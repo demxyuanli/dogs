@@ -3,7 +3,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpPnt2d, GpVec2d, GpTrsf2d};
 use crate::curve::Curve2d;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Geom2dTrimmedCurve {
     basis: Arc<dyn Curve2d>,
     first: f64,
