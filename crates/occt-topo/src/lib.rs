@@ -18,6 +18,7 @@ pub mod mesh;
 pub mod transform;
 pub mod validate;
 pub mod primitives;
+pub mod tgeometry;
 
 pub use abs::{ShapeType, Orientation};
 pub use tshape::{TShape, VertexShape, EdgeShape, WireShape, FaceShape, ShellShape, SolidShape, CompoundShape};
@@ -27,3 +28,15 @@ pub use iterator::ShapeIterator;
 pub mod model;
 pub mod topexp;
 pub mod brep_tool;
+
+// Phase 3 modules (filled in by task agents).
+pub mod wireframe;
+pub mod shape_mesh;
+pub mod bbox_from_geometry;
+pub mod face_face;
+pub mod edge_split;
+pub mod shell_check;
+pub mod solid_union;
+pub mod mesh_to_brep;
+pub mod brep_exchange;
+pub mod brep_scene;

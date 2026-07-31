@@ -18,10 +18,8 @@ impl TopoBuilder {
     /// Add sub-shape to compound.
     pub fn add(&self, shape: &mut TopoShape, sub: &TopoShape) {
         if let Ok(mut t) = shape.tshape.write() {
-            t.nb_children += 1;
+            t.add_child(sub.tshape.clone());
         }
-        // Real BRep stores children in a list; here we track count only.
-        let _ = sub;
     }
 
     /// Add edge to wire.

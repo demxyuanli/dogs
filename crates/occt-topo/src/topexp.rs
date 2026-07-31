@@ -92,7 +92,15 @@ impl Explorer {
     fn children_of(&self, s: &TopoShape) -> Vec<TopoShape> {
         match &self.children_fn {
             Some(f) => f(s),
-            None => Vec::new(),
+            // Real topology: walk the children stored on the TShape.
+            None => s
+                .tshape
+                .read()
+                .unwrap()
+                .children
+                .iter()
+                .map(|h| TopoShape::from_handle(h.clone()))
+                .collect(),
         }
     }
 
@@ -155,12 +163,28 @@ pub fn nb_shapes(shapes: &[TopoShape], target: ShapeType) -> usize {
 
 /// Collect the distinct vertices referenced by `edges`.
 ///
-/// Vertex connectivity is not stored in this port, so this uniquifies the
-/// input list by underlying `TShape` identity.
+/// Reads the real vertex children stored on each edge when present; falls back
+/// to uniquifying the input list by `TShape` identity for edges without
+/// explicit vertex children.
 pub fn vertices_from_edges(edges: &[TopoShape]) -> Vec<TopoShape> {
     let mut out: Vec<TopoShape> = Vec::new();
     for e in edges {
-        if !out.iter().any(|o| Arc::ptr_eq(&o.tshape, &e.tshape)) {
+        let has_children = !e.tshape.read().unwrap().children.is_empty();
+        let mut added = false;
+        if has_children {
+            let kids = e.tshape.read().unwrap().children.clone();
+            for h in kids {
+                if h.read().unwrap().shape_type() != ShapeType::Vertex {
+                    continue;
+                }
+                let v = TopoShape::from_handle(h);
+                if !out.iter().any(|o| Arc::ptr_eq(&o.tshape, &v.tshape)) {
+                    out.push(v);
+                    added = true;
+                }
+            }
+        }
+        if !added && !out.iter().any(|o| Arc::ptr_eq(&o.tshape, &e.tshape)) {
             out.push(e.clone());
         }
     }

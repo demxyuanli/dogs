@@ -23,6 +23,12 @@ pub mod torus;
 pub use curve::Curve;
 pub use bspline_curve::GeomBSplineCurve;
 pub use surface::Surface;
+// Phase 3 modules (curve/surface conversion).
+pub mod bspline_to_bezier;
+pub mod bezier_to_polyline;
+pub mod curve_approx;
+pub mod surface_to_grid;
+pub mod convert_geom;
 pub use line::GeomLine;
 pub use circle::GeomCircle;
 pub use ellipse::GeomEllipse;

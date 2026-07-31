@@ -1,22 +1,35 @@
 //! TShape — underlying shape data (geometric + topological content).
 //! Source: `TopoDS_TShape`
 use std::sync::{Arc, RwLock};
+use std::fmt;
 use crate::abs::{ShapeType, ShapeFlags};
 use occt_core::toploc::TopLocLocation;
 
+/// Thread-safe shared handle to a TShape (replaces Handle(TopoDS_TShape)).
+pub type HandleTShape = Arc<RwLock<TShape>>;
+
 /// Shared shape data. OCCT's TopoDS_TShape (reference-counted, shared).
 /// Use `Arc<TShape>` + `RwLock` for interior mutability like OCCT's Handle(TShape).
-#[derive(Debug)]
 pub struct TShape {
     pub shape_type: ShapeType,
     pub flags: ShapeFlags,
     pub location: TopLocLocation,
-    pub nb_children: usize,
+    /// Real children list (OCCT's `TopoDS_TShape::myShapes`). A wire holds its
+    /// edges, a face its wires, a solid its shells, a compound arbitrary shapes.
+    pub children: Vec<HandleTShape>,
+}
+
+impl fmt::Debug for TShape {
+    // Do not recurse into children (that would loop on cyclic topology);
+    // print type + child count instead.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TShape({} children={})", self.shape_type.to_str(), self.children.len())
+    }
 }
 
 impl TShape {
     pub fn new(shape_type: ShapeType) -> Self {
-        Self { shape_type, flags: ShapeFlags::default(), location: TopLocLocation::identity(), nb_children: 0 }
+        Self { shape_type, flags: ShapeFlags::default(), location: TopLocLocation::identity(), children: Vec::new() }
     }
     pub fn shape_type(&self) -> ShapeType { self.shape_type }
     pub fn free(&self) -> bool { self.flags.free }
@@ -25,8 +38,10 @@ impl TShape {
     pub fn set_closed(&mut self, v: bool) { self.flags.closed = v; }
     pub fn infinite(&self) -> bool { self.flags.infinite }
     pub fn set_infinite(&mut self, v: bool) { self.flags.infinite = v; }
-    pub fn nb_children(&self) -> usize { self.nb_children }
+    pub fn nb_children(&self) -> usize { self.children.len() }
     pub fn set_location(&mut self, l: &TopLocLocation) { self.location = l.clone(); }
+    pub fn child(&self, i: usize) -> Option<HandleTShape> { self.children.get(i).cloned() }
+    pub fn add_child(&mut self, c: HandleTShape) { self.children.push(c); }
 }
 
 /// Vertex shape data — 3D point (from BRep_TVertex).
@@ -80,9 +95,6 @@ impl FaceShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Face
 impl ShellShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Shell) } } }
 impl SolidShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Solid) } } }
 impl CompoundShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Compound) } } }
-
-/// Thread-safe shared handle to a TShape (replaces Handle(TopoDS_TShape)).
-pub type HandleTShape = Arc<RwLock<TShape>>;
 
 #[cfg(test)]
 mod tests {
