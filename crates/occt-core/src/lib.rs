@@ -15,6 +15,8 @@ pub mod elib;
 pub mod poly;
 pub mod toploc;
 pub mod geom;
+pub mod numeric;
+pub mod hull;
 pub mod bspl;
 pub mod bvh;
 pub mod convert;
