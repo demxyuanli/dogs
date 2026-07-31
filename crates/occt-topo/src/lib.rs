@@ -14,6 +14,7 @@ pub mod shape;
 pub mod builder;
 pub mod iterator;
 pub mod tools;
+pub mod mesh;
 pub mod primitives;
 
 pub use abs::{ShapeType, Orientation};
