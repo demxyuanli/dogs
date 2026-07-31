@@ -14,6 +14,7 @@ pub mod shape;
 pub mod builder;
 pub mod iterator;
 pub mod tools;
+pub mod primitives;
 
 pub use abs::{ShapeType, Orientation};
 pub use tshape::{TShape, VertexShape, EdgeShape, WireShape, FaceShape, ShellShape, SolidShape, CompoundShape};
