@@ -2,3 +2,4 @@
 pub mod clib;
 pub mod intersect;
 pub mod slib;
+pub mod surface_eval;
