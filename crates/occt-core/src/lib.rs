@@ -30,3 +30,4 @@ pub use gp::*;
 pub use kernel::*;
 pub use bnd::*;
 pub use precision::{Precision, ANGULAR, CONFUSION, RESOLUTION, INTERSECTION, APPROXIMATION, INFINITE};
+pub mod gcpnts;

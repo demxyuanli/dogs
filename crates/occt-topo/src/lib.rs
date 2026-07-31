@@ -24,3 +24,4 @@ pub use tshape::{TShape, VertexShape, EdgeShape, WireShape, FaceShape, ShellShap
 pub use shape::{TopoShape, Vertex, Edge, Wire, Face, Shell, Solid, Compound};
 pub use builder::TopoBuilder;
 pub use iterator::ShapeIterator;
+pub mod model;
