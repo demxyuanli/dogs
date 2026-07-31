@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-07-31。
-> Rust：5 crate · 39,231 行 · 582 测试（core 200 / math 88 / geom 46 / geom2d 31 / topo 217）
+> Rust：5 crate · 49,237 行 · 709 测试（core 195 / math 121 / geom 44 / geom2d 38 / topo 311）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -61,14 +61,20 @@
 | ShapeAnalysis（19） | shape_analysis | ~25% | |
 | GProp（10） | gprop + brep_gprop | ~40% | |
 
+### ◔ 新增（Phase 5，2026-08-01）
+- **精确布尔（平面多面体）**：inttools + bop_builder（Fuse/Cut/Common 体积验证）✅ 平面；NURBS 曲面仍采样近似
+- **IGES 写器**（ANSI Y14.26M，POINT/LINE/ARC/NURBS/FACE/SHELL/MSB）✅
+- **真实 BRepMesh**（Deflection 自适应四叉树）✅ 曲面细分；BRepMesh 完整 59 类仍缺
+- **SVG 渲染**（投影+画家算法）· **特征建模**（boss/hole/protrusion/pocket）· **XCAF-lite**
+- **数学深度**：分布/二维插值/稀疏矩阵 CG/FFT2D/特征值/统计/优化器/多边形/Delaunay/BVH/曲面拟合
+
 ### ⬜ 未移植（0%）
 
-- **精确布尔**：TKBO/BOPAlgo·BOPDS·BOPTools·IntTools、TKBool/TopOpeBRep（37 类）
-- **精确求交**：IntPatch（40 类）、IntImpCurveCurve
-- **特征**：TKFeat（BRepFeat、LocOpe）
+- **精确布尔（NURBS 曲面）**：IntPatch（40 类）、BOPAlgo 完整、TopOpeBRep（37 类）
+- **特征深度**：TKFeat（BRepFeat、LocOpe）
 - **精确边倒圆**：TKFillet（95,710 行源码）
 - **TKShHealing · TKXMesh · TKMeshVS**
-- **DataExchange 其余**：IGES、BinXCAF、XmlXCAF、GLTF、RWMesh
+- **DataExchange 其余**：BinXCAF、XmlXCAF、GLTF、RWMesh
 - **整个 Visualization**（TKOpenGl/TKV3d/TKService/TKIVtk）
 - **Draw / TEST**
 
