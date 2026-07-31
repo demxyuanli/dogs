@@ -5,6 +5,8 @@ pub mod bsphere;
 pub mod obb;
 pub mod sortbox;
 pub mod b2b3;
+pub mod obb_pca;
+pub mod intersect;
 
 pub use box3d::BndBox;
 pub use box2d::BndBox2d;
