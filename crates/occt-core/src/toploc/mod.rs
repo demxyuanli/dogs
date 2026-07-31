@@ -1,5 +1,5 @@
 //! Topology location — nested datum transforms. Source: `TopLoc/`
-//! A TopLoc_Location is a chain of elementary gp_Trsf transforms.
+pub mod datum;
 use crate::gp::{GpTrsf, GpPnt};
 
 /// Nested chain of transformations (like a singly-linked list of gp_Trsf).
