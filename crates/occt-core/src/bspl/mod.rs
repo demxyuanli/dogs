@@ -9,3 +9,5 @@ pub mod poles;
 pub mod knots_advanced;
 pub mod rational;
 pub mod curve_tools;
+pub mod surface_knots;
+pub mod surface_rational;

@@ -14,6 +14,7 @@
 use std::sync::Arc;
 
 pub mod curve;
+pub mod bspline_curve;
 pub mod line;
 pub mod circle;
 pub mod ellipse;
@@ -23,6 +24,7 @@ pub mod trimmed;
 pub mod offset;
 
 pub use curve::Curve2d;
+pub use bspline_curve::Geom2dBSplineCurve;
 pub use line::Geom2dLine;
 pub use circle::Geom2dCircle;
 pub use ellipse::Geom2dEllipse;

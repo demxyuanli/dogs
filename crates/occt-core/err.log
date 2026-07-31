@@ -1,0 +1,102 @@
+cargo test: 2 errors, 26 warnings (1 crates)
+═══════════════════════════════════════
+warning: unused import: `crate::gp::GpPnt`
+ --> src\bnd\sortbox.rs:2:5
+  |
+2 | use crate::gp::GpPnt;
+  |     ^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::gp::GpXyz`
+ --> src\bspl\surface.rs:4:5
+  |
+4 | use crate::gp::GpXyz;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused variable: `ixmin`
+  --> src\bnd\sortbox.rs:56:13
+   |
+56 |         let ixmin = ((xmin - self.origin[0]) / self.delta[0]).max(0.0) as usize;
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_ixmin`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `vals`
+  --> src\bnd\obb_pca.rs:29:10
+   |
+29 |     let (vals, vecs) = jacobi_3x3(cov);
+   |          ^^^^ help: if this is intentional, prefix it with an underscore: `_vals`
+
+warning: unused variable: `t`
+  --> src\bnd\obb_pca.rs:62:30
+   |
+62 |         if theta < 0.0 { let t = -t; }
+   |                              ^ help: if this is intentional, prefix it with an underscore: `_t`
+
+warning: unused variable: `weights`
+ --> src\bspl\bezier.rs:9:50
+  |
+9 | pub fn flat_bezier_coefficients(poles: &[GpPnt], weights: Option<&[f64]>,
+  |                                                  ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_weights`
+
+warning: unused variable: `tolerance`
+  --> src\bspl\bezier.rs:11:34
+   |
+11 | ...                   tolerance: f64) -> Vec<Vec<GpPnt>> {
+   |                       ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_tolerance`
+
+warning: unused variable: `n`
+  --> src\bspl\bezier.rs:50:9
+   |
+50 |     let n = poles.len();
+   |         ^ help: if this is intentional, prefix it with an underscore: `_n`
+
+warning: unused variable: `mult`
+  --> src\bspl\bezier.rs:52:9
+   |
+52 |     let mult = super::knots::multiplicity(knots, u);
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_mult`
+
+warning: variable does not need to be mutable
+ --> src\bspl\plib2d.rs:7:9
+  |
+7 |     let mut row_vals: Vec<f64> = coeffs.iter().map(|row| super::plib::eval_polynomial(row, y)).collect();
+  |         ----^^^^^^^^
+  |         |
+  |         help: remove this `mut`
+  |
+  = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `knots_v`
+  --> src\bspl\surface.rs:86:40
+   |
+86 |                       knots_u: &[f64], knots_v: &[f64],
+   |                                        ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_knots_v`
+
+warning: unused variable: `degree_v`
+  --> src\bspl\surface.rs:87:40
+   |
+87 |                       degree_u: usize, degree_v: usize,
+   |                                        ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_degree_v`
+
+warning: unused variable: `knots_u`
+   --> src\bspl\surface.rs:107:23
+    |
+107 |                       knots_u: &[f64], knots_v: &[f64],
+    |                       ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_knots_u`
+
+warning: unused variable: `degree_u`
+   --> src\bspl\surface.rs:108:23
+    |
+108 |                       degree_u: usize, degree_v: usize,
+    |                       ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_degree_u`
+
+warning: unused variable: `new_degree`
+   --> src\bspl\surface.rs:130:9
+    |
+130 |     let new_degree = degree_u + times;
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_new_degree`
+
+
+... +13 more issues

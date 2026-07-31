@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 pub mod curve;
+pub mod bspline_curve;
 pub mod surface;
 pub mod line;
 pub mod circle;
@@ -20,6 +21,7 @@ pub mod sphere;
 pub mod torus;
 
 pub use curve::Curve;
+pub use bspline_curve::GeomBSplineCurve;
 pub use surface::Surface;
 pub use line::GeomLine;
 pub use circle::GeomCircle;
