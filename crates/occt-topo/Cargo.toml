@@ -1,0 +1,9 @@
+[package]
+name = "occt-topo"
+version = "0.1.0"
+edition = "2021"
+description = "OCCT topology — boundary representation data structures (TKBRep)"
+license = "LGPL-2.1-only"
+
+[dependencies]
+occt-core = { path = "../occt-core" }
