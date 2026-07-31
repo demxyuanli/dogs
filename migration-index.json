@@ -1,0 +1,490 @@
+{
+  "version": 1,
+  "units": {
+    "gp_xyz": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_XYZ.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_XYZ.hxx"
+      ],
+      "hash": "sha256:21c083a080c57e9b3cbdd7d5cf5d9a699b25c2b3ea1892f92053f46680b488b7",
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "deps": [
+        "gp_mat"
+      ],
+      "updated_at": "2026-07-31T01:27:43.628111+00:00",
+      "target": "GpXyz",
+      "target_path": "src/gp/xyz.rs",
+      "ops": [
+        "gp_XYZ::Added",
+        "gp_XYZ::CrossSquareMagnitude",
+        "gp_XYZ::Crossed",
+        "gp_XYZ::Dot",
+        "gp_XYZ::DotCross",
+        "gp_XYZ::Modulus",
+        "gp_XYZ::MultipliedMat",
+        "gp_XYZ::MultipliedScalar"
+      ],
+      "verified_at": "2026-07-30T15:20:58.586695+00:00"
+    },
+    "gp_pnt": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Pnt.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Pnt.hxx"
+      ],
+      "hash": "sha256:89c58f83b70853eaff3f1a1ce5cf356a50e38ab6f0a4263e4d9407628c18090a",
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "deps": [
+        "gp_xyz"
+      ],
+      "updated_at": "2026-07-31T01:26:56.583203+00:00",
+      "target": "GpPnt",
+      "target_path": "src/gp/pnt.rs"
+    },
+    "gp_vec": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Vec.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Vec.hxx"
+      ],
+      "hash": "sha256:427146a7c19090b1e77e98acf04ae47929b236c62e4e8481be29a807bf562e12",
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "deps": [
+        "gp_xyz"
+      ],
+      "updated_at": "2026-07-31T01:26:56.742114+00:00",
+      "target": "GpVec",
+      "target_path": "src/gp/vec.rs",
+      "ops": [
+        "gp_Vec::Crossed",
+        "gp_Vec::Dot",
+        "gp_Vec::Magnitude"
+      ],
+      "verified_at": "2026-07-30T15:20:58.586695+00:00"
+    },
+    "gp_dir": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Dir.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Dir.hxx"
+      ],
+      "hash": "sha256:5cddbf312fbff8de7a247f53911a19a2cfc72a577d51e81fa470b500a22ad06c",
+      "deps": [
+        "gp_xyz"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "updated_at": "2026-07-31T01:26:56.870754+00:00",
+      "gate": "G3",
+      "target": "GpDir",
+      "target_path": "src/gp/dir.rs",
+      "ops": [
+        "gp_Dir::Crossed"
+      ],
+      "verified_at": "2026-07-30T15:20:58.586695+00:00"
+    },
+    "gp_mat": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Mat.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Mat.hxx"
+      ],
+      "hash": "sha256:b5088901861c7d1a6d29c6fef7bac74b893528bd4da983e7f551ff8105847a16",
+      "deps": [],
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "updated_at": "2026-07-31T01:27:43.501679+00:00",
+      "target": "GpMat",
+      "target_path": "src/gp/mat.rs",
+      "ops": [
+        "gp_Mat::Determinant",
+        "gp_Mat::Multiply",
+        "gp_Mat::Transposed"
+      ],
+      "verified_at": "2026-07-30T15:20:58.586695+00:00"
+    },
+    "gp_trsf": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Trsf.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Trsf.hxx"
+      ],
+      "hash": "sha256:8cae7503e7cea0100d56a6c63dd70a23009a3c949d7a4185e1f5cc5df9ca8060",
+      "deps": [
+        "gp_mat",
+        "gp_xyz",
+        "gp_ax1",
+        "gp_quaternion"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:57.396434+00:00",
+      "gate": "G3",
+      "target": "GpTrsf",
+      "target_path": "src/gp/trsf.rs"
+    },
+    "gp_quaternion": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Quaternion.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Quaternion.hxx"
+      ],
+      "hash": "sha256:a38531b0c7f9c018449834494876c3dc181e07b0dc8dcb66e543dd271ad337c5",
+      "deps": [
+        "gp_vec",
+        "gp_mat"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "updated_at": "2026-07-31T01:26:57.534306+00:00"
+    },
+    "precision": {
+      "module": "Precision",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKernel/Precision/Precision.hxx"
+      ],
+      "hash": "sha256:655498564e3517d5d06154a6df7f28e175c989910c726459710b9b7adeb4288c",
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "deps": [],
+      "updated_at": "2026-07-31T01:27:43.745498+00:00"
+    },
+    "gp_ax1": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Ax1.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Ax1.hxx"
+      ],
+      "hash": "sha256:160d0b65b5121ef5820b585991eb42066280ca74be66a5f586f8d37f6119bd3d",
+      "deps": [
+        "gp_pnt",
+        "gp_dir"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "updated_at": "2026-07-31T01:26:57.002322+00:00",
+      "target": "GpAx1",
+      "target_path": "src/gp/ax1.rs"
+    },
+    "gp_ax2": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Ax2.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Ax2.hxx"
+      ],
+      "hash": "sha256:a28852c72c21ec89c58e417c462432cbaab9cc8409ec3dcecb29a01ede0fbaa3",
+      "deps": [
+        "gp_pnt",
+        "gp_dir",
+        "gp_ax1"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:57.130568+00:00",
+      "gate": "G3",
+      "target": "GpAx2",
+      "target_path": "src/gp/ax2.rs"
+    },
+    "gp_ax3": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Ax3.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Ax3.hxx"
+      ],
+      "hash": "sha256:b2aa15abf7afe2d1cf16bb28ed452b291adffab755c8c22c8a722f0b96a7a6c5",
+      "deps": [
+        "gp_pnt",
+        "gp_dir",
+        "gp_ax1"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:57.258975+00:00",
+      "gate": "G3"
+    },
+    "gp_circ": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Circ.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Circ.hxx"
+      ],
+      "hash": "sha256:03c70710011d327ee8a77db0cd2538ab21903cedc723f373f21ef9bce388bfac",
+      "deps": [
+        "gp_ax2"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:57.676352+00:00",
+      "gate": "G3"
+    },
+    "gp_pln": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Pln.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Pln.hxx"
+      ],
+      "hash": "sha256:9377f415c58ee9f87eb3a4338f1a74b9ff050b9f096ae58b5c4c43c3c250b438",
+      "deps": [
+        "gp_ax3"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:57.819969+00:00",
+      "gate": "G3"
+    },
+    "gp_cylinder": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Cylinder.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Cylinder.hxx"
+      ],
+      "hash": "sha256:b2bfd00436e913547a8b9c91a887b0dd26e967a00c3a72c641a53cad4c784437",
+      "deps": [
+        "gp_ax3"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:57.963026+00:00",
+      "gate": "G3"
+    },
+    "gp_cone": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Cone.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Cone.hxx"
+      ],
+      "hash": "sha256:56407cd1856e4606bbbc94c67fbb4c857f0ad377ad4ac932403c9308cddce833",
+      "deps": [
+        "gp_ax3"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:58.107938+00:00",
+      "gate": "G3"
+    },
+    "gp_sphere": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Sphere.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Sphere.hxx"
+      ],
+      "hash": "sha256:218c8afdb175740304ad6457317459f1cae89a8037510e703a49c81fc9cfeec7",
+      "deps": [
+        "gp_ax3"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:58.240063+00:00",
+      "gate": "G3"
+    },
+    "gp_torus": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Torus.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Torus.hxx"
+      ],
+      "hash": "sha256:f5619521b1867a537e4dc86e1654d4b6a97838c310726744a868575f22f61ba6",
+      "deps": [
+        "gp_ax3"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "struct_tol",
+      "updated_at": "2026-07-31T01:26:58.379335+00:00",
+      "gate": "G3"
+    },
+    "standard_types": {
+      "module": "Standard",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKernel/Standard/Standard_TypeDef.hxx"
+      ],
+      "hash": "sha256:a69c8f3bed2b94ef7806dbb56ea8288366ac753688641fa56e4b99e8d9c83599",
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "deps": [],
+      "updated_at": "2026-07-31T01:27:43.861419+00:00"
+    },
+    "standard_failure": {
+      "module": "Standard",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKernel/Standard/Standard_Failure.cxx",
+        "src/FoundationClasses/TKernel/Standard/Standard_Failure.hxx"
+      ],
+      "hash": "sha256:797363d248f338d31fa18803addc66c0df54c9ad361c9241e861be3878722004",
+      "status": "done",
+      "region": "repl",
+      "oracle": "struct_tol",
+      "deps": [],
+      "updated_at": "2026-07-31T01:35:06.668204+00:00"
+    },
+    "standard_transient": {
+      "module": "Standard",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKernel/Standard/Standard_Transient.cxx",
+        "src/FoundationClasses/TKernel/Standard/Standard_Transient.hxx"
+      ],
+      "hash": "sha256:1dd0ec5e5ce17d28f7324442f8044d3c2c993e76ae615fa74e89bb590d2a4a6c",
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "deps": [],
+      "updated_at": "2026-07-31T01:35:06.800226+00:00"
+    },
+    "gp_2d_primitives": {
+      "module": "gp",
+      "layer": 1,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_Pnt2d.cxx",
+        "src/FoundationClasses/TKMath/gp/gp_Pnt2d.hxx"
+      ],
+      "hash": "sha256:104f37588904d3ce3947e54c24dc99b6775d527557c728f31639a6d2134118fe",
+      "deps": [
+        "gp_xyz"
+      ],
+      "status": "done",
+      "region": "wide",
+      "oracle": "numeric_tol",
+      "updated_at": "2026-07-31T01:26:58.684952+00:00"
+    },
+    "standard_handle": {
+      "module": "Standard",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKernel/Standard/Standard_Handle.hxx"
+      ],
+      "hash": "sha256:ef40907d1e3b25af1a3c5d87168d5241624b6da3b3714ff46a99464dc0c083ca",
+      "deps": [
+        "standard_transient"
+      ],
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "updated_at": "2026-07-31T01:35:06.918034+00:00",
+      "gate": "G2"
+    },
+    "ncollection": {
+      "module": "NCollection",
+      "layer": 1,
+      "sources": [
+        "src/FoundationClasses/TKernel/NCollection/NCollection_Array1.hxx",
+        "src/FoundationClasses/TKernel/NCollection/NCollection_DataMap.hxx",
+        "src/FoundationClasses/TKernel/NCollection/NCollection_Sequence.hxx",
+        "src/FoundationClasses/TKernel/NCollection/NCollection_List.hxx"
+      ],
+      "hash": "sha256:4dd851886ad1f9efb437e1141e007b56318d0018f9f78dbe791b93713c5dd5fd",
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "deps": [],
+      "updated_at": "2026-07-31T01:35:07.029387+00:00"
+    },
+    "gp_trsf_form": {
+      "module": "gp",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/gp/gp_TrsfForm.hxx"
+      ],
+      "hash": "sha256:34bd2747145ae48ce9e6a582ade592bd09fde5947624fb4d9b65e9f5551c6b8e",
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "deps": [],
+      "updated_at": "2026-07-31T01:26:58.531653+00:00"
+    },
+    "math_vector": {
+      "module": "math",
+      "layer": 1,
+      "sources": [
+        "src/FoundationClasses/TKMath/math/math_VectorBase.hxx"
+      ],
+      "hash": "sha256:962f1a7b7df2e07fab887bc9d625940f76adb72cfed4d91f69f0355c6ba01443",
+      "status": "done",
+      "region": "trans",
+      "oracle": "numeric_tol",
+      "deps": [],
+      "updated_at": "2026-07-31T01:25:34.641497+00:00"
+    },
+    "math_matrix": {
+      "module": "math",
+      "layer": 1,
+      "sources": [
+        "src/FoundationClasses/TKMath/math/math_Matrix.hxx"
+      ],
+      "hash": "sha256:29e5a77cf92eac5da962a755e6c424c7e51e8359c222b66a0af2651ecbf5df06",
+      "deps": [
+        "math_vector"
+      ],
+      "status": "done",
+      "region": "trans",
+      "oracle": "numeric_tol",
+      "updated_at": "2026-07-31T01:25:34.785620+00:00"
+    },
+    "math_intvec": {
+      "module": "math",
+      "layer": 1,
+      "sources": [
+        "src/FoundationClasses/TKMath/math/math_IntegerVector.hxx"
+      ],
+      "hash": "sha256:2aa4c4a4072e883db30b59d3a8992adaae25960b07138b4834787697f416eeff",
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "deps": [],
+      "updated_at": "2026-07-31T01:25:34.931936+00:00"
+    },
+    "math_status": {
+      "module": "math",
+      "layer": 0,
+      "sources": [
+        "src/FoundationClasses/TKMath/math/math_Status.hxx"
+      ],
+      "hash": "sha256:da2360be57484429852f4a8643f93163ebbd1b4a530a8483f4267771fbbfabd0",
+      "status": "done",
+      "region": "repl",
+      "oracle": "bit_equal",
+      "deps": [],
+      "updated_at": "2026-07-31T01:25:35.076737+00:00"
+    }
+  }
+}

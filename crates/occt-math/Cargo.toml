@@ -1,0 +1,9 @@
+[package]
+name = "occt-math"
+version = "0.1.0"
+edition = "2021"
+description = "OCCT linear algebra — pure Rust port of Open CASCADE Technology TKMath/math module"
+license = "LGPL-2.1-only"
+
+[dependencies]
+occt-core = { path = "../occt-core" }

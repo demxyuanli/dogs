@@ -1,0 +1,13 @@
+[package]
+name = "occt-core"
+version = "0.1.0"
+edition = "2021"
+description = "OCCT foundation geometry — pure Rust port of Open CASCADE Technology FoundationClasses"
+license = "LGPL-2.1-only"
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[features]
+default = ["serde", "serde_json"]

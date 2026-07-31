@@ -1,0 +1,52 @@
+{
+  "project": "Rust port — gp_ module migration target",
+  "graph": {
+    "nodes": [
+      { "id": "engine_differ", "type": "module", "title": "differ.py", "group": "infra",
+        "details": "Shared diff engine (Python, not ported — reused from trellis plugin)" },
+      { "id": "engine_harness", "type": "module", "title": "harness.py", "group": "infra",
+        "details": "Test harness (Python, not ported — per-domain adapter)" },
+      { "id": "rust_driver", "type": "impl", "title": "occt-driver", "group": "engine/occt",
+        "file": "engine/occt/driver/src/main.rs",
+        "details": "C++ driver binary — reads corpus, calls OCCT, emits golden output" },
+      { "id": "rust_runner", "type": "impl", "title": "occt-runner", "group": "engine/occt",
+        "file": "engine/occt/runner/src/main.rs",
+        "details": "Pure Rust runner — reads corpus, calls Rust port, emits candidate output" },
+      { "id": "echo_op", "type": "function", "title": "echo", "group": "ops",
+        "details": "Scaffold op — proves toolchain works. 3 records, 0 mismatches ✓" },
+
+      { "id": "gp_XYZ_pending", "type": "struct", "title": "gp_XYZ", "group": "pending",
+        "details": "Layer 0 · 106 callers · 13 methods · Oracle: unused. Priority: HIGH" },
+      { "id": "gp_Mat_pending", "type": "struct", "title": "gp_Mat", "group": "pending",
+        "details": "Layer 0 · 18 callers · 12 methods · Oracle: numeric_tol" },
+      { "id": "gp_Dir_pending", "type": "struct", "title": "gp_Dir", "group": "pending",
+        "details": "Layer 1 (dep: gp_Vec) · 106 callers · 14 methods · Oracle: numeric_tol. Critical: re-normalize after cross product" },
+      { "id": "gp_Pnt_pending", "type": "struct", "title": "gp_Pnt", "group": "pending",
+        "details": "Layer 1 · 710 callers (most-used) · 8 methods · Oracle: numeric_tol. Verify: Distance, Transform, Rotate, Scale, Translate" },
+      { "id": "gp_Vec_pending", "type": "struct", "title": "gp_Vec", "group": "pending",
+        "details": "Layer 1 · 10 methods · Oracle: numeric_tol" },
+      { "id": "gp_Trsf_pending", "type": "struct", "title": "gp_Trsf", "group": "pending",
+        "details": "Layer 3 · 14 methods · Oracle: struct_tol. Blocked by gp_Mat, gp_Ax1, gp_Quaternion" }
+    ],
+    "edges": [
+      { "source": "engine_harness", "target": "engine_differ", "type": "call" },
+      { "source": "engine_harness", "target": "rust_driver", "type": "call" },
+      { "source": "engine_harness", "target": "rust_runner", "type": "call" },
+      { "source": "echo_op", "target": "rust_driver", "type": "impl" },
+      { "source": "echo_op", "target": "rust_runner", "type": "impl" },
+
+      { "source": "gp_Dir_pending", "target": "gp_XYZ_pending", "type": "dep" },
+      { "source": "gp_Dir_pending", "target": "gp_Vec_pending", "type": "dep" },
+      { "source": "gp_Pnt_pending", "target": "gp_XYZ_pending", "type": "dep" },
+      { "source": "gp_Pnt_pending", "target": "gp_Vec_pending", "type": "dep" },
+      { "source": "gp_Pnt_pending", "target": "gp_Trsf_pending", "type": "dep" },
+      { "source": "gp_Vec_pending", "target": "gp_XYZ_pending", "type": "dep" },
+      { "source": "gp_Trsf_pending", "target": "gp_Mat_pending", "type": "dep" },
+      { "source": "gp_Trsf_pending", "target": "gp_XYZ_pending", "type": "dep" }
+    ]
+  },
+  "flows": [
+    { "id": "frontier", "entry": "gp_XYZ_pending", "steps": ["gp_XYZ_pending", "gp_Mat_pending"] },
+    { "id": "deps_chain", "entry": "gp_Trsf_pending", "steps": ["gp_Mat_pending", "gp_XYZ_pending", "gp_Vec_pending", "gp_Dir_pending", "gp_Pnt_pending", "gp_Trsf_pending"] }
+  ]
+}

@@ -1,0 +1,421 @@
+{
+  "runs": [
+    {
+      "at": "2026-07-27T14:50:58.308046+00:00",
+      "ops": {
+        "echo": {
+          "ran": 3,
+          "pass": true
+        }
+      }
+    },
+    {
+      "at": "2026-07-30T07:54:13.182838+00:00",
+      "ops": {
+        "echo": {
+          "ran": 3,
+          "pass": true
+        },
+        "gp_XYZ::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Modulus": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Added": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::MultipliedScalar": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::CrossSquareMagnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::DotCross": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::MultipliedMat": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Multiply": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Determinant": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Transposed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Magnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir::Crossed": {
+          "ran": 2000,
+          "pass": true
+        }
+      }
+    },
+    {
+      "at": "2026-07-30T08:08:14.298319+00:00",
+      "ops": {
+        "echo": {
+          "ran": 3,
+          "pass": true
+        },
+        "gp_XYZ::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Modulus": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Added": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::MultipliedScalar": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::CrossSquareMagnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::DotCross": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::MultipliedMat": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Multiply": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Determinant": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Transposed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Magnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Modulus": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Added": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::MultipliedScalar": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Normalized": {
+          "ran": 1792,
+          "pass": true
+        },
+        "gp_Vec2d::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec2d::Magnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec2d::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir2d::new": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir2d::Dot": {
+          "ran": 2000,
+          "pass": true
+        }
+      }
+    },
+    {
+      "at": "2026-07-30T15:50:16.858995+00:00",
+      "ops": {
+        "echo": {
+          "ran": 3,
+          "pass": true
+        },
+        "gp_XYZ::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Modulus": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Added": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::MultipliedScalar": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::CrossSquareMagnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::DotCross": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::MultipliedMat": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Multiply": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Determinant": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Transposed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Magnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Modulus": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Added": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::MultipliedScalar": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Normalized": {
+          "ran": 1792,
+          "pass": true
+        },
+        "gp_Vec2d::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec2d::Magnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec2d::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir2d::new": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir2d::Dot": {
+          "ran": 2000,
+          "pass": true
+        }
+      }
+    },
+    {
+      "at": "2026-07-30T15:54:11.800967+00:00",
+      "ops": {
+        "echo": {
+          "ran": 3,
+          "pass": true
+        },
+        "gp_XYZ::Dot": {
+          "ran": 2000,
+          "pass": false
+        },
+        "gp_XYZ::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Modulus": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::Added": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::MultipliedScalar": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::CrossSquareMagnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XYZ::DotCross": {
+          "ran": 2000,
+          "pass": false
+        },
+        "gp_XYZ::MultipliedMat": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Multiply": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Determinant": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Mat::Transposed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Dot": {
+          "ran": 2000,
+          "pass": false
+        },
+        "gp_Vec::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec::Magnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Modulus": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Added": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::MultipliedScalar": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_XY::Normalized": {
+          "ran": 1792,
+          "pass": true
+        },
+        "gp_Vec2d::Dot": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec2d::Magnitude": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Vec2d::Crossed": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir2d::new": {
+          "ran": 2000,
+          "pass": true
+        },
+        "gp_Dir2d::Dot": {
+          "ran": 2000,
+          "pass": true
+        }
+      }
+    }
+  ]
+}

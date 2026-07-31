@@ -1,0 +1,9 @@
+[package]
+name = "occt-geom2d"
+version = "0.1.0"
+edition = "2021"
+description = "OCCT 2D geometry — parametric curves (Geom2d)"
+license = "LGPL-2.1-only"
+
+[dependencies]
+occt-core = { path = "../occt-core" }

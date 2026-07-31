@@ -1,0 +1,47 @@
+//! 2D circle curve. Source: `Geom2d_Circle.hxx`
+use occt_core::gp::{GpPnt2d, GpVec2d, GpTrsf2d};
+use crate::curve::Curve2d;
+
+/// 2D circle: not in occt-core gp module. Defined locally with center + radius.
+#[derive(Debug, Clone)]
+pub struct GpCirc2d { pub center: GpPnt2d, pub radius: f64 }
+
+impl GpCirc2d {
+    pub fn new(center: GpPnt2d, radius: f64) -> Self { Self { center, radius } }
+}
+
+#[derive(Debug, Clone)]
+pub struct Geom2dCircle { pos: GpCirc2d }
+
+impl Geom2dCircle {
+    pub fn new(c: GpCirc2d) -> Self { Self { pos: c } }
+    pub fn from_center_radius(center: GpPnt2d, radius: f64) -> Self { Self { pos: GpCirc2d::new(center, radius) } }
+    pub fn circ(&self) -> &GpCirc2d { &self.pos }
+}
+
+impl Curve2d for Geom2dCircle {
+    fn d0(&self, u: f64) -> GpPnt2d {
+        GpPnt2d::new(self.pos.center.x() + self.pos.radius * u.cos(), self.pos.center.y() + self.pos.radius * u.sin())
+    }
+    fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d) {
+        let r = self.pos.radius;
+        let p = self.d0(u);
+        (p, GpVec2d::new(-r * u.sin(), r * u.cos()))
+    }
+    fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
+        let r = self.pos.radius;
+        let p = self.d0(u);
+        (p, GpVec2d::new(-r * u.sin(), r * u.cos()), GpVec2d::new(-r * u.cos(), -r * u.sin()))
+    }
+    fn first_parameter(&self) -> f64 { 0.0 }
+    fn last_parameter(&self) -> f64 { 2.0 * std::f64::consts::PI }
+    fn is_periodic(&self) -> bool { true }
+    fn period(&self) -> f64 { 2.0 * std::f64::consts::PI }
+    fn continuity(&self) -> u8 { 3 }
+    fn clone_dyn(&self) -> Box<dyn crate::curve::Curve2d> { Box::new(self.clone()) }
+    fn transform(&mut self, t: &GpTrsf2d) {
+        let mut c = self.pos.center; t.transforms_xy(&mut c.coord);
+        self.pos = GpCirc2d::new(c, self.pos.radius * t.scale_factor().abs());
+    }
+    fn reverse(&mut self) { self.pos.radius = -self.pos.radius; }
+}

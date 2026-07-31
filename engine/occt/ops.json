@@ -1,0 +1,37 @@
+{
+  "_comment": "OCCT CAD kernel → Rust. Inline-only gp ops (no OCCT .cxx linking needed).",
+  "_defaults": { "abs": 1e-9, "rel": 1e-12 },
+  "echo": { "oracle": "bit_equal" },
+
+  "gp_XYZ::Dot": { "oracle": "numeric_tol" },
+  "gp_XYZ::Crossed": { "oracle": "numeric_tol" },
+  "gp_XYZ::Modulus": { "oracle": "numeric_tol" },
+  "gp_XYZ::Added": { "oracle": "numeric_tol" },
+  "gp_XYZ::MultipliedScalar": { "oracle": "numeric_tol" },
+  "gp_XYZ::CrossSquareMagnitude": { "oracle": "numeric_tol" },
+  "gp_XYZ::DotCross": { "oracle": "numeric_tol" },
+  "gp_XYZ::MultipliedMat": { "oracle": "numeric_tol" },
+
+  "gp_Mat::Multiply": { "oracle": "numeric_tol" },
+  "gp_Mat::Determinant": { "oracle": "numeric_tol" },
+  "gp_Mat::Transposed": { "oracle": "bit_equal" },
+
+  "gp_Vec::Dot": { "oracle": "numeric_tol" },
+  "gp_Vec::Crossed": { "oracle": "numeric_tol" },
+  "gp_Vec::Magnitude": { "oracle": "numeric_tol" },
+
+  "gp_Dir::Crossed": { "oracle": "numeric_tol" },
+
+  "gp_XY::Dot": { "oracle": "numeric_tol" },
+  "gp_XY::Crossed": { "oracle": "numeric_tol" },
+  "gp_XY::Modulus": { "oracle": "numeric_tol" },
+  "gp_XY::Added": { "oracle": "numeric_tol" },
+  "gp_XY::MultipliedScalar": { "oracle": "numeric_tol" },
+  "gp_XY::Normalized": { "oracle": "numeric_tol" },
+  "gp_Vec2d::Dot": { "oracle": "numeric_tol" },
+  "gp_Vec2d::Magnitude": { "oracle": "numeric_tol" },
+  "gp_Vec2d::Crossed": { "oracle": "numeric_tol" },
+
+  "gp_Dir2d::new": { "oracle": "numeric_tol" },
+  "gp_Dir2d::Dot": { "oracle": "numeric_tol" }
+}
