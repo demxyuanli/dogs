@@ -7,3 +7,7 @@ license = "LGPL-2.1-only"
 
 [dependencies]
 occt-core = { path = "../occt-core" }
+
+[[example]]
+name = "demo"
+path = "../../examples/demo.rs"
