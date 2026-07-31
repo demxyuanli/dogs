@@ -6,3 +6,4 @@ pub mod tcollection;
 pub mod tcolstd;
 pub mod geomabs;
 pub mod units;
+pub mod string_tools;

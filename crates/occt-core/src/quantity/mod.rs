@@ -108,3 +108,4 @@ mod tests {
     #[test] fn color_name() { assert_eq!(Color::from_name(NameOfColor::Red), Color::RED); }
     #[test] fn color_to_u8() { let c = Color::RED; assert_eq!(c.to_rgb_u8(), (255,0,0)); }
 }
+pub mod color_tools;
