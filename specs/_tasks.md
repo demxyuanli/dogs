@@ -1,6 +1,6 @@
 # _tasks — OCCT → Rust migration map (current)
 
-> Last updated: 2026-07-31. 5 crates · 29,022 lines · 386 tests
+> Last updated: 2026-07-31. 5 crates · 39,231 lines · 561 tests
 > Phase 3 detail: [specs/_phase3_plan.md](_phase3_plan.md)
 
 ## 已完整 (✅)
