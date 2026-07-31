@@ -6,3 +6,6 @@ pub mod csg;
 pub mod fit2;
 pub mod polygon_ops;
 pub mod delaunay;
+pub mod curve_ops3d;
+pub mod polyline_simplify;
+pub mod mesh_analysis;

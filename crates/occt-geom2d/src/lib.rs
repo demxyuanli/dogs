@@ -26,6 +26,7 @@ pub mod bezier_curve;
 pub mod curve_ops;
 pub mod bspline2d_to_bezier;
 pub mod geom2d_api;
+pub mod offset2d;
 
 pub use curve::Curve2d;
 pub use bspline_curve::Geom2dBSplineCurve;

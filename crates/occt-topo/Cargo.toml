@@ -9,6 +9,7 @@ license = "LGPL-2.1-only"
 occt-core = { path = "../occt-core" }
 occt-geom = { path = "../occt-geom" }
 occt-geom2d = { path = "../occt-geom2d" }
+occt-math = { path = "../occt-math" }
 
 [[example]]
 name = "demo"

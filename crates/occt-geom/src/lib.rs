@@ -32,6 +32,7 @@ pub mod convert_geom;
 // Phase 4 modules.
 pub mod geom_api;
 pub mod curve_reparam;
+pub mod surface_fit;
 pub mod surface_ops;
 pub use line::GeomLine;
 pub use circle::GeomCircle;
