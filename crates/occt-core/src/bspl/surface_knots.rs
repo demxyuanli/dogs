@@ -112,21 +112,31 @@ pub fn trim_surface(
 ) -> (Vec<GpPnt>, Vec<f64>, Vec<f64>) {
     let mut n_u = knots_u.len().saturating_sub(degree_u + 1);
     let mut n_v = knots_v.len().saturating_sub(degree_v + 1);
+    let mut p = poles.to_vec();
+    let mut ku = knots_u.to_vec();
+    let mut kv = knots_v.to_vec();
 
-    // Bring the four trim parameters to full multiplicity (degree + 1).
-    let extra_u1 = (degree_u + 1).saturating_sub(knots::multiplicity(knots_u, u1));
-    let (p, ku) = surface::insert_knot_u(poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u1, extra_u1);
-    n_u += extra_u1;
-    let extra_u2 = (degree_u + 1).saturating_sub(knots::multiplicity(&ku, u2));
-    let (p, ku) = surface::insert_knot_u(&p, n_u, n_v, &ku, knots_v, degree_u, degree_v, u2, extra_u2);
-    n_u += extra_u2;
-
-    let extra_v1 = (degree_v + 1).saturating_sub(knots::multiplicity(knots_v, v1));
-    let (p, kv) = surface::insert_knot_v(&p, n_u, n_v, &ku, knots_v, degree_u, degree_v, v1, extra_v1);
-    n_v += extra_v1;
-    let extra_v2 = (degree_v + 1).saturating_sub(knots::multiplicity(&kv, v2));
-    let (p, kv) = surface::insert_knot_v(&p, n_u, n_v, &ku, &kv, degree_u, degree_v, v2, extra_v2);
-    n_v += extra_v2;
+    // Bring u1 and u2 up to full multiplicity (degree_u + 1), one knot at a
+    // time so the knot vector stays consistent between insertions.
+    for u in [u1, u2] {
+        let extra = (degree_u + 1).saturating_sub(knots::multiplicity(&ku, u));
+        for _ in 0..extra {
+            let (np, nk) = surface::insert_knot_u(&p, n_u, n_v, &ku, &kv, degree_u, degree_v, u, 1);
+            p = np;
+            ku = nk;
+            n_u += 1;
+        }
+    }
+    // Same for v1 and v2 in the v-direction.
+    for v in [v1, v2] {
+        let extra = (degree_v + 1).saturating_sub(knots::multiplicity(&kv, v));
+        for _ in 0..extra {
+            let (np, nk) = surface::insert_knot_v(&p, n_u, n_v, &ku, &kv, degree_u, degree_v, v, 1);
+            p = np;
+            kv = nk;
+            n_v += 1;
+        }
+    }
 
     // The sub-surface over [u1,u2] x [v1,v2] is bounded by the full-multiplicity
     // knots: control rows/cols a..=b and knots a..=b + degree + 1.
@@ -246,15 +256,6 @@ mod tests {
     }
 
     #[test]
-    fn debug_boehm() {
-        let mut v = vec![GpPnt::new(0., 0., 0.), GpPnt::new(1., 0., 0.)];
-        super::super::bezier::boehm_insert(&mut v, &[0., 0., 1., 1.], 1, 0.25, 1, None);
-        eprintln!("after boehm: {:?}", v);
-        assert_eq!(v.len(), 3);
-    }
-
-    #[test]
-    #[ignore] // TODO: trim indices need calibration
     fn trim_surface_bilinear() {
         let poles = vec![
             GpPnt::new(0.0, 0.0, 0.0),
@@ -265,11 +266,6 @@ mod tests {
         let ku = vec![0.0, 0.0, 1.0, 1.0];
         let kv = vec![0.0, 0.0, 1.0, 1.0];
         let (tp, nku, nkv) = trim_surface(&poles, &ku, &kv, 1, 1, 0.25, 0.75, 0.25, 0.75);
-        eprintln!("nku={:?}", nku);
-        eprintln!("nkv={:?}", nkv);
-        for (k, p) in tp.iter().enumerate() {
-            eprintln!("tp[{}]=({},{},{})", k, p.x(), p.y(), p.z());
-        }
         assert_eq!(nku, vec![0.25, 0.25, 0.75, 0.75]);
         assert_eq!(nkv, vec![0.25, 0.25, 0.75, 0.75]);
         assert_eq!(tp.len(), 4);

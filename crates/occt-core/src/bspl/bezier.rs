@@ -42,47 +42,68 @@ pub fn flat_bezier_coefficients(poles: &[GpPnt], weights: Option<&[f64]>,
     result
 }
 
-/// Boehm knot insertion algorithm. Inserts knot u at position idx in the B-spline curve.
-/// Modifies poles and optionally weights in-place.
+/// Boehm knot insertion algorithm. Inserts knot u (which lies in the span
+/// [knots[k], knots[k+1]) with k = hunt(knots, u)) into the B-spline curve,
+/// adding one control point. Modifies poles and optionally weights in-place.
 /// Source: BSplCLib::Boehm
-pub fn boehm_insert(poles: &mut Vec<GpPnt>, knots: &[f64], idx: usize, u: f64,
-                     degree: usize, mut weights: Option<&mut Vec<f64>>) {
+pub fn boehm_insert(poles: &mut Vec<GpPnt>, knots: &[f64], _idx: usize, u: f64,
+                     degree: usize, weights: Option<&mut Vec<f64>>) {
     let n = poles.len();
-    let new_idx = super::knots::hunt(knots, u);
-    let mult = super::knots::multiplicity(knots, u);
+    if n == 0 { return; }
+    let k = super::knots::hunt(knots, u).min(n - 1);
+    let m = super::knots::multiplicity(knots, u);
+    let p = degree;
 
-    // Compute new poles using de Boor insertion
-    poles.insert(new_idx + 1, GpPnt::zero());
-    if let Some(ref mut w) = weights { w.insert(new_idx + 1, 1.0); }
-
-    for i in (new_idx - degree + 1)..=new_idx {
-        let i0 = i.max(0);
-        let ki = idx + i - new_idx + degree;
-        let alpha = if (knots[ki] - knots[i0]).abs() > 1e-30 {
-            (u - knots[i0]) / (knots[ki] - knots[i0])
-        } else { 0.0 };
-
-        if alpha > 0.0 && alpha < 1.0 {
-            let pi = poles[i];
-            let pi1 = poles[i + 1];
-            poles[i] = GpPnt::new(
-                (1.0 - alpha) * pi.x() + alpha * pi1.x(),
-                (1.0 - alpha) * pi.y() + alpha * pi1.y(),
-                (1.0 - alpha) * pi.z() + alpha * pi1.z(),
-            );
-            poles[i + 1] = GpPnt::new(
-                alpha * pi.x() + (1.0 - alpha) * pi1.x(),
-                alpha * pi.y() + (1.0 - alpha) * pi1.y(),
-                alpha * pi.z() + (1.0 - alpha) * pi1.z(),
-            );
-            if let Some(ref mut w) = weights {
-                let wi = w[i];
-                let wi1 = w[i + 1];
-                w[i] = (1.0 - alpha) * wi + alpha * wi1;
-                w[i + 1] = alpha * wi + (1.0 - alpha) * wi1;
-            }
+    // New control points Q_0..Q_n:
+    //   Q_i = P_i                      for i <= k-p
+    //   Q_i = (1-a_i) P_{i-1} + a_i P_i  for k-p+1 <= i <= k-m
+    //   Q_i = P_{i-1}                  for i >= k-m+1
+    // where a_i = (u - U_i) / (U_{i+p} - U_i).
+    let mut new_poles = Vec::with_capacity(n + 1);
+    for i in 0..=n {
+        if i <= k.saturating_sub(p) {
+            new_poles.push(poles[i]);
+        } else if i <= k.saturating_sub(m) {
+            let alpha = knot_alpha(knots, u, i, p);
+            new_poles.push(lerp_point(poles[i - 1], poles[i], alpha));
+        } else {
+            new_poles.push(poles[i - 1]);
         }
     }
+    *poles = new_poles;
+
+    if let Some(w) = weights {
+        let mut new_w = Vec::with_capacity(w.len() + 1);
+        for i in 0..=n {
+            if i <= k.saturating_sub(p) {
+                new_w.push(w[i]);
+            } else if i <= k.saturating_sub(m) {
+                let alpha = knot_alpha(knots, u, i, p);
+                new_w.push((1.0 - alpha) * w[i - 1] + alpha * w[i]);
+            } else {
+                new_w.push(w[i - 1]);
+            }
+        }
+        *w = new_w;
+    }
+}
+
+/// Interpolation factor a_i = (u - U_i) / (U_{i+p} - U_i), 0 when degenerate.
+fn knot_alpha(knots: &[f64], u: f64, i: usize, p: usize) -> f64 {
+    if i + p < knots.len() && (knots[i + p] - knots[i]).abs() > 1e-30 {
+        ((u - knots[i]) / (knots[i + p] - knots[i])).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+/// Linear interpolation a + t * (b - a).
+fn lerp_point(a: GpPnt, b: GpPnt, t: f64) -> GpPnt {
+    GpPnt::new(
+        a.x() + t * (b.x() - a.x()),
+        a.y() + t * (b.y() - a.y()),
+        a.z() + t * (b.z() - a.z()),
+    )
 }
 
 /// Count segments in B-spline between repeating interior knots.
