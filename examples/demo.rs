@@ -40,8 +40,8 @@ fn main() {
     obj.faces = box_mesh.triangles.iter().map(|t| {
         occt_core::io::obj::ObjFace { v: vec![t.n0 as i32, t.n1 as i32, t.n2 as i32], vt: None, vn: None }
     }).collect();
-    write_obj_file("demo_box.obj", &obj).unwrap();
-    println!("  已导出 demo_box.obj ({} 面)", obj.faces.len());
+    write_obj_file("../../examples/output/demo_box.obj", &obj).unwrap();
+    println!("  已导出 ../../examples/output/demo_box.obj ({} 面)", obj.faces.len());
 
     // 球体 → 二进制 STL
     let mut stl = StlMesh::default();
@@ -49,8 +49,8 @@ fn main() {
         [sphere_mesh.vertices[t.n0], sphere_mesh.vertices[t.n1], sphere_mesh.vertices[t.n2]]
     }).collect();
     occt_core::io::stl::compute_facet_normals(&mut stl);
-    std::fs::write("demo_sphere.stl", write_binary_stl(&stl)).unwrap();
-    println!("  已导出 demo_sphere.stl ({} 三角形, 表面积 {:.2})",
+    std::fs::write("../../examples/output/demo_sphere.stl", write_binary_stl(&stl)).unwrap();
+    println!("  已导出 ../../examples/output/demo_sphere.stl ({} 三角形, 表面积 {:.2})",
         stl.triangles.len(), total_area(&stl));
 
     println!("\n=== 5. 读回 + 体积验证 ===");
