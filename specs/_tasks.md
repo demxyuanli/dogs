@@ -1,81 +1,53 @@
-# _tasks — OCCT → Rust systematic completion map
+# _tasks — OCCT → Rust migration map (current)
 
-> Last updated: 2026-07-31. In-progress loop starting from TKernel upwards.
+> Last updated: 2026-07-31. 5 crates · 179 modules · 18,959 lines · 215 tests
+> Phase 3 detail: [specs/_phase3_plan.md](_phase3_plan.md)
 
-## Legend
-```
-🟢 done    🟡 in-progress    ⚪ pending    ⬜ deferred
-```
+## 已完整 (✅)
 
-## Phase 1: FoundationClasses/TKernel — root infrastructure
+### occt-core (131 tests)
+| 域 | 模块 |
+|---|---|
+| gp 几何 (37 类型) | gp/ 全部 — 点/线/圆/椭圆/双曲/抛物/平面/柱/锥/球/环/2D/变换 |
+| 求值 | elib/ — ElCLib + ElSLib + intersect + surface_eval + measure |
+| B样条/Bezier | bspl/ — knots/eval/bezier/plib/surface/poles/rational/曲线工具 |
+| 包围体 | bnd/ — Box/Box2d/Sphere/OBB(PCA)/SortBox |
+| 空间结构 | bvh/ — BVH + 遍历 + 三角BVH |
+| 网格 | poly/ — Triangulation/Polygon2D/Polygon3D |
+| 交换 | io/ — OBJ + STL + PLY 读写 |
+| 建模基础 | csg/ (体素布尔) · hull/ · geom/ (采样/三角剖分/拟合/折线) |
+| 质量属性 | gprop/ — 质心/惯性/面积/体积 |
+| 内核 | kernel/ — OCCError/Handle/容器/TCollection/TColStd/GeomAbs/Units/OSD/Resource/字符串 |
+| 其他 | numeric/ · quantity/ · message/ · toploc/ · convert/ · cslib/ · gcpnts/ · precision |
 
-| # | Unit | Status | Effort | Notes |
-|---|---|---|---|---|
-| TK-01 | `TCollection` | 🟡 | S | Typed collection aliases (Vec<T>, HashMap<K,V>) |
-| TK-02 | `TColStd` | 🟡 | S | Standard collection aliases (TColStd_Array1OfReal→Vec<f64>) |
-| TK-03 | `GeomAbs` | 🟡 | S | Geometry enums (CurveType, SurfaceType, Shape, JoinType) |
-| TK-04 | `Quantity` | ⚪ | S | Physical quantity types (Color, Length, Angle, etc.) |
-| TK-05 | `Units/UnitsAPI` | ⚪ | M | Unit conversion (mm→m, rad→deg, etc.) |
-| TK-06 | `Message` | ⚪ | M | Progress indicator + messaging (use Rust tracing/log) |
-| TK-07 | `OSD` | ⚪ | L | OS-dependent layer (files, threads, signals → stdlib) |
-| TK-08 | `Resource` | ⚪ | M | Resource file parser (.res format) |
-| TK-09 | `Storage` | ⚪ | L | Binary persistence (OCC format reader/writer) |
-| TK-10 | `FSD` | ⚪ | M | File system driver abstraction |
-| TK-11 | `StdFail` | ⚪ | S | Standard exception subclasses |
-| TK-12 | `Plugin` | ⚪ | M | Dynamic library loading |
+### occt-math (36 tests)
+vector/matrix/intvec/status + SVD/Crout/Jacobi/Householder/Newton/BFGS/Powell/
+Gauss-Legendre/Kronrod/Eigen/Trig/LeastSquares/MultiInt + stats/fft/rng
 
-## Phase 2: FoundationClasses/TKMath — algorithms + data structures
+### occt-geom (TKG3d) + occt-geom2d (TKG2d)
+Curve/Surface traits + Line/Circle/Ellipse/Hyperbola/Parabola/Plane/Cylinder/Cone/
+Sphere/Torus + B样条/Bezier/Trimmed/Offset/Revolved + convert/transform
 
-| # | Unit | Status | Effort | Notes |
-|---|---|---|---|---|
-| TM-01 | `gp` (all 37 types) | 🟢 done | — | Complete |
-| TM-02 | `precision` | 🟢 done | — | Complete |
-| TM-03 | `elib` (ElCLib+ElSLib) | 🟢 done | — | Complete |
-| TM-04 | `bnd` (4/7) | 🟢 done | S-M | BoundSortBox, B2, B3, Tools remaining |
-| TM-05 | `math` (4/60+) | 🟡 | L | SVD, Crout, Jacobi done. Need BFGS, Brent, Newton, PSO, Gauss, Kronrod |
-| TM-06 | `Poly` | ⚪ | M | Polygon2D, Polygon3D, Triangulation data + algorithms |
-| TM-07 | `BVH` | ⚪ | M | Bounding volume hierarchy builder |
-| TM-08 | `TopLoc` | ⚪ | M | Topology location (nested datum transforms) |
-| TM-09 | `GeomAbs` | 🟡 | S | (see TK-03) |
-| TM-10 | `Convert` | ⚪ | M | Coordinate conversion (polar→cartesian, etc.) |
-| TM-11 | `CSLib` | ⚪ | M | Classifier for parametric surfaces |
-| TM-12 | `PLib` | ⚪ | L | Polynomial evaluation (Horner, Lagrange, etc.) |
-| TM-13 | `BSplCLib` | ⚪ | XL | B-spline curve core (knot insertion, evaluation, etc.) |
-| TM-14 | `BSplSLib` | ⚪ | XL | B-spline surface core |
+### occt-topo (TKBRep, 46 tests)
+ShapeType/Orientation/TShape/TopoShape/typed wrappers/TopoBuilder/Explorer/
+BRepTool(占位)/mesh(基本体)/primitives/transform/validate/model
 
-## Phase 3: ModelingData — geometry + topology
+## Phase 3 — BRep 几何内核 (进行中, 最高优先)
 
-| # | Unit | Status | Effort | Notes |
-|---|---|---|---|---|
-| MD-01 | `TKG2d` curves | 🟢 done | — | 5 curve types + Curve2d trait |
-| MD-02 | `TKG2d` remaining | ⚪ | L | TrimmedCurve, OffsetCurve, BSplineCurve, BezierCurve |
-| MD-03 | `TKG3d` curves | 🟢 done | — | GeomLine/Circle/Ellipse/Hyperbola/Parabola |
-| MD-04 | `TKG3d` surfaces | 🟢 done | — | GeomPlane/Cylinder/Cone/Sphere/Torus |
-| MD-05 | `TKG3d` remaining | ⚪ | L | TrimmedCurve, OffsetCurve, BSplineCurve, SurfaceOfRevolution, etc. |
-| MD-06 | `TKGeomBase` | ⚪ | XL | Geometric utilities (projections, extrema, intersections) |
-| MD-07 | `TKBRep` | ⚪ | XL | Boundary representation data structures |
-
-## Phase 4+: Deferred
-| # | Layer | Status | Notes |
+| # | 任务 | 状态 | 依赖 |
 |---|---|---|---|
-| MA-* | ModelingAlgorithms | ⬜ | 13 toolkits, gated by G1 (invariant oracle) |
-| DE-* | DataExchange | ⬜ | 13 toolkits, gated by complete ModelingData |
-| VI-* | Visualization | ⬜ | 6 toolkits |
-| AF-* | ApplicationFramework | ⬜ | 12 toolkits |
+| A1 | TShape 挂几何 (vertex point/edge curve/face surface) | ⚪ | geom |
+| A2 | BRepBuilder 真实顶点/边/面构建 | ⚪ | A1 |
+| A3 | BRepTool 完整几何访问 | ⚪ | A1 |
+| A4 | 真实 children 树存储 | ⚪ | A1 |
+| A5 | 边→折线 / 面→网格逼近 | ⚪ | A4+B |
+| A6 | 任意形状网格化 | ⚪ | A5 |
+| A7 | 从几何算真实包围盒 | ⚪ | A5 |
+| B1-B5 | B样条→Bezier→折线 / 曲面→UV网格 / 转换 | ⚪ | geom+bspl |
+| C1-C5 | 面求交/边分裂/壳检查/网格布尔 | ⚪ | A6 |
+| D1-D3 | 网格→BRep / BRep→交换 / 场景 | ⚪ | A6 |
 
-## Execution order
-```
-🟡 TK-01→TK-02→TK-03   (collections + enums, 1 session)
-   ↓
-🟡 TM-04→TM-05→TM-06   (bnd completions + math solvers + poly)
-   ↓
-⚪ TM-07→TM-08→TM-10   (BVH + TopLoc + Convert)
-   ↓
-⚪ TK-04→TK-05→TK-06   (Quantity + Units + Message)
-   ↓
-⚪ TM-11→TM-12          (CSLib + PLib)
-   ↓
-⬜ TM-13→TM-14          (BSplCLib + BSplSLib, XL effort, defer if possible)
-   ↓
-⬜ MD-02→MD-05→MD-06→MD-07 (ModelingData completion)
-```
+## 远期 (⬜)
+- STEP/IGES 数据交换 (需 A1 完成几何存取)
+- ModelingAlgorithms 精确布尔/倒角 (需 A6 + 求交)
+- 可视化渲染器 (外部工具已可看 OBJ/STL)
