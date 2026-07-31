@@ -163,7 +163,8 @@ mod tests {
         let a = greville_abscissae(&k, 2, 3);
         assert_eq!(a.len(), 3);
         assert!((a[0]-0.25).abs() < 1e-14);
-        assert!((a[2]-0.75).abs() < 1e-14);
+        assert!((a[1]-0.75).abs() < 1e-14);
+        assert!((a[2]-1.00).abs() < 1e-14);
     }
 
     #[test]

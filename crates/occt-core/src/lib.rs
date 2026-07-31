@@ -19,6 +19,8 @@ pub mod bvh;
 pub mod convert;
 pub mod cslib;
 pub mod gprop;
+pub mod quantity;
+pub mod message;
 
 pub use gp::*;
 pub use kernel::*;
