@@ -106,7 +106,7 @@ impl Explorer {
             let matches = if self.target == ShapeType::Shape {
                 !is_root
             } else {
-                s.tshape.shape_type() == self.target
+                shape_type_of(&s) == self.target
             };
             let kids = self.children_of(&s);
             if matches {
@@ -123,11 +123,16 @@ impl Explorer {
     }
 }
 
+/// Read the topological type of a shape (behind the shared `TShape` lock).
+fn shape_type_of(s: &TopoShape) -> ShapeType {
+    s.tshape.read().expect("poisoned TShape lock").shape_type()
+}
+
 /// Filter `shapes` to those whose type equals `target`.
 pub fn map_shapes(shapes: &[TopoShape], target: ShapeType) -> Vec<TopoShape> {
     shapes
         .iter()
-        .filter(|s| s.tshape.shape_type() == target)
+        .filter(|s| shape_type_of(s) == target)
         .cloned()
         .collect()
 }
@@ -136,7 +141,7 @@ pub fn map_shapes(shapes: &[TopoShape], target: ShapeType) -> Vec<TopoShape> {
 pub fn first_shape(shapes: &[TopoShape], target: ShapeType) -> Option<TopoShape> {
     shapes
         .iter()
-        .find(|s| s.tshape.shape_type() == target)
+        .find(|s| shape_type_of(s) == target)
         .cloned()
 }
 
@@ -144,7 +149,7 @@ pub fn first_shape(shapes: &[TopoShape], target: ShapeType) -> Option<TopoShape>
 pub fn nb_shapes(shapes: &[TopoShape], target: ShapeType) -> usize {
     shapes
         .iter()
-        .filter(|s| s.tshape.shape_type() == target)
+        .filter(|s| shape_type_of(s) == target)
         .count()
 }
 
@@ -199,7 +204,7 @@ mod tests {
         assert_eq!(nb_shapes(&shapes, ShapeType::Face), 0);
 
         let e = first_shape(&shapes, ShapeType::Edge).expect("edge present");
-        assert_eq!(e.tshape.shape_type(), ShapeType::Edge);
+        assert_eq!(shape_type_of(&e), ShapeType::Edge);
         assert!(first_shape(&shapes, ShapeType::Face).is_none());
     }
 

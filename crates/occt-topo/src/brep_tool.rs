@@ -7,7 +7,7 @@
 
 use crate::abs::ShapeType;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use occt_core::gp::{GpPnt, GpVec};
+use occt_core::gp::GpPnt;
 
 /// Namespace for BRep_Tool-style static queries.
 pub struct BRepTool;
