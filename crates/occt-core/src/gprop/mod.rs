@@ -96,3 +96,4 @@ mod tests {
         assert!((vol - 1.0/6.0).abs() < 1e-14);
     }
 }
+pub mod inertia;
