@@ -19,7 +19,6 @@ pub mod svd;
 pub mod crout;
 pub mod jacobi;
 pub mod householder;
-
 pub use status::MathStatus;
 pub use vector::MathVector;
 pub use intvec::MathIntVector;
@@ -28,3 +27,4 @@ pub use svd::SVD;
 pub use crout::Crout;
 pub use jacobi::Jacobi;
 pub use householder::Householder;
+

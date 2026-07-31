@@ -12,6 +12,8 @@ pub mod precision;
 pub mod gp;
 pub mod bnd;
 pub mod elib;
+pub mod poly;
+pub mod toploc;
 
 pub use gp::*;
 pub use kernel::*;

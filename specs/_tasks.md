@@ -1,76 +1,81 @@
-# _tasks — OCCT → Rust migration atomic breakdown
+# _tasks — OCCT → Rust systematic completion map
 
-> Updated: 2026-07-31. 28 units indexed. 14 done/verified.
-> Rules: [specs/_rules.md](_rules.md). Machine index: `migration-index.json`.
+> Last updated: 2026-07-31. In-progress loop starting from TKernel upwards.
 
-## Layer 0 — roots (no deps)
+## Legend
+```
+🟢 done    🟡 in-progress    ⚪ pending    ⬜ deferred
+```
 
-| # | Atom | Status | Source | Region | Effort |
-|---|---|---|---|---|---|
-| 1 | `gp_xyz` | ✅ done | `TKMath/gp/gp_XYZ.cxx` | wide | S |
-| 2 | `gp_pnt` | ✅ done | `TKMath/gp/gp_Pnt.cxx` | wide | S |
-| 3 | `gp_vec` | ✅ done | `TKMath/gp/gp_Vec.cxx` | wide | S |
-| 4 | `gp_dir` | ✅ done | `TKMath/gp/gp_Dir.cxx` | wide | M |
-| 5 | `gp_ax1` | ✅ done | `TKMath/gp/gp_Ax1.cxx` | wide | S |
-| 6 | `gp_ax2` | ✅ done | `TKMath/gp/gp_Ax2.cxx` | wide | M |
-| 7 | `gp_ax3` | ✅ done | `TKMath/gp/gp_Ax3.cxx` | wide | M |
-| 8 | `gp_mat` | ✅ done | `TKMath/gp/gp_Mat.cxx` | wide | S |
-| 9 | `gp_trsf` | ✅ done | `TKMath/gp/gp_Trsf.cxx` | wide | M |
-| 10 | `gp_quaternion` | ✅ done | `TKMath/gp/gp_Quaternion.cxx` | wide | M |
-| 11 | `gp_circ` | ✅ done | `TKMath/gp/gp_Circ.cxx` | wide | S |
-| 12 | `gp_pln` | ✅ done | `TKMath/gp/gp_Pln.cxx` | wide | S |
-| 13 | `gp_cylinder` | ✅ done | `TKMath/gp/gp_Cylinder.cxx` | wide | S |
-| 14 | `gp_cone` | ✅ done | `TKMath/gp/gp_Cone.cxx` | wide | S |
-| 15 | `gp_sphere` | ✅ done | `TKMath/gp/gp_Sphere.cxx` | wide | S |
-| 16 | `gp_torus` | ✅ done | `TKMath/gp/gp_Torus.cxx` | wide | M |
-| 17 | `gp_trsf_form` | ✅ done | `TKMath/gp/gp_TrsfForm.hxx` | repl | S |
-| 18 | `precision` | ✅ done | `TKernel/Precision/Precision.hxx` | wide | S |
-| 19 | `standard_types` | ✅ done | `TKernel/Standard/Standard_TypeDef.hxx` | repl | S |
-| 20 | `gp_xy` | ✅ done | `TKMath/gp/gp_XY.hxx` | wide | S |
-| 21 | `gp_mat2d` | ✅ done | `TKMath/gp/gp_Mat2d.hxx` | wide | S |
+## Phase 1: FoundationClasses/TKernel — root infrastructure
 
-## Layer 1 — depends on layer 0
+| # | Unit | Status | Effort | Notes |
+|---|---|---|---|---|
+| TK-01 | `TCollection` | 🟡 | S | Typed collection aliases (Vec<T>, HashMap<K,V>) |
+| TK-02 | `TColStd` | 🟡 | S | Standard collection aliases (TColStd_Array1OfReal→Vec<f64>) |
+| TK-03 | `GeomAbs` | 🟡 | S | Geometry enums (CurveType, SurfaceType, Shape, JoinType) |
+| TK-04 | `Quantity` | ⚪ | S | Physical quantity types (Color, Length, Angle, etc.) |
+| TK-05 | `Units/UnitsAPI` | ⚪ | M | Unit conversion (mm→m, rad→deg, etc.) |
+| TK-06 | `Message` | ⚪ | M | Progress indicator + messaging (use Rust tracing/log) |
+| TK-07 | `OSD` | ⚪ | L | OS-dependent layer (files, threads, signals → stdlib) |
+| TK-08 | `Resource` | ⚪ | M | Resource file parser (.res format) |
+| TK-09 | `Storage` | ⚪ | L | Binary persistence (OCC format reader/writer) |
+| TK-10 | `FSD` | ⚪ | M | File system driver abstraction |
+| TK-11 | `StdFail` | ⚪ | S | Standard exception subclasses |
+| TK-12 | `Plugin` | ⚪ | M | Dynamic library loading |
 
-| # | Atom | Status | Source | Deps | Region | Effort |
-|---|---|---|---|---|---|---|
-| 22 | `gp_pnt2d` | ✅ done | `TKMath/gp/gp_Pnt2d.cxx` | gp_xy | wide | S |
-| 23 | `gp_vec2d` | ✅ done | `TKMath/gp/gp_Vec2d.cxx` | gp_xy | wide | S |
-| 24 | `gp_dir2d` | ✅ done | `TKMath/gp/gp_Dir2d.cxx` | gp_xy | wide | S |
-| 25 | `gp_ax2d` | ✅ done | `TKMath/gp/gp_Ax2d.cxx` | gp_pnt2d,gp_dir2d | wide | S |
-| 26 | `gp_ax22d` | ✅ done | `TKMath/gp/gp_Ax22d.cxx` | gp_pnt2d,gp_dir2d | wide | S |
-| 27 | `gp_trsf2d` | ✅ done | `TKMath/gp/gp_Trsf2d.cxx` | gp_xy,gp_mat2d | wide | M |
-| 28 | `math_vector` | ✅ done | `TKMath/math/math_VectorBase.hxx` | — | trans | S |
-| 29 | `math_matrix` | ✅ done | `TKMath/math/math_Matrix.hxx` | math_vector | trans | S |
-| 30 | `math_intvec` | ✅ done | `TKMath/math/math_IntegerVector.hxx` | — | repl | S |
-| 31 | `math_status` | ✅ done | `TKMath/math/math_Status.hxx` | — | repl | S |
+## Phase 2: FoundationClasses/TKMath — algorithms + data structures
 
-## Layer 1 — ready to port (no deps on incomplete units)
+| # | Unit | Status | Effort | Notes |
+|---|---|---|---|---|
+| TM-01 | `gp` (all 37 types) | 🟢 done | — | Complete |
+| TM-02 | `precision` | 🟢 done | — | Complete |
+| TM-03 | `elib` (ElCLib+ElSLib) | 🟢 done | — | Complete |
+| TM-04 | `bnd` (4/7) | 🟢 done | S-M | BoundSortBox, B2, B3, Tools remaining |
+| TM-05 | `math` (4/60+) | 🟡 | L | SVD, Crout, Jacobi done. Need BFGS, Brent, Newton, PSO, Gauss, Kronrod |
+| TM-06 | `Poly` | ⚪ | M | Polygon2D, Polygon3D, Triangulation data + algorithms |
+| TM-07 | `BVH` | ⚪ | M | Bounding volume hierarchy builder |
+| TM-08 | `TopLoc` | ⚪ | M | Topology location (nested datum transforms) |
+| TM-09 | `GeomAbs` | 🟡 | S | (see TK-03) |
+| TM-10 | `Convert` | ⚪ | M | Coordinate conversion (polar→cartesian, etc.) |
+| TM-11 | `CSLib` | ⚪ | M | Classifier for parametric surfaces |
+| TM-12 | `PLib` | ⚪ | L | Polynomial evaluation (Horner, Lagrange, etc.) |
+| TM-13 | `BSplCLib` | ⚪ | XL | B-spline curve core (knot insertion, evaluation, etc.) |
+| TM-14 | `BSplSLib` | ⚪ | XL | B-spline surface core |
 
-| # | Atom | Source | Region | Effort | Notes |
-|---|---|---|---|---|---|
-| 32 | `standard_transient` | `TKernel/Standard/Standard_Transient.*` | repl | M | Arc<T> wrapper |
-| 33 | `standard_handle` | `TKernel/Standard/Standard_Handle.hxx` | repl | M | Handle protocol, gate G2 |
-| 34 | `standard_failure` | `TKernel/Standard/Standard_Failure.*` | repl | M | Exception hierarchy |
-| 35 | `ncollection` | `TKernel/NCollection/NCollection_*` | repl | L | Container templates |
+## Phase 3: ModelingData — geometry + topology
 
-## Layer 2 — ready to port (math solvers, elementary curves)
+| # | Unit | Status | Effort | Notes |
+|---|---|---|---|---|
+| MD-01 | `TKG2d` curves | 🟢 done | — | 5 curve types + Curve2d trait |
+| MD-02 | `TKG2d` remaining | ⚪ | L | TrimmedCurve, OffsetCurve, BSplineCurve, BezierCurve |
+| MD-03 | `TKG3d` curves | 🟢 done | — | GeomLine/Circle/Ellipse/Hyperbola/Parabola |
+| MD-04 | `TKG3d` surfaces | 🟢 done | — | GeomPlane/Cylinder/Cone/Sphere/Torus |
+| MD-05 | `TKG3d` remaining | ⚪ | L | TrimmedCurve, OffsetCurve, BSplineCurve, SurfaceOfRevolution, etc. |
+| MD-06 | `TKGeomBase` | ⚪ | XL | Geometric utilities (projections, extrema, intersections) |
+| MD-07 | `TKBRep` | ⚪ | XL | Boundary representation data structures |
 
-| # | Atom | Source | Deps | Effort | Notes |
-|---|---|---|---|---|---|
-| 36 | `math_gauss` | `TKMath/math/math_Gauss.*` | math_vector,math_matrix | M | Linear system solver, already in MathMatrix::solve |
-| 37 | `math_svd` | `TKMath/math/math_SVD.*` | math_vector,math_matrix | M | Singular value decomposition |
-| 38 | `math_crout` | `TKMath/math/math_Crout.*` | math_vector,math_matrix | M | LU decomposition |
-| 39 | `math_householder` | `TKMath/math/math_Householder.*` | math_vector,math_matrix | M | QR decomposition |
-| 40 | `math_jacobi` | `TKMath/math/math_Jacobi.*` | math_vector,math_matrix | M | Eigenvalue solver |
-| 41 | `el_clib` | `TKMath/ElCLib/ElCLib.cxx` | gp_* | L | Curve evaluation (lines,circles,ellipses,etc.) |
-| 42 | `el_slib` | `TKMath/ElSLib/ElSLib.cxx` | gp_* | L | Surface evaluation (planes,cylinders,cones,etc.) |
-
-## Layers 3-7 — deferred
-
-| Layer | Module | Toolkits | Status |
+## Phase 4+: Deferred
+| # | Layer | Status | Notes |
 |---|---|---|---|
-| 3 | ModelingData | TKG2d,TKG3d,TKGeomBase,TKBRep | ○ blocked by handle protocol (G2) |
-| 4 | ModelingAlgorithms | TKBO,TKBool,TKFeat,TKFillet,TKOffset,TKMesh,TKShHealing,TKTopAlgo,TKXMesh | ○ blocked by invariant oracle (G1) |
-| 5 | DataExchange | STEP,IGES,STL,glTF,VRML,OBJ,PLY | ○ deferred |
-| 6 | Visualization | OpenGL,3D viewer,selection | ○ deferred |
-| 7 | ApplicationFramework | OCAF document framework | ○ deferred |
+| MA-* | ModelingAlgorithms | ⬜ | 13 toolkits, gated by G1 (invariant oracle) |
+| DE-* | DataExchange | ⬜ | 13 toolkits, gated by complete ModelingData |
+| VI-* | Visualization | ⬜ | 6 toolkits |
+| AF-* | ApplicationFramework | ⬜ | 12 toolkits |
+
+## Execution order
+```
+🟡 TK-01→TK-02→TK-03   (collections + enums, 1 session)
+   ↓
+🟡 TM-04→TM-05→TM-06   (bnd completions + math solvers + poly)
+   ↓
+⚪ TM-07→TM-08→TM-10   (BVH + TopLoc + Convert)
+   ↓
+⚪ TK-04→TK-05→TK-06   (Quantity + Units + Message)
+   ↓
+⚪ TM-11→TM-12          (CSLib + PLib)
+   ↓
+⬜ TM-13→TM-14          (BSplCLib + BSplSLib, XL effort, defer if possible)
+   ↓
+⬜ MD-02→MD-05→MD-06→MD-07 (ModelingData completion)
+```
