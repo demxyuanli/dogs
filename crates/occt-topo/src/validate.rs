@@ -3,8 +3,9 @@ use crate::abs::{ShapeType, Orientation};
 use crate::shape::TopoShape;
 
 /// Result of a shape validity check.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CheckStatus {
+    #[default]
     Ok,
     SelfIntersection,
     Degenerated,
