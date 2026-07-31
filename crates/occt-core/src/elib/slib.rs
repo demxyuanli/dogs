@@ -33,7 +33,7 @@ pub fn sphere_value(s: &GpSphere, u: f64, v: f64) -> GpPnt {
 }
 
 pub fn torus_value(t: &GpTorus, u: f64, v: f64) -> GpPnt {
-    let R = t.major_radius; let r = t.minor_radius;
-    let r0 = R + r * v.cos();
-    pt_add3(&t.location().coord, t.pos.x_direction().xyz(), r0*u.cos(), t.pos.y_direction().xyz(), r0*u.sin(), t.pos.direction().xyz(), r*v.sin())
+    let maj_r = t.major_radius; let min_r = t.minor_radius;
+    let r0 = maj_r + min_r * v.cos();
+    pt_add3(&t.location().coord, t.pos.x_direction().xyz(), r0*u.cos(), t.pos.y_direction().xyz(), r0*u.sin(), t.pos.direction().xyz(), min_r*v.sin())
 }

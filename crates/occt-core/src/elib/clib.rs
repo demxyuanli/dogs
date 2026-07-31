@@ -1,5 +1,5 @@
 //! Elementary Curves Library. Source: `ElCLib.hxx`
-use crate::gp::{GpLin,GpCirc,GpElips,GpHypr,GpParab,GpPnt,GpVec,GpPnt2d,GpVec2d,GpLin2d,GpCirc2d,GpElips2d};
+use crate::gp::{GpLin,GpCirc,GpElips,GpHypr,GpParab,GpPnt,GpVec,GpPnt2d,GpLin2d,GpCirc2d,GpElips2d};
 
 // Helper: GpVec from scaled & added GpXyz refs
 fn vec_add(a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpVec {
@@ -9,10 +9,6 @@ fn vec_add(a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpVe
 
 fn pt_add(org: &crate::gp::GpXyz, a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpPnt {
     let r = org.added(&a.multiplied(sa)).added(&b.multiplied(sb));
-    GpPnt::from_xyz(&r)
-}
-fn pt_add3(org: &crate::gp::GpXyz, a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64, c: &crate::gp::GpXyz, sc: f64) -> GpPnt {
-    let r = org.added(&a.multiplied(sa)).added(&b.multiplied(sb)).added(&c.multiplied(sc));
     GpPnt::from_xyz(&r)
 }
 

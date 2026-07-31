@@ -1,0 +1,9 @@
+[package]
+name = "occt-geom"
+version = "0.1.0"
+edition = "2021"
+description = "OCCT 3D geometry — parametric curves and surfaces (TKG3d)"
+license = "LGPL-2.1-only"
+
+[dependencies]
+occt-core = { path = "../occt-core" }
