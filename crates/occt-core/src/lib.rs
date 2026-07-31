@@ -14,6 +14,10 @@ pub mod bnd;
 pub mod elib;
 pub mod poly;
 pub mod toploc;
+pub mod bspl;
+pub mod bvh;
+pub mod convert;
+pub mod cslib;
 
 pub use gp::*;
 pub use kernel::*;
