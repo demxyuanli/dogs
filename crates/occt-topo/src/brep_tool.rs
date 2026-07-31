@@ -107,7 +107,7 @@ mod tests {
     use super::*;
 
     fn edge() -> Edge {
-        Edge::from(TopoShape::new(ShapeType::Edge))
+        Edge(TopoShape::new(ShapeType::Edge))
     }
 
     #[test]

@@ -25,3 +25,5 @@ pub use shape::{TopoShape, Vertex, Edge, Wire, Face, Shell, Solid, Compound};
 pub use builder::TopoBuilder;
 pub use iterator::ShapeIterator;
 pub mod model;
+pub mod topexp;
+pub mod brep_tool;
