@@ -46,11 +46,11 @@
 | BRepCheck（10） | shape_analysis + brep_measure | 50% | |
 | BRepExtrema（18） | brep_extrema | 33% | |
 | BRepGProp（13） | brep_gprop + gprop | 23% | |
-| BRepAlgoAPI（10） | boolean_ops + solid_union | 30% | **体素近似** |
+| BRepAlgoAPI（10） | bop_builder + boolean_ops | 45% | **精确（平面）+ 体素（曲面）** |
 | BRepOffsetAPI（14） | loft + pipe | 36% | |
 | BRepSweep（9） | sweep + sweep_revolve + pipe | 33% | |
 | BRepFilletAPI（4） | fillet | 25% | |
-| BRepMesh（59） | wireframe + shape_mesh | **3%** | 采样近似 |
+| BRepMesh（59） | brepmesh + wireframe + shape_mesh | 25% | Deflection 自适应（平面精确/曲面细分） |
 | GeomAPI（11） | geom_api | ~80%（常用） | |
 | Geom2dAPI（5） | geom2d_api | ~80% | |
 | GCPnts（11） | gcpnts | ~45% | |
@@ -82,9 +82,9 @@
 
 | 指标 | 数值 |
 |---|---|
-| Rust 移植量 | 39,231 行（含测试） |
+| Rust 移植量 | 49,237 行（含测试） |
 | OCCT 已移植范围源码 | ~73 万行（20 toolkit） |
-| 行数比 | ~5.4% |
+| 行数比 | ~6.7% |
 | 核心几何主干覆盖 | ~85% |
 | 全量 OCCT 类覆盖（估算） | ~15–20% |
 
