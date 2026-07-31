@@ -291,15 +291,27 @@ pub fn is_inside(shape: &TopoShape, p: &GpPnt) -> bool {
     // does not land exactly on a grid cell diagonal (a degenerate ray that can
     // be double-counted or skipped by both triangles of a cell).
     let jittered = GpPnt::new(p.x(), p.y() + 1e-7, p.z() + 1e-7);
-    let mut crossings = 0usize;
+    let mut hits: Vec<f64> = Vec::new();
     for (verts, tris) in &meshes {
         for (i, j, k) in tris {
-            if ray_plus_x_hits(&verts[*i], &verts[*j], &verts[*k], &jittered) {
-                crossings += 1;
+            if let Some(t) = ray_plus_x_hits(&verts[*i], &verts[*j], &verts[*k], &jittered) {
+                hits.push(t);
             }
         }
     }
-    crossings % 2 == 1
+    // A ray passing exactly through a shared triangle edge reports two hits at
+    // the same parameter; deduplicate coincident hits so the parity stays
+    // correct for closed meshes.
+    hits.sort_by(f64::total_cmp);
+    let mut unique = 0usize;
+    let mut prev: Option<f64> = None;
+    for t in hits {
+        if prev.map_or(true, |q| (t - q).abs() > 1e-9) {
+            unique += 1;
+            prev = Some(t);
+        }
+    }
+    unique % 2 == 1
 }
 
 /// Minimum separation between two axis-aligned bounding boxes; 0 if they
@@ -513,7 +525,9 @@ fn shape_bbox(shape: &TopoShape) -> Option<BndBox> {
 
 /// Möller–Trumbore ray/triangle test for a ray from `origin` in the +X
 /// direction.
-fn ray_plus_x_hits(a: &GpPnt, b: &GpPnt, c: &GpPnt, origin: &GpPnt) -> bool {
+/// Möller–Trumbore ray (+X) / triangle intersection; returns the hit parameter
+/// `t` when the ray crosses the triangle.
+fn ray_plus_x_hits(a: &GpPnt, b: &GpPnt, c: &GpPnt, origin: &GpPnt) -> Option<f64> {
     const EPS: f64 = 1e-9;
     let dir = GpXyz::new(1.0, 0.0, 0.0);
     let edge1 = b.coord.subtracted(&a.coord);
@@ -521,21 +535,21 @@ fn ray_plus_x_hits(a: &GpPnt, b: &GpPnt, c: &GpPnt, origin: &GpPnt) -> bool {
     let h = dir.crossed(&edge2);
     let det = edge1.dot(&h);
     if det.abs() < EPS {
-        return false;
+        return None;
     }
     let inv = 1.0 / det;
     let s = origin.coord.subtracted(&a.coord);
     let u = s.dot(&h) * inv;
     if u < -EPS || u > 1.0 + EPS {
-        return false;
+        return None;
     }
     let q = s.crossed(&edge1);
     let v = dir.dot(&q) * inv;
     if v < -EPS || u + v > 1.0 + EPS {
-        return false;
+        return None;
     }
     let t = edge2.dot(&q) * inv;
-    t > EPS
+    if t > EPS { Some(t) } else { None }
 }
 
 fn collect_vertices(shape: &TopoShape) -> Vec<Vertex> {

@@ -29,6 +29,10 @@ pub mod bezier_to_polyline;
 pub mod curve_approx;
 pub mod surface_to_grid;
 pub mod convert_geom;
+// Phase 4 modules.
+pub mod geom_api;
+pub mod curve_reparam;
+pub mod surface_ops;
 pub use line::GeomLine;
 pub use circle::GeomCircle;
 pub use ellipse::GeomEllipse;

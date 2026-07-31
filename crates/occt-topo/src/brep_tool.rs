@@ -108,6 +108,39 @@ impl BRepTool {
         }
     }
 
+    /// World-coordinate vertex point: the registered local point transformed
+    /// by the shape's accumulated `location` (`TopoDS_Shape::Location`).
+    pub fn vertex_point_world(v: &Vertex) -> GpPnt {
+        let t = v.0.location().transformation();
+        Self::vertex_point(v).transformed(&t)
+    }
+
+    /// World-coordinate edge curve: the registered local curve transformed by
+    /// the edge's location.
+    pub fn edge_curve_world(e: &Edge) -> Option<Arc<dyn Curve>> {
+        let t = e.0.location().transformation();
+        Self::edge_curve(e).map(|c| Arc::from(c.transformed(&t)))
+    }
+
+    /// World-coordinate face surface: the registered local surface transformed
+    /// by the face's location.
+    pub fn face_surface_world(f: &Face) -> Option<Arc<dyn Surface>> {
+        let t = f.0.location().transformation();
+        Self::face_surface(f).map(|s| Arc::from(s.transformed(&t)))
+    }
+
+    /// World-coordinate face UV bounds (from the transformed surface).
+    pub fn uv_bounds_world(f: &Face) -> (f64, f64, f64, f64) {
+        match Self::face_surface_world(f) {
+            Some(s) => {
+                let (u1, u2) = s.u_range();
+                let (v1, v2) = s.v_range();
+                (u1, u2, v1, v2)
+            }
+            None => (f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY),
+        }
+    }
+
     /// Structural integrity of a shape list. Always true in this port:
     /// TShape types are fixed at construction.
     pub fn check_shape_integrity(shapes: &[TopoShape]) -> bool {

@@ -7,6 +7,7 @@ pub mod sortbox;
 pub mod b2b3;
 pub mod obb_pca;
 pub mod intersect;
+pub mod segment;
 
 pub use box3d::BndBox;
 pub use box2d::BndBox2d;

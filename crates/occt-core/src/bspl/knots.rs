@@ -21,19 +21,23 @@ pub fn hunt(knots: &[f64], x: f64) -> usize {
 }
 
 /// Build uniform knot vector for n_poles control points, degree d.
-/// Returns n_poles + degree + 1 knots. Source: BSplCLib::BuildKnots
+/// Returns n_poles + degree + 1 knots: `degree+1` leading zeros, the
+/// `n_poles - degree - 1` interior knots evenly spaced in (0,1), then
+/// `degree+1` trailing ones. Source: BSplCLib::BuildKnots
 pub fn build_uniform_knots(n_poles: usize, degree: usize) -> Vec<f64> {
     let n_knots = n_poles + degree + 1;
     let mut knots = vec![0.0f64; n_knots];
+    // Leading clamp: degree+1 zeros.
     for i in 0..=degree { knots[i] = 0.0; }
-    for i in (n_poles + 1)..n_knots { knots[i] = 1.0; }
-    let n_inner = n_knots - 2 * (degree + 1);
-    if n_inner > 0 {
-        let step = 1.0 / (n_inner + 1) as f64;
-        for i in 0..n_inner { knots[degree + 1 + i] = (i + 1) as f64 * step; }
-    } else {
-        for i in degree + 1..n_poles + 1 { knots[i] = 1.0; }
+    // Interior knots, evenly spaced in (0,1).
+    let n_inner = n_poles.saturating_sub(degree + 1);
+    for i in 0..n_inner {
+        knots[degree + 1 + i] = (i + 1) as f64 / (n_inner + 1) as f64;
     }
+    // Trailing clamp: degree+1 ones. Must start right after the interior
+    // knots — the previous version left the last interior slot at 0, yielding
+    // a non-monotonic vector like [0,0,0,0.5,0,1,1].
+    for i in (degree + 1 + n_inner)..n_knots { knots[i] = 1.0; }
     knots
 }
 

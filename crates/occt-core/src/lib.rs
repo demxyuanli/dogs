@@ -17,6 +17,7 @@ pub mod toploc;
 pub mod geom;
 pub mod numeric;
 pub mod hull;
+pub mod int;
 pub mod io;
 pub mod bspl;
 pub mod bvh;

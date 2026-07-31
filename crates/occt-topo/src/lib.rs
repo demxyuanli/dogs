@@ -48,3 +48,18 @@ pub mod brep_surface;
 pub mod topo_tools_full;
 pub mod boolean_ops;
 pub mod brep_measure;
+// Phase 4 modules.
+pub mod brep_builder_api;
+pub mod fillet;
+pub mod loft;
+pub mod step;
+pub mod hlr;
+pub mod vrml;
+pub mod sweep_revolve;
+pub mod shape_ops;
+pub mod shape_naming;
+pub mod brep_pipe;
+pub mod brep_faces;
+pub mod brep_sketch;
+pub mod brep_compare;
+pub mod brep_assembly;

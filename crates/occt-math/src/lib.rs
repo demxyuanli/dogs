@@ -70,4 +70,7 @@ pub use matrix_ext::{
     identity, transpose, matmul, trace, determinant, inverse, frobenius_norm,
     matrix_rank, det3, det2, solve_linear,
 };
-
+pub mod interp;
+pub mod roots;
+pub mod integrate_adaptive;
+pub mod optimize;
