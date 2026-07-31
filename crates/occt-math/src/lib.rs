@@ -24,6 +24,8 @@ pub mod gauss;
 pub mod bfgs;
 pub mod powell;
 pub mod kronrod;
+pub mod eigen;
+pub mod trig;
 pub use status::MathStatus;
 pub use vector::MathVector;
 pub use intvec::MathIntVector;
@@ -37,4 +39,6 @@ pub use gauss::{gauss_legendre, integrate};
 pub use bfgs::BFGS;
 pub use powell::Powell;
 pub use kronrod::integrate_adaptive;
+pub use eigen::{largest_eigen, smallest_eigen, all_eigenvalues, condition_number};
+pub use trig::{trig_roots, has_root};
 

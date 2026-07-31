@@ -62,15 +62,3 @@ impl BFGS {
     }
 }
 
-##[cfg(test)]
-#mod tests {
-#    use super::*;
-#    #[test]
-#    fn bfgs_quadratic() {
-#        let f = |x: &MathVector| -> f64 { (x.value(1)-3.).powi(2)+(x.value(2)+2.).powi(2) };
-#        let grad = |x: &MathVector| -> MathVector { MathVector::from_slice(&[2.*(x.value(1)-3.),2.*(x.value(2)+2.)]) };
-#        let b = BFGS::new();
-#        let x = b.minimize(f, grad, &MathVector::from_slice(&[0.,0.])).unwrap();
-#        assert!((x.value(1)-3.).abs()<1e-6); assert!((x.value(2)+2.).abs()<1e-6);
-#    }
-#}

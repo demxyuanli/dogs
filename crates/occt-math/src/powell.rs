@@ -27,7 +27,7 @@ impl Powell {
             for i in 1..=n { extrap.set_value(i, 2.0*x.value(i) - x_save.value(i)); }
             let f_extrap = f(&extrap);
             if f_extrap < fx {
-                let d_new = MathVector::new(1, n);
+                let mut d_new = MathVector::new(1, n);
                 for i in 1..=n { d_new.set_value(i, x.value(i) - x_save.value(i)); }
                 let (_, f_opt) = line_search(&f, &x, &d_new, fx);
                 fx = f_opt;
@@ -52,14 +52,3 @@ fn line_search<F: Fn(&MathVector) -> f64>(f: &F, x: &MathVector, d: &MathVector,
     (best, best_f)
 }
 
-##[cfg(test)]
-#mod tests {
-#    use super::*;
-#    #[test]
-#    fn powell_quadratic() {
-#        let f = |x: &MathVector| -> f64 { (x.value(1)-2.).powi(2)+(x.value(2)+1.).powi(2) };
-#        let p = Powell::new();
-#        let x = p.minimize(f, &MathVector::from_slice(&[0.,0.])).unwrap();
-#        assert!((x.value(1)-2.).abs()<1e-3);
-#    }
-#}

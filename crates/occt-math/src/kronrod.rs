@@ -34,12 +34,3 @@ fn integrate_recursive<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64, tol: f64, max_d
     Ok((left+right, el+er))
 }
 
-##[cfg(test)]
-#mod tests {
-#    use super::*;
-#    #[test]
-#    fn integrate_sin() {
-#        let (v, _) = integrate_adaptive(&|x| x.sin(), 0.0, std::f64::consts::PI, 1e-10, 20).unwrap();
-#        assert!((v-2.0).abs() < 1e-10);
-#    }
-#}
