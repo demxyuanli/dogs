@@ -27,7 +27,8 @@ pub fn to_homogeneous(poles: &[GpPnt], weights: &[f64]) -> Vec<(GpPnt, f64)> {
 
 /// Convert from homogeneous coordinates back to rational: P/w.
 pub fn from_homogeneous(homog: &[(GpPnt, f64)]) -> (Vec<GpPnt>, Vec<f64>) {
-    let poles: Vec<GpPnt> = homog.iter().map(|(p, &w)| {
+    let poles: Vec<GpPnt> = homog.iter().map(|hp| {
+        let (p, w) = hp;
         let wc = if *w > 1e-30 { *w } else { 1e-30 };
         GpPnt::new(p.x()/wc, p.y()/wc, p.z()/wc)
     }).collect();
