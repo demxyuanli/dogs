@@ -19,6 +19,8 @@ pub mod circle;
 pub mod ellipse;
 pub mod hyperbola;
 pub mod parabola;
+pub mod trimmed;
+pub mod offset;
 
 pub use curve::Curve2d;
 pub use line::Geom2dLine;
