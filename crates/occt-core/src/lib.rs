@@ -18,6 +18,7 @@ pub mod bspl;
 pub mod bvh;
 pub mod convert;
 pub mod cslib;
+pub mod gprop;
 
 pub use gp::*;
 pub use kernel::*;
