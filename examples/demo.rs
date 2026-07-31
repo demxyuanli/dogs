@@ -1,60 +1,67 @@
-//! End-to-end demo: create → measure → mesh → export → reimport.
-use occt_core::gp::{GpPnt, GpAx3, GpDir};
-use occt_core::elib::slib;
-use occt_core::io::obj::{ObjMesh, write_obj_file};
-use occt_core::io::stl::{StlMesh, write_binary_stl, to_triangulation, total_area};
-use occt_core::bnd::BndBox;
-use occt_topo::mesh::{mesh_box, mesh_sphere, mesh_surface_area};
+//! End-to-end demo: real-geometry model creation → measure → mesh → export → reimport.
+//!
+//! Demonstrates the Phase 3 milestone: `BRepPrimBox` builds a full boundary
+//! representation with registered geometry (vertex points, line curves,
+//! planar faces), `BRepTool` reads it back, `shape_mesh` triangulates any
+//! BRep, and `brep_exchange` exports it to OBJ/STL/PLY.
+
+use occt_core::gp::{GpPnt, GpVec};
+use occt_topo::brep_exchange::{brep_to_obj, brep_write_obj, brep_to_stl_binary};
+use occt_topo::brep_surface::face_is_planar;
+use occt_topo::brep_tool::BRepTool;
+use occt_topo::primitives::{BRepPrimBox, BRepPrimCylinder, BRepPrimSphere};
+use occt_topo::shape_mesh::{mesh_shape, shape_surface_area};
+use occt_topo::sweep::prism_from_polygon;
+use occt_topo::topo_tools_full::{faces_of, vertices_of};
 
 fn main() {
-    println!("=== 1. 模型创建 (基本体) ===");
-    // 创建一个单位立方体 + 半径2的球
-    let box_mesh = mesh_box((GpPnt::new(0.,0.,0.), GpPnt::new(1.,1.,1.)));
-    let sphere_mesh = mesh_sphere(2.0, 16, 16);
-    println!("  立方体: {} 顶点, {} 三角形, 表面积 {}",
-        box_mesh.vertices.len(), box_mesh.triangles.len(), mesh_surface_area(&box_mesh));
-    println!("  球体:   {} 顶点, {} 三角形, 表面积 {} (期望 ~50.27)",
-        sphere_mesh.vertices.len(), sphere_mesh.triangles.len(), mesh_surface_area(&sphere_mesh));
+    println!("=== Phase 3: 真实几何 BRep 模型创建 ===");
 
-    println!("\n=== 2. 曲面求值 (参数化几何) ===");
-    // 球面上取点 + 法线
-    let ax = GpAx3::new(GpPnt::new(0.,0.,0.),
-        GpDir::from_axis(occt_core::gp::dir::DirAxis::Z),
-        &GpDir::from_axis(occt_core::gp::dir::DirAxis::X)).unwrap();
-    let sphere = occt_core::gp::GpSphere::new(ax, 2.0).unwrap();
-    let p = slib::sphere_value(&sphere, 0.0, 0.0); // 经度0,纬度0
-    println!("  球面 P(0,0) = ({:.3}, {:.3}, {:.3}), |P|=({:.3})", p.x(), p.y(), p.z(),
-        (p.x()*p.x()+p.y()*p.y()+p.z()*p.z()).sqrt());
+    // 1. Box with real geometry: 8 vertices, 12 edges, 6 planar faces.
+    let box_ = BRepPrimBox::make_box(2.0, 3.0, 4.0);
+    let (nv, ne, nf) = box_.counts();
+    println!("  立方体: {nv} 顶点, {ne} 边, {nf} 面 (真几何)");
+    let all_planar = faces_of(&box_.solid.0).iter().all(|f| face_is_planar(f));
+    println!("  全部面为平面: {all_planar}");
 
-    println!("\n=== 3. 包围盒 ===");
-    let mut bb = BndBox::new();
-    for v in &sphere_mesh.vertices { bb.add_point(v); }
-    let c = bb.corner_min(); let d = bb.corner_max();
-    println!("  球体包围盒: [{:.2},{:.2}] x [{:.2},{:.2}] x [{:.2},{:.2}]",
-        c.x(), d.x(), c.y(), d.y(), c.z(), d.z());
+    // 2. Query geometry back via BRepTool.
+    let verts = vertices_of(&box_.solid.0);
+    let v0 = BRepTool::vertex_point(&verts[0]);
+    let vmax = verts.iter().fold(v0, |a, v| {
+        let p = BRepTool::vertex_point(v);
+        if p.x() + p.y() + p.z() > a.x() + a.y() + a.z() { p } else { a }
+    });
+    println!("  顶点坐标范围: {v0:?} .. {vmax:?}");
 
-    println!("\n=== 4. 格式转换: 网格 → OBJ/STL 导出 ===");
-    // 立方体 → OBJ
-    let mut obj = ObjMesh::default();
-    obj.vertices = box_mesh.vertices.clone();
-    obj.faces = box_mesh.triangles.iter().map(|t| {
-        occt_core::io::obj::ObjFace { v: vec![t.n0 as i32, t.n1 as i32, t.n2 as i32], vt: None, vn: None }
-    }).collect();
-    write_obj_file("../../examples/output/demo_box.obj", &obj).unwrap();
-    println!("  已导出 ../../examples/output/demo_box.obj ({} 面)", obj.faces.len());
+    // 3. Measure.
+    println!("  体积 = {} (期望 2·3·4 = 24)", box_.volume());
 
-    // 球体 → 二进制 STL
-    let mut stl = StlMesh::default();
-    stl.triangles = sphere_mesh.triangles.iter().map(|t| {
-        [sphere_mesh.vertices[t.n0], sphere_mesh.vertices[t.n1], sphere_mesh.vertices[t.n2]]
-    }).collect();
-    occt_core::io::stl::compute_facet_normals(&mut stl);
-    std::fs::write("../../examples/output/demo_sphere.stl", write_binary_stl(&stl)).unwrap();
-    println!("  已导出 ../../examples/output/demo_sphere.stl ({} 三角形, 表面积 {:.2})",
-        stl.triangles.len(), total_area(&stl));
+    // 4. Mesh + export OBJ/STL.
+    let mesh = mesh_shape(&box_.solid.0, 0.1);
+    println!("  网格化: {} 顶点, {} 三角形, 表面积 {:.3} (期望 52.0)",
+        mesh.vertices.len(), mesh.triangles.len(), shape_surface_area(&box_.solid.0, 0.1));
+    let obj = brep_to_obj(&box_.solid.0, 0.1);
+    println!("  OBJ 导出: {} 行", obj.lines().count());
+    brep_write_obj("../../examples/output/demo_box_real.obj", &box_.solid.0, 0.1).unwrap();
+    let stl = brep_to_stl_binary(&box_.solid.0, 0.1);
+    println!("  STL 导出: {} 字节", stl.len());
 
-    println!("\n=== 5. 读回 + 体积验证 ===");
-    let tri = to_triangulation(&stl);
-    println!("  STL 读回三角化: {} 顶点, {} 三角形", tri.nodes.len(), tri.triangles.len());
-    println!("  ✔ 端到端链路正常");
+    // 5. Sphere + cylinder.
+    let sphere = BRepPrimSphere::make_sphere(2.0);
+    let smesh = mesh_shape(&sphere.solid.0, 0.15);
+    let sarea = shape_surface_area(&sphere.solid.0, 0.15);
+    println!("  球体表面积 {sarea:.2} (期望 4π·4 ≈ 50.27), {} 三角形", smesh.triangles.len());
+    let cyl = BRepPrimCylinder::make_cylinder(1.0, 3.0);
+    println!("  圆柱体积 {} (期望 3π ≈ 9.42)", cyl.volume());
+
+    // 6. Sweep: extrude a triangle prism.
+    let tri = [GpPnt::new(0.,0.,0.), GpPnt::new(2.,0.,0.), GpPnt::new(0.,2.,0.)];
+    let prism = prism_from_polygon(&tri, &GpVec::new(0.0, 0.0, 1.0), 5.0);
+    println!("  棱柱: {} 顶点, {} 边, {} 面, 体积 {} (期望 10.0)",
+        prism.vertices.len(), prism.edges.len(), prism.lateral_faces.len() + 2,
+        occt_topo::sweep::prism_volume(&prism));
+
+    println!("\n=== 导出文件 (examples/output/) ===");
+    println!("  demo_box_real.obj — 真实几何立方体");
+    println!("  ✔ 端到端链路正常: 创建 → 查询 → 测量 → 网格化 → 导出");
 }

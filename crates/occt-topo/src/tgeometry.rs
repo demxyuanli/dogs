@@ -76,8 +76,13 @@ pub struct GeometryRegistry {
     faces: RwLock<HashMap<usize, FaceGeom>>,
 }
 
+/// Registry key: the address of the `TShape` stored inside the shared
+/// `RwLock`. This is stable for the lifetime of the `Arc` (the `TShape` never
+/// moves) and matches what `TShape::drop` can recover from `&self`, so entries
+/// are reliably removed when the last handle to a shape is dropped.
 fn key(s: &TopoShape) -> usize {
-    Arc::as_ptr(&s.tshape) as usize
+    let lock = s.tshape.read().expect("poisoned TShape lock");
+    std::ptr::addr_of!(*lock) as usize
 }
 
 impl GeometryRegistry {
@@ -193,6 +198,15 @@ impl GeometryRegistry {
         self.vertices.write().unwrap().remove(&k);
         self.edges.write().unwrap().remove(&k);
         self.faces.write().unwrap().remove(&k);
+    }
+
+    /// Remove every geometry entry keyed by the raw `TShape` address. Called
+    /// from `TShape::drop` so entries die with their shape — this prevents a
+    /// stale entry from leaking into a future shape that reuses the address.
+    pub fn remove_by_ptr(&self, ptr: usize) {
+        self.vertices.write().unwrap().remove(&ptr);
+        self.edges.write().unwrap().remove(&ptr);
+        self.faces.write().unwrap().remove(&ptr);
     }
 
     /// Number of live entries (vertices + edges + faces).

@@ -39,6 +39,9 @@ pub use cylinder::GeomCylinder;
 pub use cone::GeomCone;
 pub use sphere::GeomSphere;
 pub use torus::GeomTorus;
+pub use trimmed::GeomTrimmedCurve;
+pub use revolved::GeomRevolvedSurface;
+pub use offset::GeomOffsetCurve;
 
 pub type HandleCurve = Arc<dyn Curve>;
 pub type HandleSurface = Arc<dyn Surface>;

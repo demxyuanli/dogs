@@ -32,6 +32,15 @@ pub mod rng;
 pub mod gauss_ls;
 pub mod house_full;
 pub mod multi_int;
+pub mod cholesky;
+pub mod lu;
+pub mod qr_full;
+pub mod cubic_spline;
+pub mod polyfit;
+pub mod levenberg;
+pub mod ode;
+pub mod scalar;
+pub mod polynomial;
 pub use status::MathStatus;
 pub use vector::MathVector;
 pub use intvec::MathIntVector;
@@ -47,4 +56,18 @@ pub use powell::Powell;
 pub use kronrod::integrate_adaptive;
 pub use eigen::{largest_eigen, smallest_eigen, all_eigenvalues, condition_number};
 pub use trig::{trig_roots, has_root};
+pub use cholesky::{cholesky, cholesky_solve, is_positive_definite};
+pub use lu::{lu_decompose, lu_solve, det_from_lu, LU};
+pub use qr_full::{gram_schmidt, qr_solve, qr_least_squares};
+pub use cubic_spline::{CubicSpline, natural_cubic_spline};
+pub use polyfit::{polyfit, polyval};
+pub use levenberg::{levenberg_marquardt, LMConfig};
+pub use ode::{rk4, rk4_step};
+pub use scalar::{bisection, secant, golden_section, brent};
+pub use polynomial::{poly_eval, poly_derivative, quadratic_roots, cubic_roots, polynomial_roots};
+pub mod matrix_ext;
+pub use matrix_ext::{
+    identity, transpose, matmul, trace, determinant, inverse, frobenius_norm,
+    matrix_rank, det3, det2, solve_linear,
+};
 

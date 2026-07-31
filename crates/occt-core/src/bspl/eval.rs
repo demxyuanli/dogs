@@ -43,7 +43,9 @@ pub fn eval_curve_rational(poles: &[GpPnt], weights: &[f64], knots: &[f64], degr
     let mut pts = vec![(GpXyz::zero(), 0.0f64); degree + 1];
     for k in 0..=degree {
         let pi = (idx - degree + k).min(poles.len()-1);
-        pts[k] = (poles[pi].coord, weights[pi]);
+        // Homogeneous representation: (w_i·P_i, w_i). Blending these 4D points
+        // and dividing by the final weight gives the rational de Boor result.
+        pts[k] = (poles[pi].coord.multiplied(weights[pi]), weights[pi]);
     }
     for r in 1..=degree {
         for i in (r..=degree).rev() {

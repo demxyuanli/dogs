@@ -31,6 +31,7 @@ impl TShape {
     pub fn new(shape_type: ShapeType) -> Self {
         Self { shape_type, flags: ShapeFlags::default(), location: TopLocLocation::identity(), children: Vec::new() }
     }
+
     pub fn shape_type(&self) -> ShapeType { self.shape_type }
     pub fn free(&self) -> bool { self.flags.free }
     pub fn set_free(&mut self, v: bool) { self.flags.free = v; }
@@ -42,6 +43,16 @@ impl TShape {
     pub fn set_location(&mut self, l: &TopLocLocation) { self.location = l.clone(); }
     pub fn child(&self, i: usize) -> Option<HandleTShape> { self.children.get(i).cloned() }
     pub fn add_child(&mut self, c: HandleTShape) { self.children.push(c); }
+}
+
+impl Drop for TShape {
+    /// Release the geometry side-table entries for this shape when the last
+    /// `Arc` handle is dropped. This keeps the process-wide registry from
+    /// growing unbounded and, critically, prevents a stale entry (keyed by a
+    /// now-reused heap address) from leaking into an unrelated later shape.
+    fn drop(&mut self) {
+        crate::tgeometry::GeometryRegistry::global().remove_by_ptr(self as *const TShape as usize);
+    }
 }
 
 /// Vertex shape data — 3D point (from BRep_TVertex).

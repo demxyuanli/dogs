@@ -36,10 +36,12 @@ pub fn shape_dimension(t: ShapeType) -> u8 {
 /// Simplified: uses the `closed` flag stored on the TShape.
 pub fn is_closed(s: &TopoShape) -> bool { s.closed() }
 
-/// Vertex tools — access the 3D point (requires VertexShape data).
+/// Vertex tools — access the 3D point from the geometry side-table.
 impl Vertex {
-    /// Dummy point accessor — real impl stores point in VertexShape.
-    pub fn point(&self) -> occt_core::gp::GpPnt { occt_core::gp::GpPnt::zero() }
+    /// The 3D point registered for this vertex (`BRep_Tool::Pnt`).
+    pub fn point(&self) -> occt_core::gp::GpPnt {
+        crate::tgeometry::GeometryRegistry::global().vertex_point(&self.0)
+    }
 }
 
 /// Edge tools — parameter range.

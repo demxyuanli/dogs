@@ -50,7 +50,14 @@ pub fn boehm_insert(poles: &mut Vec<GpPnt>, knots: &[f64], _idx: usize, u: f64,
                      degree: usize, weights: Option<&mut Vec<f64>>) {
     let n = poles.len();
     if n == 0 { return; }
-    let k = super::knots::hunt(knots, u).min(n - 1);
+    // The span index k from `hunt` may legitimately equal n for a small local
+    // control polygon (e.g. a 3-pole window used by Bezier extraction, where
+    // the last interval starts at knot index n). Clamping to n-1 corrupts the
+    // insertion. k = n is safe: the affected pole range is [k-p+1, k-m] and
+    // k-m <= n-1 whenever m >= 1 (u is a knot value), which is always the case
+    // here; m = 0 with k = n cannot occur (it would require u past the last
+    // knot of a clamped vector, where multiplicity is >= 1).
+    let k = super::knots::hunt(knots, u).min(n);
     let m = super::knots::multiplicity(knots, u);
     let p = degree;
 
@@ -60,12 +67,32 @@ pub fn boehm_insert(poles: &mut Vec<GpPnt>, knots: &[f64], _idx: usize, u: f64,
     //   Q_i = P_{i-1}                  for i >= k-m+1
     // where a_i = (u - U_i) / (U_{i+p} - U_i).
     let mut new_poles = Vec::with_capacity(n + 1);
+    let w_ref: Option<&[f64]> = weights.as_deref().map(|v| v.as_slice());
     for i in 0..=n {
         if i <= k.saturating_sub(p) {
             new_poles.push(poles[i]);
         } else if i <= k.saturating_sub(m) {
             let alpha = knot_alpha(knots, u, i, p);
-            new_poles.push(lerp_point(poles[i - 1], poles[i], alpha));
+            match w_ref {
+                // Rational: blend in homogeneous space (P·w, w), then divide
+                // by the interpolated weight. A plain lerp of the Cartesian
+                // poles is wrong for NURBS.
+                Some(w) => {
+                    let wl = w[i - 1];
+                    let wr = w[i];
+                    let nw = (1.0 - alpha) * wl + alpha * wr;
+                    if nw.abs() > 1e-30 {
+                        new_poles.push(GpPnt::new(
+                            ((1.0 - alpha) * wl * poles[i - 1].x() + alpha * wr * poles[i].x()) / nw,
+                            ((1.0 - alpha) * wl * poles[i - 1].y() + alpha * wr * poles[i].y()) / nw,
+                            ((1.0 - alpha) * wl * poles[i - 1].z() + alpha * wr * poles[i].z()) / nw,
+                        ));
+                    } else {
+                        new_poles.push(lerp_point(poles[i - 1], poles[i], alpha));
+                    }
+                }
+                None => new_poles.push(lerp_point(poles[i - 1], poles[i], alpha)),
+            }
         } else {
             new_poles.push(poles[i - 1]);
         }

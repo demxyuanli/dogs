@@ -1,7 +1,13 @@
 //! Topological shape builder — constructs shapes from sub-shapes.
 //! Source: `BRep_Builder`
+use std::sync::Arc;
+
+use occt_core::gp::{GpAx2, GpCirc, GpDir, GpLin, GpPln, GpPnt, GpVec};
+use occt_geom::{Curve, GeomCircle, GeomLine, GeomPlane, Surface};
+
 use crate::abs::ShapeType;
-use crate::shape::{TopoShape, Vertex, Edge, Wire, Face, Shell, Solid, Compound};
+use crate::shape::{Compound, Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
+use crate::tgeometry::{EdgeGeom, FaceGeom, GeometryRegistry, VertexGeom};
 
 /// Builds topological shapes (mirrors BRep_Builder).
 #[derive(Debug, Default)]
@@ -33,12 +39,94 @@ impl TopoBuilder {
     /// Add any shape to compound.
     pub fn add_compound(&self, comp: &mut Compound, shape: &TopoShape) { self.add(&mut comp.0, shape); }
 
-    /// Make a vertex with a point.
-    pub fn make_vertex(&self, _p: occt_core::gp::GpPnt, tolerance: f64) -> Vertex {
+    /// Make a vertex with a point. The point and tolerance are registered in
+    /// the geometry side-table (`BRep_TVertex`).
+    pub fn make_vertex(&self, p: GpPnt, tolerance: f64) -> Vertex {
         let v = Vertex::new();
+        v.set_point(p);
         v.set_tolerance(tolerance);
         v.set_free(true);
         v
+    }
+
+    /// Make an edge over `curve` on the parameter range `[first, last]`.
+    /// Registers an `EdgeGeom` in the geometry side-table (`BRep_TEdge`).
+    pub fn make_edge(&self, curve: Arc<dyn Curve>, first: f64, last: f64) -> Edge {
+        let e = Edge::new();
+        GeometryRegistry::global().set_edge(&e.0, EdgeGeom::new(curve, first, last));
+        e
+    }
+
+    /// Make a straight segment from `p1` to `p2`, adding registered endpoint
+    /// vertices as children (`BRepBuilderAPI_MakeEdge(P1, P2)`).
+    pub fn make_edge_segment(&self, p1: &GpPnt, p2: &GpPnt) -> Edge {
+        let dir = GpDir::from_vec(&GpVec::from_pnts(p1, p2))
+            .expect("make_edge_segment: p1 and p2 must be distinct");
+        let lin = GpLin::from_pnt_dir(*p1, dir);
+        let mut e = self.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
+        let v1 = self.make_vertex(*p1, 0.0);
+        let v2 = self.make_vertex(*p2, 0.0);
+        self.add(&mut e.0, &v1.0);
+        self.add(&mut e.0, &v2.0);
+        e
+    }
+
+    /// Make a circular arc edge in the plane `axis` with the given radius and
+    /// parameter range (`BRepBuilderAPI_MakeEdge(gp_Circ, ...)`).
+    pub fn make_edge_circle(&self, axis: &GpAx2, radius: f64, first: f64, last: f64) -> Edge {
+        self.make_edge(Arc::new(GeomCircle::new(GpCirc::new(*axis, radius))), first, last)
+    }
+
+    /// Make a wire containing `edges` (`BRepBuilderAPI_MakeWire`).
+    pub fn make_wire(&self, edges: &[Edge]) -> Wire {
+        let mut wire = Wire::new();
+        for e in edges {
+            self.add_edge(&mut wire, e);
+        }
+        wire
+    }
+
+    /// Make a face over `surface`, adding `wires` as children. Registers a
+    /// `FaceGeom` (`BRep_TFace`) with natural restriction (no trimming wires).
+    pub fn make_face(&self, surface: Arc<dyn Surface>, wires: &[Wire]) -> Face {
+        let mut face = Face::new();
+        GeometryRegistry::global().set_face(&face.0, FaceGeom::new(surface));
+        for w in wires {
+            self.add_wire(&mut face, w);
+        }
+        face
+    }
+
+    /// Make an unbounded planar face (`BRepBuilderAPI_MakeFace(gp_Pln)`).
+    pub fn make_face_plane(&self, pln: &GpPln) -> Face {
+        self.make_face(Arc::new(GeomPlane::new(pln.clone())), &[])
+    }
+
+    /// Make a shell containing `faces` (`BRepBuilderAPI_MakeShell`).
+    pub fn make_shell(&self, faces: &[Face]) -> Shell {
+        let mut shell = Shell::new();
+        for f in faces {
+            self.add_face(&mut shell, f);
+        }
+        shell
+    }
+
+    /// Make a solid containing `shells` (`BRepBuilderAPI_MakeSolid`).
+    pub fn make_solid(&self, shells: &[Shell]) -> Solid {
+        let mut solid = Solid::new();
+        for s in shells {
+            self.add_shell(&mut solid, s);
+        }
+        solid
+    }
+
+    /// Make a compound of `shapes` (`BRepBuilderAPI_MakeCompound`).
+    pub fn make_compound_of(&self, shapes: &[TopoShape]) -> Compound {
+        let mut comp = Compound::new();
+        for s in shapes {
+            self.add_compound(&mut comp, s);
+        }
+        comp
     }
 
     /// Set the free flag.
@@ -49,14 +137,42 @@ impl TopoBuilder {
 }
 
 impl Vertex {
-    pub fn set_tolerance(&self, tol: f64) { self.0.tshape.write().unwrap().flags.check = tol > 1e-15; }
-    pub fn set_point(&self, _p: occt_core::gp::GpPnt) {}
+    /// Set the vertex tolerance: sets the check flag and, when geometry is
+    /// registered, keeps the side-table `VertexGeom` tolerance in sync.
+    pub fn set_tolerance(&self, tol: f64) {
+        self.0.tshape.write().unwrap().flags.check = tol > 1e-15;
+        if let Some(mut g) = GeometryRegistry::global().vertex_geom(&self.0) {
+            g.tolerance = tol;
+            GeometryRegistry::global().set_vertex(&self.0, g);
+        }
+    }
+
+    /// Register the vertex point in the geometry side-table, preserving any
+    /// tolerance already registered (`BRep_TVertex::Pnt`).
+    pub fn set_point(&self, p: GpPnt) {
+        let tol = GeometryRegistry::global().vertex_geom(&self.0).map(|g| g.tolerance).unwrap_or(0.0);
+        GeometryRegistry::global().set_vertex(&self.0, VertexGeom { point: p, tolerance: tol });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use occt_core::gp::GpPnt;
+    use occt_core::gp::GpAx3;
+
+    fn nb_children(s: &TopoShape) -> usize {
+        s.tshape.read().unwrap().children.len()
+    }
+
+    /// Release registry entries for a shape tree so tests don't leave stale
+    /// geometry keyed by a freed Arc address in the process-wide side-table.
+    fn clear_tree(s: &TopoShape) {
+        GeometryRegistry::global().clear_shape(s);
+        let children = s.tshape.read().unwrap().children.clone();
+        for c in children {
+            clear_tree(&TopoShape::from_handle(c));
+        }
+    }
 
     #[test]
     fn build_vertex() {
@@ -64,6 +180,7 @@ mod tests {
         let v = b.make_vertex(GpPnt::new(1.,2.,3.), 0.001);
         assert!(v.is_vertex());
         assert!(v.free());
+        clear_tree(&v.0);
     }
 
     #[test]
@@ -73,5 +190,29 @@ mod tests {
         let v = b.make_vertex(GpPnt::zero(), 0.0);
         b.add_compound(&mut c, &v.0);
         assert_eq!(c.shape_type(), ShapeType::Compound);
+        clear_tree(&v.0);
+        clear_tree(&c.0);
+    }
+
+    #[test]
+    fn wire_shell_solid_build_child_trees() {
+        let b = TopoBuilder::new();
+        let e1 = b.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 0.0));
+        let e2 = b.make_edge_segment(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 0.0));
+        let wire = b.make_wire(&[e1, e2]);
+        assert_eq!(nb_children(&wire.0), 2);
+
+        let face = b.make_face_plane(&GpPln::new(GpAx3::standard()));
+        assert_eq!(nb_children(&face.0), 0);
+
+        let shell = b.make_shell(&[face.clone()]);
+        assert_eq!(nb_children(&shell.0), 1);
+
+        let solid = b.make_solid(&[shell.clone()]);
+        assert_eq!(nb_children(&solid.0), 1);
+
+        let comp = b.make_compound_of(&[wire.0.clone(), face.0.clone()]);
+        assert_eq!(nb_children(&comp.0), 2);
+        clear_tree(&comp.0);
     }
 }
