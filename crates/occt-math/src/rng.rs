@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn shuffle_preserves_elements() {
-        let mut rng = SplitMix64::new(42);
+        let mut rng = XorShift64::new(42);
         let mut v: Vec<i32> = (0..10).collect();
         let mut expected = v.clone();
         shuffle(&mut v, &mut |m| rng.next_usize(m));
