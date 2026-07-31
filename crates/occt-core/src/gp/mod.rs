@@ -33,6 +33,7 @@ pub mod hypr2d;
 pub mod parab;
 pub mod parab2d;
 pub mod gtrsf;
+pub mod circ2d;
 
 pub use trsf_form::TrsfForm;
 pub use mat::GpMat;
@@ -68,3 +69,4 @@ pub use hypr2d::GpHypr2d;
 pub use parab::GpParab;
 pub use parab2d::GpParab2d;
 pub use gtrsf::GpGTrsf;
+pub use circ2d::GpCirc2d;
