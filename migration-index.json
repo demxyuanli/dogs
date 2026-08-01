@@ -1,490 +1,1537 @@
 {
   "version": 1,
   "units": {
-    "gp_xyz": {
-      "module": "gp",
+    "gcpnts": {
+      "module": ".",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_XYZ.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_XYZ.hxx"
-      ],
-      "hash": "sha256:21c083a080c57e9b3cbdd7d5cf5d9a699b25c2b3ea1892f92053f46680b488b7",
       "status": "done",
-      "region": "wide",
-      "oracle": "numeric_tol",
+      "region": "unit",
       "deps": [
-        "gp_mat"
+        "gp_mod"
       ],
-      "updated_at": "2026-07-31T01:27:43.628111+00:00",
-      "target": "GpXyz",
-      "target_path": "src/gp/xyz.rs",
-      "ops": [
-        "gp_XYZ::Added",
-        "gp_XYZ::CrossSquareMagnitude",
-        "gp_XYZ::Crossed",
-        "gp_XYZ::Dot",
-        "gp_XYZ::DotCross",
-        "gp_XYZ::Modulus",
-        "gp_XYZ::MultipliedMat",
-        "gp_XYZ::MultipliedScalar"
-      ],
-      "verified_at": "2026-07-30T15:20:58.586695+00:00"
+      "target": "CurveSample",
+      "target_path": "src/gcpnts.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
-    "gp_pnt": {
-      "module": "gp",
+    "hull": {
+      "module": ".",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Pnt.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Pnt.hxx"
-      ],
-      "hash": "sha256:89c58f83b70853eaff3f1a1ce5cf356a50e38ab6f0a4263e4d9407628c18090a",
       "status": "done",
-      "region": "wide",
-      "oracle": "numeric_tol",
+      "region": "unit",
       "deps": [
-        "gp_xyz"
+        "gp_pnt"
       ],
-      "updated_at": "2026-07-31T01:26:56.583203+00:00",
-      "target": "GpPnt",
-      "target_path": "src/gp/pnt.rs"
+      "target": "convex_hull_2d",
+      "target_path": "src/hull.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
-    "gp_vec": {
-      "module": "gp",
+    "numeric": {
+      "module": ".",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Vec.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Vec.hxx"
-      ],
-      "hash": "sha256:427146a7c19090b1e77e98acf04ae47929b236c62e4e8481be29a807bf562e12",
       "status": "done",
-      "region": "wide",
-      "oracle": "numeric_tol",
+      "region": "unit",
       "deps": [
-        "gp_xyz"
+        "gp_pnt"
       ],
-      "updated_at": "2026-07-31T01:26:56.742114+00:00",
-      "target": "GpVec",
-      "target_path": "src/gp/vec.rs",
-      "ops": [
-        "gp_Vec::Crossed",
-        "gp_Vec::Dot",
-        "gp_Vec::Magnitude"
-      ],
-      "verified_at": "2026-07-30T15:20:58.586695+00:00"
-    },
-    "gp_dir": {
-      "module": "gp",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Dir.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Dir.hxx"
-      ],
-      "hash": "sha256:5cddbf312fbff8de7a247f53911a19a2cfc72a577d51e81fa470b500a22ad06c",
-      "deps": [
-        "gp_xyz"
-      ],
-      "status": "done",
-      "region": "wide",
-      "oracle": "numeric_tol",
-      "updated_at": "2026-07-31T01:26:56.870754+00:00",
-      "gate": "G3",
-      "target": "GpDir",
-      "target_path": "src/gp/dir.rs",
-      "ops": [
-        "gp_Dir::Crossed"
-      ],
-      "verified_at": "2026-07-30T15:20:58.586695+00:00"
-    },
-    "gp_mat": {
-      "module": "gp",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Mat.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Mat.hxx"
-      ],
-      "hash": "sha256:b5088901861c7d1a6d29c6fef7bac74b893528bd4da983e7f551ff8105847a16",
-      "deps": [],
-      "status": "done",
-      "region": "wide",
-      "oracle": "numeric_tol",
-      "updated_at": "2026-07-31T01:27:43.501679+00:00",
-      "target": "GpMat",
-      "target_path": "src/gp/mat.rs",
-      "ops": [
-        "gp_Mat::Determinant",
-        "gp_Mat::Multiply",
-        "gp_Mat::Transposed"
-      ],
-      "verified_at": "2026-07-30T15:20:58.586695+00:00"
-    },
-    "gp_trsf": {
-      "module": "gp",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Trsf.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Trsf.hxx"
-      ],
-      "hash": "sha256:8cae7503e7cea0100d56a6c63dd70a23009a3c949d7a4185e1f5cc5df9ca8060",
-      "deps": [
-        "gp_mat",
-        "gp_xyz",
-        "gp_ax1",
-        "gp_quaternion"
-      ],
-      "status": "done",
-      "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:57.396434+00:00",
-      "gate": "G3",
-      "target": "GpTrsf",
-      "target_path": "src/gp/trsf.rs"
-    },
-    "gp_quaternion": {
-      "module": "gp",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Quaternion.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Quaternion.hxx"
-      ],
-      "hash": "sha256:a38531b0c7f9c018449834494876c3dc181e07b0dc8dcb66e543dd271ad337c5",
-      "deps": [
-        "gp_vec",
-        "gp_mat"
-      ],
-      "status": "done",
-      "region": "wide",
-      "oracle": "numeric_tol",
-      "updated_at": "2026-07-31T01:26:57.534306+00:00"
+      "target": "bisection",
+      "target_path": "src/numeric.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "precision": {
-      "module": "Precision",
+      "module": ".",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKernel/Precision/Precision.hxx"
-      ],
-      "hash": "sha256:655498564e3517d5d06154a6df7f28e175c989910c726459710b9b7adeb4288c",
       "status": "done",
-      "region": "repl",
-      "oracle": "bit_equal",
+      "region": "unit",
       "deps": [],
-      "updated_at": "2026-07-31T01:27:43.745498+00:00"
+      "target": "Precision",
+      "target_path": "src/precision.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_b2b3": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "B2",
+      "target_path": "src/bnd/b2b3.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_box2d": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "BndBox2d",
+      "target_path": "src/bnd/box2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_box3d": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "BndBox",
+      "target_path": "src/bnd/box3d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_bsphere": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "BndSphere",
+      "target_path": "src/bnd/bsphere.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_intersect": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "gp_pnt"
+      ],
+      "target": "ray_box_intersect",
+      "target_path": "src/bnd/intersect.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_mod": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": null,
+      "target_path": "src/bnd/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_obb": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "BndOBB",
+      "target_path": "src/bnd/obb.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_obb_pca": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_obb",
+        "gp_mod"
+      ],
+      "target": "compute_obb_pca",
+      "target_path": "src/bnd/obb_pca.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_segment": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "gp_mod"
+      ],
+      "target": "Segment2d",
+      "target_path": "src/bnd/segment.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bnd_sortbox": {
+      "module": "bnd",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "gp_pnt"
+      ],
+      "target": "SortBoxElement",
+      "target_path": "src/bnd/sortbox.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_bezier": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "flat_bezier_coefficients",
+      "target_path": "src/bspl/bezier.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_curve_tools": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "reparameterize",
+      "target_path": "src/bspl/curve_tools.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_eval": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt",
+        "gp_vec",
+        "gp_xyz"
+      ],
+      "target": "eval_curve",
+      "target_path": "src/bspl/eval.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_knots": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": "hunt",
+      "target_path": "src/bspl/knots.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_knots_advanced": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "remove_knot",
+      "target_path": "src/bspl/knots_advanced.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_mod": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": null,
+      "target_path": "src/bspl/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_plib": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": "eval_polynomial",
+      "target_path": "src/bspl/plib.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_plib2d": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "eval_tensor_product",
+      "target_path": "src/bspl/plib2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_poles": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "poles_to_coefficients",
+      "target_path": "src/bspl/poles.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_rational": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "normalize_weights",
+      "target_path": "src/bspl/rational.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_surface": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod",
+        "gp_pnt",
+        "gp_xyz"
+      ],
+      "target": "eval_surface",
+      "target_path": "src/bspl/surface.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_surface_knots": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "compute_seam_poles",
+      "target_path": "src/bspl/surface_knots.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bspl_surface_rational": {
+      "module": "bspl",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "eval_rational",
+      "target_path": "src/bspl/surface_rational.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bvh_builder_tri": {
+      "module": "bvh",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "bvh_mod",
+        "gp_pnt"
+      ],
+      "target": "TriBvh",
+      "target_path": "src/bvh/builder_tri.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bvh_bvh_ops": {
+      "module": "bvh",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "bvh_builder_tri",
+        "bvh_mod",
+        "gp_mod"
+      ],
+      "target": "ray_triangle_t",
+      "target_path": "src/bvh/bvh_ops.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bvh_bvh_query": {
+      "module": "bvh",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "bvh_builder_tri",
+        "bvh_bvh_ops",
+        "bvh_mod",
+        "gp_mod"
+      ],
+      "target": "RayQueryResult",
+      "target_path": "src/bvh/bvh_query.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bvh_mod": {
+      "module": "bvh",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "gp_pnt"
+      ],
+      "target": "BvhNode",
+      "target_path": "src/bvh/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "bvh_traversal": {
+      "module": "bvh",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "bvh_mod",
+        "gp_pnt"
+      ],
+      "target": "RayHit",
+      "target_path": "src/bvh/traversal.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "convert_advanced": {
+      "module": "convert",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod",
+        "gp_pnt"
+      ],
+      "target": "cartesian_to_spherical_point",
+      "target_path": "src/convert/advanced.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "convert_mapproj": {
+      "module": "convert",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": "lonlat_to_mercator",
+      "target_path": "src/convert/mapproj.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "convert_mod": {
+      "module": "convert",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": "polar_to_cartesian2d",
+      "target_path": "src/convert/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "cslib_mod": {
+      "module": "cslib",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": "CSLibResult",
+      "target_path": "src/cslib/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "elib_clib": {
+      "module": "elib",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "line_value",
+      "target_path": "src/elib/clib.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "elib_intersect": {
+      "module": "elib",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "elib_clib",
+        "gp_mod"
+      ],
+      "target": "line_line_intersection",
+      "target_path": "src/elib/intersect.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "elib_measure": {
+      "module": "elib",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "elib_mod",
+        "gp_mod"
+      ],
+      "target": "line_length",
+      "target_path": "src/elib/measure.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "elib_mod": {
+      "module": "elib",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": null,
+      "target_path": "src/elib/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "elib_slib": {
+      "module": "elib",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "plane_value",
+      "target_path": "src/elib/slib.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "elib_surface_eval": {
+      "module": "elib",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "elib_slib",
+        "gp_mod"
+      ],
+      "target": "SurfaceRef",
+      "target_path": "src/elib/surface_eval.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_csg": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "gp_pnt"
+      ],
+      "target": "VoxelSolid",
+      "target_path": "src/geom/csg.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_curve_frenet": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "FrenetFrame",
+      "target_path": "src/geom/curve_frenet.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_curve_ops3d": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "polyline_length3d",
+      "target_path": "src/geom/curve_ops3d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_delaunay": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "geom_polygon_ops",
+        "gp_pnt2d"
+      ],
+      "target": "delaunay_circumcircle_contains",
+      "target_path": "src/geom/delaunay.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_fit": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bspl_plib",
+        "gp_pnt"
+      ],
+      "target": "fit_polynomial",
+      "target_path": "src/geom/fit.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_fit2": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "fit_line",
+      "target_path": "src/geom/fit2.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_mesh_analysis": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "TriangleQuality",
+      "target_path": "src/geom/mesh_analysis.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_mesh_ops": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "centroid",
+      "target_path": "src/geom/mesh_ops.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_mod": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": null,
+      "target_path": "src/geom/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_polygon_boolean": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt2d"
+      ],
+      "target": "PolygonBoolOp",
+      "target_path": "src/geom/polygon_boolean.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_polygon_ops": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "polygon_area2d",
+      "target_path": "src/geom/polygon_ops.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_polyline": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "adaptive_sample",
+      "target_path": "src/geom/polyline.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_polyline_simplify": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "rdp_simplify",
+      "target_path": "src/geom/polyline_simplify.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "geom_triangulate": {
+      "module": "geom",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "triangulate_polygon",
+      "target_path": "src/geom/triangulate.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_ax1": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Ax1.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Ax1.hxx"
-      ],
-      "hash": "sha256:160d0b65b5121ef5820b585991eb42066280ca74be66a5f586f8d37f6119bd3d",
-      "deps": [
-        "gp_pnt",
-        "gp_dir"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "numeric_tol",
-      "updated_at": "2026-07-31T01:26:57.002322+00:00",
+      "deps": [
+        "gp_dir",
+        "gp_pnt"
+      ],
       "target": "GpAx1",
-      "target_path": "src/gp/ax1.rs"
+      "target_path": "src/gp/ax1.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_ax2": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Ax2.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Ax2.hxx"
-      ],
-      "hash": "sha256:a28852c72c21ec89c58e417c462432cbaab9cc8409ec3dcecb29a01ede0fbaa3",
-      "deps": [
-        "gp_pnt",
-        "gp_dir",
-        "gp_ax1"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:57.130568+00:00",
-      "gate": "G3",
+      "deps": [
+        "gp_ax1",
+        "gp_ax3",
+        "gp_dir",
+        "gp_pnt"
+      ],
       "target": "GpAx2",
-      "target_path": "src/gp/ax2.rs"
+      "target_path": "src/gp/ax2.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_ax22d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpAx22d",
+      "target_path": "src/gp/ax22d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_ax2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpAx2d",
+      "target_path": "src/gp/ax2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_ax3": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Ax3.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Ax3.hxx"
-      ],
-      "hash": "sha256:b2aa15abf7afe2d1cf16bb28ed452b291adffab755c8c22c8a722f0b96a7a6c5",
-      "deps": [
-        "gp_pnt",
-        "gp_dir",
-        "gp_ax1"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:57.258975+00:00",
-      "gate": "G3"
+      "deps": [
+        "gp_ax1",
+        "gp_ax2",
+        "gp_dir",
+        "gp_pnt"
+      ],
+      "target": "GpAx3",
+      "target_path": "src/gp/ax3.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_circ": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Circ.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Circ.hxx"
-      ],
-      "hash": "sha256:03c70710011d327ee8a77db0cd2538ab21903cedc723f373f21ef9bce388bfac",
-      "deps": [
-        "gp_ax2"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:57.676352+00:00",
-      "gate": "G3"
+      "deps": [
+        "gp_ax1",
+        "gp_ax2",
+        "gp_dir",
+        "gp_pnt",
+        "gp_trsf",
+        "gp_vec"
+      ],
+      "target": "GpCirc",
+      "target_path": "src/gp/circ.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
-    "gp_pln": {
+    "gp_circ2d": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Pln.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Pln.hxx"
-      ],
-      "hash": "sha256:9377f415c58ee9f87eb3a4338f1a74b9ff050b9f096ae58b5c4c43c3c250b438",
-      "deps": [
-        "gp_ax3"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:57.819969+00:00",
-      "gate": "G3"
-    },
-    "gp_cylinder": {
-      "module": "gp",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Cylinder.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Cylinder.hxx"
-      ],
-      "hash": "sha256:b2bfd00436e913547a8b9c91a887b0dd26e967a00c3a72c641a53cad4c784437",
       "deps": [
-        "gp_ax3"
+        "gp_mod"
       ],
-      "status": "done",
-      "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:57.963026+00:00",
-      "gate": "G3"
+      "target": "GpCirc2d",
+      "target_path": "src/gp/circ2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_cone": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Cone.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Cone.hxx"
-      ],
-      "hash": "sha256:56407cd1856e4606bbbc94c67fbb4c857f0ad377ad4ac932403c9308cddce833",
-      "deps": [
-        "gp_ax3"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:58.107938+00:00",
-      "gate": "G3"
+      "deps": [
+        "gp_ax1",
+        "gp_ax2",
+        "gp_ax3",
+        "gp_dir",
+        "gp_pnt",
+        "gp_trsf",
+        "gp_vec"
+      ],
+      "target": "GpCone",
+      "target_path": "src/gp/cone.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_cylinder": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_ax1",
+        "gp_ax2",
+        "gp_ax3",
+        "gp_dir",
+        "gp_pnt",
+        "gp_trsf",
+        "gp_vec"
+      ],
+      "target": "GpCylinder",
+      "target_path": "src/gp/cylinder.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_dir": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_vec",
+        "gp_xyz"
+      ],
+      "target": "DirAxis",
+      "target_path": "src/gp/dir.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_dir2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpDir2d",
+      "target_path": "src/gp/dir2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_elips": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpElips",
+      "target_path": "src/gp/elips.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_elips2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpElips2d",
+      "target_path": "src/gp/elips2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_gtrsf": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpGTrsf",
+      "target_path": "src/gp/gtrsf.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_hypr": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpHypr",
+      "target_path": "src/gp/hypr.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_hypr2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpHypr2d",
+      "target_path": "src/gp/hypr2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_lin": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpLin",
+      "target_path": "src/gp/lin.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_lin2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpLin2d",
+      "target_path": "src/gp/lin2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_mat": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_xyz"
+      ],
+      "target": "GpMat",
+      "target_path": "src/gp/mat.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_mat2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_xy"
+      ],
+      "target": "GpMat2d",
+      "target_path": "src/gp/mat2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_mod": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [],
+      "target": null,
+      "target_path": "src/gp/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_parab": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpParab",
+      "target_path": "src/gp/parab.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_parab2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpParab2d",
+      "target_path": "src/gp/parab2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_pln": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_ax1",
+        "gp_ax2",
+        "gp_ax3",
+        "gp_dir",
+        "gp_pnt",
+        "gp_trsf",
+        "gp_vec"
+      ],
+      "target": "GpPln",
+      "target_path": "src/gp/pln.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_pnt": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_ax1",
+        "gp_ax2",
+        "gp_trsf",
+        "gp_vec",
+        "gp_xyz"
+      ],
+      "target": "GpPnt",
+      "target_path": "src/gp/pnt.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_pnt2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpPnt2d",
+      "target_path": "src/gp/pnt2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_quaternion": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mat",
+        "gp_vec"
+      ],
+      "target": "GpQuaternion",
+      "target_path": "src/gp/quaternion.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_quaternion_ext": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_dir",
+        "gp_pnt",
+        "gp_quaternion",
+        "gp_vec"
+      ],
+      "target": "conjugate",
+      "target_path": "src/gp/quaternion_ext.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_sphere": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Sphere.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Sphere.hxx"
-      ],
-      "hash": "sha256:218c8afdb175740304ad6457317459f1cae89a8037510e703a49c81fc9cfeec7",
-      "deps": [
-        "gp_ax3"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:58.240063+00:00",
-      "gate": "G3"
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpSphere",
+      "target_path": "src/gp/sphere.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_torus": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Torus.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Torus.hxx"
-      ],
-      "hash": "sha256:f5619521b1867a537e4dc86e1654d4b6a97838c310726744a868575f22f61ba6",
-      "deps": [
-        "gp_ax3"
-      ],
       "status": "done",
       "region": "wide",
-      "oracle": "struct_tol",
-      "updated_at": "2026-07-31T01:26:58.379335+00:00",
-      "gate": "G3"
-    },
-    "standard_types": {
-      "module": "Standard",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKernel/Standard/Standard_TypeDef.hxx"
-      ],
-      "hash": "sha256:a69c8f3bed2b94ef7806dbb56ea8288366ac753688641fa56e4b99e8d9c83599",
-      "status": "done",
-      "region": "repl",
-      "oracle": "bit_equal",
-      "deps": [],
-      "updated_at": "2026-07-31T01:27:43.861419+00:00"
-    },
-    "standard_failure": {
-      "module": "Standard",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKernel/Standard/Standard_Failure.cxx",
-        "src/FoundationClasses/TKernel/Standard/Standard_Failure.hxx"
-      ],
-      "hash": "sha256:797363d248f338d31fa18803addc66c0df54c9ad361c9241e861be3878722004",
-      "status": "done",
-      "region": "repl",
-      "oracle": "struct_tol",
-      "deps": [],
-      "updated_at": "2026-07-31T01:35:06.668204+00:00"
-    },
-    "standard_transient": {
-      "module": "Standard",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKernel/Standard/Standard_Transient.cxx",
-        "src/FoundationClasses/TKernel/Standard/Standard_Transient.hxx"
-      ],
-      "hash": "sha256:1dd0ec5e5ce17d28f7324442f8044d3c2c993e76ae615fa74e89bb590d2a4a6c",
-      "status": "done",
-      "region": "repl",
-      "oracle": "bit_equal",
-      "deps": [],
-      "updated_at": "2026-07-31T01:35:06.800226+00:00"
-    },
-    "gp_2d_primitives": {
-      "module": "gp",
-      "layer": 1,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_Pnt2d.cxx",
-        "src/FoundationClasses/TKMath/gp/gp_Pnt2d.hxx"
-      ],
-      "hash": "sha256:104f37588904d3ce3947e54c24dc99b6775d527557c728f31639a6d2134118fe",
       "deps": [
+        "gp_mod"
+      ],
+      "target": "GpTorus",
+      "target_path": "src/gp/torus.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_trsf": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_ax1",
+        "gp_ax2",
+        "gp_ax3",
+        "gp_mat",
+        "gp_pnt",
+        "gp_quaternion",
+        "gp_trsf_form",
+        "gp_vec",
         "gp_xyz"
       ],
+      "target": "GpTrsf",
+      "target_path": "src/gp/trsf.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_trsf2d": {
+      "module": "gp",
+      "layer": 0,
       "status": "done",
       "region": "wide",
-      "oracle": "numeric_tol",
-      "updated_at": "2026-07-31T01:26:58.684952+00:00"
-    },
-    "standard_handle": {
-      "module": "Standard",
-      "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKernel/Standard/Standard_Handle.hxx"
-      ],
-      "hash": "sha256:ef40907d1e3b25af1a3c5d87168d5241624b6da3b3714ff46a99464dc0c083ca",
       "deps": [
-        "standard_transient"
+        "gp_mod"
       ],
-      "status": "done",
-      "region": "repl",
-      "oracle": "bit_equal",
-      "updated_at": "2026-07-31T01:35:06.918034+00:00",
-      "gate": "G2"
+      "target": "GpTrsf2d",
+      "target_path": "src/gp/trsf2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
-    "ncollection": {
-      "module": "NCollection",
-      "layer": 1,
-      "sources": [
-        "src/FoundationClasses/TKernel/NCollection/NCollection_Array1.hxx",
-        "src/FoundationClasses/TKernel/NCollection/NCollection_DataMap.hxx",
-        "src/FoundationClasses/TKernel/NCollection/NCollection_Sequence.hxx",
-        "src/FoundationClasses/TKernel/NCollection/NCollection_List.hxx"
-      ],
-      "hash": "sha256:4dd851886ad1f9efb437e1141e007b56318d0018f9f78dbe791b93713c5dd5fd",
+    "gp_trsf_ext": {
+      "module": "gp",
+      "layer": 0,
       "status": "done",
-      "region": "repl",
-      "oracle": "bit_equal",
-      "deps": [],
-      "updated_at": "2026-07-31T01:35:07.029387+00:00"
+      "region": "wide",
+      "deps": [
+        "gp_ax1",
+        "gp_dir",
+        "gp_mat",
+        "gp_pnt",
+        "gp_quaternion",
+        "gp_quaternion_ext",
+        "gp_trsf",
+        "gp_trsf_form",
+        "gp_vec"
+      ],
+      "target": "translation_of",
+      "target_path": "src/gp/trsf_ext.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
     "gp_trsf_form": {
       "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/gp/gp_TrsfForm.hxx"
-      ],
-      "hash": "sha256:34bd2747145ae48ce9e6a582ade592bd09fde5947624fb4d9b65e9f5551c6b8e",
       "status": "done",
-      "region": "repl",
-      "oracle": "bit_equal",
+      "region": "wide",
       "deps": [],
-      "updated_at": "2026-07-31T01:26:58.531653+00:00"
+      "target": "TrsfForm",
+      "target_path": "src/gp/trsf_form.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     },
-    "math_vector": {
-      "module": "math",
-      "layer": 1,
-      "sources": [
-        "src/FoundationClasses/TKMath/math/math_VectorBase.hxx"
-      ],
-      "hash": "sha256:962f1a7b7df2e07fab887bc9d625940f76adb72cfed4d91f69f0355c6ba01443",
-      "status": "done",
-      "region": "trans",
-      "oracle": "numeric_tol",
-      "deps": [],
-      "updated_at": "2026-07-31T01:25:34.641497+00:00"
-    },
-    "math_matrix": {
-      "module": "math",
-      "layer": 1,
-      "sources": [
-        "src/FoundationClasses/TKMath/math/math_Matrix.hxx"
-      ],
-      "hash": "sha256:29e5a77cf92eac5da962a755e6c424c7e51e8359c222b66a0af2651ecbf5df06",
-      "deps": [
-        "math_vector"
-      ],
-      "status": "done",
-      "region": "trans",
-      "oracle": "numeric_tol",
-      "updated_at": "2026-07-31T01:25:34.785620+00:00"
-    },
-    "math_intvec": {
-      "module": "math",
-      "layer": 1,
-      "sources": [
-        "src/FoundationClasses/TKMath/math/math_IntegerVector.hxx"
-      ],
-      "hash": "sha256:2aa4c4a4072e883db30b59d3a8992adaae25960b07138b4834787697f416eeff",
-      "status": "done",
-      "region": "repl",
-      "oracle": "bit_equal",
-      "deps": [],
-      "updated_at": "2026-07-31T01:25:34.931936+00:00"
-    },
-    "math_status": {
-      "module": "math",
+    "gp_vec": {
+      "module": "gp",
       "layer": 0,
-      "sources": [
-        "src/FoundationClasses/TKMath/math/math_Status.hxx"
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mat",
+        "gp_pnt",
+        "gp_xyz"
       ],
-      "hash": "sha256:da2360be57484429852f4a8643f93163ebbd1b4a530a8483f4267771fbbfabd0",
+      "target": "GpVec",
+      "target_path": "src/gp/vec.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_vec2d": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "GpVec2d",
+      "target_path": "src/gp/vec2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_xy": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mat2d"
+      ],
+      "target": "GpXY",
+      "target_path": "src/gp/xy.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gp_xyz": {
+      "module": "gp",
+      "layer": 0,
+      "status": "done",
+      "region": "wide",
+      "deps": [
+        "gp_mat"
+      ],
+      "target": "GpXyz",
+      "target_path": "src/gp/xyz.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gprop_inertia": {
+      "module": "gprop",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "InertiaProps",
+      "target_path": "src/gprop/inertia.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gprop_mod": {
+      "module": "gprop",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt",
+        "gp_xyz"
+      ],
+      "target": "GProperties",
+      "target_path": "src/gprop/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "gprop_topology": {
+      "module": "gprop",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "polyline_length",
+      "target_path": "src/gprop/topology.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "int_curve_curve": {
+      "module": "int",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_dir",
+        "gp_mod"
+      ],
+      "target": "segment_segment_intersection_3d",
+      "target_path": "src/int/curve_curve.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "int_mod": {
+      "module": "int",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": null,
+      "target_path": "src/int/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "io_mod": {
+      "module": "io",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": null,
+      "target_path": "src/io/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "io_obj": {
+      "module": "io",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt",
+        "poly_triangulation"
+      ],
+      "target": "ObjMesh",
+      "target_path": "src/io/obj.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "io_ply": {
+      "module": "io",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "gp_pnt",
+        "io_obj",
+        "poly_triangulation"
+      ],
+      "target": "PlyMesh",
+      "target_path": "src/io/ply.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "io_stl": {
+      "module": "io",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "bnd_box3d",
+        "gp_pnt",
+        "poly_triangulation"
+      ],
+      "target": "StlMesh",
+      "target_path": "src/io/stl.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_containers": {
+      "module": "kernel",
+      "layer": 0,
       "status": "done",
       "region": "repl",
-      "oracle": "bit_equal",
       "deps": [],
-      "updated_at": "2026-07-31T01:25:35.076737+00:00"
+      "target": "IndexedMap",
+      "target_path": "src/kernel/containers.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_error": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "OCCError",
+      "target_path": "src/kernel/error.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_geomabs": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "CurveType",
+      "target_path": "src/kernel/geomabs.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_handle": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "Handle",
+      "target_path": "src/kernel/handle.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_mod": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": null,
+      "target_path": "src/kernel/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_osd": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "SystemTime",
+      "target_path": "src/kernel/osd.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_resource": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "ResourceManager",
+      "target_path": "src/kernel/resource.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_string_tools": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "split_trim",
+      "target_path": "src/kernel/string_tools.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_tcollection": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "AsciiString",
+      "target_path": "src/kernel/tcollection.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_tcolstd": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "Array1OfReal",
+      "target_path": "src/kernel/tcolstd.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_tcolstd_full": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "Array1OfReal",
+      "target_path": "src/kernel/tcolstd_full.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "kernel_units": {
+      "module": "kernel",
+      "layer": 0,
+      "status": "done",
+      "region": "repl",
+      "deps": [],
+      "target": "LengthUnit",
+      "target_path": "src/kernel/units.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "message_mod": {
+      "module": "message",
+      "layer": 0,
+      "status": "done",
+      "region": "periph",
+      "deps": [],
+      "target": "Gravity",
+      "target_path": "src/message/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "poly_mod": {
+      "module": "poly",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": null,
+      "target_path": "src/poly/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "poly_polygon2d": {
+      "module": "poly",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt2d"
+      ],
+      "target": "Polygon2D",
+      "target_path": "src/poly/polygon2d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "poly_polygon3d": {
+      "module": "poly",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "Polygon3D",
+      "target_path": "src/poly/polygon3d.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "poly_polygon3d_full": {
+      "module": "poly",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "Polygon3D",
+      "target_path": "src/poly/polygon3d_full.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "poly_triangulation": {
+      "module": "poly",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_pnt"
+      ],
+      "target": "Triangle",
+      "target_path": "src/poly/triangulation.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "quantity_color_tools": {
+      "module": "quantity",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": "to_hsv",
+      "target_path": "src/quantity/color_tools.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "quantity_mod": {
+      "module": "quantity",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [],
+      "target": "NameOfColor",
+      "target_path": "src/quantity/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "toploc_datum": {
+      "module": "toploc",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "TopLocDatum3D",
+      "target_path": "src/toploc/datum.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
+    },
+    "toploc_mod": {
+      "module": "toploc",
+      "layer": 0,
+      "status": "done",
+      "region": "deep",
+      "deps": [
+        "gp_mod"
+      ],
+      "target": "TopLocLocation",
+      "target_path": "src/toploc/mod.rs",
+      "updated_at": "2026-08-01T07:36:00.182876+00:00"
     }
   }
 }
