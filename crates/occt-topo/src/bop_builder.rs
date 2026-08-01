@@ -13,7 +13,7 @@
 //!
 //! Non-planar inputs fall back to a voxel boolean (`crate::boolean_ops`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use occt_core::geom::polygon_ops::{point_in_polygon2d, polygon_area2d};
@@ -28,7 +28,9 @@ use crate::inttools::{edge_edge_intersections, edge_face_intersections};
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
 use crate::shell_check::shell_is_closed;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, shapes_of, wires_of_face};
+use crate::topo_tools_full::{
+    edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of, wires_of_face,
+};
 
 /// The boolean operation to apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -941,6 +943,827 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
 }
 
 // ---------------------------------------------------------------------------
+// Full-topology boolean
+// ---------------------------------------------------------------------------
+//
+// Extensions porting the rest of `BOPAlgo_Builder` / `TopOpeBRep`: N-ary
+// (multi-argument) operations, compound expansion, self-intersection
+// detection, result validation with tolerance escalation, degenerate-input
+// handling and result decomposition. All functions use the same
+// `Result<BooleanResult, String>` convention and dispatch to the exact planar
+// boolean (`boolean`) or the curved dispatcher (`crate::bop_curved::curved_boolean_full`).
+
+/// Wrap a single shape as a [`BooleanResult`] (identity operation).
+fn single_shape_result(s: &TopoShape) -> BooleanResult {
+    let shells: Vec<Shell> = shapes_of(s, ShapeType::Shell).into_iter().map(Shell).collect();
+    let faces = faces_of(s);
+    let solid = Solid::wrap(s.clone());
+    BooleanResult { shape: s.clone(), solid, shells, faces, warnings: vec![] }
+}
+
+/// Recursively flatten a compound into its non-compound sub-shapes.
+///
+/// A compound whose children are themselves compounds is fully flattened, so
+/// nested results (e.g. a compound built by folding a multi-fuse) decompose
+/// into their atomic solids/shells/faces.
+fn expand_compound(s: &TopoShape) -> Vec<TopoShape> {
+    if !s.is_compound() {
+        return vec![s.clone()];
+    }
+    let mut out = Vec::new();
+    for k in s.tshape.read().unwrap().children.clone() {
+        out.extend(expand_compound(&TopoShape::from_handle(k)));
+    }
+    out
+}
+
+/// Split a `Compound` into its top-level sub-shapes (its direct children).
+///
+/// A non-compound shape is returned as a single-element slice. Nested
+/// compounds are kept as-is at the top level (use [`boolean_multi`] or
+/// [`expand_compound`] when full flattening is needed).
+pub fn decompose_compound(shape: &TopoShape) -> Vec<TopoShape> {
+    if !shape.is_compound() {
+        return vec![shape.clone()];
+    }
+    shape
+        .tshape
+        .read()
+        .unwrap()
+        .children
+        .iter()
+        .map(|k| TopoShape::from_handle(k.clone()))
+        .collect()
+}
+
+/// Decompose a shape into its connected boundary components.
+///
+/// * a `Solid` → its shells, each wrapped back into a one-shell solid;
+/// * a `Compound` → its top-level sub-shapes (recursively flattened);
+/// * anything else → the shape itself.
+///
+/// This is the "result decomposition" step of `BOPAlgo_Builder`: after a
+/// boolean, a result may hold several disconnected solids; this splits them
+/// apart so callers can reason about each component.
+pub fn shape_components(shape: &TopoShape) -> Vec<TopoShape> {
+    match shape.shape_type() {
+        ShapeType::Solid => {
+            let bld = TopoBuilder::new();
+            let mut comps = Vec::new();
+            for sh in shapes_of(shape, ShapeType::Shell) {
+                comps.push(bld.make_solid(&[Shell(sh)]).0);
+            }
+            if comps.is_empty() {
+                vec![shape.clone()]
+            } else {
+                comps
+            }
+        }
+        ShapeType::Compound => expand_compound(shape),
+        _ => vec![shape.clone()],
+    }
+}
+
+/// Does `s` carry any boundary faces? Empty compounds, null wires and other
+/// degenerate inputs have none and are treated as the "empty" shape.
+fn has_content(s: &TopoShape) -> bool {
+    !faces_of(s).is_empty()
+}
+
+/// Is `s` usable as a solid operand? A `Solid` or a *closed* `Shell`; empty
+/// shells/solids are rejected so degenerate inputs route to
+/// [`boolean_degenerate`].
+fn is_solid_input(s: &TopoShape) -> bool {
+    if !has_content(s) {
+        return false;
+    }
+    if s.is_solid() {
+        return true;
+    }
+    if s.is_shell() {
+        return shell_is_closed(&Shell(s.clone()));
+    }
+    false
+}
+
+/// Average position of the vertices of `s` (a coarse centroid probe).
+fn shape_centroid(s: &TopoShape) -> GpPnt {
+    let vs = vertices_of(s);
+    if vs.is_empty() {
+        return GpPnt::zero();
+    }
+    let n = vs.len();
+    let mut acc = GpVec::zero();
+    for v in &vs {
+        acc = acc.added(&GpVec::from_xyz(&vertex_position(v).coord));
+    }
+    GpPnt::from_xyz(&acc.divided(n as f64).coord)
+}
+
+/// Whether the bounding boxes of `a` and `b` overlap (touch counts).
+fn bounding_boxes_overlap(a: &TopoShape, b: &TopoShape) -> bool {
+    let ba = crate::bbox_from_geometry::shape_bbox(a);
+    let bb = crate::bbox_from_geometry::shape_bbox(b);
+    !ba.is_void() && !bb.is_void() && !ba.is_out_box(&bb)
+}
+
+/// Merge several result shapes into a single [`BooleanResult`].
+///
+/// Empty shapes are dropped. A single survivor becomes the result shape (and
+/// its solid, when closed); multiple survivors are assembled into a compound.
+/// This mirrors `BOPAlgo_Builder` returning a compound of the disconnected
+/// result solids.
+fn merge_shapes_result(shapes: Vec<TopoShape>, warnings: Vec<String>) -> BooleanResult {
+    let mut kept: Vec<TopoShape> = shapes.into_iter().filter(has_content).collect();
+    if kept.is_empty() {
+        let mut r = empty_result(BoolOp::Fuse);
+        r.warnings.extend(warnings);
+        return r;
+    }
+    if kept.len() == 1 {
+        let mut r = single_shape_result(&kept[0]);
+        r.warnings.extend(warnings);
+        return r;
+    }
+    let bld = TopoBuilder::new();
+    let comp = bld.make_compound_of(&kept);
+    let mut shells = Vec::new();
+    let mut faces = Vec::new();
+    for s in &kept {
+        shells.extend(shapes_of(s, ShapeType::Shell).into_iter().map(Shell));
+        faces.extend(faces_of(s));
+    }
+    BooleanResult { shape: comp.0, solid: None, shells, faces, warnings }
+}
+
+/// Fuse a list of shapes into a single result.
+///
+/// Components whose bounding boxes do not overlap are left apart and collected
+/// into a compound (a disjoint Fuse). Components whose boxes do overlap are
+/// merged pairwise through the exact boolean until no further merge is
+/// possible. This keeps a *single* result object — either one solid or a
+/// compound of the disconnected pieces.
+fn fuse_components(shapes: &[TopoShape], tol: f64) -> Result<BooleanResult, String> {
+    let mut components: Vec<TopoShape> = shapes.iter().filter(|s| has_content(s)).cloned().collect();
+    if components.is_empty() {
+        return Ok(empty_result(BoolOp::Fuse));
+    }
+    let mut warnings: Vec<String> = Vec::new();
+    // Repeatedly merge the first pair whose bounding boxes overlap.
+    loop {
+        let n = components.len();
+        if n < 2 {
+            break;
+        }
+        let mut merged_any = false;
+        'search: for i in 0..n {
+            for j in (i + 1)..n {
+                if bounding_boxes_overlap(&components[i], &components[j]) {
+                    let r =
+                        crate::bop_curved::curved_boolean_full(&components[i], &components[j], BoolOp::Fuse, tol)?;
+                    warnings.extend(r.warnings);
+                    let mut next: Vec<TopoShape> = Vec::with_capacity(n - 1);
+                    for k in 0..n {
+                        if k != i && k != j {
+                            next.push(components[k].clone());
+                        }
+                    }
+                    next.push(r.shape);
+                    components = next;
+                    merged_any = true;
+                    break 'search;
+                }
+            }
+        }
+        if !merged_any {
+            break;
+        }
+    }
+    Ok(merge_shapes_result(components, warnings))
+}
+
+/// Top-level dispatch between the exact boolean paths.
+///
+/// * either operand is a compound → [`boolean_compound`] (expand, per-part);
+/// * either operand is not a solid → [`boolean_degenerate`] (best effort);
+/// * otherwise the full curved/planar boolean dispatcher.
+fn boolean_dispatch(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    if a.is_compound() || b.is_compound() {
+        return boolean_compound(a, b, op, tol);
+    }
+    if !is_solid_input(a) || !is_solid_input(b) {
+        return boolean_degenerate(a, b, op, tol);
+    }
+    crate::bop_curved::curved_boolean_full(a, b, op, tol)
+}
+
+/// Apply a boolean operation to a *list* of shapes (N-ary boolean).
+///
+/// `BOPAlgo_Builder`'s `Build`-with-many-arguments entry point. Handles:
+///
+/// * an empty list → an empty result (an empty compound);
+/// * a single shape → the shape itself (identity);
+/// * `Fuse` of mutually disjoint shapes → a `Compound` keeping every input
+///   (not an error);
+/// * `Fuse` of overlapping shapes → pairwise fold into one solid;
+/// * `Cut` → fold `a0 − a1 − a2 − …`;
+/// * `Common` → fold `a0 ∩ a1 ∩ a2 ∩ …`.
+///
+/// Compounds among the inputs are flattened first (a compound is a set of
+/// components, so the operation distributes over it).
+pub fn boolean_multi(shapes: &[TopoShape], op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    let tol = tol.max(1e-9);
+    if shapes.is_empty() {
+        return Ok(empty_result(op));
+    }
+    let flat: Vec<TopoShape> = shapes.iter().flat_map(expand_compound).collect();
+    if flat.is_empty() {
+        return Ok(empty_result(op));
+    }
+    if flat.len() == 1 {
+        return Ok(single_shape_result(&flat[0]));
+    }
+    match op {
+        BoolOp::Fuse => fuse_components(&flat, tol),
+        BoolOp::Cut | BoolOp::Common => {
+            // Fold left; degenerate/empty intermediates are absorbed by the
+            // dispatch (a cut against empty leaves the accumulator unchanged,
+            // an empty common stays empty).
+            let mut acc = flat[0].clone();
+            let mut warnings: Vec<String> = Vec::new();
+            for s in &flat[1..] {
+                let r = boolean_dispatch(&acc, s, op, tol)?;
+                warnings.extend(r.warnings);
+                acc = r.shape;
+            }
+            let mut res = single_shape_result(&acc);
+            res.warnings.extend(warnings);
+            Ok(res)
+        }
+    }
+}
+
+/// Boolean between shapes where either operand is a `Compound`.
+///
+/// Expands the compound(s) and applies the operation per component:
+///
+/// * `Fuse` — the union of *all* components of `a` and `b` (compounds are
+///   unions of their parts, so `(A1 ∪ A2) ∪ (B1 ∪ B2)` is the full union);
+/// * `Cut` — every component of `b` is cut out of every component of `a`;
+/// * `Common` — the pairwise intersections `ai ∩ bj` are merged.
+///
+/// Solid operands are delegated to the exact boolean
+/// (`boolean`/`curved_boolean_full`).
+pub fn boolean_compound(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    let subs_a = expand_compound(a);
+    let subs_b = expand_compound(b);
+    let mut warnings: Vec<String> = Vec::new();
+    match op {
+        BoolOp::Fuse => {
+            let mut all = subs_a;
+            all.extend(subs_b);
+            fuse_components(&all, tol)
+        }
+        BoolOp::Cut => {
+            let mut results: Vec<TopoShape> = Vec::new();
+            for sa in &subs_a {
+                let mut cur = sa.clone();
+                for sb in &subs_b {
+                    let r = boolean_dispatch(&cur, sb, BoolOp::Cut, tol)?;
+                    warnings.extend(r.warnings);
+                    cur = r.shape;
+                }
+                results.push(cur);
+            }
+            Ok(merge_shapes_result(results, warnings))
+        }
+        BoolOp::Common => {
+            let mut results: Vec<TopoShape> = Vec::new();
+            for sa in &subs_a {
+                for sb in &subs_b {
+                    let r = boolean_dispatch(sa, sb, BoolOp::Common, tol)?;
+                    warnings.extend(r.warnings);
+                    if has_content(&r.shape) {
+                        results.push(r.shape);
+                    }
+                }
+            }
+            Ok(merge_shapes_result(results, warnings))
+        }
+    }
+}
+
+/// Report produced by [`detect_self_intersections`].
+pub struct SelfIntersectionReport {
+    /// Whether any pair of non-adjacent faces was found to intersect.
+    pub found: bool,
+    /// Number of intersecting face pairs (each pair counts as one
+    /// self-intersection "edge" of the defect).
+    pub edge_count: usize,
+    /// Sample points on the found intersection curves.
+    pub points: Vec<GpPnt>,
+}
+
+/// Do the two coplanar faces' boundary polygons overlap in area?
+fn faces_polygon_overlap(f1: &Face, f2: &Face, tol: f64) -> bool {
+    let pln = match face_plane_local(f1) {
+        Some(p) => p,
+        None => return false,
+    };
+    let (Some(poly1), Some(poly2)) = (face_polygon_local(f1, &pln), face_polygon_local(f2, &pln)) else {
+        return false;
+    };
+    for v in &poly1 {
+        if point_in_polygon2d(&poly2, v) {
+            return true;
+        }
+    }
+    for v in &poly2 {
+        if point_in_polygon2d(&poly1, v) {
+            return true;
+        }
+    }
+    let _ = tol;
+    false
+}
+
+/// Check a shape for self-intersecting faces.
+///
+/// A self-intersection is a pair of *non-adjacent* faces (faces that do not
+/// share a boundary edge) whose underlying surfaces cross or overlap:
+///
+/// * transversal crossing → the sampled `SurfaceIntersection::Curves`;
+/// * coplanar overlap → `SurfaceIntersection::Coincident` with overlapping
+///   face polygons.
+///
+/// Adjacent faces are skipped because sharing a boundary edge is the normal
+/// (and legal) way two faces of a solid meet. A valid closed box therefore
+/// reports `found == false` (its only non-adjacent pairs are parallel faces),
+/// while a shell built from two crossing faces reports `found == true`.
+pub fn detect_self_intersections(shape: &TopoShape, tol: f64) -> SelfIntersectionReport {
+    let tol = tol.max(1e-9);
+    let faces = faces_of(shape);
+    let mut report = SelfIntersectionReport { found: false, edge_count: 0, points: Vec::new() };
+    if faces.len() < 2 {
+        return report;
+    }
+    // Per-face boundary-edge identities, for the adjacency test. Two faces are
+    // adjacent iff they share the same `TShape` edge.
+    let face_edges: Vec<HashSet<usize>> = faces
+        .iter()
+        .map(|f| edges_of(&f.0).into_iter().map(|e| Arc::as_ptr(&e.0.tshape) as usize).collect())
+        .collect();
+    for i in 0..faces.len() {
+        for j in (i + 1)..faces.len() {
+            if face_edges[i].iter().any(|e| face_edges[j].contains(e)) {
+                continue; // adjacent faces legitimately meet along an edge
+            }
+            let (Some(sa), Some(sb)) = (
+                GeometryRegistry::global().face_surface(&faces[i].0),
+                GeometryRegistry::global().face_surface(&faces[j].0),
+            ) else {
+                continue;
+            };
+            match crate::intpatch::surface_surface_intersection(&*sa, &*sb, tol) {
+                crate::intpatch::SurfaceIntersection::Curves(curves) => {
+                    let mut pts: Vec<GpPnt> = Vec::new();
+                    for c in &curves {
+                        pts.extend(c.points.iter().cloned());
+                    }
+                    if !pts.is_empty() {
+                        report.found = true;
+                        report.edge_count += 1;
+                        report.points.extend(pts);
+                    }
+                }
+                crate::intpatch::SurfaceIntersection::Coincident => {
+                    if faces_polygon_overlap(&faces[i], &faces[j], tol) {
+                        report.found = true;
+                        report.edge_count += 1;
+                    }
+                }
+                crate::intpatch::SurfaceIntersection::None => {}
+            }
+        }
+    }
+    report
+}
+
+/// Structural validation of a boolean result.
+///
+/// Returns a list of human-readable issue strings (empty when the result is
+/// clean): every shell must be closed (every boundary edge used by exactly two
+/// faces — `shell_is_closed`) and the result must not be self-intersecting.
+fn validate_boolean_result(r: &BooleanResult, tol: f64) -> Vec<String> {
+    let mut issues: Vec<String> = Vec::new();
+    if r.shells.is_empty() {
+        issues.push("result has no shell".into());
+    }
+    for (i, sh) in r.shells.iter().enumerate() {
+        if !shell_is_closed(sh) {
+            issues.push(format!("result shell {i} is not closed"));
+        }
+    }
+    let si = detect_self_intersections(&r.shape, tol);
+    if si.found {
+        issues.push(format!("result self-intersects ({} face pairs)", si.edge_count));
+    }
+    issues
+}
+
+/// Run a boolean and validate the result, re-computing at a larger tolerance
+/// when validation finds issues.
+///
+/// The exact boolean is tolerance-sensitive near coincident faces; when the
+/// first attempt fails validation (an open shell, a self-intersection), the
+/// operation is re-run at `tol × 10` and `tol × 100`. The best (fewest issues)
+/// result is returned, with the validation issues attached as warnings.
+pub fn boolean_with_check(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    let tol = tol.max(1e-9);
+    let mut result = boolean_dispatch(a, b, op, tol)?;
+    let mut issues = validate_boolean_result(&result, tol);
+    if !issues.is_empty() {
+        for &scale in &[10.0f64, 100.0] {
+            let nt = tol * scale;
+            let candidate = boolean_dispatch(a, b, op, nt)?;
+            let cand_issues = validate_boolean_result(&candidate, nt);
+            if cand_issues.len() < issues.len() {
+                result = candidate;
+                issues = cand_issues;
+                result.warnings.push(format!("recomputed at tol {nt:.1e} after validation (original {tol:.1e})"));
+            }
+            if issues.is_empty() {
+                break;
+            }
+        }
+    }
+    result.warnings.extend(issues);
+    Ok(result)
+}
+
+/// Handle boolean operations with degenerate (non-solid / empty) inputs.
+///
+/// Degenerate inputs are: empty shapes (no faces — null wires, empty
+/// compounds), open shells, single faces and wires. Rather than erroring, a
+/// best-effort result is produced:
+///
+/// * empty ⊕ solid → the solid (empty is the identity for Fuse);
+/// * solid − empty → the solid; empty − solid → empty;
+/// * face ∪ solid → a compound of both, with a warning;
+/// * face ∩ solid → the face when its centroid lies inside the solid, else
+///   empty.
+pub fn boolean_degenerate(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    let tol = tol.max(1e-9);
+    if a.is_compound() || b.is_compound() {
+        return boolean_compound(a, b, op, tol);
+    }
+    let a_empty = !has_content(a);
+    let b_empty = !has_content(b);
+    if a_empty || b_empty {
+        return degenerate_empty(a, b, op, a_empty, b_empty);
+    }
+    let a_solid = is_solid_input(a);
+    let b_solid = is_solid_input(b);
+    if a_solid && b_solid {
+        // Both solid: a caller reached us directly with two valid solids.
+        return crate::bop_curved::curved_boolean_full(a, b, op, tol);
+    }
+    degenerate_non_solid(a, b, op, tol, a_solid, b_solid)
+}
+
+/// Empty-input branch of [`boolean_degenerate`].
+fn degenerate_empty(a: &TopoShape, b: &TopoShape, op: BoolOp, a_empty: bool, b_empty: bool) -> Result<BooleanResult, String> {
+    match op {
+        BoolOp::Fuse => {
+            if a_empty && b_empty {
+                return Ok(empty_result(op));
+            }
+            if a_empty {
+                let mut r = single_shape_result(b);
+                r.warnings.push("empty input 'a' treated as empty; result is 'b' unchanged".into());
+                return Ok(r);
+            }
+            let mut r = single_shape_result(a);
+            r.warnings.push("empty input 'b' treated as empty; result is 'a' unchanged".into());
+            Ok(r)
+        }
+        BoolOp::Cut => {
+            if a_empty {
+                return Ok(empty_result(op));
+            }
+            let mut r = single_shape_result(a);
+            r.warnings.push("degenerate cut: 'b' has no faces; result is 'a' unchanged".into());
+            Ok(r)
+        }
+        BoolOp::Common => Ok(empty_result(op)),
+    }
+}
+
+/// Non-solid (but non-empty) input branch of [`boolean_degenerate`].
+fn degenerate_non_solid(
+    a: &TopoShape,
+    b: &TopoShape,
+    op: BoolOp,
+    tol: f64,
+    a_solid: bool,
+    b_solid: bool,
+) -> Result<BooleanResult, String> {
+    let _ = tol;
+    let bld = TopoBuilder::new();
+    match op {
+        BoolOp::Fuse => {
+            // Fuse keeps every non-empty operand: a compound of the parts.
+            let mut parts: Vec<TopoShape> = Vec::new();
+            if has_content(a) {
+                parts.push(a.clone());
+            }
+            if has_content(b) {
+                parts.push(b.clone());
+            }
+            if parts.is_empty() {
+                return Ok(empty_result(op));
+            }
+            let comp = bld.make_compound_of(&parts);
+            let mut shells = Vec::new();
+            let mut faces = Vec::new();
+            for p in &parts {
+                shells.extend(shapes_of(p, ShapeType::Shell).into_iter().map(Shell));
+                faces.extend(faces_of(p));
+            }
+            Ok(BooleanResult {
+                shape: comp.0,
+                solid: None,
+                shells,
+                faces,
+                warnings: vec!["non-solid input fused into a compound".into()],
+            })
+        }
+        BoolOp::Cut => {
+            if a_solid {
+                let mut r = single_shape_result(a);
+                r.warnings.push("degenerate cut: 'b' is not a solid; 'a' returned unchanged".into());
+                return Ok(r);
+            }
+            if !b_solid {
+                let mut r = single_shape_result(a);
+                r.warnings.push("degenerate cut: neither input is a solid".into());
+                return Ok(r);
+            }
+            // A non-solid `a` cut by a solid `b`: keep `a` unless it lies
+            // inside `b` (then nothing survives).
+            if is_inside(b, &shape_centroid(a)) {
+                Ok(empty_result(op))
+            } else {
+                let mut r = single_shape_result(a);
+                r.warnings.push("degenerate cut: 'a' is not a solid; kept 'a' unchanged".into());
+                Ok(r)
+            }
+        }
+        BoolOp::Common => {
+            let (solid_s, other) = if a_solid {
+                (a, b)
+            } else if b_solid {
+                (b, a)
+            } else {
+                let mut r = empty_result(op);
+                r.warnings.push("degenerate common: neither input is a solid".into());
+                return Ok(r);
+            };
+            if is_inside(solid_s, &shape_centroid(other)) {
+                let mut r = single_shape_result(other);
+                r.warnings.push("degenerate common: non-solid inside solid retained".into());
+                Ok(r)
+            } else {
+                let mut r = empty_result(op);
+                r.warnings.push("degenerate common: non-solid outside solid → empty".into());
+                Ok(r)
+            }
+        }
+    }
+}
+
+/// One-line diagnostic of a [`BooleanResult`].
+///
+/// Reports the result shape type, whether it is a closed solid, its face
+/// count, and how many warnings it carries.
+pub fn boolean_result_summary(r: &BooleanResult) -> String {
+    let st = r.shape.shape_type().to_str();
+    let kind = if r.solid.is_some() { "closed solid" } else { "open shell/compound" };
+    let faces = faces_of(&r.shape).len();
+    let warns = if r.warnings.is_empty() {
+        "no warnings".to_string()
+    } else {
+        format!("{} warning(s): {}", r.warnings.len(), r.warnings.join("; "))
+    };
+    format!("{st} ({kind}) {faces} faces, {warns}")
+}
+
+/// Apply a *sequence* of boolean operations to a list of shapes.
+///
+/// The operations are applied left to right, each between the running
+/// accumulator and the next shape: `((a0 op0 a1) op1 a2) op2 a3 …`. Unlike
+/// [`boolean_multi`], every step may use a different operation, so a CSG tree
+/// flattened into the alternating form `shape, op, shape, op, shape, …` can be
+/// evaluated directly. Extra shapes (beyond `ops.len() + 1`) are ignored; a
+/// missing operation for a remaining shape stops the fold.
+pub fn boolean_fold(shapes: &[TopoShape], ops: &[BoolOp], tol: f64) -> Result<BooleanResult, String> {
+    let tol = tol.max(1e-9);
+    if shapes.is_empty() {
+        return Ok(empty_result(BoolOp::Fuse));
+    }
+    let mut acc = shapes[0].clone();
+    let mut warnings: Vec<String> = Vec::new();
+    let steps = shapes.len().saturating_sub(1).min(ops.len());
+    for i in 0..steps {
+        let r = boolean_dispatch(&acc, &shapes[i + 1], ops[i], tol)?;
+        warnings.extend(r.warnings);
+        acc = r.shape;
+    }
+    let mut res = single_shape_result(&acc);
+    res.warnings.extend(warnings);
+    Ok(res)
+}
+
+/// Subtract every shape in `cuts` from `a`, one after the other (folded Cut).
+///
+/// Equivalent to `a − c1 − c2 − … − cn`. Each step routes through
+/// [`boolean_dispatch`], so compounds and degenerate operands are handled.
+/// The result is the final solid (or an empty compound when `a` is fully
+/// removed).
+pub fn boolean_cut_many(a: &TopoShape, cuts: &[TopoShape], tol: f64) -> Result<BooleanResult, String> {
+    let tol = tol.max(1e-9);
+    let mut acc = a.clone();
+    let mut warnings: Vec<String> = Vec::new();
+    for c in cuts {
+        let r = boolean_dispatch(&acc, c, BoolOp::Cut, tol)?;
+        warnings.extend(r.warnings);
+        acc = r.shape;
+    }
+    let mut res = single_shape_result(&acc);
+    res.warnings.extend(warnings);
+    Ok(res)
+}
+
+/// Intersect a list of shapes (folded Common).
+///
+/// Equivalent to `a0 ∩ a1 ∩ a2 ∩ …`. Degenerate intermediates (an empty
+/// common) stay empty through the fold, so the final result is empty as soon
+/// as any pair is disjoint.
+pub fn boolean_common_many(shapes: &[TopoShape], tol: f64) -> Result<BooleanResult, String> {
+    boolean_multi(shapes, BoolOp::Common, tol)
+}
+
+/// Pairs of face indices (into [`faces_of`]) that share a boundary edge.
+///
+/// Two faces are *adjacent* when they reference the same `TShape` edge. This
+/// is the raw face-adjacency graph of a boundary, useful for connectivity
+/// analysis and for understanding where a self-intersection check skips.
+pub fn face_adjacency(shape: &TopoShape) -> Vec<(usize, usize)> {
+    let faces = faces_of(shape);
+    let face_edges: Vec<HashSet<usize>> = faces
+        .iter()
+        .map(|f| edges_of(&f.0).into_iter().map(|e| Arc::as_ptr(&e.0.tshape) as usize).collect())
+        .collect();
+    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    for i in 0..faces.len() {
+        for j in (i + 1)..faces.len() {
+            if face_edges[i].iter().any(|e| face_edges[j].contains(e)) {
+                pairs.push((i, j));
+            }
+        }
+    }
+    pairs
+}
+
+/// Split a shape into its edge-connected boundary components.
+///
+/// Two faces belong to the same component when they are connected through a
+/// chain of shared boundary edges (the face-adjacency graph). A single closed
+/// solid has exactly one component; a compound of disjoint solids yields one
+/// component per solid. Each component is rebuilt as a one-shell solid, so the
+/// result is the "decomposed" form of a boolean result (`BOPAlgo_Builder`
+/// returns such disconnected solids inside a compound).
+///
+/// Faces that are topologically isolated (an open face with no shared edges)
+/// each become their own component.
+pub fn connected_components(shape: &TopoShape, tol: f64) -> Vec<TopoShape> {
+    let _ = tol;
+    let faces = faces_of(shape);
+    if faces.len() <= 1 {
+        return vec![shape.clone()];
+    }
+    let face_edges: Vec<HashSet<usize>> = faces
+        .iter()
+        .map(|f| edges_of(&f.0).into_iter().map(|e| Arc::as_ptr(&e.0.tshape) as usize).collect())
+        .collect();
+
+    // Union-find over faces (edge-sharing ⇒ same component).
+    fn find(parent: &mut Vec<usize>, x: usize) -> usize {
+        let mut r = x;
+        while parent[r] != r {
+            parent[r] = parent[parent[r]];
+            r = parent[r];
+        }
+        r
+    }
+    fn unite(parent: &mut Vec<usize>, a: usize, b: usize) {
+        let (ra, rb) = (find(parent, a), find(parent, b));
+        if ra != rb {
+            parent[ra] = rb;
+        }
+    }
+
+    let mut parent: Vec<usize> = (0..faces.len()).collect();
+    for i in 0..faces.len() {
+        for j in (i + 1)..faces.len() {
+            if face_edges[i].iter().any(|e| face_edges[j].contains(e)) {
+                unite(&mut parent, i, j);
+            }
+        }
+    }
+
+    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+    for i in 0..faces.len() {
+        groups.entry(find(&mut parent, i)).or_default().push(i);
+    }
+
+    let bld = TopoBuilder::new();
+    let mut comps: Vec<TopoShape> = Vec::new();
+    for (_, idx) in groups {
+        let fs: Vec<Face> = idx.iter().map(|&i| faces[i].clone()).collect();
+        let shell = bld.make_shell(&fs);
+        comps.push(bld.make_solid(&[shell]).0);
+    }
+    comps
+}
+
+/// Public structural validation of a boolean result.
+///
+/// Returns human-readable issue strings (empty when the result is clean). See
+/// [`boolean_with_check`] for the tolerance-escalation wrapper.
+pub fn boolean_result_validate(r: &BooleanResult, tol: f64) -> Vec<String> {
+    validate_boolean_result(r, tol)
+}
+
+/// Convenience wrapper: fuse every shape in `shapes` (see [`boolean_multi`]).
+///
+/// Kept as a named entry point so callers do not have to spell out
+/// `BoolOp::Fuse`; behaves identically to `boolean_multi(shapes, BoolOp::Fuse,
+/// tol)`.
+pub fn boolean_fuse_all(shapes: &[TopoShape], tol: f64) -> Result<BooleanResult, String> {
+    boolean_multi(shapes, BoolOp::Fuse, tol)
+}
+
+/// Bounding box of a boolean result, or `None` when the result is empty.
+///
+/// Delegates to [`crate::bbox_from_geometry::shape_bbox`] on the result shape,
+/// so compounds (multi-solid results) are covered by the compound bbox.
+pub fn boolean_result_bbox(r: &BooleanResult) -> Option<occt_core::bnd::BndBox> {
+    let bb = crate::bbox_from_geometry::shape_bbox(&r.shape);
+    if bb.is_void() {
+        None
+    } else {
+        Some(bb)
+    }
+}
+
+/// Normalize a boolean result into its "assembled" form.
+///
+/// When a result carries more than one shell (a multi-solid Cut/Common result
+/// that was not merged into a compound), wrap each closed shell into its own
+/// solid and return a compound of them; a single-shell result is returned
+/// unchanged. This mirrors the final assembly step of `BOPAlgo_Builder`, which
+/// hands the caller a compound of the disconnected result solids.
+pub fn normalize_result(r: &BooleanResult) -> BooleanResult {
+    if r.shape.is_compound() || r.shells.len() <= 1 {
+        return r.clone();
+    }
+    let bld = TopoBuilder::new();
+    let solids: Vec<TopoShape> = r
+        .shells
+        .iter()
+        .filter(|sh| shell_is_closed(sh))
+        .map(|sh| bld.make_solid(&[sh.clone()]).0)
+        .collect();
+    if solids.is_empty() {
+        return r.clone();
+    }
+    let shape = if solids.len() == 1 {
+        solids[0].clone()
+    } else {
+        bld.make_compound_of(&solids).0
+    };
+    let solid = Solid::wrap(shape.clone());
+    BooleanResult {
+        shape,
+        solid,
+        shells: r.shells.clone(),
+        faces: r.faces.clone(),
+        warnings: r.warnings.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1054,6 +1877,371 @@ mod tests {
         assert!(voxel > 1e-9, "voxel volume should be non-zero");
         let rel = (exact - voxel).abs() / voxel;
         assert!(rel < 0.15, "fuse {exact} vs voxel {voxel} (rel {rel:.3})");
+        clear_tree(&r.shape);
+        clear_tree(&a.0);
+        clear_tree(&b.0);
+    }
+
+    // ------------------------------------------------------------------
+    // Full-topology tests
+    // ------------------------------------------------------------------
+
+    /// Build an axis-aligned box with all six faces oriented OUTWARD.
+    ///
+    /// (`BRepPrimBox::make_box_corner` currently builds the prism top cap with
+    /// the base's normal — an inward face that makes signed volumes
+    /// position-dependent — so tests that need predictable volume/orientation
+    /// use this helper instead.)
+    fn test_box_at(lo: &GpPnt, hi: &GpPnt) -> Solid {
+        use crate::shape::Vertex;
+        use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpVec};
+        use occt_geom::{GeomLine, GeomPlane};
+        let b = TopoBuilder::new();
+        let (x0, y0, z0) = (lo.x(), lo.y(), lo.z());
+        let (x1, y1, z1) = (hi.x(), hi.y(), hi.z());
+        let c = [
+            GpPnt::new(x0, y0, z0),
+            GpPnt::new(x1, y0, z0),
+            GpPnt::new(x1, y1, z0),
+            GpPnt::new(x0, y1, z0),
+            GpPnt::new(x0, y0, z1),
+            GpPnt::new(x1, y0, z1),
+            GpPnt::new(x1, y1, z1),
+            GpPnt::new(x0, y1, z1),
+        ];
+        let verts: Vec<Vertex> = c.iter().map(|p| b.make_vertex(*p, 0.0)).collect();
+        let edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7)];
+        let edges: Vec<Edge> = edge_pairs
+            .iter()
+            .map(|&(i, j)| {
+                let dir = GpDir::from_vec(&GpVec::from_pnts(&c[i], &c[j])).unwrap();
+                let lin = GpLin::from_pnt_dir(c[i], dir);
+                let mut e = b.make_edge(Arc::new(GeomLine::new(lin)), 0.0, c[i].distance(&c[j]));
+                b.add(&mut e.0, &verts[i].0);
+                b.add(&mut e.0, &verts[j].0);
+                e
+            })
+            .collect();
+        // Face → edge-index lists (indices into `edge_pairs`) for −X, +X, −Y,
+        // +Y, −Z, +Z. Mirrors the box builder used by the shell-check tests.
+        let face_edges: [[usize; 4]; 6] = [
+            [8, 7, 11, 3],
+            [9, 5, 10, 1],
+            [0, 9, 4, 8],
+            [2, 10, 6, 11],
+            [3, 2, 1, 0],
+            [4, 5, 6, 7],
+        ];
+        let face_origins = [c[0], c[1], c[0], c[3], c[0], c[4]];
+        let normals = [
+            GpDir::new(-1.0, 0.0, 0.0).unwrap(),
+            GpDir::new(1.0, 0.0, 0.0).unwrap(),
+            GpDir::new(0.0, -1.0, 0.0).unwrap(),
+            GpDir::new(0.0, 1.0, 0.0).unwrap(),
+            GpDir::new(0.0, 0.0, -1.0).unwrap(),
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+        ];
+        let mut faces = Vec::new();
+        for i in 0..6 {
+            let x_dir = if normals[i].x().abs() > 0.9 {
+                GpDir::new(0.0, 1.0, 0.0).unwrap()
+            } else if normals[i].y().abs() > 0.9 {
+                GpDir::new(0.0, 0.0, 1.0).unwrap()
+            } else {
+                GpDir::new(1.0, 0.0, 0.0).unwrap()
+            };
+            let ax3 = GpAx3::new(face_origins[i], normals[i], &x_dir).unwrap();
+            let pln = GpPln::new(ax3);
+            let wire_edges: Vec<Edge> = face_edges[i].iter().map(|&e| edges[e].clone()).collect();
+            let wire = b.make_wire(&wire_edges);
+            faces.push(b.make_face(Arc::new(GeomPlane::new(pln)), &[wire]));
+        }
+        let shell = b.make_shell(&faces);
+        b.make_solid(&[shell])
+    }
+
+    fn disjoint_box_shapes() -> Vec<TopoShape> {
+        let b1 = test_box_at(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 1.0));
+        let b2 = test_box_at(&GpPnt::new(2.0, 0.0, 0.0), &GpPnt::new(3.0, 1.0, 1.0));
+        let b3 = test_box_at(&GpPnt::new(0.0, 2.0, 0.0), &GpPnt::new(1.0, 3.0, 1.0));
+        vec![b1.0, b2.0, b3.0]
+    }
+
+    #[test]
+    fn fuse_three_boxes_compound_or_solid() {
+        let shapes = disjoint_box_shapes();
+        let r = boolean_multi(&shapes, BoolOp::Fuse, 1e-6).expect("multi fuse ok");
+        assert!(r.shape.is_compound(), "three disjoint boxes fuse to a compound");
+        let subs = decompose_compound(&r.shape);
+        assert_eq!(subs.len(), 3, "compound has 3 sub-shapes, got {}", subs.len());
+        for s in &subs {
+            assert!(s.is_solid(), "each sub-shape is a solid");
+        }
+        let v = box_vol(&r.shape);
+        assert!((v - 3.0).abs() < 0.1, "disjoint multi fuse volume {v} (expected 3.0)");
+        clear_tree(&r.shape);
+        for s in &shapes {
+            clear_tree(s);
+        }
+    }
+
+    #[test]
+    fn boolean_multi_single_shape_identity() {
+        let shapes = disjoint_box_shapes();
+        let r = boolean_multi(&shapes[..1], BoolOp::Fuse, 1e-6).expect("single fuse ok");
+        assert_eq!(r.shape.shape_type(), ShapeType::Solid, "one shape → itself");
+        assert!(r.solid.is_some());
+        assert!((box_vol(&r.shape) - 1.0).abs() < 0.05);
+        clear_tree(&r.shape);
+        clear_tree(&shapes[0]);
+    }
+
+    #[test]
+    fn boolean_multi_overlap_folds() {
+        // Three boxes overlapping along x (each overlaps the next).
+        let b1 = test_box_at(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 1.0));
+        let b2 = test_box_at(&GpPnt::new(0.5, 0.0, 0.0), &GpPnt::new(1.5, 1.0, 1.0));
+        let b3 = test_box_at(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(2.0, 1.0, 1.0));
+        let shapes = vec![b1.0.clone(), b2.0.clone(), b3.0.clone()];
+        let r = boolean_multi(&shapes, BoolOp::Fuse, 1e-6).expect("multi fuse ok");
+        assert!(r.solid.is_some(), "overlapping fuse produces a solid");
+        assert!(shell_is_closed(&r.shells[0]), "overlapping fuse shell closed");
+        let v = box_vol(&r.shape);
+        // Analytic union: b1∪b2 = 1.5; ∪b3 = [0,2]×[0,1]×[0,1] = 2.0.
+        assert!((v - 2.0).abs() < 0.2, "multi fuse volume {v} (expected ~2.0)");
+        clear_tree(&r.shape);
+        for s in &shapes {
+            clear_tree(s);
+        }
+    }
+
+    #[test]
+    fn boolean_compound_cut() {
+        let big = test_box_at(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(3.0, 3.0, 3.0));
+        let s1 = test_box_at(&GpPnt::new(0.5, 0.5, 0.5), &GpPnt::new(1.5, 1.5, 1.5));
+        let s2 = test_box_at(&GpPnt::new(1.7, 0.5, 0.5), &GpPnt::new(2.7, 1.5, 1.5));
+        let bld = TopoBuilder::new();
+        let comp = bld.make_compound_of(&[s1.0.clone(), s2.0.clone()]);
+        let r = boolean_compound(&big.0, &comp.0, BoolOp::Cut, 1e-6).expect("compound cut ok");
+        let v = box_vol(&r.shape);
+        // 3³ − 1 − 1 = 25.
+        assert!((v - 25.0).abs() < 0.15, "compound cut volume {v} (expected ~25.0)");
+        assert!(r.solid.is_some(), "one big box minus two internal boxes → one solid");
+        clear_tree(&r.shape);
+        clear_tree(&big.0);
+        clear_tree(&s1.0);
+        clear_tree(&s2.0);
+        clear_tree(&comp.0);
+    }
+
+    #[test]
+    fn boolean_compound_common() {
+        let a1 = test_box_at(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 1.0));
+        let a2 = test_box_at(&GpPnt::new(2.0, 0.0, 0.0), &GpPnt::new(3.0, 1.0, 1.0));
+        let b = test_box_at(&GpPnt::new(0.5, 0.0, 0.0), &GpPnt::new(2.5, 1.0, 1.0));
+        let bld = TopoBuilder::new();
+        let comp = bld.make_compound_of(&[a1.0.clone(), a2.0.clone()]);
+        let r = boolean_compound(&comp.0, &b.0, BoolOp::Common, 1e-6).expect("compound common ok");
+        let v = box_vol(&r.shape);
+        // a1∩b = 0.5 volume, a2∩b = 0.5 volume.
+        assert!((v - 1.0).abs() < 0.15, "compound common volume {v} (expected ~1.0)");
+        clear_tree(&r.shape);
+        clear_tree(&comp.0);
+        clear_tree(&a1.0);
+        clear_tree(&a2.0);
+        clear_tree(&b.0);
+    }
+
+    #[test]
+    fn self_intersection_detected() {
+        use occt_core::gp::{GpAx3, GpDir, GpPln};
+        use occt_geom::GeomPlane;
+        use std::sync::Arc;
+
+        // A valid box has no self-intersections.
+        let boxed = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        let rep = detect_self_intersections(&boxed.solid.0, 1e-6);
+        assert!(!rep.found, "a box must not self-intersect");
+
+        // A shell with a horizontal face (z=0) crossed by a vertical face
+        // (y=0): the two surfaces intersect along a line through both faces.
+        let bld = TopoBuilder::new();
+        let h_wire = bld.make_wire(&[
+            bld.make_edge_segment(&GpPnt::new(-1.0, -1.0, 0.0), &GpPnt::new(1.0, -1.0, 0.0)),
+            bld.make_edge_segment(&GpPnt::new(1.0, -1.0, 0.0), &GpPnt::new(1.0, 1.0, 0.0)),
+            bld.make_edge_segment(&GpPnt::new(1.0, 1.0, 0.0), &GpPnt::new(-1.0, 1.0, 0.0)),
+            bld.make_edge_segment(&GpPnt::new(-1.0, 1.0, 0.0), &GpPnt::new(-1.0, -1.0, 0.0)),
+        ]);
+        let f_h = bld.make_face(Arc::new(GeomPlane::new(GpPln::new(GpAx3::standard()))), &[h_wire]);
+        let v_wire = bld.make_wire(&[
+            bld.make_edge_segment(&GpPnt::new(-1.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 0.0)),
+            bld.make_edge_segment(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 1.0)),
+            bld.make_edge_segment(&GpPnt::new(1.0, 0.0, 1.0), &GpPnt::new(-1.0, 0.0, 1.0)),
+            bld.make_edge_segment(&GpPnt::new(-1.0, 0.0, 1.0), &GpPnt::new(-1.0, 0.0, 0.0)),
+        ]);
+        let pln_y = GpPln::new(
+            GpAx3::new(GpPnt::zero(), GpDir::new(0.0, 1.0, 0.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap())
+                .unwrap(),
+        );
+        let f_v = bld.make_face(Arc::new(GeomPlane::new(pln_y)), &[v_wire]);
+        let shell = bld.make_shell(&[f_h, f_v]);
+        let rep2 = detect_self_intersections(&shell.0, 1e-6);
+        assert!(rep2.found, "crossing faces must be detected as self-intersecting");
+        assert!(rep2.edge_count >= 1, "at least one intersecting face pair");
+        clear_tree(&shell.0);
+        clear_tree(&boxed.solid.0);
+    }
+
+    #[test]
+    fn boolean_with_check_repairs() {
+        let (a, b) = overlapping_boxes();
+        let r = boolean_with_check(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("with-check fuse ok");
+        assert!(r.solid.is_some(), "fuse produces a solid");
+        assert!(!r.shells.is_empty(), "result has a shell");
+        assert!(r.shells.iter().all(shell_is_closed), "result shells are closed");
+        // Hard failures (open shell / repair failure) must not occur; benign
+        // diagnostics such as a volume cross-check warning are acceptable.
+        let hard = r.warnings.iter().any(|w| w.contains("not closed") || w.contains("no shell"));
+        assert!(!hard, "no hard failures: {:?}", r.warnings);
+        let v = box_vol(&r.shape);
+        assert!((v - 1.5).abs() < 0.05, "with-check fuse volume {v} (expected 1.5)");
+        clear_tree(&r.shape);
+        clear_tree(&a.0);
+        clear_tree(&b.0);
+    }
+
+    #[test]
+    fn decompose_compound_top_level() {
+        let bld = TopoBuilder::new();
+        let shapes = disjoint_box_shapes();
+        let comp = bld.make_compound_of(&shapes);
+        let subs = decompose_compound(&comp.0);
+        assert_eq!(subs.len(), 3, "compound of 3 shapes decomposes into 3");
+        for s in &subs {
+            assert!(!s.is_compound(), "sub-shapes are atomic");
+        }
+        // Non-compound input → itself.
+        let single = decompose_compound(&shapes[0]);
+        assert_eq!(single.len(), 1);
+        // shape_components splits a solid into its shells.
+        let comps = shape_components(&shapes[0]);
+        assert!(!comps.is_empty());
+        assert!(comps[0].is_solid());
+        clear_tree(&comp.0);
+        for s in &shapes {
+            clear_tree(s);
+        }
+    }
+
+    #[test]
+    fn boolean_degenerate_face() {
+        let solid = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        let bld = TopoBuilder::new();
+        let face = bld.make_face_plane(&occt_core::gp::GpPln::new(occt_core::gp::GpAx3::standard()));
+        let r = boolean_degenerate(&face.0, &solid.solid.0, BoolOp::Fuse, 1e-6).expect("face fuse ok");
+        assert!(r.shape.is_compound() || r.solid.is_some(), "face fused with solid → compound or solid");
+        assert!(!r.warnings.is_empty(), "degenerate fuse reports a warning");
+        clear_tree(&face.0);
+        clear_tree(&r.shape);
+        clear_tree(&solid.solid.0);
+    }
+
+    #[test]
+    fn boolean_degenerate_empty() {
+        let bld = TopoBuilder::new();
+        let empty = bld.make_compound_of(&[]);
+        let boxed = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        // empty fused with a box → the box (empty is the Fuse identity).
+        let r = boolean_degenerate(&empty.0, &boxed.solid.0, BoolOp::Fuse, 1e-6).expect("empty fuse ok");
+        assert!(r.solid.is_some(), "empty + box → the box");
+        assert!((box_vol(&r.shape) - 1.0).abs() < 0.05);
+        // box minus empty → the box.
+        let r2 = boolean_degenerate(&boxed.solid.0, &empty.0, BoolOp::Cut, 1e-6).expect("empty cut ok");
+        assert!((box_vol(&r2.shape) - 1.0).abs() < 0.05);
+        // empty common → empty.
+        let r3 = boolean_degenerate(&empty.0, &boxed.solid.0, BoolOp::Common, 1e-6).expect("empty common ok");
+        assert!(box_vol(&r3.shape) < 1e-9, "empty common has no volume");
+        clear_tree(&empty.0);
+        clear_tree(&r.shape);
+        clear_tree(&r2.shape);
+        clear_tree(&r3.shape);
+        clear_tree(&boxed.solid.0);
+    }
+
+    #[test]
+    fn boolean_result_summary_string() {
+        let (a, b) = overlapping_boxes();
+        let r = boolean(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("fuse ok");
+        let s = boolean_result_summary(&r);
+        assert!(s.contains(r.shape.shape_type().to_str()), "summary has the shape type: {s}");
+        assert!(s.contains("faces"), "summary mentions faces: {s}");
+        assert!(s.contains("solid") || s.contains("compound"), "summary describes the solidity: {s}");
+        clear_tree(&r.shape);
+        clear_tree(&a.0);
+        clear_tree(&b.0);
+    }
+
+    #[test]
+    fn connected_components_splits_compound() {
+        let shapes = disjoint_box_shapes();
+        let bld = TopoBuilder::new();
+        let comp = bld.make_compound_of(&shapes);
+        let comps = connected_components(&comp.0, 1e-6);
+        assert_eq!(comps.len(), 3, "compound of 3 disjoint boxes → 3 components");
+        for c in &comps {
+            assert!(c.is_solid(), "each component is a solid");
+        }
+        // A single solid has one component.
+        let one = connected_components(&shapes[0], 1e-6);
+        assert_eq!(one.len(), 1, "a single solid → one component");
+        clear_tree(&comp.0);
+        for s in &shapes {
+            clear_tree(s);
+        }
+    }
+
+    #[test]
+    fn boolean_fold_sequence() {
+        // ((a ∪ b) − c): fuse two boxes, then cut a third.
+        let a = test_box_at(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 1.0));
+        let b = test_box_at(&GpPnt::new(0.5, 0.0, 0.0), &GpPnt::new(1.5, 1.0, 1.0));
+        let c = test_box_at(&GpPnt::new(0.5, 0.0, 0.0), &GpPnt::new(1.5, 0.5, 1.0));
+        let shapes = vec![a.0.clone(), b.0.clone(), c.0.clone()];
+        let ops = vec![BoolOp::Fuse, BoolOp::Cut];
+        let r = boolean_fold(&shapes, &ops, 1e-6).expect("fold ok");
+        // a∪b = [0,1.5]×[0,1]×[0,1] (vol 1.5); cut c = [0.5,1.5]×[0,0.5]×[0,1]
+        // (vol 0.5) → 1.5 − 0.5 = 1.0.
+        let v = box_vol(&r.shape);
+        assert!((v - 1.0).abs() < 0.2, "fold volume {v} (expected ~1.0)");
+        clear_tree(&r.shape);
+        clear_tree(&a.0);
+        clear_tree(&b.0);
+        clear_tree(&c.0);
+    }
+
+    #[test]
+    fn boolean_cut_many_works() {
+        let big = test_box_at(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(3.0, 3.0, 3.0));
+        let c1 = test_box_at(&GpPnt::new(0.5, 0.5, 0.5), &GpPnt::new(1.5, 1.5, 1.5));
+        let c2 = test_box_at(&GpPnt::new(1.7, 0.5, 0.5), &GpPnt::new(2.7, 1.5, 1.5));
+        let r = boolean_cut_many(&big.0, &[c1.0.clone(), c2.0.clone()], 1e-6).expect("cut many ok");
+        let v = box_vol(&r.shape);
+        assert!((v - 25.0).abs() < 0.2, "cut-many volume {v} (expected ~25.0)");
+        clear_tree(&r.shape);
+        clear_tree(&big.0);
+        clear_tree(&c1.0);
+        clear_tree(&c2.0);
+    }
+
+    #[test]
+    fn boolean_result_validate_clean() {
+        let (a, b) = overlapping_boxes();
+        let r = boolean(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("fuse ok");
+        // A closed, non-self-intersecting fuse has no hard structural issues.
+        let issues = boolean_result_validate(&r, 1e-6);
+        let hard: Vec<&String> = issues.iter().filter(|s| s.contains("not closed") || s.contains("no shell")).collect();
+        assert!(hard.is_empty(), "no open-shell issues: {issues:?}");
+        assert!(r.shells.iter().all(shell_is_closed), "fuse shell is closed");
         clear_tree(&r.shape);
         clear_tree(&a.0);
         clear_tree(&b.0);

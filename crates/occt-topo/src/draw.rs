@@ -44,6 +44,8 @@
 //! | `iges`        | `name file`          | write an IGES file                                |
 //! | `stl`         | `name file`          | write a binary STL file                           |
 //! | `info`        | `name`               | print vertex/edge/face counts + estimated volume  |
+//! | `bbox`        | `name`               | print the axis-aligned bounding-box corners       |
+//! | `verts`       | `name`               | print the distinct vertex coordinates             |
 //! | `ls`          | —                    | list the session shape names                      |
 //! | `rm`          | `name`               | remove a shape from the session                   |
 //! | `clear`       | —                    | empty the session                                 |
@@ -53,6 +55,174 @@
 //! Unknown commands are rejected with an error rather than silently ignored,
 //! so a typo in a batch script cannot corrupt a run. The script drivers treat
 //! blank lines and lines beginning with `#` as comments.
+//!
+//! The scripting layer adds these commands on top of the shape table:
+//!
+//! | Command       | Arguments               | Effect                                 |
+//! |---------------|-------------------------|----------------------------------------|
+//! | `set`         | `name value`            | store a string/number variable         |
+//! | `expr`        | `a b op`                | `a op b` (`+ - * /`) into `result`     |
+//! | `echo`        | `text...`               | append expanded text to the log        |
+//! | `vars`        | —                       | list the session variables             |
+//! | `unset`       | `name`                  | remove a variable                      |
+//! | `incr`        | `name [step]`           | add `step` (default 1) to a number var |
+//! | `for`         | `var start end { body }`| run body per integer in `[start, end]` |
+//! | `if`          | `a b op { body }`       | run body when the comparison holds     |
+//! | `translate`   | `name dx dy dz [out]`   | translate the registered geometry      |
+//! | `rotate`      | `name ax ay az deg`     | rotate about an axis through the origin|
+//! | `scale`       | `name factor [out]`     | uniform scale about the origin         |
+//! | `mirror`      | `name nx ny nz [out]`   | mirror across a plane through the origin|
+//! | `copy`        | `name out`              | independent deep copy                  |
+//! | `transform`   | `name a11..a33 tx ty tz`| arbitrary affine map                   |
+//! | `view`        | `name [w h] [file]`     | soft-render `name` to a PPM file       |
+//! | `view_camera` | `ex ey ez tx ty tz`     | set the look-at camera                 |
+//! | `orbit`       | `dx_deg dy_deg`         | orbit the camera about its target      |
+//! | `zoom`        | `factor`                | zoom the camera toward its target      |
+//! | `pan`         | `dx dy`                 | pan the camera in screen pixels        |
+//!
+//! # TCL-style scripting subset
+//!
+//! Beyond the fixed shape-construction table, this port implements a small
+//! TCL-style scripting layer over the same line parser, covering the pieces
+//! of `Draw_Interpretor` that scripts actually exercise: variables,
+//! expressions, control flow, shape transforms and a soft-rendered view.
+//!
+//! **Variables.** `set <name> <value>` stores a string (or number) in the
+//! session's variable namespace. Any token containing a `$name` reference is
+//! expanded before dispatch, inside a token (`b$i`) or as a whole token
+//! (`$x`); unknown names are left untouched so a literal dollar sign does not
+//! break a command. [`expand_vars`] performs the substitution on a token
+//! list and [`eval_number`] resolves a single number-or-variable.
+//!
+//! ```text
+//! set x 3
+//! box b $x 2 2          ; the box is 3 × 2 × 2
+//! ```
+//!
+//! The namespace is introspectable and mutable the way a Tcl interpreter's is:
+//! `vars` lists every `name = value`, `unset <name>` deletes one, and
+//! `incr <name> [step]` adds `step` (default 1) to a numeric variable. The
+//! `expr` result slot (`result`) is an ordinary entry in the same namespace,
+//! so `incr result 1` after `expr 3 4 *` yields 13.
+//!
+//! ```text
+//! set i 0
+//! incr i 2                 ; i = 2
+//! vars                     ; logs: vars: i = 2  ...
+//! ```
+//!
+//! **Expressions.** `expr <a> <b> <op>` evaluates `a op b` (the operator is
+//! the last token, matching the Draw REPL's postfix `expr 3 4 *`) with `op`
+//! one of `+ - * /` on real numbers and stores the result in the `result`
+//! variable. Division by zero is an error; results are stored in the compact
+//! [`fmt_num`] form so `expr 3 4 *` gives `result = 12` rather than `12.0`.
+//!
+//! ```text
+//! set a 5
+//! expr $a 2 *            ; result = 10
+//! box c $result 1 1      ; box c is 10 × 1 × 1
+//! ```
+//!
+//! **Control flow.** `if <a> <b> <op> { <body> }` runs the body when the
+//! numeric comparison (`== != < > <= >=`, postfix like `expr`) holds.
+//! `for <var> <start> <end> { <body> }` runs the body once per integer in
+//! `[start, end]` (descending when `start > end`), setting `var` before each
+//! iteration so `$var` expands inside the body. The braces are optional — with
+//! no `{` the body is every token after the header. Nested `if`s inside a
+//! `for` body work, since each body is itself a command line through
+//! [`execute_line`].
+//!
+//! ```text
+//! for i 1 3 { box b$i 1 1 1 }    ; builds b1, b2, b3
+//! for i 1 5 { if $i 3 > { echo hit$i } }   ; logs hit4, hit5
+//! if $x 3 > { echo big }
+//! ```
+//!
+//! **Shape transforms.** `translate`, `rotate`, `scale`, `copy` and
+//! `transform` apply a `GpTrsf` to the *registered geometry* of a shape (the
+//! [`crate::shape_ops`] kernels), so world coordinates — vertex points, edge
+//! curves, face surfaces — actually move. This mirrors OCCT's `BRep_Tool::Transform`
+//! and is distinct from merely relabelling the shape's location.
+//!
+//! ```text
+//! translate b 1 0 0 c      ; b moved by (1,0,0) into c, b untouched
+//! rotate b 0 0 1 90        ; b rotated 90° about the Z axis (in place)
+//! scale b 2                ; b scaled ×2 about the origin (in place)
+//! mirror b 0 0 1           ; b reflected across the Z = 0 plane (in place)
+//! copy b b2                ; independent deep copy (b2 edits never touch b)
+//! transform b 1 0 0 0 1 0 0 0 1 0 0 0   ; arbitrary affine, identity here
+//! ```
+//!
+//! After a transform, `bbox <name>` (the axis-aligned bounding-box corners)
+//! and `verts <name>` (every distinct vertex coordinate) inspect the *world*
+//! geometry — a quick way to verify a `translate`/`rotate`/`scale` did what
+//! you asked, complementing `info`'s counts and volume.
+//!
+//! **View.** `view <name> [w h] [file]` soft-renders a shape through the
+//! session camera with the [`crate::viz_scene`] shaded ray-caster and writes
+//! a binary PPM (default `view.ppm`, 256×256). The camera is a real
+//! look-at state you can drive with `view_camera` (eye/target), `orbit`
+//! (yaw/pitch degrees), `zoom` (factor) and `pan` (screen pixels) — a small
+//! port of `V3d_View` interaction. The camera state lives on the session, so
+//! a script can frame a shape once and render it at several resolutions.
+//!
+//! ```text
+//! view_camera 5 4 5 0 0 0
+//! orbit 20 10
+//! zoom 1.5
+//! view b 320 240           ; writes view.ppm (320×240)
+//! ```
+//!
+//! `echo <text>` appends its (expanded) arguments to the log — the scripting
+//! printf, useful both interactively and from `if`/`for` bodies.
+//!
+//! # Port notes on the scripting layer
+//!
+//! * Variable substitution is deliberately **non-destructive**: an unknown
+//!   `$name` stays `$name` instead of raising, so file paths containing `$`
+//!   survive and a typo surfaces at the command that consumes the value
+//!   (a numeric parse error), not earlier.
+//! * Bodies of `for`/`if` are token lists re-substituted per iteration. The
+//!   outer [`execute_line`] already expanded whatever was bound before the
+//!   loop; the loop variable is bound *after* that, so its `$var` reference
+//!   survives until the per-iteration re-expansion. This is the same double
+//!   evaluation a Tcl script sees with `{*}` bodies, minus Tcl's brace
+//!   quoting subtleties.
+//! * `for` counts in integers (`start`/`end` are truncated with `as i64`) and
+//!   steps `−1` when `start > end`, so both `for i 1 3` and `for i 3 1` run
+//!   three iterations. `incr` is the integer-typed counter; `expr` results
+//!   may be fractional.
+//! * The transforms rebuild geometry through the global [`crate::tgeometry`]
+//!   registry (see [`crate::shape_ops`]), which is what makes `verts` and
+//!   `bbox` report world coordinates afterwards. Copying is a deep
+//!   [`translated_copy`] with the identity translation — independent `TShape`
+//!   handles and re-registered geometry, so it is safe to fillet or transform
+//!   the copy without affecting the source.
+//!
+//! A complete scripting session mixing variables, a loop, transforms and a
+//! render might look like:
+//!
+//! ```text
+//! # a parametric rack of three boxes with a sphere on top
+//! set n 3
+//! for i 1 $n { box b$i 2 2 2 }
+//! translate b2 3 0 0
+//! translate b3 6 0 0
+//! scale b1 1.5
+//! copy b3 b3s
+//! mirror b3s 0 0 1
+//! fuse b1 b2 rack1
+//! fuse rack1 b3 rack2
+//! info rack2
+//! bbox rack2
+//! if $n 2 >= { echo rack complete }
+//! view rack2 320 240
+//! ```
+//!
+//! which exercises every layer of the port in one script: `set`/`for`
+//! variable binding, `$` substitution inside tokens (`b$i`), `translate`/
+//! `scale`/`mirror`/`copy` transforms, boolean assembly, `info`/`bbox`
+//! inspection, `if` + `echo`, and a soft-rendered PPM view.
 //!
 //! # Port notes
 //!
@@ -103,6 +273,8 @@
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
+use occt_core::gp::{GpAx1, GpDir, GpMat, GpPnt, GpTrsf, GpVec, GpXyz, TrsfForm};
+
 use crate::abs::ShapeType;
 use crate::bop_builder::BoolOp;
 use crate::bop_curved::curved_boolean_ext;
@@ -115,8 +287,12 @@ use crate::primitives::{
 };
 use crate::shape::TopoShape;
 use crate::shape_mesh::{mesh_shape, shape_volume};
+use crate::shape_ops::{
+    rotate_shape, scale_shape, transform_shape, translate_shape, transformed_copy, translated_copy,
+};
 use crate::step::write_shape_step;
 use crate::topo_tools_full::{edges_of, shape_counts};
+use crate::viz_scene::{render_scene_ppm_shaded, Camera, RenderSettings, SceneShape, VizScene};
 
 // ---------------------------------------------------------------------------
 // Tuning constants
@@ -137,15 +313,16 @@ const VOLUME_DEFLECTION: f64 = 0.05;
 // ---------------------------------------------------------------------------
 
 /// Mutable state shared by every command: the named-shape table, the output
-/// log, the last error, and the interactive stop flag.
+/// log, the last error, the interactive stop flag, a TCL-style variable
+/// namespace and a session camera.
 ///
 /// Mirrors what a `Draw_Interpretor` keeps between commands (its variable
 /// namespace and output buffer), flattened into one struct the script and REPL
 /// drivers thread through.
 pub struct DrawSession {
-    /// Named shapes registered by primitive / boolean / fillet / offset
-    /// commands. The `info`, `mesh`, exporter and binary commands read from
-    /// here; `ls`, `rm`, `clear` manage it.
+    /// Named shapes registered by primitive / boolean / fillet / offset /
+    /// transform commands. The `info`, `bbox`, `verts`, `mesh`, exporter and
+    /// binary commands read from here; `ls`, `rm`, `clear` manage it.
     pub shapes: HashMap<String, TopoShape>,
     /// Output lines accumulated while executing commands. The REPL prints new
     /// entries after each line; `run_script` returns the whole log.
@@ -156,6 +333,14 @@ pub struct DrawSession {
     /// Set by `exit`/`quit`. Script and REPL loops check it after every line
     /// and stop — the interpreter equivalent of leaving `Draw_Interpretor`.
     pub stop: bool,
+    /// TCL-style variable namespace: `set <name> <value>` writes here, and
+    /// `$name` references in any command line expand from here before
+    /// dispatch. `expr` stores its result in the `result` entry; `for` writes
+    /// its loop variable here for each iteration.
+    pub vars: HashMap<String, String>,
+    /// The session view camera used by `view`, and driven by `view_camera`,
+    /// `orbit`, `zoom` and `pan`.
+    pub camera: Camera,
 }
 
 impl Default for DrawSession {
@@ -165,6 +350,8 @@ impl Default for DrawSession {
             log: Vec::new(),
             last_error: None,
             stop: false,
+            vars: HashMap::new(),
+            camera: Camera::default(),
         }
     }
 }
@@ -264,6 +451,114 @@ fn bool_op_name(op: BoolOp) -> &'static str {
         BoolOp::Cut => "cut",
         BoolOp::Common => "common",
     }
+}
+
+// ---------------------------------------------------------------------------
+// Variables, numbers and expressions
+// ---------------------------------------------------------------------------
+
+/// Render a real number the way the Tcl layer prints one: integral values
+/// drop the `.0` (`3`, not `3.0`), everything else keeps the compact `f64`
+/// rendering. This keeps `expr 3 4 *` storing `result = 12` and round-trips
+/// through [`eval_number`].
+fn fmt_num(v: f64) -> String {
+    if v.fract() == 0.0 && v.abs() < 9.0e15 {
+        format!("{}", v as i64)
+    } else {
+        format!("{v}")
+    }
+}
+
+/// Substitute every `$name` reference inside `tok` from the session's
+/// variable namespace.
+///
+/// A variable name is the longest run of alphanumeric/underscore characters
+/// after the `$`. Whole tokens (`$x`), embedded references (`b$i`) and
+/// repeated references (`a$i$j`) all work. Unknown names are left exactly as
+/// written — a literal `$` in a script (say a file name) is preserved instead
+/// of erroring, which is friendlier than Tcl and keeps scripts non-brittle.
+fn expand_token(session: &DrawSession, tok: &str) -> String {
+    let mut out = String::new();
+    let mut rest = tok;
+    while let Some(idx) = rest.find('$') {
+        out.push_str(&rest[..idx]);
+        let after = &rest[idx + 1..];
+        let mut name = String::new();
+        let mut name_bytes = 0;
+        for c in after.chars() {
+            if c.is_alphanumeric() || c == '_' {
+                name.push(c);
+                name_bytes += c.len_utf8();
+            } else {
+                break;
+            }
+        }
+        if name_bytes == 0 {
+            out.push('$');
+            rest = after;
+            continue;
+        }
+        match session.vars.get(&name) {
+            Some(v) => out.push_str(v),
+            None => {
+                out.push('$');
+                out.push_str(&name);
+            }
+        }
+        rest = &after[name_bytes..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Expand `$name` references in a token list — the substitution step applied
+/// to every command line before dispatch. See [`expand_token`].
+pub fn expand_vars(session: &DrawSession, tokens: &[String]) -> Vec<String> {
+    tokens.iter().map(|t| expand_token(session, t)).collect()
+}
+
+/// Parse a number, or a `$variable` holding one, as an `f64`.
+///
+/// This is the numeric-argument resolver for `expr`, `if`, `for`, `translate`
+/// and friends. A `$result` reference (an `expr` output) round-trips through
+/// [`fmt_num`], so `eval_number(session, "$result")` returns the computed
+/// value. Non-numeric text is an error.
+pub fn eval_number(session: &DrawSession, s: &str) -> Result<f64, String> {
+    let expanded = expand_token(session, s);
+    expanded
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| format!("draw: invalid number '{s}'"))
+}
+
+/// Store `value` in the session variable `name` (creating or overwriting it).
+/// Values are kept as strings — a number stored here is parsed lazily by
+/// [`eval_number`] when a command consumes it.
+pub fn set_var(session: &mut DrawSession, name: &str, value: &str) {
+    session.vars.insert(name.to_string(), value.to_string());
+}
+
+/// Split the trailing block of a `for`/`if` command off its argument list.
+///
+/// The header is `args[0..header]`; the body is everything after it. When a
+/// `{` token appears exactly at `header` the body runs to the end, dropping a
+/// trailing `}`. Without braces the body is simply the tail of `args`. An
+/// empty body is an error so a bare `for i 1 3 { }` cannot silently do
+/// nothing.
+fn command_block<'a>(args: &'a [String], keyword: &str, header: usize) -> Result<&'a [String], String> {
+    let body = if args.get(header).map(|s| s == "{").unwrap_or(false) {
+        let mut end = args.len();
+        if args.last().map(|s| s == "}").unwrap_or(false) {
+            end -= 1;
+        }
+        &args[header + 1..end]
+    } else {
+        &args[header..]
+    };
+    if body.is_empty() {
+        return Err(format!("draw: {keyword}: empty body"));
+    }
+    Ok(body)
 }
 
 // ---------------------------------------------------------------------------
@@ -537,9 +832,527 @@ fn cmd_clear(session: &mut DrawSession) -> Result<(), String> {
 fn cmd_help(session: &mut DrawSession) -> Result<(), String> {
     session.log.push(
         "commands: box cylinder sphere cone torus fuse cut common fillet offset \
-         mesh step obj iges stl info ls rm clear help exit quit"
+         mesh step obj iges stl info bbox verts ls rm clear help exit quit \
+         set expr echo vars unset incr for if translate rotate scale mirror copy transform \
+         view view_camera orbit zoom pan"
             .into(),
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Variables and expressions
+// ---------------------------------------------------------------------------
+
+/// `set <name> <value>` — store `value` (a string or a number) in the session
+/// variable namespace. The value is stored verbatim after `$`-expansion, so
+/// `set b $a` copies `a`. Later `$name` references expand anywhere in a
+/// command line — whole tokens (`$x`) and embedded in longer tokens (`b$i`).
+fn cmd_set(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 2, "set")?;
+    set_var(session, &args[0], &args[1]);
+    session.log.push(format!("set {} = {}", args[0], args[1]));
+    Ok(())
+}
+
+/// `expr <a> <b> <op>` — evaluate `a op b` on real numbers with `op` one of
+/// `+ - * /` and store the result in the `result` variable. The operator is
+/// the final token (postfix, matching the Draw REPL convention `expr 3 4 *`),
+/// and the operands may be literals or `$variables`; the stored text
+/// round-trips through [`eval_number`], so `box c $result 1 1` consumes the
+/// value directly.
+fn cmd_expr(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 3, "expr")?;
+    let a = eval_number(session, &args[0])?;
+    let b = eval_number(session, &args[1])?;
+    let result = match args[2].as_str() {
+        "+" => a + b,
+        "-" => a - b,
+        "*" => a * b,
+        "/" => {
+            if b.abs() < 1e-15 {
+                return Err("draw: expr: division by zero".into());
+            }
+            a / b
+        }
+        op => return Err(format!("draw: expr: unsupported operator '{op}'")),
+    };
+    let text = fmt_num(result);
+    set_var(session, "result", &text);
+    session.log.push(format!("result = {text}"));
+    Ok(())
+}
+
+/// `echo <text...>` — append the (already `$`-expanded) arguments joined by
+/// single spaces to the log. The scripting printf, useful interactively and
+/// from `if`/`for` bodies.
+fn cmd_echo(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    session.log.push(args.join(" "));
+    Ok(())
+}
+
+/// `vars` — list every session variable as `name = value`, sorted by name, on
+/// one log line. The analogue of Tcl's `info vars` and handy before a `for`
+/// loop to confirm what the loop variable will shadow.
+fn cmd_vars(session: &mut DrawSession) -> Result<(), String> {
+    let mut names: Vec<&String> = session.vars.keys().collect();
+    names.sort();
+    let joined = names
+        .iter()
+        .map(|n| format!("{n} = {}", session.vars[n.as_str()]))
+        .collect::<Vec<_>>()
+        .join("  ");
+    session.log.push(format!("vars: {joined}"));
+    Ok(())
+}
+
+/// `unset <name>` — remove the session variable `name`. Unknown names are an
+/// error, matching Tcl's `unset` behaviour; [`eval_number`] on a name that no
+/// longer exists falls through to a parse error rather than reading a stale
+/// value.
+fn cmd_unset(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 1, "unset")?;
+    if session.vars.remove(&args[0]).is_none() {
+        return Err(format!("draw: unset: variable '{}' not found", args[0]));
+    }
+    session.log.push(format!("unset: removed {}", args[0]));
+    Ok(())
+}
+
+/// `incr <name> [step]` — add `step` (default 1) to the numeric variable
+/// `name` and store the result back. The variable must already hold a number
+/// (`set i 0` first). The natural counter for `for` bodies and the scripting
+/// layer's integer arithmetic workhorse; port of Tcl's `incr`.
+fn cmd_incr(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() != 1 && args.len() != 2 {
+        return Err(format!(
+            "draw: incr: expected 1 or 2 arguments, got {}",
+            args.len()
+        ));
+    }
+    let cur = session
+        .vars
+        .get(&args[0])
+        .ok_or_else(|| format!("draw: incr: variable '{}' not found", args[0]))?;
+    let cur = cur
+        .parse::<f64>()
+        .map_err(|_| format!("draw: incr: '{}' is not a number", cur))?;
+    let step = if args.len() == 2 {
+        eval_number(session, &args[1])?
+    } else {
+        1.0
+    };
+    let next = cur + step;
+    let text = fmt_num(next);
+    set_var(session, &args[0], &text);
+    session.log.push(format!("incr {} = {text}", args[0]));
+    Ok(())
+}
+
+/// `for <var> <start> <end> { <body...> }` — run the body once per integer in
+/// `[start, end]` inclusive, stepping `−1` when `start > end`.
+///
+/// Before each iteration `var` is set to the current integer and the body
+/// tokens are `$`-expanded again, so `box b$i 1 1 1` builds `b1`, `b2`, ...
+/// The body is any Draw command line; braces are optional (`for i 1 3
+/// box b$i 1 1 1` works). The loop variable remains set to its final value
+/// after the loop. This is the interpreter's only looping construct — a
+/// minimal `Draw_Interpretor::Eval` over a variable-binding driver.
+fn cmd_for(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() < 4 {
+        return Err(format!(
+            "draw: for: expected at least 4 arguments, got {}",
+            args.len()
+        ));
+    }
+    let var = &args[0];
+    let start = eval_number(session, &args[1])? as i64;
+    let end = eval_number(session, &args[2])? as i64;
+    let body = command_block(args, "for", 3)?;
+    let step = if start <= end { 1 } else { -1 };
+    let mut i = start;
+    loop {
+        set_var(session, var, &fmt_num(i as f64));
+        let line = expand_vars(session, body).join(" ");
+        execute_line(session, &line)?;
+        if i == end || session.stop {
+            break;
+        }
+        i += step;
+    }
+    Ok(())
+}
+
+/// `if <a> <b> <op> { <body...> }` — numeric comparison and conditional
+/// execution.
+///
+/// When `a op b` holds (`op` one of `== != < > <= >=`, in the postfix slot
+/// matching `expr`, e.g. `if $x 3 >`) the body is executed as one line,
+/// exactly like a `for` body; otherwise it is skipped. Braces are optional.
+/// `if` is the interpreter's branch, mirroring `Draw_Interpretor`'s `if` on
+/// Tcl expr strings.
+fn cmd_if(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() < 4 {
+        return Err(format!(
+            "draw: if: expected at least 4 arguments, got {}",
+            args.len()
+        ));
+    }
+    let a = eval_number(session, &args[0])?;
+    let b = eval_number(session, &args[1])?;
+    let holds = match args[2].as_str() {
+        "==" => a == b,
+        "!=" => a != b,
+        "<" => a < b,
+        ">" => a > b,
+        "<=" => a <= b,
+        ">=" => a >= b,
+        op => return Err(format!("draw: if: unsupported comparison '{op}'")),
+    };
+    if !holds {
+        return Ok(());
+    }
+    let body = command_block(args, "if", 3)?;
+    let line = expand_vars(session, body).join(" ");
+    execute_line(session, &line)
+}
+
+// ---------------------------------------------------------------------------
+// Shape transforms
+// ---------------------------------------------------------------------------
+
+/// `translate <name> <dx> <dy> <dz> [out]` — translate `name`'s registered
+/// geometry by `(dx, dy, dz)` and register the result under `out`, or back
+/// under `name` when `out` is omitted. Wraps
+/// [`translate_shape`](crate::shape_ops::translate_shape), the OCCT
+/// `BRep_Tool::Transform` geometry rewrite — world coordinates move.
+///
+/// With an `out` name the moved geometry is a deep [`translated_copy`], so the
+/// source shape is left untouched (a `TopoShape` clone shares its `TShape`, so
+/// an in-place transform would move both). Without `out` the transform is
+/// applied in place, matching OCCT's `Draw` `translate` with one argument.
+fn cmd_translate(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() != 4 && args.len() != 5 {
+        return Err(format!(
+            "draw: translate: expected 4 or 5 arguments, got {}",
+            args.len()
+        ));
+    }
+    let v = GpVec::new(
+        eval_number(session, &args[1])?,
+        eval_number(session, &args[2])?,
+        eval_number(session, &args[3])?,
+    );
+    if let Some(out) = args.get(4) {
+        let shape = shape_owned(session, &args[0])?;
+        let result = translated_copy(&shape, &v)?;
+        register_shape(session, out, result);
+    } else {
+        let mut shape = shape_owned(session, &args[0])?;
+        translate_shape(&mut shape, &v)?;
+        register_shape(session, &args[0], shape);
+    }
+    Ok(())
+}
+
+/// `rotate <name> <ax> <ay> <az> <angle_deg>` — rotate `name` by `angle_deg`
+/// degrees about the axis through the origin with direction `(ax, ay, az)`,
+/// in place. Wraps [`rotate_shape`](crate::shape_ops::rotate_shape)
+/// (`gp_Trsf::SetRotation` + `BRep_Tool::Transform`); a 90° Z rotation maps
+/// the corner `(1,0,0)` to `(0,1,0)`.
+fn cmd_rotate(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 5, "rotate")?;
+    let mut shape = shape_owned(session, &args[0])?;
+    let dir = GpDir::new(
+        eval_number(session, &args[1])?,
+        eval_number(session, &args[2])?,
+        eval_number(session, &args[3])?,
+    )
+    .map_err(|e| format!("draw: rotate: {e}"))?;
+    let angle = eval_number(session, &args[4])?.to_radians();
+    let axis = GpAx1::new(GpPnt::zero(), dir);
+    rotate_shape(&mut shape, &axis, angle)?;
+    register_shape(session, &args[0], shape);
+    Ok(())
+}
+
+/// `scale <name> <factor> [out]` — uniformly scale `name` about the origin by
+/// `factor` and register the result under `out`, or back under `name`. A unit
+/// box scaled by 2 becomes `[0,2]³`. Wraps
+/// [`scale_shape`](crate::shape_ops::scale_shape).
+///
+/// As with `translate`, the `out` form deep-copies so the source keeps its
+/// geometry; the no-`out` form scales in place.
+fn cmd_scale(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() != 2 && args.len() != 3 {
+        return Err(format!(
+            "draw: scale: expected 2 or 3 arguments, got {}",
+            args.len()
+        ));
+    }
+    let factor = eval_number(session, &args[1])?;
+    if let Some(out) = args.get(2) {
+        let shape = shape_owned(session, &args[0])?;
+        let mut t = GpTrsf::identity();
+        t.set_scale(&GpPnt::zero(), factor)
+            .map_err(|e| format!("draw: scale: {e}"))?;
+        let result = transformed_copy(&shape, &t)?;
+        register_shape(session, out, result);
+    } else {
+        let mut shape = shape_owned(session, &args[0])?;
+        scale_shape(&mut shape, &GpPnt::zero(), factor)?;
+        register_shape(session, &args[0], shape);
+    }
+    Ok(())
+}
+
+/// `copy <name> <out>` — deep-copy `name` into `out`.
+///
+/// The copy is fully independent: it gets fresh `TShape` handles and its own
+/// re-registered geometry via
+/// [`translated_copy`](crate::shape_ops::translated_copy) with the identity
+/// translation, so later edits to `out` (fillet, translate, ...) never touch
+/// `name`. The analogue of OCCT's `copy` / `TopoDS::Transformed` with the
+/// identity transform.
+fn cmd_copy(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 2, "copy")?;
+    let shape = shape_owned(session, &args[0])?;
+    let copy = translated_copy(&shape, &GpVec::zero())?;
+    register_shape(session, &args[1], copy);
+    Ok(())
+}
+
+/// `transform <name> <a11> .. <a33> <tx> <ty> <tz>` — apply an arbitrary
+/// affine map to `name`, in place.
+///
+/// The nine `a` arguments are the 3×3 linear part read row-major (a11 a12 a13
+/// / a21 a22 a23 / a31 a32 a33) and `(tx, ty, tz)` is the translation. The
+/// `GpTrsf` is assembled directly with a unit scale and a compound form, then
+/// applied with [`transform_shape`](crate::shape_ops::transform_shape) — the
+/// OCCT `BRep_Tool::Transform` full affine path. An identity matrix with zero
+/// translation is the no-op.
+fn cmd_transform(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 13, "transform")?;
+    let mut m = GpMat::identity();
+    for (i, row) in m.m.iter_mut().enumerate() {
+        for (j, cell) in row.iter_mut().enumerate() {
+            *cell = eval_number(session, &args[1 + i * 3 + j])?;
+        }
+    }
+    let t = GpTrsf {
+        scale: 1.0,
+        shape: TrsfForm::CompoundTrsf,
+        matrix: m,
+        loc: GpXyz::new(
+            eval_number(session, &args[10])?,
+            eval_number(session, &args[11])?,
+            eval_number(session, &args[12])?,
+        ),
+    };
+    let mut shape = shape_owned(session, &args[0])?;
+    transform_shape(&mut shape, &t)?;
+    register_shape(session, &args[0], shape);
+    Ok(())
+}
+
+/// `mirror <name> <nx> <ny> <nz> [out]` — mirror `name` across the plane
+/// through the origin whose normal is `(nx, ny, nz)`.
+///
+/// The reflector matrix is the Householder `I − 2·n·nᵀ` built from the unit
+/// normal and applied as a unit-scale `GpTrsf` — the OCCT `gp_Trsf::SetMirror`
+/// for the `Ax2` (plane) case. A unit box mirrored across the Z = 0 plane
+/// (normal `0 0 1`) maps `[0,1]³` to `[0,1]²×[−1,0]`. The result is registered
+/// under `out`, or back under `name` when `out` is omitted.
+fn cmd_mirror(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() != 4 && args.len() != 5 {
+        return Err(format!(
+            "draw: mirror: expected 4 or 5 arguments, got {}",
+            args.len()
+        ));
+    }
+    let (nx, ny, nz) = (
+        eval_number(session, &args[1])?,
+        eval_number(session, &args[2])?,
+        eval_number(session, &args[3])?,
+    );
+    let norm = (nx * nx + ny * ny + nz * nz).sqrt();
+    if norm < 1e-15 {
+        return Err("draw: mirror: zero normal".into());
+    }
+    let (nx, ny, nz) = (nx / norm, ny / norm, nz / norm);
+    let m = GpMat::new(
+        1.0 - 2.0 * nx * nx,
+        -2.0 * nx * ny,
+        -2.0 * nx * nz,
+        -2.0 * ny * nx,
+        1.0 - 2.0 * ny * ny,
+        -2.0 * ny * nz,
+        -2.0 * nz * nx,
+        -2.0 * nz * ny,
+        1.0 - 2.0 * nz * nz,
+    );
+    let t = GpTrsf {
+        scale: 1.0,
+        shape: TrsfForm::CompoundTrsf,
+        matrix: m,
+        loc: GpXyz::zero(),
+    };
+    if let Some(out) = args.get(4) {
+        let shape = shape_owned(session, &args[0])?;
+        let result = transformed_copy(&shape, &t)?;
+        register_shape(session, out, result);
+    } else {
+        let mut shape = shape_owned(session, &args[0])?;
+        transform_shape(&mut shape, &t)?;
+        register_shape(session, &args[0], shape);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// View commands (soft render via viz_scene)
+// ---------------------------------------------------------------------------
+
+/// `view <name> [w h] [file]` — soft-render `name` through the session camera
+/// and write a shaded binary PPM.
+///
+/// Defaults to 256×256 and `view.ppm`. The renderer is the [`crate::viz_scene`]
+/// ray-cast shaded pipeline ([`render_scene_ppm_shaded`]) with the default
+/// `RenderSettings` (one key light, Phong shading); the log records the file
+/// and dimensions. The analogue of `V3d_View::Dump` writing `Write_PPM`.
+fn cmd_view(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() < 1 || args.len() > 4 {
+        return Err(format!(
+            "draw: view: expected 1 to 4 arguments, got {}",
+            args.len()
+        ));
+    }
+    let shape = shape_owned(session, &args[0])?;
+    let mut w = 256;
+    let mut h = 256;
+    let mut file = "view.ppm".to_string();
+    if args.len() >= 3 {
+        w = eval_number(session, &args[1])? as usize;
+        h = eval_number(session, &args[2])? as usize;
+    }
+    if args.len() >= 4 {
+        file = args[3].clone();
+    }
+    if w == 0 || h == 0 {
+        return Err(format!("draw: view: invalid dimensions {w}x{h}"));
+    }
+    let mut scene = VizScene::new();
+    scene.add(SceneShape::new(shape));
+    let bytes = render_scene_ppm_shaded(
+        &scene,
+        &session.camera,
+        w,
+        h,
+        EXPORT_DEFLECTION,
+        &RenderSettings::default(),
+    );
+    std::fs::write(&file, &bytes).map_err(|e| format!("draw: view: {e}"))?;
+    session.log.push(format!("view: wrote {file} ({w}x{h})"));
+    Ok(())
+}
+
+/// `view_camera <ex> <ey> <ez> <tx> <ty> <tz>` — set the session camera to a
+/// look-at view from `(ex, ey, ez)` toward `(tx, ty, tz)` with `+Y` up.
+/// Subsequent `view` commands render through it. The OCCT analogue is
+/// `V3d_View::SetViewOrientation` / `Camera::LookAt`.
+fn cmd_view_camera(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 6, "view_camera")?;
+    let eye = GpPnt::new(
+        eval_number(session, &args[0])?,
+        eval_number(session, &args[1])?,
+        eval_number(session, &args[2])?,
+    );
+    let target = GpPnt::new(
+        eval_number(session, &args[3])?,
+        eval_number(session, &args[4])?,
+        eval_number(session, &args[5])?,
+    );
+    session.camera = Camera::look_at(eye, target, GpVec::new(0.0, 1.0, 0.0));
+    session.log.push(format!(
+        "view_camera: eye ({},{},{}) target ({},{},{})",
+        eye.x(),
+        eye.y(),
+        eye.z(),
+        target.x(),
+        target.y(),
+        target.z()
+    ));
+    Ok(())
+}
+
+/// `orbit <dx_deg> <dy_deg>` — orbit the session camera's eye around its
+/// target: yaw by `dx_deg` about the world-up axis, then pitch by `dy_deg`
+/// (clamped near the poles). Ports `V3d_View::Rotate` for the orbit case.
+fn cmd_orbit(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 2, "orbit")?;
+    let dx = eval_number(session, &args[0])?;
+    let dy = eval_number(session, &args[1])?;
+    session.camera.camera_orbit(dx, dy);
+    session.log.push(format!("orbit: dx {dx} dy {dy}"));
+    Ok(())
+}
+
+/// `zoom <factor>` — zoom the session camera by moving the eye toward its
+/// target; `factor > 1` zooms in. Ports `V3d_View::SetZoom`.
+fn cmd_zoom(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 1, "zoom")?;
+    let factor = eval_number(session, &args[0])?;
+    session.camera.camera_zoom(factor);
+    session.log.push(format!("zoom: factor {factor}"));
+    Ok(())
+}
+
+/// `pan <dx> <dy>` — pan the session camera's eye and target together along
+/// the camera right/up plane, in screen pixels at a nominal 600-px viewport.
+/// Ports `V3d_View::Pan`.
+fn cmd_pan(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 2, "pan")?;
+    let dx = eval_number(session, &args[0])?;
+    let dy = eval_number(session, &args[1])?;
+    session.camera.camera_pan(dx, dy);
+    session.log.push(format!("pan: dx {dx} dy {dy}"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Inspection
+// ---------------------------------------------------------------------------
+
+/// `bbox <name>` — print the axis-aligned bounding box of `name` as two corner
+/// points, taken from the registered geometry (so transformed shapes report
+/// their world bounds).
+fn cmd_bbox(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 1, "bbox")?;
+    let shape = shape_owned(session, &args[0])?;
+    let bb = crate::bbox_from_geometry::shape_bbox(&shape);
+    if let Some((x0, x1, y0, y1, z0, z1)) = bb.get() {
+        session.log.push(format!(
+            "bbox {}: min ({x0}, {y0}, {z0}) max ({x1}, {y1}, {z1})",
+            args[0]
+        ));
+    } else {
+        session.log.push(format!("bbox {}: empty", args[0]));
+    }
+    Ok(())
+}
+
+/// `verts <name>` — print the distinct vertex coordinates of `name`, one per
+/// log line, using the registered geometry (world points after a transform).
+/// The OCCT analogue is `vertices` / `vstats` in the standard Draw plugin.
+fn cmd_verts(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 1, "verts")?;
+    let shape = shape_owned(session, &args[0])?;
+    let verts = crate::topo_tools_full::vertices_of(&shape);
+    session.log.push(format!("verts {}: {} vertices", args[0], verts.len()));
+    for v in verts {
+        let p = crate::brep_tool::BRepTool::vertex_point(&v);
+        session.log.push(format!("  ({:.6}, {:.6}, {:.6})", p.x(), p.y(), p.z()));
+    }
     Ok(())
 }
 
@@ -558,6 +1371,11 @@ pub fn execute_line(session: &mut DrawSession, line: &str) -> Result<(), String>
     if tokens.is_empty() {
         return Ok(());
     }
+    // Expand $variables before dispatch so `set x 3; box b $x 2 2` behaves
+    // like `box b 3 2 2`. Unknown names survive unchanged (`expand_vars` is
+    // deliberately non-destructive), and `for`/`if` bodies re-expand per
+    // iteration once their loop variable is bound.
+    let tokens = expand_vars(session, &tokens);
     let command = DrawCommand::Tokens(tokens);
     let result = dispatch(session, &command);
     if let Err(ref e) = result {
@@ -586,10 +1404,31 @@ fn dispatch(session: &mut DrawSession, command: &DrawCommand) -> Result<(), Stri
         "iges" => cmd_write(session, command.args(), WriteKind::Iges),
         "stl" => cmd_write(session, command.args(), WriteKind::Stl),
         "info" => cmd_info(session, command.args()),
+        "bbox" => cmd_bbox(session, command.args()),
+        "verts" => cmd_verts(session, command.args()),
         "ls" => cmd_ls(session),
         "rm" => cmd_rm(session, command.args()),
         "clear" => cmd_clear(session),
         "help" => cmd_help(session),
+        "set" => cmd_set(session, command.args()),
+        "expr" => cmd_expr(session, command.args()),
+        "echo" => cmd_echo(session, command.args()),
+        "vars" => cmd_vars(session),
+        "unset" => cmd_unset(session, command.args()),
+        "incr" => cmd_incr(session, command.args()),
+        "for" => cmd_for(session, command.args()),
+        "if" => cmd_if(session, command.args()),
+        "translate" => cmd_translate(session, command.args()),
+        "rotate" => cmd_rotate(session, command.args()),
+        "scale" => cmd_scale(session, command.args()),
+        "mirror" => cmd_mirror(session, command.args()),
+        "copy" => cmd_copy(session, command.args()),
+        "transform" => cmd_transform(session, command.args()),
+        "view" => cmd_view(session, command.args()),
+        "view_camera" => cmd_view_camera(session, command.args()),
+        "orbit" => cmd_orbit(session, command.args()),
+        "zoom" => cmd_zoom(session, command.args()),
+        "pan" => cmd_pan(session, command.args()),
         "exit" | "quit" => {
             session.stop = true;
             Ok(())
@@ -708,7 +1547,35 @@ pub fn volume(shape: &TopoShape) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::topo_tools_full::faces_of;
+    use crate::bbox_from_geometry::shape_bbox;
+    use crate::brep_tool::BRepTool;
+    use crate::topo_tools_full::{faces_of, vertices_of};
+
+    /// (min, max) corners of a named shape's axis-aligned bbox.
+    fn bbox_pts(s: &DrawSession, name: &str) -> ((f64, f64, f64), (f64, f64, f64)) {
+        let shape = shape_owned(s, name).unwrap();
+        let bb = shape_bbox(&shape);
+        match bb.get() {
+            Some((x0, x1, y0, y1, z0, z1)) => ((x0, y0, z0), (x1, y1, z1)),
+            None => panic!("empty bbox for {name}"),
+        }
+    }
+
+    /// Vertex coordinates of a named shape (world space).
+    fn vertex_pts(s: &DrawSession, name: &str) -> Vec<(f64, f64, f64)> {
+        let shape = shape_owned(s, name).unwrap();
+        vertices_of(&shape)
+            .iter()
+            .map(|v| {
+                let p = BRepTool::vertex_point(v);
+                (p.x(), p.y(), p.z())
+            })
+            .collect()
+    }
+
+    fn approx(a: f64, b: f64) -> bool {
+        (a - b).abs() < 1e-6
+    }
 
     #[test]
     fn parse_quoted_tokens() {
@@ -874,5 +1741,250 @@ info f
         draw_repl_with(&mut input, &mut output).expect("repl ok");
         let out = String::from_utf8(output).unwrap();
         assert!(out.contains("a"), "echo output: {out}");
+    }
+
+    // -- TCL-style variables and expressions ---------------------------------
+
+    #[test]
+    fn set_and_expand_var() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "set x 3").expect("set");
+        assert_eq!(s.vars.get("x").map(String::as_str), Some("3"));
+        execute_line(&mut s, "box b $x 2 2").expect("box with $x");
+        let (lo, hi) = bbox_pts(&s, "b");
+        assert!(approx(hi.0, 3.0), "box x extent 3, got max {}", hi.0);
+        assert!(approx(hi.1, 2.0) && approx(hi.2, 2.0));
+        assert!(approx(lo.0, 0.0) && approx(lo.1, 0.0) && approx(lo.2, 0.0));
+    }
+
+    #[test]
+    fn expr_arithmetic() {
+        let mut s = DrawSession::default();
+        execute_line(&mut s, "expr 3 4 *").expect("3*4");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("12"));
+        execute_line(&mut s, "expr 10 2 /").expect("10/2");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("5"));
+        // The stored value round-trips through eval_number.
+        let v = eval_number(&s, "$result").expect("parse result");
+        assert!(approx(v, 5.0), "result value {v}");
+    }
+
+    #[test]
+    fn expr_var_participation() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "set a 5").expect("set a");
+        execute_line(&mut s, "expr $a 2 +").expect("5+2");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("7"));
+    }
+
+    #[test]
+    fn expr_consumed_by_shape() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "expr 3 4 *\nbox c $result 1 1").expect("expr + box");
+        let (_, hi) = bbox_pts(&s, "c");
+        assert!(approx(hi.0, 12.0), "box from expr result, x max {}", hi.0);
+    }
+
+    // -- Shape transformations ------------------------------------------------
+
+    #[test]
+    fn translate_shape() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 1 1 1").expect("box");
+        execute_line(&mut s, "translate b 1 0 0").expect("translate");
+        let (lo, hi) = bbox_pts(&s, "b");
+        assert!(approx(lo.0, 1.0) && approx(hi.0, 2.0), "x shifted by +1: {lo:?} {hi:?}");
+        assert!(approx(lo.1, 0.0) && approx(hi.1, 1.0));
+    }
+
+    #[test]
+    fn translate_to_out_keeps_original() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 1 1 1").expect("box");
+        execute_line(&mut s, "translate b 5 0 0 c").expect("translate to c");
+        let (lo_b, hi_b) = bbox_pts(&s, "b");
+        let (lo_c, _) = bbox_pts(&s, "c");
+        assert!(approx(lo_b.0, 0.0) && approx(hi_b.0, 1.0), "b untouched");
+        assert!(approx(lo_c.0, 5.0), "c moved");
+    }
+
+    #[test]
+    fn rotate_shape_90() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 1 1 1").expect("box");
+        execute_line(&mut s, "rotate b 0 0 1 90").expect("rotate 90");
+        let pts = vertex_pts(&s, "b");
+        let has_corner = pts
+            .iter()
+            .any(|&(x, y, z)| approx(x, 0.0) && approx(y, 1.0) && approx(z, 0.0));
+        assert!(has_corner, "corner (1,0,0) rotated to (0,1,0), pts {pts:?}");
+    }
+
+    #[test]
+    fn scale_shape() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 2 2 2").expect("box");
+        execute_line(&mut s, "scale b 2").expect("scale");
+        let (lo, hi) = bbox_pts(&s, "b");
+        assert!(approx(lo.0, 0.0) && approx(hi.0, 4.0), "bbox doubled: {hi:?}");
+        assert!(approx(hi.1, 4.0) && approx(hi.2, 4.0));
+    }
+
+    #[test]
+    fn copy_shape_is_independent() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 1 1 1\ncopy b b2").expect("copy");
+        assert!(s.shapes.contains_key("b2"), "b2 registered");
+        execute_line(&mut s, "translate b2 3 0 0").expect("move b2");
+        let (lo_b, hi_b) = bbox_pts(&s, "b");
+        let (lo_b2, hi_b2) = bbox_pts(&s, "b2");
+        assert!(approx(lo_b.0, 0.0) && approx(hi_b.0, 1.0), "b unchanged");
+        assert!(approx(lo_b2.0, 3.0) && approx(hi_b2.0, 4.0), "b2 moved");
+    }
+
+    #[test]
+    fn transform_affine_identity_is_noop() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 1 2 3").expect("box");
+        execute_line(&mut s, "transform b 1 0 0 0 1 0 0 0 1 0 0 0").expect("identity transform");
+        let (lo, hi) = bbox_pts(&s, "b");
+        assert!(approx(lo.0, 0.0) && approx(lo.1, 0.0) && approx(lo.2, 0.0));
+        assert!(approx(hi.0, 1.0) && approx(hi.1, 2.0) && approx(hi.2, 3.0));
+    }
+
+    #[test]
+    fn mirror_across_z0_plane() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 1 1 1").expect("box");
+        execute_line(&mut s, "mirror b 0 0 1").expect("mirror z=0");
+        // Check the vertex geometry, which the mirror transform rewrites: the
+        // top corners (z = 1) must move to z = −1 and no corner may remain at
+        // z > 0. (shape_bbox is not used here because its face-surface UV
+        // sampling is unreliable on orientation-flipped mirrored planes.)
+        let pts = vertex_pts(&s, "b");
+        let has_neg_z = pts.iter().any(|&(_, _, z)| approx(z, -1.0));
+        let no_pos_z = pts.iter().all(|&(_, _, z)| z <= 1e-6);
+        assert!(has_neg_z, "a corner moved to z = -1, pts {pts:?}");
+        assert!(no_pos_z, "no corner remains at z > 0, pts {pts:?}");
+    }
+
+    // -- View commands ---------------------------------------------------------
+
+    #[test]
+    fn view_writes_ppm() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 2 2 2").expect("box");
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("draw_view_{}.ppm", std::process::id()));
+        let path_s = path.to_str().unwrap().to_string();
+        execute_line(&mut s, &format!("view b 64 48 {path_s}")).expect("view");
+        let data = std::fs::read(&path).expect("ppm exists");
+        assert!(data.starts_with(b"P6"), "ppm header, first bytes {:?}", &data[..3.min(data.len())]);
+        assert!(
+            data.len() >= 13 + 64 * 48 * 3,
+            "expected >= {} bytes, got {}",
+            13 + 64 * 48 * 3,
+            data.len()
+        );
+        assert!(s.log.iter().any(|l| l.contains("(64x48)")), "log: {:?}", s.log);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn view_camera_orbit() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 2 2 2").expect("box");
+        execute_line(&mut s, "view_camera 5 4 5 0 0 0").expect("view_camera");
+        let after_set = s.camera.eye;
+        execute_line(&mut s, "orbit 20 10").expect("orbit");
+        assert!(
+            s.camera.eye.distance(&after_set) > 1e-6,
+            "orbit moved the eye"
+        );
+        execute_line(&mut s, "zoom 1.5").expect("zoom");
+        execute_line(&mut s, "pan 5 -3").expect("pan");
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("draw_view_orbit_{}.ppm", std::process::id()));
+        let path_s = path.to_str().unwrap().to_string();
+        execute_line(&mut s, &format!("view b 32 24 {path_s}")).expect("view");
+        let data = std::fs::read(&path).expect("ppm exists");
+        assert!(data.starts_with(b"P6"), "view after camera moves still writes");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // -- Control flow ----------------------------------------------------------
+
+    #[test]
+    fn for_loop_boxes() {
+        let mut s = DrawSession::default();
+        execute_line(&mut s, "for i 1 3 { box b$i 1 1 1 }").expect("for loop");
+        assert!(s.shapes.contains_key("b1"), "b1 built");
+        assert!(s.shapes.contains_key("b2"), "b2 built");
+        assert!(s.shapes.contains_key("b3"), "b3 built");
+        assert!(!s.shapes.contains_key("b4"), "loop stopped at end");
+        // The loop variable is left bound.
+        assert_eq!(s.vars.get("i").map(String::as_str), Some("3"));
+    }
+
+    #[test]
+    fn if_comparison() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "set x 5").expect("set x");
+        execute_line(&mut s, "if $x 3 > { echo big }").expect("if true");
+        execute_line(&mut s, "if $x 3 < { echo small }").expect("if false");
+        let joined = s.log.join("\n");
+        assert!(joined.contains("big"), "log: {joined}");
+        assert!(!joined.contains("small"), "false branch skipped: {joined}");
+    }
+
+    #[test]
+    fn for_loop_uses_if_inside() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "for i 1 5 { if $i 3 > { echo hit$i } }").expect("for+if");
+        let joined = s.log.join("\n");
+        assert!(joined.contains("hit4"), "log: {joined}");
+        assert!(joined.contains("hit5"), "log: {joined}");
+        assert!(!joined.contains("hit3"), "3 is not > 3: {joined}");
+    }
+
+    #[test]
+    fn echo_expands() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "set name part1").expect("set name");
+        execute_line(&mut s, "echo building $name").expect("echo");
+        let joined = s.log.join("\n");
+        assert!(joined.contains("building part1"), "log: {joined}");
+    }
+
+    #[test]
+    fn incr_unset_vars() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "set i 0").expect("set i");
+        execute_line(&mut s, "incr i").expect("incr by 1");
+        assert_eq!(s.vars.get("i").map(String::as_str), Some("1"));
+        execute_line(&mut s, "incr i 4").expect("incr by 4");
+        assert_eq!(s.vars.get("i").map(String::as_str), Some("5"));
+        execute_line(&mut s, "vars").expect("vars");
+        let joined = s.log.join("\n");
+        assert!(joined.contains("i = 5"), "vars lists the counter: {joined}");
+        execute_line(&mut s, "unset i").expect("unset");
+        assert!(!s.vars.contains_key("i"), "i removed");
+        let err = execute_line(&mut s, "unset i").expect_err("double unset errors");
+        assert!(err.contains("not found"), "err {err}");
+    }
+
+    // -- Inspection commands added alongside the scripting layer ----------------
+
+    #[test]
+    fn bbox_and_verts_commands() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "box b 2 1 1").expect("box");
+        execute_line(&mut s, "bbox b").expect("bbox");
+        let joined = s.log.join("\n");
+        assert!(joined.contains("min (0, 0, 0)"), "bbox min: {joined}");
+        assert!(joined.contains("max (2, 1, 1)"), "bbox max: {joined}");
+        execute_line(&mut s, "verts b").expect("verts");
+        let joined = s.log.join("\n");
+        assert!(joined.contains("8 vertices"), "verts count: {joined}");
     }
 }

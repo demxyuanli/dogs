@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-07-31。
-> Rust：5 crate · 81,337 行 · 1,159 测试（core 239 / math 202 / geom 68 / geom2d 56 / topo 594）
+> Rust：5 crate · 89,209 行 · 1,259 测试（core 247 / math 202 / geom 68 / geom2d 56 / topo 686）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -81,22 +81,22 @@
 
 ### ⬜ 未移植（0%）
 
-- **完整拓扑布尔（自交/多实体/退化）**：BOPAlgo 全特征、TopOpeBRep 全拓扑（当前修剪面布尔已覆盖常见曲面）
-- **TKFillet 完整**（变半径链式共享顶点已支持；曲面面混合/多法向仍缺）
-- **TKOpenGl 硬件渲染 / TKService 字体纹理 / TKV3d 交互选择高亮 / TKIVtk**
-- **Draw 完整交互**（TCL 脚本、视图命令）
-- **BRepGProp 高阶**（惯性张量/曲线长度解析）
-- **XCAF 全 schema / STEP 读入**
+- **BOPAlgo 完整（自交修复/多结果拓扑）/ TopOpeBRep 全拓扑**
+- **TKFillet 全（曲面-曲面一般混合、多法向复杂角）**
+- **TKOpenGl 硬件渲染 / TKService 字体纹理全量 / TKV3d 交互选择高亮 / TKIVtk**
+- **Draw 完整 TCL（表达式解析/过程/命令表）**
+- **BRepGProp 更全（体积惯性、张量高级）**
+- **XCAF 完整 schema（视图/标注/实例树）/ STEP 全实体写**
 
 ## 总体结论
 
 | 指标 | 数值 |
 |---|---|
-| Rust 移植量 | 81,337 行（含测试） |
+| Rust 移植量 | 89,209 行（含测试） |
 | OCCT 已移植范围源码 | ~73 万行（20 toolkit） |
-| 行数比 | ~11.1% |
+| 行数比 | ~12.2% |
 | 核心几何主干覆盖 | ~85% |
-| 全量 OCCT 类覆盖（估算） | ~24–28% |
+| 全量 OCCT 类覆盖（估算） | ~26–30% |
 
 ### 覆盖矩阵行更新（2026-08-01，Phase 6）
 | OCCT 包 | Rust | 覆盖 | 说明 |
@@ -142,6 +142,17 @@
 | Draw/TEST | draw | 0%→40% | Draw_Interpretor-lite REPL + 脚本 + 批量测试驱动 |
 | BRepGProp/Extrema 解析深度 | gprop_analytic | 23%→45% | 解析面积/体积/质心（盒精确 24）+ 解析最近点 |
 | 曲线微分几何 | core curve_frenet | — | Frenet 帧/曲率/挠率/弧长参数化 |
+
+### 覆盖矩阵行更新（2026-08-01，Phase 10）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| 拓扑布尔完整（多实体/自交/退化） | bop_builder 扩展 | 45%→65% | boolean_multi/compound、自交检测、退化、结果分解 |
+| TKFillet 曲面面混合 | fillet_curved | 55%→70% | 平面-球/柱/球-球滚动球混合（torus 混合面） |
+| TKService 纹理/字体/多视图 | viz_scene 扩展 | 45%→60% | UV 纹理映射、5×7 位图字体标签、多视图网格渲染 |
+| Draw 完整交互 | draw 扩展 | 40%→65% | TCL 变量/表达式、for/if、视图命令、形状变换 |
+| BRepGProp 高阶 | gprop_analytic 扩展 | 45%→60% | 惯性张量、主惯量/主轴、解析曲线长 |
+| XCAF 全 schema + STEP 读 | xcaf 扩展 | 35%→55% | 名称/颜色/图层/材质全属性 + STEP 实体解析 |
+| 3D 曲线插值 | core curve_interp3d | — | Catmull-Rom/三次样条/折线 + 弧长重参数化 |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。

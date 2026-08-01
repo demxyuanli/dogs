@@ -85,6 +85,7 @@ pub mod bincaf;
 pub mod gltf;
 pub mod brepfeat;
 pub mod fillet_var;
+pub mod fillet_curved;
 pub mod shhealing;
 pub mod xmlcaf;
 pub mod rwmesh;

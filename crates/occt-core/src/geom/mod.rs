@@ -12,3 +12,4 @@ pub mod mesh_analysis;
 pub mod polygon_boolean;
 pub mod mesh_ops;
 pub mod curve_frenet;
+pub mod curve_interp3d;

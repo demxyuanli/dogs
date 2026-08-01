@@ -30,7 +30,7 @@ use std::cmp::Ordering;
 use occt_core::bnd::BndBox;
 use occt_core::bvh::bvh_ops::bvh_ray_cast;
 use occt_core::bvh::builder_tri::build_tri_bvh;
-use occt_core::gp::{GpMat, GpPnt, GpTrsf, GpVec, GpXyz};
+use occt_core::gp::{GpMat, GpPnt, GpPnt2d, GpTrsf, GpVec, GpXyz};
 use occt_core::poly::triangulation::Triangle;
 
 use crate::mesh::ShapeMesh;
@@ -165,7 +165,12 @@ impl Default for RenderSettings {
 /// Mirrors OCCT's `AIS_Shape` which attaches a `TopoDS_Shape` and a display
 /// transform to the interactive context. The legacy [`SceneShape::color`]
 /// field remains a shorthand for the diffuse channel: when set, it overrides
-/// `material.diffuse` (see [`SceneShape::material`]).
+/// `material.diffuse` (see [`SceneShape::material`]). The optional `uv` field
+/// carries per-vertex texture coordinates (in the mesh's local parameter
+/// space) so a shape imported from an OBJ/glTF/VRML node — whose [`MeshNode`]
+/// stores `uv` — can be rendered with a texture; when `None`, the textured
+/// renderer synthesizes a planar projection (see
+/// [`textured_mesh_from_scene_shape`]).
 #[derive(Debug, Clone)]
 pub struct SceneShape {
     pub shape: TopoShape,
@@ -173,13 +178,23 @@ pub struct SceneShape {
     pub color: Option<(f64, f64, f64)>,
     /// Surface material used by the shaded renderers.
     pub material: Material,
+    /// Optional per-vertex texture coordinates, one [`GpPnt2d`] per mesh
+    /// vertex (same length as the shape's tessellation). `None` (the default)
+    /// means "no UV — synthesize a planar projection".
+    pub uv: Option<Vec<GpPnt2d>>,
 }
 
 impl SceneShape {
     /// A shape at the identity transform with the default material and no
     /// explicit color.
     pub fn new(shape: TopoShape) -> Self {
-        Self { shape, transform: GpTrsf::identity(), color: None, material: Material::default() }
+        Self {
+            shape,
+            transform: GpTrsf::identity(),
+            color: None,
+            material: Material::default(),
+            uv: None,
+        }
     }
 
     /// Copy with an explicit color. The color also becomes the material's
@@ -203,6 +218,13 @@ impl SceneShape {
     /// Copy with a world transform.
     pub fn with_transform(mut self, transform: GpTrsf) -> Self {
         self.transform = transform;
+        self
+    }
+
+    /// Copy with per-vertex texture coordinates (one [`GpPnt2d`] per mesh
+    /// vertex). Pass `None` to fall back to synthesized planar projection UVs.
+    pub fn with_uv(mut self, uv: Option<Vec<GpPnt2d>>) -> Self {
+        self.uv = uv;
         self
     }
 
@@ -1614,6 +1636,951 @@ pub fn render_scene_ppm_depth(
 }
 
 // ---------------------------------------------------------------------------
+// Texture mapping
+// ---------------------------------------------------------------------------
+
+/// A width×height RGB texture image.
+///
+/// `pixels` holds one `[r, g, b]` byte triple per texel in row-major order, so
+/// `pixels.len() == width * height`. This is the minimal surface image needed
+/// by [`render_textured_ppm`]; it is the analogue of the pixel array behind an
+/// OCCT `Image_PixMap` / `Graphic3d_Texture2D`.
+#[derive(Debug, Clone)]
+pub struct Texture {
+    /// Texture width in texels.
+    pub width: usize,
+    /// Texture height in texels.
+    pub height: usize,
+    /// Row-major RGB texels, one `[r, g, b]` byte triple per texel.
+    pub pixels: Vec<[u8; 3]>,
+}
+
+/// Build a procedural checkerboard texture.
+///
+/// The `width`×`height` image is divided into a `cells`×`cells` grid (each
+/// cell is a square block of texels); adjacent cells alternate between `c1`
+/// and `c2`. A cell `(cx, cy)` is `c1` when `(cx + cy)` is even and `c2`
+/// otherwise. No file I/O is involved — the image is generated in memory.
+pub fn checkerboard_texture(
+    width: usize,
+    height: usize,
+    cells: usize,
+    c1: (u8, u8, u8),
+    c2: (u8, u8, u8),
+) -> Texture {
+    let cells = cells.max(1);
+    let w = width.max(1);
+    let h = height.max(1);
+    let mut pixels = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            let cx = x * cells / w;
+            let cy = y * cells / h;
+            let p = if (cx + cy) % 2 == 0 { c1 } else { c2 };
+            pixels.push([p.0, p.1, p.2]);
+        }
+    }
+    Texture { width: w, height: h, pixels }
+}
+
+/// Build a solid-color texture: every texel is `c`.
+pub fn solid_texture(width: usize, height: usize, c: (u8, u8, u8)) -> Texture {
+    let pixels = vec![[c.0, c.1, c.2]; width * height];
+    Texture { width, height, pixels }
+}
+
+/// A world-space textured triangle mesh, the geometry a textured renderer
+/// consumes.
+///
+/// `uv` holds one texture coordinate per vertex (parallel to `vertices`); a
+/// triangle's texture coordinate at any interior point is the barycentric
+/// interpolation of its three vertex UVs. `texture` is the per-mesh surface
+/// image (kept optional so a shape can fall back to its plain `color`), and
+/// `color` is the normalized RGB used when no texture is available.
+#[derive(Debug, Clone)]
+pub struct TexturedMesh {
+    /// World-space vertices.
+    pub vertices: Vec<GpPnt>,
+    /// Triangle indices into `vertices`.
+    pub triangles: Vec<(usize, usize, usize)>,
+    /// One texture coordinate per vertex (parallel to `vertices`).
+    pub uv: Vec<GpPnt2d>,
+    /// Optional surface image; `None` means "use `color`".
+    pub texture: Option<Texture>,
+    /// Normalized RGB base color used when `texture` is `None`.
+    pub color: (f64, f64, f64),
+}
+
+/// Mesh a [`SceneShape`] into a [`TexturedMesh`] in world space.
+///
+/// The shape is tessellated at `deflection` and its vertices are pushed
+/// through the shape's world transform. Texture coordinates come from
+/// `shape.uv` when it is present and matches the vertex count (this is how a
+/// node imported by [`crate::rwmesh`] — whose [`crate::rwmesh::MeshNode`]
+/// stores `uv` — keeps its authored UVs); otherwise a planar projection is
+/// synthesized onto the dominant axis plane so every vertex lands in
+/// `[0, 1]²` (see [`synthesize_planar_uv`]).
+pub fn textured_mesh_from_scene_shape(shape: &SceneShape, deflection: f64) -> TexturedMesh {
+    let mesh = crate::shape_mesh::mesh_shape(&shape.shape, deflection);
+    let vertices: Vec<GpPnt> = mesh
+        .vertices
+        .iter()
+        .map(|v| v.transformed(&shape.transform))
+        .collect();
+    let triangles: Vec<(usize, usize, usize)> = mesh
+        .triangles
+        .iter()
+        .map(|t| (t.n0, t.n1, t.n2))
+        .collect();
+    let uv = match &shape.uv {
+        Some(u) if u.len() == vertices.len() && !u.is_empty() => u.clone(),
+        _ => synthesize_planar_uv(&vertices),
+    };
+    let color = shape.color.unwrap_or_else(default_color);
+    TexturedMesh { vertices, triangles, uv, texture: None, color }
+}
+
+/// Synthesize planar-projection texture coordinates for `verts`.
+///
+/// The dominant axis (the world axis with the largest bounding-box extent;
+/// ties resolve in favour of `Z`, then `Y`, then `X`) is dropped and the other
+/// two coordinates are normalized into `[0, 1]²` against the mesh's bounding
+/// box. This is the classic "project onto the largest face" UV mapping used
+/// when a mesh carries no authored texture coordinates.
+fn synthesize_planar_uv(verts: &[GpPnt]) -> Vec<GpPnt2d> {
+    if verts.is_empty() {
+        return Vec::new();
+    }
+    let (mut xmin, mut xmax) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut ymin, mut ymax) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut zmin, mut zmax) = (f64::INFINITY, f64::NEG_INFINITY);
+    for v in verts {
+        xmin = xmin.min(v.x());
+        xmax = xmax.max(v.x());
+        ymin = ymin.min(v.y());
+        ymax = ymax.max(v.y());
+        zmin = zmin.min(v.z());
+        zmax = zmax.max(v.z());
+    }
+    let ex = xmax - xmin;
+    let ey = ymax - ymin;
+    let ez = zmax - zmin;
+    // Dominant axis = the largest extent; tie-break Z, then Y, then X.
+    // (u_axis, v_axis) are the world coordinate indices kept as u and v.
+    let (u_axis, v_axis) = if ez >= ey && ez >= ex {
+        (0, 1) // project onto the XY plane
+    } else if ey >= ex {
+        (0, 2) // project onto the XZ plane
+    } else {
+        (1, 2) // project onto the YZ plane
+    };
+    let coord = |p: &GpPnt, axis: usize| -> f64 {
+        match axis {
+            0 => p.x(),
+            1 => p.y(),
+            _ => p.z(),
+        }
+    };
+    let (umin, umax) = (coord(&GpPnt::new(xmin, ymin, zmin), u_axis), coord(&GpPnt::new(xmax, ymax, zmax), u_axis));
+    let (vmin, vmax) = (coord(&GpPnt::new(xmin, ymin, zmin), v_axis), coord(&GpPnt::new(xmax, ymax, zmax), v_axis));
+    let ur = (umax - umin).max(1e-12);
+    let vr = (vmax - vmin).max(1e-12);
+    verts
+        .iter()
+        .map(|p| {
+            let u = coord(p, u_axis);
+            let v = coord(p, v_axis);
+            GpPnt2d::new(((u - umin) / ur).clamp(0.0, 1.0), ((v - vmin) / vr).clamp(0.0, 1.0))
+        })
+        .collect()
+}
+
+/// Sample a texture at a normalized `(u, v)` coordinate in `[0, 1]²`.
+///
+/// The coordinate is clamped to the unit square and the texel at
+/// `floor(u·width) × floor(v·height)` is returned (edge-clamped so the last
+/// texel covers `u = 1`). A degenerate texture (zero area or empty pixels)
+/// yields white.
+fn sample_texture(tex: &Texture, u: f64, v: f64) -> [u8; 3] {
+    if tex.width == 0 || tex.height == 0 || tex.pixels.is_empty() {
+        return [255, 255, 255];
+    }
+    let tx = ((u.clamp(0.0, 1.0) * tex.width as f64).floor() as usize).min(tex.width - 1);
+    let ty = ((v.clamp(0.0, 1.0) * tex.height as f64).floor() as usize).min(tex.height - 1);
+    tex.pixels[ty * tex.width + tx]
+}
+
+/// Flatten every [`TexturedMesh`] into one triangle buffer with `(shape,
+/// triangle)` tags, ready for [`build_tri_bvh`] + [`bvh_ray_cast`].
+fn flatten_textured_meshes(meshes: &[TexturedMesh]) -> (Vec<(GpPnt, GpPnt, GpPnt)>, Vec<(usize, usize)>) {
+    let mut tri_pts = Vec::new();
+    let mut tags = Vec::new();
+    for (si, m) in meshes.iter().enumerate() {
+        for (ti, &(n0, n1, n2)) in m.triangles.iter().enumerate() {
+            tri_pts.push((m.vertices[n0], m.vertices[n1], m.vertices[n2]));
+            tags.push((si, ti));
+        }
+    }
+    (tri_pts, tags)
+}
+
+/// Ray-cast the scene into a [`Raster`] with UV texture mapping.
+///
+/// A single [`occt_core::bvh::builder_tri::TriBvh`] is built over every
+/// shape's world triangles; each triangle keeps its owning shape and triangle
+/// index so the correct per-vertex UVs are used. One ray is cast per pixel;
+/// the nearest BVH hit acts as the depth buffer. At a hit the per-vertex UVs
+/// are barycentrically interpolated, the texture is sampled at the resulting
+/// `(u, v)`, and the texel color is scaled by a simple Lambert term
+/// (`0.35 + 0.65·max(0, n·l)`) with the light pointing from the hit toward the
+/// camera — front-facing surfaces appear fully lit. Shapes whose mesh has no
+/// UV (or that have no geometry) fall back to the mesh's base `color` under
+/// the same Lambert term. Missed pixels get a dark background.
+pub fn render_textured_raster(
+    scene: &VizScene,
+    cam: &Camera,
+    width: usize,
+    height: usize,
+    deflection: f64,
+    texture: &Texture,
+) -> Raster {
+    let meshes: Vec<TexturedMesh> = scene
+        .shapes
+        .iter()
+        .map(|ss| textured_mesh_from_scene_shape(ss, deflection))
+        .collect();
+    let (tri_pts, tags) = flatten_textured_meshes(&meshes);
+    let bvh = build_tri_bvh(&tri_pts, 8);
+    let mut raster = Raster::new(width, height);
+    raster.fill(|x, y| {
+        let (nx, ny) = screen_to_ndc(width, height, x as f64 + 0.5, y as f64 + 0.5);
+        let (origin, dir) = cam.ray_through_ndc(nx, ny);
+        match bvh_ray_cast(&bvh, &tri_pts, &origin, &dir) {
+            Some((idx, t)) => {
+                let (si, ti) = tags[idx];
+                let m = &meshes[si];
+                let (n0, n1, n2) = m.triangles[ti];
+                let (a, b, c) = (m.vertices[n0], m.vertices[n1], m.vertices[n2]);
+                let hit = GpPnt::new(
+                    origin.x() + dir.x() * t,
+                    origin.y() + dir.y() * t,
+                    origin.z() + dir.z() * t,
+                );
+                let normal = GpVec::from_pnts(&a, &b).crossed(&GpVec::from_pnts(&a, &c)).normalized();
+                let light = GpVec::from_pnts(&hit, &cam.eye).normalized();
+                let shade = 0.35 + 0.65 * normal.dot(&light).max(0.0);
+                if m.uv.len() == m.vertices.len() && !m.uv.is_empty() {
+                    let (la, lb, lc) = triangle_barycentric(&a, &b, &c, &hit);
+                    let u = la * m.uv[n0].x() + lb * m.uv[n1].x() + lc * m.uv[n2].x();
+                    let v = la * m.uv[n0].y() + lb * m.uv[n1].y() + lc * m.uv[n2].y();
+                    let t = sample_texture(texture, u, v);
+                    (
+                        t[0] as f64 / 255.0 * shade,
+                        t[1] as f64 / 255.0 * shade,
+                        t[2] as f64 / 255.0 * shade,
+                    )
+                } else {
+                    (m.color.0 * shade, m.color.1 * shade, m.color.2 * shade)
+                }
+            }
+            None => (0.03, 0.03, 0.05),
+        }
+    });
+    raster
+}
+
+/// Render the scene with UV texture mapping to binary PPM bytes.
+///
+/// Equivalent to [`render_textured_raster`] followed by
+/// [`Raster::to_ppm_bytes`]. Shapes with per-vertex UV (kept from a
+/// [`crate::rwmesh`] import or synthesized as a planar projection) sample
+/// `texture`; shapes without UV fall back to their material color. This is
+/// the analogue of an `V3d_View::Dump` with a texture-mapped display.
+pub fn render_textured_ppm(
+    scene: &VizScene,
+    cam: &Camera,
+    width: usize,
+    height: usize,
+    deflection: f64,
+    texture: &Texture,
+) -> Vec<u8> {
+    render_textured_raster(scene, cam, width, height, deflection, texture).to_ppm_bytes()
+}
+
+// ---------------------------------------------------------------------------
+// Bitmap font labels
+// ---------------------------------------------------------------------------
+
+/// A tiny 5×7 bitmap font.
+///
+/// Each glyph is a 7-row × 5-column pixel pattern: `[[u8; 5]; 7]` with
+/// `1` for a foreground pixel and `0` for a transparent pixel. The built-in
+/// [`BitmapFont::new`] font covers `A–Z`, `0–9`, space and `':'` — enough for
+/// short scene labels and viewport captions. This is the analogue of the
+/// 5×7 glyph tables OCCT bundles for its `V3d_Viewer` / `AIS` trihedron text.
+#[derive(Debug, Clone)]
+pub struct BitmapFont {
+    /// Glyph patterns, keyed by character.
+    pub glyphs: std::collections::HashMap<char, [[u8; 5]; 7]>,
+}
+
+/// The built-in 5×7 glyph set: `A–Z`, `0–9`, space and `':'`.
+const BITMAP_GLYPHS: &[(char, [[u8; 5]; 7])] = &[
+    (
+        'A',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'B',
+        [
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        'C',
+        [
+            [0, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [0, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        'D',
+        [
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        'E',
+        [
+            [1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        'F',
+        [
+            [1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        'G',
+        [
+            [0, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 1, 1, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        'H',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'I',
+        [
+            [1, 1, 1, 1, 1],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [1, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        'J',
+        [
+            [0, 0, 0, 1, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        'K',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 1, 0],
+            [1, 0, 1, 0, 0],
+            [1, 1, 0, 0, 0],
+            [1, 0, 1, 0, 0],
+            [1, 0, 0, 1, 0],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'L',
+        [
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        'M',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 1, 0, 1, 1],
+            [1, 0, 1, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'N',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 1, 0, 0, 1],
+            [1, 0, 1, 0, 1],
+            [1, 0, 0, 1, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'O',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        'P',
+        [
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        'Q',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 1, 0, 1],
+            [1, 0, 0, 1, 0],
+            [0, 1, 1, 0, 1],
+        ],
+    ),
+    (
+        'R',
+        [
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0],
+            [1, 0, 1, 0, 0],
+            [1, 0, 0, 1, 0],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'S',
+        [
+            [0, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [0, 1, 1, 1, 0],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        'T',
+        [
+            [1, 1, 1, 1, 1],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+        ],
+    ),
+    (
+        'U',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        'V',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+        ],
+    ),
+    (
+        'W',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [1, 0, 1, 0, 1],
+            [1, 0, 1, 0, 1],
+            [1, 1, 0, 1, 1],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'X',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+        ],
+    ),
+    (
+        'Y',
+        [
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+        ],
+    ),
+    (
+        'Z',
+        [
+            [1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        '0',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 1, 1],
+            [1, 0, 1, 0, 1],
+            [1, 1, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        '1',
+        [
+            [0, 0, 1, 0, 0],
+            [0, 1, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [1, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        '2',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        '3',
+        [
+            [1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 1, 0],
+            [0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        '4',
+        [
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 1, 0],
+            [0, 1, 0, 1, 0],
+            [1, 0, 0, 1, 0],
+            [1, 1, 1, 1, 1],
+            [0, 0, 0, 1, 0],
+            [0, 0, 0, 1, 0],
+        ],
+    ),
+    (
+        '5',
+        [
+            [1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 0],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        '6',
+        [
+            [0, 0, 1, 1, 0],
+            [0, 1, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        '7',
+        [
+            [1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+            [0, 1, 0, 0, 0],
+            [0, 1, 0, 0, 0],
+        ],
+    ),
+    (
+        '8',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 0],
+        ],
+    ),
+    (
+        '9',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [1, 0, 0, 0, 1],
+            [0, 1, 1, 1, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 0],
+            [0, 1, 1, 0, 0],
+        ],
+    ),
+    (
+        ' ',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        ':',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+];
+
+impl Default for BitmapFont {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BitmapFont {
+    /// The built-in font: `A–Z`, `0–9`, space and `':'` at 5×7.
+    pub fn new() -> Self {
+        let mut glyphs = std::collections::HashMap::new();
+        for &(c, g) in BITMAP_GLYPHS {
+            glyphs.insert(c, g);
+        }
+        Self { glyphs }
+    }
+
+    /// The 5×7 pattern for `c`, or `None` when the font has no glyph for it.
+    pub fn glyph(&self, c: char) -> Option<&[[u8; 5]; 7]> {
+        self.glyphs.get(&c)
+    }
+
+    /// `true` when the font has a glyph for `c`.
+    pub fn has_glyph(&self, c: char) -> bool {
+        self.glyphs.contains_key(&c)
+    }
+}
+
+/// The raster size of `text` in pixels.
+///
+/// Each glyph is 5 wide and 7 tall, scaled by `scale`; the width is
+/// `chars × 5 × scale` (no inter-glyph padding) and the height `7 × scale`.
+pub fn text_raster_size(text: &str, _font: &BitmapFont, scale: usize) -> (usize, usize) {
+    let scale = scale.max(1);
+    let n = text.chars().count();
+    (n * 5 * scale, 7 * scale)
+}
+
+/// Rasterize `text` into an RGB pixel array.
+///
+/// The returned buffer is `width × height × 3` bytes (row-major) where
+/// `(width, height) = text_raster_size(text, font, scale)`. Foreground pixels
+/// are white `[255, 255, 255]`; background pixels are black `[0, 0, 0]` and
+/// count as transparent for [`overlay_text`]. Characters without a glyph in
+/// `font` are skipped.
+pub fn text_to_pixels(text: &str, font: &BitmapFont, scale: usize) -> Vec<[u8; 3]> {
+    let scale = scale.max(1);
+    let (w, h) = text_raster_size(text, font, scale);
+    let mut pixels = vec![[0u8, 0, 0]; w * h];
+    for (ci, ch) in text.chars().enumerate() {
+        let Some(glyph) = font.glyph(ch) else { continue };
+        for (ry, row) in glyph.iter().enumerate() {
+            for (rx, &on) in row.iter().enumerate() {
+                if on == 0 {
+                    continue;
+                }
+                for sy in 0..scale {
+                    for sx in 0..scale {
+                        let px = ci * 5 * scale + rx * scale + sx;
+                        let py = ry * scale + sy;
+                        if px < w && py < h {
+                            pixels[py * w + px] = [255, 255, 255];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pixels
+}
+
+/// Draw `text` at pixel position `(x, y)` onto a `width`×`height` RGB byte
+/// buffer, tinted `color`.
+///
+/// The buffer holds `width * height * 3` raw RGB bytes (the PPM pixel body
+/// without the header). If `ppm` is a complete P6 PPM image — `len ==
+/// width * height * 3 + 13` and it starts with `P6\n` — the 13-byte header is
+/// skipped automatically, so both raw bodies and full PPM buffers work.
+/// Transparent (black) raster pixels are skipped, leaving the underlying image
+/// untouched; glyph pixels are written as `color` at the scaled 5×7 positions.
+pub fn overlay_text(
+    ppm: &mut Vec<u8>,
+    width: usize,
+    height: usize,
+    text: &str,
+    font: &BitmapFont,
+    scale: usize,
+    x: usize,
+    y: usize,
+    color: (u8, u8, u8),
+) {
+    let pixels = text_to_pixels(text, font, scale);
+    let (tw, th) = text_raster_size(text, font, scale);
+    let header_len = if ppm.len() == width * height * 3 + 13 && ppm.starts_with(b"P6\n") {
+        13
+    } else {
+        0
+    };
+    let body = &mut ppm[header_len..];
+    for py in 0..th {
+        for px in 0..tw {
+            if pixels[py * tw + px] == [0, 0, 0] {
+                continue;
+            }
+            let dx = x + px;
+            let dy = y + py;
+            if dx < width && dy < height {
+                let i = (dy * width + dx) * 3;
+                body[i] = color.0;
+                body[i + 1] = color.1;
+                body[i + 2] = color.2;
+            }
+        }
+    }
+}
+
+/// Render the scene with a text label overlaid at the top-left corner.
+///
+/// The scene is shaded with [`render_scene_ppm_shaded`] using default
+/// [`RenderSettings`], then `label` is drawn in white at `(4, 4)` with the
+/// given `font` and `scale`. The result is a complete P6 PPM image — the
+/// analogue of a `V3d_View::Dump` with the viewer's text caption enabled.
+pub fn render_scene_with_label(
+    scene: &VizScene,
+    cam: &Camera,
+    width: usize,
+    height: usize,
+    deflection: f64,
+    label: &str,
+    font: &BitmapFont,
+    scale: usize,
+) -> Vec<u8> {
+    let settings = RenderSettings::default();
+    let ppm = render_scene_ppm_shaded(scene, cam, width, height, deflection, &settings);
+    let mut body = ppm[13..].to_vec();
+    overlay_text(&mut body, width, height, label, font, scale, 4, 4, (255, 255, 255));
+    let mut out = Vec::with_capacity(body.len() + 13);
+    out.extend_from_slice(format!("P6\n{width} {height}\n255\n").as_bytes());
+    out.extend_from_slice(&body);
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Multi-view layout
+// ---------------------------------------------------------------------------
+
+/// A viewport grid for [`render_view_grid`].
+///
+/// `cols` × `rows` cells, each cell rendering one scene into a
+/// `width` × `height` tile; the full output is `width*cols` × `height*rows`.
+/// Mirrors the `V3d_Viewer` multi-view window layout where several `V3d_View`s
+/// (front, top, side, isometric, …) share one screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewLayout {
+    /// Number of viewport columns.
+    pub cols: usize,
+    /// Number of viewport rows.
+    pub rows: usize,
+}
+
+/// Render several scenes into a tiled multi-view grid as PPM bytes.
+///
+/// Every scene is rendered with the *same* [`Camera`] into a
+/// `width` × `height` tile (the classic four-view viewer renders each viewport
+/// with a different camera, but a shared camera keeps the grid useful for
+/// comparing scenes side by side); the tiles are laid out row-major per
+/// [`ViewLayout`] and the full image is returned as a P6 PPM buffer of size
+/// `width*cols` × `height*rows`. Cells with no scene (when `scenes` is shorter
+/// than the grid) stay at the background color.
+pub fn render_view_grid(
+    scenes: &[&VizScene],
+    cam: &Camera,
+    width: usize,
+    height: usize,
+    layout: ViewLayout,
+    deflection: f64,
+) -> Vec<u8> {
+    let cols = layout.cols.max(1);
+    let rows = layout.rows.max(1);
+    let settings = RenderSettings::default();
+    let mut out = Raster::new(width * cols, height * rows);
+    out.clear(settings.background);
+    for r in 0..rows {
+        for c in 0..cols {
+            let i = r * cols + c;
+            let Some(scene) = scenes.get(i) else { continue };
+            let tile = render_scene_raster_zbuffer(scene, cam, width, height, deflection, &settings);
+            for ty in 0..height {
+                for tx in 0..width {
+                    out.set_pixel(c * width + tx, r * height + ty, tile.get_pixel(tx, ty));
+                }
+            }
+        }
+    }
+    out.to_ppm_bytes()
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -2192,5 +3159,156 @@ mod tests {
         assert!(!scene.set_material(9, red));
         let m = scene.shape_material(0).unwrap();
         assert!((m.diffuse.0 - 0.9).abs() < 1e-9, "material updated, diffuse {}", m.diffuse.0);
+    }
+
+    // -- Texture / font / multi-view tests -----------------------------------
+
+    #[test]
+    fn checkerboard_pixels_distinct() {
+        let tex = checkerboard_texture(4, 4, 2, (255, 0, 0), (0, 0, 255));
+        assert_eq!(tex.width, 4);
+        assert_eq!(tex.height, 4);
+        let has_red = tex.pixels.contains(&[255, 0, 0]);
+        let has_blue = tex.pixels.contains(&[0, 0, 255]);
+        assert!(has_red, "expected red cells");
+        assert!(has_blue, "expected blue cells");
+        assert!(has_red && has_blue, "checkerboard should mix both colors");
+    }
+
+    #[test]
+    fn texture_dimensions() {
+        let tex = checkerboard_texture(8, 8, 4, (10, 20, 30), (40, 50, 60));
+        assert_eq!(tex.width, 8);
+        assert_eq!(tex.height, 8);
+        assert_eq!(tex.pixels.len(), 64);
+    }
+
+    #[test]
+    fn textured_render_not_blank() {
+        let scene = box_scene();
+        let cam = Camera::default();
+        let tex = checkerboard_texture(16, 16, 4, (220, 40, 40), (40, 40, 220));
+        let textured = render_textured_ppm(&scene, &cam, 96, 72, 0.25, &tex);
+        let solid = render_scene_ppm_shaded(&scene, &cam, 96, 72, 0.25, &RenderSettings::default());
+        assert_ne!(textured, solid, "textured output should differ from the solid-color render");
+        let body = &textured[13..];
+        let near = |p: &[u8], c: (u8, u8, u8)| {
+            (p[0] as i16 - c.0 as i16).abs() <= 6
+                && (p[1] as i16 - c.1 as i16).abs() <= 6
+                && (p[2] as i16 - c.2 as i16).abs() <= 6
+        };
+        let has_c1 = body.chunks_exact(3).any(|p| near(p, (220, 40, 40)));
+        let has_c2 = body.chunks_exact(3).any(|p| near(p, (40, 40, 220)));
+        assert!(has_c1, "expected checkerboard color 1 pixels");
+        assert!(has_c2, "expected checkerboard color 2 pixels");
+    }
+
+    #[test]
+    fn uv_synthesis_dominant_axis() {
+        let ss = SceneShape::new(unit_box()); // [0,1]^3 — equal extents, dominant Z
+        let tm = textured_mesh_from_scene_shape(&ss, 0.25);
+        assert_eq!(tm.uv.len(), tm.vertices.len());
+        assert!(!tm.uv.is_empty());
+        // Dominant axis is Z, so UV = (x, y) normalized to [0,1]².
+        for (p, uv) in tm.vertices.iter().zip(&tm.uv) {
+            assert!(uv.x() >= 0.0 && uv.x() <= 1.0 && uv.y() >= 0.0 && uv.y() <= 1.0, "uv {uv:?}");
+            assert!((uv.x() - p.x()).abs() < 1e-6, "u should be x: {} vs {}", uv.x(), p.x());
+            assert!((uv.y() - p.y()).abs() < 1e-6, "v should be y: {} vs {}", uv.y(), p.y());
+        }
+    }
+
+    #[test]
+    fn bitmap_font_has_glyphs() {
+        let font = BitmapFont::default();
+        for c in ['A', 'B', 'Z', '0', '9', ' '] {
+            assert!(font.has_glyph(c), "missing glyph {c:?}");
+        }
+        let a = font.glyph('A').expect("A glyph present");
+        assert_eq!(a.len(), 7);
+        assert!(a.iter().all(|row| row.len() == 5));
+        assert!(a[0].contains(&1), "top row of 'A' should have lit pixels");
+    }
+
+    #[test]
+    fn text_raster_size_scales() {
+        let font = BitmapFont::default();
+        assert_eq!(text_raster_size("A", &font, 1), (5, 7));
+        assert_eq!(text_raster_size("AB", &font, 1), (10, 7));
+        assert_eq!(text_raster_size("A", &font, 2), (10, 14));
+    }
+
+    #[test]
+    fn overlay_text_pixels() {
+        let font = BitmapFont::default();
+        let (tw, th) = text_raster_size("A", &font, 1);
+        assert_eq!((tw, th), (5, 7));
+        let mut body = vec![0u8; 40 * 30 * 3]; // raw RGB body, no header
+        overlay_text(&mut body, 40, 30, "A", &font, 1, 2, 2, (255, 255, 255));
+        let has_white = body.chunks_exact(3).enumerate().any(|(i, p)| {
+            let px = i % 40;
+            let py = i / 40;
+            p == [255, 255, 255] && px >= 2 && px < 2 + 5 && py >= 2 && py < 2 + 7
+        });
+        assert!(has_white, "expected white text pixels at the overlay position");
+    }
+
+    #[test]
+    fn render_view_grid_tiles() {
+        let mut scene_a = VizScene::new();
+        scene_a.add(SceneShape::new(unit_box()));
+        let mut scene_b = VizScene::new();
+        let mut box_b = SceneShape::new(unit_box());
+        box_b.transform = translate(1.5, 0.0, 0.0);
+        scene_b.add(box_b);
+        let cam = Camera::default();
+        let ppm = render_view_grid(&[&scene_a, &scene_b], &cam, 40, 30, ViewLayout { cols: 2, rows: 1 }, 0.25);
+        assert!(ppm.starts_with(b"P6\n80 30\n255\n"), "expected 2×1 grid of 40×30 tiles");
+        let body = &ppm[13..];
+        let bg = [
+            (0.03 * 255.0) as u8,
+            (0.03 * 255.0) as u8,
+            (0.05 * 255.0) as u8,
+        ];
+        // The full image is 80 wide (2×40 columns); the left tile occupies
+        // columns 0–39 and the right tile columns 40–79 of every row.
+        let grid_w = 80usize;
+        let left_has = body.chunks_exact(3).enumerate().any(|(i, p)| p != bg && (i % grid_w) < 40);
+        let right_has = body.chunks_exact(3).enumerate().any(|(i, p)| p != bg && (i % grid_w) >= 40);
+        assert!(left_has, "left tile should have content");
+        assert!(right_has, "right tile should have content");
+    }
+
+    #[test]
+    fn label_overlay() {
+        let scene = box_scene();
+        let font = BitmapFont::default();
+        // The default scene produces no exact-white pixels (background is dark
+        // blue-gray and the material's specular is faint), so white label text
+        // is unambiguous in the top rows.
+        let ppm = render_scene_with_label(&scene, &Camera::default(), 64, 48, 0.25, "HI", &font, 2);
+        let body = &ppm[13..];
+        let w = 64usize;
+        let has_label = body.chunks_exact(3).enumerate().any(|(i, p)| p == [255, 255, 255] && i / w < 12);
+        assert!(has_label, "expected white label pixels in the top rows");
+    }
+
+    #[test]
+    fn textured_sphere_looks_textured() {
+        let scene = sphere_scene();
+        let tex = checkerboard_texture(16, 16, 4, (240, 60, 60), (60, 60, 240));
+        let ppm = render_textured_ppm(&scene, &Camera::default(), 64, 48, 0.25, &tex);
+        let body = &ppm[13..];
+        let has_red = body.chunks_exact(3).any(|p| p[0] as u16 > p[2] as u16 + 40);
+        let has_blue = body.chunks_exact(3).any(|p| p[2] as u16 > p[0] as u16 + 40);
+        assert!(has_red && has_blue, "sphere should show both checkerboard colors (red {has_red}, blue {has_blue})");
+    }
+
+    #[test]
+    fn solid_texture_uniform() {
+        let tex = solid_texture(4, 5, (7, 8, 9));
+        assert_eq!(tex.width, 4);
+        assert_eq!(tex.height, 5);
+        assert_eq!(tex.pixels.len(), 20);
+        assert!(tex.pixels.iter().all(|p| p == &[7, 8, 9]));
     }
 }
