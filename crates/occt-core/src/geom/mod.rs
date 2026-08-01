@@ -11,3 +11,4 @@ pub mod polyline_simplify;
 pub mod mesh_analysis;
 pub mod polygon_boolean;
 pub mod mesh_ops;
+pub mod curve_frenet;

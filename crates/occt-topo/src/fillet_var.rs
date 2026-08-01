@@ -23,17 +23,18 @@
 //! rewrite a mismatch.
 
 use std::collections::HashMap;
+use std::f64::consts::SQRT_2;
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx2, GpDir, GpPnt, GpVec};
+use occt_core::gp::{GpAx2, GpAx3, GpDir, GpPnt, GpSphere, GpVec};
 use occt_geom::bspline_surface::fit_surface_grid;
-use occt_geom::Surface;
+use occt_geom::{GeomSphere, Surface};
 
 use crate::brep_surface::face_plane;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fillet_edge::faces_touching_edge;
-use crate::shape::{Edge, Face, TopoShape};
+use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::topo_tools_full::{
     edge_vertices, edges_of, edges_of_wire, faces_of, is_same, vertex_position, wires_of_face,
 };
@@ -853,6 +854,957 @@ fn find_edge_by_endpoints(shape: &TopoShape, p0: &GpPnt, p1: &GpPnt) -> Option<E
     })
 }
 
+// ===========================================================================
+// Rolling-ball corner patch (shared-vertex blend)
+//
+// Two consecutive edge fillets meeting at a box corner leave a gap between the
+// two blend surfaces and the three corner faces. The gap is closed by a
+// spherical patch centred at the rolling-ball corner centre
+// `C = v + R·(d0 + d1 + d2)` — the point at distance `R` from each of the
+// three faces. A sphere of radius `R·√2` centred at `C` passes through the
+// three fillet tangency points, and its boundary is five circular arcs:
+//
+//   · one arc in each of the three corner-face planes,
+//   · one arc shared with each of the two trimmed blend faces.
+//
+// Each edge fillet is trimmed to start at distance `2R` from the corner, where
+// its end arc coincides with the sphere-boundary arc. The result is a closed
+// shell with one added face per shared vertex. The blend faces of a corner
+// chain are built at the corner radius `R` (the maximum incident radius), so
+// the shared tangency geometry is exactly consistent.
+// ===========================================================================
+
+/// The three unit directions of the edges meeting at `vertex`, pointing away
+/// from the vertex (into the material for a convex corner).
+fn corner_in_dirs(solid: &TopoShape, vertex: &Vertex) -> Result<[GpVec; 3], String> {
+    let p = vertex_position(vertex);
+    let es = edges_of(solid);
+    let mut dirs: Vec<GpVec> = Vec::new();
+    for e in &es {
+        let (a, b) = edge_vertices(e);
+        if let (Some(va), Some(vb)) = (a, b) {
+            let pa = vertex_position(&va);
+            let pb = vertex_position(&vb);
+            if pa.distance(&p) < 1e-9 || pb.distance(&p) < 1e-9 {
+                let other = if pa.distance(&p) < 1e-9 { pb } else { pa };
+                let v = GpVec::from_pnts(&p, &other);
+                if v.magnitude() > 1e-12 {
+                    dirs.push(v.normalized());
+                }
+            }
+        }
+    }
+    if dirs.len() != 3 {
+        return Err(format!(
+            "fillet_corner: vertex has {} incident edges (expected 3)",
+            dirs.len()
+        ));
+    }
+    Ok([dirs[0], dirs[1], dirs[2]])
+}
+
+/// The rolling-ball corner centre: the point at distance `radius` from each of
+/// the three faces meeting at `vertex` (for a box corner, `v + R·Σdirᵢ`).
+pub fn corner_center(solid: &TopoShape, vertex: &Vertex, radius: f64, _tol: f64) -> Option<GpPnt> {
+    if radius <= 0.0 {
+        return None;
+    }
+    let dirs = corner_in_dirs(solid, vertex).ok()?;
+    let p = vertex_position(vertex);
+    let s = dirs[0].added(&dirs[1]).added(&dirs[2]);
+    Some(p.translated_vec(&s.multiplied_scalar(radius)))
+}
+
+/// The effective corner radius at `vertex`: the maximum of the incident-edge
+/// fillet radii at that vertex (`r_start` when the vertex is the edge's start,
+/// `r_end` otherwise). `specs` is aligned with `edges_of(solid)`; edges without
+/// a matching spec are ignored.
+pub fn corner_patch_radius_at_vertex(
+    solid: &TopoShape,
+    vertex: &Vertex,
+    specs: &[VarFilletSpec],
+    tol: f64,
+) -> f64 {
+    let p = vertex_position(vertex);
+    let es = edges_of(solid);
+    let mut rmax = 0.0f64;
+    for (i, e) in es.iter().enumerate() {
+        let spec = match specs.get(i) {
+            Some(s) => s,
+            None => continue,
+        };
+        let (a, b) = edge_vertices(e);
+        let (Some(va), Some(vb)) = (a, b) else { continue };
+        let pa = vertex_position(&va);
+        let pb = vertex_position(&vb);
+        let r = if pa.distance(&p) < tol {
+            spec.r_start
+        } else if pb.distance(&p) < tol {
+            spec.r_end
+        } else {
+            continue;
+        };
+        rmax = rmax.max(r);
+    }
+    rmax
+}
+
+/// The unit direction of `edge` away from point `p` (one of its endpoints).
+fn in_edge_dir(edge: &Edge, p: &GpPnt) -> Result<GpVec, String> {
+    let (a, b) = edge_vertices(edge);
+    let pa = vertex_position(&a.ok_or("fillet_corner: edge has no start vertex")?);
+    let pb = vertex_position(&b.ok_or("fillet_corner: edge has no end vertex")?);
+    let other = if pa.distance(p) < 1e-9 { pb } else { pa };
+    let v = GpVec::from_pnts(p, &other);
+    if v.magnitude() < 1e-12 {
+        return Err("fillet_corner: degenerate incident edge".to_string());
+    }
+    Ok(v.normalized())
+}
+
+/// Geometry of a shared-vertex corner where two consecutive filleted edges meet.
+struct CornerGeom {
+    vertex: GpPnt,
+    radius: f64,
+    /// Rolling-ball corner centre (the corner-patch sphere centre).
+    center: GpPnt,
+    /// Direction of the first filleted edge (e_a), from the corner into material.
+    d0: GpVec,
+    /// Direction of the second filleted edge (e_b).
+    d1: GpVec,
+    /// Direction of the third (unfilleted) edge.
+    d2: GpVec,
+}
+
+impl CornerGeom {
+    fn from_edges(
+        solid: &TopoShape,
+        vertex: &Vertex,
+        edge_a: &Edge,
+        edge_b: &Edge,
+        radius: f64,
+    ) -> Result<Self, String> {
+        let dirs = corner_in_dirs(solid, vertex)?;
+        let p = vertex_position(vertex);
+        let da = in_edge_dir(edge_a, &p)?;
+        let db = in_edge_dir(edge_b, &p)?;
+        let mut d0 = GpVec::zero();
+        let mut d1 = GpVec::zero();
+        let mut d2 = GpVec::zero();
+        let mut found = [false; 3];
+        for d in &dirs {
+            if d.xyz().crossed(&da.xyz()).modulus() < 1e-6 {
+                d0 = *d;
+                found[0] = true;
+            } else if d.xyz().crossed(&db.xyz()).modulus() < 1e-6 {
+                d1 = *d;
+                found[1] = true;
+            } else {
+                d2 = *d;
+                found[2] = true;
+            }
+        }
+        if !found.iter().all(|f| *f) {
+            return Err("fillet_corner: cannot classify the corner edges".to_string());
+        }
+        let center = p.translated_vec(&d0.added(&d1).added(&d2).multiplied_scalar(radius));
+        Ok(CornerGeom { vertex: p, radius, center, d0, d1, d2 })
+    }
+
+    fn sphere_radius(&self) -> f64 {
+        SQRT_2 * self.radius
+    }
+
+    /// A point of the corner: `v + R·(a·d0 + b·d1 + c·d2)`.
+    fn pt(&self, a: f64, b: f64, c: f64) -> GpPnt {
+        let v0 = self.d0.multiplied_scalar(a * self.radius);
+        let v1 = self.d1.multiplied_scalar(b * self.radius);
+        let v2 = self.d2.multiplied_scalar(c * self.radius);
+        self.vertex.translated_vec(&v0.added(&v1).added(&v2))
+    }
+
+    /// The five boundary arcs of the corner patch, each `(center, normal,
+    /// radius, a, b)`. In order they form a closed loop: face ⊥d2, edge b,
+    /// face ⊥d0, face ⊥d1, edge a.
+    fn arcs(&self) -> Vec<(GpPnt, GpVec, f64, GpPnt, GpPnt)> {
+        let r = self.radius;
+        vec![
+            // Arc in the face perpendicular to d2 (the face shared by both edges).
+            (self.pt(1.0, 1.0, 0.0), self.d2, r, self.pt(2.0, 1.0, 0.0), self.pt(1.0, 2.0, 0.0)),
+            // Arc with edge b (the second filleted edge).
+            (self.pt(1.0, 2.0, 1.0), self.d1, r, self.pt(1.0, 2.0, 0.0), self.pt(0.0, 2.0, 1.0)),
+            // Arc in the face perpendicular to d0 (the face edge a is not on).
+            (self.pt(0.0, 1.0, 1.0), self.d0.multiplied_scalar(-1.0), r, self.pt(0.0, 2.0, 1.0), self.pt(0.0, 0.0, 1.0)),
+            // Arc in the face perpendicular to d1 (the face edge b is not on).
+            (self.pt(1.0, 0.0, 1.0), self.d1, r, self.pt(0.0, 0.0, 1.0), self.pt(2.0, 0.0, 1.0)),
+            // Arc with edge a (the first filleted edge).
+            (self.pt(2.0, 1.0, 1.0), self.d0, r, self.pt(2.0, 0.0, 1.0), self.pt(2.0, 1.0, 0.0)),
+        ]
+    }
+
+    /// The corner arc that lives on the face whose outward normal is `n_out`.
+    fn arc_on_face(&self, n_out: &GpVec) -> Option<(GpPnt, GpVec, f64, GpPnt, GpPnt)> {
+        let arcs = self.arcs();
+        let idx = if n_out.xyz().crossed(&self.d2.xyz()).modulus() < 1e-6 {
+            Some(0)
+        } else if n_out.xyz().crossed(&self.d0.xyz()).modulus() < 1e-6 {
+            Some(2)
+        } else if n_out.xyz().crossed(&self.d1.xyz()).modulus() < 1e-6 {
+            Some(3)
+        } else {
+            None
+        };
+        idx.map(|i| arcs[i].clone())
+    }
+}
+
+/// Build the spherical corner-patch face for `corner`, with its five boundary
+/// arcs shared with the corner faces and the two trimmed blend faces.
+fn build_corner_patch_face(corner: &CornerGeom, cache: &mut EdgeCache) -> Result<Face, String> {
+    let arcs = corner.arcs();
+    let mut edges = Vec::with_capacity(arcs.len());
+    for (center, normal, r, a, b) in arcs {
+        let nd = GpDir::from_vec(&normal).map_err(|e| e.to_string())?;
+        edges.push(cache.arc(&center, &nd, r, &a, &b)?);
+    }
+    let b = TopoBuilder::new();
+    let wire = b.make_wire(&edges);
+    let mut sph = GpSphere::new(GpAx3::standard(), corner.sphere_radius()).map_err(|e| e.to_string())?;
+    sph.set_location(corner.center);
+    Ok(b.make_face(Arc::new(GeomSphere::new(sph)), &[wire]))
+}
+
+/// Parameters `t ∈ [0,1]` where the segment `p→q` crosses the circle centred at
+/// `c` of radius `r` (the disk boundary).
+fn line_circle_hits(p: &GpPnt, q: &GpPnt, c: &GpPnt, r: f64) -> Vec<f64> {
+    let d = GpVec::from_pnts(p, q);
+    let f = GpVec::from_pnts(p, c); // f = c − p
+    let a = d.dot(&d);
+    if a < 1e-30 {
+        return Vec::new();
+    }
+    // |p + t·d − c|² = r²  ⇒  a·t² − 2(d·f)·t + (|f|² − r²) = 0.
+    let b = -2.0 * f.dot(&d);
+    let cc = f.dot(&f) - r * r;
+    let disc = b * b - 4.0 * a * cc;
+    if disc < 0.0 {
+        return Vec::new();
+    }
+    let sq = disc.sqrt();
+    let mut ts: Vec<f64> = Vec::new();
+    for t in [(-b + sq) / (2.0 * a), (-b - sq) / (2.0 * a)] {
+        if t > -1e-9 && t < 1.0 + 1e-9 {
+            ts.push(t.clamp(0.0, 1.0));
+        }
+    }
+    ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    ts
+}
+
+/// Remove the disk (centre `c`, radius `r`) from the polygon, keeping the
+/// outside portion. The disk cap is replaced by a straight chord; the returned
+/// polygon has that chord as one boundary edge, to be replaced by the shared
+/// corner arc.
+fn cut_disk_poly(poly: &[GpPnt], c: &GpPnt, r: f64) -> Result<Vec<GpPnt>, String> {
+    let n = poly.len();
+    if n < 3 {
+        return Err("cut_disk: degenerate polygon".to_string());
+    }
+    let mut out: Vec<GpPnt> = Vec::new();
+    for i in 0..n {
+        let p = &poly[i];
+        let q = &poly[(i + 1) % n];
+        let hits = line_circle_hits(p, q, c, r);
+        let mut ts: Vec<f64> = vec![0.0];
+        for t in &hits {
+            if *t > 1e-9 && *t < 1.0 - 1e-9 {
+                ts.push(*t);
+            }
+        }
+        ts.push(1.0);
+        ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        for w in ts.windows(2) {
+            let (t0, t1) = (w[0], w[1]);
+            if t1 - t0 < 1e-12 {
+                continue;
+            }
+            let tm = 0.5 * (t0 + t1);
+            let mid = p.translated_vec(&GpVec::from_pnts(p, q).multiplied_scalar(tm));
+            if mid.distance(c) >= r - 1e-9 {
+                let a0 = p.translated_vec(&GpVec::from_pnts(p, q).multiplied_scalar(t0));
+                let a1 = p.translated_vec(&GpVec::from_pnts(p, q).multiplied_scalar(t1));
+                if out.last().map_or(true, |last| last.distance(&a0) > 1e-6) {
+                    out.push(a0);
+                }
+                if a0.distance(&a1) > 1e-6 {
+                    out.push(a1);
+                }
+            }
+        }
+    }
+    // Close the loop: drop a trailing point equal to the first.
+    while out.len() >= 2 && out[0].distance(out.last().unwrap()) < 1e-9 {
+        out.pop();
+    }
+    if out.len() < 3 {
+        return Err("cut_disk: the disk removed the whole polygon".to_string());
+    }
+    Ok(out)
+}
+
+/// Rebuild a corner face: clip its polygon by the half-plane tangency trims,
+/// then cut out each corner disk and replace the resulting chord with the
+/// shared circular-arc edge. `arcs` holds the corner arcs that lie on this
+/// face, one per adjacent corner. `polylines` holds the sampled tangency
+/// polylines of the adjacent blend faces, which replace the straight tangency
+/// edges so the corner face shares those edges with the blend faces.
+fn rebuild_corner_face(
+    face: &Face,
+    trims: &[(GpPnt, GpVec, f64)],
+    arcs: &[(GpPnt, GpVec, f64, GpPnt, GpPnt)],
+    polylines: &[(GpPnt, GpPnt, Vec<GpPnt>)],
+    tol: f64,
+    cache: &mut EdgeCache,
+) -> Result<Face, String> {
+    let poly = register_face_edges(face, cache)?;
+    let eps = 1e-9;
+    let mut clipped = poly;
+    for (p0, u, off) in trims {
+        let inside = |q: &GpPnt| GpVec::from_pnts(p0, q).dot(u) >= off - eps;
+        clipped = clip_polygon(&clipped, &inside);
+        if clipped.len() < 3 {
+            return Err("fillet_corner: clipping a corner face left no retained region".to_string());
+        }
+    }
+    let mut arc_edges: Vec<(GpPnt, GpPnt, Edge)> = Vec::new();
+    for (center, normal, radius, a, b) in arcs {
+        let cut = cut_disk_poly(&clipped, center, *radius)?;
+        if cut.len() < 3 {
+            return Err("fillet_corner: cutting the corner disk left no region".to_string());
+        }
+        let nd = GpDir::from_vec(normal).map_err(|e| e.to_string())?;
+        let arc_edge = cache.arc(center, &nd, *radius, a, b)?;
+        arc_edges.push((*a, *b, arc_edge));
+        clipped = cut;
+    }
+    let match_tol = (10.0 * tol).max(1e-4).min(1e-3);
+    let b = TopoBuilder::new();
+    let mut edges: Vec<Edge> = Vec::new();
+    let m = clipped.len();
+    for i in 0..m {
+        let a = &clipped[i];
+        let c = &clipped[(i + 1) % m];
+        if let Some((_, _, e)) = arc_edges.iter().find(|(ta, tb, _)| {
+            (a.distance(ta) < match_tol && c.distance(tb) < match_tol)
+                || (a.distance(tb) < match_tol && c.distance(ta) < match_tol)
+        }) {
+            edges.push(e.clone());
+        } else if let Some((_, _, poly)) = polylines.iter().find(|(f, l, _)| {
+            (a.distance(f) < match_tol && c.distance(l) < match_tol)
+                || (a.distance(l) < match_tol && c.distance(f) < match_tol)
+        }) {
+            if a.distance(&poly[0]) < match_tol {
+                for w in poly.windows(2) {
+                    edges.push(cache.seg(&w[0], &w[1]));
+                }
+            } else {
+                for w in poly.windows(2).rev() {
+                    edges.push(cache.seg(&w[1], &w[0]));
+                }
+            }
+        } else if a.distance(c) > 1e-6 {
+            edges.push(cache.seg(a, c));
+        }
+    }
+    let wire = b.make_wire(&edges);
+    let surf = BRepTool::face_surface(face).ok_or("fillet_corner: corner face has no surface")?;
+    Ok(b.make_face(surf, &[wire]))
+}
+
+/// A single end-arc replacement: the corner vertex `corner` of an end face is
+/// replaced by the blend arc `t1 → t2` (shared with the blend face).
+#[derive(Clone)]
+struct EndArcReplacement {
+    corner: GpPnt,
+    t1: GpPnt,
+    t2: GpPnt,
+    center: GpPnt,
+    axis: GpVec,
+    radius: f64,
+    /// Outward normal of adjacent face 1 (used to classify the incident edges).
+    n1: GpVec,
+}
+
+/// Rebuild a face by replacing several corner vertices with their end arcs.
+/// Used for far end faces (perpendicular to an edge) that may carry arcs from
+/// more than one edge (e.g. the far +X face of two opposite X edges).
+fn rebuild_face_with_end_arcs(
+    face: &Face,
+    reps: &[EndArcReplacement],
+    cache: &mut EdgeCache,
+) -> Result<Face, String> {
+    let mut poly = register_face_edges(face, cache)?;
+    let mut arc_pairs: Vec<(GpPnt, GpPnt, Edge)> = Vec::new();
+    for rep in reps {
+        let n = poly.len();
+        let idx = poly
+            .iter()
+            .position(|q| q.distance(&rep.corner) < 1e-9)
+            .ok_or("fillet_corner: end face does not contain the corner vertex")?;
+        let prev = poly[(idx + n - 1) % n];
+        let next = poly[(idx + 1) % n];
+        let dir_prev = GpVec::from_pnts(&prev, &rep.corner).normalized();
+        let dir_next = GpVec::from_pnts(&rep.corner, &next).normalized();
+        let prev_is_face1 = dir_prev.dot(&rep.n1).abs() < 1e-6;
+        let next_is_face1 = dir_next.dot(&rep.n1).abs() < 1e-6;
+        let (t_first, t_last) = if prev_is_face1 && !next_is_face1 {
+            (rep.t1, rep.t2)
+        } else if next_is_face1 && !prev_is_face1 {
+            (rep.t2, rep.t1)
+        } else {
+            return Err("fillet_corner: cannot classify end-face incident edges".to_string());
+        };
+        let zd = GpDir::from_vec(&rep.axis).map_err(|e| e.to_string())?;
+        let arc_edge = cache.arc(&rep.center, &zd, rep.radius, &rep.t1, &rep.t2)?;
+        arc_pairs.push((rep.t1, rep.t2, arc_edge));
+        poly[idx] = t_first;
+        poly.insert(idx + 1, t_last);
+    }
+
+    let b = TopoBuilder::new();
+    let mut edges: Vec<Edge> = Vec::new();
+    let m = poly.len();
+    for i in 0..m {
+        let a = &poly[i];
+        let c = &poly[(i + 1) % m];
+        if let Some((_, _, e)) = arc_pairs.iter().find(|(ta, tb, _)| {
+            (a.distance(ta) < 1e-6 && c.distance(tb) < 1e-6)
+                || (a.distance(tb) < 1e-6 && c.distance(ta) < 1e-6)
+        }) {
+            edges.push(e.clone());
+        } else if a.distance(c) > 1e-6 {
+            edges.push(cache.seg(a, c));
+        }
+    }
+    let wire = b.make_wire(&edges);
+    let surf = BRepTool::face_surface(face).ok_or("fillet_corner: end face has no surface")?;
+    Ok(b.make_face(surf, &[wire]))
+}
+
+/// Per-edge data for a corner-chain run.
+struct EdgeInfo {
+    edge: Edge,
+    p0: GpPnt,
+    p1: GpPnt,
+    f1: Face,
+    f2: Face,
+    n1: GpVec,
+    n2: GpVec,
+    axis: GpVec,
+    len: f64,
+    spec: VarFilletSpec,
+}
+
+fn find_shared_vertex(a0: &GpPnt, a1: &GpPnt, b0: &GpPnt, b1: &GpPnt) -> Option<GpPnt> {
+    for p in [a0, a1] {
+        if p.distance(b0) < 1e-9 || p.distance(b1) < 1e-9 {
+            return Some(*p);
+        }
+    }
+    None
+}
+
+fn radius_at_endpoint(spec: &VarFilletSpec, p0: &GpPnt, p1: &GpPnt, v: &GpPnt) -> f64 {
+    if p0.distance(v) < 1e-9 {
+        spec.r_start
+    } else if p1.distance(v) < 1e-9 {
+        spec.r_end
+    } else {
+        0.5 * (spec.r_start + spec.r_end)
+    }
+}
+
+fn find_vertex_at(solid: &TopoShape, p: &GpPnt) -> Option<Vertex> {
+    crate::topo_tools_full::vertices_of(solid)
+        .into_iter()
+        .find(|v| BRepTool::vertex_point(v).distance(p) < 1e-6)
+}
+
+fn find_end_face(solid: &TopoShape, f1: &Face, f2: &Face, p: &GpPnt) -> Result<Face, String> {
+    let ends: Vec<Face> = faces_of(solid)
+        .into_iter()
+        .filter(|f| face_contains_point(f, p) && !is_same(&f.0, &f1.0) && !is_same(&f.0, &f2.0))
+        .collect();
+    if ends.len() != 1 {
+        return Err(format!(
+            "fillet_corner: expected one end face at {:?}, got {}",
+            p,
+            ends.len()
+        ));
+    }
+    Ok(ends[0].clone())
+}
+
+/// The tangency trim of `edge` on `face`: `(edge_p0, u_dir, off)` such that the
+/// retained side is `dot(from_p0, u_dir) >= off`.
+fn edge_tangency_trim(e: &EdgeInfo, face: &Face, radius: f64) -> Result<(GpPnt, GpVec, f64), String> {
+    let spec = VarFilletSpec::new(radius, radius);
+    let (_, u1, u2, cot_half) = sample_blend(&e.p0, &e.p1, &e.n1, &e.n2, &spec, 2)?;
+    let is_f1 = is_same(&face.0, &e.f1.0);
+    let is_f2 = is_same(&face.0, &e.f2.0);
+    if is_f1 {
+        Ok((e.p0, u1, radius * cot_half))
+    } else if is_f2 {
+        Ok((e.p0, u2, radius * cot_half))
+    } else {
+        Err("fillet_corner: edge is not adjacent to this face".to_string())
+    }
+}
+
+/// The faces meeting at the corner vertex.
+fn corner_faces_at(solid: &TopoShape, p: &GpPnt) -> Vec<Face> {
+    faces_of(solid)
+        .into_iter()
+        .filter(|f| face_contains_point(f, p))
+        .collect()
+}
+
+/// A corner face to be rebuilt (a face at one or more shared vertices).
+struct CornerFaceRebuild {
+    face: Face,
+    /// Tangency trims `(edge_p0, u_dir, off)` from adjacent filleted edges.
+    trims: Vec<(GpPnt, GpVec, f64)>,
+    /// Corner arcs that live on this face (their circle centre/radius also
+    /// define the corner disk that is cut out of the face).
+    arcs: Vec<(GpPnt, GpVec, f64, GpPnt, GpPnt)>,
+    /// Sampled tangency polylines `(first, last, points)` of the adjacent
+    /// blend faces, shared with them.
+    polylines: Vec<(GpPnt, GpPnt, Vec<GpPnt>)>,
+}
+
+/// A far end face to be rebuilt (perpendicular to an edge, not at a corner).
+struct EndFaceRebuild {
+    face: Face,
+    replacements: Vec<EndArcReplacement>,
+}
+
+/// Build the combined fillet of a run of consecutive edges that share vertices.
+/// Each edge gets a constant-radius blend face trimmed to `[2R, len - 2R]` at
+/// its corner ends, each shared vertex gets a spherical corner patch, and the
+/// corner faces / far end faces are rebuilt with shared edges so the resulting
+/// shell is closed.
+fn build_combined_run(
+    solid: &TopoShape,
+    run_edges: &[Edge],
+    run_specs: &[VarFilletSpec],
+    tol: f64,
+) -> Result<TopoShape, String> {
+    let n = run_edges.len();
+    if n < 2 {
+        return Err("build_combined_run: needs at least 2 consecutive edges".to_string());
+    }
+    if n != run_specs.len() {
+        return Err("build_combined_run: specs length mismatch".to_string());
+    }
+
+    // Per-edge geometry.
+    let mut infos: Vec<EdgeInfo> = Vec::with_capacity(n);
+    for (k, edge) in run_edges.iter().enumerate() {
+        let spec = run_specs[k];
+        spec.check()?;
+        let adjacent = faces_touching_edge(solid, edge);
+        if adjacent.len() != 2 {
+            return Err(format!(
+                "fillet_chain_corner: edge {k} touches {} faces (expected 2)",
+                adjacent.len()
+            ));
+        }
+        let f1 = adjacent[0].clone();
+        let f2 = adjacent[1].clone();
+        let n1 = face_outward_normal(&f1)?;
+        let n2 = face_outward_normal(&f2)?;
+        let (p0, p1) = BRepTool::edge_vertices(edge).ok_or("fillet_chain_corner: edge has no curve")?;
+        let axis = GpVec::from_pnts(&p0, &p1).normalized();
+        let len = p0.distance(&p1);
+        infos.push(EdgeInfo { edge: edge.clone(), p0, p1, f1, f2, n1, n2, axis, len, spec });
+    }
+
+    // Shared corners between consecutive edges.
+    struct CornerInfo {
+        vertex: GpPnt,
+        radius: f64,
+        geom: CornerGeom,
+        k: usize,
+    }
+    let mut corners: Vec<CornerInfo> = Vec::new();
+    for k in 0..n - 1 {
+        let (pa0, pa1) = (infos[k].p0, infos[k].p1);
+        let (pb0, pb1) = (infos[k + 1].p0, infos[k + 1].p1);
+        let shared = find_shared_vertex(&pa0, &pa1, &pb0, &pb1)
+            .ok_or("fillet_chain_corner: consecutive edges do not share a vertex")?;
+        let ra = radius_at_endpoint(&infos[k].spec, &pa0, &pa1, &shared);
+        let rb = radius_at_endpoint(&infos[k + 1].spec, &pb0, &pb1, &shared);
+        let radius = ra.max(rb);
+        let vshape = find_vertex_at(solid, &shared)
+            .ok_or("fillet_chain_corner: shared vertex not found in the solid")?;
+        let geom = CornerGeom::from_edges(solid, &vshape, &infos[k].edge, &infos[k + 1].edge, radius)?;
+        corners.push(CornerInfo { vertex: shared, radius, geom, k });
+    }
+
+    // Corner ends per edge.
+    let mut corner_at_start: Vec<Option<usize>> = vec![None; n];
+    let mut corner_at_end: Vec<Option<usize>> = vec![None; n];
+    for (ci, c) in corners.iter().enumerate() {
+        if infos[c.k].p0.distance(&c.vertex) < 1e-9 {
+            corner_at_start[c.k] = Some(ci);
+        } else {
+            corner_at_end[c.k] = Some(ci);
+        }
+        if infos[c.k + 1].p0.distance(&c.vertex) < 1e-9 {
+            corner_at_start[c.k + 1] = Some(ci);
+        } else {
+            corner_at_end[c.k + 1] = Some(ci);
+        }
+    }
+
+    // Per-edge corner radius (all incident corners of an edge must agree).
+    let mut edge_radius = vec![0.0f64; n];
+    for k in 0..n {
+        let mut r: Option<f64> = None;
+        for ci in [corner_at_start[k], corner_at_end[k]].iter().flatten() {
+            let cr = corners[*ci].radius;
+            if let Some(prev) = r {
+                if (prev - cr).abs() > tol.max(1e-9) {
+                    return Err(
+                        "fillet_chain_corner: incident corner radii differ along an edge".to_string(),
+                    );
+                }
+            }
+            r = Some(cr);
+        }
+        edge_radius[k] = r.unwrap_or_else(|| infos[k].spec.r_start.max(infos[k].spec.r_end));
+    }
+
+    // Per-edge trimmed blend samples (used for the tangency polylines, the
+    // blend faces, and the far-end tangency points).
+    let mut edge_samples: Vec<Option<Vec<BlendSample>>> = vec![None; n];
+    for k in 0..n {
+        let e = &infos[k];
+        let r = edge_radius[k];
+        let t_lo = if corner_at_start[k].is_some() { 2.0 * r / e.len } else { 0.0 };
+        let t_hi = if corner_at_end[k].is_some() { 1.0 - 2.0 * r / e.len } else { 1.0 };
+        if t_hi - t_lo < 1e-9 {
+            return Err("fillet_chain_corner: corner radius is too large for the edge".to_string());
+        }
+        let sub_p0 = e.p0.translated_vec(&e.axis.multiplied_scalar(t_lo * e.len));
+        let sub_p1 = e.p0.translated_vec(&e.axis.multiplied_scalar(t_hi * e.len));
+        let const_spec = VarFilletSpec::new(r, r);
+        let (samples, _, _, _) = sample_blend(&sub_p0, &sub_p1, &e.n1, &e.n2, &const_spec, DEFAULT_VAR_SAMPLES)?;
+        edge_samples[k] = Some(samples);
+    }
+
+    // Collect the corner faces to rebuild.
+    let mut face_map: HashMap<usize, CornerFaceRebuild> = HashMap::new();
+    let mut corner_face_keys: Vec<usize> = Vec::new();
+    for c in &corners {
+        for f in corner_faces_at(solid, &c.vertex) {
+            let n_out = match face_outward_normal(&f) {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            let Some(arc) = c.geom.arc_on_face(&n_out) else { continue };
+            let key = Arc::as_ptr(&f.0.tshape) as usize;
+            let entry = face_map.entry(key).or_insert_with(|| {
+                corner_face_keys.push(key);
+                CornerFaceRebuild {
+                    face: f.clone(),
+                    trims: Vec::new(),
+                    arcs: Vec::new(),
+                    polylines: Vec::new(),
+                }
+            });
+            entry.arcs.push(arc);
+            for &eidx in &[c.k, c.k + 1] {
+                let e = &infos[eidx];
+                if is_same(&e.f1.0, &f.0) {
+                    let (p0, u, off) = edge_tangency_trim(e, &f, c.radius)?;
+                    entry.trims.push((p0, u, off));
+                    let poly: Vec<GpPnt> =
+                        edge_samples[eidx].as_ref().unwrap().iter().map(|s| s.t1).collect();
+                    entry.polylines.push((poly[0], *poly.last().unwrap(), poly));
+                } else if is_same(&e.f2.0, &f.0) {
+                    let (p0, u, off) = edge_tangency_trim(e, &f, c.radius)?;
+                    entry.trims.push((p0, u, off));
+                    let poly: Vec<GpPnt> =
+                        edge_samples[eidx].as_ref().unwrap().iter().map(|s| s.t2).collect();
+                    entry.polylines.push((poly[0], *poly.last().unwrap(), poly));
+                }
+            }
+        }
+    }
+
+    // Collect the far end faces to rebuild.
+    let mut end_map: HashMap<usize, EndFaceRebuild> = HashMap::new();
+    let mut end_face_keys: Vec<usize> = Vec::new();
+    for k in 0..n {
+        let e = &infos[k];
+        let r = edge_radius[k];
+        if corner_at_start[k].is_none() {
+            let end_face = find_end_face(solid, &e.f1, &e.f2, &e.p0)?;
+            let s = sample_endpoint_blend(e, 0.0, r)?;
+            let key = Arc::as_ptr(&end_face.0.tshape) as usize;
+            let entry = end_map.entry(key).or_insert_with(|| {
+                end_face_keys.push(key);
+                EndFaceRebuild { face: end_face.clone(), replacements: Vec::new() }
+            });
+            entry.replacements.push(EndArcReplacement {
+                corner: e.p0,
+                t1: s.t1,
+                t2: s.t2,
+                center: s.center,
+                axis: e.axis,
+                radius: r,
+                n1: e.n1,
+            });
+        }
+        if corner_at_end[k].is_none() {
+            let end_face = find_end_face(solid, &e.f1, &e.f2, &e.p1)?;
+            let s = sample_endpoint_blend(e, 1.0, r)?;
+            let key = Arc::as_ptr(&end_face.0.tshape) as usize;
+            let entry = end_map.entry(key).or_insert_with(|| {
+                end_face_keys.push(key);
+                EndFaceRebuild { face: end_face.clone(), replacements: Vec::new() }
+            });
+            entry.replacements.push(EndArcReplacement {
+                corner: e.p1,
+                t1: s.t1,
+                t2: s.t2,
+                center: s.center,
+                axis: e.axis,
+                radius: r,
+                n1: e.n1,
+            });
+        }
+    }
+
+    // Build everything with a single shared cache.
+    let mut cache = EdgeCache::new();
+    let mut new_faces: Vec<Face> = Vec::new();
+
+    // Rebuilt corner faces.
+    for &key in &corner_face_keys {
+        let fr = &face_map[&key];
+        let rebuilt = rebuild_corner_face(&fr.face, &fr.trims, &fr.arcs, &fr.polylines, tol, &mut cache)?;
+        new_faces.push(rebuilt);
+    }
+
+    // Rebuilt far end faces.
+    for &key in &end_face_keys {
+        let er = &end_map[&key];
+        let rebuilt = rebuild_face_with_end_arcs(&er.face, &er.replacements, &mut cache)?;
+        new_faces.push(rebuilt);
+    }
+
+    // Blend faces (trimmed to the corner radius span).
+    for k in 0..n {
+        let e = &infos[k];
+        let samples = edge_samples[k].as_ref().unwrap();
+        let blend = build_var_blend_face(samples, &e.axis, &mut cache)?;
+        new_faces.push(blend);
+    }
+
+    // Corner patch faces.
+    for c in &corners {
+        let patch = build_corner_patch_face(&c.geom, &mut cache)?;
+        new_faces.push(patch);
+    }
+
+    // Assemble: keep every face except the corner faces and far end faces.
+    let mut kept: Vec<Face> = Vec::new();
+    for f in faces_of(solid) {
+        let key = Arc::as_ptr(&f.0.tshape) as usize;
+        if corner_face_keys.contains(&key) || end_face_keys.contains(&key) {
+            continue;
+        }
+        kept.push(f);
+    }
+    kept.extend(new_faces);
+
+    let b = TopoBuilder::new();
+    let shell = b.make_shell(&kept);
+    let solid_out = b.make_solid(&[shell]);
+    Ok(solid_out.0)
+}
+
+/// Sample the blend cross-section at an edge endpoint fraction (0 or 1) and
+/// return the tangency points and arc centre at that cross-section.
+fn sample_endpoint_blend(
+    e: &EdgeInfo,
+    t: f64,
+    radius: f64,
+) -> Result<BlendSample, String> {
+    let spec = VarFilletSpec::new(radius, radius);
+    let (samples, _, _, _) = sample_blend(&e.p0, &e.p1, &e.n1, &e.n2, &spec, 2)?;
+    Ok(if t < 0.5 { samples[0].clone() } else { samples[1].clone() })
+}
+
+/// Split `edge_indices` into maximal runs of edges that share a vertex.
+fn split_consecutive_runs(solid: &TopoShape, edge_indices: &[usize]) -> Vec<Vec<usize>> {
+    let es = edges_of(solid);
+    let mut runs: Vec<Vec<usize>> = Vec::new();
+    for &i in edge_indices {
+        if let Some(last) = runs.last_mut() {
+            if let Some(&prev) = last.last() {
+                if let (Some(pe), Some(ce)) = (es.get(prev), es.get(i)) {
+                    if edges_share_vertex(pe, ce) {
+                        last.push(i);
+                        continue;
+                    }
+                }
+            }
+        }
+        runs.push(vec![i]);
+    }
+    runs
+}
+
+fn edges_share_vertex(a: &Edge, b: &Edge) -> bool {
+    let (a0, a1) = edge_vertices(a);
+    let (b0, b1) = edge_vertices(b);
+    let (Some(a0), Some(a1)) = (a0, a1) else { return false };
+    let (Some(b0), Some(b1)) = (b0, b1) else { return false };
+    let (pa0, pa1) = (vertex_position(&a0), vertex_position(&a1));
+    let (pb0, pb1) = (vertex_position(&b0), vertex_position(&b1));
+    pa0.distance(&pb0) < 1e-9
+        || pa0.distance(&pb1) < 1e-9
+        || pa1.distance(&pb0) < 1e-9
+        || pa1.distance(&pb1) < 1e-9
+}
+
+/// Blend a corner where the given edges meet: build the spherical corner patch
+/// and trim the three corner faces. The edges themselves must already be (or
+/// subsequently be) filleted; this inserts the patch face and re-closes the
+/// shell. `edge_specs` maps edge indices (into `edges_of(solid)`) to specs.
+pub fn fillet_corner_blend(
+    solid: &TopoShape,
+    corner_vertex: &Vertex,
+    edge_specs: &[(usize, VarFilletSpec)],
+    tol: f64,
+) -> Result<TopoShape, String> {
+    let p = vertex_position(corner_vertex);
+    let es = edges_of(solid);
+    let mut incident: Vec<(Edge, VarFilletSpec)> = Vec::new();
+    for (i, spec) in edge_specs {
+        let e = es.get(*i).ok_or("fillet_corner_blend: edge index out of range")?;
+        let (a, b) = edge_vertices(e);
+        if let (Some(va), Some(vb)) = (a, b) {
+            if vertex_position(&va).distance(&p) < 1e-9
+                || vertex_position(&vb).distance(&p) < 1e-9
+            {
+                incident.push((e.clone(), *spec));
+            }
+        }
+    }
+    if incident.len() != 2 {
+        return Err(format!(
+            "fillet_corner_blend: expected 2 incident edge specs, got {}",
+            incident.len()
+        ));
+    }
+    let radius = incident
+        .iter()
+        .map(|(_, s)| s.r_end.max(s.r_start))
+        .fold(0.0, f64::max);
+    let geom = CornerGeom::from_edges(solid, corner_vertex, &incident[0].0, &incident[1].0, radius)?;
+
+    let mut cache = EdgeCache::new();
+    let all_faces = faces_of(solid);
+    let cf = corner_faces_at(solid, &p);
+    let mut rebuilt = Vec::new();
+    for f in &cf {
+        let n_out = match face_outward_normal(f) {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        let Some(arc) = geom.arc_on_face(&n_out) else { continue };
+        rebuilt.push(rebuild_corner_face(f, &[], &[arc], &[], tol, &mut cache)?);
+    }
+    let patch = build_corner_patch_face(&geom, &mut cache)?;
+
+    let mut faces: Vec<Face> = Vec::new();
+    for f in all_faces {
+        if cf.iter().any(|c| is_same(&f.0, &c.0)) {
+            continue;
+        }
+        faces.push(f);
+    }
+    faces.extend(rebuilt);
+    faces.push(patch);
+
+    let b = TopoBuilder::new();
+    let shell = b.make_shell(&faces);
+    let solid_out = b.make_solid(&[shell]);
+    Ok(solid_out.0)
+}
+
+/// Fillet a chain of edges, adding a spherical corner patch at every vertex
+/// shared by two consecutive edges so the result stays a closed shell.
+///
+/// Non-adjacent edges are filleted sequentially with `fillet_edge_var` (as in
+/// `fillet_edge_var_chain`). A run of consecutive edges sharing vertices is
+/// built in one pass: each edge gets a constant-radius blend face trimmed at
+/// the shared corners, and each shared vertex gets a rolling-ball corner patch
+/// (`fillet_corner_blend`). The legacy `fillet_edge_var_chain` is unchanged.
+pub fn fillet_edges_chain_with_corner(
+    solid: &TopoShape,
+    edge_indices: &[usize],
+    specs: &[VarFilletSpec],
+    tol: f64,
+) -> Result<TopoShape, String> {
+    if edge_indices.len() != specs.len() {
+        return Err(
+            "fillet_edges_chain_with_corner: specs.len() must equal edge_indices.len()".to_string(),
+        );
+    }
+    let original_edges = edges_of(solid);
+    let runs = split_consecutive_runs(solid, edge_indices);
+    let mut current = solid.clone();
+    let mut spec_offset = 0;
+    for run in &runs {
+        let run_specs = &specs[spec_offset..spec_offset + run.len()];
+        if run.len() == 1 {
+            let i = run[0];
+            let oe = original_edges
+                .get(i)
+                .ok_or_else(|| format!("fillet_edges_chain_with_corner: edge index {i} out of range"))?;
+            let (p0, p1) = BRepTool::edge_vertices(oe).ok_or("edge has no curve")?;
+            let e = find_edge_by_endpoints(&current, &p0, &p1).ok_or_else(|| {
+                format!(
+                    "fillet_edges_chain_with_corner: edge {i} was consumed by an earlier fillet"
+                )
+            })?;
+            current = fillet_edge_var(&current, &e, &run_specs[0], tol)?;
+        } else {
+            let mut run_edges: Vec<Edge> = Vec::with_capacity(run.len());
+            for &i in run {
+                let oe = original_edges
+                    .get(i)
+                    .ok_or_else(|| format!("fillet_edges_chain_with_corner: edge index {i} out of range"))?;
+                let (p0, p1) = BRepTool::edge_vertices(oe).ok_or("edge has no curve")?;
+                let e = find_edge_by_endpoints(&current, &p0, &p1).ok_or_else(|| {
+                    format!(
+                        "fillet_edges_chain_with_corner: edge {i} was consumed by an earlier fillet"
+                    )
+                })?;
+                run_edges.push(e);
+            }
+            current = build_combined_run(&current, &run_edges, run_specs, tol)?;
+        }
+        spec_offset += run.len();
+    }
+    Ok(current)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1148,6 +2100,197 @@ mod tests {
         ] {
             assert!(ps.iter().any(|p| p.distance(&want) < 1e-6), "missing preserved vertex {want:?}");
         }
+        clear_tree(&out);
+        clear_tree(&bx.solid.0);
+    }
+
+    // --- Shared-vertex corner patch (rolling-ball corner blend) ---
+
+    fn find_edge_by_endpoints_test(b: &BRepPrimBox, a: &GpPnt, bpt: &GpPnt) -> usize {
+        box_edges(b)
+            .iter()
+            .position(|e| {
+                let (x, y) = BRepTool::edge_vertices(e).unwrap();
+                (x.is_equal(a) && y.is_equal(bpt)) || (x.is_equal(bpt) && y.is_equal(a))
+            })
+            .expect("edge by endpoints")
+    }
+
+    fn corner_vertex(b: &BRepPrimBox, p: &GpPnt) -> Vertex {
+        vertices_of(&b.solid.0)
+            .into_iter()
+            .find(|v| BRepTool::vertex_point(v).is_equal(p))
+            .expect("corner vertex")
+    }
+
+    #[test]
+    fn cut_disk_splits_bottom_edge() {
+        // The -Y face rectangle at z >= R, with the corner disk centred at
+        // (R, 0, R) of radius R.
+        let r = 0.4;
+        let rect = [
+            GpPnt::new(0.0, 0.0, r),
+            GpPnt::new(2.0, 0.0, r),
+            GpPnt::new(2.0, 0.0, 2.0),
+            GpPnt::new(0.0, 0.0, 2.0),
+        ];
+        let cut = cut_disk_poly(&rect, &GpPnt::new(r, 0.0, r), r).expect("cut");
+        // The bottom edge must be split: the polygon should contain the point
+        // (2R, 0, R) where the disk boundary crosses the z = R edge.
+        assert!(
+            cut.iter().any(|p| p.distance(&GpPnt::new(2.0 * r, 0.0, r)) < 1e-6),
+            "bottom edge was not split by the disk"
+        );
+    }
+
+    #[test]
+    fn corner_center_box() {
+        let bx = BRepPrimBox::make_box(2.0, 2.0, 2.0);
+        let v = corner_vertex(&bx, &GpPnt::new(0.0, 0.0, 0.0));
+        let c = corner_center(&bx.solid.0, &v, 0.4, 1e-6).expect("corner center");
+        assert!(
+            c.distance(&GpPnt::new(0.4, 0.4, 0.4)) < 1e-9,
+            "corner centre {c:?}"
+        );
+        // The centre of the opposite corner (2,2,2) is (1.6,1.6,1.6).
+        let v2 = corner_vertex(&bx, &GpPnt::new(2.0, 2.0, 2.0));
+        let c2 = corner_center(&bx.solid.0, &v2, 0.4, 1e-6).unwrap();
+        assert!(c2.distance(&GpPnt::new(1.6, 1.6, 1.6)) < 1e-9);
+        clear_tree(&bx.solid.0);
+    }
+
+    #[test]
+    fn corner_radius_positive() {
+        let bx = BRepPrimBox::make_box(2.0, 2.0, 2.0);
+        let v = corner_vertex(&bx, &GpPnt::new(0.0, 0.0, 0.0));
+        let n = edges_of(&bx.solid.0).len();
+        // specs aligned with edges_of: constant 0.4 on the two edges incident
+        // to the corner.
+        let mut specs = vec![VarFilletSpec::new(0.1, 0.1); n];
+        let e0 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(2.0, 0.0, 0.0));
+        let e1 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(0.0, 2.0, 0.0));
+        specs[e0] = VarFilletSpec::new(0.4, 0.4);
+        specs[e1] = VarFilletSpec::new(0.4, 0.4);
+        let r = corner_patch_radius_at_vertex(&bx.solid.0, &v, &specs, 1e-6);
+        assert!((r - 0.4).abs() < 1e-9, "corner radius {r}");
+        clear_tree(&bx.solid.0);
+    }
+
+    #[test]
+    fn corner_blend_box_corner_closed() {
+        let bx = BRepPrimBox::make_box(2.0, 2.0, 2.0);
+        let e0 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(2.0, 0.0, 0.0));
+        let e1 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(0.0, 2.0, 0.0));
+        let specs = [VarFilletSpec::new(0.4, 0.4), VarFilletSpec::new(0.4, 0.4)];
+        let out = fillet_edges_chain_with_corner(&bx.solid.0, &[e0, e1], &specs, 1e-6)
+            .expect("corner chain");
+        let faces = faces_of(&out);
+        assert_eq!(
+            faces.len(),
+            9,
+            "6 faces + 2 blends + 1 corner patch, got {}",
+            faces.len()
+        );
+        assert!(shell_is_closed(&closed_shell(&out)), "corner chain must be closed");
+        // The corner patch face is a sphere.
+        let sphere = faces
+            .iter()
+            .find(|f| {
+                BRepTool::face_surface(f)
+                    .map(|s| classify_surface(s.as_ref()) == SurfaceKind::Sphere)
+                    .unwrap_or(false)
+            })
+            .expect("corner patch sphere face");
+        let _ = sphere;
+        clear_tree(&out);
+        clear_tree(&bx.solid.0);
+    }
+
+    #[test]
+    fn chain_with_corner_success() {
+        let bx = BRepPrimBox::make_box(2.0, 2.0, 2.0);
+        let e0 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(2.0, 0.0, 0.0));
+        let e1 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(0.0, 2.0, 0.0));
+        let specs = [VarFilletSpec::new(0.3, 0.3), VarFilletSpec::new(0.3, 0.3)];
+        let out = fillet_edges_chain_with_corner(&bx.solid.0, &[e0, e1], &specs, 1e-6)
+            .expect("chain with corner must not error");
+        assert!(shell_is_closed(&closed_shell(&out)), "chain with corner is closed");
+        clear_tree(&out);
+        clear_tree(&bx.solid.0);
+    }
+
+    #[test]
+    fn corner_patch_is_spherical() {
+        let bx = BRepPrimBox::make_box(2.0, 2.0, 2.0);
+        let e0 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(2.0, 0.0, 0.0));
+        let e1 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(0.0, 2.0, 0.0));
+        let specs = [VarFilletSpec::new(0.4, 0.4), VarFilletSpec::new(0.4, 0.4)];
+        let out = fillet_edges_chain_with_corner(&bx.solid.0, &[e0, e1], &specs, 1e-6).unwrap();
+        let faces = faces_of(&out);
+        let sphere = faces
+            .iter()
+            .find(|f| {
+                BRepTool::face_surface(f)
+                    .map(|s| classify_surface(s.as_ref()) == SurfaceKind::Sphere)
+                    .unwrap_or(false)
+            })
+            .expect("corner patch sphere face");
+        // All sampled surface points are equidistant from the corner centre.
+        let v = corner_vertex(&bx, &GpPnt::new(0.0, 0.0, 0.0));
+        let cc = corner_center(&bx.solid.0, &v, 0.4, 1e-6).unwrap();
+        let s = BRepTool::face_surface(sphere).unwrap();
+        let r0 = s.d0(0.0, 0.0).distance(&cc);
+        for (u, w) in [(0.5, 0.3), (1.0, 0.0), (1.5, 0.4), (3.0, 0.2)] {
+            let d = s.d0(u, w).distance(&cc);
+            assert!((d - r0).abs() < 1e-6, "patch point at distance {d} (expected {r0})");
+        }
+        clear_tree(&out);
+        clear_tree(&bx.solid.0);
+    }
+
+    #[test]
+    fn chain_nonconsecutive_still_works() {
+        let bx = BRepPrimBox::make_box(2.0, 2.0, 2.0);
+        let e0 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(2.0, 0.0, 0.0));
+        // Opposite top edge: (2,2,2)→(0,2,2).
+        let e1 = find_edge_by_endpoints_test(&bx, &GpPnt::new(2.0, 2.0, 2.0), &GpPnt::new(0.0, 2.0, 2.0));
+        let specs = [VarFilletSpec::new(0.2, 0.3), VarFilletSpec::new(0.3, 0.4)];
+        let out = fillet_edges_chain_with_corner(&bx.solid.0, &[e0, e1], &specs, 1e-6)
+            .expect("non-consecutive chain");
+        assert_eq!(faces_of(&out).len(), 8, "two sequential fillets");
+        assert!(shell_is_closed(&closed_shell(&out)), "non-consecutive chain is closed");
+        clear_tree(&out);
+        clear_tree(&bx.solid.0);
+    }
+
+    #[test]
+    fn chain_with_corner_three_edges() {
+        let bx = BRepPrimBox::make_box(2.0, 2.0, 2.0);
+        // Bottom-face loop: front X edge, right Y edge, back X edge.
+        let e0 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(2.0, 0.0, 0.0));
+        let e1 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(0.0, 2.0, 0.0));
+        let e2 = find_edge_by_endpoints_test(&bx, &GpPnt::new(0.0, 2.0, 0.0), &GpPnt::new(2.0, 2.0, 0.0));
+        let specs = [VarFilletSpec::new(0.3, 0.3); 3];
+        let out = fillet_edges_chain_with_corner(&bx.solid.0, &[e0, e1, e2], &specs, 1e-6)
+            .expect("three-edge corner chain");
+        let faces = faces_of(&out);
+        assert_eq!(
+            faces.len(),
+            11,
+            "6 faces + 3 blends + 2 corner patches, got {}",
+            faces.len()
+        );
+        assert!(shell_is_closed(&closed_shell(&out)), "three-edge corner chain is closed");
+        // Two corner patch faces.
+        let spheres = faces
+            .iter()
+            .filter(|f| {
+                BRepTool::face_surface(f)
+                    .map(|s| classify_surface(s.as_ref()) == SurfaceKind::Sphere)
+                    .unwrap_or(false)
+            })
+            .count();
+        assert_eq!(spheres, 2, "two corner patches, got {spheres}");
         clear_tree(&out);
         clear_tree(&bx.solid.0);
     }

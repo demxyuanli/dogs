@@ -1,6 +1,6 @@
 # _tasks — OCCT → Rust migration map (current)
 
-> Last updated: 2026-08-01. 5 crates · 74,250 lines · 1,069 tests
+> Last updated: 2026-08-01. 5 crates · 81,337 lines · 1,159 tests
 > Phase 3 detail: [specs/_phase3_plan.md](_phase3_plan.md)
 
 ## 已完整 (✅)
@@ -63,9 +63,9 @@ Geom2dBezierCurve · curve_ops(长度/交点/最近点) · bspline2d_to_bezier
 | M5 (F, P6): 曲面求交/布尔 + 边倒圆 + 偏移 | ✅ 球/柱面精确布尔 + 滚动球倒圆 |
 
 ## 远期 (⬜)
-- 一般 NURBS 曲面布尔的完整拓扑（当前 B样条 trace + 网格重建）
-- TKFillet 链式共享顶点角块、变半径链式
-- RWMesh 纹理/VRML 读、BinXCAF 完整 schema
-- 整个 Visualization（TKOpenGl 硬件、TKV3d 交互选择、TKService 字体/纹理）
-- Draw / TEST 交互
-- BRepGProp / Extrema 解析深度
+- 完整拓扑布尔（自交/多实体/退化）：BOPAlgo 全特征、TopOpeBRep
+- TKFillet 曲面面混合 / 多法向
+- TKOpenGl 硬件渲染 / TKService 字体纹理 / TKV3d 交互选择高亮 / TKIVtk
+- Draw 完整交互（TCL、视图命令）
+- BRepGProp 高阶（惯性张量）
+- XCAF 全 schema / STEP 读入

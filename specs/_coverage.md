@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-07-31。
-> Rust：5 crate · 74,250 行 · 1,069 测试（core 230 / math 202 / geom 68 / geom2d 56 / topo 513）
+> Rust：5 crate · 81,337 行 · 1,159 测试（core 239 / math 202 / geom 68 / geom2d 56 / topo 594）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -81,22 +81,22 @@
 
 ### ⬜ 未移植（0%）
 
-- **精确布尔（NURBS 曲面）**：IntPatch（40 类）、BOPAlgo 完整、TopOpeBRep（37 类）
-- **精确边倒圆完整**：TKFillet 变半径链式共享顶点角块（95,710 行源码）
-- **RWMesh 全量**（纹理/多场景/VRML 读）
-- **整个 Visualization**（TKOpenGl 硬件、TKV3d 交互选择/高亮、TKService 字体/纹理、TKIVtk）—— 已有 viz_scene 软件渲染子集
-- **Draw / TEST 交互**
-- **BRepGProp / Extrema 深度**（曲线/曲面解析属性）
+- **完整拓扑布尔（自交/多实体/退化）**：BOPAlgo 全特征、TopOpeBRep 全拓扑（当前修剪面布尔已覆盖常见曲面）
+- **TKFillet 完整**（变半径链式共享顶点已支持；曲面面混合/多法向仍缺）
+- **TKOpenGl 硬件渲染 / TKService 字体纹理 / TKV3d 交互选择高亮 / TKIVtk**
+- **Draw 完整交互**（TCL 脚本、视图命令）
+- **BRepGProp 高阶**（惯性张量/曲线长度解析）
+- **XCAF 全 schema / STEP 读入**
 
 ## 总体结论
 
 | 指标 | 数值 |
 |---|---|
-| Rust 移植量 | 74,250 行（含测试） |
+| Rust 移植量 | 81,337 行（含测试） |
 | OCCT 已移植范围源码 | ~73 万行（20 toolkit） |
-| 行数比 | ~10.2% |
+| 行数比 | ~11.1% |
 | 核心几何主干覆盖 | ~85% |
-| 全量 OCCT 类覆盖（估算） | ~22–26% |
+| 全量 OCCT 类覆盖（估算） | ~24–28% |
 
 ### 覆盖矩阵行更新（2026-08-01，Phase 6）
 | OCCT 包 | Rust | 覆盖 | 说明 |
@@ -131,6 +131,17 @@
 | 曲线插值 | geom interp_curve | — | 全局 B样条/带切矢插值 |
 | TKXMesh/TKMeshVS | mesh_pipeline | 0%→45% | 细分/平滑/减面/修复/一致性/到 BRep |
 | 2D 曲线工具 | geom2d curve_tools2d | — | 3 点圆弧/2D 插值/均匀取点/圆角 |
+
+### 覆盖矩阵行更新（2026-08-01，Phase 9）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| NURBS 曲面布尔完整拓扑 | bop_curved 扩展 | 50%→70% | 修剪 B-Rep 面（保持 NURBS/解析曲面 + 求交曲线边界线框） |
+| TKFillet 链式共享顶点角块 | fillet_var 扩展 | 55%→70% | 滚动球角块球面补丁，连续边链式闭合 |
+| RWMesh 纹理/VRML | rwmesh 扩展 | 45%→60% | OBJ .mtl 材质+UV、glTF 材质/纹理、VRML 2.0 读入 |
+| 硬件 Visualization | viz_scene 扩展 | 25%→45% | Phong/材质/光照/深度缓冲光栅 + 相机轨道/平移/缩放/拾取 |
+| Draw/TEST | draw | 0%→40% | Draw_Interpretor-lite REPL + 脚本 + 批量测试驱动 |
+| BRepGProp/Extrema 解析深度 | gprop_analytic | 23%→45% | 解析面积/体积/质心（盒精确 24）+ 解析最近点 |
+| 曲线微分几何 | core curve_frenet | — | Frenet 帧/曲率/挠率/弧长参数化 |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。
