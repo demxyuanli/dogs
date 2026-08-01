@@ -160,8 +160,9 @@ mod tests {
     #[test]
     fn pattern_compound_and_fuse() {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        // Overlap 0.5 (step 1.5) → Fuse volume = 1+1−0.5 = 1.5.
-        let pat = linear_pattern(&b.solid.0, &GpVec::new(1.0, 0.0, 0.0), 1.5, 2).unwrap();
+        // Overlap 0.5 (step 0.5) → Fuse volume = 1+1−0.5 = 1.5.
+        // (make_box spans [0,1]³; a 1.5 step would be disjoint → volume 2.0.)
+        let pat = linear_pattern(&b.solid.0, &GpVec::new(1.0, 0.0, 0.0), 0.5, 2).unwrap();
         let comp = pattern_to_compound(&pat);
         assert_eq!(crate::topo_tools_full::shape_counts(&comp)[&crate::abs::ShapeType::Vertex], 16);
 

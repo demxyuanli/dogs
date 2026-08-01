@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-07-31。
-> Rust：5 crate · 49,237 行 · 709 测试（core 195 / math 121 / geom 44 / geom2d 38 / topo 311）
+> Rust：5 crate · 58,803 行 · 839 测试（core 208 / math 160 / geom 52 / geom2d 38 / topo 381）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -68,6 +68,17 @@
 - **SVG 渲染**（投影+画家算法）· **特征建模**（boss/hole/protrusion/pocket）· **XCAF-lite**
 - **数学深度**：分布/二维插值/稀疏矩阵 CG/FFT2D/特征值/统计/优化器/多边形/Delaunay/BVH/曲面拟合
 
+### ◔ 新增（Phase 6，2026-08-01）
+- **IntPatch 曲面求交**（intpatch）：平面-球/球-球解析圆交线 + 平面-柱/锥/torus + 一般曲面 trace 回退 ✅
+- **曲面布尔**（bop_curved）：球/柱面实体的 Fuse/Cut/Common（分类 + 重建）✅；NURBS 一般曲面仍近似
+- **实体边倒圆**（fillet_edge）：滚动球圆柱/球面混合（盒边/盒角）✅
+- **BRepOffset 深度**（brep_offset）：多边形 miter 偏移/面偏移/壳偏移（盒 ±d 精确）✅
+- **BinXCAF**（bincaf）：二进制装配容器（拓扑+属性+子级）读写闭环 ✅
+- **glTF 2.0**（gltf）：JSON+BIN 网格导出（positions/normals/indices，data-URI 可选）✅
+- **多边形布尔**（polygon_boolean）：2D 交/并/差（凸 Sutherland-Hodgman + 一般 Weiler-Atherton）✅
+- **几何极值**（geom extrema）：点-曲线/曲线-曲线/曲线-曲面/曲面-曲面最近距离 ✅
+- **修复 gp 变换 bug**：circ/cone/cylinder/pln 方向向量被平移污染 → transforms_xyz_dir ✅
+
 ### ⬜ 未移植（0%）
 
 - **精确布尔（NURBS 曲面）**：IntPatch（40 类）、BOPAlgo 完整、TopOpeBRep（37 类）
@@ -82,11 +93,21 @@
 
 | 指标 | 数值 |
 |---|---|
-| Rust 移植量 | 49,237 行（含测试） |
+| Rust 移植量 | 58,803 行（含测试） |
 | OCCT 已移植范围源码 | ~73 万行（20 toolkit） |
-| 行数比 | ~6.7% |
+| 行数比 | ~8.1% |
 | 核心几何主干覆盖 | ~85% |
-| 全量 OCCT 类覆盖（估算） | ~15–20% |
+| 全量 OCCT 类覆盖（估算） | ~18–22% |
+
+### 覆盖矩阵行更新（2026-08-01，Phase 6）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| IntPatch / BOPAlgo（曲面） | intpatch + bop_curved | 15%→35% | 解析曲面求交 + 曲面实体布尔 |
+| BRepFilletAPI / ChFi3d | fillet_edge | 25%→40% | 滚动球边倒圆（圆柱/球面混合） |
+| BRepOffsetAPI / BRepOffset | brep_offset | 36%→50% | 多边形/面/壳偏移 |
+| BinXCAF / RWMesh | bincaf + gltf | 0%→30% | 二进制装配容器 + glTF 2.0 |
+| Extrema（点-曲线/曲面） | occt-geom extrema | <10%→35% | 4 类极值 |
+| 平面布尔 2D | polygon_boolean | — | 交/并/差（凸+一般） |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。

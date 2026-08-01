@@ -148,9 +148,9 @@ impl GpCylinder {
         self.pos.set_location(GpPnt::from_xyz(&loc));
 
         let mut x_xyz = *self.pos.x_direction().xyz();
-        t.transforms_xyz(&mut x_xyz);
+        t.transforms_xyz_dir(&mut x_xyz);
         let mut y_xyz = *self.pos.y_direction().xyz();
-        t.transforms_xyz(&mut y_xyz);
+        t.transforms_xyz_dir(&mut y_xyz);
 
         if let (Ok(xd), Ok(yd)) = (GpDir::from_xyz(&x_xyz), GpDir::from_xyz(&y_xyz)) {
             self.pos.set_x_direction(&xd);

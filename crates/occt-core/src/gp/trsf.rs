@@ -192,6 +192,16 @@ impl GpTrsf {
         *xyz = tmp.add(&self.loc);
     }
 
+    /// Transform a direction (rotation + scale only; no translation).
+    /// Source: `gp_Trsf::Transforms` on a direction is the linear part.
+    pub fn transforms_xyz_dir(&self, xyz: &mut GpXyz) {
+        let mut tmp = self.matrix.multiplied(&*xyz);
+        if self.scale != 1.0 {
+            tmp = tmp.multiply(self.scale);
+        }
+        *xyz = tmp;
+    }
+
     pub fn multiply(&mut self, other: &GpTrsf) {
         if self.form() == TrsfForm::Identity {
             *self = other.clone();

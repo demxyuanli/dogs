@@ -47,6 +47,7 @@ pub use torus::GeomTorus;
 pub use trimmed::GeomTrimmedCurve;
 pub use revolved::GeomRevolvedSurface;
 pub use offset::GeomOffsetCurve;
+pub mod extrema;
 
 pub type HandleCurve = Arc<dyn Curve>;
 pub type HandleSurface = Arc<dyn Surface>;

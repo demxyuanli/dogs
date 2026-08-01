@@ -80,3 +80,7 @@ pub mod eigen_ext;
 pub mod matrix_sparse;
 pub mod interp2d;
 pub mod distributions;
+pub mod spline_surface;
+pub mod eig_qr;
+pub mod nurbs_fit;
+pub mod distrib_extra;
