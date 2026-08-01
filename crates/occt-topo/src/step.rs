@@ -3,20 +3,42 @@
 //! Ports `STEPControl_Writer` / `STEPControl_Reader` for the BRep port.
 //! Writes and reads the classic EXPRESS entity set for B-rep solids:
 //! `CARTESIAN_POINT`, `DIRECTION`, `VECTOR`, `AXIS2_PLACEMENT_3D`,
-//! `LINE`, `CIRCLE`, `ELLIPSE`, `PARABOLA`, `PLANE`, `CYLINDRICAL_SURFACE`,
-//! `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`,
-//! `VERTEX_POINT`, `EDGE_CURVE`, `ORIENTED_EDGE`, `EDGE_LOOP`,
-//! `FACE_OUTER_BOUND`, `ADVANCED_FACE`, `CLOSED_SHELL`,
-//! `MANIFOLD_SOLID_BREP`, plus the product/representation scaffolding
-//! (`PRODUCT`, `PRODUCT_DEFINITION`, `PRODUCT_DEFINITION_SHAPE`,
-//! `SHAPE_REPRESENTATION`, `PRODUCT_DEFINITION_SHAPE_REPRESENTATION`,
-//! `ADVANCED_BREP_SHAPE_REPRESENTATION`).
+//! `LINE`, `CIRCLE`, `ELLIPSE`, `HYPERBOLA`, `PARABOLA`, `POLYLINE`,
+//! `B_SPLINE_CURVE`, `B_SPLINE_CURVE_WITH_KNOTS`, `TRIMMED_CURVE`,
+//! `OFFSET_CURVE_3D`, `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`,
+//! `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`, `B_SPLINE_SURFACE`,
+//! `B_SPLINE_SURFACE_WITH_KNOTS`, `VERTEX_POINT`, `EDGE_CURVE`,
+//! `ORIENTED_EDGE`, `EDGE_LOOP`, `FACE_OUTER_BOUND`, `FACE_BOUND`,
+//! `ADVANCED_FACE`, `CLOSED_SHELL`, `MANIFOLD_SOLID_BREP`, plus the
+//! product/representation scaffolding (`PRODUCT`, `PRODUCT_DEFINITION`,
+//! `PRODUCT_DEFINITION_SHAPE`, `SHAPE_REPRESENTATION`,
+//! `PRODUCT_DEFINITION_SHAPE_REPRESENTATION`,
+//! `ADVANCED_BREP_SHAPE_REPRESENTATION`, `NEXT_ASSEMBLY_USAGE_OCCURRENCE`)
+//! and the presentation/attribute layer (`COLOUR_RGB`,
+//! `SURFACE_STYLE_FILL_AREA`, `SURFACE_STYLE_USAGE`, `STYLED_ITEM`,
+//! `SI_UNIT`, `DIMENSIONAL_EXPONENTS`).
 //!
 //! Curves and surfaces cannot be downcast from `Arc<dyn Curve>` /
 //! `Arc<dyn Surface>`, so geometry is classified by sampling invariants
 //! (constant zero second derivative ⇒ line, constant curvature + periodic ⇒
 //! circle, planar + unbounded ⇒ plane, equidistant samples ⇒ sphere, ...).
 //! This mirrors `GeomAdaptor`'s type tag at a slightly higher cost.
+//!
+//! Non-analytic geometry is written as B-splines: a genuine
+//! `GeomBSplineCurve` / `GeomBSplineSurface` is emitted exactly through
+//! [`write_bspline_curve`] / [`write_bspline_surface`], and anything else that
+//! escapes the analytic classifiers is sampled and re-fitted (see
+//! [`fit_bspline_curve`] / [`fit_bspline_surface`]) so the shape-level writers
+//! ([`write_step_with_splines`], [`write_step_with_options`]) round-trip
+//! arbitrary geometry.
+//!
+//! The top-level writers mirror `STEPControl_Writer`'s API surface:
+//! [`write_step`] / [`write_shape_step`] for plain output,
+//! [`write_step_with_splines`] for B-spline coverage, and the attribute
+//! variants [`write_step_with_name`], [`write_step_with_color`],
+//! [`write_step_with_units`] and [`write_step_assembly`] for the STEP
+//! product/presentation layer. Each has a file-writing counterpart and a
+//! symmetric reader.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -28,8 +50,9 @@ use occt_core::gp::{
     GpSphere, GpTorus, GpVec, GpXyz,
 };
 use occt_geom::{
-    Curve, GeomBSplineCurve, GeomCircle, GeomCone, GeomCylinder, GeomEllipse, GeomHyperbola,
-    GeomLine, GeomParabola, GeomPlane, GeomSphere, GeomTorus, Surface,
+    bspline_surface::GeomBSplineSurface, Curve, GeomBSplineCurve, GeomCircle, GeomCone,
+    GeomCylinder, GeomEllipse, GeomHyperbola, GeomLine, GeomOffsetCurve, GeomParabola, GeomPlane,
+    GeomSphere, GeomTorus, GeomTrimmedCurve, Surface,
 };
 
 use crate::abs::ShapeType;
@@ -272,10 +295,40 @@ fn surface_kind(s: &dyn Surface) -> SurfKind {
 // Writer
 // ---------------------------------------------------------------------------
 
+/// STEP physical-file header fields (`FILE_DESCRIPTION` / `FILE_NAME` /
+/// `FILE_SCHEMA`), used by [`StepWriter::set_header`].
+#[derive(Debug, Clone)]
+pub struct StepHeader {
+    pub description: String,
+    pub name: String,
+    pub timestamp: String,
+    pub author: String,
+    pub organization: String,
+    pub preprocessor: String,
+    pub originator: String,
+    pub schema: String,
+}
+
+impl Default for StepHeader {
+    fn default() -> Self {
+        Self {
+            description: "BRep".into(),
+            name: "model.step".into(),
+            timestamp: "2026-07-31T00:00:00".into(),
+            author: String::new(),
+            organization: String::new(),
+            preprocessor: "rust".into(),
+            originator: String::new(),
+            schema: "AUTOMOTIVE_DESIGN".into(),
+        }
+    }
+}
+
 /// Incremental STEP writer — emits `#N=...;` records with an internal counter.
 pub struct StepWriter {
     next_id: usize,
     lines: Vec<String>,
+    header: StepHeader,
 }
 
 impl StepWriter {
@@ -283,7 +336,21 @@ impl StepWriter {
         Self {
             next_id: 1,
             lines: Vec::new(),
+            header: StepHeader::default(),
         }
+    }
+
+    /// Replace the physical-file header (FILE_DESCRIPTION / FILE_NAME /
+    /// FILE_SCHEMA). By default a minimal header is emitted.
+    pub fn set_header(&mut self, header: &StepHeader) {
+        self.header = header.clone();
+    }
+
+    /// Append a STEP comment (`/* ... */`) to the DATA section. Comments are
+    /// ignored by parsers but are useful for provenance and debugging.
+    pub fn comment(&mut self, text: &str) {
+        let clean = text.replace("*/", "* /");
+        self.lines.push(format!("/* {clean} */"));
     }
 
     /// Emit one entity body (`TYPE(a,b,...)`) and return its record id.
@@ -328,12 +395,23 @@ impl StepWriter {
 
     /// Assemble the complete physical file.
     pub fn finish(self) -> String {
+        let h = self.header;
+        let desc = esc_str(&h.description);
+        let name = esc_str(&h.name);
+        let ts = esc_str(&h.timestamp);
+        let author = esc_str(&h.author);
+        let org = esc_str(&h.organization);
+        let pre = esc_str(&h.preprocessor);
+        let orig = esc_str(&h.originator);
+        let schema = esc_str(&h.schema);
         let mut out = String::new();
         out.push_str("ISO-10303-21;\n");
         out.push_str("HEADER;\n");
-        out.push_str("FILE_DESCRIPTION(('BRep'),'2;1');\n");
-        out.push_str("FILE_NAME('model.step','2026-07-31T00:00:00',('',''),(''),'','rust','');\n");
-        out.push_str("FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\n");
+        out.push_str(&format!("FILE_DESCRIPTION(('{desc}'),'2;1');\n"));
+        out.push_str(&format!(
+            "FILE_NAME('{name}','{ts}',('{author}'),('{org}'),'{pre}','{orig}','');\n"
+        ));
+        out.push_str(&format!("FILE_SCHEMA(('{schema}'));\n"));
         out.push_str("ENDSEC;\n");
         out.push_str("DATA;\n");
         for l in &self.lines {
@@ -346,6 +424,372 @@ impl StepWriter {
     }
 }
 
+/// Serialize a single shape with a custom physical-file header.
+///
+/// The shape representation and product scaffolding are written as in
+/// [`write_step_with_name`], but the `HEADER` section (`FILE_DESCRIPTION`,
+/// `FILE_NAME`, `FILE_SCHEMA`) comes from `header` instead of the defaults.
+pub fn write_step_with_header(shape: &TopoShape, name: &str, header: &StepHeader) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.write_shape_named(name, shape)
+        .ok_or_else(|| "write_step_with_header: nothing to write".to_string())?;
+    ctx.w.set_header(header);
+    Ok(ctx.finish())
+}
+
+// ---------------------------------------------------------------------------
+// B-spline knot helpers
+// ---------------------------------------------------------------------------
+
+/// Split an expanded knot vector into its distinct values, in order.
+///
+/// STEP's `b_spline_curve_with_knots` / `b_spline_surface_with_knots` store
+/// knots as a list of distinct values plus a parallel list of multiplicities;
+/// this recovers the values half of that pair from the internal expanded form.
+fn unique_knots(knots: &[f64]) -> Vec<f64> {
+    let mut out: Vec<f64> = Vec::new();
+    for &k in knots {
+        if out.last() != Some(&k) {
+            out.push(k);
+        }
+    }
+    out
+}
+
+/// The multiplicity of each distinct knot in an expanded knot vector.
+fn knot_multiplicities(knots: &[f64]) -> Vec<usize> {
+    let mut mults: Vec<usize> = Vec::new();
+    let mut i = 0;
+    while i < knots.len() {
+        let mut j = i + 1;
+        while j < knots.len() && knots[j] == knots[i] {
+            j += 1;
+        }
+        mults.push(j - i);
+        i = j;
+    }
+    mults
+}
+
+/// Reconstruct an expanded knot vector from STEP's mult/knot lists.
+fn expand_knots(mults: &[usize], knots: &[f64]) -> Vec<f64> {
+    let mut out = Vec::new();
+    for (i, &m) in mults.iter().enumerate() {
+        let k = knots.get(i).copied().unwrap_or(0.0);
+        for _ in 0..m {
+            out.push(k);
+        }
+    }
+    out
+}
+
+/// A clamped uniform knot vector for `n` poles of `degree` — the default used
+/// by STEP `B_SPLINE_CURVE` / `B_SPLINE_SURFACE` records that omit explicit
+/// knots (multiplicity `degree + 1` at each end, interior knots evenly spaced).
+fn uniform_knots_for(n: usize, degree: usize) -> Vec<f64> {
+    let len = n + degree + 1;
+    let interior = if n >= degree + 1 { n - degree - 1 } else { 0 };
+    let mut k = Vec::with_capacity(len);
+    for _ in 0..=degree {
+        k.push(0.0);
+    }
+    for i in 1..=interior {
+        k.push(i as f64 / (interior + 1) as f64);
+    }
+    while k.len() < len {
+        k.push(1.0);
+    }
+    k
+}
+
+// ---------------------------------------------------------------------------
+// B-spline entity writers
+// ---------------------------------------------------------------------------
+
+/// Emit a `B_SPLINE_CURVE_WITH_KNOTS` entity and return its record id.
+///
+/// Rational curves carry a weights list in argument 3; polynomial curves use
+/// the `SELF` keyword (weights default to 1.0 on read). The curve form,
+/// closedness and self-intersection flags are written as unsensed defaults so
+/// the record stays minimal while remaining schema-valid. The knot vector is
+/// written as its distinct values plus multiplicities.
+pub fn write_bspline_curve(step: &mut StepWriter, curve: &GeomBSplineCurve) -> Result<usize, String> {
+    let pole_refs: Vec<usize> = curve
+        .poles
+        .iter()
+        .map(|p| step.add_cartesian_point(p))
+        .collect();
+    let mults = knot_multiplicities(&curve.knots);
+    let knots = unique_knots(&curve.knots);
+    let weights = match &curve.weights {
+        Some(w) => format!(
+            "({})",
+            w.iter().map(|wi| step_real(*wi)).collect::<Vec<_>>().join(",")
+        ),
+        None => "SELF".to_string(),
+    };
+    Ok(step.emit(format!(
+        "B_SPLINE_CURVE_WITH_KNOTS('',{},({}),{},UNSPECIFIED,.F.,.F.,({}),({}),UNSPECIFIED)",
+        curve.degree,
+        join_refs(&pole_refs),
+        weights,
+        knots.iter().map(|k| step_real(*k)).collect::<Vec<_>>().join(","),
+        mults.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(","),
+    )))
+}
+
+/// Emit a `B_SPLINE_SURFACE_WITH_KNOTS` entity and return its record id.
+///
+/// The pole grid is written row-major in `u` (each row is a fixed-`u` strip of
+/// `v`-varying control points). Weights (when the surface is rational) mirror
+/// the grid layout; polynomial surfaces use `SELF`. Each knot direction is
+/// split into distinct values plus multiplicities, and the surface form /
+/// closedness / self-intersection flags are written as unsensed defaults.
+pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> Result<usize, String> {
+    let mut rows = Vec::with_capacity(s.poles.len());
+    for row in &s.poles {
+        let refs: Vec<usize> = row.iter().map(|p| step.add_cartesian_point(p)).collect();
+        rows.push(format!("({})", join_refs(&refs)));
+    }
+    let poles_grid = format!("({})", rows.join(","));
+    let weights = match &s.weights {
+        Some(w) => format!(
+            "({})",
+            w.iter()
+                .map(|row| format!(
+                    "({})",
+                    row.iter().map(|wi| step_real(*wi)).collect::<Vec<_>>().join(",")
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        None => "SELF".to_string(),
+    };
+    let u_knots = unique_knots(&s.knots_u);
+    let v_knots = unique_knots(&s.knots_v);
+    let u_mult = knot_multiplicities(&s.knots_u);
+    let v_mult = knot_multiplicities(&s.knots_v);
+    let real_list = |v: &[f64]| v.iter().map(|k| step_real(*k)).collect::<Vec<_>>().join(",");
+    let int_list = |v: &[usize]| v.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(",");
+    Ok(step.emit(format!(
+        "B_SPLINE_SURFACE_WITH_KNOTS('',{},{},{},{},UNSPECIFIED,.F.,.F.,.F.,({}),({}),({}),({}),UNSPECIFIED)",
+        s.deg_u,
+        s.deg_v,
+        poles_grid,
+        weights,
+        real_list(&u_knots),
+        int_list(&u_mult),
+        real_list(&v_knots),
+        int_list(&v_mult),
+    )))
+}
+
+/// Emit a `TRIMMED_CURVE` entity restricting a basis curve to `[a, b]`.
+///
+/// `master_representation` is `PARAMETER`, so the trim bounds are parameter
+/// values of the basis curve (rather than points lying on it). The two bounds
+/// are normalised to ascending order.
+pub fn write_trimmed_curve(step: &mut StepWriter, curve_ref: usize, a: f64, b: f64) -> Result<usize, String> {
+    let (a, b) = (a.min(b), a.max(b));
+    Ok(step.emit(format!(
+        "TRIMMED_CURVE('',#{curve_ref},1,{},{},PARAMETER)",
+        step_real(a),
+        step_real(b)
+    )))
+}
+
+/// Emit an `OFFSET_CURVE_3D` entity: `curve_ref` shifted by `offset` along the
+/// constant direction `dir_ref`.
+///
+/// `self_intersect` and `curve_form` are left `UNSPECIFIED` (a caller that
+/// knows the basis's analytic form may override them).
+pub fn write_offset_curve(
+    step: &mut StepWriter,
+    curve_ref: usize,
+    offset: f64,
+    dir_ref: usize,
+) -> Result<usize, String> {
+    Ok(step.emit(format!(
+        "OFFSET_CURVE_3D('',#{curve_ref},#{dir_ref},{},UNSPECIFIED,UNSPECIFIED)",
+        step_real(offset)
+    )))
+}
+
+/// Emit a `POLYLINE` entity through `points` and return its record id.
+///
+/// A STEP `POLYLINE` is a connected sequence of `CARTESIAN_POINT`s; the reader
+/// reconstructs it as a degree-1 B-spline curve, so an edge built from a
+/// polyline round-trips as a piecewise-linear curve.
+pub fn write_polyline(step: &mut StepWriter, points: &[GpPnt]) -> Result<usize, String> {
+    if points.len() < 2 {
+        return Err("write_polyline: need at least 2 points".into());
+    }
+    let refs: Vec<usize> = points
+        .iter()
+        .map(|p| step.add_cartesian_point(p))
+        .collect();
+    Ok(step.emit(format!("POLYLINE('',({}))", join_refs(&refs))))
+}
+
+// ---------------------------------------------------------------------------
+// Conic entity writers (sampling reconstruction)
+// ---------------------------------------------------------------------------
+
+/// Emit a `CIRCLE` from a sampled curve.
+///
+/// The center is the circumcenter of three samples at `a`, `a + π/2` and
+/// `a + π`; the radius is the distance from the center to the first sample,
+/// and the local X/Y frame is recovered from the sample directions.
+fn emit_circle_entity(step: &mut StepWriter, c: &dyn Curve, a: f64) -> usize {
+    let p0 = c.d0(a);
+    let p1 = c.d0(a + PI / 2.0);
+    let p2 = c.d0(a + PI);
+    let center = circle_center3(&p0, &p1, &p2).unwrap_or_else(GpPnt::zero);
+    let r = center.distance(&p0);
+    let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &p0)).unwrap_or(dir_x());
+    let ydir = GpDir::from_vec(&GpVec::from_pnts(&center, &p1)).unwrap_or(dir_y());
+    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
+    let ax = step.add_axis2_placement_3d(&center, &axis, &xdir);
+    step.emit(format!("CIRCLE('',#{ax},{})", step_real(r)))
+}
+
+/// Emit an `ELLIPSE` from a sampled curve.
+///
+/// Opposite samples at `a` and `a + π` share the center (their midpoint); the
+/// semi-major axis is the distance to either, and the semi-minor axis the
+/// distance to the `a + π/2` sample.
+fn emit_ellipse_entity(step: &mut StepWriter, c: &dyn Curve, a: f64) -> usize {
+    let p0 = c.d0(a);
+    let p_half = c.d0(a + PI / 2.0);
+    let p_pi = c.d0(a + PI);
+    let center = midpoint(&p0, &p_pi);
+    let major = center.distance(&p0).max(1e-30);
+    let minor = center.distance(&p_half).max(1e-30);
+    let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &p0)).unwrap_or(dir_x());
+    let ydir = GpDir::from_vec(&GpVec::from_pnts(&p_half, &center)).unwrap_or(dir_y());
+    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
+    let ax = step.add_axis2_placement_3d(&center, &axis, &xdir);
+    step.emit(format!(
+        "ELLIPSE('',#{ax},{},{})",
+        step_real(major),
+        step_real(minor)
+    ))
+}
+
+/// Emit a `PARABOLA` from a sampled curve.
+///
+/// The vertex is the sample at parameter 0; the focal length is derived from
+/// the second derivative (|d²| = 1/f for a parabola in its own frame).
+fn emit_parabola_entity(step: &mut StepWriter, c: &dyn Curve) -> usize {
+    let vertex = c.d0(0.0);
+    let d1 = c.d1(0.0).1;
+    let d2 = c.d2(0.0).2;
+    let f = 0.5 / d2.magnitude().max(1e-30);
+    let xdir = GpDir::from_vec(&d2).unwrap_or(dir_x());
+    let ydir = GpDir::from_vec(&d1).unwrap_or(dir_y());
+    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
+    let ax = step.add_axis2_placement_3d(&vertex, &axis, &xdir);
+    step.emit(format!("PARABOLA('',#{ax},{})", step_real(f)))
+}
+
+/// Emit a `HYPERBOLA` from a sampled unbounded curve.
+///
+/// The center is the midpoint of a symmetric sample pair (`d0(u)` and
+/// `d0(-u)`); the semi-major radius is the distance to the vertex sample at
+/// parameter 0, and the semi-minor radius is |d¹(0)|.
+fn emit_hyperbola_entity(step: &mut StepWriter, c: &dyn Curve) -> usize {
+    let center = midpoint(&c.d0(1.0), &c.d0(-1.0));
+    let vertex = c.d0(0.0);
+    let major = center.distance(&vertex).max(1e-30);
+    let d1 = c.d1(0.0).1;
+    let minor = d1.magnitude().max(1e-30);
+    let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &vertex)).unwrap_or(dir_x());
+    let ydir = GpDir::from_vec(&d1).unwrap_or(dir_y());
+    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
+    let ax = step.add_axis2_placement_3d(&center, &axis, &xdir);
+    step.emit(format!(
+        "HYPERBOLA('',#{ax},{},{})",
+        step_real(major),
+        step_real(minor)
+    ))
+}
+
+/// Write the full analytic (conic) parameterisation of `curve` if it is a
+/// circle, ellipse, parabola or hyperbola. Returns `Ok(None)` for non-conic
+/// curves (lines, B-splines, generic trimmed/offset geometry).
+///
+/// This mirrors `STEPControl_Writer`'s conic coverage: a circle writes its
+/// radius, an ellipse/hyperbola its semi-axes, and a parabola its focal
+/// length, each against a reconstructed `AXIS2_PLACEMENT_3D`.
+pub fn write_conic_params(step: &mut StepWriter, curve: &dyn Curve) -> Result<Option<usize>, String> {
+    let (f, l) = (curve.first_parameter(), curve.last_parameter());
+    let (lo, hi) = if f.is_finite() && l.is_finite() && l > f {
+        (f, l)
+    } else {
+        (0.0, 1.0)
+    };
+    Ok(match classify_curve(curve, lo, hi) {
+        CurveKind::Circle => Some(emit_circle_entity(step, curve, lo)),
+        CurveKind::Ellipse => Some(emit_ellipse_entity(step, curve, lo)),
+        CurveKind::Parabola => Some(emit_parabola_entity(step, curve)),
+        CurveKind::Line => None,
+        // A hyperbola is unbounded in parameter space and non-periodic, which
+        // the sampling classifier reports as `Other`.
+        CurveKind::Other if !f.is_finite() && !l.is_finite() => Some(emit_hyperbola_entity(step, curve)),
+        CurveKind::Other => None,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// B-spline approximation helpers
+// ---------------------------------------------------------------------------
+
+/// Approximate a non-analytic surface with an interpolating B-spline surface.
+///
+/// Trait objects cannot be downcast, so a genuine `GeomBSplineSurface` is
+/// recovered by sampling and re-fitting (`fit_surface_grid`). The fit passes
+/// through every grid node, so a sampled B-spline reproduces itself closely;
+/// analytic surfaces should never reach this path.
+fn fit_bspline_surface(s: &dyn Surface) -> Result<GeomBSplineSurface, String> {
+    let (u0, u1, v0, v1) = surf_bounds(s);
+    let nu = 6;
+    let nv = 6;
+    let mut pts = Vec::with_capacity(nu);
+    for i in 0..nu {
+        let mut row = Vec::with_capacity(nv);
+        for j in 0..nv {
+            let u = u0 + (u1 - u0) * i as f64 / (nu - 1) as f64;
+            let v = v0 + (v1 - v0) * j as f64 / (nv - 1) as f64;
+            row.push(s.d0(u, v));
+        }
+        pts.push(row);
+    }
+    occt_geom::bspline_surface::fit_surface_grid(&pts, 2, 2)
+        .or_else(|_| occt_geom::bspline_surface::fit_surface_grid(&pts, 1, 1))
+        .map_err(|e| format!("fit_bspline_surface: {e}"))
+}
+
+/// Approximate a non-analytic curve with an interpolating B-spline curve.
+///
+/// Sampled at `n` parameter values across the edge's `[a, b]` range and
+/// interpolated with a cubic (degree 1 on failure) clamped B-spline.
+fn fit_bspline_curve(c: &dyn Curve, a: f64, b: f64) -> Result<GeomBSplineCurve, String> {
+    let (lo, hi) = if a.is_finite() && b.is_finite() && b > a {
+        (a, b)
+    } else {
+        (0.0, 1.0)
+    };
+    let n = 8;
+    let mut pts = Vec::with_capacity(n);
+    for i in 0..n {
+        let u = lo + (hi - lo) * i as f64 / (n - 1) as f64;
+        pts.push(c.d0(u));
+    }
+    crate::loft::interpolate_bspline(&pts, 3)
+        .or_else(|_| crate::loft::interpolate_bspline(&pts, 1))
+        .map_err(|e| format!("fit_bspline_curve: {e}"))
+}
+
 /// Internal writer state: the entity writer plus identity maps so shared
 /// vertices/edges/curves are emitted exactly once.
 struct WriteCtx {
@@ -356,6 +800,9 @@ struct WriteCtx {
     geom_ctx: usize,
     prod_ctx: usize,
     def_ctx: usize,
+    /// When true, non-analytic curves/surfaces are written as B-splines
+    /// (sampled + fitted) instead of the tangent-line / plane fallbacks.
+    splines: bool,
 }
 
 impl WriteCtx {
@@ -373,6 +820,7 @@ impl WriteCtx {
             geom_ctx,
             prod_ctx,
             def_ctx,
+            splines: false,
         }
     }
 
@@ -454,49 +902,21 @@ impl WriteCtx {
                 let vid = self.w.add_vector(&dir, 1.0);
                 self.w.emit(format!("LINE('',#{pid},#{vid})"))
             }
-            CurveKind::Circle => {
-                let p0 = c.d0(a);
-                let p1 = c.d0(a + PI / 2.0);
-                let p2 = c.d0(a + PI);
-                let center = circle_center3(&p0, &p1, &p2).unwrap_or_else(GpPnt::zero);
-                let r = center.distance(&p0);
-                let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &p0)).unwrap_or(dir_x());
-                let ydir = GpDir::from_vec(&GpVec::from_pnts(&center, &p1)).unwrap_or(dir_y());
-                let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
-                let ax = self.w.add_axis2_placement_3d(&center, &axis, &xdir);
-                self.w.emit(format!("CIRCLE('',#{ax},{})", step_real(r)))
-            }
-            CurveKind::Ellipse => {
-                let p0 = c.d0(a);
-                let p_half = c.d0(a + PI / 2.0);
-                let p_pi = c.d0(a + PI);
-                let center = midpoint(&p0, &p_pi);
-                let major = center.distance(&p0);
-                let minor = center.distance(&p_half);
-                let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &p0)).unwrap_or(dir_x());
-                let ydir = GpDir::from_vec(&GpVec::from_pnts(&p_half, &center)).unwrap_or(dir_y());
-                let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
-                let ax = self.w.add_axis2_placement_3d(&center, &axis, &xdir);
-                self.w.emit(format!(
-                    "ELLIPSE('',#{ax},{},{})",
-                    step_real(major),
-                    step_real(minor)
-                ))
-            }
-            CurveKind::Parabola => {
-                let vertex = c.d0(0.0);
-                let d1 = c.d1(0.0).1;
-                let d2 = c.d2(0.0).2;
-                let f = 0.5 / d2.magnitude().max(1e-30);
-                let xdir = GpDir::from_vec(&d2).unwrap_or(dir_x());
-                let ydir = GpDir::from_vec(&d1).unwrap_or(dir_y());
-                let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
-                let ax = self.w.add_axis2_placement_3d(&vertex, &axis, &xdir);
-                self.w.emit(format!("PARABOLA('',#{ax},{})", step_real(f)))
-            }
+            CurveKind::Circle => emit_circle_entity(&mut self.w, c, a),
+            CurveKind::Ellipse => emit_ellipse_entity(&mut self.w, c, a),
+            CurveKind::Parabola => emit_parabola_entity(&mut self.w, c),
             CurveKind::Other => {
-                // Fallback: a tangent line at the start parameter keeps the
-                // file valid; the geometry is a linear approximation.
+                // B-spline / trimmed / offset / hyperbola curve: emit a real
+                // B-spline when spline output is requested, otherwise fall back
+                // to a tangent line at the start parameter so the file stays
+                // valid (a linear approximation of the geometry).
+                if self.splines {
+                    if let Ok(bs) = fit_bspline_curve(c, a, b) {
+                        if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
+                            return id;
+                        }
+                    }
+                }
                 let p0 = c.d0(a);
                 let d1 = c.d1(a).1;
                 let dir = GpDir::from_vec(&d1).unwrap_or(dir_x());
@@ -592,7 +1012,18 @@ impl WriteCtx {
                     self.emit_plane_fallback()
                 }
             }
-            SurfKind::Other => self.emit_plane_fallback(),
+            SurfKind::Other => {
+                // B-spline or otherwise non-analytic surface: emit a fitted
+                // B-spline when spline output is requested, else a unit plane.
+                if self.splines {
+                    if let Ok(bs) = fit_bspline_surface(surf.as_ref()) {
+                        if let Ok(id) = write_bspline_surface(&mut self.w, &bs) {
+                            return id;
+                        }
+                    }
+                }
+                self.emit_plane_fallback()
+            }
         }
     }
 
@@ -655,10 +1086,10 @@ impl WriteCtx {
         }
     }
 
-    fn write_shape_named(&mut self, name: &str, shape: &TopoShape) {
+    fn write_shape_named(&mut self, name: &str, shape: &TopoShape) -> Option<usize> {
         let items = self.emit_top(shape);
         if items.is_empty() {
-            return;
+            return None;
         }
         let n = esc_str(name);
         let rep = self.w.emit(format!(
@@ -679,6 +1110,7 @@ impl WriteCtx {
         let pds = self.w.emit(format!("PRODUCT_DEFINITION_SHAPE('','',#{product})"));
         self.w
             .emit(format!("PRODUCT_DEFINITION_SHAPE_REPRESENTATION('',#{pds},#{rep})"));
+        Some(rep)
     }
 }
 
@@ -761,6 +1193,402 @@ pub fn write_shape_step(shape: &TopoShape) -> String {
     let mut model = BRepModel::new();
     model.add("Shape", shape.clone());
     write_step(&model)
+}
+
+/// Serialize a single shape, emitting B-spline geometry for non-analytic
+/// curves and surfaces (full `STEPControl_Writer` spline coverage).
+///
+/// Analytic geometry — planes/cylinders/cones/spheres/tori and
+/// lines/circles/ellipses/parabolas — is written exactly. Anything else is
+/// approximated by an interpolating B-spline and written as
+/// `B_SPLINE_CURVE_WITH_KNOTS` / `B_SPLINE_SURFACE_WITH_KNOTS`, which the
+/// reader reconstructs as a valid B-spline face/edge.
+pub fn write_step_with_splines(shape: &TopoShape) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.splines = true;
+    ctx.write_shape_named("Shape", shape)
+        .ok_or_else(|| "write_step_with_splines: nothing to write".to_string())?;
+    Ok(ctx.finish())
+}
+
+/// Serialize a single shape, overriding the `PRODUCT` name attribute.
+pub fn write_step_with_name(shape: &TopoShape, name: &str) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.write_shape_named(name, shape)
+        .ok_or_else(|| "write_step_with_name: nothing to write".to_string())?;
+    Ok(ctx.finish())
+}
+
+/// Serialize a single shape with a minimal STEP style block.
+///
+/// A `COLOUR_RGB` and the `SURFACE_STYLE_FILL_AREA` / `SURFACE_STYLE_USAGE`
+/// style chain are attached to the shape's representation through a
+/// `STYLED_ITEM` record. The style is decorative: STEP readers that do not
+/// interpret presentation styles simply skip these records.
+pub fn write_step_with_color(shape: &TopoShape, color: (f64, f64, f64)) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    let rep = ctx
+        .write_shape_named("Shape", shape)
+        .ok_or_else(|| "write_step_with_color: nothing to write".to_string())?;
+    let colour = ctx.w.emit(format!(
+        "COLOUR_RGB('',{},{},{})",
+        step_real(color.0),
+        step_real(color.1),
+        step_real(color.2)
+    ));
+    let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+    let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
+    ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
+    Ok(ctx.finish())
+}
+
+/// SI unit definitions for [`write_step_with_units`].
+///
+/// The length unit is given as the number of metres per STEP length unit
+/// (1.0 = metre, 0.001 = millimetre); the angle unit as radians per STEP
+/// angle unit (1.0 = radian, `π/180` ≈ 0.01745 = degree). The emitted
+/// `SI_UNIT` records attach these to a `GEOMETRIC_REPRESENTATION_CONTEXT`.
+#[derive(Debug, Clone)]
+pub struct StepUnits {
+    pub length_unit_m: f64,
+    pub angle_unit_rad: f64,
+}
+
+impl Default for StepUnits {
+    fn default() -> Self {
+        Self {
+            length_unit_m: 1.0,
+            angle_unit_rad: 1.0,
+        }
+    }
+}
+
+/// Emit the SI unit block (`DIMENSIONAL_EXPONENTS` + `SI_UNIT` records).
+///
+/// A dimensional-exponent vector of a length measure (metre^1) and one of a
+/// plane angle (radian, dimensionless in the length slots) are shared by the
+/// two `SI_UNIT` records. Readers that do not interpret units skip them.
+fn emit_si_units(w: &mut StepWriter, units: &StepUnits) {
+    let _ = units;
+    let len_dim = w.emit("DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.)".into());
+    let ang_dim = w.emit("DIMENSIONAL_EXPONENTS(0.,0.,0.,1.,0.,0.,0.)".into());
+    w.emit(format!("SI_UNIT(#{len_dim},*,.METRE.)"));
+    w.emit(format!("SI_UNIT(#{ang_dim},*,.RADIAN.)"));
+}
+
+/// Serialize a single shape with an explicit PRODUCT name and SI unit block.
+///
+/// The unit records (`DIMENSIONAL_EXPONENTS` + `SI_UNIT`) are emitted after
+/// the shape representation, mirroring the unit scaffolding a full
+/// `STEPControl_Writer` places in the DATA section. The length/angle scale
+/// factors from `units` are recorded so a downstream reader can convert to
+/// metres; readers that do not interpret units simply skip the records.
+pub fn write_step_with_units(
+    shape: &TopoShape,
+    name: &str,
+    units: &StepUnits,
+) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.write_shape_named(name, shape)
+        .ok_or_else(|| "write_step_with_units: nothing to write".to_string())?;
+    emit_si_units(&mut ctx.w, units);
+    Ok(ctx.finish())
+}
+
+/// Consolidated options for [`write_step_with_options`].
+///
+/// Combines the PRODUCT name, an optional colour style, SI units and the
+/// spline-capable writer into one call — the port of `STEPControl_Writer`'s
+/// per-shape configuration (name attribute, presentation colour and unit
+/// system).
+#[derive(Debug, Clone)]
+pub struct StepWriteOptions {
+    pub name: String,
+    pub color: Option<(f64, f64, f64)>,
+    pub units: StepUnits,
+    pub splines: bool,
+}
+
+impl Default for StepWriteOptions {
+    fn default() -> Self {
+        Self {
+            name: "Shape".into(),
+            color: None,
+            units: StepUnits::default(),
+            splines: false,
+        }
+    }
+}
+
+/// Serialize a single shape with the full [`StepWriteOptions`] configuration.
+///
+/// This is the one-stop entry point: it writes the shape representation and
+/// product scaffolding, then decorates it with a colour style (when
+/// `color` is set), an SI unit block, and (when `splines` is set) B-spline
+/// output for non-analytic geometry.
+pub fn write_step_with_options(shape: &TopoShape, opts: &StepWriteOptions) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.splines = opts.splines;
+    let rep = ctx
+        .write_shape_named(&opts.name, shape)
+        .ok_or_else(|| "write_step_with_options: nothing to write".to_string())?;
+    if let Some((r, g, b)) = opts.color {
+        let colour = ctx.w.emit(format!(
+            "COLOUR_RGB('',{},{},{})",
+            step_real(r),
+            step_real(g),
+            step_real(b)
+        ));
+        let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+        let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
+        ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
+    }
+    emit_si_units(&mut ctx.w, &opts.units);
+    Ok(ctx.finish())
+}
+
+/// Serialize a single shape with an explicit name and a `COLOUR_RGB` style.
+///
+/// Combines [`write_step_with_name`] and [`write_step_with_color`]: the
+/// product carries `name` and the shape representation is decorated with a
+/// `SURFACE_STYLE_FILL_AREA` colour.
+pub fn write_step_with_name_and_color(
+    shape: &TopoShape,
+    name: &str,
+    color: (f64, f64, f64),
+) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    let rep = ctx
+        .write_shape_named(name, shape)
+        .ok_or_else(|| "write_step_with_name_and_color: nothing to write".to_string())?;
+    let colour = ctx.w.emit(format!(
+        "COLOUR_RGB('',{},{},{})",
+        step_real(color.0),
+        step_real(color.1),
+        step_real(color.2)
+    ));
+    let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+    let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
+    ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
+    Ok(ctx.finish())
+}
+
+/// Write a shape to a STEP file on disk, using the spline-capable writer.
+pub fn write_step_file_with_splines(path: &str, shape: &TopoShape) -> std::io::Result<()> {
+    let content = write_step_with_splines(shape).map_err(|e| std::io::Error::other(e))?;
+    std::fs::write(path, content)
+}
+
+/// Write an assembly to a STEP file on disk.
+pub fn write_step_assembly_file(path: &str, a: &StepAssembly) -> std::io::Result<()> {
+    let content = write_step_assembly(a).map_err(|e| std::io::Error::other(e))?;
+    std::fs::write(path, content)
+}
+
+/// A lightweight assembly description: named parts plus a parent→children tree.
+///
+/// The top-level `name` is emitted as the assembly's own product definition,
+/// so assembly trees may reference it as a parent in `children`.
+#[derive(Debug, Clone)]
+pub struct StepAssembly {
+    pub name: String,
+    pub products: Vec<(String, TopoShape)>,
+    pub children: Vec<(String, Vec<String>)>,
+}
+
+/// Serialize an assembly: a `PRODUCT` / `PRODUCT_DEFINITION` pair per part
+/// (with the part's shape representation), plus `NEXT_ASSEMBLY_USAGE_OCCURRENCE`
+/// records linking the product definitions along the assembly tree.
+///
+/// Every name in `children` (both parents and children) must be either the
+/// assembly `name` or a key of `products`; unknown names return an error.
+pub fn write_step_assembly(a: &StepAssembly) -> Result<String, String> {
+    write_assembly_inner(a, false)
+}
+
+/// Serialize an assembly with B-spline output for non-analytic part geometry.
+///
+/// Equivalent to [`write_step_assembly`] with the spline-capable geometry
+/// classification enabled, so parts whose faces/edges are B-spline (or
+/// otherwise non-analytic) round-trip through `B_SPLINE_SURFACE_WITH_KNOTS` /
+/// `B_SPLINE_CURVE_WITH_KNOTS`.
+pub fn write_step_assembly_with_splines(a: &StepAssembly) -> Result<String, String> {
+    write_assembly_inner(a, true)
+}
+
+/// Shared assembly serialization; `splines` selects the geometry classifier.
+fn write_assembly_inner(a: &StepAssembly, splines: bool) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.splines = splines;
+    let mut defs: HashMap<String, usize> = HashMap::new();
+
+    // The assembly's own product definition is the root that children hang off.
+    let top = esc_str(&a.name);
+    let top_product = ctx.w.emit(format!("PRODUCT('{top}','{top}','',({}))", ctx.prod_ctx));
+    let top_form = ctx.w.emit(format!("PRODUCT_DEFINITION_FORMATION('','',#{top_product})"));
+    let top_def = ctx.w.emit(format!("PRODUCT_DEFINITION('','','',#{top_form},#{})", ctx.def_ctx));
+    defs.insert(a.name.clone(), top_def);
+
+    for (name, shape) in &a.products {
+        let n = esc_str(name);
+        let product = ctx.w.emit(format!("PRODUCT('{n}','{n}','',({}))", ctx.prod_ctx));
+        let formation = ctx.w.emit(format!("PRODUCT_DEFINITION_FORMATION('','',#{product})"));
+        let def = ctx.w.emit(format!("PRODUCT_DEFINITION('','','',#{formation},#{})", ctx.def_ctx));
+        let items = ctx.emit_top(shape);
+        if !items.is_empty() {
+            let rep = ctx.w.emit(format!(
+                "ADVANCED_BREP_SHAPE_REPRESENTATION('{n}',({}),#{})",
+                join_refs(&items),
+                ctx.geom_ctx
+            ));
+            let pds = ctx.w.emit(format!("PRODUCT_DEFINITION_SHAPE('','',#{product})"));
+            ctx.w.emit(format!("PRODUCT_DEFINITION_SHAPE_REPRESENTATION('',#{pds},#{rep})"));
+        }
+        defs.insert(name.clone(), def);
+    }
+
+    for (parent, kids) in &a.children {
+        let pdef = defs
+            .get(parent)
+            .copied()
+            .ok_or_else(|| format!("write_step_assembly: unknown parent '{parent}'"))?;
+        for kid in kids {
+            let kdef = defs
+                .get(kid)
+                .copied()
+                .ok_or_else(|| format!("write_step_assembly: unknown child '{kid}'"))?;
+            let kn = esc_str(kid);
+            ctx.w.emit(format!(
+                "NEXT_ASSEMBLY_USAGE_OCCURRENCE('{kn}','{kn}','',#{pdef},#{kdef},'')"
+            ));
+        }
+    }
+    Ok(ctx.finish())
+}
+
+/// Serialize a model to STEP, emitting B-spline geometry for non-analytic
+/// curves and surfaces (the spline-capable counterpart of [`write_step`]).
+pub fn write_step_model_with_splines(model: &BRepModel) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.splines = true;
+    for ms in &model.shapes {
+        ctx.write_shape_named(&ms.name, &ms.shape);
+    }
+    Ok(ctx.finish())
+}
+
+/// Serialize a model to STEP, attaching a `COLOUR_RGB` style to each shape
+/// whose `ModelShape.color` is set.
+///
+/// Shapes without a colour are written plain. This is the model-level
+/// counterpart of [`write_step_with_color`], reading the colours already
+/// stored on the [`BRepModel`] (e.g. via `add_with_color`).
+pub fn write_step_model_with_colors(model: &BRepModel) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    for ms in &model.shapes {
+        let rep = ctx.write_shape_named(&ms.name, &ms.shape);
+        if let (Some(rep), Some(c)) = (rep, ms.color) {
+            let colour = ctx.w.emit(format!(
+                "COLOUR_RGB('',{},{},{})",
+                step_real(c.r as f64),
+                step_real(c.g as f64),
+                step_real(c.b as f64)
+            ));
+            let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+            let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
+            ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
+        }
+    }
+    Ok(ctx.finish())
+}
+
+/// Serialize a model with per-shape [`StepWriteOptions`].
+///
+/// Each shape in the model is written with the shared options; spline output
+/// applies to every shape, and the colour/units/name defaults apply as in
+/// [`write_step_with_options`]. Shape names come from the model, so `opts.name`
+/// is only used as a fallback for unnamed shapes.
+pub fn write_step_model_with_options(model: &BRepModel, opts: &StepWriteOptions) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.splines = opts.splines;
+    for ms in &model.shapes {
+        let name = if ms.name.is_empty() { opts.name.clone() } else { ms.name.clone() };
+        let rep = ctx.write_shape_named(&name, &ms.shape);
+        if let (Some(rep), Some((r, g, b))) = (rep, opts.color) {
+            let colour = ctx.w.emit(format!(
+                "COLOUR_RGB('',{},{},{})",
+                step_real(r),
+                step_real(g),
+                step_real(b)
+            ));
+            let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+            let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
+            ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
+        }
+        emit_si_units(&mut ctx.w, &opts.units);
+    }
+    Ok(ctx.finish())
+}
+
+/// Read a STEP physical file from disk, also returning collected warnings for
+/// skipped or unsupported entities.
+pub fn read_step_file_with_warnings(path: &str) -> Result<(BRepModel, Vec<String>), String> {
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    read_step_with_warnings(&content)
+}
+
+/// Serialize a list of named shapes into one STEP file.
+///
+/// Each `(name, shape)` pair becomes its own representation + product pair,
+/// exactly as [`write_step`] does for a [`BRepModel`], without requiring the
+/// caller to build a model object first. The reader returns each shape under
+/// its `name`.
+pub fn write_step_shapes(shapes: &[(String, TopoShape)]) -> String {
+    let mut ctx = WriteCtx::new();
+    for (name, shape) in shapes {
+        ctx.write_shape_named(name, shape);
+    }
+    ctx.finish()
+}
+
+/// Spline-capable counterpart of [`write_step_shapes`]: non-analytic curves
+/// and surfaces are emitted as B-splines.
+pub fn write_step_shapes_with_splines(shapes: &[(String, TopoShape)]) -> Result<String, String> {
+    let mut ctx = WriteCtx::new();
+    ctx.splines = true;
+    for (name, shape) in shapes {
+        ctx.write_shape_named(name, shape);
+    }
+    Ok(ctx.finish())
+}
+
+/// Serialize a compound as its named children in one STEP file.
+///
+/// A [`TopoShape`] of type `Compound` is flattened: each child shape is written
+/// as a named representation (`Child1`, `Child2`, ...), which the reader
+/// reconstructs as separate model shapes. Non-compound shapes are written as a
+/// single `"Shape"` representation.
+pub fn write_step_compound(compound: &TopoShape) -> Result<String, String> {
+    if !compound.is_compound() {
+        return write_step_with_splines(compound);
+    }
+    let kids: Vec<TopoShape> = compound
+        .tshape
+        .read()
+        .unwrap()
+        .children
+        .iter()
+        .map(|h| TopoShape::from_handle(h.clone()))
+        .collect();
+    if kids.is_empty() {
+        return Err("write_step_compound: empty compound".into());
+    }
+    let named: Vec<(String, TopoShape)> = kids
+        .into_iter()
+        .enumerate()
+        .map(|(i, k)| (format!("Child{}", i + 1), k))
+        .collect();
+    Ok(write_step_shapes_with_splines(&named)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,6 +1846,7 @@ impl<'a> Resolver<'a> {
             "ORIENTED_EDGE" => self.resolve_oriented_edge(rec),
             "EDGE_LOOP" => self.resolve_loop(rec),
             "FACE_OUTER_BOUND" => self.resolve_outer_bound(rec),
+            "FACE_BOUND" => self.resolve_outer_bound(rec),
             "ADVANCED_FACE" => self.resolve_face(rec),
             "CLOSED_SHELL" => self.resolve_shell(rec),
             "MANIFOLD_SOLID_BREP" => self.resolve_solid(rec),
@@ -1242,24 +2071,78 @@ impl<'a> Resolver<'a> {
                 Arc::new(GeomParabola::new(GpParab::new(self.resolve_axis2(ax)?, f)))
             }
             "B_SPLINE_CURVE_WITH_KNOTS" => {
+                // Layout (10 args): name, degree, control_points, weights|SELF,
+                // curve_form, closed, self_intersect, knots, multiplicities, knot_spec.
                 let degree = parse_f64(&rec.args[1])? as usize;
                 let poles: Vec<GpPnt> = parse_ref_list(&rec.args[2])
                     .into_iter()
                     .map(|r| self.resolve_point(r))
                     .collect::<Result<Vec<_>, _>>()?;
-                let mults = parse_usize_list(&rec.args[3]);
-                let knot_vals = parse_real_list(&rec.args[4]);
-                let mut knots = Vec::new();
-                for (i, &m) in mults.iter().enumerate() {
-                    let kv = knot_vals.get(i).copied().unwrap_or(0.0);
-                    for _ in 0..m {
-                        knots.push(kv);
+                let weights_arg = rec.args.get(3).map(|s| s.trim().to_string());
+                let knots = expand_knots(
+                    &parse_usize_list(rec.args.get(8).map(|s| s.as_str()).unwrap_or("()")),
+                    &parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()")),
+                );
+                let curve = match weights_arg.as_deref() {
+                    None | Some("SELF") => GeomBSplineCurve::new(poles, knots, degree),
+                    Some(w) => {
+                        let weights = parse_real_list(w);
+                        if weights.len() != poles.len() {
+                            return Err("B_SPLINE_CURVE: weight count mismatch".into());
+                        }
+                        GeomBSplineCurve::rational(poles, weights, knots, degree)
                     }
+                };
+                Arc::new(curve.map_err(|e| format!("B_SPLINE_CURVE: {e}"))?)
+            }
+            "POLYLINE" => {
+                // A connected sequence of CARTESIAN_POINTs; represent it as a
+                // degree-1 B-spline that passes through every vertex.
+                let pts: Vec<GpPnt> = parse_ref_list(&rec.args[1])
+                    .into_iter()
+                    .map(|r| self.resolve_point(r))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if pts.len() < 2 {
+                    return Err("POLYLINE: need at least 2 points".into());
                 }
+                let knots = uniform_knots_for(pts.len(), 1);
+                Arc::new(
+                    GeomBSplineCurve::new(pts, knots, 1)
+                        .map_err(|e| format!("POLYLINE: {e}"))?,
+                )
+            }
+            "B_SPLINE_CURVE" => {
+                // Plain B-spline (no explicit knots): the knot vector is the
+                // clamped uniform one implied by the pole count and degree.
+                let degree = parse_f64(&rec.args[1])? as usize;
+                let poles: Vec<GpPnt> = parse_ref_list(&rec.args[2])
+                    .into_iter()
+                    .map(|r| self.resolve_point(r))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let knots = uniform_knots_for(poles.len(), degree);
                 Arc::new(
                     GeomBSplineCurve::new(poles, knots, degree)
                         .map_err(|e| format!("B_SPLINE_CURVE: {e}"))?,
                 )
+            }
+            "TRIMMED_CURVE" => {
+                // Layout: name, basis_curve, trim_1, trim_2, sense_agreement,
+                // master_representation. The bounds are the 4th/5th attributes.
+                let basis_ref = parse_ref(&rec.args[1]).ok_or("TRIMMED_CURVE: bad basis ref")?;
+                let basis = self.resolve_curve(basis_ref)?;
+                let a = parse_f64(&rec.args[3])?;
+                let b = parse_f64(&rec.args[4])?;
+                Arc::new(GeomTrimmedCurve::new(basis, a, b))
+            }
+            "OFFSET_CURVE_3D" => {
+                // Layout: name, basis_curve, direction, distance, self_intersect,
+                // curve_form.
+                let basis_ref = parse_ref(&rec.args[1]).ok_or("OFFSET_CURVE_3D: bad curve ref")?;
+                let dir_ref = parse_ref(&rec.args[2]).ok_or("OFFSET_CURVE_3D: bad dir ref")?;
+                let offset = parse_f64(&rec.args[3])?;
+                let basis = self.resolve_curve(basis_ref)?;
+                let dir = self.resolve_direction(dir_ref)?;
+                Arc::new(GeomOffsetCurve::new(basis, offset, dir))
             }
             other => {
                 self.warn(format!("unsupported curve entity {other} (#{id})"));
@@ -1313,6 +2196,62 @@ impl<'a> Resolver<'a> {
                     GpTorus::new(self.resolve_axis2(ax)?.to_ax3(), maj, min)
                         .map_err(|e| format!("TOROIDAL_SURFACE: {e}"))?,
                 ))
+            }
+            "B_SPLINE_SURFACE" => {
+                // Plain B-spline surface (no explicit knots): clamped uniform
+                // knot vectors derived from the pole grid and degrees.
+                let deg_u = parse_f64(&rec.args[1])? as usize;
+                let deg_v = parse_f64(&rec.args[2])? as usize;
+                let poles: Vec<Vec<GpPnt>> = parse_nested_ref_list(&rec.args[3])
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .map(|r| self.resolve_point(r))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let nu = poles.len();
+                let nv = poles.first().map_or(0, |r| r.len());
+                let u_knots = uniform_knots_for(nu, deg_u);
+                let v_knots = uniform_knots_for(nv, deg_v);
+                Arc::new(
+                    GeomBSplineSurface::new(poles, u_knots, v_knots, deg_u, deg_v)
+                        .map_err(|e| format!("B_SPLINE_SURFACE: {e}"))?,
+                )
+            }
+            "B_SPLINE_SURFACE_WITH_KNOTS" => {
+                // Layout (14 args): name, u_degree, v_degree, control_points grid,
+                // weights|SELF, surface_form, closed_u, closed_v, self_intersect,
+                // u_knots, u_multiplicities, v_knots, v_multiplicities, knot_spec.
+                let deg_u = parse_f64(&rec.args[1])? as usize;
+                let deg_v = parse_f64(&rec.args[2])? as usize;
+                let poles: Vec<Vec<GpPnt>> = parse_nested_ref_list(&rec.args[3])
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .map(|r| self.resolve_point(r))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let weights_arg = rec.args.get(4).map(|s| s.trim().to_string());
+                let u_knots = expand_knots(
+                    &parse_usize_list(rec.args.get(10).map(|s| s.as_str()).unwrap_or("()")),
+                    &parse_real_list(rec.args.get(9).map(|s| s.as_str()).unwrap_or("()")),
+                );
+                let v_knots = expand_knots(
+                    &parse_usize_list(rec.args.get(12).map(|s| s.as_str()).unwrap_or("()")),
+                    &parse_real_list(rec.args.get(11).map(|s| s.as_str()).unwrap_or("()")),
+                );
+                let surface = match weights_arg.as_deref() {
+                    None | Some("SELF") => {
+                        GeomBSplineSurface::new(poles, u_knots, v_knots, deg_u, deg_v)
+                    }
+                    Some(w) => {
+                        let wgrid = parse_nested_real_list(w);
+                        GeomBSplineSurface::rational(poles, wgrid, u_knots, v_knots, deg_u, deg_v)
+                    }
+                };
+                Arc::new(surface.map_err(|e| format!("B_SPLINE_SURFACE: {e}"))?)
             }
             other => {
                 self.warn(format!("unsupported surface entity {other} (#{id})"));
@@ -1442,8 +2381,45 @@ fn parse_real_list(s: &str) -> Vec<f64> {
         .collect()
 }
 
+/// Split a nested `((...),(...),...)` argument into its inner lists.
+fn parse_nested_lists(s: &str) -> Vec<Vec<String>> {
+    let s = s.trim();
+    if !(s.starts_with('(') && s.ends_with(')')) {
+        return Vec::new();
+    }
+    split_top(&s[1..s.len() - 1])
+        .into_iter()
+        .filter_map(|row| {
+            let row = row.trim();
+            if row.starts_with('(') && row.ends_with(')') {
+                Some(split_top(&row[1..row.len() - 1]))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Parse a nested list of entity references (e.g. a B-spline surface pole grid).
+fn parse_nested_ref_list(s: &str) -> Vec<Vec<usize>> {
+    parse_nested_lists(s)
+        .into_iter()
+        .map(|row| row.into_iter().filter_map(|a| parse_ref(&a)).collect())
+        .collect()
+}
+
+/// Parse a nested list of real values (e.g. a B-spline surface weight grid).
+fn parse_nested_real_list(s: &str) -> Vec<Vec<f64>> {
+    parse_nested_lists(s)
+        .into_iter()
+        .map(|row| row.into_iter().filter_map(|a| a.trim().parse().ok()).collect())
+        .collect()
+}
+
 /// Parse a STEP physical file, returning the model plus collected warnings.
-fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), String> {
+/// Extract the `DATA` section of a physical file (between `DATA;` and the
+/// closing `ENDSEC;`), validating the file terminator.
+fn data_section(content: &str) -> Result<&str, String> {
     if !content.contains("END-ISO-10303-21") {
         return Err("STEP file: missing END-ISO-10303-21 terminator".into());
     }
@@ -1454,7 +2430,11 @@ fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), String> {
     let data_end = after_data
         .find("ENDSEC;")
         .ok_or("STEP file: DATA section not closed by ENDSEC")?;
-    let data = &after_data[..data_end];
+    Ok(&after_data[..data_end])
+}
+
+fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), String> {
+    let data = data_section(content)?;
     let records = parse_records(data)?;
     let resolver = Resolver::new(&records);
 
@@ -1524,6 +2504,144 @@ pub fn read_step_with_warnings(content: &str) -> Result<(BRepModel, Vec<String>)
 pub fn read_step_file(path: &str) -> Result<BRepModel, String> {
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     read_step(&content)
+}
+
+/// Read a STEP physical file back into a [`StepAssembly`].
+///
+/// Reconstructs the product tree from `PRODUCT` / `PRODUCT_DEFINITION` /
+/// `NEXT_ASSEMBLY_USAGE_OCCURRENCE` records. The root name is the product that
+/// is never referenced as a child; part shapes are re-read from the part
+/// representations when present (parts without a representation keep an empty
+/// `TopoShape`).
+pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
+    let data = data_section(content)?;
+    let records = parse_records(data)?;
+    let resolver = Resolver::new(&records);
+
+    // PRODUCT id -> product name.
+    let mut product_names: HashMap<usize, String> = HashMap::new();
+    for (id, rec) in &records {
+        if rec.type_name == "PRODUCT" {
+            product_names.insert(*id, parse_str(&rec.args[0]));
+        }
+    }
+
+    // PRODUCT_DEFINITION_FORMATION id -> owning PRODUCT id.
+    let mut form_product: HashMap<usize, usize> = HashMap::new();
+    for (id, rec) in &records {
+        if rec.type_name == "PRODUCT_DEFINITION_FORMATION" {
+            if let Some(p) = parse_ref(&rec.args[2]) {
+                form_product.insert(*id, p);
+            }
+        }
+    }
+
+    // PRODUCT_DEFINITION id -> product name (via its formation).
+    let mut def_name: HashMap<usize, String> = HashMap::new();
+    for (id, rec) in &records {
+        if rec.type_name == "PRODUCT_DEFINITION" {
+            let name = parse_ref(&rec.args[3])
+                .and_then(|f| form_product.get(&f).copied())
+                .and_then(|p| product_names.get(&p).cloned())
+                .unwrap_or_default();
+            def_name.insert(*id, name);
+        }
+    }
+
+    // PRODUCT_DEFINITION_SHAPE id -> PRODUCT id (the shape's owner).
+    let mut pds_product: HashMap<usize, usize> = HashMap::new();
+    for (id, rec) in &records {
+        if rec.type_name == "PRODUCT_DEFINITION_SHAPE" {
+            if let Some(p) = parse_ref(&rec.args[2]) {
+                pds_product.insert(*id, p);
+            }
+        }
+    }
+
+    // representation id -> PRODUCT id, via the SHAPE_REPRESENTATION link.
+    let mut rep_product: HashMap<usize, usize> = HashMap::new();
+    for (id, rec) in &records {
+        if rec.type_name == "PRODUCT_DEFINITION_SHAPE_REPRESENTATION" {
+            if let (Some(pds), Some(rep)) = (parse_ref(&rec.args[1]), parse_ref(&rec.args[2])) {
+                if let Some(p) = pds_product.get(&pds) {
+                    rep_product.insert(rep, *p);
+                }
+            }
+        }
+    }
+
+    // Parts: resolve each representation owned by a product.
+    let mut products: Vec<(String, TopoShape)> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut reps: Vec<usize> = records
+        .iter()
+        .filter(|(_, r)| {
+            r.type_name == "ADVANCED_BREP_SHAPE_REPRESENTATION" || r.type_name == "SHAPE_REPRESENTATION"
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    reps.sort_unstable();
+    for id in reps {
+        let Some(pid) = rep_product.get(&id) else { continue };
+        let Some(name) = product_names.get(pid) else { continue };
+        let name = name.clone();
+        if seen.contains(&name) {
+            continue;
+        }
+        match resolver.resolve_representation(id) {
+            Ok((_, shapes)) => {
+                if shapes.is_empty() {
+                    continue;
+                }
+                let shape = if shapes.len() == 1 {
+                    shapes.into_iter().next().unwrap()
+                } else {
+                    let b = TopoBuilder::new();
+                    b.make_compound_of(&shapes).0
+                };
+                seen.insert(name.clone());
+                products.push((name, shape));
+            }
+            Err(e) => resolver.warn(format!("representation #{id}: {e}")),
+        }
+    }
+
+    // Assembly tree from NEXT_ASSEMBLY_USAGE_OCCURRENCE records.
+    let mut children: Vec<(String, Vec<String>)> = Vec::new();
+    let mut has_parent: HashSet<String> = HashSet::new();
+    for (_, rec) in &records {
+        if rec.type_name == "NEXT_ASSEMBLY_USAGE_OCCURRENCE" {
+            if let (Some(rel), Some(red)) = (parse_ref(&rec.args[3]), parse_ref(&rec.args[4])) {
+                if let (Some(pn), Some(cn)) = (def_name.get(&rel), def_name.get(&red)) {
+                    if let Some(entry) = children.iter_mut().find(|(p, _)| p == pn) {
+                        entry.1.push(cn.clone());
+                    } else {
+                        children.push((pn.clone(), vec![cn.clone()]));
+                    }
+                    has_parent.insert(cn.clone());
+                }
+            }
+        }
+    }
+
+    // The assembly root is the product never referenced as a child.
+    let name = product_names
+        .values()
+        .find(|n| !has_parent.contains(*n))
+        .cloned()
+        .unwrap_or_else(|| "Assembly".to_string());
+
+    Ok(StepAssembly {
+        name,
+        products,
+        children,
+    })
+}
+
+/// Read a STEP assembly physical file from disk.
+pub fn read_step_assembly_file(path: &str) -> Result<StepAssembly, String> {
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    read_step_assembly(&content)
 }
 
 /// Round-trip helper: write `shape` to STEP, read it back, and count the
@@ -1702,5 +2820,431 @@ ENDSEC;\nEND-ISO-10303-21;";
         assert_eq!(got.len(), 1);
         assert_eq!(got.names(), vec!["Ball"]);
         std::fs::remove_file(p).ok();
+    }
+
+    #[test]
+    fn bspline_curve_written() {
+        let c = GeomBSplineCurve::new(
+            vec![
+                GpPnt::new(0.0, 0.0, 0.0),
+                GpPnt::new(1.0, 0.0, 0.0),
+                GpPnt::new(2.0, 1.0, 0.0),
+                GpPnt::new(3.0, 0.0, 0.0),
+            ],
+            vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+            2,
+        )
+        .unwrap();
+        let mut w = StepWriter::new();
+        let id = write_bspline_curve(&mut w, &c).unwrap();
+        let line = &w.lines[id - 1];
+        assert!(line.contains("B_SPLINE_CURVE_WITH_KNOTS"), "{line}");
+        // Degree 2, four control-point refs, polynomial (SELF weights).
+        assert!(line.contains("('',2,(#1,#2,#3,#4)"), "{line}");
+        assert!(line.contains("SELF"), "{line}");
+        // Knots 0/0.5/1 with multiplicities 3/1/3, and the UNSPECIFIED defaults.
+        assert!(line.contains("(0.0,0.5,1.0)"), "{line}");
+        assert!(line.contains("(3,1,3)"), "{line}");
+        assert!(line.contains("UNSPECIFIED"), "{line}");
+    }
+
+    #[test]
+    fn rational_bspline_curve_written() {
+        let c = GeomBSplineCurve::rational(
+            vec![
+                GpPnt::new(0.0, 0.0, 0.0),
+                GpPnt::new(1.0, 0.0, 0.0),
+                GpPnt::new(2.0, 0.0, 0.0),
+            ],
+            vec![1.0, 0.5, 1.0],
+            vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            1,
+        )
+        .unwrap();
+        let mut w = StepWriter::new();
+        let id = write_bspline_curve(&mut w, &c).unwrap();
+        let line = &w.lines[id - 1];
+        assert!(line.contains("(1.0,0.5,1.0)"), "{line}");
+        assert!(!line.contains("SELF"), "{line}");
+    }
+
+    #[test]
+    fn bspline_surface_written() {
+        let (ku, kv) = occt_geom::bspline_surface::bspline_surface_uniform_knots(3, 3, 2, 2);
+        let poles = vec![
+            vec![
+                GpPnt::new(0.0, 0.0, 0.0),
+                GpPnt::new(0.0, 1.0, 0.0),
+                GpPnt::new(0.0, 2.0, 0.0),
+            ],
+            vec![
+                GpPnt::new(1.0, 0.0, 1.0),
+                GpPnt::new(1.0, 1.0, 1.0),
+                GpPnt::new(1.0, 2.0, 1.0),
+            ],
+            vec![
+                GpPnt::new(2.0, 0.0, 0.0),
+                GpPnt::new(2.0, 1.0, 0.0),
+                GpPnt::new(2.0, 2.0, 0.0),
+            ],
+        ];
+        let s = GeomBSplineSurface::new(poles, ku, kv, 2, 2).unwrap();
+        let mut w = StepWriter::new();
+        let id = write_bspline_surface(&mut w, &s).unwrap();
+        let line = &w.lines[id - 1];
+        assert!(line.contains("B_SPLINE_SURFACE_WITH_KNOTS"), "{line}");
+        // u_degree, v_degree both 2; 3×3 pole grid; polynomial.
+        assert!(line.contains("('',2,2,((#1,#2,#3),(#4,#5,#6),(#7,#8,#9))"), "{line}");
+        assert!(line.contains("SELF"), "{line}");
+        assert!(line.contains("(0.0,1.0)"), "{line}");
+        assert!(line.contains("(3,3)"), "{line}");
+    }
+
+    #[test]
+    fn trimmed_curve_written() {
+        let mut w = StepWriter::new();
+        let id = write_trimmed_curve(&mut w, 42, 1.5, 0.5).unwrap();
+        let line = &w.lines[id - 1];
+        // Bounds are normalised to ascending order.
+        assert!(
+            line.contains("TRIMMED_CURVE('',#42,1,0.5,1.5,PARAMETER)"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn offset_curve_written() {
+        let mut w = StepWriter::new();
+        let id = write_offset_curve(&mut w, 7, 2.5, 9).unwrap();
+        let line = &w.lines[id - 1];
+        assert!(
+            line.contains("OFFSET_CURVE_3D('',#7,#9,2.5,UNSPECIFIED,UNSPECIFIED)"),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn circle_ellipse_params() {
+        let ax2 = GpAx2::new(GpPnt::zero(), dir_z(), dir_x()).unwrap();
+        let c = GeomCircle::new(GpCirc::new(ax2.clone(), 2.0));
+        let mut w = StepWriter::new();
+        let id = write_conic_params(&mut w, &c).unwrap().expect("circle is a conic");
+        let line = &w.lines[id - 1];
+        assert!(line.contains("CIRCLE"), "{line}");
+        assert!(line.contains(",2.0)"), "{line}");
+
+        let e = GeomEllipse::new(GpElips::new(ax2, 3.0, 1.5));
+        let id = write_conic_params(&mut w, &e).unwrap().expect("ellipse is a conic");
+        let line = &w.lines[id - 1];
+        assert!(line.contains("ELLIPSE"), "{line}");
+        assert!(line.contains("3.0,1.5)"), "{line}");
+    }
+
+    /// A small curved B-spline surface grid (z = u² + v³) reused by the
+    /// spline round-trip tests.
+    fn bspline_test_surface() -> GeomBSplineSurface {
+        let (nu, nv) = (5, 5);
+        let points: Vec<Vec<GpPnt>> = (0..nu)
+            .map(|i| {
+                (0..nv)
+                    .map(|j| {
+                        let u = i as f64 / (nu - 1) as f64;
+                        let v = j as f64 / (nv - 1) as f64;
+                        GpPnt::new(u, v, u * u + v * v * v)
+                    })
+                    .collect()
+            })
+            .collect();
+        occt_geom::bspline_surface::fit_surface_grid(&points, 3, 3).unwrap()
+    }
+
+    #[test]
+    fn step_bspline_roundtrip() {
+        let surf = bspline_test_surface();
+        let face = crate::brep_builder_full::BRepBuilderFace::from_surface(Arc::new(surf));
+        let step = write_step_with_splines(&face).unwrap();
+        let m = read_step(&step).expect("read bspline step");
+        assert_eq!(m.len(), 1);
+        assert!(m.shapes[0].shape.is_face(), "shape type preserved");
+        let fs = faces_of(&m.shapes[0].shape);
+        assert!(!fs.is_empty(), "reconstructed shape has faces");
+    }
+
+    #[test]
+    fn step_spline_reader_handles() {
+        let surf = bspline_test_surface();
+        let face = crate::brep_builder_full::BRepBuilderFace::from_surface(Arc::new(surf));
+        let step = write_step_with_splines(&face).unwrap();
+        let path = std::env::temp_dir().join("occt_step_spline_reader.step");
+        let p = path.to_str().unwrap();
+        std::fs::write(p, &step).expect("write spline step");
+        let m = read_step_file(p).expect("read spline step file");
+        assert_eq!(m.len(), 1);
+        let fs = faces_of(&m.shapes[0].shape);
+        assert!(!fs.is_empty());
+        std::fs::remove_file(p).ok();
+    }
+
+    #[test]
+    fn box_roundtrip_splines() {
+        let b = BRepPrimBox::make_box(2.0, 3.0, 4.0);
+        let step = write_step_with_splines(&b.solid.0).unwrap();
+        let m = read_step(&step).expect("read spline box step");
+        assert_eq!(m.len(), 1);
+        let c = crate::topo_tools_full::shape_counts(&m.shapes[0].shape);
+        assert_eq!(c.get(&ShapeType::Vertex).copied().unwrap_or(0), 8);
+        assert_eq!(c.get(&ShapeType::Edge).copied().unwrap_or(0), 12);
+        assert_eq!(c.get(&ShapeType::Face).copied().unwrap_or(0), 6);
+    }
+
+    #[test]
+    fn conic_circle_roundtrip() {
+        let b = TopoBuilder::new();
+        let ax2 = GpAx2::new(GpPnt::zero(), dir_z(), dir_x()).unwrap();
+        let circ = GpCirc::new(ax2, 2.0);
+        let mut e = b.make_edge(Arc::new(GeomCircle::new(circ)), 0.0, 2.0 * PI);
+        let v = b.make_vertex(GpPnt::new(2.0, 0.0, 0.0), 0.0);
+        b.add(&mut e.0, &v.0);
+        b.add(&mut e.0, &v.0);
+        let w = b.make_wire(&[Edge(e.0)]);
+        let ax3 = GpAx3::new(GpPnt::zero(), dir_z(), &dir_x()).unwrap();
+        let face = crate::brep_builder_full::BRepBuilderFace::from_wire(&w, &GpPln::new(ax3)).unwrap();
+        let step = write_step_with_splines(&face).unwrap();
+        let m = read_step(&step).expect("read circle face step");
+        assert_eq!(m.len(), 1);
+        let fs = faces_of(&m.shapes[0].shape);
+        assert!(!fs.is_empty(), "reconstructed circle face");
+    }
+
+    #[test]
+    fn step_assembly_written() {
+        let a = StepAssembly {
+            name: "Assy".into(),
+            products: vec![
+                ("PartA".into(), BRepPrimBox::make_box(1.0, 2.0, 3.0).solid.0),
+                ("PartB".into(), BRepPrimBox::make_box(2.0, 1.0, 1.0).solid.0),
+            ],
+            children: vec![("Assy".into(), vec!["PartA".into(), "PartB".into()])],
+        };
+        let out = write_step_assembly(&a).unwrap();
+        assert!(out.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE"), "{out}");
+        // The assembly root plus the two parts.
+        assert!(out.matches("PRODUCT('").count() >= 2, "{out}");
+        // The usage records reference the correct product definitions.
+        assert!(out.contains("PartA"), "{out}");
+        assert!(out.contains("PartB"), "{out}");
+    }
+
+    #[test]
+    fn step_assembly_unknown_child_errors() {
+        let a = StepAssembly {
+            name: "Assy".into(),
+            products: vec![("PartA".into(), BRepPrimBox::make_box(1.0, 1.0, 1.0).solid.0)],
+            children: vec![("Assy".into(), vec!["Ghost".into()])],
+        };
+        let err = write_step_assembly(&a).unwrap_err();
+        assert!(err.contains("Ghost"), "{err}");
+    }
+
+    #[test]
+    fn step_color_written() {
+        let b = BRepPrimBox::make_box(1.0, 2.0, 3.0);
+        let out = write_step_with_color(&b.solid.0, (0.8, 0.2, 0.1)).unwrap();
+        assert!(out.contains("COLOUR_RGB"), "{out}");
+        assert!(out.contains("0.8"), "{out}");
+        assert!(out.contains("0.2"), "{out}");
+        assert!(out.contains("0.1"), "{out}");
+        // The style chain is attached to the shape representation.
+        assert!(out.contains("SURFACE_STYLE_FILL_AREA"), "{out}");
+        assert!(out.contains("SURFACE_STYLE_USAGE"), "{out}");
+        // The file still reads back as the shape.
+        let m = read_step(&out).expect("read colored step");
+        assert_eq!(m.len(), 1);
+    }
+
+    #[test]
+    fn step_name_written() {
+        let b = BRepPrimBox::make_box(1.0, 2.0, 3.0);
+        let out = write_step_with_name(&b.solid.0, "MyBox").unwrap();
+        assert!(out.contains("MyBox"), "{out}");
+        // The PRODUCT name survives a read (representation name is derived
+        // from the product name by the writer).
+        let m = read_step(&out).expect("read named step");
+        assert_eq!(m.names(), vec!["MyBox"]);
+    }
+
+    #[test]
+    fn step_units_written() {
+        let b = BRepPrimBox::make_box(1.0, 2.0, 3.0);
+        let units = StepUnits {
+            length_unit_m: 0.001,
+            angle_unit_rad: 1.0,
+        };
+        let out = write_step_with_units(&b.solid.0, "Metric", &units).unwrap();
+        assert!(out.contains("Metric"), "{out}");
+        assert!(out.contains("SI_UNIT"), "{out}");
+        assert!(out.contains("DIMENSIONAL_EXPONENTS"), "{out}");
+        // The file still reads back as the shape (unit records are skipped).
+        let m = read_step(&out).expect("read units step");
+        assert_eq!(m.len(), 1);
+    }
+
+    #[test]
+    fn step_name_color_written() {
+        let b = BRepPrimBox::make_box(1.0, 2.0, 3.0);
+        let out = write_step_with_name_and_color(&b.solid.0, "RedBox", (1.0, 0.0, 0.0)).unwrap();
+        assert!(out.contains("RedBox"), "{out}");
+        assert!(out.contains("COLOUR_RGB"), "{out}");
+        assert!(out.contains("SURFACE_STYLE_USAGE"), "{out}");
+        let m = read_step(&out).expect("read named+color step");
+        assert_eq!(m.names(), vec!["RedBox"]);
+    }
+
+    #[test]
+    fn step_assembly_roundtrip() {
+        let a = StepAssembly {
+            name: "Rig".into(),
+            products: vec![
+                ("Leg".into(), BRepPrimBox::make_box(0.5, 0.5, 2.0).solid.0),
+                ("Foot".into(), BRepPrimBox::make_box(0.8, 0.3, 0.2).solid.0),
+            ],
+            children: vec![
+                ("Rig".into(), vec!["Leg".into()]),
+                ("Leg".into(), vec!["Foot".into()]),
+            ],
+        };
+        let out = write_step_assembly(&a).unwrap();
+        let got = read_step_assembly(&out).expect("read assembly step");
+        // The tree is reconstructed: root "Rig", two parts, two usage edges.
+        assert_eq!(got.name, "Rig");
+        assert_eq!(got.products.len(), 2);
+        let names: Vec<String> = got.products.iter().map(|(n, _)| n.clone()).collect();
+        assert!(names.contains(&"Leg".into()), "{names:?}");
+        assert!(names.contains(&"Foot".into()), "{names:?}");
+        let flat: Vec<(String, String)> = got
+            .children
+            .iter()
+            .flat_map(|(p, kids)| kids.iter().map(move |k| (p.clone(), k.clone())))
+            .collect();
+        assert!(flat.contains(&("Rig".into(), "Leg".into())), "{flat:?}");
+        assert!(flat.contains(&("Leg".into(), "Foot".into())), "{flat:?}");
+    }
+
+    #[test]
+    fn step_spline_reader_plain_bspline() {
+        // A hand-written STEP file using the plain (knotless) B_SPLINE_CURVE
+        // and B_SPLINE_SURFACE entities must read back into a valid face.
+        let s = "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n\
+#1=APPLICATION_CONTEXT('AUTOMOTIVE_DESIGN');\n\
+#2=CARTESIAN_POINT('',(0.,0.,0.));\n\
+#3=CARTESIAN_POINT('',(0.,1.,0.));\n\
+#4=CARTESIAN_POINT('',(1.,0.,1.));\n\
+#5=CARTESIAN_POINT('',(1.,1.,1.));\n\
+#6=CARTESIAN_POINT('',(2.,0.,0.));\n\
+#7=CARTESIAN_POINT('',(2.,1.,0.));\n\
+#8=CARTESIAN_POINT('',(3.,0.,1.));\n\
+#9=CARTESIAN_POINT('',(3.,1.,1.));\n\
+#10=B_SPLINE_SURFACE('',1,1,((#2,#3),(#4,#5),(#6,#7),(#8,#9)),UNSPECIFIED,.F.,.F.,.F.);\n\
+#11=GEOMETRIC_REPRESENTATION_CONTEXT('','',3);\n\
+#12=ADVANCED_FACE('',#10,(),.T.);\n\
+#13=ADVANCED_BREP_SHAPE_REPRESENTATION('plain',(#12),#11);\n\
+ENDSEC;\nEND-ISO-10303-21;";
+        let m = read_step(s).expect("read plain bspline step");
+        assert_eq!(m.len(), 1);
+        let fs = faces_of(&m.shapes[0].shape);
+        assert!(!fs.is_empty(), "plain B_SPLINE_SURFACE yields a face");
+    }
+
+    #[test]
+    fn polyline_written_and_read() {
+        let pts = [
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(1.0, 0.0, 0.0),
+            GpPnt::new(2.0, 1.0, 0.0),
+        ];
+        let mut w = StepWriter::new();
+        let id = write_polyline(&mut w, &pts).unwrap();
+        assert!(w.lines[id - 1].contains("POLYLINE('',(#1,#2,#3))"), "{}", w.lines[id - 1]);
+
+        // A wire built from a polyline edge round-trips through a hand-written
+        // STEP file that references the POLYLINE.
+        let s = "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n\
+#1=APPLICATION_CONTEXT('AUTOMOTIVE_DESIGN');\n\
+#2=CARTESIAN_POINT('',(0.,0.,0.));\n\
+#3=CARTESIAN_POINT('',(1.,0.,0.));\n\
+#4=CARTESIAN_POINT('',(2.,1.,0.));\n\
+#5=POLYLINE('',(#2,#3,#4));\n\
+#6=DIRECTION('',(1.,0.,0.));\n\
+#7=VECTOR('',#6,1.);\n\
+#8=LINE('',#2,#7);\n\
+#9=VERTEX_POINT('',#2);\n\
+#10=VERTEX_POINT('',#4);\n\
+#11=EDGE_CURVE('',#9,#10,#5,.T.);\n\
+#12=ORIENTED_EDGE('',#9,#10,#11,.T.);\n\
+#13=EDGE_LOOP('',(#12));\n\
+#14=GEOMETRIC_REPRESENTATION_CONTEXT('','',3);\n\
+#15=ADVANCED_BREP_SHAPE_REPRESENTATION('poly',(#11),#14);\n\
+ENDSEC;\nEND-ISO-10303-21;";
+        let m = read_step(s).expect("read polyline step");
+        assert_eq!(m.len(), 1);
+        let e = crate::topo_tools_full::edges_of(&m.shapes[0].shape);
+        assert_eq!(e.len(), 1);
+    }
+
+    #[test]
+    fn step_options_written() {
+        let b = BRepPrimBox::make_box(1.0, 2.0, 3.0);
+        let opts = StepWriteOptions {
+            name: "OptBox".into(),
+            color: Some((0.25, 0.5, 0.75)),
+            units: StepUnits {
+                length_unit_m: 0.001,
+                angle_unit_rad: 1.0,
+            },
+            splines: true,
+        };
+        let out = write_step_with_options(&b.solid.0, &opts).unwrap();
+        assert!(out.contains("OptBox"), "{out}");
+        assert!(out.contains("COLOUR_RGB"), "{out}");
+        assert!(out.contains("0.25"), "{out}");
+        assert!(out.contains("SI_UNIT"), "{out}");
+        let m = read_step(&out).expect("read options step");
+        assert_eq!(m.names(), vec!["OptBox"]);
+    }
+
+    #[test]
+    fn step_header_written() {
+        let b = BRepPrimBox::make_box(1.0, 2.0, 3.0);
+        let h = StepHeader {
+            description: "Test part".into(),
+            name: "part.step".into(),
+            timestamp: "2030-01-01T00:00:00".into(),
+            author: "alice".into(),
+            organization: "acme".into(),
+            preprocessor: "occt-topo".into(),
+            originator: "bob".into(),
+            schema: "AP242".into(),
+        };
+        let out = write_step_with_header(&b.solid.0, "Part", &h).unwrap();
+        assert!(out.contains("Test part"), "{out}");
+        assert!(out.contains("part.step"), "{out}");
+        assert!(out.contains("2030-01-01T00:00:00"), "{out}");
+        assert!(out.contains("AP242"), "{out}");
+        let m = read_step(&out).expect("read header step");
+        assert_eq!(m.names(), vec!["Part"]);
+    }
+
+    #[test]
+    fn step_assembly_with_splines_written() {
+        let a = StepAssembly {
+            name: "Assy".into(),
+            products: vec![("PartA".into(), BRepPrimBox::make_box(1.0, 2.0, 3.0).solid.0)],
+            children: vec![("Assy".into(), vec!["PartA".into()])],
+        };
+        let out = write_step_assembly_with_splines(&a).unwrap();
+        assert!(out.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE"), "{out}");
+        let got = read_step_assembly(&out).expect("read assembly step");
+        assert_eq!(got.name, "Assy");
+        assert_eq!(got.products.len(), 1);
     }
 }
