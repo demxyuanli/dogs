@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-07-31。
-> Rust：5 crate · 58,803 行 · 839 测试（core 208 / math 160 / geom 52 / geom2d 38 / topo 381）
+> Rust：5 crate · 66,931 行 · 958 测试（core 216 / math 183 / geom 60 / geom2d 46 / topo 453）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -93,11 +93,11 @@
 
 | 指标 | 数值 |
 |---|---|
-| Rust 移植量 | 58,803 行（含测试） |
+| Rust 移植量 | 66,931 行（含测试） |
 | OCCT 已移植范围源码 | ~73 万行（20 toolkit） |
-| 行数比 | ~8.1% |
+| 行数比 | ~9.2% |
 | 核心几何主干覆盖 | ~85% |
-| 全量 OCCT 类覆盖（估算） | ~18–22% |
+| 全量 OCCT 类覆盖（估算） | ~20–24% |
 
 ### 覆盖矩阵行更新（2026-08-01，Phase 6）
 | OCCT 包 | Rust | 覆盖 | 说明 |
@@ -108,6 +108,18 @@
 | BinXCAF / RWMesh | bincaf + gltf | 0%→30% | 二进制装配容器 + glTF 2.0 |
 | Extrema（点-曲线/曲面） | occt-geom extrema | <10%→35% | 4 类极值 |
 | 平面布尔 2D | polygon_boolean | — | 交/并/差（凸+一般） |
+
+### 覆盖矩阵行更新（2026-08-01，Phase 7）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| IntPatch 一般曲面 / BOPAlgo | intpatch + bop_curved 扩展 | 35%→50% | B样条曲面 trace 求交 + 一般曲面布尔 |
+| BRepFeat / LocOpe（TKFeat） | brepfeat | 0%→40% | 拔模/凹槽/颈部/加强筋/通孔 |
+| BRepFilletAPI 变半径 | fillet_var | 40%→55% | 沿边半径线性/二次/三次变化 + 链式 |
+| ShapeHealing / ShapeFix | shhealing | 0%→45% | 焊点/小边移除/闭合线框/顶点移动 |
+| XmlXCAF | xmlcaf | 0%→35% | XML 装配容器（bincaf 文本版） |
+| Extrema2d | geom2d extrema2d | — | 2D 点/曲线极值 + 交点 |
+| 网格处理 | mesh_ops | — | Laplacian 平滑/细分/减面 |
+| 数值深度 | ode_rk45 + lsq_nonlinear | — | DOPRI5 自适应 ODE + Gauss-Newton |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。

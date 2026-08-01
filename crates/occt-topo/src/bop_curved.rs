@@ -21,14 +21,16 @@
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
+use occt_core::bnd::BndBox;
 use occt_core::gp::{GpPnt, GpVec};
+use occt_geom::Curve;
 
 use crate::abs::ShapeType;
 use crate::bop_builder::{BoolOp, BooleanResult};
 use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
-use crate::shape::{Face, Shell, Solid, TopoShape};
+use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
 use crate::topo_tools_full::{faces_of, shapes_of};
 
 /// Classification of a face relative to the other solid.
@@ -119,6 +121,151 @@ pub fn point_in_solid(p: GpPnt, solid: &TopoShape, tol: f64) -> bool {
     crate::brep_extrema::is_inside(solid, &p)
 }
 
+/// Point-in-solid for the general curved boolean path: prefers analytic
+/// sphere *and* cylinder tests (the coarse ray-cast mesh misclassifies points
+/// near a cylindrical boundary) before falling back to the ray-cast mesh.
+fn point_in_solid_curved(p: GpPnt, solid: &TopoShape, tol: f64) -> bool {
+    let fa = faces_of(solid);
+    if !fa.is_empty() {
+        let spheres: Vec<(GpPnt, f64)> = fa.iter().filter_map(face_sphere).collect();
+        if spheres.len() == fa.len() {
+            return spheres.iter().any(|(c, r)| p.distance(c) <= r + tol);
+        }
+        if let Some((c, dir, r, t0, t1)) = solid_cylinder(&fa) {
+            let w = GpVec::from_pnts(&c, &p);
+            let t = w.dot(&dir);
+            let radial = w.subtracted(&dir.multiplied_scalar(t)).magnitude();
+            return radial <= r + tol && t >= t0 - tol && t <= t1 + tol;
+        }
+    }
+    crate::brep_extrema::is_inside(solid, &p)
+}
+
+/// Circumcenter of three points (used to locate a cylinder axis).
+fn circumcenter3(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
+    let d1 = GpVec::from_pnts(a, b);
+    let d2 = GpVec::from_pnts(a, c);
+    let n = d1.crossed(&d2);
+    if n.magnitude() < 1e-20 {
+        return None;
+    }
+    let n2 = |p: &GpPnt| p.coord.dot(&p.coord);
+    // O·d1 = (|b|²−|a|²)/2 ; O·d2 = (|c|²−|a|²)/2 ; O·n = a·n.
+    let rhs1 = (n2(b) - n2(a)) * 0.5;
+    let rhs2 = (n2(c) - n2(a)) * 0.5;
+    let rhs3 = a.coord.dot(&n.coord);
+    let m = GpMat3x3::new(d1, d2, n);
+    m.solve(rhs1, rhs2, rhs3).map(|xyz| GpPnt::from_xyz(&xyz))
+}
+
+/// Small 3×3 matrix solve used by [`circumcenter3`].
+struct GpMat3x3 {
+    r: [[f64; 3]; 3],
+}
+
+impl GpMat3x3 {
+    fn new(c0: GpVec, c1: GpVec, c2: GpVec) -> Self {
+        // Columns c0, c1, c2.
+        Self {
+            r: [
+                [c0.x(), c1.x(), c2.x()],
+                [c0.y(), c1.y(), c2.y()],
+                [c0.z(), c1.z(), c2.z()],
+            ],
+        }
+    }
+    fn det(&self) -> f64 {
+        let r = &self.r;
+        r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+            - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+            + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
+    }
+    /// Solve M·x = b by Cramer's rule.
+    fn solve(&self, b0: f64, b1: f64, b2: f64) -> Option<occt_core::gp::GpXyz> {
+        let d = self.det();
+        if d.abs() < 1e-20 {
+            return None;
+        }
+        let r = &self.r;
+        let det0 = b0 * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+            - r[0][1] * (b1 * r[2][2] - r[1][2] * b2)
+            + r[0][2] * (b1 * r[2][1] - r[1][1] * b2);
+        let det1 = r[0][0] * (b1 * r[2][2] - r[1][2] * b2)
+            - b0 * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+            + r[0][2] * (r[1][0] * b2 - b1 * r[2][0]);
+        let det2 = r[0][0] * (r[1][1] * b2 - b1 * r[2][1])
+            - r[0][1] * (r[1][0] * b2 - b1 * r[2][0])
+            + b0 * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+        Some(occt_core::gp::GpXyz::new(det0 / d, det1 / d, det2 / d))
+    }
+}
+
+/// Center, axis direction, radius and along-axis extent `(t0, t1)` of a solid
+/// cylinder, detected as one cylindrical lateral face plus two planar caps.
+fn solid_cylinder(fa: &[Face]) -> Option<(GpPnt, GpVec, f64, f64, f64)> {
+    let mut lateral: Option<&Face> = None;
+    let mut caps: Vec<&Face> = Vec::new();
+    for f in fa {
+        let s = BRepTool::face_surface(f)?;
+        match classify_surface(s.as_ref()) {
+            SurfaceKind::Plane => caps.push(f),
+            SurfaceKind::Sphere => return None,
+            _ => {
+                if lateral.is_some() {
+                    return None; // more than one curved face → not a simple cylinder
+                }
+                lateral = Some(f);
+            }
+        }
+    }
+    let lat = lateral?;
+    if caps.len() != 2 {
+        return None;
+    }
+    let lat_surf = BRepTool::face_surface(lat)?;
+    let (c, dir, r) = surface_cylinder_params(lat_surf.as_ref())?;
+    let mut ts = Vec::new();
+    for cap in &caps {
+        let s = BRepTool::face_surface(cap)?;
+        let (u0, u1, v0, v1) = crate::intpatch::sample_bounds(s.as_ref());
+        let (uc, vc) = (0.5 * (u0 + u1), 0.5 * (v0 + v1));
+        let p = s.d0(uc, vc);
+        ts.push(GpVec::from_pnts(&c, &p).dot(&dir));
+    }
+    let (t0, t1) = if ts[0] <= ts[1] { (ts[0], ts[1]) } else { (ts[1], ts[0]) };
+    Some((c, dir, r, t0, t1))
+}
+
+/// Axis (point + direction) and radius of a cylindrical surface.
+fn surface_cylinder_params(s: &dyn occt_geom::Surface) -> Option<(GpPnt, GpVec, f64)> {
+    let (u0, u1, v0, v1) = crate::intpatch::sample_bounds(s);
+    let v_mid = 0.5 * (v0 + v1);
+    let (ua, ub, uc) = (u0, u0 + (u1 - u0) / 3.0, u0 + 2.0 * (u1 - u0) / 3.0);
+    let p0 = s.d0(ua, v_mid);
+    let p1 = s.d0(ub, v_mid);
+    let p2 = s.d0(uc, v_mid);
+    let c = circumcenter3(&p0, &p1, &p2)?;
+    let dir = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2)).normalized();
+    let r = p0.distance(&c);
+    if r < 1e-9 {
+        return None;
+    }
+    // Verify cylindrical: every sample at distance r from the axis.
+    for i in 0..6usize {
+        for j in 0..6usize {
+            let u = u0 + (u1 - u0) * i as f64 / 5.0;
+            let v = v0 + (v1 - v0) * j as f64 / 5.0;
+            let p = s.d0(u, v);
+            let w = GpVec::from_pnts(&c, &p);
+            let radial = w.subtracted(&dir.multiplied_scalar(w.dot(&dir))).magnitude();
+            if (radial - r).abs() > 1e-4 * r.max(1.0) {
+                return None;
+            }
+        }
+    }
+    Some((c, dir, r))
+}
+
 /// Classify a face against the other solid by sampling its surface on a 5×5
 /// grid and testing each sample with point-in-solid.
 pub fn classify_face(f: &Face, solid: &TopoShape, tol: f64) -> FaceRegion {
@@ -148,6 +295,52 @@ pub fn classify_face(f: &Face, solid: &TopoShape, tol: f64) -> FaceRegion {
     } else {
         FaceRegion::On
     }
+}
+
+/// Classify a general (non-planar, non-sphere) curved face against the other
+/// solid by sampling its surface on a denser 8×8 grid. Falls back to the same
+/// all-inside / all-outside / mixed rule as [`classify_face`] but with more
+/// samples, which matters for strongly-curved `Other` faces whose sign can vary
+/// within one coarse cell.
+pub fn classify_face_general(f: &Face, solid: &TopoShape, tol: f64) -> FaceRegion {
+    let surf = match BRepTool::face_surface(f) {
+        Some(s) => s,
+        None => return FaceRegion::Outside,
+    };
+    let (u0, u1, v0, v1) = face_uv_window_local(f);
+    let (nu, nv) = (8usize, 8usize);
+    let mut inside = 0usize;
+    let mut total = 0usize;
+    for i in 0..nu {
+        for j in 0..nv {
+            let u = u0 + (u1 - u0) * (i as f64 + 0.5) / nu as f64;
+            let v = v0 + (v1 - v0) * (j as f64 + 0.5) / nv as f64;
+            let p = surf.d0(u, v);
+            if point_in_solid_curved(p, solid, tol) {
+                inside += 1;
+            }
+            total += 1;
+        }
+    }
+    if inside == 0 {
+        FaceRegion::Outside
+    } else if inside == total {
+        FaceRegion::Inside
+    } else {
+        FaceRegion::On
+    }
+}
+
+/// Whether any face of `shape` carries a general (non-planar, non-sphere)
+/// curved surface — i.e. the general boolean path must handle it.
+fn has_general_curved_face(shape: &TopoShape) -> bool {
+    faces_of(shape).iter().any(|f| match BRepTool::face_surface(f) {
+        Some(s) => {
+            let k = classify_surface(s.as_ref());
+            k != SurfaceKind::Plane && k != SurfaceKind::Sphere
+        }
+        None => false,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -185,9 +378,39 @@ fn orient_outward(m: &mut TriMesh, center: &GpPnt) {
     }
 }
 
+/// Average 3D position of a solid's face-surface samples — the reference point
+/// used to orient each face mesh outward (mirroring `orient_outward`'s use for
+/// spherical caps).
+fn solid_centroid(shape: &TopoShape) -> GpPnt {
+    let mut sum = occt_core::gp::GpXyz::zero();
+    let mut n = 0usize;
+    for f in faces_of(shape) {
+        if let Some(s) = BRepTool::face_surface(&f) {
+            let (u0, u1, v0, v1) = face_uv_window_local(&f);
+            for i in 0..=4usize {
+                for j in 0..=4usize {
+                    let p = s.d0(u0 + (u1 - u0) * i as f64 / 4.0, v0 + (v1 - v0) * j as f64 / 4.0);
+                    sum = sum.added(&p.coord);
+                    n += 1;
+                }
+            }
+        }
+    }
+    if n > 0 {
+        GpPnt::from_xyz(&sum.multiplied(1.0 / n as f64))
+    } else {
+        GpPnt::zero()
+    }
+}
+
 /// Grid-triangulate a face's surface on an `(nu+1)×(nv+1)` UV grid.
 fn surface_grid_mesh(surf: &dyn occt_geom::Surface, nu: usize, nv: usize) -> TriMesh {
     let (u0, u1, v0, v1) = crate::intpatch::sample_bounds(surf);
+    surface_grid_mesh_uv(surf, u0, u1, v0, v1, nu, nv)
+}
+
+/// Grid-triangulate a surface over an explicit `(u0, u1, v0, v1)` window.
+fn surface_grid_mesh_uv(surf: &dyn occt_geom::Surface, u0: f64, u1: f64, v0: f64, v1: f64, nu: usize, nv: usize) -> TriMesh {
     let (nu, nv) = (nu.max(2), nv.max(2));
     let mut verts = Vec::with_capacity((nu + 1) * (nv + 1));
     for i in 0..=nu {
@@ -601,6 +824,291 @@ fn mesh_crossing_face(
     TriMesh { verts: mesh.verts, tris: kept }
 }
 
+// ---------------------------------------------------------------------------
+// General (non-analytic) curved-face meshing
+// ---------------------------------------------------------------------------
+
+/// Sample 3D points along a face's boundary edges (endpoints plus a few
+/// interior curve samples). Used to infer a finite UV window when the surface's
+/// own range is unbounded (planes, cylinders, …).
+fn face_boundary_samples(face: &Face) -> Vec<GpPnt> {
+    let mut out: Vec<GpPnt> = Vec::new();
+    let face_kids = face.0.tshape.read().unwrap().children.clone();
+    for h in face_kids {
+        if h.read().unwrap().shape_type() != ShapeType::Wire {
+            continue;
+        }
+        let wire = TopoShape::from_handle(h);
+        let wire_kids = wire.tshape.read().unwrap().children.clone();
+        for eh in wire_kids {
+            if eh.read().unwrap().shape_type() != ShapeType::Edge {
+                continue;
+            }
+            let edge = TopoShape::from_handle(eh);
+            if let Some(e) = Edge::wrap(edge) {
+                if let Some((p0, p1)) = BRepTool::edge_vertices(&e) {
+                    out.push(p0);
+                    out.push(p1);
+                }
+                if let Some(c) = BRepTool::edge_curve(&e) {
+                    let (t0, t1) = BRepTool::edge_parameters(&e);
+                    for k in 0..4usize {
+                        let t = if t0.is_finite() && t1.is_finite() && t1 > t0 {
+                            t0 + (t1 - t0) * k as f64 / 4.0
+                        } else {
+                            k as f64 - 1.0
+                        };
+                        out.push(c.d0(t));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Finite parametric window `(u_min, u_max, v_min, v_max)` for a face.
+///
+/// Uses the surface's own range when finite; otherwise projects boundary edge
+/// samples onto the surface and takes the bounding box of the `(u, v)` points.
+fn face_uv_window_local(face: &Face) -> (f64, f64, f64, f64) {
+    let surf = match BRepTool::face_surface(face) {
+        Some(s) => s,
+        None => return (-1.0, 1.0, -1.0, 1.0),
+    };
+    let (u1, u2, v1, v2) = BRepTool::uv_bounds(face);
+    if u1.is_finite() && u2.is_finite() && v1.is_finite() && v2.is_finite() {
+        return (u1, u2, v1, v2);
+    }
+    let pts = face_boundary_samples(face);
+    if pts.is_empty() {
+        return crate::intpatch::sample_bounds(surf.as_ref());
+    }
+    let mut us = Vec::with_capacity(pts.len());
+    let mut vs = Vec::with_capacity(pts.len());
+    for p in &pts {
+        let (u, v) = crate::intpatch::project_params(surf.as_ref(), p);
+        us.push(u);
+        vs.push(v);
+    }
+    let ua = us.iter().copied().fold(f64::INFINITY, f64::min);
+    let ub = us.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let va = vs.iter().copied().fold(f64::INFINITY, f64::min);
+    let vb = vs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let (ua, ub) = if ub - ua < 1e-12 { (ua - 1.0, ub + 1.0) } else { (ua, ub) };
+    let (va, vb) = if vb - va < 1e-12 { (va - 1.0, vb + 1.0) } else { (va, vb) };
+    (ua, ub, va, vb)
+}
+
+/// Mesh a whole (non-crossing) face over its finite trimmed UV window.
+fn mesh_face_window(face: &Face, nu: usize, nv: usize) -> TriMesh {
+    let surf = match BRepTool::face_surface(face) {
+        Some(s) => s,
+        None => return TriMesh::default(),
+    };
+    let (u0, u1, v0, v1) = face_uv_window_local(face);
+    surface_grid_mesh_uv(surf.as_ref(), u0, u1, v0, v1, nu, nv)
+}
+
+/// Axis-aligned bounding box of a face's surface samples (bbox pre-filter for
+/// the face-pair intersection loop).
+fn face_bbox(face: &Face) -> BndBox {
+    let mut b = BndBox::new();
+    if let Some(s) = BRepTool::face_surface(face) {
+        let (u0, u1, v0, v1) = crate::intpatch::sample_bounds(s.as_ref());
+        for i in 0..=8usize {
+            for j in 0..=8usize {
+                let u = u0 + (u1 - u0) * i as f64 / 8.0;
+                let v = v0 + (v1 - v0) * j as f64 / 8.0;
+                b.add_point(&s.d0(u, v));
+            }
+        }
+    }
+    b
+}
+
+/// Nearest point of `pts` to `p`.
+fn nearest_curve_point(pts: &[GpPnt], p: GpPnt) -> Option<GpPnt> {
+    let mut best: Option<(f64, GpPnt)> = None;
+    for q in pts {
+        let d = q.distance(&p);
+        if best.map_or(true, |(bd, _)| d < bd) {
+            best = Some((d, *q));
+        }
+    }
+    best.map(|(_, q)| q)
+}
+
+/// Triangulate the retained region of a crossing face using the intersection
+/// polylines to pull grid vertices onto the shared boundary curve.
+///
+/// Sphere faces keep the analytic cap path ([`mesh_crossing_face`]); other
+/// surfaces are grid-cell classified (a cell is kept when its centroid lies on
+/// the retained side) and grid vertices within `snap_tol` of an intersection
+/// curve are snapped onto the nearest curve point so both solids' retained
+/// meshes close along the shared intersection.
+fn mesh_crossing_face_curves(
+    face: &Face,
+    other: &TopoShape,
+    keep_inside: bool,
+    curves_on_face: &[Vec<GpPnt>],
+    rim_shared: Option<&IntersectionRim>,
+    tol: f64,
+) -> TriMesh {
+    let surf = match BRepTool::face_surface(face) {
+        Some(s) => s,
+        None => return TriMesh::default(),
+    };
+    // Spherical caps: analytic trimming only when both solids have the matching
+    // sphere face (sphere–sphere). A sphere crossing a non-sphere is meshed by
+    // the general grid-cell path below so its boundary snaps to the traced
+    // intersection curve, closing the mesh against the other solid's wall.
+    let is_sphere = classify_surface(surf.as_ref()) == SurfaceKind::Sphere;
+    if is_sphere && !solid_spheres(other).is_empty() {
+        return mesh_crossing_face(face, other, keep_inside, rim_shared, tol);
+    }
+
+    let (u0, u1, v0, v1) = face_uv_window_local(face);
+    let (nu, nv) = (32usize, 32usize);
+    let stride = nv + 1;
+    let mut verts: Vec<GpPnt> = Vec::with_capacity((nu + 1) * (nv + 1));
+    for i in 0..=nu {
+        for j in 0..=nv {
+            let u = u0 + (u1 - u0) * i as f64 / nu as f64;
+            let v = v0 + (v1 - v0) * j as f64 / nv as f64;
+            verts.push(surf.d0(u, v));
+        }
+    }
+    // Snap grid vertices near an intersection curve onto the curve.
+    let curve_pts: Vec<GpPnt> = curves_on_face.iter().flatten().copied().collect();
+    if !curve_pts.is_empty() {
+        let mut lo = verts[0];
+        let mut hi = verts[0];
+        for p in &verts {
+            lo = GpPnt::new(lo.x().min(p.x()), lo.y().min(p.y()), lo.z().min(p.z()));
+            hi = GpPnt::new(hi.x().max(p.x()), hi.y().max(p.y()), hi.z().max(p.z()));
+        }
+        let snap_tol = tol.max(lo.distance(&hi) * 0.03);
+        for v in &mut verts {
+            if let Some(near) = nearest_curve_point(&curve_pts, *v) {
+                if near.distance(v) <= snap_tol {
+                    *v = near;
+                }
+            }
+        }
+    }
+    let mut tris: Vec<(usize, usize, usize)> = Vec::new();
+    for i in 0..nu {
+        for j in 0..nv {
+            let a = i * stride + j;
+            let b = a + 1;
+            let c = a + stride;
+            let d = c + 1;
+            let uc = u0 + (u1 - u0) * (i as f64 + 0.5) / nu as f64;
+            let vc = v0 + (v1 - v0) * (j as f64 + 0.5) / nv as f64;
+            let centroid = surf.d0(uc, vc);
+            let inside = point_in_solid_curved(centroid, other, tol);
+            if inside == keep_inside {
+                tris.push((a, b, c));
+                tris.push((b, d, c));
+            }
+        }
+    }
+    TriMesh { verts, tris }
+}
+
+/// Compute the retained triangle mesh of the boolean, using the per-face
+/// intersection polylines to close the mesh along the shared intersection
+/// curves of the general path.
+fn boolean_mesh_curves(
+    a: &TopoShape,
+    b: &TopoShape,
+    op: BoolOp,
+    tol: f64,
+    pair_curves: &[Vec<Vec<Vec<GpPnt>>>],
+) -> Result<TriMesh, String> {
+    let fa = faces_of(a);
+    let fb = faces_of(b);
+    let regions_a: Vec<FaceRegion> = fa.iter().map(|f| classify_face_general(f, b, tol)).collect();
+    let regions_b: Vec<FaceRegion> = fb.iter().map(|f| classify_face_general(f, a, tol)).collect();
+
+    // Shared sphere-sphere intersection rim (reused by both caps).
+    let mut rim_shared: Option<IntersectionRim> = None;
+    'outer: for fa_i in &fa {
+        let Some(surf) = BRepTool::face_surface(fa_i) else { continue };
+        if classify_surface(surf.as_ref()) != SurfaceKind::Sphere {
+            continue;
+        }
+        let (c1, r1) = match face_sphere(fa_i) {
+            Some(x) => x,
+            None => continue,
+        };
+        for fb_j in &fb {
+            let (c2, r2) = match face_sphere(fb_j) {
+                Some(x) => x,
+                None => continue,
+            };
+            if let Some((cc, rc, n)) = sphere_sphere_circle(c1, r1, c2, r2) {
+                rim_shared = Some(rim_points(cc, rc, &n, 48));
+                break 'outer;
+            }
+        }
+    }
+
+    let centroid_a = solid_centroid(a);
+    let centroid_b = solid_centroid(b);
+    let mut flip_b = op == BoolOp::Cut;
+
+    let mut parts: Vec<TriMesh> = Vec::new();
+    for (idx, (f, region)) in fa.iter().zip(&regions_a).enumerate() {
+        if select_keep(*region, true, op) {
+            let mut m = match region {
+                FaceRegion::On => {
+                    let curves: Vec<Vec<GpPnt>> = pair_curves[idx].iter().flatten().cloned().collect();
+                    mesh_crossing_face_curves(f, b, keep_inside(true, op), &curves, rim_shared.as_ref(), tol)
+                }
+                _ => mesh_face_window(f, 24, 24),
+            };
+            orient_outward(&mut m, &centroid_a);
+            parts.push(m);
+        }
+    }
+    for (idx, (f, region)) in fb.iter().zip(&regions_b).enumerate() {
+        if select_keep(*region, false, op) {
+            let mut m = match region {
+                FaceRegion::On => {
+                    let curves: Vec<Vec<GpPnt>> = pair_curves
+                        .iter()
+                        .map(|row| row[idx].clone())
+                        .flatten()
+                        .collect();
+                    mesh_crossing_face_curves(f, a, keep_inside(false, op), &curves, rim_shared.as_ref(), tol)
+                }
+                _ => mesh_face_window(f, 24, 24),
+            };
+            orient_outward(&mut m, &centroid_b);
+            if flip_b {
+                for t in &mut m.tris {
+                    let (i, j, k) = *t;
+                    *t = (i, k, j);
+                }
+            }
+            parts.push(m);
+        }
+    }
+
+    let mut all = TriMesh::default();
+    for p in &parts {
+        let offset = all.verts.len();
+        all.verts.extend(p.verts.iter().copied());
+        for &(i, j, k) in &p.tris {
+            all.tris.push((offset + i, offset + j, offset + k));
+        }
+    }
+    let weld_tol = tol.max(1e-9);
+    Ok(weld_mesh(&all, weld_tol))
+}
+
 /// Compute the retained triangle mesh of the boolean.
 fn boolean_mesh(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<TriMesh, String> {
     let fa = faces_of(a);
@@ -798,6 +1306,215 @@ pub fn curved_boolean_volume(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64)
 }
 
 // ---------------------------------------------------------------------------
+// General (non-analytic) curved boolean
+// ---------------------------------------------------------------------------
+
+/// Build a `BooleanResult` from the retained whole faces when no face crosses
+/// the boundary (the analytic faces are preserved verbatim).
+fn result_from_kept_faces(
+    fa: &[Face],
+    fb: &[Face],
+    regions_a: &[FaceRegion],
+    regions_b: &[FaceRegion],
+    op: BoolOp,
+) -> BooleanResult {
+    let mut faces: Vec<Face> = Vec::new();
+    for (f, region) in fa.iter().zip(regions_a) {
+        if select_keep(*region, true, op) {
+            faces.push(f.clone());
+        }
+    }
+    for (f, region) in fb.iter().zip(regions_b) {
+        if select_keep(*region, false, op) {
+            faces.push(f.clone());
+        }
+    }
+    if faces.is_empty() {
+        let bld = TopoBuilder::new();
+        let comp = bld.make_compound_of(&[]);
+        return BooleanResult {
+            shape: comp.0,
+            solid: None,
+            shells: vec![],
+            faces: vec![],
+            warnings: vec![],
+        };
+    }
+    let bld = TopoBuilder::new();
+    let shell = bld.make_shell(&faces);
+    let solid = bld.make_solid(&[shell.clone()]);
+    BooleanResult {
+        shape: solid.0.clone(),
+        solid: Some(solid),
+        shells: vec![shell],
+        faces,
+        warnings: vec![],
+    }
+}
+
+/// Rebuild a faceted `BooleanResult` solid from a closed retained mesh.
+fn result_from_mesh(mesh: TriMesh) -> BooleanResult {
+    let vol = mesh_volume(&mesh);
+    if mesh.tris.is_empty() {
+        let bld = TopoBuilder::new();
+        let comp = bld.make_compound_of(&[]);
+        return BooleanResult {
+            shape: comp.0,
+            solid: None,
+            shells: vec![],
+            faces: vec![],
+            warnings: vec![format!("empty curved boolean (mesh volume {vol:.4})")],
+        };
+    }
+    let smesh = crate::mesh::ShapeMesh {
+        vertices: mesh.verts.clone(),
+        triangles: mesh
+            .tris
+            .iter()
+            .map(|&(a, b, c)| occt_core::poly::triangulation::Triangle::new(a, b, c))
+            .collect(),
+        source_shape: ShapeType::Solid,
+    };
+    let brep = crate::mesh_to_brep::shape_mesh_to_brep(&smesh);
+    let shape = brep.solid.clone().map(|s| s.0).unwrap_or_else(|| brep.shell.0.clone());
+    BooleanResult {
+        shape,
+        solid: brep.solid,
+        shells: vec![brep.shell],
+        faces: brep.faces,
+        warnings: vec![format!("curved boolean mesh volume ≈ {vol:.4}")],
+    }
+}
+
+/// Face–face intersection polylines for the general path (pairs whose bounding
+/// boxes do not overlap are skipped).
+fn general_pair_curves(fa: &[Face], fb: &[Face], tol: f64) -> Vec<Vec<Vec<Vec<GpPnt>>>> {
+    let mut pair_curves: Vec<Vec<Vec<Vec<GpPnt>>>> = vec![vec![Vec::new(); fb.len()]; fa.len()];
+    for (i, f_i) in fa.iter().enumerate() {
+        let Some(sa) = BRepTool::face_surface(f_i) else { continue };
+        let ba = face_bbox(f_i);
+        for (j, f_j) in fb.iter().enumerate() {
+            let Some(sb) = BRepTool::face_surface(f_j) else { continue };
+            let bb = face_bbox(f_j);
+            if !ba.is_void() && !bb.is_void() && ba.is_out_box(&bb) {
+                continue;
+            }
+            let curves = crate::intpatch::intersection_curve_points(sa.as_ref(), sb.as_ref(), tol, 40);
+            if !curves.is_empty() {
+                pair_curves[i][j] = curves;
+            }
+        }
+    }
+    pair_curves
+}
+
+/// The retained triangle mesh of the general curved boolean.
+///
+/// Returns `None` when no face crosses the boundary (the analytic whole-face
+/// path applies); `Some(mesh)` otherwise.
+fn general_boolean_mesh(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Option<TriMesh>, String> {
+    let fa = faces_of(a);
+    let fb = faces_of(b);
+    if fa.is_empty() || fb.is_empty() {
+        return Err("general_curved_boolean: input has no faces".into());
+    }
+    let pair_curves = general_pair_curves(&fa, &fb, tol);
+    let regions_a: Vec<FaceRegion> = fa.iter().map(|f| classify_face_general(f, b, tol)).collect();
+    let regions_b: Vec<FaceRegion> = fb.iter().map(|f| classify_face_general(f, a, tol)).collect();
+    let has_on = regions_a.contains(&FaceRegion::On) || regions_b.contains(&FaceRegion::On);
+    if !has_on {
+        return Ok(None);
+    }
+    boolean_mesh_curves(a, b, op, tol, &pair_curves).map(Some)
+}
+
+/// Boolean on solids with general (B-spline / non-analytic) curved faces.
+///
+/// Computes face–face intersection polylines (via
+/// [`crate::intpatch::intersection_curve_points`]) between every overlapping
+/// face pair, classifies each face, then rebuilds the result:
+///
+/// * faces that do not cross the boundary are kept whole (analytic faces stay
+///   analytic);
+/// * crossing faces are grid-cell classified (a cell is kept when its centroid
+///   classifies per the operation) with grid vertices near an intersection
+///   polyline snapped onto the curve, so both solids' retained meshes close
+///   along the shared intersection;
+/// * the welded retained mesh is rebuilt into a faceted BRep solid.
+///
+/// Planar inputs are delegated to `crate::bop_builder::boolean`.
+pub fn general_curved_boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    if all_faces_planar(a) && all_faces_planar(b) {
+        return crate::bop_builder::boolean(a, b, op, tol);
+    }
+    let bbox_a = crate::bbox_from_geometry::shape_bbox(a);
+    let bbox_b = crate::bbox_from_geometry::shape_bbox(b);
+    if !bbox_a.is_void() && !bbox_b.is_void() && bbox_a.is_out_box(&bbox_b) {
+        return Ok(disjoint_result(a, b, op));
+    }
+    match general_boolean_mesh(a, b, op, tol)? {
+        Some(mesh) => Ok(result_from_mesh(mesh)),
+        None => {
+            let fa = faces_of(a);
+            let fb = faces_of(b);
+            let regions_a: Vec<FaceRegion> = fa.iter().map(|f| classify_face_general(f, b, tol)).collect();
+            let regions_b: Vec<FaceRegion> = fb.iter().map(|f| classify_face_general(f, a, tol)).collect();
+            Ok(result_from_kept_faces(&fa, &fb, &regions_a, &regions_b, op))
+        }
+    }
+}
+
+/// The enclosed volume of the general curved boolean result.
+///
+/// Delegates to [`curved_boolean_volume`] when neither solid has a general
+/// curved face; otherwise returns the retained welded mesh volume (exact for a
+/// closed, consistently-oriented mesh).
+pub fn general_curved_boolean_volume(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<f64, String> {
+    if !has_general_curved_face(a) && !has_general_curved_face(b) {
+        return curved_boolean_volume(a, b, op, tol);
+    }
+    if all_faces_planar(a) && all_faces_planar(b) {
+        let r = crate::bop_builder::boolean(a, b, op, tol)?;
+        return Ok(crate::shape_mesh::shape_volume(&r.shape, 0.02));
+    }
+    let bbox_a = crate::bbox_from_geometry::shape_bbox(a);
+    let bbox_b = crate::bbox_from_geometry::shape_bbox(b);
+    if !bbox_a.is_void() && !bbox_b.is_void() && bbox_a.is_out_box(&bbox_b) {
+        return match op {
+            BoolOp::Fuse => Ok(crate::shape_mesh::shape_volume(a, 0.02) + crate::shape_mesh::shape_volume(b, 0.02)),
+            BoolOp::Cut => Ok(crate::shape_mesh::shape_volume(a, 0.02)),
+            BoolOp::Common => Ok(0.0),
+        };
+    }
+    match general_boolean_mesh(a, b, op, tol)? {
+        Some(mesh) => Ok(mesh_volume(&mesh)),
+        None => {
+            let fa = faces_of(a);
+            let fb = faces_of(b);
+            let regions_a: Vec<FaceRegion> = fa.iter().map(|f| classify_face_general(f, b, tol)).collect();
+            let regions_b: Vec<FaceRegion> = fb.iter().map(|f| classify_face_general(f, a, tol)).collect();
+            let r = result_from_kept_faces(&fa, &fb, &regions_a, &regions_b, op);
+            Ok(crate::shape_mesh::shape_volume(&r.shape, 0.02))
+        }
+    }
+}
+
+/// The explicit dispatcher for the curved boolean:
+///
+/// 1. all faces planar → `crate::bop_builder::boolean` (exact polygon split);
+/// 2. any general (non-planar, non-sphere) curved face → `general_curved_boolean`;
+/// 3. otherwise (spheres, and quadric-only solids) → [`curved_boolean`].
+pub fn curved_boolean_ext(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    if all_faces_planar(a) && all_faces_planar(b) {
+        return crate::bop_builder::boolean(a, b, op, tol);
+    }
+    if has_general_curved_face(a) || has_general_curved_face(b) {
+        return general_curved_boolean(a, b, op, tol);
+    }
+    curved_boolean(a, b, op, tol)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -806,7 +1523,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use occt_core::gp::{GpAx3, GpDir};
-    use crate::primitives::{BRepPrimBox, BRepPrimSphere};
+    use crate::primitives::{BRepPrimBox, BRepPrimCylinder, BRepPrimSphere};
     use crate::shape_mesh::shape_volume;
     use crate::shell_check::shell_is_closed;
     use crate::tgeometry::GeometryRegistry;
@@ -947,5 +1664,114 @@ mod tests {
         // Chord triangulation at 24×24 is ~1.6% low; keep a relaxed band.
         assert!((v - expected).abs() < 0.1, "sphere mesh volume {v} (expected {expected})");
         clear_tree(&sphere.0);
+    }
+
+    // -- general (non-analytic) curved-face boolean extensions --
+
+    fn cylinder_solid(radius: f64, height: f64) -> Solid {
+        BRepPrimCylinder::make_cylinder(radius, height).solid
+    }
+
+    /// A curved B-spline patch face `z = base + bump·((u−½)² + (v−½)²)` on
+    /// `[0, 1]²` (a non-planar `Other` surface).
+    fn curved_patch_face(base: f64, bump: f64) -> Face {
+        let mut grid: Vec<Vec<GpPnt>> = Vec::new();
+        for i in 0..=3usize {
+            let mut row = Vec::new();
+            for j in 0..=3usize {
+                let u = i as f64 / 3.0;
+                let v = j as f64 / 3.0;
+                let z = base + bump * ((u - 0.5) * (u - 0.5) + (v - 0.5) * (v - 0.5));
+                row.push(GpPnt::new(u, v, z));
+            }
+            grid.push(row);
+        }
+        let surf = crate::intpatch::make_bspline_surface_from_grid(&grid, 2, 2).expect("patch fit");
+        let bld = TopoBuilder::new();
+        bld.make_face(surf, &[])
+    }
+
+    #[test]
+    fn general_box_cylinder_fuse() {
+        // Box [-1,1]³ fused with a radius-0.4 cylinder on z∈[0,2] poking through
+        // the top face: expected = 8 + π·0.4²·1 ≈ 8.50.
+        let box_s = centered_box(1.0);
+        let cyl = cylinder_solid(0.4, 2.0);
+        let v = general_curved_boolean_volume(&box_s.0, &cyl.0, BoolOp::Fuse, 1e-6).expect("fuse volume");
+        let expected = 8.0 + PI * 0.16 * 1.0;
+        assert!((v - expected).abs() < 0.5, "box-cylinder fuse volume {v} (expected {expected})");
+        clear_tree(&box_s.0);
+        clear_tree(&cyl.0);
+    }
+
+    #[test]
+    fn general_sphere_cylinder_cut() {
+        // Unit sphere minus a radius-0.4 cylinder on z∈[0,2]: the cylinder exits
+        // the sphere at z = sqrt(1 − 0.4²) ≈ 0.9165.
+        let sphere = unit_sphere_solid();
+        let cyl = cylinder_solid(0.4, 2.0);
+        let v = general_curved_boolean_volume(&sphere.0, &cyl.0, BoolOp::Cut, 1e-6).expect("cut volume");
+        let z_exit = (1.0 - 0.4f64 * 0.4).sqrt();
+        let expected = 4.0 / 3.0 * PI - PI * 0.16 * z_exit;
+        assert!((v - expected).abs() < 0.5, "sphere-cylinder cut volume {v} (expected {expected})");
+        clear_tree(&sphere.0);
+        clear_tree(&cyl.0);
+    }
+
+    #[test]
+    fn planar_delegates_to_bop_builder() {
+        let a = BRepPrimBox::make_box(1.0, 1.0, 1.0).solid;
+        let b = BRepPrimBox::make_box_corner(&GpPnt::new(0.5, 0.0, 0.0), &GpPnt::new(1.5, 1.0, 1.0)).solid;
+        let r = curved_boolean_ext(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("fuse ok");
+        assert!(r.solid.is_some(), "planar fuse produces a solid");
+        assert!(shell_is_closed(&r.shells[0]), "planar fuse shell is closed");
+        assert!(faces_of(&r.shape).len() > 12, "faces {}", faces_of(&r.shape).len());
+        clear_tree(&r.shape);
+        clear_tree(&a.0);
+        clear_tree(&b.0);
+    }
+
+    #[test]
+    fn classify_general_face_inside_outside() {
+        let box_s = centered_box(1.0);
+        let inside = curved_patch_face(0.8, 0.3); // z∈[0.8, 0.95] inside the box
+        assert_eq!(classify_face_general(&inside, &box_s.0, 1e-6), FaceRegion::Inside);
+        let outside = curved_patch_face(3.0, 0.3); // z∈[3.0, 3.15] above the box
+        assert_eq!(classify_face_general(&outside, &box_s.0, 1e-6), FaceRegion::Outside);
+        // A curved face crossing the box top (spanning inside and outside) is On.
+        let crossing = curved_patch_face(0.9, 0.5); // z∈[0.9, 1.15]
+        assert_eq!(classify_face_general(&crossing, &box_s.0, 1e-6), FaceRegion::On);
+        clear_tree(&box_s.0);
+        clear_tree(&inside.0);
+        clear_tree(&outside.0);
+        clear_tree(&crossing.0);
+    }
+
+    #[test]
+    fn disjoint_general_fuse_compound() {
+        // Box at z∈[-4,-2] far below a cylinder at z∈[0,2] → Fuse returns a
+        // compound (bboxes do not overlap).
+        let box_s = BRepPrimBox::make_box_corner(&GpPnt::new(-1.0, -1.0, -4.0), &GpPnt::new(1.0, 1.0, -2.0)).solid;
+        let cyl = cylinder_solid(0.5, 2.0);
+        let r = curved_boolean_ext(&box_s.0, &cyl.0, BoolOp::Fuse, 1e-6).expect("fuse ok");
+        assert!(r.shape.is_compound(), "disjoint general fuse is a compound");
+        assert!(r.solid.is_none(), "disjoint general fuse has no single solid");
+        clear_tree(&r.shape);
+        clear_tree(&box_s.0);
+        clear_tree(&cyl.0);
+    }
+
+    #[test]
+    fn general_boolean_volume_matches_curved_boolean_volume() {
+        // Sphere-sphere dispatch stays on the analytic path: the general
+        // dispatcher's volume agrees with curved_boolean_volume.
+        let a = unit_sphere_solid();
+        let b = sphere_at(GpPnt::new(1.5, 0.0, 0.0));
+        let ext_vol = general_curved_boolean_volume(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("ext volume");
+        let ref_vol = curved_boolean_volume(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("ref volume");
+        assert!((ext_vol - ref_vol).abs() < 0.05, "ext {ext_vol} vs curved_boolean_volume {ref_vol}");
+        assert!((ext_vol - 8.018).abs() < 0.3, "ext volume {ext_vol} (expected ≈ 8.018)");
+        clear_tree(&a.0);
+        clear_tree(&b.0);
     }
 }

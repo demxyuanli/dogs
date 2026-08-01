@@ -84,3 +84,5 @@ pub mod spline_surface;
 pub mod eig_qr;
 pub mod nurbs_fit;
 pub mod distrib_extra;
+pub mod ode_rk45;
+pub mod lsq_nonlinear;

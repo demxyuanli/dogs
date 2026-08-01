@@ -48,6 +48,7 @@ pub use trimmed::GeomTrimmedCurve;
 pub use revolved::GeomRevolvedSurface;
 pub use offset::GeomOffsetCurve;
 pub mod extrema;
+pub mod bspline_surface;
 
 pub type HandleCurve = Arc<dyn Curve>;
 pub type HandleSurface = Arc<dyn Surface>;

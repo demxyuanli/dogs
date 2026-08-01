@@ -83,3 +83,7 @@ pub mod fillet_edge;
 pub mod brep_offset;
 pub mod bincaf;
 pub mod gltf;
+pub mod brepfeat;
+pub mod fillet_var;
+pub mod shhealing;
+pub mod xmlcaf;

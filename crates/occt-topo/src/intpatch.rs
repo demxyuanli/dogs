@@ -10,11 +10,13 @@
 
 use std::sync::Arc;
 
+use occt_core::geom::polyline_simplify::rdp_simplify;
 use occt_core::gp::{
     GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpElips, GpPln, GpPnt, GpSphere, GpTrsf,
     GpTorus, GpVec,
 };
 use occt_geom::{Curve, GeomCircle, GeomCylinder, GeomEllipse, GeomLine, GeomPlane, GeomSphere, GeomTorus, Surface};
+use occt_math::spline_surface::{BSplineSurface, eval_bspline_surface, interpolate_grid};
 
 use crate::brep_surface::{classify_surface, sphere_center, SurfaceKind};
 
@@ -202,6 +204,109 @@ fn sample_curve_on(curve: Arc<dyn Curve>, a: &dyn Surface, b: &dyn Surface, n: u
         on_b.push(project_params(b, &p));
     }
     IntersectionCurve { curve, points, on_a, on_b }
+}
+
+// ---------------------------------------------------------------------------
+// B-spline surface support
+// ---------------------------------------------------------------------------
+
+/// A thin wrapper over `occt_math`'s tensor-product B-spline surface, exposing
+/// it as an `occt_geom::Surface` on the unit square `[0, 1]²`.
+/// Source: `Geom_BSplineSurface`.
+#[derive(Debug, Clone)]
+pub struct BsplinePatch {
+    /// The underlying B-spline surface (poles, knots, degrees).
+    pub bs: BSplineSurface,
+}
+
+impl BsplinePatch {
+    /// Wrap an existing `BSplineSurface`.
+    pub fn new(bs: BSplineSurface) -> Self {
+        Self { bs }
+    }
+
+    /// Evaluate the patch at `(u, v)`.
+    pub fn d0(&self, u: f64, v: f64) -> GpPnt {
+        let a = eval_bspline_surface(&self.bs, u, v);
+        GpPnt::new(a[0], a[1], a[2])
+    }
+
+    /// Convert into a boxed `Surface` handle.
+    pub fn to_surface(self) -> Arc<dyn Surface> {
+        Arc::new(BsplineSurfaceWrapper { patch: self })
+    }
+}
+
+/// `occt_geom::Surface` implementation backed by a [`BsplinePatch`].
+#[derive(Debug, Clone)]
+pub struct BsplineSurfaceWrapper {
+    pub patch: BsplinePatch,
+}
+
+impl BsplineSurfaceWrapper {
+    pub fn new(bs: BSplineSurface) -> Self {
+        Self { patch: BsplinePatch::new(bs) }
+    }
+
+    /// Evaluate the wrapped surface at `(u, v)`.
+    pub fn d0(&self, u: f64, v: f64) -> GpPnt {
+        self.patch.d0(u, v)
+    }
+}
+
+impl Surface for BsplineSurfaceWrapper {
+    fn d0(&self, u: f64, v: f64) -> GpPnt {
+        let a = eval_bspline_surface(&self.patch.bs, u, v);
+        GpPnt::new(a[0], a[1], a[2])
+    }
+    fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
+        let p0 = self.patch.d0(u, v);
+        let h = 1e-6;
+        let pu = GpVec::from_pnts(&p0, &self.patch.d0(u + h, v)).divided(h);
+        let pv = GpVec::from_pnts(&p0, &self.patch.d0(u, v + h)).divided(h);
+        (p0, pu, pv)
+    }
+    fn u_range(&self) -> (f64, f64) { (0.0, 1.0) }
+    fn v_range(&self) -> (f64, f64) { (0.0, 1.0) }
+    fn continuity(&self) -> u8 {
+        (self.patch.bs.deg_u.min(self.patch.bs.deg_v).saturating_sub(1)).min(3) as u8
+    }
+    fn transform(&mut self, t: &GpTrsf) {
+        for row in &mut self.patch.bs.poles {
+            for pole in row {
+                let p = GpPnt::new(pole[0], pole[1], pole[2]).transformed(t);
+                pole[0] = p.x();
+                pole[1] = p.y();
+                pole[2] = p.z();
+            }
+        }
+    }
+    fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
+}
+
+/// Fit a B-spline patch through a `points[i][j]` grid (`i` = u rows, `j` = v
+/// columns) with degrees `deg_u × deg_v`. Uses clamped uniform knots and
+/// two-pass cubic collocation interpolation (from `occt_math`), so the surface
+/// passes through every grid point at `u = i/(nu−1)`, `v = j/(nv−1)`.
+pub fn fit_bspline_grid(points: &[Vec<GpPnt>], deg_u: usize, deg_v: usize) -> Result<BsplinePatch, String> {
+    let nu = points.len();
+    let nv = points.first().map(|r| r.len()).unwrap_or(0);
+    if nu == 0 || nv == 0 {
+        return Err("fit_bspline_grid: empty grid".into());
+    }
+    let rows: Vec<Vec<[f64; 3]>> = points
+        .iter()
+        .map(|row| row.iter().map(|p| [p.x(), p.y(), p.z()]).collect())
+        .collect();
+    let refs: Vec<&[[f64; 3]]> = rows.iter().map(|r| r.as_slice()).collect();
+    let bs = interpolate_grid(&refs, nu, nv, deg_u, deg_v)?;
+    Ok(BsplinePatch::new(bs))
+}
+
+/// Build a `Surface` from a grid of points, suitable as a general (B-spline)
+/// face surface. See [`fit_bspline_grid`].
+pub fn make_bspline_surface_from_grid(points: &[Vec<GpPnt>], deg_u: usize, deg_v: usize) -> Result<Arc<dyn Surface>, String> {
+    Ok(fit_bspline_grid(points, deg_u, deg_v)?.to_surface())
 }
 
 // ---------------------------------------------------------------------------
@@ -574,8 +679,13 @@ fn chain_segments(segs: Vec<(GpPnt, GpPnt)>, tol: f64) -> Vec<GpPnt> {
 /// Returns the traced 3D points (concatenated polylines). The level-set
 /// contour is extracted with a marching-squares pass over the `(u, v)` grid.
 pub fn trace_surface_curve(a: &dyn Surface, b: &dyn Surface, tol: f64) -> Vec<GpPnt> {
+    trace_surface_curve_n(a, b, tol, 48, 48)
+}
+
+/// `trace_surface_curve` with an explicit marching-squares grid size.
+fn trace_surface_curve_n(a: &dyn Surface, b: &dyn Surface, tol: f64, nu: usize, nv: usize) -> Vec<GpPnt> {
     let (u0, u1, v0, v1) = sample_bounds(a);
-    let (nu, nv) = (48usize, 48usize);
+    let (nu, nv) = (nu.max(4), nv.max(4));
     let mut field = vec![vec![0.0f64; nv + 1]; nu + 1];
     for i in 0..=nu {
         for j in 0..=nv {
@@ -618,6 +728,132 @@ pub fn trace_surface_curve(a: &dyn Surface, b: &dyn Surface, tol: f64) -> Vec<Gp
         }
     }
     chain_segments(segments, tol * 2.0)
+}
+
+/// Chain an unordered set of 3D points into ordered polylines by greedy
+/// nearest-neighbour walking from both ends of each chain. Points separated by
+/// more than a (diagonal-relative) link distance start a new chain; junctions
+/// are left as separate chains rather than forcing a single path through them.
+///
+/// The link tolerance is `max(tol, 2% of the bounding-box diagonal)`, so chains
+/// whose overlapping endpoints lie within `tol` merge into a single polyline
+/// while well-separated disjoint curves stay separate.
+pub fn chain_intersection_points(pts: &[GpPnt], tol: f64) -> Vec<Vec<GpPnt>> {
+    if pts.is_empty() {
+        return Vec::new();
+    }
+    let mut lo = pts[0];
+    let mut hi = pts[0];
+    for p in pts {
+        lo = GpPnt::new(lo.x().min(p.x()), lo.y().min(p.y()), lo.z().min(p.z()));
+        hi = GpPnt::new(hi.x().max(p.x()), hi.y().max(p.y()), hi.z().max(p.z()));
+    }
+    let link_tol = tol.max(lo.distance(&hi) * 0.02);
+
+    let mut used = vec![false; pts.len()];
+    let mut chains: Vec<Vec<GpPnt>> = Vec::new();
+    loop {
+        let Some(start) = (0..pts.len()).find(|&i| !used[i]) else { break };
+        used[start] = true;
+        let mut chain: Vec<GpPnt> = vec![pts[start]];
+        loop {
+            let tail = *chain.last().unwrap();
+            let head = chain[0];
+            let mut best: Option<(f64, usize, bool)> = None; // (dist, idx, at_tail)
+            for (i, p) in pts.iter().enumerate() {
+                if used[i] {
+                    continue;
+                }
+                let dt = p.distance(&tail);
+                let dh = p.distance(&head);
+                if best.map_or(true, |(bd, _, _)| dt < bd || dh < bd) {
+                    if dt <= dh {
+                        best = Some((dt, i, true));
+                    } else {
+                        best = Some((dh, i, false));
+                    }
+                }
+            }
+            match best {
+                Some((d, i, at_tail)) if d <= link_tol => {
+                    used[i] = true;
+                    if at_tail {
+                        chain.push(pts[i]);
+                    } else {
+                        chain.insert(0, pts[i]);
+                    }
+                }
+                _ => break,
+            }
+        }
+        chains.push(chain);
+    }
+    chains
+}
+
+/// Convert a chained intersection polyline into an [`IntersectionCurve`].
+///
+/// Long polylines (> 8 points) are first simplified with the
+/// Ramer–Douglas–Peucker algorithm at `tol`; the resulting vertices become a
+/// [`PolylineCurve`], and each vertex is projected onto both surfaces to fill
+/// `on_a` / `on_b`.
+pub fn polyline_to_curve(poly: &[GpPnt], a: &dyn Surface, b: &dyn Surface, tol: f64) -> Option<IntersectionCurve> {
+    if poly.len() < 2 {
+        return None;
+    }
+    let pts: Vec<GpPnt> = if poly.len() > 8 {
+        let keep = rdp_simplify(poly, tol);
+        keep.iter().map(|&i| poly[i]).collect()
+    } else {
+        poly.to_vec()
+    };
+    if pts.len() < 2 {
+        return None;
+    }
+    let curve: Arc<dyn Curve> = Arc::new(PolylineCurve { pts: pts.clone() });
+    let on_a: Vec<(f64, f64)> = pts.iter().map(|p| project_params(a, p)).collect();
+    let on_b: Vec<(f64, f64)> = pts.iter().map(|p| project_params(b, p)).collect();
+    Some(IntersectionCurve { curve, points: pts, on_a, on_b })
+}
+
+/// Trace the intersection curves of two general surfaces and return them as
+/// ordered polylines (each `Vec<GpPnt>` is one chained curve). Exposed for the
+/// curved boolean (`bop_curved`) which needs per-face intersection polylines.
+pub fn intersection_curve_points(a: &dyn Surface, b: &dyn Surface, tol: f64, samples: usize) -> Vec<Vec<GpPnt>> {
+    let grid = samples.clamp(24, 96);
+    let pts = trace_surface_curve_n(a, b, tol, grid, grid);
+    if pts.is_empty() {
+        return Vec::new();
+    }
+    chain_intersection_points(&pts, tol)
+}
+
+/// Intersect two general (possibly non-analytic) surfaces using the grid
+/// tracer, chaining the traced points into polylines and wrapping each in an
+/// [`IntersectionCurve`].
+pub fn intersect_general_surfaces(a: &dyn Surface, b: &dyn Surface, tol: f64) -> SurfaceIntersection {
+    let pts = trace_surface_curve(a, b, tol);
+    if pts.is_empty() {
+        return SurfaceIntersection::None;
+    }
+    let chains = chain_intersection_points(&pts, tol);
+    let mut curves = Vec::new();
+    for chain in &chains {
+        if let Some(ic) = polyline_to_curve(chain, a, b, tol) {
+            curves.push(ic);
+        }
+    }
+    if curves.is_empty() {
+        SurfaceIntersection::None
+    } else {
+        SurfaceIntersection::Curves(curves)
+    }
+}
+
+/// Quick overlap test: `true` when the grid tracer finds any intersection
+/// point between the two surfaces.
+pub fn surfaces_intersect_general(a: &dyn Surface, b: &dyn Surface, tol: f64) -> bool {
+    !trace_surface_curve(a, b, tol).is_empty()
 }
 
 /// Sample points from the intersection curves of `a` and `b`, retaining only
@@ -730,16 +966,8 @@ pub fn surface_surface_intersection(a: &dyn Surface, b: &dyn Surface, tol: f64) 
         _ => {}
     }
 
-    // General fallback: grid tracer.
-    let pts = trace_surface_curve(a, b, tol);
-    if pts.is_empty() {
-        SurfaceIntersection::None
-    } else {
-        let curve: Arc<dyn Curve> = Arc::new(PolylineCurve { pts: pts.clone() });
-        let on_a: Vec<(f64, f64)> = pts.iter().map(|p| project_params(a, p)).collect();
-        let on_b: Vec<(f64, f64)> = pts.iter().map(|p| project_params(b, p)).collect();
-        SurfaceIntersection::Curves(vec![IntersectionCurve { curve, points: pts, on_a, on_b }])
-    }
+    // General fallback: grid tracer chained into per-curve polylines.
+    intersect_general_surfaces(a, b, tol)
 }
 
 /// Extract sphere center + radius from a surface by sampling.
@@ -998,6 +1226,205 @@ mod tests {
                 }
             }
             other => panic!("expected line, got {other:?}"),
+        }
+    }
+
+    // -- general (non-analytic) surface intersection extensions --
+
+    fn sphere_r(center: GpPnt, r: f64) -> Arc<dyn Surface> {
+        let ax3 = GpAx3::new(center, GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
+        Arc::new(GeomSphere::new(GpSphere::new(ax3, r).unwrap()))
+    }
+
+    fn cylinder_z(r: f64) -> Arc<dyn Surface> {
+        let ax3 = GpAx3::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
+        Arc::new(GeomCylinder::new(GpCylinder::new(ax3, r).unwrap()))
+    }
+
+    /// A degree-1 B-spline patch over a tilted plane `z = u + 0.5·v` on a
+    /// 4×4 grid spanning `[0, 1]²`.
+    fn tilted_plane_patch() -> Arc<dyn Surface> {
+        let mut grid: Vec<Vec<GpPnt>> = Vec::new();
+        for i in 0..=3usize {
+            let mut row = Vec::new();
+            for j in 0..=3usize {
+                let u = i as f64 / 3.0;
+                let v = j as f64 / 3.0;
+                row.push(GpPnt::new(u, v, u + 0.5 * v));
+            }
+            grid.push(row);
+        }
+        make_bspline_surface_from_grid(&grid, 1, 1).expect("patch fit")
+    }
+
+    #[test]
+    fn general_plane_plane_line() {
+        let s1: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane_z(0.0)));
+        let yz = GpPln::new(GpAx3::new(
+            GpPnt::zero(),
+            GpDir::new(1.0, 0.0, 0.0).unwrap(),
+            &GpDir::new(0.0, 1.0, 0.0).unwrap(),
+        ).unwrap());
+        let s2: Arc<dyn Surface> = Arc::new(GeomPlane::new(yz));
+        // The analytic dispatcher still returns a line for two planes.
+        match surface_surface_intersection(s1.as_ref(), s2.as_ref(), 1e-6) {
+            SurfaceIntersection::Curves(curves) => {
+                assert_eq!(curves.len(), 1);
+                for p in &curves[0].points {
+                    assert!(p.z().abs() < 1e-6);
+                    assert!(p.x().abs() < 1e-6);
+                }
+            }
+            other => panic!("expected line, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn general_sphere_sphere_via_trace() {
+        // Two radius-2 spheres with centers 3 apart intersect in a circle;
+        // the general tracer (bypassing the analytic sphere-sphere path) finds it.
+        let a = sphere_r(GpPnt::zero(), 2.0);
+        let b = sphere_r(GpPnt::new(3.0, 0.0, 0.0), 2.0);
+        let tol = 0.05;
+        match intersect_general_surfaces(a.as_ref(), b.as_ref(), tol) {
+            SurfaceIntersection::Curves(curves) => {
+                assert!(!curves.is_empty(), "expected at least one traced curve");
+                for ic in &curves {
+                    assert!(ic.points.len() >= 2, "chained points");
+                    for p in &ic.points {
+                        assert!(distance_to_surface(p, a.as_ref()) < 4.0 * tol, "on sphere a: {p:?}");
+                        assert!(distance_to_surface(p, b.as_ref()) < 4.0 * tol, "on sphere b: {p:?}");
+                    }
+                }
+            }
+            other => panic!("expected curves, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn general_bspline_plane_intersection() {
+        let patch = tilted_plane_patch();
+        let pln: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane_z(0.5)));
+        let tol = 0.02;
+        match intersect_general_surfaces(patch.as_ref(), pln.as_ref(), tol) {
+            SurfaceIntersection::Curves(curves) => {
+                assert!(!curves.is_empty(), "expected a traced line");
+                let mut found = 0;
+                for ic in &curves {
+                    for p in &ic.points {
+                        assert!(distance_to_surface(p, patch.as_ref()) < 6.0 * tol);
+                        assert!(distance_to_surface(p, pln.as_ref()) < 6.0 * tol);
+                        found += 1;
+                    }
+                }
+                assert!(found >= 2, "at least two points on the intersection line");
+            }
+            other => panic!("expected curves, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn general_cylinder_plane_parallel_lines() {
+        let cyl = cylinder_z(1.0);
+        let pln_x = GpPln::new(GpAx3::new(
+            GpPnt::new(0.5, 0.0, 0.0),
+            GpDir::new(1.0, 0.0, 0.0).unwrap(),
+            &GpDir::new(0.0, 1.0, 0.0).unwrap(),
+        ).unwrap());
+        let pln: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln_x));
+        let tol = 0.05;
+        match intersect_general_surfaces(cyl.as_ref(), pln.as_ref(), tol) {
+            SurfaceIntersection::Curves(curves) => {
+                assert!(!curves.is_empty(), "expected generatrix lines");
+                for ic in &curves {
+                    for p in &ic.points {
+                        assert!(distance_to_surface(p, cyl.as_ref()) < 4.0 * tol, "on cylinder: {p:?}");
+                        assert!(distance_to_surface(p, pln.as_ref()) < 4.0 * tol, "on plane: {p:?}");
+                    }
+                }
+            }
+            other => panic!("expected curves, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn chain_intersection_merges() {
+        // Two polylines whose endpoint regions overlap within tol merge to one chain.
+        let chain_a: Vec<GpPnt> = (0..=10).map(|i| GpPnt::new(i as f64 * 0.1, 0.0, 0.0)).collect();
+        let chain_b: Vec<GpPnt> = (0..=10).map(|i| GpPnt::new(0.95 + i as f64 * 0.1, 0.0, 0.0)).collect();
+        let mut pts = chain_a.clone();
+        pts.extend(chain_b);
+        let chains = chain_intersection_points(&pts, 0.12);
+        assert_eq!(chains.len(), 1, "overlapping polylines merge into one chain");
+        assert_eq!(chains[0].len(), 22, "all 22 points chained in order");
+        // Well-separated curves stay separate.
+        let far: Vec<GpPnt> = (0..=5).map(|i| GpPnt::new(5.0 + i as f64 * 0.1, 0.0, 0.0)).collect();
+        let mut pts2 = pts;
+        pts2.extend(far);
+        let chains2 = chain_intersection_points(&pts2, 0.12);
+        assert_eq!(chains2.len(), 2, "a separated curve starts a new chain");
+    }
+
+    #[test]
+    fn polyline_to_curve_on_params() {
+        let s = unit_sphere(GpPnt::zero());
+        let pln: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane_z(0.5)));
+        // Circle of intersection: radius sqrt(0.75) at z = 0.5.
+        let r = (0.75f64).sqrt();
+        let poly: Vec<GpPnt> = (0..16)
+            .map(|i| {
+                let a = 2.0 * std::f64::consts::PI * i as f64 / 16.0;
+                GpPnt::new(r * a.cos(), r * a.sin(), 0.5)
+            })
+            .collect();
+        let ic = polyline_to_curve(&poly, s.as_ref(), pln.as_ref(), 1e-4).expect("curve");
+        assert_eq!(ic.points.len(), poly.len());
+        assert_eq!(ic.on_a.len(), poly.len());
+        assert_eq!(ic.on_b.len(), poly.len());
+        for (p, (ua, va)) in ic.points.iter().zip(&ic.on_a) {
+            let q = s.d0(*ua, *va);
+            assert!(q.distance(p) < 1e-5, "on_a reconstructs {p:?} as {q:?}");
+        }
+        for (p, (ub, vb)) in ic.points.iter().zip(&ic.on_b) {
+            let q = pln.d0(*ub, *vb);
+            assert!(q.distance(p) < 1e-5, "on_b reconstructs {p:?} as {q:?}");
+        }
+    }
+
+    #[test]
+    fn general_nonintersecting_empty() {
+        let s = unit_sphere(GpPnt::zero());
+        let far_pln: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane_z(10.0)));
+        assert!(matches!(
+            intersect_general_surfaces(s.as_ref(), far_pln.as_ref(), 0.05),
+            SurfaceIntersection::None
+        ));
+        assert!(!surfaces_intersect_general(s.as_ref(), far_pln.as_ref(), 0.05));
+        assert!(surfaces_intersect_general(s.as_ref(), unit_sphere(GpPnt::new(1.0, 0.0, 0.0)).as_ref(), 0.05));
+    }
+
+    #[test]
+    fn fit_bspline_grid_corners() {
+        let mut grid: Vec<Vec<GpPnt>> = Vec::new();
+        for i in 0..=3usize {
+            let mut row = Vec::new();
+            for j in 0..=3usize {
+                let u = i as f64 / 3.0;
+                let v = j as f64 / 3.0;
+                row.push(GpPnt::new(u * 2.0 - 1.0, v * 2.0 - 1.0, u * u + v));
+            }
+            grid.push(row);
+        }
+        let patch = fit_bspline_grid(&grid, 1, 1).expect("fit");
+        let corners = [
+            (0.0, 0.0, &grid[0][0]),
+            (1.0, 0.0, &grid[3][0]),
+            (0.0, 1.0, &grid[0][3]),
+            (1.0, 1.0, &grid[3][3]),
+        ];
+        for (u, v, expected) in corners {
+            let got = patch.d0(u, v);
+            assert!(got.distance(expected) < 1e-9, "corner ({u},{v}): got {got:?} expected {expected:?}");
         }
     }
 }
