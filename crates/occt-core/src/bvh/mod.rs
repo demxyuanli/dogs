@@ -1,6 +1,7 @@
 //! Bounding Volume Hierarchy. Source: `BVH/`
 pub mod traversal;
 pub mod bvh_ops;
+pub mod bvh_query;
 use crate::gp::GpPnt;
 use crate::bnd::BndBox;
 

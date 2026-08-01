@@ -87,3 +87,7 @@ pub mod brepfeat;
 pub mod fillet_var;
 pub mod shhealing;
 pub mod xmlcaf;
+pub mod rwmesh;
+pub mod brep_builder_full;
+pub mod mesh_pipeline;
+pub mod viz_scene;

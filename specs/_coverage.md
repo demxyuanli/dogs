@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-07-31。
-> Rust：5 crate · 66,931 行 · 958 测试（core 216 / math 183 / geom 60 / geom2d 46 / topo 453）
+> Rust：5 crate · 74,250 行 · 1,069 测试（core 230 / math 202 / geom 68 / geom2d 56 / topo 513）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -82,22 +82,21 @@
 ### ⬜ 未移植（0%）
 
 - **精确布尔（NURBS 曲面）**：IntPatch（40 类）、BOPAlgo 完整、TopOpeBRep（37 类）
-- **特征深度**：TKFeat（BRepFeat、LocOpe）
-- **精确边倒圆**：TKFillet（95,710 行源码）
-- **TKShHealing · TKXMesh · TKMeshVS**
-- **DataExchange 其余**：BinXCAF、XmlXCAF、GLTF、RWMesh
-- **整个 Visualization**（TKOpenGl/TKV3d/TKService/TKIVtk）
-- **Draw / TEST**
+- **精确边倒圆完整**：TKFillet 变半径链式共享顶点角块（95,710 行源码）
+- **RWMesh 全量**（纹理/多场景/VRML 读）
+- **整个 Visualization**（TKOpenGl 硬件、TKV3d 交互选择/高亮、TKService 字体/纹理、TKIVtk）—— 已有 viz_scene 软件渲染子集
+- **Draw / TEST 交互**
+- **BRepGProp / Extrema 深度**（曲线/曲面解析属性）
 
 ## 总体结论
 
 | 指标 | 数值 |
 |---|---|
-| Rust 移植量 | 66,931 行（含测试） |
+| Rust 移植量 | 74,250 行（含测试） |
 | OCCT 已移植范围源码 | ~73 万行（20 toolkit） |
-| 行数比 | ~9.2% |
+| 行数比 | ~10.2% |
 | 核心几何主干覆盖 | ~85% |
-| 全量 OCCT 类覆盖（估算） | ~20–24% |
+| 全量 OCCT 类覆盖（估算） | ~22–26% |
 
 ### 覆盖矩阵行更新（2026-08-01，Phase 6）
 | OCCT 包 | Rust | 覆盖 | 说明 |
@@ -120,6 +119,18 @@
 | Extrema2d | geom2d extrema2d | — | 2D 点/曲线极值 + 交点 |
 | 网格处理 | mesh_ops | — | Laplacian 平滑/细分/减面 |
 | 数值深度 | ode_rk45 + lsq_nonlinear | — | DOPRI5 自适应 ODE + Gauss-Newton |
+
+### 覆盖矩阵行更新（2026-08-01，Phase 8）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| RWMesh | rwmesh | 0%→45% | OBJ/PLY/STL/glTF 读入 + 场景合成 + 格式转换 |
+| BRepBuilderAPI | brep_builder_full | 33%→70% | MakeEdge/Wire/Face/Shell/Solid/Polygon 统一包装 |
+| BVH / Poly | bvh_query | 12%→40% | 射线/线段/盒查询 + 网格拓扑/体积/分量 |
+| Visualization-lite | viz_scene | 0%→25% | 场景图/相机/透视/正交渲染（SVG+PPM） |
+| math 深度 | ode_multistep + constraint_opt | 67%→75% | Adams 多步 ODE + 罚函数/增广拉格朗日约束优化 |
+| 曲线插值 | geom interp_curve | — | 全局 B样条/带切矢插值 |
+| TKXMesh/TKMeshVS | mesh_pipeline | 0%→45% | 细分/平滑/减面/修复/一致性/到 BRep |
+| 2D 曲线工具 | geom2d curve_tools2d | — | 3 点圆弧/2D 插值/均匀取点/圆角 |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。

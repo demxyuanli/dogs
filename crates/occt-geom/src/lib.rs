@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub mod curve;
 pub mod bspline_curve;
+pub mod interp_curve;
 pub mod surface;
 pub mod line;
 pub mod circle;

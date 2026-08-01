@@ -39,6 +39,7 @@ pub use bezier_curve::Geom2dBezierCurve;
 pub use bspline2d_to_bezier::BezierSegment2d;
 pub use curve_ops::*;
 pub mod extrema2d;
+pub mod curve_tools2d;
 
 /// Type alias for OCCT's Handle(Geom2d_Curve) — Arc is the Rust equivalent.
 pub type HandleCurve2d = Arc<dyn Curve2d>;

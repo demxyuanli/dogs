@@ -86,3 +86,5 @@ pub mod nurbs_fit;
 pub mod distrib_extra;
 pub mod ode_rk45;
 pub mod lsq_nonlinear;
+pub mod ode_multistep;
+pub mod constraint_opt;
