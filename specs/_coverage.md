@@ -1,8 +1,9 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-08-02。
-> Rust：5 crate · 114,016 行 · 1,485 测试（core 247 / math 202 / geom 68 / geom2d 56 / topo 912）
+> Rust：5 crate · 121,337 行 · 1,578 测试（core 247 / math 202 / geom 139 / geom2d 72 / topo 918）
 > BRepMesh 59 类迁移完成（TKMesh，4 波，~17,400 行新增：框架/数据/Delaunay/细化/分割器/愈合/工厂）
+> Phase 13（TKGeomAlgo 深度）：Extrema 解析/牛顿化 + IntAna + GCPnts + GeomConvert + IntCurvesFace
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -168,6 +169,16 @@
 | OCCT 包 | Rust | 覆盖 | 说明 |
 |---|---|---|---|
 | BRepMesh（59 类，TKMesh） | meshing/（24 模块，~17,400 行） | 25%→90% | 现代增量管线逐类移植：IMeshTools/IMeshData 框架、BRepMeshData 模型、IncrementalMesh、GeomTool/Deflection、Edge/Face 离散化、UV Delaunay 三角化（Delaun + DataStructure）、deflection 控制细化（DelaunayDeflectionControlMeshAlgo）、RangeSplitter 族（解析+周期 seam）、ModelHealer/PostProcessor、工厂、Delabella 备选算法、Triangulator/FastDiscret，接入 shape_mesh |
+
+### 覆盖矩阵行更新（2026-08-02，Phase 13 TKGeomAlgo 深度）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| Extrema（72 类，TKGeomBase） | extrema_pc + extrema_cc + extrema_surf + extrema_ss（~5,000 行） | <10%→75% | 采样近似→解析/牛顿：ExtPElC 点-直线/圆/椭/双曲/抛物精确解、ExtPC/ExtPC2d 网格+牛顿（d1/d2）、ExtCC/ExtElC（斜交线/线-圆/圆-圆解析配对）、ExtPElS 点-平面/球/柱/锥/torus 精确解、ExtPS/ExtCS/ExtSS 数值 Jacobian 牛顿（Surface trait 无 d2,ponytail 标记）、ExtPRevS/ExtPExtS 走通用路径；`extrema.rs` 改为纯门面,4 个采样函数全部切新实现（签名保留） |
+| IntAna（8 类）+ IntCurvesFace（2） | intana.rs（957 行）+ brep_face_intersect.rs | 40%→85% | Int3Pln 三平面、IntQuadQuad/QuadQuadGeo 解析（平面-平面/平面-球/球-球/平面-柱/平面-锥含二次曲线）、IntLinTorus;IntCurvesFace 薄模块复用 inttools/intpatch/face_face + intana 平面∩球/球∩球精确圆 |
+| GCPnts（11） | gcpnts.rs（466 行） | 45%→85% | AbscissaPoint（自适应积分+牛顿）、UniformAbscissa、QuasiUniform、UniformDeflection、TangentialDeflection |
+| GeomConvert（16） | convert_bspl.rs（510 行） | 部分→70% | KnotSplitting（曲线+曲面）、BSplineSurfaceToBezierSurface（全重数插入,rational 感知）、CompCurveToBSplineCurve;BSplineCurveToBezier 复用既有模块;ApproxCurve 暂由 curve_approx 覆盖 |
+| BRepExtrema（形状级） | brep_extrema.rs | 33%→60% | closest_point_on_edge/face 改走解析/牛顿 extrema,带边界钳制（含逆向边、边界边遍历）、平面求解器参数框架修正 |
+| 备注 | intana vs intpatch | — | 平面∩球/球∩球/平面∩柱两处重叠（不同 API 层,互补非重复）,待决定是否合并 |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。
