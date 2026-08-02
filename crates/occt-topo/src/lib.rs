@@ -94,3 +94,4 @@ pub mod mesh_pipeline;
 pub mod viz_scene;
 pub mod draw;
 pub mod gprop_analytic;
+pub mod meshing;
