@@ -1,29 +1,43 @@
-//! Port of OCCT incremental_mesh — Wave 1 BRepMesh.
+//! Port of OCCT incremental_mesh — BRepMesh integration.
 //!
 //! `BRepMesh_IncrementalMesh` is the meshing entry point: it builds the discrete
-//! model (`ModelBuilder`), pre-processes it (`ModelPreProcessor`), then
-//! discretizes edges/faces and assembles the crate's `ShapeMesh` triangle soup.
+//! model (`ModelBuilder`), pre-processes it (`ModelPreProcessor`), then runs the
+//! OCCT-style per-face pipeline — `EdgeDiscret` collects the boundary UV points
+//! from the discretized edges, `Triangulator` triangulates them into 3D
+//! triangles with deflection-controlled interior refinement — and assembles the
+//! crate's `ShapeMesh` triangle soup.
 //!
 //! Reference: `BRepMesh_IncrementalMesh.hxx/.cxx`, `BRepMesh_DiscretRoot.hxx`.
 //!
-//! # Wave 1 dependency note
-//! The edge/face discretization siblings (`edge_discret.rs`, `face_discret.rs`)
-//! are filled by parallel Wave 1 agents. Until they land, `discretize_edge` /
-//! `discretize_face` below call the existing `wireframe` tessellators as minimal
-//! in-file placeholders (`// W1-D 占位，波2/3 替换`), keeping the pipeline shape
-//! correct.
+//! # Pipeline
+//! `ModelBuilder::build_model` → `ModelPreProcessor::perform` →
+//! per-face [`IncrementalMesh::triangulate_model_faces`]
+//! (`EdgeDiscret` boundary UV → `Triangulator::triangulate`) → assembled
+//! `ShapeMesh`.
+//!
+//! # Fallback
+//! If any pipeline stage fails for a shape (unusual/degenerate geometry), the
+//! pre-pipeline wireframe UV-grid tessellator
+//! ([`IncrementalMesh::build_shape_mesh_wireframe`]) is used so `perform` never
+//! panics.
 
-use occt_core::gp::GpPnt;
+use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::poly::triangulation::Triangle;
+use occt_geom::Surface;
 
 use crate::abs::ShapeType;
+use crate::brep_tool::BRepTool;
+use crate::intpatch::refine_point_on_surface;
 use crate::mesh::{mesh_surface_area, ShapeMesh};
 use crate::shape::{Edge, Face, TopoShape};
 use crate::wireframe;
 
-use super::data_model::{MeshModel, MeshStatus};
+use super::data_model::{MeshEdge, MeshModel, MeshStatus};
+use super::edge_discret::{EdgeDiscret, MeshFace as UvFace};
+use super::mesh_tool::MeshTool;
 use super::model_builder::{ModelBuilder, ModelPreProcessor};
 use super::parameters::MeshParameters;
+use super::triangulator::{FaceTriangulation, Triangulator};
 
 /// `BRepMesh_IncrementalMesh::initParameters` — validates the meshing
 /// parameters and fills the `Interior`/`MinSize` defaults from the boundary
@@ -184,8 +198,8 @@ impl IncrementalMesh {
     /// Performs meshing of the shape.
     ///
     /// Pipeline (OCCT `BRepMesh_IncrementalMesh::Perform`):
-    /// `ModelBuilder::build_model` → `ModelPreProcessor::perform` →
-    /// per-edge/face discretization → assembled `ShapeMesh`.
+    /// `ModelBuilder::build_model` → `ModelPreProcessor::perform` → per-face
+    /// discretization + triangulation → assembled `ShapeMesh`.
     ///
     /// Returns the triangle soup on success, or an error message (empty shape,
     /// invalid parameters, or no triangles produced). On success the result is
@@ -210,8 +224,15 @@ impl IncrementalMesh {
         // 2. Pre-process: initialize per-entity deflection and status.
         ModelPreProcessor::perform(&mut model, &self.parameters);
 
-        // 3. Discretize every edge/face and assemble the ShapeMesh.
-        let mesh = self.build_shape_mesh(&mut model)?;
+        // 3. Discretize edges and triangulate faces through the OCCT-style
+        //    pipeline (`EdgeDiscret` boundary UV → `Triangulator`).
+        // ponytail: any pipeline failure falls back to the wireframe UV-grid
+        // tessellator (the pre-pipeline behavior) so `perform` never panics for
+        // unusual or degenerate shapes.
+        let mesh = match self.build_shape_mesh(&mut model) {
+            Ok(m) => m,
+            Err(_) => self.build_shape_mesh_wireframe(&mut model)?,
+        };
 
         // 4. Accumulate status flags from faces and their wires
         //    (`BRepMesh_IncrementalMesh::Perform`).
@@ -231,12 +252,33 @@ impl IncrementalMesh {
         Ok(mesh)
     }
 
-    /// Assemble a [`ShapeMesh`] by tessellating every face of the model.
+    /// Assemble a [`ShapeMesh`] through the OCCT-style pipeline.
     ///
-    /// Faces that triangulate successfully are cleared of the `Outdated` marker
-    /// (their mesh now matches the requested deflection); faces that produce no
-    /// triangles get a `Failure` status.
-    fn build_shape_mesh(&mut self, model: &mut MeshModel) -> Result<ShapeMesh, String> {
+    /// Every face is triangulated by [`Self::triangulate_model_faces`] and the
+    /// per-face 3D nodes/triangles are concatenated into the flat triangle soup.
+    fn build_shape_mesh(&self, model: &mut MeshModel) -> Result<ShapeMesh, String> {
+        let source_shape = model.shape().map(|s| s.shape_type()).unwrap_or(ShapeType::Shape);
+        let mut vertices: Vec<GpPnt> = Vec::new();
+        let mut triangles: Vec<Triangle> = Vec::new();
+
+        for ft in self.triangulate_model_faces(model)? {
+            let offset = vertices.len();
+            vertices.extend(ft.vertices);
+            for t in ft.triangles {
+                triangles.push(Triangle::new(offset + t.n0, offset + t.n1, offset + t.n2));
+            }
+        }
+
+        if triangles.is_empty() {
+            return Err("IncrementalMesh::perform: no triangles generated".to_string());
+        }
+        Ok(ShapeMesh { vertices, triangles, source_shape })
+    }
+
+    /// Wireframe UV-grid fallback — the pre-pipeline behavior. Faces are
+    /// tessellated with `wireframe::face_to_triangles` (deflection-bounded UV
+    /// grid) when the OCCT-style pipeline errors.
+    fn build_shape_mesh_wireframe(&mut self, model: &mut MeshModel) -> Result<ShapeMesh, String> {
         let source_shape = model.shape().map(|s| s.shape_type()).unwrap_or(ShapeType::Shape);
         let mut vertices: Vec<GpPnt> = Vec::new();
         let mut triangles: Vec<Triangle> = Vec::new();
@@ -246,7 +288,7 @@ impl IncrementalMesh {
                 let f = model.face(i).expect("face index in range");
                 (f.face().clone(), f.deflection().max(self.parameters.deflection))
             };
-            let (vs, ts) = self.discretize_face(&face, deflection);
+            let (vs, ts) = wireframe::face_to_triangles(&face, deflection);
             if ts.is_empty() {
                 model.face_mut(i).expect("face index in range").set_status(MeshStatus::FAILURE);
                 continue;
@@ -268,18 +310,198 @@ impl IncrementalMesh {
         Ok(ShapeMesh { vertices, triangles, source_shape })
     }
 
-    /// W1-D 占位，波2/3 替换: 调用 `crate::meshing::face_discret` 的 FaceDiscret
-    /// 管线。当前委托 `wireframe::face_to_triangles` 完成 deflection-bounded
-    /// UV-grid 三角化。
-    fn discretize_face(&self, face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
-        wireframe::face_to_triangles(face, deflection)
+    /// Run the per-face pipeline over the model.
+    ///
+    /// For each face the boundary UV polygon is built from its discretized 3D
+    /// edges ([`Self::build_face_uv_polygon`], the `EdgeDiscret` step) and the
+    /// boundary UV point set is triangulated into 3D triangles
+    /// ([`Triangulator::triangulate`], which runs the 2D Delaunay plus the
+    /// OCCT deflection-controlled interior refinement). Faces that triangulate
+    /// successfully are cleared of the `Outdated` marker.
+    ///
+    /// Returns the per-face triangulations so callers can inspect face coverage.
+    ///
+    /// ponytail: the `FaceDiscret` uniform interior UV grid is not added here —
+    /// the current `Delaun` port produces gapped triangulations when a dense set
+    /// of Free interior points is combined with Frontier boundary vertices (a
+    /// 3×3 grid works, anything denser leaves the boundary strips uncovered).
+    /// `Triangulator::triangulate`'s own deflection-controlled refinement plays
+    /// the interior-point role instead. Revisit once the Delaunay insertion
+    /// handles dense Free point sets.
+    fn triangulate_model_faces(&self, model: &mut MeshModel) -> Result<Vec<FaceTriangulation>, String> {
+        let tool = MeshTool::new(self.parameters.clone());
+        let triangulator = Triangulator::new(self.parameters.clone());
+
+        let mut out: Vec<FaceTriangulation> = Vec::with_capacity(model.faces_nb());
+        for i in 0..model.faces_nb() {
+            let surface = {
+                let f = model
+                    .face(i)
+                    .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?;
+                f.surface()
+                    .ok_or_else(|| format!("IncrementalMesh::triangulate_model_faces: face {i} has no surface"))?
+            };
+
+            // EdgeDiscret step: boundary UV polygon from the discretized edges.
+            let uv_face = self.build_face_uv_polygon(model, i)?;
+            let data = tool
+                .extract_face(&uv_face, 1e-6)
+                .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: face {i}: {e}"))?;
+
+            // Triangulator step: 2D Delaunay + deflection-controlled refinement.
+            let tri = triangulator
+                .triangulate(surface.as_ref(), &data)
+                .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: face {i}: {e}"))?;
+
+            model
+                .face_mut(i)
+                .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?
+                .unset_status(MeshStatus::OUTDATED);
+            out.push(tri);
+        }
+
+        if out.is_empty() {
+            return Err("IncrementalMesh::triangulate_model_faces: model has no faces".to_string());
+        }
+        Ok(out)
     }
 
-    /// W1-D 占位，波2/3 替换: 调用 `crate::meshing::edge_discret` 的 EdgeDiscret
-    /// 管线。当前委托 `wireframe::edge_to_polyline` 完成 deflection-bounded 折线。
-    #[allow(dead_code)]
-    fn discretize_edge(&self, edge: &Edge, deflection: f64) -> Vec<GpPnt> {
-        wireframe::edge_to_polyline(edge, deflection)
+    /// Build the UV polygon of a model face from its boundary edges.
+    ///
+    /// Each wire edge is discretized in 3D ([`Self::discretize_edge`],
+    /// `EdgeDiscret`) and its polyline is projected onto the face surface to
+    /// give the boundary UV points; edges are stitched so the polygon is a
+    /// continuous closed chain regardless of the wire's edge orientations.
+    ///
+    /// The first edge's direction is ambiguous (the wire stores every edge in
+    /// its natural curve direction, not necessarily the traversal direction), so
+    /// the chain is built twice — natural and flipped — and the closed one is
+    /// kept.
+    fn build_face_uv_polygon(&self, model: &MeshModel, face_index: usize) -> Result<UvFace, String> {
+        let face = model
+            .face(face_index)
+            .map_err(|e| format!("IncrementalMesh::build_face_uv_polygon: {e}"))?;
+        let surface = face.surface().ok_or("IncrementalMesh::build_face_uv_polygon: face has no surface")?;
+
+        let mut outer_wire: Vec<GpPnt2d> = Vec::new();
+        let mut inner_wires: Vec<Vec<GpPnt2d>> = Vec::new();
+        for (w_pos, &wire_index) in face.wires().iter().enumerate() {
+            let mut chain = self.wire_uv_chain(model, wire_index, surface.as_ref(), false);
+            if !chain_closed(&chain) {
+                chain = self.wire_uv_chain(model, wire_index, surface.as_ref(), true);
+            }
+            if chain.len() >= 2 {
+                if w_pos == 0 {
+                    outer_wire = chain;
+                } else {
+                    inner_wires.push(chain);
+                }
+            }
+        }
+
+        if outer_wire.is_empty() {
+            return Err(format!(
+                "IncrementalMesh::build_face_uv_polygon: face {face_index} has no boundary UV points"
+            ));
+        }
+        Ok(UvFace {
+            outer_wire,
+            inner_wires,
+            deflection: face.deflection(),
+            id: face_index,
+        })
+    }
+
+    /// UV boundary chain of one wire on a face surface.
+    ///
+    /// Each edge is discretized in 3D and projected to UV, then stitched into a
+    /// continuous chain. `reverse_first` flips the first edge's direction,
+    /// resolving the wire-start ambiguity.
+    fn wire_uv_chain(
+        &self,
+        model: &MeshModel,
+        wire_index: usize,
+        surface: &dyn Surface,
+        reverse_first: bool,
+    ) -> Vec<GpPnt2d> {
+        let wire = match model.wire(wire_index) {
+            Ok(w) => w,
+            Err(_) => return Vec::new(),
+        };
+        let mut chain: Vec<GpPnt2d> = Vec::new();
+        for j in 0..wire.edges_nb() {
+            let edge_index = match wire.edge(j) {
+                Ok(e) => e,
+                Err(_) => return Vec::new(),
+            };
+            let edge = match model.edge(edge_index) {
+                Ok(e) => e,
+                Err(_) => return Vec::new(),
+            };
+            let mut uv = self.edge_uv_points(edge, surface);
+            if reverse_first && j == 0 {
+                uv.reverse();
+            }
+            stitch_chain(&mut chain, uv);
+        }
+        chain
+    }
+
+    /// UV points of one edge on a face.
+    ///
+    /// The 3D edge is discretized into a deflection-bounded polyline
+    /// ([`Self::discretize_edge`]) and every polyline point is projected onto
+    /// the face surface.
+    fn edge_uv_points(&self, edge: &MeshEdge, surface: &dyn Surface) -> Vec<GpPnt2d> {
+        let deflection = edge.deflection();
+        let deflection = if deflection.is_finite() && deflection > 0.0 && deflection < f64::MAX {
+            deflection
+        } else {
+            self.parameters.deflection
+        };
+        self.discretize_edge(edge.edge(), deflection)
+            .into_iter()
+            .map(|p| {
+                let (u, v) = project_uv(surface, &p);
+                GpPnt2d::new(u, v)
+            })
+            .collect()
+    }
+
+    /// Discretize a 3D edge into a deflection-bounded polyline.
+    ///
+    /// Port of `BRepMesh_EdgeDiscret`/`GCPnts_UniformDeflection`: the edge's
+    /// curve is sampled adaptively so every chord deviates from the curve by at
+    /// most `deflection`. Both endpoints are always included. Returns an empty
+    /// polyline when the edge has no registered curve or an unbounded range.
+    pub fn discretize_edge(&self, edge: &Edge, deflection: f64) -> Vec<GpPnt> {
+        let Some(curve) = BRepTool::edge_curve(edge) else {
+            return Vec::new();
+        };
+        let (first, last) = BRepTool::edge_parameters(edge);
+        if !(first.is_finite() && last.is_finite() && last >= first) {
+            return Vec::new();
+        }
+        EdgeDiscret::discretize_edge(&curve, first, last, deflection.max(1e-9))
+    }
+
+    /// Discretize a single face into a 3D triangle soup through the OCCT-style
+    /// pipeline (a temporary single-face model is triangulated).
+    ///
+    /// Falls back to the wireframe UV-grid tessellator on any pipeline error.
+    pub fn discretize_face(&self, face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
+        let mut params = self.parameters.clone();
+        params.deflection = deflection;
+        let mut model = match ModelBuilder::build_model(&face.0, &params) {
+            Ok(m) => m,
+            Err(_) => return wireframe::face_to_triangles(face, deflection),
+        };
+        ModelPreProcessor::perform(&mut model, &params);
+        match self.build_shape_mesh(&mut model) {
+            Ok(m) => (m.vertices, m.triangles),
+            // ponytail: fall back to the wireframe UV-grid tessellator.
+            Err(_) => wireframe::face_to_triangles(face, deflection),
+        }
     }
 }
 
@@ -307,6 +529,59 @@ impl IncrementalMesh {
     pub fn is_done(&self) -> bool {
         self.root.is_done()
     }
+}
+
+/// Mesh a shape into a [`ShapeMesh`] through the OCCT-style BRepMesh pipeline
+/// with the given linear deflection.
+///
+/// Convenience entry wrapping [`IncrementalMesh::perform`]; the returned
+/// [`ShapeMesh`] holds the assembled triangle soup (vertices + triangles).
+pub fn incremental_mesh_to_shape_mesh(shape: &TopoShape, deflection: f64) -> Result<ShapeMesh, String> {
+    let mut inc = IncrementalMesh::new();
+    inc.set_shape(shape);
+    inc.change_parameters().deflection = deflection;
+    inc.perform()
+}
+
+/// Append an edge's UV points to a boundary chain, reversing the edge when
+/// needed so the chain stays a continuous closed polygon.
+fn stitch_chain(chain: &mut Vec<GpPnt2d>, mut edge_uv: Vec<GpPnt2d>) {
+    if edge_uv.is_empty() {
+        return;
+    }
+    if let Some(&last) = chain.last() {
+        let first = edge_uv[0];
+        let last_edge = edge_uv[edge_uv.len() - 1];
+        // The edge's own last point joining the chain's last means the edge is
+        // stored in the traversal direction already; otherwise flip it.
+        if last.distance(&last_edge) < last.distance(&first) {
+            edge_uv.reverse();
+        }
+    }
+    for p in edge_uv {
+        if chain.last().map_or(true, |q: &GpPnt2d| q.distance(&p) > 1e-9) {
+            chain.push(p);
+        }
+    }
+}
+
+/// Whether a boundary chain is a closed loop (its last point equals its first).
+fn chain_closed(chain: &[GpPnt2d]) -> bool {
+    chain.len() >= 2 && chain[0].distance(&chain[chain.len() - 1]) < 1e-6
+}
+
+/// Invert a surface point to its `(u, v)` parameters via Newton iteration,
+/// seeded from the surface range center (or the origin for unbounded ranges).
+///
+/// For analytic surfaces (planes, cylinders, …) the residual is near-linear, so
+/// the iterate converges in a couple of steps.
+fn project_uv(surface: &dyn Surface, p: &GpPnt) -> (f64, f64) {
+    let (u0, u1) = surface.u_range();
+    let (v0, v1) = surface.v_range();
+    let su = if u0.is_finite() && u1.is_finite() { 0.5 * (u0 + u1) } else { 0.0 };
+    let sv = if v0.is_finite() && v1.is_finite() { 0.5 * (v0 + v1) } else { 0.0 };
+    let (u, v, _) = refine_point_on_surface(surface, *p, su, sv, 12);
+    (u, v)
 }
 
 #[cfg(test)]
@@ -369,5 +644,32 @@ mod tests {
         inc.change_parameters().deflection = 0.0; // below Precision::Confusion()
         assert!(inc.perform().is_err());
         assert!(!inc.is_done());
+    }
+
+    #[test]
+    fn incremental_mesh_to_shape_mesh_produces_triangles() {
+        let shape = unit_box();
+        let mesh = incremental_mesh_to_shape_mesh(&shape, 0.05).expect("mesh produced");
+        assert!(mesh.triangles.len() > 0, "triangles {}", mesh.triangles.len());
+        assert!(!mesh.vertices.is_empty(), "vertices non-empty");
+        // The 6 box faces tile the unit surface: area ≈ 6.
+        let area = mesh_surface_area(&mesh);
+        assert!((area - 6.0).abs() < 0.5, "box area {area}");
+    }
+
+    #[test]
+    fn pipeline_preserves_face_count() {
+        let shape = unit_box();
+        let mut inc = IncrementalMesh::new();
+        inc.set_shape(&shape);
+        inc.change_parameters().deflection = 0.05;
+        // Build + pre-process the model and run the per-face pipeline directly.
+        let mut model = ModelBuilder::build_model(&shape, inc.parameters()).expect("model built");
+        ModelPreProcessor::perform(&mut model, inc.parameters());
+        let tris = inc.triangulate_model_faces(&mut model).expect("pipeline ran");
+        assert_eq!(tris.len(), 6, "box has 6 faces");
+        for ft in &tris {
+            assert!(ft.triangles.len() > 0, "face {} has triangles", ft.face_index);
+        }
     }
 }

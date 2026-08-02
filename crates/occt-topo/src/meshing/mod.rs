@@ -36,3 +36,10 @@ pub mod node_insertion;    // BRepMesh_{NodeInsertionMeshAlgo,DelaunayNodeInsert
 pub mod deflection_control;// BRepMesh_DelaunayDeflectionControlMeshAlgo
 pub mod triangulator;      // BRepMesh_Triangulator
 pub mod fast_discret;      // BRepMesh_FastDiscret
+
+// Wave 4 — range splitters, healing, factories, Delabella + pipeline integration.
+pub mod range_splitter;    // BRepMesh_{DefaultRangeSplitter,UVParamRangeSplitter,UndefinedRangeSplitter,BoundaryParamsRangeSplitter, CylinderRangeSplitter,ConeRangeSplitter,SphereRangeSplitter,TorusRangeSplitter,NURBSRangeSplitter,ExtrusionRangeSplitter}
+pub mod model_healer;      // BRepMesh_{ModelHealer,ModelPostProcessor}
+pub mod factories;         // BRepMesh_{DiscretFactory,DiscretAlgoFactory,MeshAlgoFactory,IncrementalMeshFactory}
+pub mod delabella;         // BRepMesh_{DelabellaBaseMeshAlgo,DelabellaMeshAlgoFactory}
+pub mod degree_of_freedom; // BRepMesh_DegreeOfFreedom

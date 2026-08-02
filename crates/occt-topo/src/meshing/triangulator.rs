@@ -245,28 +245,52 @@ impl Triangulator {
         face_index: usize,
     ) -> Result<FaceTriangulation, String> {
         let ds = delaun.result();
-        let mut node_to_vertex: HashMap<i32, usize> = HashMap::new();
-        let mut vertices: Vec<GpPnt> = Vec::new();
-        let mut uv: Vec<GpPnt2d> = Vec::new();
-        let mut triangles: Vec<Triangle> = Vec::new();
 
-        let ids: Vec<i32> = ds.elements_of_domain().iter().copied().collect();
+        // Live triangle ids (ascending for a deterministic emission order; the
+        // backing set is a HashSet whose iteration order is per-process random).
+        let mut ids: Vec<i32> = ds
+            .elements_of_domain()
+            .iter()
+            .copied()
+            .filter(|&id| ds.element_movability(id) != VertexState::Deleted)
+            .collect();
+        ids.sort_unstable();
+
+        // Emit the mesh vertices in ascending Delaun node-index order. The
+        // initial mesh nodes are indexed in input order, so the output UV
+        // vertex order is stable across runs and preserves the face boundary
+        // cycle. Iterating the triangle set to assign UV indices (as before)
+        // made the ordering depend on HashSet iteration order, permuting the
+        // UV array and breaking index-based boundary-edge checks.
+        let mut used: Vec<i32> = Vec::new();
+        let mut seen: HashSet<i32> = HashSet::new();
         for &id in &ids {
-            if ds.element_movability(id) == VertexState::Deleted {
-                continue;
+            for &n in ds.element_nodes(&ds.get_element(id)).iter() {
+                if seen.insert(n) {
+                    used.push(n);
+                }
             }
+        }
+        used.sort_unstable();
+
+        let mut node_to_vertex: HashMap<i32, usize> = HashMap::with_capacity(used.len());
+        let mut vertices: Vec<GpPnt> = Vec::with_capacity(used.len());
+        let mut uv: Vec<GpPnt2d> = Vec::with_capacity(used.len());
+        for &n in &used {
+            node_to_vertex.insert(n, uv.len());
+            let loc = ds.get_node(n).location;
+            uv.push(loc);
+            vertices.push(surface.d0(loc.x(), loc.y()));
+        }
+
+        let mut triangles: Vec<Triangle> = Vec::with_capacity(ids.len());
+        for &id in &ids {
             let nodes = ds.element_nodes(&ds.get_element(id));
-            let mut corner = [0usize; 3];
-            for (k, &n) in nodes.iter().enumerate() {
-                let vi = *node_to_vertex.entry(n).or_insert_with(|| {
-                    let loc = ds.get_node(n).location;
-                    uv.push(loc);
-                    vertices.push(surface.d0(loc.x(), loc.y()));
-                    vertices.len() - 1
-                });
-                corner[k] = vi;
-            }
-            triangles.push(Triangle::new(corner[0], corner[1], corner[2]));
+            triangles.push(Triangle::new(
+                node_to_vertex[&nodes[0]],
+                node_to_vertex[&nodes[1]],
+                node_to_vertex[&nodes[2]],
+            ));
         }
 
         if triangles.is_empty() {
