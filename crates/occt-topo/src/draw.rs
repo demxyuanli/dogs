@@ -49,7 +49,9 @@
 //! | `ls`          | —                    | list the session shape names                      |
 //! | `rm`          | `name`               | remove a shape from the session                   |
 //! | `clear`       | —                    | empty the session                                 |
-//! | `help`        | —                    | print this command list                           |
+//! | `help`        | —                    | list commands with arity and description          |
+//! | `commands`    | —                    | list all command names                            |
+//! | `arity`       | `cmd`                | report a command's accepted argument count        |
 //! | `exit` / `quit` | —                  | set the session stop flag                         |
 //!
 //! Unknown commands are rejected with an error rather than silently ignored,
@@ -68,6 +70,12 @@
 //! | `incr`        | `name [step]`           | add `step` (default 1) to a number var |
 //! | `for`         | `var start end { body }`| run body per integer in `[start, end]` |
 //! | `if`          | `a b op { body }`       | run body when the comparison holds     |
+//! | `proc` / `def`| `name { params } { body }`| define a procedure                  |
+//! | `call`        | `name args...`          | invoke a procedure by name             |
+//! | `return`      | `[value]`               | stop the current procedure, set `result`|
+//! | `lappend`     | `name value...`         | append values to a list/array variable |
+//! | `len`         | `name`                  | count list elements into `result`      |
+//! | `concat`      | `a b out`               | concatenate two list variables         |
 //! | `translate`   | `name dx dy dz [out]`   | translate the registered geometry      |
 //! | `rotate`      | `name ax ay az deg`     | rotate about an axis through the origin|
 //! | `scale`       | `name factor [out]`     | uniform scale about the origin         |
@@ -137,6 +145,40 @@
 //! for i 1 5 { if $i 3 > { echo hit$i } }   ; logs hit4, hit5
 //! if $x 3 > { echo big }
 //! ```
+//!
+//! **Procedures.** `proc <name> { p1 p2 ... } { body }` (alias `def`) stores a
+//! `;`-separated command sequence under `name`. Calling it — `call <name>
+//! args...` or directly by name — binds each parameter to the matching
+//! argument and runs the body through [`execute_line`], so parameters shadow
+//! global variables for the duration of the call and are restored afterwards.
+//! `return [value]` stops the body (storing `value` in `result`), and `expr`
+//! leaves its result in `result`, so a procedure's value is read back through
+//! that variable. Bodies may call other procedures — including themselves, so
+//! recursion works (bounded by [`PROC_MAX_DEPTH`]). An error inside a body is
+//! reported with the procedure name and the call stack.
+//!
+//! ```text
+//! proc fact { n } { if $n 2 < { return $n } ; expr $n 1 - ; set m $result ; call fact $m ; expr $n $result * }
+//! call fact 5                          ; result = 120
+//! ```
+//!
+//! **Arrays and lists.** A variable may be indexed as an array element —
+//! `set arr(0) 5` stores the key `arr(0)`, and `$arr(0)` resolves it — or hold
+//! a space-separated list built with `lappend`. `len <name>` counts list
+//! elements into `result`; `concat <a> <b> <out>` joins two list variables.
+//!
+//! ```text
+//! lappend pts 1.0
+//! lappend pts 2.0 3.0            ; pts = "1.0 2.0 3.0"
+//! len pts                       ; result = 3
+//! set arr(0) 10 ; set arr(1) 20 ; $arr(0) + $arr(1) = 30
+//! ```
+//!
+//! **Command registry.** Every command lives in a centralized table (name →
+//! handler + description + arity). `help` prints the whole table, `commands`
+//! lists the names, and `arity <cmd>` queries a command's accepted argument
+//! count — introspection that makes a session self-documenting, the analogue
+//! of OCCT's `Draw_Interpretor::PrintCommands` and `PrintHelp`.
 //!
 //! **Shape transforms.** `translate`, `rotate`, `scale`, `copy` and
 //! `transform` apply a `GpTrsf` to the *registered geometry* of a shape (the
@@ -308,9 +350,37 @@ const EXPORT_DEFLECTION: f64 = 0.1;
 /// curved shapes without being slow.
 const VOLUME_DEFLECTION: f64 = 0.05;
 
+/// Maximum `proc` call depth. Recursion is supported, but a runaway recursive
+/// procedure must fail with a clear error instead of exhausting the Rust stack.
+const PROC_MAX_DEPTH: usize = 64;
+
+/// Sentinel error used by `return` to stop a procedure body. It is caught by
+/// [`call_proc`] (which turns it into a normal `Ok(())`) and never recorded as
+/// a session error; the control characters make a collision with a real error
+/// message impossible.
+const PROC_RETURN: &str = "\u{1}draw:proc:return\u{1}";
+
 // ---------------------------------------------------------------------------
 // Session state
 // ---------------------------------------------------------------------------
+
+/// A user-defined procedure: a parameter list and a body token list.
+///
+/// `proc <name> { p1 p2 ... } { body }` stores the body *verbatim* (variable
+/// references are expanded at call time, once parameters are bound), so a body
+/// may reference its own parameters even when a global variable of the same
+/// name exists. The body is a command sequence: `;` separates commands, and
+/// each is executed through [`execute_line`] with the parameters bound as
+/// session variables.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcDef {
+    /// The procedure name (also the key in [`DrawSession::procs`]).
+    pub name: String,
+    /// Parameter names, bound positionally from call arguments.
+    pub params: Vec<String>,
+    /// Body tokens: a `;`-separated command sequence (outer braces stripped).
+    pub body: Vec<String>,
+}
 
 /// Mutable state shared by every command: the named-shape table, the output
 /// log, the last error, the interactive stop flag, a TCL-style variable
@@ -341,6 +411,13 @@ pub struct DrawSession {
     /// The session view camera used by `view`, and driven by `view_camera`,
     /// `orbit`, `zoom` and `pan`.
     pub camera: Camera,
+    /// User-defined procedures (`proc`/`def`), by name. A call to a name in
+    /// here dispatches to the procedure rather than the built-in table.
+    pub procs: HashMap<String, ProcDef>,
+    /// The active procedure call stack (innermost last). Non-empty while a
+    /// `proc` body is executing; used by `return` to know it must stop the
+    /// body, and by error messages to render the call chain.
+    pub proc_stack: Vec<String>,
 }
 
 impl Default for DrawSession {
@@ -352,6 +429,8 @@ impl Default for DrawSession {
             stop: false,
             vars: HashMap::new(),
             camera: Camera::default(),
+            procs: HashMap::new(),
+            proc_stack: Vec::new(),
         }
     }
 }
@@ -491,6 +570,16 @@ fn expand_token(session: &DrawSession, tok: &str) -> String {
                 name_bytes += c.len_utf8();
             } else {
                 break;
+            }
+        }
+        // Array element: `$arr(0)` names the variable `arr(0)`. An index group
+        // is any balanced `(...)` immediately after the base name; it is folded
+        // into the lookup key so `set arr(0) 5` / `$arr(0)` round-trip.
+        if name_bytes > 0 && after[name_bytes..].starts_with('(') {
+            if let Some(close) = after[name_bytes..].find(')') {
+                let end = name_bytes + close + 1;
+                name.push_str(&after[name_bytes..end]);
+                name_bytes = end;
             }
         }
         if name_bytes == 0 {
@@ -798,7 +887,7 @@ fn cmd_info(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
 }
 
 /// `ls` — list the session shape names, sorted, on one log line.
-fn cmd_ls(session: &mut DrawSession) -> Result<(), String> {
+fn cmd_ls(session: &mut DrawSession, _args: &[String]) -> Result<(), String> {
     let mut names: Vec<&String> = session.shapes.keys().collect();
     names.sort();
     let joined = names
@@ -821,22 +910,29 @@ fn cmd_rm(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
 }
 
 /// `clear` — empty the session: all shapes and the log.
-fn cmd_clear(session: &mut DrawSession) -> Result<(), String> {
+fn cmd_clear(session: &mut DrawSession, _args: &[String]) -> Result<(), String> {
     session.shapes.clear();
     session.log.clear();
     session.log.push("clear: session empty".into());
     Ok(())
 }
 
-/// `help` — list the available commands on one log line.
-fn cmd_help(session: &mut DrawSession) -> Result<(), String> {
-    session.log.push(
-        "commands: box cylinder sphere cone torus fuse cut common fillet offset \
-         mesh step obj iges stl info bbox verts ls rm clear help exit quit \
-         set expr echo vars unset incr for if translate rotate scale mirror copy transform \
-         view view_camera orbit zoom pan"
-            .into(),
-    );
+/// `help` — list every registered command with its arity and description, one
+/// per log line. User-defined procedures are listed too, marked `(proc)`.
+fn cmd_help(session: &mut DrawSession, _args: &[String]) -> Result<(), String> {
+    let mut entries: Vec<&CommandEntry> = COMMANDS.iter().collect();
+    entries.sort_by_key(|e| e.name);
+    session.log.push("commands (arity — description):".into());
+    for e in entries {
+        session
+            .log
+            .push(format!("  {:<12} {:<10} {}", e.name, arity_text(e), e.summary));
+    }
+    let mut procs: Vec<&String> = session.procs.keys().collect();
+    procs.sort();
+    for name in procs {
+        session.log.push(format!("  {:<12} (proc)", name));
+    }
     Ok(())
 }
 
@@ -894,7 +990,7 @@ fn cmd_echo(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
 /// `vars` — list every session variable as `name = value`, sorted by name, on
 /// one log line. The analogue of Tcl's `info vars` and handy before a `for`
 /// loop to confirm what the loop variable will shadow.
-fn cmd_vars(session: &mut DrawSession) -> Result<(), String> {
+fn cmd_vars(session: &mut DrawSession, _args: &[String]) -> Result<(), String> {
     let mut names: Vec<&String> = session.vars.keys().collect();
     names.sort();
     let joined = names
@@ -1320,6 +1416,460 @@ fn cmd_pan(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// Procedures: `proc` / `def` definitions and `call`
+// ---------------------------------------------------------------------------
+
+/// Peel a token into its structural edges: `(opens, core, closes, sep)`.
+///
+/// The whitespace-only parser glues `-;`, `$x;` and `};` into single tokens, so
+/// a body token may carry leading `{`s, a core, trailing `}`s and a trailing
+/// `;` all at once. This splits one token into those parts — the `;` is
+/// stripped *before* counting trailing `}`s so `};` closes a brace group and
+/// then separates commands.
+fn peel_token(t: &str) -> (usize, &str, usize, bool) {
+    let opens = t.chars().take_while(|&c| c == '{').count();
+    let rest = &t[opens..];
+    let (rest, sep) = match rest.strip_suffix(';') {
+        Some(r) => (r, true),
+        None => (rest, false),
+    };
+    let closes = rest.chars().rev().take_while(|&c| c == '}').count();
+    let mid = &rest[..rest.len() - closes];
+    (opens, mid, closes, sep)
+}
+
+/// Split a procedure body token list into command lines on `;`.
+///
+/// A `;` at brace depth zero separates commands, so `set a 1; expr $a 2 *` is
+/// two commands while a `;` inside an `if`/`for` body stays inside its segment.
+/// Brace characters and `;` are recognised on token edges (see [`peel_token`]).
+/// Segments keep their (now clean) tokens so they round-trip through
+/// [`execute_line`].
+fn split_body(body: &[String]) -> Vec<Vec<String>> {
+    let mut segments: Vec<Vec<String>> = Vec::new();
+    let mut cur: Vec<String> = Vec::new();
+    let mut depth = 0i32;
+    for t in body {
+        let (opens, mid, closes, sep) = peel_token(t);
+        for _ in 0..opens {
+            depth += 1;
+            cur.push("{".to_string());
+        }
+        if !mid.is_empty() {
+            cur.push(mid.to_string());
+        }
+        for _ in 0..closes {
+            depth -= 1;
+            cur.push("}".to_string());
+        }
+        if sep && depth == 0 && !cur.is_empty() {
+            segments.push(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        segments.push(cur);
+    }
+    segments
+}
+
+/// `proc <name> { p1 p2 ... } { body }` — define a procedure.
+///
+/// `def` is an alias. Parameters are bound positionally at call time and the
+/// body — a `;`-separated command sequence, stored verbatim — is executed with
+/// them in scope. The body may call other procedures (including itself) by
+/// name or via `call`. `return [value]` stops the body and stores `value` (or
+/// the empty string) in `result`. The `{`...`}` groups are optional: without
+/// them the parameter list is empty and the body is the rest of the line.
+fn cmd_proc(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() < 2 {
+        return Err("draw: proc: expected <name> { params } { body }".into());
+    }
+    // The name is the one token expanded here (`proc $name ...`); everything
+    // else — parameters and body — stays verbatim so `$param` references are
+    // resolved at call time.
+    let name = expand_token(session, &args[0]);
+    // Optional `{ p1 p2 ... }` parameter group.
+    let mut i = 1;
+    let mut params = Vec::new();
+    if args.get(i).map(|s| s == "{").unwrap_or(false) {
+        i += 1;
+        while i < args.len() && args[i] != "}" {
+            params.push(args[i].clone());
+            i += 1;
+        }
+        if i >= args.len() {
+            return Err(format!("draw: proc '{name}': unbalanced parameter braces"));
+        }
+        i += 1; // skip the closing brace
+    }
+    // Body: the remaining tokens. A single `{ ... }` group is unwrapped so the
+    // stored body is the bare command sequence; otherwise the tail is verbatim.
+    // Brace characters are counted on token edges (`};` closes a group), so the
+    // whitespace parser gluing `;` to a brace does not confuse the match.
+    let mut body = Vec::new();
+    if i < args.len() {
+        if args[i].starts_with('{') {
+            let mut depth = 0i32;
+            let mut end = None;
+            for (k, t) in args[i..].iter().enumerate() {
+                let (opens, _, closes, _) = peel_token(t);
+                depth += opens as i32 - closes as i32;
+                if depth == 0 {
+                    end = Some(i + k);
+                    break;
+                }
+            }
+            match end {
+                Some(end) => {
+                    body.extend_from_slice(&args[i + 1..end]);
+                    if end + 1 < args.len() {
+                        return Err(format!("draw: proc '{name}': unexpected tokens after body"));
+                    }
+                }
+                None => return Err(format!("draw: proc '{name}': unbalanced body braces")),
+            }
+        } else {
+            body.extend_from_slice(&args[i..]);
+        }
+    }
+    if body.is_empty() {
+        return Err(format!("draw: proc '{name}': empty body"));
+    }
+    session.procs.insert(
+        name.clone(),
+        ProcDef {
+            name: name.clone(),
+            params,
+            body,
+        },
+    );
+    session.log.push(format!("proc: defined {name}"));
+    Ok(())
+}
+
+/// `call <name> <arg...>` — invoke a user-defined procedure by name.
+///
+/// Arguments are already `$`-expanded by the caller's [`execute_line`] and are
+/// bound positionally to the procedure's parameters. The procedure's final
+/// `result` value (from `expr` or `return`) is visible to the caller through
+/// the shared `result` variable.
+fn cmd_call(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.is_empty() {
+        return Err("draw: call: expected a procedure name".into());
+    }
+    call_proc(session, &args[0], &args[1..])
+}
+
+/// `return [value]` — stop the current procedure.
+///
+/// Inside a procedure body this aborts the remaining commands; a value (or the
+/// empty string) is stored in `result` first. At the top level — where there is
+/// no procedure to stop — it behaves like `set result <value>`. The control
+/// flow is signalled with the [`PROC_RETURN`] sentinel, which [`call_proc`]
+/// catches and turns into a normal return.
+fn cmd_return(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() > 1 {
+        return Err(format!(
+            "draw: return: expected 0 or 1 argument, got {}",
+            args.len()
+        ));
+    }
+    if let Some(v) = args.first() {
+        set_var(session, "result", v);
+        session.log.push(format!("result = {v}"));
+    }
+    if session.proc_stack.is_empty() {
+        Ok(())
+    } else {
+        Err(PROC_RETURN.to_string())
+    }
+}
+
+/// Execute a procedure body against the session with the parameters already
+/// bound. Each `;`-separated segment is one command line through
+/// [`execute_line`]; [`PROC_RETURN`] stops the loop. Errors are wrapped with
+/// the procedure name and the current call stack.
+fn run_proc_body(session: &mut DrawSession, name: &str, body: &[String]) -> Result<(), String> {
+    for segment in split_body(body) {
+        if segment.is_empty() {
+            continue;
+        }
+        let line = segment.join(" ");
+        match execute_line(session, &line) {
+            Ok(()) => {}
+            Err(e) if e == PROC_RETURN => break,
+            Err(e) => {
+                let stack = session.proc_stack.join(" -> ");
+                return Err(format!(
+                    "draw: in proc '{name}' (call stack: {stack}): {e}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Look up `name`, bind the call arguments to its parameters, run its body,
+/// and restore the caller's bindings. Shared by `call <name>` and direct-name
+/// invocation from [`dispatch`]. Recursive calls work — each level pushes onto
+/// [`DrawSession::proc_stack`] and restores its parameters on the way out.
+fn call_proc(session: &mut DrawSession, name: &str, args: &[String]) -> Result<(), String> {
+    let proc = session
+        .procs
+        .get(name)
+        .cloned()
+        .ok_or_else(|| format!("draw: procedure '{name}' not found"))?;
+    if args.len() != proc.params.len() {
+        return Err(format!(
+            "draw: proc '{name}': expected {} argument(s), got {}",
+            proc.params.len(),
+            args.len()
+        ));
+    }
+    if session.proc_stack.len() >= PROC_MAX_DEPTH {
+        return Err(format!(
+            "draw: proc '{name}': max recursion depth {PROC_MAX_DEPTH} exceeded"
+        ));
+    }
+    // Bind parameters, saving the previous values so the caller's bindings are
+    // restored when the procedure returns (parameters shadow outer variables).
+    let mut saved: Vec<Option<String>> = Vec::with_capacity(proc.params.len());
+    for (param, arg) in proc.params.iter().zip(args.iter()) {
+        saved.push(session.vars.get(param).cloned());
+        session.vars.insert(param.clone(), arg.clone());
+    }
+    session.proc_stack.push(name.to_string());
+    let body = proc.body.clone();
+    let result = run_proc_body(session, name, &body);
+    session.proc_stack.pop();
+    for (param, old) in proc.params.iter().zip(saved) {
+        match old {
+            Some(v) => {
+                session.vars.insert(param.clone(), v);
+            }
+            None => {
+                session.vars.remove(param);
+            }
+        }
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
+// Arrays, lists and strings
+// ---------------------------------------------------------------------------
+
+/// `lappend <name> <value...>` — append values to the list variable `name`,
+/// creating it if needed.
+///
+/// A list is a space-separated string, matching Tcl's default representation.
+/// Because a variable name may be an array element (`arr(0)`), `lappend
+/// arr(0) 5` appends to a single element. `len` counts the elements.
+fn cmd_lappend(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    if args.len() < 2 {
+        return Err(format!(
+            "draw: lappend: expected at least 2 arguments, got {}",
+            args.len()
+        ));
+    }
+    let name = &args[0];
+    let existing = session.vars.get(name).cloned().unwrap_or_default();
+    let mut parts: Vec<String> = Vec::new();
+    if !existing.is_empty() {
+        parts.push(existing);
+    }
+    parts.extend(args[1..].iter().cloned());
+    let joined = parts.join(" ");
+    set_var(session, name, &joined);
+    session.log.push(format!("lappend {name} = {joined}"));
+    Ok(())
+}
+
+/// `len <name>` — count the elements of the list variable `name` and store the
+/// count in `result`. An undefined or empty variable is length 0.
+fn cmd_len(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 1, "len")?;
+    let value = session.vars.get(&args[0]).cloned().unwrap_or_default();
+    let n = if value.is_empty() {
+        0
+    } else {
+        value.split_whitespace().count()
+    };
+    let text = fmt_num(n as f64);
+    set_var(session, "result", &text);
+    session.log.push(format!("len {} = {n}", args[0]));
+    Ok(())
+}
+
+/// `concat <a> <b> <out>` — concatenate the list variables `a` and `b` into
+/// `out` (Tcl `concat` semantics: space-joined, empties skipped). For plain
+/// string concatenation use `$` expansion: `set x $a$b`.
+fn cmd_concat(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 3, "concat")?;
+    let a = session.vars.get(&args[0]).cloned().unwrap_or_default();
+    let b = session.vars.get(&args[1]).cloned().unwrap_or_default();
+    let joined = [a, b]
+        .iter()
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    set_var(session, &args[2], &joined);
+    session.log.push(format!("concat {} = {joined}", args[2]));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Command registry
+// ---------------------------------------------------------------------------
+
+/// One entry in the centralized command table.
+struct CommandEntry {
+    /// The command name (also the dispatch key).
+    name: &'static str,
+    /// The uniform handler: session + argument tokens.
+    handler: fn(&mut DrawSession, &[String]) -> Result<(), String>,
+    /// One-line description shown by `help`.
+    summary: &'static str,
+    /// Inclusive accepted argument-count range; `usize::MAX` means "or more".
+    min_args: usize,
+    max_args: usize,
+}
+
+/// Human-readable arity for a table entry: `3`, `2..3`, or `4 or more`.
+fn arity_text(e: &CommandEntry) -> String {
+    if e.max_args == usize::MAX {
+        format!("{} or more", e.min_args)
+    } else if e.min_args == e.max_args {
+        format!("{}", e.min_args)
+    } else {
+        format!("{}..{}", e.min_args, e.max_args)
+    }
+}
+
+// Adapt the boolean and writer handlers (which take a fixed `op`/`kind`) and
+// the `exit`/`quit` pair to the uniform `(session, args)` table signature.
+fn cmd_fuse(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    cmd_boolean(session, args, BoolOp::Fuse)
+}
+fn cmd_cut(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    cmd_boolean(session, args, BoolOp::Cut)
+}
+fn cmd_common(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    cmd_boolean(session, args, BoolOp::Common)
+}
+fn cmd_step(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    cmd_write(session, args, WriteKind::Step)
+}
+fn cmd_obj(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    cmd_write(session, args, WriteKind::Obj)
+}
+fn cmd_iges(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    cmd_write(session, args, WriteKind::Iges)
+}
+fn cmd_stl(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    cmd_write(session, args, WriteKind::Stl)
+}
+fn cmd_exit(session: &mut DrawSession, _args: &[String]) -> Result<(), String> {
+    session.stop = true;
+    Ok(())
+}
+fn cmd_quit(session: &mut DrawSession, _args: &[String]) -> Result<(), String> {
+    session.stop = true;
+    Ok(())
+}
+
+/// `commands` — list every command name (built-ins plus user procedures),
+/// sorted, on one log line.
+fn cmd_commands(session: &mut DrawSession, _args: &[String]) -> Result<(), String> {
+    let mut names: Vec<&str> = COMMANDS.iter().map(|e| e.name).collect();
+    for name in session.procs.keys() {
+        names.push(name);
+    }
+    names.sort();
+    session.log.push(format!("commands: {}", names.join(" ")));
+    Ok(())
+}
+
+/// `arity <cmd>` — report the accepted argument count of a built-in command or
+/// the parameter count of a user procedure.
+fn cmd_arity(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
+    need_args(args, 1, "arity")?;
+    let name = &args[0];
+    if let Some(proc) = session.procs.get(name) {
+        let n = proc.params.len();
+        session.log.push(format!("arity {name}: {n}"));
+        return Ok(());
+    }
+    match COMMANDS.iter().find(|e| e.name == name.as_str()) {
+        Some(e) => {
+            session.log.push(format!("arity {name}: {}", arity_text(e)));
+            Ok(())
+        }
+        None => Err(format!("draw: arity: unknown command '{name}'")),
+    }
+}
+
+/// The centralized command table: every dispatchable command, its handler, a
+/// one-line description, and its accepted argument-count range. `help`,
+/// `commands` and `arity` read from here, and [`dispatch`] looks up handlers
+/// here — the fixed `match` table of earlier phases, now data.
+const COMMANDS: &[CommandEntry] = &[
+    CommandEntry { name: "box", handler: cmd_box, summary: "build an axis-aligned box [0,dx]x[0,dy]x[0,dz]", min_args: 4, max_args: 4 },
+    CommandEntry { name: "cylinder", handler: cmd_cylinder, summary: "build a Z-axis cylinder of radius r, height h", min_args: 3, max_args: 3 },
+    CommandEntry { name: "sphere", handler: cmd_sphere, summary: "build a sphere of radius r centred at the origin", min_args: 2, max_args: 2 },
+    CommandEntry { name: "cone", handler: cmd_cone, summary: "build a cone (base r1, top 0), height h", min_args: 4, max_args: 4 },
+    CommandEntry { name: "torus", handler: cmd_torus, summary: "build a torus, major radius r1, minor r2", min_args: 3, max_args: 3 },
+    CommandEntry { name: "fuse", handler: cmd_fuse, summary: "boolean union a u b -> out", min_args: 3, max_args: 3 },
+    CommandEntry { name: "cut", handler: cmd_cut, summary: "boolean difference a - b -> out", min_args: 3, max_args: 3 },
+    CommandEntry { name: "common", handler: cmd_common, summary: "boolean intersection a n b -> out", min_args: 3, max_args: 3 },
+    CommandEntry { name: "fillet", handler: cmd_fillet, summary: "blend an edge of a solid by radius", min_args: 2, max_args: 3 },
+    CommandEntry { name: "offset", handler: cmd_offset, summary: "offset a shell/solid by dist -> out", min_args: 3, max_args: 3 },
+    CommandEntry { name: "mesh", handler: cmd_mesh, summary: "tessellate and report the triangle count", min_args: 2, max_args: 2 },
+    CommandEntry { name: "step", handler: cmd_step, summary: "write a STEP file", min_args: 2, max_args: 2 },
+    CommandEntry { name: "obj", handler: cmd_obj, summary: "write an OBJ mesh file", min_args: 2, max_args: 2 },
+    CommandEntry { name: "iges", handler: cmd_iges, summary: "write an IGES file", min_args: 2, max_args: 2 },
+    CommandEntry { name: "stl", handler: cmd_stl, summary: "write a binary STL file", min_args: 2, max_args: 2 },
+    CommandEntry { name: "info", handler: cmd_info, summary: "print vertex/edge/face counts + volume", min_args: 1, max_args: 1 },
+    CommandEntry { name: "bbox", handler: cmd_bbox, summary: "print the axis-aligned bounding-box corners", min_args: 1, max_args: 1 },
+    CommandEntry { name: "verts", handler: cmd_verts, summary: "print the distinct vertex coordinates", min_args: 1, max_args: 1 },
+    CommandEntry { name: "ls", handler: cmd_ls, summary: "list session shape names", min_args: 0, max_args: 0 },
+    CommandEntry { name: "rm", handler: cmd_rm, summary: "remove a named shape", min_args: 1, max_args: 1 },
+    CommandEntry { name: "clear", handler: cmd_clear, summary: "empty the session", min_args: 0, max_args: 0 },
+    CommandEntry { name: "help", handler: cmd_help, summary: "list commands with arity and description", min_args: 0, max_args: 0 },
+    CommandEntry { name: "commands", handler: cmd_commands, summary: "list all command names", min_args: 0, max_args: 0 },
+    CommandEntry { name: "arity", handler: cmd_arity, summary: "report a command's accepted argument count", min_args: 1, max_args: 1 },
+    CommandEntry { name: "exit", handler: cmd_exit, summary: "set the session stop flag", min_args: 0, max_args: 0 },
+    CommandEntry { name: "quit", handler: cmd_quit, summary: "set the session stop flag", min_args: 0, max_args: 0 },
+    CommandEntry { name: "set", handler: cmd_set, summary: "store a string/number variable", min_args: 2, max_args: 2 },
+    CommandEntry { name: "expr", handler: cmd_expr, summary: "evaluate a op b (postfix) into result", min_args: 3, max_args: 3 },
+    CommandEntry { name: "echo", handler: cmd_echo, summary: "append expanded text to the log", min_args: 0, max_args: usize::MAX },
+    CommandEntry { name: "vars", handler: cmd_vars, summary: "list session variables", min_args: 0, max_args: 0 },
+    CommandEntry { name: "unset", handler: cmd_unset, summary: "remove a variable", min_args: 1, max_args: 1 },
+    CommandEntry { name: "incr", handler: cmd_incr, summary: "add step (default 1) to a number var", min_args: 1, max_args: 2 },
+    CommandEntry { name: "for", handler: cmd_for, summary: "run a body per integer in [start, end]", min_args: 4, max_args: usize::MAX },
+    CommandEntry { name: "if", handler: cmd_if, summary: "run a body when the comparison holds", min_args: 4, max_args: usize::MAX },
+    CommandEntry { name: "proc", handler: cmd_proc, summary: "define a procedure with parameters and body", min_args: 2, max_args: usize::MAX },
+    CommandEntry { name: "def", handler: cmd_proc, summary: "define a procedure (alias of proc)", min_args: 2, max_args: usize::MAX },
+    CommandEntry { name: "call", handler: cmd_call, summary: "call a procedure by name with arguments", min_args: 1, max_args: usize::MAX },
+    CommandEntry { name: "return", handler: cmd_return, summary: "stop the current procedure, optionally setting result", min_args: 0, max_args: 1 },
+    CommandEntry { name: "lappend", handler: cmd_lappend, summary: "append values to a list/array variable", min_args: 2, max_args: usize::MAX },
+    CommandEntry { name: "len", handler: cmd_len, summary: "count elements of a list variable into result", min_args: 1, max_args: 1 },
+    CommandEntry { name: "concat", handler: cmd_concat, summary: "concatenate two list variables into a third", min_args: 3, max_args: 3 },
+    CommandEntry { name: "translate", handler: cmd_translate, summary: "translate a shape by (dx,dy,dz) [out]", min_args: 4, max_args: 5 },
+    CommandEntry { name: "rotate", handler: cmd_rotate, summary: "rotate a shape about an axis by degrees", min_args: 5, max_args: 5 },
+    CommandEntry { name: "scale", handler: cmd_scale, summary: "scale a shape by a factor [out]", min_args: 2, max_args: 3 },
+    CommandEntry { name: "mirror", handler: cmd_mirror, summary: "mirror a shape across a plane [out]", min_args: 4, max_args: 5 },
+    CommandEntry { name: "copy", handler: cmd_copy, summary: "independent deep copy", min_args: 2, max_args: 2 },
+    CommandEntry { name: "transform", handler: cmd_transform, summary: "arbitrary affine map (3x3 + translation)", min_args: 13, max_args: 13 },
+    CommandEntry { name: "view", handler: cmd_view, summary: "soft-render a shape to a PPM file", min_args: 1, max_args: 4 },
+    CommandEntry { name: "view_camera", handler: cmd_view_camera, summary: "set the look-at camera", min_args: 6, max_args: 6 },
+    CommandEntry { name: "orbit", handler: cmd_orbit, summary: "orbit the camera about its target", min_args: 2, max_args: 2 },
+    CommandEntry { name: "zoom", handler: cmd_zoom, summary: "zoom the camera toward its target", min_args: 1, max_args: 1 },
+    CommandEntry { name: "pan", handler: cmd_pan, summary: "pan the camera in screen pixels", min_args: 2, max_args: 2 },
+];
+
+// ---------------------------------------------------------------------------
 // Inspection
 // ---------------------------------------------------------------------------
 
@@ -1375,65 +1925,43 @@ pub fn execute_line(session: &mut DrawSession, line: &str) -> Result<(), String>
     // like `box b 3 2 2`. Unknown names survive unchanged (`expand_vars` is
     // deliberately non-destructive), and `for`/`if` bodies re-expand per
     // iteration once their loop variable is bound.
-    let tokens = expand_vars(session, &tokens);
+    //
+    // `proc`/`def` definitions are the one exception: their body is stored
+    // verbatim so `$param` references are expanded at *call* time, after the
+    // parameters are bound. Pre-expanding here would break a body whose
+    // parameter name collides with a global variable.
+    let is_proc_def = matches!(tokens[0].as_str(), "proc" | "def");
+    let tokens = if is_proc_def {
+        tokens
+    } else {
+        expand_vars(session, &tokens)
+    };
     let command = DrawCommand::Tokens(tokens);
     let result = dispatch(session, &command);
+    // `PROC_RETURN` is a control-flow signal, not a real error: it stops a
+    // procedure body without poisoning `last_error`.
     if let Err(ref e) = result {
-        session.last_error = Some(e.clone());
+        if *e != PROC_RETURN {
+            session.last_error = Some(e.clone());
+        }
     }
     result
 }
 
-/// Route a parsed command to its handler. The `match` is the fixed command
-/// table; unknown names fall through to the error arm.
+/// Route a parsed command to its handler.
+///
+/// User-defined procedures shadow built-ins: a name registered by `proc`/`def`
+/// is invoked directly with the command's arguments. Everything else is looked
+/// up in the centralized [`COMMANDS`] table; unknown names fall through to the
+/// error arm.
 fn dispatch(session: &mut DrawSession, command: &DrawCommand) -> Result<(), String> {
-    match command.name() {
-        "box" => cmd_box(session, command.args()),
-        "cylinder" => cmd_cylinder(session, command.args()),
-        "sphere" => cmd_sphere(session, command.args()),
-        "cone" => cmd_cone(session, command.args()),
-        "torus" => cmd_torus(session, command.args()),
-        "fuse" => cmd_boolean(session, command.args(), BoolOp::Fuse),
-        "cut" => cmd_boolean(session, command.args(), BoolOp::Cut),
-        "common" => cmd_boolean(session, command.args(), BoolOp::Common),
-        "fillet" => cmd_fillet(session, command.args()),
-        "offset" => cmd_offset(session, command.args()),
-        "mesh" => cmd_mesh(session, command.args()),
-        "step" => cmd_write(session, command.args(), WriteKind::Step),
-        "obj" => cmd_write(session, command.args(), WriteKind::Obj),
-        "iges" => cmd_write(session, command.args(), WriteKind::Iges),
-        "stl" => cmd_write(session, command.args(), WriteKind::Stl),
-        "info" => cmd_info(session, command.args()),
-        "bbox" => cmd_bbox(session, command.args()),
-        "verts" => cmd_verts(session, command.args()),
-        "ls" => cmd_ls(session),
-        "rm" => cmd_rm(session, command.args()),
-        "clear" => cmd_clear(session),
-        "help" => cmd_help(session),
-        "set" => cmd_set(session, command.args()),
-        "expr" => cmd_expr(session, command.args()),
-        "echo" => cmd_echo(session, command.args()),
-        "vars" => cmd_vars(session),
-        "unset" => cmd_unset(session, command.args()),
-        "incr" => cmd_incr(session, command.args()),
-        "for" => cmd_for(session, command.args()),
-        "if" => cmd_if(session, command.args()),
-        "translate" => cmd_translate(session, command.args()),
-        "rotate" => cmd_rotate(session, command.args()),
-        "scale" => cmd_scale(session, command.args()),
-        "mirror" => cmd_mirror(session, command.args()),
-        "copy" => cmd_copy(session, command.args()),
-        "transform" => cmd_transform(session, command.args()),
-        "view" => cmd_view(session, command.args()),
-        "view_camera" => cmd_view_camera(session, command.args()),
-        "orbit" => cmd_orbit(session, command.args()),
-        "zoom" => cmd_zoom(session, command.args()),
-        "pan" => cmd_pan(session, command.args()),
-        "exit" | "quit" => {
-            session.stop = true;
-            Ok(())
-        }
-        other => Err(format!("draw: unknown command '{other}'")),
+    let name = command.name();
+    if session.procs.contains_key(name) {
+        return call_proc(session, name, command.args());
+    }
+    match COMMANDS.iter().find(|e| e.name == name) {
+        Some(entry) => (entry.handler)(session, command.args()),
+        None => Err(format!("draw: unknown command '{name}'")),
     }
 }
 
@@ -1986,5 +2514,191 @@ info f
         execute_line(&mut s, "verts b").expect("verts");
         let joined = s.log.join("\n");
         assert!(joined.contains("8 vertices"), "verts count: {joined}");
+    }
+
+    // -- Phase 12: procedures, arrays and the command registry ------------------
+
+    #[test]
+    fn proc_define_and_call() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "proc add { a b } { expr $a $b + }").expect("define add");
+        assert!(s.procs.contains_key("add"), "add registered");
+        execute_line(&mut s, "call add 3 4").expect("call add");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("7"));
+        // Direct-name invocation is a shorthand for `call`.
+        execute_line(&mut s, "add 10 2").expect("direct call");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("12"));
+    }
+
+    #[test]
+    fn def_alias_and_direct_call() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "def sq { x } { expr $x $x * }").expect("def");
+        execute_line(&mut s, "sq 9").expect("direct call by name");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("81"));
+    }
+
+    #[test]
+    fn proc_body_verbatim_survives_global_collision() {
+        let mut s = DrawSession::default();
+        // A global `a` must not be substituted into the body at definition time;
+        // the body is stored verbatim and `$a` resolves to the parameter.
+        run_script(&mut s, "set a 999").expect("set a");
+        run_script(&mut s, "proc add { a b } { expr $a $b + }").expect("define add");
+        execute_line(&mut s, "call add 2 3").expect("call");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("5"));
+    }
+
+    #[test]
+    fn proc_param_restored_after_call() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "set n 100").expect("set n");
+        run_script(&mut s, "proc f { n } { expr $n 1 + }").expect("define f");
+        execute_line(&mut s, "call f 5").expect("call f");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("6"));
+        // The parameter shadowed the global `n` only for the duration of the call.
+        assert_eq!(s.vars.get("n").map(String::as_str), Some("100"), "global n restored");
+    }
+
+    #[test]
+    fn proc_recursion_factorial() {
+        let mut s = DrawSession::default();
+        let script = concat!(
+            "proc fact { n } { ",
+            "if $n 2 < { return $n }; ",
+            "expr $n 1 -; set m $result; ",
+            "call fact $m; expr $n $result * ",
+            "}\n",
+            "call fact 5\n",
+        );
+        run_script(&mut s, script).expect("factorial script");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("120"));
+    }
+
+    #[test]
+    fn proc_nested_calls_with_parameters() {
+        let mut s = DrawSession::default();
+        let script = concat!(
+            "proc double { x } { expr $x 2 * }\n",
+            "proc add { a b } { expr $a $b + }\n",
+            "proc quad { x } { call double $x; set a $result; call double $a; expr $a $result + }\n",
+            "call quad 3\n",
+        );
+        run_script(&mut s, script).expect("nested script");
+        // quad(3) = double(3) + double(double(3)) = 6 + 12 = 18.
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("18"));
+        // A helper with disjoint parameter names still works.
+        run_script(&mut s, "call add 2 3").expect("call add");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("5"));
+    }
+
+    #[test]
+    fn proc_error_reports_call_stack() {
+        let mut s = DrawSession::default();
+        let script = concat!(
+            "proc inner { } { bogus_cmd }\n",
+            "proc outer { } { call inner }\n",
+            "call outer\n",
+        );
+        let err = run_script(&mut s, script).expect_err("inner fails");
+        assert!(err.contains("in proc 'inner'"), "proc name: {err}");
+        assert!(err.contains("outer -> inner"), "call stack in {err}");
+        assert!(err.contains("unknown command 'bogus_cmd'"), "root cause: {err}");
+    }
+
+    #[test]
+    fn proc_recursion_depth_limit() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "proc loop { n } { call loop $n }").expect("define loop");
+        let err = execute_line(&mut s, "call loop 0").expect_err("runaway recursion");
+        assert!(err.contains("max recursion depth"), "err {err}");
+    }
+
+    #[test]
+    fn return_at_top_level_sets_result() {
+        let mut s = DrawSession::default();
+        execute_line(&mut s, "return 42").expect("top-level return");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("42"));
+        // No procedure is active, so no error signal leaks to the caller.
+        assert!(s.last_error.is_none(), "no error recorded");
+    }
+
+    #[test]
+    fn array_elements_add_update_query_remove() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "set arr(0) 10\nset arr(1) 20").expect("set array elements");
+        assert_eq!(s.vars.get("arr(0)").map(String::as_str), Some("10"));
+        // `$arr(i)` resolves the whole element name.
+        execute_line(&mut s, "expr $arr(0) $arr(1) +").expect("array expr");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("30"));
+        // Update an element.
+        execute_line(&mut s, "set arr(0) 5").expect("update element");
+        execute_line(&mut s, "expr $arr(0) 2 *").expect("expr after update");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("10"));
+        // Remove an element.
+        execute_line(&mut s, "unset arr(1)").expect("unset element");
+        assert!(!s.vars.contains_key("arr(1)"), "element removed");
+        assert!(s.vars.contains_key("arr(0)"), "other element intact");
+    }
+
+    #[test]
+    fn lappend_len_concat() {
+        let mut s = DrawSession::default();
+        execute_line(&mut s, "lappend list a").expect("lappend create");
+        execute_line(&mut s, "lappend list b c").expect("lappend append");
+        assert_eq!(s.vars.get("list").map(String::as_str), Some("a b c"));
+        execute_line(&mut s, "len list").expect("len");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("3"));
+        execute_line(&mut s, "lappend list d").expect("lappend again");
+        execute_line(&mut s, "len list").expect("len again");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("4"));
+        // len of an undefined variable is 0.
+        execute_line(&mut s, "len nope").expect("len undefined");
+        assert_eq!(s.vars.get("result").map(String::as_str), Some("0"));
+        // concat joins two list variables into a third.
+        run_script(&mut s, "set l1 \"1 2\"\nset l2 \"3 4\"").expect("set lists");
+        execute_line(&mut s, "concat l1 l2 out").expect("concat");
+        assert_eq!(s.vars.get("out").map(String::as_str), Some("1 2 3 4"));
+        // lappend also works on an array element.
+        execute_line(&mut s, "lappend arr(0) 7").expect("lappend element");
+        assert_eq!(s.vars.get("arr(0)").map(String::as_str), Some("7"));
+    }
+
+    #[test]
+    fn commands_lists_every_command() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "proc userproc { } { echo hi }").expect("define userproc");
+        execute_line(&mut s, "commands").expect("commands");
+        let joined = s.log.join("\n");
+        for cmd in [
+            "box", "fuse", "proc", "def", "call", "return", "lappend", "len",
+            "concat", "commands", "arity", "help", "exit", "userproc",
+        ] {
+            assert!(joined.contains(cmd), "commands lists {cmd}: {joined}");
+        }
+    }
+
+    #[test]
+    fn arity_queries() {
+        let mut s = DrawSession::default();
+        execute_line(&mut s, "arity box").expect("arity box");
+        assert!(s.log.iter().any(|l| l.contains("arity box: 4")), "log: {:?}", s.log);
+        execute_line(&mut s, "arity translate").expect("arity translate");
+        assert!(s.log.iter().any(|l| l.contains("arity translate: 4..5")), "log: {:?}", s.log);
+        execute_line(&mut s, "arity echo").expect("arity echo");
+        assert!(s.log.iter().any(|l| l.contains("arity echo: 0 or more")), "log: {:?}", s.log);
+        let err = execute_line(&mut s, "arity nope").expect_err("unknown arity");
+        assert!(err.contains("unknown command 'nope'"), "err {err}");
+    }
+
+    #[test]
+    fn help_lists_descriptions_and_user_procs() {
+        let mut s = DrawSession::default();
+        run_script(&mut s, "proc helper { } { echo hi }").expect("define helper");
+        execute_line(&mut s, "help").expect("help");
+        let joined = s.log.join("\n");
+        assert!(joined.contains("build an axis-aligned box"), "help description: {joined}");
+        assert!(joined.contains("helper"), "help lists user proc: {joined}");
+        assert!(joined.contains("(proc)"), "proc marker: {joined}");
     }
 }

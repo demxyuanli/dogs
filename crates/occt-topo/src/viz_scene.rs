@@ -1369,6 +1369,24 @@ pub fn pick_shape(
     })
 }
 
+/// Pick the world-space hit point under a screen pixel.
+///
+/// Convenience wrapper over [`pick_shape`] that discards the shape index and
+/// the ray parameter and returns only the hit point. Returns `None` when the
+/// ray through `(px, py)` misses every shape. Ports the "give me the point"
+/// form of `V3d_View::Convert` used by interactive snapping.
+pub fn pick_point(
+    scene: &VizScene,
+    cam: &Camera,
+    width: usize,
+    height: usize,
+    px: usize,
+    py: usize,
+    deflection: f64,
+) -> Option<GpPnt> {
+    pick_shape(scene, cam, width, height, px, py, deflection).map(|(_, hit, _)| hit)
+}
+
 /// Ray-cast the scene and serialize to shaded binary PPM bytes.
 ///
 /// Equivalent to [`render_scene_raster_shaded`] followed by
@@ -1580,6 +1598,51 @@ pub fn render_scene_raster_zbuffer(
         }
     }
     raster
+}
+
+/// A selection highlight material: bright yellow diffuse with a matching
+/// emissive so the shape reads as "selected" even in deep shadow.
+///
+/// Preserves the base material's specular, shininess and opacity so the
+/// highlighted shape keeps its surface character — only the tint changes.
+/// Mirrors the default highlight color OCCT applies to a picked `AIS_Shape`.
+pub fn highlight_material(base: &Material) -> Material {
+    Material {
+        diffuse: (1.0, 0.85, 0.2),
+        specular: base.specular,
+        emissive: (0.3, 0.22, 0.05),
+        shininess: base.shininess,
+        opacity: base.opacity,
+    }
+}
+
+/// Render the scene with the selected shapes highlighted, as binary PPM bytes.
+///
+/// The scene is rendered with the same z-buffer pipeline as
+/// [`render_scene_raster_zbuffer`] (same materials, lights and shading modes),
+/// except every shape whose index appears in `selection` is given the
+/// [`highlight_material`] before rasterizing. Occlusion is unchanged — a
+/// selected shape hidden behind an unselected one stays hidden, exactly as in
+/// the unselected render. Ports the selection highlight of
+/// `AIS_InteractiveContext::SetSelected`, which recolors the chosen
+/// `AIS_Shape`s.
+pub fn render_scene_with_selection(
+    scene: &VizScene,
+    cam: &Camera,
+    width: usize,
+    height: usize,
+    deflection: f64,
+    settings: &RenderSettings,
+    selection: &[usize],
+) -> Vec<u8> {
+    let selected: std::collections::HashSet<usize> = selection.iter().copied().collect();
+    let mut highlighted = scene.clone();
+    for (i, ss) in highlighted.shapes.iter_mut().enumerate() {
+        if selected.contains(&i) {
+            ss.material = highlight_material(&ss.material);
+        }
+    }
+    render_scene_raster_zbuffer(&highlighted, cam, width, height, deflection, settings).to_ppm_bytes()
 }
 
 /// Render a depth map of the scene as a grayscale [`Raster`].
@@ -2382,6 +2445,162 @@ const BITMAP_GLYPHS: &[(char, [[u8; 5]; 7])] = &[
             [0, 0, 0, 0, 0],
         ],
     ),
+    (
+        '-',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 1, 1, 1, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        '.',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+        ],
+    ),
+    (
+        ',',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        '!',
+        [
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+        ],
+    ),
+    (
+        '?',
+        [
+            [0, 1, 1, 1, 0],
+            [1, 0, 0, 0, 1],
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+        ],
+    ),
+    (
+        '+',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [1, 1, 1, 1, 1],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        '=',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        '/',
+        [
+            [0, 0, 0, 0, 1],
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+            [1, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        '_',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1],
+        ],
+    ),
+    (
+        '(',
+        [
+            [0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 1, 0],
+        ],
+    ),
+    (
+        ')',
+        [
+            [0, 1, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+        ],
+    ),
+    (
+        ';',
+        [
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
+    (
+        '\'',
+        [
+            [0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0],
+            [0, 1, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ],
+    ),
 ];
 
 impl Default for BitmapFont {
@@ -2523,6 +2742,260 @@ pub fn render_scene_with_label(
     out.extend_from_slice(format!("P6\n{width} {height}\n255\n").as_bytes());
     out.extend_from_slice(&body);
     out
+}
+
+// ---------------------------------------------------------------------------
+// Font styles (TKService full glyph texture set)
+// ---------------------------------------------------------------------------
+
+/// A size-generic bitmap font: each glyph is a fixed `glyph_w`×`glyph_h`
+/// pattern of `1`/`0` bits.
+///
+/// Unlike [`BitmapFont`] (hard-coded 5×7 cells), a [`Font`] carries its own
+/// glyph cell size, so one text rasterizer serves every style. This is the
+/// analogue of OCCT's `Font_FTFont` text drawing, where one font object owns
+/// its glyph cache and metrics and the renderer only asks "how big is a cell"
+/// and "what bits are in this glyph".
+#[derive(Debug, Clone)]
+pub struct Font {
+    /// Glyph cell width in pixels.
+    pub glyph_w: usize,
+    /// Glyph cell height in pixels.
+    pub glyph_h: usize,
+    /// Row-major glyph bit patterns, `glyph_w * glyph_h` `1`/`0` per character.
+    pub glyphs: std::collections::HashMap<char, Vec<u8>>,
+}
+
+impl Font {
+    /// An empty font with a given glyph cell size.
+    pub fn new(glyph_w: usize, glyph_h: usize) -> Self {
+        Self {
+            glyph_w: glyph_w.max(1),
+            glyph_h: glyph_h.max(1),
+            glyphs: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Insert a `glyph_w × glyph_h` glyph pattern for `c`.
+    ///
+    /// `pattern` holds one `1`/`0` bit per cell, row-major; entries shorter
+    /// than `glyph_w * glyph_h` are zero-padded, longer entries truncated.
+    pub fn insert(&mut self, c: char, pattern: &[u8]) {
+        let mut bits = vec![0u8; self.glyph_w * self.glyph_h];
+        let n = pattern.len().min(bits.len());
+        bits[..n].copy_from_slice(&pattern[..n]);
+        self.glyphs.insert(c, bits);
+    }
+
+    /// The row-major bit pattern for `c`, or `None` when the font has no glyph.
+    pub fn glyph(&self, c: char) -> Option<&[u8]> {
+        self.glyphs.get(&c).map(|g| g.as_slice())
+    }
+
+    /// `true` when the font has a glyph for `c`.
+    pub fn has_glyph(&self, c: char) -> bool {
+        self.glyphs.contains_key(&c)
+    }
+
+    /// A 5×7 [`Font`] built from the built-in [`BitmapFont`] glyph set.
+    pub fn from_bitmap(bitmap: &BitmapFont) -> Self {
+        let mut glyphs = std::collections::HashMap::new();
+        for (&c, g) in &bitmap.glyphs {
+            let bits: Vec<u8> = g.iter().flatten().copied().collect();
+            glyphs.insert(c, bits);
+        }
+        Self { glyph_w: 5, glyph_h: 7, glyphs }
+    }
+
+    /// A copy of this font whose glyphs are scaled to `glyph_w`×`glyph_h`
+    /// cells by nearest-neighbour sampling.
+    ///
+    /// Used to derive larger (or smaller) styles from the same master glyph
+    /// set without re-authoring every pattern.
+    pub fn scaled(&self, glyph_w: usize, glyph_h: usize) -> Self {
+        let gw = glyph_w.max(1);
+        let gh = glyph_h.max(1);
+        let mut glyphs = std::collections::HashMap::new();
+        for (&c, bits) in &self.glyphs {
+            let mut out = vec![0u8; gw * gh];
+            for ty in 0..gh {
+                let sy = ty * self.glyph_h / gh;
+                for tx in 0..gw {
+                    let sx = tx * self.glyph_w / gw;
+                    if bits[sy * self.glyph_w + sx] != 0 {
+                        out[ty * gw + tx] = 1;
+                    }
+                }
+            }
+            glyphs.insert(c, out);
+        }
+        Self { glyph_w: gw, glyph_h: gh, glyphs }
+    }
+}
+
+/// A selectable text style, the analogue of OCCT's `Font_FontAspect`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontStyle {
+    /// The built-in 5×7 bitmap font.
+    Standard,
+    /// A 7×9 variant scaled from the 5×7 glyph set.
+    Large,
+}
+
+/// The [`Font`] for a [`FontStyle`].
+///
+/// [`FontStyle::Standard`] is the 5×7 built-in glyph set (A–Z, 0–9 and the
+/// common symbols in [`BITMAP_GLYPHS`]); [`FontStyle::Large`] is the same set
+/// scaled to 7×9 cells.
+pub fn font_for_style(style: FontStyle) -> Font {
+    let standard = Font::from_bitmap(&BitmapFont::default());
+    match style {
+        FontStyle::Standard => standard,
+        FontStyle::Large => standard.scaled(7, 9),
+    }
+}
+
+/// Register `font` as the glyph source for `style` in a mutable registry.
+///
+/// A [`std::collections::HashMap`] keyed by [`FontStyle`] lets an application
+/// keep one font per style (e.g. a themed viewport caption font) and switch at
+/// draw time. Prefer [`font_for_style`] when the built-in styles are enough.
+pub fn set_font(
+    registry: &mut std::collections::HashMap<FontStyle, Font>,
+    style: FontStyle,
+    font: Font,
+) {
+    registry.insert(style, font);
+}
+
+/// The raster size of `text` in a generic [`Font`].
+///
+/// Each glyph is `font.glyph_w` wide and `font.glyph_h` tall, scaled by
+/// `scale`; the width is `chars × glyph_w × scale` (no inter-glyph padding).
+pub fn font_raster_size(text: &str, font: &Font, scale: usize) -> (usize, usize) {
+    let scale = scale.max(1);
+    (text.chars().count() * font.glyph_w * scale, font.glyph_h * scale)
+}
+
+/// Rasterize `text` in a generic [`Font`] into RGB pixels.
+///
+/// The returned buffer is `width × height × 3` bytes (row-major) where
+/// `(width, height) = font_raster_size(text, font, scale)`. Foreground pixels
+/// are white `[255, 255, 255]`; background pixels are black and count as
+/// transparent for [`overlay_text_font`] / [`overlay_text_rect`]. Characters
+/// without a glyph in `font` are skipped.
+pub fn font_to_pixels(text: &str, font: &Font, scale: usize) -> Vec<[u8; 3]> {
+    let scale = scale.max(1);
+    let (w, h) = font_raster_size(text, font, scale);
+    let mut pixels = vec![[0u8, 0, 0]; w * h];
+    for (ci, ch) in text.chars().enumerate() {
+        let Some(glyph) = font.glyph(ch) else { continue };
+        for (ri, row) in glyph.chunks(font.glyph_w).enumerate() {
+            for (rx, &on) in row.iter().enumerate() {
+                if on == 0 {
+                    continue;
+                }
+                for sy in 0..scale {
+                    for sx in 0..scale {
+                        let px = ci * font.glyph_w * scale + rx * scale + sx;
+                        let py = ri * scale + sy;
+                        if px < w && py < h {
+                            pixels[py * w + px] = [255, 255, 255];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pixels
+}
+
+/// Draw `text` in a generic [`Font`] at pixel position `(x, y)` onto a raw RGB
+/// byte buffer, tinted `color`.
+///
+/// Mirrors [`overlay_text`] but for a size-carrying [`Font`], so the same call
+/// serves every glyph cell size. Like [`overlay_text`], the buffer may be a
+/// raw RGB body or a complete P6 PPM image (the 13-byte header is skipped
+/// automatically); transparent (black) raster pixels are skipped.
+pub fn overlay_text_font(
+    ppm: &mut Vec<u8>,
+    width: usize,
+    height: usize,
+    text: &str,
+    font: &Font,
+    scale: usize,
+    x: usize,
+    y: usize,
+    color: (u8, u8, u8),
+) {
+    let pixels = font_to_pixels(text, font, scale);
+    let (tw, th) = font_raster_size(text, font, scale);
+    let header_len = if ppm.len() == width * height * 3 + 13 && ppm.starts_with(b"P6\n") {
+        13
+    } else {
+        0
+    };
+    let body = &mut ppm[header_len..];
+    for py in 0..th {
+        for px in 0..tw {
+            if pixels[py * tw + px] == [0, 0, 0] {
+                continue;
+            }
+            let dx = x + px;
+            let dy = y + py;
+            if dx < width && dy < height {
+                let i = (dy * width + dx) * 3;
+                body[i] = color.0;
+                body[i + 1] = color.1;
+                body[i + 2] = color.2;
+            }
+        }
+    }
+}
+
+/// Draw `text` with a filled background box onto a [`Raster`], tinted `color`.
+///
+/// A `PADDING`-pixel solid box of `background` is stamped first, then the text
+/// glyphs (in `font` at `scale`) are stamped in `color` on top; both are
+/// clipped to the raster. `(x, y)` is the top-left of the *text*; the box
+/// extends `PADDING` pixels around it. Working on a [`Raster`] makes the
+/// overlay composable with [`render_view_grid`]'s tile buffers so captions can
+/// be stamped per viewport — the classic "caption chip" of a multi-view
+/// `V3d_Viewer` window.
+pub fn overlay_text_rect(
+    raster: &mut Raster,
+    text: &str,
+    font: &Font,
+    scale: usize,
+    x: usize,
+    y: usize,
+    color: (f64, f64, f64),
+    background: (f64, f64, f64),
+) {
+    const PADDING: usize = 2;
+    let (tw, th) = font_raster_size(text, font, scale);
+    for by in 0..(th + PADDING * 2) {
+        for bx in 0..(tw + PADDING * 2) {
+            let dx = x as i64 + bx as i64 - PADDING as i64;
+            let dy = y as i64 + by as i64 - PADDING as i64;
+            if dx >= 0 && dy >= 0 && (dx as usize) < raster.width && (dy as usize) < raster.height {
+                raster.set_pixel(dx as usize, dy as usize, background);
+            }
+        }
+    }
+    let pixels = font_to_pixels(text, font, scale);
+    for py in 0..th {
+        for px in 0..tw {
+            if pixels[py * tw + px] == [0, 0, 0] {
+                continue;
+            }
+            let dx = x as i64 + px as i64;
+            let dy = y as i64 + py as i64;
+            if dx >= 0 && dy >= 0 && (dx as usize) < raster.width && (dy as usize) < raster.height {
+                raster.set_pixel(dx as usize, dy as usize, color);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3310,5 +3783,129 @@ mod tests {
         assert_eq!(tex.height, 5);
         assert_eq!(tex.pixels.len(), 20);
         assert!(tex.pixels.iter().all(|p| p == &[7, 8, 9]));
+    }
+
+    // -- Phase 12: picking / selection highlight / font styles ----------------
+
+    #[test]
+    fn pick_two_shape_scene_hits_correct() {
+        // A box (index 0) and a sphere (index 1), side by side so a pick
+        // unambiguously resolves to one of them.
+        let mut scene = VizScene::new();
+        let mut box_ss = SceneShape::new(unit_box());
+        box_ss.transform = translate(-1.5, 0.0, 0.0); // x in [-1.5, -0.5]
+        box_ss.material = Material::from_diffuse((0.8, 0.1, 0.1));
+        scene.add(box_ss);
+        let mut sphere_ss = SceneShape::new(BRepPrimSphere::make_sphere(0.5).solid.0);
+        sphere_ss.transform = translate(1.5, 0.0, 0.0); // x in [1.0, 2.0]
+        sphere_ss.material = Material::from_diffuse((0.1, 0.1, 0.8));
+        scene.add(sphere_ss);
+        let cam = Camera::default();
+        // Box front-face centre and the sphere's front-most point toward the
+        // camera (a head-on hit; grazing rays can slip between the flat
+        // tessellation triangles of the coarse sphere mesh).
+        let (bx, by, _) = project_point(&cam, GpPnt::new(-1.0, 0.5, 1.0), 200, 150).unwrap();
+        let (sx, sy, _) = project_point(&cam, GpPnt::new(1.3565, 0.0, 0.479), 200, 150).unwrap();
+        let (idx_b, hit_b, _t) = pick_shape(&scene, &cam, 200, 150, bx as usize, by as usize, 0.25).unwrap();
+        assert_eq!(idx_b, 0, "box pick returns the box, got {idx_b}");
+        assert!((hit_b.z() - 1.0).abs() < 1e-6, "box front face at z=1, got {}", hit_b.z());
+        let (idx_s, hit_s, _t) = pick_shape(&scene, &cam, 200, 150, sx as usize, sy as usize, 0.25).unwrap();
+        assert_eq!(idx_s, 1, "sphere pick returns the sphere, got {idx_s}");
+        let dist_c = hit_s.distance(&GpPnt::new(1.5, 0.0, 0.0));
+        assert!((dist_c - 0.5).abs() < 0.03, "hit sits on the sphere surface, dist {dist_c:.3}");
+        assert!(hit_s.z() > 0.3, "front hemisphere of the sphere, got z={}", hit_s.z());
+        // pick_point is the hit-point form of the same query.
+        let p = pick_point(&scene, &cam, 200, 150, bx as usize, by as usize, 0.25).unwrap();
+        assert!(p.distance(&hit_b) < 1e-9, "pick_point agrees with pick_shape");
+    }
+
+    #[test]
+    fn render_selection_highlights_picked() {
+        let scene = box_scene();
+        let cam = Camera::default();
+        let settings = RenderSettings::default();
+        // Pick a pixel on the box's front face.
+        let (sx, sy, _) = project_point(&cam, GpPnt::new(0.5, 0.5, 1.0), 96, 72).unwrap();
+        let (px, py) = (sx as usize, sy as usize);
+        let (idx, _hit, _t) = pick_shape(&scene, &cam, 96, 72, px, py, 0.25).unwrap();
+        assert_eq!(idx, 0);
+        // Base and highlighted renders use the same z-buffer pipeline, so the
+        // only difference is the selection material.
+        let base = render_scene_raster_zbuffer(&scene, &cam, 96, 72, 0.25, &settings);
+        let sel = render_scene_with_selection(&scene, &cam, 96, 72, 0.25, &settings, &[idx]);
+        assert!(sel.starts_with(b"P6\n96 72\n255\n"), "PPM header");
+        let base_px = base.get_pixel(px, py);
+        let i = 13 + (py * 96 + px) * 3;
+        let sel_px = (sel[i] as f64 / 255.0, sel[i + 1] as f64 / 255.0, sel[i + 2] as f64 / 255.0);
+        // The highlight is yellow-dominant while the base front face is a
+        // neutral gray, so the red-minus-blue gap grows.
+        let gap_base = base_px.0 - base_px.2;
+        let gap_sel = sel_px.0 - sel_px.2;
+        assert!(
+            gap_sel > gap_base + 0.2,
+            "highlight gap {gap_sel:.3} should beat base gap {gap_base:.3}"
+        );
+        let delta =
+            (base_px.0 - sel_px.0).abs() + (base_px.1 - sel_px.1).abs() + (base_px.2 - sel_px.2).abs();
+        assert!(delta > 0.2, "highlighted pixel should differ from base, delta {delta:.3}");
+    }
+
+    #[test]
+    fn font_style_sizes() {
+        let std = font_for_style(FontStyle::Standard);
+        assert_eq!((std.glyph_w, std.glyph_h), (5, 7));
+        assert_eq!(font_raster_size("A", &std, 1), (5, 7));
+        assert_eq!(font_raster_size("AB", &std, 2), (20, 14));
+        let large = font_for_style(FontStyle::Large);
+        assert_eq!((large.glyph_w, large.glyph_h), (7, 9));
+        assert_eq!(font_raster_size("A", &large, 1), (7, 9), "large font is 7×9");
+        // Every glyph from the 5×7 set survives scaling, including symbols.
+        for c in ['A', 'Z', '0', '9', ' ', '-', '!'] {
+            assert!(large.has_glyph(c), "scaled font missing {c:?}");
+        }
+        assert!(large.glyph('A').unwrap().contains(&1), "scaled glyph keeps lit pixels");
+    }
+
+    #[test]
+    fn font_charset_extended() {
+        let font = font_for_style(FontStyle::Standard);
+        for c in ['-', '.', ',', '!', '?', '+', '=', '/', '_', '(', ')', ';'] {
+            assert!(font.has_glyph(c), "missing extended symbol {c:?}");
+        }
+        let px = font_to_pixels("!", &font, 1);
+        assert!(px.contains(&[255, 255, 255]), "exclamation should have lit pixels");
+    }
+
+    #[test]
+    fn overlay_text_rect_draws_box() {
+        let font = font_for_style(FontStyle::Standard);
+        let mut raster = Raster::new(40, 30);
+        raster.clear((0.0, 0.0, 0.0));
+        overlay_text_rect(&mut raster, "A", &font, 1, 10, 10, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        // Padding is 2 and "A" is 5×7, so the white box spans x∈[8,16], y∈[8,18].
+        assert_eq!(raster.get_pixel(8, 8), (1.0, 1.0, 1.0), "box top-left corner filled");
+        assert_eq!(raster.get_pixel(16, 8), (1.0, 1.0, 1.0), "box top-right corner filled");
+        assert_eq!(raster.get_pixel(6, 8), (0.0, 0.0, 0.0), "outside the box stays untouched");
+        // 'A' top row has a lit pixel at source column 1 → absolute (11, 10).
+        assert_eq!(raster.get_pixel(11, 10), (0.0, 0.0, 0.0), "text pixel stamped black");
+    }
+
+    #[test]
+    fn set_font_registers_style() {
+        let mut registry = std::collections::HashMap::new();
+        let custom = Font::new(3, 5);
+        set_font(&mut registry, FontStyle::Standard, custom.clone());
+        assert_eq!(registry.len(), 1);
+        assert_eq!(registry[&FontStyle::Standard].glyph_w, 3);
+        assert_eq!(registry[&FontStyle::Standard].glyph_h, 5);
+    }
+
+    #[test]
+    fn overlay_text_font_large() {
+        let font = font_for_style(FontStyle::Large);
+        let mut body = vec![0u8; 30 * 20 * 3];
+        overlay_text_font(&mut body, 30, 20, "A", &font, 1, 0, 0, (255, 255, 255));
+        let has_white = body.chunks_exact(3).any(|p| p == [255, 255, 255]);
+        assert!(has_white, "large font should render lit pixels");
     }
 }

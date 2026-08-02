@@ -10,6 +10,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::f64::consts::PI;
 
+use occt_core::gp::{GpDir, GpMat, GpPnt, GpTrsf, GpXyz, TrsfForm};
+
 use crate::bincaf::{BinXcaf, BinXcafEntry, XcafAttribute};
 use crate::model::BRepModel;
 use crate::shape::TopoShape;
@@ -266,13 +268,16 @@ impl XcafAttrs {
 /// One node of the XCAF assembly tree: an optional shape, its attributes, and
 /// child occurrences. `instance_name` mirrors the STEP
 /// `NEXT_ASSEMBLY_USAGE_OCCURRENCE` occurrence name (distinct from the product
-/// `name` attribute).
+/// `name` attribute). `location` is the occurrence placement relative to its
+/// parent (the `TopLoc_Location` of a `XCAFDoc` component).
 #[derive(Debug, Clone, Default)]
 pub struct XcafDocNode {
     pub shape: Option<TopoShape>,
     pub attrs: XcafAttrs,
     pub children: Vec<XcafDocNode>,
     pub instance_name: Option<String>,
+    /// Placement of this occurrence in its parent's frame; `None` = identity.
+    pub location: Option<GpTrsf>,
 }
 
 impl XcafDocNode {
@@ -305,11 +310,16 @@ impl XcafDocNode {
     }
 }
 
-/// A full XCAF document: an assembly tree plus a format version tag.
+/// A full XCAF document: an assembly tree, named views, dimension/note
+/// annotations, plus a format version tag.
 #[derive(Debug, Clone)]
 pub struct XcafDocument {
     pub root: XcafDocNode,
     pub version: String,
+    /// Named camera views (`XCAFDoc_DocumentTool` view layer).
+    pub views: Vec<XcafView>,
+    /// Dimension / note / callout annotations.
+    pub annotations: Vec<XcafAnnotation>,
 }
 
 impl Default for XcafDocument {
@@ -317,6 +327,8 @@ impl Default for XcafDocument {
         Self {
             root: XcafDocNode::default(),
             version: "1.0".to_string(),
+            views: Vec::new(),
+            annotations: Vec::new(),
         }
     }
 }
@@ -331,6 +343,214 @@ impl XcafDocument {
     pub fn node_count(&self) -> usize {
         count_nodes(&self.root)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Named views + annotations (Phase 12 XCAF schema)
+// ---------------------------------------------------------------------------
+
+/// Projection type of a named camera view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XcafProjection {
+    /// Perspective camera (foreshortened).
+    Perspective,
+    /// Orthographic camera (parallel projection).
+    Orthographic,
+}
+
+/// A named camera view of the document. Mirrors the `XCAFDoc_*` view layer
+/// (camera position / look-at target / up direction / projection).
+#[derive(Debug, Clone, PartialEq)]
+pub struct XcafView {
+    pub name: String,
+    /// Camera (eye) position in world coordinates.
+    pub eye: GpPnt,
+    /// Look-at target point.
+    pub target: GpPnt,
+    /// Up direction (unit).
+    pub up: GpDir,
+    pub projection: XcafProjection,
+}
+
+/// The three annotation kinds carried by [`XcafAnnotation`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XcafAnnotationKind {
+    Dimension,
+    Note,
+    Callout,
+}
+
+impl XcafAnnotationKind {
+    /// Stable string tag (`"dimension"`, `"note"`, `"callout"`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            XcafAnnotationKind::Dimension => "dimension",
+            XcafAnnotationKind::Note => "note",
+            XcafAnnotationKind::Callout => "callout",
+        }
+    }
+
+    /// Inverse of [`XcafAnnotationKind::as_str`].
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "dimension" => Some(XcafAnnotationKind::Dimension),
+            "note" => Some(XcafAnnotationKind::Note),
+            "callout" => Some(XcafAnnotationKind::Callout),
+            _ => None,
+        }
+    }
+}
+
+/// A dimension / note / callout annotation anchored at a world point.
+#[derive(Debug, Clone, PartialEq)]
+pub struct XcafAnnotation {
+    /// Stable identifier used for lookup / removal.
+    pub id: String,
+    pub kind: XcafAnnotationKind,
+    /// Anchor point of the annotation in world coordinates.
+    pub anchor: GpPnt,
+    /// Display text.
+    pub text: String,
+    /// Measured value (e.g. a dimension length).
+    pub value: f64,
+}
+
+/// A read view of one placed occurrence in the assembly tree: its name, the
+/// referenced sub-tree and the placement relative to its parent.
+#[derive(Debug, Clone)]
+pub struct XcafInstance {
+    pub name: String,
+    pub node: XcafDocNode,
+    pub transform: GpTrsf,
+}
+
+// ---------------------------------------------------------------------------
+// View / annotation / transform string encoding
+//
+// Views, annotations and node placements are carried through the binary / XML
+// containers as synthetic string attributes (`__view`, `__annotation`,
+// `location`), which the generic `strings_to_attrs` decoder already ignores.
+// ---------------------------------------------------------------------------
+
+/// Shortest round-trippable decimal form of a float.
+fn fmt(v: f64) -> String {
+    format!("{v}")
+}
+
+/// `name|eye.xyz|target.xyz|up.xyz|projection` (name sanitized of `|`).
+fn view_to_string(v: &XcafView) -> String {
+    let proj = match v.projection {
+        XcafProjection::Perspective => "perspective",
+        XcafProjection::Orthographic => "orthographic",
+    };
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        sanitize(&v.name),
+        fmt(v.eye.x()),
+        fmt(v.eye.y()),
+        fmt(v.eye.z()),
+        fmt(v.target.x()),
+        fmt(v.target.y()),
+        fmt(v.target.z()),
+        fmt(v.up.x()),
+        fmt(v.up.y()),
+        fmt(v.up.z()),
+        proj
+    )
+}
+
+fn view_from_string(s: &str) -> Option<XcafView> {
+    let parts: Vec<&str> = s.split('|').collect();
+    if parts.len() != 11 {
+        return None;
+    }
+    let n: Vec<f64> = parts[1..10].iter().filter_map(|p| p.parse().ok()).collect();
+    if n.len() != 9 {
+        return None;
+    }
+    Some(XcafView {
+        name: parts[0].to_string(),
+        eye: GpPnt::new(n[0], n[1], n[2]),
+        target: GpPnt::new(n[3], n[4], n[5]),
+        up: GpDir::new(n[6], n[7], n[8]).ok()?,
+        projection: if parts[10] == "orthographic" {
+            XcafProjection::Orthographic
+        } else {
+            XcafProjection::Perspective
+        },
+    })
+}
+
+/// `id|kind|anchor.xyz|value|text` (id/text sanitized of `|`).
+fn annotation_to_string(a: &XcafAnnotation) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}",
+        sanitize(&a.id),
+        a.kind.as_str(),
+        fmt(a.anchor.x()),
+        fmt(a.anchor.y()),
+        fmt(a.anchor.z()),
+        fmt(a.value),
+        sanitize(&a.text)
+    )
+}
+
+fn annotation_from_string(s: &str) -> Option<XcafAnnotation> {
+    let parts: Vec<&str> = s.split('|').collect();
+    if parts.len() != 7 {
+        return None;
+    }
+    let kind = XcafAnnotationKind::from_str(parts[1])?;
+    let x: f64 = parts[2].parse().ok()?;
+    let y: f64 = parts[3].parse().ok()?;
+    let z: f64 = parts[4].parse().ok()?;
+    let value: f64 = parts[5].parse().ok()?;
+    Some(XcafAnnotation {
+        id: parts[0].to_string(),
+        kind,
+        anchor: GpPnt::new(x, y, z),
+        text: parts[6].to_string(),
+        value,
+    })
+}
+
+/// `scale|m00|m01|...|m22|lx|ly|lz` — the full `gp_Trsf` linear+translation
+/// part, so any placement round-trips exactly.
+fn transform_to_string(t: &GpTrsf) -> String {
+    let m = t.matrix.m;
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        fmt(t.scale),
+        fmt(m[0][0]),
+        fmt(m[0][1]),
+        fmt(m[0][2]),
+        fmt(m[1][0]),
+        fmt(m[1][1]),
+        fmt(m[1][2]),
+        fmt(m[2][0]),
+        fmt(m[2][1]),
+        fmt(m[2][2]),
+        fmt(t.loc.x),
+        fmt(t.loc.y),
+        fmt(t.loc.z)
+    )
+}
+
+fn transform_from_string(s: &str) -> Option<GpTrsf> {
+    let parts: Vec<&str> = s.split('|').collect();
+    if parts.len() != 13 {
+        return None;
+    }
+    let n: Vec<f64> = parts.iter().filter_map(|p| p.parse().ok()).collect();
+    if n.len() != 13 {
+        return None;
+    }
+    let mut t = GpTrsf::identity();
+    t.scale = n[0];
+    t.matrix = GpMat::new(n[1], n[2], n[3], n[4], n[5], n[6], n[7], n[8], n[9]);
+    t.loc = GpXyz::new(n[10], n[11], n[12]);
+    t.shape = TrsfForm::CompoundTrsf;
+    Some(t)
 }
 
 /// Total node count of a subtree (including `node` itself).
@@ -438,12 +658,24 @@ pub fn format_attr_string(a: &XcafAttribute) -> String {
 // ---------------------------------------------------------------------------
 
 /// Map a full [`XcafDocument`] onto the binary container. The `instance_name`
-/// is carried as a synthetic `"instance_name"` attribute so it survives the
-/// binary round-trip.
+/// and per-node `location` are carried as synthetic string attributes so they
+/// survive the binary round-trip; views and annotations are appended to the
+/// root entry's attribute list.
 pub fn xcaf_to_bincaf(doc: &XcafDocument) -> BinXcaf {
-    BinXcaf {
-        root: node_to_bin_entry(&doc.root),
+    let mut root = node_to_bin_entry(&doc.root);
+    for v in &doc.views {
+        root.attributes.push(XcafAttribute {
+            kind: "__view".into(),
+            value: view_to_string(v),
+        });
     }
+    for a in &doc.annotations {
+        root.attributes.push(XcafAttribute {
+            kind: "__annotation".into(),
+            value: annotation_to_string(a),
+        });
+    }
+    BinXcaf { root }
 }
 
 fn node_to_bin_entry(n: &XcafDocNode) -> BinXcafEntry {
@@ -452,6 +684,12 @@ fn node_to_bin_entry(n: &XcafDocNode) -> BinXcafEntry {
         attributes.push(XcafAttribute {
             kind: "instance_name".into(),
             value: inst.clone(),
+        });
+    }
+    if let Some(t) = &n.location {
+        attributes.push(XcafAttribute {
+            kind: "location".into(),
+            value: transform_to_string(t),
         });
     }
     BinXcafEntry {
@@ -463,20 +701,46 @@ fn node_to_bin_entry(n: &XcafDocNode) -> BinXcafEntry {
 
 /// Rebuild a [`XcafDocument`] from the binary container.
 pub fn bincaf_to_xcaf(b: &BinXcaf) -> XcafDocument {
+    let mut views = Vec::new();
+    let mut annotations = Vec::new();
+    let mut normal = Vec::new();
+    for a in &b.root.attributes {
+        match a.kind.as_str() {
+            "__view" => {
+                if let Some(v) = view_from_string(&a.value) {
+                    views.push(v);
+                }
+            }
+            "__annotation" => {
+                if let Some(x) = annotation_from_string(&a.value) {
+                    annotations.push(x);
+                }
+            }
+            _ => normal.push(a.clone()),
+        }
+    }
+    let root = BinXcafEntry {
+        shape: b.root.shape.clone(),
+        attributes: normal,
+        children: b.root.children.clone(),
+    };
     XcafDocument {
-        root: bin_entry_to_node(&b.root),
+        root: bin_entry_to_node(&root),
         version: "1.0".to_string(),
+        views,
+        annotations,
     }
 }
 
 fn bin_entry_to_node(e: &BinXcafEntry) -> XcafDocNode {
     let mut instance_name = None;
+    let mut location = None;
     let mut attrs = Vec::new();
     for a in &e.attributes {
-        if a.kind == "instance_name" {
-            instance_name = Some(a.value.clone());
-        } else {
-            attrs.push(a.clone());
+        match a.kind.as_str() {
+            "instance_name" => instance_name = Some(a.value.clone()),
+            "location" => location = transform_from_string(&a.value),
+            _ => attrs.push(a.clone()),
         }
     }
     XcafDocNode {
@@ -484,6 +748,7 @@ fn bin_entry_to_node(e: &BinXcafEntry) -> XcafDocNode {
         attrs: strings_to_attrs(&attrs),
         children: e.children.iter().map(bin_entry_to_node).collect(),
         instance_name,
+        location,
     }
 }
 
@@ -492,22 +757,46 @@ fn bin_entry_to_node(e: &BinXcafEntry) -> XcafDocNode {
 // ---------------------------------------------------------------------------
 
 /// Serialize a document to the XML container format.
+///
+/// Views and annotations are appended to the root entry's attribute list as
+/// synthetic `__view` / `__annotation` attributes; per-node placements are
+/// carried as `location` attributes on their own entries.
 pub fn xcaf_to_xml(doc: &XcafDocument) -> String {
+    let mut root = node_to_xml_entry(&doc.root);
+    for v in &doc.views {
+        root.attributes.push(crate::xmlcaf::XmlAttribute {
+            kind: "__view".into(),
+            value: view_to_string(v),
+        });
+    }
+    for a in &doc.annotations {
+        root.attributes.push(crate::xmlcaf::XmlAttribute {
+            kind: "__annotation".into(),
+            value: annotation_to_string(a),
+        });
+    }
     let xdoc = XmlXcafDoc {
         version: doc.version.clone(),
-        root: node_to_xml_entry(&doc.root),
+        root,
     };
     crate::xmlcaf::to_xml(&xdoc).unwrap_or_default()
 }
 
 fn node_to_xml_entry(n: &XcafDocNode) -> XmlEntry {
+    let mut attributes: Vec<crate::xmlcaf::XmlAttribute> = attrs_to_strings(&n.attrs)
+        .iter()
+        .map(xcaf_attr_to_xml)
+        .collect();
+    if let Some(t) = &n.location {
+        attributes.push(crate::xmlcaf::XmlAttribute {
+            kind: "location".into(),
+            value: transform_to_string(t),
+        });
+    }
     XmlEntry {
         name: n.instance_name.clone().unwrap_or_default(),
         shape: n.shape.clone(),
-        attributes: attrs_to_strings(&n.attrs)
-            .iter()
-            .map(xcaf_attr_to_xml)
-            .collect(),
+        attributes,
         children: n.children.iter().map(node_to_xml_entry).collect(),
     }
 }
@@ -529,23 +818,59 @@ fn xml_attr_to_xcaf(a: &crate::xmlcaf::XmlAttribute) -> XcafAttribute {
 /// Parse a document back from the XML container format.
 pub fn xml_to_xcaf(xml: &str) -> Result<XcafDocument, String> {
     let xdoc = crate::xmlcaf::from_xml(xml)?;
+    let mut views = Vec::new();
+    let mut annotations = Vec::new();
+    let mut normal = Vec::new();
+    for a in &xdoc.root.attributes {
+        match a.kind.as_str() {
+            "__view" => {
+                if let Some(v) = view_from_string(&a.value) {
+                    views.push(v);
+                }
+            }
+            "__annotation" => {
+                if let Some(x) = annotation_from_string(&a.value) {
+                    annotations.push(x);
+                }
+            }
+            _ => normal.push(a.clone()),
+        }
+    }
+    let root_entry = XmlEntry {
+        name: xdoc.root.name.clone(),
+        shape: xdoc.root.shape.clone(),
+        attributes: normal,
+        children: xdoc.root.children.clone(),
+    };
     Ok(XcafDocument {
         version: xdoc.version,
-        root: xml_entry_to_node(&xdoc.root),
+        root: xml_entry_to_node(&root_entry),
+        views,
+        annotations,
     })
 }
 
 fn xml_entry_to_node(e: &XmlEntry) -> XcafDocNode {
-    let attrs: Vec<XcafAttribute> = e.attributes.iter().map(xml_attr_to_xcaf).collect();
+    let mut instance_name = None;
+    let mut location = None;
+    let mut attrs = Vec::new();
+    for a in &e.attributes {
+        match a.kind.as_str() {
+            "instance_name" => instance_name = Some(a.value.clone()),
+            "location" => location = transform_from_string(&a.value),
+            _ => attrs.push(xml_attr_to_xcaf(a)),
+        }
+    }
     XcafDocNode {
         shape: e.shape.clone(),
         attrs: strings_to_attrs(&attrs),
         children: e.children.iter().map(xml_entry_to_node).collect(),
         instance_name: if e.name.is_empty() {
-            None
+            instance_name
         } else {
             Some(e.name.clone())
         },
+        location,
     }
 }
 
@@ -609,6 +934,105 @@ pub fn model_from_document(doc: &XcafDocument) -> BRepModel {
         i += 1;
     }
     model
+}
+
+// ---------------------------------------------------------------------------
+// Views / annotations / instances API (Phase 12 XCAF schema)
+// ---------------------------------------------------------------------------
+
+/// Register a named camera view on the document.
+pub fn xcaf_add_view(doc: &mut XcafDocument, view: XcafView) {
+    doc.views.push(view);
+}
+
+/// The named views registered on the document, in insertion order.
+pub fn xcaf_list_views(doc: &XcafDocument) -> &[XcafView] {
+    &doc.views
+}
+
+/// Register an annotation (dimension / note / callout) on the document.
+pub fn xcaf_add_annotation(doc: &mut XcafDocument, annotation: XcafAnnotation) {
+    doc.annotations.push(annotation);
+}
+
+/// Remove an annotation by its `id`; returns whether one was removed.
+pub fn xcaf_remove_annotation(doc: &mut XcafDocument, id: &str) -> bool {
+    let before = doc.annotations.len();
+    doc.annotations.retain(|a| a.id != id);
+    doc.annotations.len() != before
+}
+
+/// Look up an annotation by its `id`.
+pub fn xcaf_find_annotation<'a>(doc: &'a XcafDocument, id: &str) -> Option<&'a XcafAnnotation> {
+    doc.annotations.iter().find(|a| a.id == id)
+}
+
+/// All annotations on the document, in insertion order.
+pub fn xcaf_annotations(doc: &XcafDocument) -> &[XcafAnnotation] {
+    &doc.annotations
+}
+
+/// Add `child` as a placed occurrence of the root assembly. The placement is
+/// stored as the child's `location`; the returned name is the occurrence name
+/// (the child's `instance_name`, else its `name` attribute, else a generated
+/// one).
+pub fn xcaf_add_instance(doc: &mut XcafDocument, mut child: XcafDocNode, transform: GpTrsf) -> String {
+    let name = child
+        .instance_name
+        .clone()
+        .or_else(|| child.attrs.name.clone())
+        .unwrap_or_else(|| format!("Instance{}", doc.node_count() + 1));
+    child.instance_name = Some(name.clone());
+    child.location = Some(transform);
+    doc.root.children.push(child);
+    name
+}
+
+/// Number of placed occurrences in the tree (nodes carrying a `location`).
+pub fn xcaf_instance_count(doc: &XcafDocument) -> usize {
+    count_located(&doc.root)
+}
+
+fn count_located(n: &XcafDocNode) -> usize {
+    let self_count = usize::from(n.location.is_some());
+    self_count + n.children.iter().map(count_located).sum::<usize>()
+}
+
+/// Look up a placed occurrence by its occurrence name (or `name` attribute),
+/// returning its referenced sub-tree and placement.
+pub fn xcaf_find_instance(doc: &XcafDocument, name: &str) -> Option<XcafInstance> {
+    let node = find_node(&doc.root, name)?;
+    Some(XcafInstance {
+        name: node.name().to_string(),
+        node: node.clone(),
+        transform: node.location.clone().unwrap_or_else(GpTrsf::identity),
+    })
+}
+
+/// Expand the assembly tree into world-coordinate shapes.
+///
+/// Each node that carries a shape is returned once, in depth-first order, as
+/// `(name, shape)` where `shape`'s geometry has been baked into world
+/// coordinates (the accumulated product of ancestor placements). Nested
+/// instances therefore appear at their true world position. Source:
+/// `XCAFDoc_ShapeTool::GetShape` + `TopoDS::Transformed`.
+pub fn xcaf_expand_instances(doc: &XcafDocument) -> Vec<(String, TopoShape)> {
+    let mut out = Vec::new();
+    expand_node(&mut out, &doc.root, &GpTrsf::identity());
+    out
+}
+
+fn expand_node(out: &mut Vec<(String, TopoShape)>, n: &XcafDocNode, parent: &GpTrsf) {
+    let local = n.location.clone().unwrap_or_else(GpTrsf::identity);
+    let world = parent.multiplied(&local);
+    if let Some(shape) = &n.shape {
+        if let Ok(world_shape) = crate::shape_ops::transformed_copy(shape, &world) {
+            out.push((n.name().to_string(), world_shape));
+        }
+    }
+    for c in &n.children {
+        expand_node(out, c, &world);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1164,6 +1588,46 @@ fn write_tree_block(out: &mut String, n: &XcafDocNode, depth: usize) {
     }
 }
 
+/// Serialize a placed [`XcafDocument`] assembly to a STEP physical file.
+///
+/// Unlike [`document_to_step`], each shape is first expanded to world
+/// coordinates (its accumulated placement baked into the geometry), so the
+/// STEP file carries the instances at their true position. The parent→child
+/// occurrences are emitted as `NEXT_ASSEMBLY_USAGE_OCCURRENCE` records and the
+/// tree / views / annotations are embedded as a `/* XCAFDOC-BEGIN … */` comment
+/// block before `DATA`, keeping the file valid.
+pub fn write_step_assembly_with_placements(doc: &XcafDocument) -> String {
+    let expanded = xcaf_expand_instances(doc);
+    let step = crate::step::write_step_shapes(&expanded);
+
+    let mut edges = Vec::new();
+    collect_edges(&doc.root, None, &mut edges);
+    let nauo = assembly_nauo_records(&step, &edges);
+
+    let mut block = String::new();
+    block.push_str("/* XCAFDOC-BEGIN\n");
+    write_tree_block(&mut block, &doc.root, 0);
+    for v in &doc.views {
+        block.push_str(&format!("VIEW|{}\n", view_to_string(v)));
+    }
+    for a in &doc.annotations {
+        block.push_str(&format!("ANN|{}\n", annotation_to_string(a)));
+    }
+    block.push_str("XCAFDOC-END\n*/\n");
+
+    let with_block = step.replacen("DATA;", &format!("{block}DATA;"), 1);
+    if nauo.is_empty() {
+        return with_block;
+    }
+    match with_block.find("DATA;") {
+        Some(pos) => {
+            let (head, tail) = with_block.split_at(pos + 5);
+            format!("{head}\n{nauo}{tail}")
+        }
+        None => with_block,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1223,8 +1687,10 @@ mod tests {
 mod xcaf_doc_tests {
     use super::*;
     use crate::abs::ShapeType;
+    use crate::brep_tool::BRepTool;
     use crate::primitives::{BRepPrimBox, BRepPrimSphere};
-    use crate::topo_tools_full::faces_of;
+    use crate::topo_tools_full::{faces_of, vertices_of};
+    use occt_core::gp::GpVec;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TMP_SEQ: AtomicUsize = AtomicUsize::new(0);
@@ -1258,6 +1724,8 @@ mod xcaf_doc_tests {
         XcafDocument {
             root,
             version: "1.0".into(),
+            views: Vec::new(),
+            annotations: Vec::new(),
         }
     }
 
@@ -1448,6 +1916,8 @@ ENDSEC;\nEND-ISO-10303-21;";
         let doc = XcafDocument {
             root,
             version: "1.0".into(),
+            views: Vec::new(),
+            annotations: Vec::new(),
         };
         let step = document_to_step(&doc);
         assert!(step.contains("CubePart"), "product name:\n{step}");
@@ -1469,6 +1939,8 @@ ENDSEC;\nEND-ISO-10303-21;";
         let doc = XcafDocument {
             root,
             version: "1.0".into(),
+            views: Vec::new(),
+            annotations: Vec::new(),
         };
         let step = document_to_step(&doc);
         assert!(
@@ -1498,5 +1970,201 @@ ENDSEC;\nEND-ISO-10303-21;";
         let step = document_to_step(&doc);
         assert!(step.contains("DATA;"), "{step}");
         assert!(strings_to_attrs(&[]).is_empty());
+    }
+
+    fn view(name: &str, proj: XcafProjection) -> XcafView {
+        XcafView {
+            name: name.into(),
+            eye: GpPnt::new(0.0, -10.0, 5.0),
+            target: GpPnt::zero(),
+            up: GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            projection: proj,
+        }
+    }
+
+    fn annotation(id: &str, kind: XcafAnnotationKind) -> XcafAnnotation {
+        XcafAnnotation {
+            id: id.into(),
+            kind,
+            anchor: GpPnt::new(1.0, 2.0, 3.0),
+            text: "width".into(),
+            value: 5.0,
+        }
+    }
+
+    #[test]
+    fn views_annotations_roundtrip() {
+        let mut doc = XcafDocument::new();
+        xcaf_add_view(&mut doc, view("Front", XcafProjection::Perspective));
+        xcaf_add_view(&mut doc, view("Top", XcafProjection::Orthographic));
+        xcaf_add_annotation(&mut doc, annotation("d1", XcafAnnotationKind::Dimension));
+        xcaf_add_annotation(&mut doc, annotation("n1", XcafAnnotationKind::Note));
+        assert_eq!(xcaf_list_views(&doc).len(), 2);
+        assert_eq!(xcaf_annotations(&doc).len(), 2);
+        assert!(xcaf_find_annotation(&doc, "d1").is_some());
+        assert!(xcaf_find_annotation(&doc, "missing").is_none());
+
+        // Binary round-trip.
+        let bytes = crate::bincaf::serialize_bincaf(&xcaf_to_bincaf(&doc)).expect("serialize");
+        let got = bincaf_to_xcaf(&crate::bincaf::deserialize_bincaf(&bytes).expect("deserialize"));
+        assert_eq!(got.views.len(), 2);
+        assert_eq!(got.views[0].name, "Front");
+        assert_eq!(got.views[0].projection, XcafProjection::Perspective);
+        assert_eq!(got.views[1].projection, XcafProjection::Orthographic);
+        assert_eq!(got.views[0].up, GpDir::new(0.0, 0.0, 1.0).unwrap());
+        assert_eq!(got.annotations.len(), 2);
+        assert_eq!(got.annotations[0].id, "d1");
+        assert_eq!(got.annotations[0].kind, XcafAnnotationKind::Dimension);
+        assert_eq!(got.annotations[0].text, "width");
+        assert!((got.annotations[0].value - 5.0).abs() < 1e-9);
+        assert_eq!(got.annotations[1].kind, XcafAnnotationKind::Note);
+
+        // XML round-trip.
+        let got2 = xml_to_xcaf(&xcaf_to_xml(&doc)).expect("xml parse");
+        assert_eq!(got2.views.len(), 2);
+        assert_eq!(got2.views[1].name, "Top");
+        assert_eq!(got2.views[0].eye.distance(&GpPnt::new(0.0, -10.0, 5.0)), 0.0);
+        assert_eq!(got2.annotations.len(), 2);
+        assert_eq!(got2.annotations[0].id, "d1");
+
+        // Add / remove / find mutation.
+        assert!(xcaf_remove_annotation(&mut doc, "d1"));
+        assert!(xcaf_find_annotation(&doc, "d1").is_none());
+        assert_eq!(xcaf_annotations(&doc).len(), 1);
+        assert!(!xcaf_remove_annotation(&mut doc, "missing"));
+    }
+
+    #[test]
+    fn instance_placement_expansion() {
+        // Single placed occurrence through the API.
+        let mut doc = XcafDocument::new();
+        let mut part = XcafDocNode::with_shape(BRepPrimBox::make_box(1.0, 1.0, 1.0).solid.0);
+        part.attrs = XcafAttrs::named("Part");
+        part.instance_name = Some("part-01".into());
+        let mut t = GpTrsf::identity();
+        t.set_translation_vec(&GpVec::new(0.0, 0.0, 7.0));
+        let name = xcaf_add_instance(&mut doc, part, t);
+        assert_eq!(name, "part-01");
+        assert_eq!(xcaf_instance_count(&doc), 1);
+        let inst = xcaf_find_instance(&doc, "part-01").expect("instance found");
+        assert_eq!(inst.name, "part-01");
+        assert!((inst.transform.translation_part().z - 7.0).abs() < 1e-9);
+
+        // Nested placements: sub-assembly at (0,3,0), leaf at (5,0,0) → (5,3,0).
+        let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        let mut leaf = XcafDocNode::with_shape(b.solid.0);
+        leaf.attrs = XcafAttrs::named("Leaf");
+        leaf.instance_name = Some("leaf-01".into());
+        let mut t1 = GpTrsf::identity();
+        t1.set_translation_vec(&GpVec::new(5.0, 0.0, 0.0));
+        leaf.location = Some(t1);
+
+        let mut sub = XcafDocNode::new();
+        sub.attrs = XcafAttrs::named("Sub");
+        sub.instance_name = Some("sub-01".into());
+        let mut t2 = GpTrsf::identity();
+        t2.set_translation_vec(&GpVec::new(0.0, 3.0, 0.0));
+        sub.location = Some(t2);
+        sub.children.push(leaf);
+
+        let mut doc2 = XcafDocument::new();
+        doc2.root.children.push(sub);
+        assert_eq!(xcaf_instance_count(&doc2), 2);
+
+        let sub_inst = xcaf_find_instance(&doc2, "sub-01").expect("sub found");
+        assert_eq!(sub_inst.node.children.len(), 1);
+        assert!((sub_inst.transform.translation_part().y - 3.0).abs() < 1e-9);
+
+        let expanded = xcaf_expand_instances(&doc2);
+        assert_eq!(expanded.len(), 1, "only the leaf carries a shape");
+        assert_eq!(expanded[0].0, "leaf-01");
+        let shape = &expanded[0].1;
+        let mut xs: Vec<f64> = vertices_of(shape)
+            .iter()
+            .map(|v| BRepTool::vertex_point(v).x())
+            .collect();
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!((xs[0] - 5.0).abs() < 1e-9, "min x {xs:?}");
+        assert!((xs[7] - 6.0).abs() < 1e-9, "max x {xs:?}");
+        let ys: Vec<f64> = vertices_of(shape)
+            .iter()
+            .map(|v| BRepTool::vertex_point(v).y())
+            .collect();
+        let zs: Vec<f64> = vertices_of(shape)
+            .iter()
+            .map(|v| BRepTool::vertex_point(v).z())
+            .collect();
+        let minmax = |v: &[f64]| {
+            (
+                v.iter().cloned().fold(f64::INFINITY, f64::min),
+                v.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            )
+        };
+        let (min_y, max_y) = minmax(&ys);
+        let (min_z, max_z) = minmax(&zs);
+        assert!((min_y - 3.0).abs() < 1e-9 && (max_y - 4.0).abs() < 1e-9, "y {ys:?}");
+        assert!(min_z.abs() < 1e-9 && (max_z - 1.0).abs() < 1e-9, "z {zs:?}");
+
+        // Locations survive the binary round-trip.
+        let bytes = crate::bincaf::serialize_bincaf(&xcaf_to_bincaf(&doc2)).expect("serialize");
+        let got = bincaf_to_xcaf(&crate::bincaf::deserialize_bincaf(&bytes).expect("deserialize"));
+        let leaf_back = find_by_name(&got, "leaf-01").expect("leaf back");
+        let loc = leaf_back.location.as_ref().expect("location preserved");
+        assert!((loc.translation_part().x - 5.0).abs() < 1e-9);
+        let xml = xml_to_xcaf(&xcaf_to_xml(&doc2)).expect("xml parse");
+        let leaf_xml = find_by_name(&xml, "leaf-01").expect("leaf in xml");
+        let loc2 = leaf_xml.location.as_ref().expect("xml location preserved");
+        assert!((loc2.translation_part().x - 5.0).abs() < 1e-9);
+        assert!((loc2.translation_part().y - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn step_assembly_with_placements() {
+        let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        let s = BRepPrimSphere::make_sphere(0.5);
+        let mut part = XcafDocNode::with_shape(b.solid.0);
+        part.attrs = XcafAttrs::named("BoxPart");
+        part.instance_name = Some("box-01".into());
+        let mut t = GpTrsf::identity();
+        t.set_translation_vec(&GpVec::new(10.0, 0.0, 0.0));
+        part.location = Some(t);
+        let mut root = XcafDocNode::with_shape(s.solid.0);
+        root.attrs = XcafAttrs::named("Assy");
+        root.children.push(part);
+        let mut doc = XcafDocument::new();
+        doc.root = root;
+        xcaf_add_view(&mut doc, view("Front", XcafProjection::Perspective));
+
+        let step = write_step_assembly_with_placements(&doc);
+        assert!(step.contains("AXIS2_PLACEMENT_3D"), "placement keyword:\n{step}");
+        assert!(
+            step.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE"),
+            "assembly records:\n{step}"
+        );
+        assert!(step.contains("XCAFDOC-BEGIN"), "metadata block");
+        assert!(step.contains("VIEW|"), "view metadata:\n{step}");
+
+        // The box was translated +10 in x: its x=1 corner is at world x=11.
+        assert!(step.contains("11."), "transformed coordinate:\n{step}");
+
+        let model = crate::step::read_step(&step).expect("parse back");
+        assert_eq!(model.len(), 2, "two solids: {step}");
+        let names = model.names();
+        assert!(names.contains(&"Assy"), "names: {names:?}");
+        assert!(names.contains(&"box-01"), "names: {names:?}");
+        let box_shape = model
+            .shapes
+            .iter()
+            .find(|ms| ms.name == "box-01")
+            .expect("box shape")
+            .shape
+            .clone();
+        let mut xs: Vec<f64> = vertices_of(&box_shape)
+            .iter()
+            .map(|v| BRepTool::vertex_point(v).x())
+            .collect();
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!((xs[0] - 10.0).abs() < 1e-6, "min x {xs:?}");
+        assert!((xs[7] - 11.0).abs() < 1e-6, "max x {xs:?}");
     }
 }

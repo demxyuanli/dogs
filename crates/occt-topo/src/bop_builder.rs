@@ -25,7 +25,7 @@ use crate::brep_extrema::is_inside;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::inttools::{edge_edge_intersections, edge_face_intersections};
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
+use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Wire};
 use crate::shell_check::shell_is_closed;
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{
@@ -2884,6 +2884,727 @@ pub fn component_euler_characteristic(r: &ComponentEdgeReport) -> i32 {
 }
 
 // ---------------------------------------------------------------------------
+// Edge-overlap repair (BOPAlgo / TopOpeBRep depth)
+// ---------------------------------------------------------------------------
+//
+// Ports of the edge-level repair and classification passes of `BOPAlgo_Builder`
+// and `TopOpeBRep_BuildTool`: collinear overlapping-edge repair, face splitting
+// along surface intersections, boolean-result edge classification and tolerance
+// healing. All functions follow the crate's `Result<_, String>` convention and
+// rebuild shapes through the weld/edge-map machinery the exact boolean uses, so
+// coincident vertices and edges stay shared across the rebuilt boundary.
+
+/// Is the edge's curve geometrically a straight line?
+///
+/// Samples 8 points along the curve and checks that they are collinear with the
+/// first–last chord. A `GeomLine` (even trimmed) passes; a circle/arc fails.
+fn edge_is_line_like(e: &Edge) -> bool {
+    let Some(c) = BRepTool::edge_curve(e) else { return false };
+    let (a, b) = BRepTool::edge_parameters(e);
+    if !a.is_finite() || !b.is_finite() || (b - a).abs() <= 1e-15 {
+        return false;
+    }
+    let n = 8;
+    let p0 = c.d0(a);
+    let pl = c.d0(b);
+    let size = p0.distance(&pl);
+    if size <= 1e-30 {
+        return false;
+    }
+    let chord = GpVec::from_pnts(&p0, &pl);
+    let tol = 1e-6 * size;
+    for i in 1..n {
+        let p = c.d0(a + (b - a) * i as f64 / n as f64);
+        if GpVec::from_pnts(&p0, &p).cross_magnitude(&chord) > tol * size {
+            return false;
+        }
+    }
+    true
+}
+
+/// Report of [`repair_edge_overlaps`].
+#[derive(Debug, Clone)]
+pub struct RepairReport {
+    /// The repaired shape (unchanged when nothing needed repairing).
+    pub repaired: TopoShape,
+    /// Number of edges that were split to resolve a partial overlap.
+    pub repaired_edges: usize,
+    /// Number of edges removed (zero-length edges and coincident duplicates).
+    pub removed_edges: usize,
+    /// Number of vertex pairs merged because they lay within `tol`.
+    pub welded_vertices: usize,
+    /// Non-fatal diagnostics (open rebuilt boundary, dropped faces, …).
+    pub warnings: Vec<String>,
+}
+
+/// Detect and repair collinear overlapping edges of a boolean result/compound.
+///
+/// Looks at every pair of line-like edges of the shape and repairs three kinds
+/// of overlap:
+///
+/// * **zero-length edges** — an edge whose two endpoints coincide (within
+///   `tol`) is removed;
+/// * **coincident duplicates** — two collinear edges spanning the same
+///   interval are merged into one (the duplicate is counted as removed);
+/// * **partial overlaps** — two collinear edges that overlap over a sub-segment
+///   are split at the overlap boundaries so the shared sub-segment becomes a
+///   single edge (each split edge counts as repaired).
+///
+/// The boundary is rebuilt through the same `Weld`/`EdgeMap` machinery the exact
+/// boolean uses, so every vertex closer than `tol` is welded to one instance and
+/// coincident sub-segments resolve to the same `Edge`. Non-line edges (arcs,
+/// full circles) and non-planar faces are kept untouched. A `Compound` is
+/// repaired component-wise and reassembled.
+pub fn repair_edge_overlaps(shape: &TopoShape, tol: f64) -> Result<RepairReport, String> {
+    let tol = tol.max(1e-9);
+    if shape.is_compound() {
+        let children = expand_compound(shape);
+        let mut repaired_edges = 0usize;
+        let mut removed_edges = 0usize;
+        let mut welded_vertices = 0usize;
+        let mut warnings: Vec<String> = Vec::new();
+        let mut out: Vec<TopoShape> = Vec::with_capacity(children.len());
+        for c in &children {
+            let r = repair_edge_overlaps(c, tol)?;
+            repaired_edges += r.repaired_edges;
+            removed_edges += r.removed_edges;
+            welded_vertices += r.welded_vertices;
+            warnings.extend(r.warnings);
+            out.push(r.repaired);
+        }
+        let bld = TopoBuilder::new();
+        let comp = bld.make_compound_of(&out);
+        return Ok(RepairReport { repaired: comp.0, repaired_edges, removed_edges, welded_vertices, warnings });
+    }
+
+    let faces = faces_of(shape);
+    let edges = edges_of(shape);
+    let n = edges.len();
+
+    // Per-edge geometry: endpoints (from the curve), line-likeness and length.
+    let mut pts: Vec<Option<(GpPnt, GpPnt)>> = Vec::with_capacity(n);
+    let mut is_line: Vec<bool> = Vec::with_capacity(n);
+    let mut lens: Vec<f64> = Vec::with_capacity(n);
+    for e in &edges {
+        let ep = BRepTool::edge_vertices(e);
+        let len = ep.as_ref().map(|(a, b)| a.distance(b)).unwrap_or(0.0);
+        let line = ep.as_ref().map(|_| edge_is_line_like(e)).unwrap_or(false);
+        pts.push(ep);
+        is_line.push(line);
+        lens.push(len);
+    }
+
+    // Removed: zero-length edges.
+    let mut removed: HashSet<usize> = HashSet::new();
+    for i in 0..n {
+        if lens[i] < tol {
+            removed.insert(i);
+        }
+    }
+
+    // Pass 1: coincident-duplicate detection (same span on the same line).
+    let mut merge_with: Vec<Option<usize>> = vec![None; n];
+    let mut merged_count = 0usize;
+    for i in 0..n {
+        if removed.contains(&i) || !is_line[i] {
+            continue;
+        }
+        let Some((a1, a2)) = pts[i] else { continue };
+        let li = lens[i];
+        let di = GpVec::from_pnts(&a1, &a2).normalized();
+        for j in (i + 1)..n {
+            if removed.contains(&j) || !is_line[j] || merge_with[j].is_some() {
+                continue;
+            }
+            let Some((b1, b2)) = pts[j] else { continue };
+            let db = GpVec::from_pnts(&b1, &b2).normalized();
+            if di.cross_magnitude(&db) > tol {
+                continue;
+            }
+            if GpVec::from_pnts(&a1, &b1).cross_magnitude(&di) > tol {
+                continue;
+            }
+            let t = |p: &GpPnt| GpVec::from_pnts(&a1, p).dot(&di);
+            let (lo, hi) = (t(&b1).min(t(&b2)), t(&b1).max(t(&b2)));
+            if (lo - 0.0).abs() <= tol && (hi - li).abs() <= tol {
+                merge_with[j] = Some(i);
+                merged_count += 1;
+            }
+        }
+    }
+
+    // Pass 2: collect split parameters (in edge-local arc-length) for every
+    // edge whose span is cut by a collinear overlapping edge.
+    let mut split_ts: Vec<Vec<f64>> = vec![Vec::new(); n];
+    for i in 0..n {
+        if removed.contains(&i) || !is_line[i] {
+            continue;
+        }
+        let Some((a1, a2)) = pts[i] else { continue };
+        let li = lens[i];
+        let di = GpVec::from_pnts(&a1, &a2).normalized();
+        let t = |p: &GpPnt| GpVec::from_pnts(&a1, p).dot(&di);
+        let mut ts = vec![0.0, li];
+        for j in 0..n {
+            if i == j || removed.contains(&j) || !is_line[j] {
+                continue;
+            }
+            let Some((b1, b2)) = pts[j] else { continue };
+            let db = GpVec::from_pnts(&b1, &b2).normalized();
+            if di.cross_magnitude(&db) > tol {
+                continue;
+            }
+            if GpVec::from_pnts(&a1, &b1).cross_magnitude(&di) > tol {
+                continue;
+            }
+            let (tj1, tj2) = (t(&b1), t(&b2));
+            let (lo, hi) = (tj1.min(tj2), tj1.max(tj2));
+            if hi.min(li) - lo.max(0.0) <= tol {
+                continue; // disjoint or merely touching at an endpoint
+            }
+            ts.push(lo.max(0.0).min(li));
+            ts.push(hi.max(0.0).min(li));
+        }
+        ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+        ts.dedup_by(|x, y| (*x - *y).abs() <= tol.max(1e-12));
+        split_ts[i] = ts;
+    }
+    let repaired_count = split_ts.iter().filter(|ts| ts.len() > 2).count();
+
+    // Vertex merges: distinct vertex instances that collapse into one position.
+    let mut welded_vertices = 0usize;
+    let mut positions: Vec<GpPnt> = Vec::new();
+    for v in vertices_of(shape) {
+        let p = vertex_position(&v);
+        if positions.iter().any(|q| q.distance(&p) <= tol) {
+            welded_vertices += 1;
+        } else {
+            positions.push(p);
+        }
+    }
+
+    // Edges whose identity must change: removed, split, or merged with a twin.
+    let mut affected: HashSet<usize> = HashSet::new();
+    for i in 0..n {
+        if removed.contains(&i) || split_ts[i].len() > 2 {
+            affected.insert(i);
+        }
+    }
+    for (j, k) in merge_with.iter().enumerate() {
+        if let Some(i) = k {
+            affected.insert(*i);
+            affected.insert(j);
+        }
+    }
+    if affected.is_empty() {
+        return Ok(RepairReport {
+            repaired: shape.clone(),
+            repaired_edges: 0,
+            removed_edges: removed.len() + merged_count,
+            welded_vertices,
+            warnings: vec![],
+        });
+    }
+
+    // Rebuild the boundary: only faces carrying an affected edge are rebuilt.
+    let bld = TopoBuilder::new();
+    let mut edge_idx: HashMap<usize, usize> = HashMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        edge_idx.insert(Arc::as_ptr(&e.0.tshape) as usize, i);
+    }
+    let mut weld = Weld::new(tol.max(1e-7));
+    let mut edge_map = EdgeMap::default();
+    let mut result_faces: Vec<Face> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    for f in &faces {
+        let needs = edges_of(&f.0).iter().any(|e| {
+            edge_idx
+                .get(&(Arc::as_ptr(&e.0.tshape) as usize))
+                .map_or(false, |idx| affected.contains(idx))
+        });
+        if !needs {
+            result_faces.push(f.clone());
+            continue;
+        }
+        let Some(pln) = face_plane_local(f) else {
+            result_faces.push(f.clone());
+            continue;
+        };
+        match rebuild_face_repaired(&bld, f, &pln, &edge_idx, &is_line, &pts, &split_ts, &removed, &mut weld, &mut edge_map)
+        {
+            Some(nf) => result_faces.push(nf),
+            None => warnings.push("repair_edge_overlaps: a face collapsed to nothing and was dropped".into()),
+        }
+    }
+
+    if result_faces.is_empty() {
+        let empty = bld.make_compound_of(&[]);
+        return Ok(RepairReport {
+            repaired: empty.0,
+            repaired_edges: repaired_count,
+            removed_edges: removed.len() + merged_count,
+            welded_vertices,
+            warnings,
+        });
+    }
+
+    let shell = bld.make_shell(&result_faces);
+    let closed = shell_is_closed(&shell);
+    if !closed {
+        warnings.push("repair_edge_overlaps: rebuilt boundary is not closed".into());
+    }
+    let repaired: TopoShape = if closed { bld.make_solid(&[shell]).0 } else { shell.0 };
+    Ok(RepairReport {
+        repaired,
+        repaired_edges: repaired_count,
+        removed_edges: removed.len() + merged_count,
+        welded_vertices,
+        warnings,
+    })
+}
+
+/// Rebuild a single face's wires with repaired edges.
+///
+/// Removed edges are dropped; split edges become their ordered sub-segments
+/// (reversed when the wire traverses the edge backwards); unsplit line edges are
+/// re-registered through the shared weld/edge-map so coincident edges across
+/// faces resolve to one `Edge`; non-line edges are kept untouched. Returns
+/// `None` when every wire collapsed.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_face_repaired(
+    bld: &TopoBuilder,
+    f: &Face,
+    pln: &GpPln,
+    edge_idx: &HashMap<usize, usize>,
+    is_line: &[bool],
+    pts: &[Option<(GpPnt, GpPnt)>],
+    split_ts: &[Vec<f64>],
+    removed: &HashSet<usize>,
+    weld: &mut Weld,
+    edge_map: &mut EdgeMap,
+) -> Option<Face> {
+    let mut new_wires: Vec<Wire> = Vec::new();
+    for w in wires_of_face(f) {
+        let mut new_edges: Vec<Edge> = Vec::new();
+        for we in edges_of_wire(&w) {
+            let eptr = Arc::as_ptr(&we.0.tshape) as usize;
+            let Some(&idx) = edge_idx.get(&eptr) else {
+                new_edges.push(we.clone());
+                continue;
+            };
+            if removed.contains(&idx) {
+                continue;
+            }
+            let Some((p1, p2)) = pts[idx] else {
+                new_edges.push(we.clone());
+                continue;
+            };
+            let forward = !we.0.orientation().is_reversed();
+            if !is_line[idx] {
+                new_edges.push(we.clone());
+                continue;
+            }
+            let ts = &split_ts[idx];
+            if ts.len() >= 2 {
+                let di = GpVec::from_pnts(&p1, &p2).normalized();
+                let point_at = |t: f64| p1.translated_vec(&di.multiplied_scalar(t));
+                let segs: Vec<(GpPnt, GpPnt)> = if forward {
+                    ts.windows(2).map(|w| (point_at(w[0]), point_at(w[1]))).collect()
+                } else {
+                    ts.windows(2).rev().map(|w| (point_at(w[1]), point_at(w[0]))).collect()
+                };
+                for (a, b) in segs {
+                    let ia = weld.weld(&a);
+                    let ib = weld.weld(&b);
+                    if ia != ib {
+                        new_edges.push(edge_map.edge(bld, ia, ib, &weld.points));
+                    }
+                }
+            } else {
+                let (a, b) = if forward { (p1, p2) } else { (p2, p1) };
+                let ia = weld.weld(&a);
+                let ib = weld.weld(&b);
+                if ia != ib {
+                    new_edges.push(edge_map.edge(bld, ia, ib, &weld.points));
+                }
+            }
+        }
+        if !new_edges.is_empty() {
+            new_wires.push(bld.make_wire(&new_edges));
+        }
+    }
+    if new_wires.is_empty() {
+        return None;
+    }
+    let mut nf = bld.make_face(Arc::new(GeomPlane::new(pln.clone())), &new_wires);
+    nf.0.set_orientation(f.0.orientation());
+    Some(nf)
+}
+
+// ---------------------------------------------------------------------------
+// Face splitting along surface intersections
+// ---------------------------------------------------------------------------
+
+/// Split every face of `shape` along its intersection curves with the faces in
+/// `pairs`, producing clean sub-faces with complete boundary wires.
+///
+/// `pairs` lists pairs of face indices (into [`faces_of`]) whose intersection
+/// should be cut. For each pair the plane–plane intersection segment is computed
+/// (via [`face_face_segments_local`]) and both faces are split along it with the
+/// same polygon splitter and weld/edge-map the exact boolean uses, so the split
+/// edges coincide and sub-faces share boundary vertices. A face that is not
+/// cut (the segment misses it, or it is non-planar) is kept whole. The rebuilt
+/// boundary is returned as a solid when closed, otherwise as a shell.
+pub fn split_faces_along_intersections(shape: &TopoShape, pairs: &[(usize, usize)], tol: f64) -> Result<TopoShape, String> {
+    let tol = tol.max(1e-9);
+    let faces = faces_of(shape);
+    for &(i, j) in pairs {
+        if i >= faces.len() || j >= faces.len() {
+            return Err(format!(
+                "split_faces_along_intersections: face index ({i}, {j}) out of range for {} faces",
+                faces.len()
+            ));
+        }
+    }
+    let mut segs: Vec<Vec<(GpPnt, GpPnt)>> = vec![Vec::new(); faces.len()];
+    for &(i, j) in pairs {
+        let s = face_face_segments_local(&faces[i], &faces[j], tol);
+        for seg in &s {
+            segs[i].push(*seg);
+            segs[j].push(*seg);
+        }
+    }
+    let bld = TopoBuilder::new();
+    let mut weld = Weld::new(tol.max(1e-7));
+    let mut edge_map = EdgeMap::default();
+    let mut result_faces: Vec<Face> = Vec::new();
+    for (i, f) in faces.iter().enumerate() {
+        if segs[i].is_empty() {
+            result_faces.push(f.clone());
+            continue;
+        }
+        let Some(pln) = face_plane_local(f) else {
+            result_faces.push(f.clone());
+            continue;
+        };
+        let Some(poly2d) = face_polygon_local(f, &pln) else {
+            result_faces.push(f.clone());
+            continue;
+        };
+        let segs2d: Vec<(GpPnt2d, GpPnt2d)> = segs[i]
+            .iter()
+            .filter_map(|(a, b)| {
+                let a2 = project_point_to_plane(&pln, a);
+                let b2 = project_point_to_plane(&pln, b);
+                if a2.distance(&b2) < 1e-12 {
+                    None
+                } else {
+                    Some((a2, b2))
+                }
+            })
+            .collect();
+        let parts = split_polygon_by_segments(&poly2d, &dedupe_segments(segs2d));
+        if parts.len() >= 2 {
+            let subs: Vec<SubFace> = parts
+                .iter()
+                .filter_map(|p| polygon_to_subface(&bld, &pln, p, &mut weld, &mut edge_map))
+                .collect();
+            if subs.len() >= 2 {
+                result_faces.extend(subs.into_iter().map(|sf| sf.face));
+                continue;
+            }
+        }
+        result_faces.push(f.clone());
+    }
+    let shell = bld.make_shell(&result_faces);
+    let closed = shell_is_closed(&shell);
+    let out: TopoShape = if closed { bld.make_solid(&[shell]).0 } else { shell.0 };
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Boolean-result edge classification (TopOpeBRep_BuildTool)
+// ---------------------------------------------------------------------------
+
+/// Classification of an edge of a boolean result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EdgeClass {
+    /// The edge is shared by several boundary patches (referenced by three or
+    /// more result faces) — the coincidence of two bodies' edges in the result.
+    Shared,
+    /// The edge lies in the interior of a face's surface: its two adjacent
+    /// faces are coplanar, so the edge is a seam/split line on a flat region.
+    OnFace,
+    /// The edge is not part of a closed two-face boundary: a free edge or a
+    /// wire edge interior to the result topology.
+    Internal,
+    /// A regular outer-boundary edge (exactly two non-coplanar faces meet).
+    External,
+}
+
+/// Per-class counts of a [`classify_boolean_edges`] result.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct EdgeClassCounts {
+    /// Number of `Shared` edges.
+    pub shared: usize,
+    /// Number of `OnFace` edges.
+    pub on_face: usize,
+    /// Number of `Internal` edges.
+    pub internal: usize,
+    /// Number of `External` edges.
+    pub external: usize,
+}
+
+/// Classify every edge of a boolean result (`TopOpeBRep_BuildTool` style).
+///
+/// For each distinct edge of `result` the faces referencing it are counted:
+///
+/// * 3+ faces → [`EdgeClass::Shared`] (several boundary patches — the two
+///   bodies' coincident edges — meet on one edge);
+/// * exactly 2 coplanar faces → [`EdgeClass::OnFace`] (the edge is a seam lying
+///   on a face's surface interior);
+/// * exactly 2 non-coplanar faces → [`EdgeClass::External`] (regular outer
+///   boundary edge);
+/// * 0 or 1 face → [`EdgeClass::Internal`] (free / interior wire edge).
+///
+/// The operation is accepted for API symmetry with TopOpeBRep; the geometric
+/// classification is operation-independent. Use [`edge_class_counts`] to
+/// aggregate, and [`classify_edges_with_operands`] for the operand-aware
+/// classification that reports edges lying on either input body's surface.
+pub fn classify_boolean_edges(result: &TopoShape, _op: BoolOp) -> Vec<EdgeClass> {
+    let faces = faces_of(result);
+    let mut face_refs: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (fi, f) in faces.iter().enumerate() {
+        for e in edges_of(&f.0) {
+            face_refs.entry(Arc::as_ptr(&e.0.tshape) as usize).or_default().push(fi);
+        }
+    }
+    let edges = edges_of(result);
+    edges
+        .iter()
+        .map(|e| {
+            let ptr = Arc::as_ptr(&e.0.tshape) as usize;
+            let fids = face_refs.get(&ptr).map(|v| v.as_slice()).unwrap_or(&[]);
+            classify_result_edge(&faces, fids)
+        })
+        .collect()
+}
+
+/// Classify one edge from the indices of the faces referencing it.
+fn classify_result_edge(faces: &[Face], fids: &[usize]) -> EdgeClass {
+    match fids.len() {
+        0 | 1 => EdgeClass::Internal,
+        2 => {
+            let (f1, f2) = (&faces[fids[0]], &faces[fids[1]]);
+            match (face_plane_local(f1), face_plane_local(f2)) {
+                (Some(p1), Some(p2)) if planes_coincident(&p1, &p2, 1e-6) => EdgeClass::OnFace,
+                _ => EdgeClass::External,
+            }
+        }
+        _ => EdgeClass::Shared,
+    }
+}
+
+/// Aggregate [`EdgeClass`]es into [`EdgeClassCounts`].
+pub fn edge_class_counts(classes: &[EdgeClass]) -> EdgeClassCounts {
+    let mut c = EdgeClassCounts::default();
+    for cl in classes {
+        match cl {
+            EdgeClass::Shared => c.shared += 1,
+            EdgeClass::OnFace => c.on_face += 1,
+            EdgeClass::Internal => c.internal += 1,
+            EdgeClass::External => c.external += 1,
+        }
+    }
+    c
+}
+
+/// One-line summary of [`EdgeClassCounts`].
+pub fn edge_class_counts_summary(c: &EdgeClassCounts) -> String {
+    format!(
+        "{} edge(s): {} shared, {} on-face, {} internal, {} external",
+        c.shared + c.on_face + c.internal + c.external,
+        c.shared,
+        c.on_face,
+        c.internal,
+        c.external
+    )
+}
+
+/// Operand-aware edge classification for a boolean result.
+///
+/// For each edge of `result`, its midpoint is probed against both operand
+/// boundaries:
+///
+/// * on **both** operands' surfaces → [`EdgeClass::Shared`] (the two bodies
+///   meet along this edge);
+/// * on exactly one operand's surface → [`EdgeClass::OnFace`];
+/// * inside both operands (a seam hidden inside the union/intersection) →
+///   [`EdgeClass::Internal`];
+/// * otherwise → [`EdgeClass::External`].
+///
+/// This is the full `TopOpeBRep` classification; [`classify_boolean_edges`] is
+/// its result-only form.
+pub fn classify_edges_with_operands(a: &TopoShape, b: &TopoShape, result: &TopoShape, _op: BoolOp, tol: f64) -> Vec<EdgeClass> {
+    let tol = tol.max(1e-9);
+    let faces_a = faces_of(a);
+    let faces_b = faces_of(b);
+    edges_of(result)
+        .iter()
+        .map(|e| {
+            let m = match BRepTool::edge_vertices(e) {
+                Some((p1, p2)) => {
+                    let v = GpVec::from_pnts(&p1, &p2);
+                    p1.translated_vec(&v.multiplied_scalar(0.5))
+                }
+                None => GpPnt::zero(),
+            };
+            let on_a = point_on_surface(&faces_a, &m, tol);
+            let on_b = point_on_surface(&faces_b, &m, tol);
+            if on_a && on_b {
+                EdgeClass::Shared
+            } else if on_a || on_b {
+                EdgeClass::OnFace
+            } else if is_inside(a, &m) && is_inside(b, &m) {
+                EdgeClass::Internal
+            } else {
+                EdgeClass::External
+            }
+        })
+        .collect()
+}
+
+/// Is `p` (within `tol`) on the surface of any of `faces`?
+fn point_on_surface(faces: &[Face], p: &GpPnt, tol: f64) -> bool {
+    for f in faces {
+        if let Some(pln) = face_plane_local(f) {
+            if point_in_face_polygon(f, &pln, p, tol) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// ---------------------------------------------------------------------------
+// Tolerance healing
+// ---------------------------------------------------------------------------
+
+/// Report of [`heal_tolerance`] / [`heal_tolerance_report`].
+#[derive(Debug, Clone)]
+pub struct HealToleranceReport {
+    /// The healed shape.
+    pub healed: TopoShape,
+    /// Number of vertex pairs merged (weld coincident vertices within `tol`).
+    pub welded_vertices: usize,
+    /// Number of edges removed (shorter than the heal tolerance).
+    pub removed_edges: usize,
+    /// Number of degenerate faces removed.
+    pub removed_faces: usize,
+    /// Non-fatal diagnostics (open shells, dropped faces, …).
+    pub warnings: Vec<String>,
+}
+
+/// Heal a shape at a tolerance: weld near-coincident vertices, remove small
+/// edges and degenerate faces (`ShapeFix_Shape`-style).
+///
+/// This is the tolerance-welding wrapper used to tidy a boolean result before
+/// downstream processing. See [`heal_tolerance_report`] for the detailed
+/// statistics; this entry point returns just the healed shape.
+pub fn heal_tolerance(shape: &TopoShape, tol: f64) -> Result<TopoShape, String> {
+    Ok(heal_tolerance_report(shape, tol)?.healed)
+}
+
+/// Heal a shape at a tolerance and report what was fixed.
+///
+/// Welds vertices closer than `tol` to one canonical instance, removes edges
+/// shorter than `8·tol` (the small-edge threshold), and drops degenerate faces
+/// (fewer than 3 boundary edges, or a planar face of near-zero area). A
+/// `Compound` is healed component-wise. The healed shape is rebuilt through the
+/// existing healing machinery, so shared edges/vertices are preserved.
+pub fn heal_tolerance_report(shape: &TopoShape, tol: f64) -> Result<HealToleranceReport, String> {
+    let tol = tol.max(1e-9);
+    if shape.is_compound() {
+        let children = expand_compound(shape);
+        let mut healed_children: Vec<TopoShape> = Vec::with_capacity(children.len());
+        let mut welded = 0usize;
+        let mut removed_edges = 0usize;
+        let mut removed_faces = 0usize;
+        let mut warnings: Vec<String> = Vec::new();
+        for c in &children {
+            let r = heal_tolerance_report(c, tol)?;
+            welded += r.welded_vertices;
+            removed_edges += r.removed_edges;
+            removed_faces += r.removed_faces;
+            warnings.extend(r.warnings);
+            healed_children.push(r.healed);
+        }
+        let bld = TopoBuilder::new();
+        return Ok(HealToleranceReport {
+            healed: bld.make_compound_of(&healed_children).0,
+            welded_vertices: welded,
+            removed_edges,
+            removed_faces,
+            warnings,
+        });
+    }
+
+    let (s1, welded) = crate::shhealing::weld_coincident_vertices(shape, tol);
+    let (s2, removed_edges) = crate::shhealing::remove_small_edges(&s1, tol * 8.0);
+    let (s3, removed_faces) = remove_degenerate_faces(&s2, tol);
+    let mut warnings: Vec<String> = Vec::new();
+    for sh in shapes_of(&s3, ShapeType::Shell) {
+        if !shell_is_closed(&Shell(sh)) {
+            warnings.push("heal_tolerance: an open shell remains after healing".into());
+        }
+    }
+    Ok(HealToleranceReport { healed: s3, welded_vertices: welded, removed_edges, removed_faces, warnings })
+}
+
+/// Is a face degenerate — fewer than 3 boundary edges, or a (planar) face with
+/// near-zero area?
+fn face_is_degenerate_tol(face: &Face, tol: f64) -> bool {
+    let mut ecount = 0usize;
+    for w in wires_of_face(face) {
+        ecount += edges_of_wire(&w).len();
+    }
+    ecount < 3 || face_is_degenerate(face, tol)
+}
+
+/// Rebuild a shape without its degenerate faces. Shapes without shell structure
+/// (bare wires/faces) are returned unchanged.
+fn remove_degenerate_faces(shape: &TopoShape, tol: f64) -> (TopoShape, usize) {
+    let shells: Vec<Shell> = shapes_of(shape, ShapeType::Shell).into_iter().map(Shell).collect();
+    if shells.is_empty() {
+        return (shape.clone(), 0);
+    }
+    let bld = TopoBuilder::new();
+    let mut removed = 0usize;
+    let mut out: Vec<Shell> = Vec::new();
+    for sh in &shells {
+        let faces = faces_of(&sh.0);
+        let keep: Vec<Face> = faces.iter().filter(|f| !face_is_degenerate_tol(f, tol)).cloned().collect();
+        removed += faces.len() - keep.len();
+        if !keep.is_empty() {
+            out.push(bld.make_shell(&keep));
+        }
+    }
+    if out.is_empty() {
+        return (bld.make_compound_of(&[]).0, removed);
+    }
+    if out.len() == 1 {
+        let s = out.pop().unwrap();
+        if shape.is_solid() && shell_is_closed(&s) {
+            return (bld.make_solid(&[s]).0, removed);
+        }
+        return (s.0, removed);
+    }
+    let shapes: Vec<TopoShape> = out.into_iter().map(|s| s.0).collect();
+    (bld.make_compound_of(&shapes).0, removed)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -3771,6 +4492,230 @@ mod tests {
         clear_tree(&out.repaired);
         clear_tree(&out2.repaired);
         clear_tree(&shell.0);
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 12 — BOPAlgo/TopOpeBRep depth: edge-overlap repair, face
+    // splitting, edge classification and tolerance healing.
+    // ------------------------------------------------------------------
+
+    /// Does every shell under `shape` form a closed manifold boundary?
+    fn closed_of(shape: &TopoShape) -> bool {
+        let shells: Vec<Shell> = shapes_of(shape, ShapeType::Shell).into_iter().map(Shell).collect();
+        !shells.is_empty() && shells.iter().all(shell_is_closed)
+    }
+
+    #[test]
+    fn repair_edge_overlaps_noop_on_box() {
+        let boxy = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        let rep = repair_edge_overlaps(&boxy.solid.0, 1e-6).expect("repair ok");
+        assert_eq!(rep.repaired_edges, 0, "no overlapping edges in a box");
+        assert_eq!(rep.removed_edges, 0, "no edges removed from a box");
+        assert_eq!(rep.welded_vertices, 0, "a box has no near-coincident vertex pairs");
+        assert!(rep.warnings.is_empty(), "no warnings: {:?}", rep.warnings);
+        let v = box_vol(&rep.repaired);
+        assert!((v - 1.0).abs() < 0.05, "box volume preserved {v}");
+        assert!(closed_of(&rep.repaired), "repaired box stays closed");
+        clear_tree(&rep.repaired);
+        clear_tree(&boxy.solid.0);
+    }
+
+    #[test]
+    fn repair_edge_overlaps_splits_partial_overlap() {
+        // Two coplanar triangles whose base edges partially overlap along the
+        // x-axis: [0,1] and [0.5,1.5]. Both edges must split at 0.5 / 1.0.
+        let f1 = crate::brep_builder_api::make_face_from_polygon(&[
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(1.0, 0.0, 0.0),
+            GpPnt::new(0.0, 1.0, 0.0),
+        ])
+        .expect("face1");
+        let f2 = crate::brep_builder_api::make_face_from_polygon(&[
+            GpPnt::new(0.5, 0.0, 0.0),
+            GpPnt::new(1.5, 0.0, 0.0),
+            GpPnt::new(0.5, 1.0, 0.0),
+        ])
+        .expect("face2");
+        let bld = TopoBuilder::new();
+        let shell = bld.make_shell(&[f1, f2]);
+
+        let rep = repair_edge_overlaps(&shell.0, 1e-6).expect("repair ok");
+        assert!(rep.repaired_edges >= 2, "both overlapping edges are split, got {}", rep.repaired_edges);
+        assert!(!closed_of(&rep.repaired), "two open faces form an open shell");
+        // The overlapping sub-segment [0.5,1] is shared: distinct edge count rises
+        // from 6 (two triangles) to 7 (the overlap resolved into three x-axis
+        // segments plus four triangle side edges).
+        let ec = edges_of(&rep.repaired).len();
+        assert_eq!(ec, 7, "distinct edges after repair: {ec}");
+        clear_tree(&rep.repaired);
+        clear_tree(&shell.0);
+    }
+
+    #[test]
+    fn repair_edge_overlaps_merges_coincident() {
+        // Two identical coplanar square faces: every boundary edge has a
+        // coincident twin. The duplicates merge and the corner vertices weld.
+        let square = |p: &GpPnt| {
+            crate::brep_builder_api::make_face_from_polygon(&[
+                *p,
+                GpPnt::new(p.x() + 1.0, p.y(), p.z()),
+                GpPnt::new(p.x() + 1.0, p.y() + 1.0, p.z()),
+                GpPnt::new(p.x(), p.y() + 1.0, p.z()),
+            ])
+            .expect("square face")
+        };
+        let f1 = square(&GpPnt::new(0.0, 0.0, 0.0));
+        let f2 = square(&GpPnt::new(0.0, 0.0, 0.0));
+        let bld = TopoBuilder::new();
+        let shell = bld.make_shell(&[f1, f2]);
+
+        let rep = repair_edge_overlaps(&shell.0, 1e-6).expect("repair ok");
+        assert!(rep.removed_edges >= 4, "four coincident edges removed, got {}", rep.removed_edges);
+        assert!(rep.welded_vertices >= 4, "four corner pairs welded, got {}", rep.welded_vertices);
+        clear_tree(&rep.repaired);
+        clear_tree(&shell.0);
+    }
+
+    #[test]
+    fn split_faces_along_intersections_crossing() {
+        // A horizontal face crossed by a vertical face: splitting along their
+        // intersection turns the horizontal face into two sub-faces.
+        let shell = crossing_shell();
+        let faces_before = faces_of(&shell.0).len();
+        let pairs = vec![(0usize, 1usize)];
+        let split = split_faces_along_intersections(&shell.0, &pairs, 1e-6).expect("split ok");
+        let faces_after = faces_of(&split).len();
+        assert!(faces_after > faces_before, "splitting grows the face count: {faces_before} -> {faces_after}");
+        assert!(faces_after >= 3, "crossing faces split into at least 3, got {faces_after}");
+        clear_tree(&split);
+        clear_tree(&shell.0);
+    }
+
+    #[test]
+    fn classify_boolean_edges_box_all_external() {
+        let boxy = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        let classes = classify_boolean_edges(&boxy.solid.0, BoolOp::Fuse);
+        assert_eq!(classes.len(), 12, "a box has 12 distinct edges");
+        let counts = edge_class_counts(&classes);
+        assert_eq!(counts.external, 12, "every box edge is external: {counts:?}");
+        assert_eq!(counts.internal, 0);
+        assert_eq!(counts.shared, 0);
+        assert_eq!(counts.on_face, 0);
+        let summary = edge_class_counts_summary(&counts);
+        assert!(summary.contains("12 edge(s)"), "summary: {summary}");
+        clear_tree(&boxy.solid.0);
+    }
+
+    #[test]
+    fn classify_boolean_edges_shared_three_faces_on_one_edge() {
+        // A fan of three triangle faces around a single shared edge: the shared
+        // edge is referenced by 3 faces -> Shared; each triangle's two unique
+        // edges are referenced by 1 face -> Internal.
+        let bld = TopoBuilder::new();
+        let e0 = bld.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 0.0));
+        let pln = Arc::new(GeomPlane::new(GpPln::new(GpAx3::standard())));
+        let face_on = |apex: GpPnt| {
+            let e1 = bld.make_edge_segment(&GpPnt::new(1.0, 0.0, 0.0), &apex);
+            let e2 = bld.make_edge_segment(&apex, &GpPnt::new(0.0, 0.0, 0.0));
+            let wire = bld.make_wire(&[e0.clone(), e1, e2]);
+            bld.make_face(pln.clone(), &[wire])
+        };
+        let shell = bld.make_shell(&[
+            face_on(GpPnt::new(0.0, 1.0, 0.0)),
+            face_on(GpPnt::new(0.0, -1.0, 0.0)),
+            face_on(GpPnt::new(0.0, 0.0, 1.0)),
+        ]);
+        let classes = classify_boolean_edges(&shell.0, BoolOp::Fuse);
+        let counts = edge_class_counts(&classes);
+        assert_eq!(counts.shared, 1, "the shared base edge is used by three faces: {counts:?}");
+        assert_eq!(counts.internal, 6, "six unique triangle edges are single-face edges");
+        assert_eq!(counts.shared + counts.on_face + counts.internal + counts.external, classes.len());
+        clear_tree(&shell.0);
+    }
+
+    #[test]
+    fn heal_tolerance_welds_and_removes() {
+        // A near-closed wire: the last vertex is within tol of the first, so
+        // welding merges them.
+        let w = crate::brep_builder_api::make_wire_from_points(&[
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(1.0, 0.0, 0.0),
+            GpPnt::new(1.0, 1.0, 0.0),
+            GpPnt::new(1e-6, 1e-6, 0.0),
+        ])
+        .expect("wire");
+        let rep = heal_tolerance_report(&w.0, 1e-3).expect("heal ok");
+        assert!(rep.welded_vertices >= 1, "near-coincident vertices weld, got {}", rep.welded_vertices);
+        // A tiny edge is removed by the small-edge pass.
+        let w2 = crate::brep_builder_api::make_wire_from_points(&[
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(5e-4, 0.0, 0.0),
+            GpPnt::new(1.0, 0.0, 0.0),
+        ])
+        .expect("wire2");
+        let rep2 = heal_tolerance_report(&w2.0, 1e-4).expect("heal2 ok");
+        assert!(rep2.removed_edges >= 1, "tiny edge removed, got {}", rep2.removed_edges);
+        // The TopoShape entry point returns just the healed shape.
+        let healed = heal_tolerance(&w.0, 1e-3).expect("heal shape ok");
+        assert!(healed.is_wire() || healed.is_compound(), "healed shape is a boundary");
+        clear_tree(&rep.healed);
+        clear_tree(&rep2.healed);
+        clear_tree(&healed);
+        clear_tree(&w.0);
+        clear_tree(&w2.0);
+    }
+
+    #[test]
+    fn phase12_integration_fuse_cut_split_repair_classify() {
+        let (a, b) = overlapping_boxes();
+        let fuse = boolean(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("fuse ok");
+        assert!(fuse.solid.is_some(), "fuse is a solid");
+        assert!(shell_is_closed(&fuse.shells[0]), "fuse shell is closed");
+        let fuse_vol = box_vol(&fuse.shape);
+        assert!((fuse_vol - 1.5).abs() < 0.1, "fuse volume {fuse_vol} (expected 1.5)");
+
+        // Remaining face intersections in the clean fuse result (likely none).
+        let issues = analyze_self_intersections(&fuse.shape, 1e-6);
+        let pairs: Vec<(usize, usize)> = issues.iter().map(|i| (i.face_a, i.face_b)).collect();
+
+        // Split faces along those intersections, then repair and heal.
+        let split = split_faces_along_intersections(&fuse.shape, &pairs, 1e-6).expect("split ok");
+        assert!(closed_of(&split), "split result stays closed");
+        let rep = repair_edge_overlaps(&split, 1e-6).expect("repair ok");
+        assert!(closed_of(&rep.repaired), "repaired result stays closed");
+        let healed = heal_tolerance(&rep.repaired, 1e-6).expect("heal ok");
+        assert!(closed_of(&healed), "healed result stays closed");
+
+        // Volume is preserved through the whole pipeline.
+        let v = box_vol(&healed);
+        assert!((v - fuse_vol).abs() < 0.1, "volume preserved {v} vs {fuse_vol}");
+
+        // Classify the repaired result: closed manifold -> no internal edges.
+        let classes = classify_boolean_edges(&healed, BoolOp::Fuse);
+        assert_eq!(classes.len(), edges_of(&healed).len(), "one class per edge");
+        let counts = edge_class_counts(&classes);
+        assert_eq!(counts.internal, 0, "closed result has no internal edges: {counts:?}");
+        assert_eq!(counts.shared + counts.on_face + counts.internal + counts.external, classes.len());
+        assert!(counts.external > 0, "outer boundary edges present");
+
+        // The operand-aware classifier also reports a sane total.
+        let op_classes = classify_edges_with_operands(&a.0, &b.0, &healed, BoolOp::Fuse, 1e-6);
+        assert_eq!(op_classes.len(), classes.len());
+
+        // Cut path: A − B is a closed solid too.
+        let cut = boolean(&a.0, &b.0, BoolOp::Cut, 1e-6).expect("cut ok");
+        assert!(cut.solid.is_some(), "cut produces a solid");
+        let cut_vol = box_vol(&cut.shape);
+        assert!((cut_vol - 0.5).abs() < 0.1, "cut volume {cut_vol} (expected 0.5)");
+        assert!(closed_of(&cut.shape), "cut result stays closed");
+
+        clear_tree(&split);
+        clear_tree(&rep.repaired);
+        clear_tree(&healed);
+        clear_tree(&fuse.shape);
+        clear_tree(&cut.shape);
+        clear_tree(&a.0);
+        clear_tree(&b.0);
     }
 
 }

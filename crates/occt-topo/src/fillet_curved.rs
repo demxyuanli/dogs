@@ -2315,7 +2315,14 @@ pub fn fillet_curved_multi_normal(
             edges.len()
         ));
     }
-    // Fillet every edge sequentially.
+    // When the incident edges form the supported tri-sphere corner (three
+    // sphere+sphere arcs), delegate to the deterministic sector + spherical
+    // patch construction, which returns a closed shell.
+    if let Ok(out) = fillet_curved_corner_patch(solid, vertex, edges, radius, tol) {
+        return Ok(out);
+    }
+    // Best-effort fallback: fillet every edge sequentially, then add a
+    // spherical corner patch centred on the rolling-ball locus.
     let original_edges = edges_of(solid);
     let mut current = solid.clone();
     for &i in edges {
@@ -2501,6 +2508,36 @@ pub fn fillet_edge_curved_chain(
     tol: f64,
 ) -> Result<TopoShape, String> {
     let original_edges = edges_of(solid);
+    // When >= 3 of the chain's edges meet at a common vertex, close that
+    // corner with the deterministic sector + spherical patch construction
+    // (the multi-edge chain start/end patch). Otherwise fall back to repeated
+    // single-edge fillets.
+    let e_objs: Vec<Edge> = edge_indices
+        .iter()
+        .map(|&i| original_edges.get(i).cloned().ok_or_else(|| format!("fillet_edge_curved_chain: edge index {i} out of range")))
+        .collect::<Result<_, _>>()?;
+    let mut candidate: Option<crate::shape::Vertex> = None;
+    if e_objs.len() >= 3 {
+        let mut pts: Vec<GpPnt> = Vec::new();
+        for e in &e_objs {
+            if let Some((a, b)) = BRepTool::edge_vertices(e) {
+                pts.push(a);
+                pts.push(b);
+            }
+        }
+        for p in &pts {
+            let count = pts.iter().filter(|q| q.distance(p) < 1e-6).count();
+            if count >= 3 {
+                if let Some(v) = vertices_of(solid).into_iter().find(|v| BRepTool::vertex_point(v).distance(p) < 1e-6) {
+                    candidate = Some(v);
+                    break;
+                }
+            }
+        }
+    }
+    if let Some(v) = candidate {
+        return fillet_curved_corner_patch(solid, &v, edge_indices, radius, tol);
+    }
     let mut current = solid.clone();
     for &i in edge_indices {
         let oe = original_edges
@@ -2527,6 +2564,430 @@ fn find_edge_by_endpoints(shape: &TopoShape, p0: &GpPnt, p1: &GpPnt) -> Option<E
         (a.distance(p0) < 1e-6 && b.distance(p1) < 1e-6)
             || (a.distance(p1) < 1e-6 && b.distance(p0) < 1e-6)
     })
+}
+
+// ===========================================================================
+// Deterministic multi-edge corner patch (Phase 12)
+// ===========================================================================
+//
+// The tri-sphere corner: three spheres, pairwise intersecting in circular arcs
+// that meet at two common vertices, bound a closed solid of three spherical
+// caps. Filleting one sphere+sphere arc edge independently with a full annulus
+// would overlap the adjacent fillets near the vertices, so each edge is
+// filleted as a torus SECTOR spanning the azimuth interval between the two
+// rolling-ball corner centres. The trimmed caps become spherical bands bounded
+// by two tangency arcs, and each vertex is closed by a spherical patch (the
+// rolling ball tangent to all three spheres) bounded by the three sector
+// cross-section arcs. Every edge is then shared by exactly two faces, so the
+// rebuilt shell is closed deterministically.
+
+/// Azimuth (angle in the plane perpendicular to `axis`) of `p` around `axis`,
+/// measured from the basis `(e1, e2)` with reference point `ref_pt` on the
+/// axis. All circles of a sphere+sphere blend (the edge arc, the centreline,
+/// the two tangency circles) are coaxial, so the same azimuth identifies the
+/// matching points across them.
+fn point_azimuth(p: &GpPnt, ref_pt: &GpPnt, axis: &GpVec, e1: &GpVec, e2: &GpVec) -> f64 {
+    let v = GpVec::from_pnts(ref_pt, p);
+    let along = v.dot(axis);
+    let perp = v.subtracted(&axis.multiplied_scalar(along));
+    perp.dot(e2).atan2(perp.dot(e1))
+}
+
+/// The faces of `solid` that reference `edge` in one of their wires.
+fn adjacent_faces(solid: &TopoShape, edge: &Edge) -> Vec<Face> {
+    faces_of(solid)
+        .into_iter()
+        .filter(|f| {
+            wires_of_face(f)
+                .iter()
+                .any(|w| edges_of_wire(w).iter().any(|e| is_same(&e.0, &edge.0)))
+        })
+        .collect()
+}
+
+/// Rebuild a spherical adjacent face: drop the wire holding `fillet_edge`, keep
+/// every other wire, and add `new_wire`. This is what lets a sphere that is
+/// adjacent to several fillet edges keep its other tangency arcs (the
+/// tri-sphere corner needs each cap to become a band bounded by two arcs).
+fn rebuild_sphere_keep(face: &Face, fillet_edge: &Edge, new_wire: &Wire, b: &TopoBuilder) -> Result<Face, String> {
+    let surf = BRepTool::face_surface(face).ok_or("fillet_curved: sphere face has no surface")?;
+    let mut wires: Vec<Wire> = Vec::new();
+    for w in wires_of_face(face) {
+        let edges = edges_of_wire(&w);
+        let orig_len = edges.len();
+        let kept: Vec<Edge> = edges
+            .into_iter()
+            .filter(|e| !is_same(&e.0, &fillet_edge.0))
+            .collect();
+        if kept.is_empty() {
+            continue;
+        }
+        wires.push(if kept.len() < orig_len { b.make_wire(&kept) } else { w });
+    }
+    wires.push(new_wire.clone());
+    Ok(b.make_face(surf, &wires))
+}
+
+/// Build a circular-arc edge on a tangency circle `ct` (normal `dhat`, basis
+/// `e1` at azimuth 0) over the azimuth range `[start, end]`.
+fn build_contact_arc(
+    b: &TopoBuilder,
+    ct: &ContactCircleGeom,
+    dhat: &GpVec,
+    e1: &GpVec,
+    start: f64,
+    end: f64,
+    p_start: &GpPnt,
+    p_end: &GpPnt,
+) -> Result<Edge, String> {
+    let nd = GpDir::from_xyz(&dhat.xyz()).map_err(|e| e.to_string())?;
+    let xd = GpDir::from_xyz(&e1.xyz()).map_err(|e| e.to_string())?;
+    let ax2 = GpAx2::new(ct.center, nd, xd).map_err(|e| format!("fillet_curved: tangency arc frame: {e}"))?;
+    let mut e = b.make_edge_circle(&ax2, ct.radius, start, end);
+    b.add(&mut e.0, &b.make_vertex(*p_start, 0.0).0);
+    b.add(&mut e.0, &b.make_vertex(*p_end, 0.0).0);
+    Ok(e)
+}
+
+/// The tube (minor) angle of a tangency circle in a torus band: the circle is
+/// at `g.center + dhat·r·sin(v)`, radius `g.major + r·cos(v)`.
+fn tube_angle(g: &TorusBlendGeom, ct: &ContactCircleGeom, radius: f64) -> f64 {
+    let sin_v = GpVec::from_pnts(&g.center, &ct.center).dot(&g.axis) / radius;
+    let cos_v = (ct.radius - g.major) / radius;
+    sin_v.atan2(cos_v)
+}
+
+/// The cross-section arc of a torus sector at azimuth `theta`: the minor circle
+/// (radius `radius`) through the two tangency points at that azimuth, in the
+/// plane perpendicular to the centreline tangent. This is the arc shared with
+/// the spherical corner patch.
+fn build_sector_cross_arc(
+    b: &TopoBuilder,
+    g: &TorusBlendGeom,
+    radius: f64,
+    theta: f64,
+    e1: &GpVec,
+    e2: &GpVec,
+    dhat: &GpVec,
+) -> Result<Edge, String> {
+    let rho = e1
+        .multiplied_scalar(theta.cos())
+        .added(&e2.multiplied_scalar(theta.sin()));
+    let center = g.center.translated_vec(&rho.multiplied_scalar(g.major));
+    let v_a = tube_angle(g, &g.contact_a, radius);
+    let v_b = tube_angle(g, &g.contact_b, radius);
+    // Minor circle plane normal: −tangent at `theta` (the +v direction is +dhat).
+    let t = dhat.crossed(&rho).normalized();
+    let nd = GpDir::from_vec(&t.multiplied_scalar(-1.0)).map_err(|e| e.to_string())?;
+    let xd = GpDir::from_vec(&rho).map_err(|e| e.to_string())?;
+    let ax2 = GpAx2::new(center, nd, xd).map_err(|e| format!("fillet_curved: cross arc frame: {e}"))?;
+    let mut arc = b.make_edge_circle(&ax2, radius, v_a, v_b);
+    let p_a = center
+        .translated_vec(&rho.multiplied_scalar(radius * v_a.cos()).added(&dhat.multiplied_scalar(radius * v_a.sin())));
+    let p_b = center
+        .translated_vec(&rho.multiplied_scalar(radius * v_b.cos()).added(&dhat.multiplied_scalar(radius * v_b.sin())));
+    b.add(&mut arc.0, &b.make_vertex(p_a, 0.0).0);
+    b.add(&mut arc.0, &b.make_vertex(p_b, 0.0).0);
+    Ok(arc)
+}
+
+/// Fillet one sphere+sphere arc edge of the tri-sphere corner into a torus
+/// sector spanning the azimuth interval between the two rolling-ball corner
+/// centres `c0` (near the edge's first endpoint) and `c1` (near its last). The
+/// two adjacent sphere caps are rebuilt preserving their other boundaries, and
+/// the two sector cross-section arcs (at `c0` and `c1`) are returned so the
+/// caller can wire the spherical corner patches.
+#[allow(clippy::too_many_arguments)]
+fn fillet_sphere_sector(
+    solid: &TopoShape,
+    edge: &Edge,
+    f1: &Face,
+    f2: &Face,
+    s1: &SphereInfo,
+    s2: &SphereInfo,
+    radius: f64,
+    c0: &GpPnt,
+    c1: &GpPnt,
+) -> Result<(TopoShape, Edge, Edge), String> {
+    let b = TopoBuilder::new();
+    let g = sphere_sphere_blend(s1, s2, radius)?;
+    let dhat = g.axis.normalized();
+    let (e1, e2) = project_basis(&dhat);
+
+    let az = |p: &GpPnt| point_azimuth(p, &s1.center, &dhat, &e1, &e2);
+    let a0 = az(c0);
+    let a1 = az(c1);
+
+    // Determine the edge's forward azimuth direction (increasing or decreasing
+    // parameter) from the midpoint, then express c0/c1 azimuths in that frame.
+    let (p0, _p1) = BRepTool::edge_vertices(edge).ok_or("fillet_curved: edge has no vertices")?;
+    let az_p0 = az(&p0);
+    let curve = BRepTool::edge_curve(edge).ok_or("fillet_curved: edge has no curve")?;
+    let (first, last) = BRepTool::edge_parameters(edge);
+    let p_mid = curve.d0(0.5 * (first + last));
+    let rel_mid = (az(&p_mid) - az_p0).rem_euclid(2.0 * PI);
+    let increases = rel_mid < PI;
+    let forward = |a: f64| -> f64 {
+        if increases {
+            (a - az_p0).rem_euclid(2.0 * PI)
+        } else {
+            (az_p0 - a).rem_euclid(2.0 * PI)
+        }
+    };
+    // Sector starts at the corner near p0 and ends at the corner near p1.
+    let start = az_p0 + if increases { forward(a0) } else { -forward(a0) };
+    let end = az_p0 + if increases { forward(a1) } else { -forward(a1) };
+
+    let tang_pt = |ct: &ContactCircleGeom, th: f64| {
+        ct.center.translated_vec(
+            &e1.multiplied_scalar(ct.radius * th.cos()).added(&e2.multiplied_scalar(ct.radius * th.sin())),
+        )
+    };
+    let pt_a0 = tang_pt(&g.contact_a, start);
+    let pt_a1 = tang_pt(&g.contact_a, end);
+    let pt_b0 = tang_pt(&g.contact_b, start);
+    let pt_b1 = tang_pt(&g.contact_b, end);
+
+    let tang_a = build_contact_arc(&b, &g.contact_a, &dhat, &e1, start, end, &pt_a0, &pt_a1)?;
+    let tang_b = build_contact_arc(&b, &g.contact_b, &dhat, &e1, start, end, &pt_b0, &pt_b1)?;
+    let cross_start = build_sector_cross_arc(&b, &g, radius, start, &e1, &e2, &dhat)?;
+    let cross_end = build_sector_cross_arc(&b, &g, radius, end, &e1, &e2, &dhat)?;
+
+    // Torus sector face.
+    let surf = torus_surface(&g)?;
+    let sector_wire = b.make_wire(&[tang_a.clone(), cross_end.clone(), tang_b.clone(), cross_start.clone()]);
+    let sector_face = b.make_face(surf, &[sector_wire]);
+
+    // Rebuilt adjacent sphere caps.
+    let w_a = b.make_wire(&[tang_a.clone()]);
+    let rebuilt1 = rebuild_sphere_keep(f1, edge, &w_a, &b)?;
+    let w_b = b.make_wire(&[tang_b.clone()]);
+    let rebuilt2 = rebuild_sphere_keep(f2, edge, &w_b, &b)?;
+
+    let mut faces: Vec<Face> = Vec::new();
+    for f in faces_of(solid) {
+        if is_same(&f.0, &f1.0) || is_same(&f.0, &f2.0) {
+            continue;
+        }
+        faces.push(f);
+    }
+    faces.push(rebuilt1);
+    faces.push(rebuilt2);
+    faces.push(sector_face);
+    let shell = b.make_shell(&faces);
+    let solid_out = b.make_solid(&[shell]);
+    Ok((solid_out.0, cross_start, cross_end))
+}
+
+/// Rolling-ball corner centre for the tri-sphere corner: the point at distance
+/// `radius` from every face incident at `pv`, found by Newton iteration. `hint`
+/// seeds the iteration toward the exterior of the corner (there are two such
+/// points — one near each of the two common vertices — and the hint picks the
+/// right one).
+fn corner_center_ball(solid: &TopoShape, pv: &GpPnt, radius: f64, hint: &GpVec) -> Result<GpPnt, String> {
+    let faces: Vec<Face> = faces_of(solid)
+        .into_iter()
+        .filter(|f| {
+            wires_of_face(f).iter().any(|w| {
+                edges_of_wire(w).iter().any(|e| {
+                    let (a, b) = BRepTool::edge_vertices(e).unwrap_or((GpPnt::zero(), GpPnt::zero()));
+                    a.distance(pv) < 1e-6 || b.distance(pv) < 1e-6
+                })
+            })
+        })
+        .collect();
+    if faces.len() < 3 {
+        return Err(format!(
+            "fillet_curved: corner vertex touches {} faces (expected >= 3)",
+            faces.len()
+        ));
+    }
+    let mut c = pv.translated_vec(&hint.multiplied_scalar(radius));
+    for _ in 0..300 {
+        let mut gx = 0.0f64;
+        let mut gy = 0.0f64;
+        let mut gz = 0.0f64;
+        let mut grad = [[0.0; 3]; 3];
+        let mut err_sum = 0.0;
+        for f in &faces {
+            let s = BRepTool::face_surface(f).ok_or("fillet_curved: corner face has no surface")?;
+            let (q, n) = closest_point_on_surface(s.as_ref(), &c).ok_or("fillet_curved: cannot project onto a corner face")?;
+            let residual = q.distance(&c) - radius;
+            err_sum += residual.abs();
+            let nxyz = n.xyz();
+            let (nx, ny, nz) = (nxyz.x, nxyz.y, nxyz.z);
+            gx += residual * nx;
+            gy += residual * ny;
+            gz += residual * nz;
+            let comps = [nx, ny, nz];
+            for a in 0..3 {
+                for b in 0..3 {
+                    grad[a][b] += comps[a] * comps[b];
+                }
+            }
+        }
+        if err_sum / (faces.len() as f64) < 1e-7 {
+            return Ok(c);
+        }
+        if let Some(delta) = solve3x3(&grad, &[gx, gy, gz]) {
+            let step = GpVec::new(delta[0], delta[1], delta[2]);
+            if step.magnitude() < 1e-12 {
+                return Ok(c);
+            }
+            // Gauss-Newton minimises Σ residual², so the step is subtracted
+            // (otherwise the iteration converges to the *internal* tangent ball
+            // instead of the exterior rolling ball of the fillet).
+            c = c.translated_vec(&step.multiplied_scalar(-1.0));
+        } else {
+            break;
+        }
+    }
+    Ok(c)
+}
+
+/// Deterministic corner patch for 3+ curved edges meeting at `corner_vertex`.
+///
+/// Every edge is filleted as a torus sector (sphere+sphere arc edges of the
+/// tri-sphere corner), the adjacent sphere caps become bands bounded by their
+/// two tangency arcs, and each shared vertex is closed by a spherical patch of
+/// radius `radius` centred at the rolling-ball corner centre, bounded by the
+/// three sector cross-section arcs. Unlike the best-effort
+/// `fillet_curved_multi_normal`, the result is a closed shell: every edge of
+/// the rebuilt solid is referenced by exactly two faces.
+pub fn fillet_curved_corner_patch(
+    solid: &TopoShape,
+    corner_vertex: &crate::shape::Vertex,
+    edges: &[usize],
+    radius: f64,
+    tol: f64,
+) -> Result<TopoShape, String> {
+    if radius <= 0.0 || !radius.is_finite() {
+        return Err("fillet_curved_corner_patch: radius must be a positive finite value".to_string());
+    }
+    if edges.len() < 3 {
+        return Err(format!(
+            "fillet_curved_corner_patch: needs at least 3 edges, got {}",
+            edges.len()
+        ));
+    }
+    let original_edges = edges_of(solid);
+    let mut e_objs: Vec<Edge> = Vec::new();
+    for &i in edges {
+        let oe = original_edges
+            .get(i)
+            .ok_or_else(|| format!("fillet_curved_corner_patch: edge index {i} out of range"))?;
+        // Use the edge object by index (several tri-sphere edges share the same
+        // geometric endpoints, so `find_edge_by_endpoints` would be ambiguous).
+        e_objs.push(oe.clone());
+    }
+
+    let pv = BRepTool::vertex_point(corner_vertex);
+
+    // The vertices shared by >= 2 of the edges (a tri-sphere corner has two).
+    let mut shared: Vec<GpPnt> = vec![pv];
+    for e in &e_objs {
+        let (a, b) = BRepTool::edge_vertices(e).ok_or("fillet_curved_corner_patch: edge has no vertices")?;
+        for p in [a, b] {
+            if !shared.iter().any(|q| q.distance(&p) < 1e-6) {
+                shared.push(p);
+            }
+        }
+    }
+    shared.retain(|q| {
+        let count = e_objs
+            .iter()
+            .filter(|e| {
+                let (a, b) = BRepTool::edge_vertices(e).unwrap();
+                a.distance(q) < 1e-6 || b.distance(q) < 1e-6
+            })
+            .count();
+        count >= 2
+    });
+    if shared.is_empty() {
+        return Err("fillet_curved_corner_patch: the given edges share no vertex".to_string());
+    }
+
+    // Rolling-ball corner centre for each shared vertex, seeded toward the
+    // exterior (away from the other shared vertices).
+    let mut centers: Vec<GpPnt> = Vec::new();
+    for q in &shared {
+        let mut hint = GpVec::zero();
+        for r in &shared {
+            if r.distance(q) > 1e-6 {
+                let d = GpVec::from_pnts(r, q);
+                let m = d.magnitude();
+                if m > 1e-12 {
+                    hint = hint.added(&d.multiplied_scalar(1.0 / m));
+                }
+            }
+        }
+        if hint.magnitude() < 1e-12 {
+            hint = GpVec::new(1.0, 0.0, 0.0);
+        }
+        let c = corner_center_ball(solid, q, radius, &hint.normalized())?;
+        centers.push(c);
+    }
+
+    // Fillet each edge as a torus sector, collecting the cross-section arcs per
+    // corner centre for the spherical patches.
+    let mut current = solid.clone();
+    let mut cross_by_center: Vec<Vec<Edge>> = vec![Vec::new(); shared.len()];
+    for (ei, e) in e_objs.iter().enumerate() {
+        let adj = adjacent_faces(&current, e);
+        if adj.len() != 2 {
+            return Err(format!(
+                "fillet_curved_corner_patch: edge {ei} is adjacent to {} faces (expected 2)",
+                adj.len()
+            ));
+        }
+        let (f1, f2) = (&adj[0], &adj[1]);
+        let s1 = BRepTool::face_surface(f1).ok_or("fillet_curved_corner_patch: face 1 has no surface")?;
+        let s2 = BRepTool::face_surface(f2).ok_or("fillet_curved_corner_patch: face 2 has no surface")?;
+        let (k1, k2) = (classify_surface_analytic(s1.as_ref()), classify_surface_analytic(s2.as_ref()));
+        if k1 != SurfaceKind::Sphere || k2 != SurfaceKind::Sphere {
+            return Err(format!(
+                "fillet_curved_corner_patch: edge {ei} is not a sphere+sphere pair ({k1:?}, {k2:?})"
+            ));
+        }
+        let sp1 = sphere_from_surface(s1.as_ref()).ok_or("fillet_curved_corner_patch: cannot extract sphere 1")?;
+        let sp2 = sphere_from_surface(s2.as_ref()).ok_or("fillet_curved_corner_patch: cannot extract sphere 2")?;
+
+        let (p0, p1) = BRepTool::edge_vertices(e).unwrap();
+        let idx0 = shared
+            .iter()
+            .position(|q| q.distance(&p0) < 1e-6)
+            .ok_or("fillet_curved_corner_patch: edge endpoint 0 is not a shared vertex")?;
+        let idx1 = shared
+            .iter()
+            .position(|q| q.distance(&p1) < 1e-6)
+            .ok_or("fillet_curved_corner_patch: edge endpoint 1 is not a shared vertex")?;
+        let (new_solid, cross_start, cross_end) =
+            fillet_sphere_sector(&current, e, f1, f2, &sp1, &sp2, radius, &centers[idx0], &centers[idx1])?;
+        current = new_solid;
+        cross_by_center[idx0].push(cross_start);
+        cross_by_center[idx1].push(cross_end);
+    }
+
+    // Spherical corner patches.
+    let b = TopoBuilder::new();
+    let mut faces = faces_of(&current);
+    for (i, c) in centers.iter().enumerate() {
+        if cross_by_center[i].len() < 3 {
+            return Err(format!(
+                "fillet_curved_corner_patch: corner centre {i} has only {} cross-section arcs",
+                cross_by_center[i].len()
+            ));
+        }
+        let wire = b.make_wire(&cross_by_center[i]);
+        let mut sph = GpSphere::new(GpAx3::standard(), radius).map_err(|e| e.to_string())?;
+        sph.set_location(*c);
+        faces.push(b.make_face(Arc::new(GeomSphere::new(sph)), &[wire]));
+    }
+
+    let shell = b.make_shell(&faces);
+    let solid_out = b.make_solid(&[shell]);
+    let _ = tol;
+    Ok(solid_out.0)
 }
 
 #[cfg(test)]
@@ -3603,5 +4064,196 @@ mod tests {
         faces.push(b.make_face(Arc::new(GeomPlane::new(pln)), &[b.make_wire(&[e01, e12, e20])]));
         let shell = b.make_shell(&faces);
         (b.make_solid(&[shell]), edges)
+    }
+
+    // ------------------------------------------------------------------
+    // Deterministic tri-sphere corner patch (Phase 12)
+    // ------------------------------------------------------------------
+
+    /// A circular-arc edge in the plane of `normal` through `center`, radius
+    /// `radius`, x-direction `xd`, from parameter `a1` (point `p1`) to `a2`
+    /// (point `p2`).
+    fn build_arc_on_circle(
+        b: &TopoBuilder,
+        center: GpPnt,
+        normal: GpVec,
+        radius: f64,
+        xd: GpVec,
+        a1: f64,
+        a2: f64,
+        p1: GpPnt,
+        p2: GpPnt,
+    ) -> Edge {
+        let nd = GpDir::from_vec(&normal).unwrap();
+        let xdir = GpDir::from_vec(&xd).unwrap();
+        let ax2 = GpAx2::new(center, nd, xdir).unwrap();
+        let mut e = b.make_edge_circle(&ax2, radius, a1, a2);
+        let v1 = b.make_vertex(p1, 0.0);
+        let v2 = b.make_vertex(p2, 0.0);
+        b.add(&mut e.0, &v1.0);
+        b.add(&mut e.0, &v2.0);
+        e
+    }
+
+    /// The tri-sphere corner solid: three radius-`s` spheres centred at
+    /// `(s,0,0)`, `(0,s,0)`, `(0,0,s)`, all passing through the origin `V`.
+    /// They intersect pairwise in the three circular arcs of radius `s/√2`
+    /// (planes `x=y`, `y=z`, `z=x`) that all pass through `V` and the second
+    /// common point `P = (2s/3, 2s/3, 2s/3)`. The solid is the intersection of
+    /// the three spheres: three spherical caps, each bounded by two arcs, a
+    /// closed shell with 3 faces and 3 edges.
+    ///
+    /// Returns the solid, the three shared arc edges (E12, E23, E31), and the
+    /// two common vertices `V` and `P`.
+    fn build_tri_sphere_corner_solid(s: f64) -> (Solid, Vec<Edge>, GpPnt, GpPnt) {
+        let b = TopoBuilder::new();
+        let centers = [
+            GpPnt::new(s, 0.0, 0.0),
+            GpPnt::new(0.0, s, 0.0),
+            GpPnt::new(0.0, 0.0, s),
+        ];
+        let p_v = GpPnt::zero();
+        let p_p = GpPnt::new(2.0 * s / 3.0, 2.0 * s / 3.0, 2.0 * s / 3.0);
+        let p_angle = (2.0f64.sqrt() * 2.0).atan2(1.0); // atan2(2√2, 1)
+        let inv = 1.0 / 2.0f64.sqrt();
+        let rho = s * inv;
+        // (center, normal, x-direction) of each intersection circle.
+        let c12 = (GpPnt::new(s / 2.0, s / 2.0, 0.0), GpVec::new(inv, -inv, 0.0), GpVec::new(inv, inv, 0.0));
+        let c23 = (GpPnt::new(0.0, s / 2.0, s / 2.0), GpVec::new(0.0, inv, -inv), GpVec::new(0.0, inv, inv));
+        let c31 = (GpPnt::new(s / 2.0, 0.0, s / 2.0), GpVec::new(-inv, 0.0, inv), GpVec::new(inv, 0.0, inv));
+        let mk = |(center, normal, xd): (GpPnt, GpVec, GpVec)| {
+            build_arc_on_circle(&b, center, normal, rho, xd, PI, p_angle, p_v, p_p)
+        };
+        let e12 = mk(c12);
+        let e23 = mk(c23);
+        let e31 = mk(c31);
+        let mk_face = |center: GpPnt, a: Edge, bb: Edge| {
+            let mut sph = GpSphere::new(GpAx3::standard(), s).unwrap();
+            sph.set_location(center);
+            b.make_face(Arc::new(GeomSphere::new(sph)), &[b.make_wire(&[a, bb])])
+        };
+        let f1 = mk_face(centers[0], e12.clone(), e31.clone());
+        let f2 = mk_face(centers[1], e12.clone(), e23.clone());
+        let f3 = mk_face(centers[2], e23.clone(), e31.clone());
+        let shell = b.make_shell(&[f1, f2, f3]);
+        (b.make_solid(&[shell]), vec![e12, e23, e31], p_v, p_p)
+    }
+
+    #[test]
+    fn tri_sphere_corner_input_closed() {
+        let (solid, edges, p_v, p_p) = build_tri_sphere_corner_solid(1.0);
+        assert!(shell_is_closed(&shell_of(&solid.0)), "tri-sphere corner input is closed");
+        assert_eq!(faces_of(&solid.0).len(), 3);
+        assert_eq!(edges.len(), 3);
+        // The three arcs share both common vertices.
+        for e in &edges {
+            let (a, b) = BRepTool::edge_vertices(e).unwrap();
+            assert!(a.distance(&p_v) < 1e-6 || a.distance(&p_p) < 1e-6);
+            assert!(b.distance(&p_v) < 1e-6 || b.distance(&p_p) < 1e-6);
+        }
+        clear_tree(&solid.0);
+    }
+
+    #[test]
+    fn tri_sphere_corner_patch_closed() {
+        let (solid, edges, p_v, _p_p) = build_tri_sphere_corner_solid(1.0);
+        let corner = vertices_of(&solid.0)
+            .into_iter()
+            .find(|v| BRepTool::vertex_point(v).distance(&p_v) < 1e-6)
+            .expect("corner vertex V");
+        let es = edges_of(&solid.0);
+        let idx: Vec<usize> = edges
+            .iter()
+            .map(|e| es.iter().position(|x| is_same(&x.0, &e.0)).unwrap())
+            .collect();
+        let out = fillet_curved_corner_patch(&solid.0, &corner, &idx, 0.15, 1e-6)
+            .expect("tri-sphere corner patch");
+        assert!(
+            shell_is_closed(&shell_of(&out)),
+            "corner-patched tri-sphere shell is closed"
+        );
+        assert_eq!(
+            faces_of(&out).len(),
+            8,
+            "3 sphere bands + 3 torus sectors + 2 corner patches"
+        );
+        // Every boundary edge is shared by exactly two faces.
+        let mut err = String::new();
+        if let Err(e) = crate::shell_check::shell_manifold_check(&shell_of(&out)) {
+            err = e;
+        }
+        assert!(err.is_empty(), "manifold check: {err}");
+
+        // The two corner patches are spheres of the fillet radius, each tangent
+        // to all three original spheres (its centre is at distance R + r from
+        // every sphere centre).
+        let orig_centers = [
+            GpPnt::new(1.0, 0.0, 0.0),
+            GpPnt::new(0.0, 1.0, 0.0),
+            GpPnt::new(0.0, 0.0, 1.0),
+        ];
+        let patches: Vec<Face> = faces_of(&out)
+            .into_iter()
+            .filter(|f| {
+                BRepTool::face_surface(f)
+                    .and_then(|s| sphere_from_surface(s.as_ref()))
+                    .map(|sp| (sp.radius - 0.15).abs() < 1e-6)
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(patches.len(), 2, "two corner patches of radius 0.15");
+        for p in &patches {
+            let sp = sphere_from_surface(BRepTool::face_surface(p).unwrap().as_ref()).unwrap();
+            for oc in &orig_centers {
+                let d = sp.center.distance(oc);
+                assert!(
+                    (d - 1.15).abs() < 2e-3,
+                    "corner patch centre {sp:?} is at distance {d} from sphere centre {oc:?} (expected 1.15)"
+                );
+            }
+        }
+        clear_tree(&out);
+        clear_tree(&solid.0);
+    }
+
+    #[test]
+    fn tri_sphere_corner_chain_closes() {
+        // The same three edges filleted through the chain entry point (which
+        // delegates to the corner patch when >= 3 edges share a vertex).
+        let (solid, edges, p_v, _p_p) = build_tri_sphere_corner_solid(1.0);
+        let es = edges_of(&solid.0);
+        let idx: Vec<usize> = edges.iter().map(|e| es.iter().position(|x| is_same(&x.0, &e.0)).unwrap()).collect();
+        let out = fillet_edge_curved_chain(&solid.0, &idx, 0.15, 1e-6).expect("chain fillet closes the corner");
+        assert!(shell_is_closed(&shell_of(&out)), "chain corner-patch is closed");
+        assert_eq!(faces_of(&out).len(), 8);
+        let _ = p_v;
+        clear_tree(&out);
+        clear_tree(&solid.0);
+    }
+
+    #[test]
+    fn multi_normal_delegates_to_deterministic_patch() {
+        // `fillet_curved_multi_normal` now tries the deterministic corner patch
+        // first, so the tri-sphere corner returns a closed shell rather than the
+        // best-effort Err.
+        let (solid, edges, p_v, _p_p) = build_tri_sphere_corner_solid(1.0);
+        let corner = vertices_of(&solid.0)
+            .into_iter()
+            .find(|v| BRepTool::vertex_point(v).distance(&p_v) < 1e-6)
+            .unwrap();
+        let es = edges_of(&solid.0);
+        let idx: Vec<usize> = edges.iter().map(|e| es.iter().position(|x| is_same(&x.0, &e.0)).unwrap()).collect();
+        match fillet_curved_multi_normal(&solid.0, &corner, &idx, 0.15, 1e-6) {
+            Ok(out) => {
+                assert!(shell_is_closed(&shell_of(&out)), "multi-normal now closes the tri-sphere corner");
+                clear_tree(&out);
+            }
+            Err(e) => {
+                // Still allowed to fail for unsupported inputs, but must be a
+                // documented error.
+                assert!(e.contains("fillet_curved"), "unexpected error: {e}");
+            }
+        }
+        clear_tree(&solid.0);
     }
 }
