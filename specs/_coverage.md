@@ -1,7 +1,8 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-08-02。
-> Rust：5 crate · 97,917 行 · 1,350 测试（core 247 / math 202 / geom 68 / geom2d 56 / topo 777）
+> Rust：5 crate · 114,016 行 · 1,485 测试（core 247 / math 202 / geom 68 / geom2d 56 / topo 912）
+> BRepMesh 59 类迁移完成（TKMesh，4 波，~17,400 行新增：框架/数据/Delaunay/细化/分割器/愈合/工厂）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -162,6 +163,11 @@
 | TKV3d 交互选择/高亮 | viz_scene 扩展 | 60%→70% | 射线拾取 pick_shape/pick_point、选中高亮渲染、双字体、屏幕文字叠加 |
 | Draw 过程/函数 + 命令表 | draw 扩展 | 65%→80% | proc/def/call/return、递归调用栈、数组/lappend/concat、集中命令注册表 |
 | XCAF 视图/标注/实例树 | xcaf 扩展 | 55%→70% | 命名视图、尺寸/注释标注、带放置实例树 + 展开、STEP 装配写 |
+
+### 覆盖矩阵行更新（2026-08-02，BRepMesh 59 类迁移完成）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| BRepMesh（59 类，TKMesh） | meshing/（24 模块，~17,400 行） | 25%→90% | 现代增量管线逐类移植：IMeshTools/IMeshData 框架、BRepMeshData 模型、IncrementalMesh、GeomTool/Deflection、Edge/Face 离散化、UV Delaunay 三角化（Delaun + DataStructure）、deflection 控制细化（DelaunayDeflectionControlMeshAlgo）、RangeSplitter 族（解析+周期 seam）、ModelHealer/PostProcessor、工厂、Delabella 备选算法、Triangulator/FastDiscret，接入 shape_mesh |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。
