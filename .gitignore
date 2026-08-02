@@ -6,6 +6,7 @@
 # Tool artifacts
 **/.codegraph/
 **/__pycache__/
+graphify-out/
 
 # Session state
 .remember/
