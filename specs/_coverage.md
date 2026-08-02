@@ -1,9 +1,10 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
-> 审查日期：2026-08-02。
-> Rust：5 crate · 121,337 行 · 1,578 测试（core 247 / math 202 / geom 139 / geom2d 72 / topo 918）
+> 审查日期：2026-08-03。
+> Rust：5 crate · 127,556 行 · 1,656 测试（core 302 / math 215 / geom 139 / geom2d 72 / topo 928）
 > BRepMesh 59 类迁移完成（TKMesh，4 波，~17,400 行新增：框架/数据/Delaunay/细化/分割器/愈合/工厂）
 > Phase 13（TKGeomAlgo 深度）：Extrema 解析/牛顿化 + IntAna + GCPnts + GeomConvert + IntCurvesFace
+> Phase 14（基础补全）：Poly + GProp + BRepGProp + math GlobOptMin/FRPR（+7,286 行）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -40,14 +41,14 @@
 
 | OCCT 包 | Rust | 覆盖 | 说明 |
 |---|---|---|---|
-| math（54） | occt-math 36 模块 | 67% | 缺分布采样等 |
+| math（54） | occt-math 36 模块 | 85% | GlobOptMin/FRPR 补全，残余碎片化 |
 | Geom（39） | 25 类型 + geom_api | 64% | |
 | Geom2d（22） | 14 类型 + geom2d_api | 64% | |
 | BRepPrimAPI（12） | primitives + brep_builder_api | 58% | Box/Cyl/Sphere/Cone/Torus/Prism/Revol/Pipe |
 | BRepBuilderAPI（30） | brep_builder_api | 33% | MakeEdge/Vertex/Wire/Face/Polygon/Arc |
 | BRepCheck（10） | shape_analysis + brep_measure | 50% | |
 | BRepExtrema（18） | brep_extrema | 33% | |
-| BRepGProp（13） | brep_gprop + gprop | 23% | |
+| BRepGProp（13） | brep_gprop + brep_gprop_full | 80% | 精确 Gauss 积分（Linear/Surface/Volume/GK） |
 | BRepAlgoAPI（10） | bop_builder + boolean_ops | 45% | **精确（平面）+ 体素（曲面）** |
 | BRepOffsetAPI（14） | loft + pipe | 36% | |
 | BRepSweep（9） | sweep + sweep_revolve + pipe | 33% | |
@@ -58,10 +59,11 @@
 | GCPnts（11） | gcpnts | ~45% | |
 | Extrema（72） | geom_api + brep_extrema | <10% | 采样近似 |
 | IntAna/IntCurvesFace（10） | face_face + geom_api | ~40% | |
-| Poly（18） | poly/ | 22% | |
-| BVH（34） | bvh/ | 12% | |
+| Poly（18） | poly/（9 模块） | 85% | Triangulation/Coherent/Connect/MakeLoops/MergeNodes 全 |
+| BVH（34） | bvh/ | 12% | 类保真留待（TriBvh 已覆盖实际查询） |
 | ShapeAnalysis（19） | shape_analysis | ~25% | |
-| GProp（10） | gprop + brep_gprop | ~40% | |
+| GProp（10） | gprop/（gprops.rs 框架） | 85% | GProps 累加 + PrincipalProps + PG/Sel/Vel/Cel + PEquation |
+| BRepGProp（13） | brep_gprop_full（2,085 行） | 80% | 精确 Gauss 积分：Linear/Surface/Volume/GK，盒/球/柱对拍 1e-6 |
 
 ### ◔ 新增（Phase 5，2026-08-01）
 - **精确布尔（平面多面体）**：inttools + bop_builder（Fuse/Cut/Common 体积验证）✅ 平面；NURBS 曲面仍采样近似
