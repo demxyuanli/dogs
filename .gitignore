@@ -1,0 +1,14 @@
+# Rust build artifacts
+/target/
+**/target/
+**/*.rs.bk
+
+# Tool artifacts
+**/.codegraph/
+**/__pycache__/
+
+# Session state
+.remember/
+
+# Example build output
+examples/output/
