@@ -29,3 +29,10 @@ pub mod delaun_data;     // BRepMesh_DataStructureOfDelaun + SelectorOfDataStruc
 pub mod delaun;          // BRepMesh_Delaun (2D UV-space incremental Delaunay)
 pub mod delaun_index;    // BRepMesh_{VertexTool,VertexInspector,CircleTool,CircleInspector}
 pub mod mesh_tool;       // BRepMesh_MeshTool
+
+// Wave 3 — mesh algorithms + deflection control.
+pub mod mesh_algo;         // BRepMesh_{BaseMeshAlgo,ConstrainedBaseMeshAlgo,CustomBaseMeshAlgo,CustomDelaunayBaseMeshAlgo,DelaunayBaseMeshAlgo}
+pub mod node_insertion;    // BRepMesh_{NodeInsertionMeshAlgo,DelaunayNodeInsertionMeshAlgo}
+pub mod deflection_control;// BRepMesh_DelaunayDeflectionControlMeshAlgo
+pub mod triangulator;      // BRepMesh_Triangulator
+pub mod fast_discret;      // BRepMesh_FastDiscret
