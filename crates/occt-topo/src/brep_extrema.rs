@@ -1,19 +1,21 @@
 //! Shape-to-shape distance and extrema queries.
 //!
-//! Approximate port of `BRepExtrema_DistShapeShape` (TKBRep) plus a few
-//! lightweight helpers (closest vertex, point-in-solid, bbox separation).
+//! Port of `BRepExtrema_DistShapeShape` (TKBRep) plus a few lightweight
+//! helpers (closest vertex, point-in-solid, bbox separation).
 //!
 //! `BRepExtrema_DistShapeShape` computes exact distances between shapes via
-//! extremum search on the underlying geometry. This port uses sampling plus
-//! local refinement: edges are sampled along the curve parameter, faces are
-//! sampled on a UV grid, then a small golden-section / hill-climb pass
-//! sharpens the answer. Results are therefore approximate but robust for the
-//! analytic surfaces (planes, lines) this crate currently exposes.
+//! extremum search on the underlying geometry. This port delegates the
+//! point–curve and point–surface minima to the Phase 13 analytic/Newton
+//! solvers in `occt_geom` (`extrema_pc` / `extrema_surf`), then clamps the
+//! parameters to the bounded edge / face range and re-checks the face
+//! boundary edges (a bounded face's closest point can lie on an edge).
 
 use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::{GpPnt, GpXyz};
+use occt_geom::extrema::point_surface_extrema;
+use occt_geom::extrema_pc::point_curve_extrema_all;
 use occt_geom::Surface;
 
 use crate::abs::ShapeType;
@@ -23,7 +25,8 @@ use crate::topexp::Explorer;
 
 /// Minimum distance from a point to any part of a shape.
 ///
-/// Exact for vertices; approximate (sampled + refined) for edges and faces.
+/// Exact for vertices; exact analytic / Newton for edges and faces (via
+/// [`closest_point_on_edge`] / [`closest_point_on_face`]).
 pub fn point_shape_distance(p: &GpPnt, shape: &TopoShape) -> f64 {
     let mut best = f64::INFINITY;
 
@@ -150,64 +153,60 @@ pub fn closest_vertex(shape: &TopoShape, p: &GpPnt) -> Option<Vertex> {
 
 /// Closest point on an edge to `p`, returned as `(parameter, point)`.
 ///
-/// Coarse uniform sampling of `samples` points followed by a golden-section
-/// refinement on the winning interval. For an edge without a curve the
-/// parameter is `NaN`.
-pub fn closest_point_on_edge(edge: &Edge, p: &GpPnt, samples: usize) -> (f64, GpPnt) {
+/// Solves the point–curve extrema with `occt_geom`'s analytic/Newton solver
+/// ([`point_curve_extrema_all`]), then clamps the winning parameter to the
+/// edge's bounded parameter range (matching the previous sampling behaviour for
+/// unbounded curves: a generous `±1e6` window). Every returned extremum is
+/// clamped and evaluated so the global minimum of the *bounded* edge is found
+/// even when the unbounded curve's minimum lies outside the edge. For an edge
+/// without a curve the parameter is `NaN`.
+pub fn closest_point_on_edge(edge: &Edge, p: &GpPnt, _samples: usize) -> (f64, GpPnt) {
     let curve = match BRepTool::edge_curve(edge) {
         Some(c) => c,
         None => return (f64::NAN, GpPnt::zero()),
     };
     let (mut f, mut l) = BRepTool::edge_parameters(edge);
     if !f.is_finite() || !l.is_finite() {
-        // Unbounded curve (infinite line): sample a generous window.
+        // Unbounded curve (infinite line): clamp to a generous window.
         f = -1e6;
         l = 1e6;
     }
-    let n = samples.max(2);
-    let span = l - f;
+    let (f, l) = if f <= l { (f, l) } else { (l, f) };
+    let extrema = point_curve_extrema_all(&*curve, p);
+    if extrema.is_empty() {
+        // Degenerate curve (e.g. zero-length): golden-section fallback.
+        let (u, q) = occt_geom::extrema::refine_curve_point(&*curve, p, f, l);
+        return (u, q);
+    }
     let mut best_u = f;
     let mut best_d = f64::INFINITY;
-    for i in 0..=n {
-        let u = f + span * (i as f64 / n as f64);
+    let mut consider = |u: f64| {
+        let u = u.clamp(f, l);
         let d = curve.d0(u).square_distance(p);
         if d < best_d {
             best_d = d;
             best_u = u;
         }
+    };
+    for e in &extrema {
+        consider(e.u1);
     }
-    // Golden-section refine on the neighbourhood of the best sample.
-    let mut a = (best_u - span / n as f64).max(f);
-    let mut b = (best_u + span / n as f64).min(l);
-    const GR: f64 = 0.6180339887498949;
-    let mut x1 = b - GR * (b - a);
-    let mut x2 = a + GR * (b - a);
-    let mut d1 = curve.d0(x1).square_distance(p);
-    let mut d2 = curve.d0(x2).square_distance(p);
-    for _ in 0..40 {
-        if d1 < d2 {
-            b = x2;
-            x2 = x1;
-            d2 = d1;
-            x1 = b - GR * (b - a);
-            d1 = curve.d0(x1).square_distance(p);
-        } else {
-            a = x1;
-            x1 = x2;
-            d1 = d2;
-            x2 = a + GR * (b - a);
-            d2 = curve.d0(x2).square_distance(p);
-        }
-    }
-    let u = 0.5 * (a + b);
-    (u, curve.d0(u))
+    // The bounded-edge candidate must also include both endpoints; the solver
+    // reports them only when the underlying curve's range is finite.
+    consider(f);
+    consider(l);
+    (best_u, curve.d0(best_u))
 }
 
 /// Closest point on a face to `p`, returned as `((u, v), point)`.
 ///
-/// Coarse UV-grid search of `(nu+1)×(nv+1)` samples followed by a coordinate
-/// hill-climb refinement inside the face's parametric window.
-pub fn closest_point_on_face(face: &Face, p: &GpPnt, nu: usize, nv: usize) -> ((f64, f64), GpPnt) {
+/// Solves the point–surface extrema with `occt_geom`'s analytic/Newton solver
+/// ([`point_surface_extrema`]), clamps the parameter to the face's UV window,
+/// and then also checks each boundary edge (a bounded face's closest point can
+/// lie on an edge; the previous UV-grid sampler found those implicitly). When
+/// an edge wins, its `(u, v)` is recovered by projecting the 3D point back onto
+/// the surface.
+pub fn closest_point_on_face(face: &Face, p: &GpPnt, _nu: usize, _nv: usize) -> ((f64, f64), GpPnt) {
     let surface = match BRepTool::face_surface(face) {
         Some(s) => s,
         None => return ((0.0, 0.0), GpPnt::zero()),
@@ -216,51 +215,38 @@ pub fn closest_point_on_face(face: &Face, p: &GpPnt, nu: usize, nv: usize) -> ((
         Some(w) => w,
         None => return ((0.0, 0.0), GpPnt::zero()),
     };
-    let (nu, nv) = (nu.max(1), nv.max(1));
-
+    let e = point_surface_extrema(&*surface, p);
+    // The analytic solver reports its own parameter frame (a plane is
+    // reconstructed with arbitrary X/Y axes), so take its frame-independent
+    // closest POINT and re-project it into the face's own (u, v) before
+    // clamping to the face's UV window.
     let mut best_u = u1;
     let mut best_v = v1;
-    let mut best_d = f64::INFINITY;
-    for i in 0..=nu {
-        let u = u1 + (u2 - u1) * (i as f64 / nu as f64);
-        for j in 0..=nv {
-            let v = v1 + (v2 - v1) * (j as f64 / nv as f64);
-            let d = surface.d0(u, v).square_distance(p);
-            if d < best_d {
-                best_d = d;
-                best_u = u;
-                best_v = v;
-            }
+    let mut best_p = surface.d0(best_u, best_v);
+    let mut best_d = best_p.square_distance(p);
+    let (pu, pv) = project_to_surface(&surface, &e.p2);
+    let pu = pu.clamp(u1, u2);
+    let pv = pv.clamp(v1, v2);
+    let q = surface.d0(pu, pv);
+    let d = q.square_distance(p);
+    if d < best_d {
+        best_d = d;
+        best_u = pu;
+        best_v = pv;
+        best_p = q;
+    }
+    for edge in face_boundary_edges(face) {
+        let (_, q) = closest_point_on_edge(&edge, p, 0);
+        let d = q.square_distance(p);
+        if d < best_d {
+            let (pu, pv) = project_to_surface(&surface, &q);
+            best_d = d;
+            best_u = pu;
+            best_v = pv;
+            best_p = q;
         }
     }
-
-    let mut u = best_u;
-    let mut v = best_v;
-    let mut du = (u2 - u1) / nu as f64 * 0.25;
-    let mut dv = (v2 - v1) / nv as f64 * 0.25;
-    for _ in 0..60 {
-        let mut improved = false;
-        for (su, sv) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-            let nu_ = u + su * du;
-            let nv_ = v + sv * dv;
-            if nu_ < u1 || nu_ > u2 || nv_ < v1 || nv_ > v2 {
-                continue;
-            }
-            let d = surface.d0(nu_, nv_).square_distance(p);
-            if d < best_d {
-                best_d = d;
-                u = nu_;
-                v = nv_;
-                improved = true;
-            }
-        }
-        if !improved {
-            du *= 0.5;
-            dv *= 0.5;
-        }
-    }
-
-    ((u, v), surface.d0(u, v))
+    ((best_u, best_v), best_p)
 }
 
 /// Even-odd point-in-solid test.
@@ -472,6 +458,28 @@ fn project_to_surface(surface: &Arc<dyn Surface>, p: &GpPnt) -> (f64, f64) {
         }
     }
     (u, v)
+}
+
+/// All edges of a face's wires (boundary edges).
+fn face_boundary_edges(face: &Face) -> Vec<Edge> {
+    let mut out: Vec<Edge> = Vec::new();
+    let face_kids = face.0.tshape.read().unwrap().children.clone();
+    for h in face_kids {
+        if h.read().unwrap().shape_type() != ShapeType::Wire {
+            continue;
+        }
+        let wire = TopoShape::from_handle(h);
+        let wire_kids = wire.tshape.read().unwrap().children.clone();
+        for eh in wire_kids {
+            if eh.read().unwrap().shape_type() != ShapeType::Edge {
+                continue;
+            }
+            if let Some(edge) = Edge::wrap(TopoShape::from_handle(eh)) {
+                out.push(edge);
+            }
+        }
+    }
+    out
 }
 
 /// Distinct 3D endpoint points of all edges in a face's wires.

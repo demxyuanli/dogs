@@ -49,7 +49,15 @@ pub use trimmed::GeomTrimmedCurve;
 pub use revolved::GeomRevolvedSurface;
 pub use offset::GeomOffsetCurve;
 pub mod extrema;
+pub mod extrema_pc;
 pub mod bspline_surface;
+// Phase 13 (TKGeomAlgo depth): wave 2-4 placeholders.
+pub mod extrema_cc;
+pub mod extrema_surf;
+pub mod extrema_ss;
+pub mod intana;
+pub mod gcpnts;
+pub mod convert_bspl;
 
 pub type HandleCurve = Arc<dyn Curve>;
 pub type HandleSurface = Arc<dyn Surface>;

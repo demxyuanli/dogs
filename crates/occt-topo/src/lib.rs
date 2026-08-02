@@ -41,6 +41,7 @@ pub mod mesh_to_brep;
 pub mod brep_exchange;
 pub mod brep_scene;
 pub mod brep_extrema;
+pub mod brep_face_intersect;
 pub mod shape_analysis;
 pub mod brep_gprop;
 pub mod sweep;
