@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
-> 审查日期：2026-07-31。
-> Rust：5 crate · 89,209 行 · 1,259 测试（core 247 / math 202 / geom 68 / geom2d 56 / topo 686）
+> 审查日期：2026-08-02。
+> Rust：5 crate · 97,917 行 · 1,350 测试（core 247 / math 202 / geom 68 / geom2d 56 / topo 777）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -153,6 +153,15 @@
 | BRepGProp 高阶 | gprop_analytic 扩展 | 45%→60% | 惯性张量、主惯量/主轴、解析曲线长 |
 | XCAF 全 schema + STEP 读 | xcaf 扩展 | 35%→55% | 名称/颜色/图层/材质全属性 + STEP 实体解析 |
 | 3D 曲线插值 | core curve_interp3d | — | Catmull-Rom/三次样条/折线 + 弧长重参数化 |
+
+### 覆盖矩阵行更新（2026-08-02，Phase 12）
+| OCCT 包 | Rust | 覆盖 | 说明 |
+|---|---|---|---|
+| BOPAlgo/TopOpeBRep 深度 | bop_builder 扩展 | 65%→75% | 边重叠修复、面沿交线分割、边/顶点分类（Shared/OnFace/Internal/External）、容差愈合 |
+| TKFillet 多法向复杂角 | fillet_curved 扩展 | 70%→80% | 三边曲面角块确定性补丁（torus 扇区+球带+球角块），链首尾闭合 |
+| TKV3d 交互选择/高亮 | viz_scene 扩展 | 60%→70% | 射线拾取 pick_shape/pick_point、选中高亮渲染、双字体、屏幕文字叠加 |
+| Draw 过程/函数 + 命令表 | draw 扩展 | 65%→80% | proc/def/call/return、递归调用栈、数组/lappend/concat、集中命令注册表 |
+| XCAF 视图/标注/实例树 | xcaf 扩展 | 55%→70% | 命名视图、尺寸/注释标注、带放置实例树 + 展开、STEP 装配写 |
 
 强项：底层几何内核 + 拓扑数据结构 + 交换（STEP/OBJ/STL/PLY/VRML）已形成可用闭环。
 最大缺口：精确布尔 → 真实 BRepMesh → IGES/BinXCAF → Visualization。
