@@ -12,7 +12,7 @@
       ],
       "target": "CurveSample",
       "target_path": "crates/occt-core/src/gcpnts.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "hull": {
       "module": "occt-core",
@@ -24,7 +24,7 @@
       ],
       "target": "convex_hull_2d",
       "target_path": "crates/occt-core/src/hull.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "numeric": {
       "module": "occt-core",
@@ -36,7 +36,7 @@
       ],
       "target": "bisection",
       "target_path": "crates/occt-core/src/numeric.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "precision": {
       "module": "occt-core",
@@ -46,7 +46,7 @@
       "deps": [],
       "target": "Precision",
       "target_path": "crates/occt-core/src/precision.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_b2b3": {
       "module": "occt-core/bnd",
@@ -58,7 +58,7 @@
       ],
       "target": "B2",
       "target_path": "crates/occt-core/src/bnd/b2b3.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_box2d": {
       "module": "occt-core/bnd",
@@ -71,7 +71,7 @@
       ],
       "target": "BndBox2d",
       "target_path": "crates/occt-core/src/bnd/box2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_box3d": {
       "module": "occt-core/bnd",
@@ -84,7 +84,7 @@
       ],
       "target": "BndBox",
       "target_path": "crates/occt-core/src/bnd/box3d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_bsphere": {
       "module": "occt-core/bnd",
@@ -96,7 +96,7 @@
       ],
       "target": "BndSphere",
       "target_path": "crates/occt-core/src/bnd/bsphere.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_intersect": {
       "module": "occt-core/bnd",
@@ -109,7 +109,7 @@
       ],
       "target": "ray_box_intersect",
       "target_path": "crates/occt-core/src/bnd/intersect.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "mod": {
       "module": "occt-core/toploc",
@@ -122,7 +122,7 @@
       ],
       "target": "TopLocLocation",
       "target_path": "crates/occt-core/src/toploc/mod.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_obb": {
       "module": "occt-core/bnd",
@@ -132,7 +132,7 @@
       "deps": [],
       "target": "BndOBB",
       "target_path": "crates/occt-core/src/bnd/obb.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_obb_pca": {
       "module": "occt-core/bnd",
@@ -146,7 +146,7 @@
       ],
       "target": "compute_obb_pca",
       "target_path": "crates/occt-core/src/bnd/obb_pca.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_segment": {
       "module": "occt-core/bnd",
@@ -160,7 +160,7 @@
       ],
       "target": "Segment2d",
       "target_path": "crates/occt-core/src/bnd/segment.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bnd_sortbox": {
       "module": "occt-core/bnd",
@@ -173,7 +173,7 @@
       ],
       "target": "SortBoxElement",
       "target_path": "crates/occt-core/src/bnd/sortbox.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_bezier": {
       "module": "occt-core/bspl",
@@ -185,7 +185,7 @@
       ],
       "target": "flat_bezier_coefficients",
       "target_path": "crates/occt-core/src/bspl/bezier.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_curve_tools": {
       "module": "occt-core/bspl",
@@ -197,7 +197,7 @@
       ],
       "target": "reparameterize",
       "target_path": "crates/occt-core/src/bspl/curve_tools.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_eval": {
       "module": "occt-core/bspl",
@@ -211,7 +211,7 @@
       ],
       "target": "eval_curve",
       "target_path": "crates/occt-core/src/bspl/eval.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_knots": {
       "module": "occt-core/bspl",
@@ -221,7 +221,7 @@
       "deps": [],
       "target": "hunt",
       "target_path": "crates/occt-core/src/bspl/knots.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_knots_advanced": {
       "module": "occt-core/bspl",
@@ -233,7 +233,7 @@
       ],
       "target": "remove_knot",
       "target_path": "crates/occt-core/src/bspl/knots_advanced.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_plib": {
       "module": "occt-core/bspl",
@@ -243,7 +243,7 @@
       "deps": [],
       "target": "eval_polynomial",
       "target_path": "crates/occt-core/src/bspl/plib.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_plib2d": {
       "module": "occt-core/bspl",
@@ -255,7 +255,7 @@
       ],
       "target": "eval_tensor_product",
       "target_path": "crates/occt-core/src/bspl/plib2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_poles": {
       "module": "occt-core/bspl",
@@ -267,7 +267,7 @@
       ],
       "target": "poles_to_coefficients",
       "target_path": "crates/occt-core/src/bspl/poles.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_rational": {
       "module": "occt-core/bspl",
@@ -279,7 +279,7 @@
       ],
       "target": "normalize_weights",
       "target_path": "crates/occt-core/src/bspl/rational.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_surface": {
       "module": "occt-core/bspl",
@@ -293,7 +293,7 @@
       ],
       "target": "eval_surface",
       "target_path": "crates/occt-core/src/bspl/surface.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_surface_knots": {
       "module": "occt-core/bspl",
@@ -305,7 +305,7 @@
       ],
       "target": "compute_seam_poles",
       "target_path": "crates/occt-core/src/bspl/surface_knots.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bspl_surface_rational": {
       "module": "occt-core/bspl",
@@ -317,7 +317,7 @@
       ],
       "target": "eval_rational",
       "target_path": "crates/occt-core/src/bspl/surface_rational.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bvh_builder_tri": {
       "module": "occt-core/bvh",
@@ -330,7 +330,7 @@
       ],
       "target": "TriBvh",
       "target_path": "crates/occt-core/src/bvh/builder_tri.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bvh_bvh_ops": {
       "module": "occt-core/bvh",
@@ -345,7 +345,7 @@
       ],
       "target": "ray_triangle_t",
       "target_path": "crates/occt-core/src/bvh/bvh_ops.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bvh_bvh_query": {
       "module": "occt-core/bvh",
@@ -361,7 +361,7 @@
       ],
       "target": "RayQueryResult",
       "target_path": "crates/occt-core/src/bvh/bvh_query.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "bvh_traversal": {
       "module": "occt-core/bvh",
@@ -374,7 +374,7 @@
       ],
       "target": "RayHit",
       "target_path": "crates/occt-core/src/bvh/traversal.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "convert_advanced": {
       "module": "occt-core/convert",
@@ -388,7 +388,7 @@
       ],
       "target": "cartesian_to_spherical_point",
       "target_path": "crates/occt-core/src/convert/advanced.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "convert_mapproj": {
       "module": "occt-core/convert",
@@ -398,7 +398,7 @@
       "deps": [],
       "target": "lonlat_to_mercator",
       "target_path": "crates/occt-core/src/convert/mapproj.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "elib_clib": {
       "module": "occt-core/elib",
@@ -411,7 +411,7 @@
       ],
       "target": "line_value",
       "target_path": "crates/occt-core/src/elib/clib.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "elib_intersect": {
       "module": "occt-core/elib",
@@ -427,7 +427,7 @@
       ],
       "target": "line_line_intersection",
       "target_path": "crates/occt-core/src/elib/intersect.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "elib_measure": {
       "module": "occt-core/elib",
@@ -444,7 +444,7 @@
       ],
       "target": "line_length",
       "target_path": "crates/occt-core/src/elib/measure.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "elib_slib": {
       "module": "occt-core/elib",
@@ -457,7 +457,7 @@
       ],
       "target": "plane_value",
       "target_path": "crates/occt-core/src/elib/slib.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "elib_surface_eval": {
       "module": "occt-core/elib",
@@ -473,7 +473,7 @@
       ],
       "target": "SurfaceRef",
       "target_path": "crates/occt-core/src/elib/surface_eval.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_csg": {
       "module": "occt-core/geom",
@@ -486,7 +486,7 @@
       ],
       "target": "VoxelSolid",
       "target_path": "crates/occt-core/src/geom/csg.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_curve_frenet": {
       "module": "occt-core/geom",
@@ -499,7 +499,7 @@
       ],
       "target": "FrenetFrame",
       "target_path": "crates/occt-core/src/geom/curve_frenet.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_curve_interp3d": {
       "module": "occt-core/geom",
@@ -511,7 +511,7 @@
       ],
       "target": "InterpCurve3d",
       "target_path": "crates/occt-core/src/geom/curve_interp3d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_curve_ops3d": {
       "module": "occt-core/geom",
@@ -524,7 +524,7 @@
       ],
       "target": "polyline_length3d",
       "target_path": "crates/occt-core/src/geom/curve_ops3d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_delaunay": {
       "module": "occt-core/geom",
@@ -537,7 +537,7 @@
       ],
       "target": "delaunay_circumcircle_contains",
       "target_path": "crates/occt-core/src/geom/delaunay.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_fit": {
       "module": "occt-core/geom",
@@ -550,7 +550,7 @@
       ],
       "target": "fit_polynomial",
       "target_path": "crates/occt-core/src/geom/fit.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_fit2": {
       "module": "occt-core/geom",
@@ -563,7 +563,7 @@
       ],
       "target": "fit_line",
       "target_path": "crates/occt-core/src/geom/fit2.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_mesh_analysis": {
       "module": "occt-core/geom",
@@ -576,7 +576,7 @@
       ],
       "target": "TriangleQuality",
       "target_path": "crates/occt-core/src/geom/mesh_analysis.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_mesh_ops": {
       "module": "occt-core/geom",
@@ -589,7 +589,7 @@
       ],
       "target": "centroid",
       "target_path": "crates/occt-core/src/geom/mesh_ops.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_polygon_boolean": {
       "module": "occt-core/geom",
@@ -601,7 +601,7 @@
       ],
       "target": "PolygonBoolOp",
       "target_path": "crates/occt-core/src/geom/polygon_boolean.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_polygon_ops": {
       "module": "occt-core/geom",
@@ -614,7 +614,7 @@
       ],
       "target": "polygon_area2d",
       "target_path": "crates/occt-core/src/geom/polygon_ops.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_polyline": {
       "module": "occt-core/geom",
@@ -627,7 +627,7 @@
       ],
       "target": "adaptive_sample",
       "target_path": "crates/occt-core/src/geom/polyline.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_polyline_simplify": {
       "module": "occt-core/geom",
@@ -640,7 +640,7 @@
       ],
       "target": "rdp_simplify",
       "target_path": "crates/occt-core/src/geom/polyline_simplify.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_triangulate": {
       "module": "occt-core/geom",
@@ -652,7 +652,7 @@
       ],
       "target": "triangulate_polygon",
       "target_path": "crates/occt-core/src/geom/triangulate.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_ax1": {
       "module": "occt-core/gp",
@@ -665,7 +665,7 @@
       ],
       "target": "GpAx1",
       "target_path": "crates/occt-core/src/gp/ax1.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_ax2": {
       "module": "occt-core/gp",
@@ -680,7 +680,7 @@
       ],
       "target": "GpAx2",
       "target_path": "crates/occt-core/src/gp/ax2.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_ax22d": {
       "module": "occt-core/gp",
@@ -692,7 +692,7 @@
       ],
       "target": "GpAx22d",
       "target_path": "crates/occt-core/src/gp/ax22d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_ax2d": {
       "module": "occt-core/gp",
@@ -702,7 +702,7 @@
       "deps": [],
       "target": "GpAx2d",
       "target_path": "crates/occt-core/src/gp/ax2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_ax3": {
       "module": "occt-core/gp",
@@ -718,7 +718,7 @@
       ],
       "target": "GpAx3",
       "target_path": "crates/occt-core/src/gp/ax3.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_circ": {
       "module": "occt-core/gp",
@@ -735,7 +735,7 @@
       ],
       "target": "GpCirc",
       "target_path": "crates/occt-core/src/gp/circ.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_circ2d": {
       "module": "occt-core/gp",
@@ -745,7 +745,7 @@
       "deps": [],
       "target": "GpCirc2d",
       "target_path": "crates/occt-core/src/gp/circ2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_cone": {
       "module": "occt-core/gp",
@@ -763,7 +763,7 @@
       ],
       "target": "GpCone",
       "target_path": "crates/occt-core/src/gp/cone.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_cylinder": {
       "module": "occt-core/gp",
@@ -781,7 +781,7 @@
       ],
       "target": "GpCylinder",
       "target_path": "crates/occt-core/src/gp/cylinder.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_dir": {
       "module": "occt-core/gp",
@@ -795,7 +795,7 @@
       ],
       "target": "DirAxis",
       "target_path": "crates/occt-core/src/gp/dir.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_dir2d": {
       "module": "occt-core/gp",
@@ -807,7 +807,7 @@
       ],
       "target": "GpDir2d",
       "target_path": "crates/occt-core/src/gp/dir2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_elips": {
       "module": "occt-core/gp",
@@ -817,7 +817,7 @@
       "deps": [],
       "target": "GpElips",
       "target_path": "crates/occt-core/src/gp/elips.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_elips2d": {
       "module": "occt-core/gp",
@@ -827,7 +827,7 @@
       "deps": [],
       "target": "GpElips2d",
       "target_path": "crates/occt-core/src/gp/elips2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_gtrsf": {
       "module": "occt-core/gp",
@@ -837,7 +837,7 @@
       "deps": [],
       "target": "GpGTrsf",
       "target_path": "crates/occt-core/src/gp/gtrsf.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_hypr": {
       "module": "occt-core/gp",
@@ -847,7 +847,7 @@
       "deps": [],
       "target": "GpHypr",
       "target_path": "crates/occt-core/src/gp/hypr.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_hypr2d": {
       "module": "occt-core/gp",
@@ -857,7 +857,7 @@
       "deps": [],
       "target": "GpHypr2d",
       "target_path": "crates/occt-core/src/gp/hypr2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_lin": {
       "module": "occt-core/gp",
@@ -867,7 +867,7 @@
       "deps": [],
       "target": "GpLin",
       "target_path": "crates/occt-core/src/gp/lin.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_lin2d": {
       "module": "occt-core/gp",
@@ -877,7 +877,7 @@
       "deps": [],
       "target": "GpLin2d",
       "target_path": "crates/occt-core/src/gp/lin2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_mat": {
       "module": "occt-core/gp",
@@ -890,7 +890,7 @@
       ],
       "target": "GpMat",
       "target_path": "crates/occt-core/src/gp/mat.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_mat2d": {
       "module": "occt-core/gp",
@@ -903,7 +903,7 @@
       ],
       "target": "GpMat2d",
       "target_path": "crates/occt-core/src/gp/mat2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_parab": {
       "module": "occt-core/gp",
@@ -913,7 +913,7 @@
       "deps": [],
       "target": "GpParab",
       "target_path": "crates/occt-core/src/gp/parab.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_parab2d": {
       "module": "occt-core/gp",
@@ -923,7 +923,7 @@
       "deps": [],
       "target": "GpParab2d",
       "target_path": "crates/occt-core/src/gp/parab2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_pln": {
       "module": "occt-core/gp",
@@ -941,7 +941,7 @@
       ],
       "target": "GpPln",
       "target_path": "crates/occt-core/src/gp/pln.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_pnt": {
       "module": "occt-core/gp",
@@ -958,7 +958,7 @@
       ],
       "target": "GpPnt",
       "target_path": "crates/occt-core/src/gp/pnt.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_pnt2d": {
       "module": "occt-core/gp",
@@ -968,7 +968,7 @@
       "deps": [],
       "target": "GpPnt2d",
       "target_path": "crates/occt-core/src/gp/pnt2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_quaternion": {
       "module": "occt-core/gp",
@@ -982,7 +982,7 @@
       ],
       "target": "GpQuaternion",
       "target_path": "crates/occt-core/src/gp/quaternion.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_quaternion_ext": {
       "module": "occt-core/gp",
@@ -998,7 +998,7 @@
       ],
       "target": "conjugate",
       "target_path": "crates/occt-core/src/gp/quaternion_ext.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_sphere": {
       "module": "occt-core/gp",
@@ -1008,7 +1008,7 @@
       "deps": [],
       "target": "GpSphere",
       "target_path": "crates/occt-core/src/gp/sphere.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_torus": {
       "module": "occt-core/gp",
@@ -1018,7 +1018,7 @@
       "deps": [],
       "target": "GpTorus",
       "target_path": "crates/occt-core/src/gp/torus.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_trsf": {
       "module": "occt-core/gp",
@@ -1039,7 +1039,7 @@
       ],
       "target": "GpTrsf",
       "target_path": "crates/occt-core/src/gp/trsf.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_trsf2d": {
       "module": "occt-core/gp",
@@ -1051,7 +1051,7 @@
       ],
       "target": "GpTrsf2d",
       "target_path": "crates/occt-core/src/gp/trsf2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_trsf_ext": {
       "module": "occt-core/gp",
@@ -1071,7 +1071,7 @@
       ],
       "target": "translation_of",
       "target_path": "crates/occt-core/src/gp/trsf_ext.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_trsf_form": {
       "module": "occt-core/gp",
@@ -1081,7 +1081,7 @@
       "deps": [],
       "target": "TrsfForm",
       "target_path": "crates/occt-core/src/gp/trsf_form.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_vec": {
       "module": "occt-core/gp",
@@ -1096,7 +1096,7 @@
       ],
       "target": "GpVec",
       "target_path": "crates/occt-core/src/gp/vec.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_vec2d": {
       "module": "occt-core/gp",
@@ -1108,7 +1108,7 @@
       ],
       "target": "GpVec2d",
       "target_path": "crates/occt-core/src/gp/vec2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_xy": {
       "module": "occt-core/gp",
@@ -1121,7 +1121,7 @@
       ],
       "target": "GpXY",
       "target_path": "crates/occt-core/src/gp/xy.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gp_xyz": {
       "module": "occt-core/gp",
@@ -1134,7 +1134,7 @@
       ],
       "target": "GpXyz",
       "target_path": "crates/occt-core/src/gp/xyz.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gprop_inertia": {
       "module": "occt-core/gprop",
@@ -1147,7 +1147,7 @@
       ],
       "target": "InertiaProps",
       "target_path": "crates/occt-core/src/gprop/inertia.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "gprop_topology": {
       "module": "occt-core/gprop",
@@ -1159,7 +1159,7 @@
       ],
       "target": "polyline_length",
       "target_path": "crates/occt-core/src/gprop/topology.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "int_curve_curve": {
       "module": "occt-core/int",
@@ -1173,7 +1173,7 @@
       ],
       "target": "segment_segment_intersection_3d",
       "target_path": "crates/occt-core/src/int/curve_curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "io_obj": {
       "module": "occt-core/io",
@@ -1186,7 +1186,7 @@
       ],
       "target": "ObjMesh",
       "target_path": "crates/occt-core/src/io/obj.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "io_ply": {
       "module": "occt-core/io",
@@ -1201,7 +1201,7 @@
       ],
       "target": "PlyMesh",
       "target_path": "crates/occt-core/src/io/ply.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "io_stl": {
       "module": "occt-core/io",
@@ -1215,7 +1215,7 @@
       ],
       "target": "StlMesh",
       "target_path": "crates/occt-core/src/io/stl.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_containers": {
       "module": "occt-core/kernel",
@@ -1225,7 +1225,7 @@
       "deps": [],
       "target": "IndexedMap",
       "target_path": "crates/occt-core/src/kernel/containers.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_error": {
       "module": "occt-core/kernel",
@@ -1235,7 +1235,7 @@
       "deps": [],
       "target": "OCCError",
       "target_path": "crates/occt-core/src/kernel/error.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_geomabs": {
       "module": "occt-core/kernel",
@@ -1245,7 +1245,7 @@
       "deps": [],
       "target": "CurveType",
       "target_path": "crates/occt-core/src/kernel/geomabs.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_handle": {
       "module": "occt-core/kernel",
@@ -1255,7 +1255,7 @@
       "deps": [],
       "target": "Handle",
       "target_path": "crates/occt-core/src/kernel/handle.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_osd": {
       "module": "occt-core/kernel",
@@ -1265,7 +1265,7 @@
       "deps": [],
       "target": "SystemTime",
       "target_path": "crates/occt-core/src/kernel/osd.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_resource": {
       "module": "occt-core/kernel",
@@ -1275,7 +1275,7 @@
       "deps": [],
       "target": "ResourceManager",
       "target_path": "crates/occt-core/src/kernel/resource.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_string_tools": {
       "module": "occt-core/kernel",
@@ -1285,7 +1285,7 @@
       "deps": [],
       "target": "split_trim",
       "target_path": "crates/occt-core/src/kernel/string_tools.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_tcollection": {
       "module": "occt-core/kernel",
@@ -1295,7 +1295,7 @@
       "deps": [],
       "target": "AsciiString",
       "target_path": "crates/occt-core/src/kernel/tcollection.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_tcolstd": {
       "module": "occt-core/kernel",
@@ -1305,7 +1305,7 @@
       "deps": [],
       "target": "Array1OfReal",
       "target_path": "crates/occt-core/src/kernel/tcolstd.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_tcolstd_full": {
       "module": "occt-core/kernel",
@@ -1315,7 +1315,7 @@
       "deps": [],
       "target": "Array1OfReal",
       "target_path": "crates/occt-core/src/kernel/tcolstd_full.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "kernel_units": {
       "module": "occt-core/kernel",
@@ -1325,7 +1325,7 @@
       "deps": [],
       "target": "LengthUnit",
       "target_path": "crates/occt-core/src/kernel/units.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "poly_polygon2d": {
       "module": "occt-core/poly",
@@ -1337,7 +1337,7 @@
       ],
       "target": "Polygon2D",
       "target_path": "crates/occt-core/src/poly/polygon2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "poly_polygon3d": {
       "module": "occt-core/poly",
@@ -1349,7 +1349,7 @@
       ],
       "target": "Polygon3D",
       "target_path": "crates/occt-core/src/poly/polygon3d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "poly_polygon3d_full": {
       "module": "occt-core/poly",
@@ -1361,7 +1361,7 @@
       ],
       "target": "Polygon3D",
       "target_path": "crates/occt-core/src/poly/polygon3d_full.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "poly_triangulation": {
       "module": "occt-core/poly",
@@ -1373,7 +1373,7 @@
       ],
       "target": "Triangle",
       "target_path": "crates/occt-core/src/poly/triangulation.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "quantity_color_tools": {
       "module": "occt-core/quantity",
@@ -1383,7 +1383,7 @@
       "deps": [],
       "target": "to_hsv",
       "target_path": "crates/occt-core/src/quantity/color_tools.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "toploc_datum": {
       "module": "occt-core/toploc",
@@ -1397,7 +1397,7 @@
       ],
       "target": "TopLocDatum3D",
       "target_path": "crates/occt-core/src/toploc/datum.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_bezier_curve": {
       "module": "occt-geom",
@@ -1411,7 +1411,7 @@
       ],
       "target": "GeomBezierCurve",
       "target_path": "crates/occt-geom/src/bezier_curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_bezier_surface": {
       "module": "occt-geom",
@@ -1425,7 +1425,7 @@
       ],
       "target": "GeomBezierSurface",
       "target_path": "crates/occt-geom/src/bezier_surface.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_bezier_to_polyline": {
       "module": "occt-geom",
@@ -1438,7 +1438,7 @@
       ],
       "target": "de_casteljau",
       "target_path": "crates/occt-geom/src/bezier_to_polyline.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_bspline_curve": {
       "module": "occt-geom",
@@ -1452,7 +1452,7 @@
       ],
       "target": "GeomBSplineCurve",
       "target_path": "crates/occt-geom/src/bspline_curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_bspline_surface": {
       "module": "occt-geom",
@@ -1466,7 +1466,7 @@
       ],
       "target": "GeomBSplineSurface",
       "target_path": "crates/occt-geom/src/bspline_surface.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_bspline_to_bezier": {
       "module": "occt-geom",
@@ -1481,7 +1481,7 @@
       ],
       "target": "BezierSegment",
       "target_path": "crates/occt-geom/src/bspline_to_bezier.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_circle": {
       "module": "occt-geom",
@@ -1495,7 +1495,7 @@
       ],
       "target": "GeomCircle",
       "target_path": "crates/occt-geom/src/circle.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_cone": {
       "module": "occt-geom",
@@ -1509,7 +1509,7 @@
       ],
       "target": "GeomCone",
       "target_path": "crates/occt-geom/src/cone.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_convert": {
       "module": "occt-geom",
@@ -1525,7 +1525,7 @@
       ],
       "target": "curve_to_arc",
       "target_path": "crates/occt-geom/src/convert.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_convert_geom": {
       "module": "occt-geom",
@@ -1542,7 +1542,7 @@
       ],
       "target": "lin_to_geom",
       "target_path": "crates/occt-geom/src/convert_geom.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_curve": {
       "module": "occt-geom",
@@ -1555,7 +1555,7 @@
       ],
       "target": "Curve",
       "target_path": "crates/occt-geom/src/curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_curve_approx": {
       "module": "occt-geom",
@@ -1570,7 +1570,7 @@
       ],
       "target": "curve_to_polyline",
       "target_path": "crates/occt-geom/src/curve_approx.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_curve_reparam": {
       "module": "occt-geom",
@@ -1585,7 +1585,7 @@
       ],
       "target": "ReparamCurve",
       "target_path": "crates/occt-geom/src/curve_reparam.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_cylinder": {
       "module": "occt-geom",
@@ -1599,7 +1599,7 @@
       ],
       "target": "GeomCylinder",
       "target_path": "crates/occt-geom/src/cylinder.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_ellipse": {
       "module": "occt-geom",
@@ -1613,7 +1613,7 @@
       ],
       "target": "GeomEllipse",
       "target_path": "crates/occt-geom/src/ellipse.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_extrema": {
       "module": "occt-geom",
@@ -1626,7 +1626,7 @@
       ],
       "target": "ExtremaPair",
       "target_path": "crates/occt-geom/src/extrema.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_geom_api": {
       "module": "occt-geom",
@@ -1647,7 +1647,7 @@
       ],
       "target": "PointOnCurve",
       "target_path": "crates/occt-geom/src/geom_api.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_hyperbola": {
       "module": "occt-geom",
@@ -1661,7 +1661,7 @@
       ],
       "target": "GeomHyperbola",
       "target_path": "crates/occt-geom/src/hyperbola.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_interp_curve": {
       "module": "occt-geom",
@@ -1676,7 +1676,7 @@
       ],
       "target": "GeomInterpCurve",
       "target_path": "crates/occt-geom/src/interp_curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_line": {
       "module": "occt-geom",
@@ -1690,7 +1690,7 @@
       ],
       "target": "GeomLine",
       "target_path": "crates/occt-geom/src/line.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_offset": {
       "module": "occt-geom",
@@ -1704,7 +1704,7 @@
       ],
       "target": "GeomOffsetCurve",
       "target_path": "crates/occt-geom/src/offset.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_parabola": {
       "module": "occt-geom",
@@ -1718,7 +1718,7 @@
       ],
       "target": "GeomParabola",
       "target_path": "crates/occt-geom/src/parabola.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_plane": {
       "module": "occt-geom",
@@ -1732,7 +1732,7 @@
       ],
       "target": "GeomPlane",
       "target_path": "crates/occt-geom/src/plane.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_revolved": {
       "module": "occt-geom",
@@ -1747,7 +1747,7 @@
       ],
       "target": "GeomRevolvedSurface",
       "target_path": "crates/occt-geom/src/revolved.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_sphere": {
       "module": "occt-geom",
@@ -1761,7 +1761,7 @@
       ],
       "target": "GeomSphere",
       "target_path": "crates/occt-geom/src/sphere.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_surface": {
       "module": "occt-geom",
@@ -1774,7 +1774,7 @@
       ],
       "target": "Surface",
       "target_path": "crates/occt-geom/src/surface.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_surface_fit": {
       "module": "occt-geom",
@@ -1788,7 +1788,7 @@
       ],
       "target": "SurfaceFitKind",
       "target_path": "crates/occt-geom/src/surface_fit.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_surface_ops": {
       "module": "occt-geom",
@@ -1803,7 +1803,7 @@
       ],
       "target": "IsoparametricCurve",
       "target_path": "crates/occt-geom/src/surface_ops.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_surface_to_grid": {
       "module": "occt-geom",
@@ -1818,7 +1818,7 @@
       ],
       "target": "UVGrid",
       "target_path": "crates/occt-geom/src/surface_to_grid.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_torus": {
       "module": "occt-geom",
@@ -1832,7 +1832,7 @@
       ],
       "target": "GeomTorus",
       "target_path": "crates/occt-geom/src/torus.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_transform": {
       "module": "occt-geom",
@@ -1848,7 +1848,7 @@
       ],
       "target": "transform_curve",
       "target_path": "crates/occt-geom/src/transform.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom_trimmed": {
       "module": "occt-geom",
@@ -1862,7 +1862,7 @@
       ],
       "target": "GeomTrimmedCurve",
       "target_path": "crates/occt-geom/src/trimmed.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_bezier_curve": {
       "module": "occt-geom2d",
@@ -1876,7 +1876,7 @@
       ],
       "target": "Geom2dBezierCurve",
       "target_path": "crates/occt-geom2d/src/bezier_curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_bspline2d_to_bezier": {
       "module": "occt-geom2d",
@@ -1889,7 +1889,7 @@
       ],
       "target": "BezierSegment2d",
       "target_path": "crates/occt-geom2d/src/bspline2d_to_bezier.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_bspline_curve": {
       "module": "occt-geom2d",
@@ -1903,7 +1903,7 @@
       ],
       "target": "Geom2dBSplineCurve",
       "target_path": "crates/occt-geom2d/src/bspline_curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_circle": {
       "module": "occt-geom2d",
@@ -1917,7 +1917,7 @@
       ],
       "target": "Geom2dCircle",
       "target_path": "crates/occt-geom2d/src/circle.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_convert": {
       "module": "occt-geom2d",
@@ -1934,7 +1934,7 @@
       ],
       "target": "sample_curve2d",
       "target_path": "crates/occt-geom2d/src/convert.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_curve": {
       "module": "occt-geom2d",
@@ -1947,7 +1947,7 @@
       ],
       "target": "Curve2d",
       "target_path": "crates/occt-geom2d/src/curve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_curve_ops": {
       "module": "occt-geom2d",
@@ -1965,7 +1965,7 @@
       ],
       "target": "curve2d_length",
       "target_path": "crates/occt-geom2d/src/curve_ops.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_curve_tools2d": {
       "module": "occt-geom2d",
@@ -1979,7 +1979,7 @@
       ],
       "target": "arc_from_three_points",
       "target_path": "crates/occt-geom2d/src/curve_tools2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_ellipse": {
       "module": "occt-geom2d",
@@ -1993,7 +1993,7 @@
       ],
       "target": "Geom2dEllipse",
       "target_path": "crates/occt-geom2d/src/ellipse.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_extrema2d": {
       "module": "occt-geom2d",
@@ -2008,7 +2008,7 @@
       ],
       "target": "Extrema2d",
       "target_path": "crates/occt-geom2d/src/extrema2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_geom2d_api": {
       "module": "occt-geom2d",
@@ -2026,7 +2026,7 @@
       ],
       "target": "Project2d",
       "target_path": "crates/occt-geom2d/src/geom2d_api.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_hyperbola": {
       "module": "occt-geom2d",
@@ -2040,7 +2040,7 @@
       ],
       "target": "Geom2dHyperbola",
       "target_path": "crates/occt-geom2d/src/hyperbola.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_line": {
       "module": "occt-geom2d",
@@ -2054,7 +2054,7 @@
       ],
       "target": "Geom2dLine",
       "target_path": "crates/occt-geom2d/src/line.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_offset": {
       "module": "occt-geom2d",
@@ -2068,7 +2068,7 @@
       ],
       "target": "Geom2dOffsetCurve",
       "target_path": "crates/occt-geom2d/src/offset.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_offset2d": {
       "module": "occt-geom2d",
@@ -2088,7 +2088,7 @@
       ],
       "target": "OffsetCurve2d",
       "target_path": "crates/occt-geom2d/src/offset2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_parabola": {
       "module": "occt-geom2d",
@@ -2102,7 +2102,7 @@
       ],
       "target": "Geom2dParabola",
       "target_path": "crates/occt-geom2d/src/parabola.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "geom2d_trimmed": {
       "module": "occt-geom2d",
@@ -2116,7 +2116,7 @@
       ],
       "target": "Geom2dTrimmedCurve",
       "target_path": "crates/occt-geom2d/src/trimmed.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_bfgs": {
       "module": "occt-math",
@@ -2126,7 +2126,7 @@
       "deps": [],
       "target": "BFGS",
       "target_path": "crates/occt-math/src/bfgs.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_cholesky": {
       "module": "occt-math",
@@ -2136,7 +2136,7 @@
       "deps": [],
       "target": "cholesky",
       "target_path": "crates/occt-math/src/cholesky.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_constraint_opt": {
       "module": "occt-math",
@@ -2148,7 +2148,7 @@
       ],
       "target": "ConstraintFn",
       "target_path": "crates/occt-math/src/constraint_opt.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_crout": {
       "module": "occt-math",
@@ -2158,7 +2158,7 @@
       "deps": [],
       "target": "Crout",
       "target_path": "crates/occt-math/src/crout.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_cubic_spline": {
       "module": "occt-math",
@@ -2168,7 +2168,7 @@
       "deps": [],
       "target": "CubicSpline",
       "target_path": "crates/occt-math/src/cubic_spline.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_distrib_extra": {
       "module": "occt-math",
@@ -2178,7 +2178,7 @@
       "deps": [],
       "target": "ChiSquareDistribution",
       "target_path": "crates/occt-math/src/distrib_extra.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_distributions": {
       "module": "occt-math",
@@ -2190,7 +2190,7 @@
       ],
       "target": "NormalDistribution",
       "target_path": "crates/occt-math/src/distributions.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_eig_qr": {
       "module": "occt-math",
@@ -2202,7 +2202,7 @@
       ],
       "target": "QrEigen",
       "target_path": "crates/occt-math/src/eig_qr.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_eigen": {
       "module": "occt-math",
@@ -2212,7 +2212,7 @@
       "deps": [],
       "target": "largest_eigen",
       "target_path": "crates/occt-math/src/eigen.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_eigen_ext": {
       "module": "occt-math",
@@ -2225,7 +2225,7 @@
       ],
       "target": "power_iteration",
       "target_path": "crates/occt-math/src/eigen_ext.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_fft": {
       "module": "occt-math",
@@ -2235,7 +2235,7 @@
       "deps": [],
       "target": "next_power_of_two",
       "target_path": "crates/occt-math/src/fft.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_fft2d": {
       "module": "occt-math",
@@ -2247,7 +2247,7 @@
       ],
       "target": "fft2",
       "target_path": "crates/occt-math/src/fft2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_gauss": {
       "module": "occt-math",
@@ -2257,7 +2257,7 @@
       "deps": [],
       "target": "gauss_legendre",
       "target_path": "crates/occt-math/src/gauss.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_gauss_ls": {
       "module": "occt-math",
@@ -2267,7 +2267,7 @@
       "deps": [],
       "target": "GaussLeastSquare",
       "target_path": "crates/occt-math/src/gauss_ls.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_house_full": {
       "module": "occt-math",
@@ -2277,7 +2277,7 @@
       "deps": [],
       "target": "HouseholderFull",
       "target_path": "crates/occt-math/src/house_full.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_householder": {
       "module": "occt-math",
@@ -2287,7 +2287,7 @@
       "deps": [],
       "target": "Householder",
       "target_path": "crates/occt-math/src/householder.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_integrate_adaptive": {
       "module": "occt-math",
@@ -2297,7 +2297,7 @@
       "deps": [],
       "target": "adaptive_simpson",
       "target_path": "crates/occt-math/src/integrate_adaptive.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_interp": {
       "module": "occt-math",
@@ -2307,7 +2307,7 @@
       "deps": [],
       "target": "InterpKind",
       "target_path": "crates/occt-math/src/interp.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_interp2d": {
       "module": "occt-math",
@@ -2317,7 +2317,7 @@
       "deps": [],
       "target": "Grid2d",
       "target_path": "crates/occt-math/src/interp2d.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_intvec": {
       "module": "occt-math",
@@ -2327,7 +2327,7 @@
       "deps": [],
       "target": "MathIntVector",
       "target_path": "crates/occt-math/src/intvec.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_jacobi": {
       "module": "occt-math",
@@ -2337,7 +2337,7 @@
       "deps": [],
       "target": "Jacobi",
       "target_path": "crates/occt-math/src/jacobi.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_kronrod": {
       "module": "occt-math",
@@ -2347,7 +2347,7 @@
       "deps": [],
       "target": "integrate_adaptive",
       "target_path": "crates/occt-math/src/kronrod.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_levenberg": {
       "module": "occt-math",
@@ -2357,7 +2357,7 @@
       "deps": [],
       "target": "LMConfig",
       "target_path": "crates/occt-math/src/levenberg.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_lsq_nonlinear": {
       "module": "occt-math",
@@ -2370,7 +2370,7 @@
       ],
       "target": "GaussNewton",
       "target_path": "crates/occt-math/src/lsq_nonlinear.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_lu": {
       "module": "occt-math",
@@ -2380,7 +2380,7 @@
       "deps": [],
       "target": "LU",
       "target_path": "crates/occt-math/src/lu.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_matrix": {
       "module": "occt-math",
@@ -2390,7 +2390,7 @@
       "deps": [],
       "target": "MathMatrix",
       "target_path": "crates/occt-math/src/matrix.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_matrix_ext": {
       "module": "occt-math",
@@ -2404,7 +2404,7 @@
       ],
       "target": "identity",
       "target_path": "crates/occt-math/src/matrix_ext.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_matrix_sparse": {
       "module": "occt-math",
@@ -2416,7 +2416,7 @@
       ],
       "target": "SparseMatrix",
       "target_path": "crates/occt-math/src/matrix_sparse.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_multi_int": {
       "module": "occt-math",
@@ -2426,7 +2426,7 @@
       "deps": [],
       "target": "integrate_multidim",
       "target_path": "crates/occt-math/src/multi_int.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_newton": {
       "module": "occt-math",
@@ -2436,7 +2436,7 @@
       "deps": [],
       "target": "NewtonSolver",
       "target_path": "crates/occt-math/src/newton.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_nurbs_fit": {
       "module": "occt-math",
@@ -2446,7 +2446,7 @@
       "deps": [],
       "target": "BSplineFit",
       "target_path": "crates/occt-math/src/nurbs_fit.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_ode": {
       "module": "occt-math",
@@ -2456,7 +2456,7 @@
       "deps": [],
       "target": "rk4_step",
       "target_path": "crates/occt-math/src/ode.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_ode_multistep": {
       "module": "occt-math",
@@ -2468,7 +2468,7 @@
       ],
       "target": "OdeMultistepMethod",
       "target_path": "crates/occt-math/src/ode_multistep.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_ode_rk45": {
       "module": "occt-math",
@@ -2478,7 +2478,7 @@
       "deps": [],
       "target": "OdeRk45",
       "target_path": "crates/occt-math/src/ode_rk45.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_optimize": {
       "module": "occt-math",
@@ -2488,7 +2488,7 @@
       "deps": [],
       "target": "gradient_descent",
       "target_path": "crates/occt-math/src/optimize.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_polyfit": {
       "module": "occt-math",
@@ -2498,7 +2498,7 @@
       "deps": [],
       "target": "polyfit",
       "target_path": "crates/occt-math/src/polyfit.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_polynomial": {
       "module": "occt-math",
@@ -2508,7 +2508,7 @@
       "deps": [],
       "target": "poly_eval",
       "target_path": "crates/occt-math/src/polynomial.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_powell": {
       "module": "occt-math",
@@ -2518,7 +2518,7 @@
       "deps": [],
       "target": "Powell",
       "target_path": "crates/occt-math/src/powell.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_qr_full": {
       "module": "occt-math",
@@ -2528,7 +2528,7 @@
       "deps": [],
       "target": "gram_schmidt",
       "target_path": "crates/occt-math/src/qr_full.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_rng": {
       "module": "occt-math",
@@ -2538,7 +2538,7 @@
       "deps": [],
       "target": "XorShift64",
       "target_path": "crates/occt-math/src/rng.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_roots": {
       "module": "occt-math",
@@ -2550,7 +2550,7 @@
       ],
       "target": "laguerre",
       "target_path": "crates/occt-math/src/roots.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_scalar": {
       "module": "occt-math",
@@ -2560,7 +2560,7 @@
       "deps": [],
       "target": "bisection",
       "target_path": "crates/occt-math/src/scalar.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_spline_surface": {
       "module": "occt-math",
@@ -2570,7 +2570,7 @@
       "deps": [],
       "target": "BSplineSurface",
       "target_path": "crates/occt-math/src/spline_surface.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_statistics_full": {
       "module": "occt-math",
@@ -2580,7 +2580,7 @@
       "deps": [],
       "target": "mean",
       "target_path": "crates/occt-math/src/statistics_full.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_stats": {
       "module": "occt-math",
@@ -2590,7 +2590,7 @@
       "deps": [],
       "target": "mean",
       "target_path": "crates/occt-math/src/stats.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_status": {
       "module": "occt-math",
@@ -2600,7 +2600,7 @@
       "deps": [],
       "target": "MathStatus",
       "target_path": "crates/occt-math/src/status.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_svd": {
       "module": "occt-math",
@@ -2610,7 +2610,7 @@
       "deps": [],
       "target": "SVD",
       "target_path": "crates/occt-math/src/svd.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_trig": {
       "module": "occt-math",
@@ -2620,7 +2620,7 @@
       "deps": [],
       "target": "trig_roots",
       "target_path": "crates/occt-math/src/trig.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "math_vector": {
       "module": "occt-math",
@@ -2630,7 +2630,7 @@
       "deps": [],
       "target": "MathVector",
       "target_path": "crates/occt-math/src/vector.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_abs": {
       "module": "occt-topo",
@@ -2640,7 +2640,7 @@
       "deps": [],
       "target": "ShapeType",
       "target_path": "crates/occt-topo/src/abs.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_bbox_from_geometry": {
       "module": "occt-topo",
@@ -2657,7 +2657,7 @@
       ],
       "target": "shape_bbox",
       "target_path": "crates/occt-topo/src/bbox_from_geometry.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_bincaf": {
       "module": "occt-topo",
@@ -2677,7 +2677,7 @@
       ],
       "target": "XcafAttribute",
       "target_path": "crates/occt-topo/src/bincaf.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_boolean_ops": {
       "module": "occt-topo",
@@ -2694,7 +2694,7 @@
       ],
       "target": "BoolOp",
       "target_path": "crates/occt-topo/src/boolean_ops.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_bop_builder": {
       "module": "occt-topo",
@@ -2722,7 +2722,7 @@
       ],
       "target": "BoolOp",
       "target_path": "crates/occt-topo/src/bop_builder.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_bop_curved": {
       "module": "occt-topo",
@@ -2749,7 +2749,7 @@
       ],
       "target": "FaceRegion",
       "target_path": "crates/occt-topo/src/bop_curved.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_assembly": {
       "module": "occt-topo",
@@ -2766,7 +2766,7 @@
       ],
       "target": "AssemblyPart",
       "target_path": "crates/occt-topo/src/brep_assembly.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_builder_api": {
       "module": "occt-topo",
@@ -2784,7 +2784,7 @@
       ],
       "target": "PolygonBuilder",
       "target_path": "crates/occt-topo/src/brep_builder_api.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_builder_full": {
       "module": "occt-topo",
@@ -2809,7 +2809,7 @@
       ],
       "target": "BRepBuilderEdge",
       "target_path": "crates/occt-topo/src/brep_builder_full.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_compare": {
       "module": "occt-topo",
@@ -2828,7 +2828,7 @@
       ],
       "target": "shape_signature",
       "target_path": "crates/occt-topo/src/brep_compare.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_connect": {
       "module": "occt-topo",
@@ -2845,7 +2845,7 @@
       ],
       "target": "weld_vertices_shape",
       "target_path": "crates/occt-topo/src/brep_connect.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_exchange": {
       "module": "occt-topo",
@@ -2862,7 +2862,7 @@
       ],
       "target": "brep_to_obj",
       "target_path": "crates/occt-topo/src/brep_exchange.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_extrema": {
       "module": "occt-topo",
@@ -2883,7 +2883,7 @@
       ],
       "target": "point_shape_distance",
       "target_path": "crates/occt-topo/src/brep_extrema.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_faces": {
       "module": "occt-topo",
@@ -2904,7 +2904,7 @@
       ],
       "target": "GeomBSplineSurface",
       "target_path": "crates/occt-topo/src/brep_faces.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_gprop": {
       "module": "occt-topo",
@@ -2919,7 +2919,7 @@
       ],
       "target": "MassProperties",
       "target_path": "crates/occt-topo/src/brep_gprop.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_measure": {
       "module": "occt-topo",
@@ -2937,7 +2937,7 @@
       ],
       "target": "edge_length",
       "target_path": "crates/occt-topo/src/brep_measure.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_offset": {
       "module": "occt-topo",
@@ -2961,7 +2961,7 @@
       ],
       "target": "plane_plane_plane_intersection",
       "target_path": "crates/occt-topo/src/brep_offset.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_pattern": {
       "module": "occt-topo",
@@ -2977,7 +2977,7 @@
       ],
       "target": "PatternInstance",
       "target_path": "crates/occt-topo/src/brep_pattern.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_pipe": {
       "module": "occt-topo",
@@ -2995,7 +2995,7 @@
       ],
       "target": "Pipe",
       "target_path": "crates/occt-topo/src/brep_pipe.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_projection": {
       "module": "occt-topo",
@@ -3015,7 +3015,7 @@
       ],
       "target": "project_point_on_face",
       "target_path": "crates/occt-topo/src/brep_projection.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_scene": {
       "module": "occt-topo",
@@ -3033,7 +3033,7 @@
       ],
       "target": "SceneShape",
       "target_path": "crates/occt-topo/src/brep_scene.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_shell": {
       "module": "occt-topo",
@@ -3053,7 +3053,7 @@
       ],
       "target": "face_normal_at_centroid",
       "target_path": "crates/occt-topo/src/brep_shell.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_sketch": {
       "module": "occt-topo",
@@ -3072,7 +3072,7 @@
       ],
       "target": "Sketch",
       "target_path": "crates/occt-topo/src/brep_sketch.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_surface": {
       "module": "occt-topo",
@@ -3090,7 +3090,7 @@
       ],
       "target": "SurfaceKind",
       "target_path": "crates/occt-topo/src/brep_surface.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brep_tool": {
       "module": "occt-topo",
@@ -3108,7 +3108,7 @@
       ],
       "target": "BRepTool",
       "target_path": "crates/occt-topo/src/brep_tool.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brepfeat": {
       "module": "occt-topo",
@@ -3130,7 +3130,7 @@
       ],
       "target": "FeatResult",
       "target_path": "crates/occt-topo/src/brepfeat.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_brepmesh": {
       "module": "occt-topo",
@@ -3151,7 +3151,7 @@
       ],
       "target": "IncrementalMesh",
       "target_path": "crates/occt-topo/src/brepmesh.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_builder": {
       "module": "occt-topo",
@@ -3168,7 +3168,7 @@
       ],
       "target": "TopoBuilder",
       "target_path": "crates/occt-topo/src/builder.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_draw": {
       "module": "occt-topo",
@@ -3197,7 +3197,7 @@
       ],
       "target": "ProcDef",
       "target_path": "crates/occt-topo/src/draw.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_edge_split": {
       "module": "occt-topo",
@@ -3213,7 +3213,7 @@
       ],
       "target": "split_edge",
       "target_path": "crates/occt-topo/src/edge_split.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_face_face": {
       "module": "occt-topo",
@@ -3232,7 +3232,7 @@
       ],
       "target": "FaceIntersect",
       "target_path": "crates/occt-topo/src/face_face.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_feature": {
       "module": "occt-topo",
@@ -3251,7 +3251,7 @@
       ],
       "target": "FeatureResult",
       "target_path": "crates/occt-topo/src/feature.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_fillet": {
       "module": "occt-topo",
@@ -3270,7 +3270,7 @@
       ],
       "target": "FilletEdge",
       "target_path": "crates/occt-topo/src/fillet.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_fillet_curved": {
       "module": "occt-topo",
@@ -3293,7 +3293,7 @@
       ],
       "target": "PlaneInfo",
       "target_path": "crates/occt-topo/src/fillet_curved.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_fillet_edge": {
       "module": "occt-topo",
@@ -3313,7 +3313,7 @@
       ],
       "target": "FilletSpec",
       "target_path": "crates/occt-topo/src/fillet_edge.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_fillet_var": {
       "module": "occt-topo",
@@ -3335,7 +3335,7 @@
       ],
       "target": "RadiusLaw",
       "target_path": "crates/occt-topo/src/fillet_var.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_geometry_query": {
       "module": "occt-topo",
@@ -3355,7 +3355,7 @@
       ],
       "target": "Hit",
       "target_path": "crates/occt-topo/src/geometry_query.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_gltf": {
       "module": "occt-topo",
@@ -3371,7 +3371,7 @@
       ],
       "target": "GltfOptions",
       "target_path": "crates/occt-topo/src/gltf.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_gprop_analytic": {
       "module": "occt-topo",
@@ -3389,7 +3389,7 @@
       ],
       "target": "AnalyticProps",
       "target_path": "crates/occt-topo/src/gprop_analytic.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_hlr": {
       "module": "occt-topo",
@@ -3404,7 +3404,7 @@
       ],
       "target": "ProjectedPoint",
       "target_path": "crates/occt-topo/src/hlr.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_iges": {
       "module": "occt-topo",
@@ -3424,7 +3424,7 @@
       ],
       "target": "rec80",
       "target_path": "crates/occt-topo/src/iges.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_intpatch": {
       "module": "occt-topo",
@@ -3437,7 +3437,7 @@
       ],
       "target": "IntersectionCurve",
       "target_path": "crates/occt-topo/src/intpatch.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_inttools": {
       "module": "occt-topo",
@@ -3460,7 +3460,7 @@
       ],
       "target": "EdgeEdgeHit",
       "target_path": "crates/occt-topo/src/inttools.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_iterator": {
       "module": "occt-topo",
@@ -3473,7 +3473,7 @@
       ],
       "target": "ChildEntry",
       "target_path": "crates/occt-topo/src/iterator.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_loft": {
       "module": "occt-topo",
@@ -3490,7 +3490,7 @@
       ],
       "target": "LoftedSolid",
       "target_path": "crates/occt-topo/src/loft.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_mesh": {
       "module": "occt-topo",
@@ -3506,7 +3506,7 @@
       ],
       "target": "ShapeMesh",
       "target_path": "crates/occt-topo/src/mesh.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_mesh_pipeline": {
       "module": "occt-topo",
@@ -3528,7 +3528,7 @@
       ],
       "target": "MeshPipeline",
       "target_path": "crates/occt-topo/src/mesh_pipeline.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_mesh_to_brep": {
       "module": "occt-topo",
@@ -3546,7 +3546,7 @@
       ],
       "target": "BrepFromMesh",
       "target_path": "crates/occt-topo/src/mesh_to_brep.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_model": {
       "module": "occt-topo",
@@ -3560,7 +3560,7 @@
       ],
       "target": "ModelShape",
       "target_path": "crates/occt-topo/src/model.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_primitives": {
       "module": "occt-topo",
@@ -3577,7 +3577,7 @@
       ],
       "target": "BRepPrimBox",
       "target_path": "crates/occt-topo/src/primitives.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_render_svg": {
       "module": "occt-topo",
@@ -3594,7 +3594,7 @@
       ],
       "target": "SvgRenderOptions",
       "target_path": "crates/occt-topo/src/render_svg.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_rwmesh": {
       "module": "occt-topo",
@@ -3614,7 +3614,7 @@
       ],
       "target": "Material",
       "target_path": "crates/occt-topo/src/rwmesh.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shape": {
       "module": "occt-topo",
@@ -3628,7 +3628,7 @@
       ],
       "target": "TopoShape",
       "target_path": "crates/occt-topo/src/shape.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shape_analysis": {
       "module": "occt-topo",
@@ -3647,7 +3647,7 @@
       ],
       "target": "ShapeReport",
       "target_path": "crates/occt-topo/src/shape_analysis.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shape_checks": {
       "module": "occt-topo",
@@ -3665,7 +3665,7 @@
       ],
       "target": "CheckLevel",
       "target_path": "crates/occt-topo/src/shape_checks.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shape_mesh": {
       "module": "occt-topo",
@@ -3683,7 +3683,7 @@
       ],
       "target": "mesh_shape",
       "target_path": "crates/occt-topo/src/shape_mesh.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shape_metrics": {
       "module": "occt-topo",
@@ -3700,7 +3700,7 @@
       ],
       "target": "ShapeMetrics",
       "target_path": "crates/occt-topo/src/shape_metrics.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shape_naming": {
       "module": "occt-topo",
@@ -3720,7 +3720,7 @@
       ],
       "target": "ShapeId",
       "target_path": "crates/occt-topo/src/shape_naming.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shape_ops": {
       "module": "occt-topo",
@@ -3740,7 +3740,7 @@
       ],
       "target": "transform_shape",
       "target_path": "crates/occt-topo/src/shape_ops.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shell_check": {
       "module": "occt-topo",
@@ -3758,7 +3758,7 @@
       ],
       "target": "edge_face_usage",
       "target_path": "crates/occt-topo/src/shell_check.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_shhealing": {
       "module": "occt-topo",
@@ -3780,7 +3780,7 @@
       ],
       "target": "HealReport",
       "target_path": "crates/occt-topo/src/shhealing.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_solid_union": {
       "module": "occt-topo",
@@ -3802,7 +3802,7 @@
       ],
       "target": "union_meshes",
       "target_path": "crates/occt-topo/src/solid_union.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_step": {
       "module": "occt-topo",
@@ -3821,7 +3821,7 @@
       ],
       "target": "StepHeader",
       "target_path": "crates/occt-topo/src/step.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_sweep": {
       "module": "occt-topo",
@@ -3841,7 +3841,7 @@
       ],
       "target": "Prism",
       "target_path": "crates/occt-topo/src/sweep.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_sweep_revolve": {
       "module": "occt-topo",
@@ -3859,7 +3859,7 @@
       ],
       "target": "RevolvedSolid",
       "target_path": "crates/occt-topo/src/sweep_revolve.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_tgeometry": {
       "module": "occt-topo",
@@ -3875,7 +3875,7 @@
       ],
       "target": "VertexGeom",
       "target_path": "crates/occt-topo/src/tgeometry.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_tools": {
       "module": "occt-topo",
@@ -3888,7 +3888,7 @@
       ],
       "target": "map_shapes_count",
       "target_path": "crates/occt-topo/src/tools.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_topexp": {
       "module": "occt-topo",
@@ -3901,7 +3901,7 @@
       ],
       "target": "ShapeAssociation",
       "target_path": "crates/occt-topo/src/topexp.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_topo_tools_full": {
       "module": "occt-topo",
@@ -3918,7 +3918,7 @@
       ],
       "target": "map_shapes",
       "target_path": "crates/occt-topo/src/topo_tools_full.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_transform": {
       "module": "occt-topo",
@@ -3935,7 +3935,7 @@
       ],
       "target": "move_shape",
       "target_path": "crates/occt-topo/src/transform.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_tshape": {
       "module": "occt-topo",
@@ -3948,7 +3948,7 @@
       ],
       "target": "TShape",
       "target_path": "crates/occt-topo/src/tshape.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_validate": {
       "module": "occt-topo",
@@ -3961,7 +3961,7 @@
       ],
       "target": "CheckStatus",
       "target_path": "crates/occt-topo/src/validate.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_viz_scene": {
       "module": "occt-topo",
@@ -3979,7 +3979,7 @@
       ],
       "target": "Material",
       "target_path": "crates/occt-topo/src/viz_scene.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_vrml": {
       "module": "occt-topo",
@@ -3994,7 +3994,7 @@
       ],
       "target": "write_vrml",
       "target_path": "crates/occt-topo/src/vrml.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_wireframe": {
       "module": "occt-topo",
@@ -4012,7 +4012,7 @@
       ],
       "target": "edge_to_polyline",
       "target_path": "crates/occt-topo/src/wireframe.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_xcaf": {
       "module": "occt-topo",
@@ -4034,7 +4034,7 @@
       ],
       "target": "StepAssembly",
       "target_path": "crates/occt-topo/src/xcaf.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_xmlcaf": {
       "module": "occt-topo",
@@ -4054,7 +4054,7 @@
       ],
       "target": "XmlAttribute",
       "target_path": "crates/occt-topo/src/xmlcaf.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_context": {
       "module": "occt-topo/meshing",
@@ -4069,7 +4069,7 @@
       ],
       "target": "MeshAlgo",
       "target_path": "crates/occt-topo/src/meshing/context.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_data_model": {
       "module": "occt-topo/meshing",
@@ -4088,7 +4088,7 @@
       ],
       "target": "MeshStatus",
       "target_path": "crates/occt-topo/src/meshing/data_model.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_deflection": {
       "module": "occt-topo/meshing",
@@ -4103,7 +4103,7 @@
       ],
       "target": "DegreeOfFreedom",
       "target_path": "crates/occt-topo/src/meshing/deflection.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_deflection_control": {
       "module": "occt-topo/meshing",
@@ -4118,7 +4118,29 @@
       ],
       "target": "DeflectionMesh",
       "target_path": "crates/occt-topo/src/meshing/deflection_control.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
+    },
+    "topo_meshing_degree_of_freedom": {
+      "module": "occt-topo/meshing",
+      "layer": 0,
+      "status": "done",
+      "region": "unit",
+      "deps": [],
+      "target": "from_u8",
+      "target_path": "crates/occt-topo/src/meshing/degree_of_freedom.rs",
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
+    },
+    "topo_meshing_delabella": {
+      "module": "occt-topo/meshing",
+      "layer": 0,
+      "status": "done",
+      "region": "unit",
+      "deps": [
+        "gp_pnt2d"
+      ],
+      "target": "DelabellaBaseMeshAlgo",
+      "target_path": "crates/occt-topo/src/meshing/delabella.rs",
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_delaun": {
       "module": "occt-topo/meshing",
@@ -4131,7 +4153,7 @@
       ],
       "target": "BndB2",
       "target_path": "crates/occt-topo/src/meshing/delaun.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_delaun_data": {
       "module": "occt-topo/meshing",
@@ -4144,7 +4166,7 @@
       ],
       "target": "DelaunDataStructure",
       "target_path": "crates/occt-topo/src/meshing/delaun_data.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_delaun_index": {
       "module": "occt-topo/meshing",
@@ -4154,7 +4176,7 @@
       "deps": [],
       "target": "Box2d",
       "target_path": "crates/occt-topo/src/meshing/delaun_index.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_delaun_types": {
       "module": "occt-topo/meshing",
@@ -4167,7 +4189,7 @@
       ],
       "target": "VertexState",
       "target_path": "crates/occt-topo/src/meshing/delaun_types.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_edge_discret": {
       "module": "occt-topo/meshing",
@@ -4182,7 +4204,7 @@
       ],
       "target": "MeshEdge",
       "target_path": "crates/occt-topo/src/meshing/edge_discret.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_face_discret": {
       "module": "occt-topo/meshing",
@@ -4194,7 +4216,20 @@
       ],
       "target": "IntFlag",
       "target_path": "crates/occt-topo/src/meshing/face_discret.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
+    },
+    "topo_meshing_factories": {
+      "module": "occt-topo/meshing",
+      "layer": 0,
+      "status": "done",
+      "region": "unit",
+      "deps": [
+        "topo_primitives",
+        "topo_shape"
+      ],
+      "target": "DiscretAlgoFactory",
+      "target_path": "crates/occt-topo/src/meshing/factories.rs",
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_fast_discret": {
       "module": "occt-topo/meshing",
@@ -4208,7 +4243,7 @@
       ],
       "target": "FastDiscret",
       "target_path": "crates/occt-topo/src/meshing/fast_discret.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_geom_tool": {
       "module": "occt-topo/meshing",
@@ -4223,7 +4258,7 @@
       ],
       "target": "IsoType",
       "target_path": "crates/occt-topo/src/meshing/geom_tool.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_incremental_mesh": {
       "module": "occt-topo/meshing",
@@ -4232,7 +4267,10 @@
       "region": "unit",
       "deps": [
         "gp_pnt",
+        "gp_pnt2d",
         "topo_abs",
+        "topo_brep_tool",
+        "topo_intpatch",
         "topo_mesh",
         "topo_primitives",
         "topo_shape",
@@ -4240,7 +4278,7 @@
       ],
       "target": "DiscretRoot",
       "target_path": "crates/occt-topo/src/meshing/incremental_mesh.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_mesh_algo": {
       "module": "occt-topo/meshing",
@@ -4252,7 +4290,7 @@
       ],
       "target": "BaseMeshAlgo",
       "target_path": "crates/occt-topo/src/meshing/mesh_algo.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_mesh_tool": {
       "module": "occt-topo/meshing",
@@ -4270,7 +4308,7 @@
       ],
       "target": "FaceMeshData",
       "target_path": "crates/occt-topo/src/meshing/mesh_tool.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_mod": {
       "module": "occt-topo/meshing",
@@ -4280,7 +4318,7 @@
       "deps": [],
       "target": null,
       "target_path": "crates/occt-topo/src/meshing/mod.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_model_builder": {
       "module": "occt-topo/meshing",
@@ -4298,7 +4336,27 @@
       ],
       "target": "ModelBuilder",
       "target_path": "crates/occt-topo/src/meshing/model_builder.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
+    },
+    "topo_meshing_model_healer": {
+      "module": "occt-topo/meshing",
+      "layer": 0,
+      "status": "done",
+      "region": "unit",
+      "deps": [
+        "gp_ax3",
+        "gp_pln",
+        "gp_pnt",
+        "gp_pnt2d",
+        "topo_abs",
+        "topo_builder",
+        "topo_meshing_delaun",
+        "topo_meshing_delaun_types",
+        "topo_tgeometry"
+      ],
+      "target": "HealStats",
+      "target_path": "crates/occt-topo/src/meshing/model_healer.rs",
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_node_insertion": {
       "module": "occt-topo/meshing",
@@ -4314,7 +4372,7 @@
       ],
       "target": "NodeInsertionMeshAlgo",
       "target_path": "crates/occt-topo/src/meshing/node_insertion.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_parameters": {
       "module": "occt-topo/meshing",
@@ -4324,7 +4382,25 @@
       "deps": [],
       "target": "MeshAlgoType",
       "target_path": "crates/occt-topo/src/meshing/parameters.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
+    },
+    "topo_meshing_range_splitter": {
+      "module": "occt-topo/meshing",
+      "layer": 0,
+      "status": "done",
+      "region": "unit",
+      "deps": [
+        "gp_ax3",
+        "gp_pnt",
+        "gp_pnt2d",
+        "gp_torus",
+        "topo_brep_tool",
+        "topo_builder",
+        "topo_tgeometry"
+      ],
+      "target": "ParamSet",
+      "target_path": "crates/occt-topo/src/meshing/range_splitter.rs",
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_shape_tool": {
       "module": "occt-topo/meshing",
@@ -4348,7 +4424,7 @@
       ],
       "target": "ShapeTool",
       "target_path": "crates/occt-topo/src/meshing/shape_tool.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     },
     "topo_meshing_triangulator": {
       "module": "occt-topo/meshing",
@@ -4366,7 +4442,7 @@
       ],
       "target": "FaceTriangulation",
       "target_path": "crates/occt-topo/src/meshing/triangulator.rs",
-      "updated_at": "2026-08-02T11:06:46.222896+00:00"
+      "updated_at": "2026-08-02T12:40:58.447091+00:00"
     }
   }
 }
