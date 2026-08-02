@@ -22,3 +22,10 @@ pub mod edge_discret;    // BRepMesh_EdgeDiscret + EdgeParameterProvider + Curve
 pub mod face_discret;    // BRepMesh_FaceDiscret + FaceChecker + Classifier
 pub mod incremental_mesh;// BRepMesh_IncrementalMesh + DiscretRoot
 pub mod model_builder;   // BRepMesh_ModelBuilder + ModelPreProcessor
+
+// Wave 2 — Delaunay core.
+pub mod delaun_types;    // BRepMesh_{Vertex,Triangle,Circle,Edge} + OrientedEdge + PairOfIndex
+pub mod delaun_data;     // BRepMesh_DataStructureOfDelaun + SelectorOfDataStructureOfDelaun
+pub mod delaun;          // BRepMesh_Delaun (2D UV-space incremental Delaunay)
+pub mod delaun_index;    // BRepMesh_{VertexTool,VertexInspector,CircleTool,CircleInspector}
+pub mod mesh_tool;       // BRepMesh_MeshTool
