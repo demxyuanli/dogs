@@ -13,3 +13,4 @@ graphify-out/
 
 # Example build output
 examples/output/
+/.target-*/

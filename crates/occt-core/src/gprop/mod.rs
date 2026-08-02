@@ -97,3 +97,4 @@ mod tests {
     }
 }
 pub mod inertia;
+pub mod gprops;

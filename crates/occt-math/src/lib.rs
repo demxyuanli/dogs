@@ -88,3 +88,5 @@ pub mod ode_rk45;
 pub mod lsq_nonlinear;
 pub mod ode_multistep;
 pub mod constraint_opt;
+pub mod globoptmin;
+pub mod frpr;
