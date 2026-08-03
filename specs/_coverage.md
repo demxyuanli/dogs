@@ -1,7 +1,7 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-08-03。
-> Rust：5 crate · 153,809 行 · 1,942 测试（core 302 / math 215 / geom 139 / geom2d 72 / topo 1276）
+> Rust：5 crate · 158,239 行 · 2,045 测试（core 302 / math 215 / geom 139 / geom2d 72 / topo 1323）
 > BRepMesh 59 类迁移完成（TKMesh，4 波，~17,400 行新增：框架/数据/Delaunay/细化/分割器/愈合/工厂）
 > Phase 13（TKGeomAlgo 深度）：Extrema 解析/牛顿化 + IntAna + GCPnts + GeomConvert + IntCurvesFace
 > Phase 14（基础补全）：Poly + GProp + BRepGProp + math GlobOptMin/FRPR（+7,286 行）
@@ -10,6 +10,7 @@
 > Phase 17（精确布尔·波 C1）：曲线-曲面求交 + FClass2d + BeanFaceIntersector + EdgeFace（+5,692 行）
 > Phase 18（精确布尔·波 C2a）：EdgeEdge 一般曲线 + FaceFace 精确 + AlgoTools 族 + Context/2D 完整（+5,130 行）
 > Phase 19（精确布尔·波 C2b-1）：PaveFiller 全量求交管线（+4,997 行）
+> Phase 20（精确布尔·波 C2b-2）：BOPAlgo_Builder 重建收官——交叠盒 Fuse/Cut/Common 体积精确（+4,415 行）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -57,7 +58,8 @@
 | BRepAlgoAPI（10） | bop_builder + boolean_ops | 45% | **精确（平面）+ 体素（曲面）**；BOPAlgo/BOPDS 结构波已落地（数值内核后续波） |
 | BOPAlgo/BOPDS/BOPTools | bopds + builder_area/face + shell/wire_splitter | 35%→55% | Phase 15 机械波：DS 信息中枢 + 闭合面/壳/线构建 + Options/历史 |
 | IntTools（24 类） | inttools_data/range/sample/roots + pcurve + intcurvesurface + fclass2d + bean_face + edge_face + edge_edge + int_face_face + int_tools_full + int_curve | 0%→85% | Phase 16-18：求交核全（解析 <1e-9，一般 <1e-6）；PaveFiller 接入波 C2b-2 |
-| BOPAlgo_PaveFiller（12 文件 10,668 行） | pave_filler/intersect/blocks/common（4,997 行） | 0%→70% | Phase 19：VV/VE/EE/VF/EF/FF + MakeBlocks(CommonBlock) + MakePCurves + MakeSplitEdges + ShrunkData/自交检测；bop_builder 接入波 C2b-2 |
+| BOPAlgo_PaveFiller（12 文件 10,668 行） | pave_filler/intersect/blocks/common（4,997 行） | 0%→70% | Phase 19：VV/VE/EE/VF/EF/FF + MakeBlocks(CommonBlock) + MakePCurves + MakeSplitEdges + ShrunkData/自交检测 |
+| BOPAlgo_Builder（5,372 行） | bop_builder2/build_faces/build_common/build_solids（4,415 行） | 0%→70% | Phase 20：FillImages* + BuildSplitFaces/Solids + BOP Fuse/Cut/Common——**交叠盒布尔体积精确**（fuse 1.5/cut 0.5/common 0.5） |
 | BRepOffsetAPI（14） | loft + pipe | 36% | |
 | BRepSweep（9） | sweep + sweep_revolve + pipe | 33% | |
 | BRepFilletAPI（4） | fillet | 25% | |
