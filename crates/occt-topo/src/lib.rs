@@ -97,3 +97,12 @@ pub mod draw;
 pub mod gprop_analytic;
 pub mod brep_gprop_full;
 pub mod meshing;
+// Phase 15 modules (precise NURBS boolean — mechanical wave).
+pub mod bopds;
+pub mod builder_area;
+pub mod builder_face;
+pub mod shell_splitter;
+pub mod wire_splitter;
+pub mod connexity_block;
+pub mod bopalgo_options;
+pub mod bop_hist;
