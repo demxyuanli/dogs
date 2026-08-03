@@ -4627,6 +4627,38 @@
    "deps": [],
    "module": null,
    "target": null
+  },
+  "intcurvesurface": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T03:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "fclass2d": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T03:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "bean_face": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T03:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "edge_face": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T03:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
   }
  }
 }

@@ -1,12 +1,13 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-08-03。
-> Rust：5 crate · 138,072 行 · 1,785 测试（core 302 / math 215 / geom 139 / geom2d 72 / topo 1085）
+> Rust：5 crate · 143,770 行 · 1,830 测试（core 302 / math 215 / geom 139 / geom2d 72 / topo 1130）
 > BRepMesh 59 类迁移完成（TKMesh，4 波，~17,400 行新增：框架/数据/Delaunay/细化/分割器/愈合/工厂）
 > Phase 13（TKGeomAlgo 深度）：Extrema 解析/牛顿化 + IntAna + GCPnts + GeomConvert + IntCurvesFace
 > Phase 14（基础补全）：Poly + GProp + BRepGProp + math GlobOptMin/FRPR（+7,286 行）
 > Phase 15（精确 NURBS 布尔·机械波）：BOPDS + Area/Shell/Wire 构建器 + Options/历史（+5,340 行）
 > Phase 16（精确布尔·波 A）：IntTools 机械层 + pcurve 基建（+5,118 行）
+> Phase 17（精确布尔·波 C1）：曲线-曲面求交 + FClass2d + BeanFaceIntersector + EdgeFace（+5,692 行）
 > 对照：`D:\source\occt-src`（~13,395 文件；已移植范围内 ~73 万行源码）
 
 ## 架构对齐（toolkit → crate）
@@ -53,7 +54,7 @@
 | BRepGProp（13） | brep_gprop + brep_gprop_full | 80% | 精确 Gauss 积分（Linear/Surface/Volume/GK） |
 | BRepAlgoAPI（10） | bop_builder + boolean_ops | 45% | **精确（平面）+ 体素（曲面）**；BOPAlgo/BOPDS 结构波已落地（数值内核后续波） |
 | BOPAlgo/BOPDS/BOPTools | bopds + builder_area/face + shell/wire_splitter | 35%→55% | Phase 15 机械波：DS 信息中枢 + 闭合面/壳/线构建 + Options/历史 |
-| IntTools（24 类） | inttools_data/range/sample/roots + pcurve | 0%→65% | Phase 16 波 A：数据类 + ShrunkRange/Tools/Context + TopolTool + pcurve；数值核（BeanFaceIntersector/FClass2d）波 C |
+| IntTools（24 类） | inttools_data/range/sample/roots + pcurve + intcurvesurface + fclass2d + bean_face + edge_face | 0%→75% | Phase 16 波 A + Phase 17 波 C1：曲线-曲面求交 + 2D 分类 + 边-面求交数值核（解析 <1e-9，一般 <1e-6）；FaceFace/EdgeEdge 一般曲线 + PaveFiller 波 C2 |
 | BRepOffsetAPI（14） | loft + pipe | 36% | |
 | BRepSweep（9） | sweep + sweep_revolve + pipe | 33% | |
 | BRepFilletAPI（4） | fillet | 25% | |
