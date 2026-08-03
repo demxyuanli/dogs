@@ -13,4 +13,7 @@ graphify-out/
 
 # Example build output
 examples/output/
+
+# Test-generated STEP → OBJ outputs
+data/output/
 /.target-*/

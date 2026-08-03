@@ -1845,6 +1845,7 @@ impl<'a> Resolver<'a> {
             "EDGE_CURVE" => self.resolve_edge(rec),
             "ORIENTED_EDGE" => self.resolve_oriented_edge(rec),
             "EDGE_LOOP" => self.resolve_loop(rec),
+            "VERTEX_LOOP" => self.resolve_vertex_loop(rec),
             "FACE_OUTER_BOUND" => self.resolve_outer_bound(rec),
             "FACE_BOUND" => self.resolve_outer_bound(rec),
             "ADVANCED_FACE" => self.resolve_face(rec),
@@ -1911,6 +1912,14 @@ impl<'a> Resolver<'a> {
         Ok(self.b.make_wire(&edges).0)
     }
 
+    /// A `VERTEX_LOOP(name, vertex)` is the boundary of a degenerate face — a
+    /// loop reduced to a single vertex (sphere pole, cone apex). It maps to a
+    /// wire containing no edges (the face still references it via FACE_BOUND).
+    fn resolve_vertex_loop(&self, rec: &'a Record) -> Result<TopoShape, String> {
+        let _ = parse_ref(&rec.args[1]).ok_or("VERTEX_LOOP: bad vertex ref")?;
+        Ok(self.b.make_wire(&[]).0)
+    }
+
     fn resolve_outer_bound(&self, rec: &'a Record) -> Result<TopoShape, String> {
         let loop_ref = parse_ref(&rec.args[1]).ok_or("FACE_OUTER_BOUND: bad loop ref")?;
         let s = self.resolve_shape(loop_ref)?;
@@ -1921,9 +1930,24 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_face(&self, rec: &'a Record) -> Result<TopoShape, String> {
-        let surf_ref = parse_ref(&rec.args[1]).ok_or("ADVANCED_FACE: bad surface ref")?;
+        // Two argument layouts occur in the wild:
+        //  * STEP-214 (ISO standard, written by OCCT/FreeCAD): surface is the
+        //    third argument — `ADVANCED_FACE(name, bounds, surface, same_sense)`.
+        //  * this port's own writer (step.rs write path): surface is the second
+        //    argument — `ADVANCED_FACE('', #surface, (bounds), .T.)`.
+        // Detect by checking which argument holds a surface reference.
+        let surf_ref = if let Some(r) = parse_ref(&rec.args[2]) {
+            r
+        } else {
+            parse_ref(&rec.args[1]).ok_or("ADVANCED_FACE: bad surface ref")?
+        };
         let surface = self.resolve_surface(surf_ref)?;
-        let bounds = parse_ref_list(&rec.args[2]);
+        // Bounds are the other of the two leading arguments.
+        let bounds = if rec.args.get(2).map(|s| s.starts_with('(')).unwrap_or(false) {
+            parse_ref_list(&rec.args[2])
+        } else {
+            parse_ref_list(&rec.args[1])
+        };
         let mut wires = Vec::with_capacity(bounds.len());
         for &b in &bounds {
             let s = self.resolve_shape(b)?;
@@ -2069,6 +2093,14 @@ impl<'a> Resolver<'a> {
                 let ax = parse_ref(&rec.args[1]).ok_or("PARABOLA: bad axis ref")?;
                 let f = parse_f64(&rec.args[2])?;
                 Arc::new(GeomParabola::new(GpParab::new(self.resolve_axis2(ax)?, f)))
+            }
+            "SURFACE_CURVE" | "SEAM_CURVE" => {
+                // SURFACE_CURVE/SEAM_CURVE(name, curve_3d, pcurves, master_rep):
+                // the 3D curve is the second argument; the pcurve list is
+                // referenced per face at the ADVANCED_FACE level, so we take
+                // the 3D curve. SEAM_CURVE is the seam of a closed surface.
+                let c3d = parse_ref(&rec.args[1]).ok_or("SURFACE_CURVE: bad 3D curve ref")?;
+                self.resolve_curve(c3d)?
             }
             "B_SPLINE_CURVE_WITH_KNOTS" => {
                 // Layout (10 args): name, degree, control_points, weights|SELF,
@@ -2267,11 +2299,54 @@ impl<'a> Resolver<'a> {
         let rec = self.record(id)?;
         let name = parse_str(&rec.args[0]);
         let items = parse_ref_list(&rec.args[1]);
+        // A representation's item list may mix the geometric/topological shape
+        // entities (MANIFOLD_SOLID_BREP, …) with auxiliary placement / point /
+        // direction entities (AXIS2_PLACEMENT_3D, CARTESIAN_POINT, DIRECTION,
+        // VECTOR, …) that are referenced *by* the shapes but are not themselves
+        // top-level shapes. OCCT's STEP reader skips these non-shape items; we
+        // do the same so a placement next to the solid does not fail the whole
+        // representation.
         let mut shapes = Vec::with_capacity(items.len());
         for &it in &items {
-            shapes.push(self.resolve_shape(it)?);
+            match self.resolve_shape(it) {
+                Ok(s) => shapes.push(s),
+                Err(e) => {
+                    if !self.is_auxiliary_entity(it) {
+                        return Err(e);
+                    }
+                    // Auxiliary item (placement/point/direction/…): skip.
+                }
+            }
         }
         Ok((name, shapes))
+    }
+
+    /// Whether the record at `id` is an auxiliary geometric entity that a
+    /// representation lists alongside its shapes but that is not a shape.
+    fn is_auxiliary_entity(&self, id: usize) -> bool {
+        let Some(rec) = self.records.get(&id) else { return false };
+        matches!(
+            rec.type_name.as_str(),
+            "AXIS2_PLACEMENT_3D"
+                | "AXIS2_PLACEMENT_2D"
+                | "AXIS1_PLACEMENT"
+                | "CARTESIAN_POINT"
+                | "DIRECTION"
+                | "VECTOR"
+                | "GEOMETRIC_REPRESENTATION_CONTEXT"
+                | "REPRESENTATION_CONTEXT"
+                | "PARAMETRIC_REPRESENTATION_CONTEXT"
+                | "GLOBAL_UNIT_ASSIGNED_CONTEXT"
+                | "APPLICATION_CONTEXT"
+                | "PRODUCT_CONTEXT"
+                | "PRODUCT_DEFINITION_CONTEXT"
+                | "LENGTH_UNIT"
+                | "PLANE_ANGLE_UNIT"
+                | "SOLID_ANGLE_UNIT"
+                | "SI_UNIT"
+                | "NAMED_UNIT"
+                | "UNCERTAINTY_MEASURE_WITH_UNIT"
+        )
     }
 }
 
