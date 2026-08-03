@@ -115,3 +115,9 @@ pub mod inttools_sample;
 pub mod pcurve_full;
 // Phase 16c — IntTools static root/parameter helpers.
 pub mod inttools_roots;
+// Phase 17 modules (precise NURBS boolean — wave C1: curve-surface intersect + 2D classify).
+pub mod intcurvesurface;
+pub mod fclass2d;
+// Phase 17b — wave C1 core: bean-face intersector + edge-face.
+pub mod bean_face;
+pub mod edge_face;
