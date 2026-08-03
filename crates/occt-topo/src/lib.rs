@@ -135,3 +135,8 @@ pub mod pave_filler;
 pub mod pave_intersect;
 pub mod pave_blocks;
 pub mod pave_common;
+// Phase 20 modules (precise NURBS boolean — wave C2b-2a: BOPAlgo_Builder rebuild).
+pub mod bop_builder2;
+pub mod bop_build_faces;
+pub mod bop_build_common;
+pub mod bop_build_solids;

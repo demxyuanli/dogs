@@ -557,8 +557,10 @@ struct EeOutcome {
     n_e2: usize,
     /// Seeds for the new intersection vertices.
     seeds: Vec<NewVertexSeed>,
-    /// Coincident overlap ranges on edge 1.
-    common_ranges: Vec<(f64, f64)>,
+    /// Coincident overlap ranges `(e1_first, e1_last, e2_first, e2_last)` —
+    /// each edge may parameterise the shared interval differently, so the
+    /// common block must store the range per edge.
+    common_ranges: Vec<(f64, f64, f64, f64)>,
 }
 
 /// Core of [`perform_ee`]: run edge/edge intersection on every interfering pair
@@ -630,12 +632,15 @@ fn perform_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Result<(), String> {
                 t_b: pt.uv2().0,
             });
         }
-        // Coincident edge overlaps: the range is in edge-1 parameter space.
+        // Coincident edge overlaps: the shared interval in each edge's own
+        // parameter space (the two edges may parameterise the same geometry
+        // differently, e.g. two collinear segments of overlapping boxes).
         for cp in ee.common_parts() {
             if cp.part_type() == CommonPartType::Edge {
-                let r = cp.range();
-                if r.last - r.first > PCONFUSION {
-                    out.common_ranges.push((r.first, r.last));
+                if let Some((a, b, c, d)) = ee.coincident_ranges() {
+                    if b - a > PCONFUSION {
+                        out.common_ranges.push((a, b, c, d));
+                    }
                 }
             }
         }
@@ -649,11 +654,12 @@ fn perform_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Result<(), String> {
             ds.add_interf(o.n_e1, o.n_e2);
         }
         seeds.extend(o.seeds);
-        for &(a, b) in &o.common_ranges {
+        for &(a, b, c, d) in &o.common_ranges {
             ds.add_interf(o.n_e1, o.n_e2);
             let mut cb = BopdsCommonBlock::new();
             cb.add_range(a, b);
             cb.add_index(o.n_e1);
+            cb.add_range(c, d);
             cb.add_index(o.n_e2);
             ds.update_common_block(&cb);
         }
@@ -735,8 +741,17 @@ pub(crate) fn treat_new_vertices(
         }
         let n = cluster.len() as f64;
         let p = GpPnt::new(cx / n, cy / n, cz / n);
-        let v = AlgoTools::make_new_vertex(&p, tol)?;
-        let n_v = ds.append(v)?;
+        // Reuse an existing source vertex at the same point (e.g. a box corner
+        // of the other operand) instead of creating a coincident new one —
+        // otherwise the two vertices split the same edge at the same parameter
+        // into a zero-length block.
+        let n_v = match find_source_vertex_at(ds, &p, tol + CONFUSION) {
+            Some(existing) => existing,
+            None => {
+                let v = AlgoTools::make_new_vertex(&p, tol)?;
+                ds.append(v)?
+            }
+        };
         for &i in &cluster {
             let s = &seeds[i];
             add_ext_pave(ds, s.edge_a, s.t_a, n_v);
@@ -747,6 +762,24 @@ pub(crate) fn treat_new_vertices(
         out.push(n_v);
     }
     Ok(out)
+}
+
+/// The DS index of an existing source vertex within `tol` of `p`, if any.
+fn find_source_vertex_at(ds: &BopdsDS, p: &GpPnt, tol: f64) -> Option<usize> {
+    let n = ds.nb_source_shapes();
+    let tol2 = tol * tol;
+    (0..n).find(|&i| {
+        ds.shape_info(i).map(|si| si.shape_type() == ShapeType::Vertex).unwrap_or(false)
+            && ds.shape(i).and_then(|s| {
+                if s.shape_type() == ShapeType::Vertex {
+                    Some(crate::brep_tool::BRepTool::vertex_point(&Vertex(s.clone())))
+                } else {
+                    None
+                }
+            })
+            .map(|q| q.square_distance(p) <= tol2)
+            .unwrap_or(false)
+    })
 }
 
 // ---------------------------------------------------------------------------

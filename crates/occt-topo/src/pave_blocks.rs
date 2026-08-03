@@ -397,6 +397,13 @@ pub fn make_split_edges<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
         for (k, pb) in blocks.iter().enumerate() {
             let (n_v1, n_v2) = pb.indices();
             let (a_t1, a_t2) = pb.range();
+            // A zero-length block (two coincident bound vertices) cannot bound
+            // a split piece — it would create a degenerate sub-edge. This can
+            // happen when a new intersection vertex coincides with an existing
+            // source vertex (e.g. a box corner on the other box's edge).
+            if (a_t2 - a_t1).abs() <= PCONFUSION {
+                continue;
+            }
             let need_split = multi || f.ds().is_new_shape(n_v1) || f.ds().is_new_shape(n_v2);
             if need_split {
                 tasks.push(Task {

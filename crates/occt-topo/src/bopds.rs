@@ -1326,6 +1326,16 @@ impl BopdsDS {
         }
     }
 
+    /// Returns the raw same-domain shape map (`index → same-domain index`).
+    pub fn shapes_sd(&self) -> &HashMap<usize, usize> {
+        &self.shapes_sd
+    }
+
+    /// Mutable access to the raw same-domain shape map.
+    pub fn shapes_sd_mut(&mut self) -> &mut HashMap<usize, usize> {
+        &mut self.shapes_sd
+    }
+
     /// Adds an interference between shapes with indices `i1` and `i2`.
     /// Returns true when the pair was not already present.
     pub fn add_interf(&mut self, i1: usize, i2: usize) -> bool {

@@ -979,7 +979,31 @@ impl BeanFaceIntersector {
         }
 
         if inplane {
-            self.results.push(IntRange::new_unchecked(self.first_parameter, self.last_parameter));
+            // The whole line lies in the face's plane, but only the part within
+            // the face's UV window is on the face. `u`/`v` are linear in the
+            // line parameter `t`, so clip the edge range to the interval where
+            // both coordinates stay inside `[umin,umax]×[vmin,vmax]`.
+            let (p0, p1) = (orig, orig.translated_vec(&GpVec::from_xyz(ld.xyz())));
+            let (u0, v0) = plane_uv_of_point(&ploc, &ld, &p0, &_px, &_py);
+            let (u1, v1) = plane_uv_of_point(&ploc, &ld, &p1, &_px, &_py);
+            let (mut t_lo, mut t_hi) = (self.first_parameter, self.last_parameter);
+            match clip_linear_range(t_lo, t_hi, u0, u1, self.umin, self.umax) {
+                Some((a, b)) => {
+                    t_lo = a;
+                    t_hi = b;
+                }
+                None => return,
+            }
+            match clip_linear_range(t_lo, t_hi, v0, v1, self.vmin, self.vmax) {
+                Some((a, b)) => {
+                    t_lo = a;
+                    t_hi = b;
+                }
+                None => return,
+            }
+            if t_hi - t_lo > PCONFUSION {
+                self.results.push(IntRange::new_unchecked(t_lo, t_hi));
+            }
             return;
         }
         if parallel {
@@ -1551,6 +1575,32 @@ fn plane_uv_of_point(ploc: &GpPnt, _pn: &GpDir, p: &GpPnt, px: &GpDir, py: &GpDi
     (d.dot(&GpVec::from_xyz(px.xyz())), d.dot(&GpVec::from_xyz(py.xyz())))
 }
 
+/// Clips the interval `[t0, t1]` to the sub-interval where the linear
+/// coordinate `c(t) = c0 + t·(c1 − c0)` lies inside `[cmin, cmax]`.
+/// Returns `None` when no parameter in `[t0, t1]` satisfies the bound.
+fn clip_linear_range(t0: f64, t1: f64, c0: f64, c1: f64, cmin: f64, cmax: f64) -> Option<(f64, f64)> {
+    let dc = c1 - c0;
+    if dc.abs() < 1e-30 {
+        // Constant coordinate: keep the whole interval only when it is in range.
+        if c0 >= cmin - 1e-9 && c0 <= cmax + 1e-9 {
+            Some((t0, t1))
+        } else {
+            None
+        }
+    } else {
+        let ta = (cmin - c0) / dc;
+        let tb = (cmax - c0) / dc;
+        let (lo, hi) = if ta < tb { (ta, tb) } else { (tb, ta) };
+        let lo = lo.max(t0);
+        let hi = hi.min(t1);
+        if hi >= lo {
+            Some((lo, hi))
+        } else {
+            None
+        }
+    }
+}
+
 /// Port of `IntTools_Tools::ComputeIntRange`: the parameter half-width that
 /// covers the tolerance band around a crossing at incidence `angle`.
 fn compute_int_range(tol1: f64, tol2: f64, angle: f64) -> f64 {
@@ -1665,7 +1715,10 @@ mod tests {
     #[test]
     fn line_in_box_plane_covers_bean() {
         let surf = box_bottom_surface();
-        // Line lying in z = 0, spanning the full bean window.
+        // Line lying in z = 0, spanning the full bean window. Only the part
+        // inside the surface parameter window `[0,1]×[0,1]` (x ∈ [0,1], the
+        // box's UV domain) is on the face; the line's parameter equals x, so
+        // the on-face range is `[0,1]`.
         let curve = Arc::new(GeomLine::new(GpLin::from_pnt_dir(
             GpPnt::new(0.0, 0.5, 0.0),
             dir(1.0, 0.0, 0.0),
@@ -1678,8 +1731,8 @@ mod tests {
         let ranges = bfi.result();
         assert_eq!(ranges.len(), 1, "ranges: {ranges:?}");
         let r = ranges[0];
-        assert!((r.first - -1.0).abs() < 1e-9, "first {r:?}");
-        assert!((r.last - 2.0).abs() < 1e-9, "last {r:?}");
+        assert!((r.first - 0.0).abs() < 1e-9, "first {r:?}");
+        assert!((r.last - 1.0).abs() < 1e-9, "last {r:?}");
     }
 
     #[test]

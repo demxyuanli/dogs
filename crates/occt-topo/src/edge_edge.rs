@@ -211,27 +211,18 @@ impl EdgeEdge {
     ///
     /// Only curves reparametrized to `[0, 1]` (GeomTrimmedCurve) differ from
     /// the edge range here; everything else uses a one-to-one parameter space.
-    fn curve_to_edge_param(&self, idx: usize, t: f64) -> f64 {
-        let curve = if idx == 1 { &self.curve1 } else { &self.curve2 };
-        let Some(curve) = curve.as_ref() else { return t };
-        let r = if idx == 1 { self.r1() } else { self.r2() };
-        if curve.first_parameter() == 0.0 && curve.last_parameter() == 1.0 {
-            r.first + t * (r.last - r.first)
-        } else {
-            t
-        }
+    fn curve_to_edge_param(&self, _idx: usize, t: f64) -> f64 {
+        // The edge parameter range is the curve parameter range (the solver's
+        // `r1`/`r2` are sub-ranges *of the edge*, not a re-parameterization of
+        // the curve), so a curve parameter is already an edge parameter.
+        t
     }
 
     /// Map an edge-space parameter `u` into the curve's parameter space.
-    fn edge_to_curve_param(&self, idx: usize, u: f64) -> f64 {
-        let curve = if idx == 1 { &self.curve1 } else { &self.curve2 };
-        let Some(curve) = curve.as_ref() else { return u };
-        let r = if idx == 1 { self.r1() } else { self.r2() };
-        if curve.first_parameter() == 0.0 && curve.last_parameter() == 1.0 {
-            if (r.last - r.first).abs() > 1e-15 { (u - r.first) / (r.last - r.first) } else { 0.0 }
-        } else {
-            u
-        }
+    fn edge_to_curve_param(&self, _idx: usize, u: f64) -> f64 {
+        // See `curve_to_edge_param`: the edge and curve share the parameter
+        // space, so an edge parameter is already a curve parameter.
+        u
     }
 
     // -----------------------------------------------------------------------
@@ -413,7 +404,7 @@ impl EdgeEdge {
     ///
     /// Returns `(t11, t12, t21, t22)` — the overlap on edge 1 and on edge 2 in
     /// edge-parameter space — or `None` when the ranges do not overlap.
-    fn coincident_ranges(&self) -> Option<(f64, f64, f64, f64)> {
+    pub fn coincident_ranges(&self) -> Option<(f64, f64, f64, f64)> {
         let c1 = self.curve1.as_ref()?;
         let c2 = self.curve2.as_ref()?;
         let tol = self.tol.max(1e-9);

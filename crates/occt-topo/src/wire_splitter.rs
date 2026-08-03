@@ -302,7 +302,10 @@ impl WireSplitter {
                     let mut loop_edges: Vec<Edge> =
                         order[k..].iter().map(|&i| edges[i].clone()).collect();
                     loop_edges.push(edges[next].clone());
-                    let mut consumed: HashSet<usize> = order.iter().cloned().collect();
+                    // Only the tight sub-loop (order[k..] + next) is consumed;
+                    // the leading path (order[0..k]) belongs to the *outer*
+                    // loop that is still being walked and must stay in the pool.
+                    let mut consumed: HashSet<usize> = order[k..].iter().cloned().collect();
                     consumed.insert(next);
                     let remaining: Vec<Edge> = edges
                         .iter()

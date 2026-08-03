@@ -713,7 +713,10 @@ impl EdgeFace {
         let mut intersector = BeanFaceIntersector::new();
         intersector.initialize(curve.clone(), surface.clone(), tol_e, tol_f);
         intersector.set_bean_parameters(self.range.first, self.range.last);
-        let (u0, u1, v0, v1) = BRepTool::uv_bounds(&self.face);
+        // The surface parameter window must be the face's *trimmed* UV bounds
+        // (from the boundary wires), not the unbounded surface range — otherwise
+        // a coplanar edge extending past the face is reported as fully on-face.
+        let (u0, u1, v0, v1) = crate::wireframe::face_uv_bounds(&self.face, surface.as_ref());
         intersector.set_surface_parameters(u0, u1, v0, v1);
         intersector.perform()?;
         if !intersector.is_done() {
@@ -963,18 +966,20 @@ impl EdgeFace {
         let is_whole_range =
             (af1 - self.range.first).abs() < a_cr && (al1 - self.range.last).abs() < a_cr;
 
-        if (df1 > self.criteria * 2.0) && is_whole_range {
-            cp.part_type = CommonPartType::Edge;
-            return 0;
-        }
-
-        let mut tm = 0.5 * (af1 + al1);
-        if is_whole_range {
-            if a_pf.distance(&curve.d0(tm)) > self.criteria * 2.0 {
+        if df1 > self.criteria * 2.0 {
+            // A long common part is an EDGE (coincident on-face range) when its
+            // interior lies on the face — the whole edge, or a partial on-face
+            // sub-range such as a coplanar edge trimmed to the face boundary.
+            // It collapses to a touch POINT only when the middle is off the
+            // face (a tangency at the range end).
+            let tm = 0.5 * (af1 + al1);
+            if is_whole_range || self.is_projectable(tm) {
                 cp.part_type = CommonPartType::Edge;
                 return 0;
             }
         }
+
+        let mut tm = 0.5 * (af1 + al1);
         if !self.check_touch(cp, &mut tm) {
             tm = 0.5 * (af1 + al1);
         }

@@ -134,6 +134,14 @@ pub fn face_to_triangles(f: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle
             }
         }
     }
+    // A REVERSED face bounds the volume with inward-pointing surface normals;
+    // the triangle winding must be flipped so the signed volume is computed
+    // with the correct orientation.
+    if f.0.orientation() == crate::abs::Orientation::Reversed {
+        for t in tris.iter_mut() {
+            std::mem::swap(&mut t.n1, &mut t.n2);
+        }
+    }
     (pts, tris)
 }
 
