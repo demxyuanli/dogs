@@ -4515,6 +4515,70 @@
    "deps": [],
    "module": null,
    "target": null
+  },
+  "bopds": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "builder_area": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "builder_face": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "shell_splitter": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "wire_splitter": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "connexity_block": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "bopalgo_options": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
+  },
+  "bop_hist": {
+   "status": "done",
+   "layer": 0,
+   "updated_at": "2026-08-03T01:30:00",
+   "deps": [],
+   "module": null,
+   "target": null
   }
  }
 }
