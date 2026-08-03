@@ -121,3 +121,12 @@ pub mod fclass2d;
 // Phase 17b — wave C1 core: bean-face intersector + edge-face.
 pub mod bean_face;
 pub mod edge_face;
+// Phase 18 modules (precise NURBS boolean — wave C2a: edge-edge + face-face + algo tools).
+pub mod edge_edge;
+pub mod int_face_face;
+pub mod algo_tools;
+// Phase 18b — full IntTools_Context + AlgoTools2D.
+pub mod int_tools_full;
+pub mod boptools_2d;
+// Phase 18c — IntTools_Curve data class.
+pub mod int_curve;
