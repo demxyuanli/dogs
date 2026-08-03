@@ -18,6 +18,7 @@ use std::sync::{Arc, RwLock, OnceLock};
 
 use occt_core::gp::GpPnt;
 use occt_geom::{Curve, Surface};
+use occt_geom2d::curve::Curve2d;
 
 use crate::shape::TopoShape;
 
@@ -37,6 +38,9 @@ pub struct EdgeGeom {
     pub same_parameter: bool,
     pub same_range: bool,
     pub degenerated: bool,
+    /// Per-face 2D pcurves, keyed by face pointer identity (see `shape_key`).
+    /// Mirrors `BRep_TEdge`'s map of `(face -> Geom2d_Curve)`.
+    pub pcurves: HashMap<usize, Arc<dyn Curve2d>>,
 }
 
 impl EdgeGeom {
@@ -49,10 +53,21 @@ impl EdgeGeom {
             same_parameter: true,
             same_range: true,
             degenerated: false,
+            pcurves: HashMap::new(),
         }
     }
     pub fn curve(&self) -> Arc<dyn Curve> { self.curve.clone() }
     pub fn parameters(&self) -> (f64, f64) { (self.first, self.last) }
+
+    /// Attach the pcurve of this edge on the face identified by `face_key`.
+    pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>) {
+        self.pcurves.insert(face_key, c);
+    }
+
+    /// The pcurve on the face identified by `face_key`, if already built.
+    pub fn get_pcurve(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
+        self.pcurves.get(&face_key).cloned()
+    }
 }
 
 /// Face geometry — an underlying surface and a tolerance. (BRep_TFace)
@@ -134,6 +149,7 @@ impl GeometryRegistry {
                 same_parameter: g.same_parameter,
                 same_range: g.same_range,
                 degenerated: g.degenerated,
+                pcurves: g.pcurves.clone(),
             }
         })
     }
@@ -160,6 +176,28 @@ impl GeometryRegistry {
 
     pub fn is_degenerated_edge(&self, s: &TopoShape) -> bool {
         self.edge_geom(s).map(|g| g.degenerated).unwrap_or(false)
+    }
+
+    // ---- edge p-curves ----
+
+    /// The pcurve of edge `s` on the face identified by `face_key` (see
+    /// `shape_key`), if one has been attached.
+    pub fn edge_pcurve(&self, s: &TopoShape, face_key: usize) -> Option<Arc<dyn Curve2d>> {
+        self.edges.read().unwrap().get(&key(s)).and_then(|g| g.get_pcurve(face_key))
+    }
+
+    /// Attach a pcurve to edge `s` for the face identified by `face_key`.
+    /// Mirrors `BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`.
+    pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.set_pcurve(face_key, curve);
+        }
+    }
+
+    /// Stable pointer-identity key for a shape, usable as a `HashMap` key.
+    /// Same value as the internal `key` used to index the side-table.
+    pub fn shape_key(s: &TopoShape) -> usize {
+        key(s)
     }
 
     // ---- faces ----

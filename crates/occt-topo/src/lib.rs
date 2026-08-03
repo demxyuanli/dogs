@@ -106,3 +106,12 @@ pub mod wire_splitter;
 pub mod connexity_block;
 pub mod bopalgo_options;
 pub mod bop_hist;
+// Phase 16 modules (precise NURBS boolean — IntTools mechanical layer + pcurve).
+pub mod inttools_data;
+pub mod inttools_range;
+pub mod pcurve;
+// Phase 16b — IntTools sample/localize + full pcurve.
+pub mod inttools_sample;
+pub mod pcurve_full;
+// Phase 16c — IntTools static root/parameter helpers.
+pub mod inttools_roots;

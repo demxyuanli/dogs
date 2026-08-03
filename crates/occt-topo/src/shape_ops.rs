@@ -46,6 +46,7 @@ pub fn transform_shape(shape: &mut TopoShape, t: &GpTrsf) -> Result<(), String> 
                         same_parameter: g.same_parameter,
                         same_range: g.same_range,
                         degenerated: g.degenerated,
+                        pcurves: g.pcurves.clone(),
                     });
                 }
             }
@@ -120,6 +121,7 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
                         same_parameter: g.same_parameter,
                         same_range: g.same_range,
                         degenerated: g.degenerated,
+                        pcurves: g.pcurves.clone(),
                     });
                 }
             }
