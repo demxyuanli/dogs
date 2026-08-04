@@ -1,9 +1,11 @@
 # Phase 22 Plan — STEP→Mesh→OBJ 面积/几何对齐（修复 Cone/Cylinder/rev）
 
-> 审查结论：STEP→OBJ 管线读入/网格化存在几何缺口，面积对比暴露：
-> Cube/Sphere 正确，**Cone 面积 4.7（应 175）错 37×、Cylinder 16（应 151）错 9×、rev 锯齿错**、Torus 偏 18%。
-> 根因在 STEP 曲面边界解析（face_uv_bounds）与网格化（face_to_triangles 对曲面侧壁）。
-> 参考源：OCCT `BRep_Tool::UVBounds`/`BRepAdaptor_Surface` + `StepToTopoDS` 曲面构造。
+> 审查结论（已核实 OCCT 源码）：
+> - **面积错是 STEP 几何读入错**，不是网格——Cone 解析面积（brep_gprop_full）51.4（应 185），mesh 4.7。OCCT 面积用解析 `BRepGProp_Face`（BRepGProp.cxx L225-230），非网格。
+> - 波 A（face_uv_bounds 用 pcurve）**OCCT 证实**：`BRepTools::AddUVBounds`（L179）用 `BRep_Tool::CurveOnSurface` 取边 pcurve + `BndLib_Add2dCurve` 加包围盒。
+> - Cone 根因已定位：**make_pcurve_full 对锥面投影 v 域只 0.9（应 10）**——母线 (0,0,0)→(4,0,10) 在锥面的 pcurve 投影错。
+> - 波 C 修正：**不要改 surface_area 用网格**——OCCT 用解析 `BRepGProp_Face`（Phase 14 已移植 brep_gprop_full）。应修 STEP 读入使解析面积正确。
+> 参考源：OCCT `BRepTools::UVBounds`/`AddUVBounds` + `BRepGProp_Face` + `StepToTopoDS`。
 
 ## 缺口清单（审查定位）
 
@@ -15,7 +17,7 @@
 | 4 | Shape 复合实体 0 形状 | 解析到中段 | parse_records 复合实体跨行 type_name 空 | Shape/1/2 |
 | 5 | 曲面侧壁 v 细分过密 | Cylinder 侧壁 16 z 层 | OCCT v 直线不细分，我们弦偏差细分 | Cylinder/Cone 密度 |
 | 6 | Cone u 段少 | ratio 0.23 | cone_radius_at/arc_angular_step 对锥标定 | Cone 密度 |
-| 7 | surface_area 用 face_to_triangles | Cylinder 16 vs incremental 109 | brep_gprop::surface_area 未用 incremental | 面积/体积 API |
+| 7 | 面积 API 语义 | OCCT 用解析 BRepGProp_Face | 验证用 brep_gprop_full 解析面积（非 mesh） | 面积/体积 API |
 | 8 | 面积对拍门禁缺失 | 仅 bbox | 无面积对比测试 | 质量门禁 |
 
 ## 波次方案
@@ -31,10 +33,10 @@
 - **B2 Cone u 段**：cone_radius_at 采样修正，u 段按底半径标定。
 - 门禁：Cylinder/Cone 密度 ratio → ~1（面数接近 OCCT）。
 
-### 波 C：输出 API + 面积门禁（缺口 7/8，~800 行）
-- **C1 brep_gprop::surface_area/volume** 用 incremental_mesh（或 export_mesh），对齐面积。
-- **C2 面积对拍门禁**：step_obj_parity 加面积断言（Cube 600、Sphere 314、Cylinder 151、Cone 175）。
-- 门禁：面积 ratio 0.9-1.1。
+### 波 C：解析面积验证 + 面积门禁（缺口 7/8，~800 行）
+- **C1 解析面积对齐**：OCCT 面积用解析 `BRepGProp_Face`（非网格）。用 `brep_gprop_full::surface_properties`（Phase 14 已移植）作为面积验证——修 STEP 读入后解析面积应正确（Cone 51.4→185、Cylinder→151）。若 brep_gprop_full 对曲面有缺口则修它。
+- **C2 面积对拍门禁**：step_obj_parity 加解析面积断言（Cube 600、Sphere 314、Cylinder 151、Cone 175）。
+- 门禁：解析面积 ratio 0.9-1.1（比 mesh 面积更准）。
 
 ## 验证
 
