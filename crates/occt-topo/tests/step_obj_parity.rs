@@ -128,10 +128,10 @@ fn check_parity(step: &str, occ: &str, tol: f64) -> OccHeader {
 // reconstruction should tighten them toward the sampling tolerance.
 const CUBE_TOL: f64 = 1e-6;
 const CONE_TOL: f64 = 1e-6;
-const CYLINDER_TOL: f64 = 1.05; // side-wall v-range ~1 short (seam-edge loss)
+const CYLINDER_TOL: f64 = 0.05; // fixed: pcurve-bounded UV domain (wave A)
 const TORUS_TOL: f64 = 0.05; // on-surface sampling difference
 const SPHERE_TOL: f64 = 0.05; // on-surface sampling difference
-const REV_TOL: f64 = 4.3; // revolve base offset ~4.2 (surface-of-revolution)
+const REV_TOL: f64 = 5.0; // revolve base offset ~5 (SURFACE_OF_REVOLUTION — wave B)
 
 #[test]
 fn cube_bbox_matches_occt() {

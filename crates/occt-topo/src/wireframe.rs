@@ -168,23 +168,43 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
     let mut umax = f64::NEG_INFINITY;
     let mut vmin = f64::INFINITY;
     let mut vmax = f64::NEG_INFINITY;
+    // The face's UV domain is bounded by the UV image of its boundary edges
+    // (`BRepAdaptor_Surface::UVBounds` / `BRep_Tool` semantics). Each edge has
+    // a pcurve on this face; its endpoints' `(u, v)` delimit the edge's UV
+    // span. Inverting 3D boundary points numerically (`invert_uv`) is fragile
+    // on revolution surfaces (a cylinder's v-range is infinite on the surface),
+    // so we take the pcurve's UV directly.
+    //
+    // Periodic u (seam): a full circle edge spans one period; its pcurve u
+    // runs 0→−2π. The u domain must therefore cover a full period, not
+    // collapse to ~0, so we unwrap each edge's u span to the surface's
+    // [u0, u0+period] window.
+    let (su0, su1) = surface.u_range();
+    let u_period = if su0.is_finite() && su1.is_finite() && su1 > su0 { su1 - su0 } else { 0.0 };
     for w in f.tshape.read().unwrap().children.iter() {
         let w = TopoShape::from_handle(w.clone());
         if w.shape_type() != ShapeType::Wire { continue; }
         for eh in w.tshape.read().unwrap().children.iter() {
             let e = TopoShape::from_handle(eh.clone());
             if e.shape_type() != ShapeType::Edge { continue; }
-            let Some(curve) = reg().edge_curve(&e) else { continue };
+            let edge = Edge(e.clone());
+            let Ok(pc) = crate::pcurve_full::make_pcurve_full(&edge, f) else { continue };
             let (a0, a1) = reg().edge_parameters(&e);
             if !(a0.is_finite() && a1.is_finite() && a1 > a0) { continue; }
+            // Sample the pcurve along the edge (a full circle edge's endpoints
+            // coincide in UV, so endpoints alone would collapse the domain).
             for k in 0..=8 {
-                let p = curve.d0(a0 + (a1 - a0) * k as f64 / 8.0);
-                if let Some((uu, vv)) = invert_uv(surface, &p) {
-                    umin = umin.min(uu);
-                    umax = umax.max(uu);
-                    vmin = vmin.min(vv);
-                    vmax = vmax.max(vv);
-                }
+                let t = a0 + (a1 - a0) * k as f64 / 8.0;
+                let uv = pc.d0(t);
+                let u0a = if u_period > 0.0 {
+                    (uv.x() - su0).rem_euclid(u_period) + su0
+                } else {
+                    uv.x()
+                };
+                umin = umin.min(u0a);
+                umax = umax.max(u0a);
+                vmin = vmin.min(uv.y());
+                vmax = vmax.max(uv.y());
             }
         }
     }
