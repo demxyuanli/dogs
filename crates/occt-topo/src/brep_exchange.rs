@@ -41,34 +41,44 @@ fn shape_mesh_to_ply(mesh: &ShapeMesh) -> PlyMesh {
     }
 }
 
+/// Mesh a shape for export using the OCCT `BRepMesh_IncrementalMesh` semantics
+/// (planar faces triangulate exactly, curved faces subdivide adaptively), so
+/// the exported density matches OCCT — a box becomes 12 triangles, not the
+/// thousands a uniform UV grid would emit.
+fn export_mesh(shape: &TopoShape, deflection: f64) -> ShapeMesh {
+    crate::brepmesh::incremental_mesh(shape, deflection)
+        .map(|im| im.mesh)
+        .unwrap_or_else(|_| crate::shape_mesh::mesh_shape(shape, deflection))
+}
+
 /// Export a shape to Wavefront OBJ text.
 pub fn brep_to_obj(shape: &TopoShape, deflection: f64) -> String {
-    let mesh = crate::shape_mesh::mesh_shape(shape, deflection);
+    let mesh = export_mesh(shape, deflection);
     occt_core::io::obj::write_obj(&shape_mesh_to_obj(&mesh))
 }
 
 /// Export a shape to ASCII STL text.
 pub fn brep_to_stl_ascii(shape: &TopoShape, deflection: f64) -> String {
-    let mesh = crate::shape_mesh::mesh_shape(shape, deflection);
+    let mesh = export_mesh(shape, deflection);
     occt_core::io::stl::write_ascii_stl(&shape_mesh_to_stl(&mesh))
 }
 
 /// Export a shape to binary STL bytes (vertices welded first).
 pub fn brep_to_stl_binary(shape: &TopoShape, deflection: f64) -> Vec<u8> {
-    let mut mesh = crate::shape_mesh::mesh_shape(shape, deflection);
+    let mut mesh = export_mesh(shape, deflection);
     crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
     occt_core::io::stl::write_binary_stl(&shape_mesh_to_stl(&mesh))
 }
 
 /// Export a shape to ASCII PLY text.
 pub fn brep_to_ply(shape: &TopoShape, deflection: f64) -> String {
-    let mesh = crate::shape_mesh::mesh_shape(shape, deflection);
+    let mesh = export_mesh(shape, deflection);
     occt_core::io::ply::write_ply(&shape_mesh_to_ply(&mesh))
 }
 
 /// Write a shape to an OBJ file.
 pub fn brep_write_obj(path: &str, shape: &TopoShape, deflection: f64) -> std::io::Result<()> {
-    let mesh = crate::shape_mesh::mesh_shape(shape, deflection);
+    let mesh = export_mesh(shape, deflection);
     occt_core::io::obj::write_obj_file(path, &shape_mesh_to_obj(&mesh))
 }
 

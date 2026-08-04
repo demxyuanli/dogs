@@ -142,12 +142,27 @@ fn point_triangle_distance(p: &GpPnt, a: &GpPnt, b: &GpPnt, c: &GpPnt) -> f64 {
     let bdot = ab.xyz().dot(&ap.xyz());
     let cdot = ac.xyz().dot(&ap.xyz());
     let bbc = ab.xyz().dot(&ac.xyz());
+    // Barycentric weights: v corresponds to vertex b (opposite edge ac), w to
+    // vertex c (opposite edge ab). The norms must be the *opposite* edge's:
+    //   v = (|ac|²·bdot − bbc·cdot) / |ab×ac|²
+    //   w = (|ab|²·cdot − bbc·bdot) / |ab×ac|²
+    // Swapping |ab|² and |ac|² here was the bug: a point on a face split into
+    // two triangles (e.g. a box centre) landed on the wrong diagonal, giving
+    // the edge distance instead of the plane distance.
+    let ab2 = ab.xyz().dot(&ab.xyz());
+    let ac2 = ac.xyz().dot(&ac.xyz());
     let denom = n2;
-    let v = (cdot * (ab.xyz().dot(&ab.xyz())) - bdot * bbc) / denom;
-    let w = (bdot * (ac.xyz().dot(&ac.xyz())) - cdot * bbc) / denom;
+    let v = (ac2 * bdot - bbc * cdot) / denom;
+    let w = (ab2 * cdot - bbc * bdot) / denom;
     let u = 1.0 - v - w;
-    if u >= 0.0 && v >= 0.0 && w >= 0.0 {
-        // Closest point inside the triangle.
+    // Tolerance on the barycentric bounds: a point exactly on the triangle's
+    // diagonal edge (a box centre projected onto a face split into two
+    // triangles) yields u/v/w that are zero up to floating-point sign — treat
+    // |·| ≤ eps as inside rather than falling through to the edge distance.
+    const EPS: f64 = 1e-12;
+    if u >= -EPS && v >= -EPS && w >= -EPS {
+        // Closest point inside the triangle (clamp tiny negatives to the edge).
+        let (u, v, w) = (u.max(0.0), v.max(0.0), w.max(0.0));
         let q = GpPnt::new(
             u * a.x() + v * b.x() + w * c.x(),
             u * a.y() + v * b.y() + w * c.y(),

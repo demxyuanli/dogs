@@ -33,7 +33,7 @@ pub struct IncrementalMesh {
 }
 
 /// Max recursion depth for curved-face cell subdivision.
-const MAX_FACE_DEPTH: usize = 6;
+const MAX_FACE_DEPTH: usize = 9;
 /// Max recursion depth for `adaptive_curve_polyline`.
 const MAX_CURVE_DEPTH: usize = 24;
 
@@ -170,13 +170,18 @@ fn adaptive_face_mesh(
         let p10 = surface.d0(cu1, cv0);
         let p01 = surface.d0(cu0, cv1);
         let p11 = surface.d0(cu1, cv1);
-        let pm = surface.d0(mu, mv);
-        let bilinear = GpPnt::new(
-            0.25 * (p00.x() + p10.x() + p01.x() + p11.x()),
-            0.25 * (p00.y() + p10.y() + p01.y() + p11.y()),
-            0.25 * (p00.z() + p10.z() + p01.z() + p11.z()),
-        );
-        let dev = pm.distance(&bilinear);
+        // Chord-deviation criterion (OCCT `BRepMesh_IncrementalMesh` semantics):
+        // the distance from the surface at each cell-edge midpoint to the chord
+        // joining the edge's corners, plus the cell-centre deviation from the
+        // bilinear patch. A sphere's surface dips below the facet chord, so the
+        // edge-midpoint deviation drives the right subdivision; the centre
+        // check catches high-order curvature a chord midpoint misses.
+        let dev = point_segment_dist(&surface.d0(mu, cv0), &p00, &p10)
+            .max(point_segment_dist(&surface.d0(mu, cv1), &p01, &p11))
+            .max(point_segment_dist(&surface.d0(cu0, mv), &p00, &p01))
+            .max(point_segment_dist(&surface.d0(cu1, mv), &p10, &p11))
+            .max(point_segment_dist(&surface.d0(mu, mv), &p00, &p11))
+            .max(point_segment_dist(&surface.d0(mu, mv), &p10, &p01));
 
         if dev > def && depth < MAX_FACE_DEPTH {
             *iterations += 1;

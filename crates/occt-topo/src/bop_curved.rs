@@ -2555,8 +2555,10 @@ mod tests {
         let r = curved_boolean(&sphere.0, &box_s.0, BoolOp::Common, 1e-6).expect("common ok");
         assert!(r.solid.is_some(), "common produces a solid");
         // The result keeps the whole (curved) sphere face, so shape_volume is
-        // reliable for this curved solid.
-        let v = shape_volume(&r.shape, 0.05);
+        // reliable for this curved solid. The adaptive mesh's deflection
+        // calibration is looser than OCCT's (def 0.05 → ~3.5% sphere error), so
+        // a finer deflection is needed for the <0.05 (1.2%) volume gate.
+        let v = shape_volume(&r.shape, 0.01);
         let expected = 4.0 / 3.0 * PI;
         assert!((v - expected).abs() < 0.05, "common volume {v} (expected {expected})");
         clear_tree(&r.shape);
