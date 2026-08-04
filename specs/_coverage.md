@@ -1,7 +1,8 @@
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
-> 审查日期：2026-08-03。
-> Rust：5 crate · 158,239 行 · 2,045 测试（core 302 / math 215 / geom 139 / geom2d 72 / topo 1323）
+> 审查日期：2026-08-04。
+> Rust：5 crate · 158,239 行 · 2,052 测试（core 302 / math 215 / geom 139 / geom2d 72 / topo 1340）
+> STEP→OBJ 对拍门禁（`tests/step_obj_parity.rs`，oracle=data/occ-*.obj）：Cube/Cone 精确、Sphere/Torus 采样差、Cylinder/rev 宽容差（缺口，Phase 21 移植）
 > BRepMesh 59 类迁移完成（TKMesh，4 波，~17,400 行新增：框架/数据/Delaunay/细化/分割器/愈合/工厂）
 > Phase 13（TKGeomAlgo 深度）：Extrema 解析/牛顿化 + IntAna + GCPnts + GeomConvert + IntCurvesFace
 > Phase 14（基础补全）：Poly + GProp + BRepGProp + math GlobOptMin/FRPR（+7,286 行）
