@@ -112,7 +112,10 @@ fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
         return None;
     }
     let apex = closest_point_lines(g0a, d0, g1a, d1)?;
-    let m0 = mid(&s.d0(0.0, 0.0), &s.d0(PI, 0.0));
+    // The cone axis runs through the apex and the midpoint of two opposite
+    // points on a u-ring. Sample the ring at v=1 (not v=0 — every u collapses
+    // to the apex there, making the axis a zero vector).
+    let m0 = mid(&s.d0(0.0, 1.0), &s.d0(PI, 1.0));
     let axis = GpVec::from_pnts(&apex, &m0);
     let am = axis.magnitude();
     if am < 1e-9 {
