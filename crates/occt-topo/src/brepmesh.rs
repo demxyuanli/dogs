@@ -75,7 +75,7 @@ pub fn incremental_mesh(shape: &TopoShape, deflection: f64) -> Result<Incrementa
 /// adaptive UV subdivision.
 fn mesh_face(face: &Face, deflection: f64, iterations: &mut usize) -> (Vec<GpPnt>, Vec<Triangle>) {
     if face_is_planar(face) {
-        return planar_face_mesh(face);
+        return planar_face_mesh(face, deflection);
     }
     adaptive_face_mesh(face, deflection, iterations)
 }
@@ -89,12 +89,15 @@ fn mesh_face(face: &Face, deflection: f64, iterations: &mut usize) -> (Vec<GpPnt
 /// the resulting polygon is convex it is fan-triangulated with outward
 /// orientation; otherwise we fall back to the uniform grid of
 /// [`face_to_triangles`].
-fn planar_face_mesh(face: &Face) -> (Vec<GpPnt>, Vec<Triangle>) {
-    // Distinct boundary points.
+fn planar_face_mesh(face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
+    // Distinct boundary points. The boundary is sampled with the given
+    // deflection (not a hard-coded 1e-6 — that would over-plate a circular disk
+    // cap into thousands of segments instead of the ~tens OCCT uses).
+    let bound_def = deflection.max(0.01);
     let mut pts: Vec<GpPnt> = Vec::new();
     for wire in wires_of_face(face) {
         for e in edges_of_wire(&wire) {
-            for p in edge_to_polyline(&e, 1e-6) {
+            for p in edge_to_polyline(&e, bound_def) {
                 if !pts.iter().any(|q| q.distance(&p) < 1e-9) {
                     pts.push(p);
                 }
@@ -160,6 +163,21 @@ fn adaptive_face_mesh(
     }
 
     let def = deflection.max(1e-9);
+    // OCCT route: the periodic-u direction (cylinder/cone/sphere/torus side)
+    // subdivides by the `GCPnts_TangentialDeflection::ArcAngularStep` chord
+    // step `2·acos(1 − deflection/radius)`, bounded by a cap so a tiny
+    // deflection doesn't explode; the v direction subdivides by the actual
+    // chord deviation (a cylinder's axial v-direction is straight, deviation
+    // ~0, so it gets few segments — matching OCCT's ~2-segment side walls).
+    let u_periodic = surface.is_u_periodic();
+    let u_step: Option<f64> = if u_periodic {
+        let vmid = 0.5 * (v0 + v1);
+        let r = surface.d0(0.0, vmid).distance(&surface.d0(std::f64::consts::PI, vmid)) * 0.5;
+        let ang_step = crate::meshing::range_splitter::arc_angular_step(r, def, 1.0, 0.0);
+        Some(ang_step.max((u1 - u0) / 96.0))
+    } else {
+        None
+    };
     let mut verts: Vec<GpPnt> = Vec::new();
     let mut tris: Vec<Triangle> = Vec::new();
     let mut stack = vec![(u0, u1, v0, v1, 0usize)];
@@ -170,25 +188,49 @@ fn adaptive_face_mesh(
         let p10 = surface.d0(cu1, cv0);
         let p01 = surface.d0(cu0, cv1);
         let p11 = surface.d0(cu1, cv1);
-        // Chord-deviation criterion (OCCT `BRepMesh_IncrementalMesh` semantics):
-        // the distance from the surface at each cell-edge midpoint to the chord
-        // joining the edge's corners, plus the cell-centre deviation from the
-        // bilinear patch. A sphere's surface dips below the facet chord, so the
-        // edge-midpoint deviation drives the right subdivision; the centre
-        // check catches high-order curvature a chord midpoint misses.
-        let dev = point_segment_dist(&surface.d0(mu, cv0), &p00, &p10)
-            .max(point_segment_dist(&surface.d0(mu, cv1), &p01, &p11))
-            .max(point_segment_dist(&surface.d0(cu0, mv), &p00, &p01))
-            .max(point_segment_dist(&surface.d0(cu1, mv), &p10, &p11))
-            .max(point_segment_dist(&surface.d0(mu, mv), &p00, &p11))
-            .max(point_segment_dist(&surface.d0(mu, mv), &p10, &p01));
+        // u direction: fixed angular step for periodic surfaces, else chord
+        // deviation. v direction: chord deviation (straight directions stay
+        // coarse). Subdivide while either is not converged.
+        let u_done = match u_step {
+            Some(step) => (cu1 - cu0) <= step,
+            None => {
+                let dev = point_segment_dist(&surface.d0(mu, cv0), &p00, &p10)
+                    .max(point_segment_dist(&surface.d0(mu, cv1), &p01, &p11));
+                dev <= def
+            }
+        };
+        let v_done = {
+            let dev = point_segment_dist(&surface.d0(cu0, mv), &p00, &p01)
+                .max(point_segment_dist(&surface.d0(cu1, mv), &p10, &p11))
+                // Cell-centre deviation from the diagonals — catches high-order
+                // curvature (a sphere's latitude arcs) that edge-midpoints miss.
+                .max(point_segment_dist(&surface.d0(mu, mv), &p00, &p11))
+                .max(point_segment_dist(&surface.d0(mu, mv), &p10, &p01));
+            dev <= def
+        };
 
-        if dev > def && depth < MAX_FACE_DEPTH {
+        if !(u_done && v_done) && depth < MAX_FACE_DEPTH {
+            // Subdivide only the unconverged direction(s) — OCCT splits U and V
+            // independently (a straight cylinder v-direction stays coarse while
+            // the angular u-direction refines).
             *iterations += 1;
-            stack.push((mu, cu1, mv, cv1, depth + 1));
-            stack.push((cu0, mu, mv, cv1, depth + 1));
-            stack.push((mu, cu1, cv0, mv, depth + 1));
-            stack.push((cu0, mu, cv0, mv, depth + 1));
+            match (u_done, v_done) {
+                (true, false) => {
+                    stack.push((cu0, cu1, mv, cv1, depth + 1));
+                    stack.push((cu0, cu1, cv0, mv, depth + 1));
+                }
+                (false, true) => {
+                    stack.push((mu, cu1, cv0, cv1, depth + 1));
+                    stack.push((cu0, mu, cv0, cv1, depth + 1));
+                }
+                (false, false) => {
+                    stack.push((mu, cu1, mv, cv1, depth + 1));
+                    stack.push((cu0, mu, mv, cv1, depth + 1));
+                    stack.push((mu, cu1, cv0, mv, depth + 1));
+                    stack.push((cu0, mu, cv0, mv, depth + 1));
+                }
+                (true, true) => {}
+            }
         } else {
             let nvec = surface_normal(surface.as_ref(), mu, mv);
             let n = nvec.xyz();
