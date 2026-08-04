@@ -47,6 +47,7 @@ pub use sphere::GeomSphere;
 pub use torus::GeomTorus;
 pub use trimmed::GeomTrimmedCurve;
 pub use revolved::GeomRevolvedSurface;
+pub use surface_of_revolution::GeomSurfaceOfRevolution;
 pub use offset::GeomOffsetCurve;
 pub mod extrema;
 pub mod extrema_pc;
@@ -58,6 +59,7 @@ pub mod extrema_ss;
 pub mod intana;
 pub mod gcpnts;
 pub mod convert_bspl;
+pub mod surface_of_revolution;
 
 pub type HandleCurve = Arc<dyn Curve>;
 pub type HandleSurface = Arc<dyn Surface>;

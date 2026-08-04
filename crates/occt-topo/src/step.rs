@@ -46,13 +46,13 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpElips, GpHypr, GpLin, GpParab, GpPln, GpPnt,
-    GpSphere, GpTorus, GpVec, GpXyz,
+    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpElips, GpHypr, GpLin, GpParab, GpPln,
+    GpPnt, GpSphere, GpTorus, GpVec, GpXyz,
 };
 use occt_geom::{
     bspline_surface::GeomBSplineSurface, Curve, GeomBSplineCurve, GeomCircle, GeomCone,
     GeomCylinder, GeomEllipse, GeomHyperbola, GeomLine, GeomOffsetCurve, GeomParabola, GeomPlane,
-    GeomSphere, GeomTorus, GeomTrimmedCurve, Surface,
+    GeomSphere, GeomSurfaceOfRevolution, GeomTorus, GeomTrimmedCurve, Surface,
 };
 
 use crate::abs::ShapeType;
@@ -2023,6 +2023,20 @@ impl<'a> Resolver<'a> {
         Ok(GpVec::from_xyz(&dir.xyz().multiplied(mag)))
     }
 
+    /// `AXIS1_PLACEMENT(name, location, axis_direction)` → `GpAx1`.
+    fn resolve_axis1(&self, id: usize) -> Result<GpAx1, String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "AXIS1_PLACEMENT" {
+            self.warn(format!("expected AXIS1_PLACEMENT, got {} (#{id})", rec.type_name));
+            return Err(format!("expected AXIS1_PLACEMENT at #{id}"));
+        }
+        let loc_ref = parse_ref(&rec.args[1]).ok_or("AXIS1: bad location ref")?;
+        let dir_ref = parse_ref(&rec.args[2]).ok_or("AXIS1: bad direction ref")?;
+        let loc = self.resolve_point(loc_ref)?;
+        let dir = self.resolve_direction(dir_ref)?;
+        Ok(GpAx1::new(loc, dir))
+    }
+
     fn resolve_axis2(&self, id: usize) -> Result<GpAx2, String> {
         if let Some(a) = self.axis_cache.borrow().get(&id) {
             return Ok(*a);
@@ -2111,12 +2125,22 @@ impl<'a> Resolver<'a> {
                     .map(|r| self.resolve_point(r))
                     .collect::<Result<Vec<_>, _>>()?;
                 let weights_arg = rec.args.get(3).map(|s| s.trim().to_string());
+                // B_SPLINE_CURVE_WITH_KNOTS layout:
+                // (name, degree, control_points, curve_form, closed,
+                //  self_intersect, knot_multiplicities, knots, knot_spec).
                 let knots = expand_knots(
-                    &parse_usize_list(rec.args.get(8).map(|s| s.as_str()).unwrap_or("()")),
+                    &parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()")),
                     &parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()")),
                 );
                 let curve = match weights_arg.as_deref() {
-                    None | Some("SELF") => GeomBSplineCurve::new(poles, knots, degree),
+                    // No weights: non-rational curve (curve_form is UNSPECIFIED
+                    // or a non-rational flag like CIRCULAR/LINEAR).
+                    None | Some("SELF") | Some(".UNSPECIFIED.") | Some(".CIRCULAR.")
+                    | Some(".LINEAR.") => GeomBSplineCurve::new(poles, knots, degree),
+                    Some(w) if w.starts_with('.') => {
+                        // Another non-rational curve form marker.
+                        GeomBSplineCurve::new(poles, knots, degree)
+                    }
                     Some(w) => {
                         let weights = parse_real_list(w);
                         if weights.len() != poles.len() {
@@ -2228,6 +2252,29 @@ impl<'a> Resolver<'a> {
                     GpTorus::new(self.resolve_axis2(ax)?.to_ax3(), maj, min)
                         .map_err(|e| format!("TOROIDAL_SURFACE: {e}"))?,
                 ))
+            }
+            "SURFACE_OF_REVOLUTION" => {
+                // SURFACE_OF_REVOLUTION(name, axis, generatrix) — the axis is an
+                // AXIS1_PLACEMENT and the generatrix a curve. STEP order is
+                // (axis, curve); FreeCAD emits (curve, axis). Detect which
+                // argument holds the AXIS1_PLACEMENT by its record type.
+                let r1 = parse_ref(&rec.args[1]);
+                let r2 = parse_ref(&rec.args[2]);
+                let is_axis1 = |r: usize| {
+                    self.record(r)
+                        .map(|rec| rec.type_name == "AXIS1_PLACEMENT")
+                        .unwrap_or(false)
+                };
+                let (axis_ref, gen_ref) = match (r1, r2) {
+                    (Some(a), Some(g)) if is_axis1(a) => (a, g),
+                    (Some(g), Some(a)) if is_axis1(a) => (a, g),
+                    (Some(a), Some(g)) => (a, g), // fallback: STEP order
+                    (Some(a), None) => (a, a),
+                    _ => return Err("SURFACE_OF_REVOLUTION: bad refs".into()),
+                };
+                let axis = self.resolve_axis1(axis_ref)?;
+                let generatrix = self.resolve_curve(gen_ref)?;
+                Arc::new(GeomSurfaceOfRevolution::new(generatrix, axis))
             }
             "B_SPLINE_SURFACE" => {
                 // Plain B-spline surface (no explicit knots): clamped uniform
