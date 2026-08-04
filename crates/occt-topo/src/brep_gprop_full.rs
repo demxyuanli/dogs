@@ -317,6 +317,8 @@ fn classify_surface_kind(s: &dyn Surface) -> SurfKind {
         _ => {
             if cylinder_frame(s).is_some() {
                 SurfKind::Cylinder
+            } else if cone_frame(s).is_some() {
+                SurfKind::Cone
             } else {
                 SurfKind::Other
             }
@@ -364,6 +366,42 @@ fn cylinder_frame(s: &dyn Surface) -> Option<(GpXyz, GpXyz, GpXyz, GpXyz, f64)> 
     Some((o.coord, xd, yd, z, r))
 }
 
+/// Frame of a cone surface: apex (o), radial axes (x, y) and axis (z),
+/// plus the semi-angle `alpha`. Recovered by sampling `d0` — the port's
+/// `dyn Surface` cannot downcast to `GpCone`.
+fn cone_frame(s: &dyn Surface) -> Option<(GpXyz, GpXyz, GpXyz, GpXyz, f64)> {
+    // d0(0,0) and d0(0,1) lie on the v-direction generatrix (u=0).
+    let p0 = s.d0(0.0, 0.0);
+    let p1 = s.d0(0.0, 1.0);
+    let g = p1.coord.subtracted(&p0.coord);
+    let gm = g.modulus();
+    if gm < 1e-12 {
+        return None;
+    }
+    let z = g.divided(gm);
+    let g0a = p0.coord;
+    // Semi-angle between the generatrix and the axis (both unit vectors).
+    let alpha = g.divided(gm).dot(&z).clamp(-1.0, 1.0).acos();
+    // Radial axis x through the u=0 direction.
+    let p2 = s.d0(std::f64::consts::PI, 0.5);
+    let xr = p2.coord.subtracted(&g0a);
+    let xm = xr.modulus();
+    if xm < 1e-12 {
+        return None;
+    }
+    let xd = xr.divided(xm);
+    let yd = z.crossed(&xd);
+    if yd.modulus() < 1e-12 {
+        return None;
+    }
+    let yd = yd.divided(yd.modulus());
+    // Apex: along the axis from the u=0 iso-line, the radial distance r0
+    // divided by tan(alpha) locates the cone's vertex.
+    let r0 = g0a.subtracted(&z.multiplied(g0a.dot(&z))).modulus();
+    let apex = g0a.added(&z.multiplied(r0 / alpha.tan()));
+    Some((apex, xd, yd, z, alpha))
+}
+
 /// First derivatives `(point, du, dv)` of a surface at `(u, v)`, using the
 /// analytic `d1` when it is non-degenerate and central finite differences
 /// otherwise (cylinder / sphere / torus / cone `d1` return zero in the port).
@@ -393,6 +431,7 @@ fn surface_d1(s: &dyn Surface, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
 enum UVMap {
     Plane { o: GpXyz, xd: GpXyz, yd: GpXyz },
     Cylinder { o: GpXyz, xd: GpXyz, yd: GpXyz, z: GpXyz, r: f64 },
+    Cone { o: GpXyz, xd: GpXyz, yd: GpXyz, z: GpXyz, alpha: f64 },
     Generic,
 }
 
@@ -402,6 +441,14 @@ impl UVMap {
             UVMap::Plane { o, xd, yd } => {
                 let rel = p.coord.subtracted(o);
                 GpPnt2d::new(rel.dot(xd), rel.dot(yd))
+            }
+            UVMap::Cone { o, xd, yd, z, alpha } => {
+                // Cone param: d0(u,v) = apex + x·((r+v·sinα)cos u) + y·((r+v·sinα)sin u)
+                // + z·(v·cosα). Invert: dz = v·cosα, angle from x/y.
+                let rel = p.coord.subtracted(o);
+                let u = rel.dot(yd).atan2(rel.dot(xd)).rem_euclid(2.0 * PI);
+                let v = rel.dot(z) / alpha.cos();
+                GpPnt2d::new(u, v)
             }
             UVMap::Cylinder { o, xd, yd, z, .. } => {
                 let rel = p.coord.subtracted(o);
@@ -426,6 +473,20 @@ impl UVMap {
                 let dy = d3.coord.dot(yd);
                 let du = (dy * ua.cos() - dx * ua.sin()) / r;
                 let dv = d3.coord.dot(z);
+                GpVec2d::new(du, dv)
+            }
+            UVMap::Cone { o, xd, yd, z, alpha } => {
+                let rel = p.coord.subtracted(o);
+                let _ = u;
+                let ua = rel.dot(yd).atan2(rel.dot(xd)).rem_euclid(2.0 * PI);
+                let dx = d3.coord.dot(xd);
+                let dy = d3.coord.dot(yd);
+                // Radius at the cone's current v (like Cylinder but r varies
+                // with v along the generatrix).
+                let r0 = (rel.subtracted(&z.multiplied(rel.dot(z)))).modulus();
+                let r = r0.max(1e-9);
+                let du = (dy * ua.cos() - dx * ua.sin()) / r;
+                let dv = d3.coord.dot(z) / alpha.cos();
                 GpVec2d::new(du, dv)
             }
             UVMap::Generic => {
@@ -572,6 +633,11 @@ impl FaceGauss {
                 let (o, xd, yd, z, r) =
                     cylinder_frame(surface.as_ref()).ok_or("brep_gprop_full: bad cylinder frame")?;
                 UVMap::Cylinder { o, xd, yd, z, r }
+            }
+            SurfKind::Cone => {
+                let (o, xd, yd, z, alpha) =
+                    cone_frame(surface.as_ref()).ok_or("brep_gprop_full: bad cone frame")?;
+                UVMap::Cone { o, xd, yd, z, alpha }
             }
             _ => UVMap::Generic,
         };

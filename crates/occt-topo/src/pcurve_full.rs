@@ -119,7 +119,10 @@ fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
         return None;
     }
     let ax = axis.divided(am);
-    let alpha = GpVec::from_pnts(&apex, &g0a).angle(&ax);
+    // Use the v=1 point for the apex angle: `g0a` (v=0) may coincide with the
+    // apex itself (a cone whose parameter v=0 sits at the vertex), making the
+    // vector from apex to g0a a zero vector and the angle undefined.
+    let alpha = GpVec::from_pnts(&apex, &g0b).angle(&ax);
     if alpha < 1e-6 || alpha > FRAC_PI_2 - 1e-6 {
         return None;
     }
@@ -128,7 +131,12 @@ fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
         for j in 0..=nv {
             let u = 2.0 * PI * i as f64 / nu as f64;
             let v = -1.0 + 2.0 * j as f64 / nv as f64;
+            // Skip the apex itself (v where the sampled point coincides with
+            // the apex) — the apex angle is undefined there.
             let p = s.d0(u, v);
+            if p.distance(&apex) < 1e-9 {
+                continue;
+            }
             let ang = GpVec::from_pnts(&apex, &p).angle(&ax);
             if (ang - alpha).abs() > 1e-3 * alpha.max(0.01) {
                 return None;
