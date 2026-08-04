@@ -128,11 +128,12 @@ fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
     }
     let (nu, nv) = (6, 5);
     for i in 0..=nu {
-        for j in 0..=nv {
+        for j in 1..=nv {
             let u = 2.0 * PI * i as f64 / nu as f64;
-            let v = -1.0 + 2.0 * j as f64 / nv as f64;
-            // Skip the apex itself (v where the sampled point coincides with
-            // the apex) — the apex angle is undefined there.
+            // Sample the valid cone half only (v > 0): the surface's v-range is
+            // unbounded but d0 is only well-defined on the cone sheet away from
+            // the apex; negative v can land on the opposite (invalid) sheet.
+            let v = j as f64 / nv as f64;
             let p = s.d0(u, v);
             if p.distance(&apex) < 1e-9 {
                 continue;
