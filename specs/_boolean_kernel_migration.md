@@ -49,12 +49,18 @@
 - **实现**：`wireframe.rs::planar_polygon_triangulate` 支持多 wire 面——识别外环（最大面积）、孔桥接到外环（反向遍历使桥接多边形简单）、`ear_clip`（严格内部点测试，边界/共线点不阻断耳朵）。
 - **门禁** ✅：`face_with_hole_triangulates_ring_area`：2×2 方形+24 边形孔 → 面积 4−πr²（3.8059 vs 3.8037）。全量 lib 1260 通过。
 
-### 子任务 2 — BuilderFace 拓扑（BOPAlgo_BuilderFace::Perform）【进行中】
+### 子任务 2 — BuilderFace 拓扑（BOPAlgo_BuilderFace::Perform）【✅ 完成 2026-08-05】
 - **OCCT 参考**：`BOPAlgo_BuilderFace.cxx:118`（PerformShapesToAvoid → PerformLoops → PerformAreas → PerformInternalShapes）。
-- **范围**：`chain_2d_loops` + `section_face_to_subface`（boss 78 面闭合已证）完成；**通用 case**（cut/common）正确。
-- **难点**：须处理**闭合 section 环**（→ 带孔面）**和开放 section 线**（→ 面分裂成片，WireSplitter + 孔/生长分类）；上次尝试只对闭合环正确，破坏了 cut/common 15+ 测试。
-- **依赖**：子任务 1（孔三角化）已提供，boss 体积应可验证。
-- **门禁**：cut/common 测试恢复绿；boss 78 面 + 闭合 + 体积正确。
+- **实现**：`bop_builder.rs` 新增 **2D 排列区域追踪**（`trace_planar_regions`）替换 `split_faces` 的无限直线切割（G2 根因）：
+  1. 边界边 + section 段全部投影 2D，在**成对交点处切分**（`split_segments_2d`，含端点触碰/共线重叠）；
+  2. 半边界遍历（`next()` = reverse 方向最小 **CW** 增量）追踪所有有界面的边界环；
+  3. 按严格包含把 CW 环分派为 CCW 环的孔（同环反向 = 环面内界 vs 盘外界，非嵌套）；无界环丢弃。
+  - **闭合 section 环**（boss 圆柱底面）→ 环面区域（外环+孔）→ **带孔面**（`region_to_subface` 多 wire）。
+  - **开放 section 线**（cut/common 穿出）→ 面分裂成片。两类 case 统一由排列法处理。
+- **配套修正**：`SubFace.interior` 区域内部点（环面质心落孔里，分类/定向用内部点）；`flip_face`/`flip_face_plane`/`unify_result_edges` 保留多 wire；`shell_euler_characteristic` 按 `2 − wires` 计面（环面 Euler 修正，子任务 4 提前）。
+- **实测**：boss fuse **78 面**（从 341）、闭合、mesh 体积 4.1553 ✓；cut/common 全绿（cut_two_pieces 2 solids、cut_overlapping 6 面闭合 vol 0.5）。
+- **偏差**：未复用手写 `chain_2d_loops`，也未接 `bop_build_faces.rs` 的 3D WireSplitter/FaceBuilder（需 BOPDS 边分裂基础设施）；2D 排列对平面路径更直接。上一轮 15+ 破坏已消除（半边界规则 + 严格包含两处修复）。
+- **门禁**：✅ cut/common 恢复绿；boss 78 面 + 闭合 + 体积正确。全量 lib 1261 通过。
 
 ### 子任务 3 — 分类（IntTools_FClass2d 集成）
 - **OCCT 参考**：`IntTools_FClass2d.cxx`（点-in-面，处理孔）。

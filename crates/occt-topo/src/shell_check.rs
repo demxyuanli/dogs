@@ -110,18 +110,43 @@ pub fn shell_is_closed(shell: &Shell) -> bool {
 
 /// Euler characteristic V − E + F over the shell's real (deduplicated)
 /// topology.
+///
+/// A face with `w` boundary wires is a disk with `w−1` holes and contributes
+/// `1 − (w−1)` to the face count (a plain disk counts 1, an annulus counts 0,
+/// a disk with two holes counts −1), so the sum is topologically correct even
+/// when a split face keeps its hole loops (e.g. the box-top ring around a boss
+/// cylinder).
 pub fn shell_euler_characteristic(shell: &Shell) -> i32 {
     let mut faces = Vec::new();
     collect_faces(&shell.0, &mut faces);
     let mut edges = Vec::new();
+    let mut f_count = 0i32;
     for f in &faces {
         collect_edges(f, &mut edges);
+        let wires = wires_of_face_count(f);
+        f_count += 2 - wires as i32; // disk-with-holes contribution
     }
     let mut verts = Vec::new();
     for e in &edges {
         collect_vertices(e, &mut verts);
     }
-    dedupe_count(&verts) as i32 - dedupe_count(&edges) as i32 + faces.len() as i32
+    dedupe_count(&verts) as i32 - dedupe_count(&edges) as i32 + f_count
+}
+
+/// Number of boundary wires of a face (1 for a plain face; a face built from
+/// an outer loop plus hole loops carries one wire per loop).
+fn wires_of_face_count(face: &TopoShape) -> usize {
+    let mut n = 0usize;
+    for child in direct_children(face) {
+        if child.shape_type() == ShapeType::Wire {
+            n += 1;
+        } else if child.shape_type() == ShapeType::Edge {
+            // A face whose children are edges directly (no wire) counts one
+            // boundary.
+            return 1;
+        }
+    }
+    n.max(1)
 }
 
 /// Topological invariants of a shell — the boolean-result gate
