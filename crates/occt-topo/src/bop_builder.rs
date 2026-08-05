@@ -687,6 +687,44 @@ fn trace_planar_regions(boundary: &[GpPnt2d], segs2d: &[(GpPnt2d, GpPnt2d)]) -> 
     if edges.is_empty() {
         return Vec::new();
     }
+    // OCCT `BOPAlgo_BuilderFace::PerformShapesToAvoid`: repeatedly strip edges
+    // whose endpoint vertex is touched by a single edge — a dangling end that
+    // can never close a loop. Such a segment cannot partition a region anyway
+    // (it is a slit), so stripping it leaves the arrangement's regions intact
+    // while keeping the half-edge traversal well-formed (even vertex degree).
+    let mut keep = vec![true; edges.len()];
+    loop {
+        let mut deg: HashMap<usize, usize> = HashMap::new();
+        for (i, &(a, b)) in edges.iter().enumerate() {
+            if !keep[i] {
+                continue;
+            }
+            *deg.entry(a).or_default() += 1;
+            *deg.entry(b).or_default() += 1;
+        }
+        let mut stripped = false;
+        for (i, &(a, b)) in edges.iter().enumerate() {
+            if !keep[i] {
+                continue;
+            }
+            if deg.get(&a).copied().unwrap_or(0) <= 1 || deg.get(&b).copied().unwrap_or(0) <= 1 {
+                keep[i] = false;
+                stripped = true;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    let edges: Vec<(usize, usize)> = edges
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| keep[*i])
+        .map(|(_, e)| *e)
+        .collect();
+    if edges.is_empty() {
+        return Vec::new();
+    }
     let verts = &w2.pts;
 
     // Half-edges: index 2e is (u→v), 2e+1 is (v→u).
@@ -5645,6 +5683,40 @@ mod tests {
             assert_eq!(on, expect, "{label}");
         }
         clear_tree(&ring);
+    }
+
+    /// `PerformShapesToAvoid` translation: the arrangement strips dangling
+    /// section segments (degree-1 endpoints) that can never close a loop, so a
+    /// slit or a floating segment leaves the face's regions intact instead of
+    /// stalling the half-edge traversal.
+    #[test]
+    fn trace_regions_strips_dangling_section_segment() {
+        let sq = [
+            GpPnt2d::new(0.0, 0.0),
+            GpPnt2d::new(1.0, 0.0),
+            GpPnt2d::new(1.0, 1.0),
+            GpPnt2d::new(0.0, 1.0),
+        ];
+        // A segment fully floating inside the face: both ends dangling → stripped.
+        let regions = trace_planar_regions(&sq, &[(GpPnt2d::new(0.3, 0.3), GpPnt2d::new(0.7, 0.7))]);
+        assert_eq!(regions.len(), 1, "floating segment does not split the face");
+        // A slit from the bottom boundary inward: the inner end is dangling.
+        let regions = trace_planar_regions(&sq, &[(GpPnt2d::new(0.5, 0.0), GpPnt2d::new(0.5, 0.4))]);
+        assert_eq!(regions.len(), 1, "boundary slit does not split the face");
+        // A closed loop still splits the face (dangling strips are isolated).
+        let loop_pts = [
+            GpPnt2d::new(0.25, 0.25),
+            GpPnt2d::new(0.75, 0.25),
+            GpPnt2d::new(0.75, 0.75),
+            GpPnt2d::new(0.25, 0.75),
+        ];
+        let mut closed: Vec<(GpPnt2d, GpPnt2d)> = Vec::new();
+        for i in 0..4 {
+            closed.push((loop_pts[i], loop_pts[(i + 1) % 4]));
+        }
+        closed.push((GpPnt2d::new(0.1, 0.1), GpPnt2d::new(0.2, 0.9))); // dangling diagonal
+        let regions = trace_planar_regions(&sq, &closed);
+        assert_eq!(regions.len(), 2, "closed loop splits into ring + disk");
     }
 
 }

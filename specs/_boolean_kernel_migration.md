@@ -76,8 +76,8 @@
 | PerformAreas growth/hole 判定（`IsGrowthWire`+`FClass2d::IsHole`） | 环 signed area 方向（CCW=growth/CW=hole） | 依据相同（环方向），实现不同 |
 | PerformAreas 孔→面归属（`FClass2d::Perform` 点在面内） | `point_strictly_inside` 严格包含 | 等价，严格包含处理同环反向边界 |
 | PerformAreas Add Holes（多 wire 面） | `region_to_subface` 多 wire | 等价 |
-| PerformShapesToAvoid（悬空边剥离） | **未实现** | 悬空 section 段（degree-1）会卡半边界遍历；当前 case 不触发，通用 case 需补 |
-| PerformInternalShapes（面内游离边） | **未实现** | 当前布尔不产生面内游离边 |
+| PerformShapesToAvoid（悬空边剥离） | `trace_planar_regions` 焊接后反复剥离 degree-1 边（`trace_regions_strips_dangling_section_segment` 测试） | ✅ 已补；悬空 slit/浮游段不分裂区域 |
+| PerformInternalShapes（面内游离边） | 排列法天然处理——浮游闭合环成为环/盘区域（同 boss 环），悬空段被剥离 | 等价；OCCT 的 internal-wire 表示 vs 本实现的独立区域/孔，几何结果一致 |
 | `BOPTools_AlgoTools3D::PointInFace`（UV 线切边界求内部点） | `region_interior2`（质心+内推） | 思路相同，实现不同 |
 
 ### 子任务 4 — Euler/拓扑验证
