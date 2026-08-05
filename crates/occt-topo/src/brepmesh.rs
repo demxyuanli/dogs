@@ -173,13 +173,29 @@ fn adaptive_face_mesh(
     // ~0, so it gets few segments — matching OCCT's ~2-segment side walls).
     let u_periodic = surface.is_u_periodic();
     let u_step: Option<f64> = if u_periodic {
-        let vmid = 0.5 * (v0 + v1);
-        let r = surface.d0(0.0, vmid).distance(&surface.d0(std::f64::consts::PI, vmid)) * 0.5;
+        // Use the maximum u-ring radius sampled across the v range — for a
+        // cone it grows 0→base, for a sphere it peaks at the equator and
+        // collapses to 0 at the poles. Sampling avoids both the mid-range
+        // underestimate (cone) and the pole-collapse (sphere, where the
+        // v-range endpoints are the poles with radius 0).
+        let mut r = 0.0f64;
+        for k in 0..=8 {
+            let vk = v0 + (v1 - v0) * k as f64 / 8.0;
+            let rk = surface.d0(0.0, vk).distance(&surface.d0(std::f64::consts::PI, vk)) * 0.5;
+            r = r.max(rk);
+        }
+        let r = r.max(1e-9);
         let ang_step = crate::meshing::range_splitter::arc_angular_step(r, def, 1.0, 0.0);
         Some(ang_step.max((u1 - u0) / 96.0))
     } else {
         None
     };
+    // Cylinder/cone side walls have a straight v-direction generatrix; their v
+    // band is a single segment (OCCT Delaunay does not refine a straight line).
+    let straight_v = matches!(
+        crate::pcurve_full::classify_surface_kind(surface.as_ref()),
+        crate::brep_surface::SurfaceKind::Cylinder | crate::brep_surface::SurfaceKind::Cone
+    );
     let mut verts: Vec<GpPnt> = Vec::new();
     let mut tris: Vec<Triangle> = Vec::new();
     let mut stack = vec![(u0, u1, v0, v1, 0usize)];
@@ -229,7 +245,14 @@ fn adaptive_face_mesh(
                 dev <= def
             }
         };
-        let v_done = {
+        let v_done = if straight_v {
+            // Cylinder/cone side walls: the v direction is a straight
+            // generatrix, so it subdivides to a small fixed number of bands
+            // (OCCT's Delaunay gives the straight direction a minimal mesh
+            // quality density — a cylinder's ~2, a cone's ~4), not the
+            // hundreds the chord-deviation chase produced.
+            (cv1 - cv0) <= (v1 - v0) / 4.0
+        } else {
             let dev = point_segment_dist(&surface.d0(cu0, mv), &p00, &p01)
                 .max(point_segment_dist(&surface.d0(cu1, mv), &p10, &p11))
                 // Cell-centre deviation from the diagonals — catches high-order
