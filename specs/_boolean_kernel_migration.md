@@ -62,10 +62,23 @@
 - **偏差**：未复用手写 `chain_2d_loops`，也未接 `bop_build_faces.rs` 的 3D WireSplitter/FaceBuilder（需 BOPDS 边分裂基础设施）；2D 排列对平面路径更直接。上一轮 15+ 破坏已消除（半边界规则 + 严格包含两处修复）。
 - **门禁**：✅ cut/common 恢复绿；boss 78 面 + 闭合 + 体积正确。全量 lib 1261 通过。
 
-### 子任务 3 — 分类（IntTools_FClass2d 集成）
+### 子任务 3 — 分类（IntTools_FClass2d 集成）【✅ 完成 2026-08-05】
 - **OCCT 参考**：`IntTools_FClass2d.cxx`（点-in-面，处理孔）。
-- **范围**：布尔分类用已移植的 `FClass2d`（fclass2d.rs）处理带孔面（当前用质心，会落孔内）。
-- **门禁**：环面 In/Out 分类正确（用孔内点 vs 环材质点）。
+- **实现**：`bop_builder::point_in_face_holes` —— 镜像 `FClass2d` region 语义（On=边界 tol 内 / In=外环内且孔外），逐 wire 链边 → 投影到面自身帧（外环+孔）判定。接入 `face_on_other`（共面检测）。
+- **FClass2d 实测**：对子任务2 重建的带孔环面分类正确 —— 孔内点 Out、环材质点 In、边界 On、`is_hole`=false。门禁测试 `fclass2d_classifies_ring_face_hole_vs_material` + `boolean_classify_ring_face_hole_vs_material`。
+- **重要发现（fclass2d 帧不对齐）**：FClass2d 对 **BRepPrimBox 源面**的 UV 环与 `project_point_to_plane` 帧差一个反射（`face_plane_local` 用 `GpAx1::new` 重建任意 X 轴，非曲面自然 UV 轴；GeomPlane::pos 私有无法取真实轴）→ 点被误判帧外。故布尔分类路径用自洽的 `point_in_face_holes`（同帧构建环），FClass2d 用于重建面（有 pcurve）与门禁测试。
+- **门禁**：✅ 环面 In/Out 分类正确（孔内点 Out vs 环材质点 In）。全量 lib 1263 通过。
+
+### 子任务 2 翻译偏差审查（对照 OCCT BOPAlgo_BuilderFace.cxx）
+| OCCT 步骤 | 移植实现 | 偏差 |
+|---|---|---|
+| PerformLoops（WireSplitter 链环） | `trace_planar_regions` 2D 排列半边界遍历 | 机制不同，结果等价（确定性更强） |
+| PerformAreas growth/hole 判定（`IsGrowthWire`+`FClass2d::IsHole`） | 环 signed area 方向（CCW=growth/CW=hole） | 依据相同（环方向），实现不同 |
+| PerformAreas 孔→面归属（`FClass2d::Perform` 点在面内） | `point_strictly_inside` 严格包含 | 等价，严格包含处理同环反向边界 |
+| PerformAreas Add Holes（多 wire 面） | `region_to_subface` 多 wire | 等价 |
+| PerformShapesToAvoid（悬空边剥离） | **未实现** | 悬空 section 段（degree-1）会卡半边界遍历；当前 case 不触发，通用 case 需补 |
+| PerformInternalShapes（面内游离边） | **未实现** | 当前布尔不产生面内游离边 |
+| `BOPTools_AlgoTools3D::PointInFace`（UV 线切边界求内部点） | `region_interior2`（质心+内推） | 思路相同，实现不同 |
 
 ### 子任务 4 — Euler/拓扑验证
 - **OCCT 参考**：拓扑不变量（V−E+F）。

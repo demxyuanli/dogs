@@ -1329,15 +1329,126 @@ fn point_in_face_polygon(face: &Face, pln: &GpPln, p: &GpPnt, tol: f64) -> bool 
     point_in_polygon2d(&poly, &p2)
 }
 
+/// Hole-aware point-in-face: is `p` (on `pln`, within `tol`) inside the
+/// trimmed region of `face`?
+///
+/// Mirrors `IntTools_FClass2d::Perform`'s region semantics (a point is `On`
+/// within `tol` of a boundary ring, `In` when inside the outer ring and
+/// outside every hole ring) but builds the rings in the face's own plane frame
+/// from the wire boundaries, so the result is self-consistent with
+/// `project_point_to_plane` and needs no pcurves. A point in a ring face's
+/// hole is therefore `Out` (not "on" the face) while a ring-material point is
+/// `In`.
+fn point_in_face_holes(face: &Face, pln: &GpPln, p: &GpPnt, tol: f64) -> bool {
+    let n = plane_normal(pln);
+    let d = GpVec::from_pnts(&pln.location(), p).dot(&n.normalized()).abs();
+    if d > tol {
+        return false;
+    }
+    let p2 = project_point_to_plane(pln, p);
+    // Per-wire boundary loops, chained into order and projected to `pln`'s
+    // frame; the largest-|area| loop is the outer ring, the rest are holes.
+    let mut loops: Vec<(f64, Vec<GpPnt2d>)> = Vec::new();
+    for w in wires_of_face(face) {
+        let mut pts: Vec<GpPnt> = Vec::new();
+        let mut edges: Vec<(GpPnt, GpPnt)> = Vec::new();
+        for e in edges_of_wire(&w) {
+            let (v1, v2) = edge_vertices(&e);
+            if let (Some(a), Some(b)) = (v1, v2) {
+                edges.push((vertex_position(&a), vertex_position(&b)));
+            }
+        }
+        if edges.is_empty() {
+            continue;
+        }
+        pts.push(edges[0].0);
+        pts.push(edges[0].1);
+        let mut used = vec![false; edges.len()];
+        used[0] = true;
+        let mut last = edges[0].1;
+        for _ in 0..edges.len() {
+            let mut found: Option<(usize, GpPnt)> = None;
+            for (i, (a, b)) in edges.iter().enumerate() {
+                if used[i] {
+                    continue;
+                }
+                if a.distance(&last) < 1e-9 {
+                    found = Some((i, *b));
+                    break;
+                }
+                if b.distance(&last) < 1e-9 {
+                    found = Some((i, *a));
+                    break;
+                }
+            }
+            match found {
+                Some((i, nxt)) => {
+                    used[i] = true;
+                    pts.push(nxt);
+                    last = nxt;
+                }
+                None => break,
+            }
+        }
+        if pts.len() >= 3 {
+            let poly: Vec<GpPnt2d> = pts.iter().map(|q| project_point_to_plane(pln, q)).collect();
+            let a = polygon_area2d(&poly);
+            if a.abs() > 1e-12 {
+                loops.push((a, poly));
+            }
+        }
+    }
+    if loops.is_empty() {
+        return point_in_face_polygon(face, pln, p, tol);
+    }
+    let mut outer_i = 0;
+    for (i, (a, _)) in loops.iter().enumerate() {
+        if a.abs() > loops[outer_i].0.abs() {
+            outer_i = i;
+        }
+    }
+    // `On` within `tol` of a boundary ring (both outer and holes).
+    let near = |poly: &[GpPnt2d]| {
+        let n = poly.len();
+        for i in 0..n {
+            let a = poly[i];
+            let b = poly[(i + 1) % n];
+            let (abx, aby) = (b.x() - a.x(), b.y() - a.y());
+            let (apx, apy) = (p2.x() - a.x(), p2.y() - a.y());
+            let len2 = abx * abx + aby * aby;
+            let t = if len2 < 1e-24 { 0.0 } else { ((apx * abx + apy * aby) / len2).clamp(0.0, 1.0) };
+            let qx = a.x() + abx * t;
+            let qy = a.y() + aby * t;
+            if (p2.x() - qx).hypot(p2.y() - qy) < tol {
+                return true;
+            }
+        }
+        false
+    };
+    if near(&loops[outer_i].1) || loops.iter().enumerate().any(|(i, (_, l))| i != outer_i && near(l)) {
+        return true;
+    }
+    if !point_in_polygon2d(&loops[outer_i].1, &p2) {
+        return false;
+    }
+    for (i, (_, l)) in loops.iter().enumerate() {
+        if i != outer_i && point_in_polygon2d(l, &p2) {
+            return false;
+        }
+    }
+    true
+}
+
 /// True when the sub-face's plane is coincident with a face of `other_faces`
-/// and the sub-face's region-interior point lies inside that face's polygon.
+/// and the sub-face's region-interior point lies inside that face's trimmed
+/// region (hole-aware via [`point_in_face_holes`]).
 fn face_on_other(plane: &GpPln, interior: &GpPnt, other_faces: &[Face], tol: f64) -> bool {
     for of in other_faces {
         let Some(opl) = face_plane_local(of) else { continue };
         if !planes_coincident(plane, &opl, tol) {
             continue;
         }
-        if point_in_face_polygon(of, &opl, interior, tol) {
+        if point_in_face_holes(of, &opl, interior, tol) {
             return true;
         }
     }
@@ -5463,5 +5574,77 @@ mod tests {
         clear_tree(&b.0);
     }
 
+    // ------------------------------------------------------------------
+    // Subtask 3 gate: hole-aware (FClass2d) ring-face classification
+    // ------------------------------------------------------------------
+
+    /// A ring face: outer square `0..2`, square hole `0.5..1.5`, in `z=0`.
+    fn ring_face(b: &TopoBuilder) -> Face {
+        use crate::builder_face::build_face_with_holes;
+        let mk = |pts: &[GpPnt]| {
+            (0..4).map(|i| b.make_edge_segment(&pts[i], &pts[(i + 1) % 4])).collect::<Vec<Edge>>()
+        };
+        let outer = [
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(2.0, 0.0, 0.0),
+            GpPnt::new(2.0, 2.0, 0.0),
+            GpPnt::new(0.0, 2.0, 0.0),
+        ];
+        let hole = [
+            GpPnt::new(0.5, 0.5, 0.0),
+            GpPnt::new(0.5, 1.5, 0.0),
+            GpPnt::new(1.5, 1.5, 0.0),
+            GpPnt::new(1.5, 0.5, 0.0),
+        ];
+        build_face_with_holes(&mk(&outer), &[mk(&hole)]).expect("ring face")
+    }
+
+    /// The ported `IntTools_FClass2d` classifies a ring face's hole vs its
+    /// material correctly: hole-interior points are `Out`, ring-material points
+    /// are `In`, both boundary rings are `On`, and the face is a growth (not a
+    /// hole).
+    #[test]
+    fn fclass2d_classifies_ring_face_hole_vs_material() {
+        use crate::fclass2d::{FaceState, FClass2d};
+        let b = TopoBuilder::new();
+        let ring = ring_face(&b);
+        let pln = face_plane_local(&ring).expect("plane");
+        let cl = FClass2d::new(&ring, 1e-7).expect("classifier");
+        assert!(!cl.is_hole(), "ring face is a growth, not a hole");
+        let p = |x: f64, y: f64| project_point_to_plane(&pln, &GpPnt::new(x, y, 0.0));
+        // Ring material points → In.
+        assert_eq!(cl.perform(p(0.1, 0.1)), FaceState::In, "ring corner material");
+        assert_eq!(cl.perform(p(1.9, 1.9)), FaceState::In, "ring far corner material");
+        // Hole points → Out (a hole-interior point is not part of the face).
+        assert_eq!(cl.perform(p(1.0, 1.0)), FaceState::Out, "hole center");
+        assert_eq!(cl.perform(p(0.75, 0.75)), FaceState::Out, "hole interior");
+        // Boundaries → On.
+        assert_eq!(cl.perform(p(0.0, 1.0)), FaceState::On, "outer boundary");
+        assert_eq!(cl.perform(p(0.5, 1.0)), FaceState::On, "hole boundary");
+        // Outside → Out.
+        assert_eq!(cl.perform(p(3.0, 3.0)), FaceState::Out, "outside");
+        clear_tree(&ring);
+    }
+
+    /// The boolean's own hole-aware point-in-face test (`point_in_face_holes`,
+    /// which mirrors `FClass2d`'s region semantics in the plane frame) agrees:
+    /// a hole-interior point is not "on" the face, a ring-material point is.
+    #[test]
+    fn boolean_classify_ring_face_hole_vs_material() {
+        let b = TopoBuilder::new();
+        let ring = ring_face(&b);
+        let pln = face_plane_local(&ring).expect("plane");
+        for (label, x, y, expect) in [
+            ("ring material (0.1,0.1)", 0.1, 0.1, true),
+            ("ring material (1.9,1.9)", 1.9, 1.9, true),
+            ("hole center (1,1)", 1.0, 1.0, false),
+            ("hole interior (0.75,0.75)", 0.75, 0.75, false),
+            ("outside (3,3)", 3.0, 3.0, false),
+        ] {
+            let on = point_in_face_holes(&ring, &pln, &GpPnt::new(x, y, 0.0), 1e-6);
+            assert_eq!(on, expect, "{label}");
+        }
+        clear_tree(&ring);
+    }
 
 }
