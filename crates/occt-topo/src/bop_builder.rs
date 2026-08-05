@@ -29,7 +29,8 @@ use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Wire};
 use crate::shell_check::shell_is_closed;
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{
-    edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of, wires_of_face,
+    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
+    wires_of_face,
 };
 
 /// The boolean operation to apply.
@@ -626,6 +627,163 @@ fn orient_faces_outward(bld: &TopoBuilder, faces: &[Face]) -> Vec<Face> {
     out
 }
 
+/// Unify boundary edges across result faces (BOPDS-style): subdivide every
+/// face's boundary at every vertex that lies on it, so faces sharing a
+/// geometric boundary use the same edge partition and thus the same `Edge`
+/// `TShape`. Without this, a face split by intersection lines (e.g. a box top
+/// cut by a boss cylinder's chord lines) keeps subdivided boundary edges while
+/// its neighbour keeps the original long edge, and the shell never closes.
+///
+/// Each face's boundary loop is rebuilt by CHAINING its wire edges at shared
+/// endpoints (a shared edge's stored vertex order is the first creator's, so
+/// `edge_vertices` order is not the traversal order), then refined at all
+/// globally-welded vertices lying strictly inside a segment; every refined
+/// adjacent pair maps to one canonical `Edge`.
+fn unify_result_edges(bld: &TopoBuilder, faces: &[Face], tol: f64) -> Vec<Face> {
+    let mut weld = Weld::new(tol.max(1e-7));
+    // Per-face boundary loops (per wire) as welded vertex-index sequences.
+    let mut face_loops: Vec<Vec<Vec<usize>>> = Vec::with_capacity(faces.len());
+    let mut all_verts: Vec<usize> = Vec::new();
+    for f in faces {
+        let mut face_l: Vec<Vec<usize>> = Vec::new();
+        for w in wires_of_face(f) {
+            // Chain wire edges at shared endpoints into one vertex loop.
+            let mut edges: Vec<(GpPnt, GpPnt)> = Vec::new();
+            for e in edges_of_wire(&w) {
+                let (v1, v2) = edge_vertices(&e);
+                if let (Some(a), Some(b)) = (v1, v2) {
+                    edges.push((vertex_position(&a), vertex_position(&b)));
+                }
+            }
+            if edges.is_empty() {
+                continue;
+            }
+            let mut loop_pts: Vec<GpPnt> = vec![edges[0].0, edges[0].1];
+            let mut used = vec![false; edges.len()];
+            used[0] = true;
+            let mut last = edges[0].1;
+            for _ in 0..edges.len() {
+                let mut found: Option<(usize, GpPnt)> = None;
+                for (i, (a, b)) in edges.iter().enumerate() {
+                    if used[i] {
+                        continue;
+                    }
+                    if a.distance(&last) < 1e-9 {
+                        found = Some((i, *b));
+                        break;
+                    }
+                    if b.distance(&last) < 1e-9 {
+                        found = Some((i, *a));
+                        break;
+                    }
+                }
+                match found {
+                    Some((i, next)) => {
+                        used[i] = true;
+                        loop_pts.push(next);
+                        last = next;
+                    }
+                    None => break,
+                }
+            }
+            if loop_pts.len() < 3 {
+                continue;
+            }
+            if loop_pts.first().unwrap().distance(loop_pts.last().unwrap()) < 1e-9 {
+                loop_pts.pop();
+            }
+            let loop_idx: Vec<usize> = loop_pts
+                .iter()
+                .map(|p| {
+                    let i = weld.weld(p);
+                    all_verts.push(i);
+                    i
+                })
+                .collect();
+            face_l.push(loop_idx);
+        }
+        face_loops.push(face_l);
+    }
+
+    let mut edge_map: HashMap<(usize, usize), Edge> = HashMap::new();
+    let mut out: Vec<Face> = Vec::with_capacity(faces.len());
+    for (fi, f) in faces.iter().enumerate() {
+        let face_l = &face_loops[fi];
+        let nw = wires_of_face(f).len();
+        if face_l.is_empty() || face_l.len() != nw {
+            out.push(f.clone());
+            continue;
+        }
+        let mut new_edges: Vec<Edge> = Vec::new();
+        let mut ok = true;
+        for loop_idx in face_l {
+            let n = loop_idx.len();
+            if n < 3 {
+                ok = false;
+                break;
+            }
+            let mut refined: Vec<usize> = Vec::new();
+            for k in 0..n {
+                let a = loop_idx[k];
+                let b = loop_idx[(k + 1) % n];
+                refined.push(a);
+                if a == b {
+                    continue;
+                }
+                let pa = weld.points[a];
+                let pb = weld.points[b];
+                let ab = pb.coord.subtracted(&pa.coord);
+                let len2 = ab.square_modulus();
+                if len2 < 1e-24 {
+                    continue;
+                }
+                let mut mid: Vec<(f64, usize)> = Vec::new();
+                for &m in &all_verts {
+                    if m == a || m == b {
+                        continue;
+                    }
+                    let pm = weld.points[m];
+                    let am = pm.coord.subtracted(&pa.coord);
+                    if ab.crossed(&am).modulus() > 1e-7 * len2.sqrt() {
+                        continue;
+                    }
+                    let t = am.dot(&ab) / len2;
+                    if t > 1e-9 && t < 1.0 - 1e-9 {
+                        mid.push((t, m));
+                    }
+                }
+                mid.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+                for (_, m) in mid {
+                    refined.push(m);
+                }
+            }
+            for k in 0..refined.len() {
+                let (a, b) = (refined[k], refined[(k + 1) % refined.len()]);
+                if a == b {
+                    continue;
+                }
+                let key = (a.min(b), a.max(b));
+                let e = edge_map
+                    .entry(key)
+                    .or_insert_with(|| bld.make_edge_segment(&weld.points[a], &weld.points[b]))
+                    .clone();
+                new_edges.push(e);
+            }
+        }
+        if ok && new_edges.len() >= 3 {
+            if let Some(surf) = BRepTool::face_surface(f) {
+                let wire = bld.make_wire(&new_edges);
+                out.push(bld.make_face(surf, &[wire]));
+            } else {
+                out.push(f.clone());
+            }
+        } else {
+            out.push(f.clone());
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Classification
 // ---------------------------------------------------------------------------
@@ -915,6 +1073,12 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
     if result_faces.is_empty() {
         return Ok(empty_result(op));
     }
+    // Unify edges across faces so shared geometric boundaries reference one
+    // Edge TShape (a face split by intersection lines otherwise keeps
+    // subdivided boundary edges while its neighbour keeps the long edge, and
+    // the shell never closes). Run BEFORE orienting outward — the closure
+    // check in `orient_faces_outward` needs the unified (closed) shell.
+    let result_faces = unify_result_edges(&bld, &result_faces, tol);
     // Make every face's normal point outward from the result, so the signed
     // mesh volume is consistent (source faces may be oriented inward).
     let result_faces = orient_faces_outward(&bld, &result_faces);

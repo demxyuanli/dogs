@@ -978,12 +978,7 @@ mod tests {
         assert!(after.volume > before, "rib through the profile succeeds and adds volume");
     }
 
-    // Deferred: the exact planar boolean cannot close the shell of a
-    // box + protruding faceted-cylinder fuse ("result shell is not closed",
-    // exact 4.674 vs voxel 3.972), so the wire-based volume is unreliable.
-    // Re-enable once the boolean shell-closure gap is fixed.
     #[test]
-    #[ignore = "boolean fuse shell-closure gap (box + faceted-cylinder fuse)"]
     fn boss_adds_material() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
         let before = crate::shape_mesh::shape_volume(&box_s.solid.0, 0.05);
