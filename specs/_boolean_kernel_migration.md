@@ -46,8 +46,13 @@
 - **已翻译**：`BOPDS_PaveBlock::Update` → `pave_split_ranges`；`PutPavesOnCurve` → 段端点吸附到对侧实体顶点。
 - **已实现**：`split_polygon_by_segment` 有限段/弦切割（面数 341→89，干净），**但 shell 不闭合**（36 条 1-face 边 = 24 边形弦）。
 - **根因（调查确认）**：弦端点有 ~0.0066 吸附漂移（face-face 裁剪计算），且**圆柱 facet 边可能缺 vertex children**（`face_boundary_points` 取不到顶点）→ 环碎片与圆柱侧面底边无法焊接共享。
-- **结论**：在当前"多边形切割 + edge_map 焊接"架构下，有限段切割无法闭合——section 边共享需要**完整 `BOPAlgo_BuilderFace` wire 重建**（从共享 section 边重建面线框，含孔），是独立的大移植。
-- 现状：无限直线分割 + Wave 3 统一正确闭合（341 面）。过度细分是质量/效率问题，非正确性。
+- **BuilderFace 移植尝试（2026-08-05）**：实现 `chain_2d_loops` + `section_face_to_subface`（从边界+section 边建带孔面，分类点用外 loop 首顶点）。**结果**：boss fuse 78 面（从 341）、shell 闭合——**拓扑目标达成**！但：
+  - **带孔面网格化失败**：`planar_polygon_triangulate` 不支持孔，把环扇成实心盘 → 体积错（1.55 vs 4.16）。
+  - **通用 case 破坏**：cut/common 等 15+ 测试失败（带孔面方案对一般布尔不成立）。
+  - **Euler=3**（应 2）：环孔拓扑计数偏差。
+  - 已回退。
+- **结论**：BuilderFace 拓扑（78 面闭合）可行，但需配套 **多边形带孔三角化**（网格化）+ 通用 case 正确性（cut/common 的环处理）+ Euler 修正——是**多件套**移植，非单点修复。
+- 现状：无限直线分割 + Wave 3 统一正确闭合（341 面，正确体积/Euler）。过度细分是质量/效率问题，非正确性。
 
 ### 波 3 — 平面布尔合并到 BOPDS/BOPAlgo 管线（G3+G4）【核心已落地 2026-08-05】
 - **已实现**：`bop_builder::unify_result_edges`——结果面间按几何端点统一边 TShape（BOPDS pave 式细分），**每面边界按共享端点链边重建 loop**（`edge_vertices` 是首创建者序，非遍历序——P1 orientation 丢失所致），再在所有全局焊接顶点处细分，相邻对映射到单一规范 Edge。
