@@ -71,6 +71,26 @@ impl TopoBuilder {
         e
     }
 
+    /// Make a straight segment edge from `p1` to `p2`, reusing the given
+    /// endpoint vertices instead of creating fresh ones — so edges sharing an
+    /// endpoint reference the same vertex `TShape` (needed for a meaningful
+    /// Euler characteristic / vertex-sharing across faces).
+    pub fn make_edge_segment_with_vertices(
+        &self,
+        p1: &GpPnt,
+        p2: &GpPnt,
+        v1: &Vertex,
+        v2: &Vertex,
+    ) -> Edge {
+        let dir = GpDir::from_vec(&GpVec::from_pnts(p1, p2))
+            .expect("make_edge_segment_with_vertices: p1 and p2 must be distinct");
+        let lin = GpLin::from_pnt_dir(*p1, dir);
+        let mut e = self.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
+        self.add(&mut e.0, &v1.0);
+        self.add(&mut e.0, &v2.0);
+        e
+    }
+
     /// Make a circular arc edge in the plane `axis` with the given radius and
     /// parameter range (`BRepBuilderAPI_MakeEdge(gp_Circ, ...)`).
     pub fn make_edge_circle(&self, axis: &GpAx2, radius: f64, first: f64, last: f64) -> Edge {

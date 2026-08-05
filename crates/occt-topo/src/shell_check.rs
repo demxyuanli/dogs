@@ -124,6 +124,33 @@ pub fn shell_euler_characteristic(shell: &Shell) -> i32 {
     dedupe_count(&verts) as i32 - dedupe_count(&edges) as i32 + faces.len() as i32
 }
 
+/// Topological invariants of a shell — the boolean-result gate
+/// (BOPAlgo / trellis R4 "invariant oracle"). A valid closed solid is
+/// manifold (every edge shared by exactly 2 faces) with Euler characteristic
+/// V − E + F = 2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShellInvariants {
+    /// Every boundary edge is referenced by exactly 2 faces.
+    pub closed: bool,
+    /// V − E + F over the deduplicated topology.
+    pub euler_characteristic: i32,
+}
+
+impl ShellInvariants {
+    /// True for a closed, genus-0 solid shell (manifold + Euler=2).
+    pub fn is_valid_solid(&self) -> bool {
+        self.closed && self.euler_characteristic == 2
+    }
+}
+
+/// Compute the topological invariants of a shell.
+pub fn shell_invariants(shell: &Shell) -> ShellInvariants {
+    ShellInvariants {
+        closed: shell_is_closed(shell),
+        euler_characteristic: shell_euler_characteristic(shell),
+    }
+}
+
 /// Whether the wire's first edge start point equals its last edge end point.
 /// Falls back to edge-count parity when the edges carry no evaluable curve.
 pub fn wire_is_closed(wire: &Wire) -> bool {

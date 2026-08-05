@@ -25,8 +25,8 @@ use crate::brep_extrema::is_inside;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::inttools::{edge_edge_intersections, edge_face_intersections};
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Wire};
-use crate::shell_check::shell_is_closed;
+use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
+use crate::shell_check::{shell_invariants, shell_is_closed};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{
     edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
@@ -706,6 +706,31 @@ fn unify_result_edges(bld: &TopoBuilder, faces: &[Face], tol: f64) -> Vec<Face> 
     }
 
     let mut edge_map: HashMap<(usize, usize), Edge> = HashMap::new();
+    // One shared vertex TShape per welded point, so edges sharing an endpoint
+    // reference the same vertex (meaningful Euler characteristic).
+    let mut vertex_map: HashMap<usize, Vertex> = HashMap::new();
+    let mut shared_edge = |bld: &TopoBuilder,
+                           edge_map: &mut HashMap<(usize, usize), Edge>,
+                           vertex_map: &mut HashMap<usize, Vertex>,
+                           a: usize,
+                           b: usize|
+     -> Edge {
+        let key = (a.min(b), a.max(b));
+        if let Some(e) = edge_map.get(&key) {
+            return e.clone();
+        }
+        let va = vertex_map
+            .entry(a)
+            .or_insert_with(|| bld.make_vertex(weld.points[a], 0.0))
+            .clone();
+        let vb = vertex_map
+            .entry(b)
+            .or_insert_with(|| bld.make_vertex(weld.points[b], 0.0))
+            .clone();
+        let e = bld.make_edge_segment_with_vertices(&weld.points[a], &weld.points[b], &va, &vb);
+        edge_map.insert(key, e.clone());
+        e
+    };
     let mut out: Vec<Face> = Vec::with_capacity(faces.len());
     for (fi, f) in faces.iter().enumerate() {
         let face_l = &face_loops[fi];
@@ -762,12 +787,7 @@ fn unify_result_edges(bld: &TopoBuilder, faces: &[Face], tol: f64) -> Vec<Face> 
                 if a == b {
                     continue;
                 }
-                let key = (a.min(b), a.max(b));
-                let e = edge_map
-                    .entry(key)
-                    .or_insert_with(|| bld.make_edge_segment(&weld.points[a], &weld.points[b]))
-                    .clone();
-                new_edges.push(e);
+                new_edges.push(shared_edge(bld, &mut edge_map, &mut vertex_map, a, b));
             }
         }
         if ok && new_edges.len() >= 3 {
@@ -1083,8 +1103,11 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
     // mesh volume is consistent (source faces may be oriented inward).
     let result_faces = orient_faces_outward(&bld, &result_faces);
     let shell = bld.make_shell(&result_faces);
-    let closed = shell_is_closed(&shell);
-    let solid = if closed { Some(bld.make_solid(&[shell.clone()])) } else { None };
+    let inv = shell_invariants(&shell);
+    // A manifold (closed) shell yields a solid; Euler is topology-reporting
+    // (2 for a simple solid, 0 for a solid with a cavity) and is asserted
+    // separately by the invariant oracle test.
+    let solid = if inv.closed { Some(bld.make_solid(&[shell.clone()])) } else { None };
     let shape = solid
         .as_ref()
         .map(|s| s.0.clone())
@@ -1097,7 +1120,9 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
         faces: result_faces,
         warnings: vec![],
     };
-    if !closed {
+    // Topological invariant gate (trellis R4 "invariant oracle"): a boolean
+    // result must be a closed (manifold) shell.
+    if !inv.closed {
         result.warnings.push("result shell is not closed".into());
     }
 
@@ -3788,6 +3813,55 @@ mod tests {
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
             clear_tree(&TopoShape::from_handle(c));
+        }
+    }
+
+    /// Faceted cylinder solid (axis +Z, base at z=1, centered at (1,1)) from a
+    /// triangle mesh — all faces planar, like the boss tool.
+    fn faceted_cylinder() -> TopoShape {
+        let (r, h, slices) = (0.25, 0.8, 24usize);
+        let mut vertices = Vec::new();
+        let mut triangles = Vec::new();
+        for i in 0..=slices {
+            let th = 2.0 * std::f64::consts::PI * i as f64 / slices as f64;
+            vertices.push(GpPnt::new(1.0 + r * th.cos(), 1.0 + r * th.sin(), 1.0));
+            vertices.push(GpPnt::new(1.0 + r * th.cos(), 1.0 + r * th.sin(), 1.0 + h));
+        }
+        for i in 0..slices {
+            let (a, b, c, d) = (2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3);
+            triangles.push(occt_core::poly::triangulation::Triangle::new(a, b, c));
+            triangles.push(occt_core::poly::triangulation::Triangle::new(b, d, c));
+        }
+        let (top_idx, bot_idx) = (vertices.len(), vertices.len() + 1);
+        vertices.push(GpPnt::new(1.0, 1.0, 1.0 + h));
+        vertices.push(GpPnt::new(1.0, 1.0, 1.0));
+        for i in 0..slices {
+            let (tb, tt) = (2 * i + 1, 2 * i + 3);
+            let (bb, bt) = (2 * i, 2 * i + 2);
+            triangles.push(occt_core::poly::triangulation::Triangle::new(top_idx, tt, tb));
+            triangles.push(occt_core::poly::triangulation::Triangle::new(bot_idx, bb, bt));
+        }
+        let mesh = crate::mesh::ShapeMesh { vertices, triangles, source_shape: ShapeType::Solid };
+        crate::mesh_to_brep::shape_mesh_to_brep(&mesh).solid.expect("closed").0
+    }
+
+    /// Wave 3/4 gate: a planar fuse of a box with a protruding faceted cylinder
+    /// must yield a closed, genus-0 solid (manifold + Euler characteristic 2).
+    #[test]
+    fn fuse_box_cylinder_is_closed_solid() {
+        let a = BRepPrimBox::make_box(2.0, 2.0, 1.0).solid.0;
+        let tool = faceted_cylinder();
+        let r = boolean(&a, &tool, BoolOp::Fuse, 1e-4).expect("fuse");
+        let shape = r.solid.clone().map(|s| s.0).unwrap_or(r.shape);
+        let shells = shapes_of(&shape, ShapeType::Shell);
+        assert!(!shells.is_empty(), "fuse produced no shell; warnings {:?}", r.warnings);
+        for s in &shells {
+            let inv = shell_invariants(&Shell(s.clone()));
+            assert!(
+                inv.is_valid_solid(),
+                "invariants {inv:?} not valid solid; warnings {:?}",
+                r.warnings
+            );
         }
     }
 
