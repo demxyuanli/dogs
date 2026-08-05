@@ -335,11 +335,13 @@ impl PaveFiller {
         self.ds.update_pave_blocks();
         self.perform_ff()?;
         self.check_errors()?;
+        // OCCT order: MakeSplitEdges (right after FF) precedes MakeBlocks;
+        // MakePCurves follows MakeBlocks.
+        self.make_split_edges()?;
+        self.check_errors()?;
         self.make_blocks()?;
         self.check_errors()?;
         self.make_pcurves()?;
-        self.check_errors()?;
-        self.make_split_edges()?;
         self.check_errors()?;
         self.intersection_done = true;
         Ok(())

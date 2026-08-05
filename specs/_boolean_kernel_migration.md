@@ -113,6 +113,30 @@
   4. **B3 未做**：下游实体装配（fuse 曾 euler=32 vol_m=0.5 应 1.5）——B1+B2 修好后需重测。
 - **现状**：手写 `bop_builder::boolean` 仍是正确路径（1266 测试绿）；`bop_builder2` 合并为多会话长线工作。
 - **B2 剩余调查**：管线面的 section 边端点为何未连上边界（B1 的 `vertex_on_edge` 容差 vs section 顶点实际位置）；角走环对 9 条唯一边的边集只产出 1 个环。
+
+### 翻译边界图：`PaveFiller::PerformInternal` 序列对照（2026-08-06）
+用户指引：**如实翻译，不修具体问题，沿 OCC 源码路径找边界**。对照 `/d/source/occt-src/.../BOPAlgo/BOPAlgo_PaveFiller.cxx:234`：
+
+| OCCT 步骤 | 我的 `pave_filler.rs::perform_internal` | 状态 |
+|---|---|---|
+| Init / Prepare | init / prepare | ✅ |
+| PerformVV/VE | perform_vv/ve | ✅ |
+| **UpdatePaveBlocksWithSDVertices**（VE/EE/VF/EF 后） | `update_pave_blocks`（语义不同） | ❌ 缺失/简化 |
+| PerformEE/VF/EF | perform_ee/vf/ef | ✅ |
+| **UpdateInterfsWithSDVertices** | — | ❌ 缺失 |
+| **RepeatIntersection** | — | ❌ 缺失 |
+| **ForceInterfEE / ForceInterfEF** | — | ❌ 缺失 |
+| PerformFF | perform_ff（**直接建 section 边**） | ⚠️ 偏差：OCCT 只记 `BOPDS_Curve`/`BOPDS_Point` |
+| **UpdateBlocksWithSharedVertices** | — | ❌ 缺失 |
+| **RefineFaceInfoIn** | — | ❌ 缺失 |
+| **MakeSplitEdges** | make_split_edges（在 make_blocks **之后**） | ❌ **顺序错**：OCCT 在 make_blocks **之前** |
+| **UpdatePaveBlocksWithSDVertices** | — | ❌ 缺失 |
+| MakeBlocks | make_blocks | ✅（但顺序错） |
+| CheckSelfInterference / RemoveMicroEdges | — | ❌ 缺失 |
+| MakePCurves | make_pcurves | ✅ |
+| ProcessDE | — | ❌ 缺失 |
+
+**下一步（忠实边界扩展）**：按 OCCT 序列重构 `perform_internal`——补 `UpdatePaveBlocksWithSDVertices`/`UpdateBlocksWithSharedVertices`/`RefineFaceInfoIn`，把 `make_split_edges` 移到 `make_blocks` 前，查 section 边创建的真实位置（OCCT 在 MakeSplitEdges 或 Builder 侧）。这些是结构对齐，非模型修补。
 - 门禁：✅ `boss_adds_material` 通过；全量 lib 1259 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4）【✅ 完成 2026-08-05】
