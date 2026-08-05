@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use occt_core::geom::polygon_ops::{point_in_polygon2d, polygon_area2d};
 use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
-use occt_geom::GeomPlane;
+use occt_geom::{GeomPlane, Surface};
 
 use crate::abs::ShapeType;
 use crate::brep_extrema::is_inside;
@@ -879,6 +879,83 @@ fn region_to_subface(
     let face = b.make_face(Arc::new(GeomPlane::new(pln.clone())), &wires);
     let interior = plane_point_from_2d(pln, &r.interior);
     Some(SubFace { face, poly3d: pts3d, plane: pln.clone(), interior })
+}
+
+/// Build a `Face` on `surface` from a traced 2D region (outer loop plus hole
+/// loops), used by the BOPAlgo face-image stage's planar fast path.
+fn region_to_face(r: &Region2d, pln: &GpPln, surface: Arc<dyn Surface>) -> Option<Face> {
+    if r.outer.len() < 3 || polygon_area2d(&r.outer).abs() < 1e-12 {
+        return None;
+    }
+    let b = TopoBuilder::new();
+    let wire = |poly: &[GpPnt2d]| -> Option<Wire> {
+        if poly.len() < 3 {
+            return None;
+        }
+        let pts3d: Vec<GpPnt> = poly.iter().map(|p| plane_point_from_2d(pln, p)).collect();
+        let edges: Vec<Edge> = (0..pts3d.len())
+            .map(|i| b.make_edge_segment(&pts3d[i], &pts3d[(i + 1) % pts3d.len()]))
+            .collect();
+        Some(b.make_wire(&edges))
+    };
+    let outer = wire(&r.outer)?;
+    let mut wires = vec![outer];
+    for h in &r.holes {
+        if let Some(w) = wire(h) {
+            wires.push(w);
+        }
+    }
+    Some(b.make_face(surface, &wires))
+}
+
+/// Split `face` into its planar regions with the 2-D arrangement
+/// ([`trace_planar_regions`]), building one face per region on the face's own
+/// surface. `on_edges` are the on-face (section) edges of the face.
+///
+/// This is the planar fast path used by `BOPAlgo_Builder::BuildSplitFaces`
+/// (via `crate::bop_build_faces`): the arrangement splits the boundary edges
+/// at section endpoints itself, so it does not depend on the pave-block
+/// machinery having pre-split them.
+pub(crate) fn split_face_planar_regions(face: &Face, on_edges: &[Edge]) -> Option<Vec<TopoShape>> {
+    if on_edges.is_empty() {
+        return None;
+    }
+    let pln = face_plane_local(face)?;
+    let poly = face_polygon_local(face, &pln)?;
+    let segs2d: Vec<(GpPnt2d, GpPnt2d)> = on_edges
+        .iter()
+        .filter_map(|e| {
+            let (a, b) = edge_vertices(e);
+            match (a, b) {
+                (Some(av), Some(bv)) => {
+                    let a2 = project_point_to_plane(&pln, &vertex_position(&av));
+                    let b2 = project_point_to_plane(&pln, &vertex_position(&bv));
+                    if a2.distance(&b2) > 1e-9 {
+                        Some((a2, b2))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    let regions = trace_planar_regions(&poly, &segs2d);
+    if regions.is_empty() {
+        return None;
+    }
+    let surf = BRepTool::face_surface(face)?;
+    let mut out = Vec::new();
+    for r in &regions {
+        if let Some(fc) = region_to_face(r, &pln, surf.clone()) {
+            out.push(fc.0);
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
 }
 
 /// Build the closed wire of one 2D loop on `pln`, welding vertices and

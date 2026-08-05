@@ -103,7 +103,14 @@
 - **已实现**：`bop_builder::unify_result_edges`——结果面间按几何端点统一边 TShape（BOPDS pave 式细分），**每面边界按共享端点链边重建 loop**（`edge_vertices` 是首创建者序，非遍历序——P1 orientation 丢失所致），再在所有全局焊接顶点处细分，相邻对映射到单一规范 Edge。
 - **已实现**：重排——unify 在 `orient_faces_outward` 之前（orient 的 `shell_is_closed` 门禁需统一后的闭合 shell）。
 - **效果**：box+凸出圆柱 fuse `shell_is_closed=true`；`boss_adds_material` 解除 ignore 并通过；全量 lib 1259 通过。
-- **剩余**：G5 面重建（已定位：共享边 mixed-orientation 由链边解决）；`bop_builder2`/`bop_build_*` 全量合并（可选，当前手写 unify 已达同效果）。**G2 无限直线切割已清除**——`split_faces` 及 repair 路径（`split_faces_along_intersections`/`repair_self_intersections`）全部改用 2D 排列 `trace_planar_regions`，旧 `split_polygon_by_segment(s)`/`dedupe_segments`/`polygon_to_subface` 死代码已删。
+- **剩余**：G5 面重建（已定位：共享边 mixed-orientation 由链边解决）。**G2 无限直线切割已清除**——`split_faces` 及 repair 路径全部改用 2D 排列 `trace_planar_regions`，旧 `split_polygon_by_segment(s)`/`dedupe_segments`/`polygon_to_subface` 死代码已删。
+
+### 波 6 — `bop_builder2`/`bop_build_*` 全量合并（进行中，2026-08-05）
+- **调查结论**：`bop_builder2` 管线有多级缺陷，非单点修复：
+  1. **PaveFiller 边界边未在 section 端点分裂**（A 边界 24 边 0 条 split images）→ build_split_faces 的 3D WireSplitter 失败（open chain）。
+  2. **已修**：`build_split_faces` 加平面快速路径 `bop_builder::split_face_planar_regions`——对平面面用 2D 排列（自动分裂边）建面，`SplitTask.on_edges` 单独携带 section 边。build_split_faces 不再对平面 case 报错。
+  3. **仍未修（下游）**：面选择/实体装配阶段错误——fuse 12 面 euler=32 vol_m=0.5（应 1.5）、cut mesh vol=0、common euler=30。`build_split_solids_full`/`build_result`/`post_treat` 需要独立调试。
+- **现状**：手写 `bop_builder::boolean`（`trace_planar_regions`+`unify_result_edges`）仍是正确路径（1265 测试绿）；`bop_builder2` 合并为长线工作，非必需。
 - 门禁：✅ `boss_adds_material` 通过；全量 lib 1259 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4）【✅ 完成 2026-08-05】

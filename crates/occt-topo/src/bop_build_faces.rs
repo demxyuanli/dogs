@@ -141,11 +141,13 @@ pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
     let n = f.ds().nb_source_shapes();
 
     /// One face to split: the source face and the edge set that bounds its
-    /// split pieces.
+    /// split pieces. `on_edges` are the on-face (section) edges separately,
+    /// for the planar arrangement fast path.
     struct SplitTask {
         face_index: usize,
         face: Face,
         edges: Vec<Edge>,
+        on_edges: Vec<Edge>,
     }
     let mut tasks: Vec<SplitTask> = Vec::new();
 
@@ -236,22 +238,36 @@ pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
         // block of the on-face edge covers exactly the part of that edge lying
         // on the face; its split edge (when the block was split) is the
         // properly-trimmed sub-edge. Fall back to the whole edge otherwise.
+        let mut on_le: Vec<Edge> = Vec::new();
         for &(e_idx, fl, ll) in &on_edges {
             let on_edge = on_face_split_edge(f, e_idx, fl, ll);
             let Some(mut sp) = on_edge else { continue };
             sp.set_orientation(Orientation::Forward);
             le.push(Edge(sp.clone()));
+            on_le.push(Edge(sp.clone()));
             sp.set_orientation(Orientation::Reversed);
             le.push(Edge(sp));
         }
 
-        tasks.push(SplitTask { face_index: i, face, edges: le });
+        tasks.push(SplitTask { face_index: i, face, edges: le, on_edges: on_le });
     }
 
     // 2. Execute the tasks: close each edge set into wires, then build one
     //    closed face per wire on the original surface.
     let mut faces_im: HashMap<usize, Vec<TopoShape>> = HashMap::new();
     for task in tasks {
+        // Planar fast path: the 2-D arrangement splits the boundary edges at
+        // section endpoints itself, so it does not need the boundary pre-split
+        // by the pave-block machinery. Builds one face per traced region (a
+        // split face keeps hole loops as multi-wire faces).
+        if let Some(splits) =
+            crate::bop_builder::split_face_planar_regions(&task.face, &task.on_edges)
+        {
+            for sp in splits {
+                faces_im.entry(task.face_index).or_default().push(sp);
+            }
+            continue;
+        }
         // The on-face edges are added FORWARD and REVERSED, and the boundary
         // edges of coincident faces coincide geometrically (A's edge and B's
         // edge over the shared segment). The duplicates are needed: an interior
