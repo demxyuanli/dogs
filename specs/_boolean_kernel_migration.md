@@ -15,8 +15,13 @@
 
 ### G1 面-面求交不裁剪真边界（IntTools_FaceFace）
 - `face_face.rs::face_face_intersection`（:195）：`Line` 是**无限线**（无面内裁剪）；`Curve` 是采样点云（无连通性）。
-- `bop_builder::face_face_segments_local`（:277）虽做两面 2D 多边形裁剪，但：`face_polygon_local` 是**顶点-only、凸-only、质心角排序**近似；无 3D 中点重验证；共线边分支（:234）无 inside 测试 → **杂散段**（box 侧面 × 圆柱侧片）。
-- OCCT 做法：`IntTools_FaceFace` 裁剪到 **UV 域**（`CorrectSurfaceBoundaries`）+ 稀疏点测试（`dom.Classify`），靠 `PutBoundPaveOnCurve`（面边界穿越点）+ `IsValidBlockForFaces`（块中点 in-face 过滤）兜底。
+- `bop_builder::face_face_segments_local`（:277）做两面 2D 多边形裁剪。**调查修正（波 1，2026-08-05）**：实测 boss fuse 时 `face_face_segments_local` 只产生**正确的 24 边形段**（24 条，全在 z=1，box 顶面×圆柱底边），**无杂散段**——G1 对本 case 不是根因（之前诊断被 dbg 错误工具位置污染）。
+- 注意：`face_polygon_local` 的顶点-only/凸-only 质心角排序对**非凸/自交叉边界**仍不可靠（见 G5）。
+
+### G5（新发现，波 1）box 侧面重建出**自交叉 wire**（最深根因）
+- 实测 fuse 结果里 box y=0 侧面的 wire 是 `(2,0,0)→(0,0,0)→(2,0,0)→(2,0,1)→(2,0,1)→(0,0,1)→(0,0,1)→(0,0,0)`——**边不连通**（e1.b≠e2.a），自交叉。box x=2 侧面同样。
+- 此 malformed wire **无 unify 也存在**（pre-existing），来自 `split_faces`→`polygon_to_subface` 重建 box 侧面时用了**坏多边形**（`face_polygon_local`/`face_boundary_points`）。
+- **下一步（波 2 重定位）**：先修 `face_polygon_local`/box 侧面多边形提取（干净矩形），再谈边统一。手写 `unify_result_edges`（两次尝试）因坏输入面而失败，已回退——正确路径是迁移文档 Wave 3 的"接入 bop_build_* 管线"，非手写重建。
 
 ### G2 无限直线分割（BOPAlgo 边分裂）
 - `split_polygon_by_segment`（bop_builder.rs:345）：用 `side()` 叉积按**无限直线**分类 → 弦延长线穿越 box 边界 → 过度细分、slivers。
