@@ -16,4 +16,5 @@ examples/output/
 
 # Test-generated STEP → OBJ outputs
 data/output/
+data/output2/
 /.target-*/
