@@ -5,7 +5,7 @@
 //! face into a UV-grid triangle soup. Geometry is read from the side-table
 //! registry (`tgeometry::GeometryRegistry`) — the same data `BRep_Tool` reads.
 
-use occt_core::gp::{GpPnt, GpXyz};
+use occt_core::gp::{GpPnt, GpPnt2d, GpXyz};
 use occt_core::gcpnts::{CurveSample, UniformDeflection, UniformPoints};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::{Curve, Surface};
@@ -122,28 +122,157 @@ pub(crate) fn is_convex(pts: &[GpPnt], n: &GpXyz) -> bool {
     true
 }
 
+/// Whether `p` is STRICTLY inside the 2D triangle `(a, b, c)` (boundary and
+/// collinear points excluded — ear clipping must not let an edge point block an
+/// ear).
+fn point_in_triangle_2d(a: &GpPnt2d, b: &GpPnt2d, c: &GpPnt2d, p: &GpPnt2d) -> bool {
+    let s = |u: &GpPnt2d, v: &GpPnt2d, w: &GpPnt2d| {
+        (v.x() - u.x()) * (w.y() - u.y()) - (v.y() - u.y()) * (w.x() - u.x())
+    };
+    let d1 = s(p, a, b);
+    let d2 = s(p, b, c);
+    let d3 = s(p, c, a);
+    if d1 == 0.0 || d2 == 0.0 || d3 == 0.0 {
+        return false;
+    }
+    (d1 > 0.0 && d2 > 0.0 && d3 > 0.0) || (d1 < 0.0 && d2 < 0.0 && d3 < 0.0)
+}
+
+/// Ear-clipping triangulation of a simple (possibly non-convex) 2D polygon.
+/// Returns `(i0, i1, i2)` vertex-index triples. `None` when degenerate.
+fn ear_clip(poly: &[GpPnt2d]) -> Option<Vec<(usize, usize, usize)>> {
+    if poly.len() < 3 {
+        return None;
+    }
+    // Overall orientation sign (cross-product of the first convex vertex).
+    let area = {
+        let mut a = 0.0;
+        for i in 0..poly.len() {
+            let p = poly[i];
+            let q = poly[(i + 1) % poly.len()];
+            a += p.x() * q.y() - q.x() * p.y();
+        }
+        a
+    };
+    if area.abs() < 1e-12 {
+        return None;
+    }
+    let sign = area.signum();
+    let mut idx: Vec<usize> = (0..poly.len()).collect();
+    let mut tris: Vec<(usize, usize, usize)> = Vec::new();
+    let mut guard = 0;
+    while idx.len() > 3 && guard < poly.len() * poly.len() {
+        guard += 1;
+        let m = idx.len();
+        let mut clipped = false;
+        for k in 0..m {
+            let (a, b, c) = (idx[k], idx[(k + 1) % m], idx[(k + 2) % m]);
+            let cross = (poly[b].x() - poly[a].x()) * (poly[c].y() - poly[b].y())
+                - (poly[b].y() - poly[a].y()) * (poly[c].x() - poly[b].x());
+            if cross * sign <= 0.0 {
+                continue; // reflex or degenerate vertex
+            }
+            let mut has_inside = false;
+            for &i in &idx {
+                if i != a && i != b && i != c
+                    && point_in_triangle_2d(&poly[a], &poly[b], &poly[c], &poly[i])
+                {
+                    has_inside = true;
+                    break;
+                }
+            }
+            if has_inside {
+                continue;
+            }
+            tris.push((a, b, c));
+            idx.remove((k + 1) % m);
+            clipped = true;
+            break;
+        }
+        if !clipped {
+            return None;
+        }
+    }
+    if idx.len() == 3 {
+        tris.push((idx[0], idx[1], idx[2]));
+        Some(tris)
+    } else {
+        None
+    }
+}
+
+/// Bridge every hole to the outer boundary by its closest vertex pair, yielding
+/// a single simple polygon (the face's material) suitable for ear clipping.
+fn bridge_holes(outer: &[GpPnt2d], holes: &[&[GpPnt2d]]) -> Vec<GpPnt2d> {
+    let signed_area = |pts: &[GpPnt2d]| -> f64 {
+        let mut a = 0.0;
+        for i in 0..pts.len() {
+            let p = pts[i];
+            let q = pts[(i + 1) % pts.len()];
+            a += p.x() * q.y() - q.x() * p.y();
+        }
+        a
+    };
+    let outer_sign = signed_area(outer).signum();
+    let mut poly = outer.to_vec();
+    for hole in holes {
+        // Traverse the hole OPPOSITE to the outer so the bridged polygon is a
+        // simple ring cut open along the bridge (not a self-crossing loop).
+        let reverse = signed_area(hole).signum() == outer_sign;
+        let (mut oi, mut hi) = (0usize, 0usize);
+        let mut best = f64::INFINITY;
+        for (i, op) in poly.iter().enumerate() {
+            for (j, hp) in hole.iter().enumerate() {
+                let d = op.distance(hp);
+                if d < best {
+                    best = d;
+                    oi = i;
+                    hi = j;
+                }
+            }
+        }
+        let hlen = hole.len();
+        let mut new_poly = Vec::with_capacity(poly.len() + hlen + 2);
+        new_poly.extend_from_slice(&poly[..=oi]);
+        for k in 0..=hlen {
+            let idx = if reverse { (hi + hlen - k) % hlen } else { (hi + k) % hlen };
+            new_poly.push(hole[idx]);
+        }
+        new_poly.extend_from_slice(&poly[oi..]);
+        poly = new_poly;
+    }
+    poly
+}
+
 /// Triangulate a convex planar face from its boundary polygon.
 ///
 /// Boundary points are collected from each wire edge with the given deflection,
 /// deduplicated, and ordered radially around the face centroid (recovering the
 /// boundary order of a convex polygon), then fan-triangulated with outward
-/// winding along the plane axis. Returns `None` when the boundary is degenerate
-/// or non-convex — the caller then falls back to a UV grid.
+/// winding along the plane axis. A face with holes (outer + hole wires, e.g. a
+/// box top ring cut by a boss cylinder's base) is triangulated by ear-clipping
+/// the hole-bridged polygon. Returns `None` when the boundary is degenerate or
+/// non-convex — the caller then falls back to a UV grid.
 pub(crate) fn planar_polygon_triangulate(
     face: &Face,
     bound_def: f64,
 ) -> Option<(Vec<GpPnt>, Vec<Triangle>)> {
-    let mut pts: Vec<GpPnt> = Vec::new();
+    // Per-wire boundary point loops.
+    let mut loops: Vec<Vec<GpPnt>> = Vec::new();
     for wire in wires_of_face(face) {
+        let mut loop_pts: Vec<GpPnt> = Vec::new();
         for e in edges_of_wire(&wire) {
             for p in edge_to_polyline(&e, bound_def) {
-                if !pts.iter().any(|q| q.distance(&p) < 1e-9) {
-                    pts.push(p);
+                if !loop_pts.iter().any(|q| q.distance(&p) < 1e-9) {
+                    loop_pts.push(p);
                 }
             }
         }
+        if loop_pts.len() >= 3 {
+            loops.push(loop_pts);
+        }
     }
-    if pts.len() < 3 {
+    if loops.is_empty() {
         return None;
     }
 
@@ -151,25 +280,87 @@ pub(crate) fn planar_polygon_triangulate(
     let n = *pln.axis().direction().xyz();
     let xdir = *pln.x_axis().direction().xyz();
     let ydir = xdir.crossed(&n);
-    let centroid = pts
+
+    // Order each loop radially around the face centroid (convex recovery).
+    let mut all_pts: Vec<GpPnt> = Vec::new();
+    for l in &loops {
+        all_pts.extend(l.iter().cloned());
+    }
+    let centroid = all_pts
         .iter()
         .fold(GpPnt::new(0.0, 0.0, 0.0), |acc, p| {
             GpPnt::new(acc.x() + p.x(), acc.y() + p.y(), acc.z() + p.z())
         });
-    let inv = 1.0 / pts.len() as f64;
+    let inv = 1.0 / all_pts.len() as f64;
     let c = GpPnt::new(centroid.x() * inv, centroid.y() * inv, centroid.z() * inv);
+    let order = |l: &mut Vec<GpPnt>| {
+        l.sort_by(|p, q| {
+            let ap = p.coord.subtracted(&c.coord);
+            let aq = q.coord.subtracted(&c.coord);
+            let ang_p = ap.dot(&ydir).atan2(ap.dot(&xdir));
+            let ang_q = aq.dot(&ydir).atan2(aq.dot(&xdir));
+            ang_p.partial_cmp(&ang_q).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    };
+    let mut pts = loops[0].clone();
+    order(&mut pts);
+    let to2d = |p: &GpPnt| -> GpPnt2d {
+        let v = p.coord.subtracted(&pln.location().coord);
+        GpPnt2d::new(v.dot(&xdir), v.dot(&ydir))
+    };
 
-    // Order the boundary points around the centroid (radial sweep).
-    pts.sort_by(|p, q| {
-        let ap = p.coord.subtracted(&c.coord);
-        let aq = q.coord.subtracted(&c.coord);
-        let ang_p = ap.dot(&ydir).atan2(ap.dot(&xdir));
-        let ang_q = aq.dot(&ydir).atan2(aq.dot(&xdir));
-        ang_p.partial_cmp(&ang_q).unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    if !is_convex(&pts, &n) {
-        return None;
+    if loops.len() == 1 {
+        // Single boundary: convex fan, else ear-clip.
+        if !is_convex(&pts, &n) {
+            let poly2d: Vec<GpPnt2d> = pts.iter().map(to2d).collect();
+            let tris2 = ear_clip(&poly2d)?;
+            let tris: Vec<Triangle> = tris2
+                .iter()
+                .map(|&(a, b, c2)| orient3(&pts, a, b, c2, &n))
+                .collect();
+            let pts3 = pts;
+            return Some((pts3, tris));
+        }
+    } else {
+        // Outer + holes: identify the outer (largest area), bridge holes, ear-clip.
+        let mut area_of: Vec<f64> = Vec::new();
+        for l in &loops {
+            let poly2d: Vec<GpPnt2d> = l.iter().map(to2d).collect();
+            let mut a = 0.0;
+            for i in 0..poly2d.len() {
+                let p = poly2d[i];
+                let q = poly2d[(i + 1) % poly2d.len()];
+                a += p.x() * q.y() - q.x() * p.y();
+            }
+            area_of.push(a.abs());
+        }
+        let outer_i = area_of
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .map(|(i, _)| i)?;
+        let outer_pts = loops[outer_i].clone();
+        let outer2d: Vec<GpPnt2d> = outer_pts.iter().map(to2d).collect();
+        let holes2d: Vec<Vec<GpPnt2d>> = loops
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != outer_i)
+            .map(|(_, l)| l.iter().map(to2d).collect())
+            .collect();
+        let holes_refs: Vec<&[GpPnt2d]> = holes2d.iter().map(|v| v.as_slice()).collect();
+        let bridged = bridge_holes(&outer2d, &holes_refs);
+        let tris2 = ear_clip(&bridged)?;
+        // Map triangulated 2D points back to 3D.
+        let pts3: Vec<GpPnt> = bridged.iter().map(|p| {
+            let o = pln.location().coord;
+            let v = xdir.multiplied(p.x()).added(&ydir.multiplied(p.y()));
+            GpPnt::new(o.x() + v.x(), o.y() + v.y(), o.z() + v.z())
+        }).collect();
+        let tris: Vec<Triangle> = tris2
+            .iter()
+            .map(|&(a, b, c2)| orient3(&pts3, a, b, c2, &n))
+            .collect();
+        return Some((pts3, tris));
     }
 
     let mut tris = Vec::with_capacity(pts.len() - 2);
@@ -450,6 +641,51 @@ pub(crate) mod tests {
         }
         b.add_wire(&mut face, &wire);
         face
+    }
+
+    /// A face with an outer 2×2 square and a 24-gon hole (a box-top ring cut by
+    /// a boss cylinder) triangulates to the ring area, not the full square.
+    #[test]
+    fn face_with_hole_triangulates_ring_area() {
+        use occt_core::gp::{GpAx3, GpPnt};
+        let b = TopoBuilder::new();
+        let mut face = Face::new();
+        let pln = GpPln::new(GpAx3::new(GpPnt::new(0.0, 0.0, 1.0), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap());
+        reg().set_face(&face.0, FaceGeom::new(Arc::new(GeomPlane::new(pln.clone()))));
+        // Outer 2×2 square.
+        let mut outer = Wire::new();
+        for (x0, y0, x1, y1) in [(0.0, 0.0, 2.0, 0.0), (2.0, 0.0, 2.0, 2.0), (2.0, 2.0, 0.0, 2.0), (0.0, 2.0, 0.0, 0.0)] {
+            let e = b.make_edge_segment(&GpPnt::new(x0, y0, 1.0), &GpPnt::new(x1, y1, 1.0));
+            b.add_edge(&mut outer, &e);
+        }
+        b.add_wire(&mut face, &outer);
+        // Hole: 24-gon at (1,1), r=0.25.
+        let r = 0.25;
+        let n = 24usize;
+        let mut hole = Wire::new();
+        for i in 0..n {
+            let t0 = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
+            let t1 = 2.0 * std::f64::consts::PI * (i + 1) as f64 / n as f64;
+            let e = b.make_edge_segment(
+                &GpPnt::new(1.0 + r * t0.cos(), 1.0 + r * t0.sin(), 1.0),
+                &GpPnt::new(1.0 + r * t1.cos(), 1.0 + r * t1.sin(), 1.0),
+            );
+            b.add_edge(&mut hole, &e);
+        }
+        b.add_wire(&mut face, &hole);
+        let (pts, tris) = face_to_triangles(&face, 0.05);
+        let mut area = 0.0;
+        for t in &tris {
+            let a = pts[t.n0].coord;
+            let x = pts[t.n1].coord.subtracted(&a);
+            let y = pts[t.n2].coord.subtracted(&a);
+            area += 0.5 * x.crossed(&y).modulus();
+        }
+        let expect = 4.0 - std::f64::consts::PI * r * r;
+        assert!(
+            (area - expect).abs() < 0.05,
+            "ring area {area} vs expected {expect} (hole not subtracted?)"
+        );
     }
 
     #[test]
