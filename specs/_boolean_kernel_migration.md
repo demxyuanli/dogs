@@ -46,11 +46,12 @@
 - `split_polygon_by_segment` 改**有限段**切割（交点在段内才切），或接入 BOPDS pave 分裂：边在**两面顶点并集**处切分（`PutBoundPaveOnCurve` + `PaveBlock::Update`）。
 - 门禁：box 顶面只切环+盘，外边界不被弦延长线细分。
 
-### 波 3 — 平面布尔合并到 BOPDS/BOPAlgo 管线（G3+G4，~800 行）
-- `bop_builder::boolean` 的 Step 6 替换为 `bop_builder2`/`bop_build_*` 装配（`fill_images_faces` + `build_split_solids` + `close_open_shells`），获得：跨面边统一（`shapes_sd`/CommonBlock）、几何 shell 闭合（`ShellSplitter` EKey）。
-- 分类/选择逻辑（`classify_face`/`select`）保留，输出改走 BOPAlgo 重建。
-- `shell_is_closed` 增加**几何身份**闭包检查（`shell_splitter::EKey`）作为兜底，不再只看 TShape 指针。
-- 门禁：`boss_adds_material` 通过（shell 闭合、体积 ≈ 4.157±0.6）；现有布尔测试全绿。
+### 波 3 — 平面布尔合并到 BOPDS/BOPAlgo 管线（G3+G4）【核心已落地 2026-08-05】
+- **已实现**：`bop_builder::unify_result_edges`——结果面间按几何端点统一边 TShape（BOPDS pave 式细分），**每面边界按共享端点链边重建 loop**（`edge_vertices` 是首创建者序，非遍历序——P1 orientation 丢失所致），再在所有全局焊接顶点处细分，相邻对映射到单一规范 Edge。
+- **已实现**：重排——unify 在 `orient_faces_outward` 之前（orient 的 `shell_is_closed` 门禁需统一后的闭合 shell）。
+- **效果**：box+凸出圆柱 fuse `shell_is_closed=true`；`boss_adds_material` 解除 ignore 并通过；全量 lib 1259 通过。
+- **剩余**：G2 无限直线分割过度细分（质量/数量问题，非闭合必需——unify 已兜底）；G5 面重建（已定位：共享边 mixed-orientation 由链边解决）；`bop_builder2`/`bop_build_*` 全量合并（可选，当前手写 unify 已达同效果）。
+- 门禁：✅ `boss_adds_material` 通过；全量 lib 1259 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4，~300 行）
 - 实现/接入验证门禁：`shell_is_closed`（几何）、`shell_manifold_check`、`shell_euler_characteristic`、`bop_checker` 非自交。
