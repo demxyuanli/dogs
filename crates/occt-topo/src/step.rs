@@ -55,7 +55,7 @@ use occt_geom::{
     GeomSphere, GeomSurfaceOfRevolution, GeomTorus, GeomTrimmedCurve, Surface,
 };
 
-use crate::abs::ShapeType;
+use crate::abs::{Orientation, ShapeType};
 use crate::brep_surface::{classify_surface, face_plane, sphere_center, SurfaceKind};
 use crate::builder::TopoBuilder;
 use crate::model::BRepModel;
@@ -1896,7 +1896,18 @@ impl<'a> Resolver<'a> {
 
     fn resolve_oriented_edge(&self, rec: &'a Record) -> Result<TopoShape, String> {
         let edge_ref = parse_ref(&rec.args[3]).ok_or("ORIENTED_EDGE: bad edge ref")?;
-        self.resolve_shape(edge_ref)
+        let mut s = self.resolve_shape(edge_ref)?;
+        // ORIENTED_EDGE(name, *, *, edge, orientation): a .F. reverses the edge
+        // in the wire. Without this, two ORIENTED_EDGEs referencing the same
+        // EDGE_CURVE (e.g. a cylinder side wall's two seam generatrices) both
+        // return the same forward edge, and the wire loses one — the surface
+        // never closes.
+        if let Some(o) = rec.args.get(4).map(|s| s.trim().to_string()) {
+            if o == ".F." {
+                s.set_orientation(Orientation::Reversed);
+            }
+        }
+        Ok(s)
     }
 
     fn resolve_loop(&self, rec: &'a Record) -> Result<TopoShape, String> {

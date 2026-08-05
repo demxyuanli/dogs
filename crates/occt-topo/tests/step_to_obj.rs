@@ -130,6 +130,27 @@ fn cylinder_step_to_obj() {
 }
 
 #[test]
+fn cylinder_step_mesh_covers_full_u_period() {
+    // Regression: a full-cylinder face's UV u-domain must span the whole
+    // period. `face_uv_bounds` samples each boundary-edge pcurve; the full
+    // circle's pcurve is unwrapped monotonically (u 0 → −2π) so the samples
+    // only reached 7π/4 — dropping a π/4 wedge and ~12.5% of the lateral
+    // area (measured 133.9 vs analytic 150.8).
+    let model = read_step_file(&data_dir().join("Cylinder.step").to_string_lossy())
+        .unwrap_or_else(|e| panic!("read Cylinder.step: {e}"));
+    let shape = &model.shapes[0].shape;
+    let im = occt_topo::brepmesh::incremental_mesh(shape, 0.1).expect("mesh cylinder");
+    let area = occt_topo::mesh::mesh_surface_area(&im.mesh);
+    // Analytic: 2πr² + 2πrh with r=2, h=10 → 48π ≈ 150.80. The mesh is a
+    // chord approximation of the curved lateral, so allow 2% under.
+    let expect = 48.0 * std::f64::consts::PI;
+    assert!(
+        (area - expect).abs() / expect < 0.02,
+        "cylinder mesh area {area} vs analytic {expect}"
+    );
+}
+
+#[test]
 fn torus_step_to_obj() {
     let (obj, name) = step_to_obj("Torus");
     assert_valid_obj("torus", &obj);

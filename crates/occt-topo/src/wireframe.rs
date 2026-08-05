@@ -5,14 +5,16 @@
 //! face into a UV-grid triangle soup. Geometry is read from the side-table
 //! registry (`tgeometry::GeometryRegistry`) — the same data `BRep_Tool` reads.
 
-use occt_core::gp::GpPnt;
+use occt_core::gp::{GpPnt, GpXyz};
 use occt_core::gcpnts::{CurveSample, UniformDeflection, UniformPoints};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::{Curve, Surface};
 
 use crate::abs::ShapeType;
+use crate::brep_surface::{face_is_planar, face_plane};
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
 fn reg() -> &'static GeometryRegistry {
     GeometryRegistry::global()
@@ -86,13 +88,121 @@ pub fn edge_chord_error(e: &Edge, polyline: &[GpPnt]) -> f64 {
     max_dev
 }
 
+/// Wind a triangle so its normal agrees with `n`.
+pub(crate) fn orient3(pts: &[GpPnt], i0: usize, i1: usize, i2: usize, n: &GpXyz) -> Triangle {
+    let pa = pts[i0].coord;
+    let pb = pts[i1].coord;
+    let pc = pts[i2].coord;
+    let nn = pb.subtracted(&pa).crossed(&pc.subtracted(&pa));
+    if n.dot(&nn) < 0.0 {
+        Triangle::new(i0, i2, i1)
+    } else {
+        Triangle::new(i0, i1, i2)
+    }
+}
+
+/// Whether a (planar, non-self-intersecting) polygon is convex when seen along
+/// `n` (all consecutive-triple signed areas share a sign).
+pub(crate) fn is_convex(pts: &[GpPnt], n: &GpXyz) -> bool {
+    let mut sign: Option<f64> = None;
+    let m = pts.len();
+    for i in 0..m {
+        let a = pts[i].coord;
+        let b = pts[(i + 1) % m].coord;
+        let c = pts[(i + 2) % m].coord;
+        let d = b.subtracted(&a).crossed(&c.subtracted(&a)).dot(n);
+        if d.abs() > 1e-12 {
+            match sign {
+                None => sign = Some(d.signum()),
+                Some(s) if s != d.signum() => return false,
+                _ => {}
+            }
+        }
+    }
+    true
+}
+
+/// Triangulate a convex planar face from its boundary polygon.
+///
+/// Boundary points are collected from each wire edge with the given deflection,
+/// deduplicated, and ordered radially around the face centroid (recovering the
+/// boundary order of a convex polygon), then fan-triangulated with outward
+/// winding along the plane axis. Returns `None` when the boundary is degenerate
+/// or non-convex — the caller then falls back to a UV grid.
+pub(crate) fn planar_polygon_triangulate(
+    face: &Face,
+    bound_def: f64,
+) -> Option<(Vec<GpPnt>, Vec<Triangle>)> {
+    let mut pts: Vec<GpPnt> = Vec::new();
+    for wire in wires_of_face(face) {
+        for e in edges_of_wire(&wire) {
+            for p in edge_to_polyline(&e, bound_def) {
+                if !pts.iter().any(|q| q.distance(&p) < 1e-9) {
+                    pts.push(p);
+                }
+            }
+        }
+    }
+    if pts.len() < 3 {
+        return None;
+    }
+
+    let pln = face_plane(face).unwrap_or_else(occt_core::gp::GpPln::default);
+    let n = *pln.axis().direction().xyz();
+    let xdir = *pln.x_axis().direction().xyz();
+    let ydir = xdir.crossed(&n);
+    let centroid = pts
+        .iter()
+        .fold(GpPnt::new(0.0, 0.0, 0.0), |acc, p| {
+            GpPnt::new(acc.x() + p.x(), acc.y() + p.y(), acc.z() + p.z())
+        });
+    let inv = 1.0 / pts.len() as f64;
+    let c = GpPnt::new(centroid.x() * inv, centroid.y() * inv, centroid.z() * inv);
+
+    // Order the boundary points around the centroid (radial sweep).
+    pts.sort_by(|p, q| {
+        let ap = p.coord.subtracted(&c.coord);
+        let aq = q.coord.subtracted(&c.coord);
+        let ang_p = ap.dot(&ydir).atan2(ap.dot(&xdir));
+        let ang_q = aq.dot(&ydir).atan2(aq.dot(&xdir));
+        ang_p.partial_cmp(&ang_q).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    if !is_convex(&pts, &n) {
+        return None;
+    }
+
+    let mut tris = Vec::with_capacity(pts.len() - 2);
+    for i in 1..pts.len() - 1 {
+        tris.push(orient3(&pts, 0, i, i + 1, &n));
+    }
+    // A REVERSED face bounds the volume with inward-pointing parametric normals
+    // (face_plane's axis is not orientation-aware); flip so the mesh points
+    // outward, matching `face_to_triangles`' UV-grid convention.
+    if face.0.orientation() == crate::abs::Orientation::Reversed {
+        for t in tris.iter_mut() {
+            std::mem::swap(&mut t.n1, &mut t.n2);
+        }
+    }
+    Some((pts, tris))
+}
+
 /// Tessellate a face into a UV-grid triangle soup (vertices + triangles).
 ///
-/// Grid resolution is driven by `deflection` relative to the UV domain size
-/// (`nu = clamp(ceil(du/deflection)+1, 3, 64)`). Triangle winding follows the
-/// surface normal from `d1` so the resulting mesh points outward. Degenerate
-/// cells are skipped. Missing surface or unbounded domain yields an empty soup.
+/// Planar faces triangulate exactly from their boundary polygon (see
+/// [`planar_polygon_triangulate`]) — a UV grid of the bounding box would
+/// over-cover a disk cap as its circumscribing square. Curved faces fall back
+/// to the grid below. Grid resolution is driven by `deflection` relative to
+/// the UV domain size (`nu = clamp(ceil(du/deflection)+1, 3, 64)`). Triangle
+/// winding follows the surface normal from `d1` so the resulting mesh points
+/// outward. Degenerate cells are skipped. Missing surface or unbounded domain
+/// yields an empty soup.
 pub fn face_to_triangles(f: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
+    if face_is_planar(f) {
+        if let Some(m) = planar_polygon_triangulate(f, deflection.max(0.01)) {
+            return m;
+        }
+    }
     let Some(surface) = reg().face_surface(f) else { return (Vec::new(), Vec::new()) };
     let (u0, u1, v0, v1) = face_uv_bounds(f, surface.as_ref());
     if !(u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite()) {
@@ -181,6 +291,7 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
     // [u0, u0+period] window.
     let (su0, su1) = surface.u_range();
     let u_period = if su0.is_finite() && su1.is_finite() && su1 > su0 { su1 - su0 } else { 0.0 };
+    let mut full_period = false;
     for w in f.tshape.read().unwrap().children.iter() {
         let w = TopoShape::from_handle(w.clone());
         if w.shape_type() != ShapeType::Wire { continue; }
@@ -191,24 +302,47 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
             let Ok(pc) = crate::pcurve_full::make_pcurve_full(&edge, f) else { continue };
             let (a0, a1) = reg().edge_parameters(&e);
             if !(a0.is_finite() && a1.is_finite() && a1 > a0) { continue; }
-            // Sample the pcurve along the edge (a full circle edge's endpoints
-            // coincide in UV, so endpoints alone would collapse the domain).
+            // Sample the pcurve along the edge. The pcurve of a full-circle
+            // edge is unwrapped monotonically (u runs 0 → −2π), so its UV
+            // endpoints differ by the period rather than coinciding; the u-span
+            // must be measured in continuously-unwrapped coordinates.
+            let mut cu_min = f64::INFINITY;
+            let mut cu_max = f64::NEG_INFINITY;
+            let mut prev: Option<f64> = None;
             for k in 0..=8 {
                 let t = a0 + (a1 - a0) * k as f64 / 8.0;
                 let uv = pc.d0(t);
-                let u0a = if u_period > 0.0 {
-                    (uv.x() - su0).rem_euclid(u_period) + su0
-                } else {
-                    uv.x()
-                };
-                umin = umin.min(u0a);
-                umax = umax.max(u0a);
+                let mut u = uv.x();
+                if u_period > 0.0 {
+                    // Continuously unwrap relative to the previous sample so a
+                    // seam-wrapping edge keeps its true span instead of
+                    // collapsing modulo the period.
+                    if let Some(p) = prev {
+                        while u - p > u_period * 0.5 { u -= u_period; }
+                        while u - p < -u_period * 0.5 { u += u_period; }
+                    }
+                    prev = Some(u);
+                }
+                cu_min = cu_min.min(u);
+                cu_max = cu_max.max(u);
                 vmin = vmin.min(uv.y());
                 vmax = vmax.max(uv.y());
             }
+            umin = umin.min(cu_min);
+            umax = umax.max(cu_max);
+            // A boundary edge spanning a full u-period (a full-circle / seam
+            // loop) forces the face's u-domain to the whole period — otherwise
+            // a full cylinder's u-extent collapses to [0, 7π/4] (the sampled
+            // max never reaches the period boundary) and the mesh loses the
+            // final π/4 wedge (~12.5% of the lateral area).
+            if u_period > 0.0 && cu_max - cu_min >= u_period - 1e-6 {
+                full_period = true;
+            }
         }
     }
-    if umin.is_finite() && umax > umin && vmin.is_finite() && vmax > vmin {
+    if full_period {
+        (su0, su0 + u_period, vmin, vmax)
+    } else if umin.is_finite() && umax > umin && vmin.is_finite() && vmax > vmin {
         (umin, umax, vmin, vmax)
     } else {
         (0.0, 1.0, 0.0, 1.0)
@@ -338,7 +472,9 @@ pub(crate) mod tests {
     fn face_triangulates_to_unit_area() {
         let f = square_face();
         let (pts, tris) = face_to_triangles(&f, 0.25);
-        assert!(tris.len() >= 6, "tris {}", tris.len());
+        // Planar faces triangulate exactly from their boundary polygon: a
+        // square is 2 triangles (not the dense UV grid).
+        assert_eq!(tris.len(), 2, "tris {}", tris.len());
         let area: f64 = tris.iter().map(|t| triangle_area(&pts, t)).sum();
         assert!((area - 1.0).abs() < 1e-6, "area {area}");
     }

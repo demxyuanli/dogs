@@ -1,5 +1,7 @@
 # Phase 22 Plan — STEP→Mesh→OBJ 面积/几何对齐（修复 Cone/Cylinder/rev）
 
+> **状态更新（2026-08-05）**：缺口 2（Cylinder u 域塌缩）已修——`wireframe::face_uv_bounds` 对整周期边连续解包 + 全周期检测（wireframe.rs）。incremental（brep_to_obj）面积 133.9→149.35（解析 150.8）；Cylinder bbox 对拍过。**剩余 P2**：`face_to_triangles` 对平面 cap 铺外接正方形（面积 16.0 vs 12.57）→ 复用 `planar_face_mesh` 边界多边形逻辑（见下方波 A2'）。
+
 > 审查结论（已核实 OCCT 源码）：
 > - **面积错是 STEP 几何读入错**，不是网格——Cone 解析面积（brep_gprop_full）51.4（应 185），mesh 4.7。OCCT 面积用解析 `BRepGProp_Face`（BRepGProp.cxx L225-230），非网格。
 > - 波 A（face_uv_bounds 用 pcurve）**OCCT 证实**：`BRepTools::AddUVBounds`（L179）用 `BRep_Tool::CurveOnSurface` 取边 pcurve + `BndLib_Add2dCurve` 加包围盒。
@@ -24,7 +26,8 @@
 
 ### 波 A：STEP 曲面边界修复（缺口 1/2/3，~3,000 行）
 - **A1 face_uv_bounds 对锥/柱**：修复边投影对单一曲面（锥 1 母线+顶圆）的 v 域推导。OCCT `BRepAdaptor_Surface::UVBounds` 用**所有边界边 pcurve 的 UV 包围盒**，需补锥面母线+圆的 pcurve 完整覆盖。
-- **A2 face_to_triangles 对曲面侧壁**：Cylinder 侧壁 mesh_shape 面积 16 修复——face_uv_bounds（波 A 已修 pcurve）后 UV 网格覆盖完整。
+- **A2 face_to_triangles 对曲面侧壁**：Cylinder 侧壁 mesh_shape 面积 16 修复——face_uv_bounds（波 A 已修 pcurve）后 UV 网格覆盖完整。（u 域塌缩已修，见状态更新。）
+- **A2'（P2，新增）face_to_triangles 平面 cap 铺正方形**：平面面应走边界多边形（复用 `brepmesh::planar_face_mesh` 的收集+径向排序+凸扇形逻辑，上提为共享函数），非 UV 网格。cap 面积 16.0→12.57。mesh_shape 总面积 157.6→~150.8。
 - **A3 rev 1/4 圆环柱**：诊断 6 面体曲面拼接（2 圆柱 90° + 4 平面），修面方向/法向。
 - 门禁：面积对拍（Cone ~175、Cylinder ~151、rev r=10 圆柱面积 ~628）。
 

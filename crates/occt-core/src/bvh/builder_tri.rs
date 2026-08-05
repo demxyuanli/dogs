@@ -31,10 +31,25 @@ fn bbox_of(indices: &[usize], boxes: &[BndBox]) -> BndBox {
     b
 }
 
+/// Union of the boxes of triangles `s..e` (for a leaf's index-extent range).
+fn range_bbox(s: usize, e: usize, boxes: &[BndBox]) -> BndBox {
+    let mut b = BndBox::new();
+    for bb in &boxes[s..e.min(boxes.len())] { b.add_box(bb); }
+    b
+}
+
 fn build_rec(indices: &[usize], boxes: &[BndBox], max_leaf: usize) -> BvhNode {
     let bbox = bbox_of(indices, boxes);
     if indices.len() <= max_leaf {
-        let (s, e) = (indices[0], indices[indices.len()-1] + 1);
+        // The split sorts indices by bbox centre, so this leaf's indices are
+        // NOT value-ascending: `(first, last+1)` can yield an empty or
+        // non-covering range (e.g. [8,9,0,1,2,3] → (8,4)) and silently drop
+        // triangles from ray/query traversal. Span the leaf's own index extent
+        // (min..=max) and grow the bbox to cover every triangle in that range
+        // so a ray hitting any in-range triangle is not pruned at this leaf.
+        let s = *indices.iter().min().unwrap();
+        let e = *indices.iter().max().unwrap() + 1;
+        let bbox = range_bbox(s, e, boxes);
         return BvhNode::leaf(bbox, s, e);
     }
     // Find longest axis of combined bbox

@@ -25,7 +25,11 @@ pub fn map_shapes(shape: &TopoShape, types: &[ShapeType]) -> HashMap<ShapeType, 
     let mut seen = HashSet::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
-        if !seen.insert(Arc::as_ptr(&s.tshape)) {
+        // Key on (TShape, orientation) — OCCT's TopTools_MapOfShape. Two edges
+        // sharing a TShape with opposite orientations (a cylinder side wall's
+        // two seam generatrices) are distinct; merging them uncloses the face.
+        let key = (Arc::as_ptr(&s.tshape) as usize, s.orientation() as u8);
+        if !seen.insert(key) {
             continue;
         }
         if types.contains(&s.shape_type()) {
@@ -45,7 +49,8 @@ pub fn all_subshapes(shape: &TopoShape) -> Vec<TopoShape> {
     let mut seen = HashSet::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
-        if !seen.insert(Arc::as_ptr(&s.tshape)) {
+        let key = (Arc::as_ptr(&s.tshape) as usize, s.orientation() as u8);
+        if !seen.insert(key) {
             continue;
         }
         out.push(s.clone());

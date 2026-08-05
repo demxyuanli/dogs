@@ -20,7 +20,7 @@ use crate::brep_tool::BRepTool;
 use crate::mesh::ShapeMesh;
 use crate::shape::{Face, TopoShape};
 use crate::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
-use crate::wireframe::{edge_to_polyline, face_to_triangles};
+use crate::wireframe::{edge_to_polyline, face_to_triangles, orient3, planar_polygon_triangulate};
 
 /// Result of an incremental meshing pass.
 #[derive(Debug, Clone)]
@@ -92,54 +92,10 @@ fn mesh_face(face: &Face, deflection: f64, iterations: &mut usize) -> (Vec<GpPnt
 /// orientation; otherwise we fall back to the uniform grid of
 /// [`face_to_triangles`].
 fn planar_face_mesh(face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
-    // Distinct boundary points. The boundary is sampled with the given
-    // deflection (not a hard-coded 1e-6 — that would over-plate a circular disk
-    // cap into thousands of segments instead of the ~tens OCCT uses).
-    let bound_def = deflection.max(0.01);
-    let mut pts: Vec<GpPnt> = Vec::new();
-    for wire in wires_of_face(face) {
-        for e in edges_of_wire(&wire) {
-            for p in edge_to_polyline(&e, bound_def) {
-                if !pts.iter().any(|q| q.distance(&p) < 1e-9) {
-                    pts.push(p);
-                }
-            }
-        }
-    }
-    if pts.len() < 3 {
-        return face_to_triangles(face, 1e-6);
-    }
-
-    let pln = face_plane(face).unwrap_or_else(occt_core::gp::GpPln::default);
-    let n = *pln.axis().direction().xyz();
-    let xdir = *pln.x_axis().direction().xyz();
-    let ydir = xdir.crossed(&n);
-    let centroid = pts
-        .iter()
-        .fold(GpPnt::new(0.0, 0.0, 0.0), |acc, p| {
-            GpPnt::new(acc.x() + p.x(), acc.y() + p.y(), acc.z() + p.z())
-        });
-    let inv = 1.0 / pts.len() as f64;
-    let c = GpPnt::new(centroid.x() * inv, centroid.y() * inv, centroid.z() * inv);
-
-    // Order the boundary points around the centroid (radial sweep).
-    pts.sort_by(|p, q| {
-        let ap = p.coord.subtracted(&c.coord);
-        let aq = q.coord.subtracted(&c.coord);
-        let ang_p = ap.dot(&ydir).atan2(ap.dot(&xdir));
-        let ang_q = aq.dot(&ydir).atan2(aq.dot(&xdir));
-        ang_p.partial_cmp(&ang_q).unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    if !is_convex(&pts, &n) {
-        return face_to_triangles(face, 1e-6);
-    }
-
-    let mut tris = Vec::with_capacity(pts.len() - 2);
-    for i in 1..pts.len() - 1 {
-        tris.push(orient3(&pts, 0, i, i + 1, &n));
-    }
-    (pts, tris)
+    // Boundary polygon triangulation (see wireframe::planar_polygon_triangulate);
+    // degenerate/non-convex boundaries degrade to the UV grid.
+    planar_polygon_triangulate(face, deflection.max(0.01))
+        .unwrap_or_else(|| face_to_triangles(face, 1e-6))
 }
 
 /// Adaptive curved-face meshing: recursive UV refinement.
@@ -452,39 +408,7 @@ fn tri_area2(pts: &[GpPnt], t: &Triangle) -> f64 {
     ab.crossed(&ac).square_modulus()
 }
 
-/// Wind a triangle so its normal agrees with `n`.
-fn orient3(pts: &[GpPnt], i0: usize, i1: usize, i2: usize, n: &GpXyz) -> Triangle {
-    let pa = pts[i0].coord;
-    let pb = pts[i1].coord;
-    let pc = pts[i2].coord;
-    let nn = pb.subtracted(&pa).crossed(&pc.subtracted(&pa));
-    if n.dot(&nn) < 0.0 {
-        Triangle::new(i0, i2, i1)
-    } else {
-        Triangle::new(i0, i1, i2)
-    }
-}
-
-/// Whether a (planar, non-self-intersecting) polygon is convex when seen along
-/// `n` (all consecutive-triple signed areas share a sign).
-fn is_convex(pts: &[GpPnt], n: &GpXyz) -> bool {
-    let mut sign: Option<f64> = None;
-    let m = pts.len();
-    for i in 0..m {
-        let a = pts[i].coord;
-        let b = pts[(i + 1) % m].coord;
-        let c = pts[(i + 2) % m].coord;
-        let d = b.subtracted(&a).crossed(&c.subtracted(&a)).dot(n);
-        if d.abs() > 1e-12 {
-            match sign {
-                None => sign = Some(d.signum()),
-                Some(s) if s != d.signum() => return false,
-                _ => {}
-            }
-        }
-    }
-    true
-}
+// (orient3 / is_convex now live in wireframe.rs, shared with face_to_triangles.)
 
 #[cfg(test)]
 mod tests {

@@ -157,7 +157,8 @@ mod tests {
         let shape = square_face_compound();
         let mesh = mesh_shape(&shape, 0.25);
         assert_eq!(mesh.source_shape, ShapeType::Compound);
-        assert!(mesh.triangles.len() >= 6, "tris {}", mesh.triangles.len());
+        // Planar face triangulates exactly from its boundary polygon (2 tris).
+        assert_eq!(mesh.triangles.len(), 2, "tris {}", mesh.triangles.len());
         assert!((mesh_surface_area(&mesh) - 1.0).abs() < 1e-6, "area {}", mesh_surface_area(&mesh));
     }
 
