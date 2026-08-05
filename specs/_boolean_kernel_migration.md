@@ -42,10 +42,12 @@
 - `face_face_segments_local`：裁剪到每面 **UV 域** + **3D 中点双面重验证**（`IsValidBlockForFaces` 等价：段中点 `point_in_face` 双面）；删除共线边无测试分支。
 - 门禁：box+圆柱 fuse 后 box 侧面不再被切；杂散段清零。
 
-### 波 2 — 有限段/共用顶点分裂（G2）【已尝试，回退，后续】
-- 已实现 `split_polygon_by_segment` 有限段/弦切割版本：面数 341→89（干净），**但 shell 不闭合**（24 边形弦边未与圆柱底盘共享，36 条 1-face 边——弦端点与圆柱顶点焊接不匹配）。已回退。
-- 现状：无限直线分割 + Wave 3 统一达到正确闭合（341 面，正确体积/Euler）。**过度细分是质量/效率问题，非正确性**。
-- 后续：接入 BOPDS pave 分裂（`PutBoundPaveOnCurve` + `PaveBlock::Update`）替代手写多边形切割，或修弦端点焊接。
+### 波 2 — 有限段/共用顶点分裂（G2）【已深入尝试，回退，需 BuilderFace 移植】
+- **已翻译**：`BOPDS_PaveBlock::Update` → `pave_split_ranges`；`PutPavesOnCurve` → 段端点吸附到对侧实体顶点。
+- **已实现**：`split_polygon_by_segment` 有限段/弦切割（面数 341→89，干净），**但 shell 不闭合**（36 条 1-face 边 = 24 边形弦）。
+- **根因（调查确认）**：弦端点有 ~0.0066 吸附漂移（face-face 裁剪计算），且**圆柱 facet 边可能缺 vertex children**（`face_boundary_points` 取不到顶点）→ 环碎片与圆柱侧面底边无法焊接共享。
+- **结论**：在当前"多边形切割 + edge_map 焊接"架构下，有限段切割无法闭合——section 边共享需要**完整 `BOPAlgo_BuilderFace` wire 重建**（从共享 section 边重建面线框，含孔），是独立的大移植。
+- 现状：无限直线分割 + Wave 3 统一正确闭合（341 面）。过度细分是质量/效率问题，非正确性。
 
 ### 波 3 — 平面布尔合并到 BOPDS/BOPAlgo 管线（G3+G4）【核心已落地 2026-08-05】
 - **已实现**：`bop_builder::unify_result_edges`——结果面间按几何端点统一边 TShape（BOPDS pave 式细分），**每面边界按共享端点链边重建 loop**（`edge_vertices` 是首创建者序，非遍历序——P1 orientation 丢失所致），再在所有全局焊接顶点处细分，相邻对映射到单一规范 Edge。
