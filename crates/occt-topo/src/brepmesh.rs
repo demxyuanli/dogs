@@ -9,6 +9,8 @@
 //! `curve_approx::curve_to_polyline`; this module does not re-emit them into the
 //! triangle soup (the face tessellation is self-contained).
 
+use std::collections::HashMap;
+
 use occt_core::gp::{GpPnt, GpXyz};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::Curve;
@@ -181,6 +183,34 @@ fn adaptive_face_mesh(
     let mut verts: Vec<GpPnt> = Vec::new();
     let mut tris: Vec<Triangle> = Vec::new();
     let mut stack = vec![(u0, u1, v0, v1, 0usize)];
+    // Shared-node table: a cell boundary point at (u, v) maps to one index, so
+    // neighbouring cells share their common-edge vertices (OCCT Delaunay node
+    // sharing). Without it every cell emitted its own 4 vertices — ~70% of the
+    // mesh was duplicate points and the mesh was not watertight.
+    let scale = 1.0 / def.max(1e-9);
+    let mut nodes: HashMap<(i64, i64), usize> = HashMap::new();
+
+    // Shared-node lookup: return the vertex index for (u, v), inserting it the
+    // first time. `verts`/`nodes` are passed explicitly so the closure doesn't
+    // hold conflicting borrows with the triangle assembly below.
+    fn get_node(
+        verts: &mut Vec<GpPnt>,
+        nodes: &mut HashMap<(i64, i64), usize>,
+        surface: &dyn occt_geom::Surface,
+        scale: f64,
+        u: f64,
+        v: f64,
+    ) -> usize {
+        let key = ((u * scale).round() as i64, (v * scale).round() as i64);
+        if let Some(&i) = nodes.get(&key) {
+            i
+        } else {
+            let i = verts.len();
+            verts.push(surface.d0(u, v));
+            nodes.insert(key, i);
+            i
+        }
+    }
 
     while let Some((cu0, cu1, cv0, cv1, depth)) = stack.pop() {
         let (mu, mv) = (0.5 * (cu0 + cu1), 0.5 * (cv0 + cv1));
@@ -234,13 +264,12 @@ fn adaptive_face_mesh(
         } else {
             let nvec = surface_normal(surface.as_ref(), mu, mv);
             let n = nvec.xyz();
-            let base = verts.len();
-            verts.push(p00);
-            verts.push(p10);
-            verts.push(p01);
-            verts.push(p11);
-            let t1 = orient3(&verts, base, base + 1, base + 2, &n);
-            let t2 = orient3(&verts, base + 1, base + 3, base + 2, &n);
+            let i0 = get_node(&mut verts, &mut nodes, surface.as_ref(), scale, cu0, cv0);
+            let i1 = get_node(&mut verts, &mut nodes, surface.as_ref(), scale, cu1, cv0);
+            let i2 = get_node(&mut verts, &mut nodes, surface.as_ref(), scale, cu0, cv1);
+            let i3 = get_node(&mut verts, &mut nodes, surface.as_ref(), scale, cu1, cv1);
+            let t1 = orient3(&verts, i0, i1, i2, &n);
+            let t2 = orient3(&verts, i1, i3, i2, &n);
             if tri_area2(&verts, &t1) > 1e-24 {
                 tris.push(t1);
             }
