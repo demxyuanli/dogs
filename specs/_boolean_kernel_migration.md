@@ -108,9 +108,11 @@
 ### 波 6 — `bop_builder2`/`bop_build_*` 全量合并（进行中，2026-08-05）
 - **调查结论**：`bop_builder2` 管线有多级缺陷，非单点修复：
   1. **PaveFiller 边界边未在 section 端点分裂**（A 边界 24 边 0 条 split images）→ build_split_faces 的 3D WireSplitter 失败（open chain）。
-  2. **已修**：`build_split_faces` 加平面快速路径 `bop_builder::split_face_planar_regions`——对平面面用 2D 排列（自动分裂边）建面，`SplitTask.on_edges` 单独携带 section 边。build_split_faces 不再对平面 case 报错。
-  3. **仍未修（下游）**：面选择/实体装配阶段错误——fuse 12 面 euler=32 vol_m=0.5（应 1.5）、cut mesh vol=0、common euler=30。`build_split_solids_full`/`build_result`/`post_treat` 需要独立调试。
-- **现状**：手写 `bop_builder::boolean`（`trace_planar_regions`+`unify_result_edges`）仍是正确路径（1265 测试绿）；`bop_builder2` 合并为长线工作，非必需。
+  2. **B1 已修 ✅**：`pave_intersect::perform_ff` 建 section 边后，把 section 顶点加到含它的边界边 pave blocks（`vertex_on_edge`+`add_ext_pave`+`split_pave_blocks_impl`）。实测 8/24 边界边被分裂（之前 0）。这是 OCCT `PerformFF` 后 `UpdatePaveBlocks` 步骤的忠实移植。
+  3. **B2 部分 ✅**：`wire_splitter::split_block_2d`——OCCT `BOPAlgo_WireSplitter::SplitBlock` 的角走环移植（dedupe 边 → 半边界 → 面 2D 角 → 最小 CW 走环，丢弃最大 |area| 无界面）。`perform` 在贪心失败时回退。隔离测试 `split_block_splits_square_by_vertical_line` 通过。**但管线复杂边集仍有 4 面失败**（section 边悬空/边界边多分裂产生 9 条唯一边，角走环只找到 1 个环）。
+  4. **B3 未做**：下游实体装配（fuse 曾 euler=32 vol_m=0.5 应 1.5）——B1+B2 修好后需重测。
+- **现状**：手写 `bop_builder::boolean` 仍是正确路径（1266 测试绿）；`bop_builder2` 合并为多会话长线工作。
+- **B2 剩余调查**：管线面的 section 边端点为何未连上边界（B1 的 `vertex_on_edge` 容差 vs section 顶点实际位置）；角走环对 9 条唯一边的边集只产出 1 个环。
 - 门禁：✅ `boss_adds_material` 通过；全量 lib 1259 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4）【✅ 完成 2026-08-05】

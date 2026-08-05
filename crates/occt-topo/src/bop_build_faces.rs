@@ -256,18 +256,6 @@ pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
     //    closed face per wire on the original surface.
     let mut faces_im: HashMap<usize, Vec<TopoShape>> = HashMap::new();
     for task in tasks {
-        // Planar fast path: the 2-D arrangement splits the boundary edges at
-        // section endpoints itself, so it does not need the boundary pre-split
-        // by the pave-block machinery. Builds one face per traced region (a
-        // split face keeps hole loops as multi-wire faces).
-        if let Some(splits) =
-            crate::bop_builder::split_face_planar_regions(&task.face, &task.on_edges)
-        {
-            for sp in splits {
-                faces_im.entry(task.face_index).or_default().push(sp);
-            }
-            continue;
-        }
         // The on-face edges are added FORWARD and REVERSED, and the boundary
         // edges of coincident faces coincide geometrically (A's edge and B's
         // edge over the shared segment). The duplicates are needed: an interior

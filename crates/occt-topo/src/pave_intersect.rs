@@ -50,6 +50,7 @@ use crate::inttools_data::{CommonPartType, IntRange};
 use crate::pave_filler::{GlueEnum, PaveFiller};
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::edges_of;
 
 // ---------------------------------------------------------------------------
 // FillCtx
@@ -1316,6 +1317,39 @@ fn perform_ff_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Result<(), String> {
         let fi_b = face_info_mut(ds, t.n_fb);
         fi_b.add_pave(n_edge, t.range.first, t.range.last);
         ds.add_interf(t.n_fa, t.n_fb);
+
+        // Split the boundary edges of both faces at the section vertices so the
+        // on-face edge endpoints connect to the face boundary — the
+        // `UpdatePaveBlocks` step of `BOPAlgo_PaveFiller::PerformFF`. Without
+        // it the boundary edges stay whole, the face-image WireSplitter sees an
+        // open chain, and the split faces never close.
+        let section_verts = [n_v1, n_v2];
+        let mut modified: Vec<usize> = Vec::new();
+        let tools = IntToolsContext::new();
+        for n_f in [t.n_fa, t.n_fb] {
+            let Some(f_shape) = ds.shape(n_f).cloned() else { continue };
+            let boundary: Vec<usize> =
+                edges_of(&Face(f_shape).0).iter().filter_map(|e| ds.index(&e.0)).collect();
+            for n_e in boundary {
+                for &n_v in &section_verts {
+                    let Some(si_e) = ds.shape_info(n_e) else { continue };
+                    if si_e.has_subshape(n_v) {
+                        continue; // the vertex is a bound of the edge
+                    }
+                    let Some(v_shape) = ds.shape(n_v).cloned() else { continue };
+                    let Some(e_shape) = ds.shape(n_e).cloned() else { continue };
+                    if let Ok(Some((tt, _))) =
+                        vertex_on_edge(&tools, &Vertex(v_shape), &Edge(e_shape), tol)
+                    {
+                        add_ext_pave(ds, n_e, tt, n_v);
+                        modified.push(n_e);
+                    }
+                }
+            }
+        }
+        if !modified.is_empty() {
+            split_pave_blocks_impl(ds, ctx, &modified)?;
+        }
     }
     Ok(())
 }
