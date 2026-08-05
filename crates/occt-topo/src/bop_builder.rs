@@ -318,117 +318,6 @@ fn face_face_segments_local(f1: &Face, f2: &Face, tol: f64) -> Vec<(GpPnt, GpPnt
 }
 
 // ---------------------------------------------------------------------------
-// 2D polygon splitting
-// ---------------------------------------------------------------------------
-
-/// Remove consecutive duplicate vertices (closing point handled separately).
-fn dedupe_polygon(poly: &[GpPnt2d]) -> Vec<GpPnt2d> {
-    let mut out: Vec<GpPnt2d> = Vec::new();
-    for p in poly {
-        if let Some(last) = out.last() {
-            if (last.x() - p.x()).abs() < 1e-9 && (last.y() - p.y()).abs() < 1e-9 {
-                continue;
-            }
-        }
-        out.push(*p);
-    }
-    if out.len() > 1 {
-        let first = out[0];
-        let last = *out.last().unwrap();
-        if (first.x() - last.x()).abs() < 1e-9 && (first.y() - last.y()).abs() < 1e-9 {
-            out.pop();
-        }
-    }
-    out
-}
-
-/// Split a simple polygon into the two half-polygons on either side of the
-/// directed line through `a` and `b`. Vertices on the line belong to both
-/// halves. Degenerate halves (fewer than 3 vertices / zero area) are dropped;
-/// a line that does not cross the polygon leaves it unchanged.
-fn split_polygon_by_segment(poly: &[GpPnt2d], a: &GpPnt2d, b: &GpPnt2d) -> Vec<Vec<GpPnt2d>> {
-    let d = (b.x() - a.x(), b.y() - a.y());
-    let len2 = d.0 * d.0 + d.1 * d.1;
-    if len2 < 1e-24 || poly.len() < 3 {
-        return vec![poly.to_vec()];
-    }
-    let eps = 1e-9 * len2.sqrt().max(1.0);
-    let side = |p: &GpPnt2d| d.0 * (p.y() - a.y()) - d.1 * (p.x() - a.x());
-
-    let mut pos: Vec<GpPnt2d> = Vec::new();
-    let mut neg: Vec<GpPnt2d> = Vec::new();
-    let n = poly.len();
-    for i in 0..n {
-        let p = poly[i];
-        let q = poly[(i + 1) % n];
-        let sp = side(&p);
-        let sq = side(&q);
-        if sp >= -eps {
-            pos.push(p);
-        }
-        if sp <= eps {
-            neg.push(p);
-        }
-        if (sp > eps && sq < -eps) || (sp < -eps && sq > eps) {
-            let t = sp / (sp - sq);
-            let inter = GpPnt2d::new(p.x() + t * (q.x() - p.x()), p.y() + t * (q.y() - p.y()));
-            pos.push(inter);
-            neg.push(inter);
-        }
-    }
-    let mut out: Vec<Vec<GpPnt2d>> = Vec::new();
-    for raw in [pos, neg] {
-        let pp = dedupe_polygon(&raw);
-        if pp.len() >= 3 && polygon_area2d(&pp).abs() > 1e-12 {
-            out.push(pp);
-        }
-    }
-    if out.is_empty() {
-        // The line ran along the polygon boundary or outside it.
-        out.push(dedupe_polygon(poly));
-    }
-    out
-}
-
-/// Whether two segments lie on the same (infinite) line, within tolerance.
-fn segments_same_line(a: &(GpPnt2d, GpPnt2d), b: &(GpPnt2d, GpPnt2d)) -> bool {
-    let d1 = (a.1.x() - a.0.x(), a.1.y() - a.0.y());
-    let d2 = (b.1.x() - b.0.x(), b.1.y() - b.0.y());
-    let cr = d1.0 * d2.1 - d1.1 * d2.0;
-    if cr.abs() > 1e-9 {
-        return false;
-    }
-    let v = (b.0.x() - a.0.x(), b.0.y() - a.0.y());
-    (d1.0 * v.1 - d1.1 * v.0).abs() <= 1e-6
-}
-
-fn dedupe_segments(segs: Vec<(GpPnt2d, GpPnt2d)>) -> Vec<(GpPnt2d, GpPnt2d)> {
-    let mut out: Vec<(GpPnt2d, GpPnt2d)> = Vec::new();
-    for s in segs {
-        if !out.iter().any(|t| segments_same_line(&s, t)) {
-            out.push(s);
-        }
-    }
-    out
-}
-
-/// Sequentially split `poly` by every cutting line in `segs`.
-fn split_polygon_by_segments(poly: &[GpPnt2d], segs: &[(GpPnt2d, GpPnt2d)]) -> Vec<Vec<GpPnt2d>> {
-    let mut polys = vec![poly.to_vec()];
-    for (a, b) in segs {
-        let mut next: Vec<Vec<GpPnt2d>> = Vec::new();
-        for p in &polys {
-            next.extend(split_polygon_by_segment(p, a, b));
-        }
-        polys = next;
-        if polys.is_empty() {
-            break;
-        }
-    }
-    polys
-}
-
-// ---------------------------------------------------------------------------
 // 2-D planar arrangement (BOPAlgo_BuilderFace::PerformAreas-style region
 // tracing)
 // ---------------------------------------------------------------------------
@@ -1018,23 +907,6 @@ fn loop_wire(
         return None;
     }
     Some(b.make_wire(&wire_edges))
-}
-
-/// Build a [`SubFace`] from a single simple 2D polygon (the self-intersection
-/// repair path, whose pieces carry no holes).
-fn polygon_to_subface(
-    b: &TopoBuilder,
-    pln: &GpPln,
-    poly2d: &[GpPnt2d],
-    weld: &mut Weld,
-    edge_map: &mut EdgeMap,
-) -> Option<SubFace> {
-    let r = Region2d {
-        outer: poly2d.to_vec(),
-        holes: Vec::new(),
-        interior: region_interior2(poly2d, &[]),
-    };
-    region_to_subface(b, pln, &r, weld, edge_map)
 }
 
 /// Rebuild a sub-face with the reversed plane (used for Cut's cut-through
@@ -2755,7 +2627,7 @@ pub fn repair_self_intersections(shape: &TopoShape, tol: f64) -> Result<RepairRe
                 }
             })
             .collect();
-        if split_polygon_by_segments(&poly, &segs2d).len() >= 2 {
+        if trace_planar_regions(&poly, &segs2d).len() >= 2 {
             fixed_count += 1;
         }
     }
@@ -4149,11 +4021,14 @@ pub fn split_faces_along_intersections(shape: &TopoShape, pairs: &[(usize, usize
                 }
             })
             .collect();
-        let parts = split_polygon_by_segments(&poly2d, &dedupe_segments(segs2d));
-        if parts.len() >= 2 {
-            let subs: Vec<SubFace> = parts
+        // The same BuilderFace-style planar arrangement the boolean uses:
+        // open section lines split the face into regions, closed loops carve
+        // holes (a split face may keep a hole loop as a multi-wire sub-face).
+        let regions = trace_planar_regions(&poly2d, &segs2d);
+        if regions.len() >= 2 {
+            let subs: Vec<SubFace> = regions
                 .iter()
-                .filter_map(|p| polygon_to_subface(&bld, &pln, p, &mut weld, &mut edge_map))
+                .filter_map(|r| region_to_subface(&bld, &pln, r, &mut weld, &mut edge_map))
                 .collect();
             if subs.len() >= 2 {
                 result_faces.extend(subs.into_iter().map(|sf| sf.face));

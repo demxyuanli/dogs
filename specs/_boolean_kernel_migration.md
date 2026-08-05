@@ -80,10 +80,10 @@
 | PerformInternalShapes（面内游离边） | 排列法天然处理——浮游闭合环成为环/盘区域（同 boss 环），悬空段被剥离 | 等价；OCCT 的 internal-wire 表示 vs 本实现的独立区域/孔，几何结果一致 |
 | `BOPTools_AlgoTools3D::PointInFace`（UV 线切边界求内部点） | `region_interior2`（质心+内推） | 思路相同，实现不同 |
 
-### 子任务 4 — Euler/拓扑验证
+### 子任务 4 — Euler/拓扑验证【✅ 完成 2026-08-05】
 - **OCCT 参考**：拓扑不变量（V−E+F）。
-- **范围**：`shell_invariants` Euler 修正（BuilderFace 环面 Euler=3 应=2）+ 测试。
-- **门禁**：Euler=2；`fuse_box_cylinder_is_closed_solid` 全绿。
+- **实现**：`shell_euler_characteristic` 按 `2 − wires` 计面（带孔面贡献 `1−孔数`）；独立测试 `euler_of_face_with_hole_counts_holes`（单环面 = 8−8+0 = 0，非朴素 1）。
+- **门禁**：✅ Euler=2（boss 环面 shell）；`fuse_box_cylinder_is_closed_solid` 全绿。
 
 **依赖**：1→2→3→4（子任务 1 是环面网格化前提；2 依赖 1 验证体积）。
 
@@ -103,7 +103,7 @@
 - **已实现**：`bop_builder::unify_result_edges`——结果面间按几何端点统一边 TShape（BOPDS pave 式细分），**每面边界按共享端点链边重建 loop**（`edge_vertices` 是首创建者序，非遍历序——P1 orientation 丢失所致），再在所有全局焊接顶点处细分，相邻对映射到单一规范 Edge。
 - **已实现**：重排——unify 在 `orient_faces_outward` 之前（orient 的 `shell_is_closed` 门禁需统一后的闭合 shell）。
 - **效果**：box+凸出圆柱 fuse `shell_is_closed=true`；`boss_adds_material` 解除 ignore 并通过；全量 lib 1259 通过。
-- **剩余**：G2 无限直线分割过度细分（质量/数量问题，非闭合必需——unify 已兜底）；G5 面重建（已定位：共享边 mixed-orientation 由链边解决）；`bop_builder2`/`bop_build_*` 全量合并（可选，当前手写 unify 已达同效果）。
+- **剩余**：G5 面重建（已定位：共享边 mixed-orientation 由链边解决）；`bop_builder2`/`bop_build_*` 全量合并（可选，当前手写 unify 已达同效果）。**G2 无限直线切割已清除**——`split_faces` 及 repair 路径（`split_faces_along_intersections`/`repair_self_intersections`）全部改用 2D 排列 `trace_planar_regions`，旧 `split_polygon_by_segment(s)`/`dedupe_segments`/`polygon_to_subface` 死代码已删。
 - 门禁：✅ `boss_adds_material` 通过；全量 lib 1259 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4）【✅ 完成 2026-08-05】

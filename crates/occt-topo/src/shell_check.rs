@@ -371,4 +371,38 @@ mod tests {
         assert!(!wire_is_closed(&wire));
         clear_tree(&wire.0);
     }
+
+    #[test]
+    fn euler_of_face_with_hole_counts_holes() {
+        use crate::builder_face::build_face_with_holes;
+        // A single annulus face (outer square + inner square hole). The naive
+        // V−E+F counts it as 8 − 8 + 1 = 1, but a disk with one hole has Euler
+        // characteristic 0. The hole-aware face count (2 − wires per face)
+        // gives 8 − 8 + 0 = 0.
+        let b = TopoBuilder::new();
+        let mk = |pts: &[GpPnt; 4]| -> Vec<Edge> {
+            (0..4).map(|i| b.make_edge_segment(&pts[i], &pts[(i + 1) % 4])).collect()
+        };
+        let outer = [
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(2.0, 0.0, 0.0),
+            GpPnt::new(2.0, 2.0, 0.0),
+            GpPnt::new(0.0, 2.0, 0.0),
+        ];
+        let hole = [
+            GpPnt::new(0.5, 0.5, 0.0),
+            GpPnt::new(0.5, 1.5, 0.0),
+            GpPnt::new(1.5, 1.5, 0.0),
+            GpPnt::new(1.5, 0.5, 0.0),
+        ];
+        let ring = build_face_with_holes(&mk(&outer), &[mk(&hole)]).expect("ring face");
+        assert_eq!(wires_of_face_count(&ring.0), 2, "annulus has an outer loop and a hole");
+        let shell = Shell(ring.0.clone());
+        assert_eq!(
+            shell_euler_characteristic(&shell),
+            0,
+            "an annulus face has Euler 0, not the naive 1"
+        );
+        clear_tree(&ring);
+    }
 }
