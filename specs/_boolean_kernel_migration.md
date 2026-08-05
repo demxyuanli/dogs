@@ -42,6 +42,32 @@
 - `face_face_segments_local`：裁剪到每面 **UV 域** + **3D 中点双面重验证**（`IsValidBlockForFaces` 等价：段中点 `point_in_face` 双面）；删除共线边无测试分支。
 - 门禁：box+圆柱 fuse 后 box 侧面不再被切；杂散段清零。
 
+## 波 2 子任务分解（逐一翻译迁移，保移植忠实）
+
+### 子任务 1 — 带孔多边形三角化【✅ 完成 2026-08-05】
+- **OCCT 参考**：`BRepMesh` 2D 三角化 / 多边形 ear-clipping；带孔多边形通过"桥接孔到外边界"转简单多边形。
+- **实现**：`wireframe.rs::planar_polygon_triangulate` 支持多 wire 面——识别外环（最大面积）、孔桥接到外环（反向遍历使桥接多边形简单）、`ear_clip`（严格内部点测试，边界/共线点不阻断耳朵）。
+- **门禁** ✅：`face_with_hole_triangulates_ring_area`：2×2 方形+24 边形孔 → 面积 4−πr²（3.8059 vs 3.8037）。全量 lib 1260 通过。
+
+### 子任务 2 — BuilderFace 拓扑（BOPAlgo_BuilderFace::Perform）【进行中】
+- **OCCT 参考**：`BOPAlgo_BuilderFace.cxx:118`（PerformShapesToAvoid → PerformLoops → PerformAreas → PerformInternalShapes）。
+- **范围**：`chain_2d_loops` + `section_face_to_subface`（boss 78 面闭合已证）完成；**通用 case**（cut/common）正确。
+- **难点**：须处理**闭合 section 环**（→ 带孔面）**和开放 section 线**（→ 面分裂成片，WireSplitter + 孔/生长分类）；上次尝试只对闭合环正确，破坏了 cut/common 15+ 测试。
+- **依赖**：子任务 1（孔三角化）已提供，boss 体积应可验证。
+- **门禁**：cut/common 测试恢复绿；boss 78 面 + 闭合 + 体积正确。
+
+### 子任务 3 — 分类（IntTools_FClass2d 集成）
+- **OCCT 参考**：`IntTools_FClass2d.cxx`（点-in-面，处理孔）。
+- **范围**：布尔分类用已移植的 `FClass2d`（fclass2d.rs）处理带孔面（当前用质心，会落孔内）。
+- **门禁**：环面 In/Out 分类正确（用孔内点 vs 环材质点）。
+
+### 子任务 4 — Euler/拓扑验证
+- **OCCT 参考**：拓扑不变量（V−E+F）。
+- **范围**：`shell_invariants` Euler 修正（BuilderFace 环面 Euler=3 应=2）+ 测试。
+- **门禁**：Euler=2；`fuse_box_cylinder_is_closed_solid` 全绿。
+
+**依赖**：1→2→3→4（子任务 1 是环面网格化前提；2 依赖 1 验证体积）。
+
 ### 波 2 — 有限段/共用顶点分裂（G2）【已深入尝试，回退，需 BuilderFace 移植】
 - **已翻译**：`BOPDS_PaveBlock::Update` → `pave_split_ranges`；`PutPavesOnCurve` → 段端点吸附到对侧实体顶点。
 - **已实现**：`split_polygon_by_segment` 有限段/弦切割（面数 341→89，干净），**但 shell 不闭合**（36 条 1-face 边 = 24 边形弦）。
