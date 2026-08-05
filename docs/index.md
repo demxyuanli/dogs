@@ -23,6 +23,8 @@
 | [code-flow.json](../code-flow.json) | static call graph from codegraph — 5 dependency layers, 8 cross-cutting edges, blast radius |
 | [migration-index.json](../migration-index.json) | machine-readable index (24 units, content-hashed) |
 | [trellis/plan.md](trellis/plan.md) | strategic migration map (run trellis-plan) |
+| [specs/_boolean_kernel_migration.md](../specs/_boolean_kernel_migration.md) | **布尔内核移植任务** — 平面布尔合并到已移植 BOPAlgo 管线（bopds+bop_build_*+bop_builder2），shell 闭合；波 1-5，含拓扑不变量 oracle 门禁 |
+| [specs/_phase23b_plan.md](../specs/_phase23b_plan.md) | 布尔 shell 闭合初始调查（已被 _boolean_kernel_migration.md 吸收/扩展） |
 
 ## key points
 
