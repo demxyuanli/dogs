@@ -28,13 +28,17 @@ fn data_dir() -> PathBuf {
 }
 
 /// Read a STEP file, convert the first shape to OBJ, return `(obj_text, name)`.
+///
+/// The name is the sample filename, not the STEP `SHAPE_REPRESENTATION` name —
+/// those records carry an empty string for every sample, so writing by `s.name`
+/// would clobber a single `data/output/.obj` file.
 fn step_to_obj(name: &str) -> (String, String) {
     let model = read_step_file(&data_dir().join(format!("{name}.step")).to_string_lossy())
         .unwrap_or_else(|e| panic!("read {name}.step: {e}"));
     assert!(!model.shapes.is_empty(), "{name}.step parsed to no shapes");
     let s = &model.shapes[0];
     let obj = brep_to_obj(&s.shape, 0.1);
-    (obj, s.name.clone())
+    (obj, name.to_string())
 }
 
 /// Parse the `v x y z` lines of an OBJ into a vertex list.

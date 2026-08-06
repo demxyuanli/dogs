@@ -394,11 +394,12 @@ pub fn euler_poincare(shape: &TopoShape) -> i32 {
     count_vertices(shape) as i32 - count_edges(shape) as i32 + count_faces(shape) as i32
 }
 
-/// Whether every edge of the shape is referenced by exactly two faces.
+/// Whether every edge of the shape is referenced exactly twice.
 ///
 /// A closed (watertight) shell has each boundary edge shared by exactly two
-/// faces. Free edges (one face) or non-manifold edges (three or more faces)
-/// make the shape leaky.
+/// faces; a periodic seam edge is counted twice from its one face (matching
+/// OCCT `BRepCheck_Shell::Closed`). Free edges (one reference) or non-manifold
+/// edges (three or more) make the shape leaky.
 pub fn is_watertight(shape: &TopoShape) -> bool {
     let mut face_edges: Vec<Vec<TopoShape>> = Vec::new();
     let mut ex = Explorer::new(shape, ShapeType::Face);
@@ -429,12 +430,12 @@ pub fn is_watertight(shape: &TopoShape) -> bool {
 
     let mut refs: HashMap<usize, usize> = HashMap::new();
     for fe in &face_edges {
-        let mut seen_in_face = std::collections::HashSet::new();
+        // No per-face dedup: a periodic seam edge legitimately appears twice in
+        // one face's wire; OCCT BRepCheck_Shell::Closed counts occurrences, so a
+        // seam edge counts as 2 (closed), not 1 (free edge).
         for e in fe {
             let key = Arc::as_ptr(&e.tshape) as usize;
-            if seen_in_face.insert(key) {
-                *refs.entry(key).or_insert(0) += 1;
-            }
+            *refs.entry(key).or_insert(0) += 1;
         }
     }
     refs.values().all(|&n| n == 2)
