@@ -532,8 +532,16 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
                 vmin = vmin.min(v);
                 vmax = vmax.max(v);
             }
-            umin = umin.min(cu_min);
-            umax = umax.max(cu_max);
+            // A boundary edge may be a v-direction line (u constant) or a
+            // degenerate point; such edges do not bound the u-window — taking
+            // their constant u would pull umin/umax to a value from another
+            // seam position (mod 2π) and over-expand the face's u-domain to a
+            // full period. Only u-varying edges contribute to the u-extent.
+            let cu_span = cu_max - cu_min;
+            if cu_span > 1e-9 {
+                umin = umin.min(cu_min);
+                umax = umax.max(cu_max);
+            }
             // A boundary edge spanning a full u-period (a full-circle / seam
             // loop) forces the face's u-domain to the whole period — otherwise
             // a full cylinder's u-extent collapses to [0, 7π/4] (the sampled
