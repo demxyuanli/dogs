@@ -121,23 +121,25 @@
 |---|---|---|
 | Init / Prepare | init / prepare | ✅ |
 | PerformVV/VE | perform_vv/ve | ✅ |
-| **UpdatePaveBlocksWithSDVertices**（VE/EE/VF/EF 后） | `update_pave_blocks`（语义不同） | ❌ 缺失/简化 |
-| PerformEE/VF/EF | perform_ee/vf/ef | ✅ |
-| **UpdateInterfsWithSDVertices** | — | ❌ 缺失 |
+| **UpdatePaveBlocksWithSDVertices**（VE/EE/VF/EF 后 + MakeSplitEdges 后） | `update_pave_blocks_with_sd_vertices`（bopds.rs:1265） | ✅ 已补（2026-08-06）——只重定向块界索引到 SD 代表，不分裂 |
+| PerformEE/VF/EF | perform_ee/vf/ef（内部 `split_pave_blocks_impl`，对齐 OCCT `SplitPaveBlocks`） | ✅ EE/EF 分裂已移入 stage |
+| **UpdateInterfsWithSDVertices** | —（Rust DS 用扁平 `HashSet<(usize,usize)>`，无按类型 `Interf*` 数组） | ❌ 缺失（需先建干涉数组） |
 | **RepeatIntersection** | — | ❌ 缺失 |
 | **ForceInterfEE / ForceInterfEF** | — | ❌ 缺失 |
 | PerformFF | perform_ff（**直接建 section 边**） | ⚠️ 偏差：OCCT 只记 `BOPDS_Curve`/`BOPDS_Point` |
 | **UpdateBlocksWithSharedVertices** | — | ❌ 缺失 |
 | **RefineFaceInfoIn** | — | ❌ 缺失 |
-| **MakeSplitEdges** | make_split_edges（在 make_blocks **之后**） | ❌ **顺序错**：OCCT 在 make_blocks **之前** |
-| **UpdatePaveBlocksWithSDVertices** | — | ❌ 缺失 |
-| MakeBlocks | make_blocks | ✅（但顺序错） |
+| **MakeSplitEdges** | make_split_edges | ✅ 顺序已对齐（f93b541） |
+| **UpdatePaveBlocksWithSDVertices** | `update_pave_blocks_with_sd_vertices` | ✅ 已补 |
+| MakeBlocks | make_blocks | ✅ |
 | CheckSelfInterference / RemoveMicroEdges | — | ❌ 缺失 |
 | MakePCurves | make_pcurves | ✅ |
 | ProcessDE | — | ❌ 缺失 |
 
-**下一步（忠实边界扩展）**：按 OCCT 序列重构 `perform_internal`——补 `UpdatePaveBlocksWithSDVertices`/`UpdateBlocksWithSharedVertices`/`RefineFaceInfoIn`，把 `make_split_edges` 移到 `make_blocks` 前，查 section 边创建的真实位置（OCCT 在 MakeSplitEdges 或 Builder 侧）。这些是结构对齐，非模型修补。
-- 门禁：✅ `boss_adds_material` 通过；全量 lib 1259 绿。
+**波6 已做（2026-08-06 第 2 次会话）**：`UpdatePaveBlocksWithSDVertices` 忠实移植——`BopdsDS::update_pave_blocks_with_sd_vertices` 遍历整个 pave-block pool，把每个块的 Pave1/Pave2 索引沿 `shapes_sd` 链重定向到 SD 代表（`BOPDS_DS::UpdatePaveBlockWithSDVertices`，BOPDS_DS.cxx:1462）。同时把 EE/EF 的块分裂从 `perform_internal` 外层移入各 stage 内部（对齐 OCCT `IntersectEE`/`IntersectEF` 末尾的 `SplitPaveBlocks`）。`perform_internal` 序列：VE→SD→EE→SD→VF→SD→EF→SD→FF→MakeSplitEdges→SD→MakeBlocks→MakePCurves。两个单测更新为 OCCT 忠实后置状态（分裂后 ext_paves 清空）。全量 lib 1266 绿。
+
+**下一步（忠实边界扩展）**：按 OCCT 序列继续——`UpdateInterfsWithSDVertices`（需先给 BopdsDS 建按类型干涉数组 `InterfVV/VE/VF/EE/EF`，现有扁平 `HashSet` 不够）、`UpdateBlocksWithSharedVertices`、`RefineFaceInfoIn`、`RepeatIntersection`、`ForceInterfEE/EF`、`ProcessDE`。查 section 边创建的真实位置（OCCT 在 MakeSplitEdges 或 Builder 侧）。这些是结构对齐，非模型修补。
+- 门禁：✅ `boss_adds_material` 通过；全量 lib 1266 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4）【✅ 完成 2026-08-05】
 - `shell_check::ShellInvariants{closed, euler_characteristic}` + `shell_invariants()`；`is_valid_solid()`（closed + Euler=2）。

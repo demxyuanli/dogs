@@ -1262,6 +1262,32 @@ impl BopdsDS {
         }
     }
 
+    /// Replaces the bound vertex indices of every pave block in the pool by
+    /// their same-domain (SD) representatives.
+    ///
+    /// Source: `BOPDS_DS::UpdatePaveBlocksWithSDVertices` +
+    /// `BOPDS_DS::UpdatePaveBlockWithSDVertices`. The counterpart of
+    /// [`BopdsDS::update_pave_blocks`] (which *splits* blocks carrying extra
+    /// paves); this step only *redirects* the two bound paves of each block to
+    /// the SD vertices created by the V/V, E/E, V/F and E/F stages.
+    pub fn update_pave_blocks_with_sd_vertices(&mut self) {
+        let sd = &self.shapes_sd;
+        for list in &mut self.pave_blocks_pool {
+            for pb in list.iter_mut() {
+                let (n1, n2) = pb.indices();
+                let mut c1 = n1;
+                while let Some(&nx) = sd.get(&c1) {
+                    c1 = nx;
+                }
+                let mut c2 = n2;
+                while let Some(&nx) = sd.get(&c2) {
+                    c2 = nx;
+                }
+                pb.set_indices(c1, c2);
+            }
+        }
+    }
+
     /// Updates the pave blocks of the edges of the common block and records
     /// the block. Source: `BOPDS_DS::UpdateCommonBlock` (simplified).
     pub fn update_common_block(&mut self, cb: &BopdsCommonBlock) {

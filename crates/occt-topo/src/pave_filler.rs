@@ -309,10 +309,15 @@ impl PaveFiller {
     ///
     /// Source: `BOPAlgo_PaveFiller::PerformInternal`. The stages:
     ///
-    /// `init` → `prepare` → `perform_vv` → update pave blocks → `perform_ve`
-    /// → update → `perform_ee` → update → `perform_vf` → update → `perform_ef`
-    /// → update → `perform_ff` → `make_blocks` → `make_pcurves` →
-    /// `make_split_edges`.
+    /// `init` → `prepare` → `perform_vv` → `perform_ve` → SD-vertex update →
+    /// `perform_ee` → SD-vertex update → `perform_vf` → SD-vertex update →
+    /// `perform_ef` → SD-vertex update → `perform_ff` → `make_split_edges` →
+    /// SD-vertex update → `make_blocks` → `make_pcurves`.
+    ///
+    /// The per-stage block *splitting* happens inside each intersection stage
+    /// (the OCCT `SplitPaveBlocks`); this step only *redirects* the bound
+    /// vertex indices of the blocks to their same-domain representatives
+    /// (`BOPDS_DS::UpdatePaveBlocksWithSDVertices`).
     pub fn perform_internal(&mut self) -> Result<(), String> {
         self.init()?;
         self.check_errors()?;
@@ -320,25 +325,25 @@ impl PaveFiller {
         self.check_errors()?;
         self.perform_vv()?;
         self.check_errors()?;
-        self.ds.update_pave_blocks();
         self.perform_ve()?;
         self.check_errors()?;
-        self.ds.update_pave_blocks();
+        self.ds.update_pave_blocks_with_sd_vertices();
         self.perform_ee()?;
         self.check_errors()?;
-        self.ds.update_pave_blocks();
+        self.ds.update_pave_blocks_with_sd_vertices();
         self.perform_vf()?;
         self.check_errors()?;
-        self.ds.update_pave_blocks();
+        self.ds.update_pave_blocks_with_sd_vertices();
         self.perform_ef()?;
         self.check_errors()?;
-        self.ds.update_pave_blocks();
+        self.ds.update_pave_blocks_with_sd_vertices();
         self.perform_ff()?;
         self.check_errors()?;
         // OCCT order: MakeSplitEdges (right after FF) precedes MakeBlocks;
         // MakePCurves follows MakeBlocks.
         self.make_split_edges()?;
         self.check_errors()?;
+        self.ds.update_pave_blocks_with_sd_vertices();
         self.make_blocks()?;
         self.check_errors()?;
         self.make_pcurves()?;

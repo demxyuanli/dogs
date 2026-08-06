@@ -667,6 +667,18 @@ fn perform_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Result<(), String> {
     }
     if !seeds.is_empty() {
         treat_new_vertices(ds, ctx.fuzzy, &seeds)?;
+        // Split the pave blocks of the touched edges — OCCT's `SplitPaveBlocks`
+        // at the end of `IntersectEE` (`BOPAlgo_PaveFiller_3.cxx`).
+        let mut modified: Vec<usize> = Vec::new();
+        for s in &seeds {
+            modified.push(s.edge_a);
+            if s.edge_b != s.edge_a {
+                modified.push(s.edge_b);
+            }
+        }
+        modified.sort_unstable();
+        modified.dedup();
+        split_pave_blocks_impl(ds, ctx, &modified)?;
     }
     Ok(())
 }
@@ -1153,6 +1165,16 @@ fn perform_ef_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Result<(), String> {
                 record_vertex_point_on_face(ds, h.n_f, n_v, &h.seed.point);
             }
         }
+        // Split the pave blocks of the edges pierced by the face — OCCT's
+        // `SplitPaveBlocks` invoked through `PerformNewVertices` in
+        // `IntersectEF` (`BOPAlgo_PaveFiller_5.cxx` → `_3.cxx`).
+        let mut modified: Vec<usize> = Vec::new();
+        for h in &hits {
+            modified.push(h.n_e);
+        }
+        modified.sort_unstable();
+        modified.dedup();
+        split_pave_blocks_impl(ds, ctx, &modified)?;
     }
     Ok(())
 }
@@ -1621,14 +1643,16 @@ mod tests {
         }
         assert!(found, "crossing vertex created in the DS");
 
-        // The crossing edge of A carries an extra pave.
+        // The crossing edge of A is split at the crossing: the block carrying
+        // the extra pave was replaced by elementary blocks (OCCT
+        // `SplitPaveBlocks` at the end of `IntersectEE`).
         let na_e = f.ds().index(&a.edges[1].0).unwrap();
-        let has_extra = f
-            .ds()
-            .pave_blocks(na_e)
-            .iter()
-            .any(|pb| !pb.ext_paves().is_empty());
-        assert!(has_extra, "A's right-bottom edge has an extra pave at the crossing");
+        let blocks = f.ds().pave_blocks(na_e);
+        assert!(blocks.len() >= 2, "A's right-bottom edge is split at the crossing");
+        assert!(
+            blocks.iter().all(|pb| pb.ext_paves().is_empty()),
+            "all extra paves consumed into elementary blocks"
+        );
     }
 
     #[test]
@@ -1785,16 +1809,20 @@ mod tests {
         }
         assert!(found, "piercing vertex created in the DS");
 
-        // The E/F interference is recorded and the vertex paves the edge.
+        // The E/F interference is recorded and the edge is split at the
+        // piercing point (the extra pave was consumed into elementary blocks).
         let n_e = f.ds().index(&e.0).unwrap();
         let n_f = f.ds().index(&box_solid.faces[0].0).unwrap();
         assert!(f.ds().has_interf_pair(n_e, n_f));
-        let has_extra = f
-            .ds()
-            .pave_blocks(n_e)
-            .iter()
-            .any(|pb| pb.ext_paves().iter().any(|p| (p.param - 1.0).abs() < 1e-6));
-        assert!(has_extra, "piercing point inserted as an extra pave");
+        let blocks = f.ds().pave_blocks(n_e);
+        assert!(
+            blocks.iter().any(|pb| pb.pave1().parameter() == 1.0 || pb.pave2().parameter() == 1.0),
+            "piercing point is a bound of an elementary block"
+        );
+        assert!(
+            blocks.iter().all(|pb| pb.ext_paves().is_empty()),
+            "all extra paves consumed into elementary blocks"
+        );
     }
 
     #[test]
