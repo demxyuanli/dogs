@@ -49,6 +49,8 @@ pub use trimmed::GeomTrimmedCurve;
 pub use revolved::GeomRevolvedSurface;
 pub use surface_of_revolution::GeomSurfaceOfRevolution;
 pub use offset::GeomOffsetCurve;
+pub mod offset_surface;
+pub use offset_surface::GeomOffsetSurface;
 pub mod extrema;
 pub mod extrema_pc;
 pub mod bspline_surface;

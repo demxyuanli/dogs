@@ -131,6 +131,7 @@ const CONE_TOL: f64 = 1e-6;
 const CYLINDER_TOL: f64 = 0.05; // fixed: pcurve-bounded UV domain (wave A)
 const TORUS_TOL: f64 = 0.05; // on-surface sampling difference
 const SPHERE_TOL: f64 = 0.05; // on-surface sampling difference
+const EXACT_TOL: f64 = 1e-6; // faceted/complex surfaces match the OCCT bbox exactly
 
 #[test]
 fn cube_bbox_matches_occt() {
@@ -155,6 +156,67 @@ fn torus_bbox_matches_occt() {
 #[test]
 fn sphere_bbox_matches_occt() {
     check_parity("Sphere", "occ-shpere.obj", SPHERE_TOL);
+}
+
+#[test]
+fn holed_plate_bbox_matches_occt() {
+    check_parity("HoledPlate", "occ-HoledPlate.obj", EXACT_TOL);
+}
+
+#[test]
+fn offset_plane_hole_edge_bbox_matches_occt() {
+    check_parity("OffsetPlaneHoleEdge", "occ-OffsetPlaneHoleEdge.obj", EXACT_TOL);
+}
+
+#[test]
+fn shape2_bbox_matches_occt() {
+    // Shape-2.step is a B-spline surface model (rational surfaces + knots).
+    check_parity("Shape-2", "occ-shape-2.obj", EXACT_TOL);
+}
+
+#[test]
+fn shape1_export_is_valid() {
+    // Shape-1.step's OCCT reference (occ-shape-1.obj) is an older/different
+    // model — its y-extent (±14.9) does not match the current STEP's geometry
+    // (±67.5) — so no bbox parity is asserted. Assert a valid export and record
+    // density.
+    let model = read_step_file(&data_dir().join("Shape-1.step").to_string_lossy())
+        .unwrap_or_else(|e| panic!("read Shape-1.step: {e}"));
+    assert!(!model.shapes.is_empty(), "Shape-1.step parsed to no shapes");
+    let obj = brep_to_obj(&model.shapes[0].shape, 0.1);
+    let nv = obj.lines().filter(|l| l.starts_with('v')).count();
+    let nf = obj.lines().filter(|l| l.starts_with('f')).count();
+    assert!(nv > 0 && nf > 0, "Shape-1 OBJ degenerate: v={nv} f={nf}");
+    let occ = std::fs::read_to_string(data_dir().join("occ-shape-1.obj")).unwrap();
+    let h = parse_occ_header(&occ);
+    eprintln!(
+        "[Shape-1] ours v={nv} f={nf} | occ-reference(v={} f={}) | f-ratio {:.2}",
+        h.vertices,
+        h.faces,
+        nf as f64 / h.faces as f64
+    );
+}
+
+#[test]
+fn shape_export_is_valid() {
+    // Shape.step's OCCT reference (occ-shape.obj) is an older/different model
+    // (z-extent 100 vs the current STEP's ~105.5), so no bbox parity is
+    // asserted. Assert a valid export and record density.
+    let model = read_step_file(&data_dir().join("Shape.step").to_string_lossy())
+        .unwrap_or_else(|e| panic!("read Shape.step: {e}"));
+    assert!(!model.shapes.is_empty(), "Shape.step parsed to no shapes");
+    let obj = brep_to_obj(&model.shapes[0].shape, 0.1);
+    let nv = obj.lines().filter(|l| l.starts_with('v')).count();
+    let nf = obj.lines().filter(|l| l.starts_with('f')).count();
+    assert!(nv > 0 && nf > 0, "Shape OBJ degenerate: v={nv} f={nf}");
+    let occ = std::fs::read_to_string(data_dir().join("occ-shape.obj")).unwrap();
+    let h = parse_occ_header(&occ);
+    eprintln!(
+        "[Shape] ours v={nv} f={nf} | occ-reference(v={} f={}) | f-ratio {:.2}",
+        h.vertices,
+        h.faces,
+        nf as f64 / h.faces as f64
+    );
 }
 
 #[test]

@@ -205,6 +205,25 @@ fn all_outputs_compare_to_occt_reference() {
 }
 
 #[test]
+fn holed_plate_step_to_obj() {
+    let (obj, name) = step_to_obj("HoledPlate");
+    assert_valid_obj("holedplate", &obj);
+    write_output(&name, &obj);
+}
+
+#[test]
+fn shape_family_step_to_obj() {
+    // The B-spline / offset-surface samples (previously un-parseable) now
+    // export valid non-degenerate meshes.
+    for name in ["Shape", "Shape-1", "Shape-2", "OffsetPlaneHoleEdge"] {
+        let (obj, shape_name) = step_to_obj(name);
+        assert_valid_obj(name, &obj);
+        write_output(&name, &obj);
+        let _ = shape_name;
+    }
+}
+
+#[test]
 fn step_to_obj_writes_output_files() {
     // End-to-end: read → tessellate → write to data/output/, and the written
     // file round-trips through the OBJ reader.
