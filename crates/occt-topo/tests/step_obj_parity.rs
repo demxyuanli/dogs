@@ -175,48 +175,19 @@ fn shape2_bbox_matches_occt() {
 }
 
 #[test]
-fn shape1_export_is_valid() {
-    // Shape-1.step's OCCT reference (occ-shape-1.obj) is an older/different
-    // model — its y-extent (±14.9) does not match the current STEP's geometry
-    // (±67.5) — so no bbox parity is asserted. Assert a valid export and record
-    // density.
-    let model = read_step_file(&data_dir().join("Shape-1.step").to_string_lossy())
-        .unwrap_or_else(|e| panic!("read Shape-1.step: {e}"));
-    assert!(!model.shapes.is_empty(), "Shape-1.step parsed to no shapes");
-    let obj = brep_to_obj(&model.shapes[0].shape, 0.1);
-    let nv = obj.lines().filter(|l| l.starts_with('v')).count();
-    let nf = obj.lines().filter(|l| l.starts_with('f')).count();
-    assert!(nv > 0 && nf > 0, "Shape-1 OBJ degenerate: v={nv} f={nf}");
-    let occ = std::fs::read_to_string(data_dir().join("occ-shape-1.obj")).unwrap();
-    let h = parse_occ_header(&occ);
-    eprintln!(
-        "[Shape-1] ours v={nv} f={nf} | occ-reference(v={} f={}) | f-ratio {:.2}",
-        h.vertices,
-        h.faces,
-        nf as f64 / h.faces as f64
-    );
+fn shape1_bbox_matches_occt() {
+    // Shape-1.step's analytic surfaces (cylinders/spheres/tori) are the
+    // kettle's edge-trimming geometry; the face UV domains are bounded by the
+    // pcurves. With that clipping the bbox matches the OCCT reference; the
+    // residual y delta (±0.14) is the sphere/round-edge sampling difference.
+    check_parity("Shape-1", "occ-shape-1.obj", 0.2);
 }
 
 #[test]
-fn shape_export_is_valid() {
-    // Shape.step's OCCT reference (occ-shape.obj) is an older/different model
-    // (z-extent 100 vs the current STEP's ~105.5), so no bbox parity is
-    // asserted. Assert a valid export and record density.
-    let model = read_step_file(&data_dir().join("Shape.step").to_string_lossy())
-        .unwrap_or_else(|e| panic!("read Shape.step: {e}"));
-    assert!(!model.shapes.is_empty(), "Shape.step parsed to no shapes");
-    let obj = brep_to_obj(&model.shapes[0].shape, 0.1);
-    let nv = obj.lines().filter(|l| l.starts_with('v')).count();
-    let nf = obj.lines().filter(|l| l.starts_with('f')).count();
-    assert!(nv > 0 && nf > 0, "Shape OBJ degenerate: v={nv} f={nf}");
-    let occ = std::fs::read_to_string(data_dir().join("occ-shape.obj")).unwrap();
-    let h = parse_occ_header(&occ);
-    eprintln!(
-        "[Shape] ours v={nv} f={nf} | occ-reference(v={} f={}) | f-ratio {:.2}",
-        h.vertices,
-        h.faces,
-        nf as f64 / h.faces as f64
-    );
+fn shape_bbox_matches_occt() {
+    // Shape.step's offset surfaces and B-splines now clip to their face pcurve
+    // domains; the bbox matches the OCCT reference exactly.
+    check_parity("Shape", "occ-shape.obj", EXACT_TOL);
 }
 
 #[test]

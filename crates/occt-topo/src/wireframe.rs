@@ -459,12 +459,6 @@ pub fn face_area(f: &Face) -> f64 {
 /// with a Newton iterate on `d1`. Falls back to `[0,1]²` when nothing can be
 /// determined.
 pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64, f64) {
-    let (u0, u1) = surface.u_range();
-    let (v0, v1) = surface.v_range();
-    if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() && u1 > u0 && v1 > v0 {
-        return (u0, u1, v0, v1);
-    }
-
     let mut umin = f64::INFINITY;
     let mut umax = f64::NEG_INFINITY;
     let mut vmin = f64::INFINITY;
@@ -482,7 +476,10 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
     // [u0, u0+period] window.
     let (su0, su1) = surface.u_range();
     let u_period = if su0.is_finite() && su1.is_finite() && su1 > su0 { su1 - su0 } else { 0.0 };
+    let (sv0, sv1) = surface.v_range();
+    let v_period = if sv0.is_finite() && sv1.is_finite() && sv1 > sv0 { sv1 - sv0 } else { 0.0 };
     let mut full_period = false;
+    let mut full_v_period = false;
     for w in f.tshape.read().unwrap().children.iter() {
         let w = TopoShape::from_handle(w.clone());
         if w.shape_type() != ShapeType::Wire { continue; }
@@ -495,29 +492,45 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
             if !(a0.is_finite() && a1.is_finite() && a1 > a0) { continue; }
             // Sample the pcurve along the edge. The pcurve of a full-circle
             // edge is unwrapped monotonically (u runs 0 → −2π), so its UV
-            // endpoints differ by the period rather than coinciding; the u-span
+            // endpoints differ by the period rather than coinciding; the span
             // must be measured in continuously-unwrapped coordinates.
             let mut cu_min = f64::INFINITY;
             let mut cu_max = f64::NEG_INFINITY;
-            let mut prev: Option<f64> = None;
+            let mut cv_min = f64::INFINITY;
+            let mut cv_max = f64::NEG_INFINITY;
+            let mut prev_u: Option<f64> = None;
+            let mut prev_v: Option<f64> = None;
             for k in 0..=8 {
                 let t = a0 + (a1 - a0) * k as f64 / 8.0;
                 let uv = pc.d0(t);
                 let mut u = uv.x();
+                let mut v = uv.y();
                 if u_period > 0.0 {
                     // Continuously unwrap relative to the previous sample so a
                     // seam-wrapping edge keeps its true span instead of
                     // collapsing modulo the period.
-                    if let Some(p) = prev {
+                    if let Some(p) = prev_u {
                         while u - p > u_period * 0.5 { u -= u_period; }
                         while u - p < -u_period * 0.5 { u += u_period; }
                     }
-                    prev = Some(u);
+                    prev_u = Some(u);
+                }
+                if v_period > 0.0 {
+                    // Same for a periodic v (torus tube direction): the tube is
+                    // a full 0..2π circle, so a seam edge crosses the period and
+                    // must be unwrapped too.
+                    if let Some(p) = prev_v {
+                        while v - p > v_period * 0.5 { v -= v_period; }
+                        while v - p < -v_period * 0.5 { v += v_period; }
+                    }
+                    prev_v = Some(v);
                 }
                 cu_min = cu_min.min(u);
                 cu_max = cu_max.max(u);
-                vmin = vmin.min(uv.y());
-                vmax = vmax.max(uv.y());
+                cv_min = cv_min.min(v);
+                cv_max = cv_max.max(v);
+                vmin = vmin.min(v);
+                vmax = vmax.max(v);
             }
             umin = umin.min(cu_min);
             umax = umax.max(cu_max);
@@ -529,14 +542,27 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
             if u_period > 0.0 && cu_max - cu_min >= u_period - 1e-6 {
                 full_period = true;
             }
+            if v_period > 0.0 && cv_max - cv_min >= v_period - 1e-6 {
+                full_v_period = true;
+            }
         }
     }
     if full_period {
-        (su0, su0 + u_period, vmin, vmax)
+        let vres = if full_v_period { (sv0, sv0 + v_period) } else { (vmin, vmax) };
+        (su0, su0 + u_period, vres.0, vres.1)
     } else if umin.is_finite() && umax > umin && vmin.is_finite() && vmax > vmin {
         (umin, umax, vmin, vmax)
     } else {
-        (0.0, 1.0, 0.0, 1.0)
+        // No boundary edge with a usable pcurve (face without edges/pcurves):
+        // fall back to the surface's natural bounds — OCCT
+        // `BRepTools::AddUVBounds` does the same when the edge box is void.
+        let (u0, u1) = surface.u_range();
+        let (v0, v1) = surface.v_range();
+        if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() && u1 > u0 && v1 > v0 {
+            (u0, u1, v0, v1)
+        } else {
+            (0.0, 1.0, 0.0, 1.0)
+        }
     }
 }
 

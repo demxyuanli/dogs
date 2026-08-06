@@ -117,6 +117,15 @@ fn shape2_area_matches_occt() {
 }
 
 #[test]
+fn shape1_area_matches_occt() {
+    // Shape-1.step: the analytic surfaces (cylinders/spheres/tori) are the
+    // kettle's edge-trimming geometry — their face UV domains are bounded by the
+    // pcurves, so the mesh covers only the trimmed patch. Bbox and area agree
+    // with the OCCT reference once the pcurve clipping is honoured.
+    check_area_parity("Shape-1", "occ-shape-1.obj", COMPLEX_AREA_TOL);
+}
+
+#[test]
 fn shape_area_matches_occt() {
     check_area_parity("Shape", "occ-shape.obj", COMPLEX_AREA_TOL);
 }
