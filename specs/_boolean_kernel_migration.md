@@ -138,7 +138,9 @@
 
 **波6 已做（2026-08-06 第 2 次会话）**：`UpdatePaveBlocksWithSDVertices` 忠实移植——`BopdsDS::update_pave_blocks_with_sd_vertices` 遍历整个 pave-block pool，把每个块的 Pave1/Pave2 索引沿 `shapes_sd` 链重定向到 SD 代表（`BOPDS_DS::UpdatePaveBlockWithSDVertices`，BOPDS_DS.cxx:1462）。同时把 EE/EF 的块分裂从 `perform_internal` 外层移入各 stage 内部（对齐 OCCT `IntersectEE`/`IntersectEF` 末尾的 `SplitPaveBlocks`）。`perform_internal` 序列：VE→SD→EE→SD→VF→SD→EF→SD→FF→MakeSplitEdges→SD→MakeBlocks→MakePCurves。两个单测更新为 OCCT 忠实后置状态（分裂后 ext_paves 清空）。全量 lib 1266 绿。
 
-**下一步（忠实边界扩展）**：按 OCCT 序列继续——`UpdateInterfsWithSDVertices`（需先给 BopdsDS 建按类型干涉数组 `InterfVV/VE/VF/EE/EF`，现有扁平 `HashSet` 不够）、`UpdateBlocksWithSharedVertices`、`RefineFaceInfoIn`、`RepeatIntersection`、`ForceInterfEE/EF`、`ProcessDE`。查 section 边创建的真实位置（OCCT 在 MakeSplitEdges 或 Builder 侧）。这些是结构对齐，非模型修补。
+**波6 调查（同会话）**：boss fuse（box 2×2×1 + 24 面平面圆柱 r=0.25 高 0.8 立在 z=1 顶面）走 `bop_builder2` 与手写 `bop_builder::boolean` 对比——**体积相同（4.1553）但拓扑不同：B2 出 2 个 solid（102 面），手写出 1 个 solid（78 面）**。根因：圆柱底盖与 box 顶面共面，`fill_same_domain_faces` 未把共面片合并成同一 solid（B3 下游实体装配缺口，`build_split_solids_full` 逐 solid 独立成 shell，未跨 solid 合并共面片）。这是与 PaveFiller 无关的 build 阶段缺口。
+
+**下一步（忠实边界扩展）**：按 OCCT 序列继续——`UpdateInterfsWithSDVertices`（需先给 BopdsDS 建按类型干涉数组 `InterfVV/VE/VF/EE/EF`，现有扁平 `HashSet` 不够）、`UpdateBlocksWithSharedVertices`（gated：非 non-destructive 模式直接 return，当前默认 off 为 no-op）、`RefineFaceInfoIn`（需 face-info On/In 分裂）、`RepeatIntersection`、`ForceInterfEE/EF`、`ProcessDE`。另：B3 实体装配缺口（跨 solid 共面片合并）。查 section 边创建的真实位置（OCCT 在 MakeSplitEdges 或 Builder 侧）。这些是结构对齐，非模型修补。
 - 门禁：✅ `boss_adds_material` 通过；全量 lib 1266 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4）【✅ 完成 2026-08-05】
