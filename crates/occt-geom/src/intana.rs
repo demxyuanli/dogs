@@ -1,20 +1,22 @@
 //! Analytic intersection of primitives. Port of the `IntAna` package
 //! (TKGeomBase): `IntAna_Int3Pln`, `IntAna_QuadQuadGeo` (the analytic
 //! quadric-quadric cases: plane-plane, plane-sphere, sphere-sphere,
-//! plane-cylinder, plane-cone) and `IntAna_IntLinTorus`.
+//! plane-cylinder, plane-cone, cylinder-cylinder, cylinder-sphere,
+//! sphere-cone, cone-cone, cylinder-cone) and `IntAna_IntLinTorus`.
 //!
 //! Shape-level intersection (`IntCurvesFace`, TKTopAlgo) is deliberately out
 //! of scope; this module is the geometric kernel only.
 
 use std::cmp::Ordering;
+use std::f64::consts::PI;
 
 use occt_core::elib::clib;
 use occt_core::gp::dir::DirAxis;
 use occt_core::gp::{
-    GpAx2, GpCirc, GpCone, GpCylinder, GpDir, GpElips, GpHypr, GpLin, GpParab, GpPln, GpPnt,
-    GpSphere, GpTorus, GpVec,
+    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpElips, GpHypr, GpLin,
+    GpParab, GpPln, GpPnt, GpPnt2d, GpSphere, GpTorus, GpVec, GpVec2d,
 };
-use occt_core::precision::CONFUSION;
+use occt_core::precision::{ANGULAR, CONFUSION};
 
 // ---------------------------------------------------------------------------
 // Polynomial root helpers (self-contained; `occt-geom` does not depend on
@@ -318,10 +320,14 @@ pub enum QuadricIntersection {
     Line(GpLin),
     TwoLines(GpLin, GpLin),
     Circle(GpCirc),
+    /// Two circles (cylinder∩sphere, sphere∩cone, cone×cone on one axis…).
+    TwoCircles(GpCirc, GpCirc),
     Ellipse(GpElips),
+    /// Two ellipses (equal-radius cylinders with intersecting axes).
+    TwoEllipses(GpElips, GpElips),
     Parabola(GpParab),
     Hyperbola(GpHypr),
-    /// The two quadrics coincide (same plane/sphere).
+    /// The two quadrics coincide (same plane/sphere/cone).
     Same,
     /// No intersection.
     None,
@@ -336,7 +342,12 @@ impl PartialEq for QuadricIntersection {
             (Line(a), Line(b)) => a == b,
             (TwoLines(a1, a2), TwoLines(b1, b2)) => a1 == b1 && a2 == b2,
             (Circle(a), Circle(b)) => a.location() == b.location() && a.radius() == b.radius(),
+            (TwoCircles(a1, a2), TwoCircles(b1, b2)) => {
+                a1.location() == b1.location() && a1.radius() == b1.radius()
+                    && a2.location() == b2.location() && a2.radius() == b2.radius()
+            }
             (Ellipse(a), Ellipse(b)) => a == b,
+            (TwoEllipses(a1, a2), TwoEllipses(b1, b2)) => a1 == b1 && a2 == b2,
             (Parabola(a), Parabola(b)) => a == b,
             (Hyperbola(a), Hyperbola(b)) => a == b,
             _ => false,
@@ -654,6 +665,545 @@ pub fn quadric_quadric_plane_cone(
     }
 }
 
+// ---------------------------------------------------------------------------
+// IntAna_QuadQuadGeo: cylinder×cylinder, cylinder×sphere, sphere×cone,
+// cone×cone, cylinder×cone.
+// ---------------------------------------------------------------------------
+
+/// Snap an axis direction that is nearly axis-aligned to the exact axis.
+/// Port of `RefineDir` (IntAna_QuadQuadGeo.cxx): it keeps the cross products
+/// used by the axis relation code away from exact degeneracies.
+fn refine_dir(d: &mut GpDir) {
+    let mut c = [d.x(), d.y(), d.z()];
+    let (mut m, mut n) = (0, 0);
+    for &v in &c {
+        if v == 1.0 || v == -1.0 {
+            m += 1;
+        } else if v != 0.0 {
+            n += 1;
+        }
+    }
+    if m > 0 && n > 0 {
+        let eps = f64::EPSILON;
+        let (r1, r2) = (1.0 - eps, 1.0 + eps);
+        for k in 0..3 {
+            let num = c[k].abs();
+            if num > r1 && num < r2 {
+                c[k] = if c[k] > 0.0 { 1.0 } else { -1.0 };
+                c[(k + 1) % 3] = 0.0;
+                c[(k + 2) % 3] = 0.0;
+                break;
+            }
+        }
+        if let Ok(dd) = GpDir::new(c[0], c[1], c[2]) {
+            *d = dd;
+        }
+    }
+}
+
+/// Scalar triple product `a·(b×c)` — OCCT `Det33` in AxeOperator.
+fn det33(a: &GpVec, b: &GpVec, c: &GpVec) -> f64 {
+    a.dot(&b.crossed(c))
+}
+
+/// Relation between two axes — port of `AxeOperator`
+/// (IntAna_QuadQuadGeo.cxx). Returns `(parallel, distance, coplanar,
+/// intersection point)`; `coplanar` needs the axes to (nearly) meet
+/// (`distance < eps_dist` and the triple product within tolerance), and the
+/// point is only computed for concurrent non-parallel axes.
+fn axe_operator(a1: &GpAx1, a2: &GpAx1, eps_dist: f64, eps_para: f64) -> (bool, f64, bool, Option<GpPnt>) {
+    let mut v1 = *a1.direction();
+    let mut v2 = *a2.direction();
+    refine_dir(&mut v1);
+    refine_dir(&mut v2);
+    let (p1, p2) = (*a1.location(), *a2.location());
+    let (w1, w2) = (GpVec::from_xyz(v1.xyz()), GpVec::from_xyz(v2.xyz()));
+    let parallel = w1.cross_magnitude(&w2) <= eps_para;
+    let distance = if parallel {
+        let rel = GpVec::from_pnts(&p1, &p2);
+        rel.subtracted(&w1.multiplied_scalar(rel.dot(&w1))).magnitude()
+    } else {
+        w1.crossed(&w2).normalized().dot(&GpVec::from_pnts(&p1, &p2)).abs()
+    };
+    let mut coplanar = false;
+    let mut pt_intersect = None;
+    if distance < eps_dist {
+        let det = det33(&w1, &w2, &GpVec::from_pnts(&p2, &p1)); // rows V1, V2, P1−P2
+        if det.abs() <= eps_dist {
+            coplanar = true;
+            if !parallel {
+                // Concurrent axes: intersection point P1 + A·V1.
+                let sm = GpVec::from_pnts(&p1, &p2);
+                let d1 = w1.y() * w2.x() - w1.x() * w2.y();
+                let d2 = w1.z() * w2.y() - w1.y() * w2.z();
+                let d3 = w1.z() * w2.x() - w1.x() * w2.z();
+                let a = if d1 != 0.0 && d1.abs() >= d2.abs() && d1.abs() >= d3.abs() {
+                    (sm.y() * w2.x() - sm.x() * w2.y()) / d1
+                } else if d2 != 0.0 && d2.abs() >= d1.abs() && d2.abs() >= d3.abs() {
+                    (sm.z() * w2.y() - sm.y() * w2.z()) / d2
+                } else {
+                    (sm.z() * w2.x() - sm.x() * w2.z()) / d3
+                };
+                pt_intersect = Some(p1.translated_vec(&w1.multiplied_scalar(a)));
+            }
+        }
+    }
+    (parallel, distance, coplanar, pt_intersect)
+}
+
+/// The perpendicular segment between two non-parallel axes: signed distance and
+/// the parameters of the closest points on each axis. Port of
+/// `AxeOperator::Distance`.
+fn axe_distance(a1: &GpAx1, a2: &GpAx1) -> (f64, f64, f64) {
+    let w1 = GpVec::from_xyz(a1.direction().xyz());
+    let w2 = GpVec::from_xyz(a2.direction().xyz());
+    let o1o2 = GpVec::from_pnts(a1.location(), a2.location());
+    let n = w1.crossed(&w2);
+    if n.magnitude() < 1e-12 {
+        return (0.0, 0.0, 0.0);
+    }
+    let n = n.normalized();
+    let d = det33(&w1, &w2, &n);
+    if d != 0.0 {
+        let dist = det33(&w1, &w2, &o1o2) / d;
+        let p1 = det33(&o1o2, &w2, &n) / (-d);
+        let p2 = det33(&w1, &o1o2, &n) / d;
+        (dist, p1, p2)
+    } else {
+        (0.0, 0.0, 0.0)
+    }
+}
+
+/// Distance from `p` to the axis line.
+fn dist_point_axis(p: &GpPnt, ax: &GpAx1) -> f64 {
+    let dir = GpVec::from_xyz(ax.direction().xyz());
+    let rel = GpVec::from_pnts(ax.location(), p);
+    rel.subtracted(&dir.multiplied_scalar(rel.dot(&dir))).magnitude()
+}
+
+fn mid_pnt(a: &GpPnt, b: &GpPnt) -> GpPnt {
+    GpPnt::new(0.5 * (a.x() + b.x()), 0.5 * (a.y() + b.y()), 0.5 * (a.z() + b.z()))
+}
+
+/// A circle with the given center / plane normal / radius (the frame X
+/// direction is arbitrary — it does not affect the curve).
+fn circle_with_normal(center: GpPnt, normal: GpDir, radius: f64) -> GpCirc {
+    GpCirc::new(ax2_from_dirs(center, normal, perp_x_dir(&normal)), radius)
+}
+
+/// A plane through `pt` with the given normal.
+fn plane_normal_at(pt: GpPnt, normal: GpDir) -> Option<GpPln> {
+    let ax3 = GpAx3::new(pt, normal, &perp_x_dir(&normal)).ok()?;
+    Some(GpPln::new(ax3))
+}
+
+/// Cylinder ∩ cylinder. Port of `IntAna_QuadQuadGeo::Perform(gp_Cylinder,
+/// gp_Cylinder)`: parallel axes give two generatrix lines (or one when tangent,
+/// `Same`/`None` for coincident/disjoint), intersecting equal-radius axes give
+/// the two bisector-plane ellipses, external tangency a point, and everything
+/// else (`NoGeometricSolution`) → `None` for the numeric walker.
+pub fn quadric_quadric_cylinder_cylinder(
+    c1: &GpCylinder,
+    c2: &GpCylinder,
+    tol: f64,
+) -> QuadricIntersection {
+    let (parallel, dist, coplanar, pt_inter) =
+        axe_operator(&c1.axis(), &c2.axis(), CONFUSION, ANGULAR);
+    let r1 = c1.radius();
+    let r2 = c2.radius();
+    let rmr = (r1 - r2).abs();
+    let rmr_relative = rmr / r1.max(r2);
+    let dir_cyl = c1.position().direction();
+    let wdir = GpVec::from_xyz(dir_cyl.xyz());
+
+    if parallel {
+        if dist <= tol {
+            return if rmr <= tol {
+                QuadricIntersection::Same
+            } else {
+                QuadricIntersection::None
+            };
+        }
+        // Parallel axes, strictly separated. Project the 2nd location onto the
+        // 1st cylinder base plane and intersect the two base circles.
+        let p1 = c1.location();
+        let p2t = c2.location();
+        let proj = wdir.dot(&GpVec::from_pnts(&p1, &p2t));
+        let p2 = p2t.translated_vec(&wdir.multiplied_scalar(-proj));
+        let r1p2 = r1 + r2;
+        if dist > r1p2 + tol {
+            QuadricIntersection::None
+        } else if (r1p2 - dist) <= f64::EPSILON {
+            // External tangency: one generatrix line.
+            let pt1 = p1.translated_vec(&GpVec::from_pnts(&p1, &p2).multiplied_scalar(r1 / r1p2));
+            QuadricIntersection::Line(GpLin::from_pnt_dir(pt1, dir_cyl))
+        } else if dist > rmr {
+            // Two generatrix lines (or one when the base circles are tangent).
+            let a_r1r1 = r1 * r1;
+            let a_cos = 0.5 * (a_r1r1 - r2 * r2 + dist * dist) / (r1 * dist);
+            let a_sin2 = 1.0 - a_cos * a_cos;
+            let is_tangent = 4.0 * a_r1r1 * a_sin2 < tol * tol;
+            let dir_a1a2 = GpVec::from_pnts(&p1, &p2).divided(dist);
+            if is_tangent {
+                let pt1 = p1.translated_vec(&dir_a1a2.multiplied_scalar(r1 * a_cos));
+                QuadricIntersection::Line(GpLin::from_pnt_dir(pt1, dir_cyl))
+            } else {
+                let a_sin = a_sin2.sqrt();
+                let axd = *c1.position().x_direction();
+                let ayd = *c1.position().y_direction();
+                let r1x = GpVec::from_xyz(axd.xyz()).multiplied_scalar(r1);
+                let r1y = GpVec::from_xyz(ayd.xyz()).multiplied_scalar(r1);
+                let adx = dir_a1a2.dot(&GpVec::from_xyz(axd.xyz()));
+                let ady = dir_a1a2.dot(&GpVec::from_xyz(ayd.xyz()));
+                let (ndx, ndy) = (adx * a_cos - ady * a_sin, ady * a_cos + adx * a_sin);
+                let pt1 = p1
+                    .translated_vec(&r1x.multiplied_scalar(ndx))
+                    .translated_vec(&r1y.multiplied_scalar(ndy));
+                let (ndx, ndy) = (adx * a_cos + ady * a_sin, ady * a_cos - adx * a_sin);
+                let pt2 = p1
+                    .translated_vec(&r1x.multiplied_scalar(ndx))
+                    .translated_vec(&r1y.multiplied_scalar(ndy));
+                QuadricIntersection::TwoLines(
+                    GpLin::from_pnt_dir(pt1, dir_cyl),
+                    GpLin::from_pnt_dir(pt2, dir_cyl),
+                )
+            }
+        } else if dist > rmr - tol {
+            // Internal tangency: one generatrix line.
+            let mut r1_rmr = r1 / rmr;
+            if r1 < r2 {
+                r1_rmr = -r1_rmr;
+            }
+            let pt1 = p1.translated_vec(&GpVec::from_pnts(&p1, &p2).multiplied_scalar(r1_rmr));
+            QuadricIntersection::Line(GpLin::from_pnt_dir(pt1, dir_cyl))
+        } else {
+            QuadricIntersection::None
+        }
+    } else if rmr_relative <= 1e-13 && coplanar {
+        // Equal-radius cylinders with intersecting axes → two ellipses in the
+        // bisector planes. Frame: `dir1`/`dir2` are the bisectors (perpendicular),
+        // each used as the plane normal of one ellipse.
+        let Some(pt) = pt_inter else { return QuadricIntersection::None };
+        let wd2 = GpVec::from_xyz(c2.position().direction().xyz());
+        let ang = wdir.angle(&wd2);
+        let b = (0.5 * (PI - ang)).sin().abs();
+        let a = (0.5 * ang).sin().abs();
+        if a == 0.0 || b == 0.0 {
+            return QuadricIntersection::Same;
+        }
+        let Ok(d1) = GpDir::from_vec(&wdir.added(&wd2)) else { return QuadricIntersection::None };
+        let Ok(d2) = GpDir::from_vec(&wdir.subtracted(&wd2)) else { return QuadricIntersection::None };
+        let (mut p1, mut p1bis) = (r1 / b, r1);
+        let (mut p2, mut p2bis) = (r1 / a, r1);
+        if p1 < p1bis {
+            std::mem::swap(&mut p1, &mut p1bis);
+        }
+        if p2 < p2bis {
+            std::mem::swap(&mut p2, &mut p2bis);
+        }
+        let Ok(ax2_1) = GpAx2::new(pt, d1, d2) else { return QuadricIntersection::None };
+        let Ok(ax2_2) = GpAx2::new(pt, d2, d1) else { return QuadricIntersection::None };
+        QuadricIntersection::TwoEllipses(
+            GpElips::new(ax2_1, p1, p1bis),
+            GpElips::new(ax2_2, p2, p2bis),
+        )
+    } else if (dist - r1 - r2).abs() < tol {
+        // External tangency with intersecting (non-parallel) axes: a point on
+        // the common perpendicular.
+        let d1 = *c1.axis().direction();
+        let d2 = *c2.axis().direction();
+        let (_, p1p, p2p) = axe_distance(&c1.axis(), &c2.axis());
+        let p1 = c1
+            .axis()
+            .location()
+            .translated_vec(&GpVec::from_xyz(d1.xyz()).multiplied_scalar(-p1p));
+        let p2 = c2
+            .axis()
+            .location()
+            .translated_vec(&GpVec::from_xyz(d2.xyz()).multiplied_scalar(-p2p));
+        let Ok(dir) = GpDir::from_vec(&GpVec::from_pnts(&p1, &p2)) else { return QuadricIntersection::None };
+        let pt = p1.translated_vec(&GpVec::from_xyz(dir.xyz()).multiplied_scalar(r1));
+        QuadricIntersection::Point(pt)
+    } else {
+        QuadricIntersection::None
+    }
+}
+
+/// Cylinder ∩ sphere. Port of `IntAna_QuadQuadGeo::Perform(gp_Cylinder,
+/// gp_Sphere)`: when the sphere center lies on the cylinder axis the section is
+/// one or two circles (radius = cylinder radius, centered at
+/// `center ± √(r_sph² − r_cyl²)·axis`); otherwise `NoGeometricSolution` → `None`.
+pub fn quadric_quadric_cylinder_sphere(
+    cyl: &GpCylinder,
+    sph: &GpSphere,
+    _tol: f64,
+) -> QuadricIntersection {
+    let pt = sph.location();
+    // OCCT tests the axes to intersect at the sphere center exactly; a small
+    // tolerance keeps the closed form on near-axis configurations.
+    if dist_point_axis(&pt, &cyl.axis()) > 1e-9 {
+        return QuadricIntersection::None;
+    }
+    let r_cyl = cyl.radius();
+    let r_sph = sph.radius();
+    if r_sph < r_cyl {
+        return QuadricIntersection::None; // IntAna_Empty
+    }
+    let dist = (r_sph * r_sph - r_cyl * r_cyl).sqrt();
+    let dir = cyl.position().direction();
+    let w = GpVec::from_xyz(dir.xyz());
+    let c1 = pt.translated_vec(&w.multiplied_scalar(dist));
+    let circ1 = circle_with_normal(c1, dir, r_cyl);
+    if dist > f64::EPSILON {
+        let c2 = pt.translated_vec(&w.multiplied_scalar(-dist));
+        QuadricIntersection::TwoCircles(circ1, circle_with_normal(c2, dir, r_cyl))
+    } else {
+        QuadricIntersection::Circle(circ1)
+    }
+}
+
+/// Sphere ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Sphere, gp_Cone)`:
+/// when the sphere center lies on the cone axis the section is one or two
+/// circles — the roots of the 2D cross-section quadratic
+/// `(1+tg²)x² + 2·tg²·d·x + tg²·d² − r² = 0`, with `d` the apex→center
+/// distance. Otherwise `NoGeometricSolution` → `None`.
+pub fn quadric_quadric_sphere_cone(
+    sph: &GpSphere,
+    cone: &GpCone,
+    _tol: f64,
+) -> QuadricIntersection {
+    let pt = sph.location();
+    if dist_point_axis(&pt, &cone.axis()) > 1e-9 {
+        return QuadricIntersection::None;
+    }
+    let apex = cone.apex();
+    let d = pt.distance(&apex);
+    let condir = if d > f64::EPSILON {
+        let Ok(c) = GpDir::from_vec(&GpVec::from_pnts(&apex, &pt)) else {
+            return QuadricIntersection::None;
+        };
+        c
+    } else {
+        cone.position().direction()
+    };
+    let rad = sph.radius();
+    let tga = cone.semi_angle().tan();
+    let tgatga = tga * tga;
+    let roots = quadratic_roots(1.0 + tgatga, 2.0 * tgatga * d, -rad * rad + d * d * tgatga);
+    if roots.is_empty() {
+        return QuadricIntersection::None; // IntAna_Empty
+    }
+    let w = GpVec::from_xyz(condir.xyz());
+    let mut circles: Vec<GpCirc> = Vec::new();
+    for x in roots {
+        let dpx = d + x;
+        let center = apex.translated_vec(&w.multiplied_scalar(dpx));
+        let r = (tga * dpx).abs();
+        if r <= 0.01 * CONFUSION {
+            continue; // IntAna_PointAndCircle: degenerate radius → point
+        }
+        circles.push(circle_with_normal(center, condir, r));
+    }
+    match circles.len() {
+        1 => QuadricIntersection::Circle(circles.pop().unwrap()),
+        2 => {
+            let c2 = circles.pop().unwrap();
+            let c1 = circles.pop().unwrap();
+            QuadricIntersection::TwoCircles(c1, c2)
+        }
+        _ => QuadricIntersection::None,
+    }
+}
+
+/// Cone ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Cone, gp_Cone)` for the
+/// tractable branches: coincident axes (two circles / a point / `Same`),
+/// parallel axes with equal semi-angle (a conic in the plane through the two
+/// apexes, from the plane∩cone closed form), and coincident apexes (one or two
+/// generatrix lines). The common-generatrix case and everything else return
+/// `None` for the numeric walker.
+pub fn quadric_quadric_cone_cone(
+    c1: &GpCone,
+    c2: &GpCone,
+    tol_ang: f64,
+    tol: f64,
+) -> QuadricIntersection {
+    let tg1 = c1.semi_angle().tan();
+    let mut tg2 = c2.semi_angle().tan();
+    if tg1 * tg2 < 0.0 {
+        tg2 = -tg2;
+    }
+    let tol2 = tol * tol;
+    let ap1 = c1.apex();
+    let ap2 = c2.apex();
+    let d_a1a2 = ap1.square_distance(&ap2);
+    let (parallel, dist_axes, _coplanar, _pt_inter) =
+        axe_operator(&c1.axis(), &c2.axis(), 1e-14, ANGULAR);
+
+    // 1 — coincident axes: two circles where the cone radii match (or the two
+    // cones coincide / touch at the apex).
+    if parallel && dist_axes < 1e-14 {
+        let p = c1.apex();
+        let d = c1.position().direction();
+        let w = GpVec::from_xyz(d.xyz());
+        let offset = w.dot(&GpVec::from_pnts(&p, &ap2));
+        if (tg1 - tg2).abs() > ANGULAR {
+            if offset.abs() < 1e-10 {
+                return QuadricIntersection::Point(p);
+            }
+            let x1 = offset * tg2 / (tg1 + tg2);
+            let x2 = offset * tg2 / (tg2 - tg1);
+            let c1c = p.translated_vec(&w.multiplied_scalar(x1));
+            let c2c = p.translated_vec(&w.multiplied_scalar(x2));
+            QuadricIntersection::TwoCircles(
+                circle_with_normal(c1c, d, (x1 * tg1).abs()),
+                circle_with_normal(c2c, d, (x2 * tg1).abs()),
+            )
+        } else if offset.abs() < 1e-10 {
+            QuadricIntersection::Same
+        } else {
+            let x = 0.5 * offset;
+            QuadricIntersection::Circle(circle_with_normal(
+                p.translated_vec(&w.multiplied_scalar(x)),
+                d,
+                (x * tg1).abs(),
+            ))
+        }
+    }
+    // 2 — parallel axes with (nearly) equal semi-angles: the intersection lies
+    // in the plane through the two apexes; reduce to the plane∩cone conic.
+    else if (tg1 - tg2).abs() < tol_ang && parallel {
+        let da1 = c1.position().direction();
+        let o1o2 = GpVec::from_pnts(&ap1, &ap2);
+        let o1o2n = o1o2.normalized();
+        let o1o2_da1 = GpVec::from_xyz(da1.xyz()).dot(&o1o2n);
+        let o1_proj = o1o2n.subtracted(&GpVec::from_xyz(da1.xyz()).multiplied_scalar(o1o2_da1));
+        let Ok(db1) = GpDir::from_vec(&o1_proj) else { return QuadricIntersection::None };
+        let y_o1o2 = o1o2.dot(&GpVec::from_xyz(da1.xyz()));
+        let abstg1 = tg1.abs();
+        let x2 = (dist_axes / abstg1 - y_o1o2) * 0.5;
+        let x1 = x2 + y_o1o2;
+        let p1 = ap1
+            .translated_vec(&GpVec::from_xyz(da1.xyz()).multiplied_scalar(x1))
+            .translated_vec(&GpVec::from_xyz(db1.xyz()).multiplied_scalar(x1 * abstg1));
+        let p1_m = GpVec::from_pnts(&p1, &mid_pnt(&ap1, &ap2));
+        let da1_x_db1 = GpVec::from_xyz(da1.xyz()).crossed(&GpVec::from_xyz(db1.xyz()));
+        let ortho = da1_x_db1.crossed(&p1_m);
+        let Ok(n) = GpDir::from_vec(&ortho) else { return QuadricIntersection::None };
+        let Some(pln) = plane_normal_at(p1, n) else { return QuadricIntersection::None };
+        quadric_quadric_plane_cone(&pln, c1, tol_ang, tol)
+    }
+    // 3 — coincident apexes: one or two generatrix lines (or `None`).
+    else if d_a1a2 < tol2 {
+        cone_cone_common_apex(c1, c2, tg1, tg2, tol)
+    } else {
+        // 4/5 — common generatrix / general: no analytic closed form.
+        QuadricIntersection::None
+    }
+}
+
+/// Coincident-apex cones: `IntAna_QuadQuadGeo::Perform` branch 3 — a 2D
+/// section analysis determines touch/intersection, then the one or two
+/// generatrix lines are built through the shared apex.
+fn cone_cone_common_apex(c1: &GpCone, c2: &GpCone, tg1: f64, tg2: f64, tol: f64) -> QuadricIntersection {
+    let half_pi = 0.5 * PI;
+    let d1 = 1.0;
+    let p0 = GpPnt2d::new(0.0, 0.0);
+    let ax1 = c1.axis();
+    let ax2 = c2.axis();
+    let mut gamma = ax1.direction().angle(ax2.direction());
+    if gamma > half_pi {
+        gamma = PI - gamma;
+    }
+    let (cos_g, sin_g) = (gamma.cos(), gamma.sin());
+    let tg_beta1 = tg1.abs();
+    let tg_beta2 = tg2.abs();
+    let r1 = d1 * tg_beta1;
+    let p1 = GpPnt2d::new(d1, r1);
+    // Project P1 onto the 2nd axis line (in the plane of the two axes) to find
+    // whether the section circles overlap, touch or miss.
+    let v_ax2 = GpVec2d::new(cos_g, sin_g);
+    let Ok(_) = GpDir2d::from_vec2d(&v_ax2) else { return QuadricIntersection::None };
+    let v = GpVec2d::new(p1.x() - p0.x(), p1.y() - p0.y());
+    let mut dx = v_ax2.dot(&v);
+    let pa2 = p0.translated_vec(&v_ax2.multiplied_scalar(dx));
+    dx = pa2.distance(&p0);
+    let r2 = dx * tg_beta2;
+    let rd2 = pa2.distance(&p1);
+    if rd2 > r2 + tol {
+        return QuadricIntersection::None; // IntAna_Empty
+    }
+    let i_ret = if rd2 < r2 - tol { 2 } else { 1 };
+    // 3D construction: two planes perpendicular to the axes through the ring
+    // points Q1/Q2 intersect in the line through the section mid-point QX.
+    let q_apex1 = c1.apex();
+    let d3_ax1 = *ax1.direction();
+    let w1 = GpVec::from_xyz(d3_ax1.xyz());
+    let qa1 = q_apex1.translated_vec(&w1.multiplied_scalar(d1));
+    let dx = w1.dot(&GpVec::from_xyz(ax2.direction().xyz()));
+    let d3_ax2 = if dx < 0.0 {
+        ax2.direction().reversed()
+    } else {
+        *ax2.direction()
+    };
+    let w2 = GpVec::from_xyz(d3_ax2.xyz());
+    let d2 = d1 * ((1.0 + tg_beta1 * tg_beta1) / (1.0 + tg_beta2 * tg_beta2)).sqrt();
+    let qa2 = q_apex1.translated_vec(&w2.multiplied_scalar(d2));
+    let Some(pln1) = plane_normal_at(qa1, d3_ax1) else { return QuadricIntersection::None };
+    let Some(pln2) = plane_normal_at(qa2, d3_ax2) else { return QuadricIntersection::None };
+    let Some(lin) = plane_plane_line(&pln1, &pln2) else { return QuadricIntersection::None };
+    let wl = GpVec::from_xyz(lin.direction().xyz());
+    let orig = lin.location();
+    let vr = GpVec::from_pnts(&qa1, &orig);
+    let dx = wl.dot(&vr);
+    let qx = orig.translated_vec(&wl.multiplied_scalar(dx));
+    if i_ret == 1 {
+        // One tangency line.
+        let Ok(dir) = GpDir::from_vec(&GpVec::from_pnts(&q_apex1, &qx)) else {
+            return QuadricIntersection::None;
+        };
+        QuadricIntersection::Line(GpLin::from_pnt_dir(q_apex1, dir))
+    } else {
+        // Two intersection lines.
+        let da = qa1.distance(&qx);
+        let ddx = (r1 * r1 - da * da).sqrt();
+        let qx1 = qx.translated_vec(&wl.multiplied_scalar(ddx));
+        let qx2 = qx.translated_vec(&wl.multiplied_scalar(-ddx));
+        let Ok(dir1) = GpDir::from_vec(&GpVec::from_pnts(&q_apex1, &qx1)) else {
+            return QuadricIntersection::None;
+        };
+        let Ok(dir2) = GpDir::from_vec(&GpVec::from_pnts(&q_apex1, &qx2)) else {
+            return QuadricIntersection::None;
+        };
+        QuadricIntersection::TwoLines(
+            GpLin::from_pnt_dir(q_apex1, dir1),
+            GpLin::from_pnt_dir(q_apex1, dir2),
+        )
+    }
+}
+
+/// Cylinder ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Cylinder,
+/// gp_Cone)`: only the coincident-axis case has a closed form (two circles at
+/// `apex ± r_cyl/tan(angle)` along the axis); otherwise `NoGeometricSolution`.
+pub fn quadric_quadric_cylinder_cone(
+    cyl: &GpCylinder,
+    cone: &GpCone,
+    _tol: f64,
+) -> QuadricIntersection {
+    let (parallel, dist, _, _) = axe_operator(&cyl.axis(), &cone.axis(), 1e-14, ANGULAR);
+    if !(parallel && dist < 1e-14) {
+        return QuadricIntersection::None;
+    }
+    let pt = cone.apex();
+    let dist = cyl.radius() / cone.semi_angle().tan();
+    let dir = cyl.position().direction();
+    let w = GpVec::from_xyz(dir.xyz());
+    let r = cyl.radius();
+    QuadricIntersection::TwoCircles(
+        circle_with_normal(pt.translated_vec(&w.multiplied_scalar(dist)), dir, r),
+        circle_with_normal(pt.translated_vec(&w.multiplied_scalar(-dist)), dir, r),
+    )
+}
+
 /// Analytic quadric-quadric intersection dispatcher for the tractable pairs.
 pub fn quadric_quadric(q1: &Quadric, q2: &Quadric, tol_ang: f64, tol: f64) -> QuadricIntersection {
     use Quadric::*;
@@ -665,7 +1215,11 @@ pub fn quadric_quadric(q1: &Quadric, q2: &Quadric, tol_ang: f64, tol: f64) -> Qu
             quadric_quadric_plane_cylinder(p, c, tol_ang, tol)
         }
         (Plane(p), Cone(c)) | (Cone(c), Plane(p)) => quadric_quadric_plane_cone(p, c, tol_ang, tol),
-        _ => QuadricIntersection::None,
+        (Cylinder(a), Cylinder(b)) => quadric_quadric_cylinder_cylinder(a, b, tol),
+        (Cylinder(c), Sphere(s)) | (Sphere(s), Cylinder(c)) => quadric_quadric_cylinder_sphere(c, s, tol),
+        (Sphere(s), Cone(c)) | (Cone(c), Sphere(s)) => quadric_quadric_sphere_cone(s, c, tol),
+        (Cone(a), Cone(b)) => quadric_quadric_cone_cone(a, b, tol_ang, tol),
+        (Cylinder(c), Cone(k)) | (Cone(k), Cylinder(c)) => quadric_quadric_cylinder_cone(c, k, tol),
     }
 }
 
@@ -766,6 +1320,29 @@ mod tests {
         let perp = v.coord.subtracted(&axis.xyz().multiplied(h));
         let rho = perp.modulus();
         (rho - h.abs() * cone.semi_angle().tan()).abs() < tol
+    }
+
+    fn on_cylinder(p: &GpPnt, cyl: &GpCylinder, tol: f64) -> bool {
+        let axis = *cyl.axis().direction();
+        let v = GpVec::from_pnts(cyl.axis().location(), p);
+        let h = v.dot(&GpVec::from_xyz(axis.xyz()));
+        let perp = v.coord.subtracted(&axis.xyz().multiplied(h));
+        (perp.modulus() - cyl.radius()).abs() < tol
+    }
+
+    fn on_sphere(p: &GpPnt, sph: &GpSphere, tol: f64) -> bool {
+        (p.distance(&sph.location()) - sph.radius()).abs() < tol
+    }
+
+    fn cylinder_axis(center: GpPnt, axis: GpDir, r: f64) -> GpCylinder {
+        let x = perp_x_dir(&axis);
+        GpCylinder::new(GpAx3::new(center, axis, &x).unwrap_or_default(), r).unwrap()
+    }
+
+    /// A cone whose geometric apex is `apex` (radius 0 anchor).
+    fn cone_apex_at(apex: GpPnt, axis: GpDir, semi: f64) -> GpCone {
+        let x = perp_x_dir(&axis);
+        GpCone::new(GpAx3::new(apex, axis, &x).unwrap_or_default(), 0.0, semi).unwrap()
     }
 
     #[test]
@@ -953,5 +1530,174 @@ mod tests {
         let torus = GpTorus::new(GpAx3::standard(), 3.0, 1.0).unwrap();
         let line = GpLin::from_pnt_dir(GpPnt::new(0., 0., 0.), GpDir::from_axis(DirAxis::Z));
         assert!(line_torus_intersect(&line, &torus).is_empty());
+    }
+
+    #[test]
+    fn cylinder_cylinder_parallel_two_lines() {
+        // Two unit cylinders, parallel Z axes through (0,0,0) and (0.5,0,0):
+        // base circles intersect at x=0.25, y=±√(1−0.25²).
+        let z = GpDir::from_axis(DirAxis::Z);
+        let c1 = cylinder_axis(GpPnt::new(0.0, 0.0, 0.0), z, 1.0);
+        let c2 = cylinder_axis(GpPnt::new(0.5, 0.0, 0.0), z, 1.0);
+        match quadric_quadric_cylinder_cylinder(&c1, &c2, 1e-7) {
+            QuadricIntersection::TwoLines(l1, l2) => {
+                let h = (0.9375f64).sqrt();
+                for l in [l1, l2] {
+                    let p = clib::line_value(&l, 0.0);
+                    assert!((p.y().abs() - h).abs() < 1e-9, "y {}", p.y());
+                    assert!((p.x() - 0.25).abs() < 1e-9, "x {}", p.x());
+                    assert!(on_cylinder(&p, &c1, 1e-9), "{p:?} not on cyl1");
+                    assert!(on_cylinder(&p, &c2, 1e-9), "{p:?} not on cyl2");
+                }
+            }
+            other => panic!("expected two lines, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cylinder_cylinder_nested_empty() {
+        // Concentric cylinders of different radii never meet.
+        let z = GpDir::from_axis(DirAxis::Z);
+        let c1 = cylinder_axis(GpPnt::new(0.0, 0.0, 0.0), z, 1.0);
+        let c2 = cylinder_axis(GpPnt::new(0.0, 0.0, 0.0), z, 2.0);
+        assert_eq!(
+            quadric_quadric_cylinder_cylinder(&c1, &c2, 1e-7),
+            QuadricIntersection::None
+        );
+    }
+
+    #[test]
+    fn cylinder_cylinder_intersecting_ellipses() {
+        // Equal unit cylinders, perpendicular axes through the origin: two
+        // bisector-plane ellipses (x²+z²=1 ∧ x²+y²=1 → y=±z).
+        let z = GpDir::from_axis(DirAxis::Z);
+        let x = GpDir::from_axis(DirAxis::X);
+        let c1 = cylinder_axis(GpPnt::new(0.0, 0.0, 0.0), z, 1.0);
+        let c2 = cylinder_axis(GpPnt::new(0.0, 0.0, 0.0), x, 1.0);
+        match quadric_quadric_cylinder_cylinder(&c1, &c2, 1e-7) {
+            QuadricIntersection::TwoEllipses(e1, e2) => {
+                assert!(e1.location().distance(&GpPnt::new(0., 0., 0.)) < 1e-9);
+                assert!(e2.location().distance(&GpPnt::new(0., 0., 0.)) < 1e-9);
+                for e in [e1, e2] {
+                    for k in 0..16 {
+                        let p = clib::ellipse_value(&e, 2.0 * PI * k as f64 / 16.0);
+                        assert!(on_cylinder(&p, &c1, 1e-6), "{p:?} not on cyl1");
+                        assert!(on_cylinder(&p, &c2, 1e-6), "{p:?} not on cyl2");
+                    }
+                }
+            }
+            other => panic!("expected two ellipses, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cylinder_sphere_two_circles() {
+        // Unit sphere at the origin, Z-axis cylinder r=0.5 through it: circles
+        // at z=±√(1−0.25)=±0.866, radius 0.5.
+        let z = GpDir::from_axis(DirAxis::Z);
+        let cyl = cylinder_axis(GpPnt::new(0.0, 0.0, 0.0), z, 0.5);
+        let sph = sphere_at(GpPnt::new(0.0, 0.0, 0.0), 1.0);
+        match quadric_quadric_cylinder_sphere(&cyl, &sph, 1e-7) {
+            QuadricIntersection::TwoCircles(c1, c2) => {
+                for c in [c1, c2] {
+                    assert!((c.radius() - 0.5).abs() < 1e-9, "radius {}", c.radius());
+                    assert!(c.location().x().abs() < 1e-9 && c.location().y().abs() < 1e-9);
+                    assert!((c.location().z().abs() - (0.75f64).sqrt()).abs() < 1e-9);
+                    for k in 0..8 {
+                        let p = clib::circle_value(&c, 2.0 * PI * k as f64 / 8.0);
+                        assert!(on_cylinder(&p, &cyl, 1e-6), "{p:?} not on cylinder");
+                        assert!(on_sphere(&p, &sph, 1e-6), "{p:?} not on sphere");
+                    }
+                }
+            }
+            other => panic!("expected two circles, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sphere_cone_two_circles() {
+        // Cone apex at the origin, axis +Z, 30°; sphere center (0,0,3), r=2:
+        // two circles at z≈3.40 (r≈1.96) and z≈1.10 (r≈0.64).
+        let z = GpDir::from_axis(DirAxis::Z);
+        let cone = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), z, PI / 6.0);
+        let sph = sphere_at(GpPnt::new(0.0, 0.0, 3.0), 2.0);
+        match quadric_quadric_sphere_cone(&sph, &cone, 1e-7) {
+            QuadricIntersection::TwoCircles(c1, c2) => {
+                for c in [c1, c2] {
+                    for k in 0..8 {
+                        let p = clib::circle_value(&c, 2.0 * PI * k as f64 / 8.0);
+                        assert!(on_cone(&p, &cone, 1e-5), "{p:?} not on cone");
+                        assert!(on_sphere(&p, &sph, 1e-5), "{p:?} not on sphere");
+                    }
+                }
+            }
+            other => panic!("expected two circles, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cone_cone_same_axis_two_circles() {
+        // Same axis +Z; cone1 apex origin 30°, cone2 apex (0,0,1) 45°.
+        let z = GpDir::from_axis(DirAxis::Z);
+        let c1 = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), z, PI / 6.0);
+        let c2 = cone_apex_at(GpPnt::new(0.0, 0.0, 1.0), z, PI / 4.0);
+        match quadric_quadric_cone_cone(&c1, &c2, ANGULAR, 1e-7) {
+            QuadricIntersection::TwoCircles(a, b) => {
+                for c in [a, b] {
+                    for k in 0..8 {
+                        let p = clib::circle_value(&c, 2.0 * PI * k as f64 / 8.0);
+                        assert!(on_cone(&p, &c1, 1e-5), "{p:?} not on cone1");
+                        assert!(on_cone(&p, &c2, 1e-5), "{p:?} not on cone2");
+                    }
+                }
+            }
+            other => panic!("expected two circles, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cone_cone_common_apex_two_lines() {
+        // Two 30° cones sharing the apex, axes differing by 40°: two generatrix
+        // lines through the apex.
+        let z = GpDir::from_axis(DirAxis::Z);
+        let axis2 = GpDir::new((40.0f64).to_radians().sin(), 0.0, (40.0f64).to_radians().cos()).unwrap();
+        let c1 = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), z, PI / 6.0);
+        let c2 = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), axis2, PI / 6.0);
+        match quadric_quadric_cone_cone(&c1, &c2, ANGULAR, 1e-7) {
+            QuadricIntersection::TwoLines(l1, l2) => {
+                for l in [l1, l2] {
+                    for t in [-2.0, -1.0, 1.0, 2.0] {
+                        let p = clib::line_value(&l, t);
+                        assert!(on_cone(&p, &c1, 1e-5), "{p:?} not on cone1");
+                        assert!(on_cone(&p, &c2, 1e-5), "{p:?} not on cone2");
+                    }
+                }
+            }
+            other => panic!("expected two lines, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cylinder_cone_same_axis_two_circles() {
+        // Cylinder r=0.5 axis Z through origin; cone apex origin 45°: circles at
+        // z=±0.5/tan(45°)=±0.5, radius 0.5.
+        let z = GpDir::from_axis(DirAxis::Z);
+        let cyl = cylinder_axis(GpPnt::new(0.0, 0.0, 0.0), z, 0.5);
+        let cone = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), z, PI / 4.0);
+        match quadric_quadric_cylinder_cone(&cyl, &cone, 1e-7) {
+            QuadricIntersection::TwoCircles(c1, c2) => {
+                for c in [c1, c2] {
+                    assert!((c.radius() - 0.5).abs() < 1e-9);
+                    assert!(c.location().x().abs() < 1e-9 && c.location().y().abs() < 1e-9);
+                    assert!((c.location().z().abs() - 0.5).abs() < 1e-9);
+                    for k in 0..8 {
+                        let p = clib::circle_value(&c, 2.0 * PI * k as f64 / 8.0);
+                        assert!(on_cylinder(&p, &cyl, 1e-6), "{p:?} not on cylinder");
+                        assert!(on_cone(&p, &cone, 1e-6), "{p:?} not on cone");
+                    }
+                }
+            }
+            other => panic!("expected two circles, got {other:?}"),
+        }
     }
 }

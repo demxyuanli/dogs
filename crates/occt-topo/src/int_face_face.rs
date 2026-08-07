@@ -4,26 +4,33 @@
 //! walker and `GeomInt_WLApprox`: the two faces' underlying surfaces are
 //! classified, supported analytic pairs dispatch to the exact closed forms in
 //! `crate::intpatch` (plane∩plane, plane∩sphere, sphere∩sphere, plane∩cylinder)
-//! and `occt_geom::intana` (plane∩cone, plane∩torus), and everything else falls
-//! back to the intpatch sampling tracer.
+//! and `occt_geom::intana` — the `IntAna_QuadQuadGeo` conics (plane∩cone,
+//! plane∩torus, cylinder×cylinder, cylinder×sphere, sphere×cone, cone×cone,
+//! cylinder×cone). Everything else falls back to the intpatch sampling tracer.
 //!
 //! The output mirrors `IntTools_Curve`: a 3D curve plus the per-face 2D
 //! pcurves (`pcurve_full::make_pcurve_full`) over a valid parameter range.
 //!
-//! ponytail: cone×cone / cone×sphere / torus×* (non-plane) pairs still fall
-//! through to the grid tracer — OCCT uses the numeric IntPatch walker there, so
-//! the boundary is the same; the plane×cylinder generatrix pair collapses to a
-//! single line curve. Add per-pair closed forms when a caller needs them.
+//! ponytail: the cone×cone common-generatrix branch and torus×* (non-plane)
+//! pairs still fall through to the grid tracer — OCCT uses the numeric IntPatch
+//! walker there, so the boundary is the same; the plane×cylinder generatrix
+//! pair collapses to a single line curve. Add per-pair closed forms when a
+//! caller needs them.
 
 use std::cmp::Ordering;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpDir, GpDir2d, GpLin, GpLin2d, GpPln, GpPnt, GpPnt2d,
-    GpVec, GpVec2d,
+    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpLin, GpLin2d, GpPln,
+    GpPnt, GpPnt2d, GpSphere, GpVec, GpVec2d,
 };
-use occt_geom::intana::{quadric_quadric_plane_cone, QuadricIntersection};
+use occt_core::precision::ANGULAR;
+use occt_geom::intana::{
+    quadric_quadric_cone_cone, quadric_quadric_cylinder_cone, quadric_quadric_cylinder_cylinder,
+    quadric_quadric_cylinder_sphere, quadric_quadric_plane_cone, quadric_quadric_sphere_cone,
+    QuadricIntersection,
+};
 use occt_geom::{
     Curve, GeomCircle, GeomEllipse, GeomHyperbola, GeomLine, GeomParabola, Surface,
 };
@@ -229,6 +236,26 @@ fn cone_from_surface(s: &dyn Surface) -> Option<GpCone> {
     let x = perp_x_dir(&z);
     let ax3 = GpAx3::new(apex, z, &x).ok()?;
     GpCone::new(ax3, 0.0, alpha).ok()
+}
+
+/// Recover a `GpCylinder` from a cylinder surface via `cylinder_params`
+/// (axis frame X direction is arbitrary — it does not affect the section
+/// curve geometry, only its parametrization).
+fn cylinder_from_surface(s: &dyn Surface) -> Option<GpCylinder> {
+    let (center, ax, r) = cylinder_params(s)?;
+    let z = GpDir::from_vec(&ax).ok()?;
+    let x = perp_x_dir(&z);
+    let ax3 = GpAx3::new(center, z, &x).ok()?;
+    GpCylinder::new(ax3, r).ok()
+}
+
+/// Recover a `GpSphere` from a sphere surface (sphere frame is arbitrary).
+fn sphere_from_surface(s: &dyn Surface) -> Option<GpSphere> {
+    let (c, r) = intpatch::sphere_params(s)?;
+    let z = GpDir::new(0.0, 0.0, 1.0).ok()?;
+    let x = GpDir::new(1.0, 0.0, 0.0).ok()?;
+    let ax3 = GpAx3::new(c, z, &x).ok()?;
+    GpSphere::new(ax3, r).ok()
 }
 
 /// Plane coefficients `A·x + B·y + C·z + D = 0` with unit normal (OCCT form).
@@ -538,6 +565,17 @@ impl FaceFace {
             (SurfaceKind::Plane, SurfaceKind::Torus) | (SurfaceKind::Torus, SurfaceKind::Plane) => {
                 self.plane_torus(sa, sb, fa, fb, tol)
             }
+            (SurfaceKind::Cylinder, SurfaceKind::Cylinder) => {
+                self.cylinder_cylinder(sa, sb, fa, fb, tol)
+            }
+            (SurfaceKind::Sphere, SurfaceKind::Cylinder) => {
+                self.cylinder_sphere(sa, sb, fa, fb, tol)
+            }
+            (SurfaceKind::Sphere, SurfaceKind::Cone) => self.sphere_cone(sa, sb, fa, fb, tol),
+            (SurfaceKind::Cone, SurfaceKind::Cylinder) => {
+                self.cylinder_cone(sa, sb, fa, fb, tol)
+            }
+            (SurfaceKind::Cone, SurfaceKind::Cone) => self.cone_cone(sa, sb, fa, fb, tol),
             _ => self.general(sa, sb, fa, fb, tol),
         }
     }
@@ -792,6 +830,115 @@ impl FaceFace {
         }
     }
 
+    /// Cylinder ∩ cylinder — generatrix lines / `Same` / two ellipses /
+    /// tangent via `IntAna_QuadQuadGeo::Perform(gp_Cylinder, gp_Cylinder)`,
+    /// falling back to the tracer when there is no analytic closed form.
+    fn cylinder_cylinder(
+        &mut self,
+        sa: &dyn Surface,
+        sb: &dyn Surface,
+        fa: &Face,
+        fb: &Face,
+        tol: f64,
+    ) -> Result<Vec<FaceFaceCurve>, String> {
+        let c1 = cylinder_from_surface(sa).ok_or("FaceFace: cylinder extraction (a)")?;
+        let c2 = cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction (b)")?;
+        let qi = quadric_quadric_cylinder_cylinder(&c1, &c2, tol);
+        let out = self.conics_to_curves(qi, fa, fb);
+        if out.is_empty() {
+            self.general(sa, sb, fa, fb, tol)
+        } else {
+            Ok(out)
+        }
+    }
+
+    /// Cylinder ∩ sphere — one or two circles when the sphere center lies on
+    /// the cylinder axis (via `Perform(gp_Cylinder, gp_Sphere)`), else tracer.
+    fn cylinder_sphere(
+        &mut self,
+        sa: &dyn Surface,
+        sb: &dyn Surface,
+        fa: &Face,
+        fb: &Face,
+        tol: f64,
+    ) -> Result<Vec<FaceFaceCurve>, String> {
+        // Sorted order: face1 (sa) is the sphere, face2 (sb) the cylinder.
+        let sph = sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?;
+        let cyl = cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction")?;
+        let qi = quadric_quadric_cylinder_sphere(&cyl, &sph, tol);
+        let out = self.conics_to_curves(qi, fa, fb);
+        if out.is_empty() {
+            self.general(sa, sb, fa, fb, tol)
+        } else {
+            Ok(out)
+        }
+    }
+
+    /// Sphere ∩ cone — one or two circles when the sphere center lies on the
+    /// cone axis (via `Perform(gp_Sphere, gp_Cone)`), else tracer.
+    fn sphere_cone(
+        &mut self,
+        sa: &dyn Surface,
+        sb: &dyn Surface,
+        fa: &Face,
+        fb: &Face,
+        tol: f64,
+    ) -> Result<Vec<FaceFaceCurve>, String> {
+        // Sorted order: face1 (sa) is the sphere, face2 (sb) the cone.
+        let sph = sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?;
+        let cone = cone_from_surface(sb).ok_or("FaceFace: cone extraction")?;
+        let qi = quadric_quadric_sphere_cone(&sph, &cone, tol);
+        let out = self.conics_to_curves(qi, fa, fb);
+        if out.is_empty() {
+            self.general(sa, sb, fa, fb, tol)
+        } else {
+            Ok(out)
+        }
+    }
+
+    /// Cone ∩ cylinder — two circles for coincident axes (via `Perform
+    /// (gp_Cylinder, gp_Cone)`), else tracer.
+    fn cylinder_cone(
+        &mut self,
+        sa: &dyn Surface,
+        sb: &dyn Surface,
+        fa: &Face,
+        fb: &Face,
+        tol: f64,
+    ) -> Result<Vec<FaceFaceCurve>, String> {
+        // Sorted order: face1 (sa) is the cone, face2 (sb) the cylinder.
+        let cone = cone_from_surface(sa).ok_or("FaceFace: cone extraction")?;
+        let cyl = cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction")?;
+        let qi = quadric_quadric_cylinder_cone(&cyl, &cone, tol);
+        let out = self.conics_to_curves(qi, fa, fb);
+        if out.is_empty() {
+            self.general(sa, sb, fa, fb, tol)
+        } else {
+            Ok(out)
+        }
+    }
+
+    /// Cone ∩ cone — coincident-axis circles, parallel equal-angle conic, or
+    /// shared-apex generatrices (via `Perform(gp_Cone, gp_Cone)`), else tracer.
+    fn cone_cone(
+        &mut self,
+        sa: &dyn Surface,
+        sb: &dyn Surface,
+        fa: &Face,
+        fb: &Face,
+        tol: f64,
+    ) -> Result<Vec<FaceFaceCurve>, String> {
+        let c1 = cone_from_surface(sa).ok_or("FaceFace: cone extraction (a)")?;
+        let c2 = cone_from_surface(sb).ok_or("FaceFace: cone extraction (b)")?;
+        let qi = quadric_quadric_cone_cone(&c1, &c2, ANGULAR, tol);
+        let out = self.conics_to_curves(qi, fa, fb);
+        if out.is_empty() {
+            self.general(sa, sb, fa, fb, tol)
+        } else {
+            Ok(out)
+        }
+    }
+
     /// Wrap an `intana` conic (analytic section) into a `FaceFaceCurve`.
     fn conic_curve(
         &self,
@@ -816,7 +963,15 @@ impl FaceFace {
                 self.conic_curve(Arc::new(GeomLine::new(l2)), CurveKind::Line, fa, fb),
             ],
             Circle(c) => vec![self.conic_curve(Arc::new(GeomCircle::new(c)), CurveKind::Circle, fa, fb)],
+            TwoCircles(c1, c2) => vec![
+                self.conic_curve(Arc::new(GeomCircle::new(c1)), CurveKind::Circle, fa, fb),
+                self.conic_curve(Arc::new(GeomCircle::new(c2)), CurveKind::Circle, fa, fb),
+            ],
             Ellipse(e) => vec![self.conic_curve(Arc::new(GeomEllipse::new(e)), CurveKind::Ellipse, fa, fb)],
+            TwoEllipses(e1, e2) => vec![
+                self.conic_curve(Arc::new(GeomEllipse::new(e1)), CurveKind::Ellipse, fa, fb),
+                self.conic_curve(Arc::new(GeomEllipse::new(e2)), CurveKind::Ellipse, fa, fb),
+            ],
             Parabola(p) => vec![self.conic_curve(Arc::new(GeomParabola::new(p)), CurveKind::Parabola, fa, fb)],
             Hyperbola(h) => vec![self.conic_curve(Arc::new(GeomHyperbola::new(h)), CurveKind::Hyperbola, fa, fb)],
             Point(_) | Same | None => Vec::new(),
@@ -1347,5 +1502,97 @@ mod tests {
         ff.set_context(FaceFaceContext);
         assert!(ff.tangent_faces() == false);
         assert!(!ff.is_done());
+    }
+
+    #[test]
+    fn cylinder_cylinder_two_lines() {
+        // Two unit Z-axis cylinders, axes through (0,0,0) and (0.5,0,0): the
+        // section is two generatrix lines at x=0.25, y=±√0.9375.
+        let c1 = cylinder_face(1.0);
+        let ax3 = GpAx3::new(
+            GpPnt::new(0.5, 0.0, 0.0),
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+        )
+        .unwrap();
+        let c2 = TopoBuilder::new().make_face(
+            Arc::new(GeomCylinder::new(GpCylinder::new(ax3, 1.0).unwrap())),
+            &[],
+        );
+        let mut ff = FaceFace::new();
+        ff.set_face1(c1);
+        ff.set_face2(c2);
+        ff.set_tolerance(TOL);
+        ff.perform().expect("perform");
+        let res = ff.result();
+        assert_eq!(res.nb_curves(), 2, "two generatrix lines");
+        let h = (0.9375f64).sqrt();
+        for i in 0..2 {
+            let c = res.curve(i);
+            assert_eq!(c.kind, CurveKind::Line);
+            for k in 0..=4 {
+                let t = c.range.first + (c.range.last - c.range.first) * k as f64 / 4.0;
+                let p = c.curve.d0(t);
+                assert!((p.x() - 0.25).abs() < 1e-6, "x {}", p.x());
+                assert!((p.y().abs() - h).abs() < 1e-6, "y {}", p.y());
+            }
+        }
+    }
+
+    #[test]
+    fn cylinder_sphere_two_circles() {
+        // Unit sphere at the origin, Z-axis cylinder r=0.5 through it: circles
+        // at z=±√0.75, radius 0.5.
+        let cyl = cylinder_face(0.5);
+        let sph = sphere_face(GpPnt::zero(), 1.0);
+        let mut ff = FaceFace::new();
+        ff.set_face1(cyl);
+        ff.set_face2(sph);
+        ff.set_tolerance(TOL);
+        ff.perform().expect("perform");
+        let res = ff.result();
+        assert_eq!(res.nb_curves(), 2, "two circles");
+        for i in 0..2 {
+            let c = res.curve(i);
+            assert_eq!(c.kind, CurveKind::Circle);
+            for k in 0..8 {
+                let t = c.range.first + (c.range.last - c.range.first) * k as f64 / 8.0;
+                let p = c.curve.d0(t);
+                let xy = GpPnt::new(p.x(), p.y(), 0.0).distance(&GpPnt::zero());
+                assert!((xy - 0.5).abs() < 1e-6, "cylinder radius {xy}");
+                assert!((p.distance(&GpPnt::zero()) - 1.0).abs() < 1e-6, "sphere radius");
+            }
+        }
+    }
+
+    #[test]
+    fn sphere_cone_two_circles() {
+        // Cone (apex at the origin, axis +Z, 30°) with a unit-less sphere at
+        // (0,0,3) radius 2: two circles, both on the cone and the sphere.
+        let cone = cone_face(PI / 6.0);
+        let sph = sphere_face(GpPnt::new(0.0, 0.0, 3.0), 2.0);
+        let mut ff = FaceFace::new();
+        ff.set_face1(cone);
+        ff.set_face2(sph);
+        ff.set_tolerance(TOL);
+        ff.perform().expect("perform");
+        let res = ff.result();
+        assert_eq!(res.nb_curves(), 2, "two circles");
+        let sa: Arc<dyn Surface> = Arc::new(GeomCone::new(GpCone::new(GpAx3::standard(), 1.0, PI / 6.0).unwrap()));
+        let sb: Arc<dyn Surface> = Arc::new(GeomSphere::new(GpSphere::new(
+            GpAx3::new(
+                GpPnt::new(0.0, 0.0, 3.0),
+                GpDir::new(0.0, 0.0, 1.0).unwrap(),
+                &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+            )
+            .unwrap(),
+            2.0,
+        )
+        .unwrap()));
+        for i in 0..2 {
+            let c = res.curve(i);
+            assert_eq!(c.kind, CurveKind::Circle);
+            assert_points_on_both(c, sa.as_ref(), sb.as_ref(), 1e-4);
+        }
     }
 }
