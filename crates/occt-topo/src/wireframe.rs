@@ -529,18 +529,36 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
                 cu_max = cu_max.max(u);
                 cv_min = cv_min.min(v);
                 cv_max = cv_max.max(v);
-                vmin = vmin.min(v);
-                vmax = vmax.max(v);
+                // Accumulate v with seam reconciliation: a seam-crossing face's
+                // boundary edges land on opposite sides of the period seam and
+                // their unwrapped `v` sits a whole period apart, which would
+                // inflate the union AABB to the full period and draw geometry
+                // that is not part of the face (a partial torus knuckle turning
+                // into a full tube). Shift each sample by whole periods so it
+                // stays within ±period/2 of the running window.
+                let v_shift = if v_period > 0.0 && vmin.is_finite() && vmax.is_finite() {
+                    period_shift(v, 0.5 * (vmin + vmax), v_period)
+                } else {
+                    0.0
+                };
+                vmin = vmin.min(v + v_shift);
+                vmax = vmax.max(v + v_shift);
             }
             // A boundary edge may be a v-direction line (u constant) or a
             // degenerate point; such edges do not bound the u-window — taking
             // their constant u would pull umin/umax to a value from another
             // seam position (mod 2π) and over-expand the face's u-domain to a
             // full period. Only u-varying edges contribute to the u-extent.
+            // The u interval is reconciled across the seam the same way as v.
             let cu_span = cu_max - cu_min;
             if cu_span > 1e-9 {
-                umin = umin.min(cu_min);
-                umax = umax.max(cu_max);
+                let u_shift = if u_period > 0.0 && umin.is_finite() && umax.is_finite() {
+                    period_shift(0.5 * (cu_min + cu_max), 0.5 * (umin + umax), u_period)
+                } else {
+                    0.0
+                };
+                umin = umin.min(cu_min + u_shift);
+                umax = umax.max(cu_max + u_shift);
             }
             // A boundary edge spanning a full u-period (a full-circle / seam
             // loop) forces the face's u-domain to the whole period — otherwise
@@ -559,7 +577,14 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
         let vres = if full_v_period { (sv0, sv0 + v_period) } else { (vmin, vmax) };
         (su0, su0 + u_period, vres.0, vres.1)
     } else if umin.is_finite() && umax > umin && vmin.is_finite() && vmax > vmin {
-        (umin, umax, vmin, vmax)
+        if full_v_period {
+            // A face that wraps the full tube in v but only a partial u arc:
+            // the v-window spans the whole period (reconciliation would have
+            // collapsed it to a seam sliver).
+            (umin, umax, sv0, sv0 + v_period)
+        } else {
+            (umin, umax, vmin, vmax)
+        }
     } else {
         // No boundary edge with a usable pcurve (face without edges/pcurves):
         // fall back to the surface's natural bounds — OCCT
@@ -571,6 +596,18 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
         } else {
             (0.0, 1.0, 0.0, 1.0)
         }
+    }
+}
+
+/// Whole-period offset to add to an unwrapped periodic coordinate so it lies
+/// within ±period/2 of `ref` — reconciling edges that sit on opposite sides of
+/// a period seam without collapsing a genuine span. Returns 0 when `ref` is
+/// not finite or `period` is not a positive finite value.
+fn period_shift(x: f64, ref_: f64, period: f64) -> f64 {
+    if period <= 0.0 || !period.is_finite() || !ref_.is_finite() {
+        0.0
+    } else {
+        -((x - ref_) / period).round() * period
     }
 }
 
