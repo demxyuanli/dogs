@@ -26,7 +26,7 @@
 //! * **Shape sets** — [`BOPToolsSet::shape_list`] dedupes a shape collection
 //!   and [`BOPToolsSet::type_count`] counts shapes of a given type.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
@@ -337,6 +337,45 @@ impl AlgoTools {
             }
         }
         out
+    }
+
+    /// Splits the keys of the `adjacency` map into connected blocks.
+    ///
+    /// Port of `BOPAlgo_Tools::MakeBlocks` (BOPAlgo_Tools.hxx): each key of
+    /// `adjacency` starts a chain; the chain is grown by repeatedly appending
+    /// the neighbours of its members (a breadth-first walk over the symmetric
+    /// adjacency map — the map `FillMap` produces), so every element belongs to
+    /// exactly one block. Blocks are returned in the order of their first key
+    /// (keys visited in ascending order), matching the OCCT insertion order.
+    pub fn make_blocks<K>(adjacency: &HashMap<K, Vec<K>>) -> Vec<Vec<K>>
+    where
+        K: Clone + Eq + std::hash::Hash + Ord,
+    {
+        let mut keys: Vec<&K> = adjacency.keys().collect();
+        keys.sort();
+        let mut used: HashSet<K> = HashSet::new();
+        let mut blocks: Vec<Vec<K>> = Vec::new();
+        for &key in &keys {
+            if !used.insert(key.clone()) {
+                continue;
+            }
+            // Start the chain.
+            let mut chain: Vec<K> = vec![key.clone()];
+            // Grow it: the neighbours of every member join.
+            let mut i = 0;
+            while i < chain.len() {
+                if let Some(neighbours) = adjacency.get(&chain[i]) {
+                    for n in neighbours {
+                        if used.insert(n.clone()) {
+                            chain.push(n.clone());
+                        }
+                    }
+                }
+                i += 1;
+            }
+            blocks.push(chain);
+        }
+        blocks
     }
 
     /// Reorder the edges of `wire` so they form a closed chain: each edge's end
@@ -1158,6 +1197,35 @@ mod tests {
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].shapes().len(), 1);
         assert_eq!(blocks[1].shapes().len(), 1);
+    }
+
+    #[test]
+    fn make_blocks_connects_transitive_chain() {
+        // 0~1, 1~2 (no direct 0~2): MakeBlocks joins the chain into one block.
+        let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
+        adj.entry(0).or_default().extend([1]);
+        adj.entry(1).or_default().extend([0, 2]);
+        adj.entry(2).or_default().extend([1]);
+        let blocks = AlgoTools::make_blocks(&adj);
+        assert_eq!(blocks.len(), 1, "transitive chain must collapse into one block");
+        assert_eq!(blocks[0].len(), 3);
+        assert!(blocks[0].contains(&0) && blocks[0].contains(&1) && blocks[0].contains(&2));
+    }
+
+    #[test]
+    fn make_blocks_separates_disconnected() {
+        // Two disconnected pairs and one isolated key.
+        let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
+        adj.entry(0).or_default().extend([1]);
+        adj.entry(1).or_default().extend([0]);
+        adj.entry(2).or_default().extend([3]);
+        adj.entry(3).or_default().extend([2]);
+        adj.entry(4).or_default(); // isolated: present as a key, no neighbours
+        let blocks = AlgoTools::make_blocks(&adj);
+        assert_eq!(blocks.len(), 3);
+        let mut sizes: Vec<usize> = blocks.iter().map(|b| b.len()).collect();
+        sizes.sort_unstable();
+        assert_eq!(sizes, vec![1, 2, 2]);
     }
 
     #[test]

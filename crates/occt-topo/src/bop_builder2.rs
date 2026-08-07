@@ -30,19 +30,20 @@
 //! object/tool faces must have relative to the opposite group to pass into the
 //! result, and the states drive the face selection during the building phase.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::abs::ShapeType;
 use crate::algo_tools::AlgoTools;
-use crate::bop_build_common::BopBuildOps;
+use crate::bop_build_common::{is_split_to_reverse, BopBuildOps};
 use crate::bop_build_faces::BopBuilderLike;
-use crate::bop_hist::BopHistory;
-use crate::bopds::{BopdsDS, BopdsPaveBlock};
+use crate::bop_hist::{is_supported_type, BopHistory};
+use crate::bopds::{BopdsDS, BopdsInterf, BopdsPaveBlock};
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::pave_filler::PaveFiller;
 use crate::shape::TopoShape;
+use crate::topo_tools_full::all_subshapes;
 
 /// Result-shape assembly order — matches the per-type `BuildResult` calls of
 /// OCCT `BOPAlgo_Builder::PerformInternal1` (lowest type first).
@@ -360,6 +361,7 @@ impl BopBuilder {
         // Building phase.
         self.build_bop(objects, obj_state, tools, tools_state)?;
         self.build_result()?;
+        self.prepare_history();
         self.post_treat()?;
         Ok(self.result_shape.clone())
     }
@@ -594,12 +596,166 @@ impl BopBuilder {
 
     /// Post-treats the result shape by correcting the tolerances.
     ///
-    /// Port of `BOPAlgo_Builder::PostTreat`: raises the vertex tolerances so
-    /// every vertex covers the endpoints of its edges (capped by the given
-    /// budget).
+    /// Port of `BOPAlgo_Builder::PostTreat` (`BOPAlgo_Builder.cxx`): the
+    /// `CorrectTolerances` + `CorrectShapeTolerances` pair is covered by
+    /// [`AlgoTools::correct_tolerances`]. The OCCT `aMA` avoid-map of the
+    /// source V/E/F shapes is only populated in the non-destructive mode,
+    /// which this port does not exercise (the tolerance pass runs against the
+    /// result shape, matching the default destructive mode).
     fn post_treat(&mut self) -> Result<(), String> {
         AlgoTools::correct_tolerances(&self.result_shape, 0.05);
         Ok(())
+    }
+
+    /// Fills the modified/generated/removed relations of the history from the
+    /// images table and the result shape.
+    ///
+    /// Port of `BOPAlgo_Builder::PrepareHistory` (`BOPAlgo_Builder_4.cxx`):
+    /// for every source shape of the data structure,
+    /// - the split pieces of the shape kept in the result become **modified**
+    ///   from it;
+    /// - the vertices/edges the intersections created from an EDGE/FACE source
+    ///   become **generated** from it ([`BopBuilder::loc_generated`]);
+    /// - a shape with no trace in the result (and no surviving splits) is
+    ///   marked **removed**.
+    fn prepare_history(&mut self) {
+        // All shapes of the result (the root and every sub-shape), keyed by
+        // (TShape, orientation) — the OCCT `TopTools_MapOfShape` identity.
+        let result_keys: HashSet<(usize, u8)> = all_subshapes(&self.result_shape)
+            .iter()
+            .map(|s| (Arc::as_ptr(&s.tshape) as usize, s.orientation() as u8))
+            .collect();
+        let in_result = |s: &TopoShape| {
+            result_keys.contains(&(Arc::as_ptr(&s.tshape) as usize, s.orientation() as u8))
+        };
+
+        let n = self.filler.ds().nb_source_shapes();
+        for i in 0..n {
+            let Some(si) = self.filler.ds().shape_info(i) else { continue };
+            let s = si.shape().clone();
+            if !is_supported_type(&s) {
+                continue;
+            }
+
+            let mut is_modified = false;
+            // Modified: the splits of the shape kept in the result, oriented
+            // like the source (VERTEX/SOLID take the source orientation; an
+            // EDGE/FACE whose direction flips is reversed).
+            let splits: Vec<TopoShape> =
+                self.history.image(&s).map(|v| v.to_vec()).unwrap_or_default();
+            for sp in &splits {
+                if !in_result(sp) {
+                    continue;
+                }
+                let mut sp = sp.clone();
+                let t = sp.shape_type();
+                if t == ShapeType::Vertex || t == ShapeType::Solid {
+                    sp.set_orientation(s.orientation());
+                } else if is_split_to_reverse(&sp, &s) {
+                    sp.set_orientation(sp.orientation().reversed());
+                }
+                let _ = self.history.add_modified(&s, sp);
+                is_modified = true;
+            }
+
+            // Generated: the vertices/edges the intersections created from the
+            // shape, kept in the result.
+            for g in self.loc_generated(&s) {
+                if in_result(&g) {
+                    let _ = self.history.add_generated(&s, g);
+                }
+            }
+
+            // Removed: the shape has no trace in the result nor any surviving
+            // split.
+            if !is_modified && !in_result(&s) {
+                let _ = self.history.add_removed(s);
+            }
+        }
+    }
+
+    /// Shapes generated from `s` by the intersections: the vertices created in
+    /// E/E and E/F interferences (for an EDGE or FACE source) plus, for a
+    /// FACE, the section edges and vertices lying on it.
+    ///
+    /// Port of `BOPAlgo_Builder::LocGenerated` (`BOPAlgo_Builder_4.cxx`). The
+    /// new-vertex part reads the `index_new` records of the E/E and E/F
+    /// interferences; the section edges/vertices of a face come from its
+    /// [`crate::bopds::BopdsFaceInfo`]. Whether a returned shape actually made
+    /// it into the result is checked by the caller
+    /// ([`BopBuilder::prepare_history`]).
+    fn loc_generated(&self, s: &TopoShape) -> Vec<TopoShape> {
+        let mut out: Vec<TopoShape> = Vec::new();
+        let a_type = s.shape_type();
+        if a_type != ShapeType::Edge && a_type != ShapeType::Face {
+            return out;
+        }
+        let ds = self.filler.ds();
+        let Some(n_s) = ds.index(s) else { return out };
+        // Untouched shapes carry no generated elements — an edge without pave
+        // blocks, a face without a face-info entry (the OCCT `HasReference`
+        // guard).
+        let is_face = a_type == ShapeType::Face;
+        if is_face {
+            if !ds.face_info_pool().iter().any(|fi| fi.face_index == n_s) {
+                return out;
+            }
+        } else if !ds.has_pave_blocks(n_s) {
+            return out;
+        }
+
+        // New vertices of the E/E (edge sources) and E/F interferences
+        // containing the shape, deduplicated by their same-domain index.
+        let mut fence: Vec<usize> = Vec::new();
+        if !is_face {
+            Self::collect_interf_vertices(ds, ds.interf_ee(), n_s, &mut fence, &mut out);
+        }
+        Self::collect_interf_vertices(ds, ds.interf_ef(), n_s, &mut fence, &mut out);
+        if !is_face {
+            return out;
+        }
+
+        // Section edges and section vertices lying on the face.
+        if let Some(fi) = ds.face_info_pool().iter().find(|fi| fi.face_index == n_s) {
+            for &(e_idx, _, _) in fi.paves() {
+                if let Some(e) = ds.shape(e_idx) {
+                    out.push(e.clone());
+                }
+            }
+            for &(v_idx, _, _) in fi.verts() {
+                if let Some(v) = ds.shape(v_idx) {
+                    out.push(v.clone());
+                }
+            }
+        }
+        out
+    }
+
+    /// Appends the `index_new` vertices of the interferences `ints` containing
+    /// `n_s`, deduplicated by their same-domain vertex index (the OCCT
+    /// `LocGenerated` loop over `InterfEE` / `InterfEF`).
+    fn collect_interf_vertices(
+        ds: &BopdsDS,
+        ints: &[BopdsInterf],
+        n_s: usize,
+        fence: &mut Vec<usize>,
+        out: &mut Vec<TopoShape>,
+    ) {
+        for it in ints {
+            let Some(n_v) = it.get_index_new() else { continue };
+            if !it.contains(n_s) {
+                continue;
+            }
+            // Resolve the vertex through its same-domain twin.
+            let n_v = ds.has_shape_sd(n_v).unwrap_or(n_v);
+            if fence.contains(&n_v) {
+                continue;
+            }
+            fence.push(n_v);
+            if let Some(v) = ds.shape(n_v) {
+                out.push(v.clone());
+            }
+        }
     }
 }
 
@@ -851,6 +1007,44 @@ mod tests {
         // vertex/edge images produced by the intersection.
         assert!(!b.history().is_empty(), "history should record split images");
         assert!(!b.origins().is_empty(), "origins back-map should be populated");
+    }
+
+    #[test]
+    fn prepare_history_fills_modified_generated_removed() {
+        // Fuse of two identical boxes: the coincident vertex/edge/face images
+        // become modified relations, all kept in the result (`PrepareHistory`,
+        // `BOPAlgo_Builder_4.cxx`).
+        let a = unit_box();
+        let c = unit_box();
+        let mut b = BopBuilder::new();
+        b.set_arguments(&[a.solid.0.clone(), c.solid.0.clone()]);
+        b.perform().unwrap();
+        let m = b.history().modified_map();
+        assert!(!m.is_empty(), "identical boxes must record modified relations");
+        let result_sub: Vec<TopoShape> = all_subshapes(b.result());
+        for splits in m.values() {
+            for sp in splits {
+                assert!(
+                    result_sub.iter().any(|r| r.same_tshape(sp)),
+                    "a modified split must be kept in the result"
+                );
+            }
+        }
+        // Any generated relation also references a result shape.
+        for gens in b.history().generated_map().values() {
+            for gg in gens {
+                assert!(result_sub.iter().any(|r| r.same_tshape(gg)));
+            }
+        }
+        // Cut of a disjoint tool: the tool solid has no trace in the result and
+        // no surviving splits, so it is marked removed.
+        let a = unit_box();
+        let bx = far_box();
+        let mut b2 = BopBuilder::new();
+        b2.set_arguments(&[a.solid.0.clone(), bx.clone()]);
+        let (os, ts) = BoolOp2::Cut.states();
+        b2.perform_internal(&[a.solid.0.clone()], os, &[bx.clone()], ts).unwrap();
+        assert!(b2.history().is_deleted(&bx), "the cut-away tool solid is removed");
     }
 
     #[test]

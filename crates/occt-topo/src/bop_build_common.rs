@@ -137,7 +137,7 @@ fn reverse_orientation(s: &mut TopoShape) {
 /// otherwise the tangent/normal directions of the two geometries are compared
 /// at a common point. `false` is returned for shapes without registered
 /// geometry or of a non face/edge type.
-fn is_split_to_reverse(split: &TopoShape, original: &TopoShape) -> bool {
+pub(crate) fn is_split_to_reverse(split: &TopoShape, original: &TopoShape) -> bool {
     if split.shape_type() != original.shape_type() {
         return false;
     }

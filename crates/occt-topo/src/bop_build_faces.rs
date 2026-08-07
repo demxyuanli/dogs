@@ -647,30 +647,25 @@ pub fn fill_same_domain_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String
         return Ok(());
     }
 
-    // Group by (edge signature, geometric surface).
+    // Group the same-domain faces into connected blocks. OCCT analyzes every
+    // face pair, records the coincident pairs in the `aDMSLS` adjacency map
+    // (`BOPAlgo_Tools::FillMap`) and groups the blocks with
+    // `BOPAlgo_Tools::MakeBlocks` — the transitive closure of the pairwise
+    // same-domain relation.
     let tol = f.fuzzy_value().max(1e-7);
-    let mut groups: Vec<Vec<TopoShape>> = Vec::new();
-    let mut used = vec![false; all_faces.len()];
+    let mut adjacency: HashMap<usize, Vec<usize>> = HashMap::new();
     for i in 0..all_faces.len() {
-        if used[i] {
-            continue;
-        }
-        let mut group = vec![all_faces[i].clone()];
-        used[i] = true;
         for j in (i + 1)..all_faces.len() {
-            if used[j] {
-                continue;
-            }
-            let sd_ij = faces_same_domain(&Face(all_faces[i].clone()), &Face(all_faces[j].clone()), tol);
-            if i == 0 && j == 6 {
-            }
-            if sd_ij {
-                group.push(all_faces[j].clone());
-                used[j] = true;
+            if faces_same_domain(&Face(all_faces[i].clone()), &Face(all_faces[j].clone()), tol) {
+                adjacency.entry(i).or_default().push(j);
+                adjacency.entry(j).or_default().push(i);
             }
         }
-        groups.push(group);
     }
+    let groups: Vec<Vec<TopoShape>> = AlgoTools::make_blocks(&adjacency)
+        .into_iter()
+        .map(|block| block.into_iter().map(|i| all_faces[i].clone()).collect())
+        .collect();
 
     // Fill the same-domain map.
     for group in groups {

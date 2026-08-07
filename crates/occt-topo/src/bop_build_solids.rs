@@ -686,6 +686,14 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         f.history_mut().add_image(&solid, p.clone());
         f.origins_mut().entry(shape_key(&p)).or_default().push(solid.clone());
     }
+
+    // 7. Settle the internal vertices/edges/wires of the arguments (and those
+    //    inside the source solids) into the split solids — the third
+    //    `FillImagesSolids` stage, `BOPAlgo_Builder::FillInternalShapes`
+    //    (`BOPAlgo_Builder_3.cxx`), which this port keeps in
+    //    `crate::bop_build_common::fill_internal_shapes`. It reads the solid
+    //    images just recorded above.
+    crate::bop_build_common::fill_internal_shapes(f)?;
     Ok(())
 }
 
