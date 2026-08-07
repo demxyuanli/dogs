@@ -460,11 +460,30 @@ pub fn make_split_edges<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
 /// Build and attach the p-curve of every edge stored in the face-info pool
 /// onto its face.
 ///
-/// Port of `BOPAlgo_PaveFiller::MakePCurves` (without the face/face section
-/// branch). Each `(edge, face)` pair in the [`crate::bopds::BopdsFaceInfo`]
-/// pool is projected with [`pcurve_full::make_pcurve_full`] and stored in the
-/// [`GeometryRegistry`] side-table via `set_edge_pcurve`; the endpoint vertex
-/// tolerances are then grown to cover the 3D/2D deviation (OCCT `UpdateVertices`).
+/// Port of `BOPAlgo_PaveFiller::MakePCurves` (`BOPAlgo_PaveFiller_7.cxx:589`),
+/// both branches:
+///
+/// 1. **IN / ON pave blocks** — the faces' boundary (`On`) and coincident
+///    (`In`) edges. Each edge without a p-curve on the face yet is projected
+///    with [`pcurve_full::make_pcurve_full`] and stored in the
+///    [`GeometryRegistry`] side-table via `set_edge_pcurve`. An `On` edge that
+///    already carries a p-curve is skipped, matching the OCCT `bHasPC` test
+///    (OCCT step 1: the `PaveBlocksIn` / `PaveBlocksOn` MPC batches).
+/// 2. **Section pave blocks** — the face/face section edges. Their p-curves
+///    are already attached by the F/F intersection ([`crate::pave_intersect`]),
+///    so only the endpoint vertex tolerances are grown to cover the 3D/2D
+///    deviation. This is the OCCT step 2, where the section MPCs carry the
+///    section flag and `MPC::Perform` calls `UpdateVertices` even though no
+///    new p-curve is built. When a section edge has no p-curve yet (a
+///    degenerate pipeline state), it is built first, as OCCT does.
+///
+/// Translation boundaries: the common-block p-curve copy of the OCCT `On`
+/// branch (`BOPTools_AlgoTools2D::AttachExistingPCurve`, reusing a coincident
+/// edge's p-curve) is not ported — recomputation via [`pcurve_full`] is
+/// geometrically equivalent for coincident edges and the Rust common block
+/// stores edge indices + ranges rather than pave-block handles. The periodic
+/// p-curve adjustment (`AdjustPCurveOnSurf`) of the `MPC::Perform` fast path
+/// is likewise left to the F/F solver / trim step.
 pub fn make_pcurves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
     if f.avoid_build_pcurve() {
         return Ok(());
@@ -477,27 +496,77 @@ pub fn make_pcurves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
     for fi in fi_pool {
         let Some(face_shape) = f.ds().shape(fi.face_index).cloned() else { continue };
         let face = Face(face_shape);
-        let paves = fi.paves.clone();
-        for (edge_idx, _t1, _t2) in paves {
+        let face_key = GeometryRegistry::shape_key(&face.0);
+
+        // 1. IN + ON pave blocks: build a p-curve for every edge that does not
+        //    carry one on this face yet.
+        let mut edges: Vec<usize> = fi.paves_in().iter().map(|&(e, _, _)| e).collect();
+        for &(e, _, _) in fi.paves_on() {
+            // OCCT skips the On blocks whose edge already has a curve on the face.
+            let has_pc = f
+                .ds()
+                .shape(e)
+                .map(|s| boptools_2d::curve_on_surface(&Edge(s.clone()), &face).is_some())
+                .unwrap_or(false);
+            if !has_pc {
+                edges.push(e);
+            }
+        }
+        edges.sort_unstable();
+        edges.dedup();
+        for edge_idx in edges {
             let Some(edge_shape) = f.ds().shape(edge_idx).cloned() else { continue };
             let edge = Edge(edge_shape);
             if boptools_2d::curve_on_surface(&edge, &face).is_some() {
                 continue;
             }
-            let pc = match pcurve_full::make_pcurve_full(&edge, &face) {
-                Ok(pc) => pc,
+            match pcurve_full::make_pcurve_full(&edge, &face) {
+                Ok(pc) => {
+                    GeometryRegistry::global().set_edge_pcurve(&edge.0, face_key, pc);
+                }
                 Err(e) => {
                     let msg = format!(
                         "make_pcurves: pcurve failed for edge {edge_idx} on face {}: {e}",
                         fi.face_index
                     );
                     f.add_warning(msg);
-                    continue;
                 }
-            };
-            let face_key = GeometryRegistry::shape_key(&face.0);
-            GeometryRegistry::global().set_edge_pcurve(&edge.0, face_key, pc.clone());
-            update_vertices(&edge, &face, &pc);
+            }
+        }
+
+        // 2. Section pave blocks: the p-curve is already attached by the F/F
+        //    intersection — only the endpoint vertex tolerances are grown
+        //    (`UpdateVertices`). An edge without a p-curve (degenerate pipeline
+        //    state) gets one built first, as `MPC::Perform` does.
+        if on_s1 || on_s2 {
+            let mut section_edges: Vec<usize> = Vec::new();
+            for &(edge_idx, _t1, _t2) in fi.paves() {
+                if !section_edges.contains(&edge_idx) {
+                    section_edges.push(edge_idx);
+                }
+            }
+            for edge_idx in section_edges {
+                let Some(edge_shape) = f.ds().shape(edge_idx).cloned() else { continue };
+                let edge = Edge(edge_shape);
+                let pc = match boptools_2d::curve_on_surface(&edge, &face) {
+                    Some(pc) => pc,
+                    None => match pcurve_full::make_pcurve_full(&edge, &face) {
+                        Ok(pc) => {
+                            GeometryRegistry::global().set_edge_pcurve(&edge.0, face_key, pc.clone());
+                            pc
+                        }
+                        Err(e) => {
+                            let msg = format!(
+                                "make_pcurves: pcurve failed for edge {edge_idx} on face {}: {e}",
+                                fi.face_index
+                            );
+                            f.add_warning(msg);
+                            continue;
+                        }
+                    },
+                };
+                update_vertices(&edge, &face, &pc);
+            }
         }
     }
     Ok(())
@@ -1186,6 +1255,90 @@ mod tests {
         assert!((q0.x() - 0.0).abs() < 1e-6 && (q0.y() - 0.0).abs() < 1e-6, "start {q0:?}");
         let q1 = pc.d0(1.0);
         assert!((q1.x() - 0.0).abs() < 1e-6 && (q1.y() - 1.0).abs() < 1e-6, "end {q1:?}");
+    }
+
+    #[test]
+    fn make_pcurves_builds_pcurve_for_in_and_on_edges() {
+        let b = unit_box();
+        let mut f = StubFiller::default();
+        f.ds.init(&[b.solid.0.clone()]);
+        let e0 = f.ds.index(&b.edges[0].0).unwrap();
+        let f0 = f.ds.index(&b.faces[0].0).unwrap();
+        // Edge 0 has no pcurve on face 0 yet.
+        assert!(boptools_2d::curve_on_surface(&b.edges[0], &b.faces[0]).is_none());
+        {
+            let mut fi = crate::bopds::BopdsFaceInfo::new(f0);
+            fi.add_pave_on(e0, 0.0, 1.0);
+            fi.add_pave_in(e0, 0.0, 1.0);
+            f.ds.change_face_info_pool().push(fi);
+        }
+
+        make_pcurves(&mut f).unwrap();
+
+        // The IN/ON paves got a pcurve (deduplicated: the same edge appears in
+        // both lists, the pcurve is built once).
+        assert!(boptools_2d::curve_on_surface(&b.edges[0], &b.faces[0]).is_some(), "IN/ON pcurve built");
+        assert!(f.warnings.is_empty(), "warnings: {:?}", f.warnings);
+    }
+
+    #[test]
+    fn make_pcurves_builds_on_pcurve_once_when_already_present() {
+        let b = unit_box();
+        let mut f = StubFiller::default();
+        f.ds.init(&[b.solid.0.clone()]);
+        let e0 = f.ds.index(&b.edges[0].0).unwrap();
+        let f0 = f.ds.index(&b.faces[0].0).unwrap();
+        // Edge 0 carries a pcurve on face 0 already.
+        let pc = pcurve_full::make_pcurve_full(&b.edges[0], &b.faces[0]).unwrap();
+        let key = GeometryRegistry::shape_key(&b.faces[0].0);
+        GeometryRegistry::global().set_edge_pcurve(&b.edges[0].0, key, pc);
+        {
+            let mut fi = crate::bopds::BopdsFaceInfo::new(f0);
+            fi.add_pave_on(e0, 0.0, 1.0);
+            f.ds.change_face_info_pool().push(fi);
+        }
+
+        make_pcurves(&mut f).unwrap();
+
+        // The ON block whose edge already has a pcurve is skipped (OCCT bHasPC).
+        assert!(boptools_2d::curve_on_surface(&b.edges[0], &b.faces[0]).is_some());
+        assert!(f.warnings.is_empty(), "warnings: {:?}", f.warnings);
+    }
+
+    #[test]
+    fn make_pcurves_updates_vertices_of_section_edge_with_existing_pcurve() {
+        let b = unit_box();
+        let mut f = StubFiller::default();
+        f.ds.init(&[b.solid.0.clone()]);
+        let e0 = f.ds.index(&b.edges[0].0).unwrap();
+        let f0 = f.ds.index(&b.faces[0].0).unwrap();
+        // Store a deliberately wrong pcurve for edge 0 on face 0 (shifted by
+        // (0.1, 0.1) in UV) — simulating a section pcurve that deviates from
+        // the true surface mapping.
+        let true_pc = pcurve_full::make_pcurve_full(&b.edges[0], &b.faces[0]).unwrap();
+        let mut tr = occt_core::gp::GpTrsf2d::identity();
+        tr.set_translation_vec(&occt_core::gp::GpVec2d::new(0.1, 0.1));
+        let shifted: Arc<dyn Curve2d> = Arc::from(true_pc.transformed(&tr));
+        let face_key = GeometryRegistry::shape_key(&b.faces[0].0);
+        GeometryRegistry::global().set_edge_pcurve(&b.edges[0].0, face_key, shifted);
+        // Register the edge as a section pave on the face.
+        {
+            let mut fi = crate::bopds::BopdsFaceInfo::new(f0);
+            fi.add_pave(e0, 0.0, 1.0);
+            f.ds.change_face_info_pool().push(fi);
+        }
+        let v0 = edge_vertex_shapes(&b.edges[0])[0].clone();
+        let v1 = edge_vertex_shapes(&b.edges[0])[1].clone();
+        let tol_before = BRepTool::vertex_tolerance(&Vertex(v0.clone()));
+
+        make_pcurves(&mut f).unwrap();
+
+        // The section branch calls UpdateVertices even though the pcurve already
+        // exists: the boundary vertex tolerances grow to cover the 3D/2D gap.
+        let tol_after = BRepTool::vertex_tolerance(&Vertex(v0.clone()));
+        assert!(tol_after > tol_before, "vertex tolerance grew from {tol_before} to {tol_after}");
+        let tol_after1 = BRepTool::vertex_tolerance(&Vertex(v1.clone()));
+        assert!(tol_after1 > tol_before, "second vertex tolerance grew: {tol_after1}");
     }
 
     #[test]
