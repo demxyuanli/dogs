@@ -219,7 +219,7 @@ fn holed_plate_step_to_obj() {
 fn shape_family_step_to_obj() {
     // The B-spline / offset-surface samples (previously un-parseable) now
     // export valid non-degenerate meshes.
-    for name in ["Shape", "Shape-1", "Shape-2", "OffsetPlaneHoleEdge"] {
+    for name in ["Shape", "Shape-1", "Shape-2", "OffsetPlaneHoleEdge", "linkrods", "screw"] {
         let (obj, shape_name) = step_to_obj(name);
         assert_valid_obj(name, &obj);
         write_output(&name, &obj);
