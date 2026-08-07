@@ -39,9 +39,13 @@
 //!   (`GetFaceOff`, angle-normals around a shared edge) is not ported — the
 //!   on-boundary case it decides is covered heuristically by
 //!   [`is_covering_face`].
-//! * The connexity-block grouping (classify one face of a connected block,
-//!   apply the verdict to the block) is skipped — every candidate is
-//!   classified individually, which is a cost increase, not a semantic change.
+//! * The connexity-block grouping (`BOPAlgo_FillIn3DParts::MakeConnexityBlock`)
+//!   is ported in [`classify_faces_in_solid`]: candidates connect into blocks
+//!   through edges that are not on the solid and not degenerated, one
+//!   representative face (the first block face carrying a solid/degenerated
+//!   edge) is classified, and its verdict applies to the whole block — a cost
+//!   reduction with no semantic change, since every block face lies in the
+//!   same region of the solid.
 //! * Classification runs against the *original* solid, whose volume equals the
 //!   draft solid's; only the boundary-edge set passed to
 //!   [`face_state_in_solid`] comes from the split faces (OCCT classifies
@@ -744,10 +748,15 @@ fn collect_all_candidate_faces<B: BopBuildOps>(f: &B) -> Vec<TopoShape> {
 ///    the solid's box (the `BOPTools_BoxTree` BVH selector, ported as a
 ///    [`shape_bbox_with_margin`] overlap check; `shape_bbox` samples a face's
 ///    surface on a 16×16 UV grid, so the cull over-approximates the face);
-/// 3. a surviving face is classified with [`face_state_in_solid`] — the
+/// 3. the survivors are grouped into connexity blocks through edges that are
+///    not on the solid and not degenerated ([`connexity_blocks`], the
+///    `BOPAlgo_FillIn3DParts::MakeConnexityBlock` BFS), and one representative
+///    of each block — the first face carrying a solid/degenerated edge, else
+///    the block start — is classified with [`face_state_in_solid`] (the
 ///    `BOPTools_AlgoTools::ComputeState(Face, Solid)` fallback path of
-///    `IsInternalFace` — and the on-boundary [`is_covering_face`] covering
-///    test decides the faces `ComputeState` leaves `On`.
+///    `IsInternalFace`), with the on-boundary [`is_covering_face`] covering
+///    test deciding the `On` faces. The representative's verdict applies to
+///    the whole block.
 fn classify_faces_in_solid(
     candidates: &[TopoShape],
     solid: &TopoShape,
@@ -757,7 +766,10 @@ fn classify_faces_in_solid(
     solid_box: &BndBox,
     tol: f64,
 ) -> Vec<TopoShape> {
-    let mut in_faces: Vec<TopoShape> = Vec::new();
+    // 1. Box cull + own-face filter (the `BOPTools_BoxTree` selector and the
+    //    `aMSF` fence): candidates already part of the solid or whose box does
+    //    not reach the solid's box are dropped before grouping.
+    let mut sel: Vec<TopoShape> = Vec::new();
     for im in candidates {
         if own_faces.contains(&shape_key(im)) {
             continue;
@@ -765,19 +777,107 @@ fn classify_faces_in_solid(
         if shape_bbox_with_margin(im, tol).is_out_box(solid_box) {
             continue;
         }
-        let state = face_state_in_solid(&Face(im.clone()), solid, own_edges, tol);
-        let covering = state == FaceState::On && is_covering_face(im, faces, own_edges);
+        sel.push(im.clone());
+    }
+    // 2. Connexity-block grouping of the survivors, classified through one
+    //    representative face per block (OCCT `BOPAlgo_FillIn3DParts::Perform`).
+    let mut in_faces: Vec<TopoShape> = Vec::new();
+    for (block, rep) in connexity_blocks(&sel, own_edges) {
+        let state = face_state_in_solid(&Face(rep.clone()), solid, own_edges, tol);
+        let covering = state == FaceState::On && is_covering_face(&rep, faces, own_edges);
         if state != FaceState::In && !covering {
             continue;
         }
-        let mut fwd = im.clone();
-        fwd.set_orientation(Orientation::Forward);
-        in_faces.push(fwd);
-        let mut rev = im.clone();
-        rev.set_orientation(Orientation::Reversed);
-        in_faces.push(rev);
+        for im in block {
+            let mut fwd = im.clone();
+            fwd.set_orientation(Orientation::Forward);
+            in_faces.push(fwd);
+            let mut rev = im.clone();
+            rev.set_orientation(Orientation::Reversed);
+            in_faces.push(rev);
+        }
     }
     in_faces
+}
+
+/// Connexity blocks of `faces`, grouping faces that connect through edges
+/// *not* on the solid and not degenerated, with the block's classification
+/// representative.
+///
+/// Mirrors `BOPAlgo_FillIn3DParts::MakeConnexityBlock`:
+/// - an edge on the solid (`solid_edges`, OCCT `aMSE`) or a degenerated edge
+///   is a barrier: traversal does not cross it (so candidates glued along a
+///   solid boundary are separate blocks), and the first face of the block
+///   carrying such an edge becomes the representative `theFaceToClassify`;
+/// - a block with no barrier edge is classified by its start face.
+///
+/// Returns `(block faces, representative face)` per block.
+fn connexity_blocks(faces: &[TopoShape], solid_edges: &HashSet<EKey>) -> Vec<(Vec<TopoShape>, TopoShape)> {
+    let n = faces.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    // Per-face edges with the degeneracy flag (OCCT `BRep_Tool::Degenerated`)
+    // and their undirected keys.
+    let face_eds: Vec<Vec<(Edge, bool)>> = faces
+        .iter()
+        .map(|f| {
+            edges_of(f)
+                .into_iter()
+                .map(|e| (e.clone(), BRepTool::is_degenerated(&e)))
+                .collect()
+        })
+        .collect();
+    let face_keys: Vec<Vec<EKey>> = face_eds
+        .iter()
+        .map(|es| es.iter().map(|(e, _)| edge_key(e)).collect())
+        .collect();
+    // Edge -> faces containing it (the candidate EF map `aMEFP`).
+    let mut edge_faces: HashMap<EKey, Vec<usize>> = HashMap::new();
+    for (i, keys) in face_keys.iter().enumerate() {
+        for &k in keys {
+            edge_faces.entry(k).or_default().push(i);
+        }
+    }
+    let mut visited = vec![false; n];
+    let mut out = Vec::new();
+    for start in 0..n {
+        if visited[start] {
+            continue;
+        }
+        // Breadth-first traversal over non-barrier shared edges, mirroring the
+        // growing-list iteration of `MakeConnexityBlock`.
+        let mut block: Vec<usize> = Vec::new();
+        let mut rep: Option<usize> = None;
+        let mut queue = std::collections::VecDeque::from([start]);
+        visited[start] = true;
+        while let Some(i) = queue.pop_front() {
+            block.push(i);
+            for ((_, deg), &k) in face_eds[i].iter().zip(&face_keys[i]) {
+                if solid_edges.contains(&k) || *deg {
+                    // Barrier edge: does not connect the block, and the first
+                    // face carrying one is the classification representative.
+                    if rep.is_none() {
+                        rep = Some(i);
+                    }
+                    continue;
+                }
+                if let Some(neigh) = edge_faces.get(&k) {
+                    for &j in neigh {
+                        if !visited[j] {
+                            visited[j] = true;
+                            queue.push_back(j);
+                        }
+                    }
+                }
+            }
+        }
+        out.push((
+            block.iter().map(|&i| faces[i].clone()).collect(),
+            faces[rep.unwrap_or(start)].clone(),
+        ));
+    }
+    out
 }
 
 /// Whether `im` is a covering face of the solid's own split `faces`: it is
@@ -1464,6 +1564,51 @@ mod tests {
             2,
             "inner face kept FORWARD and REVERSED"
         );
+    }
+
+    #[test]
+    fn connexity_blocks_group_via_non_solid_edges_and_split_at_barriers() {
+        // Two adjacent faces of a box share an edge: with no solid edges they
+        // form one connexity block (connected through the shared non-barrier
+        // edge) classified by the block-start representative; once that shared
+        // edge is marked as a solid boundary edge it becomes a barrier and the
+        // two faces split into separate singleton blocks, each its own
+        // representative (mirroring `BOPAlgo_FillIn3DParts::MakeConnexityBlock`).
+        let boxed = axis_box(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let fs = faces_of(&boxed.0);
+        let (a, b, shared) = {
+            let ka: HashSet<EKey> = face_edges(&Face(fs[0].0.clone())).into_iter().collect();
+            let mut bf = None;
+            let mut sk = None;
+            for f in &fs[1..] {
+                for k in face_edges(&Face(f.0.clone())) {
+                    if ka.contains(&k) {
+                        bf = Some(f.0.clone());
+                        sk = Some(k);
+                        break;
+                    }
+                }
+                if bf.is_some() {
+                    break;
+                }
+            }
+            (fs[0].0.clone(), bf.expect("adjacent face"), sk.expect("shared edge"))
+        };
+        // No solid edges: one block connected through the shared edge.
+        let blocks = connexity_blocks(&[a.clone(), b.clone()], &HashSet::new());
+        assert_eq!(blocks.len(), 1, "two faces connected through a non-solid edge");
+        let (bfaces, brep) = &blocks[0];
+        assert_eq!(bfaces.len(), 2);
+        assert!(brep.same_tshape(&a), "representative is the block start (no barrier edge)");
+        // The shared edge as a solid boundary: the barrier splits the two faces.
+        let mut se: HashSet<EKey> = HashSet::new();
+        se.insert(shared);
+        let blocks = connexity_blocks(&[a.clone(), b.clone()], &se);
+        assert_eq!(blocks.len(), 2, "solid boundary edge splits the connexity block");
+        for (bfaces, brep) in &blocks {
+            assert_eq!(bfaces.len(), 1, "each barrier-separated face is its own block");
+            assert!(brep.same_tshape(&bfaces[0]), "a barrier-edge face is its own representative");
+        }
     }
 
     #[test]
