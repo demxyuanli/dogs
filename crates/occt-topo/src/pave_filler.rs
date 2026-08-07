@@ -313,7 +313,9 @@ impl PaveFiller {
     ///
     /// `init` → `prepare` → `perform_vv` → `perform_ve` → SD-vertex update →
     /// `perform_ee` → SD-vertex update → `perform_vf` → SD-vertex update →
-    /// `perform_ef` → SD-vertex update → interference-SD update → `perform_ff`
+    /// `perform_ef` → SD-vertex update → interference-SD update →
+    /// `repeat_intersection` → `force_interf_ee` → `force_interf_ef` →
+    /// `refine_face_info_in` → `perform_ff` → `update_blocks_with_shared_vertices`
     /// → `make_split_edges` → SD-vertex update → `make_blocks` →
     /// interference-SD update → `make_pcurves`.
     ///
@@ -355,6 +357,12 @@ impl PaveFiller {
         self.check_errors()?;
         self.perform_ff()?;
         self.check_errors()?;
+        // OCCT `PerformInternal`: `UpdateBlocksWithSharedVertices` runs right
+        // after FF; in the default destructive mode its gate returns at once.
+        self.update_blocks_with_shared_vertices();
+        // OCCT `PerformInternal`: after FF the IN face-info pave blocks that
+        // are also ON (boundary) blocks are dropped from the face info.
+        self.ds.refine_face_info_in();
         // OCCT order: MakeSplitEdges (right after FF) precedes MakeBlocks;
         // MakePCurves follows MakeBlocks.
         self.make_split_edges()?;
@@ -504,6 +512,21 @@ impl PaveFiller {
     /// [`crate::pave_intersect::perform_ff`].
     fn perform_ff(&mut self) -> Result<(), String> {
         crate::pave_intersect::perform_ff(self)
+    }
+
+    /// Updates the pave blocks of the faces with vertices shared by the faces.
+    ///
+    /// Source: `BOPAlgo_PaveFiller::UpdateBlocksWithSharedVertices`
+    /// (`BOPAlgo_PaveFiller_6.cxx`). The whole body is gated behind the
+    /// non-destructive mode (`if (!myNonDestructive) return;`); the default
+    /// destructive mode returns immediately, so only the gate is ported — the
+    /// non-destructive-only body (`EstimatePaveOnCurve` + the shared-vertex
+    /// updates) is left as a translation boundary.
+    fn update_blocks_with_shared_vertices(&mut self) {
+        if !self.non_destructive() {
+            return;
+        }
+        // ponytail: body not translated — reachable only in non-destructive mode.
     }
 
     /// Groups coincident pave blocks into common blocks. Source: `MakeBlocks`

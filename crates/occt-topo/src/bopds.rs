@@ -633,6 +633,9 @@ impl Default for BopdsCommonBlock {
 /// - `paves_in` (`In`): edges lying on the face (an edge of the other operand
 ///   coincident with the face, e.g. the triangulated base of a cylinder
 ///   standing on a planar face). They do not split the face.
+/// - `paves_on` (`On`): pave blocks of the face's own boundary edges, built by
+///   [`BopdsDS::update_face_info_on`]. `BOPDS_DS::RefineFaceInfoIn` drops the
+///   IN blocks that are also ON (boundary) blocks.
 ///
 /// Each pave-block entry is `(edge index, first parameter, last parameter)`.
 /// Vertices lying on the face are kept separately in `verts` — the OCCT
@@ -647,6 +650,8 @@ pub struct BopdsFaceInfo {
     pub paves: Vec<(usize, f64, f64)>,
     /// IN pave blocks lying on the face (coincident edges of the other operand).
     pub paves_in: Vec<(usize, f64, f64)>,
+    /// ON pave blocks lying on the face (the face's own boundary edges).
+    pub paves_on: Vec<(usize, f64, f64)>,
     /// Vertices lying on the face (V/F and E/F hits), `(vertex index, u, v)`.
     pub verts: Vec<(usize, f64, f64)>,
 }
@@ -654,7 +659,13 @@ pub struct BopdsFaceInfo {
 impl BopdsFaceInfo {
     /// Constructor with the face index.
     pub fn new(face_index: usize) -> Self {
-        Self { face_index, paves: Vec::new(), paves_in: Vec::new(), verts: Vec::new() }
+        Self {
+            face_index,
+            paves: Vec::new(),
+            paves_in: Vec::new(),
+            paves_on: Vec::new(),
+            verts: Vec::new(),
+        }
     }
 
     /// Set the index of the face.
@@ -685,6 +696,16 @@ impl BopdsFaceInfo {
     /// Returns the IN pave blocks of the face.
     pub fn paves_in(&self) -> &[(usize, f64, f64)] {
         &self.paves_in
+    }
+
+    /// Adds an ON pave block (a pave block of the face's boundary edge).
+    pub fn add_pave_on(&mut self, edge: usize, first: f64, last: f64) {
+        self.paves_on.push((edge, first, last));
+    }
+
+    /// Returns the ON pave blocks of the face (its boundary-edge pave blocks).
+    pub fn paves_on(&self) -> &[(usize, f64, f64)] {
+        &self.paves_on
     }
 
     /// Adds a vertex lying on the face (`BOPDS_FaceInfo::VerticesSc`/`On`/`In`).
@@ -1403,6 +1424,59 @@ impl BopdsDS {
     /// Mutable access to the face-info pool.
     pub fn change_face_info_pool(&mut self) -> &mut Vec<BopdsFaceInfo> {
         &mut self.face_info_pool
+    }
+
+    /// Builds the ON set of the face `i`: the pave blocks of the face's own
+    /// boundary edges. Source: `BOPDS_DS::UpdateFaceInfoOn` + `FaceInfoOn`.
+    ///
+    /// A face without a face-info entry (untouched by the intersection) is
+    /// skipped, matching the OCCT `!aShapeInfo.HasReference()` guard. For each
+    /// boundary EDGE sub-shape the edge's pave blocks are collected (OCCT
+    /// redirects through `RealPaveBlock`); boundary VERTEX sub-shapes feed the
+    /// ON vertex set, which our `verts` pool does not track separately — its
+    /// only consumer is the non-destructive-mode `UpdateBlocksWithSharedVertices`
+    /// body, which is not translated.
+    pub fn update_face_info_on(&mut self, i: usize) {
+        if !self.face_info_pool.iter().any(|fi| fi.face_index == i) {
+            return;
+        }
+        let mut on = Vec::new();
+        if let Some(s) = self.shape_info(i) {
+            for &sub in s.sub_shapes() {
+                let is_edge = self
+                    .shape_info(sub)
+                    .map(|s| s.shape_type() == ShapeType::Edge)
+                    .unwrap_or(false);
+                if !is_edge {
+                    continue;
+                }
+                for pb in self.pave_blocks(sub) {
+                    on.push((pb.edge_index, pb.first, pb.last));
+                }
+            }
+        }
+        if let Some(fi) = self.face_info_pool.iter_mut().find(|fi| fi.face_index == i) {
+            fi.paves_on = on;
+        }
+    }
+
+    /// Removes from the IN pave blocks of every source face the blocks that
+    /// are also ON (boundary) pave blocks.
+    /// Source: `BOPDS_DS::RefineFaceInfoIn`.
+    ///
+    /// OCCT iterates the source shapes and skips the faces without a face-info
+    /// entry; the pool holds exactly those entries, so iterating it directly
+    /// is equivalent. The blocks are compared by `(edge, first, last)`, the
+    /// handle-identity test of the OCCT `IndexedMap`s projected onto our
+    /// tuple representation of the face-info sets.
+    pub fn refine_face_info_in(&mut self) {
+        for fi in self.face_info_pool.iter_mut() {
+            if fi.paves_in.is_empty() || fi.paves_on.is_empty() {
+                continue;
+            }
+            let on = &fi.paves_on;
+            fi.paves_in.retain(|pb| !on.contains(pb));
+        }
     }
 
     /// Adds same-domain shape information (`index` and `index_sd`).
@@ -2424,5 +2498,67 @@ mod tests {
         assert!(ds.add_interf_ee(2, 9, None));
         ds.update_interfs_with_sd_vertices();
         assert_eq!(ds.interf_ee()[0].get_index_new(), None);
+    }
+
+    #[test]
+    fn refine_face_info_in_drops_in_blocks_that_are_on() {
+        let mut ds = BopdsDS::new();
+        let pool = ds.change_face_info_pool();
+        // Face 0: one IN block is also a boundary (ON) block, one is not.
+        let mut f0 = BopdsFaceInfo::new(0);
+        f0.add_pave_in(3, 0.1, 0.9); // also ON below
+        f0.add_pave_in(7, 0.0, 1.0); // not ON
+        f0.add_pave_on(3, 0.1, 0.9);
+        pool.push(f0);
+        // Face 1: empty ON set — nothing to refine.
+        let mut f1 = BopdsFaceInfo::new(1);
+        f1.add_pave_in(5, 0.0, 1.0);
+        pool.push(f1);
+
+        ds.refine_face_info_in();
+
+        let r0 = &ds.face_info_pool()[0];
+        assert_eq!(r0.paves_in(), &[(7, 0.0, 1.0)]);
+        assert_eq!(r0.paves_on(), &[(3, 0.1, 0.9)]);
+        assert_eq!(ds.face_info_pool()[1].paves_in(), &[(5, 0.0, 1.0)]);
+    }
+
+    #[test]
+    fn update_face_info_on_collects_boundary_edge_pave_blocks() {
+        let mut ds = BopdsDS::new();
+        let b = unit_box();
+        ds.append(b.solid.0.clone()).unwrap();
+        // A box face touches 4 boundary edges; find the first face.
+        let face = (0..ds.nb_shapes())
+            .find(|&i| ds.shape_info(i).map(|s| s.shape_type()) == Some(ShapeType::Face))
+            .expect("box has a face");
+        // OCCT `UpdateFaceInfoOn` only acts on faces with a face-info entry.
+        ds.change_face_info_pool().push(BopdsFaceInfo::new(face));
+        // Split the face's boundary edges so they carry pave blocks.
+        let edges: Vec<usize> = ds
+            .shape_info(face)
+            .unwrap()
+            .sub_shapes()
+            .iter()
+            .copied()
+            .filter(|&s| ds.shape_info(s).map(|si| si.shape_type()) == Some(ShapeType::Edge))
+            .collect();
+        assert_eq!(edges.len(), 4);
+        for &e in &edges {
+            ds.init_pave_blocks_for_edge(e);
+        }
+
+        ds.update_face_info_on(face);
+
+        let expected: Vec<(usize, f64, f64)> = edges
+            .iter()
+            .flat_map(|&e| {
+                ds.pave_blocks(e)
+                    .iter()
+                    .map(|pb| (pb.edge_index, pb.first, pb.last))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(ds.face_info_pool()[0].paves_on(), expected.as_slice());
     }
 }
