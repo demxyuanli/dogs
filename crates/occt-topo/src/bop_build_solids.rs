@@ -222,25 +222,12 @@ fn collect_solid_split_faces<B: BopBuildOps>(f: &B, solid: &TopoShape) -> Vec<To
 /// closed shell into a solid. Mirrors the `BOPAlgo_BuilderSolid` output
 /// assembly: each closed shell of the split is one solid of the result.
 fn split_faces_into_solids(faces: &[TopoShape]) -> Result<Vec<TopoShape>, String> {
-    let mut splitter = ShellSplitter::new();
-    for fc in faces {
-        splitter.add_start_element(fc.clone());
-    }
-    splitter.perform()?;
-    let shells = splitter.shells().to_vec();
-    // Close open shells (a piece cut by the intersection is missing the section
-    // face, which the shell splitter leaves as a loose face because the section
-    // edge is shared by more than two faces) by attaching the loose faces that
-    // cover their open boundary.
-    let shells = close_open_shells(&shells, faces);
-    let bld = TopoBuilder::new();
-    let mut out = Vec::new();
-    for sh in shells {
-        let mut solid = Solid::new();
-        bld.add(&mut solid.0, &sh);
-        out.push(solid.0);
-    }
-    Ok(out)
+    // The faithful `BOPAlgo_SplitSolid` assembly: the four-phase
+    // `BOPAlgo_BuilderSolid` pipeline (ShapesToAvoid → Loops → Areas →
+    // InternalShapes) turns the split + internal faces into region solids.
+    // `close_open_shells` (re-attaching the shared section face onto the open
+    // pieces) is applied inside `PerformLoops`.
+    crate::builder_solid::build_solids_from_faces(faces)
 }
 
 /// Closes open shells of `shells` using loose faces from `all_faces`.
@@ -251,7 +238,7 @@ fn split_faces_into_solids(faces: &[TopoShape]) -> Result<Vec<TopoShape>, String
 /// so they are not bridges). This attaches each loose face to every open shell
 /// whose open boundary it covers, copying the face when it closes more than one
 /// shell.
-fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -> Vec<TopoShape> {
+pub(crate) fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -> Vec<TopoShape> {
     let bld = TopoBuilder::new();
 
     // The loose faces: single faces of `all_faces` not already used by a

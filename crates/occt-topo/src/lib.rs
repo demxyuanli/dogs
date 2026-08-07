@@ -140,3 +140,4 @@ pub mod bop_builder2;
 pub mod bop_build_faces;
 pub mod bop_build_common;
 pub mod bop_build_solids;
+pub mod builder_solid;
