@@ -14,6 +14,42 @@
 //! sibling `crate::bop_build_common` module uses — so this module stays
 //! independent of the concrete `BopBuilder` fields and is verified standalone.
 //!
+//! * **Full flow** — [`build_split_solids_full`] is the operator entry point
+//!   (`BopBuilder::fill_images_solids`). It mirrors the complete
+//!   `FillImagesSolids` flow, split into the two OCCT stages:
+//!   1. **`FillIn3DParts`** — [`collect_all_candidate_faces`] gathers every
+//!      source face and its split images into the global candidate list
+//!      (OCCT `aLFaces` + `aMFence`), and [`classify_faces_in_solid`] runs one
+//!      `BOPAlgo_FillIn3DParts::Perform` per solid: candidates already part of
+//!      the solid are skipped (`aMSF`), faces whose box does not reach the
+//!      solid's box are culled (the `BOPTools_BoxTree` BVH selector, ported as
+//!      a pairwise [`crate::bbox_from_geometry::shape_bbox`] overlap check),
+//!      and the survivors are classified with [`face_state_in_solid`] plus the
+//!      [`is_covering_face`] on-boundary test.
+//!   2. **`BuildSplitSolids`** — the split faces of each solid (own split
+//!      faces + the classified internal faces, each FORWARD and REVERSED) are
+//!      grouped into closed shells with [`crate::shell_splitter::ShellSplitter`]
+//!      and wrapped into solids.
+//!
+//! ## Translation boundaries vs OCCT
+//!
+//! * `IsInternalFace` is ported through its `ComputeState(Face, Solid)`
+//!   fallback (edge-midpoint / interior-point classification in
+//!   [`face_state_in_solid`]); the primary *method of angles*
+//!   (`GetFaceOff`, angle-normals around a shared edge) is not ported — the
+//!   on-boundary case it decides is covered heuristically by
+//!   [`is_covering_face`].
+//! * The connexity-block grouping (classify one face of a connected block,
+//!   apply the verdict to the block) is skipped — every candidate is
+//!   classified individually, which is a cost increase, not a semantic change.
+//! * Classification runs against the *original* solid, whose volume equals the
+//!   draft solid's; only the boundary-edge set passed to
+//!   [`face_state_in_solid`] comes from the split faces (OCCT classifies
+//!   against the draft solid built by `BuildDraftSolid`).
+//! * `BOPAlgo_SplitSolid` / `BOPAlgo_BuilderSolid` (the true solid assembly)
+//!   is replaced by [`ShellSplitter`] + [`close_open_shells`]; the
+//!   `aMST` same-domain face-set dedupe is replaced by [`merge_sharing_faces`].
+//!
 //! * **Draft pass** — [`fill_images_solids`] rebuilds every source solid from
 //!   its face splits: each face of the solid is replaced by its image pieces
 //!   (a split whose orientation is inverted relative to the original face is
@@ -34,11 +70,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use occt_core::bnd::BndBox;
 use occt_core::gp::{GpAx3, GpPln, GpPnt};
 use occt_geom::GeomPlane;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::AlgoTools;
+use crate::bbox_from_geometry::{shape_bbox, shape_bbox_with_margin};
 use crate::bop_build_common::{build_draft_solid, BopBuildOps};
 use crate::brep_extrema::{closest_point_on_face, is_inside};
 use crate::brep_surface::{surface_closest_params, surface_normal};
@@ -525,6 +563,12 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         .collect();
     let tol = f.fuzzy_value().max(1e-7);
 
+    // FillIn3DParts input shared by every solid's classification: the global
+    // candidate faces (all source faces + their splits) and the solids' boxes.
+    let candidates = collect_all_candidate_faces(f);
+    let solid_boxes: HashMap<usize, BndBox> =
+        solids.iter().map(|s| (shape_key(s), shape_bbox(s))).collect();
+
     // Interior regions already claimed by a previous source solid: an interior
     // piece with a bounding box already seen is a duplicate overlap region.
     let mut seen: Vec<BBoxKey> = Vec::new();
@@ -550,40 +594,29 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         // 1. Split faces of the solid itself.
         let mut faces = collect_solid_split_faces(f, &solid);
 
-        // 2. Internal faces: faces of the other solids that lie inside or
-        //    cover this one. A face strictly inside the solid is internal; a
-        //    face on the solid's boundary whose edges all lie on the solid's
-        //    own split faces covers an open boundary — e.g. the cylinder base
-        //    over the box-top hole — and is included the same way so the hole
-        //    closes (mirrors `BOPAlgo_Builder::FillIn3DParts` + the covering
-        //    section faces that complete a split shell).
-        let mut in_faces: Vec<TopoShape> = Vec::new();
+        // 2. Internal faces — the FillIn3DParts classification of the global
+        //    candidates (every source face and its split images) against this
+        //    solid. A face strictly inside the solid is internal; a face on the
+        //    solid's boundary whose edges all lie on the solid's own split
+        //    faces covers an open boundary — e.g. the cylinder base over the
+        //    box-top hole — and is included the same way so the hole closes.
         let own_edges: HashSet<EKey> = faces.iter().flat_map(|f| face_edges(&Face(f.clone()))).collect();
-        for other in &solids {
-            if other.same_tshape(&solid) {
-                continue;
+        let own_faces: HashSet<usize> = faces_of(&solid).into_iter().flat_map(|fc| {
+            let k = shape_key(&fc.0);
+            match f.history().image(&fc.0) {
+                Some(imgs) => imgs.iter().map(|im| shape_key(im)).chain([k]).collect(),
+                None => vec![k],
             }
-            for fc in faces_of(other) {
-                let images: Vec<TopoShape> = match f.history().image(&fc.0) {
-                    Some(imgs) => imgs.to_vec(),
-                    None => vec![fc.0.clone()],
-                };
-                for im in images {
-                    let state = face_state_in_solid(&Face(im.clone()), &solid, &own_edges, tol);
-                    let covering =
-                        state == FaceState::On && is_covering_face(&im, &faces, &own_edges);
-                    if state != FaceState::In && !covering {
-                        continue;
-                    }
-                    let mut fwd = im.clone();
-                    fwd.set_orientation(Orientation::Forward);
-                    in_faces.push(fwd);
-                    let mut rev = im.clone();
-                    rev.set_orientation(Orientation::Reversed);
-                    in_faces.push(rev);
-                }
-            }
-        }
+        }).collect();
+        let in_faces = classify_faces_in_solid(
+            &candidates,
+            &solid,
+            &own_faces,
+            &faces,
+            &own_edges,
+            &solid_boxes[&shape_key(&solid)],
+            tol,
+        );
 
         // A solid that neither splits nor hosts internal faces is unchanged.
         if !solid_interfered(f, &solid) && in_faces.is_empty() {
@@ -654,6 +687,89 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         f.origins_mut().entry(shape_key(&p)).or_default().push(solid.clone());
     }
     Ok(())
+}
+
+/// The global candidate face list of the FillIn3DParts classification
+/// (`BOPAlgo_Builder::FillIn3DParts`): every source FACE shape of the data
+/// structure replaced by its image splits, an un-split face kept as-is,
+/// deduplicated by `TShape` identity (the OCCT `aMFence` fence map).
+fn collect_all_candidate_faces<B: BopBuildOps>(f: &B) -> Vec<TopoShape> {
+    let n = f.ds().nb_source_shapes();
+    let mut fence: Vec<TopoShape> = Vec::new();
+    let mut out: Vec<TopoShape> = Vec::new();
+    for i in 0..n {
+        let Some(si) = f.ds().shape_info(i) else { continue };
+        if si.shape_type() != ShapeType::Face {
+            continue;
+        }
+        let face = si.shape().clone();
+        match f.history().image(&face) {
+            Some(imgs) => {
+                for im in imgs {
+                    if !fence.iter().any(|x| x.same_tshape(im)) {
+                        fence.push(im.clone());
+                        out.push(im.clone());
+                    }
+                }
+            }
+            None => {
+                if !fence.iter().any(|x| x.same_tshape(&face)) {
+                    fence.push(face.clone());
+                    out.push(face);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Classifies the global candidate faces against `solid` and returns those
+/// lying inside it or covering an open boundary of its split faces, each as a
+/// FORWARD + REVERSED pair (the shell of a split piece needs both orientations
+/// to close against its neighbours).
+///
+/// Mirrors one `BOPAlgo_FillIn3DParts::Perform` task of
+/// `BOPAlgo_Tools::ClassifyFaces`:
+/// 1. candidates already part of the solid — its own faces and their split
+///    images (`aMSF`) — are skipped;
+/// 2. the pairwise box cull rejects faces whose bounding box does not reach
+///    the solid's box (the `BOPTools_BoxTree` BVH selector, ported as a
+///    [`shape_bbox_with_margin`] overlap check; `shape_bbox` samples a face's
+///    surface on a 16×16 UV grid, so the cull over-approximates the face);
+/// 3. a surviving face is classified with [`face_state_in_solid`] — the
+///    `BOPTools_AlgoTools::ComputeState(Face, Solid)` fallback path of
+///    `IsInternalFace` — and the on-boundary [`is_covering_face`] covering
+///    test decides the faces `ComputeState` leaves `On`.
+fn classify_faces_in_solid(
+    candidates: &[TopoShape],
+    solid: &TopoShape,
+    own_faces: &HashSet<usize>,
+    faces: &[TopoShape],
+    own_edges: &HashSet<EKey>,
+    solid_box: &BndBox,
+    tol: f64,
+) -> Vec<TopoShape> {
+    let mut in_faces: Vec<TopoShape> = Vec::new();
+    for im in candidates {
+        if own_faces.contains(&shape_key(im)) {
+            continue;
+        }
+        if shape_bbox_with_margin(im, tol).is_out_box(solid_box) {
+            continue;
+        }
+        let state = face_state_in_solid(&Face(im.clone()), solid, own_edges, tol);
+        let covering = state == FaceState::On && is_covering_face(im, faces, own_edges);
+        if state != FaceState::In && !covering {
+            continue;
+        }
+        let mut fwd = im.clone();
+        fwd.set_orientation(Orientation::Forward);
+        in_faces.push(fwd);
+        let mut rev = im.clone();
+        rev.set_orientation(Orientation::Reversed);
+        in_faces.push(rev);
+    }
+    in_faces
 }
 
 /// Whether `im` is a covering face of the solid's own split `faces`: it is
@@ -1265,6 +1381,81 @@ mod tests {
             let ors = st.origins.get(&shape_key(im)).expect("origin recorded");
             assert!(ors.iter().any(|o| o.same_tshape(&a.0) || o.same_tshape(&b.0)));
         }
+    }
+
+    #[test]
+    fn collect_candidates_dedupes_split_images_and_keeps_unsplit() {
+        // A box whose top face is split into one fresh image: the global
+        // candidate list holds the split image (not the original top face) plus
+        // the five unsplit faces, all distinct (the fence dedupes).
+        let boxed = BRepPrimBox::make_box(1.0, 1.0, 1.0);
+        let faces = faces_of(&boxed.solid.0);
+        let top = face_at_z(&faces, 1.0);
+        let new_top = re_face(&top);
+
+        let mut ds = BopdsDS::new();
+        ds.init(&[boxed.solid.0.clone()]);
+        let mut history = BopHistory::new();
+        history.add_image(&top.0, new_top.0.clone());
+        let b = stub(ds, history, vec![boxed.solid.0.clone()]);
+
+        let candidates = collect_all_candidate_faces(&b);
+        assert_eq!(candidates.len(), 6, "one split image + five unsplit faces");
+        assert!(
+            candidates.iter().any(|c| c.same_tshape(&new_top.0)),
+            "split image present"
+        );
+        assert!(
+            !candidates.iter().any(|c| c.same_tshape(&top.0)),
+            "original split face replaced by its image"
+        );
+        for (i, a) in candidates.iter().enumerate() {
+            for b2 in &candidates[i + 1..] {
+                assert!(!a.same_tshape(b2), "candidates are distinct");
+            }
+        }
+    }
+
+    #[test]
+    fn classify_faces_in_solid_culls_remote_and_keeps_internal() {
+        // Solid box [0,1]³; a face far outside is rejected by the pairwise box
+        // cull, a face strictly inside (a standalone candidate, not a face of
+        // the solid) is classified IN and returned FORWARD + REVERSED.
+        let boxed = axis_box(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let far = axis_box(5.0, 5.0, 5.0, 6.0, 6.0, 6.0);
+        let far_face = faces_of(&far.0)[0].clone();
+        let inner = axis_box(0.25, 0.25, 0.25, 0.75, 0.75, 0.75);
+        let inner_face = faces_of(&inner.0)[0].clone();
+
+        let candidates = vec![far_face.0.clone(), inner_face.0.clone()];
+        let own_edges: HashSet<EKey> = HashSet::new();
+        let own_faces: HashSet<usize> =
+            faces_of(&boxed.0).into_iter().map(|fc| shape_key(&fc.0)).collect();
+        let solid_box = shape_bbox(&boxed.0);
+        let tol = 1e-7;
+
+        let in_faces = classify_faces_in_solid(
+            &candidates,
+            &boxed.0,
+            &own_faces,
+            &[],
+            &own_edges,
+            &solid_box,
+            tol,
+        );
+        assert!(
+            !in_faces.iter().any(|c| c.same_tshape(&far_face.0)),
+            "remote face box-culled"
+        );
+        assert!(
+            in_faces.iter().any(|c| c.same_tshape(&inner_face.0)),
+            "inner face classified IN"
+        );
+        assert_eq!(
+            in_faces.iter().filter(|c| c.same_tshape(&inner_face.0)).count(),
+            2,
+            "inner face kept FORWARD and REVERSED"
+        );
     }
 
     #[test]
