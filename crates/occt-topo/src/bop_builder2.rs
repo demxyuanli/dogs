@@ -444,8 +444,11 @@ impl BopBuilder {
 
         self.fill_images_vertices()?;
         self.fill_images_edges()?;
+        crate::bop_build_common::fill_images_containers(self, ShapeType::Wire)?;
         self.fill_images_faces()?;
+        crate::bop_build_common::fill_images_containers(self, ShapeType::Shell)?;
         self.fill_images_solids()?;
+        crate::bop_build_common::fill_images_containers(self, ShapeType::CompSolid)?;
         Ok(())
     }
 

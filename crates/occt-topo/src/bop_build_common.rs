@@ -245,18 +245,23 @@ fn surface_closest_normal(s: &dyn occt_geom::Surface, u: f64, v: f64) -> occt_co
 
 /// Fills the images of the container shapes of the data structure.
 ///
-/// Mirrors `BOPAlgo_Builder::FillImagesContainers`: every source wire, shell
-/// and comp-solid is rebuilt from the splits of its direct sub-shapes. A
-/// container whose sub-shapes were not modified keeps no image (it is returned
-/// as-is by the caller).
-pub fn fill_images_containers<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
+/// Mirrors `BOPAlgo_Builder::FillImagesContainers(theType)`: every source
+/// container of `container_type` (wire, shell or comp-solid) is rebuilt from
+/// the splits of its direct sub-shapes. A container whose sub-shapes were not
+/// modified keeps no image (it is returned as-is by the caller). The caller
+/// invokes this once per container type at the matching stage of the build
+/// sequence (WIRE after the edges, SHELL after the faces, COMPSOLID after the
+/// solids), so each type's direct sub-shape images are already filled.
+pub fn fill_images_containers<B: BopBuildOps>(
+    f: &mut B,
+    container_type: ShapeType,
+) -> Result<(), String> {
     let n = f.ds().nb_source_shapes();
     for i in 0..n {
         let Some(si) = f.ds().shape_info(i) else { continue };
-        let t = si.shape_type();
-        if t == ShapeType::Wire || t == ShapeType::Shell || t == ShapeType::CompSolid {
+        if si.shape_type() == container_type {
             let c = si.shape().clone();
-            fill_images_container(f, &c, t)?;
+            fill_images_container(f, &c, container_type)?;
         }
     }
     Ok(())
@@ -1003,7 +1008,7 @@ mod tests {
         let ds = BopdsDS::new();
         let history = BopHistory::new();
         let mut b = stub(ds.clone(), history, Vec::new());
-        fill_images_containers(&mut b).unwrap();
+        fill_images_containers(&mut b, ShapeType::Shell).unwrap();
         assert!(!b.history().has_any_images());
     }
 
@@ -1026,7 +1031,7 @@ mod tests {
         history.add_image(&top.0, new_top.0.clone());
         let mut b = stub(ds, history, vec![boxed.solid.0.clone()]);
 
-        fill_images_containers(&mut b).unwrap();
+        fill_images_containers(&mut b, ShapeType::Shell).unwrap();
 
         let imgs = b.history().image(&shell).expect("shell has an image");
         assert_eq!(imgs.len(), 1, "one closed shell image");
@@ -1043,7 +1048,7 @@ mod tests {
         let mut ds = BopdsDS::new();
         ds.init(&[boxed.solid.0.clone()]);
         let mut b = stub(ds, BopHistory::new(), vec![boxed.solid.0.clone()]);
-        fill_images_containers(&mut b).unwrap();
+        fill_images_containers(&mut b, ShapeType::Shell).unwrap();
         assert!(
             b.history().image(&shell).is_none(),
             "no face was split -> no container image"
@@ -1257,7 +1262,7 @@ mod tests {
         let mut b = stub(ds, history, vec![boxed.solid.0.clone()]);
 
         // First reassemble the shell image.
-        fill_images_containers(&mut b).unwrap();
+        fill_images_containers(&mut b, ShapeType::Shell).unwrap();
         let shell_imgs = b.history().image(&shell).unwrap().to_vec();
         assert_eq!(shell_imgs.len(), 1);
 
