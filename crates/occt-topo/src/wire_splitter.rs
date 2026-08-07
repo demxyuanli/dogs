@@ -106,6 +106,44 @@ fn select_next_edge(
     sel
 }
 
+/// Deduplicate the edges by geometric endpoint pair: the on-face edges arrive
+/// FORWARD and REVERSED, which are the same segment and would otherwise be seen
+/// by the greedy walk as an immediate loop-back (every loop cut into single
+/// edges). One representative per segment is kept.
+fn dedup_edges(edges: &[Edge]) -> Vec<Edge> {
+    let mut dedup: Vec<Edge> = Vec::new();
+    let mut seen: HashSet<(VKey, VKey)> = HashSet::new();
+    for e in edges {
+        let (a, b) = edge_vertices(e);
+        let (Some(av), Some(bv)) = (a, b) else { continue };
+        let key = (vertex_key(&av).min(vertex_key(&bv)), vertex_key(&av).max(vertex_key(&bv)));
+        if seen.insert(key) {
+            dedup.push(e.clone());
+        }
+    }
+    dedup
+}
+
+/// Whether every vertex has even degree when each geometric segment is counted
+/// once (OCCT `IsRegular`). A regular block is a union of closed loops (a face
+/// whose only on-face edges form closed section rings); an irregular block has
+/// odd-degree vertices (a face cut by open section segments).
+fn is_regular_block(edges: &[Edge]) -> bool {
+    let mut deg: HashMap<VKey, usize> = HashMap::new();
+    let mut seen: HashSet<(VKey, VKey)> = HashSet::new();
+    for e in edges {
+        let (a, b) = edge_vertices(e);
+        let (Some(av), Some(bv)) = (a, b) else { continue };
+        let key = (vertex_key(&av).min(vertex_key(&bv)), vertex_key(&av).max(vertex_key(&bv)));
+        if !seen.insert(key) {
+            continue;
+        }
+        *deg.entry(vertex_key(&av)).or_default() += 1;
+        *deg.entry(vertex_key(&bv)).or_default() += 1;
+    }
+    deg.values().all(|&d| d % 2 == 0)
+}
+
 /// A set of edges together with the face they belong to.
 ///
 /// Mirrors `BOPAlgo_WireEdgeSet`: the edges are the (intersection) result of
@@ -219,18 +257,26 @@ impl WireSplitter {
     /// Run the splitting: chain the edges of the [`WireEdgeSet`] into closed
     /// wires.
     ///
-    /// An irregular connexity block (a face cut by on-face edges, whose
-    /// vertices have odd degree) cannot be closed by the greedy chaining of
-    /// [`WireSplitter::make_wire`]; for a planar face it falls back to the
-    /// `SplitBlock` angle walk on the face plane, which recovers the actual
-    /// region loops.
+    /// The on-face edges arrive FORWARD and REVERSED. A *regular* block — every
+    /// geometric segment counted once gives each vertex even degree, i.e. a
+    /// face whose only on-face edges form closed section rings — is chained
+    /// after deduplicating the reversed copies: the greedy walk would otherwise
+    /// see the reversed copy as an immediate loop-back and cut every ring into
+    /// single edges. An irregular block (odd-degree vertices from open section
+    /// segments) is chained directly; on failure a planar face falls back to
+    /// the `SplitBlock` angle walk.
     pub fn perform(&mut self) -> Result<(), String> {
         self.wires.clear();
         if self.wes.edges.is_empty() {
             return Err("BOPAlgo_WireSplitter::perform: no input edges".to_string());
         }
-        let pool = self.wes.edges.clone();
-        match Self::split_edges(pool) {
+        let regular = is_regular_block(&self.wes.edges);
+        let edges = if regular {
+            dedup_edges(&self.wes.edges)
+        } else {
+            self.wes.edges.clone()
+        };
+        match Self::split_edges(edges) {
             Ok(w) => {
                 self.wires = w;
                 Ok(())

@@ -41,7 +41,7 @@
 
 use std::collections::HashMap;
 
-use occt_core::gp::GpVec;
+use occt_core::gp::{GpPnt2d, GpVec};
 use occt_geom::Surface;
 
 use crate::abs::{Orientation, ShapeType};
@@ -281,25 +281,55 @@ pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
 
         let mut ff = task.face.clone();
         ff.0.set_orientation(Orientation::Forward);
-        for w in wires {
-            let wire_edges = edges_of_wire(&Wire(w));
-            let shapes: Vec<TopoShape> = wire_edges.iter().map(|e| e.0.clone()).collect();
-            let mut fb = FaceBuilder::new();
-            fb.set_face(&ff);
-            fb.set_shapes(&shapes);
-            if let Err(e) = fb.perform() {
-                f.add_error(format!(
-                    "BuildSplitFaces: face {} area construction failed: {e}",
-                    task.face_index
-                ));
+        // Group the closed wires into (growth outer loop, hole loops) per
+        // `BOPAlgo_BuilderFace::PerformAreas`: a wire strictly containing
+        // another wire's region is a growth, the inner wire is its hole. Each
+        // growth becomes a face bounded by its outer loop plus the holes that
+        // fall inside it. Every hole region is also a split piece on its own
+        // (the disk cut out of the outer loop), rebuilt as an independent face.
+        let wire_edges_list: Vec<Vec<Edge>> = wires.iter().map(|w| edges_of_wire(&Wire(w.clone()))).collect();
+        let mut used = vec![false; wire_edges_list.len()];
+        for i in 0..wire_edges_list.len() {
+            if used[i] {
                 continue;
             }
-            for area in fb.areas() {
-                let split_face = Face(area.clone());
-                // Best-effort p-curve attachment on the new face (OCCT builds
-                // p-curves on the planar faces for the downstream 2-D stages).
-                attach_pcurves(&split_face, &wire_edges);
-                faces_im.entry(task.face_index).or_default().push(area.clone());
+            used[i] = true;
+            let mut holes: Vec<Vec<Edge>> = Vec::new();
+            for j in (i + 1)..wire_edges_list.len() {
+                if used[j] {
+                    continue;
+                }
+                if loop_contains(&wire_edges_list[i], &wire_edges_list[j]) {
+                    used[j] = true;
+                    holes.push(wire_edges_list[j].clone());
+                }
+            }
+            let mut all_edges = wire_edges_list[i].clone();
+            for h in &holes {
+                all_edges.extend(h.iter().cloned());
+            }
+            let shapes: Vec<TopoShape> = all_edges.iter().map(|e| e.0.clone()).collect();
+            match crate::builder_face::build_face_with_holes(&wire_edges_list[i], &holes) {
+                Ok(face) => {
+                    attach_pcurves(&face, &all_edges);
+                    faces_im.entry(task.face_index).or_default().push(face.0);
+                }
+                Err(_) => {
+                    // Fall back to a plain single-wire face (no holes attach).
+                    let mut fb = FaceBuilder::new();
+                    fb.set_face(&ff);
+                    fb.set_shapes(&shapes);
+                    if let Err(e2) = fb.perform() {
+                        f.add_error(format!(
+                            "BuildSplitFaces: face {} area construction failed: {e2}",
+                            task.face_index
+                        ));
+                        continue;
+                    }
+                    for area in fb.areas() {
+                        faces_im.entry(task.face_index).or_default().push(area.clone());
+                    }
+                }
             }
         }
     }
@@ -343,6 +373,72 @@ fn on_face_split_edge<B: BopBuilderLike>(
     f.ds().shape(e_idx).cloned()
 }
 
+/// Whether the region bounded by `outer` strictly contains the region bounded
+/// by `inner`: `inner` has the smaller |area| and one of its vertices lies
+/// strictly inside `outer`. Mirrors the hole→growth attachment of
+/// `BOPAlgo_BuilderFace::PerformAreas` (`IsInside` on the 2-D classification).
+fn loop_contains(outer: &[Edge], inner: &[Edge]) -> bool {
+    let op = match crate::builder_area::plane_from_loop(outer) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let a_outer = crate::builder_face::loop_signed_area(outer, &op).abs();
+    let a_inner = crate::builder_face::loop_signed_area(inner, &op).abs();
+    if a_inner >= a_outer {
+        return false;
+    }
+    // Project `outer` into its own plane frame and test one vertex of `inner`
+    // with the ray-crossing test (strictly inside: on-boundary → false).
+    let outer_poly = project_loop_2d(outer, &op);
+    let inner_poly = project_loop_2d(inner, &op);
+    let Some(&p) = inner_poly.first() else { return false };
+    point_in_polygon(&outer_poly, &p, false)
+}
+
+/// Project an edge loop onto the plane frame `(u, v)` of `pln`.
+fn project_loop_2d(edges: &[Edge], pln: &occt_core::gp::GpPln) -> Vec<occt_core::gp::GpPnt2d> {
+    let xd = *pln.position().x_direction().xyz();
+    let yd = *pln.position().y_direction().xyz();
+    let loc = pln.position().location();
+    let mut out = Vec::new();
+    for e in edges {
+        let (a, _) = edge_vertices(e);
+        let Some(a) = a else { continue };
+        let p = vertex_position(&a);
+        let v = p.coord.subtracted(&loc.coord);
+        out.push(occt_core::gp::GpPnt2d::new(v.dot(&xd), v.dot(&yd)));
+    }
+    out
+}
+
+/// Ray-crossing point-in-polygon test on the plane; `on_edge_is_inside=false`
+/// makes a boundary point count as outside.
+fn point_in_polygon(poly: &[occt_core::gp::GpPnt2d], p: &occt_core::gp::GpPnt2d, on_edge_is_inside: bool) -> bool {
+    let mut inside = false;
+    let n = poly.len();
+    for i in 0..n {
+        let (a, b) = (poly[i], poly[(i + 1) % n]);
+        let ((ax, ay), (bx, by)) = ((a.x(), a.y()), (b.x(), b.y()));
+        // Boundary test (point on segment).
+        let cross = (p.x() - ax) * (by - ay) - (p.y() - ay) * (bx - ax);
+        let seg_len2 = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
+        if seg_len2 > 1e-24 {
+            let t = (((p.x() - ax) * (bx - ax) + (p.y() - ay) * (by - ay)) / seg_len2).clamp(0.0, 1.0);
+            let (qx, qy) = (ax + (bx - ax) * t, ay + (by - ay) * t);
+            if (p.x() - qx).hypot(p.y() - qy) < 1e-9 {
+                return on_edge_is_inside;
+            }
+        }
+        // Ray-crossing.
+        if ((ay > p.y()) != (by > p.y()))
+            && (p.x() < (bx - ax) * (p.y() - ay) / (by - ay + 1e-30) + ax)
+        {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
 /// Keeps the closed wires that bound genuine split pieces of `face`: a
 /// degenerate wire (zero area) cannot bound a face, and duplicate wires that
 /// bound the same region collapse to one representative.
@@ -353,7 +449,7 @@ fn filter_wires(wires: &[TopoShape], face: &Face) -> Vec<TopoShape> {
     for w in wires {
         let we = edges_of_wire(&Wire(w.clone()));
         let area = match &pln {
-            Some(p) => crate::builder_face::loop_signed_area(&we, p).abs(),
+            Some(p) => wire_signed_area(&we, p).abs(),
             None => 0.0,
         };
         if area <= 1e-7 {
@@ -367,6 +463,50 @@ fn filter_wires(wires: &[TopoShape], face: &Face) -> Vec<TopoShape> {
         out.push(w.clone());
     }
     out
+}
+
+/// Signed area of a closed wire on the plane, from the unique vertex positions
+/// of its edges (shoelace over the polygon vertices). Unlike
+/// `builder_face::loop_signed_area`, this does not require the wire edges to be
+/// stored in chain order — it collects the distinct endpoint points and walks
+/// them as the polygon. Zero for a degenerate (self-coincident) wire.
+fn wire_signed_area(edges: &[Edge], pln: &occt_core::gp::GpPln) -> f64 {
+    use std::collections::BTreeSet;
+    let mut pts: Vec<occt_core::gp::GpPnt> = Vec::new();
+    for e in edges {
+        let (a, b) = edge_vertices(e);
+        for v in [a, b].into_iter().flatten() {
+            pts.push(vertex_position(&v));
+        }
+    }
+    if pts.len() < 3 {
+        return 0.0;
+    }
+    // Project onto the plane frame; collect distinct points (a closed ring has
+    // n edges → n distinct vertices; the closing vertex equals the first).
+    let xd = *pln.position().x_direction().xyz();
+    let yd = *pln.position().y_direction().xyz();
+    let loc = pln.position().location();
+    let mut ring: Vec<GpPnt2d> = Vec::new();
+    let mut seen: BTreeSet<(i64, i64)> = BTreeSet::new();
+    for p in pts {
+        let v = p.coord.subtracted(&loc.coord);
+        let q = GpPnt2d::new(v.dot(&xd), v.dot(&yd));
+        let k = ((q.x() / 1e-6).round() as i64, (q.y() / 1e-6).round() as i64);
+        if seen.insert(k) {
+            ring.push(q);
+        }
+    }
+    if ring.len() < 3 {
+        return 0.0;
+    }
+    let mut acc = 0.0;
+    let n = ring.len();
+    for i in 0..n {
+        let (a, b) = (ring[i], ring[(i + 1) % n]);
+        acc += a.x() * b.y() - b.x() * a.y();
+    }
+    0.5 * acc
 }
 
 /// Sorted multiset of an edge loop's quantized endpoint pairs — the identity
@@ -444,8 +584,12 @@ pub fn fill_same_domain_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String
         }
         let Some(orig) = f.ds().shape(i).cloned() else { continue };
         match f.history().image(&orig) {
-            Some(imgs) => all_faces.extend(imgs.iter().cloned()),
-            None => all_faces.push(orig),
+            Some(imgs) => {
+                all_faces.extend(imgs.iter().cloned())
+            }
+            None => {
+                all_faces.push(orig)
+            }
         }
     }
     if all_faces.len() < 2 {
@@ -466,7 +610,10 @@ pub fn fill_same_domain_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String
             if used[j] {
                 continue;
             }
-            if faces_same_domain(&Face(all_faces[i].clone()), &Face(all_faces[j].clone()), tol) {
+            let sd_ij = faces_same_domain(&Face(all_faces[i].clone()), &Face(all_faces[j].clone()), tol);
+            if i == 0 && j == 6 {
+            }
+            if sd_ij {
                 group.push(all_faces[j].clone());
                 used[j] = true;
             }
@@ -496,6 +643,9 @@ pub fn fill_same_domain_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String
         // Bind every non-representative face to the representative.
         for gf in &group {
             if !gf.same_tshape(&rep) {
+                let gi = f.ds().index(gf).map(|x| x.to_string()).unwrap_or("?".into());
+                let ri = f.ds().index(&rep).map(|x| x.to_string()).unwrap_or("?".into());
+                let is_src = f.ds().nb_source_shapes();
                 f.bind_shapes_sd(gf.clone(), rep.clone());
             }
         }
@@ -511,6 +661,7 @@ pub fn fill_same_domain_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String
             }
         }
     }
+
     Ok(())
 }
 

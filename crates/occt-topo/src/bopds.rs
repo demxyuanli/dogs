@@ -625,20 +625,30 @@ impl Default for BopdsCommonBlock {
 
 /// Handy information about the state of a face. Source: `BOPDS_FaceInfo.hxx`.
 ///
-/// In this port `paves` stores the pave blocks on the face as
-/// `(edge index, first parameter, last parameter)`.
+/// The pave blocks on the face are split by kind, mirroring
+/// `BOPDS_FaceInfo::PaveBlocksSc` / `PaveBlocksIn` / `PaveBlocksOn`:
+/// - `paves` (`Sc`): section edges — the edges produced by the face/face
+///   intersection. `BOPAlgo_Builder::BuildSplitFaces` uses only these to cut
+///   the face into split pieces (plus the IN edges as internal shapes);
+/// - `paves_in` (`In`): edges lying on the face (an edge of the other operand
+///   coincident with the face, e.g. the triangulated base of a cylinder
+///   standing on a planar face). They do not split the face.
+///
+/// Each entry is `(edge index, first parameter, last parameter)`.
 #[derive(Debug, Clone, Default)]
 pub struct BopdsFaceInfo {
     /// Index of the face in the DS.
     pub face_index: usize,
-    /// Pave blocks lying on the face.
+    /// Section pave blocks lying on the face (F/F intersection edges).
     pub paves: Vec<(usize, f64, f64)>,
+    /// IN pave blocks lying on the face (coincident edges of the other operand).
+    pub paves_in: Vec<(usize, f64, f64)>,
 }
 
 impl BopdsFaceInfo {
     /// Constructor with the face index.
     pub fn new(face_index: usize) -> Self {
-        Self { face_index, paves: Vec::new() }
+        Self { face_index, paves: Vec::new(), paves_in: Vec::new() }
     }
 
     /// Set the index of the face.
@@ -651,14 +661,24 @@ impl BopdsFaceInfo {
         self.face_index
     }
 
-    /// Adds a pave block to the face.
+    /// Adds a section pave block to the face.
     pub fn add_pave(&mut self, edge: usize, first: f64, last: f64) {
         self.paves.push((edge, first, last));
     }
 
-    /// Returns the pave blocks of the face.
+    /// Adds an IN pave block (a coincident edge of the other operand) to the face.
+    pub fn add_pave_in(&mut self, edge: usize, first: f64, last: f64) {
+        self.paves_in.push((edge, first, last));
+    }
+
+    /// Returns the section pave blocks of the face.
     pub fn paves(&self) -> &[(usize, f64, f64)] {
         &self.paves
+    }
+
+    /// Returns the IN pave blocks of the face.
+    pub fn paves_in(&self) -> &[(usize, f64, f64)] {
+        &self.paves_in
     }
 }
 

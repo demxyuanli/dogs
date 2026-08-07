@@ -1146,12 +1146,15 @@ fn perform_ef_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Result<(), String> {
     }
     for (n_e, n_f, t1, t2) in face_paves {
         let fi = face_info_mut(ds, n_f);
+        // A coincident edge lying on the face is an IN pave block: it does not
+        // cut the face (OCCT `FaceInfoIn`), so it is stored separately from the
+        // section paves.
         if !fi
-            .paves
+            .paves_in
             .iter()
             .any(|&(e, f, l)| e == n_e && (f - t1).abs() <= PCONFUSION && (l - t2).abs() <= PCONFUSION)
         {
-            fi.add_pave(n_e, t1, t2);
+            fi.add_pave_in(n_e, t1, t2);
         }
     }
     if !hits.is_empty() {
