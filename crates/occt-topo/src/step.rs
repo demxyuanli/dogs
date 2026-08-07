@@ -2162,7 +2162,14 @@ impl<'a> Resolver<'a> {
             }
             edges.push(Edge(s));
         }
-        Ok(self.b.make_wire(&edges).0)
+        let mut wire = self.b.make_wire(&edges).0;
+        // The EDGE_LOOP lists its ORIENTED_EDGEs in any cyclic order; the file
+        // is not guaranteed to place consecutive edges next to each other (a
+        // CAD writer may list them out of sequence). Reorder the wire's edges
+        // into a connected chain by following shared vertices, as the OCCT STEP
+        // reader does when assembling the loop.
+        crate::algo_tools::AlgoTools::orient_edges_on_wire(&mut wire);
+        Ok(wire)
     }
 
     /// A `VERTEX_LOOP(name, vertex)` is the boundary of a degenerate face — a
