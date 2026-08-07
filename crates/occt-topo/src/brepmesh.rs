@@ -128,6 +128,12 @@ fn adaptive_face_mesh(
     // chord deviation (a cylinder's axial v-direction is straight, deviation
     // ~0, so it gets few segments — matching OCCT's ~2-segment side walls).
     let u_periodic = surface.is_u_periodic();
+    // OCCT default angular deflection (BRepMesh_IncrementalMesh ang = 0.5 rad).
+    // The chord step of a curved direction is min(linear sagitta step, angular
+    // step): on small-radius surfaces (knuckle tori r=0.125) the linear sagitta
+    // alone gives ~2.7 rad segments, but OCCT caps every curved direction at
+    // angle·r (0.5·0.125 ≈ 0.06 edge) — the observed OCCT linkrods density.
+    const OCCT_ANGLE: f64 = 0.5;
     let u_step: Option<f64> = if u_periodic {
         // Use the maximum u-ring radius sampled across the v range — for a
         // cone it grows 0→base, for a sphere it peaks at the equator and
@@ -141,8 +147,24 @@ fn adaptive_face_mesh(
             r = r.max(rk);
         }
         let r = r.max(1e-9);
-        let ang_step = crate::meshing::range_splitter::arc_angular_step(r, def, 1.0, 0.0);
+        let ang_step = crate::meshing::range_splitter::arc_angular_step(r, def, OCCT_ANGLE, 0.0);
         Some(ang_step.max((u1 - u0) / 96.0))
+    } else {
+        None
+    };
+    // V-direction angular cap for periodic-v surfaces (torus tube direction):
+    // the sagitta chord test alone leaves a small tube nearly unsubdivided
+    // (sagitta < deflection needs Δv up to ~2.7 rad for r = 0.125), while OCCT
+    // bounds every curved direction by the angular deflection.
+    let v_step: Option<f64> = if surface.is_v_periodic() {
+        let vm = 0.5 * (v0 + v1);
+        let r_v = surface
+            .d0(0.0, vm)
+            .distance(&surface.d0(0.0, vm + std::f64::consts::PI))
+            * 0.5;
+        let r_v = r_v.max(1e-9);
+        let ang_step = crate::meshing::range_splitter::arc_angular_step(r_v, def, OCCT_ANGLE, 0.0);
+        Some(ang_step.max((v1 - v0) / 96.0))
     } else {
         None
     };
@@ -215,7 +237,14 @@ fn adaptive_face_mesh(
                 // curvature (a sphere's latitude arcs) that edge-midpoints miss.
                 .max(point_segment_dist(&surface.d0(mu, mv), &p00, &p11))
                 .max(point_segment_dist(&surface.d0(mu, mv), &p10, &p01));
-            dev <= def
+            // The sagitta (chord-deviation) tolerance is the linear deflection;
+            // the angular deflection caps the step on tightly-curved directions
+            // (small tubes) that a flat sagitta budget leaves too coarse.
+            let ang_ok = match v_step {
+                Some(step) => (cv1 - cv0) <= step,
+                None => true,
+            };
+            dev <= def && ang_ok
         };
 
         if !(u_done && v_done) && depth < MAX_FACE_DEPTH {

@@ -23,7 +23,11 @@ pub fn cylinder_value(cy: &GpCylinder, u: f64, v: f64) -> GpPnt {
 pub fn cone_value(co: &GpCone, u: f64, v: f64) -> GpPnt {
     let r = co.radius; let a = co.semi_angle;
     let r0 = r + v * a.sin(); let z0 = v * a.cos();
-    pt_add3(&co.apex().coord, co.pos.x_direction().xyz(), r0*u.cos(), co.pos.y_direction().xyz(), r0*u.sin(), co.pos.direction().xyz(), z0)
+    // STEP/OCCT convention (ElSLib::ConeValue): v=0 is the placement plane
+    // (radius = RefRadius), the apex is RefRadius/tan(semi_angle) below it
+    // along the axis. Base on the placement, not `apex()` (which in this port
+    // returns the placement + (r/tan α)·axis, a non-OCCT convention).
+    pt_add3(&co.location().coord, co.pos.x_direction().xyz(), r0*u.cos(), co.pos.y_direction().xyz(), r0*u.sin(), co.pos.direction().xyz(), z0)
 }
 
 pub fn sphere_value(s: &GpSphere, u: f64, v: f64) -> GpPnt {

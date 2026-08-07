@@ -233,11 +233,14 @@ pub fn point_cylinder_extrema(cy: &GpCylinder, p: &GpPnt) -> Vec<ExtremaPair> {
 /// opens along +Z).
 pub fn point_cone_extrema(co: &GpCone, p: &GpPnt) -> Vec<ExtremaPair> {
     let pos = co.position();
-    let o = co.location(); // cone vertex (radius-0 point) in this port
     let a = co.semi_angle();
     let tol = CONFUSION;
     let oz = GpVec::from_xyz(pos.direction().xyz());
     let r = co.radius();
+    // True cone vertex (radius-0 point): `slib::cone_value` is parameterized
+    // from the placement, so the vertex is placement − (RefRadius/tan α)·axis
+    // (at surface parameter v = −RefRadius/sin α).
+    let o = GpPnt::from_xyz(&pos.location().coord.subtracted(&pos.direction().xyz().multiplied(r / a.tan())));
     let mp = GpVec::from_pnts(&o, p);
     let l2 = mp.square_magnitude();
     let vm = -(r / a.sin());
@@ -245,7 +248,7 @@ pub fn point_cone_extrema(co: &GpCone, p: &GpPnt) -> Vec<ExtremaPair> {
         // P coincides with the vertex: a single minimum.
         return vec![ps_pair(p, 0.0, vm, o)];
     }
-    let dirz = oz; // vertex == location, semi-angle > 0 → cone opens along +Z
+    let dirz = oz; // semi-angle > 0 → cone opens along +Z
     let zp = GpVec::from_pnts(&o, p).dot(&oz);
     let pp = p.translated_vec(&oz.multiplied_scalar(-zp));
     let opp = GpVec::from_pnts(&o, &pp);
@@ -1128,15 +1131,15 @@ mod tests {
 
     #[test]
     fn point_cone_extrema_min() {
-        // Cone vertex at origin, semi-angle 45°, point (0.5, 0, 0.1).
-        // In the XZ plane the surface is ρ = z; closest point at ρ = 0.3,
-        // distance² = 0.08.
+        // Cone placement at origin, RefRadius 1, semi-angle 45° → vertex at
+        // (0,0,-1); in the XZ plane the generatrix is ρ = 1 + z. Point
+        // (0.5, 0, 0.1): closest point at ρ = 0.8, z = -0.2, distance² = 0.18.
         let co = GpCone::new(GpAx3::standard(), 1.0, PI / 4.0).unwrap();
         let all = point_cone_extrema(&co, &GpPnt::new(0.5, 0.0, 0.1));
         assert_eq!(all.len(), 2, "cone extrema {all:?}");
         let min = all.iter().min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap()).unwrap();
-        assert!((min.distance - (0.08f64).sqrt()).abs() < 1e-7, "min {}", min.distance);
-        assert!((min.p2.x() - 0.3).abs() < 1e-6 && (min.p2.z() - 0.3).abs() < 1e-6, "closest {min:?}");
+        assert!((min.distance - (0.18f64).sqrt()).abs() < 1e-7, "min {}", min.distance);
+        assert!((min.p2.x() - 0.8).abs() < 1e-6 && (min.p2.z() - (-0.2)).abs() < 1e-6, "closest {min:?}");
     }
 
     #[test]

@@ -1574,7 +1574,9 @@ mod tests {
     fn line_through_cone_two_points() {
         // Cone (geometric tip at (0,0,−1), radius 1 at z = 0, half-angle 45°):
         // radius at z = 1 is 2, so the line along X at z = 1 crosses at x = ±2.
-        let ax3 = GpAx3::new(GpPnt::new(0.0, 0.0, -1.0), dir(0.0, 0.0, 1.0), &dir(1.0, 0.0, 0.0)).unwrap();
+        // Placement at the origin (radius 1 at z = 0); the tip is then at
+        // z = −RefRadius/tan(45°) = −1.
+        let ax3 = GpAx3::new(GpPnt::new(0.0, 0.0, 0.0), dir(0.0, 0.0, 1.0), &dir(1.0, 0.0, 0.0)).unwrap();
         let cone = GpCone::new(ax3, 1.0, PI / 4.0).unwrap();
         let surface = GeomCone::new(cone);
         let line = GeomLine::from_pnt_dir(GpPnt::new(-3.0, 0.0, 1.0), dir(1.0, 0.0, 0.0));

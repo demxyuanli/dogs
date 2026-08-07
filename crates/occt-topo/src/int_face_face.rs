@@ -1093,11 +1093,23 @@ mod tests {
         TopoBuilder::new().make_face(Arc::new(GeomCylinder::new(GpCylinder::new(ax3, radius).unwrap())), &[])
     }
 
-    /// A cone face, apex at the origin, axis +Z, with the given semi-angle
-    /// (location ring radius 1 — the geometric tip is the location).
+    /// A `GpCone` whose apex (radius-0 point) is at the origin, axis +Z, with
+    /// location ring radius 1. The placement is shifted to (0,0,1/tan α) so the
+    /// apex lands on the origin under the OCCT placement convention.
+    fn cone_apex_origin(a: f64) -> GpCone {
+        let loc = GpPnt::new(0.0, 0.0, 1.0 / a.tan());
+        let ax3 = GpAx3::new(
+            loc,
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+        )
+        .unwrap();
+        GpCone::new(ax3, 1.0, a).unwrap()
+    }
+
+    /// A cone face, apex at the origin, axis +Z, with the given semi-angle.
     fn cone_face(semi_angle: f64) -> Face {
-        let cone = GpCone::new(GpAx3::standard(), 1.0, semi_angle).unwrap();
-        TopoBuilder::new().make_face(Arc::new(GeomCone::new(cone)), &[])
+        TopoBuilder::new().make_face(Arc::new(GeomCone::new(cone_apex_origin(semi_angle))), &[])
     }
 
     /// A torus face centered at the origin, axis +Z.
@@ -1299,7 +1311,7 @@ mod tests {
             let r = GpPnt::new(p.x(), p.y(), 0.0).distance(&GpPnt::zero());
             assert!((r - 0.5).abs() < 1e-6, "radius {r}");
         }
-        let s_cone: Arc<dyn Surface> = Arc::new(GeomCone::new(GpCone::new(GpAx3::standard(), 1.0, 0.5f64.atan()).unwrap()));
+        let s_cone: Arc<dyn Surface> = Arc::new(GeomCone::new(cone_apex_origin(0.5f64.atan())));
         let s_pln: Arc<dyn Surface> = Arc::new(occt_geom::GeomPlane::new(plane_z(1.0)));
         assert_points_on_both(c, s_pln.as_ref(), s_cone.as_ref(), 1e-4);
     }
@@ -1319,7 +1331,7 @@ mod tests {
         assert_eq!(res.nb_curves(), 1, "one conic section");
         let c = res.curve(0);
         assert_eq!(c.kind, CurveKind::Ellipse, "oblique cut is an ellipse");
-        let s_cone: Arc<dyn Surface> = Arc::new(GeomCone::new(GpCone::new(GpAx3::standard(), 1.0, 0.5f64.atan()).unwrap()));
+        let s_cone: Arc<dyn Surface> = Arc::new(GeomCone::new(cone_apex_origin(0.5f64.atan())));
         let s_pln: Arc<dyn Surface> = Arc::new(occt_geom::GeomPlane::new(GpPln::new(
             GpAx3::new(GpPnt::new(0.0, 0.0, 2.0), GpDir::new(0.0, 0.3, 0.954).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap(),
         )));
@@ -1578,7 +1590,7 @@ mod tests {
         ff.perform().expect("perform");
         let res = ff.result();
         assert_eq!(res.nb_curves(), 2, "two circles");
-        let sa: Arc<dyn Surface> = Arc::new(GeomCone::new(GpCone::new(GpAx3::standard(), 1.0, PI / 6.0).unwrap()));
+        let sa: Arc<dyn Surface> = Arc::new(GeomCone::new(cone_apex_origin(PI / 6.0)));
         let sb: Arc<dyn Surface> = Arc::new(GeomSphere::new(GpSphere::new(
             GpAx3::new(
                 GpPnt::new(0.0, 0.0, 3.0),

@@ -259,7 +259,13 @@ impl Projector {
             SurfaceKind::Cone => {
                 let (apex, ax, alpha) = cone_params(s)?;
                 let (x, y, z) = cone_frame(s, &apex, &ax)?;
-                Some(Projector::Cone { o: apex, x, y, z, alpha })
+                // The projection origin must be the surface's placement plane
+                // point (v=0), not its apex: `cone_value` is parameterized from
+                // the placement (ElSLib::ConeValue), so an apex-based origin
+                // would offset the projected v by RefRadius/sin(α) and the UV
+                // window would not be the exact inverse of `surface.d0`.
+                let o = cone_placement(s, &apex, &z)?;
+                Some(Projector::Cone { o, x, y, z, alpha })
             }
             SurfaceKind::Sphere => {
                 let center = sphere_center(s)?;
@@ -395,6 +401,18 @@ fn cone_frame(s: &dyn Surface, _apex: &GpPnt, z: &GpVec) -> Option<(GpVec, GpVec
     }
     let y = z.crossed(&x).normalized();
     Some((x, y, *z))
+}
+
+/// The cone's placement point (the v=0 ring plane, `ElSLib::ConeValue` base).
+///
+/// `s.d0(0,0)` lies on the v=0 ring: `placement + RefRadius·x`. Subtracting
+/// its radial component about the axis (from the apex) recovers the placement
+/// point on the axis.
+fn cone_placement(s: &dyn Surface, apex: &GpPnt, z: &GpVec) -> Option<GpPnt> {
+    let p0 = s.d0(0.0, 0.0);
+    let d = GpVec::from_pnts(apex, &p0);
+    let radial = d.subtracted(&z.multiplied_scalar(d.dot(z)));
+    Some(GpPnt::from_xyz(&p0.coord.subtracted(&radial.coord)))
 }
 
 // ---------------------------------------------------------------------------
