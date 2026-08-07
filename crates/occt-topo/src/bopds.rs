@@ -1038,10 +1038,26 @@ pub struct BopdsDS {
     common_blocks: Vec<BopdsCommonBlock>,
     /// Same-domain shape map `index → same-domain index`.
     shapes_sd: HashMap<usize, usize>,
-    /// Set of interfering pairs `(min, max)`.
+    /// Indices of the vertices whose tolerance was increased during the
+    /// intersection (`BOPAlgo_PaveFiller::myIncreasedSS`). The repeat
+    /// intersection stage re-runs V/V, V/E and V/F for these vertices.
+    increased_ss: HashSet<usize>,
+    /// Flat set of interfering pairs `(min, max)`. Mirror of OCCT's
+    /// `myInterfTB` — membership queries only (`has_interf_pair`); the full
+    /// per-type records (with the new-vertex index) live in `interf_vv..`.
     interferences: HashSet<(usize, usize)>,
     /// Set of interfered shape indices.
     interfered: HashSet<usize>,
+    /// Typed interference records V/V. Source: `BOPDS_DS::InterfVV`.
+    interf_vv: Vec<BopdsInterf>,
+    /// Typed interference records V/E.
+    interf_ve: Vec<BopdsInterf>,
+    /// Typed interference records V/F.
+    interf_vf: Vec<BopdsInterf>,
+    /// Typed interference records E/E.
+    interf_ee: Vec<BopdsInterf>,
+    /// Typed interference records E/F.
+    interf_ef: Vec<BopdsInterf>,
 }
 
 impl BopdsDS {
@@ -1058,8 +1074,14 @@ impl BopdsDS {
             face_info_pool: Vec::new(),
             common_blocks: Vec::new(),
             shapes_sd: HashMap::new(),
+            increased_ss: HashSet::new(),
             interferences: HashSet::new(),
             interfered: HashSet::new(),
+            interf_vv: Vec::new(),
+            interf_ve: Vec::new(),
+            interf_vf: Vec::new(),
+            interf_ee: Vec::new(),
+            interf_ef: Vec::new(),
         }
     }
 
@@ -1075,8 +1097,14 @@ impl BopdsDS {
         self.face_info_pool.clear();
         self.common_blocks.clear();
         self.shapes_sd.clear();
+        self.increased_ss.clear();
         self.interferences.clear();
         self.interfered.clear();
+        self.interf_vv.clear();
+        self.interf_ve.clear();
+        self.interf_vf.clear();
+        self.interf_ee.clear();
+        self.interf_ef.clear();
     }
 
     /// Sets the arguments of the operation (they are appended by [`BopdsDS::init`]).
@@ -1210,6 +1238,22 @@ impl BopdsDS {
     /// Returns the cached bounding box of the shape with index `i`.
     pub fn box_of(&self, i: usize) -> Option<&BndBox> {
         self.boxes.get(i)
+    }
+
+    /// Rebuilds the bounding box of the vertex `index` so it covers the point
+    /// and the tolerance sphere.
+    ///
+    /// Port of the `BRepBndLib::Add` + `SetGap` part of
+    /// `BOPAlgo_PaveFiller::UpdateVertex`: a vertex whose tolerance grows must
+    /// have its DS box enlarged, or the repeat intersection (which re-selects
+    /// pairs by box overlap) would miss its newly-touching neighbours.
+    pub fn refresh_vertex_box(&mut self, index: usize, tol: f64) {
+        let Some(shape) = self.shape(index) else { return };
+        let mut b = shape_bbox(shape);
+        b.enlarge(tol);
+        if let Some(slot) = self.boxes.get_mut(index) {
+            *slot = b;
+        }
     }
 
     /// True if the shape with index `i` has pave-block information.
@@ -1398,6 +1442,16 @@ impl BopdsDS {
         &mut self.shapes_sd
     }
 
+    /// Returns the indices of the vertices whose tolerance was increased.
+    pub fn increased_ss(&self) -> &HashSet<usize> {
+        &self.increased_ss
+    }
+
+    /// Mutable access to the set of vertices with increased tolerance.
+    pub fn increased_ss_mut(&mut self) -> &mut HashSet<usize> {
+        &mut self.increased_ss
+    }
+
     /// Adds an interference between shapes with indices `i1` and `i2`.
     /// Returns true when the pair was not already present.
     pub fn add_interf(&mut self, i1: usize, i2: usize) -> bool {
@@ -1426,12 +1480,200 @@ impl BopdsDS {
     pub fn interferences(&self) -> &HashSet<(usize, usize)> {
         &self.interferences
     }
+
+    /// Returns the typed V/V interference records.
+    pub fn interf_vv(&self) -> &[BopdsInterf] {
+        &self.interf_vv
+    }
+
+    /// Returns the typed V/E interference records.
+    pub fn interf_ve(&self) -> &[BopdsInterf] {
+        &self.interf_ve
+    }
+
+    /// Returns the typed V/F interference records.
+    pub fn interf_vf(&self) -> &[BopdsInterf] {
+        &self.interf_vf
+    }
+
+    /// Returns the typed E/E interference records.
+    pub fn interf_ee(&self) -> &[BopdsInterf] {
+        &self.interf_ee
+    }
+
+    /// Returns the typed E/F interference records.
+    pub fn interf_ef(&self) -> &[BopdsInterf] {
+        &self.interf_ef
+    }
+
+    /// Appends a typed V/V interference record, registering the flat pair as
+    /// well. The typed record is appended only when the pair was not interfered
+    /// before (matching OCCT's `if (AddInterf(n1, n2)) { InterfVV().Appended() }`
+    /// guard in `MakeSDVertices`). Returns true when a record was appended.
+    pub fn add_interf_vv(&mut self, i1: usize, i2: usize, index_new: Option<usize>) -> bool {
+        if !self.add_interf(i1, i2) {
+            return false;
+        }
+        Self::append_interf(&mut self.interf_vv, i1, i2, index_new);
+        true
+    }
+
+    /// Appends a typed V/E interference record (see [`BopdsDS::add_interf_vv`]).
+    pub fn add_interf_ve(&mut self, i1: usize, i2: usize, index_new: Option<usize>) -> bool {
+        if !self.add_interf(i1, i2) {
+            return false;
+        }
+        Self::append_interf(&mut self.interf_ve, i1, i2, index_new);
+        true
+    }
+
+    /// Appends a typed V/F interference record (see [`BopdsDS::add_interf_vv`]).
+    pub fn add_interf_vf(&mut self, i1: usize, i2: usize, index_new: Option<usize>) -> bool {
+        if !self.add_interf(i1, i2) {
+            return false;
+        }
+        Self::append_interf(&mut self.interf_vf, i1, i2, index_new);
+        true
+    }
+
+    /// Appends a typed E/E interference record (see [`BopdsDS::add_interf_vv`]).
+    pub fn add_interf_ee(&mut self, i1: usize, i2: usize, index_new: Option<usize>) -> bool {
+        if !self.add_interf(i1, i2) {
+            return false;
+        }
+        Self::append_interf(&mut self.interf_ee, i1, i2, index_new);
+        true
+    }
+
+    /// Appends a typed E/F interference record (see [`BopdsDS::add_interf_vv`]).
+    pub fn add_interf_ef(&mut self, i1: usize, i2: usize, index_new: Option<usize>) -> bool {
+        if !self.add_interf(i1, i2) {
+            return false;
+        }
+        Self::append_interf(&mut self.interf_ef, i1, i2, index_new);
+        true
+    }
+
+    fn append_interf(arr: &mut Vec<BopdsInterf>, i1: usize, i2: usize, index_new: Option<usize>) {
+        let mut it = BopdsInterf::new(i1, i2);
+        if let Some(n) = index_new {
+            it.set_index_new(n);
+        }
+        arr.push(it);
+    }
+
+    /// Redirects the new-vertex index of every typed interference to its
+    /// same-domain (SD) representative.
+    ///
+    /// Source: `BOPAlgo_PaveFiller::UpdateInterfsWithSDVertices` +
+    /// `UpdateIntfsWithSDVertices` (`BOPAlgo_PaveFiller_10.cxx`): each typed
+    /// interference whose `index_new` names a vertex that has since been merged
+    /// into an SD cluster is re-pointed at the cluster representative. Called
+    /// in `PerformInternal` after the E/F stage and again after `MakeBlocks`.
+    pub fn update_interfs_with_sd_vertices(&mut self) {
+        Self::update_intfs_with_sd_vertices(&self.shapes_sd, &mut self.interf_vv);
+        Self::update_intfs_with_sd_vertices(&self.shapes_sd, &mut self.interf_ve);
+        Self::update_intfs_with_sd_vertices(&self.shapes_sd, &mut self.interf_vf);
+        Self::update_intfs_with_sd_vertices(&self.shapes_sd, &mut self.interf_ee);
+        Self::update_intfs_with_sd_vertices(&self.shapes_sd, &mut self.interf_ef);
+    }
+
+    fn update_intfs_with_sd_vertices(sd: &HashMap<usize, usize>, interfs: &mut [BopdsInterf]) {
+        for it in interfs.iter_mut() {
+            let Some(n) = it.get_index_new() else { continue };
+            let mut cur = n;
+            while let Some(&next) = sd.get(&cur) {
+                cur = next;
+            }
+            if cur != n {
+                it.set_index_new(cur);
+            }
+        }
+    }
 }
 
 impl Default for BopdsDS {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Extended interference pairs for the vertices of `the_indices` whose
+/// tolerance was increased.
+///
+/// Port of `BOPDS_Iterator::IntersectExt` (`BOPDS_Iterator.cxx`): every vertex
+/// of `the_indices` (using its same-domain representative's box) is tested
+/// against *every* interfering shape of the DS (using the representative box
+/// for map members, the own box otherwise). The resulting pairs are returned
+/// bucketed by interference type (VV..ZZ) — `BOPDS_Iterator::Initialize` then
+/// serves these buckets *instead of* the regular pair lists, so the repeated
+/// V/V, V/E and V/F stages process only the pairs involving the increased
+/// vertices.
+///
+/// `the_indices` holds *source* vertex indices (as built by
+/// `BOPAlgo_PaveFiller::RepeatIntersection`). The box-overlap test is done
+/// brute-force (mirroring [`BopdsIterator::prepare`]) rather than with the
+/// OCCT BVH tree — the semantics are identical.
+pub fn intersect_ext_pairs(ds: &BopdsDS, the_indices: &HashSet<usize>) -> Vec<Vec<(usize, usize)>> {
+    let mut buckets: Vec<Vec<(usize, usize)>> = vec![Vec::new(); NB_INTERF_TYPES];
+    if the_indices.is_empty() {
+        return buckets;
+    }
+    let n = ds.nb_source_shapes();
+    // Resolved box of a shape: the same-domain representative's box for the
+    // map members (OCCT `ShapeInfo(nVSD).Box()`), the own box otherwise
+    // (OCCT `aSI.Box()` for the tree).
+    let box_of = |k: usize, in_map: bool| -> BndBox {
+        if in_map {
+            ds.boxes[ds.get_same_domain_index(k)].clone()
+        } else {
+            ds.boxes[k].clone()
+        }
+    };
+    let mut fence: HashSet<(usize, usize)> = HashSet::new();
+    for i in 0..n {
+        let si = &ds.shape_infos[i];
+        // `IntersectExt` skips shapes without a boundary representation and
+        // solids; `has_brep` is exactly the effective set.
+        if !si.is_interfering() || si.kind == ShapeType::Solid {
+            continue;
+        }
+        if !the_indices.contains(&i) {
+            // Only map members are queries (every shape still lives in the tree).
+            continue;
+        }
+        let box_i = box_of(i, true);
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let sj = &ds.shape_infos[j];
+            if !sj.is_interfering() || sj.kind == ShapeType::Solid {
+                continue;
+            }
+            if ds.rank(i) == ds.rank(j) {
+                continue;
+            }
+            let box_j = box_of(j, the_indices.contains(&j));
+            if box_i.is_out_box(&box_j) {
+                continue;
+            }
+            // Avoid interfering a shape with its own sub-shapes.
+            let t1 = bopds_tools::type_to_integer(si.kind);
+            let t2 = bopds_tools::type_to_integer(sj.kind);
+            if (t1 < t2 && si.has_subshape(j)) || (t1 > t2 && sj.has_subshape(i)) {
+                continue;
+            }
+            let ix = bopds_tools::type_to_integer2(si.kind, sj.kind);
+            if (0..NB_INTERF_TYPES as i32).contains(&ix) {
+                let (a, b) = (i.min(j), i.max(j));
+                if fence.insert((a, b)) {
+                    buckets[ix as usize].push((i, j));
+                }
+            }
+        }
+    }
+    buckets
 }
 
 // ---------------------------------------------------------------------------
@@ -2150,5 +2392,37 @@ mod tests {
         assert_eq!(ds.get_same_domain_index(1), 9);
         assert_eq!(ds.has_shape_sd(1), Some(9));
         assert_eq!(ds.get_same_domain_index(2), 2);
+    }
+
+    #[test]
+    fn typed_interferences_and_sd_redirection() {
+        let mut ds = BopdsDS::new();
+        // A V/V record with a new-vertex index.
+        assert!(ds.add_interf_vv(3, 7, Some(5)));
+        // Unordered duplicate: no second flat pair, no second typed record.
+        assert!(!ds.add_interf_vv(7, 3, Some(5)));
+        assert_eq!(ds.interf_vv().len(), 1);
+        assert_eq!(ds.interf_vv()[0].get_index_new(), Some(5));
+        // The flat table still tracks membership.
+        assert!(ds.has_interf_pair(3, 7));
+        assert!(ds.has_interf(7));
+
+        // A V/E record whose new vertex is later merged into an SD cluster.
+        assert!(ds.add_interf_ve(1, 8, Some(6)));
+        ds.add_shape_sd(6, 12);
+        ds.add_shape_sd(12, 20);
+        ds.update_interfs_with_sd_vertices();
+        assert_eq!(
+            ds.interf_ve()[0].get_index_new(),
+            Some(20),
+            "redirected to the final SD representative"
+        );
+        // The V/V new vertex has no SD partner — left untouched.
+        assert_eq!(ds.interf_vv()[0].get_index_new(), Some(5));
+
+        // An interference with no new-vertex index stays untouched.
+        assert!(ds.add_interf_ee(2, 9, None));
+        ds.update_interfs_with_sd_vertices();
+        assert_eq!(ds.interf_ee()[0].get_index_new(), None);
     }
 }

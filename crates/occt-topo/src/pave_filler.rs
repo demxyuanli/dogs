@@ -23,6 +23,8 @@
 //! the pipeline steps delegate to them (and to the pave-common helpers) via
 //! [`PaveFillerLike`].
 
+use std::collections::HashSet;
+
 use crate::abs::ShapeType;
 use crate::bopds::BopdsDS;
 use crate::int_tools_full::IntToolsContext;
@@ -311,13 +313,17 @@ impl PaveFiller {
     ///
     /// `init` → `prepare` → `perform_vv` → `perform_ve` → SD-vertex update →
     /// `perform_ee` → SD-vertex update → `perform_vf` → SD-vertex update →
-    /// `perform_ef` → SD-vertex update → `perform_ff` → `make_split_edges` →
-    /// SD-vertex update → `make_blocks` → `make_pcurves`.
+    /// `perform_ef` → SD-vertex update → interference-SD update → `perform_ff`
+    /// → `make_split_edges` → SD-vertex update → `make_blocks` →
+    /// interference-SD update → `make_pcurves`.
     ///
     /// The per-stage block *splitting* happens inside each intersection stage
     /// (the OCCT `SplitPaveBlocks`); this step only *redirects* the bound
     /// vertex indices of the blocks to their same-domain representatives
-    /// (`BOPDS_DS::UpdatePaveBlocksWithSDVertices`).
+    /// (`BOPDS_DS::UpdatePaveBlocksWithSDVertices`). The interference-SD update
+    /// (`BOPDS_DS::UpdateInterfsWithSDVertices`) re-points the new-vertex index
+    /// of every typed interference at its SD representative — OCCT calls it
+    /// after the E/F stage and again after `MakeBlocks`.
     pub fn perform_internal(&mut self) -> Result<(), String> {
         self.init()?;
         self.check_errors()?;
@@ -337,6 +343,16 @@ impl PaveFiller {
         self.perform_ef()?;
         self.check_errors()?;
         self.ds.update_pave_blocks_with_sd_vertices();
+        self.ds.update_interfs_with_sd_vertices();
+        // OCCT `PerformInternal`: after the interference-SD update the
+        // intersection is repeated for the vertices whose tolerance was
+        // increased, then the edge/edge and edge/face coincidences forced.
+        self.repeat_intersection_stage()?;
+        self.check_errors()?;
+        self.force_interf_ee()?;
+        self.check_errors()?;
+        self.force_interf_ef()?;
+        self.check_errors()?;
         self.perform_ff()?;
         self.check_errors()?;
         // OCCT order: MakeSplitEdges (right after FF) precedes MakeBlocks;
@@ -346,6 +362,7 @@ impl PaveFiller {
         self.ds.update_pave_blocks_with_sd_vertices();
         self.make_blocks()?;
         self.check_errors()?;
+        self.ds.update_interfs_with_sd_vertices();
         self.make_pcurves()?;
         self.check_errors()?;
         self.intersection_done = true;
@@ -402,6 +419,85 @@ impl PaveFiller {
     /// [`crate::pave_intersect::perform_ef`].
     fn perform_ef(&mut self) -> Result<(), String> {
         crate::pave_intersect::perform_ef(self)
+    }
+
+    /// Repeats the intersection for the vertices whose tolerance was increased
+    /// during the previous stages.
+    ///
+    /// Source: `BOPAlgo_PaveFiller::RepeatIntersection`
+    /// (`BOPAlgo_PaveFiller.cxx`). The vertices whose tolerance grew (and the
+    /// source vertices linked to them through the SD map) get an extended
+    /// interference pair set (`BOPDS_Iterator::IntersectExt`), then V/V, V/E
+    /// and V/F are re-run on those pairs only.
+    ///
+    /// Named `_stage` to avoid colliding with the
+    /// [`repeat_intersection`](Self::repeat_intersection) option accessor.
+    fn repeat_intersection_stage(&mut self) -> Result<(), String> {
+        let extra_map = {
+            let ds = self.ds();
+            let increased = ds.increased_ss();
+            if increased.is_empty() {
+                return Ok(());
+            }
+            let mut extra_map: HashSet<usize> = HashSet::new();
+            let n = ds.nb_source_shapes();
+            for i in 0..n {
+                let is_vertex = ds
+                    .shape_info(i)
+                    .map(|s| s.shape_type() == ShapeType::Vertex)
+                    .unwrap_or(false);
+                if !is_vertex {
+                    continue;
+                }
+                // The original vertex had its tolerance increased directly...
+                if increased.contains(&i) {
+                    extra_map.insert(i);
+                    continue;
+                }
+                // ...or it was linked to a same-domain vertex whose tolerance
+                // grew.
+                if let Some(n_vsd) = ds.has_shape_sd(i) {
+                    if increased.contains(&n_vsd) {
+                        extra_map.insert(i);
+                    }
+                }
+            }
+            extra_map
+        };
+        if extra_map.is_empty() {
+            return Ok(());
+        }
+        let buckets = crate::bopds::intersect_ext_pairs(self.ds(), &extra_map);
+        // Re-run the vertex stages on the extended pairs.
+        crate::pave_intersect::perform_vv_pairs(self, &buckets[0])?;
+        self.ds_mut().update_pave_blocks_with_sd_vertices();
+        crate::pave_intersect::perform_ve_pairs(self, &buckets[1])?;
+        self.ds_mut().update_pave_blocks_with_sd_vertices();
+        crate::pave_intersect::perform_vf_pairs(self, &buckets[3])?;
+        self.ds_mut().update_pave_blocks_with_sd_vertices();
+        self.ds_mut().update_interfs_with_sd_vertices();
+        Ok(())
+    }
+
+    /// Force intersection of the edges after the increase of the tolerance
+    /// values of their vertices.
+    ///
+    /// Source: `BOPAlgo_PaveFiller::ForceInterfEE`
+    /// (`BOPAlgo_PaveFiller_3.cxx`). Looks for additional edge/edge common
+    /// blocks among the pairs of pave blocks bounded by the same vertices.
+    fn force_interf_ee(&mut self) -> Result<(), String> {
+        crate::pave_intersect::force_interf_ee(self)
+    }
+
+    /// Force edge/face intersection after the increase of the tolerance values
+    /// of their vertices.
+    ///
+    /// Source: `BOPAlgo_PaveFiller::ForceInterfEF`
+    /// (`BOPAlgo_PaveFiller_5.cxx`). Looks for additional edge/face common
+    /// blocks among the pairs of pave blocks whose bounding vertices lie on
+    /// the face.
+    fn force_interf_ef(&mut self) -> Result<(), String> {
+        crate::pave_intersect::force_interf_ef(self)
     }
 
     /// Face/Face intersection. Source: `PerformFF`. Delegates to
