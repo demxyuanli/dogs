@@ -3,25 +3,30 @@
 //! Ports the orchestration of `IntTools_FaceFace` (TKBO) without the IntPatch
 //! walker and `GeomInt_WLApprox`: the two faces' underlying surfaces are
 //! classified, supported analytic pairs dispatch to the exact closed forms in
-//! `crate::intpatch` (plane∩plane, plane∩sphere, sphere∩sphere, plane∩cylinder),
-//! and everything else falls back to the intpatch sampling tracer.
+//! `crate::intpatch` (plane∩plane, plane∩sphere, sphere∩sphere, plane∩cylinder)
+//! and `occt_geom::intana` (plane∩cone, plane∩torus), and everything else falls
+//! back to the intpatch sampling tracer.
 //!
 //! The output mirrors `IntTools_Curve`: a 3D curve plus the per-face 2D
 //! pcurves (`pcurve_full::make_pcurve_full`) over a valid parameter range.
 //!
-//! ponytail: cone / torus and general quadric↔quadric pairs fall through to the
-//! grid tracer instead of the analytic `IntAna` conic sections; the plane×
-//! cylinder generatrix pair collapses to a single line curve. Add per-pair
-//! closed forms when a caller needs exact conics.
+//! ponytail: cone×cone / cone×sphere / torus×* (non-plane) pairs still fall
+//! through to the grid tracer — OCCT uses the numeric IntPatch walker there, so
+//! the boundary is the same; the plane×cylinder generatrix pair collapses to a
+//! single line curve. Add per-pair closed forms when a caller needs them.
 
 use std::cmp::Ordering;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx1, GpDir, GpDir2d, GpLin, GpLin2d, GpPln, GpPnt, GpPnt2d, GpVec, GpVec2d,
+    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpDir, GpDir2d, GpLin, GpLin2d, GpPln, GpPnt, GpPnt2d,
+    GpVec, GpVec2d,
 };
-use occt_geom::{Curve, GeomLine, Surface};
+use occt_geom::intana::{quadric_quadric_plane_cone, QuadricIntersection};
+use occt_geom::{
+    Curve, GeomCircle, GeomEllipse, GeomHyperbola, GeomLine, GeomParabola, Surface,
+};
 use occt_geom2d::curve::Curve2d;
 
 use crate::brep_surface::{classify_surface, SurfaceKind};
@@ -29,7 +34,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::intpatch::{self, IntersectionCurve, SurfaceIntersection};
 use crate::inttools_data::{CurveKind, IntRange};
-use crate::pcurve_full::{classify_surface_kind, make_pcurve_full};
+use crate::pcurve_full::{classify_surface_kind, cone_params, make_pcurve_full, torus_params};
 use crate::shape::Face;
 use crate::tgeometry::GeometryRegistry;
 
@@ -198,6 +203,103 @@ fn plane_cylinder_kind(pln: &GpPln, ax: &GpAx1) -> CurveKind {
     } else {
         CurveKind::Ellipse
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cone / Torus helpers
+// ---------------------------------------------------------------------------
+
+/// A unit direction perpendicular to `z` (axis for a cone/torus frame).
+fn perp_x_dir(z: &GpDir) -> GpDir {
+    let base = if z.x().abs() < 0.9 {
+        GpDir::new(1.0, 0.0, 0.0).expect("x")
+    } else {
+        GpDir::new(0.0, 1.0, 0.0).expect("y")
+    };
+    base.cross(z).unwrap_or(base)
+}
+
+/// Recover a `GpCone` from a cone surface by sampling its invariants
+/// (apex + axis + semi-angle from `pcurve_full`). The cone is anchored at its
+/// apex with radius 0 — `IntAna_QuadQuadGeo` only reads apex / axis / semi-angle
+/// geometry (plus `radius` in one axis-flip heuristic, where 0 is safe).
+fn cone_from_surface(s: &dyn Surface) -> Option<GpCone> {
+    let (apex, ax, alpha) = cone_params(s)?;
+    let z = GpDir::from_vec(&ax).ok()?;
+    let x = perp_x_dir(&z);
+    let ax3 = GpAx3::new(apex, z, &x).ok()?;
+    GpCone::new(ax3, 0.0, alpha).ok()
+}
+
+/// Plane coefficients `A·x + B·y + C·z + D = 0` with unit normal (OCCT form).
+fn plane_coeffs(p: &GpPln) -> (f64, f64, f64, f64) {
+    let n = GpVec::from_xyz(p.axis().direction().xyz()).normalized();
+    let loc = p.location();
+    let d = -(n.x() * loc.x() + n.y() * loc.y() + n.z() * loc.z());
+    (n.x(), n.y(), n.z(), d)
+}
+
+/// A `GpCirc` in the plane through `center` with normal `normal` and `radius`.
+fn circle_gp(center: GpPnt, normal: GpDir, radius: f64) -> Option<GpCirc> {
+    let x_dir = perp_x_dir(&normal);
+    let ax2 = GpAx2::new(center, normal, x_dir).ok()?;
+    Some(GpCirc::new(ax2, radius))
+}
+
+/// Plane ∩ torus circles. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln,
+/// gp_Torus)` (IntAna_QuadQuadGeo.cxx): up to two circles when the torus axis
+/// is parallel to the plane normal (perpendicular cut → radii `major ± dt`,
+/// `dt = √(minor² − dist²)` from the center) or perpendicular to it (axis in
+/// the plane through the center → two `minor` circles at `±major`). Returns
+/// `None` for any other orientation — the general (non-planar) torus section,
+/// which OCCT routes to the numeric walker.
+fn plane_torus_circles(pln: &GpPln, center: GpPnt, ax: &GpVec, major: f64, minor: f64, tol: f64) -> Option<Vec<GpCirc>> {
+    if minor >= major {
+        return None; // degenerate torus → IntAna_NoGeometricSolution
+    }
+    let n = GpVec::from_xyz(pln.axis().direction().xyz()).normalized();
+    let az = ax.normalized();
+    let n_par = n.dot(&az);
+    let (a, b, c, d) = plane_coeffs(pln);
+    let dist = a * center.x() + b * center.y() + c * center.z() + d;
+
+    if (n_par.abs() - 1.0).abs() <= 1e-12 {
+        // Axis ∥ plane normal → perpendicular cut.
+        let a_dr = dist.abs() - minor;
+        if a_dr > 1e-13 {
+            return None; // plane misses the tube → IntAna_Empty
+        }
+        let dist = if a_dr.abs() < 1e-13 {
+            if dist < 0.0 { -minor } else { minor }
+        } else {
+            dist
+        };
+        let a_dt = (minor * minor - dist * dist).max(0.0).sqrt();
+        let center_on_plane = center.translated_vec(&n.multiplied_scalar(-dist));
+        let normal = GpDir::from_vec(&n).ok()?;
+        let mut out = vec![circle_gp(center_on_plane, normal, major + a_dt)?];
+        if a_dr < -1e-13 && a_dt > tol {
+            out.push(circle_gp(center_on_plane, normal, (major - a_dt).max(0.0))?);
+        }
+        return Some(out);
+    }
+
+    if n_par.abs() > 1e-12 {
+        return None; // oblique → IntAna_NoGeometricSolution (numeric)
+    }
+    // Axis ⊥ normal → plane must contain the torus axis through the center.
+    if dist.abs() > 1e-14 {
+        return None;
+    }
+    let a_dir = GpDir::from_vec(&az).ok()?;
+    let normal = GpDir::from_vec(&n).ok()?;
+    let e = a_dir.cross(&normal).ok()?;
+    let c1 = center.translated_vec(&GpVec::from_xyz(e.xyz()).multiplied_scalar(major));
+    let c2 = center.translated_vec(&GpVec::from_xyz(e.xyz()).multiplied_scalar(-major));
+    Some(vec![
+        circle_gp(c1, normal, minor)?,
+        circle_gp(c2, normal, minor)?,
+    ])
 }
 
 /// Parameter interval of the (unit-speed) 2D line that lies inside the UV
@@ -430,6 +532,12 @@ impl FaceFace {
             | (SurfaceKind::Cylinder, SurfaceKind::Plane) => {
                 self.plane_cylinder(sa, sb, fa, fb, tol)
             }
+            (SurfaceKind::Plane, SurfaceKind::Cone) | (SurfaceKind::Cone, SurfaceKind::Plane) => {
+                self.plane_cone(sa, sb, fa, fb, tol)
+            }
+            (SurfaceKind::Plane, SurfaceKind::Torus) | (SurfaceKind::Torus, SurfaceKind::Plane) => {
+                self.plane_torus(sa, sb, fa, fb, tol)
+            }
             _ => self.general(sa, sb, fa, fb, tol),
         }
     }
@@ -613,6 +721,108 @@ impl FaceFace {
         Ok(out)
     }
 
+    /// Plane ∩ cone — the exact conic section (circle / ellipse / parabola /
+    /// hyperbola / two generatrix lines) via `IntAna_QuadQuadGeo::Perform
+    /// (gp_Pln, gp_Cone)` (intana::quadric_quadric_plane_cone), falling back to
+    /// the tracer when the closed form yields nothing (tangent apex point,
+    /// degenerate or disjoint).
+    fn plane_cone(
+        &mut self,
+        sa: &dyn Surface,
+        sb: &dyn Surface,
+        fa: &Face,
+        fb: &Face,
+        tol: f64,
+    ) -> Result<Vec<FaceFaceCurve>, String> {
+        let is_plane_a = classify_surface(sa) == SurfaceKind::Plane;
+        let (pln, cone) = if is_plane_a {
+            (
+                intpatch::plane_from_surface(sa).ok_or("FaceFace: plane extraction")?,
+                cone_from_surface(sb).ok_or("FaceFace: cone extraction")?,
+            )
+        } else {
+            (
+                intpatch::plane_from_surface(sb).ok_or("FaceFace: plane extraction")?,
+                cone_from_surface(sa).ok_or("FaceFace: cone extraction")?,
+            )
+        };
+        let qi = quadric_quadric_plane_cone(&pln, &cone, 1e-12, 1e-7);
+        let out = self.conics_to_curves(qi, fa, fb);
+        if out.is_empty() {
+            self.general(sa, sb, fa, fb, tol)
+        } else {
+            Ok(out)
+        }
+    }
+
+    /// Plane ∩ torus — the exact circles of `IntAna_QuadQuadGeo::Perform
+    /// (gp_Pln, gp_Torus)` (up to two: a perpendicular cut at `major ± dt`, or
+    /// the two `minor` circles when the axis lies in the plane), falling back
+    /// to the tracer for an oblique section.
+    fn plane_torus(
+        &mut self,
+        sa: &dyn Surface,
+        sb: &dyn Surface,
+        fa: &Face,
+        fb: &Face,
+        tol: f64,
+    ) -> Result<Vec<FaceFaceCurve>, String> {
+        let is_plane_a = classify_surface(sa) == SurfaceKind::Plane;
+        let (pln, (center, ax, major, minor)) = if is_plane_a {
+            (
+                intpatch::plane_from_surface(sa).ok_or("FaceFace: plane extraction")?,
+                torus_params(sb).ok_or("FaceFace: torus extraction")?,
+            )
+        } else {
+            (
+                intpatch::plane_from_surface(sb).ok_or("FaceFace: plane extraction")?,
+                torus_params(sa).ok_or("FaceFace: torus extraction")?,
+            )
+        };
+        let mut out = Vec::new();
+        if let Some(circs) = plane_torus_circles(&pln, center, &ax, major, minor, tol) {
+            for c in circs {
+                out.push(self.conic_curve(Arc::new(GeomCircle::new(c)), CurveKind::Circle, fa, fb));
+            }
+        }
+        if out.is_empty() {
+            self.general(sa, sb, fa, fb, tol)
+        } else {
+            Ok(out)
+        }
+    }
+
+    /// Wrap an `intana` conic (analytic section) into a `FaceFaceCurve`.
+    fn conic_curve(
+        &self,
+        curve: Arc<dyn Curve>,
+        kind: CurveKind,
+        fa: &Face,
+        fb: &Face,
+    ) -> FaceFaceCurve {
+        let range = curve_range(curve.as_ref());
+        self.finish_curve(curve, kind, range, fa, fb)
+    }
+
+    /// Convert a `QuadricIntersection` (exact conic section) into section
+    /// curves. A tangent `Point`, `Same` and `None` produce no curve — the
+    /// caller falls back to the tracer.
+    fn conics_to_curves(&self, qi: QuadricIntersection, fa: &Face, fb: &Face) -> Vec<FaceFaceCurve> {
+        use QuadricIntersection::*;
+        match qi {
+            Line(l) => vec![self.conic_curve(Arc::new(GeomLine::new(l)), CurveKind::Line, fa, fb)],
+            TwoLines(l1, l2) => vec![
+                self.conic_curve(Arc::new(GeomLine::new(l1)), CurveKind::Line, fa, fb),
+                self.conic_curve(Arc::new(GeomLine::new(l2)), CurveKind::Line, fa, fb),
+            ],
+            Circle(c) => vec![self.conic_curve(Arc::new(GeomCircle::new(c)), CurveKind::Circle, fa, fb)],
+            Ellipse(e) => vec![self.conic_curve(Arc::new(GeomEllipse::new(e)), CurveKind::Ellipse, fa, fb)],
+            Parabola(p) => vec![self.conic_curve(Arc::new(GeomParabola::new(p)), CurveKind::Parabola, fa, fb)],
+            Hyperbola(h) => vec![self.conic_curve(Arc::new(GeomHyperbola::new(h)), CurveKind::Hyperbola, fa, fb)],
+            Point(_) | Same | None => Vec::new(),
+        }
+    }
+
     /// General fallback: the `intpatch` sampling tracer (analytic dispatcher +
     /// marching-squares grid tracer). Marks `tangent_faces` on coincidence.
     fn general(
@@ -688,8 +898,8 @@ impl Default for FaceFace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use occt_core::gp::{GpAx3, GpCylinder, GpSphere};
-    use occt_geom::{GeomCylinder, GeomSphere};
+    use occt_core::gp::{GpAx3, GpCylinder, GpSphere, GpTorus};
+    use occt_geom::{GeomCone, GeomCylinder, GeomSphere, GeomTorus};
 
     const TOL: f64 = 1e-6;
 
@@ -726,6 +936,26 @@ mod tests {
         )
         .unwrap();
         TopoBuilder::new().make_face(Arc::new(GeomCylinder::new(GpCylinder::new(ax3, radius).unwrap())), &[])
+    }
+
+    /// A cone face, apex at the origin, axis +Z, with the given semi-angle
+    /// (location ring radius 1 — the geometric tip is the location).
+    fn cone_face(semi_angle: f64) -> Face {
+        let cone = GpCone::new(GpAx3::standard(), 1.0, semi_angle).unwrap();
+        TopoBuilder::new().make_face(Arc::new(GeomCone::new(cone)), &[])
+    }
+
+    /// A torus face centered at the origin, axis +Z.
+    fn torus_face(major: f64, minor: f64) -> Face {
+        let torus = GpTorus::new(GpAx3::standard(), major, minor).unwrap();
+        TopoBuilder::new().make_face(Arc::new(GeomTorus::new(torus)), &[])
+    }
+
+    /// A plane face through `origin` with the given unit normal (x-dir is
+    /// `+X`, valid for normals with zero x-component).
+    fn plane_face_normal(origin: GpPnt, normal: GpDir) -> Face {
+        let ax3 = GpAx3::new(origin, normal, &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
+        TopoBuilder::new().make_face_plane(&GpPln::new(ax3))
     }
 
     /// Sample a FaceFaceCurve and assert every sample lies on both faces'
@@ -889,6 +1119,123 @@ mod tests {
         let (a, b) = (c.range.first, c.range.last);
         let mid = c.curve.d0(0.5 * (a + b));
         assert!(mid.distance(&ref_mid) < 1e-6, "FaceFace line {mid:?} != intpatch {ref_mid:?}");
+    }
+
+    #[test]
+    fn plane_cone_intersects_in_circle() {
+        // Cone with semi-angle atan(0.5), geometric tip at the origin; plane
+        // z = 1 perpendicular to the axis cuts a circle of radius tan(atan0.5)
+        // = 0.5 at (0,0,1).
+        let pln = plane_face(&plane_z(1.0));
+        let cone = cone_face(0.5f64.atan());
+        let mut ff = FaceFace::new();
+        ff.set_face1(pln);
+        ff.set_face2(cone);
+        ff.set_tolerance(TOL);
+        ff.perform().expect("perform");
+        let res = ff.result();
+        assert_eq!(res.nb_curves(), 1, "plane ⊥ cone axis meets in one circle");
+        let c = res.curve(0);
+        assert_eq!(c.kind, CurveKind::Circle);
+        for i in 0..=16 {
+            let t = c.range.first + (c.range.last - c.range.first) * i as f64 / 16.0;
+            let p = c.curve.d0(t);
+            assert!((p.z() - 1.0).abs() < 1e-6, "in plane: {p:?}");
+            let r = GpPnt::new(p.x(), p.y(), 0.0).distance(&GpPnt::zero());
+            assert!((r - 0.5).abs() < 1e-6, "radius {r}");
+        }
+        let s_cone: Arc<dyn Surface> = Arc::new(GeomCone::new(GpCone::new(GpAx3::standard(), 1.0, 0.5f64.atan()).unwrap()));
+        let s_pln: Arc<dyn Surface> = Arc::new(occt_geom::GeomPlane::new(plane_z(1.0)));
+        assert_points_on_both(c, s_pln.as_ref(), s_cone.as_ref(), 1e-4);
+    }
+
+    #[test]
+    fn plane_cone_intersects_in_ellipse() {
+        // Oblique plane (not through the apex, not perpendicular to the axis,
+        // not parallel to a generatrix) → exact ellipse, sampled on both faces.
+        let pln = plane_face_normal(GpPnt::new(0.0, 0.0, 2.0), GpDir::new(0.0, 0.3, 0.954).unwrap());
+        let cone = cone_face(0.5f64.atan());
+        let mut ff = FaceFace::new();
+        ff.set_face1(pln);
+        ff.set_face2(cone);
+        ff.set_tolerance(TOL);
+        ff.perform().expect("perform");
+        let res = ff.result();
+        assert_eq!(res.nb_curves(), 1, "one conic section");
+        let c = res.curve(0);
+        assert_eq!(c.kind, CurveKind::Ellipse, "oblique cut is an ellipse");
+        let s_cone: Arc<dyn Surface> = Arc::new(GeomCone::new(GpCone::new(GpAx3::standard(), 1.0, 0.5f64.atan()).unwrap()));
+        let s_pln: Arc<dyn Surface> = Arc::new(occt_geom::GeomPlane::new(GpPln::new(
+            GpAx3::new(GpPnt::new(0.0, 0.0, 2.0), GpDir::new(0.0, 0.3, 0.954).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap(),
+        )));
+        assert_points_on_both(c, s_pln.as_ref(), s_cone.as_ref(), 1e-4);
+    }
+
+    #[test]
+    fn plane_torus_axis_in_plane_two_circles() {
+        // Torus R=3 r=1, plane y = 0 contains the axis → two circles of radius
+        // 1 centered at (±3, 0, 0).
+        let pln = plane_face_normal(GpPnt::zero(), GpDir::new(0.0, 1.0, 0.0).unwrap());
+        let tor = torus_face(3.0, 1.0);
+        let mut ff = FaceFace::new();
+        ff.set_face1(pln);
+        ff.set_face2(tor);
+        ff.set_tolerance(TOL);
+        ff.perform().expect("perform");
+        let res = ff.result();
+        assert_eq!(res.nb_curves(), 2, "axis-in-plane cut gives two minor circles");
+        for c in res.curves() {
+            assert_eq!(c.kind, CurveKind::Circle);
+            // The circle's center (midpoint of two opposite points) is on the
+            // major ring: (±3, 0, 0).
+            let (a, b) = (c.range.first, c.range.last);
+            let p0 = c.curve.d0(a);
+            let p1 = c.curve.d0(0.5 * (a + b)); // opposite point (circle is 2π-periodic)
+            let center = mid(&p0, &p1);
+            assert!(center.y().abs() < 1e-6, "center in plane: {center:?}");
+            assert!((GpPnt::new(center.x(), 0.0, center.z()).distance(&GpPnt::zero()) - 3.0).abs() < 1e-6,
+                "center on major ring {center:?}");
+            for i in 0..=16 {
+                let t = a + (b - a) * i as f64 / 16.0;
+                let p = c.curve.d0(t);
+                assert!(p.y().abs() < 1e-6, "in plane: {p:?}");
+            }
+        }
+        let s_tor: Arc<dyn Surface> = Arc::new(GeomTorus::new(GpTorus::new(GpAx3::standard(), 3.0, 1.0).unwrap()));
+        let s_pln: Arc<dyn Surface> = Arc::new(occt_geom::GeomPlane::new(GpPln::new(
+            GpAx3::new(GpPnt::zero(), GpDir::new(0.0, 1.0, 0.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap(),
+        )));
+        for c in res.curves() {
+            assert_points_on_both(c, s_pln.as_ref(), s_tor.as_ref(), 1e-4);
+        }
+    }
+
+    #[test]
+    fn plane_torus_perpendicular_cut_two_circles() {
+        // Torus R=3 r=1, plane z = 0 perpendicular to the axis through the
+        // center → two circles of radius 4 and 2.
+        let pln = plane_face(&plane_z(0.0));
+        let tor = torus_face(3.0, 1.0);
+        let mut ff = FaceFace::new();
+        ff.set_face1(pln);
+        ff.set_face2(tor);
+        ff.set_tolerance(TOL);
+        ff.perform().expect("perform");
+        let res = ff.result();
+        assert_eq!(res.nb_curves(), 2, "perpendicular cut through the center gives two circles");
+        let mut radii: Vec<f64> = res
+            .curves()
+            .iter()
+            .map(|c| c.curve.d0(0.0).distance(&GpPnt::zero()))
+            .collect();
+        radii.sort_by(f64::total_cmp);
+        assert!((radii[0] - 2.0).abs() < 1e-6, "minor circle radius {}", radii[0]);
+        assert!((radii[1] - 4.0).abs() < 1e-6, "major circle radius {}", radii[1]);
+        let s_tor: Arc<dyn Surface> = Arc::new(GeomTorus::new(GpTorus::new(GpAx3::standard(), 3.0, 1.0).unwrap()));
+        let s_pln: Arc<dyn Surface> = Arc::new(occt_geom::GeomPlane::new(plane_z(0.0)));
+        for c in res.curves() {
+            assert_points_on_both(c, s_pln.as_ref(), s_tor.as_ref(), 1e-4);
+        }
     }
 
     #[test]

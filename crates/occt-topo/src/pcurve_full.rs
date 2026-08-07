@@ -98,7 +98,7 @@ fn cylinder_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
 
 /// Cone parameters `(apex, unit axis, semi-angle)`: two fixed-`u` generatrices
 /// intersect at the apex; every sampled point makes the same angle with the axis.
-fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
+pub(crate) fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
     let g0a = s.d0(0.0, 0.0);
     let g0b = s.d0(0.0, 1.0);
     let d0 = GpVec::from_pnts(&g0a, &g0b);
@@ -151,7 +151,7 @@ fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
 }
 
 /// Torus parameters `(center, axis, major radius, minor radius)`.
-fn torus_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> {
+pub(crate) fn torus_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> {
     let top = s.d0(0.0, FRAC_PI_2);
     let bot = s.d0(0.0, -FRAC_PI_2);
     let axv = GpVec::from_pnts(&bot, &top);
