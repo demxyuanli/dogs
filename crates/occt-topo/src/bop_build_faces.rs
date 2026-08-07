@@ -39,9 +39,10 @@
 //! [`crate::bopds`], [`crate::pave_filler`], [`crate::algo_tools`],
 //! [`crate::bop_builder2`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use occt_core::gp::{GpPnt2d, GpVec};
+use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
 use occt_geom::Surface;
 
 use crate::abs::{Orientation, ShapeType};
@@ -52,7 +53,8 @@ use crate::boptools_2d;
 use crate::brep_surface::{classify_surface, surface_closest_params, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::builder_area::AreaBuilder;
-use crate::builder_face::FaceBuilder;
+use crate::builder_face::{make_face_from_wire, FaceBuilder};
+use crate::fclass2d::{FClass2d, FaceState};
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, vertex_position};
@@ -283,54 +285,44 @@ pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
         let mut ff = task.face.clone();
         ff.0.set_orientation(Orientation::Forward);
         // Group the closed wires into (growth outer loop, hole loops) per
-        // `BOPAlgo_BuilderFace::PerformAreas`: a wire strictly containing
-        // another wire's region is a growth, the inner wire is its hole. Each
-        // growth becomes a face bounded by its outer loop plus the holes that
-        // fall inside it. Every hole region is also a split piece on its own
-        // (the disk cut out of the outer loop), rebuilt as an independent face.
+        // `BOPAlgo_BuilderFace::PerformAreas` — see [`group_wires_as_areas`].
+        // Each growth becomes a face bounded by its outer loop plus the holes
+        // that fall inside it; every hole region is also a split piece on its
+        // own, rebuilt as an independent face.
         let wire_edges_list: Vec<Vec<Edge>> = wires.iter().map(|w| edges_of_wire(&Wire(w.clone()))).collect();
-        let mut used = vec![false; wire_edges_list.len()];
-        for i in 0..wire_edges_list.len() {
-            if used[i] {
-                continue;
-            }
-            used[i] = true;
+        let surface = GeometryRegistry::global().face_surface(&task.face.0);
+        let groups = group_wires_as_areas(&wire_edges_list, &surface);
+        for (g, holes_idx) in groups {
             let mut holes: Vec<Vec<Edge>> = Vec::new();
-            for j in (i + 1)..wire_edges_list.len() {
-                if used[j] {
-                    continue;
-                }
-                if loop_contains(&wire_edges_list[i], &wire_edges_list[j]) {
-                    used[j] = true;
-                    // B-Rep holes wind opposite the outer loop. The wire splitter
-                    // can emit the bounded hole either way (the fan arc edges of
-                    // the tri-fan cylinder chain CW, the single-disc arcs CCW), so
-                    // the hole is reversed only when it winds the same way as the
-                    // growth's outer loop. Mirrors `BOPAlgo_BuilderFace::PerformAreas`,
-                    // where the hole wire the WireSplitter produced is added to the
-                    // growth face and the face's surface frame fixes its winding.
-                    let reversed = crate::builder_area::plane_from_loop(&wire_edges_list[i])
-                        .map(|pln| {
-                            let outer_signed =
-                                crate::builder_face::loop_signed_area(&wire_edges_list[i], &pln);
-                            let hole_signed =
-                                crate::builder_face::loop_signed_area(&wire_edges_list[j], &pln);
-                            outer_signed * hole_signed > 0.0
-                        })
-                        .unwrap_or(true);
-                    holes.push(if reversed {
-                        reverse_loop(&wire_edges_list[j])
-                    } else {
-                        wire_edges_list[j].clone()
-                    });
-                }
+            for &h in &holes_idx {
+                // B-Rep holes wind opposite the outer loop. The wire splitter
+                // can emit the bounded hole either way (the fan arc edges of
+                // the tri-fan cylinder chain CW, the single-disc arcs CCW), so
+                // the hole is reversed only when it winds the same way as the
+                // growth's outer loop. Mirrors `BOPAlgo_BuilderFace::PerformAreas`,
+                // where the hole wire the WireSplitter produced is added to the
+                // growth face and the face's surface frame fixes its winding.
+                let reversed = crate::builder_area::plane_from_loop(&wire_edges_list[g])
+                    .map(|pln| {
+                        let outer_signed =
+                            crate::builder_face::loop_signed_area(&wire_edges_list[g], &pln);
+                        let hole_signed =
+                            crate::builder_face::loop_signed_area(&wire_edges_list[h], &pln);
+                        outer_signed * hole_signed > 0.0
+                    })
+                    .unwrap_or(true);
+                holes.push(if reversed {
+                    reverse_loop(&wire_edges_list[h])
+                } else {
+                    wire_edges_list[h].clone()
+                });
             }
-            let mut all_edges = wire_edges_list[i].clone();
+            let mut all_edges = wire_edges_list[g].clone();
             for h in &holes {
                 all_edges.extend(h.iter().cloned());
             }
             let shapes: Vec<TopoShape> = all_edges.iter().map(|e| e.0.clone()).collect();
-            match crate::builder_face::build_face_with_holes(&wire_edges_list[i], &holes) {
+            match crate::builder_face::build_face_with_holes(&wire_edges_list[g], &holes) {
                 Ok(face) => {
                     attach_pcurves(&face, &all_edges);
                     faces_im.entry(task.face_index).or_default().push(face.0);
@@ -414,6 +406,178 @@ fn loop_contains(outer: &[Edge], inner: &[Edge]) -> bool {
     let inner_poly = project_loop_2d(inner, &op);
     let Some(&p) = inner_poly.first() else { return false };
     point_in_polygon(&outer_poly, &p, false)
+}
+
+/// Group the closed split wires into (growth outer loop, hole loops) per
+/// `BOPAlgo_BuilderFace::PerformAreas` (BOPAlgo_BuilderFace.cxx:387).
+///
+/// Mirrors the OCCT flow:
+/// 1. classify each wire as a growth or a hole — the `IsGrowthWire` fast path
+///    (a wire sharing an edge with a known hole wire is a growth) plus a
+///    winding-independent geometric fallback for the remaining wires
+///    (BOPAlgo_BuilderFace.cxx:441-458);
+/// 2. attach every hole to the *nearest* growth that contains it — the
+///    `IntTools_FClass2d` point-in-region test over the growth's draft face
+///    (`IsInside`, BOPAlgo_BuilderFace.cxx:842-894), keeping the most-internal
+///    containing growth (the `IsInside(aFace, *pFaceWas)` owner resolution,
+///    BOPAlgo_BuilderFace.cxx:524-536).
+///
+/// `FClass2d::IsHole` is deliberately *not* used for the growth/hole decision:
+/// the port's split wires are emitted in the surface frame regardless of the
+/// material side, so a winding test misclassifies (the outer loop of a
+/// box-bottom face reports `is_hole == true`). The classification stays
+/// geometric; `FClass2d` is used only for the containment (`IsInside`) test,
+/// which is winding-independent. The `Box2dTree` bbox cull of
+/// BOPAlgo_BuilderFace.cxx:471-481 is skipped: the wire count per face is tiny,
+/// so a plain scan over every growth is equivalent.
+///
+/// Returns, in wire order, the index of each growth wire and the indices of
+/// the hole wires attached to it.
+fn group_wires_as_areas(
+    wire_edges: &[Vec<Edge>],
+    surface: &Option<Arc<dyn Surface>>,
+) -> Vec<(usize, Vec<usize>)> {
+    let n = wire_edges.len();
+    let edge_key = |e: &Edge| GeometryRegistry::shape_key(&e.0);
+
+    // Phase 1 — growth/hole classification (PerformAreas lines 425-459).
+    let mut mhe: HashSet<usize> = HashSet::new();
+    let mut is_growth = vec![false; n];
+    for i in 0..n {
+        // IsGrowthWire fast path: the wire contains an edge of a known hole.
+        if wire_edges[i].iter().any(|e| mhe.contains(&edge_key(e))) {
+            is_growth[i] = true;
+            continue;
+        }
+        // Geometric fallback: strictly contained in another wire → a hole.
+        let mut hole = false;
+        for (j, oes) in wire_edges.iter().enumerate() {
+            if j != i && loop_contains(oes, &wire_edges[i]) {
+                hole = true;
+                break;
+            }
+        }
+        if hole {
+            for e in &wire_edges[i] {
+                mhe.insert(edge_key(e));
+            }
+        } else {
+            is_growth[i] = true;
+        }
+    }
+
+    // Draft-face classifier of every growth (a single-wire face on the
+    // original surface), used for the hole containment test.
+    let mut cls: Vec<Option<FClass2d>> = vec![None; n];
+    for i in 0..n {
+        if is_growth[i] {
+            if let Some(surf) = surface {
+                if let Ok(face) = make_face_from_wire(&wire_edges[i], Some(surf.clone())) {
+                    if let Ok(c) = FClass2d::new(&face, 1e-7) {
+                        cls[i] = Some(c);
+                    }
+                }
+            }
+        }
+    }
+
+    // Phase 2 — attach each hole to the nearest (most internal) growth
+    // (PerformAreas lines 486-537).
+    let mut owners: Vec<Option<usize>> = vec![None; n];
+    for h in 0..n {
+        if is_growth[h] {
+            continue;
+        }
+        for g in 0..n {
+            if !is_growth[g] {
+                continue;
+            }
+            if !hole_inside(&wire_edges[h], g, &wire_edges, &cls, surface) {
+                continue;
+            }
+            match owners[h] {
+                None => owners[h] = Some(g),
+                Some(g0) => {
+                    // Most-internal growth wins (OCCT `IsInside(aFace, *pFaceWas)`).
+                    let new_inside_old = match &cls[g0] {
+                        Some(co) => {
+                            wire_point_state(&wire_edges[g], co, surface) == Some(FaceState::In)
+                        }
+                        None => loop_contains(&wire_edges[g0], &wire_edges[g]),
+                    };
+                    if new_inside_old {
+                        owners[h] = Some(g);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut groups: Vec<(usize, Vec<usize>)> = Vec::new();
+    for g in 0..n {
+        if is_growth[g] {
+            groups.push((g, (0..n).filter(|&h| owners[h] == Some(g)).collect()));
+        }
+    }
+    groups
+}
+
+/// Whether the hole wire `hole` lies inside the growth wire `g` — the
+/// `IntTools_FClass2d` `IsInside` test of PerformAreas (a hole edge midpoint
+/// classified against the growth's draft-face region), falling back to the
+/// geometric containment when no classifier is available. A hole sharing an
+/// edge with the growth is never inside it (OCCT returns early at
+/// BOPAlgo_BuilderFace.cxx:870).
+fn hole_inside(
+    hole: &[Edge],
+    g: usize,
+    wire_edges: &[Vec<Edge>],
+    cls: &[Option<FClass2d>],
+    surface: &Option<Arc<dyn Surface>>,
+) -> bool {
+    let geometric = loop_contains(&wire_edges[g], hole);
+    match (&cls[g], surface) {
+        (Some(cl), Some(_)) => {
+            let gk: HashSet<usize> = wire_edges[g]
+                .iter()
+                .map(|e| GeometryRegistry::shape_key(&e.0))
+                .collect();
+            if hole.iter().any(|e| gk.contains(&GeometryRegistry::shape_key(&e.0))) {
+                return false;
+            }
+            geometric || wire_point_state(hole, cl, surface) == Some(FaceState::In)
+        }
+        _ => geometric,
+    }
+}
+
+/// The `IntTools_FClass2d` state of a point on `wire` (one edge midpoint
+/// projected to the surface UV), classified against the classifier `cl`.
+/// `None` when no edge yields a usable point. Mirrors the OCCT `IsInside`
+/// loop over the wire's edges (BOPAlgo_BuilderFace.cxx:859-892).
+fn wire_point_state(
+    wire: &[Edge],
+    cl: &FClass2d,
+    surface: &Option<Arc<dyn Surface>>,
+) -> Option<FaceState> {
+    let surf = surface.as_ref()?;
+    for e in wire {
+        let (a, b) = edge_vertices(e);
+        let (Some(va), Some(vb)) = (a, b) else { continue };
+        let pa = vertex_position(&va);
+        let pb = vertex_position(&vb);
+        let mid = GpPnt::new(
+            (pa.x() + pb.x()) / 2.0,
+            (pa.y() + pb.y()) / 2.0,
+            (pa.z() + pb.z()) / 2.0,
+        );
+        let (u, v) = surface_closest_params(surf.as_ref(), &mid, 16, 16);
+        let st = cl.perform(GpPnt2d::new(u, v));
+        if st != FaceState::Unknown {
+            return Some(st);
+        }
+    }
+    None
 }
 
 /// Project an edge loop onto the plane frame `(u, v)` of `pln`.
@@ -1043,5 +1207,70 @@ mod tests {
         assert!(!stub.has_errors(), "errors: {:?}", stub.errors);
         // An empty face-info record means the face was not split.
         assert!(!stub.history().has_any_images(), "no split faces recorded");
+    }
+
+    /// A hole wire passed *before* its growth wire must still be attached to
+    /// the growth, not emitted as a standalone overlapping face.
+    ///
+    /// The old greedy grouping scanned `j > i` and took the first enclosing
+    /// wire, so a hole at index 0 had no growth to attach to. The
+    /// `PerformAreas` port classifies all wires first, then attaches every hole
+    /// to its (nearest) containing growth — order-independent.
+    #[test]
+    fn group_wires_as_areas_attaches_hole_regardless_of_order() {
+        use occt_core::gp::{GpAx3, GpPln};
+        use occt_geom::GeomPlane;
+
+        let b = TopoBuilder::new();
+        // Outer square and an inner diamond, both CCW in the +Z plane.
+        let sq = [
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(1.0, 0.0, 0.0),
+            GpPnt::new(1.0, 1.0, 0.0),
+            GpPnt::new(0.0, 1.0, 0.0),
+        ];
+        let dia = [
+            GpPnt::new(0.2, 0.5, 0.0),
+            GpPnt::new(0.5, 0.2, 0.0),
+            GpPnt::new(0.8, 0.5, 0.0),
+            GpPnt::new(0.5, 0.8, 0.0),
+        ];
+        let sq_es: Vec<Edge> = (0..4).map(|i| b.make_edge_segment(&sq[i], &sq[(i + 1) % 4])).collect();
+        let dia_es: Vec<Edge> = (0..4).map(|i| b.make_edge_segment(&dia[i], &dia[(i + 1) % 4])).collect();
+        let surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(GpPln::new(GpAx3::standard())));
+
+        // Hole wire first: `[diamond, square]`.
+        let groups = group_wires_as_areas(&[dia_es, sq_es], &Some(surf));
+        assert_eq!(groups.len(), 1, "exactly one growth group");
+        assert_eq!(groups[0].0, 1, "the growth is the square (wire 1)");
+        assert_eq!(groups[0].1, vec![0], "the diamond (wire 0) is its hole");
+    }
+
+    /// Two disjoint growth pieces (a diagonal split) never become each other's
+    /// holes: they share no containing relation, so both come out as growths.
+    #[test]
+    fn group_wires_as_areas_disjoint_pieces_are_both_growths() {
+        use occt_core::gp::{GpAx3, GpPln};
+        use occt_geom::GeomPlane;
+
+        let b = TopoBuilder::new();
+        // Two disjoint triangles inside a unit square (a diagonal split).
+        let t1 = [
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(1.0, 0.0, 0.0),
+            GpPnt::new(1.0, 1.0, 0.0),
+        ];
+        let t2 = [
+            GpPnt::new(1.0, 1.0, 0.0),
+            GpPnt::new(0.0, 1.0, 0.0),
+            GpPnt::new(0.0, 0.0, 0.0),
+        ];
+        let e1: Vec<Edge> = (0..3).map(|i| b.make_edge_segment(&t1[i], &t1[(i + 1) % 3])).collect();
+        let e2: Vec<Edge> = (0..3).map(|i| b.make_edge_segment(&t2[i], &t2[(i + 1) % 3])).collect();
+        let surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(GpPln::new(GpAx3::standard())));
+
+        let groups = group_wires_as_areas(&[e1, e2], &Some(surf));
+        assert_eq!(groups.len(), 2, "two disjoint pieces -> two growths");
+        assert!(groups.iter().all(|(_, hs)| hs.is_empty()), "no holes");
     }
 }
