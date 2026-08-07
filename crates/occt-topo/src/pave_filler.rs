@@ -317,7 +317,9 @@ impl PaveFiller {
     /// `repeat_intersection` → `force_interf_ee` → `force_interf_ef` →
     /// `refine_face_info_in` → `perform_ff` → `update_blocks_with_shared_vertices`
     /// → `make_split_edges` → SD-vertex update → `make_blocks` →
-    /// interference-SD update → `make_pcurves`.
+    /// `check_self_interference` → interference-SD update →
+    /// `release_pave_blocks` → `refine_face_info_on` → `remove_micro_edges` →
+    /// `make_pcurves` → `process_de`.
     ///
     /// The per-stage block *splitting* happens inside each intersection stage
     /// (the OCCT `SplitPaveBlocks`); this step only *redirects* the bound
@@ -325,7 +327,10 @@ impl PaveFiller {
     /// (`BOPDS_DS::UpdatePaveBlocksWithSDVertices`). The interference-SD update
     /// (`BOPDS_DS::UpdateInterfsWithSDVertices`) re-points the new-vertex index
     /// of every typed interference at its SD representative — OCCT calls it
-    /// after the E/F stage and again after `MakeBlocks`.
+    /// after the E/F stage and again after `MakeBlocks`. The post-`MakeBlocks`
+    /// tail (`CheckSelfInterference`, `ReleasePaveBlocks`, `RefineFaceInfoOn`,
+    /// `RemoveMicroEdges`, `ProcessDE`) mirrors `BOPAlgo_PaveFiller::PerformInternal`
+    /// in order.
     pub fn perform_internal(&mut self) -> Result<(), String> {
         self.init()?;
         self.check_errors()?;
@@ -370,8 +375,18 @@ impl PaveFiller {
         self.ds.update_pave_blocks_with_sd_vertices();
         self.make_blocks()?;
         self.check_errors()?;
+        // OCCT `PerformInternal` (BOPAlgo_PaveFiller.cxx), after `MakeBlocks`:
+        // `CheckSelfInterference` (:336) → `UpdateInterfsWithSDVertices` (:338)
+        // → `ReleasePaveBlocks` (:339) → `RefineFaceInfoOn` (:340) →
+        // `RemoveMicroEdges` (:342) → `MakePCurves` (:344) → `ProcessDE` (:350).
+        crate::pave_common::check_self_interference(self)?;
         self.ds.update_interfs_with_sd_vertices();
+        self.ds_mut().release_pave_blocks();
+        self.ds_mut().refine_face_info_on();
+        crate::pave_common::remove_micro_edges(self);
         self.make_pcurves()?;
+        self.check_errors()?;
+        crate::pave_blocks::process_de(self)?;
         self.check_errors()?;
         self.intersection_done = true;
         Ok(())

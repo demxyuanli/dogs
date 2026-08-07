@@ -15,6 +15,7 @@
 //! | `UpdateInterfsWithSDVertices`      | [`update_interfs_with_sd_vertices`]        |
 //! | `UpdateCommonBlocksWithSDVertices` | [`update_common_blocks_with_sd_vertices`]  |
 //! | `CheckSelfInterference`            | [`check_self_interference`]                |
+//! | `RemoveMicroEdges`                 | [`remove_micro_edges`]                     |
 //!
 //! Source: `BOPAlgo_PaveFiller_3.cxx` (FillShrunkData/AnalyzeShrunkData),
 //! `BOPAlgo_PaveFiller_9.cxx` (the edge-wide FillShrunkData),
@@ -41,6 +42,8 @@
 //!   retain the IN/Section vertex sets). It detects overlapping solids, faces
 //!   and crossing edges within one argument; boundary-touching sub-shapes are
 //!   excluded.
+
+use std::collections::HashSet;
 
 use crate::abs::ShapeType;
 use crate::algo_tools::AlgoTools;
@@ -475,6 +478,76 @@ pub fn check_self_interference(f: &mut PaveFiller) -> Result<bool, String> {
     Ok(detected)
 }
 
+/// Removes the micro edges — degenerate pave blocks whose bound vertices
+/// coincide and whose shrunk range cannot be computed — from the data
+/// structure.
+///
+/// Port of `BOPAlgo_PaveFiller::RemoveMicroEdges` from
+/// `BOPAlgo_PaveFiller_6.cxx`. Every edge carrying at least two pave blocks is
+/// examined: for each *real* pave block (common-block members are unified
+/// through their canonical block, `BOPDS_DS::RealPaveBlock`), a block whose
+/// two bound vertices coincide and whose shrunk range cannot be computed
+/// (`!IsDone()`, mirroring the OCCT `!HasShrunkData()` test on the empty
+/// shrunk box) is a micro edge. The detected edges are then removed from the
+/// DS via [`crate::bopds::BopdsDS::remove_pave_blocks`].
+///
+/// Translation boundaries: the OCCT `HasFlag` guard (skip the flagged,
+/// degenerated edges) is ported through the degenerated-edge query of
+/// [`crate::brep_tool::BRepTool`]; the shrunk range is computed with
+/// [`ShrunkRange`] on the block's edge over a neutral face (the same
+/// simplification as [`fill_shrunk_data_for_block`]), matching the OCCT
+/// `FillShrunkData` semantics.
+pub fn remove_micro_edges(f: &mut PaveFiller) {
+    let tol = f.fuzzy_value();
+    // Fence of already-processed real blocks; the detected micro edges.
+    let micro: HashSet<usize> = {
+        let ds = f.ds();
+        // Fence of already-processed real blocks (edge + quantized range), so a
+        // common block's members are examined once (OCCT fences by the pave
+        // block handle).
+        let mut fence: HashSet<(usize, i64, i64)> = HashSet::new();
+        let mut micro: HashSet<usize> = HashSet::new();
+        for list in ds.pave_blocks_pool() {
+            if list.len() < 2 {
+                // No splits: a single block is never a micro edge.
+                continue;
+            }
+            let orig = list[0].original_edge();
+            // OCCT `HasFlag` guard: flagged (degenerated) edges are skipped.
+            let flagged = ds
+                .shape_info(orig)
+                .map(|si| BRepTool::is_degenerated(&Edge(si.shape().clone())))
+                .unwrap_or(false);
+            if flagged {
+                continue;
+            }
+            for pb in list {
+                let real = ds.real_pave_block(pb);
+                let key = (real.edge(), (real.first * 1e7) as i64, (real.last * 1e7) as i64);
+                if !fence.insert(key) {
+                    continue;
+                }
+                let (n1, n2) = real.indices();
+                if n1 != n2 {
+                    continue;
+                }
+                let n_e = if real.has_edge() { real.edge() } else { real.original_edge() };
+                let Some(shape) = ds.shape(n_e) else { continue };
+                let mut sr = ShrunkRange::new();
+                let _ = sr.set_shrunk_range(&Edge(shape.clone()), &Face::new(), tol);
+                if !sr.is_done() {
+                    // Micro edge: no valid shrunk range can be built on it.
+                    micro.insert(n_e);
+                }
+            }
+        }
+        micro
+    };
+    if !micro.is_empty() {
+        f.ds_mut().remove_pave_blocks(&micro);
+    }
+}
+
 /// Whether the two sub-shapes of indices `i` and `j` genuinely self-intersect
 /// (beyond sharing a boundary element).
 fn is_self_intersecting(ds: &BopdsDS, i: usize, j: usize) -> bool {
@@ -894,5 +967,52 @@ mod tests {
         assert!(!pf.has_warnings());
         clear_tree(&a.solid.0);
         clear_tree(&c.solid.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // remove_micro_edges
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn remove_micro_edges_removes_degenerate_blocks() {
+        let mut pf = PaveFiller::new();
+        let b = unit_box();
+        pf.set_arguments(&[b.solid.0.clone()]);
+        pf.init().unwrap();
+        let e = pf.ds().index(&b.edges[0].0).expect("edge indexed");
+        // A curve-less edge appended to the DS: any block on it fails the
+        // shrunk-range computation, so it is a micro edge.
+        let n_empty = pf.ds_mut().append(Edge::new().0).unwrap();
+        let subs = pf.ds().shape_info(e).unwrap().sub_shapes().to_vec();
+        let (v1, v2) = (subs[0], subs[1]);
+        {
+            let blocks = pf.ds_mut().change_pave_blocks_mut(e);
+            // Block 1: normal (distinct bounds on a real edge).
+            let mut pb1 = BopdsPaveBlock::new();
+            pb1.set_edge(e);
+            pb1.set_original_edge(e);
+            pb1.set_range(0.0, 0.4);
+            pb1.set_indices(v1, v2);
+            // Block 2: degenerate (coincident bounds) on a curve-less edge.
+            let mut pb2 = BopdsPaveBlock::new();
+            pb2.set_edge(n_empty);
+            pb2.set_original_edge(e);
+            pb2.set_range(0.4, 0.6);
+            pb2.set_indices(n_empty, n_empty);
+            blocks.clear();
+            blocks.push(pb1);
+            blocks.push(pb2);
+        }
+
+        remove_micro_edges(&mut pf);
+
+        let blocks = pf.ds().pave_blocks(e);
+        assert!(
+            !blocks.iter().any(|pb| pb.edge() == n_empty),
+            "the degenerate block must be removed, got: {:?}",
+            blocks
+        );
+        assert!(blocks.iter().any(|pb| pb.edge() == e), "the normal block is kept");
+        clear_tree(&b.solid.0);
     }
 }

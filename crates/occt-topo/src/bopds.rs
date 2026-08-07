@@ -1479,6 +1479,131 @@ impl BopdsDS {
         }
     }
 
+    /// Rebuilds the ON sets of all faces with a face-info entry and drops the
+    /// ON blocks without an assigned edge.
+    ///
+    /// Source: `BOPDS_DS::RefineFaceInfoOn` (`BOPDS_DS.cxx`): for every
+    /// face-info pool entry the ON set is rebuilt from the face's boundary
+    /// edges (`UpdateFaceInfoOn` + `FaceInfoOn`, here
+    /// [`BopdsDS::update_face_info_on`]), then the ON blocks whose edge is not
+    /// set (`!HasEdge()`) are removed. OCCT's `HasEdge` filter is kept for
+    /// faithfulness (an ON entry with `edge == usize::MAX`), even though the
+    /// rebuild only ever records blocks with an assigned edge.
+    pub fn refine_face_info_on(&mut self) {
+        let indices: Vec<usize> = self.face_info_pool.iter().map(|fi| fi.face_index).collect();
+        for i in indices {
+            self.update_face_info_on(i);
+        }
+        for fi in &mut self.face_info_pool {
+            fi.paves_on.retain(|(edge, _, _)| *edge != usize::MAX);
+        }
+    }
+
+    /// True if the pave block `pb` is a member of a common block: one of its
+    /// edges (assigned or original) is an edge of a common block and its
+    /// parameter range matches one of the common-block ranges.
+    ///
+    /// Port of `BOPDS_DS::IsCommonBlock` adapted to the tuple
+    /// `(edge indices + ranges)` representation of the Rust common block.
+    pub fn is_common_block(&self, pb: &BopdsPaveBlock) -> bool {
+        self.common_blocks.iter().any(|cb| {
+            let on_edge = cb.contains_index(pb.edge()) || cb.contains_index(pb.original_edge());
+            on_edge && cb.contains_range(pb.first, pb.last, 1e-7)
+        })
+    }
+
+    /// Returns the real pave block of `pb`: the first block of the common
+    /// block when `pb` is a common-block member, `pb` itself otherwise.
+    ///
+    /// Port of `BOPDS_DS::RealPaveBlock` (`BOPDS_DS.cxx`). The Rust common
+    /// block stores the shared edge indices and ranges but not its own block
+    /// list, so the first block is re-discovered as the block of the first
+    /// common-block edge matching the first shared range (falls back to `pb`).
+    pub fn real_pave_block(&self, pb: &BopdsPaveBlock) -> BopdsPaveBlock {
+        let cb = self.common_blocks.iter().find(|cb| {
+            let on_edge = cb.contains_index(pb.edge()) || cb.contains_index(pb.original_edge());
+            on_edge && cb.contains_range(pb.first, pb.last, 1e-7)
+        });
+        let Some(cb) = cb else { return pb.clone() };
+        let r0 = cb.ranges().first().copied().unwrap_or((pb.first, pb.last));
+        if let Some(&e0) = cb.indices().first() {
+            for bp in self.pave_blocks(e0) {
+                if (bp.first - r0.0).abs() <= 1e-7 && (bp.last - r0.1).abs() <= 1e-7 {
+                    return bp.clone();
+                }
+            }
+        }
+        pb.clone()
+    }
+
+    /// Removes the reference to the pave blocks of the untouched edges, so no
+    /// image is created for them later.
+    ///
+    /// Source: `BOPDS_DS::ReleasePaveBlocks` (`BOPDS_DS.cxx`). For every edge
+    /// whose block list holds exactly one *untouched* block — the block is not
+    /// a common-block member and both bound vertices are original (source)
+    /// shapes — the reference to the block list is dropped from the edge's
+    /// shape info and the list contents are cleared. The edge keeps a
+    /// reference to an *empty* list, marking it as deleted: this distinguishes
+    /// the small edges for which no pave block could even be built from the
+    /// normal edges whose block was created but left untouched.
+    pub fn release_pave_blocks(&mut self) {
+        let nb_source = self.nb_source_shapes;
+        let mut to_clear: Vec<usize> = Vec::new();
+        let mut to_release: Vec<usize> = Vec::new();
+        {
+            for (slot, list) in self.pave_blocks_pool.iter().enumerate() {
+                if list.len() != 1 {
+                    continue;
+                }
+                let pb = &list[0];
+                if self.is_common_block(pb) {
+                    continue;
+                }
+                let (n1, n2) = pb.indices();
+                if n1 < nb_source && n2 < nb_source {
+                    to_clear.push(slot);
+                    to_release.push(pb.original_edge());
+                }
+            }
+        }
+        for slot in to_clear {
+            if let Some(list) = self.pave_blocks_pool.get_mut(slot) {
+                list.clear();
+            }
+        }
+        for orig in to_release {
+            if orig < self.shape_infos.len() {
+                self.shape_infos[orig].pb_reference = -1;
+            }
+        }
+    }
+
+    /// Removes every pave block whose assigned edge is in `edges` from the
+    /// pave-block pool and from the face-info sets.
+    ///
+    /// Port of `BOPAlgo_PaveFiller::RemovePaveBlocks` (`BOPAlgo_PaveFiller_6.cxx`).
+    /// The OCCT step that also drops the blocks from the F/F section curves
+    /// (`BOPDS_InterfFF::ChangeCurves`) has no counterpart in this port — the
+    /// Rust DS keeps no per-interference section-curve structure — so the
+    /// removal is limited to the pool and the face-info In/On/Sc sets.
+    pub fn remove_pave_blocks(&mut self, edges: &HashSet<usize>) {
+        if edges.is_empty() {
+            return;
+        }
+        // 1. Pave-blocks pool.
+        for list in &mut self.pave_blocks_pool {
+            list.retain(|pb| !edges.contains(&pb.edge()));
+        }
+        // 2. (translation boundary) F/F section curves — not represented here.
+        // 3. Face-info sets (Sc / In / On).
+        for fi in &mut self.face_info_pool {
+            fi.paves.retain(|(e, _, _)| !edges.contains(e));
+            fi.paves_in.retain(|(e, _, _)| !edges.contains(e));
+            fi.paves_on.retain(|(e, _, _)| !edges.contains(e));
+        }
+    }
+
     /// Adds same-domain shape information (`index` and `index_sd`).
     pub fn add_shape_sd(&mut self, index: usize, index_sd: usize) {
         if index != index_sd {
@@ -2521,6 +2646,136 @@ mod tests {
         assert_eq!(r0.paves_in(), &[(7, 0.0, 1.0)]);
         assert_eq!(r0.paves_on(), &[(3, 0.1, 0.9)]);
         assert_eq!(ds.face_info_pool()[1].paves_in(), &[(5, 0.0, 1.0)]);
+    }
+
+    #[test]
+    fn release_pave_blocks_clears_untouched_single_block_edges() {
+        let mut ds = BopdsDS::new();
+        let b = unit_box();
+        ds.set_arguments(vec![b.solid.0.clone()]);
+        ds.init(&[b.solid.0.clone()]);
+        let e = ds.index(&b.edges[0].0).expect("edge indexed");
+        ds.init_pave_blocks_for_edge(e);
+        assert!(ds.has_pave_blocks(e));
+
+        ds.release_pave_blocks();
+
+        // Untouched (both bounds are source vertices) single block: released.
+        assert!(!ds.has_pave_blocks(e), "reference must be dropped");
+        assert!(ds.pave_blocks(e).is_empty(), "list contents must be cleared");
+    }
+
+    #[test]
+    fn release_pave_blocks_keeps_blocks_bounded_by_new_vertices() {
+        let mut ds = BopdsDS::new();
+        let b = unit_box();
+        ds.set_arguments(vec![b.solid.0.clone()]);
+        ds.init(&[b.solid.0.clone()]);
+        let e = ds.index(&b.edges[0].0).expect("edge indexed");
+        ds.init_pave_blocks_for_edge(e);
+        // Replace one bound with a new (non-source) vertex index.
+        let n_v2 = ds.pave_blocks(e)[0].index2;
+        let nb_source = ds.nb_source_shapes();
+        ds.change_pave_blocks_mut(e)[0].set_indices(nb_source, n_v2);
+
+        ds.release_pave_blocks();
+
+        assert!(ds.has_pave_blocks(e), "a block with a new bound must be kept");
+        assert_eq!(ds.pave_blocks(e).len(), 1);
+    }
+
+    #[test]
+    fn release_pave_blocks_keeps_common_block_members() {
+        let mut ds = BopdsDS::new();
+        let b = unit_box();
+        ds.set_arguments(vec![b.solid.0.clone()]);
+        ds.init(&[b.solid.0.clone()]);
+        let e = ds.index(&b.edges[0].0).expect("edge indexed");
+        ds.init_pave_blocks_for_edge(e);
+        let mut cb = BopdsCommonBlock::new();
+        cb.add_index(e);
+        cb.add_range(0.0, 1.0);
+        ds.update_common_block(&cb);
+
+        ds.release_pave_blocks();
+
+        assert!(ds.has_pave_blocks(e), "a common-block member must be kept");
+        assert_eq!(ds.pave_blocks(e).len(), 1);
+    }
+
+    #[test]
+    fn refine_face_info_on_rebuilds_on_set_and_drops_edge_less_blocks() {
+        let mut ds = BopdsDS::new();
+        let b = unit_box();
+        ds.set_arguments(vec![b.solid.0.clone()]);
+        ds.init(&[b.solid.0.clone()]);
+        let face = (0..ds.nb_shapes())
+            .find(|&i| ds.shape_info(i).map(|s| s.shape_type()) == Some(ShapeType::Face))
+            .expect("box has a face");
+        ds.change_face_info_pool().push(BopdsFaceInfo::new(face));
+        // The face's boundary edges carry a default block each.
+        let edges: Vec<usize> = ds
+            .shape_info(face)
+            .unwrap()
+            .sub_shapes()
+            .iter()
+            .copied()
+            .filter(|&s| ds.shape_info(s).map(|si| si.shape_type()) == Some(ShapeType::Edge))
+            .collect();
+        assert_eq!(edges.len(), 4);
+        for &e in &edges {
+            ds.init_pave_blocks_for_edge(e);
+        }
+        // Inject a block without an edge on the first boundary edge.
+        let e0 = edges[0];
+        {
+            let mut pb = BopdsPaveBlock::new();
+            pb.edge_index = usize::MAX;
+            pb.first = 0.3;
+            pb.last = 0.7;
+            ds.change_pave_blocks_mut(e0).push(pb);
+        }
+
+        ds.refine_face_info_on();
+
+        let on = &ds.face_info_pool()[0].paves_on;
+        assert!(
+            !on.iter().any(|(edge, _, _)| *edge == usize::MAX),
+            "the edge-less block must be dropped, got: {:?}",
+            on
+        );
+        assert_eq!(on.len(), edges.len(), "one real block per boundary edge");
+    }
+
+    #[test]
+    fn remove_pave_blocks_removes_blocks_from_pool_and_face_info() {
+        let mut ds = BopdsDS::new();
+        let b = unit_box();
+        ds.set_arguments(vec![b.solid.0.clone()]);
+        ds.init(&[b.solid.0.clone()]);
+        let e = ds.index(&b.edges[0].0).expect("edge indexed");
+        ds.init_pave_blocks_for_edge(e);
+        // A block whose assigned edge is a newly-appended curve-less edge.
+        let n_empty = ds.append(Edge::new().0).unwrap();
+        {
+            let blocks = ds.change_pave_blocks_mut(e);
+            blocks[0].set_edge(n_empty);
+        }
+        let face = (0..ds.nb_shapes())
+            .find(|&i| ds.shape_info(i).map(|s| s.shape_type()) == Some(ShapeType::Face))
+            .expect("box has a face");
+        let mut fi = BopdsFaceInfo::new(face);
+        fi.add_pave(n_empty, 0.0, 1.0);
+        fi.add_pave_in(e, 0.0, 1.0);
+        ds.change_face_info_pool().push(fi);
+
+        ds.remove_pave_blocks(&HashSet::from([n_empty]));
+
+        // The block re-pointed at n_empty is removed from e's list.
+        assert!(ds.pave_blocks(e).iter().all(|pb| pb.edge() != n_empty));
+        // The Sc set referencing n_empty is cleaned; the In set stays.
+        assert!(ds.face_info_pool()[0].paves().is_empty());
+        assert_eq!(ds.face_info_pool()[0].paves_in(), &[(e, 0.0, 1.0)]);
     }
 
     #[test]
