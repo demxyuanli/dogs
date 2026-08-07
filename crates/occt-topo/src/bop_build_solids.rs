@@ -31,7 +31,7 @@
 //! stage, settling internal vertices/edges/wires) already lives in
 //! `crate::bop_build_common`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use occt_core::gp::{GpAx3, GpPln, GpPnt};
@@ -233,7 +233,14 @@ fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -> Vec<TopoS
 
     let mut out: Vec<TopoShape> = Vec::new();
     for sh in shells {
-        if !AlgoTools::is_open_shell(sh) {
+        // A shell that is geometrically closed — every boundary edge (by
+        // undirected key) used by exactly two faces — needs no loose face
+        // attached and no re-orientation; the TShape-identity check reports it
+        // open only when coincident faces carry distinct edge `TShape`s (the
+        // box-top ring vs the cylinder base). Rebuilding such a shell would
+        // re-create its faces with fresh `TShape`s and break the cross-solid
+        // merge that relies on the shared face's identity.
+        if !AlgoTools::is_open_shell(sh) || !geometrically_open(sh) {
             out.push(sh.clone());
             continue;
         }
@@ -282,6 +289,19 @@ fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -> Vec<TopoS
 /// The directed edge keys of a face.
 fn face_edges(f: &Face) -> Vec<EKey> {
     edges_of(&f.0).into_iter().map(|e| edge_key(&e)).collect()
+}
+
+/// Whether `shell` has an edge (by undirected key) used by other than exactly
+/// two faces — the geometric-open test complementing
+/// [`AlgoTools::is_open_shell`]'s `TShape`-identity count.
+fn geometrically_open(shell: &TopoShape) -> bool {
+    let mut counts: HashMap<EKey, usize> = HashMap::new();
+    for f in faces_of(shell) {
+        for k in face_edges(&f) {
+            *counts.entry(k).or_insert(0) += 1;
+        }
+    }
+    counts.values().any(|&c| c != 2)
 }
 
 /// The set of undirected edge keys of a shell that are shared by exactly one
@@ -508,6 +528,9 @@ pub fn build_split_solids_full<B: BopBuildOps>(
     // Interior regions already claimed by a previous source solid: an interior
     // piece with a bounding box already seen is a duplicate overlap region.
     let mut seen: Vec<BBoxKey> = Vec::new();
+    // Every selected piece, tagged with its source solid, for the cross-solid
+    // merge pass at the end.
+    let mut collected: Vec<(TopoShape, TopoShape)> = Vec::new();
 
     for i in 0..n {
         let Some(si) = f.ds().shape_info(i) else { continue };
@@ -527,8 +550,15 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         // 1. Split faces of the solid itself.
         let mut faces = collect_solid_split_faces(f, &solid);
 
-        // 2. Internal faces: faces of the other solids strictly inside this one.
+        // 2. Internal faces: faces of the other solids that lie inside or
+        //    cover this one. A face strictly inside the solid is internal; a
+        //    face on the solid's boundary whose edges all lie on the solid's
+        //    own split faces covers an open boundary — e.g. the cylinder base
+        //    over the box-top hole — and is included the same way so the hole
+        //    closes (mirrors `BOPAlgo_Builder::FillIn3DParts` + the covering
+        //    section faces that complete a split shell).
         let mut in_faces: Vec<TopoShape> = Vec::new();
+        let own_edges: HashSet<EKey> = faces.iter().flat_map(|f| face_edges(&Face(f.clone()))).collect();
         for other in &solids {
             if other.same_tshape(&solid) {
                 continue;
@@ -539,7 +569,10 @@ pub fn build_split_solids_full<B: BopBuildOps>(
                     None => vec![fc.0.clone()],
                 };
                 for im in images {
-                    if face_state_in_solid(&Face(im.clone()), &solid, tol) != FaceState::In {
+                    let state = face_state_in_solid(&Face(im.clone()), &solid, &own_edges, tol);
+                    let covering =
+                        state == FaceState::On && is_covering_face(&im, &faces, &own_edges);
+                    if state != FaceState::In && !covering {
                         continue;
                     }
                     let mut fwd = im.clone();
@@ -598,13 +631,143 @@ pub fn build_split_solids_full<B: BopBuildOps>(
             kept.push(p);
         }
 
-        // 5. Record the images and the origins back-map.
         for p in kept {
-            f.history_mut().add_image(&solid, p.clone());
-            f.origins_mut().entry(shape_key(&p)).or_default().push(solid.clone());
+            collected.push((solid.clone(), p));
         }
     }
+
+    // 5. Cross-solid merge (Fuse only): result pieces that share a face — a
+    //    coincident face one solid's assembly took from the other, such as the
+    //    cylinder base over the box-top hole — are one region of the union.
+    //    The shared face is internal and is dropped; the remaining boundary
+    //    faces re-close into a single solid. Mirrors the same-domain collapse
+    //    that connects coincident faces across the split solids.
+    let final_pieces = if op == BopOp::Fuse {
+        merge_sharing_faces(collected)?
+    } else {
+        collected
+    };
+
+    // 6. Record the images and the origins back-map.
+    for (solid, p) in final_pieces {
+        f.history_mut().add_image(&solid, p.clone());
+        f.origins_mut().entry(shape_key(&p)).or_default().push(solid.clone());
+    }
     Ok(())
+}
+
+/// Whether `im` is a covering face of the solid's own split `faces`: it is
+/// On the solid's boundary (checked by the caller), at least one of its
+/// boundary edges lies on the solid's own split faces, and it does not
+/// duplicate an existing face (it fills a hole rather than coinciding with a
+/// face already there).
+///
+/// Not every edge needs to be on the solid: a triangulated fan face that
+/// covers a hole carries internal spoke edges (hub→rim) that are not edges of
+/// the solid — OCCT's `IsInternalFace` likewise needs only the shared section
+/// edge, not all of the face's edges.
+fn is_covering_face(im: &TopoShape, own_faces: &[TopoShape], own_edges: &HashSet<EKey>) -> bool {
+    let fk: HashSet<EKey> = face_edges(&Face(im.clone())).into_iter().collect();
+    if fk.is_empty() || !fk.iter().any(|k| own_edges.contains(k)) {
+        return false;
+    }
+    !own_faces.iter().any(|g| {
+        let gk: HashSet<EKey> = face_edges(&Face(g.clone())).into_iter().collect();
+        gk.len() == fk.len() && gk.iter().all(|k| fk.contains(k))
+    })
+}
+
+/// Merges result pieces that share a face into single solids.
+///
+/// Each piece is tagged with its source solid. Pieces that share a face
+/// (same `TShape`) are one geometric region: the shared face is a coincident
+/// boundary, internal to the union, so it is dropped and the remaining
+/// boundary faces are re-closed into solid(s). The merged solid is recorded as
+/// an image of every source solid of the group. A group that fails to re-close
+/// keeps its original pieces (best effort).
+fn merge_sharing_faces(
+    pieces: Vec<(TopoShape, TopoShape)>,
+) -> Result<Vec<(TopoShape, TopoShape)>, String> {
+    let n = pieces.len();
+    // Two pieces share a face when a face `TShape` appears in both — the
+    // coincident face one assembly took from the other (the cylinder base over
+    // the box-top hole). `close_open_shells` keeps such faces un-rebuilt, so
+    // the identity holds; section faces cut between adjacent pieces of the
+    // same solid are separate `TShape`s and do not merge.
+    let shares_face = |a: &TopoShape, b: &TopoShape| -> bool {
+        faces_of(a).iter().any(|fa| faces_of(b).iter().any(|fb| fa.0.same_tshape(&fb.0)))
+    };
+    let mut used = vec![false; n];
+    let mut out: Vec<(TopoShape, TopoShape)> = Vec::new();
+    for i in 0..n {
+        if used[i] {
+            continue;
+        }
+        used[i] = true;
+        let mut group: Vec<usize> = vec![i];
+        // Grow the group: any piece sharing a face with a member joins.
+        loop {
+            let mut grew = false;
+            for j in 0..n {
+                if used[j] {
+                    continue;
+                }
+                if group.iter().any(|&g| shares_face(&pieces[g].1, &pieces[j].1)) {
+                    used[j] = true;
+                    group.push(j);
+                    grew = true;
+                }
+            }
+            if !grew {
+                break;
+            }
+        }
+        if group.len() == 1 {
+            out.push(pieces[group[0]].clone());
+            continue;
+        }
+        let srcs: Vec<TopoShape> = group.iter().map(|&g| pieces[g].0.clone()).collect();
+        // Boundary faces of the union: every face of every piece except those
+        // shared by more than one piece (the internal coincident faces).
+        let mut keep: Vec<TopoShape> = Vec::new();
+        for &g in &group {
+            for f in faces_of(&pieces[g].1) {
+                let in_other = group
+                    .iter()
+                    .any(|&h| h != g && faces_of(&pieces[h].1).iter().any(|g2| g2.0.same_tshape(&f.0)));
+                if !in_other && !keep.iter().any(|k| k.same_tshape(&f.0)) {
+                    keep.push(f.0);
+                }
+            }
+        }
+        // Re-close the boundary faces into solid(s) without the draft-pass
+        // `close_open_shells` (its centroid orientation is unreliable across
+        // coincident pieces and would flip faces against the mesh winding).
+        // The pieces are already closed; the merged set only needs to be
+        // re-grouped. Keep the original pieces if the merged set is not closed.
+        let mut splitter = ShellSplitter::new();
+        for f in &keep {
+            splitter.add_start_element(f.clone());
+        }
+        if splitter.perform().is_ok() {
+            let shells = splitter.shells().to_vec();
+            if !shells.is_empty() {
+                let bld = TopoBuilder::new();
+                for sh in shells {
+                    let mut solid = Solid::new();
+                    bld.add(&mut solid.0, &sh);
+                    for src in &srcs {
+                        out.push((src.clone(), solid.0.clone()));
+                    }
+                }
+                continue;
+            }
+        }
+        for &g in &group {
+            out.push(pieces[g].clone());
+        }
+    }
+    Ok(out)
 }
 
 /// The boolean operation derived from the object/tool face states.
@@ -672,10 +835,45 @@ fn piece_center(solid: &TopoShape) -> GpPnt {
     GpPnt::new(0.5 * (mnx + mxx), 0.5 * (mny + mxy), 0.5 * (mnz + mxz))
 }
 
-/// Whether `face` lies strictly inside `solid`: its boundary-vertex centroid is
-/// `In` the solid (`On` is not internal — a face on the solid's boundary is a
-/// shared outer face, not a section face).
-fn face_state_in_solid(face: &Face, solid: &TopoShape, tol: f64) -> FaceState {
+/// Whether `face` lies inside `solid` or on its boundary. Mirrors OCCT
+/// `BOPTools_AlgoTools::ComputeState(Face, Solid)`: an edge of the face that is
+/// not on the solid determines the state — its midpoint is classified; a face
+/// all of whose edges lie on the solid is classified by an interior point.
+/// `On` is not internal (a face on the solid's boundary is a shared outer face,
+/// not a section face).
+///
+/// `solid_edges` is the solid's own split faces' edge set (the draft-solid
+/// boundary). The boundary-vertex centroid the previous test used is ambiguous
+/// for a face that straddles the solid (the box top's square-minus-circle has
+/// its centroid inside the cylinder base, yet is mostly outside it); an edge
+/// midpoint is not.
+fn face_state_in_solid(
+    face: &Face,
+    solid: &TopoShape,
+    solid_edges: &HashSet<EKey>,
+    tol: f64,
+) -> FaceState {
+    for e in edges_of(&face.0) {
+        if solid_edges.contains(&edge_key(&e)) {
+            continue;
+        }
+        // An edge of the face not on the solid: classify its midpoint.
+        let (first, last) = BRepTool::edge_parameters(&e);
+        if first.is_finite() && last.is_finite() {
+            if let Some(c) = BRepTool::edge_curve(&e) {
+                return classify_solid_state(solid, &c.d0(0.5 * (first + last)), tol);
+            }
+        }
+        let (Some(a), Some(b)) = crate::topo_tools_full::edge_vertices(&e) else { break };
+        let pa = BRepTool::vertex_point(&a);
+        let pb = BRepTool::vertex_point(&b);
+        let mid = GpPnt::new(0.5 * (pa.x() + pb.x()), 0.5 * (pa.y() + pb.y()), 0.5 * (pa.z() + pb.z()));
+        return classify_solid_state(solid, &mid, tol);
+    }
+    // All edges of the face lie on the solid: classify an interior point.
+    if let Some(p) = face_sample_point(face) {
+        return classify_solid_state(solid, &p, tol);
+    }
     let vs = vertices_of(&face.0);
     if vs.is_empty() {
         return FaceState::Unknown;
@@ -686,8 +884,7 @@ fn face_state_in_solid(face: &Face, solid: &TopoShape, tol: f64) -> FaceState {
         let p = BRepTool::vertex_point(v);
         acc = GpPnt::new(acc.x() + p.x(), acc.y() + p.y(), acc.z() + p.z());
     }
-    let p = GpPnt::new(acc.x() / n, acc.y() / n, acc.z() / n);
-    classify_solid_state(solid, &p, tol)
+    classify_solid_state(solid, &GpPnt::new(acc.x() / n, acc.y() / n, acc.z() / n), tol)
 }
 
 // ---------------------------------------------------------------------------

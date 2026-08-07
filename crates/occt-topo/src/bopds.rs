@@ -634,7 +634,11 @@ impl Default for BopdsCommonBlock {
 ///   coincident with the face, e.g. the triangulated base of a cylinder
 ///   standing on a planar face). They do not split the face.
 ///
-/// Each entry is `(edge index, first parameter, last parameter)`.
+/// Each pave-block entry is `(edge index, first parameter, last parameter)`.
+/// Vertices lying on the face are kept separately in `verts` — the OCCT
+/// `VerticesSc` / `VerticesOn` / `VerticesIn` maps. Mixing them into `paves`
+/// would make the section-edge list un-usable as an edge list (a vertex index
+/// is not an edge).
 #[derive(Debug, Clone, Default)]
 pub struct BopdsFaceInfo {
     /// Index of the face in the DS.
@@ -643,12 +647,14 @@ pub struct BopdsFaceInfo {
     pub paves: Vec<(usize, f64, f64)>,
     /// IN pave blocks lying on the face (coincident edges of the other operand).
     pub paves_in: Vec<(usize, f64, f64)>,
+    /// Vertices lying on the face (V/F and E/F hits), `(vertex index, u, v)`.
+    pub verts: Vec<(usize, f64, f64)>,
 }
 
 impl BopdsFaceInfo {
     /// Constructor with the face index.
     pub fn new(face_index: usize) -> Self {
-        Self { face_index, paves: Vec::new(), paves_in: Vec::new() }
+        Self { face_index, paves: Vec::new(), paves_in: Vec::new(), verts: Vec::new() }
     }
 
     /// Set the index of the face.
@@ -679,6 +685,16 @@ impl BopdsFaceInfo {
     /// Returns the IN pave blocks of the face.
     pub fn paves_in(&self) -> &[(usize, f64, f64)] {
         &self.paves_in
+    }
+
+    /// Adds a vertex lying on the face (`BOPDS_FaceInfo::VerticesSc`/`On`/`In`).
+    pub fn add_vert(&mut self, vertex: usize, u: f64, v: f64) {
+        self.verts.push((vertex, u, v));
+    }
+
+    /// Returns the vertices lying on the face.
+    pub fn verts(&self) -> &[(usize, f64, f64)] {
+        &self.verts
     }
 }
 

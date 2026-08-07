@@ -165,11 +165,12 @@ pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
         let face = Face(face_shape);
 
         // The face participates only when the intersection recorded on-face
-        // (IN/ON/section) edges for it. The face-info `paves` list mixes edge
-        // indices (E/F, F/F section edges) with vertex indices (V/F vertices on
-        // the face); only the edges are on-face section edges. Each pave carries
-        // the `(first, last)` parameter range of the edge lying on the face, so
-        // the split face is bounded by the *trimmed* sub-edge.
+        // (IN/ON/section) edges for it. The face-info `paves` list holds the
+        // section-edge indices (F/F intersection edges); on-face V/F vertices
+        // are kept separately in `verts`. Each pave carries the `(first, last)`
+        // parameter range of the edge lying on the face, so the split face is
+        // bounded by the *trimmed* sub-edge. The edge-type check below guards
+        // against any stray non-edge entry.
         let on_edges: Vec<(usize, f64, f64)> = {
             let pool = f.ds().face_info_pool();
             let mut v: Vec<(usize, f64, f64)> = Vec::new();
@@ -301,7 +302,27 @@ pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
                 }
                 if loop_contains(&wire_edges_list[i], &wire_edges_list[j]) {
                     used[j] = true;
-                    holes.push(wire_edges_list[j].clone());
+                    // B-Rep holes wind opposite the outer loop. The wire splitter
+                    // can emit the bounded hole either way (the fan arc edges of
+                    // the tri-fan cylinder chain CW, the single-disc arcs CCW), so
+                    // the hole is reversed only when it winds the same way as the
+                    // growth's outer loop. Mirrors `BOPAlgo_BuilderFace::PerformAreas`,
+                    // where the hole wire the WireSplitter produced is added to the
+                    // growth face and the face's surface frame fixes its winding.
+                    let reversed = crate::builder_area::plane_from_loop(&wire_edges_list[i])
+                        .map(|pln| {
+                            let outer_signed =
+                                crate::builder_face::loop_signed_area(&wire_edges_list[i], &pln);
+                            let hole_signed =
+                                crate::builder_face::loop_signed_area(&wire_edges_list[j], &pln);
+                            outer_signed * hole_signed > 0.0
+                        })
+                        .unwrap_or(true);
+                    holes.push(if reversed {
+                        reverse_loop(&wire_edges_list[j])
+                    } else {
+                        wire_edges_list[j].clone()
+                    });
                 }
             }
             let mut all_edges = wire_edges_list[i].clone();
@@ -442,6 +463,36 @@ fn point_in_polygon(poly: &[occt_core::gp::GpPnt2d], p: &occt_core::gp::GpPnt2d,
 /// Keeps the closed wires that bound genuine split pieces of `face`: a
 /// degenerate wire (zero area) cannot bound a face, and duplicate wires that
 /// bound the same region collapse to one representative.
+/// Reverse the geometric direction of every edge of a loop, so the loop winds
+/// opposite its original direction (`TopoDS::Reverse` on an edge list).
+///
+/// Each edge's two child vertices are swapped and its parameter range is
+/// mirrored, so the child-order chaining used by
+/// `builder_face::{build_loops, loop_signed_area}` walks the loop the other
+/// way — the geometric winding flips. A B-Rep hole must wind opposite its
+/// outer loop; the wire splitter emits every bounded region CCW, so the hole
+/// attached to a growth face needs this reversal.
+fn reverse_loop(edges: &[Edge]) -> Vec<Edge> {
+    let reg = GeometryRegistry::global();
+    edges
+        .iter()
+        .map(|e| {
+            let mut nt = crate::tshape::TShape::new(ShapeType::Edge);
+            for k in e.0.tshape.read().unwrap().children.iter().rev() {
+                nt.add_child(k.clone());
+            }
+            let mut ne = TopoShape::from_handle(std::sync::Arc::new(std::sync::RwLock::new(nt)));
+            ne.set_orientation(e.0.orientation().reversed());
+            let ne = Edge(ne);
+            if let Some(mut g) = reg.edge_geom(&e.0) {
+                std::mem::swap(&mut g.first, &mut g.last);
+                reg.set_edge(&ne.0, g);
+            }
+            ne
+        })
+        .collect()
+}
+
 fn filter_wires(wires: &[TopoShape], face: &Face) -> Vec<TopoShape> {
     let pln = crate::brep_surface::face_plane(face);
     let mut seen: Vec<Vec<((i64, i64, i64), (i64, i64, i64))>> = Vec::new();

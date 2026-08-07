@@ -809,6 +809,11 @@ fn ensure_face_info(ds: &mut BopdsDS, n_f: usize) {
 }
 
 /// Record the vertex with index `n_v` (projecting to `(u, v)`) on the face `n_f`.
+///
+/// The vertex is stored in the face-info `verts` list, not `paves`: the
+/// section-edge list (`PaveBlocksSc`) must hold only edge indices (OCCT keeps
+/// on-face vertices in the separate `VerticesSc`/`VerticesOn`/`VerticesIn`
+/// maps of `BOPDS_FaceInfo`).
 fn record_vertex_on_face(ds: &mut BopdsDS, n_f: usize, n_v: usize, u: f64, v: f64) {
     let pool = ds.change_face_info_pool();
     let info = match pool.iter_mut().find(|fi| fi.face_index == n_f) {
@@ -818,7 +823,7 @@ fn record_vertex_on_face(ds: &mut BopdsDS, n_f: usize, n_v: usize, u: f64, v: f6
             pool.last_mut().expect("just pushed")
         }
     };
-    info.add_pave(n_v, u, v);
+    info.add_vert(n_v, u, v);
 }
 
 /// Core of [`perform_vf`]: classify every interfering vertex against its face
@@ -1714,7 +1719,10 @@ mod tests {
         let n_inside = f.ds().index(&inside.0).unwrap();
         let n_on = f.ds().index(&on_edge.0).unwrap();
         let n_mid = f.ds().index(&mid_box.0).unwrap();
-        let recorded: Vec<usize> = info.paves().iter().map(|p| p.0).collect();
+        // On-face vertices are kept in the `verts` list, never in the section
+        // `paves` (which must hold only edge indices).
+        assert!(info.paves().is_empty(), "section paves hold no vertices");
+        let recorded: Vec<usize> = info.verts().iter().map(|p| p.0).collect();
         assert!(recorded.contains(&n_inside), "inside vertex recorded");
         assert!(recorded.contains(&n_on), "on-boundary vertex recorded");
         assert!(!recorded.contains(&n_mid), "floating vertex not recorded");
