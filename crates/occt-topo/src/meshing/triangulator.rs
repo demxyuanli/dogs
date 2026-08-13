@@ -158,11 +158,12 @@ impl Triangulator {
     /// keeps the convex hull edges, so the outer wire of a convex face is
     /// preserved without explicit constraint links.
     ///
-    /// ponytail: constraint edges are not registered as `Frontier` links (the
-    /// `Delaun::new_with_data` pre-linked path currently produces a gapped
-    /// triangulation for a plain square). For non-convex faces / holes the
-    /// boundary must be enforced with links — revisit when a curved/hole face
-    /// needs it.
+    /// ponytail: constraint edges are not registered as `Frontier` links — the
+    /// `Delaun::new_with_data` pre-linked path's `frontier_adjust`/`cleanup_mesh`
+    /// delete every triangle of a plain square (the known "gapped triangulation"
+    /// bug in the constraint processing), so only the convex-hull path is used.
+    /// For non-convex faces / holes the boundary must be enforced with links —
+    /// revisit once the frontier-adjust bug is fixed.
     fn run_delaun(&self, data: &FaceMeshData, interior: &[GpPnt2d]) -> Result<Delaun, String> {
         let boundary: HashSet<usize> =
             data.constraint_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
