@@ -361,6 +361,20 @@ impl Projector {
     }
 }
 
+/// Analytic projection of a 3D point onto an analytic surface
+/// (plane/cylinder/cone/sphere/torus) — the OCCT `ProjLib` inverse. Returns
+/// `None` for non-analytic surfaces (B-spline, …), where the caller must fall
+/// back to a numeric inversion.
+///
+/// Unlike a Newton iterate seeded from the surface range centre, this is the
+/// exact inverse of `d0` even on unbounded-v surfaces (a cylinder/cone point far
+/// from v=0), where Newton from the centre cannot converge.
+pub fn project_point_on_surface(s: &dyn Surface, p: &GpPnt) -> Option<GpPnt2d> {
+    let kind = classify_surface_kind(s);
+    let proj = Projector::from_surface(s, kind)?;
+    Some(proj.project(p))
+}
+
 /// Recover the plane's location and in-plane axes from its surface `d0`.
 fn plane_axes(surf: &dyn Surface) -> Option<(GpPnt, GpVec, GpVec)> {
     let o = surf.d0(0.0, 0.0);

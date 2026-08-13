@@ -462,8 +462,12 @@ impl IncrementalMesh {
         self.discretize_edge(edge.edge(), deflection)
             .into_iter()
             .map(|p| {
-                let (u, v) = project_uv(surface, &p);
-                GpPnt2d::new(u, v)
+                // Analytic ProjLib inverse first (exact even on unbounded-v
+                // surfaces); Newton fallback for non-analytic (B-spline) faces.
+                crate::pcurve_full::project_point_on_surface(surface, &p).unwrap_or_else(|| {
+                    let (u, v) = project_uv(surface, &p);
+                    GpPnt2d::new(u, v)
+                })
             })
             .collect()
     }
