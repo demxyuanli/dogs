@@ -134,44 +134,71 @@ fn adaptive_face_mesh(
     // alone gives ~2.7 rad segments, but OCCT caps every curved direction at
     // angle·r (0.5·0.125 ≈ 0.06 edge) — the observed OCCT linkrods density.
     const OCCT_ANGLE: f64 = 0.5;
-    let u_step: Option<f64> = if u_periodic {
-        // Use the maximum u-ring radius sampled across the v range — for a
-        // cone it grows 0→base, for a sphere it peaks at the equator and
-        // collapses to 0 at the poles. Sampling avoids both the mid-range
-        // underestimate (cone) and the pole-collapse (sphere, where the
-        // v-range endpoints are the poles with radius 0).
+    let kind = crate::pcurve_full::classify_surface_kind(surface.as_ref());
+    // Maximum u-ring radius sampled across the v range — for a cone it grows
+    // 0→base, for a sphere it peaks at the equator and collapses to 0 at the
+    // poles, for a torus it is the outer equator R+r. Sampling avoids both the
+    // cone mid-range underestimate and the sphere pole-collapse (a v-range
+    // endpoint is a pole with radius 0).
+    let max_ring_r = if u_periodic {
         let mut r = 0.0f64;
         for k in 0..=8 {
             let vk = v0 + (v1 - v0) * k as f64 / 8.0;
             let rk = surface.d0(0.0, vk).distance(&surface.d0(std::f64::consts::PI, vk)) * 0.5;
             r = r.max(rk);
         }
-        let r = r.max(1e-9);
-        let ang_step = crate::meshing::range_splitter::arc_angular_step(r, def, OCCT_ANGLE, 0.0);
-        Some(ang_step.max((u1 - u0) / 96.0))
+        r.max(1e-9)
     } else {
-        None
+        0.0
     };
-    // V-direction angular cap for periodic-v surfaces (torus tube direction):
-    // the sagitta chord test alone leaves a small tube nearly unsubdivided
-    // (sagitta < deflection needs Δv up to ~2.7 rad for r = 0.125), while OCCT
-    // bounds every curved direction by the angular deflection.
-    let v_step: Option<f64> = if surface.is_v_periodic() {
-        let vm = 0.5 * (v0 + v1);
-        let r_v = surface
-            .d0(0.0, vm)
-            .distance(&surface.d0(0.0, vm + std::f64::consts::PI))
-            * 0.5;
-        let r_v = r_v.max(1e-9);
-        let ang_step = crate::meshing::range_splitter::arc_angular_step(r_v, def, OCCT_ANGLE, 0.0);
-        Some(ang_step.max((v1 - v0) / 96.0))
-    } else {
-        None
+
+    // Per-surface-type angular steps, ported from the OCCT BRepMesh range
+    // splitters (the source `range_splitter.rs` port). `u_step`/`v_step` are
+    // the quadtree convergence thresholds in each direction.
+    let (u_step, v_step): (Option<f64>, Option<f64>) = match kind {
+        crate::brep_surface::SurfaceKind::Torus => {
+            // Tube (minor) radius — the curvature radius of the v direction.
+            let vm = 0.5 * (v0 + v1);
+            let r_minor = surface
+                .d0(0.0, vm)
+                .distance(&surface.d0(0.0, vm + std::f64::consts::PI))
+                * 0.5;
+            let r_minor = r_minor.max(1e-9);
+            let old_dv = crate::meshing::range_splitter::arc_angular_step(r_minor, def, OCCT_ANGLE, 0.0);
+            let du0 = crate::meshing::range_splitter::arc_angular_step(max_ring_r, def, OCCT_ANGLE, 0.0);
+            // OCCT BRepMesh_TorusRangeSplitter blends the outer-equator u step
+            // with the tube v step: du = du0·min(old_dv,du0)/√(du0²+old_dv²).
+            let aa = (du0 * du0 + old_dv * old_dv).sqrt();
+            let du = if aa > 1e-30 { du0 * old_dv.min(du0) / aa } else { du0 };
+            (
+                Some(du.max((u1 - u0) / 96.0)),
+                Some(old_dv.max((v1 - v0) / 96.0)),
+            )
+        }
+        crate::brep_surface::SurfaceKind::Sphere => {
+            // OCCT BRepMesh_SphereRangeSplitter: the same step in both u and v,
+            // 0.7× the angular step (the latitude arcs share the equatorial
+            // radius, so OCCT's aStep applies to both directions).
+            let a_step =
+                0.7 * crate::meshing::range_splitter::arc_angular_step(max_ring_r, def, OCCT_ANGLE, 0.0);
+            (
+                Some(a_step.max((u1 - u0) / 96.0)),
+                Some(a_step.max((v1 - v0) / 96.0)),
+            )
+        }
+        crate::brep_surface::SurfaceKind::Cylinder | crate::brep_surface::SurfaceKind::Cone => {
+            // u subdivides by the angular step; the straight v generatrix is
+            // handled by `straight_v` below (a cylinder's ~2 bands, a cone's ~4).
+            let ang_step =
+                crate::meshing::range_splitter::arc_angular_step(max_ring_r, def, OCCT_ANGLE, 0.0);
+            (Some(ang_step.max((u1 - u0) / 96.0)), None)
+        }
+        _ => (None, None),
     };
     // Cylinder/cone side walls have a straight v-direction generatrix; their v
     // band is a single segment (OCCT Delaunay does not refine a straight line).
     let straight_v = matches!(
-        crate::pcurve_full::classify_surface_kind(surface.as_ref()),
+        kind,
         crate::brep_surface::SurfaceKind::Cylinder | crate::brep_surface::SurfaceKind::Cone
     );
     let mut verts: Vec<GpPnt> = Vec::new();
