@@ -355,7 +355,17 @@ pub fn mesh_faces(
         if let Some(face) = Face::wrap(fs) {
             if let Some(surface) = BRepTool::face_surface(&face) {
                 if let Some((u1, u2, v1, v2)) = face_uv_window(&face) {
-                    out.push(sample_grid(&surface, u1, u2, v1, v2, nu, nv));
+                    let (verts, mut tris) = sample_grid(&surface, u1, u2, v1, v2, nu, nv);
+                    // The grid follows the surface parameterization; a REVERSED
+                    // face has its material on the opposite side, so its
+                    // triangles must wind the other way (OCCT `BRep_Tool::
+                    // Triangulation` + the face orientation the caller applies).
+                    if face.orientation().is_reversed() {
+                        for t in &mut tris {
+                            std::mem::swap(&mut t.1, &mut t.2);
+                        }
+                    }
+                    out.push((verts, tris));
                 }
             }
         }
