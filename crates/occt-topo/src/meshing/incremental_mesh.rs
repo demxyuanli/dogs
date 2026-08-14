@@ -392,7 +392,9 @@ impl IncrementalMesh {
             })
             .collect();
         if triangles.is_empty() {
-            return Err("IncrementalMesh::map_triangulation: Delaunay produced no triangles".to_string());
+            return Err(format!(
+                "IncrementalMesh::map_triangulation: face {face_index}: Delaunay produced no triangles"
+            ));
         }
         Ok(FaceTriangulation { face_index, vertices, triangles, uv })
     }
