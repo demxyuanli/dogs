@@ -281,9 +281,20 @@ pub fn edge_pcurve_on_face(edge: &Edge, face: &Face, samples: usize) -> Vec<GpPn
     if !a.is_finite() || !b.is_finite() {
         return Vec::new();
     }
-    (0..samples)
-        .map(|i| {
-            let u = a + (b - a) * i as f64 / (samples.max(1) - 1) as f64;
+    let t_vals: Vec<f64> = (0..samples)
+        .map(|i| a + (b - a) * i as f64 / (samples.max(1) - 1) as f64)
+        .collect();
+    // Analytic surfaces: continuous ProjLib projection (stays on the same sheet
+    // of a self-intersecting spindle torus). B-spline/non-analytic surfaces fall
+    // back to the point-wise grid search + hill-climb below.
+    if let Some(pts) =
+        crate::pcurve_full::project_curve_on_surface(surf.as_ref(), curve.as_ref(), &t_vals)
+    {
+        return pts;
+    }
+    t_vals
+        .iter()
+        .map(|&u| {
             let p = curve.d0(u);
             let (pu, pv) = surface_closest_params(surf.as_ref(), &p, 32, 32);
             GpPnt2d::new(pu, pv)

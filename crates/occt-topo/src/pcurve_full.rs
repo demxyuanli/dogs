@@ -309,6 +309,11 @@ impl Projector {
         )
     }
 
+    /// Whether the surface's `v` parameter is periodic (torus tube direction).
+    fn is_v_periodic(&self) -> bool {
+        matches!(self, Projector::Torus { .. })
+    }
+
     /// Project a single 3D point onto the face `(u, v)` domain. `u` is wrapped
     /// into the principal angle range `(-π, π]`; use [`Self::project_seq`] to
     /// unwrap a continuous sequence across the seam.
@@ -355,14 +360,17 @@ impl Projector {
         }
     }
 
-    /// Project a sequence of edge points, unwrapping the `u` coordinate across
-    /// the seam of a `u`-periodic surface so the result is continuous.
+    /// Project a sequence of edge points, unwrapping the `u` (and, for a torus,
+    /// the `v`) coordinate across the seam so the result stays continuous and on
+    /// the same sheet of a self-intersecting surface.
     fn project_seq(&self, curve: &dyn Curve, t_vals: &[f64]) -> Vec<GpPnt2d> {
         let mut out = Vec::with_capacity(t_vals.len());
         let mut prev_u = f64::NAN;
+        let mut prev_v = f64::NAN;
         for &t in t_vals {
             let q = self.project(&curve.d0(t));
             let mut u = q.x();
+            let mut v = q.y();
             if self.is_u_periodic() && prev_u.is_finite() {
                 while u - prev_u > PI {
                     u -= 2.0 * PI;
@@ -371,8 +379,17 @@ impl Projector {
                     u += 2.0 * PI;
                 }
             }
+            if self.is_v_periodic() && prev_v.is_finite() {
+                while v - prev_v > PI {
+                    v -= 2.0 * PI;
+                }
+                while v - prev_v < -PI {
+                    v += 2.0 * PI;
+                }
+            }
             prev_u = u;
-            out.push(GpPnt2d::new(u, q.y()));
+            prev_v = v;
+            out.push(GpPnt2d::new(u, v));
         }
         out
     }
@@ -390,6 +407,26 @@ pub fn project_point_on_surface(s: &dyn Surface, p: &GpPnt) -> Option<GpPnt2d> {
     let kind = classify_surface_kind(s);
     let proj = Projector::from_surface(s, kind)?;
     Some(proj.project(p))
+}
+
+/// Continuous projection of a 3D curve onto an analytic surface — the OCCT
+/// `ProjLib` `projected curve` route. Each sample is projected and then
+/// unwrapped across the `u`/`v` seam so the polyline stays on the *same sheet*
+/// of a self-intersecting surface (a spindle torus), which a point-wise
+/// projection cannot guarantee. Restricted to the torus: for the other analytic
+/// surfaces the point-wise grid search is already exact (their `d0` inverse has
+/// no sheet ambiguity), so the caller keeps that path. Returns `None` otherwise.
+pub fn project_curve_on_surface(
+    s: &dyn Surface,
+    curve: &dyn Curve,
+    t_vals: &[f64],
+) -> Option<Vec<GpPnt2d>> {
+    let kind = classify_surface_kind(s);
+    if kind != SurfaceKind::Torus {
+        return None;
+    }
+    let proj = Projector::from_surface(s, kind)?;
+    Some(proj.project_seq(curve, t_vals))
 }
 
 /// Recover the plane's location and in-plane axes from its surface `d0`.
