@@ -179,7 +179,13 @@ pub(crate) fn torus_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> 
             let p = s.d0(u, v);
             let rr = GpVec::from_pnts(&center, &p);
             let ra = rr.dot(&ax);
-            let rho = rr.subtracted(&ax.multiplied_scalar(ra)).magnitude();
+            // Signed radial distance `R + r·cos v` — not the unsigned magnitude.
+            // A spindle torus (R < r) folds through itself, so its inner equator
+            // (v ≈ π) has a negative rho; the unsigned |R + r·cos v| breaks the
+            // tube equation there. Recover the sign from the torus identity
+            // |rr|² = rho² + ra² ⇒ rho = (|rr|² + R² − r²) / (2R), which is exact
+            // for both ring (R > r) and spindle (R < r) tori (ElSLib convention).
+            let rho = (rr.square_magnitude() + big_r.powi(2) - small_r.powi(2)) / (2.0 * big_r);
             let err = ((rho - big_r).powi(2) + ra.powi(2)).sqrt();
             if (err - small_r).abs() > 1e-3 * small_r.max(1.0) {
                 return None;
@@ -329,10 +335,15 @@ impl Projector {
                 let v = (d.dot(z) / r).clamp(-1.0, 1.0).asin();
                 GpPnt2d::new(d.dot(y).atan2(d.dot(x)), v)
             }
-            Projector::Torus { o, x, y, z, r_big, r_small: _ } => {
+            Projector::Torus { o, x, y, z, r_big, r_small } => {
                 let d = GpVec::from_pnts(o, p);
                 let dz = d.dot(z);
-                let rho = d.subtracted(&z.multiplied_scalar(dz)).magnitude();
+                // Signed radial distance `R + r·cos v`. The unsigned |R + r·cos v|
+                // folds a spindle torus (R < r) through its inner equator (v ≈ π),
+                // where the radial distance is negative; `atan2(dz, |rho| − R)`
+                // then returns v ≈ 0 instead of v ≈ π. Recover the sign from the
+                // torus identity |d|² = rho² + dz² ⇒ rho = (|d|² + R² − r²)/(2R).
+                let rho = (d.square_magnitude() + r_big.powi(2) - r_small.powi(2)) / (2.0 * r_big);
                 GpPnt2d::new(d.dot(y).atan2(d.dot(x)), dz.atan2(rho - r_big))
             }
         }
