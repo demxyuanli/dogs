@@ -319,14 +319,24 @@ impl DelaunayNodeInsertionMeshAlgo {
                 // at the same parameters, so their i-th points coincide; the wire
                 // orientation reverses both together (`BRep_Tool::CurveOnSurface`
                 // + the shared `BRepMeshData_Edge` polyline).
+                //
+                // OCCT `BRepMesh_NodeInsertionMeshAlgo::collectWirePoints` walks each
+                // pcurve *exclusively* of its last point — that junction point equals
+                // the next edge's first point, so it is appended only once and the
+                // wire stays a clean closed chain.
                 let pts = pcurve.points();
                 let pts3d = edge.discretization().points();
+                let n = pts.len();
                 if pcurve.is_forward() {
-                    uv.extend_from_slice(pts);
-                    p3d.extend_from_slice(pts3d);
+                    for i in 0..n.saturating_sub(1) {
+                        uv.push(pts[i]);
+                        p3d.push(pts3d[i]);
+                    }
                 } else {
-                    uv.extend(pts.iter().rev());
-                    p3d.extend(pts3d.iter().rev());
+                    for i in (1..n).rev() {
+                        uv.push(pts[i]);
+                        p3d.push(pts3d[i]);
+                    }
                 }
             }
 
