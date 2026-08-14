@@ -96,21 +96,6 @@ pub fn interpolate_lagrange(xs: &[f64], ys: &[f64], x: f64) -> f64 {
     plib::lagrange_value(xs, ys, x)
 }
 
-/// Moving average smoothing of a 1D signal.
-pub fn smooth_moving_average(data: &[f64], window: usize) -> Vec<f64> {
-    let n = data.len();
-    if n == 0 { return vec![]; }
-    let w = window.max(1);
-    let mut out = vec![0.0f64; n];
-    for i in 0..n {
-        let lo = i.saturating_sub(w / 2);
-        let hi = (i + w / 2 + 1).min(n);
-        let slice = &data[lo..hi];
-        out[i] = slice.iter().sum::<f64>() / slice.len() as f64;
-    }
-    out
-}
-
 /// Simple cubic spline interpolation through points (natural boundary).
 /// Returns coefficients per segment: for segment i, y = a + b*t + c*t² + d*t³, t∈[0,1].
 pub fn cubic_spline_segments(xs: &[f64], ys: &[f64]) -> Result<Vec<[f64; 4]>, &'static str> {
@@ -188,12 +173,5 @@ mod tests {
         assert!((eval_spline(&xs, &segs, 0.0)).abs() < 1e-10);
         assert!((eval_spline(&xs, &segs, 1.0) - 1.0).abs() < 1e-10);
         assert!((eval_spline(&xs, &segs, 2.0)).abs() < 1e-10);
-    }
-
-    #[test]
-    fn moving_avg() {
-        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let sm = smooth_moving_average(&data, 3);
-        assert!((sm[2] - 3.0).abs() < 1e-14);
     }
 }

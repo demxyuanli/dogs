@@ -91,7 +91,6 @@ pub mod shhealing;
 pub mod xmlcaf;
 pub mod rwmesh;
 pub mod brep_builder_full;
-pub mod mesh_pipeline;
 pub mod viz_scene;
 pub mod draw;
 pub mod gprop_analytic;

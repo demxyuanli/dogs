@@ -1,8 +1,6 @@
 //! Phase 7 end-to-end: BRepFeat features (draft/groove/neck), variable-radius
-//! fillet, shape healing, XML XCAF, mesh ops (smoothing/subdivision) and math
-//! depth (RK45).
+//! fillet, shape healing, XML XCAF, and math depth (RK45).
 
-use occt_core::geom::mesh_ops::{laplacian_smooth, uniform_subdivide};
 use occt_core::gp::{GpDir, GpPnt};
 use occt_math::ode_rk45::rk45_solve;
 use occt_topo::brepfeat::draft;
@@ -103,21 +101,7 @@ fn xmlcaf_roundtrip_nested() {
 }
 
 #[test]
-fn mesh_ops_and_math_depth() {
-    // Mesh smoothing + subdivision on a bumpy square.
-    let verts = vec![
-        GpPnt::new(0.0, 0.0, 0.0),
-        GpPnt::new(1.0, 0.0, 0.0),
-        GpPnt::new(1.0, 1.0, 0.5),
-        GpPnt::new(0.0, 1.0, 0.0),
-    ];
-    let tris = vec![(0, 1, 2), (0, 2, 3)];
-    let smoothed = laplacian_smooth(&verts, &tris, 3, 0.5);
-    assert!(smoothed[2].z() < 0.5, "bump flattened to {}", smoothed[2].z());
-    let (nv, nt) = uniform_subdivide(&smoothed, &tris);
-    assert_eq!(nt.len(), 8, "2 tris → 8 after subdivide");
-    assert_eq!(nv.len(), 9);
-
+fn math_depth_rk45() {
     // RK45: harmonic oscillator y'' = −y → sin(t).
     let (t_end, y) = rk45_solve(
         &|t: f64, y: &[f64], dy: &mut [f64]| {

@@ -1,11 +1,10 @@
-//! Phase 8 end-to-end: RWMesh import, BRepBuilderAPI full, mesh pipeline,
-//! visualization-lite, BVH queries, and math depth.
+//! Phase 8 end-to-end: RWMesh import, BRepBuilderAPI full, visualization-lite,
+//! BVH queries, and math depth.
 
 use occt_core::bvh::builder_tri::{build_tri_bvh, TriBvh};
 use occt_core::bvh::bvh_query::{ray_cast_mesh, segment_query_mesh};
 use occt_core::gp::{GpPnt, GpVec};
 use occt_topo::brep_builder_full::BRepBuilderSolid;
-use occt_topo::mesh_pipeline::MeshPipeline;
 use occt_topo::primitives::BRepPrimBox;
 use occt_topo::rwmesh::{mesh_from_shape, scene_bounds, scene_to_compound};
 use occt_topo::viz_scene::{camera_view_matrix, project_point, Camera, CameraProjection, SceneShape, VizScene};
@@ -39,18 +38,6 @@ fn brep_builder_solid_box() {
     assert_eq!(nv, 8, "box vertices {nv}");
     let nf = occt_topo::topo_tools_full::faces_of(&solid.0).len();
     assert_eq!(nf, 6, "box faces {nf}");
-}
-
-#[test]
-fn mesh_pipeline_refine_smooth_volume() {
-    let (v, t) = box_mesh();
-    let mut mp = MeshPipeline { vertices: v, triangles: t };
-    mp.refine(1);
-    mp.smooth(2, 0.5);
-    let vol = mp.volume();
-    // Volume preserved through refine+smooth (divergence theorem on the soup).
-    assert!((vol - 8.0).abs() < 1.5, "box volume {vol} (expect 8)");
-    assert!(vol > 0.0, "positive volume");
 }
 
 #[test]
