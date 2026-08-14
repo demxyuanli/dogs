@@ -285,10 +285,16 @@ impl Projector {
                 Some(Projector::Sphere { o: center, x, y, z, r })
             }
             SurfaceKind::Torus => {
-                let (center, _ax, r_big, r_small) = torus_params(s)?;
+                let (center, ax, r_big, r_small) = torus_params(s)?;
                 let x = GpVec::from_pnts(&center, &s.d0(0.0, 0.0)).normalized();
                 let y = GpVec::from_pnts(&center, &s.d0(FRAC_PI_2, 0.0)).normalized();
-                let z = x.crossed(&y).normalized();
+                // The axis must be the surface's *actual* revolution axis (the
+                // `ElSLib::TorusParameters` `gp_Ax3` direction), recovered by
+                // `torus_params` from `top − bot` — not `x × y`, which flips for
+                // a left-handed STEP torus and would make `v = atan2(z·d, …)` land
+                // on the wrong half of the tube (the screw's thread got v < 0 for
+                // points above its centre).
+                let z = ax;
                 Some(Projector::Torus { o: center, x, y, z, r_big, r_small })
             }
             SurfaceKind::Other => None,
