@@ -21,6 +21,8 @@
 //! ([`IncrementalMesh::build_shape_mesh_wireframe`]) is used so `perform` never
 //! panics.
 
+use std::collections::HashMap;
+
 use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::Surface;
@@ -33,7 +35,8 @@ use crate::shape::{Edge, Face, TopoShape};
 use crate::wireframe;
 
 use super::data_model::{MeshEdge, MeshModel, MeshStatus};
-use super::edge_discret::{EdgeDiscret, MeshFace as UvFace};
+use super::delaun_types::VertexState;
+use super::edge_discret::{CurveTessellator, EdgeDiscret, MeshFace as UvFace};
 use super::mesh_tool::MeshTool;
 use super::model_builder::{ModelBuilder, ModelPreProcessor};
 use super::node_insertion::{DelaunayNodeInsertionMeshAlgo, TriangulationResult};
@@ -378,7 +381,15 @@ impl IncrementalMesh {
         let mut uv = Vec::with_capacity(result.nodes.len());
         for n in &result.nodes {
             uv.push(n.location);
-            vertices.push(surface.d0(n.location.x(), n.location.y()));
+            // Boundary (Frontier) nodes carry the shared edge-polyline 3D point,
+            // so adjacent faces meet exactly on their shared edge; interior
+            // nodes are mapped from the face surface.
+            let p = if n.state == VertexState::Frontier {
+                n.p3d
+            } else {
+                surface.d0(n.location.x(), n.location.y())
+            };
+            vertices.push(p);
         }
         let triangles: Vec<Triangle> = result
             .triangles
@@ -399,11 +410,11 @@ impl IncrementalMesh {
         Ok(FaceTriangulation { face_index, vertices, triangles, uv })
     }
 
-    /// Populate each edge pcurve's discretization points by sampling the analytic
-    /// pcurve (`make_pcurve_full`, the OCCT `MakePCurveOnFace` port) over the
-    /// edge's parameter range.
+    /// Discretize every edge's 3D curve once (the shared 3D polyline, OCCT
+    /// `BRepMesh_EdgeDiscret::Tessellate3d`) and mirror its parameters into each
+    /// pcurve (`Tessellate2d`), so the 2D and 3D boundary points stay aligned and
+    /// adjacent faces meet exactly on a shared edge.
     fn discretize_pcurves(&self, model: &mut MeshModel) -> Result<(), String> {
-        const SAMPLES: usize = 32;
         // Collect the pcurve jobs first (an immutable pass), then populate
         // (a mutable pass) so `model` is never borrowed twice at once.
         let mut jobs: Vec<(usize, usize, Edge, Face, f64, f64)> = Vec::new();
@@ -425,7 +436,31 @@ impl IncrementalMesh {
                 jobs.push((i, p, topo_edge.clone(), topo_face, a, b));
             }
         }
+
+        // Tessellate each edge's 3D curve once (cached), then reuse its parameter
+        // sequence for every pcurve of that edge.
+        let mut edge_params: HashMap<usize, Vec<f64>> = HashMap::new();
         for (edge_index, pcurve_index, topo_edge, topo_face, a, b) in jobs {
+            let params = match edge_params.get(&edge_index) {
+                Some(p) => p.clone(),
+                None => {
+                    let curve = model.edge(edge_index)?.curve().ok_or_else(|| {
+                        format!("IncrementalMesh::discretize_pcurves: edge {edge_index} has no 3D curve")
+                    })?;
+                    let def = model.edge(edge_index)?.deflection().max(1e-9);
+                    let tess = CurveTessellator::from_range(curve, a, b, def, 2);
+                    let params = tess.params().to_vec();
+                    // Store the shared 3D polyline (Tessellate3d).
+                    let em = model.edge_mut(edge_index)?;
+                    em.discretization_mut().clear(false);
+                    for (&t, &p) in params.iter().zip(tess.points().iter()) {
+                        em.discretization_mut().add_point(p, t);
+                    }
+                    edge_params.insert(edge_index, params.clone());
+                    params
+                }
+            };
+
             let pc = crate::pcurve_full::make_pcurve_full(&topo_edge, &topo_face)
                 .map_err(|e| format!("IncrementalMesh::discretize_pcurves: {e}"))?;
             // The pcurve must follow the edge's 3D direction (OCCT
@@ -434,10 +469,9 @@ impl IncrementalMesh {
             let flip = crate::pcurve_full::pc_curve_orientation(&topo_edge, &topo_face, pc.as_ref()) < 0.0;
             let pcurve = model.edge_mut(edge_index)?.pcurve_mut(pcurve_index)?;
             pcurve.clear(false);
-            for k in 0..=SAMPLES {
-                let frac = k as f64 / SAMPLES as f64;
-                let t = if flip { b - (b - a) * frac } else { a + (b - a) * frac };
-                pcurve.add_point(pc.d0(t), t);
+            for &t in &params {
+                let t_eval = if flip { a + b - t } else { t };
+                pcurve.add_point(pc.d0(t_eval), t);
             }
         }
         Ok(())

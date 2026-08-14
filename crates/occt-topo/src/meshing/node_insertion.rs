@@ -42,13 +42,14 @@ use super::range_splitter::{create_range_splitter, RangeSplitter};
 /// Source: `BRepMesh_NodeInsertionMeshAlgo`.
 pub trait NodeInsertionMeshAlgo {
     /// Adds the given 2D point to the mesh data structure and returns its
-    /// (1-based) node index. `location3d` is the index of the associated 3D
-    /// point in the nodes map; coincident points collapse to the existing node
-    /// unless `is_force_add` is set. Source: `addNodeToStructure`.
+    /// (1-based) node index. `p3d` is the associated 3D point (inlined on the
+    /// vertex, matching this port's `DelaunVertex`); coincident points collapse
+    /// to the existing node unless `is_force_add` is set. Source:
+    /// `addNodeToStructure`.
     fn add_node_to_structure(
         &mut self,
         point: GpPnt2d,
-        location3d: i32,
+        p3d: GpPnt,
         movability: VertexState,
         is_force_add: bool,
     ) -> i32;
@@ -65,6 +66,7 @@ pub trait NodeInsertionMeshAlgo {
     fn insert_boundary_nodes(
         &mut self,
         uv_points: &[GpPnt2d],
+        p3d_points: &[GpPnt],
         constraint_edges: &[(i32, i32)],
     ) -> Result<usize, String>;
 
@@ -166,7 +168,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         is_force_add: bool,
     ) -> i32 {
         let node_index =
-            self.add_node_to_structure(point2d, self.nodes_map.len() as i32, movability, is_force_add);
+            self.add_node_to_structure(point2d, point, movability, is_force_add);
         if node_index as usize > self.nodes_map.len() {
             self.nodes_map.push(point);
             // Pre-bind frontier/fixed nodes with identity mapping so boundary
@@ -262,14 +264,14 @@ impl DelaunayNodeInsertionMeshAlgo {
         face_index: usize,
         params: &MeshParameters,
     ) -> Result<TriangulationResult, String> {
-        let (uv, constraints) = Self::collect_boundary_uv(model, face_index)?;
+        let (uv, p3d, constraints) = Self::collect_boundary_uv(model, face_index)?;
         if uv.is_empty() {
             return Err(format!(
                 "DelaunayNodeInsertionMeshAlgo::perform: face {face_index} has no boundary UV points"
             ));
         }
         self.boundary_uv = uv.clone();
-        self.insert_boundary_nodes(&uv, &constraints)?;
+        self.insert_boundary_nodes(&uv, &p3d, &constraints)?;
 
         // Internal (in-face) 3D points -> UV via the face surface.
         let mut internal_uv: Vec<GpPnt2d> = Vec::new();
@@ -297,9 +299,10 @@ impl DelaunayNodeInsertionMeshAlgo {
     fn collect_boundary_uv(
         model: &MeshModel,
         face_index: usize,
-    ) -> Result<(Vec<GpPnt2d>, Vec<(i32, i32)>), String> {
+    ) -> Result<(Vec<GpPnt2d>, Vec<GpPnt>, Vec<(i32, i32)>), String> {
         let face = model.face(face_index)?;
         let mut uv: Vec<GpPnt2d> = Vec::new();
+        let mut p3d: Vec<GpPnt> = Vec::new();
         let mut constraints: Vec<(i32, i32)> = Vec::new();
 
         for &wire_index in face.wires() {
@@ -312,11 +315,18 @@ impl DelaunayNodeInsertionMeshAlgo {
                 let Some(pcurve) = edge.pcurve_for(face_index, orientation) else {
                     continue;
                 };
+                // The pcurve (2D) and the edge's shared 3D polyline are discretized
+                // at the same parameters, so their i-th points coincide; the wire
+                // orientation reverses both together (`BRep_Tool::CurveOnSurface`
+                // + the shared `BRepMeshData_Edge` polyline).
                 let pts = pcurve.points();
+                let pts3d = edge.discretization().points();
                 if pcurve.is_forward() {
                     uv.extend_from_slice(pts);
+                    p3d.extend_from_slice(pts3d);
                 } else {
                     uv.extend(pts.iter().rev());
+                    p3d.extend(pts3d.iter().rev());
                 }
             }
 
@@ -333,7 +343,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             }
         }
 
-        Ok((uv, constraints))
+        Ok((uv, p3d, constraints))
     }
 }
 
@@ -341,11 +351,11 @@ impl NodeInsertionMeshAlgo for DelaunayNodeInsertionMeshAlgo {
     fn add_node_to_structure(
         &mut self,
         point: GpPnt2d,
-        location3d: i32,
+        p3d: GpPnt,
         movability: VertexState,
         is_force_add: bool,
     ) -> i32 {
-        let vertex = DelaunVertex::new(point, GpPnt::zero(), location3d, movability);
+        let vertex = DelaunVertex::new(point, p3d, 0, movability);
         if is_force_add {
             self.structure.add_node_force(vertex)
         } else {
@@ -362,14 +372,15 @@ impl NodeInsertionMeshAlgo for DelaunayNodeInsertionMeshAlgo {
     fn insert_boundary_nodes(
         &mut self,
         uv_points: &[GpPnt2d],
+        p3d_points: &[GpPnt],
         constraint_edges: &[(i32, i32)],
     ) -> Result<usize, String> {
         self.boundary_indices.clear();
         self.boundary_indices.reserve(uv_points.len());
-        for &p in uv_points {
-            // ponytail: the 3D point for the nodes map is a placeholder — the
-            // real 3D association lives in the model's edge discretization.
-            let node = self.register_node(GpPnt::zero(), p, VertexState::Frontier, false);
+        for (i, &p) in uv_points.iter().enumerate() {
+            // The boundary 3D point is the shared edge polyline vertex — not a
+            // placeholder — so adjacent faces meet exactly on the shared edge.
+            let node = self.register_node(p3d_points[i], p, VertexState::Frontier, false);
             self.boundary_indices.push(node);
         }
 
@@ -463,7 +474,7 @@ mod tests {
         let edges = vec![(0i32, 1), (1, 2), (2, 3), (3, 0)];
 
         let mut algo = DelaunayNodeInsertionMeshAlgo::new();
-        assert_eq!(algo.insert_boundary_nodes(&pts, &edges).unwrap(), 4);
+        assert_eq!(algo.insert_boundary_nodes(&pts, &vec![GpPnt::zero(); 4], &edges).unwrap(), 4);
         assert_eq!(algo.boundary_indices(), &[1, 2, 3, 4][..]);
 
         let ds = algo.structure();
@@ -482,7 +493,7 @@ mod tests {
     fn internal_insertion_yields_2n_minus_2_minus_h() {
         let (boundary, edges) = octagon();
         let mut algo = DelaunayNodeInsertionMeshAlgo::new();
-        assert_eq!(algo.insert_boundary_nodes(&boundary, &edges).unwrap(), 8);
+        assert_eq!(algo.insert_boundary_nodes(&boundary, &vec![GpPnt::zero(); 8], &edges).unwrap(), 8);
         assert_eq!(algo.insert_internal_nodes(&[GpPnt2d::new(1.0, 1.0)]).unwrap(), 1);
 
         let res = algo.triangulate().expect("triangulate");
