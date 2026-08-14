@@ -404,6 +404,18 @@ impl IncrementalMesh {
                 "IncrementalMesh::build_face_uv_polygon: face {face_index} has no boundary UV points"
             ));
         }
+        // Normalize the winding: the Delaunay constraint processing (frontier
+        // adjust) expects the outer wire CCW (positive signed area) and holes CW,
+        // matching OCCT's pcurve convention (material on the left). A CW outer
+        // wire otherwise makes frontier_adjust delete every triangle.
+        if signed_area(&outer_wire) < 0.0 {
+            outer_wire.reverse();
+        }
+        for wire in inner_wires.iter_mut() {
+            if signed_area(wire) > 0.0 {
+                wire.reverse();
+            }
+        }
         Ok(UvFace {
             outer_wire,
             inner_wires,
@@ -572,6 +584,16 @@ fn stitch_chain(chain: &mut Vec<GpPnt2d>, mut edge_uv: Vec<GpPnt2d>) {
 /// Whether a boundary chain is a closed loop (its last point equals its first).
 fn chain_closed(chain: &[GpPnt2d]) -> bool {
     chain.len() >= 2 && chain[0].distance(&chain[chain.len() - 1]) < 1e-6
+}
+
+/// Signed area of a UV polygon (shoelace); positive = counter-clockwise.
+fn signed_area(poly: &[GpPnt2d]) -> f64 {
+    let mut a = 0.0;
+    for i in 0..poly.len() {
+        let j = (i + 1) % poly.len();
+        a += poly[i].x() * poly[j].y() - poly[j].x() * poly[i].y();
+    }
+    0.5 * a
 }
 
 /// Invert a surface point to its `(u, v)` parameters via Newton iteration,

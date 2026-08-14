@@ -24,6 +24,7 @@ use occt_geom::Surface;
 
 use super::data_model::MeshModel;
 use super::delaun::Delaun;
+use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunVertex, VertexState};
 use super::edge_discret::MeshFace as UvFace;
 use super::mesh_tool::{FaceMeshData, MeshTool};
@@ -154,39 +155,46 @@ impl Triangulator {
     /// given interior refinement points and runs the triangulation.
     ///
     /// Boundary vertices (those on a constraint edge) are tagged `Frontier`;
-    /// interior points are `Free`. The Delaunay triangulation of a point set
-    /// keeps the convex hull edges, so the outer wire of a convex face is
-    /// preserved without explicit constraint links.
-    ///
-    /// ponytail: constraint edges are not registered as `Frontier` links — the
-    /// `Delaun::new_with_data` pre-linked path's `frontier_adjust`/`cleanup_mesh`
-    /// delete every triangle of a plain square (the known "gapped triangulation"
-    /// bug in the constraint processing), so only the convex-hull path is used.
-    /// For non-convex faces / holes the boundary must be enforced with links —
-    /// revisit once the frontier-adjust bug is fixed.
+    /// interior points are `Free`. The boundary (constraint) edges are
+    /// registered as `Frontier` links so the Delaunay honours the face polygon
+    /// (OCCT `initDataStructure` + `UseEdge`), not just the convex hull of the
+    /// boundary points — required for non-convex faces, holes and periodic
+    /// (seam) boundaries. The caller must supply a CCW outer wire (see
+    /// `build_face_uv_polygon`'s winding normalisation); a CW wire makes the
+    /// frontier adjust delete every triangle.
     fn run_delaun(&self, data: &FaceMeshData, interior: &[GpPnt2d]) -> Result<Delaun, String> {
         let boundary: HashSet<usize> =
             data.constraint_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
-        let mut vertices: Vec<DelaunVertex> = Vec::with_capacity(data.vertices.len() + interior.len());
+        let total = data.vertices.len() + interior.len();
+        let mut structure = DelaunDataStructure::new(total.max(16));
+        let mut node_indices: Vec<i32> = Vec::with_capacity(total);
         for (i, v) in data.vertices.iter().enumerate() {
             let state = if boundary.contains(&i) {
                 VertexState::Frontier
             } else {
                 VertexState::Free
             };
-            vertices.push(DelaunVertex::new(
+            node_indices.push(structure.add_node(DelaunVertex::new(
                 GpPnt2d::new(v.u, v.v),
                 GpPnt::zero(),
                 i as i32,
                 state,
-            ));
+            )));
         }
         for &uv in interior {
-            vertices.push(DelaunVertex::new(uv, GpPnt::zero(), 0, VertexState::Free));
+            node_indices.push(structure.add_node(DelaunVertex::new(uv, GpPnt::zero(), 0, VertexState::Free)));
+        }
+        for &(a, b) in &data.constraint_edges {
+            if a < node_indices.len() && b < node_indices.len() {
+                let (na, nb) = (node_indices[a], node_indices[b]);
+                if na != nb {
+                    structure.add_link(na, nb, VertexState::Frontier);
+                }
+            }
         }
 
-        Ok(Delaun::new_vertices(&vertices))
+        Ok(Delaun::new_with_data(structure, &mut node_indices))
     }
 
     /// UV barycenters of the triangles whose deviation from the surface exceeds
