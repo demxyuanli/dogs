@@ -115,9 +115,7 @@ fn direct_children(s: &TopoShape) -> Vec<TopoShape> {
         .read()
         .unwrap()
         .children
-        .iter()
-        .map(|h| TopoShape::from_handle(h.clone()))
-        .collect()
+        .clone()
 }
 
 /// Reverse the orientation of a shape view.
@@ -658,7 +656,7 @@ fn treat_compound(s: &TopoShape, out: &mut Vec<TopoShape>, fence: &mut Vec<TopoS
         return;
     }
     for h in s.tshape.read().unwrap().children.clone() {
-        treat_compound(&TopoShape::from_handle(h), out, fence);
+        treat_compound(&h, out, fence);
     }
 }
 
@@ -765,8 +763,7 @@ fn compute_state_by_one_point(
         }
         _ => {
             let kids = shape.tshape.read().unwrap().children.clone();
-            for h in kids {
-                let sub = TopoShape::from_handle(h);
+            for sub in kids {
                 let st = compute_state_by_one_point(&sub, solid, tol)?;
                 if st != FaceState::Unknown {
                     return Ok(st);

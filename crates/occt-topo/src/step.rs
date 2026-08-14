@@ -1068,9 +1068,7 @@ impl WriteCtx {
                     .read()
                     .unwrap()
                     .children
-                    .iter()
-                    .map(|h| TopoShape::from_handle(h.clone()))
-                    .collect();
+                    .clone();
                 let mut out = Vec::new();
                 for k in kids {
                     out.extend(self.emit_top(&k));
@@ -1122,8 +1120,8 @@ fn children_of_type(s: &TopoShape, t: ShapeType) -> Vec<TopoShape> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type == t)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|h| h.shape_type() == t)
+        .cloned()
         .collect()
 }
 
@@ -1578,9 +1576,7 @@ pub fn write_step_compound(compound: &TopoShape) -> Result<String, String> {
         .read()
         .unwrap()
         .children
-        .iter()
-        .map(|h| TopoShape::from_handle(h.clone()))
-        .collect();
+        .clone();
     if kids.is_empty() {
         return Err("write_step_compound: empty compound".into());
     }

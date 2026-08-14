@@ -614,7 +614,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 
@@ -1117,7 +1117,7 @@ mod tests_full {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 

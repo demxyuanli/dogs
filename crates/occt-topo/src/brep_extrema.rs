@@ -464,17 +464,16 @@ fn project_to_surface(surface: &Arc<dyn Surface>, p: &GpPnt) -> (f64, f64) {
 fn face_boundary_edges(face: &Face) -> Vec<Edge> {
     let mut out: Vec<Edge> = Vec::new();
     let face_kids = face.0.tshape.read().unwrap().children.clone();
-    for h in face_kids {
-        if h.read().unwrap().shape_type() != ShapeType::Wire {
+    for wire in face_kids {
+        if wire.shape_type() != ShapeType::Wire {
             continue;
         }
-        let wire = TopoShape::from_handle(h);
         let wire_kids = wire.tshape.read().unwrap().children.clone();
-        for eh in wire_kids {
-            if eh.read().unwrap().shape_type() != ShapeType::Edge {
+        for e in wire_kids {
+            if e.shape_type() != ShapeType::Edge {
                 continue;
             }
-            if let Some(edge) = Edge::wrap(TopoShape::from_handle(eh)) {
+            if let Some(edge) = Edge::wrap(e) {
                 out.push(edge);
             }
         }
@@ -486,17 +485,16 @@ fn face_boundary_edges(face: &Face) -> Vec<Edge> {
 fn face_boundary_points(face: &Face) -> Vec<GpPnt> {
     let mut out: Vec<GpPnt> = Vec::new();
     let face_kids = face.0.tshape.read().unwrap().children.clone();
-    for h in face_kids {
-        if h.read().unwrap().shape_type() != ShapeType::Wire {
+    for wire in face_kids {
+        if wire.shape_type() != ShapeType::Wire {
             continue;
         }
-        let wire = TopoShape::from_handle(h);
         let wire_kids = wire.tshape.read().unwrap().children.clone();
-        for eh in wire_kids {
-            if eh.read().unwrap().shape_type() != ShapeType::Edge {
+        for e in wire_kids {
+            if e.shape_type() != ShapeType::Edge {
                 continue;
             }
-            if let Some(edge) = Edge::wrap(TopoShape::from_handle(eh)) {
+            if let Some(edge) = Edge::wrap(e) {
                 if let Some((a, b)) = BRepTool::edge_vertices(&edge) {
                     if !out.iter().any(|q| q.distance(&a) < 1e-9) {
                         out.push(a);

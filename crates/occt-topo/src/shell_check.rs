@@ -12,13 +12,7 @@ use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Shell, TopoShape, Wire};
 
 fn direct_children(s: &TopoShape) -> Vec<TopoShape> {
-    s.tshape
-        .read()
-        .unwrap()
-        .children
-        .iter()
-        .map(|h| TopoShape::from_handle(h.clone()))
-        .collect()
+    s.tshape.read().unwrap().children.clone()
 }
 
 /// Depth-first collect every edge in the tree rooted at `s`.
@@ -209,7 +203,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 
@@ -310,7 +304,7 @@ mod tests {
     fn closed_six_face_box_is_closed() {
         let b = TopoBuilder::new();
         let solid = build_box(&b, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 2.0, 3.0), &[true; 6]);
-        let shell = Shell(TopoShape::from_handle(solid.0.tshape.read().unwrap().children[0].clone()));
+        let shell = Shell(solid.0.tshape.read().unwrap().children[0].clone());
         assert!(shell_manifold_check(&shell).is_ok(), "unexpected offending edges");
         assert!(shell_is_closed(&shell));
         // V − E + F = 8 − 12 + 6 = 2
@@ -328,7 +322,7 @@ mod tests {
             &GpPnt::new(1.0, 1.0, 1.0),
             &[true, true, true, true, false, false],
         );
-        let shell = Shell(TopoShape::from_handle(solid.0.tshape.read().unwrap().children[0].clone()));
+        let shell = Shell(solid.0.tshape.read().unwrap().children[0].clone());
         let err = shell_manifold_check(&shell).expect_err("open shell must fail");
         assert!(!shell_is_closed(&shell));
         // The 8 top/bottom edges are referenced once.

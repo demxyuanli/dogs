@@ -1154,9 +1154,7 @@ mod tests {
         let r = cylinder_radius(BRepTool::face_surface(blend).unwrap().as_ref()).unwrap();
         assert!((r - 0.4).abs() < 1e-6, "blend radius {r}");
         // Closed shell.
-        let shell = Shell(TopoShape::from_handle(
-            out.tshape.read().unwrap().children[0].clone(),
-        ));
+        let shell = Shell(out.tshape.read().unwrap().children[0].clone());
         assert!(shell_is_closed(&shell), "filleted box is closed");
         // Every edge endpoint of the result lies on the original box surface
         // (within tolerance). The box spans [0,2]³; the surface is the union
@@ -1233,9 +1231,7 @@ mod tests {
             .unwrap();
         let out = fillet_edge_chain(&bx.solid.0, &[e0, e1], 0.3).expect("chain");
         assert_eq!(faces_of(&out).len(), 8, "two fillets add two faces");
-        let shell = Shell(TopoShape::from_handle(
-            out.tshape.read().unwrap().children[0].clone(),
-        ));
+        let shell = Shell(out.tshape.read().unwrap().children[0].clone());
         assert!(shell_is_closed(&shell), "chained fillet is closed");
     }
 
@@ -1253,9 +1249,7 @@ mod tests {
         let sphere = find_face_by_surface(&faces, |s| classify_surface(s) == SurfaceKind::Sphere)
             .expect("sphere blend face");
         let _ = sphere;
-        let shell = Shell(TopoShape::from_handle(
-            out.tshape.read().unwrap().children[0].clone(),
-        ));
+        let shell = Shell(out.tshape.read().unwrap().children[0].clone());
         assert!(shell_is_closed(&shell), "corner fillet is closed");
     }
 

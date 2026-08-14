@@ -136,8 +136,8 @@ pub fn check_edges(shape: &TopoShape) -> Vec<String> {
                         .unwrap()
                         .children
                         .iter()
-                        .filter(|h| h.read().unwrap().shape_type() == ShapeType::Vertex)
-                        .map(|h| TopoShape::from_handle(h.clone()))
+                        .filter(|h| h.shape_type() == ShapeType::Vertex)
+                        .cloned()
                         .collect();
                     if !kids.is_empty() {
                         let p_first = BRepTool::vertex_point(
@@ -191,10 +191,10 @@ pub fn check_faces(shape: &TopoShape) -> Vec<String> {
             let mut w = 0usize;
             let kids = face.0.tshape.read().unwrap().children.clone();
             for h in kids {
-                if h.read().unwrap().shape_type() != ShapeType::Wire {
+                if h.shape_type() != ShapeType::Wire {
                     continue;
                 }
-                if let Some(wire) = Wire::wrap(TopoShape::from_handle(h)) {
+                if let Some(wire) = Wire::wrap(h) {
                     if !check_wire_closed(&wire) {
                         issues.push(format!("face {idx}: wire {w} is not closed"));
                     }
@@ -293,8 +293,8 @@ fn wire_edges(wire: &Wire) -> Vec<Edge> {
     let mut out = Vec::new();
     let kids = wire.0.tshape.read().unwrap().children.clone();
     for h in kids {
-        if h.read().unwrap().shape_type() == ShapeType::Edge {
-            if let Some(e) = Edge::wrap(TopoShape::from_handle(h)) {
+        if h.shape_type() == ShapeType::Edge {
+            if let Some(e) = Edge::wrap(h) {
                 out.push(e);
             }
         }
@@ -312,8 +312,8 @@ fn edge_endpoint_points(e: &Edge) -> Option<(GpPnt, GpPnt)> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type() == ShapeType::Vertex)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|h| h.shape_type() == ShapeType::Vertex)
+        .cloned()
         .collect();
     if kids.len() >= 2 {
         let a = BRepTool::vertex_point(&Vertex::wrap(kids[0].clone()).expect("vertex child"));
@@ -409,15 +409,14 @@ pub fn is_watertight(shape: &TopoShape) -> bool {
         if let Some(face) = Face::wrap(fs) {
             let mut edges = Vec::new();
             let face_kids = face.0.tshape.read().unwrap().children.clone();
-            for h in face_kids {
-                if h.read().unwrap().shape_type() != ShapeType::Wire {
+            for wire in face_kids {
+                if wire.shape_type() != ShapeType::Wire {
                     continue;
                 }
-                let wire = TopoShape::from_handle(h);
                 let wire_kids = wire.tshape.read().unwrap().children.clone();
                 for eh in wire_kids {
-                    if eh.read().unwrap().shape_type() == ShapeType::Edge {
-                        edges.push(TopoShape::from_handle(eh));
+                    if eh.shape_type() == ShapeType::Edge {
+                        edges.push(eh);
                     }
                 }
             }

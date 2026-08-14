@@ -63,13 +63,7 @@ fn ptr(s: &TopoShape) -> usize {
 
 /// Direct child `TopoShape`s of `s` (the `TShape::children` list).
 fn children(s: &TopoShape) -> Vec<TopoShape> {
-    s.tshape
-        .read()
-        .unwrap()
-        .children
-        .iter()
-        .map(|h| TopoShape::from_handle(h.clone()))
-        .collect()
+    s.tshape.read().unwrap().children.clone()
 }
 
 /// Position-grouping index: the index of an existing representative point

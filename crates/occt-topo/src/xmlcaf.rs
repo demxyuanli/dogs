@@ -319,9 +319,7 @@ fn write_shape_xml(out: &mut String, s: &TopoShape, depth: usize) {
                 .read()
                 .unwrap()
                 .children
-                .iter()
-                .map(|h| TopoShape::from_handle(h.clone()))
-                .collect();
+                .clone();
             for k in &kids {
                 write_shape_xml(out, k, depth + 1);
             }
@@ -905,8 +903,8 @@ fn children_of_type(s: &TopoShape, t: ShapeType) -> Vec<TopoShape> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type == t)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|h| h.shape_type() == t)
+        .cloned()
         .collect()
 }
 

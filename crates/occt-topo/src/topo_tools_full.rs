@@ -25,10 +25,13 @@ pub fn map_shapes(shape: &TopoShape, types: &[ShapeType]) -> HashMap<ShapeType, 
     let mut seen = HashSet::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
-        // Key on (TShape, orientation) — OCCT's TopTools_MapOfShape. Two edges
-        // sharing a TShape with opposite orientations (a cylinder side wall's
-        // two seam generatrices) are distinct; merging them uncloses the face.
-        let key = (Arc::as_ptr(&s.tshape) as usize, s.orientation() as u8);
+        // Key on TShape identity only — OCCT's TopTools_ShapeMapHasher (used by
+        // TopTools_IndexedMapOfShape / TopExp::MapShapes) keys with IsSame, so a
+        // shared edge used Forward in one face and Reversed in another (e.g. the
+        // box's 12 edges) counts once. The orientation is carried on the returned
+        // shape view; a seam's two opposite-oriented occurrences stay reachable
+        // through `edges_of_wire` (direct children), which does not deduplicate.
+        let key = Arc::as_ptr(&s.tshape) as usize;
         if !seen.insert(key) {
             continue;
         }
@@ -36,7 +39,7 @@ pub fn map_shapes(shape: &TopoShape, types: &[ShapeType]) -> HashMap<ShapeType, 
             out.get_mut(&s.shape_type()).unwrap().push(s.clone());
         }
         for k in s.tshape.read().unwrap().children.clone().into_iter().rev() {
-            stack.push(TopoShape::from_handle(k));
+            stack.push(k);
         }
     }
     out
@@ -49,13 +52,13 @@ pub fn all_subshapes(shape: &TopoShape) -> Vec<TopoShape> {
     let mut seen = HashSet::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
-        let key = (Arc::as_ptr(&s.tshape) as usize, s.orientation() as u8);
+        let key = Arc::as_ptr(&s.tshape) as usize;
         if !seen.insert(key) {
             continue;
         }
         out.push(s.clone());
         for k in s.tshape.read().unwrap().children.clone().into_iter().rev() {
-            stack.push(TopoShape::from_handle(k));
+            stack.push(k);
         }
     }
     out
@@ -103,12 +106,14 @@ pub fn wires_of_face(face: &Face) -> Vec<Wire> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type() == ShapeType::Wire)
-        .map(|h| Wire(TopoShape::from_handle(h.clone())))
+        .filter(|s| s.shape_type() == ShapeType::Wire)
+        .map(|s| Wire(s.clone()))
         .collect()
 }
 
-/// Direct child edges of a wire.
+/// Direct child edges of a wire, preserving each edge's stored orientation
+/// (a reversed edge on the wire stays reversed — the OCCT `TopoDS_Iterator`
+/// contract).
 pub fn edges_of_wire(wire: &Wire) -> Vec<Edge> {
     wire.0
         .tshape
@@ -116,8 +121,8 @@ pub fn edges_of_wire(wire: &Wire) -> Vec<Edge> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type() == ShapeType::Edge)
-        .map(|h| Edge(TopoShape::from_handle(h.clone())))
+        .filter(|s| s.shape_type() == ShapeType::Edge)
+        .map(|s| Edge(s.clone()))
         .collect()
 }
 
@@ -131,8 +136,8 @@ pub fn edge_vertices(edge: &Edge) -> (Option<Vertex>, Option<Vertex>) {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type() == ShapeType::Vertex)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|s| s.shape_type() == ShapeType::Vertex)
+        .cloned()
         .collect();
     let first = kids.first().cloned().map(Vertex);
     let last = kids.get(1).or_else(|| kids.last()).cloned().map(Vertex);
@@ -208,11 +213,11 @@ pub fn structure_is_valid(shape: &TopoShape) -> bool {
         }
         let parent = s.shape_type();
         for k in s.tshape.read().unwrap().children.clone() {
-            let child = k.read().unwrap().shape_type();
+            let child = k.shape_type();
             if !valid_child(parent, child) {
                 return false;
             }
-            stack.push(TopoShape::from_handle(k));
+            stack.push(k);
         }
     }
     true

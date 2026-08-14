@@ -1822,7 +1822,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 
@@ -1842,7 +1842,7 @@ mod tests {
     }
 
     fn closed_shell(shape: &TopoShape) -> Shell {
-        Shell(TopoShape::from_handle(shape.tshape.read().unwrap().children[0].clone()))
+        Shell(shape.tshape.read().unwrap().children[0].clone())
     }
 
     fn blend_face<'a>(faces: &'a [Face]) -> &'a Face {

@@ -24,7 +24,10 @@ impl TopoBuilder {
     /// Add sub-shape to compound.
     pub fn add(&self, shape: &mut TopoShape, sub: &TopoShape) {
         if let Ok(mut t) = shape.tshape.write() {
-            t.add_child(sub.tshape.clone());
+            // Store the full child shape (TShape + Location + Orientation), the
+            // OCCT `BRep_Builder::Add` / `TopoDS_TShape::myShapes` model — the
+            // orientation is what lets a wire hold a reversed edge.
+            t.add_child(sub.clone());
         }
     }
 
@@ -190,7 +193,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 

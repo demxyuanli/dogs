@@ -953,7 +953,7 @@ mod tests {
             .unwrap()
             .children
             .iter()
-            .filter(|h| h.read().unwrap().shape_type() == ShapeType::Solid)
+            .filter(|h| h.shape_type() == ShapeType::Solid)
             .count()
     }
 

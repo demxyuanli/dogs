@@ -21,7 +21,7 @@ use occt_geom::{Curve, GeomCircle, GeomCone, GeomCylinder, GeomLine, GeomPlane, 
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, Solid, Vertex, Wire};
 use crate::topexp::Explorer;
-use crate::abs::ShapeType;
+use crate::abs::{Orientation, ShapeType};
 
 /// Wireframe edges of a box: pairs of corner indices into `box_corners`.
 const BOX_EDGES: [(usize, usize); 12] = [
@@ -104,16 +104,30 @@ fn build_box(b: &TopoBuilder, corners: &[GpPnt; 8]) -> Solid {
         (corners[0], dir(0.0, 0.0, -1.0), [0, 3, 2, 1]), // -Z
         (corners[4], dir(0.0, 0.0, 1.0), [4, 5, 6, 7]), // +Z
         (corners[0], dir(0.0, -1.0, 0.0), [0, 1, 5, 4]), // -Y
-        (corners[3], dir(0.0, 1.0, 0.0), [3, 2, 6, 7]), // +Y
+        (corners[3], dir(0.0, 1.0, 0.0), [3, 7, 6, 2]), // +Y
         (corners[0], dir(-1.0, 0.0, 0.0), [0, 4, 7, 3]), // -X
         (corners[1], dir(1.0, 0.0, 0.0), [1, 2, 6, 5]), // +X
     ];
 
     let mut faces: Vec<Face> = Vec::with_capacity(6);
     for (origin, normal, cycle) in faces_def {
+        // Orient each shared edge to the face's CCW-outward traversal: the edge
+        // TShape carries one fixed curve direction (BOX_EDGES), so a wire that
+        // traverses it the other way stores it Reversed (the OCCT
+        // `BRepPrim_GWedge` / `BRepBuilderAPI_MakeWire` edge-orientation model).
         let quad: Vec<Edge> = [0, 1, 2, 3]
             .iter()
-            .map(|&k| edges[edge_index(cycle[k], cycle[(k + 1) % 4])].clone())
+            .map(|&k| {
+                let a = cycle[k];
+                let b = cycle[(k + 1) % 4];
+                let idx = edge_index(a, b);
+                let e = edges[idx].clone();
+                if BOX_EDGES[idx] == (a, b) {
+                    e
+                } else {
+                    Edge(e.0.oriented(Orientation::Reversed))
+                }
+            })
             .collect();
         let wire = b.make_wire(&quad);
         let surface: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane(origin, normal)));

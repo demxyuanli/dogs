@@ -481,14 +481,12 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
     let mut full_period = false;
     let mut full_v_period = false;
     for w in f.tshape.read().unwrap().children.iter() {
-        let w = TopoShape::from_handle(w.clone());
         if w.shape_type() != ShapeType::Wire { continue; }
-        for eh in w.tshape.read().unwrap().children.iter() {
-            let e = TopoShape::from_handle(eh.clone());
+        for e in w.tshape.read().unwrap().children.iter() {
             if e.shape_type() != ShapeType::Edge { continue; }
             let edge = Edge(e.clone());
             let Ok(pc) = crate::pcurve_full::make_pcurve_full(&edge, f) else { continue };
-            let (a0, a1) = reg().edge_parameters(&e);
+            let (a0, a1) = reg().edge_parameters(e);
             if !(a0.is_finite() && a1.is_finite() && a1 > a0) { continue; }
             // Sample the pcurve along the edge. The pcurve of a full-circle
             // edge is unwrapped monotonically (u runs 0 → −2π), so its UV

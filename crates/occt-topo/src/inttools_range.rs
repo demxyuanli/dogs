@@ -396,10 +396,10 @@ impl IntToolsTools {
         let tol2 = t * t;
         let kids = edge.0.tshape.read().unwrap().children.clone();
         for h in kids {
-            if h.read().unwrap().shape_type() != ShapeType::Vertex {
+            if h.shape_type() != ShapeType::Vertex {
                 continue;
             }
-            let v = Vertex(TopoShape::from_handle(h));
+            let v = Vertex(h);
             if BRepTool::vertex_point(&v).square_distance(pnt) <= tol2 {
                 return true;
             }
@@ -517,7 +517,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 

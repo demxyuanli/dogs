@@ -25,7 +25,7 @@ use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::Surface;
 
-use crate::abs::ShapeType;
+use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::intpatch::refine_point_on_surface;
 use crate::mesh::{mesh_surface_area, ShapeMesh};
@@ -409,7 +409,12 @@ impl IncrementalMesh {
         let mut jobs: Vec<(usize, usize, Edge, Face, f64, f64)> = Vec::new();
         for i in 0..model.edges_nb() {
             let edge = model.edge(i)?;
-            let topo_edge = edge.edge().clone();
+            // The pcurve is a property of the (edge, face) pair in the edge's
+            // *natural* curve direction, independent of how a wire orients it;
+            // the wire orientation is applied later when the boundary UV is
+            // collected. Normalize to Forward so the sampled pcurve points
+            // follow `a -> b` (OCCT `BRep_Tool::CurveOnSurface` convention).
+            let topo_edge = Edge(edge.edge().0.oriented(Orientation::Forward));
             let (a, b) = BRepTool::edge_parameters(&topo_edge);
             if !(a.is_finite() && b.is_finite() && b - a >= 1e-15) {
                 continue;

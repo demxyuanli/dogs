@@ -1080,8 +1080,8 @@ fn edge_vertex_shapes(edge: &Edge) -> Vec<TopoShape> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type() == ShapeType::Vertex)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|h| h.shape_type() == ShapeType::Vertex)
+        .cloned()
         .collect()
 }
 

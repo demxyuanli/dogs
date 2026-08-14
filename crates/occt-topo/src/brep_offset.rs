@@ -838,7 +838,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 
@@ -981,7 +981,7 @@ mod tests {
         // Side length 3.0.
         assert!(approx(max(&xs) - min(&xs), 3.0));
         // Closed manifold shell.
-        let shell = Shell(TopoShape::from_handle(result.tshape.read().unwrap().children[0].clone()));
+        let shell = Shell(result.tshape.read().unwrap().children[0].clone());
         assert!(shell_is_closed(&shell), "offset box must be a closed shell");
         clear_tree(&result);
     }

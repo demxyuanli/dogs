@@ -76,8 +76,7 @@ fn add_to_bbox(s: &TopoShape, b: &mut BndBox) {
 
 fn add_children(s: &TopoShape, b: &mut BndBox) {
     let kids = s.tshape.read().unwrap().children.clone();
-    for h in kids {
-        let child = TopoShape::from_handle(h);
+    for child in kids {
         add_to_bbox(&child, b);
     }
 }

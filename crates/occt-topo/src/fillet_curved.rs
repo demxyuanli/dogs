@@ -3008,12 +3008,12 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 
     fn shell_of(shape: &TopoShape) -> Shell {
-        Shell(TopoShape::from_handle(shape.tshape.read().unwrap().children[0].clone()))
+        Shell(shape.tshape.read().unwrap().children[0].clone())
     }
 
     /// A planar face surface whose axis direction is `normal`.

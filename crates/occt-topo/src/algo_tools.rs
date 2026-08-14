@@ -243,8 +243,7 @@ impl AlgoTools {
             }
             _ => {
                 let kids = shape.tshape.read().unwrap().children.clone();
-                for h in kids {
-                    let sub = TopoShape::from_handle(h);
+                for sub in kids {
                     let st = AlgoTools::compute_state(&sub, p, tol)?;
                     if st != FaceState::Unknown {
                         return Ok(st);
@@ -393,8 +392,8 @@ impl AlgoTools {
             .unwrap()
             .children
             .iter()
-            .filter(|h| h.read().unwrap().shape_type() == ShapeType::Edge)
-            .map(|h| TopoShape::from_handle(h.clone()))
+            .filter(|h| h.shape_type() == ShapeType::Edge)
+            .cloned()
             .collect();
         let mut unique: Vec<TopoShape> = Vec::new();
         for e in edges {
@@ -447,10 +446,10 @@ impl AlgoTools {
                 order.push(j);
             }
         }
-        let handles: Vec<HandleTShape> =
-            order.into_iter().map(|i| unique[i].tshape.clone()).collect();
+        let ordered: Vec<TopoShape> =
+            order.into_iter().map(|i| unique[i].clone()).collect();
         if let Ok(mut t) = wire.tshape.write() {
-            t.children = handles;
+            t.children = ordered;
         }
     }
 
@@ -467,8 +466,8 @@ impl AlgoTools {
             .unwrap()
             .children
             .iter()
-            .filter(|h| h.read().unwrap().shape_type() == ShapeType::Face)
-            .map(|h| TopoShape::from_handle(h.clone()))
+            .filter(|h| h.shape_type() == ShapeType::Face)
+            .cloned()
             .collect();
         let mut unique: Vec<TopoShape> = Vec::new();
         for f in faces {
@@ -508,10 +507,10 @@ impl AlgoTools {
                 order.push(i);
             }
         }
-        let handles: Vec<HandleTShape> =
-            order.into_iter().map(|i| unique[i].tshape.clone()).collect();
+        let ordered: Vec<TopoShape> =
+            order.into_iter().map(|i| unique[i].clone()).collect();
         if let Ok(mut t) = shell.tshape.write() {
-            t.children = handles;
+            t.children = ordered;
         }
     }
 
@@ -533,15 +532,7 @@ impl AlgoTools {
             g.pcurves = geom.pcurves.clone();
             reg.set_edge(&e.0, g);
         }
-        let kids: Vec<TopoShape> = edge
-            .0
-            .tshape
-            .read()
-            .unwrap()
-            .children
-            .iter()
-            .map(|h| TopoShape::from_handle(h.clone()))
-            .collect();
+        let kids = edge.0.tshape.read().unwrap().children.clone();
         for k in kids {
             b.add(&mut e.0, &k);
         }
@@ -612,8 +603,8 @@ impl AlgoTools {
                 .unwrap()
                 .children
                 .iter()
-                .filter(|h| h.read().unwrap().shape_type() == ShapeType::Shell)
-                .map(|h| TopoShape::from_handle(h.clone()))
+                .filter(|h| h.shape_type() == ShapeType::Shell)
+                .cloned()
                 .collect(),
             _ => return false,
         };
@@ -624,8 +615,8 @@ impl AlgoTools {
                 .unwrap()
                 .children
                 .iter()
-                .filter(|h| h.read().unwrap().shape_type() == ShapeType::Face)
-                .map(|h| TopoShape::from_handle(h.clone()))
+                .filter(|h| h.shape_type() == ShapeType::Face)
+                .cloned()
                 .collect();
             let mut counts: HashMap<usize, usize> = HashMap::new();
             for f in &faces {
@@ -748,7 +739,7 @@ impl AlgoTools {
             ShapeType::Compound => {
                 let kids = shape.tshape.read().unwrap().children.clone();
                 kids.iter()
-                    .map(|h| AlgoTools::dimension(&TopoShape::from_handle(h.clone())))
+                    .map(|h| AlgoTools::dimension(h))
                     .max()
                     .unwrap_or(0)
             }
@@ -773,8 +764,8 @@ impl AlgoTools {
                 .unwrap()
                 .children
                 .iter()
-                .filter(|h| h.read().unwrap().shape_type() == ShapeType::Vertex)
-                .map(|h| TopoShape::from_handle(h.clone()))
+                .filter(|h| h.shape_type() == ShapeType::Vertex)
+                .cloned()
                 .collect();
             if let (Some(curve), true, true) = (curve, a.is_finite(), b.is_finite()) {
                 let pa = curve.d0(a);
@@ -1255,7 +1246,7 @@ mod tests {
         AlgoTools::orient_faces_on_shell(&mut sh);
         assert_eq!(sh.tshape.read().unwrap().children.len(), 6);
         for h in sh.tshape.read().unwrap().children.iter() {
-            assert_eq!(h.read().unwrap().shape_type(), ShapeType::Face);
+            assert_eq!(h.shape_type(), ShapeType::Face);
         }
     }
 
@@ -1299,8 +1290,7 @@ mod tests {
     #[test]
     fn is_open_shell_closed_false_open_true() {
         let b = unit_box();
-        let shell_h = b.solid.0.tshape.read().unwrap().children[0].clone();
-        let shell = TopoShape::from_handle(shell_h);
+        let shell = b.solid.0.tshape.read().unwrap().children[0].clone();
         assert!(!AlgoTools::is_open_shell(&shell));
 
         // Five faces of the box form an open shell (the right face is missing).

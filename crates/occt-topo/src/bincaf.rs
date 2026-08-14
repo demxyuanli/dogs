@@ -211,9 +211,7 @@ fn write_shape(w: &mut BinWriter, s: &TopoShape) {
                 .read()
                 .unwrap()
                 .children
-                .iter()
-                .map(|h| TopoShape::from_handle(h.clone()))
-                .collect();
+                .clone();
             w.u32(kids.len() as u32);
             for k in &kids {
                 write_shape(w, k);
@@ -592,8 +590,8 @@ fn children_of_type(s: &TopoShape, t: ShapeType) -> Vec<TopoShape> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type == t)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|h| h.shape_type() == t)
+        .cloned()
         .collect()
 }
 
@@ -819,9 +817,7 @@ mod tests {
             .read()
             .unwrap()
             .children
-            .iter()
-            .map(|h| TopoShape::from_handle(h.clone()))
-            .collect();
+            .clone();
         assert_eq!(kids.len(), 2);
         assert_eq!(kids[0].shape_type(), ShapeType::Solid);
         assert_eq!(kids[1].shape_type(), ShapeType::Solid);

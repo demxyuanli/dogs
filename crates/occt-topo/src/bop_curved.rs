@@ -837,18 +837,16 @@ fn mesh_crossing_face(
 fn face_boundary_samples(face: &Face) -> Vec<GpPnt> {
     let mut out: Vec<GpPnt> = Vec::new();
     let face_kids = face.0.tshape.read().unwrap().children.clone();
-    for h in face_kids {
-        if h.read().unwrap().shape_type() != ShapeType::Wire {
+    for wire in face_kids {
+        if wire.shape_type() != ShapeType::Wire {
             continue;
         }
-        let wire = TopoShape::from_handle(h);
         let wire_kids = wire.tshape.read().unwrap().children.clone();
-        for eh in wire_kids {
-            if eh.read().unwrap().shape_type() != ShapeType::Edge {
+        for e in wire_kids {
+            if e.shape_type() != ShapeType::Edge {
                 continue;
             }
-            let edge = TopoShape::from_handle(eh);
-            if let Some(e) = Edge::wrap(edge) {
+            if let Some(e) = Edge::wrap(e) {
                 if let Some((p0, p1)) = BRepTool::edge_vertices(&e) {
                     out.push(p0);
                     out.push(p1);
@@ -2529,7 +2527,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 

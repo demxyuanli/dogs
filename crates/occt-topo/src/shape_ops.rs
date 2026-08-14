@@ -63,7 +63,7 @@ pub fn transform_shape(shape: &mut TopoShape, t: &GpTrsf) -> Result<(), String> 
             _ => {}
         }
         for k in s.tshape.read().unwrap().children.clone() {
-            stack.push(TopoShape::from_handle(k));
+            stack.push(k);
         }
     }
     shape.location = TopLocLocation::identity();
@@ -138,7 +138,7 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
         }
         map.insert(key, copy.clone());
         for k in s.tshape.read().unwrap().children.clone() {
-            stack.push(TopoShape::from_handle(k));
+            stack.push(k);
         }
     }
     // Rebuild children: attach each copied child to its copied parent.
@@ -149,11 +149,11 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
             continue;
         }
         for k in src.tshape.read().unwrap().children.clone() {
-            let ck = std::sync::Arc::as_ptr(&k) as usize;
+            let ck = std::sync::Arc::as_ptr(&k.tshape) as usize;
             if let Some(copy) = map.get(&ck) {
                 let child_shape = copy.clone();
-                dst.tshape.write().unwrap().add_child(child_shape.tshape.clone());
-                stack.push((TopoShape::from_handle(k), copy.clone()));
+                dst.tshape.write().unwrap().add_child(child_shape);
+                stack.push((k, copy.clone()));
             }
         }
     }
@@ -195,7 +195,7 @@ pub fn has_geometry(shape: &TopoShape) -> bool {
             _ => {}
         }
         for k in s.tshape.read().unwrap().children.clone() {
-            stack.push(TopoShape::from_handle(k));
+            stack.push(k);
         }
     }
     false
@@ -212,7 +212,7 @@ pub fn clear_shape_geometry(shape: &TopoShape) {
         }
         reg.clear_shape(&s);
         for k in s.tshape.read().unwrap().children.clone() {
-            stack.push(TopoShape::from_handle(k));
+            stack.push(k);
         }
     }
 }

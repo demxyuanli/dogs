@@ -3,6 +3,7 @@
 use std::sync::{Arc, RwLock};
 use std::fmt;
 use crate::abs::{ShapeType, ShapeFlags};
+use crate::shape::TopoShape;
 use occt_core::toploc::TopLocLocation;
 
 /// Thread-safe shared handle to a TShape (replaces Handle(TopoDS_TShape)).
@@ -14,9 +15,11 @@ pub struct TShape {
     pub shape_type: ShapeType,
     pub flags: ShapeFlags,
     pub location: TopLocLocation,
-    /// Real children list (OCCT's `TopoDS_TShape::myShapes`). A wire holds its
-    /// edges, a face its wires, a solid its shells, a compound arbitrary shapes.
-    pub children: Vec<HandleTShape>,
+    /// Real children list (OCCT's `TopoDS_TShape::myShapes`, which stores
+    /// `TopoDS_Shape` = TShape + Location + Orientation). A wire holds its
+    /// edges, a face its wires, a solid its shells, a compound arbitrary
+    /// shapes — each with its own orientation.
+    pub children: Vec<TopoShape>,
 }
 
 impl fmt::Debug for TShape {
@@ -41,8 +44,8 @@ impl TShape {
     pub fn set_infinite(&mut self, v: bool) { self.flags.infinite = v; }
     pub fn nb_children(&self) -> usize { self.children.len() }
     pub fn set_location(&mut self, l: &TopLocLocation) { self.location = l.clone(); }
-    pub fn child(&self, i: usize) -> Option<HandleTShape> { self.children.get(i).cloned() }
-    pub fn add_child(&mut self, c: HandleTShape) { self.children.push(c); }
+    pub fn child(&self, i: usize) -> Option<TopoShape> { self.children.get(i).cloned() }
+    pub fn add_child(&mut self, c: TopoShape) { self.children.push(c); }
 }
 
 impl Drop for TShape {

@@ -510,9 +510,7 @@ impl IgesWriter {
                     .read()
                     .unwrap()
                     .children
-                    .iter()
-                    .map(|h| TopoShape::from_handle(h.clone()))
-                    .collect();
+                    .clone();
                 for k in kids {
                     self.emit_shape(&k);
                 }
@@ -605,8 +603,8 @@ fn children_of_type(s: &TopoShape, t: ShapeType) -> Vec<TopoShape> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type == t)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|h| h.shape_type() == t)
+        .cloned()
         .collect()
 }
 

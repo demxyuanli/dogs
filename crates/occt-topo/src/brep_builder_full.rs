@@ -499,8 +499,8 @@ impl BRepBuilderShell {
             return Err("BRepBuilderShell::closed_box: dimensions must be positive".into());
         }
         let box_ = crate::primitives::BRepPrimBox::make_box(w, h, d);
-        let handle = box_.solid.0.tshape.read().unwrap().children[0].clone();
-        Ok(Shell(TopoShape::from_handle(handle)))
+        let shell = box_.solid.0.tshape.read().unwrap().children[0].clone();
+        Ok(Shell(shell))
     }
 
     /// Whether the wrapped shell is a closed manifold boundary
@@ -979,7 +979,7 @@ mod tests {
         let bx = BRepPrimBox::make_box(1.0, 1.0, 1.0);
         let faces = crate::topo_tools_full::faces_of(&bx.solid.0);
         let solid = BRepBuilderSolid::from_faces(&faces).expect("solid");
-        let shell = Shell(TopoShape::from_handle(solid.0.tshape.read().unwrap().children[0].clone()));
+        let shell = Shell(solid.0.tshape.read().unwrap().children[0].clone());
         assert!(crate::shell_check::shell_is_closed(&shell), "solid shell closed");
         assert_eq!(crate::topo_tools_full::vertices_of(&solid.0).len(), 8);
         assert!(BRepBuilderSolid::from_faces(&[]).is_err());
@@ -1022,7 +1022,7 @@ mod tests {
     fn prism_solid_from_base() {
         let tri = [GpPnt::new(0., 0., 0.), GpPnt::new(1., 0., 0.), GpPnt::new(0., 1., 0.)];
         let solid = solid_from_prism(&tri, &GpVec::new(0., 0., 1.), 3.0).expect("prism");
-        let shell = Shell(TopoShape::from_handle(solid.0.tshape.read().unwrap().children[0].clone()));
+        let shell = Shell(solid.0.tshape.read().unwrap().children[0].clone());
         assert!(crate::shell_check::shell_is_closed(&shell), "triangle prism closed");
         // Boundary counts: 6 vertices, 9 edges, 5 faces.
         assert_eq!(crate::topo_tools_full::vertices_of(&solid.0).len(), 6);

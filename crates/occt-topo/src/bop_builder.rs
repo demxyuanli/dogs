@@ -1766,7 +1766,7 @@ fn expand_compound(s: &TopoShape) -> Vec<TopoShape> {
     }
     let mut out = Vec::new();
     for k in s.tshape.read().unwrap().children.clone() {
-        out.extend(expand_compound(&TopoShape::from_handle(k)));
+        out.extend(expand_compound(&k));
     }
     out
 }
@@ -1785,9 +1785,7 @@ pub fn decompose_compound(shape: &TopoShape) -> Vec<TopoShape> {
         .read()
         .unwrap()
         .children
-        .iter()
-        .map(|k| TopoShape::from_handle(k.clone()))
-        .collect()
+        .clone()
 }
 
 /// Decompose a shape into its connected boundary components.
@@ -4420,7 +4418,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 

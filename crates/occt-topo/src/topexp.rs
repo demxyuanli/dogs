@@ -93,14 +93,7 @@ impl Explorer {
         match &self.children_fn {
             Some(f) => f(s),
             // Real topology: walk the children stored on the TShape.
-            None => s
-                .tshape
-                .read()
-                .unwrap()
-                .children
-                .iter()
-                .map(|h| TopoShape::from_handle(h.clone()))
-                .collect(),
+            None => s.tshape.read().unwrap().children.clone(),
         }
     }
 
@@ -173,11 +166,10 @@ pub fn vertices_from_edges(edges: &[TopoShape]) -> Vec<TopoShape> {
         let mut added = false;
         if has_children {
             let kids = e.tshape.read().unwrap().children.clone();
-            for h in kids {
-                if h.read().unwrap().shape_type() != ShapeType::Vertex {
+            for v in kids {
+                if v.shape_type() != ShapeType::Vertex {
                     continue;
                 }
-                let v = TopoShape::from_handle(h);
                 if !out.iter().any(|o| Arc::ptr_eq(&o.tshape, &v.tshape)) {
                     out.push(v);
                     added = true;

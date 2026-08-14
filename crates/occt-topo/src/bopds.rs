@@ -918,8 +918,8 @@ fn direct_vertex_children(shape: &TopoShape) -> Vec<TopoShape> {
         .unwrap()
         .children
         .iter()
-        .filter(|h| h.read().unwrap().shape_type() == ShapeType::Vertex)
-        .map(|h| TopoShape::from_handle(h.clone()))
+        .filter(|h| h.shape_type() == ShapeType::Vertex)
+        .cloned()
         .collect()
 }
 
@@ -930,9 +930,7 @@ fn direct_children(shape: &TopoShape) -> Vec<TopoShape> {
         .read()
         .unwrap()
         .children
-        .iter()
-        .map(|h| TopoShape::from_handle(h.clone()))
-        .collect()
+        .clone()
 }
 
 /// The two boundary vertices of an edge.

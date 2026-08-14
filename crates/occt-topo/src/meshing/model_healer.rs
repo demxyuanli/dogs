@@ -305,7 +305,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&crate::shape::TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 

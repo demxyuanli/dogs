@@ -51,17 +51,10 @@ pub fn bbox_union(a: &BndBox, b: &BndBox) -> BndBox {
 
 fn all_faces(shape: &TopoShape) -> Vec<TopoShape> {
     fn walk(s: &TopoShape, out: &mut Vec<TopoShape>) {
-        for child in s
-            .tshape
-            .read()
-            .unwrap()
-            .children
-            .iter()
-            .map(|h| TopoShape::from_handle(h.clone()))
-        {
+        for child in s.tshape.read().unwrap().children.iter() {
             match child.shape_type() {
-                ShapeType::Face => out.push(child),
-                ShapeType::Shell | ShapeType::Solid | ShapeType::Compound | ShapeType::CompSolid => walk(&child, out),
+                ShapeType::Face => out.push(child.clone()),
+                ShapeType::Shell | ShapeType::Solid | ShapeType::Compound | ShapeType::CompSolid => walk(child, out),
                 _ => {}
             }
         }
@@ -73,18 +66,11 @@ fn all_faces(shape: &TopoShape) -> Vec<TopoShape> {
 
 fn all_edges(shape: &TopoShape) -> Vec<TopoShape> {
     fn walk(s: &TopoShape, out: &mut Vec<TopoShape>) {
-        for child in s
-            .tshape
-            .read()
-            .unwrap()
-            .children
-            .iter()
-            .map(|h| TopoShape::from_handle(h.clone()))
-        {
+        for child in s.tshape.read().unwrap().children.iter() {
             match child.shape_type() {
-                ShapeType::Edge => out.push(child),
+                ShapeType::Edge => out.push(child.clone()),
                 ShapeType::Wire | ShapeType::Face | ShapeType::Shell | ShapeType::Solid
-                | ShapeType::Compound | ShapeType::CompSolid => walk(&child, out),
+                | ShapeType::Compound | ShapeType::CompSolid => walk(child, out),
                 _ => {}
             }
         }
@@ -281,7 +267,7 @@ mod tests {
         GeometryRegistry::global().clear_shape(s);
         let children = s.tshape.read().unwrap().children.clone();
         for c in children {
-            clear_tree(&TopoShape::from_handle(c));
+            clear_tree(&c);
         }
     }
 
