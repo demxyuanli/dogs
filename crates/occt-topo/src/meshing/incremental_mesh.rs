@@ -36,6 +36,7 @@ use super::data_model::{MeshEdge, MeshModel, MeshStatus};
 use super::edge_discret::{EdgeDiscret, MeshFace as UvFace};
 use super::mesh_tool::MeshTool;
 use super::model_builder::{ModelBuilder, ModelPreProcessor};
+use super::node_insertion::{DelaunayNodeInsertionMeshAlgo, TriangulationResult};
 use super::parameters::MeshParameters;
 use super::triangulator::{FaceTriangulation, Triangulator};
 
@@ -329,29 +330,28 @@ impl IncrementalMesh {
     /// the interior-point role instead. Revisit once the Delaunay insertion
     /// handles dense Free point sets.
     fn triangulate_model_faces(&self, model: &mut MeshModel) -> Result<Vec<FaceTriangulation>, String> {
-        let tool = MeshTool::new(self.parameters.clone());
-        let triangulator = Triangulator::new(self.parameters.clone());
+        // EdgeDiscret step (OCCT BRepMesh_EdgeDiscret): populate every edge
+        // pcurve from the analytic MakePCurveOnFace (`make_pcurve_full`).
+        self.discretize_pcurves(model)?;
 
+        let mut algo = DelaunayNodeInsertionMeshAlgo::new();
         let mut out: Vec<FaceTriangulation> = Vec::with_capacity(model.faces_nb());
         for i in 0..model.faces_nb() {
-            let surface = {
-                let f = model
-                    .face(i)
-                    .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?;
-                f.surface()
-                    .ok_or_else(|| format!("IncrementalMesh::triangulate_model_faces: face {i} has no surface"))?
-            };
+            let surface = model
+                .face(i)
+                .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?
+                .surface()
+                .ok_or_else(|| {
+                    format!("IncrementalMesh::triangulate_model_faces: face {i} has no surface")
+                })?
+                .clone();
 
-            // EdgeDiscret step: boundary UV polygon from the discretized edges.
-            let uv_face = self.build_face_uv_polygon(model, i)?;
-            let data = tool
-                .extract_face(&uv_face, 1e-6)
+            // Delaunay node insertion (OCCT BRepMesh_DelaunayNodeInsertionMeshAlgo):
+            // boundary UV from pcurves + interior surface nodes + constraint links.
+            let result = algo
+                .perform(model, i, &self.parameters)
                 .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: face {i}: {e}"))?;
-
-            // Triangulator step: 2D Delaunay + deflection-controlled refinement.
-            let tri = triangulator
-                .triangulate(surface.as_ref(), &data)
-                .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: face {i}: {e}"))?;
+            let tri = Self::map_triangulation(&result, surface.as_ref(), i)?;
 
             model
                 .face_mut(i)
@@ -364,6 +364,76 @@ impl IncrementalMesh {
             return Err("IncrementalMesh::triangulate_model_faces: model has no faces".to_string());
         }
         Ok(out)
+    }
+
+    /// Evaluate the surface at every Delaunay node (UV) to build the 3D triangle
+    /// mesh. `TriangulationResult.nodes[i]` is the structure node with index
+    /// `i + 1`, and every triangle vertex index is 1-based.
+    fn map_triangulation(
+        result: &TriangulationResult,
+        surface: &dyn Surface,
+        face_index: usize,
+    ) -> Result<FaceTriangulation, String> {
+        let mut vertices = Vec::with_capacity(result.nodes.len());
+        let mut uv = Vec::with_capacity(result.nodes.len());
+        for n in &result.nodes {
+            uv.push(n.location);
+            vertices.push(surface.d0(n.location.x(), n.location.y()));
+        }
+        let triangles: Vec<Triangle> = result
+            .triangles
+            .iter()
+            .map(|t| {
+                Triangle::new(
+                    (t.vertex_indices[0] - 1) as usize,
+                    (t.vertex_indices[1] - 1) as usize,
+                    (t.vertex_indices[2] - 1) as usize,
+                )
+            })
+            .collect();
+        if triangles.is_empty() {
+            return Err("IncrementalMesh::map_triangulation: Delaunay produced no triangles".to_string());
+        }
+        Ok(FaceTriangulation { face_index, vertices, triangles, uv })
+    }
+
+    /// Populate each edge pcurve's discretization points by sampling the analytic
+    /// pcurve (`make_pcurve_full`, the OCCT `MakePCurveOnFace` port) over the
+    /// edge's parameter range.
+    fn discretize_pcurves(&self, model: &mut MeshModel) -> Result<(), String> {
+        const SAMPLES: usize = 32;
+        // Collect the pcurve jobs first (an immutable pass), then populate
+        // (a mutable pass) so `model` is never borrowed twice at once.
+        let mut jobs: Vec<(usize, usize, Edge, Face, f64, f64)> = Vec::new();
+        for i in 0..model.edges_nb() {
+            let edge = model.edge(i)?;
+            let topo_edge = edge.edge().clone();
+            let (a, b) = BRepTool::edge_parameters(&topo_edge);
+            if !(a.is_finite() && b.is_finite() && b - a >= 1e-15) {
+                continue;
+            }
+            for p in 0..edge.pcurves_nb() {
+                let face_index = edge.pcurve(p)?.face();
+                let topo_face = model.face(face_index)?.face().clone();
+                jobs.push((i, p, topo_edge.clone(), topo_face, a, b));
+            }
+        }
+        for (edge_index, pcurve_index, topo_edge, topo_face, a, b) in jobs {
+            let pc = crate::pcurve_full::make_pcurve_full(&topo_edge, &topo_face)
+                .map_err(|e| format!("IncrementalMesh::discretize_pcurves: {e}"))?;
+            // The pcurve must follow the edge's 3D direction (OCCT
+            // `MakePCurveOnFace` guarantees this); a surface whose parameterization
+            // flips it (e.g. a box face with an inward plane normal) yields −1.
+            let flip = crate::pcurve_full::pc_curve_orientation(&topo_edge, &topo_face, pc.as_ref()) < 0.0;
+            let pcurve = model.edge_mut(edge_index)?.pcurve_mut(pcurve_index)?;
+            pcurve.clear(false);
+            for k in 0..=SAMPLES {
+                let frac = k as f64 / SAMPLES as f64;
+                let t = if flip { b - (b - a) * frac } else { a + (b - a) * frac };
+                pcurve.add_point(pc.d0(t), t);
+            }
+        }
+        Ok(())
     }
 
     /// Build the UV polygon of a model face from its boundary edges.
@@ -403,18 +473,6 @@ impl IncrementalMesh {
             return Err(format!(
                 "IncrementalMesh::build_face_uv_polygon: face {face_index} has no boundary UV points"
             ));
-        }
-        // Normalize the winding: the Delaunay constraint processing (frontier
-        // adjust) expects the outer wire CCW (positive signed area) and holes CW,
-        // matching OCCT's pcurve convention (material on the left). A CW outer
-        // wire otherwise makes frontier_adjust delete every triangle.
-        if signed_area(&outer_wire) < 0.0 {
-            outer_wire.reverse();
-        }
-        for wire in inner_wires.iter_mut() {
-            if signed_area(wire) > 0.0 {
-                wire.reverse();
-            }
         }
         Ok(UvFace {
             outer_wire,
@@ -584,16 +642,6 @@ fn stitch_chain(chain: &mut Vec<GpPnt2d>, mut edge_uv: Vec<GpPnt2d>) {
 /// Whether a boundary chain is a closed loop (its last point equals its first).
 fn chain_closed(chain: &[GpPnt2d]) -> bool {
     chain.len() >= 2 && chain[0].distance(&chain[chain.len() - 1]) < 1e-6
-}
-
-/// Signed area of a UV polygon (shoelace); positive = counter-clockwise.
-fn signed_area(poly: &[GpPnt2d]) -> f64 {
-    let mut a = 0.0;
-    for i in 0..poly.len() {
-        let j = (i + 1) % poly.len();
-        a += poly[i].x() * poly[j].y() - poly[j].x() * poly[i].y();
-    }
-    0.5 * a
 }
 
 /// Invert a surface point to its `(u, v)` parameters via Newton iteration,

@@ -36,6 +36,7 @@ use super::delaun_types::{DelaunTriangle, DelaunVertex, VertexState};
 #[allow(unused_imports)]
 use super::mesh_algo::*;
 use super::parameters::MeshParameters;
+use super::range_splitter::{create_range_splitter, RangeSplitter};
 
 /// Abstract insertion of free vertices into a Delaunay mesh.
 /// Source: `BRepMesh_NodeInsertionMeshAlgo`.
@@ -92,6 +93,7 @@ pub struct DelaunayNodeInsertionMeshAlgo {
     nodes_map: Vec<GpPnt>,
     used_nodes: HashMap<i32, i32>,
     boundary_indices: Vec<i32>,
+    boundary_uv: Vec<GpPnt2d>,
     pre_process_surface_nodes: bool,
     last_result: Option<TriangulationResult>,
 }
@@ -110,6 +112,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             nodes_map: Vec::new(),
             used_nodes: HashMap::new(),
             boundary_indices: Vec::new(),
+            boundary_uv: Vec::new(),
             pre_process_surface_nodes,
             last_result: None,
         }
@@ -177,18 +180,32 @@ impl DelaunayNodeInsertionMeshAlgo {
     }
 
     /// Generates surface (interior) nodes for the face and registers them.
-    /// Source: `DelaunayNodeInsertionMeshAlgo::registerSurfaceNodes`.
-    ///
-    /// ponytail: deflection-driven generation (`RangeSplitter::GenerateSurfaceNodes`)
-    /// belongs to the stub `mesh_algo.rs` range-splitter port; without it this
-    /// currently yields no interior points.
+    /// Source: `DelaunayNodeInsertionMeshAlgo::registerSurfaceNodes`, driving the
+    /// analytical `RangeSplitter` (cylinder/cone/sphere/torus/NURBS) to place the
+    /// interior UV nodes that a periodic surface's degenerate seam boundary alone
+    /// cannot cover.
     pub fn generate_surface_nodes(
         &mut self,
-        _model: &MeshModel,
-        _face_index: usize,
-        _params: &MeshParameters,
+        model: &MeshModel,
+        face_index: usize,
+        params: &MeshParameters,
     ) -> Result<usize, String> {
-        Ok(0)
+        let face = model.face(face_index)?;
+        let Some(surface) = face.surface() else {
+            return Ok(0);
+        };
+        let mut splitter = create_range_splitter(surface.as_ref());
+        splitter.reset(face, params);
+        for &uv in &self.boundary_uv {
+            splitter.add_point(uv);
+        }
+        splitter.adjust_range();
+        let Some(nodes) = splitter.generate_surface_nodes(params) else {
+            return Ok(0);
+        };
+        let count = nodes.len();
+        self.insert_internal_nodes(&nodes)?;
+        Ok(count)
     }
 
     /// Triangulates the registered nodes (boundary + internal + generated
@@ -251,6 +268,7 @@ impl DelaunayNodeInsertionMeshAlgo {
                 "DelaunayNodeInsertionMeshAlgo::perform: face {face_index} has no boundary UV points"
             ));
         }
+        self.boundary_uv = uv.clone();
         self.insert_boundary_nodes(&uv, &constraints)?;
 
         // Internal (in-face) 3D points -> UV via the face surface.

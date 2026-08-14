@@ -502,6 +502,15 @@ impl MeshEdge {
             .ok_or_else(|| out_of_range("MeshEdge::pcurve", index, self.pcurves.len()))
     }
 
+    /// Mutable pcurve with the given index (populated by the edge-discretization
+    /// step).
+    pub fn pcurve_mut(&mut self, index: usize) -> Result<&mut MeshPCurve, String> {
+        let len = self.pcurves.len();
+        self.pcurves
+            .get_mut(index)
+            .ok_or_else(|| out_of_range("MeshEdge::pcurve_mut", index, len))
+    }
+
     /// Adds a pcurve for the given discrete face and orientation; returns the
     /// index of the added pcurve.
     pub fn add_pcurve(&mut self, face: usize, orientation: Orientation) -> usize {
