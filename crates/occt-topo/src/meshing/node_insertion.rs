@@ -30,6 +30,7 @@ use super::data_model::*;
 use super::delaun::Delaun;
 use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunTriangle, DelaunVertex, VertexState};
+use super::face_discret::Classifier;
 // ponytail: `mesh_algo.rs` (BRepMesh_{BaseMeshAlgo,ConstrainedBaseMeshAlgo}) is a
 // stub; the base-algo contract it will provide is modelled here by
 // `NodeInsertionMeshAlgo` + `DelaunayNodeInsertionMeshAlgo` until it lands.
@@ -96,6 +97,10 @@ pub struct DelaunayNodeInsertionMeshAlgo {
     used_nodes: HashMap<i32, i32>,
     boundary_indices: Vec<i32>,
     boundary_uv: Vec<GpPnt2d>,
+    /// Point-in-face classifier over the face's registered wires
+    /// (`BRepMesh_Classifier`), used to drop surface/interior nodes that fall
+    /// outside the face's real region.
+    classifier: Classifier,
     pre_process_surface_nodes: bool,
     last_result: Option<TriangulationResult>,
 }
@@ -115,6 +120,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             used_nodes: HashMap::new(),
             boundary_indices: Vec::new(),
             boundary_uv: Vec::new(),
+            classifier: Classifier::new(),
             pre_process_surface_nodes,
             last_result: None,
         }
@@ -205,8 +211,13 @@ impl DelaunayNodeInsertionMeshAlgo {
         let Some(nodes) = splitter.generate_surface_nodes(params) else {
             return Ok(0);
         };
-        let count = nodes.len();
-        self.insert_internal_nodes(&nodes)?;
+        // `registerSurfaceNodes`: only nodes classified IN the face are kept.
+        let filtered: Vec<GpPnt2d> = nodes
+            .into_iter()
+            .filter(|n| self.classifier.is_inside(n))
+            .collect();
+        let count = filtered.len();
+        self.insert_internal_nodes(&filtered)?;
         Ok(count)
     }
 
@@ -264,22 +275,35 @@ impl DelaunayNodeInsertionMeshAlgo {
         face_index: usize,
         params: &MeshParameters,
     ) -> Result<TriangulationResult, String> {
-        let (uv, p3d, constraints) = Self::collect_boundary_uv(model, face_index)?;
+        let (uv, p3d, constraints, wires_uv) = Self::collect_boundary_uv(model, face_index)?;
         if uv.is_empty() {
             return Err(format!(
                 "DelaunayNodeInsertionMeshAlgo::perform: face {face_index} has no boundary UV points"
             ));
         }
         self.boundary_uv = uv.clone();
+
+        // Register the face's wires in the classifier (`BRepMesh_Classifier`).
+        let (umin, umax, vmin, vmax) = uv_bounds(&uv);
+        self.classifier = Classifier::new();
+        for w in &wires_uv {
+            self.classifier
+                .register_wire(w, (1e-9, 1e-9), (umin, umax), (vmin, vmax));
+        }
+
         self.insert_boundary_nodes(&uv, &p3d, &constraints)?;
 
-        // Internal (in-face) 3D points -> UV via the face surface.
+        // Internal (in-face) 3D points -> UV via the face surface, dropped when
+        // outside the face (`insertInternalVertex` classifier check).
         let mut internal_uv: Vec<GpPnt2d> = Vec::new();
         let face = model.face(face_index)?;
         if let Some(surface) = face.surface() {
             for p in face.points() {
                 if let Some(proj) = project_point_on_surface(surface.as_ref(), p, 1e-7) {
-                    internal_uv.push(GpPnt2d::new(proj.u, proj.v));
+                    let uv_p = GpPnt2d::new(proj.u, proj.v);
+                    if self.classifier.is_inside(&uv_p) {
+                        internal_uv.push(uv_p);
+                    }
                 }
             }
         }
@@ -299,11 +323,12 @@ impl DelaunayNodeInsertionMeshAlgo {
     fn collect_boundary_uv(
         model: &MeshModel,
         face_index: usize,
-    ) -> Result<(Vec<GpPnt2d>, Vec<GpPnt>, Vec<(i32, i32)>), String> {
+    ) -> Result<(Vec<GpPnt2d>, Vec<GpPnt>, Vec<(i32, i32)>, Vec<Vec<GpPnt2d>>), String> {
         let face = model.face(face_index)?;
         let mut uv: Vec<GpPnt2d> = Vec::new();
         let mut p3d: Vec<GpPnt> = Vec::new();
         let mut constraints: Vec<(i32, i32)> = Vec::new();
+        let mut wires_uv: Vec<Vec<GpPnt2d>> = Vec::new();
 
         for &wire_index in face.wires() {
             let wire = model.wire(wire_index)?;
@@ -342,6 +367,7 @@ impl DelaunayNodeInsertionMeshAlgo {
 
             let n = uv.len();
             if n - chain_start >= 2 {
+                wires_uv.push(uv[chain_start..n].to_vec());
                 for t in chain_start..n - 1 {
                     if uv[t] != uv[t + 1] {
                         constraints.push((t as i32, (t + 1) as i32));
@@ -353,8 +379,24 @@ impl DelaunayNodeInsertionMeshAlgo {
             }
         }
 
-        Ok((uv, p3d, constraints))
+        Ok((uv, p3d, constraints, wires_uv))
     }
+}
+
+/// Axis-aligned UV bounds of a point set.
+fn uv_bounds(points: &[GpPnt2d]) -> (f64, f64, f64, f64) {
+    let (mut umin, mut umax, mut vmin, mut vmax) =
+        (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    for p in points {
+        umin = umin.min(p.x());
+        umax = umax.max(p.x());
+        vmin = vmin.min(p.y());
+        vmax = vmax.max(p.y());
+    }
+    if !umin.is_finite() {
+        return (0.0, 1.0, 0.0, 1.0);
+    }
+    (umin, umax, vmin, vmax)
 }
 
 impl NodeInsertionMeshAlgo for DelaunayNodeInsertionMeshAlgo {

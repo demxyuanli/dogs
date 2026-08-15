@@ -16,15 +16,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
+use occt_core::gp::GpPnt2d;
+use occt_geom2d::curve::Curve2d;
 
-use crate::abs::ShapeType;
+use crate::abs::{Orientation, ShapeType};
 use crate::bbox_from_geometry::shape_bbox;
 use crate::brep_tool::BRepTool;
-use crate::shape::{Edge, TopoShape};
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};
+use crate::pcurve_full::make_pcurve_full;
+use crate::shape::{Edge, Face, TopoShape, Wire};
+use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, wires_of_face};
 
-use super::data_model::{MeshModel, MeshStatus};
+use super::data_model::{MeshEdge, MeshModel, MeshStatus};
 use super::parameters::MeshParameters;
+use super::wire_order::{WireOrder, WireOrderStatus};
 
 /// Maximum dimension of a bounding box (`BRepMesh_ShapeTool::BoxMaxDimension`).
 fn box_max_dimension(b: &BndBox) -> Option<f64> {
@@ -43,6 +47,205 @@ fn edge_length(e: &Edge) -> f64 {
     }
 }
 
+/// `BRepMesh_Deflection::ComputeAbsoluteDeflection`: convert a relative
+/// deflection into an absolute one for a shape of bounding-box max dimension
+/// `shape_size` inside a shape of max dimension `max_shape_size`. The coefficient
+/// `max_size / (2·shape_size)` is clamped to `[0.5, 2.0]`.
+fn compute_absolute_deflection(shape_size: f64, max_shape_size: f64, relative: f64) -> f64 {
+    if relative <= 0.0 {
+        return 0.0;
+    }
+    // OCCT seeds aShapeSize with the relative value and overwrites it with the
+    // shape's bbox max dimension when non-void.
+    let shape_size = if shape_size > 0.0 { shape_size } else { relative };
+    let max_size = if max_shape_size > 0.0 { max_shape_size } else { shape_size };
+    let coeff = (max_size / (2.0 * shape_size)).clamp(0.5, 2.0);
+    coeff * shape_size * relative
+}
+
+/// Distance from each edge endpoint's vertex point to the curve at the matching
+/// parameter (`-1.0` when a vertex or curve is missing) — the `aDistF`/`aDistL`
+/// of `BRepMesh_Deflection::ComputeDeflection`.
+fn edge_vertex_adjust(e: &MeshEdge) -> (f64, f64) {
+    let Some(curve) = e.curve() else {
+        return (-1.0, -1.0);
+    };
+    let (v1, v2) = edge_vertices(e.edge());
+    let (f, l) = (e.first_parameter(), e.last_parameter());
+    let df = v1
+        .map(|v| BRepTool::vertex_point(&v).distance(&curve.d0(f)))
+        .unwrap_or(-1.0);
+    let dl = v2
+        .map(|v| BRepTool::vertex_point(&v).distance(&curve.d0(l)))
+        .unwrap_or(-1.0);
+    (df, dl)
+}
+
+/// Port of `BRepMesh_ShapeVisitor::addWire` (2D pcurve mode).
+///
+/// Orders the wire's edges into one connected chain
+/// (`ShapeAnalysis_Wire::CheckOrder` → `ShapeAnalysis_WireOrder::Perform`) and,
+/// for every non-EXTERNAL edge, registers its pcurve on the face and its
+/// position/orientation in the wire chain. Returns `false` when the wire cannot
+/// be ordered (a missing pcurve → `ShapeExtend_FAIL`); a wire whose edges needed
+/// reversing sets the face `UNORIENTED_WIRE` status (`ShapeExtend_DONE3`).
+fn add_wire(
+    model: &mut MeshModel,
+    face_index: usize,
+    wire: &Wire,
+    edge_index: &mut HashMap<usize, usize>,
+) -> bool {
+    let face = match model.face(face_index) {
+        Ok(f) => f.face().clone(),
+        Err(_) => return false,
+    };
+    // `ShapeExtend_WireData(theWire, chained=true, manifold=false)` keeps only
+    // FORWARD/REVERSED edges in the main list; INTERNAL/EXTERNAL are non-manifold.
+    let stored: Vec<Edge> = edges_of_wire(wire)
+        .into_iter()
+        .filter(|e| {
+            let o = e.0.orientation();
+            o == Orientation::Forward || o == Orientation::Reversed
+        })
+        .collect();
+    if stored.is_empty() {
+        return false;
+    }
+
+    // 2D endpoints in each edge's *traversal* direction, mirroring
+    // `ShapeAnalysis_Edge::PCurve(..., orient=true)`: a reversed edge toggles
+    // `cf`/`cl`, so its start point is the pcurve's natural end.
+    let mut order = WireOrder::new();
+    for e in &stored {
+        // Pass the edge's *actual* orientation: a seam edge has two pcurves
+        // (one per side) and must hand each traversal its own side, not the
+        // forward pcurve twice.
+        let pc = match make_pcurve_full(e, &face) {
+            Ok(pc) => pc,
+            Err(_) => return false,
+        };
+        let fwd = Edge(e.0.oriented(Orientation::Forward));
+        let (a, b) = BRepTool::edge_parameters(&fwd);
+        if !a.is_finite() || !b.is_finite() || b - a < 1e-15 {
+            return false;
+        }
+        let (p_a, p_b) = (pc.d0(a), pc.d0(b));
+        let (begin, end) = if e.0.orientation().is_reversed() {
+            (p_b, p_a)
+        } else {
+            (p_a, p_b)
+        };
+        order.add_edge(begin, end);
+    }
+    order.perform();
+
+    if order.status() == WireOrderStatus::Reversed {
+        if let Ok(f) = model.face_mut(face_index) {
+            f.set_status(MeshStatus::UNORIENTED_WIRE);
+        }
+    }
+    if order.nb_edges() != stored.len() {
+        return false;
+    }
+
+    let wire_index = model.add_wire(wire.clone());
+    for i in 1..=stored.len() {
+        let signed = order.ordered(i);
+        let e = &stored[signed.unsigned_abs() as usize - 1];
+        let orientation = if signed < 0 {
+            e.0.orientation().reversed()
+        } else {
+            e.0.orientation()
+        };
+        if orientation == Orientation::External {
+            continue;
+        }
+        let key = Arc::as_ptr(&e.0.tshape) as usize;
+        let eidx = match edge_index.get(&key) {
+            Some(&i) => i,
+            None => {
+                let i = model.add_edge(e.clone());
+                edge_index.insert(key, i);
+                i
+            }
+        };
+        if let Ok(edge) = model.edge_mut(eidx) {
+            edge.add_pcurve(face_index, orientation);
+        }
+        if let Ok(w) = model.wire_mut(wire_index) {
+            w.add_edge(eidx, orientation);
+        }
+    }
+    if let Ok(f) = model.face_mut(face_index) {
+        f.add_wire(wire_index);
+    }
+    true
+}
+
+/// Port of `ShapeAnalysis::OuterWire`: the first wire whose 2D signed area
+/// (`ShapeAnalysis::TotCross2D`) is non-negative, else the last wire.
+fn outer_wire(face: &Face) -> Option<Wire> {
+    let wires = wires_of_face(face);
+    if wires.is_empty() {
+        return None;
+    }
+    for (i, w) in wires.iter().enumerate() {
+        if i == wires.len() - 1 {
+            return Some(w.clone());
+        }
+        if wire_area_2d(w, face) >= 0.0 {
+            return Some(w.clone());
+        }
+    }
+    None
+}
+
+/// `ShapeAnalysis::TotCross2D` — signed 2D area of a wire's pcurves (trapezoid
+/// rule over sampled pcurve points, sequence reversed per REVERSED edge).
+fn wire_area_2d(wire: &Wire, face: &Face) -> f64 {
+    let mut totcross = 0.0;
+    let mut uv0: Option<GpPnt2d> = None;
+    let mut fuv = GpPnt2d::new(0.0, 0.0);
+    let mut nbc = 0usize;
+    for e in edges_of_wire(wire) {
+        let fwd = Edge(e.0.oriented(Orientation::Forward));
+        let Ok(pc) = make_pcurve_full(&fwd, face) else { continue };
+        let (a, b) = BRepTool::edge_parameters(&fwd);
+        if !a.is_finite() || !b.is_finite() {
+            continue;
+        }
+        let mut pts = sample_pcurve(pc.as_ref(), a, b);
+        if e.0.orientation().is_reversed() {
+            pts.reverse();
+        }
+        nbc += 1;
+        if nbc == 1 {
+            fuv = pts[0];
+            uv0 = Some(pts[0]);
+        }
+        for p in &pts {
+            totcross += (fuv.x() - p.x()) * (fuv.y() + p.y()) / 2.0;
+            fuv = *p;
+        }
+    }
+    if let Some(u0) = uv0 {
+        totcross += (fuv.x() - u0.x()) * (fuv.y() + u0.y()) / 2.0;
+    }
+    totcross
+}
+
+/// Uniform sample of a pcurve over `[a, b]` (endpoints + interior), standing in
+/// for `ShapeAnalysis_Curve::GetSamplePoints`.
+fn sample_pcurve(pc: &dyn Curve2d, a: f64, b: f64) -> Vec<GpPnt2d> {
+    const N: usize = 8;
+    let mut pts = Vec::with_capacity(N);
+    for i in 0..N {
+        let t = a + (b - a) * i as f64 / (N - 1) as f64;
+        pts.push(pc.d0(t));
+    }
+    pts
+}
+
 /// Tool for building a discrete model from a topological shape.
 /// Port of `BRepMesh_ModelBuilder` (+ the visiting logic of
 /// `BRepMesh_ShapeVisitor`).
@@ -52,10 +255,11 @@ impl ModelBuilder {
     /// Build the discrete model of `shape` under `params`.
     ///
     /// Mirrors `BRepMesh_ModelBuilder::performInternal` plus the
-    /// `BRepMesh_ShapeVisitor` walk: distinct edges are collected once and
-    /// shared between faces; every face gets its wires, every wire its ordered
-    /// edges, and each edge gets one pcurve per adjacent face. Free edges (not
-    /// bounding any face) are added as well.
+    /// `BRepMesh_ShapeVisitor` walk: every face gets its outer wire first
+    /// (`ShapeAnalysis::OuterWire`), then its inner wires, each wire reordered
+    /// into a connected chain (`ShapeAnalysis_Wire::CheckOrder`), with EXTERNAL
+    /// edges skipped and shared edges deduplicated by TShape identity. Free edges
+    /// (not bounding any face) are added as well.
     ///
     /// Returns `Err` when the shape is empty (void bounding box → `Message_Fail1`).
     pub fn build_model(shape: &TopoShape, params: &MeshParameters) -> Result<MeshModel, String> {
@@ -73,38 +277,33 @@ impl ModelBuilder {
         };
         model.set_max_size(max_size);
 
-        // Visit faces → wires → edges, deduplicating edges by TShape identity
-        // so a shared edge yields a single MeshEdge (ShapeVisitor::Visit(Edge)).
+        // Visit(Face): outer wire first; a failure on the outer wire fails the
+        // face, a failure on an inner wire only marks it unoriented.
         let mut edge_index: HashMap<usize, usize> = HashMap::new();
         for f in faces_of(shape) {
             let face_index = model.add_face(f.clone());
-            let wires = wires_of_face(&f);
-            for w in wires {
-                let wire_index = model.add_wire(w.clone());
-                for e in edges_of_wire(&w) {
-                    let key = Arc::as_ptr(&e.0.tshape) as usize;
-                    let eidx = match edge_index.get(&key) {
-                        Some(&i) => i,
-                        None => {
-                            let i = model.add_edge(e.clone());
-                            edge_index.insert(key, i);
-                            i
-                        }
-                    };
-                    let orientation = e.0.orientation();
-                    model
-                        .edge_mut(eidx)
-                        .expect("edge index just added")
-                        .add_pcurve(face_index, orientation);
-                    model
-                        .wire_mut(wire_index)
-                        .expect("wire index just added")
-                        .add_edge(eidx, orientation);
+
+            let outer = outer_wire(&f);
+            if let Some(outer_wire) = &outer {
+                if !add_wire(&mut model, face_index, outer_wire, &mut edge_index) {
+                    if let Ok(fm) = model.face_mut(face_index) {
+                        fm.set_status(MeshStatus::FAILURE);
+                    }
+                    continue;
                 }
-                model
-                    .face_mut(face_index)
-                    .expect("face index just added")
-                    .add_wire(wire_index);
+            }
+
+            for w in wires_of_face(&f) {
+                if let Some(outer_wire) = &outer {
+                    if Arc::ptr_eq(&w.0.tshape, &outer_wire.0.tshape) {
+                        continue;
+                    }
+                }
+                if !add_wire(&mut model, face_index, &w, &mut edge_index) {
+                    if let Ok(fm) = model.face_mut(face_index) {
+                        fm.set_status(MeshStatus::UNORIENTED_WIRE);
+                    }
+                }
             }
         }
 
@@ -127,53 +326,101 @@ impl ModelBuilder {
 pub struct ModelPreProcessor;
 
 impl ModelPreProcessor {
-    /// Initialize deflections and statuses of every face/edge in `model`.
-    ///
-    /// In relative mode each edge's deflection is `params.deflection * edge length`
-    /// (OCCT: `<deflection> * size of edge`); otherwise it is
-    /// `max(deflection, deflection_interior)`. Face deflection is the maximum
-    /// deflection of the face's boundary edges. Returns `false` for an empty
-    /// model.
-    pub fn perform(model: &mut MeshModel, params: &MeshParameters) -> bool {
-        if model.faces_nb() == 0 && model.edges_nb() == 0 {
-            return false;
-        }
+    /// `BRepMesh_Deflection::ComputeDeflection(edge)` — set the linear and angular
+    /// deflection of one edge (absolute deflection in relative mode, plus the
+    /// vertex-adjustment floor).
+    pub fn compute_edge_deflection(
+        model: &mut MeshModel,
+        edge_index: usize,
+        params: &MeshParameters,
+    ) -> Result<(), String> {
+        let max_size = model.max_size();
+        let edge = model.edge(edge_index)?;
+        let size = edge_length(edge.edge());
+        let mut lin = if params.relative {
+            compute_absolute_deflection(size, max_size, params.deflection)
+        } else {
+            params.deflection
+        };
+        let (df, dl) = edge_vertex_adjust(edge);
+        lin = lin.max(df.max(dl));
+        let e = model.edge_mut(edge_index)?;
+        e.set_deflection(lin.max(1e-7));
+        e.set_angular_deflection(params.angle);
+        e.set_status(MeshStatus::OUTDATED);
+        Ok(())
+    }
 
-        for i in 0..model.edges_nb() {
-            let len = edge_length(model.edge(i).expect("edge index in range").edge());
-            let d = if params.relative {
-                if len > 0.0 {
-                    params.deflection * len
-                } else {
-                    params.deflection
-                }
-            } else {
-                params.deflection.max(params.deflection_interior.max(0.0))
-            };
-            let e = model.edge_mut(i).expect("edge index in range");
-            e.set_deflection(d.max(1e-7));
-            e.set_angular_deflection(params.angle);
-            // Fresh model: no prior triangulation, so nothing is reusable.
-            e.set_status(MeshStatus::OUTDATED);
-        }
+    /// `BRepMesh_Deflection::ComputeDeflection(wire)` — mean of the wire's edge
+    /// deflections (or `params.deflection` for an empty wire).
+    pub fn compute_wire_deflection(
+        model: &mut MeshModel,
+        wire_index: usize,
+        params: &MeshParameters,
+    ) -> Result<(), String> {
+        let w = model.wire(wire_index)?;
+        let def = if w.edges_nb() > 0 {
+            let sum: f64 = (0..w.edges_nb())
+                .map(|j| model.edge(w.edge(j)?).map(|e| e.deflection()))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .sum();
+            sum / w.edges_nb() as f64
+        } else {
+            params.deflection
+        };
+        model.wire_mut(wire_index)?.set_deflection(def);
+        Ok(())
+    }
 
-        for i in 0..model.faces_nb() {
-            // Face deflection is the maximum deflection of its boundary edges.
-            let mut d = 0.0f64;
-            let wire_indices: Vec<usize> = model.face(i).expect("face index in range").wires().to_vec();
-            for wi in wire_indices {
-                let edge_indices: Vec<usize> =
-                    model.wire(wi).expect("wire index in range").edges().to_vec();
-                for ei in edge_indices {
-                    d = d.max(model.edge(ei).expect("edge index in range").deflection());
-                }
+    /// `BRepMesh_Deflection::ComputeDeflection(face)` — the face interior
+    /// deflection (or its absolute form in relative mode) floored by the mean of
+    /// the wire deflections and `2·MaxFaceTolerance`.
+    pub fn compute_face_deflection(
+        model: &mut MeshModel,
+        face_index: usize,
+        params: &MeshParameters,
+    ) -> Result<(), String> {
+        let (face_shape, wires, force) = {
+            let f = model.face(face_index)?;
+            (f.face().clone(), f.wires().to_vec(), params.force_face_deflection)
+        };
+        let interior = if params.relative {
+            let size = box_max_dimension(&shape_bbox(&face_shape)).unwrap_or(0.0);
+            compute_absolute_deflection(size, -1.0, params.deflection_interior)
+        } else {
+            params.deflection_interior
+        };
+        let mut face_def = 0.0;
+        if !force {
+            if !wires.is_empty() {
+                let sum: f64 = wires
+                    .iter()
+                    .map(|&wi| model.wire(wi).map(|w| w.deflection()))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .sum();
+                face_def = sum / wires.len() as f64;
             }
-            let f = model.face_mut(i).expect("face index in range");
-            f.set_deflection(d.max(params.deflection));
-            f.set_status(MeshStatus::OUTDATED);
+            face_def =
+                (2.0 * super::shape_tool::ShapeTool::max_face_tolerance(&face_shape)).max(face_def);
         }
+        face_def = interior.max(face_def);
+        let fm = model.face_mut(face_index)?;
+        fm.set_deflection(face_def.max(1e-7));
+        fm.set_status(MeshStatus::OUTDATED);
+        Ok(())
+    }
 
-        true
+    /// `BRepMesh_ModelPreProcessor::performInternal` — seam-edge amplification on
+    /// cone faces, triangulation-consistency (reuse) check, and cleanup of
+    /// outdated polygons. A fresh model has no stored triangulation, so the
+    /// consistency/cleanup are no-ops.
+    ///
+    /// ponytail: `SeamEdgeAmplifier` (cone seam-edge splitting) is not ported — a
+    /// density refinement for cone seam edges.
+    pub fn perform(model: &mut MeshModel, _params: &MeshParameters) -> bool {
+        model.faces_nb() != 0 || model.edges_nb() != 0
     }
 }
 
@@ -240,7 +487,15 @@ mod tests {
         let shape = unit_box();
         let params = MeshParameters::default();
         let mut model = ModelBuilder::build_model(&shape, &params).expect("model built");
-        assert!(ModelPreProcessor::perform(&mut model, &params));
+        for i in 0..model.edges_nb() {
+            ModelPreProcessor::compute_edge_deflection(&mut model, i, &params).expect("edge deflection");
+        }
+        for i in 0..model.wires_nb() {
+            ModelPreProcessor::compute_wire_deflection(&mut model, i, &params).expect("wire deflection");
+        }
+        for i in 0..model.faces_nb() {
+            ModelPreProcessor::compute_face_deflection(&mut model, i, &params).expect("face deflection");
+        }
         for i in 0..model.edges_nb() {
             let e = model.edge(i).expect("edge index");
             assert!(e.deflection() >= params.deflection);
@@ -258,11 +513,15 @@ mod tests {
         let shape = unit_box();
         let params = MeshParameters { relative: true, ..MeshParameters::default() };
         let mut model = ModelBuilder::build_model(&shape, &params).expect("model built");
-        assert!(ModelPreProcessor::perform(&mut model, &params));
+        for i in 0..model.edges_nb() {
+            ModelPreProcessor::compute_edge_deflection(&mut model, i, &params).expect("edge deflection");
+        }
         for i in 0..model.edges_nb() {
             let d = model.edge(i).expect("edge index").deflection();
-            // unit box edges are length 1 → relative deflection == base deflection.
-            assert!((d - params.deflection).abs() < 1e-9, "rel deflection {d}");
+            // Unit box: edge size 1, model max size 1 → coefficient 1/(2·1)=0.5,
+            // so the relative deflection becomes 0.5·deflection
+            // (`BRepMesh_Deflection::ComputeAbsoluteDeflection`).
+            assert!((d - 0.5 * params.deflection).abs() < 1e-9, "rel deflection {d}");
         }
     }
 }

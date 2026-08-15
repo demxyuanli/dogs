@@ -39,8 +39,11 @@ pub struct EdgeGeom {
     pub same_range: bool,
     pub degenerated: bool,
     /// Per-face 2D pcurves, keyed by face pointer identity (see `shape_key`).
-    /// Mirrors `BRep_TEdge`'s map of `(face -> Geom2d_Curve)`.
-    pub pcurves: HashMap<usize, Arc<dyn Curve2d>>,
+    /// Mirrors `BRep_TEdge`'s list of `(face -> Geom2d_Curve)`: a seam edge of a
+    /// periodic surface carries *two* pcurves on the same face (one per side of
+    /// the seam, e.g. the cone's `u = 0` and `u = 2π` sides), stored in
+    /// forward-then-reversed order.
+    pub pcurves: HashMap<usize, Vec<Arc<dyn Curve2d>>>,
 }
 
 impl EdgeGeom {
@@ -59,14 +62,27 @@ impl EdgeGeom {
     pub fn curve(&self) -> Arc<dyn Curve> { self.curve.clone() }
     pub fn parameters(&self) -> (f64, f64) { (self.first, self.last) }
 
-    /// Attach the pcurve of this edge on the face identified by `face_key`.
+    /// Attach the (single) pcurve of this edge on the face identified by
+    /// `face_key`, replacing any previously attached pcurves.
     pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>) {
-        self.pcurves.insert(face_key, c);
+        self.pcurves.insert(face_key, vec![c]);
     }
 
-    /// The pcurve on the face identified by `face_key`, if already built.
+    /// Replace the pcurves of this edge on the face (one for a normal edge, two
+    /// in forward-then-reversed order for a seam edge).
+    pub fn set_pcurves(&mut self, face_key: usize, cs: Vec<Arc<dyn Curve2d>>) {
+        self.pcurves.insert(face_key, cs);
+    }
+
+    /// The first pcurve on the face (the single pcurve of a normal edge).
     pub fn get_pcurve(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
-        self.pcurves.get(&face_key).cloned()
+        self.pcurves.get(&face_key).and_then(|v| v.first().cloned())
+    }
+
+    /// All pcurves on the face (two, in forward-then-reversed order, for a seam
+    /// edge).
+    pub fn get_pcurves(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
+        self.pcurves.get(&face_key).cloned().unwrap_or_default()
     }
 }
 
@@ -181,9 +197,16 @@ impl GeometryRegistry {
     // ---- edge p-curves ----
 
     /// The pcurve of edge `s` on the face identified by `face_key` (see
-    /// `shape_key`), if one has been attached.
+    /// `shape_key`), if one has been attached. For a seam edge this is the
+    /// forward pcurve; use [`GeometryRegistry::edge_pcurves`] to get both.
     pub fn edge_pcurve(&self, s: &TopoShape, face_key: usize) -> Option<Arc<dyn Curve2d>> {
         self.edges.read().unwrap().get(&key(s)).and_then(|g| g.get_pcurve(face_key))
+    }
+
+    /// All pcurves of edge `s` on the face identified by `face_key`
+    /// (forward-then-reversed for a seam edge, one for a normal edge).
+    pub fn edge_pcurves(&self, s: &TopoShape, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
+        self.edges.read().unwrap().get(&key(s)).map(|g| g.get_pcurves(face_key)).unwrap_or_default()
     }
 
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
@@ -191,6 +214,14 @@ impl GeometryRegistry {
     pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
         if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
             g.set_pcurve(face_key, curve);
+        }
+    }
+
+    /// Replace the pcurves of edge `s` on the face identified by `face_key`.
+    /// Mirrors the seam overload `BRep_Builder::UpdateEdge(edge, c1, c2, face)`.
+    pub fn set_edge_pcurves(&self, s: &TopoShape, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.set_pcurves(face_key, curves);
         }
     }
 

@@ -397,7 +397,11 @@ impl AlgoTools {
             .collect();
         let mut unique: Vec<TopoShape> = Vec::new();
         for e in edges {
-            if !unique.iter().any(|u| u.same_tshape(&e)) {
+            // Collapse only exact duplicate references (same TShape *and* same
+            // orientation). A seam edge of a periodic surface appears twice with
+            // opposite orientations (its two sides); both must be kept or the
+            // wire's UV polygon degenerates to one seam side.
+            if !unique.iter().any(|u| u.same_tshape(&e) && u.orientation() == e.orientation()) {
                 unique.push(e);
             }
         }

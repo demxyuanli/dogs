@@ -24,6 +24,10 @@ use std::collections::{HashMap, HashSet};
 use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::precision::{PCONFUSION, RESOLUTION};
 
+use crate::abs::Orientation;
+use crate::brep_tool::BRepTool;
+use crate::topo_tools_full::edge_vertices;
+
 use super::data_model::{MeshCurve, MeshModel, MeshStatus};
 use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunLink, DelaunTriangle, VertexState};
@@ -128,6 +132,231 @@ impl ModelHealer {
             removed += Self::dedup_consecutive_points(edge.discretization_mut())?;
         }
         Ok(removed)
+    }
+
+    /// `BRepMesh_ModelHealer::fixFaceBoundaries` — for every wire edge whose three
+    /// consecutive edges share vertices, snap the current edge's pcurve endpoints
+    /// onto the closest endpoints of the previous/next pcurves (OCCT
+    /// `connectClosestPoints`). This closes the small UV gaps that numerical
+    /// projection leaves at edge junctions. Returns the number of snapped points.
+    pub fn fix_face_boundaries(model: &mut MeshModel, face_index: usize) -> Result<usize, String> {
+        let wire_indices: Vec<usize> = model.face(face_index)?.wires().to_vec();
+        let mut snapped = 0usize;
+        for wire_index in wire_indices {
+            let chain: Vec<(usize, Orientation)> = {
+                let w = model.wire(wire_index)?;
+                let mut c = Vec::with_capacity(w.edges_nb());
+                for j in 0..w.edges_nb() {
+                    c.push((w.edge(j)?, w.edge_orientation(j)?));
+                }
+                c
+            };
+            let n = chain.len();
+            for i in 0..n {
+                let (prev_edge, prev_ori) = chain[(i + n - 1) % n];
+                let (curr_edge, curr_ori) = chain[i];
+                let (next_edge, next_ori) = chain[(i + 1) % n];
+
+                if !Self::common_vertex(model, prev_edge, curr_edge)
+                    || !Self::common_vertex(model, curr_edge, next_edge)
+                {
+                    continue;
+                }
+                let Some(prev_pc) = Self::find_pcurve(model, prev_edge, face_index, prev_ori)
+                else {
+                    continue;
+                };
+                let Some(curr_pc) = Self::find_pcurve(model, curr_edge, face_index, curr_ori)
+                else {
+                    continue;
+                };
+                let Some(next_pc) = Self::find_pcurve(model, next_edge, face_index, next_ori)
+                else {
+                    continue;
+                };
+                if Self::pcurve_is_internal(model, prev_edge, prev_pc)
+                    || Self::pcurve_is_internal(model, curr_edge, curr_pc)
+                    || Self::pcurve_is_internal(model, next_edge, next_pc)
+                {
+                    continue;
+                }
+                snapped += Self::connect_closest_points(
+                    model,
+                    prev_edge,
+                    prev_pc,
+                    curr_edge,
+                    curr_pc,
+                    next_edge,
+                    next_pc,
+                );
+            }
+        }
+        Ok(snapped)
+    }
+
+    /// `BRepMesh_ModelHealer::connectClosestPoints` — snap the current pcurve's two
+    /// endpoints onto the closest endpoints of the previous and next pcurves.
+    fn connect_closest_points(
+        model: &mut MeshModel,
+        prev_edge: usize,
+        prev_pc: usize,
+        curr_edge: usize,
+        curr_pc: usize,
+        next_edge: usize,
+        next_pc: usize,
+    ) -> usize {
+        // A single-edge wire has no neighbour to snap against.
+        if prev_edge == curr_edge && prev_pc == curr_pc {
+            return 0;
+        }
+
+        let (prev_first, prev_last) = Self::pcurve_ends(model, prev_edge, prev_pc);
+        let (curr_first, curr_last) = Self::pcurve_ends(model, curr_edge, curr_pc);
+        let (next_first, next_last) = Self::pcurve_ends(model, next_edge, next_pc);
+
+        // `closestPoints(prev, curr)` → which prev endpoint is closest to which
+        // curr endpoint; `closestPoints(next, curr)` → same for next.
+        let (prev_side, curr_prev_side) =
+            Self::closest_pair(prev_first, prev_last, curr_first, curr_last);
+        let (next_side, curr_next_side) =
+            Self::closest_pair(next_first, next_last, curr_first, curr_last);
+
+        let prev_val = if prev_side { prev_first } else { prev_last };
+        let next_val = if next_side { next_first } else { next_last };
+
+        // `adjustSamePoints`: when the current edge is degenerate (both its
+        // endpoints are closest to the same neighbour), snap the other endpoint
+        // against the other neighbour instead.
+        let mut snapped = 0usize;
+        if curr_prev_side == curr_next_side {
+            let other_curr_side = !curr_prev_side;
+            let other_curr_val = if other_curr_side { curr_first } else { curr_last };
+            let (other_next_side, _) =
+                Self::closest_pair_to(other_curr_val, next_first, next_last);
+            let other_next_val = if other_next_side { next_first } else { next_last };
+            snapped += usize::from(Self::set_pcurve_end(model, curr_edge, curr_pc, curr_prev_side, prev_val));
+            snapped += usize::from(Self::set_pcurve_end(model, curr_edge, curr_pc, other_curr_side, other_next_val));
+        } else {
+            snapped += usize::from(Self::set_pcurve_end(model, curr_edge, curr_pc, curr_prev_side, prev_val));
+            snapped += usize::from(Self::set_pcurve_end(model, curr_edge, curr_pc, curr_next_side, next_val));
+        }
+        snapped
+    }
+
+    /// `ShapeAnalysis_Wire`-free helper: the `(first, last)` UV of a pcurve.
+    fn pcurve_ends(model: &MeshModel, edge: usize, pc: usize) -> (GpPnt2d, GpPnt2d) {
+        let e = model.edge(edge).expect("edge index in range");
+        let p = e.pcurve(pc).expect("pcurve index in range");
+        let n = p.parameters_nb();
+        if n == 0 {
+            return (GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.0, 0.0));
+        }
+        (
+            p.get_point(0).unwrap_or_else(|_| GpPnt2d::new(0.0, 0.0)),
+            p.get_point(n - 1).unwrap_or_else(|_| GpPnt2d::new(0.0, 0.0)),
+        )
+    }
+
+    /// Sets one end (`first` or `last`) of a pcurve to `val`; true when it changed.
+    fn set_pcurve_end(
+        model: &mut MeshModel,
+        edge: usize,
+        pc: usize,
+        is_first: bool,
+        val: GpPnt2d,
+    ) -> bool {
+        let e = model.edge_mut(edge).expect("edge index in range");
+        let p = e.pcurve_mut(pc).expect("pcurve index in range");
+        let n = p.parameters_nb();
+        if n == 0 {
+            return false;
+        }
+        let idx = if is_first { 0 } else { n - 1 };
+        let cur = p.get_point(idx).unwrap_or(val);
+        if cur == val {
+            return false;
+        }
+        if let Ok(slot) = p.get_point_mut(idx) {
+            *slot = val;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Index of the pcurve of `edge` on `face` with the given orientation.
+    fn find_pcurve(
+        model: &MeshModel,
+        edge: usize,
+        face: usize,
+        orientation: Orientation,
+    ) -> Option<usize> {
+        let e = model.edge(edge).ok()?;
+        e.pcurves_for(face)
+            .into_iter()
+            .find(|&i| e.pcurve(i).map(|p| p.orientation() == orientation).unwrap_or(false))
+            .or_else(|| e.pcurves_for(face).last().copied())
+    }
+
+    /// `IMeshData_PCurve::IsInternal` for the given pcurve.
+    fn pcurve_is_internal(model: &MeshModel, edge: usize, pc: usize) -> bool {
+        model
+            .edge(edge)
+            .ok()
+            .and_then(|e| e.pcurve(pc).ok())
+            .map(|p| p.is_internal())
+            .unwrap_or(false)
+    }
+
+    /// `BRepMesh_ModelHealer::getCommonVertex` — whether two edges share a vertex
+    /// (by TShape identity or by position within the sum of their tolerances).
+    fn common_vertex(model: &MeshModel, e1: usize, e2: usize) -> bool {
+        let (Ok(edge1), Ok(edge2)) = (model.edge(e1), model.edge(e2)) else {
+            return false;
+        };
+        let (a1, b1) = edge_vertices(edge1.edge());
+        let (a2, b2) = edge_vertices(edge2.edge());
+        for v1 in [a1.as_ref(), b1.as_ref()].into_iter().flatten() {
+            for v2 in [a2.as_ref(), b2.as_ref()].into_iter().flatten() {
+                if std::sync::Arc::ptr_eq(&v1.0.tshape, &v2.0.tshape) {
+                    return true;
+                }
+                let tol = BRepTool::vertex_tolerance(v1) + BRepTool::vertex_tolerance(v2);
+                if BRepTool::vertex_point(v1).distance(&BRepTool::vertex_point(v2)) < tol {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// `closestPoints(a, b)` — returns `(a_side, b_side)`, the indices of the
+    /// closest pair of endpoints across the two segments.
+    fn closest_pair(
+        a_first: GpPnt2d,
+        a_last: GpPnt2d,
+        b_first: GpPnt2d,
+        b_last: GpPnt2d,
+    ) -> (bool, bool) {
+        let (first_side, d_first) = Self::closest_pair_to(a_first, b_first, b_last);
+        let (last_side, d_last) = Self::closest_pair_to(a_last, b_first, b_last);
+        if d_first <= d_last {
+            (true, first_side)
+        } else {
+            (false, last_side)
+        }
+    }
+
+    /// `closestPoint(ref, first, second)` — which of `first`/`second` is closest to
+    /// `ref`, and the square distance.
+    fn closest_pair_to(ref_pnt: GpPnt2d, first: GpPnt2d, second: GpPnt2d) -> (bool, f64) {
+        let d_first = ref_pnt.distance(&first);
+        let d_second = ref_pnt.distance(&second);
+        if d_first <= d_second {
+            (true, d_first)
+        } else {
+            (false, d_second)
+        }
     }
 
     /// Drops consecutive curve points closer than `Precision::PConfusion`.
@@ -278,6 +507,29 @@ mod tests {
     use crate::meshing::delaun_types::DelaunVertex;
     use crate::tgeometry::GeometryRegistry;
     use occt_core::gp::{GpAx3, GpPln};
+
+    #[test]
+    fn closest_pair_picks_nearest_endpoints() {
+        // a = (0,0)->(1,0); b = (1,0)->(1,1): a's last (1,0) meets b's first (1,0).
+        let (a_side, b_side) = ModelHealer::closest_pair(
+            GpPnt2d::new(0.0, 0.0),
+            GpPnt2d::new(1.0, 0.0),
+            GpPnt2d::new(1.0, 0.0),
+            GpPnt2d::new(1.0, 1.0),
+        );
+        assert_eq!(a_side, false); // a's last
+        assert_eq!(b_side, true); // b's first
+    }
+
+    #[test]
+    fn closest_pair_to_returns_nearest() {
+        let (side, _) = ModelHealer::closest_pair_to(
+            GpPnt2d::new(0.0, 0.0),
+            GpPnt2d::new(0.1, 0.0),
+            GpPnt2d::new(1.0, 0.0),
+        );
+        assert!(side); // (0.1,0) is closer than (1,0)
+    }
 
     fn v(u: f64, w: f64) -> DelaunVertex {
         DelaunVertex::new_parametric(u, w, VertexState::Free)

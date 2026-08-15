@@ -27,8 +27,8 @@ use std::collections::BTreeSet;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use occt_core::gp::{GpPnt, GpPnt2d};
-use occt_core::precision::{CONFUSION, PCONFUSION, RESOLUTION};
+use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
+use occt_core::precision::{CONFUSION, PCONFUSION, RESOLUTION, SQUARE_CONFUSION};
 use occt_geom::Surface;
 
 use super::data_model::*;
@@ -403,10 +403,33 @@ fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters) -> Option
 
     let tol_u = param_resolution(surface.as_ref(), deflection, true);
     let tol_v = param_resolution(surface.as_ref(), deflection, false);
-    let u_seq =
+    let mut u_seq =
         compute_grain_and_filter(s, &u_params, tol_u, range_u.1 - range_u.0, delta.0, params);
-    let v_seq =
+    let mut v_seq =
         compute_grain_and_filter(s, &v_params, tol_v, range_v.1 - range_v.0, delta.1, params);
+
+    // `AnalyticalFilter`: refine U control params along V iso-lines, then V
+    // control params along U iso-lines, so the grid converges onto curvature
+    // extrema (OCCT NURBSRangeSplitter::GenerateSurfaceNodes).
+    let angle_interior = if params.angle_interior >= 0.0 { params.angle_interior } else { 2.0 * params.angle };
+    analytical_filter_insert(
+        surface.as_ref(),
+        false,
+        &v_seq,
+        &mut u_seq,
+        deflection,
+        angle_interior,
+        params.min_size,
+    );
+    analytical_filter_insert(
+        surface.as_ref(),
+        true,
+        &u_seq,
+        &mut v_seq,
+        deflection,
+        angle_interior,
+        params.min_size,
+    );
 
     let mut nodes = Vec::with_capacity(u_seq.len() * v_seq.len());
     for &u in &u_seq {
@@ -415,6 +438,99 @@ fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters) -> Option
         }
     }
     Some(nodes)
+}
+
+/// Squared distance from `mid` to the segment `p1..p2`
+/// (`BRepMesh_GeomTool::SquareDeflectionOfSegment`).
+fn sq_deflection_of_segment(p1: &GpPnt, p2: &GpPnt, mid: &GpPnt) -> f64 {
+    let ab = p2.coord.subtracted(&p1.coord);
+    let len2 = ab.square_modulus();
+    if len2 <= f64::EPSILON {
+        return mid.coord.subtracted(&p1.coord).square_modulus();
+    }
+    let am = mid.coord.subtracted(&p1.coord);
+    let t = (am.dot(&ab) / len2).clamp(0.0, 1.0);
+    let proj = p1.coord.added(&ab.multiplied(t));
+    mid.coord.subtracted(&proj).square_modulus()
+}
+
+/// `BRepMesh_NURBSRangeSplitter::AnalyticalFilter` (insertion pass): refines the
+/// control-parameter sequence of one direction along the iso-lines of the other
+/// direction by inserting a midpoint wherever the segment's deflection or the
+/// tangent angle exceeds the face deflection / interior angle. This is what makes
+/// the interior node grid converge onto the surface's curvature extrema (the
+/// bbox gate). The removal/thinning pass is omitted — it is a density optimisation
+/// that does not move extrema.
+fn analytical_filter_insert(
+    surface: &dyn Surface,
+    is_iso_u: bool,
+    iso_params: &[f64],
+    control_params: &mut Vec<f64>,
+    deflection: f64,
+    angle_interior: f64,
+    min_size: f64,
+) {
+    if control_params.len() < 2 || iso_params.is_empty() {
+        return;
+    }
+    let sq_max_deflection = deflection * deflection;
+    let sq_min_size = min_size * min_size;
+
+    // OCCT: IsoU scans every iso-line; IsoV skips the two outer ones.
+    let (start, end) = if is_iso_u {
+        (0, iso_params.len())
+    } else {
+        (1, iso_params.len().saturating_sub(1))
+    };
+
+    for &iso_param in &iso_params[start..end] {
+        let iso_point = |t: f64| -> GpPnt {
+            if is_iso_u {
+                surface.d0(iso_param, t)
+            } else {
+                surface.d0(t, iso_param)
+            }
+        };
+        let iso_tangent = |t: f64| -> GpVec {
+            let (_, du, dv) = if is_iso_u {
+                surface.d1(iso_param, t)
+            } else {
+                surface.d1(t, iso_param)
+            };
+            if is_iso_u {
+                dv
+            } else {
+                du
+            }
+        };
+
+        let mut prev_param = control_params[0];
+        let mut prev_pnt = iso_point(prev_param);
+        let mut prev_vec = iso_tangent(prev_param);
+
+        let mut j = 1usize;
+        while j < control_params.len() {
+            let curr_param = control_params[j];
+            let curr_pnt = iso_point(curr_param);
+            let curr_vec = iso_tangent(curr_param);
+
+            let mid_param = 0.5 * (prev_param + curr_param);
+            let mid_pnt = iso_point(mid_param);
+            let sq_dist = sq_deflection_of_segment(&prev_pnt, &curr_pnt, &mid_pnt);
+            let angle = prev_vec.angle(&curr_vec);
+
+            if (sq_dist > sq_max_deflection || angle > angle_interior) && sq_dist > sq_min_size {
+                control_params.insert(j, mid_param);
+                // Reprocess the inserted midpoint against `prev` (j stays).
+                continue;
+            }
+
+            prev_param = curr_param;
+            prev_pnt = curr_pnt;
+            prev_vec = curr_vec;
+            j += 1;
+        }
+    }
 }
 
 /// Range splitter — computes the discrete UV range of a face and, for the

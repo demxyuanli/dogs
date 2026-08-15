@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpPnt, GpPnt2d};
+use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
 use occt_geom::Curve;
 
 // Meshing parameters — owned by the sibling `parameters.rs` stub.
@@ -177,6 +177,14 @@ impl EdgeParameterProvider {
 
     /// Map a stored parameter onto the actual range. SameParameter edges pass
     /// the value through unchanged.
+    ///
+    /// ponytail: OCCT `BRepMesh_EdgeParameterProvider::Parameter` additionally
+    /// projects the corresponding 3D point onto the pcurve (`Extrema_LocateExtPC`)
+    /// to refine the non-SameParameter result and guard against parameter
+    /// regressions on periodic surfaces. That projection needs a pcurve adaptor
+    /// + a 3D point, neither carried by this stand-in provider (edges produced
+    /// by `make_pcurve_full` are same-parameter, so the path is unreachable
+    /// today); the linear rescale below is the faithful degenerate case.
     pub fn remap(&self, stored: f64) -> f64 {
         if self.is_same_param {
             return stored;
@@ -218,14 +226,16 @@ const MAX_SPLIT_DEPTH: usize = 24;
 
 /// Flattens a parametric curve into a deflection-bounded polyline.
 ///
-/// Port of `BRepMesh_CurveTessellator` / `GCPnts_UniformDeflection`: the curve
+/// Port of `BRepMesh_CurveTessellator` / `GCPnts_TangentialDeflection`: the curve
 /// is seeded with at least `min_points` uniform samples and every segment is
 /// then refined while its chord (evaluated at the parameter midpoint) deviates
-/// from the true curve by more than `deflection`.
+/// from the true curve by more than `deflection`, or while the angle between the
+/// segment end tangents exceeds `angular_deflection` (disabled when infinite).
 #[derive(Clone)]
 pub struct CurveTessellator {
     curve: Arc<dyn Curve>,
     deflection: f64,
+    angular_deflection: f64,
     min_points: usize,
     points: Vec<GpPnt>,
     params: Vec<f64>,
@@ -247,9 +257,24 @@ impl CurveTessellator {
         deflection: f64,
         min_points: usize,
     ) -> Self {
+        Self::from_range_angular(curve, first, last, deflection, f64::INFINITY, min_points)
+    }
+
+    /// Tessellate `curve` over `[first, last]` bounding both the chord deviation
+    /// (`deflection`) and the angular deviation between consecutive end tangents
+    /// (`angular_deflection`, `GCPnts_TangentialDeflection`'s angular term).
+    pub fn from_range_angular(
+        curve: Arc<dyn Curve>,
+        first: f64,
+        last: f64,
+        deflection: f64,
+        angular_deflection: f64,
+        min_points: usize,
+    ) -> Self {
         let mut t = Self {
             curve,
             deflection: deflection.max(1e-12),
+            angular_deflection,
             min_points: min_points.max(2),
             points: Vec::new(),
             params: Vec::new(),
@@ -340,12 +365,19 @@ impl CurveTessellator {
         }
 
         let def = self.deflection;
+        let ang = self.angular_deflection;
         let mut final_params: Vec<f64> = Vec::new();
         let mut last: Option<f64> = None;
         while let Some((lo, hi, depth)) = stack.pop() {
             let mid = 0.5 * (lo + hi);
             let (pa, pm, pb) = (self.curve.d0(lo), self.curve.d0(mid), self.curve.d0(hi));
-            if point_segment_dist(&pm, &pa, &pb) > def && depth < MAX_SPLIT_DEPTH {
+            let linear = point_segment_dist(&pm, &pa, &pb) > def;
+            let angular = ang.is_finite() && {
+                let (_, ta) = self.curve.d1(lo);
+                let (_, tb) = self.curve.d1(hi);
+                angle_between(&ta, &tb) > ang
+            };
+            if (linear || angular) && depth < MAX_SPLIT_DEPTH {
                 stack.push((mid, hi, depth + 1));
                 stack.push((lo, mid, depth + 1));
             } else {
@@ -500,33 +532,51 @@ impl EdgeDiscret {
         tess.points
     }
 
-    /// Port of `Tessellate3d`: build the 3D polygon of an edge from a finished
-    /// tessellator, keeping both endpoints.
-    pub fn tessellate_3d(edge: &MeshEdge, tessellator: &CurveTessellator) -> Vec<GpPnt> {
-        let mut pts = Vec::with_capacity(tessellator.points_nb());
-        for p in tessellator.points() {
-            if pts.last().is_none_or(|q: &GpPnt| q.distance(p) > 1e-12) {
-                pts.push(*p);
+    /// Port of `Tessellate3d(theUpdateEnds=true)`: the first and last points are
+    /// the edge's vertex points (`BRep_Tool::Pnt(firstVertex)` /
+    /// `Pnt(lastVertex)`), the interior points come from the tessellator
+    /// (OCCT's indices 2..PointsNb−1). Degenerated edges keep only the start
+    /// vertex.
+    pub fn tessellate_3d(
+        edge: &MeshEdge,
+        tessellator: &CurveTessellator,
+        first_vertex: GpPnt,
+        last_vertex: GpPnt,
+    ) -> Vec<GpPnt> {
+        let n = tessellator.points_nb();
+        if n == 0 {
+            return Vec::new();
+        }
+        let mut pts = Vec::with_capacity(n);
+        pts.push(first_vertex);
+        if !edge.degenerated {
+            // OCCT: `for (i = 2; i < PointsNb(); ++i)` — interior points only.
+            for i in 1..n.saturating_sub(1) {
+                if let Some(p) = tessellator.point(i) {
+                    if pts.last().is_none_or(|q: &GpPnt| q.distance(&p) > 1e-12) {
+                        pts.push(p);
+                    }
+                }
             }
         }
-        if edge.degenerated && !pts.is_empty() {
-            pts.truncate(1);
-        }
+        pts.push(last_vertex);
         pts
     }
 
-    /// Port of `Tessellate2d`: evaluate the 2D pcurve at the parameters produced
-    /// by the 3D tessellation (mapped through the provider).
+    /// Port of `Tessellate2d(theUpdateEnds=true)`: evaluate the 2D pcurve at the
+    /// 3D tessellation parameters (mapped through the provider). The provider
+    /// passes a SameParameter edge's parameters through verbatim and linearly
+    /// rescales a non-SameParameter edge's stored parameters onto the pcurve
+    /// range (`BRepMesh_EdgeParameterProvider::Parameter` without the 3D-point
+    /// projection — see `EdgeParameterProvider`).
     pub fn tessellate_2d(
         provider: &EdgeParameterProvider,
         tessellator: &CurveTessellator,
         pcurve: &dyn Fn(f64) -> GpPnt2d,
     ) -> Vec<GpPnt2d> {
         let mut out = Vec::with_capacity(tessellator.points_nb());
-        for (i, &u) in tessellator.params().iter().enumerate() {
-            let mapped = provider.parameter(i, tessellator.points_nb());
-            // Prefer the tessellated 3D parameter when the edge is SameParameter.
-            let actual = if provider.is_same_param() { u } else { mapped };
+        for &u in tessellator.params() {
+            let actual = provider.remap(u);
             let p2 = pcurve(actual);
             if out.last().is_none_or(|q: &GpPnt2d| q.distance(&p2) > 1e-12) {
                 out.push(p2);
@@ -539,6 +589,15 @@ impl EdgeDiscret {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/// Angle (radians) between two vectors.
+fn angle_between(a: &GpVec, b: &GpVec) -> f64 {
+    let denom = a.magnitude() * b.magnitude();
+    if denom < 1e-30 {
+        return 0.0;
+    }
+    (a.dot(b) / denom).clamp(-1.0, 1.0).acos()
+}
 
 /// Distance from `p` to the segment `a..b`.
 fn point_segment_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> f64 {
@@ -603,6 +662,21 @@ mod tests {
     }
 
     #[test]
+    fn angular_deflection_refines_arc() {
+        let curve = arc_curve(1.0, 0.0, std::f64::consts::PI);
+        // Loose linear deflection (chord deviation only) vs. tight angular bound:
+        // the angular term must add points even when the chord is already short.
+        let lin = CurveTessellator::from_range(curve.clone(), 0.0, 1.0, 10.0, 2);
+        let ang = CurveTessellator::from_range_angular(curve.clone(), 0.0, 1.0, 10.0, 0.05, 2);
+        assert!(
+            ang.points_nb() > lin.points_nb(),
+            "angular {} should exceed linear {}",
+            ang.points_nb(),
+            lin.points_nb()
+        );
+    }
+
+    #[test]
     fn min_points_respected_and_deflection_drives_density() {
         let curve = arc_curve(1.0, 0.0, std::f64::consts::PI);
         let coarse = CurveTessellator::from_range(curve.clone(), 0.0, 1.0, 0.2, 4);
@@ -629,13 +703,18 @@ mod tests {
     }
 
     #[test]
-    fn tessellate_3d_keeps_endpoints_and_dedups() {
+    fn tessellate_3d_replaces_endpoints_with_vertices() {
         let edge = MeshEdge::new(segment_curve(1.0), 0.0, 1.0);
-        let t = CurveTessellator::from_range(edge.curve.clone(), 0.0, 1.0, 0.1, 2);
-        let pts = EdgeDiscret::tessellate_3d(&edge, &t);
-        assert_eq!(pts.first(), t.points().first());
-        assert_eq!(pts.last(), t.points().last());
-        assert!(pts.len() <= t.points_nb());
+        let t = CurveTessellator::from_range(edge.curve.clone(), 0.0, 1.0, 0.1, 4);
+        let a = GpPnt::new(0.0, 0.0, 0.0);
+        let b = GpPnt::new(1.0, 0.0, 0.0);
+        let pts = EdgeDiscret::tessellate_3d(&edge, &t, a, b);
+        // Endpoints are the vertex points (BRep_Tool::Pnt), not curve values.
+        assert_eq!(pts.first(), Some(&a));
+        assert_eq!(pts.last(), Some(&b));
+        // Interior points come from the tessellator; total ≤ tessellator count.
+        assert!(pts.len() <= t.points_nb(), "len {}", pts.len());
+        assert!(pts.len() >= 2);
     }
 
     #[test]

@@ -22,6 +22,7 @@ pub mod edge_discret;    // BRepMesh_EdgeDiscret + EdgeParameterProvider + Curve
 pub mod face_discret;    // BRepMesh_FaceDiscret + FaceChecker + Classifier
 pub mod incremental_mesh;// BRepMesh_IncrementalMesh + DiscretRoot
 pub mod model_builder;   // BRepMesh_ModelBuilder + ModelPreProcessor
+pub mod wire_order;      // ShapeAnalysis_WireOrder (2D pcurve mode)
 
 // Wave 2 — Delaunay core.
 pub mod delaun_types;    // BRepMesh_{Vertex,Triangle,Circle,Edge} + OrientedEdge + PairOfIndex

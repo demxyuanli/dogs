@@ -46,8 +46,9 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpElips, GpHypr, GpLin, GpParab, GpPln,
-    GpPnt, GpSphere, GpTorus, GpVec, GpXyz,
+    GpAx1, GpAx2, GpAx22d, GpAx2d, GpAx3, GpCirc, GpCirc2d, GpCone, GpCylinder, GpDir, GpDir2d,
+    GpElips, GpElips2d, GpHypr, GpLin, GpParab, GpPln, GpPnt, GpPnt2d, GpSphere, GpTorus, GpVec,
+    GpVec2d, GpXyz,
 };
 use occt_geom::{
     bspline_surface::GeomBSplineSurface, Curve, GeomBSplineCurve, GeomCircle, GeomCone,
@@ -55,9 +56,15 @@ use occt_geom::{
     GeomParabola, GeomPlane, GeomSphere, GeomSurfaceOfRevolution, GeomTorus, GeomTrimmedCurve,
     Surface,
 };
+use occt_geom2d::curve::Curve2d;
+use occt_geom2d::{
+    bspline_curve::Geom2dBSplineCurve, circle::Geom2dCircle, ellipse::Geom2dEllipse,
+    line::Geom2dLine, trimmed::Geom2dTrimmedCurve,
+};
 
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_surface::{classify_surface, face_plane, sphere_center, SurfaceKind};
+use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::model::BRepModel;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
@@ -2020,6 +2027,20 @@ fn parse_xyz(s: &str) -> Result<GpXyz, String> {
     ))
 }
 
+/// Parse a 2D `(x, y)` tuple (STEP 2D curves use two-component CARTESIAN_POINTs).
+fn parse_xy(s: &str) -> Result<(f64, f64), String> {
+    let s = s.trim();
+    let inner = s.trim_start_matches('(').trim_end_matches(')');
+    let parts: Vec<String> = split_top(inner)
+        .into_iter()
+        .map(|p| p.trim().to_string())
+        .collect();
+    if parts.len() != 2 {
+        return Err(format!("expected 2-component tuple, got '{s}'"));
+    }
+    Ok((parse_f64(&parts[0])?, parse_f64(&parts[1])?))
+}
+
 fn parse_str(s: &str) -> String {
     let s = s.trim();
     if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
@@ -2040,6 +2061,13 @@ struct Resolver<'a> {
     axis_cache: RefCell<HashMap<usize, GpAx2>>,
     curve_cache: RefCell<HashMap<usize, Arc<dyn Curve>>>,
     surface_cache: RefCell<HashMap<usize, Arc<dyn Surface>>>,
+    curve2d_cache: RefCell<HashMap<usize, (Arc<dyn Curve2d>, (f64, f64))>>,
+    /// SURFACE_CURVE / SEAM_CURVE id → its `associated_geometry` (pcurve_or_surface)
+    /// reference list, carried for the face-level pcurve association.
+    surface_curve_pcurves: RefCell<HashMap<usize, Vec<usize>>>,
+    /// Edge TShape pointer → the curve entity id of its geometry (an EDGE_CURVE's
+    /// `curve` attribute, which may be a SURFACE_CURVE carrying pcurves).
+    edge_curve_ref: RefCell<HashMap<usize, usize>>,
     resolving: RefCell<HashSet<usize>>,
     warnings: RefCell<Vec<String>>,
 }
@@ -2055,6 +2083,9 @@ impl<'a> Resolver<'a> {
             axis_cache: RefCell::new(HashMap::new()),
             curve_cache: RefCell::new(HashMap::new()),
             surface_cache: RefCell::new(HashMap::new()),
+            curve2d_cache: RefCell::new(HashMap::new()),
+            surface_curve_pcurves: RefCell::new(HashMap::new()),
+            edge_curve_ref: RefCell::new(HashMap::new()),
             resolving: RefCell::new(HashSet::new()),
             warnings: RefCell::new(Vec::new()),
         }
@@ -2129,6 +2160,11 @@ impl<'a> Resolver<'a> {
         let mut e = self.b.make_edge(curve, first, last);
         self.b.add(&mut e.0, &v1);
         self.b.add(&mut e.0, &v2);
+        // Remember the edge's curve entity for the face-level pcurve association
+        // (a SURFACE_CURVE's pcurve is matched to the face's surface by ref).
+        self.edge_curve_ref
+            .borrow_mut()
+            .insert(Arc::as_ptr(&e.0.tshape) as usize, curve_ref);
         Ok(e.0)
     }
 
@@ -2212,7 +2248,61 @@ impl<'a> Resolver<'a> {
             }
             wires.push(Wire(s));
         }
-        Ok(self.b.make_face(surface, &wires).0)
+        let face = self.b.make_face(surface, &wires);
+        let face_key = GeometryRegistry::shape_key(&face.0);
+        // Associate each wire edge's SURFACE_CURVE pcurve with this face's
+        // surface (`BRep_Builder::UpdateEdge(edge, pcurve, face, tol)`).
+        for w in &wires {
+            for e in edges_of_wire(w) {
+                self.associate_edge_pcurve(&e, surf_ref, face_key)?;
+            }
+        }
+        Ok(face.0)
+    }
+
+    /// Match a wire edge's SURFACE_CURVE pcurve to `surf_ref` and attach its 2D
+    /// curve to the edge for `face_key`. Source:
+    /// `StepToTopoDS_GeometricTool::PCurve` + `StepToTopoDS_TranslateEdge::MakePCurve`.
+    fn associate_edge_pcurve(
+        &self,
+        edge: &Edge,
+        surf_ref: usize,
+        face_key: usize,
+    ) -> Result<(), String> {
+        let key = Arc::as_ptr(&edge.0.tshape) as usize;
+        let Some(&curve_ref) = self.edge_curve_ref.borrow().get(&key) else {
+            return Ok(());
+        };
+        let Some(pcurves) = self.surface_curve_pcurves.borrow().get(&curve_ref).cloned() else {
+            return Ok(());
+        };
+        // Each associated_geometry entry is a pcurve_or_surface: a PCURVE (with
+        // a 2D curve) or a SURFACE (intersection curve). Only PCURVEs carry the
+        // pcurve; a SURFACE entry fails to resolve and is skipped. The raw 2D
+        // curve is stored with its own parameterization; the meshing maps the
+        // edge's 3D parameter onto it (`BRepMesh_EdgeParameterProvider`).
+        let mut matched: Vec<Arc<dyn Curve2d>> = Vec::new();
+        for pc in pcurves {
+            if let Ok((basis_surf, c2d)) = self.resolve_pcurve(pc) {
+                if basis_surf == surf_ref {
+                    matched.push(c2d);
+                }
+            }
+        }
+        // A seam edge carries two pcurves on the same face (one per side of the
+        // seam, e.g. the cone's `u = 0` and `u = 2π`). Order them forward-then-
+        // reversed (`ShapeAnalysis_Curve::SelectForwardSeam`) so the wire assembly
+        // can hand each traversal its own side.
+        if matched.len() == 2 {
+            let fwd = crate::pcurve_full::select_forward_seam(matched[0].as_ref(), matched[1].as_ref());
+            if fwd == 2 {
+                matched.swap(0, 1);
+            }
+        }
+        if !matched.is_empty() {
+            GeometryRegistry::global().set_edge_pcurves(&edge.0, face_key, matched);
+        }
+        Ok(())
     }
 
     fn resolve_shell(&self, rec: &'a Record) -> Result<TopoShape, String> {
@@ -2366,10 +2456,13 @@ impl<'a> Resolver<'a> {
             }
             "SURFACE_CURVE" | "SEAM_CURVE" => {
                 // SURFACE_CURVE/SEAM_CURVE(name, curve_3d, pcurves, master_rep):
-                // the 3D curve is the second argument; the pcurve list is
-                // referenced per face at the ADVANCED_FACE level, so we take
-                // the 3D curve. SEAM_CURVE is the seam of a closed surface.
+                // the 3D curve is the second argument; the pcurve list
+                // (associated_geometry) is carried for the face-level pcurve
+                // association. SEAM_CURVE is the seam of a closed surface.
                 let c3d = parse_ref(&rec.args[1]).ok_or("SURFACE_CURVE: bad 3D curve ref")?;
+                self.surface_curve_pcurves
+                    .borrow_mut()
+                    .insert(id, parse_ref_list(&rec.args[2]));
                 self.resolve_curve(c3d)?
             }
             "B_SPLINE_CURVE_WITH_KNOTS" => {
@@ -2463,6 +2556,178 @@ impl<'a> Resolver<'a> {
         };
         self.curve_cache.borrow_mut().insert(id, curve.clone());
         Ok(curve)
+    }
+
+    /// 2D `CARTESIAN_POINT` → `GpPnt2d` (STEP pcurves use two-component points).
+    fn resolve_point_2d(&self, id: usize) -> Result<GpPnt2d, String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "CARTESIAN_POINT" {
+            return Err(format!("expected CARTESIAN_POINT at #{id}"));
+        }
+        let (x, y) = parse_xy(&rec.args[1]).map_err(|e| format!("CARTESIAN_POINT #{id}: {e}"))?;
+        Ok(GpPnt2d::new(x, y))
+    }
+
+    /// 2D `DIRECTION` → `GpDir2d`.
+    fn resolve_direction_2d(&self, id: usize) -> Result<GpDir2d, String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "DIRECTION" {
+            return Err(format!("expected DIRECTION at #{id}"));
+        }
+        let (x, y) = parse_xy(&rec.args[1]).map_err(|e| format!("DIRECTION #{id}: {e}"))?;
+        GpDir2d::new(x, y).map_err(|e| format!("DIRECTION #{id}: {e}"))
+    }
+
+    /// 2D `VECTOR` → `GpVec2d`.
+    fn resolve_vector_2d(&self, id: usize) -> Result<GpVec2d, String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "VECTOR" {
+            return Err(format!("expected VECTOR at #{id}"));
+        }
+        let dir_ref = parse_ref(&rec.args[1]).ok_or("VECTOR: bad direction ref")?;
+        let mag = parse_f64(&rec.args[2])?;
+        let dir = self.resolve_direction_2d(dir_ref)?;
+        Ok(GpVec2d::new(dir.x * mag, dir.y * mag))
+    }
+
+    /// 2D `AXIS2_PLACEMENT_2D` → `GpAx22d` (the ref_direction is X; Y is its
+    /// counter-clockwise normal).
+    fn resolve_axis22d(&self, id: usize) -> Result<GpAx22d, String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "AXIS2_PLACEMENT_2D" {
+            return Err(format!("expected AXIS2_PLACEMENT_2D at #{id}"));
+        }
+        let loc = self.resolve_point_2d(parse_ref(&rec.args[1]).ok_or("AXIS2_2D: bad loc ref")?)?;
+        let vx = match parse_ref(&rec.args[2]) {
+            Some(r) => self.resolve_direction_2d(r)?,
+            None => GpDir2d::new(1.0, 0.0).unwrap(),
+        };
+        let vy = GpDir2d::new(-vx.y, vx.x).map_err(|e| format!("AXIS2_2D: {e}"))?;
+        GpAx22d::new(loc, vx, vy).map_err(|e| format!("AXIS2_PLACEMENT_2D: {e}"))
+    }
+
+    /// 2D curve → `Arc<dyn Curve2d>` (STEP pcurve geometry). Source:
+    /// `StepToGeom::MakeCurve2d`.
+    fn resolve_curve_2d(&self, id: usize) -> Result<(Arc<dyn Curve2d>, (f64, f64)), String> {
+        if let Some(c) = self.curve2d_cache.borrow().get(&id) {
+            return Ok(c.clone());
+        }
+        let rec = self.record(id)?;
+        let (curve, range): (Arc<dyn Curve2d>, (f64, f64)) = match rec.type_name.as_str() {
+            "LINE" => {
+                let pnt = parse_ref(&rec.args[1]).ok_or("LINE: bad point ref")?;
+                let vec = parse_ref(&rec.args[2]).ok_or("LINE: bad vector ref")?;
+                let p = self.resolve_point_2d(pnt)?;
+                let v = self.resolve_vector_2d(vec)?;
+                let d = GpDir2d::new(v.x(), v.y()).map_err(|e| format!("LINE: {e}"))?;
+                let mag = (v.x() * v.x() + v.y() * v.y()).sqrt();
+                (Arc::new(Geom2dLine::new(GpAx2d::new(p, d))), (0.0, mag))
+            }
+            "CIRCLE" => {
+                let ax = parse_ref(&rec.args[1]).ok_or("CIRCLE: bad axis ref")?;
+                let r = parse_f64(&rec.args[2])?;
+                let ax22 = self.resolve_axis22d(ax)?;
+                let c: Arc<dyn Curve2d> = Arc::new(Geom2dCircle::new(GpCirc2d::new(ax22, r)));
+                let range = (c.first_parameter(), c.last_parameter());
+                (c, range)
+            }
+            "ELLIPSE" => {
+                let ax = parse_ref(&rec.args[1]).ok_or("ELLIPSE: bad axis ref")?;
+                let maj = parse_f64(&rec.args[2])?;
+                let min = parse_f64(&rec.args[3])?;
+                let ax22 = self.resolve_axis22d(ax)?;
+                let c: Arc<dyn Curve2d> =
+                    Arc::new(Geom2dEllipse::new(GpElips2d::new(ax22, maj, min)));
+                let range = (c.first_parameter(), c.last_parameter());
+                (c, range)
+            }
+            "B_SPLINE_CURVE_WITH_KNOTS" => {
+                let degree = parse_f64(&rec.args[1])? as usize;
+                let pts: Vec<GpPnt2d> = parse_ref_list(&rec.args[2])
+                    .into_iter()
+                    .map(|r| self.resolve_point_2d(r))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let knots = expand_knots(
+                    &parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()")),
+                    &parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()")),
+                );
+                let (xs, ys): (Vec<f64>, Vec<f64>) =
+                    pts.iter().map(|p| (p.x(), p.y())).unzip();
+                let c: Arc<dyn Curve2d> = Arc::new(
+                    Geom2dBSplineCurve::new(xs, ys, knots, degree)
+                        .map_err(|e| format!("B_SPLINE_CURVE_2D: {e}"))?,
+                );
+                let range = (c.first_parameter(), c.last_parameter());
+                (c, range)
+            }
+            "POLYLINE" => {
+                let pts: Vec<GpPnt2d> = parse_ref_list(&rec.args[1])
+                    .into_iter()
+                    .map(|r| self.resolve_point_2d(r))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if pts.len() < 2 {
+                    return Err("POLYLINE: need at least 2 points".into());
+                }
+                let knots = uniform_knots_for(pts.len(), 1);
+                let (xs, ys): (Vec<f64>, Vec<f64>) =
+                    pts.iter().map(|p| (p.x(), p.y())).unzip();
+                let c: Arc<dyn Curve2d> = Arc::new(
+                    Geom2dBSplineCurve::new(xs, ys, knots, 1)
+                        .map_err(|e| format!("POLYLINE: {e}"))?,
+                );
+                let range = (c.first_parameter(), c.last_parameter());
+                (c, range)
+            }
+            "B_SPLINE_CURVE" => {
+                let degree = parse_f64(&rec.args[1])? as usize;
+                let pts: Vec<GpPnt2d> = parse_ref_list(&rec.args[2])
+                    .into_iter()
+                    .map(|r| self.resolve_point_2d(r))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let knots = uniform_knots_for(pts.len(), degree);
+                let (xs, ys): (Vec<f64>, Vec<f64>) =
+                    pts.iter().map(|p| (p.x(), p.y())).unzip();
+                let c: Arc<dyn Curve2d> = Arc::new(
+                    Geom2dBSplineCurve::new(xs, ys, knots, degree)
+                        .map_err(|e| format!("B_SPLINE_CURVE_2D: {e}"))?,
+                );
+                let range = (c.first_parameter(), c.last_parameter());
+                (c, range)
+            }
+            "TRIMMED_CURVE" => {
+                let basis_ref = parse_ref(&rec.args[1]).ok_or("TRIMMED_CURVE: bad basis ref")?;
+                let (basis, _) = self.resolve_curve_2d(basis_ref)?;
+                let a = parse_f64(&rec.args[3])?;
+                let b = parse_f64(&rec.args[4])?;
+                (Arc::new(Geom2dTrimmedCurve::new(basis, a, b)), (a, b))
+            }
+            other => {
+                self.warn(format!("unsupported 2D curve entity {other} (#{id})"));
+                return Err(format!("unsupported 2D curve entity {other} (#{id})"));
+            }
+        };
+        self.curve2d_cache.borrow_mut().insert(id, (curve.clone(), range));
+        Ok((curve, range))
+    }
+
+    /// `PCURVE(name, basis_surface, reference_to_curve)` → the pcurve's basis
+    /// surface reference and its 2D curve (the first item of the
+    /// DEFINITIONAL_REPRESENTATION). Source: `StepToTopoDS_TranslateEdge::MakePCurve`.
+    fn resolve_pcurve(&self, id: usize) -> Result<(usize, Arc<dyn Curve2d>), String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "PCURVE" {
+            return Err(format!("expected PCURVE at #{id}"));
+        }
+        let basis_surf = parse_ref(&rec.args[1]).ok_or("PCURVE: bad basis surface ref")?;
+        let dri = parse_ref(&rec.args[2]).ok_or("PCURVE: bad reference_to_curve ref")?;
+        let dri_rec = self.record(dri)?;
+        if dri_rec.type_name != "DEFINITIONAL_REPRESENTATION" {
+            return Err(format!("expected DEFINITIONAL_REPRESENTATION at #{dri}"));
+        }
+        let items = parse_ref_list(&dri_rec.args[1]);
+        let curve_ref = *items.first().ok_or("PCURVE: empty reference_to_curve")?;
+        let (c2d, _range) = self.resolve_curve_2d(curve_ref)?;
+        Ok((basis_surf, c2d))
     }
 
     fn resolve_surface(&self, id: usize) -> Result<Arc<dyn Surface>, String> {
@@ -2666,6 +2931,17 @@ impl<'a> Resolver<'a> {
 /// the reconstructed curve's analytic type.
 fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -> (f64, f64) {
     let (f, l) = (curve.first_parameter(), curve.last_parameter());
+    // A bounded non-periodic curve (B-spline, trimmed curve) is already
+    // parameterized over exactly this edge; its natural range IS the edge's.
+    // The kind-based heuristic below only matters for unbounded (line,
+    // parabola) and periodic (circle, ellipse) analytic curves, whose canonical
+    // range must be mapped to the two vertices. Classifying a rational
+    // circular-arc B-spline as "parabola" here yields a range that does not
+    // match its knot domain, so the mesh evaluates the curve out of domain and
+    // the boundary drifts off the surface.
+    if f.is_finite() && l.is_finite() && !curve.is_periodic() {
+        return if l > f { (f, l) } else { (0.0, 1.0) };
+    }
     let (lo, hi) = if f.is_finite() && l.is_finite() && l > f {
         (f, l)
     } else {

@@ -581,13 +581,227 @@ fn iso_circle_pcurve(curve: &dyn Curve, proj: &Projector, a: f64, b: f64) -> Opt
 // Main entry points
 // ---------------------------------------------------------------------------
 
+/// A 2D curve linearly reparameterized from `[p0, p1]` onto `[a, b]`: a parameter
+/// `t ∈ [a, b]` maps to `inner.d0(p0 + (t − a)·(p1 − p0)/(b − a))`. Aligns a
+/// STEP-imported pcurve (parameterized over its natural range) with the edge's
+/// 3D range.
+#[derive(Clone)]
+pub struct ReparamCurve2d {
+    inner: Arc<dyn Curve2d>,
+    a: f64,
+    b: f64,
+    p0: f64,
+    p1: f64,
+}
+
+impl ReparamCurve2d {
+    pub fn new(inner: Arc<dyn Curve2d>, a: f64, b: f64, p0: f64, p1: f64) -> Self {
+        Self { inner, a, b, p0, p1 }
+    }
+
+    fn scale(&self) -> f64 {
+        if (self.b - self.a).abs() < 1e-30 {
+            1.0
+        } else {
+            (self.p1 - self.p0) / (self.b - self.a)
+        }
+    }
+
+    fn map(&self, t: f64) -> f64 {
+        self.p0 + (t - self.a) * self.scale()
+    }
+}
+
+impl Curve2d for ReparamCurve2d {
+    fn d0(&self, u: f64) -> GpPnt2d {
+        self.inner.d0(self.map(u))
+    }
+    fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d) {
+        let (p, d) = self.inner.d1(self.map(u));
+        let s = self.scale();
+        (p, GpVec2d::new(d.x() * s, d.y() * s))
+    }
+    fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
+        let (p, d1, d2) = self.inner.d2(self.map(u));
+        let s = self.scale();
+        (
+            p,
+            GpVec2d::new(d1.x() * s, d1.y() * s),
+            GpVec2d::new(d2.x() * s * s, d2.y() * s * s),
+        )
+    }
+    fn first_parameter(&self) -> f64 {
+        self.a
+    }
+    fn last_parameter(&self) -> f64 {
+        self.b
+    }
+    fn continuity(&self) -> u8 {
+        self.inner.continuity()
+    }
+    fn transform(&mut self, t: &GpTrsf2d) {
+        let mut inner = self.inner.clone_dyn();
+        inner.transform(t);
+        self.inner = Arc::from(inner);
+    }
+    fn reverse(&mut self) {
+        let mut inner = self.inner.clone_dyn();
+        inner.reverse();
+        self.inner = Arc::from(inner);
+    }
+    fn clone_dyn(&self) -> Box<dyn Curve2d> {
+        Box::new(self.clone())
+    }
+}
+
+/// Wrap a 2D curve in a linear reparameterization from `[p0, p1]` onto `[a, b]`.
+pub fn reparam_curve2d(
+    inner: Arc<dyn Curve2d>,
+    a: f64,
+    b: f64,
+    p0: f64,
+    p1: f64,
+) -> Arc<dyn Curve2d> {
+    Arc::new(ReparamCurve2d::new(inner, a, b, p0, p1))
+}
+
+/// Parameter of the 2D curve closest to `uv` (the 1-D projection of a surface
+/// point onto the pcurve). A bounded curve is searched on `[first, last]`; an
+/// unbounded line is projected in closed form.
+pub fn project_uv_on_curve2d(curve: &dyn Curve2d, uv: GpPnt2d) -> f64 {
+    let (f, l) = (curve.first_parameter(), curve.last_parameter());
+    if f.is_finite() && l.is_finite() {
+        let mut best = f;
+        let mut best_d = f64::INFINITY;
+        for i in 0..=64 {
+            let u = f + (l - f) * i as f64 / 64.0;
+            let d = curve.d0(u).distance(&uv);
+            if d < best_d {
+                best_d = d;
+                best = u;
+            }
+        }
+        let mut step = (l - f) / 64.0;
+        for _ in 0..32 {
+            step *= 0.5;
+            let mut u = best;
+            let mut dd = best_d;
+            for &du in &[-step, step] {
+                let nu = (u + du).clamp(f, l);
+                let d = curve.d0(nu).distance(&uv);
+                if d < dd {
+                    dd = d;
+                    u = nu;
+                }
+            }
+            best = u;
+            best_d = dd;
+        }
+        best
+    } else {
+        let p0 = curve.d0(0.0);
+        let dir = curve.d0(1.0).coord.subtracted(&p0.coord);
+        let len2 = dir.square_modulus();
+        if len2 < 1e-30 {
+            return 0.0;
+        }
+        uv.coord.subtracted(&p0.coord).dot(&dir) / len2
+    }
+}
+
+/// Parameter of the pcurve whose 3D image on `surface` is closest to `p`
+/// (`Extrema_LocateExtPC` on a pcurve). The distance `F(u)=|C(u)−p|²` has an
+/// extremum when `g(u)=dF/du=(p−C(u))·C'(u)=0`; a Newton step from `u_guess`
+/// (the linear-scaled parameter) finds that root locally, as
+/// `math_FunctionRoot` does. No global scan — the pcurve may have several
+/// stationary points and OCCT keeps the one nearest the guess.
+pub fn project_point_on_pcurve(
+    curve: &dyn Curve2d,
+    surface: &dyn Surface,
+    p: &GpPnt,
+    u_guess: f64,
+) -> f64 {
+    let dist = |u: f64| {
+        let uv = curve.d0(u);
+        surface.d0(uv.x(), uv.y()).distance(p)
+    };
+    let (f, l) = (curve.first_parameter(), curve.last_parameter());
+    let (lo, hi) = if f.is_finite() && l.is_finite() {
+        (f, l)
+    } else {
+        (u_guess - 1e6, u_guess + 1e6)
+    };
+    let mut u = u_guess.clamp(lo, hi);
+    let mut best = dist(u);
+    let mut step = 1.0;
+    for _ in 0..64 {
+        let mut improved = false;
+        for &du in &[-step, step] {
+            let nu = (u + du).clamp(lo, hi);
+            let d = dist(nu);
+            if d < best {
+                best = d;
+                u = nu;
+                improved = true;
+            }
+        }
+        if !improved {
+            step *= 0.5;
+            if step < 1e-12 {
+                break;
+            }
+        }
+    }
+    u
+}
+
 /// Construct the pcurve of `edge` on `face` — the edge's 3D curve projected
 /// into the face surface's `(u, v)` parameter domain, with analytic cases for
 /// every analytic surface and a sampling fallback for B-spline faces.
 ///
 /// The returned pcurve is parameterized over the edge's range `[a, b]` so
 /// `d0(a)` / `d0(b)` land on the projected endpoints.
+/// Select which of two seam pcurves is the forward one (its 2D direction matches
+/// the edge's 3D direction), port of `ShapeAnalysis_Curve::SelectForwardSeam`.
+/// Returns 1 (first pcurve) or 2 (second pcurve).
+pub fn select_forward_seam(c1: &dyn Curve2d, c2: &dyn Curve2d) -> usize {
+    // Chord of a pcurve over its parameter range (a line's direction, or the
+    // chord of a bounded curve).
+    let chord = |c: &dyn Curve2d| -> (GpPnt2d, GpVec2d) {
+        let (a, b) = (c.first_parameter(), c.last_parameter());
+        let (a, b) = if a.is_finite() && b.is_finite() { (a, b) } else { (0.0, 1.0) };
+        let p0 = c.d0(a);
+        let p1 = c.d0(b);
+        (p0, GpVec2d::new(p1.x() - p0.x(), p1.y() - p0.y()))
+    };
+    let (loc1, d1) = chord(c1);
+    let (loc2, _d2) = chord(c2);
+    // Seam running along +v: the forward side is the larger-u one.
+    if d1.y() > 0.0 {
+        return if loc1.x() > loc2.x() { 1 } else { 2 };
+    }
+    // Seam running along +u: the forward side is the larger-v one.
+    if d1.x() > 0.0 {
+        return if loc1.y() > loc2.y() { 1 } else { 2 };
+    }
+    1
+}
+
 pub fn make_pcurve_full(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, String> {
+    // A STEP-imported pcurve (BRep_TEdge's stored `(face -> Geom2d_Curve)`)
+    // wins over projection: it is the exact trimming curve of the face, so a
+    // B-spline face whose 3D trimming curve does not lie on the surface still
+    // gets the correct 2D boundary. A seam edge stores two (forward/reversed
+    // sides); pick the one matching the edge's traversal orientation.
+    let face_key = GeometryRegistry::shape_key(&face.0);
+    let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
+    if pcs.len() >= 2 {
+        let idx = if edge.0.orientation().is_reversed() { 1 } else { 0 };
+        return Ok(pcs[idx].clone());
+    }
+    if let Some(pc) = pcs.first() {
+        return Ok(pc.clone());
+    }
     let Some(curve) = GeometryRegistry::global().edge_curve(&edge.0) else {
         return Err("make_pcurve_full: edge has no 3D curve".into());
     };

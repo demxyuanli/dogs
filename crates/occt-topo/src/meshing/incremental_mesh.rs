@@ -39,6 +39,7 @@ use super::delaun_types::VertexState;
 use super::edge_discret::{CurveTessellator, EdgeDiscret, MeshFace as UvFace};
 use super::mesh_tool::MeshTool;
 use super::model_builder::{ModelBuilder, ModelPreProcessor};
+use super::model_healer::ModelHealer;
 use super::node_insertion::{DelaunayNodeInsertionMeshAlgo, TriangulationResult};
 use super::parameters::MeshParameters;
 use super::triangulator::{FaceTriangulation, Triangulator};
@@ -225,14 +226,10 @@ impl IncrementalMesh {
         let mut model = ModelBuilder::build_model(&shape, &self.parameters)
             .map_err(|e| format!("IncrementalMesh::perform: {e}"))?;
 
-        // 2. Pre-process: initialize per-entity deflection and status.
-        ModelPreProcessor::perform(&mut model, &self.parameters);
-
-        // 3. Discretize edges and triangulate faces through the OCCT-style
-        //    pipeline (`EdgeDiscret` boundary UV → `Triangulator`).
-        // ponytail: any pipeline failure falls back to the wireframe UV-grid
-        // tessellator (the pre-pipeline behavior) so `perform` never panics for
-        // unusual or degenerate shapes.
+        // 2. Discretize edges, heal, pre-process, and triangulate faces through
+        //    the OCCT pipeline (EdgeDiscret → ModelHealer → ModelPreProcessor →
+        //    FaceDiscret). Any pipeline failure falls back to the wireframe
+        //    UV-grid tessellator (the pre-pipeline behavior).
         let mesh = match self.build_shape_mesh(&mut model) {
             Ok(m) => m,
             Err(_) => self.build_shape_mesh_wireframe(&mut model)?,
@@ -337,6 +334,23 @@ impl IncrementalMesh {
         // pcurve from the analytic MakePCurveOnFace (`make_pcurve_full`).
         self.discretize_pcurves(model)?;
 
+        // ModelHealer step (`BRepMesh_ModelHealer::fixFaceBoundaries`): per wire
+        // compute its deflection, snap the pcurve endpoints of adjacent wire edges
+        // together (`connectClosestPoints`), then compute the face deflection.
+        for i in 0..model.faces_nb() {
+            let wire_indices: Vec<usize> = model.face(i)?.wires().to_vec();
+            for wi in &wire_indices {
+                ModelPreProcessor::compute_wire_deflection(model, *wi, &self.parameters)?;
+            }
+            ModelHealer::fix_face_boundaries(model, i)?;
+            ModelPreProcessor::compute_face_deflection(model, i, &self.parameters)?;
+        }
+
+        // ModelPreProcessor step (`BRepMesh_ModelPreProcessor::performInternal`):
+        // seam-edge amplification + triangulation-consistency (no-ops on a fresh
+        // model) before the faces are triangulated.
+        ModelPreProcessor::perform(model, &self.parameters);
+
         let mut algo = DelaunayNodeInsertionMeshAlgo::new();
         let mut out: Vec<FaceTriangulation> = Vec::with_capacity(model.faces_nb());
         for i in 0..model.faces_nb() {
@@ -381,14 +395,12 @@ impl IncrementalMesh {
         let mut uv = Vec::with_capacity(result.nodes.len());
         for n in &result.nodes {
             uv.push(n.location);
-            // Boundary (Frontier) nodes carry the shared edge-polyline 3D point,
-            // so adjacent faces meet exactly on their shared edge; interior
-            // nodes are mapped from the face surface.
-            let p = if n.state == VertexState::Frontier {
-                n.p3d
-            } else {
-                surface.d0(n.location.x(), n.location.y())
-            };
+            // Every node is mapped from the face surface at its UV. A
+            // non-SameParameter STEP edge has a 3D curve that may lie off the
+            // surface (its pcurve is the master); evaluating the surface at the
+            // pcurve's UV is the faithful `BRepAdaptor_Curve(edge, face)`
+            // behaviour, which keeps the mesh on the surface.
+            let p = surface.d0(n.location.x(), n.location.y());
             vertices.push(p);
         }
         let triangles: Vec<Triangle> = result
@@ -423,17 +435,21 @@ impl IncrementalMesh {
             // The pcurve is a property of the (edge, face) pair in the edge's
             // *natural* curve direction, independent of how a wire orients it;
             // the wire orientation is applied later when the boundary UV is
-            // collected. Normalize to Forward so the sampled pcurve points
-            // follow `a -> b` (OCCT `BRep_Tool::CurveOnSurface` convention).
-            let topo_edge = Edge(edge.edge().0.oriented(Orientation::Forward));
-            let (a, b) = BRepTool::edge_parameters(&topo_edge);
+            // collected. The 3D parameter range is computed on the Forward edge
+            // (`a -> b`), but each pcurve carries its own wire orientation — a
+            // seam edge has a Forward and a Reversed pcurve on the same face,
+            // and `make_pcurve_full` selects the matching side from it.
+            let fwd_edge = Edge(edge.edge().0.oriented(Orientation::Forward));
+            let (a, b) = BRepTool::edge_parameters(&fwd_edge);
             if !(a.is_finite() && b.is_finite() && b - a >= 1e-15) {
                 continue;
             }
             for p in 0..edge.pcurves_nb() {
                 let face_index = edge.pcurve(p)?.face();
+                let orientation = edge.pcurve(p)?.orientation();
                 let topo_face = model.face(face_index)?.face().clone();
-                jobs.push((i, p, topo_edge.clone(), topo_face, a, b));
+                let oriented_edge = Edge(edge.edge().0.oriented(orientation));
+                jobs.push((i, p, oriented_edge, topo_face, a, b));
             }
         }
 
@@ -444,16 +460,38 @@ impl IncrementalMesh {
             let params = match edge_params.get(&edge_index) {
                 Some(p) => p.clone(),
                 None => {
+                    // `BRepMesh_EdgeDiscret::process` computes the edge's
+                    // deflection (`BRepMesh_Deflection::ComputeDeflection`) before
+                    // tessellating its 3D curve.
+                    ModelPreProcessor::compute_edge_deflection(model, edge_index, &self.parameters)?;
                     let curve = model.edge(edge_index)?.curve().ok_or_else(|| {
                         format!("IncrementalMesh::discretize_pcurves: edge {edge_index} has no 3D curve")
                     })?;
-                    let def = model.edge(edge_index)?.deflection().max(1e-9);
-                    let tess = CurveTessellator::from_range(curve, a, b, def, 2);
+                    let (def, ang) = {
+                        let e = model.edge(edge_index)?;
+                        (e.deflection().max(1e-9), 0.5 * e.angular_deflection())
+                    };
+                    let tess = CurveTessellator::from_range_angular(curve, a, b, def, ang, 2);
                     let params = tess.params().to_vec();
-                    // Store the shared 3D polyline (Tessellate3d).
+                    // Store the shared 3D polyline. OCCT `Tessellate3d(theUpdateEnds=true)`
+                    // replaces the two end points with the exact vertex points
+                    // (`BRep_Tool::Pnt`), so adjacent faces meet exactly on shared
+                    // edges and the mesh bbox lands on the shape's true extrema.
+                    let (first_vertex, last_vertex) =
+                        crate::topo_tools_full::edge_vertices(&topo_edge);
+                    let first_pnt = first_vertex.as_ref().map(|v| BRepTool::vertex_point(v));
+                    let last_pnt = last_vertex.as_ref().map(|v| BRepTool::vertex_point(v));
                     let em = model.edge_mut(edge_index)?;
                     em.discretization_mut().clear(false);
-                    for (&t, &p) in params.iter().zip(tess.points().iter()) {
+                    let n = params.len();
+                    for (k, &t) in params.iter().enumerate() {
+                        let p = if k == 0 {
+                            first_pnt.unwrap_or(tess.points()[k])
+                        } else if k == n - 1 {
+                            last_pnt.unwrap_or(tess.points()[k])
+                        } else {
+                            tess.points()[k]
+                        };
                         em.discretization_mut().add_point(p, t);
                     }
                     edge_params.insert(edge_index, params.clone());
@@ -463,15 +501,59 @@ impl IncrementalMesh {
 
             let pc = crate::pcurve_full::make_pcurve_full(&topo_edge, &topo_face)
                 .map_err(|e| format!("IncrementalMesh::discretize_pcurves: {e}"))?;
-            // The pcurve must follow the edge's 3D direction (OCCT
-            // `MakePCurveOnFace` guarantees this); a surface whose parameterization
-            // flips it (e.g. a box face with an inward plane normal) yields −1.
-            let flip = crate::pcurve_full::pc_curve_orientation(&topo_edge, &topo_face, pc.as_ref()) < 0.0;
+            // `BRepMesh_EdgeDiscret::Tessellate2d` + `EdgeParameterProvider`: the
+            // pcurve parameter is found by projecting the edge's 3D polyline point
+            // onto the surface and then onto the pcurve (a non-SameParameter STEP
+            // edge's 3D curve may lie off the surface). The 3D polyline was stored
+            // above, so read it back for the projection.
+            let surface = BRepTool::face_surface(&topo_face).ok_or_else(|| {
+                "IncrementalMesh::discretize_pcurves: face has no surface".to_string()
+            })?;
+            let pts3d: Vec<GpPnt> = model.edge(edge_index)?.discretization().points().to_vec();
             let pcurve = model.edge_mut(edge_index)?.pcurve_mut(pcurve_index)?;
             pcurve.clear(false);
-            for &t in &params {
-                let t_eval = if flip { a + b - t } else { t };
-                pcurve.add_point(pc.d0(t_eval), t);
+            // The pcurve's parameter range over this edge. A bounded curve is its
+            // own `[first, last]`; an unbounded line's range is the arc length
+            // between the edge's vertices projected onto the surface then the
+            // pcurve (`BRep_Builder::UpdateEdge`).
+            let (pf, pl) = if pc.first_parameter().is_finite() && pc.last_parameter().is_finite() {
+                (pc.first_parameter(), pc.last_parameter())
+            } else if a.is_finite() && b.is_finite() && b > a {
+                // Bounded 3D curve (circle / B-spline / trimmed line) whose pcurve
+                // is unbounded (a 2D line): the pcurve is parameterized over the
+                // edge's own range (`SameParameter`), so use `[a, b]` directly.
+                // Projecting the vertices collapses for a *closed* edge whose two
+                // vertices coincide (a torus minor seam's inner point), which would
+                // shrink the pcurve parameter range to a single value.
+                (a, b)
+            } else {
+                let proj = |v: Option<crate::shape::Vertex>| -> Option<f64> {
+                    let p = BRepTool::vertex_point(&v?);
+                    let pr =
+                        occt_geom::geom_api::project_point_on_surface(surface.as_ref(), &p, 1e-7)?;
+                    Some(crate::pcurve_full::project_uv_on_curve2d(
+                        pc.as_ref(),
+                        GpPnt2d::new(pr.u, pr.v),
+                    ))
+                };
+                let (v1, v2) = crate::topo_tools_full::edge_vertices(&topo_edge);
+                match (proj(v1), proj(v2)) {
+                    (Some(u1), Some(u2)) => (u1.min(u2), u1.max(u2)),
+                    _ => (a, b),
+                }
+            };
+            for (&t, p3d) in params.iter().zip(pts3d.iter()) {
+                // Linear scale gives the projection's starting parameter
+                // (`EdgeParameterProvider`); `Extrema_LocateExtPC` then snaps it
+                // onto the pcurve's nearest 3D image.
+                let u_guess = pf + (t - a) * (pl - pf) / (b - a);
+                let u = crate::pcurve_full::project_point_on_pcurve(
+                    pc.as_ref(),
+                    surface.as_ref(),
+                    p3d,
+                    u_guess,
+                );
+                pcurve.add_point(pc.d0(u), t);
             }
         }
         Ok(())

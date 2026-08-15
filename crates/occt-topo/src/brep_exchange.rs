@@ -41,19 +41,26 @@ fn shape_mesh_to_ply(mesh: &ShapeMesh) -> PlyMesh {
     }
 }
 
-/// Mesh a shape for export using the OCCT `BRepMesh_IncrementalMesh` semantics
-/// (planar faces triangulate exactly, curved faces subdivide adaptively), so
-/// the exported density matches OCCT — a box becomes 12 triangles, not the
-/// thousands a uniform UV grid would emit.
+/// Mesh a shape for export using the OCCT `BRepMesh_IncrementalMesh` pipeline:
+/// the Delaunay path (`meshing::incremental_mesh_to_shape_mesh`) shares each
+/// edge's 3D polyline between its adjacent faces, so the output is watertight on
+/// shared edges and periodic seams. Falls back to the quadtree subdivision path
+/// (`brepmesh`) when the Delaunay pipeline errors.
+///
+/// ponytail: B-spline faces whose STEP `SURFACE_CURVE` pcurves are dropped
+/// (`step.rs`) get a wrong boundary, so the Delaunay bbox drifts past `EXACT_TOL`
+/// on `Shape.step`/`Shape-2.step` — a STEP-import gap, not a BRepMesh one.
 fn export_mesh(shape: &TopoShape, deflection: f64) -> ShapeMesh {
-    crate::brepmesh::incremental_mesh(shape, deflection)
-        .map(|im| im.mesh)
+    crate::meshing::incremental_mesh::incremental_mesh_to_shape_mesh(shape, deflection)
+        .or_else(|_| crate::brepmesh::incremental_mesh(shape, deflection).map(|im| im.mesh))
         .unwrap_or_else(|_| crate::shape_mesh::mesh_shape(shape, deflection))
 }
 
-/// Export a shape to Wavefront OBJ text.
+/// Export a shape to Wavefront OBJ text (coincident vertices welded first so
+/// shared edges and periodic seams are watertight).
 pub fn brep_to_obj(shape: &TopoShape, deflection: f64) -> String {
-    let mesh = export_mesh(shape, deflection);
+    let mut mesh = export_mesh(shape, deflection);
+    crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
     occt_core::io::obj::write_obj(&shape_mesh_to_obj(&mesh))
 }
 
@@ -70,15 +77,17 @@ pub fn brep_to_stl_binary(shape: &TopoShape, deflection: f64) -> Vec<u8> {
     occt_core::io::stl::write_binary_stl(&shape_mesh_to_stl(&mesh))
 }
 
-/// Export a shape to ASCII PLY text.
+/// Export a shape to ASCII PLY text (vertices welded first).
 pub fn brep_to_ply(shape: &TopoShape, deflection: f64) -> String {
-    let mesh = export_mesh(shape, deflection);
+    let mut mesh = export_mesh(shape, deflection);
+    crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
     occt_core::io::ply::write_ply(&shape_mesh_to_ply(&mesh))
 }
 
-/// Write a shape to an OBJ file.
+/// Write a shape to an OBJ file (vertices welded first).
 pub fn brep_write_obj(path: &str, shape: &TopoShape, deflection: f64) -> std::io::Result<()> {
-    let mesh = export_mesh(shape, deflection);
+    let mut mesh = export_mesh(shape, deflection);
+    crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
     occt_core::io::obj::write_obj_file(path, &shape_mesh_to_obj(&mesh))
 }
 
