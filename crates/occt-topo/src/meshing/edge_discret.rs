@@ -13,8 +13,16 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
-use occt_geom::Curve;
+use occt_core::elib::{clib, slib};
+use occt_core::gcpnts::{perform_linear, perform_tangential_curve, CurveSecondDeriv};
+use occt_core::gp::{GpAx1, GpAx2, GpCirc, GpDir, GpDir2d, GpLin, GpPnt, GpPnt2d, GpVec};
+use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION};
+use occt_geom::{geom_api, Curve, Surface};
+use occt_geom2d::curve::Curve2d;
+
+use crate::abs::{Orientation, ShapeType};
+use crate::brep_tool::BRepTool;
+use crate::shape::{Edge, Vertex};
 
 // Meshing parameters — owned by the sibling `parameters.rs` stub.
 pub use super::parameters::MeshParameters;
@@ -101,6 +109,9 @@ pub struct EdgeParameterProvider {
     old_first: f64,
     old_last: f64,
     scale: f64,
+    /// `myCurParam` / `myFoundParam` (`hxx:86, 119-136`).
+    cur_param: f64,
+    found_param: f64,
 }
 
 impl EdgeParameterProvider {
@@ -113,6 +124,8 @@ impl EdgeParameterProvider {
             old_first: first,
             old_last: last,
             scale: 1.0,
+            cur_param: first,
+            found_param: first,
         }
     }
 
@@ -133,6 +146,8 @@ impl EdgeParameterProvider {
             old_first,
             old_last,
             scale,
+            cur_param: first,
+            found_param: first,
         }
     }
 
@@ -192,6 +207,34 @@ impl EdgeParameterProvider {
         self.first + self.scale * (stored - self.old_first)
     }
 
+    /// `BRepMesh_EdgeParameterProvider::Parameter` (`hxx:109-139`).
+    /// SameParameter returns `stored`. Otherwise scale, then
+    /// `Extrema_LocateExtPC` on the face `BRepAdaptor_Curve` (curve-on-surface)
+    /// with the period/regression guard.
+    pub fn parameter_of(&mut self, stored: f64, point3d: &GpPnt, cos: &dyn Curve) -> f64 {
+        if self.is_same_param {
+            return stored;
+        }
+        let prev_param = self.cur_param;
+        self.cur_param = self.first + self.scale * (stored - self.old_first);
+        let prev_found = self.found_param;
+        self.found_param += self.cur_param - prev_param;
+        if let Some((found, _)) = crate::int_tools_vertex_line::extrema_locate_ext_pc(
+            cos,
+            point3d,
+            self.found_param,
+            self.first,
+            self.last,
+        ) {
+            if (prev_found < self.found_param && prev_found < found)
+                || (prev_found > self.found_param && prev_found > found)
+            {
+                self.found_param = found;
+            }
+        }
+        self.found_param
+    }
+
     /// `n` parameters uniformly spaced across the actual range, inclusive of
     /// both endpoints. `n` is clamped to at least 2.
     pub fn uniform_parameters(&self, n: usize) -> Vec<f64> {
@@ -221,9 +264,6 @@ impl EdgeParameterProvider {
 // CurveTessellator
 // ---------------------------------------------------------------------------
 
-/// Max recursion depth while splitting a curve segment by deflection.
-const MAX_SPLIT_DEPTH: usize = 24;
-
 /// Flattens a parametric curve into a deflection-bounded polyline.
 ///
 /// Port of `BRepMesh_CurveTessellator` / `GCPnts_TangentialDeflection`: the curve
@@ -231,14 +271,28 @@ const MAX_SPLIT_DEPTH: usize = 24;
 /// then refined while its chord (evaluated at the parameter midpoint) deviates
 /// from the true curve by more than `deflection`, or while the angle between the
 /// segment end tangents exceeds `angular_deflection` (disabled when infinite).
+/// Circles use `PerformCircular`. Other types follow
+/// `GCPnts_TangentialDeflection::initialize` (`cxx:415-453`).
 #[derive(Clone)]
 pub struct CurveTessellator {
     curve: Arc<dyn Curve>,
     deflection: f64,
     angular_deflection: f64,
     min_points: usize,
+    min_size: f64,
     points: Vec<GpPnt>,
     params: Vec<f64>,
+}
+
+struct TessCurve<'a>(&'a dyn Curve);
+
+impl CurveSecondDeriv for TessCurve<'_> {
+    fn point(&self, u: f64) -> GpPnt {
+        self.0.d0(u)
+    }
+    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
+        self.0.d2(u)
+    }
 }
 
 impl CurveTessellator {
@@ -271,11 +325,33 @@ impl CurveTessellator {
         angular_deflection: f64,
         min_points: usize,
     ) -> Self {
+        Self::from_range_angular_min(
+            curve,
+            first,
+            last,
+            deflection,
+            angular_deflection,
+            min_points,
+            CONFUSION,
+        )
+    }
+
+    /// Same as `from_range_angular` with OCCT `Initialize(..., theMinLen)`.
+    pub fn from_range_angular_min(
+        curve: Arc<dyn Curve>,
+        first: f64,
+        last: f64,
+        deflection: f64,
+        angular_deflection: f64,
+        min_points: usize,
+        min_size: f64,
+    ) -> Self {
         let mut t = Self {
             curve,
             deflection: deflection.max(1e-12),
             angular_deflection,
             min_points: min_points.max(2),
+            min_size: min_size.max(CONFUSION),
             points: Vec::new(),
             params: Vec::new(),
         };
@@ -316,6 +392,60 @@ impl CurveTessellator {
         &self.params
     }
 
+    /// `GCPnts_TangentialDeflection::AddPoint` (`cxx:458-491`).
+    pub fn add_point(&mut self, pnt: GpPnt, param: f64, is_replace: bool) -> usize {
+        let tol = PCONFUSION;
+        let nb = self.params.len();
+        for i in 0..nb {
+            let dist = self.params[i] - param;
+            if dist.abs() <= tol {
+                if is_replace {
+                    if i < self.points.len() {
+                        self.points[i] = pnt;
+                    }
+                    self.params[i] = param;
+                }
+                return i;
+            } else if dist > tol {
+                let pi = i.min(self.points.len());
+                self.points.insert(pi, pnt);
+                self.params.insert(i, param);
+                return i;
+            }
+        }
+        self.points.push(pnt);
+        self.params.push(param);
+        self.params.len() - 1
+    }
+
+    /// `BRepMesh_CurveTessellator::addInternalVertices` (`cxx:193-208`).
+    ///
+    /// `BRep_Tool::Parameter(V,E)` walks `BRep_TVertex` PointOnCurve, which this
+    /// port does not store. Fallback: project `BRep_Tool::Pnt` onto the 3D curve.
+    pub fn add_internal_vertices(&mut self, edge: &Edge) {
+        let stored = edge
+            .0
+            .tshape
+            .read()
+            .expect("poisoned TShape lock")
+            .children
+            .clone();
+        for child in stored {
+            if child.shape_type() != ShapeType::Vertex {
+                continue;
+            }
+            if child.orientation() != Orientation::Internal {
+                continue;
+            }
+            let vertex = Vertex(child);
+            let pnt = BRepTool::vertex_point(&vertex);
+            let Some(param) = vertex_parameter_on_edge(&vertex, edge) else {
+                continue;
+            };
+            self.add_point(pnt, param, true);
+        }
+    }
+
     /// Measured worst chord deviation. Each segment's chord is sampled at
     /// `samples` interior curve parameters; the furthest distance to the chord
     /// is returned. `samples == 0` samples only the segment midpoint.
@@ -354,53 +484,116 @@ impl CurveTessellator {
             return;
         }
 
-        let n_seed = self.min_points.max(2);
-        let span = b - a;
-        let mut stack: Vec<(f64, f64, usize)> = Vec::with_capacity(n_seed);
-        // Push seed segments last-to-first so they pop in ascending order.
-        for i in (0..n_seed - 1).rev() {
-            let u0 = a + span * i as f64 / (n_seed - 1) as f64;
-            let u1 = a + span * (i + 1) as f64 / (n_seed - 1) as f64;
-            stack.push((u0, u1, 0));
+        // `GCPnts_TangentialDeflection::initialize` dispatches `GeomAbs_Circle`
+        // to `PerformCircular` (uniform `ArcAngularStep`). Binary-splitting a
+        // 4-point seed on a full circle yields 48 samples at the default 0.5 rad
+        // angle; OCCT walks `ceil(span / Du)` instead.
+        if let Some(radius) = self.curve.circle_radius() {
+            self.build_circular(a, b, radius);
+            return;
         }
 
-        let def = self.deflection;
-        let ang = self.angular_deflection;
-        let mut final_params: Vec<f64> = Vec::new();
-        let mut last: Option<f64> = None;
-        while let Some((lo, hi, depth)) = stack.pop() {
-            let mid = 0.5 * (lo + hi);
-            let (pa, pm, pb) = (self.curve.d0(lo), self.curve.d0(mid), self.curve.d0(hi));
-            let linear = point_segment_dist(&pm, &pa, &pb) > def;
-            let angular = ang.is_finite() && {
-                let (_, ta) = self.curve.d1(lo);
-                let (_, tb) = self.curve.d1(hi);
-                angle_between(&ta, &tb) > ang
-            };
-            if (linear || angular) && depth < MAX_SPLIT_DEPTH {
-                stack.push((mid, hi, depth + 1));
-                stack.push((lo, mid, depth + 1));
+        // `GCPnts_TangentialDeflection::initialize` (`cxx:415-453`).
+        // BSpline intervals are the adaptor-trimmed `NbIntervals(CN)` set
+        // (`GeomAdaptor_Curve.cxx:371-413`), not the untrimmed unique knots.
+        let adaptor = TessCurve(self.curve.as_ref());
+        let two_poles = self
+            .curve
+            .bspline_poles()
+            .or_else(|| self.curve.bezier_poles())
+            .is_some_and(|p| p.len() == 2);
+        if self.curve.is_line() || two_poles {
+            let (params, points) = perform_linear(&adaptor, a, b, self.min_points);
+            self.params = params;
+            self.points = points;
+            return;
+        }
+
+        let ang = if self.angular_deflection.is_finite() && self.angular_deflection > 0.0 {
+            self.angular_deflection.max(ANGULAR)
+        } else {
+            std::f64::consts::PI
+        };
+        let intervals = if let (Some(knots), Some(deg)) =
+            (self.curve.bspline_knots(), self.curve.nurbs_degree())
+        {
+            occt_core::bspl::adaptor_intervals(
+                knots,
+                deg,
+                self.curve.is_periodic(),
+                6,
+                a,
+                b,
+                self.curve.resolution(CONFUSION).min(PCONFUSION),
+            )
+        } else {
+            self.curve.parameter_intervals(6)
+        };
+        let degree_min_nb = self
+            .curve
+            .nurbs_degree()
+            .map(|d| (d + 1).max(self.min_points))
+            .unwrap_or(self.min_points);
+        let (params, points) = perform_tangential_curve(
+            &adaptor,
+            a,
+            b,
+            ang,
+            self.deflection,
+            self.min_points,
+            PCONFUSION,
+            self.min_size,
+            &intervals,
+            degree_min_nb,
+        );
+        self.params = params;
+        self.points = points;
+    }
+
+    /// `GCPnts_TangentialDeflection::PerformCircular` + `ArcAngularStep`.
+    /// `Initialize` passes `myMinLen` (`cxx:357-360`, `cxx:413`).
+    ///
+    /// `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps `Geom_TrimmedCurve` to
+    /// the basis, so Circle `U` is radians. Our STEP trim remaps that interval
+    /// onto `[0, 1]`; `aDiff` for `ceil(aDiff / Du)` is the basis angle span,
+    /// while stored parameters stay in `[first, last]` for SameParameter
+    /// Tessellate2d / KeepParam.
+    fn build_circular(&mut self, first: f64, last: f64, radius: f64) {
+        let ang = if self.angular_deflection.is_finite() && self.angular_deflection > 0.0 {
+            self.angular_deflection
+        } else {
+            std::f64::consts::PI
+        };
+        let mut du =
+            super::range_splitter::arc_angular_step(radius, self.deflection, ang, self.min_size);
+        let param_span = last - first;
+        let angle_span = if let Some((bf, bl)) = self.curve.trimmed_basis_range() {
+            let full = self.curve.last_parameter() - self.curve.first_parameter();
+            if full.abs() > 1e-16 {
+                (bl - bf).abs() * param_span / full
             } else {
-                if last != Some(lo) {
-                    final_params.push(lo);
-                    last = Some(lo);
-                }
-                if last != Some(hi) {
-                    final_params.push(hi);
-                    last = Some(hi);
-                }
+                param_span
             }
+        } else {
+            param_span
+        };
+        if du <= 1e-12 {
+            du = angle_span.abs();
         }
-
-        if final_params.first() != Some(&a) {
-            final_params.insert(0, a);
+        let diff = angle_span.abs();
+        let mut nb = (diff / du).ceil().min(1.0e6) as i32;
+        nb = nb.max(self.min_points as i32 - 1).max(1);
+        let du_param = param_span / nb as f64;
+        self.params.clear();
+        self.points.clear();
+        let mut u = first;
+        for _ in 0..nb {
+            self.params.push(u);
+            self.points.push(self.curve.d0(u));
+            u += du_param;
         }
-        if final_params.last() != Some(&b) {
-            final_params.push(b);
-        }
-
-        self.params = final_params;
-        self.points = self.params.iter().map(|&u| self.curve.d0(u)).collect();
+        self.params.push(last);
+        self.points.push(self.curve.d0(last));
     }
 }
 
@@ -590,16 +783,461 @@ impl EdgeDiscret {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Angle (radians) between two vectors.
-fn angle_between(a: &GpVec, b: &GpVec) -> f64 {
-    let denom = a.magnitude() * b.magnitude();
-    if denom < 1e-30 {
-        return 0.0;
+/// Distance from `p` to the segment `a..b`.
+/// `BRepMesh_CurveTessellator::splitByDeflection2d` (`cxx:157-188`).
+///
+/// `aNodesNb` is captured before the pcurve loop. Each pcurve rebuilds
+/// `aParamArray` from the current discretizer's first `aNodesNb` parameters
+/// (`cxx:175-186`), so splits from an earlier pcurve shift which original
+/// spans the later pcurves still see.
+pub fn split_by_deflection2d(
+    curve: &dyn Curve,
+    params: &mut Vec<f64>,
+    pcurves: &[(Arc<dyn Curve2d>, Arc<dyn Surface>)],
+    lin_def: f64,
+    min_size: f64,
+) {
+    if params.len() < 2 {
+        return;
     }
-    (a.dot(b) / denom).clamp(-1.0, 1.0).acos()
+    let sq_def = lin_def * lin_def;
+    let sq_min = sq_def.max(min_size * min_size);
+    let a_nodes_nb = params.len();
+    for (c2d, surf) in pcurves {
+        // `BRepMesh_CurveTessellator.cxx:168-171`: skip only
+        // `STANDARD_TYPE(Geom_Plane)`, not a sampled is_planar classify.
+        if surf.gp_pln().is_some() {
+            continue;
+        }
+        params.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        params.dedup_by(|a, b| (*a - *b).abs() < PCONFUSION);
+        let n = a_nodes_nb.min(params.len());
+        let arr = params[..n].to_vec();
+        for w in arr.windows(2) {
+            split_segment_2d(
+                curve,
+                c2d.as_ref(),
+                surf.as_ref(),
+                w[0],
+                w[1],
+                1,
+                sq_def,
+                sq_min,
+                params,
+            );
+        }
+    }
+    params.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    params.dedup_by(|a, b| (*a - *b).abs() < PCONFUSION);
 }
 
-/// Distance from `p` to the segment `a..b`.
+/// `BRepMesh_CurveTessellator::splitSegment` (`cxx:274-340`).
+fn split_segment_2d(
+    c3d: &dyn Curve,
+    c2d: &dyn Curve2d,
+    surf: &dyn Surface,
+    first: f64,
+    last: f64,
+    iter: i32,
+    sq_def: f64,
+    sq_min: f64,
+    params: &mut Vec<f64>,
+) {
+    if iter > 10 {
+        return;
+    }
+    if (last - first).abs() < 2.0 * PCONFUSION {
+        return;
+    }
+    let (cf, cl) = (c2d.first_parameter(), c2d.last_parameter());
+    if cf.is_finite() && first - cf < -PCONFUSION {
+        return;
+    }
+    if cl.is_finite() && last - cl > PCONFUSION {
+        return;
+    }
+    let uvf = c2d.d0(first);
+    let uvl = c2d.d0(last);
+    let p3df = surf.d0(uvf.x(), uvf.y());
+    let p3dl = surf.d0(uvl.x(), uvl.y());
+    if p3df.square_distance(&p3dl) < sq_min {
+        return;
+    }
+    let uvm = GpPnt2d::new(0.5 * (uvf.x() + uvl.x()), 0.5 * (uvf.y() + uvl.y()));
+    let mid_surf = surf.d0(uvm.x(), uvm.y());
+    let v1 = GpVec::from_pnts(&p3df, &mid_surf);
+    if v1.square_magnitude() < sq_min {
+        return;
+    }
+    let mut a_vec = GpVec::from_pnts(&p3df, &p3dl);
+    let mag = a_vec.magnitude();
+    if mag < 1e-30 {
+        return;
+    }
+    a_vec = a_vec.multiplied_scalar(1.0 / mag);
+    let proj = a_vec.multiplied_scalar(v1.dot(&a_vec));
+    let dist = v1.subtracted(&proj);
+    if dist.square_magnitude() < sq_def {
+        return;
+    }
+    let midpar = 0.5 * (first + last);
+    params.push(midpar);
+    split_segment_2d(
+        c3d, c2d, surf, first, midpar, iter + 1, sq_def, sq_min, params,
+    );
+    split_segment_2d(
+        c3d, c2d, surf, midpar, last, iter + 1, sq_def, sq_min, params,
+    );
+}
+
+/// `BRepMesh_CurveTessellator::Value` (`cxx:223-270`) for CurveOnSurface:
+/// drop an interior sample whose pcurve UV is outside the surface range
+/// (padded by `U/VResolution(Confusion)`) when the 3D point is farther than
+/// the edge tolerance from `surface(UV)`. Analytic and periodic surfaces keep
+/// every sample.
+pub fn curve_tessellator_value_ok(
+    pcurve: &dyn Curve2d,
+    surface: &dyn Surface,
+    parameter: f64,
+    point: &GpPnt,
+    edge_tol: f64,
+) -> bool {
+    let nurbs_like =
+        surface.nb_u_poles() > 2 || surface.nb_v_poles() > 2 || surface.offset_distance().is_some();
+    if !nurbs_like {
+        return true;
+    }
+    if surface.is_u_periodic() || surface.is_v_periodic() {
+        return true;
+    }
+    let uv = pcurve.d0(parameter);
+    let (u0, u1) = surface.u_range();
+    let (v0, v1) = surface.v_range();
+    let (du, dv) = surface
+        .uv_resolution(CONFUSION)
+        .unwrap_or((CONFUSION, CONFUSION));
+    if uv.x() > u0 - du && uv.x() < u1 + du && uv.y() > v0 - dv && uv.y() < v1 + dv {
+        return true;
+    }
+    let on_surf = surface.d0(uv.x(), uv.y());
+    point.square_distance(&on_surf) < edge_tol * edge_tol
+}
+
+/// Parameter of an INTERNAL vertex on `edge`. PointOnCurve is unported;
+/// `GeomAPI_ProjectPointOnCurve` on the 3D curve stands in for
+/// `BRep_Tool::Parameter(V,E)` (`BRep_Tool.cxx:1503-1510`).
+fn vertex_parameter_on_edge(vertex: &Vertex, edge: &Edge) -> Option<f64> {
+    let pnt = BRepTool::vertex_point(vertex);
+    let curve = BRepTool::edge_curve(edge)?;
+    let tol = BRepTool::vertex_tolerance(vertex);
+    geom_api::project_point_on_curve(curve.as_ref(), &pnt, tol).map(|p| p.parameter)
+}
+
+/// `BRepMesh_CurveTessellator.cxx:100-114` min-point threshold from `GetType`.
+/// Circle uses `circle_radius`. Ellipse is periodic and not a NURBS. Periodic
+/// BSpline/Bezier stay at 2 (`GeomAbs_BSplineCurve`). Parabola/hyperbola
+/// GetType is unported without a downcast (comment: cxx:103-106).
+pub fn tessellator_min_points(curve: &dyn Curve) -> usize {
+    if curve.circle_radius().is_some() {
+        return 4;
+    }
+    if curve.is_periodic() && curve.bspline_poles().is_none() && curve.bezier_poles().is_none() {
+        return 4;
+    }
+    2
+}
+
+/// `Adaptor3d_CurveOnSurface::EvalKPart` reverse of a classified circle
+/// (`cxx:1597-1602` and the same SetDirection pattern on every iso Circle).
+fn reverse_kpart_circ(circ: &mut GpCirc) {
+    let mut ax = circ.position();
+    ax.set_direction(ax.direction().reversed());
+    circ.set_position(&ax);
+}
+
+/// `to3d(Pl, Circ2d)` (`Adaptor3d_CurveOnSurface.cxx:57-83`).
+fn circ2d_to3d_on_plane(pl: &occt_core::gp::GpPln, c: &occt_core::gp::GpCirc2d) -> Option<GpCirc> {
+    let loc = c.position().location();
+    let p = slib::plane_value(pl, loc.x(), loc.y());
+    let vx2 = *c.position().x_direction();
+    let vy2 = *c.position().y_direction();
+    let vx = GpVec::from_xyz(
+        &pl.pos
+            .x_direction()
+            .xyz()
+            .multiplied(vx2.x)
+            .added(&pl.pos.y_direction().xyz().multiplied(vx2.y)),
+    );
+    let vy = GpVec::from_xyz(
+        &pl.pos
+            .x_direction()
+            .xyz()
+            .multiplied(vy2.x)
+            .added(&pl.pos.y_direction().xyz().multiplied(vy2.y)),
+    );
+    let n = vx.crossed(&vy);
+    let xd = GpDir::from_vec(&vx).ok()?;
+    let nd = GpDir::from_vec(&n).ok()?;
+    let ax = GpAx2::new(p, nd, xd).ok()?;
+    Some(GpCirc::new(ax, c.radius()))
+}
+
+/// Rotate a V-iso circle by the 2d line U (`cxx:1594-1596`).
+fn rotate_iso_v(circ: &mut GpCirc, axis: &occt_core::gp::GpAx3, u: f64) {
+    let drev = axis
+        .x_direction()
+        .crossed(axis.y_direction())
+        .unwrap_or(*axis.x_direction());
+    let axe = GpAx1::new(axis.location(), drev);
+    circ.rotate(&axe, u);
+}
+
+/// `Adaptor3d_CurveOnSurface::EvalKPart` (`cxx:1552-1732`).
+/// `GeomAdaptor_Surface` of a rectangular trim reports the basis GetType.
+fn eval_k_part(pc: &dyn Curve2d, surf: &dyn Surface) -> (Option<GpCirc>, Option<GpLin>) {
+    if let Some(basis) = surf.rectangular_trimmed_basis() {
+        return eval_k_part(pc, basis.as_ref());
+    }
+    let mut circ = None;
+    let mut lin = None;
+    if let Some(pl) = surf.gp_pln() {
+        if let Some(c2) = pc.gp_circ2d() {
+            circ = circ2d_to3d_on_plane(&pl, &c2);
+        } else if pc.is_line() {
+            let (uv, duv) = pc.d1(0.0);
+            let (p, d1u, d1v) = surf.d1(uv.x(), uv.y());
+            let v = d1u
+                .multiplied_scalar(duv.x())
+                .added(&d1v.multiplied_scalar(duv.y()));
+            if let Ok(dir) = GpDir::from_vec(&v) {
+                lin = Some(GpLin::from_pnt_dir(p, dir));
+            }
+        }
+        return (circ, lin);
+    }
+    let Some(l2) = pc.gp_lin2d() else {
+        return (None, None);
+    };
+    let d = *l2.direction();
+    let loc = l2.location();
+    const DX2D: GpDir2d = GpDir2d { x: 1.0, y: 0.0 };
+    const DY2D: GpDir2d = GpDir2d { x: 0.0, y: 1.0 };
+    if d.is_parallel(&DX2D, ANGULAR) {
+        if let Some(sph) = surf.gp_sphere() {
+            if (loc.y().abs() - std::f64::consts::FRAC_PI_2).abs() >= PCONFUSION {
+                let axis = sph.position();
+                let mut c = slib::sphere_v_iso(axis, sph.radius(), loc.y());
+                rotate_iso_v(&mut c, axis, loc.x());
+                if d.is_opposite(&DX2D, ANGULAR) {
+                    reverse_kpart_circ(&mut c);
+                }
+                circ = Some(c);
+            }
+        } else if let Some(cyl) = surf.gp_cylinder() {
+            let axis = cyl.position();
+            let mut c = slib::cylinder_v_iso(&axis, cyl.radius(), loc.y());
+            rotate_iso_v(&mut c, &axis, loc.x());
+            if d.is_opposite(&DX2D, ANGULAR) {
+                reverse_kpart_circ(&mut c);
+            }
+            circ = Some(c);
+        } else if let Some(cone) = surf.gp_cone() {
+            let axis = cone.position();
+            let mut c = slib::cone_v_iso(&axis, cone.radius(), cone.semi_angle(), loc.y());
+            rotate_iso_v(&mut c, &axis, loc.x());
+            if d.is_opposite(&DX2D, ANGULAR) {
+                reverse_kpart_circ(&mut c);
+            }
+            circ = Some(c);
+        } else if let Some(tor) = surf.gp_torus() {
+            let axis = tor.position();
+            let mut c = slib::torus_v_iso(axis, tor.major_radius(), tor.minor_radius(), loc.y());
+            rotate_iso_v(&mut c, axis, loc.x());
+            if d.is_opposite(&DX2D, ANGULAR) {
+                reverse_kpart_circ(&mut c);
+            }
+            circ = Some(c);
+        }
+    } else if d.is_parallel(&DY2D, ANGULAR) {
+        if let Some(sph) = surf.gp_sphere() {
+            let axis = sph.position();
+            let mut c = slib::sphere_u_iso(axis, sph.radius(), 0.0);
+            let drev = axis
+                .x_direction()
+                .crossed(&axis.direction())
+                .unwrap_or(*axis.x_direction());
+            let axe_y = GpAx1::new(axis.location(), drev);
+            c.rotate(&axe_y, loc.y());
+            rotate_iso_v(&mut c, axis, loc.x());
+            if d.is_opposite(&DY2D, ANGULAR) {
+                reverse_kpart_circ(&mut c);
+            }
+            circ = Some(c);
+        } else if let Some(cyl) = surf.gp_cylinder() {
+            let mut l = slib::cylinder_u_iso(&cyl.position(), cyl.radius(), loc.x());
+            let tr = GpVec::from_xyz(l.direction().xyz()).multiplied_scalar(loc.y());
+            l = l.translated_vec(&tr);
+            if d.is_opposite(&DY2D, ANGULAR) {
+                l.set_direction(l.direction().reversed());
+            }
+            lin = Some(l);
+        } else if let Some(cone) = surf.gp_cone() {
+            let mut l = slib::cone_u_iso(
+                &cone.position(),
+                cone.radius(),
+                cone.semi_angle(),
+                loc.x(),
+            );
+            let tr = GpVec::from_xyz(l.direction().xyz()).multiplied_scalar(loc.y());
+            l = l.translated_vec(&tr);
+            if d.is_opposite(&DY2D, ANGULAR) {
+                l.set_direction(l.direction().reversed());
+            }
+            lin = Some(l);
+        } else if let Some(tor) = surf.gp_torus() {
+            let mut c = slib::torus_u_iso(
+                tor.position(),
+                tor.major_radius(),
+                tor.minor_radius(),
+                loc.x(),
+            );
+            let axe = *c.position().axis();
+            c.rotate(&axe, loc.y());
+            if d.is_opposite(&DY2D, ANGULAR) {
+                reverse_kpart_circ(&mut c);
+            }
+            circ = Some(c);
+        }
+    }
+    (circ, lin)
+}
+
+/// `Adaptor3d_CurveOnSurface` used by `BRepAdaptor_Curve(edge, face)`.
+pub struct CurveOnSurface {
+    pcurve: Arc<dyn Curve2d>,
+    surface: Arc<dyn Surface>,
+    first: f64,
+    last: f64,
+    kpart_circ: Option<GpCirc>,
+    kpart_lin: Option<GpLin>,
+}
+
+impl CurveOnSurface {
+    /// Evaluate `surface(pcurve(t))` on `[first, last]`, with `EvalKPart`.
+    pub fn new(
+        pcurve: Arc<dyn Curve2d>,
+        surface: Arc<dyn Surface>,
+        first: f64,
+        last: f64,
+    ) -> Self {
+        let (kpart_circ, kpart_lin) = eval_k_part(pcurve.as_ref(), surface.as_ref());
+        Self {
+            pcurve,
+            surface,
+            first,
+            last,
+            kpart_circ,
+            kpart_lin,
+        }
+    }
+}
+
+impl Curve for CurveOnSurface {
+    fn d0(&self, u: f64) -> GpPnt {
+        if let Some(ref c) = self.kpart_circ {
+            return clib::circle_value(c, u);
+        }
+        if let Some(ref l) = self.kpart_lin {
+            return clib::line_value(l, u);
+        }
+        let uv = self.pcurve.d0(u);
+        self.surface.d0(uv.x(), uv.y())
+    }
+
+    fn d1(&self, u: f64) -> (GpPnt, GpVec) {
+        if let Some(ref c) = self.kpart_circ {
+            return clib::circle_d1(c, u);
+        }
+        if let Some(ref l) = self.kpart_lin {
+            return clib::line_d1(l, u);
+        }
+        let (uv, duv) = self.pcurve.d1(u);
+        let (p, su, sv) = self.surface.d1(uv.x(), uv.y());
+        let tan = su
+            .multiplied_scalar(duv.x())
+            .added(&sv.multiplied_scalar(duv.y()));
+        (p, tan)
+    }
+
+    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
+        if let Some(ref c) = self.kpart_circ {
+            return clib::circle_d2(c, u);
+        }
+        if let Some(ref l) = self.kpart_lin {
+            return clib::line_d2(l, u);
+        }
+        let (uv, duv, d2uv) = self.pcurve.d2(u);
+        let (p, su, sv, suu, suv, svv) = self.surface.d2(uv.x(), uv.y());
+        let d1 = su
+            .multiplied_scalar(duv.x())
+            .added(&sv.multiplied_scalar(duv.y()));
+        let d2 = suu
+            .multiplied_scalar(duv.x() * duv.x())
+            .added(&suv.multiplied_scalar(2.0 * duv.x() * duv.y()))
+            .added(&svv.multiplied_scalar(duv.y() * duv.y()))
+            .added(&su.multiplied_scalar(d2uv.x()))
+            .added(&sv.multiplied_scalar(d2uv.y()));
+        (p, d1, d2)
+    }
+
+    fn first_parameter(&self) -> f64 {
+        self.first
+    }
+    fn last_parameter(&self) -> f64 {
+        self.last
+    }
+    fn is_periodic(&self) -> bool {
+        if self.kpart_circ.is_some() {
+            return true;
+        }
+        self.pcurve.is_periodic()
+    }
+    fn period(&self) -> f64 {
+        if self.kpart_circ.is_some() {
+            return 2.0 * std::f64::consts::PI;
+        }
+        self.pcurve.period()
+    }
+    fn circle_radius(&self) -> Option<f64> {
+        self.kpart_circ.as_ref().map(|c| c.radius())
+    }
+    fn gp_circ(&self) -> Option<GpCirc> {
+        self.kpart_circ.clone()
+    }
+    fn is_line(&self) -> bool {
+        self.kpart_lin.is_some()
+    }
+    fn continuity(&self) -> u8 {
+        self.pcurve.continuity().min(self.surface.continuity())
+    }
+    fn transform(&mut self, _t: &occt_core::gp::GpTrsf) {}
+    fn reverse(&mut self) {
+        let tmp = self.first;
+        self.first = self.last;
+        self.last = tmp;
+    }
+    fn clone_dyn(&self) -> Box<dyn Curve> {
+        Box::new(Self {
+            pcurve: Arc::from(self.pcurve.clone_dyn()),
+            surface: self.surface.clone(),
+            first: self.first,
+            last: self.last,
+            kpart_circ: self.kpart_circ.clone(),
+            kpart_lin: self.kpart_lin,
+        })
+    }
+}
+
 fn point_segment_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> f64 {
     let ab = b.coord.subtracted(&a.coord);
     let len2 = ab.square_modulus();

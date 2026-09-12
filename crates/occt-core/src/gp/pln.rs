@@ -56,6 +56,19 @@ impl GpPln {
         self.pos.is_direct()
     }
 
+    /// `gp_Pln::Coefficients` — Ax + By + Cz + D = 0.
+    pub fn coefficients(&self) -> (f64, f64, f64, f64) {
+        let d = self.pos.direction();
+        let (a, b, c) = if self.pos.is_direct() {
+            (d.x(), d.y(), d.z())
+        } else {
+            (-d.x(), -d.y(), -d.z())
+        };
+        let p = self.pos.location();
+        let cte = -(a * p.x() + b * p.y() + c * p.z());
+        (a, b, c, cte)
+    }
+
     pub fn u_reverse(&mut self) {
         self.pos.x_reverse();
     }

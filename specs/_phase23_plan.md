@@ -32,9 +32,9 @@
 - 验证：核心编译过；`add` 单测覆盖 F/R 父、恒等/非恒等父位置。
 
 ### 波 B：中央读取器（topo_tools_full/topexp/iterator/shell_check/shape_checks/wireframe）
-- `edges_of_wire`/`wires_of_face`/`shapes_of`/`edge_vertices` 直接返回 children 的 TopoShape（带方向）。
-- 遍历时按 TopoDS_Iterator 语义**复合父方向**（`Compose(parent_orient, child_orient)`）——`map_shapes` 去重键吃到真方向。
-- 验证：Cylinder 侧壁 `edges_of` 返回 **4 边**（seam 双出现）；wire 内 #77 为 Reversed。
+- 已落地（2026-08-26）：`cumulated_children` 为 `TopoDS_Iterator` 默认 Compose/Move；`map_shapes`/`all_subshapes`/`Explorer`/`edges_of_wire`/`wires_of_face`/`edge_vertices`/`structure_is_valid`/`shell_check`/`wireframe` 面遍历共用。
+- `map_shapes` 去重仍按 TShape 指针（对齐 `IsSame`，忽略 orientation）；seam 双边靠 `edges_of_wire`（不去重）。
+- 验证：Cylinder 侧壁 `edges_of_wire` 返回 **4 边**（seam 双出现）；wire 内 #77 为 Reversed。
 
 ### 波 C：长尾 168 读取点（并行 agent 按文件分包，机械改）
 - 验证：全 lib 编译 + 全量测试绿。

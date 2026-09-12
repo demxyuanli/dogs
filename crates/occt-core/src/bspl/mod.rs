@@ -1,9 +1,21 @@
 //! B-spline curve and surface algorithms. Source: `BSplCLib.hxx` + `BSplSLib.hxx`
 pub mod knots;
 pub mod eval;
+pub mod bohm;
+pub mod locate;
+pub mod build_knots;
+pub mod prepare_eval;
+pub mod rational_derivative;
+pub mod build_cache;
+pub mod surface_interpolate;
+pub mod convert_grid_poly;
 pub mod bezier;
 pub mod plib;
 pub mod plib2d;
+pub mod plib_eval;
+pub mod plib_jacobi;
+pub mod banded_interp;
+pub mod comp_poly;
 pub mod surface;
 pub mod poles;
 pub mod knots_advanced;
@@ -11,3 +23,12 @@ pub mod rational;
 pub mod curve_tools;
 pub mod surface_knots;
 pub mod surface_rational;
+pub mod surface_resolution;
+pub mod curve_resolution;
+pub mod intervals;
+pub mod plib_rational;
+pub mod curve_dn;
+
+pub use surface_resolution::bspline_surface_resolution;
+pub use curve_resolution::bspline_curve_resolution;
+pub use intervals::{adaptor_intervals, intervals as bspline_intervals, local_continuity};

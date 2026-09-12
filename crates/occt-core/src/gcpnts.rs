@@ -10,6 +10,10 @@
 
 use crate::gp::{GpPnt, GpVec};
 
+#[path = "gcpnts_perform.rs"]
+mod perform;
+pub use perform::{perform_linear, perform_tangential_curve, CurveSecondDeriv};
+
 /// Minimal curve abstraction for point generation.
 pub trait CurveSample {
     /// Point of the curve at parameter `u`.

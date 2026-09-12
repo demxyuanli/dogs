@@ -8,6 +8,8 @@ impl GpLin2d {
     pub fn new(a: GpAx2d) -> Self { Self { pos: a } }
     pub fn from_pnt_dir(p: GpPnt2d, d: GpDir2d) -> Self { Self { pos: GpAx2d::new(p, d) } }
     #[inline] pub fn position(&self) -> &GpAx2d { &self.pos }
+    #[inline] pub fn location(&self) -> GpPnt2d { self.pos.loc }
+    #[inline] pub fn direction(&self) -> &GpDir2d { &self.pos.vdir }
     pub fn set_position(&mut self, a: GpAx2d) { self.pos = a; }
     pub fn angle(&self, other: &Self) -> f64 { self.pos.vdir.angle(&other.pos.vdir) }
     pub fn distance(&self, p: &GpPnt2d) -> f64 {

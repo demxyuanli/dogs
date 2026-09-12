@@ -1,6 +1,6 @@
 # _tasks — OCCT → Rust migration map (current)
 
-> Last updated: 2026-08-01. 5 crates · 89,209 lines · 1,259 tests
+> Last updated: 2026-08-29. Implementation `.rs` files are split to <=800 lines.
 > Phase 3 detail: [specs/_phase3_plan.md](_phase3_plan.md)
 
 ## 已完整 (✅)
@@ -61,6 +61,21 @@ Geom2dBezierCurve · curve_ops(长度/交点/最近点) · bspline2d_to_bezier
 | M3 (C+D): 网格导入 + 基础布尔 | ✅ 体素布尔 + mesh→BRep + 交换 |
 | M4 (E, P5): 平面精确布尔 + Deflection 网格 + SVG | ✅ 精确平面 Fuse/Cut/Common |
 | M5 (F, P6): 曲面求交/布尔 + 边倒圆 + 偏移 | ✅ 球/柱面精确布尔 + 滚动球倒圆 |
+
+## BOPAlgo remaining vs OCCT (large)
+
+Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent FillIn3D IN counts or spoke filters. Do not change `IsHole`. Small wiring (BuildSplitFaces edge images, `SetContext`, history `myImages` keys) is deferred.
+
+| Id | Gap | OCCT | Port | Notes |
+|---|---|---|---|---|
+| B1 | Dual boolean entry + `bop_builder.rs` size | `BOPAlgo_BOP` only | `boolean()` unchanged; entry ~200 lines; API/tests/planar split under 800 | Gate not shrunk. Split 2026-08-29 |
+| B2 | `BuilderSolid::PerformAreas` BoxTree / `myBoxes` | `BOPAlgo_BuilderSolid.cxx:397` | Hole `AabbTree` + `IsInside` owner + `SetWhole` unbound; `IsHole` still containment | Ported 2026-08-29 |
+| B3 | `BuilderSolid::PerformInternalShapes` | `ClassifyFaces` at `:673` | `classify_faces_occt`; uses `myBoxes` when present | Ported 2026-08-29 |
+| B4 | `PostTreat` avoid-map | `BOPAlgo_Builder.cxx:450` `aMA` | `correct_tolerances_avoid`; filled when `NonDestructive` | Ported 2026-08-29 |
+| B5 | CompSolid rebuild | `BOPAlgo_BOP.cxx:1267` `CollectContainers` | Collect + connexity wrap; SOLID args still early-return | Ported 2026-08-29 |
+| B6 | Leftover split-solids | `BuildSplitSolids` + `aMST` | Live: `bop_split_solids_occt` + `bop_bop::build_solid` | Isolated in private `bop_build_solids` leftover submodule 2026-08-29 |
+| B7 | `IntTools_Context::ComputeVE` (edge/edge) | `IntTools_EdgeEdge` | Sampled min-distance; no live PaveFiller caller | Deferred — VE is vertex/edge `pave_ve`; EE is `edge_edge.rs` |
+| B8 | PaveFiller BoxTree | `IsExistingPaveBlock` / `IntersectVertices` | `AabbTree` + `bnd2bvh3d`; same `IsOut` | Ported 2026-08-29 |
 
 ## 远期 (⬜)
 - BOPAlgo 完整（自交修复/多结果拓扑）/ TopOpeBRep 全拓扑

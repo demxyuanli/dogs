@@ -17,6 +17,36 @@ impl GpSphere {
     #[inline] pub fn x_axis(&self) -> GpAx1 { GpAx1::new(self.pos.location(), *self.pos.x_direction()) }
     #[inline] pub fn y_axis(&self) -> GpAx1 { GpAx1::new(self.pos.location(), *self.pos.y_direction()) }
     #[inline] pub fn is_direct(&self) -> bool { self.pos.is_direct() }
+
+    /// `gp_Sphere::Coefficients` — local X^2+Y^2+Z^2-R^2 = 0 in world coords.
+    pub fn coefficients(&self) -> [f64; 10] {
+        let mut t = GpTrsf::identity();
+        t.set_transformation(&self.pos);
+        let t11 = t.value(1, 1);
+        let t12 = t.value(1, 2);
+        let t13 = t.value(1, 3);
+        let t14 = t.value(1, 4);
+        let t21 = t.value(2, 1);
+        let t22 = t.value(2, 2);
+        let t23 = t.value(2, 3);
+        let t24 = t.value(2, 4);
+        let t31 = t.value(3, 1);
+        let t32 = t.value(3, 2);
+        let t33 = t.value(3, 3);
+        let t34 = t.value(3, 4);
+        [
+            t11 * t11 + t21 * t21 + t31 * t31,
+            t12 * t12 + t22 * t22 + t32 * t32,
+            t13 * t13 + t23 * t23 + t33 * t33,
+            t11 * t12 + t21 * t22 + t31 * t32,
+            t11 * t13 + t21 * t23 + t31 * t33,
+            t12 * t13 + t22 * t23 + t32 * t33,
+            t11 * t14 + t21 * t24 + t31 * t34,
+            t12 * t14 + t22 * t24 + t32 * t34,
+            t13 * t14 + t23 * t24 + t33 * t34,
+            t14 * t14 + t24 * t24 + t34 * t34 - self.radius * self.radius,
+        ]
+    }
     #[inline] pub fn u_reverse(&mut self) { self.pos.y_reverse(); }
     #[inline] pub fn v_reverse(&mut self) { self.pos.z_reverse(); }
     fn _mirror(&mut self, t: &GpTrsf) { self.transform(t); }

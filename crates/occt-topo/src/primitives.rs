@@ -92,8 +92,7 @@ fn build_box(b: &TopoBuilder, corners: &[GpPnt; 8]) -> Solid {
         let p1 = &corners[i];
         let p2 = &corners[j];
         let mut e = b.make_edge(line_curve(p1, p2), 0.0, p1.distance(p2));
-        b.add(&mut e.0, &verts[i].0);
-        b.add(&mut e.0, &verts[j].0);
+        b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
         edges.push(e);
     }
 
@@ -160,22 +159,34 @@ impl BRepPrimBox {
         Self { solid, bbox }
     }
 
-    /// Box spanning two corner points (axis-aligned). The geometry is built
-    /// at the actual corner position (a prism sweep of the base polygon), so
-    /// `BRepTool`/`mesh_shape` report the correct world coordinates.
+    /// Box spanning two corner points (axis-aligned). Same `BRepPrim_GWedge`
+    /// shared-TShape construction as [`Self::make_box`], translated to `p1`/`p2`.
     pub fn make_box_corner(p1: &GpPnt, p2: &GpPnt) -> Self {
         let min = GpPnt::new(p1.x().min(p2.x()), p1.y().min(p2.y()), p1.z().min(p2.z()));
         let max = GpPnt::new(p1.x().max(p2.x()), p1.y().max(p2.y()), p1.z().max(p2.z()));
+        let dx = max.x() - min.x();
+        let dy = max.y() - min.y();
         let dz = max.z() - min.z();
-        assert!(dz > 0.0, "make_box_corner: box must have positive height");
-        let base = [
+        assert!(
+            dx > 0.0 && dy > 0.0 && dz > 0.0,
+            "make_box_corner: box must have positive extent"
+        );
+        let b = TopoBuilder::new();
+        let corners = [
             GpPnt::new(min.x(), min.y(), min.z()),
             GpPnt::new(max.x(), min.y(), min.z()),
             GpPnt::new(max.x(), max.y(), min.z()),
             GpPnt::new(min.x(), max.y(), min.z()),
+            GpPnt::new(min.x(), min.y(), max.z()),
+            GpPnt::new(max.x(), min.y(), max.z()),
+            GpPnt::new(max.x(), max.y(), max.z()),
+            GpPnt::new(min.x(), max.y(), max.z()),
         ];
-        let prism = crate::sweep::prism_from_polygon(&base, &occt_core::gp::GpVec::new(0.0, 0.0, 1.0), dz);
-        Self { solid: prism.solid, bbox: BndBox::from_corners(&min, &max) }
+        let solid = build_box(&b, &corners);
+        Self {
+            solid,
+            bbox: BndBox::from_corners(&min, &max),
+        }
     }
 
     pub fn volume(&self) -> f64 {
@@ -241,19 +252,16 @@ impl BRepPrimCylinder {
 
         // Ring circles: parameter [0, 2π], seam at θ = 0 → shared vertices.
         let mut bottom_circle = b.make_edge(circle_curve(&ax, radius), 0.0, 2.0 * PI);
-        b.add(&mut bottom_circle.0, &v_bottom.0);
-        b.add(&mut bottom_circle.0, &v_bottom.0); // closed: both ends at seam vertex
+        b.add_edge_vertices(&mut bottom_circle, &v_bottom, &v_bottom);
 
         let mut top_ax = ax;
         top_ax.set_location(GpPnt::new(0.0, 0.0, height));
         let mut top_circle = b.make_edge(circle_curve(&top_ax, radius), 0.0, 2.0 * PI);
-        b.add(&mut top_circle.0, &v_top.0);
-        b.add(&mut top_circle.0, &v_top.0);
+        b.add_edge_vertices(&mut top_circle, &v_top, &v_top);
 
         // Seam line connecting the two seam vertices.
         let mut seam = b.make_edge(line_curve(&bottom, &top), 0.0, height);
-        b.add(&mut seam.0, &v_bottom.0);
-        b.add(&mut seam.0, &v_top.0);
+        b.add_edge_vertices(&mut seam, &v_bottom, &v_top);
 
         // Bottom cap: planar face bounded by the bottom circle.
         let bottom_wire = b.make_wire(&[bottom_circle.clone()]);
@@ -355,13 +363,11 @@ impl BRepPrimCone {
 
         // Base circle at z = 0.
         let mut base_circle = b.make_edge(circle_curve(&ax, radius), 0.0, 2.0 * PI);
-        b.add(&mut base_circle.0, &v_base.0);
-        b.add(&mut base_circle.0, &v_base.0);
+        b.add_edge_vertices(&mut base_circle, &v_base, &v_base);
 
         // Seam from the base seam point up to the apex.
         let mut seam = b.make_edge(line_curve(&base_p, &apex), 0.0, GpPnt::new(radius, 0.0, 0.0).distance(&apex));
-        b.add(&mut seam.0, &v_base.0);
-        b.add(&mut seam.0, &v_apex.0);
+        b.add_edge_vertices(&mut seam, &v_base, &v_apex);
 
         // Base: planar face bounded by the base circle.
         let base_wire = b.make_wire(&[base_circle.clone()]);

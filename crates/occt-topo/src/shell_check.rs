@@ -9,10 +9,11 @@ use std::sync::Arc;
 
 use crate::abs::ShapeType;
 use crate::brep_tool::BRepTool;
+use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Shell, TopoShape, Wire};
 
 fn direct_children(s: &TopoShape) -> Vec<TopoShape> {
-    s.tshape.read().unwrap().children.clone()
+    cumulated_children(s)
 }
 
 /// Depth-first collect every edge in the tree rooted at `s`.

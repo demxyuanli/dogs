@@ -80,6 +80,42 @@ pub fn check_degree(n_poles: usize, degree: usize, n_knots: usize) -> Result<(),
     Ok(())
 }
 
+/// Compress an expanded knot sequence into unique knots + multiplicities
+/// (`Geom_BSplineCurve::Knots` / `Multiplicities`).
+pub fn unique_knots_mults(knots: &[f64]) -> (Vec<f64>, Vec<i32>) {
+    if knots.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let mut uk = vec![knots[0]];
+    let mut m = vec![1i32];
+    for &k in &knots[1..] {
+        if (k - *uk.last().unwrap()).abs() <= 0.0 {
+            *m.last_mut().unwrap() += 1;
+        } else {
+            uk.push(k);
+            m.push(1);
+        }
+    }
+    (uk, m)
+}
+
+/// `BSplCLib::PoleIndex` (`BSplCLib.cxx:1758`).
+///
+/// `index` is the 1-based unique-knot index (`Mults.Lower()..=Index` summed).
+pub fn pole_index(degree: i32, index: i32, periodic: bool, mults: &[i32]) -> i32 {
+    let mut pindex = 0i32;
+    let upper = index.max(0) as usize;
+    for i in 0..upper.min(mults.len()) {
+        pindex += mults[i];
+    }
+    if periodic {
+        pindex -= *mults.first().unwrap_or(&0);
+    } else {
+        pindex -= degree + 1;
+    }
+    pindex
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

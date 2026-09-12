@@ -5,7 +5,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpAx2, GpCirc, GpDir, GpLin, GpPln, GpPnt, GpVec};
 use occt_geom::{Curve, GeomCircle, GeomLine, GeomPlane, Surface};
 
-use crate::abs::ShapeType;
+use crate::abs::{Orientation, ShapeType};
 use crate::shape::{Compound, Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::tgeometry::{EdgeGeom, FaceGeom, GeometryRegistry, VertexGeom};
 
@@ -21,13 +21,50 @@ impl TopoBuilder {
         TopoShape::new(shape_type)
     }
 
-    /// Add sub-shape to compound.
+    /// Add sub-shape. Source: `TopoDS_Builder::Add` (TopoDS_Builder.cxx).
+    ///
+    /// Stores a full `TopoShape` (TShape + location + orientation). If the
+    /// parent *view* is `REVERSED`, the stored child is reversed; if the
+    /// parent location is not identity, the stored child is moved by
+    /// `parent.location.inverted()`. The component TShape is frozen
+    /// (`Free(false)`). Type compatibility is the OCCT `aTb` table; an
+    /// incompatible pair is skipped (OCCT throws `TopoDS_UnCompatibleShapes`).
     pub fn add(&self, shape: &mut TopoShape, sub: &TopoShape) {
+        // OCCT freezes the component first (also guards self-insertion).
+        sub.set_free(false);
+        if !shape.free() {
+            return;
+        }
+        if !self.compatible(shape.shape_type(), sub.shape_type()) {
+            return;
+        }
+        let mut child = sub.clone();
+        if shape.orientation() == crate::abs::Orientation::Reversed {
+            child.reverse();
+        }
+        if !shape.location().is_identity() {
+            child.move_location(&shape.location().inverted());
+        }
         if let Ok(mut t) = shape.tshape.write() {
-            // Store the full child shape (TShape + Location + Orientation), the
-            // OCCT `BRep_Builder::Add` / `TopoDS_TShape::myShapes` model — the
-            // orientation is what lets a wire hold a reversed edge.
-            t.add_child(sub.clone());
+            t.add_child(child);
+            t.set_modified(true);
+        }
+    }
+
+    /// OCCT `TopoDS_Builder::Add` compatibility bits: which parent types may
+    /// contain a given component type.
+    fn compatible(&self, parent: ShapeType, component: ShapeType) -> bool {
+        use ShapeType::*;
+        match component {
+            Compound => parent == Compound,
+            CompSolid => parent == Compound,
+            Solid => parent == Compound || parent == CompSolid,
+            Shell => parent == Compound || parent == Solid,
+            Face => parent == Compound || parent == Shell,
+            Wire => parent == Compound || parent == Face,
+            Edge => parent == Compound || parent == Solid || parent == Wire,
+            Vertex => parent == Compound || parent == Solid || parent == Face || parent == Edge,
+            Shape => false,
         }
     }
 
@@ -69,8 +106,7 @@ impl TopoBuilder {
         let mut e = self.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
         let v1 = self.make_vertex(*p1, 0.0);
         let v2 = self.make_vertex(*p2, 0.0);
-        self.add(&mut e.0, &v1.0);
-        self.add(&mut e.0, &v2.0);
+        self.add_edge_vertices(&mut e, &v1, &v2);
         e
     }
 
@@ -89,9 +125,18 @@ impl TopoBuilder {
             .expect("make_edge_segment_with_vertices: p1 and p2 must be distinct");
         let lin = GpLin::from_pnt_dir(*p1, dir);
         let mut e = self.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
-        self.add(&mut e.0, &v1.0);
-        self.add(&mut e.0, &v2.0);
+        self.add_edge_vertices(&mut e, v1, v2);
         e
+    }
+
+    /// `BRepLib_MakeEdge`: first vertex FORWARD, last vertex REVERSED.
+    pub(crate) fn add_edge_vertices(&self, e: &mut Edge, v1: &Vertex, v2: &Vertex) {
+        let mut a = v1.0.clone();
+        a.set_orientation(Orientation::Forward);
+        let mut b = v2.0.clone();
+        b.set_orientation(Orientation::Reversed);
+        self.add(&mut e.0, &a);
+        self.add(&mut e.0, &b);
     }
 
     /// Make a circular arc edge in the plane `axis` with the given radius and
@@ -215,6 +260,21 @@ mod tests {
         assert_eq!(c.shape_type(), ShapeType::Compound);
         clear_tree(&v.0);
         clear_tree(&c.0);
+    }
+
+    #[test]
+    fn add_reversed_parent_stores_reversed_child() {
+        let b = TopoBuilder::new();
+        let mut wire = Wire::new();
+        wire.0.set_orientation(crate::abs::Orientation::Reversed);
+        let e = b.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 0.0));
+        b.add_edge(&mut wire, &e);
+        let stored = wire.0.tshape.read().unwrap().children[0].clone();
+        assert!(stored.orientation().is_reversed());
+        let viewed = crate::iterator::ShapeIterator::of_shape(&wire.0).next().unwrap();
+        assert!(viewed.orientation().is_forward());
+        assert!(!e.free());
+        clear_tree(&wire.0);
     }
 
     #[test]

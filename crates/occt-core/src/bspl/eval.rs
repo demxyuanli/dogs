@@ -95,6 +95,103 @@ pub fn eval_curve_d1(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64) -> (
     (pt, d1)
 }
 
+/// Non-rational B-spline D0/D1/D2. Second derivative poles follow the same
+/// `BSplCLib` difference used for D1 (`eval_curve_d1`).
+pub fn eval_curve_d2(
+    poles: &[GpPnt],
+    knots: &[f64],
+    degree: usize,
+    u: f64,
+) -> (GpPnt, GpVec, GpVec) {
+    let (pt, d1) = eval_curve_d1(poles, knots, degree, u);
+    if degree < 2 || poles.len() < 3 || knots.len() < 4 {
+        return (pt, d1, GpVec::zero());
+    }
+    let n = poles.len();
+    let mut dpoles = Vec::with_capacity(n - 1);
+    for i in 0..n - 1 {
+        let k0 = i + 1;
+        let k1 = k0 + degree;
+        let alpha = if k1 < knots.len() && knots[k1] > knots[k0] {
+            degree as f64 / (knots[k1] - knots[k0])
+        } else {
+            1.0
+        };
+        dpoles.push(GpPnt::new(
+            alpha * (poles[i + 1].coord.x - poles[i].coord.x),
+            alpha * (poles[i + 1].coord.y - poles[i].coord.y),
+            alpha * (poles[i + 1].coord.z - poles[i].coord.z),
+        ));
+    }
+    let dknots = &knots[1..knots.len() - 1];
+    let deg1 = degree - 1;
+    if dpoles.len() < 2 || deg1 < 1 || dknots.len() < 4 {
+        return (pt, d1, GpVec::zero());
+    }
+    let m = dpoles.len();
+    let mut ddpoles = Vec::with_capacity(m - 1);
+    for i in 0..m - 1 {
+        let k0 = i + 1;
+        let k1 = k0 + deg1;
+        let alpha = if k1 < dknots.len() && dknots[k1] > dknots[k0] {
+            deg1 as f64 / (dknots[k1] - dknots[k0])
+        } else {
+            1.0
+        };
+        ddpoles.push(GpPnt::new(
+            alpha * (dpoles[i + 1].coord.x - dpoles[i].coord.x),
+            alpha * (dpoles[i + 1].coord.y - dpoles[i].coord.y),
+            alpha * (dpoles[i + 1].coord.z - dpoles[i].coord.z),
+        ));
+    }
+    let ddknots = &dknots[1..dknots.len() - 1];
+    let deg2 = deg1 - 1;
+    if ddpoles.is_empty() {
+        return (pt, d1, GpVec::zero());
+    }
+    let p = eval_curve(&ddpoles, ddknots, deg2, u);
+    (pt, d1, GpVec::new(p.x(), p.y(), p.z()))
+}
+
+/// Rational B-spline D2 via homogeneous `A = w P` (`BSplCLib` quotient rule).
+pub fn eval_curve_rational_d2(
+    poles: &[GpPnt],
+    weights: &[f64],
+    knots: &[f64],
+    degree: usize,
+    u: f64,
+) -> (GpPnt, GpVec, GpVec) {
+    if poles.len() != weights.len() || poles.is_empty() {
+        return (GpPnt::zero(), GpVec::zero(), GpVec::zero());
+    }
+    let a_poles: Vec<GpPnt> = poles
+        .iter()
+        .zip(weights.iter())
+        .map(|(p, w)| GpPnt::new(p.x() * w, p.y() * w, p.z() * w))
+        .collect();
+    let w_poles: Vec<GpPnt> = weights.iter().map(|w| GpPnt::new(*w, 0.0, 0.0)).collect();
+    let (a, da, d2a) = eval_curve_d2(&a_poles, knots, degree, u);
+    let (_, dwv, d2wv) = eval_curve_d2(&w_poles, knots, degree, u);
+    let w = eval_curve(&w_poles, knots, degree, u).x();
+    if w.abs() < 1e-30 {
+        return (a, da, d2a);
+    }
+    let p = GpPnt::new(a.x() / w, a.y() / w, a.z() / w);
+    let dw = dwv.x();
+    let d2w = d2wv.x();
+    let d1 = GpVec::new(
+        (da.x() * w - a.x() * dw) / (w * w),
+        (da.y() * w - a.y() * dw) / (w * w),
+        (da.z() * w - a.z() * dw) / (w * w),
+    );
+    let d2 = GpVec::new(
+        (d2a.x() - 2.0 * d1.x() * dw - p.x() * d2w) / w,
+        (d2a.y() - 2.0 * d1.y() * dw - p.y() * d2w) / w,
+        (d2a.z() - 2.0 * d1.z() * dw - p.z() * d2w) / w,
+    );
+    (p, d1, d2)
+}
+
 use crate::gp::GpXyz;
 use crate::gp::GpVec;
 
@@ -136,6 +233,50 @@ pub fn eval_surface_d1(poles: &[GpPnt], n_u: usize, n_v: usize,
     );
     let (_, dv) = eval_curve_d1(&curve_u, knots_v, degree_v, v);
     (pt, du, dv)
+}
+
+/// Non-rational B-spline surface D0/D1/D2.
+/// Tensor product of `eval_curve_d2`. Source: `BSplSLib::D2` non-rational arm
+/// (`BSplSLib.cxx:1063-1247`).
+pub fn eval_surface_d2(
+    poles: &[GpPnt],
+    n_u: usize,
+    n_v: usize,
+    knots_u: &[f64],
+    knots_v: &[f64],
+    degree_u: usize,
+    degree_v: usize,
+    u: f64,
+    v: f64,
+) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+    let n = n_v;
+    if n_u == 0 || n == 0 || poles.is_empty() {
+        return (
+            GpPnt::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+        );
+    }
+    let mut curve_u = Vec::with_capacity(n);
+    let mut dcurve_u = Vec::with_capacity(n);
+    let mut d2curve_u = Vec::with_capacity(n);
+    for j in 0..n {
+        let col: Vec<GpPnt> = (0..n_u).map(|i| poles[i * n + j]).collect();
+        let (pt, du, d2u) = eval_curve_d2(&col, knots_u, degree_u, u);
+        curve_u.push(pt);
+        dcurve_u.push(GpPnt::new(du.x(), du.y(), du.z()));
+        d2curve_u.push(GpPnt::new(d2u.x(), d2u.y(), d2u.z()));
+    }
+    let (pt, dv, d2v) = eval_curve_d2(&curve_u, knots_v, degree_v, v);
+    let du_pt = eval_curve(&dcurve_u, knots_v, degree_v, v);
+    let du = GpVec::new(du_pt.x(), du_pt.y(), du_pt.z());
+    let d2u_pt = eval_curve(&d2curve_u, knots_v, degree_v, v);
+    let d2u = GpVec::new(d2u_pt.x(), d2u_pt.y(), d2u_pt.z());
+    let (_, duv) = eval_curve_d1(&dcurve_u, knots_v, degree_v, v);
+    (pt, du, dv, d2u, d2v, duv)
 }
 
 #[cfg(test)]

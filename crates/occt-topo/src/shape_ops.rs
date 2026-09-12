@@ -31,9 +31,10 @@ pub fn transform_shape(shape: &mut TopoShape, t: &GpTrsf) -> Result<(), String> 
         }
         match s.shape_type() {
             ShapeType::Vertex => {
-                let p = reg.vertex_point(&s).transformed(t);
-                let tol = reg.vertex_tolerance(&s);
-                reg.set_vertex(&s, VertexGeom { point: p, tolerance: tol });
+                if let Some(g) = reg.vertex_geom(&s) {
+                    let p = g.point.transformed(t);
+                    reg.set_vertex(&s, VertexGeom { point: p, tolerance: g.tolerance });
+                }
             }
             ShapeType::Edge => {
                 if let Some(g) = reg.edge_geom(&s) {
@@ -47,6 +48,7 @@ pub fn transform_shape(shape: &mut TopoShape, t: &GpTrsf) -> Result<(), String> 
                         same_range: g.same_range,
                         degenerated: g.degenerated,
                         pcurves: g.pcurves.clone(),
+                        pcurve_ranges: g.pcurve_ranges.clone(),
                     });
                 }
             }
@@ -108,8 +110,10 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
         let mut copy = TopoShape::new(s.shape_type());
         match s.shape_type() {
             ShapeType::Vertex => {
-                let p = reg.vertex_point(&s).transformed(t);
-                reg.set_vertex(&copy, VertexGeom { point: p, tolerance: reg.vertex_tolerance(&s) });
+                if let Some(g) = reg.vertex_geom(&s) {
+                    let p = g.point.transformed(t);
+                    reg.set_vertex(&copy, VertexGeom { point: p, tolerance: g.tolerance });
+                }
             }
             ShapeType::Edge => {
                 if let Some(g) = reg.edge_geom(&s) {
@@ -122,6 +126,7 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
                         same_range: g.same_range,
                         degenerated: g.degenerated,
                         pcurves: g.pcurves.clone(),
+                        pcurve_ranges: g.pcurve_ranges.clone(),
                     });
                 }
             }

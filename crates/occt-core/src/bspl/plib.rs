@@ -101,6 +101,102 @@ pub fn power_to_bezier(degree: usize) -> Vec<f64> {
     matrix
 }
 
+/// `PLib::Trimming` dimension arm (`PLib.cxx:1642-1716`).
+/// `coefs` is degree-major, `dim`-minor, length `(degree+1)*dim`.
+pub fn trimming(u1: f64, u2: f64, dim: usize, coefs: &mut [f64]) {
+    if dim == 0 || coefs.len() < dim {
+        return;
+    }
+    let lsp = u2 - u1;
+    let mut len = coefs.len() / dim;
+    if len == 0 {
+        return;
+    }
+    len -= 1;
+    let upc = coefs.len() - dim;
+    for _i in 1..=len {
+        let mut indc = upc - dim * (_i - 1);
+        for j in 0..dim {
+            let lo = indc - dim + j;
+            if lo < coefs.len() && indc + j < coefs.len() {
+                coefs[lo] += u1 * coefs[indc + j];
+            }
+        }
+        while indc < upc {
+            indc += dim;
+            for k in 0..dim {
+                let lo = indc - dim + k;
+                if lo < coefs.len() && indc + k < coefs.len() {
+                    coefs[lo] = u1 * coefs[indc + k] + lsp * coefs[lo];
+                }
+            }
+        }
+        for j in 0..dim {
+            if upc + j < coefs.len() {
+                coefs[upc + j] *= lsp;
+            }
+        }
+    }
+}
+
+/// `PLib::VTrimming` non-rational (`PLib.cxx:1885-1918`).
+pub fn v_trimming(v1: f64, v2: f64, coeffs: &mut [Vec<crate::gp::GpPnt>]) {
+    if coeffs.is_empty() {
+        return;
+    }
+    let cols = coeffs[0].len();
+    for row in coeffs.iter_mut() {
+        let mut temp = vec![0.0; cols * 3];
+        for (icol, p) in row.iter().enumerate() {
+            temp[icol * 3] = p.x();
+            temp[icol * 3 + 1] = p.y();
+            temp[icol * 3 + 2] = p.z();
+        }
+        trimming(v1, v2, 3, &mut temp);
+        for icol in 0..cols {
+            row[icol] = crate::gp::GpPnt::new(
+                temp[icol * 3],
+                temp[icol * 3 + 1],
+                temp[icol * 3 + 2],
+            );
+        }
+    }
+}
+
+/// `PLib::UTrimming` non-rational (`PLib.cxx:1839-1881`).
+pub fn u_trimming(u1: f64, u2: f64, coeffs: &mut [Vec<crate::gp::GpPnt>]) {
+    if coeffs.is_empty() {
+        return;
+    }
+    let rows = coeffs.len();
+    let cols = coeffs[0].len();
+    for icol in 0..cols {
+        let mut temp = vec![0.0; rows * 3];
+        for (irow, row) in coeffs.iter().enumerate() {
+            let p = row[icol];
+            temp[irow * 3] = p.x();
+            temp[irow * 3 + 1] = p.y();
+            temp[irow * 3 + 2] = p.z();
+        }
+        trimming(u1, u2, 3, &mut temp);
+        for irow in 0..rows {
+            coeffs[irow][icol] = crate::gp::GpPnt::new(
+                temp[irow * 3],
+                temp[irow * 3 + 1],
+                temp[irow * 3 + 2],
+            );
+        }
+    }
+}
+
+/// `PLib::Bin` (`PLib.cxx:260-270`). N in `[0, 25]`, P in `[0, N]`.
+pub fn bin(n: i32, p: i32) -> f64 {
+    if n < 0 || n > 25 || p < 0 || p > n {
+        return 0.0;
+    }
+    binomial(n as usize, p as usize) as f64
+}
+
 /// Binomial coefficient C(n, k).
 fn binomial(n: usize, k: usize) -> usize {
     if k > n { return 0; }

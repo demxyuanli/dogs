@@ -1,0 +1,584 @@
+//! `BOPAlgo_WireSplitter::SplitBlock` (`BOPAlgo_WireSplitter_1.cxx`).
+//!
+//! Irregular connexity blocks (a vertex with other than one IN and one OUT,
+//! or TShape-coincident edges) are walked by `Path`: unused OUT edges, the
+//! smallest `ClockWiseAngle` from the incoming IN angle, then `MakeWire` of
+//! each closed buffer. Regular 1-in/1-out blocks without TShape coincidence
+//! fall through to a single `MakeWire`.
+
+use std::collections::HashMap;
+use std::f64::consts::PI;
+
+use occt_core::gp::{GpDir2d, GpPnt2d, GpVec2d};
+use occt_core::precision::{Precision, PCONFUSION};
+use occt_geom2d::curve::Curve2d;
+
+use crate::abs::{Orientation, ShapeType};
+use crate::boptools_2d::make_2d;
+use crate::brep_tool::BRepTool;
+use crate::builder::TopoBuilder;
+use crate::pcurve::{pc_curve_kind, CurveKind};
+use crate::shape::{Edge, Face, TopoShape, Vertex};
+use crate::tgeometry::GeometryRegistry;
+
+const TWO_PI: f64 = PI + PI;
+
+/// `BOPAlgo_EdgeInfo`.
+#[derive(Clone)]
+struct EdgeInfo {
+    edge: Edge,
+    passed: bool,
+    is_in: bool,
+    is_inside: bool,
+    angle: f64,
+}
+
+struct SmartMap {
+    verts: Vec<TopoShape>,
+    infos: Vec<Vec<EdgeInfo>>,
+    index: HashMap<usize, usize>,
+}
+
+impl SmartMap {
+    fn new() -> Self {
+        Self {
+            verts: Vec::new(),
+            infos: Vec::new(),
+            index: HashMap::new(),
+        }
+    }
+
+    fn slot(&mut self, v: &TopoShape) -> usize {
+        let k = GeometryRegistry::shape_key(v);
+        if let Some(&i) = self.index.get(&k) {
+            return i;
+        }
+        let i = self.verts.len();
+        self.index.insert(k, i);
+        self.verts.push(v.clone());
+        self.infos.push(Vec::new());
+        i
+    }
+}
+
+/// `BOPAlgo_WireSplitter::SplitBlock`.
+pub(crate) fn split_block(face: &Face, edges: &[Edge]) -> Result<Vec<TopoShape>, String> {
+    let mut map = SmartMap::new();
+    let mut unique: HashMap<usize, usize> = HashMap::new();
+    let mut vert_closed: HashMap<usize, bool> = HashMap::new();
+    let fk = GeometryRegistry::shape_key(&face.0);
+
+    for e in edges {
+        if make_2d(e, face).is_err() {
+            continue;
+        }
+        let ek = GeometryRegistry::shape_key(&e.0);
+        let closed = edge_closed_on_face(e, face, fk);
+        let n = unique.entry(ek).or_insert(0);
+        *n += 1;
+        if *n > 1 && !closed {
+            unique.insert(ek, 0);
+        }
+        let kids = oriented_vertices(e);
+        for (i, v) in kids.iter().enumerate() {
+            let slot = map.slot(v);
+            let is_in = v.orientation() == Orientation::Reversed;
+            map.infos[slot].push(EdgeInfo {
+                edge: e.clone(),
+                passed: false,
+                is_in,
+                is_inside: false,
+                angle: -1.0,
+            });
+            let vk = GeometryRegistry::shape_key(v);
+            let cyc = closed || (kids.len() >= 2 && kids[0].same_tshape(&kids[1]));
+            let e0 = vert_closed.entry(vk).or_insert(false);
+            if cyc || i > 0 && kids[0].same_tshape(v) {
+                *e0 = true;
+            }
+            if cyc {
+                *e0 = true;
+            }
+        }
+    }
+
+    if map.verts.is_empty() {
+        return Err("SplitBlock: no edges with a pcurve on the face".into());
+    }
+
+    for infos in &mut map.infos {
+        for ei in infos.iter_mut() {
+            let ek = GeometryRegistry::shape_key(&ei.edge.0);
+            ei.is_inside = unique.get(&ek).copied().unwrap_or(0) == 0;
+        }
+    }
+
+    if nothing_to_do(&map, edges) {
+        return Ok(vec![make_wire(edges)]);
+    }
+
+    for slot in 0..map.verts.len() {
+        let v = map.verts[slot].clone();
+        let n = map.infos[slot].len();
+        for i in 0..n {
+            let e = map.infos[slot][i].edge.clone();
+            let is_in = map.infos[slot][i].is_in;
+            let mut vv = v.clone();
+            vv.set_orientation(if is_in {
+                Orientation::Reversed
+            } else {
+                Orientation::Forward
+            });
+            map.infos[slot][i].angle = angle_2d(&vv, &e, face, is_in);
+        }
+    }
+    refine_angles(face, &mut map);
+
+    let mut loops: Vec<TopoShape> = Vec::new();
+    let nverts = map.verts.len();
+    for slot in 0..nverts {
+        let ninfo = map.infos[slot].len();
+        for i in 0..ninfo {
+            if map.infos[slot][i].is_in || map.infos[slot][i].passed {
+                continue;
+            }
+            path(
+                face,
+                &vert_closed,
+                slot,
+                i,
+                &mut map,
+                &mut loops,
+            );
+        }
+    }
+    if loops.is_empty() {
+        return Err("SplitBlock: Path produced no wires".into());
+    }
+    Ok(loops)
+}
+
+fn nothing_to_do(map: &SmartMap, edges: &[Edge]) -> bool {
+    for infos in &map.infos {
+        let mut cin = 0;
+        let mut cout = 0;
+        for ei in infos {
+            if ei.is_in {
+                cin += 1;
+            } else {
+                cout += 1;
+            }
+        }
+        if cin != 1 || cout != 1 {
+            return false;
+        }
+    }
+    let mut n_by_tshape: HashMap<usize, usize> = HashMap::new();
+    for e in edges {
+        *n_by_tshape
+            .entry(GeometryRegistry::shape_key(&e.0))
+            .or_insert(0) += 1;
+    }
+    n_by_tshape.values().all(|&n| n == 1)
+}
+
+fn path(
+    face: &Face,
+    vert_closed: &HashMap<usize, bool>,
+    start_slot: usize,
+    start_info: usize,
+    map: &mut SmartMap,
+    loops: &mut Vec<TopoShape>,
+) {
+    let mut ls: Vec<Edge> = Vec::new();
+    let mut vert_va: Vec<TopoShape> = Vec::new();
+    let mut coord_va: Vec<GpPnt2d> = Vec::new();
+    let mut info_seq: Vec<(usize, usize)> = Vec::new();
+
+    let mut va_slot = start_slot;
+    let mut info_idx = start_info;
+    let eps = f64::EPSILON;
+
+    loop {
+        if ls.len() == 1 && ls[0].0.same_tshape(&map.infos[va_slot][info_idx].edge.0) {
+            return;
+        }
+        map.infos[va_slot][info_idx].passed = true;
+        let e_out = map.infos[va_slot][info_idx].edge.clone();
+        let va = map.verts[va_slot].clone();
+        ls.push(e_out.clone());
+        vert_va.push(va.clone());
+        info_seq.push((va_slot, info_idx));
+
+        let mut p_va = va.clone();
+        p_va.set_orientation(Orientation::Forward);
+        let pa = coord2d(&p_va, &e_out, face);
+        coord_va.push(pa);
+
+        let vb = get_next_vertex(&p_va, &e_out);
+        let pb = coord2d(&vb, &e_out, face);
+        let Some(&vb_slot) = map.index.get(&GeometryRegistry::shape_key(&vb)) else {
+            return;
+        };
+        let tol2d = 2.0 * tolerance_2d(&Vertex(vb.clone()), face);
+        let tol2d2 = tol2d * tol2d;
+        let closed = vert_closed
+            .get(&GeometryRegistry::shape_key(&vb))
+            .copied()
+            .unwrap_or(false);
+
+        {
+            let mut buf: Vec<Edge> = Vec::new();
+            let mut has_edge = false;
+            let a_nb = ls.len();
+            let mut cut: Option<usize> = None;
+            for i in (0..a_nb).rev() {
+                let e_prev = &ls[i];
+                buf.push(e_prev.clone());
+                if !has_edge {
+                    has_edge = !BRepTool::is_degenerated(e_prev);
+                    if !has_edge {
+                        continue;
+                    }
+                }
+                let same_v = vert_va[i].same_tshape(&vb);
+                let mut same_v2d = same_v;
+                if same_v && closed {
+                    same_v2d = coord_va[i].square_distance(&pb) < tol2d2;
+                    if same_v2d {
+                        let ud = (coord_va[i].x() - pb.x()).abs();
+                        let vd = (coord_va[i].y() - pb.y()).abs();
+                        let (tu, tv) = uv_tolerance_2d(&Vertex(vb.clone()), face);
+                        if ud > 2.0 * tu || vd > 2.0 * tv {
+                            same_v2d = false;
+                        }
+                    }
+                }
+                if same_v && same_v2d {
+                    let mut priz = true;
+                    if buf.len() == 2 && buf[0].0.same_tshape(&buf[1].0) {
+                        priz = false;
+                    }
+                    if priz {
+                        loops.push(make_wire(&buf));
+                    }
+                    if i < 1 {
+                        return;
+                    }
+                    cut = Some(i);
+                    break;
+                }
+            }
+            if let Some(i) = cut {
+                ls.truncate(i);
+                vert_va.truncate(i);
+                coord_va.truncate(i);
+                info_seq.truncate(i);
+            }
+        }
+
+        let is_boundary = info_seq
+            .last()
+            .map(|&(s, ii)| !map.infos[s][ii].is_inside)
+            .unwrap_or(true);
+        let a_le = &map.infos[vb_slot];
+        let angle_in = angle_in(&e_out, a_le);
+        let i_cnt = nb_ways_out(a_le);
+        let mut min_angle = 100.0;
+        let mut chosen: Option<usize> = None;
+        let mut only_inside: Option<usize> = None;
+        let mut n_inside = 0usize;
+
+        for (k, ei) in a_le.iter().enumerate() {
+            if ei.is_in || ei.passed {
+                continue;
+            }
+            if i_cnt == 0 {
+                return;
+            }
+            if i_cnt == 1 {
+                chosen = Some(k);
+                break;
+            }
+            let ang = if ei.edge.0.same_tshape(&e_out.0) {
+                TWO_PI
+            } else {
+                if closed {
+                    let p2 = coord2d_vf(&ei.edge, face);
+                    if p2.square_distance(&pb) > tol2d2 {
+                        continue;
+                    }
+                }
+                clockwise_angle(angle_in, ei.angle)
+            };
+            if is_boundary && ei.is_inside {
+                n_inside += 1;
+                only_inside = Some(k);
+            }
+            if ang < min_angle - eps {
+                min_angle = ang;
+                chosen = Some(k);
+            }
+        }
+        if n_inside == 1 {
+            chosen = only_inside;
+        }
+        let Some(k) = chosen else {
+            return;
+        };
+        va_slot = vb_slot;
+        info_idx = k;
+    }
+}
+
+fn make_wire(edges: &[Edge]) -> TopoShape {
+    let w = TopoBuilder::new().make_wire(edges);
+    w.0.set_closed(true);
+    w.0
+}
+
+/// `ClockWiseAngle`.
+fn clockwise_angle(angle_in: f64, angle_out: f64) -> f64 {
+    let mut a_in = angle_in;
+    let mut a_out = angle_out;
+    if a_in >= TWO_PI {
+        a_in -= TWO_PI;
+    }
+    if a_out >= TWO_PI {
+        a_out -= TWO_PI;
+    }
+    let mut a1 = a_in + PI;
+    if a1 >= TWO_PI {
+        a1 -= TWO_PI;
+    }
+    let mut da = a1 - a_out;
+    if da <= 0.0 {
+        da += TWO_PI;
+    } else if da <= 1.0e-14 {
+        da = TWO_PI;
+    }
+    da
+}
+
+/// `gp_Dir2d::Angle` from +X, folded into `[0, 2pi)`.
+fn dir2d_angle(d: &GpDir2d) -> f64 {
+    let a = d.y().atan2(d.x());
+    if a < 0.0 {
+        a + TWO_PI
+    } else {
+        a
+    }
+}
+
+fn coord2d(v: &TopoShape, e: &Edge, face: &Face) -> GpPnt2d {
+    let t = vertex_parameter(v, e);
+    match make_2d(e, face) {
+        Ok(c) => c.d0(t),
+        Err(_) => GpPnt2d::new(99.0, 99.0),
+    }
+}
+
+fn coord2d_vf(e: &Edge, face: &Face) -> GpPnt2d {
+    for v in oriented_vertices(e) {
+        if v.orientation() == Orientation::Forward {
+            return coord2d(&v, e, face);
+        }
+    }
+    GpPnt2d::new(99.0, 99.0)
+}
+
+fn vertex_parameter(v: &TopoShape, e: &Edge) -> f64 {
+    let (first, last) = BRepTool::edge_parameters(e);
+    let kids = stored_vertices(e);
+    if kids.first().is_some_and(|k| k.same_tshape(v)) {
+        first
+    } else {
+        last
+    }
+}
+
+fn get_next_vertex(v: &TopoShape, e: &Edge) -> TopoShape {
+    for vx in oriented_vertices(e) {
+        if !(vx.same_tshape(v) && vx.orientation() == v.orientation()) {
+            return vx;
+        }
+    }
+    v.clone()
+}
+
+fn nb_ways_out(le: &[EdgeInfo]) -> usize {
+    le.iter().filter(|ei| !ei.is_in && !ei.passed).count()
+}
+
+fn angle_in(e_in: &Edge, le: &[EdgeInfo]) -> f64 {
+    for ei in le {
+        if ei.is_in
+            && ei.edge.0.same_tshape(&e_in.0)
+            && ei.edge.0.orientation() == e_in.0.orientation()
+        {
+            return ei.angle;
+        }
+    }
+    0.0
+}
+
+fn angle_2d(v: &TopoShape, e: &Edge, face: &Face, is_in: bool) -> f64 {
+    let tv = vertex_parameter(v, e);
+    if Precision::is_infinite(tv) {
+        return 0.0;
+    }
+    let Ok(c) = make_2d(e, face) else {
+        return 0.0;
+    };
+    let (first, last) = BRepTool::edge_parameters(e);
+    let tol2d = 2.0 * tolerance_2d(&Vertex(v.clone()), face);
+    let mut dt = curve_resolution(c.as_ref(), tol2d).max(PCONFUSION);
+    if pc_curve_kind(c.as_ref()) != CurveKind::Line {
+        let r = curve2d_radius(c.as_ref(), tv);
+        if r > PCONFUSION {
+            let cosphi = r / (r + tol2d);
+            if cosphi.abs() <= 1.0 {
+                dt = dt.max(cosphi.acos());
+            }
+        }
+    }
+    let mut tx = 0.05 * (last - first);
+    if tx < 5.0e-5 {
+        tx = 5.0e-5_f64.min((last - first) / 2.0);
+    }
+    if dt > tx {
+        dt = tx;
+    }
+    let tv1 = if (tv - first).abs() < (tv - last).abs() {
+        tv + dt
+    } else {
+        tv - dt
+    };
+    let pv = c.d0(tv);
+    let pv1 = c.d0(tv1);
+    let v2 = if is_in {
+        GpVec2d::new(pv.x() - pv1.x(), pv.y() - pv1.y())
+    } else {
+        GpVec2d::new(pv1.x() - pv.x(), pv1.y() - pv.y())
+    };
+    match GpDir2d::from_vec2d(&v2) {
+        Ok(d) => dir2d_angle(&d),
+        Err(_) => 0.0,
+    }
+}
+
+fn curve_resolution(c: &dyn Curve2d, tol2d: f64) -> f64 {
+    let mid = 0.5 * (c.first_parameter() + c.last_parameter());
+    let t = if mid.is_finite() {
+        mid
+    } else {
+        0.0
+    };
+    let (_, d1) = c.d1(t);
+    let mag = d1.magnitude();
+    if mag > PCONFUSION {
+        tol2d / mag
+    } else {
+        tol2d
+    }
+}
+
+fn curve2d_radius(c: &dyn Curve2d, t: f64) -> f64 {
+    let (_, d1, d2) = c.d2(t);
+    let n2 = d1.square_magnitude();
+    if n2 <= PCONFUSION {
+        return 0.0;
+    }
+    let k = d1.crossed(&d2).abs() / n2.powf(1.5);
+    if k > PCONFUSION {
+        1.0 / k
+    } else {
+        0.0
+    }
+}
+
+fn tolerance_2d(v: &Vertex, face: &Face) -> f64 {
+    let (u, vv) = uv_tolerance_2d(v, face);
+    let t3 = BRepTool::vertex_tolerance(v);
+    u.max(vv).max(t3)
+}
+
+fn uv_tolerance_2d(v: &Vertex, face: &Face) -> (f64, f64) {
+    let t3 = BRepTool::vertex_tolerance(v).max(PCONFUSION);
+    let Some(surf) = BRepTool::face_surface(face) else {
+        return (t3, t3);
+    };
+    let p = BRepTool::vertex_point(v);
+    let (u, vv) = crate::brep_surface::surface_closest_params(surf.as_ref(), &p, 8, 8);
+    let (_, du, dv) = surf.d1(u, vv);
+    let ur = if du.magnitude() > PCONFUSION {
+        t3 / du.magnitude()
+    } else {
+        t3
+    };
+    let vr = if dv.magnitude() > PCONFUSION {
+        t3 / dv.magnitude()
+    } else {
+        t3
+    };
+    (ur, vr)
+}
+
+/// `RefineAngles`: only the `iCntBnd != 2` early-out is needed for the
+/// planar IN-edge splits (a vertex with three boundary edges returns here).
+/// `RefineAngle2D` (2D line intersection) is not instantiated.
+fn refine_angles(_face: &Face, map: &mut SmartMap) {
+    for infos in &mut map.infos {
+        let mut n_bnd = 0;
+        for ei in infos.iter() {
+            if !ei.is_inside {
+                n_bnd += 1;
+            }
+        }
+        if n_bnd != 2 {
+            continue;
+        }
+        let _ = infos;
+    }
+}
+
+fn edge_closed_on_face(e: &Edge, face: &Face, face_key: usize) -> bool {
+    if BRepTool::is_degenerated(e) {
+        return true;
+    }
+    GeometryRegistry::global().edge_pcurves(&e.0, face_key).len() >= 2
+}
+
+fn stored_vertices(e: &Edge) -> Vec<TopoShape> {
+    e.0.tshape
+        .read()
+        .expect("poisoned TShape lock")
+        .children
+        .iter()
+        .filter(|s| s.shape_type() == ShapeType::Vertex)
+        .cloned()
+        .collect()
+}
+
+/// Edge vertices with `TopoDS_Iterator(cumOri=true)` orientation.
+///
+/// When both children are stored Forward (`make_edge_segment` in this port),
+/// the last child is treated as Reversed, matching `BRepLib_MakeEdge`.
+fn oriented_vertices(e: &Edge) -> Vec<TopoShape> {
+    let stored = stored_vertices(e);
+    let mut oris: Vec<Orientation> = stored.iter().map(|v| v.orientation()).collect();
+    if oris.len() >= 2
+        && oris[0] == Orientation::Forward
+        && oris[1] == Orientation::Forward
+    {
+        oris[1] = Orientation::Reversed;
+    }
+    stored
+        .into_iter()
+        .zip(oris)
+        .map(|(mut v, o)| {
+            v.set_orientation(Orientation::compose(e.0.orientation(), o));
+            v
+        })
+        .collect()
+}

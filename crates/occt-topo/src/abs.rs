@@ -66,13 +66,36 @@ impl Orientation {
             Self::Internal | Self::External => *self,
         }
     }
+
+    /// `TopAbs::Compose(parent, child)` — accumulated orientation of a child
+    /// inside a parent. Table is indexed `[child][parent]` to match OCCT
+    /// `TopAbs.hxx` (`aTable[Or2][Or1]`).
+    pub fn compose(parent: Self, child: Self) -> Self {
+        const T: [[Orientation; 4]; 4] = [
+            [Orientation::Forward, Orientation::Reversed, Orientation::Internal, Orientation::External],
+            [Orientation::Reversed, Orientation::Forward, Orientation::Internal, Orientation::External],
+            [Orientation::Internal, Orientation::Internal, Orientation::Internal, Orientation::Internal],
+            [Orientation::External, Orientation::External, Orientation::External, Orientation::External],
+        ];
+        T[child.as_index()][parent.as_index()]
+    }
+
+    fn as_index(self) -> usize {
+        match self {
+            Self::Forward => 0,
+            Self::Reversed => 1,
+            Self::Internal => 2,
+            Self::External => 3,
+        }
+    }
+
     pub fn to_str(&self) -> &'static str {
         match self { Self::Forward=>"FORWARD", Self::Reversed=>"REVERSED", Self::Internal=>"INTERNAL", Self::External=>"EXTERNAL" }
     }
 }
 
-/// Topology flag: free, modified, check, oriented, closed, infinite. Source: `TopAbs_ShapeEnum` flags
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Topology flag: free, modified, check, oriented, closed, infinite. Source: `TopoDS_TShape` bits
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShapeFlags {
     pub free: bool,
     pub modified: bool,
@@ -81,6 +104,21 @@ pub struct ShapeFlags {
     pub closed: bool,
     pub infinite: bool,
     pub convex: bool,
+}
+
+impl Default for ShapeFlags {
+    /// OCCT `TopoDS_TShape` ctor: Free | Modified | Orientable.
+    fn default() -> Self {
+        Self {
+            free: true,
+            modified: true,
+            check: false,
+            oriented: true,
+            closed: false,
+            infinite: false,
+            convex: false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -99,5 +137,20 @@ mod tests {
         assert_eq!(Orientation::Forward.reversed(), Orientation::Reversed);
         assert_eq!(Orientation::Reversed.reversed(), Orientation::Forward);
         assert_eq!(Orientation::Internal.reversed(), Orientation::Internal);
+    }
+
+    #[test]
+    fn orientation_compose_matches_topabs() {
+        assert_eq!(Orientation::compose(Orientation::Forward, Orientation::Reversed), Orientation::Reversed);
+        assert_eq!(Orientation::compose(Orientation::Reversed, Orientation::Reversed), Orientation::Forward);
+        assert_eq!(Orientation::compose(Orientation::Internal, Orientation::Forward), Orientation::Internal);
+        assert_eq!(Orientation::compose(Orientation::External, Orientation::Reversed), Orientation::External);
+    }
+
+    #[test]
+    fn tshape_flag_defaults_match_occt() {
+        let f = ShapeFlags::default();
+        assert!(f.free && f.modified && f.oriented);
+        assert!(!f.check && !f.closed && !f.infinite && !f.convex);
     }
 }

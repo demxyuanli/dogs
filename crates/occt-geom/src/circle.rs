@@ -19,6 +19,8 @@ impl Curve for GeomCircle {
     fn last_parameter(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn is_periodic(&self) -> bool { true }
     fn period(&self) -> f64 { 2.0 * std::f64::consts::PI }
+    fn circle_radius(&self) -> Option<f64> { Some(self.pos.radius.abs()) }
+    fn gp_circ(&self) -> Option<GpCirc> { Some(self.pos.clone()) }
     fn continuity(&self) -> u8 { 3 }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.radius = -self.pos.radius; }

@@ -70,14 +70,8 @@ impl GeomBezierCurve {
     pub fn set_pole(&mut self, i: usize, p: GpPnt) {
         self.poles[i] = p;
     }
-}
 
-impl Curve for GeomBezierCurve {
-    fn d0(&self, u: f64) -> GpPnt {
-        de_casteljau(&self.poles, u)
-    }
-
-    fn d1(&self, u: f64) -> GpVec {
+    fn tangent(&self, u: f64) -> GpVec {
         let deg = self.degree();
         if deg == 0 {
             return GpVec::new(0.0, 0.0, 0.0);
@@ -96,7 +90,7 @@ impl Curve for GeomBezierCurve {
         de_casteljau_vec(&dp, u)
     }
 
-    fn d2(&self, u: f64) -> GpVec {
+    fn second_deriv(&self, u: f64) -> GpVec {
         let deg = self.degree();
         if deg < 2 {
             return GpVec::new(0.0, 0.0, 0.0);
@@ -122,6 +116,20 @@ impl Curve for GeomBezierCurve {
         }
         de_casteljau_vec(&ddp, u)
     }
+}
+
+impl Curve for GeomBezierCurve {
+    fn d0(&self, u: f64) -> GpPnt {
+        de_casteljau(&self.poles, u)
+    }
+
+    fn d1(&self, u: f64) -> (GpPnt, GpVec) {
+        (self.d0(u), self.tangent(u))
+    }
+
+    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
+        (self.d0(u), self.tangent(u), self.second_deriv(u))
+    }
 
     fn first_parameter(&self) -> f64 {
         0.0
@@ -131,7 +139,7 @@ impl Curve for GeomBezierCurve {
         1.0
     }
 
-    fn continuity(&self) -> usize {
+    fn continuity(&self) -> u8 {
         3
     }
 
@@ -147,6 +155,13 @@ impl Curve for GeomBezierCurve {
 
     fn clone_dyn(&self) -> Box<dyn Curve> {
         Box::new(self.clone())
+    }
+
+    fn bezier_poles(&self) -> Option<&[GpPnt]> {
+        Some(&self.poles)
+    }
+    fn nurbs_degree(&self) -> Option<usize> {
+        Some(self.poles.len().saturating_sub(1))
     }
 }
 

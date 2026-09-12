@@ -9,15 +9,71 @@ pub trait Curve: Send + Sync {
         let (p, d1, d2) = self.d2(u);
         (p, d1, d2, GpVec::zero())
     }
+    /// `Geom_Curve::EvalDN` (`Geom_Curve.hxx:210`, pure virtual).
+    /// Illegal `N < 1` returns zero instead of throw. `GeomBSplineCurve`
+    /// overrides via `BSplCLib::DN`.
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec {
+        if n < 1 {
+            return GpVec::zero();
+        }
+        match n {
+            1 => self.d1(u).1,
+            2 => self.d2(u).2,
+            3 => self.d3(u).3,
+            _ => GpVec::zero(),
+        }
+    }
     fn value(&self, u: f64) -> GpPnt { self.d0(u) }
     fn first_parameter(&self) -> f64;
     fn last_parameter(&self) -> f64;
     fn is_periodic(&self) -> bool { false }
     fn period(&self) -> f64 { 0.0 }
     fn continuity(&self) -> u8;
+    /// Radius when this is a `Geom_Circle`; `None` for every other type.
+    /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_Circle`.
+    fn circle_radius(&self) -> Option<f64> { None }
+    /// `Geom_Circle::Circ` / `Adaptor3d_Curve::Circle`. `None` otherwise.
+    fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { None }
+    /// `Geom_TrimmedCurve`. OCCT `IsKind(STANDARD_TYPE(Geom_TrimmedCurve))`.
+    fn is_geom_trimmed(&self) -> bool { false }
+    /// Basis `[First, Last]` of a `Geom_TrimmedCurve` before the `[0, 1]` remap.
+    /// `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps to the basis curve;
+    /// a `Geom_Circle` keeps radian parameters on that interval.
+    fn trimmed_basis_range(&self) -> Option<(f64, f64)> { None }
+    /// `Adaptor3d_Curve::GetType() == GeomAbs_Line`.
+    fn is_line(&self) -> bool { false }
+    /// `Adaptor3d_Curve::Degree` for Bezier / BSpline.
+    fn nurbs_degree(&self) -> Option<usize> { None }
+    /// `Adaptor3d_Curve::Intervals` including the range ends (`GeomAbs_CN`).
+    fn parameter_intervals(&self, _continuity: u8) -> Vec<f64> {
+        vec![self.first_parameter(), self.last_parameter()]
+    }
+    /// Flat knot sequence of a `Geom_BSplineCurve`; `None` otherwise.
+    fn bspline_knots(&self) -> Option<&[f64]> {
+        None
+    }
+    /// Poles when this is a `Geom_BSplineCurve`; `None` otherwise.
+    /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_BSplineCurve`.
+    fn bspline_poles(&self) -> Option<&[GpPnt]> { None }
+    /// Poles when this is a `Geom_BezierCurve`; `None` otherwise.
+    /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_BezierCurve`.
+    fn bezier_poles(&self) -> Option<&[GpPnt]> { None }
+    /// `Adaptor3d_Curve::NbIntervals`. Default one span.
+    fn nb_intervals(&self, _continuity: u8) -> i32 { 1 }
+    /// `GeomAdaptor_Curve::Resolution` (`cxx:1116-1148`).
+    /// Default `Precision::Parametric(r3d) = r3d * PConfusion / Confusion`.
+    fn resolution(&self, r3d: f64) -> f64 {
+        r3d * occt_core::precision::PCONFUSION / occt_core::precision::CONFUSION
+    }
     fn transform(&mut self, t: &GpTrsf);
     fn reverse(&mut self);
     fn clone_dyn(&self) -> Box<dyn Curve>;
     fn transformed(&self, t: &GpTrsf) -> Box<dyn Curve> { let mut c = self.clone_dyn(); c.transform(t); c }
     fn reversed(&self) -> Box<dyn Curve> { let mut c = self.clone_dyn(); c.reverse(); c }
+    /// `Geom_Curve::Translate`.
+    fn translated(&self, v: &GpVec) -> Box<dyn Curve> {
+        let mut t = GpTrsf::identity();
+        t.set_translation_vec(v);
+        self.transformed(&t)
+    }
 }

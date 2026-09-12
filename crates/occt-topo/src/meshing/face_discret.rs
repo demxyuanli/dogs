@@ -12,9 +12,12 @@
 //! stubs are filled this module uses the stand-ins from `edge_discret` and
 //! carries a local `GeomTool` stand-in so the algorithms stay self-testable.
 
-use occt_core::gp::GpPnt2d;
+use occt_core::cslib::{Class2d, Class2dResult};
+use occt_core::gp::{GpPnt2d, GpVec2d};
+use occt_core::precision::{ANGULAR, PCONFUSION};
 
 use super::edge_discret::MeshFace;
+use super::geom_tool::{GeomTool as OcctGeomTool, IntFlag as OcctIntFlag};
 use super::parameters::MeshParameters;
 
 // ---------------------------------------------------------------------------
@@ -120,15 +123,13 @@ pub enum PointState {
 
 /// Classifies UV points against the wires of a discrete face.
 ///
-/// Port of `BRepMesh_Classifier`: wires are registered as closed UV polygons and
-/// [`Classifier::perform`] decides whether a point lies inside the face. The
-/// first registered wire is the outer boundary; every subsequent wire is a
-/// hole. A point on any boundary is reported as [`PointState::On`] (treated as
-/// OUT by [`Classifier::is_inside`], matching OCCT).
+/// Port of `BRepMesh_Classifier` (`BRepMesh_Classifier.cxx:35-127`): each wire
+/// is a `CSLib_Class2d` in the splitter UV range. Accumulated turning sets
+/// `TabOrient`; `Perform` treats ON as OUT and inverts a clockwise wire.
 #[derive(Debug, Default)]
 pub struct Classifier {
-    wires: Vec<Vec<GpPnt2d>>,
-    tolerances: Vec<f64>,
+    tab_class: Vec<Class2d>,
+    tab_orient: Vec<bool>,
 }
 
 impl Classifier {
@@ -136,46 +137,76 @@ impl Classifier {
         Self::default()
     }
 
-    /// Register a boundary wire. `tol_uv` is the parametric tolerance used for
-    /// the "on boundary" decision; `_range_u` / `_range_v` are accepted for
-    /// OCCT signature parity but not needed by the winding-number test.
+    /// `BRepMesh_Classifier::RegisterWire`.
     pub fn register_wire(
         &mut self,
         wire: &[GpPnt2d],
         tol_uv: (f64, f64),
-        _range_u: (f64, f64),
-        _range_v: (f64, f64),
+        range_u: (f64, f64),
+        range_v: (f64, f64),
     ) {
-        if wire.len() < 2 {
+        let n = wire.len();
+        if n < 2 {
             return;
         }
-        self.wires.push(wire.to_vec());
-        self.tolerances.push(tol_uv.0.max(tol_uv.1));
+        let sq_confusion = PCONFUSION * PCONFUSION;
+        let mut angle = 0.0;
+        let mut p1 = wire[0];
+        let mut p2 = wire[1];
+        for i in 0..n {
+            let p3 = wire[(i + 2) % n];
+            let a = GpVec2d::new(p2.x() - p1.x(), p2.y() - p1.y());
+            let b = GpVec2d::new(p3.x() - p2.x(), p3.y() - p2.y());
+            if a.square_magnitude() > sq_confusion && b.square_magnitude() > sq_confusion {
+                let cur = a.angle(&b);
+                let cur_abs = cur.abs();
+                if cur_abs > ANGULAR && (std::f64::consts::PI - cur_abs) > ANGULAR {
+                    angle += cur;
+                    p1 = p2;
+                }
+            }
+            p2 = p3;
+        }
+        if angle.abs() < ANGULAR {
+            angle = 0.0;
+        }
+        self.tab_class.push(Class2d::new(
+            wire,
+            tol_uv.0,
+            tol_uv.1,
+            range_u.0,
+            range_v.0,
+            range_u.1,
+            range_v.1,
+        ));
+        self.tab_orient.push(!(angle < 0.0));
     }
 
     /// Number of registered wires.
     pub fn wires_nb(&self) -> usize {
-        self.wires.len()
+        self.tab_class.len()
     }
 
-    /// Classify a point against the registered wires. First wire is outer, the
-    /// rest are holes. A point on any boundary is `On`.
+    /// `BRepMesh_Classifier::Perform`. ON (`SiDans == 0`) is `On` for callers
+    /// that distinguish it; [`Self::is_inside`] treats it as OUT, as OCCT does.
+    /// No registered wire: `TopAbs_IN` (`cxx:35-59`, the loop does not run).
     pub fn perform(&self, p: &GpPnt2d) -> PointState {
-        let Some(outer) = self.wires.first() else {
-            return PointState::Out;
-        };
-        let tol = self.tolerances.first().copied().unwrap_or(1e-7);
-        match classify_polygon(p, outer, tol) {
-            PointState::On => return PointState::On,
-            PointState::Out => return PointState::Out,
-            PointState::In => {}
+        if self.tab_class.is_empty() {
+            return PointState::In;
         }
-        for (i, hole) in self.wires.iter().enumerate().skip(1) {
-            let tol = self.tolerances.get(i).copied().unwrap_or(1e-7);
-            match classify_polygon(p, hole, tol) {
-                PointState::On => return PointState::On,
-                PointState::In => return PointState::Out,
-                PointState::Out => {}
+        for (class2d, &orient) in self.tab_class.iter().zip(self.tab_orient.iter()) {
+            match class2d.si_dans(p) {
+                Class2dResult::Uncertain => return PointState::On,
+                Class2dResult::Outside => {
+                    if orient {
+                        return PointState::Out;
+                    }
+                }
+                Class2dResult::Inside => {
+                    if !orient {
+                        return PointState::Out;
+                    }
+                }
             }
         }
         PointState::In
@@ -245,10 +276,17 @@ fn is_left(a: &GpPnt2d, b: &GpPnt2d, p: &GpPnt2d) -> f64 {
 #[derive(Debug)]
 pub struct FaceChecker<'a> {
     face: &'a MeshFace,
-    /// Collected `(p1, p2, wire_index)` boundary segments.
-    segments: Vec<(GpPnt2d, GpPnt2d, usize)>,
+    /// Collected `(p1, p2, wire_index, edge_index)` boundary segments.
+    /// `edge_index` is the discrete-model edge; `usize::MAX` when unknown.
+    segments: Vec<(GpPnt2d, GpPnt2d, usize, usize)>,
     /// Registered proper crossings: `(segment_a, segment_b, intersection)`.
     intersections: Vec<(usize, usize, GpPnt2d)>,
+    /// Edges that own a Cross (`BRepMesh_FaceChecker::GetIntersectingEdges`).
+    intersecting_edges: Vec<usize>,
+    /// `FaceChecker::new` walks one closed UV chain per wire and skips the
+    /// wrap pair. `from_pcurve_edges` has no junction / wrap segments
+    /// (`BRepMesh_FaceChecker.cxx:69-81`), so wrap skip is off.
+    skip_closed_wrap: bool,
 }
 
 impl<'a> FaceChecker<'a> {
@@ -262,54 +300,163 @@ impl<'a> FaceChecker<'a> {
             .chain(face.inner_wires.iter())
             .enumerate()
         {
-            // Closed polygon: every edge including the closing `last -> first`.
+            // `BRepMesh_FaceChecker.cxx:69-81`: consecutive pcurve points only.
+            // A duplicated close (`first == last`) already supplies the last
+            // edge; wrapping that chain would add a degenerate zero-length
+            // segment that false-positives against the real closing edge.
             let n = wire.len();
-            for i in 0..n {
-                segments.push((wire[i], wire[(i + 1) % n], wi));
+            if n < 2 {
+                continue;
+            }
+            let closed = wire[0].distance(&wire[n - 1]) <= 1e-9;
+            let pair_count = if closed { n - 1 } else { n };
+            for k in 0..pair_count {
+                let a = wire[k];
+                let b = wire[(k + 1) % n];
+                if a.distance(&b) <= 1e-9 {
+                    continue;
+                }
+                segments.push((a, b, wi, usize::MAX));
             }
         }
         Self {
             face,
             segments,
             intersections: Vec::new(),
+            intersecting_edges: Vec::new(),
+            skip_closed_wrap: true,
         }
+    }
+
+    /// `SegmentsFiller` (`BRepMesh_FaceChecker.cxx:61-81`): consecutive
+    /// samples inside each edge pcurve. No segment is created between edges.
+    /// `edges` is `(wire_index, pcurve points in GetPoint order)`.
+    pub fn from_pcurve_edges(
+        face: &'a MeshFace,
+        edges: &[(usize, usize, Vec<GpPnt2d>)],
+        tolerance: f64,
+    ) -> Self {
+        let _ = tolerance;
+        let mut segments = Vec::new();
+        for (wi, ei, pts) in edges {
+            for k in 1..pts.len() {
+                let a = pts[k - 1];
+                let b = pts[k];
+                if a.distance(&b) <= 1e-9 {
+                    continue;
+                }
+                segments.push((a, b, *wi, *ei));
+            }
+        }
+        Self {
+            face,
+            segments,
+            intersections: Vec::new(),
+            intersecting_edges: Vec::new(),
+            skip_closed_wrap: false,
+        }
+    }
+
+    /// `BRepMesh_FaceChecker::GetIntersectingEdges`.
+    pub fn intersecting_edges(&self) -> &[usize] {
+        &self.intersecting_edges
     }
 
     /// Run the self-intersection check. Returns true when no boundary segment
     /// properly crosses another (the face is wire-consistent).
     pub fn perform(&mut self) -> bool {
         self.intersections.clear();
+        self.intersecting_edges.clear();
+        let _ = self.skip_closed_wrap;
         let n = self.segments.len();
         for i in 0..n {
             for j in (i + 1)..n {
-                let (a1, a2, wa) = self.segments[i];
-                let (b1, b2, wb) = self.segments[j];
-                // Consecutive segments inside the same wire share an endpoint;
-                // that is a legitimate adjacency, not a crossing.
-                if wa == wb && (j == i + 1 || (i == 0 && j == n - 1)) {
+                let (a1, a2, wa, _) = self.segments[i];
+                let (b1, b2, wb, _) = self.segments[j];
+                // `BRepMesh_GeomTool::IntSegSeg` + `classifyPoint` (`cxx:342-460`,
+                // `516-551`): a shared vertex is EndPointTouch / NoIntersection
+                // when `consider_end_touch` is false. Homemade consecutive-index
+                // skip is not in `BndBox2dTreeSelector::Accept`.
+                let (flag, ip_xy) = OcctGeomTool::int_seg_seg(
+                    a1.xy(),
+                    a2.xy(),
+                    b1.xy(),
+                    b2.xy(),
+                    false,
+                    false,
+                );
+                // `BRepMesh_FaceChecker.cxx:150-158`: only a proper Cross counts,
+                // and `|gp_Vec2d::Angle| < 5 deg` is ignored (same direction).
+                if flag != OcctIntFlag::Cross {
                     continue;
                 }
-                let mut ip = GpPnt2d::zero();
-                let flag = GeomTool::int_seg_seg(
-                    &a1,
-                    &a2,
-                    &b1,
-                    &b2,
-                    false,
-                    false,
-                    &mut ip,
-                );
-                if flag == IntFlag::Cross || flag == IntFlag::Same {
-                    self.intersections.push((i, j, ip));
+                let ip = GpPnt2d::from_xy(ip_xy);
+                let va = GpVec2d::new(a2.x() - a1.x(), a2.y() - a1.y());
+                let vb = GpVec2d::new(b2.x() - b1.x(), b2.y() - b1.y());
+                const MAX_TANGENT: f64 = 5.0 * std::f64::consts::PI / 180.0;
+                if va.angle(&vb).abs() < MAX_TANGENT {
+                    continue;
+                }
+                // `BRepMesh_FaceChecker.cxx:160-186`: on the same wire, a Cross
+                // that encloses less than `pi * (2*defl)^2` is a tiny fold, not
+                // a self-intersection (`cxx:256-257`).
+                if wa == wb && self.small_loop_cross(i, j, &ip) {
+                    continue;
+                }
+                self.intersections.push((i, j, ip));
+                // `BRepMesh_FaceChecker.cxx:275-282`: only the edges that own
+                // a Cross go into GetIntersectingEdges.
+                let ea = self.segments[i].3;
+                let eb = self.segments[j].3;
+                if ea != usize::MAX && !self.intersecting_edges.contains(&ea) {
+                    self.intersecting_edges.push(ea);
+                }
+                if eb != usize::MAX && !self.intersecting_edges.contains(&eb) {
+                    self.intersecting_edges.push(eb);
                 }
             }
         }
         self.intersections.is_empty()
     }
 
+    /// `BndBox2dTreeSelector::Accept` loop-area gate (`cxx:160-186`).
+    fn small_loop_cross(&self, i: usize, j: usize, ip: &GpPnt2d) -> bool {
+        let defl = self.face.deflection;
+        let max_loop = std::f64::consts::PI * (2.0 * defl) * (2.0 * defl);
+        let mut prev = GpPnt2d::zero();
+        let mut have_prev = false;
+        let mut sum = 0.0;
+        let res2 = 1e-24;
+        for s in i..j {
+            let p2 = self.segments[s].1;
+            let cur = GpPnt2d::new(p2.x() - ip.x(), p2.y() - ip.y());
+            let cur2 = cur.x() * cur.x() + cur.y() * cur.y();
+            if cur2 < res2 {
+                continue;
+            }
+            if have_prev {
+                let prev2 = prev.x() * prev.x() + prev.y() * prev.y();
+                if prev2 > res2 {
+                    sum += prev.x() * cur.y() - prev.y() * cur.x();
+                }
+            }
+            prev = cur;
+            have_prev = true;
+        }
+        sum.abs() * 0.5 < max_loop
+    }
+
     /// Intersecting segment pairs from the last [`Self::perform`].
     pub fn intersecting_segments(&self) -> &[(usize, usize, GpPnt2d)] {
         &self.intersections
+    }
+
+    pub fn segment_len(&self) -> usize {
+        self.segments.len()
+    }
+
+    pub fn segment_at(&self, i: usize) -> Option<(GpPnt2d, GpPnt2d, usize, usize)> {
+        self.segments.get(i).copied()
     }
 
     /// Whether the face can be meshed: non-degenerate and (when checked) free
@@ -528,11 +675,13 @@ mod tests {
     #[test]
     fn classifier_handles_hole() {
         let outer = square();
+        // Inner wire is clockwise so RegisterWire TabOrient inverts it
+        // (`BRepMesh_Classifier.cxx:126`).
         let hole = vec![
             GpPnt2d::new(0.25, 0.25),
-            GpPnt2d::new(0.75, 0.25),
-            GpPnt2d::new(0.75, 0.75),
             GpPnt2d::new(0.25, 0.75),
+            GpPnt2d::new(0.75, 0.75),
+            GpPnt2d::new(0.75, 0.25),
         ];
         let mut c = Classifier::new();
         c.register_wire(&outer, (1e-9, 1e-9), (0.0, 1.0), (0.0, 1.0));

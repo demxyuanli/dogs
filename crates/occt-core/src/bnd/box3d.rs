@@ -198,6 +198,55 @@ impl BndBox {
 
     /// Transformed copy.
     pub fn transformed(&self, t: &GpTrsf) -> Self { let mut r = *self; r.transform(t); r }
+
+    /// Squared diagonal of the gap-enlarged box (`Bnd_Box::SquareExtent`).
+    pub fn square_extent(&self) -> f64 {
+        if self.is_void() {
+            return 0.0;
+        }
+        if self.is_whole() {
+            return f64::INFINITY;
+        }
+        let g = self.gap;
+        let dx = if self.is_open_xmin() || self.is_open_xmax() {
+            f64::INFINITY
+        } else {
+            (self.xmax - self.xmin + 2.0 * g).max(0.0)
+        };
+        let dy = if self.is_open_ymin() || self.is_open_ymax() {
+            f64::INFINITY
+        } else {
+            (self.ymax - self.ymin + 2.0 * g).max(0.0)
+        };
+        let dz = if self.is_open_zmin() || self.is_open_zmax() {
+            f64::INFINITY
+        } else {
+            (self.zmax - self.zmin + 2.0 * g).max(0.0)
+        };
+        dx * dx + dy * dy + dz * dz
+    }
+
+    /// True when every finite axis is shorter than `tol`.
+    /// Source: `Bnd_Box::IsThin` (`Bnd_Box.cxx`). Uses raw extents, not the gap.
+    /// A line-sized box (thin in two axes, long in one) is not overall thin.
+    pub fn is_thin(&self, tol: f64) -> bool {
+        if self.is_whole() {
+            return false;
+        }
+        if self.is_void() {
+            return true;
+        }
+        if self.is_open_xmin() || self.is_open_xmax() || self.xmax - self.xmin >= tol {
+            return false;
+        }
+        if self.is_open_ymin() || self.is_open_ymax() || self.ymax - self.ymin >= tol {
+            return false;
+        }
+        if self.is_open_zmin() || self.is_open_zmax() || self.zmax - self.zmin >= tol {
+            return false;
+        }
+        true
+    }
 }
 
 impl Default for BndBox { fn default() -> Self { Self::new() } }

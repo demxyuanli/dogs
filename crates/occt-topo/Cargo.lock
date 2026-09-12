@@ -27,6 +27,7 @@ name = "occt-geom"
 version = "0.1.0"
 dependencies = [
  "occt-core",
+ "occt-geom2d",
 ]
 
 [[package]]

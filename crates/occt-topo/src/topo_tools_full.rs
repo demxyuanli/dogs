@@ -11,7 +11,8 @@ use std::sync::Arc;
 
 use occt_core::gp::GpPnt;
 
-use crate::abs::ShapeType;
+use crate::abs::{Orientation, ShapeType};
+use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
 
@@ -38,7 +39,7 @@ pub fn map_shapes(shape: &TopoShape, types: &[ShapeType]) -> HashMap<ShapeType, 
         if types.contains(&s.shape_type()) {
             out.get_mut(&s.shape_type()).unwrap().push(s.clone());
         }
-        for k in s.tshape.read().unwrap().children.clone().into_iter().rev() {
+        for k in cumulated_children(&s).into_iter().rev() {
             stack.push(k);
         }
     }
@@ -57,7 +58,7 @@ pub fn all_subshapes(shape: &TopoShape) -> Vec<TopoShape> {
             continue;
         }
         out.push(s.clone());
-        for k in s.tshape.read().unwrap().children.clone().into_iter().rev() {
+        for k in cumulated_children(&s).into_iter().rev() {
             stack.push(k);
         }
     }
@@ -100,47 +101,54 @@ pub fn faces_of(shape: &TopoShape) -> Vec<Face> {
 
 /// Direct child wires of a face (the face's boundary wires).
 pub fn wires_of_face(face: &Face) -> Vec<Wire> {
-    face.0
-        .tshape
-        .read()
-        .unwrap()
-        .children
-        .iter()
+    cumulated_children(&face.0)
+        .into_iter()
         .filter(|s| s.shape_type() == ShapeType::Wire)
-        .map(|s| Wire(s.clone()))
+        .map(Wire)
         .collect()
 }
 
-/// Direct child edges of a wire, preserving each edge's stored orientation
-/// (a reversed edge on the wire stays reversed — the OCCT `TopoDS_Iterator`
-/// contract).
+/// Direct child edges of a wire, with `TopoDS_Iterator` Compose so a reversed
+/// parent wire yields reversed edge views. Does not uniquify: a seam edge
+/// stored twice (Forward and Reversed) is returned twice.
 pub fn edges_of_wire(wire: &Wire) -> Vec<Edge> {
-    wire.0
-        .tshape
-        .read()
-        .unwrap()
-        .children
-        .iter()
+    cumulated_children(&wire.0)
+        .into_iter()
         .filter(|s| s.shape_type() == ShapeType::Edge)
-        .map(|s| Edge(s.clone()))
+        .map(Edge)
         .collect()
 }
 
-/// The two endpoint vertices of an edge (from its vertex children, in the
-/// order they were added — matching `TopExp::FirstVertex`/`LastVertex`).
+/// The two endpoint vertices of an edge (`TopExp::FirstVertex` / `LastVertex`,
+/// `CumOri = false`). First is the child stored `FORWARD`; last is `REVERSED`.
 pub fn edge_vertices(edge: &Edge) -> (Option<Vertex>, Option<Vertex>) {
-    let kids: Vec<TopoShape> = edge
+    let stored = edge
         .0
         .tshape
         .read()
-        .unwrap()
+        .expect("poisoned TShape lock")
         .children
-        .iter()
+        .clone();
+    let verts: Vec<TopoShape> = stored
+        .into_iter()
         .filter(|s| s.shape_type() == ShapeType::Vertex)
-        .cloned()
         .collect();
-    let first = kids.first().cloned().map(Vertex);
-    let last = kids.get(1).or_else(|| kids.last()).cloned().map(Vertex);
+    let first = verts
+        .iter()
+        .find(|s| s.orientation() == Orientation::Forward)
+        .cloned()
+        .map(Vertex);
+    let last = verts
+        .iter()
+        .find(|s| s.orientation() == Orientation::Reversed)
+        .cloned()
+        .map(Vertex);
+    if first.is_some() || last.is_some() {
+        return (first, last);
+    }
+    // Vertices added without FORWARD/REVERSED storage (pre-MakeEdge write).
+    let first = verts.first().cloned().map(Vertex);
+    let last = verts.get(1).or_else(|| verts.last()).cloned().map(Vertex);
     (first, last)
 }
 
@@ -212,7 +220,7 @@ pub fn structure_is_valid(shape: &TopoShape) -> bool {
             continue;
         }
         let parent = s.shape_type();
-        for k in s.tshape.read().unwrap().children.clone() {
+        for k in cumulated_children(&s) {
             let child = k.shape_type();
             if !valid_child(parent, child) {
                 return false;

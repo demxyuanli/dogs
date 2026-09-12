@@ -35,462 +35,21 @@
 
 use std::sync::Arc;
 
-use occt_core::bnd::BndBox;
-use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
-use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION};
-use occt_geom::extrema_surf::curve_surface_extrema_all;
+use occt_core::gp::{GpPnt, GpVec};
+use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::{Curve, Surface};
 
+use crate::bean_face_kind::{
+    classify_fast_curve, plane_geometry, sphere_geometry, FastCurveKind,
+};
+use crate::bean_face_range::MarkedRangeSet;
 use crate::brep_surface::{classify_surface, surface_closest_params, SurfaceKind};
-use crate::intcurvesurface::perform_curve_surface;
+use crate::brep_tool::BRepTool;
 use crate::inttools_data::IntRange;
 use crate::inttools_range::IntContext;
 use crate::meshing::range_splitter::{classify_surface as classify_surface_mesh, SurfaceType};
 
 const PI: f64 = std::f64::consts::PI;
-
-// ---------------------------------------------------------------------------
-// Curve / surface classification helpers
-// ---------------------------------------------------------------------------
-
-/// Coarse analytic kind of a curve (sampling classification).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FastCurveKind {
-    Line,
-    Circle,
-    Ellipse,
-    Other,
-}
-
-/// Whether the curve is geometrically a straight line (unbounded, or all
-/// samples collinear with the first–last chord).
-fn is_line_like(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return true;
-    }
-    if (b - a).abs() <= 1e-15 {
-        return false;
-    }
-    let p0 = c.d0(a);
-    let pl = c.d0(b);
-    let size = p0.distance(&pl);
-    if size <= 1e-30 {
-        return false;
-    }
-    let d0 = GpVec::from_pnts(&p0, &pl);
-    let tol = 1e-6 * size;
-    for i in 1..8 {
-        let p = c.d0(a + (b - a) * i as f64 / 8.0);
-        if GpVec::from_pnts(&p0, &p).crossed(&d0).magnitude() > tol * size {
-            return false;
-        }
-    }
-    true
-}
-
-/// First three non-collinear samples of a curve.
-fn first_three_spanning(pts: &[GpPnt]) -> Option<(GpPnt, GpPnt, GpPnt)> {
-    let p0 = pts[0];
-    let mut i1 = None;
-    for (i, p) in pts.iter().enumerate().skip(1) {
-        if GpVec::from_pnts(&p0, p).magnitude() > 1e-9 {
-            i1 = Some(i);
-            break;
-        }
-    }
-    let i1 = i1?;
-    let p1 = pts[i1];
-    let d0 = GpVec::from_pnts(&p0, &p1);
-    for p in pts.iter().skip(i1 + 1) {
-        if GpVec::from_pnts(&p0, p).crossed(&d0).magnitude() > 1e-9 * d0.magnitude().max(1e-9) {
-            return Some((p0, p1, *p));
-        }
-    }
-    None
-}
-
-fn det3(m: &[[f64; 3]; 3]) -> f64 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-}
-
-fn solve3(a: &[[f64; 3]; 3], rhs: &[f64; 3]) -> Option<[f64; 3]> {
-    let d = det3(a);
-    if d.abs() < 1e-20 {
-        return None;
-    }
-    let mut x = [0.0; 3];
-    for k in 0..3 {
-        let mut m = *a;
-        for i in 0..3 {
-            m[i][k] = rhs[i];
-        }
-        x[k] = det3(&m) / d;
-    }
-    Some(x)
-}
-
-/// Circumcenter of three non-collinear points.
-fn circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
-    let d1 = GpVec::from_pnts(a, b);
-    let d2 = GpVec::from_pnts(a, c);
-    let n = d1.crossed(&d2);
-    if n.magnitude() < 1e-30 {
-        return None;
-    }
-    let n2 = |p: &GpPnt| p.coord.dot(&p.coord);
-    let mat = [
-        [d1.xyz().x, d1.xyz().y, d1.xyz().z],
-        [d2.xyz().x, d2.xyz().y, d2.xyz().z],
-        [n.xyz().x, n.xyz().y, n.xyz().z],
-    ];
-    let rhs = [0.5 * (n2(b) - n2(a)), 0.5 * (n2(c) - n2(a)), a.coord.dot(&n.xyz())];
-    let o = solve3(&mat, &rhs)?;
-    Some(GpPnt::new(o[0], o[1], o[2]))
-}
-
-fn midpoint(a: &GpPnt, b: &GpPnt) -> GpPnt {
-    GpPnt::new(0.5 * (a.x() + b.x()), 0.5 * (a.y() + b.y()), 0.5 * (a.z() + b.z()))
-}
-
-/// Whether the curve is a full circle-like closed curve: all samples coplanar
-/// and equidistant from a common centre.
-fn is_circle_like(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() || (b - a).abs() <= 1e-15 {
-        return false;
-    }
-    let n = 8;
-    let pts: Vec<GpPnt> = (0..=n).map(|i| c.d0(a + (b - a) * i as f64 / n as f64)).collect();
-    let (p0, p1, p2) = match first_three_spanning(&pts) {
-        Some(x) => x,
-        None => return false,
-    };
-    let center = match circumcenter(&p0, &p1, &p2) {
-        Some(c) => c,
-        None => return false,
-    };
-    let radius = p0.distance(&center);
-    if radius <= 1e-30 {
-        return false;
-    }
-    let nrm = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return false;
-    }
-    let nv = nrm.divided(m);
-    let scale = radius.max(1.0);
-    let tol = 1e-6 * scale;
-    for p in pts {
-        let v = GpVec::from_pnts(&center, &p);
-        if v.dot(&nv).abs() > tol {
-            return false;
-        }
-        if (v.magnitude() - radius).abs() > tol {
-            return false;
-        }
-    }
-    true
-}
-
-/// `(center, radius, unit plane normal)` of a circle-like curve.
-fn circle_geometry(c: &dyn Curve) -> Option<(GpPnt, f64, GpDir)> {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return None;
-    }
-    let n = 8;
-    let pts: Vec<GpPnt> = (0..=n).map(|i| c.d0(a + (b - a) * i as f64 / n as f64)).collect();
-    let (p0, p1, p2) = first_three_spanning(&pts)?;
-    let center = circumcenter(&p0, &p1, &p2)?;
-    let radius = p0.distance(&center);
-    if radius <= 1e-30 {
-        return None;
-    }
-    let nrm = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return None;
-    }
-    let d = GpDir::from_vec(&nrm.divided(m)).ok()?;
-    Some((center, radius, d))
-}
-
-/// Whether the curve is an ellipse-like closed curve (coplanar, periodic 2π,
-/// not a circle).
-fn is_ellipse_like(c: &dyn Curve) -> bool {
-    if is_circle_like(c) {
-        return false;
-    }
-    if !c.is_periodic() {
-        return false;
-    }
-    let period = c.period();
-    if (period - 2.0 * PI).abs() > 1e-6 {
-        return false;
-    }
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return false;
-    }
-    // All samples coplanar.
-    let p0 = c.d0(a);
-    let p1 = c.d0(a + (b - a) / 6.0);
-    let p2 = c.d0(a + 2.0 * (b - a) / 6.0);
-    let (p0, p1, p2) = match first_three_spanning(&[p0, p1, p2]) {
-        Some(x) => x,
-        None => return false,
-    };
-    let nrm = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return false;
-    }
-    let nv = nrm.divided(m);
-    for i in 0..24 {
-        let u = a + (b - a) * i as f64 / 24.0;
-        let v = GpVec::from_pnts(&p0, &c.d0(u));
-        if v.dot(&nv).abs() > 1e-5 * v.magnitude().max(1.0) {
-            return false;
-        }
-    }
-    true
-}
-
-/// `(center, axis direction)` of an ellipse-like curve (natural 2π
-/// parametrisation: opposite samples share the centre, the plane normal is the
-/// axis).
-fn ellipse_geometry(c: &dyn Curve) -> Option<(GpPnt, GpDir)> {
-    let center = midpoint(&c.d0(0.0), &c.d0(PI));
-    let p0 = c.d0(0.0);
-    let pq = c.d0(PI / 2.0);
-    let nrm = GpVec::from_pnts(&center, &p0).crossed(&GpVec::from_pnts(&center, &pq));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return None;
-    }
-    let d = GpDir::from_vec(&nrm.divided(m)).ok()?;
-    // Validate the centre with the perpendicular pair.
-    let c2 = midpoint(&c.d0(PI / 2.0), &c.d0(3.0 * PI / 2.0));
-    if c2.distance(&center) > 1e-4 * center.distance(&p0).max(1.0) {
-        return None;
-    }
-    Some((center, d))
-}
-
-/// `(location, unit direction)` of a line-like curve.
-fn line_geometry(c: &dyn Curve) -> Option<(GpPnt, GpDir)> {
-    let p0 = c.d0(0.0);
-    let p1 = c.d0(1.0);
-    let v = GpVec::from_pnts(&p0, &p1);
-    let m = v.magnitude();
-    if m <= 1e-30 {
-        return None;
-    }
-    let d = GpDir::from_vec(&v.divided(m)).ok()?;
-    Some((p0, d))
-}
-
-fn classify_fast_curve(c: &dyn Curve) -> FastCurveKind {
-    if is_line_like(c) {
-        return FastCurveKind::Line;
-    }
-    if is_circle_like(c) {
-        return FastCurveKind::Circle;
-    }
-    if is_ellipse_like(c) {
-        return FastCurveKind::Ellipse;
-    }
-    FastCurveKind::Other
-}
-
-/// `(location, x_dir, y_dir, normal)` of a planar surface (natural frame).
-fn plane_geometry(s: &dyn Surface) -> Option<(GpPnt, GpDir, GpDir, GpDir)> {
-    let (u0, _) = s.u_range();
-    let (v0, _) = s.v_range();
-    let u0 = if u0.is_finite() { u0 } else { 0.0 };
-    let v0 = if v0.is_finite() { v0 } else { 0.0 };
-    let o = s.d0(u0, v0);
-    let xv = GpVec::from_pnts(&o, &s.d0(u0 + 1.0, v0));
-    let yv = GpVec::from_pnts(&o, &s.d0(u0, v0 + 1.0));
-    let nv = xv.crossed(&yv);
-    let n = GpDir::from_vec(&nv).ok()?;
-    let x = GpDir::from_vec(&xv).ok()?;
-    let y = GpDir::from_vec(&yv).ok()?;
-    Some((o, x, y, n))
-}
-
-/// `(center, radius)` of a spherical surface.
-fn sphere_geometry(s: &dyn Surface) -> Option<(GpPnt, f64)> {
-    let center = crate::brep_surface::sphere_center(s)?;
-    let (u0, _) = s.u_range();
-    let u0 = if u0.is_finite() { u0 } else { 0.0 };
-    let r = s.d0(u0, 0.0).distance(&center);
-    if r < 1e-12 {
-        return None;
-    }
-    Some((center, r))
-}
-
-/// `(axis, radius)` of a cylindrical surface (axis direction from the V
-/// advance, axis point = circle centre at V start, radius = half the opposite
-/// sample distance).
-fn cylinder_geometry(s: &dyn Surface) -> Option<(occt_core::gp::GpAx1, f64)> {
-    let u0 = 0.0;
-    let c0 = midpoint(&s.d0(u0, 0.0), &s.d0(u0 + PI, 0.0));
-    let c1 = midpoint(&s.d0(u0, 1.0), &s.d0(u0 + PI, 1.0));
-    let z = GpVec::from_pnts(&c0, &c1);
-    let zm = z.magnitude();
-    if zm < 1e-12 {
-        return None;
-    }
-    let zd = GpDir::from_vec(&z.divided(zm)).ok()?;
-    let r = s.d0(u0, 0.0).distance(&c0);
-    if r < 1e-12 {
-        return None;
-    }
-    Some((occt_core::gp::GpAx1::new(c0, zd), r))
-}
-
-/// Signed distance from `p` to a plane (`plane_geometry` frame).
-fn plane_distance(ploc: &GpPnt, nrm: &GpDir, p: &GpPnt) -> f64 {
-    GpVec::from_pnts(ploc, p).dot(&GpVec::from_xyz(nrm.xyz())).abs()
-}
-
-// ---------------------------------------------------------------------------
-// MarkedRangeSet (port of IntTools_MarkedRangeSet)
-// ---------------------------------------------------------------------------
-
-/// A sorted set of parameter ranges, each carrying an integer flag. Ranges are
-/// stored as consecutive `[boundaries[i], boundaries[i+1])` intervals; inserting
-/// a range splits existing intervals and marks the overlap.
-#[derive(Debug, Clone)]
-struct MarkedRangeSet {
-    boundaries: Vec<f64>,
-    flags: Vec<i32>,
-}
-
-impl MarkedRangeSet {
-    fn new() -> Self {
-        Self { boundaries: Vec::new(), flags: Vec::new() }
-    }
-
-    /// `[first, last]` covered by one range carrying `init_flag`.
-    fn set_boundaries(&mut self, first: f64, last: f64, init_flag: i32) {
-        self.boundaries = vec![first, last];
-        self.flags = vec![init_flag];
-    }
-
-    fn len(&self) -> usize {
-        self.flags.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.flags.is_empty()
-    }
-
-    fn range(&self, i: usize) -> IntRange {
-        IntRange::new_unchecked(self.boundaries[i], self.boundaries[i + 1])
-    }
-
-    fn flag(&self, i: usize) -> i32 {
-        self.flags[i]
-    }
-
-    fn set_flag(&mut self, i: usize, flag: i32) {
-        self.flags[i] = flag;
-    }
-
-    /// Index (0-based) of the range containing `value`, using the OCCT
-    /// `GetIndex(value, UseLower)` semantics; `-1` when `value` is outside the
-    /// set (or exactly at the last boundary with `UseLower`).
-    fn get_index(&self, value: f64, use_lower: bool) -> isize {
-        if self.boundaries.is_empty() {
-            return -1;
-        }
-        if (use_lower && value < self.boundaries[0])
-            || (!use_lower && value <= self.boundaries[0])
-        {
-            return -1;
-        }
-        for i in 1..self.boundaries.len() {
-            if (use_lower && value < self.boundaries[i])
-                || (!use_lower && value <= self.boundaries[i])
-            {
-                return (i - 1) as isize;
-            }
-        }
-        -1
-    }
-
-    /// Indices (0-based) of every range containing `value` (a boundary value
-    /// belongs to both adjacent ranges). Port of `GetIndices`.
-    fn get_indices(&self, value: f64) -> Vec<usize> {
-        let mut out = Vec::new();
-        if self.boundaries.is_empty() || value < self.boundaries[0] {
-            return out;
-        }
-        let mut found = false;
-        for i in 1..self.boundaries.len() {
-            if found {
-                if value >= self.boundaries[i - 1] {
-                    out.push(i - 1);
-                } else {
-                    break;
-                }
-            } else if value <= self.boundaries[i] {
-                out.push(i - 1);
-                found = true;
-            }
-        }
-        out
-    }
-
-    /// Insert `[first, last]` with `flag`, splitting covered ranges. Returns
-    /// `false` when the boundaries do not resolve (OCCT `InsertRange`).
-    fn insert_range(&mut self, first: f64, last: f64, flag: i32) -> bool {
-        if self.boundaries.is_empty() {
-            return false;
-        }
-        let mut idx1 = self.get_index(first, true);
-        if idx1 < 0 {
-            return false;
-        }
-        let mut idx2 = self.get_index(last, false);
-        if idx2 < 0 {
-            return false;
-        }
-        if idx2 < idx1 {
-            std::mem::swap(&mut idx1, &mut idx2);
-            if last < first {
-                return false;
-            }
-        }
-        let idx1 = idx1 as usize;
-        let mut idx2 = idx2 as usize;
-        let are_equal = idx1 == idx2;
-        let prev_flag = self.flags[idx1];
-
-        self.boundaries.insert(idx1 + 1, first);
-        self.flags.insert(idx1 + 1, flag);
-        idx2 += 1;
-        self.boundaries.insert(idx2 + 1, last);
-        if are_equal {
-            self.flags.insert(idx2 + 1, prev_flag);
-        } else {
-            self.flags.insert(idx2, flag);
-        }
-        if !are_equal {
-            for i in (idx1 + 1)..idx2 {
-                self.flags[i] = flag;
-            }
-        }
-        true
-    }
-}
 
 // ---------------------------------------------------------------------------
 // BeanFaceIntersector
@@ -499,23 +58,23 @@ impl MarkedRangeSet {
 /// Computes the parameter ranges of a curve bean that lie on a surface within
 /// the combined edge/face tolerance. Port of `IntTools_BeanFaceIntersector`.
 pub struct BeanFaceIntersector {
-    curve: Option<Arc<dyn Curve>>,
-    surface: Option<Arc<dyn Surface>>,
-    first_parameter: f64,
-    last_parameter: f64,
-    umin: f64,
-    umax: f64,
-    vmin: f64,
-    vmax: f64,
-    bean_tolerance: f64,
-    face_tolerance: f64,
-    curve_resolution: f64,
-    criteria: f64,
-    range_manager: MarkedRangeSet,
-    context: Option<IntContext>,
-    results: Vec<IntRange>,
-    is_done: bool,
-    min_sq_distance: f64,
+    pub(crate) curve: Option<Arc<dyn Curve>>,
+    pub(crate) surface: Option<Arc<dyn Surface>>,
+    pub(crate) first_parameter: f64,
+    pub(crate) last_parameter: f64,
+    pub(crate) umin: f64,
+    pub(crate) umax: f64,
+    pub(crate) vmin: f64,
+    pub(crate) vmax: f64,
+    pub(crate) bean_tolerance: f64,
+    pub(crate) face_tolerance: f64,
+    pub(crate) curve_resolution: f64,
+    pub(crate) criteria: f64,
+    pub(crate) range_manager: MarkedRangeSet,
+    pub(crate) context: Option<IntContext>,
+    pub(crate) results: Vec<IntRange>,
+    pub(crate) is_done: bool,
+    pub(crate) min_sq_distance: f64,
 }
 
 impl BeanFaceIntersector {
@@ -566,6 +125,26 @@ impl BeanFaceIntersector {
         self.min_sq_distance = f64::MAX;
     }
 
+    /// Initialise from an edge and a face (`IntTools_BeanFaceIntersector::Init`
+    /// of `TopoDS_Edge` / `TopoDS_Face`). Criteria include `Precision::Confusion`.
+    pub fn initialize_edge_face(&mut self, edge: &crate::shape::Edge, face: &crate::shape::Face) {
+        let Some(curve) = BRepTool::edge_curve(edge) else {
+            return;
+        };
+        let Some(surface) = BRepTool::face_surface(face) else {
+            return;
+        };
+        let tol_e = BRepTool::edge_tolerance(edge);
+        let tol_f = BRepTool::face_tolerance(face);
+        self.initialize(curve, surface, tol_e, tol_f);
+        self.criteria = tol_e + tol_f + CONFUSION;
+        self.curve_resolution = self.resolution(self.criteria);
+        let (ef, el) = BRepTool::edge_parameters(edge);
+        if ef.is_finite() && el.is_finite() && el >= ef {
+            self.set_bean_parameters(ef, el);
+        }
+    }
+
     /// Restrict the curve bean to `[first, last]`.
     pub fn set_bean_parameters(&mut self, first: f64, last: f64) {
         self.first_parameter = first;
@@ -603,19 +182,19 @@ impl BeanFaceIntersector {
 
     // ---- accessors -------------------------------------------------------
 
-    fn curve(&self) -> &dyn Curve {
+    pub(crate) fn curve(&self) -> &dyn Curve {
         self.curve.as_ref().expect("BeanFaceIntersector: curve not set").as_ref()
     }
 
-    fn surface(&self) -> &dyn Surface {
+    pub(crate) fn surface(&self) -> &dyn Surface {
         self.surface.as_ref().expect("BeanFaceIntersector: surface not set").as_ref()
     }
 
-    fn curve_d0(&self, u: f64) -> GpPnt {
+    pub(crate) fn curve_d0(&self, u: f64) -> GpPnt {
         self.curve().d0(u)
     }
 
-    fn surface_d0(&self, u: f64, v: f64) -> GpPnt {
+    pub(crate) fn surface_d0(&self, u: f64, v: f64) -> GpPnt {
         self.surface().d0(u, v)
     }
 
@@ -623,7 +202,7 @@ impl BeanFaceIntersector {
     /// increment over which the curve deviates from a straight chord by ~`tol`.
     /// Uses the current bean window (unbounded curves must have it set via
     /// [`set_bean_parameters`](Self::set_bean_parameters)).
-    fn resolution(&self, tol: f64) -> f64 {
+    pub(crate) fn resolution(&self, tol: f64) -> f64 {
         let c = self.curve();
         let a = self.first_parameter;
         let b = self.last_parameter;
@@ -656,7 +235,7 @@ impl BeanFaceIntersector {
     /// only ~1e-3 accurate on analytic quadrics — far too coarse for the
     /// tolerance-driven range walk (`criteria` ~ 1e-7). All other surfaces use
     /// the grid+refine projector.
-    fn closest_params_dist(&self, p: &GpPnt) -> (f64, f64, f64) {
+    pub(crate) fn closest_params_dist(&self, p: &GpPnt) -> (f64, f64, f64) {
         match classify_surface(self.surface()) {
             SurfaceKind::Plane => {
                 if let Some((ploc, px, py, pn)) = plane_geometry(self.surface()) {
@@ -685,31 +264,11 @@ impl BeanFaceIntersector {
         (u, v, dist)
     }
 
-    /// Distance from the curve point at `arg` to the surface; the closest
-    /// surface parameters (clamped to the window) are written to `u`/`v`.
-    /// Port of `Distance(arg, u, v)`.
-    fn distance_with_uv(&self, arg: f64, u: &mut f64, v: &mut f64) -> f64 {
-        let p = self.curve_d0(arg);
-        *u = self.umin;
-        *v = self.vmin;
-        let (su, sv, d) = self.closest_params_dist(&p);
-        *u = su.clamp(self.umin, self.umax);
-        *v = sv.clamp(self.vmin, self.vmax);
-        d
-    }
-
-    /// Distance from the curve point at `arg` to the surface.
-    fn distance(&self, arg: f64) -> f64 {
-        let mut u = 0.0;
-        let mut v = 0.0;
-        self.distance_with_uv(arg, &mut u, &mut v)
-    }
-
     // ---- Range expansion ----------------------------------------------------
 
     /// Expand a result range from a known on-surface point, increasing or
     /// decreasing the parameter. Port of `ComputeRangeFromStartPoint(bool, …)`.
-    fn compute_range_from_start_point(&mut self, to_increase: bool, parameter: f64, u: f64, v: f64) {
+    pub(crate) fn compute_range_from_start_point(&mut self, to_increase: bool, parameter: f64, u: f64, v: f64) {
         let found = self.range_manager.get_index(parameter, to_increase);
         if found < 0 {
             return;
@@ -721,7 +280,7 @@ impl BeanFaceIntersector {
     /// parameter by `curve_resolution` and bisecting on the distance until the
     /// curve leaves the surface. Port of
     /// `ComputeRangeFromStartPoint(bool, double, double, double, int)`.
-    fn compute_range_from_start_point_idx(
+    pub(crate) fn compute_range_from_start_point_idx(
         &mut self,
         to_increase: bool,
         parameter: f64,
@@ -839,7 +398,7 @@ impl BeanFaceIntersector {
 
     /// Insert a degenerate (point) result range when a crossing point added no
     /// interval — a tangency point. Port of the static `SetEmptyResultRange`.
-    fn set_empty_result_range(&mut self, parameter: f64) {
+    pub(crate) fn set_empty_result_range(&mut self, parameter: f64) {
         let indices = self.range_manager.get_indices(parameter);
         let mut add = !indices.is_empty();
         for &k in &indices {
@@ -928,618 +487,14 @@ impl BeanFaceIntersector {
         if !finite {
             return false;
         }
+        // OCCT: Bezier / Other / (BSpline with degree>2 and knots>2).
+        // Without knot access a BSpline is treated as Other and still localizes.
         match classify_surface_mesh(self.surface()) {
-            SurfaceType::BezierSurface | SurfaceType::OtherSurface => true,
-            SurfaceType::BSplineSurface => true,
+            SurfaceType::BezierSurface | SurfaceType::OtherSurface | SurfaceType::BSplineSurface => {
+                true
+            }
             _ => false,
         }
-    }
-
-    /// Line × plane intersection: substitute the line into the plane equation,
-    /// then emit either a single root range (expanded by the tolerance-derived
-    /// parameter width) or the whole range when the line lies in the plane.
-    /// Port of `ComputeLinePlane`.
-    fn compute_line_plane(&mut self) {
-        let tol_ang = 1e-9;
-        self.is_done = true;
-
-        let (ploc, _px, _py, pn) = match plane_geometry(self.surface()) {
-            Some(g) => g,
-            None => return,
-        };
-        let (orig, ld) = match line_geometry(self.curve()) {
-            Some(g) => g,
-            None => return,
-        };
-        let nrm = GpVec::from_xyz(pn.xyz());
-        let (a, b, c) = (nrm.x(), nrm.y(), nrm.z());
-        let dcoef = -nrm.dot(&GpVec::from_pnts(&GpPnt::zero(), &ploc));
-        let (al, bl, cl) = (ld.x(), ld.y(), ld.z());
-        let direc = a * al + b * bl + c * cl;
-        let dis = a * orig.x() + b * orig.y() + c * orig.z() + dcoef;
-
-        let (mut parallel, mut inplane) = (false, false);
-        if direc.abs() < tol_ang {
-            parallel = true;
-            inplane = dis.abs() < self.criteria;
-        } else {
-            let p1 = self.curve_d0(self.first_parameter);
-            let p2 = self.curve_d0(self.last_parameter);
-            let mut d1 = a * p1.x() + b * p1.y() + c * p1.z() + dcoef;
-            if d1 < 0.0 {
-                d1 = -d1;
-            }
-            let mut d2 = a * p2.x() + b * p2.y() + c * p2.z() + dcoef;
-            if d2 < 0.0 {
-                d2 = -d2;
-            }
-            if d1 <= self.criteria && d2 <= self.criteria {
-                inplane = true;
-            }
-        }
-
-        if inplane {
-            // The whole line lies in the face's plane, but only the part within
-            // the face's UV window is on the face. `u`/`v` are linear in the
-            // line parameter `t`, so clip the edge range to the interval where
-            // both coordinates stay inside `[umin,umax]×[vmin,vmax]`.
-            let (p0, p1) = (orig, orig.translated_vec(&GpVec::from_xyz(ld.xyz())));
-            let (u0, v0) = plane_uv_of_point(&ploc, &ld, &p0, &_px, &_py);
-            let (u1, v1) = plane_uv_of_point(&ploc, &ld, &p1, &_px, &_py);
-            let (mut t_lo, mut t_hi) = (self.first_parameter, self.last_parameter);
-            match clip_linear_range(t_lo, t_hi, u0, u1, self.umin, self.umax) {
-                Some((a, b)) => {
-                    t_lo = a;
-                    t_hi = b;
-                }
-                None => return,
-            }
-            match clip_linear_range(t_lo, t_hi, v0, v1, self.vmin, self.vmax) {
-                Some((a, b)) => {
-                    t_lo = a;
-                    t_hi = b;
-                }
-                None => return,
-            }
-            if t_hi - t_lo > PCONFUSION {
-                self.results.push(IntRange::new_unchecked(t_lo, t_hi));
-            }
-            return;
-        }
-        if parallel {
-            return;
-        }
-
-        let t = -dis / direc;
-        if t < self.first_parameter || t > self.last_parameter {
-            return;
-        }
-        let pint = orig.translated_vec(&GpVec::from_xyz(ld.xyz()).multiplied_scalar(t));
-        let (u, v) = plane_uv_of_point(&ploc, &ld, &pint, &_px, &_py);
-        if self.umin > u || u > self.umax || self.vmin > v || v > self.vmax {
-            return;
-        }
-
-        // Parameter half-width from the tolerances and the incidence angle.
-        let angle = (PI * 0.5 - ld.angle(&pn)).abs();
-        let a_dt = compute_int_range(self.bean_tolerance, self.face_tolerance, angle);
-        let t1 = self.first_parameter.max(t - a_dt);
-        let t2 = self.last_parameter.min(t + a_dt);
-        self.results.push(IntRange::new_unchecked(t1, t2));
-    }
-
-    /// Fast analytic coincidence / no-intersection checks for conic curves
-    /// against quadric surfaces. Returns `true` when a decisive verdict was
-    /// reached; otherwise computation continues. Port of `FastComputeAnalytic`.
-    fn fast_compute_analytic(&mut self) -> bool {
-        let ck = classify_fast_curve(self.curve());
-        if ck == FastCurveKind::Other {
-            return false;
-        }
-        let sk = classify_surface(self.surface());
-        let mut is_coincide = false;
-        let mut has_intersection = true;
-
-        match sk {
-            SurfaceKind::Plane => {
-                let (ploc, _px, _py, pn) = match plane_geometry(self.surface()) {
-                    Some(g) => g,
-                    None => return false,
-                };
-                let (adir, aloc) = match ck {
-                    FastCurveKind::Circle => {
-                        let (c, _r, n) = match circle_geometry(self.curve()) {
-                            Some(g) => g,
-                            None => return false,
-                        };
-                        (n, c)
-                    }
-                    FastCurveKind::Ellipse => {
-                        let (c, n) = match ellipse_geometry(self.curve()) {
-                            Some(g) => g,
-                            None => return false,
-                        };
-                        (n, c)
-                    }
-                    _ => return false,
-                };
-                let angle = adir.angle(&pn);
-                if angle > ANGULAR {
-                    return false;
-                }
-                has_intersection = false;
-                let dist = plane_distance(&ploc, &pn, &aloc);
-                is_coincide = dist < self.criteria;
-            }
-            SurfaceKind::Sphere => {
-                let (sc, sr) = match sphere_geometry(self.surface()) {
-                    Some(g) => g,
-                    None => return false,
-                };
-                if ck == FastCurveKind::Line {
-                    let (lloc, ldir) = match line_geometry(self.curve()) {
-                        Some(g) => g,
-                        None => return false,
-                    };
-                    let lin = GpLin::from_pnt_dir(lloc, ldir);
-                    let dist = lin.distance(&sc) - sr;
-                    has_intersection = dist < self.criteria;
-                } else {
-                    return false;
-                }
-            }
-            SurfaceKind::Cylinder | SurfaceKind::Other => {
-                // `brep_surface::classify_surface` never returns `Cylinder`
-                // directly; re-confirm via the mesh classifier.
-                if classify_surface_mesh(self.surface()) != SurfaceType::Cylinder {
-                    return false;
-                }
-                let (axis, radius) = match cylinder_geometry(self.surface()) {
-                    Some(g) => g,
-                    None => return false,
-                };
-                match ck {
-                    FastCurveKind::Line => {
-                        let (lloc, ldir) = match line_geometry(self.curve()) {
-                            Some(g) => g,
-                            None => return false,
-                        };
-                        if !ldir.is_parallel(axis.direction()) {
-                            return false;
-                        }
-                        has_intersection = false;
-                        let lin = GpLin::from_pnt_dir(lloc, ldir);
-                        let dist = (lin.distance(axis.location()) - radius).abs();
-                        is_coincide = dist < self.criteria;
-                    }
-                    FastCurveKind::Circle => {
-                        let (cloc, cr, cn) = match circle_geometry(self.curve()) {
-                            Some(g) => g,
-                            None => return false,
-                        };
-                        let angle = axis.direction().angle(&cn);
-                        if angle > ANGULAR {
-                            return false;
-                        }
-                        let axis_lin = GpLin::from_pnt_dir(*axis.location(), *axis.direction());
-                        let dist_loc = axis_lin.distance(&cloc);
-                        let dist = dist_loc + (cr - radius).abs();
-                        is_coincide = dist < self.criteria;
-                        if !is_coincide {
-                            has_intersection = (dist_loc - (cr + radius)) < self.criteria
-                                && ((cr - radius).abs() - dist_loc) < self.criteria;
-                        }
-                    }
-                    _ => return false,
-                }
-            }
-            SurfaceKind::Cone | SurfaceKind::Torus => return false,
-        }
-
-        if is_coincide {
-            self.results.push(IntRange::new_unchecked(self.first_parameter, self.last_parameter));
-        }
-        is_coincide || !has_intersection
-    }
-
-    /// Scan the whole bean for coincidence with the surface: sample 23 points,
-    /// expand ranges from each. Port of `TestComputeCoinside`.
-    fn test_compute_coinside(&mut self) -> bool {
-        let cfp = self.first_parameter;
-        let clp = self.last_parameter;
-        let nb_seg = 23;
-        let cdp = (clp - cfp) / nb_seg as f64;
-
-        let mut u = 0.0;
-        let mut v = 0.0;
-        if self.distance_with_uv(cfp, &mut u, &mut v) > self.criteria {
-            return false;
-        }
-        self.compute_range_from_start_point(true, cfp, u, v);
-
-        let found = self.range_manager.get_index(clp, false);
-        if found >= 0 && self.range_manager.flag(found as usize) == 2 {
-            return true;
-        }
-        if self.distance_with_uv(clp, &mut u, &mut v) > self.criteria {
-            return false;
-        }
-        self.compute_range_from_start_point(false, clp, u, v);
-
-        for i in 1..nb_seg {
-            let par = cfp + i as f64 * cdp;
-            if self.distance_with_uv(par, &mut u, &mut v) > self.criteria {
-                return false;
-            }
-            let n = self.range_manager.len();
-            self.compute_range_from_start_point(false, par, u, v);
-            self.compute_range_from_start_point(true, par, u, v);
-            if n == self.range_manager.len() {
-                self.set_empty_result_range(par);
-            }
-        }
-        true
-    }
-
-    /// Exact curve–surface intersection via `IntCurveSurface_HInter`, then
-    /// range expansion around every intersection point / segment. Port of
-    /// `ComputeAroundExactIntersection`.
-    fn compute_around_exact_intersection(&mut self) {
-        let uv = self.finite_uv_bounds();
-        let res = perform_curve_surface(
-            self.curve(),
-            self.surface(),
-            (self.first_parameter, self.last_parameter),
-            uv,
-        );
-        let hr = match res {
-            Ok(h) => h,
-            Err(_) => return,
-        };
-
-        // With more than one point, tighten the criteria to avoid merging
-        // distinct crossings into one range.
-        if hr.nb_points() > 1 {
-            self.criteria = 3.0 * CONFUSION;
-            self.curve_resolution = self.resolution(self.criteria);
-        }
-
-        for i in 0..hr.nb_points() {
-            let p = hr.point(i);
-            let mut w = p.param();
-            if w < self.first_parameter || w > self.last_parameter {
-                continue;
-            }
-            // Refine to the exact crossing (HInter's general path is only
-            // accurate to ~1e-6, coarser than the result criteria).
-            w = self.refine_crossing_param(w);
-            let (su, sv) = {
-                let pnt = self.curve_d0(w);
-                let (a, b, _) = self.closest_params_dist(&pnt);
-                (a, b)
-            };
-            let mut u = su;
-            let mut v = sv;
-            let u_not_valid = self.umin > u || u > self.umax;
-            let v_not_valid = self.vmin > v || v > self.vmax;
-            let mut solution_is_valid = !u_not_valid && !v_not_valid;
-
-            if u_not_valid || v_not_valid {
-                let mut b_u_corrected = true;
-                if u_not_valid {
-                    b_u_corrected = false;
-                    solution_is_valid = false;
-                    if self.surface().is_u_periodic() {
-                        u = adjust_periodic(u, self.umin, self.umax, 2.0 * PI);
-                        solution_is_valid = true;
-                        b_u_corrected = true;
-                    }
-                }
-                if b_u_corrected && v_not_valid {
-                    solution_is_valid = false;
-                    if self.surface().is_v_periodic() {
-                        v = adjust_periodic(v, self.vmin, self.vmax, 2.0 * PI);
-                        solution_is_valid = true;
-                    }
-                }
-            }
-
-            if !solution_is_valid {
-                continue;
-            }
-
-            let n = self.range_manager.len();
-            self.compute_range_from_start_point(false, w, u, v);
-            self.compute_range_from_start_point(true, w, u, v);
-            if n == self.range_manager.len() {
-                self.set_empty_result_range(w);
-            } else {
-                self.min_sq_distance = 0.0;
-            }
-        }
-
-        for i in 0..hr.nb_segments() {
-            let seg = hr.segment(i);
-            let p1 = seg.first_point();
-            let p2 = seg.second_point();
-            let first_param = if p1.param() < self.first_parameter {
-                self.first_parameter
-            } else {
-                p1.param()
-            };
-            let last_param = if self.last_parameter < p2.param() {
-                self.last_parameter
-            } else {
-                p2.param()
-            };
-            self.range_manager.insert_range(first_param, last_param, 2);
-            self.compute_range_from_start_point(false, p1.param(), p1.u(), p1.v());
-            self.compute_range_from_start_point(true, p2.param(), p2.u(), p2.v());
-            self.min_sq_distance = 0.0;
-        }
-    }
-
-    /// Complete result ranges whose start/end boundaries are near the surface
-    /// but were missed by the discrete intersection points. Port of
-    /// `ComputeNearRangeBoundaries`.
-    fn compute_near_range_boundaries(&mut self) {
-        let mut u = self.umin;
-        let mut v = self.vmin;
-
-        let n = self.range_manager.len();
-        for i in 0..n {
-            if self.range_manager.flag(i) > 0 {
-                continue;
-            }
-            if i > 0 && self.range_manager.flag(i - 1) > 0 {
-                continue;
-            }
-            let r = self.range_manager.range(i);
-            if self.distance_with_uv(r.first, &mut u, &mut v) < self.criteria {
-                let old_len = self.range_manager.len();
-                if i > 0 {
-                    self.compute_range_from_start_point_idx(false, r.first, u, v, i - 1);
-                }
-                let idx = i + (self.range_manager.len() - old_len);
-                if idx < self.range_manager.len() {
-                    self.compute_range_from_start_point_idx(true, r.first, u, v, idx);
-                }
-                if old_len == self.range_manager.len() {
-                    self.set_empty_result_range(r.first);
-                }
-            }
-        }
-
-        if self.range_manager.is_empty() {
-            return;
-        }
-        let last_idx = self.range_manager.len() - 1;
-        if self.range_manager.flag(last_idx) == 0 {
-            let r = self.range_manager.range(last_idx);
-            if self.distance_with_uv(r.last, &mut u, &mut v) < self.criteria {
-                let old_len = self.range_manager.len();
-                self.compute_range_from_start_point_idx(false, r.last, u, v, last_idx);
-                if old_len == self.range_manager.len() {
-                    self.set_empty_result_range(r.last);
-                }
-            }
-        }
-    }
-
-    /// Refine an HInter crossing parameter to the local minimum of the exact
-    /// surface distance. The HInter general path converges with the coarse
-    /// projector (`~1e-6` distance error), which can exceed the tightened
-    /// result criteria (`3·Confusion`); refining makes the walk's starting
-    /// point lie genuinely on the surface.
-    fn refine_crossing_param(&self, w: f64) -> f64 {
-        let window = (10.0 * self.curve_resolution).max(1e-5);
-        let f = |u: f64| self.closest_params_dist(&self.curve_d0(u)).2;
-        golden_1d(&f, w - window, w + window, 1e-10).0
-    }
-
-    /// Use curve–surface extrema to find near-surface spans that HInter's
-    /// discrete points missed (tangencies / parallel spans). Port of
-    /// `ComputeUsingExtremum`.
-    fn compute_using_extremum(&mut self) {
-        let tol = PCONFUSION;
-        let mut i = 0usize;
-        while i < self.range_manager.len() {
-            if self.range_manager.flag(i) > 0 {
-                i += 1;
-                continue;
-            }
-            let r = self.range_manager.range(i);
-            let anarg1 = r.first;
-            let anarg2 = r.last;
-
-            if anarg2 - anarg1 < PCONFUSION {
-                if (i > 0 && self.range_manager.flag(i - 1) == 2)
-                    || (i + 1 < self.range_manager.len() && self.range_manager.flag(i + 1) == 2)
-                {
-                    self.range_manager.set_flag(i, 1);
-                    i += 1;
-                    continue;
-                }
-            }
-
-            let old_len = self.range_manager.len();
-            let mut solution_found = false;
-
-            // All curve–surface extrema, restricted to this range + surface window.
-            let exts = curve_surface_extrema_all(self.curve(), self.surface());
-            let mut candidates: Vec<(f64, f64, f64)> = Vec::new();
-            for e in &exts {
-                self.min_sq_distance = self.min_sq_distance.min(e.distance * e.distance);
-                if e.distance * e.distance >= self.criteria * self.criteria {
-                    continue;
-                }
-                if e.u1 < anarg1 - tol || e.u1 > anarg2 + tol {
-                    continue;
-                }
-                let u = e.u2;
-                let v = e.v2.unwrap_or(0.0);
-                if u < self.umin || u > self.umax || v < self.vmin || v > self.vmax {
-                    continue;
-                }
-                candidates.push((e.u1, u, v));
-            }
-
-            // Fall back to the single global extremum when the list is empty.
-            if candidates.is_empty() {
-                let e = occt_geom::extrema::curve_surface_extrema(self.curve(), self.surface(), 16);
-                self.min_sq_distance = self.min_sq_distance.min(e.distance * e.distance);
-                if e.distance * e.distance < self.criteria * self.criteria
-                    && e.u1 >= anarg1 - tol
-                    && e.u1 <= anarg2 + tol
-                {
-                    let u = e.u2;
-                    let v = e.v2.unwrap_or(0.0);
-                    if u >= self.umin && u <= self.umax && v >= self.vmin && v <= self.vmax {
-                        let n = self.range_manager.len();
-                        self.compute_range_from_start_point(false, e.u1, u, v);
-                        self.compute_range_from_start_point(true, e.u1, u, v);
-                        solution_found = true;
-                        if n == self.range_manager.len() {
-                            self.set_empty_result_range(e.u1);
-                        }
-                    }
-                }
-            } else {
-                for (t, u, v) in candidates {
-                    let n = self.range_manager.len();
-                    self.compute_range_from_start_point(false, t, u, v);
-                    self.compute_range_from_start_point(true, t, u, v);
-                    solution_found = true;
-                    if n == self.range_manager.len() {
-                        self.set_empty_result_range(t);
-                    }
-                }
-            }
-
-            if !solution_found {
-                self.range_manager.set_flag(i, 1);
-            }
-            let diff = self.range_manager.len() - old_len;
-            if diff > 0 {
-                i += diff;
-            } else {
-                i += 1;
-            }
-        }
-    }
-
-    /// Localized intersection for high-degree NURBS surfaces: box-cull the
-    /// subdivided curve cells against the surface box, then run the exact
-    /// curve–surface intersection per surviving cell. Port of `ComputeLocalized`
-    /// + `LocalizeSolutions` (the subdivision machinery is collapsed into the
-    /// per-cell box test + exact solve).
-    fn compute_localized(&mut self) -> bool {
-        let fbox = self.surface_box(self.umin, self.umax, self.vmin, self.vmax, self.criteria);
-        let ebox = self.curve_box(self.first_parameter, self.last_parameter, self.bean_tolerance);
-
-        // Whole-domain rejection: nothing to do.
-        if ebox.is_out_box(&fbox) {
-            for i in 0..self.range_manager.len() {
-                self.range_manager.set_flag(i, 1);
-            }
-            return true;
-        }
-
-        // Subdivide the curve bean into cells; flag cells whose curve box is
-        // disjoint from the surface box.
-        let nb_c = 3usize;
-        let first = self.first_parameter;
-        let last = self.last_parameter;
-        let span = last - first;
-        let mut any_survive = false;
-        let mut cells: Vec<(f64, f64)> = Vec::with_capacity(nb_c);
-        for k in 0..nb_c {
-            let a = first + k as f64 * span / nb_c as f64;
-            let b = if k + 1 == nb_c { last } else { first + (k + 1) as f64 * span / nb_c as f64 };
-            let cbox = self.curve_box(a, b, self.bean_tolerance);
-            if cbox.is_out_box(&fbox) {
-                self.range_manager.insert_range(a, b, 1);
-            } else {
-                cells.push((a, b));
-                any_survive = true;
-            }
-        }
-        if !any_survive {
-            return true;
-        }
-
-        // Exact intersection per surviving cell.
-        let uv = self.finite_uv_bounds();
-        for (a, b) in cells {
-            if let Ok(hr) = perform_curve_surface(self.curve(), self.surface(), (a, b), uv) {
-                for i in 0..hr.nb_points() {
-                    let p = hr.point(i);
-                    let w = p.param();
-                    if w < self.first_parameter || w > self.last_parameter {
-                        continue;
-                    }
-                    let u = p.u().clamp(self.umin, self.umax);
-                    let v = p.v().clamp(self.vmin, self.vmax);
-                    let n = self.range_manager.len();
-                    self.compute_range_from_start_point(false, w, u, v);
-                    self.compute_range_from_start_point(true, w, u, v);
-                    if n == self.range_manager.len() {
-                        self.set_empty_result_range(w);
-                    } else {
-                        self.min_sq_distance = 0.0;
-                    }
-                }
-            }
-        }
-
-        self.compute_near_range_boundaries();
-        true
-    }
-
-    /// Finite `(u0, v0, u1, v1)` bounds for the HInter call; unbounded
-    /// directions are clamped to a broad window (they only arise for analytic
-    /// surfaces handled elsewhere).
-    fn finite_uv_bounds(&self) -> (f64, f64, f64, f64) {
-        let clamp = |a: f64, b: f64| {
-            if a.is_finite() && b.is_finite() {
-                (a, b)
-            } else {
-                (-1e4, 1e4)
-            }
-        };
-        let (u0, u1) = clamp(self.umin, self.umax);
-        let (v0, v1) = clamp(self.vmin, self.vmax);
-        (u0, u1, v0, v1)
-    }
-
-    /// Axis-aligned bounding box of the surface patch over `[u0,u1]×[v0,v1]`,
-    /// sampled on a grid and enlarged by `tol`.
-    fn surface_box(&self, u0: f64, u1: f64, v0: f64, v1: f64, tol: f64) -> BndBox {
-        let mut b = BndBox::new();
-        let nu = 12usize;
-        let nv = 12usize;
-        for i in 0..=nu {
-            for j in 0..=nv {
-                let u = u0 + (u1 - u0) * i as f64 / nu as f64;
-                let v = v0 + (v1 - v0) * j as f64 / nv as f64;
-                b.add_point(&self.surface_d0(u, v));
-            }
-        }
-        b.enlarge(tol);
-        b
-    }
-
-    /// Axis-aligned bounding box of the curve over `[a,b]`, sampled and
-    /// enlarged by `tol`.
-    fn curve_box(&self, a: f64, b: f64, tol: f64) -> BndBox {
-        let mut bb = BndBox::new();
-        let n = 32usize;
-        for i in 0..=n {
-            let u = a + (b - a) * i as f64 / n as f64;
-            bb.add_point(&self.curve_d0(u));
-        }
-        bb.enlarge(tol);
-        bb
     }
 }
 
@@ -1553,68 +508,8 @@ impl Default for BeanFaceIntersector {
 // Static helpers
 // ---------------------------------------------------------------------------
 
-/// Wrap `value` into `[min, max]` by whole periods (positive modulo).
-fn adjust_periodic(value: f64, min: f64, max: f64, period: f64) -> f64 {
-    let p = period.abs();
-    if p <= 1e-30 || !min.is_finite() || !max.is_finite() {
-        return value;
-    }
-    let mut v = value;
-    while v < min {
-        v += p;
-    }
-    while v > max {
-        v -= p;
-    }
-    v
-}
-
-/// `(u, v)` parameters of `p` in a plane's natural frame.
-fn plane_uv_of_point(ploc: &GpPnt, _pn: &GpDir, p: &GpPnt, px: &GpDir, py: &GpDir) -> (f64, f64) {
-    let d = GpVec::from_pnts(ploc, p);
-    (d.dot(&GpVec::from_xyz(px.xyz())), d.dot(&GpVec::from_xyz(py.xyz())))
-}
-
-/// Clips the interval `[t0, t1]` to the sub-interval where the linear
-/// coordinate `c(t) = c0 + t·(c1 − c0)` lies inside `[cmin, cmax]`.
-/// Returns `None` when no parameter in `[t0, t1]` satisfies the bound.
-fn clip_linear_range(t0: f64, t1: f64, c0: f64, c1: f64, cmin: f64, cmax: f64) -> Option<(f64, f64)> {
-    let dc = c1 - c0;
-    if dc.abs() < 1e-30 {
-        // Constant coordinate: keep the whole interval only when it is in range.
-        if c0 >= cmin - 1e-9 && c0 <= cmax + 1e-9 {
-            Some((t0, t1))
-        } else {
-            None
-        }
-    } else {
-        let ta = (cmin - c0) / dc;
-        let tb = (cmax - c0) / dc;
-        let (lo, hi) = if ta < tb { (ta, tb) } else { (tb, ta) };
-        let lo = lo.max(t0);
-        let hi = hi.min(t1);
-        if hi >= lo {
-            Some((lo, hi))
-        } else {
-            None
-        }
-    }
-}
-
-/// Port of `IntTools_Tools::ComputeIntRange`: the parameter half-width that
-/// covers the tolerance band around a crossing at incidence `angle`.
-fn compute_int_range(tol1: f64, tol2: f64, angle: f64) -> f64 {
-    if (PI * 0.5 - angle).abs() < ANGULAR {
-        return tol2;
-    }
-    let an_angle = if angle > PI * 0.5 { PI - angle } else { angle };
-    let a1 = tol1 * (PI * 0.5 - an_angle).tan();
-    let a2 = tol2 / an_angle.sin();
-    a1 + a2
-}
-
 /// Golden-section minimization of `f` over `[lo, hi]`. Returns `(argmin, min)`.
-fn golden_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64, eps: f64) -> (f64, f64) {
+pub(crate) fn golden_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64, eps: f64) -> (f64, f64) {
     const GOLD: f64 = 0.618_033_988_749_894_9;
     let mut a = lo;
     let mut b = hi;
@@ -1715,10 +610,8 @@ mod tests {
     #[test]
     fn line_in_box_plane_covers_bean() {
         let surf = box_bottom_surface();
-        // Line lying in z = 0, spanning the full bean window. Only the part
-        // inside the surface parameter window `[0,1]×[0,1]` (x ∈ [0,1], the
-        // box's UV domain) is on the face; the line's parameter equals x, so
-        // the on-face range is `[0,1]`.
+        // Line lying in z = 0. `ComputeLinePlane` in-plane returns the whole
+        // bean range; the face 2D restriction is applied by EdgeFace.
         let curve = Arc::new(GeomLine::new(GpLin::from_pnt_dir(
             GpPnt::new(0.0, 0.5, 0.0),
             dir(1.0, 0.0, 0.0),
@@ -1731,8 +624,8 @@ mod tests {
         let ranges = bfi.result();
         assert_eq!(ranges.len(), 1, "ranges: {ranges:?}");
         let r = ranges[0];
-        assert!((r.first - 0.0).abs() < 1e-9, "first {r:?}");
-        assert!((r.last - 1.0).abs() < 1e-9, "last {r:?}");
+        assert!((r.first + 1.0).abs() < 1e-9, "first {r:?}");
+        assert!((r.last - 2.0).abs() < 1e-9, "last {r:?}");
     }
 
     #[test]

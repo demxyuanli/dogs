@@ -16,6 +16,7 @@ pub mod parameters;      // IMeshTools_Parameters
 pub mod data_model;      // BRepMeshData::{Model,Edge,Face,Wire,Curve,PCurve} + IMeshData::{Status,Types}
 pub mod context;         // IMeshTools_Context + MeshAlgo/ModelAlgo/MeshBuilder/ShapeExplorer traits
 pub mod geom_tool;       // BRepMesh_GeomTool
+pub mod geomlib_norm;    // GeomLib::NormEstim
 pub mod deflection;      // BRepMesh_Deflection
 pub mod shape_tool;      // BRepMesh_ShapeTool + ShapeVisitor
 pub mod edge_discret;    // BRepMesh_EdgeDiscret + EdgeParameterProvider + CurveTessellator

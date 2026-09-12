@@ -21,6 +21,17 @@ impl GeomBSplineCurve {
         Ok(Self { poles, weights: None, knots, degree, periodic: false })
     }
 
+    /// `Geom_BSplineCurve(Poles, Knots, Mults, Degree)` — unique knots + multiplicities.
+    pub fn from_poles_knots_mults(
+        poles: Vec<GpPnt>,
+        knots: Vec<f64>,
+        mults: Vec<i32>,
+        degree: usize,
+    ) -> Result<Self, &'static str> {
+        let flat = occt_core::bspl::banded_interp::knot_sequence(&knots, &mults, degree as i32);
+        Self::new(poles, flat, degree)
+    }
+
     /// Build a rational B-spline (weights length must equal pole count).
     pub fn rational(poles: Vec<GpPnt>, weights: Vec<f64>, knots: Vec<f64>, degree: usize) -> Result<Self, &'static str> {
         knots::check_degree(poles.len(), degree, knots.len())?;
@@ -133,24 +144,56 @@ impl Curve for GeomBSplineCurve {
     }
 
     fn d1(&self, u: f64) -> (GpPnt, GpVec) {
-        let p = self.d0(u);
-        let v = if self.weights.is_some() {
-            self.fd_d1(u)
-        } else {
-            eval::eval_curve_d1(&self.poles, &self.knots, self.degree, u).1
-        };
-        (p, v)
+        // `Geom_BSplineCurve::D1` / `BSplCLib::D1`. Rational uses the
+        // homogeneous quotient already computed by `eval_curve_rational_d2`.
+        match &self.weights {
+            Some(w) => {
+                let (p, d1, _) =
+                    eval::eval_curve_rational_d2(&self.poles, w, &self.knots, self.degree, u);
+                (p, d1)
+            }
+            None => eval::eval_curve_d1(&self.poles, &self.knots, self.degree, u),
+        }
+    }
+
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec {
+        // `Geom_BSplineCurve::EvalDN` (`Geom_BSplineCurve_1.cxx:300-316`).
+        // Illegal N<1 returns zero instead of throw. Eval-rep is empty.
+        if n < 1 {
+            return GpVec::zero();
+        }
+        occt_core::bspl::curve_dn::dn(
+            u,
+            n,
+            0,
+            self.degree as i32,
+            self.periodic,
+            &self.poles,
+            self.weights.as_deref(),
+            &self.knots,
+            None,
+        )
     }
 
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
-        let (p, d1) = self.d1(u);
-        (p, d1, self.fd_d2(u))
+        match &self.weights {
+            Some(w) => eval::eval_curve_rational_d2(&self.poles, w, &self.knots, self.degree, u),
+            None => eval::eval_curve_d2(&self.poles, &self.knots, self.degree, u),
+        }
     }
 
     fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
     fn is_periodic(&self) -> bool { self.periodic }
-    fn continuity(&self) -> u8 { if self.degree >= 2 { 3 } else { 1 } }
+    fn continuity(&self) -> u8 {
+        occt_core::bspl::local_continuity(
+            &self.knots,
+            self.degree,
+            self.periodic,
+            self.first_parameter(),
+            self.last_parameter(),
+        )
+    }
 
     fn transform(&mut self, t: &GpTrsf) {
         for p in self.poles.iter_mut() {
@@ -166,6 +209,35 @@ impl Curve for GeomBSplineCurve {
     }
 
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
+    fn bspline_poles(&self) -> Option<&[GpPnt]> { Some(&self.poles) }
+    fn bspline_knots(&self) -> Option<&[f64]> { Some(&self.knots) }
+    fn nurbs_degree(&self) -> Option<usize> { Some(self.degree) }
+    fn resolution(&self, r3d: f64) -> f64 {
+        occt_core::bspl::bspline_curve_resolution(
+            &self.poles,
+            self.weights.as_deref(),
+            &self.knots,
+            self.degree as i32,
+            r3d,
+        )
+    }
+    fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
+        let eps = self
+            .resolution(occt_core::precision::CONFUSION)
+            .min(occt_core::precision::PCONFUSION);
+        occt_core::bspl::adaptor_intervals(
+            &self.knots,
+            self.degree,
+            self.periodic,
+            continuity,
+            self.first_parameter(),
+            self.last_parameter(),
+            eps,
+        )
+    }
+    fn nb_intervals(&self, continuity: u8) -> i32 {
+        self.parameter_intervals(continuity).len().saturating_sub(1).max(1) as i32
+    }
 }
 
 #[cfg(test)]

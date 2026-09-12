@@ -1,41 +1,160 @@
-//! Trimmed 2D curve. Source: `Geom2d_TrimmedCurve.hxx`
+//! Trimmed 2D curve. Source: `Geom2d_TrimmedCurve.cxx`.
 use std::sync::Arc;
 use occt_core::gp::{GpPnt2d, GpVec2d, GpTrsf2d};
+use occt_core::precision::{PCONFUSION, Precision};
 use crate::curve::Curve2d;
+
+/// `ElCLib::AdjustPeriodic` (`ElCLib.cxx:115`).
+fn adjust_periodic(u_first: f64, u_last: f64, preci: f64, u1: &mut f64, u2: &mut f64) {
+    if Precision::is_infinite(u_first) || Precision::is_infinite(u_last) {
+        *u1 = u_first;
+        *u2 = u_last;
+        return;
+    }
+    let a_period = u_last - u_first;
+    if a_period < f64::EPSILON {
+        *u1 = u_first;
+        *u2 = u_last;
+        return;
+    }
+    *u1 -= ((*u1 - u_first) / a_period).floor() * a_period;
+    if u_last - *u1 < preci {
+        *u1 -= a_period;
+    }
+    *u2 -= ((*u2 - *u1) / a_period).floor() * a_period;
+    if *u2 - *u1 < preci {
+        *u2 += a_period;
+    }
+}
 
 #[derive(Clone)]
 pub struct Geom2dTrimmedCurve {
     basis: Arc<dyn Curve2d>,
-    first: f64,
-    last: f64,
+    u_trim1: f64,
+    u_trim2: f64,
 }
 
 impl Geom2dTrimmedCurve {
-    pub fn new(curve: Arc<dyn Curve2d>, first: f64, last: f64) -> Self {
-        let a = first.min(last); let b = first.max(last);
-        Self { basis: curve, first: a, last: b }
+    pub fn new(curve: Arc<dyn Curve2d>, u1: f64, u2: f64) -> Self {
+        Self::new_sense(curve, u1, u2, true, true)
     }
-    pub fn basis_curve(&self) -> &Arc<dyn Curve2d> { &self.basis }
-    pub fn trim_parameter(&self, u: f64) -> f64 { self.first + u * (self.last - self.first) }
+
+    /// `Geom2d_TrimmedCurve(C, U1, U2, Sense, theAdjustPeriodic)`.
+    pub fn new_sense(
+        curve: Arc<dyn Curve2d>,
+        u1: f64,
+        u2: f64,
+        sense: bool,
+        adjust_periodic: bool,
+    ) -> Self {
+        let basis = if let Some(b) = curve.trimmed_basis() {
+            Arc::from(b.clone_dyn())
+        } else {
+            curve
+        };
+        let mut s = Self {
+            basis,
+            u_trim1: u1,
+            u_trim2: u2,
+        };
+        s.set_trim(u1, u2, sense, adjust_periodic);
+        s
+    }
+
+    pub fn basis_curve(&self) -> &Arc<dyn Curve2d> {
+        &self.basis
+    }
+
+    /// `Geom2d_TrimmedCurve::SetTrim` (`cxx:98-154`).
+    fn set_trim(&mut self, u1: f64, u2: f64, sense: bool, adjust_periodic_flag: bool) {
+        if u1 == u2 {
+            return;
+        }
+        let udeb = self.basis.first_parameter();
+        let ufin = self.basis.last_parameter();
+        let mut same_sense = true;
+        if self.basis.is_periodic() {
+            same_sense = sense;
+            self.u_trim1 = u1;
+            self.u_trim2 = u2;
+            if adjust_periodic_flag {
+                let preci = ((self.u_trim2 - self.u_trim1).abs() / 2.0).min(PCONFUSION);
+                adjust_periodic(udeb, ufin, preci, &mut self.u_trim1, &mut self.u_trim2);
+            }
+        } else if u1 < u2 {
+            same_sense = sense;
+            self.u_trim1 = u1;
+            self.u_trim2 = u2;
+        } else {
+            same_sense = !sense;
+            self.u_trim1 = u2;
+            self.u_trim2 = u1;
+        }
+        if !same_sense {
+            self.reverse();
+        }
+    }
 }
 
 impl Curve2d for Geom2dTrimmedCurve {
-    fn d0(&self, u: f64) -> GpPnt2d { self.basis.d0(self.first + u * (self.last - self.first)) }
+    fn d0(&self, u: f64) -> GpPnt2d {
+        self.basis.d0(u)
+    }
     fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d) {
-        let t = self.first + u * (self.last - self.first);
-        let (p, d) = self.basis.d1(t);
-        (p, GpVec2d::new(d.x() * (self.last - self.first), d.y() * (self.last - self.first)))
+        self.basis.d1(u)
     }
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
-        let t = self.first + u * (self.last - self.first);
-        let (p, d1, d2) = self.basis.d2(t);
-        let s = self.last - self.first;
-        (p, GpVec2d::new(d1.x()*s, d1.y()*s), GpVec2d::new(d2.x()*s*s, d2.y()*s*s))
+        self.basis.d2(u)
     }
-    fn first_parameter(&self) -> f64 { 0.0 }
-    fn last_parameter(&self) -> f64 { 1.0 }
-    fn continuity(&self) -> u8 { self.basis.continuity() }
-    fn transform(&mut self, t: &GpTrsf2d) { /* basis is shared, cannot mutate */ }
-    fn reverse(&mut self) { std::mem::swap(&mut self.first, &mut self.last); }
-    fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
+    fn first_parameter(&self) -> f64 {
+        self.u_trim1
+    }
+    fn last_parameter(&self) -> f64 {
+        self.u_trim2
+    }
+    fn is_periodic(&self) -> bool {
+        if self.basis.is_periodic() {
+            let period = self.basis.period();
+            let length = self.u_trim2 - self.u_trim1;
+            if length > PCONFUSION && period > 0.0 {
+                let rem = length - period * (length / period).round();
+                if rem.abs() <= PCONFUSION {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    fn period(&self) -> f64 {
+        self.basis.period()
+    }
+    fn continuity(&self) -> u8 {
+        self.basis.continuity()
+    }
+    fn transform(&mut self, t: &GpTrsf2d) {
+        let mut b = self.basis.clone_dyn();
+        b.transform(t);
+        self.basis = Arc::from(b);
+    }
+    fn reverse(&mut self) {
+        let mut b = self.basis.clone_dyn();
+        b.reverse();
+        self.basis = Arc::from(b);
+        std::mem::swap(&mut self.u_trim1, &mut self.u_trim2);
+    }
+    fn clone_dyn(&self) -> Box<dyn Curve2d> {
+        Box::new(self.clone())
+    }
+    fn is_line(&self) -> bool {
+        self.basis.is_line()
+    }
+    fn gp_lin2d(&self) -> Option<occt_core::gp::GpLin2d> {
+        self.basis.gp_lin2d()
+    }
+    fn gp_circ2d(&self) -> Option<occt_core::gp::GpCirc2d> {
+        self.basis.gp_circ2d()
+    }
+    fn trimmed_basis(&self) -> Option<&dyn Curve2d> {
+        Some(self.basis.as_ref())
+    }
 }

@@ -88,6 +88,26 @@ impl ShrunkRange {
     /// unbounded parameter ranges, and micro-edges whose vertex spheres cover
     /// the whole range.
     pub fn set_shrunk_range(&mut self, edge: &Edge, face: &Face, tol: f64) -> Result<(), String> {
+        let (first, last) = BRepTool::edge_parameters(edge);
+        let (v1, v2) = edge_vertices(edge);
+        self.set_data(edge, first, last, v1.as_ref(), v2.as_ref(), tol)?;
+        self.face = Some(face.clone());
+        Ok(())
+    }
+
+    /// `IntTools_ShrunkRange::SetData` + `Perform`.
+    ///
+    /// `t1`/`t2` and `v1`/`v2` are the pave-block range and bound vertices
+    /// (`BOPAlgo_PaveFiller::FillShrunkData(PaveBlock)`).
+    pub fn set_data(
+        &mut self,
+        edge: &Edge,
+        first: f64,
+        last: f64,
+        v1: Option<&Vertex>,
+        v2: Option<&Vertex>,
+        tol: f64,
+    ) -> Result<(), String> {
         self.is_done = false;
         self.is_splittable = false;
         self.shrunk_first = 0.0;
@@ -95,7 +115,8 @@ impl ShrunkRange {
         self.length = 0.0;
         self.error = None;
         self.edge = Some(edge.clone());
-        self.face = Some(face.clone());
+        self.first = first;
+        self.last = last;
 
         if BRepTool::is_degenerated(edge) {
             return self.fail("edge is degenerated");
@@ -103,12 +124,9 @@ impl ShrunkRange {
         let Some(curve) = BRepTool::edge_curve(edge) else {
             return self.fail("edge has no registered 3D curve");
         };
-        let (first, last) = BRepTool::edge_parameters(edge);
         if !first.is_finite() || !last.is_finite() {
             return self.fail("edge has an unbounded parameter range");
         }
-        self.first = first;
-        self.last = last;
         if last - first < PCONFUSION {
             return self.fail("edge parameter range is too short");
         }
@@ -116,12 +134,11 @@ impl ShrunkRange {
         // Endpoint vertex points and tolerances. OCCT increases the vertex
         // tolerances on Precision::Confusion() to keep correspondence with the
         // intersection precision, and floors them at the edge tolerance.
-        let (v1, v2) = edge_vertices(edge);
-        let p1 = v1.as_ref().map(|v| BRepTool::vertex_point(v)).unwrap_or_else(|| curve.d0(first));
-        let p2 = v2.as_ref().map(|v| BRepTool::vertex_point(v)).unwrap_or_else(|| curve.d0(last));
-        let a_tol_e = tol.max(0.0);
-        let mut a_tol_v1 = v1.as_ref().map(|v| BRepTool::vertex_tolerance(v)).unwrap_or(0.0);
-        let mut a_tol_v2 = v2.as_ref().map(|v| BRepTool::vertex_tolerance(v)).unwrap_or(0.0);
+        let p1 = v1.map(BRepTool::vertex_point).unwrap_or_else(|| curve.d0(first));
+        let p2 = v2.map(BRepTool::vertex_point).unwrap_or_else(|| curve.d0(last));
+        let a_tol_e = BRepTool::edge_tolerance(edge).max(tol).max(0.0);
+        let mut a_tol_v1 = v1.map(BRepTool::vertex_tolerance).unwrap_or(0.0);
+        let mut a_tol_v2 = v2.map(BRepTool::vertex_tolerance).unwrap_or(0.0);
         if a_tol_v1 < a_tol_e {
             a_tol_v1 = a_tol_e;
         }
@@ -229,7 +246,7 @@ impl Default for ShrunkRange {
 /// Finds the range of `curve` over `[first, last]` that is not covered by the
 /// tolerance spheres of the two endpoint points `p1`/`p2`. Returns `None` when
 /// no such range exists (the spheres overlap / cover the whole curve).
-fn find_valid_range(
+pub(crate) fn find_valid_range(
     curve: &dyn Curve,
     first: f64,
     last: f64,
@@ -336,7 +353,7 @@ fn find_nearest_valid_point(
 /// The maximum derivative magnitude `|dp/du|` is estimated by central
 /// differences over the curve's range; `Resolution = tol / max_speed`. For an
 /// arc-length parametrised line (`max_speed = 1`) this is exactly `tol`.
-fn curve_resolution(curve: &dyn Curve, first: f64, last: f64, tol: f64) -> f64 {
+pub(crate) fn curve_resolution(curve: &dyn Curve, first: f64, last: f64, tol: f64) -> f64 {
     let span = last - first;
     if span.abs() <= 1e-30 || tol <= 0.0 {
         return PCONFUSION;
@@ -576,6 +593,7 @@ mod tests {
                 same_range: true,
                 degenerated: true,
                 pcurves: std::collections::HashMap::new(),
+                pcurve_ranges: std::collections::HashMap::new(),
             },
         );
         let mut sr = ShrunkRange::new();

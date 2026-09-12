@@ -22,4 +22,5 @@ impl Curve for GeomLine {
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.pos.vdir.reverse(); }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
+    fn is_line(&self) -> bool { true }
 }

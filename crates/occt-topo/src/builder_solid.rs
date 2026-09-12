@@ -21,20 +21,16 @@
 //!   a region) or a *hole* (a cavity lying inside a growth) and assembles the
 //!   regions into solids: every growth becomes one solid and receives the holes
 //!   it contains.
-//! * `PerformInternalShapes` classifies the internal shells against the regions
-//!   and adds the ones lying inside a region as its internal faces.
+//! * `PerformInternalShapes` classifies the internal faces against the regions
+//!   with `BOPAlgo_Tools::ClassifyFaces` and adds IN faces as INTERNAL shells.
 //!
 //! ## Translation boundaries vs OCCT
 //!
-//! * `IsHole` (OCCT `BRepClass3d_SolidClassifier::PerformInfinitePoint`, a
-//!   winding-number orientation test) is replaced by containment: a closed shell
-//!   is a hole when a representative face point lies strictly inside another
-//!   shell's solid. For the consistently-outward split faces the boolean
-//!   pipeline feeds in, the two agree; the port's version is orientation-free.
-//! * The `BOPTools_BoxTree` BVH box culling of `PerformAreas` and the
-//!   connexity-block grouping of `BOPAlgo_Tools::ClassifyFaces` in
-//!   `PerformInternalShapes` are replaced by pairwise box / point classification
-//!   (the internal shells are few).
+//! * `IsHole` is `BRepClass3d_SolidClassifier::PerformInfinitePoint` on the
+//!   shell wrapped as a solid (`BuilderSolid.cxx:823`). `IsGrowthShell`
+//!   (`:864`) treats a later shell as growth when it shares a face with an
+//!   already-identified hole. Hole-to-growth assignment still uses
+//!   `BOPTools_BoxTree` (`:460-502`) and `IsInside` (`:520`).
 //! * `IntTools_Context::IsInfiniteFace` (open bounding box) is ported through
 //!   the `BndBox` open flags.
 //! * `BOPAlgo_ShellSplitter` is the existing
@@ -46,17 +42,23 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use occt_core::bnd::BndBox;
 use occt_core::gp::GpPnt;
 
 use crate::abs::Orientation;
+use crate::algo_tools::AlgoTools;
 use crate::bbox_from_geometry::shape_bbox;
+use crate::bop_aabb_faces::AabbTree;
+use crate::bop_classify_occt::classify_faces_occt;
+use crate::bop_occt_util::{iter_children, shape_key as occt_shape_key};
 use crate::brep_extrema::{closest_point_on_face, is_inside};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
+use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Face, Shell, Solid, TopoShape};
 use crate::shell_splitter::{ShellSplitter, edge_key, EKey};
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools_full::{edges_of, faces_of};
 
 /// Stable identity key of a shape (the address of its shared `TShape`).
 fn shape_key(s: &TopoShape) -> usize {
@@ -131,20 +133,34 @@ fn make_solid_from_shell(shell: &TopoShape) -> TopoShape {
     solid.0
 }
 
-/// Volume of the axis-aligned bounding box of the vertices of `solid`.
-fn bbox_volume(solid: &TopoShape) -> f64 {
-    let mut mn = (f64::INFINITY, f64::INFINITY, f64::INFINITY);
-    let mut mx = (f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-    for v in vertices_of(solid) {
-        let p = BRepTool::vertex_point(&v);
-        mn.0 = mn.0.min(p.x());
-        mn.1 = mn.1.min(p.y());
-        mn.2 = mn.2.min(p.z());
-        mx.0 = mx.0.max(p.x());
-        mx.1 = mx.1.max(p.y());
-        mx.2 = mx.2.max(p.z());
+/// Whether solid `inner` lies inside solid `outer` (`IsInside` of two solids,
+/// `BOPAlgo_BuilderSolid.cxx:520`): a face point of `inner` classified IN
+/// `outer`. Used only to pick the innermost hole owner, not as `IsHole`.
+fn solid_inside_solid(inner: &TopoShape, outer: &TopoShape, tol: f64) -> bool {
+    let Some(f) = faces_of(inner).into_iter().next() else {
+        return false;
+    };
+    let Some(p) = face_sample_point(&f) else {
+        return false;
+    };
+    classify_point(outer, &p, tol) == FaceState::In
+}
+
+/// `IsGrowthShell` (`BuilderSolid.cxx:864`): a later shell is a growth when
+/// one of its direct children is a face of an already-identified hole.
+fn is_growth_shell(shell: &TopoShape, hole_faces: &HashSet<usize>) -> bool {
+    if hole_faces.is_empty() {
+        return false;
     }
-    (mx.0 - mn.0) * (mx.1 - mn.1) * (mx.2 - mn.2)
+    iter_children(shell)
+        .iter()
+        .any(|c| hole_faces.contains(&shape_key(c)))
+}
+
+/// `IsHole` (`BuilderSolid.cxx:823`): infinite point of the shell-as-solid
+/// classifies `IN`.
+fn is_hole_shell(shell: &TopoShape) -> bool {
+    AlgoTools::is_inverted_solid(&make_solid_from_shell(shell))
 }
 
 /// Whether the whole shell lies strictly inside the solid `solid`: a
@@ -227,6 +243,8 @@ pub struct BuilderSolid {
     loops_internal: Vec<TopoShape>,
     /// The region solids (`myAreas`).
     areas: Vec<TopoShape>,
+    /// `myBoxes` — bounding box of each area / unbound hole solid.
+    boxes: HashMap<usize, BndBox>,
     /// When true, internal parts are not merged back into the result
     /// (`myAvoidInternalShapes`).
     avoid_internal_shapes: bool,
@@ -245,6 +263,7 @@ impl BuilderSolid {
             loops: Vec::new(),
             loops_internal: Vec::new(),
             areas: Vec::new(),
+            boxes: HashMap::new(),
             avoid_internal_shapes: false,
             fuzzy: 1e-7,
             warnings: Vec::new(),
@@ -409,6 +428,9 @@ impl BuilderSolid {
             &self.shapes,
         );
         for sh in shells {
+            if crate::bop_build_solids::geometrically_open(&sh) {
+                continue;
+            }
             self.loops.push(sh);
         }
         // 2. Post treatment: faces of the input that reached no loop are set
@@ -440,73 +462,106 @@ impl BuilderSolid {
 
     /// Phase 3 — turn the shells into region solids.
     ///
-    /// Mirrors `BOPAlgo_BuilderSolid::PerformAreas`: every closed shell becomes
-    /// a candidate solid; a shell is a *hole* when it lies strictly inside
-    /// another shell's solid (OCCT's inside-out `IsHole`); each hole is attached
-    /// to the innermost growth that contains it and the growth solids become the
-    /// areas. A hole that fits in no growth becomes a solid on its own.
+    /// Mirrors `BOPAlgo_BuilderSolid::PerformAreas` (`:397`).
+    /// `IsGrowthShell` then `IsHole` (`:422-427`); hole-to-growth assignment
+    /// uses `BOPTools_BoxTree` (`:460-502`) and `IsInside` (`:520`). Unbound
+    /// holes get a `SetWhole` box (`:591`).
     fn perform_areas(&mut self) {
         self.areas.clear();
+        self.boxes.clear();
         let n = self.loops.len();
         if n == 0 {
             return;
         }
         let tol = self.fuzzy.max(1e-7);
         let solids: Vec<TopoShape> = self.loops.iter().map(make_solid_from_shell).collect();
-        // Hole detection (containment-based `IsHole`).
-        let mut is_hole = vec![false; n];
+        let mut hole_faces: HashSet<usize> = HashSet::new();
+        let mut growth: Vec<usize> = Vec::new();
+        let mut hole_idx: Vec<usize> = Vec::new();
         for i in 0..n {
-            for j in 0..n {
-                if i != j && shell_inside_solid(&self.loops[i], &solids[j], tol) {
-                    is_hole[i] = true;
-                    break;
+            let mut b_growth = is_growth_shell(&self.loops[i], &hole_faces);
+            if !b_growth {
+                b_growth = !is_hole_shell(&self.loops[i]);
+            }
+            if b_growth {
+                growth.push(i);
+            } else {
+                hole_idx.push(i);
+                for c in iter_children(&self.loops[i]) {
+                    hole_faces.insert(shape_key(&c));
                 }
             }
-        }
-        let growth: Vec<usize> = (0..n).filter(|&i| !is_hole[i]).collect();
-        // Attach each hole to the innermost growth that contains it (the one
-        // with the smallest bounding box).
-        let mut hole_owner: Vec<Option<usize>> = vec![None; n];
-        for i in 0..n {
-            if !is_hole[i] {
-                continue;
-            }
-            let mut owner: Option<usize> = None;
-            for &j in &growth {
-                if shell_inside_solid(&self.loops[i], &solids[j], tol) {
-                    owner = match owner {
-                        None => Some(j),
-                        Some(o) => Some(if bbox_volume(&solids[j]) < bbox_volume(&solids[o]) { j } else { o }),
-                    };
-                }
-            }
-            hole_owner[i] = owner;
         }
         let bld = TopoBuilder::new();
+
+        if hole_idx.is_empty() {
+            for &j in &growth {
+                let s = solids[j].clone();
+                self.boxes.insert(occt_shape_key(&s), shape_bbox(&s));
+                self.areas.push(s);
+            }
+            return;
+        }
+
+        let mut tree = AabbTree::new();
+        tree.set_size(hole_idx.len());
+        for (k, &i) in hole_idx.iter().enumerate() {
+            tree.add(k, shape_bbox(&self.loops[i]));
+        }
+        tree.build();
+
+        let mut hole_owner: Vec<Option<usize>> = vec![None; n];
+        for &j in &growth {
+            let box_s = shape_bbox(&solids[j]);
+            for k in tree.select(&box_s) {
+                if k >= hole_idx.len() {
+                    continue;
+                }
+                let i = hole_idx[k];
+                if !shell_inside_solid(&self.loops[i], &solids[j], tol) {
+                    continue;
+                }
+                hole_owner[i] = match hole_owner[i] {
+                    None => Some(j),
+                    Some(o) => {
+                        if solid_inside_solid(&solids[j], &solids[o], tol) {
+                            Some(j)
+                        } else {
+                            Some(o)
+                        }
+                    }
+                };
+            }
+        }
+
         for &j in &growth {
             let mut solid = solids[j].clone();
-            for i in 0..n {
-                if is_hole[i] && hole_owner[i] == Some(j) {
+            for &i in &hole_idx {
+                if hole_owner[i] == Some(j) {
                     bld.add(&mut solid, &self.loops[i]);
                 }
             }
+            self.boxes.insert(occt_shape_key(&solid), shape_bbox(&solid));
             self.areas.push(solid);
         }
-        for i in 0..n {
-            if is_hole[i] && hole_owner[i].is_none() {
-                self.areas.push(solids[i].clone());
+        for &i in &hole_idx {
+            if hole_owner[i].is_none() {
+                let s = solids[i].clone();
+                let mut whole = BndBox::new();
+                whole.set_whole();
+                self.boxes.insert(occt_shape_key(&s), whole);
+                self.areas.push(s);
             }
         }
     }
 
     /// Phase 4 — classify the internal shells against the regions.
     ///
-    /// Mirrors `BOPAlgo_BuilderSolid::PerformInternalShapes`: with no regions
-    /// the internal shells alone form the solid; otherwise each internal face is
-    /// classified against the regions (OCCT `BOPAlgo_Tools::ClassifyFaces`,
-    /// grouped per face here) and the faces lying inside a region are joined
-    /// into `INTERNAL` shells added to it. Faces that fit no region are reported
-    /// as a warning, mirroring the OCCT `BOPAlgo_AlertSolidBuilderUnusedFaces`.
+    /// Mirrors `BOPAlgo_BuilderSolid::PerformInternalShapes` (`:602`): with no
+    /// regions the internal faces alone form the solid (`MakeInternalShells`);
+    /// otherwise `BOPAlgo_Tools::ClassifyFaces` (`:673`) maps each area to its
+    /// IN faces, which become INTERNAL shells. Faces that fit no region raise
+    /// `BOPAlgo_AlertSolidBuilderUnusedFaces` and are not added to the result.
     fn perform_internal_shapes(&mut self) {
         if self.avoid_internal_shapes {
             return;
@@ -514,13 +569,12 @@ impl BuilderSolid {
         if self.loops_internal.is_empty() {
             return;
         }
-        let tol = self.fuzzy.max(1e-7);
-        // All faces of the internal shells, deduplicated.
+        // Shell children (`TopoDS_Iterator`), not a uniquifying face explorer.
         let mut faces: Vec<TopoShape> = Vec::new();
         for sh in &self.loops_internal {
-            for f in faces_of(sh) {
-                if !faces.iter().any(|x| x.same_tshape(&f.0)) {
-                    faces.push(f.0.clone());
+            for child in iter_children(sh) {
+                if !faces.iter().any(|x| x.same_tshape(&child)) {
+                    faces.push(child);
                 }
             }
         }
@@ -529,7 +583,6 @@ impl BuilderSolid {
         }
         let bld = TopoBuilder::new();
         if self.areas.is_empty() {
-            // No regions: the internal faces alone form the solid.
             let mut solid = Solid::new();
             for sh in connect_faces_into_shells(&faces, true) {
                 bld.add(&mut solid.0, &sh);
@@ -537,30 +590,39 @@ impl BuilderSolid {
             self.areas.push(solid.0);
             return;
         }
+
         let areas = self.areas.clone();
-        let mut done: HashSet<usize> = HashSet::new();
-        let mut per_area: Vec<Vec<TopoShape>> = vec![Vec::new(); areas.len()];
-        for f in &faces {
-            let Some(p) = face_sample_point(&Face(f.clone())) else { continue };
-            for (k, area) in areas.iter().enumerate() {
-                if classify_point(area, &p, tol) == FaceState::In {
-                    per_area[k].push(f.clone());
-                    done.insert(shape_key(f));
-                    break;
-                }
-            }
+        let mut box_map = HashMap::new();
+        for a in &areas {
+            let k = occt_shape_key(a);
+            let box_ = self.boxes.get(&k).copied().unwrap_or_else(|| shape_bbox(a));
+            box_map.insert(k, box_);
         }
-        for (k, list) in per_area.into_iter().enumerate() {
+        let ctx = IntToolsContext::new();
+        let empty_if: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+        let in_parts = classify_faces_occt(&faces, &areas, &ctx, &box_map, &empty_if);
+
+        let mut done: HashSet<usize> = HashSet::new();
+        for (k, area) in areas.iter().enumerate() {
+            let Some(list) = in_parts.get(&occt_shape_key(area)) else {
+                continue;
+            };
             if list.is_empty() {
                 continue;
             }
+            for f in list {
+                done.insert(occt_shape_key(f));
+            }
             let mut solid = self.areas[k].clone();
-            for sh in connect_faces_into_shells(&list, true) {
+            for sh in connect_faces_into_shells(list, true) {
                 bld.add(&mut solid, &sh);
             }
             self.areas[k] = solid;
         }
-        let unused = faces.iter().filter(|f| !done.contains(&shape_key(f))).count();
+        let unused = faces
+            .iter()
+            .filter(|f| !done.contains(&occt_shape_key(f)))
+            .count();
         if unused > 0 {
             self.warnings.push(format!(
                 "BuilderSolid: {unused} internal face(s) fit no region and were dropped"

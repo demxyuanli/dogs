@@ -1,5 +1,10 @@
 //! 3D Bezier surface.
 
+use std::sync::Arc;
+
+use crate::bezier_curve::GeomBezierCurve;
+use crate::bspline_surface::GeomBSplineSurface;
+use crate::curve::Curve;
 use crate::surface::Surface;
 use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 
@@ -79,6 +84,28 @@ impl GeomBezierSurface {
         self.n_v - 1
     }
 
+    /// `Geom_BezierSurface::UIso` (`Geom_BezierSurface.cxx:1769-1810`).
+    pub fn u_iso(&self, u: f64) -> Result<GeomBezierCurve, &'static str> {
+        let mut poles = Vec::with_capacity(self.n_v);
+        for j in 0..self.n_v {
+            let col: Vec<GpPnt> = (0..self.n_u)
+                .map(|i| self.poles[i * self.n_v + j])
+                .collect();
+            poles.push(de_casteljau(&col, u));
+        }
+        GeomBezierCurve::new(poles)
+    }
+
+    /// `Geom_BezierSurface::VIso` (`Geom_BezierSurface.cxx:1821-1862`).
+    pub fn v_iso(&self, v: f64) -> Result<GeomBezierCurve, &'static str> {
+        let mut poles = Vec::with_capacity(self.n_u);
+        for i in 0..self.n_u {
+            let start = i * self.n_v;
+            poles.push(de_casteljau(&self.poles[start..start + self.n_v], v));
+        }
+        GeomBezierCurve::new(poles)
+    }
+
     fn du(&self, u: f64, v: f64) -> GpVec {
         if self.n_u < 2 {
             return GpVec::new(0.0, 0.0, 0.0);
@@ -149,6 +176,30 @@ impl Surface for GeomBezierSurface {
         (self.d0(u, v), self.du(u, v), self.dv(u, v))
     }
 
+    fn osculating_bspline(&self) -> Option<GeomBSplineSurface> {
+        if self.n_u < 2 || self.n_v < 2 {
+            return None;
+        }
+        let deg_u = self.n_u - 1;
+        let deg_v = self.n_v - 1;
+        let mut poles = vec![vec![GpPnt::new(0.0, 0.0, 0.0); self.n_v]; self.n_u];
+        for i in 0..self.n_u {
+            for j in 0..self.n_v {
+                poles[i][j] = self.poles[i * self.n_v + j];
+            }
+        }
+        GeomBSplineSurface::from_poles_knots_mults(
+            poles,
+            vec![0.0, 1.0],
+            vec![0.0, 1.0],
+            vec![(deg_u + 1) as i32, (deg_u + 1) as i32],
+            vec![(deg_v + 1) as i32, (deg_v + 1) as i32],
+            deg_u,
+            deg_v,
+        )
+        .ok()
+    }
+
     fn u_range(&self) -> (f64, f64) {
         (0.0, 1.0)
     }
@@ -157,7 +208,7 @@ impl Surface for GeomBezierSurface {
         (0.0, 1.0)
     }
 
-    fn continuity(&self) -> usize {
+    fn continuity(&self) -> u8 {
         3
     }
 
@@ -169,6 +220,28 @@ impl Surface for GeomBezierSurface {
 
     fn clone_dyn(&self) -> Box<dyn Surface> {
         Box::new(self.clone())
+    }
+
+    fn u_degree(&self) -> i32 {
+        GeomBezierSurface::u_degree(self) as i32
+    }
+    fn v_degree(&self) -> i32 {
+        GeomBezierSurface::v_degree(self) as i32
+    }
+
+    fn u_iso_curve(&self, u: f64) -> Option<Arc<dyn Curve>> {
+        self.u_iso(u).ok().map(|c| Arc::new(c) as Arc<dyn Curve>)
+    }
+
+    fn v_iso_curve(&self, v: f64) -> Option<Arc<dyn Curve>> {
+        self.v_iso(v).ok().map(|c| Arc::new(c) as Arc<dyn Curve>)
+    }
+
+    fn nb_u_poles(&self) -> i32 {
+        self.n_u as i32
+    }
+    fn nb_v_poles(&self) -> i32 {
+        self.n_v as i32
     }
 }
 

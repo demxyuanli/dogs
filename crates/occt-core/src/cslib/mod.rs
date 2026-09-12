@@ -4,6 +4,15 @@
 //! The classification is done by computing the normal at the closest point
 //! and projecting the point-to-surface vector onto the normal.
 
+pub mod class2d;
+pub mod dn_normal;
+pub mod normal;
+pub mod poly_def;
+pub use class2d::{Class2d, Class2dResult};
+pub use dn_normal::{dn_normal, dnnuv, dnnuv2};
+pub use normal::{normal_d2, normal_max_order, CSLibNormalStatus};
+pub use poly_def::NormalPolyDef;
+
 /// Result of a surface classification test.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CSLibResult { Inside, Outside, On }

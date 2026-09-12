@@ -1,4 +1,5 @@
 //! 2D circle curve. Source: `Geom2d_Circle.hxx`
+use occt_core::elib::clib;
 use occt_core::gp::{GpCirc2d, GpPnt2d, GpVec2d, GpTrsf2d};
 use crate::curve::Curve2d;
 
@@ -13,17 +14,16 @@ impl Geom2dCircle {
 
 impl Curve2d for Geom2dCircle {
     fn d0(&self, u: f64) -> GpPnt2d {
-        GpPnt2d::new(self.pos.location().x() + self.pos.radius * u.cos(), self.pos.location().y() + self.pos.radius * u.sin())
+        // `Geom2d_Circle::EvalD0` (`cxx:164-167`): `ElCLib::CircleValue`.
+        clib::circle2d_value(&self.pos, u)
     }
     fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d) {
-        let r = self.pos.radius;
-        let p = self.d0(u);
-        (p, GpVec2d::new(-r * u.sin(), r * u.cos()))
+        // `Geom2d_Circle::EvalD1` (`cxx:171-176`): `ElCLib::CircleD1`.
+        clib::circle2d_d1(&self.pos, u)
     }
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
-        let r = self.pos.radius;
-        let p = self.d0(u);
-        (p, GpVec2d::new(-r * u.sin(), r * u.cos()), GpVec2d::new(-r * u.cos(), -r * u.sin()))
+        // `Geom2d_Circle::EvalD2` (`cxx:180-185`): `ElCLib::CircleD2`.
+        clib::circle2d_d2(&self.pos, u)
     }
     fn first_parameter(&self) -> f64 { 0.0 }
     fn last_parameter(&self) -> f64 { 2.0 * std::f64::consts::PI }
@@ -33,4 +33,5 @@ impl Curve2d for Geom2dCircle {
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.radius = -self.pos.radius; }
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
+    fn gp_circ2d(&self) -> Option<occt_core::gp::GpCirc2d> { Some(self.pos) }
 }

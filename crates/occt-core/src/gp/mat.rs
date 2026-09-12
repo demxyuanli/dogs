@@ -33,6 +33,11 @@ impl GpMat {
         Self { m: [[c1.x, c2.x, c3.x], [c1.y, c2.y, c3.y], [c1.z, c2.z, c3.z]] }
     }
 
+    /// `gp_Mat::SetRows`.
+    pub fn set_rows(&mut self, r1: &GpXyz, r2: &GpXyz, r3: &GpXyz) {
+        self.m = [[r1.x, r1.y, r1.z], [r2.x, r2.y, r2.z], [r3.x, r3.y, r3.z]];
+    }
+
     #[inline] pub fn value(&self, row: usize, col: usize) -> f64 { self.m[row - 1][col - 1] }
 
     #[inline] pub fn row(&self, r: usize) -> GpXyz {

@@ -158,7 +158,7 @@ let (pf, pl) = if pc.first_parameter().is_finite() && ... {
 
 1. **四叉树兜底**（`export_mesh` 的 `brepmesh` 路径）仍用旧的点向投影，未对齐 Delaunay。
 2. **NURBS RangeSplitter 的移除/thinning pass 未做**（纯密度优化，不影响 bbox）。
-3. **ModelHealer 的 `amplifyEdges`/`FaceChecker` 未移植**。
+3. **ModelHealer 的 `amplifyEdges`/`FaceChecker`** — 已接到 `IncrementalMesh::heal_self_intersecting_wires`（`BRepMesh_ModelHealer.cxx:234-211`）。
 4. **FaceDiscret 的 uniform 内部 UV 网格未加**（`Triangulator` 的 deflection 细化替代）。
 
 ---

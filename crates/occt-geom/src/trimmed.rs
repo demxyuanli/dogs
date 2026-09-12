@@ -35,6 +35,23 @@ impl Curve for GeomTrimmedCurve {
     fn first_parameter(&self) -> f64 { 0.0 }
     fn last_parameter(&self) -> f64 { 1.0 }
     fn continuity(&self) -> u8 { self.basis.continuity() }
+    fn circle_radius(&self) -> Option<f64> { self.basis.circle_radius() }
+    fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { self.basis.gp_circ() }
+    fn is_geom_trimmed(&self) -> bool { true }
+    fn trimmed_basis_range(&self) -> Option<(f64, f64)> {
+        // `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps nested trims.
+        if let Some((bf, bl)) = self.basis.trimmed_basis_range() {
+            Some((
+                bf + self.first * (bl - bf),
+                bf + self.last * (bl - bf),
+            ))
+        } else {
+            Some((self.first, self.last))
+        }
+    }
+    fn is_line(&self) -> bool { self.basis.is_line() }
+    fn bspline_poles(&self) -> Option<&[GpPnt]> { self.basis.bspline_poles() }
+    fn bezier_poles(&self) -> Option<&[GpPnt]> { self.basis.bezier_poles() }
     fn transform(&mut self, _t: &GpTrsf) {}
     fn reverse(&mut self) { std::mem::swap(&mut self.first, &mut self.last); }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }

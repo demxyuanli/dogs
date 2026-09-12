@@ -17,16 +17,18 @@ use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::{GpPnt, GpPnt2d};
+use occt_core::precision::PCONFUSION;
 use occt_core::toploc::TopLocLocation;
 use occt_geom::Curve;
 
 use crate::abs::Orientation;
+use crate::boptools_2d::curve_on_surface_range;
 use crate::brep_surface::edge_pcurve_on_face;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::topo_tools_full::{edge_vertices, edges_of_wire, wires_of_face};
 
-use super::data_model::{MeshModel, MeshStatus};
+use super::data_model::{MeshEdge, MeshModel, MeshStatus};
 
 /// Identity key of a `TShape` (its heap address). Used to deduplicate shared
 /// edges that are visited once per containing face.
@@ -123,6 +125,59 @@ impl ShapeTool {
             return *p;
         }
         p.transformed(&loc.transformation())
+    }
+
+    /// `BRepMesh_ShapeTool::CheckAndUpdateFlags` (`cxx:98-187`).
+    ///
+    /// SameRange is cleared when the CurveOnSurface parameter bounds differ
+    /// from the 3D range; that also clears SameParam. A closed edge whose 3D
+    /// length is below the vertex tolerance is marked degenerated.
+    pub fn check_and_update_flags(edge: &mut MeshEdge, face: &Face) {
+        if !edge.same_param() && !edge.same_range() && edge.degenerated() {
+            return;
+        }
+        let Some(curve) = edge.curve() else {
+            edge.set_degenerated(true);
+            return;
+        };
+        let first = edge.first_parameter();
+        let last = edge.last_parameter();
+        // `BRepAdaptor_Curve(E,F).First/Last` is `BRep_Tool::CurveOnSurface`
+        // pf,pl (per-face COS range after CheckPCurves clamp).
+        if let Some((_, cf, cl)) = curve_on_surface_range(edge.edge(), face) {
+            if edge.same_range() {
+                let same = (cf - first).abs() < PCONFUSION && (cl - last).abs() < PCONFUSION;
+                edge.set_same_range(same);
+                if !same {
+                    edge.set_same_param(false);
+                }
+            }
+        }
+        if edge.degenerated() {
+            return;
+        }
+        let (v1, v2) = edge_vertices(edge.edge());
+        let (Some(v1), Some(v2)) = (v1, v2) else {
+            edge.set_degenerated(true);
+            return;
+        };
+        if !v1.0.same_tshape(&v2.0) {
+            return;
+        }
+        let vertex_tol = BRepTool::vertex_tolerance(&v1);
+        let n = 20;
+        let du = (last - first) / n as f64;
+        let mut prev = curve.d0(first);
+        let mut length = 0.0;
+        for i in 1..=n {
+            let p = curve.d0(first + i as f64 * du);
+            length += prev.distance(&p);
+            if length > vertex_tol {
+                break;
+            }
+            prev = p;
+        }
+        edge.set_degenerated(length < vertex_tol);
     }
 }
 

@@ -31,6 +31,8 @@ use occt_core::gp::{GpPnt, GpVec2d};
 use occt_core::precision::{ANGULAR, PCONFUSION, RESOLUTION};
 use occt_geom2d::curve::Curve2d;
 
+use crate::brep_surface::SurfaceKind;
+use crate::pcurve_full::classify_surface_kind;
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 
@@ -66,6 +68,101 @@ pub fn curve_on_surface(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
     let reg = GeometryRegistry::global();
     let face_key = GeometryRegistry::shape_key(&face.0);
     reg.edge_pcurve(&edge.0, face_key)
+}
+
+/// `BRep_Tool::CurveOnSurface(edge, face, first, last)`: stored p-curve plus
+/// the CurveOnSurface representation range (`BRep_GCurve::First/Last`).
+/// Falls back to the 3D edge range, then the 2d curve domain.
+///
+/// When no COS is stored, `BRep_Tool.cxx:367-372` projects onto a plane via
+/// `CurveOnPlane` and sets `First/Last` to the 3D edge `f,l` (`cxx:418-419`).
+pub fn curve_on_surface_range(edge: &Edge, face: &Face) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
+    if let Some(pc) = curve_on_surface(edge, face) {
+        let face_key = GeometryRegistry::shape_key(&face.0);
+        let reg = GeometryRegistry::global();
+        if let Some((t1, t2)) = reg.pcurve_range(&edge.0, face_key) {
+            if t1.is_finite() && t2.is_finite() {
+                return Some((pc, t1, t2));
+            }
+        }
+        let (t1, t2) = reg.edge_parameters(&edge.0);
+        if t1.is_finite() && t2.is_finite() {
+            return Some((pc, t1, t2));
+        }
+        let (a, b) = (pc.first_parameter(), pc.last_parameter());
+        if a.is_finite() && b.is_finite() {
+            return Some((pc, a, b));
+        }
+        return None;
+    }
+    let surf = GeometryRegistry::global().face_surface(&face.0)?;
+    if classify_surface_kind(surf.as_ref()) != SurfaceKind::Plane {
+        return None;
+    }
+    let pc = crate::pcurve::make_pcurve_on_face(edge, face).ok()?;
+    let (t1, t2) = GeometryRegistry::global().edge_parameters(&edge.0);
+    if t1.is_finite() && t2.is_finite() {
+        Some((pc, t1, t2))
+    } else {
+        None
+    }
+}
+
+/// `BRep_Tool::CurveOnSurface(edge, surface)`: a seam on a closed surface
+/// returns `PCurve2` when the edge is `REVERSED` (`BRep_Tool.cxx:354-361`).
+/// `ShapeAnalysis_Edge::PCurve(..., orient=true)` then swaps the range
+/// (`ShapeAnalysis_Edge.cxx:201-206`).
+pub fn curve_on_surface_oriented(
+    edge: &Edge,
+    face: &Face,
+    orient: bool,
+) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
+    let face_key = GeometryRegistry::shape_key(&face.0);
+    let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
+    let reversed = edge.0.orientation().is_reversed();
+    let pc = if pcs.len() >= 2 && reversed {
+        pcs[1].clone()
+    } else {
+        pcs.first()?.clone()
+    };
+    let reg = GeometryRegistry::global();
+    let (mut t1, mut t2) = reg
+        .pcurve_range(&edge.0, face_key)
+        .unwrap_or_else(|| reg.edge_parameters(&edge.0));
+    if !(t1.is_finite() && t2.is_finite()) {
+        t1 = pc.first_parameter();
+        t2 = pc.last_parameter();
+    }
+    if !(t1.is_finite() && t2.is_finite()) {
+        return None;
+    }
+    if orient && reversed {
+        std::mem::swap(&mut t1, &mut t2);
+    }
+    Some((pc, t1, t2))
+}
+
+/// `ShapeBuild_Edge::ReplacePCurve` (`ShapeBuild_Edge.cxx:474-503`).
+pub fn replace_pcurve(edge: &Edge, face: &Face, pcurve: Arc<dyn Curve2d>) {
+    let face_key = GeometryRegistry::shape_key(&face.0);
+    let reg = GeometryRegistry::global();
+    // `ShapeBuild_Edge::ReplacePCurve` (`cxx:479-502`) reads COS `f,l`
+    // before UpdateEdge, then `B.Range(edge, face, f, l)` restores it.
+    let saved = reg.pcurve_range(&edge.0, face_key);
+    let pcs = reg.edge_pcurves(&edge.0, face_key);
+    if pcs.len() < 2 || Arc::ptr_eq(&pcs[0], &pcs[1]) {
+        reg.set_edge_pcurve(&edge.0, face_key, pcurve);
+    } else {
+        let pair = if edge.0.orientation().is_reversed() {
+            vec![pcs[0].clone(), pcurve]
+        } else {
+            vec![pcurve, pcs[1].clone()]
+        };
+        reg.set_edge_pcurves(&edge.0, face_key, pair);
+    }
+    if let Some((f, l)) = saved {
+        reg.set_pcurve_range(&edge.0, face_key, f, l);
+    }
 }
 
 /// Unit tangent of the edge's 3D curve at parameter `t`

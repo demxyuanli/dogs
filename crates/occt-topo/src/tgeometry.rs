@@ -39,11 +39,16 @@ pub struct EdgeGeom {
     pub same_range: bool,
     pub degenerated: bool,
     /// Per-face 2D pcurves, keyed by face pointer identity (see `shape_key`).
-    /// Mirrors `BRep_TEdge`'s list of `(face -> Geom2d_Curve)`: a seam edge of a
-    /// periodic surface carries *two* pcurves on the same face (one per side of
-    /// the seam, e.g. the cone's `u = 0` and `u = 2π` sides), stored in
-    /// forward-then-reversed order.
+    /// `BRep_Tool::CurveOnSurface` finds a representation by `Geom_Surface`
+    /// handle, so faces that share a surface share these pcurves: lookup
+    /// falls back to another face key on the same `Arc<dyn Surface>`.
+    /// A seam edge of a periodic surface carries *two* pcurves on the same
+    /// face (one per side of the seam), stored in forward-then-reversed order.
     pub pcurves: HashMap<usize, Vec<Arc<dyn Curve2d>>>,
+    /// Per-face `BRep_GCurve` First/Last of the CurveOnSurface representation.
+    /// `UpdateEdge` copies the 3D range; `BRep_Builder::Range(edge, face)`
+    /// can then clamp it (`StepToTopoDS_TranslateEdgeLoop::CheckPCurves`).
+    pub pcurve_ranges: HashMap<usize, (f64, f64)>,
 }
 
 impl EdgeGeom {
@@ -57,6 +62,7 @@ impl EdgeGeom {
             same_range: true,
             degenerated: false,
             pcurves: HashMap::new(),
+            pcurve_ranges: HashMap::new(),
         }
     }
     pub fn curve(&self) -> Arc<dyn Curve> { self.curve.clone() }
@@ -65,13 +71,29 @@ impl EdgeGeom {
     /// Attach the (single) pcurve of this edge on the face identified by
     /// `face_key`, replacing any previously attached pcurves.
     pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>) {
-        self.pcurves.insert(face_key, vec![c]);
+        self.pcurves.insert(face_key, vec![c.clone()]);
+        self.init_pcurve_range(face_key, Some(c.as_ref()));
     }
 
     /// Replace the pcurves of this edge on the face (one for a normal edge, two
     /// in forward-then-reversed order for a seam edge).
     pub fn set_pcurves(&mut self, face_key: usize, cs: Vec<Arc<dyn Curve2d>>) {
+        let first = cs.first().cloned();
         self.pcurves.insert(face_key, cs);
+        self.init_pcurve_range(face_key, first.as_deref());
+    }
+
+    /// `UpdateCurves` (`BRep_Builder.cxx:149-164`): new COS range is the 3D
+    /// range when finite, else the pcurve's own `[First, Last]`.
+    fn init_pcurve_range(&mut self, face_key: usize, pc: Option<&dyn Curve2d>) {
+        let (f, l) = if self.first.is_finite() && self.last.is_finite() {
+            (self.first, self.last)
+        } else if let Some(c) = pc {
+            (c.first_parameter(), c.last_parameter())
+        } else {
+            return;
+        };
+        self.pcurve_ranges.insert(face_key, (f, l));
     }
 
     /// The first pcurve on the face (the single pcurve of a normal edge).
@@ -166,6 +188,7 @@ impl GeometryRegistry {
                 same_range: g.same_range,
                 degenerated: g.degenerated,
                 pcurves: g.pcurves.clone(),
+                pcurve_ranges: g.pcurve_ranges.clone(),
             }
         })
     }
@@ -199,14 +222,43 @@ impl GeometryRegistry {
     /// The pcurve of edge `s` on the face identified by `face_key` (see
     /// `shape_key`), if one has been attached. For a seam edge this is the
     /// forward pcurve; use [`GeometryRegistry::edge_pcurves`] to get both.
+    ///
+    /// When no entry exists for `face_key`, a pcurve attached for another face
+    /// that shares the same surface handle is returned (`BRep_Tool::CurveOnSurface`
+    /// keys representations by `Geom_Surface`, not by face TShape).
     pub fn edge_pcurve(&self, s: &TopoShape, face_key: usize) -> Option<Arc<dyn Curve2d>> {
-        self.edges.read().unwrap().get(&key(s)).and_then(|g| g.get_pcurve(face_key))
+        self.edge_pcurves(s, face_key).into_iter().next()
     }
 
     /// All pcurves of edge `s` on the face identified by `face_key`
     /// (forward-then-reversed for a seam edge, one for a normal edge).
     pub fn edge_pcurves(&self, s: &TopoShape, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
-        self.edges.read().unwrap().get(&key(s)).map(|g| g.get_pcurves(face_key)).unwrap_or_default()
+        let want = self.faces.read().unwrap().get(&face_key).map(|g| g.surface.clone());
+        let edges = self.edges.read().unwrap();
+        let Some(g) = edges.get(&key(s)) else {
+            return Vec::new();
+        };
+        let direct = g.get_pcurves(face_key);
+        if !direct.is_empty() {
+            return direct;
+        }
+        let Some(want) = want else {
+            return Vec::new();
+        };
+        let candidates: Vec<(usize, Vec<Arc<dyn Curve2d>>)> = g
+            .pcurves
+            .iter()
+            .filter(|(&fk, _)| fk != face_key)
+            .map(|(&fk, cs)| (fk, cs.clone()))
+            .collect();
+        drop(edges);
+        let faces = self.faces.read().unwrap();
+        for (fk, cs) in candidates {
+            if faces.get(&fk).is_some_and(|fg| Arc::ptr_eq(&fg.surface, &want)) {
+                return cs;
+            }
+        }
+        Vec::new()
     }
 
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
@@ -222,6 +274,122 @@ impl GeometryRegistry {
     pub fn set_edge_pcurves(&self, s: &TopoShape, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
         if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
             g.set_pcurves(face_key, curves);
+        }
+    }
+
+    /// `BRep_Builder::Range(edge, face, first, last)` (`BRep_Builder.cxx:1121`).
+    pub fn set_pcurve_range(&self, s: &TopoShape, face_key: usize, first: f64, last: f64) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.pcurve_ranges.insert(face_key, (first, last));
+        }
+    }
+
+    /// COS representation `[First, Last]` for `face_key`, with the same
+    /// same-surface fallback as [`GeometryRegistry::edge_pcurve`].
+    pub fn pcurve_range(&self, s: &TopoShape, face_key: usize) -> Option<(f64, f64)> {
+        let edges = self.edges.read().unwrap();
+        let g = edges.get(&key(s))?;
+        if let Some(&r) = g.pcurve_ranges.get(&face_key) {
+            return Some(r);
+        }
+        let want = self.faces.read().unwrap().get(&face_key).map(|fg| fg.surface.clone());
+        let Some(want) = want else {
+            return None;
+        };
+        for (&fk, r) in &g.pcurve_ranges {
+            if fk != face_key
+                && self
+                    .faces
+                    .read()
+                    .unwrap()
+                    .get(&fk)
+                    .is_some_and(|fg| Arc::ptr_eq(&fg.surface, &want))
+            {
+                return Some(*r);
+            }
+        }
+        None
+    }
+
+    /// `BRep_Builder::SameRange`.
+    pub fn set_same_range(&self, s: &TopoShape, value: bool) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.same_range = value;
+        }
+    }
+
+    /// `BRep_Builder::SameParameter`.
+    pub fn set_same_parameter(&self, s: &TopoShape, value: bool) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.same_parameter = value;
+        }
+    }
+
+    /// `BRep_Builder::UpdateEdge` tolerance write.
+    pub fn set_edge_tolerance(&self, s: &TopoShape, tol: f64) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.tolerance = tol;
+        }
+    }
+
+    /// CurveOnSurface representations: surface, pcurve, COS `[first, last]`.
+    pub fn edge_pcurve_reps(
+        &self,
+        s: &TopoShape,
+    ) -> Vec<(Arc<dyn Surface>, Arc<dyn Curve2d>, f64, f64)> {
+        let edges = self.edges.read().unwrap();
+        let faces = self.faces.read().unwrap();
+        let Some(g) = edges.get(&key(s)) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (&fk, pcs) in &g.pcurves {
+            let Some(fg) = faces.get(&fk) else {
+                continue;
+            };
+            let (a, b) = g
+                .pcurve_ranges
+                .get(&fk)
+                .copied()
+                .unwrap_or((g.first, g.last));
+            for pc in pcs {
+                out.push((fg.surface.clone(), pc.clone(), a, b));
+            }
+        }
+        out
+    }
+
+    /// `ShapeBuild_Edge::RemovePCurve` — drop every pcurve of `edge` on the
+    /// same `Geom_Surface` handle as `face`.
+    pub fn remove_pcurves_on_surface(&self, edge: &TopoShape, face: &TopoShape) {
+        let Some(want) = self.face_surface(face) else {
+            return;
+        };
+        let drop_keys: Vec<usize> = {
+            let faces = self.faces.read().unwrap();
+            let edges = self.edges.read().unwrap();
+            let Some(g) = edges.get(&key(edge)) else {
+                return;
+            };
+            g.pcurves
+                .keys()
+                .copied()
+                .filter(|&fk| {
+                    faces
+                        .get(&fk)
+                        .map(|fg| Arc::ptr_eq(&fg.surface, &want))
+                        .unwrap_or(fk == key(face))
+                })
+                .collect()
+        };
+        if drop_keys.is_empty() {
+            return;
+        }
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(edge)) {
+            for fk in drop_keys {
+                g.pcurves.remove(&fk);
+                g.pcurve_ranges.remove(&fk);
+            }
         }
     }
 
@@ -256,6 +424,20 @@ impl GeometryRegistry {
 
     pub fn natural_restriction(&self, s: &TopoShape) -> bool {
         self.face_geom(s).map(|g| g.natural_restriction).unwrap_or(true)
+    }
+
+    /// `BRep_Builder::NaturalRestriction(face, flag)`.
+    pub fn set_natural_restriction(&self, s: &TopoShape, flag: bool) {
+        if let Some(g) = self.faces.write().unwrap().get_mut(&key(s)) {
+            g.natural_restriction = flag;
+        }
+    }
+
+    /// `BRep_Builder::UpdateFace` tolerance write.
+    pub fn set_face_tolerance(&self, s: &TopoShape, tol: f64) {
+        if let Some(g) = self.faces.write().unwrap().get_mut(&key(s)) {
+            g.tolerance = tol;
+        }
     }
 
     // ---- lifecycle ----

@@ -4,8 +4,13 @@
 //! pole grid element-wise. Evaluation uses Cox-de Boor basis functions in each
 //! parametric direction with a rational division when weights are present.
 
+use std::sync::Arc;
+
+use occt_core::bspl::eval;
 use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 
+use crate::bspline_curve::GeomBSplineCurve;
+use crate::curve::Curve;
 use crate::surface::Surface;
 
 /// Non-rational or rational tensor-product B-spline surface.
@@ -85,6 +90,155 @@ impl GeomBSplineSurface {
     pub fn nb_poles_u(&self) -> usize { self.poles.len() }
     pub fn nb_poles_v(&self) -> usize { self.poles.first().map_or(0, |r| r.len()) }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
+
+    /// Distinct knots and multiplicities from a flat knot vector.
+    pub fn unique_knots_mults(flat: &[f64]) -> (Vec<f64>, Vec<i32>) {
+        let mut knots = Vec::new();
+        let mut mults = Vec::new();
+        for &k in flat {
+            if knots.last() == Some(&k) {
+                if let Some(m) = mults.last_mut() {
+                    *m += 1;
+                }
+            } else {
+                knots.push(k);
+                mults.push(1);
+            }
+        }
+        (knots, mults)
+    }
+
+    /// `Geom_BSplineSurface` from unique knots + multiplicities.
+    pub fn from_poles_knots_mults(
+        poles: Vec<Vec<GpPnt>>,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        u_mults: Vec<i32>,
+        v_mults: Vec<i32>,
+        deg_u: usize,
+        deg_v: usize,
+    ) -> Result<Self, String> {
+        let flat_u = occt_core::bspl::banded_interp::knot_sequence(&u_knots, &u_mults, deg_u as i32);
+        let flat_v = occt_core::bspl::banded_interp::knot_sequence(&v_knots, &v_mults, deg_v as i32);
+        Self::new(poles, flat_u, flat_v, deg_u, deg_v)
+    }
+
+    /// `Geom_BSplineSurface::EvalDN` (`Geom_BSplineSurface_1.cxx:279-312`).
+    /// `UIndex`/`VIndex` are 0 so `LocateParameter` always runs. Knots are
+    /// already flat (`NoMults`). Periodic flags are not stored on this type.
+    pub fn eval_dn_bspl(&self, u: f64, v: f64, nu: i32, nv: i32) -> GpVec {
+        if nu + nv < 1 || nu < 0 || nv < 0 {
+            // cxx:281-284 throws `Geom_UndefinedDerivative`.
+            return GpVec::new(0.0, 0.0, 0.0);
+        }
+        let rat = self.weights.is_some();
+        occt_core::bspl::prepare_eval::dn(
+            u,
+            v,
+            nu,
+            nv,
+            0,
+            0,
+            &self.poles,
+            self.weights.as_deref(),
+            &self.knots_u,
+            &self.knots_v,
+            None,
+            None,
+            self.deg_u as i32,
+            self.deg_v as i32,
+            rat,
+            rat,
+            false,
+            false,
+        )
+    }
+
+    /// Distinct knots (`Geom_BSplineSurface` knot array, multiplicity collapsed).
+    fn unique_knots(knots: &[f64]) -> Vec<f64> {
+        let mut out = Vec::new();
+        for &k in knots {
+            if out.last().map_or(true, |p: &f64| (k - *p).abs() > 1e-14) {
+                out.push(k);
+            }
+        }
+        out
+    }
+
+    /// `Geom_BSplineSurface::UIso` (`Geom_BSplineSurface_1.cxx:598-635`).
+    pub fn u_iso(&self, u: f64) -> Result<GeomBSplineCurve, String> {
+        let nu = self.nb_poles_u();
+        let nv = self.nb_poles_v();
+        if nu == 0 || nv == 0 {
+            return Err("GeomBSplineSurface::u_iso: empty pole grid".into());
+        }
+        let mut cpoles = Vec::with_capacity(nv);
+        match &self.weights {
+            Some(w) => {
+                let mut cweights = Vec::with_capacity(nv);
+                for j in 0..nv {
+                    let col: Vec<GpPnt> = (0..nu).map(|i| self.poles[i][j]).collect();
+                    let cw: Vec<f64> = (0..nu).map(|i| w[i][j]).collect();
+                    cpoles.push(eval::eval_curve_rational(
+                        &col,
+                        &cw,
+                        &self.knots_u,
+                        self.deg_u,
+                        u,
+                    ));
+                    let wpts: Vec<GpPnt> = cw.iter().map(|&wi| GpPnt::new(wi, 0.0, 0.0)).collect();
+                    cweights.push(eval::eval_curve(&wpts, &self.knots_u, self.deg_u, u).x());
+                }
+                GeomBSplineCurve::rational(cpoles, cweights, self.knots_v.clone(), self.deg_v)
+                    .map_err(|e| e.to_string())
+            }
+            None => {
+                for j in 0..nv {
+                    let col: Vec<GpPnt> = (0..nu).map(|i| self.poles[i][j]).collect();
+                    cpoles.push(eval::eval_curve(&col, &self.knots_u, self.deg_u, u));
+                }
+                GeomBSplineCurve::new(cpoles, self.knots_v.clone(), self.deg_v)
+                    .map_err(|e| e.to_string())
+            }
+        }
+    }
+
+    /// `Geom_BSplineSurface::VIso` (`Geom_BSplineSurface_1.cxx:775-812`).
+    pub fn v_iso(&self, v: f64) -> Result<GeomBSplineCurve, String> {
+        let nu = self.nb_poles_u();
+        let nv = self.nb_poles_v();
+        if nu == 0 || nv == 0 {
+            return Err("GeomBSplineSurface::v_iso: empty pole grid".into());
+        }
+        let mut cpoles = Vec::with_capacity(nu);
+        match &self.weights {
+            Some(w) => {
+                let mut cweights = Vec::with_capacity(nu);
+                for i in 0..nu {
+                    let row = &self.poles[i];
+                    let rw = &w[i];
+                    cpoles.push(eval::eval_curve_rational(
+                        row,
+                        rw,
+                        &self.knots_v,
+                        self.deg_v,
+                        v,
+                    ));
+                    let wpts: Vec<GpPnt> = rw.iter().map(|&wi| GpPnt::new(wi, 0.0, 0.0)).collect();
+                    cweights.push(eval::eval_curve(&wpts, &self.knots_v, self.deg_v, v).x());
+                }
+                GeomBSplineCurve::rational(cpoles, cweights, self.knots_u.clone(), self.deg_u)
+                    .map_err(|e| e.to_string())
+            }
+            None => {
+                for i in 0..nu {
+                    cpoles.push(eval::eval_curve(&self.poles[i], &self.knots_v, self.deg_v, v));
+                }
+                GeomBSplineCurve::new(cpoles, self.knots_u.clone(), self.deg_u)
+                    .map_err(|e| e.to_string())
+            }
+        }
+    }
 }
 
 /// Clamped uniform knot vector for `n` poles of degree `p`
@@ -367,26 +521,98 @@ impl Surface for GeomBSplineSurface {
     }
 
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
-        let p = self.d0(u, v);
-        let (u0, u1) = self.u_range();
-        let (v0, v1) = self.v_range();
-        let hu = if u1 > u0 { (u1 - u0) * 1e-4 } else { 1e-6 };
-        let hv = if v1 > v0 { (v1 - v0) * 1e-4 } else { 1e-6 };
-        let pu = self.d0(u + hu, v);
-        let pm = self.d0(u - hu, v);
-        let pv = self.d0(u, v + hv);
-        let pn = self.d0(u, v - hv);
-        let du = GpVec::new(
-            (pu.x() - pm.x()) / (2.0 * hu),
-            (pu.y() - pm.y()) / (2.0 * hu),
-            (pu.z() - pm.z()) / (2.0 * hu),
-        );
-        let dv = GpVec::new(
-            (pv.x() - pn.x()) / (2.0 * hv),
-            (pv.y() - pn.y()) / (2.0 * hv),
-            (pv.z() - pn.z()) / (2.0 * hv),
-        );
-        (p, du, dv)
+        // `Geom_BSplineSurface::D1` / `BSplSLib::D1`. Non-rational uses
+        // `eval_surface_d1`. Rational uses homogeneous `A = w P` then
+        // `BSplSLib::RationalDerivative` first-order quotient.
+        let nu = self.poles.len();
+        if nu == 0 || self.poles[0].is_empty() {
+            return (GpPnt::zero(), GpVec::zero(), GpVec::zero());
+        }
+        let nv = self.poles[0].len();
+        let mut flat = Vec::with_capacity(nu * nv);
+        for row in &self.poles {
+            flat.extend_from_slice(row);
+        }
+        if let Some(w) = &self.weights {
+            let mut wflat = Vec::with_capacity(nu * nv);
+            for row in w {
+                wflat.extend_from_slice(row);
+            }
+            return occt_core::bspl::surface_rational::eval_surface_rational_d1(
+                &flat,
+                &wflat,
+                nu,
+                nv,
+                &self.knots_u,
+                &self.knots_v,
+                self.deg_u,
+                self.deg_v,
+                u,
+                v,
+            );
+        }
+        eval::eval_surface_d1(
+            &flat,
+            nu,
+            nv,
+            &self.knots_u,
+            &self.knots_v,
+            self.deg_u,
+            self.deg_v,
+            u,
+            v,
+        )
+    }
+
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        // `Geom_BSplineSurface::D2` / `BSplSLib::D2`. Non-rational uses
+        // `eval_surface_d2`. Rational uses homogeneous `A = w P` then
+        // `BSplSLib::RationalDerivative` second-order quotient.
+        let nu = self.poles.len();
+        if nu == 0 || self.poles[0].is_empty() {
+            return (
+                GpPnt::zero(),
+                GpVec::zero(),
+                GpVec::zero(),
+                GpVec::zero(),
+                GpVec::zero(),
+                GpVec::zero(),
+            );
+        }
+        let nv = self.poles[0].len();
+        let mut flat = Vec::with_capacity(nu * nv);
+        for row in &self.poles {
+            flat.extend_from_slice(row);
+        }
+        if let Some(w) = &self.weights {
+            let mut wflat = Vec::with_capacity(nu * nv);
+            for row in w {
+                wflat.extend_from_slice(row);
+            }
+            return occt_core::bspl::surface_rational::eval_surface_rational_d2(
+                &flat,
+                &wflat,
+                nu,
+                nv,
+                &self.knots_u,
+                &self.knots_v,
+                self.deg_u,
+                self.deg_v,
+                u,
+                v,
+            );
+        }
+        eval::eval_surface_d2(
+            &flat,
+            nu,
+            nv,
+            &self.knots_u,
+            &self.knots_v,
+            self.deg_u,
+            self.deg_v,
+            u,
+            v,
+        )
     }
 
     fn u_range(&self) -> (f64, f64) {
@@ -421,6 +647,91 @@ impl Surface for GeomBSplineSurface {
 
     fn clone_dyn(&self) -> Box<dyn Surface> {
         Box::new(self.clone())
+    }
+
+    fn is_bspline_surface(&self) -> bool {
+        true
+    }
+
+    fn osculating_bspline(&self) -> Option<GeomBSplineSurface> {
+        Some(self.clone())
+    }
+
+    fn eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> GpVec {
+        self.eval_dn_bspl(u, v, nu, nv)
+    }
+
+    fn is_u_closed(&self) -> bool {
+        let nu = self.poles.len();
+        if nu < 2 {
+            return false;
+        }
+        let a = &self.poles[0];
+        let b = &self.poles[nu - 1];
+        if a.len() != b.len() {
+            return false;
+        }
+        a.iter()
+            .zip(b.iter())
+            .all(|(p, q)| p.square_distance(q) <= 1e-14)
+    }
+
+    fn is_v_closed(&self) -> bool {
+        if self.poles.is_empty() || self.poles[0].len() < 2 {
+            return false;
+        }
+        let nv = self.poles[0].len();
+        self.poles.iter().all(|row| {
+            row.len() == nv && row[0].square_distance(&row[nv - 1]) <= 1e-14
+        })
+    }
+
+    fn u_iso_curve(&self, u: f64) -> Option<Arc<dyn Curve>> {
+        self.u_iso(u).ok().map(|c| Arc::new(c) as Arc<dyn Curve>)
+    }
+
+    fn v_iso_curve(&self, v: f64) -> Option<Arc<dyn Curve>> {
+        self.v_iso(v).ok().map(|c| Arc::new(c) as Arc<dyn Curve>)
+    }
+
+    fn u_degree(&self) -> i32 {
+        self.deg_u as i32
+    }
+    fn v_degree(&self) -> i32 {
+        self.deg_v as i32
+    }
+    fn nb_u_poles(&self) -> i32 {
+        self.nb_poles_u() as i32
+    }
+    fn nb_v_poles(&self) -> i32 {
+        self.nb_poles_v() as i32
+    }
+    fn nb_u_intervals(&self, _continuity: u8) -> i32 {
+        Self::unique_knots(&self.knots_u).len().saturating_sub(1) as i32
+    }
+    fn nb_v_intervals(&self, _continuity: u8) -> i32 {
+        Self::unique_knots(&self.knots_v).len().saturating_sub(1) as i32
+    }
+    fn u_intervals(&self, _continuity: u8) -> Vec<f64> {
+        Self::unique_knots(&self.knots_u)
+    }
+    fn v_intervals(&self, _continuity: u8) -> Vec<f64> {
+        Self::unique_knots(&self.knots_v)
+    }
+
+    fn uv_resolution(&self, r3d: f64) -> Option<(f64, f64)> {
+        let rational = self.weights.is_some();
+        Some(occt_core::bspl::bspline_surface_resolution(
+            &self.poles,
+            self.weights.as_deref(),
+            &self.knots_u,
+            &self.knots_v,
+            self.deg_u as i32,
+            self.deg_v as i32,
+            rational,
+            rational,
+            r3d,
+        ))
     }
 }
 

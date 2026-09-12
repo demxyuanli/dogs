@@ -7,3 +7,4 @@ license = "LGPL-2.1-only"
 
 [dependencies]
 occt-core = { path = "../occt-core" }
+occt-geom2d = { path = "../occt-geom2d" }

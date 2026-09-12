@@ -73,6 +73,32 @@ impl GpCylinder {
         self.pos.is_direct()
     }
 
+    /// `gp_Cylinder::Coefficients` — local X^2 + Y^2 - R^2 = 0 in world coords.
+    pub fn coefficients(&self) -> [f64; 10] {
+        let mut t = GpTrsf::identity();
+        t.set_transformation(&self.pos);
+        let t11 = t.value(1, 1);
+        let t12 = t.value(1, 2);
+        let t13 = t.value(1, 3);
+        let t14 = t.value(1, 4);
+        let t21 = t.value(2, 1);
+        let t22 = t.value(2, 2);
+        let t23 = t.value(2, 3);
+        let t24 = t.value(2, 4);
+        [
+            t11 * t11 + t21 * t21,
+            t12 * t12 + t22 * t22,
+            t13 * t13 + t23 * t23,
+            t11 * t12 + t21 * t22,
+            t11 * t13 + t21 * t23,
+            t12 * t13 + t22 * t23,
+            t11 * t14 + t21 * t24,
+            t12 * t14 + t22 * t24,
+            t13 * t14 + t23 * t24,
+            t14 * t14 + t24 * t24 - self.radius * self.radius,
+        ]
+    }
+
     pub fn u_reverse(&mut self) {
         self.pos.x_reverse();
     }

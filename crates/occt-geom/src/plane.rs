@@ -18,4 +18,5 @@ impl Surface for GeomPlane {
     fn continuity(&self) -> u8 { 3 }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
+    fn gp_pln(&self) -> Option<GpPln> { Some(self.pos.clone()) }
 }

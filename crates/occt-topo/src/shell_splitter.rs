@@ -12,10 +12,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::abs::Orientation;
 use crate::builder::TopoBuilder;
 use crate::connexity_block::ConnexityBlock;
 use crate::shape::{Edge, Face, Shell, TopoShape, Vertex};
-use crate::topo_tools_full::{edge_vertices, edges_of, faces_of, is_same, vertex_position};
+use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::{edge_vertices, edges_of, faces_of, vertex_position};
 
 /// Vertex identity: 3D coordinates quantized onto a `1e-6` grid.
 pub(crate) type VKey = (i64, i64, i64);
@@ -56,14 +58,17 @@ fn face_edge_keys(f: &Face) -> HashSet<EKey> {
     edges_of(&f.0).into_iter().map(|e| edge_key(&e)).collect()
 }
 
-/// Build a shell containing `faces` (in order) and mark it closed.
+/// Build a shell containing `faces` (in order). Closed flag is set only when
+/// `BRep_Tool::IsClosed` holds (`ShellSplitter.cxx:383-386`).
 fn make_shell_from_faces(faces: &[Face]) -> Shell {
     let bld = TopoBuilder::new();
     let mut shell = Shell::new();
     for f in faces {
         bld.add_face(&mut shell, f);
     }
-    shell.0.set_closed(true);
+    if !crate::algo_tools::AlgoTools::is_open_shell(&shell.0) {
+        shell.0.set_closed(true);
+    }
     shell
 }
 
@@ -120,7 +125,9 @@ impl ShellSplitter {
         &self.blocks
     }
 
-    /// Expand the start elements into a deduplicated list of faces.
+    /// Expand the start elements into faces, unique by TShape+orientation
+    /// (`IsEqual`). FORWARD and REVERSED of the same TShape are both kept so
+    /// `MakeConnexityBlocks` can mark the block non-regular (`_cxx:207-210`).
     fn collect_faces(&self) -> Vec<Face> {
         let mut raw: Vec<Face> = Vec::new();
         for s in &self.start_shapes {
@@ -130,10 +137,16 @@ impl ShellSplitter {
                 raw.extend(faces_of(s));
             }
         }
-        // Deduplicate by TShape identity (a face added twice is the same face).
+        let mut seen: HashSet<(usize, u8)> = HashSet::new();
         let mut out: Vec<Face> = Vec::new();
         for f in raw {
-            if !out.iter().any(|g| is_same(&g.0, &f.0)) {
+            let o = match f.0.orientation() {
+                Orientation::Forward => 0,
+                Orientation::Reversed => 1,
+                Orientation::Internal => 2,
+                Orientation::External => 3,
+            };
+            if seen.insert((GeometryRegistry::shape_key(&f.0), o)) {
                 out.push(f);
             }
         }
@@ -226,94 +239,10 @@ impl ShellSplitter {
         Ok(())
     }
 
-    /// Split one connexity block into a set of closed shells.
-    ///
-    /// Mirrors `BOPAlgo_ShellSplitter::SplitBlock`:
-    /// 1. faces that carry a free edge (an edge shared by no other face of the
-    ///    block) cannot belong to a closed shell and are dropped, iteratively;
-    /// 2. the remaining faces are grouped by edge connectivity into shells —
-    ///    two faces belong to the same shell only when their shared edge is
-    ///    used by exactly two faces of the block, which keeps closed shells
-    ///    that touch along a multi-connected edge apart.
-    ///
-    /// The shells are stored in `block.loops()`.
-    ///
-    /// ponytail: the OCCT angle-based face selection at multi-connected edges
-    /// is replaced by the "shared edge used by exactly two faces" rule. That
-    /// separates shells glued along an edge, but not shells glued along a
-    /// face or by non-manifold vertex contact; add the dihedral-angle pass if
-    /// that is ever needed.
+    /// Split one connexity block into closed shells
+    /// (`BOPAlgo_ShellSplitter::SplitBlock`).
     pub fn split_block(block: &mut ConnexityBlock) {
-        block.change_loops_mut().clear();
-        let shapes = block.shapes().to_vec();
-        let faces: Vec<Face> = shapes.iter().map(|s| Face(s.clone())).collect();
-        let n = faces.len();
-        if n == 0 {
-            return;
-        }
-        let face_keys: Vec<HashSet<EKey>> = faces.iter().map(face_edge_keys).collect();
-        let mut edge_faces: HashMap<EKey, Vec<usize>> = HashMap::new();
-        for (i, keys) in face_keys.iter().enumerate() {
-            for &k in keys {
-                edge_faces.entry(k).or_default().push(i);
-            }
-        }
-        // 1. Remove faces with free edges, iteratively.
-        let mut alive = vec![true; n];
-        loop {
-            let mut removed_any = false;
-            for i in 0..n {
-                if !alive[i] {
-                    continue;
-                }
-                let free = face_keys[i].iter().any(|&k| {
-                    let cnt = edge_faces
-                        .get(&k)
-                        .map_or(0, |v| v.iter().filter(|&&j| alive[j]).count());
-                    cnt < 2
-                });
-                if free {
-                    alive[i] = false;
-                    removed_any = true;
-                }
-            }
-            if !removed_any {
-                break;
-            }
-        }
-        // 2. Extract edge-connected closed components.
-        let mut visited = vec![false; n];
-        for start in 0..n {
-            if !alive[start] || visited[start] {
-                continue;
-            }
-            let mut comp: Vec<usize> = Vec::new();
-            let mut stack = vec![start];
-            visited[start] = true;
-            while let Some(i) = stack.pop() {
-                comp.push(i);
-                for &k in &face_keys[i] {
-                    let Some(neigh) = edge_faces.get(&k) else { continue };
-                    // Only a bridge edge shared by exactly two alive faces
-                    // connects two faces of the same shell.
-                    if neigh.iter().filter(|&&j| alive[j]).count() != 2 {
-                        continue;
-                    }
-                    for &j in neigh {
-                        if alive[j] && !visited[j] {
-                            visited[j] = true;
-                            stack.push(j);
-                        }
-                    }
-                }
-            }
-            if comp.is_empty() {
-                continue;
-            }
-            let shell_faces: Vec<Face> = comp.iter().map(|&i| faces[i].clone()).collect();
-            let shell = make_shell_from_faces(&shell_faces);
-            block.change_loops_mut().push(shell.0);
-        }
+        crate::shell_splitter_block::split_block(block);
     }
 }
 

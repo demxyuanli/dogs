@@ -12,7 +12,8 @@ use occt_geom::{Curve, Surface};
 
 use crate::abs::ShapeType;
 use crate::brep_surface::{face_is_planar, face_plane};
-use crate::shape::{Edge, Face, TopoShape};
+use crate::iterator::cumulated_children;
+use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
@@ -480,13 +481,13 @@ pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64,
     let v_period = if sv0.is_finite() && sv1.is_finite() && sv1 > sv0 { sv1 - sv0 } else { 0.0 };
     let mut full_period = false;
     let mut full_v_period = false;
-    for w in f.tshape.read().unwrap().children.iter() {
+    for w in cumulated_children(&f.0) {
         if w.shape_type() != ShapeType::Wire { continue; }
-        for e in w.tshape.read().unwrap().children.iter() {
+        for e in cumulated_children(&w) {
             if e.shape_type() != ShapeType::Edge { continue; }
             let edge = Edge(e.clone());
             let Ok(pc) = crate::pcurve_full::make_pcurve_full(&edge, f) else { continue };
-            let (a0, a1) = reg().edge_parameters(e);
+            let (a0, a1) = reg().edge_parameters(&e);
             if !(a0.is_finite() && a1.is_finite() && a1 > a0) { continue; }
             // Sample the pcurve along the edge. The pcurve of a full-circle
             // edge is unwrapped monotonically (u runs 0 → −2π), so its UV

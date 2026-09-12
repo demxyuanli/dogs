@@ -40,6 +40,14 @@ impl GpXY {
     #[inline] pub fn set_linear_form_2(&mut self, a1:f64, xy1:&Self, a2:f64, xy2:&Self) { self.x=a1*xy1.x+a2*xy2.x; self.y=a1*xy1.y+a2*xy2.y; }
     #[inline] pub fn set_linear_form_add(&mut self, xy1:&Self, xy2:&Self) { self.x=xy1.x+xy2.x; self.y=xy1.y+xy2.y; }
     #[inline] pub fn set_linear_form_add_scaled(&mut self, a1:f64, xy1:&Self, xy2:&Self) { self.x=a1*xy1.x+xy2.x; self.y=a1*xy1.y+xy2.y; }
+    /// `gp_XY::SetLinearForm(A1, XY1, A2, XY2, XY3)` — `A1*XY1 + A2*XY2 + XY3`.
+    #[inline] pub fn set_linear_form_3(&mut self, a1:f64, xy1:&Self, a2:f64, xy2:&Self, xy3:&Self) {
+        self.x = a1 * xy1.x + a2 * xy2.x + xy3.x;
+        self.y = a1 * xy1.y + a2 * xy2.y + xy3.y;
+    }
+    /// `gp_XY::SetLinearForm(A1, XY1, XY2)` already exists as `set_linear_form_add_scaled`.
+    /// `gp_XY::SetLinearForm(A1, XY1)` — scale a single vector.
+    #[inline] pub fn set_linear_form_1(&mut self, a1:f64, xy1:&Self) { self.x=a1*xy1.x; self.y=a1*xy1.y; }
 }
 
 impl Default for GpXY { #[inline] fn default() -> Self { Self::zero() } }

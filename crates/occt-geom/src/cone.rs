@@ -7,6 +7,8 @@ pub struct GeomCone { pos: GpCone }
 
 impl GeomCone {
     pub fn new(c: GpCone) -> Self { Self { pos: c } }
+    /// `Geom_ConicalSurface::Cone`.
+    pub fn cone(&self) -> &GpCone { &self.pos }
 }
 
 impl Surface for GeomCone {
@@ -17,7 +19,11 @@ impl Surface for GeomCone {
     fn u_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }
     fn v_range(&self) -> (f64, f64) { (f64::NEG_INFINITY, f64::INFINITY) }
     fn is_u_periodic(&self) -> bool { true }
+    fn cone_ref(&self) -> Option<(f64, f64)> {
+        Some((self.pos.radius, self.pos.semi_angle))
+    }
     fn continuity(&self) -> u8 { 3 }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
+    fn gp_cone(&self) -> Option<GpCone> { Some(self.pos.clone()) }
 }

@@ -1,10 +1,8 @@
 //! Split a set of edges into closed wires (loops).
 //!
-//! Ports `BOPAlgo_WireSplitter` (TKBO). The input is a `WireEdgeSet` — the
-//! edges lying on a face (its outer boundary plus any hole boundaries).
-//! `perform()` chains the edges greedily by vertex adjacency into closed
-//! wires, handling branch vertices by closing the loop that leads back to an
-//! already-visited vertex.
+//! Ports `BOPAlgo_WireSplitter` (TKBO). `perform()` runs MakeWire on a
+//! regular block (even vertex degree after geometric dedup) and
+//! `SplitBlock` / `Path` (`wire_splitter_block`) on an irregular block.
 //!
 //! Edges are matched by the coordinates of their endpoints (order
 //! independent for identity, order aware for the chaining), taken from
@@ -271,6 +269,14 @@ impl WireSplitter {
             return Err("BOPAlgo_WireSplitter::perform: no input edges".to_string());
         }
         let regular = is_regular_block(&self.wes.edges);
+        // OCCT MakeWires: a regular connexity block is MakeWire; an irregular
+        // block (odd-degree vertices) always runs SplitBlock when a face is set.
+        if !regular {
+            if let Some(face) = self.wes.face().cloned() {
+                self.wires = crate::wire_splitter_block::split_block(&face, &self.wes.edges)?;
+                return Ok(());
+            }
+        }
         let edges = if regular {
             dedup_edges(&self.wes.edges)
         } else {
@@ -283,145 +289,12 @@ impl WireSplitter {
             }
             Err(greedy_err) => {
                 if let Some(face) = self.wes.face().cloned() {
-                    if let Ok(w) = Self::split_block_2d(&self.wes.edges, &face) {
-                        self.wires = w;
-                        return Ok(());
-                    }
+                    self.wires = crate::wire_splitter_block::split_block(&face, &self.wes.edges)?;
+                    return Ok(());
                 }
                 Err(greedy_err)
             }
         }
-    }
-
-    /// Split the edge set into the face's region loops by the 2-D angle walk
-    /// (`BOPAlgo_WireSplitter::SplitBlock`).
-    ///
-    /// Coincident edges (the on-face edges are supplied FORWARD and REVERSED)
-    /// are deduplicated, then each edge becomes two directed half-edges. At
-    /// every vertex the outgoing half-edges are ordered by their angle in the
-    /// face plane, and each loop follows the edge with the smallest clockwise
-    /// angle from the incoming direction — the same region-following rule as
-    /// the planar arrangement. The bounded regions (positive signed area in the
-    /// plane) are returned as wires of the input edges, so the shared section
-    /// edges keep their identity.
-    fn split_block_2d(edges: &[Edge], face: &Face) -> Result<Vec<TopoShape>, String> {
-        use occt_core::gp::GpPnt2d;
-        let pln = crate::brep_surface::face_plane(face)
-            .ok_or_else(|| "split_block_2d: face is not planar".to_string())?;
-        let xd = *pln.position().x_direction().xyz();
-        let yd = *pln.position().y_direction().xyz();
-        let loc = pln.position().location();
-        let proj = |p: &occt_core::gp::GpPnt| -> GpPnt2d {
-            let v = p.coord.subtracted(&loc.coord);
-            GpPnt2d::new(v.dot(&xd), v.dot(&yd))
-        };
-
-        // Deduplicate coincident edges (keep one representative per segment).
-        let mut dedup: Vec<Edge> = Vec::new();
-        let mut seen: HashSet<(VKey, VKey)> = HashSet::new();
-        let mut ends2: Vec<(GpPnt2d, GpPnt2d)> = Vec::new();
-        for e in edges {
-            let (a, b) = edge_vertices(e);
-            let (Some(av), Some(bv)) = (a, b) else { continue };
-            let (ka, kb) = (vertex_key(&av), vertex_key(&bv));
-            let key = (ka.min(kb), ka.max(kb));
-            if seen.insert(key) {
-                dedup.push(e.clone());
-                ends2.push((proj(&vertex_position(&av)), proj(&vertex_position(&bv))));
-            }
-        }
-        if dedup.len() < 3 {
-            return Err("split_block_2d: too few distinct edges".to_string());
-        }
-
-        // Directed half-edges: 2i = (a->b), 2i+1 = (b->a).
-        let ends: Vec<EndKey> = dedup.iter().map(edge_end_keys).collect();
-        let he = dedup.len() * 2;
-        let tail = |h: usize| -> VKey { if h % 2 == 0 { ends[h / 2].0 } else { ends[h / 2].1 } };
-        let head = |h: usize| -> VKey { if h % 2 == 0 { ends[h / 2].1 } else { ends[h / 2].0 } };
-        let angle2 = |h: usize| -> f64 {
-            let (p0, p1) = ends2[h / 2];
-            let (u, v) = if h % 2 == 0 { (p0, p1) } else { (p1, p0) };
-            (v.y() - u.y()).atan2(v.x() - u.x())
-        };
-        let mut out_at: HashMap<VKey, Vec<usize>> = HashMap::new();
-        for h in 0..he {
-            out_at.entry(tail(h)).or_default().push(h);
-        }
-        let next = |h: usize| -> usize {
-            let v = head(h);
-            let rev = angle2(h ^ 1);
-            let mut best: Option<usize> = None;
-            let mut best_delta = std::f64::consts::TAU;
-            for &h2 in out_at.get(&v).map(|l| l.as_slice()).unwrap_or(&[]) {
-                if h2 == (h ^ 1) {
-                    continue;
-                }
-                let mut delta = rev - angle2(h2);
-                if delta <= 0.0 {
-                    delta += std::f64::consts::TAU;
-                }
-                if delta < best_delta {
-                    best_delta = delta;
-                    best = Some(h2);
-                }
-            }
-            best.unwrap_or(h ^ 1)
-        };
-
-        let mut used = vec![false; he];
-        let mut loops: Vec<(Vec<usize>, f64)> = Vec::new();
-        for h0 in 0..he {
-            if used[h0] {
-                continue;
-            }
-            let mut order: Vec<usize> = Vec::new();
-            let mut h = h0;
-            loop {
-                if used[h] {
-                    break;
-                }
-                used[h] = true;
-                order.push(h / 2);
-                h = next(h);
-                if h == h0 {
-                    break;
-                }
-            }
-            if order.len() < 3 {
-                continue;
-            }
-            let area = order
-                .iter()
-                .map(|&i| {
-                    let (p0, p1) = ends2[i];
-                    p0.x() * p1.y() - p1.x() * p0.y()
-                })
-                .sum::<f64>();
-            loops.push((order, area));
-        }
-        // The unbounded face's loop has the largest |area| (the face's own
-        // boundary); drop it, keeping the bounded regions regardless of the
-        // plane's orientation.
-        let mut max_i = 0;
-        for (k, (_, a)) in loops.iter().enumerate() {
-            if a.abs() > loops[max_i].1.abs() {
-                max_i = k;
-            }
-        }
-        loops.remove(max_i);
-        let b = TopoBuilder::new();
-        let mut wires: Vec<TopoShape> = Vec::new();
-        for (order, _) in loops {
-            let wire_edges: Vec<Edge> = order.iter().map(|&i| dedup[i].clone()).collect();
-            let w = b.make_wire(&wire_edges);
-            w.0.set_closed(true);
-            wires.push(w.0);
-        }
-        if wires.is_empty() {
-            return Err("split_block_2d: no bounded region loops".to_string());
-        }
-        Ok(wires)
     }
 
     /// Chain the given edges by vertex adjacency into one closed wire.
@@ -536,17 +409,21 @@ impl WireSplitter {
         Ok(w.0)
     }
 
-    /// Split all `edges` of `face` into a set of closed wires (the outer
-    /// loop plus any hole loops). The face is used only as an edge source.
-    pub fn split_block(_face: &Face, edges: Vec<Edge>) -> Result<Vec<TopoShape>, String> {
-        Self::split_edges(edges)
+    /// `BOPAlgo_WireSplitter::SplitBlock`.
+    pub fn split_block(face: &Face, edges: Vec<Edge>) -> Result<Vec<TopoShape>, String> {
+        crate::wire_splitter_block::split_block(face, &edges)
     }
 
     /// Build the closed wires of `face` — the outer loop plus, for a face
     /// with holes, one loop per hole.
     pub fn make_wires(face: &Face) -> Result<Vec<TopoShape>, String> {
-        let edges = edges_of(&face.0);
-        Self::split_block(face, edges)
+        let mut wes = WireEdgeSet::new();
+        wes.set_face(face.clone());
+        wes.add_edges(&edges_of(&face.0));
+        let mut ws = Self::new();
+        ws.set_wes(wes);
+        ws.perform()?;
+        Ok(ws.wires().to_vec())
     }
 }
 
@@ -594,6 +471,7 @@ fn wire_chains_closed(wire: &TopoShape) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abs::Orientation;
     use crate::brep_extrema::test_box::unit_box;
     use crate::shape::Wire;
     use crate::topo_tools_full::edges_of;
@@ -724,6 +602,28 @@ mod tests {
             assert!(w.closed());
             assert!(wire_chains_closed(w));
         }
+
+        // Covering-style WES (`BuildSplitFaces` 1.1 + 1.2): outer boundary
+        // plus IN hole edges FORWARD and REVERSED. A regular block must
+        // still walk the annulus (outer + inner) after dedup.
+        let mut wes = WireEdgeSet::new();
+        wes.set_face(face.clone());
+        wes.add_edges(&outer_edges);
+        for e in &inner_edges {
+            wes.add_edges(&[e.clone()]);
+            let mut rev = e.clone();
+            rev.0.set_orientation(Orientation::Reversed);
+            wes.add_edges(&[rev]);
+        }
+        let mut ws = WireSplitter::new();
+        ws.set_wes(wes);
+        ws.perform().expect("IN + boundary walks the annulus");
+        assert_eq!(ws.wires().len(), 2, "outer loop and hole loop from IN+boundary");
+        for w in ws.wires() {
+            assert_eq!(edges_of(w).len(), 4);
+            assert!(w.closed());
+            assert!(wire_chains_closed(w));
+        }
     }
 
     #[test]
@@ -744,24 +644,26 @@ mod tests {
     #[test]
     fn split_block_splits_square_by_vertical_line() {
         let b = TopoBuilder::new();
-        // Square 0..1, section line x=0.5 from z=0 to z=1 (boundary split there).
-        let face = planar_face(&[b.make_wire(&[
-            b.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(0.5, 0.0, 0.0)),
-            b.make_edge_segment(&GpPnt::new(0.5, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 0.0)),
-            b.make_edge_segment(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 0.0)),
-            b.make_edge_segment(&GpPnt::new(1.0, 1.0, 0.0), &GpPnt::new(0.5, 1.0, 0.0)),
-            b.make_edge_segment(&GpPnt::new(0.5, 1.0, 0.0), &GpPnt::new(0.0, 1.0, 0.0)),
-            b.make_edge_segment(&GpPnt::new(0.0, 1.0, 0.0), &GpPnt::new(0.0, 0.0, 0.0)),
-        ])]);
-        let section = b.make_edge_segment(&GpPnt::new(0.5, 0.0, 0.0), &GpPnt::new(0.5, 1.0, 0.0));
-        let edges = edges_of(&face.0);
-        let mut all = edges.clone();
+        let p = [
+            b.make_vertex(GpPnt::new(0.0, 0.0, 0.0), 0.0),
+            b.make_vertex(GpPnt::new(0.5, 0.0, 0.0), 0.0),
+            b.make_vertex(GpPnt::new(1.0, 0.0, 0.0), 0.0),
+            b.make_vertex(GpPnt::new(1.0, 1.0, 0.0), 0.0),
+            b.make_vertex(GpPnt::new(0.5, 1.0, 0.0), 0.0),
+            b.make_vertex(GpPnt::new(0.0, 1.0, 0.0), 0.0),
+        ];
+        let gp = |i: usize| crate::topo_tools_full::vertex_position(&p[i]);
+        let e = |i: usize, j: usize| b.make_edge_segment_with_vertices(&gp(i), &gp(j), &p[i], &p[j]);
+        let boundary = [e(0, 1), e(1, 2), e(2, 3), e(3, 4), e(4, 5), e(5, 0)];
+        let face = planar_face(&[b.make_wire(&boundary)]);
+        let section = e(1, 4);
+        let mut all = edges_of(&face.0);
         all.push(section.clone());
-        all.push(Edge(section.0.clone()));
-        // The SplitBlock angle walk recovers the two regions of the split
-        // square (the greedy chaining of `make_wire` cannot).
-        let wires = WireSplitter::split_block_2d(&all, &face).expect("split block 2d");
-        assert_eq!(wires.len(), 2, "the square splits into two pieces");
+        let mut rev = section;
+        rev.0.set_orientation(Orientation::Reversed);
+        all.push(rev);
+        let wires = WireSplitter::split_block(&face, all).expect("split block");
+        assert_eq!(wires.len(), 2, "the square splits into two pieces, got {}", wires.len());
         for w in &wires {
             assert!(w.closed());
             assert!(wire_chains_closed(w));

@@ -42,6 +42,8 @@ impl TShape {
     pub fn set_closed(&mut self, v: bool) { self.flags.closed = v; }
     pub fn infinite(&self) -> bool { self.flags.infinite }
     pub fn set_infinite(&mut self, v: bool) { self.flags.infinite = v; }
+    pub fn modified(&self) -> bool { self.flags.modified }
+    pub fn set_modified(&mut self, v: bool) { self.flags.modified = v; }
     pub fn nb_children(&self) -> usize { self.children.len() }
     pub fn set_location(&mut self, l: &TopLocLocation) { self.location = l.clone(); }
     pub fn child(&self, i: usize) -> Option<TopoShape> { self.children.get(i).cloned() }

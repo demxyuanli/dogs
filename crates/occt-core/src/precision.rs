@@ -13,6 +13,8 @@ pub const PCONFUSION: f64 = CONFUSION * 0.01;
 pub const PINTERSECTION: f64 = INTERSECTION * 0.01;
 pub const PAPPROXIMATION: f64 = APPROXIMATION * 0.01;
 pub const RESOLUTION: f64 = 1e-12;
+/// `RealSmall()` (`Standard_Real.hxx:132-135`) = `DBL_MIN`.
+pub const REAL_SMALL: f64 = f64::MIN_POSITIVE;
 
 pub struct Precision;
 
@@ -32,4 +34,20 @@ impl Precision {
     #[inline] pub fn is_infinite(r: f64) -> bool { r.abs() >= (0.5 * INFINITE) }
     #[inline] pub const fn is_positive_infinite(r: f64) -> bool { r >= (0.5 * INFINITE) }
     #[inline] pub const fn is_negative_infinite(r: f64) -> bool { r <= -(0.5 * INFINITE) }
+}
+
+/// `Epsilon(theValue)` (`Standard_Real.hxx:242-246`).
+pub fn epsilon(value: f64) -> f64 {
+    if value == 0.0 {
+        return f64::MIN_POSITIVE;
+    }
+    if !value.is_finite() {
+        return f64::NAN;
+    }
+    let next = f64::from_bits(value.to_bits() + 1);
+    if value >= 0.0 {
+        next - value
+    } else {
+        value - next
+    }
 }

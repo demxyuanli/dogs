@@ -6,7 +6,7 @@
 
 | 管线 | 入口 | 使用 BOPDS/BOPAlgo | shell 闭合 |
 |---|---|---|---|
-| **平面布尔** | `bop_builder::boolean`（bop_builder.rs:823） | ❌ 不 import bopds/bop_build_* | ❌ TShape 指针计数，跨面边不统一 → 不闭合 |
+| **平面布尔** | `bop_builder::boolean` → `bop_builder2::builder_bop`（legacy 2D 排列仅作错误回退） | ✅ bopds + bop_build_faces/common/solids | ✅ `ShellSplitter` + 共面片跨 solid 合并 |
 | **通用 fuse** | `bop_builder2::BopBuilder::build_bop`（bop_builder2.rs:411） | ✅ bopds + bop_build_faces/common/solids | ✅ `ShellSplitter` + `close_open_shells`（几何 EKey 身份） |
 
 **正确的机制已经移植**（bop_builder2 路径：`fill_images_vertices→edges→faces→solids`，BOPDS pave-block 边分裂、`shapes_sd` 顶点统一、几何 shell 闭合）。平面 `bop_builder::boolean` 是**另一套简化重复实现**，未接入。
@@ -111,8 +111,8 @@
   2. **B1 已修 ✅**：`pave_intersect::perform_ff` 建 section 边后，把 section 顶点加到含它的边界边 pave blocks（`vertex_on_edge`+`add_ext_pave`+`split_pave_blocks_impl`）。实测 8/24 边界边被分裂（之前 0）。这是 OCCT `PerformFF` 后 `UpdatePaveBlocks` 步骤的忠实移植。
   3. **B2 部分 ✅**：`wire_splitter::split_block_2d`——OCCT `BOPAlgo_WireSplitter::SplitBlock` 的角走环移植（dedupe 边 → 半边界 → 面 2D 角 → 最小 CW 走环，丢弃最大 |area| 无界面）。`perform` 在贪心失败时回退。隔离测试 `split_block_splits_square_by_vertical_line` 通过。**但管线复杂边集仍有 4 面失败**（section 边悬空/边界边多分裂产生 9 条唯一边，角走环只找到 1 个环）。
   4. **B3 未做**：下游实体装配（fuse 曾 euler=32 vol_m=0.5 应 1.5）——B1+B2 修好后需重测。
-- **现状**：手写 `bop_builder::boolean` 仍是正确路径（1266 测试绿）；`bop_builder2` 合并为多会话长线工作。
-- **B2 剩余调查**：管线面的 section 边端点为何未连上边界（B1 的 `vertex_on_edge` 容差 vs section 顶点实际位置）；角走环对 9 条唯一边的边集只产出 1 个环。
+**绿路径（2026-08-30）**：`bop_builder::boolean` 只走 `bop_builder2::builder_bop`（`BOPAlgo_BOP`）。手写 2D 排列 `boolean_planar_legacy` 不再作为 BOPAlgo 失败/未闭合时的回退。`myShapesSD.Bind` 含代表面自身（`bind_shapes_sd` identity），`BuildDraftSolid` 对 SD 面走 `IsSplitToReverseWithWarn`。`BRepPrimBox::make_box_corner` 与 `make_box` 共用 `build_box`（不再走 prism），重叠盒子两条实体 FillIn3D 均为 IN=1；`BuildSplitSolids` intern overlap 后 Fuse 交出 1 个闭合 solid 体积 1.5。Cut/Common 对同一组几何走 `BuildRC`（不走 `BuildSolid`）：`cut_overlapping_boxes` 与 `common_overlapping_boxes` 各 1 个闭合 solid、体积 0.5。`fuse_box_cylinder_is_closed_solid` 与 `fuse_overlapping_boxes` 均在 BOPAlgo 路径下闭合。
+- **B2 剩余调查**：`BuildSplitFaces` 已按 OCCT 1.2 In + 1.3 Sc 收集边（圆柱底盖落在 box 顶上的边是 `FaceInfoIn`，先前只读 `PaveBlocksSc` 导致顶面不剖分）。`BOPDS_CommonBlock` 的 `myFaces` 已与边索引分开；EF 重合走 `FillMap`+`PerformCommonBlocks` 把面挂到 common block。`PerformFF` 开头已按 OCCT 对 fence 面调用 `UpdateFaceInfoOn` + `UpdateFaceInfoIn`（清 IN 后用 VF + EF common block 重建 `PaveBlocksIn`/`VerticesIn`）。covering 面的 `WireSplitter::perform` 已核对：外环 + IN 孔边 FWD/REV 能走出环面。
 
 ### 翻译边界图：`PaveFiller::PerformInternal` 序列对照（2026-08-06）
 用户指引：**如实翻译，不修具体问题，沿 OCC 源码路径找边界**。对照 `/d/source/occt-src/.../BOPAlgo/BOPAlgo_PaveFiller.cxx:234`：
@@ -123,15 +123,15 @@
 | PerformVV/VE | perform_vv/ve | ✅ |
 | **UpdatePaveBlocksWithSDVertices**（VE/EE/VF/EF 后 + MakeSplitEdges 后） | `update_pave_blocks_with_sd_vertices`（bopds.rs:1265） | ✅ 已补（2026-08-06）——只重定向块界索引到 SD 代表，不分裂 |
 | PerformEE/VF/EF | perform_ee/vf/ef（内部 `split_pave_blocks_impl`，对齐 OCCT `SplitPaveBlocks`） | ✅ EE/EF 分裂已移入 stage |
-| **UpdateInterfsWithSDVertices** | —（Rust DS 用扁平 `HashSet<(usize,usize)>`，无按类型 `Interf*` 数组） | ❌ 缺失（需先建干涉数组） |
+| **UpdateInterfsWithSDVertices** | `BopdsDS::update_interfs_with_sd_vertices` + typed `InterfVV/VE/VF/EE/EF`；EE/EF 在 `PerformNewVertices` 后 `SetIndexNew` | ✅ 已补（2026-08-26） |
 | **RepeatIntersection** | — | ❌ 缺失 |
-| **ForceInterfEE / ForceInterfEF** | — | ❌ 缺失 |
-| PerformFF | perform_ff（**直接建 section 边**） | ⚠️ 偏差：OCCT 只记 `BOPDS_Curve`/`BOPDS_Point` |
-| **UpdateBlocksWithSharedVertices** | — | ❌ 缺失 |
-| **RefineFaceInfoIn** | — | ❌ 缺失 |
+| **ForceInterfEE / ForceInterfEF** | `force_interf_ee` / `force_interf_ef`（无参）+ `ForceInterfEF(theMPB, theAddInterf)` 供 `PutSEInOtherFaces` | ✅ 无参在 FF 前；section 重载 `theAddInterf=false` |
+| PerformFF | 写 `InterfFF`+`BOPDS_Curve`（不造边） | ✅ 边改由 `MakeBlocks`/`PostTreatFF` 生成 |
+| **UpdateBlocksWithSharedVertices** | `update_blocks_with_shared_vertices`（destructive 默认 no-op） | ✅ |
+| **RefineFaceInfoIn** | `BopdsDS::refine_face_info_in`（FF 之后） | ✅ |
 | **MakeSplitEdges** | make_split_edges | ✅ 顺序已对齐（f93b541） |
 | **UpdatePaveBlocksWithSDVertices** | `update_pave_blocks_with_sd_vertices` | ✅ 已补 |
-| MakeBlocks | make_blocks | ✅ |
+| MakeBlocks | EE `pave_blocks::make_blocks` + FF `pave_ff::make_blocks_ff`（`_6.cxx` PutPaves/PutBound/造边/`IsExistingPaveBlock` ON/IN 树/`ProcessExistingPaveBlocks` 第一套/`PostTreatFF`/`CorrectToleranceOfSE`/`UpdateFaceInfo`/`PutSEInOtherFaces`） | ✅ section PB 经 `ForceInterfEF(..., false)` 打进其它面 IN |
 | CheckSelfInterference / RemoveMicroEdges | — | ❌ 缺失 |
 | MakePCurves | make_pcurves | ✅ |
 | ProcessDE | — | ❌ 缺失 |
@@ -140,7 +140,7 @@
 
 **波6 调查（同会话）**：boss fuse（box 2×2×1 + 24 面平面圆柱 r=0.25 高 0.8 立在 z=1 顶面）走 `bop_builder2` 与手写 `bop_builder::boolean` 对比——**体积相同（4.1553）但拓扑不同：B2 出 2 个 solid（102 面），手写出 1 个 solid（78 面）**。根因：圆柱底盖与 box 顶面共面，`fill_same_domain_faces` 未把共面片合并成同一 solid（B3 下游实体装配缺口，`build_split_solids_full` 逐 solid 独立成 shell，未跨 solid 合并共面片）。这是与 PaveFiller 无关的 build 阶段缺口。
 
-**下一步（忠实边界扩展）**：按 OCCT 序列继续——`UpdateInterfsWithSDVertices`（需先给 BopdsDS 建按类型干涉数组 `InterfVV/VE/VF/EE/EF`，现有扁平 `HashSet` 不够）、`UpdateBlocksWithSharedVertices`（gated：非 non-destructive 模式直接 return，当前默认 off 为 no-op）、`RefineFaceInfoIn`（需 face-info On/In 分裂）、`RepeatIntersection`、`ForceInterfEE/EF`、`ProcessDE`。另：B3 实体装配缺口（跨 solid 共面片合并）。查 section 边创建的真实位置（OCCT 在 MakeSplitEdges 或 Builder 侧）。这些是结构对齐，非模型修补。
+**下一步（忠实边界扩展）**：按 OCCT 序列继续——`UpdateBlocksWithSharedVertices`（gated：非 non-destructive 模式直接 return，当前默认 off 为 no-op）、`RefineFaceInfoIn`（需 face-info On/In 分裂）、`RepeatIntersection`/`ForceInterfEE/EF`/`ProcessDE` 的深度对齐。另：B3 实体装配缺口（跨 solid 共面片合并）。查 section 边创建的真实位置（OCCT 在 MakeSplitEdges 或 Builder 侧）。这些是结构对齐，非模型修补。
 - 门禁：✅ `boss_adds_material` 通过；全量 lib 1266 绿。
 
 ### 波 4 — 拓扑不变量 oracle（trellis R4）【✅ 完成 2026-08-05】

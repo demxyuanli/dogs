@@ -1,8 +1,8 @@
 //! 2D B-spline curve. Source: `Geom2d_BSplineCurve.hxx`
 
 use crate::curve::Curve2d;
-use occt_core::gp::{GpPnt2d, GpVec2d, GpTrsf2d};
-use occt_core::bspl::knots;
+use occt_core::bspl::{eval, knots};
+use occt_core::gp::{GpPnt, GpPnt2d, GpTrsf2d, GpVec2d};
 
 /// 2D B-spline curve (non-rational), stored as separate x/y pole arrays.
 #[derive(Clone)]
@@ -28,6 +28,15 @@ impl Geom2dBSplineCurve {
     pub fn degree(&self) -> usize { self.degree }
     pub fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     pub fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
+
+    /// Lift `(x, y)` poles to `z = 0` for `BSplCLib` evaluators.
+    fn poles_3d(&self) -> Vec<GpPnt> {
+        self.xs
+            .iter()
+            .zip(self.ys.iter())
+            .map(|(&x, &y)| GpPnt::new(x, y, 0.0))
+            .collect()
+    }
 
     /// De Boor triangular evaluation on (x, y) pole pairs.
     fn de_boor(&self, u: f64) -> GpPnt2d {
@@ -60,24 +69,21 @@ impl Curve2d for Geom2dBSplineCurve {
     fn d0(&self, u: f64) -> GpPnt2d { self.de_boor(u) }
 
     fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d) {
-        let h = 1e-6;
-        let p = self.d0(u);
-        let p1 = self.d0(u + h);
-        let p2 = self.d0(u - h);
-        (p, GpVec2d::new((p1.x() - p2.x()) / (2.0 * h), (p1.y() - p2.y()) / (2.0 * h)))
+        // `Geom2d_BSplineCurve::D1` / `BSplCLib::D1`.
+        let poles = self.poles_3d();
+        let (p, d) = eval::eval_curve_d1(&poles, &self.knots, self.degree, u);
+        (GpPnt2d::new(p.x(), p.y()), GpVec2d::new(d.x(), d.y()))
     }
 
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
-        let (p, d1) = self.d1(u);
-        let h = 1e-6;
-        let p1 = self.d0(u + h);
-        let p0 = self.d0(u);
-        let p2 = self.d0(u - h);
-        let d2 = GpVec2d::new(
-            (p1.x() - 2.0 * p0.x() + p2.x()) / (h * h),
-            (p1.y() - 2.0 * p0.y() + p2.y()) / (h * h),
-        );
-        (p, d1, d2)
+        // `Geom2d_BSplineCurve::D2` / `BSplCLib::D2`.
+        let poles = self.poles_3d();
+        let (p, d1, d2) = eval::eval_curve_d2(&poles, &self.knots, self.degree, u);
+        (
+            GpPnt2d::new(p.x(), p.y()),
+            GpVec2d::new(d1.x(), d1.y()),
+            GpVec2d::new(d2.x(), d2.y()),
+        )
     }
 
     fn first_parameter(&self) -> f64 { self.knots[self.degree] }
@@ -94,11 +100,23 @@ impl Curve2d for Geom2dBSplineCurve {
     }
 
     fn reverse(&mut self) {
+        // `Geom2d_BSplineCurve::Reverse` / `BSplCLib::Reverse` on a flat
+        // knot sequence: `k' = umax - k` after reversing the array.
+        // `1 - k` is only valid when the last knot is 1 (Shape-2 pcurves
+        // use V knots on `[0, 150]`).
         self.xs.reverse();
         self.ys.reverse();
         let n = self.knots.len();
-        for i in 0..n / 2 { self.knots.swap(i, n - 1 - i); }
-        for k in self.knots.iter_mut() { *k = 1.0 - *k; }
+        if n == 0 {
+            return;
+        }
+        let umax = self.knots[n - 1];
+        for i in 0..n / 2 {
+            self.knots.swap(i, n - 1 - i);
+        }
+        for k in self.knots.iter_mut() {
+            *k = umax - *k;
+        }
     }
 
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }

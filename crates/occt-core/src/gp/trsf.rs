@@ -62,6 +62,34 @@ impl GpTrsf {
         self.loc = GpXyz::zero();
     }
 
+    /// `gp_Trsf::SetTransformation(const gp_Ax3&)` — world to local frame of `a3`.
+    pub fn set_transformation(&mut self, a3: &GpAx3) {
+        self.shape = TrsfForm::CompoundTrsf;
+        self.scale = 1.0;
+        self.matrix.set_rows(
+            a3.x_direction().xyz(),
+            a3.y_direction().xyz(),
+            a3.direction().xyz(),
+        );
+        let mut loc = a3.location().coord;
+        loc.multiply_mat(&self.matrix);
+        loc.reverse();
+        self.loc = loc;
+    }
+
+    /// `gp_Trsf::Value(row, col)` — 1-based, column 4 is the translation.
+    pub fn value(&self, row: i32, col: i32) -> f64 {
+        if col < 4 {
+            self.scale * self.matrix.value(row as usize, col as usize)
+        } else {
+            match row {
+                1 => self.loc.x,
+                2 => self.loc.y,
+                _ => self.loc.z,
+            }
+        }
+    }
+
     pub fn set_translation_vec(&mut self, v: &GpVec) {
         self.set_identity();
         self.shape = TrsfForm::Translation;

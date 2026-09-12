@@ -2,6 +2,7 @@ use crate::gp::ax1::GpAx1;
 use crate::gp::ax3::GpAx3;
 use crate::gp::dir::GpDir;
 use crate::gp::pnt::GpPnt;
+use crate::gp::xyz::GpXyz;
 
 /// Coordinate system (origin + Z direction + X direction).
 /// X is orthogonalized via CrossCross after construction.
@@ -30,6 +31,41 @@ impl GpAx2 {
             vxdir: xdir,
             vydir: ydir,
         }
+    }
+
+    /// `gp_Ax2(P, V)` — origin plus Z; X is a coordinate-axis perpendicular to `V`.
+    /// Source: `gp_Ax2.cxx` constructor at lines 31-80.
+    pub fn from_axis(origin: GpPnt, z_dir: GpDir) -> Self {
+        let a = z_dir.x();
+        let b = z_dir.y();
+        let c = z_dir.z();
+        let aabs = a.abs();
+        let babs = b.abs();
+        let cabs = c.abs();
+        let x_xyz = if babs <= aabs && babs <= cabs {
+            if aabs > cabs {
+                GpXyz::new(-c, 0.0, a)
+            } else {
+                GpXyz::new(c, 0.0, -a)
+            }
+        } else if aabs <= babs && aabs <= cabs {
+            if babs > cabs {
+                GpXyz::new(0.0, -c, b)
+            } else {
+                GpXyz::new(0.0, c, -b)
+            }
+        } else if aabs > babs {
+            GpXyz::new(-b, a, 0.0)
+        } else {
+            GpXyz::new(b, -a, 0.0)
+        };
+        let x_dir = GpDir::from_xyz(&x_xyz).unwrap_or_else(|_| GpDir::from_axis(crate::gp::dir::DirAxis::X));
+        Self::new(origin, z_dir, x_dir).unwrap_or_else(|_| {
+            let mut ax = Self::standard();
+            ax.set_location(origin);
+            ax.set_direction(z_dir);
+            ax
+        })
     }
 
     /// New coordinate system. X direction is orthogonalized via CrossCross.

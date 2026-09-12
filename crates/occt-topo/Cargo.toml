@@ -14,3 +14,11 @@ occt-math = { path = "../occt-math" }
 [[example]]
 name = "demo"
 path = "../../examples/demo.rs"
+
+[[example]]
+name = "linkrods_dbg"
+path = "examples/linkrods_dbg.rs"
+
+[[example]]
+name = "export_data_obj"
+path = "examples/export_data_obj.rs"

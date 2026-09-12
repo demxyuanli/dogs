@@ -1,6 +1,6 @@
 //! Rational (NURBS) surface operations: evaluation and weight utilities.
 
-use crate::gp::GpPnt;
+use crate::gp::{GpPnt, GpVec};
 use super::eval;
 
 /// Evaluate a rational tensor-product B-spline surface at (u, v).
@@ -33,6 +33,134 @@ pub fn eval_rational(
         temp_weights.push(eval_weight_curve(&wcol, ku, du, u));
     }
     eval::eval_curve_rational(&temp_poles, &temp_weights, kv, dv, v)
+}
+
+/// Rational surface D1 via homogeneous poles `A = w P`.
+/// Source: `BSplSLib::D1` + `BSplSLib::RationalDerivative` for `(N,M)=(1,1)`
+/// (`BSplSLib.cxx:855-970`, `cxx:87-120`): `S = A/w`,
+/// `dS = (dA * w - A * dw) / w^2`.
+pub fn eval_surface_rational_d1(
+    poles: &[GpPnt],
+    weights: &[f64],
+    n_u: usize,
+    n_v: usize,
+    knots_u: &[f64],
+    knots_v: &[f64],
+    degree_u: usize,
+    degree_v: usize,
+    u: f64,
+    v: f64,
+) -> (GpPnt, GpVec, GpVec) {
+    if poles.len() != weights.len() || poles.is_empty() || n_u == 0 || n_v == 0 {
+        return (GpPnt::zero(), GpVec::zero(), GpVec::zero());
+    }
+    let a_poles: Vec<GpPnt> = poles
+        .iter()
+        .zip(weights.iter())
+        .map(|(p, w)| GpPnt::new(p.x() * w, p.y() * w, p.z() * w))
+        .collect();
+    let w_poles: Vec<GpPnt> = weights.iter().map(|&w| GpPnt::new(w, 0.0, 0.0)).collect();
+    let (a, da_u, da_v) =
+        eval::eval_surface_d1(&a_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
+    let (wpt, dw_u, dw_v) =
+        eval::eval_surface_d1(&w_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
+    let w = wpt.x();
+    if w.abs() < 1e-30 {
+        return (a, da_u, da_v);
+    }
+    let ww = w * w;
+    let p = GpPnt::new(a.x() / w, a.y() / w, a.z() / w);
+    let du = GpVec::new(
+        (da_u.x() * w - a.x() * dw_u.x()) / ww,
+        (da_u.y() * w - a.y() * dw_u.x()) / ww,
+        (da_u.z() * w - a.z() * dw_u.x()) / ww,
+    );
+    let dv = GpVec::new(
+        (da_v.x() * w - a.x() * dw_v.x()) / ww,
+        (da_v.y() * w - a.y() * dw_v.x()) / ww,
+        (da_v.z() * w - a.z() * dw_v.x()) / ww,
+    );
+    (p, du, dv)
+}
+
+/// Rational surface D2 via homogeneous poles `A = w P`.
+/// Source: `BSplSLib::D2` + `BSplSLib::RationalDerivative` for `(N,M)=(2,2)`
+/// (`BSplSLib.cxx:1063-1247`, `cxx:87-120`):
+/// `S = A/w`, `dS = (dA * w - A * dw) / w^2`,
+/// `Suu = (Auu - 2 Su wu - S wuu) / w`,
+/// `Svv = (Avv - 2 Sv wv - S wvv) / w`,
+/// `Suv = (Auv - Su wv - Sv wu - S wuv) / w`.
+pub fn eval_surface_rational_d2(
+    poles: &[GpPnt],
+    weights: &[f64],
+    n_u: usize,
+    n_v: usize,
+    knots_u: &[f64],
+    knots_v: &[f64],
+    degree_u: usize,
+    degree_v: usize,
+    u: f64,
+    v: f64,
+) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+    if poles.len() != weights.len() || poles.is_empty() || n_u == 0 || n_v == 0 {
+        return (
+            GpPnt::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+        );
+    }
+    let a_poles: Vec<GpPnt> = poles
+        .iter()
+        .zip(weights.iter())
+        .map(|(p, w)| GpPnt::new(p.x() * w, p.y() * w, p.z() * w))
+        .collect();
+    let w_poles: Vec<GpPnt> = weights.iter().map(|&w| GpPnt::new(w, 0.0, 0.0)).collect();
+    let (a, da_u, da_v, d2a_u, d2a_v, d2a_uv) = eval::eval_surface_d2(
+        &a_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v,
+    );
+    let (wpt, dw_u, dw_v, d2w_u, d2w_v, d2w_uv) = eval::eval_surface_d2(
+        &w_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v,
+    );
+    let w = wpt.x();
+    if w.abs() < 1e-30 {
+        return (a, da_u, da_v, d2a_u, d2a_v, d2a_uv);
+    }
+    let ww = w * w;
+    let p = GpPnt::new(a.x() / w, a.y() / w, a.z() / w);
+    let wu = dw_u.x();
+    let wv = dw_v.x();
+    let wuu = d2w_u.x();
+    let wvv = d2w_v.x();
+    let wuv = d2w_uv.x();
+    let du = GpVec::new(
+        (da_u.x() * w - a.x() * wu) / ww,
+        (da_u.y() * w - a.y() * wu) / ww,
+        (da_u.z() * w - a.z() * wu) / ww,
+    );
+    let dv = GpVec::new(
+        (da_v.x() * w - a.x() * wv) / ww,
+        (da_v.y() * w - a.y() * wv) / ww,
+        (da_v.z() * w - a.z() * wv) / ww,
+    );
+    let d2u = GpVec::new(
+        (d2a_u.x() - 2.0 * du.x() * wu - p.x() * wuu) / w,
+        (d2a_u.y() - 2.0 * du.y() * wu - p.y() * wuu) / w,
+        (d2a_u.z() - 2.0 * du.z() * wu - p.z() * wuu) / w,
+    );
+    let d2v = GpVec::new(
+        (d2a_v.x() - 2.0 * dv.x() * wv - p.x() * wvv) / w,
+        (d2a_v.y() - 2.0 * dv.y() * wv - p.y() * wvv) / w,
+        (d2a_v.z() - 2.0 * dv.z() * wv - p.z() * wvv) / w,
+    );
+    let d2uv = GpVec::new(
+        (d2a_uv.x() - du.x() * wv - dv.x() * wu - p.x() * wuv) / w,
+        (d2a_uv.y() - du.y() * wv - dv.y() * wu - p.y() * wuv) / w,
+        (d2a_uv.z() - du.z() * wv - dv.z() * wu - p.z() * wuv) / w,
+    );
+    (p, du, dv, d2u, d2v, d2uv)
 }
 
 /// Scalar B-spline evaluation of a weight vector (the intermediate weight of

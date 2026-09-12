@@ -52,7 +52,7 @@ fn ensure_edge(
     }
     let pa = BRepTool::vertex_point(&vertices[a]);
     let pb = BRepTool::vertex_point(&vertices[b]);
-    let e = builder.make_edge_segment(&pa, &pb);
+    let e = builder.make_edge_segment_with_vertices(&pa, &pb, &vertices[a], &vertices[b]);
     edge_of_pair.insert(key, e.clone());
     edges.push(e.clone());
     e

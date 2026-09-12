@@ -18,5 +18,21 @@ impl GpDir2d {
     pub fn is_opposite(&self,o:&Self,tol:f64) -> bool { std::f64::consts::PI-self.angle(o)<=tol }
     pub fn reverse(&mut self) { self.x=-self.x; self.y=-self.y; }
     pub fn reversed(&self) -> Self { Self{x:-self.x,y:-self.y} }
+    /// `gp_Dir2d::Transform(gp_Trsf2d)` — vectorial part only (no translation).
+    pub fn transform(&mut self, t: &crate::gp::trsf2d::GpTrsf2d) {
+        let mut xy = GpXY::new(self.x, self.y);
+        xy.multiply_mat2d(t.vectorial_part());
+        if t.scale_factor() != 1.0 {
+            xy.multiply_scalar(t.scale_factor());
+        }
+        if let Ok(d) = Self::from_xy(&xy) {
+            *self = d;
+        }
+    }
+    pub fn transformed(&self, t: &crate::gp::trsf2d::GpTrsf2d) -> Self {
+        let mut r = *self;
+        r.transform(t);
+        r
+    }
 }
 impl Default for GpDir2d { fn default() -> Self { Self { x: 1.0, y: 0.0 } } }

@@ -28,19 +28,25 @@ use super::delaun_types::{DelaunLink, DelaunPairOfIndex, DelaunTriangle, DelaunV
 /// stores a `NCollection_CellFilter`); this is a `HashMap`-backed equivalent
 /// with the same cell size / tolerance semantics.
 struct VertexCellFilter {
-    cell_size: f64,
+    /// `(U, V)` cell sizes. Source: `BRepMesh_VertexTool::SetCellSize`.
+    cell_size: (f64, f64),
     tolerance: (f64, f64),
     cells: HashMap<(i64, i64), Vec<i32>>,
 }
 
 impl VertexCellFilter {
     fn new(cell_size: f64, tolerance: (f64, f64)) -> Self {
-        Self { cell_size, tolerance, cells: HashMap::new() }
+        Self {
+            cell_size: (cell_size, cell_size),
+            tolerance,
+            cells: HashMap::new(),
+        }
     }
 
     fn cell_of(&self, p: GpXY) -> (i64, i64) {
-        let cs = if self.cell_size > 0.0 { self.cell_size } else { 1.0 };
-        ((p.x / cs).floor() as i64, (p.y / cs).floor() as i64)
+        let cu = if self.cell_size.0 > 0.0 { self.cell_size.0 } else { 1.0 };
+        let cv = if self.cell_size.1 > 0.0 { self.cell_size.1 } else { 1.0 };
+        ((p.x / cu).floor() as i64, (p.y / cv).floor() as i64)
     }
 
     fn add(&mut self, index: i32, p: GpPnt2d) {
@@ -122,6 +128,16 @@ pub struct DelaunDataStructure {
 }
 
 impl DelaunDataStructure {
+    /// Sets the 2D cell-filter pitch. Source: `BRepMesh_VertexTool::SetCellSize`.
+    pub fn set_cell_size(&mut self, size_u: f64, size_v: f64) {
+        self.vertex_cells.cell_size = (size_u.max(1e-16), size_v.max(1e-16));
+    }
+
+    /// Sets the coincidence tolerance. Source: `BRepMesh_VertexTool::SetTolerance`.
+    pub fn set_tolerance(&mut self, tol_u: f64, tol_v: f64) {
+        self.vertex_cells.tolerance = (tol_u, tol_v);
+    }
+
     /// Creates an empty data structure. `reserved_node_size` is only a capacity
     /// hint, matching the OCCT constructor.
     pub fn new(reserved_node_size: usize) -> Self {
@@ -459,11 +475,27 @@ impl DelaunDataStructure {
         &self.elements_of_domain
     }
 
-    /// Vertex indices of a triangle, read straight from the contract's cached
-    /// `vertex_indices` (the OCCT class reconstructs them from edges +
-    /// orientations via `ElementNodes`).
+    /// Vertex indices of a triangle via `ElementNodes`
+    /// (`BRepMesh_DataStructureOfDelaun.cxx:259-286`): reconstruct from link 0
+    /// (both ends) and link 2 (the remaining corner). Cached `vertex_indices`
+    /// are not the source of truth.
     pub fn element_nodes(&self, triangle: &DelaunTriangle) -> [i32; 3] {
-        triangle.vertex_indices
+        let mut nodes = [0i32; 3];
+        let link1 = self.get_link(triangle.link_at(0).abs());
+        if triangle.link_at(0) > 0 {
+            nodes[0] = link1.first_node();
+            nodes[1] = link1.last_node();
+        } else {
+            nodes[1] = link1.first_node();
+            nodes[0] = link1.last_node();
+        }
+        let link2 = self.get_link(triangle.link_at(2).abs());
+        nodes[2] = if triangle.link_at(2) > 0 {
+            link2.first_node()
+        } else {
+            link2.last_node()
+        };
+        nodes
     }
 
     // ------------------------------------------------------------------
@@ -559,7 +591,11 @@ impl DelaunDataStructure {
         }
         self.vertices = new_verts;
         self.node_links = new_node_links;
-        self.vertex_cells = VertexCellFilter::new(self.vertex_cells.cell_size, self.vertex_cells.tolerance);
+        self.vertex_cells = VertexCellFilter {
+            cell_size: self.vertex_cells.cell_size,
+            tolerance: self.vertex_cells.tolerance,
+            cells: HashMap::new(),
+        };
         for (i, v) in self.vertices.iter().enumerate() {
             self.vertex_cells.add((i + 1) as i32, v.location);
         }

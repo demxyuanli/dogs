@@ -57,6 +57,11 @@ impl TopoShape {
     pub fn orientation(&self) -> Orientation { self.orientation }
     pub fn set_orientation(&mut self, o: Orientation) { self.orientation = o; }
 
+    /// `TopoDS_Shape::Reverse` — swap Forward/Reversed; Internal/External unchanged.
+    pub fn reverse(&mut self) {
+        self.orientation = self.orientation.reversed();
+    }
+
     /// Copy with reversed orientation.
     pub fn oriented(&self, o: Orientation) -> Self {
         Self { tshape: self.tshape.clone(), location: self.location.clone(), orientation: o }

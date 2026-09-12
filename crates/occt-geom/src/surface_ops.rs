@@ -27,6 +27,15 @@ impl Curve for IsoparametricCurve {
     fn is_periodic(&self) -> bool { self.curve.is_periodic() }
     fn period(&self) -> f64 { self.curve.period() }
     fn continuity(&self) -> u8 { self.curve.continuity() }
+    fn circle_radius(&self) -> Option<f64> { self.curve.circle_radius() }
+    fn is_line(&self) -> bool { self.curve.is_line() }
+    fn nurbs_degree(&self) -> Option<usize> { self.curve.nurbs_degree() }
+    fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
+        self.curve.parameter_intervals(continuity)
+    }
+    fn bspline_poles(&self) -> Option<&[occt_core::gp::GpPnt]> { self.curve.bspline_poles() }
+    fn bezier_poles(&self) -> Option<&[occt_core::gp::GpPnt]> { self.curve.bezier_poles() }
+    fn nb_intervals(&self, continuity: u8) -> i32 { self.curve.nb_intervals(continuity) }
     // ponytail: adapter over an immutable Arc; transforms are no-ops like
     // GeomTrimmedCurve. Apply transforms to the underlying surface instead.
     fn transform(&mut self, _t: &GpTrsf) {}

@@ -12,9 +12,10 @@ use std::sync::Arc;
 use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpPnt, GpVec};
 use occt_geom::{Curve, GeomLine, GeomPlane, Surface};
 
+use crate::abs::Orientation;
 use crate::brep_surface;
 use crate::builder::TopoBuilder;
-use crate::shape::{Edge, Face, Solid, Vertex, Wire};
+use crate::shape::{Edge, Face, Solid, Vertex};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full;
 
@@ -58,6 +59,37 @@ fn edge_through(b: &TopoBuilder, v1: &Vertex, v2: &Vertex) -> Edge {
     e
 }
 
+fn edge_between(edges: &[Edge], va: &Vertex, vb: &Vertex) -> Option<Edge> {
+    let pa = GeometryRegistry::global().vertex_point(&va.0);
+    let pb = GeometryRegistry::global().vertex_point(&vb.0);
+    edges.iter().find(|e| {
+        let (a, b) = topo_tools_full::edge_vertices(e);
+        let (Some(a), Some(b)) = (a, b) else { return false };
+        let qa = GeometryRegistry::global().vertex_point(&a.0);
+        let qb = GeometryRegistry::global().vertex_point(&b.0);
+        (qa.distance(&pa) < 1e-12 && qb.distance(&pb) < 1e-12)
+            || (qa.distance(&pb) < 1e-12 && qb.distance(&pa) < 1e-12)
+    }).cloned()
+}
+
+/// Orient `e` so its stored curve runs `from` -> `to` on the wire
+/// (`BRepPrim_GWedge` / `BRepBuilderAPI_MakeWire` edge-orientation model).
+fn edge_oriented_from_to(e: &Edge, from: &Vertex, to: &Vertex) -> Edge {
+    let pa = GeometryRegistry::global().vertex_point(&from.0);
+    let pb = GeometryRegistry::global().vertex_point(&to.0);
+    let (a, b) = topo_tools_full::edge_vertices(e);
+    let (Some(a), Some(b)) = (a, b) else {
+        return e.clone();
+    };
+    let qa = GeometryRegistry::global().vertex_point(&a.0);
+    let qb = GeometryRegistry::global().vertex_point(&b.0);
+    if qa.distance(&pa) < 1e-12 && qb.distance(&pb) < 1e-12 {
+        e.clone()
+    } else {
+        Edge(e.0.oriented(Orientation::Reversed))
+    }
+}
+
 /// Boundary vertices of a planar face's outer wire, in traversal order.
 ///
 /// The reconstruction is direction-robust: it walks the edges finding the next
@@ -73,14 +105,18 @@ fn base_ring_vertices(face: &Face) -> Vec<Vertex> {
         return Vec::new();
     }
     let pos = |v: &Vertex| GeometryRegistry::global().vertex_point(&v.0);
-    let start = pos(&edge_first(&edges[0]));
-    let mut ring: Vec<Vertex> = Vec::new();
-    let mut cur = edge_first(&edges[0]);
-    ring.push(cur.clone());
+    let (Some(v_a), Some(v_b)) = topo_tools_full::edge_vertices(&edges[0]) else {
+        return Vec::new();
+    };
+    // Follow the first edge to its other end before searching; otherwise the
+    // closing edge (also incident to the start vertex) is taken first and the
+    // ring is reversed relative to `edges_of_wire`.
+    let start = pos(&v_a);
+    let mut ring: Vec<Vertex> = vec![v_a.clone(), v_b.clone()];
+    let mut cur = v_b;
     let mut used = vec![false; edges.len()];
     used[0] = true;
     loop {
-        // Find the next edge sharing `cur` as one endpoint.
         let mut found = false;
         for (i, e) in edges.iter().enumerate() {
             if used[i] {
@@ -97,7 +133,6 @@ fn base_ring_vertices(face: &Face) -> Vec<Vertex> {
                 continue;
             }
             if pos(&next).distance(&start) < 1e-12 {
-                // Ring closes; do not push the repeated start.
                 return ring;
             }
             ring.push(next.clone());
@@ -110,11 +145,6 @@ fn base_ring_vertices(face: &Face) -> Vec<Vertex> {
             return ring;
         }
     }
-}
-
-fn edge_first(e: &Edge) -> Vertex {
-    let (a, _) = topo_tools_full::edge_vertices(e);
-    a.expect("sweep: edge has no vertices")
 }
 
 /// Extrude a planar face by the full displacement vector `d`.
@@ -143,12 +173,18 @@ pub fn prism_from_face(face: &Face, d: &GpVec) -> Prism {
         vert_edges.push(edge_through(&b, &base_verts[i], &top_verts[i]));
     }
 
-    // Base edges: the input face's boundary edges (already registered).
-    let base_edges: Vec<Edge> = topo_tools_full::wires_of_face(face)
+    // Base edges aligned to the vertex ring, not `edges_of_wire` child order.
+    let wire_edges: Vec<Edge> = topo_tools_full::wires_of_face(face)
         .first()
         .map(|w| topo_tools_full::edges_of_wire(w))
         .unwrap_or_default();
-    assert_eq!(base_edges.len(), n, "sweep: base wire edge count mismatch");
+    let base_edges: Vec<Edge> = (0..n)
+        .map(|i| {
+            let j = (i + 1) % n;
+            edge_between(&wire_edges, &base_verts[i], &base_verts[j])
+                .expect("sweep: missing base edge for vertex ring")
+        })
+        .collect();
 
     // Top face: base plane translated by `d`.
     let base_plane = brep_surface::face_plane(face).expect("sweep: base face must be planar");
@@ -157,11 +193,18 @@ pub fn prism_from_face(face: &Face, d: &GpVec) -> Prism {
     let top_wire = b.make_wire(&top_edges);
     let top_face = b.make_face(Arc::new(GeomPlane::new(top_plane)), &[top_wire]);
 
-    // Lateral faces: one planar quad per base edge.
+    // Lateral faces: one planar quad per base edge. The wire is CCW-outward
+    // (`BRepPrim_GWedge`): base i->j, generating edge at j, top j->i (the
+    // stored top curve is i->j, so Reversed), generating edge at i reversed.
     let mut lateral_faces = Vec::with_capacity(n);
     for i in 0..n {
         let j = (i + 1) % n;
-        let wire = b.make_wire(&[base_edges[i].clone(), vert_edges[j].clone(), top_edges[i].clone(), vert_edges[i].clone()]);
+        let wire = b.make_wire(&[
+            edge_oriented_from_to(&base_edges[i], &base_verts[i], &base_verts[j]),
+            edge_oriented_from_to(&vert_edges[j], &base_verts[j], &top_verts[j]),
+            edge_oriented_from_to(&top_edges[i], &top_verts[j], &top_verts[i]),
+            edge_oriented_from_to(&vert_edges[i], &top_verts[i], &base_verts[i]),
+        ]);
         let surface: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane_through3(
             &base_pts[i], &base_pts[j], &shift(&base_pts[j], &d),
         )));

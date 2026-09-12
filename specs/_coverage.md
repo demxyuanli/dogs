@@ -1,3 +1,51 @@
+> 审查日期：**2026-09-09**（对照 `D:\source\OCCT-src` OCC 8.0.0；刷新量测）。
+> 前一版：2026-08-22。
+> Rust：5 crate · **~216,620** 行源码（core 22,572 / math 12,446 / geom 14,358 / geom2d 4,568 / topo **162,676**）+ topo tests 2,144 · **741** 个 `.rs`。
+> OCCT 8.0.0：`src/` hxx+cxx+lxx **~2,775,909** 行（~13,769 文件）；含 gxx 等 **~3,097,008**；`.hxx` ~7,072。
+> CAD 内核（Foundation+ModelingData+ModelingAlgorithms）**~1,814,140** 行。
+> 行数比：全库 **~7.9%**；CAD 内核 **~12.1%**。类/API 加权（CAD 内核）约 **48–52%**（较 8-22 的 ~45% 上浮，主因 IntPatch/PaveFiller/BOP 加深）。
+>
+> topo 簇行数（约）：int 28k · bop 27k · meshing 18k · pave 16k · brep 12k · fillet 8k · step/viz/draw/xcaf 各 2–4k。
+> 源码标记粗扫：`Source: OCCT…` ~1.5k 处；`not ported`/`stub`/`unimplemented` 类注释 ~167；`approx`/`fallback`/`voxel`/`heuristic` ~357。
+
+## 2026-09-09 再审查（对照 8.0.0）
+
+| 层 | OCCT loc（现测） | 对齐 | 最大缺口 / 缺陷 |
+|---|---|---|---|
+| Foundation (TKernel+TKMath) | ~341k | ~70% | gp 长尾；**严重缺陷**：`GeomCylinder/Sphere/Torus::d1` 返回零切矢 |
+| ModelingData | ~562k | ~55–60% | Adaptor/RectangularTrimmed/LinearExtrusion；几何仍在 `GeometryRegistry` 侧表 |
+| ModelingAlgorithms | ~911k | ~42–48% | ImpPrm RLine/端点未完；`GetFaceOff` 未移植；ChFi3d/TopOpe 浅 |
+| DataExchange | ~651k | ~14–18% | STEP 实体子集 vs 42 包；IGES/XCAF 非全 schema |
+| Viz / Draw / OCAF | ~597k | ~8–20% | lite 替代（viz_scene / draw / xcaf），不算 toolkit 完成 |
+
+**绿路径（已接线）**
+- 布尔：`boolean` → `bop_builder2::builder_bop_with_fuzzy` → PaveFiller（含 RepeatIntersection / ForceInterfEE/EF / ProcessDE）→ FillImages* → BuildBOP。平面 `boolean_planar_legacy` **不再**作回退；无面 operand 仍 **voxel_fallback**。
+- 面交：`PatchIntersection` = ImpImp →（Fail）PrmPrm；单侧解析二次曲面 → ImpPrm（SearchInside+IWalking）；否则 PrmPrm。IntPatch 相关 ~**8.3k** 行。
+- **整体测试导出（STEP→OBJ）**：`rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj`。读 `data/*.step`，偏转 0.1，写仓库根 `output/<stem>.obj`。对照基线仍是 `tests/step_obj_parity` / `data/occ-*.obj`。
+
+**语义偏差 / 缺陷（现行代码）**
+1. **`cylinder.rs` / `sphere.rs` / `torus.rs` 的 `d1`** — 已改走 `surface_eval` / ElSLib（2026-09-09）。
+2. **`GeometryRegistry` 侧表** — 边/面几何不在 `TShape` 内；`transform_shape` / `transformed_copy` 仅在有 `vertex_geom` 时写回，不再对未注册顶点写原点。
+3. **`edge_vertices`** — `TopExp::FirstVertex/LastVertex`（存储 FORWARD/REVERSED）；`MakeEdge` / 盒/柱/锥原语按 `BRepLib_MakeEdge` 写向。其它 `add` 位点仍可能两个都是 FORWARD（回退插入顺序）。
+4. **`GetFaceOff` / 角法向** — live 路径 `algo_tools_face::get_face_off` / `is_internal_face`。leftover `is_covering_face` 仅死路径 + 合成测试，未接到 `BopBuilder`。
+5. **ImpPrm** — SearchInside+IWalking；`fleche` 已接入偏转；IWLine 端点 Destination/Recadre/MakeTransition 已接。HVertex 合并（cxx 329–465）仍标未移植。
+6. **体素残留** — 无面 operand 仍 `voxel_fallback`。`validate` 的 voxel 体积对拍已去掉。绿路径仍是 `bop_builder2`。
+7. **BRepMesh** — `FaceChecker` + `amplifyEdges` 接到 `IncrementalMesh::heal_self_intersecting_wires`（锥缝 `amplify_cone_seams` 仍在 `ModelPreProcessor`）。
+
+## 2026-08-22 再审查（历史快照）
+
+| 层 | OCCT loc | 对齐 | 最大缺口 |
+|---|---|---|---|
+| Foundation (TKernel+TKMath) | 223k | ~68% | gp 缺 Euler/GTrsf2d/NLerp；TKernel 无 Storage/Plugin |
+| ModelingData | 324k | ~55% | Geom Bezier 已导出；仍缺 RectangularTrimmed / LinearExtrusion / Adaptor |
+| ModelingAlgorithms | 862k | ~38% | PaveFiller 序列不全；两条布尔管线；TKGeomAlgo/ChFi3d/TopOpe |
+| DataExchange | 603k | ~14% | STEP 42 包 vs `step.rs` lite |
+| Viz / Draw / OCAF | 556k | ~8–18% | 有意的 lite 替代，不算 toolkit 完成 |
+
+**语义偏差（8-22）**：几何侧表 `GeometryRegistry`；长尾仍直接读 `TShape.children`；`edge_vertices` 非 FirstVertex；当时记 PaveFiller 缺 RepeatIntersection / ForceInterf / ProcessDE — **2026-09 已接线进 `perform_internal`**。
+
+---
+
 # OCCT ↔ Rust 对齐与覆盖矩阵
 
 > 审查日期：2026-08-04。
@@ -56,7 +104,7 @@
 | BRepCheck（10） | shape_analysis + brep_measure | 50% | |
 | BRepExtrema（18） | brep_extrema | 33% | |
 | BRepGProp（13） | brep_gprop + brep_gprop_full | 80% | 精确 Gauss 积分（Linear/Surface/Volume/GK） |
-| BRepAlgoAPI（10） | bop_builder + boolean_ops | 45% | **精确（平面）+ 体素（曲面）**；BOPAlgo/BOPDS 结构波已落地（数值内核后续波） |
+| BRepAlgoAPI（10） | bop_builder + boolean_ops | 45% | **绿路径走 BOPAlgo**（`boolean` → `bop_builder2`）；平面 2D 排列仅作未闭合/报错回退；NURBS 曲面仍采样近似 |
 | BOPAlgo/BOPDS/BOPTools | bopds + builder_area/face + shell/wire_splitter | 35%→55% | Phase 15 机械波：DS 信息中枢 + 闭合面/壳/线构建 + Options/历史 |
 | IntTools（24 类） | inttools_data/range/sample/roots + pcurve + intcurvesurface + fclass2d + bean_face + edge_face + edge_edge + int_face_face + int_tools_full + int_curve | 0%→85% | Phase 16-18：求交核全（解析 <1e-9，一般 <1e-6）；PaveFiller 接入波 C2b-2 |
 | BOPAlgo_PaveFiller（12 文件 10,668 行） | pave_filler/intersect/blocks/common（4,997 行） | 0%→70% | Phase 19：VV/VE/EE/VF/EF/FF + MakeBlocks(CommonBlock) + MakePCurves + MakeSplitEdges + ShrunkData/自交检测 |

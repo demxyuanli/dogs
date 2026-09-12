@@ -15,6 +15,8 @@
 //!   directions (=> consistent surface normals) and removes orphan nodes.
 //! * [`ModelHealer::heal_model`] normalizes the discrete model's edge curves by
 //!   dropping consecutive coincident points.
+//! * FaceChecker + `amplifyEdges` run from `IncrementalMesh::heal_self_intersecting_wires`
+//!   (`BRepMesh_ModelHealer.cxx:234-211`).
 //! * [`ModelPostProcessor::process`] converts a `DelaunDataStructure` into a
 //!   [`FaceTriangulation`] (3D nodes + per-node UV + index triples) — the
 //!   structure a `MeshModel` face is meshed from, mirroring `Poly_Triangulation`.
@@ -51,9 +53,9 @@ pub struct HealStats {
 /// Heals a triangulated mesh.
 ///
 /// The OCCT `BRepMesh_ModelHealer` fixes wire boundaries and self-intersections
-/// on the `IMeshData` model; here the same responsibility is applied to the
-/// Delaunay structure where the triangles live. Vertex "welding" is handled at
-/// insertion time by the data structure's cell filter, so it is not repeated.
+/// on the `IMeshData` model. Boundary snapping lives here (`fix_face_boundaries`);
+/// FaceChecker / `amplifyEdges` run on the discrete model from IncrementalMesh
+/// before triangulation. Delaunay-level heal still removes slivers after insert.
 pub struct ModelHealer;
 
 impl ModelHealer {
@@ -160,6 +162,11 @@ impl ModelHealer {
                 if !Self::common_vertex(model, prev_edge, curr_edge)
                     || !Self::common_vertex(model, curr_edge, next_edge)
                 {
+                    // `fixFaceBoundaries` (`cxx:346-356`): no common vertex
+                    // marks the wire open and the face outdated. Inner
+                    // OpenWire is skipped in NodeInsertion initDataStructure.
+                    model.face_mut(face_index)?.set_status(MeshStatus::OUTDATED);
+                    model.wire_mut(wire_index)?.set_status(MeshStatus::OPEN_WIRE);
                     continue;
                 }
                 let Some(prev_pc) = Self::find_pcurve(model, prev_edge, face_index, prev_ori)
@@ -205,19 +212,47 @@ impl ModelHealer {
         next_edge: usize,
         next_pc: usize,
     ) -> usize {
-        // A single-edge wire has no neighbour to snap against.
+        // `BRepMesh_ModelHealer.cxx:452-456`: a one-edge wire (the cone
+        // base circle) copies last UV onto first so AddNode welds the close.
         if prev_edge == curr_edge && prev_pc == curr_pc {
-            return 0;
+            let (_, last) = Self::pcurve_ends(model, curr_edge, curr_pc);
+            return usize::from(Self::set_pcurve_end(
+                model, curr_edge, curr_pc, true, last,
+            ));
         }
 
         let (prev_first, prev_last) = Self::pcurve_ends(model, prev_edge, prev_pc);
         let (curr_first, curr_last) = Self::pcurve_ends(model, curr_edge, curr_pc);
-        let (next_first, next_last) = Self::pcurve_ends(model, next_edge, next_pc);
 
         // `closestPoints(prev, curr)` → which prev endpoint is closest to which
         // curr endpoint; `closestPoints(next, curr)` → same for next.
         let (prev_side, curr_prev_side) =
             Self::closest_pair(prev_first, prev_last, curr_first, curr_last);
+
+        // `cxx:467-475`: two-edge wire (`thePrevDEdge == theNextDEdge`) writes
+        // both ends of the other pcurve from the current one.
+        if prev_edge == next_edge && prev_pc == next_pc {
+            let curr_prev_val = if curr_prev_side { curr_first } else { curr_last };
+            let curr_next_val = if curr_prev_side { curr_last } else { curr_first };
+            let mut snapped = 0usize;
+            snapped += usize::from(Self::set_pcurve_end(
+                model,
+                prev_edge,
+                prev_pc,
+                !prev_side,
+                curr_next_val,
+            ));
+            snapped += usize::from(Self::set_pcurve_end(
+                model,
+                prev_edge,
+                prev_pc,
+                prev_side,
+                curr_prev_val,
+            ));
+            return snapped;
+        }
+
+        let (next_first, next_last) = Self::pcurve_ends(model, next_edge, next_pc);
         let (next_side, curr_next_side) =
             Self::closest_pair(next_first, next_last, curr_first, curr_last);
 
@@ -284,7 +319,10 @@ impl ModelHealer {
         }
     }
 
-    /// Index of the pcurve of `edge` on `face` with the given orientation.
+    /// `IEdge::GetPCurve(face, orientation)`. A seam has two pcurves; the
+    /// orientation must match. A single pcurve on the face is returned as-is
+    /// (the only CurveOnSurface). Falling back to "last" on a seam would pair
+    /// the two period copies of one TEdge and snap `(2pi, 3pi)` onto `(2pi, pi)`.
     fn find_pcurve(
         model: &MeshModel,
         edge: usize,
@@ -292,10 +330,19 @@ impl ModelHealer {
         orientation: Orientation,
     ) -> Option<usize> {
         let e = model.edge(edge).ok()?;
-        e.pcurves_for(face)
-            .into_iter()
-            .find(|&i| e.pcurve(i).map(|p| p.orientation() == orientation).unwrap_or(false))
-            .or_else(|| e.pcurves_for(face).last().copied())
+        let candidates = e.pcurves_for(face);
+        if let Some(i) = candidates.iter().copied().find(|&i| {
+            e.pcurve(i)
+                .map(|p| p.orientation() == orientation)
+                .unwrap_or(false)
+        }) {
+            return Some(i);
+        }
+        if candidates.len() == 1 {
+            candidates.first().copied()
+        } else {
+            None
+        }
     }
 
     /// `IMeshData_PCurve::IsInternal` for the given pcurve.
@@ -308,26 +355,43 @@ impl ModelHealer {
             .unwrap_or(false)
     }
 
-    /// `BRepMesh_ModelHealer::getCommonVertex` — whether two edges share a vertex
-    /// (by TShape identity or by position within the sum of their tolerances).
+    /// `BRepMesh_ModelHealer::getCommonVertex` (`cxx:373-435`).
     fn common_vertex(model: &MeshModel, e1: usize, e2: usize) -> bool {
         let (Ok(edge1), Ok(edge2)) = (model.edge(e1), model.edge(e2)) else {
             return false;
         };
         let (a1, b1) = edge_vertices(edge1.edge());
         let (a2, b2) = edge_vertices(edge2.edge());
-        for v1 in [a1.as_ref(), b1.as_ref()].into_iter().flatten() {
-            for v2 in [a2.as_ref(), b2.as_ref()].into_iter().flatten() {
-                if std::sync::Arc::ptr_eq(&v1.0.tshape, &v2.0.tshape) {
-                    return true;
-                }
-                let tol = BRepTool::vertex_tolerance(v1) + BRepTool::vertex_tolerance(v2);
-                if BRepTool::vertex_point(v1).distance(&BRepTool::vertex_point(v2)) < tol {
-                    return true;
-                }
-            }
+        let (Some(a1), Some(b1)) = (a1, b1) else {
+            return false;
+        };
+        let (Some(a2), Some(b2)) = (a2, b2) else {
+            return false;
+        };
+        // Same TEdge: only a closed edge (First == Last) shares a vertex
+        // with itself (`cxx:394-397`).
+        if edge1.edge().0.same_tshape(&edge2.edge().0) {
+            return a1.0.same_tshape(&b1.0);
         }
-        false
+        if a1.0.same_tshape(&a2.0) || a1.0.same_tshape(&b2.0) {
+            return true;
+        }
+        if b1.0.same_tshape(&a2.0) || b1.0.same_tshape(&b2.0) {
+            return true;
+        }
+        let p1a = BRepTool::vertex_point(&a1);
+        let p1b = BRepTool::vertex_point(&b1);
+        let p2a = BRepTool::vertex_point(&a2);
+        let p2b = BRepTool::vertex_point(&b2);
+        let t2max = BRepTool::vertex_tolerance(&a2).max(BRepTool::vertex_tolerance(&b2));
+        let tol_a = BRepTool::vertex_tolerance(&a1) + t2max;
+        let sq_a = tol_a * tol_a;
+        if p1a.square_distance(&p2a) < sq_a || p1a.square_distance(&p2b) < sq_a {
+            return true;
+        }
+        let tol_b = BRepTool::vertex_tolerance(&b1) + t2max;
+        let sq_b = tol_b * tol_b;
+        p1b.square_distance(&p2a) < sq_b || p1b.square_distance(&p2b) < sq_b
     }
 
     /// `closestPoints(a, b)` — returns `(a_side, b_side)`, the indices of the

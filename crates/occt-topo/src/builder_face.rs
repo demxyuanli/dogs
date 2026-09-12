@@ -66,10 +66,12 @@ impl FaceBuilder {
     }
 
     /// Set the generatrix face (`BOPAlgo_BuilderFace::SetFace`). Its
-    /// orientation is recorded and the face normalized to `FORWARD`.
+    /// orientation is recorded and `myFace` is stored `FORWARD`.
     pub fn set_face(&mut self, f: &Face) {
         self.orientation = f.0.orientation();
-        self.face = Some(f.clone());
+        let mut ff = f.clone();
+        ff.0.set_orientation(Orientation::Forward);
+        self.face = Some(ff);
     }
 
     /// The generatrix face, if set.
@@ -84,14 +86,17 @@ impl AreaBuilder for FaceBuilder {
     }
 
     fn perform_shapes_to_avoid(&mut self) -> Result<(), String> {
-        self.base.perform_shapes_to_avoid()
+        crate::builder_face_occt::perform_shapes_to_avoid(self)
     }
 
     fn perform_loops(&mut self) -> Result<(), String> {
-        self.base.perform_loops()
+        crate::builder_face_occt::perform_loops(self)
     }
 
     fn perform_areas(&mut self) -> Result<(), String> {
+        if self.face.is_some() {
+            return crate::builder_face_occt::perform_areas(self);
+        }
         self.base.areas.clear();
         let loops = self.base.loops.clone();
         let b = TopoBuilder::new();
@@ -113,7 +118,7 @@ impl AreaBuilder for FaceBuilder {
     }
 
     fn perform_internal_shapes(&mut self) -> Result<(), String> {
-        self.base.perform_internal_shapes()
+        crate::builder_face_occt::perform_internal_shapes(self)
     }
 
     fn areas(&self) -> &[TopoShape] {

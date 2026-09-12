@@ -29,10 +29,42 @@ impl GpVec2d {
     pub fn normalized(&self) -> Result<Self,&'static str> { Ok(Self{coord:self.coord.normalized()?}) }
     pub fn reverse(&mut self) { self.coord.reverse(); }
     pub fn reversed(&self) -> Self { Self{coord:self.coord.reversed()} }
-    pub fn angle(&self,o:&Self) -> f64 { let m1=self.coord.modulus(); let m2=o.coord.modulus(); if m1<=RESOLUTION||m2<=RESOLUTION {0.0} else {(self.coord.dot(&o.coord)/(m1*m2)).clamp(-1.0,1.0).acos()} }
-    pub fn is_normal(&self,o:&Self,tol:f64) -> bool { (std::f64::consts::FRAC_PI_2-self.angle(o)).abs()<=tol }
-    pub fn is_parallel(&self,o:&Self,tol:f64) -> bool { let a=self.angle(o); a<=tol||std::f64::consts::PI-a<=tol }
-    pub fn is_opposite(&self,o:&Self,tol:f64) -> bool { std::f64::consts::PI-self.angle(o)<=tol }
+    /// Signed angle from this vector to `o`, in `(-PI, PI]`.
+    /// Source: `gp_Vec2d::Angle`.
+    pub fn angle(&self, o: &Self) -> f64 {
+        let m1 = self.coord.modulus();
+        let m2 = o.coord.modulus();
+        if m1 <= RESOLUTION || m2 <= RESOLUTION {
+            return 0.0;
+        }
+        let d = m1 * m2;
+        let cosinus = (self.coord.dot(&o.coord) / d).clamp(-1.0, 1.0);
+        let sinus = self.coord.crossed(&o.coord) / d;
+        const COS_45: f64 = std::f64::consts::FRAC_1_SQRT_2;
+        if cosinus > -COS_45 && cosinus < COS_45 {
+            if sinus > 0.0 {
+                cosinus.acos()
+            } else {
+                -cosinus.acos()
+            }
+        } else if cosinus > 0.0 {
+            sinus.asin()
+        } else if sinus > 0.0 {
+            std::f64::consts::PI - sinus.asin()
+        } else {
+            -std::f64::consts::PI - sinus.asin()
+        }
+    }
+    pub fn is_normal(&self, o: &Self, tol: f64) -> bool {
+        (std::f64::consts::FRAC_PI_2 - self.angle(o).abs()).abs() <= tol
+    }
+    pub fn is_parallel(&self, o: &Self, tol: f64) -> bool {
+        let a = self.angle(o).abs();
+        a <= tol || std::f64::consts::PI - a <= tol
+    }
+    pub fn is_opposite(&self, o: &Self, tol: f64) -> bool {
+        std::f64::consts::PI - self.angle(o).abs() <= tol
+    }
     pub fn multiply_mat2d(&mut self,m:&GpMat2d) { self.coord.multiply_mat2d(m); }
     pub fn multiplied_mat2d(&self,m:&GpMat2d) -> Self { Self{coord:self.coord.multiplied_mat2d(m)} }
     pub fn set_linear_form_2(&mut self,a1:f64,v1:&Self,a2:f64,v2:&Self) { self.coord.set_linear_form_2(a1,&v1.coord,a2,&v2.coord); }

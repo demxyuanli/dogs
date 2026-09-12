@@ -6,16 +6,11 @@
 //! A common part is either:
 //!
 //! * an **edge** — a (sub-)range of the edge that lies on the face surface
-//!   (coincidence), encoded as [`CommonPartType::Edge`] with a non-degenerate
-//!   range;
+//!   (coincidence), encoded as [`CommonPartType::Edge`];
 //! * a **point** — a single parameter at which the edge touches/crosses the
-//!   face, encoded as [`CommonPartType::Edge`] with a degenerate range
-//!   `[t, t]`.
-//!
-//! The point/edge distinction mirrors OCCT's `TopAbs_VERTEX` / `TopAbs_EDGE`.
-//! The port's [`CommonPartType`] collapses both to `Edge` (per its own doc: "a
-//! vertex or coincident arc"), so callers distinguish them via the range length
-//! or [`EdgeFace::point_parameters`].
+//!   face, encoded as [`CommonPartType::Vertex`] with
+//!   [`CommonPrt::vertex_parameter1`] (the range is kept, matching
+//!   `IntTools_EdgeFace::MakeType`).
 //!
 //! Flow (mirrors `IntTools_EdgeFace::Perform`):
 //!
@@ -29,522 +24,17 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
+use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::{Curve, Surface};
 
 use crate::bean_face::BeanFaceIntersector;
-use crate::brep_surface::{is_planar, sphere_center, surface_closest_params, SurfaceKind};
+use crate::brep_surface::{is_planar, surface_closest_params, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FaceState, FClass2d};
-use crate::intcurvesurface::perform_curve_surface;
+use crate::edge_face_kind::*;
 use crate::inttools_data::{CommonPartType, CommonPrt, IntRange};
 use crate::shape::{Edge, Face};
-
-const PI: f64 = std::f64::consts::PI;
-
-// ---------------------------------------------------------------------------
-// Curve classification helpers
-// ---------------------------------------------------------------------------
-
-/// Coarse analytic kind of a 3D curve, mirroring the `GeomAbs_CurveType` subset
-/// the algorithm branches on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CurveKind {
-    Line,
-    Circle,
-    BSpline,
-    Other,
-}
-
-/// Whether the curve is geometrically a straight line (unbounded, or all
-/// samples collinear with the first–last chord).
-fn is_line_like(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return true;
-    }
-    if (b - a).abs() <= 1e-15 {
-        return false;
-    }
-    let p0 = c.d0(a);
-    let pl = c.d0(b);
-    let size = p0.distance(&pl);
-    if size <= 1e-30 {
-        return false;
-    }
-    let d0 = GpVec::from_pnts(&p0, &pl);
-    let tol = 1e-6 * size;
-    for i in 1..8 {
-        let p = c.d0(a + (b - a) * i as f64 / 8.0);
-        if GpVec::from_pnts(&p0, &p).crossed(&d0).magnitude() > tol * size {
-            return false;
-        }
-    }
-    true
-}
-
-/// First three non-collinear samples of a point set, if they exist.
-fn first_three_spanning(pts: &[GpPnt]) -> Option<(GpPnt, GpPnt, GpPnt)> {
-    let p0 = pts[0];
-    let mut i1 = None;
-    for (i, p) in pts.iter().enumerate().skip(1) {
-        if GpVec::from_pnts(&p0, p).magnitude() > 1e-9 {
-            i1 = Some(i);
-            break;
-        }
-    }
-    let i1 = i1?;
-    let p1 = pts[i1];
-    let d0 = GpVec::from_pnts(&p0, &p1);
-    for p in pts.iter().skip(i1 + 1) {
-        if GpVec::from_pnts(&p0, p).crossed(&d0).magnitude() > 1e-9 * d0.magnitude().max(1e-9) {
-            return Some((p0, p1, *p));
-        }
-    }
-    None
-}
-
-fn det3(m: &[[f64; 3]; 3]) -> f64 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-}
-
-fn solve3(a: &[[f64; 3]; 3], rhs: &[f64; 3]) -> Option<[f64; 3]> {
-    let d = det3(a);
-    if d.abs() < 1e-20 {
-        return None;
-    }
-    let mut x = [0.0; 3];
-    for k in 0..3 {
-        let mut m = *a;
-        for i in 0..3 {
-            m[i][k] = rhs[i];
-        }
-        x[k] = det3(&m) / d;
-    }
-    Some(x)
-}
-
-/// Circumcenter of three non-collinear 3D points, if it exists.
-fn circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
-    let d1 = GpVec::from_pnts(a, b);
-    let d2 = GpVec::from_pnts(a, c);
-    let n = d1.crossed(&d2);
-    if n.magnitude() < 1e-30 {
-        return None;
-    }
-    let n2 = |p: &GpPnt| p.coord.dot(&p.coord);
-    let mat = [
-        [d1.xyz().x, d1.xyz().y, d1.xyz().z],
-        [d2.xyz().x, d2.xyz().y, d2.xyz().z],
-        [n.xyz().x, n.xyz().y, n.xyz().z],
-    ];
-    let rhs = [0.5 * (n2(b) - n2(a)), 0.5 * (n2(c) - n2(a)), a.coord.dot(&n.xyz())];
-    let o = solve3(&mat, &rhs)?;
-    Some(GpPnt::new(o[0], o[1], o[2]))
-}
-
-/// Whether the curve is geometrically a (planar) circle: every sample is
-/// coplanar and equidistant from a common center.
-fn is_circle_like(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() || (b - a).abs() <= 1e-15 {
-        return false;
-    }
-    let n = 8;
-    let pts: Vec<GpPnt> = (0..=n).map(|i| c.d0(a + (b - a) * i as f64 / n as f64)).collect();
-    let (p0, p1, p2) = match first_three_spanning(&pts) {
-        Some(x) => x,
-        None => return false,
-    };
-    let center = match circumcenter(&p0, &p1, &p2) {
-        Some(c) => c,
-        None => return false,
-    };
-    let radius = p0.distance(&center);
-    if radius <= 1e-30 {
-        return false;
-    }
-    let nrm = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return false;
-    }
-    let nv = nrm.divided(m);
-    let scale = radius.max(1.0);
-    let tol = 1e-6 * scale;
-    for p in pts {
-        let v = GpVec::from_pnts(&center, &p);
-        if v.dot(&nv).abs() > tol {
-            return false;
-        }
-        if (v.magnitude() - radius).abs() > tol {
-            return false;
-        }
-    }
-    true
-}
-
-/// `(center, radius, unit plane normal)` of a circle-like curve.
-fn circle_geometry(c: &dyn Curve) -> Option<(GpPnt, f64, GpVec)> {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return None;
-    }
-    let n = 8;
-    let pts: Vec<GpPnt> = (0..=n).map(|i| c.d0(a + (b - a) * i as f64 / n as f64)).collect();
-    let (p0, p1, p2) = first_three_spanning(&pts)?;
-    let center = circumcenter(&p0, &p1, &p2)?;
-    let radius = p0.distance(&center);
-    if radius <= 1e-30 {
-        return None;
-    }
-    let nrm = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return None;
-    }
-    Some((center, radius, nrm.divided(m)))
-}
-
-/// Classify a 3D curve by sampling geometric invariants.
-fn curve_kind(c: &dyn Curve) -> CurveKind {
-    if is_line_like(c) {
-        return CurveKind::Line;
-    }
-    if is_circle_like(c) {
-        return CurveKind::Circle;
-    }
-    if c.is_periodic() && (c.period() - 2.0 * PI).abs() < 1e-9 {
-        // Ellipse / other periodic conic: analytic (not B-spline).
-        CurveKind::Other
-    } else {
-        CurveKind::BSpline
-    }
-}
-
-/// Approximate `BRepAdaptor_Curve::Resolution(tol)`: the parameter increment
-/// over which the curve moves at most ~`tol`. Used for the "whole range" tests.
-fn curve_resolution(c: &dyn Curve, tol: f64) -> f64 {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return tol.max(PCONFUSION);
-    }
-    let span = b - a;
-    if span.abs() <= 1e-15 {
-        return 1.0;
-    }
-    let n = 64;
-    let h = span / n as f64;
-    let mut max_speed = 0.0;
-    let mut prev = c.d0(a);
-    for i in 1..=n {
-        let u = a + h * i as f64;
-        let p = c.d0(u);
-        let d = p.distance(&prev);
-        let speed = d / h;
-        if speed > max_speed {
-            max_speed = speed;
-        }
-        prev = p;
-    }
-    if max_speed <= 1e-30 {
-        return tol.max(PCONFUSION);
-    }
-    (tol / max_speed).max(PCONFUSION)
-}
-
-// ---------------------------------------------------------------------------
-// Analytic surface geometry recovery (dyn Surface cannot be downcast)
-// ---------------------------------------------------------------------------
-
-fn surface_sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let clamp = |a: f64, b: f64| if a.is_finite() && b.is_finite() && b > a { (a, b) } else { (-1.0, 1.0) };
-    let (u0, u1) = clamp(u0, u1);
-    let (v0, v1) = clamp(v0, v1);
-    (u0, u1, v0, v1)
-}
-
-fn quadric_u0(s: &dyn Surface) -> f64 {
-    let (u0, _) = s.u_range();
-    if u0.is_finite() {
-        u0
-    } else {
-        0.0
-    }
-}
-
-fn midpoint(a: &GpPnt, b: &GpPnt) -> GpPnt {
-    GpPnt::new(0.5 * (a.x() + b.x()), 0.5 * (a.y() + b.y()), 0.5 * (a.z() + b.z()))
-}
-
-/// `(origin, unit-u, unit-v)` frame of a planar surface (natural parameterization).
-fn plane_frame(s: &dyn Surface) -> Option<(GpPnt, GpVec, GpVec)> {
-    let (o, x, y) = s.d1(0.0, 0.0);
-    let mx = x.magnitude();
-    let my = y.magnitude();
-    if mx < 1e-30 || my < 1e-30 {
-        return None;
-    }
-    Some((o, x.divided(mx), y.divided(my)))
-}
-
-/// Exact projection of `p` onto a planar surface: `(u, v, distance)`.
-fn plane_projection(s: &dyn Surface, p: &GpPnt) -> (f64, f64, f64) {
-    let (o, x, y) = match plane_frame(s) {
-        Some(f) => f,
-        None => {
-            let (u, v) = surface_closest_params(s, p, 24, 24);
-            let q = s.d0(u, v);
-            return (u, v, p.distance(&q));
-        }
-    };
-    let n = x.crossed(&y);
-    let m = n.magnitude();
-    if m < 1e-30 {
-        let (u, v) = surface_closest_params(s, p, 24, 24);
-        let q = s.d0(u, v);
-        return (u, v, p.distance(&q));
-    }
-    let n = n.divided(m);
-    let d = GpVec::from_pnts(&o, p);
-    let dist = d.dot(&n).abs();
-    let proj = p.translated_vec(&n.multiplied_scalar(-d.dot(&n)));
-    let w = GpVec::from_pnts(&o, &proj);
-    (w.dot(&x), w.dot(&y), dist)
-}
-
-/// Plane normal of a planar surface.
-fn plane_normal(s: &dyn Surface) -> GpVec {
-    match plane_frame(s) {
-        Some((_, x, y)) => x.crossed(&y).normalized(),
-        None => GpVec::zero(),
-    }
-}
-
-/// `(axis point, axis direction, radius)` of a cylindrical surface.
-fn cylinder_geometry(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
-    let u0 = quadric_u0(s);
-    let (_, _, v0, _) = surface_sample_bounds(s);
-    let c0 = midpoint(&s.d0(u0, v0), &s.d0(u0 + PI, v0));
-    let c1 = midpoint(&s.d0(u0, v0 + 1.0), &s.d0(u0 + PI, v0 + 1.0));
-    let zvec = GpVec::from_pnts(&c0, &c1);
-    let zm = zvec.magnitude();
-    if zm < 1e-12 {
-        return None;
-    }
-    let z = zvec.divided(zm);
-    let r = s.d0(u0, v0).distance(&c0);
-    if r < 1e-12 {
-        return None;
-    }
-    Some((c0, z, r))
-}
-
-fn cylinder_matches(s: &dyn Surface, a: &GpPnt, z: &GpVec, r: f64) -> bool {
-    let (u0, u1, v0, v1) = surface_sample_bounds(s);
-    let tol = 1e-4 * r.abs().max(1.0);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            let d = GpVec::from_pnts(a, &s.d0(u, v));
-            let rho = d.coord.subtracted(&z.xyz().multiplied(d.dot(z))).modulus();
-            if (rho - r).abs() > tol {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// `(apex, axis direction, tan(semi-angle))` of a conical surface.
-fn cone_geometry(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
-    let u0 = quadric_u0(s);
-    let (_, _, v0, _) = surface_sample_bounds(s);
-    let c0 = midpoint(&s.d0(u0, v0), &s.d0(u0 + PI, v0));
-    let c1 = midpoint(&s.d0(u0, v0 + 1.0), &s.d0(u0 + PI, v0 + 1.0));
-    let zvec = GpVec::from_pnts(&c0, &c1);
-    let zm = zvec.magnitude();
-    if zm < 1e-12 {
-        return None;
-    }
-    let z = zvec.divided(zm);
-    let r0 = s.d0(u0, v0).distance(&c0);
-    let r1 = s.d0(u0, v0 + 1.0).distance(&c1);
-    let tan_alpha = (r1 - r0) / zm;
-    if tan_alpha.abs() < 1e-12 {
-        return None;
-    }
-    let s0 = r0 / tan_alpha;
-    let apex = c0.translated_vec(&z.multiplied_scalar(-s0));
-    Some((apex, z, tan_alpha))
-}
-
-fn cone_matches(s: &dyn Surface, apex: &GpPnt, z: &GpVec, tan_alpha: f64) -> bool {
-    let cosa = 1.0 / (1.0 + tan_alpha * tan_alpha).sqrt();
-    let (u0, u1, v0, v1) = surface_sample_bounds(s);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            let d = GpVec::from_pnts(apex, &s.d0(u, v));
-            let err = (d.dot(z) * d.dot(z) - d.square_magnitude() * cosa * cosa).abs();
-            if err > 1e-4 * d.square_magnitude().max(1.0) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// `(center, axis direction, major radius, minor radius)` of a torus.
-fn torus_geometry(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> {
-    let u0 = quadric_u0(s);
-    let o = midpoint(&s.d0(u0, 0.0), &s.d0(u0 + PI, 0.0));
-    let r_outer = s.d0(u0, 0.0).distance(&o);
-    let o2 = midpoint(&s.d0(u0, PI), &s.d0(u0 + PI, PI));
-    let r_inner = s.d0(u0, PI).distance(&o2);
-    if o.distance(&o2) > 1e-6 * r_outer.max(1.0) {
-        return None;
-    }
-    let major = 0.5 * (r_outer + r_inner);
-    let minor = 0.5 * (r_outer - r_inner);
-    if major <= 1e-12 || minor <= 1e-12 {
-        return None;
-    }
-    let x = GpVec::from_pnts(&o, &s.d0(u0, 0.0)).divided(r_outer);
-    let y = GpVec::from_pnts(&o, &s.d0(u0 + PI / 2.0, 0.0)).divided(r_outer);
-    let z = x.crossed(&y).normalized();
-    Some((o, z, major, minor))
-}
-
-fn torus_matches(s: &dyn Surface, o: &GpPnt, z: &GpVec, major: f64, minor: f64) -> bool {
-    let (u0, u1, v0, v1) = surface_sample_bounds(s);
-    let tol = 1e-4 * major.max(minor).max(1.0);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            let d = GpVec::from_pnts(o, &s.d0(u, v));
-            let dz = d.dot(z);
-            let rho = d.coord.subtracted(&z.xyz().multiplied(dz)).modulus();
-            let err = ((rho - major).powi(2) + dz * dz).sqrt() - minor;
-            if err.abs() > tol {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// Full analytic surface classification (plane, sphere, cylinder, cone, torus).
-fn surface_kind(s: &dyn Surface) -> SurfaceKind {
-    if is_planar(s, 6, 6, 1e-6) {
-        return SurfaceKind::Plane;
-    }
-    if let Some((a, z, r)) = cylinder_geometry(s) {
-        if cylinder_matches(s, &a, &z, r) {
-            return SurfaceKind::Cylinder;
-        }
-    }
-    if let Some((apex, z, ta)) = cone_geometry(s) {
-        if cone_matches(s, &apex, &z, ta) {
-            return SurfaceKind::Cone;
-        }
-    }
-    if let Some((o, z, maj, min)) = torus_geometry(s) {
-        if torus_matches(s, &o, &z, maj, min) {
-            return SurfaceKind::Torus;
-        }
-    }
-    if sphere_center(s).is_some() {
-        return SurfaceKind::Sphere;
-    }
-    SurfaceKind::Other
-}
-
-/// Shortcut distance for a point lying on the axis of an analytic surface.
-///
-/// Port of `IntTools_EdgeFace::IsEqDistance`: when the point is within `TOL` of
-/// the cylinder axis / cone axis / torus major circle, the surface distance is
-/// the analytic radius directly (projection is ill-defined there).
-fn is_eq_distance(p: &GpPnt, s: &dyn Surface) -> Option<f64> {
-    const TOL: f64 = 1e-7;
-    match surface_kind(s) {
-        SurfaceKind::Cylinder => {
-            let (a, z, r) = cylinder_geometry(s)?;
-            let dc = GpVec::from_pnts(&a, p).crossed(&z).magnitude();
-            if dc < TOL {
-                Some(r)
-            } else {
-                None
-            }
-        }
-        SurfaceKind::Cone => {
-            let (apex, z, ta) = cone_geometry(s)?;
-            let dc = GpVec::from_pnts(&apex, p).crossed(&z).magnitude();
-            if dc < TOL {
-                Some(p.distance(&apex) * ta)
-            } else {
-                None
-            }
-        }
-        SurfaceKind::Torus => {
-            let (o, _, maj, min) = torus_geometry(s)?;
-            let dc = (o.distance(p) - maj).abs();
-            if dc < TOL {
-                Some(min)
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-/// `IntTools_Tools::IsDirsCoinside`: unit directions equal or opposite within
-/// `0.0002` (measured as the distance between the unit-sphere points).
-fn dirs_coinside(d1: &GpVec, d2: &GpVec) -> bool {
-    let d = d1.subtracted(d2).magnitude();
-    d < 0.0002 || (2.0 - d).abs() < 0.0002
-}
-
-/// Whether a circle-like curve is coplanar with a planar surface.
-fn is_coplanar(curve: &dyn Curve, surface: &dyn Surface) -> bool {
-    if !is_circle_like(curve) || !is_planar(surface, 6, 6, 1e-6) {
-        return false;
-    }
-    let (_, _, n) = match circle_geometry(curve) {
-        Some(g) => g,
-        None => return false,
-    };
-    dirs_coinside(&n, &plane_normal(surface))
-}
-
-/// Whether a circle-like curve is tangent to a planar surface (its center is at
-/// distance ≈ radius from the plane).
-fn is_radius(curve: &dyn Curve, surface: &dyn Surface, criteria: f64) -> bool {
-    if !is_circle_like(curve) || !is_planar(surface, 6, 6, 1e-6) {
-        return false;
-    }
-    let (center, r, _) = match circle_geometry(curve) {
-        Some(g) => g,
-        None => return false,
-    };
-    let pn = plane_normal(surface);
-    let po = surface.d0(0.0, 0.0);
-    let d = GpVec::from_pnts(&po, &center).dot(&pn).abs();
-    (d - r).abs() < criteria
-}
-
-// ---------------------------------------------------------------------------
-// EdgeFace
-// ---------------------------------------------------------------------------
 
 /// Edge/face intersection algorithm. Port of `IntTools_EdgeFace`.
 ///
@@ -552,18 +42,19 @@ fn is_radius(curve: &dyn Curve, surface: &dyn Surface, criteria: f64) -> bool {
 /// are not `Debug`. `Clone` is provided (Arc handles clone cheaply).
 #[derive(Clone)]
 pub struct EdgeFace {
-    edge: Edge,
-    face: Face,
-    range: IntRange,
-    fuzzy_value: f64,
-    quick_coincidence_check: bool,
-    curve: Option<Arc<dyn Curve>>,
-    surface: Option<Arc<dyn Surface>>,
-    criteria: f64,
-    is_done: bool,
-    error_status: i32,
-    common_parts: Vec<CommonPrt>,
-    face_classifier: Option<FClass2d>,
+    pub(crate) edge: Edge,
+    pub(crate) face: Face,
+    pub(crate) range: IntRange,
+    pub(crate) fuzzy_value: f64,
+    pub(crate) quick_coincidence_check: bool,
+    pub(crate) curve: Option<Arc<dyn Curve>>,
+    pub(crate) surface: Option<Arc<dyn Surface>>,
+    pub(crate) criteria: f64,
+    pub(crate) is_done: bool,
+    pub(crate) error_status: i32,
+    pub(crate) common_parts: Vec<CommonPrt>,
+    pub(crate) face_classifier: Option<FClass2d>,
+    pub(crate) min_distance: f64,
 }
 
 impl Default for EdgeFace {
@@ -588,6 +79,7 @@ impl EdgeFace {
             error_status: 1,
             common_parts: Vec::new(),
             face_classifier: None,
+            min_distance: f64::MAX,
         }
     }
 
@@ -653,14 +145,15 @@ impl EdgeFace {
     pub fn perform(&mut self) -> Result<(), String> {
         self.common_parts.clear();
         self.error_status = 0;
+        self.min_distance = f64::MAX;
         self.check_data();
         if self.error_status != 0 {
             return Ok(());
         }
 
-        let curve = BRepTool::edge_curve(&self.edge)
+        let curve = BRepTool::edge_curve_world(&self.edge)
             .ok_or_else(|| "EdgeFace::perform: edge has no curve".to_string())?;
-        let surface = BRepTool::face_surface(&self.face)
+        let surface = BRepTool::face_surface_world(&self.face)
             .ok_or_else(|| "EdgeFace::perform: face has no surface".to_string())?;
         let (ef, el) = BRepTool::edge_parameters(&self.edge);
         if !ef.is_finite() || !el.is_finite() || el - ef <= 1e-15 {
@@ -705,6 +198,9 @@ impl EdgeFace {
             cp.part_type = CommonPartType::Edge;
             cp.range = self.range;
             cp.face = Some(self.face.0.clone());
+            let p1 = curve.d0(self.range.first);
+            let p2 = curve.d0(self.range.last);
+            cp.set_bounding_points(p1, p2);
             self.common_parts.push(cp);
             self.is_done = true;
             return Ok(());
@@ -713,15 +209,13 @@ impl EdgeFace {
         let mut intersector = BeanFaceIntersector::new();
         intersector.initialize(curve.clone(), surface.clone(), tol_e, tol_f);
         intersector.set_bean_parameters(self.range.first, self.range.last);
-        // The surface parameter window must be the face's *trimmed* UV bounds
-        // (from the boundary wires), not the unbounded surface range — otherwise
-        // a coplanar edge extending past the face is reported as fully on-face.
-        let (u0, u1, v0, v1) = crate::wireframe::face_uv_bounds(&self.face, surface.as_ref());
-        intersector.set_surface_parameters(u0, u1, v0, v1);
+        // `IntTools_EdgeFace::Perform` does not call `SetSurfaceParameters`;
+        // the adaptor/surface ranges come from `BeanFaceIntersector::Init`.
         intersector.perform()?;
         if !intersector.is_done() {
             return Ok(());
         }
+        self.min_distance = intersector.minimal_square_distance().sqrt();
 
         for r in intersector.result() {
             let mid = 0.5 * (r.first + r.last);
@@ -729,6 +223,9 @@ impl EdgeFace {
                 let mut cp = CommonPrt::new();
                 cp.range = r;
                 cp.face = Some(self.face.0.clone());
+                let p1 = curve.d0(r.first);
+                let p2 = curve.d0(r.last);
+                cp.set_bounding_points(p1, p2);
                 self.common_parts.push(cp);
             }
         }
@@ -770,14 +267,20 @@ impl EdgeFace {
         &self.common_parts
     }
 
-    /// For each common part, `Some(t)` when the part is a single point at edge
-    /// parameter `t`, `None` when it is a coincident edge sub-range.
+    /// `IntTools_EdgeFace::MinimalDistance`.
+    pub fn minimal_distance(&self) -> f64 {
+        self.min_distance
+    }
+
+    /// For each common part, `Some(t)` when the part is a `TopAbs_VERTEX`
+    /// at edge parameter `t`, `None` when it is a coincident edge sub-range.
     pub fn point_parameters(&self) -> Vec<Option<f64>> {
         self.common_parts
             .iter()
             .map(|cp| {
-                if cp.range.length() <= self.criteria * 2.0 {
-                    Some(cp.range.first)
+                if cp.part_type == CommonPartType::Vertex {
+                    cp.vertex_parameter1
+                        .or_else(|| Some(0.5 * (cp.range.first + cp.range.last)))
                 } else {
                     None
                 }
@@ -879,7 +382,7 @@ impl EdgeFace {
 
     /// Signed distance from the curve point at `t` to the surface, minus
     /// `myCriteria`. Port of `IntTools_EdgeFace::DistanceFunction`.
-    fn distance_function(&self, t: f64) -> f64 {
+    pub(crate) fn distance_function(&self, t: f64) -> f64 {
         let curve = self.curve.clone().expect("curve set");
         let surface = self.surface.clone().expect("surface set");
         let p = curve.d0(t);
@@ -914,7 +417,7 @@ impl EdgeFace {
 
     /// Sample the curve–surface distance over `[t0, t1]`. Returns
     /// `(min, max, param_at_min)` with golden-section refinement around the min.
-    fn distance_profile(&self, t0: f64, t1: f64, n: usize) -> (f64, f64, f64) {
+    pub(crate) fn distance_profile(&self, t0: f64, t1: f64, n: usize) -> (f64, f64, f64) {
         let curve = self.curve.clone().expect("curve set");
         if t1 <= t0 {
             let p = curve.d0(t0);
@@ -949,182 +452,7 @@ impl EdgeFace {
         (min_d, max_d, min_t)
     }
 
-    /// Classify a range as an edge (coincident sub-range) or a point.
-    /// Port of `IntTools_EdgeFace::MakeType`.
-    ///
-    /// A point collapses the range to `[t, t]` (the touch/mid parameter); an
-    /// edge keeps the original non-degenerate range. Both carry
-    /// [`CommonPartType::Edge`].
-    fn make_type(&mut self, cp: &mut CommonPrt) -> i32 {
-        let af1 = cp.range.first;
-        let al1 = cp.range.last;
-        let curve = self.curve.clone().expect("curve set");
-        let a_pf = curve.d0(af1);
-        let a_pl = curve.d0(al1);
-        let df1 = a_pf.distance(&a_pl);
-        let a_cr = curve_resolution(curve.as_ref(), self.criteria);
-        let is_whole_range =
-            (af1 - self.range.first).abs() < a_cr && (al1 - self.range.last).abs() < a_cr;
-
-        if df1 > self.criteria * 2.0 {
-            // A long common part is an EDGE (coincident on-face range) when its
-            // interior lies on the face — the whole edge, or a partial on-face
-            // sub-range such as a coplanar edge trimmed to the face boundary.
-            // It collapses to a touch POINT only when the middle is off the
-            // face (a tangency at the range end).
-            let tm = 0.5 * (af1 + al1);
-            if is_whole_range || self.is_projectable(tm) {
-                cp.part_type = CommonPartType::Edge;
-                return 0;
-            }
-        }
-
-        let mut tm = 0.5 * (af1 + al1);
-        if !self.check_touch(cp, &mut tm) {
-            tm = 0.5 * (af1 + al1);
-        }
-        cp.part_type = CommonPartType::Edge;
-        cp.range = IntRange::new_unchecked(tm, tm);
-        0
-    }
-
-    /// Whether the range contains a touch point within `myCriteria`, and the
-    /// touch parameter. Port of `IntTools_EdgeFace::CheckTouch`.
-    fn check_touch(&self, cp: &CommonPrt, tx: &mut f64) -> bool {
-        let a_tf = cp.range.first;
-        let a_tl = cp.range.last;
-        let curve = self.curve.clone().expect("curve set");
-        let a_cr = curve_resolution(curve.as_ref(), self.criteria);
-        if (a_tf - self.range.first).abs() < a_cr && (a_tl - self.range.last).abs() < a_cr {
-            return false; // whole range: keep EDGE
-        }
-
-        let (min_d, max_d, min_t) = self.distance_profile(a_tf, a_tl, 32);
-        // Extrema parallel case: the distance is nearly constant over the range.
-        if max_d - min_d <= 0.05 * (min_d + self.criteria.max(1e-9)) {
-            return false;
-        }
-        let mut a_dist2 = min_d * min_d;
-        let mut a_tx = min_t;
-
-        // Exact curve–surface intersection fallback (the `Extrema` aNbExt == 0
-        // branch of `IntTools_EdgeFace::CheckTouch`): when the sampled profile
-        // found no near-surface minimum, consult the exact intersector.
-        if a_dist2 > self.criteria * self.criteria && a_tl > a_tf {
-            let surface = self.surface.clone().expect("surface set");
-            let (u0, u1, v0, v1) = surface_sample_bounds(surface.as_ref());
-            if let Ok(hr) = perform_curve_surface(
-                curve.as_ref(),
-                surface.as_ref(),
-                (a_tf, a_tl),
-                (u0, u1, v0, v1),
-            ) {
-                for i in 0..hr.nb_points() {
-                    let p = hr.point(i);
-                    if p.param() >= a_tf && p.param() <= a_tl {
-                        a_dist2 = 0.0;
-                        a_tx = p.param();
-                        break;
-                    }
-                }
-            }
-        }
-
-        let b1 = self.distance_function(a_tf) + self.criteria;
-        if b1 * b1 < a_dist2 {
-            a_dist2 = b1 * b1;
-            a_tx = a_tf;
-        }
-        let b2 = self.distance_function(a_tl) + self.criteria;
-        if b2 * b2 < a_dist2 {
-            a_dist2 = b2 * b2;
-            a_tx = a_tl;
-        }
-        let bm = self.distance_function(0.5 * (a_tf + a_tl)) + self.criteria;
-        if bm * bm < a_dist2 {
-            a_dist2 = bm * bm;
-            a_tx = 0.5 * (a_tf + a_tl);
-        }
-
-        if a_dist2 > self.criteria * self.criteria {
-            return false;
-        }
-        *tx = a_tx;
-        if (a_tx - a_tf).abs() < PCONFUSION {
-            return true;
-        }
-        if (a_tx - a_tl).abs() < PCONFUSION {
-            return true;
-        }
-        if a_tx > a_tf && a_tx < a_tl {
-            return true;
-        }
-        false
-    }
-
-    /// Vertex-specific touch refinement. Port of `IntTools_EdgeFace::CheckTouchVertex`.
-    fn check_touch_vertex(&self, cp: &CommonPrt, tx: &mut f64) -> bool {
-        let a_tf = cp.range.first;
-        let a_tl = cp.range.last;
-        let curve = self.curve.clone().expect("curve set");
-        let a_type = curve_kind(curve.as_ref());
-        let a_eps_t = if a_type == CurveKind::Line { 9e-5 } else { 8e-5 };
-        let a_tm = 0.5 * (a_tf + a_tl);
-        let a_dist2 = {
-            let d = self.distance_function(a_tm);
-            d * d
-        };
-        if a_tl <= a_tf {
-            return false;
-        }
-        let (min_d, max_d, min_t) = self.distance_profile(a_tf, a_tl, 32);
-        if max_d - min_d <= 0.05 * (min_d + self.criteria.max(1e-9)) {
-            return false;
-        }
-        let a_dist2_new = min_d * min_d;
-        if a_dist2_new > a_dist2 {
-            *tx = a_tm;
-            return true;
-        }
-        if a_dist2_new > self.criteria * self.criteria {
-            return false;
-        }
-        let a_tx = min_t;
-        if (a_tx - a_tf).abs() < a_eps_t {
-            return false;
-        }
-        if (a_tx - a_tl).abs() < a_eps_t {
-            return false;
-        }
-        if a_tx > a_tf && a_tx < a_tl {
-            *tx = a_tx;
-            return true;
-        }
-        false
-    }
-
-    /// The line/cylinder and circle/plane special treatment: refine EDGE/VERTEX
-    /// common parts into touch points when the range is only tangent.
-    fn refine_touch_parts(&mut self) {
-        for i in 0..self.common_parts.len() {
-            if self.common_parts[i].part_type != CommonPartType::Edge {
-                continue;
-            }
-            let is_point = self.common_parts[i].range.length() <= self.criteria * 2.0;
-            let cp = self.common_parts[i].clone();
-            let mut tx = 0.0;
-            let touched = if is_point {
-                self.check_touch_vertex(&cp, &mut tx)
-            } else {
-                self.check_touch(&cp, &mut tx)
-            };
-            if touched {
-                self.common_parts[i].range = IntRange::new_unchecked(tx, tx);
-            }
-        }
-    }
 }
-
 /// Golden-section minimization of `f` over `[lo, hi]`. Returns `(argmin, min)`.
 fn golden_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64, eps: f64) -> (f64, f64) {
     const GOLD: f64 = 0.6180339887498949;

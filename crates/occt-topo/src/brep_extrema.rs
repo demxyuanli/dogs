@@ -704,7 +704,14 @@ pub(crate) mod test_box {
             let (origin, normal, u_dir) = face_planes[fi];
             let ax3 = GpAx3::new(origin, normal, &u_dir).expect("perpendicular axes");
             let mut face = b.make_face_plane(&GpPln::new(ax3));
-            let wire = b.make_wire(&face_edge_sets[fi].map(|ei| edges[ei].clone()));
+            let mut wire = b.make_wire(&face_edge_sets[fi].map(|ei| edges[ei].clone()));
+            // Bottom plane: origin (0,0,0), normal -Z, u = +Y so v = +X.
+            // The +X then +Y edge loop is clockwise in that UV frame; reverse
+            // the wire so the outer ring is CCW (material on the left), matching
+            // BRepPrimAPI_MakeBox / IntTools_FClass2d::IsHole.
+            if fi == 0 {
+                wire.0.reverse();
+            }
             b.add_wire(&mut face, &wire);
             faces.push(face);
         }

@@ -50,17 +50,50 @@ fn shape_mesh_to_ply(mesh: &ShapeMesh) -> PlyMesh {
 /// ponytail: B-spline faces whose STEP `SURFACE_CURVE` pcurves are dropped
 /// (`step.rs`) get a wrong boundary, so the Delaunay bbox drifts past `EXACT_TOL`
 /// on `Shape.step`/`Shape-2.step` — a STEP-import gap, not a BRepMesh one.
-fn export_mesh(shape: &TopoShape, deflection: f64) -> ShapeMesh {
-    crate::meshing::incremental_mesh::incremental_mesh_to_shape_mesh(shape, deflection)
-        .or_else(|_| crate::brepmesh::incremental_mesh(shape, deflection).map(|im| im.mesh))
-        .unwrap_or_else(|_| crate::shape_mesh::mesh_shape(shape, deflection))
+/// `Prs3d::GetDeflection` for a finite box (`Prs3d.hxx:66-72`).
+/// `maxComp(diag) * DeviationCoefficient * 4`, coefficient default 0.001.
+fn prs3d_get_deflection(shape: &TopoShape, maximal_chordial: f64) -> f64 {
+    const DEVIATION_COEFFICIENT: f64 = 0.001;
+    const CONFUSION: f64 = 1e-7;
+    let b = crate::bbox_from_geometry::shape_bbox(shape);
+    if b.is_void() {
+        return maximal_chordial.max(CONFUSION);
+    }
+    let mn = b.corner_min();
+    let mx = b.corner_max();
+    let max_comp = (mx.x() - mn.x())
+        .max(mx.y() - mn.y())
+        .max(mx.z() - mn.z());
+    (max_comp * DEVIATION_COEFFICIENT * 4.0).max(CONFUSION)
 }
 
-/// Export a shape to Wavefront OBJ text (coincident vertices welded first so
-/// shared edges and periodic seams are watertight).
+fn export_mesh(shape: &TopoShape, deflection: f64) -> ShapeMesh {
+    // `RWObj_CafWriter` writes the vis triangulation
+    // (`StdPrs_ToolTriangulatedShape::Tessellate` →
+    // `BRepMesh_DiscretFactory::Discret(shape, GetDeflection, DeviationAngle)`).
+    // Drawer defaults: 20 deg (`Prs3d_Drawer.cxx:96`) and relative
+    // `GetDeflection` (`Prs3d.hxx:71`). The `deflection` argument is only
+    // the void-box fallback (`MaximalChordialDeviation`).
+    const PRS3D_DEV_ANGLE: f64 = 20.0 * std::f64::consts::PI / 180.0;
+    let lin = prs3d_get_deflection(shape, deflection);
+    crate::meshing::incremental_mesh::IncrementalMesh::from_deflection(
+        shape,
+        lin,
+        false,
+        PRS3D_DEV_ANGLE,
+    )
+    .mesh()
+    .cloned()
+    .or_else(|| crate::brepmesh::incremental_mesh(shape, deflection).ok().map(|im| im.mesh))
+    .unwrap_or_else(|| crate::shape_mesh::mesh_shape(shape, deflection))
+}
+
+/// Export a shape to Wavefront OBJ text.
+///
+/// Vertices stay per face (`RWObj_CafWriter` / `RWMesh_FaceIterator`):
+/// a box is 24 nodes / 12 triangles, not a globally welded 8-node mesh.
 pub fn brep_to_obj(shape: &TopoShape, deflection: f64) -> String {
-    let mut mesh = export_mesh(shape, deflection);
-    crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
+    let mesh = export_mesh(shape, deflection);
     occt_core::io::obj::write_obj(&shape_mesh_to_obj(&mesh))
 }
 
@@ -84,10 +117,9 @@ pub fn brep_to_ply(shape: &TopoShape, deflection: f64) -> String {
     occt_core::io::ply::write_ply(&shape_mesh_to_ply(&mesh))
 }
 
-/// Write a shape to an OBJ file (vertices welded first).
+/// Write a shape to an OBJ file (per-face nodes, same as [`brep_to_obj`]).
 pub fn brep_write_obj(path: &str, shape: &TopoShape, deflection: f64) -> std::io::Result<()> {
-    let mut mesh = export_mesh(shape, deflection);
-    crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
+    let mesh = export_mesh(shape, deflection);
     occt_core::io::obj::write_obj_file(path, &shape_mesh_to_obj(&mesh))
 }
 

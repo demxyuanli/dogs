@@ -1,14 +1,13 @@
 //! Topology exploration — a port of `TopExp_Explorer`.
 //!
-//! `TShape` does not store children in this port, so the explorer cannot walk
-//! the topology tree on its own. The caller seeds children for the root with
-//! [`Explorer::set_children`], or supplies a `children_of` callback with
-//! [`Explorer::with_children_fn`]; the explorer then walks the tree depth-first,
-//! yielding every sub-shape whose type matches the target.
+//! Default walks use [`crate::iterator::cumulated_children`] (`TopoDS_Iterator`
+//! with `cumOri`/`cumLoc` true). Callers may still seed children with
+//! [`Explorer::set_children`] or [`Explorer::with_children_fn`].
 
 use std::sync::Arc;
 
 use crate::abs::ShapeType;
+use crate::iterator::cumulated_children;
 use crate::shape::TopoShape;
 
 /// A named association between two shapes (TopExp_StackEntry style).
@@ -92,8 +91,7 @@ impl Explorer {
     fn children_of(&self, s: &TopoShape) -> Vec<TopoShape> {
         match &self.children_fn {
             Some(f) => f(s),
-            // Real topology: walk the children stored on the TShape.
-            None => s.tshape.read().unwrap().children.clone(),
+            None => cumulated_children(s),
         }
     }
 
@@ -165,7 +163,7 @@ pub fn vertices_from_edges(edges: &[TopoShape]) -> Vec<TopoShape> {
         let has_children = !e.tshape.read().unwrap().children.is_empty();
         let mut added = false;
         if has_children {
-            let kids = e.tshape.read().unwrap().children.clone();
+            let kids = cumulated_children(e);
             for v in kids {
                 if v.shape_type() != ShapeType::Vertex {
                     continue;

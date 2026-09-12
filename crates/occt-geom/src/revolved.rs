@@ -46,6 +46,10 @@ impl Surface for GeomRevolvedSurface {
     fn u_range(&self) -> (f64, f64) { (self.basis.first_parameter(), self.basis.last_parameter()) }
     fn v_range(&self) -> (f64, f64) { (0.0, 2.0 * std::f64::consts::PI) }
     fn is_v_periodic(&self) -> bool { true }
+    fn is_surface_of_revolution(&self) -> bool { true }
+    fn revolution_basis_curve(&self) -> Option<Arc<dyn Curve>> {
+        Some(self.basis.clone())
+    }
     fn continuity(&self) -> u8 { self.basis.continuity() }
     fn transform(&mut self, _t: &GpTrsf) {}
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }

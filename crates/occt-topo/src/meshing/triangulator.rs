@@ -34,11 +34,12 @@ use super::parameters::MeshParameters;
 pub struct FaceTriangulation {
     /// Model index of the triangulated face.
     pub face_index: usize,
-    /// 3D mesh nodes (surface evaluated at the UV nodes).
+    /// 3D mesh nodes. Frontier vertices are the edge 3D polyline; interior
+    /// vertices are `surface.d0` at `uv`.
     pub vertices: Vec<GpPnt>,
     /// Triangles referencing `vertices` by 0-based index.
     pub triangles: Vec<Triangle>,
-    /// UV coordinates of every node (`vertices[i] == surface.d0(uv[i])`).
+    /// UV coordinates of every node.
     pub uv: Vec<GpPnt2d>,
 }
 

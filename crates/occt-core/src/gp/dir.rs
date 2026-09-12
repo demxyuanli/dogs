@@ -170,17 +170,23 @@ impl GpDir {
         cos.acos()
     }
 
-    /// Angle between self and other, with reference direction Vref.
-    /// Positive if cross product aligns with Vref, negative otherwise.
+    /// `gp_Dir::AngleWithRef` (`gp_Dir.cxx:55-84`). Opposite directions
+    /// use `PI - asin(|cross|)` so the result is `PI`, not 0.
     pub fn angle_with_ref(&self, other: &GpDir, vref: &GpDir) -> f64 {
-        if let Ok(c) = self.crossed(other) {
-            let a = self.angle(other);
-            if c.dot(vref) < 0.0 {
-                return -a;
-            }
-            a
+        let xyz = self.coord.crossed(&other.coord);
+        let cosinus = self.coord.dot(&other.coord);
+        let sinus = xyz.modulus();
+        let ang = if cosinus > -0.70710678118655 && cosinus < 0.70710678118655 {
+            cosinus.acos()
+        } else if cosinus < 0.0 {
+            std::f64::consts::PI - sinus.asin()
         } else {
-            0.0
+            sinus.asin()
+        };
+        if xyz.dot(vref.xyz()) >= 0.0 {
+            ang
+        } else {
+            -ang
         }
     }
 

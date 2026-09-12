@@ -11,7 +11,7 @@
 //! Only the 2D mode is needed (`addWire` calls `CheckOrder(..., isClosed=true,
 //! mode3d=false)`), so 3D/both modes are not carried over.
 
-use occt_core::gp::GpPnt2d;
+use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::precision::SQUARE_CONFUSION;
 
 /// OCCT `RealSmall()` — below this squared distance the join is considered exact.
@@ -30,16 +30,15 @@ pub enum WireOrderStatus {
     Shifted,
 }
 
-fn sq_dist(a: &GpPnt2d, b: &GpPnt2d) -> f64 {
-    let dx = a.x() - b.x();
-    let dy = a.y() - b.y();
-    dx * dx + dy * dy
+fn sq_dist(a: &GpPnt, b: &GpPnt) -> f64 {
+    a.square_distance(b)
 }
 
-/// Ordered chain of wire edges in 2D space.
+/// Ordered chain of wire edges. Mode2D stores `(u, v, 0)`; Mode3D stores
+/// `FirstVertex` / `LastVertex` (`ShapeAnalysis_WireOrder` `gp_XYZ`).
 pub struct WireOrder {
-    begins: Vec<GpPnt2d>,
-    ends: Vec<GpPnt2d>,
+    begins: Vec<GpPnt>,
+    ends: Vec<GpPnt>,
     /// `ord[i]` holds the signed edge number at position `i` (1-based `i`):
     /// positive = forward, negative = reversed.
     ord: Vec<i32>,
@@ -57,7 +56,15 @@ impl WireOrder {
     }
 
     /// Append an edge by its (start, end) 2D points, in natural edge direction.
+    /// `CheckOrder(..., mode3d=false)` stores XY as XYZ with Z=0.
     pub fn add_edge(&mut self, begin: GpPnt2d, end: GpPnt2d) {
+        self.begins
+            .push(GpPnt::new(begin.x(), begin.y(), 0.0));
+        self.ends.push(GpPnt::new(end.x(), end.y(), 0.0));
+    }
+
+    /// `CheckOrder(..., mode3d=true)`: 3D `FirstVertex` / `LastVertex`.
+    pub fn add_edge_xyz(&mut self, begin: GpPnt, end: GpPnt) {
         self.begins.push(begin);
         self.ends.push(end);
     }
@@ -72,6 +79,34 @@ impl WireOrder {
         self.status
     }
 
+    /// Signed area of the ordered chain (`IsOuterBound` / `TotCross2D` sign).
+    /// Negative means the CheckOrder walk is clockwise in UV.
+    pub fn chain_area(&self) -> f64 {
+        let n = self.nb_edges();
+        if n < 2 {
+            return 0.0;
+        }
+        let mut area = 0.0;
+        for i in 1..=n {
+            let a = self.point_at(self.ordered(i), true);
+            let b = self.point_at(self.ordered(if i == n { 1 } else { i + 1 }), true);
+            area += a.x() * b.y() - b.x() * a.y();
+        }
+        area * 0.5
+    }
+
+    /// Reverse the ordered chain so a clockwise walk becomes counter-clockwise
+    /// (`ShapeFix_Face::FixOrientation` / `IsOuterBound` on the discrete loop).
+    pub fn reverse_chain(&mut self) {
+        if self.ord.is_empty() {
+            return;
+        }
+        self.ord.reverse();
+        for v in &mut self.ord {
+            *v = -*v;
+        }
+    }
+
     /// Signed edge number at chain position `idx` (1-based): positive = forward,
     /// negative = reversed. Identity when `perform()` has not run yet.
     pub fn ordered(&self, idx: usize) -> i32 {
@@ -83,7 +118,7 @@ impl WireOrder {
 
     /// Traversal start (`want_start == true`) or end (`false`) point of the edge
     /// whose signed chain number is `idx` (positive = forward, negative = reversed).
-    fn point_at(&self, idx: i32, want_start: bool) -> GpPnt2d {
+    fn point_at(&self, idx: i32, want_start: bool) -> GpPnt {
         let e = idx.unsigned_abs() as usize - 1;
         let (b, en) = (self.begins[e], self.ends[e]);
         if idx > 0 {

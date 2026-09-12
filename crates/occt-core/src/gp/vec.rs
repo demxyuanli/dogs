@@ -228,6 +228,18 @@ impl GpVec {
         self.dot(other) < 0.0
     }
 
+    /// `gp_Vec::IsParallel(Other, AngularTolerance)`.
+    pub fn is_parallel_ang(&self, other: &GpVec, angular_tolerance: f64) -> bool {
+        let ang = self.angle(other);
+        ang <= angular_tolerance || std::f64::consts::PI - ang <= angular_tolerance
+    }
+
+    /// `gp_Vec::IsOpposite(Other, AngularTolerance)`.
+    pub fn is_opposite_ang(&self, other: &GpVec, angular_tolerance: f64) -> bool {
+        let ang = self.angle(other);
+        std::f64::consts::PI - ang <= angular_tolerance
+    }
+
     pub fn multiply_mat(mut self, mat: &GpMat) -> Self {
         self.coord = self.coord.multiplied_mat(mat);
         self
