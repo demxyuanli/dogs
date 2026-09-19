@@ -13,8 +13,13 @@ graphify-out/
 
 # Example build output
 examples/output/
+# 门禁导出的生成物（export_data_obj 默认输出目录；board §11：生成物不入库）
+/output/
 
 # Test-generated STEP → OBJ outputs
 data/output/
 data/output2/
 /.target-*/
+
+# 本地工具配置
+.claude/settings.local.json
