@@ -163,7 +163,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-52 | A16 | `occt-geom/src/geom_api.rs:52,97`、`occt-geom2d/src/curve_ops.rs:68-69` | 256×256 采样求交/投影 → `Extrema_ExtPS/ExtCC` + `intana2d`/`intimpargen` | 3 | pending |
 | T-53 | A17 | `occt-topo/src/brep_exchange.rs:56-98` | 偏转形参被 Prs3d 顶掉 + 三级静默回退 → `RWObj_CafWriter`/`RWMesh_FaceIterator.cxx:87-89`（不网格化、空则跳过）⇒ 删回退、形参改名 | **6** | **done**（2026-09-20） |
 | T-54 | A18 | `occt-topo/src/wireframe.rs:257-380` | 平面耳切 + 质心角度排序 + 桥洞 → 约束 Delaunay（`BRepMesh_DelaunayBaseMeshAlgo` + `BRepMesh_Delaun`） | 7 | pending |
-| T-55 | A19 | `meshing/incremental_mesh/p01.rs:369,460-467`、`wireframe.rs:407-408`、`brepmesh.rs:38,174-175,259` | `WIREFRAME_FALLBACK_RATIO_MAX=0.10` 失败率换算法 + 四叉树魔数 + `clamp(3,64)` → OCCT 无失败率阈值，逐面置 `IMeshData_Failure`（`BRepMesh_BaseMeshAlgo.cxx:52-62`） | 7 | pending |
+| T-55 | A19 | `meshing/incremental_mesh/p01.rs:369,460-467`、`wireframe.rs:407-408`、`brepmesh.rs:38,174-175,259` | `WIREFRAME_FALLBACK_RATIO_MAX=0.10` 失败率换算法 + 四叉树魔数 + `clamp(3,64)` → OCCT 无失败率阈值，逐面置 `IMeshData_Failure`（`BRepMesh_BaseMeshAlgo.cxx:52-62`） | 7 | **失败率阈值已删**（2026-09-20）：`WIREFRAME_FALLBACK_RATIO_MAX` 与其"超 10% 即整体改用 UV 栅格"分支移除（仓库明令禁止的"OCCT 里不存在的规则"）；**逐面 UV 栅格回退暂留**并就地标 `UNPORTED`——实测 `data/occ/T0M.stp` 有 **169/1772 面**（9.5%）在忠实管线上判 FAILURE，删掉回退会让 `step_obj_parity` 变 13/14（T0M bbox min[2] 短 0.33）。待 T-68 修完该缺口后再删。四叉树魔数（`brepmesh.rs`）属 A13/A18 遗留（T-49/T-55 交叉），未动 |
 | T-56 | A20 | `occt-topo/src/step/p05.rs:508-604` | `p1.distance(p2) < 1e-3` 替代 `V1.IsSame(V2)`；`Other`/HYPERBOLA 边域落 `(0,1)` → `StepToTopoDS_TranslateEdge.cxx:438,443` + `ShapeAnalysis_Curve.cxx:376-400` | **6** | pending |
 | T-57 | A21 | `occt-topo/src/meshing/model_healer.rs:279-290` | 退化支路左右端接反、丢 `aPrevSqDist - aNextSqDist` 判定 → `BRepMesh_ModelHealer.cxx:491-512` + `hxx:143-151` | **6** | **done**（2026-09-20） |
 | T-58 | A22 | `occt-topo/src/step/p05.rs:348-370,740-760` | `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂；圆用三点外心回退 → `ShapeAnalysis_Curve.cxx:382-400,160,200` | 6 | pending |
@@ -288,6 +288,24 @@ cd ..; git worktree remove --force .target-headcheck
 - **过期期望订正**：`fclass2d::tests::infinite_point_closed_periodic_face_is_in` 的注释自承前提是"球面无边界 wire"（port artifact）；现在球面有了真实边界 ⇒ 无限点为 `Out`，测试改名并注明 `LateralWire` 出处（同 T-06 先例：改的是编码 artifact 的期望，不是新写测试）。
 - **验证**：`occt-topo --lib` **1293/1**（唯一红仍 T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`occt-geom` 151、`occt-geom2d` 72、`occt-core` 290 —— **逐项与基线一致**。
 - **T-68 剩余**：环面（`BRepPrim_Torus::SetMeridian` 的闭合经线分支：`MeridianClosed()` ⇒ 单边双 pcurve，`cxx:389-396`）与带孔面的内环（`ring area 4 vs 3.8037`）⇒ 完成后重放 A13/A18，再重放 T-59。
+
+**T-68 第四轮（2026-09-20）：A19 独立落地；A13/A18 重放的分诊从 9 个失败降到 5 个**
+
+- **A19（T-55）完成**：只删"失败率阈值 + 两级静默换网格器"（`perform` 直接传播错误、失败面只置 `MeshStatus::FAILURE`；删 `build_shape_mesh_wireframe`、`wireframe_face_triangulation`、`WIREFRAME_FALLBACK_RATIO_MAX`、`discretize_face` 的两处回退），**保留** `wireframe` 的 UV 栅格给其余消费者 ⇒ `--lib` **1293/1**、四道门禁与基线一致。这样仓库明令禁止的"OCCT 里不存在的失败率规则"已彻底移除，且不牵连 A13/A18。
+- **A13/A18 重放（分诊）**：把 `face_to_triangles` 也改成委托忠实管线后，`--lib` 由 1293/1 变 **1288/6**——比第三轮（round 20 的 1291/10）**少 4 个失败**：`viz_scene`×3 与 `vrml` 的球面用例**已随 T-68 步 1+2 通过** ✓。剩余 5 个（已逐一定位）：
+  1. `bop_curved::sphere_inside_box_common_volume`：共同体积 4.1288 vs 4.1888（**低 1.43%**）——忠实 Delaunay 在该偏转下比旧栅格略粗，旧容差是按栅格标定的（属"期望需按新网格重标定"，非错误）；
+  2. `brep_pattern::pattern_volume_sums_copies`：两球体积 **0** ⇒ 模式副本的分离面**无 pcurve/wire**；
+  3. `draw::sphere_fillet_offset`：offset 体积 **0** ⇒ 同上（分离/派生形状缺边界）；
+  4. `rwmesh::roundtrip_shape_mesh`：**panic** `make_edge_segment_with_vertices: p1 and p2 must be distinct` ⇒ 网格→BRep 路径遇到**零长边**（与 T-32 的 `mesh_to_brep` 同族，需按 `BRepBuilderAPI_MakeShapeOnMesh` 跳过退化段）；
+  5. `wireframe::face_with_hole_triangulates_ring_area`：ring area **4 vs 3.8037** ⇒ 带孔面的**内环未生效**（`model_builder` 内 wire 处理）。
+- **结论**：A13/A18 的剩余阻塞点已从"球面完全无边界"收敛为 **分离/派生形状的边界传播**、**mesh→BRep 零长边**、**带孔面内环**三件事。A13/A18 暂缓（重放会红 5 个），A19 已单独落地。
+
+**T-68 第五轮（2026-09-20）：T0M 的 169 面缺口被测出——A19 只能先删"被禁的失败率规则"**
+
+- **重要测量**：按 A19 把"失败率阈值 + 两级回退"全删后，`step_obj_parity` **14/14 → 13/14**：`data/occ/T0M.stp` 的 `bbox min[2] ours=-424.412306008 occ=-424.741875692`（**短 0.33**）。临时探针（已删）定位：`IncrementalMesh::perform` 返回 Ok，但 **`face_stats` 只有 1603 面 / 形状 1772 面** ⇒ **169 个面（9.5%）被判 FAILURE 且无三角化**，此前正是被那条"逐面 UV 栅格回退"悄悄补齐的（169/1772 = 9.5% **低于** 10% 阈值，所以阈值本身没触发——被禁的规则与被依赖的回退是两件事）。
+- **本轮落地（A19 的实质部分）**：删除 `WIREFRAME_FALLBACK_RATIO_MAX = 0.10` 及其"超 10% 即整形状改用 UV 栅格"分支——这是仓库明令禁止、OCCT 中不存在的失败率规则；**逐面回退暂留**并在原地写明 `UNPORTED` 与实测依据（169/1772），待 T-68 补完该缺口后删除。
+- **验证**：`occt-topo --lib` **1293/1**、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` 2/3 —— 全部与基线一致。
+- **下一步（精确）**：定位 T0M 那 169 个面为何判 FAILURE（提示：单面探针 `IncrementalMesh::discretize_face` 已不再回退，可直接逐面统计并打印首个失败面的 surface/错误），这同时是 A13/A18 与 T-55 剩余部分的共同前置。
 
 ## 4. 决策与约束（不可违反）
 

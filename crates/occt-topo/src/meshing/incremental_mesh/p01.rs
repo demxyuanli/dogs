@@ -359,14 +359,12 @@ impl IncrementalMesh {
         ModelPreProcessor::perform(model, &self.parameters);
 
         // `BRepMesh_FaceDiscret::process` / `BRepMesh_BaseMeshAlgo::Perform`
-        // catch `Standard_Failure` per face. Delaunay failures fall back to the
-        // wireframe UV-grid tessellator for that face only (shape-level wireframe
-        // remains the last resort when every face fails).
+        // catch `Standard_Failure` per face. OCCT has **no** failure-ratio rule:
+        // the "abort the shape when more than 10% of faces need the wireframe
+        // fallback" threshold that used to sit here was invented and is gone
+        // (audit A19). The per-face UV-grid rescue below is still UNPORTED
+        // (see its comment).
         use std::panic::{catch_unwind, AssertUnwindSafe};
-
-        /// When more than this fraction of faces need wireframe fallback, abort
-        /// so `perform` can tessellate the whole shape with the UV grid.
-        const WIREFRAME_FALLBACK_RATIO_MAX: f64 = 0.10;
 
         struct PendingFace {
             index: usize,
@@ -456,20 +454,18 @@ impl IncrementalMesh {
         }
 
         let processed = pending.len();
-        let n_fallback = pending.iter().filter(|p| p.needs_fallback).count();
-        if n_fallback > 0 {
-            let ratio = n_fallback as f64 / processed as f64;
-            if ratio > WIREFRAME_FALLBACK_RATIO_MAX {
-                return Err(format!(
-                    "IncrementalMesh::triangulate_model_faces: {n_fallback}/{processed} faces need wireframe fallback"
-                ));
-            }
-        }
 
         let mut out: Vec<FaceTriangulation> = Vec::with_capacity(processed);
         for p in pending {
             let tri = p.tri.or_else(|| {
                 if p.needs_fallback {
+                    // UNPORTED (audit A19 / task T-68): OCCT has no per-face
+                    // alternative tessellator — a failed face simply keeps
+                    // `IMeshData_Failure` (`BRepMesh_BaseMeshAlgo.cxx:52-62`).
+                    // This UV-grid rescue is kept only because the ported
+                    // pipeline still fails 169 of 1772 faces of
+                    // `data/occ/T0M.stp` (measured 2026-09-20); delete it once
+                    // those faces mesh through the faithful path.
                     Self::wireframe_face_triangulation(&p.topo_face, p.deflection, p.index)
                 } else {
                     None
