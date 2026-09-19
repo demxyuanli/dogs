@@ -119,6 +119,11 @@ impl Curve2d for OffsetCurve2d {
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(self.clone())
     }
+
+    /// `Geom2d_OffsetCurve::BasisCurve()` (`Geom2d_OffsetCurve.cxx:174-177`).
+    fn offset_basis(&self) -> Option<&dyn Curve2d> {
+        Some(&*self.basis)
+    }
 }
 
 /// Wrap a basis curve in an [`OffsetCurve2d`] with the default sign convention

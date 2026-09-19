@@ -181,6 +181,11 @@ impl Curve2d for Geom2dBezierCurve {
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(self.clone())
     }
+
+    /// `Geom2d_BezierCurve::NbPoles()` (`Geom2d_BezierCurve.cxx:600-603`).
+    fn bezier_nb_poles(&self) -> Option<usize> {
+        Some(self.poles.len())
+    }
 }
 
 /// de Casteljau evaluation of a non-rational Bezier.

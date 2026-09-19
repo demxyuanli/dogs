@@ -11,25 +11,31 @@ impl Geom2dEllipse {
 }
 
 impl Curve2d for Geom2dEllipse {
+    /// `ElCLib::EllipseValue(U, gp_Ax22d, Major, Minor)` (`cxx:543-555`):
+    /// `P = Loc + Major*cos(U)*Xd + Minor*sin(U)*Yd`.
     fn d0(&self, u: f64) -> GpPnt2d {
         let a = self.pos.major_radius;
         let b = self.pos.minor_radius;
         let cx = self.pos.pos.point.x(); let cy = self.pos.pos.point.y();
         let xd = self.pos.pos.vxdir; let yd = self.pos.pos.vydir;
-        GpPnt2d::new(cx + a*u.cos()*xd.x - b*u.sin()*yd.x, cy + a*u.cos()*xd.y - b*u.sin()*yd.y)
+        GpPnt2d::new(cx + a*u.cos()*xd.x + b*u.sin()*yd.x, cy + a*u.cos()*xd.y + b*u.sin()*yd.y)
     }
+    /// `ElCLib::EllipseD1(U, gp_Ax22d, Major, Minor)` (`cxx:623-650`):
+    /// `V1 = -Major*sin(U)*Xd + Minor*cos(U)*Yd`.
     fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d) {
         let a = self.pos.major_radius; let b = self.pos.minor_radius;
         let xd = self.pos.pos.vxdir; let yd = self.pos.pos.vydir;
         let p = self.d0(u);
-        (p, GpVec2d::new(-a*u.sin()*xd.x - b*u.cos()*yd.x, -a*u.sin()*xd.y - b*u.cos()*yd.y))
+        (p, GpVec2d::new(-a*u.sin()*xd.x + b*u.cos()*yd.x, -a*u.sin()*xd.y + b*u.cos()*yd.y))
     }
+    /// `ElCLib::EllipseD2(U, gp_Ax22d, Major, Minor)`:
+    /// `V2 = -Major*cos(U)*Xd - Minor*sin(U)*Yd`.
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
         let a = self.pos.major_radius; let b = self.pos.minor_radius;
         let xd = self.pos.pos.vxdir; let yd = self.pos.pos.vydir;
         let p = self.d0(u);
-        let d1 = GpVec2d::new(-a*u.sin()*xd.x - b*u.cos()*yd.x, -a*u.sin()*xd.y - b*u.cos()*yd.y);
-        let d2 = GpVec2d::new(-a*u.cos()*xd.x + b*u.sin()*yd.x, -a*u.cos()*xd.y + b*u.sin()*yd.y);
+        let d1 = GpVec2d::new(-a*u.sin()*xd.x + b*u.cos()*yd.x, -a*u.sin()*xd.y + b*u.cos()*yd.y);
+        let d2 = GpVec2d::new(-a*u.cos()*xd.x - b*u.sin()*yd.x, -a*u.cos()*xd.y - b*u.sin()*yd.y);
         (p, d1, d2)
     }
     fn first_parameter(&self) -> f64 { 0.0 }

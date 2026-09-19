@@ -48,4 +48,7 @@ impl Curve2d for Geom2dOffsetCurve {
     fn transform(&mut self, t: &GpTrsf2d) { self.offset *= t.scale_factor().abs(); }
     fn reverse(&mut self) { self.offset = -self.offset; }
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
+
+    /// `Geom2d_OffsetCurve::BasisCurve()` (`Geom2d_OffsetCurve.cxx:174-177`).
+    fn offset_basis(&self) -> Option<&dyn Curve2d> { Some(&*self.basis) }
 }

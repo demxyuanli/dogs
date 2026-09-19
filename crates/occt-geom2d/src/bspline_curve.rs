@@ -88,7 +88,33 @@ impl Curve2d for Geom2dBSplineCurve {
 
     fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
-    fn continuity(&self) -> u8 { if self.degree >= 2 { 3 } else { 1 } }
+    fn continuity(&self) -> u8 {
+        // `Geom2d_BSplineCurve::Continuity` / `GeomAdaptor` LocalContinuity.
+        occt_core::bspl::local_continuity(
+            &self.knots,
+            self.degree,
+            false,
+            self.first_parameter(),
+            self.last_parameter(),
+        )
+    }
+    fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
+        occt_core::bspl::adaptor_intervals(
+            &self.knots,
+            self.degree,
+            false,
+            continuity,
+            self.first_parameter(),
+            self.last_parameter(),
+            occt_core::precision::PCONFUSION,
+        )
+    }
+    fn nb_intervals(&self, continuity: u8) -> i32 {
+        self.parameter_intervals(continuity)
+            .len()
+            .saturating_sub(1)
+            .max(1) as i32
+    }
 
     fn transform(&mut self, t: &GpTrsf2d) {
         for i in 0..self.xs.len() {
@@ -120,6 +146,22 @@ impl Curve2d for Geom2dBSplineCurve {
     }
 
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
+
+    /// `Geom2d_BSplineCurve::NbKnots()` (`Geom2d_BSplineCurve_1.cxx:598-601`):
+    /// the number of distinct knots. The curve stores the expanded knot
+    /// sequence, so compress it as `Geom_BSplineCurve::Knots` does.
+    fn bspline_nb_knots(&self) -> Option<usize> {
+        Some(knots::unique_knots_mults(&self.knots).0.len())
+    }
+
+    /// `Geom2d_BSplineCurve::Degree()` (`Geom2d_BSplineCurve_1.cxx:168-171`).
+    fn bspline_degree(&self) -> Option<usize> {
+        Some(self.degree)
+    }
+
+    fn bspline_poles2d(&self) -> Option<(&[f64], &[f64])> {
+        Some((&self.xs, &self.ys))
+    }
 }
 
 #[cfg(test)]
