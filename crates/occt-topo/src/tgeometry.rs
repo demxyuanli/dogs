@@ -206,6 +206,18 @@ impl GeometryRegistry {
         self.edges.write().unwrap().insert(key(s), geom);
     }
 
+    /// `BRep_Builder::Range(E, First, Last)`: set the edge's parameter range.
+    /// `BRepPrim_OneAxis` relies on it for the degenerate pole edges
+    /// (`SetParameters(ETOP/EBOTTOM, …, 0., myAngle)`,
+    /// `BRepPrim_OneAxis.cxx:407`, `:418`): the 3D curve is absent but the range
+    /// still spans the full period so the edge's pcurve is a full u-isoline.
+    pub fn set_edge_range(&self, s: &TopoShape, first: f64, last: f64) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.first = first;
+            g.last = last;
+        }
+    }
+
     pub fn edge_geom(&self, s: &TopoShape) -> Option<EdgeGeom> {
         self.edges.read().unwrap().get(&key(s)).map(|g| {
             // EdgeGeom is not Clone (Arc<dyn Curve> is Clone, but we rebuild a

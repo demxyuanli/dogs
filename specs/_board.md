@@ -269,6 +269,17 @@ cd ..; git worktree remove --force .target-headcheck
 - **新增前置**：需要在 port 里能构造**退化边**（无 3D 曲线、只有 pcurve 的边）。`EdgeGeom` 有 `degenerated: bool`，但 `TopoBuilder::make_edge` 目前强制要求 3D 曲线 ⇒ T-68 需先给 builder 加"退化边"构造（对齐 `BRepPrim_Builder::MakeDegeneratedEdge`，`BRepPrim_OneAxis.cxx:934/1212/1264`）。
 - **处置**：按纪律**回退**（`git checkout`），`--lib` 复跑 **1293/1**；结论并入本任务卡。**次序**：退化边构造 → 球/环 wire（含极点边）→ 探针验证 → 重放 A13/A18 → 重放 T-59。
 
+**T-68 第二轮（2026-09-20）：退化边构造已落地；完整 `LateralWire` 让忠实网格首次跑通**
+
+- **已落地（保留，附加性、无调用者、门禁不动）**：
+  - `TopoBuilder::make_degenerated_edge(&GpPnt)`（`builder.rs`）+ port 内 `DegeneratePointCurve`（常点曲线占位，导数全零、范围 `[0,0]`、`CN`），并置 `GeometryRegistry::set_degenerated`；语义对齐 `BRepPrim_Builder::MakeDegeneratedEdge`（`BRepPrim_OneAxis.cxx:934/1212/1264`）与 `BRep_Builder::Degenerated`（`BRep_Builder.cxx:1073-1085`，OCCT 会**丢掉 3D 曲线**，本 port 的 `EdgeGeom::curve` 非空故用占位）。
+  - `GeometryRegistry::set_edge_range(s, first, last)`（对齐 `BRep_Builder::Range`，供 `SetParameters(ETOP/EBOTTOM, …, 0., myAngle)`，`BRepPrim_OneAxis.cxx:407/418`）。
+- **球面完整 wire 实测（`LateralWire` 四条边：Top 退化 + End 经线(reversed) + Bottom 退化 + Start 经线；pcurve 全部为 `gp_Lin2d`：极点 `(0,±π/2)+X` 范围 `[0,2π]`、经线 `(0/2π,−2π)+Y` 范围 `[3π/2,5π/2]`）**：
+  - `wires=1`、`uv_bounds=(0,2π,−π/2,π/2)`、`classify=Sphere`、`analytic_surface_area=4π` ✓
+  - **`incremental_mesh_to_shape_mesh` 首次成功**：`168 verts / 306 tris`（未给极点边设范围时是 `4096/7686`；此前**完全失败** `face 0 has no boundary UV points`）⇒ **A13/A18 的前置在网格侧已打通**。
+  - **仍未通过**：`brep_gprop_full::surface_properties/volume_properties` 返回 **0**（`--lib` 会变 1291/3，新增 `sphere_surface_volume`、`adaptive_box_sphere`）。路径已缩小到 `FaceGauss`：`compute_face` 判 `rect_domain`（四条 pcurve 都是直线）后走 `compute_rect → compute_natural`，其入口守卫 `u2 > u1 && v2 > v1` 不成立即返回 0 ⇒ 问题在 `FaceGauss::new` 自己的 `uv_bounds(surface, &arcs)`/`build_arc(&e,&map)`（`brep_gprop_full/p02.rs:36-60`），与 `brep_tools::uv_bounds`（实测正确）不是同一条实现。
+- **下一步（精确）**：读 `brep_gprop_full/p02.rs` 的 `build_arc` 与该模块的 `uv_bounds(surface,&arcs)`，定位为何闭合球面的四条直线 pcurve 得不到非退化 UV 盒；修好后球面 wire 即可重放（随后 A13/A18 → T-59）。球面基元代码已按纪律回退，避免半成品。
+
 ## 4. 决策与约束（不可违反）
 
 1. 改完先编译（`cargo check`，编译不过先修编译）。

@@ -2,7 +2,7 @@
 //! Source: `BRep_Builder`
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx2, GpCirc, GpDir, GpLin, GpPln, GpPnt, GpVec};
+use occt_core::gp::{GpAx2, GpCirc, GpDir, GpLin, GpPln, GpPnt, GpTrsf, GpVec};
 use occt_geom::{Curve, GeomCircle, GeomLine, GeomPlane, Surface};
 
 use crate::abs::{Orientation, ShapeType};
@@ -94,6 +94,20 @@ impl TopoBuilder {
     pub fn make_edge(&self, curve: Arc<dyn Curve>, first: f64, last: f64) -> Edge {
         let e = Edge::new();
         GeometryRegistry::global().set_edge(&e.0, EdgeGeom::new(curve, first, last));
+        e
+    }
+
+    /// `BRepPrim_Builder::MakeDegeneratedEdge` (`BRepPrim_OneAxis.cxx:934`,
+    /// `:1212`, `:1264`): an edge whose 3D representation is the single point
+    /// `p` (a sphere/cone pole, a torus seam point). OCCT stores **no** 3D curve
+    /// for such an edge (`BRep_Builder::Degenerated`,
+    /// `BRep_Builder.cxx:1073-1085`) and the mesh pipeline then uses its pcurve
+    /// only (`meshing/edge_discret.rs:720-723`, `:744`). `EdgeGeom::curve` is
+    /// non-nullable here, so a constant-point curve carries `p`; every consumer
+    /// must key off the `degenerated` flag, never off this curve's shape.
+    pub fn make_degenerated_edge(&self, p: &GpPnt) -> Edge {
+        let e = self.make_edge(Arc::new(DegeneratePointCurve { p: *p }), 0.0, 0.0);
+        GeometryRegistry::global().set_degenerated(&e.0, true);
         e
     }
 
@@ -297,5 +311,44 @@ mod tests {
         let comp = b.make_compound_of(&[wire.0.clone(), face.0.clone()]);
         assert_eq!(nb_children(&comp.0), 2);
         clear_tree(&comp.0);
+    }
+}
+
+/// Port-internal stand-in for OCCT's **absent** 3D curve of a degenerated edge
+/// (`BRep_Builder::Degenerated` drops it, `BRep_Builder.cxx:1073-1085`).
+/// `EdgeGeom::curve` is a non-nullable `Arc<dyn Curve>` in this port, so a
+/// constant-point curve keeps `p` available while every derivative is zero and
+/// `[First, Last] = [0, 0]`. Consumers must rely on the `degenerated` flag
+/// (`GeometryRegistry::is_degenerated_edge`), never on this curve's shape.
+#[derive(Debug, Clone)]
+struct DegeneratePointCurve {
+    p: GpPnt,
+}
+
+impl Curve for DegeneratePointCurve {
+    fn d0(&self, _u: f64) -> GpPnt {
+        self.p
+    }
+    fn d1(&self, _u: f64) -> (GpPnt, GpVec) {
+        (self.p, GpVec::zero())
+    }
+    fn d2(&self, _u: f64) -> (GpPnt, GpVec, GpVec) {
+        (self.p, GpVec::zero(), GpVec::zero())
+    }
+    fn first_parameter(&self) -> f64 {
+        0.0
+    }
+    fn last_parameter(&self) -> f64 {
+        0.0
+    }
+    fn continuity(&self) -> u8 {
+        6 // GeomAbs_CN
+    }
+    fn transform(&mut self, t: &GpTrsf) {
+        self.p = self.p.transformed(t);
+    }
+    fn reverse(&mut self) {}
+    fn clone_dyn(&self) -> Box<dyn Curve> {
+        Box::new(self.clone())
     }
 }
