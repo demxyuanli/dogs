@@ -9,16 +9,26 @@
 //! general Newton path, exactly as OCCT does for the non-analytically-
 //! computable cases.
 //!
+//! **UNPORTED (audit A1 / task T-67)** — the general point-surface path
+//! (`point_surface_newton_all*`) is a **substitute, not a port**: it seeds a
+//! 24×24 parameter grid (local extrema + global min/max + corners) and
+//! Newton-refines with a **numeric** Jacobian. OCCT has no such grid: its
+//! general path is `Extrema_GenExtPS::Perform` (`Extrema_GenExtPS.cxx`,
+//! 1056 lines) — per-C2-interval sampling with `mySample`, then
+//! `math_FunctionSetRoot` on `Extrema_GFuncExtPS`'s analytic system; the type
+//! dispatch and iso-degenerate handling live in `Extrema_ExtPS`
+//! (`Extrema_ExtPS.cxx`, 376 lines) with the analytic arms in
+//! `Extrema_ExtPElS` (454 lines). Porting those three files is the faithful
+//! fix; until then this module must not be cited as an `Extrema_ExtPS` port.
+//!
+//! `Surface::d2` **does** exist (`surface.rs:12`, analytic surfaces override
+//! it; the trait default is a central difference, see A15/T-51), so the numeric
+//! Jacobian here is not a trait limitation — it is part of the substitute.
+//!
 //! `dyn Surface` cannot be downcast, so analytic dispatch classifies by
 //! geometric invariants (mirroring `brep_surface::classify_surface`): only
 //! planes (constant normal) and spheres (equidistant samples from a solved
 //! center) are classified; everything else goes through the Newton path.
-//!
-//! The Newton systems are solved with a NUMERIC Jacobian: the `Surface` trait
-//! exposes only `d0`/`d1` (no second derivatives), so the Jacobian of the
-//! orthogonality conditions `F = ((S-P)·Su, (S-P)·Sv)` is computed by central
-//! finite differences of `d1` with `eps ≈ 1e-6` relative to the parameter
-//! range. // ponytail: numeric Jacobian, Surface trait lacks d2
 mod prelude {
 
 pub(crate) use std::cmp::Ordering;
