@@ -261,6 +261,14 @@ cd ..; git worktree remove --force .target-headcheck
 - 仓内 API 盘点（已确认可用）：`GeometryRegistry::set_edge_pcurve/set_edge_pcurves/set_pcurve_range`、`occt_geom2d::{Geom2dLine,Geom2dCircle}`、`TopoBuilder::{make_edge,add_edge_vertices,make_wire,make_face}`；现有球面测试还断言 `UVBounds = 2π × π`（`primitives.rs:576-578`），可作为实现正确性的即时报错点。
 - **未改任何代码**（避免半成品）；T-68 方案已写入任务卡，下一轮从其"验证链"逐步执行。
 
+**T-68 第一轮实测（2026-09-20）：只加经线不够，极点退化边是必须的**
+
+- **实现尝试**：给球面加了忠实经线线（`BRepPrim_Sphere::SetMeridian` 的圆：`GpAx3(O, −Y, X)` 半径 r，参数 `[3π/2, 5π/2]`），两条边（u=0 与 u=2π）+ 用 `set_edge_pcurve` 挂上 `BRepPrim_OneAxis::LateralFace` 规定的 **UV 直线 pcurve**（沿 +v，起点 `(u, −2π)`）。编译通过。
+- **探针实测（临时探针，已删）**：`wires=1` ✓、`uv_bounds=(0, 2π, −π/2, π/2)` ✓（与 `primitives.rs:576-578` 的断言一致）、`classify=Sphere` ✓、`analytic_surface_area=4π` ✓、UV 栅格网格 4096 顶点 ✓ —— 但 **`brep_gprop_full::surface_properties` 返回 0** ⇒ `--lib` **1291/3**（新增两个失败：`brep_gprop_full::{sphere_surface_volume, adaptive_box_sphere}`）。
+- **根因（决定性）**：只有两条经线时，UV 环路是 **u=0 与 u=2π 两条竖线**，**环路包围面积 = 0** ⇒ `BRepGProp` 的 2D Gauss 积分（`FaceGauss`）得 0。OCCT 之所以在 `LateralWire()` 里还要 `TopEdge`/`BottomEdge`，正是因为它们是 **v=±π/2 上的 u 等参线（跨整个 2π）**，把 UV 环路闭合成完整矩形。⇒ **极点退化边不可省**。
+- **新增前置**：需要在 port 里能构造**退化边**（无 3D 曲线、只有 pcurve 的边）。`EdgeGeom` 有 `degenerated: bool`，但 `TopoBuilder::make_edge` 目前强制要求 3D 曲线 ⇒ T-68 需先给 builder 加"退化边"构造（对齐 `BRepPrim_Builder::MakeDegeneratedEdge`，`BRepPrim_OneAxis.cxx:934/1212/1264`）。
+- **处置**：按纪律**回退**（`git checkout`），`--lib` 复跑 **1293/1**；结论并入本任务卡。**次序**：退化边构造 → 球/环 wire（含极点边）→ 探针验证 → 重放 A13/A18 → 重放 T-59。
+
 ## 4. 决策与约束（不可违反）
 
 1. 改完先编译（`cargo check`，编译不过先修编译）。
