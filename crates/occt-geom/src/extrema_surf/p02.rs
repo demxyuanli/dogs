@@ -59,10 +59,26 @@ pub(super) fn solve_point_surface(
 
 /// All local extrema of |S(u,v)-P| via grid seeding + Newton, deduplicated and
 /// sorted by distance. Replaces the sampling path of `Extrema_ExtPS` for
-/// non-analytic surfaces.
+/// non-analytic surfaces, over the surface's natural parameter bounds.
 pub(crate) fn point_surface_newton_all(s: &dyn Surface, p: &GpPnt) -> Vec<ExtremaPair> {
     let (u0, u1) = surf_bound_u(s);
     let (v0, v1) = surf_bound_v(s);
+    point_surface_newton_all_box(s, p, u0, u1, v0, v1)
+}
+
+/// [`point_surface_newton_all`] over an explicit parameter window. This is the
+/// `Extrema_ExtPS` search of `ShapeAnalysis_Surface::ValueOfUV`
+/// (`ShapeAnalysis_Surface.cxx:1350-1352`), which initialises the extrema over
+/// the face bounds EXPANDED by the resolution, so the closest point is allowed
+/// to leave `[uf, ul] x [vf, vl]`.
+pub(crate) fn point_surface_newton_all_box(
+    s: &dyn Surface,
+    p: &GpPnt,
+    u0: f64,
+    u1: f64,
+    v0: f64,
+    v1: f64,
+) -> Vec<ExtremaPair> {
     let (nu, nv) = (24, 24);
     let mut d2 = vec![vec![0.0; nv + 1]; nu + 1];
     for i in 0..=nu {
@@ -389,6 +405,32 @@ pub fn point_surface_extrema_all(s: &dyn Surface, p: &GpPnt) -> Vec<ExtremaPair>
 /// Minimum distance from `p` to `s` (with the closest point and parameters).
 pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
     match point_surface_extrema_all(s, p).into_iter().next() {
+        Some(e) => e,
+        None => fallback_point_surface(s, p),
+    }
+}
+
+/// Minimum distance from `p` to `s` (with the closest point and parameters)
+/// searched over an explicit parameter window: `Extrema_ExtPS` after
+/// `Initialize(SurfAdapt, uf - du, ul + du, vf - dv, vl + dv, Tol, Tol)`
+/// (`ShapeAnalysis_Surface.cxx:1352`). Non-finite or inverted windows fall back
+/// to the natural-bounds entry point.
+pub fn point_surface_extrema_box(
+    s: &dyn Surface,
+    p: &GpPnt,
+    u0: f64,
+    u1: f64,
+    v0: f64,
+    v1: f64,
+) -> ExtremaPair {
+    let ok = |a: f64, b: f64| a.is_finite() && b.is_finite() && b > a;
+    if !ok(u0, u1) || !ok(v0, v1) {
+        return point_surface_extrema(s, p);
+    }
+    match point_surface_newton_all_box(s, p, u0, u1, v0, v1)
+        .into_iter()
+        .next()
+    {
         Some(e) => e,
         None => fallback_point_surface(s, p),
     }

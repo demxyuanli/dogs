@@ -232,6 +232,19 @@ impl crate::Surface for GeomSurfaceOfRevolution {
         Some(self.generatrix.clone())
     }
 
+    fn revolution_axis(&self) -> Option<occt_core::gp::GpAx1> {
+        Some(self.axis())
+    }
+
+    /// `GeomAdaptor_SurfaceOfRevolution::UResolution` / `VResolution`
+    /// (`cxx:356-366`) and `GeomAdaptor_Surface::VResolution` Revolution arm
+    /// (`cxx:1906-1908`). U is `Precision::Parametric`; V follows the basis.
+    fn uv_resolution(&self, r3d: f64) -> Option<(f64, f64)> {
+        let ru = r3d * occt_core::precision::PCONFUSION / occt_core::precision::CONFUSION;
+        let rv = self.generatrix.resolution(r3d);
+        Some((ru, rv))
+    }
+
     fn is_v_periodic(&self) -> bool {
         false
     }

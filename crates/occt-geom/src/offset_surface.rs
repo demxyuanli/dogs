@@ -1,7 +1,7 @@
 //! Offset 3D surface. Source: `Geom_OffsetSurface.hxx`
 //!
 //! The offset surface at `(u, v)` is the basis surface point displaced along
-//! its unit normal by the signed offset: `d0 = basis.d0 + offset · n`.
+//! its unit normal by the signed offset: `d0 = basis.d0 + offset * n`.
 //! First partials follow `Geom_OffsetSurfaceUtils::EvaluateD1`.
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use occt_core::precision::{APPROXIMATION, RESOLUTION};
 use crate::adv_approx::ApproxAFunction3d;
 use crate::bspline_curve::GeomBSplineCurve;
 use crate::curve::Curve;
-use crate::offset_surface_utils::evaluate_d1;
+use crate::offset_surface_utils::{evaluate_d0, evaluate_d1};
 use crate::osculating_surface::{OsculatingSurface, OSCULATING_TOL};
 use crate::surface::Surface;
 
@@ -52,6 +52,7 @@ impl GeomOffsetSurface {
     }
 
     /// Unit normal of the basis surface at `(u, v)` (the offset direction).
+    /// Prefer `evaluate_d0` / `d0` for the offset point; this remains for iso.
     fn unit_normal(&self, u: f64, v: f64) -> GpVec {
         let (_, du, dv) = self.basis.d1(u, v);
         let n = du.xyz().crossed(dv.xyz());
@@ -143,9 +144,25 @@ impl GeomOffsetSurface {
 
 impl Surface for GeomOffsetSurface {
     fn d0(&self, u: f64, v: f64) -> GpPnt {
-        let p = self.basis.d0(u, v);
-        let n = self.unit_normal(u, v);
-        GpPnt::from_xyz(&p.coord.added(&n.xyz().multiplied(self.offset)))
+        // `Geom_OffsetSurfaceUtils::EvaluateD0` (`pxx:586-783`).
+        let (p, d1u, d1v) = self.basis.d1(u, v);
+        match evaluate_d0(
+            u,
+            v,
+            self.basis.as_ref(),
+            self.offset,
+            Some(&self.osc),
+            p,
+            d1u,
+            d1v,
+        ) {
+            Some(r) => r,
+            None => {
+                let basis_p = self.basis.d0(u, v);
+                let n = self.unit_normal(u, v);
+                GpPnt::from_xyz(&basis_p.coord.added(&n.xyz().multiplied(self.offset)))
+            }
+        }
     }
 
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {

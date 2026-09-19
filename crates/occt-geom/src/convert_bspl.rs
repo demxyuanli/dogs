@@ -147,6 +147,8 @@ fn insert_surface_u(s: &GeomBSplineSurface, u: f64, mult: usize) -> GeomBSplineS
         deg_u: s.deg_u,
         deg_v: s.deg_v,
         weights: new_weights,
+        u_periodic: s.u_periodic,
+        v_periodic: s.v_periodic,
     }
 }
 
@@ -182,6 +184,8 @@ fn insert_surface_v(s: &GeomBSplineSurface, v: f64, mult: usize) -> GeomBSplineS
         deg_u: s.deg_u,
         deg_v: s.deg_v,
         weights: new_weights,
+        u_periodic: s.u_periodic,
+        v_periodic: s.v_periodic,
     }
 }
 

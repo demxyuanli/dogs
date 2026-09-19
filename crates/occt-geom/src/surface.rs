@@ -1,7 +1,7 @@
 //! Abstract 3D parametric surface. Source: `Geom_Surface.hxx`
 use std::sync::Arc;
 
-use occt_core::gp::{GpCone, GpCylinder, GpPln, GpPnt, GpSphere, GpTorus, GpVec, GpTrsf};
+use occt_core::gp::{GpAx1, GpCone, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus, GpVec, GpTrsf};
 
 use crate::curve::Curve;
 
@@ -65,9 +65,14 @@ pub trait Surface: Send + Sync {
     fn rectangular_trimmed_basis(&self) -> Option<Arc<dyn Surface>> { None }
     /// `STANDARD_TYPE(Geom_SurfaceOfLinearExtrusion)`.
     fn is_surface_of_linear_extrusion(&self) -> bool { false }
+    /// `Geom_Surface::UIso`: for an analytic surface the partner is
+    /// `GeomAdaptor_Surface::UIso` (`GeomAdaptor_Surface.cxx`) over
+    /// `Geom_Plane::UIso` / `Geom_CylindricalSurface::UIso` /
+    /// `Geom_ConicalSurface::UIso` / `Geom_SphericalSurface::UIso` /
+    /// `Geom_ToroidalSurface::UIso`; for a parametric patch it is
     /// `Geom_BSplineSurface::UIso` / `Geom_BezierSurface::UIso`.
     fn u_iso_curve(&self, _u: f64) -> Option<Arc<dyn Curve>> { None }
-    /// `Geom_BSplineSurface::VIso` / `Geom_BezierSurface::VIso`.
+    /// `Geom_Surface::VIso`; the mirror of [`Surface::u_iso_curve`].
     fn v_iso_curve(&self, _v: f64) -> Option<Arc<dyn Curve>> { None }
     /// `Geom_Surface::UPeriod`.
     fn u_period(&self) -> f64 {
@@ -104,8 +109,12 @@ pub trait Surface: Send + Sync {
     fn v_degree(&self) -> i32 { 1 }
     /// `Adaptor3d_Surface::BasisCurve` on `Geom_SurfaceOfRevolution`.
     fn revolution_basis_curve(&self) -> Option<Arc<dyn Curve>> { None }
+    /// `Adaptor3d_Surface::AxeOfRevolution` on `Geom_SurfaceOfRevolution`.
+    fn revolution_axis(&self) -> Option<GpAx1> { None }
     /// `Adaptor3d_Surface::BasisCurve` on `Geom_SurfaceOfLinearExtrusion`.
     fn extrusion_basis_curve(&self) -> Option<Arc<dyn Curve>> { None }
+    /// `Geom_SweptSurface::Direction` of a `Geom_SurfaceOfLinearExtrusion`.
+    fn extrusion_direction(&self) -> Option<GpDir> { None }
     /// `Geom_BSplineSurface::Resolution` / `GeomAdaptor_Surface::UResolution`
     /// + `VResolution`. `None` falls back to a finite-difference estimate.
     fn uv_resolution(&self, _r3d: f64) -> Option<(f64, f64)> { None }

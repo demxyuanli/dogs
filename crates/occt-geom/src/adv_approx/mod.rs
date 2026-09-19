@@ -4,4 +4,4 @@
 mod simple;
 mod approx;
 
-pub use approx::ApproxAFunction3d;
+pub use approx::{ApproxAFunction1dPair, ApproxAFunction3d};

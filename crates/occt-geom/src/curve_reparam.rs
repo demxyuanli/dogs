@@ -10,6 +10,10 @@ use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 
 /// Linear reparameterization adapter: maps a new parameter `t ∈ [new_a, new_b]`
 /// onto the original curve's parameter range `[first, last]` linearly.
+///
+/// When the basis is a BSpline / Bezier, knots (remapped) and degree are kept
+/// so `Extrema_ExtPC` still takes the `GeomAbs_BSplineCurve` arm
+/// (`Extrema_GGExtPC.hxx:190+`) after SameRange / Project reparam.
 #[derive(Clone)]
 pub struct ReparamCurve {
     curve: Arc<dyn Curve>,
@@ -17,11 +21,23 @@ pub struct ReparamCurve {
     last: f64,
     new_a: f64,
     new_b: f64,
+    /// Flat knot sequence mapped into `[new_a, new_b]`; `None` if basis is not
+    /// a BSpline.
+    remapped_knots: Option<Vec<f64>>,
+    nurbs_deg: Option<usize>,
 }
 
 impl ReparamCurve {
     fn orig(&self, t: f64) -> f64 {
         self.first + (t - self.new_a) * (self.last - self.first) / (self.new_b - self.new_a)
+    }
+
+    fn map_param(&self, u: f64) -> f64 {
+        let den = self.last - self.first;
+        if den.abs() <= 0.0 {
+            return self.new_a;
+        }
+        self.new_a + (u - self.first) * (self.new_b - self.new_a) / den
     }
 }
 
@@ -40,11 +56,51 @@ impl Curve for ReparamCurve {
     fn first_parameter(&self) -> f64 { self.new_a }
     fn last_parameter(&self) -> f64 { self.new_b }
     fn is_periodic(&self) -> bool { self.curve.is_periodic() }
-    fn period(&self) -> f64 { self.curve.period() }
+    fn period(&self) -> f64 {
+        let den = self.last - self.first;
+        if den.abs() <= 0.0 {
+            return self.curve.period();
+        }
+        self.curve.period() * (self.new_b - self.new_a).abs() / den.abs()
+    }
     fn continuity(&self) -> u8 { self.curve.continuity() }
+    fn is_line(&self) -> bool { self.curve.is_line() }
+    fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { self.curve.gp_circ() }
+    fn circle_radius(&self) -> Option<f64> { self.curve.circle_radius() }
+    fn nurbs_degree(&self) -> Option<usize> { self.nurbs_deg.or_else(|| self.curve.nurbs_degree()) }
+    fn bspline_knots(&self) -> Option<&[f64]> {
+        self.remapped_knots.as_deref()
+    }
+    fn bspline_poles(&self) -> Option<&[GpPnt]> { self.curve.bspline_poles() }
+    fn bezier_poles(&self) -> Option<&[GpPnt]> { self.curve.bezier_poles() }
+    fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
+        self.curve
+            .parameter_intervals(continuity)
+            .into_iter()
+            .map(|u| self.map_param(u))
+            .collect()
+    }
+    fn nb_intervals(&self, continuity: u8) -> i32 {
+        self.parameter_intervals(continuity)
+            .len()
+            .saturating_sub(1)
+            .max(1) as i32
+    }
+    fn resolution(&self, r3d: f64) -> f64 {
+        let den = (self.last - self.first).abs();
+        let span = (self.new_b - self.new_a).abs();
+        if den <= 0.0 {
+            return self.curve.resolution(r3d);
+        }
+        self.curve.resolution(r3d) * span / den
+    }
     // ponytail: adapter over an immutable Arc; transforms are no-ops.
     fn transform(&mut self, _t: &GpTrsf) {}
-    fn reverse(&mut self) { std::mem::swap(&mut self.new_a, &mut self.new_b); }
+    fn reverse(&mut self) {
+        // Swap the new range only. Remapped knots stay in the geometric
+        // image of the basis knot vector; ExtPC normalizes [uinf,usup].
+        std::mem::swap(&mut self.new_a, &mut self.new_b);
+    }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
 }
 
@@ -52,12 +108,27 @@ impl Curve for ReparamCurve {
 /// preserving geometry: new `t` maps linearly onto `[first, last]`. Requires a
 /// bounded original range (unbounded lines yield a degenerate map).
 pub fn reparameterize_curve(c: &dyn Curve, new_a: f64, new_b: f64) -> Arc<dyn Curve> {
+    let first = c.first_parameter();
+    let last = c.last_parameter();
+    let den = last - first;
+    let remapped_knots = c.bspline_knots().map(|knots| {
+        if den.abs() <= 0.0 {
+            knots.to_vec()
+        } else {
+            knots
+                .iter()
+                .map(|&u| new_a + (u - first) * (new_b - new_a) / den)
+                .collect()
+        }
+    });
     Arc::new(ReparamCurve {
         curve: Arc::from(c.clone_dyn()),
-        first: c.first_parameter(),
-        last: c.last_parameter(),
+        first,
+        last,
         new_a,
         new_b,
+        remapped_knots,
+        nurbs_deg: c.nurbs_degree(),
     })
 }
 

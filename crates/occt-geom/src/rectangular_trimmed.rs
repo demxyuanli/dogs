@@ -6,6 +6,7 @@ use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 use occt_core::precision::Precision;
 
 use crate::curve::Curve;
+use crate::geom_adaptor_local::{try_local_d1, try_local_d2};
 use crate::offset_surface::GeomOffsetSurface;
 use crate::surface::Surface;
 use crate::trimmed::GeomTrimmedCurve;
@@ -22,6 +23,10 @@ pub struct GeomRectangularTrimmedSurface {
     u_trimmed: bool,
     v_trimmed: bool,
 }
+
+/// Adaptor domain tolerance used by `UTrim`/`VTrim` (`Adaptor3d_CurveOnSurface`
+/// EvalFirstLastSurf passes `Precision::PConfusion`).
+const ADAPTOR_TOL: f64 = Precision::PCONFUSION;
 
 fn copy_untrimmed(s: &Arc<dyn Surface>) -> Arc<dyn Surface> {
     s.rectangular_trimmed_basis()
@@ -116,7 +121,44 @@ impl Surface for GeomRectangularTrimmedSurface {
     }
 
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
+        // `GeomAdaptor_Surface::EvalD1` BSpline LocalD1 when UV is on the
+        // restricted adaptor domain end (`cxx:1129-1195`).
+        if let Some(bs) = self.basis.osculating_bspline() {
+            if let Some(r) = try_local_d1(
+                &bs,
+                u,
+                v,
+                self.u1,
+                self.u2,
+                self.v1,
+                self.v2,
+                ADAPTOR_TOL,
+                ADAPTOR_TOL,
+            ) {
+                return r;
+            }
+        }
         self.basis.d1(u, v)
+    }
+
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        // `GeomAdaptor_Surface::EvalD2` BSpline LocalD2 (`cxx:1273-1292`).
+        if let Some(bs) = self.basis.osculating_bspline() {
+            if let Some(r) = try_local_d2(
+                &bs,
+                u,
+                v,
+                self.u1,
+                self.u2,
+                self.v1,
+                self.v2,
+                ADAPTOR_TOL,
+                ADAPTOR_TOL,
+            ) {
+                return r;
+            }
+        }
+        self.basis.d2(u, v)
     }
 
     fn u_range(&self) -> (f64, f64) {

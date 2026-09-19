@@ -34,12 +34,18 @@ pub trait Curve: Send + Sync {
     fn circle_radius(&self) -> Option<f64> { None }
     /// `Geom_Circle::Circ` / `Adaptor3d_Curve::Circle`. `None` otherwise.
     fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { None }
+    /// `Geom_Ellipse::Elips` / `Adaptor3d_Curve::Ellipse`. `None` otherwise.
+    fn gp_ellipse(&self) -> Option<occt_core::gp::GpElips> { None }
     /// `Geom_TrimmedCurve`. OCCT `IsKind(STANDARD_TYPE(Geom_TrimmedCurve))`.
     fn is_geom_trimmed(&self) -> bool { false }
     /// Basis `[First, Last]` of a `Geom_TrimmedCurve` before the `[0, 1]` remap.
     /// `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps to the basis curve;
     /// a `Geom_Circle` keeps radian parameters on that interval.
     fn trimmed_basis_range(&self) -> Option<(f64, f64)> { None }
+    /// Basis curve of a `Geom_TrimmedCurve` plus its basis parameter range.
+    /// `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps the trim and keeps the
+    /// basis curve, so `GeomBndLib_Curve` sees the basis with the basis range.
+    fn untrimmed_basis(&self) -> Option<(std::sync::Arc<dyn Curve>, f64, f64)> { None }
     /// `Adaptor3d_Curve::GetType() == GeomAbs_Line`.
     fn is_line(&self) -> bool { false }
     /// `Adaptor3d_Curve::Degree` for Bezier / BSpline.

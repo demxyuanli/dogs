@@ -1,7 +1,7 @@
 //! `Geom_OffsetSurfaceUtils`. Source: `Geom_OffsetSurfaceUtils.pxx`.
 //! `EvaluateD1` queries `OsculatingSurface` (null query keeps the else arm).
 
-use occt_core::cslib::{dn_normal, dnnuv, dnnuv2, normal_max_order, CSLibNormalStatus};
+use occt_core::cslib::{dn_normal, dnnuv, dnnuv2, normal_d1_mag, normal_max_order, CSLibNormalStatus};
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::precision::{Precision, CONFUSION, PCONFUSION};
 
@@ -300,9 +300,12 @@ fn fill_der_surf_d2(
 
 fn run_compute(
     max_order: i32,
+    min_order: i32,
     u: f64,
     v: f64,
     basis: &dyn Surface,
+    nu: i32,
+    nv: i32,
     along_u: bool,
     along_v: bool,
     osc: Option<&dyn Surface>,
@@ -310,8 +313,173 @@ fn run_compute(
     der_surf: &mut [Vec<GpVec>],
 ) -> bool {
     compute_derivatives(
-        max_order, 2, u, v, basis, 1, 1, along_u, along_v, osc, der_nuv, der_surf,
+        max_order, min_order, u, v, basis, nu, nv, along_u, along_v, osc, der_nuv, der_surf,
     )
+}
+
+fn calculate_d0(the_value: &mut GpPnt, d1u: &GpVec, d1v: &GpVec, offset: f64, sign: f64) -> bool {
+    // `ComputeNormal` (`pxx:104-129`) then offset (`pxx:197-209`).
+    let mut a_d1u = *d1u;
+    let mut a_d1v = *d1v;
+    let nu2 = a_d1u.square_magnitude();
+    let nv2 = a_d1v.square_magnitude();
+    if nu2 > 1.0 {
+        a_d1u = a_d1u.divided(nu2.sqrt());
+    }
+    if nv2 > 1.0 {
+        a_d1v = a_d1v.divided(nv2.sqrt());
+    }
+    let mut a_norm = a_d1u.crossed(&a_d1v);
+    if a_norm.square_magnitude() <= D1_TOL * D1_TOL {
+        return false;
+    }
+    a_norm.normalize();
+    *the_value = GpPnt::from_xyz(&the_value.coord.added(&a_norm.xyz().multiplied(offset * sign)));
+    true
+}
+
+/// `EvaluateD0` with precomputed basis D1 (`pxx:586-750`).
+/// Returns `None` when cxx would throw `Geom_UndefinedValue`.
+pub fn evaluate_d0(
+    u_in: f64,
+    v_in: f64,
+    basis: &dyn Surface,
+    offset: f64,
+    osc_query: Option<&OsculatingSurface>,
+    value_in: GpPnt,
+    d1u_in: GpVec,
+    d1v_in: GpVec,
+) -> Option<GpPnt> {
+    let u_start = u_in;
+    let v_start = v_in;
+    let (u_min, u_max) = basis.u_range();
+    let (v_min, v_max) = basis.v_range();
+    let is_u_per = basis.is_u_periodic();
+    let is_v_per = basis.is_v_periodic();
+
+    let mut the_u = u_in;
+    let mut the_v = v_in;
+    let mut the_value = value_in;
+    let mut a_d1u = d1u_in;
+    let mut a_d1v = d1v_in;
+    let mut is_first = true;
+
+    loop {
+        if !is_first {
+            let (p, d1u, d1v) = basis.d1(the_u, the_v);
+            the_value = p;
+            a_d1u = d1u;
+            a_d1v = d1v;
+        }
+        is_first = false;
+
+        if is_infinite_coord(&a_d1u) || is_infinite_coord(&a_d1v) {
+            return None;
+        }
+
+        if calculate_d0(&mut the_value, &a_d1u, &a_d1v, offset, 1.0) {
+            return Some(the_value);
+        }
+
+        let max_order = 3;
+        let mut along_u = false;
+        let mut along_v = false;
+        let mut is_opposite = false;
+        let mut osc_surf: Option<crate::bspline_surface::GeomBSplineSurface> = None;
+        if let Some(q) = osc_query {
+            let (au, tu, lu) = q.u_osculating(the_u, the_v);
+            along_u = au;
+            if au {
+                is_opposite = tu;
+                osc_surf = lu;
+            }
+            let (av, tv, lv) = q.v_osculating(the_u, the_v);
+            along_v = av;
+            if av {
+                is_opposite = tv;
+                osc_surf = lv;
+            }
+        }
+        let a_sign = if (along_u || along_v) && is_opposite {
+            -1.0
+        } else {
+            1.0
+        };
+
+        let mut der_nuv = alloc_grid(max_order + 1, max_order + 1);
+        let mut der_surf = alloc_grid(max_order + 2, max_order + 2);
+        grid_set(&mut der_surf, 1, 0, a_d1u);
+        grid_set(&mut der_surf, 0, 1, a_d1v);
+        let osc_ref = osc_surf.as_ref().map(|s| s as &dyn Surface);
+        let has_osc = (along_u || along_v) && osc_ref.is_some();
+        if !run_compute(
+            max_order,
+            1,
+            the_u,
+            the_v,
+            basis,
+            0,
+            0,
+            has_osc && along_u,
+            has_osc && along_v,
+            osc_ref,
+            &mut der_nuv,
+            &mut der_surf,
+        ) {
+            return None;
+        }
+
+        let (mut n_status, mut normal, _, _) = normal_max_order(
+            max_order, &der_nuv, D1_TOL, the_u, the_v, u_min, u_max, v_min, v_max,
+        );
+
+        // `pxx:708-724`: InfinityOfSolutions -> ReplaceDerivative then MagTol Normal.
+        if n_status == CSLibNormalStatus::InfinityOfSolutions {
+            let mut new_du = a_d1u;
+            let mut new_dv = a_d1v;
+            if replace_derivative(
+                the_u,
+                the_v,
+                u_min,
+                u_max,
+                v_min,
+                v_max,
+                &mut new_du,
+                &mut new_dv,
+                D1_TOL * D1_TOL,
+                basis,
+            ) {
+                let r = normal_d1_mag(&new_du, &new_dv, D1_TOL);
+                n_status = r.0;
+                normal = r.1;
+            }
+        }
+
+        if n_status == CSLibNormalStatus::Defined {
+            if let Some(n) = normal {
+                return Some(GpPnt::from_xyz(
+                    &the_value.coord.added(&n.xyz().multiplied(offset * a_sign)),
+                ));
+            }
+        }
+
+        if !shift_point(
+            u_start,
+            v_start,
+            &mut the_u,
+            &mut the_v,
+            u_min,
+            u_max,
+            v_min,
+            v_max,
+            is_u_per,
+            is_v_per,
+            &a_d1u,
+            &a_d1v,
+        ) {
+            return None;
+        }
+    }
 }
 
 /// `EvaluateD1` with precomputed basis D2 (`pxx:804-1095`).
@@ -449,9 +617,12 @@ pub fn evaluate_d1(
         let has_osc = (along_u || along_v) && osc_ref.is_some();
         if !run_compute(
             max_order,
+            2,
             the_u,
             the_v,
             basis,
+            1,
+            1,
             has_osc && along_u,
             has_osc && along_v,
             osc_ref,
@@ -485,9 +656,12 @@ pub fn evaluate_d1(
                 let osc_ref = osc_surf.as_ref().map(|s| s as &dyn Surface);
                 if !run_compute(
                     max_order,
+                    2,
                     the_u,
                     the_v,
                     basis,
+                    1,
+                    1,
                     has_osc && along_u,
                     has_osc && along_v,
                     osc_ref,
