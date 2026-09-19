@@ -24,7 +24,7 @@ impl Surface for GeomSphere {
     fn v_range(&self) -> (f64, f64) { (-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2) }
     fn is_u_periodic(&self) -> bool { true }
     fn gp_sphere(&self) -> Option<GpSphere> { Some(self.pos) }
-    fn continuity(&self) -> u8 { 3 }
+    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
 

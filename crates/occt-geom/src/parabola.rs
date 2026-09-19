@@ -16,7 +16,7 @@ impl Curve for GeomParabola {
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) { (self.d0(u), self.d1(u).1, GpVec::zero()) }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
-    fn continuity(&self) -> u8 { 3 }
+    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.focal = -self.pos.focal; }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }

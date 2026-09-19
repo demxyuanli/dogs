@@ -20,7 +20,7 @@ impl Curve for GeomEllipse {
     fn is_periodic(&self) -> bool { true }
     fn period(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn gp_ellipse(&self) -> Option<GpElips> { Some(self.pos.clone()) }
-    fn continuity(&self) -> u8 { 3 }
+    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn reverse(&mut self) { std::mem::swap(&mut self.pos.major_radius, &mut self.pos.minor_radius); }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }

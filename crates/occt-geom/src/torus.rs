@@ -24,7 +24,7 @@ impl Surface for GeomTorus {
     fn is_u_periodic(&self) -> bool { true }
     fn is_v_periodic(&self) -> bool { true }
     fn gp_torus(&self) -> Option<GpTorus> { Some(self.pos) }
-    fn continuity(&self) -> u8 { 3 }
+    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
 

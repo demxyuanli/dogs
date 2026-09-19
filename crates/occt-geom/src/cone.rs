@@ -26,7 +26,7 @@ impl Surface for GeomCone {
     fn cone_ref(&self) -> Option<(f64, f64)> {
         Some((self.pos.radius, self.pos.semi_angle))
     }
-    fn continuity(&self) -> u8 { 3 }
+    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
     fn gp_cone(&self) -> Option<GpCone> { Some(self.pos.clone()) }
