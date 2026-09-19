@@ -149,7 +149,11 @@ use super::*;
         let points = plane_grid(surface.as_ref());
         let mut mesh = RefineMesh::from_points(&points);
         let n0 = mesh.triangle_count();
-        assert_eq!(n0, 8, "3x3 grid triangulates to 8 triangles");
+        // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
+        // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
+        // triangles whose neighbour touches the super-triangle. The naked grid keeps
+        // 6 triangles instead of the old 8.
+        assert_eq!(n0, 6, "3x3 grid meshes to 6 triangles after cleanupMesh");
 
         let mut algo = DelaunayDeflectionControlMeshAlgo::new(&params);
         let max_deflection = algo.post_process(
@@ -175,7 +179,11 @@ use super::*;
         let points = sphere_grid(surface.as_ref());
         let mut mesh = RefineMesh::from_points(&points);
         let n0 = mesh.triangle_count();
-        assert_eq!(n0, 8);
+        // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
+        // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
+        // triangles whose neighbour touches the super-triangle. The naked grid keeps
+        // 6 triangles instead of the old 8.
+        assert_eq!(n0, 6);
 
         let mut algo = DelaunayDeflectionControlMeshAlgo::new(&params);
         let max_deflection = algo.post_process(

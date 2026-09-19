@@ -66,8 +66,7 @@ pub(super) fn make_segment_safe(builder: &TopoBuilder, p1: &GpPnt, p2: &GpPnt) -
     let mut e = builder.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
     let v1 = builder.make_vertex(*p1, 0.0);
     let v2 = builder.make_vertex(*p2, 0.0);
-    builder.add(&mut e.0, &v1.0);
-    builder.add(&mut e.0, &v2.0);
+    builder.add_edge_vertices(&mut e, &v1, &v2);
     e
 }
 
@@ -87,8 +86,7 @@ pub(super) fn make_edge_with_vertices(
         .unwrap_or_else(|_| GpDir::new(1.0, 0.0, 0.0).unwrap());
     let lin = GpLin::from_pnt_dir(*p1, dir);
     let mut e = builder.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
-    builder.add(&mut e.0, &v1.0);
-    builder.add(&mut e.0, &v2.0);
+    builder.add_edge_vertices(&mut e, v1, v2);
     e
 }
 
@@ -102,8 +100,7 @@ pub(super) fn edge_with_canonical_vertices(old: &Edge, v1: &Vertex, v2: &Vertex)
     let (first, last) = reg.edge_parameters(&old.0);
     let builder = TopoBuilder::new();
     let mut ne = builder.make_edge(curve, first, last);
-    builder.add(&mut ne.0, &v1.0);
-    builder.add(&mut ne.0, &v2.0);
+    builder.add_edge_vertices(&mut ne, v1, v2);
     Some(ne)
 }
 

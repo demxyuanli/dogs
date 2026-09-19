@@ -385,8 +385,12 @@ fn adaptor_surface_intervals(
 
 /// `BRepMesh_NURBSRangeSplitter::getUndefinedInterval` (`cxx:414-449`).
 ///
-/// Interval count is the *trimmed* adaptor count. A single span falls back
-/// to `getUndefinedIntervalNb` (`NbPoles-1`) and a uniform interior grid.
+/// The interval count and break array come from the untrimmed surface adaptor
+/// (`cxx:420-421`, `cxx:438-447`): `GetSurface()` is the `BRepAdaptor_Surface`
+/// built with `R = false` by `IMeshData_Face` (`IMeshData_Face.hxx`), so
+/// `NbUIntervals` / `UIntervals` see the full `Geom_Surface` bounds. The
+/// adjusted range `GetRangeU()` (`cxx:460-461`) is only fed to the uniform
+/// fallback grid (`cxx:430`).
 pub(super) fn get_undefined_interval(
     s: &dyn RangeSplitter,
     is_u: bool,
@@ -396,7 +400,8 @@ pub(super) fn get_undefined_interval(
     let Some(surf) = s.surface() else {
         return vec![range.0, range.1];
     };
-    let iv = adaptor_surface_intervals(surf.as_ref(), is_u, continuity, range);
+    let geom_range = if is_u { surf.u_range() } else { surf.v_range() };
+    let iv = adaptor_surface_intervals(surf.as_ref(), is_u, continuity, geom_range);
     let mut intervals_nb = iv.len().saturating_sub(1) as i32;
     if intervals_nb == 1 {
         intervals_nb = s.get_undefined_interval_nb(is_u, continuity);
@@ -652,19 +657,13 @@ pub(super) fn analytical_filter(
         (1, iso_params.len().saturating_sub(1))
     };
 
-    // `cxx:74-75` builds `GeomAdaptor_Curve(UIso/VIso)` then `D1`. Offset
-    // UIso is AdvApprox (`Shape 8575/16372`); keep Offset on surface D1.
-    let extract_iso = classify_surface(surface) != SurfaceType::OffsetSurface;
-
+    // `cxx:74-75` builds `GeomAdaptor_Curve(UIso/VIso)` then `D1`.
+    // Offset UIso/VIso is AdvApprox (`Geom_OffsetSurface.cxx:601-687`).
     for &iso_param in &iso_params[start..end] {
-        let iso_curve = if extract_iso {
-            if is_iso_u {
-                surface.u_iso_curve(iso_param)
-            } else {
-                surface.v_iso_curve(iso_param)
-            }
+        let iso_curve = if is_iso_u {
+            surface.u_iso_curve(iso_param)
         } else {
-            None
+            surface.v_iso_curve(iso_param)
         };
         let iso_point = |t: f64| -> GpPnt {
             if let Some(ref c) = iso_curve {
@@ -728,8 +727,11 @@ pub(super) fn analytical_filter(
                 let look_mid = iso_point(0.5 * (prev_param + next_param));
                 let look_dist = sq_deflection_of_segment(&prev_pnt, &next_pnt, &look_mid);
                 if look_dist < sq_max_deflection {
-                    let look_ok = prev_vec.square_magnitude() < RESOLUTION
-                        || next_vec.square_magnitude() < RESOLUTION
+                    // `BRepMesh_NURBSRangeSplitter.cxx:165-167`: both
+                    // `SquareMagnitude()` guards use `gp::Resolution()` =
+                    // `RealSmall()` = `DBL_MIN` (`gp.hxx:60`).
+                    let look_ok = prev_vec.square_magnitude() < REAL_SMALL
+                        || next_vec.square_magnitude() < REAL_SMALL
                         || prev_vec.angle(&next_vec).abs() < angle_interior;
                     if look_ok {
                         control_remove.insert(curr_param.to_bits());
@@ -801,21 +803,20 @@ pub trait RangeSplitter {
             return;
         };
 
-        // `BRepAdaptor_Surface(F)` Restriction=true (`cxx:72-75`) loads
-        // `BRepTools::UVBounds`, not `Geom_Surface::Bounds`.
-        let (mut gu0, mut gu1) = surf.u_range();
-        let (mut gv0, mut gv1) = surf.v_range();
-        if let Some(topo) = self.dface().map(|f| f.face().clone()) {
-            let (umin, umax, vmin, vmax) = crate::brep_tools::uv_bounds(&topo);
-            if umin.is_finite() && umax.is_finite() && umax >= umin {
-                gu0 = umin;
-                gu1 = umax;
-            }
-            if vmin.is_finite() && vmax.is_finite() && vmax >= vmin {
-                gv0 = vmin;
-                gv1 = vmax;
-            }
-        }
+        // `BRepMesh_DefaultRangeSplitter::GetSurface()` (`hxx:81`) is the
+        // discrete face's own adaptor, which `IMeshData_Face` builds
+        // UNRESTRICTED (`IMeshData_Face.hxx:69`
+        // `new BRepAdaptor_Surface(GetFace(), false)`). Its
+        // `First/Last U|VParameter` therefore come from `Geom_Surface::Bounds`
+        // (`BRepAdaptor_Surface.cxx:79` `Load(aSurface, trsf)`), NOT from
+        // `BRepTools::UVBounds`. `AdjustRange` (`cxx:45-81`) must use that plain
+        // surface range; clipping the discrete range to the face's pcurve box is
+        // the `Restriction=true` adaptor's behaviour and collapses faces whose
+        // stored pcurves lie off the surface domain (e.g. a plane face whose
+        // pcurves sit in a shifted parameterization), which leaves
+        // `computeLengthV` == 0 and `IsValid` == false.
+        let (gu0, gu1) = surf.u_range();
+        let (gv0, gv1) = surf.v_range();
         update_range(gu0, gu1, surf.is_u_periodic(), &mut du_first, &mut du_second);
         if du_second < du_first {
             self.base_mut().set_valid(false);

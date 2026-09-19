@@ -103,19 +103,26 @@ fn face_centroid_point(f: &Face) -> GpPnt {
             if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() {
                 s.d0(0.5 * (u0 + u1), 0.5 * (v0 + v1))
             } else {
-                // Unbounded: centroid of boundary vertices.
+                // Unbounded: centroid of the boundary vertex set (every
+                // distinct vertex counted once).
                 let mut acc = occt_core::gp::GpXyz::zero();
-                let mut n = 0usize;
+                let mut used: Vec<Vertex> = Vec::new();
                 for w in crate::topo_tools_full::wires_of_face(f) {
                     for e in crate::topo_tools_full::edges_of_wire(&w) {
-                        if let (Some(v), _) = crate::topo_tools_full::edge_vertices(&e) {
-                            acc = acc.added(&crate::brep_tool::BRepTool::vertex_point(&v).coord);
-                            n += 1;
+                        let (a, b) = crate::topo_tools_full::edge_vertices(&e);
+                        for v in [a, b].into_iter().flatten() {
+                            if used.iter().any(|u| u.same_tshape(&v)) {
+                                continue;
+                            }
+                            used.push(v);
                         }
                     }
                 }
-                if n > 0 {
-                    GpPnt::from_xyz(&acc.divided(n as f64))
+                for v in &used {
+                    acc = acc.added(&crate::brep_tool::BRepTool::vertex_point(v).coord);
+                }
+                if !used.is_empty() {
+                    GpPnt::from_xyz(&acc.divided(used.len() as f64))
                 } else {
                     s.d0(0.0, 0.0)
                 }

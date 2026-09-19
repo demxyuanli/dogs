@@ -15,7 +15,9 @@ impl<'a> Resolver<'a> {
             }
             "CYLINDRICAL_SURFACE" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("CYLINDRICAL_SURFACE: bad axis ref")?;
-                let r = parse_f64(&rec.args[2])?;
+                // `StepToGeom::MakeCylindricalSurface` (`StepToGeom.cxx:1444-1453`):
+                // `SS->Radius() * LengthFactor()` (`cxx:1452`).
+                let r = parse_f64(&rec.args[2])? * self.length_factor;
                 Arc::new(GeomCylinder::new(
                     GpCylinder::new(self.resolve_axis2(ax)?.to_ax3(), r)
                         .map_err(|e| format!("CYLINDRICAL_SURFACE: {e}"))?,
@@ -23,8 +25,13 @@ impl<'a> Resolver<'a> {
             }
             "CONICAL_SURFACE" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("CONICAL_SURFACE: bad axis ref")?;
-                let r = parse_f64(&rec.args[2])?;
-                let a = parse_f64(&rec.args[3])?;
+                // `StepToGeom::MakeConicalSurface` (`StepToGeom.cxx:1307-1321`):
+                // `R = SS->Radius() * theLocalFactors.LengthFactor()` (`cxx:1315`),
+                // `Ang = SS->SemiAngle() * theLocalFactors.PlaneAngleFactor()`
+                // (`cxx:1316`). OCCT then floors the angle at
+                // `Precision::Angular()` (`cxx:1319`); that floor is unported here.
+                let r = parse_f64(&rec.args[2])? * self.length_factor;
+                let a = parse_f64(&rec.args[3])? * self.plane_angle_factor;
                 Arc::new(GeomCone::new(
                     GpCone::new(self.resolve_axis2(ax)?.to_ax3(), r, a)
                         .map_err(|e| format!("CONICAL_SURFACE: {e}"))?,
@@ -32,7 +39,9 @@ impl<'a> Resolver<'a> {
             }
             "SPHERICAL_SURFACE" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("SPHERICAL_SURFACE: bad axis ref")?;
-                let r = parse_f64(&rec.args[2])?;
+                // `StepToGeom::MakeSphericalSurface` (`StepToGeom.cxx:1893-1901`):
+                // `SS->Radius() * LengthFactor()` (`cxx:1899`).
+                let r = parse_f64(&rec.args[2])? * self.length_factor;
                 Arc::new(GeomSphere::new(
                     GpSphere::new(self.resolve_axis2(ax)?.to_ax3(), r)
                         .map_err(|e| format!("SPHERICAL_SURFACE: {e}"))?,
@@ -40,8 +49,14 @@ impl<'a> Resolver<'a> {
             }
             "TOROIDAL_SURFACE" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("TOROIDAL_SURFACE: bad axis ref")?;
-                let maj = parse_f64(&rec.args[2])?;
-                let min = parse_f64(&rec.args[3])?;
+                // `StepToGeom::MakeToroidalSurface` (`StepToGeom.cxx:2104-2115`):
+                // `std::abs(MajorRadius * LF)`, `std::abs(MinorRadius * LF)`
+                // (`cxx:2111-2113`). OCCT takes the absolute value; this port
+                // keeps the raw sign because `step_surface_is_reversed`
+                // (`StepToTopoDS_TranslateFace.cxx:479-491`) already handles the
+                // negative-major-radius face orientation.
+                let maj = parse_f64(&rec.args[2])? * self.length_factor;
+                let min = parse_f64(&rec.args[3])? * self.length_factor;
                 Arc::new(GeomTorus::new(
                     GpTorus::new(self.resolve_axis2(ax)?.to_ax3(), maj, min)
                         .map_err(|e| format!("TOROIDAL_SURFACE: {e}"))?,
@@ -69,6 +84,40 @@ impl<'a> Resolver<'a> {
                 let axis = self.resolve_axis1(axis_ref)?;
                 let generatrix = self.resolve_curve(gen_ref)?;
                 Arc::new(GeomSurfaceOfRevolution::new(generatrix, axis))
+            }
+            "SURFACE_OF_LINEAR_EXTRUSION" => {
+                // SURFACE_OF_LINEAR_EXTRUSION(name, swept_curve, extrusion_axis).
+                // `RWStepGeom_RWSurfaceOfLinearExtrusion.cxx:44-55` reads
+                // `swept_curve` from attribute 2 and `extrusion_axis` from
+                // attribute 3, so the order is positional.
+                let curve_ref = parse_ref(&rec.args[1])
+                    .ok_or("SURFACE_OF_LINEAR_EXTRUSION: bad curve ref")?;
+                let axis_ref = parse_ref(&rec.args[2])
+                    .ok_or("SURFACE_OF_LINEAR_EXTRUSION: bad axis ref")?;
+                // `StepToGeom::MakeSurfaceOfLinearExtrusion`
+                // (`StepToGeom.cxx:2007-2029`): `gp_Dir D(V->Vec())`
+                // (`cxx:2020`) drops the `VECTOR` magnitude, which
+                // `resolve_vector` has already scaled by `LengthFactor`.
+                let axis_vec = self.resolve_vector(axis_ref)?;
+                let direction = GpDir::from_vec(&axis_vec)
+                    .map_err(|e| format!("SURFACE_OF_LINEAR_EXTRUSION: {e}"))?;
+                let basis = self.resolve_curve(curve_ref)?;
+                // `cxx:2021-2024`: a `Geom_Line` basis parallel to the extrusion
+                // direction is degenerate and OCCT returns a null surface. The
+                // port has no `Geom_Line` downcast, so `is_line()` (which a
+                // `Geom_TrimmedCurve` would forward) plus the `!is_geom_trimmed()`
+                // test stands in for it, and the constant tangent of the line
+                // stands in for `Lin().Direction()`.
+                if basis.is_line() && !basis.is_geom_trimmed() {
+                    if let Ok(line_dir) = GpDir::from_vec(&basis.d1(0.0).1) {
+                        if line_dir.is_parallel_tol(&direction, occt_core::precision::ANGULAR) {
+                            return Err(
+                                "SURFACE_OF_LINEAR_EXTRUSION: degenerate line basis".into()
+                            );
+                        }
+                    }
+                }
+                Arc::new(GeomSurfaceOfLinearExtrusion::new(basis, direction))
             }
             "B_SPLINE_SURFACE" => {
                 // Plain B-spline surface (no explicit knots): clamped uniform
@@ -131,10 +180,21 @@ impl<'a> Resolver<'a> {
             "OFFSET_SURFACE" => {
                 // Layout: (name, basis_surface, distance, self_intersect).
                 let basis_ref = parse_ref(&rec.args[1]).ok_or("OFFSET_SURFACE: bad basis ref")?;
-                let distance = parse_f64(&rec.args[2])?;
+                // `StepToGeom::MakeSurface` Offset arm (`StepToGeom.cxx:1940-1962`):
+                // `anOffset = OS->Distance() * LengthFactor()` (`cxx:1947`).
+                let distance = parse_f64(&rec.args[2])? * self.length_factor;
                 let basis = self.resolve_surface(basis_ref)?;
                 Arc::new(GeomOffsetSurface::new(basis, distance))
             }
+            // UNPORTED: `RECTANGULAR_TRIMMED_SURFACE` has no arm here.
+            // `StepToGeom::MakeRectangularTrimmedSurface` (`StepToGeom.cxx:1835-1884`)
+            // builds the basis surface and scales the trim window by `uFact` /
+            // `vFact` taken from LengthFactor / PlaneAngleFactor (`cxx:1847-1882`),
+            // so the file length factor is not threaded through that entity. No
+            // sample in `data/` uses it. Until the arm exists, `resolve_surface`
+            // reports it as unsupported. Note `step_surface_is_reversed`
+            // (`StepToTopoDS_TranslateFace.cxx:479-491`) already recurses into the
+            // basis surface for the face-orientation test.
             other => {
                 self.warn(format!("unsupported surface entity {other} (#{id})"));
                 return Err(format!("unsupported surface entity {other} (#{id})"));
@@ -273,9 +333,13 @@ fn shape_analysis_project_act(
     let mut closed = false;
     let mut period = 0.0;
     if ok {
+        // `ShapeAnalysis_Curve.cxx:340-344`: `theCurve.IsClosed()` only.
+        // Do not treat `is_periodic` alone as closed (invent vs cxx) — that
+        // forced AdjustByPeriod on Extrema hits and could shrink / wrap
+        // edge ranges after always-Project (`TranslateEdge.cxx:442-444`).
         let lo = curve.d0(u_min);
         let hi = curve.d0(u_max);
-        if lo.distance(&hi) <= occt_core::precision::CONFUSION || curve.is_periodic() {
+        if lo.distance(&hi) <= occt_core::precision::CONFUSION {
             closed = true;
             period = u_max - u_min;
         }
@@ -450,22 +514,13 @@ pub(super) fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -
     // SameParameter inflated the face deflection (Shape-2: 18 vs Prs3d 0.6).
     if f.is_finite() && l.is_finite() && !curve.is_periodic() {
         const PRECI: f64 = 1e-3;
-        // Vertices already near the natural ends: keep the knot domain.
-        // Extrema Project on Shape.step's two [0,1] BSplines (nat=1.85)
-        // still shrinks the 3D range to ~0.89 against a full-span pcurve
-        // (6134 -> 6345). Shape-2 portion edges have nat 3..9, above this
-        // floor. Leftover: CheckPCurves remap after Extrema-accurate ends.
-        const ALIGNED: f64 = 2.0;
+        // `TranslateEdge.cxx:442-444`: always `ShapeAnalysis_Curve::Project`
+        // (t296 removed invent ALIGNED=2.0 gate). `edge_from_curve3d` then
+        // runs `UpdateParam3d` / displaced-Line shift. Prior ALIGNED skip
+        // densified Shape less (6318 vs ~6330) by keeping full knot spans
+        // on near-aligned BSplines — that was invent, not cxx.
         if p1.distance(p2) < PRECI {
             return if l > f { (f, l) } else { (0.0, 1.0) };
-        }
-        let pf = curve.d0(f);
-        let pl = curve.d0(l);
-        if pf.distance(p1) <= ALIGNED && pl.distance(p2) <= ALIGNED {
-            return (f, l);
-        }
-        if pf.distance(p2) <= ALIGNED && pl.distance(p1) <= ALIGNED {
-            return (l, f);
         }
         if let (Some(a), Some(b)) = (
             shape_analysis_project(curve, p1, PRECI),
@@ -488,6 +543,26 @@ pub(super) fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -
     if let Some(c) = curve.gp_circ() {
         if p1.distance(p2) >= 1e-9 {
             return circle_params_from_circ(&c, p1, p2);
+        }
+    }
+    // `StepToTopoDS_TranslateEdge::MakeFromCurve3D` (`cxx:442-444`) calls
+    // `ShapeAnalysis_Curve::Project` for EVERY curve type; conics are not
+    // `Geom_BoundedCurve` so the endpoint early-exit (`cxx:162-181`) does not
+    // apply, and a full conic is `IsClosed()` so `Project` does not widen the
+    // range (`cxx:184-198`). The sampled-fit arms below (`classify_curve`
+    // returning `Circle` when the |d2| spread is under 2%) mis-parameterize a
+    // nearly circular ELLIPSE: ATU01038 stores `(0.015306440, 0.595131394)`
+    // while `Project` yields `(0.0, 0.594307367)`, which walked the pcurve
+    // endpoint 7.65e-2 off the vertex (inflated vertex tolerance).
+    if curve.is_periodic() && p1.distance(p2) > occt_core::precision::PCONFUSION {
+        const PRECI: f64 = 1e-3;
+        if let (Some(a), Some(b)) = (
+            shape_analysis_project(curve, p1, PRECI),
+            shape_analysis_project(curve, p2, PRECI),
+        ) {
+            if (a.0 - b.0).abs() > occt_core::precision::PCONFUSION {
+                return (a.0, b.0);
+            }
         }
     }
     let (lo, hi) = if f.is_finite() && l.is_finite() && l > f {
@@ -778,6 +853,14 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
         .map(|(id, _)| *id)
         .collect();
     rep_ids.sort_unstable();
+    // UNPORTED: `STEPControl_ActorRead::TransferEntity` composes each mapped
+    // shape representation with the shapes related to it by
+    // `SHAPE_REPRESENTATION_RELATIONSHIP` / `..._WITH_TRANSFORMATION`
+    // (`TransferRelatedSRR`, `STEPControl_ActorRead.cxx:2061-2091`, and
+    // `ComputeSRRWT`, `cxx:2493-2545`), and `read.step.shape.relationship`
+    // defaults to true (`DESTEP_Parameters.hxx:170`). Here every related
+    // representation is emitted as its own root shape instead of being composed
+    // into the product shape. No sample in `data/` carries such a relation.
 
     let mut model = BRepModel::new();
     if !rep_ids.is_empty() {
@@ -880,24 +963,39 @@ pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
         }
     }
 
-    // PRODUCT_DEFINITION_SHAPE id -> PRODUCT id (the shape's owner).
-    let mut pds_product: HashMap<usize, usize> = HashMap::new();
+    // PRODUCT_DEFINITION_SHAPE id -> product name. Its `definition` field
+    // (`characterized_definition`) is a PRODUCT_DEFINITION in a standard file
+    // (`SHAPE_DEFINITION_REPRESENTATION`, as OCCT writes) and was a PRODUCT id
+    // in this port's earlier files; accept both.
+    let mut pds_name: HashMap<usize, String> = HashMap::new();
     for (id, rec) in &records {
         if rec.type_name == "PRODUCT_DEFINITION_SHAPE" {
-            if let Some(p) = parse_ref(&rec.args[2]) {
-                pds_product.insert(*id, p);
+            if let Some(d) = parse_ref(&rec.args[2]) {
+                if let Some(n) = def_name.get(&d).or_else(|| product_names.get(&d)) {
+                    pds_name.insert(*id, n.clone());
+                }
             }
         }
     }
 
-    // representation id -> PRODUCT id, via the SHAPE_REPRESENTATION link.
-    let mut rep_product: HashMap<usize, usize> = HashMap::new();
-    for (id, rec) in &records {
-        if rec.type_name == "PRODUCT_DEFINITION_SHAPE_REPRESENTATION" {
-            if let (Some(pds), Some(rep)) = (parse_ref(&rec.args[1]), parse_ref(&rec.args[2])) {
-                if let Some(p) = pds_product.get(&pds) {
-                    rep_product.insert(rep, *p);
-                }
+    // representation id -> product name, via the shape-definition link.
+    //  * `SHAPE_DEFINITION_REPRESENTATION(definition, used_representation)` is
+    //    the ISO 10303-42 entity OCCT's writer emits.
+    //  * `PRODUCT_DEFINITION_SHAPE_REPRESENTATION` is this port's legacy record.
+    let mut rep_name: HashMap<usize, String> = HashMap::new();
+    for (_, rec) in &records {
+        let (pds, rep) = match rec.type_name.as_str() {
+            "SHAPE_DEFINITION_REPRESENTATION" => {
+                (parse_ref(&rec.args[0]), parse_ref(&rec.args[1]))
+            }
+            "PRODUCT_DEFINITION_SHAPE_REPRESENTATION" => {
+                (parse_ref(&rec.args[1]), parse_ref(&rec.args[2]))
+            }
+            _ => (None, None),
+        };
+        if let (Some(pds), Some(rep)) = (pds, rep) {
+            if let Some(n) = pds_name.get(&pds) {
+                rep_name.insert(rep, n.clone());
             }
         }
     }
@@ -914,8 +1012,7 @@ pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
         .collect();
     reps.sort_unstable();
     for id in reps {
-        let Some(pid) = rep_product.get(&id) else { continue };
-        let Some(name) = product_names.get(pid) else { continue };
+        let Some(name) = rep_name.get(&id) else { continue };
         let name = name.clone();
         if seen.contains(&name) {
             continue;

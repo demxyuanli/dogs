@@ -277,10 +277,21 @@ impl BRepPrimCylinder {
             &[top_wire],
         );
 
-        // Lateral face: the cylinder surface, wire = bottom circle + seam +
-        // top circle + seam (the seam is traversed twice, once per direction,
-        // matching OCCT's seam edge convention).
-        let lateral_wire = b.make_wire(&[bottom_circle, seam.clone(), top_circle, seam]);
+        // Lateral face: the cylinder surface. OCCT's swept lateral face
+        // (`BRepPrim_Revolution` / `BRepSweep_Revolve`) traverses the two rings
+        // in OPPOSITE directions and uses the seam generatrix twice with
+        // opposite orientations. The occurrence orientation written by
+        // `TopoDSToStep_MakeStepWire.cxx:262`
+        // (`OrientedEdge->Init(..., anEdge.Orientation() == TopAbs_FORWARD)`)
+        // then gives a closed loop whose U winding is zero (bottom -2pi +
+        // top +2pi), so the pcurve loop closes with no periodic shift. Traversing
+        // both rings the same way leaves a +4pi U winding that no seam placement
+        // can remove (`ShapeFix_Wire::FixShifted`, `ShapeFix_Wire.cxx:1661-2125`).
+        let mut lateral_bottom = bottom_circle.clone();
+        lateral_bottom.0.reverse();
+        let mut lateral_seam_back = seam.clone();
+        lateral_seam_back.0.reverse();
+        let lateral_wire = b.make_wire(&[lateral_bottom, seam, top_circle, lateral_seam_back]);
         let lateral_face = b.make_face(Arc::new(GeomCylinder::new(
             GpCylinder::new(ax, radius).expect("cylinder radius"),
         )), &[lateral_wire]);

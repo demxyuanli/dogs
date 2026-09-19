@@ -156,7 +156,16 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
         for k in src.tshape.read().unwrap().children.clone() {
             let ck = std::sync::Arc::as_ptr(&k.tshape) as usize;
             if let Some(copy) = map.get(&ck) {
-                let child_shape = copy.clone();
+                // A copy is structural: it keeps the child's stored orientation
+                // and location. `BRepTools_ShapeSet::Add` +
+                // `BRepTools_ShapeSet::Read` and `BRepBuilderAPI_Copy` never
+                // touch `TopoDS_Shape::myOrientation`, so a vertex stored
+                // `REVERSED` on its edge stays `REVERSED` in the copy; dropping
+                // it would make `TopExp::FirstVertex`/`LastVertex` (which read
+                // that flag, `TopExp.cxx:182-210`) return nothing.
+                let mut child_shape = copy.clone();
+                child_shape.set_orientation(k.orientation());
+                child_shape.set_location(k.location());
                 dst.tshape.write().unwrap().add_child(child_shape);
                 stack.push((k, copy.clone()));
             }

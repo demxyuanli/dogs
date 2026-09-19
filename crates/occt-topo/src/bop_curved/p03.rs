@@ -381,6 +381,21 @@ pub(super) fn unwrap_uv_polyline(pts: &[GpPnt2d], surf: &dyn Surface) -> Vec<GpP
         cur = best;
         out.push(GpPnt2d::new(best, pts[i].y()));
     }
+    // Place the unwrapped run inside the surface's periodic window. A loop that
+    // crosses the seam can unwrap to `[-period, 0]` instead of `[u0, u1]`; it
+    // then lies outside the face window (touching it in one point only), so the
+    // rect-boundary extension in `cut_two_sides` retraces the polyline itself
+    // and both sides degenerate. Aligning the run's centre with the window
+    // centre modulo the period puts it back in the window while leaving a run
+    // that already sits in the window untouched.
+    let lo = out.iter().map(|p| p.x()).fold(f64::INFINITY, f64::min);
+    let hi = out.iter().map(|p| p.x()).fold(f64::NEG_INFINITY, f64::max);
+    let k = ((0.5 * (u0 + u1) - 0.5 * (lo + hi)) / period).round();
+    if k != 0.0 {
+        for p in &mut out {
+            *p = GpPnt2d::new(p.x() + k * period, p.y());
+        }
+    }
     out
 }
 

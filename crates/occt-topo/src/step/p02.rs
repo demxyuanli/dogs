@@ -193,17 +193,14 @@ impl WriteCtx {
         let mut refs = Vec::with_capacity(edges.len());
         for e in &edges {
             let edge_id = self.emit_edge(e);
-            let (v1, v2) = edge_vertices(e);
-            let (Some(v1), Some(v2)) = (v1, v2) else {
-                continue;
-            };
-            let k1 = Arc::as_ptr(&v1.0.tshape) as usize;
-            let k2 = Arc::as_ptr(&v2.0.tshape) as usize;
-            let (Some(&v1_id), Some(&v2_id)) = (self.vertex_ids.get(&k1), self.vertex_ids.get(&k2))
-            else {
-                continue;
-            };
-            refs.push(self.w.emit(format!("ORIENTED_EDGE('',#{v1_id},#{v2_id},#{edge_id},.T.)")));
+            // `TopoDSToStep_MakeStepWire.cxx:258-263` builds each EDGE_LOOP entry
+            // as `StepShape_OrientedEdge` with a derived edgeStart/edgeEnd
+            // (`RWStepShape_RWOrientedEdge.cxx:78-84` writes them as `*`) and the
+            // boolean occurrence flag `(anEdge.Orientation() == TopAbs_FORWARD)`.
+            // The edge's own vertices belong to the EDGE_CURVE emitted above, so
+            // only the occurrence orientation is written here.
+            let occ = if e.0.orientation().is_forward() { ".T." } else { ".F." };
+            refs.push(self.w.emit(format!("ORIENTED_EDGE('',*,*,#{edge_id},{occ})")));
         }
         self.w.emit(format!("EDGE_LOOP('',({}))", join_refs(&refs)))
     }
@@ -212,11 +209,38 @@ impl WriteCtx {
         let surf_ref = self.emit_surface(f);
         let wires = wires_of_face(f);
         let mut bounds = Vec::with_capacity(wires.len());
+        // `TopoDSToStep_MakeStepFace.cxx:297-327`: each wire of the FORWARD face
+        // becomes a plain `StepShape_FaceBound`. OCCT's writer never builds a
+        // `StepShape_FaceOuterBound` (the only `new StepShape_FaceOuterBound`
+        // in the OCCT sources is the reader's `NewEntity`,
+        // `RWStepAP214_GeneralModule.cxx:5756`); a DRAWEXE 8.0.0
+        // `testwritestep` of `data/HoledPlate.step` confirms 38 `FACE_BOUND`
+        // and 0 `FACE_OUTER_BOUND`.
+        // The boolean is the wire orientation relative to the FORWARD face,
+        // negated when the face itself is REVERSED (`cxx:319-325`):
+        //   face FORWARD  -> `(CurrentWire.Orientation() == TopAbs_FORWARD)`
+        //   face REVERSED -> `(CurrentWire.Orientation() == TopAbs_REVERSED)`
+        let face_forward = f.0.orientation().is_forward();
         for w in &wires {
             let loop_ref = self.emit_wire(w);
-            bounds.push(self.w.emit(format!("FACE_OUTER_BOUND('',#{loop_ref},.T.)")));
+            // `wires_of_face` composes the face orientation into the child
+            // (`TopoDS_Iterator`), so undo it to recover the wire's stored
+            // orientation relative to the face.
+            let rel_forward = w.0.orientation().is_forward() == face_forward;
+            let bound_forward = if face_forward { rel_forward } else { !rel_forward };
+            let b = if bound_forward { ".T." } else { ".F." };
+            bounds.push(self.w.emit(format!("FACE_BOUND('',#{loop_ref},{b})")));
         }
-        self.w.emit(format!("ADVANCED_FACE('',#{surf_ref},({}),.T.)", join_refs(&bounds)))
+        // ISO 10303-42 `advanced_face(name, bounds, face_geometry, same_sense)`:
+        // the surface is the third argument. OCCT's reader
+        // (`RWStepShape_RWAdvancedFace`) and `StepToTopoDS_TranslateFace` expect
+        // this order; an OCCT-written cylinder reads back only with it.
+        // `TopoDSToStep_MakeStepFace.cxx:479`:
+        // `Fpms->Init(aName, aBounds, Spms, aFace.Orientation() == TopAbs_FORWARD)`
+        // -- the face's relative orientation in the shell, not a constant.
+        let same_sense = if face_forward { ".T." } else { ".F." };
+        self.w
+            .emit(format!("ADVANCED_FACE('',({}),#{surf_ref},{same_sense})", join_refs(&bounds)))
     }
 
     pub(super) fn emit_surface(&mut self, f: &Face) -> usize {
@@ -356,19 +380,26 @@ impl WriteCtx {
             join_refs(&items),
             self.geom_ctx
         ));
+        // Product scaffolding, matching `STEPControl_Writer`'s graph (compare an
+        // OCCT-written file): `PRODUCT`'s context field is a set of entity refs
+        // (`(#n)`), `PRODUCT_DEFINITION_SHAPE` characterizes the
+        // `PRODUCT_DEFINITION` (not the `PRODUCT`), and the representation is
+        // bound by `SHAPE_DEFINITION_REPRESENTATION`
+        // (`STEPConstruct_Styles` / `STEPControl_Writer`; schema
+        // `shape_definition_representation.definition : characterized_definition`).
         let product = self
             .w
-            .emit(format!("PRODUCT('{n}','{n}','',({}))", self.prod_ctx));
+            .emit(format!("PRODUCT('{n}','{n}','',(#{}))", self.prod_ctx));
         let formation = self
             .w
             .emit(format!("PRODUCT_DEFINITION_FORMATION('','',#{product})"));
-        self.w.emit(format!(
+        let def = self.w.emit(format!(
             "PRODUCT_DEFINITION('','','',#{formation},#{})",
             self.def_ctx
         ));
-        let pds = self.w.emit(format!("PRODUCT_DEFINITION_SHAPE('','',#{product})"));
+        let pds = self.w.emit(format!("PRODUCT_DEFINITION_SHAPE('','',#{def})"));
         self.w
-            .emit(format!("PRODUCT_DEFINITION_SHAPE_REPRESENTATION('',#{pds},#{rep})"));
+            .emit(format!("SHAPE_DEFINITION_REPRESENTATION(#{pds},#{rep})"));
         Some(rep)
     }
 }

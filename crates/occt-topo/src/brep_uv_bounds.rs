@@ -8,8 +8,17 @@
 //! Edge overload:
 //! 1. `BRep_Tool::CurveOnSurface` — missing pcurve → return;
 //! 2. `BndLib_Add2dCurve::Add(C2D, T1, T2, 0., BoxC)` then `Get` the UV range;
-//! 3. surface `Bounds`; peel `Geom_RectangularTrimmedSurface` (no-op here:
-//!    the port stores the basis surface on the face);
+//! 3. `Bounds()` of the STORED surface first (`BRepTools.cxx:191-192`), THEN
+//!    peel `Geom_RectangularTrimmedSurface` down to its basis surface, which the
+//!    reference uses only for the periodicity/closedness tests
+//!    (`BRepTools.cxx:194-199`). The port keeps the stored surface for both
+//!    steps: the ranges still agree (`Geom_RectangularTrimmedSurface::Bounds`
+//!    returns the trim, `Geom_RectangularTrimmedSurface.cxx:433-440`, exactly as
+//!    our `u_range`/`v_range` do), but a trimmed wrapper answers
+//!    `IsUPeriodic() == false` for a periodic basis whose trim is not a whole
+//!    number of periods (`Geom_RectangularTrimmedSurface.cxx:509-523`). OCCT
+//!    tests the BASIS there (periodic -> no clamping), we test the wrapper and
+//!    take the clamp below, so the two differ for such faces;
 //! 4. if the surface is not U-periodic, clamp the U range to surface bounds
 //!    unless a B-spline extra-periodicity check succeeds;
 //! 5. same for V;

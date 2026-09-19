@@ -283,7 +283,11 @@ fn split_cone_seam(model: &mut MeshModel, edge_index: usize, face_index: usize, 
         )
     };
     let a_mod = (y0 - y1).abs();
-    if a_mod < RESOLUTION {
+    // `BRepMesh_ModelPreProcessor.cxx:197-199`:
+    //   const double aMod = std::abs(aFPntOfIPC1.Y() - aLPntOfIPC1.Y());
+    //   if (aMod < gp::Resolution())
+    // with `gp::Resolution()` = `RealSmall()` = `DBL_MIN` (`gp.hxx:60`).
+    if a_mod < REAL_SMALL {
         return false;
     }
     let dt = (last - first).abs() / a_mod * du;
@@ -325,7 +329,27 @@ fn split_cone_seam(model: &mut MeshModel, edge_index: usize, face_index: usize, 
         Ok(c) => c,
         Err(_) => return false,
     };
-    let geom_first = pc1.d0(pc1.first_parameter());
+    let geom_first = {
+        // `BRepMesh_ModelPreProcessor.cxx:228`:
+        //   aPC1 = BRep_Tool::CurveOnSurface(aE forward, aF, af, al);
+        //   aFPntOfPC1 = aPC1->Value(aPC1->FirstParameter());
+        // and the swap at `cxx:229-231`.
+        // `Geom2d_Line::FirstParameter()` is `-Precision::Infinite()`
+        // (`Geom2d_Line.cxx:142-145`), the FINITE sentinel `-2e100`
+        // (`Precision.hxx:371`) -- not an IEEE infinity. That matters: for an
+        // axis-aligned 2D line (`dir.x == 0`) `Value(-2e100)` keeps the finite
+        // `x` of the location (`0.0 * -2e100 == -0.0`), so the test below can
+        // tell the two period copies of the seam apart and swap them. Feeding
+        // IEEE `-inf` instead makes `0.0 * -inf` a NaN, the comparison false,
+        // and the two copies stay cross-wired (seam pcurve gets points from the
+        // other period side).
+        let fp = pc1.first_parameter();
+        if fp.is_finite() {
+            pc1.d0(fp)
+        } else {
+            pc1.d0(-occt_core::precision::INFINITE)
+        }
+    };
     if (last_u - geom_first.x()).abs() > CONFUSION {
         std::mem::swap(&mut pc1, &mut pc2);
     }

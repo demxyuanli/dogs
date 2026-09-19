@@ -15,7 +15,7 @@
 //! Indices follow OCCT: vertices/links/elements are **1-based** in the public
 //! API; storage is 0-based `Vec`s.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use occt_core::gp::{GpPnt2d, GpXY};
 use occt_core::precision::{CONFUSION, PCONFUSION};
@@ -112,19 +112,33 @@ impl VertexCellFilter {
 /// compacted via the deleted lists / `clear_deleted`.
 pub struct DelaunDataStructure {
     vertices: Vec<DelaunVertex>,
-    del_vertices: Vec<i32>,
+    del_vertices: VecDeque<i32>,
     vertex_cells: VertexCellFilter,
     node_links: Vec<Vec<i32>>,
 
     links: Vec<DelaunLink>,
     link_states: Vec<VertexState>,
     link_elements: Vec<DelaunPairOfIndex>,
-    del_links: Vec<i32>,
-    links_of_domain: HashSet<i32>,
+    del_links: VecDeque<i32>,
+    // Like `elements_of_domain`, `LinksOfDomain()` is an
+    // `IMeshData::MapOfInteger` = `TColStd_PackedMapOfInteger`
+    // (`NCollection_PackedMap<int>`, `BRepMesh_DataStructureOfDelaun.hxx:228-229`),
+    // traversed in ascending id order by `getEdgesByType`
+    // (`BRepMesh_MeshTool.cxx:284-300`) and `MeshAlgo` consumers. A `HashSet`
+    // here leaked a per-process random iteration order into the mesh result.
+    links_of_domain: BTreeSet<i32>,
 
     elements: Vec<DelaunTriangle>,
     element_states: Vec<VertexState>,
-    elements_of_domain: HashSet<i32>,
+    // `BTreeSet` (ascending id) mirrors the traversal of OCCT's
+    // `ElementsOfDomain()`, an `IMeshData::MapOfInteger` =
+    // `TColStd_PackedMapOfInteger` (`NCollection_PackedMap<int>`). The packed
+    // map stores 64 consecutive ids per block and walks hash buckets in order;
+    // with `NextPrimeForMap(0) == 101` buckets there is no collision until an
+    // id block index reaches 101, i.e. element id >= 6464, so its traversal is
+    // exactly ascending id. `ElementsOfDomain` order feeds the control-node
+    // list in `BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:102-107`.
+    elements_of_domain: BTreeSet<i32>,
 }
 
 impl DelaunDataStructure {
@@ -145,17 +159,17 @@ impl DelaunDataStructure {
         let cell_size = CONFUSION + 0.05 * CONFUSION;
         Self {
             vertices: Vec::with_capacity(cap),
-            del_vertices: Vec::new(),
+            del_vertices: VecDeque::new(),
             vertex_cells: VertexCellFilter::new(cell_size, (CONFUSION, CONFUSION)),
             node_links: Vec::with_capacity(cap),
             links: Vec::with_capacity(cap * 3),
             link_states: Vec::with_capacity(cap * 3),
             link_elements: Vec::with_capacity(cap * 3),
-            del_links: Vec::new(),
-            links_of_domain: HashSet::new(),
+            del_links: VecDeque::new(),
+            links_of_domain: BTreeSet::new(),
             elements: Vec::with_capacity(cap * 2),
             element_states: Vec::with_capacity(cap * 2),
-            elements_of_domain: HashSet::new(),
+            elements_of_domain: BTreeSet::new(),
         }
     }
 
@@ -190,7 +204,10 @@ impl DelaunDataStructure {
                 return existing;
             }
         }
-        let idx = if let Some(del) = self.del_vertices.pop() {
+        // Deleted node slots are recycled from the front of the list, matching
+        // `BRepMesh_VertexInspector.hxx:54-64` (`myDelNodes.First()` +
+        // `RemoveFirst()`, fed by `Append` at `:95-99` -- a FIFO).
+        let idx = if let Some(del) = self.del_vertices.pop_front() {
             self.vertices[(del - 1) as usize] = node;
             del
         } else {
@@ -243,7 +260,7 @@ impl DelaunDataStructure {
             let p = self.vertices[(index - 1) as usize].location;
             self.vertices[(index - 1) as usize].state = VertexState::Deleted;
             self.vertex_cells.remove(index, p);
-            self.del_vertices.push(index);
+            self.del_vertices.push_back(index);
         }
     }
 
@@ -276,6 +293,14 @@ impl DelaunDataStructure {
     /// newly created or already present with the same orientation, and a
     /// *negative* index when an equivalent link exists in the opposite
     /// orientation. Source: `AddLink`.
+    ///
+    /// A recycled index is taken from the **front** of the deleted list
+    /// (`BRepMesh_DataStructureOfDelaun.cxx:77-89`: `myDelLinks.First()` then
+    /// `myDelLinks.RemoveFirst()`; `myDelLinks` is an `NCollection_List` fed by
+    /// `Append` at `:138-143`, i.e. a FIFO). Reusing the most recently freed
+    /// index instead makes a fresh link collide with a link id that a polygon
+    /// captured earlier in the same `meshPolygon` and was just freed by
+    /// `cleanupPolygon`.
     pub fn add_link(&mut self, first: i32, last: i32, state: VertexState) -> i32 {
         let probe = DelaunLink::new_unparameterized(first, last, 0);
         let existing = self.index_of_link(&probe);
@@ -285,7 +310,7 @@ impl DelaunDataStructure {
         }
 
         let id;
-        if let Some(del) = self.del_links.pop() {
+        if let Some(del) = self.del_links.pop_front() {
             id = del;
             self.links[(id - 1) as usize] = DelaunLink::new_unparameterized(first, last, id);
             self.link_states[(id - 1) as usize] = state;
@@ -371,7 +396,7 @@ impl DelaunDataStructure {
         self.clean_link(index, &link);
         self.link_states[idx] = VertexState::Deleted;
         self.links_of_domain.remove(&index);
-        self.del_links.push(index);
+        self.del_links.push_back(index);
     }
 
     fn clean_link(&mut self, index: i32, link: &DelaunLink) {
@@ -391,7 +416,7 @@ impl DelaunDataStructure {
     }
 
     /// Live link ids registered in the mesh. Source: `LinksOfDomain`.
-    pub fn links_of_domain(&self) -> &HashSet<i32> {
+    pub fn links_of_domain(&self) -> &BTreeSet<i32> {
         &self.links_of_domain
     }
 
@@ -471,7 +496,9 @@ impl DelaunDataStructure {
     }
 
     /// Live element ids registered in the mesh. Source: `ElementsOfDomain`.
-    pub fn elements_of_domain(&self) -> &HashSet<i32> {
+    /// Ascending order, matching the OCCT packed-map traversal (see the field
+    /// comment on `elements_of_domain`).
+    pub fn elements_of_domain(&self) -> &BTreeSet<i32> {
         &self.elements_of_domain
     }
 
@@ -510,7 +537,7 @@ impl DelaunDataStructure {
 
     /// Removes all elements (and links left free by that), as `ClearDomain`.
     pub fn clear_domain(&mut self) {
-        let mut free_edges: HashSet<i32> = HashSet::new();
+        let mut free_edges: BTreeSet<i32> = BTreeSet::new();
         let element_ids: Vec<i32> = self.elements_of_domain.iter().copied().collect();
         for id in element_ids {
             let element = self.get_element(id);
@@ -620,10 +647,10 @@ fn remove_element_index(index: i32, pair: &mut DelaunPairOfIndex) {
 /// kept for API parity (they remain empty unless later callers populate them).
 pub struct DelaunSelector<'a> {
     mesh: &'a DelaunDataStructure,
-    nodes: HashSet<i32>,
-    links: HashSet<i32>,
-    elements: HashSet<i32>,
-    frontier: HashSet<i32>,
+    nodes: BTreeSet<i32>,
+    links: BTreeSet<i32>,
+    elements: BTreeSet<i32>,
+    frontier: BTreeSet<i32>,
 }
 
 impl<'a> DelaunSelector<'a> {
@@ -631,10 +658,10 @@ impl<'a> DelaunSelector<'a> {
     pub fn new(mesh: &'a DelaunDataStructure) -> Self {
         Self {
             mesh,
-            nodes: HashSet::new(),
-            links: HashSet::new(),
-            elements: HashSet::new(),
-            frontier: HashSet::new(),
+            nodes: BTreeSet::new(),
+            links: BTreeSet::new(),
+            elements: BTreeSet::new(),
+            frontier: BTreeSet::new(),
         }
     }
 
@@ -697,22 +724,22 @@ impl<'a> DelaunSelector<'a> {
     pub fn add_neighbours(&mut self) {}
 
     /// Selected node indices.
-    pub fn nodes(&self) -> &HashSet<i32> {
+    pub fn nodes(&self) -> &BTreeSet<i32> {
         &self.nodes
     }
 
     /// Selected link indices.
-    pub fn links(&self) -> &HashSet<i32> {
+    pub fn links(&self) -> &BTreeSet<i32> {
         &self.links
     }
 
     /// Selected element indices.
-    pub fn elements(&self) -> &HashSet<i32> {
+    pub fn elements(&self) -> &BTreeSet<i32> {
         &self.elements
     }
 
     /// Frontier link indices (currently unpopulated, OCCT parity).
-    pub fn frontier_links(&self) -> &HashSet<i32> {
+    pub fn frontier_links(&self) -> &BTreeSet<i32> {
         &self.frontier
     }
 

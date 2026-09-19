@@ -50,15 +50,24 @@ fn shape_mesh_to_ply(mesh: &ShapeMesh) -> PlyMesh {
 /// ponytail: B-spline faces whose STEP `SURFACE_CURVE` pcurves are dropped
 /// (`step.rs`) get a wrong boundary, so the Delaunay bbox drifts past `EXACT_TOL`
 /// on `Shape.step`/`Shape-2.step` — a STEP-import gap, not a BRepMesh one.
-/// `Prs3d::GetDeflection` for a finite box (`Prs3d.hxx:66-72`).
+/// `Prs3d::GetDeflection(shape, drawer)` (`Prs3d.hxx:82-103`):
+/// `BRepBndLib::Add(shape, box, false)` then
 /// `maxComp(diag) * DeviationCoefficient * 4`, coefficient default 0.001.
-fn prs3d_get_deflection(shape: &TopoShape, maximal_chordial: f64) -> f64 {
+pub fn prs3d_get_deflection(shape: &TopoShape, maximal_chordial: f64) -> f64 {
     const DEVIATION_COEFFICIENT: f64 = 0.001;
     const CONFUSION: f64 = 1e-7;
-    let b = crate::bbox_from_geometry::shape_bbox(shape);
+    let b = crate::brep_bnd_lib::shape_bnd_box(shape);
     if b.is_void() {
-        return maximal_chordial.max(CONFUSION);
+        return maximal_chordial;
     }
+    let b = if b.is_open() {
+        if !b.has_finite_part() {
+            return maximal_chordial;
+        }
+        b.finite_part()
+    } else {
+        b
+    };
     let mn = b.corner_min();
     let mx = b.corner_max();
     let max_comp = (mx.x() - mn.x())

@@ -407,8 +407,7 @@ pub(super) fn rebuild_circle_wire(circ: &GpCirc, first: f64, last: f64) -> Resul
     let mut e = b.make_edge(curve.clone(), first, last);
     let seam = curve.d0(first);
     let v = b.make_vertex(seam, 0.0);
-    b.add(&mut e.0, &v.0);
-    b.add(&mut e.0, &v.0);
+    b.add_edge_vertices(&mut e, &v, &v);
     let w = b.make_wire(&[e]);
     w.set_closed(true);
     Ok(w)

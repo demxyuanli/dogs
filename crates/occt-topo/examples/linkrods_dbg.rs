@@ -1,6 +1,5 @@
 use occt_core::gp::GpPnt2d;
 use occt_core::precision::{CONFUSION, PCONFUSION};
-use occt_topo::bbox_from_geometry::shape_bbox;
 use occt_topo::brep_tools;
 use occt_topo::boptools_2d::curve_on_surface;
 use occt_topo::brep_exchange::brep_to_obj;
@@ -47,18 +46,7 @@ fn type_name(t: SurfaceType) -> &'static str {
 }
 
 fn prs3d_lin(shape: &occt_topo::shape::TopoShape, maximal_chordial: f64) -> f64 {
-    const DEVIATION_COEFFICIENT: f64 = 0.001;
-    const CONFUSION: f64 = 1e-7;
-    let b = shape_bbox(shape);
-    if b.is_void() {
-        return maximal_chordial.max(CONFUSION);
-    }
-    let mn = b.corner_min();
-    let mx = b.corner_max();
-    let max_comp = (mx.x() - mn.x())
-        .max(mx.y() - mn.y())
-        .max(mx.z() - mn.z());
-    (max_comp * DEVIATION_COEFFICIENT * 4.0).max(CONFUSION)
+    occt_topo::brep_exchange::prs3d_get_deflection(shape, maximal_chordial)
 }
 
 fn dump_grid(shape: &occt_topo::shape::TopoShape, stem: &str) {
@@ -413,7 +401,12 @@ fn main() {
     let nattr_only = args.iter().any(|a| a == "--nattr");
     let faces_only = args.iter().any(|a| a == "--faces");
     let only = args.into_iter().find(|a| {
-        a != "--shift" && a != "--ranges" && a != "--grid" && a != "--nattr" && a != "--faces"
+        a != "--shift"
+            && a != "--ranges"
+            && a != "--grid"
+            && a != "--nattr"
+            && a != "--faces"
+            && a != "--sph"
     });
     let stems = [
         "OffsetPlaneHoleEdge",

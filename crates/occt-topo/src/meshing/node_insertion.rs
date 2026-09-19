@@ -284,7 +284,7 @@ impl DelaunayNodeInsertionMeshAlgo {
     /// surface) and returns the triangles. The structure is consumed by the
     /// [`Delaun`]; call this once after inserting all nodes.
     pub fn triangulate(&mut self) -> Result<TriangulationResult, String> {
-        self.finish_mesh(&[], &MeshParameters::default(), 0.0)
+        self.finish_mesh(&[], &MeshParameters::default(), 0.0, usize::MAX)
     }
 
     /// Base mesh, then optional `insertNodes` (`AddVertices`), then `collectTriangles`.
@@ -296,6 +296,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         insert: &[(GpPnt2d, GpPnt)],
         params: &MeshParameters,
         face_deflection: f64,
+        face_index: usize,
     ) -> Result<TriangulationResult, String> {
         if self.structure.nb_nodes() == 0 {
             return Err("DelaunayNodeInsertionMeshAlgo::triangulate: no nodes registered".to_string());
@@ -318,6 +319,8 @@ impl DelaunayNodeInsertionMeshAlgo {
         for &e in &frontier {
             let _ = delaun.use_edge(e);
         }
+        let bnd_nodes = delaun.result().nb_nodes();
+        let bnd_tris = delaun.result().elements_of_domain().len();
 
         if !insert.is_empty() {
             let mut idxs: Vec<i32> = Vec::with_capacity(insert.len());
@@ -466,6 +469,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         // then RegisterWire with the splitter range.
         self.splitter = None;
         self.classifier = Classifier::new();
+        let mut range_invalid = false;
         {
             let face = model.face(face_index)?;
             if let Some(surface) = face.surface() {
@@ -489,9 +493,36 @@ impl DelaunayNodeInsertionMeshAlgo {
                         self.classifier
                             .register_wire(w, sp.tolerance_uv(), sp.range_u(), sp.range_v());
                     }
+                } else {
+                    range_invalid = true;
                 }
-                self.splitter = Some(sp);
+                if !range_invalid {
+                    self.splitter = Some(sp);
+                }
             }
+        }
+        // `BRepMesh_NodeInsertionMeshAlgo::initDataStructure`
+        // (`BRepMesh_NodeInsertionMeshAlgo.hxx:79-83`): when `AdjustRange` leaves
+        // the range splitter invalid, OCCT marks the face failed and returns
+        // false, so `BRepMesh_BaseMeshAlgo::process` (`BRepMesh_BaseMeshAlgo.cxx:52-59`)
+        // skips `generateMesh`/`commitSurfaceTriangulation` for it. That is what
+        // keeps `BRepMesh_GeomTool::CellsCount` (`BRepMesh_GeomTool.cxx:465-511`)
+        // from ever seeing a degenerate discrete range: the cylinder branch
+        // divides by the V extent (`BRepMesh_GeomTool.cxx:495-501`), and an
+        // invalid splitter implies that extent is zero (a zero-extent range
+        // samples to a zero-length `computeLengthV`, hence `IsValid` == false).
+        // Without this guard a zero V extent reaches `initCirclesTool`
+        // (`BRepMesh_Delaun.cxx:280-304`) as a huge cell count and a microscopic
+        // cell size, and binding the circumcircles grows the cell grid without
+        // bound.
+        if range_invalid {
+            model
+                .face_mut(face_index)
+                .map_err(|e| format!("DelaunayNodeInsertionMeshAlgo::perform: {e}"))?
+                .set_status(MeshStatus::FAILURE);
+            return Err(format!(
+                "DelaunayNodeInsertionMeshAlgo::perform: face {face_index} has an invalid discrete range"
+            ));
         }
         if self.classifier.wires_nb() == 0 {
             let (umin, umax, vmin, vmax) = uv_bounds(&uv);
@@ -522,10 +553,10 @@ impl DelaunayNodeInsertionMeshAlgo {
         let face_deflection = model.face(face_index)?.deflection();
         if self.pre_process_surface_nodes {
             self.generate_surface_nodes(model, face_index, params)?;
-            return self.finish_mesh(&[], params, face_deflection);
+            return self.finish_mesh(&[], params, face_deflection, face_index);
         }
         let insert = self.list_surface_nodes(model, face_index, params)?;
-        self.finish_mesh(&insert, params, face_deflection)
+        self.finish_mesh(&insert, params, face_deflection, face_index)
     }
 
     /// Collects boundary UV for two OCCT paths that must not be mixed:
@@ -570,7 +601,6 @@ impl DelaunayNodeInsertionMeshAlgo {
                 if n == 0 {
                     continue;
                 }
-
                 // Frontier links: every sample in the same traversal order as
                 // `collectWirePoints`, including the last (`initDataStructure`
                 // registers 0..=last). `Ordered < 0` walks the CheckOrder
@@ -772,13 +802,18 @@ impl ParametricDelaun<'_> {
         )
     }
 
-    /// `DelaunayNodeInsertionMeshAlgo::insertNodes` (`hxx:104-130`).
+    /// `DelaunayNodeInsertionMeshAlgo::insertNodes` (`hxx:104-131`).
     fn insert_parametric(
         &mut self,
         algo: &mut DelaunayNodeInsertionMeshAlgo,
         surface: &dyn Surface,
         nodes: &[GpPnt2d],
     ) -> bool {
+        // `hxx:108-111`: the early return tests the INPUT list, not the
+        // classifier's output.
+        if nodes.is_empty() {
+            return false;
+        }
         let mut idxs = Vec::new();
         for &uv in nodes {
             if !algo.classifier.is_inside(&uv) {
@@ -792,11 +827,11 @@ impl ParametricDelaun<'_> {
             }
             idxs.push(idx);
         }
-        if idxs.is_empty() {
-            return false;
-        }
+        // `hxx:125`: `AddVertices` is called even when every node was
+        // classified out, so `ProcessConstraints()` still runs.
         self.delaun.add_vertices(&mut idxs);
-        true
+        // `hxx:130`: only the RETURN VALUE reflects the classifier's output.
+        !idxs.is_empty()
     }
 }
 
@@ -1071,9 +1106,12 @@ mod tests {
 
         let res = algo.triangulate().expect("triangulate");
         assert!(!res.triangles.is_empty());
-        // 9 lattice points, octagonal hull (h = 8): 2N - 2 - h = 8 triangles.
-        assert_eq!(res.triangles.len(), 8);
-        assert_eq!(res.nodes.len(), 9);
+        // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
+        // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
+        // triangles whose neighbour touches the super-triangle. These nodes carry only
+        // Free links, so the mesh keeps 6 triangles over 7 nodes instead of 8 over 9.
+        assert_eq!(res.triangles.len(), 6);
+        assert_eq!(res.nodes.len(), 7);
         // Every triangle references live node indices only.
         for t in &res.triangles {
             for &v in &t.vertex_indices {

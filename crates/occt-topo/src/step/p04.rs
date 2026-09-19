@@ -1,11 +1,30 @@
 use super::prelude::*;
 use super::*;
 
+/// Direct child edges of a wire **without** composing the wire orientation
+/// (`TopoDS_Iterator` with `cumOri=false`). Used for `TranslateEdgeLoop`
+/// SelectForwardSeam `EdgeO` (`cxx:700`).
+fn edges_stored_on_wire(wire: &Wire) -> Vec<Edge> {
+    wire.0
+        .tshape
+        .read()
+        .expect("poisoned TShape lock")
+        .children
+        .iter()
+        .filter(|s| s.shape_type() == ShapeType::Edge)
+        .cloned()
+        .map(Edge)
+        .collect()
+}
+
 impl<'a> Resolver<'a> {
 
     pub(super) fn new(records: &'a HashMap<usize, Record>) -> Self {
         Self {
             records,
+            precision: step_precision(records),
+            plane_angle_factor: context_plane_angle_factor(records),
+            length_factor: context_length_factor(records),
             b: TopoBuilder::new(),
             shape_cache: RefCell::new(HashMap::new()),
             point_cache: RefCell::new(HashMap::new()),
@@ -50,6 +69,8 @@ impl<'a> Resolver<'a> {
             "ADVANCED_FACE" => self.resolve_face(rec),
             "CLOSED_SHELL" => self.resolve_shell(rec),
             "MANIFOLD_SOLID_BREP" => self.resolve_solid(rec),
+            "BREP_WITH_VOIDS" => self.resolve_brep_with_voids(rec),
+            "MAPPED_ITEM" => self.resolve_mapped_item(rec),
             other => {
                 self.warn(format!("unsupported topological entity {other} (#{id})"));
                 Err(format!("unsupported entity {other} (#{id})"))
@@ -78,8 +99,18 @@ impl<'a> Resolver<'a> {
         let start_ref = parse_ref(&rec.args[1]).ok_or("EDGE_CURVE: bad start ref")?;
         let end_ref = parse_ref(&rec.args[2]).ok_or("EDGE_CURVE: bad end ref")?;
         let curve_ref = parse_ref(&rec.args[3]).ok_or("EDGE_CURVE: bad curve ref")?;
-        let v1 = self.resolve_shape(start_ref)?;
-        let v2 = self.resolve_shape(end_ref)?;
+        // `StepToTopoDS_TranslateEdge.cxx:290-322`: `same_sense` picks which
+        // VERTEX is the edge's geometric first / last. `.T.` keeps
+        // `edge_start -> edge_end`; `.F.` swaps them, so the projected range
+        // and the vertex children both follow the curve's own direction.
+        let same_sense = parse_logical(rec.args.get(4).map(String::as_str), true);
+        let (first_ref, last_ref) = if same_sense {
+            (start_ref, end_ref)
+        } else {
+            (end_ref, start_ref)
+        };
+        let v1 = self.resolve_shape(first_ref)?;
+        let v2 = self.resolve_shape(last_ref)?;
         if !v1.is_vertex() || !v2.is_vertex() {
             return Err("EDGE_CURVE: endpoints are not vertices".into());
         }
@@ -87,16 +118,26 @@ impl<'a> Resolver<'a> {
         let p1 = GeometryRegistry::global().vertex_point(&v1);
         let p2 = GeometryRegistry::global().vertex_point(&v2);
         let (curve, first, last) = edge_from_curve3d(curve, &p1, &p2);
+        // `MakeFromCurve3D` (`TranslateEdge.cxx:452-455`): distance at projected
+        // params after `UpdateParam3d` (and any displaced-Line shift).
+        let temp1 = curve.d0(first).distance(&p1);
+        let temp2 = curve.d0(last).distance(&p2);
         let mut e = self.b.make_edge(curve, first, last);
         // `BRep_Builder` / `BRepLib_MakeEdge`: first vertex FORWARD, last REVERSED
         // (`TopoDS_Builder::Add`). Needed so `TopExp::LastVertex` exists on a
         // closed EDGE_CURVE (same TVertex stored twice) and
         // `ShapeAnalysis_Edge::FirstVertex` works on REVERSED seam uses.
-        self.b.add_edge_vertices(&mut e, &Vertex(v1), &Vertex(v2));
-        // `MakeFromCurve3D` (`cxx:478-479`) `UpdateVertex(1.000001 * dist)` is
-        // skipped until `ShapeAnalysis_Curve::Project` is Extrema-accurate:
-        // sampler residuals were written into vertex tolerance and
-        // `MaxFaceTolerance` / edge discret over-tessellated Shape.step.
+        let v1 = Vertex(v1);
+        let v2 = Vertex(v2);
+        self.b.add_edge_vertices(&mut e, &v1, &v2);
+        // `MakeFromCurve3D` (`TranslateEdge.cxx:478-479`): grow vertex tolerance
+        // to cover Project residual (`BRep_Builder::UpdateVertex` only raises).
+        // Enabled after ExtPC Project temps on Shape f7 seams are ~1e-7..1e-13
+        // (well under preci=1e-3); invent sampler residuals previously densified.
+        let t1 = crate::brep_tool::BRepTool::vertex_tolerance(&v1).max(1.000001 * temp1);
+        let t2 = crate::brep_tool::BRepTool::vertex_tolerance(&v2).max(1.000001 * temp2);
+        v1.set_tolerance(t1);
+        v2.set_tolerance(t2);
         // Remember the edge's curve entity for the face-level pcurve association
         // (a SURFACE_CURVE's pcurve is matched to the face's surface by ref).
         self.edge_curve_ref
@@ -108,17 +149,45 @@ impl<'a> Resolver<'a> {
     pub(super) fn resolve_oriented_edge(&self, rec: &'a Record) -> Result<TopoShape, String> {
         let edge_ref = parse_ref(&rec.args[3]).ok_or("ORIENTED_EDGE: bad edge ref")?;
         let mut s = self.resolve_shape(edge_ref)?;
-        // ORIENTED_EDGE(name, *, *, edge, orientation): a .F. reverses the edge
-        // in the wire. Without this, two ORIENTED_EDGEs referencing the same
-        // EDGE_CURVE (e.g. a cylinder side wall's two seam generatrices) both
-        // return the same forward edge, and the wire loses one — the surface
-        // never closes.
-        if let Some(o) = rec.args.get(4).map(|s| s.trim().to_string()) {
-            if o == ".F." {
-                s.set_orientation(Orientation::Reversed);
+        // `StepToTopoDS_TranslateEdgeLoop.cxx:546-556`: the occurrence
+        // orientation is the ORIENTED_EDGE boolean combined with the
+        // EDGE_CURVE's `same_sense`:
+        //   FORWARD  when (Orientation && SameSense) || (!Orientation && !SameSense)
+        //   REVERSED otherwise.
+        // The edge's stored forward direction already follows `same_sense`
+        // (`resolve_edge`), so this is the XNOR of the two booleans. Without it
+        // an `EDGE_CURVE(...,.F.)` occurrence comes back backwards.
+        let ori = parse_logical(rec.args.get(4).map(String::as_str), true);
+        let ec_same_sense = self.edge_curve_same_sense(edge_ref);
+        s.set_orientation(if ori == ec_same_sense {
+            Orientation::Forward
+        } else {
+            Orientation::Reversed
+        });
+        Ok(s)
+    }
+
+    /// `same_sense` of the `EDGE_CURVE` an ORIENTED_EDGE references.
+    /// `StepToTopoDS_TranslateEdgeLoop.cxx:306-308` follows a nested
+    /// ORIENTED_EDGE down to its EDGE_CURVE (bug #29979). A chain that does not
+    /// end at an EDGE_CURVE defaults to `.T.`.
+    fn edge_curve_same_sense(&self, mut id: usize) -> bool {
+        for _ in 0..8 {
+            let Ok(rec) = self.record(id) else {
+                return true;
+            };
+            match rec.type_name.as_str() {
+                "EDGE_CURVE" => {
+                    return parse_logical(rec.args.get(4).map(String::as_str), true);
+                }
+                "ORIENTED_EDGE" => match parse_ref(&rec.args[3]) {
+                    Some(next) => id = next,
+                    None => return true,
+                },
+                _ => return true,
             }
         }
-        Ok(s)
+        true
     }
 
     pub(super) fn resolve_loop(&self, rec: &'a Record) -> Result<TopoShape, String> {
@@ -131,14 +200,21 @@ impl<'a> Resolver<'a> {
             }
             edges.push(Edge(s));
         }
-        let mut wire = self.b.make_wire(&edges).0;
-        // The EDGE_LOOP lists its ORIENTED_EDGEs in any cyclic order; the file
-        // is not guaranteed to place consecutive edges next to each other (a
-        // CAD writer may list them out of sequence). Reorder the wire's edges
-        // into a connected chain by following shared vertices, as the OCCT STEP
-        // reader does when assembling the loop.
-        crate::algo_tools::AlgoTools::orient_edges_on_wire(&mut wire);
-        Ok(wire)
+        // Keep EDGE_LOOP order for seam SelectForwardSeam (`TranslateEdgeLoop`
+        // iterates OrientedEdges in list order; last UpdateEdge wins). Reorder
+        // for connectivity after pcurve association in `resolve_face`.
+        //
+        // UNPORTED: `StepToTopoDS_TranslateEdgeLoop.cxx:288-403` and `:405-491`
+        // bind (confuse) vertices through the translate tool before the loop is
+        // mapped: distinct `VERTEX` entities whose points coincide (`:385-396`,
+        // bug PRO7656) and adjacent edges that share no vertex at all
+        // (`:429-433` selects each side's meeting vertex out of
+        // `EC->EdgeStart/EdgeEnd` by `OrEdge1->Orientation()`, then `:466-477`
+        // rebinds `Vs1`/`Vs2` to one vertex, bug BUC50070 #3815). This port maps
+        // every ORIENTED_EDGE independently with its own VERTEX entities and
+        // never rebinds them, so a malformed EDGE_LOOP stays disconnected until
+        // the `ShapeFix_Wire` stage (`shhealing`) tries to close it.
+        Ok(self.b.make_wire(&edges).0)
     }
 
     /// A `VERTEX_LOOP(name, vertex)` is the boundary of a degenerate face — a
@@ -165,10 +241,11 @@ impl<'a> Resolver<'a> {
 
     pub(super) fn resolve_face(&self, rec: &'a Record) -> Result<TopoShape, String> {
         // Two argument layouts occur in the wild:
-        //  * STEP-214 (ISO standard, written by OCCT/FreeCAD): surface is the
-        //    third argument — `ADVANCED_FACE(name, bounds, surface, same_sense)`.
-        //  * this port's own writer (step.rs write path): surface is the second
-        //    argument — `ADVANCED_FACE('', #surface, (bounds), .T.)`.
+        //  * STEP-214 (ISO standard, written by OCCT/FreeCAD and by this port's
+        //    writer since the cylinder-validation fix): surface is the third
+        //    argument — `ADVANCED_FACE(name, bounds, surface, same_sense)`.
+        //  * legacy files from this port's earlier writer: surface is the
+        //    second argument — `ADVANCED_FACE('', #surface, (bounds), .T.)`.
         // Detect by checking which argument holds a surface reference.
         let surf_ref = if let Some(r) = parse_ref(&rec.args[2]) {
             r
@@ -192,6 +269,9 @@ impl<'a> Resolver<'a> {
         // `StepToTopoDS_TranslateFace.cxx:608-634` — a lone VertexLoop on a
         // sphere / BSpline / revolution is the whole closed surface; add
         // `BRepLib_MakeFace` natural bounds and skip the vertex loop itself.
+        // `cxx:629` passes `Precision()`, the translator's `myPrecision`
+        // (`STEPControl_ActorRead.cxx:2370-2384`) = file uncertainty x
+        // `LengthFactor` (`step_precision`), not `Precision::Confusion()`.
         if bounds.len() == 1
             && self.bound_loop_is_vertex_loop(bounds[0])
             && (surface.gp_sphere().is_some()
@@ -200,7 +280,7 @@ impl<'a> Resolver<'a> {
         {
             let mut face = crate::brep_lib_make_face::make_face_from_surface(
                 surface,
-                occt_core::precision::Precision::CONFUSION,
+                self.precision,
             );
             face.0.set_orientation(if same_sense {
                 Orientation::Forward
@@ -210,11 +290,15 @@ impl<'a> Resolver<'a> {
             return Ok(face.0);
         }
         let mut wires = Vec::with_capacity(bounds.len());
+        // `TranslateEdgeLoop.cxx:272`: `ForwardWire = FaceBound->Orientation()`
+        // for SelectForwardSeam Compose — captured before sameSense reverse.
+        let mut wire_bound_oris = Vec::with_capacity(bounds.len());
         for &b in &bounds {
             let mut s = self.resolve_shape(b)?;
             if !s.is_wire() {
                 return Err(format!("#{b}: expected wire in face bounds"));
             }
+            wire_bound_oris.push(s.orientation());
             // Bound orientation is already on the wire from `resolve_outer_bound`.
             // A reversed `Face_Surface` (or negative-major torus) flips it again
             // so the stored wire matches CAS.CADE (`cxx:714-723`).
@@ -233,12 +317,43 @@ impl<'a> Resolver<'a> {
         // Associate each wire edge's SURFACE_CURVE pcurve with this face's
         // surface (`BRep_Builder::UpdateEdge(edge, pcurve, face, tol)`).
         let face_ori = face.0.orientation();
-        for w in &wires {
-            for e in edges_of_wire(w) {
-                self.associate_edge_pcurve(&e, surf_ref, face_key, face_ori)?;
+        for (w, &wire_o) in wires.iter_mut().zip(wire_bound_oris.iter()) {
+            // EdgeO is ORIENTED_EDGE storage (`cxx:700`), not wire-composed.
+            // Iterate EDGE_LOOP order so last seam UpdateEdge matches cxx.
+            let loop_edges = edges_stored_on_wire(w);
+            // `StepToTopoDS_GeometricTool.cxx:104-116`: the seam test counts how
+            // many oriented edges of the loop reference the same step edge.
+            let loop_refs: Vec<usize> = loop_edges
+                .iter()
+                .map(|x| {
+                    self.edge_curve_ref
+                        .borrow()
+                        .get(&(Arc::as_ptr(&x.0.tshape) as usize))
+                        .copied()
+                        .unwrap_or(0)
+                })
+                .collect();
+            for e in &loop_edges {
+                let key = Arc::as_ptr(&e.0.tshape) as usize;
+                let curve_ref = self.edge_curve_ref.borrow().get(&key).copied().unwrap_or(0);
+                let nb_oe = loop_refs.iter().filter(|&&r| r == curve_ref).count();
+                self.associate_edge_pcurve(e, surf_ref, face_key, face_ori, wire_o, nb_oe)?;
             }
-            crate::shhealing::check_pcurves_and_shift(w, &face);
+            // `TranslateEdgeLoop.cxx:844-868` EdgeProjAux before CheckPCurves.
+            // cxx:815 is only `B.Add(W,E)`; after CheckPCurves (cxx:875) the
+            // function returns — no OrientEdgesOnWire / wire child reorder.
+            // `TranslateEdgeLoop.cxx:236` `preci = Precision()`, set by
+            // `STEPControl_ActorRead` from the file's
+            // `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` uncertainty or from
+            // `read.precision.val` (default 1.e-03); see `step_precision`.
+            let preci = self.precision;
+            crate::shhealing::project_wire_pcurve_ranges(w, &face, preci);
+            crate::shhealing::check_pcurves_and_shift(w, &face, preci);
         }
+        // `BRepLib_MakeFace.cxx:860-866` forced SameParameter is already in
+        // `make_face_uv` for natural-bound Offset faces. Wiring it on STEP
+        // Offset faces (after EdgeProjAux) densifies Shape 6141 -> 6213 vs
+        // occ 6150; TranslateFace.cxx has no equivalent call.
         Ok(face.0)
     }
 
@@ -281,15 +396,145 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// True when `assoc_ref` is a `PCURVE` whose basis surface is `surf_ref`
+    /// (`StepToTopoDS_GeometricTool.cxx:57-63` / `:94-97` / `:143-146`).
+    fn pcurve_lies_on(&self, assoc_ref: usize, surf_ref: usize) -> bool {
+        matches!(self.resolve_pcurve(assoc_ref), Ok((basis, _)) if basis == surf_ref)
+    }
+
+    /// The raw STEP origin and direction ratios of a `PCURVE` whose underlying
+    /// 2D curve is a `LINE` (`StepToTopoDS_GeometricTool.cxx:167-181`), as
+    /// `(Pnt.X, Pnt.Y, Dir.X, Dir.Y)`. `None` for any other entity.
+    fn step_2d_line(&self, assoc_ref: usize) -> Option<(f64, f64, f64, f64)> {
+        let rec = self.record(assoc_ref).ok()?;
+        if rec.type_name != "PCURVE" {
+            return None;
+        }
+        let dri = parse_ref(&rec.args[2])?;
+        let dri_rec = self.record(dri).ok()?;
+        if dri_rec.type_name != "DEFINITIONAL_REPRESENTATION" {
+            return None;
+        }
+        let line_ref = *parse_ref_list(&dri_rec.args[1]).first()?;
+        let line = self.record(line_ref).ok()?;
+        if line.type_name != "LINE" {
+            return None;
+        }
+        let pnt = self.record(parse_ref(&line.args[1])?).ok()?;
+        let dir = self.record(parse_ref(&line.args[2])?).ok()?;
+        if pnt.type_name != "CARTESIAN_POINT" || dir.type_name != "DIRECTION" {
+            return None;
+        }
+        let p = parse_xy(&pnt.args[1]).ok()?;
+        let d = parse_xy(&dir.args[1]).ok()?;
+        Some((p.0, p.1, d.0, d.1))
+    }
+
+    /// `StepToTopoDS_GeometricTool::IsSeamCurve` (`cxx:78-121`). `nb_oe` is how
+    /// many oriented edges of the loop reference the same step edge.
+    fn is_seam_curve(&self, curve_ref: usize, surf_ref: usize, nb_oe: usize) -> bool {
+        if let Ok(rec) = self.record(curve_ref) {
+            if rec.type_name == "SEAM_CURVE" {
+                return true;
+            }
+        }
+        let assoc = self
+            .surface_curve_pcurves
+            .borrow()
+            .get(&curve_ref)
+            .cloned()
+            .unwrap_or_default();
+        if assoc.len() != 2 {
+            return false;
+        }
+        if !self.pcurve_lies_on(assoc[0], surf_ref) || !self.pcurve_lies_on(assoc[1], surf_ref) {
+            return false;
+        }
+        // `cxx:104-116`: two oriented edges of the same wire share this edge.
+        nb_oe == 2
+    }
+
+    /// `StepToTopoDS_GeometricTool::IsLikeSeam` (`cxx:133-218`): the two pcurves
+    /// lie on the same surface but the edge is used once by the loop, and both
+    /// are `LINE`s sharing an origin coordinate and a direction (CATIA BRep).
+    fn is_like_seam(&self, curve_ref: usize, surf_ref: usize, nb_oe: usize) -> bool {
+        let assoc = self
+            .surface_curve_pcurves
+            .borrow()
+            .get(&curve_ref)
+            .cloned()
+            .unwrap_or_default();
+        if assoc.len() != 2 {
+            return false;
+        }
+        if !self.pcurve_lies_on(assoc[0], surf_ref) || !self.pcurve_lies_on(assoc[1], surf_ref) {
+            return false;
+        }
+        // `cxx:160-165`: the two oriented edges are not in the same wire.
+        if nb_oe != 1 {
+            return false;
+        }
+        let (Some(l1), Some(l2)) = (self.step_2d_line(assoc[0]), self.step_2d_line(assoc[1]))
+        else {
+            return false;
+        };
+        // `cxx:183-196`, `preci2d = Precision::PConfusion()`.
+        let preci2d = occt_core::precision::PCONFUSION;
+        let delta_x = (l1.0 - l2.0).abs();
+        let delta_y = (l1.1 - l2.1).abs();
+        let delta_dir_x = (l1.2 - l2.2).abs();
+        let delta_dir_y = (l1.3 - l2.3).abs();
+        if delta_x < preci2d || delta_y < preci2d {
+            delta_dir_x < preci2d && delta_dir_y < preci2d
+        } else {
+            false
+        }
+    }
+
+    /// `TranslateEdgeLoop.cxx:699-734`: order the two seam pcurves so the first
+    /// entry is the FORWARD one. `ShapeAnalysis_Curve::SelectForwardSeam`, then
+    /// flip when the cumulative edge/wire/face orientation is reversed.
+    fn order_seam_pcurves(
+        &self,
+        edge: &Edge,
+        matched: &mut [Arc<dyn Curve2d>],
+        face_ori: Orientation,
+        wire_o: Orientation,
+    ) {
+        if matched.len() != 2 {
+            return;
+        }
+        // WireO is FaceBound->Orientation (`cxx:272`), not the post-sameSense wire.
+        let mut fwd =
+            crate::pcurve_full::select_forward_seam(matched[0].as_ref(), matched[1].as_ref());
+        if fwd != 0 {
+            let edge_o = edge.0.orientation();
+            let cumul = Orientation::compose(edge_o, wire_o);
+            let cumul = Orientation::compose(cumul, face_ori);
+            if cumul != Orientation::Forward {
+                fwd = 3 - fwd;
+            }
+            if fwd == 2 {
+                matched.swap(0, 1);
+            }
+        }
+    }
+
     /// Match a wire edge's SURFACE_CURVE pcurve to `surf_ref` and attach its 2D
     /// curve to the edge for `face_key`. Source:
     /// `StepToTopoDS_GeometricTool::PCurve` + `StepToTopoDS_TranslateEdge::MakePCurve`.
+    ///
+    /// `nb_oe` is the number of oriented edges of the current loop that
+    /// reference this edge; it selects the seam arm
+    /// (`TranslateEdgeLoop.cxx:611-667`, `:689-767`, `:779-796`).
     pub(super) fn associate_edge_pcurve(
         &self,
         edge: &Edge,
         surf_ref: usize,
         face_key: usize,
         face_ori: Orientation,
+        wire_o: Orientation,
+        nb_oe: usize,
     ) -> Result<(), String> {
         let key = Arc::as_ptr(&edge.0.tshape) as usize;
         let Some(&curve_ref) = self.edge_curve_ref.borrow().get(&key) else {
@@ -311,28 +556,27 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
-        // A seam edge carries two pcurves on the same face (one per side of the
-        // seam, e.g. the cone's `u = 0` and `u = 2π`). Order them forward-then-
-        // reversed (`ShapeAnalysis_Curve::SelectForwardSeam`) so the wire assembly
-        // can hand each traversal its own side.
-        if matched.len() == 2 {
-            // `StepToTopoDS_TranslateEdgeLoop.cxx:721-734`: SelectForwardSeam,
-            // then invert 1↔2 when Compose(Edge, Wire, Face) is not FORWARD.
-            // `edges_of_wire` already composes the parent wire onto the edge.
-            let mut fwd =
-                crate::pcurve_full::select_forward_seam(matched[0].as_ref(), matched[1].as_ref());
-            if fwd != 0 {
-                let cumul = Orientation::compose(face_ori, edge.0.orientation());
-                if cumul != Orientation::Forward {
-                    fwd = 3 - fwd;
-                }
-                if fwd == 2 {
-                    matched.swap(0, 1);
-                }
-            }
-        }
-        if !matched.is_empty() {
-            GeometryRegistry::global().set_edge_pcurves(&edge.0, face_key, matched);
+        let is_seam = self.is_seam_curve(curve_ref, surf_ref, nb_oe);
+        let is_like_seam = !is_seam && self.is_like_seam(curve_ref, surf_ref, nb_oe);
+        let stored: Vec<Arc<dyn Curve2d>> = if is_seam {
+            // `cxx:736-767`: a seam edge carries two pcurves on the same face
+            // (one per side of the seam, e.g. the cone's `u = 0` and `u = 2pi`),
+            // stored forward-then-reversed so the wire assembly can hand each
+            // traversal its own side.
+            self.order_seam_pcurves(edge, &mut matched, face_ori, wire_o);
+            matched
+        } else if is_like_seam {
+            // `cxx:748-767`: `else UpdateEdge(E, C2d2, Face, 0.)` - only the
+            // forward pcurve is stored for CATIA-like seams.
+            self.order_seam_pcurves(edge, &mut matched, face_ori, wire_o);
+            matched.into_iter().take(1).collect()
+        } else {
+            // `cxx:645-667` walks every matching pcurve and keeps the last, then
+            // `cxx:786-793` does `B.UpdateEdge(E, C2d, Face, 0.)` with it.
+            matched.pop().into_iter().collect()
+        };
+        if !stored.is_empty() {
+            GeometryRegistry::global().set_edge_pcurves(&edge.0, face_key, stored);
         }
         Ok(())
     }
@@ -359,6 +603,200 @@ impl<'a> Resolver<'a> {
         Ok(self.b.make_solid(&[Shell(s)]).0)
     }
 
+    /// `StepToTopoDS_Builder::Init(BrepWithVoids)` (`StepToTopoDS_Builder.cxx:
+    /// 179-251`), reached from `STEPControl_ActorRead::TransferEntity`
+    /// (`cxx:1827-1831`, checked before `MANIFOLD_SOLID_BREP` because
+    /// `BREP_WITH_VOIDS` is a subtype). The outer `CLOSED_SHELL` becomes the
+    /// solid's first shell; every `ORIENTED_CLOSED_SHELL` of the `voids` set
+    /// becomes an inner shell, reversed when its `orientation` attribute is
+    /// `.F.` (`cxx:237-241`).
+    pub(super) fn resolve_brep_with_voids(&self, rec: &'a Record) -> Result<TopoShape, String> {
+        let outer_ref = parse_ref(&rec.args[1]).ok_or("BREP_WITH_VOIDS: bad outer ref")?;
+        let outer = self.resolve_shape(outer_ref)?;
+        if !outer.is_shell() {
+            // `cxx:210-214`: "OuterShell from BrepWithVoids not mapped to TopoDS".
+            return Err("BREP_WITH_VOIDS: outer is not a shell".into());
+        }
+        let mut shells = vec![Shell(outer)];
+        for void in parse_ref_list(&rec.args[2]) {
+            match self.resolve_oriented_closed_shell(void) {
+                Ok(s) => shells.push(Shell(s)),
+                // `cxx:244-247`: "A Void from BrepWithVoids not mapped to
+                // TopoDS" is a warning; the solid keeps the shells that mapped.
+                Err(e) => self.warn(format!("void #{void}: {e}")),
+            }
+        }
+        Ok(self.b.make_solid(&shells).0)
+    }
+
+    /// One void of a `BREP_WITH_VOIDS`: `ORIENTED_CLOSED_SHELL(name, *,
+    /// closed_shell, orientation)`. Its faces are the derived
+    /// `SELF\connected_face_set.cfs_faces := closed_shell.cfs_faces`
+    /// (`StepShape_OrientedClosedShell.cxx:81-87`), so the shell is translated
+    /// through the referenced `CLOSED_SHELL`.
+    fn resolve_oriented_closed_shell(&self, id: usize) -> Result<TopoShape, String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "ORIENTED_CLOSED_SHELL" {
+            return Err(format!("expected ORIENTED_CLOSED_SHELL at #{id}"));
+        }
+        let shell_ref = parse_ref(&rec.args[2]).ok_or("ORIENTED_CLOSED_SHELL: bad shell ref")?;
+        let mut s = self.resolve_shape(shell_ref)?;
+        if !s.is_shell() {
+            return Err(format!("#{shell_ref}: void is not a shell"));
+        }
+        // `StepToTopoDS_Builder.cxx:239-241`:
+        // `if (!anOCShell->Orientation()) aShape.Reverse();`
+        if !parse_logical(rec.args.get(3).map(String::as_str), true) {
+            s.set_orientation(Orientation::Reversed);
+        }
+        Ok(s)
+    }
+
+    /// `STEPControl_ActorRead::TransferEntity(StepRepr_MappedItem)`
+    /// (`STEPControl_ActorRead.cxx:1971-2045`): an assembly instance. The shape
+    /// of `mapping_source.mapped_representation` is placed by the transform
+    /// from `mapping_source.mapping_origin` to `mapping_target`, or, when the
+    /// mapping target is a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`, by the
+    /// transform carried by that operator (`cxx:2013-2032`). `MAPPED_ITEM(name,
+    /// mapping_source, mapping_target)` (`RWStepRepr_RWMappedItem.cxx:37-63`);
+    /// `REPRESENTATION_MAP(mapping_origin, mapped_representation)`
+    /// (`RWStepRepr_RWRepresentationMap.cxx:34-57`).
+    pub(super) fn resolve_mapped_item(&self, rec: &'a Record) -> Result<TopoShape, String> {
+        let source_ref = parse_ref(&rec.args[1]).ok_or("MAPPED_ITEM: bad mapping_source ref")?;
+        let target_ref = parse_ref(&rec.args[2]).ok_or("MAPPED_ITEM: bad mapping_target ref")?;
+        let source = self.record(source_ref)?;
+        if source.type_name != "REPRESENTATION_MAP" {
+            return Err(format!(
+                "MAPPED_ITEM: mapping_source #{source_ref} is {}",
+                source.type_name
+            ));
+        }
+        let origin_ref =
+            parse_ref(&source.args[0]).ok_or("REPRESENTATION_MAP: bad mapping_origin ref")?;
+        let maprep_ref = parse_ref(&source.args[1])
+            .ok_or("REPRESENTATION_MAP: bad mapped_representation ref")?;
+        // `cxx:1989-2001`: transfer the mapped representation, then warn when it
+        // produced no shape.
+        let (_, shapes) = self.resolve_representation(maprep_ref)?;
+        if shapes.is_empty() {
+            return Err(format!(
+                "MAPPED_ITEM: mapped representation #{maprep_ref} produced no shape"
+            ));
+        }
+        let mut mapped = if shapes.len() == 1 {
+            shapes.into_iter().next().unwrap()
+        } else {
+            TopoBuilder::new().make_compound_of(&shapes).0
+        };
+        // `cxx:2013-2032`: two placement formulas.
+        let target = self.record(target_ref)?;
+        let trsf = if target.type_name == "CARTESIAN_TRANSFORMATION_OPERATOR_3D" {
+            self.make_transformation3d(target_ref).ok()
+        } else {
+            match (self.resolve_axis2(origin_ref), self.resolve_axis2(target_ref)) {
+                (Ok(ax_orig), Ok(ax_targ)) => Some(self.compute_axis_transform(&ax_orig, &ax_targ)),
+                _ => None,
+            }
+        };
+        match trsf {
+            // `cxx:2038 ApplyTransformation`: `shape.Move(TopLoc_Location(Trsf))`.
+            // This port's geometry registry is location-blind (the mesh path
+            // reads the registered geometry, not `TopoShape::location`), so the
+            // placement is baked into a copy, the same mechanism `Assembly`
+            // export uses (`shape_ops::transformed_copy`).
+            Some(t) if t.form() != occt_core::gp::TrsfForm::Identity => {
+                match crate::shape_ops::transformed_copy(&mapped, &t) {
+                    Ok(copy) => mapped = copy,
+                    Err(e) => self.warn(format!("MAPPED_ITEM: transform failed: {e}")),
+                }
+            }
+            Some(_) => {}
+            // `cxx:2042-2044`: "Mapped Item, case not recognized, location
+            // ignored" - keep the untransformed shape.
+            None => self.warn(format!(
+                "MAPPED_ITEM #{target_ref}: case not recognized, location ignored"
+            )),
+        }
+        Ok(mapped)
+    }
+
+    /// `StepToGeom::MakeTransformation3d` (`StepToGeom.cxx:2153-2214`) for a
+    /// `CARTESIAN_TRANSFORMATION_OPERATOR_3D`. The reader starts at parameter 3
+    /// (two `functionally_defined_transformation` names are skipped,
+    /// `RWStepGeom_RWCartesianTransformationOperator.cxx:36-49`), so axis1 is
+    /// param 4, axis2 param 5, local_origin param 6, scale param 7 and axis3
+    /// param 8 (`RWStepGeom_RWCartesianTransformationOperator3d.cxx:82-128`).
+    fn make_transformation3d(&self, id: usize) -> Result<occt_core::gp::GpTrsf, String> {
+        let rec = self.record(id)?;
+        let origin_ref = parse_ref(&rec.args[5]).ok_or("CTO3D: bad local_origin ref")?;
+        // `cxx:2158`: `MakeCartesianPoint(LocalOrigin)` - scaled by LengthFactor.
+        let p = self.resolve_point(origin_ref)?;
+        // `cxx:2163-2198`: default X / Y, overridden by axis1 / axis2.
+        let mut d1 = dir_x();
+        if let Some(r) = parse_ref(&rec.args[3]) {
+            if let Ok(d) = self.resolve_direction(r) {
+                d1 = d;
+            }
+        }
+        let mut d2 = dir_y();
+        if let Some(r) = parse_ref(&rec.args[4]) {
+            if let Ok(d) = self.resolve_direction(r) {
+                d2 = d;
+            }
+        }
+        // `cxx:2186-2202`: axis3, or `D1.Crossed(D2)` when absent.
+        let d3 = match parse_ref(&rec.args[7]) {
+            Some(r) => self
+                .resolve_direction(r)
+                .unwrap_or_else(|_| d1.crossed(&d2).unwrap_or_else(|_| dir_z())),
+            None => d1.crossed(&d2).unwrap_or_else(|_| dir_z()),
+        };
+        // `gp_Ax3(P, D3, D1)`: Vy = D3 ^ D1, X re-orthogonalized as Vy ^ D3.
+        let ydir = d3.crossed(&d1).map_err(|e| format!("CTO3D: {e}"))?;
+        let xdir = ydir.crossed(&d3).map_err(|e| format!("CTO3D: {e}"))?;
+        let ax3 = GpAx3 {
+            axis: GpAx1::new(p, d3),
+            vxdir: xdir,
+            vydir: ydir,
+        };
+        let mut t = occt_core::gp::GpTrsf::identity();
+        t.set_transformation(&ax3);
+        // `cxx:2205-2208`: `if (HasScale) CT.SetScaleFactor(Scale())`.
+        if let Some(s) = rec.args.get(6).and_then(|a| parse_f64(a).ok()) {
+            t.scale = s;
+        }
+        // `cxx:2210`: `CT = CT.Inverted()`.
+        t.invert().map_err(|e| format!("CTO3D: {e}"))?;
+        Ok(t)
+    }
+
+    /// `STEPControl_ActorRead::ComputeTransformation` axis-pair arm
+    /// (`STEPControl_ActorRead.cxx:2471-2489`):
+    /// `Trsf.SetTransformation(ax3Targ, ax3Orig)`
+    /// (`gp_Trsf.cxx:172-192`) maps `ax3Orig`-frame coordinates into the
+    /// `ax3Targ` frame, i.e. `world->ax3Orig` composed with the inverse of
+    /// `world->ax3Targ`.
+    fn compute_axis_transform(&self, orig: &GpAx2, targ: &GpAx2) -> occt_core::gp::GpTrsf {
+        let ax3_orig = GpAx3 {
+            axis: orig.axis,
+            vxdir: orig.vxdir,
+            vydir: orig.vydir,
+        };
+        let ax3_targ = GpAx3 {
+            axis: targ.axis,
+            vxdir: targ.vxdir,
+            vydir: targ.vydir,
+        };
+        let mut t_orig = occt_core::gp::GpTrsf::identity();
+        t_orig.set_transformation(&ax3_orig);
+        let mut t_targ = occt_core::gp::GpTrsf::identity();
+        t_targ.set_transformation(&ax3_targ);
+        let inv_targ = t_targ
+            .inverted()
+            .unwrap_or_else(|_| occt_core::gp::GpTrsf::identity());
+        t_orig.multiplied(&inv_targ)
+    }
+
     pub(super) fn resolve_point(&self, id: usize) -> Result<GpPnt, String> {
         if let Some(p) = self.point_cache.borrow().get(&id) {
             return Ok(*p);
@@ -369,7 +807,11 @@ impl<'a> Resolver<'a> {
             return Err(format!("expected CARTESIAN_POINT at #{id}"));
         }
         let v = parse_xyz(&rec.args[1]).map_err(|e| format!("CARTESIAN_POINT #{id}: {e}"))?;
-        let p = GpPnt::from_xyz(&v);
+        // `StepToGeom::MakeCartesianPoint` (`StepToGeom.cxx:1173-1186`): every
+        // coordinate is multiplied by `LF = theLocalFactors.LengthFactor()`
+        // (`cxx:1179`). The 2D reader (`MakeCartesianPoint2d`, `cxx:1191-1204`)
+        // deliberately does NOT scale, so `resolve_point_2d` stays unchanged.
+        let p = GpPnt::from_xyz(&v.multiplied(self.length_factor));
         self.point_cache.borrow_mut().insert(id, p);
         Ok(p)
     }
@@ -398,7 +840,13 @@ impl<'a> Resolver<'a> {
         let dir_ref = parse_ref(&rec.args[1]).ok_or("VECTOR: bad direction ref")?;
         let mag = parse_f64(&rec.args[2])?;
         let dir = self.resolve_direction(dir_ref)?;
-        Ok(GpVec::from_xyz(&dir.xyz().multiplied(mag)))
+        // `StepToGeom::MakeVectorWithMagnitude` (`StepToGeom.cxx:2569-2581`):
+        // `V = D->Dir().XYZ() * SV->Magnitude() * LengthFactor` (`cxx:2577`).
+        // `MakeVectorWithMagnitude2d` (`cxx:2586-2597`) does not scale, so
+        // `resolve_vector_2d` stays unchanged.
+        Ok(GpVec::from_xyz(
+            &dir.xyz().multiplied(mag * self.length_factor),
+        ))
     }
 
     /// `AXIS1_PLACEMENT(name, location, axis_direction)` → `GpAx1`.
@@ -458,13 +906,21 @@ impl<'a> Resolver<'a> {
             }
             "CIRCLE" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("CIRCLE: bad axis ref")?;
-                let r = parse_f64(&rec.args[2])?;
+                // `StepToGeom::MakeCircle` (`StepToGeom.cxx:1212-1225`):
+                // `SC->Radius() * LengthFactor()` (`cxx:1222`).
+                let r = parse_f64(&rec.args[2])? * self.length_factor;
                 Arc::new(GeomCircle::new(GpCirc::new(self.resolve_axis2(ax)?, r)))
             }
             "ELLIPSE" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("ELLIPSE: bad axis ref")?;
-                let maj = parse_f64(&rec.args[2])?;
-                let min = parse_f64(&rec.args[3])?;
+                // `StepToGeom::MakeEllipse` (`StepToGeom.cxx:1536-1566`):
+                // `majorR = SemiAxis1 * LF`, `minorR = SemiAxis2 * LF`
+                // (`cxx:1549-1550`). OCCT also swaps the axes when
+                // `majorR < minorR` (`cxx:1552-1561`); that branch is unported
+                // here (the LF product is sign-invariant, so it does not change
+                // the swap decision).
+                let maj = parse_f64(&rec.args[2])? * self.length_factor;
+                let min = parse_f64(&rec.args[3])? * self.length_factor;
                 Arc::new(GeomEllipse::new(GpElips::new(
                     self.resolve_axis2(ax)?,
                     maj,
@@ -473,8 +929,10 @@ impl<'a> Resolver<'a> {
             }
             "HYPERBOLA" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("HYPERBOLA: bad axis ref")?;
-                let maj = parse_f64(&rec.args[2])?;
-                let min = parse_f64(&rec.args[3])?;
+                // `StepToGeom::MakeHyperbola` (`StepToGeom.cxx:1604-1622`):
+                // `SemiAxis() * LF`, `SemiImagAxis() * LF` (`cxx:1616-1617`).
+                let maj = parse_f64(&rec.args[2])? * self.length_factor;
+                let min = parse_f64(&rec.args[3])? * self.length_factor;
                 Arc::new(GeomHyperbola::new(GpHypr::new(
                     self.resolve_axis2(ax)?,
                     maj,
@@ -483,7 +941,9 @@ impl<'a> Resolver<'a> {
             }
             "PARABOLA" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("PARABOLA: bad axis ref")?;
-                let f = parse_f64(&rec.args[2])?;
+                // `StepToGeom::MakeParabola` (`StepToGeom.cxx:1695-1710`):
+                // `SC->FocalDist() * LengthFactor()` (`cxx:1706`).
+                let f = parse_f64(&rec.args[2])? * self.length_factor;
                 Arc::new(GeomParabola::new(GpParab::new(self.resolve_axis2(ax)?, f)))
             }
             "SURFACE_CURVE" | "SEAM_CURVE" => {
@@ -565,6 +1025,13 @@ impl<'a> Resolver<'a> {
             "TRIMMED_CURVE" => {
                 // Layout: name, basis_curve, trim_1, trim_2, sense_agreement,
                 // master_representation. The bounds are the 4th/5th attributes.
+                // UNPORTED: `StepToGeom::MakeTrimmedCurve` (`StepToGeom.cxx:2376-2394`)
+                // scales the parameter trims by `fact` (`cxx:2380` Line magnitude
+                // times LengthFactor, `cxx:2386` PlaneAngleFactor for Circle /
+                // Ellipse) and adds the `shift` of `cxx:2389-2392`; only a
+                // POINT-trimmed curve skips both (`cxx:2355-2372`). The raw
+                // parameters are used here, so the file length factor is not
+                // threaded through this arm.
                 let basis_ref = parse_ref(&rec.args[1]).ok_or("TRIMMED_CURVE: bad basis ref")?;
                 let basis = self.resolve_curve(basis_ref)?;
                 let a = parse_f64(&rec.args[3])?;
@@ -727,6 +1194,10 @@ impl<'a> Resolver<'a> {
                 (c, range)
             }
             "TRIMMED_CURVE" => {
+                // UNPORTED: `StepToGeom::MakeTrimmedCurve2d` (`StepToGeom.cxx:2517-2561`)
+                // scales the parameter trims by `fact` (Line magnitude at `cxx:2533`,
+                // PlaneAngleFactor at `cxx:2539`) and adds the `shift` of
+                // `cxx:2541-2545`. The raw parameters are used here.
                 let basis_ref = parse_ref(&rec.args[1]).ok_or("TRIMMED_CURVE: bad basis ref")?;
                 let (basis, _) = self.resolve_curve_2d(basis_ref)?;
                 let a = parse_f64(&rec.args[3])?;
@@ -769,8 +1240,10 @@ impl<'a> Resolver<'a> {
     /// `GeomConvert_Units::DegreeToRadian`. STEP stores cylinder/cone/sphere/torus
     /// pcurve `U` in the file angle unit and cone `V` as axis length; OCCT's
     /// `ElSLib` cone uses `V` along the generatrix (`Length / cos(semiAngle)`).
-    /// Length/angle factors stay 1: this reader does not rescale 3D coordinates
-    /// from `SI_UNIT` records (`step/p02.rs` write-side units are skipped on read).
+    /// The length factor is the file's `StepData_Factors::LengthFactor()`
+    /// (`StepToTopoDS_TranslateEdge.cxx:573-580` passes it to
+    /// `GeomConvert_Units::DegreeToRadian`); the angle factor is
+    /// `theLocalFactors.FactorDegreeRadian()`.
     ///
     /// Line location/direction are scaled then the direction is renormalized
     /// (`GeomConvert_Units.cxx:260-276`), so a V-iso generatrix keeps parameter
@@ -786,20 +1259,20 @@ impl<'a> Resolver<'a> {
         curve_ref: usize,
         surf: &dyn Surface,
     ) -> Arc<dyn Curve2d> {
-        const LENGTH_FACT: f64 = 1.0;
-        const ANGLE_FACT: f64 = 1.0;
+        let length_fact = self.length_factor;
+        let angle_fact = self.plane_angle_factor;
         let is_plane = classify_surface(surf) == SurfaceKind::Plane;
         // `GeomConvert_Units.cxx:191-227`. Offset (and other non-analytic
         // kinds) return the pcurve unchanged. Revolution is U-angle only.
         let (u_fact, v_fact) = if let Some((_, alpha)) = surf.cone_ref() {
-            (ANGLE_FACT, LENGTH_FACT / alpha.cos())
+            (angle_fact, length_fact / alpha.cos())
         } else if surf.is_surface_of_revolution() {
-            (ANGLE_FACT, LENGTH_FACT)
+            (angle_fact, length_fact)
         } else {
             match classify_surface(surf) {
-                SurfaceKind::Sphere | SurfaceKind::Torus => (ANGLE_FACT, ANGLE_FACT),
-                SurfaceKind::Cylinder => (ANGLE_FACT, LENGTH_FACT),
-                SurfaceKind::Plane => (LENGTH_FACT, LENGTH_FACT),
+                SurfaceKind::Sphere | SurfaceKind::Torus => (angle_fact, angle_fact),
+                SurfaceKind::Cylinder => (angle_fact, length_fact),
+                SurfaceKind::Plane => (length_fact, length_fact),
                 SurfaceKind::Cone | SurfaceKind::Other => return c2d,
             }
         };
@@ -809,7 +1282,7 @@ impl<'a> Resolver<'a> {
         match rec.type_name.as_str() {
             "CIRCLE" | "ELLIPSE" if is_plane => {
                 let mut t = occt_core::gp::GpTrsf2d::default();
-                if t.set_scale(&GpPnt2d::new(0.0, 0.0), LENGTH_FACT).is_err() {
+                if t.set_scale(&GpPnt2d::new(0.0, 0.0), length_fact).is_err() {
                     return c2d;
                 }
                 let mut scaled = c2d.clone_dyn();

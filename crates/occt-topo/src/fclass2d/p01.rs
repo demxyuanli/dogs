@@ -429,7 +429,7 @@ pub(super) fn edge_points(edge: &Edge, face: &Face) -> Vec<GpPnt2d> {
 
 /// Sample a pcurve uniformly over the edge range `[a, b]`.
 pub(super) fn sample_pcurve(pc: &dyn Curve2d, a: f64, b: f64) -> Vec<GpPnt2d> {
-    let n = sample_count(pc);
+    let n = sample_count(pc, a, b);
     (0..n)
         .map(|i| {
             let t = a + (b - a) * i as f64 / (n.max(1) - 1) as f64;
@@ -438,14 +438,30 @@ pub(super) fn sample_pcurve(pc: &dyn Curve2d, a: f64, b: f64) -> Vec<GpPnt2d> {
         .collect()
 }
 
-/// Number of samples for a pcurve: a straight UV line needs only its endpoints,
-/// a circle pcurve 48 samples, anything else (curved, non-isoparametric) 32.
-pub(super) fn sample_count(pc: &dyn Curve2d) -> usize {
-    match pc_curve_kind(pc) {
-        CurveKind::Line => 2,
-        CurveKind::Circle => 48,
-        _ => 32,
+/// Number of boundary samples for a pcurve, mirroring
+/// `BRepTopAdaptor_FClass2d::Perform` (`BRepTopAdaptor_FClass2d.cxx:179-185`):
+///
+/// ```text
+/// Standard_Integer nbs = Geom2dInt_Geom2dCurveTool::NbSamples(aCurveAdaptor2D);
+/// if (nbs > 2)
+///   nbs *= 4;
+/// ```
+///
+/// `first`/`last` are the adaptor's `FirstParameter()`/`LastParameter()` (the
+/// edge pcurve range) and only matter for the circle arm of
+/// [`nb_samples`]. `du` is then
+/// `(plbid - pfbid) / (nbs - 1)` (`BRepTopAdaptor_FClass2d.cxx:186`), i.e.
+/// uniform over `[a, b]`.
+pub(super) fn sample_count(pc: &dyn Curve2d, first: f64, last: f64) -> usize {
+    // `BRepTopAdaptor_FClass2d.cxx:180` -> `Geom2dInt_Geom2dCurveTool::NbSamples`
+    // (`Geom2dInt_Geom2dCurveTool.cxx:73-91`) -> `Geom2dAdaptor_Curve::NbSamples`
+    // (`Geom2dAdaptor_Curve.cxx:1391-1394`, body `cxx:1351-1389`).
+    let mut nbs = nb_samples(pc, first, last);
+    if nbs > 2 {
+        // `BRepTopAdaptor_FClass2d.cxx:182-184`.
+        nbs *= 4;
     }
+    nbs.max(2)
 }
 
 /// Chain edge polylines into a single closed ring by UV continuity.

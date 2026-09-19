@@ -164,16 +164,22 @@ pub fn compute_nb_v_samples(
     n.min(50)
 }
 
-/// Classify a 2D curve the way `Adaptor2d_Curve2d::GetType` would for sample
-/// budgets: periodic 2-pi is not Bezier/BSpline; unbounded is not either;
-/// finite non-periodic is treated as BSpline (the pcurve default).
+/// Classify a 2D curve the way `Geom2dAdaptor_Curve::GetType()` does for
+/// sample budgets (`Geom2dAdaptor_Curve.cxx:285-345`): a `Geom2d_TrimmedCurve`
+/// takes its basis's type (`cxx:285-288`), `GeomAbs_BezierCurve` and
+/// `GeomAbs_BSplineCurve` are reported as such, and every other curve type
+/// falls to `GeomAbs_OtherCurve` (`cxx:343-345`), which
+/// `ComputeNbSamples2d` samples 17 times (`GeomBndLib_SamplingHelpers.pxx:103-104`).
 pub fn sample_kind_of(curve: &dyn Curve2d) -> SampleCurveKind {
-    if curve.is_periodic() {
-        SampleCurveKind::Other
-    } else if !curve.first_parameter().is_finite() || !curve.last_parameter().is_finite() {
-        SampleCurveKind::Other
+    if let Some(basis) = curve.trimmed_basis() {
+        return sample_kind_of(basis);
+    }
+    if curve.bezier_nb_poles().is_some() {
+        SampleCurveKind::Bezier // `cxx:316-320`
+    } else if curve.bspline_nb_knots().is_some() {
+        SampleCurveKind::BSpline // `cxx:322-328`
     } else {
-        SampleCurveKind::BSpline
+        SampleCurveKind::Other
     }
 }
 pub fn compute_nb_u_samples_full(kind: SampleSurfaceKind, nb_u_poles: usize, u_degree: usize, nb_u_knots: usize) -> i32 {

@@ -34,7 +34,7 @@ pub(crate) use occt_geom2d::curve::Curve2d;
 
 pub(crate) use crate::abs::Orientation;
 pub(crate) use crate::brep_surface::{edge_pcurve_on_face, face_uv_bounds};
-pub(crate) use crate::pcurve::{pc_curve_kind, CurveKind};
+pub(crate) use crate::curve_sampling_2d::nb_samples;
 pub(crate) use crate::pcurve_full::make_pcurve_full;
 pub(crate) use crate::shape::{Edge, Face};
 pub(crate) use crate::tgeometry::GeometryRegistry;

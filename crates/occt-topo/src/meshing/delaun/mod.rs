@@ -11,11 +11,11 @@
 //! Swap for `delaun_index::CircleTool` when it lands.
 mod prelude {
 
-pub(crate) use std::collections::{HashMap, HashSet};
+pub(crate) use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub(crate) use std::f64::consts::PI;
 
 pub(crate) use occt_core::gp::{GpPnt2d, GpVec2d, GpXY};
-pub(crate) use occt_core::precision::{ANGULAR, PCONFUSION, RESOLUTION};
+pub(crate) use occt_core::precision::{ANGULAR, PCONFUSION, REAL_SMALL};
 
 pub(crate) use super::super::delaun_data::{DelaunDataStructure, DelaunSelector};
 pub(crate) use super::super::delaun_types::{DelaunCircle, DelaunLink, DelaunTriangle, DelaunVertex, VertexState};

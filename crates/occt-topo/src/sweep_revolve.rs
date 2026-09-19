@@ -82,8 +82,7 @@ fn build_ring(b: &TopoBuilder, r: f64, z: f64, steps: usize, total: f64) -> (Vec
         let a0 = total * j as f64 / steps as f64;
         let a1 = total * (j + 1) as f64 / steps as f64;
         let mut e = b.make_edge_circle(&ax2, r, a0, a1);
-        b.add(&mut e.0, &verts[j].0);
-        b.add(&mut e.0, &verts[j + 1].0);
+        b.add_edge_vertices(&mut e, &verts[j], &verts[j + 1]);
         edges.push(e);
     }
     (verts, edges)
@@ -95,8 +94,7 @@ fn edge_through(b: &TopoBuilder, v1: &Vertex, v2: &Vertex) -> Edge {
     let p2 = GeometryRegistry::global().vertex_point(&v2.0);
     let dir = GpDir::from_vec(&GpVec::from_pnts(&p1, &p2)).unwrap_or_else(|_| x_dir());
     let mut e = b.make_edge(Arc::new(GeomLine::new(GpLin::from_pnt_dir(p1, dir))), 0.0, p1.distance(&p2));
-    b.add(&mut e.0, &v1.0);
-    b.add(&mut e.0, &v2.0);
+    b.add_edge_vertices(&mut e, v1, v2);
     e
 }
 

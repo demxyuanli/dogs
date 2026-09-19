@@ -5,7 +5,7 @@
 use std::f64::consts::PI;
 
 use occt_core::gp::{GpAx1, GpCylinder, GpXyz};
-use occt_core::precision::{ANGULAR, CONFUSION, Precision};
+use occt_core::precision::{ANGULAR, CONFUSION, Precision, REAL_SMALL};
 
 use super::glines::PairOutcome;
 
@@ -290,7 +290,9 @@ pub(crate) fn compute_u2(u1: f64, wl: i32, c: &Coeffs, delta: Option<&mut f64>) 
         arg = -1.0;
     } else if let Some(d) = delta {
         let dd = (1.0 - arg).min(1.0 + arg);
-        if dd * dd < 1.0e-150 || dd >= 2.0 {
+        // `IntPatch_ImpImpIntersection.cxx:5391`:
+        // `Standard_DivideByZero_Raise_if((aDelta * aDelta < RealSmall()) || (aDelta >= 2.0), ...)`.
+        if dd * dd < REAL_SMALL || dd >= 2.0 {
             return None;
         }
         *d = tol0 / (dd * (2.0 - dd)).sqrt();

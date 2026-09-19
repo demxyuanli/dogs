@@ -13,12 +13,13 @@
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx1, GpAx2d, GpAx22d, GpAx3, GpCirc2d, GpDir, GpDir2d, GpPln, GpPnt, GpPnt2d, GpVec, GpVec2d,
+    GpAx1, GpAx2d, GpAx22d, GpAx3, GpCirc2d, GpDir, GpDir2d, GpElips2d, GpPln, GpPnt, GpPnt2d, GpVec,
+    GpVec2d,
 };
 use occt_geom::projlib;
 use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
-use occt_geom2d::{Geom2dBSplineCurve, Geom2dCircle, Geom2dLine};
+use occt_geom2d::{Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dLine};
 
 use crate::brep_surface::{edge_pcurve_on_face, is_planar};
 use crate::shape::{Edge, Face};
@@ -81,6 +82,34 @@ impl Curve2d for PlaneKeepParam2d {
         c.reverse();
         self.curve = Arc::from(c);
     }
+    // Kind delegation to the projected 3D curve. `GeomProjLib::ProjectOnPlane`
+    // (`GeomProjLib.cxx:313-366`) returns the projected curve in the same
+    // representation as the source (Line / Circle / Ellipse / Bezier / BSpline
+    // arms, `cxx:327-354`) and re-wraps a trimmed source in a `Geom_TrimmedCurve`
+    // (`cxx:358-363`); `BRep_Tool::CurveOnPlane` then runs
+    // `ProjLib_ProjectedCurve` (`BRep_Tool.cxx:399-410`), which preserves the
+    // curve kind. So the sample count of this wrapper
+    // (`Geom2dAdaptor_Curve::NbSamples`, `Geom2dAdaptor_Curve.cxx:1351-1394`) is
+    // the source curve's count, not the trait default 20. A bare default makes
+    // a trimmed/Bezier/BSpline edge projected onto a plane face under-sample.
+    //
+    // `gp_circ2d` is NOT delegated: the projection of a circle is a circle only
+    // when the plane is parallel to the circle's plane, otherwise an ellipse
+    // (`ProjLib_Plane::Project(gp_Circ)`, `ProjLib_Plane.cxx:110-123`), and that
+    // detection is not ported here. Reporting `None` keeps the circle arm of
+    // `Geom2dInt_Geom2dCurveTool::NbSamples` off instead of guessing.
+    fn is_line(&self) -> bool {
+        self.curve.is_line()
+    }
+    fn bezier_nb_poles(&self) -> Option<usize> {
+        self.curve.bezier_poles().map(|poles| poles.len())
+    }
+    fn bspline_nb_knots(&self) -> Option<usize> {
+        self.curve.bspline_knots().map(|knots| knots.len())
+    }
+    fn bspline_degree(&self) -> Option<usize> {
+        self.curve.nurbs_degree()
+    }
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(Self {
             curve: Arc::from(self.curve.clone_dyn()),
@@ -94,6 +123,17 @@ impl Curve2d for PlaneKeepParam2d {
 /// on the plane. Unwraps a 2d TrimmedCurve to its basis (`cxx:443-447`).
 fn curve_on_plane(curve: &dyn Curve, surf: &dyn Surface) -> Option<Arc<dyn Curve2d>> {
     let pln = pln_from_surface(surf)?;
+    project_curve_on_plane(curve, &pln)
+}
+
+/// `GeomProjLib::ProjectOnPlane` (KeepParam=true) then `ProjLib_ProjectedCurve`
+/// on the plane given by its own `gp_Pln`: the normal projection of `curve`
+/// expressed in that plane's `(u, v)`. Split out of [`curve_on_plane`] so the
+/// caller can pass a plane that is not the surface's own frame - the
+/// `ShapeConstruct_ProjectCurveOnSurface::projectAnalytic` arm projects onto the
+/// *basis* plane behind a trimmed / offset surface wrapper
+/// (`ShapeConstruct_ProjectCurveOnSurface.cxx:848-897`).
+pub(crate) fn project_curve_on_plane(curve: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2d>> {
     // `GeomProjLib.cxx:339-343`: a trimmed 3D curve stays KeepParam on its
     // own `[First, Last]` (our STEP trim is remapped to `[0, 1]`).
     if curve.is_geom_trimmed()
@@ -105,7 +145,7 @@ fn curve_on_plane(curve: &dyn Curve, surf: &dyn Surface) -> Option<Arc<dyn Curve
         // rational 3D BSpline was 1.322 on Shape-2 (cxx KeepParam + weights).
         return Some(Arc::new(PlaneKeepParam2d {
             curve: Arc::from(curve.clone_dyn()),
-            pln,
+            pln: pln.clone(),
         }));
     }
     if let Some(c) = curve.gp_circ() {
@@ -117,6 +157,22 @@ fn curve_on_plane(curve: &dyn Curve, surf: &dyn Surface) -> Option<Arc<dyn Curve
         let vy = GpDir2d::new(yx, yy).ok()?;
         let ax = GpAx22d::new(p2d, vx, vy).ok()?;
         return Some(Arc::new(Geom2dCircle::new(GpCirc2d::new(ax, c.radius()))));
+    }
+    if let Some(e) = curve.gp_ellipse() {
+        // `ProjLib_Plane::Project(gp_Elips)` (`ProjLib_Plane.cxx:126-139`):
+        // project the ellipse axes and keep the radii, so the 2D parameter
+        // `u` stays the 3D ellipse parameter.
+        let p2d = projlib::eval_pln_pnt2d(&pln, &e.location());
+        let (xx, xy) = projlib::eval_pln_dir2d(&pln, e.position().x_direction());
+        let (yx, yy) = projlib::eval_pln_dir2d(&pln, e.position().y_direction());
+        let vx = GpDir2d::new(xx, xy).ok()?;
+        let vy = GpDir2d::new(yx, yy).ok()?;
+        let ax = GpAx22d::new(p2d, vx, vy).ok()?;
+        return Some(Arc::new(Geom2dEllipse::new(GpElips2d::new(
+            ax,
+            e.major_radius(),
+            e.minor_radius(),
+        ))));
     }
     if curve.is_line() {
         // `ProjLib_Plane::Project(gp_Lin)` (`cxx:101-106`).
@@ -182,7 +238,8 @@ pub fn make_pcurve_on_face(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>,
     let Some(surf) = GeometryRegistry::global().face_surface(&face.0) else {
         return Err("make_pcurve_on_face: face has no surface".into());
     };
-    if is_planar(surf.as_ref(), 8, 8, 1e-6) {
+    let planar = is_planar(surf.as_ref(), 8, 8, 1e-6);
+    if planar {
         if let Some(pc) = curve_on_plane(curve.as_ref(), surf.as_ref()) {
             return Ok(pc);
         }

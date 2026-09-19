@@ -332,7 +332,9 @@ pub(super) fn perform_conic_surf(
                 return None;
             };
             let dq = GpVec::from_pnts(&eo, o);
-            trig_solve(a * n.dot(&x), -b * n.dot(&y), n.dot(&dq), t0, t1, ANALYTIC_TOL)
+            // `ElCLib::EllipseValue` uses `+Minor*sin(U)*YDir` (`cxx:176-189`),
+            // so the Y coefficient carries the same sign as `b`.
+            trig_solve(a * n.dot(&x), b * n.dot(&y), n.dot(&dq), t0, t1, ANALYTIC_TOL)
         }
         _ => return None,
     };

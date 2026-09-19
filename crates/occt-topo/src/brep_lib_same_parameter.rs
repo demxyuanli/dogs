@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use occt_core::precision::{CONFUSION, INFINITE, Precision};
+use occt_geom::approx_same_parameter::{u_resolution, v_resolution};
 use occt_geom::{ApproxSameParameter, Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
@@ -14,34 +15,6 @@ use crate::tgeometry::{GeometryRegistry, VertexGeom};
 use crate::topo_tools_full::{edge_vertices, edges_of, faces_of};
 
 const NCONTROL: i32 = 22;
-
-fn u_resolution(s: &dyn Surface, tol: f64) -> f64 {
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let um = 0.5 * (u0 + u1);
-    let vm = 0.5 * (v0 + v1);
-    let (_, du, _) = s.d1(um, vm);
-    let m = du.magnitude();
-    if m > 1.0e-12 {
-        tol / m
-    } else {
-        tol
-    }
-}
-
-fn v_resolution(s: &dyn Surface, tol: f64) -> f64 {
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let um = 0.5 * (u0 + u1);
-    let vm = 0.5 * (v0 + v1);
-    let (_, _, dv) = s.d1(um, vm);
-    let m = dv.magnitude();
-    if m > 1.0e-12 {
-        tol / m
-    } else {
-        tol
-    }
-}
 
 /// `BRepLib.cxx:1070-1188`.
 fn compute_tol(
@@ -178,18 +151,50 @@ fn same_parameter_edge(edge: &Edge, face: &Face, the_tol: f64) -> f64 {
     let same_range = g.same_range;
     let mut ya_pcu = false;
     const BIG_ERROR: f64 = 1.0e10;
+    // `cxx:1378`: TolSameRange = max(GAC.Resolution(theTolerance), PConfusion).
+    //
+    // UNPORTED: `cxx:1389` and `cxx:1678` pass this value as the first argument
+    // of `GeomLib::SameRange` (`GeomLib.cxx:842-969`), where it decides the
+    // `LastOnCurve`/`FirstOnCurve` early-out and the equal-span test. The Rust
+    // helper `shhealing::geom_lib_same_range` (`shhealing/p03.rs:579-625`) takes
+    // no tolerance and compares with `Precision::PConfusion` instead, so the
+    // value is computed here and deliberately left unused.
+    let tol_same_range = crate::int_tools_vertex_line::adaptor_resolution(c3d.as_ref(), the_tol)
+        .max(occt_core::precision::PCONFUSION);
+    let _ = tol_same_range;
+    let (first_on, last_on) = reg
+        .pcurve_range(&edge.0, face_key)
+        .unwrap_or((f3d, l3d));
+    let mut out_pcs: Vec<std::sync::Arc<dyn Curve2d>> = Vec::with_capacity(pcs.len());
+    let mut pcs_changed = false;
     for pc in &pcs {
         ya_pcu = true;
-        let _ = same_range;
-        // Unported: `GeomLib::SameRange` when `!SameRange` (`cxx:1387-1392`).
-        let error = compute_tol(c3d.as_ref(), pc.as_ref(), surf.as_ref(), f3d, l3d, NCONTROL);
+        // `cxx:1387-1391`: `GeomLib::SameRange` when `!SameRange`.
+        let mut cur_pc = if !same_range {
+            let remapped = crate::shhealing::geom_lib_same_range(
+                pc.clone(),
+                first_on,
+                last_on,
+                f3d,
+                l3d,
+            );
+            if !std::sync::Arc::ptr_eq(&remapped, pc) {
+                pcs_changed = true;
+            }
+            remapped
+        } else {
+            pc.clone()
+        };
+        let error =
+            compute_tol(c3d.as_ref(), cur_pc.as_ref(), surf.as_ref(), f3d, l3d, NCONTROL);
         if error > BIG_ERROR {
             maxdist = error;
+            out_pcs.push(cur_pc);
             break;
         }
         let same_p = ApproxSameParameter::new(
             c3d.as_ref(),
-            pc.as_ref(),
+            cur_pc.as_ref(),
             surf.as_ref(),
             f3d,
             l3d,
@@ -199,7 +204,26 @@ fn same_parameter_edge(edge: &Edge, face: &Face, the_tol: f64) -> f64 {
             maxdist = maxdist.max(same_p.tol_reached);
         } else if same_p.done {
             maxdist = maxdist.max(same_p.tol_reached.min(error));
+            // `cxx:1648-1671`: replace pcurve when Approx rebuilt it.
+            if let Some(ref new_pc) = same_p.curve2d {
+                if same_p.tol_reached <= error {
+                    cur_pc = new_pc.clone();
+                    pcs_changed = true;
+                }
+            }
         } else {
+            // `cxx:1678-1684`: Approx failed - still SameRange onto 3d domain.
+            let remapped = crate::shhealing::geom_lib_same_range(
+                pc.clone(),
+                first_on,
+                last_on,
+                f3d,
+                l3d,
+            );
+            if !std::sync::Arc::ptr_eq(&remapped, &cur_pc) {
+                pcs_changed = true;
+            }
+            cur_pc = remapped;
             is_same_p = false;
         }
         if !is_same_p {
@@ -212,6 +236,11 @@ fn same_parameter_edge(edge: &Edge, face: &Face, the_tol: f64) -> f64 {
                 is_same_p = true;
             }
         }
+        out_pcs.push(cur_pc);
+    }
+    if pcs_changed && !out_pcs.is_empty() {
+        reg.set_edge_pcurves(&edge.0, face_key, out_pcs);
+        reg.set_pcurve_range(&edge.0, face_key, f3d, l3d);
     }
     g.first = f3d;
     g.last = l3d;
@@ -245,6 +274,19 @@ fn update_v_tol(edge: &Edge, new_tol: f64) {
             reg.set_vertex(&v.0, vg);
         }
     }
+}
+
+/// `BRepLib::SameParameter(theEdge, theTolerance)` (`BRepLib.cxx:1237-1246`):
+/// the four argument overload with `IsUseOldEdge = true` (the edge is modified
+/// in place) followed by `UpdateVTol` (`cxx:1242-1245`).
+///
+/// UNPORTED: the four argument overload (`cxx:1251-1739`) walks *every*
+/// `CurveOnSurface` representation of the edge (`cxx:1263-1291`); this entry
+/// point covers only `face`. The `GetCurve3d` period clamp (`cxx:1312-1332`)
+/// is done by [`same_parameter_edge`] (`cxx:156-161`).
+pub fn same_parameter_edge_inplace(edge: &Edge, face: &Face, tolerance: f64) {
+    let new_tol = same_parameter_edge(edge, face, tolerance);
+    update_v_tol(edge, new_tol);
 }
 
 fn update_tolerances(shape: &TopoShape) {

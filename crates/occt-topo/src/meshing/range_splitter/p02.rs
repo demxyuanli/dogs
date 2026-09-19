@@ -255,8 +255,9 @@ impl RangeSplitter for CylinderRangeSplitter {
         let mut nb_v = 0i32;
         if a_arc_len > deflection {
             nb_u = (su / self.du) as i32;
-            // ponytail: the OCCT V-step computation is commented out, so nbV stays 0
-            // and no interior rows are produced.
+            // `BRepMesh_CylinderRangeSplitter.cxx:52-64`: OCCT's own V-step /
+            // nbV block is commented out in the reference, so nbV stays 0 here
+            // for the same reason and no interior rows are produced.
         }
         let du = su / (nb_u + 1) as f64;
         let dv = sv / (nb_v + 1) as f64;
@@ -577,10 +578,13 @@ impl RangeSplitter for TorusRangeSplitter {
         let dv = diff_v / (nb_v + 1) as f64;
 
         let ru = R + r;
+        // `BRepMesh_TorusRangeSplitter.cxx:47`: `if (ru > 1.e-16)` -- literal match.
         let du = if ru > 1e-16 {
             let du0 = arc_angular_step(ru, deflection, params.angle, params.min_size);
             let aa = (du0 * du0 + old_dv * old_dv).sqrt();
-            if aa < RESOLUTION {
+            // `BRepMesh_TorusRangeSplitter.cxx:55`: `if (aa < gp::Resolution())`
+            // with `gp::Resolution()` = `RealSmall()` = `DBL_MIN` (`gp.hxx:60`).
+            if aa < REAL_SMALL {
                 return None;
             }
             du0 * old_dv.min(du0) / aa

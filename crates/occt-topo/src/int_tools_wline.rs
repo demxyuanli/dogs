@@ -392,48 +392,20 @@ fn is_degenerated_zone(p2d: &GpPnt2d, s: &dyn Surface, i_dir: i32) -> bool {
     !b_flag
 }
 
+/// `GeomAdaptor_Surface::UResolution` (`GeomAdaptor_Surface.cxx:1818-1895`).
+/// OCCT call site: `IntTools_WLineTool.cxx:153`
+/// (`aD = aGAS1.UResolution(aDelta)`), with `aDelta = 1.e-7`
+/// (`cxx:149`). Kept as a wrapper so every `IntPatch` / `IntWalk` caller of
+/// this helper keeps resolving to one implementation.
 pub(crate) fn u_resolution(s: &dyn Surface, tol3d: f64) -> f64 {
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let u = if u0.is_finite() && u1.is_finite() {
-        0.5 * (u0 + u1)
-    } else {
-        0.0
-    };
-    let v = if v0.is_finite() && v1.is_finite() {
-        0.5 * (v0 + v1)
-    } else {
-        0.0
-    };
-    let (_, du, _) = s.d1(u, v);
-    let mag = du.magnitude();
-    if mag > 1e-30 {
-        (tol3d / mag).max(1e-12)
-    } else {
-        tol3d
-    }
+    occt_geom::approx_same_parameter::u_resolution(s, tol3d)
 }
 
+/// `GeomAdaptor_Surface::VResolution` (`GeomAdaptor_Surface.cxx:1900-1957`).
+/// OCCT call site: `IntTools_WLineTool.cxx:169`
+/// (`aD = aGAS1.VResolution(aDelta)`).
 pub(crate) fn v_resolution(s: &dyn Surface, tol3d: f64) -> f64 {
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let u = if u0.is_finite() && u1.is_finite() {
-        0.5 * (u0 + u1)
-    } else {
-        0.0
-    };
-    let v = if v0.is_finite() && v1.is_finite() {
-        0.5 * (v0 + v1)
-    } else {
-        0.0
-    };
-    let (_, _, dv) = s.d1(u, v);
-    let mag = dv.magnitude();
-    if mag > 1e-30 {
-        (tol3d / mag).max(1e-12)
-    } else {
-        tol3d
-    }
+    occt_geom::approx_same_parameter::v_resolution(s, tol3d)
 }
 
 fn is_point_in_degenerated_zone(

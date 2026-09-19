@@ -15,8 +15,8 @@
 //! independent of the concrete `BopBuilder` fields and is verified standalone.
 //!
 //! Live GF path is [`crate::bop_images_solids`] → [`crate::bop_split_solids_occt`]
-//! (`aMST`). Leftover `build_split_solids_full` / `merge_sharing_faces` live in
-//! the private `leftover` submodule (not called by `BopBuilder`).
+//! (`aMST`). Leftover `build_split_solids_full` lives in the private `leftover`
+//! submodule (not called by `BopBuilder`).
 //!
 //! * **Full flow** — [`build_split_solids_full`] (not called by `BopBuilder`).
 //!   Historical mix of two OCCT stages:

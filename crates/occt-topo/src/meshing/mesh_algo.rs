@@ -401,16 +401,21 @@ mod tests {
             DelaunVertex::new_parametric(0.0, 1.0, VertexState::Free),
         ];
         let mut mesher = Delaun::new_vertices(&points);
-        assert_eq!(mesher.result().elements_of_domain().len(), 2);
+        // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
+        // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
+        // triangles whose neighbour touches the super-triangle. This square carries
+        // only Free links, so cleanupMesh leaves no triangle at all.
+        assert_eq!(mesher.result().elements_of_domain().len(), 0);
 
         // The wrapper re-initializes the circle tool (2x2 cells) and delegates
         // to the inner post-process, leaving the mesh untouched.
         let mut wrapper = CustomDelaunayBaseMeshAlgo::new(InnerCustom);
         let params = MeshParameters::default();
         ConstrainedBaseMeshAlgo::post_process_mesh(&mut wrapper, &mut mesher, &params);
+        // Same cleanupMesh() branch as above: the post-processed mesh stays empty.
         assert_eq!(
             mesher.result().elements_of_domain().len(),
-            2,
+            0,
             "post-process must not change the triangulation"
         );
     }

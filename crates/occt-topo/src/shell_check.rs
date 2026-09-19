@@ -264,8 +264,7 @@ mod tests {
                 let dir = GpDir::from_vec(&GpVec::from_pnts(&corners[i], &corners[j])).unwrap();
                 let lin = GpLin::from_pnt_dir(corners[i], dir);
                 let mut e = b.make_edge(Arc::new(GeomLine::new(lin)), 0.0, corners[i].distance(&corners[j]));
-                b.add(&mut e.0, &verts[i].0);
-                b.add(&mut e.0, &verts[j].0);
+                b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
                 e
             })
             .collect();

@@ -274,6 +274,20 @@ pub fn surface_closest_params(s: &dyn Surface, p: &GpPnt, nu: usize, nv: usize) 
 /// Approximate p-curve of an edge on a face: the projection of the edge's
 /// curve onto the face surface, sampled at `samples` parameter values. Each
 /// sample is a 2D `(u, v)` parameter of the face's surface.
+///
+/// This is the port's stand-in for `BRep_Tool::CurveOnSurface` when the face
+/// carries no pcurve yet (`IntTools_FClass2d::Init` / `BRepTopAdaptor_FClass2d`
+/// read the pcurve, and OCCT builds a missing one with
+/// `ShapeConstruct_ProjectCurveOnSurface::Perform` through
+/// `ShapeFix_Edge::FixAddPCurve`; `BRep_Tool.cxx` `CurveOnSurface` returns the
+/// stored one). The projection is therefore the real OCCT projector
+/// ([`crate::pcurve_full::project_curve_on_surface_perform`]): one single
+/// source of `(u, v)`, the same one `shhealing::fix_add_pcurve` stores.
+///
+/// The old analytic shortcut (`pcurve_full::project_curve_on_surface`, torus
+/// only) and the grid search below are NOT OCCT code paths - they are kept
+/// only as a last resort so callers still get a polyline where OCCT would
+/// return a null pcurve.
 pub fn edge_pcurve_on_face(edge: &Edge, face: &Face, samples: usize) -> Vec<GpPnt2d> {
     let Some(surf) = GeometryRegistry::global().face_surface(&face.0) else { return Vec::new() };
     let Some(curve) = GeometryRegistry::global().edge_curve(&edge.0) else { return Vec::new() };
@@ -281,16 +295,27 @@ pub fn edge_pcurve_on_face(edge: &Edge, face: &Face, samples: usize) -> Vec<GpPn
     if !a.is_finite() || !b.is_finite() {
         return Vec::new();
     }
-    let t_vals: Vec<f64> = (0..samples)
-        .map(|i| a + (b - a) * i as f64 / (samples.max(1) - 1) as f64)
+    let n = samples.max(1);
+    let t_vals: Vec<f64> = (0..n)
+        .map(|i| a + (b - a) * i as f64 / (n - 1).max(1) as f64)
         .collect();
-    // Analytic surfaces: continuous ProjLib projection (stays on the same sheet
-    // of a self-intersecting spindle torus). B-spline/non-analytic surfaces fall
-    // back to the point-wise grid search + hill-climb below.
-    if let Some(pts) =
-        crate::pcurve_full::project_curve_on_surface(surf.as_ref(), curve.as_ref(), &t_vals)
-    {
-        return pts;
+    // `ShapeFix_Edge.cxx:499`: `preci = (prec > 0. ? prec : BRep_Tool::Tolerance(edge))`;
+    // `cxx:521-531`: the end-vertex tolerances (`-1` = a null vertex).
+    let preci = GeometryRegistry::global()
+        .edge_tolerance(&edge.0)
+        .max(occt_core::precision::CONFUSION);
+    let mut cache = crate::pcurve_full::ProjectorCache::default();
+    if let Some(c2d) = crate::pcurve_full::project_curve_on_surface_perform(
+        curve.as_ref(),
+        surf.as_ref(),
+        a,
+        b,
+        preci,
+        -1.0,
+        -1.0,
+        &mut cache,
+    ) {
+        return t_vals.iter().map(|&t| c2d.d0(t)).collect();
     }
     t_vals
         .iter()
@@ -302,9 +327,18 @@ pub fn edge_pcurve_on_face(edge: &Edge, face: &Face, samples: usize) -> Vec<GpPn
         .collect()
 }
 
-/// Face UV bounds from the registered surface (`BRep_Tool::UVBounds`).
+/// Face UV bounds (`BRep_Tool::UVBounds(F, UMin, UMax, VMin, VMax)`,
+/// `BRep_Tool.cxx`), i.e. the box of the face's pcurves, not the surface's
+/// natural range:
+///
+///   BRep_Tool::UVBounds -> BRepTools::UVBounds(F, B) -> AddUVBounds
+/// (`BRepTools.cxx:64-75`, `:126-160`); a face with no usable pcurve box falls
+/// back to the surface bounds (`BRepTools.cxx:141-153`). This is also what
+/// `BRepAdaptor_Surface(F)` restricts to (`BRepAdaptor_Surface.cxx:72-75`,
+/// `BRepTools::UVBounds`), which is the adaptor `IntTools_FaceFace::Perform`
+/// loads into its `GeomAdaptor_Surface` (`IntTools_FaceFace.cxx`).
 pub fn face_uv_bounds(face: &Face) -> (f64, f64, f64, f64) {
-    BRepTool::uv_bounds(face)
+    crate::brep_tools::uv_bounds(face)
 }
 
 #[cfg(test)]

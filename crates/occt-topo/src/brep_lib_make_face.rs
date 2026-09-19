@@ -138,7 +138,7 @@ pub fn make_face_uv(
     let mut v_min = vm;
     let mut v_max = v_m;
 
-    // `BRepLib_MakeFace.cxx:479-518` — unwrap RTS, recut Offset of extrusion/revolution.
+    // `BRepLib_MakeFace.cxx:479-518` - unwrap RTS, recut Offset of extrusion/revolution.
     let mut surface = surface;
     let bs = surface
         .rectangular_trimmed_basis()

@@ -227,8 +227,7 @@ use super::*;
         let curve: Arc<dyn Curve> = Arc::new(GeomCircle::new(GpCirc::new(ax3.ax2(), 1.0)));
         let mut e = b.make_edge(curve.clone(), 0.0, 2.0 * PI);
         let seam = b.make_vertex(curve.d0(0.0), 0.0);
-        b.add(&mut e.0, &seam.0);
-        b.add(&mut e.0, &seam.0);
+        b.add_edge_vertices(&mut e, &seam, &seam);
         let wire = b.make_wire(&[e]);
         let out = offset_wire_3d(&wire, 0.2).expect("offset");
         for v in vertices_of(&out.0) {

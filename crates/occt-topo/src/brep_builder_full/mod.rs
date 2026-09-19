@@ -146,11 +146,13 @@ mod tests {
     fn edge_from_ellipse() {
         let e = BRepBuilderEdge::from_ellipse(GpAx2::standard(), 4.0, 2.0, 0.0, 2.0 * PI).expect("ellipse edge");
         let curve = BRepTool::edge_curve(&e).expect("ellipse curve");
-        // Major vertex at angle 0, minor vertex at π/2. The OCCT ellipse
-        // convention is x = a·cos u, y = −b·sin u, so the π/2 point lies at
-        // (0, −minor).
+        // Major vertex at angle 0, minor vertex at PI/2. OCCT's ellipse
+        // parameterisation is P = Loc + a*cos(u)*XDir + b*sin(u)*YDir
+        // (`ElCLib::EllipseValue`, ElCLib.cxx:176-189, reached from
+        // `Geom_Ellipse::EvalD0`, Geom_Ellipse.cxx:189-191), so the PI/2
+        // point lies at (0, +minor).
         assert!(curve.d0(0.0).distance(&GpPnt::new(4.0, 0.0, 0.0)) < 1e-9, "major vertex");
-        assert!(curve.d0(0.5 * PI).distance(&GpPnt::new(0.0, -2.0, 0.0)) < 1e-9, "minor vertex");
+        assert!(curve.d0(0.5 * PI).distance(&GpPnt::new(0.0, 2.0, 0.0)) < 1e-9, "minor vertex");
         // Invalid radii rejected.
         assert!(BRepBuilderEdge::from_ellipse(GpAx2::standard(), 2.0, 3.0, 0.0, 1.0).is_err());
         assert!(BRepBuilderEdge::from_ellipse(GpAx2::standard(), 0.0, 2.0, 0.0, 1.0).is_err());

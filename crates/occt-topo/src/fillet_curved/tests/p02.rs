@@ -413,8 +413,7 @@ use super::*;
         let mut e = b.make_edge_circle(&ax2, radius, a1, a2);
         let v1 = b.make_vertex(p1, 0.0);
         let v2 = b.make_vertex(p2, 0.0);
-        b.add(&mut e.0, &v1.0);
-        b.add(&mut e.0, &v2.0);
+        b.add_edge_vertices(&mut e, &v1, &v2);
         e
     }
 

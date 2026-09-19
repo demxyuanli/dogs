@@ -229,8 +229,7 @@ pub fn section_wire(points: &[GpPnt]) -> Result<Wire, String> {
             0.0,
             points[i].distance(&points[j]),
         );
-        b.add(&mut e.0, &verts[i].0);
-        b.add(&mut e.0, &verts[j].0);
+        b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
         edges.push(e);
     }
     Ok(b.make_wire(&edges))
@@ -263,8 +262,7 @@ fn edge_through(b: &TopoBuilder, v1: &Vertex, v2: &Vertex) -> Edge {
     let dir = GpDir::from_vec(&GpVec::from_pnts(&p1, &p2))
         .unwrap_or_else(|_| GpDir::new(1.0, 0.0, 0.0).unwrap());
     let mut e = b.make_edge(Arc::new(GeomLine::new(GpLin::from_pnt_dir(p1, dir))), 0.0, p1.distance(&p2));
-    b.add(&mut e.0, &v1.0);
-    b.add(&mut e.0, &v2.0);
+    b.add_edge_vertices(&mut e, v1, v2);
     e
 }
 
@@ -297,8 +295,7 @@ pub fn ruled_face_between(pts_a: &[GpPnt], pts_b: &[GpPnt], k: usize) -> Face {
             0.0,
             quad[i].distance(&quad[i2]),
         );
-        b.add(&mut e.0, &verts[i].0);
-        b.add(&mut e.0, &verts[i2].0);
+        b.add_edge_vertices(&mut e, &verts[i], &verts[i2]);
         edges.push(e);
     }
     let wire = b.make_wire(&edges);

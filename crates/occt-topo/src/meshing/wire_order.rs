@@ -12,10 +12,7 @@
 //! mode3d=false)`), so 3D/both modes are not carried over.
 
 use occt_core::gp::{GpPnt, GpPnt2d};
-use occt_core::precision::SQUARE_CONFUSION;
-
-/// OCCT `RealSmall()` — below this squared distance the join is considered exact.
-const REAL_SMALL: f64 = 1e-12;
+use occt_core::precision::{REAL_SMALL, SQUARE_CONFUSION};
 
 /// Result status of the order analysis (mirrors `ShapeAnalysis_WireOrder::Status`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,6 +202,8 @@ impl WireOrder {
             }
 
             let close_dist = sq_dist(&first_pnt, &last_pnt);
+            // `ShapeAnalysis_WireOrder.cxx:451`:
+            // `if (aBestMin3D <= RealSmall() || aBestMin3D < aCloseDist)`.
             if best_min <= REAL_SMALL || best_min < close_dist {
                 match best_joint_type {
                     0 => {

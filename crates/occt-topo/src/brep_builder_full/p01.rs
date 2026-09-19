@@ -579,8 +579,7 @@ pub fn edge_from_two_vertices(v1: &Vertex, v2: &Vertex) -> Result<Edge, String> 
         0.0,
         p1.distance(&p2),
     );
-    b.add(&mut e.0, &v1.0);
-    b.add(&mut e.0, &v2.0);
+    b.add_edge_vertices(&mut e, v1, v2);
     Ok(e)
 }
 

@@ -257,8 +257,7 @@ use super::*;
                 0.0,
                 p1.distance(&p2),
             );
-            b.add(&mut e.0, &verts[i].0);
-            b.add(&mut e.0, &verts[j].0);
+            b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
             edges.push(e);
         }
         let edge_index = |a: usize, b: usize| {

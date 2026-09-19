@@ -8,6 +8,7 @@
 
 use occt_core::bnd::BndBox2d;
 use occt_core::bspl::knots as bspl_knots;
+use occt_core::bspl::locate::hunt_occt;
 use occt_core::gp::GpPnt2d;
 use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom2d::curve::Curve2d;
@@ -98,8 +99,10 @@ pub fn reduce_spline_box2d_range(
 /// `GeomBndLib_SplineHelpers::ComputePoleIndexRange`.
 ///
 /// `knots` / `mults` are the unique-knot tables (`Geom_BSplineCurve::Knots` /
-/// `Multiplicities`). Hunt is 0-based here; OCCT's Hunt is 1-based with
-/// `Lower() == 1`.
+/// `Multiplicities`). `hunt_occt` is the exact `BSplCLib::Hunt` port, 1-based
+/// with `Lower() == 1`; the previous 0-based `bspl::knots::hunt` (last knot
+/// `<= x`) plus `+ 1` was off by one whenever `the_min` / `the_max` sat exactly
+/// on a knot, which widened or dropped a pole row.
 pub fn compute_pole_index_range(
     knots: &[f64],
     mults: &[i32],
@@ -114,14 +117,14 @@ pub fn compute_pole_index_range(
     }
     let lower = 1i32;
     let upper = knots.len() as i32;
-    let mut out_min = bspl_knots::hunt(knots, the_min) as i32 + 1;
+    let mut out_min = hunt_occt(knots, the_min);
     if out_min < lower {
         out_min = lower;
     }
     if out_min > upper {
         out_min = upper;
     }
-    let mut out_max = bspl_knots::hunt(knots, the_max) as i32 + 1;
+    let mut out_max = hunt_occt(knots, the_max);
     out_max += 1;
     if out_max < lower {
         out_max = lower;
@@ -276,13 +279,16 @@ pub fn bspline_curve_box2d(
 
 /// Sampling half of `CurveBoxOptimal` for 2D (`NDim = 2`) **without**
 /// `AdjustExtrT` (PSO+Brent). PerformAreas never calls `BoxOptimal`; this is
-/// the sample envelope that `BoxOptimal` starts from.
+/// the sample envelope that `BoxOptimal` starts from. The sample budget is
+/// `GeomBndLib_SamplingHelpers::ComputeNbSamplesT` fed from the real curve
+/// quantities (`CurveBoxOptimal`, `GeomBndLib_SplineHelpers.pxx:410-412`;
+/// `ComputeNbSamples2d`, `GeomBndLib_SamplingHelpers.pxx:73-105`).
 pub fn curve_box_sample2d(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
     let a_nb = compute_nb_samples2d(
         sample_kind_of(curve),
-        8,
-        3,
-        4,
+        curve.bezier_nb_poles().unwrap_or(0),
+        curve.bspline_degree().unwrap_or(0),
+        curve.bspline_nb_knots().unwrap_or(0),
         curve.first_parameter(),
         curve.last_parameter(),
         the_u1,

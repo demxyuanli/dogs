@@ -24,7 +24,7 @@ mod prelude {
 pub(crate) use std::collections::HashSet;
 
 pub(crate) use occt_core::gp::{GpPnt, GpPnt2d, GpVec, GpXY};
-pub(crate) use occt_core::precision::{ANGULAR, CONFUSION, RESOLUTION};
+pub(crate) use occt_core::precision::{ANGULAR, CONFUSION, REAL_SMALL};
 pub(crate) use occt_geom::Surface;
 
 pub(crate) use super::super::delaun::Delaun;

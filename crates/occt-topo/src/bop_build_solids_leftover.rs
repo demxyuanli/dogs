@@ -1,9 +1,14 @@
-//! Leftover GF+BOP mix: [`build_split_solids_full`] / [`merge_sharing_faces`].
+//! Leftover GF+BOP mix: [`build_split_solids_full`].
 //!
 //! Not called by `BopBuilder`. Live GF solids are [`crate::bop_split_solids_occt`];
 //! live Fuse/Cut/Common filter is [`crate::bop_bop::build_shape`]. Do not fold
 //! obj/tool states back into FillImagesSolids. Private helpers stay on the
 //! parent module.
+//!
+//! UNPORTED: a `merge_sharing_faces` pass used to run at the end of
+//! [`build_split_solids_full`] and re-assembled pieces that share a face into
+//! one solid. OCCT has no such stage (`BOPAlgo_Builder_3.cxx:579-616`); see the
+//! note at the image-recording step below.
 
 use super::*;
 
@@ -126,6 +131,7 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         //    themselves) cannot bound a solid and is dropped.
         let mut kept: Vec<TopoShape> = Vec::new();
         for p in pieces {
+            let c = piece_center(&p);
             if piece_bbox_volume(&p) < 1e-9 {
                 continue;
             }
@@ -160,20 +166,25 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         }
     }
 
-    // 5. Cross-solid merge (Fuse only): result pieces that share a face — a
-    //    coincident face one solid's assembly took from the other, such as the
-    //    cylinder base over the box-top hole — are one region of the union.
-    //    The shared face is internal and is dropped; the remaining boundary
-    //    faces re-close into a single solid. Mirrors the same-domain collapse
-    //    that connects coincident faces across the split solids.
-    let final_pieces = if op == BopOp::Fuse {
-        merge_sharing_faces(collected, tol)?
-    } else {
-        collected
-    };
-
-    // 6. Record the images and the origins back-map.
-    for (solid, p) in final_pieces {
+    // 5. Record the images and the origins back-map. Mirrors the tail of
+    //    `BOPAlgo_Builder::BuildSplitSolids` (`BOPAlgo_Builder_3.cxx:579-616`):
+    //    every area built for a source solid is interned through the
+    //    same-domain face-set map (`aMST`) and recorded as an image (with the
+    //    source appended to `myOrigins`) of that source. The areas of one
+    //    source stay distinct images.
+    //
+    //    UNPORTED: a `merge_sharing_faces` pass used to run here. It grouped
+    //    the pieces that share a face — same `TShape`, or a coplanar pair with
+    //    an area ratio under a constant — and rebuilt each group with
+    //    `ShellSplitter`, pushing the merged solid once per contributing
+    //    source. OCCT has no such stage: `BuildSplitSolids` keeps the
+    //    `BOPAlgo_SplitSolid` areas as built, and the same-domain collapse is
+    //    the `aMST` face-set intern above, which maps an area to an existing
+    //    representative instead of re-closing shells (the live
+    //    [`crate::bop_split_solids_occt`] does exactly that and also has no
+    //    merge). The pass broke the piece partition: three union pieces of
+    //    volume 0.5 were re-closed into one 1.5 solid recorded three times.
+    for (solid, p) in collected {
         f.history_mut().add_image(&solid, p.clone());
         f.origins_mut().entry(shape_key(&p)).or_default().push(solid.clone());
     }
@@ -389,178 +400,6 @@ fn is_covering_face(im: &TopoShape, own_faces: &[TopoShape], own_edges: &HashSet
         let gk: HashSet<EKey> = face_edges(&Face(g.clone())).into_iter().collect();
         gk.len() == fk.len() && gk.iter().all(|k| fk.contains(k))
     })
-}
-
-/// Merges result pieces that share a face into single solids.
-///
-/// Each piece is tagged with its source solid. Pieces that share a face
-/// (same `TShape`, or coplanar overlapping faces such as a cylinder base
-/// sitting on a box-top hole) are one geometric region of a Fuse. Internal
-/// coincident faces are dropped; the remaining boundary faces are re-closed.
-/// A group that fails to re-close keeps its original pieces (best effort).
-///
-/// Not OCCT (`BOPAlgo_BOP::BuildSolid` uses `MapFacesToBuildSolids` + aMST).
-/// Only [`build_split_solids_full`] calls this.
-fn merge_sharing_faces(
-    pieces: Vec<(TopoShape, TopoShape)>,
-    tol: f64,
-) -> Result<Vec<(TopoShape, TopoShape)>, String> {
-    let n = pieces.len();
-    let shares_face = |a: &TopoShape, b: &TopoShape| -> bool {
-        faces_of(a).iter().any(|fa| {
-            faces_of(b)
-                .iter()
-                .any(|fb| faces_share_interface(&fa, &fb, tol))
-        })
-    };
-    let mut used = vec![false; n];
-    let mut out: Vec<(TopoShape, TopoShape)> = Vec::new();
-    for i in 0..n {
-        if used[i] {
-            continue;
-        }
-        used[i] = true;
-        let mut group: Vec<usize> = vec![i];
-        loop {
-            let mut grew = false;
-            for j in 0..n {
-                if used[j] {
-                    continue;
-                }
-                if group.iter().any(|&g| shares_face(&pieces[g].1, &pieces[j].1)) {
-                    used[j] = true;
-                    group.push(j);
-                    grew = true;
-                }
-            }
-            if !grew {
-                break;
-            }
-        }
-        if group.len() == 1 {
-            out.push(pieces[group[0]].clone());
-            continue;
-        }
-        let srcs: Vec<TopoShape> = group.iter().map(|&g| pieces[g].0.clone()).collect();
-        let mut keep: Vec<TopoShape> = Vec::new();
-        for &g in &group {
-            let others: Vec<Face> = group
-                .iter()
-                .filter(|&&h| h != g)
-                .flat_map(|&h| faces_of(&pieces[h].1))
-                .collect();
-            for f in faces_of(&pieces[g].1) {
-                if is_internal_interface(&f, &others, tol) {
-                    continue;
-                }
-                if !keep.iter().any(|k| k.same_tshape(&f.0)) {
-                    keep.push(f.0);
-                }
-            }
-        }
-        let mut splitter = ShellSplitter::new();
-        for f in &keep {
-            splitter.add_start_element(f.clone());
-        }
-        if splitter.perform().is_ok() {
-            let shells = splitter.shells().to_vec();
-            if !shells.is_empty() {
-                let bld = TopoBuilder::new();
-                for sh in shells {
-                    let mut solid = Solid::new();
-                    bld.add(&mut solid.0, &sh);
-                    for src in &srcs {
-                        out.push((src.clone(), solid.0.clone()));
-                    }
-                }
-                continue;
-            }
-        }
-        for &g in &group {
-            out.push(pieces[g].clone());
-        }
-    }
-    Ok(out)
-}
-
-/// True when two faces are the same `TShape` or a covering pair (coplanar,
-/// overlapping in 2-D, and one patch is substantially smaller — a disk filling
-/// a holed face). Similar-area coplanar walls of adjacent split pieces are not
-/// an interface: they belong to distinct Fuse regions.
-fn faces_share_interface(a: &Face, b: &Face, tol: f64) -> bool {
-    if a.0.same_tshape(&b.0) {
-        return true;
-    }
-    if !faces_coplanar_overlap(a, b, tol) {
-        return false;
-    }
-    let sa = face_aabb_area(a);
-    let sb = face_aabb_area(b);
-    let (lo, hi) = if sa < sb { (sa, sb) } else { (sb, sa) };
-    hi > 1e-18 && lo / hi < 0.8
-}
-
-/// Drop `f` from the merged boundary when it is an internal interface against
-/// `others`: same TShape, a smaller covering patch, or the higher-key member
-/// of a similar-area coincident pair.
-fn is_internal_interface(f: &Face, others: &[Face], tol: f64) -> bool {
-    for o in others {
-        if f.0.same_tshape(&o.0) {
-            return true;
-        }
-        if !faces_coplanar_overlap(f, o, tol) {
-            continue;
-        }
-        let sa = face_aabb_area(f);
-        let sb = face_aabb_area(o);
-        if sa + 1e-18 < sb * 0.8 {
-            return true;
-        }
-        if sb + 1e-18 < sa * 0.8 {
-            continue;
-        }
-        // Similar-area coplanar faces are not dropped here; grouping already
-        // ignored them. Same-TShape is handled above.
-    }
-    false
-}
-
-fn faces_coplanar_overlap(a: &Face, b: &Face, tol: f64) -> bool {
-    let (Some(pa), Some(pb)) = (face_plane(a), face_plane(b)) else {
-        return false;
-    };
-    let n1 = *pa.axis().direction().xyz();
-    let n2 = *pb.axis().direction().xyz();
-    if n1.dot(&n2).abs() < 0.999999 {
-        return false;
-    }
-    let delta = pa.location().coord.subtracted(&pb.location().coord);
-    if delta.dot(&n2).abs() > tol.max(1e-7) {
-        return false;
-    }
-    aabb_overlap_dims(&a.0, &b.0) >= 2
-}
-
-/// Count of AABB axes with a strictly positive overlap length.
-fn aabb_overlap_dims(a: &TopoShape, b: &TopoShape) -> usize {
-    let (Some(aa), Some(bb)) = (shape_bbox(a).get(), shape_bbox(b).get()) else {
-        return 0;
-    };
-    let overlap = |amin: f64, amax: f64, bmin: f64, bmax: f64| (amax.min(bmax) - amin.max(bmin)).max(0.0);
-    let ox = overlap(aa.0, aa.1, bb.0, bb.1);
-    let oy = overlap(aa.2, aa.3, bb.2, bb.3);
-    let oz = overlap(aa.4, aa.5, bb.4, bb.5);
-    [ox, oy, oz].iter().filter(|&&d| d > 1e-9).count()
-}
-
-fn face_aabb_area(f: &Face) -> f64 {
-    let Some((xmin, xmax, ymin, ymax, zmin, zmax)) = shape_bbox(&f.0).get() else {
-        return 0.0;
-    };
-    let dx = (xmax - xmin).abs();
-    let dy = (ymax - ymin).abs();
-    let dz = (zmax - zmin).abs();
-    (dx * dy).max(dy * dz).max(dz * dx)
 }
 
 /// The boolean operation derived from the object/tool face states.

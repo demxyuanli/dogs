@@ -7,8 +7,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::abs::Orientation;
-use crate::algo_tools_face::{get_edge_off, get_face_off, CoupleOfShape};
+use crate::abs::{Orientation, ShapeType};
+use crate::algo_tools_face::{get_face_off, CoupleOfShape};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::connexity_block::ConnexityBlock;
@@ -19,6 +19,60 @@ use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
+}
+
+/// `BOPTools_AlgoTools::GetEdgeOff` (`BOPTools_AlgoTools.cxx:1099-1126`).
+///
+/// OCCT matches `theE1` inside `theF2` with `IsSame` (the same `TopoDS_Edge`
+/// TShape) and requires the opposite orientation. Its BOP guarantees that two
+/// faces meeting along a boundary carry that shared edge, so `IsSame` is the
+/// geometric edge. This port does not run that share step, hence the same
+/// geometric identity ([`edge_ek`]) is used instead of `IsSame`, exactly as in
+/// the ancestor maps above. Two geometric views of one segment may carry
+/// opposite intrinsic directions, so the orientation test is expressed as the
+/// traversal test it stands for in OCCT ([`crate::shell_splitter::edge_traversal`]).
+fn get_edge_off_geo(the_e1: &Edge, the_f2: &TopoShape) -> Option<Edge> {
+    let k = edge_ek(the_e1);
+    let tr1 = crate::shell_splitter::edge_traversal(the_e1);
+    for w in crate::bop_occt_util::iter_children(the_f2) {
+        if w.shape_type() != ShapeType::Wire {
+            continue;
+        }
+        for e in crate::bop_occt_util::iter_children(&w) {
+            if e.shape_type() != ShapeType::Edge {
+                continue;
+            }
+            let e2 = Edge(e.clone());
+            if edge_ek(&e2) != k {
+                continue;
+            }
+            let off = match (tr1, crate::shell_splitter::edge_traversal(&e2)) {
+                (Some((a1, b1)), Some((a2, b2))) => a2 == b1 && b2 == a1,
+                _ => e2.0.orientation() == the_e1.0.orientation().reversed(),
+            };
+            if off {
+                return Some(e2);
+            }
+        }
+    }
+    None
+}
+
+/// Identity of an edge for the ancestor maps of `SplitBlock`.
+///
+/// OCCT keys `aEFMap` / `aMEFP` with `TopExp::MapShapesAndAncestors`, i.e. the
+/// `TopoDS_Edge` itself (`BOPAlgo_ShellSplitter.cxx:192`, `:310`). In OCCT the
+/// BOP pipeline already guarantees that two faces meeting along a boundary
+/// share that `TopoDS_Edge`, so the TShape *is* the geometric edge. This port
+/// does not run that share step, so the equivalent identity is the geometric
+/// one the rest of the splitter uses
+/// ([`crate::shell_splitter::edge_key`], the module's documented convention and
+/// the key [`crate::shell_splitter::ShellSplitter::perform`] builds the blocks
+/// with). Keying `SplitBlock` by TShape instead makes every face whose
+/// neighbours were built by a different producer look "free-edged" and drops
+/// the whole block.
+fn edge_ek(e: &Edge) -> crate::shell_splitter::EKey {
+    crate::shell_splitter::edge_key(e)
 }
 
 fn ori_byte(o: Orientation) -> u8 {
@@ -51,11 +105,11 @@ fn make_shell(faces: &[TopoShape]) -> TopoShape {
     shell.0
 }
 
-fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<usize, Vec<TopoShape>> {
-    let mut mef: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> {
+    let mut mef: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
     for f in faces {
         for e in face_boundary_edges(f) {
-            let k = shape_key(&e.0);
+            let k = edge_ek(&e);
             let ent = mef.entry(k).or_default();
             if !ent.iter().any(|x| ori_key(x) == ori_key(f)) {
                 ent.push(f.clone());
@@ -65,9 +119,12 @@ fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<usize, Vec<TopoShape>> {
     mef
 }
 
-fn merge_face_into_mef(mef: &mut HashMap<usize, Vec<TopoShape>>, face: &TopoShape) {
+fn merge_face_into_mef(
+    mef: &mut HashMap<crate::shell_splitter::EKey, Vec<TopoShape>>,
+    face: &TopoShape,
+) {
     for e in face_boundary_edges(face) {
-        let k = shape_key(&e.0);
+        let k = edge_ek(&e);
         let ent = mef.entry(k).or_default();
         if !ent.iter().any(|x| ori_key(x) == ori_key(face)) {
             ent.push(face.clone());
@@ -83,7 +140,7 @@ fn shell_is_closed(shell: &TopoShape) -> bool {
 /// input shell. Otherwise the walk does not cross stop edges.
 fn refine_shell(
     shell: &TopoShape,
-    mef: &HashMap<usize, Vec<TopoShape>>,
+    mef: &HashMap<crate::shell_splitter::EKey, Vec<TopoShape>>,
 ) -> Vec<TopoShape> {
     let faces: Vec<TopoShape> = crate::bop_occt_util::iter_children(shell)
         .into_iter()
@@ -92,7 +149,7 @@ fn refine_shell(
     if faces.is_empty() {
         return Vec::new();
     }
-    let mut stop: HashSet<usize> = HashSet::new();
+    let mut stop: HashSet<crate::shell_splitter::EKey> = HashSet::new();
     for (ek, lf) in mef {
         if lf.len() > 2 {
             stop.insert(*ek);
@@ -101,14 +158,23 @@ fn refine_shell(
         if lf.len() == 2 {
             let e1 = face_boundary_edges(&lf[0])
                 .into_iter()
-                .find(|e| shape_key(&e.0) == *ek)
-                .map(|e| e.0);
+                .find(|e| edge_ek(e) == *ek);
             let e2 = face_boundary_edges(&lf[1])
                 .into_iter()
-                .find(|e| shape_key(&e.0) == *ek)
-                .map(|e| e.0);
+                .find(|e| edge_ek(e) == *ek);
+            // `RefineShell` (`BOPAlgo_ShellSplitter.cxx:470-481`) stops on the
+            // edges whose two faces traverse them the same way. It compares the
+            // orientations of the one shared `TopoDS_Edge`; the geometric views
+            // used here are compared by traversal instead.
             if let (Some(a), Some(b)) = (e1, e2) {
-                if a.orientation() == b.orientation() {
+                let same_dir = match (
+                    crate::shell_splitter::edge_traversal(&a),
+                    crate::shell_splitter::edge_traversal(&b),
+                ) {
+                    (Some(ta), Some(tb)) => ta == tb,
+                    _ => a.0.orientation() == b.0.orientation(),
+                };
+                if same_dir {
                     stop.insert(*ek);
                     continue;
                 }
@@ -118,7 +184,7 @@ fn refine_shell(
         for f in lf {
             nb += 1;
             if face_boundary_edges(f).iter().any(|e| {
-                shape_key(&e.0) == *ek && e.0.orientation() == Orientation::Internal
+                edge_ek(e) == *ek && e.0.orientation() == Orientation::Internal
             }) {
                 nb += 1;
             }
@@ -144,7 +210,7 @@ fn refine_shell(
             let mut next: Vec<TopoShape> = Vec::new();
             for fp in &wave {
                 for e in face_boundary_edges(fp) {
-                    if stop.contains(&shape_key(&e.0)) {
+                    if stop.contains(&edge_ek(&e)) {
                         continue;
                     }
                     if e.0.orientation() == Orientation::Internal {
@@ -153,7 +219,7 @@ fn refine_shell(
                     if BRepTool::is_degenerated(&e) {
                         continue;
                     }
-                    let Some(lf) = mef.get(&shape_key(&e.0)) else {
+                    let Some(lf) = mef.get(&edge_ek(&e)) else {
                         continue;
                     };
                     for fp1 in lf {
@@ -194,12 +260,12 @@ pub fn split_block(block: &mut ConnexityBlock) {
     loop {
         let live: Vec<TopoShape> = a_m_faces.values().cloned().collect();
         let a_ef = map_edges_and_faces(&live);
-        let begin = a_m_faces.len();
+            let begin = a_m_faces.len();
         for (ek, lf) in &a_ef {
             let Some(e_rep) = live.iter().find_map(|f| {
                 face_boundary_edges(f)
                     .into_iter()
-                    .find(|e| shape_key(&e.0) == *ek)
+                    .find(|e| edge_ek(e) == *ek)
             }) else {
                 continue;
             };
@@ -242,7 +308,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
             continue;
         }
         let mut shell_faces: Vec<TopoShape> = vec![a_ff.clone()];
-        let mut a_mefp: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+        let mut a_mefp: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
         merge_face_into_mef(&mut a_mefp, a_ff);
         let mut i = 0usize;
         while i < shell_faces.len() {
@@ -250,7 +316,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
             let is_boundary = a_boundary.contains(&shape_key(&a_f));
             for a_e in face_boundary_edges(&a_f) {
                 if a_mefp
-                    .get(&shape_key(&a_e.0))
+                    .get(&edge_ek(&a_e))
                     .map(|l| l.len() > 1)
                     .unwrap_or(false)
                 {
@@ -262,7 +328,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
                 if BRepTool::is_degenerated(&a_e) {
                     continue;
                 }
-                let Some(a_lf) = a_ef_map.get(&shape_key(&a_e.0)) else {
+                let Some(a_lf) = a_ef_map.get(&edge_ek(&a_e)) else {
                     continue;
                 };
                 if a_lf.is_empty() {
@@ -275,7 +341,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
                     if a_f.same_tshape(a_fl) || added.contains(&ori_key(a_fl)) {
                         continue;
                     }
-                    let Some(a_el) = get_edge_off(&a_e, &Face(a_fl.clone())) else {
+                    let Some(a_el) = get_edge_off_geo(&a_e, a_fl) else {
                         continue;
                     };
                     if is_boundary && !a_boundary.contains(&shape_key(a_fl)) {

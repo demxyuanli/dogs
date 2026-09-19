@@ -254,8 +254,13 @@ use super::*;
         let bx = unit_box();
         let ctx = IntToolsContext::new();
         let (u0, u1, v0, v1) = ctx.uv_bounds(&bx.faces[0]);
-        // The bottom face is an (unbounded) plane.
-        assert!(!u0.is_finite() && !u1.is_finite() && !v0.is_finite() && !v1.is_finite());
+        // `IntTools_Context::UVBounds` reads the face through
+        // `BRepAdaptor_Surface` (`IntTools_Context.cxx:1028-1039`), which
+        // restricts the plane to `BRepTools::UVBounds` (`BRepAdaptor_Surface.cxx:71-76`),
+        // i.e. the box of the face's pcurves (`BRepTools.cxx:64-75`, `:126-160`),
+        // NOT the plane's natural (infinite) range. The bottom face of the
+        // unit box is the square [0,1]x[0,1] in its own (u,v).
+        assert_eq!((u0, u1, v0, v1), (0.0, 1.0, 0.0, 1.0));
         let (a0, a1, b0, b1) = crate::brep_surface::face_uv_bounds(&bx.faces[0]);
         assert_eq!((u0, u1, v0, v1), (a0, a1, b0, b1));
         clear_tree(&bx.solid.0);

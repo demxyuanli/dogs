@@ -121,8 +121,7 @@ pub fn sketch_to_wire(sketch: &Sketch, plane: &GpPln) -> Result<Wire, String> {
             0.0,
             pts3d[i].distance(&pts3d[j]),
         );
-        b.add(&mut e.0, &verts[i].0);
-        b.add(&mut e.0, &verts[j].0);
+        b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
         edges.push(e);
     }
     let wire = b.make_wire(&edges);

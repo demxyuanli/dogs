@@ -29,6 +29,37 @@ pub struct VertexGeom {
     pub tolerance: f64,
 }
 
+/// PARKED (t313) `BRep_TEdge` flags for a freshly built edge.
+///
+/// `BRep_TEdge::BRep_TEdge()` starts with `SameParameter(true)`/`SameRange(true)`
+/// (`BRep_TEdge.cxx:31-38`) and `EmptyCopy` carries both flags with the edge
+/// (`cxx:124-127`), so seeding `true` matches OCCT for a freshly built edge. A
+/// fix tool clears the flags only when it rewrites the curve/pcurve
+/// (`ShapeFix_Edge.cxx:781-782` FixReversed2d, `ShapeBuild_Edge.cxx:326-327`
+/// CopyRanges, `ShapeFix.cxx:129-133` for `enforce`, `BRepLib.cxx:945`,
+/// `ShapeConstruct.cxx:449-450`), and the STEP importer clears them only for
+/// COMPOSITE_CURVE edges (`StepToTopoDS_TranslateCompositeCurve.cxx:267`).
+///
+/// t314 ported the `!wasSP` arm of `ShapeFix_Edge::FixSameParameter`
+/// (`shhealing/p03.rs`), so this flag no longer hides a missing branch. Measured
+/// with a temporary probe over all 16 `data/*.step` inputs of
+/// `export_data_obj`: no edge is cleared, the `!wasSP` arm never runs, and no
+/// input contains a COMPOSITE_CURVE. It stays dormant under FromSTEP.FixShape
+/// (`FixEdgeSameParameterMode: 0` -> `ShapeFix_Wire.cxx:953` is off;
+/// `FixSameParameterMode: -1` -> `ShapeFix_Shape.cxx:259-261` passes
+/// `enforce = false`, so `ShapeFix.cxx:129-133` does not clear the flag;
+/// `read.stdsameparameter.mode` defaults to 0, `XSAlgo.cxx:46`).
+///
+/// The remaining `Shape-1` face `f34` box (`v = 5.346039` / `Zmax = 75.346039`
+/// against OCCT `5.283071`/`75.283071`) is not this arm: our cylinder pcurve of
+/// that edge is the 10 pole B-spline built by
+/// `fix_add_pcurve` -> `pcurve_full::project_curve_on_surface_perform`
+/// (`0.196` same-parameter deviation), while OCCT's comes from
+/// `XSAlgo_ShapeProcessor::CheckPCurve`'s `FixAddPCurve` tail
+/// (`XSAlgo_ShapeProcessor.cxx:448-505`), parked here as
+/// `CHECK_PCURVE_REPROJECT`.
+const EDGE_NEW_IS_SAME_PARAMETER: bool = true;
+
 /// Edge geometry — an underlying curve and a parameter range. (BRep_TEdge)
 pub struct EdgeGeom {
     pub curve: Arc<dyn Curve>,
@@ -58,7 +89,7 @@ impl EdgeGeom {
             first,
             last,
             tolerance: 0.0,
-            same_parameter: true,
+            same_parameter: EDGE_NEW_IS_SAME_PARAMETER,
             same_range: true,
             degenerated: false,
             pcurves: HashMap::new(),
@@ -215,6 +246,19 @@ impl GeometryRegistry {
 
     pub fn is_degenerated_edge(&self, s: &TopoShape) -> bool {
         self.edge_geom(s).map(|g| g.degenerated).unwrap_or(false)
+    }
+
+    /// `BRep_Builder::Degenerated(E, D)` (`BRep_Builder.cxx:1073-1085`): set the
+    /// degenerated flag. OCCT also drops the 3D curve when `D` is true
+    /// (`UpdateCurves(TE->ChangeCurves(), occ::handle<Geom_Curve>(), ...)`,
+    /// `cxx:1082-1084`). `EdgeGeom::curve` here is a non-nullable
+    /// `Arc<dyn Curve>`, so a caller that needs OCCT's "no 3D curve" state
+    /// stores what `BRepAdaptor_Curve(edge, face)` would build from the pcurve
+    /// instead (`Adaptor3d_CurveOnSurface`).
+    pub fn set_degenerated(&self, s: &TopoShape, v: bool) {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.degenerated = v;
+        }
     }
 
     // ---- edge p-curves ----

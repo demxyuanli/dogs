@@ -13,7 +13,7 @@
 
 use occt_core::gcpnts::{CurveDeriv, CurveSample, TangentialDeflection};
 use occt_core::gp::{GpDir, GpPnt, GpPnt2d, GpVec, GpXY};
-use occt_core::precision::{ANGULAR, PCONFUSION, RESOLUTION, SQUARE_CONFUSION};
+use occt_core::precision::{ANGULAR, PCONFUSION, REAL_SMALL, SQUARE_CONFUSION};
 use occt_geom::{Curve, Surface};
 
 /// Iso-curve type. Source: `GeomAbs_IsoType`
@@ -182,7 +182,16 @@ impl GeomTool {
     /// Uses `Surface::d1` when it is non-degenerate; otherwise falls back to
     /// central finite differences of `d0` (the elementary-surface
     /// implementations in `occt-geom` leave `d1` zero for cylinder/cone/sphere/
-    /// torus). Source: `TangentOnSurface` / `ValueAndTangents`
+    /// torus).
+    ///
+    /// UNPORTED: OCCT `BRepMesh_GeomTool` has no `TangentOnSurface` /
+    /// `ValueAndTangents` entry point (`BRepMesh_GeomTool.hxx:125-140`), and it
+    /// never substitutes finite differences: `BRepMesh_GeomTool::Normal`
+    /// (`BRepMesh_GeomTool.cxx:256-281`) takes `D1` from the surface and hands it
+    /// to `CSLib::Normal`, whose null-tangent test is
+    /// `aD1UMag <= gp::Resolution()` on *squared* magnitudes, i.e. `RealSmall()`
+    /// = `DBL_MIN` (`CSLib.cxx:55-66`, `gp.hxx:60`, `Standard_Real.hxx:132-135`).
+    /// The 1e-12 magnitude guards below are Rust-only; kept unchanged.
     pub fn tangent_on_surface(surface: &dyn Surface, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
         let (p, du, dv) = surface.d1(u, v);
         let (du, dv) = if du.magnitude() <= 1e-12 || dv.magnitude() <= 1e-12 {
@@ -197,7 +206,8 @@ impl GeomTool {
     }
 
     /// Point and both first partials of `surface` at `(u, v)`.
-    /// Alias of [`GeomTool::tangent_on_surface`] matching the OCCT name.
+    /// Alias of [`GeomTool::tangent_on_surface`]; there is no OCCT
+    /// `ValueAndTangents` entry point in `BRepMesh_GeomTool.hxx`.
     pub fn value_and_tangents(surface: &dyn Surface, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
         Self::tangent_on_surface(surface, u, v)
     }
@@ -211,6 +221,12 @@ impl GeomTool {
     pub fn normal_on_surface(surface: &dyn Surface, u: f64, v: f64) -> Result<(GpPnt, GpDir), String> {
         let (p, du, dv) = Self::tangent_on_surface(surface, u, v);
         let n = du.crossed(&dv);
+        // `ANGULAR` matches `theSinTol` = `Precision::Angular()`, which
+        // `BRepMesh_GeomTool.cxx:268` passes to `CSLib::Normal` and which is
+        // compared as `aSin2 < theSinTol * theSinTol` (`CSLib.cxx:70`).
+        // UNPORTED: the `.max(1e-12)` magnitude clamps have no OCCT counterpart;
+        // OCCT rejects null tangents first, on squared magnitudes against
+        // `gp::Resolution()` (`CSLib.cxx:55-66`). Kept unchanged.
         let tol = ANGULAR * du.magnitude().max(1e-12) * dv.magnitude().max(1e-12);
         if n.magnitude() > tol {
             return Ok((p, GpDir::from_vec(&n).map_err(|e| e.to_string())?));
@@ -300,7 +316,9 @@ impl GeomTool {
         let cross_d1d2 = v1.crossed(&v2);
         let cross_d1d3 = vo1o2.crossed(&v2);
 
-        let prec = RESOLUTION;
+        // `BRepMesh_GeomTool.cxx:316`: `const double aPrec = gp::Resolution();`
+        // which is `RealSmall()` = `DBL_MIN` (`gp.hxx:60`, `Standard_Real.hxx:132-135`).
+        let prec = REAL_SMALL;
         if cross_d1d2.abs() < prec {
             return if cross_d1d3.abs() < prec {
                 (IntFlag::Same, GpXY::zero(), [0.0; 2])

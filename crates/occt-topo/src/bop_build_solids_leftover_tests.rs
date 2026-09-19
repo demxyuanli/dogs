@@ -8,7 +8,7 @@ use occt_geom::{GeomLine, GeomPlane, Surface};
 use crate::bop_hist::BopHistory;
 use crate::bopds::BopdsDS;
 use crate::primitives::BRepPrimBox;
-use crate::shape::{Face, Solid, Vertex};
+use crate::shape::{Edge, Face, Solid, Vertex};
 use crate::topo_tools_full::{edges_of, vertices_of};
 
     /// A minimal `BopBuildOps` host for the isolated tests.
@@ -89,8 +89,7 @@ use crate::topo_tools_full::{edges_of, vertices_of};
             let dir = GpDir::from_vec(&GpVec::from_pnts(p1, p2)).unwrap();
             let lin = GpLin::from_pnt_dir(*p1, dir);
             let mut e = b.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
-            b.add(&mut e.0, &v1.0);
-            b.add(&mut e.0, &v2.0);
+            b.add_edge_vertices(&mut e, v1, v2);
             e
         };
         let edge_idx: [(usize, usize); 12] = [
@@ -105,6 +104,21 @@ use crate::topo_tools_full::{edges_of, vertices_of};
         let face_edge_sets: [[usize; 4]; 6] = [
             [0, 1, 2, 3], [4, 5, 6, 7], [0, 9, 4, 8], [2, 10, 6, 11], [3, 11, 7, 8], [1, 10, 5, 9],
         ];
+        // Outward corner cycle of every face (same chords as the shared
+        // `unit_box` fixture). An edge that the face closes against its
+        // `edge_idx` chord is stored Reversed, so two faces sharing an edge
+        // always see opposite orientations — the invariant
+        // `BOPTools_AlgoTools::GetEdgeOff` (`BOPTools_AlgoTools.cxx:1099-1127`)
+        // and `BOPAlgo_ShellSplitter::SplitBlock` (`BOPAlgo_ShellSplitter.cxx:319`)
+        // rely on.
+        let face_cycles: [[usize; 4]; 6] = [
+            [0, 1, 2, 3], // bottom (z = z0)
+            [4, 5, 6, 7], // top (z = z1)
+            [0, 1, 5, 4], // front (y = y0)
+            [3, 7, 6, 2], // back (y = y1)
+            [0, 4, 7, 3], // left (x = x0)
+            [1, 2, 6, 5], // right (x = x1)
+        ];
         let face_planes: [(GpPnt, GpDir, GpDir); 6] = [
             (GpPnt::new(x0, y0, z0), GpDir::new(0.0, 0.0, -1.0).unwrap(), GpDir::new(0.0, 1.0, 0.0).unwrap()),
             (GpPnt::new(x0, y0, z1), GpDir::new(0.0, 0.0, 1.0).unwrap(), GpDir::new(1.0, 0.0, 0.0).unwrap()),
@@ -118,7 +132,34 @@ use crate::topo_tools_full::{edges_of, vertices_of};
             let (origin, normal, u_dir) = face_planes[fi];
             let ax3 = GpAx3::new(origin, normal, &u_dir).unwrap();
             let mut face = b.make_face_plane(&GpPln::new(ax3));
-            let wire = b.make_wire(&face_edge_sets[fi].map(|ei| edges[ei].clone()));
+            let cycle = face_cycles[fi];
+            let quad: Vec<Edge> = face_edge_sets[fi]
+                .iter()
+                .map(|&ei| {
+                    let (i, j) = edge_idx[ei];
+                    let k = (0..4)
+                        .find(|&k| {
+                            let a = cycle[k];
+                            let b = cycle[(k + 1) % 4];
+                            (a == i && b == j) || (a == j && b == i)
+                        })
+                        .expect("edge belongs to the face cycle");
+                    let (a, b) = (cycle[k], cycle[(k + 1) % 4]);
+                    let e = edges[ei].clone();
+                    if (a, b) == (i, j) {
+                        e
+                    } else {
+                        Edge(e.0.oriented(Orientation::Reversed))
+                    }
+                })
+                .collect();
+            let mut wire = b.make_wire(&quad);
+            // The bottom plane's +X then +Y loop is clockwise in that UV frame;
+            // reverse the wire so the outer ring is CCW (material on the left),
+            // matching BRepPrimAPI_MakeBox / IntTools_FClass2d::IsHole.
+            if fi == 0 {
+                wire.0.reverse();
+            }
             b.add_wire(&mut face, &wire);
             faces.push(face);
         }

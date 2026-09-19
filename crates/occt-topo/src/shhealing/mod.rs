@@ -47,6 +47,12 @@ pub use p02::*;
 pub use p03::*;
 pub use p04::*;
 
+/// `ShapeAnalysis_Curve` projection helpers (`ShapeAnalysis_Curve.cxx`).
+pub mod shape_analysis_curve;
+/// `ShapeAnalysis_TransferParameters(Proj)` (`ShapeAnalysis_TransferParameters.cxx`,
+/// `ShapeAnalysis_TransferParametersProj.cxx`).
+pub mod transfer_params;
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

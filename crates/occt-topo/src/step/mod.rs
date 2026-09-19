@@ -54,8 +54,8 @@ pub(crate) use occt_core::gp::{
 pub(crate) use occt_geom::{
     bspline_surface::GeomBSplineSurface, Curve, GeomBSplineCurve, GeomCircle, GeomCone,
     GeomCylinder, GeomEllipse, GeomHyperbola, GeomLine, GeomOffsetCurve, GeomOffsetSurface,
-    GeomParabola, GeomPlane, GeomSphere, GeomSurfaceOfRevolution, GeomTorus, GeomTrimmedCurve,
-    Surface,
+    GeomParabola, GeomPlane, GeomSphere, GeomSurfaceOfLinearExtrusion,
+    GeomSurfaceOfRevolution, GeomTorus, GeomTrimmedCurve, Surface,
 };
 pub(crate) use occt_geom2d::curve::Curve2d;
 pub(crate) use occt_geom2d::{

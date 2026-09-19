@@ -50,8 +50,7 @@ use super::*;
         let mut e = b.make_edge_circle(&ax2, radius, 0.0, 2.0 * PI);
         let seam = center.translated_vec(&GpVec::from_xyz(xd.xyz()).multiplied_scalar(radius));
         let v = b.make_vertex(seam, 0.0);
-        b.add(&mut e.0, &v.0);
-        b.add(&mut e.0, &v.0);
+        b.add_edge_vertices(&mut e, &v, &v);
         e
     }
 
@@ -102,8 +101,7 @@ use super::*;
             let dir = GpDir::from_vec(&GpVec::from_pnts(&c[i], &c[j])).unwrap();
             let lin = GpLin::from_pnt_dir(c[i], dir);
             let mut e = b.make_edge(Arc::new(GeomLine::new(lin)), 0.0, c[i].distance(&c[j]));
-            b.add(&mut e.0, &verts[i].0);
-            b.add(&mut e.0, &verts[j].0);
+            b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
             edges.push(e);
         }
 
@@ -413,8 +411,7 @@ use super::*;
         let mut e = b.make_edge_circle(&ax2, radius, a1, a2);
         let v1 = b.make_vertex(GpPnt::new(center.x() + radius * a1.cos(), center.y() + radius * a1.sin(), z), 0.0);
         let v2 = b.make_vertex(GpPnt::new(center.x() + radius * a2.cos(), center.y() + radius * a2.sin(), z), 0.0);
-        b.add(&mut e.0, &v1.0);
-        b.add(&mut e.0, &v2.0);
+        b.add_edge_vertices(&mut e, &v1, &v2);
         e
     }
 

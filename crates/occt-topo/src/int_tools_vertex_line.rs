@@ -18,10 +18,10 @@
 //!    a bounded curve still accepts `StartPoint` / `EndPoint` within
 //!    `aTolSum`.
 //!
-//! `Extrema_LocateExtPC` / `Extrema_ExtPC` are translated as a Newton walk
-//! from a seed parameter and a dense sample-plus-Newton global search. The
-//! OCCT extrema kernels themselves are not in this crate; the decision
-//! predicates (midpoint, `aTolSum`, Confusion) are identical.
+//! `Extrema_LocateExtPC` is a Newton walk from a seed. `Extrema_ExtPC` is
+//! `occt_geom::extrema_pc::extrema_ext_pc_*` (`Extrema_GGExtPC` Perform /
+//! IntervalPerform). Decision predicates (midpoint, `aTolSum`, Confusion)
+//! stay identical to `IntTools_Context`.
 
 use occt_core::gp::GpPnt;
 use occt_core::precision::{CONFUSION, INFINITE, Precision};
@@ -42,12 +42,6 @@ const EXTREMA_EPS: f64 = 1.0e-10;
 
 /// Newton iterations for the local (`LocateExtPC`) search.
 const LOCATE_ITERS: usize = 12;
-
-/// Sample count for the global (`ExtPC`) search.
-const GLOBAL_SAMPLES: usize = 64;
-
-/// Newton iterations used to refine each global sample.
-const GLOBAL_REFINE: usize = 8;
 
 /// Result of [`is_vertex_on_line`]: the vertex lies on the curve at `t`.
 #[derive(Debug, Clone, Copy)]
@@ -194,12 +188,12 @@ fn locate_ext_pc(curve: &dyn Curve, p: &GpPnt, t_seed: f64, first: f64, last: f6
     Some((t, last_good))
 }
 
-/// Dense sampling used as the `Extrema_ExtPC` fallback.
+/// `Extrema_ExtPC` on `[first, last]` — pick min among `IsMin` solutions
+/// (`ShapeAnalysis_Curve.cxx:277-301` / `Extrema_GGExtPC.hxx` Perform).
 ///
-/// OCCT iterates `NbExt` minima and keeps the smallest `SquareDistance`. The
-/// port samples the finite range, Newton-refines each sample, and keeps the
-/// closest refined point. Unbounded curves sample a window around the linear
-/// estimate already used by `project_point_on_curve`.
+/// Unbounded windows still probe around the linear estimate used by
+/// `project_point_on_curve`. `UpdateVertex` (`TranslateEdge.cxx:478-479`) is
+/// enabled in `step/p04.rs` once ExtPC Project residuals are OCCT-scale.
 fn extrema_ext_pc(curve: &dyn Curve, p: &GpPnt, first: f64, last: f64) -> Option<(f64, GpPnt, f64)> {
     let (a, b) = if Precision::is_infinite(first) || Precision::is_infinite(last) {
         let p0 = curve.d0(0.0);
@@ -219,27 +213,7 @@ fn extrema_ext_pc(curve: &dyn Curve, p: &GpPnt, first: f64, last: f64) -> Option
         let q = curve.d0(a);
         return Some((a, q, p.distance(&q)));
     }
-    let mut best_t = a;
-    let mut best_p = curve.d0(a);
-    let mut best_d2 = p.square_distance(&best_p);
-    for i in 0..=GLOBAL_SAMPLES {
-        let u = a + (b - a) * (i as f64 / GLOBAL_SAMPLES as f64);
-        let mut t = u;
-        for _ in 0..GLOBAL_REFINE {
-            let Some(next) = newton_step(curve, p, t) else {
-                break;
-            };
-            t = clamp_param(next, a, b);
-        }
-        let q = curve.d0(t);
-        let d2 = p.square_distance(&q);
-        if d2 < best_d2 {
-            best_d2 = d2;
-            best_t = t;
-            best_p = q;
-        }
-    }
-    Some((best_t, best_p, best_d2.sqrt()))
+    occt_geom::extrema_pc::extrema_ext_pc_min_in_range(curve, p, a, b)
 }
 
 /// OCCT extremity refinement: start from `t_end`, keep it unless Locate/ExtPC

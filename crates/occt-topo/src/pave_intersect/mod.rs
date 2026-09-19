@@ -109,8 +109,7 @@ mod tests {
                 0.0,
                 p1.distance(&p2),
             );
-            b.add(&mut e.0, &vertices[i].0);
-            b.add(&mut e.0, &vertices[j].0);
+            b.add_edge_vertices(&mut e, &vertices[i], &vertices[j]);
             edges.push(e);
         }
         // Face planes: the same normal/u axes as the unit box, origins shifted.

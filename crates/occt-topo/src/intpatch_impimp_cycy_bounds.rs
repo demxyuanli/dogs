@@ -3,11 +3,9 @@
 //! Source: `IntPatch_ImpImpIntersection.cxx` WorkWithBoundaries /
 //! CriticalPointsComputing / CylCylMonotonicity / InscribeInterval.
 
-use occt_core::precision::Precision;
+use occt_core::precision::{Precision, REAL_SMALL};
 
 use super::{inscribe_point, Coeffs, NUL_VALUE, PERIOD};
-
-const REAL_SMALL: f64 = 1.0e-150;
 
 /// `Bnd_Range` (void when `hi < lo`).
 #[derive(Clone, Copy, Debug)]
@@ -106,6 +104,7 @@ impl URange {
         let period = period.abs();
         let df = self.lo - val;
         let dl = self.hi - val;
+        // `Bnd_Range.cxx:76`: `if (aPeriod <= RealSmall())`.
         if period <= REAL_SMALL {
             let delta = df * dl;
             if delta == 0.0 {
@@ -367,6 +366,8 @@ pub(crate) fn cyl_cyl_monotonicity(u1: f64, wl: i32, c: &Coeffs, period: f64) ->
         return None;
     }
     let mut increasing = true;
+    // `IntPatch_ImpImpIntersection.cxx:5299`:
+    // `if (((M_PI - aU1Temp) < RealSmall()) && (aU1Temp < thePeriod))`.
     if (std::f64::consts::PI - u_tmp) < REAL_SMALL && u_tmp < period {
         increasing = false;
     }

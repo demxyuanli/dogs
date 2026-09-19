@@ -12,10 +12,6 @@ occt-geom2d = { path = "../occt-geom2d" }
 occt-math = { path = "../occt-math" }
 
 [[example]]
-name = "demo"
-path = "../../examples/demo.rs"
-
-[[example]]
 name = "linkrods_dbg"
 path = "examples/linkrods_dbg.rs"
 

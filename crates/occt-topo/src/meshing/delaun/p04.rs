@@ -3,7 +3,7 @@ use super::*;
 
 impl Delaun {
 
-    pub(super) fn mesh_polygon(&mut self, the_polygon: &mut Vec<i32>, the_poly_boxes: &mut Vec<BndB2>, skipped: &mut Option<HashSet<i32>>) {
+    pub(super) fn mesh_polygon(&mut self, the_polygon: &mut Vec<i32>, the_poly_boxes: &mut Vec<BndB2>, skipped: &mut Option<BTreeSet<i32>>) {
         if self.mesh_elementary_polygon(the_polygon) {
             return;
         }
@@ -361,7 +361,7 @@ impl Delaun {
                 let mut found = false;
                 for k in 0..3 {
                     if element.link_at(k).abs() == id && (element.link_at(k) > 0) == is_forward {
-                        let mut loop_edges = HashMap::new();
+                        let mut loop_edges = BTreeMap::new();
                         self.delete_triangle(elem_id, &mut loop_edges);
                         found = true;
                         break;
@@ -411,7 +411,7 @@ impl Delaun {
     /// Re-triangulates the cavity left after deleting the triangles of a vertex
     /// (used by `RemoveVertex`). Collects the loop of free edges around the
     /// cavity and meshes it as a polygon.
-    pub(super) fn mesh_polygon_of_cavity(&mut self, loop_edges: &mut HashMap<i32, bool>) {
+    pub(super) fn mesh_polygon_of_cavity(&mut self, loop_edges: &mut BTreeMap<i32, bool>) {
         let mut boxes: Vec<BndB2> = Vec::new();
         let mut polygon: Vec<i32> = Vec::new();
         let mut loop_edges_count = loop_edges.len();
@@ -487,8 +487,12 @@ impl Delaun {
         }
     }
 
-    pub(super) fn get_edges_by_type(&self, edge_type: VertexState) -> HashSet<i32> {
-        let mut result = HashSet::new();
+    /// Edges whose state matches `edge_type`, in ascending link-id order.
+    /// Source: `BRepMesh_MeshTool::GetEdgesByType` (`BRepMesh_MeshTool.cxx:284-300`),
+    /// which walks `LinksOfDomain()` (a `NCollection_PackedMap<int>`) in
+    /// ascending order and stores into another `IMeshData::MapOfInteger`.
+    pub(super) fn get_edges_by_type(&self, edge_type: VertexState) -> BTreeSet<i32> {
+        let mut result = BTreeSet::new();
         for &edge in self.mesh_data.links_of_domain() {
             let is_to_add = if edge_type == VertexState::Free {
                 self.mesh_data.elements_connected_to(edge).extent() <= 1

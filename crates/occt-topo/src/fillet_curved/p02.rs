@@ -555,8 +555,7 @@ pub(super) fn build_circle_edge(b: &TopoBuilder, c: &ContactCircleGeom, seam: &G
     let ax2 = GpAx2::new(c.center, nd, xd).map_err(|e| format!("fillet_curved: circle frame: {e}"))?;
     let mut e = b.make_edge_circle(&ax2, c.radius, 0.0, 2.0 * PI);
     let v = b.make_vertex(*seam, 0.0);
-    b.add(&mut e.0, &v.0);
-    b.add(&mut e.0, &v.0);
+    b.add_edge_vertices(&mut e, &v, &v);
     Ok(e)
 }
 

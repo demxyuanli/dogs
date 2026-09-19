@@ -54,8 +54,7 @@ fn edge_through(b: &TopoBuilder, v1: &Vertex, v2: &Vertex) -> Edge {
     let dir = GpDir::from_vec(&GpVec::from_pnts(&p1, &p2))
         .unwrap_or_else(|_| GpDir::new(1.0, 0.0, 0.0).unwrap());
     let mut e = b.make_edge(Arc::new(GeomLine::new(GpLin::from_pnt_dir(p1, dir))), 0.0, p1.distance(&p2));
-    b.add(&mut e.0, &v1.0);
-    b.add(&mut e.0, &v2.0);
+    b.add_edge_vertices(&mut e, v1, v2);
     e
 }
 
@@ -254,8 +253,7 @@ pub fn prism_from_polygon(points: &[GpPnt], direction: &GpVec, height: f64) -> P
             }))),
             0.0, points[i].distance(&points[j]),
         );
-        b.add(&mut e.0, &verts[i].0);
-        b.add(&mut e.0, &verts[j].0);
+        b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
         base_edges.push(e);
     }
     let base_wire = b.make_wire(&base_edges);

@@ -1,6 +1,21 @@
 use super::prelude::*;
 use super::*;
 
+pub(super) static DBG_CENTER: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_LINK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_TESTED: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_SHOT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_SHOT0: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_REJMIN: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_MID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_BAD3D: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_MIN_SQ: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(f64::INFINITY.to_bits());
+
 /// Read access to a triangulated mesh required by the deflection control.
 ///
 /// This is the Rust counterpart of OCCT's `getStructure()` accessor on the
@@ -191,6 +206,15 @@ impl DelaunayDeflectionControlMeshAlgo {
         self.processed_couples.clear();
         self.max_sq_deflection = -1.0;
         self.is_all_degenerated = false;
+        DBG_CENTER.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_LINK.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_TESTED.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_SHOT.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_SHOT0.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_REJMIN.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_MID.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_BAD3D.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_MIN_SQ.store(f64::INFINITY.to_bits(), std::sync::atomic::Ordering::Relaxed);
 
         let mut is_inserted = true;
         for _pass in 0..MAX_PASSES {
@@ -208,8 +232,8 @@ impl DelaunayDeflectionControlMeshAlgo {
                 break;
             }
 
-            for id in ids {
-                let triangle = mesh.triangle(id);
+            for id in &ids {
+                let triangle = mesh.triangle(*id);
                 self.split_triangle_geometry(mesh, surface, &triangle);
             }
 
@@ -253,12 +277,14 @@ impl DelaunayDeflectionControlMeshAlgo {
                 .added(&nodes_info[1].point_2d)
                 .added(&nodes_info[2].point_2d)
                 .multiplied_scalar(1.0 / 3.0);
-            self.use_point(
+            if self.use_point(
                 mesh,
                 surface,
                 GpPnt2d::from_xy(center_2d),
                 &NormalDeviation::new(&nodes_info[0].point_3d, normal),
-            );
+            ) {
+                DBG_CENTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
             self.split_links(mesh, surface, &nodes_info, &node_indices);
         }
     }
@@ -326,7 +352,10 @@ impl DelaunayDeflectionControlMeshAlgo {
     /// Returns `false` if the normal has null magnitude. Source: `computeNormal`.
     pub(super) fn compute_normal(&self, link1: &GpVec, link2: &GpVec, normal: &mut GpVec) -> bool {
         let cross = link1.crossed(link2);
-        if cross.square_magnitude() > RESOLUTION {
+        // `BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:284`:
+        // `if (aNormal.SquareMagnitude() > gp::Resolution())` with
+        // `gp::Resolution()` = `RealSmall()` = `DBL_MIN` (`gp.hxx:60`).
+        if cross.square_magnitude() > REAL_SMALL {
             *normal = cross.normalized();
             return true;
         }
@@ -358,6 +387,7 @@ impl DelaunayDeflectionControlMeshAlgo {
             if !self.processed_couples.insert((first, last)) {
                 continue;
             }
+            DBG_TESTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
             let mid_2d = nodes_info[i]
                 .point_2d
@@ -366,7 +396,9 @@ impl DelaunayDeflectionControlMeshAlgo {
             let mid_2d = GpPnt2d::from_xy(mid_2d);
 
             let line = LineDeviation::new(&nodes_info[i].point_3d, &nodes_info[j].point_3d);
-            if !self.use_point(mesh, surface, mid_2d, &line) {
+            if self.use_point(mesh, surface, mid_2d, &line) {
+                DBG_MID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            } else {
                 let reject_min_size =
                     self.reject_split_links_for_min_size(surface, &nodes_info[i], &nodes_info[j], mid_2d);
                 let reject_angular = self.check_link_ends_for_angular_deviation(
@@ -376,6 +408,7 @@ impl DelaunayDeflectionControlMeshAlgo {
                     mid_2d,
                 );
                 if !reject_min_size && !reject_angular {
+                    DBG_LINK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     self.control_nodes.push(mid_2d);
                 }
             }
@@ -486,12 +519,25 @@ impl DelaunayDeflectionControlMeshAlgo {
         let shot = mesh
             .shot_triangles(p2d.coord)
             .unwrap_or_else(|| mesh.elements_of_domain());
+        if shot.is_empty() {
+            DBG_SHOT0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        DBG_SHOT.fetch_add(shot.len(), std::sync::atomic::Ordering::Relaxed);
         for id in shot {
             let triangle = mesh.triangle(id);
             for node_id in element_nodes_from_links(mesh, &triangle) {
                 if used_nodes.insert(node_id) {
                     let vertex = mesh.vertex(node_id);
-                    if p3d.square_distance(&vertex.p3d) < self.sq_min_size {
+                    let sq = p3d.square_distance(&vertex.p3d);
+                    if !(vertex.p3d.coord.x.is_finite()
+                        && vertex.p3d.coord.y.is_finite()
+                        && vertex.p3d.coord.z.is_finite())
+                    {
+                        DBG_BAD3D.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    DBG_MIN_SQ.fetch_min(sq.to_bits(), std::sync::atomic::Ordering::Relaxed);
+                    if sq < self.sq_min_size {
+                        DBG_REJMIN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         return true;
                     }
                 }

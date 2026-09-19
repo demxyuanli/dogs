@@ -162,7 +162,9 @@ impl CircleTool {
             return None;
         }
         let d = 2.0 * (p1.x * link1.y + p2.x * link2.y + p3.x * link3.y);
-        if d.abs() < RESOLUTION {
+        // `BRepMesh_CircleTool.cxx:112`: `if (std::abs(aD) < gp::Resolution())`
+        // with `gp::Resolution()` = `RealSmall()` = `DBL_MIN` (`gp.hxx:60`).
+        if d.abs() < REAL_SMALL {
             return None;
         }
         let inv_d = 1.0 / d;
@@ -271,10 +273,10 @@ impl StackOfFrames {
     }
 }
 
-pub(super) fn map_bind(map: &mut HashMap<i32, bool>, key: i32, value: bool) -> bool {
+pub(super) fn map_bind(map: &mut BTreeMap<i32, bool>, key: i32, value: bool) -> bool {
     match map.entry(key) {
-        std::collections::hash_map::Entry::Occupied(_) => false,
-        std::collections::hash_map::Entry::Vacant(v) => {
+        std::collections::btree_map::Entry::Occupied(_) => false,
+        std::collections::btree_map::Entry::Vacant(v) => {
             v.insert(value);
             true
         }

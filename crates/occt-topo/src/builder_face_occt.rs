@@ -310,13 +310,13 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
     let mut a_hole_faces: Vec<TopoShape> = Vec::new();
     let mut a_mhe: HashSet<usize> = HashSet::new();
 
-    for a_wire in fb.base.loops.clone() {
+    for (i_loop, a_wire) in fb.base.loops.clone().into_iter().enumerate() {
         let wire = Wire(a_wire.clone());
         let a_face = make_face_on(fb, &wire)?;
         let mut b_is_growth = is_growth_wire(&a_wire, &a_mhe);
         if !b_is_growth {
-            if let Ok(a_clsf) = FClass2d::new(&a_face, a_tol) {
-                b_is_growth = !a_clsf.is_hole();
+            if let Ok(c) = FClass2d::new(&a_face, a_tol) {
+                b_is_growth = !c.is_hole();
             }
         }
         if b_is_growth {

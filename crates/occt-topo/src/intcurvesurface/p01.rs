@@ -334,10 +334,10 @@ pub(super) fn conic_geometry(c: &dyn Curve, kind: CurveKind) -> Option<ConicGeom
                 return None;
             }
             let x = GpVec::from_pnts(&o, &p0).divided(a);
-            let y = GpVec::from_pnts(&pq, &o).divided(b); // P(π/2) = o − y·b
+            let y = GpVec::from_pnts(&o, &pq).divided(b); // P(pi/2) = o + y*b
             for &u in &[0.3f64, 1.1f64, 5.0f64] {
                 let expect = o.translated_vec(&x.multiplied_scalar(a * u.cos()))
-                    .translated_vec(&y.multiplied_scalar(-b * u.sin()));
+                    .translated_vec(&y.multiplied_scalar(b * u.sin()));
                 if c.d0(u).distance(&expect) > 1e-6 * a.max(b).max(1.0) {
                     return None;
                 }

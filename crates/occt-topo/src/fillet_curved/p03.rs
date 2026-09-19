@@ -411,8 +411,7 @@ pub(super) fn build_xy_arc(
     let mut e = b.make_edge_circle(&ax2, r, a1, a2);
     let v1 = b.make_vertex(center_xy.add(&Xy { x: r * a1.cos(), y: r * a1.sin() }).to_pnt(z, xh, yh, ax, ref_pt), 0.0);
     let v2 = b.make_vertex(center_xy.add(&Xy { x: r * a2.cos(), y: r * a2.sin() }).to_pnt(z, xh, yh, ax, ref_pt), 0.0);
-    b.add(&mut e.0, &v1.0);
-    b.add(&mut e.0, &v2.0);
+    b.add_edge_vertices(&mut e, &v1, &v2);
     Ok(e)
 }
 

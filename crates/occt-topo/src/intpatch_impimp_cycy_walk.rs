@@ -4,7 +4,7 @@
 use std::f64::consts::PI;
 
 use occt_core::gp::{GpCylinder, GpVec};
-use occt_core::precision::{CONFUSION, PCONFUSION, SQUARE_CONFUSION};
+use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL, SQUARE_CONFUSION};
 
 use crate::geom_int::GeomIntLine;
 use crate::int_tools_wline::{PatchPoint, WLine, WLineWay};
@@ -17,8 +17,6 @@ use super::{
 };
 use super::super::glines::PairOutcome;
 use super::super::quad::{normale, ImplicitQuad};
-
-const REAL_SMALL: f64 = 1.0e-150;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WlStatus {
@@ -352,6 +350,8 @@ pub(crate) fn cy_cy_walk(
                         && (v1[i] - dom.v1l) <= dom.tol2d
                         && (dom.v2f - v2[i]) <= dom.tol2d
                         && (v2[i] - dom.v2l) <= dom.tol2d;
+                    // `IntPatch_ImpImpIntersection.cxx:7055-7058`:
+                    // `(((aVSurf1f - aV1[i]) * (aVSurf1f - aV1Prev[i]) < RealSmall()) && ...)`.
                     let is_v_int = (((dom.v1f - v1[i]) * (dom.v1f - v1_prev[i]) < REAL_SMALL)
                         && ((dom.v1l - v1[i]) * (dom.v1l - v1_prev[i]) < REAL_SMALL))
                         || (((dom.v2f - v2[i]) * (dom.v2f - v2_prev[i]) < REAL_SMALL)

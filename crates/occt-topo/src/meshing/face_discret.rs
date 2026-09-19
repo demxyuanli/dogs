@@ -467,6 +467,15 @@ impl<'a> FaceChecker<'a> {
 
     /// Whether a face is degenerate: no outer wire, fewer than three distinct
     /// outer points, or zero UV area.
+    ///
+    /// UNPORTED: OCCT `BRepMesh_FaceChecker` does self-intersection checking
+    /// only (`BRepMesh_FaceChecker.cxx:224-236` `Perform`); it has no
+    /// outer-wire area predicate. The nearest real OCCT predicates are
+    /// `BRepMesh_Triangulator.cxx:180-183` (`Precision::SquareConfusion()`, used
+    /// only to pick a quad diagonal, deleting nothing) and
+    /// `BRepMesh_BaseMeshAlgo.cxx:116-120` ("Prevent holes around wire of zero
+    /// area", which only re-tags links as `BRepMesh_Fixed`). The 1e-9 and 1e-12
+    /// thresholds below are Rust-only and are kept unchanged.
     pub fn is_degenerate(face: &MeshFace) -> bool {
         if face.outer_wire.len() < 3 {
             return true;

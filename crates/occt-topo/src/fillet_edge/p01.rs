@@ -116,8 +116,7 @@ impl EdgeCache {
         let mut e = self.b.make_edge_circle(&ax2, radius, a1, a2);
         let v1 = self.b.make_vertex(*a, 0.0);
         let v2 = self.b.make_vertex(*b, 0.0);
-        self.b.add(&mut e.0, &v1.0);
-        self.b.add(&mut e.0, &v2.0);
+        self.b.add_edge_vertices(&mut e, &v1, &v2);
         self.arcs.insert(key, e.clone());
         Ok(e)
     }

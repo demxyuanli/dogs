@@ -608,14 +608,27 @@ impl CircleTool {
 
     /// Circumcircle of three points, or `None` when they are collinear or
     /// coincident. Returns `(u, v, radius)`. Port of `BRepMesh_CircleTool::MakeCircle`.
+    ///
+    /// DUPLICATE PORT: the faithful port of `BRepMesh_CircleTool::MakeCircle` is
+    /// `delaun/p01.rs:150-183`. This copy is not reachable from the production
+    /// mesh pipeline -- its only callers are the tests at `delaun_index.rs:673+`
+    /// (`delaun/mod.rs:9-11` still says the sibling file is "under construction").
+    /// Documented rather than aligned; do NOT mistake it for a faithful port.
     pub fn make_circle(
         p1: (f64, f64),
         p2: (f64, f64),
         p3: (f64, f64),
     ) -> Option<(f64, f64, f64)> {
+        // `BRepMesh_CircleTool.cxx:80-81`: `aPrecision = Precision::PConfusion()`
+        // = `Confusion() * 0.01` = 1e-9 (`Precision.hxx:334`),
+        // `aSqPrecision = aPrecision * aPrecision`.
         const PRECISION: f64 = 1e-9;
         const SQ_PRECISION: f64 = PRECISION * PRECISION;
-        const RESOLUTION: f64 = 1e-9;
+        // UNPORTED: the determinant guard in `BRepMesh_CircleTool.cxx:112` is
+        // `std::abs(aD) < gp::Resolution()`, i.e. `RealSmall()` = `DBL_MIN`
+        // (`gp.hxx:60`, `Standard_Real.hxx:132-135`); 1e-9 is not OCCT-derived.
+        // `delaun/p01.rs:167` uses `REAL_SMALL` for the same test.
+        const UNPORTED_DETERMINANT_GUARD: f64 = 1e-9;
 
         let (x1, y1) = p1;
         let (x2, y2) = p2;
@@ -635,7 +648,7 @@ impl CircleTool {
         }
 
         let d = 2.0 * (x1 * l1.1 + x2 * l2.1 + x3 * l3.1);
-        if d.abs() < RESOLUTION {
+        if d.abs() < UNPORTED_DETERMINANT_GUARD {
             return None;
         }
         let inv_d = 1.0 / d;

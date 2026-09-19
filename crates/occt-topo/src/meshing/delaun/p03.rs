@@ -4,16 +4,15 @@ use super::*;
 impl Delaun {
 
     pub(super) fn frontier_adjust(&mut self) {
-        // `HashSet` iteration order is nondeterministic; OCCT uses
-        // `TColStd_PackedMapOfInteger` with stable iteration. Sort only here —
-        // not in `Frontier()` / `create_triangles` poly maps.
+        // `Frontier()` walks `LinksOfDomain()`, an OCCT `NCollection_PackedMap<int>`
+        // traversed in ascending id order (`BRepMesh_MeshTool.cxx:284-300`); our
+        // structure stores it in a `BTreeSet`, so the ids are already ascending.
         let mut frontier_ids: Vec<i32> = self.frontier().into_iter().collect();
-        frontier_ids.sort_unstable();
         let mut failed_frontiers: Vec<i32> = Vec::new();
-        let mut loop_edges: HashMap<i32, bool> = HashMap::new();
-        let mut int_frontier_edges: HashSet<i32> = HashSet::new();
+        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut int_frontier_edges: BTreeSet<i32> = BTreeSet::new();
 
-        for pass in 1..=2 {
+        for _pass in 1..=2 {
             for &frontier_id in &frontier_ids {
                 let pair = self.mesh_data.elements_connected_to(frontier_id);
                 let nb = pair.extent();
@@ -25,8 +24,14 @@ impl Delaun {
                     let element = self.mesh_data.get_element(prior_elem);
                     let mut found = false;
                     for n in 0..3 {
+                        if frontier_id == element.link_at(n).abs() {
+                            if element.link_at(n) < 0 {
+                                found = true;
+                            }
+                        }
+                    }
+                    for n in 0..3 {
                         if frontier_id == element.link_at(n).abs() && element.link_at(n) < 0 {
-                            found = true;
                             self.delete_triangle(prior_elem, &mut loop_edges);
                             break;
                         }
@@ -37,8 +42,7 @@ impl Delaun {
                 }
             }
 
-            let loop_keys: Vec<i32> = loop_edges.keys().copied().collect();
-            for &e in &loop_keys {
+            let loop_keys: Vec<i32> = loop_edges.keys().copied().collect();            for &e in &loop_keys {
                 if self.mesh_data.elements_connected_to(e).is_empty() {
                     self.mesh_data.remove_link(e, false);
                 }
@@ -53,7 +57,7 @@ impl Delaun {
                 if let Some(s) = skipped {
                     int_frontier_edges = s;
                 }
-                if pass == 2 && !success {
+                if _pass == 2 && !success {
                     failed_frontiers.push(frontier_id);
                 }
             }
@@ -83,7 +87,7 @@ impl Delaun {
         boxes.push(b);
     }
 
-    pub(super) fn mesh_left_polygon_of(&mut self, start_edge_id: i32, is_forward: bool, skipped: &mut Option<HashSet<i32>>) -> bool {
+    pub(super) fn mesh_left_polygon_of(&mut self, start_edge_id: i32, is_forward: bool, skipped: &mut Option<BTreeSet<i32>>) -> bool {
         if let Some(s) = skipped.as_ref() {
             if s.contains(&start_edge_id) {
                 return true;
@@ -114,8 +118,8 @@ impl Delaun {
         update_bnd_box(start_edge_vertex_s, a_pivot_vertex, &mut b0);
         boxes.push(b0);
 
-        let mut dead_links: HashSet<i32> = HashSet::new();
-        let mut leprous_links: HashSet<i32> = HashSet::new();
+        let mut dead_links: BTreeSet<i32> = BTreeSet::new();
+        let mut leprous_links: BTreeSet<i32> = BTreeSet::new();
         leprous_links.insert(start_edge_id);
 
         let mut is_skip_leprous = true;
@@ -187,10 +191,10 @@ impl Delaun {
         ref_link_dir: GpVec2d,
         boxes: &[BndB2],
         polygon: &[i32],
-        skipped: Option<&HashSet<i32>>,
+        skipped: Option<&BTreeSet<i32>>,
         is_skip_leprous: bool,
-        leprous_links: &mut HashSet<i32>,
-        dead_links: &mut HashSet<i32>,
+        leprous_links: &mut BTreeSet<i32>,
+        dead_links: &mut BTreeSet<i32>,
     ) -> Option<(i32, i32, GpVec2d, BndB2)> {
         let mut max_angle = f64::NEG_INFINITY;
         let mut next_link_id = 0;
@@ -327,9 +331,9 @@ impl Delaun {
         if poly_len < 3 {
             return;
         }
-        let mut loop_edges: HashMap<i32, bool> = HashMap::new();
-        let mut ignored_edges: HashSet<i32> = HashSet::new();
-        let mut poly_vertices_find_map: HashSet<i32> = HashSet::new();
+        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut ignored_edges: BTreeSet<i32> = BTreeSet::new();
+        let mut poly_vertices_find_map: BTreeSet<i32> = BTreeSet::new();
         let mut poly_vertices: Vec<i32> = Vec::new();
 
         for poly_it in 1..=poly_len {
@@ -425,11 +429,11 @@ impl Delaun {
         &mut self,
         zombie_node_id: i32,
         poly_vertices: &[i32],
-        poly_vertices_find_map: &HashSet<i32>,
+        poly_vertices_find_map: &BTreeSet<i32>,
         the_polygon: &[i32],
         the_poly_boxes: &[BndB2],
-        survived_links: &mut HashSet<i32>,
-        loop_edges: &mut HashMap<i32, bool>,
+        survived_links: &mut BTreeSet<i32>,
+        loop_edges: &mut BTreeMap<i32, bool>,
         victim_nodes: &mut Vec<i32>,
     ) {
         let neighbors: Vec<i32> = self.mesh_data.links_connected_to(zombie_node_id).to_vec();
@@ -503,8 +507,8 @@ impl Delaun {
         end_point: i32,
         the_polygon: &[i32],
         the_poly_boxes: &[BndB2],
-        survived_links: &mut HashSet<i32>,
-        loop_edges: &mut HashMap<i32, bool>,
+        survived_links: &mut BTreeSet<i32>,
+        loop_edges: &mut BTreeMap<i32, bool>,
     ) {
         if survived_links.contains(&link_to_check_id) {
             return;
@@ -528,7 +532,7 @@ impl Delaun {
         }
     }
 
-    pub(super) fn kill_link_triangles(&mut self, link_id: i32, loop_edges: &mut HashMap<i32, bool>) {
+    pub(super) fn kill_link_triangles(&mut self, link_id: i32, loop_edges: &mut BTreeMap<i32, bool>) {
         let elem_nb = self.mesh_data.elements_connected_to(link_id).extent();
         for _ in 0..elem_nb {
             let elem_id = self.mesh_data.elements_connected_to(link_id).first_index();

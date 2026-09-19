@@ -407,7 +407,7 @@ pub(super) fn surface_grid_mesh_uv(surf: &dyn occt_geom::Surface, u0: f64, u1: f
                 let n1 = verts[b].coord.subtracted(&verts[a].coord).crossed(&verts[c].coord.subtracted(&verts[a].coord));
                 if ns.dot(&n1) < 0.0 {
                     tris.push((a, c, b));
-                    tris.push((b, d, c));
+                    tris.push((c, d, b));
                 } else {
                     tris.push((a, b, c));
                     tris.push((b, d, c));

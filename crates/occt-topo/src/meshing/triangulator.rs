@@ -15,6 +15,23 @@
 //!   pipeline; `mesh_algo.rs` / `deflection_control.rs` / `node_insertion.rs`
 //!   are Wave-3 stubs, so this module plays that role for the mesh algorithms
 //!   below).
+//!
+//! UNPORTED members of `BRepMesh_Triangulator` (verified against
+//! `D:\source\OCCT-src\src\ModelingAlgorithms\TKMesh\BRepMesh\BRepMesh_Triangulator.cxx`):
+//! - `addTriange34` (`cxx:130-169`) and `checkCondition` (`cxx:171-185`): the
+//!   simplified-wire fast path that turns a 3-point wire into one triangle and a
+//!   4-point wire into two by picking the shorter diagonal. Not ported here.
+//! - `Perform` (`cxx:87-108`) and `prepareMeshStructure` (`cxx:187-231`) are the
+//!   only callers, so the fast path is unreachable until `Perform` exists.
+//!
+//! Scope note: `BRepMesh_Triangulator` is NOT part of the BRep meshing pipeline.
+//! Its only reference in OCCT is
+//! `src\DataExchange\TKDEVRML\VrmlData\VrmlData_IndexedFaceSet.cxx:204`, i.e. the
+//! VRML reader. The STEP/OBJ export path used by `brep_exchange` goes through
+//! `IncrementalMesh::triangulate_model_faces`, which drives
+//! `DelaunayNodeInsertionMeshAlgo` (`node_insertion.rs`); the `Triangulator`
+//! struct in this file is referenced only by its own unit tests. Porting the
+//! fast path therefore cannot change any STEP-derived mesh.
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,6 +41,7 @@ use occt_geom::Surface;
 
 use super::data_model::MeshModel;
 use super::delaun::Delaun;
+use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunVertex, VertexState};
 use super::edge_discret::MeshFace as UvFace;
 use super::mesh_tool::{FaceMeshData, MeshTool};
@@ -68,11 +86,11 @@ impl Triangulator {
 
     /// Triangulates a face given its UV vertices + constraint edges onto `surface`.
     ///
-    /// Boundary vertices (the endpoints of `data.constraint_edges`) are tagged
-    /// `Frontier`; for a convex face the Delaunay triangulation preserves the
-    /// outer wire as hull edges. Interior triangles whose deviation from the
-    /// surface exceeds the face deflection are refined by inserting their UV
-    /// barycenters and re-triangulating.
+    /// Boundary vertices are tagged `Frontier` and `data.constraint_edges` are
+    /// registered as `Frontier` constraint links, so the outer wire is preserved
+    /// by `FrontierAdjust`/`CleanupMesh` (see [`Self::run_delaun`]). Interior
+    /// triangles whose deviation from the surface exceeds the face deflection are
+    /// refined by inserting their UV barycenters and re-triangulating.
     pub fn triangulate(
         &self,
         surface: &dyn Surface,
@@ -154,38 +172,70 @@ impl Triangulator {
     /// Builds the Delaunay input over the face's boundary UV vertices plus the
     /// given interior refinement points and runs the triangulation.
     ///
-    /// Boundary vertices (those on a constraint edge) are tagged `Frontier`;
-    /// interior points are `Free`. The Delaunay triangulation of a point set
-    /// keeps the convex hull edges, so the outer wire of a convex face is
-    /// preserved without explicit constraint links.
+    /// This is the port of `BRepMesh_Triangulator::prepareMeshStructure`
+    /// (`BRepMesh_Triangulator.cxx:186-230`): every wire node is registered with
+    /// `BRepMesh_Frontier` movability, every wire link is registered as a
+    /// `BRepMesh_Frontier` constraint link, and the mesher is then run over that
+    /// existing structure (`BRepMesh_Delaun(myMeshStructure, *myIndices)`,
+    /// `BRepMesh_Triangulator.cxx:237` = `Delaun::new_with_data`, which ports
+    /// `BRepMesh_Delaun(theOldMesh, theVertexIndices)`,
+    /// `BRepMesh_Delaun.cxx:201-213`).
     ///
-    /// This convex-hull path is superseded for shape meshing by the faithful
-    /// `DelaunayNodeInsertionMeshAlgo` (pcurve boundary + constraint links); it
-    /// remains for the standalone `triangulate_face_polygon` / `triangulate_model`
-    /// convenience entry points.
+    /// Registering the constraint links is not optional. `ProcessConstraints`
+    /// (`BRepMesh_Delaun.cxx:703`) ends in `FrontierAdjust` (`:944-1046`) and
+    /// `CleanupMesh` (`:815-936`, called from `:1028`); cleanup keeps a triangle
+    /// only when its free edge is bound to a non-`Free` link
+    /// (`isBoundToFrontier`, `:589-621`). With no Frontier/Fixed link registered
+    /// the structure is effectively all-`Free`, so cleanup deletes every
+    /// triangle. Interior refinement points are `Free`, as in
+    /// `BRepMesh_Triangulator` (which registers boundary nodes only).
     fn run_delaun(&self, data: &FaceMeshData, interior: &[GpPnt2d]) -> Result<Delaun, String> {
         let boundary: HashSet<usize> =
             data.constraint_edges.iter().flat_map(|&(a, b)| [a, b]).collect();
 
-        let mut vertices: Vec<DelaunVertex> = Vec::with_capacity(data.vertices.len() + interior.len());
+        let mut structure = DelaunDataStructure::new(data.vertices.len() + interior.len());
+        let mut indices: Vec<i32> = Vec::with_capacity(data.vertices.len() + interior.len());
         for (i, v) in data.vertices.iter().enumerate() {
             let state = if boundary.contains(&i) {
                 VertexState::Frontier
             } else {
                 VertexState::Free
             };
-            vertices.push(DelaunVertex::new(
+            indices.push(structure.add_node(DelaunVertex::new(
                 GpPnt2d::new(v.u, v.v),
                 GpPnt::zero(),
                 i as i32,
                 state,
-            ));
+            )));
         }
         for &uv in interior {
-            vertices.push(DelaunVertex::new(uv, GpPnt::zero(), 0, VertexState::Free));
+            indices.push(structure.add_node(DelaunVertex::new(uv, GpPnt::zero(), 0, VertexState::Free)));
         }
 
-        Ok(Delaun::new_vertices(&vertices))
+        // Wire links in wire order, marked `Frontier`
+        // (`BRepMesh_Triangulator.cxx:210-216`). `AddLink` returns the existing
+        // link for an already registered node pair and leaves its movability
+        // untouched (`BRepMesh_DataStructureOfDelaun.cxx:74-84`), so the mesher's
+        // own `Free` link requests reuse these Frontier links.
+        for &(a, b) in &data.constraint_edges {
+            let na = *indices.get(a).ok_or_else(|| {
+                format!(
+                    "Triangulator::run_delaun: constraint start {a} out of range ({} points)",
+                    data.vertices.len()
+                )
+            })?;
+            let nb = *indices.get(b).ok_or_else(|| {
+                format!(
+                    "Triangulator::run_delaun: constraint end {b} out of range ({} points)",
+                    data.vertices.len()
+                )
+            })?;
+            if na != nb {
+                structure.add_link(na, nb, VertexState::Frontier);
+            }
+        }
+
+        Ok(Delaun::new_with_data(structure, &mut indices))
     }
 
     /// UV barycenters of the triangles whose deviation from the surface exceeds

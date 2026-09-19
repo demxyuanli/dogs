@@ -104,8 +104,7 @@ fn build_wire_from_points(
     let mut edges = Vec::with_capacity(segs.len());
     for (i, j) in segs {
         let mut e = b.make_edge(line_curve(&points[i], &points[j]), 0.0, points[i].distance(&points[j]));
-        b.add(&mut e.0, &verts[i].0);
-        b.add(&mut e.0, &verts[j].0);
+        b.add_edge_vertices(&mut e, &verts[i], &verts[j]);
         edges.push(e);
     }
     let wire = b.make_wire(&edges);
@@ -232,8 +231,7 @@ pub fn make_edge_arc(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt) -> Result<Edge, String>
     let mut e = b.make_edge(curve, 0.0, 1.0); // trimmed curve normalizes to [0, 1]
     let v1 = b.make_vertex(*p1, 0.0);
     let v3 = b.make_vertex(*p3, 0.0);
-    b.add(&mut e.0, &v1.0);
-    b.add(&mut e.0, &v3.0);
+    b.add_edge_vertices(&mut e, &v1, &v3);
     Ok(e)
 }
 

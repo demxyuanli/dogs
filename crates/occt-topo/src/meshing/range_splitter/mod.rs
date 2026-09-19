@@ -29,7 +29,7 @@ pub(crate) use std::f64::consts::PI;
 pub(crate) use std::sync::Arc;
 
 pub(crate) use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
-pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, RESOLUTION, SQUARE_CONFUSION};
+pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL, SQUARE_CONFUSION};
 pub(crate) use occt_geom::Surface;
 
 pub(crate) use super::super::data_model::*;

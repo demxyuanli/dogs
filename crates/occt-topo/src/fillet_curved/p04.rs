@@ -437,8 +437,9 @@ pub(super) fn build_sphere_arc(
     let a1 = va.coord.dot(&ydir.xyz()).atan2(va.coord.dot(&xdir.xyz()));
     let a2 = vb.coord.dot(&ydir.xyz()).atan2(vb.coord.dot(&xdir.xyz()));
     let mut e = b.make_edge_circle(&ax2, radius, a1, a2);
-    b.add(&mut e.0, &b.make_vertex(*a, 0.0).0);
-    b.add(&mut e.0, &b.make_vertex(*bb, 0.0).0);
+    let v1 = b.make_vertex(*a, 0.0);
+    let v2 = b.make_vertex(*bb, 0.0);
+    b.add_edge_vertices(&mut e, &v1, &v2);
     Ok(e)
 }
 
@@ -591,8 +592,9 @@ pub(super) fn build_contact_arc(
     let xd = GpDir::from_xyz(&e1.xyz()).map_err(|e| e.to_string())?;
     let ax2 = GpAx2::new(ct.center, nd, xd).map_err(|e| format!("fillet_curved: tangency arc frame: {e}"))?;
     let mut e = b.make_edge_circle(&ax2, ct.radius, start, end);
-    b.add(&mut e.0, &b.make_vertex(*p_start, 0.0).0);
-    b.add(&mut e.0, &b.make_vertex(*p_end, 0.0).0);
+    let v_start = b.make_vertex(*p_start, 0.0);
+    let v_end = b.make_vertex(*p_end, 0.0);
+    b.add_edge_vertices(&mut e, &v_start, &v_end);
     Ok(e)
 }
 
@@ -633,7 +635,8 @@ pub(super) fn build_sector_cross_arc(
         .translated_vec(&rho.multiplied_scalar(radius * v_a.cos()).added(&dhat.multiplied_scalar(radius * v_a.sin())));
     let p_b = center
         .translated_vec(&rho.multiplied_scalar(radius * v_b.cos()).added(&dhat.multiplied_scalar(radius * v_b.sin())));
-    b.add(&mut arc.0, &b.make_vertex(p_a, 0.0).0);
-    b.add(&mut arc.0, &b.make_vertex(p_b, 0.0).0);
+    let v_a = b.make_vertex(p_a, 0.0);
+    let v_b = b.make_vertex(p_b, 0.0);
+    b.add_edge_vertices(&mut arc, &v_a, &v_b);
     Ok(arc)
 }

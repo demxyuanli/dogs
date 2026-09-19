@@ -193,13 +193,12 @@ impl EdgeParameterProvider {
     /// Map a stored parameter onto the actual range. SameParameter edges pass
     /// the value through unchanged.
     ///
-    /// ponytail: OCCT `BRepMesh_EdgeParameterProvider::Parameter` additionally
-    /// projects the corresponding 3D point onto the pcurve (`Extrema_LocateExtPC`)
-    /// to refine the non-SameParameter result and guard against parameter
-    /// regressions on periodic surfaces. That projection needs a pcurve adaptor
-    /// + a 3D point, neither carried by this stand-in provider (edges produced
-    /// by `make_pcurve_full` are same-parameter, so the path is unreachable
-    /// today); the linear rescale below is the faithful degenerate case.
+    /// Projection-free linear rescale: the `Parameter` result before the
+    /// `Extrema_LocateExtPC` refinement. Kept for callers that carry only 2D
+    /// data (`tessellate_2d`, `parameter`). Callers that do have the 3D point
+    /// and the curve-on-surface must use `parameter_of` below, which implements
+    /// the full `BRepMesh_EdgeParameterProvider::Parameter` refinement and IS
+    /// the path taken by the live pipeline (`incremental_mesh/p01.rs:921,1229`).
     pub fn remap(&self, stored: f64) -> f64 {
         if self.is_same_param {
             return stored;
@@ -806,6 +805,7 @@ pub fn split_by_deflection2d(
     for (c2d, surf) in pcurves {
         // `BRepMesh_CurveTessellator.cxx:168-171`: skip only
         // `STANDARD_TYPE(Geom_Plane)`, not a sampled is_planar classify.
+        // Offset / BSpline / Rev stay in the loop (unlike Value cxx:241-246).
         if surf.gp_pln().is_some() {
             continue;
         }
@@ -881,6 +881,8 @@ fn split_segment_2d(
         return;
     }
     let midpar = 0.5 * (first + last);
+    // `cxx:335-336` AddPoint(myCurve.D0(midpar), midpar, false); params-only
+    // path records midpar — Tessellate3d evaluates the SameParam 3D curve later.
     params.push(midpar);
     split_segment_2d(
         c3d, c2d, surf, first, midpar, iter + 1, sq_def, sq_min, params,
@@ -895,6 +897,10 @@ fn split_segment_2d(
 /// (padded by `U/VResolution(Confusion)`) when the 3D point is farther than
 /// the edge tolerance from `surface(UV)`. Analytic and periodic surfaces keep
 /// every sample.
+///
+/// Type gate matches `cxx:241-246`: only `BSpline` / `Bezier` / `OtherSurface`
+/// run the UV out-of-range check. `OffsetSurface` is excluded even when the
+/// basis exposes poles (`GetType() == GeomAbs_OffsetSurface`).
 pub fn curve_tessellator_value_ok(
     pcurve: &dyn Curve2d,
     surface: &dyn Surface,
@@ -902,10 +908,13 @@ pub fn curve_tessellator_value_ok(
     point: &GpPnt,
     edge_tol: f64,
 ) -> bool {
-    let nurbs_like =
-        surface.nb_u_poles() > 2 || surface.nb_v_poles() > 2 || surface.offset_distance().is_some();
-    if !nurbs_like {
-        return true;
+    use super::range_splitter::SurfaceType;
+    let ty = super::range_splitter::classify_surface(surface);
+    match ty {
+        SurfaceType::BSplineSurface
+        | SurfaceType::BezierSurface
+        | SurfaceType::OtherSurface => {}
+        _ => return true,
     }
     if surface.is_u_periodic() || surface.is_v_periodic() {
         return true;
@@ -1120,10 +1129,21 @@ pub struct CurveOnSurface {
     last: f64,
     kpart_circ: Option<GpCirc>,
     kpart_lin: Option<GpLin>,
+    /// `myFirstSurf` from `EvalFirstLastSurf` (`cxx:1778-1783`).
+    first_surf: Option<Arc<dyn Surface>>,
+    /// `myLastSurf` from `EvalFirstLastSurf` (`cxx:1822-1827`).
+    last_surf: Option<Arc<dyn Surface>>,
 }
 
 impl CurveOnSurface {
-    /// Evaluate `surface(pcurve(t))` on `[first, last]`, with `EvalKPart`.
+    /// Evaluate `surface(pcurve(t))` on `[first, last]`, with `EvalKPart` and
+    /// `EvalFirstLastSurf` (`Adaptor3d_CurveOnSurface::Load` cxx:951-963).
+    ///
+    /// PORTED: Offset unwrap + `LocatePart_Offset` (BSpline + RevExt) +
+    /// `LocatePart_RevExt` + `LocatePart` / `Locate1Coord` (surface+curve) /
+    /// `Locate2Coord` (Arr+param) + UTrim/VTrim end patches for D1/D2
+    /// (`cxx:1212-1266`, `1833-1866`) + `GeomAdaptor` LocalD1/IfUVBound/Span via
+    /// `GeomRectangularTrimmedSurface` (`GeomAdaptor_Surface.cxx:1193-1195`).
     pub fn new(
         pcurve: Arc<dyn Curve2d>,
         surface: Arc<dyn Surface>,
@@ -1131,6 +1151,8 @@ impl CurveOnSurface {
         last: f64,
     ) -> Self {
         let (kpart_circ, kpart_lin) = eval_k_part(pcurve.as_ref(), surface.as_ref());
+        let (first_surf, last_surf) =
+            super::cos_locate::eval_first_last_surf(pcurve.as_ref(), &surface, first, last);
         Self {
             pcurve,
             surface,
@@ -1138,6 +1160,20 @@ impl CurveOnSurface {
             last,
             kpart_circ,
             kpart_lin,
+            first_surf,
+            last_surf,
+        }
+    }
+
+    fn end_surf(&self, u: f64) -> Option<&Arc<dyn Surface>> {
+        // `Adaptor3d_CurveOnSurface::EvalD1` cxx:1208-1222.
+        let tol = PCONFUSION / 10.0;
+        if (u - self.first).abs() < tol {
+            self.first_surf.as_ref()
+        } else if (u - self.last).abs() < tol {
+            self.last_surf.as_ref()
+        } else {
+            None
         }
     }
 }
@@ -1162,7 +1198,8 @@ impl Curve for CurveOnSurface {
             return clib::line_d1(l, u);
         }
         let (uv, duv) = self.pcurve.d1(u);
-        let (p, su, sv) = self.surface.d1(uv.x(), uv.y());
+        let surf = self.end_surf(u).unwrap_or(&self.surface);
+        let (p, su, sv) = surf.d1(uv.x(), uv.y());
         let tan = su
             .multiplied_scalar(duv.x())
             .added(&sv.multiplied_scalar(duv.y()));
@@ -1177,7 +1214,8 @@ impl Curve for CurveOnSurface {
             return clib::line_d2(l, u);
         }
         let (uv, duv, d2uv) = self.pcurve.d2(u);
-        let (p, su, sv, suu, suv, svv) = self.surface.d2(uv.x(), uv.y());
+        let surf = self.end_surf(u).unwrap_or(&self.surface);
+        let (p, su, sv, suu, suv, svv) = surf.d2(uv.x(), uv.y());
         let d1 = su
             .multiplied_scalar(duv.x())
             .added(&sv.multiplied_scalar(duv.y()));
@@ -1234,6 +1272,8 @@ impl Curve for CurveOnSurface {
             last: self.last,
             kpart_circ: self.kpart_circ.clone(),
             kpart_lin: self.kpart_lin,
+            first_surf: self.first_surf.clone(),
+            last_surf: self.last_surf.clone(),
         })
     }
 }

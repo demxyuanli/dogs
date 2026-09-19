@@ -35,8 +35,22 @@ use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunLink, DelaunTriangle, VertexState};
 
 /// A triangle whose UV area is at or below this magnitude is treated as
-/// degenerate and removed by the healer. `Resolution` (1e-12) is far below any
-/// meaningful feature size while still catching exactly-collinear slivers.
+/// degenerate and removed by [`ModelHealer::heal`].
+///
+/// UNPORTED: this constant is NOT derived from OCCT. `BRepMesh_ModelHealer`
+/// never removes triangles (it only fixes wire boundaries and self
+/// intersections on the discrete model), and OCCT has no area-based
+/// degenerate-triangle threshold anywhere in the mesh pipeline. The nearest
+/// real OCCT predicates are:
+/// - `BRepMesh_CircleTool::MakeCircle` (`BRepMesh_CircleTool.cxx:87`, `:95`,
+///   `:103` `aLink.SquareModulus() < Precision::PConfusion()^2`) and
+///   (`BRepMesh_CircleTool.cxx:113` `std::abs(aD) < gp::Resolution()`), applied
+///   at insert time by `BRepMesh_Delaun::addTriangle`
+///   (`BRepMesh_Delaun.cxx:1388-1397`), which drops the triangle when no
+///   circumcircle can be built;
+/// - `BRepMesh_MeshTool::CleanFrontierLinks` (`BRepMesh_MeshTool.cxx:128`),
+///   which destroys triangles lying outside the frontier without any area test.
+/// `1e-12` is kept because there is no equal OCCT branch with a different value.
 const DEGENERATE_AREA_EPS: f64 = RESOLUTION;
 
 /// Outcome counters of [`ModelHealer::heal`].
@@ -255,7 +269,6 @@ impl ModelHealer {
         let (next_first, next_last) = Self::pcurve_ends(model, next_edge, next_pc);
         let (next_side, curr_next_side) =
             Self::closest_pair(next_first, next_last, curr_first, curr_last);
-
         let prev_val = if prev_side { prev_first } else { prev_last };
         let next_val = if next_side { next_first } else { next_last };
 
@@ -693,7 +706,11 @@ mod tests {
             .collect();
         let delaun = Delaun::new_vertices(&pts);
         let ds = delaun.into_result();
-        assert_eq!(ds.elements_of_domain().len(), 8);
+        // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
+        // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
+        // triangles whose neighbour touches the super-triangle. With only Free links
+        // the 3x3 grid keeps 6 triangles over 7 nodes instead of the old 8 over 9.
+        assert_eq!(ds.elements_of_domain().len(), 6);
 
         let b = TopoBuilder::new();
         let face = b.make_face_plane(&GpPln::new(GpAx3::standard()));
@@ -703,11 +720,11 @@ mod tests {
 
         let out = ModelPostProcessor::process(&ds, &model, face_index).expect("process");
 
-        assert_eq!(out.nodes.len(), 9, "all 9 grid vertices written back");
-        assert_eq!(out.uv_nodes.len(), 9, "per-node UV aligned with 3D nodes");
-        assert_eq!(out.triangles.len(), 8, "8 triangles for the 3x3 grid");
-        assert_eq!(out.nodes_nb(), 9);
-        assert_eq!(out.triangles_nb(), 8);
+        assert_eq!(out.nodes.len(), 7, "7 grid vertices written back after cleanupMesh");
+        assert_eq!(out.uv_nodes.len(), 7, "per-node UV aligned with 3D nodes");
+        assert_eq!(out.triangles.len(), 6, "6 triangles for the pruned 3x3 grid");
+        assert_eq!(out.nodes_nb(), 7);
+        assert_eq!(out.triangles_nb(), 6);
         assert_eq!(out.face_index, face_index);
         // Triangle corners index into the compact node array.
         for tri in &out.triangles {

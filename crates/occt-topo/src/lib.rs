@@ -134,6 +134,9 @@ pub mod bop_hist;
 pub mod inttools_data;
 pub mod inttools_range;
 pub mod pcurve;
+// Shared 2D sample-count helpers (`Geom2dAdaptor_Curve::NbSamples` /
+// `Geom2dInt_Geom2dCurveTool::NbSamples`).
+mod curve_sampling_2d;
 // Phase 16b — IntTools sample/localize + full pcurve.
 pub mod inttools_sample;
 pub mod pcurve_full;
@@ -213,6 +216,12 @@ mod geom_bnd_lib_bspline2d;
 mod geom_bnd_lib_offset2d;
 mod geom_bnd_lib_curve2d;
 mod geom_bnd_lib_spline_helpers;
+mod geom_bnd_lib_inf3d;
+mod geom_bnd_lib_circle3d;
+mod geom_bnd_lib_curve3d;
+mod geom_bnd_lib_analytic3d;
+mod geom_bnd_lib_surface3d;
+pub mod brep_bnd_lib;
 mod bnd_lib_add2d;
 mod brep_uv_bounds;
 mod bop_box2d_tree;

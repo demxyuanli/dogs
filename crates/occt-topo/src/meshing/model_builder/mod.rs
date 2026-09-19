@@ -19,7 +19,7 @@ pub(crate) use std::sync::Arc;
 pub(crate) use occt_core::bnd::{BndBox, BndBox2d};
 pub(crate) use occt_core::cslib::{Class2d, Class2dResult};
 pub(crate) use occt_core::gp::GpPnt2d;
-pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, RESOLUTION};
+pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL};
 pub(crate) use occt_geom::Curve;
 pub(crate) use occt_geom2d::curve::Curve2d;
 

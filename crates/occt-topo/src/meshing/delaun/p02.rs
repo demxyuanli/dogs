@@ -115,17 +115,17 @@ impl Delaun {
     }
 
     /// Gives the list of frontier edges. Source: `Frontier()`.
-    pub fn frontier(&self) -> HashSet<i32> {
+    pub fn frontier(&self) -> BTreeSet<i32> {
         self.get_edges_by_type(VertexState::Frontier)
     }
 
     /// Gives the list of internal (fixed) edges. Source: `InternalEdges()`.
-    pub fn internal_edges(&self) -> HashSet<i32> {
+    pub fn internal_edges(&self) -> BTreeSet<i32> {
         self.get_edges_by_type(VertexState::Fixed)
     }
 
     /// Gives the list of free edges used at most once. Source: `FreeEdges()`.
-    pub fn free_edges(&self) -> HashSet<i32> {
+    pub fn free_edges(&self) -> BTreeSet<i32> {
         self.get_edges_by_type(VertexState::Free)
     }
 
@@ -148,7 +148,7 @@ impl Delaun {
     pub fn remove_vertex(&mut self, vertex: &DelaunVertex) {
         let mut selector = DelaunSelector::new(&self.mesh_data);
         selector.neighbours_of(vertex);
-        let mut loop_edges: HashMap<i32, bool> = HashMap::new();
+        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
         let elements: Vec<i32> = selector.elements().iter().copied().collect();
         for id in elements {
             self.delete_triangle(id, &mut loop_edges);
@@ -303,7 +303,7 @@ impl Delaun {
     }
 
     pub(super) fn compute(&mut self, vertex_indexes: &mut Vec<i32>) {
-        let mut loop_edges: HashMap<i32, bool> = HashMap::new();
+        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
         for i in 0..3 {
             loop_edges.insert(self.sup_trian.link_at(i).abs(), true);
         }
@@ -315,7 +315,7 @@ impl Delaun {
         self.remove_aux_elements();
     }
 
-    pub(super) fn delete_triangle(&mut self, index: i32, loop_edges: &mut HashMap<i32, bool>) {
+    pub(super) fn delete_triangle(&mut self, index: i32, loop_edges: &mut BTreeMap<i32, bool>) {
         if self.init_circles {
             self.circles.delete(index);
         }
@@ -332,8 +332,8 @@ impl Delaun {
     }
 
     pub(super) fn remove_aux_elements(&mut self) {
-        let mut loop_edges: HashMap<i32, bool> = HashMap::new();
-        let mut elements: HashSet<i32> = HashSet::new();
+        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut elements: BTreeSet<i32> = BTreeSet::new();
         {
             let mut selector = DelaunSelector::new(&self.mesh_data);
             let sup = self.sup_vert.clone();
@@ -363,7 +363,7 @@ impl Delaun {
         }
     }
 
-    pub(super) fn create_triangles(&mut self, vertex_index: i32, poly: &mut HashMap<i32, bool>) {
+    pub(super) fn create_triangles(&mut self, vertex_index: i32, poly: &mut BTreeMap<i32, bool>) {
         let mut loop_edges: Vec<i32> = Vec::new();
         let mut external_edges: Vec<i32> = Vec::new();
         let vertex_coord = self.mesh_data.get_node(vertex_index).location.coord;
@@ -460,7 +460,7 @@ impl Delaun {
         while i < upper {
             let vertex_idx = vertex_indexes[i];
             let vertex = *self.mesh_data.get_node(vertex_idx);
-            let mut loop_edges: HashMap<i32, bool> = HashMap::new();
+            let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
             let mut circles_list = self.circles.select(vertex.location.coord);
 
             let mut on_edge_id = 0;
@@ -509,15 +509,15 @@ impl Delaun {
             i += 1;
         }
 
-        // Constraint processing (frontier adjustment + mesh cleanup) only makes
-        // sense when the mesh actually has constraint edges. For a plain
-        // triangulation (no Frontier/Fixed edges) OCCT's `cleanupMesh` would
-        // strip every boundary triangle whose neighbour touches the super
-        // triangle, orphaning valid hull vertices. Skip it so a plain Delaunay
-        // keeps a complete triangulation.
-        if !self.frontier().is_empty() || !self.internal_edges().is_empty() {
-            self.process_constraints();
-        }
+        // `ProcessConstraints()` is called UNCONDITIONALLY at the tail of
+        // `BRepMesh_Delaun::createTrianglesOnNewVertices`
+        // (`BRepMesh_Delaun.cxx:703`, body `insertInternalEdges();
+        // frontierAdjust()`). The vertex loop (`cxx:629-700`) is followed by
+        // this call rather than containing it, so it is reached even when the
+        // vertex list is empty. `frontierAdjust` is the only mechanism that
+        // closes leftover free-edge loops, so skipping it here leaves them
+        // unclosed.
+        self.process_constraints();
     }
 
     pub(super) fn add_triangle(&mut self, edges: [i32; 3], oris: [bool; 3], nodes: [i32; 3]) {
@@ -588,7 +588,7 @@ impl Delaun {
 
     pub(super) fn is_bound_to_frontier(&self, ref_node_id: i32, ref_link_id: i32) -> bool {
         let mut stack: Vec<i32> = vec![ref_link_id];
-        let mut visited: HashSet<i32> = HashSet::new();
+        let mut visited: BTreeSet<i32> = BTreeSet::new();
         while let Some(cur) = stack.pop() {
             let pair = self.mesh_data.elements_connected_to(cur);
             if pair.is_empty() {
@@ -623,8 +623,8 @@ impl Delaun {
 
     pub(super) fn cleanup_mesh(&mut self) {
         loop {
-            let mut loop_edges: HashMap<i32, bool> = HashMap::new();
-            let mut del_triangles: HashSet<i32> = HashSet::new();
+            let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+            let mut del_triangles: BTreeSet<i32> = BTreeSet::new();
 
             // `FreeEdges()` is `TColStd_PackedMapOfInteger` — sorted keys.
             let mut free_edges: Vec<i32> = self.free_edges().into_iter().collect();

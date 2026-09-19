@@ -142,6 +142,53 @@ fn is_regular_block(edges: &[Edge]) -> bool {
     deg.values().all(|&d| d % 2 == 0)
 }
 
+/// Split `edges` into vertex-connexity blocks, in input order.
+///
+/// Mirrors `BOPTools_AlgoTools::MakeConnexityBlocks(theEdges, TopAbs_VERTEX,
+/// TopAbs_EDGE, theBlocks)`: two edges belong to the same block when they share
+/// a vertex (transitively). Vertex identity is the quantized position used by
+/// the chaining above, so the blocks match the `edge_vertices` endpoints.
+fn connexity_blocks(edges: &[Edge]) -> Vec<Vec<Edge>> {
+    let n = edges.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(parent: &mut Vec<usize>, mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    let mut owner: HashMap<VKey, usize> = HashMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        let (a, b) = edge_vertices(e);
+        for v in [a, b].into_iter().flatten() {
+            let k = vertex_key(&v);
+            match owner.get(&k).copied() {
+                Some(j) => {
+                    let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                    if ri != rj {
+                        parent[ri] = rj;
+                    }
+                }
+                None => {
+                    owner.insert(k, i);
+                }
+            }
+        }
+    }
+    let mut blocks: Vec<Vec<Edge>> = Vec::new();
+    let mut slot: HashMap<usize, usize> = HashMap::new();
+    for (i, e) in edges.iter().enumerate() {
+        let r = find(&mut parent, i);
+        let idx = *slot.entry(r).or_insert_with(|| {
+            blocks.push(Vec::new());
+            blocks.len() - 1
+        });
+        blocks[idx].push(e.clone());
+    }
+    blocks
+}
+
 /// A set of edges together with the face they belong to.
 ///
 /// Mirrors `BOPAlgo_WireEdgeSet`: the edges are the (intersection) result of
@@ -269,8 +316,34 @@ impl WireSplitter {
             return Err("BOPAlgo_WireSplitter::perform: no input edges".to_string());
         }
         let regular = is_regular_block(&self.wes.edges);
-        // OCCT MakeWires: a regular connexity block is MakeWire; an irregular
-        // block (odd-degree vertices) always runs SplitBlock when a face is set.
+        // OCCT `BOPAlgo_WireSplitter::MakeWires`: the wire edge set is first
+        // split into vertex-connexity blocks
+        // (`BOPTools_AlgoTools::MakeConnexityBlocks(StartElements, VERTEX,
+        // EDGE, myLCB)`), then every block is chained by `SplitBlock` -- a
+        // regular block through the `bNothingToDo` early-out (`MakeWire` on
+        // the block shapes), an irregular one through the angle walk (`Path`).
+        // Feeding all blocks at once would merge them in that early-out.
+        if let Some(face) = self.wes.face().cloned() {
+            let mut wires: Vec<TopoShape> = Vec::new();
+            for block in connexity_blocks(&self.wes.edges) {
+                match crate::wire_splitter_block::split_block(&face, &block) {
+                    Ok(mut w) => wires.append(&mut w),
+                    Err(_) => {
+                        // No usable pcurve on the face for this block: keep the
+                        // coordinate-based chaining.
+                        let pool = if is_regular_block(&block) {
+                            dedup_edges(&block)
+                        } else {
+                            block
+                        };
+                        let mut w = Self::split_edges(pool)?;
+                        wires.append(&mut w);
+                    }
+                }
+            }
+            self.wires = wires;
+            return Ok(());
+        }
         if !regular {
             if let Some(face) = self.wes.face().cloned() {
                 self.wires = crate::wire_splitter_block::split_block(&face, &self.wes.edges)?;
@@ -539,8 +612,7 @@ mod tests {
             1.0,
         );
         let v = b.make_vertex(p, 0.0);
-        b.add(&mut e.0, &v.0);
-        b.add(&mut e.0, &v.0); // same vertex twice -> endpoints coincide
+        b.add_edge_vertices(&mut e, &v, &v); // same vertex twice -> endpoints coincide
         let mut edges = vec![e];
         let w = WireSplitter::make_wire(&mut edges).expect("closed edge makes a wire");
         assert!(w.is_wire());

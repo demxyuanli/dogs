@@ -53,10 +53,34 @@ pub(crate) fn edge_key(e: &Edge) -> EKey {
     }
 }
 
+/// Oriented traversal of an edge view: the endpoint keys where the view starts
+/// and where it ends.
+///
+/// `TopExp_Explorer` / `TopoDS_Iterator` deliver every edge with the orientation
+/// composed down from its parents (`TopoDS_Iterator.cxx:72-81`); the edge's own
+/// first/last vertices fix its intrinsic direction ([`edge_vertices`]).
+/// OCCT only ever compares two edge orientations after
+/// `TopoDS_Shape::IsSame` (same TShape), so both views share that intrinsic
+/// direction and the comparison is a traversal comparison
+/// (`BOPTools_AlgoTools::GetEdgeOff`, `BOPTools_AlgoTools.cxx:1099-1126`;
+/// `BOPTools_AlgoTools::GetFaceOff`, `BOPTools_AlgoTools.cxx:1051`). This port
+/// identifies edges geometrically ([`edge_key`]), where two views of one
+/// segment may be built with opposite vertex order, so the traversal itself has
+/// to be compared.
+pub(crate) fn edge_traversal(e: &Edge) -> Option<(VKey, VKey)> {
+    let (a, b) = edge_vertices(e);
+    let (a, b) = (a?, b?);
+    let (ka, kb) = (vertex_key(&a), vertex_key(&b));
+    match e.0.orientation() {
+        Orientation::Forward => Some((ka, kb)),
+        Orientation::Reversed => Some((kb, ka)),
+        _ => None,
+    }
+}
+
 /// Set of edge keys of a face (every distinct boundary edge).
 fn face_edge_keys(f: &Face) -> HashSet<EKey> {
-    edges_of(&f.0).into_iter().map(|e| edge_key(&e)).collect()
-}
+    edges_of(&f.0).into_iter().map(|e| edge_key(&e)).collect()}
 
 /// Build a shell containing `faces` (in order). Closed flag is set only when
 /// `BRep_Tool::IsClosed` holds (`ShellSplitter.cxx:383-386`).
