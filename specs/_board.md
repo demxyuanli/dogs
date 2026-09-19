@@ -158,7 +158,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-56 | A20 | `occt-topo/src/step/p05.rs:508-604` | `p1.distance(p2) < 1e-3` 替代 `V1.IsSame(V2)`；`Other`/HYPERBOLA 边域落 `(0,1)` → `StepToTopoDS_TranslateEdge.cxx:438,443` + `ShapeAnalysis_Curve.cxx:376-400` | **6** | pending |
 | T-57 | A21 | `occt-topo/src/meshing/model_healer.rs:279-290` | 退化支路左右端接反、丢 `aPrevSqDist - aNextSqDist` 判定 → `BRepMesh_ModelHealer.cxx:491-512` + `hxx:143-151` | **6** | **done**（2026-09-20） |
 | T-58 | A22 | `occt-topo/src/step/p05.rs:348-370,740-760` | `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂；圆用三点外心回退 → `ShapeAnalysis_Curve.cxx:382-400,160,200` | 6 | pending |
-| T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | pending |
+| T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | **已尝试 → 回退，被 A13/A18 阻塞**（2026-09-20）：按 `BRepTools.cxx:172-367` 完整移植（`box_curve2d` 精确盒 + B-spline 周期验证 2/3/6 点 + 非周期钳制）后 `step_obj_parity` 14/14→**13/14**：`data/occ/T0M.stp` 的 **bbox min[2] ours=-424.978671 occ=-424.741876（Δ=0.237）**——忠实窗口等于 OCCT 的 `BRepTools::UVBounds`，但**消费方**是本仓自创的"UV 矩形栅格"建网格（A13/A18），而 OCCT 的网格由 pcurve 驱动（`BRepMesh_FaceDiscret`），所以凸包级别的窗口外扩不会漏进 OCCT 的网格。⇒ 必须先做 A13/A18（或改为逐样本判定），再重放本改动 |
 | T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | pending |
 | T-61 | A25 | `meshing/delaun/p04.rs:346-375` | 自造"先删邻三角形再 AddElement" → `BRepMesh_Delaun.cxx:2263-2274` 失败即置 `IMeshData_Failure`，不改网格 | 7 | pending |
 | T-62 | A26 | `brep_exchange.rs:118,125`、`occt-core/src/io/{ply,stl}.rs`、`iges.rs:168,390-438`、`step/p02.rs:16-17,43`、`vrml.rs:92`、`obj.rs` | PLY 焊接/属性类型、STL 阈值/头/嗅探、IGES 采样族与自造回转面、STEP 写侧采样重拟、`solid TRUE`、恒空 `vn` → 各 `RWPly_*`/`RWStl*`/`GeomToIGES_*`/`GeomToStep_MakeCurve.cxx:94-99`/`VrmlData_ShapeConvert.cxx:360` | 8 | pending |
@@ -228,6 +228,13 @@ cd ..; git worktree remove --force .target-headcheck
 - **改动**：`brep_exchange::export_mesh` 去掉 `.or_else(brepmesh::incremental_mesh)`（legacy 四叉树）与 `.unwrap_or_else(shape_mesh::mesh_shape)`（UV 栅格）两级回退——OCCT 的 OBJ 写侧 `RWObj_CafWriter` 读的是形状上**已有的**三角化（`RWMesh_FaceIterator.cxx:87`），缺三角化时**跳过**该面（`:89`），从不切换网格器。现在网格化失败即返回空网格（显式、可观测），不再静默换成非 OCCT 算法。
 - **形参改名**：`deflection` → `maximal_chordial_deviation`（对外 7 个函数 + `prs3d_get_deflection` 同改），并在三处注释里写清：该参数是 drawer 的 `MaximalChordialDeviation`，**只在包围盒为空/无界时**生效；真正驱动密度的是 `Prs3d::GetDeflection = maxComp(bbox)*0.001*4`（`Prs3d.hxx:82-103`）。同步更新 `examples/export_data_obj.rs`、`tests/step_obj_parity.rs`、`tests/step_obj_area.rs` 的过时注释（原文仍称"Rust 用 UV 栅格"）。
 - **验证**：`occt-topo --lib` 1293/1（唯一红仍 T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3 —— **门禁全绿且逐项与基线一致** ⇒ 对全部门禁模型，Delaunay 管线本身即可成功，被删的两级回退**从未被需要**（此前只是静默兜底风险）。
+
+**批 5 先行尝试（T-59 / A23）：`face_uv_bounds` → 忠实 `AddUVBounds` —— 已回退，2026-09-20**
+
+- **做了什么**：按 `BRepTools.cxx:172-367` 完整移植 `AddUVBounds`（替换 138 行自创启发式：9 点采样、`period_shift` 手工解缠绕、"仅 u 变化边"`1e-9` 判据、整周期检测），并配 `BRepTools.cxx:126-157` 的 face 级并集 + `:141-153` 的自然范围兜底。用仓内 `geom_bnd_lib_curve2d::box_curve2d`（= `BndLib_Add2dCurve::Add`）、`BndBox2d`、`make_pcurve_full`，含 B-spline 周期验证的 2 点（`IsUClosed`）与 3/6 点检查（`100*Confusion²`）及非周期钳制。编译 exit 0。
+- **结果（回归）**：`step_obj_parity` **14/14 → 13/14**：`data/occ/T0M.stp` 的 `bbox min[2] ours=-424.978671054 occ=-424.741875692`（**Δ=0.237**，我方超出 OCCT 参考）。
+- **归因**：移植后的窗口**就是** OCCT `BRepTools::UVBounds` 的值；差异来自**消费方**——本仓的 `wireframe::face_to_triangles` 是自创的"UV 矩形栅格"网格化（A13/A18），会把窗口内、face 之外的部分也采样进去；而 OCCT 的网格由 pcurve 驱动（`BRepMesh_FaceDiscret`），窗口的凸包级外扩**不会**进入网格。这也解释了原实现那些看似古怪的钳制/整周期启发式其实是在替栅格建网格兜底。
+- **处置**：按"失配即停"**回退**该改动（`git checkout -- crates/occt-topo/src/wireframe.rs`），复跑 `step_obj_parity` **14/14** 确认恢复；把结论与依赖写进本表 T-59 与 `_index.md` 的 A23 行。**正确次序**：先做 A13/A18（pcurve 驱动建网格），再重放本改动；否则忠实窗口会被自创消费方放大成超界几何。
 
 ## 4. 决策与约束（不可违反）
 
