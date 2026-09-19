@@ -123,6 +123,55 @@ cd ..; git worktree remove --force .target-headcheck
 | T-28 | ImpPrm HVertex 合并（`IntPatch_ImpPrmIntersection` cxx 329–465）未移植；`intana` 与 `intpatch` 重叠未合并 | pending |
 | T-29 | `specs/_coverage.md` 已过期（2026-09-09；行数/测试数与本轮不符）→ 本轮收敛后刷新 | pending |
 
+### P5 — 自创 → 忠实移植（审查 A0–A26 逐项，2026-09-20 立项）
+
+> 来源：`specs/_audit/_index.md`（5 区报告 + A0–A26）。**父任务 T-36**，下列每项一个可跟踪 ID。
+> 验收统一为：① `cargo check` 过；② 该 crate `--lib` 不低于基线（topo 1293/1、geom 153、geom2d 72、core 293、math 215）；③ 相关门禁不回归（`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3）；④ 无对应 OCCT 分支时标 `UNPORTED` + OCCT 文件行号，**不加新规则/阈值/启发式**。
+
+| ID | A# | 位置（文件:行） | 自创内容 → OCCT 对应 | 阶段 | 状态 |
+|---|---|---|---|---|---|
+| T-35 | **A0** | `occt-geom/src/offset.rs:14-19`、`occt-geom2d/src/offset.rs:19-41` | 3D 沿参考方向平移 / 2D 法向反号、缺 `DNdir` → `Geom_OffsetCurveUtils.pxx:47-115`、`Geom2d_OffsetCurveUtils.pxx:43-` | **1（先修）** | **done**（2026-09-20） |
+| T-63 | A0 派生 | `occt-geom/src/curve.rs:8-11`（`Curve::d3`）、`occt-geom2d/src/curve.rs`（`Curve2d::d3`）、各具体曲线 | `EvalD3`（`Geom_Curve::EvalD3` / `Geom2d_Curve::EvalD3`）无任何具体曲线实现 ⇒ offset 的 `CalculateD2` 里 `D2Ndir` 项恒为 0；`EvalD2` 的 `AdjustDerivative` 奇异支路（`Geom_OffsetCurve.cxx:311-330`、`Geom2d_OffsetCurve.cxx:265-280`）未移植（`isDirectionChange` 恒 false） | 1 后 | pending |
+| T-64 | **A27**（新） | `occt-geom/src/{line,circle,ellipse,hyperbola,parabola,plane,cylinder,cone,sphere,torus}.rs` 的 `continuity()` | 解析曲线/曲面一律返回 `3`（G2），OCCT `Geom_Conic::Continuity()`=`GeomAbs_CN`（`Geom_Conic.cxx:32-35`）、`Geom_Line`/`Geom_Plane`/`Geom_ElementarySurface` 同为 CN(6)；端口 B 样条侧 `bspl::local_continuity` 单跨返回 6，证明编码约定一致 ⇒ 解析类少报连续性，影响 `NbIntervals`/`parameter_intervals` 消费方 | 1 后 | pending |
+| T-37 | A1 | `occt-topo/src/brep_surface.rs:234-272`（39 处/27 文件） | 网格扫描 + 6 轮二分 → `Extrema_ExtPS`（仓内 `extrema_surf::point_surface_extrema_box`） | 3 | pending |
+| T-38 | A2 | `occt-topo/src/brep_extrema.rs:252-301` | 7×7 采样 + 射线奇偶 → `SolidClassifier`/`algo_tools::compute_state`（`BOPAlgo_BuilderSolid.cxx:835-860`） | 4 | pending |
+| T-39 | A3 | `occt-topo/src/step/p01.rs:114-144,663-680` | 6 点二阶差分猜曲线族 → `StepToGeom.cxx:1335-1349` 按实体类型 / `GeomToStep_MakeCurve.cxx:54` | 5 | pending |
+| T-40 | A4 | `occt-topo/src/algo_tools/p01.rs:165-205` | V/E/F 分支 32×32 投影 → `BOPTools_AlgoTools::ComputeState` 精确投影 | 4 | pending |
+| T-41 | A5 | `bop_builder_core.rs:79-96`、`bop_curved/p02.rs:409-581`、`p04.rs:42-70,325-401` | 体素/网格布尔与计票 → 无 OCCT 对应 ⇒ **摘除并标未移植** | 4 | pending |
+| T-42 | A6 | `occt-core/src/gcpnts.rs:30,87-225` | 中点二分 `MAX_DEPTH=16` 伪造 deflection → 调 `gcpnts_perform.rs:52`（已逐行移植） | **2** | pending |
+| T-43 | A7 | `occt-geom/src/extrema_pc/p01.rs:563,621`、`extrema_cc/p02.rs:83,214-239` | `clamp(24,256)` 网格 + 16 兜底 → 调 `extrema_pc/p03.rs`（`Extrema_GGExtPC`） | **2** | pending |
+| T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending |
+| T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | pending |
+| T-46 | A10 | `elib/surface_eval.rs:100,104`、`bnd/bsphere.rs:19-29`、`elib/intersect.rs:58-60`、`poly/make_loops.rs:234` | 静默默认值/凭空造值/只取首候选 → `ElSLib::SphereD2/TorusD2`、`Bnd_Sphere.cxx:73-96`、`Poly_MakeLoops.cxx:611-700` | 8 | pending |
+| T-47 | A11 | `bop_builder_dispatch.rs:473-601`、`bop_draft_solid_occt.rs:41,49`、`edge_edge/p01.rs:368-371` | 质心规则 / `solid−face` 原样返回 / 丢"顶点<3"的面 / 采样解当补集 → `BOPAlgo_Builder_3.cxx:329` 等对应控制流 | 4 | pending |
+| T-48 | A12 | `brepfeat/p01.rs:109,419,361,508`、`feature.rs:197` | 体积解析覆盖 / 网格夹具冒充 `BRepPrimAPI_MakeCylinder` / `clamp(16,64)` → `BRepFeat_MakeDPrism/MakeRevol`、`LocOpe_Revol` | 8 | pending |
+| T-49 | A13 | `occt-topo/src/wireframe.rs:392-415` | 未裁剪 UV 窗口规则网格 → `BRepMesh_FaceDiscret` 按 pcurve 边界离散 | 5 | pending |
+| T-50 | A14 | `geom/`（csg/delaunay/triangulate/fit*/polygon_*）、`elib/measure.rs`、`validate.rs`、`hlr.rs`、`viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs` | 整包非移植件（`validate.rs` 的 `is_valid()` 恒 true 风险最高）→ 模块头声明未移植 + 真实出处 | 8 | pending |
+| T-51 | A15 | `extrema_cc/p02.rs:210-241`、`hyperbola.rs:16`、`parabola.rs:16`、`surface.rs:12-20`、`intana/p02.rs:574`、`extrema_ss.rs:69,119`、`curve_reparam.rs:37,189,228`、`gcpnts.rs` 积分 | 失败被 `fallback_*` 吞掉（丢 `StdFail_NotDone` 语义）+ 自创阈值 → 逐条按 OCCT 返回失败或补齐精确解 | 8 | pending |
+| T-52 | A16 | `occt-geom/src/geom_api.rs:52,97`、`occt-geom2d/src/curve_ops.rs:68-69` | 256×256 采样求交/投影 → `Extrema_ExtPS/ExtCC` + `intana2d`/`intimpargen` | 3 | pending |
+| T-53 | A17 | `occt-topo/src/brep_exchange.rs:56-98` | 偏转形参被 Prs3d 顶掉 + 三级静默回退 → `RWObj_CafWriter`/`RWMesh_FaceIterator.cxx:87-89`（不网格化、空则跳过）⇒ 删回退、形参改名 | **6** | pending |
+| T-54 | A18 | `occt-topo/src/wireframe.rs:257-380` | 平面耳切 + 质心角度排序 + 桥洞 → 约束 Delaunay（`BRepMesh_DelaunayBaseMeshAlgo` + `BRepMesh_Delaun`） | 7 | pending |
+| T-55 | A19 | `meshing/incremental_mesh/p01.rs:369,460-467`、`wireframe.rs:407-408`、`brepmesh.rs:38,174-175,259` | `WIREFRAME_FALLBACK_RATIO_MAX=0.10` 失败率换算法 + 四叉树魔数 + `clamp(3,64)` → OCCT 无失败率阈值，逐面置 `IMeshData_Failure`（`BRepMesh_BaseMeshAlgo.cxx:52-62`） | 7 | pending |
+| T-56 | A20 | `occt-topo/src/step/p05.rs:508-604` | `p1.distance(p2) < 1e-3` 替代 `V1.IsSame(V2)`；`Other`/HYPERBOLA 边域落 `(0,1)` → `StepToTopoDS_TranslateEdge.cxx:438,443` + `ShapeAnalysis_Curve.cxx:376-400` | **6** | pending |
+| T-57 | A21 | `occt-topo/src/meshing/model_healer.rs:279-290` | 退化支路左右端接反、丢 `aPrevSqDist - aNextSqDist` 判定 → `BRepMesh_ModelHealer.cxx:491-512` + `hxx:143-151` | **6** | pending |
+| T-58 | A22 | `occt-topo/src/step/p05.rs:348-370,740-760` | `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂；圆用三点外心回退 → `ShapeAnalysis_Curve.cxx:382-400,160,200` | 6 | pending |
+| T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | pending |
+| T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | pending |
+| T-61 | A25 | `meshing/delaun/p04.rs:346-375` | 自造"先删邻三角形再 AddElement" → `BRepMesh_Delaun.cxx:2263-2274` 失败即置 `IMeshData_Failure`，不改网格 | 7 | pending |
+| T-62 | A26 | `brep_exchange.rs:118,125`、`occt-core/src/io/{ply,stl}.rs`、`iges.rs:168,390-438`、`step/p02.rs:16-17,43`、`vrml.rs:92`、`obj.rs` | PLY 焊接/属性类型、STL 阈值/头/嗅探、IGES 采样族与自造回转面、STEP 写侧采样重拟、`solid TRUE`、恒空 `vn` → 各 `RWPly_*`/`RWStl*`/`GeomToIGES_*`/`GeomToStep_MakeCurve.cxx:94-99`/`VrmlData_ShapeConvert.cxx:360` | 8 | pending |
+
+> 执行纪律（本轮：**先提交、再任务化、再开工**）：commit `bcbc7dc` 已把审查前的全部工作树入库（8 个提交，工作树干净），此后每个修复单独成 commit，便于 A/B 与回滚。
+
+**批 1（T-35 / A0）已完成 —— 2026-09-20**
+
+- **改动**：`crates/occt-geom/src/offset.rs`（整文件重写）、`crates/occt-geom2d/src/offset.rs`（整文件重写）、`crates/occt-geom2d/src/curve.rs`（补 `Curve2d::d3`，对应 `Geom2d_Curve::EvalD3`）。
+- **对齐内容**：`CalculateD0/D1/D2` 逐行移植（含 `R/R2/R3/R5` 与 `Dr/D2r` 两个稳定性分支、`theIsDirChange` 的 `D2.Reverse()`）；3D 法向 `Ndir = D1 ^ Direction`（沿法向偏移，**不再是沿方向平移**）；2D 法向 `(D1.Y(), -D1.X())`（**不再反号**）；`Continuity` 用 OCCT 的 C1→C0 / C2→C1 / C3→C2 表（`Geom_OffsetCurve.cxx:229-257`、`Geom2d_OffsetCurve.cxx:181-210`）；`Reverse` 改为**基曲线也反转**（`cxx:95-100` / `:90-95`）；`Transform` 3D 改为变换基曲线+方向+**带符号** scale（`cxx:454-460`），2D 保持 `abs`（`cxx:414-419`，与 3D 不同，OCCT 确实如此）。
+- **容差**：用 `gp::Resolution()` 的忠实值 `precision::REAL_SMALL`（`DBL_MIN`），不用仓内 `precision::RESOLUTION`（`1e-12`，非 OCCT 值）。
+- **验证**：① `occt-geom`/`occt-geom2d`/`occt-topo` `--all-targets` 编译 exit 0；② 门禁与基线**逐项一致**：topo lib 1293/1、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3、geom 153/153、geom2d 72/72；③ **解析恒等式探针**（临时，已删）：圆基（R=2）+ 方向 +Z + 偏距 0.5 ⇒ D0/D1/D2 与半径 2.5 的解析圆 **max 误差 0.000e0**（17 点），`Reverse` 后 `|P(0)|=1.5=R−d` ✓。
+- **覆盖事实（重要）**：`data/*.step` 中**没有 `OFFSET_CURVE`** 实体（只有 `OFFSET_SURFACE`，属 `Geom_OffsetSurface`，非本项）；3D 类的唯一构造点 `step/p04.rs:1049` 故**无门禁覆盖**；2D 类**无任何构造点**（`Geom2dOffsetCurve::new` 无调用者，`geom_bnd_lib_offset2d::box_offset` 亦无调用者）⇒ **A0 是潜在正确性缺陷（latent），修复后不影响任何现有门禁数字**。审查报告 §3 中"2D 版被 `geom_bnd_lib_offset2d.rs:101` 消费"应订正为"该消费者自身为死代码"。
+- **未移植（已在文件头登记，另立 T-63）**：`EvalD3` 缺失导致 `D2Ndir` 项为 0、`EvalD2` 的 `AdjustDerivative` 奇异支路、OCCT 抛异常在无失败通道下回退为基曲线值（与仓内 `offset_surface.rs`/`bspline_surface.rs` 既有约定一致）、ctor 的 C0 拒绝与 G1 升级。
+- **派生新发现**：**A27（T-64）**——解析曲线/曲面 `continuity()` 全报 `3`(G2)，OCCT 为 `GeomAbs_CN`(6)。
+
 ## 4. 决策与约束（不可违反）
 
 1. 改完先编译（`cargo check`，编译不过先修编译）。

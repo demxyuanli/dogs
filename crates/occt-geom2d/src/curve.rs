@@ -6,6 +6,13 @@ pub trait Curve2d: Send + Sync {
     fn d0(&self, u: f64) -> GpPnt2d;
     fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d);
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d);
+    /// `Geom2d_Curve::EvalD3`. Default returns a zero third derivative, mirroring
+    /// the 3D `Curve::d3` default; concrete curves must override it (no curve in
+    /// this crate does yet — see `Geom2d_OffsetCurve::d2`, task T-63).
+    fn d3(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
+        let (p, d1, d2) = self.d2(u);
+        (p, d1, d2, GpVec2d::zero())
+    }
     fn value(&self, u: f64) -> GpPnt2d { self.d0(u) }
     fn first_parameter(&self) -> f64;
     fn last_parameter(&self) -> f64;
