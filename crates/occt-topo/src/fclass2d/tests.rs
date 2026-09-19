@@ -179,14 +179,18 @@ use super::*;
     }
 
     #[test]
-    fn infinite_point_closed_periodic_face_is_in() {
-        // A full sphere face has no boundary wires -> the classifier sees an
-        // empty boundary and the infinite point is In (closed periodic face).
+    fn infinite_point_closed_periodic_face_is_out() {
+        // A full sphere face is bounded by its seam meridian and the degenerate
+        // pole edges (`BRepPrim_OneAxis::LateralWire`,
+        // `BRepPrim_OneAxis.cxx:660-679`), so its UV domain is the finite
+        // rectangle [0, 2π] × [-π/2, π/2] and the point outside it is `Out`.
+        // (The previous expectation `In` encoded the port's wireless sphere
+        // face, i.e. a missing boundary, not OCCT's structure.)
         let sph = crate::primitives::BRepPrimSphere::make_sphere(2.0);
         let face = faces_of(&sph.solid.0).into_iter().next().expect("sphere face");
         let cl = FClass2d::new(&face, 1e-6).expect("classifier");
-        assert_eq!(cl.perform_infinite_point(), FaceState::In);
-        // Any 2D point is In (no restriction).
+        assert_eq!(cl.perform_infinite_point(), FaceState::Out);
+        // Any 2D point inside the seam rectangle is In.
         assert_eq!(cl.perform(p2(1.0, 0.5)), FaceState::In);
     }
 

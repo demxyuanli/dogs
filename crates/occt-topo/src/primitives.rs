@@ -14,12 +14,15 @@ use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::{
-    GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpLin, GpPln, GpPnt, GpSphere, GpTorus, GpVec,
+    GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpLin, GpPln, GpPnt, GpPnt2d, GpSphere,
+    GpTorus, GpVec,
 };
 use occt_geom::{Curve, GeomCircle, GeomCone, GeomCylinder, GeomLine, GeomPlane, GeomSphere, GeomTorus, Surface};
+use occt_geom2d::Geom2dLine;
 
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, Solid, Vertex, Wire};
+use crate::tgeometry::GeometryRegistry;
 use crate::topexp::Explorer;
 use crate::abs::{Orientation, ShapeType};
 
@@ -318,20 +321,87 @@ pub struct BRepPrimSphere {
 }
 
 impl BRepPrimSphere {
-    /// Sphere of given radius centered at the origin. A single face with the
-    /// analytic spherical surface (no boundary edges in the untrimmed case).
+    /// Sphere of given radius centered at the origin.
+    ///
+    /// The single lateral face carries the full `BRepPrim_OneAxis::LateralWire`
+    /// structure of a revolution primitive (`BRepPrim_OneAxis.cxx:660-679`):
+    /// the degenerate pole edges (north/south, range `[0, myAngle]` per
+    /// `SetParameters`, `cxx:407`, `:418`) plus the meridian seam traversed at
+    /// `u = 0` (StartEdge) and `u = 2π` (EndEdge, reversed). pcurves are the UV
+    /// lines of `BRepPrim_OneAxis::LateralFace` (`cxx:389-439`):
+    /// `gp_Lin2d((0, ±π/2), +X)` over `[0, 2π]` for the poles — that is what
+    /// makes the UV loop enclose the whole sphere — and
+    /// `gp_Lin2d((0 or 2π, -2π), +Y)` over `[3π/2, 5π/2]` for the meridians.
+    /// Meridian geometry follows `BRepPrim_Sphere::SetMeridian`
+    /// (`BRepPrim_Sphere.cxx:71-85`).
     pub fn make_sphere(radius: f64) -> Self {
         assert!(
             radius > 0.0,
             "BRepPrimSphere::make_sphere: radius must be positive"
         );
         let b = TopoBuilder::new();
-        let face = b.make_face(
-            Arc::new(GeomSphere::new(
-                GpSphere::new(GpAx3::standard(), radius).expect("sphere radius"),
-            )),
-            &[],
+        let r = radius;
+        let north = GpPnt::new(0.0, 0.0, r);
+        let south = GpPnt::new(0.0, 0.0, -r);
+        let v_north = b.make_vertex(north, 0.0);
+        let v_south = b.make_vertex(south, 0.0);
+
+        let mer_ax = GpAx3::new(GpPnt::zero(), dir(0.0, -1.0, 0.0), &dir(1.0, 0.0, 0.0))
+            .expect("meridian axis");
+        let (t0, t1) = (1.5 * PI, 2.5 * PI);
+        let mut start = b.make_edge(circle_curve(&mer_ax, r), t0, t1);
+        b.add_edge_vertices(&mut start, &v_south, &v_north);
+        let mut end = b.make_edge(circle_curve(&mer_ax, r), t0, t1);
+        b.add_edge_vertices(&mut end, &v_south, &v_north);
+
+        let mut top = b.make_degenerated_edge(&north);
+        b.add_edge_vertices(&mut top, &v_north, &v_north);
+        let mut bottom = b.make_degenerated_edge(&south);
+        b.add_edge_vertices(&mut bottom, &v_south, &v_south);
+        GeometryRegistry::global().set_edge_range(&top.0, 0.0, 2.0 * PI);
+        GeometryRegistry::global().set_edge_range(&bottom.0, 0.0, 2.0 * PI);
+
+        // `LateralWire` order and orientations (`cxx:666-679`):
+        // TopEdge(fwd), EndEdge(rev), BottomEdge(rev), StartEdge(fwd).
+        end.0.reverse();
+        bottom.0.reverse();
+        let wire = b.make_wire(&[top.clone(), end.clone(), bottom.clone(), start.clone()]);
+
+        let surface: Arc<dyn Surface> = Arc::new(GeomSphere::new(
+            GpSphere::new(GpAx3::standard(), radius).expect("sphere radius"),
+        ));
+        let face = b.make_face(surface, &[wire]);
+
+        // pcurves (`BRepPrim_OneAxis::LateralFace`, `cxx:389-439`).
+        let face_key = GeometryRegistry::shape_key(&face.0);
+        let reg = GeometryRegistry::global();
+        let dir_u = GpDir2d::new(1.0, 0.0).expect("u direction");
+        let dir_v = GpDir2d::new(0.0, 1.0).expect("v direction");
+        let attach = |edge: &Edge, pc: Geom2dLine, range: (f64, f64)| {
+            reg.set_edge_pcurve(&edge.0, face_key, Arc::new(pc));
+            reg.set_pcurve_range(&edge.0, face_key, range.0, range.1);
+        };
+        attach(
+            &top,
+            Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, 0.5 * PI), dir_u),
+            (0.0, 2.0 * PI),
         );
+        attach(
+            &bottom,
+            Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, -0.5 * PI), dir_u),
+            (0.0, 2.0 * PI),
+        );
+        attach(
+            &start,
+            Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, -2.0 * PI), dir_v),
+            (t0, t1),
+        );
+        attach(
+            &end,
+            Geom2dLine::from_pnt_dir(GpPnt2d::new(2.0 * PI, -2.0 * PI), dir_v),
+            (t0, t1),
+        );
+
         let shell = b.make_shell(&[face]);
         let solid = b.make_solid(&[shell]);
         Self { solid, radius }

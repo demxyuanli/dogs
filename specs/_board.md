@@ -149,7 +149,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-47 | A11 | `bop_builder_dispatch.rs:473-601`、`bop_draft_solid_occt.rs:41,49`、`edge_edge/p01.rs:368-371` | 质心规则 / `solid−face` 原样返回 / 丢"顶点<3"的面 / 采样解当补集 → `BOPAlgo_Builder_3.cxx:329` 等对应控制流 | 4 | pending |
 | T-48 | A12 | `brepfeat/p01.rs:109,419,361,508`、`feature.rs:197` | 体积解析覆盖 / 网格夹具冒充 `BRepPrimAPI_MakeCylinder` / `clamp(16,64)` → `BRepFeat_MakeDPrism/MakeRevol`、`LocOpe_Revol` | 8 | pending |
 | T-49 | A13 | `occt-topo/src/wireframe.rs:392-415` | 未裁剪 UV 窗口规则网格 → `BRepMesh_FaceDiscret` 按 pcurve 边界离散 | 5 | **已尝试 → 回退，被 T-68 阻塞**（2026-09-20）：`face_to_triangles` 已改为委托 `incremental_mesh_to_shape_mesh`、并删掉 `build_shape_mesh_wireframe`/`wireframe_face_triangulation`/`WIREFRAME_FALLBACK_RATIO_MAX` 与 `discretize_face` 的两处回退（编译 exit 0，无递归），但 `occt-topo --lib` 由 1293/1 变 **1284/10**（9 个新失败全部落在"面的边界结构缺失"上，见 T-68）⇒ 按失配即停回退，基线恢复 |
-| T-68 | **A13/A18 前置（新）** | `occt-topo/src/primitives.rs`（sphere/torus）、`model_builder/*`、构造/模式类（`brep_pattern`、detach/copy 路径） | 忠实管线要求面具备**边界 wire + pcurve**；实测（临时探针，已删）：`sphere` faces=1 **wires/face=[0]** → 网格化失败 `DelaunayNodeInsertionMeshAlgo::perform: face 0 has no boundary UV points`；`torus` 同样 **[0]** → 失败；`cylinder` [1,1,1] → OK 52/48、`cone` [1,1] → OK 26/24、`box` ×6 [1] → OK 24/12。另 `wireframe::tests::face_with_hole_triangulates_ring_area` 变成"ring area 4 vs expected 3.8037（内环未生效）" ⇒ 内环/内 wire 也没进模型 | 5 前置 | pending（**方案已核实**，见下） |
+| T-68 | **A13/A18 前置（新）** | `occt-topo/src/primitives.rs`（sphere/torus）、`model_builder/*`、构造/模式类（`brep_pattern`、detach/copy 路径） | 忠实管线要求面具备**边界 wire + pcurve**；实测（临时探针，已删）：`sphere` faces=1 **wires/face=[0]** → 网格化失败 `DelaunayNodeInsertionMeshAlgo::perform: face 0 has no boundary UV points`；`torus` 同样 **[0]** → 失败；`cylinder` [1,1,1] → OK 52/48、`cone` [1,1] → OK 26/24、`box` ×6 [1] → OK 24/12。另 `wireframe::tests::face_with_hole_triangulates_ring_area` 变成"ring area 4 vs expected 3.8037（内环未生效）" ⇒ 内环/内 wire 也没进模型 | 5 前置 | **球面 done**（2026-09-20，T-68 步 1+2）；**环面/带孔内环待做** |
 
 **T-68 执行方案（2026-09-20 现场核实，供下一轮直接照做）**
 
@@ -279,6 +279,15 @@ cd ..; git worktree remove --force .target-headcheck
   - **`incremental_mesh_to_shape_mesh` 首次成功**：`168 verts / 306 tris`（未给极点边设范围时是 `4096/7686`；此前**完全失败** `face 0 has no boundary UV points`）⇒ **A13/A18 的前置在网格侧已打通**。
   - **仍未通过**：`brep_gprop_full::surface_properties/volume_properties` 返回 **0**（`--lib` 会变 1291/3，新增 `sphere_surface_volume`、`adaptive_box_sphere`）。路径已缩小到 `FaceGauss`：`compute_face` 判 `rect_domain`（四条 pcurve 都是直线）后走 `compute_rect → compute_natural`，其入口守卫 `u2 > u1 && v2 > v1` 不成立即返回 0 ⇒ 问题在 `FaceGauss::new` 自己的 `uv_bounds(surface, &arcs)`/`build_arc(&e,&map)`（`brep_gprop_full/p02.rs:36-60`），与 `brep_tools::uv_bounds`（实测正确）不是同一条实现。
 - **下一步（精确）**：读 `brep_gprop_full/p02.rs` 的 `build_arc` 与该模块的 `uv_bounds(surface,&arcs)`，定位为何闭合球面的四条直线 pcurve 得不到非退化 UV 盒；修好后球面 wire 即可重放（随后 A13/A18 → T-59）。球面基元代码已按纪律回退，避免半成品。
+
+**T-68 第三轮（2026-09-20）：球面前置**打通**——`FaceGauss` 改为 pcurve 优先 + 球面 wire 落地，Gauss 面积/体积恢复 4π / 4⁄3π**
+
+- **新发现（A28，已修）**：`brep_gprop_full::FaceGauss` 的边界弧原先是"3D 曲线 + UV 反演"（`BoundaryArc::value/d12d` 走 `UVMap::map_point`）。这**无法表达接缝两侧**（u=0 vs u=2π 在 3D 上同一点）、也建不出退化边的弧，于是闭合面（球/环）的 UV 盒退化成一点 ⇒ `compute_rect` 守卫 `u2 > u1 && v2 > v1` 不成立 ⇒ 面积/体积**静默为 0**。修法：`BoundaryArc` 改 `ArcGeom::{Pcurve, Curve3d}`，`build_arc(e, face, map)` **优先取已存 pcurve**（连 `pcurve_range`），无 pcurve 才回退 3D+反演；新增 `classify_arc_kind2d`。这同时对齐了 OCCT `BRepGProp_Face` 走 `BRep_Tool::CurveOnSurface` 的事实。
+- **球面 wire 落地**（T-68 步 1+2；步 1 的 `make_degenerated_edge`/`set_edge_range` 见上一轮提交）：四条边 `Top(退化,fwd) → End(经线,rev) → Bottom(退化,rev) → Start(经线,fwd)`，pcurve 全为 `gp_Lin2d`（极点 `(0,±π/2)+X` 范围 `[0,2π]`；经线 `(0/2π,−2π)+Y` 范围 `[3π/2,5π/2]`），极点边范围按 `SetParameters(...,0,myAngle)` 设为 `[0,2π]`。
+- **实测（临时探针，已删）**：`wires=1`、`uv_bounds=(0,2π,−π/2,π/2)`、**`brep_gprop_full` 面积 = 12.566370614359137（4π，Δ=3.5e-14）**、**体积 = 4.188790204786379（4⁄3π，Δ=1.2e-14）**、`analytic_surface_area=4π`、忠实网格 168/306、栅格网格 4096/7686。
+- **过期期望订正**：`fclass2d::tests::infinite_point_closed_periodic_face_is_in` 的注释自承前提是"球面无边界 wire"（port artifact）；现在球面有了真实边界 ⇒ 无限点为 `Out`，测试改名并注明 `LateralWire` 出处（同 T-06 先例：改的是编码 artifact 的期望，不是新写测试）。
+- **验证**：`occt-topo --lib` **1293/1**（唯一红仍 T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`occt-geom` 151、`occt-geom2d` 72、`occt-core` 290 —— **逐项与基线一致**。
+- **T-68 剩余**：环面（`BRepPrim_Torus::SetMeridian` 的闭合经线分支：`MeridianClosed()` ⇒ 单边双 pcurve，`cxx:389-396`）与带孔面的内环（`ring area 4 vs 3.8037`）⇒ 完成后重放 A13/A18，再重放 T-59。
 
 ## 4. 决策与约束（不可违反）
 

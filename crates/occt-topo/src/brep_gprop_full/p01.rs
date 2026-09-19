@@ -525,28 +525,46 @@ pub(super) enum ArcKind {
     Other,
 }
 
-/// A boundary arc of a face: the edge's 3D curve together with the UV inverse
-/// map, so `d12d` yields the pcurve point and derivative in the surface's UV.
+/// A boundary arc of a face — how it yields UV.
+///
+/// OCCT's `BRepGProp_Face` trims on the face's **pcurve**
+/// (`BRep_Tool::CurveOnSurface`): only a pcurve can distinguish the two sides of
+/// a seam (`u = 0` vs `u = 2π`) and a degenerate pole edge has no 3D curve at
+/// all. The 3D-curve + UV-inverse form is kept as the fallback for faces whose
+/// pcurves are absent (a port shortcut, documented as such).
+pub(super) enum ArcGeom {
+    Pcurve(Arc<dyn Curve2d>),
+    Curve3d(Arc<dyn Curve>, UVMap),
+}
+
+/// A boundary arc of a face: its UV representation plus the edge's parameter
+/// range, so `d12d` yields the pcurve point and derivative in the surface's UV.
 pub(super) struct BoundaryArc {
-    pub(super) curve: Arc<dyn Curve>,
+    pub(super) geom: ArcGeom,
     pub(super) a: f64,
     pub(super) b: f64,
     pub(super) kind: ArcKind,
-    pub(super) map: UVMap,
 }
 
 impl BoundaryArc {
     pub(super) fn d12d(&self, s: &dyn Surface, t: f64) -> (GpPnt2d, GpVec2d) {
-        let p = self.curve.d0(t);
-        let d1 = self.curve.d1(t).1;
-        let puv = self.map.map_point(s, &p);
-        let duv = self.map.map_deriv(s, &p, &d1, puv.x());
-        (puv, duv)
+        match &self.geom {
+            ArcGeom::Pcurve(pc) => pc.d1(t),
+            ArcGeom::Curve3d(c, map) => {
+                let p = c.d0(t);
+                let d1 = c.d1(t).1;
+                let puv = map.map_point(s, &p);
+                let duv = map.map_deriv(s, &p, &d1, puv.x());
+                (puv, duv)
+            }
+        }
     }
 
     pub(super) fn value(&self, s: &dyn Surface, t: f64) -> GpPnt2d {
-        let p = self.curve.d0(t);
-        self.map.map_point(s, &p)
+        match &self.geom {
+            ArcGeom::Pcurve(pc) => pc.d0(t),
+            ArcGeom::Curve3d(c, map) => map.map_point(s, &c.d0(t)),
+        }
     }
 }
 

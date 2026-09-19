@@ -35,6 +35,7 @@ pub(crate) use std::sync::Arc;
 
 pub(crate) use occt_core::gp::{GpMat, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXyz};
 pub(crate) use occt_geom::{Curve, Surface};
+pub(crate) use occt_geom2d::Curve2d;
 pub(crate) use occt_math::gauss::gauss_legendre;
 
 pub(crate) use crate::brep_surface::classify_surface;

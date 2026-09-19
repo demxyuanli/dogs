@@ -42,7 +42,7 @@ impl FaceGauss {
                     has_repeated = true;
                 }
                 seen.push(key);
-                if let Some(arc) = build_arc(&e, &map) {
+                if let Some(arc) = build_arc(&e, face, &map) {
                     arcs.push(arc);
                 }
             }
@@ -230,8 +230,31 @@ pub(super) fn l_coeff(eps: f64) -> f64 {
     }
 }
 
-/// Build the pcurve arc for an edge, honouring the edge's orientation.
-pub(super) fn build_arc(e: &Edge, map: &UVMap) -> Option<BoundaryArc> {
+/// Build the boundary arc for an edge of `face`, honouring the edge's
+/// orientation.
+///
+/// The face's stored **pcurve** wins (`BRepGProp_Face` trims on
+/// `BRep_Tool::CurveOnSurface`): it is the only representation that keeps the
+/// two sides of a seam apart (`u = 0` vs `u = 2π`) and it exists for degenerate
+/// pole edges, which have no 3D curve. Without a pcurve the previous 3D-curve +
+/// UV-inverse shortcut is used.
+pub(super) fn build_arc(e: &Edge, face: &Face, map: &UVMap) -> Option<BoundaryArc> {
+    let face_key = crate::tgeometry::GeometryRegistry::shape_key(&face.0);
+    let reg = crate::tgeometry::GeometryRegistry::global();
+    if let Some(pc) = reg.edge_pcurve(&e.0, face_key) {
+        let (a, b) = reg
+            .pcurve_range(&e.0, face_key)
+            .unwrap_or_else(|| (pc.first_parameter(), pc.last_parameter()));
+        if a.is_finite() && b.is_finite() && b > a {
+            let kind = classify_arc_kind2d(pc.as_ref(), a, b);
+            return Some(BoundaryArc {
+                geom: ArcGeom::Pcurve(pc),
+                a,
+                b,
+                kind,
+            });
+        }
+    }
     let curve = BRepTool::edge_curve_world(e)?;
     let (a0, b0) = BRepTool::edge_parameters(e);
     if !(a0.is_finite() && b0.is_finite() && b0 > a0) {
@@ -243,7 +266,30 @@ pub(super) fn build_arc(e: &Edge, map: &UVMap) -> Option<BoundaryArc> {
         (curve, a0, b0)
     };
     let kind = classify_arc_kind(curve.as_ref(), a, b);
-    Some(BoundaryArc { curve, a, b, kind, map: map.clone() })
+    Some(BoundaryArc {
+        geom: ArcGeom::Curve3d(curve, map.clone()),
+        a,
+        b,
+        kind,
+    })
+}
+
+/// [`classify_arc_kind`] for a 2D pcurve (`ArcKind::Other` is the safe answer
+/// for anything that is not a straight UV line).
+pub(super) fn classify_arc_kind2d(c: &dyn Curve2d, a: f64, b: f64) -> ArcKind {
+    let mut is_line = true;
+    for i in 0..=4 {
+        let t = a + (b - a) * i as f64 / 4.0;
+        let (_, _, d2) = c.d2(t);
+        if d2.square_magnitude() > 1e-18 {
+            is_line = false;
+            break;
+        }
+    }
+    if is_line {
+        return ArcKind::Line;
+    }
+    ArcKind::Other
 }
 
 /// Classify the edge curve for integration-order purposes.
