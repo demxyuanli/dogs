@@ -1,9 +1,19 @@
 //! Curve approximation to polylines.
-//! Source: `GCPnts_UniformDeflection.hxx`, `GeomConvert_CurveToPolyline.hxx`.
+//!
+//! **Provenance**: the previous header cited `GCPnts_UniformDeflection.hxx` and
+//! `GeomConvert_CurveToPolyline.hxx`; the latter class **does not exist** in
+//! OCCT 8.0.0 (no `*CurveToPolyline*` file in the source tree) and
+//! `GCPnts_UniformDeflection` is **UNPORTED** (`occt-core/src/gcpnts.rs` module
+//! docs). The polyline is therefore produced by the faithful
+//! `GCPnts_TangentialDeflection` engine with its angular term disabled
+//! (`angular_deflection = PI`, the same convention as
+//! `meshing::edge_discret::CurveTessellator::from_range`), which is what OCCT's
+//! mesh pipeline uses to tessellate curves.
 
 use crate::curve::Curve;
-use occt_core::gcpnts::{polyline_length, CurveSample, UniformDeflection, UniformPoints};
-use occt_core::gp::GpPnt;
+use occt_core::gcpnts::{perform_tangential_curve, polyline_length, CurveSample, CurveSecondDeriv, UniformPoints};
+use occt_core::gp::{GpPnt, GpVec};
+use occt_core::precision::{CONFUSION, PCONFUSION};
 
 /// Adapts `&dyn Curve` to the object-safe `CurveSample` sampler trait.
 struct CurveAdapter<'a>(&'a dyn Curve);
@@ -11,6 +21,18 @@ struct CurveAdapter<'a>(&'a dyn Curve);
 impl CurveSample for CurveAdapter<'_> {
     fn point(&self, u: f64) -> GpPnt {
         self.0.value(u)
+    }
+}
+
+/// Adapts `&dyn Curve` to the `GCPnts_TangentialDeflection` engine.
+struct TdCurve<'a>(&'a dyn Curve);
+
+impl CurveSecondDeriv for TdCurve<'_> {
+    fn point(&self, u: f64) -> GpPnt {
+        self.0.value(u)
+    }
+    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
+        self.0.d2(u)
     }
 }
 
@@ -23,7 +45,28 @@ pub fn curve_to_polyline(c: &dyn Curve, tol: f64) -> Vec<GpPnt> {
     if !a.is_finite() || !b.is_finite() {
         return curve_to_polyline_uniform(c, 64);
     }
-    UniformDeflection::from_curve_with_deflection(&CurveAdapter(c), a, b, tol).points
+    let mut intervals = c.parameter_intervals(6);
+    if intervals.len() < 2 {
+        intervals = vec![a, b];
+    }
+    let degree_min_nb = c.nurbs_degree().map(|d| (d + 1).max(2)).unwrap_or(2);
+    let (_, points) = perform_tangential_curve(
+        &TdCurve(c),
+        a,
+        b,
+        std::f64::consts::PI,
+        tol,
+        2,
+        PCONFUSION,
+        CONFUSION,
+        &intervals,
+        degree_min_nb,
+    );
+    if points.len() >= 2 {
+        points
+    } else {
+        vec![c.value(a), c.value(b)]
+    }
 }
 
 /// `n` points sampled uniformly across the curve's parameter range

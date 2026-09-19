@@ -138,7 +138,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-39 | A3 | `occt-topo/src/step/p01.rs:114-144,663-680` | 6 点二阶差分猜曲线族 → `StepToGeom.cxx:1335-1349` 按实体类型 / `GeomToStep_MakeCurve.cxx:54` | 5 | pending |
 | T-40 | A4 | `occt-topo/src/algo_tools/p01.rs:165-205` | V/E/F 分支 32×32 投影 → `BOPTools_AlgoTools::ComputeState` 精确投影 | 4 | pending |
 | T-41 | A5 | `bop_builder_core.rs:79-96`、`bop_curved/p02.rs:409-581`、`p04.rs:42-70,325-401` | 体素/网格布尔与计票 → 无 OCCT 对应 ⇒ **摘除并标未移植** | 4 | pending |
-| T-42 | A6 | `occt-core/src/gcpnts.rs:30,87-225` | 中点二分 `MAX_DEPTH=16` 伪造 deflection → 调 `gcpnts_perform.rs:52`（已逐行移植） | **2** | pending |
+| T-42 | A6 | `occt-core/src/gcpnts.rs:30,87-225` | 中点二分 `MAX_DEPTH=16` 伪造 deflection → 调 `gcpnts_perform.rs:52`（已逐行移植） | **2** | **done**（2026-09-20） |
 | T-43 | A7 | `occt-geom/src/extrema_pc/p01.rs:563,621`、`extrema_cc/p02.rs:83,214-239` | `clamp(24,256)` 网格 + 16 兜底 → 调 `extrema_pc/p03.rs`（`Extrema_GGExtPC`） | **2** | pending |
 | T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending |
 | T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | pending |
@@ -171,6 +171,16 @@ cd ..; git worktree remove --force .target-headcheck
 - **覆盖事实（重要）**：`data/*.step` 中**没有 `OFFSET_CURVE`** 实体（只有 `OFFSET_SURFACE`，属 `Geom_OffsetSurface`，非本项）；3D 类的唯一构造点 `step/p04.rs:1049` 故**无门禁覆盖**；2D 类**无任何构造点**（`Geom2dOffsetCurve::new` 无调用者，`geom_bnd_lib_offset2d::box_offset` 亦无调用者）⇒ **A0 是潜在正确性缺陷（latent），修复后不影响任何现有门禁数字**。审查报告 §3 中"2D 版被 `geom_bnd_lib_offset2d.rs:101` 消费"应订正为"该消费者自身为死代码"。
 - **未移植（已在文件头登记，另立 T-63）**：`EvalD3` 缺失导致 `D2Ndir` 项为 0、`EvalD2` 的 `AdjustDerivative` 奇异支路、OCCT 抛异常在无失败通道下回退为基曲线值（与仓内 `offset_surface.rs`/`bspline_surface.rs` 既有约定一致）、ctor 的 C0 拒绝与 G1 升级。
 - **派生新发现**：**A27（T-64）**——解析曲线/曲面 `continuity()` 全报 `3`(G2)，OCCT 为 `GeomAbs_CN`(6)。
+
+**批 2（T-42 / A6）已完成 —— 2026-09-20**
+
+- **改动**：`occt-core/src/gcpnts.rs`（删自创采样器）、`occt-geom/src/gcpnts.rs`、`occt-geom/src/curve_approx.rs`、`occt-topo/src/wireframe.rs`、`occt-topo/src/meshing/geom_tool.rs`。
+- **删除的自创实现**：`UniformDeflection` / `QuasiUniformDeflection` / `TangentialDeflection` 三个结构体及其 `subdivide`/`subdivide_tangent` 递归（`MAX_DEPTH=16` 截断、中点弦偏差、`point_segment_dist`），以及 `geom_tool.rs` 的自造 `enforce_min_points`（OCCT 的最小点数逻辑在 `GCPnts_TangentialDeflection::PerformCurve` 内部的 `fill_min_points`，已在忠实件里实现）。
+- **改走忠实件**：`wireframe::edge_to_polyline` → `meshing::edge_discret::CurveTessellator::from_range`（= `GCPnts_TangentialDeflection::initialize` `cxx:415-453` + `PerformCurve` `cxx:522-916`），最小点数取 `tessellator_min_points`（`BRepMesh_CurveTessellator.cxx:100-114`）；`occt-geom::tangential_deflection` → `perform_tangential_curve`（CN 区间 + BSpline/Bezier 最小点数提升，与 `edge_discret` 同源）；`curve_approx::curve_to_polyline` → 同一引擎（角向项关闭，`RANGE` 约定同 `CurveTessellator::from_range`）；`geom_tool::discretize_curve`/`discretize_iso_curve` → `CurveTessellator`（iso 走 `Surface::u_iso_curve`/`v_iso_curve` = `Geom_Surface::UIso/VIso`）。
+- **登记为未移植**：`GCPnts_UniformDeflection`、`GCPnts_QuasiUniformDeflection`、`GCPnts_UniformAbscissa`（`occt-core/src/gcpnts.rs` 模块头列出 OCCT 文件与未移植理由）；`occt-geom::uniform_deflection` 已删除（原为伪造的 "UniformDeflection 参数访问器"，无生产调用者）。
+- **验证**：三 crate `--all-targets` 编译 exit 0，改动文件零警告；门禁与基线**逐项一致**（topo lib 1293/1、parity 14/14、step_to_obj 13/13、area 11/11、geom_parity 2/3、geom2d 72）；`occt-core --lib` **293→290**、`occt-geom --lib` **153→151**——减少量恰好是删掉的自创采样器测试（3 + 2），非回归。
+- **派生新发现（假出处，并入 T-45/A9）**：`occt-geom/src/curve_approx.rs` 头注释引用的 `GeomConvert_CurveToPolyline` **在 OCCT 8.0.0 中不存在**（全树无 `*CurveToPolyline*` 文件），原注释同时误称 `occt-core` 已实现 `GCPnts_UniformDeflection`；两处均已改正。
+- **遗留**：`occt-geom/src/gcpnts.rs` 的 `curve_length`/`abscissa_point` 仍用自适应 Simpson + 牛顿（OCCT 是 `math_GaussSingleIntegration` + `math_NewtonFunctionRoot`），属 **A15/T-51**，未在本批动手（该文件头已注明）。
 
 ## 4. 决策与约束（不可违反）
 

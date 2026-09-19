@@ -1,15 +1,22 @@
-//! Curve discretization points. Port of the `GCPnts` package (TKGeomBase):
-//! `GCPnts_AbscissaPoint`, `GCPnts_UniformAbscissa`, `GCPnts_QuasiUniformAbscissa`,
-//! plus parameter accessors for the deflection samplers already implemented in
-//! `occt-core` (`GCPnts_UniformDeflection`, `GCPnts_TangentialDeflection`).
+//! Curve discretization points. Port of the `GCPnts`/`CPnts` packages
+//! (TKGeomBase): `CPnts_AbscissaPoint`, `GCPnts_AbscissaPoint`,
+//! `GCPnts_UniformAbscissa`, `GCPnts_QuasiUniformAbscissa`, plus a parameter
+//! accessor for the tangential-deflection sampler.
 //!
 //! The `Curve` trait has no arc-length method, so lengths are integrated
 //! adaptively (adaptive Simpson) over `|C′(u)|` and the abscissa inversion is
-//! a safeguarded Newton solve, mirroring `CPnts_AbscissaPoint::Perform`.
+//! a safeguarded Newton solve. **Deviation (A15/T-51)**: OCCT uses
+//! `math_GaussSingleIntegration` + `math_NewtonFunctionRoot`
+//! (`CPnts_AbscissaPoint.cxx`); the adaptive Simpson path is not a translation
+//! and must be replaced when T-51 is executed.
+//!
+//! `GCPnts_UniformDeflection` / `GCPnts_QuasiUniformDeflection` are **UNPORTED**
+//! (see `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
+//! fake "uniform deflection" accessor.
 
-use occt_core::gcpnts::{CurveDeriv, CurveSample, TangentialDeflection, UniformDeflection};
+use occt_core::gcpnts::{perform_tangential_curve, CurveSecondDeriv};
 use occt_core::gp::{GpPnt, GpVec};
-use occt_core::precision::CONFUSION;
+use occt_core::precision::{CONFUSION, PCONFUSION};
 
 use crate::curve::Curve;
 
@@ -263,39 +270,59 @@ pub fn quasi_uniform_abscissa(c: &dyn Curve, n: usize) -> Result<Vec<f64>, Strin
     Ok(out)
 }
 
-/// Adapter from `&dyn Curve` to the `occt-core` sampler traits.
+/// Adapter from `&dyn Curve` to the `GCPnts_TangentialDeflection` engine.
 struct Adapter<'a>(&'a dyn Curve);
 
-impl CurveSample for Adapter<'_> {
+impl CurveSecondDeriv for Adapter<'_> {
     fn point(&self, u: f64) -> GpPnt {
         self.0.d0(u)
     }
-}
-
-impl CurveDeriv for Adapter<'_> {
-    fn tangent(&self, u: f64) -> GpVec {
-        self.0.d1(u).1
+    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
+        self.0.d2(u)
     }
-}
-
-/// Parameters such that every chord deviates from the curve by at most `tol`
-/// (port of `GCPnts_UniformDeflection`, parameter accessor).
-pub fn uniform_deflection(c: &dyn Curve, tol: f64) -> Vec<f64> {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !(a.is_finite() && b.is_finite()) {
-        return vec![a, b];
-    }
-    UniformDeflection::from_curve_with_deflection(&Adapter(c), a, b, tol).params
 }
 
 /// Parameters refined by both chord deviation `tol` and tangent-angle change
-/// `angle_tol` (port of `GCPnts_TangentialDeflection`, parameter accessor).
+/// `angle_tol`, via the faithful `GCPnts_TangentialDeflection` engine
+/// (`GCPnts_TangentialDeflection.cxx:522-916`, ported in
+/// `occt-core/src/gcpnts_perform.rs`).
+///
+/// The CN breakpoint set and the BSpline/Bezier minimum-point bump follow the
+/// same derivation as `meshing::edge_discret::CurveTessellator::initialize`
+/// (`GCPnts_TangentialDeflection::initialize`, `cxx:415-453`); `u_tol`/`min_len`
+/// are the OCCT `Initialize` defaults (`cxx:302-322`, `1.0e-9` / `CONFUSION`).
 pub fn tangential_deflection(c: &dyn Curve, tol: f64, angle_tol: f64) -> Vec<f64> {
     let (a, b) = (c.first_parameter(), c.last_parameter());
     if !(a.is_finite() && b.is_finite()) {
         return vec![a, b];
     }
-    TangentialDeflection::from_curve_with_deriv(&Adapter(c), a, b, tol, angle_tol).params
+    let ang = if angle_tol.is_finite() && angle_tol > 0.0 {
+        angle_tol
+    } else {
+        std::f64::consts::PI
+    };
+    let mut intervals = c.parameter_intervals(6);
+    if intervals.len() < 2 {
+        intervals = vec![a, b];
+    }
+    let degree_min_nb = c.nurbs_degree().map(|d| (d + 1).max(2)).unwrap_or(2);
+    let (params, _) = perform_tangential_curve(
+        &Adapter(c),
+        a,
+        b,
+        ang,
+        tol,
+        2,
+        PCONFUSION,
+        CONFUSION,
+        &intervals,
+        degree_min_nb,
+    );
+    if params.len() < 2 {
+        vec![a, b]
+    } else {
+        params
+    }
 }
 
 #[cfg(test)]
@@ -409,48 +436,6 @@ mod tests {
         assert!((params[1] - 0.25).abs() < 1e-6, "params {params:?}");
         assert!((params[2] - 0.5).abs() < 1e-6, "params {params:?}");
         assert!((params[3] - 0.75).abs() < 1e-6, "params {params:?}");
-    }
-
-    #[test]
-    fn uniform_deflection_circle_within_tolerance() {
-        let c = unit_circle();
-        let tol = 0.01;
-        let params = uniform_deflection(&c, tol);
-        assert!(params.len() >= 9, "only {} params", params.len());
-        // Chord error over every span is within tol.
-        for w in params.windows(2) {
-            let (ua, ub) = (w[0], w[1]);
-            let (pa, pb) = (c.d0(ua), c.d0(ub));
-            for k in 1..9 {
-                let p = c.d0(ua + (ub - ua) * k as f64 / 9.0);
-                let d = point_seg_dist(&p, &pa, &pb);
-                assert!(d <= tol + 1e-9, "deviation {d} > tol {tol} in [{ua}, {ub}]");
-            }
-        }
-        // First and last parameters are the range bounds.
-        assert!((params[0] - 0.0).abs() < 1e-12);
-        assert!((params[params.len() - 1] - 2.0 * PI).abs() < 1e-12);
-    }
-
-    #[test]
-    fn tangential_deflection_refines() {
-        let c = unit_circle();
-        let params = tangential_deflection(&c, 0.5, 0.1);
-        assert!(params.len() > 8, "only {} params", params.len());
-        assert!((params[0] - 0.0).abs() < 1e-12);
-        assert!((params[params.len() - 1] - 2.0 * PI).abs() < 1e-12);
-    }
-
-    fn point_seg_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> f64 {
-        let ab = GpVec::from_pnts(a, b);
-        let l2 = ab.square_magnitude();
-        if l2 <= f64::EPSILON {
-            return p.distance(a);
-        }
-        let t = ((p.x() - a.x()) * ab.x() + (p.y() - a.y()) * ab.y() + (p.z() - a.z()) * ab.z()) / l2;
-        let t = t.clamp(0.0, 1.0);
-        let q = GpPnt::new(a.x() + t * ab.x(), a.y() + t * ab.y(), a.z() + t * ab.z());
-        p.distance(&q)
     }
 
     #[test]

@@ -11,10 +11,11 @@
 //! `&dyn Surface` / `&dyn Curve`, which accepts the crate's `Arc<dyn Surface>` /
 //! `Arc<dyn Curve>` handles via deref coercion.
 
-use occt_core::gcpnts::{CurveDeriv, CurveSample, TangentialDeflection};
 use occt_core::gp::{GpDir, GpPnt, GpPnt2d, GpVec, GpXY};
 use occt_core::precision::{ANGULAR, PCONFUSION, REAL_SMALL, SQUARE_CONFUSION};
 use occt_geom::{Curve, Surface};
+
+use crate::meshing::edge_discret::CurveTessellator;
 
 /// Iso-curve type. Source: `GeomAbs_IsoType`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,6 +410,11 @@ impl GeomTool {
 
     /// Discretizes `curve` on `[first, last]` with adaptive tangential
     /// deflection. Returns `(parameter, point)` pairs.
+    ///
+    /// Uses the faithful `GCPnts_TangentialDeflection` engine
+    /// (`GCPnts_TangentialDeflection::initialize` + `PerformCurve`,
+    /// `cxx:415-453`, `cxx:522-916`); the previous implementation used an
+    /// invented midpoint-bisection sampler (audit A6).
     pub fn discretize_curve(
         curve: &dyn Curve,
         first: f64,
@@ -417,18 +423,28 @@ impl GeomTool {
         ang_deflection: f64,
         min_points: usize,
     ) -> Vec<(f64, GpPnt)> {
-        let adapter = CurveAdapter { curve };
-        let td = TangentialDeflection::from_curve_with_deriv(
-            &adapter,
+        let arc: std::sync::Arc<dyn Curve> = std::sync::Arc::from(curve.clone_dyn());
+        let tess = CurveTessellator::from_range_angular_min(
+            arc,
             first,
             last,
             lin_deflection,
             ang_deflection,
+            min_points,
+            occt_core::precision::CONFUSION,
         );
-        enforce_min_points(&td.params, &td.points, min_points, &adapter)
+        tess.params()
+            .iter()
+            .copied()
+            .zip(tess.points().iter().copied())
+            .collect()
     }
 
     /// Discretizes an iso-curve of `surface`. Returns `(parameter, point, uv)`.
+    ///
+    /// The iso curve comes from `Geom_Surface::UIso/VIso` (port:
+    /// `Surface::u_iso_curve`/`v_iso_curve`) and is tessellated with the faithful
+    /// tangential-deflection engine, as OCCT does.
     pub fn discretize_iso_curve(
         surface: &dyn Surface,
         iso_type: IsoType,
@@ -439,17 +455,26 @@ impl GeomTool {
         ang_deflection: f64,
         min_points: usize,
     ) -> Vec<(f64, GpPnt, GpPnt2d)> {
-        let adapter = IsoCurveAdapter { surface, iso_type, iso_param };
-        let td = TangentialDeflection::from_curve_with_deriv(
-            &adapter,
+        let arc = match iso_type {
+            IsoType::U => surface.u_iso_curve(iso_param),
+            IsoType::V => surface.v_iso_curve(iso_param),
+        };
+        let Some(arc) = arc else {
+            return Vec::new();
+        };
+        let tess = CurveTessellator::from_range_angular_min(
+            arc,
             first,
             last,
             lin_deflection,
             ang_deflection,
+            min_points,
+            occt_core::precision::CONFUSION,
         );
-        let pairs = enforce_min_points(&td.params, &td.points, min_points, &adapter);
-        pairs
-            .into_iter()
+        tess.params()
+            .iter()
+            .copied()
+            .zip(tess.points().iter().copied())
             .map(|(t, p)| {
                 let uv = match iso_type {
                     IsoType::U => GpPnt2d::new(iso_param, t),
@@ -458,78 +483,6 @@ impl GeomTool {
                 (t, p, uv)
             })
             .collect()
-    }
-}
-
-/// Enforces the minimum-points contract: if the adaptive sampler produced fewer
-/// than `min_points`, re-samples uniformly. Otherwise keeps the adaptive points.
-fn enforce_min_points<A: CurveSample>(
-    params: &[f64],
-    points: &[GpPnt],
-    min_points: usize,
-    adapter: &A,
-) -> Vec<(f64, GpPnt)> {
-    if params.len() >= min_points.max(2) {
-        return params.iter().zip(points.iter()).map(|(&t, &p)| (t, p)).collect();
-    }
-    let n = min_points.max(2);
-    let (a, b) = (params[0], *params.last().unwrap());
-    (0..n)
-        .map(|i| {
-            let t = a + (b - a) * i as f64 / (n - 1) as f64;
-            (t, adapter.point(t))
-        })
-        .collect()
-}
-
-/// `CurveSample`/`CurveDeriv` adapter over a `dyn Curve` for the gcpnts samplers.
-struct CurveAdapter<'a> {
-    curve: &'a dyn Curve,
-}
-
-impl CurveSample for CurveAdapter<'_> {
-    fn point(&self, u: f64) -> GpPnt {
-        self.curve.d0(u)
-    }
-}
-
-impl CurveDeriv for CurveAdapter<'_> {
-    fn tangent(&self, u: f64) -> GpVec {
-        self.curve.d1(u).1
-    }
-}
-
-/// `CurveSample`/`CurveDeriv` adapter over a surface iso-curve.
-struct IsoCurveAdapter<'a> {
-    surface: &'a dyn Surface,
-    iso_type: IsoType,
-    iso_param: f64,
-}
-
-impl IsoCurveAdapter<'_> {
-    fn params(&self, t: f64) -> (f64, f64) {
-        match self.iso_type {
-            IsoType::U => (self.iso_param, t),
-            IsoType::V => (t, self.iso_param),
-        }
-    }
-}
-
-impl CurveSample for IsoCurveAdapter<'_> {
-    fn point(&self, t: f64) -> GpPnt {
-        let (u, v) = self.params(t);
-        self.surface.d0(u, v)
-    }
-}
-
-impl CurveDeriv for IsoCurveAdapter<'_> {
-    fn tangent(&self, t: f64) -> GpVec {
-        let (u, v) = self.params(t);
-        let (_, du, dv) = GeomTool::tangent_on_surface(self.surface, u, v);
-        match self.iso_type {
-            IsoType::U => dv,
-            IsoType::V => du,
-        }
     }
 }
 

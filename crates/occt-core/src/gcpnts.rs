@@ -1,35 +1,41 @@
-//! Point generators for curves and surfaces.
+//! Point generators for curves (`GCPnts` package).
 //!
-//! Port of the OCCT `GCPnts` package point-distribution tools:
-//! `GCPnts_UniformDeflection`, `GCPnts_QuasiUniformDeflection` and
-//! `GCPnts_TangentialDeflection`, plus a small set of deterministic sampling
-//! helpers.
+//! **Ported (faithful)**: the `GCPnts_TangentialDeflection` engine lives in
+//! `gcpnts_perform.rs` / `gcpnts_estim.rs` — `PerformLinear` (`cxx:321-348`),
+//! `PerformCurve` (`cxx:522-916`) and `EstimDefl` (`cxx:960-1010`), re-exported
+//! below as `perform_linear` / `perform_tangential_curve`.
 //!
-//! All samplers work on an abstract parametric curve — anything that can
-//! evaluate a 3D point (and optionally a tangent) from a parameter value.
+//! **UNPORTED** (do not fake these — no OCCT branch exists here yet):
+//! - `GCPnts_UniformDeflection` (`GCPnts_UniformDeflection.cxx`): Linear /
+//!   Circular / Curved / Composite dispatch plus the `Controle` end-point
+//!   correction. Callers that need a chord-deflection polyline must currently
+//!   use the tangential engine (what `BRepMesh_CurveTessellator` does in OCCT:
+//!   `BRepMesh_CurveTessellator.cxx` -> `GCPnts_TangentialDeflection`).
+//! - `GCPnts_QuasiUniformDeflection` (`GCPnts_QuasiUniformDeflection.cxx`).
+//! - `GCPnts_UniformAbscissa` (`GCPnts_UniformAbscissa.cxx`).
+//!
+//! The remaining helpers in this file (`UniformPoints`, `sample_line`,
+//! `sample_circle`, `polyline_length`, `reparametrize_by_chord_length`,
+//! `evaluate_at`, `total_chord_error`) are **port-internal utilities, not OCCT
+//! translations**; they carry no OCCT line references and must not be used as
+//! evidence of alignment.
 
-use crate::gp::{GpPnt, GpVec};
+use crate::gp::GpPnt;
 
 #[path = "gcpnts_perform.rs"]
 mod perform;
 pub use perform::{perform_linear, perform_tangential_curve, CurveSecondDeriv};
 
-/// Minimal curve abstraction for point generation.
+/// Minimal curve abstraction for parameter-uniform sampling.
 pub trait CurveSample {
     /// Point of the curve at parameter `u`.
     fn point(&self, u: f64) -> GpPnt;
 }
 
-/// Curves that also expose a tangent direction.
-pub trait CurveDeriv {
-    /// Tangent direction at parameter `u` (need not be unit length).
-    fn tangent(&self, u: f64) -> GpVec;
-}
-
-/// Recursion depth cap for the adaptive samplers.
-const MAX_DEPTH: usize = 16;
-
 /// Uniformly spaced points over a parameter interval.
+///
+/// Port-internal utility (not an OCCT class; `GCPnts_UniformAbscissa` is
+/// arc-length based and is UNPORTED, see the module docs).
 pub struct UniformPoints {
     pub params: Vec<f64>,
     pub points: Vec<GpPnt>,
@@ -75,152 +81,6 @@ impl UniformPoints {
     /// Parameter of the `i`-th sample (0-based).
     pub fn parameter(&self, i: usize) -> f64 {
         self.params[i]
-    }
-}
-
-/// Adaptive sampling so every chord deviates from the curve by at most `tol`.
-pub struct UniformDeflection {
-    pub points: Vec<GpPnt>,
-    pub params: Vec<f64>,
-}
-
-impl UniformDeflection {
-    /// Subdivide `[a, b]` until each chord deviates from the curve by at most
-    /// `tol`, never producing more than `max_pts` points.
-    pub fn from_curve<C: CurveSample>(c: &C, a: f64, b: f64, tol: f64, max_pts: usize) -> Self {
-        let mut params = Vec::new();
-        let mut points = Vec::new();
-        subdivide(c, a, b, tol, max_pts, 0, &mut params, &mut points);
-        Self { points, params }
-    }
-
-    /// Same as [`Self::from_curve`] with no point cap and depth [`MAX_DEPTH`].
-    pub fn from_curve_with_deflection<C: CurveSample>(c: &C, a: f64, b: f64, tol: f64) -> Self {
-        let mut params = Vec::new();
-        let mut points = Vec::new();
-        subdivide(c, a, b, tol, usize::MAX, 0, &mut params, &mut points);
-        Self { points, params }
-    }
-}
-
-/// Recursive subdivision core. A span is split when the midpoint deviates
-/// from the chord by more than `tol`, subject to depth and point caps.
-fn subdivide<C: CurveSample>(
-    c: &C,
-    a: f64,
-    b: f64,
-    tol: f64,
-    max_pts: usize,
-    depth: usize,
-    params: &mut Vec<f64>,
-    points: &mut Vec<GpPnt>,
-) {
-    let pa = c.point(a);
-    let pb = c.point(b);
-    let mid = 0.5 * (a + b);
-    let pm = c.point(mid);
-    let dev = point_segment_dist(&pm, &pa, &pb);
-
-    if dev > tol && depth < MAX_DEPTH && params.len() < max_pts {
-        subdivide(c, a, mid, tol, max_pts, depth + 1, params, points);
-        subdivide(c, mid, b, tol, max_pts, depth + 1, params, points);
-    } else {
-        // Emit the span, avoiding a duplicate start point (the previous
-        // accepted leaf already emitted `a` as its end point).
-        if params.last() != Some(&a) {
-            params.push(a);
-            points.push(pa);
-        }
-        params.push(b);
-        points.push(pb);
-    }
-}
-
-/// Like [`UniformDeflection`] but inserts each span's midpoint so the point
-/// count is always odd (matches `GCPnts_QuasiUniformDeflection`).
-pub struct QuasiUniformDeflection {
-    pub points: Vec<GpPnt>,
-    pub params: Vec<f64>,
-}
-
-impl QuasiUniformDeflection {
-    /// Delegate to [`UniformDeflection::from_curve`], then add each span's
-    /// midpoint. `n` base points become `2n-1` (always odd).
-    pub fn from_curve<C: CurveSample>(c: &C, a: f64, b: f64, tol: f64, max_pts: usize) -> Self {
-        let base = UniformDeflection::from_curve(c, a, b, tol, max_pts);
-        let n = base.params.len();
-        if n < 2 {
-            return Self { points: base.points, params: base.params };
-        }
-        let mut params = Vec::with_capacity(2 * n - 1);
-        let mut points = Vec::with_capacity(2 * n - 1);
-        for i in 0..n - 1 {
-            let ua = base.params[i];
-            let ub = base.params[i + 1];
-            let um = 0.5 * (ua + ub);
-            params.push(ua);
-            points.push(base.points[i]);
-            params.push(um);
-            points.push(c.point(um));
-        }
-        params.push(base.params[n - 1]);
-        points.push(base.points[n - 1]);
-        Self { points, params }
-    }
-}
-
-/// Adaptive sampling driven by both chord deflection and tangent-angle change.
-pub struct TangentialDeflection {
-    pub points: Vec<GpPnt>,
-    pub params: Vec<f64>,
-}
-
-impl TangentialDeflection {
-    /// Refine `[a, b]` so chords deviate by at most `tol` and the tangent
-    /// direction changes by no more than `angle_tol` radians between any two
-    /// consecutive samples.
-    pub fn from_curve_with_deriv<C: CurveSample + CurveDeriv>(
-        c: &C,
-        a: f64,
-        b: f64,
-        tol: f64,
-        angle_tol: f64,
-    ) -> Self {
-        let mut params = Vec::new();
-        let mut points = Vec::new();
-        subdivide_tangent(c, a, b, tol, angle_tol, 0, &mut params, &mut points);
-        Self { points, params }
-    }
-}
-
-/// Recursive subdivision combining chord deviation and tangent-angle criteria.
-fn subdivide_tangent<C: CurveSample + CurveDeriv>(
-    c: &C,
-    a: f64,
-    b: f64,
-    tol: f64,
-    angle_tol: f64,
-    depth: usize,
-    params: &mut Vec<f64>,
-    points: &mut Vec<GpPnt>,
-) {
-    let pa = c.point(a);
-    let pb = c.point(b);
-    let mid = 0.5 * (a + b);
-    let pm = c.point(mid);
-    let dev = point_segment_dist(&pm, &pa, &pb);
-    let dangle = c.tangent(a).angle(&c.tangent(b));
-
-    if (dev > tol || dangle > angle_tol) && depth < MAX_DEPTH {
-        subdivide_tangent(c, a, mid, tol, angle_tol, depth + 1, params, points);
-        subdivide_tangent(c, mid, b, tol, angle_tol, depth + 1, params, points);
-    } else {
-        if params.last() != Some(&a) {
-            params.push(a);
-            points.push(pa);
-        }
-        params.push(b);
-        points.push(pb);
     }
 }
 
@@ -301,7 +161,7 @@ pub fn sample_circle(center: &GpPnt, radius: f64, n: usize, z_normal: bool) -> V
 ///
 /// For each span the true curve is sampled at 8 interior parameters and the
 /// furthest of those points from the chord is taken; the result is the
-/// maximum over all spans.
+/// maximum over all spans. Port-internal measurement helper (not OCCT).
 pub fn total_chord_error(points: &[GpPnt], orig: &dyn Fn(f64) -> GpPnt, params: &[f64]) -> f64 {
     let mut max_dev = 0.0f64;
     let n = params.len().min(points.len());
@@ -330,7 +190,7 @@ fn lerp(a: &GpPnt, b: &GpPnt, t: f64) -> GpPnt {
 }
 
 /// Distance from point `p` to the line segment `a..b`.
-fn point_segment_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> f64 {
+pub(crate) fn point_segment_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> f64 {
     let abx = b.x() - a.x();
     let aby = b.y() - a.y();
     let abz = b.z() - a.z();
@@ -356,20 +216,6 @@ mod tests {
         }
     }
 
-    struct Circle {
-        radius: f64,
-    }
-    impl CurveSample for Circle {
-        fn point(&self, u: f64) -> GpPnt {
-            GpPnt::new(self.radius * u.cos(), self.radius * u.sin(), 0.0)
-        }
-    }
-    impl CurveDeriv for Circle {
-        fn tangent(&self, u: f64) -> GpVec {
-            GpVec::new(-self.radius * u.sin(), self.radius * u.cos(), 0.0)
-        }
-    }
-
     #[test]
     fn uniform_points_linear() {
         let up = UniformPoints::from_curve(&LinearX, 0.0, 10.0, 11);
@@ -378,40 +224,6 @@ mod tests {
         assert!((p5.x() - 5.0).abs() < 1e-12, "p5.x={}", p5.x());
         assert!(p5.y().abs() < 1e-12 && p5.z().abs() < 1e-12);
         assert!((up.parameter(10) - 10.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn uniform_deflection_circle() {
-        let c = Circle { radius: 1.0 };
-        let ud = UniformDeflection::from_curve_with_deflection(&c, 0.0, 2.0 * std::f64::consts::PI, 0.01);
-        assert!(ud.points.len() > 8, "only {} points", ud.points.len());
-        let err = total_chord_error(&ud.points, &|u| c.point(u), &ud.params);
-        assert!(err < 0.02, "chord error {err} too large");
-    }
-
-    #[test]
-    fn quasi_uniform_odd_count() {
-        let c = Circle { radius: 1.0 };
-        let q = QuasiUniformDeflection::from_curve(&c, 0.0, std::f64::consts::PI, 0.01, 1000);
-        assert!(q.points.len() > 4);
-        assert_eq!(q.points.len() % 2, 1, "expected odd count, got {}", q.points.len());
-    }
-
-    #[test]
-    fn tangential_deflection_refines() {
-        let c = Circle { radius: 1.0 };
-        // Loose deflection but a tight angle tolerance: the tangent criterion
-        // must drive the refinement.
-        let td = TangentialDeflection::from_curve_with_deriv(
-            &c,
-            0.0,
-            2.0 * std::f64::consts::PI,
-            0.5,
-            0.1,
-        );
-        assert!(td.points.len() > 8, "only {} points", td.points.len());
-        let err = total_chord_error(&td.points, &|u| c.point(u), &td.params);
-        assert!(err < 0.02, "chord error {err} too large");
     }
 
     #[test]

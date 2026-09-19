@@ -1,18 +1,25 @@
 //! Wireframe & face tessellation.
 //!
-//! Port of the *meshing* half of `BRepMesh_IncrementalMesh`: an edge is
-//! turned into a deflection-bounded polyline (`GCPnts_UniformDeflection`) and a
-//! face into a UV-grid triangle soup. Geometry is read from the side-table
-//! registry (`tgeometry::GeometryRegistry`) — the same data `BRep_Tool` reads.
+//! Port of the *meshing* half of `BRepMesh_IncrementalMesh`: an edge is turned
+//! into a deflection-bounded polyline and a face into a UV-grid triangle soup.
+//! Geometry is read from the side-table registry (`tgeometry::GeometryRegistry`)
+//! — the same data `BRep_Tool` reads.
+//!
+//! Edge polylines go through the faithful tessellator
+//! (`meshing::edge_discret::CurveTessellator` = `GCPnts_TangentialDeflection`
+//! initialize/PerformCurve), matching OCCT's mesh pipeline where
+//! `BRepMesh_CurveTessellator` uses `GCPnts_TangentialDeflection`.
+//! `GCPnts_UniformDeflection` is **UNPORTED** (see `occt-core/src/gcpnts.rs`).
 
 use occt_core::gp::{GpPnt, GpPnt2d, GpXyz};
-use occt_core::gcpnts::{CurveSample, UniformDeflection, UniformPoints};
+use occt_core::gcpnts::{CurveSample, UniformPoints};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::{Curve, Surface};
 
 use crate::abs::ShapeType;
 use crate::brep_surface::{face_is_planar, face_plane};
 use crate::iterator::cumulated_children;
+use crate::meshing::edge_discret::{tessellator_min_points, CurveTessellator};
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{edges_of_wire, wires_of_face};
@@ -21,7 +28,7 @@ fn reg() -> &'static GeometryRegistry {
     GeometryRegistry::global()
 }
 
-/// Adapter making a `&dyn Curve` sampleable by the `gcpnts` samplers.
+/// Adapter making a `&dyn Curve` sampleable by the uniform fallback sampler.
 struct CurveAdapter<'a> {
     curve: &'a dyn Curve,
 }
@@ -33,10 +40,14 @@ impl CurveSample for CurveAdapter<'_> {
 
 /// Discretize an edge into a polyline of 3D points.
 ///
-/// The underlying curve is sampled with [`UniformDeflection`] over the edge's
-/// parameter range; both endpoints are always included. If the edge has no
-/// registered curve (or an unbounded range) an empty polyline is returned;
-/// a fallback of 64 uniform samples covers the degenerate-adaptive case.
+/// The curve is tessellated over the edge's parameter range with the faithful
+/// `GCPnts_TangentialDeflection` engine (`GCPnts_TangentialDeflection::initialize`
+/// `cxx:415-453` + `PerformCurve` `cxx:522-916`), i.e. what OCCT's
+/// `BRepMesh_CurveTessellator` calls; `min_points` comes from
+/// `BRepMesh_CurveTessellator.cxx:100-114` (`tessellator_min_points`).
+/// Both endpoints are always included. If the edge has no registered curve (or
+/// an unbounded range) an empty polyline is returned; a fallback of 64 uniform
+/// samples covers the degenerate case.
 pub fn edge_to_polyline(e: &Edge, deflection: f64) -> Vec<GpPnt> {
     let Some(curve) = reg().edge_curve(e) else { return Vec::new() };
     let (f0, f1) = reg().edge_parameters(e);
@@ -45,9 +56,10 @@ pub fn edge_to_polyline(e: &Edge, deflection: f64) -> Vec<GpPnt> {
         return vec![curve.d0(a)];
     }
     let tol = deflection.max(1e-9);
-    let sampled = UniformDeflection::from_curve_with_deflection(&CurveAdapter { curve: curve.as_ref() }, a, b, tol);
-    if sampled.points.len() >= 2 {
-        sampled.points
+    let min_points = tessellator_min_points(curve.as_ref());
+    let tess = CurveTessellator::from_range(curve.clone(), a, b, tol, min_points);
+    if tess.points_nb() >= 2 {
+        tess.points().to_vec()
     } else {
         UniformPoints::from_curve(&CurveAdapter { curve: curve.as_ref() }, a, b, 64).points
     }
