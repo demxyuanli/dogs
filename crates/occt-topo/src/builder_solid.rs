@@ -716,7 +716,19 @@ mod tests {
             &GpPnt::new(0.75, 0.75, 0.75),
         );
         let mut faces: Vec<TopoShape> = faces_of(&outer.solid.0).into_iter().map(|f| f.0).collect();
-        faces.extend(faces_of(&inner.solid.0).into_iter().map(|f| f.0));
+        // A cavity shell is stored INVERTED: `IsHole`
+        // (`BOPAlgo_BuilderSolid.cxx:823-831`) asks whether the *infinite* point
+        // classifies `IN` on the shell wrapped as a solid, which only holds when
+        // the shell's faces point into its own void. `BRepPrimBox::make_box_corner`
+        // builds a normal outward box, so the cavity faces are reversed here —
+        // exactly how the split of a Cut operand hands its inner shell to the
+        // builder. (With outward faces OCCT sees a second *growth* and emits two
+        // areas, which is what the un-reversed fixture was really asserting.)
+        faces.extend(
+            faces_of(&inner.solid.0)
+                .into_iter()
+                .map(|f| f.0.oriented(crate::abs::Orientation::Reversed)),
+        );
         let mut bs = BuilderSolid::new();
         bs.set_shapes(faces);
         bs.perform().expect("perform");

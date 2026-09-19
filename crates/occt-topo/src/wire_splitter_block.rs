@@ -10,8 +10,9 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 
 use occt_core::gp::{GpDir2d, GpPnt2d, GpVec2d};
-use occt_core::precision::{Precision, PCONFUSION};
+use occt_core::precision::{Precision, ANGULAR, PCONFUSION};
 use occt_geom2d::curve::Curve2d;
+use occt_geom2d::line::Geom2dLine;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::boptools_2d::make_2d;
@@ -524,22 +525,137 @@ fn uv_tolerance_2d(v: &Vertex, face: &Face) -> (f64, f64) {
     (ur, vr)
 }
 
-/// `RefineAngles`: only the `iCntBnd != 2` early-out is needed for the
-/// planar IN-edge splits (a vertex with three boundary edges returns here).
-/// `RefineAngle2D` (2D line intersection) is not instantiated.
-fn refine_angles(_face: &Face, map: &mut SmartMap) {
-    for infos in &mut map.infos {
-        let mut n_bnd = 0;
-        for ei in infos.iter() {
-            if !ei.is_inside {
-                n_bnd += 1;
+/// `BOPAlgo_WireSplitter::RefineAngles` (`BOPAlgo_WireSplitter_1.cxx:905-918`,
+/// `:925-1029`): for every vertex, when exactly **two** boundary edges meet,
+/// re-angle the interior OUT edges that do not already lie inside the boundary
+/// wedge — through [`refine_angle_2d`], or, when the vertex carries exactly two
+/// interior edges and the 2-D intersection finds nothing, by nudging the angle
+/// just inside the wedge (`:996-1000`). The updated angle is looked up by edge
+/// (`aDMSR` is a map of edge → angle), so both occurrences of a shared section
+/// edge at the vertex get it, the IN one shifted by π (`:1009-1027`).
+fn refine_angles(face: &Face, map: &mut SmartMap) {
+    for slot in 0..map.verts.len() {
+        let v = map.verts[slot].clone();
+        refine_angles_at_vertex(face, &v, &mut map.infos[slot]);
+    }
+}
+
+fn refine_angles_at_vertex(face: &Face, v: &TopoShape, infos: &mut [EdgeInfo]) {
+    let mut a_a1 = 0.0_f64; // angle of the outgoing boundary edge
+    let mut a_a2 = 0.0_f64; // angle of the incoming boundary edge
+    let mut i_cnt_bnd = 0usize;
+    let mut i_cnt_int = 0usize;
+    for ei in infos.iter() {
+        if !ei.is_inside {
+            i_cnt_bnd += 1;
+            if ei.is_in {
+                a_a2 = ei.angle;
+            } else {
+                a_a1 = ei.angle;
             }
+        } else {
+            i_cnt_int += 1;
         }
-        if n_bnd != 2 {
+    }
+    if i_cnt_bnd != 2 {
+        return;
+    }
+    let a_delta = clockwise_angle(a_a2, a_a1);
+    let mut refined: HashMap<usize, f64> = HashMap::new();
+    for ei in infos.iter() {
+        if !ei.is_inside || ei.is_in {
             continue;
         }
-        let _ = infos;
+        if clockwise_angle(a_a2, ei.angle) < a_delta {
+            continue; // already inside the wedge
+        }
+        let ek = GeometryRegistry::shape_key(&ei.edge.0);
+        match refine_angle_2d(face, v, &ei.edge, a_a1, a_a2, a_delta) {
+            Some(a_new) => {
+                refined.insert(ek, a_new);
+            }
+            None if i_cnt_int == 2 => {
+                let a_new = if ei.angle <= a_a1 {
+                    a_a1 + ANGULAR
+                } else {
+                    a_a2 - ANGULAR
+                };
+                refined.insert(ek, a_new);
+            }
+            None => {}
+        }
     }
+    if refined.is_empty() {
+        return;
+    }
+    for ei in infos.iter_mut() {
+        if let Some(&a) = refined.get(&GeometryRegistry::shape_key(&ei.edge.0)) {
+            ei.angle = if ei.is_in { a + PI } else { a };
+        }
+    }
+}
+
+/// `RefineAngle2D` (`BOPAlgo_WireSplitter_1.cxx:1033-1125`): intersect the
+/// edge's p-curve with the ray through the vertex along each boundary angle and
+/// take the angle of the point where the curve leaves the wedge. Returns the
+/// refined angle, or `None` when neither ray produces a usable point.
+fn refine_angle_2d(
+    face: &Face,
+    v: &TopoShape,
+    e: &Edge,
+    a_a1: f64,
+    a_a2: f64,
+    a_delta: f64,
+) -> Option<f64> {
+    let a_cf = 0.01;
+    let a_tol_int = 1.0e-10;
+    let c = make_2d(e, face).ok()?;
+    let (a_t1, a_t2) = BRepTool::edge_parameters(e);
+    let a_tv = vertex_parameter(v, e);
+    let a_pv = c.d0(a_tv);
+    let a_t_op = if (a_tv - a_t1).abs() < (a_tv - a_t2).abs() {
+        a_t2
+    } else {
+        a_t1
+    };
+    // `aGAC1.Load(aC2D, aT1, aT2)`: the intersection is restricted to the
+    // CurveOnSurface range, which for a bounded p-curve is its own domain.
+    let max_dt = 0.3 * (a_t2 - a_t1);
+    for i in 0..2 {
+        let a_ai = if i == 0 { a_a1 } else { a_a2 + PI };
+        let dir = GpDir2d::from_vec2d(&GpVec2d::new(a_ai.cos(), a_ai.sin())).ok()?;
+        let line = Geom2dLine::from_pnt_dir(a_pv, dir);
+        let points = occt_geom2d::geom2d_api::intersect_curves(c.as_ref(), &line, a_tol_int);
+        let mut a_t1max = a_tv;
+        let mut a_t2max = -1.0_f64;
+        for p in points {
+            if p.u1 < a_t1 - a_tol_int || p.u1 > a_t2 + a_tol_int {
+                continue;
+            }
+            if p.u2 > a_t2max && (p.u1 - a_tv).abs() < max_dt {
+                a_t2max = p.u2;
+                a_t1max = p.u1;
+            }
+        }
+        if a_t2max <= 0.0 {
+            continue;
+        }
+        let d_t = a_t_op - a_t1max;
+        if d_t.abs() < a_tol_int {
+            continue;
+        }
+        let a_t = a_t1max + a_cf * d_t;
+        let a_p = c.d0(a_t);
+        let vec2 = GpVec2d::new(a_p.x() - a_pv.x(), a_p.y() - a_pv.y());
+        let Ok(dir2) = GpDir2d::from_vec2d(&vec2) else {
+            continue;
+        };
+        let a_angle = dir2d_angle(&dir2);
+        if clockwise_angle(a_a2, a_angle) < a_delta {
+            return Some(a_angle);
+        }
+    }
+    None
 }
 
 fn edge_closed_on_face(e: &Edge, face: &Face, face_key: usize) -> bool {

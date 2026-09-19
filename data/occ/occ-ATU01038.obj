@@ -1,7 +1,7 @@
 # Exported by Open CASCADE Technology [dev.opencascade.org]
 #  Vertices: 18102
 #     Faces: 22586
-mtllib ATU01038.mtl
+mtllib occ-as.mtl
 g ATU01038_中実
 usemtl mat_1
 v -9.750000 0.492118 238.982452

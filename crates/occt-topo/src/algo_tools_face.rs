@@ -309,11 +309,19 @@ pub fn get_face_off(
     for cs in lcs_off {
         let e2 = Edge(cs.shape1.clone());
         let f2 = Face(cs.shape2.clone());
-        let dtgt2 = if e2.0.orientation() == or1 {
-            dtgt
-        } else {
-            dtgt.reversed()
+        // `GetFaceOff` (`BOPTools_AlgoTools.cxx:1051`) keeps `aDTgt` when the
+        // two edges carry the same orientation, because they are the same
+        // `TopoDS_Edge` and therefore traverse in the same direction. Here the
+        // candidate edge is matched geometrically and may have been built with
+        // the opposite vertex order, so the traversals themselves are compared.
+        let same_dir = match (
+            crate::shell_splitter::edge_traversal(e1),
+            crate::shell_splitter::edge_traversal(&e2),
+        ) {
+            (Some(t1), Some(t2)) => t1 == t2,
+            _ => e2.0.orientation() == or1,
         };
+        let dtgt2 = if same_dir { dtgt } else { dtgt.reversed() };
         let Some((_dn2, dbf2)) =
             get_face_dir(&e2, &f2, &px, t, &dtgt2, small, ctx, &px, &dtgt, dt3d)
         else {
@@ -713,10 +721,16 @@ pub fn is_split_to_reverse_edge(
     let Some(c_sp) = BRepTool::edge_curve(e_sp) else {
         return Err(1);
     };
-    let Some(_c_or) = BRepTool::edge_curve(e_or) else {
+    let Some(c_or) = BRepTool::edge_curve(e_or) else {
         return Err(1);
     };
-    if GeometryRegistry::shape_key(&e_sp.0) == GeometryRegistry::shape_key(&e_or.0) {
+    // `BOPTools_AlgoTools.cxx:1461-1465`: when the two edges carry the *same
+    // curve* — every split piece of an edge does, `MakeSplitEdge` copies the
+    // parent's `Geom_Curve` handle — the decision is the orientation comparison
+    // alone, and the tangent test is not run. Comparing the edge TShape instead
+    // would never fire for a split piece (it is a distinct TShape) and would
+    // force the geometric branch on the most common case.
+    if std::sync::Arc::ptr_eq(&c_sp, &c_or) {
         return Ok(e_sp.0.orientation() != e_or.0.orientation());
     }
     let (f, l) = BRepTool::edge_parameters(e_sp);

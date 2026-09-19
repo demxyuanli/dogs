@@ -54,13 +54,17 @@ use super::*;
 
     #[test]
     fn point_ellipse_y_axis() {
-        // Point (0,4,0), a=2,b=1: closest at u=3π/2 → (0,1,0), dist 3.
+        // Point (0,4,0), a=2,b=1: closest at u=π/2 → (0,1,0), dist 3.
+        // Parameterization is `ElCLib::EllipseValue` (`ElCLib.cxx:176-189`):
+        // P = Loc + Major*cos(U)*XDir + Minor*sin(U)*YDir, so +YDir sits at
+        // U = π/2 (the previous expectation 3π/2 encoded the mirrored
+        // `-Minor*sin(U)` that `clib::ellipse_value` no longer uses).
         let e = GpElips::new(GpAx2::standard(), 2.0, 1.0);
         let p = GpPnt::new(0.0, 4.0, 0.0);
         let em = point_ellipse_extrema(&e, &p);
         assert!((em.distance - 3.0).abs() < 1e-7, "min {}", em.distance);
         assert!((em.p2.x()).abs() < 1e-6 && (em.p2.y() - 1.0).abs() < 1e-6, "closest {em:?}");
-        assert!((em.u1 - 3.0 * PI / 2.0).abs() < 1e-6, "u {}", em.u1);
+        assert!((em.u1 - PI / 2.0).abs() < 1e-6, "u {}", em.u1);
     }
 
     #[test]

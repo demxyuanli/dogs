@@ -76,8 +76,17 @@ fn obj_bbox(obj: &str) -> Option<([f64; 3], [f64; 3])> {
 /// Compare our STEP→OBJ output to the OCCT reference: bbox must match
 /// (within `tol`), density is recorded.
 fn check_parity(step: &str, occ: &str, tol: f64) -> OccHeader {
-    let model = read_step_file(&data_dir().join(format!("{step}.step")).to_string_lossy())
-        .unwrap_or_else(|e| panic!("read {step}.step: {e}"));
+    check_parity_at(&format!("{step}.step"), occ, tol)
+}
+
+/// [`check_parity`] with explicit `data/`-relative paths: the OCCT test models
+/// under `data/occ/` keep their references next to them in `data/occ-ref/`
+/// (`.stp` sources included).
+fn check_parity_at(step_rel: &str, occ_rel: &str, tol: f64) -> OccHeader {
+    let step = step_rel;
+    let occ = occ_rel;
+    let model = read_step_file(&data_dir().join(step).to_string_lossy())
+        .unwrap_or_else(|e| panic!("read {step}: {e}"));
     assert!(!model.shapes.is_empty(), "{step}: parsed to no shapes");
     let obj = brep_to_obj(&model.shapes[0].shape, 0.1);
 
@@ -197,8 +206,34 @@ fn shape_bbox_matches_occt() {
 }
 
 #[test]
-fn rev_export_is_valid() {
-    // rev.step is a 6-face solid (two quarter-cylinder walls + caps) while
+fn atu01038_bbox_matches_occt() {
+    // ATU01038 is the OCCT bug-tracker model shipped with the wave-2026-09-15
+    // data set (`data/ATU01038.step`, product name + colors). Its faces sit on
+    // periodic cylinders/planes, so the old mirrored `ElCLib::EllipseValue`
+    // minor axis plus the un-cancelled lateral seam U winding moved faces
+    // 130/140/156/216/222 off their faces. After the ElCLib sign fix
+    // (`ElCLib.cxx:176-189`) and the OCCT seam/U-winding loop order
+    // (`BRepSweep_Revolve` order in `primitives.rs`) the bbox agrees with the
+    // DRAWEXE reference to 1.1e-5; 1e-4 is the locked tolerance. Density stays
+    // a tracked gap (UV grid vs deflection-adaptive), so it is not asserted.
+    check_parity("ATU01038", "occ-ATU01038.obj", 1e-4);
+}
+
+#[test]
+fn occ_test_model_bboxes_match_occt() {
+    // The wave-2026-09-15 OCCT test models (`data/occ/*.stp`, references
+    // regenerated with `data/_occ_ref_export.tcl` into `data/occ-ref/`). The
+    // bbox is exact for these four — they lock the alignment the export gate
+    // measured; a3n00 / acs10 / TDB still drift and are tracked on the board
+    // instead of being asserted here. Density stays a tracked gap.
+    check_parity_at("occ/bottom.step", "occ-ref/bottom.obj", 1e-3);
+    check_parity_at("occ/motoc.step", "occ-ref/motoc.obj", 1e-3);
+    check_parity_at("occ/top.step", "occ-ref/top.obj", 1e-3);
+    check_parity_at("occ/T0M.stp", "occ-ref/T0M.obj", 1e-3);
+}
+
+#[test]
+fn rev_export_is_valid() {    // rev.step is a 6-face solid (two quarter-cylinder walls + caps) while
     // occ-rev.obj is a simpler 3-face quarter-cylinder — the reference is a
     // different/older shape, so no bbox parity is asserted. Assert a valid
     // export and record density.
