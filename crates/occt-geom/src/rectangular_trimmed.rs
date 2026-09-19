@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpPnt, GpTrsf, GpVec};
+use occt_core::gp::{GpCone, GpCylinder, GpPln, GpPnt, GpSphere, GpTorus, GpTrsf, GpVec};
 use occt_core::precision::Precision;
 
 use crate::curve::Curve;
@@ -233,6 +233,26 @@ impl Surface for GeomRectangularTrimmedSurface {
 
     fn rectangular_trimmed_basis(&self) -> Option<Arc<dyn Surface>> {
         Some(self.basis.clone())
+    }
+
+    // `GeomAdaptor_Surface::load` unwraps a `Geom_RectangularTrimmedSurface` to
+    // its basis surface and keeps only the parameter range
+    // (`GeomAdaptor_Surface.cxx:423-425`), so the `GetType()`-equivalent queries
+    // must report the basis type.
+    fn gp_pln(&self) -> Option<GpPln> {
+        self.basis.gp_pln()
+    }
+    fn gp_sphere(&self) -> Option<GpSphere> {
+        self.basis.gp_sphere()
+    }
+    fn gp_cylinder(&self) -> Option<GpCylinder> {
+        self.basis.gp_cylinder()
+    }
+    fn gp_cone(&self) -> Option<GpCone> {
+        self.basis.gp_cone()
+    }
+    fn gp_torus(&self) -> Option<GpTorus> {
+        self.basis.gp_torus()
     }
 
     fn u_iso_curve(&self, u: f64) -> Option<Arc<dyn Curve>> {

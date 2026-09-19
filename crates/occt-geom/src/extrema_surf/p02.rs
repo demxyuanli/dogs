@@ -388,14 +388,34 @@ pub(super) fn fallback_curve_surface(c: &dyn Curve, s: &dyn Surface) -> ExtremaP
 // ---------------------------------------------------------------------------
 
 /// All local extrema of the point-surface distance, deduplicated and sorted.
-/// Planes and spheres are classified and solved analytically (exact); every
-/// other surface goes through the grid + Newton path.
+///
+/// Mirrors `Extrema_ExtPS::Perform`'s surface-type switch (`Extrema_ExtPS.cxx`):
+/// the elementary surfaces Plane / Cylinder / Cone / Sphere / Torus go to
+/// `Extrema_ExtPElS` (analytically solved, exact), everything else to the
+/// general path. The type is taken from the `GetType()`-equivalent trait
+/// queries (`Surface::gp_pln` / `gp_cylinder` / `gp_cone` / `gp_sphere` /
+/// `gp_torus`), not from a sampling classifier.
 pub fn point_surface_extrema_all(s: &dyn Surface, p: &GpPnt) -> Vec<ExtremaPair> {
-    if let Some(pl) = classify_plane(s) {
+    if let Some(pl) = s.gp_pln() {
         return vec![point_plane_extrema(&pl, p)];
     }
-    if let Some(sp) = classify_sphere(s) {
+    if let Some(sp) = s.gp_sphere() {
         let mut v = point_sphere_extrema(&sp, p);
+        v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        return v;
+    }
+    if let Some(cy) = s.gp_cylinder() {
+        let mut v = point_cylinder_extrema(&cy, p);
+        v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        return v;
+    }
+    if let Some(co) = s.gp_cone() {
+        let mut v = point_cone_extrema(&co, p);
+        v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+        return v;
+    }
+    if let Some(to) = s.gp_torus() {
+        let mut v = point_torus_extrema(&to, p);
         v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
         return v;
     }
@@ -437,14 +457,16 @@ pub fn point_surface_extrema_box(
 }
 
 /// All local extrema of the curve-surface distance, deduplicated and sorted.
-/// Lines against planes/spheres are classified and solved analytically; all
-/// other pairs go through the grid + Newton path.
+/// Lines against planes/spheres are solved analytically by the matching
+/// `Extrema_ExtPElS`-style arm (`Extrema_ExtElCS`'s elementary switch, taken
+/// from the `GetType()`-equivalent trait queries); all other pairs go through
+/// the general path.
 pub fn curve_surface_extrema_all(c: &dyn Curve, s: &dyn Surface) -> Vec<ExtremaPair> {
     if let Some(l) = reconstruct_line(c) {
-        if let Some(sp) = classify_sphere(s) {
+        if let Some(sp) = s.gp_sphere() {
             return line_sphere_extrema(&l, &sp);
         }
-        if let Some(pl) = classify_plane(s) {
+        if let Some(pl) = s.gp_pln() {
             return line_plane_extrema(&l, &pl);
         }
     }
