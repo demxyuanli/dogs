@@ -156,7 +156,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-54 | A18 | `occt-topo/src/wireframe.rs:257-380` | 平面耳切 + 质心角度排序 + 桥洞 → 约束 Delaunay（`BRepMesh_DelaunayBaseMeshAlgo` + `BRepMesh_Delaun`） | 7 | pending |
 | T-55 | A19 | `meshing/incremental_mesh/p01.rs:369,460-467`、`wireframe.rs:407-408`、`brepmesh.rs:38,174-175,259` | `WIREFRAME_FALLBACK_RATIO_MAX=0.10` 失败率换算法 + 四叉树魔数 + `clamp(3,64)` → OCCT 无失败率阈值，逐面置 `IMeshData_Failure`（`BRepMesh_BaseMeshAlgo.cxx:52-62`） | 7 | pending |
 | T-56 | A20 | `occt-topo/src/step/p05.rs:508-604` | `p1.distance(p2) < 1e-3` 替代 `V1.IsSame(V2)`；`Other`/HYPERBOLA 边域落 `(0,1)` → `StepToTopoDS_TranslateEdge.cxx:438,443` + `ShapeAnalysis_Curve.cxx:376-400` | **6** | pending |
-| T-57 | A21 | `occt-topo/src/meshing/model_healer.rs:279-290` | 退化支路左右端接反、丢 `aPrevSqDist - aNextSqDist` 判定 → `BRepMesh_ModelHealer.cxx:491-512` + `hxx:143-151` | **6** | pending |
+| T-57 | A21 | `occt-topo/src/meshing/model_healer.rs:279-290` | 退化支路左右端接反、丢 `aPrevSqDist - aNextSqDist` 判定 → `BRepMesh_ModelHealer.cxx:491-512` + `hxx:143-151` | **6** | **done**（2026-09-20） |
 | T-58 | A22 | `occt-topo/src/step/p05.rs:348-370,740-760` | `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂；圆用三点外心回退 → `ShapeAnalysis_Curve.cxx:382-400,160,200` | 6 | pending |
 | T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | pending |
 | T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | pending |
@@ -215,6 +215,13 @@ cd ..; git worktree remove --force .target-headcheck
 - **配套（`GeomAdaptor_Surface.cxx:423-425`）**：该处 `load` 会把 `Geom_RectangularTrimmedSurface` 解包成 basis + 范围 ⇒ 给 `rectangular_trimmed.rs` 补上 5 个类型查询的**委托**，否则裁剪后的平面/柱面会被当成"非初等"而落到通用路径。
 - **验证**：`occt-geom --lib` 151/151、`occt-topo --lib` 1293/1（唯一红仍 T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3 —— **逐项与基线一致**（含裁剪委托单独复跑 `step_to_obj`）。
 - **未做（T-67 剩余）**：`Extrema_ExtPS` 的**范围/`IsoIsDeg`** 分派（现有解析臂无参数窗口，故 `point_surface_extrema_box` 仍走通用路径）、`Extrema_GenExtPS` 主体（1056 行，含逐 C2 区间采样 + `math_FunctionSetRoot` + 解析 Jacobian）⇒ 完成后再做 T-37 的 40 处调用点迁移。
+
+**批 6 先行（T-57 / A21）：`adjustSamePoints` 忠实化 —— 2026-09-20**
+
+- **OCCT 事实（逐行核对）**：`BRepMesh_ModelHealer.cxx:489-512` 按 `aPrevSqDist - aNextSqDist > gp::Resolution()` 分两支，**两支都写「curr@prev ← prev_val」与「curr@next ← next_val」**，区别只在退化守卫（`hxx:143-148`：当两个配对指向**同一端**时把该端翻到另一头，并用 `closestPoint` 在**minor 边**的端点里重算）；而 minor 边在 prev 更远那一支是 **prev**，在另一支是 **next**。端口原实现**丢了这个判定**、只保留了一支的形态（永远用 next 的端点），且 `closestPoints` 的返回值（平方距离）没接出来。
+- **同步订正的两个比较器**（`hxx:88-129`）：`closestPoint` 用**平方距离 + 严格 `<`**（平局取 second），`closestPoints` 的取舍是 `sq1 - sq2 < gp::Resolution()`（取 first，除非明显更远）——端口原实现用**线性距离 + `<=`**，平局方向相反。
+- **改动**：`model_healer.rs` 新增忠实 `closest_point`/`closest_pair`（返回 `(a_side, b_side, sq)`）与 `adjust_same_points`（`hxx:134-152` 的指针翻转 + `closestPoint` 重算语义），`connect_closest_points` 尾部改为 OCCT 的两支；新增 `GP_RESOLUTION = REAL_SMALL`（`gp::Resolution()`，注明仓内 `RESOLUTION=1e-12` 不是 OCCT 值）；两处既有单测按新签名适配（语义断言不变）。
+- **验证**：`occt-topo --lib` 1293/1（唯一红仍 T-01 `groove_cuts_cylinder`）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3 —— **逐项与基线一致**。
 
 ## 4. 决策与约束（不可违反）
 
