@@ -103,6 +103,26 @@ pub fn locate_parameter_range(
     (knot_index, new_u)
 }
 
+/// `BSplCLib::FlatIndex` (`BSplCLib.cxx:141-164`). `index` / `mults` are
+/// 1-based unique-knot style (`Mults.Lower()=1`).
+pub fn flat_index(degree: i32, index: i32, mults: &[i32], periodic: bool) -> i32 {
+    let mut flat = index;
+    let m_lower = 1i32;
+    for i in (m_lower + 1)..=index {
+        let mi = (i - 1) as usize;
+        if mi >= mults.len() {
+            break;
+        }
+        flat += mults[mi] - 1;
+    }
+    if periodic {
+        flat += degree;
+    } else if let Some(&m0) = mults.first() {
+        flat += m0 - 1;
+    }
+    flat
+}
+
 /// `BSplCLib::FirstUKnotIndex` (`BSplCLib.cxx:111-121`). `mults` is 0-based.
 pub fn first_u_knot_index(degree: i32, mults: &[i32]) -> i32 {
     let mut index = 1i32;

@@ -12,6 +12,11 @@ pub const INFINITE: f64 = 2e100;
 pub const PCONFUSION: f64 = CONFUSION * 0.01;
 pub const PINTERSECTION: f64 = INTERSECTION * 0.01;
 pub const PAPPROXIMATION: f64 = APPROXIMATION * 0.01;
+/// NOT an OCCT constant: `gp::Resolution()` is `RealSmall()` = `DBL_MIN`
+/// (`gp.hxx:60`, `Standard_Real.hxx:132-135`), i.e. `REAL_SMALL` below. The only
+/// `Precision::` member equal to 1e-12 is `Precision::Angular()`
+/// (`Precision.hxx:124`), which is `ANGULAR`. A site whose OCCT counterpart calls
+/// `gp::Resolution()` must use `REAL_SMALL`, never this value.
 pub const RESOLUTION: f64 = 1e-12;
 /// `RealSmall()` (`Standard_Real.hxx:132-135`) = `DBL_MIN`.
 pub const REAL_SMALL: f64 = f64::MIN_POSITIVE;

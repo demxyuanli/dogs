@@ -1,21 +1,27 @@
 //! Jacobi polynomial basis used by `AdvApprox_SimpleApprox`.
 //! Source: `PLib_JacobiPolynomial.cxx`, `PLib.cxx` (`JacobiParameters`, `NivConstr`).
 
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::kernel::geomabs::Shape;
 
 const DATA: &str = include_str!("plib_jacobi_data.pxx");
+const COEFFS: &str = include_str!("plib_jacobi_coeffs.pxx");
 const INVALID: f64 = -999.0;
 const MAX_DEGREE: i32 = 30;
 const NB: [i32; 9] = [8, 10, 15, 20, 25, 30, 40, 50, 61];
 
 fn parse_array(name: &str) -> Vec<f64> {
+    parse_array_in(DATA, name)
+}
+
+fn parse_array_in(src: &str, name: &str) -> Vec<f64> {
     let key = format!("{name}");
-    let Some(pos) = DATA.find(&key) else {
+    let Some(pos) = src.find(&key) else {
         return Vec::new();
     };
-    let rest = &DATA[pos + key.len()..];
+    let rest = &src[pos + key.len()..];
     let Some(brace) = rest.find('{') else {
         return Vec::new();
     };
@@ -83,6 +89,38 @@ struct JacobiDb {
     weights0: [Vec<f64>; 3],
     max_values: [Vec<f64>; 3],
     trans: [Vec<f64>; 3],
+}
+
+/// One `JacobiCoefficientsCache` entry (`PLib_JacobiPolynomial_Coeffs.pxx:21-28`).
+struct JacobiCoefficients {
+    tnorm: Vec<f64>,
+    cof_a: Vec<f64>,
+    cof_b: Vec<f64>,
+    denom: Vec<f64>,
+}
+
+fn parse_coefficients(niv: i32, degree: i32) -> JacobiCoefficients {
+    let get = |prefix: &str| parse_array_in(COEFFS, &format!("{prefix}_C{niv}_D{degree}["));
+    JacobiCoefficients {
+        tnorm: get("TNorm"),
+        cof_a: get("CofA"),
+        cof_b: get("CofB"),
+        denom: get("Denom"),
+    }
+}
+
+/// `GetJacobiCoefficients` (`PLib_JacobiPolynomial_Coeffs.pxx:5681-5685`).
+///
+/// OCCT resolves this through the compile-time `PrecomputedCoefficients[3][31]`
+/// table; here the same arrays are looked up by name and memoised.
+fn coefficients(niv: i32, degree: i32) -> Arc<JacobiCoefficients> {
+    static CACHE: OnceLock<Mutex<HashMap<(i32, i32), Arc<JacobiCoefficients>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().unwrap();
+    guard
+        .entry((niv, degree))
+        .or_insert_with(|| Arc::new(parse_coefficients(niv, degree)))
+        .clone()
 }
 
 /// `PLib::NivConstr`.
@@ -431,5 +469,139 @@ impl JacobiPolynomial {
             }
         }
         coeff
+    }
+
+    /// `PLib_JacobiPolynomial::D0123` (`cxx:379-517`, FORTRAN `MPOJAC`).
+    ///
+    /// `basis_value` / `basis_d1` / `basis_d2` / `basis_d3` must each hold
+    /// `degree + 1` values; OCCT only writes the outputs up to `the_nd_eriv`,
+    /// so callers of the `d0`/`d1`/`d2` wrappers leave the rest empty.
+    pub fn d0123(
+        &self,
+        the_nd_eriv: i32,
+        the_u: f64,
+        basis_value: &mut [f64],
+        basis_d1: &mut [f64],
+        basis_d2: &mut [f64],
+        basis_d3: &mut [f64],
+    ) {
+        let coeffs = coefficients(self.niv_constr, self.degree);
+        let hermite_niv_constr = 2 * (self.niv_constr + 1);
+        let degree = self.degree;
+        if degree == 0 {
+            basis_value[0] = 1.0;
+            if the_nd_eriv >= 1 {
+                basis_d1[0] = 0.0;
+                if the_nd_eriv >= 2 {
+                    basis_d2[0] = 0.0;
+                    if the_nd_eriv == 3 {
+                        basis_d3[0] = 0.0;
+                    }
+                }
+            }
+        } else {
+            basis_value[0] = 1.0;
+            let aux = (hermite_niv_constr + 1) as f64;
+            basis_value[1] = aux * the_u;
+            if the_nd_eriv >= 1 {
+                basis_d1[0] = 0.0;
+                basis_d1[1] = aux;
+                if the_nd_eriv >= 2 {
+                    basis_d2[0] = 0.0;
+                    basis_d2[1] = 0.0;
+                    if the_nd_eriv == 3 {
+                        basis_d3[0] = 0.0;
+                        basis_d3[1] = 0.0;
+                    }
+                }
+            }
+        }
+        if degree > 1 {
+            if the_nd_eriv == 0 {
+                for i in 2..=degree as usize {
+                    basis_value[i] = (coeffs.cof_a[i] * the_u * basis_value[i - 1]
+                        + coeffs.cof_b[i] * basis_value[i - 2])
+                        * coeffs.denom[i];
+                }
+            } else {
+                for i in 2..=degree as usize {
+                    let cof_a = coeffs.cof_a[i];
+                    let cof_b = coeffs.cof_b[i];
+                    let denom = coeffs.denom[i];
+                    basis_value[i] =
+                        (cof_a * the_u * basis_value[i - 1] + cof_b * basis_value[i - 2]) * denom;
+                    basis_d1[i] = (cof_a * (the_u * basis_d1[i - 1] + basis_value[i - 1])
+                        + cof_b * basis_d1[i - 2])
+                        * denom;
+                    if the_nd_eriv >= 2 {
+                        basis_d2[i] = (cof_a * (the_u * basis_d2[i - 1] + 2.0 * basis_d1[i - 1])
+                            + cof_b * basis_d2[i - 2])
+                            * denom;
+                        if the_nd_eriv == 3 {
+                            basis_d3[i] =
+                                (cof_a * (the_u * basis_d3[i - 1] + 3.0 * basis_d2[i - 1])
+                                    + cof_b * basis_d3[i - 2])
+                                    * denom;
+                        }
+                    }
+                }
+            }
+        }
+        if the_nd_eriv == 0 {
+            for i in 0..=degree as usize {
+                basis_value[i] *= coeffs.tnorm[i];
+            }
+        } else {
+            for i in 0..=degree as usize {
+                let norm = coeffs.tnorm[i];
+                basis_value[i] *= norm;
+                basis_d1[i] *= norm;
+                if the_nd_eriv >= 2 {
+                    basis_d2[i] *= norm;
+                    if the_nd_eriv >= 3 {
+                        basis_d3[i] *= norm;
+                    }
+                }
+            }
+        }
+    }
+
+    /// `PLib_JacobiPolynomial::D0` (`cxx:519-522`).
+    pub fn d0(&self, the_u: f64, basis_value: &mut [f64]) {
+        let mut e1: [f64; 0] = [];
+        let mut e2: [f64; 0] = [];
+        let mut e3: [f64; 0] = [];
+        self.d0123(0, the_u, basis_value, &mut e1, &mut e2, &mut e3);
+    }
+
+    /// `PLib_JacobiPolynomial::D1` (`cxx:526-532`).
+    pub fn d1(&self, the_u: f64, basis_value: &mut [f64], basis_d1: &mut [f64]) {
+        let mut e2: [f64; 0] = [];
+        let mut e3: [f64; 0] = [];
+        self.d0123(1, the_u, basis_value, basis_d1, &mut e2, &mut e3);
+    }
+
+    /// `PLib_JacobiPolynomial::D2` (`cxx:535-541`).
+    pub fn d2(
+        &self,
+        the_u: f64,
+        basis_value: &mut [f64],
+        basis_d1: &mut [f64],
+        basis_d2: &mut [f64],
+    ) {
+        let mut e3: [f64; 0] = [];
+        self.d0123(2, the_u, basis_value, basis_d1, basis_d2, &mut e3);
+    }
+
+    /// `PLib_JacobiPolynomial::D3` (`cxx:545-551`).
+    pub fn d3(
+        &self,
+        the_u: f64,
+        basis_value: &mut [f64],
+        basis_d1: &mut [f64],
+        basis_d2: &mut [f64],
+        basis_d3: &mut [f64],
+    ) {
+        self.d0123(3, the_u, basis_value, basis_d1, basis_d2, basis_d3);
     }
 }

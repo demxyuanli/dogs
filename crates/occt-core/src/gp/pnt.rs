@@ -28,6 +28,9 @@ impl GpPnt {
     #[inline] pub fn y(&self) -> f64 { self.coord.y }
     #[inline] pub fn z(&self) -> f64 { self.coord.z }
 
+    /// The underlying `gp_XYZ`.
+    #[inline] pub fn xyz(&self) -> &GpXyz { &self.coord }
+
     #[inline] pub fn set_x(&mut self, v: f64) { self.coord.x = v; }
     #[inline] pub fn set_y(&mut self, v: f64) { self.coord.y = v; }
     #[inline] pub fn set_z(&mut self, v: f64) { self.coord.z = v; }

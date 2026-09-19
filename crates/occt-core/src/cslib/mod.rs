@@ -10,7 +10,7 @@ pub mod normal;
 pub mod poly_def;
 pub use class2d::{Class2d, Class2dResult};
 pub use dn_normal::{dn_normal, dnnuv, dnnuv2};
-pub use normal::{normal_d2, normal_max_order, CSLibNormalStatus};
+pub use normal::{normal_d1_mag, normal_d2, normal_max_order, CSLibNormalStatus};
 pub use poly_def::NormalPolyDef;
 
 /// Result of a surface classification test.

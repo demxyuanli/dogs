@@ -31,6 +31,15 @@ impl GpXyz {
     #[inline] pub fn y(&self) -> f64 { self.y }
     #[inline] pub fn z(&self) -> f64 { self.z }
 
+    /// `gp_XYZ::Coord(theIndex)` with a 0-based index (0..3).
+    #[inline] pub fn coord(&self, the_index: usize) -> f64 {
+        match the_index {
+            0 => self.x,
+            1 => self.y,
+            _ => self.z,
+        }
+    }
+
     pub fn modulus(&self) -> f64 { (self.x * self.x + self.y * self.y + self.z * self.z).sqrt() }
     pub fn square_modulus(&self) -> f64 { self.x * self.x + self.y * self.y + self.z * self.z }
 

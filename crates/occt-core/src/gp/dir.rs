@@ -170,6 +170,27 @@ impl GpDir {
         cos.acos()
     }
 
+    /// `gp_Dir::Angle` (`gp_Dir.cxx:27-52`) - accurate near 0 and PI.
+    pub fn angle_tol(&self, other: &GpDir) -> f64 {
+        let cosinus = self.dot(other);
+        if cosinus > -0.70710678118655 && cosinus < 0.70710678118655 {
+            cosinus.clamp(-1.0, 1.0).acos()
+        } else {
+            let sinus = self.coord.crossed(&other.coord).modulus();
+            if cosinus < 0.0 {
+                std::f64::consts::PI - sinus.asin()
+            } else {
+                sinus.asin()
+            }
+        }
+    }
+
+    /// `gp_Dir::IsParallel(other, theAngularTolerance)` (`gp_Dir.hxx`).
+    pub fn is_parallel_tol(&self, other: &GpDir, ang_tol: f64) -> bool {
+        let an_ang = self.angle_tol(other);
+        an_ang <= ang_tol || (std::f64::consts::PI - an_ang) <= ang_tol
+    }
+
     /// `gp_Dir::AngleWithRef` (`gp_Dir.cxx:55-84`). Opposite directions
     /// use `PI - asin(|cross|)` so the result is `PI`, not 0.
     pub fn angle_with_ref(&self, other: &GpDir, vref: &GpDir) -> f64 {

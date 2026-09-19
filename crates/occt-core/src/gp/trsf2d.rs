@@ -17,6 +17,29 @@ impl GpTrsf2d {
     pub fn set_mirror_pnt(&mut self,p:&GpPnt2d) { self.shape=TrsfForm::PntMirror; self.scale=-1.0; self.matrix.set_identity(); self.loc=p.xy().multiplied_scalar(2.0); }
     pub fn set_mirror_ax2d(&mut self,ax:&GpAx2d) { self.shape=TrsfForm::Ax1Mirror; self.scale=-1.0; let d=ax.direction(); let p=ax.location().xy(); let(dx,dy)=(d.x,d.y); self.matrix=GpMat2d::new(2.0*dx*dx-1.0,2.0*dx*dy,2.0*dy*dx,2.0*dy*dy-1.0); self.loc=*p; self.loc.multiply_mat2d(&self.matrix); self.loc.reverse(); self.loc.add(p); }
     pub fn set_rotation(&mut self,p:&GpPnt2d,angle:f64) { self.shape=TrsfForm::Rotation; self.scale=1.0; self.loc=p.xy().reversed(); self.matrix.set_rotation(angle); self.loc.multiply_mat2d(&self.matrix); self.loc.add(p.xy()); }
+    /// `gp_Trsf2d::SetTransformation(const gp_Ax2d&, const gp_Ax2d&)` (`gp_Trsf2d.cxx:48-70`):
+    /// change of basis from `from_system1` to `to_system2`.
+    pub fn set_transformation(&mut self, from_system1: &GpAx2d, to_system2: &GpAx2d) {
+        self.shape = TrsfForm::CompoundTrsf;
+        self.scale = 1.0;
+        // matrix from XOY to theSystem2
+        let v1 = GpXY::new(to_system2.vdir.x, to_system2.vdir.y);
+        let v2 = GpXY::new(-v1.y, v1.x);
+        self.matrix = GpMat2d::from_cols(&v1, &v2);
+        self.loc = *to_system2.loc.xy();
+        self.matrix.transpose();
+        self.loc.multiply_mat2d(&self.matrix);
+        self.loc.reverse();
+        // matrix from theSystem1 to XOY
+        let v3 = GpXY::new(from_system1.vdir.x, from_system1.vdir.y);
+        let v4 = GpXY::new(-v3.y, v3.x);
+        let ma1 = GpMat2d::from_cols(&v3, &v4);
+        let mut ma1loc = *from_system1.loc.xy();
+        // matrix * MA1 => fromSystem1 -> toSystem2
+        ma1loc.multiply_mat2d(&self.matrix);
+        self.loc.add(&ma1loc);
+        self.matrix.multiply(&ma1);
+    }
     pub fn set_scale(&mut self,p:&GpPnt2d,s:f64) -> Result<(),&'static str> { if s.abs()<=RESOLUTION { Err("too small") } else { self.shape=TrsfForm::Scale; self.scale=s; self.matrix.set_identity(); self.loc=p.xy().multiplied_scalar(1.0-s); Ok(()) } }
     pub fn transforms_xy(&self,coord:&mut GpXY) { coord.multiply_mat2d(&self.matrix); if self.scale!=1.0 { coord.multiply_scalar(self.scale); } coord.add(&self.loc); }
     pub fn multiply(&mut self,o:&Self) { let mut nl=o.loc; nl.multiply_mat2d(&self.matrix); if self.scale!=1.0 { nl.multiply_scalar(self.scale); } nl.add(&self.loc); self.loc=nl; self.matrix.multiply(&o.matrix); self.scale*=o.scale; if self.shape==TrsfForm::Identity { self.shape=o.shape; } else if o.shape!=TrsfForm::Identity { self.shape=TrsfForm::CompoundTrsf; } }

@@ -28,6 +28,24 @@ pub enum CSLibNormalStatus {
     D1NuIsParallelD1Nv,
 }
 
+/// `CSLib::Normal(D1U, D1V, MagTol, Status, Normal)` (`CSLib.cxx:156-179`).
+pub fn normal_d1_mag(d1u: &GpVec, d1v: &GpVec, mag_tol: f64) -> (CSLibNormalStatus, Option<GpDir>) {
+    let d1u_mag = d1u.magnitude();
+    let d1v_mag = d1v.magnitude();
+    let cross = d1u.crossed(d1v);
+    let n_mag = cross.magnitude();
+    if n_mag <= mag_tol || d1u_mag <= mag_tol || d1v_mag <= mag_tol {
+        return (CSLibNormalStatus::Singular, None);
+    }
+    match (GpDir::from_vec(d1u), GpDir::from_vec(d1v)) {
+        (Ok(du), Ok(dv)) => match du.crossed(&dv) {
+            Ok(n) => (CSLibNormalStatus::Defined, Some(n)),
+            Err(_) => (CSLibNormalStatus::Singular, None),
+        },
+        _ => (CSLibNormalStatus::Singular, None),
+    }
+}
+
 /// `CSLib::Normal(D1U, D1V, D2U, D2V, D2UV, SinTol, Done, Status, Normal)`.
 /// Source: `CSLib.cxx:84-151`.
 pub fn normal_d2(

@@ -1,4 +1,13 @@
-//! Wavefront OBJ file reader/writer. Source: `RWObj_Reader` / `RWObj_Writer` (simplified)
+//! Generic Wavefront OBJ read/write helper (not a port of an OCCT class).
+//!
+//! OCCT has no `RWObj_Writer` class. The OBJ write side is `RWObj_CafWriter`
+//! (+ `RWObj_ObjWriterContext`, `RWObj_ObjMaterialMap`); the read side is
+//! `RWObj_Reader` / `RWObj_CafReader` / `RWObj_TriangulationReader` (all under
+//! `src/DataExchange/TKDEOBJ/RWObj/`). This module is a minimal standalone
+//! parser/writer used by this crate's `brep_to_obj` export path; it is NOT a
+//! port of `RWObj_CafWriter`, so the OBJ write side must not be treated as
+//! aligned with OCCT.
+//!
 //! Minimal but complete OBJ parser supporting v/vt/vn/f with negative indices.
 use std::io::{self, Write};
 use crate::gp::GpPnt;

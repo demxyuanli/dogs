@@ -1,7 +1,7 @@
 //! Elementary Curves Library. Source: `ElCLib.hxx`
 use crate::gp::{
-    GpAx2, GpCirc, GpCirc2d, GpDir, GpElips, GpElips2d, GpHypr, GpLin, GpLin2d, GpParab, GpPnt,
-    GpPnt2d, GpVec, GpVec2d,
+    GpAx2, GpAx22d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr, GpLin, GpLin2d,
+    GpParab, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXY,
 };
 use crate::precision::{COMPUTATIONAL, RESOLUTION};
 
@@ -43,20 +43,34 @@ pub fn circle_d2(c: &GpCirc, u: f64) -> (GpPnt, GpVec, GpVec) {
     (p, d1, d2)
 }
 
+/// `ElCLib::EllipseValue(U, gp_Ax2, Major, Minor)` (`cxx:176-189`):
+/// `P = Loc + Major*cos(U)*XDir + Minor*sin(U)*YDir`.
+///
+/// The minor-axis term is `+Minor*sin(U)`; the previous `-Minor*sin(U)` mirrored
+/// the parameterisation about the major axis. A full ellipse is unchanged (its
+/// point set is symmetric), but a trimmed arc is not: the vertex parameters
+/// coming out of `ShapeAnalysis_Curve::Project` land on the mirrored angles, so
+/// the forward arc mandated by `StepToTopoDS_GeometricTool::UpdateParam3d`
+/// (`GeometricTool.cxx:270-279`) became the complement of OCCT's arc and the
+/// edge left its faces (ATU01038 faces 130/140/156/216/222).
 pub fn ellipse_value(e: &GpElips, u: f64) -> GpPnt {
     let a = e.major_radius; let b = e.minor_radius;
-    pt_add(&e.location().coord, e.pos.x_direction().xyz(), a*u.cos(), e.pos.y_direction().xyz(), -b*u.sin())
+    pt_add(&e.location().coord, e.pos.x_direction().xyz(), a*u.cos(), e.pos.y_direction().xyz(), b*u.sin())
 }
+/// `ElCLib::EllipseD1(U, gp_Ax2, Major, Minor)` (`cxx:256-274`):
+/// `V1 = -Major*sin(U)*XDir + Minor*cos(U)*YDir`.
 pub fn ellipse_d1(e: &GpElips, u: f64) -> (GpPnt, GpVec) {
     let a = e.major_radius; let b = e.minor_radius;
     let p = ellipse_value(e, u);
-    (p, vec_add(e.pos.x_direction().xyz(), -a*u.sin(), e.pos.y_direction().xyz(), -b*u.cos()))
+    (p, vec_add(e.pos.x_direction().xyz(), -a*u.sin(), e.pos.y_direction().xyz(), b*u.cos()))
 }
+/// `ElCLib::EllipseD2(U, gp_Ax2, Major, Minor)` (`cxx:352-374`):
+/// `V2 = -Major*cos(U)*XDir - Minor*sin(U)*YDir`.
 pub fn ellipse_d2(e: &GpElips, u: f64) -> (GpPnt, GpVec, GpVec) {
     let a = e.major_radius; let b = e.minor_radius;
     let p = ellipse_value(e, u);
-    let d1 = vec_add(e.pos.x_direction().xyz(), -a*u.sin(), e.pos.y_direction().xyz(), -b*u.cos());
-    let d2 = vec_add(e.pos.x_direction().xyz(), -a*u.cos(), e.pos.y_direction().xyz(), b*u.sin());
+    let d1 = vec_add(e.pos.x_direction().xyz(), -a*u.sin(), e.pos.y_direction().xyz(), b*u.cos());
+    let d2 = vec_add(e.pos.x_direction().xyz(), -a*u.cos(), e.pos.y_direction().xyz(), -b*u.sin());
     (p, d1, d2)
 }
 
@@ -121,17 +135,69 @@ pub fn circle2d_d2(c: &GpCirc2d, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
     let v2 = GpVec2d::new(-(xc * xd.x + yc * yd.x), -(xc * xd.y + yc * yd.y));
     (p, v1, v2)
 }
+/// `ElCLib::EllipseValue(U, gp_Ax22d, Major, Minor)` (`cxx:543-555`):
+/// `P = Loc + Major*cos(U)*Xd + Minor*sin(U)*Yd` (same `+Minor*sin(U)` as the
+/// 3D `gp_Ax2` overload, so the 3D and 2D parameterisations agree).
 pub fn ellipse2d_value(e: &GpElips2d, u: f64) -> GpPnt2d {
     let a=e.major_radius; let b=e.minor_radius; let cx=e.pos.point.x(); let cy=e.pos.point.y(); let xd=e.pos.vxdir; let yd=e.pos.vydir;
-    GpPnt2d::new(cx+a*u.cos()*xd.x-b*u.sin()*yd.x, cy+a*u.cos()*xd.y-b*u.sin()*yd.y)
+    GpPnt2d::new(cx+a*u.cos()*xd.x+b*u.sin()*yd.x, cy+a*u.cos()*xd.y+b*u.sin()*yd.y)
 }
 
 const PIPI: f64 = 2.0 * std::f64::consts::PI;
 const NEGATIVE_RESOLUTION: f64 = -COMPUTATIONAL;
 
+/// `gp_Dir2d::Angle(gp_Dir2d)` (`gp_Dir2d.cxx:26-62`). Both arguments must be
+/// unit vectors; the result is signed and lies in `[-PI, PI]`.
+pub(super) fn dir2d_angle(a: &GpDir2d, b: &GpDir2d) -> f64 {
+    let cosinus = a.dot(b);
+    let sinus = a.crossed(b);
+    const COS_45: f64 = std::f64::consts::FRAC_1_SQRT_2;
+    if cosinus > -COS_45 && cosinus < COS_45 {
+        if sinus > 0.0 {
+            cosinus.acos()
+        } else {
+            -cosinus.acos()
+        }
+    } else if cosinus > 0.0 {
+        sinus.asin()
+    } else if sinus > 0.0 {
+        std::f64::consts::PI - sinus.asin()
+    } else {
+        -std::f64::consts::PI - sinus.asin()
+    }
+}
+
+/// `ElCLib::LineParameter(gp_Ax2d, gp_Pnt2d)` (`ElCLib.cxx:1276-1281`).
+pub fn line2d_parameter(l: &GpLin2d, p: &GpPnt2d) -> f64 {
+    let mut coord = *p.xy();
+    coord.subtract(l.pos.loc.xy());
+    coord.dot(&GpXY::new(l.pos.vdir.x, l.pos.vdir.y))
+}
+
+/// `ElCLib::CircleParameter(gp_Ax22d, gp_Pnt2d)` (`ElCLib.cxx:1285-1291`).
+///
+/// The OCCT body is `Pos.XDirection().Angle(gp_Vec2d(Pos.Location(), P))`, which
+/// relies on the implicit `gp_Dir2d(const gp_Vec2d&)` conversion
+/// (`gp_Dir2d.hxx:67-69,290`) that normalizes the vector. A null vector makes
+/// OCCT raise `Standard_ConstructionError`; like the 3D `circle_parameter`
+/// below, the degenerate case returns `0.0` instead of aborting.
+pub fn circle2d_parameter(pos: &GpAx22d, p: &GpPnt2d) -> f64 {
+    let vx = p.x() - pos.point.x();
+    let vy = p.y() - pos.point.y();
+    let Ok(vdir) = GpDir2d::new(vx, vy) else {
+        return 0.0;
+    };
+    let mut teta = dir2d_angle(&pos.vxdir, &vdir);
+    if pos.vxdir.crossed(&pos.vydir) < 0.0 {
+        teta = -teta;
+    }
+    normalize_angle(&mut teta);
+    teta
+}
+
 /// `ElCLib::normalizeAngle` (`ElCLib.cxx:56-72`): wrap into `[0, 2*PI]`, keep
 /// the closing seam at exactly `2*PI`.
-fn normalize_angle(the_angle: &mut f64) {
+pub(super) fn normalize_angle(the_angle: &mut f64) {
     while *the_angle < NEGATIVE_RESOLUTION {
         *the_angle += PIPI;
     }

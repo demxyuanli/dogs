@@ -1,6 +1,62 @@
 //! Polynomial evaluation and Hermite endpoint interpolation.
 //! Source: `PLib::EvalPolynomial`, `PLib::NoDerivativeEvalPolynomial`,
-//! `PLib::HermiteInterpolate` (`PLib.cxx:945-2045`).
+//! `PLib::EvalLagrange`, `PLib::HermiteInterpolate`
+//! (`PLib.cxx:945-2045`).
+
+/// `PLib::EvalLagrange` (`PLib.cxx:1122-1250`) for 2D points.
+///
+/// `values` / `params` hold `degree + 1` points and their assigned parameters.
+/// Returns `min(derivative_request, degree) + 1` entries: result `k` is the
+/// `k`-th derivative of the Lagrange polynomial at `parameter`. `Err(1)` is
+/// OCCT's `ReturnCode` for a repeated parameter (`cxx:1189`).
+pub fn eval_lagrange(
+    parameter: f64,
+    derivative_request: usize,
+    degree: usize,
+    values: &[[f64; 2]],
+    params: &[f64],
+) -> Result<Vec<[f64; 2]>, i32> {
+    const DIM: usize = 2;
+    if degree == 0 || values.len() < degree + 1 || params.len() < degree + 1 {
+        return Err(1);
+    }
+    let local_request = derivative_request.min(degree);
+    // `cxx:1170-1200`: in-place divided differences, one row per difference
+    // order (`divided_differences_array[jj * Dimension + kk]`).
+    let mut dd: Vec<[f64; 2]> = values[..=degree].to_vec();
+    for ii in (0..=degree).rev() {
+        for jj in ((degree - ii + 1)..=degree).rev() {
+            for kk in 0..DIM {
+                dd[jj][kk] -= dd[jj - 1][kk];
+            }
+            let difference = params[jj] - params[jj + ii - degree - 1];
+            if difference.abs() < f64::MIN_POSITIVE {
+                return Err(1);
+            }
+            let inv = 1.0 / difference;
+            for kk in 0..DIM {
+                dd[jj][kk] *= inv;
+            }
+        }
+    }
+    // `cxx:1211-1247`: Horner with the divided differences, derivative orders
+    // updated from the highest down so order `jj - 1` is still the previous one.
+    let mut result = vec![[0.0f64; 2]; local_request + 1];
+    result[0] = dd[degree];
+    for ii in (1..=degree).rev() {
+        let difference = parameter - params[ii - 1];
+        for jj in (1..=local_request).rev() {
+            let prev = result[jj - 1];
+            for kk in 0..DIM {
+                result[jj][kk] = result[jj][kk] * difference + prev[kk] * jj as f64;
+            }
+        }
+        for kk in 0..DIM {
+            result[0][kk] = result[0][kk] * difference + dd[ii - 1][kk];
+        }
+    }
+    Ok(result)
+}
 
 /// Horner evaluation of a vector-valued polynomial (derivative order 0).
 /// Coefficients are stored degree-major, dimension-minor:
@@ -29,6 +85,46 @@ pub fn eval_poly0(coeffs: &[f64], degree: i32, dimension: usize, u: f64, out: &m
         let base = (k as usize) * dimension;
         for d in 0..dimension {
             out[d] = out[d] * u + coeffs.get(base + d).copied().unwrap_or(0.0);
+        }
+    }
+}
+
+/// `PLib::EvalPolynomial` (`PLib.cxx:945-1026`) for `derivative_request >= 0`.
+///
+/// Coefficients are stored degree-major, dimension-minor (`PLib.cxx:951-966`).
+/// `out` must hold `(1 + derivative_request) * dimension` values; the block
+/// `[k * dimension, (k + 1) * dimension)` receives derivative order `k`.
+/// The `cxx` dispatches orders 1/2 to optimized helpers and everything else
+/// (including 0) to the general loop; this is the general loop.
+pub fn eval_polynomial(
+    par: f64,
+    derivative_request: i32,
+    degree: i32,
+    dimension: usize,
+    coeffs: &[f64],
+    out: &mut [f64],
+) {
+    if dimension == 0 {
+        return;
+    }
+    let deriv = derivative_request.max(0) as usize;
+    let degree = degree.max(0) as usize;
+    let res_size = (1 + deriv) * dimension;
+    for v in out[..res_size].iter_mut() {
+        *v = 0.0;
+    }
+    for deg in 0..=degree {
+        let base = (degree - deg) * dimension;
+        let mut ptr = deriv * dimension;
+        for d in (1..=deriv).rev() {
+            let orig = ptr - dimension;
+            for i in 0..dimension {
+                out[ptr + i] = out[ptr + i] * par + out[orig + i] * d as f64;
+            }
+            ptr = orig;
+        }
+        for i in 0..dimension {
+            out[ptr + i] = out[ptr + i] * par + coeffs.get(base + i).copied().unwrap_or(0.0);
         }
     }
 }

@@ -74,3 +74,9 @@ pub use parab::GpParab;
 pub use parab2d::GpParab2d;
 pub use gtrsf::GpGTrsf;
 pub use circ2d::GpCirc2d;
+
+/// `gp::OX2d()` (`gp.cxx`): the 2D reference frame — origin `(0, 0)`, X
+/// direction `(1, 0)`.
+pub fn ox2d() -> GpAx2d {
+    GpAx2d::new(GpPnt2d::zero(), GpDir2d::default())
+}

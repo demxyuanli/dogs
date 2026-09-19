@@ -46,6 +46,23 @@ impl BndBox {
     #[inline] pub fn is_open_zmax(&self) -> bool { self.flags & ZMAX_OPEN != 0 }
     #[inline] pub fn is_finite(&self) -> bool { self.flags & (VOID_MASK | WHOLE_MASK) == 0 }
 
+    /// `Bnd_Box::IsOpen` (`Bnd_Box.hxx:241`).
+    #[inline] pub fn is_open(&self) -> bool { self.flags & WHOLE_MASK != 0 }
+
+    /// `Bnd_Box::HasFinitePart` (`Bnd_Box.hxx:374`).
+    #[inline] pub fn has_finite_part(&self) -> bool { !self.is_void() && self.xmax >= self.xmin }
+
+    /// `Bnd_Box::FinitePart` (`Bnd_Box.hxx:360`).
+    pub fn finite_part(&self) -> Self {
+        if !self.has_finite_part() {
+            return Self::new();
+        }
+        let mut a_box = Self::new();
+        a_box.update(self.xmin, self.ymin, self.zmin, self.xmax, self.ymax, self.zmax);
+        a_box.set_gap(self.gap);
+        a_box
+    }
+
     // ---- modifiers ----
 
     /// Set to whole space (infinite in all directions). Source: `Bnd_Box.hxx:100`
@@ -57,8 +74,30 @@ impl BndBox {
     pub fn set_gap(&mut self, tol: f64) { self.gap = tol; }
     pub fn gap(&self) -> f64 { self.gap }
 
-    /// Enlarge by gap in all directions. Source: `Bnd_Box.hxx` (Enlarge)
-    pub fn enlarge(&mut self, tol: f64) { self.gap += tol; }
+    /// `Bnd_Box::Update(xmin, ymin, zmin, xmax, ymax, zmax)`.
+    pub fn update(&mut self, xmin: f64, ymin: f64, zmin: f64, xmax: f64, ymax: f64, zmax: f64) {
+        self.xmin = xmin; self.xmax = xmax;
+        self.ymin = ymin; self.ymax = ymax;
+        self.zmin = zmin; self.zmax = zmax;
+        self.flags = 0;
+    }
+
+    /// `Bnd_Box::OpenXmin`.
+    pub fn open_xmin(&mut self) { self.flags |= XMIN_OPEN; }
+    /// `Bnd_Box::OpenXmax`.
+    pub fn open_xmax(&mut self) { self.flags |= XMAX_OPEN; }
+    /// `Bnd_Box::OpenYmin`.
+    pub fn open_ymin(&mut self) { self.flags |= YMIN_OPEN; }
+    /// `Bnd_Box::OpenYmax`.
+    pub fn open_ymax(&mut self) { self.flags |= YMAX_OPEN; }
+    /// `Bnd_Box::OpenZmin`.
+    pub fn open_zmin(&mut self) { self.flags |= ZMIN_OPEN; }
+    /// `Bnd_Box::OpenZmax`.
+    pub fn open_zmax(&mut self) { self.flags |= ZMAX_OPEN; }
+
+    /// Enlarge by gap in all directions. Source: `Bnd_Box::Enlarge`
+    /// (`Bnd_Box.hxx:155`): `Gap = max(Gap, |Tol|)`.
+    pub fn enlarge(&mut self, tol: f64) { self.gap = self.gap.max(tol.abs()); }
 
     // ---- add point ----
 

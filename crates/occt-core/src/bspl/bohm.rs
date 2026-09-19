@@ -20,9 +20,14 @@ pub fn bohm(u: f64, degree: i32, n: i32, knots: &[f64], dimension: i32, poles: &
     };
     let degm1 = degree - 1;
     let mut ddmi = (degree << 1) + 1;
-    let dim2 = dimension << 1;
-    let ps_dd = degree * dimension;
-    let ps_ddm_dim = ps_dd - dimension;
+    // `cxx:1483-1484` walks `double*` pointers. For `Degree == 1` the final
+    // `tbis -= Dim2` / `pole -= Dim2` land one `Dimension` before the buffer;
+    // OCCT never dereferences that value (the outer loop has ended), so the
+    // walk is harmless there. Rust needs the signed offsets to reproduce it
+    // without an unsigned underflow panic.
+    let dim2 = (dimension << 1) as isize;
+    let ps_dd = (degree * dimension) as isize;
+    let ps_ddm_dim = ps_dd - dimension as isize;
 
     for i in 0..degree {
         ddmi -= 1;
@@ -37,8 +42,8 @@ pub fn bohm(u: f64, degree: i32, n: i32, knots: &[f64], dimension: i32, poles: &
                 1.0 / (knots[jdmi] - knots[j])
             };
             for _ in 0..dimension {
-                poles[pole] -= poles[tbis];
-                poles[pole] *= coef;
+                poles[pole as usize] -= poles[tbis as usize];
+                poles[pole as usize] *= coef;
                 pole += 1;
                 tbis += 1;
             }
@@ -50,12 +55,12 @@ pub fn bohm(u: f64, degree: i32, n: i32, knots: &[f64], dimension: i32, poles: &
     let mut idim = 0isize - dimension as isize;
     for i in 0..degree {
         idim += dimension as isize;
-        let mut pole = idim as usize;
-        let mut tbis = pole + dimension;
+        let mut pole = idim;
+        let mut tbis = pole + dimension as isize;
         let coef = u - knots[i];
         for _j in (0..=i).rev() {
             for _ in 0..dimension {
-                poles[pole] += coef * poles[tbis];
+                poles[pole as usize] += coef * poles[tbis as usize];
                 pole += 1;
                 tbis += 1;
             }

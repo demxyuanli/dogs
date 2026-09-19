@@ -1,6 +1,6 @@
 //! 2D vector. Source: `gp_Vec2d.hxx`
 use crate::precision::RESOLUTION;
-use crate::gp::{xy::GpXY, mat2d::GpMat2d, dir2d::GpDir2d};
+use crate::gp::{xy::GpXY, mat2d::GpMat2d, dir2d::GpDir2d, trsf2d::GpTrsf2d, trsf_form::TrsfForm};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpVec2d { pub coord: GpXY }
@@ -67,6 +67,20 @@ impl GpVec2d {
     }
     pub fn multiply_mat2d(&mut self,m:&GpMat2d) { self.coord.multiply_mat2d(m); }
     pub fn multiplied_mat2d(&self,m:&GpMat2d) -> Self { Self{coord:self.coord.multiplied_mat2d(m)} }
+    /// `gp_Vec2d::Transform(const gp_Trsf2d&)` (`gp_Vec2d.cxx:112-130`): a vector
+    /// picks up the linear part only, never the translation. The `Scale` case is
+    /// a separate arm in OCCT because `ScaleFactor()` is not folded into the
+    /// matrix there.
+    pub fn transform(&mut self, t: &GpTrsf2d) {
+        match t.form() {
+            TrsfForm::Identity | TrsfForm::Translation => {}
+            TrsfForm::PntMirror => self.coord.reverse(),
+            TrsfForm::Scale => self.coord.multiply_scalar(t.scale_factor()),
+            _ => self.coord.multiply_mat2d(t.vectorial_part()),
+        }
+    }
+    /// `gp_Vec2d::Transformed(const gp_Trsf2d&)` (`gp_Vec2d.cxx:186-191`).
+    pub fn transformed(&self, t: &GpTrsf2d) -> Self { let mut r = *self; r.transform(t); r }
     pub fn set_linear_form_2(&mut self,a1:f64,v1:&Self,a2:f64,v2:&Self) { self.coord.set_linear_form_2(a1,&v1.coord,a2,&v2.coord); }
     pub fn set_linear_form_add(&mut self,v1:&Self,v2:&Self) { self.coord.set_linear_form_add(&v1.coord,&v2.coord); }
     pub fn set_linear_form_add_scaled(&mut self,a1:f64,v1:&Self,v2:&Self) { self.coord.set_linear_form_add_scaled(a1,&v1.coord,&v2.coord); }

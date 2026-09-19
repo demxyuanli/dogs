@@ -4,9 +4,7 @@
 //! `UTolerance = tolerance_3d / (max_derivative * degree)`.
 
 use crate::gp::GpPnt;
-
-/// OCCT `RealSmall` used when the derivative bound vanishes.
-const REAL_SMALL: f64 = 1.0e-15;
+use crate::precision::REAL_SMALL;
 
 /// `BSplCLib::Resolution` (3D). `flat_knots` is the expanded knot sequence.
 pub fn bspline_curve_resolution(
@@ -17,6 +15,10 @@ pub fn bspline_curve_resolution(
     tolerance_3d: f64,
 ) -> f64 {
     let num_poles = poles.len() as i32;
+    // Rust-only bounds guards: OCCT (`BSplCLib.cxx:4337`) computes
+    // `num_poles = FlatKnots.Length() - Deg1` and leaves `max_derivative = 0`
+    // for these degenerate inputs, which falls into the `RealSmall()` branch
+    // at `BSplCLib.cxx:4812-4817` -- the same result returned here.
     if num_poles < 1 || degree < 1 || flat_knots.is_empty() {
         return tolerance_3d / REAL_SMALL;
     }
@@ -104,6 +106,9 @@ pub fn bspline_curve_resolution(
         }
     }
     max_derivative *= degree as f64;
+    // `BSplCLib.cxx:4811-4818`: `max_derivative *= Degree;
+    // if (max_derivative > RealSmall()) UTolerance = Tolerance3D / max_derivative;
+    // else UTolerance = Tolerance3D / RealSmall();`
     if max_derivative > REAL_SMALL {
         tolerance_3d / max_derivative
     } else {

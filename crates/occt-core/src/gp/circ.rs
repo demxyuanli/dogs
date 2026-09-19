@@ -147,6 +147,13 @@ impl GpCirc {
         if let (Ok(xd), Ok(yd)) = (GpDir::from_xyz(&x_xyz), GpDir::from_xyz(&y_xyz)) {
             self.pos.vxdir = xd;
             self.pos.vydir = yd;
+            // `gp_Ax2::Transform` (`gp_Ax2.hxx:346-354`): the main direction is
+            // recomputed from the transformed X/Y directions. Without this the
+            // stored axis direction stays stale and `Parameter` (which projects
+            // on the axis plane) returns a wrong angle.
+            if let Ok(zd) = xd.crossed(&yd) {
+                self.pos.axis.set_direction(zd);
+            }
         }
 
         self.radius *= t.scale_factor();
