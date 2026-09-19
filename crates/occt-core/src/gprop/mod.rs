@@ -1,5 +1,13 @@
-//! Geometric properties (centroid, area, volume, inertia). Source: `GProp/`
-//! Computes global properties of geometric primitives and meshes.
+//! Geometric properties helpers.
+//!
+//! **Provenance (audit A9)**: `GProperties` (triangulation mass properties) is
+//! **not** a translation of anything in OCCT's `GProp/` package, which contains
+//! only `GProp_GProps`, `GProp_PGProps`, `GProp_SelGProps`, `GProp_VelGProps`,
+//! `GProp_CelGProps`, `GProp_PrincipalProps`, `GProp_PEquation` and the
+//! `GProp_ValueType`/`GProp_UndefinedAxis` enums — no triangulation-based
+//! class. OCCT computes shape/tessellation properties through
+//! `BRepGProp::SurfaceProperties` / `VolumeProperties` with `GProp_GProps`
+//! (ported in `occt-topo/gprop_analytic`).
 use crate::gp::GpPnt;
 
 /// Mass/area/volume properties for a triangulated mesh.

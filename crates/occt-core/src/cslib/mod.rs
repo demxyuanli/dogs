@@ -1,8 +1,16 @@
-//! Classifier for parametric surfaces. Source: `CSLib/`
-//! Tests whether a point lies inside, outside, or on a surface.
+//! CSLib ports plus a **port-internal** surface classifier.
 //!
-//! The classification is done by computing the normal at the closest point
-//! and projecting the point-to-surface vector onto the normal.
+//! **Ported from `CSLib/`**: `class2d` (`CSLib_Class2d`), `normal` /
+//! `dn_normal` (`CSLib::Normal` / `CSLib::DNNormal`), `poly_def`
+//! (`CSLib_NormalPolyDef`).
+//!
+//! **Provenance (audit A9)**: `CSLibResult`, `classify_point` and
+//! `sphere_normal` below are **not** OCCT translations — the `CSLib` package
+//! contains only `CSLib.cxx/hxx`, `CSLib_Class2d`, `CSLib_NormalPolyDef` and
+//! the status enums (`DerivativeStatus`, `NormalStatus`), i.e. nothing that
+//! classifies a point against a surface. OCCT classifies points against faces
+//! through `BRepClass_FaceClassifier` / `IntTools_FClass2d` on the pcurve
+//! (ported in `occt-topo/fclass2d`).
 
 pub mod class2d;
 pub mod dn_normal;

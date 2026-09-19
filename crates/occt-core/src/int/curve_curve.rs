@@ -1,5 +1,11 @@
-//! Exact curve-curve intersection primitives.
-//! Source: `IntCurveCurve_IntImpCurveCurve`, `IntTools`.
+//! Curve-curve intersection primitives (port-internal).
+//!
+//! **Provenance (audit A9)**: **not** a translation of
+//! `IntCurveCurve_IntImpCurveCurve` / `IntTools`. The functions below are
+//! closest-point / overlap primitives in the style of Ericson, *Real-Time
+//! Collision Detection*; OCCT intersects curves through `IntImp_CurveCurve` +
+//! `IntCurve_*` (with `Extrema_ExtCC` for proximity) and edge–edge proximity
+//! through `IntTools_EdgeEdge`.
 use crate::gp::{GpLin, GpPnt, GpVec};
 
 const EPS: f64 = 1e-14;

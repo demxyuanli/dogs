@@ -1,4 +1,10 @@
-//! Box intersection and distance utilities. Source: Bnd_Tools
+//! Box intersection and distance utilities (port-internal).
+//!
+//! **Provenance (audit A9)**: **not** an OCCT translation. `Bnd_Tools`
+//! (`Bnd_Tools.hxx`) declares only the two `Bnd2BVH` overloads converting a
+//! `Bnd_Box`/`Bnd_Box2d` to `BVH_Box`; OCCT has no ray-box or box-distance
+//! helper in that package (ray/box queries live in `BVH_Tree`/`BVH_Box`
+//! traversal and `IntAna`).
 use crate::gp::GpPnt;
 use crate::bnd::BndBox;
 

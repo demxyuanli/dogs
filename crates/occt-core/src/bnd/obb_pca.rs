@@ -1,4 +1,11 @@
-//! PCA-based OBB computation. Source: Bnd_OBB + Jacobi eigenvalue decomposition.
+//! PCA-based OBB computation (port-internal).
+//!
+//! **Provenance (audit A9)**: **not** an OCCT translation. `Bnd_OBB`
+//! (`Bnd_OBB.hxx`) declares exactly three constructors — empty, from
+//! `(center, XDir, YDir, ZDir, XHSize, YHSize, ZHSize)`, and from a `Bnd_Box` —
+//! with no principal-axis fitting; OCCT builds an OBB from axes supplied by the
+//! caller (`BRepBndLib::AddOBB` takes a pre-computed `Bnd_OBB`). The PCA/Jacobi
+//! eigen decomposition here is this port's own.
 use crate::gp::{GpPnt, GpDir, GpXyz};
 use crate::bnd::BndOBB;
 

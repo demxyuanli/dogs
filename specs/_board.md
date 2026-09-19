@@ -144,7 +144,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-65 | A7 派生 | `occt-geom/src/extrema_pc/p01.rs`（`ellipse_all`/`hyperbola_all`/`parabola_all`）、`p02.rs::ext_pelc_all` | 三条解析臂已存在但未接线：缺 `myIsMin` 端口（`Extrema_ExtPElC.cxx:277`、`:381`、`:473`）⇒ 椭圆/双曲/抛物目前走 `default:` 臂；且 `Curve` 无 hyperbola/parabola 类型查询（T-12） | 2 后 | pending |
 | T-66 | A7 派生 | `occt-geom/src/extrema_cc/p02.rs:40-115` | 通用曲线–曲线**种子集**自创（均匀网格 + 局部极值 + 边界最优点）；OCCT `Extrema_GenExtCC::Perform` 用 `math_GlobOptMin`（仓内 `occt-math/globoptmin.rs` 已移植）+ `Extrema_ECC` 的 `math_FunctionSetRoot` 起点 | 2 后 | pending |
 | T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending |
-| T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | pending |
+| T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | **done**（2026-09-20，7 处文件头全部改正 + 包内容已逐项核对） |
 | T-46 | A10 | `elib/surface_eval.rs:100,104`、`bnd/bsphere.rs:19-29`、`elib/intersect.rs:58-60`、`poly/make_loops.rs:234` | 静默默认值/凭空造值/只取首候选 → `ElSLib::SphereD2/TorusD2`、`Bnd_Sphere.cxx:73-96`、`Poly_MakeLoops.cxx:611-700` | 8 | pending |
 | T-47 | A11 | `bop_builder_dispatch.rs:473-601`、`bop_draft_solid_occt.rs:41,49`、`edge_edge/p01.rs:368-371` | 质心规则 / `solid−face` 原样返回 / 丢"顶点<3"的面 / 采样解当补集 → `BOPAlgo_Builder_3.cxx:329` 等对应控制流 | 4 | pending |
 | T-48 | A12 | `brepfeat/p01.rs:109,419,361,508`、`feature.rs:197` | 体积解析覆盖 / 网格夹具冒充 `BRepPrimAPI_MakeCylinder` / `clamp(16,64)` → `BRepFeat_MakeDPrism/MakeRevol`、`LocOpe_Revol` | 8 | pending |
@@ -200,6 +200,12 @@ cd ..; git worktree remove --force .target-headcheck
 - 审查报告 A1 的整改建议写着"仓内已有忠实件 `extrema_surf::point_surface_extrema(_box)`（`Extrema_ExtPS`）"——**该前提不成立**。实读：`extrema_surf/p02.rs:74-119` 的 `point_surface_newton_all_box` 是 **24×24 网格播种**（局部极值 + 全局 min/max + 角点）+ Newton，Jacobian 用**数值差分**（`p01.rs:620-621`），模块头还写着 "Surface trait lacks d2"——而 `Surface::d2` **存在**（`surface.rs:12`，解析曲面覆写）。⇒ 它和 `brep_surface::surface_closest_params` 属**同一类替代品**；把 39 处调用点迁过去等于"自创换自创"。
 - 忠实路径 = **移植** OCCT 的 `Extrema_ExtPS.cxx`(376 行) + `.hxx`(140)、`Extrema_GenExtPS.cxx`(1056) + `.hxx`(155)、`Extrema_ExtPElS.cxx`(454) + `.hxx`(76)：类型分派 + iso 退化处理（`IsoIsDeg`）+ 逐 C2 区间采样（`mySample`）+ `Extrema_GFuncExtPS` 的解析系统与 `math_FunctionSetRoot`，Jacobian 改用解析 `d2`。
 - 已立项 **T-67**（A1 前置，T-37 被其阻塞），并把订正写回 `specs/_audit/_index.md` 的 A1 行与 §7 第 2 条、`extrema_surf/mod.rs` 模块头。**本批未改任何行为代码**，门禁不受影响。
+
+**批 8 先行（T-45 / A9，假出处整改）已完成 —— 2026-09-20**
+
+- **逐项核对的 OCCT 事实**（不是照抄审查结论）：`CSLib/` 包只有 `CSLib`、`CSLib_Class2d`、`CSLib_NormalPolyDef` + 三个状态枚举（无点–面分类器）；`GProp/` 包只有 7 个类（`GProp_GProps`/`PGProps`/`SelGProps`/`VelGProps`/`CelGProps`/`PrincipalProps`/`PEquation`，无三角化属性类）；`Convert/` 包是 18 个 B 样条转换类（无坐标转换）；`Bnd_OBB` 恰好 3 个 ctor（空 / 中心+三轴+尺寸 / 由 `Bnd_Box`）；`Bnd_Tools` 只有 `Bnd2BVH` 两个重载；全树**无** `Ramer`/`Peucker`，`Douglas` 亦无命中（先前的 177 命中是 `Standard_ProgramError` 的正则误匹配）；全树唯一的 polar 助手是 `V3d_View.cxx` 的文件级 `toPolarCoords`。
+- **改动**（仅注释）：7 处文件头改为"**非 OCCT 翻译（port-internal）**"+ 上述包内容清单，并给出真实 OCCT 对应（点–面分类走 `BRepClass_FaceClassifier`/`IntTools_FClass2d`；形状/网格属性走 `BRepGProp::SurfaceProperties/VolumeProperties` + `GProp_GProps`；曲线/边邻近走 `IntTools_EdgeEdge`+`Extrema_ExtCC`）。`polyline_simplify` 额外写明 `intpatch_trace.rs:260-262` 用它抽稀交线 ⇒ **非 OCCT 规则在改交线几何**。
+- **验证**：`occt-core --all-targets` exit 0、`--lib` 290/290（纯注释改动）。
 
 ## 4. 决策与约束（不可违反）
 

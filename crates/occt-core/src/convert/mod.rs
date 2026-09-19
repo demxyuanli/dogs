@@ -1,5 +1,11 @@
-//! Coordinate system conversions. Source: `Convert/`
-//! Conversions between polar, cylindrical, spherical, and Cartesian coordinates.
+//! Coordinate system conversions (port-internal).
+//!
+//! **Provenance (audit A9)**: **not** an OCCT translation. OCCT's `Convert/`
+//! package is the 18 B-Spline conversion classes (`Convert_CircleToBSplineCurve`,
+//! `Convert_CompBezierCurvesToBSplineCurve`, `Convert_ConeToBSplineSurface`, …)
+//! and contains no coordinate conversion at all; the only polar helper in the
+//! whole OCCT 8.0.0 tree is the file-static `toPolarCoords` in
+//! `V3d_View.cxx` (visualization, a screen-space helper).
 
 /// Polar to Cartesian 2D. Returns (x, y).
 pub fn polar_to_cartesian2d(rho: f64, theta: f64) -> (f64, f64) {

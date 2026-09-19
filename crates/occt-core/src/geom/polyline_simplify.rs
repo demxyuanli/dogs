@@ -1,5 +1,12 @@
-//! Polyline simplification and resampling.
-//! Source: `ShapeAnalysis_FreeBoundData`, `math` decimation (RDP).
+//! Polyline simplification and resampling (port-internal).
+//!
+//! **Provenance (audit A9)**: **not** an OCCT translation.
+//! Ramer–Douglas–Peucker does not exist in OCCT — no `Ramer`/`Peucker`
+//! identifier appears anywhere in the OCCT 8.0.0 tree (`Douglas` alone also
+//! matches nothing), and `ShapeAnalysis_FreeBoundData` performs no decimation.
+//! Consumers must be aware that
+//! `occt-topo/src/intpatch_trace.rs:260-262` feeds this into intersection-curve
+//! decimation, i.e. a **non-OCCT rule changes intersection geometry**.
 
 use crate::gp::{GpPnt, GpPnt2d};
 
