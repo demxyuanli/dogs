@@ -7,9 +7,11 @@
 //!     to within a tolerance. This is the hard geometric gate: a correct STEP
 //!     parser + surface evaluation gives the same extents as OCCT.
 //!  2. **Mesh density** — the OCCT reference headers carry `# Vertices` /
-//!     `# Faces`; we record the ratio but do not assert it (the Rust mesh
-//!     tessellator is a UV grid, OCCT's is deflection-adaptive — the density
-//!     gap is a known, tracked gap, not a geometry error).
+//!     `# Faces`; we record the ratio but do not assert it. Both sides now use
+//!     the `BRepMesh_IncrementalMesh` Delaunay pipeline (the export path no
+//!     longer falls back to the UV-grid/quadtree meshers — audit A17), so the
+//!     remaining density differences come from the STEP-import gaps tracked in
+//!     `specs/_board.md`, not from a different tessellator.
 //!
 //! The pipeline under test: `step::read_step_file` → `brep_exchange::brep_to_obj`.
 

@@ -1,7 +1,12 @@
 //! Overall-test dump: every `data/*.step` (and `.stp`) to `output/<stem>.obj`.
 //!
 //! Pipeline: `read_step_file` → compound if multiple roots → `brep_to_obj(..., 0.1)`.
-//! Re-run before visual / mesh overall checks. Do not add a second exporter.
+//! The second argument is the drawer's `MaximalChordialDeviation` (the fallback
+//! used only for a void/unbounded bounding box); the linear deflection actually
+//! driving the mesh is `Prs3d::GetDeflection(shape, drawer)` =
+//! `maxComp(bbox) * 0.001 * 4` (`Prs3d.hxx:82-103`), so changing `0.1` does not
+//! change the export density. Re-run before visual / mesh overall checks. Do not
+//! add a second exporter.
 //!
 //! Optional positional arguments name extra source directories (relative to the
 //! repository root) to scan instead of `data/`, so the OCCT test models under

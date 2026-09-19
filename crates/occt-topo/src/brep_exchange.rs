@@ -53,16 +53,16 @@ fn shape_mesh_to_ply(mesh: &ShapeMesh) -> PlyMesh {
 /// `Prs3d::GetDeflection(shape, drawer)` (`Prs3d.hxx:82-103`):
 /// `BRepBndLib::Add(shape, box, false)` then
 /// `maxComp(diag) * DeviationCoefficient * 4`, coefficient default 0.001.
-pub fn prs3d_get_deflection(shape: &TopoShape, maximal_chordial: f64) -> f64 {
+pub fn prs3d_get_deflection(shape: &TopoShape, maximal_chordial_deviation: f64) -> f64 {
     const DEVIATION_COEFFICIENT: f64 = 0.001;
     const CONFUSION: f64 = 1e-7;
     let b = crate::brep_bnd_lib::shape_bnd_box(shape);
     if b.is_void() {
-        return maximal_chordial;
+        return maximal_chordial_deviation;
     }
     let b = if b.is_open() {
         if !b.has_finite_part() {
-            return maximal_chordial;
+            return maximal_chordial_deviation;
         }
         b.finite_part()
     } else {
@@ -76,15 +76,24 @@ pub fn prs3d_get_deflection(shape: &TopoShape, maximal_chordial: f64) -> f64 {
     (max_comp * DEVIATION_COEFFICIENT * 4.0).max(CONFUSION)
 }
 
-fn export_mesh(shape: &TopoShape, deflection: f64) -> ShapeMesh {
+fn export_mesh(shape: &TopoShape, maximal_chordial_deviation: f64) -> ShapeMesh {
     // `RWObj_CafWriter` writes the vis triangulation
     // (`StdPrs_ToolTriangulatedShape::Tessellate` →
     // `BRepMesh_DiscretFactory::Discret(shape, GetDeflection, DeviationAngle)`).
     // Drawer defaults: 20 deg (`Prs3d_Drawer.cxx:96`) and relative
-    // `GetDeflection` (`Prs3d.hxx:71`). The `deflection` argument is only
-    // the void-box fallback (`MaximalChordialDeviation`).
+    // `GetDeflection` (`Prs3d.hxx:71`). The argument is the drawer's
+    // `MaximalChordialDeviation` — it is **not** a linear deflection and only
+    // matters for a void/unbounded bounding box (`Prs3d.hxx:82-103`).
+    //
+    // A failed tessellation yields an **empty** mesh: OCCT's OBJ writer reads
+    // the triangulation already stored on the shape
+    // (`RWMesh_FaceIterator.cxx:87`) and **skips** a face without one (`:89`) —
+    // it never switches to another mesher. The two silent fallbacks that used to
+    // sit here (legacy quadtree `brepmesh::incremental_mesh`, UV-grid
+    // `shape_mesh::mesh_shape`) were non-OCCT algorithms and are removed
+    // (audit A17).
     const PRS3D_DEV_ANGLE: f64 = 20.0 * std::f64::consts::PI / 180.0;
-    let lin = prs3d_get_deflection(shape, deflection);
+    let lin = prs3d_get_deflection(shape, maximal_chordial_deviation);
     crate::meshing::incremental_mesh::IncrementalMesh::from_deflection(
         shape,
         lin,
@@ -93,53 +102,56 @@ fn export_mesh(shape: &TopoShape, deflection: f64) -> ShapeMesh {
     )
     .mesh()
     .cloned()
-    .or_else(|| crate::brepmesh::incremental_mesh(shape, deflection).ok().map(|im| im.mesh))
-    .unwrap_or_else(|| crate::shape_mesh::mesh_shape(shape, deflection))
+    .unwrap_or_else(|| ShapeMesh {
+        vertices: Vec::new(),
+        triangles: Vec::new(),
+        source_shape: crate::abs::ShapeType::Shape,
+    })
 }
 
 /// Export a shape to Wavefront OBJ text.
 ///
 /// Vertices stay per face (`RWObj_CafWriter` / `RWMesh_FaceIterator`):
 /// a box is 24 nodes / 12 triangles, not a globally welded 8-node mesh.
-pub fn brep_to_obj(shape: &TopoShape, deflection: f64) -> String {
-    let mesh = export_mesh(shape, deflection);
+pub fn brep_to_obj(shape: &TopoShape, maximal_chordial_deviation: f64) -> String {
+    let mesh = export_mesh(shape, maximal_chordial_deviation);
     occt_core::io::obj::write_obj(&shape_mesh_to_obj(&mesh))
 }
 
 /// Export a shape to ASCII STL text.
-pub fn brep_to_stl_ascii(shape: &TopoShape, deflection: f64) -> String {
-    let mesh = export_mesh(shape, deflection);
+pub fn brep_to_stl_ascii(shape: &TopoShape, maximal_chordial_deviation: f64) -> String {
+    let mesh = export_mesh(shape, maximal_chordial_deviation);
     occt_core::io::stl::write_ascii_stl(&shape_mesh_to_stl(&mesh))
 }
 
 /// Export a shape to binary STL bytes (vertices welded first).
-pub fn brep_to_stl_binary(shape: &TopoShape, deflection: f64) -> Vec<u8> {
-    let mut mesh = export_mesh(shape, deflection);
+pub fn brep_to_stl_binary(shape: &TopoShape, maximal_chordial_deviation: f64) -> Vec<u8> {
+    let mut mesh = export_mesh(shape, maximal_chordial_deviation);
     crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
     occt_core::io::stl::write_binary_stl(&shape_mesh_to_stl(&mesh))
 }
 
 /// Export a shape to ASCII PLY text (vertices welded first).
-pub fn brep_to_ply(shape: &TopoShape, deflection: f64) -> String {
-    let mut mesh = export_mesh(shape, deflection);
+pub fn brep_to_ply(shape: &TopoShape, maximal_chordial_deviation: f64) -> String {
+    let mut mesh = export_mesh(shape, maximal_chordial_deviation);
     crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
     occt_core::io::ply::write_ply(&shape_mesh_to_ply(&mesh))
 }
 
 /// Write a shape to an OBJ file (per-face nodes, same as [`brep_to_obj`]).
-pub fn brep_write_obj(path: &str, shape: &TopoShape, deflection: f64) -> std::io::Result<()> {
-    let mesh = export_mesh(shape, deflection);
+pub fn brep_write_obj(path: &str, shape: &TopoShape, maximal_chordial_deviation: f64) -> std::io::Result<()> {
+    let mesh = export_mesh(shape, maximal_chordial_deviation);
     occt_core::io::obj::write_obj_file(path, &shape_mesh_to_obj(&mesh))
 }
 
 /// Write a shape to a (binary) STL file.
-pub fn brep_write_stl(path: &str, shape: &TopoShape, deflection: f64) -> std::io::Result<()> {
-    std::fs::write(path, brep_to_stl_binary(shape, deflection))
+pub fn brep_write_stl(path: &str, shape: &TopoShape, maximal_chordial_deviation: f64) -> std::io::Result<()> {
+    std::fs::write(path, brep_to_stl_binary(shape, maximal_chordial_deviation))
 }
 
 /// Write a shape to an ASCII PLY file.
-pub fn brep_write_ply(path: &str, shape: &TopoShape, deflection: f64) -> std::io::Result<()> {
-    std::fs::write(path, brep_to_ply(shape, deflection))
+pub fn brep_write_ply(path: &str, shape: &TopoShape, maximal_chordial_deviation: f64) -> std::io::Result<()> {
+    std::fs::write(path, brep_to_ply(shape, maximal_chordial_deviation))
 }
 
 #[cfg(test)]

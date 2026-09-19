@@ -152,7 +152,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-50 | A14 | `geom/`（csg/delaunay/triangulate/fit*/polygon_*）、`elib/measure.rs`、`validate.rs`、`hlr.rs`、`viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs` | 整包非移植件（`validate.rs` 的 `is_valid()` 恒 true 风险最高）→ 模块头声明未移植 + 真实出处 | 8 | pending |
 | T-51 | A15 | `extrema_cc/p02.rs:210-241`、`hyperbola.rs:16`、`parabola.rs:16`、`surface.rs:12-20`、`intana/p02.rs:574`、`extrema_ss.rs:69,119`、`curve_reparam.rs:37,189,228`、`gcpnts.rs` 积分 | 失败被 `fallback_*` 吞掉（丢 `StdFail_NotDone` 语义）+ 自创阈值 → 逐条按 OCCT 返回失败或补齐精确解 | 8 | pending |
 | T-52 | A16 | `occt-geom/src/geom_api.rs:52,97`、`occt-geom2d/src/curve_ops.rs:68-69` | 256×256 采样求交/投影 → `Extrema_ExtPS/ExtCC` + `intana2d`/`intimpargen` | 3 | pending |
-| T-53 | A17 | `occt-topo/src/brep_exchange.rs:56-98` | 偏转形参被 Prs3d 顶掉 + 三级静默回退 → `RWObj_CafWriter`/`RWMesh_FaceIterator.cxx:87-89`（不网格化、空则跳过）⇒ 删回退、形参改名 | **6** | pending |
+| T-53 | A17 | `occt-topo/src/brep_exchange.rs:56-98` | 偏转形参被 Prs3d 顶掉 + 三级静默回退 → `RWObj_CafWriter`/`RWMesh_FaceIterator.cxx:87-89`（不网格化、空则跳过）⇒ 删回退、形参改名 | **6** | **done**（2026-09-20） |
 | T-54 | A18 | `occt-topo/src/wireframe.rs:257-380` | 平面耳切 + 质心角度排序 + 桥洞 → 约束 Delaunay（`BRepMesh_DelaunayBaseMeshAlgo` + `BRepMesh_Delaun`） | 7 | pending |
 | T-55 | A19 | `meshing/incremental_mesh/p01.rs:369,460-467`、`wireframe.rs:407-408`、`brepmesh.rs:38,174-175,259` | `WIREFRAME_FALLBACK_RATIO_MAX=0.10` 失败率换算法 + 四叉树魔数 + `clamp(3,64)` → OCCT 无失败率阈值，逐面置 `IMeshData_Failure`（`BRepMesh_BaseMeshAlgo.cxx:52-62`） | 7 | pending |
 | T-56 | A20 | `occt-topo/src/step/p05.rs:508-604` | `p1.distance(p2) < 1e-3` 替代 `V1.IsSame(V2)`；`Other`/HYPERBOLA 边域落 `(0,1)` → `StepToTopoDS_TranslateEdge.cxx:438,443` + `ShapeAnalysis_Curve.cxx:376-400` | **6** | pending |
@@ -222,6 +222,12 @@ cd ..; git worktree remove --force .target-headcheck
 - **同步订正的两个比较器**（`hxx:88-129`）：`closestPoint` 用**平方距离 + 严格 `<`**（平局取 second），`closestPoints` 的取舍是 `sq1 - sq2 < gp::Resolution()`（取 first，除非明显更远）——端口原实现用**线性距离 + `<=`**，平局方向相反。
 - **改动**：`model_healer.rs` 新增忠实 `closest_point`/`closest_pair`（返回 `(a_side, b_side, sq)`）与 `adjust_same_points`（`hxx:134-152` 的指针翻转 + `closestPoint` 重算语义），`connect_closest_points` 尾部改为 OCCT 的两支；新增 `GP_RESOLUTION = REAL_SMALL`（`gp::Resolution()`，注明仓内 `RESOLUTION=1e-12` 不是 OCCT 值）；两处既有单测按新签名适配（语义断言不变）。
 - **验证**：`occt-topo --lib` 1293/1（唯一红仍 T-01 `groove_cuts_cylinder`）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3 —— **逐项与基线一致**。
+
+**批 6 续（T-53 / A17）：导出路径删掉两级静默换网格器 —— 2026-09-20**
+
+- **改动**：`brep_exchange::export_mesh` 去掉 `.or_else(brepmesh::incremental_mesh)`（legacy 四叉树）与 `.unwrap_or_else(shape_mesh::mesh_shape)`（UV 栅格）两级回退——OCCT 的 OBJ 写侧 `RWObj_CafWriter` 读的是形状上**已有的**三角化（`RWMesh_FaceIterator.cxx:87`），缺三角化时**跳过**该面（`:89`），从不切换网格器。现在网格化失败即返回空网格（显式、可观测），不再静默换成非 OCCT 算法。
+- **形参改名**：`deflection` → `maximal_chordial_deviation`（对外 7 个函数 + `prs3d_get_deflection` 同改），并在三处注释里写清：该参数是 drawer 的 `MaximalChordialDeviation`，**只在包围盒为空/无界时**生效；真正驱动密度的是 `Prs3d::GetDeflection = maxComp(bbox)*0.001*4`（`Prs3d.hxx:82-103`）。同步更新 `examples/export_data_obj.rs`、`tests/step_obj_parity.rs`、`tests/step_obj_area.rs` 的过时注释（原文仍称"Rust 用 UV 栅格"）。
+- **验证**：`occt-topo --lib` 1293/1（唯一红仍 T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3 —— **门禁全绿且逐项与基线一致** ⇒ 对全部门禁模型，Delaunay 管线本身即可成功，被删的两级回退**从未被需要**（此前只是静默兜底风险）。
 
 ## 4. 决策与约束（不可违反）
 

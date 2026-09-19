@@ -4,11 +4,13 @@
 //! test gates the *surface area* of the exported mesh against the OCCT
 //! reference OBJ. Both meshes are triangle approximations of the same analytic
 //! shape, so the areas agree within the meshing tolerance: planar faces are
-//! exact, curved faces differ by the chord/UV-grid sampling (< 4% at the 0.1
-//! deflection the tests use).
+//! exact, curved faces differ by the chord sampling (< 4% at the deflection the
+//! export derives from the shape bbox — `Prs3d::GetDeflection`, not the `0.1`
+//! argument, which is only the drawer's `MaximalChordialDeviation`).
 //!
-//! Pipeline: `step::read_step_file` → `brep_exchange::brep_to_obj` (0.1), both
-//! areas measured with the same fan-triangle rule on [`ObjMesh::parse`].
+//! Pipeline: `step::read_step_file` → `brep_exchange::brep_to_obj` (Delaunay
+//! `BRepMesh_IncrementalMesh`; no UV-grid/quadtree fallback since audit A17),
+//! both areas measured with the same fan-triangle rule on [`ObjMesh::parse`].
 use std::path::PathBuf;
 
 use occt_core::io::obj::{ObjMesh, read_obj_file};
