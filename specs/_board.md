@@ -139,7 +139,9 @@ cd ..; git worktree remove --force .target-headcheck
 | T-40 | A4 | `occt-topo/src/algo_tools/p01.rs:165-205` | V/E/F 分支 32×32 投影 → `BOPTools_AlgoTools::ComputeState` 精确投影 | 4 | pending |
 | T-41 | A5 | `bop_builder_core.rs:79-96`、`bop_curved/p02.rs:409-581`、`p04.rs:42-70,325-401` | 体素/网格布尔与计票 → 无 OCCT 对应 ⇒ **摘除并标未移植** | 4 | pending |
 | T-42 | A6 | `occt-core/src/gcpnts.rs:30,87-225` | 中点二分 `MAX_DEPTH=16` 伪造 deflection → 调 `gcpnts_perform.rs:52`（已逐行移植） | **2** | **done**（2026-09-20） |
-| T-43 | A7 | `occt-geom/src/extrema_pc/p01.rs:563,621`、`extrema_cc/p02.rs:83,214-239` | `clamp(24,256)` 网格 + 16 兜底 → 调 `extrema_pc/p03.rs`（`Extrema_GGExtPC`） | **2** | pending |
+| T-43 | A7 | `occt-geom/src/extrema_pc/p01.rs:563,621`、`extrema_cc/p02.rs:83,214-239` | `clamp(24,256)` 网格 + 16 兜底 → 调 `extrema_pc/p03.rs`（`Extrema_GGExtPC`） | **2** | **部分 done**（2026-09-20）：点–曲线侧已忠实；`extrema_cc` 侧见 **T-66** |
+| T-65 | A7 派生 | `occt-geom/src/extrema_pc/p01.rs`（`ellipse_all`/`hyperbola_all`/`parabola_all`）、`p02.rs::ext_pelc_all` | 三条解析臂已存在但未接线：缺 `myIsMin` 端口（`Extrema_ExtPElC.cxx:277`、`:381`、`:473`）⇒ 椭圆/双曲/抛物目前走 `default:` 臂；且 `Curve` 无 hyperbola/parabola 类型查询（T-12） | 2 后 | pending |
+| T-66 | A7 派生 | `occt-geom/src/extrema_cc/p02.rs:40-115` | 通用曲线–曲线**种子集**自创（均匀网格 + 局部极值 + 边界最优点）；OCCT `Extrema_GenExtCC::Perform` 用 `math_GlobOptMin`（仓内 `occt-math/globoptmin.rs` 已移植）+ `Extrema_ECC` 的 `math_FunctionSetRoot` 起点 | 2 后 | pending |
 | T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending |
 | T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | pending |
 | T-46 | A10 | `elib/surface_eval.rs:100,104`、`bnd/bsphere.rs:19-29`、`elib/intersect.rs:58-60`、`poly/make_loops.rs:234` | 静默默认值/凭空造值/只取首候选 → `ElSLib::SphereD2/TorusD2`、`Bnd_Sphere.cxx:73-96`、`Poly_MakeLoops.cxx:611-700` | 8 | pending |
@@ -181,6 +183,15 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证**：三 crate `--all-targets` 编译 exit 0，改动文件零警告；门禁与基线**逐项一致**（topo lib 1293/1、parity 14/14、step_to_obj 13/13、area 11/11、geom_parity 2/3、geom2d 72）；`occt-core --lib` **293→290**、`occt-geom --lib` **153→151**——减少量恰好是删掉的自创采样器测试（3 + 2），非回归。
 - **派生新发现（假出处，并入 T-45/A9）**：`occt-geom/src/curve_approx.rs` 头注释引用的 `GeomConvert_CurveToPolyline` **在 OCCT 8.0.0 中不存在**（全树无 `*CurveToPolyline*` 文件），原注释同时误称 `occt-core` 已实现 `GCPnts_UniformDeflection`；两处均已改正。
 - **遗留**：`occt-geom/src/gcpnts.rs` 的 `curve_length`/`abscissa_point` 仍用自适应 Simpson + 牛顿（OCCT 是 `math_GaussSingleIntegration` + `math_NewtonFunctionRoot`），属 **A15/T-51**，未在本批动手（该文件头已注明）。
+
+**批 2 续（T-43 / A7，点–曲线侧）已完成 —— 2026-09-20**
+
+- **改动**：`occt-geom/src/extrema_pc/{mod,p02,p03,tests}.rs`、`extrema_cc/mod.rs`（文档）。
+- **对齐内容**：`point_curve_extrema_all` 由"采样分类 + 自创网格路径"改为 `Extrema_ExtPC` 的真实结构——`Extrema_ExtPC` 在 V8_0_0 是 `Extrema_GGExtPC` 的别名（`Extrema_ExtPC.hxx:31-38`），其类型分派：line/circle（本仓可判定）走 `Extrema_ExtPElC` 解析臂并带上 OCCT 的 `myIsMin`（线 = min `cxx:77`；圆 = near 为 min、对径点为 max `cxx:177-188`），其余走 `p03` 的 `default:` 臂（`hxx:390-502`，`aMaxSample=17` + `DeflCurvIntervals`）。
+- **删除的自创实现**：`p01` 的 `newton_point_curve_all`/`build_samples`/`solve_f_zero`/`refine_seed`/`fprime`/`dist2`/`fval`/`pair` 与采样分类器 `is_line`/`circumcenter`/`classify_circle`（共 ~254 行），以及 `p02::param_for_point`。
+- **语义订正（重要）**：原实现**无条件把区间端点当作极值**加入结果；OCCT 不会——`Extrema_ExtPElC` 只保留落在 `[Uinf, Usup]` 内的解（`cxx:180`），`default:` 臂仅在点与端点重合时补端点（`GGExtPC.hxx:474-502`），端点处理属调用方（`ShapeAnalysis_Curve::Project` `cxx:161-182`）。已按 OCCT 去掉该自创补端点。
+- **验证**：`occt-geom --lib` **151/151**、`occt-geom2d` 72/72、`occt-topo --lib` 1293/1（唯一红仍是 `brepfeat::tests::groove_cuts_cylinder` = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3（T-05）——**逐项与基线一致**；`--all-targets` exit 0。
+- **未修（已立项）**：**T-66** = `extrema_cc` 的通用曲线–曲线种子集仍是自创网格（OCCT `Extrema_GenExtCC` 用 `math_GlobOptMin`，仓内 `occt-math/globoptmin.rs` 已移植，可直接用）；**T-65** = `ellipse_all`/`hyperbola_all`/`parabola_all` 解析臂缺 `myIsMin` 端口（`Extrema_ExtPElC.cxx:277`/`:381`/`:473`）且 `Curve` 无 hyperbola/parabola 类型查询（T-12），故这三种类型当前走 `default:` 臂（已在代码注释与 `extrema_cc/mod.rs` 头部写明）。
 
 ## 4. 决策与约束（不可违反）
 

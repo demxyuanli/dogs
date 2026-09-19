@@ -832,24 +832,23 @@ pub fn extrema_ext_pc_range(
         state.dist2 = point.square_distance(&state.pl);
     }
 
-    if curve.bspline_knots().is_some() {
+    // `Extrema_GGExtPC` curve-type switch: elementary curves go to
+    // `Extrema_ExtPElC`, BSpline/Bezier/OtherCurve to the `default:` arm
+    // (`Extrema_GGExtPC.hxx:390-502`).
+    if let Some(pairs) = super::p02::ext_pelc_all(curve, point, u_inf, u_sup) {
+        // `ExtPElC` filters to `[Uinf, Usup]` itself (`Extrema_ExtPElC.cxx:180`)
+        // and sets `myIsMin` per solution (`cxx:77`, `:184`); `myDone = true`
+        // regardless of the number of solutions (`cxx:189`).
+        for (e, is_min) in pairs {
+            state.add_sol(e.u1, e.p2, e.distance * e.distance, is_min);
+        }
+        state.done = true;
+    } else if curve.bspline_knots().is_some() {
         perform_bspline(&mut state, curve, point);
         postprocess_ends(&mut state);
-    } else if curve.bezier_poles().is_some()
-        || (!curve.is_line() && curve.gp_circ().is_none() && curve.circle_radius().is_none())
-    {
+    } else {
         perform_general(&mut state, curve, point);
         postprocess_ends(&mut state);
-    } else {
-        // Elementary: reuse existing analytic all-extrema, mark all as min
-        // candidates for Project (ExtPElC sets IsMin per solution).
-        for e in super::point_curve_extrema_all(curve, point) {
-            if e.u1 < u_inf - state.tol_u || e.u1 > u_sup + state.tol_u {
-                continue;
-            }
-            state.add_sol(e.u1, e.p2, e.distance * e.distance, true);
-        }
-        state.done = !state.sols.is_empty();
     }
     state.sols
 }

@@ -2,7 +2,7 @@ use super::prelude::*;
 use super::*;
     use crate::curve::Curve;
     use crate::{GeomBSplineCurve, GeomCircle, GeomLine};
-    use occt_core::gp::{GpAx1, GpAx2, GpAx3, GpDir, GpElips, GpHypr, GpLin, GpParab, GpPnt, GpVec};
+    use occt_core::gp::{GpAx2, GpDir, GpElips, GpHypr, GpLin, GpParab, GpPnt, GpVec};
 
     const PI: f64 = std::f64::consts::PI;
 
@@ -124,7 +124,7 @@ use super::*;
         )
         .unwrap();
         let p = GpPnt::new(2.0, 4.0, 0.0);
-        let all = newton_point_curve_all(&c, &p);
+        let all = point_curve_extrema_all(&c, &p);
         assert!(!all.is_empty());
         let min = all.iter().min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap()).unwrap();
         // Derivative condition (C-P)·C′ ≈ 0 at the closest parameter.
