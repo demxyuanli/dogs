@@ -317,6 +317,15 @@ cd ..; git worktree remove --force .target-headcheck
 - **结论**：T0M 的 bbox 缺口（删回退后短 0.33）**不是缺边界**，而是**带孔的非平面面**在 Delaunay 约束路径上产出空网格（与 `wireframe::tests::face_with_hole_triangulates_ring_area` 的"内环未生效"同源）。⇒ 修法应落在**内环作为约束的处理**（`model_builder` 把内 wire 交给面模型 + 约束 Delaunay 的孔洞多边形处理，参考 `BRepMesh_Delaun` 的 `meshLeftPolygonOf`/约束边路径），以及 2 例 `invalid discrete range` 的离散域校验。
 - **验证**：本轮**未改行为代码**（仅临时探针，已清零）；`occt-topo --lib` **1293/1**，工作树干净。
 
+**T-68 第七轮（2026-09-20）：缺口继续下钻到 `Delaun::compute` 产不出三角形**
+
+- **证据链（临时探针，已清零）**：在 `node_insertion::finish_mesh` 加打印（记录 `nodes/links/du/dv/frontier/base_domain_tris`，全 1769 面），对 T0M 跑全形状后聚合：
+  - 166 个失败面：`base_domain_tris=0` **且 `frontier=0`**，但已注册 **50–116 节点 / 52+ 链接**；
+  - 1603 个成功面：`base_domain_tris>0`、`frontier>0`。
+- **推论**：`frontier=0` 是**结果**而非原因——`Delaun` 构造期（`new_with_data_cells` → `perform` → `super_mesh` + `compute`）**一个三角形都没产出**，于是所有链接都"无相连三角形"，被随后的 `erase_free_links()` 全部清掉。已核对 `erase_free_links` 与 OCCT `BRepMesh_MeshTool::EraseFreeLinks`（`cxx:204-219`）逐行一致 ⇒ **不是这里的偏差**，下一站是 `Delaun::compute`/`create_triangles`（`delaun/p02.rs:305-316`、`:366+`）在"带孔面"配置下的行为。
+- **排除项**：UV 跨度不是决定因素——失败面 `du ∈ [4.02, 2332.6]`（均值 85），成功面 `du ∈ [0.005, 610.6]`（均值 15.2），区间**重叠**；决定因素仍是 **`wires=2`（外环+内环）且 `surface=Other`**（166/166）。
+- **下一步**：对单个失败面插桩 `compute`（`loop_edges` 初值、`create_triangles(first)` 是否产出、`create_triangles_on_new_vertices` 的插入数），并与 OCCT `BRepMesh_Delaun::compute`/`createTriangles` 在"外环+内环"配置下对照——这是 A13/A18、T-55 剩余回退、T-59 三者的最后一道共同前置。
+
 ## 4. 决策与约束（不可违反）
 
 1. 改完先编译（`cargo check`，编译不过先修编译）。
