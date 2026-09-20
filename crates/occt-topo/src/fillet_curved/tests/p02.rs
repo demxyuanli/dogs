@@ -25,7 +25,7 @@ use super::*;
             .into_iter()
             .find(|f| {
                 BRepTool::face_surface(f)
-                    .map(|s| classify_surface_full(s.as_ref()) == SurfaceKind::Other)
+                    .map(|s| classify_surface_full(s.as_ref()) == SurfaceKind::Cone)
                     .unwrap_or(false)
             })
             .expect("cone face");
@@ -45,13 +45,13 @@ use super::*;
         assert!(shell_is_closed(&shell_of(&out)), "plane+cone fillet is closed");
         // The blend face is a torus band (the rolling-ball envelope). Use the
         // analytic classifier: the trimmed cone face is `Cone`, the torus blend
-        // is `Other`.
+        // is `Torus`.
         let faces = faces_of(&out);
         let blend = faces
             .iter()
             .find(|f| {
                 BRepTool::face_surface(f)
-                    .map(|s| classify_surface_analytic(s.as_ref()) == SurfaceKind::Other)
+                    .map(|s| classify_surface_analytic(s.as_ref()) == SurfaceKind::Torus)
                     .unwrap_or(false)
             })
             .expect("torus blend face");

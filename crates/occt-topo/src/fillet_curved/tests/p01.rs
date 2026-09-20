@@ -274,14 +274,17 @@ use super::*;
         (b.make_solid(&[shell]), inner_circle)
     }
 
-    /// The first face that is not plane/sphere/cylinder — the torus blend face,
-    /// since every input face of the test solids is plane/sphere/cylinder.
+    /// The torus blend face: every input face of the test solids is
+    /// plane/sphere/cylinder, so the torus is identified by its exact analytic
+    /// type. (It used to be found as `SurfaceKind::Other` because the
+    /// classifier could not see non-plane/sphere surfaces; with the exact
+    /// `GetType()` classification it reports `SurfaceKind::Torus`.)
     pub(super) fn find_blend_face<'a>(faces: &'a [Face]) -> &'a Face {
         faces
             .iter()
             .find(|f| {
                 BRepTool::face_surface(f)
-                    .map(|s| classify_surface_full(s.as_ref()) == SurfaceKind::Other)
+                    .map(|s| classify_surface_full(s.as_ref()) == SurfaceKind::Torus)
                     .unwrap_or(false)
             })
             .expect("torus blend face")

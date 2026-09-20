@@ -172,7 +172,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-58 | A22 | `occt-topo/src/step/p05.rs:348-370,740-760` | `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂；圆用三点外心回退 → `ShapeAnalysis_Curve.cxx:382-400,160,200` | 6 | pending |
 | T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | **已尝试 → 回退，被 A13/A18 阻塞**（2026-09-20）：按 `BRepTools.cxx:172-367` 完整移植（`box_curve2d` 精确盒 + B-spline 周期验证 2/3/6 点 + 非周期钳制）后 `step_obj_parity` 14/14→**13/14**：`data/occ/T0M.stp` 的 **bbox min[2] ours=-424.978671 occ=-424.741876（Δ=0.237）**——忠实窗口等于 OCCT 的 `BRepTools::UVBounds`，但**消费方**是本仓自创的"UV 矩形栅格"建网格（A13/A18），而 OCCT 的网格由 pcurve 驱动（`BRepMesh_FaceDiscret`），所以凸包级别的窗口外扩不会漏进 OCCT 的网格。⇒ 必须先做 A13/A18（或改为逐样本判定），再重放本改动 |
 | T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | **done**（2026-09-20）：改为 `GeomAdaptor_Surface::Load`（`cxx:422-513`）的 `DynamicType` 精确顺序（RTS→Plane→Cylinder→Cone→Sphere→Torus→Revolution→Extrusion→**Bezier**→BSpline→Offset→Other），删除 `match (up,vp)` 与自创 `is_cylinder_like`；新增 `Surface::is_bezier_surface()`。门禁全等于基线 |
-| T-72 | **A30**（批 4 派生，新） | `occt-topo/src/brep_surface.rs:78-101` | `brep_surface::classify_surface` = 8×8 采样 `is_planar(1e-6)` + 等距球心 + `1e-4*r` 阈值 ⇒ STEP 读入面型靠采样（`step/p01.rs:160`、`step/p04.rs:1275+`） | 5 后 | pending（改为 `Surface` 类型判定，同 A24 做法；本轮只报告） |
+| T-72 | **A30**（批 4 派生，新） | `occt-topo/src/brep_surface.rs:78-101` | `brep_surface::classify_surface` = 8×8 采样 `is_planar(1e-6)` + 等距球心 + `1e-4*r` 阈值 ⇒ STEP 读入面型靠采样（`step/p01.rs:160`、`step/p04.rs:1275+`） | 5 后 | **done**（2026-09-20）：改为 `GeomAdaptor_Surface::Load`（`cxx:422-513`）的精确类判定（RTS→Plane→Cylinder→Cone→Sphere→Torus→Other）；删除 8×8 采样与两个阈值。可观测修复：`step/p04.rs` 的 `GeomConvert_Units` 分派此前把柱/锥判成 `Other` ⇒ 柱面 pcurve **单位换算被跳过**。8 个既有测试的"缺陷断言"（3 处查找面谓词 `== Other` + 1 处 `assert_eq!(vanilla, Other)`）改为精确类型；未新增测试、未放宽门禁 |
 | T-61 | A25 | `meshing/delaun/p04.rs:346-375` | 自造"先删邻三角形再 AddElement" → `BRepMesh_Delaun.cxx:2263-2274` 失败即置 `IMeshData_Failure`，不改网格 | 7 | pending |
 | T-62 | A26 | `brep_exchange.rs:118,125`、`occt-core/src/io/{ply,stl}.rs`、`iges.rs:168,390-438`、`step/p02.rs:16-17,43`、`vrml.rs:92`、`obj.rs` | PLY 焊接/属性类型、STL 阈值/头/嗅探、IGES 采样族与自造回转面、STEP 写侧采样重拟、`solid TRUE`、恒空 `vn` → 各 `RWPly_*`/`RWStl*`/`GeomToIGES_*`/`GeomToStep_MakeCurve.cxx:94-99`/`VrmlData_ShapeConvert.cxx:360` | 8 | pending |
 
@@ -392,6 +392,19 @@ cd ..; git worktree remove --force .target-headcheck
 - **实测效应（网格密度，`step_obj_parity --nocapture` 对拍）**：Shape-2、ATU01038、T0M、`occ/bottom`、`occ/top` 均有变化（例 T0M **46647/46754 → 46514/46945**、ATU01038 17767/22160 → 17745/22119），其余 11 个模型逐位不变 ⇒ 证实 A24 描述的"错判会换掉整张内部节点网格"确实在 live 路径上发生。
 - **验证（全绿，与基线逐项一致）**：`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**、`occt-topo --lib` **1293/1**、`occt-geom --lib` **151/151**；`cargo check` exit 0。
 - **旁支（已立项 T-72/A30）**：`brep_surface::classify_surface`（`brep_surface.rs:78-101`）是**另一处**采样分类器（8×8 采样 + `1e-6`/`1e-4` 阈值判 Plane/Sphere/Other），服务于 STEP **读入**面型；本轮只报告未动手。
+
+**批 5（A30/T-72：`brep_surface::classify_surface` → 精确 `GetType()`）已完成 —— 2026-09-20**
+
+- **落地**：`crates/occt-topo/src/brep_surface.rs`。
+  - `classify_surface` 改为 `GeomAdaptor_Surface::Load`（`GeomAdaptor_Surface.cxx:422-513`）的精确类判定：`rectangular_trimmed_basis` 递归 → `gp_pln` → `gp_cylinder` → `gp_cone` → `gp_sphere` → `gp_torus` → `Other`。
+  - **删除** 8×8 采样分类（`is_planar(1e-6)`、等距球心判定、`1e-4*r` 阈值）；该实现**只能**报 Plane/Sphere/Other，柱/锥/环一律 `Other`。
+- **可观测修复**：`step/p04.rs::unit_conversion_2d`（对应 `GeomConvert_Units.cxx:191-227`，OCCT 用 `IsKind` 分派）此前对柱/锥面拿到 `Other` ⇒ 走 `return c2d`，**整段单位换算被跳过**；现在柱面取 `(AngleFact, LengthFact)`、锥面取 `(AngleFact, LengthFact/cos α)`（锥面本就由 `cone_ref()` 先命中）。本轮门禁数字不变是因为测试模型用单位长度因子。
+- **副作用（如实登记，含纪律说明）**：精确化后 `--lib` 由 1293/1 变 **1285/9**（8 个新增红）。逐个追因后确认**全部**来自"断言分类器看不见非 plane/sphere 面"这一**缺陷行为**，不是真实回归：
+  1. 3 处**查找面的谓词**把 `SurfaceKind::Other` 当作"环面/锥面"——`fillet_curved/tests/p01.rs::find_blend_face`（`:279-288`）、`tests/p02.rs::cone_extraction_geometric`（`:28`）、`tests/p02.rs::plane_cone_blend`（`:54`）⇒ 改为 `Torus`（前两处为锥面的改为 `Cone`），语义不变（"找到那张环面/锥面"）且更精确。
+  2. 1 处**断言缺陷本身**——`fillet_edge/tests.rs:100-102` 注释原文 `// The vanilla classifier cannot see cylinders; the extended one can.` 并 `assert_eq!(vanilla, SurfaceKind::Other)` ⇒ 改为断言正确事实 `classify_surface(...) == SurfaceKind::Cylinder`。
+  - **声明**：本轮**未新增任何测试**、**未放宽任何门禁断言**，只订正了 4 处"把缺陷写进测试"的位置；这与"为对齐新写单元测试"是两回事，故在此与 `_index.md` A30 行双重登记，便于后人复核。
+- **验证（全绿，与基线逐项一致）**：`occt-topo --lib` **1293/1**（唯一红 = T-01 `brepfeat::groove_cuts_cylinder`）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`occt-geom --lib` 151/151；`cargo check` exit 0。
+- **旁支（未动手）**：`fillet_edge::classify_surface_full`（`fillet_edge/p02.rs:245-255`）与 `fillet_curved::classify_surface_analytic`（`fillet_curved/p01.rs:138-148`）仍各自带一层 6×6 采样柱面/锥面检测，现在对真实柱/锥已成冗余（`classify_surface` 直接给出 `Cylinder`/`Cone`）；`gprop_analytic/p01.rs:47` 还有一份同名实现。⇒ 建议立项（下一轮可选）：把这三处收敛为直接使用精确判定，删掉采样臂。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。

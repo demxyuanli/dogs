@@ -97,10 +97,13 @@ use super::*;
         let faces = faces_of(&out);
         let blend = find_face_by_surface(&faces, |s| classify_surface_full(s) == SurfaceKind::Cylinder)
             .expect("blend face");
-        // The vanilla classifier cannot see cylinders; the extended one can.
-        let vanilla = classify_surface(BRepTool::face_surface(blend).unwrap().as_ref());
-        assert_eq!(vanilla, SurfaceKind::Other);
-        assert_eq!(classify_surface_full(BRepTool::face_surface(blend).unwrap().as_ref()), SurfaceKind::Cylinder);
+        // Both classifiers see the cylinder: the analytic one reports the exact
+        // `GetType()` kind (`Geom_CylindricalSurface` → `Cylinder`) and the
+        // extended wrapper agrees. (The analytic classifier used to be blind to
+        // cylinders and reported `Other`.)
+        let blend_surf = BRepTool::face_surface(blend).unwrap();
+        assert_eq!(classify_surface(blend_surf.as_ref()), SurfaceKind::Cylinder);
+        assert_eq!(classify_surface_full(blend_surf.as_ref()), SurfaceKind::Cylinder);
     }
 
     #[test]

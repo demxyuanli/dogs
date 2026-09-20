@@ -75,27 +75,35 @@ pub fn is_planar(s: &dyn Surface, nu: usize, nv: usize, tol: f64) -> bool {
     first_ok
 }
 
-/// Classify a surface by sampling its geometry invariants.
+/// Classify a surface by its **exact analytic type**.
+///
+/// Mirrors `GeomAdaptor_Surface::Load` (`GeomAdaptor_Surface.cxx:422-513`),
+/// which compares the surface's exact class in a fixed order
+/// (rectangular-trimmed → recurse on the basis; Plane, Cylinder, Cone, Sphere,
+/// Torus, …; anything else is `GeomAbs_OtherSurface`). The port exposes the same
+/// information through the `Surface` type queries, so no sampling is needed.
+///
+/// The previous body sampled an 8×8 grid and compared normals / centre
+/// distances with `1e-6` / `1e-4` thresholds, and could only ever report
+/// `Plane`, `Sphere` or `Other` (audit A30).
 pub fn classify_surface(s: &dyn Surface) -> SurfaceKind {
-    let nu = 8;
-    let nv = 8;
-    if is_planar(s, nu, nv, 1e-6) {
+    if let Some(basis) = s.rectangular_trimmed_basis() {
+        return classify_surface(basis.as_ref());
+    }
+    if s.gp_pln().is_some() {
         return SurfaceKind::Plane;
     }
-    // Sphere: all sampled points are equidistant from one center.
-    if let Some(center) = sphere_center(s) {
-        let (u0, u1, v0, v1) = sample_bounds(s);
-        let r0 = s.d0(u0, v0).distance(&center);
-        for i in 0..nu {
-            for j in 0..nv {
-                let u = u0 + (u1 - u0) * i as f64 / (nu - 1) as f64;
-                let v = v0 + (v1 - v0) * j as f64 / (nv - 1) as f64;
-                if (s.d0(u, v).distance(&center) - r0).abs() > 1e-4 * r0.abs().max(1.0) {
-                    return SurfaceKind::Other;
-                }
-            }
-        }
+    if s.gp_cylinder().is_some() {
+        return SurfaceKind::Cylinder;
+    }
+    if s.gp_cone().is_some() {
+        return SurfaceKind::Cone;
+    }
+    if s.gp_sphere().is_some() {
         return SurfaceKind::Sphere;
+    }
+    if s.gp_torus().is_some() {
+        return SurfaceKind::Torus;
     }
     SurfaceKind::Other
 }
