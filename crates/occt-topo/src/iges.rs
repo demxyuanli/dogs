@@ -1509,6 +1509,33 @@ impl IgesWriter {
                 _ => inner_curves.push(cs),
             }
         }
+        // `cxx:334-365`: edges of the face that are not part of any wire become
+        // further inner contours. OCCT transfers their 3-D curve and their UV curve
+        // (`TransferEdge(edge, face, originMap, length, false)`); the UV curve is
+        // UNPORTED here, so the contour takes the "3-D only" preference 2, exactly
+        // as the wire contours do.
+        let wire_edge_keys: std::collections::HashSet<usize> = wires
+            .iter()
+            .flat_map(|w| edges_of_wire(w))
+            .map(|e| Arc::as_ptr(&e.0.tshape) as usize)
+            .collect();
+        for e in children_of_type(&f.0, ShapeType::Edge) {
+            let key = Arc::as_ptr(&e.tshape) as usize;
+            if wire_edge_keys.contains(&key) {
+                continue;
+            }
+            let edge = Edge(e);
+            let idx = match self.edge_curve_entities.get(&key) {
+                Some(&i) => i,
+                None => {
+                    let i = self.emit_edge_curve(&edge);
+                    self.edge_curve_entities.insert(key, i);
+                    i
+                }
+            };
+            curve_refs.push(idx);
+            inner_curves.push(self.emit(142, 0, format!("142,0,{surf_idx},0,{idx},2;")));
+        }
         curve_refs.append(&mut synth);
 
         // `cxx:380-400`: `isWholeSurface` is `BRep_Tool::NaturalRestriction(face)`,
