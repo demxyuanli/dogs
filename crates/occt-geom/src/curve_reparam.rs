@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use crate::bspline_curve::GeomBSplineCurve;
 use crate::curve::Curve;
-use occt_core::bspl::knots::{build_uniform_knots, hunt};
+use occt_core::bspl::knots::build_uniform_knots;
 use occt_core::bspl::poles::greville_abscissae;
 use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 
@@ -172,39 +172,30 @@ pub fn arc_reparam_check(c: &dyn Curve, samples: usize) -> f64 {
     max_dev
 }
 
-/// B-spline basis values at `u`, indexed by pole (Algorithm A2.2 from
-/// The NURBS Book), for a clamped knot vector.
+/// B-spline basis values at `u`, indexed by pole, for a clamped knot vector.
 ///
-/// **非 OCCT 出处**：OCCT 的等价件是 `BSplCLib::BasisFuns`/`bspl`（按结点区间
-/// 与 `Span` 求基函数），本函数取自 The NURBS Book A2.2 教科书算法，故文件头
-/// 只把 `Geom_Curve`/`Geom_BSplineCurve`/`GCPnts_AbscissaPoint` 记为*调用侧*来源。
-fn basis_values(knots: &[f64], degree: usize, u: f64) -> Vec<f64> {
+/// Faithful port path: `BSplCLib::EvalBsplineBasis` (`BSplCLib_2.cxx:429-563`)
+/// via [`occt_core::bspl::eval_basis::eval_bspline_basis`], scattered from
+/// `FirstNonZeroBsplineIndex` into the per-pole vector. OCCT's caller
+/// (`BSplCLib.cxx:3532-3535`) **gives up** when the routine reports an error
+/// (`ErrorCode != 0`, e.g. a vanishing knot span), so the failure is propagated
+/// instead of fabricating values.
+///
+/// (The previous body was the NURBS Book A2.2 algorithm with an invented
+/// `1e-15` denominator guard; the audit's claim that the missing piece was
+/// `BSplCLib::BasisFuns` was wrong — that name does not exist in 8.0.0.)
+fn basis_values(knots: &[f64], degree: usize, u: f64) -> Result<Vec<f64>, i32> {
     let n_poles = knots.len() - degree - 1;
-    let s = hunt(knots, u).max(degree).min(n_poles - 1);
-    let mut left = vec![0.0; degree + 1];
-    let mut right = vec![0.0; degree + 1];
-    let mut n = vec![0.0; degree + 1];
-    n[0] = 1.0;
-    for j in 1..=degree {
-        left[j] = u - knots[s + 1 - j];
-        right[j] = knots[s + j] - u;
-        let mut saved = 0.0;
-        for r in 0..j {
-            let denom = right[r + 1] + left[j - r];
-            let temp = if denom.abs() > 1e-15 { n[r] / denom } else { 0.0 };
-            n[r] = saved + right[r + 1] * temp;
-            saved = left[j - r] * temp;
-        }
-        n[j] = saved;
-    }
-    let mut basis = vec![0.0; n_poles];
-    for r in 0..=degree {
-        let gi = s - degree + r;
-        if gi < n_poles {
-            basis[gi] = n[r];
+    let order = degree as i32 + 1;
+    let (first, basis) = occt_core::bspl::eval_basis::eval_bspline_basis(0, order, knots, u, false)?;
+    let mut out = vec![0.0; n_poles];
+    for (c, v) in basis[0].iter().enumerate() {
+        let i = (first - 1) + c as i32;
+        if i >= 0 && (i as usize) < n_poles {
+            out[i as usize] = *v;
         }
     }
-    basis
+    Ok(out)
 }
 
 /// Solve `A·x = b` for a square `A` by partial-pivoted Gaussian elimination;
@@ -284,7 +275,12 @@ pub fn resample_bspline(points: &[GpPnt], degree: usize) -> Result<GeomBSplineCu
         return GeomBSplineCurve::new(points.to_vec(), knots, 1).map_err(|e| e.to_string());
     }
     let params = greville_abscissae(&knots, degree, n);
-    let a: Vec<Vec<f64>> = params.iter().map(|&u| basis_values(&knots, degree, u)).collect();
+    let mut a: Vec<Vec<f64>> = Vec::with_capacity(params.len());
+    for &u in &params {
+        a.push(basis_values(&knots, degree, u).map_err(|code| {
+            format!("resample_bspline: BSplCLib::EvalBsplineBasis failed with code {code}")
+        })?);
+    }
     let px = gauss_solve(&a, &points.iter().map(|p| p.x()).collect::<Vec<_>>())
         .ok_or("resample_bspline: singular collocation matrix")?;
     let py = gauss_solve(&a, &points.iter().map(|p| p.y()).collect::<Vec<_>>())
