@@ -442,6 +442,11 @@ struct Ent {
     /// `IGESData_IGESEntity`; written to DE card 1 field 7
     /// (`IGESData_IGESWriter.cxx:324-331`, `v[6] = themodel->DNum(...)`).
     trsf: Option<usize>,
+    /// The other entities this one references, in record order - `OwnShared` in
+    /// OCCT terms (`IGESData_GeneralModule::OwnShared` feeds the writer's pointer
+    /// resolution). Recorded so the pointers can be checked (and, for T-85, later
+    /// remapped) without parsing the parameter text back into numbers.
+    refs: Vec<usize>,
     /// Parameter data, always ending with the record delimiter `;`.
     params: String,
 }
@@ -538,9 +543,36 @@ impl IgesWriter {
             ty,
             form,
             trsf: None,
+            refs: Vec::new(),
             params,
         });
         self.entities.len()
+    }
+
+    /// Register one entity that references others, recording those pointers in
+    /// record order (T-85's prerequisite for OCCT's reachability-based writing).
+    fn emit_refs(&mut self, ty: i32, form: i32, params: String, refs: &[usize]) -> usize {
+        let de = self.emit(ty, form, params);
+        self.entities[de - 1].refs = refs.to_vec();
+        de
+    }
+
+    /// Every recorded pointer must address an entity that exists and precede the
+    /// referencing entity (`IGESData_IGESWriter::Send` resolves pointers through
+    /// the model, so a dangling number would be written verbatim). Debug-only:
+    /// the emitters below build the pointers themselves.
+    fn check_refs(&self) {
+        for (i, e) in self.entities.iter().enumerate() {
+            for r in &e.refs {
+                debug_assert!(
+                    *r >= 1 && *r <= self.entities.len() && *r != i + 1,
+                    "entity {} (type {}) references {} - out of range or self",
+                    i + 1,
+                    e.ty,
+                    r
+                );
+            }
+        }
     }
 
     /// `IGESData_IGESEntity::InitTransf` — record the entity's transformation
@@ -825,10 +857,11 @@ impl IgesWriter {
         let c = self.emit_point(center);
         let a = self.emit_direction(axis);
         let r = self.emit_direction(x_dir);
-        self.emit(
+        self.emit_refs(
             196,
             0,
             format!("196,{c},{},{a},{r};", num(radius)),
+            &[c, a, r],
         )
     }
 
@@ -846,10 +879,11 @@ impl IgesWriter {
         let l = self.emit_point(location);
         let a = self.emit_direction(axis);
         let r = self.emit_direction(x_dir);
-        self.emit(
+        self.emit_refs(
             192,
             0,
             format!("192,{l},{a},{},{r};", num(radius)),
+            &[l, a, r],
         )
     }
 
@@ -885,7 +919,7 @@ impl IgesWriter {
         let l = self.emit_point(&loc);
         let a = self.emit_direction(axis);
         let r = self.emit_direction(&xd);
-        self.emit(
+        self.emit_refs(
             194,
             0,
             format!(
@@ -893,6 +927,7 @@ impl IgesWriter {
                 num(ref_radius),
                 num(angle * 180.0 / std::f64::consts::PI)
             ),
+            &[l, a, r],
         )
     }
 
@@ -911,10 +946,11 @@ impl IgesWriter {
         let c = self.emit_point(center);
         let a = self.emit_direction(axis);
         let r = self.emit_direction(x_dir);
-        self.emit(
+        self.emit_refs(
             198,
             0,
             format!("198,{c},{a},{},{},{r};", num(major), num(minor)),
+            &[c, a, r],
         )
     }
 
@@ -1095,7 +1131,7 @@ impl IgesWriter {
             &GpPnt::new(loc.x() - d.x(), loc.y() - d.y(), loc.z() - d.z()),
         );
         let tau = 2.0 * std::f64::consts::PI;
-        Some(self.emit(
+        Some(self.emit_refs(
             120,
             0,
             format!(
@@ -1103,6 +1139,7 @@ impl IgesWriter {
                 num(tau - u1),
                 num(tau - u0)
             ),
+            &[axis_line, generatrix],
         ))
     }
 
@@ -1148,7 +1185,7 @@ impl IgesWriter {
                 self.emit_line(&p0, &p1)
             }
         };
-        Some(self.emit(
+        Some(self.emit_refs(
             122,
             0,
             format!(
@@ -1157,6 +1194,7 @@ impl IgesWriter {
                 num(end.y()),
                 num(end.z())
             ),
+            &[directrix],
         ))
     }
 
@@ -1484,13 +1522,13 @@ impl IgesWriter {
                     .map(|i| i.to_string())
                     .collect::<Vec<_>>()
                     .join(",");
-                self.emit(102, 0, format!("102,{},{};", edge_refs.len(), refs))
+                self.emit_refs(102, 0, format!("102,{},{};", edge_refs.len(), refs), &edge_refs)
             };
             // `IGESGeom_CurveOnSurface::Init` (`IGESGeom_CurveOnSurface.cxx:26-40`)
             // with `Imode = 0` (`cxx:269`) and the "3-D only" preference above;
             // `IGESGeom_ToolCurveOnSurface::WriteOwnParams` (`:104-115`) writes
             // `142, creation_mode, surface, curve_uv, curve_3d, preference_mode;`.
-            let cs = self.emit(142, 0, format!("142,0,{surf_idx},0,{curve3d},2;"));
+            let cs = self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{curve3d},2;"), &[surf_idx, curve3d]);
             match &outer_wire {
                 Some(o) if Arc::as_ptr(&o.0.tshape) == Arc::as_ptr(&w.0.tshape) => {
                     outer_curve = Some(cs)
@@ -1523,7 +1561,7 @@ impl IgesWriter {
                 }
             };
             curve_refs.push(idx);
-            inner_curves.push(self.emit(142, 0, format!("142,0,{surf_idx},0,{idx},2;")));
+            inner_curves.push(self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{idx},2;"), &[surf_idx, idx]));
         }
         curve_refs.append(&mut synth);
 
@@ -1546,9 +1584,9 @@ impl IgesWriter {
         // OCCT's own primitives would have here.
         if outer_curve.is_none() && !synth.is_empty() {
             let mut it = synth.iter();
-            outer_curve = it.next().map(|c| self.emit(142, 0, format!("142,0,{surf_idx},0,{c},2;")));
+            outer_curve = it.next().map(|c| self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{c},2;"), &[surf_idx, *c]));
             for c in it {
-                inner_curves.push(self.emit(142, 0, format!("142,0,{surf_idx},0,{c},2;")));
+                inner_curves.push(self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{c},2;"), &[surf_idx, *c]));
             }
         }
 
@@ -1565,13 +1603,21 @@ impl IgesWriter {
             (false, Some(i)) => i.to_string(),
             _ => "0".to_string(),
         };
+        let mut ref_list = vec![surf_idx];
+        if !is_whole {
+            if let Some(i) = outer_curve {
+                ref_list.push(i);
+            }
+        }
+        ref_list.extend(inner_curves.iter().copied());
         for c in &inner_curves {
             refs.push_str(&format!(",{c}"));
         }
-        self.emit(
+        self.emit_refs(
             144,
             0,
             format!("144,{surf_idx},{outer_flag},{n_inner},{refs};"),
+            &ref_list,
         )
     }
 
@@ -1591,7 +1637,7 @@ impl IgesWriter {
                     .map(|i| i.to_string())
                     .collect::<Vec<_>>()
                     .join(",");
-                Some(self.emit(402, 0, format!("402,{n},{refs};")))
+                Some(self.emit_refs(402, 0, format!("402,{n},{refs};"), &items))
             }
         }
     }
@@ -1661,6 +1707,7 @@ impl IgesWriter {
     }
 
     fn finish(self) -> String {
+        self.check_refs();
         let mut out = String::new();
         let mut s_seq = 1usize;
         let mut g_seq = 1usize;
