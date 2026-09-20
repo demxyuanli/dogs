@@ -3,12 +3,20 @@
 //! `GCPnts_UniformAbscissa`, `GCPnts_QuasiUniformAbscissa`, plus a parameter
 //! accessor for the tangential-deflection sampler.
 //!
-//! The `Curve` trait has no arc-length method, so lengths are integrated
-//! adaptively (adaptive Simpson) over `|C′(u)|` and the abscissa inversion is
-//! a safeguarded Newton solve. **Deviation (A15/T-51)**: OCCT uses
-//! `math_GaussSingleIntegration` + `math_NewtonFunctionRoot`
-//! (`CPnts_AbscissaPoint.cxx`); the adaptive Simpson path is not a translation
-//! and must be replaced when T-51 is executed.
+//! Arc length is the faithful `CPnts_AbscissaPoint::Length` path: the speed
+//! `|C'(u)|` is integrated with `math_GaussSingleIntegration` at OCCT's
+//! per-type order (`CPnts_AbscissaPoint.cxx:57-77`) and, for the tolerance
+//! overload, with the 13-iteration interval-doubling loop
+//! (`math_GaussSingleIntegration.cxx:64-98`). OCCT tabulates the Gauss nodes and
+//! weights (`math.cxx` `Point[]`/`Weight[]`, `GaussPointsMax() = 61`); the port
+//! computes the same values with [`occt_math::gauss::gauss_legendre`] and clamps
+//! the order to 61 the same way.
+//!
+//! **UNPORTED (A15/T-51 remainder)**: the abscissa *inversion* below
+//! ([`abscissa_point`], [`uniform_abscissa`]) still uses a local
+//! safest-Newton/bisection solver; OCCT drives it with `math_FunctionRoot` on
+//! `CPnts_MyGaussFunction` (`CPnts_AbscissaPoint.cxx:395-432`), which needs the
+//! `math_FunctionRoot` port.
 //!
 //! `GCPnts_UniformDeflection` / `GCPnts_QuasiUniformDeflection` are **UNPORTED**
 //! (see `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
@@ -20,50 +28,73 @@ use occt_core::precision::{CONFUSION, PCONFUSION};
 
 use crate::curve::Curve;
 
-const MAX_DEPTH: usize = 20;
+/// `math::GaussPointsMax()` (`math.cxx:24-27`).
+const GAUSS_POINTS_MAX: usize = 61;
 
 fn speed(c: &dyn Curve, u: f64) -> f64 {
     let (_, d1) = c.d1(u);
     d1.magnitude()
 }
 
-/// Adaptive Simpson integration of `|C′(u)|` over `[a, b]` to absolute
-/// tolerance `tol`.
-fn adaptive_length(c: &dyn Curve, a: f64, b: f64, tol: f64) -> f64 {
-    fn simpson(a: f64, b: f64, fa: f64, fm: f64, fb: f64) -> f64 {
-        (b - a) / 6.0 * (fa + 4.0 * fm + fb)
+/// `CPnts_AbscissaPoint.cxx:57-77` (`order`): `f3d` integrated with a Gauss rule
+/// whose order depends on the curve type — `Line` 2, `Parabola` 5,
+/// `BezierCurve` `min(24, 2*Degree)`, `BSplineCurve` `min(24, 2*NbPoles - 1)`,
+/// everything else 10.
+fn gauss_order(c: &dyn Curve) -> usize {
+    if c.is_line() {
+        2
+    } else if c.gp_parabola().is_some() {
+        5
+    } else if let Some(p) = c.bezier_poles() {
+        (2 * p.len().saturating_sub(1)).min(24)
+    } else if let Some(p) = c.bspline_poles() {
+        (2 * p.len()).saturating_sub(1).min(24)
+    } else {
+        10
     }
-    fn rec(
-        c: &dyn Curve,
-        a: f64,
-        b: f64,
-        fa: f64,
-        fm: f64,
-        fb: f64,
-        whole: f64,
-        tol: f64,
-        depth: usize,
-    ) -> f64 {
-        let mid = 0.5 * (a + b);
-        let lm = 0.5 * (a + mid);
-        let rm = 0.5 * (mid + b);
-        let flm = speed(c, lm);
-        let frm = speed(c, rm);
-        let left = simpson(a, mid, fa, flm, fm);
-        let right = simpson(mid, b, fm, frm, fb);
-        if depth >= MAX_DEPTH || (left + right - whole).abs() <= 15.0 * tol {
-            left + right + (left + right - whole) / 15.0
-        } else {
-            rec(c, a, mid, fa, flm, fm, left, tol * 0.5, depth + 1)
-                + rec(c, mid, b, fm, frm, fb, right, tol * 0.5, depth + 1)
-        }
-    }
-    let (fa, fm, fb) = (speed(c, a), speed(c, 0.5 * (a + b)), speed(c, b));
-    let whole = simpson(a, b, fa, fm, fb);
-    rec(c, a, b, fa, fm, fb, whole, tol, 0)
 }
 
-/// Arc length of `c` over `[a, b]` (absolute tolerance `tol`).
+/// `math_GaussSingleIntegration::Perform` (`math_GaussSingleIntegration.cxx:100-150`):
+/// scale the `[-1, 1]` rule onto `[Lower, Upper]` and sum `Weight * F(Point)`.
+/// OCCT sums the symmetric pairs explicitly and scales by `xr` at the end; the
+/// port uses the already-scaled pairs from `gauss_legendre`, which differ only in
+/// the floating-point accumulation order.
+fn gauss_single(f: &dyn Fn(f64) -> f64, lower: f64, upper: f64, order: usize) -> f64 {
+    let order = order.clamp(1, GAUSS_POINTS_MAX);
+    let (points, weights) = occt_math::gauss::gauss_legendre(lower, upper, order);
+    let mut val = 0.0;
+    for (p, w) in points.iter().zip(weights.iter()) {
+        val += w * f(*p);
+    }
+    val
+}
+
+/// `math_GaussSingleIntegration` with a tolerance
+/// (`math_GaussSingleIntegration.cxx:64-98`): repeat the rule on `2^k` equal
+/// sub-intervals (`IterMax = 13`) until two successive totals differ by at most
+/// `tol`.
+fn gauss_single_tol(f: &dyn Fn(f64) -> f64, lower: f64, upper: f64, order: usize, tol: f64) -> f64 {
+    const ITER_MAX: usize = 13;
+    let mut len = gauss_single(f, lower, upper, order);
+    let mut nb_interval = 1usize;
+    for _ in 1..ITER_MAX {
+        let old_len = len;
+        len = 0.0;
+        nb_interval *= 2;
+        let du = (upper - lower) / nb_interval as f64;
+        for i in 0..nb_interval {
+            len += gauss_single(f, lower + i as f64 * du, lower + (i + 1) as f64 * du, order);
+        }
+        if (old_len - len).abs() <= tol {
+            break;
+        }
+    }
+    len
+}
+
+/// Arc length of `c` over `[a, b]` (`CPnts_AbscissaPoint::Length(C, U1, U2,
+/// Tol)`, `CPnts_AbscissaPoint.cxx:168-184`): `|math_GaussSingleIntegration(…)|
+/// ` on the speed, with the per-type Gauss order.
 pub fn curve_length_range(c: &dyn Curve, a: f64, b: f64, tol: f64) -> f64 {
     if !(a.is_finite() && b.is_finite()) {
         return f64::INFINITY;
@@ -71,10 +102,9 @@ pub fn curve_length_range(c: &dyn Curve, a: f64, b: f64, tol: f64) -> f64 {
     if b <= a {
         return 0.0;
     }
-    let span = b - a;
-    // Scale the tolerance to the span so absolute small curves still resolve.
-    let tol = tol.max(span * 1e-10);
-    adaptive_length(c, a, b, tol)
+    let order = gauss_order(c);
+    let speed_fn = |u: f64| speed(c, u);
+    gauss_single_tol(&speed_fn, a, b, order, tol).abs()
 }
 
 /// Total arc length of `c` over its parameter range.
@@ -124,8 +154,16 @@ pub fn abscissa_point(c: &dyn Curve, abscissa: f64, from: f64) -> Result<f64, St
 
     let glo = g(lo);
     let ghi = g(hi);
-    if glo > 0.0 || ghi < 0.0 {
+    // The tolerance guard mirrors OCCT's widened search bracket
+    // (`CPnts_AbscissaPoint.cxx:367-369`: `myUMin = U1 - DU`, `myUMax = U2 + DU`
+    // with `DU = U2 - U1`): an abscissa equal to the curve's length must land on
+    // the end parameter even though the Gauss length carries a rounding error,
+    // while a request genuinely beyond the length is still rejected.
+    if glo > tol || ghi < -tol {
         return Err("abscissa_point: abscissa beyond curve length".to_string());
+    }
+    if ghi <= 0.0 {
+        return Ok(hi);
     }
     if (ghi - glo).abs() < 1e-15 {
         return Ok(0.5 * (lo + hi));
