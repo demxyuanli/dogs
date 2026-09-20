@@ -385,6 +385,14 @@ cd ..; git worktree remove --force .target-headcheck
   2. **同族的已登记缺口**：`shhealing/p04.rs::project_wire_pcurve_ranges`（`TranslateEdgeLoop.cxx:844` 的 `EdgeProjAux` → `B.Range`）的注释已自述"窗口按原样写入（与 OCCT 同）"，并**推迟了 pcurve 反向**，理由是"我们的 mesher 处理不了**反向且窗口与 3D range 周期错位**的 pcurve"——face 20 正是这种形状，说明该缺口与 T-69 是同一处。
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
 - **下一步（第 43 轮，两条并行）**：① **判定性实验**：把同一面上各 wire 的 u 归一到同一周期窗口（仅作诊断，不改 `node_insertion` 的行为）后看 face 20 是否走通忠实 Delaunay（预期 74/72）——若走通，则缺的是"跨 wire 的周期对齐"，须先在 OCCT 里找到执行该对齐的那段控制流（候选：`ShapeFix_Wire::FixShifted` 的面级用法 / `StepToTopoDS_TranslateEdgeLoop` 的 `CheckPCurves` 段 / `ShapeFix_Face::FixMissingSeam`）并按它移植，**不得直接给网格层打补丁**；② 用参考的重复顶点证据确定"共享该顶点的两个面"是哪两张，确认端口是否两张都没网格化（据此判断要补的控制流范围）。
+**批 70（A26/T-78 步 10：修正 T 卡 Directory 计数 off-by-one；IGES 结构自洽性全量验证）—— 2026-09-20 第 85 轮**
+
+- **发现（临时校验探针查出，属 批 56 卡片格式合规化时留下的缺陷）**：Terminate 卡的 **Directory 计数写成 `2·实体数 + 1`**。`finish()` 里 `d_seq` 初值为 1、每实体 +2，收尾时却直接写 `d_seq`；OCCT 写的是 `nbd * 2`（`IGESData_IGESWriter.cxx:942-947` 的 `Sprintf("S%7dG%7dD%7dP%7d…", nbs, nbg, nbd*2, thepnum.Value(...)-1)`），且同一 `Sprintf` 的 S/G/P 三项取的正是**各段最后一个序号**（端口已用 `s_seq-1`/`g_seq-1`/`p_seq-1` 对齐）⇒ D 项同样应为 `d_seq - 1`。实测 `Shape.step`：实际 D 段 28 行，T 卡却写 29。
+- **落地**：`finish()` 的 T 卡改为 `d_seq - 1`，并把注释补全为 `cxx:942-947` 的三项语义（注释原引 `:942-943`）。
+- **验证（临时探针 `zzprobe_iges_validate.rs`，已删；`git grep zzprobe` = 0）**：对 `Cube`/`Sphere`/`Shape`/`Shape-2`/`HoledPlate`/`ATU01038` 逐份写出文件并做**结构自洽检查**：① 每张卡 80 列；② P 段序号 1..N 连续、每行第 73 列为 `P`、其 DE 指针域等于该实体的首张 D 卡号（`2i−1`）；③ 每个 DE 的 `pstart/pcount` 都能在 P 段取到完整参数串；④ 复合实体的**引导指针域**逐类型复核（102 的曲线表、142 的 surface/curve3d、144 的 surface/outer+inner、402 的实体表、192/194/196/198 的 point/axis、120 的 axis/generatrix、122 的 directrix）全部指向存在的 DE；⑤ T 卡四项与实际段长逐项相等。修前 6/6 模型报 "D 计数 +1"；修后 **6/6 全部 `ok`**（如 `ATU01038: DE=3729 P=7436 D=7458`、`HoledPlate: DE=291 P=339 D=582`）。该探针同时**证明批 56/59/60/62/63 的 DE 指针与 P 段记账自洽**（此前无任何门禁覆盖 IGES 文本）。
+- **门禁**：`occt-topo --lib` **1287/1**（红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3（红 = T-05）、`export_data_obj` **16/16**；IGES 自身 6 个单测全绿（`section_terminators_present` 未受影响——它只检查 T 卡存在与终止格式，未钉住 D 计数）。
+- **旁支（登记，未改）**：写入器仍无 OCCT 的"只写可达实体"过滤 ⇒ `isWholeSurface` 面的外侧 142 会成为游离实体（合法但多一个）；建议作为 T-78 余项之一处理。
+
 **批 69（A26/T-78 步 9：面内"不属于任何 wire 的边"补成内侧 142 轮廓）—— 2026-09-20 第 84 轮**
 
 - **缺口**：`BRepToIGES_BRShell::TransferFace` 在两条 wire 循环之后还有一段（`BRepToIGES_BRShell.cxx:334-365`）：把面上**不属于任何 wire 的边**逐条转移，并各自封一条 `CurveOnSurface`（142）追加到内侧轮廓序列（2D 曲线同样先由 `TransferEdge(edge, face, originMap, length, false)` 拿，本端口未移植该分支 ⇒ 取 OCCT 的"仅 3D"支 `PreferenceMode = 2`，与 wire 轮廓一致）。端口此前只遍历 wire，漏掉这一段。
@@ -1075,7 +1083,7 @@ cd ..; git worktree remove --force .target-headcheck
 | A23 | ⬜ | T-59 | `face_uv_bounds` → `BRepTools::AddUVBounds`；两次回退，**被 T-49/T-69 阻塞** |
 | A24 | ✅ | T-60 | `classify_surface` → `GeomAdaptor_Surface::Load` 精确类判定 |
 | A25 | ✅ | T-61 | 删除补丁 ✅（批 12）；✅ 失败标志上抛到面级（第 68 轮批 52：`Delaun::failed` → `finish_mesh` 提前返回 → 面级 `MeshStatus::FAILURE`，与 OCCT 空格 catch 后不执行 `commitSurfaceTriangulation` 一致） |
-| A26 | ◐ | T-62 | ✅ PLY `uchar uint`、STL 平方 `gp::Resolution()`、VRML `solid FALSE`、**STL 头/嗅探**（批 16）；✅ **STEP 写侧曲线采样重拟已删**（第 48 轮 T-71：`fit_bspline_curve` 的 n=8 采样拟合删除，B 样条/Bezier 改按 `GeomToStep_MakeBoundedCurve` 直写——`Shape-2.step` 写回 82 条 `B_SPLINE_CURVE_WITH_KNOTS`）；◐ **IGES 写侧**（第 70–79 轮批 55–64）：卡片格式合规化 ✅、曲线按类型分派 ✅、126 ✅、192/194/196/198 ✅、128 ✅、120/122 ✅、104＋124 ✅、DE 卡 P 指针与默认域修正 ✅、142/144 重建 ✅、根结构切到默认 Faces 模式（402 Group）✅、游离面边已补（批 69）；余 2D 曲线、周期面反周期化与椭圆整周支；✅ PLY 顶点焊接已删（逐面节点表＋全局下标与 `RWPly_CafWriter` 等价，第 79 轮批 64 复核）、STL 读取合并容差改回"精确相等"（批 64）；⬜ 无；OBJ `vn` 已订正为网格侧法向缺口（A13/A18） |
+| A26 | ◐ | T-62 | ✅ PLY `uchar uint`、STL 平方 `gp::Resolution()`、VRML `solid FALSE`、**STL 头/嗅探**（批 16）；✅ **STEP 写侧曲线采样重拟已删**（第 48 轮 T-71：`fit_bspline_curve` 的 n=8 采样拟合删除，B 样条/Bezier 改按 `GeomToStep_MakeBoundedCurve` 直写——`Shape-2.step` 写回 82 条 `B_SPLINE_CURVE_WITH_KNOTS`）；◐ **IGES 写侧**（第 70–79 轮批 55–64）：卡片格式合规化 ✅、曲线按类型分派 ✅、126 ✅、192/194/196/198 ✅、128 ✅、120/122 ✅、104＋124 ✅、DE 卡 P 指针与默认域修正 ✅、T 卡 D 计数 off-by-one 修正 ✅（批 70）、142/144 重建 ✅、根结构切到默认 Faces 模式（402 Group）✅、游离面边已补（批 69）；余 2D 曲线、周期面反周期化与椭圆整周支；✅ PLY 顶点焊接已删（逐面节点表＋全局下标与 `RWPly_CafWriter` 等价，第 79 轮批 64 复核）、STL 读取合并容差改回"精确相等"（批 64）；⬜ 无；OBJ `vn` 已订正为网格侧法向缺口（A13/A18） |
 | A27 | ✅ | T-64 | 15 处 `continuity()` 应为 `CN(6)`；改动被消费方（`range_splitter/p01.rs:295`、`edge_discret.rs:1259`）阻塞 |
 | A28 | ✅ | （随 T-68） | `FaceGauss` 边界弧改 pcurve 优先 |
 | A29 | ✅ | T-70 | `ExtPElC` 直线臂参数系平移修复 |
