@@ -370,6 +370,14 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证（全绿，与基线逐项一致）**：`occt-topo --lib` **1293/1**、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**（`OffsetPlaneHoleEdge` 回到 280.00）、`step_geometry_parity` **2/3**；`occt-geom` 151/151、`occt-core` 290/290（1 ignored）、`occt-geom2d` 72/72；`cargo check` 四个 crate exit 0；插桩与探针 0 残留。
 - **旁支**：`classify_curve`/`CurveKind` 仍被 STEP **写**侧使用（`step/p01.rs:670`、`step/p02.rs:157`），其删除归 **A3/T-39**；`p05.rs` 内已无 `classify_curve` 调用。
 
+**批 3 计划（A3/T-39：`classify_curve` → 类型分派，2026-09-20 现场核实，供下一轮直接照做）**
+
+- **两侧调用点**：写侧 `crates/occt-topo/src/step/p01.rs:670`（`emit_*_entity` 选择）与 `crates/occt-topo/src/step/p02.rs:157`（同一族）；分类器本体 `step/p01.rs:104-144`（6 点 `|d²|` 采样 + `(max−min)/max < 0.02` 阈值，阈值 OCCT 无）。
+- **OCCT 对照**：`GeomToStep_MakeCurve.cxx:50-104` 按 **`IsKind`** 分派且顺序固定：`Geom_Line` → `Geom_Conic`（→ `GeomToStep_MakeConic`，再按 `IsKind` 分到 circle/ellipse/hyperbola/parabola）→ `Geom_TrimmedCurve`（基曲线为 BSpline/Bezier 时先 `Segment`，否则**按基曲线整体导出**）→ `Geom_BoundedCurve` → 否则 `done = false`。
+- **端口已有精确判据（本轮 A20/A29 刚补齐）**：`Curve::{is_line, gp_circ, gp_ellipse, gp_hyperbola, gp_parabola, is_geom_trimmed, untrimmed_basis, bspline_knots, bspline_poles, bezier_poles, nurbs_degree}` ⇒ `Geom_Conic` = 四个 `gp_*` 任一为 `Some`；`Geom_BoundedCurve` = BSpline/Bezier（`bspline_knots`/`bezier_poles`）。**不需要**新增类型查询。
+- **改法**：把 `classify_curve(c, a, b) -> CurveKind` 换成按上述顺序的类型判定（返回同一个 `CurveKind` 或直接改 `match` 到具体 `emit_*` 分支），删除 6 点采样与 2% 阈值；`CurveKind::Other` 只保留 OCCT 的 `done = false` 语义（B-spline/Bezier 走 `emit_bspline/emit_bezier` 分支，勿再落 `Other`）。
+- **门禁**：`step_to_obj` **13/13**（写→读 round-trip，是主门禁）、`step_obj_parity` 14/14、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`occt-topo --lib` 1293/1；**注意** `A3` 的读侧（`write_conic_params`）与本项同族，若时间不够可只做写侧并保留读侧标注。
+
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
 2. 改代码前对着 `.cxx` 审控制流；**有同等分支才改**，没有就标"未移植"（注释写 OCCT 文件+行号），**不加** OCCT 里不存在的谓词/启发式/面积比/长度滤边/体积门。
