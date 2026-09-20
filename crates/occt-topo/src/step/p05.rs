@@ -518,131 +518,19 @@ fn shift_displaced_line(
     Arc::new(GeomLine::from_pnt_dir(origin, dir))
 }
 
-/// Compute an edge's parameter range from its endpoint vertex points, based on
-/// the reconstructed curve's analytic type.
-///
-/// **T-56 (A20) 未完成**：`TranslateEdge.cxx:442-444` 只做两次
-/// `ShapeAnalysis_Curve::Project`（无端点距捷径、无按类型分派），但按该忠实形
-/// 式改写后（只留两次 `Project` + 解析臂）实测三门禁失配：`step_obj_area`
-/// 10/11（`data/occ/OffsetPlaneHoleEdge.step` 面积 **204.00 vs occ 280.00**）、
-/// `step_to_geometry_parity` 1/3、`step_to_obj` 12/13 ⇒ 下面这些**自创回退**
-/// （`p1.distance(p2) < PRECI` 用整条结点域、`(a.0-b.0).abs() <= PConfusion`
-/// 也退回整条结点域、`classify_curve` 采样族）目前仍在**掩盖**某处区间差异；
-/// 只有先让本模型的边区间与 OCCT 一致（`Project` 包装层/`UpdateParam3d` 的
-/// 闭合与周期分支）才可删。`ProjectAct` 的解析精确臂已按 cxx:355-477 补齐
-/// （见 `occt-core/src/elib/clib.rs::parameter_elips/hypr/parab`）。
+/// `StepToTopoDS_TranslateEdge::MakeFromCurve3D` (`cxx:442-444`): the edge range
+/// is `ShapeAnalysis_Curve::Project` of both endpoint points with
+/// `AdjustToEnds = false` — for **every** curve type, with no analytic-type
+/// dispatch for the range itself and no endpoint-distance shortcut. `Project`
+/// keeps its own endpoint early-exit for `Geom_BoundedCurve` (`cxx:161-182`) and
+/// has no failure channel (`ShapeAnalysis_Curve.cxx:147-201` always produces a
+/// parameter); `UpdateParam3d` (cxx:446) and the displaced-Line shift
+/// (cxx:451-472) are applied by [`edge_from_curve3d`].
 pub(super) fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -> (f64, f64) {
-    let (f, l) = (curve.first_parameter(), curve.last_parameter());
-    // Bounded non-periodic (BSpline / trimmed / Bezier): Project the vertices
-    // (`MakeFromCurve3D` cxx:442-444). The previous natural-range early-return
-    // used the whole knot domain for an EDGE_CURVE that only spans a portion,
-    // so `ComputeDeflection` vertex-adjust and `MaxFaceTolerance` after
-    // SameParameter inflated the face deflection (Shape-2: 18 vs Prs3d 0.6).
-    if f.is_finite() && l.is_finite() && !curve.is_periodic() {
-        const PRECI: f64 = 1e-3;
-        // `TranslateEdge.cxx:442-444`: always `ShapeAnalysis_Curve::Project`
-        // (t296 removed invent ALIGNED=2.0 gate). `edge_from_curve3d` then
-        // runs `UpdateParam3d` / displaced-Line shift. Prior ALIGNED skip
-        // densified Shape less (6318 vs ~6330) by keeping full knot spans
-        // on near-aligned BSplines — that was invent, not cxx.
-        if p1.distance(p2) < PRECI {
-            return if l > f { (f, l) } else { (0.0, 1.0) };
-        }
-        let a = shape_analysis_project(curve, p1, PRECI);
-        let b = shape_analysis_project(curve, p2, PRECI);
-        if (a.0 - b.0).abs() > occt_core::precision::PCONFUSION {
-            return (a.0, b.0);
-        }
-        return if l > f { (f, l) } else { (0.0, 1.0) };
-    }
-    // `StepToTopoDS_TranslateEdge::MakeFromCurve3D` (`cxx:442-446`):
-    // `ShapeAnalysis_Curve::Project` then `UpdateParam3d`. For `Geom_Circle`
-    // that is `ElCLib::CircleParameter` + periodic `AdjustPeriodic`.
-    // Closed full-period edges (same vertex) keep the sampled atan2 branch:
-    // `CircleParameter` normalizes into `[0, 2pi]`, so `(U, U+2pi)` can sit at
-    // `[3pi/2, 7pi/2]` and this port's periodic UV box over-tessellates
-    // `Torus.step` (2112/4032 vs occ 1369/2592). OCCT still uses that range;
-    // the leftover is the UV-box interaction, not this Project call.
-    if let Some(c) = curve.gp_circ() {
-        if p1.distance(p2) >= 1e-9 {
-            return circle_params_from_circ(&c, p1, p2);
-        }
-    }
-    // `StepToTopoDS_TranslateEdge::MakeFromCurve3D` (`cxx:442-444`) calls
-    // `ShapeAnalysis_Curve::Project` for EVERY curve type; conics are not
-    // `Geom_BoundedCurve` so the endpoint early-exit (`cxx:162-181`) does not
-    // apply, and a full conic is `IsClosed()` so `Project` does not widen the
-    // range (`cxx:184-198`). The sampled-fit arms below (`classify_curve`
-    // returning `Circle` when the |d2| spread is under 2%) mis-parameterize a
-    // nearly circular ELLIPSE: ATU01038 stores `(0.015306440, 0.595131394)`
-    // while `Project` yields `(0.0, 0.594307367)`, which walked the pcurve
-    // endpoint 7.65e-2 off the vertex (inflated vertex tolerance).
-    if curve.is_periodic() && p1.distance(p2) > occt_core::precision::PCONFUSION {
-        const PRECI: f64 = 1e-3;
-        let a = shape_analysis_project(curve, p1, PRECI);
-        let b = shape_analysis_project(curve, p2, PRECI);
-        if (a.0 - b.0).abs() > occt_core::precision::PCONFUSION {
-            return (a.0, b.0);
-        }
-    }
-    let (lo, hi) = if f.is_finite() && l.is_finite() && l > f {
-        (f, l)
-    } else {
-        (0.0, 1.0)
-    };
-    match classify_curve(curve, lo, hi) {
-        CurveKind::Line => {
-            let origin = curve.d0(0.0);
-            let d1 = curve.d1(0.0).1;
-            let dir = GpVec::from_xyz(&d1.xyz().normalized());
-            (
-                GpVec::from_pnts(&origin, p1).dot(&dir),
-                GpVec::from_pnts(&origin, p2).dot(&dir),
-            )
-        }
-        CurveKind::Circle => circle_edge_params(curve, p1, p2, lo, hi),
-        CurveKind::Ellipse => {
-            let pa = curve.d0(lo);
-            let pb = curve.d0(lo + (hi - lo) / 4.0);
-            let pc = curve.d0(lo + (hi - lo) / 2.0);
-            let center = midpoint(&pa, &pc);
-            let a_major = center.distance(&pa).max(1e-30);
-            let b_minor = center.distance(&pb).max(1e-30);
-            let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &pa)).unwrap_or(dir_x());
-            let ydir = GpDir::from_vec(&GpVec::from_pnts(&pb, &center)).unwrap_or(dir_y());
-            let ang = |p: &GpPnt| {
-                let v = GpVec::from_pnts(&center, p);
-                (-v.xyz().dot(ydir.xyz()) / b_minor)
-                    .atan2(v.xyz().dot(xdir.xyz()) / a_major)
-            };
-            let t1 = ang(p1);
-            if p1.distance(p2) < 1e-9 {
-                return (t1, t1 + 2.0 * PI);
-            }
-            let mut t2 = ang(p2);
-            if t2 <= t1 {
-                t2 += 2.0 * PI;
-            }
-            (t1, t2)
-        }
-        CurveKind::Parabola => {
-            let vertex = curve.d0(0.0);
-            let d1 = curve.d1(0.0).1;
-            let ydir = GpDir::from_vec(&d1).unwrap_or(dir_y());
-            let dir = GpVec::from_xyz(ydir.xyz());
-            (
-                GpVec::from_pnts(&vertex, p1).dot(&dir),
-                GpVec::from_pnts(&vertex, p2).dot(&dir),
-            )
-        }
-        CurveKind::Other => {
-            if f.is_finite() && l.is_finite() && l > f {
-                (f, l)
-            } else {
-                (0.0, 1.0)
-            }
-        }
-    }
+    const PRECI: f64 = 1e-3;
+    let (u1, _) = shape_analysis_project(curve, p1, PRECI);
+    let (u2, _) = shape_analysis_project(curve, p2, PRECI);
+    (u1, u2)
 }
 
 /// `StepToTopoDS_GeometricTool::UpdateParam3d` (`GeometricTool.cxx:227-409`).
@@ -728,62 +616,6 @@ fn update_param3d(
         std::mem::swap(w1, w2);
     }
     curve
-}
-
-/// `ElCLib::CircleParameter` + `StepToTopoDS_GeometricTool::UpdateParam3d`
-/// periodic arm (`GeometricTool.cxx:270-279`).
-fn circle_params_from_circ(c: &GpCirc, p1: &GpPnt, p2: &GpPnt) -> (f64, f64) {
-    let pos = c.position();
-    let mut w1 = occt_core::elib::clib::circle_parameter(&pos, p1);
-    let mut w2 = occt_core::elib::clib::circle_parameter(&pos, p2);
-    // Closed circle: `BRep_Tool::Range` starts at the vertex parameter,
-    // not always 0. `[0, 2pi]` makes `Value(first)` the opposite point on
-    // the circle, so `ComputeDeflection`'s vertex-adjust floor becomes
-    // the diameter and tessellation stops at 2 points (`Torus.step` minor
-    // seam). Source: `BRep_Tool::Range` + `BRepMesh_Deflection.cxx:86-94`.
-    if p1.distance(p2) < 1e-9 {
-        return (w1, w1 + 2.0 * PI);
-    }
-    if w1 < w2 {
-        return (w1, w2);
-    }
-    crate::geom_bnd_lib_elclib2d::adjust_periodic(
-        0.0,
-        2.0 * PI,
-        occt_core::precision::PCONFUSION,
-        &mut w1,
-        &mut w2,
-    );
-    (w1, w2)
-}
-
-/// Sampled-circle fallback when the 3D curve is not a `Geom_Circle`.
-fn circle_edge_params(
-    curve: &dyn Curve,
-    p1: &GpPnt,
-    p2: &GpPnt,
-    lo: f64,
-    hi: f64,
-) -> (f64, f64) {
-    let pa = curve.d0(lo);
-    let pb = curve.d0(lo + (hi - lo) / 4.0);
-    let pc = curve.d0(lo + (hi - lo) / 2.0);
-    let center = circle_center3(&pa, &pb, &pc).unwrap_or_else(GpPnt::zero);
-    let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &pa)).unwrap_or(dir_x());
-    let ydir = GpDir::from_vec(&GpVec::from_pnts(&center, &pb)).unwrap_or(dir_y());
-    let ang = |p: &GpPnt| {
-        let v = GpVec::from_pnts(&center, p);
-        v.xyz().dot(ydir.xyz()).atan2(v.xyz().dot(xdir.xyz()))
-    };
-    let t1 = ang(p1);
-    if p1.distance(p2) < 1e-9 {
-        return (t1, t1 + 2.0 * PI);
-    }
-    let mut t2 = ang(p2);
-    if t2 <= t1 {
-        t2 += 2.0 * PI;
-    }
-    (t1, t2)
 }
 
 pub(super) fn parse_usize_list(s: &str) -> Vec<usize> {

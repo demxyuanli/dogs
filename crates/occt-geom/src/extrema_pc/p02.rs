@@ -41,10 +41,22 @@ pub(super) fn ext_pelc_all(
     uinf: f64,
     usup: f64,
 ) -> Option<Vec<(ExtremaPair, bool)>> {
+    if let Some(l) = c.gp_line() {
+        // `Extrema_GGExtPC` reaches `Extrema_ExtPElC` with the curve's **own**
+        // `gp_Lin` (`theCurve.Line()`, `Extrema_GGExtPC.hxx:390-405`), so the
+        // returned parameter lives in the curve's parameter space. Building the
+        // analytic line at `d0(uinf)` instead made every parameter off by
+        // `-uinf` (measured on `data/occ/OffsetPlaneHoleEdge.step`: the
+        // two-`Project` edge range came out `(2, 11)` where the true projection
+        // is `(0, 10)`, i.e. shifted by the window lower bound).
+        return Some(line_all(&l, p, uinf, usup).into_iter().map(|e| (e, true)).collect());
+    }
     if c.is_line() {
-        let u0 = if uinf.is_finite() { uinf } else { 0.0 };
-        let loc = c.d0(u0);
-        let dir = match GpDir::from_vec(&c.d1(u0).1) {
+        // Line-like curve without its own `gp_Lin`: rebuild it from the curve
+        // origin `d0(0)`, which is the line's `Location` under the port's
+        // arc-length parameterisation (`GeomLine::d0(u) = Loc + u * Dir`).
+        let loc = c.d0(0.0);
+        let dir = match GpDir::from_vec(&c.d1(0.0).1) {
             Ok(d) => d,
             Err(_) => return Some(Vec::new()),
         };

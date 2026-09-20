@@ -32,6 +32,8 @@ pub trait Curve: Send + Sync {
     /// Radius when this is a `Geom_Circle`; `None` for every other type.
     /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_Circle`.
     fn circle_radius(&self) -> Option<f64> { None }
+    /// `Geom_Line::Lin` / `Adaptor3d_Curve::Line`. `None` otherwise.
+    fn gp_line(&self) -> Option<occt_core::gp::GpLin> { None }
     /// `Geom_Circle::Circ` / `Adaptor3d_Curve::Circle`. `None` otherwise.
     fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { None }
     /// `Geom_Ellipse::Elips` / `Adaptor3d_Curve::Ellipse`. `None` otherwise.
