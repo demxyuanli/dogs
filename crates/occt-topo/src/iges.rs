@@ -43,13 +43,37 @@ pub fn rec80(s: &str) -> String {
     line
 }
 
-/// Build one section line: section letter + 7-digit sequence + data → 80 cols.
-fn sec_line(section: char, seq: usize, content: &str) -> String {
+/// Data columns of a Start/Global/Directory card
+/// (`IGESData_IGESWriter.cxx:38-39`: `MaxcarsG = 72`).
+const MAXCARS_G: usize = 72;
+/// Data columns of a Parameter card (`cxx:39`: `MaxcarsP = 64`).
+const MAXCARS_P: usize = 64;
+
+/// One IGES card: the data field left-justified in `width` columns, then
+/// `section` and the card's sequence number in the last seven columns
+/// (`IGESData_IGESWriter.cxx:836-880` for D, `:769-794` for G/S).
+fn sec_line(section: char, seq: usize, content: &str, width: usize) -> String {
     let mut s = String::with_capacity(80);
+    for ch in content.chars().take(width) {
+        s.push(ch);
+    }
+    s.push_str(&" ".repeat(width - s.len()));
     s.push(section);
-    s.push_str(&format!("{seq:07}"));
-    s.push_str(content);
-    rec80(&s)
+    s.push_str(&format!("{seq:>7}"));
+    s
+}
+
+/// One Parameter card (`IGESData_IGESWriter.cxx:902-925`):
+/// `data` (64 columns) + blank + the owning entity's directory-entry pointer
+/// (`2*i - 1`) + `P` + the card's sequence number.
+fn param_line(content: &str, de_pointer: usize, seq: usize) -> String {
+    let mut s = String::with_capacity(80);
+    for ch in content.chars().take(MAXCARS_P) {
+        s.push(ch);
+    }
+    s.push_str(&" ".repeat(MAXCARS_P - s.len()));
+    s.push_str(&format!(" {de_pointer:>7}P{seq:>7}"));
+    s
 }
 
 /// Right-justify a value in an 8-column IGES field.
@@ -156,8 +180,8 @@ enum IgCurveKind {
     /// (T-78).
     Conic,
     /// Bezier / B-spline: OCCT emits entity 126
-    /// (`GeomToIGES_GeomCurve::TransferBSplineCurve`); this port has no 126
-    /// emitter yet (T-78).
+    /// (`GeomToIGES_GeomCurve::TransferBSplineCurve`), see
+    /// [`IgesWriter::emit_bspline_curve`].
     Bounded,
     Other,
 }
@@ -173,6 +197,56 @@ fn iges_curve_kind(c: &dyn Curve) -> IgCurveKind {
         IgCurveKind::Bounded
     } else {
         IgCurveKind::Other
+    }
+}
+
+/// `ArePolesPlanar` (`GeomToIGES_GeomCurve.cxx:170-199`): the area vector
+/// `P(n) x P(1) + sum_{i<n} P(i) x P(i+1)`, normalised; every pole must then sit
+/// at the same distance from the plane through `P(1)`. Fewer than three poles is
+/// planar by definition and gets an arbitrary normal perpendicular to the first
+/// segment (`GetAnyNormal`).
+fn poles_planar_and_normal(poles: &[GpPnt]) -> (bool, GpVec) {
+    let xyz = |p: &GpPnt| p.coord;
+    if poles.len() < 3 {
+        let d = xyz(&poles[0]).subtracted(&xyz(&poles[1]));
+        return (true, any_normal(&d));
+    }
+    let mut n = xyz(&poles[poles.len() - 1]).crossed(&xyz(&poles[0]));
+    for i in 0..poles.len() - 1 {
+        n = n.added(&xyz(&poles[i]).crossed(&xyz(&poles[i + 1])));
+    }
+    let modulus = n.modulus();
+    if modulus < occt_core::precision::CONFUSION {
+        return (false, GpVec::new(0.0, 0.0, 1.0));
+    }
+    let normal = GpVec::from_xyz(&n.divided(modulus));
+    let scl = xyz(&poles[0]).dot(&normal.xyz());
+    for p in &poles[1..] {
+        if (xyz(p).dot(&normal.xyz()) - scl).abs() > occt_core::precision::CONFUSION {
+            return (false, normal);
+        }
+    }
+    (true, normal)
+}
+
+/// `GetAnyNormal` (`GeomToIGES_GeomCurve.cxx:120-140`): a unit vector normal to
+/// `v`, built from the axis least aligned with it.
+fn any_normal(v: &occt_core::gp::GpXyz) -> GpVec {
+    let ax = v.x().abs();
+    let ay = v.y().abs();
+    let az = v.z().abs();
+    let out = if ax <= ay && ax <= az {
+        GpVec::new(0.0, -v.z(), v.y())
+    } else if ay <= az {
+        GpVec::new(v.z(), 0.0, -v.x())
+    } else {
+        GpVec::new(-v.y(), v.x(), 0.0)
+    };
+    let m = out.xyz().modulus();
+    if m < 1e-30 {
+        GpVec::new(0.0, 0.0, 1.0)
+    } else {
+        GpVec::new(out.x() / m, out.y() / m, out.z() / m)
     }
 }
 
@@ -208,31 +282,36 @@ impl Ent {
         out
     }
 
+    /// The two Directory Entry cards of the entity
+    /// (`IGESData_IGESWriter.cxx:809-880`): eight 8-column fields plus four
+    /// 2-column status fields on the first card, and five 8-column numeric
+    /// fields plus four 8-column string fields (two reserved, the label and the
+    /// subscript) on the second - 72 data columns each.
     fn directory_lines(&self) -> (String, String) {
-        let ty = self.ty.to_string();
-        let pcount = self.param_line_count().to_string();
-        let form = self.form.to_string();
+        let ty = field8(&self.ty.to_string());
+        let pcount = field8(&self.param_line_count().to_string());
+        let form = field8(&self.form.to_string());
         let l1 = format!(
-            "{}{}{}{}{}{}{}{}",
-            field8(&ty),
-            field8(&pcount),
+            "{ty}{pcount}{}{}{}{}{}{}{:>2}{:>2}{:>2}{:>2}",
             field8("0"),
             field8("0"),
             field8("0"),
             field8("0"),
             field8("0"),
-            field8("0")
+            field8("0"),
+            0,
+            0,
+            0,
+            0
         );
         let l2 = format!(
-            "{}{}{}{}{}{}{}{}",
-            field8(&ty),
+            "{ty}{}{}{pcount}{form}{}{}{}{}",
             field8("1"),
             field8("7"),
-            field8(&pcount),
-            field8(&form),
+            field8(""),
+            field8(""),
             field8l(&self.label),
-            field8("0"),
-            field8("")
+            field8("0")
         );
         (l1, l2)
     }
@@ -391,19 +470,132 @@ impl IgesWriter {
                 };
                 self.emit_circular_arc(&center, &p1, &p2, &plane_pt)
             }
-            IgCurveKind::Conic | IgCurveKind::Bounded | IgCurveKind::Other => {
+            IgCurveKind::Bounded => match self.emit_bspline_curve(curve.as_ref(), a, b) {
+                Some(idx) => idx,
+                None => {
+                    // UNPORTED (audit A26 / task T-78): `GeomToIGES_GeomCurve::
+                    // TransferCurve(Geom_BSplineCurve)` (`cxx:279-423`) first
+                    // makes a periodic curve non-periodic (`SetNotPeriodic`) and
+                    // calls `Segment` when the edge range is narrower than the
+                    // curve's own; this port has neither, so those cases keep the
+                    // chord-line stand-in.
+                    let p1 = curve.d0(a);
+                    let p2 = curve.d0(b);
+                    self.emit_line(&p1, &p2)
+                }
+            },
+            IgCurveKind::Conic | IgCurveKind::Other => {
                 // UNPORTED (audit A26 / task T-78): OCCT writes entity 104 for
-                // ellipse/hyperbola/parabola (`TransferConic`) and entity 126 for
-                // Bezier/B-spline (`TransferBSplineCurve`); neither emitter is
-                // ported, and `TransferCurve` returns a null handle for any other
-                // curve type, in which case the caller writes no curve at all.
-                // Until those emitters land the edge keeps the chord-line
-                // stand-in.
+                // ellipse/hyperbola/parabola (`TransferConic`), and
+                // `TransferCurve` returns a null handle for any other curve type,
+                // in which case the caller writes no curve at all. Until the 104
+                // emitter lands the edge keeps the chord-line stand-in.
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
                 self.emit_line(&p1, &p2)
             }
         }
+    }
+
+    /// Entity 126 (`GeomToIGES_GeomCurve::TransferCurve(Geom_BSplineCurve)`,
+    /// `GeomToIGES_GeomCurve.cxx:279-423`, written by
+    /// `IGESGeom_ToolBSplineCurve::WriteOwnParams`,
+    /// `IGESGeom_ToolBSplineCurve.cxx:64-105`):
+    ///
+    /// `126, index, degree, planar, closed, polynomial, periodic,
+    ///   knots[-degree .. index+1], weights[0 .. index], poles[0 .. index],
+    ///   UMin, UMax, Normal;`
+    ///
+    /// with `index = nb_poles - 1` and the knot array the curve's flattened knot
+    /// sequence. The planar flag and the normal come from `ArePolesPlanar`
+    /// (`cxx:170-199`): `P(n) x P(1) + sum P(i) x P(i+1)`, normalised (or
+    /// `(0,0,1)` with `planar = false` when the sum is shorter than
+    /// `Precision::Confusion()`), then every pole must sit at the same distance
+    /// from the plane through `P(1)`. Returns `None` for the cases this port
+    /// cannot express.
+    fn emit_bspline_curve(&mut self, curve: &dyn Curve, first: f64, last: f64) -> Option<usize> {
+        // `cxx:294-307`: a periodic curve is converted to a non-periodic copy
+        // before writing.
+        if curve.is_periodic() {
+            return None;
+        }
+        let (curve_first, curve_last) = (curve.first_parameter(), curve.last_parameter());
+        // `cxx:320-356`: a narrower range is obtained with
+        // `Geom_BSplineCurve::Segment`.
+        if first > curve_first + occt_core::precision::PCONFUSION
+            || last < curve_last - occt_core::precision::PCONFUSION
+        {
+            return None;
+        }
+
+        let (poles, knots, degree) = if let (Some(p), Some(k), Some(d)) = (
+            curve.bspline_poles(),
+            curve.bspline_knots(),
+            curve.nurbs_degree(),
+        ) {
+            (p.to_vec(), k.to_vec(), d)
+        } else if let Some(p) = curve.bezier_poles() {
+            // `TransferCurve(Geom_BezierCurve)` (`cxx:430-450`) goes through
+            // `GeomConvert::CurveToBSplineCurve`: one span whose end knots carry
+            // multiplicity degree+1.
+            let d = p.len().checked_sub(1)?;
+            let mut k = vec![curve_first; d + 1];
+            k.extend(std::iter::repeat(curve_last).take(d + 1));
+            (p.to_vec(), k, d)
+        } else {
+            return None;
+        };
+        if poles.len() < 2 || degree == 0 || knots.len() != poles.len() + degree + 1 {
+            return None;
+        }
+        let index = poles.len() - 1;
+
+        let (planar, normal) = poles_planar_and_normal(&poles);
+        // `cxx:415-418`: the normal is flipped when it points down.
+        let normal = if normal.z() < 0.0 {
+            GpVec::new(-normal.x(), -normal.y(), -normal.z())
+        } else {
+            normal
+        };
+
+        let weights: Vec<f64> = match curve.bspline_weights() {
+            Some(w) if w.len() == poles.len() => w.to_vec(),
+            _ => vec![1.0; poles.len()],
+        };
+        // `cxx:360`: `IPolyn = !IsRational()`.
+        let polynomial = curve.bspline_weights().is_none();
+        let closed = poles
+            .first()
+            .zip(poles.last())
+            .map(|(f, l)| f.distance(l) <= occt_core::precision::CONFUSION)
+            .unwrap_or(false);
+
+        let mut s = format!(
+            "126,{index},{degree},{},{},{},0",
+            u8::from(planar),
+            u8::from(closed),
+            u8::from(polynomial)
+        );
+        for k in &knots {
+            s.push(',');
+            s.push_str(&num(*k));
+        }
+        for w in &weights {
+            s.push(',');
+            s.push_str(&num(*w));
+        }
+        for p in &poles {
+            s.push_str(&format!(",{},{},{}", num(p.x()), num(p.y()), num(p.z())));
+        }
+        s.push_str(&format!(
+            ",{},{},{},{},{};",
+            num(first),
+            num(last),
+            num(normal.x()),
+            num(normal.y()),
+            num(normal.z())
+        ));
+        Some(self.emit(126, 0, "B_SPLINE_CURVE", s))
     }
 
     /// Base surface entity for a face, plus any synthesized boundary curves
@@ -564,43 +756,50 @@ impl IgesWriter {
         let mut d_seq = 1usize;
         let mut p_seq = 1usize;
 
-        out.push_str(&sec_line('S', s_seq, "IGES B-REP MODEL GENERATED BY RUST OCCT PORT"));
+        out.push_str(&sec_line(
+            'S',
+            s_seq,
+            "IGES B-REP MODEL GENERATED BY RUST OCCT PORT",
+            MAXCARS_G,
+        ));
         out.push('\n');
         s_seq += 1;
 
         for gl in self.global_lines() {
-            out.push_str(&sec_line('G', g_seq, &gl));
+            out.push_str(&sec_line('G', g_seq, &gl, MAXCARS_G));
             out.push('\n');
             g_seq += 1;
         }
 
-        for ent in &self.entities {
+        // Directory entries: entity `i` owns the two DE pointers `2i-1` and `2i`.
+        for (i, ent) in self.entities.iter().enumerate() {
             let (l1, l2) = ent.directory_lines();
-            out.push_str(&sec_line('D', d_seq, &l1));
+            out.push_str(&sec_line('D', 2 * i + 1, &l1, MAXCARS_G));
             out.push('\n');
-            d_seq += 1;
-            out.push_str(&sec_line('D', d_seq, &l2));
+            out.push_str(&sec_line('D', 2 * i + 2, &l2, MAXCARS_G));
             out.push('\n');
-            d_seq += 1;
+            d_seq += 2;
         }
 
-        for ent in &self.entities {
+        for (i, ent) in self.entities.iter().enumerate() {
             for chunk in ent.param_chunks() {
-                out.push_str(&sec_line('P', p_seq, &chunk));
+                out.push_str(&param_line(&chunk, 2 * i + 1, p_seq));
                 out.push('\n');
                 p_seq += 1;
             }
         }
 
-        // Terminate record: last sequence number of each section + T=1.
+        // Terminate card (`IGESData_IGESWriter.cxx:942-943`): the last sequence
+        // number of each section, blank-filled, then 40 blanks and `T0000001`.
         let t = format!(
-            "S{:07}G{:07}D{:07}P{:07}        T0000001",
+            "S{:>7}G{:>7}D{:>7}P{:>7}{}T0000001",
             s_seq - 1,
             g_seq - 1,
-            d_seq - 1,
-            p_seq - 1
+            d_seq,
+            p_seq - 1,
+            " ".repeat(40)
         );
-        out.push_str(&rec80(&t));
+        out.push_str(&t);
         out.push('\n');
         out
     }
@@ -659,12 +858,17 @@ pub fn write_shape_iges(shape: &TopoShape) -> String {
 /// 500–599: B-rep face/shell). Total records is the number of directory
 /// entries (D-section lines / 2).
 pub fn iges_entity_counts(text: &str) -> (usize, usize) {
-    let d_lines: Vec<&str> = text.lines().filter(|l| l.starts_with('D')).collect();
+    // The section letter sits in column 73 and the entity type in columns 1-8
+    // (`IGESData_IGESWriter.cxx:836-859`).
+    let d_lines: Vec<&str> = text
+        .lines()
+        .filter(|l| l.as_bytes().get(72) == Some(&b'D'))
+        .collect();
     let total = d_lines.len() / 2;
     let mut geo = 0usize;
     for (i, l) in d_lines.iter().enumerate() {
         if i % 2 == 0 {
-            let ty: i32 = l.get(8..16).unwrap_or("0").trim().parse().unwrap_or(0);
+            let ty: i32 = l.get(0..8).unwrap_or("0").trim().parse().unwrap_or(0);
             if (100..200).contains(&ty) || (500..600).contains(&ty) {
                 geo += 1;
             }
@@ -717,7 +921,16 @@ mod tests {
         let p = path.to_str().unwrap();
         write_iges_file(p, &model).expect("write iges file");
         let content = std::fs::read_to_string(p).expect("read iges file");
-        assert!(content.starts_with('S'), "first line should start with S");
+        // The card format puts the data in columns 1-72, the section letter in
+        // column 73 and the sequence number in columns 74-80
+        // (`IGESData_IGESWriter.cxx:763-793` for the Start section).
+        let first = content.lines().next().expect("first card");
+        assert_eq!(first.len(), 80, "card length: {first:?}");
+        assert_eq!(
+            first.as_bytes().get(72),
+            Some(&b'S'),
+            "first card must be a Start card: {first:?}"
+        );
         std::fs::remove_file(p).ok();
     }
 
