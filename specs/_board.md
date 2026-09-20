@@ -750,11 +750,11 @@ cd ..; git worktree remove --force .target-headcheck
 | A# | 状态 | 任务 | 摘要 / 剩余 |
 |---|---|---|---|
 | A0 | ✅ | T-35 / T-63 / T-75 | offset 曲线 D0/D1/D2/D3 与 `EvalDN` 已全部按两个 `*OffsetCurveUtils.pxx` 落地（T-35 公式重写、T-63 基曲线 `EvalD3`+`AdjustDerivative`+初等曲线 `EvalDN` 至 5 阶、T-75 offset 自身 `CalculateD3`/`EvalD3`/`EvalDN`）；解析对拍 circle r=2 偏移 0.5 ⇒ 与 r=2.5 同心圆逐分量差 ≤1.11e-16。**遗留 UNPORTED（已登记）**：非初等、非 B 样条基曲线（如 Bezier）的 `EvalDN` 4/5 阶仍是 trait 默认零值 |
-| A1 | ◐ | T-37/T-67 | `Extrema_ExtPS/GenExtPS/ExtPElS` 移植：**步 1+2 done**（解析臂接线 + `Extrema_ExtPS` 分派层 `ExtPs`：窗口/`IsoIsDeg`/`TreatSolution`/周期归一，批 25）；**步 3 ⬜**（`Extrema_GenExtPS` 主体 1195 行 + `ExtExtS`/`ExtPRevS`）；39 处调用点未迁（一般曲面仍落替代件） |
+| A1 | ◐ | T-37/T-67（+T-80） | `Extrema_ExtPS/GenExtPS/ExtPElS` 移植：**步 1+2 done**（解析臂接线 + `Extrema_ExtPS` 分派层 `ExtPs`：窗口/`IsoIsDeg`/`TreatSolution`/周期归一，批 25）；**步 3 ⬜**（`Extrema_GenExtPS` 主体 1195 行 + `ExtExtS`/`ExtPRevS`）；39 处调用点未迁（一般曲面仍落替代件） |
 | A2 | ✅ | T-38 | `is_inside` 的 7×7 采样 + 射线奇偶**已删除**（实体走 `SolidClassifier`；非实体分支保留并标 UNPORTED）；同时按 `BRepClass3d_SolidExplorer::Init` 补 `myMapEV`（内部孤立顶点不再误判 ON）⇒ `phase3_integration` 4/4 |
 | A3 | ✅ | T-39 / T-71 | `classify_curve` 删除；写侧 `IsKind` 分派 + `GeomToStep_Make*` 精确值；**T-71 ✅**（第 48 轮：未识别曲线写 `$`、补齐 `Geom_BoundedCurve` 臂按 `GeomToStep_MakeBoundedCurve` 写 B 样条/Bezier、退化边走"without 3d curve"支） |
 | A4 | ✅ | T-40 | F 分支改走忠实 `BRepClass_FaceClassifier::Perform(F,P,Tol)`（第 53 轮），自创 32×32 投影与 "距离 > tol → Out" 门删除；E 分支本用忠实 `Extrema_ExtPC`；`algo_tools/p02.rs` 两处投影同批改忠实 |
-| A5 | ⬜ | T-41 | 体素/网格布尔摘除（`bop_curved`、`bop_builder_core`） |
+| A5 | ◐ | T-41 / 新 T-79 / 新 T-80 | **dispatch 级已摘除**（第 59 轮：`bop_builder_core::voxel_fallback` 删除，`bop_builder::boolean`/`bop_builder_planar` 的空/非平面输入改走忠实 `builder_bop_with_fuzzy`，门禁不变）；**余项 = `bop_curved` 的网格布尔**（`boolean_mesh`/`region_inside_other`/`general_boolean_trimmed`，T-79），**被 T-80 阻塞**（曲面 operand 下 `BOPAlgo_BOP` 移植体失效；第 63 轮已定位到「节线未切面」）；`feature.rs`/`brepfeat` 的 `voxel_boolean` 已标 UNPORTED 归 A12 |
 | A6 | ✅ | T-42 | `gcpnts` 二分族改调忠实 `gcpnts_perform` |
 | A7 | ✅ | T-43/T-65/T-66 | 点–曲线侧 ✅（含直线臂 A29 修复、椭圆/双曲/抛物臂 T-65）；曲线–曲线侧 ✅（T-66 步 a/b-1/b-2：`globoptmin` setter 与全局+局部驱动、`GlobOptFuncCCC2`、`GGenExtCC::Perform` 逐段移植并接线，自创种子集与采样分类器全删）。遗留就地标 UNPORTED：局部引擎只有 BFGS、`CellFilter` 容器为线性表、长度比用 `gcpnts::curve_length`、闭合非周期曲线为 false |
 | A8 | ⬜ | T-44 | `comp_curve_to_bspline` 采样降级；**前置缺件**：`GeomConvert_CurveToBSpline` + `GeomBSplineCurve::{increase_degree,knots,multiplicities}` |
@@ -860,6 +860,33 @@ cd ..; git worktree remove --force .target-headcheck
 5. **大件（未动）**：A2/A4/A5/A11（BOP 层）、A8（缺 `GeomConvert_CurveToBSpline` + `GeomBSplineCurve::IncreaseDegree`）、A12（体积覆盖被 BOP 缺口阻塞）。
 
 **纪律提醒（本会话反复用到）**：每批先 `cargo check`；只引用现有基线、不为对齐新写测试；改测试仅限"订正断言缺陷行为"（如 A30 的 4 处）并须在画板与审查表双重登记；失配即停并回退（`git checkout -- <file>`），把证据与依赖写回本文件与 `_audit/_index.md`；`read` 工具的行号是显示行号，引用一律以 `grep` 为准。
+### 14.2 第 63 轮收尾交接（2026-09-20，goal 60 轮预算用尽）
+
+> 本轮结束时的状态：工作树干净，HEAD 见 `git log`；门禁与基线一致 —— `occt-topo --lib` **1291/1**（唯一红 = T-01 `brepfeat::tests::groove_cuts_cylinder`）、`occt-core --lib` 290/290、`occt-geom --lib` 151/151、`occt-geom2d --lib` 72/72、`occt-math --lib` 215/215、`phase3` 4/4、`phase4` 9/9、`phase6` 5/5、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**（红 = T-05 offset 体积）、`export_data_obj` **16/16** 且 16 个模型顶点/面数逐位一致。
+
+**A. 已结项（✅，按 `.cxx/.hxx` 改完控制流并有门禁证据）**
+A0、A2、A3、A4、A6、A7、A9、A10、A11、A14、A17、A20、A21、A22、A24、A28、A29、A30、A31；
+A25 的"删补丁"部分、A26 的四项（PLY 属性类型/STL 判据与头/VRML solid/PLY 焊接）、A15 的 `surface_d2`+`gauss MinPivot`+失败通道+`curve_reparam` 基函数。
+
+**B. 进行中（◐，已定位到具体控制流，下一步明确）**
+- **T-80（最高优先，阻塞 T-79/A1 的最终迁移）**：曲面 operand 下 `BOPAlgo_BOP` 移植体给错结果。已用探针逐段定位：FF **找到**节线（`pair (11,36) kinds=(Plane,Cylinder) nb_curves=1`）→ 但 `b.result()` 仍是**两个未分割的实体**（`kept=["Solid/6f","Solid/3f"]`，对照平面参考 `mfs=16/sfs=14/BuilderSolid→Solid/14f`）⇒ **断点在「FF 之后到面分割」**。下一探针：`pave_ff_post`/`pave_ff_make`/`pave_blocks` 里节线 edge 是否创建、其 pcurve 是否落在盒体顶面与柱面上；再查 `FillImages`/`BuilderFace` 后 `b.result()` 的面数。对照 `BOPAlgo_PaveFiller::PostTreatFF`/`MakeBlocks`、`BOPAlgo_Builder::FillImagesFaces`。
+- **T-79（A5 余项，被 T-80 阻塞）**：`bop_curved` 的网格布尔（`boolean_mesh`/`boolean_mesh_curves`/`region_inside_other`/`general_boolean_trimmed`）从 `boolean_dispatch` 摘除，改由忠实 BOP 承担；批 37 的实验显示**门禁全绿也不能作为依据**（见 §9 的坑），必须先用 `box∪cyl` 的面类型+体积探针判定。
+- **T-77（A11 派生）**：`IntTools_EdgeEdge::FindSolutions` 两重载 bbox 递归 + `FindParameters`/`IsIntersection`/`CheckCoincidence`+`DistPC`/`FindDistPC`/`SplitRangeOnSegments`/`MergeSolutions` + `Prepare` 的 `myRes*`/`myPTol*`/`myResCoeff*` 与类型 swap；**前置已备齐**（忠实 `geom_bnd_lib_curve3d::box_curve` 与 `geom_api::project_point_on_curve`）。
+- **T-78（A26 派生）**：IGES 写侧发射器（现只有 110/100/自造 120 球面回转面/186）→ 按 `GeomToIGES_GeomCurve`（100/104/106/108/110/126）与 `GeomToIGES_GeomSurface`（球面 **196**、锥 194、柱 192、环 198）补齐。
+- **T-67 分步 3（A1，§7 第 2 条）**：`math_FunctionSetRoot`（1452 行）+ `Extrema_GenExtPS`（1195 行）；完成后按序迁 39 处调用点并删 `brep_surface::surface_closest_params`（A1 的最终收口）。
+- **A15 余项**：`gcpnts.rs` 的 Simpson → `CPnts_AbscissaPoint`（前置 `math_GaussSingleIntegration` + `math_FunctionRoot`）；**A16 求交 half**：`geom_api` 的两个采样器（`curve_surface_intersections`/`curve_curve_intersections`）→ `IntCurveSurface_Intersection`/`IntTools_EdgeEdge`（已就地标 UNPORTED）。
+- **A19 余项**：`brepmesh.rs` 的 `MAX_FACE_DEPTH=9`/`/96` 与 `wireframe.rs:419-420` 的 `clamp(3,64)` → 按 `BRepMesh_GeomTool.cxx:465-512`（无 64 上限）与各 `BRepMesh_*RangeSplitter` 对齐；**A27**：15 处 `continuity()` → `CN(6)`，被消费方阻塞（须先对齐 `range_splitter/p01.rs:295`、`edge_discret.rs:1259` 的语义）。
+
+**C. 被前置阻塞（⬜，前置未完成前不动手）**
+- **A12**（`brepfeat` 体积覆盖/网格夹具/`clamp(16,64)`）：需 `BRepFeat_MakeDPrism/MakeRevol` + 忠实布尔，与 T-80 同源。
+- **A13/A18/A23**：网格管线（`face_to_triangles` 按 UV 窗口栅格 → pcurve 离散、约束 Delaunay、`AddUVBounds`），前置 = **T-69 收口**（先补"OCCT 会网格化、端口失败"那一类面的控制流）。
+- **A8**：`comp_curve_to_bspline` 采样降级，缺 `GeomConvert_CurveToBSpline`+`IncreaseDegree`+`CompCurveToBSplineCurve::Add`；**无生产消费者**。
+
+**D. 纪律提醒（给下一次会话）**
+1. 渲染/计数式统计不能代替形状组成 dump（§9 已记两例：`pave_blocks` 误读、批 37「门禁全绿」误判）。
+2. 改某函数的分派/实现前，先 `git grep` 它的直接调用者：若现有断言直接绑在旧体上，门禁不会覆盖改动路径。
+3. 探针一律临时、用完删除并 `git grep` 复核；提交用显式路径；每批跑该 crate `--lib` + 四道 STEP 门禁 + `export_data_obj`。
+
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
 2. 改代码前对着 `.cxx` 审控制流；**有同等分支才改**，没有就标"未移植"（注释写 OCCT 文件+行号），**不加** OCCT 里不存在的谓词/启发式/面积比/长度滤边/体积门。
