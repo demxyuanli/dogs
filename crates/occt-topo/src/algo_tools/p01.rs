@@ -181,10 +181,41 @@ impl AlgoTools {
                 let f = Face(shape.clone());
                 let surf = BRepTool::face_surface(&f)
                     .ok_or("compute_state: face has no registered surface")?;
-                let (u, v) = surface_closest_params(surf.as_ref(), p, 32, 32);
-                if surf.d0(u, v).distance(p) > tol {
-                    return Ok(FaceState::Out);
+                // Port of `BRepClass_FaceClassifier::Perform(F, P, Tol)`
+                // (`BRepClass_FaceClassifier.cxx:76-125`): `Extrema_ExtPS` over
+                // the face's `BRepTools::UVBounds` (`cxx:91-92`), the
+                // `IsDone()`/`NbExt()` guards (`cxx:98-107`, leaving the state
+                // `UNKNOWN` with `rejected = true`), the solution of smallest
+                // square distance (`cxx:109-117`), then the 2D classifier on
+                // that `(u, v)` (`cxx:121-123`).
+                //
+                // OCCT does **not** test the 3-D projection distance here: the
+                // previous body's `surf.d0(u,v).distance(p) > tol → Out` gate
+                // was port-invented (audit A4/T-40), and the `32×32` grid
+                // search was A1's substitute. `BRepAdaptor_Surface(theF, false)`
+                // (`cxx:90`) is the *unrestricted* face surface, so the window
+                // comes from the explicit `UVBounds` argument, as here.
+                let uv = crate::brep_uv_bounds::uv_box_of_face(&f);
+                let ex = occt_geom::extrema_surf::ExtPs::with_window(
+                    p,
+                    surf.as_ref(),
+                    uv.xmin(),
+                    uv.xmax(),
+                    uv.ymin(),
+                    uv.ymax(),
+                    tol,
+                    tol,
+                );
+                if !ex.is_done() || ex.nb_ext() == 0 {
+                    return Ok(FaceState::Unknown);
                 }
+                let mut best = 1usize;
+                for i in 2..=ex.nb_ext() {
+                    if ex.square_distance(i) < ex.square_distance(best) {
+                        best = i;
+                    }
+                }
+                let (u, v, _) = ex.point(best);
                 let cl = FClass2d::new(&f, tol)?;
                 Ok(cl.perform(GpPnt2d::new(u, v)))
             }

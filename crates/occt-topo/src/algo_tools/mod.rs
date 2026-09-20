@@ -39,7 +39,7 @@ pub(crate) use crate::abs::{Orientation, ShapeType};
 pub(crate) use crate::brep_class3d::SolidClassifier;
 pub(crate) use crate::brep_extrema::closest_point_on_edge;
 pub(crate) use crate::brep_measure::edge_length;
-pub(crate) use crate::brep_surface::{surface_closest_params, surface_normal};
+pub(crate) use crate::brep_surface::surface_normal;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::connexity_block::ConnexityBlock;

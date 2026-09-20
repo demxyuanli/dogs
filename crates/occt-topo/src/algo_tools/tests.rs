@@ -160,10 +160,15 @@ use super::*;
             AlgoTools::compute_state(&face.0, &GpPnt::new(0.5, 0.5, 0.0), 1e-6).unwrap(),
             FaceState::In
         );
-        // Point above the face plane → Out.
+        // Point above the face plane, projection interior → still In:
+        // `BRepClass_FaceClassifier::Perform(F, P, Tol)`
+        // (`BRepClass_FaceClassifier.cxx:76-125`) classifies the *projection*
+        // in the face's UV domain and never tests the 3-D distance. The old
+        // expectation (`Out`) encoded the port-invented `distance > tol` gate
+        // that audit A4/T-40 removed.
         assert_eq!(
             AlgoTools::compute_state(&face.0, &GpPnt::new(0.5, 0.5, 0.1), 1e-6).unwrap(),
-            FaceState::Out
+            FaceState::In
         );
         // Point on the face boundary edge → On.
         assert_eq!(

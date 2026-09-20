@@ -66,8 +66,15 @@ impl AlgoTools {
         for i in 0..=32 {
             let t = a + (b - a) * i as f64 / 32.0;
             let p = AlgoTools::point_on_edge(edge, t).ok()?;
-            let (u, v) = surface_closest_params(surf.as_ref(), &p, 32, 32);
-            if cl.perform(GpPnt2d::new(u, v)) == FaceState::Out {
+            // Faithful `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`, T-52); the
+            // previous 32x32 grid was A1's substitute. A sample whose projection
+            // is not done contributes nothing (OCCT's classifier has no (u, v)
+            // to work with there).
+            let Some(ps) = occt_geom::geom_api::project_point_on_surface(surf.as_ref(), &p, 1e-7)
+            else {
+                continue;
+            };
+            if cl.perform(GpPnt2d::new(ps.u, ps.v)) == FaceState::Out {
                 return Some(t);
             }
         }
@@ -127,7 +134,9 @@ impl AlgoTools {
     /// Unit surface normal of `face` at the parameter point closest to `p`.
     pub(super) fn face_normal_at_point(face: &Face, p: &GpPnt) -> Option<GpVec> {
         let surf = BRepTool::face_surface(face)?;
-        let (u, v) = surface_closest_params(surf.as_ref(), p, 32, 32);
+        // Faithful `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`, T-52).
+        let (u, v) = occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, 1e-7)
+            .map(|ps| (ps.u, ps.v))?;
         let n = surface_normal(surf.as_ref(), u, v);
         if n.square_magnitude() < 1e-30 { None } else { Some(n) }
     }
