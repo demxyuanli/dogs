@@ -385,6 +385,11 @@ cd ..; git worktree remove --force .target-headcheck
   2. **同族的已登记缺口**：`shhealing/p04.rs::project_wire_pcurve_ranges`（`TranslateEdgeLoop.cxx:844` 的 `EdgeProjAux` → `B.Range`）的注释已自述"窗口按原样写入（与 OCCT 同）"，并**推迟了 pcurve 反向**，理由是"我们的 mesher 处理不了**反向且窗口与 3D range 周期错位**的 pcurve"——face 20 正是这种形状，说明该缺口与 T-69 是同一处。
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
 - **下一步（第 43 轮，两条并行）**：① **判定性实验**：把同一面上各 wire 的 u 归一到同一周期窗口（仅作诊断，不改 `node_insertion` 的行为）后看 face 20 是否走通忠实 Delaunay（预期 74/72）——若走通，则缺的是"跨 wire 的周期对齐"，须先在 OCCT 里找到执行该对齐的那段控制流（候选：`ShapeFix_Wire::FixShifted` 的面级用法 / `StepToTopoDS_TranslateEdgeLoop` 的 `CheckPCurves` 段 / `ShapeFix_Face::FixMissingSeam`）并按它移植，**不得直接给网格层打补丁**；② 用参考的重复顶点证据确定"共享该顶点的两个面"是哪两张，确认端口是否两张都没网格化（据此判断要补的控制流范围）。
+**批 68（交接刷新＋全量基线复核：§14.3"第 82 轮收尾交接"）—— 2026-09-20 第 83 轮**
+
+- **动作（无代码改动）**：把 §14.2（第 63 轮交接）的过期条目覆盖为新的 **§14.3「第 82 轮收尾交接」**：① 抄录本轮实测的全部基线（`occt-core` 290/290、`occt-math` 215/215、`occt-geom` 146/146、`occt-geom2d` 72/72、`occt-topo` 1287/1、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`phase3/4/5/6` 4/4·9/9·7/7·5/5、`export_data_obj` 16/16 且 16 模型计数逐位一致）；② 写明 `occt-geom` 151→146、`occt-topo` 1291→1287 的**原因与清单**（批 65/66/67 删除的零消费方模块自带单测：`surface_to_grid` 3、`feature.rs` 4、`comp_curve_to_bspline` 2 等），避免下一轮误判为回归；③ 列出第 74–82 轮新增结项（A26 的 IGES 写侧批 55–63 与交换侧批 64、A15 部分批 65、A8/T-44 批 66、A12/T-48 部分批 67、T-84 结项）；④ **未被阻塞**的余项给出下一步入口（T-78 的 2D 曲线/周期面反周期化/整周椭圆/游离边/可达性过滤、T-77、A16 求交 half、T-67 分步 3 及其解锁的 A15/A19 项）；⑤ **被阻塞**项（T-80→T-81/T-82/T-83 与 T-79、A12 体积覆盖；T-69→A13/A18/A23）；⑥ 做法小结（零消费方自创件直接删的取证要求、反例登记、"提交用显式路径且勿用重定向掩盖 add 失败"——批 65 曾漏提三文件已在批 66 的 `c1448fa` 补）。
+- **验证**：本条为文档批，代码树与上一提交一致；上表基线即本轮 `pwsh` 全量复核的输出（5 个 crate `--lib` ＋ 4 道 STEP 门禁 ＋ `phase3/4/5/6` ＋ `export_data_obj`）。
+
 **批 67（A12/T-48：删除零消费方的自创"特征体素布尔＋网格圆柱夹具"模块 `feature.rs`）—— 2026-09-20 第 82 轮**
 
 - **缺口（A12/T-48 原文）**：`brepfeat` 用**解析体积覆盖**、用**网格夹具冒充 `BRepPrimAPI_MakeCylinder`**、以及 `clamp(16, 64)` 的体素分辨率；OCCT 对应件是 `BRepFeat_MakeDPrism`/`BRepFeat_MakeRevol`、`LocOpe_Revol`（T-48 行的出处列了 `brepfeat/p01.rs:109,419,361,508`、`feature.rs:197`）。
@@ -1175,6 +1180,31 @@ A25 的"删补丁"部分、A26 的四项（PLY 属性类型/STL 判据与头/VRM
 2. 改某函数的分派/实现前，先 `git grep` 它的直接调用者：若现有断言直接绑在旧体上，门禁不会覆盖改动路径。
 3. 探针一律临时、用完删除并 `git grep` 复核；提交用显式路径；每批跑该 crate `--lib` + 四道 STEP 门禁 + `export_data_obj`。
 
+### 14.3 第 82 轮收尾交接（2026-09-20；覆盖 §14.2 的过期条目）
+
+> **当前基线（第 82 轮实测，逐项照抄即可作为下一轮的对齐下限）**：`occt-core --lib` **290/290**（1 ignored）、`occt-math --lib` **215/215**（1 ignored）、`occt-geom --lib` **146/146**、`occt-geom2d --lib` **72/72**、`occt-topo --lib` **1287/1**（唯一红 = T-01 `brepfeat::tests::groove_cuts_cylinder`）、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**（红 = T-05 offset 体积 2208.0 vs 1612.9）、`phase3/4/5/6` **4/4 · 9/9 · 7/7 · 5/5**、`export_data_obj` **16/16** 且 16 个模型顶点/面数与 §2 快照逐位一致。**注意**：`occt-geom` 由 151→146、`occt-topo` 由 1291→1287 是**删除零消费方自创模块所带走的自带单测**（批 65 `surface_to_grid` 3 个、批 67 `feature.rs` 4 个、批 66 `comp_curve_to_bspline` 2 个；`occt-geom` 另含 `convert_bspl` 内 2 个），不是行为回退——凡删模块必须在批次报告里写明少掉的测试名与"零消费方"证据。
+
+**A. 本轮新增的结项（第 74–82 轮，批 59–67）**
+- **A26 / T-78（IGES 写侧）**：批 55–63 依次补齐 —— 曲线按类型分派、卡片格式合规、**126**（B 样条/Bezier）、**192/194/196/198**（柱/锥/球/环）、**128**（B 样条面）、**120/122**（回转/拉伸面）、**104＋124**（二次曲线弧＋变换矩阵）、DE 卡 P 指针与默认域、**142/144**（CurveOnSurface/TrimmedSurface 按 `BRepToIGES_BRShell::TransferFace` 重建）、128 的 `closedU/V`（`IsUClosed` 语义）与按基面裁剪的 UV 范围；批 63 查实 `write.iges.brep.mode` **默认 0＝Faces 模式**，故根结构改为 **144/142 ＋ 402 Group**（`BRepToIGES_BRSolid`/`BRShell`），删除混用的 510/514/186。**T-84 结项**。
+- **A26 交换侧余项**：批 64 把 STL 读取的节点合并容差由自创 `1e-9` 网格改为 OCCT 的"仅精确相等才合并"（`Poly_MergeNodesTool` 默认 tolerance 0）；PLY 项经复核为已忠实（逐 BRep 面节点表 + 全局下标 ≡ `RWPly_CafWriter` 的 `myVertOffset + (tri-anElemLower)`），一次按**三角面**重复节点的错误尝试已回退。
+- **A15（部分）**：批 65 删除自创死模块 `surface_to_grid`（`UVGrid` 零消费），`surface_fit::GridSurface` 就地标 UNPORTED（OCCT 无此类型，近似式为 `GeomAPI_PointsToBSplineSurface`/`GeomPlate_BuildPlateSurface`），并订正 trait 默认 `d2` 的实现者清单（回转/拉伸面**已**覆写）。
+- **A8 / T-44**：批 66 删除自创的"采样折线＋强制 1 次"曲线→B 样条转换（`comp_curve_to_bspline`，零消费方），就地留 UNPORTED（`GeomConvert_CompCurveToBSplineCurve.cxx:135-215` ＋ `GeomConvert::CurveToBSplineCurve` → `Convert_*ToBSplineCurve`）。
+- **A12 / T-48（部分）**：批 67 删除零消费方的 `feature.rs`（网格圆柱夹具 `z_cylinder_mesh` ＋ 其 `clamp(16,64)`）。
+
+**B. 仍开且**未被前置阻塞**（下一步入口已定位）**
+1. **T-78 余项（IGES）**：① **2D（UV）曲线**——`BRepToIGES_BRWire::TransferEdge(edge, face, originMap, length, false)`（`BRepToIGES_BRWire.cxx:340-588`）为 142 产生 `CurveUV` 并把 `PreferenceMode` 从 2 改成 3；其中含逐面型 UV 修正（平面直接返回空、回转面 u/v 反转、柱/锥/拉伸面原点平移，`:374-389` 起）；② **周期面反周期化**（`SetUOrigin`/`SetUNotPeriodic` → `BSplSLib::Unperiodize`，`GeomToIGES_GeomSurface.cxx:244-343`）与 `periodicU/V` 取值；③ 椭圆整周支（`GeomConvert_ApproxCurve`，`:620-645`，前置 A8 的 `GeomConvert`）；④ 面内**不属于任何 wire 的边**（`BRepToIGES_BRShell.cxx:334-365`）；⑤ 端口的写入器无 OCCT 的"只写可达实体"过滤（当前会把创建过的实体全部写出）。
+2. **T-77（A11 派生）**：`IntTools_EdgeEdge::FindSolutions` 两重载 bbox 递归 ＋ `FindParameters`/`IsIntersection`/`CheckCoincidence`/`DistPC`/`FindDistPC`/`SplitRangeOnSegments`/`MergeSolutions` ＋ `Prepare` 的 `myRes*`/`myPTol*`/`myResCoeff*` 与类型 swap；**前置已备齐**（`geom_bnd_lib_curve3d::box_curve`、`geom_api::project_point_on_curve`）。它同时是 A16 求交 half 的前置。
+3. **A16 求交 half**：`geom_api::{curve_surface_intersections, curve_curve_intersections}`（现就地 UNPORTED）→ `IntCurveSurface_Intersection` / `IntTools_EdgeEdge`；生产调用点 `inttools/p01.rs:278,285,292,295,450`。
+4. **T-67 分步 3（A1，§7 第 2 条）**：`math_FunctionSetRoot`（1452 行）＋ `Extrema_GenExtPS`（1195 行）→ 完成后按序迁 39 处调用点、删 `brep_surface::surface_closest_params`、并解除 **A15 曲面族兜底移除**与 **A19 的 `surface_family` 相关项**。
+
+**C. 仍被前置阻塞（前置未完成前不动手）**
+- **T-80 链（最高优先）**：`box∪cyl` 的柱体 GF 实体四面全 `Internal` ⇒ `BuildSolid` 只见盒体 7 面；断点已细分到 **T-81**（`AdjustPCurveOnFace` 周期平移——**已于批 52 按 `BOPTools_AlgoTools2D.cxx:247-400` 落地**，需重测）、**T-82**（分类/保留）、**T-83**（缝处 `anIsSameV2d` 起点 u=2π vs 到达 u=0）。**T-79**（`bop_curved` 网格布尔摘除）与 **A12 的解析体积覆盖**都等它。
+- **A13/A18/A23**：网格管线（pcurve 离散、约束 Delaunay、`AddUVBounds`），前置 = **T-69 收口**（下一步＝Torus face 20 的跨 wire 周期对齐，见 `shhealing/p04.rs` 与 `StepToTopoDS_TranslateEdgeLoop::CheckPCurves` 的 `AdjustPeriodic` 分支）。
+
+**D. 本轮确立的做法（下一轮照做）**
+1. **"零消费方自创件直接删"已经是最快且最可验证的结项方式**（批 65/66/67）：删除前必须 `git grep` 逐名核对（含 tests/examples）、在批次报告写出被删测试名与数量、并在门禁里说明数量下降的原因；有生产消费方的自创件（如 `brepfeat` 的 `resolution_for`、`surface_fit::fit_plane`）只标注、不删。
+2. 反例也要写进画板（批 64 的 PLY 三角级重复尝试：判据是"OCCT 的每面单位是 **BRep 面**而非三角面"）。
+3. 每批仍旧：改前 `cargo check` → 该 crate `--lib` → 四道 STEP 门禁 ＋ `export_data_obj` → 提交用显式路径（`git add <file>` 逐个，**不要**用重定向掩盖 add 失败：批 65 曾因此漏提三个文件，批 66 已补 `c1448fa`）。
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
 2. 改代码前对着 `.cxx` 审控制流；**有同等分支才改**，没有就标"未移植"（注释写 OCCT 文件+行号），**不加** OCCT 里不存在的谓词/启发式/面积比/长度滤边/体积门。
