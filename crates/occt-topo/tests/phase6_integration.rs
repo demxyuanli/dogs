@@ -48,7 +48,7 @@ fn polygon_boolean_ops_match_areas() {
 fn geom_extrema_distances() {
     // Point to line: (3,4,0) to x-axis → 4.
     let line = make_line(GpPnt::new(0.0, 0.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap());
-    let e = point_curve_extrema(&line, &GpPnt::new(3.0, 4.0, 0.0));
+    let e = point_curve_extrema(&line, &GpPnt::new(3.0, 4.0, 0.0)).expect("line projection");
     assert!((e.distance - 4.0).abs() < 1e-7, "point-line {}", e.distance);
 
     // Curve–surface: line y=3 vs unit sphere at origin → 2.

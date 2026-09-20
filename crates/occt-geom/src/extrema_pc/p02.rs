@@ -150,22 +150,17 @@ pub fn point_curve_extrema_all(c: &dyn Curve, p: &GpPnt) -> Vec<ExtremaPair> {
 }
 
 /// Minimum distance from `p` to `c` (with the closest point and parameter).
-pub fn point_curve_extrema(c: &dyn Curve, p: &GpPnt) -> ExtremaPair {
-    match point_curve_extrema_all(c, p).into_iter().next() {
-        Some(e) => e,
-        None => {
-            // Degenerate curve: fall back to the golden-section refine.
-            let (u, q) =
-                crate::extrema::refine_curve_point(c, p, c.first_parameter(), c.last_parameter());
-            ExtremaPair { p1: *p, p2: q, distance: p.distance(&q), u1: u, v1: None, u2: u, v2: None }
-        }
-    }
+///
+/// `None` means OCCT's `IsDone() == false`: `Extrema_GGExtPC::Perform` leaves the
+/// solution list empty and callers must test `IsDone` before using the results
+/// (`Extrema_GGExtPC.hxx:531`, `:545-550`). The previous body fabricated a
+/// golden-section "refine" result instead (audit A15), which made a failure
+/// indistinguishable from a real extremum.
+pub fn point_curve_extrema(c: &dyn Curve, p: &GpPnt) -> Option<ExtremaPair> {
+    point_curve_extrema_all(c, p).into_iter().next()
 }
 
-/// Maximum distance from `p` to `c` (farthest local extremum).
-pub fn point_curve_max_extrema(c: &dyn Curve, p: &GpPnt) -> ExtremaPair {
-    match point_curve_extrema_all(c, p).into_iter().last() {
-        Some(e) => e,
-        None => point_curve_extrema(c, p),
-    }
+/// Maximum distance from `p` to `c` (farthest local extremum); `None` as above.
+pub fn point_curve_max_extrema(c: &dyn Curve, p: &GpPnt) -> Option<ExtremaPair> {
+    point_curve_extrema_all(c, p).into_iter().last()
 }

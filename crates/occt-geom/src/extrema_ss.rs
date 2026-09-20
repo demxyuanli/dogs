@@ -445,6 +445,7 @@ pub(crate) fn surface_surface_newton_all(s1: &dyn Surface, s2: &dyn Surface) -> 
 }
 
 /// Fallback: coarse grid min + coordinate descent (degenerate pairs).
+// UNPORTED (audit A15): OCCT has no such fallback — `Extrema_ExtSS`/`Extrema_ExtPS` set `myDone = false` / throw when the search finds nothing (`Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`). This body fabricates a pair instead; it is kept because live consumers (`occt-topo/src/bean_face_exact.rs:278`) rely on it, and removal needs the T-67 (`Extrema_ExtPS`/`GenExtPS`) port first.
 fn fallback_ss(s1: &dyn Surface, s2: &dyn Surface) -> ExtremaPair {
     let (u10, u11) = surf_bound_u(s1);
     let (v10, v11) = surf_bound_v(s1);

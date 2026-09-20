@@ -107,7 +107,7 @@ use super::*;
         assert!((all[0].distance - 1.0).abs() < 1e-7, "min {}", all[0].distance);
         assert!((all[all.len() - 1].distance - 5.0).abs() < 1e-7, "max {}", all[all.len() - 1].distance);
         // The convenience minimum must agree.
-        let e = curve_curve_extrema(&c1, &c2);
+        let e = curve_curve_extrema(&c1, &c2).expect("curve-curve extrema");
         assert!((e.distance - 1.0).abs() < 1e-7, "min wrapper {}", e.distance);
     }
 

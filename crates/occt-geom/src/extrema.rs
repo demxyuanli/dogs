@@ -70,14 +70,15 @@ pub fn refine_curve_point(c: &dyn Curve, p: &GpPnt, a: f64, b: f64) -> (f64, GpP
 
 /// Minimum distance from point `p` to curve `c` (with the closest point).
 /// Exact analytic dispatch for lines/circles; Newton refinement otherwise.
-pub fn point_curve_extrema(c: &dyn Curve, p: &GpPnt) -> ExtremaPair {
+/// `None` mirrors OCCT's `IsDone() == false` (`Extrema_GGExtPC.hxx:531`).
+pub fn point_curve_extrema(c: &dyn Curve, p: &GpPnt) -> Option<ExtremaPair> {
     crate::extrema_pc::point_curve_extrema(c, p)
 }
 
 /// Maximum distance from point `p` to curve `c` over its parameter range.
 /// `samples` is kept for signature compatibility but no longer drives the
-/// computation.
-pub fn point_curve_max_extrema(c: &dyn Curve, p: &GpPnt, _samples: usize) -> ExtremaPair {
+/// computation. `None` as above.
+pub fn point_curve_max_extrema(c: &dyn Curve, p: &GpPnt, _samples: usize) -> Option<ExtremaPair> {
     crate::extrema_pc::point_curve_max_extrema(c, p)
 }
 
@@ -128,7 +129,7 @@ mod tests {
     #[test]
     fn point_line_min_distance() {
         let line = line(GpPnt::new(0.0, 0.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap());
-        let e = point_curve_extrema(&line, &GpPnt::new(3.0, 4.0, 0.0));
+        let e = point_curve_extrema(&line, &GpPnt::new(3.0, 4.0, 0.0)).expect("line projection");
         assert!((e.distance - 4.0).abs() < 1e-7, "dist {}", e.distance);
         assert!((e.p2.x() - 3.0).abs() < 1e-6, "closest x {}", e.p2.x());
     }
@@ -137,9 +138,9 @@ mod tests {
     fn point_circle_min_and_max() {
         let circle = GeomCircle::new(GpCirc::new(GpAx2::standard(), 1.0));
         let p = GpPnt::new(3.0, 0.0, 0.0);
-        let e = point_curve_extrema(&circle, &p);
+        let e = point_curve_extrema(&circle, &p).expect("circle projection");
         assert!((e.distance - 2.0).abs() < 1e-6, "min dist {}", e.distance);
-        let m = point_curve_max_extrema(&circle, &p, 64);
+        let m = point_curve_max_extrema(&circle, &p, 64).expect("circle max");
         assert!((m.distance - 4.0).abs() < 1e-6, "max dist {}", m.distance);
     }
 

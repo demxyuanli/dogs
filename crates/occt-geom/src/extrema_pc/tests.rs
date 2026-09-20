@@ -92,7 +92,7 @@ use super::*;
     #[test]
     fn point_curve_extrema_line_dispatch() {
         let line = GeomLine::new(line_on_x_axis());
-        let e = point_curve_extrema(&line, &GpPnt::new(3.0, 4.0, 0.0));
+        let e = point_curve_extrema(&line, &GpPnt::new(3.0, 4.0, 0.0)).expect("line projection");
         assert!((e.distance - 4.0).abs() < 1e-9, "dist {}", e.distance);
         assert!((e.u1 - 3.0).abs() < 1e-9, "u {}", e.u1);
     }
@@ -105,7 +105,7 @@ use super::*;
         assert!(!all.is_empty(), "no extrema found");
         assert!((all[0].distance - 2.0).abs() < 1e-6, "min {}", all[0].distance);
         assert!((all[all.len() - 1].distance - 4.0).abs() < 1e-6, "max {}", all[all.len() - 1].distance);
-        let e = point_curve_extrema(&circle, &p);
+        let e = point_curve_extrema(&circle, &p).expect("circle projection");
         assert!((e.distance - 2.0).abs() < 1e-6, "min via wrapper {}", e.distance);
     }
 
@@ -137,7 +137,7 @@ use super::*;
         let d2 = p.distance(&c.d0(min.u1 + eps));
         assert!(min.distance <= d0 + 1e-9 && min.distance <= d2 + 1e-9, "not a local min");
         // And point_curve_extrema delegates to it.
-        let e = point_curve_extrema(&c, &p);
+        let e = point_curve_extrema(&c, &p).expect("curve projection");
         assert!((e.distance - min.distance).abs() < 1e-6, "wrapper {}", e.distance);
     }
 

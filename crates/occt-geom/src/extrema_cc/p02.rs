@@ -207,38 +207,14 @@ pub fn curve_curve_extrema_all(c1: &dyn Curve, c2: &dyn Curve) -> Vec<ExtremaPai
 
 /// Minimum distance between two curves (with the closest points and
 /// parameters). The first entry of `curve_curve_extrema_all` (sorted ascending).
-pub fn curve_curve_extrema(c1: &dyn Curve, c2: &dyn Curve) -> ExtremaPair {
-    match curve_curve_extrema_all(c1, c2).into_iter().next() {
-        Some(e) => e,
-        None => {
-            // Degenerate fallback: coarse grid best pair.
-            let (a1, b1) = if c1.first_parameter().is_finite() && c1.last_parameter().is_finite() {
-                (c1.first_parameter(), c1.last_parameter())
-            } else {
-                (-1.0, 1.0)
-            };
-            let (a2, b2) = if c2.first_parameter().is_finite() && c2.last_parameter().is_finite() {
-                (c2.first_parameter(), c2.last_parameter())
-            } else {
-                (-1.0, 1.0)
-            };
-            let n = 16;
-            let mut best: Option<ExtremaPair> = None;
-            for i in 0..=n {
-                for j in 0..=n {
-                    let u = a1 + (b1 - a1) * i as f64 / n as f64;
-                    let v = a2 + (b2 - a2) * j as f64 / n as f64;
-                    let p1 = c1.d0(u);
-                    let p2 = c2.d0(v);
-                    let e = pair_cc(p1, u, p2, v);
-                    if best.as_ref().map_or(true, |b| e.distance < b.distance) {
-                        best = Some(e);
-                    }
-                }
-            }
-            best.unwrap_or_else(|| pair_cc(GpPnt::zero(), 0.0, GpPnt::zero(), 0.0))
-        }
-    }
+///
+/// `None` means OCCT's `myDone = false` — `Extrema_GGenExtCC::Perform`
+/// (`Extrema_GGenExtCC.hxx:691-695`) returns without solutions when the search
+/// finds none, and no fabricated pair is produced. The previous body fell back to
+/// a 16×16 parameter grid and finally to a zero-distance pair at the origin
+/// (audit A15).
+pub fn curve_curve_extrema(c1: &dyn Curve, c2: &dyn Curve) -> Option<ExtremaPair> {
+    curve_curve_extrema_all(c1, c2).into_iter().next()
 }
 
 /// Local extremum of the distance between two curves from seed parameters

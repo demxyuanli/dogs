@@ -542,7 +542,7 @@ cd ..; git worktree remove --force .target-headcheck
 | A12 | ⬜ | T-48 | `brepfeat` 体积覆盖、网格夹具冒充 `BRepPrimAPI_MakeCylinder`、`clamp(16,64)` |
 | A13 | ⬜ | T-49 | `face_to_triangles` 按 UV 窗口栅格建网；曾被回退（1284/10）⇒ **被 T-69 阻塞** |
 | A14 | ✅ | T-50 | 10 处模块头 `UNPORTED` + 真实出处（批 8+13） |
-| A15 | ◐ | T-51 | ✅ `surface_d2` 五个初等面（批 11）+ Bezier（批 15）、`math_Gauss MinPivot`（批 11）、`IntAna_IntLinTorus` 根校验与 `Extrema_ExtElSS` 声明（批 14）；⬜ **失败通道**（`extrema_cc/pc/surf` 改可失败 API，牵动 `extrema.rs`+BOP 消费方）、`curve_reparam.rs:189` 的 `1e-15`（缺忠实 `BSplCLib::BasisFuns`）、`gcpnts.rs` 的 Simpson 积分、`surface_fit`/`surface_to_grid` 的 D2（非 OCCT 件） |
+| A15 | ◐ | T-51 | ✅ `surface_d2` 五个初等面（批 11）+ Bezier（批 15）、`math_Gauss MinPivot`（批 11）、`IntAna_IntLinTorus` 根校验与 `Extrema_ExtElSS` 声明（批 14）、**曲线族失败通道**（批 17：`point_curve_extrema`/`point_curve_max_extrema`/`curve_curve_extrema` → `Option`，删黄金分割与 16×16 网格兜底；曲面族兜底已就地标 UNPORTED）；⬜ `curve_reparam.rs:189` 的 `1e-15`（缺忠实 `BSplCLib::BasisFuns`）、`gcpnts.rs` 的 Simpson 积分、曲面族兜底的**移除**（前置 T-67）、`surface_fit`/`surface_to_grid` 的 D2（非 OCCT 件） |
 | A16 | ⬜ | T-52 | 256×256 采样求交/投影 → `Extrema_ExtPS/ExtCC`（前置 T-67） |
 | A17 | ✅ | T-53 | 删 `brep_exchange` 静默回退 + 形参改名 |
 | A18 | ⬜ | T-54 | 平面耳切/桥洞 → 约束 Delaunay；**被 T-69 阻塞** |
@@ -573,6 +573,17 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证**：`occt-core --lib` **290/290**（STL 读写与 ASCII/binary 往返测试全过）、`occt-topo --lib` 1293/1（唯一红 = T-01）、四道 STEP 门禁 11/11、2/3、14/14、13/13。
 - **T-48/A12 的实地结论（本轮未动手，已写入任务卡）**：`brepfeat/p01.rs:107-109` 的 `result.volume = (v0 + πr²h − overlap).max(0)` 是**解析体积覆盖**，使 `brepfeat/tests.rs:172` 的 `after.volume > before` 恒真；但删掉它会让该断言依赖真实网格体积，而代码注释已自述"the boolean does not close through-hole topology"（体积不可靠）⇒ **删覆盖会立刻把 `boss_thru_all_pierces` 打红（1293→1292/2，劣于基线）**。⇒ A12 的体积部分**被 BOP 缺口阻塞**（与 A5/A11 同源），本轮只确认了因果关系，未改代码。
 - **OBJ `vn` 的实地结论（订正审查措辞）**：写侧**并非**"恒空 `vn`"——`occt-core/src/io/obj.rs:130` 在 `mesh.normals` 非空时会写 `vn`；OCCT 也是 `if (theFace.HasNormals())` 才写（`RWObj_CafWriter.cxx:245,281,317`）。真正的缺口是**网格侧不产出法向**（`brep_to_obj` 的 `ObjMesh.normals` 恒空），属网格管线（A13/A18）而非 OBJ 写侧。⇒ A26 该子项应改写为"网格法向未产出"，不再是写侧偏离。
+
+**批 17（A15/T-51 的失败通道：曲线族改为可失败语义）—— 2026-09-20**
+
+- **背景（消费者实测，决定改动边界）**：`point_curve_extrema`/`curve_curve_extrema`（返回 `ExtremaPair` 的**带兜底**版本）在 `occt-topo` **无生产调用者**——生产路径用的是 `point_curve_extrema_all`（`brep_extrema.rs:18`、`edge_edge/mod.rs:29`）与 `extrema_surf::{curve_surface_extrema_all, point_surface_extrema}`；曲面族**有**生产消费方（`bean_face_exact.rs:278` 调 `extrema::curve_surface_extrema`），其忠实化要等 T-67 的 `Extrema_ExtPS/GenExtPS` ⇒ 本轮只动曲线族、曲面族仅就地声明。
+- **落地**：
+  1. `occt-geom/src/extrema_pc/p02.rs::{point_curve_extrema, point_curve_max_extrema}` → 返回 **`Option<ExtremaPair>`**，删除"退化时黄金分割兜底"（`refine_curve_point` 那条自创路径）；`None` 即 OCCT 的 `IsDone() == false`（`Extrema_GGExtPC.hxx:531`、`:545-550`）。
+  2. `occt-geom/src/extrema_cc/p02.rs::curve_curve_extrema` → **`Option<ExtremaPair>`**，删除 16×16 参数网格兜底与 `pair_cc(zero, 0, zero, 0)` 伪造对；`None` 即 `Extrema_GGenExtCC.hxx:691-695` 的 `if (aNbSol == 0) { myDone = false; return; }`。
+  3. `occt-geom/src/extrema.rs` 的两个公开包装同步改为 `Option`。
+  4. **曲面族兜底就地标 `UNPORTED`**：`extrema_ss.rs::fallback_ss`、`extrema_surf/p02.rs::{fallback_point_surface, fallback_curve_surface}`——注明 OCCT 无此兜底（`Extrema_ExtElSS.cxx:62-83` 抛 `Standard_NotImplemented`、`GGExtPC.hxx:531` 置 `done=false`），因 `bean_face_exact.rs:278` 依赖而暂留，移除需先做 T-67。
+- **测试适配（仅机械加 `.expect(...)`，不放宽断言）**：`extrema.rs` 3 处、`extrema_pc/tests.rs` 3 处、`extrema_cc/tests.rs` 1 处、`occt-topo/tests/phase6_integration.rs` 1 处。
+- **验证（全绿，与基线逐项一致）**：`occt-core --lib` 290/290、`occt-geom` **151/151**、`occt-geom2d` 72/72、`occt-topo --lib` 1293/1（唯一红 = T-01）、`phase6_integration` **5/5**、四道 STEP 门禁 11/11、2/3、14/14、13/13；`cargo check --tests` 两 crate exit 0。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。

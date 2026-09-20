@@ -139,6 +139,7 @@ pub(crate) fn point_surface_newton_all_box(
 }
 
 /// Fallback: coarse grid min + coordinate descent (degenerate surfaces).
+// UNPORTED (audit A15): OCCT has no such fallback — `Extrema_ExtSS`/`Extrema_ExtPS` set `myDone = false` / throw when the search finds nothing (`Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`). This body fabricates a pair instead; it is kept because live consumers (`occt-topo/src/bean_face_exact.rs:278`) rely on it, and removal needs the T-67 (`Extrema_ExtPS`/`GenExtPS`) port first.
 pub(super) fn fallback_point_surface(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
     let (u0, u1) = surf_bound_u(s);
     let (v0, v1) = surf_bound_v(s);
@@ -359,6 +360,7 @@ pub(crate) fn curve_surface_newton_all(c: &dyn Curve, s: &dyn Surface) -> Vec<Ex
 }
 
 /// Fallback: grid min (degenerate curve-surface pairs).
+// UNPORTED (audit A15): OCCT has no such fallback — `Extrema_ExtSS`/`Extrema_ExtPS` set `myDone = false` / throw when the search finds nothing (`Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`). This body fabricates a pair instead; it is kept because live consumers (`occt-topo/src/bean_face_exact.rs:278`) rely on it, and removal needs the T-67 (`Extrema_ExtPS`/`GenExtPS`) port first.
 pub(super) fn fallback_curve_surface(c: &dyn Curve, s: &dyn Surface) -> ExtremaPair {
     let (t0, t1) = curve_bound(c);
     let (u0, u1) = surf_bound_u(s);
