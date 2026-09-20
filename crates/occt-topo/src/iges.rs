@@ -274,6 +274,32 @@ fn swept_surface_kind(s: &dyn Surface) -> Option<SweptKind> {
     }
 }
 
+/// `Geom_BSplineCurve::IsEqual` (`Geom_BSplineCurve_1.cxx:662-...`) between the
+/// two iso curves that `Geom_BSplineSurface::IsUClosed`/`IsVClosed`
+/// (`Geom_BSplineSurface_1.cxx:1350-1389`) compares: the pole lists must agree
+/// **component-wise** within `Precision::Confusion()` (not by point distance), and
+/// every other quantity `IsEqual` looks at (degree, knot count and values,
+/// multiplicity list, rational flag, pole count) is shared by construction,
+/// because both iso curves are built from the same surface
+/// (`Geom_BSplineSurface::UIso`/`VIso`) and therefore use the same V/U knots,
+/// multiplicities, degree and periodicity. Differing lengths fail the comparison,
+/// as `IsEqual` does on a count mismatch.
+fn iso_rows_equal(a: &[GpPnt], b: &[GpPnt]) -> bool {
+    let tol = occt_core::precision::CONFUSION;
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(p, q)| {
+            (p.x() - q.x()).abs() <= tol && (p.y() - q.y()).abs() <= tol && (p.z() - q.z()).abs() <= tol
+        })
+}
+
+/// The rational arm of `Geom_BSplineCurve::IsEqual`
+/// (`Geom_BSplineCurve_1.cxx`, `fabs(w1 - w2) > Epsilon(w1)`): weights are
+/// compared against `Epsilon` of the **first** curve's weight
+/// (`Standard_Real.hxx:242-246`).
+fn weight_equal(a: f64, b: f64) -> bool {
+    (a - b).abs() <= occt_core::precision::epsilon(a)
+}
+
 /// The unit of the model space the Global section declares
 /// (`IGESData_IGESWriter.cxx:38-45` writes `2Hmm` with unit flag 2 = millimetre,
 /// so `GeomToIGES_GeomEntity::GetUnit()` is 1: distances are written as they are).
@@ -903,7 +929,8 @@ impl IgesWriter {
         )
     }
 
-    /// Entity 128 (`GeomToIGES_GeomSurface::TransferBSplineSurface`, written by
+    /// Entity 128 (`GeomToIGES_GeomSurface::TransferBSplineSurface`,
+    /// `GeomToIGES_GeomSurface.cxx:191-460`, written by
     /// `IGESGeom_ToolBSplineSurface::WriteOwnParams`,
     /// `IGESGeom_ToolBSplineSurface.cxx:64-125`):
     ///
@@ -916,6 +943,19 @@ impl IgesWriter {
     /// knot vectors. A Bezier surface becomes the equivalent single-span
     /// B-spline (end knots with multiplicity degree+1) as
     /// `GeomConvert::SurfaceToBSplineSurface` would produce.
+    ///
+    /// `closedU/V` come from `IsUClosed`/`IsVClosed` (`cxx:347-348`, see
+    /// [`iso_rows_equal`]), `polynomial` from `Polynom = !(RationU || RationV)`
+    /// (`cxx:355`; the port's B-spline surface carries one rational flag for both
+    /// directions) and the written range from the non-periodic arm of the bounds
+    /// fix (`cxx:245-255`, `:274-284`). The periodic arm (`cxx:256-273`,
+    /// `:285-302`, `:304-343`: `ShapeAnalysis::AdjustToPeriod`,
+    /// `SetUOrigin`/`SetVOrigin`, `SetUNotPeriodic`/`SetVNotPeriodic` →
+    /// `BSplSLib::Unperiodize`) is UNPORTED (audit A26 / task T-78): OCCT re-origins
+    /// and unperiodizes the surface before reading its knots and poles and writes
+    /// `periodicU/V` from the **original** `IsUPeriodic`/`IsVPeriodic`
+    /// (`cxx:235-236`, `:448-449`), while this port keeps the periodic
+    /// representation and writes `periodicU/V = 0`.
     fn emit_bspline_surface(
         &mut self,
         surf: &dyn Surface,
@@ -947,20 +987,47 @@ impl IgesWriter {
         }
         let (ind_u, ind_v) = (nu - 1, nv - 1);
 
-        let weights: Vec<Vec<f64>> = match surf.bspline_surface_weights() {
+        // `TransferSurface(Geom_RectangularTrimmedSurface)` recurses on
+        // `BasisSurface()` before this branch (`cxx:492-515`), so every quantity
+        // read below - poles, knots, degree, periodicity and `Bounds` - belongs to
+        // the untrimmed basis (`st` there plays the role of `start` here).
+        let basis = surf.rectangular_trimmed_basis();
+        let bs: &dyn Surface = match basis.as_deref() {
+            Some(b) => b,
+            None => surf,
+        };
+
+        let stored_weights = bs.bspline_surface_weights();
+        let rational = stored_weights.is_some();
+        let weights: Vec<Vec<f64>> = match stored_weights {
             Some(w) if w.len() == nu && w.iter().all(|r| r.len() == nv) => w.to_vec(),
             _ => vec![vec![1.0; nv]; nu],
         };
-        let polynomial = surf.bspline_surface_weights().is_none();
-        let closed_u = poles.first().zip(poles.last()).map_or(false, |(f, l)| {
-            f.iter().zip(l.iter()).all(|(a, b)| a.distance(b) <= occt_core::precision::CONFUSION)
-        });
-        let closed_v = (0..nu).all(|i| {
-            poles[i]
-                .first()
-                .zip(poles[i].last())
-                .map_or(false, |(f, l)| f.distance(l) <= occt_core::precision::CONFUSION)
-        });
+        let polynomial = !rational;
+        // `CloseU = mysurface->IsUClosed()` / `CloseV` (`cxx:347-348`).
+        let closed_u = bs.is_u_periodic()
+            || (iso_rows_equal(&poles[0], &poles[nu - 1])
+                && (!rational || weights[0].iter().zip(&weights[nu - 1]).all(|(a, b)| weight_equal(*a, *b))));
+        let closed_v = bs.is_v_periodic()
+            || (0..nu).all(|i| {
+                iso_rows_equal(&poles[i][0..1], &poles[i][nv - 1..nv])
+                    && (!rational || weight_equal(weights[i][0], weights[i][nv - 1]))
+            });
+
+        // `cxx:244-255` / `:274-284`: a non-periodic surface clamps the written
+        // range to its own bounds (the periodic arm is UNPORTED, see above).
+        let (su0, su1) = bs.u_range();
+        let (sv0, sv1) = bs.v_range();
+        let (u0, u1) = if bs.is_u_periodic() {
+            (u0, u1)
+        } else {
+            (u0.max(su0), u1.min(su1))
+        };
+        let (v0, v1) = if bs.is_v_periodic() {
+            (v0, v1)
+        } else {
+            (v0.max(sv0), v1.min(sv1))
+        };
 
         let mut s = format!(
             "128,{ind_u},{ind_v},{deg_u},{deg_v},{},{},{},0,0",
