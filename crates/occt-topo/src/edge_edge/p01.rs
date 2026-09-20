@@ -356,7 +356,19 @@ impl EdgeEdge {
         let r2 = self.r2();
 
         let mut solutions: Vec<(f64, f64, GpPnt)> = Vec::new();
-        for p in curve_curve_extrema_all(&*c1, &*c2) {
+        // `Extrema_ExtCC` runs over the *edge* ranges: OCCT's `IntTools_EdgeEdge`
+        // holds `BRepAdaptor_Curve` objects, whose `FirstParameter`/`LastParameter`
+        // are the edge's (`IntTools_EdgeEdge.cxx:94-95`, `:164-165`), and
+        // `Extrema_ExtCC` forwards them to the engine (`Extrema_ExtCC.cxx:180`).
+        // The curve's own range may be infinite (an edge on an infinite line).
+        for p in curve_curve_extrema_all_range(
+            &*c1,
+            &*c2,
+            r1.first,
+            r1.last,
+            r2.first,
+            r2.last,
+        ) {
             if p.distance <= tol.max(1e-7) {
                 if let Some(sol) = self.find_parameters(p.u1, p.u2) {
                     solutions.push(sol);

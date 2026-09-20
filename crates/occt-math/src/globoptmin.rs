@@ -196,9 +196,33 @@ impl GlobOptMin {
 
     /// Search for global minima of `f` inside `[lower, upper]`^n.
     ///
-    /// On success the solutions can be retrieved via [`GlobOptMin::nb_extrema`],
-    /// [`GlobOptMin::point`] and [`GlobOptMin::minimal_value`].
+    /// This is the port's convenience combination of OCCT's
+    /// `SetGlobalParams` + `Perform` (the constructor's form). Callers that need
+    /// `math_GlobOptMin`'s incremental drive — one `SetLocalParams` + `Perform`
+    /// per parameter sub-box, with the best value and the solution list carried
+    /// across the calls, as `Extrema_GGenExtCC::Perform` does
+    /// (`Extrema_GGenExtCC.hxx:639-649`) — use [`GlobOptMin::set_global_params`]
+    /// followed by [`GlobOptMin::perform_local`].
     pub fn perform<F>(&mut self, f: F, lower: &MathVector, upper: &MathVector) -> Result<(), String>
+    where
+        F: Fn(&MathVector) -> f64,
+    {
+        let c = self.lip_const;
+        self.set_global_params(&f, lower, upper, c)?;
+        self.perform_local(&f)
+    }
+
+    /// `math_GlobOptMin::SetGlobalParams` (`cxx:112-148`): install the objective,
+    /// the Lipschitz estimate `the_c`, the global box and the working box,
+    /// `myMaxV = (b-a)/3`, then `initCellSize()` + `ComputeInitSol()` and
+    /// `myDone = false`.
+    pub fn set_global_params<F>(
+        &mut self,
+        f: &F,
+        lower: &MathVector,
+        upper: &MathVector,
+        the_c: f64,
+    ) -> Result<(), String>
     where
         F: Fn(&MathVector) -> f64,
     {
@@ -227,18 +251,29 @@ impl GlobOptMin {
             self.b.set_value(i, hi);
             self.max_v.set_value(i, (hi - lo) / 3.0);
         }
+        self.lip_const = the_c;
+        self.init_lip_const = the_c;
         self.z = -1.0;
         self.f = INF;
         self.y.clear();
         self.sol_count = 0;
         self.done = false;
 
-        // `math_GlobOptMin::SetGlobalParams` (`cxx:112-148`) runs
-        // `initCellSize()` + `ComputeInitSol()` on the GLOBAL box; the port runs
-        // the equivalent `compute_init_sol` here, i.e. before a pending
-        // `SetLocalParams` narrows the box — exactly OCCT's sequence in
-        // `Extrema_GGenExtCC::Perform` (`Extrema_GGenExtCC.hxx:648-649`).
-        self.compute_init_sol(&f)?;
+        // `ComputeInitSol()` runs here, i.e. before a pending `SetLocalParams`
+        // narrows the box — OCCT's sequence.
+        self.compute_init_sol(f)
+    }
+
+    /// `math_GlobOptMin::Perform(isFindSingleSolution)` (`cxx:192-262`) driven by
+    /// the state left by [`GlobOptMin::set_global_params`] /
+    /// [`GlobOptMin::set_local_params`]. **Does not reset** the best value or the
+    /// solution list, so successive calls accumulate — which is exactly how
+    /// `Extrema_GGenExtCC` uses it.
+    pub fn perform_local<F>(&mut self, f: &F) -> Result<(), String>
+    where
+        F: Fn(&MathVector) -> f64,
+    {
+        let n = self.n;
 
         // `math_GlobOptMin::SetLocalParams` (`cxx:154-171`): override the
         // working box (and `myMaxV`), reset `myZ`, keep `myDone = false`.
@@ -267,7 +302,7 @@ impl GlobOptMin {
             return Err("degenerated parameter space".into());
         }
         if !self.lip_const_locked {
-            self.compute_initial_values(&f);
+            self.compute_initial_values(f);
         }
         self.e1 = min_length * self.discretization_tol;
         self.e2 = max_length * self.discretization_tol;
@@ -284,7 +319,7 @@ impl GlobOptMin {
             return Ok(());
         }
         self.last_step = 0.0;
-        self.compute_global_extremum(&f, n);
+        self.compute_global_extremum(f, n);
         self.done = true;
         Ok(())
     }

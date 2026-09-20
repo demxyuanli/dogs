@@ -25,7 +25,7 @@ mod prelude {
 pub(crate) use std::cmp::Ordering;
 
 pub(crate) use occt_core::elib::clib;
-pub(crate) use occt_core::gp::{GpAx2, GpCirc, GpDir, GpLin, GpPnt, GpVec};
+pub(crate) use occt_core::gp::{GpCirc, GpLin, GpPnt, GpVec};
 pub(crate) use occt_core::precision::{ANGULAR, CONFUSION, RESOLUTION};
 
 pub(crate) use crate::curve::Curve;
@@ -37,9 +37,11 @@ pub(crate) use crate::extrema::ExtremaPair;
 mod p01;
 mod p02;
 mod p03;
+mod p04;
 pub use p01::*;
 pub use p02::*;
 pub use p03::*;
+pub use p04::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

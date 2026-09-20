@@ -28,6 +28,7 @@ version = "0.1.0"
 dependencies = [
  "occt-core",
  "occt-geom2d",
+ "occt-math",
 ]
 
 [[package]]

@@ -2,117 +2,6 @@ use super::prelude::*;
 use super::*;
 
 /// All local extrema of |C1−C2| via grid → bracket sign changes → Newton.
-pub(super) fn newton_curve_curve_all(c1: &dyn Curve, c2: &dyn Curve) -> Vec<ExtremaPair> {
-    let (a1, b1) = (c1.first_parameter(), c1.last_parameter());
-    let (a2, b2) = (c2.first_parameter(), c2.last_parameter());
-    let us = build_samples(c1, a1, b1);
-    let vs = build_samples(c2, a2, b2);
-    let n1 = us.len();
-    let n2 = vs.len();
-
-    // Sample F1, F2 and the squared distance on the grid.
-    let mut f1g = vec![vec![f64::NAN; n2]; n1];
-    let mut f2g = vec![vec![f64::NAN; n2]; n1];
-    let mut dg = vec![vec![f64::NAN; n2]; n1];
-    for i in 0..n1 {
-        for j in 0..n2 {
-            let u = us[i];
-            let v = vs[j];
-            let p1 = c1.d0(u);
-            let p2 = c2.d0(v);
-            let (_, du) = c1.d1(u);
-            let (_, dv) = c2.d1(v);
-            if !p1.x().is_finite() || !p2.x().is_finite() {
-                continue;
-            }
-            let d = GpVec::from_pnts(&p2, &p1);
-            let ndu = du.magnitude();
-            let ndv = dv.magnitude();
-            if ndu > 1e-12 {
-                f1g[i][j] = d.dot(&du) / ndu;
-            }
-            if ndv > 1e-12 {
-                f2g[i][j] = d.dot(&dv) / ndv;
-            }
-            dg[i][j] = p1.square_distance(&p2);
-        }
-    }
-
-    let mut seeds: Vec<(f64, f64)> = Vec::new();
-
-    // Sign changes of F1 (along u) and F2 (along v) bracket a root.
-    for i in 0..n1.saturating_sub(1) {
-        for j in 0..n2.saturating_sub(1) {
-            let a = f1g[i][j];
-            let b = f1g[i + 1][j];
-            let c = f2g[i][j];
-            let d = f2g[i][j + 1];
-            if !(a.is_finite() && b.is_finite() && c.is_finite() && d.is_finite()) {
-                continue;
-            }
-            let s1 = (a < 0.0 && b > 0.0) || (a > 0.0 && b < 0.0) || a.abs() < 1e-14 || b.abs() < 1e-14;
-            let s2 = (c < 0.0 && d > 0.0) || (c > 0.0 && d < 0.0) || c.abs() < 1e-14 || d.abs() < 1e-14;
-            if s1 && s2 {
-                seeds.push((0.5 * (us[i] + us[i + 1]), 0.5 * (vs[j] + vs[j + 1])));
-            }
-        }
-    }
-
-    // Local min/max suppression on the sampled squared distance (catches
-    // tangency extrema missed by sign changes).
-    for i in 1..n1.saturating_sub(1) {
-        for j in 1..n2.saturating_sub(1) {
-            let d = dg[i][j];
-            if !d.is_finite() {
-                continue;
-            }
-            let neighbors = [dg[i - 1][j], dg[i + 1][j], dg[i][j - 1], dg[i][j + 1]];
-            if !neighbors.iter().all(|x| x.is_finite()) {
-                continue;
-            }
-            let is_min = d <= neighbors[0] && d <= neighbors[1] && d <= neighbors[2] && d <= neighbors[3];
-            let is_max = d >= neighbors[0] && d >= neighbors[1] && d >= neighbors[2] && d >= neighbors[3];
-            if is_min || is_max {
-                seeds.push((us[i], vs[j]));
-            }
-        }
-    }
-
-    // Boundary seeds (best grid point on each edge) for trimmed curves.
-    if n1 >= 2 && n2 >= 2 {
-        let mut edges: [Option<(f64, f64)>; 4] = [None, None, None, None];
-        for i in 0..n1 {
-            if dg[i][0].is_finite() && edges[0].map_or(true, |(_, d)| dg[i][0] < d) {
-                edges[0] = Some((us[i], vs[0]));
-            }
-            if dg[i][n2 - 1].is_finite() && edges[1].map_or(true, |(_, d)| dg[i][n2 - 1] < d) {
-                edges[1] = Some((us[i], vs[n2 - 1]));
-            }
-        }
-        for j in 0..n2 {
-            if dg[0][j].is_finite() && edges[2].map_or(true, |(_, d)| dg[0][j] < d) {
-                edges[2] = Some((us[0], vs[j]));
-            }
-            if dg[n1 - 1][j].is_finite() && edges[3].map_or(true, |(_, d)| dg[n1 - 1][j] < d) {
-                edges[3] = Some((us[n1 - 1], vs[j]));
-            }
-        }
-        for e in edges.into_iter().flatten() {
-            seeds.push(e);
-        }
-    }
-
-    let mut out: Vec<ExtremaPair> = Vec::new();
-    for (u0, v0) in seeds {
-        let (u, v) = refine_curve_curve(c1, c2, u0, v0, a1, b1, a2, b2);
-        let p1 = c1.d0(u);
-        let p2 = c2.d0(v);
-        if p1.x().is_finite() && p2.x().is_finite() {
-            out.push(pair_cc(p1, u, p2, v));
-        }
-    }
-    dedupe_sort(out)
-}
 
 /// Deduplicate by parameter proximity and sort ascending by distance.
 pub(super) fn dedupe_sort(v: Vec<ExtremaPair>) -> Vec<ExtremaPair> {
@@ -149,20 +38,46 @@ pub(super) fn in_period(u: f64, lo: f64, period: f64) -> f64 {
 // Public dispatch.
 // ---------------------------------------------------------------------------
 
-/// All local extrema (minima and maxima) of the distance between two curves,
-/// deduplicated and sorted by distance.
-///
-/// Lines and circles are classified and solved analytically (exact); every
-/// other pair goes through the grid + Newton path. Unbounded curves use
-/// expanding-window grids.
+/// `Extrema_ExtCC` over the curves' own parameter ranges.
 pub fn curve_curve_extrema_all(c1: &dyn Curve, c2: &dyn Curve) -> Vec<ExtremaPair> {
     let (a1, b1) = (c1.first_parameter(), c1.last_parameter());
     let (a2, b2) = (c2.first_parameter(), c2.last_parameter());
+    curve_curve_extrema_all_range(c1, c2, a1, b1, a2, b2)
+}
 
-    let l1 = is_line(c1).then(|| line_of_curve(c1)).flatten();
-    let l2 = is_line(c2).then(|| line_of_curve(c2)).flatten();
-    let g1 = classify_circle(c1);
-    let g2 = classify_circle(c2);
+/// `Extrema_ExtCC(C1, C2, U1, U2, V1, V2)` — the extrema over explicit parameter
+/// ranges (`Extrema_ExtCC.cxx:150-190` installs them with `Initialize`/`SetParams`
+/// and hands them to `Extrema_ECC`, i.e. `Extrema_GGenExtCC`, as
+/// `myLowBorder`/`myUppBorder`, `cxx:180`).
+///
+/// This is what a caller that owns a *bounded* piece of an unbounded curve (an
+/// edge whose curve is an infinite line) must use: feeding the adaptor's own
+/// `±Precision::Infinite()` bounds to the optimizer cannot resolve extrema near
+/// small parameters.
+///
+/// Lines/circles plus elementary partners are solved analytically
+/// (`Extrema_ExtElC`, `Extrema_ExtCC.cxx:251-305`); everything else goes through
+/// [`GGenExtCC`]. Deduplicated and sorted by distance.
+pub fn curve_curve_extrema_all_range(
+    c1: &dyn Curve,
+    c2: &dyn Curve,
+    a1: f64,
+    b1: f64,
+    a2: f64,
+    b2: f64,
+) -> Vec<ExtremaPair> {
+
+    // `Extrema_ExtCC::Perform` dispatches on `Adaptor3d_Curve::GetType()`
+    // (`Extrema_ExtCC.cxx:251-305`): a line plus an elementary curve, or two
+    // circles, go to the analytic `Extrema_ExtElC`; everything else to
+    // `Extrema_ECC` (= `Extrema_GGenExtCC`). The port reads the type from the
+    // curve's own queries (`gp_line`/`gp_circ`), not from a sampling
+    // classifier — the previous `is_line`/`classify_circle` reconstruction is
+    // gone with the invented seed set.
+    let l1 = c1.gp_line();
+    let l2 = c2.gp_line();
+    let g1 = c1.gp_circ();
+    let g2 = c2.gp_circ();
 
     let analytic: Vec<ExtremaPair> = match (l1, l2, g1, g2) {
         (Some(l1), Some(l2), _, _) => line_line_extrema(&l1, &l2),
@@ -202,7 +117,19 @@ pub fn curve_curve_extrema_all(c1: &dyn Curve, c2: &dyn Curve) -> Vec<ExtremaPai
         }
     }
 
-    dedupe_sort(newton_curve_curve_all(c1, c2))
+    // `Extrema_ExtCC` falls back to `Extrema_ECC`, which *is*
+    // `Extrema_GGenExtCC` (`Extrema_ECC.hxx:23-28`), for every pair that is not
+    // an elementary `Extrema_ExtElC` case (`Extrema_ExtCC.cxx:248-305`).
+    let mut g = GGenExtCC::new(c1, c2, (a1, a2), (b1, b2));
+    if g.perform().is_err() || !g.is_done() {
+        return Vec::new();
+    }
+    let mut out: Vec<ExtremaPair> = Vec::new();
+    for n in 1..=g.nb_ext() {
+        let (u, p1, v, p2) = g.points(n);
+        out.push(pair_cc(p1, u, p2, v));
+    }
+    dedupe_sort(out)
 }
 
 /// Minimum distance between two curves (with the closest points and

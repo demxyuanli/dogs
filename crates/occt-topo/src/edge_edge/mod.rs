@@ -26,7 +26,7 @@ pub(crate) use std::sync::Arc;
 
 pub(crate) use occt_core::gp::{GpLin, GpPnt, GpVec};
 pub(crate) use occt_core::precision::ANGULAR;
-pub(crate) use occt_geom::extrema_cc::{curve_curve_extrema_all, locate_extcc};
+pub(crate) use occt_geom::extrema_cc::{curve_curve_extrema_all_range, locate_extcc};
 pub(crate) use occt_geom::geom_api;
 pub(crate) use occt_geom::Curve;
 
