@@ -26,8 +26,15 @@ pub struct GlobOptMin {
     pub find_single_solution: bool,
     /// If true, the Lipschitz constant is not re-estimated by `perform`.
     pub lip_const_locked: bool,
-    /// Lower bound on the objective considered "good enough".
+    /// Lower bound on the objective considered "good enough"
+    /// (`myFunctionalMinimalValue`, `math_GlobOptMin.hxx:238`).
     pub functional_minimal_value: f64,
+    /// `myCont` (`math_GlobOptMin.hxx:264`), default 2 (`cxx:69`).
+    pub cont: i32,
+    /// Pending `SetLocalParams` sub-box (`myLocalA`/`myLocalB` are not stored in
+    /// OCCT — `SetLocalParams` writes `myA`/`myB` directly; the port keeps the
+    /// request until `perform` reaches the same point of the sequence).
+    local_params: Option<(MathVector, MathVector)>,
 
     // State.
     done: bool,
@@ -72,6 +79,8 @@ impl GlobOptMin {
             find_single_solution: false,
             lip_const_locked: false,
             functional_minimal_value: -INF,
+            cont: 2,
+            local_params: None,
             done: false,
             n: 0,
             f: INF,
@@ -104,6 +113,67 @@ impl GlobOptMin {
     pub fn set_lip_const(&mut self, c: f64) {
         self.lip_const = c;
         self.init_lip_const = c;
+    }
+
+    /// `math_GlobOptMin::SetLipConstState(theFlag)` (`math_GlobOptMin.cxx:116-123`):
+    /// when locked, `Perform` does **not** re-estimate the Lipschitz constant
+    /// (`cxx:223-227`).
+    pub fn set_lip_const_state(&mut self, flag: bool) {
+        self.lip_const_locked = flag;
+    }
+
+    /// `math_GlobOptMin::GetLipConstState()` (`math_GlobOptMin.hxx:118`).
+    pub fn lip_const_state(&self) -> bool {
+        self.lip_const_locked
+    }
+
+    /// `math_GlobOptMin::SetContinuity(theCont)` (`math_GlobOptMin.hxx:102`).
+    ///
+    /// OCCT uses it to choose the local-refinement engine inside
+    /// `computeLocalExtremum` (`cxx:266-339`: `myCont >= 2` → `math_NewtonMinimum`
+    /// on a `math_MultipleVarFunctionWithHessian`, `myCont >= 1` → `math_BFGS`
+    /// on a `WithGradient`, else `math_Powell`). The port's `GlobOptMin` takes a
+    /// plain value closure, so the stored value has no engine to switch —
+    /// **UNPORTED** (see the note on `compute_local_extremum`).
+    pub fn set_continuity(&mut self, the_cont: i32) {
+        self.cont = the_cont;
+    }
+
+    /// `math_GlobOptMin::GetContinuity()` (`math_GlobOptMin.hxx:104`).
+    pub fn continuity(&self) -> i32 {
+        self.cont
+    }
+
+    /// `math_GlobOptMin::SetFunctionalMinimalValue(theMinimalValue)`
+    /// (`math_GlobOptMin.hxx:107-110`): the value the stop criterion
+    /// `CheckFunctionalStopCriteria` (`cxx:600-604`) compares against.
+    pub fn set_functional_minimal_value(&mut self, the_minimal_value: f64) {
+        self.functional_minimal_value = the_minimal_value;
+    }
+
+    /// `math_GlobOptMin::GetFunctionalMinimalValue()` (`math_GlobOptMin.hxx:112`).
+    pub fn functional_minimal_value(&self) -> f64 {
+        self.functional_minimal_value
+    }
+
+    /// `math_GlobOptMin::SetLocalParams(theLocalA, theLocalB)`
+    /// (`math_GlobOptMin.cxx:154-171`): restrict the search box to a sub-box
+    /// **without** re-running `ComputeInitSol` — OCCT relies on that: the
+    /// constructor's `SetGlobalParams` (`cxx:112-148`) already ran
+    /// `initCellSize()` + `ComputeInitSol()` on the *global* box, and
+    /// `Extrema_GGenExtCC::Perform` then calls `SetLocalParams` per interval
+    /// pair before every `Perform` (`Extrema_GGenExtCC.hxx:648-649`).
+    ///
+    /// The port's [`GlobOptMin::perform`] applies this pending sub-box at the
+    /// same point of the sequence (after the global `compute_init_sol`, before
+    /// the `e1/e2/e3` setup of `Perform`).
+    pub fn set_local_params(&mut self, the_local_a: &MathVector, the_local_b: &MathVector) {
+        self.local_params = Some((the_local_a.clone(), the_local_b.clone()));
+    }
+
+    /// The pending `SetLocalParams` box, if any.
+    pub fn local_params(&self) -> Option<(&MathVector, &MathVector)> {
+        self.local_params.as_ref().map(|(a, b)| (a, b))
     }
 
     /// 2-D convenience wrapper: minimize `f(x, y)` over
@@ -163,6 +233,26 @@ impl GlobOptMin {
         self.sol_count = 0;
         self.done = false;
 
+        // `math_GlobOptMin::SetGlobalParams` (`cxx:112-148`) runs
+        // `initCellSize()` + `ComputeInitSol()` on the GLOBAL box; the port runs
+        // the equivalent `compute_init_sol` here, i.e. before a pending
+        // `SetLocalParams` narrows the box — exactly OCCT's sequence in
+        // `Extrema_GGenExtCC::Perform` (`Extrema_GGenExtCC.hxx:648-649`).
+        self.compute_init_sol(&f)?;
+
+        // `math_GlobOptMin::SetLocalParams` (`cxx:154-171`): override the
+        // working box (and `myMaxV`), reset `myZ`, keep `myDone = false`.
+        if let Some((la, lb)) = self.local_params.clone() {
+            for i in 1..=n {
+                self.a.set_value(i, la.value(i));
+                self.b.set_value(i, lb.value(i));
+                self.max_v
+                    .set_value(i, (self.b.value(i) - self.a.value(i)) / 3.0);
+            }
+            self.z = -1.0;
+            self.done = false;
+        }
+
         let mut min_length = f64::MAX;
         let mut max_length = f64::MIN;
         for i in 1..=n {
@@ -172,7 +262,8 @@ impl GlobOptMin {
             self.v.set_value(i, 0.0);
         }
         if min_length < 1.0e-9 {
-            // Degenerate parameter space (`Precision::PConfusion()`).
+            // Degenerate parameter space (`Precision::PConfusion()`, `cxx:214-221`;
+            // OCCT returns with `myDone = false`, the port reports it).
             return Err("degenerated parameter space".into());
         }
         if !self.lip_const_locked {
@@ -188,7 +279,6 @@ impl GlobOptMin {
             self.e3 = -max_length * self.discretization_tol * self.lip_const / 4.0;
         }
 
-        self.compute_init_sol(&f)?;
         if self.check_functional_stop_criteria() {
             self.done = true;
             return Ok(());
@@ -411,6 +501,17 @@ impl GlobOptMin {
 
     /// Run a local descent from `pnt`; returns the minimizing point and its
     /// value if it lies inside the global box.
+    /// Local refinement from a seed point.
+    ///
+    /// **UNPORTED (audit A7/T-66)**: OCCT's `computeLocalExtremum`
+    /// (`math_GlobOptMin.cxx:266-339`) selects the engine from `myCont` and the
+    /// runtime type of `myFunc`: `myCont >= 2` + `math_MultipleVarFunctionWithHessian`
+    /// → `math_NewtonMinimum` (with `SetBoundary(myGlobA, myGlobB)`), `myCont >= 1`
+    /// + `WithGradient` → `math_BFGS`, else `math_Powell` with an identity
+    /// direction matrix. The port's `GlobOptMin` takes a plain value closure and
+    /// has no function-class hierarchy, so only the BFGS arm exists and its
+    /// gradient is a numeric difference. `set_continuity` is therefore stored
+    /// but does not switch engines.
     fn compute_local_extremum<F: Fn(&MathVector) -> f64>(
         &self,
         f: &F,
