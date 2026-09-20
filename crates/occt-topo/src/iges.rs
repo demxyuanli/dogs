@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use occt_core::gp::{GpDir, GpPln, GpPnt, GpVec};
+use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt, GpVec};
 use occt_geom::{Curve, Surface};
 
 use crate::abs::ShapeType;
@@ -79,11 +79,6 @@ fn param_line(content: &str, de_pointer: usize, seq: usize) -> String {
 /// Right-justify a value in an 8-column IGES field.
 fn field8(v: &str) -> String {
     format!("{v:>8}")
-}
-
-/// Left-justify a label in an 8-column IGES field.
-fn field8l(v: &str) -> String {
-    format!("{v:<8}")
 }
 
 /// Render an f64 in IGES parameter syntax (always carries a decimal point or
@@ -279,6 +274,136 @@ fn swept_surface_kind(s: &dyn Surface) -> Option<SweptKind> {
     }
 }
 
+/// The unit of the model space the Global section declares
+/// (`IGESData_IGESWriter.cxx:38-45` writes `2Hmm` with unit flag 2 = millimetre,
+/// so `GeomToIGES_GeomEntity::GetUnit()` is 1: distances are written as they are).
+const IGES_UNIT: f64 = 1.0;
+
+/// `IGESConvGeom_GeomBuilder::IsIdentity` (`IGESConvGeom_GeomBuilder.cxx:159-175`,
+/// `epsl = epsa = 1.E-10` at `:29-30`): the frame's 3x3 part is the identity
+/// within `epsa` and its translation part vanishes within `epsl`. In OCCT `thepos`
+/// is the frame's **local → global** transformation (`SetPosition(pos)` stores
+/// `Trsf(pos, gp::XOY())`, `:137-143`) and `EvalXYZ` applies its inverse
+/// (`:212-216`), so `thepos` is the identity exactly when the frame is the
+/// absolute one.
+fn frame_is_identity(frame: &GpAx3) -> bool {
+    let eps = 1e-10;
+    let (x, y, z) = (
+        *frame.x_direction().xyz(),
+        *frame.y_direction().xyz(),
+        *frame.direction().xyz(),
+    );
+    let o = frame.location().coord;
+    let m = [
+        [x.x(), y.x(), z.x()],
+        [x.y(), y.y(), z.y()],
+        [x.z(), y.z(), z.z()],
+    ];
+    for (i, row) in m.iter().enumerate() {
+        for (j, v) in row.iter().enumerate() {
+            let cons = if i == j { 1.0 } else { 0.0 };
+            if (*v - cons).abs() > eps {
+                return false;
+            }
+        }
+    }
+    o.x().abs() <= eps && o.y().abs() <= eps && o.z().abs() <= eps
+}
+
+/// `IGESConvGeom_GeomBuilder::EvalXYZ` (`IGESConvGeom_GeomBuilder.cxx:212-216`):
+/// the point expressed in the frame's local coordinates (the frame's axes are
+/// orthonormal, so this is `thepos.Inverted()` applied to the point).
+fn frame_local_point(frame: &GpAx3, p: &GpPnt) -> (f64, f64, f64) {
+    let d = p.coord.subtracted(&frame.location().coord);
+    (
+        d.dot(frame.x_direction().xyz()),
+        d.dot(frame.y_direction().xyz()),
+        d.dot(&frame.direction().xyz()),
+    )
+}
+
+/// `gp_Elips2d::Coefficients` (`gp_Elips2d.cxx:25-62`) evaluated on the frame
+/// `gp_Ax22d(gp::Origin2d(), gp::DX2d(), gp::DY2d())` that
+/// `GeomToIGES_GeomCurve.cxx:671` builds. With that frame the `gp_Trsf2d T` there
+/// is the identity, so the general sums collapse to
+/// `A = 1/DMaj, B = 1/DMin, C = D = E = 0, F = -1`; the degenerate arm
+/// (`DMin <= gp::Resolution()`, `:35-45`) keeps its own form. The result is in
+/// `gp_Elips2d::Coefficients`' **own** output order — the caller in
+/// `GeomToIGES_GeomCurve.cxx:675` passes it in the shuffled order `(A, C, B, D,
+/// E, F)`.
+fn gp_elips2d_coefficients(major: f64, minor: f64) -> (f64, f64, f64, f64, f64, f64) {
+    let dmin = minor * minor;
+    let dmaj = major * major;
+    if dmin <= occt_core::precision::REAL_SMALL && dmaj <= occt_core::precision::REAL_SMALL {
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    } else if dmin <= occt_core::precision::REAL_SMALL {
+        (1.0, 0.0, 0.0, 0.0, 0.0, -dmaj)
+    } else {
+        (1.0 / dmaj, 1.0 / dmin, 0.0, 0.0, 0.0, -1.0)
+    }
+}
+
+/// `gp_Hypr2d::Coefficients` (`gp_Hypr2d.cxx:25-61`) on the same identity frame:
+/// `A = 1/DMaj, B = -1/DMin, C = D = E = 0, F = -1`, with the same degenerate arm.
+fn gp_hypr2d_coefficients(major: f64, minor: f64) -> (f64, f64, f64, f64, f64, f64) {
+    let dmin = minor * minor;
+    let dmaj = major * major;
+    if dmin <= occt_core::precision::REAL_SMALL && dmaj <= occt_core::precision::REAL_SMALL {
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    } else if dmin <= occt_core::precision::REAL_SMALL {
+        (1.0, 0.0, 0.0, 0.0, 0.0, -dmaj)
+    } else {
+        (1.0 / dmaj, -1.0 / dmin, 0.0, 0.0, 0.0, -1.0)
+    }
+}
+
+/// `gp_Parab2d::Coefficients` (`gp_Parab2d.cxx:44-60`) on the same identity frame,
+/// with `P = 2 * focalLength` and `focalLength = start->Focal() * 2`
+/// (`GeomToIGES_GeomCurve.cxx:818-819`): `A = C = 0`, `B = 1`, `D = -P`,
+/// `E = F = 0`.
+fn gp_parab2d_coefficients(focal: f64) -> (f64, f64, f64, f64, f64, f64) {
+    let p = 2.0 * (focal * 2.0);
+    (0.0, 1.0, 0.0, -p, 0.0, 0.0)
+}
+
+/// `GeomToIGES_GeomCurve.cxx:722-729` (hyperbola) and `:795-802` (parabola): a
+/// range end past `Precision::Infinite()` becomes ±`Precision::Infinite()`. The
+/// ellipse branch has no such arm.
+fn occt_infinite_range(a: f64, b: f64) -> (f64, f64) {
+    let u1 = if occt_core::precision::Precision::is_negative_infinite(a) {
+        -occt_core::precision::INFINITE
+    } else {
+        a
+    };
+    let u2 = if occt_core::precision::Precision::is_positive_infinite(b) {
+        occt_core::precision::INFINITE
+    } else {
+        b
+    };
+    (u1, u2)
+}
+
+/// `IGESGeom_ConicArc::ComputedFormNumber` (`IGESGeom_ConicArc.cxx:97-124`):
+/// form 1 ellipse, 2 hyperbola, 3 parabola, 0 when the coefficients identify no
+/// conic. `eps = 1.E-08` there, `eps2 = eps*eps`, `eps4 = eps2*eps2`.
+fn conic_form_number(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> i32 {
+    let eps = 1e-8f64;
+    let eps4 = (eps * eps) * (eps * eps);
+    let q1 = a * (c * f - e * e / 4.0) + b / 2.0 * (e * d / 4.0 - b * f / 2.0)
+        + d / 2.0 * (b * e / 4.0 - c * d / 2.0);
+    let q2 = a * c - b * b / 4.0;
+    let q3 = a + c;
+    if q2 > eps4 && q1 * q3 < 0.0 {
+        1
+    } else if q2 < -eps4 && q1.abs() > eps4 {
+        2
+    } else if q2.abs() <= eps4 && q1.abs() > eps4 {
+        3
+    } else {
+        0
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Entity bookkeeping
 // ---------------------------------------------------------------------------
@@ -287,7 +412,10 @@ fn swept_surface_kind(s: &dyn Surface) -> Option<SweptKind> {
 struct Ent {
     ty: i32,
     form: i32,
-    label: String,
+    /// Pointer to the entity's transformation matrix (`#124`), `HasTransf()` in
+    /// `IGESData_IGESEntity`; written to DE card 1 field 7
+    /// (`IGESData_IGESWriter.cxx:324-331`, `v[6] = themodel->DNum(...)`).
+    trsf: Option<usize>,
     /// Parameter data, always ending with the record delimiter `;`.
     params: String,
 }
@@ -312,20 +440,29 @@ impl Ent {
     }
 
     /// The two Directory Entry cards of the entity
-    /// (`IGESData_IGESWriter.cxx:809-880`): eight 8-column fields plus four
-    /// 2-column status fields on the first card, and nine 8-column fields on the
-    /// second - 72 data columns each. Card 1 field 2 is the sequence number of the
-    /// entity's **first parameter card** (`v[1] = thepnum.Value(i)`, `cxx:834`),
-    /// card 2 field 4 the number of parameter cards
-    /// (`v[15] = thepnum.Value(i+1) - thepnum.Value(i)`, `cxx:835`).
+    /// (`IGESData_IGESWriter.cxx:276-365` filling `v[0..16]`, `:809-880` laying
+    /// the cards out): eight 8-column fields plus four 2-column status fields on
+    /// the first card and nine 8-column fields on the second - 72 data columns
+    /// each. Card 1 field 2 is the sequence number of the entity's **first
+    /// parameter card** (`v[1] = thepnum.Value(i)`, `cxx:834`), field 7 the
+    /// transformation matrix pointer (`cxx:324-331`); card 2 field 4 is the number
+    /// of parameter cards (`v[15]`, `cxx:835`), field 5 the form number
+    /// (`v[16] = anent->FormNumber()`, `cxx:364`).
+    ///
+    /// The remaining fields carry `IGESData_IGESEntity`'s defaults: line weight
+    /// `theLWeightNum = 0` and color `DefColor() == DefVoid` ⇒ 0
+    /// (`IGESData_IGESEntity.cxx:53-63`, `IGESData_IGESWriter.cxx:347-361`), a
+    /// blank label (`theShortLabel` is null unless `SetShortLabel` is called,
+    /// `cxx:366-379`) and the subscript number `theSubScriptN = 0`
+    /// (`IGESData_IGESEntity.cxx:60`, written right-justified by `cxx:380-391`).
     fn directory_lines(&self, p_start: usize) -> (String, String) {
         let ty = field8(&self.ty.to_string());
         let pstart = field8(&p_start.to_string());
         let pcount = field8(&self.param_line_count().to_string());
         let form = field8(&self.form.to_string());
+        let trsf = field8(&self.trsf.map_or("0".to_string(), |t| t.to_string()));
         let l1 = format!(
-            "{ty}{pstart}{}{}{}{}{}{}{:>2}{:>2}{:>2}{:>2}",
-            field8("0"),
+            "{ty}{pstart}{}{}{}{}{trsf}{}{:>2}{:>2}{:>2}{:>2}",
             field8("0"),
             field8("0"),
             field8("0"),
@@ -338,11 +475,11 @@ impl Ent {
         );
         let l2 = format!(
             "{ty}{}{}{pcount}{form}{}{}{}{}",
-            field8("1"),
-            field8("7"),
+            field8("0"),
+            field8("0"),
             field8(""),
             field8(""),
-            field8l(&self.label),
+            field8(""),
             field8("0")
         );
         (l1, l2)
@@ -365,14 +502,25 @@ impl IgesWriter {
         }
     }
 
-    fn emit(&mut self, ty: i32, form: i32, label: &str, params: String) -> usize {
+    /// Register one entity. The DE label, line weight, color and status fields are
+    /// not parameters here: OCCT's writer takes them from the entity's own
+    /// `IGESData_IGESEntity` state, which is at its defaults for generated
+    /// geometry (`IGESData_IGESWriter.cxx:276-365`), see
+    /// [`Ent::directory_lines`].
+    fn emit(&mut self, ty: i32, form: i32, params: String) -> usize {
         self.entities.push(Ent {
             ty,
             form,
-            label: label.into(),
+            trsf: None,
             params,
         });
         self.entities.len()
+    }
+
+    /// `IGESData_IGESEntity::InitTransf` — record the entity's transformation
+    /// matrix pointer, written to DE card 1 field 7 (`IGESData_IGESWriter.cxx:324-331`).
+    fn set_trsf(&mut self, de: usize, trsf: usize) {
+        self.entities[de - 1].trsf = Some(trsf);
     }
 
     // ---- geometry entities ----
@@ -381,7 +529,6 @@ impl IgesWriter {
         self.emit(
             116,
             0,
-            "POINT",
             format!("116,{},{},{};", num(p.x()), num(p.y()), num(p.z())),
         )
     }
@@ -390,7 +537,6 @@ impl IgesWriter {
         self.emit(
             110,
             0,
-            "LINE",
             format!(
                 "110,{},{},{},{},{},{};",
                 num(a.x()),
@@ -410,7 +556,6 @@ impl IgesWriter {
         self.emit(
             108,
             1,
-            "PLANE",
             format!("108,{},{},{},{};", num(n.x), num(n.y), num(n.z), num(d)),
         )
     }
@@ -419,7 +564,6 @@ impl IgesWriter {
         self.emit(
             100,
             0,
-            "ARC",
             format!(
                 "100,0.,{},{},{},{},{},{},{},{},{},{},{},{};",
                 num(center.x()),
@@ -507,11 +651,13 @@ impl IgesWriter {
             // narrower than the curve's own; this port has neither, so those cases
             // return `None`.
             IgCurveKind::Bounded => self.emit_bspline_curve(curve, a, b),
-            // UNPORTED (audit A26 / task T-78): `TransferConic`
-            // (`GeomToIGES_GeomCurve.cxx:533-603`) writes entity 104 for
-            // ellipse/hyperbola/parabola; any other curve type has no branch in
-            // `TransferCurve` and yields a null handle.
-            IgCurveKind::Conic | IgCurveKind::Other => None,
+            // `TransferConic` (`GeomToIGES_GeomCurve.cxx:533-603` is the circle;
+            // the ellipse/hyperbola/parabola transfers are `:608-700`, `:707-773`,
+            // `:780-845`) writes entity 104. Any other curve type has no branch in
+            // `TransferCurve` and yields a null handle (UNPORTED, audit A26 /
+            // task T-78).
+            IgCurveKind::Conic => self.emit_conic_arc(curve, a, b),
+            IgCurveKind::Other => None,
         }
     }
 
@@ -634,7 +780,7 @@ impl IgesWriter {
             num(normal.y()),
             num(normal.z())
         ));
-        Some(self.emit(126, 0, "B_SPLINE_CURVE", s))
+        Some(self.emit(126, 0, s))
     }
 
     /// Entity 123 Direction (`IGESGeom_ToolDirection::WriteOwnParams`,
@@ -644,7 +790,6 @@ impl IgesWriter {
         self.emit(
             123,
             0,
-            "DIRECTION",
             format!("123,{},{},{};", num(d.x()), num(d.y()), num(d.z())),
         )
     }
@@ -668,7 +813,6 @@ impl IgesWriter {
         self.emit(
             196,
             0,
-            "SPHERICAL_SURFACE",
             format!("196,{c},{},{a},{r};", num(radius)),
         )
     }
@@ -690,7 +834,6 @@ impl IgesWriter {
         self.emit(
             192,
             0,
-            "CYLINDRICAL_SURFACE",
             format!("192,{l},{a},{},{r};", num(radius)),
         )
     }
@@ -730,7 +873,6 @@ impl IgesWriter {
         self.emit(
             194,
             0,
-            "CONICAL_SURFACE",
             format!(
                 "194,{l},{a},{},{},{r};",
                 num(ref_radius),
@@ -757,7 +899,6 @@ impl IgesWriter {
         self.emit(
             198,
             0,
-            "TOROIDAL_SURFACE",
             format!("198,{c},{a},{},{},{r};", num(major), num(minor)),
         )
     }
@@ -854,7 +995,7 @@ impl IgesWriter {
             num(v0),
             num(v1)
         ));
-        Some(self.emit(128, 0, "B_SPLINE_SURFACE", s))
+        Some(self.emit(128, 0, s))
     }
 
     /// Entity 120 (`GeomToIGES_GeomSurface::TransferSurface(
@@ -901,7 +1042,6 @@ impl IgesWriter {
         Some(self.emit(
             120,
             0,
-            "SURFACE_OF_REVOLUTION",
             format!(
                 "120,{axis_line},{generatrix},{},{};",
                 num(tau - u1),
@@ -955,7 +1095,6 @@ impl IgesWriter {
         Some(self.emit(
             122,
             0,
-            "TABULATED_CYLINDER",
             format!(
                 "122,{directrix},{},{},{};",
                 num(end.x()),
@@ -963,6 +1102,127 @@ impl IgesWriter {
                 num(end.z())
             ),
         ))
+    }
+
+    /// Entity 124 (`IGESConvGeom_GeomBuilder::MakeTransformation`,
+    /// `IGESConvGeom_GeomBuilder.cxx:218-237`, written by
+    /// `IGESGeom_ToolTransformationMatrix::WriteOwnParams`,
+    /// `IGESGeom_ToolTransformationMatrix.cxx:90-104`): the frame's 3x4 matrix
+    /// `R11 R12 R13 T1 R21 R22 R23 T2 R31 R32 R33 T3`, the translation column
+    /// divided by the file unit; form 1 when the frame is left-handed
+    /// (`rs->SetFormNumber(1)` when `thepos.IsNegative()`).
+    fn emit_transformation_matrix(&mut self, frame: &GpAx3, unit: f64) -> usize {
+        let x = *frame.x_direction().xyz();
+        let y = *frame.y_direction().xyz();
+        let z = *frame.direction().xyz();
+        let o = frame.location().coord;
+        let rows = [
+            [x.x(), y.x(), z.x()],
+            [x.y(), y.y(), z.y()],
+            [x.z(), y.z(), z.z()],
+        ];
+        let form = if det3(&rows) < 0.0 { 1 } else { 0 };
+        let mut s = String::from("124");
+        for (i, row) in rows.iter().enumerate() {
+            for v in row {
+                s.push(',');
+                s.push_str(&num(*v));
+            }
+            s.push(',');
+            let t = match i {
+                0 => o.x(),
+                1 => o.y(),
+                _ => o.z(),
+            };
+            s.push_str(&num(t / unit));
+        }
+        s.push(';');
+        self.emit(124, form, s)
+    }
+
+    /// Entity 104 (`GeomToIGES_GeomCurve::TransferCurve(Geom_Ellipse)`,
+    /// `GeomToIGES_GeomCurve.cxx:608-700`; `(Geom_Hyperbola)`, `:707-773`;
+    /// `(Geom_Parabola)`, `:780-845`; written by
+    /// `IGESGeom_ToolConicArc::WriteOwnParams`, `IGESGeom_ToolConicArc.cxx:103-125`):
+    ///
+    /// `104, A, B, C, D, E, F, ZT, start.x, start.y, end.x, end.y;`
+    ///
+    /// The coefficients come from the 2d conic built on the identity frame (see
+    /// [`gp_elips2d_coefficients`]) with the radii divided by the file unit, the
+    /// DE form number from [`conic_form_number`] (`IGESGeom_ConicArc::Init`,
+    /// `IGESGeom_ConicArc.cxx:33-53`), `ZT = 0` and the arc's end points in the
+    /// conic's own frame (`Build.EvalXYZ`, `:669-670`). A frame other than the
+    /// absolute one is recorded as entity 124 on the DE card
+    /// (`:692-697`). Returns `None` for the full-period ellipse, which OCCT routes
+    /// through `GeomConvert_ApproxCurve` instead (`:620-645`).
+    fn emit_conic_arc(&mut self, curve: &dyn Curve, a: f64, b: f64) -> Option<usize> {
+        use std::f64::consts::PI;
+        let unit = IGES_UNIT;
+        let (abc, pos, u1, u2) = if let Some(e) = curve.gp_ellipse() {
+            if (b - a - 2.0 * PI).abs() <= occt_core::precision::PCONFUSION {
+                // UNPORTED (audit A26 / task T-78): `cxx:620-645` converts the
+                // full-period ellipse with `GeomConvert_ApproxCurve` (then
+                // `GeomConvert::CurveToBSplineCurve` + `Reparametrize`) and
+                // transfers that B-spline; this port has no `GeomConvert_ApproxCurve`.
+                return None;
+            }
+            // `cxx:649-654`: `|Udeb| <= gp::Resolution()` is snapped to 0.
+            let u1 = if a.abs() <= occt_core::precision::REAL_SMALL {
+                0.0
+            } else {
+                a
+            };
+            let (fa, fb, fc, fd, fe, ff) =
+                gp_elips2d_coefficients(e.major_radius() / unit, e.minor_radius() / unit);
+            // `E2d.Coefficients(A, C, B, D, E, F)` (`cxx:675`) then
+            // `Init(A, 2*B, C, 2*D, 2*E, F)` (`cxx:678-686`).
+            ([fa, 2.0 * fc, fb, 2.0 * fd, 2.0 * fe, ff], *e.position(), u1, b)
+        } else if let Some(h) = curve.gp_hyperbola() {
+            let (u1, u2) = occt_infinite_range(a, b);
+            let (fa, fb, fc, fd, fe, ff) =
+                gp_hypr2d_coefficients(h.major_radius / unit, h.minor_radius / unit);
+            // `H2d.Coefficients(A, C, B, D, E, F)` (`cxx:749`) then
+            // `Init(A, B, C, D, E, F)` (`cxx:751-759`; no doubling here).
+            ([fa, fc, fb, fd, fe, ff], *h.position(), u1, u2)
+        } else if let Some(p) = curve.gp_parabola() {
+            let (u1, u2) = occt_infinite_range(a, b);
+            let (fa, fb, fc, fd, fe, ff) = gp_parab2d_coefficients(p.focal / unit);
+            // `P2d.Coefficients(A, C, B, D, E, F)` (`cxx:821`) then
+            // `Init(A, B, C, D, E, F)` (`cxx:823-831`; no doubling here).
+            ([fa, fc, fb, fd, fe, ff], *p.position(), u1, u2)
+        } else {
+            return None;
+        };
+        let frame = pos.to_ax3();
+        let (sx, sy, _) = frame_local_point(&frame, &curve.d0(u1));
+        let (ex, ey, _) = frame_local_point(&frame, &curve.d0(u2));
+        let [fa, fb, fc, fd, fe, ff] = abc;
+        let form = conic_form_number(fa, fb, fc, fd, fe, ff);
+        let de = self.emit(
+            104,
+            form,
+            format!(
+                "104,{},{},{},{},{},{},{},{},{},{},{};",
+                num(fa),
+                num(fb),
+                num(fc),
+                num(fd),
+                num(fe),
+                num(ff),
+                num(0.0),
+                num(sx),
+                num(sy),
+                num(ex),
+                num(ey)
+            ),
+        );
+        // `cxx:688-697`: the transformation matrix is created **after** the conic
+        // arc and recorded on it (`Conic->InitTransf(TMat)`).
+        if !frame_is_identity(&frame) {
+            let t = self.emit_transformation_matrix(&frame, unit);
+            self.set_trsf(de, t);
+        }
+        Some(de)
     }
 
     /// Base surface entity for a face, plus any synthesized boundary curves
@@ -1135,7 +1395,6 @@ impl IgesWriter {
             self.emit(
                 144,
                 0,
-                "TRIMMED",
                 format!("144,{surf_idx},{},{},{},{},1,{m},{};", num(u0), num(u1), num(v0), num(v1), refs),
             )
         };
@@ -1145,7 +1404,7 @@ impl IgesWriter {
             params.push_str(&format!(",{c}"));
         }
         params.push(';');
-        self.emit(510, 0, "FACE", params)
+        self.emit(510, 0, params)
     }
 
     fn emit_shell(&mut self, sh: &Shell) -> usize {
@@ -1154,7 +1413,7 @@ impl IgesWriter {
             .iter()
             .map(|f| self.emit_face(&Face(f.clone())).to_string())
             .collect();
-        self.emit(514, 0, "SHELL", format!("514,{};", refs.join(",")))
+        self.emit(514, 0, format!("514,{};", refs.join(",")))
     }
 
     fn emit_solid(&mut self, s: &Solid) -> usize {
@@ -1164,7 +1423,7 @@ impl IgesWriter {
             .map(|sh| self.emit_shell(&Shell(sh.clone())).to_string())
             .collect();
         let outer = refs.first().cloned().unwrap_or_else(|| "0".to_string());
-        self.emit(186, 0, "MSBO", format!("186,{outer};"))
+        self.emit(186, 0, format!("186,{outer};"))
     }
 
     fn emit_shape(&mut self, shape: &TopoShape) {
