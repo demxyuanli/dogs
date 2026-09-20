@@ -1,7 +1,7 @@
 //! Elementary Curves Library. Source: `ElCLib.hxx`
 use crate::gp::{
-    GpAx2, GpAx22d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr, GpLin, GpLin2d,
-    GpParab, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXY,
+    GpAx2, GpAx22d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr, GpHypr2d, GpLin,
+    GpLin2d, GpParab, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXY,
 };
 use crate::precision::{COMPUTATIONAL, RESOLUTION};
 
@@ -43,6 +43,19 @@ pub fn circle_d2(c: &GpCirc, u: f64) -> (GpPnt, GpVec, GpVec) {
     (p, d1, d2)
 }
 
+/// `ElCLib::CircleD3(U, gp_Ax2, Radius)` (`ElCLib.cxx:435-460`):
+/// `V3 = Radius*sin(U)*XDir - Radius*cos(U)*YDir` (= `-V1`). Needed by
+/// `Geom_OffsetCurve`'s `CalculateD2`, whose `D2Ndir` term consumes the basis's
+/// third derivative (audit A0/T-63).
+pub fn circle_d3(c: &GpCirc, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
+    let r = c.radius;
+    let p = circle_value(c, u);
+    let d1 = vec_add(c.pos.x_direction().xyz(), -r*u.sin(), c.pos.y_direction().xyz(), r*u.cos());
+    let d2 = vec_add(c.pos.x_direction().xyz(), -r*u.cos(), c.pos.y_direction().xyz(), -r*u.sin());
+    let d3 = vec_add(c.pos.x_direction().xyz(), r*u.sin(), c.pos.y_direction().xyz(), -r*u.cos());
+    (p, d1, d2, d3)
+}
+
 /// `ElCLib::EllipseValue(U, gp_Ax2, Major, Minor)` (`cxx:176-189`):
 /// `P = Loc + Major*cos(U)*XDir + Minor*sin(U)*YDir`.
 ///
@@ -74,6 +87,17 @@ pub fn ellipse_d2(e: &GpElips, u: f64) -> (GpPnt, GpVec, GpVec) {
     (p, d1, d2)
 }
 
+/// `ElCLib::EllipseD3(U, gp_Ax2, Major, Minor)` (`ElCLib.cxx:464-491`):
+/// `V3 = Major*sin(U)*XDir - Minor*cos(U)*YDir` (= `-V1`).
+pub fn ellipse_d3(e: &GpElips, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
+    let a = e.major_radius; let b = e.minor_radius;
+    let p = ellipse_value(e, u);
+    let d1 = vec_add(e.pos.x_direction().xyz(), -a*u.sin(), e.pos.y_direction().xyz(), b*u.cos());
+    let d2 = vec_add(e.pos.x_direction().xyz(), -a*u.cos(), e.pos.y_direction().xyz(), -b*u.sin());
+    let d3 = vec_add(e.pos.x_direction().xyz(), a*u.sin(), e.pos.y_direction().xyz(), -b*u.cos());
+    (p, d1, d2, d3)
+}
+
 pub fn hyperbola_value(h: &GpHypr, u: f64) -> GpPnt {
     let a = h.major_radius; let b = h.minor_radius;
     pt_add(&h.location().coord, h.pos.x_direction().xyz(), a*u.cosh(), h.pos.y_direction().xyz(), b*u.sinh())
@@ -84,10 +108,52 @@ pub fn hyperbola_d1(h: &GpHypr, u: f64) -> (GpPnt, GpVec) {
     (p, vec_add(h.pos.x_direction().xyz(), a*u.sinh(), h.pos.y_direction().xyz(), b*u.cosh()))
 }
 
+/// `ElCLib::HyperbolaD2(U, gp_Ax2, Major, Minor)` (`ElCLib.cxx:378-401`):
+/// `V1 = Major*sinh(U)*XDir + Minor*cosh(U)*YDir`,
+/// `V2 = Major*cosh(U)*XDir + Minor*sinh(U)*YDir`.
+pub fn hyperbola_d2(h: &GpHypr, u: f64) -> (GpPnt, GpVec, GpVec) {
+    let a = h.major_radius; let b = h.minor_radius;
+    let p = hyperbola_value(h, u);
+    let d1 = vec_add(h.pos.x_direction().xyz(), a*u.sinh(), h.pos.y_direction().xyz(), b*u.cosh());
+    let d2 = vec_add(h.pos.x_direction().xyz(), a*u.cosh(), h.pos.y_direction().xyz(), b*u.sinh());
+    (p, d1, d2)
+}
+
+/// `ElCLib::HyperbolaD3(U, gp_Ax2, Major, Minor)` (`ElCLib.cxx:494-516`):
+/// `V1 = V3 = Major*sinh(U)*XDir + Minor*cosh(U)*YDir` (OCCT sets `V3` from the
+/// same linear form as `V1`).
+pub fn hyperbola_d3(h: &GpHypr, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
+    let a = h.major_radius; let b = h.minor_radius;
+    let p = hyperbola_value(h, u);
+    let d1 = vec_add(h.pos.x_direction().xyz(), a*u.sinh(), h.pos.y_direction().xyz(), b*u.cosh());
+    let d2 = vec_add(h.pos.x_direction().xyz(), a*u.cosh(), h.pos.y_direction().xyz(), b*u.sinh());
+    let d3 = vec_add(h.pos.x_direction().xyz(), a*u.sinh(), h.pos.y_direction().xyz(), b*u.cosh());
+    (p, d1, d2, d3)
+}
+
 pub fn parabola_value(p: &GpParab, u: f64) -> GpPnt {
     let f = p.focal;
     pt_add(&p.location().coord, p.pos.x_direction().xyz(), u*u/(4.0*f), p.pos.y_direction().xyz(), u)
 }
+/// `ElCLib::ParabolaD2(U, gp_Ax2, Focal)` (`ElCLib.cxx:404-431`):
+/// `P = Loc + U²/(4F)*XDir + U*YDir`, `V1 = U/(2F)*XDir + YDir`,
+/// `V2 = XDir/(2F)`. When `|Focal| <= gp::Resolution()` OCCT returns
+/// `P = Loc`, `V1 = YDir`, `V2 = 0`.
+pub fn parabola_d2(p: &GpParab, u: f64) -> (GpPnt, GpVec, GpVec) {
+    let f = p.focal;
+    if f.abs() <= RESOLUTION {
+        return (
+            p.location(),
+            GpVec::from_xyz(&p.pos.y_direction().xyz()),
+            GpVec::zero(),
+        );
+    }
+    let pt = parabola_value(p, u);
+    let d1 = vec_add(p.pos.x_direction().xyz(), u/(2.0*f), p.pos.y_direction().xyz(), 1.0);
+    let d2 = GpVec::from_xyz(&p.pos.x_direction().xyz().divided(2.0 * f));
+    (pt, d1, d2)
+}
+
 pub fn parabola_d1(p: &GpParab, u: f64) -> (GpPnt, GpVec) {
     let f = p.focal;
     let pt = parabola_value(p, u);
@@ -135,6 +201,56 @@ pub fn circle2d_d2(c: &GpCirc2d, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
     let v2 = GpVec2d::new(-(xc * xd.x + yc * yd.x), -(xc * xd.y + yc * yd.y));
     (p, v1, v2)
 }
+/// `ElCLib::CircleD3(gp_Ax22d, Radius, …)` 2d (`ElCLib.cxx:809-839`):
+/// `V3 = -V1 = Radius*sin(U)*Xd - Radius*cos(U)*Yd`.
+pub fn circle2d_d3(c: &GpCirc2d, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
+    let r = c.radius;
+    let xd = c.pos.vxdir;
+    let yd = c.pos.vydir;
+    let xc = r * u.cos();
+    let yc = r * u.sin();
+    let p = GpPnt2d::new(
+        xc * xd.x + yc * yd.x + c.pos.point.x(),
+        xc * xd.y + yc * yd.y + c.pos.point.y(),
+    );
+    let v1 = GpVec2d::new(-yc * xd.x + xc * yd.x, -yc * xd.y + xc * yd.y);
+    let v2 = GpVec2d::new(-(xc * xd.x + yc * yd.x), -(xc * xd.y + yc * yd.y));
+    let v3 = GpVec2d::new(yc * xd.x - xc * yd.x, yc * xd.y - xc * yd.y);
+    (p, v1, v2, v3)
+}
+
+/// `ElCLib::EllipseD3(gp_Ax22d, Major, Minor, …)` 2d (`ElCLib.cxx:843-875`):
+/// `V3 = -V1 = Major*sin(U)*Xd - Minor*cos(U)*Yd`.
+pub fn ellipse2d_d3(e: &GpElips2d, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
+    let a = e.major_radius;
+    let b = e.minor_radius;
+    let xd = e.pos.vxdir;
+    let yd = e.pos.vydir;
+    let p = ellipse2d_value(e, u);
+    let (su, cu) = (u.sin(), u.cos());
+    let v1 = GpVec2d::new(-a * su * xd.x + b * cu * yd.x, -a * su * xd.y + b * cu * yd.y);
+    let v2 = GpVec2d::new(-a * cu * xd.x - b * su * yd.x, -a * cu * xd.y - b * su * yd.y);
+    let v3 = GpVec2d::new(a * su * xd.x - b * cu * yd.x, a * su * xd.y - b * cu * yd.y);
+    (p, v1, v2, v3)
+}
+
+/// `ElCLib::HyperbolaD3(gp_Ax22d, Major, Minor, …)` 2d (`ElCLib.cxx:878-905`):
+/// `V3 = V1 = Major*sinh(U)*Xd + Minor*cosh(U)*Yd`.
+pub fn hyperbola2d_d3(h: &GpHypr2d, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
+    let a = h.major_radius;
+    let b = h.minor_radius;
+    let xd = h.pos.vxdir;
+    let yd = h.pos.vydir;
+    let (sh, ch) = (u.sinh(), u.cosh());
+    let p = GpPnt2d::new(
+        a * ch * xd.x + b * sh * yd.x + h.pos.point.x(),
+        a * ch * xd.y + b * sh * yd.y + h.pos.point.y(),
+    );
+    let v1 = GpVec2d::new(a * sh * xd.x + b * ch * yd.x, a * sh * xd.y + b * ch * yd.y);
+    let v2 = GpVec2d::new(a * ch * xd.x + b * sh * yd.x, a * ch * xd.y + b * sh * yd.y);
+    (p, v1, v2, v1)
+}
+
 /// `ElCLib::EllipseValue(U, gp_Ax22d, Major, Minor)` (`cxx:543-555`):
 /// `P = Loc + Major*cos(U)*Xd + Minor*sin(U)*Yd` (same `+Minor*sin(U)` as the
 /// 3D `gp_Ax2` overload, so the 3D and 2D parameterisations agree).

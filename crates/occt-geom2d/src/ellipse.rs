@@ -1,4 +1,5 @@
 //! 2D ellipse curve. Source: `Geom2d_Ellipse.hxx`
+use occt_core::elib::clib;
 use occt_core::gp::{GpElips2d, GpPnt2d, GpVec2d, GpTrsf2d, GpAx22d};
 use crate::curve::Curve2d;
 
@@ -37,6 +38,11 @@ impl Curve2d for Geom2dEllipse {
         let d1 = GpVec2d::new(-a*u.sin()*xd.x + b*u.cos()*yd.x, -a*u.sin()*xd.y + b*u.cos()*yd.y);
         let d2 = GpVec2d::new(-a*u.cos()*xd.x - b*u.sin()*yd.x, -a*u.cos()*xd.y - b*u.sin()*yd.y);
         (p, d1, d2)
+    }
+    /// `Geom2d_Ellipse::EvalD3` → `ElCLib::EllipseD3` (`ElCLib.cxx:843-875`).
+    /// Needed by `Geom2d_OffsetCurve`'s `CalculateD2` (`D2Ndir`).
+    fn d3(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
+        clib::ellipse2d_d3(&self.pos, u)
     }
     fn first_parameter(&self) -> f64 { 0.0 }
     fn last_parameter(&self) -> f64 { 2.0 * std::f64::consts::PI }

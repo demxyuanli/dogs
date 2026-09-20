@@ -25,6 +25,11 @@ impl Curve2d for Geom2dCircle {
         // `Geom2d_Circle::EvalD2` (`cxx:180-185`): `ElCLib::CircleD2`.
         clib::circle2d_d2(&self.pos, u)
     }
+    /// `Geom2d_Circle::EvalD3` (`cxx:189-194`): `ElCLib::CircleD3` (`cxx:809-839`).
+    /// Needed by `Geom2d_OffsetCurve`'s `CalculateD2` (`D2Ndir`).
+    fn d3(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
+        clib::circle2d_d3(&self.pos, u)
+    }
     fn first_parameter(&self) -> f64 { 0.0 }
     fn last_parameter(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn is_periodic(&self) -> bool { true }

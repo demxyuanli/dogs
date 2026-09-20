@@ -15,6 +15,9 @@ impl Curve for GeomEllipse {
     fn d0(&self, u: f64) -> GpPnt { clib::ellipse_value(&self.pos, u) }
     fn d1(&self, u: f64) -> (GpPnt, GpVec) { clib::ellipse_d1(&self.pos, u) }
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) { clib::ellipse_d2(&self.pos, u) }
+    /// `Geom_Ellipse::EvalD3` → `ElCLib::EllipseD3` (`ElCLib.cxx:464-491`).
+    /// Needed by `Geom_OffsetCurve`'s `CalculateD2` (`D2Ndir`).
+    fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) { clib::ellipse_d3(&self.pos, u) }
     fn first_parameter(&self) -> f64 { 0.0 }
     fn last_parameter(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn is_periodic(&self) -> bool { true }

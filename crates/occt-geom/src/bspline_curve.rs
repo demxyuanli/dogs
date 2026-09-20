@@ -182,6 +182,15 @@ impl Curve for GeomBSplineCurve {
         }
     }
 
+    /// `Geom_BSplineCurve::D3` (`BSplCLib::DN(..., 3)`), which `Geom_OffsetCurve`
+    /// calls through `basisCurve->D3(U, …)` in `CalculateD2`. Without this
+    /// override the trait default returned a **zero** third derivative for every
+    /// B-spline basis.
+    fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
+        let (p, d1, d2) = self.d2(u);
+        (p, d1, d2, self.eval_dn(u, 3))
+    }
+
     fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
     fn is_periodic(&self) -> bool { self.periodic }

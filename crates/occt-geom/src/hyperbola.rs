@@ -13,7 +13,10 @@ impl GeomHyperbola {
 impl Curve for GeomHyperbola {
     fn d0(&self, u: f64) -> GpPnt { clib::hyperbola_value(&self.pos, u) }
     fn d1(&self, u: f64) -> (GpPnt, GpVec) { clib::hyperbola_d1(&self.pos, u) }
-    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) { (self.d0(u), self.d1(u).1, GpVec::zero()) }
+    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) { clib::hyperbola_d2(&self.pos, u) }
+    /// `Geom_Hyperbola::EvalD3` → `ElCLib::HyperbolaD3` (`ElCLib.cxx:494-516`).
+    /// Needed by `Geom_OffsetCurve`'s `CalculateD2` (`D2Ndir`).
+    fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) { clib::hyperbola_d3(&self.pos, u) }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
     fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
