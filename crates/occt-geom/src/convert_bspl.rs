@@ -1,12 +1,16 @@
 //! BSpline conversion depth. Port of the `GeomConvert` gap-fillers
 //! (TKGeomBase): `GeomConvert_BSplineCurveKnotSplitting`,
-//! `GeomConvert_BSplineSurfaceKnotSplitting`, `GeomConvert_BSplineSurfaceToBezierSurface`
-//! and `GeomConvert_CompCurveToBSplineCurve`.
+//! `GeomConvert_BSplineSurfaceKnotSplitting` and
+//! `GeomConvert_BSplineSurfaceToBezierSurface`.
 //!
 //! Curve→Bezier is already covered by `crate::bspline_to_bezier` and is not
 //! duplicated here; `GeomConvert_ApproxCurve` (adaptive spline approximation)
 //! is covered pragmatically by `curve_approx` (polyline) plus
 //! `curve_reparam::resample_bspline` (interpolation) and is deferred.
+//!
+//! **UNPORTED (audit A8 / task T-44)**: `GeomConvert_CompCurveToBSplineCurve` and
+//! `GeomConvert::CurveToBSplineCurve` (see the note further down); the port's
+//! earlier sampling substitute was removed in batch 66.
 
 use occt_core::bspl::bezier::boehm_insert;
 use occt_core::bspl::knots::{hunt, insert_knot, multiplicity};
@@ -14,7 +18,6 @@ use occt_core::gp::GpPnt;
 
 use crate::bspline_curve::GeomBSplineCurve;
 use crate::bspline_surface::GeomBSplineSurface;
-use crate::curve::Curve;
 
 // ---------------------------------------------------------------------------
 // Knot splitting (GeomConvert_BSplineCurveKnotSplitting /
@@ -292,70 +295,27 @@ pub fn bspline_surface_to_bezier_surface(s: &GeomBSplineSurface) -> Vec<BezierSu
 // CompCurveToBSplineCurve.
 // ---------------------------------------------------------------------------
 
-/// Merge connected curve segments into a single degree-1 B-spline passing
-/// through the sampled composite polyline (port of
-/// `GeomConvert_CompCurveToBSplineCurve`; degree 1 reproduces polygonal
-/// composites exactly, which is the OCCT use case for line/arc chains).
-///
-/// Each segment must be bounded and connected to the next within `tol`
-/// (orientation is detected automatically).
-pub fn comp_curve_to_bspline(segs: &[Box<dyn Curve>], tol: f64) -> Result<GeomBSplineCurve, String> {
-    if segs.is_empty() {
-        return Err("comp_curve_to_bspline: no segments".to_string());
-    }
-    let tol = tol.max(1e-9);
-    let mut pts: Vec<GpPnt> = Vec::new();
-    let mut cur: Option<GpPnt> = None;
-    for seg in segs {
-        let (a, b) = (seg.first_parameter(), seg.last_parameter());
-        if !(a.is_finite() && b.is_finite()) || b <= a {
-            return Err("comp_curve_to_bspline: unbounded or degenerate segment".to_string());
-        }
-        let (start, end, reverse) = match cur {
-            None => (a, b, false),
-            Some(c) => {
-                if seg.d0(a).distance(&c) <= tol {
-                    (a, b, false)
-                } else if seg.d0(b).distance(&c) <= tol {
-                    (b, a, true)
-                } else {
-                    return Err("comp_curve_to_bspline: segments not connected".to_string());
-                }
-            }
-        };
-        let n = ((b - a) / 0.1).ceil().clamp(2.0, 64.0) as usize;
-        for k in 0..=n {
-            let t = if reverse {
-                1.0 - k as f64 / n as f64
-            } else {
-                k as f64 / n as f64
-            };
-            let p = seg.d0(start + (end - start) * t);
-            if pts.last().map_or(true, |l| l.distance(&p) > tol) {
-                pts.push(p);
-            }
-        }
-        cur = Some(*pts.last().unwrap());
-    }
-    // Ensure the final endpoint is included.
-    let last_seg = segs.last().unwrap();
-    let end = last_seg.d0(last_seg.last_parameter());
-    if pts.last().map_or(true, |p| p.distance(&end) > tol) {
-        pts.push(end);
-    }
-    if pts.len() < 2 {
-        return Err("comp_curve_to_bspline: too few points".to_string());
-    }
-    crate::curve_reparam::resample_bspline(&pts, 1).map_err(|e| e.to_string())
-}
+// UNPORTED (audit A8 / task T-44): `GeomConvert_CompCurveToBSplineCurve`
+// (`GeomConvert_CompCurveToBSplineCurve.cxx:135-215`) concatenates the **exact**
+// B-spline images of its segments - each produced by
+// `GeomConvert::CurveToBSplineCurve` (`GeomConvert_CurveToBSplineCurve.cxx` →
+// `Convert_LineToBSplineCurve` / `Convert_CircleToBSplineCurve` /
+// `Convert_EllipseToBSplineCurve` / `Convert_ParabolaToBSplineCurve` /
+// `Convert_HyperbolaToBSplineCurve`, all rational and exact) - and stitches them
+// by knot/pole surgery, reparametrising and inserting knots as needed.
+//
+// This port used to substitute a **sampled polyline fitted as a degree-1
+// B-spline** (`n = clamp((b-a)/0.1, 2, 64)` points per segment), which is not
+// OCCT's construction. That function had no production caller
+// (`git grep comp_curve_to_bspline` reached only its own tests), so it was
+// removed in batch 66 rather than left as an invented rule; porting the OCCT
+// algorithm above is deferred until a consumer needs it.
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::surface::Surface;
-    use crate::{GeomLine, GeomTrimmedCurve};
-    use occt_core::gp::{GpDir, GpPnt};
-    use std::sync::Arc;
+    use occt_core::gp::GpPnt;
 
     fn degree3_multiknot_curve() -> GeomBSplineCurve {
         // Cubic; interior 0.5 (mult 1) keeps C2, interior 0.75 (mult 3) is C0.
@@ -481,34 +441,5 @@ mod tests {
                 assert!(p.poles[i][j].distance(&s.d0(u, v)) < 1e-9, "corner ({i},{j})");
             }
         }
-    }
-
-    #[test]
-    fn comp_curve_merges_two_lines() {
-        // Two connected line segments forming an L.
-        let l1 = GeomLine::from_pnt_dir(GpPnt::new(0., 0., 0.), GpDir::new(1., 0., 0.).unwrap());
-        let t1 = GeomTrimmedCurve::new(Arc::new(l1), 0.0, 1.0);
-        let l2 = GeomLine::from_pnt_dir(GpPnt::new(1., 0., 0.), GpDir::new(0., 1., 0.).unwrap());
-        let t2 = GeomTrimmedCurve::new(Arc::new(l2), 0.0, 1.0);
-
-        let segs: Vec<Box<dyn Curve>> = vec![Box::new(t1), Box::new(t2)];
-        let spline = comp_curve_to_bspline(&segs, 1e-7).expect("merge");
-        // The degree-1 spline interpolates its sampled polyline: endpoints and
-        // the junction are exact.
-        assert!(spline.d0(spline.first_parameter()).distance(&GpPnt::new(0., 0., 0.)) < 1e-9);
-        assert!(spline.d0(spline.last_parameter()).distance(&GpPnt::new(1., 1., 0.)) < 1e-9);
-        // Junction is at arc length 1.0 of the total 2.0 → parameter 0.5.
-        let mid = spline.d0(0.5);
-        assert!(mid.distance(&GpPnt::new(1., 0., 0.)) < 1e-6, "junction {mid:?}");
-    }
-
-    #[test]
-    fn comp_curve_rejects_disconnected() {
-        let l1 = GeomLine::from_pnt_dir(GpPnt::new(0., 0., 0.), GpDir::new(1., 0., 0.).unwrap());
-        let t1 = GeomTrimmedCurve::new(Arc::new(l1), 0.0, 1.0);
-        let l2 = GeomLine::from_pnt_dir(GpPnt::new(5., 0., 0.), GpDir::new(0., 1., 0.).unwrap());
-        let t2 = GeomTrimmedCurve::new(Arc::new(l2), 0.0, 1.0);
-        let segs: Vec<Box<dyn Curve>> = vec![Box::new(t1), Box::new(t2)];
-        assert!(comp_curve_to_bspline(&segs, 1e-7).is_err());
     }
 }
