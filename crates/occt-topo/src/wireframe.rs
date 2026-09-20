@@ -396,11 +396,23 @@ pub(crate) fn planar_polygon_triangulate(
 /// Planar faces triangulate exactly from their boundary polygon (see
 /// [`planar_polygon_triangulate`]) — a UV grid of the bounding box would
 /// over-cover a disk cap as its circumscribing square. Curved faces fall back
-/// to the grid below. Grid resolution is driven by `deflection` relative to
-/// the UV domain size (`nu = clamp(ceil(du/deflection)+1, 3, 64)`). Triangle
-/// winding follows the surface normal from `d1` so the resulting mesh points
-/// outward. Degenerate cells are skipped. Missing surface or unbounded domain
-/// yields an empty soup.
+/// to the grid below. Triangle winding follows the surface normal from `d1` so
+/// the resulting mesh points outward. Degenerate cells are skipped. Missing
+/// surface or unbounded domain yields an empty soup.
+///
+/// **UNPORTED (audit A19 / task T-55, T-68)**: OCCT has no per-face UV-grid
+/// tessellator at all — the live path is `BRepMesh` (`BRepMesh_FaceDiscret` for
+/// the boundary, then `BRepMesh_Delaun`), whose only grid-like resolution is
+/// `BRepMesh_GeomTool::CellsCount` (`BRepMesh_GeomTool.cxx:465-512`, ported in
+/// `meshing::node_insertion::geom_tool_cells_count`) and which has no upper
+/// bound. The stand-in's `nu`/`nv` below are therefore port-invented, including
+/// the `3` floor and the `64` ceiling: the floor keeps a degenerate domain from
+/// producing no cells at all, the ceiling bounds the vertex count
+/// (`nu * nv`) of a grid that a tiny deflection on a large UV domain would
+/// otherwise blow up (OCCT's bounded counts never feed a full UV grid). This
+/// function is reached only when the ported pipeline fails for a face; delete it
+/// together with the fallback once those faces mesh through the faithful path
+/// (see the note in `meshing::incremental_mesh::triangulate_model_faces`).
 pub fn face_to_triangles(f: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
     if face_is_planar(f) {
         if let Some(m) = planar_polygon_triangulate(f, deflection.max(0.01)) {
