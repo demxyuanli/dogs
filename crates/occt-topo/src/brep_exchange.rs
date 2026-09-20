@@ -131,10 +131,16 @@ pub fn brep_to_stl_binary(shape: &TopoShape, maximal_chordial_deviation: f64) ->
     occt_core::io::stl::write_binary_stl(&shape_mesh_to_stl(&mesh))
 }
 
-/// Export a shape to ASCII PLY text (vertices welded first).
+/// Export a shape to ASCII PLY text.
+///
+/// `RWPly_PlyWriterContext` writes each **face's own node block** with a running
+/// `myVertOffset` (`RWPly_PlyWriterContext.cxx:276`, `:300`) — it never merges
+/// nodes across faces, so this path must **not** weld: a box is 24 vertex
+/// records (6 faces × 4), exactly like the OBJ path ([`brep_to_obj`]). The
+/// previous body called `weld_vertices(1e-9)` first, producing a shared 8-node
+/// mesh that OCCT never writes (audit A26).
 pub fn brep_to_ply(shape: &TopoShape, maximal_chordial_deviation: f64) -> String {
-    let mut mesh = export_mesh(shape, maximal_chordial_deviation);
-    crate::shape_mesh::weld_vertices(&mut mesh, 1e-9);
+    let mesh = export_mesh(shape, maximal_chordial_deviation);
     occt_core::io::ply::write_ply(&shape_mesh_to_ply(&mesh))
 }
 
