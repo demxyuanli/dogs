@@ -385,6 +385,12 @@ cd ..; git worktree remove --force .target-headcheck
   1. **`StepToTopoDS_TranslateEdgeLoop::CheckPCurves`（`cxx:100-176`）的"周期窗口归一"未移植**：`git grep adjust_periodic -- crates` 显示端口**从不**在 STEP 读入路径调用 `ElCLib::AdjustPeriodic`（该函数本身已移植在 `occt-core/src/elib/clib2d.rs:40-65`）。OCCT 在该处对每条边做：`sae.PCurve(edge,face,pc,w1,w2,false)` →（非周期 pcurve 时把 w1/w2 夹进 `[cf,cl]`）→ **`if (w1 > w2 && mySurf->IsUPeriodic()) { ElCLib::AdjustPeriodic(u1,u2, min(|w2-w1|/2, PConfusion), w1, w2); B.Range(edge, face, w1, w2); }`**。对 face 20 逐边推算：edge 59（`7.854→1.571`，**w1>w2**）与 edge 62（`1.5708→−4.712`，**w1>w2**）会被归一到 `[1.5708, 7.854]`（=与 edge 60 同窗口）；这正是"两条 wire 落在同一 u 窗口"所需的对齐，而端口现在把 STEP 的原始窗口**原样留着**（所以 wire 0 在 `[1.5708,7.854]`、wire 1 的 61/62 在 `[−4.712,1.5708]` 与 `[1.5708,7.854]` 混杂）。
   2. **同族的已登记缺口**：`shhealing/p04.rs::project_wire_pcurve_ranges`（`TranslateEdgeLoop.cxx:844` 的 `EdgeProjAux` → `B.Range`）的注释已自述"窗口按原样写入（与 OCCT 同）"，并**推迟了 pcurve 反向**，理由是"我们的 mesher 处理不了**反向且窗口与 3D range 周期错位**的 pcurve"——face 20 正是这种形状，说明该缺口与 T-69 是同一处。
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
+**批 75（第 89 轮收尾：IGES 校验器全量跑通 18/18 ＋ §14.4 交接）—— 2026-09-20 第 90 轮**
+
+- **验证**：把批 74 的常驻校验器跑到**全部**导出模型 —— 16 个 `data/*.step` ＋ `data/occ/{bottom,top}.step` 共 **18/18 `ok`**（结构自洽：80 列、P 段序号连续、P 行 DE 指针 = `2i−1`、每个 DE 的 `pstart/pcount` 可取串、102/142/144/402/192/194/196/198/120/122 的引导指针全部可解析、T 卡四项 = 实际段长）。最大两份：`occ/bottom.step` DE=2526 / P=12974、`occ/top.step` DE=2627 / P=15128。
+- **交接**：新增 **§14.4「第 89 轮收尾交接」**，汇总本会话批 59–74（A26/IGES 主体、A15 部分、A8/T-44、A12/T-48）与三条已设计未实施的下一步（T-85 步 2 可达性过滤＋重编号；T-78 的 2D UV 曲线／周期面反周期化／整周椭圆；T-77 与 A16 求交 half 为下一批最合适取材），并写明仍被前置阻塞的 A12/A13/A18/A19/A23/A15 与 T-79/T-80 链。
+- **门禁**：本轮无库代码改动（`occt-topo --lib` 1287/1 不变；四道 STEP 门禁与 `export_data_obj` 见批 72/74）。
+
 **批 74（IGES 结构自洽校验器转为常驻示例 `examples/iges_check.rs`）—— 2026-09-20 第 89 轮**
 
 - **动机**：IGES 文本**没有任何门禁覆盖**，批 70/71/72 的正确性只能靠临时探针（用完即删，下次无法复现）。本轮把批 70 的临时探针写成**常驻示例**（不是单测，不进 `cargo test`，与 `export_data_obj` 同类），把"写入器必须满足的结构不变量"固化下来，供后续 IGES 批次一条命令复核。
@@ -1256,6 +1262,24 @@ A25 的"删补丁"部分、A26 的四项（PLY 属性类型/STL 判据与头/VRM
 1. **"零消费方自创件直接删"已经是最快且最可验证的结项方式**（批 65/66/67）：删除前必须 `git grep` 逐名核对（含 tests/examples）、在批次报告写出被删测试名与数量、并在门禁里说明数量下降的原因；有生产消费方的自创件（如 `brepfeat` 的 `resolution_for`、`surface_fit::fit_plane`）只标注、不删。
 2. 反例也要写进画板（批 64 的 PLY 三角级重复尝试：判据是"OCCT 的每面单位是 **BRep 面**而非三角面"）。
 3. 每批仍旧：改前 `cargo check` → 该 crate `--lib` → 四道 STEP 门禁 ＋ `export_data_obj` → 提交用显式路径（`git add <file>` 逐个，**不要**用重定向掩盖 add 失败：批 65 曾因此漏提三个文件，批 66 已补 `c1448fa`）。
+### 14.4 第 89 轮收尾交接（2026-09-20；本轮会话批次 59–74 的总结）
+
+> **基线（未变，照 §14.3 抄）**：`occt-core` 290/290、`occt-math` 215/215、`occt-geom` 146/146、`occt-geom2d` 72/72、`occt-topo` **1287/1**（红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3（红 = T-05）、`phase3/4/5/6` 4/4·9/9·7/7·5/5、`export_data_obj` 16/16。
+> **新增常驻校验**：`cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_check -- <模型名…>` —— 结构自洽检查（80 列 / P 段记账 / DE 指针 / 复合实体引导指针 / T 卡四项）。**本轮实测 18/18 全 ok**（16 个 `data/*.step` + `data/occ/{bottom,top}.step`，后者 DE=2526/2627、P=12974/15128）。改 IGES 写侧后请先跑它。
+
+**A. 本会话结项/推进（批 59–74）**
+- **A26 / T-78（IGES 写侧，主体完成）**：批 55–63 依次落地 126、192/194/196/198、128、120/122、104＋124、**142/144**、DE 卡 P 指针与默认域、128 的 `IsUClosed` 语义与按基面裁剪；批 63 查实 `write.iges.brep.mode` **默认 0＝Faces 模式**并把根结构改为 **144/142 ＋ 402 Group**（删除混用的 510/514/186，**T-84 结项**）；批 64 STL 读取合并容差改回"精确相等"、PLY 项复核为已忠实；批 69 补上"面内游离边 → 内侧 142"；批 70 修正 **T 卡 D 计数 off-by-one**；批 71 删除**孤儿 116 块**；批 72 完成**参数指针结构化**（`Ent.refs`/`emit_refs`/`check_refs`）。
+- **A15**：批 65 删除自创死模块 `surface_to_grid`、`GridSurface` 标 UNPORTED、订正 trait 默认 `d2` 实现者清单。
+- **A8/T-44**：批 66 删除自创的采样折线＋强制 1 次转换；OCCT 侧移植保留为"待消费方"。
+- **A12/T-48**：批 67 删除零消费方的 `feature.rs`（网格圆柱夹具 + `clamp(16,64)`）。
+
+**B. 已设计但未实施（下一步直接照做，勿重新推导）**
+1. **T-85 步 2（写侧可达性过滤＋重编号）**：见 T-85 任务行的四步方案（求根 → 沿 `Ent.refs` DFS 求可达集 → 按创建序重编号 → 按类型布局用 `refs` 记录顺序回填参数指针；备选＝构造 `params` 时对指针位留占位符）。改完必须跑 `iges_check` 全量对比（实体数会减少，属预期）。
+2. **T-78 余项**：2D（UV）曲线 —— `BRepToIGES_BRWire::TransferEdge(edge, face, originMap, length, false)`（`BRepToIGES_BRWire.cxx:340-588`），注意**平面直接返回空**（`:374-377`）故平面面端口现状已忠实；非平面面需逐类型 UV 修正（回转面 u/v 反转、柱/锥/拉伸面原点平移）并把 `PreferenceMode` 由 2 改 3；周期面反周期化与 `periodicU/V`（`GeomToIGES_GeomSurface.cxx:244-343`）；整周椭圆（`GeomConvert_ApproxCurve`，`:620-645`，前置 A8 的 `GeomConvert`）。
+
+**C. 仍被前置阻塞**：T-80 链（T-81/T-82/T-83，柱体 GF 全 `Internal` ⇒ `BuildSolid` 只见盒体）→ 阻塞 **T-79**、**A12 的解析体积覆盖**；**T-69** 收口（Torus face 20 跨 wire 周期对齐）→ 阻塞 **A13/A18/A23**；**T-67 分步 3**（`math_FunctionSetRoot` 1452 行 ＋ `Extrema_GenExtPS` 1195 行）→ 阻塞 **A15 曲面族兜底移除**与 **A19 相关项**。未阻塞的 **T-77**（`IntTools_EdgeEdge::FindSolutions` bbox 递归，前置已备齐）与 **A16 求交 half**（`geom_api` 两个采样器 → `IntCurveSurface_Intersection`/`IntTools_EdgeEdge`）是下一批最合适的取材。
+
+**D. 纪律（本会话新增）**：① 零消费方自创件直接删（删前 `git grep` 逐名核对、报告写明被删测试名与数量）；② 反例也要入画板（批 64 的 PLY 三角级重复）；③ 提交用**逐个** `git add <file>`（批 65 曾因重定向掩盖 add 失败漏提三文件，已在 `c1448fa` 补）；④ IGES 改动的验收＝`iges_check` 全量 ok ＋ 该 crate `--lib` ＋ 四道 STEP 门禁 ＋ `export_data_obj`。
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
 2. 改代码前对着 `.cxx` 审控制流；**有同等分支才改**，没有就标"未移植"（注释写 OCCT 文件+行号），**不加** OCCT 里不存在的谓词/启发式/面积比/长度滤边/体积门。
