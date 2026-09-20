@@ -379,11 +379,21 @@ cd ..; git worktree remove --force .target-headcheck
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
 - **下一步（第 43 轮，两条并行）**：① **判定性实验**：把同一面上各 wire 的 u 归一到同一周期窗口（仅作诊断，不改 `node_insertion` 的行为）后看 face 20 是否走通忠实 Delaunay（预期 74/72）——若走通，则缺的是"跨 wire 的周期对齐"，须先在 OCCT 里找到执行该对齐的那段控制流（候选：`ShapeFix_Wire::FixShifted` 的面级用法 / `StepToTopoDS_TranslateEdgeLoop` 的 `CheckPCurves` 段 / `ShapeFix_Face::FixMissingSeam`）并按它移植，**不得直接给网格层打补丁**；② 用参考的重复顶点证据确定"共享该顶点的两个面"是哪两张，确认端口是否两张都没网格化（据此判断要补的控制流范围）。
 
+**批 43（T-80：修法② 试做并回退；下一步转向"该对的 BopdsCurve 由哪条分支产出"）—— 2026-09-20 第 66 轮**
+
+- **试做**：在 `int_face_face_helpers.rs::pcurve_of_curve` 里加一个 2D 线性重参数化适配器（`ReparamCurve2d`，镜像 3D 的 `occt_geom::curve_reparam::ReparamCurve`：d0/d1/d2 的链式缩放、first/last/period/continuity/is_line/gp_circ2d 转发、`transform`/`reverse` clone-on-write），把通用投影 `make_pcurve_full` 的结果映到 3D 的 `[range.first, range.last]`，意图让 `pc.D0(t)` 落在 `C(t)`（`IntTools_Curve::SetCurves` 语义）。
+- **结果：无效**（判据探针，临时 `examples/zz_probe_pc.rs`，已删）：`box∪cyl` 仍 `FUSE=6 平面面/vol 8.0000`、`CUT=6 平面面/vol 8.0000`、`COMMON=空(0 面)`；平面参考 `FUSE box∪box(重叠)=14 面/vol 10.0000` 不变。⇒ **该对的 pcurve 并非（或不只是）由 `finish_curve`/`pcurve_of_curve` 提供**。
+- **处置**：按"失配即停"`git checkout -- crates/occt-topo/src/int_face_face_helpers.rs` **回退**，复跑 `occt-topo --lib` **1291/1** 确认恢复基线；探针已删（`git grep zz_probe` = 0），工作树干净。
+- **下一步（已写入 T-80 行）**：先确认该对（`ff=0 pair=(11,36)`）的 `BopdsCurve` 由哪条分支产出——解析臂 `int_face_face_analytic.rs::plane_cylinder → curve_from_ic → finish_curve`，还是通用 tracer（`int_face_face_make_curve.rs::make_bspline`/`make_bspline2d`/`wline_to_curve`）；再 dump 其 `pcurve1/pcurve2` 的参数区间与 3D 曲线 `[first,last]` 的差异。若来自 tracer，要修的是 **WLine 的 2D 点参数化**（`make_bspline2d` 与 `make_bspline` 的结点来源是否同参）。
+- **本批无行为代码改动**（改动静止于试做并回退）：门禁与基线一致（`occt-topo --lib` 1291/1、四道 STEP 门禁、`phase3/4/6`、`export_data_obj` 16/16）。
+
 **批 42（T-80 追到 pcurve 生成处：解析臂的 pcurves 走通用投影，与 3D 曲线不同参）—— 2026-09-20 第 65 轮**
 
 - **对读链路（本批只读 + 记录，无行为改动）**：`int_face_face_analytic.rs::plane_cylinder`（`IntAna_QuadQuadGeo` 的精确解）→ `int_face_face.rs::curve_from_ic`（`crate::int_face_face_analytic` 的解析臂）→ **`finish_curve`**：`pcurve1 = pcurve_of_curve(&curve, range, fa)`、`pcurve2 = pcurve_of_curve(&curve, range, fb)`；而 `int_face_face_helpers.rs::pcurve_of_curve`（`:277`）把 3D 曲线**临时做成 edge**（参数 `[range.first, range.last]`）后调 **通用投影 `make_pcurve_full`**（`ShapeConstruct_ProjectCurveOnSurface` 式近似）⇒ 得到的 2D 曲线参数系是"采样/裁剪"参数，**与 3D 曲线（解析圆，0..2π）不同参**；这正好解释第 64 轮插桩看到的 `pc.d0(t_mid=1.0) → uv=(2.715211, 1.000000) reconstructed=false`。
 - **OCCT 侧对照**：`IntTools_FaceFace` 的解析分支由 `IntPatch` 直接产出**与 3D 曲线同参**的 pcurves（`IntTools_Curve::SetCurves` 只做装载），因此 `IsValidBlockForFaces` 的 `pc.D0(aMidPar)` 必然落在 3D 中点，节线块有效、节线 edge 建出、面被切开。
-- **两条修法（已写入 T-80 行，下一步择一）**：① 解析臂按交点解析式**直接构造 2D 圆/直线**（与 3D 同参）——最忠实；② 在 `pcurve_of_curve` 里把 `make_pcurve_full` 的结果**重参数化到 `[range.first, range.last]`**（端口目前只有 3D 的 `occt_geom::curve_reparam::reparameterize_curve`，需补 2D 版）。
+- ****第 66 轮：修法② 试做 → 无效，已回退**（`int_face_face_helpers.rs::pcurve_of_curve` 里加 2D 线性重参数化适配器，把 `make_pcurve_full` 的结果映到 `[range.first, range.last]`）：`box∪cyl` 三操作仍为 `FUSE=6 平面面/vol 8.0`、`CUT=6 平面面/vol 8.0`、`COMMON=空`（平面参考 `FUSE=14 面/vol 10.0` 不变）⇒ **该对的 pcurve 并非由 `finish_curve`/`pcurve_of_curve` 提供**（或不只是它），改动已 `git checkout --` 回退（无残留）。**下一步**：先确认该对的 `BopdsCurve` 是哪条分支产出的——解析臂（`curve_from_ic`）还是通用 tracer（`make_bspline2d`/`wline_to_curve`）——再 dump 其 `pcurve1/pcurve2` 的参数区间与 3D 曲线的 `[first,last]` 之差；若来自 tracer，则要修的是 WLine 的 2D 点参数化（`int_face_face_make_curve.rs::make_bspline2d` 与 `make_bspline` 的结点来源）。
+
+两条修法（已写入 T-80 行，下一步择一）**：① 解析臂按交点解析式**直接构造 2D 圆/直线**（与 3D 同参）——最忠实；② 在 `pcurve_of_curve` 里把 `make_pcurve_full` 的结果**重参数化到 `[range.first, range.last]`**（端口目前只有 3D 的 `occt_geom::curve_reparam::reparameterize_curve`，需补 2D 版）。
 - **判据（修好后必须复跑）**：`box∪cyl` 探针应从 `reconstructed=false / total section edges 0 / b.result=两个未分割实体` 变为 `reconstructed=true / 建出节线 edge / b.result 出现被切面且体积 ≈8.5`，随后复跑四道 STEP 门禁 + `export_data_obj` 与 `bop_curved` 直连用例。
 - **本批无行为代码改动**：门禁与基线不变（`occt-topo --lib` 1291/1、`phase3/4/6`、四道 STEP 门禁、`export_data_obj` 16/16）。
 
