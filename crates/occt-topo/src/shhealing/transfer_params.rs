@@ -114,6 +114,9 @@ impl Curve for CurveRange {
     fn bspline_poles(&self) -> Option<&[GpPnt]> {
         self.curve.bspline_poles()
     }
+    fn bspline_weights(&self) -> Option<&[f64]> {
+        self.curve.bspline_weights()
+    }
     fn bezier_poles(&self) -> Option<&[GpPnt]> {
         self.curve.bezier_poles()
     }

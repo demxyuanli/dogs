@@ -30,25 +30,17 @@ pub(super) fn fit_bspline_surface(s: &dyn Surface) -> Result<GeomBSplineSurface,
         .map_err(|e| format!("fit_bspline_surface: {e}"))
 }
 
-/// Approximate a non-analytic curve with an interpolating B-spline curve.
-///
-/// Sampled at `n` parameter values across the edge's `[a, b]` range and
-/// interpolated with a cubic (degree 1 on failure) clamped B-spline.
-pub(super) fn fit_bspline_curve(c: &dyn Curve, a: f64, b: f64) -> Result<GeomBSplineCurve, String> {
-    let (lo, hi) = if a.is_finite() && b.is_finite() && b > a {
-        (a, b)
-    } else {
-        (0.0, 1.0)
-    };
-    let n = 8;
-    let mut pts = Vec::with_capacity(n);
-    for i in 0..n {
-        let u = lo + (hi - lo) * i as f64 / (n - 1) as f64;
-        pts.push(c.d0(u));
-    }
-    crate::loft::interpolate_bspline(&pts, 3)
-        .or_else(|_| crate::loft::interpolate_bspline(&pts, 1))
-        .map_err(|e| format!("fit_bspline_curve: {e}"))
+/// `GeomConvert::CurveToBSplineCurve` for a Bezier curve
+/// (`GeomToStep_MakeBoundedCurve.cxx:64-75` converts every `Geom_BezierCurve`
+/// this way before writing it): a Bezier is exactly a clamped B-spline whose
+/// degree is `nb_poles - 1` and whose knots are `0`/`1` with multiplicity
+/// `degree + 1`. The port's `GeomBezierCurve` is non-rational, matching
+/// `Geom_BezierCurve::IsRational() == false` for this case.
+fn bezier_to_bspline(poles: &[GpPnt]) -> Option<GeomBSplineCurve> {
+    let degree = poles.len().checked_sub(1)?;
+    let mut knots = vec![0.0; degree + 1];
+    knots.extend(std::iter::repeat(1.0).take(degree + 1));
+    GeomBSplineCurve::new(poles.to_vec(), knots, degree).ok()
 }
 
 /// Internal writer state: the entity writer plus identity maps so shared
@@ -121,39 +113,64 @@ impl WriteCtx {
         };
         let vid1 = self.emit_vertex(&v1);
         let vid2 = self.emit_vertex(&v2);
-        let curve_ref = self.emit_edge_curve(e);
-        let id = self.w.emit(format!("EDGE_CURVE('',#{vid1},#{vid2},#{curve_ref},.T.)"));
+        // `TopoDSToStep_MakeStepEdge.cxx:345` passes `MkCurve.Value()`, which is a
+        // null handle when `GeomToStep_MakeCurve` left `done = false`
+        // (`MakeCurve.cxx:100-103`); the STEP geometry attribute is then unset,
+        // which this writer spells `$`.
+        let geom = match self.emit_edge_curve(e) {
+            Some(id) => format!("#{id}"),
+            None => "$".to_string(),
+        };
+        let id = self.w.emit(format!("EDGE_CURVE('',#{vid1},#{vid2},{geom},.T.)"));
         self.edge_ids.insert(key, id);
         id
     }
 
-    pub(super) fn emit_edge_curve(&mut self, e: &Edge) -> usize {
-        let Some(curve) = GeometryRegistry::global().edge_curve(&e.0) else {
-            // No registered curve: emit a line through the endpoint vertices.
+    pub(super) fn emit_edge_curve(&mut self, e: &Edge) -> Option<usize> {
+        // `TopoDSToStep_MakeStepEdge.cxx:194-196` branches on
+        // `BRepAdaptor_Curve(aEdge).Curve()` being null, which is the case for a
+        // **degenerate** edge (`BRep_Tool::Curve` has no 3D curve). This port
+        // stores a point-curve stand-in for those, so the degeneracy flag is what
+        // routes to the "edge without 3d curve; creating..." branch below.
+        let degenerate = crate::brep_tool::BRepTool::is_degenerated(e)
+            || GeometryRegistry::global().is_degenerated_edge(&e.0);
+        let curve = if degenerate {
+            None
+        } else {
+            GeometryRegistry::global().edge_curve(&e.0)
+        };
+        let Some(curve) = curve else {
+            // `TopoDSToStep_MakeStepEdge.cxx:263-330` ("edge without 3d curve;
+            // creating..."): OCCT builds a `Geom_Line` from the pcurve endpoints
+            // when the current face is a plane and the pcurve a line, and
+            // otherwise fits a B-spline through sampled surface points. This port
+            // emits a line through the edge's vertices for both cases — the
+            // B-spline fit is UNPORTED.
             let (v1, v2) = edge_vertices(e);
             let (Some(v1), Some(v2)) = (v1, v2) else {
                 let pid = self.w.add_cartesian_point(&GpPnt::zero());
                 let vid = self.w.add_vector(&dir_x(), 1.0);
-                return self.w.emit(format!("LINE('',#{pid},#{vid})"));
+                return Some(self.w.emit(format!("LINE('',#{pid},#{vid})")));
             };
             let p1 = GeometryRegistry::global().vertex_point(&v1.0);
             let p2 = GeometryRegistry::global().vertex_point(&v2.0);
             let d = GpDir::from_vec(&GpVec::from_pnts(&p1, &p2)).unwrap_or(dir_x());
             let pid = self.w.add_cartesian_point(&p1);
             let vid = self.w.add_vector(&d, 1.0);
-            return self.w.emit(format!("LINE('',#{pid},#{vid})"));
+            return Some(self.w.emit(format!("LINE('',#{pid},#{vid})")));
         };
         let ckey = Arc::as_ptr(&curve) as *const () as usize;
         if let Some(&id) = self.curve_ids.get(&ckey) {
-            return id;
+            return Some(id);
         }
-        let (a, b) = GeometryRegistry::global().edge_parameters(&e.0);
-        let id = self.emit_curve_entity(curve.as_ref(), a, b);
-        self.curve_ids.insert(ckey, id);
+        let id = self.emit_curve_entity(curve.as_ref());
+        if let Some(id) = id {
+            self.curve_ids.insert(ckey, id);
+        }
         id
     }
 
-    pub(super) fn emit_curve_entity(&mut self, c: &dyn Curve, a: f64, b: f64) -> usize {
+    pub(super) fn emit_curve_entity(&mut self, c: &dyn Curve) -> Option<usize> {
         // `GeomToStep_MakeCurve.cxx:50-104` dispatch order:
         // `Geom_Line` → `Geom_Conic` → `Geom_TrimmedCurve` → `Geom_BoundedCurve`
         // → `done = false`. The family comes from the curve's own type
@@ -163,19 +180,19 @@ impl WriteCtx {
         if let Some(l) = c.gp_line() {
             let pid = self.w.add_cartesian_point(&l.location());
             let vid = self.w.add_vector(&l.direction(), 1.0);
-            return self.w.emit(format!("LINE('',#{pid},#{vid})"));
+            return Some(self.w.emit(format!("LINE('',#{pid},#{vid})")));
         }
         if let Some(circ) = c.gp_circ() {
-            return emit_circle_entity(&mut self.w, &circ);
+            return Some(emit_circle_entity(&mut self.w, &circ));
         }
         if let Some(e) = c.gp_ellipse() {
-            return emit_ellipse_entity(&mut self.w, &e);
+            return Some(emit_ellipse_entity(&mut self.w, &e));
         }
         if let Some(h) = c.gp_hyperbola() {
-            return emit_hyperbola_entity(&mut self.w, &h);
+            return Some(emit_hyperbola_entity(&mut self.w, &h));
         }
         if let Some(p) = c.gp_parabola() {
-            return emit_parabola_entity(&mut self.w, &p);
+            return Some(emit_parabola_entity(&mut self.w, &p));
         }
         // `MakeCurve.cxx:66-92`: a `Geom_TrimmedCurve` is written through its
         // **basis** curve. For a conic basis the `gp_*` queries above already
@@ -185,29 +202,50 @@ impl WriteCtx {
         // is represented by this port's own remapped knots instead, so it falls
         // through to the spline arm below.
         if c.is_geom_trimmed() {
-            if let Some((basis, bf, bl)) = c.untrimmed_basis() {
+            if let Some((basis, _bf, _bl)) = c.untrimmed_basis() {
                 if basis.bspline_knots().is_none() && basis.bezier_poles().is_none() {
-                    return self.emit_curve_entity(basis.as_ref(), bf, bl);
+                    return self.emit_curve_entity(basis.as_ref());
                 }
             }
         }
-        // UNPORTED (`MakeCurve.cxx:100-103`): an unrecognised curve sets
-        // `done = false` (no entity at all); this port instead emits a spline
-        // fit when requested and otherwise a tangent line at the start
-        // parameter, so the file stays well-formed. Tracked as T-71.
-        if self.splines {
-            if let Ok(bs) = fit_bspline_curve(c, a, b) {
+        // `MakeCurve.cxx:94-99`: `Geom_BoundedCurve` → `GeomToStep_MakeBoundedCurve`
+        // (`GeomToStep_MakeBoundedCurve.cxx:37-80`): a B-spline goes to
+        // `B_SPLINE_CURVE_WITH_KNOTS` (+`_AND_RATIONAL_...` when rational), and a
+        // Bezier is first converted with `GeomConvert::CurveToBSplineCurve` and
+        // written the same way.
+        // UNPORTED: `Geom_BSplineCurve::SetNotPeriodic` (`cxx:46-51`) is not
+        // ported, so a periodic B-spline keeps its periodicity here.
+        if let (Some(poles), Some(knots), Some(deg)) =
+            (c.bspline_poles(), c.bspline_knots(), c.nurbs_degree())
+        {
+            let bs = match c.bspline_weights() {
+                Some(w) if w.len() == poles.len() => {
+                    GeomBSplineCurve::rational(poles.to_vec(), w.to_vec(), knots.to_vec(), deg)
+                }
+                _ => GeomBSplineCurve::new(poles.to_vec(), knots.to_vec(), deg),
+            };
+            if let Ok(bs) = bs {
                 if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
-                    return id;
+                    return Some(id);
                 }
             }
         }
-        let p0 = c.d0(a);
-        let d1 = c.d1(a).1;
-        let dir = GpDir::from_vec(&d1).unwrap_or(dir_x());
-        let pid = self.w.add_cartesian_point(&p0);
-        let vid = self.w.add_vector(&dir, 1.0);
-        self.w.emit(format!("LINE('',#{pid},#{vid})"))
+        if let Some(poles) = c.bezier_poles() {
+            if let Some(bs) = bezier_to_bspline(poles) {
+                if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
+                    return Some(id);
+                }
+            }
+        }
+        // `GeomToStep_MakeCurve.cxx:100-103`: an unrecognised curve (not
+        // `Geom_Line`, `Geom_Conic`, `Geom_TrimmedCurve` or `Geom_BoundedCurve`)
+        // leaves `done = false` and `theCurve` null. The caller
+        // (`TopoDSToStep_MakeStepEdge.cxx:260-261,345`) then builds the
+        // `EDGE_CURVE` with that null handle, i.e. the geometry attribute is
+        // simply unset — see `emit_edge`, which writes `$` for `None`. The
+        // previous body emitted a spline fit or a tangent line instead, so the
+        // file never showed the deviation (task T-71).
+        None
     }
 
     pub(super) fn emit_wire(&mut self, w: &Wire) -> usize {

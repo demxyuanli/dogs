@@ -67,6 +67,11 @@ pub trait Curve: Send + Sync {
     /// Poles when this is a `Geom_BSplineCurve`; `None` otherwise.
     /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_BSplineCurve`.
     fn bspline_poles(&self) -> Option<&[GpPnt]> { None }
+    /// `Geom_BSplineCurve::Weights()`; `None` when the curve is not rational or
+    /// not a B-spline. Needed by the STEP writer, whose
+    /// `GeomToStep_MakeBSplineCurveWithKnotsAndRationalBSplineCurve`
+    /// (`GeomToStep_MakeBoundedCurve.cxx:52-62`) branches on `IsRational`.
+    fn bspline_weights(&self) -> Option<&[f64]> { None }
     /// Poles when this is a `Geom_BezierCurve`; `None` otherwise.
     /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_BezierCurve`.
     fn bezier_poles(&self) -> Option<&[GpPnt]> { None }

@@ -72,6 +72,7 @@ impl Curve for ReparamCurve {
         self.remapped_knots.as_deref()
     }
     fn bspline_poles(&self) -> Option<&[GpPnt]> { self.curve.bspline_poles() }
+    fn bspline_weights(&self) -> Option<&[f64]> { self.curve.bspline_weights() }
     fn bezier_poles(&self) -> Option<&[GpPnt]> { self.curve.bezier_poles() }
     fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
         self.curve

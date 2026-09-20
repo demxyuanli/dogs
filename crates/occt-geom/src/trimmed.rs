@@ -122,6 +122,7 @@ impl Curve for GeomTrimmedCurve {
     fn nurbs_degree(&self) -> Option<usize> { self.nurbs_deg.or_else(|| self.basis.nurbs_degree()) }
     fn bspline_knots(&self) -> Option<&[f64]> { self.remapped_knots.as_deref() }
     fn bspline_poles(&self) -> Option<&[GpPnt]> { self.basis.bspline_poles() }
+    fn bspline_weights(&self) -> Option<&[f64]> { self.basis.bspline_weights() }
     fn bezier_poles(&self) -> Option<&[GpPnt]> { self.basis.bezier_poles() }
     fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
         let den = self.last - self.first;
@@ -231,6 +232,7 @@ impl Curve for GeomTrimmedCurveBasis {
     fn nurbs_degree(&self) -> Option<usize> { self.basis.nurbs_degree() }
     fn bspline_knots(&self) -> Option<&[f64]> { self.basis.bspline_knots() }
     fn bspline_poles(&self) -> Option<&[GpPnt]> { self.basis.bspline_poles() }
+    fn bspline_weights(&self) -> Option<&[f64]> { self.basis.bspline_weights() }
     fn bezier_poles(&self) -> Option<&[GpPnt]> { self.basis.bezier_poles() }
     fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
         self.basis.parameter_intervals(continuity)

@@ -219,6 +219,7 @@ impl Curve for GeomBSplineCurve {
 
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
     fn bspline_poles(&self) -> Option<&[GpPnt]> { Some(&self.poles) }
+    fn bspline_weights(&self) -> Option<&[f64]> { self.weights.as_deref() }
     fn bspline_knots(&self) -> Option<&[f64]> { Some(&self.knots) }
     fn nurbs_degree(&self) -> Option<usize> { Some(self.degree) }
     fn resolution(&self, r3d: f64) -> f64 {
