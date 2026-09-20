@@ -18,7 +18,7 @@ use crate::fclass2d::{FaceState, FClass2d};
 use crate::int_curves_face::{FaceIntersector, Transition};
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools_full::{faces_of, vertices_of};
 
 /// Probe line produced by `SolidExplorer::OtherSegment`.
 struct Segment {
@@ -31,17 +31,71 @@ struct Segment {
 pub struct SolidExplorer {
     shape: TopoShape,
     faces: Vec<Face>,
+    /// `myMapEV` (`BRepClass3d_SolidExplorer::Init`, `cxx:930-982`): the edges
+    /// and vertices that bound the shape's non-`INTERNAL`/`EXTERNAL` faces,
+    /// with `INTERNAL`/`EXTERNAL` and degenerated edges skipped. Used for the
+    /// ON test in `BRepClass3d_SClassifier::Perform` (`cxx:217-227`).
+    map_ev: Vec<TopoShape>,
     first_face: i32,
 }
 
 impl SolidExplorer {
     pub fn load(shape: TopoShape) -> Self {
         let faces = faces_of(&shape);
+        let map_ev = Self::edge_vertex_map(&shape);
         Self {
             shape,
             faces,
+            map_ev,
             first_face: 0,
         }
+    }
+
+    /// The ON-test edge/vertex list (see [`SolidExplorer::map_ev`]).
+    pub fn map_ev(&self) -> &[TopoShape] {
+        &self.map_ev
+    }
+
+    /// `BRepClass3d_SolidExplorer::Init` (`cxx:930-982`): walk the shape's
+    /// faces; for each face keep its edges unless the face or the edge is
+    /// `INTERNAL`/`EXTERNAL` or the edge is degenerated; `TopExp::MapShapes(aE,
+    /// myMapEV)` then adds the edge **and its vertices**, deduplicated. A vertex
+    /// or edge that is an internal *child* of the solid is therefore absent,
+    /// which is what keeps an internal vertex from classifying the query point
+    /// as ON.
+    fn edge_vertex_map(shape: &TopoShape) -> Vec<TopoShape> {
+        fn push_unique(out: &mut Vec<TopoShape>, s: &TopoShape) {
+            if !out.iter().any(|k| k.same_tshape(s)) {
+                out.push(s.clone());
+            }
+        }
+        let mut out: Vec<TopoShape> = Vec::new();
+        for f in faces_of(shape) {
+            let fo = f.0.orientation();
+            if fo == Orientation::Internal || fo == Orientation::External {
+                continue;
+            }
+            for w in crate::topo_tools_full::wires_of_face(&f) {
+                for e in crate::topo_tools_full::edges_of_wire(&w) {
+                    let eo = e.0.orientation();
+                    if eo == Orientation::Internal || eo == Orientation::External {
+                        continue;
+                    }
+                    if BRepTool::is_degenerated(&e) {
+                        continue;
+                    }
+                    push_unique(&mut out, &e.0);
+                    let (v1, v2) = crate::topo_tools_full::edge_vertices(&e);
+                    if let Some(v) = v1 {
+                        push_unique(&mut out, &v.0);
+                    }
+                    if let Some(v) = v2 {
+                        push_unique(&mut out, &v.0);
+                    }
+                }
+            }
+        }
+        out
     }
 
     pub fn shape(&self) -> &TopoShape {
@@ -132,16 +186,25 @@ impl SolidExplorer {
     }
 }
 
-fn on_vertex_or_edge(shape: &TopoShape, p: &GpPnt, tol: f64) -> bool {
-    for v in vertices_of(shape) {
-        if BRepTool::vertex_point(&v).distance(p) <= tol {
-            return true;
-        }
-    }
-    for e in edges_of(shape) {
-        let (_, q) = closest_point_on_edge(&e, p, 32);
-        if q.distance(p) <= tol {
-            return true;
+/// `BRepClass3d_SClassifier::Perform` (`cxx:217-227`): a query point within
+/// tolerance of a vertex or edge of `map_ev` — the explorer's `myMapEV` — is ON.
+/// The list is built by [`SolidExplorer::edge_vertex_map`], which skips internal
+/// children exactly as `BRepClass3d_SolidExplorer::Init` does.
+fn on_vertex_or_edge(map_ev: &[TopoShape], p: &GpPnt, tol: f64) -> bool {
+    for s in map_ev {
+        if s.is_vertex() {
+            if BRepTool::vertex_point(&crate::shape::Vertex(s.clone()))
+                .distance(p)
+                <= tol
+            {
+                return true;
+            }
+        } else if s.is_edge() {
+            let e = Edge(s.clone());
+            let (_, q) = closest_point_on_edge(&e, p, 32);
+            if q.distance(p) <= tol {
+                return true;
+            }
         }
     }
     false
@@ -231,7 +294,7 @@ impl SClassifier {
             self.state = FaceState::In;
             return;
         }
-        if on_vertex_or_edge(expl.shape(), p, tol) {
+        if on_vertex_or_edge(expl.map_ev(), p, tol) {
             self.state = FaceState::On;
             return;
         }

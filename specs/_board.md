@@ -135,7 +135,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-64 | **A27**（新） | `occt-geom/src/{line,circle,ellipse,hyperbola,parabola,plane,cylinder,cone,sphere,torus}.rs`、`occt-geom2d/src/{line,circle,ellipse,hyperbola,parabola}.rs` 的 `continuity()` | 解析曲线/曲面一律返回 `3`（G2），OCCT `Geom_Conic::Continuity()`=`GeomAbs_CN`（`Geom_Conic.cxx:32-35`）、`Geom_Line`(`:128-131`)/`Geom_ElementarySurface`(`:25`)/`Geom2d_Line`(`:172`)/`Geom2d_Conic`(`:48`) 同为 CN(6)；端口 B 样条侧 `bspl::local_continuity` 单跨返回 6，证明编码约定一致 ⇒ 解析类少报连续性，影响 `NbIntervals`/`parameter_intervals` 消费方 | **已尝试 → 回退**（2026-09-20）：仅把这 15 处改成 6 后，`step_to_obj` 由 13/13 变 12/13——**Sphere 网格变空**（`tests/step_to_obj.rs:240` round-trip 顶点数 0）。⇒ 不能单独改：某个消费方把"报出的连续性"当跨度上限（嫌疑点 `meshing/range_splitter/p01.rs:295` 的 `continuity <= curve.continuity()`、`meshing/edge_discret.rs:1259` 的 `pcurve.continuity().min(surface.continuity())`）。下一步：先按 OCCT 对齐该消费方（`GeomAdaptor_Surface::NbUIntervals`/`NbVIntervals` 语义），再改这 15 处 | pending（被消费方阻塞） |
 | T-37 | A1 | `occt-topo/src/brep_surface.rs:234-272`（39 处/27 文件） | 网格扫描 + 6 轮二分 → **需先移植** `Extrema_ExtPS`/`Extrema_GenExtPS`/`Extrema_ExtPElS`（仓内 `extrema_surf` **不是**忠实件：24×24 网格 + 数值 Jacobian，见 T-67） | 3 | pending（被 T-67 阻塞） |
 | T-67 | A1 前置 | 新增移植：`occt-geom/src/extrema_surf/`（或新模块） | 移植 `Extrema_ExtPS.cxx`(376)+`.hxx`(140)、`Extrema_GenExtPS.cxx`(1056)+`.hxx`(155)、`Extrema_ExtPElS.cxx`(454)+`.hxx`(76)：类型分派 + iso 退化处理（`IsoIsDeg`）+ 逐 C2 区间采样（`mySample`）+ `math_FunctionSetRoot` 解析系统（`Extrema_GFuncExtPS`），并改用 `Surface::d2`（`surface.rs:12`）的解析 Jacobian 取代数值差分 | **3 前置** | **分步 1 done**（2026-09-20）：解析臂接线 + trimmed 类型委托；**分步 2/3**（`Extrema_ExtPS` 分派含范围/IsoIsDeg、`Extrema_GenExtPS` 主体）pending |
-| T-38 | A2 | `occt-topo/src/brep_extrema.rs:252-301` | 7×7 采样 + 射线奇偶 → `SolidClassifier`/`algo_tools::compute_state`（`BOPAlgo_BuilderSolid.cxx:835-860`） | 4 | pending |
+| T-38 | A2 | `occt-topo/src/brep_extrema.rs:252-301` | 7×7 采样 + 射线奇偶 → `SolidClassifier`/`algo_tools::compute_state`（`BOPAlgo_BuilderSolid.cxx:835-860`） | 4 | **done**（2026-09-20 第 44 轮）：`is_inside` 对 Solid/CompSolid 改走 `brep_class3d::SolidClassifier::classify`（`BRepClass3d_SClassifier::Perform`），非实体形状仍走原网格射线奇偶并**就地标 UNPORTED**（OCCT 用 `BRepClass3d_SolidExplorer` 处理 shell，端口未接线）。**同批修掉一处真实缺陷**：`SolidExplorer` 缺 `myMapEV`，ON 判定误用"整形状的全部顶点/边"，导致**实体内部的孤立顶点**会把查询点判成 `On`；现按 `BRepClass3d_SolidExplorer::Init`（`cxx:930-982`）只收"非 INTERNAL/EXTERNAL 面的、非 INTERNAL/EXTERNAL 且非退化的边及其顶点"。证据：`phase3_integration` **3/4 → 4/4**（原红 `primitives_measure_correctly` 的球内点分类转绿），`occt-topo --lib` 1293/1、四道 STEP 门禁 14/14、13/13、11/11、2/3、`export_data_obj` 16/16 且计数与基线逐位一致 |
 | T-39 | A3 | `occt-topo/src/step/p01.rs:104-144,663-680`、`step/p02.rs:156-189` | 6 点二阶差分猜曲线族（`(max−min)/max < 0.02` 阈值 OCCT 无）+ 四个 conic 实体按采样重建参数 → `GeomToStep_MakeCurve.cxx:50-104`（`IsKind` 分派）/ `GeomToStep_Make{Circle,Ellipse,Parabola,Hyperbola}` 精确值 | 5 | **done**（2026-09-20）：`classify_curve`+`CurveKind` 删除；`emit_curve_entity` 按 Line→Conic→Trimmed→Bounded 的 `IsKind` 顺序分派（trimmed 走基曲线递归）；`write_conic_params` 按 MakeConic 顺序；四个 `emit_*` 改为取 `gp_*` 的精确 placement/半径/半轴/焦距；门禁全等于基线 |
 | T-71 | **A3 派生（新）** | `occt-topo/src/step/p02.rs::emit_curve_entity` 兜底臂 | `GeomToStep_MakeCurve.cxx:100-103` 的未识别曲线置 `done = false`（**不写任何实体**）未移植：端口仍写 B-spline 拟合（`fit_bspline_curve`）或起点切线 LINE 兜底 ⇒ 会为 OCCT 拒绝导出的曲线伪造实体 | 5 后 | pending（已在代码处标 `UNPORTED` + cxx 行号） |
 | T-40 | A4 | `occt-topo/src/algo_tools/p01.rs:165-205` | V/E/F 分支 32×32 投影 → `BOPTools_AlgoTools::ComputeState` 精确投影 | 4 | pending |
@@ -372,6 +372,13 @@ cd ..; git worktree remove --force .target-headcheck
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
 - **下一步（第 43 轮，两条并行）**：① **判定性实验**：把同一面上各 wire 的 u 归一到同一周期窗口（仅作诊断，不改 `node_insertion` 的行为）后看 face 20 是否走通忠实 Delaunay（预期 74/72）——若走通，则缺的是"跨 wire 的周期对齐"，须先在 OCCT 里找到执行该对齐的那段控制流（候选：`ShapeFix_Wire::FixShifted` 的面级用法 / `StepToTopoDS_TranslateEdgeLoop` 的 `CheckPCurves` 段 / `ShapeFix_Face::FixMissingSeam`）并按它移植，**不得直接给网格层打补丁**；② 用参考的重复顶点证据确定"共享该顶点的两个面"是哪两张，确认端口是否两张都没网格化（据此判断要补的控制流范围）。
 
+**批 20（A2/T-38：点–实体分类改走忠实 SolidClassifier，并补上 `SolidExplorer::myMapEV`）—— 2026-09-20 第 44 轮**
+
+- **落地 1（`occt-topo/src/brep_extrema.rs::is_inside`）**：Solid/CompSolid 改调 `crate::brep_class3d::SolidClassifier::classify(shape, p, CONFUSION)`（= `BRepClass3d_SClassifier::Perform` 的移植），`In` 即"在体内"；原来的 **7×7 UV 网格 + 抖动 +X 射线奇偶**实现改名为 `is_inside_mesh`，只留给**非实体**形状（`BRepClass3d_SolidClassifier` 只对实体/闭壳有定义，OCCT 对 shell 走 `BRepClass3d_SolidExplorer`，端口未接线）并就地标 `UNPORTED`。严格内部语义不变（`On` 不算 In）。
+- **落地 2（同批发现的真实缺陷，`occt-topo/src/brep_class3d.rs`）**：端口 `SClassifier::perform` 的 ON 前置判定用 `on_vertex_or_edge(expl.shape(), …)`，即**整个形状的全部顶点/边**；OCCT 用的是 `myMapEV`——`BRepClass3d_SolidExplorer::Init`（`cxx:930-982`）只把**非 INTERNAL/EXTERNAL 的面**上的**非 INTERNAL/EXTERNAL、非退化边及其顶点**收进 BVH 树（`cxx:217-227` 用它做 ON 判定）。差别实测：对"单位盒 + 一个位于 (0.5,0.5,0.5) 的内部孤立顶点"，旧实现把查询点 (0.5,0.5,0.5) 判成 **`On`**（⇒ `bop_build_common::tests::inside_vertex_settles_into_original_solid_as_copy` 回归），OCCT 语义应为 **`In`**。现补 `SolidExplorer::edge_vertex_map`（逐面→逐 wire→逐边，按上述过滤）并让 ON 判定只用该列表。
+- **验证（全部等于或优于基线）**：`occt-topo --lib` **1293/1**（唯一红 = T-01 `brepfeat::tests::groove_cuts_cylinder`，与基线同）、`phase3_integration` **3/4 → 4/4**（`primitives_measure_correctly` 转绿）、`phase6_integration` 5/5、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**（红 = T-05，报错文本仍逐字 `Offset divergence 2208.0 vs shape_volume 1612.9`）、`export_data_obj` **16/16** 且 16 个模型的 v/f 与 §14.1 记录**逐位一致**；探针（`examples/zz_probe_a2.rs`）已删除，工作树只含上述两个文件的行为改动。
+- **未完成（如实登记）**：非实体（shell/compound）的 `is_inside` 仍是端口自创的网格射线奇偶（`is_inside_mesh`，已标 UNPORTED + OCCT `BRepClass3d_SolidExplorer` 出处）；A4（`algo_tools::compute_state` 的 32×32 投影）与 A16（256×256 采样求交）仍需 T-67 的 `Extrema_ExtPS` 系列。
+
 **T-69 第 3 轮（2026-09-20 第 43 轮 goal round）：判据性实验否证"跨 wire 周期对齐"假设；face 20 的几何/分片参数与成功的 face 8 对比记录在案**
 
 - **实验（临时探针，已删）**：在 `DelaunayNodeInsertionMeshAlgo::perform` 开头对周期面（`gp_torus()` 且 `is_u_periodic()`）做"把每条 wire 的 pcurve 整链按 `k·2π` 平移到第一条 wire 的 u 窗口"的归一，然后数 `triangulate_model_faces` 的 `mapping_failed`（= 忠实路径 0 三角的面）：**基线 162 ⇒ 归一后 161**，且 **face 20 仍是 `tris=0 nodes=74`**。⇒ 第 2 轮提出的"两 wire 的 u 窗口相差一个周期导致 face 20 失败"**被否证**（对齐后仍失败），u 窗口差异只是伴生现象，不是成因。
@@ -569,7 +576,7 @@ cd ..; git worktree remove --force .target-headcheck
 |---|---|---|---|
 | A0 | ✅ | T-35 / T-63 | offset 曲线 D0/D1/D2 按两个 `*OffsetCurveUtils.pxx` 重写（潜在缺陷，无门禁覆盖）；T-63 步 1（基曲线 `EvalD3`）+ 步 2（`AdjustDerivative` 奇异支路、初等曲线 `EvalDN` 至 5 阶）已落地 —— 余项 T-75（offset 自身的 `EvalD3`/`EvalDN`，零消费者） |
 | A1 | ◐ | T-37/T-67 | `Extrema_ExtPS/GenExtPS/ExtPElS` 移植：**步 1**（解析臂接线）done；**步 2/3**（`ExtPS` 范围/`IsoIsDeg`、`GenExtPS` 主体 1056 行）⬜；39 处调用点未迁 |
-| A2 | ⬜ | T-38 | `brep_extrema.rs` 7×7 采样 + 射线奇偶 → `SolidClassifier`/`compute_state` |
+| A2 | ✅ | T-38 | `is_inside` 的 7×7 采样 + 射线奇偶**已删除**（实体走 `SolidClassifier`；非实体分支保留并标 UNPORTED）；同时按 `BRepClass3d_SolidExplorer::Init` 补 `myMapEV`（内部孤立顶点不再误判 ON）⇒ `phase3_integration` 4/4 |
 | A3 | ✅ | T-39 | `classify_curve` 删除；写侧 `IsKind` 分派 + `GeomToStep_Make*` 精确值；剩 T-71（`done=false` 臂） |
 | A4 | ⬜ | T-40 | `algo_tools::compute_state` 的 32×32 投影 |
 | A5 | ⬜ | T-41 | 体素/网格布尔摘除（`bop_curved`、`bop_builder_core`） |
@@ -664,7 +671,7 @@ cd ..; git worktree remove --force .target-headcheck
 | `step_obj_area` | **11/11** |
 | `step_geometry_parity` | **2/3**（红 = T-05） |
 | `phase6_integration` | **5/5** |
-| `phase3_integration` | 3/4（红 = 已登记的**预先存在**项 `primitives_measure_correctly`：球面 `is_inside`，属 A2/T-38） |
+| `phase3_integration` | **4/4**（2026-09-20 第 44 轮 A2/T-38 修复后由 3/4 转绿：`primitives_measure_correctly` 的球内点分类） |
 | `export_data_obj` | 16/16 模型 ok，计数与既有记录逐位一致（Shape-1 3343/4336、Shape-2 3105/4792、Shape 6150/11372、Sphere 642/1244、Torus 1369/2592、linkrods 3494/5078、rev 104/92、screw 600/790） |
 
 工作树干净、无插桩/探针残留（`git grep zz_probe` / `dbg-` 均 0 命中）。

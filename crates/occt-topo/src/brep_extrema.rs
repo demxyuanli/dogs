@@ -256,7 +256,38 @@ pub fn closest_point_on_face(face: &Face, p: &GpPnt, _nu: usize, _nv: usize) -> 
 /// rejected first. If the shape cannot be meshed (no faces with surfaces), the
 /// bounding-box containment is returned as a fallback. Best suited to closed
 /// solids; results on open surfaces are not meaningful.
+/// Whether `p` lies inside the solid `shape` (audit A2 / task T-38).
+///
+/// Solids go through `BRepClass3d_SolidClassifier` (the port's
+/// [`SolidClassifier::classify`], `brep_class3d.rs:463`, itself a port of
+/// `BRepClass3d_SClassifier::Perform`); `In` is the answer, matching the
+/// strictly-interior semantics the previous body had.
+///
+/// For a shape that is **not** a solid (`BRepClass3d_SolidClassifier` is only
+/// defined for solids/shells with a closed volume) this keeps the port-internal
+/// approximation: a 7x7 UV mesh per face plus a jittered +X ray parity count.
+/// UNPORTED there: OCCT classifies a shell through
+/// `BRepClass3d_SolidExplorer` on the shell's own faces
+/// (`BRepClass3d_SolidExplorer.cxx:80-120`), which this port has not wired for
+/// non-solid shapes yet.
 pub fn is_inside(shape: &TopoShape, p: &GpPnt) -> bool {
+    match shape.shape_type() {
+        ShapeType::Solid | ShapeType::CompSolid => matches!(
+            crate::brep_class3d::SolidClassifier::classify(
+                shape,
+                p,
+                occt_core::precision::CONFUSION
+            ),
+            crate::fclass2d::FaceState::In
+        ),
+        _ => is_inside_mesh(shape, p),
+    }
+}
+
+/// Port-internal mesh + ray-parity point classification, kept only for
+/// non-solid shapes (see [`is_inside`]): a 7x7 UV mesh of every face, then the
+/// parity of a slightly jittered +X ray. UNPORTED for that case.
+fn is_inside_mesh(shape: &TopoShape, p: &GpPnt) -> bool {
     let bbox = shape_bbox(shape);
     if let Some(b) = &bbox {
         if b.is_out(p) {
