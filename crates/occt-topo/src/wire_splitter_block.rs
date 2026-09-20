@@ -199,7 +199,6 @@ fn path(
     let mut va_slot = start_slot;
     let mut info_idx = start_info;
     let eps = f64::EPSILON;
-
     loop {
         if ls.len() == 1 && ls[0].0.same_tshape(&map.infos[va_slot][info_idx].edge.0) {
             return;
@@ -372,10 +371,63 @@ fn dir2d_angle(d: &GpDir2d) -> f64 {
 }
 
 fn coord2d(v: &TopoShape, e: &Edge, face: &Face) -> GpPnt2d {
-    let t = vertex_parameter(v, e);
+    let t = vertex_parameter_on_face(v, e);
     match make_2d(e, face) {
         Ok(c) => c.d0(t),
         Err(_) => GpPnt2d::new(99.0, 99.0),
+    }
+}
+
+/// `BRep_Tool::Parameter(V, E, S, L)` (`BRep_Tool.cxx:301-352`): the parameter of
+/// the vertex `v` on the edge's pcurve.
+///
+/// The occurrence of `v` among the edge's vertices is searched with
+/// `TopoDS_Iterator(E.Oriented(FORWARD))`, i.e. over the *stored* vertex
+/// orientations; a second occurrence of the same vertex (a closed edge whose two
+/// ends are one shape, e.g. a ring on a periodic surface) records
+/// `rev = (E.Orientation() == REVERSED)` and replaces the occurrence only when
+/// its orientation equals `v`'s. The chosen occurrence's orientation then picks
+/// the end: `FORWARD -> first` (flipped by `rev`), `REVERSED -> last` (flipped by
+/// `rev`). Without this, the two ends of a closed edge collapse onto the same UV
+/// and `BOPAlgo_WireSplitter::Path` closes a bogus one-edge loop at the seam.
+///
+/// The `INTERNAL` / not-found branch of OCCT consults the vertex's
+/// `BRep_PointRepresentation`s on the pcurve (`BRep_TVertex::Points`), which this
+/// port does not model; it falls back to the 3D `BRep_Tool::Parameter(V, E)`.
+fn vertex_parameter_on_face(v: &TopoShape, e: &Edge) -> f64 {
+    let (first, last) = BRepTool::edge_parameters(e);
+    let mut vf: Option<Orientation> = None;
+    let mut rev = false;
+    for k in stored_vertices_oriented(e) {
+        if !k.same_tshape(v) {
+            continue;
+        }
+        match vf {
+            None => vf = Some(k.orientation()),
+            Some(_) => {
+                rev = e.0.orientation() == Orientation::Reversed;
+                if k.orientation() == v.orientation() {
+                    vf = Some(k.orientation());
+                }
+            }
+        }
+    }
+    match vf {
+        Some(Orientation::Forward) => {
+            if rev {
+                last
+            } else {
+                first
+            }
+        }
+        Some(Orientation::Reversed) => {
+            if rev {
+                first
+            } else {
+                last
+            }
+        }
+        _ => vertex_parameter(v, e),
     }
 }
 
@@ -424,7 +476,7 @@ fn angle_in(e_in: &Edge, le: &[EdgeInfo]) -> f64 {
 }
 
 fn angle_2d(v: &TopoShape, e: &Edge, face: &Face, is_in: bool) -> f64 {
-    let tv = vertex_parameter(v, e);
+    let tv = vertex_parameter_on_face(v, e);
     if Precision::is_infinite(tv) {
         return 0.0;
     }
@@ -676,11 +728,11 @@ fn stored_vertices(e: &Edge) -> Vec<TopoShape> {
         .collect()
 }
 
-/// Edge vertices with `TopoDS_Iterator(cumOri=true)` orientation.
-///
-/// When both children are stored Forward (`make_edge_segment` in this port),
-/// the last child is treated as Reversed, matching `BRepLib_MakeEdge`.
-fn oriented_vertices(e: &Edge) -> Vec<TopoShape> {
+/// The edge's stored vertices with the `(FORWARD, REVERSED)` orientation pair
+/// OCCT guarantees (`BRep_Builder::Add`); the port also builds edges whose two
+/// children are stored Forward, so the last child is normalised to Reversed
+/// there. No composition with the edge's own orientation.
+fn stored_vertices_oriented(e: &Edge) -> Vec<TopoShape> {
     let stored = stored_vertices(e);
     let mut oris: Vec<Orientation> = stored.iter().map(|v| v.orientation()).collect();
     if oris.len() >= 2
@@ -693,7 +745,21 @@ fn oriented_vertices(e: &Edge) -> Vec<TopoShape> {
         .into_iter()
         .zip(oris)
         .map(|(mut v, o)| {
-            v.set_orientation(Orientation::compose(e.0.orientation(), o));
+            v.set_orientation(o);
+            v
+        })
+        .collect()
+}
+
+/// Edge vertices with `TopoDS_Iterator(cumOri=true)` orientation.
+///
+/// When both children are stored Forward (`make_edge_segment` in this port),
+/// the last child is treated as Reversed, matching `BRepLib_MakeEdge`.
+fn oriented_vertices(e: &Edge) -> Vec<TopoShape> {
+    stored_vertices_oriented(e)
+        .into_iter()
+        .map(|mut v| {
+            v.set_orientation(Orientation::compose(e.0.orientation(), v.orientation()));
             v
         })
         .collect()
