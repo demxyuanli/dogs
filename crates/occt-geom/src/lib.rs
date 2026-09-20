@@ -29,7 +29,6 @@ pub use surface::Surface;
 pub mod bspline_to_bezier;
 pub mod bezier_to_polyline;
 pub mod curve_approx;
-pub mod surface_to_grid;
 pub mod convert_geom;
 // Phase 4 modules.
 pub mod geom_api;

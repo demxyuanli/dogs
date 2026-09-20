@@ -97,6 +97,14 @@ pub enum SurfaceFitKind {
 
 /// A degree-1 (bilinear) B-spline surface through a grid of points. Implements
 /// `Surface` by bilinear interpolation of the control lattice.
+///
+/// **UNPORTED (audit A15)**: OCCT has no such surface *type* - it approximates a
+/// point grid with a real `Geom_BSplineSurface` (`GeomAPI_PointsToBSplineSurface`
+/// / `GeomPlate_BuildPlateSurface`), whose `D2` is analytic
+/// (`BSplSLib::D2`). `GridSurface` is a port-only stand-in and therefore inherits
+/// the trait's finite-difference `D2`; nothing in the port consumes it today (only
+/// this module's own tests), so the faithful resolution is to keep it marked
+/// rather than to invent a derivative.
 #[derive(Clone)]
 pub struct GridSurface {
     pub us: Vec<f64>,

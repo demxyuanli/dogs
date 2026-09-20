@@ -15,10 +15,12 @@ pub trait Surface: Send + Sync {
     /// surfaces, `BSplSLib::D2` for B-spline/Bezier, `Geom_OffsetSurfaceUtils`
     /// for offsets) and no finite-difference fallback exists anywhere in OCCT.
     /// The five elementary surfaces (plane / cylinder / cone / sphere / torus),
-    /// `GeomBSplineSurface` and `GeomRectangularTrimmedSurface` override this;
-    /// the remaining implementors (`GeomBezierSurface`, `GeomOffsetSurface`,
-    /// `GeomSurfaceOfRevolution`, `GeomSurfaceOfLinearExtrusion`,
-    /// `surface_fit`, `surface_to_grid`) still inherit the `h = 1e-6` difference.
+    /// `GeomBSplineSurface`, `GeomRectangularTrimmedSurface`,
+    /// `GeomSurfaceOfRevolution` and `GeomSurfaceOfLinearExtrusion` override this
+    /// (`Geom_RevolutionUtils::CalculateD2` / `Geom_ExtrusionUtils::CalculateD2`);
+    /// the remaining implementors are `GeomBezierSurface`, `GeomOffsetSurface` and
+    /// the port-only `surface_fit::GridSurface` (audit A15; the abandoned
+    /// `surface_to_grid` module was deleted in batch 65 as a dead non-OCCT type).
     fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
         let h = 1e-6;
         let (p, du, dv) = self.d1(u, v);
