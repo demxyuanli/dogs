@@ -176,6 +176,23 @@ impl Surface for GeomBezierSurface {
         (self.d0(u, v), self.du(u, v), self.dv(u, v))
     }
 
+    /// `Geom_BezierSurface::D2`. Exact through the equivalent B-spline
+    /// representation (a Bezier is a B-spline on `[0,1]` with full knot
+    /// multiplicities, so all derivatives coincide), instead of the trait's
+    /// `h = 1e-6` central difference (audit A15). The only case without that
+    /// representation is a degenerate surface with a single pole row
+    /// (`n_u < 2 || n_v < 2`), where `d1` is still analytic and the second
+    /// derivatives vanish.
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        match self.osculating_bspline() {
+            Some(bs) => bs.d2(u, v),
+            None => {
+                let (p, du, dv) = self.d1(u, v);
+                (p, du, dv, GpVec::zero(), GpVec::zero(), GpVec::zero())
+            }
+        }
+    }
+
     fn osculating_bspline(&self) -> Option<GeomBSplineSurface> {
         if self.n_u < 2 || self.n_v < 2 {
             return None;
