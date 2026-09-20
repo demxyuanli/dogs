@@ -67,7 +67,16 @@ pub fn make_2d(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, String> {
 pub fn curve_on_surface(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
     let reg = GeometryRegistry::global();
     let face_key = GeometryRegistry::shape_key(&face.0);
-    reg.edge_pcurve(&edge.0, face_key)
+    let pcs = reg.edge_pcurves(&edge.0, face_key);
+    // `BRep_Tool::CurveOnSurface` (`BRep_Tool.cxx:347-357`): for a
+    // representation on a *closed* surface (a seam's two pcurves) a REVERSED
+    // edge reads `PCurve2`, otherwise `PCurve1`.
+    if edge.0.orientation() == crate::abs::Orientation::Reversed {
+        if let Some(second) = pcs.get(1) {
+            return Some(second.clone());
+        }
+    }
+    pcs.into_iter().next()
 }
 
 /// `BRep_Tool::CurveOnSurface(edge, face, first, last)`: stored p-curve plus

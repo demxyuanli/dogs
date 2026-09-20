@@ -294,10 +294,63 @@ impl BRepPrimCylinder {
         lateral_bottom.0.reverse();
         let mut lateral_seam_back = seam.clone();
         lateral_seam_back.0.reverse();
-        let lateral_wire = b.make_wire(&[lateral_bottom, seam, top_circle, lateral_seam_back]);
+        let lateral_wire = b.make_wire(&[
+            lateral_bottom,
+            seam.clone(),
+            top_circle.clone(),
+            lateral_seam_back,
+        ]);
         let lateral_face = b.make_face(Arc::new(GeomCylinder::new(
             GpCylinder::new(ax, radius).expect("cylinder radius"),
         )), &[lateral_wire]);
+
+        // pcurves on the lateral face (`BRepPrim_OneAxis::LateralFace`,
+        // `BRepPrim_OneAxis.cxx:388-439`, reached through
+        // `BRepPrim_Cylinder::MakeEmptyLateralFace`). `myVMin = 0`,
+        // `myVMax = height`, `myAngle = 2*pi`, `myMeridianOffset = 0` and
+        // `HasSides()` is false for a full revolution, so:
+        //   * `ETOP`/`EBOTTOM` (the cap circles) are `gp_Lin2d((0, VMax|VMin),
+        //     +X)` — u free;
+        //   * `ESTART`/`EEND` (the seam) use the *closed* form
+        //     `SetPCurve(E, F, c1, c2)` with `c1 = gp_Lin2d((myAngle,
+        //     -offset), +Y)` and `c2 = gp_Lin2d((0, -offset), +Y)`
+        //     (`cxx:434-439`). The two pcurves are what make
+        //     `BRep_Tool::IsClosed(seam, lateral)` true
+        //     (`BRep_Tool.cxx:820-840`: a curve representation on the closed
+        //     surface) and what `BRep_Tool::CurveOnSurface` selects between for
+        //     a REVERSED edge (`cxx:354-356`).
+        {
+            let reg = GeometryRegistry::global();
+            let face_key = GeometryRegistry::shape_key(&lateral_face.0);
+            let dir_u = GpDir2d::new(1.0, 0.0).expect("u direction");
+            let dir_v = GpDir2d::new(0.0, 1.0).expect("v direction");
+            let attach = |edge: &Edge, pc: Geom2dLine, range: (f64, f64)| {
+                reg.set_edge_pcurve(&edge.0, face_key, Arc::new(pc));
+                reg.set_pcurve_range(&edge.0, face_key, range.0, range.1);
+            };
+            attach(
+                &bottom_circle,
+                Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, 0.0), dir_u),
+                (0.0, 2.0 * PI),
+            );
+            attach(
+                &top_circle,
+                Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, height), dir_u),
+                (0.0, 2.0 * PI),
+            );
+            reg.set_edge_pcurves(
+                &seam.0,
+                face_key,
+                vec![
+                    Arc::new(Geom2dLine::from_pnt_dir(
+                        GpPnt2d::new(2.0 * PI, 0.0),
+                        dir_v,
+                    )),
+                    Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, 0.0), dir_v)),
+                ],
+            );
+            reg.set_pcurve_range(&seam.0, face_key, 0.0, height);
+        }
 
         let shell = b.make_shell(&[bottom_face, top_face, lateral_face]);
         let solid = b.make_solid(&[shell]);
