@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use occt_core::gp::{GpPln, GpPnt, GpVec};
+use occt_core::gp::{GpDir, GpPln, GpPnt, GpVec};
 use occt_geom::{Curve, Surface};
 
 use crate::abs::ShapeType;
@@ -598,6 +598,131 @@ impl IgesWriter {
         Some(self.emit(126, 0, "B_SPLINE_CURVE", s))
     }
 
+    /// Entity 123 Direction (`IGESGeom_ToolDirection::WriteOwnParams`,
+    /// `IGESGeom_ToolDirection.cxx:64-74`): the three components of the unit
+    /// vector.
+    fn emit_direction(&mut self, d: &GpDir) -> usize {
+        self.emit(
+            123,
+            0,
+            "DIRECTION",
+            format!("123,{},{},{};", num(d.x()), num(d.y()), num(d.z())),
+        )
+    }
+
+    /// Entity 196 (`GeomToIGES_GeomSurface::TransferSphericalSurface`,
+    /// `GeomToIGES_GeomSurface.cxx:1366-1400`, written by
+    /// `IGESSolid_ToolSphericalSurface::WriteOwnParams`,
+    /// `IGESSolid_ToolSphericalSurface.cxx:70-80`):
+    /// `196, centre_point, radius, axis_direction, reference_direction;` — the
+    /// parametrised form, which is the one OCCT's transfer produces.
+    fn emit_spherical_surface(
+        &mut self,
+        center: &GpPnt,
+        radius: f64,
+        axis: &GpDir,
+        x_dir: &GpDir,
+    ) -> usize {
+        let c = self.emit_point(center);
+        let a = self.emit_direction(axis);
+        let r = self.emit_direction(x_dir);
+        self.emit(
+            196,
+            0,
+            "SPHERICAL_SURFACE",
+            format!("196,{c},{},{a},{r};", num(radius)),
+        )
+    }
+
+    /// Entity 192 (`GeomToIGES_GeomSurface::TransferCylindricalSurface`,
+    /// `GeomToIGES_GeomSurface.cxx:1280-1314`, written by
+    /// `IGESSolid_ToolCylindricalSurface::WriteOwnParams`):
+    /// `192, location_point, axis_direction, radius, reference_direction;`.
+    fn emit_cylindrical_surface(
+        &mut self,
+        location: &GpPnt,
+        axis: &GpDir,
+        radius: f64,
+        x_dir: &GpDir,
+    ) -> usize {
+        let l = self.emit_point(location);
+        let a = self.emit_direction(axis);
+        let r = self.emit_direction(x_dir);
+        self.emit(
+            192,
+            0,
+            "CYLINDRICAL_SURFACE",
+            format!("192,{l},{a},{},{r};", num(radius)),
+        )
+    }
+
+    /// Entity 194 (`TransferConicalSurface`, `cxx:1318-1362`, written by
+    /// `IGESSolid_ToolConicalSurface::WriteOwnParams`):
+    /// `194, location_point, axis_direction, ref_radius, semi_angle_deg,
+    /// reference_direction;`. A negative semi-angle is written by mirroring the
+    /// reference point through the apex, negating the angle and reversing the
+    /// reference direction (`cxx:1344-1350`).
+    fn emit_conical_surface(
+        &mut self,
+        location: &GpPnt,
+        apex: &GpPnt,
+        axis: &GpDir,
+        ref_radius: f64,
+        semi_angle: f64,
+        x_dir: &GpDir,
+    ) -> usize {
+        let (loc, angle, xd) = if semi_angle < 0.0 {
+            (
+                GpPnt::new(
+                    2.0 * apex.x() - location.x(),
+                    2.0 * apex.y() - location.y(),
+                    2.0 * apex.z() - location.z(),
+                ),
+                -semi_angle,
+                GpDir::new(-x_dir.x(), -x_dir.y(), -x_dir.z())
+                    .unwrap_or_else(|_| *x_dir),
+            )
+        } else {
+            (*location, semi_angle, *x_dir)
+        };
+        let l = self.emit_point(&loc);
+        let a = self.emit_direction(axis);
+        let r = self.emit_direction(&xd);
+        self.emit(
+            194,
+            0,
+            "CONICAL_SURFACE",
+            format!(
+                "194,{l},{a},{},{},{r};",
+                num(ref_radius),
+                num(angle * 180.0 / std::f64::consts::PI)
+            ),
+        )
+    }
+
+    /// Entity 198 (`TransferToroidalSurface`, `cxx:1402-1435`, written by
+    /// `IGESSolid_ToolToroidalSurface::WriteOwnParams`):
+    /// `198, centre_point, axis_direction, major_radius, minor_radius,
+    /// reference_direction;`.
+    fn emit_toroidal_surface(
+        &mut self,
+        center: &GpPnt,
+        axis: &GpDir,
+        major: f64,
+        minor: f64,
+        x_dir: &GpDir,
+    ) -> usize {
+        let c = self.emit_point(center);
+        let a = self.emit_direction(axis);
+        let r = self.emit_direction(x_dir);
+        self.emit(
+            198,
+            0,
+            "TOROIDAL_SURFACE",
+            format!("198,{c},{a},{},{},{r};", num(major), num(minor)),
+        )
+    }
+
     /// Base surface entity for a face, plus any synthesized boundary curves
     /// (used when the face carries no boundary wires, e.g. a sphere).
     fn emit_face_surface(&mut self, f: &Face) -> (usize, Vec<usize>) {
@@ -608,29 +733,102 @@ impl IgesWriter {
             let pln = face_plane(f).unwrap_or_else(GpPln::default);
             return (self.emit_plane(&pln), Vec::new());
         }
+        // `GeomToIGES_GeomSurface::TransferSurface` (`cxx:520-600`) dispatches on
+        // the surface's exact type; the elementary surfaces become the IGES
+        // surface entities 192/194/196/198 with the location point, the axis and
+        // the reference direction taken from the `gp_*` surface itself.
+        match classify_surface(surf.as_ref()) {
+            SurfaceKind::Cylinder => {
+                if let Some(cy) = surf.gp_cylinder() {
+                    let pos = cy.position();
+                    return (
+                        self.emit_cylindrical_surface(
+                            &pos.location(),
+                            pos.axis().direction(),
+                            cy.radius(),
+                            pos.x_direction(),
+                        ),
+                        Vec::new(),
+                    );
+                }
+            }
+            SurfaceKind::Cone => {
+                if let Some(co) = surf.gp_cone() {
+                    let pos = co.position();
+                    return (
+                        self.emit_conical_surface(
+                            &pos.location(),
+                            &co.apex(),
+                            pos.axis().direction(),
+                            co.radius(),
+                            co.semi_angle(),
+                            pos.x_direction(),
+                        ),
+                        Vec::new(),
+                    );
+                }
+            }
+            SurfaceKind::Torus => {
+                if let Some(t) = surf.gp_torus() {
+                    let pos = t.position();
+                    return (
+                        self.emit_toroidal_surface(
+                            &pos.location(),
+                            pos.axis().direction(),
+                            t.major_radius(),
+                            t.minor_radius(),
+                            pos.x_direction(),
+                        ),
+                        Vec::new(),
+                    );
+                }
+            }
+            _ => {}
+        }
         if classify_surface(surf.as_ref()) == SurfaceKind::Sphere {
             if let Some(center) = sphere_center(surf.as_ref()) {
                 let (u0, _, v0, v1) = surf_bounds(surf.as_ref());
                 let vm = 0.5 * (v0 + v1);
                 let r = surf.d0(u0, vm).distance(&center);
                 if r > 1e-9 {
-                    // Surface of revolution: axis line + generatrix semicircle.
+                    // `GeomToIGES_GeomSurface::TransferSphericalSurface`
+                    // (`GeomToIGES_GeomSurface.cxx:1366-1400`): entity 196 is a
+                    // centre **point** entity (#116), the radius, the axis
+                    // direction (#123) and the reference direction (#123, the
+                    // sphere's X axis), written by
+                    // `IGESSolid_ToolSphericalSurface::WriteOwnParams` as
+                    // `196, centre, radius, axis, refdir;`.
+                    // `GeomToIGES_GeomSurface.cxx:1384-1393`: the axis and the
+                    // reference direction come from the `gp_Sphere`'s position
+                    // (its main axis and its X axis).
+                    let (axis, x_dir) = match surf.gp_sphere() {
+                        Some(sp) => {
+                            let axis = *sp.position().axis().direction();
+                            let x_dir = *sp.position().x_direction();
+                            (axis, x_dir)
+                        }
+                        None => (
+                            GpDir::new(0.0, 0.0, 1.0).expect("z"),
+                            GpDir::new(1.0, 0.0, 0.0).expect("x"),
+                        ),
+                    };
+                    let sph = self.emit_spherical_surface(&center, r, &axis, &x_dir);
+                    // The two meridian arcs still serve as the face's seam
+                    // boundary curves (#144 needs a boundary), matching the
+                    // sphere the port's primitives build.
                     let south = GpPnt::new(center.x(), center.y(), center.z() - r);
                     let north = GpPnt::new(center.x(), center.y(), center.z() + r);
-                    let axis_idx = self.emit_line(&south, &north);
                     let gen = self.emit_arc_3p(
                         &south,
                         &GpPnt::new(center.x() + r, center.y(), center.z()),
                         &north,
                     );
-                    let rev = self.emit(120, 0, "REVOLVED", format!("120,{axis_idx},{gen};"));
-                    // Second meridian completes the sphere's seam boundary.
                     let mer2 = self.emit_arc_3p(
                         &north,
                         &GpPnt::new(center.x() - r, center.y(), center.z()),
                         &south,
                     );
-                    return (rev, vec![gen, mer2]);
+                    return (sph, vec![gen, mer2]);
                 }
             }
         }
