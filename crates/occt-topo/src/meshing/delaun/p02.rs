@@ -16,6 +16,7 @@ impl Delaun {
             circles: CircleTool::new(),
             sup_vert: Vec::new(),
             init_circles: false,
+            failed: false,
             sup_trian: DelaunTriangle::default(),
         };
         delaun.perform(&mut indices, -1, -1);
@@ -41,6 +42,7 @@ impl Delaun {
             circles: CircleTool::new(),
             sup_vert: Vec::new(),
             init_circles: false,
+            failed: false,
             sup_trian: DelaunTriangle::default(),
         };
         delaun.perform(vertex_indices, cells_u, cells_v);
@@ -517,10 +519,29 @@ impl Delaun {
         // vertex list is empty. `frontierAdjust` is the only mechanism that
         // closes leftover free-edge loops, so skipping it here leaves them
         // unclosed.
+        //
+        // A full-link failure (`add_triangle`, see below) aborts the rest of the
+        // pass: OCCT's `Standard_OutOfRange` unwinds out of `perform()` and is
+        // swallowed by `BRepMesh_BaseMeshAlgo.cxx:52-62`.
+        if self.failed {
+            return;
+        }
         self.process_constraints();
     }
 
-    pub(super) fn add_triangle(&mut self, edges: [i32; 3], oris: [bool; 3], nodes: [i32; 3]) {
+    /// `BRepMesh_Delaun::addTriangle`. Returns `false` when one of the three
+    /// links already carries two triangles — OCCT's `BRepMesh_PairOfIndex::Append`
+    /// (`BRepMesh_PairOfIndex.hxx:41`) throws `Standard_OutOfRange` there, which
+    /// `BRepMesh_BaseMeshAlgo.cxx:52-62` swallows so the face ends up with no
+    /// mesh. The port reports the same condition instead of panicking, and
+    /// callers abort the current polygon (`self.failed`).
+    pub(super) fn add_triangle(&mut self, edges: [i32; 3], oris: [bool; 3], nodes: [i32; 3]) -> bool {
+        for e in edges {
+            if self.mesh_data.elements_connected_to(e.abs()).extent() >= 2 {
+                self.failed = true;
+                return false;
+            }
+        }
         let signed = [
             if oris[0] { edges[0] } else { -edges[0] },
             if oris[1] { edges[1] } else { -edges[1] },
@@ -560,6 +581,7 @@ impl Delaun {
         if !is_added {
             self.mesh_data.remove_element(new_id);
         }
+        true
     }
 
     pub(super) fn insert_internal_edges(&mut self) {

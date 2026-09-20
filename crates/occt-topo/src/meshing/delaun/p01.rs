@@ -295,4 +295,9 @@ pub struct Delaun {
     pub(super) sup_vert: Vec<i32>,
     pub(super) init_circles: bool,
     pub(super) sup_trian: DelaunTriangle,
+    /// Set when `addTriangle` hit OCCT's `Standard_OutOfRange` condition (a link
+    /// already carrying two triangles). OCCT lets the exception escape to
+    /// `BRepMesh_BaseMeshAlgo.cxx:52-62`, which swallows it and leaves the face
+    /// unmeshed; callers here read this flag and abort the polygon.
+    pub(super) failed: bool,
 }

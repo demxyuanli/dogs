@@ -4,6 +4,13 @@ use super::*;
 impl Delaun {
 
     pub(super) fn mesh_polygon(&mut self, the_polygon: &mut Vec<i32>, the_poly_boxes: &mut Vec<BndB2>, skipped: &mut Option<BTreeSet<i32>>) {
+        // A full-link failure unwinds out of the mesh in OCCT
+        // (`BRepMesh_BaseMeshAlgo.cxx:52-62` swallows the exception) — stop here.
+        if self.failed {
+            the_polygon.clear();
+            the_poly_boxes.clear();
+            return;
+        }
         if self.mesh_elementary_polygon(the_polygon) {
             return;
         }
@@ -187,6 +194,10 @@ impl Delaun {
             let mut poly2: Vec<i32> = Vec::new();
             let mut boxes2: Vec<BndB2> = Vec::new();
             self.decompose_simple_polygon(&mut cut_poly, &mut cut_boxes, &mut poly2, &mut boxes2);
+            if self.failed {
+                // OCCT's exception unwinds the whole decomposition.
+                break;
+            }
             if !poly2.is_empty() {
                 pending.push((poly2, boxes2));
             }
@@ -340,40 +351,19 @@ impl Delaun {
         let new_edge_0 = self.mesh_data.add_link(nodes[1], nodes[2], VertexState::Free);
         let new_edge_1 = self.mesh_data.add_link(nodes[2], nodes[0], VertexState::Free);
         let new_edges_info = [first_edge_info, new_edge_0, new_edge_1];
-        // Same oriented-edge predicate as `cleanupPolygon`
-        // (`BRepMesh_Delaun.cxx:1446-1451`): free the slot before `AddElement`
-        // when the ear reuses a link that still carries two triangles.
-        for &info in &new_edges_info {
-            let id = info.abs();
-            if self.mesh_data.elements_connected_to(id).extent() < 2 {
-                continue;
-            }
-            let is_forward = info > 0;
-            let pair = self.mesh_data.elements_connected_to(id);
-            let mut elem_it = 1;
-            while elem_it <= pair.extent() {
-                let elem_id = pair.index(elem_it);
-                if elem_id < 0 {
-                    elem_it += 1;
-                    continue;
-                }
-                let element = self.mesh_data.get_element(elem_id);
-                let mut found = false;
-                for k in 0..3 {
-                    if element.link_at(k).abs() == id && (element.link_at(k) > 0) == is_forward {
-                        let mut loop_edges = BTreeMap::new();
-                        self.delete_triangle(elem_id, &mut loop_edges);
-                        found = true;
-                        break;
-                    }
-                }
-                if found {
-                    break;
-                }
-                elem_it += 1;
-            }
+        // `BRepMesh_Delaun.cxx:2259-2274`: OCCT does `AddLink` twice and then
+        // `addTriangle` **without touching existing triangles**. The previous body
+        // deleted whichever neighbour triangle already used one of the ear links
+        // ("free the slot before `AddElement`") — an invented rule (audit A25).
+        // `add_triangle` now reports OCCT's `Standard_OutOfRange` condition
+        // (= a link already carrying two triangles) instead of panicking, and the
+        // polygon is dropped, mirroring the swallowed exception that leaves the
+        // face unmeshed in OCCT.
+        if !self.add_triangle_by_info(new_edges_info, nodes) {
+            the_polygon.clear();
+            the_poly_boxes.clear();
+            return;
         }
-        self.add_triangle_by_info(new_edges_info, nodes);
 
         if used_link_id == 3 {
             the_polygon.remove(0);

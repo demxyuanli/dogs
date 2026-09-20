@@ -174,7 +174,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | **已尝试 → 回退，被 A13/A18 阻塞**（2026-09-20）：按 `BRepTools.cxx:172-367` 完整移植（`box_curve2d` 精确盒 + B-spline 周期验证 2/3/6 点 + 非周期钳制）后 `step_obj_parity` 14/14→**13/14**：`data/occ/T0M.stp` 的 **bbox min[2] ours=-424.978671 occ=-424.741876（Δ=0.237）**——忠实窗口等于 OCCT 的 `BRepTools::UVBounds`，但**消费方**是本仓自创的"UV 矩形栅格"建网格（A13/A18），而 OCCT 的网格由 pcurve 驱动（`BRepMesh_FaceDiscret`），所以凸包级别的窗口外扩不会漏进 OCCT 的网格。⇒ 必须先做 A13/A18（或改为逐样本判定），再重放本改动 |
 | T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | **done**（2026-09-20）：改为 `GeomAdaptor_Surface::Load`（`cxx:422-513`）的 `DynamicType` 精确顺序（RTS→Plane→Cylinder→Cone→Sphere→Torus→Revolution→Extrusion→**Bezier**→BSpline→Offset→Other），删除 `match (up,vp)` 与自创 `is_cylinder_like`；新增 `Surface::is_bezier_surface()`。门禁全等于基线 |
 | T-72 | **A30**（批 4 派生，新） | `occt-topo/src/brep_surface.rs:78-101` | `brep_surface::classify_surface` = 8×8 采样 `is_planar(1e-6)` + 等距球心 + `1e-4*r` 阈值 ⇒ STEP 读入面型靠采样（`step/p01.rs:160`、`step/p04.rs:1275+`） | 5 后 | **done**（2026-09-20）：改为 `GeomAdaptor_Surface::Load`（`cxx:422-513`）的精确类判定（RTS→Plane→Cylinder→Cone→Sphere→Torus→Other）；删除 8×8 采样与两个阈值。可观测修复：`step/p04.rs` 的 `GeomConvert_Units` 分派此前把柱/锥判成 `Other` ⇒ 柱面 pcurve **单位换算被跳过**。8 个既有测试的"缺陷断言"（3 处查找面谓词 `== Other` + 1 处 `assert_eq!(vanilla, Other)`）改为精确类型；未新增测试、未放宽门禁 |
-| T-61 | A25 | `meshing/delaun/p04.rs:346-375` | 自造"先删邻三角形再 AddElement" → `BRepMesh_Delaun.cxx:2263-2274` 失败即置 `IMeshData_Failure`，不改网格 | 7 | pending |
+| T-61 | A25 | `meshing/delaun/p04.rs:346-375` | 自造"先删邻三角形再 AddElement" → `BRepMesh_Delaun.cxx:2263-2274` 失败即置 `IMeshData_Failure`，不改网格 | 7 | **◐ 主体 done**（2026-09-20）：删除整段删除补丁；`add_triangle`/`add_triangle_by_info` 改为可判定失败（链接满 ⇒ `failed=true` 返回 false = OCCT `Standard_OutOfRange`，经 `BRepMesh_BaseMeshAlgo.cxx:52-62` 空 catch 吞掉）；`mesh_polygon`/分解循环/`process_constraints` 前均检查 `failed`。门禁全等于基线（T0M 网格 46514/46945 → 46516/46962，见 §7 批 12）。**收尾项**：OCCT 是**整面**无网格，端口目前只中止当前多边形（已加三角形保留）⇒ 需把失败标志上抛到面级管线（`IMeshData_Failure`） |
 | T-62 | A26 | `brep_exchange.rs:118,125`、`occt-core/src/io/{ply,stl}.rs`、`iges.rs:168,390-438`、`step/p02.rs:16-17,43`、`vrml.rs:92`、`obj.rs` | PLY 焊接/属性类型、STL 阈值/头/嗅探、IGES 采样族与自造回转面、STEP 写侧采样重拟、`solid TRUE`、恒空 `vn` → 各 `RWPly_*`/`RWStl*`/`GeomToIGES_*`/`GeomToStep_MakeCurve.cxx:94-99`/`VrmlData_ShapeConvert.cxx:360` | 8 | **◐ 3/6 done**（2026-09-20）：PLY 写侧属性类型 `uchar uint`（`RWPly_PlyWriterContext.cxx:214`）；STL 退化法向改"平方量 > `gp::Resolution()`"（`RWStl.cxx:325/407`）；VRML `solid FALSE`（`VrmlData_ShapeConvert.cxx:356-361`）。**未修**：PLY 顶点焊接/每面重复（24 vs 8）、STL 头字节与格式嗅探、IGES 采样族与整球回转面、STEP 写侧 B-spline 采样重拟、OBJ 恒空 `vn` |
 
 > 执行纪律（本轮：**先提交、再任务化、再开工**）：commit `bcbc7dc` 已把审查前的全部工作树入库（8 个提交，工作树干净），此后每个修复单独成 commit，便于 A/B 与回滚。
@@ -474,6 +474,18 @@ cd ..; git worktree remove --force .target-headcheck
   5. `occt-math/src/matrix.rs::MathMatrix::solve`（自述 `Source: math_Gauss.cxx`）的 `pivot.abs() < 1e-30` → 同样改 **`1.0e-20`**（同上依据）。
   6. `occt-geom/src/curve_reparam.rs::basis_values`（The NURBS Book A2.2 教科书算法）加**非 OCCT 出处**注记：OCCT 等价件是 `BSplCLib::BasisFuns`/`bspl`；文件头的 `Geom_Curve`/`Geom_BSplineCurve`/`GCPnts_AbscissaPoint` 只是调用侧来源。
   - 验证追加：`occt-math --lib` **215/215**（1 ignored）+ 上述全套门禁仍等于基线。
+
+**批 12（A25/T-61：删除"先删邻三角形"自创补丁，改为 OCCT 的失败语义）已完成 —— 2026-09-20**
+
+- **问题**：`decompose_simple_polygon` 在加耳三角形前会把"已挂两个三角形的耳链接"上的邻居三角形**删掉**再 `AddElement`（原 `delaun/p04.rs:343-375`，注释自述 "free the slot before `AddElement`"）。OCCT `BRepMesh_Delaun.cxx:2259-2274` 只做 `AddLink` × 2 + `addTriangle`，**不碰既有三角形**；链接满时 `BRepMesh_PairOfIndex::Append`（`BRepMesh_PairOfIndex.hxx:41`）抛 `Standard_OutOfRange`，被 `BRepMesh_BaseMeshAlgo.cxx:52-62` 空 catch 吞掉 ⇒ 该面**没有网格**。删除补丁是仓库明令禁止的"OCCT 里不存在的规则"。
+- **落地**：
+  1. `Delaun` 新增 `failed: bool`（`p01.rs` 结构体 + 三处构造点）。
+  2. `add_triangle`（`p02.rs`）由"直接 `add_element`（链接满则由 `DelaunPairOfIndex::append` panic）"改为**先判满**：任一链接 `elements_connected_to(..).extent() >= 2` ⇒ 置 `failed = true` 并返回 `false`（= OCCT 的抛出条件，不再 panic、也不动既有三角形）；否则照常建三角形并返回 `true`。`add_triangle_by_info`（`p03.rs`）同样返回 `bool`。
+  3. `decompose_simple_polygon`（`p04.rs`）：**删除整段删除补丁**；`add_triangle_by_info` 返回 `false` 时清空多边形并返回（等价于 OCCT 异常把该面留成无网格）。
+  4. 失败即止的传播：`mesh_polygon` 入口与分解循环、`create_triangles_on_new_vertices` 的尾部（`process_constraints` 前）都检查 `self.failed`。
+- **验证（全绿，与基线逐项一致）**：`occt-topo --lib` **1293/1**（唯一红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3；`cargo check` exit 0。
+- **实测网格变化（重要，订正 T-68 第九轮的"0 次触发"结论）**：`step_obj_parity --nocapture` 对比——Cube 24/12、Cylinder 146/140、Shape-2 3105/4792、ATU01038 17745/22119 **逐位不变**；**T0M 由 46514/46945 变为 46516/46962（v +2 / f +17）**。⇒ 该自创删除在 T0M 上**确实触发过**（第九轮只对前若干个及每 200 个 `NO_EAR` 采样打印，漏掉了这些事件），删掉后网格略有增加、门禁仍全绿；这是"移除自创行为"的**正向证据**，不是回归。
+- **保留的差异（如实标注）**：OCCT 抛出后是**整个面**没有网格；端口现在只中止当前多边形的分解（此前已加入的三角形保留）。要让整面清零需要把失败标志上抛到面级管线（`IMeshData_Failure` 语义），属 T-61 的收尾项，已写进任务卡。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。

@@ -316,14 +316,16 @@ impl Delaun {
         true
     }
 
-    pub(super) fn add_triangle_by_info(&mut self, edges_info: [i32; 3], nodes: [i32; 3]) {
+    /// Returns `false` when `add_triangle` hit OCCT's full-link condition
+    /// (`BRepMesh_PairOfIndex::Append` throwing `Standard_OutOfRange`).
+    pub(super) fn add_triangle_by_info(&mut self, edges_info: [i32; 3], nodes: [i32; 3]) -> bool {
         let mut edges = [0i32; 3];
         let mut oris = [false; 3];
         for i in 0..3 {
             edges[i] = edges_info[i].abs();
             oris[i] = edges_info[i] > 0;
         }
-        self.add_triangle(edges, oris, nodes);
+        self.add_triangle(edges, oris, nodes)
     }
 
     pub(super) fn cleanup_polygon(&mut self, the_polygon: &[i32], the_poly_boxes: &[BndB2]) {
