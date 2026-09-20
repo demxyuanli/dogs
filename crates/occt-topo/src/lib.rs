@@ -74,7 +74,6 @@ pub mod brep_connect;
 pub mod brep_projection;
 pub mod brep_pattern;
 pub mod shape_metrics;
-pub mod feature;
 pub mod render_svg;
 pub mod iges;
 pub mod brepmesh;
