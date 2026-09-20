@@ -9,7 +9,7 @@ use occt_geom::{GeomPlane, Surface};
 
 use crate::abs::ShapeType;
 use crate::bop_builder_core::{
-    disjoint_result, empty_result, validate, voxel_fallback, BoolOp, BooleanResult,
+    disjoint_result, empty_result, validate, BoolOp, BooleanResult,
 };
 use crate::brep_extrema::is_inside;
 use crate::brep_tool::BRepTool;

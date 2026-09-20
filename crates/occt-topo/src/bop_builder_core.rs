@@ -76,24 +76,6 @@ pub(crate) fn disjoint_result(a: &TopoShape, b: &TopoShape, op: BoolOp) -> Boole
     }
 }
 
-pub(crate) fn voxel_fallback(a: &TopoShape, b: &TopoShape, op: BoolOp) -> Result<BooleanResult, String> {
-    let vop = match op {
-        BoolOp::Fuse => crate::boolean_ops::BoolOp::Union,
-        BoolOp::Cut => crate::boolean_ops::BoolOp::Subtraction,
-        BoolOp::Common => crate::boolean_ops::BoolOp::Intersection,
-    };
-    let mesh = crate::boolean_ops::voxel_boolean(a, b, 32, vop)?;
-    let brep = crate::mesh_to_brep::shape_mesh_to_brep(&mesh);
-    let warnings = vec!["non-planar input: fell back to voxel boolean".to_string()];
-    let shape = brep.solid.clone().map(|s| s.0).unwrap_or_else(|| brep.shell.0.clone());
-    Ok(BooleanResult {
-        shape,
-        solid: brep.solid,
-        shells: vec![brep.shell],
-        faces: brep.faces,
-        warnings,
-    })
-}
 
 pub(crate) fn validate(a: &TopoShape, b: &TopoShape, op: BoolOp, result: &mut BooleanResult) {
     if result.faces.is_empty() {

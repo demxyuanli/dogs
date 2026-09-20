@@ -232,7 +232,7 @@ fn boolean_non_solid(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Resu
 
 /// The port's two operation enums (`bop_builder_core::BoolOp` and
 /// `bop_builder2::BoolOp2`, both `Fuse`/`Cut`/`Common`).
-fn to_bool_op2(op: BoolOp) -> crate::bop_builder2::BoolOp2 {
+pub(crate) fn to_bool_op2(op: BoolOp) -> crate::bop_builder2::BoolOp2 {
     match op {
         BoolOp::Fuse => crate::bop_builder2::BoolOp2::Fuse,
         BoolOp::Cut => crate::bop_builder2::BoolOp2::Cut,

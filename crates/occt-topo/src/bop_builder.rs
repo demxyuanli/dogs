@@ -1,9 +1,11 @@
 //! Exact boolean operations for B-Rep solids.
 //!
 //! [`boolean`] is `BOPAlgo_BOP` via [`crate::bop_builder2`]. Empty-face
-//! operands (no B-Rep) fall back to voxels. Disjoint bounding boxes
-//! short-circuit. There is no planar 2-D arrangement on this path
-//! (`boolean_planar_legacy` remains only as a leftover module).
+//! operands go to the same engine, whose `CheckData` skips them with
+//! `BOPAlgo_AlertEmptyShape` (`BOPAlgo_BOP.cxx:162-167`, `:203-209`) — the
+//! previous voxel/mesh fallback has no OCCT counterpart (audit A5/T-41).
+//! Disjoint bounding boxes short-circuit. There is no planar 2-D arrangement on
+//! this path (`boolean_planar_legacy` remains only as a leftover module).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -28,7 +30,7 @@ use crate::topo_tools_full::{
 pub use crate::bop_builder_core::{BoolOp, BooleanResult};
 pub use crate::bop_builder_planar::boolean_planar_legacy;
 pub(crate) use crate::bop_builder_core::{
-    disjoint_result, empty_result, single_shape_result, validate, voxel_fallback,
+    disjoint_result, empty_result, single_shape_result, validate,
 };
 pub(crate) use crate::bop_builder_planar::*;
 
@@ -46,7 +48,16 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
     let fb = faces_of(b);
 
     if fa.is_empty() || fb.is_empty() {
-        return voxel_fallback(a, b, op);
+        // OCCT has no mesh/voxel boolean: an empty argument is skipped with
+        // `BOPAlgo_AlertEmptyShape` and the operation proceeds
+        // (`BOPAlgo_BOP.cxx:162-167`, `:203-209`), which is what the engine does.
+        let shape = crate::bop_builder2::builder_bop_with_fuzzy(
+            std::slice::from_ref(a),
+            std::slice::from_ref(b),
+            crate::bop_builder_dispatch::to_bool_op2(op),
+            tol,
+        )?;
+        return Ok(single_shape_result(&shape));
     }
 
     let bbox_a = crate::bbox_from_geometry::shape_bbox(a);

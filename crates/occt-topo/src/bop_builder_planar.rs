@@ -12,7 +12,7 @@ use occt_geom::{GeomPlane, Surface};
 
 use crate::abs::ShapeType;
 use crate::bop_builder_core::{
-    disjoint_result, empty_result, validate, voxel_fallback, BoolOp, BooleanResult,
+    disjoint_result, empty_result, single_shape_result, validate, BoolOp, BooleanResult,
 };
 use crate::brep_extrema::is_inside;
 use crate::brep_tool::BRepTool;
@@ -41,14 +41,31 @@ pub fn boolean_planar_legacy(
     let fa = faces_of(a);
     let fb = faces_of(b);
 
-    // Planarity gate → voxel fallback for curved inputs.
+    // Planarity gate. **UNPORTED (audit A5/T-41)**: OCCT has ONE
+    // `BOPAlgo_BOP` for planar and curved inputs, so an empty or non-planar
+    // operand goes to the same exact engine; the previous body fell back to a
+    // 32³ `boolean_ops::voxel_boolean` (mesh boolean), which has no OCCT
+    // counterpart. This module stays a leftover planar 2-D arrangement
+    // (`boolean_planar_legacy`).
     if fa.is_empty() || fb.is_empty() {
-        return voxel_fallback(a, b, op);
+        let shape = crate::bop_builder2::builder_bop_with_fuzzy(
+            std::slice::from_ref(a),
+            std::slice::from_ref(b),
+            crate::bop_builder_dispatch::to_bool_op2(op),
+            tol,
+        )?;
+        return Ok(single_shape_result(&shape));
     }
     let planes_a: Vec<Option<GpPln>> = fa.iter().map(face_plane_local).collect();
     let planes_b: Vec<Option<GpPln>> = fb.iter().map(face_plane_local).collect();
     if planes_a.iter().any(Option::is_none) || planes_b.iter().any(Option::is_none) {
-        return voxel_fallback(a, b, op);
+        let shape = crate::bop_builder2::builder_bop_with_fuzzy(
+            std::slice::from_ref(a),
+            std::slice::from_ref(b),
+            crate::bop_builder_dispatch::to_bool_op2(op),
+            tol,
+        )?;
+        return Ok(single_shape_result(&shape));
     }
 
     // Disjoint shortcut (bounding boxes don't overlap).

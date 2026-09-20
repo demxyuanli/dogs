@@ -97,6 +97,12 @@ pub fn feature_volume_before_after(before: &Solid, after: &FeatureResult) -> f64
 
 /// Run a voxel boolean between `solid` and `tool`, converting the resulting
 /// mesh to a BRep solid and recording the voxel fallback as a warning.
+///
+/// **UNPORTED (audit A5/A12)**: OCCT has no mesh/voxel boolean — a feature runs
+/// `BRepFeat_MakePrism`/`BRepFeat_MakeRevol` (or `LocOpe_*`) on top of
+/// `BOPAlgo_BOP` with a real tool solid. The port's feature subsystem is
+/// mesh-based here; replacing it belongs to A12/T-48, which also owns the
+/// analytic `brepfeat` path.
 fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: f64) -> Result<FeatureResult, String> {
     let resolution = resolution_for(solid, tool, tol);
     let mesh = voxel_boolean(&solid.0, tool, resolution, op)
