@@ -592,6 +592,36 @@ cd ..; git worktree remove --force .target-headcheck
 - **新登记（预先存在的红，非本批引入）**：`occt-topo/tests/phase3_integration.rs::primitives_measure_correctly` 在 `:79` 的 `is_inside(&sphere.solid.0, &Gpnt::new(0.5,0.5,0.5))` 断言失败——这是**球面点分类**（A2/T-38 的 7×7 采样 + 射线奇偶）的已知缺口，与本批（仅改 PLY 导出）无关；该集成测试不在既有基线清单内，故计入"旁支红"而不影响门禁。⇒ 建议并入 A2/T-38 修复范围。
 - **验证（门禁与 lib 逐项等于基线）**：`occt-core --lib` 290/290、`occt-topo --lib` 1293/1（唯一红 = T-01）、`phase3_integration` 3/4（红 = 上述预先存在项）、四道 STEP 门禁 11/11、2/3、14/14、13/13；`cargo check --tests` 两 crate exit 0。
 
+### 14.1 第 40 轮最终复核（2026-09-20）与交班
+
+**全套基线复核（全部持平或优于记录基线）**：
+
+| 目标 | 结果 |
+|---|---|
+| `occt-core --lib` | **290/290**（1 ignored） |
+| `occt-geom --lib` | **151/151** |
+| `occt-geom2d --lib` | **72/72** |
+| `occt-math --lib` | **215/215**（1 ignored） |
+| `occt-topo --lib` | **1293/1**（唯一红 = T-01 `brepfeat::tests::groove_cuts_cylinder`） |
+| `step_obj_parity` | **14/14** |
+| `step_to_obj` | **13/13** |
+| `step_obj_area` | **11/11** |
+| `step_geometry_parity` | **2/3**（红 = T-05） |
+| `phase6_integration` | **5/5** |
+| `phase3_integration` | 3/4（红 = 已登记的**预先存在**项 `primitives_measure_correctly`：球面 `is_inside`，属 A2/T-38） |
+| `export_data_obj` | 16/16 模型 ok，计数与既有记录逐位一致（Shape-1 3343/4336、Shape-2 3105/4792、Shape 6150/11372、Sphere 642/1244、Torus 1369/2592、linkrods 3494/5078、rev 104/92、screw 600/790） |
+
+工作树干净、无插桩/探针残留（`git grep zz_probe` / `dbg-` 均 0 命中）。
+
+**下一步优先级（含前置，供接续者直接开工）**：
+
+1. **T-69（A13/A18/A23/T-55/T-59 的共同前置，价值最高）**：带孔面（`wires=2`）前沿链存在**沿同一直线重叠**的链接 ⇒ `meshPolygon` 修正循环 `Glued` 大批删段 ⇒ 拼接多边形 ⇒ `decomposeSimplePolygon` 正确判"无耳"清空（166 面）。证据与仪器化配方见 §7 T-68 第九轮；下一步是逐面比对 `node_insertion.rs::{collect_boundary_uv, init_data_structure, finish_mesh}`、`model_builder/p01.rs::{add_wire, visit}`、`shape_tool.rs::visit_face` 与 OCCT `BRepMesh_NodeInsertionMeshAlgo`/`ShapeTool`/`ModelBuilder`，找出"重复/偏移插入"来源。完成后才能删 T-55 的逐面 UV 栅格回退、重放 A13/A18 与 T-59/A23。
+2. **T-67 → A1/A16**：移植 `Extrema_ExtPS`（376 行）/`Extrema_GenExtPS`（1056 行）/`Extrema_ExtPElS`（454 行）；完成后按 §7 条目 2 的顺序迁 39 处调用点并删 `brep_surface::surface_closest_params`；A16 的 256×256 采样求交随即可换。
+3. **T-66 / T-51 余项 / T-62 余项**：T-66 需先扩 `occt-math/globoptmin.rs`（缺 `SetLocalParams`/`SetLipConstState`/`SetFunctionalMinimalValue`/`SetContinuity`）再补 `GGenExtCC::Perform`；T-51 剩余为 `curve_reparam.rs:189` 的 `1e-15`（缺 `BSplCLib::BasisFuns` 忠实件）、`gcpnts.rs` 的 Simpson 积分、曲面族 `fallback_*` 的移除（前置 T-67）；T-62 剩余为 IGES 采样族与 STEP 写侧 B-spline 采样重拟。
+4. **T-63 余项**：移植 `Geom_OffsetCurveUtils.pxx` 的 `AdjustDerivative`（约 60 行）以补齐 3D/2D offset 的 `isDirectionChange` 奇异支路（现为常量 `false`，已标 UNPORTED）。
+5. **大件（未动）**：A2/A4/A5/A11（BOP 层）、A8（缺 `GeomConvert_CurveToBSpline` + `GeomBSplineCurve::IncreaseDegree`）、A12（体积覆盖被 BOP 缺口阻塞）。
+
+**纪律提醒（本会话反复用到）**：每批先 `cargo check`；只引用现有基线、不为对齐新写测试；改测试仅限"订正断言缺陷行为"（如 A30 的 4 处）并须在画板与审查表双重登记；失配即停并回退（`git checkout -- <file>`），把证据与依赖写回本文件与 `_audit/_index.md`；`read` 工具的行号是显示行号，引用一律以 `grep` 为准。
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
 2. 改代码前对着 `.cxx` 审控制流；**有同等分支才改**，没有就标"未移植"（注释写 OCCT 文件+行号），**不加** OCCT 里不存在的谓词/启发式/面积比/长度滤边/体积门。
