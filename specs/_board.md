@@ -326,6 +326,17 @@ cd ..; git worktree remove --force .target-headcheck
 - **排除项**：UV 跨度不是决定因素——失败面 `du ∈ [4.02, 2332.6]`（均值 85），成功面 `du ∈ [0.005, 610.6]`（均值 15.2），区间**重叠**；决定因素仍是 **`wires=2`（外环+内环）且 `surface=Other`**（166/166）。
 - **下一步**：对单个失败面插桩 `compute`（`loop_edges` 初值、`create_triangles(first)` 是否产出、`create_triangles_on_new_vertices` 的插入数），并与 OCCT `BRepMesh_Delaun::compute`/`createTriangles` 在"外环+内环"配置下对照——这是 A13/A18、T-55 剩余回退、T-59 三者的最后一道共同前置。
 
+**T-68 第八轮（2026-09-20）：缺口锁定到 `process_constraints()`——它把 100+ 三角全删成 0（= A25 的自创删除补丁）**
+
+- **证据（临时插桩，已清零）**：`Delaun::compute` 与 `create_triangles_on_new_vertices` 分阶段计数，对 T0M 聚合：
+  - `sup=[53,54,55]`（超三角形正常）、`create_triangles(first)` 后 **`after_first=3`**（超三角形被拆成 3 个）✓；
+  - 顶点循环结束后 **`after_loop=101..159`（即 100+ 个三角形，正常）**；
+  - **`process_constraints()` 之后 `after_pc=0`** —— **166/166 个失败面全部如此**，三角化被整体销毁。
+- **定位**：`process_constraints()`（`BRepMesh_Delaun.cxx:703` 尾调；body `insertInternalEdges(); frontierAdjust()`）→ `frontierAdjust` → `delaun/p04.rs::decompose_simple_polygon`（`:228-...`）。该函数正是 **审查 A25 记录的自创实现**：在 `:346-375` 它把"ear 复用链接"的**相邻三角形删掉**再 `add_triangle_by_info`，而 OCCT `BRepMesh_Delaun.cxx:2259-2274` 是**直接 `AddLink` + `addTriangle`、无任何删除**（OCCT 在退化到第三条连接时由 `BRepMesh_PairOfIndex.hxx:41` 抛 `Standard_OutOfRange`，被 `BRepMesh_BaseMeshAlgo.cxx:62` 空 catch 吞掉，该面干脆没有三角网）。
+- **推论**：A25 的"删邻三角形"补丁在"外环+内环"（`wires=2`）配置下会把整个 2D 网格删空 ⇒ 这就是 T0M 166 面缺口的直接原因，也解释了为何 `frame_with_hole` 的 ring area 变成整盘（4.0）。**A25 与 T-68 的这个阻塞点是同一处代码。**
+- **修法（下一轮，对着 `.cxx` 做）**：按 `BRepMesh_Delaun.cxx`（`frontierAdjust` / 多边形分解 / `meshLeftPolygonOf`）**去掉删除逻辑**，改为 OCCT 的 `AddLink`+`addTriangle` + 失败即抛出（端口用 `Err`/跳过该多边形，等价于 OCCT 的空 catch ⇒ 该面无网格）；随后重放 A13/A18（`face_to_triangles` → 忠实管线）与 T-55 的回退删除，并复验 T0M 的 `step_obj_parity`（届时若 OCCT 本身也不网格化那些面，bbox 应与参考一致而非变短——这正是本轮结论要验证的下一步）。
+- **验证**：本轮**未改行为代码**；`occt-topo --lib` **1293/1**，工作树干净、插桩 grep 复核 0 残留。
+
 ## 4. 决策与约束（不可违反）
 
 1. 改完先编译（`cargo check`，编译不过先修编译）。
