@@ -60,6 +60,12 @@ fn project_on_plane(pl: &GpPln, q: &GpPnt) -> GpPnt {
 /// (0 when the surfaces intersect), the max is `d+r1+r2`; the closest /
 /// farthest point pairs lie on the line through the centers (or on an
 /// intersection circle when they intersect).
+///
+/// **UNPORTED / 本地扩展 (audit A15)**: OCCT's
+/// `Extrema_ExtElSS::Perform(const gp_Sphere&, const gp_Sphere&)`
+/// (`Extrema_ExtElSS.cxx:77-83`) sets `myDone`/`myNbExt` and then throws
+/// `Standard_NotImplemented` — there is **no** closed-form sphere–sphere extrema
+/// in OCCT, so these values cannot be compared against OCCT behaviour.
 pub fn sphere_sphere_extrema(sp1: &GpSphere, sp2: &GpSphere) -> Vec<ExtremaPair> {
     let c1 = sp1.location();
     let c2 = sp2.location();
@@ -128,6 +134,11 @@ fn plane_sphere_pairs(pl: &GpPln, sp: &GpSphere) -> Vec<(GpPnt, GpPnt, f64)> {
 }
 
 /// Plane vs sphere (s1 = plane, s2 = sphere).
+///
+/// **UNPORTED / 本地扩展 (audit A15)**: `Extrema_ExtElSS::Perform(const gp_Pln&,
+/// const gp_Sphere&)` (`Extrema_ExtElSS.cxx:62-69`) sets `myDone`/`myNbExt` and
+/// throws `Standard_NotImplemented`; OCCT has no closed-form plane–sphere
+/// extrema, so this is a port-local extension.
 pub fn plane_sphere_extrema(pl: &GpPln, sp: &GpSphere) -> Vec<ExtremaPair> {
     plane_sphere_pairs(pl, sp)
         .into_iter()

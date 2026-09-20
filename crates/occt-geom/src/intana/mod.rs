@@ -12,7 +12,7 @@ mod prelude {
 pub(crate) use std::cmp::Ordering;
 pub(crate) use std::f64::consts::PI;
 
-pub(crate) use occt_core::elib::clib;
+pub(crate) use occt_core::elib::{clib, slib};
 pub(crate) use occt_core::gp::dir::DirAxis;
 pub(crate) use occt_core::gp::{
     GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpElips, GpHypr, GpLin,

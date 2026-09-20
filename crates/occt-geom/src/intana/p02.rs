@@ -562,22 +562,22 @@ pub fn line_torus_intersect(l: &GpLin, t: &GpTorus) -> Vec<GpPnt> {
     let a0 = c * c + 4.0 * r2 * (z0 * z0 - rr2);
 
     let mut out = Vec::new();
-    let mut seen: Vec<GpPnt> = Vec::new();
     for mut tt in quartic_roots(a4, a3, a2, a1, a0) {
         tt += param_of_new_pl;
         let p = clib::line_value(l, tt);
-        // Verify the point lies on the torus (OCCT re-checks the square distance).
-        let v2 = GpVec::from_pnts(&tor_loc, &p);
-        let dz = v2.dot(&zd);
-        let perp = v2.coord.subtracted(&zd.xyz().multiplied(dz));
-        let rho = perp.modulus();
-        let err = ((rho - r) * (rho - r) + dz * dz - rr2).abs();
-        if err < 1e-7 {
-            if seen.iter().all(|s| s.distance(&p) > 1e-7) {
-                seen.push(p);
-                out.push(p);
-            }
+        // `IntAna_IntLinTorus.cxx:98-106`: re-parameterise the candidate on the
+        // torus (`ElSLib::Parameters`) and re-evaluate it (`ElSLib::Value`); a
+        // root is kept only when the **square distance** between the line point
+        // and the torus point is `<= 1e-10` (OCCT counts the others as bad
+        // solutions). The previous body tested an invented implicit-equation
+        // residual `|(rho-R)^2 + z^2 - r^2| < 1e-7` and deduplicated points with
+        // a further `1e-7` (audit A15) — OCCT stores every valid root as is.
+        let (u, v) = slib::torus_parameters(&t.position(), r, rr, &p);
+        let p_sol_t = slib::torus_value(t, u, v);
+        if p_sol_t.square_distance(&p) > 1.0e-10 {
+            continue;
         }
+        out.push(p);
     }
     out.sort_by(|a, b| a.x().partial_cmp(&b.x()).unwrap_or(Ordering::Equal));
     out
