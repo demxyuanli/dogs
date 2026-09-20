@@ -389,39 +389,31 @@ pub(super) fn fallback_curve_surface(c: &dyn Curve, s: &dyn Surface) -> ExtremaP
 // Public dispatch.
 // ---------------------------------------------------------------------------
 
-/// All local extrema of the point-surface distance, deduplicated and sorted.
+/// All extrema of the point-surface distance, sorted by distance.
 ///
-/// Mirrors `Extrema_ExtPS::Perform`'s surface-type switch (`Extrema_ExtPS.cxx`):
-/// the elementary surfaces Plane / Cylinder / Cone / Sphere / Torus go to
-/// `Extrema_ExtPElS` (analytically solved, exact), everything else to the
-/// general path. The type is taken from the `GetType()`-equivalent trait
-/// queries (`Surface::gp_pln` / `gp_cylinder` / `gp_cone` / `gp_sphere` /
-/// `gp_torus`), not from a sampling classifier.
+/// This is `Extrema_ExtPS` over the surface's natural parameter range
+/// (`Extrema_ExtPS(P, S, TolU, TolV)`, `Extrema_ExtPS.cxx:158-177`): the type
+/// dispatch, the periodic normalization and the window test all live in
+/// [`ExtPs`] (`p03.rs`). `TolU`/`TolV` are the `Precision::PConfusion()` that
+/// `ShapeAnalysis_Surface::ValueOfUV` passes (`ShapeAnalysis_Surface.cxx:1349`).
+/// Sorting is a port convenience — `Extrema_ExtPS::Point` keeps engine order.
 pub fn point_surface_extrema_all(s: &dyn Surface, p: &GpPnt) -> Vec<ExtremaPair> {
-    if let Some(pl) = s.gp_pln() {
-        return vec![point_plane_extrema(&pl, p)];
-    }
-    if let Some(sp) = s.gp_sphere() {
-        let mut v = point_sphere_extrema(&sp, p);
-        v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
-        return v;
-    }
-    if let Some(cy) = s.gp_cylinder() {
-        let mut v = point_cylinder_extrema(&cy, p);
-        v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
-        return v;
-    }
-    if let Some(co) = s.gp_cone() {
-        let mut v = point_cone_extrema(&co, p);
-        v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
-        return v;
-    }
-    if let Some(to) = s.gp_torus() {
-        let mut v = point_torus_extrema(&to, p);
-        v.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
-        return v;
-    }
-    point_surface_newton_all(s, p)
+    let (u0, u1) = s.u_range();
+    let (v0, v1) = s.v_range();
+    let ex = ExtPs::with_window(p, s, u0, u1, v0, v1, PCONFUSION, PCONFUSION);
+    let mut out = ext_ps_solutions(&ex, p);
+    out.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
+    out
+}
+
+/// The solutions of an [`ExtPs`] run as `ExtremaPair`s, in engine order.
+pub(super) fn ext_ps_solutions(ex: &ExtPs<'_>, p: &GpPnt) -> Vec<ExtremaPair> {
+    (1..=ex.nb_ext())
+        .map(|i| {
+            let (u, v, q) = ex.point(i);
+            ps_pair(p, u, v, q)
+        })
+        .collect()
 }
 
 /// Minimum distance from `p` to `s` (with the closest point and parameters).
@@ -437,6 +429,14 @@ pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
 /// `Initialize(SurfAdapt, uf - du, ul + du, vf - dv, vl + dv, Tol, Tol)`
 /// (`ShapeAnalysis_Surface.cxx:1352`). Non-finite or inverted windows fall back
 /// to the natural-bounds entry point.
+///
+/// The window search itself is [`ExtPs`] (`p03.rs`): elementary surfaces are
+/// solved analytically and then filtered by the window (`TreatSolution`), the
+/// rest go through the general arm. When the window yields no solution — OCCT's
+/// `ValueOfUV` then runs `SurfaceNewton` + `UVFromIso` over the face boundary
+/// (`ShapeAnalysis_Surface.cxx:1449-1459`) — the port's stand-in is the general
+/// substitute restricted to the same window, and only if that is empty too the
+/// natural-bounds `fallback_point_surface` (UNPORTED, see its note).
 pub fn point_surface_extrema_box(
     s: &dyn Surface,
     p: &GpPnt,
@@ -448,6 +448,16 @@ pub fn point_surface_extrema_box(
     let ok = |a: f64, b: f64| a.is_finite() && b.is_finite() && b > a;
     if !ok(u0, u1) || !ok(v0, v1) {
         return point_surface_extrema(s, p);
+    }
+    let ex = ExtPs::with_window(p, s, u0, u1, v0, v1, PCONFUSION, PCONFUSION);
+    let mut best: Option<ExtremaPair> = None;
+    for e in ext_ps_solutions(&ex, p) {
+        if best.as_ref().is_none_or(|b| e.distance < b.distance) {
+            best = Some(e);
+        }
+    }
+    if let Some(e) = best {
+        return e;
     }
     match point_surface_newton_all_box(s, p, u0, u1, v0, v1)
         .into_iter()

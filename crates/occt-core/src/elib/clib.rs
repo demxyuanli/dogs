@@ -485,6 +485,27 @@ pub fn parabola_parameter(pos: &GpAx2, p: &GpPnt) -> f64 {
         .dot(&pos.y_direction().xyz())
 }
 
+/// `ElCLib::InPeriod(theU, theUFirst, theULast)` (`ElCLib.cxx:95-111`).
+///
+/// Maps `theU` into the period `[theUFirst, theULast]` (`ULast - UFirst` is the
+/// period). The OCCT body guards against infinite inputs (FLT overflow) and a
+/// vanishing period, then shifts by a whole number of periods using
+/// `ceil((UFirst - U) / period)` — note `Epsilon(ULast)`, the relative
+/// float epsilon of the upper bound, not `PConfusion`.
+pub fn in_period(the_u: f64, the_u_first: f64, the_u_last: f64) -> f64 {
+    if crate::precision::Precision::is_infinite(the_u)
+        || crate::precision::Precision::is_infinite(the_u_first)
+        || crate::precision::Precision::is_infinite(the_u_last)
+    {
+        return the_u;
+    }
+    let a_period = the_u_last - the_u_first;
+    if a_period < crate::precision::epsilon(the_u_last) {
+        return the_u;
+    }
+    the_u_first.max(the_u + a_period * ((the_u_first - the_u) / a_period).ceil())
+}
+
 /// `ElCLib::Parameter(gp_Elips, gp_Pnt)` (`ElCLib.lxx:335-339`).
 pub fn parameter_elips(e: &GpElips, p: &GpPnt) -> f64 {
     ellipse_parameter(&e.pos, e.major_radius, e.minor_radius, p)
