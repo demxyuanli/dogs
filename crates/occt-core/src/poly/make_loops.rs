@@ -4,6 +4,8 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use crate::gp::{GpDir, GpDir2d, GpVec};
+
 /// Orientation flags that can be attached to a link.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LinkFlag(pub u8);
@@ -51,6 +53,28 @@ pub trait MakeLoopsHelper {
     fn get_adjacent_links(&self, node: usize) -> &[Link];
     /// Optional hook called from `add_link`.
     fn on_add_link(&self, _num: usize, _link: &Link) {}
+    /// `Poly_MakeLoops::Helper::GetNormal` (`Poly_MakeLoops.hxx:104-118`).
+    /// OCCT's base implementation returns `false`, which makes `chooseLeftWay`
+    /// fall back to `theLstIndS.First()`; `None` is that `false`.
+    fn get_normal(&self, _node: usize) -> Option<GpDir> {
+        None
+    }
+    /// `Poly_MakeLoops3D::Helper::GetFirstTangent` (`Poly_MakeLoops.hxx:276`).
+    fn get_first_tangent(&self, _link: &Link) -> Option<GpDir> {
+        None
+    }
+    /// `Poly_MakeLoops3D::Helper::GetLastTangent` (`Poly_MakeLoops.hxx:279`).
+    fn get_last_tangent(&self, _link: &Link) -> Option<GpDir> {
+        None
+    }
+    /// `Poly_MakeLoops2D::Helper::GetFirstTangent` (`Poly_MakeLoops.hxx:317`).
+    fn get_first_tangent_2d(&self, _link: &Link) -> Option<GpDir2d> {
+        None
+    }
+    /// `Poly_MakeLoops2D::Helper::GetLastTangent` (`Poly_MakeLoops.hxx:320`).
+    fn get_last_tangent_2d(&self, _link: &Link) -> Option<GpDir2d> {
+        None
+    }
 }
 
 /// Make loops from a set of connected links.
@@ -69,11 +93,17 @@ pub struct PolyMakeLoops<'a> {
     loops: Vec<Vec<Link>>,
     start_indices: BTreeSet<isize>,
     hang_indices: BTreeSet<isize>,
+    /// `Poly_MakeLoops2D` flag: `myRightWay = !theLeftWay`
+    /// (`Poly_MakeLoops.cxx:682-687`). The 3D class has no such flag; the port
+    /// collapses `Poly_MakeLoops3D` and `Poly_MakeLoops2D` into one struct, and
+    /// this boolean selects which `chooseLeftWay` runs.
+    two_d: bool,
+    right_way: bool,
 }
 
 impl<'a> PolyMakeLoops<'a> {
-    /// Constructor. The helper supplies adjacency; a null helper would make the
-    /// algorithm return a wrong result.
+    /// Constructor of the 3D flavour (`Poly_MakeLoops3D`). The helper supplies
+    /// adjacency; a null helper would make the algorithm return a wrong result.
     pub fn new(helper: &'a dyn MakeLoopsHelper) -> Self {
         Self {
             helper,
@@ -82,7 +112,18 @@ impl<'a> PolyMakeLoops<'a> {
             loops: Vec::new(),
             start_indices: BTreeSet::new(),
             hang_indices: BTreeSet::new(),
+            two_d: false,
+            right_way: false,
         }
+    }
+
+    /// Constructor of the 2D flavour: `Poly_MakeLoops2D(theLeftWay, helper,
+    /// alloc)` stores `myRightWay = !theLeftWay` (`Poly_MakeLoops.cxx:682-687`).
+    pub fn new_2d(helper: &'a dyn MakeLoopsHelper, left_way: bool) -> Self {
+        let mut ml = Self::new(helper);
+        ml.two_d = true;
+        ml.right_way = !left_way;
+        ml
     }
 
     /// Resets the algorithm to its initial state.
@@ -230,16 +271,114 @@ impl<'a> PolyMakeLoops<'a> {
 
     /// Chooses the next link at a branching node.
     ///
-    /// **UNPORTED**: OCCT's `Poly_MakeLoops::chooseLeftWay` is a real min-angle
-    /// selection — `Poly_MakeLoops.cxx:611-676` (3D: `aAngleMin` between the
-    /// incoming link's tangent and each candidate, via
-    /// `myHelper->GetNormal`/`GetLastTangent`) and `:688-700` (2D, additionally
-    /// gated by `myRightWay`); only when those accessors fail does it
-    /// `return theLstIndS.First()`. This port has neither the helper's
-    /// normal/tangent accessors nor `myRightWay`, so it always takes that
-    /// fallback branch. Tracked as T-73.
-    pub fn choose_left_way(&self, _node: usize, _seg_index: isize, lst_ind_s: &[isize]) -> isize {
-        lst_ind_s[0]
+    /// `Poly_MakeLoops3D::chooseLeftWay` (`Poly_MakeLoops.cxx:614-678`): the
+    /// incoming link's tangent is projected into the plane orthogonal to the
+    /// node normal to give the reference direction, and the candidate whose
+    /// (projected) first tangent makes the smallest signed
+    /// `gp_Dir::AngleWithRef` with it wins. Every step that OCCT guards with a
+    /// failed helper accessor falls back to `theLstIndS.First()` (`:621-624`,
+    /// `:628-631`, `:636-640`), as does an all-rejected candidate list
+    /// (`:677`).
+    ///
+    /// The 2D flavour (`new_2d`, `Poly_MakeLoops2D`) runs
+    /// [`Self::choose_left_way_2d`] instead (`cxx:692-738`).
+    pub fn choose_left_way(&self, node: usize, seg_index: isize, lst_ind_s: &[isize]) -> isize {
+        if self.two_d {
+            return self.choose_left_way_2d(seg_index, lst_ind_s);
+        }
+        let mut angle_min = std::f64::consts::PI * 2.0;
+        let Some(normal) = self.helper.get_normal(node) else {
+            return lst_ind_s[0];
+        };
+        let link = &self.map_links[seg_index.unsigned_abs() as usize - 1];
+        let Some(tgt_ref) = self.helper.get_last_tangent(link) else {
+            return lst_ind_s[0];
+        };
+
+        // Project the tangent onto the plane orthogonal to the normal to get the
+        // reference direction: `Normal.CrossCrossed(TgtRef, Normal)` (`cxx:635`).
+        let n = GpVec::from_xyz(normal.xyz());
+        let t = GpVec::from_xyz(tgt_ref.xyz());
+        let tgt_ref_xyz = n.cross_crossed(&t);
+        if tgt_ref_xyz.square_magnitude() < 1e-14 {
+            // A problem with defining the reference direction: take the first way.
+            return lst_ind_s[0];
+        }
+        let Ok(tgt_ref) = GpDir::from_xyz(tgt_ref_xyz.xyz()) else {
+            return lst_ind_s[0];
+        };
+
+        // Find the way with the minimal angle to the reference direction (the
+        // angle is in the range ]-PI; PI]).
+        let mut res_index: isize = 0;
+        for &ind_s in lst_ind_s {
+            let link = &self.map_links[ind_s.unsigned_abs() as usize - 1];
+            let Some(tgt) = self.helper.get_first_tangent(link) else {
+                continue;
+            };
+            let t = GpVec::from_xyz(tgt.xyz());
+            let tgt_xyz = n.cross_crossed(&t);
+            if tgt_xyz.square_magnitude() < 1e-14 {
+                // Skip a problem way.
+                continue;
+            }
+            let Ok(tgt) = GpDir::from_xyz(tgt_xyz.xyz()) else {
+                continue;
+            };
+            let mut angle = tgt.angle_with_ref(&tgt_ref, &normal);
+            if angle < 1e-4 - std::f64::consts::PI {
+                angle = std::f64::consts::PI;
+            }
+            if angle < angle_min {
+                angle_min = angle;
+                res_index = ind_s;
+            }
+        }
+        if res_index == 0 {
+            lst_ind_s[0]
+        } else {
+            res_index
+        }
+    }
+
+    /// `Poly_MakeLoops2D::chooseLeftWay` (`Poly_MakeLoops.cxx:692-738`): the same
+    /// minimal-signed-angle selection as the 3D flavour, but using the links'
+    /// 2D first/last tangents directly (no normal projection) and negating every
+    /// candidate angle when `myRightWay` is set (`theLeftWay == false`,
+    /// `cxx:682-687`). A failed `GetLastTangent` on the incoming link falls back
+    /// to `theLstIndS.First()` (`cxx:700-704`), failing candidates are skipped
+    /// (`cxx:716-720`), and an all-rejected list also falls back (`cxx:737`).
+    fn choose_left_way_2d(&self, seg_index: isize, lst_ind_s: &[isize]) -> isize {
+        let mut angle_min = std::f64::consts::PI * 2.0;
+        let link = &self.map_links[seg_index.unsigned_abs() as usize - 1];
+        let Some(tgt_ref) = self.helper.get_last_tangent_2d(link) else {
+            // A problem with defining the reference direction: take the first way.
+            return lst_ind_s[0];
+        };
+        let mut res_index: isize = 0;
+        for &ind_s in lst_ind_s {
+            let link = &self.map_links[ind_s.unsigned_abs() as usize - 1];
+            let Some(tgt) = self.helper.get_first_tangent_2d(link) else {
+                // Skip a problem way.
+                continue;
+            };
+            let mut angle = tgt.angle(&tgt_ref);
+            if self.right_way {
+                angle = -angle;
+            }
+            if angle < 1e-4 - std::f64::consts::PI {
+                angle = std::f64::consts::PI;
+            }
+            if angle < angle_min {
+                angle_min = angle;
+                res_index = ind_s;
+            }
+        }
+        if res_index == 0 {
+            lst_ind_s[0]
+        } else {
+            res_index
+        }
     }
 
     /// Collects edges in a chain until they form a closed contour. Returns the
