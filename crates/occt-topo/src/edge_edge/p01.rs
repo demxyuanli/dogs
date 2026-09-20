@@ -336,12 +336,22 @@ impl EdgeEdge {
     // General curves
     // -----------------------------------------------------------------------
 
-    /// General-curve case: local extrema of the distance, plus the sampling
-    /// solver as a complement; near-zero-distance pairs are the intersections.
+    /// General-curve case: the extrema of the distance; a pair whose distance is
+    /// within tolerance is an intersection.
     ///
-    /// Mirrors `IntTools_EdgeEdge::FindSolutions` at the level this port needs:
-    /// no bounding-box recursion, but the same "distance within tolerance is an
-    /// intersection" criterion.
+    /// **UNPORTED (audit A11 / task T-47 sub-item 3)** — OCCT's
+    /// `IntTools_EdgeEdge::FindSolutions` does not enumerate `Extrema_ExtCC`
+    /// solutions: it recurses on the parameter boxes
+    /// (`IntTools_EdgeEdge.cxx:290-549`) with `BndBuildBox` (`:1410-1419`),
+    /// `FindParameters` (`:553-671`), `IsIntersection` (`:1060-1146`),
+    /// `CheckCoincidence` (`:1150-1206`) and `SplitRangeOnSegments`
+    /// (`:1366-1406`), so that *every* crossing whose boxes stay in contact is
+    /// reported even when it is not a distance extremum of the whole range. The
+    /// port's substitute is the "extrema within tolerance" criterion above; the
+    /// previous body additionally merged the sampled
+    /// `inttools::edge_edge_intersections` solutions, which has no OCCT
+    /// counterpart at all and was removed (the faithful extrema engine
+    /// `Extrema_ExtCC`/`GGenExtCC` covers those cases, see T-66).
     pub(super) fn find_solutions(&mut self) {
         if self.is_coincident() {
             self.push_coincident_common_part();
@@ -349,8 +359,6 @@ impl EdgeEdge {
         }
         let c1 = self.curve1.clone().unwrap();
         let c2 = self.curve2.clone().unwrap();
-        let e1 = self.edge1.clone().unwrap();
-        let e2 = self.edge2.clone().unwrap();
         let tol = self.tol;
         let r1 = self.r1();
         let r2 = self.r2();
@@ -373,13 +381,6 @@ impl EdgeEdge {
                 if let Some(sol) = self.find_parameters(p.u1, p.u2) {
                     solutions.push(sol);
                 }
-            }
-        }
-        // Complement: the existing solver already handles line/circle/general
-        // combinations; merge (and dedupe) whatever it reports.
-        for h in edge_edge_intersections(&e1, &e2, tol.max(1e-9)) {
-            if r1.contains(h.u1) && r2.contains(h.u2) {
-                solutions.push((h.u1, h.u2, h.point));
             }
         }
         self.merge_solutions(solutions);
