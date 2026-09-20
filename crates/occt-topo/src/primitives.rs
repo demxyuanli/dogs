@@ -280,25 +280,34 @@ impl BRepPrimCylinder {
             &[top_wire],
         );
 
-        // Lateral face: the cylinder surface. OCCT's swept lateral face
-        // (`BRepPrim_Revolution` / `BRepSweep_Revolve`) traverses the two rings
-        // in OPPOSITE directions and uses the seam generatrix twice with
-        // opposite orientations. The occurrence orientation written by
-        // `TopoDSToStep_MakeStepWire.cxx:262`
+        // Lateral face: the cylinder surface. Wire order and orientations follow
+        // `BRepPrim_OneAxis::LateralWire` (`BRepPrim_OneAxis.cxx:660-684`):
+        // `AddWireEdge(TopEdge(), false)`, `AddWireEdge(EndEdge(), true)`,
+        // `AddWireEdge(BottomEdge(), true)`, `AddWireEdge(StartEdge(), false)`
+        // — i.e. top circle forward, seam reversed, bottom circle reversed, seam
+        // forward. The two seam occurrences are the same port edge (OCCT has the
+        // u=0/u=2pi meridians as separate edges), so the U winding of the loop is
+        // still zero (bottom -2pi + top +2pi, the seam contributing +h -h): the
+        // occurrence orientation written by `TopoDSToStep_MakeStepWire.cxx:262`
         // (`OrientedEdge->Init(..., anEdge.Orientation() == TopAbs_FORWARD)`)
-        // then gives a closed loop whose U winding is zero (bottom -2pi +
-        // top +2pi), so the pcurve loop closes with no periodic shift. Traversing
-        // both rings the same way leaves a +4pi U winding that no seam placement
-        // can remove (`ShapeFix_Wire::FixShifted`, `ShapeFix_Wire.cxx:1661-2125`).
+        // keeps the pcurve loop free of any periodic shift that
+        // `ShapeFix_Wire::FixShifted` (`ShapeFix_Wire.cxx:1661-2125`) would have
+        // to remove.
+        //
+        // The order also drives `BOPAlgo_WireSplitter`: the edges of the face
+        // enter `aLE` in this order, which fixes the vertex slots of the
+        // `mySmartMap` and therefore the entry edge of each `Path` walk. With the
+        // bottom ring first the walk entered at the bottom vertex and closed the
+        // band on the wrong side of the seam (see T-80 / batch 49).
         let mut lateral_bottom = bottom_circle.clone();
         lateral_bottom.0.reverse();
         let mut lateral_seam_back = seam.clone();
         lateral_seam_back.0.reverse();
         let lateral_wire = b.make_wire(&[
-            lateral_bottom,
-            seam.clone(),
             top_circle.clone(),
             lateral_seam_back,
+            lateral_bottom,
+            seam.clone(),
         ]);
         let lateral_face = b.make_face(Arc::new(GeomCylinder::new(
             GpCylinder::new(ax, radius).expect("cylinder radius"),
