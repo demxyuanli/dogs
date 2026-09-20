@@ -58,10 +58,20 @@ fn real_brepmesh_and_iges() {
     // IGES export of a box.
     let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
     let iges = write_shape_iges(&b.solid.0);
-    assert!(iges.starts_with('S'), "IGES starts with S record");
+    // The Start card carries the section letter in column 73
+    // (`IGESData_IGESWriter.cxx:763-793`), not at the start of the line.
+    let first = iges.lines().next().expect("first card");
+    assert_eq!(first.len(), 80, "Start card length: {first:?}");
+    assert_eq!(
+        first.as_bytes().get(72),
+        Some(&b'S'),
+        "first card must be a Start card: {first:?}"
+    );
     assert!(iges.lines().all(|l| l.chars().count() == 80), "all IGES lines 80 chars");
-    assert!(iges.contains("186"), "has MANIFOLD SOLID BREP");
-    assert!(iges.contains("510"), "has FACE");
+    // Faces mode (`write.iges.brep.mode = 0`, OCCT's default): the faces are
+    // trimmed surfaces (144) grouped by 402.
+    assert!(iges.contains("144"), "has TRIMMED SURFACE");
+    assert!(iges.contains("402"), "has GROUP");
 }
 
 #[test]

@@ -1524,54 +1524,82 @@ impl IgesWriter {
                 is_whole = false;
             }
         }
-        let trim_idx = if curve_refs.is_empty() {
-            surf_idx
-        } else {
-            let outer_flag = u8::from(!is_whole);
-            let n_inner = inner_curves.len();
-            // `IGESGeom_ToolTrimmedSurface::WriteOwnParams`
-            // (`IGESGeom_ToolTrimmedSurface.cxx:196-218`): `144, surface,
-            // outer_boundary_type, nb_inner_contours, outer_contour, inner...;`
-            // with the outer contour written as `0` when the type is false.
-            let mut refs = match (is_whole, outer_curve) {
-                (false, Some(i)) => i.to_string(),
-                _ => "0".to_string(),
-            };
-            for c in &inner_curves {
-                refs.push_str(&format!(",{c}"));
+        // A face this port built without boundary wires (the sphere) carries
+        // synthesized seam curves (`emit_face_surface`); they are transferred as the
+        // face's contour `CurveOnSurface` entities, standing in for the seam wires
+        // OCCT's own primitives would have here.
+        if outer_curve.is_none() && !synth.is_empty() {
+            let mut it = synth.iter();
+            outer_curve = it.next().map(|c| self.emit(142, 0, format!("142,0,{surf_idx},0,{c},2;")));
+            for c in it {
+                inner_curves.push(self.emit(142, 0, format!("142,0,{surf_idx},0,{c},2;")));
             }
-            self.emit(
-                144,
-                0,
-                format!("144,{surf_idx},{outer_flag},{n_inner},{refs};"),
-            )
-        };
-
-        let mut params = format!("510,{trim_idx}");
-        for c in &curve_refs {
-            params.push_str(&format!(",{c}"));
         }
-        params.push(';');
-        self.emit(510, 0, params)
+
+        if curve_refs.is_empty() {
+            return surf_idx;
+        }
+        let outer_flag = u8::from(!is_whole);
+        let n_inner = inner_curves.len();
+        // `IGESGeom_ToolTrimmedSurface::WriteOwnParams`
+        // (`IGESGeom_ToolTrimmedSurface.cxx:196-218`): `144, surface,
+        // outer_boundary_type, nb_inner_contours, outer_contour, inner...;`
+        // with the outer contour written as `0` when the type is false.
+        let mut refs = match (is_whole, outer_curve) {
+            (false, Some(i)) => i.to_string(),
+            _ => "0".to_string(),
+        };
+        for c in &inner_curves {
+            refs.push_str(&format!(",{c}"));
+        }
+        self.emit(
+            144,
+            0,
+            format!("144,{surf_idx},{outer_flag},{n_inner},{refs};"),
+        )
     }
 
-    fn emit_shell(&mut self, sh: &Shell) -> usize {
+    /// `Group` (402) when there is more than one item, the item itself otherwise -
+    /// `IGESBasic_ToolGroup::WriteOwnParams` (`IGESBasic_ToolGroup.cxx:104-115`)
+    /// writes `402, n, entity...;` and both `BRepToIGES_BRShell::TransferShell`
+    /// (`BRepToIGES_BRShell.cxx:463-471`) and
+    /// `BRepToIGES_BRSolid::TransferSolid` (`BRepToIGES_BRSolid.cxx:154-163`) use
+    /// exactly this rule.
+    fn group_or_single(&mut self, items: Vec<usize>) -> Option<usize> {
+        match items.len() {
+            0 => None,
+            1 => Some(items[0]),
+            n => {
+                let refs = items
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                Some(self.emit(402, 0, format!("402,{n},{refs};")))
+            }
+        }
+    }
+
+    /// `BRepToIGES_BRShell::TransferShell` (`BRepToIGES_BRShell.cxx:411-476`): the
+    /// shell's faces are transferred as trimmed surfaces (144) and grouped.
+    fn emit_shell(&mut self, sh: &Shell) -> Option<usize> {
         let faces = children_of_type(&sh.0, ShapeType::Face);
-        let refs: Vec<String> = faces
+        let refs: Vec<usize> = faces
             .iter()
-            .map(|f| self.emit_face(&Face(f.clone())).to_string())
+            .map(|f| self.emit_face(&Face(f.clone())))
             .collect();
-        self.emit(514, 0, format!("514,{};", refs.join(",")))
+        self.group_or_single(refs)
     }
 
-    fn emit_solid(&mut self, s: &Solid) -> usize {
+    /// `BRepToIGES_BRSolid::TransferSolid` (`BRepToIGES_BRSolid.cxx:100-168`): the
+    /// solid's shells are transferred and grouped the same way.
+    fn emit_solid(&mut self, s: &Solid) -> Option<usize> {
         let shells = children_of_type(&s.0, ShapeType::Shell);
-        let refs: Vec<String> = shells
+        let refs: Vec<usize> = shells
             .iter()
-            .map(|sh| self.emit_shell(&Shell(sh.clone())).to_string())
+            .filter_map(|sh| self.emit_shell(&Shell(sh.clone())))
             .collect();
-        let outer = refs.first().cloned().unwrap_or_else(|| "0".to_string());
-        self.emit(186, 0, format!("186,{outer};"))
+        self.group_or_single(refs)
     }
 
     fn emit_shape(&mut self, shape: &TopoShape) {
@@ -1758,7 +1786,10 @@ mod tests {
     fn box_iges_contains_expected_entities() {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
         let iges = write_shape_iges(&b.solid.0);
-        for needle in ["116", "110", "108", "510", "514", "186"] {
+        // The default `write.iges.brep.mode = 0` (Faces mode) writes the faces as
+        // trimmed surfaces (144 over 142) grouped by 402 - not the 510/514/186
+        // BRep-mode tree this port used to emit.
+        for needle in ["116", "110", "108", "142", "144", "402"] {
             assert!(iges.contains(needle), "missing entity {needle}");
         }
         for line in iges.lines() {
@@ -1778,7 +1809,7 @@ mod tests {
             iges.contains("100") || iges.contains("128"),
             "expected a circular arc or NURBS curve"
         );
-        assert!(iges.contains("186"), "missing 186");
+        assert!(iges.contains("144"), "missing 144");
         for line in iges.lines() {
             assert_eq!(line.len(), 80, "line length {}", line.len());
         }
