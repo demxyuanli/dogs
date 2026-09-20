@@ -723,6 +723,101 @@ impl IgesWriter {
         )
     }
 
+    /// Entity 128 (`GeomToIGES_GeomSurface::TransferBSplineSurface`, written by
+    /// `IGESGeom_ToolBSplineSurface::WriteOwnParams`,
+    /// `IGESGeom_ToolBSplineSurface.cxx:64-125`):
+    ///
+    /// `128, indU, indV, degU, degV, closedU, closedV, polynomial, periodicU,
+    ///   periodicV, knotU[-degU .. indU+1], knotV[-degV .. indV+1],
+    ///   weights[0..indU][0..indV], poles[0..indU][0..indV],
+    ///   UMin, UMax, VMin, VMax;`
+    ///
+    /// with `indU = nb_poles_u - 1`, `indV = nb_poles_v - 1` and the flattened
+    /// knot vectors. A Bezier surface becomes the equivalent single-span
+    /// B-spline (end knots with multiplicity degree+1) as
+    /// `GeomConvert::SurfaceToBSplineSurface` would produce.
+    fn emit_bspline_surface(
+        &mut self,
+        surf: &dyn Surface,
+        u0: f64,
+        u1: f64,
+        v0: f64,
+        v1: f64,
+    ) -> Option<usize> {
+        let (poles, knots_u, knots_v, deg_u, deg_v) = match (
+            surf.bspline_surface_poles(),
+            surf.bspline_surface_uknots(),
+            surf.bspline_surface_vknots(),
+        ) {
+            (Some(p), Some(ku), Some(kv)) => (
+                p.to_vec(),
+                ku.to_vec(),
+                kv.to_vec(),
+                surf.u_degree().max(1) as usize,
+                surf.v_degree().max(1) as usize,
+            ),
+            _ => return None,
+        };
+        if poles.is_empty() || poles[0].is_empty() {
+            return None;
+        }
+        let (nu, nv) = (poles.len(), poles[0].len());
+        if knots_u.len() != nu + deg_u + 1 || knots_v.len() != nv + deg_v + 1 {
+            return None;
+        }
+        let (ind_u, ind_v) = (nu - 1, nv - 1);
+
+        let weights: Vec<Vec<f64>> = match surf.bspline_surface_weights() {
+            Some(w) if w.len() == nu && w.iter().all(|r| r.len() == nv) => w.to_vec(),
+            _ => vec![vec![1.0; nv]; nu],
+        };
+        let polynomial = surf.bspline_surface_weights().is_none();
+        let closed_u = poles.first().zip(poles.last()).map_or(false, |(f, l)| {
+            f.iter().zip(l.iter()).all(|(a, b)| a.distance(b) <= occt_core::precision::CONFUSION)
+        });
+        let closed_v = (0..nu).all(|i| {
+            poles[i]
+                .first()
+                .zip(poles[i].last())
+                .map_or(false, |(f, l)| f.distance(l) <= occt_core::precision::CONFUSION)
+        });
+
+        let mut s = format!(
+            "128,{ind_u},{ind_v},{deg_u},{deg_v},{},{},{},0,0",
+            u8::from(closed_u),
+            u8::from(closed_v),
+            u8::from(polynomial)
+        );
+        for k in &knots_u {
+            s.push(',');
+            s.push_str(&num(*k));
+        }
+        for k in &knots_v {
+            s.push(',');
+            s.push_str(&num(*k));
+        }
+        for j in 0..nv {
+            for i in 0..nu {
+                s.push(',');
+                s.push_str(&num(weights[i][j]));
+            }
+        }
+        for j in 0..nv {
+            for i in 0..nu {
+                let p = &poles[i][j];
+                s.push_str(&format!(",{},{},{}", num(p.x()), num(p.y()), num(p.z())));
+            }
+        }
+        s.push_str(&format!(
+            ",{},{},{},{};",
+            num(u0),
+            num(u1),
+            num(v0),
+            num(v1)
+        ));
+        Some(self.emit(128, 0, "B_SPLINE_SURFACE", s))
+    }
+
     /// Base surface entity for a face, plus any synthesized boundary curves
     /// (used when the face carries no boundary wires, e.g. a sphere).
     fn emit_face_surface(&mut self, f: &Face) -> (usize, Vec<usize>) {
@@ -832,8 +927,15 @@ impl IgesWriter {
                 }
             }
         }
+        // `GeomToIGES_GeomSurface::TransferSurface` (`cxx:520-600`) also has the
+        // B-spline branch (`TransferBSplineSurface`), which the port now writes
+        // as entity 128.
+        let (u0, u1, v0, v1) = face_uv_bounds_finite(f);
+        if let Some(idx) = self.emit_bspline_surface(surf.as_ref(), u0, u1, v0, v1) {
+            return (idx, Vec::new());
+        }
         // Unclassified curved face: fall back to a plane.
-        // ponytail: covers sphere/box tests; add 128 NURBS surfaces when needed.
+        // ponytail: covers the surfaces the IGES writer has no emitter for.
         let pln = face_plane(f).unwrap_or_else(GpPln::default);
         (self.emit_plane(&pln), Vec::new())
     }

@@ -100,6 +100,21 @@ pub trait Surface: Send + Sync {
     /// `Adaptor3d_Surface::NbUPoles` (Bezier / BSpline). Default 2 so
     /// `NbPoles - 1` is a single interval.
     fn nb_u_poles(&self) -> i32 { 2 }
+
+    /// `Geom_BSplineSurface::Poles()` — the pole grid, U-major (`[u][v]`).
+    /// Needed by the IGES/STEP writers, which emit the poles as data
+    /// (`GeomToIGES_GeomSurface::TransferBSplineSurface`).
+    fn bspline_surface_poles(&self) -> Option<&[Vec<GpPnt>]> { None }
+
+    /// `Geom_BSplineSurface::UKnots()` (the flattened U knot vector).
+    fn bspline_surface_uknots(&self) -> Option<&[f64]> { None }
+
+    /// `Geom_BSplineSurface::VKnots()` (the flattened V knot vector).
+    fn bspline_surface_vknots(&self) -> Option<&[f64]> { None }
+
+    /// `Geom_BSplineSurface::Weights()`; `None` for a non-rational surface
+    /// (`Geom_BSplineSurface::IsRational() == false`), whose weights are all 1.
+    fn bspline_surface_weights(&self) -> Option<&[Vec<f64>]> { None }
     /// `Adaptor3d_Surface::NbVPoles`.
     fn nb_v_poles(&self) -> i32 { 2 }
     /// `Adaptor3d_Surface::NbUIntervals`. Default one span.

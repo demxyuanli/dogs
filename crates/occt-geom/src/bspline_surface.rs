@@ -1025,6 +1025,14 @@ impl Surface for GeomBSplineSurface {
     fn v_degree(&self) -> i32 {
         self.deg_v as i32
     }
+    fn bspline_surface_poles(&self) -> Option<&[Vec<GpPnt>]> { Some(&self.poles) }
+
+    fn bspline_surface_uknots(&self) -> Option<&[f64]> { Some(&self.knots_u) }
+
+    fn bspline_surface_vknots(&self) -> Option<&[f64]> { Some(&self.knots_v) }
+
+    fn bspline_surface_weights(&self) -> Option<&[Vec<f64>]> { self.weights.as_deref() }
+
     fn nb_u_poles(&self) -> i32 {
         self.nb_poles_u() as i32
     }

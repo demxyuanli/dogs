@@ -283,6 +283,18 @@ impl Surface for GeomRectangularTrimmedSurface {
         self.basis.v_period()
     }
 
+    fn bspline_surface_poles(&self) -> Option<&[Vec<GpPnt>]> {
+        self.basis.bspline_surface_poles()
+    }
+
+    fn bspline_surface_uknots(&self) -> Option<&[f64]> { self.basis.bspline_surface_uknots() }
+
+    fn bspline_surface_vknots(&self) -> Option<&[f64]> { self.basis.bspline_surface_vknots() }
+
+    fn bspline_surface_weights(&self) -> Option<&[Vec<f64>]> {
+        self.basis.bspline_surface_weights()
+    }
+
     fn nb_u_poles(&self) -> i32 {
         self.basis.nb_u_poles()
     }
