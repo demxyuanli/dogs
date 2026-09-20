@@ -1,4 +1,9 @@
 //! Polygon triangulation (ear clipping) + mesh utilities.
+//!
+//! **UNPORTED (audit A14)**: ear clipping is a port-local algorithm; OCCT
+//! triangulates a face through `BRepMesh` (Delaunay, see
+//! `occt-topo/src/meshing/delaun`) and orients loops through
+//! `Poly_MakeLoops`/`Poly_Connect`.
 use crate::gp::GpPnt;
 
 /// Orientation test in XY plane: >0 = CCW, <0 = CW.

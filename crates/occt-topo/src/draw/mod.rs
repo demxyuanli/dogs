@@ -1,5 +1,9 @@
 //! Draw_Interpretor-lite: a scripting + batch command driver for the BRep kernel.
 //!
+//! **UNPORTED (audit A14)**: a port-local, dependency-free command driver; OCCT's
+//! Draw lives in TKDraw (`Draw_Interpretor`, `Draw_Commands`, `DBRep`) and is not
+//! translated here.
+//!
 //! This module is a small, dependency-free port of OCCT's interactive `Draw`
 //! package. OCCT ships the full `Draw_Interpretor` as a Tcl-embedded shell;
 //! this port keeps only the two pieces that matter for driving a kernel from

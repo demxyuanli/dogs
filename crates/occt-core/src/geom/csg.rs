@@ -1,5 +1,11 @@
 //! Mesh-based constructive solid geometry (union/intersection/difference).
 //! Simplified voxel-approximation CSG — robust for prototyping.
+//!
+//! **UNPORTED (audit A10 §9 / A14)**: OCCT has **no** voxel boolean. Its
+//! boolean pipeline is `BRepAlgoAPI_*` on top of `BOPAlgo_Builder` (already
+//! ported under `occt-topo/src/bop_builder*`); the result here depends on voxel
+//! resolution rather than on exact intersection. Consumers
+//! (`occt-topo/src/solid_union.rs`) are documented as approximations.
 use crate::gp::GpPnt;
 use crate::bnd::BndBox;
 

@@ -1,5 +1,9 @@
 //! Phase 6 module: viz_scene — scene graph, camera, and raster pipeline.
 //!
+//! **UNPORTED (audit A14)**: port-local scene graph / camera / rasterizer. OCCT's
+//! visualization stack is TKV3d (`AIS_InteractiveContext`, `V3d_View`, OpenGl
+//! drivers); nothing here is a translation of it.
+//!
 //! A lightweight port of OCCT's `AIS_Shape` (scene item), `V3d_View`
 //! (camera) and `V3d_Viewer` (projection) for offline rendering. A
 //! [`VizScene`] holds [`SceneShape`]s — each a `TopoShape` plus a world

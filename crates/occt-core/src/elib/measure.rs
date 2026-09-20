@@ -1,4 +1,11 @@
 //! Curve/surface measurement utilities — lengths, areas, curvatures.
+//!
+//! **UNPORTED (audit A10 §8 / A15)**: OCCT has no such functions in
+//! `ElCLib`/`ElSLib`. The self-contained Simpson integration, chord-length
+//! accumulation (`curve_arc_length`, `point_at_arc_length`) and midpoint
+//! rectangle areas (`surface_patch_area`) below are port-local; OCCT's
+//! equivalents are `GCPnts_AbscissaPoint` (arc length via Newton on the
+//! integral, with a tolerance) and `GProp_*` (areas/volumes).
 use crate::gp::{GpPnt, GpVec, GpLin, GpCirc, GpElips, GpHypr, GpParab, GpPln};
 use crate::elib::{clib, slib};
 

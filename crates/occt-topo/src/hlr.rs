@@ -1,5 +1,9 @@
 //! Phase 4 module: hlr — hidden-line removal / projection.
 //!
+//! **UNPORTED (audit A14)**: not a translation of `HLRBRep_*` (TKHlr). Only the
+//! common case of a lightweight projection/wireframe is implemented here; the
+//! OCCT hidden-line algorithm (`HLRBRep_Algo`/`HLRBRep_HLRToShape`) has no port.
+//!
 //! A lightweight port of OCCT's `HLRBRep` for the common case of a
 //! triangulated shape under orthographic projection. Vertices are projected
 //! onto the plane perpendicular to a view direction, triangles are

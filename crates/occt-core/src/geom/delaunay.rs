@@ -1,5 +1,10 @@
 //! 2D Delaunay triangulation (Bowyer–Watson), Voronoi cells, point location.
-//! Source: OCCT `Poly_Triangulation` and `math_Recipes`.
+//!
+//! **UNPORTED / 出处订正 (audit A9/A14)**: Bowyer–Watson is **not** in OCCT —
+//! `Poly_Triangulation` is only the triangle/vertex container and
+//! `math_Recipes` is a book (Numerical Recipes), not an OCCT package. OCCT's
+//! 2D constrained face mesh is `BRepMesh_Delaun` + `BRepMesh_BaseMeshAlgo`,
+//! already ported under `occt-topo/src/meshing/delaun`.
 
 use std::collections::{HashMap, HashSet};
 

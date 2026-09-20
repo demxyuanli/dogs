@@ -1,5 +1,9 @@
 //! Phase 5 module: render_svg — SVG wireframe and shaded rendering.
 //!
+//! **UNPORTED (audit A14)**: OCCT does not write SVG — its visualization is
+//! TKV3d (`V3d_View`, `AIS_*`, OpenGl). This module is a port-local raster/vector
+//! renderer inspired by `V3d_View`'s orthographic projection, not a translation.
+//!
 //! Ports OCCT's `V3d_View` orthographic projection to a 2-D SVG scene. A
 //! shape is tessellated (`BRepMesh_IncrementalMesh`), projected perpendicular
 //! to a view direction (`HLRBRep`), painter-sorted, and emitted as either
