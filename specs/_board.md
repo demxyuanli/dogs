@@ -385,6 +385,13 @@ cd ..; git worktree remove --force .target-headcheck
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
 - **下一步（第 43 轮，两条并行）**：① **判定性实验**：把同一面上各 wire 的 u 归一到同一周期窗口（仅作诊断，不改 `node_insertion` 的行为）后看 face 20 是否走通忠实 Delaunay（预期 74/72）——若走通，则缺的是"跨 wire 的周期对齐"，须先在 OCCT 里找到执行该对齐的那段控制流（候选：`ShapeFix_Wire::FixShifted` 的面级用法 / `StepToTopoDS_TranslateEdgeLoop` 的 `CheckPCurves` 段 / `ShapeFix_Face::FixMissingSeam`）并按它移植，**不得直接给网格层打补丁**；② 用参考的重复顶点证据确定"共享该顶点的两个面"是哪两张，确认端口是否两张都没网格化（据此判断要补的控制流范围）。
 
+**批 53（A19 余项：UV 栅格替身与它的分辨率就地标 UNPORTED；顺带记录「去 64 上限」实验）—— 2026-09-20 第 68 轮**
+
+- **为什么不能"按 OCCT 对齐阈值"**：OCCT **没有**逐面 UV 栅格剖分器；活管线是 `BRepMesh_FaceDiscret`（边界离散）+ `BRepMesh_Delaun`，其中唯一的"栅格分辨率"是 `BRepMesh_GeomTool::CellsCount`（`BRepMesh_GeomTool.cxx:465-512`，端口已在 `meshing::node_insertion::geom_tool_cells_count` 忠实移植），**且无上限**。端口 `wireframe::face_to_triangles` 是替身，其 `nu/nv` 的自创项（`3` 下界、`64` 上限）没有对应 OCCT 分支。
+- **落地（纯注释，零行为改动）**：在该函数文档里写明 ① OCCT 无此件；② `3`/`64` 是自创（下限防退化域无胞、上限约束 `nu*nv` 顶点数，OCCT 的胞数从不喂满一张 UV 栅格）；③ 删除条件指向 `meshing::incremental_mesh::triangulate_model_faces` 的替身注记（该面类走通忠实路径后一并删）。
+- **实验记录（去上限）**：把 `clamp(3,64)` 改成 `max(3)` 后 **16 个导出计数无一变化**（ATU01038 17745/22119、Shape 6150/11372、Shape-2 3105/4792 等逐位相同）⇒ 该上限对受门禁模型**不生效**，故按"替身护栏"保留而非删除。
+- **门禁**：`occt-topo --lib` **1291/1**（唯一红 = T-01）；其余门禁与基线一致（本轮只改注释，前一批已逐项复跑）。
+
 **批 52（A25/T-61 收尾：Delaun 失败 ⇒ 整面无网格）—— 2026-09-20 第 68 轮**
 
 - **缺口**：`BRepMesh_Delaun::addTriangle` 撞上链接三角形对溢出时，OCCT 抛 `Standard_OutOfRange`（`BRepMesh_PairOfIndex.hxx:41`），异常从 `generateMesh` 逃出、被 `BRepMesh_BaseMeshAlgo::Perform` 空 catch 吞掉（`BRepMesh_BaseMeshAlgo.cxx:40-62`）⇒ `commitSurfaceTriangulation` **根本没执行** ⇒ 该面**完全无三角化**（而不是"已建好的部分网格"）。端口只中止当前多边形，随后照样提交部分网格。
@@ -906,7 +913,7 @@ cd ..; git worktree remove --force .target-headcheck
 | A16 | ◐ | T-52 | **投影已忠实**（第 52 轮：点–曲线→`Extrema_ExtPC`、点–面→`Extrema_ExtPS`，自创网格/黄金分割已删）；⬜ 求交 half（`geom_api` 两个采样器 + `occt-geom2d/curve_ops.rs:68-69`），已标 UNPORTED，前置 `IntCurveSurface`/`IntTools_EdgeEdge`（T-67 步 3 之外） |
 | A17 | ✅ | T-53 | 删 `brep_exchange` 静默回退 + 形参改名 |
 | A18 | ⬜ | T-54 | 平面耳切/桥洞 → 约束 Delaunay；前置同 A13（T-69 收口：先补"OCCT 会网格化、端口失败"那类面的控制流） |
-| A19 | ◐ | T-55 | 失败率阈值 `WIREFRAME_FALLBACK_RATIO_MAX` ✅ 删；**逐面 UV 栅格回退**仍在（T-69 第 1 轮：管面类 OCCT 也不网格化，但另有至少一类失败面 OCCT 会网格化 ⇒ 暂不可删，先补该类控制流） |
+| A19 | ◐ | T-55 | 失败率阈值 `WIREFRAME_FALLBACK_RATIO_MAX` ✅ 删；**逐面 UV 栅格回退**仍在（T-69 第 1 轮：管面类 OCCT 也不网格化，但另有至少一类失败面 OCCT 会网格化 ⇒ 暂不可删，先补该类控制流） | **批 53（第 68 轮）**：阈值部分按「OCCT 无对应分支」就地标 UNPORTED（`wireframe.rs` 的 `3`/`64` 自创项，含 `BRepMesh_GeomTool::CellsCount` 出处与删除条件；实测去掉 64 上限对 16 个导出计数无影响 ⇒ 作为替身护栏保留）。**余项**：逐面回退的**删除**（前置 T-69）。
 | A20 | ✅ | T-56 | 边域两次 `Project`；三个自创回退删除（含 A29 根因修复） |
 | A21 | ✅ | T-57 | `model_healer` 退化支路 + 平方距离判据 |
 | A22 | ✅ | T-58 | `ProjectAct` 解析臂 + 删除三点外心/`classify_curve` 族 |
