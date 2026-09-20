@@ -397,6 +397,7 @@ cd ..; git worktree remove --force .target-headcheck
 - **订正两处前述推测（留痕）**：
   1. **`build_solid` 的「按实参播种 aMFS」是错的**：OCCT `BOPAlgo_BOP.cxx:1156` 在 RC 循环前 `aMFS.Clear()`，只用实参播种求 `aMTSols`（共享面的实体），随后按 `myRC` 重建 —— 端口现有结构**忠实**。本轮实验（按实参播种 → `mfs=11`/`sfs=11`）已 `git checkout --` 回退。
   2. **收尾判定 `anIsSameV2d` 不是终端阻塞**：临时禁用该 UV 判定（`ZZ_DBG_NOUV`）后，柱面从「1 area/3 wires」变为「1 area/2 wires」，但 FUSE 结果**完全不变** ⇒ 即使收尾通过，`perform_areas`（`IsGrowthWire` / `IntTools_FClass2d::IsHole`）仍把一条环带 loop 当成 hole（1 growth + 1 hole ⇒ 一个带内环的面）。
+- **`perform_areas` 的逐 loop 实测（`ZZ_DBG_AREA`，已删）**：盒体顶面 = `loop0`(4 边, growth, ring_area=+4.000000) + `loop1`(1 边, growth, +0.502125) + `loop2`(1 边, hole, −0.502125) ✅；**柱面 = 6 个单边 loop**（4 个闭合圆 + 缝的两段），其中 5 个 `is_hole=true`、1 个 `growth=true`（`IsGrowthWire` 命中前一个 hole 的边），且**所有 ring_area = NaN**（`FClass2d` 的 `outer_ring()` 为空：单边闭合圆的 UV 采样环退化成零面积直线 ⇒ 被 `area.abs() < SQUARE_CONFUSION` 丢弃 ⇒ 默认「hole」）⇒ 端口的假面「1 area / 3 wires」= 1 growth + 2 hole 拼出来的。
 - **下一轮入口（T-83，按此顺序）**：① 收尾判定：按 OCCT 的 `aVertMap`（TShape+Location+**Orientation**）与逐边实例 `IsClosed` 建模，使两次 band walk 能收尾（判据：柱面 `build_split_faces_occt` 出 **2 个 area**）；② `perform_areas` 的 growth/hole 判据：按 `IntTools_FClass2d.cxx:548-565` 核对端口 `fclass2d/p01.rs:250`（逐 wire 有符号 UV 面积；`myIsHole` 取最后一个 wire）与 UV 多边形符号（判据：两条环带 loop 都判为 growth）；③ 之后复跑 `box∪cyl` 三操作，再看 T-82/T-81。
 
 **批 49（T-80 第四段：柱面侧面 wire 对齐 `BRepPrim_OneAxis::LateralWire`；登记 T-83）—— 2026-09-20 第 70 轮**
