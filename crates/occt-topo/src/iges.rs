@@ -25,7 +25,7 @@ use crate::brep_surface::{classify_surface, face_is_planar, face_plane, sphere_c
 use crate::brep_tool::BRepTool;
 use crate::model::BRepModel;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertices_of, wires_of_face};
+use crate::topo_tools_full::{edge_vertices, edges_of_wire, wires_of_face};
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -623,17 +623,6 @@ impl IgesWriter {
 
     // ---- topology entities ----
 
-    fn emit_vertices(&mut self, shape: &TopoShape) {
-        for v in vertices_of(shape) {
-            let key = Arc::as_ptr(&v.0.tshape) as usize;
-            if self.point_entities.contains_key(&key) {
-                continue;
-            }
-            let p = BRepTool::vertex_point(&v);
-            let idx = self.emit_point(&p);
-            self.point_entities.insert(key, idx);
-        }
-    }
 
     /// `GeomToIGES_GeomCurve::TransferCurve(Geom_Curve, Udeb, Ufin)`
     /// (`GeomToIGES_GeomCurve.cxx:94-126` dispatching, `:133-161` on the bounded
@@ -1643,15 +1632,12 @@ impl IgesWriter {
                 }
             }
             ShapeType::Solid => {
-                self.emit_vertices(shape);
                 self.emit_solid(&Solid(shape.clone()));
             }
             ShapeType::Shell => {
-                self.emit_vertices(shape);
                 self.emit_shell(&Shell(shape.clone()));
             }
             ShapeType::Face => {
-                self.emit_vertices(shape);
                 self.emit_face(&Face(shape.clone()));
             }
             _ => {}
@@ -1818,8 +1804,11 @@ mod tests {
         let iges = write_shape_iges(&b.solid.0);
         // The default `write.iges.brep.mode = 0` (Faces mode) writes the faces as
         // trimmed surfaces (144 over 142) grouped by 402 - not the 510/514/186
-        // BRep-mode tree this port used to emit.
-        for needle in ["116", "110", "108", "142", "144", "402"] {
+        // BRep-mode tree this port used to emit. Point entities (116) appear only
+        // where OCCT references them (the location point of 192/194/196/198); the
+        // port's earlier unconditional per-vertex 116 block was unreferenced output
+        // and was removed in batch 71, so a box legitimately has none.
+        for needle in ["110", "108", "142", "144", "402"] {
             assert!(iges.contains(needle), "missing entity {needle}");
         }
         for line in iges.lines() {
