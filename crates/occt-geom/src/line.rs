@@ -25,7 +25,7 @@ impl Curve for GeomLine {
     }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
-    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
+    fn continuity(&self) -> u8 { 6 }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.pos.vdir.reverse(); }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }

@@ -45,7 +45,7 @@ impl Curve2d for Geom2dParabola {
     }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
-    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
+    fn continuity(&self) -> u8 { 6 }
     fn clone_dyn(&self) -> Box<dyn crate::curve::Curve2d> { Box::new(self.clone()) }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.focal = -self.pos.focal; }

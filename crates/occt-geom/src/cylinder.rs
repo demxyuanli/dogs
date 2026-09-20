@@ -29,7 +29,7 @@ impl Surface for GeomCylinder {
     fn v_range(&self) -> (f64, f64) { (f64::NEG_INFINITY, f64::INFINITY) }
     fn is_u_periodic(&self) -> bool { true }
     fn gp_cylinder(&self) -> Option<GpCylinder> { Some(self.pos.clone()) }
-    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
+    fn continuity(&self) -> u8 { 6 }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
 

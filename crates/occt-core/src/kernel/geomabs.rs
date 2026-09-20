@@ -13,13 +13,14 @@ pub enum SurfaceType { Plane, Cylinder, Cone, Sphere, Torus, BezierSurface, BSpl
 ///
 /// Numeric order matches OCCT (`GeomAbs_C0`=0 … `GeomAbs_CN`=6).
 ///
-/// **Known deviation (task T-64)**: OCCT returns `GeomAbs_CN` for every
-/// analytic curve/surface (`Geom_Conic.cxx:32-35`, `Geom_Line.cxx:128-131`,
+/// Analytic curves and surfaces report `GeomAbs_CN` (6) like OCCT does
+/// (`Geom_Conic.cxx:32-35`, `Geom_Line.cxx:128-131`,
 /// `Geom_ElementarySurface.cxx:25` for plane/cylinder/cone/sphere/torus,
-/// `Geom2d_Line.cxx:172`, `Geom2d_Conic.cxx:48`), while this port's analytic
-/// classes still return `G2` (3). Raising them alone empties the Sphere mesh in
-/// `step_to_obj` (a consumer treats the reported continuity as a span bound),
-/// so the change must be done together with that consumer's OCCT semantics.
+/// `Geom2d_Line.cxx:172`, `Geom2d_Conic.cxx:48`). Task T-64 had to hold them at
+/// `G2` (3) because a mesh consumer treated the reported continuity as a span
+/// bound and the Sphere mesh came out empty; that consumer now derives its spans
+/// the OCCT way (`GeomAdaptor_Curve::NbIntervals` returns a single interval for
+/// every non-B-spline, non-offset curve), so the values are faithful again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Shape { C0, G1, C1, G2, C2, C3, CN }
 

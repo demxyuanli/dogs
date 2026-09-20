@@ -31,7 +31,7 @@ impl Curve for GeomCircle {
     fn period(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn circle_radius(&self) -> Option<f64> { Some(self.pos.radius.abs()) }
     fn gp_circ(&self) -> Option<GpCirc> { Some(self.pos.clone()) }
-    fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer
+    fn continuity(&self) -> u8 { 6 }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.radius = -self.pos.radius; }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
