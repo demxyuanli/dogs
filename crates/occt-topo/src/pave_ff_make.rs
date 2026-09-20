@@ -119,12 +119,14 @@ fn is_valid_block_for_faces(
         && valid_block_point_for_face(ctx, f2, &p, t, pc2, tol)
 }
 
-/// One face of `IntTools_Context::IsValidBlockForFaces`.
-///
-/// FaceFace pcurves from `make_pcurve_full` may be UV-speed Geom2dLines that
-/// do not share the 3D parameter. Use the 2D branch only when the pcurve at
-/// `t` reconstructs to the 3D midpoint within `tol`; otherwise fall through
-/// to 3D `IsValidPointForFace`.
+/// One face of `IntTools_Context::IsValidBlockForFaces`
+/// (`IntTools_Context.cxx:738-752`): with a pcurve, sample it at the 3D
+/// parameter and classify the resulting 2D point (`IsPointInOnFace`); with no
+/// pcurve, project the 3D point and run `IsValidPointForFace`. There is no
+/// reconstruction test in OCCT — the pcurves of `IntTools_FaceFace` are
+/// expressed in the 3D curve's parameter (`IntTools_Curve::SetCurves`), and the
+/// sort the intersectors apply is undone before the curves leave `FaceFace`
+/// (`IntTools_FaceFace.cxx:420-436`, `:550-563`).
 fn valid_block_point_for_face(
     ctx: &mut IntToolsContext,
     face: &Face,
@@ -135,14 +137,9 @@ fn valid_block_point_for_face(
 ) -> bool {
     if let Some(pc) = pc {
         let uv = pc.d0(t);
-        let reconstructed = BRepTool::face_surface(face)
-            .map(|s| s.d0(uv.x(), uv.y()).distance(p) <= tol.max(CONFUSION))
+        return ctx
+            .is_valid_point_for_face((uv.x(), uv.y()), face)
             .unwrap_or(false);
-        if reconstructed {
-            return ctx
-                .is_valid_point_for_face((uv.x(), uv.y()), face)
-                .unwrap_or(false);
-        }
     }
     ctx.is_point_in_on_face(face, p, None, tol).unwrap_or(false)
 }

@@ -244,10 +244,18 @@ impl FaceFace {
 
     /// Intersects the underlying surfaces of the two faces.
     ///
-    /// The faces are ordered internally so the "higher" analytic type becomes
-    /// `face1` (OCCT `SortTypes`); the result curves always carry `face1_idx =
-    /// 0` and `face2_idx = 1` in that sorted order. Output curves are sorted by
-    /// curve parameter and deduplicated.
+    /// The surfaces are ordered internally so the "higher" analytic type becomes
+    /// `Face1` (`IntTools_FaceFace.cxx:351-357`, `SortTypes`), and the
+    /// intersectors express their pcurves in *that* order. OCCT swaps the
+    /// pcurves back when `bReverse` is set — `cxx:420-436` for the plane/plane
+    /// early return, `cxx:550-563` for the general path (the intersection points
+    /// are re-bound the same way, `cxx:595-604`) — so on output
+    /// `pcurve1` is the pcurve on the face passed as `face1` and `pcurve2` the
+    /// one on `face2`, in the *caller's* order. That is the order
+    /// `BOPAlgo_PaveFiller::MakeBlocks` consumes them in: it binds
+    /// `aIC.FirstCurve2d()` to `myDS->Shape(nF1)` and `SecondCurve2d()` to
+    /// `Shape(nF2)` (`BOPAlgo_PaveFiller_6.cxx:747-748`, `:914`).
+    /// Output curves are sorted by curve parameter and deduplicated.
     pub fn perform(&mut self) -> Result<(), String> {
         self.done = false;
         let fa = self.face1.clone().ok_or("FaceFace::perform: face1 not set")?;
@@ -275,6 +283,15 @@ impl FaceFace {
         self.tangent_faces = false;
         let mut curves =
             self.intersect_surfaces(ka, kb, sa.as_ref(), sb.as_ref(), &fa, &fb, tol)?;
+
+        // `IntTools_FaceFace.cxx:420-436` / `:550-563`: undo the sort for the
+        // pcurves, so they come out bound to the caller's Face1/Face2.
+        if reverse {
+            for c in &mut curves {
+                std::mem::swap(&mut c.pcurve1, &mut c.pcurve2);
+            }
+        }
+
         if !self.list_of_pnts.is_empty() {
             for &(u1, v1, u2, v2) in &self.list_of_pnts {
                 let p1 = sa.d0(u1, v1);
