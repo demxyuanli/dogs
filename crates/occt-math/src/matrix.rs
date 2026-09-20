@@ -313,7 +313,9 @@ impl MathMatrix {
                 x.set_value(max_row, tb);
             }
             let pivot = a.value(k, k);
-            if pivot.abs() < 1e-30 { return Err("Solve: singular matrix"); }
+            // `math_Gauss.hxx:45-49`: `MinPivot = 1.0e-20` ("If the largest pivot
+            // found is less than MinPivot the matrix A is considered singular").
+            if pivot.abs() < 1.0e-20 { return Err("Solve: singular matrix"); }
             for i in (k + 1)..=n {
                 let factor = a.value(i, k) / pivot;
                 a.set_value(i, k, 0.0);

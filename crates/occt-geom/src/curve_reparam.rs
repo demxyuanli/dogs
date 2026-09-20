@@ -173,6 +173,10 @@ pub fn arc_reparam_check(c: &dyn Curve, samples: usize) -> f64 {
 
 /// B-spline basis values at `u`, indexed by pole (Algorithm A2.2 from
 /// The NURBS Book), for a clamped knot vector.
+///
+/// **非 OCCT 出处**：OCCT 的等价件是 `BSplCLib::BasisFuns`/`bspl`（按结点区间
+/// 与 `Span` 求基函数），本函数取自 The NURBS Book A2.2 教科书算法，故文件头
+/// 只把 `Geom_Curve`/`Geom_BSplineCurve`/`GCPnts_AbscissaPoint` 记为*调用侧*来源。
 fn basis_values(knots: &[f64], degree: usize, u: f64) -> Vec<f64> {
     let n_poles = knots.len() - degree - 1;
     let s = hunt(knots, u).max(degree).min(n_poles - 1);
@@ -204,6 +208,11 @@ fn basis_values(knots: &[f64], degree: usize, u: f64) -> Vec<f64> {
 
 /// Solve `A·x = b` for a square `A` by partial-pivoted Gaussian elimination;
 /// `None` if singular.
+///
+/// The singularity test is OCCT's `math_Gauss` pivot threshold
+/// `MinPivot = 1.0e-20` (`math_Gauss.hxx:45-49`: "If the largest pivot found is
+/// less than MinPivot the matrix A is considered singular"). The previous
+/// constant was the invented `1e-14` (audit A15).
 fn gauss_solve(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
     let n = a.len();
     if n == 0 {
@@ -225,7 +234,7 @@ fn gauss_solve(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
                 piv = r;
             }
         }
-        if best < 1e-14 {
+        if best < 1.0e-20 {
             return None;
         }
         if piv != col {
