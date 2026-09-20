@@ -1716,13 +1716,16 @@ impl IgesWriter {
             }
         }
 
-        // Terminate card (`IGESData_IGESWriter.cxx:942-943`): the last sequence
-        // number of each section, blank-filled, then 40 blanks and `T0000001`.
+        // Terminate card (`IGESData_IGESWriter.cxx:942-947`): the **last sequence
+        // number** of each section - `nbs`, `nbg`, `nbd * 2` and
+        // `thepnum.Value(thepnum.Length()) - 1` - blank-filled, then 40 blanks and
+        // `T0000001`. The Directory section therefore reports `2 * entities`, not
+        // `2 * entities + 1` (as of batch 70).
         let t = format!(
             "S{:>7}G{:>7}D{:>7}P{:>7}{}T0000001",
             s_seq - 1,
             g_seq - 1,
-            d_seq,
+            d_seq - 1,
             p_seq - 1,
             " ".repeat(40)
         );
