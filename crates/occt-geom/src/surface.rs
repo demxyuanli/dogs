@@ -8,7 +8,17 @@ use crate::curve::Curve;
 pub trait Surface: Send + Sync {
     fn d0(&self, u: f64, v: f64) -> GpPnt;
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec);
-    /// Default D2 by central difference of D1. Analytic surfaces override.
+    /// Default D2 by central difference of D1.
+    ///
+    /// **UNPORTED (audit A15)**: OCCT's `Geom_Surface::D2` is pure virtual — every
+    /// concrete class computes it analytically (`ElSLib::*D2` for the elementary
+    /// surfaces, `BSplSLib::D2` for B-spline/Bezier, `Geom_OffsetSurfaceUtils`
+    /// for offsets) and no finite-difference fallback exists anywhere in OCCT.
+    /// The five elementary surfaces (plane / cylinder / cone / sphere / torus),
+    /// `GeomBSplineSurface` and `GeomRectangularTrimmedSurface` override this;
+    /// the remaining implementors (`GeomBezierSurface`, `GeomOffsetSurface`,
+    /// `GeomSurfaceOfRevolution`, `GeomSurfaceOfLinearExtrusion`,
+    /// `surface_fit`, `surface_to_grid`) still inherit the `h = 1e-6` difference.
     fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
         let h = 1e-6;
         let (p, du, dv) = self.d1(u, v);

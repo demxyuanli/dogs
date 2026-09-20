@@ -78,64 +78,90 @@ pub fn cone_d1(co: &GpCone, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
     (slib::cone_value(co, u, v), du, dv)
 }
 
+/// `ElSLib::PlaneD2`: the plane is affine, so all second derivatives vanish.
+pub fn plane_d2(pl: &GpPln, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+    let (p, du, dv) = plane_d1(pl, u, v);
+    (p, du, dv, GpVec::zero(), GpVec::zero(), GpVec::zero())
+}
+
+/// `ElSLib::CylinderD2`: `Vuu = -R·Vxy`, `Vvv = Vuv = 0`.
+pub fn cylinder_d2(cy: &GpCylinder, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+    let r = cy.radius;
+    let duu = GpVec::from_xyz(&cy.pos.x_direction().xyz().multiplied(-r*u.cos())
+        .added(&cy.pos.y_direction().xyz().multiplied(-r*u.sin())));
+    let (p, du, dv) = cylinder_d1(cy, u, v);
+    (p, du, dv, duu, GpVec::zero(), GpVec::zero())
+}
+
+/// `ElSLib::ConeD2` (`ElSLib.cxx:867-...`). With `R = Radius + V·sinA`,
+/// `Vxy = cosU·X + sinU·Y`, `DVxy = -sinU·X + cosU·Y`:
+/// `Vuu = -R·Vxy`, `Vvv = 0`, `Vuv = sinA·DVxy`.
+pub fn cone_d2(co: &GpCone, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+    let a = co.semi_angle;
+    let big_r = co.radius + v * a.sin();
+    let (cu, su) = (u.cos(), u.sin());
+    let (p, du, dv) = cone_d1(co, u, v);
+    let vxy = co.pos.x_direction().xyz().multiplied(cu)
+        .added(&co.pos.y_direction().xyz().multiplied(su));
+    let dvxy = co.pos.x_direction().xyz().multiplied(-su)
+        .added(&co.pos.y_direction().xyz().multiplied(cu));
+    let duu = GpVec::from_xyz(&vxy.multiplied(-big_r));
+    let duv = GpVec::from_xyz(&dvxy.multiplied(a.sin()));
+    (p, du, dv, duu, GpVec::zero(), duv)
+}
+
+/// `ElSLib::SphereD2` (`ElSLib.cxx:975-1037`): `Vuu = -R·cosV·Vxy`,
+/// `Vvv = -R·cosV·Vxy - R·sinV·Z`, `Vuv = -R·sinV·DVxy`.
+pub fn sphere_d2(s: &GpSphere, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+    let r = s.radius;
+    let (cv, sv) = (v.cos(), v.sin());
+    let (cu, su) = (u.cos(), u.sin());
+    let (p, du, dv) = sphere_d1(s, u, v);
+    let vxy = s.pos.x_direction().xyz().multiplied(cu)
+        .added(&s.pos.y_direction().xyz().multiplied(su));
+    let dvxy = s.pos.x_direction().xyz().multiplied(-su)
+        .added(&s.pos.y_direction().xyz().multiplied(cu));
+    let duu = GpVec::from_xyz(&vxy.multiplied(-r * cv));
+    let dvv = GpVec::from_xyz(&vxy.multiplied(-r * cv)
+        .added(&s.pos.direction().xyz().multiplied(-r * sv)));
+    let duv = GpVec::from_xyz(&dvxy.multiplied(-r * sv));
+    (p, du, dv, duu, dvv, duv)
+}
+
+/// `ElSLib::TorusD2` (`ElSLib.cxx:1039-1100`): `Vuu = -R·Vxy`,
+/// `Vvv = -r·cosV·Vxy - r·sinV·Z`, `Vuv = r·sinV·(sinU·X - cosU·Y)`.
+pub fn torus_d2(t: &GpTorus, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+    let r = t.minor_radius;
+    let (cv, sv) = (v.cos(), v.sin());
+    let (cu, su) = (u.cos(), u.sin());
+    let big_r = t.major_radius + r * cv;
+    let (p, du, dv) = torus_d1(t, u, v);
+    let vxy = t.pos.x_direction().xyz().multiplied(cu)
+        .added(&t.pos.y_direction().xyz().multiplied(su));
+    // `Vuv = r·sinV·(sinU·X − cosU·Y) = −r·sinV·DVxy`.
+    let dvxy = t.pos.x_direction().xyz().multiplied(-su)
+        .added(&t.pos.y_direction().xyz().multiplied(cu));
+    let duu = GpVec::from_xyz(&vxy.multiplied(-big_r));
+    let dvv = GpVec::from_xyz(&vxy.multiplied(-r * cv)
+        .added(&t.pos.direction().xyz().multiplied(-r * sv)));
+    let duv = GpVec::from_xyz(&dvxy.multiplied(-r * sv));
+    (p, du, dv, duu, dvv, duv)
+}
+
 /// Evaluate any elementary surface D2 (point + du + dv + duu + dvv + duv).
 ///
-/// `ElSLib::PlaneD2` / `CylinderD2` / `SphereD2` (`ElSLib.cxx:975-1037`) /
-/// `TorusD2` (`ElSLib.cxx:1039-1100`). With `Vxy = cosU·X + sinU·Y` and
-/// `DVxy = -sinU·X + cosU·Y` the non-zero second derivatives are
-/// `Vuu = -R·cosV·Vxy`, `Vvv = -R·cosV·Vxy - R·sinV·Z`, `Vuv = -R·sinV·DVxy`
-/// (sphere) and `Vuu = -R·Vxy`, `Vvv = -r·cosV·Vxy - r·sinV·Z`,
-/// `Vuv = r·sinV·(sinU·X - cosU·Y)` (torus).
-///
-/// The previous body returned **zero** `duu/dvv/duv` for both sphere and torus,
-/// silently dropping curvature (audit A10).
+/// Delegates to the per-type `ElSLib::*D2` transcriptions above. The previous
+/// body (before audit A10) returned **zero** `duu/dvv/duv` for sphere and torus,
+/// silently dropping curvature; `SurfaceRef` has no `Cone` variant, so a cone is
+/// evaluated through [`cone_d2`] directly.
 pub fn surface_d2(
     s: &SurfaceRef, u: f64, v: f64,
 ) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
     match s {
-        SurfaceRef::Plane(pl) => {
-            let (p, du, dv) = plane_d1(pl, u, v);
-            (p, du, dv, GpVec::zero(), GpVec::zero(), GpVec::zero())
-        }
-        SurfaceRef::Cylinder(cy) => {
-            let r = cy.radius;
-            let duu = GpVec::from_xyz(&cy.pos.x_direction().xyz().multiplied(-r*u.cos())
-                .added(&cy.pos.y_direction().xyz().multiplied(-r*u.sin())));
-            let (p, du, dv) = cylinder_d1(cy, u, v);
-            (p, du, dv, duu, GpVec::zero(), GpVec::zero())
-        }
-        SurfaceRef::Sphere(s) => {
-            let r = s.radius;
-            let (cv, sv) = (v.cos(), v.sin());
-            let (cu, su) = (u.cos(), u.sin());
-            let (p, du, dv) = sphere_d1(s, u, v);
-            let vxy = s.pos.x_direction().xyz().multiplied(cu)
-                .added(&s.pos.y_direction().xyz().multiplied(su));
-            let dvxy = s.pos.x_direction().xyz().multiplied(-su)
-                .added(&s.pos.y_direction().xyz().multiplied(cu));
-            let duu = GpVec::from_xyz(&vxy.multiplied(-r * cv));
-            let dvv = GpVec::from_xyz(&vxy.multiplied(-r * cv)
-                .added(&s.pos.direction().xyz().multiplied(-r * sv)));
-            let duv = GpVec::from_xyz(&dvxy.multiplied(-r * sv));
-            (p, du, dv, duu, dvv, duv)
-        }
-        SurfaceRef::Torus(t) => {
-            let r = t.minor_radius;
-            let (cv, sv) = (v.cos(), v.sin());
-            let (cu, su) = (u.cos(), u.sin());
-            let big_r = t.major_radius + r * cv;
-            let (p, du, dv) = torus_d1(t, u, v);
-            let vxy = t.pos.x_direction().xyz().multiplied(cu)
-                .added(&t.pos.y_direction().xyz().multiplied(su));
-            // `Vuv = r·sinV·(sinU·X − cosU·Y) = −r·sinV·DVxy`.
-            let dvxy = t.pos.x_direction().xyz().multiplied(-su)
-                .added(&t.pos.y_direction().xyz().multiplied(cu));
-            let duu = GpVec::from_xyz(&vxy.multiplied(-big_r));
-            let dvv = GpVec::from_xyz(&vxy.multiplied(-r * cv)
-                .added(&t.pos.direction().xyz().multiplied(-r * sv)));
-            let duv = GpVec::from_xyz(&dvxy.multiplied(-r * sv));
-            (p, du, dv, duu, dvv, duv)
-        }
+        SurfaceRef::Plane(pl) => plane_d2(pl, u, v),
+        SurfaceRef::Cylinder(cy) => cylinder_d2(cy, u, v),
+        SurfaceRef::Sphere(s) => sphere_d2(s, u, v),
+        SurfaceRef::Torus(t) => torus_d2(t, u, v),
     }
 }
 

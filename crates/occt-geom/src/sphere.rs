@@ -20,6 +20,11 @@ impl Surface for GeomSphere {
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
         surface_eval::sphere_d1(&self.pos, u, v)
     }
+    /// `Geom_SphericalSurface::D2` → `ElSLib::SphereD2` (`ElSLib.cxx:975-1037`).
+    /// Replaces the trait's central-difference default (audit A15).
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        surface_eval::sphere_d2(&self.pos, u, v)
+    }
     fn u_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }
     fn v_range(&self) -> (f64, f64) { (-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2) }
     fn is_u_periodic(&self) -> bool { true }

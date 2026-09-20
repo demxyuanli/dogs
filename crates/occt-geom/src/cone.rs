@@ -20,6 +20,12 @@ impl Surface for GeomCone {
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
         surface_eval::cone_d1(&self.pos, u, v)
     }
+    /// `Geom_ConicalSurface::D2` → `ElSLib::ConeD2` (`ElSLib.cxx:867-...`):
+    /// `Vuu = -R·Vxy`, `Vvv = 0`, `Vuv = sinA·DVxy`.
+    /// Replaces the trait's central-difference default (audit A15).
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        surface_eval::cone_d2(&self.pos, u, v)
+    }
     fn u_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }
     fn v_range(&self) -> (f64, f64) { (f64::NEG_INFINITY, f64::INFINITY) }
     fn is_u_periodic(&self) -> bool { true }

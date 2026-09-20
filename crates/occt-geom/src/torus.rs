@@ -19,6 +19,11 @@ impl Surface for GeomTorus {
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
         surface_eval::torus_d1(&self.pos, u, v)
     }
+    /// `Geom_ToroidalSurface::D2` → `ElSLib::TorusD2` (`ElSLib.cxx:1039-1100`).
+    /// Replaces the trait's central-difference default (audit A15).
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        surface_eval::torus_d2(&self.pos, u, v)
+    }
     fn u_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }
     fn v_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }
     fn is_u_periodic(&self) -> bool { true }

@@ -20,6 +20,11 @@ impl Surface for GeomCylinder {
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
         surface_eval::cylinder_d1(&self.pos, u, v)
     }
+    /// `Geom_CylindricalSurface::D2` → `ElSLib::CylinderD2`.
+    /// Replaces the trait's central-difference default (audit A15).
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        surface_eval::cylinder_d2(&self.pos, u, v)
+    }
     fn u_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }
     fn v_range(&self) -> (f64, f64) { (f64::NEG_INFINITY, f64::INFINITY) }
     fn is_u_periodic(&self) -> bool { true }
