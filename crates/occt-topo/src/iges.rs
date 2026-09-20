@@ -138,37 +138,41 @@ fn circle_center3(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
 // Curve classification
 // ---------------------------------------------------------------------------
 
+/// Curve kind for the IGES curve dispatch.
+///
+/// `GeomToIGES_GeomCurve::TransferCurve` (`GeomToIGES_GeomCurve.cxx:75-116`)
+/// dispatches on the curve's **exact type** (`IsKind`), never on sampled
+/// geometry: `Geom_BoundedCurve` (Bezier / B-spline / trimmed) → the 126/100
+/// family, `Geom_Conic` → 104 (circle 100), `Geom_OffsetCurve`, `Geom_Line` →
+/// 110. The port has the equivalent type queries on [`Curve`], so the previous
+/// "6 samples of |C''| with a 2% spread" classifier (audit A26) is replaced by
+/// this dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CurveKind {
+enum IgCurveKind {
     Line,
     Circle,
+    /// Ellipse / hyperbola / parabola: OCCT emits conic-arc entity 104
+    /// (`GeomToIGES_GeomCurve::TransferConic`); this port has no 104 emitter yet
+    /// (T-78).
+    Conic,
+    /// Bezier / B-spline: OCCT emits entity 126
+    /// (`GeomToIGES_GeomCurve::TransferBSplineCurve`); this port has no 126
+    /// emitter yet (T-78).
+    Bounded,
     Other,
 }
 
-fn edge_curve_kind(c: &dyn Curve, a: f64, b: f64) -> CurveKind {
-    let (lo, hi) = if a.is_finite() && b.is_finite() && b > a {
-        (a, b)
+fn iges_curve_kind(c: &dyn Curve) -> IgCurveKind {
+    if c.is_line() {
+        IgCurveKind::Line
+    } else if c.gp_circ().is_some() {
+        IgCurveKind::Circle
+    } else if c.gp_ellipse().is_some() || c.gp_hyperbola().is_some() || c.gp_parabola().is_some() {
+        IgCurveKind::Conic
+    } else if c.bspline_poles().is_some() || c.bezier_poles().is_some() {
+        IgCurveKind::Bounded
     } else {
-        (0.0, 1.0)
-    };
-    let span = hi - lo;
-    if span < 1e-12 {
-        return CurveKind::Other;
-    }
-    let mut d2s = Vec::with_capacity(6);
-    for i in 0..6 {
-        let u = lo + span * i as f64 / 5.0;
-        d2s.push(c.d2(u).2.magnitude());
-    }
-    let max_d2 = d2s.iter().cloned().fold(0.0_f64, f64::max);
-    if max_d2 < 1e-9 {
-        return CurveKind::Line;
-    }
-    let min_d2 = d2s.iter().cloned().fold(f64::INFINITY, f64::min);
-    if c.is_periodic() || (max_d2 - min_d2) / max_d2 < 0.02 {
-        CurveKind::Circle
-    } else {
-        CurveKind::Other
+        IgCurveKind::Other
     }
 }
 
@@ -358,37 +362,43 @@ impl IgesWriter {
             return self.emit_line(&p1, &p2);
         };
         let (a, b) = BRepTool::edge_parameters(e);
-        match edge_curve_kind(curve.as_ref(), a, b) {
-            CurveKind::Line => {
+        match iges_curve_kind(curve.as_ref()) {
+            IgCurveKind::Line => {
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
                 self.emit_line(&p1, &p2)
             }
-            CurveKind::Circle => {
+            IgCurveKind::Circle => {
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
-                if p1.distance(&p2) < 1e-9 {
-                    // Full circle: three distinct samples define the center;
-                    // the start/end points coincide (IGES closed-arc form).
-                    let q1 = curve.d0(a + (b - a) / 6.0);
-                    let q2 = curve.d0(a + (b - a) / 3.0);
-                    let q3 = curve.d0(a + 5.0 * (b - a) / 6.0);
-                    let center = circle_center3(&q1, &q2, &q3).unwrap_or_else(GpPnt::zero);
-                    let n = GpVec::from_pnts(&q1, &q2).xyz().crossed(GpVec::from_pnts(&q1, &q3).xyz());
-                    let plane_pt = if n.square_modulus() < 1e-30 {
-                        GpPnt::new(center.x(), center.y(), center.z() + 1.0)
-                    } else {
-                        GpPnt::from_xyz(&center.coord.added(&n.divided(n.modulus())))
-                    };
-                    self.emit_circular_arc(&center, &p1, &p1, &plane_pt)
-                } else {
-                    let pm = curve.d0(0.5 * (a + b));
-                    self.emit_arc_3p(&p1, &pm, &p2)
-                }
+                // `GeomToIGES_GeomCurve::TransferCircle`
+                // (`GeomToIGES_GeomCurve.cxx:292-329`) takes the centre, the axis
+                // and the radius from the `Geom_Circle` itself - never from a
+                // three-point fit on sampled points. A closed edge (start == end)
+                // is written with the arc's start/end coincident (IGES closed
+                // circular arc form).
+                let (center, plane_pt) = match curve.gp_circ() {
+                    Some(c) => {
+                        let pos = c.position();
+                        let loc = pos.location();
+                        let n = pos.direction();
+                        (
+                            loc,
+                            GpPnt::new(loc.x() + n.x(), loc.y() + n.y(), loc.z() + n.z()),
+                        )
+                    }
+                    None => (GpPnt::zero(), GpPnt::new(0.0, 0.0, 1.0)),
+                };
+                self.emit_circular_arc(&center, &p1, &p2, &plane_pt)
             }
-            CurveKind::Other => {
-                // No NURBS downcast available: approximate by the chord line.
-                // ponytail: no 128 emitted; add when GeomBSplineCurve data is exposed.
+            IgCurveKind::Conic | IgCurveKind::Bounded | IgCurveKind::Other => {
+                // UNPORTED (audit A26 / task T-78): OCCT writes entity 104 for
+                // ellipse/hyperbola/parabola (`TransferConic`) and entity 126 for
+                // Bezier/B-spline (`TransferBSplineCurve`); neither emitter is
+                // ported, and `TransferCurve` returns a null handle for any other
+                // curve type, in which case the caller writes no curve at all.
+                // Until those emitters land the edge keeps the chord-line
+                // stand-in.
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
                 self.emit_line(&p1, &p2)
