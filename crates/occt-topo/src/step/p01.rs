@@ -47,14 +47,6 @@ pub(super) fn dir_z() -> GpDir {
     GpDir::new(0.0, 0.0, 1.0).unwrap()
 }
 
-pub(super) fn midpoint(a: &GpPnt, b: &GpPnt) -> GpPnt {
-    GpPnt::new(
-        0.5 * (a.x() + b.x()),
-        0.5 * (a.y() + b.y()),
-        0.5 * (a.z() + b.z()),
-    )
-}
-
 /// 3×3 determinant.
 pub(super) fn det3(m: &[[f64; 3]; 3]) -> f64 {
     m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
@@ -100,48 +92,6 @@ pub(super) fn circle_center3(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
 // ---------------------------------------------------------------------------
 // Geometry classification
 // ---------------------------------------------------------------------------
-
-/// Analytic curve family, classified by sampling (GeomAdaptor substitute).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum CurveKind {
-    Line,
-    Circle,
-    Ellipse,
-    Parabola,
-    Other, // hyperbola / B-spline / unsupported
-}
-
-pub(super) fn classify_curve(c: &dyn Curve, a: f64, b: f64) -> CurveKind {
-    let (lo, hi) = if a.is_finite() && b.is_finite() && b > a {
-        (a, b)
-    } else {
-        (0.0, 1.0)
-    };
-    let span = hi - lo;
-    let n = 6;
-    let mut d2s = Vec::with_capacity(n);
-    for i in 0..n {
-        let u = lo + span * i as f64 / (n - 1) as f64;
-        d2s.push(c.d2(u).2.magnitude());
-    }
-    let max_d2 = d2s.iter().cloned().fold(0.0_f64, f64::max);
-    if max_d2 < 1e-9 {
-        return CurveKind::Line;
-    }
-    let min_d2 = d2s.iter().cloned().fold(f64::INFINITY, f64::min);
-    if (max_d2 - min_d2) / max_d2 < 0.02 {
-        // constant |d²|: circle (closed) or parabola (open)
-        if c.is_periodic() {
-            CurveKind::Circle
-        } else {
-            CurveKind::Parabola
-        }
-    } else if c.is_periodic() {
-        CurveKind::Ellipse
-    } else {
-        CurveKind::Other
-    }
-}
 
 /// Analytic surface family. Plane/sphere reuse `brep_surface`'s tested
 /// classifiers; cylinder/cone/torus are detected from constant-v rings.
@@ -571,110 +521,71 @@ pub fn write_polyline(step: &mut StepWriter, points: &[GpPnt]) -> Result<usize, 
 }
 
 // ---------------------------------------------------------------------------
-// Conic entity writers (sampling reconstruction)
+// Conic entity writers (exact `GeomToStep_Make*` transcriptions)
 // ---------------------------------------------------------------------------
 
-/// Emit a `CIRCLE` from a sampled curve.
-///
-/// The center is the circumcenter of three samples at `a`, `a + π/2` and
-/// `a + π`; the radius is the distance from the center to the first sample,
-/// and the local X/Y frame is recovered from the sample directions.
-pub(super) fn emit_circle_entity(step: &mut StepWriter, c: &dyn Curve, a: f64) -> usize {
-    let p0 = c.d0(a);
-    let p1 = c.d0(a + PI / 2.0);
-    let p2 = c.d0(a + PI);
-    let center = circle_center3(&p0, &p1, &p2).unwrap_or_else(GpPnt::zero);
-    let r = center.distance(&p0);
-    let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &p0)).unwrap_or(dir_x());
-    let ydir = GpDir::from_vec(&GpVec::from_pnts(&center, &p1)).unwrap_or(dir_y());
-    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
-    let ax = step.add_axis2_placement_3d(&center, &axis, &xdir);
-    step.emit(format!("CIRCLE('',#{ax},{})", step_real(r)))
+/// `GeomToStep_MakeCircle` (`GeomToStep_MakeCircle.cxx`): the
+/// `AXIS2_PLACEMENT_3D` comes from `C.Position()` (Location / Direction /
+/// XDirection) and the radius from `C.Radius()`. No sampling: the previous body
+/// recovered the center from three curve samples and the radius from their
+/// distance.
+pub(super) fn emit_circle_entity(step: &mut StepWriter, c: &GpCirc) -> usize {
+    let pos = c.position();
+    let ax = step.add_axis2_placement_3d(&pos.location(), &pos.direction(), &pos.x_direction());
+    step.emit(format!("CIRCLE('',#{ax},{})", step_real(c.radius())))
 }
 
-/// Emit an `ELLIPSE` from a sampled curve.
-///
-/// Opposite samples at `a` and `a + π` share the center (their midpoint); the
-/// semi-major axis is the distance to either, and the semi-minor axis the
-/// distance to the `a + π/2` sample.
-pub(super) fn emit_ellipse_entity(step: &mut StepWriter, c: &dyn Curve, a: f64) -> usize {
-    let p0 = c.d0(a);
-    let p_half = c.d0(a + PI / 2.0);
-    let p_pi = c.d0(a + PI);
-    let center = midpoint(&p0, &p_pi);
-    let major = center.distance(&p0).max(1e-30);
-    let minor = center.distance(&p_half).max(1e-30);
-    let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &p0)).unwrap_or(dir_x());
-    let ydir = GpDir::from_vec(&GpVec::from_pnts(&p_half, &center)).unwrap_or(dir_y());
-    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
-    let ax = step.add_axis2_placement_3d(&center, &axis, &xdir);
+/// `GeomToStep_MakeEllipse`: placement from `E.Position()`, semi-axes from
+/// `E.MajorRadius()` / `E.MinorRadius()`.
+pub(super) fn emit_ellipse_entity(step: &mut StepWriter, e: &GpElips) -> usize {
+    let pos = e.pos;
+    let ax = step.add_axis2_placement_3d(&pos.location(), &pos.direction(), &pos.x_direction());
     step.emit(format!(
         "ELLIPSE('',#{ax},{},{})",
-        step_real(major),
-        step_real(minor)
+        step_real(e.major_radius),
+        step_real(e.minor_radius)
     ))
 }
 
-/// Emit a `PARABOLA` from a sampled curve.
-///
-/// The vertex is the sample at parameter 0; the focal length is derived from
-/// the second derivative (|d²| = 1/f for a parabola in its own frame).
-pub(super) fn emit_parabola_entity(step: &mut StepWriter, c: &dyn Curve) -> usize {
-    let vertex = c.d0(0.0);
-    let d1 = c.d1(0.0).1;
-    let d2 = c.d2(0.0).2;
-    let f = 0.5 / d2.magnitude().max(1e-30);
-    let xdir = GpDir::from_vec(&d2).unwrap_or(dir_x());
-    let ydir = GpDir::from_vec(&d1).unwrap_or(dir_y());
-    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
-    let ax = step.add_axis2_placement_3d(&vertex, &axis, &xdir);
-    step.emit(format!("PARABOLA('',#{ax},{})", step_real(f)))
+/// `GeomToStep_MakeParabola`: placement from `P.Position()`, focal length from
+/// `P.Focal()`.
+pub(super) fn emit_parabola_entity(step: &mut StepWriter, p: &GpParab) -> usize {
+    let pos = p.pos;
+    let ax = step.add_axis2_placement_3d(&pos.location(), &pos.direction(), &pos.x_direction());
+    step.emit(format!("PARABOLA('',#{ax},{})", step_real(p.focal)))
 }
 
-/// Emit a `HYPERBOLA` from a sampled unbounded curve.
-///
-/// The center is the midpoint of a symmetric sample pair (`d0(u)` and
-/// `d0(-u)`); the semi-major radius is the distance to the vertex sample at
-/// parameter 0, and the semi-minor radius is |d¹(0)|.
-pub(super) fn emit_hyperbola_entity(step: &mut StepWriter, c: &dyn Curve) -> usize {
-    let center = midpoint(&c.d0(1.0), &c.d0(-1.0));
-    let vertex = c.d0(0.0);
-    let major = center.distance(&vertex).max(1e-30);
-    let d1 = c.d1(0.0).1;
-    let minor = d1.magnitude().max(1e-30);
-    let xdir = GpDir::from_vec(&GpVec::from_pnts(&center, &vertex)).unwrap_or(dir_x());
-    let ydir = GpDir::from_vec(&d1).unwrap_or(dir_y());
-    let axis = xdir.crossed(&ydir).unwrap_or(dir_z());
-    let ax = step.add_axis2_placement_3d(&center, &axis, &xdir);
+/// `GeomToStep_MakeHyperbola`: placement from `H.Position()`, semi-axes from
+/// `H.MajorRadius()` / `H.MinorRadius()`.
+pub(super) fn emit_hyperbola_entity(step: &mut StepWriter, h: &GpHypr) -> usize {
+    let pos = h.pos;
+    let ax = step.add_axis2_placement_3d(&pos.location(), &pos.direction(), &pos.x_direction());
     step.emit(format!(
         "HYPERBOLA('',#{ax},{},{})",
-        step_real(major),
-        step_real(minor)
+        step_real(h.major_radius),
+        step_real(h.minor_radius)
     ))
 }
 
 /// Write the full analytic (conic) parameterisation of `curve` if it is a
-/// circle, ellipse, parabola or hyperbola. Returns `Ok(None)` for non-conic
+/// circle, ellipse, hyperbola or parabola. Returns `Ok(None)` for non-conic
 /// curves (lines, B-splines, generic trimmed/offset geometry).
 ///
-/// This mirrors `STEPControl_Writer`'s conic coverage: a circle writes its
-/// radius, an ellipse/hyperbola its semi-axes, and a parabola its focal
-/// length, each against a reconstructed `AXIS2_PLACEMENT_3D`.
+/// Type dispatch follows `GeomToStep_MakeCurve.cxx:60-65` (`Geom_Conic` →
+/// `GeomToStep_MakeConic`) and `GeomToStep_MakeConic.cxx`: `IsKind` order
+/// Circle → Ellipse → Hyperbola → Parabola. `Geom_Line` and the bounded curves
+/// are handled by the caller (`GeomToStep_MakeLine` / `MakeBoundedCurve`,
+/// `MakeCurve.cxx:54-59` and `:94-99`), which is why a line yields `None` here.
 pub fn write_conic_params(step: &mut StepWriter, curve: &dyn Curve) -> Result<Option<usize>, String> {
-    let (f, l) = (curve.first_parameter(), curve.last_parameter());
-    let (lo, hi) = if f.is_finite() && l.is_finite() && l > f {
-        (f, l)
+    Ok(if let Some(c) = curve.gp_circ() {
+        Some(emit_circle_entity(step, &c))
+    } else if let Some(e) = curve.gp_ellipse() {
+        Some(emit_ellipse_entity(step, &e))
+    } else if let Some(h) = curve.gp_hyperbola() {
+        Some(emit_hyperbola_entity(step, &h))
+    } else if let Some(p) = curve.gp_parabola() {
+        Some(emit_parabola_entity(step, &p))
     } else {
-        (0.0, 1.0)
-    };
-    Ok(match classify_curve(curve, lo, hi) {
-        CurveKind::Circle => Some(emit_circle_entity(step, curve, lo)),
-        CurveKind::Ellipse => Some(emit_ellipse_entity(step, curve, lo)),
-        CurveKind::Parabola => Some(emit_parabola_entity(step, curve)),
-        CurveKind::Line => None,
-        // A hyperbola is unbounded in parameter space and non-periodic, which
-        // the sampling classifier reports as `Other`.
-        CurveKind::Other if !f.is_finite() && !l.is_finite() => Some(emit_hyperbola_entity(step, curve)),
-        CurveKind::Other => None,
+        None
     })
 }

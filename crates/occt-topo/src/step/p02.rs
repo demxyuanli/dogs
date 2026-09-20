@@ -154,38 +154,60 @@ impl WriteCtx {
     }
 
     pub(super) fn emit_curve_entity(&mut self, c: &dyn Curve, a: f64, b: f64) -> usize {
-        match classify_curve(c, a, b) {
-            CurveKind::Line => {
-                let origin = c.d0(0.0);
-                let d1 = c.d1(0.0).1;
-                let dir = GpDir::from_vec(&d1).unwrap_or(dir_x());
-                let pid = self.w.add_cartesian_point(&origin);
-                let vid = self.w.add_vector(&dir, 1.0);
-                self.w.emit(format!("LINE('',#{pid},#{vid})"))
-            }
-            CurveKind::Circle => emit_circle_entity(&mut self.w, c, a),
-            CurveKind::Ellipse => emit_ellipse_entity(&mut self.w, c, a),
-            CurveKind::Parabola => emit_parabola_entity(&mut self.w, c),
-            CurveKind::Other => {
-                // B-spline / trimmed / offset / hyperbola curve: emit a real
-                // B-spline when spline output is requested, otherwise fall back
-                // to a tangent line at the start parameter so the file stays
-                // valid (a linear approximation of the geometry).
-                if self.splines {
-                    if let Ok(bs) = fit_bspline_curve(c, a, b) {
-                        if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
-                            return id;
-                        }
-                    }
+        // `GeomToStep_MakeCurve.cxx:50-104` dispatch order:
+        // `Geom_Line` → `Geom_Conic` → `Geom_TrimmedCurve` → `Geom_BoundedCurve`
+        // → `done = false`. The family comes from the curve's own type
+        // (`IsKind`), never from sampling: the previous body classified by six
+        // `|d²|` samples with a `(max-min)/max < 0.02` threshold that OCCT has
+        // nowhere (audit A3).
+        if let Some(l) = c.gp_line() {
+            let pid = self.w.add_cartesian_point(&l.location());
+            let vid = self.w.add_vector(&l.direction(), 1.0);
+            return self.w.emit(format!("LINE('',#{pid},#{vid})"));
+        }
+        if let Some(circ) = c.gp_circ() {
+            return emit_circle_entity(&mut self.w, &circ);
+        }
+        if let Some(e) = c.gp_ellipse() {
+            return emit_ellipse_entity(&mut self.w, &e);
+        }
+        if let Some(h) = c.gp_hyperbola() {
+            return emit_hyperbola_entity(&mut self.w, &h);
+        }
+        if let Some(p) = c.gp_parabola() {
+            return emit_parabola_entity(&mut self.w, &p);
+        }
+        // `MakeCurve.cxx:66-92`: a `Geom_TrimmedCurve` is written through its
+        // **basis** curve. For a conic basis the `gp_*` queries above already
+        // returned the basis (the port's `GeomTrimmedCurve` forwards them), so
+        // only the remaining non-BSpline/Bezier bases need the recursion here;
+        // a BSpline/Bezier basis would be `Segment`-ed by OCCT (`cxx:71-82`) and
+        // is represented by this port's own remapped knots instead, so it falls
+        // through to the spline arm below.
+        if c.is_geom_trimmed() {
+            if let Some((basis, bf, bl)) = c.untrimmed_basis() {
+                if basis.bspline_knots().is_none() && basis.bezier_poles().is_none() {
+                    return self.emit_curve_entity(basis.as_ref(), bf, bl);
                 }
-                let p0 = c.d0(a);
-                let d1 = c.d1(a).1;
-                let dir = GpDir::from_vec(&d1).unwrap_or(dir_x());
-                let pid = self.w.add_cartesian_point(&p0);
-                let vid = self.w.add_vector(&dir, 1.0);
-                self.w.emit(format!("LINE('',#{pid},#{vid})"))
             }
         }
+        // UNPORTED (`MakeCurve.cxx:100-103`): an unrecognised curve sets
+        // `done = false` (no entity at all); this port instead emits a spline
+        // fit when requested and otherwise a tangent line at the start
+        // parameter, so the file stays well-formed. Tracked as T-71.
+        if self.splines {
+            if let Ok(bs) = fit_bspline_curve(c, a, b) {
+                if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
+                    return id;
+                }
+            }
+        }
+        let p0 = c.d0(a);
+        let d1 = c.d1(a).1;
+        let dir = GpDir::from_vec(&d1).unwrap_or(dir_x());
+        let pid = self.w.add_cartesian_point(&p0);
+        let vid = self.w.add_vector(&dir, 1.0);
+        self.w.emit(format!("LINE('',#{pid},#{vid})"))
     }
 
     pub(super) fn emit_wire(&mut self, w: &Wire) -> usize {

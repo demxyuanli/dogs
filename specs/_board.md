@@ -136,7 +136,8 @@ cd ..; git worktree remove --force .target-headcheck
 | T-37 | A1 | `occt-topo/src/brep_surface.rs:234-272`（39 处/27 文件） | 网格扫描 + 6 轮二分 → **需先移植** `Extrema_ExtPS`/`Extrema_GenExtPS`/`Extrema_ExtPElS`（仓内 `extrema_surf` **不是**忠实件：24×24 网格 + 数值 Jacobian，见 T-67） | 3 | pending（被 T-67 阻塞） |
 | T-67 | A1 前置 | 新增移植：`occt-geom/src/extrema_surf/`（或新模块） | 移植 `Extrema_ExtPS.cxx`(376)+`.hxx`(140)、`Extrema_GenExtPS.cxx`(1056)+`.hxx`(155)、`Extrema_ExtPElS.cxx`(454)+`.hxx`(76)：类型分派 + iso 退化处理（`IsoIsDeg`）+ 逐 C2 区间采样（`mySample`）+ `math_FunctionSetRoot` 解析系统（`Extrema_GFuncExtPS`），并改用 `Surface::d2`（`surface.rs:12`）的解析 Jacobian 取代数值差分 | **3 前置** | **分步 1 done**（2026-09-20）：解析臂接线 + trimmed 类型委托；**分步 2/3**（`Extrema_ExtPS` 分派含范围/IsoIsDeg、`Extrema_GenExtPS` 主体）pending |
 | T-38 | A2 | `occt-topo/src/brep_extrema.rs:252-301` | 7×7 采样 + 射线奇偶 → `SolidClassifier`/`algo_tools::compute_state`（`BOPAlgo_BuilderSolid.cxx:835-860`） | 4 | pending |
-| T-39 | A3 | `occt-topo/src/step/p01.rs:114-144,663-680` | 6 点二阶差分猜曲线族 → `StepToGeom.cxx:1335-1349` 按实体类型 / `GeomToStep_MakeCurve.cxx:54` | 5 | pending |
+| T-39 | A3 | `occt-topo/src/step/p01.rs:104-144,663-680`、`step/p02.rs:156-189` | 6 点二阶差分猜曲线族（`(max−min)/max < 0.02` 阈值 OCCT 无）+ 四个 conic 实体按采样重建参数 → `GeomToStep_MakeCurve.cxx:50-104`（`IsKind` 分派）/ `GeomToStep_Make{Circle,Ellipse,Parabola,Hyperbola}` 精确值 | 5 | **done**（2026-09-20）：`classify_curve`+`CurveKind` 删除；`emit_curve_entity` 按 Line→Conic→Trimmed→Bounded 的 `IsKind` 顺序分派（trimmed 走基曲线递归）；`write_conic_params` 按 MakeConic 顺序；四个 `emit_*` 改为取 `gp_*` 的精确 placement/半径/半轴/焦距；门禁全等于基线 |
+| T-71 | **A3 派生（新）** | `occt-topo/src/step/p02.rs::emit_curve_entity` 兜底臂 | `GeomToStep_MakeCurve.cxx:100-103` 的未识别曲线置 `done = false`（**不写任何实体**）未移植：端口仍写 B-spline 拟合（`fit_bspline_curve`）或起点切线 LINE 兜底 ⇒ 会为 OCCT 拒绝导出的曲线伪造实体 | 5 后 | pending（已在代码处标 `UNPORTED` + cxx 行号） |
 | T-40 | A4 | `occt-topo/src/algo_tools/p01.rs:165-205` | V/E/F 分支 32×32 投影 → `BOPTools_AlgoTools::ComputeState` 精确投影 | 4 | pending |
 | T-41 | A5 | `bop_builder_core.rs:79-96`、`bop_curved/p02.rs:409-581`、`p04.rs:42-70,325-401` | 体素/网格布尔与计票 → 无 OCCT 对应 ⇒ **摘除并标未移植** | 4 | pending |
 | T-42 | A6 | `occt-core/src/gcpnts.rs:30,87-225` | 中点二分 `MAX_DEPTH=16` 伪造 deflection → 调 `gcpnts_perform.rs:52`（已逐行移植） | **2** | **done**（2026-09-20） |
@@ -370,13 +371,16 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证（全绿，与基线逐项一致）**：`occt-topo --lib` **1293/1**、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**（`OffsetPlaneHoleEdge` 回到 280.00）、`step_geometry_parity` **2/3**；`occt-geom` 151/151、`occt-core` 290/290（1 ignored）、`occt-geom2d` 72/72；`cargo check` 四个 crate exit 0；插桩与探针 0 残留。
 - **旁支**：`classify_curve`/`CurveKind` 仍被 STEP **写**侧使用（`step/p01.rs:670`、`step/p02.rs:157`），其删除归 **A3/T-39**；`p05.rs` 内已无 `classify_curve` 调用。
 
-**批 3 计划（A3/T-39：`classify_curve` → 类型分派，2026-09-20 现场核实，供下一轮直接照做）**
+**批 3（A3/T-39：`classify_curve` → `IsKind` 分派）已完成 —— 2026-09-20**
 
-- **两侧调用点**：写侧 `crates/occt-topo/src/step/p01.rs:670`（`emit_*_entity` 选择）与 `crates/occt-topo/src/step/p02.rs:157`（同一族）；分类器本体 `step/p01.rs:104-144`（6 点 `|d²|` 采样 + `(max−min)/max < 0.02` 阈值，阈值 OCCT 无）。
-- **OCCT 对照**：`GeomToStep_MakeCurve.cxx:50-104` 按 **`IsKind`** 分派且顺序固定：`Geom_Line` → `Geom_Conic`（→ `GeomToStep_MakeConic`，再按 `IsKind` 分到 circle/ellipse/hyperbola/parabola）→ `Geom_TrimmedCurve`（基曲线为 BSpline/Bezier 时先 `Segment`，否则**按基曲线整体导出**）→ `Geom_BoundedCurve` → 否则 `done = false`。
-- **端口已有精确判据（本轮 A20/A29 刚补齐）**：`Curve::{is_line, gp_circ, gp_ellipse, gp_hyperbola, gp_parabola, is_geom_trimmed, untrimmed_basis, bspline_knots, bspline_poles, bezier_poles, nurbs_degree}` ⇒ `Geom_Conic` = 四个 `gp_*` 任一为 `Some`；`Geom_BoundedCurve` = BSpline/Bezier（`bspline_knots`/`bezier_poles`）。**不需要**新增类型查询。
-- **改法**：把 `classify_curve(c, a, b) -> CurveKind` 换成按上述顺序的类型判定（返回同一个 `CurveKind` 或直接改 `match` 到具体 `emit_*` 分支），删除 6 点采样与 2% 阈值；`CurveKind::Other` 只保留 OCCT 的 `done = false` 语义（B-spline/Bezier 走 `emit_bspline/emit_bezier` 分支，勿再落 `Other`）。
-- **门禁**：`step_to_obj` **13/13**（写→读 round-trip，是主门禁）、`step_obj_parity` 14/14、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`occt-topo --lib` 1293/1；**注意** `A3` 的读侧（`write_conic_params`）与本项同族，若时间不够可只做写侧并保留读侧标注。
+- **落地**：`crates/occt-topo/src/step/p01.rs`、`crates/occt-topo/src/step/p02.rs`。
+  1. **删除** `CurveKind` 与 `classify_curve`（6 点 `|d²|` 采样 + `(max−min)/max < 0.02` 自创阈值）及只为其服务的 `midpoint`。
+  2. `p02.rs::emit_curve_entity` 改为 `GeomToStep_MakeCurve.cxx:50-104` 的 `IsKind` 顺序：`gp_line` → `gp_circ` → `gp_ellipse` → `gp_hyperbola` → `gp_parabola` → trimmed 基曲线递归（`cxx:66-92`）→（登记为 UNPORTED 的兜底臂）。
+  3. `write_conic_params` 改为 `GeomToStep_MakeConic.cxx` 的顺序：Circle → Ellipse → Hyperbola → Parabola（`Geom_Line`/有界曲线由调用方处理，故直线返回 `None`，对应 `MakeCurve.cxx:54-59/94-99`）。
+  4. 四个 `emit_*_entity` 由**采样重建**改为 OCCT 精确值：`GeomToStep_MakeCircle/Ellipse/Parabola/Hyperbola` 用 `Position()` 建 `AXIS2_PLACEMENT_3D`，半径/半轴/焦距直接取 `Radius/MajorRadius/MinorRadius/Focal`（此前的三点外心、`|d²|` 反推焦距、`d0(±1)` 中点全部删除）。
+- **保留的两个 UNPORTED（新立项 T-71）**：`MakeCurve.cxx:100-103` 的 `done = false`（不写实体）未移植，端口仍写 B-spline 拟合或起点切线；trimmed 的 BSpline/Bezier 基曲线走端口自己的重映射结点（等价 OCCT `Segment`），已在代码处写明。
+- **验证（全绿，与基线逐项一致）**：`step_to_obj` **13/13**、`step_obj_parity` **14/14**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**、`occt-topo --lib` **1293/1**；`cargo check` exit 0；现有 `step::tests::circle_ellipse_params`（断言 `CIRCLE … ,2.0)` 与 `ELLIPSE … 3.0,1.5)`）在精确实现下仍通过。
+- **旁支**：`step` 模块内仅剩 `classify_surface`（`brep_surface`）这一处采样分类器 = **A24/T-60**，属下一批（面型分派）。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
