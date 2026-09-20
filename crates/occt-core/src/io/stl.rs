@@ -158,19 +158,26 @@ pub fn write_ascii_stl(mesh: &StlMesh) -> String {
     s
 }
 
-/// Build a `Triangulation`, deduplicating vertices by coordinate rounded to 1e-9.
+/// Build a `Triangulation`, merging facet nodes whose coordinates are **exactly**
+/// equal - `RWStl_Reader` merges "on the fly" through `Poly_MergeNodesTool`
+/// (`RWStl_Reader.hxx:36` "The nodes with equal coordinates are merged
+/// automatically on the fly") whose merge tolerance defaults to `0.0`
+/// (`Poly_MergeNodesTool.hxx:50-56`: "0.0 by default (only 3D points with exactly
+/// matching coordinates are merged)"; the merge angle defaults to `M_PI/2`, i.e.
+/// all nodes merge regardless of the facet angle, `RWStl_Reader.hxx:93-95`).
+/// The previous body quantised every coordinate onto a `1e-9` grid, an invented
+/// tolerance (audit A26) that also merged near-coincident nodes OCCT keeps apart.
 pub fn to_triangulation(mesh: &StlMesh) -> Triangulation {
     let mut nodes: Vec<GpPnt> = Vec::new();
-    let mut map: HashMap<(i64, i64, i64), usize> = HashMap::new();
+    let mut map: HashMap<(u64, u64, u64), usize> = HashMap::new();
+    // `0.0 == -0.0` in OCCT's coordinate comparison, so normalise the sign bit
+    // before hashing.
+    let key_of = |v: f64| if v == 0.0 { 0.0f64.to_bits() } else { v.to_bits() };
     let mut tris = Vec::with_capacity(mesh.triangles.len());
     for tri in &mesh.triangles {
         let mut idx = [0usize; 3];
         for (j, p) in tri.iter().enumerate() {
-            let key = (
-                (p.x() * 1e9).round() as i64,
-                (p.y() * 1e9).round() as i64,
-                (p.z() * 1e9).round() as i64,
-            );
+            let key = (key_of(p.x()), key_of(p.y()), key_of(p.z()));
             idx[j] = *map.entry(key).or_insert_with(|| {
                 nodes.push(*p);
                 nodes.len() - 1
