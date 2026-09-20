@@ -227,3 +227,64 @@ pub fn circle_parameter(pos: &GpAx2, p: &GpPnt) -> f64 {
     normalize_angle(&mut teta);
     teta
 }
+
+/// `ElCLib::EllipseParameter(gp_Ax2, Major, Minor, gp_Pnt)` (`ElCLib.cxx:1226-1249`).
+///
+/// `gp_Vec(xaxis).AngleWithRef(gp_Vec(Om), gp_Vec(Pos.Direction()))` normalizes
+/// all three vectors, so the `gp_Dir` form is used here; a degenerate `Om`
+/// (which makes OCCT raise `Standard_ConstructionError`) returns `0.0`, matching
+/// the convention of [`circle_parameter`] above.
+pub fn ellipse_parameter(pos: &GpAx2, major_radius: f64, minor_radius: f64, p: &GpPnt) -> f64 {
+    let op = p.xyz().subtracted(pos.location().xyz());
+    let xaxis = *pos.x_direction().xyz();
+    let yaxis = *pos.y_direction().xyz();
+    let ny = op.dot(&yaxis);
+    let nx = op.dot(&xaxis);
+
+    if nx.abs() <= RESOLUTION && ny.abs() <= RESOLUTION {
+        // The point P is on the axis of the ellipse.
+        return 0.0;
+    }
+
+    let yaxis = yaxis.multiply_scalar(ny * (major_radius / minor_radius));
+    let om = xaxis.multiplied(nx).added(&yaxis);
+
+    let (Ok(dx), Ok(dom)) = (GpDir::from_xyz(&xaxis), GpDir::from_xyz(&om)) else {
+        return 0.0;
+    };
+    let mut teta = dx.angle_with_ref(&dom, &pos.direction());
+    normalize_angle(&mut teta);
+    teta
+}
+
+/// `ElCLib::HyperbolaParameter(gp_Ax2, Major /*unused*/, Minor, gp_Pnt)`
+/// (`ElCLib.cxx:1253-1265`).
+pub fn hyperbola_parameter(pos: &GpAx2, _major_radius: f64, minor_radius: f64, p: &GpPnt) -> f64 {
+    let sht = GpVec::from_pnts(&pos.location(), p)
+        .xyz()
+        .dot(&pos.y_direction().xyz())
+        / minor_radius;
+    sht.asinh()
+}
+
+/// `ElCLib::ParabolaParameter(gp_Ax2, gp_Pnt)` (`ElCLib.cxx:1269-1272`).
+pub fn parabola_parameter(pos: &GpAx2, p: &GpPnt) -> f64 {
+    GpVec::from_pnts(&pos.location(), p)
+        .xyz()
+        .dot(&pos.y_direction().xyz())
+}
+
+/// `ElCLib::Parameter(gp_Elips, gp_Pnt)` (`ElCLib.lxx:335-339`).
+pub fn parameter_elips(e: &GpElips, p: &GpPnt) -> f64 {
+    ellipse_parameter(&e.pos, e.major_radius, e.minor_radius, p)
+}
+
+/// `ElCLib::Parameter(gp_Hypr, gp_Pnt)` (`ElCLib.lxx:341-345`).
+pub fn parameter_hypr(h: &GpHypr, p: &GpPnt) -> f64 {
+    hyperbola_parameter(&h.pos, h.major_radius, h.minor_radius, p)
+}
+
+/// `ElCLib::Parameter(gp_Parab, gp_Pnt)` (`ElCLib.lxx:347-351`).
+pub fn parameter_parab(prb: &GpParab, p: &GpPnt) -> f64 {
+    parabola_parameter(&prb.pos, p)
+}

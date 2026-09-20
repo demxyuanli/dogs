@@ -115,8 +115,19 @@ impl<'a> Resolver<'a> {
             return Err("EDGE_CURVE: endpoints are not vertices".into());
         }
         let curve = self.resolve_curve(curve_ref)?;
-        let p1 = GeometryRegistry::global().vertex_point(&v1);
-        let p2 = GeometryRegistry::global().vertex_point(&v2);
+        // `MakeFromCurve3D` (`TranslateEdge.cxx:433-441`): the projection points
+        // are the two endpoint vertices; when the two translated vertices are the
+        // same `TopoDS_Shape` (`V1.IsSame(V2)`), `GetCartesianPoints` re-reads
+        // them from the EDGE_CURVE's own `edge_start` / `edge_end` vertex geometry
+        // (STEP order, i.e. **not** the `same_sense`-swapped order).
+        let mut p1 = GeometryRegistry::global().vertex_point(&v1);
+        let mut p2 = GeometryRegistry::global().vertex_point(&v2);
+        if crate::topo_tools_full::is_same(&v1, &v2) {
+            let raw1 = self.resolve_shape(start_ref)?;
+            let raw2 = self.resolve_shape(end_ref)?;
+            p1 = GeometryRegistry::global().vertex_point(&raw1);
+            p2 = GeometryRegistry::global().vertex_point(&raw2);
+        }
         let (curve, first, last) = edge_from_curve3d(curve, &p1, &p2);
         // `MakeFromCurve3D` (`TranslateEdge.cxx:452-455`): distance at projected
         // params after `UpdateParam3d` (and any displaced-Line shift).

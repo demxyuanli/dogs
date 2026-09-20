@@ -165,7 +165,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-53 | A17 | `occt-topo/src/brep_exchange.rs:56-98` | 偏转形参被 Prs3d 顶掉 + 三级静默回退 → `RWObj_CafWriter`/`RWMesh_FaceIterator.cxx:87-89`（不网格化、空则跳过）⇒ 删回退、形参改名 | **6** | **done**（2026-09-20） |
 | T-54 | A18 | `occt-topo/src/wireframe.rs:257-380` | 平面耳切 + 质心角度排序 + 桥洞 → 约束 Delaunay（`BRepMesh_DelaunayBaseMeshAlgo` + `BRepMesh_Delaun`） | 7 | pending |
 | T-55 | A19 | `meshing/incremental_mesh/p01.rs:369,460-467`、`wireframe.rs:407-408`、`brepmesh.rs:38,174-175,259` | `WIREFRAME_FALLBACK_RATIO_MAX=0.10` 失败率换算法 + 四叉树魔数 + `clamp(3,64)` → OCCT 无失败率阈值，逐面置 `IMeshData_Failure`（`BRepMesh_BaseMeshAlgo.cxx:52-62`） | 7 | **失败率阈值已删**（2026-09-20）：`WIREFRAME_FALLBACK_RATIO_MAX` 与其"超 10% 即整体改用 UV 栅格"分支移除（仓库明令禁止的"OCCT 里不存在的规则"）；**逐面 UV 栅格回退暂留**并就地标 `UNPORTED`——实测 `data/occ/T0M.stp` 有 **169/1772 面**（9.5%）在忠实管线上判 FAILURE，删掉回退会让 `step_obj_parity` 变 13/14（T0M bbox min[2] 短 0.33）。待 T-68 修完该缺口后再删。四叉树魔数（`brepmesh.rs`）属 A13/A18 遗留（T-49/T-55 交叉），未动 |
-| T-56 | A20 | `occt-topo/src/step/p05.rs:508-604` | `p1.distance(p2) < 1e-3` 替代 `V1.IsSame(V2)`；`Other`/HYPERBOLA 边域落 `(0,1)` → `StepToTopoDS_TranslateEdge.cxx:438,443` + `ShapeAnalysis_Curve.cxx:376-400` | **6** | pending |
+| T-56 | A20 | `occt-topo/src/step/p05.rs:508-604` | `p1.distance(p2) < 1e-3` 替代 `V1.IsSame(V2)`；`Other`/HYPERBOLA 边域落 `(0,1)` → `StepToTopoDS_TranslateEdge.cxx:438,443` + `ShapeAnalysis_Curve.cxx:376-400` | **6** | **◐ 步 1 done**（2026-09-20）：① `ProjectAct` 解析精确臂按 `ShapeAnalysis_Curve.cxx:355-477` 补齐（Circle/Hyperbola/Parabola/Line/Ellipse + `default:`），新增 `clib::{ellipse,hyperbola,parabola}_parameter`（`ElCLib.cxx:1226-1272`）/`parameter_{elips,hypr,parab}`（`ElCLib.lxx:335-351`）/`Curve::gp_hyperbola|gp_parabola`；`Project`/`ProjectAct` 去 `Option`（OCCT 无失败通道）。② `TranslateEdge.cxx:437-441` 的 `V1.IsSame(V2)`→`GetCartesianPoints` 已补（当前不可达：同实体才 `IsSame`，故为潜伏正确性）。**③ 阻塞**：删三个自创回退（端点距捷径/脱靶整域/`classify_curve` 采样族）后 `step_obj_area` 10/11（`OffsetPlaneHoleEdge` 面积 204.00 vs occ 280.00）、`step_geometry_parity` 1/3、`step_to_obj` 12/13 ⇒ 已回退该三处，只留 ①②。**下一步**：先对齐 `OffsetPlaneHoleEdge` 的边区间（`shape_analysis_project` 包装层加宽/`UpdateParam3d` 闭合-周期分支），再删回退 |
 | T-57 | A21 | `occt-topo/src/meshing/model_healer.rs:279-290` | 退化支路左右端接反、丢 `aPrevSqDist - aNextSqDist` 判定 → `BRepMesh_ModelHealer.cxx:491-512` + `hxx:143-151` | **6** | **done**（2026-09-20） |
 | T-58 | A22 | `occt-topo/src/step/p05.rs:348-370,740-760` | `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂；圆用三点外心回退 → `ShapeAnalysis_Curve.cxx:382-400,160,200` | 6 | pending |
 | T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | **已尝试 → 回退，被 A13/A18 阻塞**（2026-09-20）：按 `BRepTools.cxx:172-367` 完整移植（`box_curve2d` 精确盒 + B-spline 周期验证 2/3/6 点 + 非周期钳制）后 `step_obj_parity` 14/14→**13/14**：`data/occ/T0M.stp` 的 **bbox min[2] ours=-424.978671 occ=-424.741876（Δ=0.237）**——忠实窗口等于 OCCT 的 `BRepTools::UVBounds`，但**消费方**是本仓自创的"UV 矩形栅格"建网格（A13/A18），而 OCCT 的网格由 pcurve 驱动（`BRepMesh_FaceDiscret`），所以凸包级别的窗口外扩不会漏进 OCCT 的网格。⇒ 必须先做 A13/A18（或改为逐样本判定），再重放本改动 |
@@ -352,8 +352,21 @@ cd ..; git worktree remove --force .target-headcheck
 - **未决**：无 OCCT 运行时可对拍（`DRAWEXE` 因缺 DLL 无法启动，见 §9），故"OCCT 在同输入下是否也会 `Glued` 清空"无法实测；但本轮证明端口在这条路径上与 `.cxx` 逐行一致，且输入（重叠前沿链）本身可疑。
 - **验证**：本轮**未改行为代码**；`cargo check` exit 0；插桩与探针（`zz_probe_t0m6.rs`、`p04.rs` 全部 `[dbg-*]`）已 `git checkout` 还原 + `git grep` 复核 0 残留，工作树干净。**T-55 的逐面 UV 栅格回退仍然承重**，继续阻塞到 T-69 落地。
 
-## 4. 决策与约束（不可违反）
+**批 2（T-56 / A20 + A22）第一步已完成 —— 2026-09-20**
 
+- **落地（本批保留部分）**：
+  1. `crates/occt-core/src/elib/clib.rs`：新增 `ellipse_parameter` / `hyperbola_parameter` / `parabola_parameter`（逐行对 `ElCLib.cxx:1226-1272`）与 `parameter_elips` / `parameter_hypr` / `parameter_parab`（`ElCLib.lxx:335-351`）。
+  2. `crates/occt-geom/src/curve.rs` + `hyperbola.rs` + `parabola.rs`：补 `Curve::gp_hyperbola()` / `gp_parabola()`（`Adaptor3d_Curve::Hyperbola/Parabola`）。
+  3. `crates/occt-topo/src/step/p05.rs::shape_analysis_project_act`：`!ok` 分支改为 `ShapeAnalysis_Curve.cxx:355-477` 的忠实 switch（Circle→Hyperbola→Parabola→Line→Ellipse，`default:` 才分段搜索），并去掉 `Project`/`ProjectAct` 的 `Option` 失败通道（OCCT 里 `Project` 恒返回一个参数）。
+  4. `crates/occt-topo/src/step/p04.rs::resolve_edge`：补 `TranslateEdge.cxx:437-441` 的 `V1.IsSame(V2)` → `GetCartesianPoints`（按 STEP 顺序重取 `edge_start`/`edge_end`）。**注**：端口里 `IsSame ⟺ 同一实体引用`，两点必然相同 ⇒ 该分支当前不可达，属潜伏正确性（同 A0 的性质），已在代码里写明。
+- **实测失配 → 已按"失配即停"回退的那三处（本批唯一未保留项）**：把 `edge_params_for_curve` 改成 `TranslateEdge.cxx:442-444` 的忠实形（两次 `Project`，无端点距捷径、无按类型分派）后：
+  - `step_obj_area` **10/11**：`data/occ/OffsetPlaneHoleEdge.step` 面积 **our=204.00 / occ=280.00（ratio 0.7286）**；
+  - `step_geometry_parity` **1/3**、`step_to_obj` **12/13**（此前基线 2/3、13/13）。
+  - **归因**：忠实形下某条边的区间被压短（自创回退此前在**掩盖**该差异）。已排除"`Project` 的前端不是忠实件"——`shape_analysis_project_act` 的第一臂走 `int_tools_vertex_line::extrema_project_in_range` → `occt_geom::extrema_pc::extrema_ext_pc_min_in_range`，即 T-43 已对齐的 `Extrema_GGExtPC`。⇒ 嫌疑收窄到 `shape_analysis_project`（`ShapeAnalysis_Curve.cxx:147-201`）包装层的 `delta` 加宽口径与 `update_param3d`（`GeometricTool.cxx:227-409`）的**闭合/周期**分支。
+- **保留部分的验证（全绿，与基线逐项一致）**：`occt-topo --lib` **1293/1**、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**；`occt-core`/`occt-geom`/`occt-geom2d` `--lib` 与基线一致；`cargo check` 三个改动 crate exit 0。
+- **旁支**：`classify_curve` 的 `CurveKind` 采样族（含三点外心椭球）**元数据仍在** `edge_params_for_curve`，删除被 `OffsetPlaneHoleEdge` 阻塞（记在 T-56 ③ 与 A22 行）。
+
+## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
 2. 改代码前对着 `.cxx` 审控制流；**有同等分支才改**，没有就标"未移植"（注释写 OCCT 文件+行号），**不加** OCCT 里不存在的谓词/启发式/面积比/长度滤边/体积门。
 3. 对齐验证 = 跑**现有门禁/基线**（`step_obj_parity`、`step_to_obj`、`step_obj_area`、`step_geometry_parity`、`export_data_obj` 导出、`data/occ-*.obj` 对拍）；**不为对齐新写单元测试**，不用假输入证明算法已对齐。

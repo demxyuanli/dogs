@@ -302,13 +302,16 @@ fn elclib_line_parameter(curve: &dyn Curve, p: &GpPnt) -> f64 {
 }
 
 /// `ShapeAnalysis_Curve::ProjectAct` (`cxx:265-497`).
+///
+/// OCCT's `ProjectAct` returns a parameter on every path (`ShapeAnalysis_Curve.cxx`
+/// has no failure channel), so this port has no `Option` either.
 fn shape_analysis_project_act(
     curve: &dyn Curve,
     point: &GpPnt,
     preci: f64,
     u_min: f64,
     u_max: f64,
-) -> Option<(f64, f64)> {
+) -> (f64, f64) {
     let mut ok = false;
     let mut proj_param = 0.0;
     let mut computed_param = 0.0;
@@ -346,9 +349,11 @@ fn shape_analysis_project_act(
     }
 
     if !ok {
-        if curve.is_line() {
-            proj_param = elclib_line_parameter(curve, point);
-        } else if let Some(c) = curve.gp_circ() {
+        // `ShapeAnalysis_Curve.cxx:355-477`: `switch (theCurve.GetType())` with a
+        // precise `ElCLib::Parameter` arm for every analytic type, and the
+        // segmented `ProjectOnSegments` search only for the `default:` case
+        // (B-spline / Bezier / other).
+        if let Some(c) = curve.gp_circ() {
             let loc = c.position().location();
             if c.radius() <= occt_core::precision::RESOLUTION
                 || point.square_distance(&loc) <= occt_core::precision::RESOLUTION
@@ -357,6 +362,16 @@ fn shape_analysis_project_act(
             } else {
                 proj_param = occt_core::elib::clib::circle_parameter(&c.position(), point);
             }
+            closed = true;
+            period = 2.0 * std::f64::consts::PI;
+        } else if let Some(h) = curve.gp_hyperbola() {
+            proj_param = occt_core::elib::clib::parameter_hypr(&h, point);
+        } else if let Some(prb) = curve.gp_parabola() {
+            proj_param = occt_core::elib::clib::parameter_parab(&prb, point);
+        } else if curve.is_line() {
+            proj_param = elclib_line_parameter(curve, point);
+        } else if let Some(el) = curve.gp_ellipse() {
+            proj_param = occt_core::elib::clib::parameter_elips(&el, point);
             closed = true;
             period = 2.0 * std::f64::consts::PI;
         } else {
@@ -373,14 +388,14 @@ fn shape_analysis_project_act(
                 &mut proj_param,
             );
             if dist <= preci {
-                return Some((proj_param, dist));
+                return (proj_param, dist);
             }
             if let Some((t, q)) = crate::int_tools_vertex_line::extrema_locate_ext_pc(
                 curve, point, proj_param, u_min, u_max,
             ) {
                 let d_newton = point.distance(&q);
                 if d_newton < mod_min {
-                    return Some((t, d_newton));
+                    return (t, d_newton);
                 }
             }
             for n in [40, 20, 25, 40] {
@@ -394,13 +409,13 @@ fn shape_analysis_project_act(
                     &mut proj_param,
                 );
                 if dist <= preci {
-                    return Some((proj_param, dist));
+                    return (proj_param, dist);
                 }
             }
             if dist > mod_min && have_old {
-                return Some((computed_param, computed_dist));
+                return (computed_param, computed_dist);
             }
-            return Some((proj_param, dist));
+            return (proj_param, dist);
         }
     }
 
@@ -419,14 +434,14 @@ fn shape_analysis_project_act(
     let q = curve.d0(proj_param);
     let new_dist = point.distance(&q);
     if have_old && old_dist * old_dist < new_dist * new_dist {
-        return Some((old_param, old_dist));
+        return (old_param, old_dist);
     }
-    Some((proj_param, new_dist))
+    (proj_param, new_dist)
 }
 
 /// `ShapeAnalysis_Curve::Project` (`cxx:147-201`) with `AdjustToEnds=false`
 /// as `MakeFromCurve3D` (`TranslateEdge.cxx:443-444`).
-fn shape_analysis_project(curve: &dyn Curve, p: &GpPnt, preci: f64) -> Option<(f64, f64)> {
+fn shape_analysis_project(curve: &dyn Curve, p: &GpPnt, preci: f64) -> (f64, f64) {
     let (mut u_min, mut u_max) = (curve.first_parameter(), curve.last_parameter());
     if u_min > u_max {
         std::mem::swap(&mut u_min, &mut u_max);
@@ -436,11 +451,11 @@ fn shape_analysis_project(curve: &dyn Curve, p: &GpPnt, preci: f64) -> Option<(f
         let high = curve.d0(u_max);
         let dl = low.distance(p);
         if dl <= occt_core::precision::CONFUSION {
-            return Some((u_min, dl));
+            return (u_min, dl);
         }
         let dh = high.distance(p);
         if dh <= occt_core::precision::CONFUSION {
-            return Some((u_max, dh));
+            return (u_max, dh);
         }
         let closed = low.distance(&high) <= occt_core::precision::CONFUSION;
         if !closed {
@@ -505,6 +520,17 @@ fn shift_displaced_line(
 
 /// Compute an edge's parameter range from its endpoint vertex points, based on
 /// the reconstructed curve's analytic type.
+///
+/// **T-56 (A20) 未完成**：`TranslateEdge.cxx:442-444` 只做两次
+/// `ShapeAnalysis_Curve::Project`（无端点距捷径、无按类型分派），但按该忠实形
+/// 式改写后（只留两次 `Project` + 解析臂）实测三门禁失配：`step_obj_area`
+/// 10/11（`data/occ/OffsetPlaneHoleEdge.step` 面积 **204.00 vs occ 280.00**）、
+/// `step_to_geometry_parity` 1/3、`step_to_obj` 12/13 ⇒ 下面这些**自创回退**
+/// （`p1.distance(p2) < PRECI` 用整条结点域、`(a.0-b.0).abs() <= PConfusion`
+/// 也退回整条结点域、`classify_curve` 采样族）目前仍在**掩盖**某处区间差异；
+/// 只有先让本模型的边区间与 OCCT 一致（`Project` 包装层/`UpdateParam3d` 的
+/// 闭合与周期分支）才可删。`ProjectAct` 的解析精确臂已按 cxx:355-477 补齐
+/// （见 `occt-core/src/elib/clib.rs::parameter_elips/hypr/parab`）。
 pub(super) fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -> (f64, f64) {
     let (f, l) = (curve.first_parameter(), curve.last_parameter());
     // Bounded non-periodic (BSpline / trimmed / Bezier): Project the vertices
@@ -522,13 +548,10 @@ pub(super) fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -
         if p1.distance(p2) < PRECI {
             return if l > f { (f, l) } else { (0.0, 1.0) };
         }
-        if let (Some(a), Some(b)) = (
-            shape_analysis_project(curve, p1, PRECI),
-            shape_analysis_project(curve, p2, PRECI),
-        ) {
-            if (a.0 - b.0).abs() > occt_core::precision::PCONFUSION {
-                return (a.0, b.0);
-            }
+        let a = shape_analysis_project(curve, p1, PRECI);
+        let b = shape_analysis_project(curve, p2, PRECI);
+        if (a.0 - b.0).abs() > occt_core::precision::PCONFUSION {
+            return (a.0, b.0);
         }
         return if l > f { (f, l) } else { (0.0, 1.0) };
     }
@@ -556,13 +579,10 @@ pub(super) fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -
     // endpoint 7.65e-2 off the vertex (inflated vertex tolerance).
     if curve.is_periodic() && p1.distance(p2) > occt_core::precision::PCONFUSION {
         const PRECI: f64 = 1e-3;
-        if let (Some(a), Some(b)) = (
-            shape_analysis_project(curve, p1, PRECI),
-            shape_analysis_project(curve, p2, PRECI),
-        ) {
-            if (a.0 - b.0).abs() > occt_core::precision::PCONFUSION {
-                return (a.0, b.0);
-            }
+        let a = shape_analysis_project(curve, p1, PRECI);
+        let b = shape_analysis_project(curve, p2, PRECI);
+        if (a.0 - b.0).abs() > occt_core::precision::PCONFUSION {
+            return (a.0, b.0);
         }
     }
     let (lo, hi) = if f.is_finite() && l.is_finite() && l > f {

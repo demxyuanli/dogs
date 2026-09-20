@@ -36,6 +36,10 @@ pub trait Curve: Send + Sync {
     fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { None }
     /// `Geom_Ellipse::Elips` / `Adaptor3d_Curve::Ellipse`. `None` otherwise.
     fn gp_ellipse(&self) -> Option<occt_core::gp::GpElips> { None }
+    /// `Geom_Hyperbola::Hypr` / `Adaptor3d_Curve::Hyperbola`. `None` otherwise.
+    fn gp_hyperbola(&self) -> Option<occt_core::gp::GpHypr> { None }
+    /// `Geom_Parabola::Parab` / `Adaptor3d_Curve::Parabola`. `None` otherwise.
+    fn gp_parabola(&self) -> Option<occt_core::gp::GpParab> { None }
     /// `Geom_TrimmedCurve`. OCCT `IsKind(STANDARD_TYPE(Geom_TrimmedCurve))`.
     fn is_geom_trimmed(&self) -> bool { false }
     /// Basis `[First, Last]` of a `Geom_TrimmedCurve` before the `[0, 1]` remap.
