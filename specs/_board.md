@@ -372,6 +372,17 @@ cd ..; git worktree remove --force .target-headcheck
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
 - **下一步（第 43 轮，两条并行）**：① **判定性实验**：把同一面上各 wire 的 u 归一到同一周期窗口（仅作诊断，不改 `node_insertion` 的行为）后看 face 20 是否走通忠实 Delaunay（预期 74/72）——若走通，则缺的是"跨 wire 的周期对齐"，须先在 OCCT 里找到执行该对齐的那段控制流（候选：`ShapeFix_Wire::FixShifted` 的面级用法 / `StepToTopoDS_TranslateEdgeLoop` 的 `CheckPCurves` 段 / `ShapeFix_Face::FixMissingSeam`）并按它移植，**不得直接给网格层打补丁**；② 用参考的重复顶点证据确定"共享该顶点的两个面"是哪两张，确认端口是否两张都没网格化（据此判断要补的控制流范围）。
 
+**T-69 第 3 轮（2026-09-20 第 43 轮 goal round）：判据性实验否证"跨 wire 周期对齐"假设；face 20 的几何/分片参数与成功的 face 8 对比记录在案**
+
+- **实验（临时探针，已删）**：在 `DelaunayNodeInsertionMeshAlgo::perform` 开头对周期面（`gp_torus()` 且 `is_u_periodic()`）做"把每条 wire 的 pcurve 整链按 `k·2π` 平移到第一条 wire 的 u 窗口"的归一，然后数 `triangulate_model_faces` 的 `mapping_failed`（= 忠实路径 0 三角的面）：**基线 162 ⇒ 归一后 161**，且 **face 20 仍是 `tris=0 nodes=74`**。⇒ 第 2 轮提出的"两 wire 的 u 窗口相差一个周期导致 face 20 失败"**被否证**（对齐后仍失败），u 窗口差异只是伴生现象，不是成因。
+- **face 20 与 face 8 的实测参数（探针，已删）**：
+  - face 20：Torus **major=1.699445、minor=1.5（非 spindle，major>minor）、u_periodic=true**；splitter `range_u=(−4.7124, 1.5708)`（诚实周期钳制后的窗口）、`range_v=(0.05088, 1.5708)`、`delta=(0.39482, 0.66683)`、`tol_uv=(6.283e−7, 1.520e−7)`；两条 wire 各 2 条边（`FixLacking` 复制的闭合圆），v 分别 0.05088 与 π/2。
+  - face 8（忠实成功，74v/72t）：Torus major=15.35、minor=5.5；`range_u=(1.5708, 7.8540)`、`range_v=(2.65050, 3.63269)`、`delta=(0.09765, 0.18184)`。
+  ⇒ 两面的链形状/边数/v 结构同类，差别只落在**具体参数值**（fat torus 的 minor/major 比 0.88、v 带 `[0.05, π/2]`、u 窗口偏移）与 splitter 派生量（`delta`、`tol_uv`、`cells_count`）上；第 2 轮的"u 窗口"已排除，故下一步须**直接对这张面对拍 Delaunay 内部**。
+- **本轮的另一条负结果（重要，避免重走）**：`build_shape_mesh` 开始时逐面扫"边界边的离散点是否经过 `(−0,−11.823,−424.742)`"，**0 命中**（`edge.discretization()` 在网格化前为空，且即便在网格化后也 0 命中）⇒ 该参考顶点**不是**端口任何面的边界顶点，而是 OCCT 在某张面内部放下的网格顶点；"共享该顶点的两个面"这一推断作废（参考里 v962/v965 重合可能来自两张**共面/贴面**的面各自网格化）。
+- **验证**：本轮**未改行为代码**（探针全部 `git checkout` 还原 + `git grep dbg-t69/DSH_T69_ALIGN` 于 `crates/` 0 残留）；`occt-topo --lib` **1293/1**。
+- **下一步（第 44 轮，聚焦单面对拍）**：把第 9 轮那套 Delaunay 分支计数/链 dump 仪器**只对 face 8（成功）与 face 20（失败）开启**：`init_data_structure` 的链节点 UV、`mesh_polygon` 的入参数多边形（长度/面积/首尾节点）、`decompose_simple_polygon` 的 `NO_EAR` 原因（`skip_prec`/`skip_neg`/`filter`/`isect`）与 `Glued/Same/PointOnSegment/Cross` 事件、以及 `cells_count`/`set_cell_size`/`set_tolerance` 的取值，逐项对照 OCCT `BRepMesh_Delaun.cxx`，找出**成功面与失败面在这条控制流上的第一处分叉**（第 9 轮只证明了"T0M 全局无自创分支"，未针对这对同类面做过差分）。
+
 **T-68 第九轮（2026-09-20）：Delaunay 层逐行核对全部忠实；`NO_EAR` 清空来自"拼接多边形 + 真实重叠共线前沿链"，根因在 Delaunay 之外 ⇒ 立项 T-69；A25 的"删除补丁致清空"结论被实测推翻**
 
 - **分支级计数（临时探针，已删）**：T0M 上 `decompose_simple_polygon` 共 **975 次 `NO_EAR`**（`used_link_id == 0` → `thePolygon.Clear()`），而这些失败里 **`skip_filter = 0`、`isect = 0`**——没有任何候选是被"角度过滤"或"相交测试"拒掉的；**全部**落在 `anAbsDist < Precision`（`skip_prec`）或 `aDist < 0.`（`skip_neg`）。两类：
