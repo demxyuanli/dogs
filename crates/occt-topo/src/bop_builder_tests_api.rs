@@ -155,41 +155,6 @@ use occt_core::gp::GpPnt;
     }
 
     #[test]
-    fn boolean_degenerate_face() {
-        let solid = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        let bld = TopoBuilder::new();
-        let face = bld.make_face_plane(&occt_core::gp::GpPln::new(occt_core::gp::GpAx3::standard()));
-        let r = boolean_degenerate(&face.0, &solid.solid.0, BoolOp::Fuse, 1e-6).expect("face fuse ok");
-        assert!(r.shape.is_compound() || r.solid.is_some(), "face fused with solid → compound or solid");
-        assert!(!r.warnings.is_empty(), "degenerate fuse reports a warning");
-        clear_tree(&face.0);
-        clear_tree(&r.shape);
-        clear_tree(&solid.solid.0);
-    }
-
-    #[test]
-    fn boolean_degenerate_empty() {
-        let bld = TopoBuilder::new();
-        let empty = bld.make_compound_of(&[]);
-        let boxed = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        // empty fused with a box → the box (empty is the Fuse identity).
-        let r = boolean_degenerate(&empty.0, &boxed.solid.0, BoolOp::Fuse, 1e-6).expect("empty fuse ok");
-        assert!(r.solid.is_some(), "empty + box → the box");
-        assert!((box_vol(&r.shape) - 1.0).abs() < 0.05);
-        // box minus empty → the box.
-        let r2 = boolean_degenerate(&boxed.solid.0, &empty.0, BoolOp::Cut, 1e-6).expect("empty cut ok");
-        assert!((box_vol(&r2.shape) - 1.0).abs() < 0.05);
-        // empty common → empty.
-        let r3 = boolean_degenerate(&empty.0, &boxed.solid.0, BoolOp::Common, 1e-6).expect("empty common ok");
-        assert!(box_vol(&r3.shape) < 1e-9, "empty common has no volume");
-        clear_tree(&empty.0);
-        clear_tree(&r.shape);
-        clear_tree(&r2.shape);
-        clear_tree(&r3.shape);
-        clear_tree(&boxed.solid.0);
-    }
-
-    #[test]
     fn boolean_result_summary_string() {
         let (a, b) = overlapping_boxes();
         let r = boolean(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("fuse ok");

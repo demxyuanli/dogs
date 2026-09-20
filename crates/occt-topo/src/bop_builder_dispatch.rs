@@ -5,21 +5,17 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use occt_core::geom::polygon_ops::{point_in_polygon2d, polygon_area2d};
-use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
+use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d};
 use occt_geom::{GeomPlane, Surface};
 
 use crate::abs::ShapeType;
-use crate::brep_extrema::is_inside;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::inttools::{edge_edge_intersections, edge_face_intersections};
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::shell_check::{shell_invariants, shell_is_closed};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
-    wires_of_face,
-};
+use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, wires_of_face};
 
 use crate::bop_builder::boolean;
 use crate::bop_builder_core::{empty_result, single_shape_result, BooleanResult, BoolOp};
@@ -93,8 +89,8 @@ fn has_content(s: &TopoShape) -> bool {
 }
 
 /// Is `s` usable as a solid operand? A `Solid` or a *closed* `Shell`; empty
-/// shells/solids are rejected so degenerate inputs route to
-/// [`boolean_degenerate`].
+/// shells/solids are rejected so the operands go to [`boolean_non_solid`]
+/// (`BOPAlgo_BOP::CheckData` then decides, as in OCCT).
 fn is_solid_input(s: &TopoShape) -> bool {
     if !has_content(s) {
         return false;
@@ -106,20 +102,6 @@ fn is_solid_input(s: &TopoShape) -> bool {
         return shell_is_closed(&Shell(s.clone()));
     }
     false
-}
-
-/// Average position of the vertices of `s` (a coarse centroid probe).
-fn shape_centroid(s: &TopoShape) -> GpPnt {
-    let vs = vertices_of(s);
-    if vs.is_empty() {
-        return GpPnt::zero();
-    }
-    let n = vs.len();
-    let mut acc = GpVec::zero();
-    for v in &vs {
-        acc = acc.added(&GpVec::from_xyz(&vertex_position(v).coord));
-    }
-    GpPnt::from_xyz(&acc.divided(n as f64).coord)
 }
 
 /// Whether the bounding boxes of `a` and `b` overlap (touch counts).
@@ -203,16 +185,59 @@ fn fuse_components(shapes: &[TopoShape], tol: f64) -> Result<BooleanResult, Stri
 /// Top-level dispatch between the exact boolean paths.
 ///
 /// * either operand is a compound → [`boolean_compound`] (expand, per-part);
-/// * either operand is not a solid → [`boolean_degenerate`] (best effort);
+/// * either operand is not a solid → [`boolean_non_solid`] (`BOPAlgo_BOP`'s
+///   `CheckData` decides legality — OCCT has no best-effort layer);
 /// * otherwise the full curved/planar boolean dispatcher.
 fn boolean_dispatch(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
     if a.is_compound() || b.is_compound() {
         return boolean_compound(a, b, op, tol);
     }
     if !is_solid_input(a) || !is_solid_input(b) {
-        return boolean_degenerate(a, b, op, tol);
+        return boolean_non_solid(a, b, op, tol);
     }
     crate::bop_curved::curved_boolean_full(a, b, op, tol)
+}
+
+/// `BOPAlgo_BOP` on operands that are not both usable solids (faces, wires,
+/// open shells, empty shapes).
+///
+/// OCCT has no best-effort "degenerate" branch: `BOPAlgo_BOP::CheckData`
+/// (`BOPAlgo_BOP.cxx:140-210`) is the only gate. It skips an empty argument
+/// with the `BOPAlgo_AlertEmptyShape` warning (`cxx:162-167`), lets the empty
+/// group take the other group's dimension (`cxx:203-209`), and rejects a
+/// `FUSE` of unequal dimensions (`cxx:181-186`, `:193-195`) or a `CUT` whose
+/// objects are of larger dimension than the tools (`cxx:194`) with
+/// `BOPAlgo_AlertBOPNotAllowed`; `COMMON` accepts any dimensions. The port's
+/// `bop_bop::check_data` is that check and
+/// `bop_builder2::builder_bop_with_fuzzy` is `BOPAlgo_BOP::Perform` +
+/// `BuildShape`, so the operands are handed over unchanged.
+fn boolean_non_solid(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+    let mut warnings: Vec<String> = Vec::new();
+    if crate::bop_bop::is_empty_shape(a) {
+        warnings.push("BOPAlgo_AlertEmptyShape (objects)".into());
+    }
+    if crate::bop_bop::is_empty_shape(b) {
+        warnings.push("BOPAlgo_AlertEmptyShape (tools)".into());
+    }
+    let shape = crate::bop_builder2::builder_bop_with_fuzzy(
+        std::slice::from_ref(a),
+        std::slice::from_ref(b),
+        to_bool_op2(op),
+        tol,
+    )?;
+    let mut r = single_shape_result(&shape);
+    r.warnings.extend(warnings);
+    Ok(r)
+}
+
+/// The port's two operation enums (`bop_builder_core::BoolOp` and
+/// `bop_builder2::BoolOp2`, both `Fuse`/`Cut`/`Common`).
+fn to_bool_op2(op: BoolOp) -> crate::bop_builder2::BoolOp2 {
+    match op {
+        BoolOp::Fuse => crate::bop_builder2::BoolOp2::Fuse,
+        BoolOp::Cut => crate::bop_builder2::BoolOp2::Cut,
+        BoolOp::Common => crate::bop_builder2::BoolOp2::Common,
+    }
 }
 
 /// Apply a boolean operation to a *list* of shapes (N-ary boolean).
@@ -244,9 +269,11 @@ pub fn boolean_multi(shapes: &[TopoShape], op: BoolOp, tol: f64) -> Result<Boole
     match op {
         BoolOp::Fuse => fuse_components(&flat, tol),
         BoolOp::Cut | BoolOp::Common => {
-            // Fold left; degenerate/empty intermediates are absorbed by the
-            // dispatch (a cut against empty leaves the accumulator unchanged,
-            // an empty common stays empty).
+            // Fold left. Empty and non-solid intermediates are handled by
+            // `BOPAlgo_BOP` itself: an empty group takes the other group's
+            // dimension (`BOPAlgo_BOP.cxx:203-209`), so a cut against an empty
+            // shape leaves the accumulator unchanged and an empty common stays
+            // empty — no special case is needed here.
             let mut acc = flat[0].clone();
             let mut warnings: Vec<String> = Vec::new();
             for s in &flat[1..] {
@@ -459,146 +486,6 @@ pub fn boolean_with_check(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) ->
     Ok(result)
 }
 
-/// Handle boolean operations with degenerate (non-solid / empty) inputs.
-///
-/// Degenerate inputs are: empty shapes (no faces — null wires, empty
-/// compounds), open shells, single faces and wires. Rather than erroring, a
-/// best-effort result is produced:
-///
-/// * empty ⊕ solid → the solid (empty is the identity for Fuse);
-/// * solid − empty → the solid; empty − solid → empty;
-/// * face ∪ solid → a compound of both, with a warning;
-/// * face ∩ solid → the face when its centroid lies inside the solid, else
-///   empty.
-pub fn boolean_degenerate(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
-    let tol = tol.max(1e-9);
-    if a.is_compound() || b.is_compound() {
-        return boolean_compound(a, b, op, tol);
-    }
-    let a_empty = !has_content(a);
-    let b_empty = !has_content(b);
-    if a_empty || b_empty {
-        return degenerate_empty(a, b, op, a_empty, b_empty);
-    }
-    let a_solid = is_solid_input(a);
-    let b_solid = is_solid_input(b);
-    if a_solid && b_solid {
-        // Both solid: a caller reached us directly with two valid solids.
-        return crate::bop_curved::curved_boolean_full(a, b, op, tol);
-    }
-    degenerate_non_solid(a, b, op, tol, a_solid, b_solid)
-}
-
-/// Empty-input branch of [`boolean_degenerate`].
-fn degenerate_empty(a: &TopoShape, b: &TopoShape, op: BoolOp, a_empty: bool, b_empty: bool) -> Result<BooleanResult, String> {
-    match op {
-        BoolOp::Fuse => {
-            if a_empty && b_empty {
-                return Ok(empty_result(op));
-            }
-            if a_empty {
-                let mut r = single_shape_result(b);
-                r.warnings.push("empty input 'a' treated as empty; result is 'b' unchanged".into());
-                return Ok(r);
-            }
-            let mut r = single_shape_result(a);
-            r.warnings.push("empty input 'b' treated as empty; result is 'a' unchanged".into());
-            Ok(r)
-        }
-        BoolOp::Cut => {
-            if a_empty {
-                return Ok(empty_result(op));
-            }
-            let mut r = single_shape_result(a);
-            r.warnings.push("degenerate cut: 'b' has no faces; result is 'a' unchanged".into());
-            Ok(r)
-        }
-        BoolOp::Common => Ok(empty_result(op)),
-    }
-}
-
-/// Non-solid (but non-empty) input branch of [`boolean_degenerate`].
-fn degenerate_non_solid(
-    a: &TopoShape,
-    b: &TopoShape,
-    op: BoolOp,
-    tol: f64,
-    a_solid: bool,
-    b_solid: bool,
-) -> Result<BooleanResult, String> {
-    let _ = tol;
-    let bld = TopoBuilder::new();
-    match op {
-        BoolOp::Fuse => {
-            // Fuse keeps every non-empty operand: a compound of the parts.
-            let mut parts: Vec<TopoShape> = Vec::new();
-            if has_content(a) {
-                parts.push(a.clone());
-            }
-            if has_content(b) {
-                parts.push(b.clone());
-            }
-            if parts.is_empty() {
-                return Ok(empty_result(op));
-            }
-            let comp = bld.make_compound_of(&parts);
-            let mut shells = Vec::new();
-            let mut faces = Vec::new();
-            for p in &parts {
-                shells.extend(shapes_of(p, ShapeType::Shell).into_iter().map(Shell));
-                faces.extend(faces_of(p));
-            }
-            Ok(BooleanResult {
-                shape: comp.0,
-                solid: None,
-                shells,
-                faces,
-                warnings: vec!["non-solid input fused into a compound".into()],
-            })
-        }
-        BoolOp::Cut => {
-            if a_solid {
-                let mut r = single_shape_result(a);
-                r.warnings.push("degenerate cut: 'b' is not a solid; 'a' returned unchanged".into());
-                return Ok(r);
-            }
-            if !b_solid {
-                let mut r = single_shape_result(a);
-                r.warnings.push("degenerate cut: neither input is a solid".into());
-                return Ok(r);
-            }
-            // A non-solid `a` cut by a solid `b`: keep `a` unless it lies
-            // inside `b` (then nothing survives).
-            if is_inside(b, &shape_centroid(a)) {
-                Ok(empty_result(op))
-            } else {
-                let mut r = single_shape_result(a);
-                r.warnings.push("degenerate cut: 'a' is not a solid; kept 'a' unchanged".into());
-                Ok(r)
-            }
-        }
-        BoolOp::Common => {
-            let (solid_s, other) = if a_solid {
-                (a, b)
-            } else if b_solid {
-                (b, a)
-            } else {
-                let mut r = empty_result(op);
-                r.warnings.push("degenerate common: neither input is a solid".into());
-                return Ok(r);
-            };
-            if is_inside(solid_s, &shape_centroid(other)) {
-                let mut r = single_shape_result(other);
-                r.warnings.push("degenerate common: non-solid inside solid retained".into());
-                Ok(r)
-            } else {
-                let mut r = empty_result(op);
-                r.warnings.push("degenerate common: non-solid outside solid → empty".into());
-                Ok(r)
-            }
-        }
-    }
-}
 
 /// One-line diagnostic of a [`BooleanResult`].
 ///
