@@ -204,6 +204,11 @@ impl Surface for GeomBezierSurface {
         (0.0, 1.0)
     }
 
+    /// `IsKind(STANDARD_TYPE(Geom_BezierSurface))` (`GeomAdaptor_Surface.cxx:480`).
+    fn is_bezier_surface(&self) -> bool {
+        true
+    }
+
     fn v_range(&self) -> (f64, f64) {
         (0.0, 1.0)
     }

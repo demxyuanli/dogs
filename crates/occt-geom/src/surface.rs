@@ -31,6 +31,9 @@ pub trait Surface: Send + Sync {
     fn transformed(&self, t: &GpTrsf) -> Box<dyn Surface> { let mut s = self.clone_dyn(); s.transform(t); s }
     /// `STANDARD_TYPE(Geom_BSplineSurface)` — extra `BRepTools::AddUVBounds` probe.
     fn is_bspline_surface(&self) -> bool { false }
+    /// `Adaptor3d_Surface::GetType() == GeomAbs_BezierSurface`
+    /// (`Geom_BezierSurface`; `GeomAdaptor_Surface.cxx:480-487`).
+    fn is_bezier_surface(&self) -> bool { false }
     /// Clone as `Geom_BSplineSurface` when this is one (or a Bezier converted
     /// the way `Geom_OsculatingSurface::Init` does).
     fn osculating_bspline(&self) -> Option<crate::bspline_surface::GeomBSplineSurface> {

@@ -171,7 +171,8 @@ cd ..; git worktree remove --force .target-headcheck
 | T-57 | A21 | `occt-topo/src/meshing/model_healer.rs:279-290` | 退化支路左右端接反、丢 `aPrevSqDist - aNextSqDist` 判定 → `BRepMesh_ModelHealer.cxx:491-512` + `hxx:143-151` | **6** | **done**（2026-09-20） |
 | T-58 | A22 | `occt-topo/src/step/p05.rs:348-370,740-760` | `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂；圆用三点外心回退 → `ShapeAnalysis_Curve.cxx:382-400,160,200` | 6 | pending |
 | T-59 | A23 | `occt-topo/src/wireframe.rs:462-599` | 9 点 pcurve 采样当 UV 包围盒 → `BRepTools.cxx:172-330` `AddUVBounds`（精确，B-spline 走控制多边形） | 5 | **已尝试 → 回退，被 A13/A18 阻塞**（2026-09-20）：按 `BRepTools.cxx:172-367` 完整移植（`box_curve2d` 精确盒 + B-spline 周期验证 2/3/6 点 + 非周期钳制）后 `step_obj_parity` 14/14→**13/14**：`data/occ/T0M.stp` 的 **bbox min[2] ours=-424.978671 occ=-424.741876（Δ=0.237）**——忠实窗口等于 OCCT 的 `BRepTools::UVBounds`，但**消费方**是本仓自创的"UV 矩形栅格"建网格（A13/A18），而 OCCT 的网格由 pcurve 驱动（`BRepMesh_FaceDiscret`），所以凸包级别的窗口外扩不会漏进 OCCT 的网格。⇒ 必须先做 A13/A18（或改为逐样本判定），再重放本改动 |
-| T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | pending |
+| T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | **done**（2026-09-20）：改为 `GeomAdaptor_Surface::Load`（`cxx:422-513`）的 `DynamicType` 精确顺序（RTS→Plane→Cylinder→Cone→Sphere→Torus→Revolution→Extrusion→**Bezier**→BSpline→Offset→Other），删除 `match (up,vp)` 与自创 `is_cylinder_like`；新增 `Surface::is_bezier_surface()`。门禁全等于基线 |
+| T-72 | **A30**（批 4 派生，新） | `occt-topo/src/brep_surface.rs:78-101` | `brep_surface::classify_surface` = 8×8 采样 `is_planar(1e-6)` + 等距球心 + `1e-4*r` 阈值 ⇒ STEP 读入面型靠采样（`step/p01.rs:160`、`step/p04.rs:1275+`） | 5 后 | pending（改为 `Surface` 类型判定，同 A24 做法；本轮只报告） |
 | T-61 | A25 | `meshing/delaun/p04.rs:346-375` | 自造"先删邻三角形再 AddElement" → `BRepMesh_Delaun.cxx:2263-2274` 失败即置 `IMeshData_Failure`，不改网格 | 7 | pending |
 | T-62 | A26 | `brep_exchange.rs:118,125`、`occt-core/src/io/{ply,stl}.rs`、`iges.rs:168,390-438`、`step/p02.rs:16-17,43`、`vrml.rs:92`、`obj.rs` | PLY 焊接/属性类型、STL 阈值/头/嗅探、IGES 采样族与自造回转面、STEP 写侧采样重拟、`solid TRUE`、恒空 `vn` → 各 `RWPly_*`/`RWStl*`/`GeomToIGES_*`/`GeomToStep_MakeCurve.cxx:94-99`/`VrmlData_ShapeConvert.cxx:360` | 8 | pending |
 
@@ -382,13 +383,15 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证（全绿，与基线逐项一致）**：`step_to_obj` **13/13**、`step_obj_parity` **14/14**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**、`occt-topo --lib` **1293/1**；`cargo check` exit 0；现有 `step::tests::circle_ellipse_params`（断言 `CIRCLE … ,2.0)` 与 `ELLIPSE … 3.0,1.5)`）在精确实现下仍通过。
 - **旁支**：`step` 模块内仅剩 `classify_surface`（`brep_surface`）这一处采样分类器 = **A24/T-60**，属下一批（面型分派）。
 
-**批 4 计划（A24/T-60：`classify_surface` → `GetType()` 分派，2026-09-20 现场核实，供下一轮直接照做）**
+**批 4（A24/T-60：`classify_surface` → `GetType()` 分派）已完成 —— 2026-09-20**
 
-- **改动点（唯一）**：`crates/occt-topo/src/meshing/range_splitter/p01.rs:86-124` 的 `classify_surface`——现在先用 `rectangular_trimmed_basis`/offset/revolution/extrusion/bspline 挡一遍，剩下的靠**周期标志 + `is_cylinder_like` 半径采样**猜（`(:110-123)`），`(:128-133)` 的 `is_cylinder_like` 是自创判别式。这四个 `SurfaceType` 消费点依赖它：`node_insertion.rs:895-930`（决定 Torus/Cylinder/Plane/Extrusion 的内部节点网格）、`model_builder/p02.rs:170`、`edge_discret.rs:914`、`incremental_mesh/p01.rs:247,294`。
-- **OCCT 对照（已读原文）**：`GeomAdaptor_Surface::Load`（`src/ModelingData/TKG3d/GeomAdaptor/GeomAdaptor_Surface.cxx:422-513`）用 **`DynamicType` 精确相等**（不是 `IsKind`）按固定顺序判定：`Geom_RectangularTrimmedSurface`（→ 递归基面）→ `Geom_Plane` → `Geom_CylindricalSurface` → `Geom_ConicalSurface` → `Geom_SphericalSurface` → `Geom_ToroidalSurface` → `Geom_SurfaceOfRevolution` → `Geom_SurfaceOfLinearExtrusion` → **`Geom_BezierSurface`** → `Geom_BSplineSurface` → `Geom_OffsetSurface` → 否则 `GeomAbs_OtherSurface`。注意 **Bezier 在 BSpline 之前**。
-- **端口可用判据**：`Surface::{rectangular_trimmed_basis, gp_pln, gp_cylinder, gp_cone, gp_sphere, gp_torus, is_surface_of_revolution, is_surface_of_linear_extrusion, is_bspline_surface, is_offset_surface}` —— 足够覆盖除 Bezier 外的全部 arm。**待查**：端口是否有独立的 Bezier 曲面类/查询（`git grep bezier -- crates/occt-geom/src/surface.rs` 目前为空）⇒ 若无，则 `SurfaceType::BezierSurface` 保持不可达并在注释里写明（OCCT 有 `Geom_BezierSurface` 类）。
-- **改法**：把 `(:110-123)` 的 `match (up, vp)` 与 `is_cylinder_like` 删除，改成上述顺序的精确判定，`None` 落 `SurfaceType::OtherSurface`（= `GeomAbs_OtherSurface`）。先确认 `is_cylinder_like` 无其他调用者（`git grep is_cylinder_like`）。
-- **门禁**：`step_obj_parity` **14/14**（bbox 最敏感，A24 说错判会换掉整张内部节点网格）、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`occt-topo --lib` 1293/1；另跑 `export_data_obj` 抽查 `data/occ/*.step` 的顶点/三角数。**失配即停**：若某模型因端口缺某面类的精确查询而落 `OtherSurface` 导致网格变化，先补该查询（对着 `GeomAdaptor_Surface::Load` 的 arm）再重放，不要保留采样兜底。
+- **落地**：`crates/occt-topo/src/meshing/range_splitter/p01.rs`、`crates/occt-geom/src/{surface.rs,bezier_surface.rs}`。
+  1. `classify_surface` 改为 `GeomAdaptor_Surface::Load`（`GeomAdaptor_Surface.cxx:422-513`）的逐行转写：**`DynamicType` 精确类判定**，顺序 RTS（递归基面）→ Plane → Cylinder → Cone → Sphere → Torus → SurfaceOfRevolution → SurfaceOfLinearExtrusion → **Bezier**（`cxx:480`，先于 BSpline）→ BSpline → Offset → `OtherSurface`。
+  2. **删除**周期标志 `match (up, vp)`（`(:110-123)`，其中 `(true,false) if v_fin => Sphere` 会把任何 V 有限的柱/锥判成 Sphere）与自创判别式 `is_cylinder_like`（`(:128-133)`，两点半径采样 + `1e-7` 相对阈值）。
+  3. 新增 `Surface::is_bezier_surface()`（`Adaptor3d_Surface::GetType() == GeomAbs_BezierSurface`），`GeomBezierSurface` 置 `true`——此前 `SurfaceType::BezierSurface` 不可达。
+- **实测效应（网格密度，`step_obj_parity --nocapture` 对拍）**：Shape-2、ATU01038、T0M、`occ/bottom`、`occ/top` 均有变化（例 T0M **46647/46754 → 46514/46945**、ATU01038 17767/22160 → 17745/22119），其余 11 个模型逐位不变 ⇒ 证实 A24 描述的"错判会换掉整张内部节点网格"确实在 live 路径上发生。
+- **验证（全绿，与基线逐项一致）**：`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**、`occt-topo --lib` **1293/1**、`occt-geom --lib` **151/151**；`cargo check` exit 0。
+- **旁支（已立项 T-72/A30）**：`brep_surface::classify_surface`（`brep_surface.rs:78-101`）是**另一处**采样分类器（8×8 采样 + `1e-6`/`1e-4` 阈值判 Plane/Sphere/Other），服务于 STEP **读入**面型；本轮只报告未动手。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。

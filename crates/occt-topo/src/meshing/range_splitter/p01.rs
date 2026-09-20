@@ -79,16 +79,35 @@ pub enum SurfaceType {
 
 /// Classifies a `dyn Surface` into a [`SurfaceType`].
 ///
-/// Type flags follow `GeomAdaptor_Surface::load` (`cxx:423-498`): RTS unwraps
-/// to its basis; Offset / revolution / extrusion / BSpline win over the
-/// periodic-flag sampling that would otherwise call an Offset of revolution a
-/// Sphere. Analytic plane/cyl/cone/sphere/torus still use the sampling arms.
+/// Exact transcription of `GeomAdaptor_Surface::Load`
+/// (`GeomAdaptor_Surface.cxx:422-513`), which compares **`DynamicType`**
+/// (exact class, not `IsKind`) in a fixed order: rectangular-trimmed (recurse
+/// on the basis), Plane, Cylinder, Cone, Sphere, Torus, SurfaceOfRevolution,
+/// SurfaceOfLinearExtrusion, **Bezier** (`cxx:480`, before BSpline),
+/// BSpline, Offset, else `GeomAbs_OtherSurface`.
+///
+/// The previous body guessed Plane/Cylinder/Cone/Sphere/Torus from the
+/// periodicity flags plus a sampled constant-radius test (`is_cylinder_like`),
+/// which turned any V-bounded cylinder or cone into a `Sphere` and swapped the
+/// whole internal node grid (audit A24).
 pub fn classify_surface(s: &dyn Surface) -> SurfaceType {
     if let Some(basis) = s.rectangular_trimmed_basis() {
         return classify_surface(basis.as_ref());
     }
-    if s.is_offset_surface() {
-        return SurfaceType::OffsetSurface;
+    if s.gp_pln().is_some() {
+        return SurfaceType::Plane;
+    }
+    if s.gp_cylinder().is_some() {
+        return SurfaceType::Cylinder;
+    }
+    if s.gp_cone().is_some() {
+        return SurfaceType::Cone;
+    }
+    if s.gp_sphere().is_some() {
+        return SurfaceType::Sphere;
+    }
+    if s.gp_torus().is_some() {
+        return SurfaceType::Torus;
     }
     if s.is_surface_of_revolution() {
         return SurfaceType::SurfaceOfRevolution;
@@ -96,40 +115,16 @@ pub fn classify_surface(s: &dyn Surface) -> SurfaceType {
     if s.is_surface_of_linear_extrusion() {
         return SurfaceType::SurfaceOfExtrusion;
     }
+    if s.is_bezier_surface() {
+        return SurfaceType::BezierSurface;
+    }
     if s.is_bspline_surface() {
         return SurfaceType::BSplineSurface;
     }
-
-    let up = s.is_u_periodic();
-    let vp = s.is_v_periodic();
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let u_fin = u0.is_finite() && u1.is_finite();
-    let v_fin = v0.is_finite() && v1.is_finite();
-
-    match (up, vp) {
-        (true, true) => SurfaceType::Torus,
-        (true, false) if v_fin => SurfaceType::Sphere,
-        (true, false) => {
-            if is_cylinder_like(s) {
-                SurfaceType::Cylinder
-            } else {
-                SurfaceType::Cone
-            }
-        }
-        (false, true) => SurfaceType::SurfaceOfRevolution,
-        (false, false) if u_fin && v_fin => SurfaceType::BSplineSurface,
-        (false, false) => SurfaceType::Plane,
+    if s.is_offset_surface() {
+        return SurfaceType::OffsetSurface;
     }
-}
-
-/// True when the (u-periodic, unbounded-V) surface keeps a constant radius along
-/// V — the cylinder/cone discriminator.
-pub(super) fn is_cylinder_like(s: &dyn Surface) -> bool {
-    let r_at = |v: f64| s.d0(0.0, v).distance(&s.d0(PI, v)) * 0.5;
-    let r0 = r_at(0.0);
-    let r1 = r_at(1.0);
-    (r0 - r1).abs() <= 1e-7 * r0.abs().max(r1.abs()).max(1e-7)
+    SurfaceType::OtherSurface
 }
 
 /// Radius of a cylinder. `BRepAdaptor_Surface::Cylinder().Radius()` when the
