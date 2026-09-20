@@ -7,11 +7,33 @@ pub trait Curve2d: Send + Sync {
     fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d);
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d);
     /// `Geom2d_Curve::EvalD3`. Default returns a zero third derivative, mirroring
-    /// the 3D `Curve::d3` default; concrete curves must override it (no curve in
-    /// this crate does yet — see `Geom2d_OffsetCurve::d2`, task T-63).
+    /// the 3D `Curve::d3` default; overridden by `Geom2dCircle`/`Geom2dEllipse`/
+    /// `Geom2dHyperbola` (`clib2d.rs:294-328`) for `Geom2d_OffsetCurve::d2`
+    /// (task T-63). The remaining implementors keep the zero default — see the
+    /// `eval_dn` note below.
     fn d3(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
         let (p, d1, d2) = self.d2(u);
         (p, d1, d2, GpVec2d::zero())
+    }
+    /// `Geom2d_Curve::EvalDN` (`Geom2d_Curve.hxx:210`, pure virtual).
+    /// The default covers `N = 1..3` through `d1`/`d2`/`d3`; `N < 1` (OCCT throws
+    /// `Geom2d_UndefinedDerivative`) and `N > 3` return a zero vector — the same
+    /// convention as the 3D `Curve::eval_dn` (`occt-geom/src/curve.rs:12-25`).
+    /// UNPORTED for `N > 3`: the 2D B-spline/Bezier/trimmed/offset implementors
+    /// do not override this yet (3D `GeomBSplineCurve` uses `BSplCLib::DN`; the
+    /// 2D `Geom2d_BSplineCurve::EvalDN` / `Geom2d_BezierCurve::EvalDN` have no
+    /// counterpart here). The elementary curves *do* override it via
+    /// `ElCLib::*DN` (`clib2d.rs:329-432`).
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec2d {
+        if n < 1 {
+            return GpVec2d::zero();
+        }
+        match n {
+            1 => self.d1(u).1,
+            2 => self.d2(u).2,
+            3 => self.d3(u).3,
+            _ => GpVec2d::zero(),
+        }
     }
     fn value(&self, u: f64) -> GpPnt2d { self.d0(u) }
     fn first_parameter(&self) -> f64;

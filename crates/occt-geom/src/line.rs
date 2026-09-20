@@ -16,6 +16,13 @@ impl Curve for GeomLine {
     fn d0(&self, u: f64) -> GpPnt { clib::line_value(&self.pos, u) }
     fn d1(&self, u: f64) -> (GpPnt, GpVec) { clib::line_d1(&self.pos, u) }
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) { clib::line_d2(&self.pos, u) }
+    /// `Geom_Line::EvalDN` (`Geom_Line.cxx:207-219`) → `ElCLib::LineDN`
+    /// (`ElCLib.cxx:911-918`). The `N < 1` throw becomes a zero vector, the
+    /// convention of `Curve::eval_dn` (`curve.rs:12-25`).
+    fn eval_dn(&self, _u: f64, n: i32) -> GpVec {
+        if n < 1 { return GpVec::zero(); }
+        clib::line_dn(&self.pos, n)
+    }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
     fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer

@@ -1,25 +1,32 @@
 //! Offset 3D curve. Source: `Geom_OffsetCurve.hxx`
 //!
 //! Point and derivative formulas are a port of `Geom_OffsetCurveUtils.pxx`:
-//! `CalculateD0` (`:47-63`), `CalculateD1` (`:74-116`), `CalculateD2` (`:129-201`).
+//! `CalculateD0` (`:47-63`), `CalculateD1` (`:74-116`), `CalculateD2` (`:129-201`),
+//! `AdjustDerivative` (`:322-390`).
 //! The offset point moves along the **local normal** `Ndir = D1 ^ Direction`
 //! (not along `Direction`): `P(u) = p(u) + Offset * Ndir / ||Ndir||`.
-//! `EvalD0/EvalD1/EvalD2` wrappers mirror `Geom_OffsetCurve.cxx:262-334`.
+//! `EvalD0/EvalD1/EvalD2` wrappers mirror `Geom_OffsetCurve.cxx:261-336`.
 //!
 //! UNPORTED (documented deviations, no OCCT invention added):
-//! - `CalculateD2` needs the basis **third** derivative (`EvalD3`). No curve in
-//!   this crate overrides `Curve::d3`, so the trait default (zero) is used and
-//!   the `D2Ndir` term of `D2` is zero-valued until `EvalD3` is ported per
-//!   curve type (task T-63; OCCT `Geom_Curve::EvalD3`). D0/D1 are unaffected.
-//! - `EvalD2`'s singular arm (`Geom_OffsetCurve.cxx:311-330`) computes
-//!   `isDirectionChange` through `Geom_OffsetCurveUtils::AdjustDerivative`
-//!   (`pxx:313-...`) when the basis `D1` magnitude is `<= gp::Resolution()`;
-//!   the port passes `false` (same task T-63).
+//! - `Geom_OffsetCurve::EvalD3` (`cxx:342-380` → `EvaluateD3` `pxx:494-529` →
+//!   `CalculateD3` `pxx:203-307`) is not ported, so this class keeps the
+//!   `Curve::d3` default (`D3 = 0`). Consequently `Geom_OffsetCurve::EvalDN`
+//!   (`cxx:386-410`, which forwards orders 1/2/3 to `EvalD1`/`EvalD2`/`EvalD3`
+//!   and everything else to the basis) is not ported either; the `Curve` trait
+//!   default covers orders 1..3. Nothing in this crate consumes an offset curve's
+//!   D3 yet (task T-63).
+//! - `AdjustDerivative` consumes basis `EvalDN` orders up to 5. `Curve::eval_dn`
+//!   is faithful for B-spline (`BSplCLib::DN`, `bspline_curve.rs:159`) and for
+//!   line/circle/ellipse/hyperbola/parabola (`ElCLib::*DN`, `clib.rs`); the
+//!   remaining bases still fall back to the trait default (zero above order 3) —
+//!   `Geom_BezierCurve::EvalDN` (`Geom_BezierCurve.cxx:601-617`) and
+//!   `Geom_Curve`'s non-elementary subclasses are not ported to that depth.
 //! - OCCT throws `Geom_UndefinedValue`/`Geom_UndefinedDerivative` when a
-//!   `CalculateD*` call returns false (`cxx:271-274`, `:291-294`, `:327-331`).
+//!   `CalculateD*` call returns false (`cxx:271-274`, `:291-294`, `:324-336`).
 //!   The `Curve` trait has no failure channel, so the port returns the basis
 //!   value, matching the existing convention in `bspline_surface.rs:182-185`
-//!   and `offset_surface.rs:160-165`.
+//!   and `offset_surface.rs:160-165`. `AdjustDerivative`'s own `false` return
+//!   is unreachable in the port for the same reason (`pxx:320`).
 //! - Constructor checks (`Geom_OffsetCurve.cxx:187-217`: C0 rejection, G1
 //!   upgrade of a C0 B-spline basis, direction-magnitude folding at `:181-183`)
 //!   are not ported; this crate constructs the offset directly.
@@ -168,6 +175,70 @@ impl GeomOffsetCurve {
     }
 }
 
+/// `Geom_OffsetCurveUtils::AdjustDerivative` (`Geom_OffsetCurveUtils.pxx:322-390`):
+/// at a singular parameter (basis `D1` magnitude `<= gp::Resolution()`) the
+/// tangent is rebuilt from the first `EvalDN` order in `{2, 3}` (`aMaxDerivOrder`)
+/// whose magnitude exceeds `gp::Resolution()`; its sign is chosen so that it
+/// agrees with the chord `P(u - aDelta) P(u + aDelta)` (`aDelta =
+/// max((u_sup - u_inf) * 1e-3, 1e-7)`), and `theD2..theD4` are the `EvalDN`
+/// values one and two orders above it, times that same sign.
+/// `theIsDirectionChange` is `V.Dot(V1) < 0`.
+///
+/// OCCT returns `false` only when an `EvalDN`/`EvalD0` throws; the `Curve` trait
+/// has no failure channel (see the header), so this always returns `true`.
+fn adjust_derivative(
+    curve: &dyn Curve,
+    max_derivative: i32,
+    u: f64,
+    d1: &mut GpVec,
+    d2: &mut GpVec,
+    d3: &mut GpVec,
+    d4: &mut GpVec,
+    is_direction_change: &mut bool,
+) -> bool {
+    /// `gp::Resolution()` (`pxx:331`).
+    const A_TOL: f64 = GP_RESOLUTION;
+    /// `aMinStep` (`pxx:332`).
+    const MIN_STEP: f64 = 1e-7;
+    /// `aMaxDerivOrder` (`pxx:333`).
+    const MAX_DERIV_ORDER: i32 = 3;
+    /// `DivisionFactor` (`pxx:339`).
+    const DIVISION_FACTOR: f64 = 1.0e-3;
+
+    *is_direction_change = false;
+    let u_inf = curve.first_parameter();
+    let u_sup = curve.last_parameter();
+    // `RealLast()` / `RealFirst()` (`Standard_Real.hxx`): an unbounded range
+    // gives `du = 0` (so `aDelta = aMinStep`).
+    let du = if u_sup >= f64::MAX || u_inf <= f64::MIN { 0.0 } else { u_sup - u_inf };
+    let delta = (du * DIVISION_FACTOR).max(MIN_STEP);
+
+    // Derivative is approximated by Taylor-series (`pxx:352-359`).
+    let mut index = 1;
+    let v = loop {
+        index += 1;
+        let current = curve.eval_dn(u, index);
+        if current.square_magnitude() > A_TOL || index >= MAX_DERIV_ORDER {
+            break current;
+        }
+    };
+
+    let u_shift = if u - u_inf < delta { u + delta } else { u - delta };
+    let p1 = curve.d0(u.min(u_shift));
+    let p2 = curve.d0(u.max(u_shift));
+    let v1 = GpVec::from_pnts(&p1, &p2);
+    *is_direction_change = v.dot(&v1) < 0.0;
+    let sign = if *is_direction_change { -1.0 } else { 1.0 };
+
+    *d1 = v.multiplied_scalar(sign);
+    let derivs = [d2, d3, d4];
+    for i in 1..max_derivative {
+        let dn = curve.eval_dn(u, index + i);
+        *derivs[(i - 1) as usize] = dn.multiplied_scalar(sign);
+    }
+    true
+}
+
 impl Curve for GeomOffsetCurve {
     /// `Geom_OffsetCurve::EvalD0` (`Geom_OffsetCurve.cxx:262-276`): the basis is
     /// evaluated through `EvalD1`, so the point comes from the D1 evaluation.
@@ -199,9 +270,33 @@ impl Curve for GeomOffsetCurve {
         let mut value = p;
         let mut a_d1 = d1;
         let mut a_d2 = d2;
-        // `cxx:311-330` derives `isDirectionChange` from `AdjustDerivative` when
-        // the basis D1 is singular; not ported (see header), passed as false.
-        if !self.calculate_d2(&mut value, &mut a_d1, &mut a_d2, &d3, false, GP_RESOLUTION) {
+        let mut a_d3 = d3;
+        let mut is_direction_change = false;
+        if a_d1.square_magnitude() <= GP_RESOLUTION {
+            // `cxx:311-330`: the basis D1 is singular, so `D1..D3` and
+            // `isDirectionChange` come from `AdjustDerivative(..., 3, ...)`.
+            let mut a_dummy_d4 = GpVec::zero();
+            // A `false` return throws `Geom_UndefinedDerivative` (`cxx:317-320`);
+            // `adjust_derivative` has no failure channel and always succeeds.
+            let _ = adjust_derivative(
+                self.basis.as_ref(),
+                3,
+                u,
+                &mut a_d1,
+                &mut a_d2,
+                &mut a_d3,
+                &mut a_dummy_d4,
+                &mut is_direction_change,
+            );
+        }
+        if !self.calculate_d2(
+            &mut value,
+            &mut a_d1,
+            &mut a_d2,
+            &a_d3,
+            is_direction_change,
+            GP_RESOLUTION,
+        ) {
             // `cxx:328` throws `Geom_UndefinedDerivative`.
             return (p, d1, d2);
         }

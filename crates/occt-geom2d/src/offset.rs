@@ -1,19 +1,25 @@
 //! Offset 2D curve. Source: `Geom2d_OffsetCurve.hxx`
 //!
 //! Point and derivative formulas are a port of `Geom2d_OffsetCurveUtils.pxx`:
-//! `CalculateD0` (`:43-53`), `CalculateD1` (`:61-101`), `CalculateD2` (`:111-177`).
+//! `CalculateD0` (`:43-53`), `CalculateD1` (`:61-101`), `CalculateD2` (`:111-177`),
+//! `AdjustDerivative` (`:296-364`).
 //! The normal is `Ndir = (D1.Y, -D1.X)` (the tangent rotated by -90 degrees, see
 //! `pxx:34`) and the offset point is `P(u) = p(u) + Offset * Ndir / ||Ndir||`.
 //! `EvalD0/EvalD1/EvalD2` wrappers mirror `Geom2d_OffsetCurve.cxx:216-285`.
 //!
 //! UNPORTED (documented deviations, no OCCT invention added):
-//! - `CalculateD2` needs the basis **third** derivative (`Geom2d_Curve::EvalD3`).
-//!   No curve in this crate overrides `Curve2d::d3`, so the trait default (zero)
-//!   is used and the `D2Ndir` term is zero-valued until `EvalD3` is ported per
-//!   curve type (task T-63). D0/D1 are unaffected.
-//! - `EvalD2`'s singular arm (`Geom2d_OffsetCurve.cxx:265-280`) derives
-//!   `isDirectionChange` from `AdjustDerivative` when the basis `D1` is
-//!   singular; the port passes `false` (task T-63).
+//! - `Geom2d_OffsetCurve::EvalD3` (`cxx:289-327` → `EvaluateD3` `pxx:459-484` →
+//!   `CalculateD3` `pxx:179-280`) is not ported, so this class keeps the
+//!   `Curve2d::d3` default (`D3 = 0`), and `Geom2d_OffsetCurve::EvalDN`
+//!   (`cxx:332-356`) is not ported either; the `Curve2d` trait default covers
+//!   orders 1..3. Nothing in this crate consumes an offset curve's D3 yet
+//!   (task T-63).
+//! - `AdjustDerivative` consumes basis `EvalDN` orders up to 5. The elementary
+//!   bases are faithful (`ElCLib::*DN` 2d, `clib2d.rs:329-432`) and
+//!   `Geom2dTrimmedCurve` delegates to its basis (`cxx:273-283`); the remaining
+//!   bases fall back to the trait default (zero above order 3) —
+//!   `Geom2d_BSplineCurve::EvalDN` / `Geom2d_BezierCurve::EvalDN` have no
+//!   counterpart here (`Geom2d_Curve::eval_dn`, `curve.rs`).
 //! - OCCT throws `Geom2d_UndefinedValue`/`Geom2d_UndefinedDerivative` when a
 //!   `CalculateD*` call returns false (`cxx:224-227`, `:244-247`, `:280-283`).
 //!   The `Curve2d` trait has no failure channel, so the port returns the basis
@@ -170,6 +176,68 @@ impl Geom2dOffsetCurve {
     }
 }
 
+/// `Geom2d_OffsetCurveUtils::AdjustDerivative` (`Geom2d_OffsetCurveUtils.pxx:296-364`):
+/// the 2D transcription of the 3D algorithm — first non-vanishing `EvalDN` order
+/// in `{2, 3}` (`aMaxDerivOrder`), chord-sign selection with `aDelta =
+/// max((u_sup - u_inf) * 1e-3, 1e-7)`, then `theD2..theD4` from the `EvalDN`
+/// values one and two orders above, times the sign, and
+/// `theIsDirectionChange = V.Dot(V1) < 0`.
+///
+/// OCCT returns `false` only when an `EvalDN` throws; the `Curve2d` trait has no
+/// failure channel (see the header), so this always returns `true`.
+fn adjust_derivative(
+    curve: &dyn Curve2d,
+    max_derivative: i32,
+    u: f64,
+    d1: &mut GpVec2d,
+    d2: &mut GpVec2d,
+    d3: &mut GpVec2d,
+    d4: &mut GpVec2d,
+    is_direction_change: &mut bool,
+) -> bool {
+    /// `gp::Resolution()` (`pxx:305`).
+    const A_TOL: f64 = GP_RESOLUTION;
+    /// `aMinStep` (`pxx:306`).
+    const MIN_STEP: f64 = 1e-7;
+    /// `aMaxDerivOrder` (`pxx:307`).
+    const MAX_DERIV_ORDER: i32 = 3;
+    /// `DivisionFactor` (`pxx:313`).
+    const DIVISION_FACTOR: f64 = 1.0e-3;
+
+    *is_direction_change = false;
+    let u_inf = curve.first_parameter();
+    let u_sup = curve.last_parameter();
+    // `RealLast()` / `RealFirst()` (`Standard_Real.hxx`): an unbounded range
+    // gives `du = 0` (so `aDelta = aMinStep`).
+    let du = if u_sup >= f64::MAX || u_inf <= f64::MIN { 0.0 } else { u_sup - u_inf };
+    let delta = (du * DIVISION_FACTOR).max(MIN_STEP);
+
+    // Derivative is approximated by Taylor-series (`pxx:326-333`).
+    let mut index = 1;
+    let v = loop {
+        index += 1;
+        let current = curve.eval_dn(u, index);
+        if current.square_magnitude() > A_TOL || index >= MAX_DERIV_ORDER {
+            break current;
+        }
+    };
+
+    let u_shift = if u - u_inf < delta { u + delta } else { u - delta };
+    let p1 = curve.d0(u.min(u_shift));
+    let p2 = curve.d0(u.max(u_shift));
+    let v1 = GpVec2d::new(p2.x() - p1.x(), p2.y() - p1.y());
+    *is_direction_change = v.dot(&v1) < 0.0;
+    let sign = if *is_direction_change { -1.0 } else { 1.0 };
+
+    *d1 = v.multiplied_scalar(sign);
+    let derivs = [d2, d3, d4];
+    for i in 1..max_derivative {
+        let dn = curve.eval_dn(u, index + i);
+        *derivs[(i - 1) as usize] = dn.multiplied_scalar(sign);
+    }
+    true
+}
+
 impl Curve2d for Geom2dOffsetCurve {
     /// `Geom2d_OffsetCurve::EvalD0` (`Geom2d_OffsetCurve.cxx:216-228`).
     fn d0(&self, u: f64) -> GpPnt2d {
@@ -200,9 +268,26 @@ impl Curve2d for Geom2dOffsetCurve {
         let mut value = p;
         let mut a_d1 = d1;
         let mut a_d2 = d2;
-        // `cxx:258-280` derives `isDirectionChange` from `AdjustDerivative` at a
-        // singular basis D1; not ported (see header), passed as false.
-        if !self.calculate_d2(&mut value, &mut a_d1, &mut a_d2, &d3, false) {
+        let mut a_d3 = d3;
+        let mut is_direction_change = false;
+        if a_d1.square_magnitude() <= GP_RESOLUTION {
+            // `cxx:258-280`: the basis D1 is singular, so `D1..D3` and
+            // `isDirectionChange` come from `AdjustDerivative(..., 3, ...)`.
+            let mut a_dummy_d4 = GpVec2d::zero();
+            // A `false` return throws `Geom2d_UndefinedDerivative` (`cxx:265-268`);
+            // `adjust_derivative` has no failure channel and always succeeds.
+            let _ = adjust_derivative(
+                self.basis.as_ref(),
+                3,
+                u,
+                &mut a_d1,
+                &mut a_d2,
+                &mut a_d3,
+                &mut a_dummy_d4,
+                &mut is_direction_change,
+            );
+        }
+        if !self.calculate_d2(&mut value, &mut a_d1, &mut a_d2, &a_d3, is_direction_change) {
             // `cxx:282` throws `Geom2d_UndefinedDerivative`.
             return (p, d1, d2);
         }

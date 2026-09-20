@@ -54,6 +54,29 @@ impl Curve for GeomTrimmedCurve {
         let s = self.last - self.first;
         (p, GpVec::new(d1.x()*s,d1.y()*s,d1.z()*s), GpVec::new(d2.x()*s*s,d2.y()*s*s,d2.z()*s*s))
     }
+    /// `Geom_TrimmedCurve::EvalD3` (`Geom_TrimmedCurve.cxx:231-236`) delegates to
+    /// the basis; this view reparameterises to `[0, 1]`, so the chain rule of
+    /// `d1`/`d2` above applies with `s = last - first`.
+    fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
+        let t = self.first + u * (self.last - self.first);
+        let (p, d1, d2, d3) = self.basis.d3(t);
+        let s = self.last - self.first;
+        let s2 = s * s;
+        let s3 = s2 * s;
+        (
+            p,
+            GpVec::new(d1.x()*s, d1.y()*s, d1.z()*s),
+            GpVec::new(d2.x()*s2, d2.y()*s2, d2.z()*s2),
+            GpVec::new(d3.x()*s3, d3.y()*s3, d3.z()*s3),
+        )
+    }
+    /// `Geom_TrimmedCurve::EvalDN` (`Geom_TrimmedCurve.cxx:240-243`) delegates to
+    /// the basis; same `s^N` chain rule as `d1`/`d2`/`d3`.
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec {
+        let t = self.first + u * (self.last - self.first);
+        let s = self.last - self.first;
+        self.basis.eval_dn(t, n).multiplied_scalar(s.powi(n))
+    }
     fn first_parameter(&self) -> f64 { 0.0 }
     fn last_parameter(&self) -> f64 { 1.0 }
     fn continuity(&self) -> u8 { self.basis.continuity() }
@@ -159,6 +182,11 @@ impl Curve for GeomTrimmedCurveBasis {
     fn d0(&self, u: f64) -> GpPnt { self.basis.d0(u) }
     fn d1(&self, u: f64) -> (GpPnt, GpVec) { self.basis.d1(u) }
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) { self.basis.d2(u) }
+    /// `Geom_TrimmedCurve::EvalD3` (`Geom_TrimmedCurve.cxx:231-236`): direct
+    /// delegation — this view is already expressed in basis parameters.
+    fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) { self.basis.d3(u) }
+    /// `Geom_TrimmedCurve::EvalDN` (`Geom_TrimmedCurve.cxx:240-243`).
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec { self.basis.eval_dn(u, n) }
     fn first_parameter(&self) -> f64 { self.first }
     fn last_parameter(&self) -> f64 { self.last }
     /// `Geom_TrimmedCurve::IsPeriodic` (`cxx:169-180`): the basis must be

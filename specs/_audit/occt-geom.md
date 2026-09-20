@@ -26,6 +26,7 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - OCCT 对应：`Geom_OffsetCurveUtils.pxx:53,60-61`（`Ndir = D1.XYZ().Crossed(theDirXYZ)`，`P = p + Offset·Ndir/R`）、`:86-114`（D1 必须追加 `DNdir` 法向旋转项）
 - 影响：改几何结果。`occt-topo/src/step/p04.rs:1049` 直接构造该类型，STEP 读入的 OFFSET_CURVE 几何全错；D1/D2 恒等于基曲线导数，切线方向错
 - 建议：按 `Geom_OffsetCurveUtils.pxx:47-201` 重写 D0/D1/D2，或标未移植
+- **处置（✅ 已完成：T-35 重写 D0/D1/D2；T-63 步 1 补基曲线 `EvalD3`；T-63 步 2 / 2026-09-20 第 41 轮批 19 移植 `AdjustDerivative` `pxx:322-390` 并接进 `EvalD2` 奇异支路，`isDirectionChange` 不再恒 `false`）**。余项 **T-75**：offset 类自身的 `EvalD3`（`EvaluateD3` `pxx:494-529` / `CalculateD3` `pxx:203-307`）与 `EvalDN`（`cxx:386-410`）未移植，`d3` 仍走 trait 默认零值；仓内无消费者，已在 `offset.rs` 文件头登记。
 
 ### 2. `Geom2dOffsetCurve` 法向反号 + D1/D2 缺 `DNdir`
 - 判定：自创

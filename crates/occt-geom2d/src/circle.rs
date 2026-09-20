@@ -1,5 +1,5 @@
 //! 2D circle curve. Source: `Geom2d_Circle.hxx`
-use occt_core::elib::clib;
+use occt_core::elib::{clib, clib2d};
 use occt_core::gp::{GpCirc2d, GpPnt2d, GpVec2d, GpTrsf2d};
 use crate::curve::Curve2d;
 
@@ -29,6 +29,14 @@ impl Curve2d for Geom2dCircle {
     /// Needed by `Geom2d_OffsetCurve`'s `CalculateD2` (`D2Ndir`).
     fn d3(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
         clib::circle2d_d3(&self.pos, u)
+    }
+    /// `Geom2d_Circle::EvalDN` (`Geom2d_Circle.cxx:198-205`) →
+    /// `ElCLib::CircleDN` 2d (`clib2d.rs:338-360`, `ElCLib.cxx:1060-1092`).
+    /// `N < 1` returns a zero vector instead of the OCCT throw
+    /// (`Geom2d_Curve::EvalDN` convention, see `curve.rs`).
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec2d {
+        if n < 1 { return GpVec2d::zero(); }
+        clib2d::circle_dn_ax22d(u, &self.pos.pos, self.pos.radius, n)
     }
     fn first_parameter(&self) -> f64 { 0.0 }
     fn last_parameter(&self) -> f64 { 2.0 * std::f64::consts::PI }

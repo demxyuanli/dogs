@@ -1,5 +1,6 @@
 //! 2D parabola curve. Source: `Geom2d_Parabola.hxx`
 use occt_core::gp::{GpParab2d, GpPnt2d, GpVec2d, GpTrsf2d, GpAx22d};
+use occt_core::elib::clib2d;
 use crate::curve::Curve2d;
 
 #[derive(Debug, Clone)]
@@ -31,6 +32,16 @@ impl Curve2d for Geom2dParabola {
         let d1 = GpVec2d::new(u/(2.0*f)*xd.x + self.pos.pos.vydir.x, u/(2.0*f)*xd.y + self.pos.pos.vydir.y);
         let d2 = GpVec2d::new(xd.x/(2.0*f), xd.y/(2.0*f));
         (p, d1, d2)
+    }
+    // `Geom2d_Parabola::EvalD3` (`Geom2d_Parabola.cxx:220-227`) is
+    // `ElCLib::ParabolaD2` with `D3.SetCoord(0, 0)` — the trait default already
+    // returns a zero third derivative.
+    /// `Geom2d_Parabola::EvalDN` (`Geom2d_Parabola.cxx:230-237`) →
+    /// `ElCLib::ParabolaDN` 2d (`clib2d.rs:416-432`, `ElCLib.cxx:1162-1188`).
+    /// `N < 1` returns a zero vector instead of the OCCT throw.
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec2d {
+        if n < 1 { return GpVec2d::zero(); }
+        clib2d::parabola_dn_ax22d(u, &self.pos.pos, self.pos.focal, n)
     }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }

@@ -106,6 +106,15 @@ impl Curve2d for Geom2dTrimmedCurve {
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
         self.basis.d2(u)
     }
+    /// `Geom2d_TrimmedCurve::EvalD3` (`Geom2d_TrimmedCurve.cxx:273-276`): direct
+    /// delegation to the basis, like `d0`/`d1`/`d2` above.
+    fn d3(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
+        self.basis.d3(u)
+    }
+    /// `Geom2d_TrimmedCurve::EvalDN` (`Geom2d_TrimmedCurve.cxx:280-283`).
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec2d {
+        self.basis.eval_dn(u, n)
+    }
     fn first_parameter(&self) -> f64 {
         self.u_trim1
     }

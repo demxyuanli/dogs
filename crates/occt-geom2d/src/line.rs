@@ -1,5 +1,6 @@
 //! 2D line curve. Source: `Geom2d_Line.hxx`
 use occt_core::gp::{GpLin2d, GpPnt2d, GpVec2d, GpDir2d, GpTrsf2d, GpAx2d};
+use occt_core::elib::clib2d;
 use crate::curve::Curve2d;
 
 #[derive(Debug, Clone)]
@@ -25,6 +26,13 @@ impl Curve2d for Geom2dLine {
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
         let (p, d1) = self.d1(u);
         (p, d1, GpVec2d::zero())
+    }
+    /// `Geom2d_Line::EvalDN` (`Geom2d_Line.cxx:221-233`) → `ElCLib::LineDN` 2d
+    /// (`clib2d.rs:329-335`, `ElCLib.cxx:1049-1055`): `N == 1` is the direction,
+    /// any other order the null vector.
+    fn eval_dn(&self, _u: f64, n: i32) -> GpVec2d {
+        if n < 1 { return GpVec2d::zero(); }
+        clib2d::line_dn_ax2d(_u, &self.pos.pos, n)
     }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }

@@ -16,6 +16,13 @@ impl Curve for GeomParabola {
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) { clib::parabola_d2(&self.pos, u) }
     // `Geom_Parabola::EvalD3` (`Geom_Parabola.cxx:195-200`) sets `V3 = (0,0,0)`
     // — the trait default already returns a zero third derivative.
+    /// `Geom_Parabola::EvalDN` (`Geom_Parabola.cxx:205-212`) →
+    /// `ElCLib::ParabolaDN` (`ElCLib.cxx:1020-1045`). `N < 1` returns a zero
+    /// vector (see `curve.rs:12-25`).
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec {
+        if n < 1 { return GpVec::zero(); }
+        clib::parabola_dn(&self.pos, u, n)
+    }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
     fn continuity(&self) -> u8 { 3 } // T-64: OCCT=GeomAbs_CN(6), blocked by consumer

@@ -3,7 +3,7 @@ use crate::gp::{
     GpAx2, GpAx22d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr, GpHypr2d, GpLin,
     GpLin2d, GpParab, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXY,
 };
-use crate::precision::{COMPUTATIONAL, RESOLUTION};
+use crate::precision::{COMPUTATIONAL, REAL_SMALL, RESOLUTION};
 
 // Helper: GpVec from scaled & added GpXyz refs
 fn vec_add(a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpVec {
@@ -158,6 +158,101 @@ pub fn parabola_d1(p: &GpParab, u: f64) -> (GpPnt, GpVec) {
     let f = p.focal;
     let pt = parabola_value(p, u);
     (pt, vec_add(p.pos.x_direction().xyz(), u/(2.0*f), p.pos.y_direction().xyz(), 1.0))
+}
+
+// ---------------------------------------------------------------------------
+// DN (Nth derivative) of the elementary curves. Source: `ElCLib::*DN`.
+// Ported for `Geom_OffsetCurveUtils::AdjustDerivative` (`pxx:385`), which asks
+// for orders above 3 and whose `theD2`/`theD3` outputs are the `EvalDN(u, 3..5)`
+// values scaled by the direction sign (audit A0/T-63).
+// ---------------------------------------------------------------------------
+
+/// `ElCLib::LineDN(U, gp_Ax1, N)` (`ElCLib.cxx:911-918`): `N == 1` gives the
+/// direction, every other order is the null vector.
+pub fn line_dn(l: &GpLin, n: i32) -> GpVec {
+    if n == 1 {
+        GpVec::from_xyz(l.pos.vdir.xyz())
+    } else {
+        GpVec::zero()
+    }
+}
+
+/// `ElCLib::CircleDN(U, gp_Ax2, Radius, N)` (`ElCLib.cxx:922-953`):
+/// `V1 = -R*sin(U)*XDir + R*cos(U)*YDir` and the order-4 cycle
+/// `V2 = -V0`, `V3 = -V1`, `V4 = V0`, `V5 = V1`. OCCT leaves `Xc = Yc = 0` for
+/// orders outside the four residue classes; that arm is unreachable for `N >= 1`.
+pub fn circle_dn(c: &GpCirc, u: f64, n: i32) -> GpVec {
+    let r = c.radius;
+    let (xc, yc) = if n == 1 {
+        (-r * u.sin(), r * u.cos())
+    } else if (n + 2) % 4 == 0 {
+        (-r * u.cos(), -r * u.sin())
+    } else if (n + 1) % 4 == 0 {
+        (r * u.sin(), -r * u.cos())
+    } else if n % 4 == 0 {
+        (r * u.cos(), r * u.sin())
+    } else if (n - 1) % 4 == 0 {
+        (-r * u.sin(), r * u.cos())
+    } else {
+        (0.0, 0.0)
+    };
+    vec_add(c.pos.x_direction().xyz(), xc, c.pos.y_direction().xyz(), yc)
+}
+
+/// `ElCLib::EllipseDN(U, gp_Ax2, Major, Minor, N)` (`ElCLib.cxx:957-992`):
+/// same residue cycle as `CircleDN` with `Major` on `XDir` and `Minor` on `YDir`.
+pub fn ellipse_dn(e: &GpElips, u: f64, n: i32) -> GpVec {
+    let a = e.major_radius;
+    let b = e.minor_radius;
+    let (xc, yc) = if n == 1 {
+        (-a * u.sin(), b * u.cos())
+    } else if (n + 2) % 4 == 0 {
+        (-a * u.cos(), -b * u.sin())
+    } else if (n + 1) % 4 == 0 {
+        (a * u.sin(), -b * u.cos())
+    } else if n % 4 == 0 {
+        (a * u.cos(), b * u.sin())
+    } else if (n - 1) % 4 == 0 {
+        (-a * u.sin(), b * u.cos())
+    } else {
+        (0.0, 0.0)
+    };
+    vec_add(e.pos.x_direction().xyz(), xc, e.pos.y_direction().xyz(), yc)
+}
+
+/// `ElCLib::HyperbolaDN(U, gp_Ax2, Major, Minor, N)` (`ElCLib.cxx:996-1016`):
+/// odd orders give `Major*sinh(U)*XDir + Minor*cosh(U)*YDir`, even orders
+/// `Major*cosh(U)*XDir + Minor*sinh(U)*YDir` (`IsOdd`/`IsEven`, i.e. `V1 = V3`).
+pub fn hyperbola_dn(h: &GpHypr, u: f64, n: i32) -> GpVec {
+    let a = h.major_radius;
+    let b = h.minor_radius;
+    let (xc, yc) = if n % 2 != 0 {
+        (a * u.sinh(), b * u.cosh())
+    } else {
+        (a * u.cosh(), b * u.sinh())
+    };
+    vec_add(h.pos.x_direction().xyz(), xc, h.pos.y_direction().xyz(), yc)
+}
+
+/// `ElCLib::ParabolaDN(U, gp_Ax2, Focal, N)` (`ElCLib.cxx:1020-1045`):
+/// `N > 2` or `N <= 0` gives the null vector; `V1 = U/(2F)*XDir + YDir`,
+/// `V2 = XDir/(2F)`. When `|Focal| <= gp::Resolution()` OCCT returns `XDir` for
+/// `V1` and the null vector for `V2`.
+pub fn parabola_dn(p: &GpParab, u: f64, n: i32) -> GpVec {
+    if n > 2 || n <= 0 {
+        return GpVec::zero();
+    }
+    let xdir = p.pos.x_direction().xyz();
+    if n == 1 {
+        if p.focal.abs() <= REAL_SMALL {
+            return GpVec::from_xyz(xdir);
+        }
+        return vec_add(xdir, u / (2.0 * p.focal), p.pos.y_direction().xyz(), 1.0);
+    }
+    if p.focal.abs() <= REAL_SMALL {
+        return GpVec::zero();
+    }
+    GpVec::from_xyz(&xdir.divided(2.0 * p.focal))
 }
 
 // 2D

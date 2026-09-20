@@ -1,5 +1,5 @@
 //! 2D hyperbola curve. Source: `Geom2d_Hyperbola.hxx`
-use occt_core::elib::clib;
+use occt_core::elib::{clib, clib2d};
 use occt_core::gp::{GpHypr2d, GpPnt2d, GpVec2d, GpTrsf2d, GpAx22d};
 use crate::curve::Curve2d;
 
@@ -36,6 +36,13 @@ impl Curve2d for Geom2dHyperbola {
     /// where OCCT sets `V3 = V1`. Needed by `Geom2d_OffsetCurve`'s `CalculateD2`.
     fn d3(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d, GpVec2d) {
         clib::hyperbola2d_d3(&self.pos, u)
+    }
+    /// `Geom2d_Hyperbola::EvalDN` (`Geom2d_Hyperbola.cxx:329-336`) →
+    /// `ElCLib::HyperbolaDN` 2d (`clib2d.rs:394-413`, `ElCLib.cxx:1137-1158`).
+    /// `N < 1` returns a zero vector instead of the OCCT throw.
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec2d {
+        if n < 1 { return GpVec2d::zero(); }
+        clib2d::hyperbola_dn_ax22d(u, &self.pos.pos, self.pos.major_radius, self.pos.minor_radius, n)
     }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
