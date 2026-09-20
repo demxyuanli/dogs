@@ -18,8 +18,9 @@
 //! * **P-curves** — [`AlgoTools::make_pcurve`] / [`AlgoTools2D::edge_to_face`]
 //!   build the edge→face UV curve by delegating to
 //!   [`crate::pcurve_full::make_pcurve_full`];
-//!   [`AlgoTools2D::adjust_pcurve_on_surf`] brings a pcurve inside the face UV
-//!   bounds via [`crate::pcurve_full::trim_pcurve_to_face`]
+//!   [`AlgoTools2D::adjust_pcurve_on_surf`] is the faithful
+//!   `BOPTools_AlgoTools2D::AdjustPCurveOnSurf` (`BOPTools_AlgoTools2D.cxx:247-400`):
+//!   a whole-period translation of the pcurve, no trimming
 //!   (`AdjustPCurveOnSurf`);
 //! * **Surface normal** — [`AlgoTools::get_normal_to_surface`] computes the
 //!   unit normal of a surface at `(u, v)` (`GetNormalToSurface`);

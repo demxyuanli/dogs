@@ -152,20 +152,145 @@ impl AlgoTools2D {
         AlgoTools::make_pcurve(edge, face)
     }
 
-    /// Bring `curve` inside the UV bounds of `face`
-    /// (`BOPTools_AlgoTools2D::AdjustPCurveOnSurf`).
+    /// `BOPTools_AlgoTools2D::AdjustPCurveOnSurf`
+    /// (`BOPTools_AlgoTools2D.cxx:247-400`): shift `curve` by whole periods of
+    /// the surface so that the point at the **middle of the edge's range**
+    /// `[first, last]` (OCCT's `aT = 0.5*(aFirst+aLast)`, *not* the pcurve's own
+    /// range — a `Geom2d_Line` may declare an infinite one) lies inside the
+    /// face's UV bounds.
     ///
-    /// Periodic dimensions are shifted by whole periods so the curve midpoint
-    /// lands in range; a non-periodic dimension that still exits the bounds is
-    /// trimmed to the in-bounds parameter subrange. Delegates to
-    /// [`crate::pcurve_full::trim_pcurve_to_face`].
+    /// OCCT never trims the pcurve here: the result either is the same curve or
+    /// the same curve translated by `(du, dv)` (`cxx:389-399`). The pieces are,
+    /// in order:
+    /// * a whole-period shift of `u2`/`v2` onto the bounds (`cxx:273-344`),
+    ///   including the cylinder special case `dFi = MaxToleranceEdge(face)/R`
+    ///   and the `(VMax - VMin) < aVPeriod` tie-break for `dv`;
+    /// * a `BRepClass_FaceClassifier` cross-check of `(u2 + du, v2 + dv)` for
+    ///   surfaces whose period is narrower than the face range
+    ///   (`cxx:346-387`), which may flip `du`/`dv` by one more period;
+    /// * the translation itself (`cxx:388-399`).
+    ///
+    /// The classifier here is the port's [`crate::fclass2d::FClass2d`]; when it
+    /// cannot be built (a degenerate face) the cross-check is skipped, which
+    /// leaves `du`/`dv` as the first stage computed them.
     pub fn adjust_pcurve_on_surf(
         curve: &Arc<dyn Curve2d>,
         face: &Face,
-        tol: f64,
+        first: f64,
+        last: f64,
+        _tol: f64,
     ) -> Result<Arc<dyn Curve2d>, String> {
-        pcurve_full::trim_pcurve_to_face(curve, face, tol)
+        use crate::fclass2d::{FaceState, FClass2d};
+
+        let surf = crate::brep_tool::BRepTool::face_surface(face)
+            .ok_or("AdjustPCurveOnSurf: face has no surface")?;
+        let (umin, umax, vmin, vmax) = crate::brep_tool::BRepTool::uv_bounds(face);
+        let u_periodic = surf.is_u_periodic();
+        let v_periodic = surf.is_v_periodic();
+        let u_period = if u_periodic { surf.u_period() } else { 0.0 };
+        let v_period = if v_periodic { surf.v_period() } else { 0.0 };
+        let a_delta = occt_core::precision::PCONFUSION;
+
+        let a_t = 0.5 * (first + last);
+        let p = curve.d0(a_t);
+        let (mut u2, mut v2) = (p.x(), p.y());
+
+        // du (`cxx:273-315`)
+        let mut du = 0.0;
+        if u_periodic && u_period > 0.0 {
+            if (u2 - umin).abs() < a_delta {
+                u2 = umin;
+            } else if (u2 - umin - u_period).abs() < a_delta {
+                u2 = umin + u_period;
+            }
+            let (nu2, ndu) =
+                crate::geom_int::adjust_periodic(u2, umin, umax, u_period, 0.0);
+            u2 = nu2;
+            du = ndu;
+            if du == 0.0 {
+                if let Some(radius) = cylinder_radius(surf.as_ref()) {
+                    let a_tol = max_tolerance_edge(face);
+                    let mut d_fi = a_tol / radius;
+                    if d_fi < a_delta {
+                        d_fi = a_delta;
+                    }
+                    let min_cond = umin - u2 > d_fi;
+                    let max_cond = u2 - umax > d_fi;
+                    if min_cond || max_cond {
+                        du = if min_cond { u_period } else { -u_period };
+                    }
+                }
+            }
+        }
+
+        // dv (`cxx:317-344`)
+        let mut dv = 0.0;
+        if v_periodic && v_period > 0.0 {
+            let min_cond = vmin - v2 > a_delta;
+            let max_cond = v2 - vmax > a_delta;
+            if min_cond || max_cond {
+                dv = if min_cond { v_period } else { -v_period };
+            }
+            if (vmax - vmin < v_period) && dv != 0.0 {
+                let v_mid = 0.5 * (vmin + vmax);
+                let d_vm = (v2 - v_mid).abs();
+                let d_vr = (v2 + dv - v_mid).abs();
+                if d_vm < d_vr {
+                    dv = 0.0;
+                }
+            }
+        }
+
+        // Classifier cross-check (`cxx:346-387`)
+        if let Ok(cl) = FClass2d::new(face, a_delta) {
+            if u_periodic && u_period > 0.0 && (umax - umin - 2.0 * a_delta) > u_period {
+                let u = u2 + du;
+                if u > umin + a_delta + u_period || u < umax - a_delta - u_period {
+                    if cl.perform(GpPnt2d::new(u, v2 + dv)) == FaceState::Out {
+                        du += if u > umin + a_delta + u_period {
+                            -u_period
+                        } else {
+                            u_period
+                        };
+                    }
+                }
+            }
+            if v_periodic && v_period > 0.0 && (vmax - vmin - 2.0 * a_delta) > v_period {
+                let u = u2 + du;
+                let v = v2 + dv;
+                if v > vmin + a_delta + v_period || v < vmax - a_delta - v_period {
+                    if cl.perform(GpPnt2d::new(u, v)) == FaceState::Out {
+                        dv += if v > vmin + a_delta + v_period {
+                            -v_period
+                        } else {
+                            v_period
+                        };
+                    }
+                }
+            }
+        }
+
+        if du == 0.0 && dv == 0.0 {
+            return Ok(curve.clone());
+        }
+        let mut tr = occt_core::gp::GpTrsf2d::identity();
+        tr.set_translation_vec(&occt_core::gp::GpVec2d::new(du, dv));
+        Ok(Arc::from(curve.transformed(&tr)))
     }
+}
+
+/// `BRep_Tool::MaxTolerance(face, TopAbs_EDGE)`.
+fn max_tolerance_edge(face: &Face) -> f64 {
+    crate::topo_tools_full::edges_of(&face.0)
+        .iter()
+        .map(|e| crate::brep_tool::BRepTool::edge_tolerance(e))
+        .fold(0.0f64, f64::max)
+}
+
+/// The radius of a cylindrical surface, for the `dFi = aTol / aR` branch of
+/// `AdjustPCurveOnSurf` (`cxx:294-313`).
+fn cylinder_radius(surf: &dyn Surface) -> Option<f64> {
+    surf.gp_cylinder().map(|c| c.radius())
 }
 
 /// Shape-set utilities mirroring `BOPTools_Set`.

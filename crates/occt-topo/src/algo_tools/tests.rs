@@ -122,7 +122,9 @@ use super::*;
         assert!((q0.x() - 0.0).abs() < 1e-6 && (q0.y() - 0.0).abs() < 1e-6, "start {:?}", q0);
 
         // Adjusting keeps the pcurve inside the face UV bounds.
-        let adj = AlgoTools2D::adjust_pcurve_on_surf(&pc, face, 1e-7).expect("adjusted");
+        let (e_first, e_last) = BRepTool::edge_parameters(edge);
+        let adj = AlgoTools2D::adjust_pcurve_on_surf(&pc, face, e_first, e_last, 1e-7)
+            .expect("adjusted");
         let (umin, umax, vmin, vmax) = BRepTool::uv_bounds(face);
         for i in 0..=8 {
             let q = adj.d0(i as f64 / 8.0);

@@ -238,6 +238,14 @@ pub(super) fn v_period(s: &dyn Surface) -> f64 {
 /// For periodic surface dimensions (the `u` of cylinder/cone/sphere/torus and
 /// the `v` of a torus) the curve is translated by whole periods so its midpoint
 /// lies in range. If part of the curve still leaves a non-periodic bounded
+/// **UNPORTED (A15/T-51 余项)**: OCCT has no trimming step on this position.
+/// `BOPTools_AlgoTools2D::AdjustPCurveOnSurf` (`BOPTools_AlgoTools2D.cxx:247-400`)
+/// only translates the pcurve by whole surface periods and leaves its range
+/// alone; the faithful port is
+/// [`crate::algo_tools::AlgoTools2D::adjust_pcurve_on_surf`], which
+/// `pave_blocks/p01.rs` now calls. This trim helper is kept only as a utility for
+/// callers that explicitly want the pcurve clipped to the face rectangle; do not
+/// use it in an `AdjustPCurveOnFace` position.
 /// dimension, it is trimmed to the in-bounds parameter subrange.
 pub fn trim_pcurve_to_face(curve: &Arc<dyn Curve2d>, face: &Face, _tol: f64) -> Result<Arc<dyn Curve2d>, String> {
     let (umin, umax, vmin, vmax) = face_uv_bounds(face);

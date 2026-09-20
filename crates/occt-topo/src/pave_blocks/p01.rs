@@ -565,9 +565,10 @@ pub(super) fn update_vertices(edge: &Edge, face: &Face, pc: &Arc<dyn Curve2d>) {
 /// Deepened [`make_pcurves`] — build the pcurve of every edge that needs one
 /// on each adjacent face, then run the three OCCT post-processing steps:
 ///
-/// * **Trim** — [`pcurve_full::trim_pcurve_to_face`] brings the pcurve inside
-///   the face UV rectangle (whole-period shifts on periodic dimensions, a
-///   clipped B-spline otherwise).
+/// * **Adjust** — [`crate::algo_tools::AlgoTools2D::adjust_pcurve_on_surf`]
+///   (`BOPTools_AlgoTools2D::AdjustPCurveOnSurf`, `BOPTools_AlgoTools2D.cxx:247-400`)
+///   shifts the pcurve by whole surface periods so its mid-range point lands
+///   inside the face UV bounds. OCCT does not trim the pcurve here.
 /// * **Align** — the pcurve endpoints are compared against the surface
 ///   projection of the edge's 3D endpoints; when the 2D deviation exceeds the
 ///   tolerance the pcurve is re-fitted so the endpoints land on the projected
@@ -638,11 +639,23 @@ pub fn make_pcurves_full<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                 continue;
             }
         };
-        let pc = match pcurve_full::trim_pcurve_to_face(&pc, &face, face_tol) {
+        // `BOPTools_AlgoTools::MakePCurve` (`BOPTools_AlgoTools.cxx:1689-1713`):
+        // `BOPTools_AlgoTools2D::AdjustPCurveOnFace` shifts the pcurve by whole
+        // surface periods; it never trims it. OCCT picks the overload by the 3D
+        // curve: a periodic curve passes `[aT1, aT2]` (the edge's range on the
+        // surface) directly, an open one passes the trimmed curve's own range.
+        let (edge_first, edge_last) = BRepTool::edge_parameters(&edge);
+        let pc = match crate::algo_tools::AlgoTools2D::adjust_pcurve_on_surf(
+            &pc,
+            &face,
+            edge_first,
+            edge_last,
+            face_tol,
+        ) {
             Ok(pc) => pc,
             Err(e) => {
                 let msg = format!(
-                    "make_pcurves_full: trim failed for edge {edge_idx} on face {face_idx}: {e}"
+                    "make_pcurves_full: AdjustPCurveOnFace failed for edge {edge_idx} on face {face_idx}: {e}"
                 );
                 f.add_warning(msg);
                 continue;
