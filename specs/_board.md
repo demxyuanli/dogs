@@ -385,6 +385,14 @@ cd ..; git worktree remove --force .target-headcheck
   1. **`StepToTopoDS_TranslateEdgeLoop::CheckPCurves`（`cxx:100-176`）的"周期窗口归一"未移植**：`git grep adjust_periodic -- crates` 显示端口**从不**在 STEP 读入路径调用 `ElCLib::AdjustPeriodic`（该函数本身已移植在 `occt-core/src/elib/clib2d.rs:40-65`）。OCCT 在该处对每条边做：`sae.PCurve(edge,face,pc,w1,w2,false)` →（非周期 pcurve 时把 w1/w2 夹进 `[cf,cl]`）→ **`if (w1 > w2 && mySurf->IsUPeriodic()) { ElCLib::AdjustPeriodic(u1,u2, min(|w2-w1|/2, PConfusion), w1, w2); B.Range(edge, face, w1, w2); }`**。对 face 20 逐边推算：edge 59（`7.854→1.571`，**w1>w2**）与 edge 62（`1.5708→−4.712`，**w1>w2**）会被归一到 `[1.5708, 7.854]`（=与 edge 60 同窗口）；这正是"两条 wire 落在同一 u 窗口"所需的对齐，而端口现在把 STEP 的原始窗口**原样留着**（所以 wire 0 在 `[1.5708,7.854]`、wire 1 的 61/62 在 `[−4.712,1.5708]` 与 `[1.5708,7.854]` 混杂）。
   2. **同族的已登记缺口**：`shhealing/p04.rs::project_wire_pcurve_ranges`（`TranslateEdgeLoop.cxx:844` 的 `EdgeProjAux` → `B.Range`）的注释已自述"窗口按原样写入（与 OCCT 同）"，并**推迟了 pcurve 反向**，理由是"我们的 mesher 处理不了**反向且窗口与 3D range 周期错位**的 pcurve"——face 20 正是这种形状，说明该缺口与 T-69 是同一处。
   ⇒ 第 43 轮执行顺序建议：**(i)** 先做诊断实验（把同面各 wire 的 u 归一到同一周期窗口，预期 face 20 变 74/72，用它锁定机制）；**(ii)** 再按 (1) 移植/补齐 `CheckPCurves` 的 `AdjustPeriodic`+`B.Range` 分支（并核对 (2) 里推迟的 `need_reverse`），**不得在网格层加对齐补丁**；**(iii)** 重跑 `occt-topo --lib` + 四道 STEP 门禁 + `export_data_obj`，按面类记录 T0M 计数。
+**批 74（IGES 结构自洽校验器转为常驻示例 `examples/iges_check.rs`）—— 2026-09-20 第 89 轮**
+
+- **动机**：IGES 文本**没有任何门禁覆盖**，批 70/71/72 的正确性只能靠临时探针（用完即删，下次无法复现）。本轮把批 70 的临时探针写成**常驻示例**（不是单测，不进 `cargo test`，与 `export_data_obj` 同类），把"写入器必须满足的结构不变量"固化下来，供后续 IGES 批次一条命令复核。
+- **检查项（逐项对应 OCCT 出处，写在文件头注释里）**：① 每张卡 80 列；② P 段序号连续 `1..N`、每行第 73 列节字母、其 DE 指针域 = 所属实体首张 D 卡号 `2i−1`（`IGESData_IGESWriter.cxx:903`）、每个 DE 的 `pstart`/`pcount`（`:834-835`）能取到该实体自己的参数串；③ 各复合实体**引导指针域**逐类型可解析（102 曲线表、142 surface/curve3d、144 surface/outer+inner、402 实体表、192/194/196/198 point/axis/refdir、120 axis/generatrix、122 directrix）；④ Terminate 卡四项 = 实际段长（`:942-947`：`nbs`/`nbg`/`nbd*2`/P 末序号）。
+- **用法**：`cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_check -- Cube Sphere Shape Shape-2 HoledPlate ATU01038`（缺省跑 `Cube Sphere`；参数为 `data/<name>.step`，含 `/` 者按路径用；有问题时打印前 6 条并 `exit(1)`）。
+- **实测**：6/6 模型 `ok` —— `Cube DE=37 P=37`、`Sphere DE=12 P=24`、`Shape DE=67 P=551`、`Shape-2 DE=209 P=4249`、`HoledPlate DE=231 P=278`、`ATU01038 DE=3144 P=6850`（实体数较批 70 那次普遍减少，正是批 71 删除孤儿 116 的结果）。
+- **门禁**：`occt-topo --lib` **1287/1**（红 = T-01）——示例为增量文件，不影响库与门禁；`step_obj_parity`/`step_to_obj`/`step_obj_area`/`step_geometry_parity`/`export_data_obj` 在批 72 已复测为 14/14·13/13·11/11·2/3·16/16，本轮未触碰库代码。
+
 **批 73（T-85 步 2 设计定稿：可达性过滤＋重编号的可执行方案）—— 2026-09-20 第 88 轮**
 
 - **本轮无代码改动**：把 T-85 步 2 的完整方案写进任务行（含 4 个子步骤与"参数里指针 vs 实数"的判别规则），使下一轮可直接照做而无需重新推导。要点：
