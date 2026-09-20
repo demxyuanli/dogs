@@ -2,21 +2,16 @@
 //!
 //! Point and derivative formulas are a port of `Geom_OffsetCurveUtils.pxx`:
 //! `CalculateD0` (`:47-63`), `CalculateD1` (`:74-116`), `CalculateD2` (`:129-201`),
-//! `AdjustDerivative` (`:322-390`).
+//! `CalculateD3` (`:215-306`), `AdjustDerivative` (`:322-390`).
 //! The offset point moves along the **local normal** `Ndir = D1 ^ Direction`
 //! (not along `Direction`): `P(u) = p(u) + Offset * Ndir / ||Ndir||`.
-//! `EvalD0/EvalD1/EvalD2` wrappers mirror `Geom_OffsetCurve.cxx:261-336`.
+//! `EvalD0/EvalD1/EvalD2/EvalD3/EvalDN` wrappers mirror
+//! `Geom_OffsetCurve.cxx:261-410`.
 //!
 //! UNPORTED (documented deviations, no OCCT invention added):
-//! - `Geom_OffsetCurve::EvalD3` (`cxx:342-380` → `EvaluateD3` `pxx:494-529` →
-//!   `CalculateD3` `pxx:203-307`) is not ported, so this class keeps the
-//!   `Curve::d3` default (`D3 = 0`). Consequently `Geom_OffsetCurve::EvalDN`
-//!   (`cxx:386-410`, which forwards orders 1/2/3 to `EvalD1`/`EvalD2`/`EvalD3`
-//!   and everything else to the basis) is not ported either; the `Curve` trait
-//!   default covers orders 1..3. Nothing in this crate consumes an offset curve's
-//!   D3 yet (task T-63).
-//! - `AdjustDerivative` consumes basis `EvalDN` orders up to 5. `Curve::eval_dn`
-//!   is faithful for B-spline (`BSplCLib::DN`, `bspline_curve.rs:159`) and for
+//! - `AdjustDerivative` consumes basis `EvalDN` orders up to 5 (`EvalD3` feeds it
+//!   `EvalDN(U, 4)`, `pxx:510`). `Curve::eval_dn` is faithful for B-spline
+//!   (`BSplCLib::DN`, `bspline_curve.rs:159`) and for
 //!   line/circle/ellipse/hyperbola/parabola (`ElCLib::*DN`, `clib.rs`); the
 //!   remaining bases still fall back to the trait default (zero above order 3) —
 //!   `Geom_BezierCurve::EvalDN` (`Geom_BezierCurve.cxx:601-617`) and
@@ -173,6 +168,96 @@ impl GeomOffsetCurve {
         *d2 = d2.added(&GpVec::from_xyz(&d2ndir));
         true
     }
+
+    /// `Geom_OffsetCurveUtils::CalculateD3` (`Geom_OffsetCurveUtils.pxx:215-306`).
+    /// `d4` is the basis fourth derivative (`EvaluateD3` passes `EvalDN(U, 4)`,
+    /// `pxx:510`). The `theIsDirChange` arm reverses `D3` before adding the
+    /// normal term (`pxx:301-305`), mirroring `CalculateD2`'s `D2` handling.
+    #[allow(clippy::too_many_arguments)]
+    fn calculate_d3(
+        &self,
+        value: &mut GpPnt,
+        d1: &mut GpVec,
+        d2: &mut GpVec,
+        d3: &mut GpVec,
+        d4: &GpVec,
+        is_dir_change: bool,
+        tolerance: f64,
+    ) -> bool {
+        let mut ndir = d1.xyz().crossed(self.direction.xyz());
+        let mut dndir = d2.xyz().crossed(self.direction.xyz());
+        let mut d2ndir = d3.xyz().crossed(self.direction.xyz());
+        let mut d3ndir = d4.xyz().crossed(self.direction.xyz());
+        let r2 = ndir.square_modulus();
+        let r = r2.sqrt();
+        let r3 = r2 * r;
+        let r4 = r2 * r2;
+        let r5 = r3 * r2;
+        let r6 = r3 * r3;
+        let r7 = r5 * r2;
+        let dr = ndir.dot(&dndir);
+        let d2r = ndir.dot(&d2ndir) + dndir.dot(&dndir);
+        let d3r = ndir.dot(&d3ndir) + 3.0 * dndir.dot(&d2ndir);
+
+        if r7 <= tolerance {
+            if r6 <= tolerance {
+                return false;
+            }
+            // We try another computation but the stability is not very good
+            // dixit ISG.
+            // V3 = P"' (U) :
+            d3ndir = d3ndir.subtracted(&d2ndir.multiplied(3.0 * dr / r2));
+            d3ndir = d3ndir.subtracted(&dndir.multiplied(3.0 * ((d2r / r2) + (dr * dr / r4))));
+            d3ndir = d3ndir.added(&ndir.multiplied(
+                6.0 * dr * dr / r4 + 6.0 * dr * d2r / r4 - 15.0 * dr * dr * dr / r6 - d3r,
+            ));
+            d3ndir = d3ndir.multiplied(self.offset / r);
+
+            // V2 = P" (U) :
+            d2ndir = d2ndir.subtracted(&dndir.multiplied(2.0 * dr / r2));
+            d2ndir = d2ndir.subtracted(&ndir.multiplied((3.0 * dr * dr / r4) - (d2r / r2)));
+            d2ndir = d2ndir.multiplied(self.offset / r);
+
+            // V1 = P' (U) :
+            dndir = dndir.multiplied(r);
+            dndir = dndir.subtracted(&ndir.multiplied(dr / r));
+            dndir = dndir.multiplied(self.offset / r2);
+        } else {
+            // Same computation as IICURV in EUCLID-IS because the stability is better.
+            // V3 = P"' (U) :
+            d3ndir = d3ndir.divided(r);
+            d3ndir = d3ndir.subtracted(&d2ndir.multiplied(3.0 * dr / r3));
+            d3ndir = d3ndir.subtracted(&dndir.multiplied(3.0 * ((d2r / r3) + (dr * dr) / r5)));
+            d3ndir = d3ndir.added(&ndir.multiplied(
+                6.0 * dr * dr / r5 + 6.0 * dr * d2r / r5 - 15.0 * dr * dr * dr / r7 - d3r,
+            ));
+            d3ndir = d3ndir.multiplied(self.offset);
+
+            // V2 = P" (U) :
+            d2ndir = d2ndir.divided(r);
+            d2ndir = d2ndir.subtracted(&dndir.multiplied(2.0 * dr / r3));
+            d2ndir = d2ndir.subtracted(&ndir.multiplied((3.0 * dr * dr / r5) - (d2r / r3)));
+            d2ndir = d2ndir.multiplied(self.offset);
+
+            // V1 = P' (U) :
+            dndir = dndir.multiplied(self.offset / r);
+            dndir = dndir.subtracted(&ndir.multiplied(self.offset * dr / r3));
+        }
+
+        ndir = ndir.multiplied(self.offset / r);
+        // P(u)
+        *value = GpPnt::from_xyz(&value.coord.added(&ndir));
+        // P'(u) :
+        *d1 = d1.added(&GpVec::from_xyz(&dndir));
+        // P"(u) :
+        *d2 = d2.added(&GpVec::from_xyz(&d2ndir));
+        // P"'(u) :
+        if is_dir_change {
+            *d3 = d3.reversed();
+        }
+        *d3 = d3.added(&GpVec::from_xyz(&d3ndir));
+        true
+    }
 }
 
 /// `Geom_OffsetCurveUtils::AdjustDerivative` (`Geom_OffsetCurveUtils.pxx:322-390`):
@@ -305,6 +390,60 @@ impl Curve for GeomOffsetCurve {
 
     fn first_parameter(&self) -> f64 { self.basis.first_parameter() }
     fn last_parameter(&self) -> f64 { self.basis.last_parameter() }
+
+    /// `Geom_OffsetCurve::EvalD3` (`Geom_OffsetCurve.cxx:342-380`) →
+    /// `Geom_OffsetCurveUtils::EvaluateD3` (`pxx:495-529`) → [`Self::calculate_d3`].
+    /// The basis fourth derivative is `EvalDN(U, 4)` (`pxx:510`) and feeds the
+    /// singular arm's `AdjustDerivative(..., 4, ...)`.
+    fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
+        let (p, d1, d2, d3) = self.basis.d3(u);
+        let mut a_d1 = d1;
+        let mut a_d2 = d2;
+        let mut a_d3 = d3;
+        let mut a_d4 = self.basis.eval_dn(u, 4);
+        let mut is_direction_change = false;
+        if a_d1.square_magnitude() <= GP_RESOLUTION {
+            // `cxx:357-366`: `AdjustDerivative(theBasisCurve, 4, ...)`.
+            let _ = adjust_derivative(
+                self.basis.as_ref(),
+                4,
+                u,
+                &mut a_d1,
+                &mut a_d2,
+                &mut a_d3,
+                &mut a_d4,
+                &mut is_direction_change,
+            );
+        }
+        let mut value = p;
+        if !self.calculate_d3(
+            &mut value,
+            &mut a_d1,
+            &mut a_d2,
+            &mut a_d3,
+            &a_d4,
+            is_direction_change,
+            GP_RESOLUTION,
+        ) {
+            // `cxx:379` throws `Geom_UndefinedDerivative`.
+            return (p, d1, d2, d3);
+        }
+        (value, a_d1, a_d2, a_d3)
+    }
+
+    /// `Geom_OffsetCurve::EvalDN` (`Geom_OffsetCurve.cxx:386-410`): orders 1..3
+    /// come from `EvalD1`/`EvalD2`/`EvalD3`, **every higher order is forwarded to
+    /// the basis curve** (`cxx:409`). `N < 1` returns a zero vector instead of
+    /// the OCCT throw (the `Curve::eval_dn` convention, `curve.rs:12-25`).
+    fn eval_dn(&self, u: f64, n: i32) -> GpVec {
+        match n {
+            i32::MIN..=0 => GpVec::zero(),
+            1 => self.d1(u).1,
+            2 => self.d2(u).2,
+            3 => self.d3(u).3,
+            _ => self.basis.eval_dn(u, n),
+        }
+    }
     /// `Geom_OffsetCurve::Continuity` (`Geom_OffsetCurve.cxx:229-257`).
     fn continuity(&self) -> u8 { offset_continuity(self.basis.continuity()) }
 
