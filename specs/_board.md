@@ -149,7 +149,8 @@ cd ..; git worktree remove --force .target-headcheck
 | T-47 | A11 | `bop_builder_dispatch.rs:473-601`、`bop_draft_solid_occt.rs:41,49`、`edge_edge/p01.rs:368-371` | 质心规则 / `solid−face` 原样返回 / 丢"顶点<3"的面 / 采样解当补集 → `BOPAlgo_Builder_3.cxx:329` 等对应控制流 | 4 | pending |
 | T-48 | A12 | `brepfeat/p01.rs:109,419,361,508`、`feature.rs:197` | 体积解析覆盖 / 网格夹具冒充 `BRepPrimAPI_MakeCylinder` / `clamp(16,64)` → `BRepFeat_MakeDPrism/MakeRevol`、`LocOpe_Revol` | 8 | pending |
 | T-49 | A13 | `occt-topo/src/wireframe.rs:392-415` | 未裁剪 UV 窗口规则网格 → `BRepMesh_FaceDiscret` 按 pcurve 边界离散 | 5 | **已尝试 → 回退，被 T-68 阻塞**（2026-09-20）：`face_to_triangles` 已改为委托 `incremental_mesh_to_shape_mesh`、并删掉 `build_shape_mesh_wireframe`/`wireframe_face_triangulation`/`WIREFRAME_FALLBACK_RATIO_MAX` 与 `discretize_face` 的两处回退（编译 exit 0，无递归），但 `occt-topo --lib` 由 1293/1 变 **1284/10**（9 个新失败全部落在"面的边界结构缺失"上，见 T-68）⇒ 按失配即停回退，基线恢复 |
-| T-68 | **A13/A18 前置（新）** | `occt-topo/src/primitives.rs`（sphere/torus）、`model_builder/*`、构造/模式类（`brep_pattern`、detach/copy 路径） | 忠实管线要求面具备**边界 wire + pcurve**；实测（临时探针，已删）：`sphere` faces=1 **wires/face=[0]** → 网格化失败 `DelaunayNodeInsertionMeshAlgo::perform: face 0 has no boundary UV points`；`torus` 同样 **[0]** → 失败；`cylinder` [1,1,1] → OK 52/48、`cone` [1,1] → OK 26/24、`box` ×6 [1] → OK 24/12。另 `wireframe::tests::face_with_hole_triangulates_ring_area` 变成"ring area 4 vs expected 3.8037（内环未生效）" ⇒ 内环/内 wire 也没进模型 | 5 前置 | **球面 done**（2026-09-20，T-68 步 1+2）；**环面/带孔内环待做** |
+| T-68 | **A13/A18 前置（新）** | `occt-topo/src/primitives.rs`（sphere/torus）、`model_builder/*`、构造/模式类（`brep_pattern`、detach/copy 路径） | 忠实管线要求面具备**边界 wire + pcurve**；实测（临时探针，已删）：`sphere` faces=1 **wires/face=[0]** → 网格化失败 `DelaunayNodeInsertionMeshAlgo::perform: face 0 has no boundary UV points`；`torus` 同样 **[0]** → 失败；`cylinder` [1,1,1] → OK 52/48、`cone` [1,1] → OK 26/24、`box` ×6 [1] → OK 24/12。另 `wireframe::tests::face_with_hole_triangulates_ring_area` 变成"ring area 4 vs expected 3.8037（内环未生效）" ⇒ 内环/内 wire 也没进模型 | 5 前置 | **球面 done**（步骤 1+2）；**步 3 结论（第九轮）**：Delaunay 层逐行核对**全部忠实**，缺口根因在其上游"重叠共线前沿链" ⇒ 移出本卡、立项 **T-69**；环面/带孔内环待做 |
+| T-69 | **T-68 步 3 派生（新）** | `occt-topo/src/meshing/node_insertion.rs`（`collect_boundary_uv`/`init_data_structure`/`finish_mesh`）、`model_builder/p01.rs`（`add_wire`/`visit`）、`shape_tool.rs`（`visit_face`） | 带孔面（`wires=2`）的前沿链里存在**沿同一直线重叠**的链接（实测两端点各差 ~0.05、v 完全相同）⇒ `meshPolygon` 修正循环被 `Glued` 大批删段、交出拼接多边形 ⇒ `decomposeSimplePolygon` **正确地**判"无耳"并清空 ⇒ 该面 0 三角（166 面）。需与 OCCT `BRepMesh_NodeInsertionMeshAlgo`/`BRepMesh_ShapeTool`/`BRepMesh_ModelBuilder` 逐行对齐，找出"重复/偏移插入"的来源 | 5 前置 | pending（T-68 步 3 的正解） |
 
 **T-68 执行方案（2026-09-20 现场核实，供下一轮直接照做）**
 
@@ -336,6 +337,20 @@ cd ..; git worktree remove --force .target-headcheck
 - **推论**：A25 的"删邻三角形"补丁在"外环+内环"（`wires=2`）配置下会把整个 2D 网格删空 ⇒ 这就是 T0M 166 面缺口的直接原因，也解释了为何 `frame_with_hole` 的 ring area 变成整盘（4.0）。**A25 与 T-68 的这个阻塞点是同一处代码。**
 - **修法（下一轮，对着 `.cxx` 做）**：按 `BRepMesh_Delaun.cxx`（`frontierAdjust` / 多边形分解 / `meshLeftPolygonOf`）**去掉删除逻辑**，改为 OCCT 的 `AddLink`+`addTriangle` + 失败即抛出（端口用 `Err`/跳过该多边形，等价于 OCCT 的空 catch ⇒ 该面无网格）；随后重放 A13/A18（`face_to_triangles` → 忠实管线）与 T-55 的回退删除，并复验 T0M 的 `step_obj_parity`（届时若 OCCT 本身也不网格化那些面，bbox 应与参考一致而非变短——这正是本轮结论要验证的下一步）。
 - **验证**：本轮**未改行为代码**；`occt-topo --lib` **1293/1**，工作树干净、插桩 grep 复核 0 残留。
+
+**T-68 第九轮（2026-09-20）：Delaunay 层逐行核对全部忠实；`NO_EAR` 清空来自"拼接多边形 + 真实重叠共线前沿链"，根因在 Delaunay 之外 ⇒ 立项 T-69；A25 的"删除补丁致清空"结论被实测推翻**
+
+- **分支级计数（临时探针，已删）**：T0M 上 `decompose_simple_polygon` 共 **975 次 `NO_EAR`**（`used_link_id == 0` → `thePolygon.Clear()`），而这些失败里 **`skip_filter = 0`、`isect = 0`**——没有任何候选是被"角度过滤"或"相交测试"拒掉的；**全部**落在 `anAbsDist < Precision`（`skip_prec`）或 `aDist < 0.`（`skip_neg`）。两类：
+  - **负面积（CW）**：`poly_area = -1032.496` / `-1.7226`，`skip_neg=3`（三个 pivot 的叉积全负）；
+  - **零面积退化**：`poly_area = 0.0`，`skip_prec=6..7`，所有 pivot 的 `dist = -0.0`、`angle = π`（全部落在参考边反向射线上）。
+- **链一致性检查（决定性）**：`NO_EAR#2..#5` 的多边形起于节点 84、止于 42（首≠尾）；**`NO_EAR#200` 的入参是闭合的 26 链**（`incoming_chain = (20,19),(19,18),(18,17)…`，`self_closed=true`），修正后变成 `[19, 26, 25, 24, …, 20]`，链在索引 1 处断成 `(20,19) | (1,26)`（`breaks=[(1,19,1)]`）⇒ 修正循环把一个**不成环的拼接多边形**交给了分解器，分解器"判无耳并清空"是**正确的**。
+- **修正循环事件跟踪**：所有命中都是 **`Glued`**，且**几何上真实**：命中两端 4 点共线且线段重叠——例 `(20.3780056797, 25.6094339642)→(19.4517326942, 25.6094339642)` 对 `(19.5024277029, 25.6094339642)→(20.4350375644, 25.6094339642)`，两对端点各差 ~0.05、**v 完全相同**。
+- **重复点普查**：这些面 `exact_pairs = 0`（无同位置节点，`add_node` 的 `index_of_node` 合并正常）⇒ 不是"重复插点"，而是**前沿链本身沿同一条直线重叠**。
+- **逐行核对（本轮，全部一致，行号取 OCCT 原文）**：`meshPolygon`(1818-2076)↔`mesh_polygon`、`processLoop`(1756-1776)↔`process_loop`（`Prepend` 倒序遍历后仍是升序，与端口 `polygon[link_from + i]` 的 1-based 等价性逐项核对）、`createAndReplacePolygonLink`(1783-1814)、`decomposeSimplePolygon` 头/耳循环/尾(2120-2314)、`getOrientedNodes`(1735-1749)、`checkIntersection`(1324-1372)、`findNextPolygonLink`(1206-1316)、`meshLeftPolygonOf`(1066-1196)、`classifyPoint`(516-552)、`IntLinLin`/`IntSegSeg`(302-461)、`AddLink`/`SubstituteLink`/`RemoveLink`(71-145，含 `myDelLinks` FIFO 复用)、`cleanupPolygon`(1404-1529)、`AngDeviation90Deg = π/2`(cxx:39-40)、`Precision = PConfusion`(cxx:43)。**Delaunay 层没有找到自创/偏差。**
+- **推翻上一轮结论（重要）**：第八轮把 T0M 缺口归因于 **A25 的自创"删邻三角形"补丁**（`p04.rs:346-375`）。本轮实测 `DELETE_NEIGHBOUR` 事件 **0 次**（该分支在 T0M 上从不触发），而 975 次清空全部由 `skip_prec`/`skip_neg` 触发 ⇒ **删除补丁不是 T0M 缺口的成因**。A25 仍是应修的自创项（按原卡处理），改它**不会**修好 T0M（这点直接决定 T-61 不再是 A13/A18/T-55/T-59 的前置）。
+- **T0M 缺口的直接机制（已闭环到可修点）**：带孔面（`wires=2`）的前沿链里有**重叠共线链接** → 修正循环 `Glued` 大批删段 → 交出拼接/开放多边形 → 分解器正确清空 → 该面 0 三角（166 面）。**来源在 Delaunay 之外**，故立项 **T-69**（`node_insertion.rs`/`model_builder`/`shape_tool` 的重复/偏移插入）。
+- **未决**：无 OCCT 运行时可对拍（`DRAWEXE` 因缺 DLL 无法启动，见 §9），故"OCCT 在同输入下是否也会 `Glued` 清空"无法实测；但本轮证明端口在这条路径上与 `.cxx` 逐行一致，且输入（重叠前沿链）本身可疑。
+- **验证**：本轮**未改行为代码**；`cargo check` exit 0；插桩与探针（`zz_probe_t0m6.rs`、`p04.rs` 全部 `[dbg-*]`）已 `git checkout` 还原 + `git grep` 复核 0 残留，工作树干净。**T-55 的逐面 UV 栅格回退仍然承重**，继续阻塞到 T-69 落地。
 
 ## 4. 决策与约束（不可违反）
 
