@@ -307,6 +307,16 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证**：`occt-topo --lib` **1293/1**、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` 2/3 —— 全部与基线一致。
 - **下一步（精确）**：定位 T0M 那 169 个面为何判 FAILURE（提示：单面探针 `IncrementalMesh::discretize_face` 已不再回退，可直接逐面统计并打印首个失败面的 surface/错误），这同时是 A13/A18 与 T-55 剩余部分的共同前置。
 
+**T-68 第六轮（2026-09-20）：T0M 缺口的根因锁定为"带孔面（2 wire）+ 非平面"的 Delaunay 空结果**
+
+- **方法**：在 `add_wire` 的 4 个 early-return 与 `triangulate_model_faces` 的 Delaunay 失败/空结果处临时插 `eprintln!`（6 处，全部已删并被 `git status` 复核为 0 残留），跑 T0M 全形状 `perform` 后按原因聚合。
+- **结果（决定性）**：
+  - `add_wire` **从未失败**（0 条记录）——面都有 wire（1772 面实测：1 wire 1463、2 wires 294、3 wires 15），原先怀疑的"缺 wire/坏 pcurve"不成立；
+  - 带回退时 `face_stats = 1769 / 1772`（3 面为 `REUSED`，正常跳过），**168 面走回退**：其中 **166 面是 `map_triangulation` 返回空（Delaunay 成功但产出 0 三角形）**，另 **2 面**（1691、1758）报 `DelaunayNodeInsertionMeshAlgo::perform: face N has an invalid discrete range`；
+  - 逐面 profile：**166 面的特征完全一致 —— `wires=2`（外环 + 内环 = 带孔面）且 `surface=Other`（非平面）**。
+- **结论**：T0M 的 bbox 缺口（删回退后短 0.33）**不是缺边界**，而是**带孔的非平面面**在 Delaunay 约束路径上产出空网格（与 `wireframe::tests::face_with_hole_triangulates_ring_area` 的"内环未生效"同源）。⇒ 修法应落在**内环作为约束的处理**（`model_builder` 把内 wire 交给面模型 + 约束 Delaunay 的孔洞多边形处理，参考 `BRepMesh_Delaun` 的 `meshLeftPolygonOf`/约束边路径），以及 2 例 `invalid discrete range` 的离散域校验。
+- **验证**：本轮**未改行为代码**（仅临时探针，已清零）；`occt-topo --lib` **1293/1**，工作树干净。
+
 ## 4. 决策与约束（不可违反）
 
 1. 改完先编译（`cargo check`，编译不过先修编译）。
