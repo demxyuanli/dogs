@@ -48,6 +48,13 @@ pub fn line_plane_intersection(l: &GpLin, pl: &GpPln) -> Option<(GpPnt, f64)> {
 }
 
 /// Intersection of circle with plane. Returns up to 2 points.
+///
+/// **UNPORTED**: `ElCLib` has no intersection functions; the faithful
+/// implementation is `IntAna_Quadric` / `GeomAPI_IntCS` (analytic circle–plane
+/// intersection), which this port does not have. The previous body returned
+/// `[center, C(π/2)]` for the coplanar case — two fabricated points that OCCT
+/// never produces (the coplanar case is the whole circle, i.e. **no isolated
+/// intersection points**; audit A10), so that branch now returns nothing.
 pub fn circle_plane_intersection(c: &GpCirc, pl: &GpPln) -> Vec<GpPnt> {
     let center = c.location();
     let normal = *pl.pos.direction().xyz();
@@ -56,8 +63,8 @@ pub fn circle_plane_intersection(c: &GpCirc, pl: &GpPln) -> Vec<GpPnt> {
     let d = normal.dot(&center.coord.subtracted(&p0.coord));
     if d.abs() > c.radius + 1e-12 { return vec![]; }
     if d.abs() < 1e-12 {
-        // Coplanar — full circle
-        return vec![center, clib::circle_value(c, std::f64::consts::FRAC_PI_2)];
+        // Coplanar: the whole circle lies in the plane — no isolated points.
+        return vec![];
     }
     // Circle plane intersects in 1 or 2 points
     let cos_phi = -d / c.radius;

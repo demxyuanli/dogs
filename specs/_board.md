@@ -146,7 +146,8 @@ cd ..; git worktree remove --force .target-headcheck
 | T-66 | A7 派生 | `occt-geom/src/extrema_cc/p02.rs:40-115` | 通用曲线–曲线**种子集**自创（均匀网格 + 局部极值 + 边界最优点）；OCCT `Extrema_GenExtCC::Perform` 用 `math_GlobOptMin`（仓内 `occt-math/globoptmin.rs` 已移植）+ `Extrema_ECC` 的 `math_FunctionSetRoot` 起点 | 2 后 | pending |
 | T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending |
 | T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | **done**（2026-09-20，7 处文件头全部改正 + 包内容已逐项核对） |
-| T-46 | A10 | `elib/surface_eval.rs:100,104`、`bnd/bsphere.rs:19-29`、`elib/intersect.rs:58-60`、`poly/make_loops.rs:234` | 静默默认值/凭空造值/只取首候选 → `ElSLib::SphereD2/TorusD2`、`Bnd_Sphere.cxx:73-96`、`Poly_MakeLoops.cxx:611-700` | 8 | pending |
+| T-46 | A10 | `elib/surface_eval.rs:100,104`、`bnd/bsphere.rs:19-29`、`elib/intersect.rs:58-60`、`poly/make_loops.rs:234` | 静默默认值/凭空造值/只取首候选 → `ElSLib::SphereD2/TorusD2`、`Bnd_Sphere.cxx:73-96`、`Poly_MakeLoops.cxx:611-700` | 8 | **◐ 3/4 done**（2026-09-20）：`surface_d2` 补球/环面非零二阶导；`bsphere` 补"被包含⇒整体替换"分支 + `distance` 改回"到球心"（面距另立 `distances`）；`circle_plane_intersection` 删凭空造点并标 `UNPORTED`（`ElCLib` 无求交，忠实件是 `IntAna_Quadric`/`GeomAPI_IntCS`）；`choose_left_way` 标 `UNPORTED` ⇒ **T-73** |
+| T-73 | **A10 派生（新）** | `occt-core/src/poly/make_loops.rs:234` `choose_left_way` | 只取首候选（`lst_ind_s[0]`）→ `Poly_MakeLoops.cxx:611-676`（3D 最小夹角）/`:688-700`（2D + `myRightWay`） | 8 后 | pending（前置：给 `MakeLoopsHelper` 补 `GetNormal`/`GetLastTangent`/结点坐标访问器与 `myRightWay`；当前该路径仅被自身测试调用） |
 | T-47 | A11 | `bop_builder_dispatch.rs:473-601`、`bop_draft_solid_occt.rs:41,49`、`edge_edge/p01.rs:368-371` | 质心规则 / `solid−face` 原样返回 / 丢"顶点<3"的面 / 采样解当补集 → `BOPAlgo_Builder_3.cxx:329` 等对应控制流 | 4 | pending |
 | T-48 | A12 | `brepfeat/p01.rs:109,419,361,508`、`feature.rs:197` | 体积解析覆盖 / 网格夹具冒充 `BRepPrimAPI_MakeCylinder` / `clamp(16,64)` → `BRepFeat_MakeDPrism/MakeRevol`、`LocOpe_Revol` | 8 | pending |
 | T-49 | A13 | `occt-topo/src/wireframe.rs:392-415` | 未裁剪 UV 窗口规则网格 → `BRepMesh_FaceDiscret` 按 pcurve 边界离散 | 5 | **已尝试 → 回退，被 T-68 阻塞**（2026-09-20）：`face_to_triangles` 已改为委托 `incremental_mesh_to_shape_mesh`、并删掉 `build_shape_mesh_wireframe`/`wireframe_face_triangulation`/`WIREFRAME_FALLBACK_RATIO_MAX` 与 `discretize_face` 的两处回退（编译 exit 0，无递归），但 `occt-topo --lib` 由 1293/1 变 **1284/10**（9 个新失败全部落在"面的边界结构缺失"上，见 T-68）⇒ 按失配即停回退，基线恢复 |
@@ -416,6 +417,16 @@ cd ..; git worktree remove --force .target-headcheck
   2. `GeomTrimmedCurve` 补 `gp_line`/`gp_ellipse`/`gp_hyperbola`/`gp_parabola` 转发（`GeomAdaptor_Curve::load` `cxx:252-254` 会解包 trimmed 并保留基曲线，故适配器的 `GetType()`/`Line()`/… 都是基曲线的）——此前只转发了 `gp_circ`，导致 trimmed 椭圆/双曲/抛物拿不到类型标签。
 - **验证（全绿，与基线逐项一致）**：`occt-geom --lib` **151/151**（其中 `extrema_pc/tests.rs` 的椭圆/双曲/抛物极值断言在**解析臂**下仍通过 ⇒ 解析臂与数值路径在这些用例上一致）、`occt-topo --lib` 1293/1（唯一红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3；网格密度与批 4 后逐位相同（ATU01038 17745/22119、Shape-2 3105/4792）⇒ 本批是**分派忠实化**，在这些模型上数值不敏感。
 - **A7 剩余**：仅 `extrema_cc` 侧（曲线–曲线种子集）⇒ **T-66**。
+
+**批 7（A10/T-46：`occt-core` 静默默认值 4 处）已完成 3/4 —— 2026-09-20**
+
+- **落地**：`crates/occt-core/src/elib/surface_eval.rs`、`bnd/bsphere.rs`、`elib/intersect.rs`、`poly/make_loops.rs`。
+  1. `surface_d2`：球/环面的 `duu/dvv/duv` 由**恒为 0** 改为 `ElSLib::SphereD2`（`cxx:975-1037`）/`TorusD2`（`cxx:1039-1100`）的公式（以 `Vxy = cosU·X + sinU·Y`、`DVxy = -sinU·X + cosU·Y` 表示）：球 `Vuu=-R·cosV·Vxy`、`Vvv=-R·cosV·Vxy-R·sinV·Z`、`Vuv=-R·sinV·DVxy`；环面 `Vuu=-R·Vxy`、`Vvv=-r·cosV·Vxy-r·sinV·Z`、`Vuv=-r·sinV·DVxy`（与端口既有 `sphere_d1`/`torus_d1` 的参数约定一致）。
+  2. `BndSphere::add_sphere`：按 `Bnd_Sphere.cxx:73-101` 补两个分支——**被包含 ⇒ 整体替换（圆心也换）**、包含对方 ⇒ 忽略；原实现只放大半径、圆心不动（偏心/偏小会漏检）。
+  3. `BndSphere::distance`：按 `Bnd_Sphere.cxx:63-66` 改为**到球心**的距离（原名下实现的是到球面，同名不同义）；面距单独提供 `distances`（`cxx:45-50`）与 `square_distance`（`cxx:68-71`）。
+  4. `circle_plane_intersection`：**删除**共面时凭空造的 `[center, C(π/2)]` 两点（OCCT 从不产生），改为返回空（共面 ⇒ 整圆、无孤立交点），整个函数标 `UNPORTED` 并写明忠实件是 `IntAna_Quadric`/`GeomAPI_IntCS`（`ElCLib` 无求交函数）。
+- **未完成 ⇒ T-73（已就地标 UNPORTED）**：`poly/make_loops.rs::choose_left_way` 仍取首候选。OCCT 的最小夹角选择在 `Poly_MakeLoops.cxx:611-676`（3D，用 `myHelper->GetNormal`/`GetLastTangent`）与 `:688-700`（2D，加 `myRightWay`），仅在取不到法向/切线时才 `return theLstIndS.First()`；端口既无 helper 的法向/切线访问器也无 `myRightWay`，故永远走该兜底分支。该路径目前仅被自身测试调用。
+- **验证（全绿，与基线逐项一致）**：`occt-core --lib` **290/290**（1 ignored）、`occt-geom --lib` 151/151、`occt-topo --lib` **1293/1**（唯一红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3；`cargo check` exit 0。本批三处均为**潜伏**修复（`surface_d2`/`bsphere`/`intersect` 在仓内均无调用者），故门禁数字不变。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。

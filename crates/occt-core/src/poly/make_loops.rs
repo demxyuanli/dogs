@@ -228,12 +228,17 @@ impl<'a> PolyMakeLoops<'a> {
         out
     }
 
-    /// Chooses the next link at a branching node. The base implementation
-    /// picks the first candidate; geometric subclasses would pick the most
-    /// left way using tangents/normals.
+    /// Chooses the next link at a branching node.
+    ///
+    /// **UNPORTED**: OCCT's `Poly_MakeLoops::chooseLeftWay` is a real min-angle
+    /// selection — `Poly_MakeLoops.cxx:611-676` (3D: `aAngleMin` between the
+    /// incoming link's tangent and each candidate, via
+    /// `myHelper->GetNormal`/`GetLastTangent`) and `:688-700` (2D, additionally
+    /// gated by `myRightWay`); only when those accessors fail does it
+    /// `return theLstIndS.First()`. This port has neither the helper's
+    /// normal/tangent accessors nor `myRightWay`, so it always takes that
+    /// fallback branch. Tracked as T-73.
     pub fn choose_left_way(&self, _node: usize, _seg_index: isize, lst_ind_s: &[isize]) -> isize {
-        // ponytail: first candidate; angle-based selection is only needed for
-        // geometric left/right disambiguation.
         lst_ind_s[0]
     }
 

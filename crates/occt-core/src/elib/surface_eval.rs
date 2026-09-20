@@ -79,7 +79,16 @@ pub fn cone_d1(co: &GpCone, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
 }
 
 /// Evaluate any elementary surface D2 (point + du + dv + duu + dvv + duv).
-/// Returned as (pt, du, dv, duu, dvv, duv) — simplified for planes/cylinders.
+///
+/// `ElSLib::PlaneD2` / `CylinderD2` / `SphereD2` (`ElSLib.cxx:975-1037`) /
+/// `TorusD2` (`ElSLib.cxx:1039-1100`). With `Vxy = cosU·X + sinU·Y` and
+/// `DVxy = -sinU·X + cosU·Y` the non-zero second derivatives are
+/// `Vuu = -R·cosV·Vxy`, `Vvv = -R·cosV·Vxy - R·sinV·Z`, `Vuv = -R·sinV·DVxy`
+/// (sphere) and `Vuu = -R·Vxy`, `Vvv = -r·cosV·Vxy - r·sinV·Z`,
+/// `Vuv = r·sinV·(sinU·X - cosU·Y)` (torus).
+///
+/// The previous body returned **zero** `duu/dvv/duv` for both sphere and torus,
+/// silently dropping curvature (audit A10).
 pub fn surface_d2(
     s: &SurfaceRef, u: f64, v: f64,
 ) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
@@ -96,12 +105,36 @@ pub fn surface_d2(
             (p, du, dv, duu, GpVec::zero(), GpVec::zero())
         }
         SurfaceRef::Sphere(s) => {
+            let r = s.radius;
+            let (cv, sv) = (v.cos(), v.sin());
+            let (cu, su) = (u.cos(), u.sin());
             let (p, du, dv) = sphere_d1(s, u, v);
-            (p, du, dv, GpVec::zero(), GpVec::zero(), GpVec::zero())
+            let vxy = s.pos.x_direction().xyz().multiplied(cu)
+                .added(&s.pos.y_direction().xyz().multiplied(su));
+            let dvxy = s.pos.x_direction().xyz().multiplied(-su)
+                .added(&s.pos.y_direction().xyz().multiplied(cu));
+            let duu = GpVec::from_xyz(&vxy.multiplied(-r * cv));
+            let dvv = GpVec::from_xyz(&vxy.multiplied(-r * cv)
+                .added(&s.pos.direction().xyz().multiplied(-r * sv)));
+            let duv = GpVec::from_xyz(&dvxy.multiplied(-r * sv));
+            (p, du, dv, duu, dvv, duv)
         }
         SurfaceRef::Torus(t) => {
+            let r = t.minor_radius;
+            let (cv, sv) = (v.cos(), v.sin());
+            let (cu, su) = (u.cos(), u.sin());
+            let big_r = t.major_radius + r * cv;
             let (p, du, dv) = torus_d1(t, u, v);
-            (p, du, dv, GpVec::zero(), GpVec::zero(), GpVec::zero())
+            let vxy = t.pos.x_direction().xyz().multiplied(cu)
+                .added(&t.pos.y_direction().xyz().multiplied(su));
+            // `Vuv = r·sinV·(sinU·X − cosU·Y) = −r·sinV·DVxy`.
+            let dvxy = t.pos.x_direction().xyz().multiplied(-su)
+                .added(&t.pos.y_direction().xyz().multiplied(cu));
+            let duu = GpVec::from_xyz(&vxy.multiplied(-big_r));
+            let dvv = GpVec::from_xyz(&vxy.multiplied(-r * cv)
+                .added(&t.pos.direction().xyz().multiplied(-r * sv)));
+            let duv = GpVec::from_xyz(&dvxy.multiplied(-r * sv));
+            (p, du, dv, duu, dvv, duv)
         }
     }
 }
