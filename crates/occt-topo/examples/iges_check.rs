@@ -122,6 +122,8 @@ fn main() {
         }
         // (3) pointer fields
         let de_set: HashSet<usize> = des.iter().map(|d| d.4).collect();
+        // Directories nothing points at (roots are legitimately unreferenced).
+        let mut referenced: HashSet<usize> = HashSet::new();
         for (ty, pstart, pcount, _trsf, de) in &des {
             let mut body = String::new();
             for k in 0..*pcount {
@@ -130,54 +132,48 @@ fn main() {
                 }
             }
             let f: Vec<&str> = body.trim_end_matches(';').split(',').collect();
-            let check = |idx: usize, what: &str, problems: &mut Vec<String>| {
-                if let Some(txt) = f.get(idx) {
-                    if let Ok(p) = txt.trim().parse::<usize>() {
-                        if p != 0 && !de_set.contains(&p) {
-                            problems.push(format!("DE{de} ty={ty} {what} -> {p} (no such DE)"));
-                        }
-                    }
-                }
-            };
+            // The pointer fields of this type, by record position - the same
+            // layout the writer's `emit_refs` records (`Entries in OwnShared`
+            // order). Collecting them lets the check both validate the numbers and
+            // report which directories nothing references (T-85's motivation: OCCT
+            // only writes entities reachable from the root, this writer writes
+            // everything it created).
+            let mut ptr_idx: Vec<usize> = Vec::new();
             match ty {
                 102 => {
                     if let Some(n) = f.get(1).and_then(|s| s.trim().parse::<usize>().ok()) {
-                        for k in 0..n {
-                            check(2 + k, "curve", &mut problems);
-                        }
+                        ptr_idx.extend((0..n).map(|k| 2 + k));
                     }
                 }
-                142 => {
-                    check(2, "surface", &mut problems);
-                    check(4, "curve3d", &mut problems);
-                }
+                142 => ptr_idx.extend([2usize, 4]),
                 144 => {
-                    check(1, "surface", &mut problems);
                     if let Some(n) = f.get(3).and_then(|s| s.trim().parse::<usize>().ok()) {
-                        check(4, "outer", &mut problems);
-                        for k in 0..n {
-                            check(5 + k, "inner", &mut problems);
-                        }
+                        ptr_idx.push(4);
+                        ptr_idx.extend((0..n).map(|k| 5 + k));
                     }
                 }
                 402 => {
                     if let Some(n) = f.get(1).and_then(|s| s.trim().parse::<usize>().ok()) {
-                        for k in 0..n {
-                            check(2 + k, "entity", &mut problems);
+                        ptr_idx.extend((0..n).map(|k| 2 + k));
+                    }
+                }
+                192 | 194 | 196 | 198 => ptr_idx.extend([1usize, 2, f.len() - 1]),
+                120 => ptr_idx.extend([1usize, 2]),
+                122 => ptr_idx.push(1),
+                _ => {}
+            }
+            for idx in ptr_idx {
+                if let Some(txt) = f.get(idx) {
+                    if let Ok(p) = txt.trim().parse::<usize>() {
+                        if p == 0 {
+                            continue;
+                        }
+                        referenced.insert(p);
+                        if !de_set.contains(&p) {
+                            problems.push(format!("DE{de} ty={ty} field {idx} -> {p} (no such DE)"));
                         }
                     }
                 }
-                192 | 194 | 196 | 198 => {
-                    check(1, "point", &mut problems);
-                    check(2, "axis", &mut problems);
-                    check(f.len() - 1, "refdir", &mut problems);
-                }
-                120 => {
-                    check(1, "axis", &mut problems);
-                    check(2, "generatrix", &mut problems);
-                }
-                122 => check(1, "directrix", &mut problems),
-                _ => {}
             }
         }
         // (4) T card
@@ -200,12 +196,25 @@ fn main() {
             }
             None => problems.push("no Terminate card".into()),
         }
+        let orphans: Vec<(usize, i32)> = des
+            .iter()
+            .filter(|(_, _, _, _, de)| !referenced.contains(de))
+            .map(|(ty, _, _, _, de)| (*de, *ty))
+            .collect();
         if problems.is_empty() {
             println!(
-                "ok  {name}: DE={} P={} sections={counts:?}",
+                "ok  {name}: DE={} P={} sections={counts:?} unreferenced={}",
                 des.len(),
-                p_by_seq.len()
+                p_by_seq.len(),
+                orphans.len()
             );
+            if !orphans.is_empty() {
+                let mut by_ty: BTreeMap<i32, usize> = BTreeMap::new();
+                for (_, ty) in &orphans {
+                    *by_ty.entry(*ty).or_insert(0) += 1;
+                }
+                println!("    unreferenced by type: {by_ty:?} (first DEs {:?})", &orphans.iter().take(6).map(|(d, t)| (*d, *t)).collect::<Vec<_>>());
+            }
         } else {
             bad += 1;
             println!("BAD {name}: {} problem(s)", problems.len());
