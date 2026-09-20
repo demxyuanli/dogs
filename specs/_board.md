@@ -142,7 +142,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-41 | A5 | `bop_builder_core.rs:79-96`、`bop_curved/p02.rs:409-581`、`p04.rs:42-70,325-401` | 体素/网格布尔与计票 → 无 OCCT 对应 ⇒ **摘除并标未移植** | 4 | pending |
 | T-42 | A6 | `occt-core/src/gcpnts.rs:30,87-225` | 中点二分 `MAX_DEPTH=16` 伪造 deflection → 调 `gcpnts_perform.rs:52`（已逐行移植） | **2** | **done**（2026-09-20） |
 | T-43 | A7 | `occt-geom/src/extrema_pc/p01.rs:563,621`、`extrema_cc/p02.rs:83,214-239` | `clamp(24,256)` 网格 + 16 兜底 → 调 `extrema_pc/p03.rs`（`Extrema_GGExtPC`） | **2** | **部分 done**（2026-09-20）：点–曲线侧已忠实；`extrema_cc` 侧见 **T-66** |
-| T-65 | A7 派生 | `occt-geom/src/extrema_pc/p01.rs`（`ellipse_all`/`hyperbola_all`/`parabola_all`）、`p02.rs::ext_pelc_all` | 三条解析臂已存在但未接线：缺 `myIsMin` 端口（`Extrema_ExtPElC.cxx:277`、`:381`、`:473`）⇒ 椭圆/双曲/抛物目前走 `default:` 臂；且 `Curve` 无 hyperbola/parabola 类型查询（T-12） | 2 后 | pending |
+| T-65 | A7 派生 | `occt-geom/src/extrema_pc/p01.rs`（`ellipse_all`/`hyperbola_all`/`parabola_all`）、`p02.rs::ext_pelc_all` | 三条解析臂已存在但未接线：缺 `myIsMin` 端口（`Extrema_ExtPElC.cxx:277`、`:381`、`:473`）⇒ 椭圆/双曲/抛物目前走 `default:` 臂；且 `Curve` 无 hyperbola/parabola 类型查询（T-12） | 2 后 | **done**（2026-09-20）：三条臂已接线，`myIsMin` 按 OCCT 逐行——椭圆比 `\|P−C(Us+0.1)\|²`（`cxx:277`）、双曲/抛物比 `\|P−C(Us+1)\|²`（`cxx:381`/`:473`）；类型查询阻塞已解除（A20/A29 轮补的 `gp_hyperbola`/`gp_parabola`），并给 `GeomTrimmedCurve` 补齐 `gp_{line,ellipse,hyperbola,parabola}` 转发（`GeomAdaptor_Curve::load` `cxx:252-254` 解包到基曲线）。门禁全等于基线；`occt-geom` 既有椭圆/双曲/抛物极值测试在解析臂下仍 151/151 |
 | T-66 | A7 派生 | `occt-geom/src/extrema_cc/p02.rs:40-115` | 通用曲线–曲线**种子集**自创（均匀网格 + 局部极值 + 边界最优点）；OCCT `Extrema_GenExtCC::Perform` 用 `math_GlobOptMin`（仓内 `occt-math/globoptmin.rs` 已移植）+ `Extrema_ECC` 的 `math_FunctionSetRoot` 起点 | 2 后 | pending |
 | T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending |
 | T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | **done**（2026-09-20，7 处文件头全部改正 + 包内容已逐项核对） |
@@ -405,6 +405,17 @@ cd ..; git worktree remove --force .target-headcheck
   - **声明**：本轮**未新增任何测试**、**未放宽任何门禁断言**，只订正了 4 处"把缺陷写进测试"的位置；这与"为对齐新写单元测试"是两回事，故在此与 `_index.md` A30 行双重登记，便于后人复核。
 - **验证（全绿，与基线逐项一致）**：`occt-topo --lib` **1293/1**（唯一红 = T-01 `brepfeat::groove_cuts_cylinder`）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3、`occt-geom --lib` 151/151；`cargo check` exit 0。
 - **旁支（未动手）**：`fillet_edge::classify_surface_full`（`fillet_edge/p02.rs:245-255`）与 `fillet_curved::classify_surface_analytic`（`fillet_curved/p01.rs:138-148`）仍各自带一层 6×6 采样柱面/锥面检测，现在对真实柱/锥已成冗余（`classify_surface` 直接给出 `Cylinder`/`Cone`）；`gprop_analytic/p01.rs:47` 还有一份同名实现。⇒ 建议立项（下一轮可选）：把这三处收敛为直接使用精确判定，删掉采样臂。
+
+**批 6（A7/T-65：`Extrema_ExtPElC` 椭圆/双曲/抛物臂接线 + `myIsMin`）已完成 —— 2026-09-20**
+
+- **落地**：`crates/occt-geom/src/extrema_pc/p02.rs`、`crates/occt-geom/src/trimmed.rs`。
+  1. `ext_pelc_all` 补上三条解析臂（此前只接 Line/Circle，椭圆/双曲/抛物落 `Extrema_GGExtPC` 的数值 `default:` 臂）：
+     - 椭圆 → `ellipse_all` + `myIsMin = sqDist(Us) < |P − C(Us + 0.1)|²`（`Extrema_ExtPElC.cxx:270-279`）；
+     - 双曲 → `hyperbola_all` + `myIsMin` 用步长 `+1`（`cxx:377-384`）；
+     - 抛物 → `parabola_all` + `myIsMin` 用步长 `+1`（`cxx:469-476`）。
+  2. `GeomTrimmedCurve` 补 `gp_line`/`gp_ellipse`/`gp_hyperbola`/`gp_parabola` 转发（`GeomAdaptor_Curve::load` `cxx:252-254` 会解包 trimmed 并保留基曲线，故适配器的 `GetType()`/`Line()`/… 都是基曲线的）——此前只转发了 `gp_circ`，导致 trimmed 椭圆/双曲/抛物拿不到类型标签。
+- **验证（全绿，与基线逐项一致）**：`occt-geom --lib` **151/151**（其中 `extrema_pc/tests.rs` 的椭圆/双曲/抛物极值断言在**解析臂**下仍通过 ⇒ 解析臂与数值路径在这些用例上一致）、`occt-topo --lib` 1293/1（唯一红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3；网格密度与批 4 后逐位相同（ATU01038 17745/22119、Shape-2 3105/4792）⇒ 本批是**分派忠实化**，在这些模型上数值不敏感。
+- **A7 剩余**：仅 `extrema_cc` 侧（曲线–曲线种子集）⇒ **T-66**。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。

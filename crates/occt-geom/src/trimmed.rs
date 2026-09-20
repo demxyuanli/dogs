@@ -59,6 +59,13 @@ impl Curve for GeomTrimmedCurve {
     fn continuity(&self) -> u8 { self.basis.continuity() }
     fn circle_radius(&self) -> Option<f64> { self.basis.circle_radius() }
     fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { self.basis.gp_circ() }
+    /// `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps a `Geom_TrimmedCurve`
+    /// and keeps the **basis**, so the adaptor's `GetType()` / `Line()` /
+    /// `Ellipse()` / `Hyperbola()` / `Parabola()` queries resolve to the basis.
+    fn gp_line(&self) -> Option<occt_core::gp::GpLin> { self.basis.gp_line() }
+    fn gp_ellipse(&self) -> Option<occt_core::gp::GpElips> { self.basis.gp_ellipse() }
+    fn gp_hyperbola(&self) -> Option<occt_core::gp::GpHypr> { self.basis.gp_hyperbola() }
+    fn gp_parabola(&self) -> Option<occt_core::gp::GpParab> { self.basis.gp_parabola() }
     fn is_geom_trimmed(&self) -> bool { true }
     fn trimmed_basis_range(&self) -> Option<(f64, f64)> {
         // `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps nested trims.

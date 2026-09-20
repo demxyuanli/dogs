@@ -23,18 +23,17 @@ pub(super) fn dedupe_sort(v: Vec<ExtremaPair>) -> Vec<ExtremaPair> {
 // ---------------------------------------------------------------------------
 
 /// `Extrema_ExtPElC` arms selected by `Extrema_GGExtPC`'s curve-type switch
-/// (`Extrema_GGExtPC.hxx`, ported in `p03`): Line / Circle / Ellipse /
+/// (`Extrema_GGExtPC.hxx:390-405`, ported in `p03`): Line / Circle / Ellipse /
 /// Hyperbola / Parabola go to `Extrema_ExtPElC`.
 ///
 /// Each entry carries OCCT's `myIsMin` flag: line is always a minimum
 /// (`Extrema_ExtPElC.cxx:77`), for a circle `Usol[0]` (near point) is the
-/// minimum and `Usol[1] = Usol[0] + PI` the maximum (`cxx:177-188`).
+/// minimum and `Usol[1] = Usol[0] + PI` the maximum (`cxx:177-188`); for an
+/// ellipse the flag compares against `C(Us + 0.1)` (`cxx:277`) and for a
+/// hyperbola/parabola against `C(Us + 1)` (`cxx:381`, `:473`).
 ///
-/// Returns `None` when the curve is not an elementary type this port can tag:
-/// `Curve` exposes `is_line`/`gp_circ`/`gp_ellipse` but no hyperbola/parabola
-/// tag (T-12/T-51), and the Ellipse / Hyperbola / Parabola arms still lack the
-/// `myIsMin` port (`cxx:277`, `:381`, `:473`) ⇒ those types take the
-/// `default:` arm instead (UNPORTED, task T-65).
+/// Returns `None` when the curve is not an elementary type (`Extrema_GGExtPC`
+/// then takes its `default:` arm in `p03`).
 pub(super) fn ext_pelc_all(
     c: &dyn Curve,
     p: &GpPnt,
@@ -69,6 +68,45 @@ pub(super) fn ext_pelc_all(
                 .into_iter()
                 .enumerate()
                 .map(|(i, e)| (e, i == 0))
+                .collect(),
+        );
+    }
+    if let Some(e) = c.gp_ellipse() {
+        // `Extrema_ExtPElC.cxx:270-279`: `myIsMin = sqDist(Us) < |P − C(Us+0.1)|²`.
+        return Some(
+            ellipse_all(&e, p, uinf, usup)
+                .into_iter()
+                .map(|pair| {
+                    let is_min = pair.distance * pair.distance
+                        < p.square_distance(&clib::ellipse_value(&e, pair.u1 + 0.1));
+                    (pair, is_min)
+                })
+                .collect(),
+        );
+    }
+    if let Some(h) = c.gp_hyperbola() {
+        // `Extrema_ExtPElC.cxx:377-384`: `myIsMin` at parameter step `+1`.
+        return Some(
+            hyperbola_all(&h, p, uinf, usup)
+                .into_iter()
+                .map(|pair| {
+                    let is_min = pair.distance * pair.distance
+                        < p.square_distance(&clib::hyperbola_value(&h, pair.u1 + 1.0));
+                    (pair, is_min)
+                })
+                .collect(),
+        );
+    }
+    if let Some(pa) = c.gp_parabola() {
+        // `Extrema_ExtPElC.cxx:469-476`: `myIsMin` at parameter step `+1`.
+        return Some(
+            parabola_all(&pa, p, uinf, usup)
+                .into_iter()
+                .map(|pair| {
+                    let is_min = pair.distance * pair.distance
+                        < p.square_distance(&clib::parabola_value(&pa, pair.u1 + 1.0));
+                    (pair, is_min)
+                })
                 .collect(),
         );
     }
