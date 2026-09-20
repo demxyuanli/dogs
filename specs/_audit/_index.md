@@ -106,6 +106,8 @@
 
 ## 7. 整改优先级（全部指向 OCCT 改法，非特例补丁）
 
+> **状态同步（2026-09-20 第 37 轮）**：条目 0（A0/T-35 ✅）、1（A6 ✅ / A7 ◐：点–曲线 ✅、椭圆双曲抛物臂 ✅、xtrema_cc 种子集 ⬜ T-66）、5（A3 ✅ 含 A24 ✅）、6（A20 ✅ / A21 ✅ / A17 ✅）**已完成**；条目 7 中 A24 ✅、A19 的失败率阈值 ✅、A25 主体 ✅，其余（A18/A22 已 ✅/A23）**仍被 T-69 阻塞**；条目 8 中 A9 ✅、A14 ✅、A10 ◐（仅余 choose_left_way T-73）、A26 ◐（PLY 顶点焊接 / IGES / STEP 写侧）。**当前整体进度见 _board.md §14 状态矩阵**。条目 2/3/4/9 未动。
+
 0. **A0（最高危，先修）**：按 `Geom_OffsetCurveUtils.pxx:47-115` 与 `Geom2d_OffsetCurveUtils.pxx:43-...` 重写 3D/2D offset 曲线的 D0/D1/D2（法向偏移 + `DNdir` 项 + 失败返回），并复核 `step/p04.rs:1049` 的调用点与 `geom_bnd_lib_offset2d.rs:101` 的消费——这是**公式错误**（3D 平移、2D 反号），会直接产出错误几何。
 1. **A6 → A7**（网格离散/极值）：`gcpnts.rs` 二分族改调 `gcpnts_perform.rs` 忠实件；`extrema_pc/p01` 通用路径改调 `p03`（`Extrema_GGExtPC`）。这两条在 live 网格/布尔路径上，且忠实件**已在仓内**，属最低成本高收益。
 2. **A1（规模最大）**：**先做 T-67**——移植 `Extrema_ExtPS`/`Extrema_GenExtPS`/`Extrema_ExtPElS`（约 2.2k 行 OCCT）并提供解析 Jacobian 版本；**在此之前不要**把 39 处调用点迁到 `extrema_surf`（它也是替代品）。T-67 完成后按 `brep_class3d.rs` → `pave_intersect/*` → `inttools_range.rs` → `algo_tools/*` → `int_curves_face.rs` 分批迁移，并同批内删除 `brep_surface::surface_closest_params`。
