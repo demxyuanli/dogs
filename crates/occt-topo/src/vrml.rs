@@ -89,7 +89,10 @@ fn vrml_shape_body(mesh: &ShapeMesh, name: &str, indent: &str) -> String {
     }
     s.push_str(&format!("{indent}    ]\n"));
     s.push_str(&format!("{indent}    normalPerVertex FALSE\n"));
-    s.push_str(&format!("{indent}    solid TRUE\n"));
+    // `VrmlData_ShapeConvert.cxx:356-361` builds the face set as
+    // `VrmlData_IndexedFaceSet(..., true /*IsCCW*/, false /*IsSolid*/,
+    // false /*IsConvex*/)` ⇒ `solid FALSE`.
+    s.push_str(&format!("{indent}    solid FALSE\n"));
     s.push_str(&format!("{indent}  }}\n"));
     s.push_str(&format!("{indent}}}\n"));
     s

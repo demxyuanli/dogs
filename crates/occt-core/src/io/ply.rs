@@ -96,7 +96,8 @@ pub fn write_ply(mesh: &PlyMesh) -> String {
     s.push_str(&format!("element vertex {}\n", mesh.vertices.len()));
     s.push_str("property float x\nproperty float y\nproperty float z\n");
     s.push_str(&format!("element face {}\n", mesh.faces.len()));
-    s.push_str("property list uchar int vertex_indices\nend_header\n");
+    // `RWPly_PlyWriterContext.cxx:214`: `property list uchar uint vertex_indices`.
+    s.push_str("property list uchar uint vertex_indices\nend_header\n");
     for v in &mesh.vertices {
         s.push_str(&format!("{} {} {}\n", v.x(), v.y(), v.z()));
     }

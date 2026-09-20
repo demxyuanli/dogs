@@ -202,7 +202,11 @@ pub fn compute_facet_normals(mesh: &mut StlMesh) {
     mesh.normals = mesh.triangles.iter().map(compute_normal).collect();
 }
 
-/// Unit normal of a triangle via normalized cross product; zero vector if degenerate.
+/// Unit normal of a triangle via normalized cross product; the zero vector when
+/// the cross product's **squared** magnitude does not exceed `gp::Resolution()`
+/// (`RWStl.cxx:325` / `:407`: `if (aVNorm.SquareMagnitude() > gp::Resolution())`,
+/// and `gp::Resolution() == RealSmall() == DBL_MIN`). The previous threshold was
+/// the invented `|cross| < 1e-12` (audit A26).
 fn compute_normal(tri: &[GpPnt; 3]) -> [f64; 3] {
     let (a, b, c) = (&tri[0], &tri[1], &tri[2]);
     let ab = (b.x() - a.x(), b.y() - a.y(), b.z() - a.z());
@@ -210,11 +214,12 @@ fn compute_normal(tri: &[GpPnt; 3]) -> [f64; 3] {
     let cx = ab.1 * ac.2 - ab.2 * ac.1;
     let cy = ab.2 * ac.0 - ab.0 * ac.2;
     let cz = ab.0 * ac.1 - ab.1 * ac.0;
-    let len = (cx * cx + cy * cy + cz * cz).sqrt();
-    if len < 1e-12 {
-        [0.0, 0.0, 0.0]
-    } else {
+    let sq = cx * cx + cy * cy + cz * cz;
+    if sq > crate::precision::REAL_SMALL {
+        let len = sq.sqrt();
         [cx / len, cy / len, cz / len]
+    } else {
+        [0.0, 0.0, 0.0]
     }
 }
 

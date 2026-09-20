@@ -144,7 +144,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-43 | A7 | `occt-geom/src/extrema_pc/p01.rs:563,621`、`extrema_cc/p02.rs:83,214-239` | `clamp(24,256)` 网格 + 16 兜底 → 调 `extrema_pc/p03.rs`（`Extrema_GGExtPC`） | **2** | **部分 done**（2026-09-20）：点–曲线侧已忠实；`extrema_cc` 侧见 **T-66** |
 | T-65 | A7 派生 | `occt-geom/src/extrema_pc/p01.rs`（`ellipse_all`/`hyperbola_all`/`parabola_all`）、`p02.rs::ext_pelc_all` | 三条解析臂已存在但未接线：缺 `myIsMin` 端口（`Extrema_ExtPElC.cxx:277`、`:381`、`:473`）⇒ 椭圆/双曲/抛物目前走 `default:` 臂；且 `Curve` 无 hyperbola/parabola 类型查询（T-12） | 2 后 | **done**（2026-09-20）：三条臂已接线，`myIsMin` 按 OCCT 逐行——椭圆比 `\|P−C(Us+0.1)\|²`（`cxx:277`）、双曲/抛物比 `\|P−C(Us+1)\|²`（`cxx:381`/`:473`）；类型查询阻塞已解除（A20/A29 轮补的 `gp_hyperbola`/`gp_parabola`），并给 `GeomTrimmedCurve` 补齐 `gp_{line,ellipse,hyperbola,parabola}` 转发（`GeomAdaptor_Curve::load` `cxx:252-254` 解包到基曲线）。门禁全等于基线；`occt-geom` 既有椭圆/双曲/抛物极值测试在解析臂下仍 151/151 |
 | T-66 | A7 派生 | `occt-geom/src/extrema_cc/p02.rs:40-115` | 通用曲线–曲线**种子集**自创（均匀网格 + 局部极值 + 边界最优点）；OCCT `Extrema_GenExtCC::Perform` 用 `math_GlobOptMin`（仓内 `occt-math/globoptmin.rs` 已移植）+ `Extrema_ECC` 的 `math_FunctionSetRoot` 起点 | 2 后 | pending |
-| T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending |
+| T-44 | A8 | `occt-geom/src/convert_bspl.rs:326,349` | 采样折线 + 强制 1 次 → `GeomConvert_CompCurveToBSplineCurve.cxx:135-215` | 8 | pending（**前置缺口已探明**：需先补 `GeomBSplineCurve::{increase_degree,knots,multiplicities}` 与 `GeomConvert_CurveToBSpline`；当前函数无生产调用者） |
 | T-45 | A9 | `convert/`、`cslib/mod.rs:24-41`、`gprop/mod.rs:27-42`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`geom/polyline_simplify.rs`、`int/curve_curve.rs` | 假出处（写 OCCT 包名但该包无此函数）→ 改标真实出处/非 OCCT（`polyline_simplify` 经 `intpatch_trace.rs:260` 改变交线几何，须标注） | 8 | **done**（2026-09-20，7 处文件头全部改正 + 包内容已逐项核对） |
 | T-46 | A10 | `elib/surface_eval.rs:100,104`、`bnd/bsphere.rs:19-29`、`elib/intersect.rs:58-60`、`poly/make_loops.rs:234` | 静默默认值/凭空造值/只取首候选 → `ElSLib::SphereD2/TorusD2`、`Bnd_Sphere.cxx:73-96`、`Poly_MakeLoops.cxx:611-700` | 8 | **◐ 3/4 done**（2026-09-20）：`surface_d2` 补球/环面非零二阶导；`bsphere` 补"被包含⇒整体替换"分支 + `distance` 改回"到球心"（面距另立 `distances`）；`circle_plane_intersection` 删凭空造点并标 `UNPORTED`（`ElCLib` 无求交，忠实件是 `IntAna_Quadric`/`GeomAPI_IntCS`）；`choose_left_way` 标 `UNPORTED` ⇒ **T-73** |
 | T-73 | **A10 派生（新）** | `occt-core/src/poly/make_loops.rs:234` `choose_left_way` | 只取首候选（`lst_ind_s[0]`）→ `Poly_MakeLoops.cxx:611-676`（3D 最小夹角）/`:688-700`（2D + `myRightWay`） | 8 后 | pending（前置：给 `MakeLoopsHelper` 补 `GetNormal`/`GetLastTangent`/结点坐标访问器与 `myRightWay`；当前该路径仅被自身测试调用） |
@@ -175,7 +175,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-60 | A24 | `meshing/range_splitter/p01.rs:86-133` | 周期标志 + 半径采样猜面型 → `GetType()` 分派（`BRepMesh_FaceDiscret.cxx:112` + `MeshAlgoFactory.cxx:64`） | 5 | **done**（2026-09-20）：改为 `GeomAdaptor_Surface::Load`（`cxx:422-513`）的 `DynamicType` 精确顺序（RTS→Plane→Cylinder→Cone→Sphere→Torus→Revolution→Extrusion→**Bezier**→BSpline→Offset→Other），删除 `match (up,vp)` 与自创 `is_cylinder_like`；新增 `Surface::is_bezier_surface()`。门禁全等于基线 |
 | T-72 | **A30**（批 4 派生，新） | `occt-topo/src/brep_surface.rs:78-101` | `brep_surface::classify_surface` = 8×8 采样 `is_planar(1e-6)` + 等距球心 + `1e-4*r` 阈值 ⇒ STEP 读入面型靠采样（`step/p01.rs:160`、`step/p04.rs:1275+`） | 5 后 | **done**（2026-09-20）：改为 `GeomAdaptor_Surface::Load`（`cxx:422-513`）的精确类判定（RTS→Plane→Cylinder→Cone→Sphere→Torus→Other）；删除 8×8 采样与两个阈值。可观测修复：`step/p04.rs` 的 `GeomConvert_Units` 分派此前把柱/锥判成 `Other` ⇒ 柱面 pcurve **单位换算被跳过**。8 个既有测试的"缺陷断言"（3 处查找面谓词 `== Other` + 1 处 `assert_eq!(vanilla, Other)`）改为精确类型；未新增测试、未放宽门禁 |
 | T-61 | A25 | `meshing/delaun/p04.rs:346-375` | 自造"先删邻三角形再 AddElement" → `BRepMesh_Delaun.cxx:2263-2274` 失败即置 `IMeshData_Failure`，不改网格 | 7 | pending |
-| T-62 | A26 | `brep_exchange.rs:118,125`、`occt-core/src/io/{ply,stl}.rs`、`iges.rs:168,390-438`、`step/p02.rs:16-17,43`、`vrml.rs:92`、`obj.rs` | PLY 焊接/属性类型、STL 阈值/头/嗅探、IGES 采样族与自造回转面、STEP 写侧采样重拟、`solid TRUE`、恒空 `vn` → 各 `RWPly_*`/`RWStl*`/`GeomToIGES_*`/`GeomToStep_MakeCurve.cxx:94-99`/`VrmlData_ShapeConvert.cxx:360` | 8 | pending |
+| T-62 | A26 | `brep_exchange.rs:118,125`、`occt-core/src/io/{ply,stl}.rs`、`iges.rs:168,390-438`、`step/p02.rs:16-17,43`、`vrml.rs:92`、`obj.rs` | PLY 焊接/属性类型、STL 阈值/头/嗅探、IGES 采样族与自造回转面、STEP 写侧采样重拟、`solid TRUE`、恒空 `vn` → 各 `RWPly_*`/`RWStl*`/`GeomToIGES_*`/`GeomToStep_MakeCurve.cxx:94-99`/`VrmlData_ShapeConvert.cxx:360` | 8 | **◐ 3/6 done**（2026-09-20）：PLY 写侧属性类型 `uchar uint`（`RWPly_PlyWriterContext.cxx:214`）；STL 退化法向改"平方量 > `gp::Resolution()`"（`RWStl.cxx:325/407`）；VRML `solid FALSE`（`VrmlData_ShapeConvert.cxx:356-361`）。**未修**：PLY 顶点焊接/每面重复（24 vs 8）、STL 头字节与格式嗅探、IGES 采样族与整球回转面、STEP 写侧 B-spline 采样重拟、OBJ 恒空 `vn` |
 
 > 执行纪律（本轮：**先提交、再任务化、再开工**）：commit `bcbc7dc` 已把审查前的全部工作树入库（8 个提交，工作树干净），此后每个修复单独成 commit，便于 A/B 与回滚。
 
@@ -435,6 +435,20 @@ cd ..; git worktree remove --force .target-headcheck
   - `Analyzer::is_valid()` 与 `check_geometry()` 加显式告警：前者**恒返回 `true`**、后者**恒返回 `Report::ok()`**，**不得作为校验门禁**使用。
   - **无行为改动**（纯声明）：`occt-topo --lib` 仍 **1293/1**（唯一红 = T-01）。
 - **未完成（仍在 T-50 内）**：A14 其余包（`geom/`（csg/delaunay/triangulate/fit*/polygon_*）、`elib/measure.rs`、`hlr.rs`、`viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs`）的模块头声明。
+
+**批 9（A26/T-62 的 3 个可收口小项）已完成 —— 2026-09-20**
+
+- **落地**（三处逐行对 OCCT 原文）：
+  1. `crates/occt-core/src/io/ply.rs:99`：写侧属性类型 `property list uchar int vertex_indices` → **`uchar uint`**（`RWPly_PlyWriterContext.cxx:214`）。读侧解析器未动（其测试夹具 `:178` 仍用旧拼写，解析器两者都能读）。
+  2. `crates/occt-core/src/io/stl.rs::compute_normal`：退化判据由自创的 `|cross| < 1e-12` 改为 OCCT 的**平方量**比较 `sq > gp::Resolution()`（`RWStl.cxx:325`、`:407`；`gp::Resolution() == RealSmall() == DBL_MIN`，端口用 `crate::precision::REAL_SMALL`）。
+  3. `crates/occt-topo/src/vrml.rs:92`：`solid TRUE` → **`solid FALSE`**（`VrmlData_ShapeConvert.cxx:356-361` 构造 `VrmlData_IndexedFaceSet(..., IsCCW=true, IsSolid=false, IsConvex=false)`）。
+- **验证（等于基线）**：`occt-core --lib` **290/290**（PLY/STL 的读写测试全过，说明改属性类型与阈值未破坏解析/往返）、`occt-topo --lib` **1293/1**（唯一红 = T-01，VRML 用例通过）、四道 STEP 门禁 14/14、13/13、11/11、2/3；`cargo check` exit 0。
+- **未修（仍在 T-62）**：PLY `weld_vertices(1e-9)` 与"每面重复自身 node+偏移"（OCCT 每面重复 ⇒ 盒体 24 vs 8 顶点，改它要动 `PlyMesh` 结构）、STL 80 字节头与格式嗅探、IGES 曲线族 `<2%` 采样与整球自造 120 回转面、STEP 写侧 B-spline `n=8`/6×6 采样重拟、OBJ 写侧恒空 `vn`。
+
+**批 9 旁的侦察结论（T-44/A8：`comp_curve_to_bspline`）——本轮未动手，已记录前置**
+
+- `occt-geom/src/convert_bspl.rs::comp_curve_to_bspline` 现为**采样 0.1 折线 + `resample_bspline(pts, 1)`**（`:(326)` 的 `((b-a)/0.1).ceil().clamp(2,64)` 与 `:349`），而 OCCT `GeomConvert_CompCurveToBSplineCurve::Add`（`cxx:135-215`）是 **`IncreaseDegree` 齐次化 + 结点/极点/权重拼接**（不采样）。
+- **前置缺口（本轮实测）**：端口**没有** `GeomBSplineCurve::increase_degree`、`knots()`、`multiplicities()`、`set_knots`，也没有 `GeomConvert_CurveToBSpline`（把 line/conic 转成 B-spline，`GeomConvert_CurveToBSpline.cxx`）。⇒ 忠实移植需先补这两件，故 A8 不能在本批收口（已把结论写进任务卡；`comp_curve_to_bspline` 当前**无生产调用者**，仅自身测试用）。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
