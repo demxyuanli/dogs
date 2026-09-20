@@ -1430,11 +1430,48 @@ impl IgesWriter {
         (self.emit_plane(&pln), Vec::new())
     }
 
+    /// A face as `BRepToIGES_BRShell::TransferFace` builds it
+    /// (`BRepToIGES_BRShell.cxx:250-405`): the base surface entity, one
+    /// `CurveOnSurface` (142) per wire, and a `TrimmedSurface` (144) that carries
+    /// the outer/inner contour pointers.
+    ///
+    /// The 3-D curve of a wire comes from `BRepToIGES_BRWire::TransferWire`
+    /// (`BRepToIGES_BRWire.cxx:662-781`): a single-edge wire is that edge's curve
+    /// entity, a wire with two or more edges a `CompositeCurve` (102, form 0).
+    /// The 2-D (UV) curve, which OCCT builds with
+    /// `TransferEdge(edge, face, originMap, length, false)` (`:720`), is UNPORTED
+    /// (audit A26 / task T-78) - the transfer therefore takes the "3-D only" arm
+    /// of `BRepToIGES_BRShell.cxx:285-288`, writing a null `CurveUV` and
+    /// `PreferenceMode = 2`. Edges of the face that belong to no wire
+    /// (`:334-365`) are likewise UNPORTED.
+    ///
+    /// **Registered remainder (T-84)**: `510` still carries this port's earlier
+    /// layout instead of `IGESSolid_ToolFace::WriteOwnParams`
+    /// (`510, surface, nb_loops, has_outer_loop, loop_ptrs...`) over `508` Loop
+    /// entities, and `514`/`186` follow the same old shape.
     fn emit_face(&mut self, f: &Face) -> usize {
         let (surf_idx, mut synth) = self.emit_face_surface(f);
+        let wires = wires_of_face(f);
+        // `ShapeAlgo::AlgoContainer()->OuterWire(aFace)` (`cxx:275`) resolves to
+        // `ShapeAnalysis::OuterWire` (`ShapeAnalysis.cxx`: the last wire, or the
+        // first one with a non-negative `TotCross2D`).
+        let outer_wire = crate::meshing::model_builder::outer_of_wires(&wires, f);
         let mut curve_refs: Vec<usize> = Vec::new();
-        for wire in wires_of_face(f) {
-            for e in edges_of_wire(&wire) {
+        let mut outer_curve: Option<usize> = None;
+        let mut inner_curves: Vec<usize> = Vec::new();
+        // The outer wire is transferred first (`cxx:276-294`), then the inner ones
+        // (`:301-331`).
+        let ordered: Vec<&crate::shape::Wire> = outer_wire
+            .iter()
+            .chain(wires.iter().filter(|w| {
+                outer_wire
+                    .as_ref()
+                    .map_or(true, |o| Arc::as_ptr(&o.0.tshape) != Arc::as_ptr(&w.0.tshape))
+            }))
+            .collect();
+        for w in ordered {
+            let mut edge_refs: Vec<usize> = Vec::new();
+            for e in edges_of_wire(w) {
                 let key = Arc::as_ptr(&e.0.tshape) as usize;
                 let idx = match self.edge_curve_entities.get(&key) {
                     Some(&i) => i,
@@ -1444,25 +1481,69 @@ impl IgesWriter {
                         i
                     }
                 };
+                edge_refs.push(idx);
                 curve_refs.push(idx);
+            }
+            if edge_refs.is_empty() {
+                continue;
+            }
+            let curve3d = if edge_refs.len() == 1 {
+                edge_refs[0]
+            } else {
+                let refs = edge_refs
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                self.emit(102, 0, format!("102,{},{};", edge_refs.len(), refs))
+            };
+            // `IGESGeom_CurveOnSurface::Init` (`IGESGeom_CurveOnSurface.cxx:26-40`)
+            // with `Imode = 0` (`cxx:269`) and the "3-D only" preference above;
+            // `IGESGeom_ToolCurveOnSurface::WriteOwnParams` (`:104-115`) writes
+            // `142, creation_mode, surface, curve_uv, curve_3d, preference_mode;`.
+            let cs = self.emit(142, 0, format!("142,0,{surf_idx},0,{curve3d},2;"));
+            match &outer_wire {
+                Some(o) if Arc::as_ptr(&o.0.tshape) == Arc::as_ptr(&w.0.tshape) => {
+                    outer_curve = Some(cs)
+                }
+                _ => inner_curves.push(cs),
             }
         }
         curve_refs.append(&mut synth);
 
+        // `cxx:380-400`: `isWholeSurface` is `BRep_Tool::NaturalRestriction(face)`,
+        // forced to false for a plane / cylinder / cone - the guard there tests the
+        // `CurveOnSurface` handle, which is non-null whenever the face has a wire.
+        let mut is_whole = BRepTool::natural_restriction(f);
+        let surf = BRepTool::face_surface(f);
+        if let Some(s) = surf.as_ref() {
+            let k = classify_surface(s.as_ref());
+            if (k == SurfaceKind::Plane || k == SurfaceKind::Cylinder || k == SurfaceKind::Cone)
+                && outer_curve.is_some()
+            {
+                is_whole = false;
+            }
+        }
         let trim_idx = if curve_refs.is_empty() {
             surf_idx
         } else {
-            let (u0, u1, v0, v1) = face_uv_bounds_finite(f);
-            let m = curve_refs.len();
-            let refs = curve_refs
-                .iter()
-                .map(|i| i.to_string())
-                .collect::<Vec<_>>()
-                .join(",");
+            let outer_flag = u8::from(!is_whole);
+            let n_inner = inner_curves.len();
+            // `IGESGeom_ToolTrimmedSurface::WriteOwnParams`
+            // (`IGESGeom_ToolTrimmedSurface.cxx:196-218`): `144, surface,
+            // outer_boundary_type, nb_inner_contours, outer_contour, inner...;`
+            // with the outer contour written as `0` when the type is false.
+            let mut refs = match (is_whole, outer_curve) {
+                (false, Some(i)) => i.to_string(),
+                _ => "0".to_string(),
+            };
+            for c in &inner_curves {
+                refs.push_str(&format!(",{c}"));
+            }
             self.emit(
                 144,
                 0,
-                format!("144,{surf_idx},{},{},{},{},1,{m},{};", num(u0), num(u1), num(v0), num(v1), refs),
+                format!("144,{surf_idx},{outer_flag},{n_inner},{refs};"),
             )
         };
 
