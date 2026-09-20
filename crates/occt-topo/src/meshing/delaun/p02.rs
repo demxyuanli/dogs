@@ -100,6 +100,16 @@ impl Delaun {
         &self.mesh_data
     }
 
+    /// Whether `addTriangle` hit the `Standard_OutOfRange` condition of
+    /// `BRepMesh_PairOfIndex::Append` (`BRepMesh_PairOfIndex.hxx:41`). OCCT lets
+    /// that exception leave `BRepMesh_Delaun` and `BRepMesh_BaseMeshAlgo::Perform`
+    /// swallows it (`BRepMesh_BaseMeshAlgo.cxx:59-62`), so
+    /// `commitSurfaceTriangulation` never runs and the face keeps
+    /// `IMeshData_Failure` with **no** triangulation.
+    pub fn failed(&self) -> bool {
+        self.failed
+    }
+
     /// Consumes the triangulator and returns the mesh data structure.
     pub fn into_result(self) -> DelaunDataStructure {
         self.mesh_data

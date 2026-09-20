@@ -111,6 +111,9 @@ pub struct DelaunayNodeInsertionMeshAlgo {
     classifier: Classifier,
     pre_process_surface_nodes: bool,
     last_result: Option<TriangulationResult>,
+    /// Set when [`Delaun::failed`] aborted `generateMesh`: the face must keep
+    /// `IMeshData_Failure` and no triangulation (`BRepMesh_BaseMeshAlgo.cxx:59-62`).
+    delaun_failed: bool,
     /// Face range splitter: `Scale` to face basis, `AddPoint`, interior grid.
     /// Source: `BRepMesh_NodeInsertionMeshAlgo::myRangeSplitter`.
     splitter: Option<Box<dyn RangeSplitter>>,
@@ -135,6 +138,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             classifier: Classifier::new(),
             pre_process_surface_nodes,
             last_result: None,
+            delaun_failed: false,
             splitter: None,
         }
     }
@@ -308,6 +312,20 @@ impl DelaunayNodeInsertionMeshAlgo {
             .collect();
         let (cells_u, cells_v) = self.cells_count(indices.len() as i32);
         let mut delaun = Delaun::new_with_data_cells(structure, &mut indices, cells_u, cells_v);
+        // `BRepMesh_Delaun::addTriangle` overflowed a link's triangle pair:
+        // OCCT's `Standard_OutOfRange` (`BRepMesh_PairOfIndex.hxx:41`) unwinds out
+        // of `generateMesh`, `BRepMesh_BaseMeshAlgo::Perform` swallows it
+        // (`BRepMesh_BaseMeshAlgo.cxx:59-62`) and `commitSurfaceTriangulation` is
+        // never reached, so the face ends up with `IMeshData_Failure` and no
+        // triangulation at all — not with the partial mesh built so far. Record
+        // the flag and stop here; `perform` turns it into the face's FAILURE
+        // status (audit A25 / task T-61).
+        if delaun.failed() {
+            self.delaun_failed = true;
+            return Err(format!(
+                "DelaunayNodeInsertionMeshAlgo::finish_mesh: BRepMesh_Delaun::addTriangle failed (link pair overflow)"
+            ));
+        }
         // `BRepMesh_DelaunayBaseMeshAlgo::generateMesh` (`cxx:45-46`).
         delaun.erase_free_links();
 
@@ -553,10 +571,34 @@ impl DelaunayNodeInsertionMeshAlgo {
         let face_deflection = model.face(face_index)?.deflection();
         if self.pre_process_surface_nodes {
             self.generate_surface_nodes(model, face_index, params)?;
-            return self.finish_mesh(&[], params, face_deflection, face_index);
+            let result = self.finish_mesh(&[], params, face_deflection, face_index);
+            if self.delaun_failed {
+                model
+                    .face_mut(face_index)
+                    .map_err(|e| format!("DelaunayNodeInsertionMeshAlgo::perform: {e}"))?
+                    .set_status(MeshStatus::FAILURE);
+                return Err(format!(
+                    "DelaunayNodeInsertionMeshAlgo::perform: face {face_index}: BRepMesh_Delaun::addTriangle failed, no triangulation committed"
+                ));
+            }
+            return result;
         }
         let insert = self.list_surface_nodes(model, face_index, params)?;
-        self.finish_mesh(&insert, params, face_deflection, face_index)
+        let result = self.finish_mesh(&insert, params, face_deflection, face_index);
+        if self.delaun_failed {
+            // `BRepMesh_BaseMeshAlgo::Perform` (`BRepMesh_BaseMeshAlgo.cxx:40-62`):
+            // the swallowed `Standard_OutOfRange` leaves the face with
+            // `IMeshData_Failure` and no triangulation, and the remaining faces of
+            // the shape are still meshed.
+            model
+                .face_mut(face_index)
+                .map_err(|e| format!("DelaunayNodeInsertionMeshAlgo::perform: {e}"))?
+                .set_status(MeshStatus::FAILURE);
+            return Err(format!(
+                "DelaunayNodeInsertionMeshAlgo::perform: face {face_index}: BRepMesh_Delaun::addTriangle failed, no triangulation committed"
+            ));
+        }
+        result
     }
 
     /// Collects boundary UV for two OCCT paths that must not be mixed:

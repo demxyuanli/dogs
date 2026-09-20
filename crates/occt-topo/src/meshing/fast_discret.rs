@@ -79,6 +79,14 @@ impl FastDiscret {
             .map(|p| DelaunVertex::new(*p, GpPnt::zero(), 0, VertexState::Free))
             .collect();
         let delaun = Delaun::new_vertices(&vertices);
+        // `BRepMesh_Delaun::addTriangle` link-pair overflow: OCCT's
+        // `Standard_OutOfRange` unwinds out of the triangulation and
+        // `BRepMesh_BaseMeshAlgo::Perform` swallows it (`cxx:59-62`), so the face
+        // gets no triangulation at all (audit A25 / task T-61). Report the empty
+        // result instead of the partial mesh.
+        if delaun.failed() {
+            return (Vec::new(), Vec::new());
+        }
         let ds = delaun.result();
 
         let mut out_v: Vec<GpPnt> = Vec::new();
