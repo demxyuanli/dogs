@@ -20,7 +20,7 @@ use crate::bop_occt_util::{
 };
 use crate::bop_split_to_reverse::orient_split_with_warn;
 use crate::int_tools_full::IntToolsContext;
-use crate::shape::{Face, Shell, Solid, TopoShape};
+use crate::shape::{Shell, Solid, TopoShape};
 
 /// Whether `fx` is bound in the builder same-domain map (`myShapesSD.IsBound`).
 fn shapes_sd_bound<B: BopSolidHost>(f: &B, fx: &TopoShape) -> bool {
@@ -33,20 +33,16 @@ fn shapes_sd_bound<B: BopSolidHost>(f: &B, fx: &TopoShape) -> bool {
         .is_some()
 }
 
-/// True when `face` has no area (sliver). The existing draft path skipped
-/// those; OCCT `BRep_Builder::Add` would still add them, but a zero-area
-/// face cannot bound a shell, so the skip is kept as the degenerate-face
-/// guard already used by `add_draft_face`.
-fn face_is_degenerate(face: &Face) -> bool {
-    crate::topo_tools_full::vertices_of(&face.0).len() < 3
-}
-
-/// Add `face` to `shell` once, skipping degenerates and duplicates.
+/// Add `face` to `shell` once, skipping duplicates.
+///
+/// `BOPAlgo_Builder::BuildDraftSolid` adds every image face unconditionally
+/// (`BOPAlgo_Builder_3.cxx:329` / `:342` / `:357`: `iFlag = 1; aBB.Add(aShD,
+/// aFx)`). The previous body also dropped faces with fewer than three vertices;
+/// that predicate does not exist in OCCT and is removed (audit A11). A duplicate
+/// `TShape` cannot occur in OCCT's `myImages` list, so the identity guard is kept
+/// only as a cheap invariant check.
 fn add_draft_face_once(shell: &mut Shell, face: &TopoShape) -> bool {
-    let Some(fc) = as_face(face) else {
-        return false;
-    };
-    if face_is_degenerate(&fc) {
+    if as_face(face).is_none() {
         return false;
     }
     if iter_children(&shell.0)
