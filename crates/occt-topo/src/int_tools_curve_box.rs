@@ -25,9 +25,6 @@ use occt_geom::Curve;
 
 use crate::inttools_data::IntRange;
 
-/// Samples used when building the curve box (`BndLib_Add3dCurve::Add`).
-const CURVE_BOX_SAMPLES: usize = 48;
-
 /// `IntTools_Tools::CheckCurve` comparison tolerance: two vertices at
 /// Confusion plus Confusion as the minimal distance between them.
 pub const CHECK_CURVE_THIN: f64 = 3.0 * CONFUSION;
@@ -39,19 +36,15 @@ pub fn box_is_thin(box_: &BndBox, tol: f64) -> bool {
 
 /// Build a bounding box of `curve` over `[first, last]`, enlarged by `tol`.
 ///
-/// Stands in for `BndLib_Add3dCurve::Add(GeomAdaptor_Curve, tol, box)`.
+/// `BndLib_Add3dCurve::Add(theAdaptor, U1, U2, Tol, B)` — in 8.0.0 that forwards
+/// to `GeomBndLib_Curve`, whose faithful port (per-type dispatch, analytic arms,
+/// tolerance as the box gap) is [`crate::geom_bnd_lib_curve3d::box_curve`]. The
+/// previous body sampled 48 points, a stand-in with no OCCT counterpart
+/// (audit A19/T-55 family).
 pub fn add_curve_to_box(curve: &dyn Curve, first: f64, last: f64, tol: f64, box_: &mut BndBox) {
     let (a, b) = finite_or_unit(curve, first, last);
-    if (b - a).abs() <= PCONFUSION {
-        box_.add_point(&curve.d0(a));
-        box_.enlarge(tol);
-        return;
-    }
-    for i in 0..=CURVE_BOX_SAMPLES {
-        let t = a + (b - a) * (i as f64 / CURVE_BOX_SAMPLES as f64);
-        box_.add_point(&curve.d0(t));
-    }
-    box_.enlarge(tol);
+    let b_curve = crate::geom_bnd_lib_curve3d::box_curve(curve, a, b, tol);
+    box_.add_box(&b_curve);
 }
 
 fn finite_or_unit(curve: &dyn Curve, first: f64, last: f64) -> (f64, f64) {
@@ -212,19 +205,6 @@ pub fn curve_box_unexpanded(curve: &dyn Curve, first: f64, last: f64, curve_tol:
     box_
 }
 
-/// Distance from `p` to the closest sampled point of `curve` in `[first, last]`.
-pub fn sampled_distance_to_curve(curve: &dyn Curve, p: &GpPnt, first: f64, last: f64) -> f64 {
-    let (a, b) = finite_or_unit(curve, first, last);
-    let mut best = p.distance(&curve.d0(a));
-    for i in 1..=CURVE_BOX_SAMPLES {
-        let t = a + (b - a) * (i as f64 / CURVE_BOX_SAMPLES as f64);
-        let d = p.distance(&curve.d0(t));
-        if d < best {
-            best = d;
-        }
-    }
-    best
-}
 
 /// True when `p` is inside `box` expanded by `tol` (used by IsExistingVertex).
 pub fn point_box_out(box_: &BndBox, p: &GpPnt, tol: f64) -> bool {
