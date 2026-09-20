@@ -161,7 +161,7 @@ cd ..; git worktree remove --force .target-headcheck
 - **环**：`BRepPrim_Torus::SetMeridian()`（`BRepPrim_Torus.cxx:71-82`）——3D 经线 = `Geom_Circle(gp_Ax2(loc + major·XDir, −Y, XDir), minor)`；2D pcurve = `Geom2d_Circle(gp_Ax2d((**major**, 0), XDir), minor)`。
 - **仓内已有可直接用的件**：`GeometryRegistry::set_edge_pcurve(&TopoShape, face_key, Arc<dyn Curve2d>)` / `set_edge_pcurves`（`tgeometry.rs:310-320`，seam 边用两元素 forward→reversed）、`set_pcurve_range`（`:325`）、`occt_geom2d::{Geom2dLine, Geom2dCircle}`、`TopoBuilder::{make_edge, add_edge_vertices, make_wire, make_face}`。
 - **验证链**：① 临时探针（sphere/torus `wires/face > 0` 且 `incremental_mesh_to_shape_mesh` 成功、顶点/三角数 > 0）；② `--lib` 1293/1 不回退（球面测试还断言 `UVBounds = 2π × π`，见 `primitives.rs:576-578`，即退化极点边的 u 等参线必须到位）；③ 再重放 A13/A18；④ 再重放 T-59/A23。
-| T-50 | A14 | `geom/`（csg/delaunay/triangulate/fit*/polygon_*）、`elib/measure.rs`、`validate.rs`、`hlr.rs`、`viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs` | 整包非移植件（`validate.rs` 的 `is_valid()` 恒 true 风险最高）→ 模块头声明未移植 + 真实出处 | 8 | pending |
+| T-50 | A14 | `geom/`（csg/delaunay/triangulate/fit*/polygon_*）、`elib/measure.rs`、`validate.rs`、`hlr.rs`、`viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs` | 整包非移植件（`validate.rs` 的 `is_valid()` 恒 true 风险最高）→ 模块头声明未移植 + 真实出处 | 8 | **◐ 高风险项已声明**（2026-09-20）：`validate.rs` 模块头 + `Analyzer::{is_valid,check_geometry}` 已标 `UNPORTED` 并写明"**不得作为校验门禁**"与 OCCT 对照（`BRepCheck_Analyzer::IsValid` `BRepCheck_Analyzer.cxx:458-478` 遍历 `BRepCheck_Status`，任一非 `NoError` 即 false）；其余包（`geom/`、`elib/measure.rs`、`hlr.rs`、`viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs`）的模块头声明仍未做 |
 | T-51 | A15 | `extrema_cc/p02.rs:210-241`、`hyperbola.rs:16`、`parabola.rs:16`、`surface.rs:12-20`、`intana/p02.rs:574`、`extrema_ss.rs:69,119`、`curve_reparam.rs:37,189,228`、`gcpnts.rs` 积分 | 失败被 `fallback_*` 吞掉（丢 `StdFail_NotDone` 语义）+ 自创阈值 → 逐条按 OCCT 返回失败或补齐精确解 | 8 | pending |
 | T-52 | A16 | `occt-geom/src/geom_api.rs:52,97`、`occt-geom2d/src/curve_ops.rs:68-69` | 256×256 采样求交/投影 → `Extrema_ExtPS/ExtCC` + `intana2d`/`intimpargen` | 3 | pending |
 | T-53 | A17 | `occt-topo/src/brep_exchange.rs:56-98` | 偏转形参被 Prs3d 顶掉 + 三级静默回退 → `RWObj_CafWriter`/`RWMesh_FaceIterator.cxx:87-89`（不网格化、空则跳过）⇒ 删回退、形参改名 | **6** | **done**（2026-09-20） |
@@ -427,6 +427,14 @@ cd ..; git worktree remove --force .target-headcheck
   4. `circle_plane_intersection`：**删除**共面时凭空造的 `[center, C(π/2)]` 两点（OCCT 从不产生），改为返回空（共面 ⇒ 整圆、无孤立交点），整个函数标 `UNPORTED` 并写明忠实件是 `IntAna_Quadric`/`GeomAPI_IntCS`（`ElCLib` 无求交函数）。
 - **未完成 ⇒ T-73（已就地标 UNPORTED）**：`poly/make_loops.rs::choose_left_way` 仍取首候选。OCCT 的最小夹角选择在 `Poly_MakeLoops.cxx:611-676`（3D，用 `myHelper->GetNormal`/`GetLastTangent`）与 `:688-700`（2D，加 `myRightWay`），仅在取不到法向/切线时才 `return theLstIndS.First()`；端口既无 helper 的法向/切线访问器也无 `myRightWay`，故永远走该兜底分支。该路径目前仅被自身测试调用。
 - **验证（全绿，与基线逐项一致）**：`occt-core --lib` **290/290**（1 ignored）、`occt-geom --lib` 151/151、`occt-topo --lib` **1293/1**（唯一红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3；`cargo check` exit 0。本批三处均为**潜伏**修复（`surface_d2`/`bsphere`/`intersect` 在仓内均无调用者），故门禁数字不变。
+
+**批 8（A14/T-50 的高风险项：`validate.rs` 的"恒 true"假门禁）已完成声明 —— 2026-09-20**
+
+- **落地**：`crates/occt-topo/src/validate.rs`。
+  - 模块头新增 `UNPORTED` 段：说明本文件**不是** `BRepCheck_Analyzer` 的翻译——OCCT 的 `IsValid(S)`（`BRepCheck_Analyzer.cxx:458-478`）遍历 `myMap` 里每个子形状的 `BRepCheck_Status`，任一 `!= BRepCheck_NoError` 即 `false` 并递归；本文件的检查（Euler 特征、计数合理性、朝向统计）是本地不变量，**不等价**。
+  - `Analyzer::is_valid()` 与 `check_geometry()` 加显式告警：前者**恒返回 `true`**、后者**恒返回 `Report::ok()`**，**不得作为校验门禁**使用。
+  - **无行为改动**（纯声明）：`occt-topo --lib` 仍 **1293/1**（唯一红 = T-01）。
+- **未完成（仍在 T-50 内）**：A14 其余包（`geom/`（csg/delaunay/triangulate/fit*/polygon_*）、`elib/measure.rs`、`hlr.rs`、`viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs`）的模块头声明。
 
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。

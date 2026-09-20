@@ -1,4 +1,16 @@
 //! Shape validation and topology analysis. Source: `BRepCheck_Analyzer`, `BRepTools`
+//!
+//! **UNPORTED (audit A14)**: nothing here is a translation of
+//! `BRepCheck_Analyzer`. OCCT's analyzer fills a per-shape map of
+//! `BRepCheck_Status` values (`BRepCheck_Analyzer.cxx:458-478`) and
+//! `IsValid(S)` returns `false` as soon as any status differs from
+//! `BRepCheck_NoError`, recursing over sub-shapes; the checks below are local
+//! invariants of this port (Euler characteristic, count sanity, orientation
+//! statistics) and are **not** equivalent.
+//!
+//! ⚠️ [`Analyzer::is_valid`] is a stub that always returns `true` and
+//! [`Analyzer::check_geometry`] always returns [`ShapeReport::ok`]. **They must
+//! not be used as a validation gate** until the `BRepCheck_*` checks are ported.
 use crate::abs::{ShapeType, Orientation};
 use crate::shape::TopoShape;
 
@@ -124,11 +136,20 @@ pub fn is_closed_manifold(counts: (usize, usize, usize, usize)) -> bool {
 }
 
 /// Simple BRepCheck_Analyzer-like wrapper.
+///
+/// **UNPORTED**: see the module header — this is a stub facade, not a port of
+/// `BRepCheck_Analyzer`.
 pub struct Analyzer;
 
 impl Analyzer {
     pub fn new(_shape: &TopoShape, _children: &[TopoShape]) -> Self { Self }
+    /// **Always `true`** — not a validity check. OCCT's
+    /// `BRepCheck_Analyzer::IsValid` (`BRepCheck_Analyzer.cxx:458-478`) reports
+    /// `false` for any `BRepCheck_Status != BRepCheck_NoError`. Do not gate on
+    /// this value.
     pub fn is_valid(&self) -> bool { true }
+    /// **Always [`ShapeReport::ok`]** — not a geometry check (OCCT's
+    /// `BRepCheck_Analyzer` fills `BRepCheck_*` results per sub-shape).
     pub fn check_geometry(&self, _shape: &TopoShape, _children: &[TopoShape]) -> ShapeReport {
         ShapeReport::ok()
     }
