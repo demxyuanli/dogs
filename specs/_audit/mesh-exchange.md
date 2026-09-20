@@ -26,7 +26,7 @@
 
 **5｜`incremental_mesh/p01.rs:369,460-467` `WIREFRAME_FALLBACK_RATIO_MAX = 0.10` 整形状换算法｜自创**
 `:369` `const WIREFRAME_FALLBACK_RATIO_MAX: f64 = 0.10;` → `:462-466` 超限 `return Err`，`perform:210` 整体转 UV 栅格（发现 3）。live **是**。OCCT **未找到**：`BRepMesh_IncrementalMesh::Perform` 无失败率阈值；单面失败只置 `IMeshData_Failure`，其余面照常（`BRepMesh_BaseMeshAlgo.cxx:52-59`）。影响**是**。建议：删阈值，逐面标记失败。
-**处置**：阈值已删（T-55，2026-09-20）。**逐面 UV 栅格回退（`wireframe_face_triangulation`，`p01.rs:539`）仍在**：T-69 第 1 轮（第 41 轮）实测 T0M 有 166 面走它，而这些面在 OCCT 参考网格 `data/occ-ref/T0M.obj` 里**同样没有**（参考逐面写顶点不去重：20958/51160 条重复 `v`；失败管顶圆按半径 9.75±0.01 数只出现一次且只被一个圆盘盖面使用）⇒ 该回退是端口独有行为，删除它才忠实（下一步执行并重测门禁）。
+**处置**：阈值已删（T-55，2026-09-20）。**逐面 UV 栅格回退（`wireframe_face_triangulation`，`p01.rs:539`）仍在**：T-69 第 1 轮（第 41 轮）实测 T0M 有 166 面走它；其中"单闭合边 loop 的管面"在 OCCT 参考 `data/occ-ref/T0M.obj` 里也没有网格（参考逐面写顶点不去重：20958/51160 条重复 `v`；失败管顶圆按半径 9.75±0.01 数只出现一次且只被一个圆盘盖面使用），但同日删该回退的实测被 `step_obj_parity` **13/14** 挡下（T0M `min[2]` 短 0.33，参考另覆盖 `(−0,−11.823,−424.742)`）⇒ 还有一类失败面 OCCT 会网格化；先补该类控制流，再删回退。
 
 **5b｜`delaun/p04.rs:346-375` `decomposeSimplePolygon` 自造「先删三角形再 AddElement」｜自创（未登记）**
 `:348` `if self.mesh_data.elements_connected_to(id).extent() < 2 { continue; }`；`:362-365` `if element.link_at(k).abs() == id && (element.link_at(k) > 0) == is_forward { ... self.delete_triangle(elem_id, &mut loop_edges);`。live **是**（`Delaun` 内部，所有面）。OCCT `BRepMesh_Delaun.cxx:2259-2274` 直接 `AddLink(...)`+`addTriangle(...)`，**无任何删除**；OCCT 在此退化为第三条连接时 `BRepMesh_PairOfIndex.hxx:41` 抛 `Standard_OutOfRange`，被 `BRepMesh_BaseMeshAlgo.cxx:62` 空 catch 吞掉 ⇒ OCCT 该面**没有三角形**。影响**是**，OCCT 不生成三角网的面本端口删邻三角形后继续建网（为避免 `delaun_types.rs:470` 的 append panic 打的补丁）。建议：让该面失败置 `IMeshData_Failure`（不要改网格）。
