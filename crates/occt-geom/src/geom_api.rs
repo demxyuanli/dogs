@@ -2,9 +2,20 @@
 //! Source: `GeomAPI_ProjectPointOnCurve.hxx`, `GeomAPI_ProjectPointOnSurf.hxx`,
 //! `GeomAPI_IntCS.hxx`, `GeomAPI_ExtremaCurveCurve.hxx`.
 //!
-//! ponytail: sampler-based approximations throughout — not root-exact like
-//! OCCT's Extrema/IntCurve algorithms. Adequate for geometry tooling; replace
-//! with subdivision/Newton solvers if exact roots on arbitrary curves are needed.
+//! **Ported (faithful)**: [`project_point_on_curve`] = `Extrema_ExtPC` via
+//! [`crate::extrema_pc`] with `GeomAPI_ProjectPointOnCurve`'s own
+//! `IsDone`/minimum rules (`GeomAPI_ProjectPointOnCurve.cxx:135-155`), and
+//! [`project_point_on_surface`] = `Extrema_ExtPS` via [`crate::extrema_surf::ExtPs`]
+//! with `GeomAPI_ProjectPointOnSurf`'s rules
+//! (`GeomAPI_ProjectPointOnSurf.cxx:214-246`).
+//!
+//! **UNPORTED (audit A16)** — the two intersection samplers below are
+//! port-internal grid/golden-section searches, not OCCT translations:
+//! [`curve_surface_intersections`] stands in for `GeomAPI_IntCS` →
+//! `IntCurveSurface_Intersection` + `IntPatch_Intersection`, and
+//! [`curve_curve_intersections`] for the `IntTools_EdgeEdge` /
+//! `IntCurve_IntConicConic` family (8.0.0 has no `GeomAPI_IntCC`). Both are on
+//! live `inttools` paths, so they must be replaced, not deleted.
 
 use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
 use crate::curve::Curve;
@@ -25,39 +36,66 @@ pub struct PointOnSurface {
     pub distance: f64,
 }
 
-/// Nearest point on `c` to `p` (coarse scan + golden-section refinement).
-/// Unbounded curves (lines) are handled by probing an expanding window around
-/// `u = 0` until the minimum is interior.
+/// Nearest point on `c` to `p`.
+///
+/// Port of `GeomAPI_ProjectPointOnCurve::Perform`
+/// (`GeomAPI_ProjectPointOnCurve.cxx:135-155`): the extrema engine is
+/// `Extrema_ExtPC` over the curve's own range (`myExtPC.Initialize(myC,
+/// myC.FirstParameter(), myC.LastParameter())`, `cxx:58`), `IsDone()` requires
+/// `IsDone() && NbExt() > 0` (`cxx:139`) and the answer is the **minimum**
+/// (`cxx:143-152`). OCCT performs **no** endpoint adjustment here — that is
+/// `ShapeAnalysis_Curve::Project`'s job (`ShapeAnalysis_Curve.cxx:161-182`).
+/// The faithful `Extrema_ExtPC` port is [`crate::extrema_pc::point_curve_extrema`]
+/// (audit A7/T-43: `ExtPElC` analytic arms + `Extrema_GGExtPC`'s `default:` arm,
+/// with `None` standing for OCCT's `IsDone() == false`).
+///
+/// The previous body was an invented coarse scan + golden-section refinement
+/// over an expanding window (audit A16).
 pub fn project_point_on_curve(c: &dyn Curve, p: &GpPnt, _tol: f64) -> Option<PointOnCurve> {
-    let mk = |u: f64, q: GpPnt| PointOnCurve { parameter: u, point: q, distance: q.distance(p) };
-    let a = c.first_parameter();
-    let b = c.last_parameter();
-    if !a.is_finite() || !b.is_finite() {
-        let base = c.d0(0.0);
-        let d = base.distance(p);
-        let mut w = (d + 1.0).max(1.0) * 8.0;
-        for _ in 0..4 {
-            if let Some((u, q)) = refine_closest_curve(c, p, -w, w) {
-                if (u + w).abs() > 1e-9 && (u - w).abs() > 1e-9 {
-                    return Some(mk(u, q));
-                }
-            }
-            w *= 8.0;
-        }
-        return refine_closest_curve(c, p, -w, w).map(|(u, q)| mk(u, q));
-    }
-    refine_closest_curve(c, p, a, b).map(|(u, q)| mk(u, q))
+    let e = crate::extrema_pc::point_curve_extrema(c, p)?;
+    Some(PointOnCurve { parameter: e.u1, point: e.p2, distance: e.distance })
 }
 
-/// Nearest (u, v) parameters of `p` on `s` (grid search + hill-climb).
-/// Unbounded parameter directions use an expanding window.
-pub fn project_point_on_surface(s: &dyn Surface, p: &GpPnt, _tol: f64) -> Option<PointOnSurface> {
-    let (u, v) = surface_closest_params(s, p);
-    let point = s.d0(u, v);
+/// Nearest (u, v) parameters of `p` on `s` (the minimum of the extrema).
+///
+/// Port of `GeomAPI_ProjectPointOnSurf::Perform`
+/// (`GeomAPI_ProjectPointOnSurf.cxx:214-246`): `Extrema_ExtPS` over the
+/// surface's own range with `Tolerance` used for both parameters, `IsDone()`
+/// requiring `IsDone() && NbExt() > 0` (`cxx:83`) and the answer being the
+/// smallest `SquareDistance` (`cxx:88-100`). The engine is
+/// [`crate::extrema_surf::ExtPs`] (audit A1/T-67 step 2): elementary surfaces go
+/// to the exact `Extrema_ExtPElS` arms, everything else to the general arm,
+/// which is still the port's substitute for the unported `Extrema_GenExtPS`
+/// (marked UNPORTED there).
+///
+/// The previous body was an invented 16×16 grid + hill-climb + golden-section
+/// over an expanding window (audit A16).
+pub fn project_point_on_surface(s: &dyn Surface, p: &GpPnt, tol: f64) -> Option<PointOnSurface> {
+    let tol = if tol > 0.0 { tol } else { occt_core::precision::PCONFUSION };
+    let ex = crate::extrema_surf::ExtPs::with_surface(p, s, tol, tol);
+    if !ex.is_done() {
+        return None;
+    }
+    let n = ex.nb_ext();
+    if n == 0 {
+        return None;
+    }
+    let mut best = 1usize;
+    for i in 2..=n {
+        if ex.square_distance(i) < ex.square_distance(best) {
+            best = i;
+        }
+    }
+    let (u, v, point) = ex.point(best);
     Some(PointOnSurface { u, v, point, distance: point.distance(p) })
 }
 
 /// Intersection points of curve `c` with surface `s`.
+///
+/// **UNPORTED (audit A16)**: a port-internal sampler (curve sampling +
+/// distance-dip detection + golden-section minimization), not a translation.
+/// OCCT's route is `GeomAPI_IntCS` → `IntCurveSurface_Intersection` /
+/// `IntPatch_Intersection` (curved cases) — none of which is ported.
 ///
 /// Samples the curve, detects parameter intervals where the distance to the
 /// surface dips through a near-zero local minimum, refines each minimum by
@@ -94,9 +132,11 @@ pub fn curve_surface_intersections(c: &dyn Curve, s: &dyn Surface, tol: f64, sam
 
 /// Approximate intersection points of two 3D curves.
 ///
-/// ponytail: approximate sampler-based intersection — not root-exact. Samples
-/// both curves on coarse grids, refines candidate pairs by alternating 1-D
-/// minimization, and dedupes points within `tol`.
+/// **UNPORTED (audit A16)**: port-internal sampler — samples both curves on
+/// 256×256 grids, refines candidate pairs by alternating 1-D minimization and
+/// dedupes within `tol`; not root-exact. OCCT has no `GeomAPI_IntCC` in 8.0.0;
+/// its curve/curve roots come from `IntTools_EdgeEdge`
+/// (`IntTools_EdgeEdge.cxx:353-549`) or `IntCurve_IntConicConic`.
 pub fn curve_curve_intersections(c1: &dyn Curve, c2: &dyn Curve, tol: f64) -> Vec<GpPnt> {
     let tol = tol.max(1e-12);
     let na = 256;
@@ -255,13 +295,19 @@ pub fn surface_bbox(s: &dyn Surface, nu: usize, nv: usize) -> (GpPnt, GpPnt) {
 pub fn pcurve_of_curve_on_surface(c: &dyn Curve, s: &dyn Surface, samples: usize) -> Vec<GpPnt2d> {
     let (a, b) = finite_range(c.first_parameter(), c.last_parameter());
     let n = samples.max(2);
-    (0..n)
-        .map(|i| {
-            let u = a + (b - a) * i as f64 / (n - 1) as f64;
-            let (su, sv) = surface_closest_params(s, &c.d0(u));
-            GpPnt2d::new(su, sv)
-        })
-        .collect()
+    let mut out: Vec<GpPnt2d> = Vec::with_capacity(n);
+    for i in 0..n {
+        let u = a + (b - a) * i as f64 / (n - 1) as f64;
+        match project_point_on_surface(s, &c.d0(u), occt_core::precision::PCONFUSION) {
+            Some(ps) => out.push(GpPnt2d::new(ps.u, ps.v)),
+            // `GeomAPI_ProjectPointOnSurf` reports not-done for this sample;
+            // repeat the previous parameter rather than dropping the point.
+            // (OCCT's projector retries with `ShapeAnalysis_Surface::ValueOfUV`,
+            // `ShapeAnalysis_Surface.cxx:1449-1459`, which the port lacks.)
+            None => out.push(out.last().copied().unwrap_or(GpPnt2d::new(0.0, 0.0))),
+        }
+    }
+    out
 }
 
 // --- internals -------------------------------------------------------------
@@ -294,121 +340,18 @@ fn minimize_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64) -> (f64, f64) {
     (x, f(x))
 }
 
-/// Coarse-to-fine closest point over a finite `[a, b]`.
-fn refine_closest_curve(c: &dyn Curve, p: &GpPnt, a: f64, b: f64) -> Option<(f64, GpPnt)> {
-    if !(b > a) {
-        return None;
-    }
-    let n = 64;
-    let mut best = a;
-    let mut best_d = f64::INFINITY;
-    for i in 0..=n {
-        let u = a + (b - a) * i as f64 / n as f64;
-        let d = c.d0(u).square_distance(p);
-        if d < best_d {
-            best_d = d;
-            best = u;
-        }
-    }
-    let span = (b - a) / n as f64;
-    let lo = (best - span).max(a);
-    let hi = (best + span).min(b);
-    let (u, _) = minimize_1d(&|u| c.d0(u).square_distance(p), lo, hi);
-    Some((u, c.d0(u)))
-}
-
-/// Closest (u, v) on a surface within a finite window: grid search + hill-climb.
-fn closest_params_in_window(s: &dyn Surface, p: &GpPnt, u0: f64, u1: f64, v0: f64, v1: f64) -> (f64, f64) {
-    if !(u1 > u0) || !(v1 > v0) {
-        return (u0, v0);
-    }
-    let nu = 16;
-    let nv = 16;
-    let mut best = (u0, v0);
-    let mut best_d = f64::INFINITY;
-    for i in 0..=nu {
-        for j in 0..=nv {
-            let u = u0 + (u1 - u0) * i as f64 / nu as f64;
-            let v = v0 + (v1 - v0) * j as f64 / nv as f64;
-            let d = s.d0(u, v).square_distance(p);
-            if d < best_d {
-                best_d = d;
-                best = (u, v);
-            }
-        }
-    }
-    // Coarse-to-fine refinement (6 rounds of local hill-climb).
-    let (mut u, mut v) = best;
-    let (mut hu, mut hv) = ((u1 - u0) / nu as f64, (v1 - v0) / nv as f64);
-    for _ in 0..6 {
-        hu *= 0.5;
-        hv *= 0.5;
-        let mut du = u;
-        let mut dv = v;
-        let mut dd = s.d0(u, v).square_distance(p);
-        for &(su, sv) in &[(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-            let nu2 = (u + su * hu).clamp(u0, u1);
-            let nv2 = (v + sv * hv).clamp(v0, v1);
-            let d = s.d0(nu2, nv2).square_distance(p);
-            if d < dd {
-                dd = d;
-                du = nu2;
-                dv = nv2;
-            }
-        }
-        u = du;
-        v = dv;
-    }
-    // Golden-section polish per axis over the local neighborhood. The hill-climb
-    // steps halve 6 times, so its accuracy is `window/16/2^6`; the polish closes
-    // the gap to the true minimum (needed for far/unbounded projections).
-    for _ in 0..3 {
-        let (nu, _) = minimize_1d(&|t| s.d0(t, v).square_distance(p), (u - hu).max(u0), (u + hu).min(u1));
-        u = nu;
-        let (nv, _) = minimize_1d(&|t| s.d0(u, t).square_distance(p), (v - hv).max(v0), (v + hv).min(v1));
-        v = nv;
-    }
-    (u, v)
-}
-
-/// Closest (u, v) of `p` on `s`, expanding the window for unbounded directions
-/// until the solution is interior.
-fn surface_closest_params(s: &dyn Surface, p: &GpPnt) -> (f64, f64) {
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let unb_u = !u0.is_finite() || !u1.is_finite();
-    let unb_v = !v0.is_finite() || !v1.is_finite();
-    let (mut lo_u, mut hi_u) = if unb_u { (-1.0, 1.0) } else { (u0, u1) };
-    let (mut lo_v, mut hi_v) = if unb_v { (-1.0, 1.0) } else { (v0, v1) };
-    let (mut u, mut v) = closest_params_in_window(s, p, lo_u, hi_u, lo_v, hi_v);
-    if unb_u || unb_v {
-        let mut w = 1.0;
-        for _ in 0..8 {
-            let on_u = unb_u && ((u - lo_u).abs() < 1e-9 || (u - hi_u).abs() < 1e-9);
-            let on_v = unb_v && ((v - lo_v).abs() < 1e-9 || (v - hi_v).abs() < 1e-9);
-            if !on_u && !on_v {
-                break;
-            }
-            w *= 8.0;
-            if unb_u {
-                lo_u = -w;
-                hi_u = w;
-            }
-            if unb_v {
-                lo_v = -w;
-                hi_v = w;
-            }
-            (u, v) = closest_params_in_window(s, p, lo_u, hi_u, lo_v, hi_v);
-        }
-    }
-    (u, v)
-}
-
 /// Distance from `c(u)` to the nearest point on surface `s`.
+///
+/// The projection is the faithful `GeomAPI_ProjectPointOnSurf` of
+/// [`project_point_on_surface`]; when it reports not-done the sample counts as
+/// "no crossing" (`INFINITY`) for the sampler below, instead of inventing a
+/// far-away point.
 fn dist_curve_surface(c: &dyn Curve, s: &dyn Surface, u: f64) -> f64 {
     let p = c.d0(u);
-    let (su, sv) = surface_closest_params(s, &p);
-    p.distance(&s.d0(su, sv))
+    match project_point_on_surface(s, &p, occt_core::precision::PCONFUSION) {
+        Some(ps) => p.distance(&ps.point),
+        None => f64::INFINITY,
+    }
 }
 
 /// Sample window for `c` that covers the given bounding box. Unbounded curves
