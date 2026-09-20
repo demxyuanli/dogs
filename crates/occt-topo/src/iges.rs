@@ -250,6 +250,35 @@ fn any_normal(v: &occt_core::gp::GpXyz) -> GpVec {
     }
 }
 
+/// The `Geom_SweptSurface` family of `GeomToIGES_GeomSurface::TransferSurface`
+/// (`GeomToIGES_GeomSurface.cxx:1000-1025`): a linear extrusion becomes entity
+/// 122, a revolution entity 120.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SweptKind {
+    Extrusion,
+    Revolution,
+}
+
+/// Resolve the swept surface behind a face's surface the way
+/// `GeomToIGES_GeomSurface::TransferSurface` dispatches: a
+/// `Geom_RectangularTrimmedSurface` is peeled first (`cxx:492-515`, the
+/// `Bounded` branch at `:177-181` recurses on `BasisSurface`), then the exact
+/// `Geom_SweptSurface` type decides (`cxx:1013-1022`, extrusion before
+/// revolution). Anything else - including a `Geom_OffsetSurface`, which is not a
+/// `Geom_SweptSurface` - has no swept branch.
+fn swept_surface_kind(s: &dyn Surface) -> Option<SweptKind> {
+    if let Some(b) = s.rectangular_trimmed_basis() {
+        return swept_surface_kind(b.as_ref());
+    }
+    if s.is_surface_of_linear_extrusion() {
+        Some(SweptKind::Extrusion)
+    } else if s.is_surface_of_revolution() {
+        Some(SweptKind::Revolution)
+    } else {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Entity bookkeeping
 // ---------------------------------------------------------------------------
@@ -284,15 +313,18 @@ impl Ent {
 
     /// The two Directory Entry cards of the entity
     /// (`IGESData_IGESWriter.cxx:809-880`): eight 8-column fields plus four
-    /// 2-column status fields on the first card, and five 8-column numeric
-    /// fields plus four 8-column string fields (two reserved, the label and the
-    /// subscript) on the second - 72 data columns each.
-    fn directory_lines(&self) -> (String, String) {
+    /// 2-column status fields on the first card, and nine 8-column fields on the
+    /// second - 72 data columns each. Card 1 field 2 is the sequence number of the
+    /// entity's **first parameter card** (`v[1] = thepnum.Value(i)`, `cxx:834`),
+    /// card 2 field 4 the number of parameter cards
+    /// (`v[15] = thepnum.Value(i+1) - thepnum.Value(i)`, `cxx:835`).
+    fn directory_lines(&self, p_start: usize) -> (String, String) {
         let ty = field8(&self.ty.to_string());
+        let pstart = field8(&p_start.to_string());
         let pcount = field8(&self.param_line_count().to_string());
         let form = field8(&self.form.to_string());
         let l1 = format!(
-            "{ty}{pcount}{}{}{}{}{}{}{:>2}{:>2}{:>2}{:>2}",
+            "{ty}{pstart}{}{}{}{}{}{}{:>2}{:>2}{:>2}{:>2}",
             field8("0"),
             field8("0"),
             field8("0"),
@@ -433,19 +465,18 @@ impl IgesWriter {
         }
     }
 
-    fn emit_edge_curve(&mut self, e: &Edge) -> usize {
-        let Some(curve) = BRepTool::edge_curve(e) else {
-            let (v1, v2) = edge_vertices(e);
-            let p1 = v1.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
-            let p2 = v2.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
-            return self.emit_line(&p1, &p2);
-        };
-        let (a, b) = BRepTool::edge_parameters(e);
-        match iges_curve_kind(curve.as_ref()) {
+    /// `GeomToIGES_GeomCurve::TransferCurve(Geom_Curve, Udeb, Ufin)`
+    /// (`GeomToIGES_GeomCurve.cxx:94-126` dispatching, `:133-161` on the bounded
+    /// family, `:481-528` on the conics): a `Geom_Line` becomes entity 110, a
+    /// `Geom_Circle` entity 100, a B-spline/Bezier entity 126. Returns `None`
+    /// where OCCT's transfer returns a null handle (conics: the 104 writer is not
+    /// ported yet; any other curve type has no branch at all).
+    fn emit_curve_range(&mut self, curve: &dyn Curve, a: f64, b: f64) -> Option<usize> {
+        match iges_curve_kind(curve) {
             IgCurveKind::Line => {
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
-                self.emit_line(&p1, &p2)
+                Some(self.emit_line(&p1, &p2))
             }
             IgCurveKind::Circle => {
                 let p1 = curve.d0(a);
@@ -468,28 +499,36 @@ impl IgesWriter {
                     }
                     None => (GpPnt::zero(), GpPnt::new(0.0, 0.0, 1.0)),
                 };
-                self.emit_circular_arc(&center, &p1, &p2, &plane_pt)
+                Some(self.emit_circular_arc(&center, &p1, &p2, &plane_pt))
             }
-            IgCurveKind::Bounded => match self.emit_bspline_curve(curve.as_ref(), a, b) {
-                Some(idx) => idx,
-                None => {
-                    // UNPORTED (audit A26 / task T-78): `GeomToIGES_GeomCurve::
-                    // TransferCurve(Geom_BSplineCurve)` (`cxx:279-423`) first
-                    // makes a periodic curve non-periodic (`SetNotPeriodic`) and
-                    // calls `Segment` when the edge range is narrower than the
-                    // curve's own; this port has neither, so those cases keep the
-                    // chord-line stand-in.
-                    let p1 = curve.d0(a);
-                    let p2 = curve.d0(b);
-                    self.emit_line(&p1, &p2)
-                }
-            },
-            IgCurveKind::Conic | IgCurveKind::Other => {
-                // UNPORTED (audit A26 / task T-78): OCCT writes entity 104 for
-                // ellipse/hyperbola/parabola (`TransferConic`), and
-                // `TransferCurve` returns a null handle for any other curve type,
-                // in which case the caller writes no curve at all. Until the 104
-                // emitter lands the edge keeps the chord-line stand-in.
+            // UNPORTED (audit A26 / task T-78): `TransferCurve(Geom_BSplineCurve)`
+            // (`cxx:279-423`) first makes a periodic curve non-periodic
+            // (`SetNotPeriodic`) and calls `Segment` when the requested range is
+            // narrower than the curve's own; this port has neither, so those cases
+            // return `None`.
+            IgCurveKind::Bounded => self.emit_bspline_curve(curve, a, b),
+            // UNPORTED (audit A26 / task T-78): `TransferConic`
+            // (`GeomToIGES_GeomCurve.cxx:533-603`) writes entity 104 for
+            // ellipse/hyperbola/parabola; any other curve type has no branch in
+            // `TransferCurve` and yields a null handle.
+            IgCurveKind::Conic | IgCurveKind::Other => None,
+        }
+    }
+
+    fn emit_edge_curve(&mut self, e: &Edge) -> usize {
+        let Some(curve) = BRepTool::edge_curve(e) else {
+            let (v1, v2) = edge_vertices(e);
+            let p1 = v1.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
+            let p2 = v2.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
+            return self.emit_line(&p1, &p2);
+        };
+        let (a, b) = BRepTool::edge_parameters(e);
+        match self.emit_curve_range(curve.as_ref(), a, b) {
+            Some(idx) => idx,
+            None => {
+                // The transfer above returned a null handle: OCCT writes no curve
+                // at all for those types, the port keeps the chord-line stand-in
+                // (UNPORTED, audit A26 / task T-78, see `emit_curve_range`).
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
                 self.emit_line(&p1, &p2)
@@ -818,6 +857,114 @@ impl IgesWriter {
         Some(self.emit(128, 0, "B_SPLINE_SURFACE", s))
     }
 
+    /// Entity 120 (`GeomToIGES_GeomSurface::TransferSurface(
+    /// Geom_SurfaceOfRevolution)`, `GeomToIGES_GeomSurface.cxx:1111-1188`, written
+    /// by `IGESGeom_ToolSurfaceOfRevolution::WriteOwnParams`, `:119-127`):
+    ///
+    /// `120, axis_line, generatrix, start_angle, end_angle;`
+    ///
+    /// - the generatrix is `GC.TransferCurve(BasisCurve, V1, V2)` (`cxx:1155`);
+    /// - the axis is an `IGESGeom_Line` (`cxx:1163-1183`) whose start point is
+    ///   the axis location and whose second point is `Location - Direction` -
+    ///   the CAS.CADE axis reversed (`#30 rln`, `#36 BUC60328 face 7`), the same
+    ///   convention the reader inverts (`IGESToBRep_TopoSurface.cxx:768`);
+    /// - the angles come from `Surf->Init(Axis, Generatrix, 2*M_PI - U2,
+    ///   2*M_PI - U1)` (`cxx:1185`), the CAS.CADE/IGES phase convention.
+    fn emit_surface_of_revolution(
+        &mut self,
+        surf: &dyn Surface,
+        u0: f64,
+        u1: f64,
+        v0: f64,
+        v1: f64,
+    ) -> Option<usize> {
+        let basis = surf.revolution_basis_curve()?;
+        let axis = surf.revolution_axis()?;
+        // `GC.TransferCurve(Curve, V1, V2)` (`cxx:1155`); a generatrix type with
+        // no IGES writer keeps the port's chord-line stand-in (UNPORTED, audit
+        // A26 / task T-78: `TransferConic` entity 104).
+        let generatrix = match self.emit_curve_range(basis.as_ref(), v0, v1) {
+            Some(i) => i,
+            None => {
+                let p0 = basis.d0(v0);
+                let p1 = basis.d0(v1);
+                self.emit_line(&p0, &p1)
+            }
+        };
+        let loc = axis.location();
+        let d = axis.direction();
+        let axis_line = self.emit_line(
+            &loc,
+            &GpPnt::new(loc.x() - d.x(), loc.y() - d.y(), loc.z() - d.z()),
+        );
+        let tau = 2.0 * std::f64::consts::PI;
+        Some(self.emit(
+            120,
+            0,
+            "SURFACE_OF_REVOLUTION",
+            format!(
+                "120,{axis_line},{generatrix},{},{};",
+                num(tau - u1),
+                num(tau - u0)
+            ),
+        ))
+    }
+
+    /// Entity 122 (`GeomToIGES_GeomSurface::TransferSurface(
+    /// Geom_SurfaceOfLinearExtrusion)`, `GeomToIGES_GeomSurface.cxx:1032-1104`,
+    /// written by `IGESGeom_ToolTabulatedCylinder::WriteOwnParams`, `:90-98`):
+    ///
+    /// `122, directrix, end_point.x, end_point.y, end_point.z;`
+    ///
+    /// - the U range is re-read from the surface's own `Bounds`
+    ///   (`cxx:1067-1071`, the `OCC9490` fix), not from the caller's range;
+    /// - the V range keeps OCCT's infinite handling (`cxx:1058-1065`);
+    /// - the directrix is the basis curve translated so that its origin coincides
+    ///   with the directrix origin (`cxx:1075-1096`): when
+    ///   `|V1| > Precision::Confusion()` it is shifted by
+    ///   `Value(U1,V1) - Value(U1,0)`, i.e. by `V1 * Direction`;
+    /// - the terminate point is `start->Value(U1, V2)` (`cxx:1078`).
+    fn emit_tabulated_cylinder(&mut self, surf: &dyn Surface, v0: f64, v1: f64) -> Option<usize> {
+        let basis = surf.extrusion_basis_curve()?;
+        let (u1, u2) = surf.u_range();
+        let vv1 = if occt_core::precision::Precision::is_negative_infinite(v0) {
+            -occt_core::precision::INFINITE
+        } else {
+            v0
+        };
+        let vv2 = if occt_core::precision::Precision::is_positive_infinite(v1) {
+            occt_core::precision::INFINITE
+        } else {
+            v1
+        };
+        let end = surf.value(u1, vv2);
+        let copy = if vv1.abs() > occt_core::precision::CONFUSION {
+            let shift = GpVec::from_pnts(&surf.value(u1, 0.0), &surf.value(u1, vv1));
+            basis.translated(&shift)
+        } else {
+            basis.clone_dyn()
+        };
+        let directrix = match self.emit_curve_range(copy.as_ref(), u1, u2) {
+            Some(i) => i,
+            None => {
+                let p0 = copy.d0(u1);
+                let p1 = copy.d0(u2);
+                self.emit_line(&p0, &p1)
+            }
+        };
+        Some(self.emit(
+            122,
+            0,
+            "TABULATED_CYLINDER",
+            format!(
+                "122,{directrix},{},{},{};",
+                num(end.x()),
+                num(end.y()),
+                num(end.z())
+            ),
+        ))
+    }
+
     /// Base surface entity for a face, plus any synthesized boundary curves
     /// (used when the face carries no boundary wires, e.g. a sphere).
     fn emit_face_surface(&mut self, f: &Face) -> (usize, Vec<usize>) {
@@ -933,6 +1080,22 @@ impl IgesWriter {
         let (u0, u1, v0, v1) = face_uv_bounds_finite(f);
         if let Some(idx) = self.emit_bspline_surface(surf.as_ref(), u0, u1, v0, v1) {
             return (idx, Vec::new());
+        }
+        // `GeomToIGES_GeomSurface::TransferSurface` (`cxx:1000-1025`) on the swept
+        // family - reached after the bounded family (B-spline / Bezier / trimmed,
+        // `cxx:125-139`), which is the order `cxx:112-147` dispatches in.
+        match swept_surface_kind(surf.as_ref()) {
+            Some(SweptKind::Extrusion) => {
+                if let Some(idx) = self.emit_tabulated_cylinder(surf.as_ref(), v0, v1) {
+                    return (idx, Vec::new());
+                }
+            }
+            Some(SweptKind::Revolution) => {
+                if let Some(idx) = self.emit_surface_of_revolution(surf.as_ref(), u0, u1, v0, v1) {
+                    return (idx, Vec::new());
+                }
+            }
+            None => {}
         }
         // Unclassified curved face: fall back to a plane.
         // ponytail: covers the surfaces the IGES writer has no emitter for.
@@ -1072,8 +1235,10 @@ impl IgesWriter {
         }
 
         // Directory entries: entity `i` owns the two DE pointers `2i-1` and `2i`.
+        let mut p_start = 1usize;
         for (i, ent) in self.entities.iter().enumerate() {
-            let (l1, l2) = ent.directory_lines();
+            let (l1, l2) = ent.directory_lines(p_start);
+            p_start += ent.param_line_count();
             out.push_str(&sec_line('D', 2 * i + 1, &l1, MAXCARS_G));
             out.push('\n');
             out.push_str(&sec_line('D', 2 * i + 2, &l2, MAXCARS_G));
