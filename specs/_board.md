@@ -520,6 +520,50 @@ cd ..; git worktree remove --force .target-headcheck
 - **A10 现状**：`Surface::d2` 的解析实现已覆盖 **plane / cylinder / cone / sphere / torus / Bezier / BSpline / RectangularTrimmed / SurfaceOfRevolution / SurfaceOfLinearExtrusion / OffsetSurface**（偏移面的 D2 走 `offset_surface_utils::compute_derivatives` 路径，trait 默认只余 `surface_fit`/`surface_to_grid` 两个**非 OCCT** 的网格工具类，已在 trait 文档中列名标 `UNPORTED`）。
 - **验证（全绿，与基线逐项一致）**：`occt-core --lib` 290/290、`occt-geom` **151/151**、`occt-geom2d` 72/72、`occt-topo --lib` 1293/1（唯一红 = T-01）、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 2/3；`cargo check` 全绿。
 
+## 14. A0–A31 整改状态矩阵（2026-09-20 第 36 轮汇总，供接续）
+
+> 口径：✅ = 该审查项已按 OCCT 控制流修完并有门禁证据；◐ = 部分完成（括号内写剩余）；⬜ = 未动（括号内写阻塞或前置）。
+> 每项详细证据在 `specs/_audit/_index.md` 对应行与本文 §7 各批次报告。
+
+| A# | 状态 | 任务 | 摘要 / 剩余 |
+|---|---|---|---|
+| A0 | ✅ | T-35 | offset 曲线 D0/D1/D2 按两个 `*OffsetCurveUtils.pxx` 重写（潜在缺陷，无门禁覆盖） |
+| A1 | ◐ | T-37/T-67 | `Extrema_ExtPS/GenExtPS/ExtPElS` 移植：**步 1**（解析臂接线）done；**步 2/3**（`ExtPS` 范围/`IsoIsDeg`、`GenExtPS` 主体 1056 行）⬜；39 处调用点未迁 |
+| A2 | ⬜ | T-38 | `brep_extrema.rs` 7×7 采样 + 射线奇偶 → `SolidClassifier`/`compute_state` |
+| A3 | ✅ | T-39 | `classify_curve` 删除；写侧 `IsKind` 分派 + `GeomToStep_Make*` 精确值；剩 T-71（`done=false` 臂） |
+| A4 | ⬜ | T-40 | `algo_tools::compute_state` 的 32×32 投影 |
+| A5 | ⬜ | T-41 | 体素/网格布尔摘除（`bop_curved`、`bop_builder_core`） |
+| A6 | ✅ | T-42 | `gcpnts` 二分族改调忠实 `gcpnts_perform` |
+| A7 | ◐ | T-43/T-65/T-66 | 点–曲线侧 ✅（含直线臂 A29 修复、椭圆/双曲/抛物臂 T-65）；**T-66**（`extrema_cc` 种子集 → `math_GlobOptMin`）⬜ |
+| A8 | ⬜ | T-44 | `comp_curve_to_bspline` 采样降级；**前置缺件**：`GeomConvert_CurveToBSpline` + `GeomBSplineCurve::{increase_degree,knots,multiplicities}` |
+| A9 | ✅ | T-45 | 7 处假出处改正（含批 15 追加的 `geom/delaunay.rs`） |
+| A10 | ◐ | T-46/T-73 | `surface_d2` ✅（球/环/锥解析，批 7+11+15）、`Bnd_Sphere` ✅、`circle_plane_intersection` ✅ 删伪造点、`measure.rs` 已声明；**T-73**（`choose_left_way` 最小夹角，缺 helper 法向/切线访问器）⬜ |
+| A11 | ⬜ | T-47 | 质心规则 / `solid−face` 原样返回 / 丢"顶点<3"面 / 采样解当补集 |
+| A12 | ⬜ | T-48 | `brepfeat` 体积覆盖、网格夹具冒充 `BRepPrimAPI_MakeCylinder`、`clamp(16,64)` |
+| A13 | ⬜ | T-49 | `face_to_triangles` 按 UV 窗口栅格建网；曾被回退（1284/10）⇒ **被 T-69 阻塞** |
+| A14 | ✅ | T-50 | 10 处模块头 `UNPORTED` + 真实出处（批 8+13） |
+| A15 | ◐ | T-51 | ✅ `surface_d2` 五个初等面（批 11）+ Bezier（批 15）、`math_Gauss MinPivot`（批 11）、`IntAna_IntLinTorus` 根校验与 `Extrema_ExtElSS` 声明（批 14）；⬜ **失败通道**（`extrema_cc/pc/surf` 改可失败 API，牵动 `extrema.rs`+BOP 消费方）、`curve_reparam.rs:189` 的 `1e-15`（缺忠实 `BSplCLib::BasisFuns`）、`gcpnts.rs` 的 Simpson 积分、`surface_fit`/`surface_to_grid` 的 D2（非 OCCT 件） |
+| A16 | ⬜ | T-52 | 256×256 采样求交/投影 → `Extrema_ExtPS/ExtCC`（前置 T-67） |
+| A17 | ✅ | T-53 | 删 `brep_exchange` 静默回退 + 形参改名 |
+| A18 | ⬜ | T-54 | 平面耳切/桥洞 → 约束 Delaunay；**被 T-69 阻塞** |
+| A19 | ◐ | T-55 | 失败率阈值 `WIREFRAME_FALLBACK_RATIO_MAX` ✅ 删；**逐面 UV 栅格回退**仍在（承重，阻塞于 T-69） |
+| A20 | ✅ | T-56 | 边域两次 `Project`；三个自创回退删除（含 A29 根因修复） |
+| A21 | ✅ | T-57 | `model_healer` 退化支路 + 平方距离判据 |
+| A22 | ✅ | T-58 | `ProjectAct` 解析臂 + 删除三点外心/`classify_curve` 族 |
+| A23 | ⬜ | T-59 | `face_uv_bounds` → `BRepTools::AddUVBounds`；两次回退，**被 T-49/T-69 阻塞** |
+| A24 | ✅ | T-60 | `classify_surface` → `GeomAdaptor_Surface::Load` 精确类判定 |
+| A25 | ◐ | T-61 | 删除补丁 ✅（批 12）；⬜ 失败标志上抛到面级（OCCT 是整面无网格） |
+| A26 | ◐ | T-62 | ✅ PLY `uchar uint` / STL 平方 `gp::Resolution()` / VRML `solid FALSE`；⬜ PLY 顶点焊接与每面重复、STL 80 字节头与格式嗅探、IGES 采样族与整球回转面、STEP 写侧 B-spline 采样重拟、OBJ 恒空 `vn` |
+| A27 | ◐ | T-64 | 15 处 `continuity()` 应为 `CN(6)`；改动被消费方（`range_splitter/p01.rs:295`、`edge_discret.rs:1259`）阻塞 |
+| A28 | ✅ | （随 T-68） | `FaceGauss` 边界弧改 pcurve 优先 |
+| A29 | ✅ | T-70 | `ExtPElC` 直线臂参数系平移修复 |
+| A30 | ✅ | T-72 | `brep_surface::classify_surface` 精确类型（8×8 采样删除） |
+| A31 | ✅ | T-74 | 伪造的 `GeomRevolvedSurface` 删除（零消费者） |
+
+**其余派生待办**：T-63 ◐（`EvalD3` 步 1 ✅，`AdjustDerivative` 奇异支路 ⬜）、T-66 ⬜、T-67 ◐、T-69 ⬜（带孔面前沿链重叠共线 ⇒ A13/A18/A23/T-55/T-59 的共同前置）、T-71 ⬜（STEP `done=false` 臂）、T-73 ⬜（`choose_left_way`）。
+
+**基线（每条门禁必须逐项相等）**：`occt-topo --lib` **1293/1**（唯一红 = T-01 `brepfeat::tests::groove_cuts_cylinder`）、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`step_geometry_parity` **2/3**（红 = T-05）、`occt-core --lib` 290/290、`occt-geom --lib` 151/151、`occt-geom2d --lib` 72/72、`occt-math --lib` 215/215。
+
 ## 4. 决策与约束（不可违反）
 1. 改完先编译（`cargo check`，编译不过先修编译）。
 2. 改代码前对着 `.cxx` 审控制流；**有同等分支才改**，没有就标"未移植"（注释写 OCCT 文件+行号），**不加** OCCT 里不存在的谓词/启发式/面积比/长度滤边/体积门。
