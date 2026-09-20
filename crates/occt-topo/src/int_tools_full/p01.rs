@@ -194,6 +194,16 @@ impl IntToolsContext {
             let (u, v, _) = plane_projection(surf.as_ref(), p);
             return Ok((u, v));
         }
+        // `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`): the faithful engine is
+        // exact on the elementary surfaces (cylinder/cone/sphere/torus) and is
+        // what `IntTools_Context::ProjPS` uses (`IntTools_Context.cxx:617-630`).
+        // The 32x32 `surface_closest_params` grid (audit A1) stays only as a
+        // last resort for the surfaces whose General engine is not ported yet.
+        if let Some(ps) =
+            occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
+        {
+            return Ok((ps.u, ps.v));
+        }
         Ok(surface_closest_params(surf.as_ref(), p, 32, 32))
     }
 
