@@ -46,10 +46,10 @@ pub(crate) use crate::tgeometry::GeometryRegistry;
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod document;
+mod parser;
+pub use document::*;
+pub use parser::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

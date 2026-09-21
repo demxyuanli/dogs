@@ -2050,7 +2050,7 @@ fn insert_additional_point_or_adjust(
 fn resolve_closed_surface_period_jump(
     surf: &dyn Surface,
     curve: &dyn Curve,
-    singularities: &[super::p04::Singularity],
+    singularities: &[super::singularities::Singularity],
     preci: f64,
     need_resolve_u_jump: bool,
     need_resolve_v_jump: bool,
@@ -2095,7 +2095,7 @@ fn resolve_closed_surface_period_jump(
                 a_min_param += up;
                 a_max_param += up;
             }
-            first_x += super::p03::adjust_to_period(first_x, a_min_param, a_max_param);
+            first_x += super::projection_cache::adjust_to_period(first_x, a_min_param, a_max_param);
             pts2d[0].set_x(first_x);
         }
         let mut prev_x = first_x;
@@ -2179,7 +2179,7 @@ fn resolve_closed_surface_period_jump(
                 a_min_param += vp;
                 a_max_param += vp;
             }
-            first_y += super::p03::adjust_to_period(first_y, a_min_param, a_max_param);
+            first_y += super::projection_cache::adjust_to_period(first_y, a_min_param, a_max_param);
             pts2d[0].set_y(first_y);
         }
         let mut prev_y = first_y;
@@ -2286,7 +2286,7 @@ fn resolve_closed_surface_period_jump(
     }
 
     // `cxx:1746-1890`: "Handle AdjustOverDegen".
-    super::p04::adjust_over_degenerated(surf, singularities, preci, pts3d, pts2d);
+    super::singularities::adjust_over_degenerated(surf, singularities, preci, pts3d, pts2d);
 }
 
 /// `ShapeConstruct_ProjectCurveOnSurface::Perform` (`cxx:707-774`):
@@ -2299,7 +2299,7 @@ fn resolve_closed_surface_period_jump(
 /// (`cxx:1475-1476`).
 ///
 /// The `myCache` endpoint cache and the B-spline corner cache are PORTED
-/// (`pcurve_full/p03.rs`): `getLine` seeds its four probes from them, anchors
+/// (`pcurve_full/projection_cache.rs`): `getLine` seeds its four probes from them, anchors
 /// `fixPeriodicityTroubles` on the cached point (`cxx:957-961`) and refills
 /// `myCache` from the pcurve it returns (`cxx:1122-1142`); the fallback path
 /// refills it at `cxx:1892-1903`. `cache` is `myCache`, cleared by `SetSurface`
@@ -2357,7 +2357,7 @@ pub fn project_curve_on_surface_perform(
     preci: f64,
     tol_first: f64,
     tol_last: f64,
-    cache: &mut super::p03::ProjectorCache,
+    cache: &mut super::projection_cache::ProjectorCache,
 ) -> Option<Arc<dyn Curve2d>> {
     if !first.is_finite() || !last.is_finite() || last - first < 1e-15 {
         return None;
@@ -2383,8 +2383,8 @@ pub fn project_curve_on_surface_perform(
     // `getLine` before everything else (`cxx:1119`); a hit gives the exact
     // `Geom2d_Line` / 2-pole pcurve OCCT stores for an isoparametric edge and
     // refills `myCache` from its two endpoints (`cxx:1122-1142`).
-    let mut gl = super::p03::GetLineOut::default();
-    if let Some(c2d) = super::p03::get_line(surf, &pts3d, &t_vals, preci, cache, &mut gl) {
+    let mut gl = super::projection_cache::GetLineOut::default();
+    if let Some(c2d) = super::projection_cache::get_line(surf, &pts3d, &t_vals, preci, cache, &mut gl) {
         let change_cycle = cache.change_cycle(&pts3d[0], &pts3d[pts3d.len() - 1]);
         cache.store(&pts3d, &[gl.first2d, gl.last2d], change_cycle);
         return Some(c2d);
@@ -2512,7 +2512,7 @@ pub fn project_curve_on_surface_perform(
     // it is a pure function of the surface and its bounds, so it is computed
     // once here and shared by the latch, `correct_degenerated_points` and
     // `resolve_closed_surface_period_jump`.
-    let singularities = super::p04::compute_singularities(surf);
+    let singularities = super::singularities::compute_singularities(surf);
     // `cxx:1308-1310` `p2d`: loop-carried. OCCT leaves it uninitialized, but
     // every first-iteration arm assigns it before use.
     let mut p2d = GpPnt2d::zero();
@@ -2641,7 +2641,7 @@ pub fn project_curve_on_surface_perform(
                 == crate::geom_bnd_lib_surface3d::SurfaceKind::BSplineSurface;
             if is_bspline
                 && prev_p3d.distance(&p3d) < preci
-                && super::p04::nb_singularities(&singularities, preci) > 0
+                && super::singularities::nb_singularities(&singularities, preci) > 0
             {
                 if (p2d.x() - prev_p2d.x()).abs() > 0.95 * up
                     && !sa_is_u_closed(surf, preci)
@@ -2676,7 +2676,7 @@ pub fn project_curve_on_surface_perform(
     // by `if (!isoPar2d3d)` at
     // `ShapeConstruct_ProjectCurveOnSurface.cxx:1467`.
     if !iso_out.iso_par2d3d {
-        super::p04::correct_degenerated_points(
+        super::singularities::correct_degenerated_points(
             surf,
             curve,
             &singularities,
@@ -2707,7 +2707,7 @@ pub fn project_curve_on_surface_perform(
     // `Perform:cxx:771`: `theC2D = interpolatePCurve(aNbPini, aPoints2d, aParams)`,
     // the single other source of `theC2D` besides `getLine`. A `None` result is
     // OCCT's null `theC2D` (`cxx:773`, `ShapeExtend_FAIL1`).
-    let c2d = super::p03::interpolate_pcurve(&pts, &t_vals, preci)?;
+    let c2d = super::projection_cache::interpolate_pcurve(&pts, &t_vals, preci)?;
     // `cxx:1892-1903`: `myCache` is refilled from the pcurve just built, so the
     // next pcurve on this surface is projected from these endpoints.
     let change_cycle = cache.change_cycle(&pts3d[0], &pts3d[pts3d.len() - 1]);

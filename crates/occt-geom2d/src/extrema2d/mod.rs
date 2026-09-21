@@ -16,10 +16,10 @@ pub(crate) use crate::curve::Curve2d;
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod analytic_solvers;
+mod curve_curve;
+pub use analytic_solvers::*;
+pub use curve_curve::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

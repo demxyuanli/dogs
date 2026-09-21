@@ -835,7 +835,7 @@ pub fn extrema_ext_pc_range(
     // `Extrema_GGExtPC` curve-type switch: elementary curves go to
     // `Extrema_ExtPElC`, BSpline/Bezier/OtherCurve to the `default:` arm
     // (`Extrema_GGExtPC.hxx:390-502`).
-    if let Some(pairs) = super::p02::ext_pelc_all(curve, point, u_inf, u_sup) {
+    if let Some(pairs) = super::point_curve::ext_pelc_all(curve, point, u_inf, u_sup) {
         // `ExtPElC` filters to `[Uinf, Usup]` itself (`Extrema_ExtPElC.cxx:180`)
         // and sets `myIsMin` per solution (`cxx:77`, `:184`); `myDone = true`
         // regardless of the number of solutions (`cxx:189`).

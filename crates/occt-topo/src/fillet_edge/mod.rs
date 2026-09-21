@@ -31,10 +31,10 @@ pub(crate) use crate::topo_tools_full::{
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod spec;
+mod chain;
+pub use spec::*;
+pub use chain::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

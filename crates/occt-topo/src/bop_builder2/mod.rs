@@ -46,12 +46,12 @@ pub(crate) use crate::topo_tools_full::all_subshapes;
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod builder;
+mod arguments;
+mod data_access;
+pub use builder::*;
+pub use arguments::*;
+pub use data_access::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

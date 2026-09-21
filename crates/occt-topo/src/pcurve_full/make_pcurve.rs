@@ -243,7 +243,7 @@ pub(super) fn v_period(s: &dyn Surface) -> f64 {
 /// only translates the pcurve by whole surface periods and leaves its range
 /// alone; the faithful port is
 /// [`crate::algo_tools::AlgoTools2D::adjust_pcurve_on_surf`], which
-/// `pave_blocks/p01.rs` now calls. This trim helper is kept only as a utility for
+/// `pave_blocks/surface_projector.rs` now calls. This trim helper is kept only as a utility for
 /// callers that explicitly want the pcurve clipped to the face rectangle; do not
 /// use it in an `AdjustPCurveOnFace` position.
 /// dimension, it is trimmed to the in-bounds parameter subrange.

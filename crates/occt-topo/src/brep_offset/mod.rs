@@ -22,10 +22,10 @@ pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, verti
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod curve_face_offset;
+mod shell_offset;
+pub use curve_face_offset::*;
+pub use shell_offset::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

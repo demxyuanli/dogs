@@ -38,14 +38,14 @@ pub(crate) use crate::topo_tools_full::{
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
+mod common;
+mod wire_heal;
+mod wire_fix;
+mod pcurve_ranges;
+pub use common::*;
+pub use wire_heal::*;
+pub use wire_fix::*;
+pub use pcurve_ranges::*;
 
 /// `ShapeAnalysis_Curve` projection helpers (`ShapeAnalysis_Curve.cxx`).
 pub mod shape_analysis_curve;

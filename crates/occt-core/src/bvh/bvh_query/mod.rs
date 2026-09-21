@@ -66,10 +66,10 @@ pub(crate) use crate::gp::{GpPnt, GpPnt2d, GpVec};
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod mesh_queries;
+mod triangulate;
+pub use mesh_queries::*;
+pub use triangulate::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

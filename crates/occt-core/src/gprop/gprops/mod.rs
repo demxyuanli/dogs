@@ -37,10 +37,10 @@ pub(crate) use std::ops::{Deref, DerefMut};
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod props;
+mod plane_equation;
+pub use props::*;
+pub use plane_equation::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

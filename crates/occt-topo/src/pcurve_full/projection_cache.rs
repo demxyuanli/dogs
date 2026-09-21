@@ -26,17 +26,17 @@
 //!
 //! PARKED (reported, not fudged):
 //! - nothing from the `isoParam` chain: `isAnIsoparametric`
-//!   (`p01::is_an_isoparametric`, `cxx:2461-2796`), the `isoParam` arms of the
+//!   (`surface_projector::is_an_isoparametric`, `cxx:2461-2796`), the `isoParam` arms of the
 //!   sample loop (`cxx:1317-1375`), the `p1OnIso` / `p2OnIso` endpoint
 //!   overrides (`cxx:1379-1385`) and the `if (!isoPar2d3d)` guard of
 //!   `projectDegeneratedPoints` (`cxx:1467`) are all ported. A model with an
 //!   isoparametric boundary edge therefore takes the iso arm instead of the
 //!   `myCache` arm below. The walking-Newton projection of the sample loop
 //!   itself (`cxx:1432`) stays ported, in
-//!   `p01::project_curve_on_surface_perform`.
+//!   `surface_projector::project_curve_on_surface_perform`.
 
 use super::prelude::*;
-use super::p01::{bspline_from_samples, next_value_of_uv, value_of_uv_with_gap};
+use super::surface_projector::{bspline_from_samples, next_value_of_uv, value_of_uv_with_gap};
 use crate::shhealing::adjust_by_period;
 use occt_core::precision::{CONFUSION, PCONFUSION, SQUARE_CONFUSION};
 
@@ -432,7 +432,7 @@ fn is_cn_1(s: &dyn Surface) -> bool {
 /// `SurfaceProjectorWithCache::ValueOfUV` (`cxx:106-115`) is the corner-cache
 /// lookup followed by `mySurf->ValueOfUV(thePoint, theTol)`, i.e.
 /// [`value_of_uv`] with the working tolerance as `preci`, and `Gap()` (`cxx:141`)
-/// is `mySurf->Gap()`; see [`super::p01::value_of_uv_with_gap`] for how the
+/// is `mySurf->Gap()`; see [`super::surface_projector::value_of_uv_with_gap`] for how the
 /// residue is recovered.
 ///
 /// `ShapeConstruct_ProjectCurveOnSurface::getLine` (`cxx:902-1102`): the

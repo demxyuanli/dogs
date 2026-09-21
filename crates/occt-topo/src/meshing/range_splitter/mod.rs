@@ -40,12 +40,12 @@ pub(crate) use crate::brep_tool::BRepTool;
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod param_set;
+mod splitter;
+mod nodes;
+pub use param_set::*;
+pub use splitter::*;
+pub use nodes::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

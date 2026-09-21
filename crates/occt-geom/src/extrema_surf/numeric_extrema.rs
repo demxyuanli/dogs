@@ -394,7 +394,7 @@ pub(super) fn fallback_curve_surface(c: &dyn Curve, s: &dyn Surface) -> ExtremaP
 /// This is `Extrema_ExtPS` over the surface's natural parameter range
 /// (`Extrema_ExtPS(P, S, TolU, TolV)`, `Extrema_ExtPS.cxx:158-177`): the type
 /// dispatch, the periodic normalization and the window test all live in
-/// [`ExtPs`] (`p03.rs`). `TolU`/`TolV` are the `Precision::PConfusion()` that
+/// [`ExtPs`] (`point_surface_extrema.rs`). `TolU`/`TolV` are the `Precision::PConfusion()` that
 /// `ShapeAnalysis_Surface::ValueOfUV` passes (`ShapeAnalysis_Surface.cxx:1349`).
 /// Sorting is a port convenience — `Extrema_ExtPS::Point` keeps engine order.
 pub fn point_surface_extrema_all(s: &dyn Surface, p: &GpPnt) -> Vec<ExtremaPair> {
@@ -430,7 +430,7 @@ pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
 /// (`ShapeAnalysis_Surface.cxx:1352`). Non-finite or inverted windows fall back
 /// to the natural-bounds entry point.
 ///
-/// The window search itself is [`ExtPs`] (`p03.rs`): elementary surfaces are
+/// The window search itself is [`ExtPs`] (`point_surface_extrema.rs`): elementary surfaces are
 /// solved analytically and then filtered by the window (`TreatSolution`), the
 /// rest go through the general arm. When the window yields no solution — OCCT's
 /// `ValueOfUV` then runs `SurfaceNewton` + `UVFromIso` over the face boundary

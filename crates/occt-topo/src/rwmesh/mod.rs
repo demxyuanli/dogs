@@ -27,12 +27,12 @@ pub(crate) use crate::shape::{Compound, TopoShape};
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod scene;
+mod vrml;
+mod gltf;
+pub use scene::*;
+pub use vrml::*;
+pub use gltf::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

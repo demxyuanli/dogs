@@ -43,12 +43,12 @@ pub(crate) use crate::topo_tools_full::{
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod spec;
+mod variable_fillet;
+mod end_faces;
+pub use spec::*;
+pub use variable_fillet::*;
+pub use end_faces::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

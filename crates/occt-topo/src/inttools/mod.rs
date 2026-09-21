@@ -33,10 +33,10 @@ pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, 
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod intersections;
+mod face_classification;
+pub use intersections::*;
+pub use face_classification::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

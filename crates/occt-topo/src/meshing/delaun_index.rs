@@ -610,7 +610,7 @@ impl CircleTool {
     /// coincident. Returns `(u, v, radius)`. Port of `BRepMesh_CircleTool::MakeCircle`.
     ///
     /// DUPLICATE PORT: the faithful port of `BRepMesh_CircleTool::MakeCircle` is
-    /// `delaun/p01.rs:150-183`. This copy is not reachable from the production
+    /// `delaun/constants.rs:150-183`. This copy is not reachable from the production
     /// mesh pipeline -- its only callers are the tests at `delaun_index.rs:673+`
     /// (`delaun/mod.rs:9-11` still says the sibling file is "under construction").
     /// Documented rather than aligned; do NOT mistake it for a faithful port.
@@ -627,7 +627,7 @@ impl CircleTool {
         // UNPORTED: the determinant guard in `BRepMesh_CircleTool.cxx:112` is
         // `std::abs(aD) < gp::Resolution()`, i.e. `RealSmall()` = `DBL_MIN`
         // (`gp.hxx:60`, `Standard_Real.hxx:132-135`); 1e-9 is not OCCT-derived.
-        // `delaun/p01.rs:167` uses `REAL_SMALL` for the same test.
+        // `delaun/constants.rs:167` uses `REAL_SMALL` for the same test.
         const UNPORTED_DETERMINANT_GUARD: f64 = 1e-9;
 
         let (x1, y1) = p1;

@@ -33,7 +33,7 @@
 //!   (`Proj.cxx:268-279`) - see [`correct_parameter`].
 //! * `myLocation` (`Proj.cxx:97`, `:199`, `:209`, `:318`, `:322`, `:472`): the
 //!   port's healing path keeps locations identity, exactly like the rest of
-//!   `shhealing` (`p03.rs` reads edges through `BRepTool::edge_curve` /
+//!   `shhealing` (`wire_fix.rs` reads edges through `BRepTool::edge_curve` /
 //!   `curve_on_surface_oriented`, never the `_world` variants), so every
 //!   `Transformed(myLocation)` / `Inverted()` is a no-op here.
 

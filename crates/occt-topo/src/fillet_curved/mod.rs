@@ -54,16 +54,16 @@ pub(crate) use crate::topo_tools_full::{
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-mod p05;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
-pub use p05::*;
+mod surface_info;
+mod meridional;
+mod torus_blend;
+mod rolling_ball;
+mod corner_patch;
+pub use surface_info::*;
+pub use meridional::*;
+pub use torus_blend::*;
+pub use rolling_ball::*;
+pub use corner_patch::*;
 
 #[cfg(test)]
 mod tests;

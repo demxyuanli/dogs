@@ -36,10 +36,10 @@ pub(crate) use crate::brep_surface::{is_planar, sphere_center, surface_closest_p
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod types;
+mod solvers;
+pub use types::*;
+pub use solvers::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

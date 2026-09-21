@@ -62,10 +62,10 @@ pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, verti
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod build_ops;
+mod draft_solid;
+pub use build_ops::*;
+pub use draft_solid::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

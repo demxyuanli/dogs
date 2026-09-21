@@ -193,7 +193,7 @@ fn locate_ext_pc(curve: &dyn Curve, p: &GpPnt, t_seed: f64, first: f64, last: f6
 ///
 /// Unbounded windows still probe around the linear estimate used by
 /// `project_point_on_curve`. `UpdateVertex` (`TranslateEdge.cxx:478-479`) is
-/// enabled in `step/p04.rs` once ExtPC Project residuals are OCCT-scale.
+/// enabled in `step/read_topology.rs` once ExtPC Project residuals are OCCT-scale.
 fn extrema_ext_pc(curve: &dyn Curve, p: &GpPnt, first: f64, last: f64) -> Option<(f64, GpPnt, f64)> {
     let (a, b) = if Precision::is_infinite(first) || Precision::is_infinite(last) {
         let p0 = curve.d0(0.0);

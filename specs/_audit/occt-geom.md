@@ -6,12 +6,12 @@
 共列 15 条：**自创 14 条**、**等价替换未登记 1 条**、**已登记 0 条**（仓库内不存在等价替换登记表，`specs/` 下只有 `_board.md`/`_tasks.md` 等）。
 
 最高危：**`Geom_OffsetCurve` 的 D0/D1 公式写错**（`offset.rs:16`）——OCCT 是 `P = p + Offset·(p′×Dir)/‖p′×Dir‖`（沿法向偏移），
-Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读入路径直接使用（`occt-topo/src/step/p04.rs:1049`），
+Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读入路径直接使用（`occt-topo/src/step/read_topology.rs:1049`），
 且 2D 版本法向还反号（`occt-geom2d/src/offset.rs:24` vs `Geom2d_OffsetCurveUtils.pxx:50`），偏移落在另一侧。
 
-次高危：**求根/分类整体被采样网格 + 阈值 + 牛顿/黄金分割替代**。讽刺的是同一分支**已有忠实移植**（`extrema_pc/p03.rs` 逐行对上
+次高危：**求根/分类整体被采样网格 + 阈值 + 牛顿/黄金分割替代**。讽刺的是同一分支**已有忠实移植**（`extrema_pc/general_extrema_pc.rs` 逐行对上
 `Extrema_GGExtPC.hxx`、`GGenExtPC.hxx`、`GFuncExtPC.hxx`），但被消费的是并存的网格版：`occt-topo/src/brep_extrema.rs:175`、
-`edge_edge/p01.rs:359`、`shhealing/shape_analysis_curve.rs:136`、`occt-geom/src/approx_same_parameter.rs:227`。
+`edge_edge/edge_edge.rs:359`、`shhealing/shape_analysis_curve.rs:136`、`occt-geom/src/approx_same_parameter.rs:227`。
 
 方法：`rg` 扫候选（`not ported|UNPORTED|simplif|approx|fallback|heuristic|sampled|iterat|clamp|Newton`）后逐条打开 OCCT
 `.cxx/.hxx/.pxx` 比对分支、常量、收敛判据。注意 V8_0_0 已把 `Extrema_ExtPC`/`Extrema_ECC` 改为模板别名
@@ -24,7 +24,7 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - 判定：自创
 - 证据：`crates/occt-geom/src/offset.rs:16,18-19` — `p.coord.added(&self.direction.xyz().multiplied(self.offset))` / `fn d1(..) { let (p,d) = self.basis.d1(u); (self.d0(u), d) }`（D2 同）
 - OCCT 对应：`Geom_OffsetCurveUtils.pxx:53,60-61`（`Ndir = D1.XYZ().Crossed(theDirXYZ)`，`P = p + Offset·Ndir/R`）、`:86-114`（D1 必须追加 `DNdir` 法向旋转项）
-- 影响：改几何结果。`occt-topo/src/step/p04.rs:1049` 直接构造该类型，STEP 读入的 OFFSET_CURVE 几何全错；D1/D2 恒等于基曲线导数，切线方向错
+- 影响：改几何结果。`occt-topo/src/step/read_topology.rs:1049` 直接构造该类型，STEP 读入的 OFFSET_CURVE 几何全错；D1/D2 恒等于基曲线导数，切线方向错
 - 建议：按 `Geom_OffsetCurveUtils.pxx:47-201` 重写 D0/D1/D2，或标未移植
 - **处置（✅ 已完成：T-35 重写 D0/D1/D2；T-63 步 1 补基曲线 `EvalD3`；T-63 步 2 / 2026-09-20 第 41 轮批 19 移植 `AdjustDerivative` `pxx:322-390` 并接进 `EvalD2` 奇异支路，`isDirectionChange` 不再恒 `false`）**。余项 **T-75**：offset 类自身的 `EvalD3`（`EvaluateD3` `pxx:494-529` / `CalculateD3` `pxx:203-307`）与 `EvalDN`（`cxx:386-410`）未移植，`d3` 仍走 trait 默认零值；仓内无消费者，已在 `offset.rs` 文件头登记。
 
@@ -37,21 +37,21 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 
 ### 3. 点–曲线通用路径被换成「span/0.1 网格 + 变号 + 牛顿」
 - 判定：自创
-- 证据：`crates/occt-geom/src/extrema_pc/p01.rs:621,644,563` — `let n = ((span / 0.1).ceil() as usize).clamp(24, 256);` / `newton_point_curve_all` / `for _ in 0..60`
+- 证据：`crates/occt-geom/src/extrema_pc/poly_roots.rs:621,644,563` — `let n = ((span / 0.1).ceil() as usize).clamp(24, 256);` / `newton_point_curve_all` / `for _ in 0..60`
 - OCCT 对应：`Extrema_GGExtPC.hxx:391`（`aMaxSample = 17`）、`:424`（`mysample = max(RealToInt(aMaxSample*(sup-inf)/maxint), 3)`）、`:390-470`（按 `NbIntervals(C2)`/`DeflCurvIntervals` 分区）；`Extrema_GGenExtPC.hxx:166`（`math_FunctionRoots`）
 - 影响：改几何结果。OCCT 无 `span/0.1`、无 `clamp(24,256)`、无 60 次上限
 - 建议：删 p01 网格路径，调用方改走 p03（已对齐 `GGExtPC.hxx:390-470`）
 
 ### 4. 曲线–曲线被「2D 网格 + 边最佳点种子 + 16×16 兜底」替代 `math_GlobOptMin`
 - 判定：自创
-- 证据：`crates/occt-geom/src/extrema_cc/p02.rs:83,214-239` — `let mut edges: [Option<(f64,f64)>; 4] = [None,None,None,None];` / `// Degenerate fallback: coarse grid best pair` / `let n = 16;`
+- 证据：`crates/occt-geom/src/extrema_cc/curve_curve.rs:83,214-239` — `let mut edges: [Option<(f64,f64)>; 4] = [None,None,None,None];` / `// Degenerate fallback: coarse grid best pair` / `let n = 16;`
 - OCCT 对应：`Extrema_GGenExtCC.hxx:617`（`math_GlobOptMin aFinder(...)`）、`:639-688`（区间对 + `NCollection_CellFilter` 去重）；`Extrema_ExtCC.cxx:312-316`
 - 影响：改几何结果。"边最佳点"种子与 16×16 兜底在 OCCT 中不存在
 - 建议：按 `Extrema_GGenExtCC.hxx:617` 直译 GlobOptMin，或标未移植
 
 ### 5. `IsDone`/`myDone` 被全部吞掉（失败返回兜底数值）
 - 判定：自创（静默丢弃失败）
-- 证据：`crates/occt-geom/src/extrema_cc/p02.rs:210-241`、`extrema_ss.rs:437,494`、`extrema_surf/p02.rs:142`、`extrema_pc/p02.rs:120-126` — `None => { … best.unwrap_or_else(|| pair_cc(GpPnt::zero(), 0.0, GpPnt::zero(), 0.0)) }`
+- 证据：`crates/occt-geom/src/extrema_cc/curve_curve.rs:210-241`、`extrema_ss.rs:437,494`、`extrema_surf/numeric_extrema.rs:142`、`extrema_pc/point_curve.rs:120-126` — `None => { … best.unwrap_or_else(|| pair_cc(GpPnt::zero(), 0.0, GpPnt::zero(), 0.0)) }`
 - OCCT 对应：`Extrema_GGExtPC.hxx:531,545-550`（未完成 `throw StdFail_NotDone()`）；`Extrema_GGenExtCC.hxx:691-695`（`if (aNbSol == 0) { myDone = false; return; }`）
 - 影响：改几何结果。曲线自交时返回正距离而非"未完成"，调用方无法区分
 - 建议：删全部 `fallback_*`/黄金分割/坐标下降，按 OCCT 传 done
@@ -72,21 +72,21 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 
 ### 8. `intana` 求交族：四次方程族自创阈值 + 锥/锥阈值 + 未移植返回 None
 - 判定：自创（多处）+ 未移植
-- 证据：`crates/occt-geom/src/intana/p01.rs:120,145,152`（`two_m_p < 1e-12` / `poly4(..).abs() < 1e-6` / 去重 `1e-8`；`:116` 失败返空根且 done 仍真）；`intana/p02.rs:336,340,370`（`1e-14` 绝对阈值替代自适应 `aTolAng`）；`intana/p02.rs:396,490`、`p01.rs:519`（直接 `None`）
+- 证据：`crates/occt-geom/src/intana/analytic_intersections.rs:120,145,152`（`two_m_p < 1e-12` / `poly4(..).abs() < 1e-6` / 去重 `1e-8`；`:116` 失败返空根且 done 仍真）；`intana/line_torus.rs:336,340,370`（`1e-14` 绝对阈值替代自适应 `aTolAng`）；`intana/line_torus.rs:396,490`、`intana/analytic_intersections.rs:519`（直接 `None`）
 - OCCT 对应：`math_DirectPolynomialRoots.cxx:344-393`（`ShouldReduceDegreeQuartic`）、`:583-587`（`if (!aSuccess) { myDone = false; return; }`）、`:678-705`、`:92-120`（`RefineRoot`）；`IntAna_QuadQuadGeo.cxx:1440,1458-1475,1524`（`TOL_APEX_CONF=1e-10`、`EstimDist` 求 `aTolAng`）；`:1324,1603`、`:1060-1200`（未移植的完整分类）
 - 影响：改几何结果（近轴近平行锥漏解；本应 not-done 被当成"无解曲线"）
 - 建议：按 `math_DirectPolynomialRoots.cxx` 重译并传 done；补 `EstimDist`/`aTolAng`
 
 ### 9. 直线–环面：物理残差 `1e-7` 取代参数回代，且无法表达 `done=false`
 - 判定：自创（静默失败）
-- 证据：`crates/occt-geom/src/intana/p02.rs:574-576` — `let err = ((rho - r)*(rho - r) + dz*dz - rr2).abs(); if err < 1e-7 { if seen.iter().all(|s| s.distance(&p) > 1e-7) {`
+- 证据：`crates/occt-geom/src/intana/line_torus.rs:574-576` — `let err = ((rho - r)*(rho - r) + dz*dz - rr2).abs(); if err < 1e-7 { if seen.iter().all(|s| s.distance(&p) > 1e-7) {`
 - OCCT 对应：`IntAna_IntLinTorus.cxx:99-103`（回代 `ElSLib::Parameters/Value`，`if (a0 > 0.0000000001) aNbBadSol++;`）、`:116-120`（全解被拒 → `nbpt = 0; done = false;`）
 - 影响：改几何结果 + 全解被拒时返回空 `Vec`，调用方误判"无交点"
 - 建议：改 `Result`/done，按 `:99-125` 直译
 
 ### 10. 类型判定：采样几何不变量取代 `GetType()`
 - 判定：自创
-- 证据：`crates/occt-geom/src/extrema_pc/p01.rs:434,452`（6 点切向 + `1e-7*m0*m`）、`:505,515`（共面 `1e-4*nmag*ni`、等距 `1e-4*r`）；复制到 `extrema_cc/p01.rs:476,523`、`extrema_surf/p01.rs:537,567`、`extrema2d/p01.rs:459,497`
+- 证据：`crates/occt-geom/src/extrema_pc/poly_roots.rs:434,452`（6 点切向 + `1e-7*m0*m`）、`:505,515`（共面 `1e-4*nmag*ni`、等距 `1e-4*r`）；复制到 `extrema_cc/poly_roots.rs:476,523`、`extrema_surf/analytic_solvers.rs:537,567`、`extrema2d/analytic_solvers.rs:459,497`
 - OCCT 对应：`Extrema_GGExtPC.hxx:123,160-181`（`type = TheCurveTool::GetType(theC)` + switch）；`Extrema_ExtCC.cxx:188-189`、`Extrema_ExtCC2d.cxx:105`、`Extrema_ExtSS.cxx:122-127`
 - 影响：改几何结果（近似圆/浅弧可能进错分支）
 - 建议：`Curve` trait 已有 `is_line()/gp_circ()/gp_ellipse()/circle_radius()`（`curve.rs:34-50`），直接用于分派并删采样分类器
@@ -95,7 +95,7 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - 判定：等价替换未登记（未移植臂静默给默认值）
 - 证据：`crates/occt-geom/src/hyperbola.rs:16`、`parabola.rs:16` — `(self.d0(u), self.d1(u).1, GpVec::zero())`
 - OCCT 对应：`Geom_Hyperbola.cxx:244`（`ElCLib::HyperbolaD2`，`:253` 还有 D3）；`Geom_Parabola.cxx:186`（`ElCLib::ParabolaD2`）
-- 影响：改几何结果。抛物线 D2 恒为 `Yd/(2f)` 而非 0；消费方 `approx_same_parameter.rs:85`、`occt-core/src/gcpnts_perform.rs:384`、`extrema_cc/p01.rs:590` 的曲率/逼近/求交全被污染
+- 影响：改几何结果。抛物线 D2 恒为 `Yd/(2f)` 而非 0；消费方 `approx_same_parameter.rs:85`、`occt-core/src/gcpnts_perform.rs:384`、`extrema_cc/poly_roots.rs:590` 的曲率/逼近/求交全被污染
 - 建议：在 `occt-core/src/elib/clib.rs` 补 `hyperbola_d2/parabola_d2`（对照 `ElCLib.cxx`）后替换
 
 ### 12. `Surface::d2` 默认用一阶导前向差分，解析曲面全走这条自创路径
@@ -125,8 +125,8 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - 建议：按上述行号补构造与 `SetTrim` 全部分支；`rectangular_trimmed.rs:119-162` 的 D0/D1/D2 转发已与 `cxx:391-407` 一致，不用动
 ## 已核对为忠实移植（反证，供"未发现"依据）
 
-- `extrema_pc/p03.rs` 整体：BSpline 结点臂 `:476-611` ↔ `Extrema_GGExtPC.hxx:190-388`；default 臂 `:699-774` ↔ `:390-470`；`AddSol :347` ↔ `:617-632`；`SearchOfTolerance`/`MaxOrder`/奇异 DN/三点 DF ↔ `Extrema_GFuncExtPC.hxx`；`FunctionRoots :366-375` ↔ `Extrema_GGenExtPC.hxx:166`；`defl_curv_intervals :632-695` ↔ `Extrema_CurveTool.cxx:41-91`
-- `extrema_pc/p01.rs:263-295` 点–圆 ↔ `Extrema_ExtPElC.cxx:125-190`；`extrema_cc/p01.rs:257-277` 线–线 ↔ `Extrema_ExtElC.cxx:327-338`；`:285-338` 线–圆系数 `A1..A5` ↔ `:560-564`（逐字一致）；`circle_circle_extrema ↔ :982-1110`
+- `extrema_pc/general_extrema_pc.rs` 整体：BSpline 结点臂 `:476-611` ↔ `Extrema_GGExtPC.hxx:190-388`；default 臂 `:699-774` ↔ `:390-470`；`AddSol :347` ↔ `:617-632`；`SearchOfTolerance`/`MaxOrder`/奇异 DN/三点 DF ↔ `Extrema_GFuncExtPC.hxx`；`FunctionRoots :366-375` ↔ `Extrema_GGenExtPC.hxx:166`；`defl_curv_intervals :632-695` ↔ `Extrema_CurveTool.cxx:41-91`
+- `extrema_pc/poly_roots.rs:263-295` 点–圆 ↔ `Extrema_ExtPElC.cxx:125-190`；`extrema_cc/poly_roots.rs:257-277` 线–线 ↔ `Extrema_ExtElC.cxx:327-338`；`:285-338` 线–圆系数 `A1..A5` ↔ `:560-564`（逐字一致）；`circle_circle_extrema ↔ :982-1110`
 - `approx_same_parameter.rs:703-737` 后处理兜底 ↔ `Approx_SameParameter.cxx:482-539`（含 `11/40`、`U/VResolution`、`anApproxTol < myTolReached` 比较）
 - `osculating_surface.rs:54-78` 十等分采样 ↔ `Geom_OsculatingSurface.cxx:784-832`；`build_osculating :308-467` ↔ `cxx:532-780`（无曲率阈值类启发式）
 - `intana_curve.rs` 系数/容差 ↔ `IntAna_Curve.cxx:95-217,279-374,440-568`；`intana_intquadquad.rs:139-193` ↔ `IntAna_IntQuadQuad.cxx:61-118`；`intana_torus.rs` 常量 ↔ `IntAna_QuadQuadGeo.cxx:351-359,2539-2560,2606`；`intana_trig.rs` 主体 ↔ `math_TrigonometricFunctionRoots.cxx:75-504`
@@ -144,8 +144,8 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - `osculating_surface.rs:99-107,136-143`：失败时 `clear_flags(); return;`，OCCT `Geom_OsculatingSurface.cxx:206-213` 只清标志不 return（`:245` 继续建 `myOsculSurf2`）→ 自创（提前退出）
 - `interp_curve.rs:211,96,252-254`：均匀结点 + 有限差分导数基（`h=1e-7`）+ 逐点切矢，OCCT `GeomAPI_Interpolate.cxx:622-646,664-669,795` 用弦长参数与 `BSplCLib::Interpolate` → 自创（零生产调用点）
 - `adv_approx/approx.rs:257-258`：硬编码 `DichoCutting`（`tmil=0.5*(a+b)` + `20.0*PCONFUSION`），缺 `AdvApprox_PrefAndRec`/`CutPnts_C2/C3`（`GeomConvert_ApproxCurve.cxx:144-155`、`AdvApprox_PrefAndRec.cxx:36-75`）→ 自创；生产路径 `offset_surface.rs:130`，切分点不同导致结点/极点不同
-- `surface_fit.rs:13-40`：`fit_plane` 无 `GeomLib_IsPlanarSurface.cxx:44-45` 的 `gz < Tol` 门，调用点 `occt-topo/src/brep_offset/p01.rs:491-500` 每边仅采 4 点；`fit_sphere` 无 OCCT 对应 → 等价替换未登记
+- `surface_fit.rs:13-40`：`fit_plane` 无 `GeomLib_IsPlanarSurface.cxx:44-45` 的 `gz < Tol` 门，调用点 `occt-topo/src/brep_offset/curve_face_offset.rs:491-500` 每边仅采 4 点；`fit_sphere` 无 OCCT 对应 → 等价替换未登记
 - `curve_approx.rs:23-25,49-55`：无界曲线回退 `curve_to_polyline_uniform(c,64)`/代理区间 `(0,1)`，OCCT `GCPnts_UniformDeflection` 无此分支；`bezier_to_polyline.rs:7,48-68` 的 `MAX_DEPTH=24` 与内部极点平坦度判据 OCCT 中不存在 → 自创（仅 `brepmesh.rs:385` 调用）
 - `offset_surface.rs:160-164,185,209-212` 与 `projlib.rs:102`：前者 `transform` 空实现、`EvaluateD0/D1` 失败静默返回基面点/向量（`:63` 兜底写死 `(0,0,1)`），OCCT `Geom_OffsetSurface.cxx:338-343,839-842` 抛 `Geom_UndefinedValue`/执行 `Transform`；后者固定 32 采样而 OCCT `ProjLib_ProjectedCurve.cxx:639-659` 走自适应 `Approx_CurveOnSurface` → 均自创
 - `approx_same_parameter.rs:436,442` 的 `UNPORTED: Geom_BezierSurface::Resolution` 是真实缺口：OCCT `GeomAdaptor_Surface.cxx:1872-1875,1934-1937` 有该分支，Rust 走 `default: Precision::Parametric`，U/V 容差不同 → 改几何结果，需登记
-- `geom_api.rs` 采样器有真实生产调用点：`occt-topo/src/edge_edge/p01.rs:293,482`、`inttools/p01.rs:278,450`、`meshing/edge_discret.rs:942`
+- `geom_api.rs` 采样器有真实生产调用点：`occt-topo/src/edge_edge/edge_edge.rs:293,482`、`inttools/intersections.rs:278,450`、`meshing/edge_discret.rs:942`

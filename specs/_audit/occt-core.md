@@ -9,7 +9,7 @@
 2. **最高危**：`crates/occt-core/src/gcpnts.rs:87-137` —— 用"递归中点二分 + `MAX_DEPTH = 16` 截断"冒充 `GCPnts_UniformDeflection`，缺 OCCT 的 `Linear/Circular/Curved/Composite` 分派与末尾 `Controle` 修正；该函数经 `occt-topo/src/wireframe.rs:48`（`edge_to_polyline`）进入 `brepmesh`/`shape_mesh`/`geometry_query` 活路径。
 3. **同一 crate 内已有忠实件**：`gcpnts_perform.rs`（`GCPnts_TangentialDeflection::PerformCurve` 逐行移植，`1.5/0.75*dusave` 已核对 `TangentialDeflection.cxx:836-857`）、`gcpnts_estim.rs`、`intana2d/`、`intres2d/`、`bspl/`、`math_*`。`gcpnts.rs` 与它们并存 ⇒ 属"该用忠实件却另造一套"。
 4. **4 项"假出处"**（文件头写 `Source: Xxx/`，但 OCCT 的该包根本没有这些函数）：`convert/`、`cslib/mod.rs`、`gprop/mod.rs`、`bnd/{intersect,obb_pca}.rs`。这比实现差异更危险：会让后续审查误判为已对齐。
-5. **7 项已登记**（`io/obj.rs`、`io/stl.rs`、`io/ply.rs`、`kernel/osd.rs::sha1_hex`、`bvh/bvh_query/p01.rs` 全扫描回退、`geom/csg.rs`（消费侧登记）、`elib/clib.rs` 的两处例外返回）——见 §3，本身可接受但仍列出。
+5. **7 项已登记**（`io/obj.rs`、`io/stl.rs`、`io/ply.rs`、`kernel/osd.rs::sha1_hex`、`bvh/bvh_query/mesh_queries.rs` 全扫描回退、`geom/csg.rs`（消费侧登记）、`elib/clib.rs` 的两处例外返回）——见 §3，本身可接受但仍列出。
 6. **未发现**规则明令禁止的"面积比/长度滤边/体积门"式自创；`bspl/`、`gp/`、`intana2d/`、`intres2d/`、`intf/`、`intcurve/`、`intimpargen/`、`math_*`、`gprop/gprops/`、`poly/{connect,merge_nodes,triangulation_full}` 抽样比对未发现自创。
 
 ## 发现
@@ -118,7 +118,7 @@
 ### 14. `gprop/mod.rs` 的网格 `GProperties` 与真实移植件 `gprop/gprops/` 并存
 - 判定：**自创（假出处）**
 - 证据：`crates/occt-core/src/gprop/mod.rs:1` `//! ... Source: `GProp/``；`:27-42` `add_triangle(...)` 用 `idx(a)+idx(b)+idx(c)` 的 4 顶点对称和算惯量（`:37`）；`:71-78` `mesh_volume` 四面体和
-- OCCT 对应：**未找到对应分支**。`GProp_GProps`/`GProp_SelGProps`/`GProp_VelGProps` 是解析积分（本 crate 已移植于 `gprop/gprops/p01.rs:479,539,626`，且那些函数头**明确**写 "approximated by planar triangular facets"）。
+- OCCT 对应：**未找到对应分支**。`GProp_GProps`/`GProp_SelGProps`/`GProp_VelGProps` 是解析积分（本 crate 已移植于 `gprop/gprops/props.rs:479,539,626`，且那些函数头**明确**写 "approximated by planar triangular facets"）。
 - 影响：质量/惯量随三角化变化。live 仅 `centroid_of_points`（`occt-topo/src/brep_gprop.rs:17`）。
 - 建议：`gprop/mod.rs` 改为薄层委托 `gprop/gprops/`；`GProperties` 若保留则标注"三角面近似，非 `GProp_GProps`"。
 
@@ -136,7 +136,7 @@
 | `io/obj.rs:1-9` | "not a port of an OCCT class" + 列出 `RWObj_*` 真实类名 | 登记完整 |
 | `io/stl.rs:1` / `io/ply.rs:1` | `Source: RWStl/RWPLY (simplified)` | 有理由、无行号 |
 | `kernel/osd.rs:114-126` | `sha1_hex` = FNV-1a，`ponytail: placeholder ... NOT cryptographic` | **不等价**（非 SHA-1），已登记故列此 |
-| `bvh/bvh_query/p01.rs:365-408` | BVH 探测→全扫描回退，`ponytail:` 说明理由 | 结果仍正确，仅性能 |
+| `bvh/bvh_query/mesh_queries.rs:365-408` | BVH 探测→全扫描回退，`ponytail:` 说明理由 | 结果仍正确，仅性能 |
 | `poly/merge_nodes.rs:176` / `gp/ax1.rs:55` / `gp/quaternion.rs:140` / `gp/trsf.rs:298` | `ponytail:` 实现选择说明 | 不改变结果 |
 | `elib/clib.rs:177-196` | `circle2d_parameter` 退化时返回 `0.0` 而非 OCCT 的 `Standard_ConstructionError` | 出口语义不同，已写明 |
 | `elib/clib.rs:46-55` | `ellipse_value` 符号修正 + ATU01038 实证 | 修正**向 OCCT 对齐**，非自创 |
@@ -158,7 +158,7 @@
 
 - `bspl/`（30 文件）、`gp/`（26 文件）、`math_*`（8 文件）、`intana2d/`、`intres2d/`、`intf/`、`intcurve/`、`intimpargen/`、`elib/{clib,clib2d,slib}.rs`：198 条 `Source:` 中绝大多数集中于此，且抽查的 4 个函数逐行一致；`intcurve/mod.rs:20-73` 与 `intf/mod.rs:6-14` 的未移植清单**逐文件给了字节数**，属高质量登记。
 - `cslib/{normal,dn_normal,class2d,poly_def}.rs`：`CSLib.cxx:84-151/183-387/391-568` 行号可核。
-- `gprop/gprops/`：解析件与近似件在注释里分开标注（`p01.rs:479,539,626`）。
+- `gprop/gprops/`：解析件与近似件在注释里分开标注（`gprops/props.rs:479,539,626`）。
 - `poly/{connect,merge_nodes,triangulation_full}.rs`：控制流有 `Poly_Connect.cxx`/`Poly_MergeNodesTool.cxx` 出处；`merge_nodes.rs:176` 的 `ponytail` 只是预分配提示。
 - 规则禁令专项（面积比/长度滤边/体积门）：本轮 40 条关键词命中中未出现用于生产判定的此类谓词（与 `_index.md:108` 一致）。
 - **未逐项核对**（建议下轮）：`bnd/sortbox.rs`（`Bnd_BoundSortBox` 的网格划分方式与本实现 `new(elements,nx,ny,nz)` 不同，需回读 `.cxx`）、`geom/` 其余文件（`delaunay.rs`/`triangulate.rs`/`fit*.rs`/`polygon_*.rs`/`mesh_analysis.rs`/`curve_ops3d.rs`：均为无行号的自造几何辅助，属"整个 `geom/` 包不是移植件"这一系统性事实，非单点缺陷）。

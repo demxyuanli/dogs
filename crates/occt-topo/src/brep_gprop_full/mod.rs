@@ -181,11 +181,11 @@ mod tests {
     }
 }
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
+mod gauss;
+mod integration;
+mod properties;
+mod mesh_inertia;
+pub use gauss::*;
+pub use integration::*;
+pub use properties::*;
+pub use mesh_inertia::*;

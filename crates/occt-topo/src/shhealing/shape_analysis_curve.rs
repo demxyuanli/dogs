@@ -18,7 +18,7 @@
 //! The `Geom_Curve` `NextProject` overload (`cxx:504-557`) and the `Geom_Curve`
 //! `Project` overload without an explicit range (`cxx:126-142`, which only
 //! forwards to `cxx:147` with the curve's own range) are already ported in
-//! `pcurve_full/p01.rs:1423` (`next_project_on_curve_range`), so they are not
+//! `pcurve_full/common.rs:1423` (`next_project_on_curve_range`), so they are not
 //! duplicated here.
 //!
 //! UNPORTED, inside [`project_act`]'s `!OK` switch:
@@ -37,8 +37,8 @@
 //! `theCurve.IsClosed()` (`cxx:340`, `cxx:187`) has no `Curve` counterpart; a
 //! curve whose two range ends coincide stands in for it. A trimmed arc of a
 //! periodic basis must NOT count as closed: the `AdjustByPeriod` block
-//! (`cxx:479-484`) would then wrap its range (`shhealing/p05`-style deviation,
-//! see `step/p05.rs:336-344`).
+//! (`cxx:479-484`) would then wrap its range (`shhealing/wire_fix.rs`-style deviation,
+//! see `step/read_geometry.rs:336-344`).
 
 use occt_core::elib::clib;
 use occt_core::gp::GpPnt;

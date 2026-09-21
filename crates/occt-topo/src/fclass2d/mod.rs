@@ -43,8 +43,8 @@ pub(crate) use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 }
 
 
-mod p01;
-pub use p01::*;
+mod classifier;
+pub use classifier::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

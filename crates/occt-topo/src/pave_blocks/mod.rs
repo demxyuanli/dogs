@@ -726,7 +726,7 @@ mod tests {
     }
 }
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod make_blocks;
+mod split_edges;
+pub use make_blocks::*;
+pub use split_edges::*;

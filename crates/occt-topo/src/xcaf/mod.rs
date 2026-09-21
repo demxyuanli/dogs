@@ -25,12 +25,12 @@ pub(crate) use crate::xmlcaf::{XmlEntry, XmlXcafDoc};
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod assembly;
+mod convert;
+mod step_io;
+pub use assembly::*;
+pub use convert::*;
+pub use step_io::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

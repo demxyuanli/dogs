@@ -198,7 +198,7 @@ impl EdgeParameterProvider {
     /// data (`tessellate_2d`, `parameter`). Callers that do have the 3D point
     /// and the curve-on-surface must use `parameter_of` below, which implements
     /// the full `BRepMesh_EdgeParameterProvider::Parameter` refinement and IS
-    /// the path taken by the live pipeline (`incremental_mesh/p01.rs:921,1229`).
+    /// the path taken by the live pipeline (`incremental_mesh/discret_root.rs:921,1229`).
     pub fn remap(&self, stored: f64) -> f64 {
         if self.is_same_param {
             return stored;

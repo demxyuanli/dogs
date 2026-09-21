@@ -23,7 +23,7 @@ pub(super) fn dedupe_sort(v: Vec<ExtremaPair>) -> Vec<ExtremaPair> {
 // ---------------------------------------------------------------------------
 
 /// `Extrema_ExtPElC` arms selected by `Extrema_GGExtPC`'s curve-type switch
-/// (`Extrema_GGExtPC.hxx:390-405`, ported in `p03`): Line / Circle / Ellipse /
+/// (`Extrema_GGExtPC.hxx:390-405`, ported in `general_extrema_pc`): Line / Circle / Ellipse /
 /// Hyperbola / Parabola go to `Extrema_ExtPElC`.
 ///
 /// Each entry carries OCCT's `myIsMin` flag: line is always a minimum
@@ -33,7 +33,7 @@ pub(super) fn dedupe_sort(v: Vec<ExtremaPair>) -> Vec<ExtremaPair> {
 /// hyperbola/parabola against `C(Us + 1)` (`cxx:381`, `:473`).
 ///
 /// Returns `None` when the curve is not an elementary type (`Extrema_GGExtPC`
-/// then takes its `default:` arm in `p03`).
+/// then takes its `default:` arm in `general_extrema_pc`).
 pub(super) fn ext_pelc_all(
     c: &dyn Curve,
     p: &GpPnt,
@@ -119,7 +119,7 @@ pub(super) fn ext_pelc_all(
 /// `Extrema_ExtPC` is the `Extrema_GGExtPC` type alias in OCCT 8.0.0
 /// (`Extrema_ExtPC.hxx:31-38`): its type switch sends the elementary curves to
 /// `Extrema_ExtPElC` and BSpline / Bezier / OtherCurve to the `default:` arm
-/// (`hxx:390-502`). Both arms are ported (`p01` analytic arms, `p03` exact
+/// (`hxx:390-502`). Both arms are ported (`poly_roots` analytic arms, `general_extrema_pc` exact
 /// bracketing + Newton refinement); the previous grid + 60-step Newton sampler
 /// (audit A7) is gone.
 ///

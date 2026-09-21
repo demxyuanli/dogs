@@ -40,14 +40,14 @@ pub(crate) use crate::tgeometry::GeometryRegistry;
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
+mod surface_projector;
+mod make_pcurve;
+mod projection_cache;
+mod singularities;
+pub use surface_projector::*;
+pub use make_pcurve::*;
+pub use projection_cache::*;
+pub use singularities::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

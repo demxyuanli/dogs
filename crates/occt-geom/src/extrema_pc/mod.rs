@@ -24,12 +24,12 @@ pub(crate) use crate::extrema::ExtremaPair;
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::{extrema_ext_pc_min_in_range, extrema_ext_pc_range, ExtPcSolution};
+mod poly_roots;
+mod point_curve;
+mod general_extrema_pc;
+pub use poly_roots::*;
+pub use point_curve::*;
+pub use general_extrema_pc::{extrema_ext_pc_min_in_range, extrema_ext_pc_range, ExtPcSolution};
 
 #[cfg(test)]
 #[path = "tests.rs"]

@@ -156,7 +156,7 @@ fn same_parameter_edge(edge: &Edge, face: &Face, the_tol: f64) -> f64 {
     // UNPORTED: `cxx:1389` and `cxx:1678` pass this value as the first argument
     // of `GeomLib::SameRange` (`GeomLib.cxx:842-969`), where it decides the
     // `LastOnCurve`/`FirstOnCurve` early-out and the equal-span test. The Rust
-    // helper `shhealing::geom_lib_same_range` (`shhealing/p03.rs:579-625`) takes
+    // helper `shhealing::geom_lib_same_range` (`shhealing/wire_fix.rs:579-625`) takes
     // no tolerance and compares with `Precision::PConfusion` instead, so the
     // value is computed here and deliberately left unused.
     let tol_same_range = crate::int_tools_vertex_line::adaptor_resolution(c3d.as_ref(), the_tol)

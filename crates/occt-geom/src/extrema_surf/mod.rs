@@ -19,7 +19,7 @@
 //! (`BuildTree`), then `math_FunctionSetRoot` on `Extrema_FuncPSNorm`'s
 //! analytic system. Porting that engine is the remaining faithful fix.
 //!
-//! The **layer above it is ported**: [`ExtPs`] (`p03.rs`) is `Extrema_ExtPS` —
+//! The **layer above it is ported**: [`ExtPs`] (`point_surface_extrema.rs`) is `Extrema_ExtPS` —
 //! the type dispatch to the analytic `Extrema_ExtPElS` arms, the ±1e10 window
 //! clamp, the `nbU/nbV` sampling counts with the 300 sample `IsoIsDeg` rule,
 //! `TreatSolution`'s periodic normalization and window test, and the
@@ -52,12 +52,12 @@ pub(crate) use crate::surface::Surface;
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod analytic_solvers;
+mod numeric_extrema;
+mod point_surface_extrema;
+pub use analytic_solvers::*;
+pub use numeric_extrema::*;
+pub use point_surface_extrema::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

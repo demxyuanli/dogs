@@ -30,10 +30,10 @@ pub(crate) use occt_core::gp::GpPnt;
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod types;
+mod localize_data;
+pub use types::*;
+pub use localize_data::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

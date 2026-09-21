@@ -344,12 +344,12 @@ pub(crate) use crate::viz_scene::{render_scene_ppm_shaded, Camera, RenderSetting
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod interpreter;
+mod commands;
+mod dispatch;
+pub use interpreter::*;
+pub use commands::*;
+pub use dispatch::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

@@ -16,8 +16,8 @@ pub(crate) use super::super::triangulation_full::PolyTriangulation;
 }
 
 
-mod p01;
-pub use p01::*;
+mod tri_ptr;
+pub use tri_ptr::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

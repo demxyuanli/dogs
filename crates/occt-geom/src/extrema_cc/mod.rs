@@ -4,10 +4,10 @@
 //! `Extrema_LocateExtCC` (TKGeomBase). Analytic exact solvers for the cheap
 //! elementary pairs (skew-line distance, line–circle, coaxial/parallel
 //! circle–circle) plus a Newton refinement of F1(u,v) = (C1−C2)·C1′/|C1′| = 0,
-//! F2(u,v) = (C1−C2)·C2′/|C2′| = 0 (`p01::f_and_jac` / `refine_curve_curve`).
+//! F2(u,v) = (C1−C2)·C2′/|C2′| = 0 (`poly_roots::f_and_jac` / `refine_curve_curve`).
 //!
 //! **UNPORTED (audit A7 / task T-66)** — the **seed set** for the general path
-//! is invented: `p02` builds a uniform `n1 × n2` grid, keeps local min/max of
+//! is invented: `curve_curve` builds a uniform `n1 × n2` grid, keeps local min/max of
 //! the sampled squared distance plus the best point of each grid boundary, then
 //! Newton-refines each seed. OCCT `Extrema_GenExtCC::Perform` instead runs
 //! `math_GlobOptMin` over the 2D parameter box (and `Extrema_ECC` combines the
@@ -34,14 +34,14 @@ pub(crate) use crate::extrema::ExtremaPair;
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
+mod poly_roots;
+mod curve_curve;
+mod glob_opt_func;
+mod general_extrema;
+pub use poly_roots::*;
+pub use curve_curve::*;
+pub use glob_opt_func::*;
+pub use general_extrema::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

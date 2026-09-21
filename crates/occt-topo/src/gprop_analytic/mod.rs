@@ -51,12 +51,12 @@ pub(crate) use crate::topo_tools_full::{
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
+mod analytic_props;
+mod mass_properties;
+mod edge_length;
+pub use analytic_props::*;
+pub use mass_properties::*;
+pub use edge_length::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

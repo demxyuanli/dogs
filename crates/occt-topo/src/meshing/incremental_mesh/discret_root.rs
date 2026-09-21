@@ -331,7 +331,7 @@ impl IncrementalMesh {
     /// `getRangeSplitter().GenerateSurfaceNodes(...)`
     /// (`BRepMesh_DelaunayNodeInsertionMeshAlgo.hxx:65-69` when
     /// `IsPreProcessSurfaceNodes()` is true, `:94-100` otherwise). Only the base
-    /// splitter yields no nodes (`range_splitter/p02.rs:60-62`, OCCT's null list).
+    /// splitter yields no nodes (`range_splitter/stitching.rs:60-62`, OCCT's null list).
     pub(super) fn triangulate_model_faces(&self, model: &mut MeshModel) -> Result<Vec<FaceTriangulation>, String> {
         // EdgeDiscret step (OCCT BRepMesh_EdgeDiscret): populate every edge
         // pcurve from the analytic MakePCurveOnFace (`make_pcurve_full`).

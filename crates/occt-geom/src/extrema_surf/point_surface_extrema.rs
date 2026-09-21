@@ -17,7 +17,7 @@
 //! * `Extrema_GenExtPS` — **UNPORTED** (`cxx:346`, 1195 lines in 8.0.0:
 //!   `GetGridPoints` + `BuildGrid` + `FindSolution` over a `Bnd_Sphere` UBTree
 //!   with `math_FunctionSetRoot`). The port substitutes the 24×24 grid +
-//!   numeric-Jacobian Newton of `p02.rs`; see the module header.
+//!   numeric-Jacobian Newton of `numeric_extrema.rs`; see the module header.
 //!
 //! What *is* ported here and was missing before: the ±1e10 clamp of the window
 //! (`cxx:216-231`), the sampling counts `nbU/nbV` = 44 (B-spline/Bezier) else
@@ -316,7 +316,7 @@ impl<'a> ExtPs<'a> {
 
         // UNPORTED (T-67): `myExtPS.Initialize(*myS, nbU, nbV, myuinf, myusup,
         // myvinf, myvsup, mytolu, mytolv)` (`cxx:261`) — `Extrema_GenExtPS` is
-        // not ported; the substitute of `p02.rs` has no separate initialization,
+        // not ported; the substitute of `numeric_extrema.rs` has no separate initialization,
         // it builds its grid in `Perform`'s general arm. `cxx:263-264`
         // (`myExtPExtS.Nullify(); myExtPRevS.Nullify();`) has no Rust
         // counterpart: the two engines do not exist here.
@@ -390,10 +390,10 @@ impl<'a> ExtPs<'a> {
     ///
     /// UNPORTED (T-67): the engine is `Extrema_GenExtPS` (`GenExtPS.cxx:968`),
     /// 1195 lines over `GeomGridEval_Surface` + a `Bnd_Sphere` UBTree +
-    /// `math_FunctionSetRoot`; the port substitutes `p02.rs`'s 24×24 grid and
+    /// `math_FunctionSetRoot`; the port substitutes `numeric_extrema.rs`'s 24×24 grid and
     /// numeric-Jacobian Newton. The substitute cannot sample an unbounded range,
     /// so a window left at the `Initialize` ±1e10 clamp is replaced by the
-    /// natural-bounds clamp of `p01::surf_bound_{u,v}` — a substitute-only
+    /// natural-bounds clamp of `analytic_solvers::surf_bound_{u,v}` — a substitute-only
     /// concession, not an OCCT branch.
     fn perform_general(&mut self, s: &dyn Surface, p: &GpPnt) {
         let u_clamped = self.uinf <= -1e9 || self.usup >= 1e9;

@@ -55,10 +55,10 @@ pub(crate) use super::super::triangulator::{FaceTriangulation, Triangulator};
 }
 
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod discret_root;
+mod stitching;
+pub use discret_root::*;
+pub use stitching::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

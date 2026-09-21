@@ -41,7 +41,7 @@ pub struct VertexGeom {
 /// COMPOSITE_CURVE edges (`StepToTopoDS_TranslateCompositeCurve.cxx:267`).
 ///
 /// t314 ported the `!wasSP` arm of `ShapeFix_Edge::FixSameParameter`
-/// (`shhealing/p03.rs`), so this flag no longer hides a missing branch. Measured
+/// (`shhealing/wire_fix.rs`), so this flag no longer hides a missing branch. Measured
 /// with a temporary probe over all 16 `data/*.step` inputs of
 /// `export_data_obj`: no edge is cleared, the `!wasSP` arm never runs, and no
 /// input contains a COMPOSITE_CURVE. It stays dormant under FromSTEP.FixShape

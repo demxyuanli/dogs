@@ -460,5 +460,5 @@ mod tests {
     }
 }
 
-mod p01;
-pub use p01::*;
+mod shrunk_data;
+pub use shrunk_data::*;

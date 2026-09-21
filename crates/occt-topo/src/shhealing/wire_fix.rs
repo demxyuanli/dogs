@@ -911,7 +911,7 @@ fn check_pcurve_rep_range(wire: &Wire, face: &Face, preci: f64) {
     // `XSAlgo_ShapeProcessor::CheckPCurve(myEdge, aFace, preci, sbwd->IsSeam(i))`
     // (`XSAlgo_ShapeProcessor.cxx:344-505`), reached from
     // `StepToTopoDS_TranslateEdgeLoop.cxx:875` `CheckPCurves` and therefore from
-    // `step/p04.rs` where this function is invoked. That call is the missing
+    // `step/pcurve_ranges.rs` where this function is invoked. That call is the missing
     // piece behind linkrods FACE 35: the gate at `cxx:392-401`
     // (`aDist11/aDist22 > thePrecision` -> `RemovePCurve` + return) is what
     // leaves the 2.172 edge's tolerance at the imported 1.2432146551310009e-07
@@ -922,7 +922,7 @@ fn check_pcurve_rep_range(wire: &Wire, face: &Face, preci: f64) {
     // file's `UNCERTAINTY_MEASURE_WITH_UNIT` length measure times the length
     // factor (linkrods.step declares 2.E-005, so preci = 2e-05), else
     // `read.precision.val` (`Interface_StaticStandards.cxx:39`, default
-    // 1.e-03); `step/p03.rs::step_precision` parses that.
+    // 1.e-03); `step/wire_fix::step_precision` parses that.
     //
     // ENABLED (t336). The two blockers recorded here against enabling it are
     // both gone:
@@ -941,7 +941,7 @@ fn check_pcurve_rep_range(wire: &Wire, face: &Face, preci: f64) {
     // the full run goes 44.8 s -> 279 s.
     //
     // The re-projection tail `cxx:403-505` is separately gated by
-    // `CHECK_PCURVE_REPROJECT` in `shhealing/p04.rs`; measured inert for all 16
+    // `CHECK_PCURVE_REPROJECT` in `shhealing/pcurve_ranges.rs`; measured inert for all 16
     // models, and still parked for the reason recorded there.
     if T312_WIRE_XSALGO_CHECKPCURVE {
         check_pcurves_xsalgo(wire, face, preci);
@@ -1813,7 +1813,7 @@ fn fix_small_all(
 ///
 /// `num` is the 1-based wire position of the edge to test (`0` = the last edge,
 /// `cxx:903`). The singularity side reuses `SurfaceSingularities`
-/// (`pcurve_full/p04.rs`), the port of `ShapeAnalysis_Surface::ComputeSingularities`
+/// (`pcurve_full/pcurve_ranges.rs`), the port of `ShapeAnalysis_Surface::ComputeSingularities`
 /// / `DegeneratedValues` / `IsDegenerated`.
 enum DegeneratedCheck {
     /// Returned false without `ShapeExtend_FAIL2`: nothing to fix.
@@ -2909,8 +2909,8 @@ fn copy_reverse_pcurves(to: &Edge, from: &Edge, reverse: bool) {
             if i == 0 && reverse {
                 // `cxx:4152-4160`: `ReversedParameter` on the old range, then
                 // `Reverse`, then the swap.
-                let fp = super::p04::reversed_parameter(pc.as_ref(), fp0);
-                let lp = super::p04::reversed_parameter(pc.as_ref(), lp0);
+                let fp = super::pcurve_ranges::reversed_parameter(pc.as_ref(), fp0);
+                let lp = super::pcurve_ranges::reversed_parameter(pc.as_ref(), lp0);
                 let mut c = pc.clone_dyn();
                 c.reverse();
                 copied.push(Arc::from(c));

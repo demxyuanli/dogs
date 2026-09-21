@@ -24,14 +24,14 @@ pub(crate) use super::super::geom_tool::{GeomTool, IntFlag};
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
+mod constants;
+mod triangulation;
+mod frontier;
+mod polygon_meshing;
+pub use constants::*;
+pub use triangulation::*;
+pub use frontier::*;
+pub use polygon_meshing::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

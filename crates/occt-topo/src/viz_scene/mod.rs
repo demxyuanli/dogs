@@ -44,18 +44,18 @@ pub(crate) use crate::shape::TopoShape;
 }
 
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-mod p05;
-mod p06;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
-pub use p05::*;
-pub use p06::*;
+mod scene;
+mod image;
+mod render;
+mod font;
+mod overlay;
+mod bitmap_glyphs;
+pub use scene::*;
+pub use image::*;
+pub use render::*;
+pub use font::*;
+pub use overlay::*;
+pub use bitmap_glyphs::*;
 
 #[cfg(test)]
 mod tests;

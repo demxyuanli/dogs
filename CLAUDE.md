@@ -24,3 +24,9 @@ OK:  TotCross2D 用定向边 pcurve（BRep_Tool::CurveOnSurface 有同等分支�
 NO:  按辐条长度当 unused；包围盒面积比 0.8 冒充 same-domain
 NO:  为凑某一 STEP 的顶点数在 addWire 里按面积翻链；用特例 walk 代替 Edge.Reverse()
 ```
+
+## 文件与模块命名
+
+- **禁止 `pNN.rs` 这类无语义文件名**。早期为控制文件长度把大模块切成 `p01.rs`…`p06.rs`，全仓已于 2026-09-20（批 79，122 个文件）重构为按内容命名；不要再新增这种名字。
+- 拆子模块时用 `<module>/mod.rs` + `mod <主题>;` + `pub use <主题>::*;`：各部分共享同一命名空间，调用方看到的仍是 `<module>::<item>`（例：`occt_topo::step::read_step_file`），文件名取该文件承载的 OCCT 类/职责（例：`step/read_geometry.rs`、`extrema_surf/numeric_extrema.rs`、`meshing/delaun/frontier.rs`、`brep_offset/curve_face_offset.rs`）。
+- 规格、报告、注释里引用源码用**真实文件名**（`step/read_geometry.rs:476`），不要引用已废弃的 `pNN`，也不要用 `read` 工具的折行显示行号（以 `grep` 的物理行号为准）。

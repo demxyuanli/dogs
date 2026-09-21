@@ -680,7 +680,7 @@ fn check_pcurve(edge: &Edge, face: &Face, preci: f64, is_seam: bool) -> bool {
     // write at `cxx:491`). Reason for parking is the re-projection quality, not
     // this control flow: the only port of the re-projection, `fix_add_pcurve` ->
     // `pcurve_full::project_curve_on_surface_perform`
-    // (`pcurve_full/p01.rs:417-460`), builds a degree-1 B-spline with one pole
+    // (`pcurve_full/common.rs:417-460`), builds a degree-1 B-spline with one pole
     // per sample instead of the tolerance-driven `Approx_BSplineApprox`
     // reduction of `ShapeConstruct_ProjectCurveOnSurface::ApproxPCurve` (no
     // port of `Approx_BSplineApprox` exists), and `cxx:435-439` forces

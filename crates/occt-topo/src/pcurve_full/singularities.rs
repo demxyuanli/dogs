@@ -13,11 +13,11 @@
 //!   (`ShapeAnalysis_Surface.cxx:362`) / `ProjectDegenerated`
 //!   (`ShapeAnalysis_Surface.cxx:449`, `:498`) used only as the
 //!   `Precision::Confusion() + gap` seed of `NextValueOfUV`. `NextValueOfUV`
-//!   is now ported (`p01::next_value_of_uv`) and its callers pass
+//!   is now ported (`surface_projector::next_value_of_uv`) and its callers pass
 //!   `Precision::Confusion() + gap` / `1000 * gap` explicitly
 //!   (`ShapeConstruct_ProjectCurveOnSurface.cxx:1358`, `:1413`, `:1432`); the
 //!   gap here is recovered as the residue of the returned point
-//!   (`p01::value_of_uv_with_gap`).
+//!   (`surface_projector::value_of_uv_with_gap`).
 //! - The singularity arrays are recomputed per pcurve instead of being cached in
 //!   `ShapeAnalysis_Surface::myNbDeg` / `myPreci` / ... (`ShapeAnalysis_Surface.hxx`).
 //!   `ComputeSingularities` is a pure function of the surface and its bounds, so
@@ -28,7 +28,7 @@
 //!   `ShapeConstruct_ProjectCurveOnSurface` chain (the free function
 //!   `projectDegeneratedPoints` at `cxx:600-635` calls the *sequence* overload).
 
-use super::p01::{sa_is_u_closed, sa_is_v_closed, value_of_uv};
+use super::surface_projector::{sa_is_u_closed, sa_is_v_closed, value_of_uv};
 use super::prelude::*;
 use occt_core::precision::{CONFUSION, PCONFUSION};
 
@@ -390,7 +390,7 @@ pub(super) fn project_degenerated_points(
 /// (`direct = true` then `false`) followed by the singularity loop that calls
 /// `correctExtremity` for the ends of the 3D curve that land on a singularity.
 ///
-/// With `isAnIsoparametric` PARKed (`p01.rs`), the `if (!isoPar2d3d)` guard at
+/// With `isAnIsoparametric` PARKed (`surface_projector.rs`), the `if (!isoPar2d3d)` guard at
 /// `cxx:1467` always holds: `isAnIsoparametric` sets `theIsoPar2d3d = false` on
 /// entry (`cxx:2482`) and the port never sets it.
 #[allow(clippy::too_many_arguments)]
@@ -498,7 +498,7 @@ fn adjust_second_to_first_point(surf: &dyn Surface, first: &GpPnt2d, second: &mu
 ///
 /// `ShapeAnalysis_Surface::NextValueOfUV(FirstPointOfLine, aP3d, myPreci,
 /// Precision::Confusion())` (`cxx:2012-2013`) is replaced by
-/// [`super::p01::value_of_uv`] (see `p01.rs` on the seeding).
+/// [`super::surface_projector::value_of_uv`] (see `surface_projector.rs` on the seeding).
 #[allow(clippy::too_many_arguments)]
 fn correct_extremity(
     curve: &dyn Curve,
@@ -664,7 +664,7 @@ fn correct_extremity(
 ///
 /// PORTED: the guards below are `IsUClosed(myPreci)` / `IsVClosed(myPreci)`
 /// (`cxx:1750`, `cxx:1820`), the full `ShapeAnalysis_Surface` versions
-/// ([`super::p01::sa_is_u_closed`] / [`super::p01::sa_is_v_closed`],
+/// ([`super::surface_projector::sa_is_u_closed`] / [`super::surface_projector::sa_is_v_closed`],
 /// `ShapeAnalysis_Surface.cxx:660-863`, `:865-1077`), not the bare
 /// `Geom_Surface` flags.
 pub(super) fn adjust_over_degenerated(

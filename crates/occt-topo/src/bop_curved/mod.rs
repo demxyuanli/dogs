@@ -467,11 +467,11 @@ mod tests {
     }
 }
 
-mod p01;
-mod p02;
-mod p03;
-mod p04;
-pub use p01::*;
-pub use p02::*;
-pub use p03::*;
-pub use p04::*;
+mod region_mesh;
+mod face_meshing;
+mod general_mesh;
+mod region_trim;
+pub use region_mesh::*;
+pub use face_meshing::*;
+pub use general_mesh::*;
+pub use region_trim::*;

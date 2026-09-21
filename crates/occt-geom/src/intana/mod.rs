@@ -43,10 +43,10 @@ pub use curve_ana::IntAnaCurve;
 pub use intquadquad::IntQuadQuad;
 pub use quadric::IntAnaQuadric;
 
-mod p01;
-mod p02;
-pub use p01::*;
-pub use p02::*;
+mod analytic_intersections;
+mod line_torus;
+pub use analytic_intersections::*;
+pub use line_torus::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]
