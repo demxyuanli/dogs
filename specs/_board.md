@@ -421,6 +421,15 @@ cd ..; git worktree remove --force .target-headcheck
   - **失败的 Torus face 20**：wire 0（v=0.05088）的 pcurve 在 **u ∈ [1.5708, 7.8540]**，wire 1（v=π/2）的在 **u ∈ [−4.7124, 1.5708]** —— **正好相差一个周期（2π）**；`update_range` 的周期钳制（`BRepMesh_DefaultRangeSplitter::updateRange` `cxx:202-235`；端口 `range_splitter/param_set.rs:214-235`，已忠实）把 `range_u` 钳成 `(−4.7124, 1.5708)` ⇒ **wire 0 的链恰好落在范围外一个周期**（缩放后 u ∈ [1,2]）。
   - 两面的**单 wire 链形状完全相同**（每 wire 2 条边、都是 `FixLacking` 复制的闭合圆 ⇒ 出-回链，37+37=74 节点），所以**目前观测到的唯一差异就是"同面两条 wire 的 u 窗口是否对齐"**。四个边的 `same_param/same_range` 全为 true，且 `pc.d0(t)=t`（每边自身一致），说明两个 u 窗口来自 STEP 文件各自的圆参数化，不是边内参数化错。
 - **参考侧证据**：`data/occ-ref/T0M.obj` 里该顶点出现 **两次且完全重合**（v962/v965）⇒ 该顶点被**两个面**各自写了一次（逐面写顶点不去重）⇒ 至少与它相邻的某个面在 OCCT 里**是**被网格化的；端口忠实路径在这些面上给 0 三角，故"OCCT 会网格化、端口失败"的面类**确实存在**，且与本轮的 u 窗口差异一致。
+**批 97（IGES：周期 B 样条按 `SetNotPeriodic` 副本写 126；仅编译验证）—— 2026-09-21 第 106 轮**
+
+> 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。本批把批 95 新增的 `SetNotPeriodic` 接到 IGES 写侧（`GeomToIGES_GeomCurve.cxx:294-307` 的原文控制流）。
+
+- **改动（`iges.rs::emit_bspline_curve`）**：原实现遇 `curve.is_periodic()` 直接 `return None`（⇒ 调用方退化成弦线）；现按 OCCT `TransferCurve(Geom_BSplineCurve)`（`cxx:294-307`）改为**先做非周期副本**：取 `bspline_poles/knots/nurbs_degree/weights` 重建 `GeomBSplineCurve{periodic:true}` → `set_not_periodic()` → 用该副本走余下流程（范围检查、planar/normal、126 参数）。126 的 `periodic` 字段本就恒写 0（与 `IGESGeom_ToolBSplineCurve::WriteOwnParams` 一致），无需改。
+- **仍 UNPORTED（就地注明）**：请求区间窄于曲线自身时 OCCT 用 `Geom_BSplineCurve::Segment` 取子段；该函数未移植 ⇒ 这类请求仍返回 `None`（下一批 **Segment + SetOrigin** 一并解决，两个消费方：此处与 `GeomConvert::CurveToBSplineCurve` 的 trimmed-Bezier/BSpline 臂）。
+- **验证（仅编译）**：`cargo check --offline --all-targets` 五 crate **exit 0、0 error**（本轮复检 core/geom/topo）。
+- **门禁影响面**：仅 IGES **写**侧（周期 B 样条边：弦线 → 126），OBJ 门禁不读 IGES；`iges_check` 实体统计变化属预期（§6.2 第 97 行）。
+
 **批 96（R2-22：2D/pcurve 周期表示 + 读侧接线；仅编译验证）—— 2026-09-21 第 105 轮**
 
 > 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。本批把 3D 侧的周期机制（批 93/94）镜像到 2D，并为 R2-19 备好 2D 周期圆锥/样条。
@@ -1666,6 +1675,7 @@ cd ..; git worktree remove --force .target-pre85
 | 94（§7 批 94） | **读侧首次变为可达的周期曲线**：`occt-topo --lib` 中依赖 bbox/求值的用例、`bop_builder2_boss`/`phase19`、四道 STEP 门禁、`export_data_obj`（语料中 linkrods/screw/Shape/ATU01038/bottom/motoc/top 含 `closed_curve=.T.` 的 B 样条） | ① 闭曲线（`closed=.T.` ∧ degree>1 ∧ `IsClosed()`）按 `StepToGeom.cxx:920-926` 强制周期化 ⇒ 极点数 −1、改走周期求值；② 描述子"像周期"时按周期表示构造（`:873-894`）；③ 重数 > degree+1 由"报错"改为"钳制+裁剪首尾极点"；④ 重复结点按 `Epsilon` 归并；⇒ **批 90 的 `box_bspline` 周期 arm 自此可达** |
 | 95（§7 批 95） | **无（读侧不动）**：仅 IGES **写**侧整周椭圆由 104 改 126 ⇒ 只影响 `iges_check` 的实体统计，OBJ 门禁不读 IGES | 新增 `reparametrize`/`set_knots`/`set_not_periodic`/`distinct_knots_and_mults`/`GpAx2::Rotated` + `emit_whole_period_ellipse` |
 | 96（§7 批 96） | **读侧（2D/pcurve）**：`occt-topo --lib` 中 pcurve 相关用例、`phase*`、四道 STEP 门禁、`export_data_obj`/网格门禁（pcurve 变周期会改 pcurve 求值与后续网格化） | ① 2D 臂接入 `MakeBSplineCurveCommon`（重数归并/钳制/极点裁剪/周期判定/闭曲线强制周期化）；② 周期 pcurve 走 `curve_dn` 周期求值（③④ 同 §6.2 第 94 行的重数钳制/重复结点归并语义） |
+| 97（§7 批 97） | **无（写侧）**：IGES 周期 B 样条边由"弦线"改 126 ⇒ 仅 `iges_check` 的实体统计变化 | `emit_bspline_curve` 前置 `SetNotPeriodic` 副本（`GeomToIGES_GeomCurve.cxx:294-307`） |
 
 > **注意**：批 80–84 在本差分对照点之前，故其影响不在第 2 步里；若要分开验证它们（R2-1 的盒递归、R2-2 的求交接线、R2-4 的 IGES 重编号、R2-5 的 SRR 组合、批 84 的 128 反周期化），用同一二分法把对照点前移到 `f4d4d0b^`（= 批 79 末）即可，共 5 个对照点。
 

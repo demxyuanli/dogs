@@ -853,11 +853,11 @@ impl IgesWriter {
                 };
                 Some(self.emit_circular_arc(&center, &p1, &p2, &plane_pt))
             }
-            // UNPORTED (audit A26 / task T-78): `TransferCurve(Geom_BSplineCurve)`
-            // (`cxx:279-423`) first makes a periodic curve non-periodic
-            // (`SetNotPeriodic`) and calls `Segment` when the requested range is
-            // narrower than the curve's own; this port has neither, so those cases
-            // return `None`.
+            // `TransferCurve(Geom_BSplineCurve)` (`cxx:279-423`): a periodic curve
+            // is written through a `SetNotPeriodic` copy (`emit_bspline_curve`).
+            // UNPORTED: a requested range narrower than the curve's own is
+            // obtained with `Geom_BSplineCurve::Segment`, so those cases return
+            // `None`.
             IgCurveKind::Bounded => self.emit_bspline_curve(curve, a, b),
             // `TransferConic` (`GeomToIGES_GeomCurve.cxx:533-603` is the circle;
             // the ellipse/hyperbola/parabola transfers are `:608-700`, `:707-773`,
@@ -907,14 +907,31 @@ impl IgesWriter {
     /// from the plane through `P(1)`. Returns `None` for the cases this port
     /// cannot express.
     fn emit_bspline_curve(&mut self, curve: &dyn Curve, first: f64, last: f64) -> Option<usize> {
-        // `cxx:294-307`: a periodic curve is converted to a non-periodic copy
-        // before writing.
-        if curve.is_periodic() {
-            return None;
-        }
+        // `cxx:294-307`: a periodic curve is written through a non-periodic copy
+        // (`SetNotPeriodic`); the 126 writer reports `periodic = 0`, which the
+        // port's parameter writer already does.
+        let unperiodized;
+        let curve: &dyn Curve = if curve.is_periodic() {
+            let poles = curve.bspline_poles()?.to_vec();
+            let knots = curve.bspline_knots()?.to_vec();
+            let degree = curve.nurbs_degree()?;
+            let mut c = occt_geom::bspline_curve::GeomBSplineCurve {
+                poles,
+                weights: curve.bspline_weights().map(|w| w.to_vec()),
+                knots,
+                degree,
+                periodic: true,
+            };
+            c.set_not_periodic();
+            unperiodized = c;
+            &unperiodized
+        } else {
+            curve
+        };
         let (curve_first, curve_last) = (curve.first_parameter(), curve.last_parameter());
         // `cxx:320-356`: a narrower range is obtained with
-        // `Geom_BSplineCurve::Segment`.
+        // `Geom_BSplineCurve::Segment` — UNPORTED, so such a request still
+        // returns `None` (the caller falls back to a chord line).
         if first > curve_first + occt_core::precision::PCONFUSION
             || last < curve_last - occt_core::precision::PCONFUSION
         {
