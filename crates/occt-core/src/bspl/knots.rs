@@ -154,6 +154,80 @@ pub fn nb_poles(degree: i32, periodic: bool, mults: &[i32]) -> i32 {
     sigma
 }
 
+/// `BSplCLib::KnotSequenceLength` (`BSplCLib.cxx:455-474`): the flat knot vector
+/// length; for a periodic curve the sequence is extended by one period on each
+/// side, i.e. `2 * (degree + 1 - Mf)` extra knots.
+pub fn knot_sequence_length(mults: &[i32], degree: i32, periodic: bool) -> usize {
+    let total: i32 = mults.iter().sum();
+    if periodic && !mults.is_empty() {
+        (total + 2 * (degree + 1 - mults[0])).max(0) as usize
+    } else {
+        total.max(0) as usize
+    }
+}
+
+/// `BSplCLib::KnotSequence(Knots, Mults, Degree, Periodic = true, KnotSeq)`
+/// (`BSplCLib.cxx:488-548`): the base multiplicities are written starting at
+/// index `M1 + 1` (`M1 = Degree + 1 - Mults(1)`), then the sequence is extended
+/// by one period **backwards** (knots from the end, minus the period) and
+/// **forwards** (knots from the start, plus the period).
+///
+/// The OCCT walk of `j` can in principle step outside `Knots`/`Mults`; Rust
+/// clamps the index instead of reading out of bounds (OCCT would be undefined
+/// there).
+pub fn knot_sequence_periodic(knots: &[f64], mults: &[i32], degree: i32) -> Vec<f64> {
+    let n = knot_sequence_length(mults, degree, true);
+    let mut seq = vec![0.0f64; n];
+    if knots.is_empty() || mults.is_empty() {
+        return seq;
+    }
+    let m1 = (degree + 1 - mults[0]).max(0) as usize;
+    let mut index = m1;
+    for (i, &k) in knots.iter().enumerate() {
+        for _ in 0..mults.get(i).copied().unwrap_or(0).max(0) {
+            if index >= seq.len() {
+                break;
+            }
+            seq[index] = k;
+            index += 1;
+        }
+    }
+    let period = knots[knots.len() - 1] - knots[0];
+    let k_at = |j: i32| -> f64 {
+        let j = j.clamp(1, knots.len() as i32);
+        knots[(j - 1) as usize]
+    };
+    let m_at = |j: i32| -> i32 {
+        let j = j.clamp(1, mults.len() as i32);
+        mults[(j - 1) as usize]
+    };
+    // Backward fill (`cxx:521-533`): 1-based `i = M1 .. 1`.
+    let mut m = 1i32;
+    let mut j = knots.len() as i32 - 1;
+    for i in (0..m1).rev() {
+        seq[i] = k_at(j) - period;
+        m += 1;
+        if m > m_at(j) {
+            j -= 1;
+            m = 1;
+        }
+    }
+    // Forward fill (`cxx:534-546`): from the first free slot to the end.
+    let mut m = 1i32;
+    let mut j = 2i32;
+    let mut i = index;
+    while i < seq.len() {
+        seq[i] = k_at(j) + period;
+        m += 1;
+        if m > m_at(j) {
+            j += 1;
+            m = 1;
+        }
+        i += 1;
+    }
+    seq
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

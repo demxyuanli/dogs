@@ -21,8 +21,9 @@ use occt_core::bspl::bezier::boehm_insert;
 use occt_core::bspl::banded_interp::knot_sequence;
 use occt_core::bspl::knots::{self, hunt, insert_knot, multiplicity};
 use occt_core::convert::{
-    circle_to_bspline_curve_range, ellipse_to_bspline_curve_range, hyperbola_to_bspline_curve,
-    parabola_to_bspline_curve, ConicToBSplineCurve, ConvertError, ParameterisationType,
+    circle_to_bspline_curve, circle_to_bspline_curve_range, ellipse_to_bspline_curve,
+    ellipse_to_bspline_curve_range, hyperbola_to_bspline_curve, parabola_to_bspline_curve,
+    ConicToBSplineCurve, ConvertError, ParameterisationType,
 };
 use occt_core::gp::{
     GpAx2, GpAx22d, GpAx3, GpCirc2d, GpElips2d, GpHypr2d, GpParab2d, GpPnt, GpTrsf,
@@ -349,11 +350,22 @@ fn bspline_curve_builder(
         .iter()
         .map(|p| GpPnt::new(p.x(), p.y(), 0.0))
         .collect();
-    let flat = knot_sequence(
-        convert.knots(),
-        convert.multiplicities(),
-        convert.degree() as i32,
-    );
+    // `Geom_BSplineCurve`'s rational/non-rational constructors call
+    // `updateKnots()`, i.e. `BSplCLib::KnotSequence(…, Periodic)`; for a
+    // periodic result that is the sequence extended by one period each side.
+    let flat = if convert.is_periodic() {
+        knots::knot_sequence_periodic(
+            convert.knots(),
+            convert.multiplicities(),
+            convert.degree() as i32,
+        )
+    } else {
+        knot_sequence(
+            convert.knots(),
+            convert.multiplicities(),
+            convert.degree() as i32,
+        )
+    };
     let weights = convert.weights().to_vec();
     let weights = if weights_are_rational(&weights) { Some(weights) } else { None };
     let mut curve = GeomBSplineCurve {
@@ -382,12 +394,13 @@ fn bspline_curve_builder(
 /// - the `U2 - U1 >= 6` sub-arm of a trimmed circle/ellipse under
 ///   `Convert_RationalC1` (`:224-242`, `:262-280`) needs
 ///   `GeomConvert_CompCurveToBSplineCurve`;
-/// - a `Geom_OffsetCurve` (`:340-354`, `:436-450`) needs `GeomConvert_ApproxCurve`;
-/// - a non-trimmed `Geom_Circle`/`Geom_Ellipse` (`:363-408`) ends with
-///   `TheCurve->SetPeriodic()` (`:378`, `:383`, `:406`) and this port has no
-///   periodic `Geom_BSplineCurve` representation yet (board card **R2-21**:
-///   `Geom_BSplineCurve::SetPeriodic`, `Geom_BSplineCurve.cxx:777-815`,
-///   `BSplCLib::KnotSequence` periodic arm, and the periodic evaluation arms).
+/// - a `Geom_OffsetCurve` (`:340-354`, `:436-450`) needs `GeomConvert_ApproxCurve`.
+///
+/// The non-trimmed `Geom_Circle`/`Geom_Ellipse` arms (`:363-408`) end with
+/// `TheCurve->SetPeriodic()` (`:378`, `:383`, `:406`); the periodic
+/// `Geom_BSplineCurve` representation they need is ported
+/// (`GeomBSplineCurve::set_periodic`, `Geom_BSplineCurve.cxx:777-815`) —
+/// board card **R2-21**.
 ///
 /// An unrecognised curve type throws `Standard_DomainError("No such curve")`
 /// (`:355-358`, `:451-454`) — returned as [`ConvertError::DomainError`].
@@ -481,11 +494,23 @@ pub fn curve_to_bspline_curve(
     }
 
     // Non-trimmed arm (`cxx:361-455`).
-    if c.gp_ellipse().is_some() || c.gp_circ().is_some() {
-        // `cxx:363-408`: `Convert_*ToBSplineCurve(E2d/C2d, Parameterisation)`
-        // followed by `TheCurve->SetPeriodic()`. UNPORTED — see the doc note
-        // (board card R2-21).
-        return Err(ConvertError::Unported);
+    if let Some(elips) = c.gp_ellipse() {
+        // `cxx:363-385`: `Convert_EllipseToBSplineCurve(E2d, Parameterisation)`
+        // followed by `TheCurve->SetPeriodic()`.
+        let e2d = GpElips2d::new(GpAx22d::standard(), elips.major_radius, elips.minor_radius);
+        let convert = ellipse_to_bspline_curve(&e2d, parameterisation)?;
+        let mut curve = bspline_curve_builder(elips.position(), &convert)?;
+        curve.set_periodic();
+        return Ok(curve);
+    }
+
+    if let Some(circ) = c.gp_circ() {
+        // `cxx:387-408`.
+        let c2d = GpCirc2d::new(GpAx22d::standard(), circ.radius());
+        let convert = circle_to_bspline_curve(&c2d, parameterisation)?;
+        let mut curve = bspline_curve_builder(&circ.position(), &convert)?;
+        curve.set_periodic();
+        return Ok(curve);
     }
 
     if let Some(poles) = c.bezier_poles() {

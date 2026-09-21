@@ -51,6 +51,66 @@ impl GeomBSplineCurve {
     pub fn degree(&self) -> usize { self.degree }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
 
+    /// `Geom_BSplineCurve::SetPeriodic()` (`Geom_BSplineCurve.cxx:777-815`):
+    /// convert a non-periodic representation into the periodic one.
+    ///
+    /// The kept knots are `FirstUKnotIndex()..LastUKnotIndex()` of the distinct
+    /// array (`Geom_BSplineCurve_1.cxx:334-344`, `:404-414`), the end
+    /// multiplicities are clamped to `degree`, the pole count becomes
+    /// `BSplCLib::NbPoles(degree, true, mults)` and the flat knot vector is
+    /// rebuilt with the periodic `BSplCLib::KnotSequence` (`updateKnots()`).
+    ///
+    /// OCCT's `myPoles.Resize(1, nbp, true)` keeps the leading poles when the
+    /// count shrinks; when it grows, OCCT leaves the new poles
+    /// default-constructed — reproduced here as the origin (poles) and `0.0`
+    /// (weights).
+    ///
+    /// `ClearEvalRepresentation()` has no counterpart: this port stores no
+    /// evaluation cache.
+    pub fn set_periodic(&mut self) {
+        if self.periodic {
+            // OCCT's `SetPeriodic()` on an already periodic curve is a no-op:
+            // `FirstUKnotIndex()`/`LastUKnotIndex()` return `1`/`myKnots.Length()`
+            // (`Geom_BSplineCurve_1.cxx:334-344`, `:404-414`), the end
+            // multiplicities are already `<= degree`, `NbPoles(degree, true, …)`
+            // reproduces the pole count and `updateKnots()` rebuilds the same
+            // flat sequence. The port stores only the flat sequence, whose
+            // run-length decomposition would additionally expose the
+            // period-extension knots (OCCT keeps those in `myFlatKnots` only),
+            // so the no-op is taken explicitly rather than recomputed.
+            return;
+        }
+        let (uknots, umults) = knots::unique_knots_mults(&self.knots);
+        if uknots.is_empty() || umults.is_empty() {
+            return;
+        }
+        let degree = self.degree as i32;
+        let first = occt_core::bspl::locate::first_u_knot_index(degree, &umults).max(1) as usize;
+        let last = occt_core::bspl::locate::last_u_knot_index(degree, &umults).max(1) as usize;
+        let first = first.min(uknots.len());
+        let last = last.min(uknots.len()).max(first);
+        let uknots = uknots[first - 1..last].to_vec();
+        let mut umults = umults[first - 1..last].to_vec();
+        let last_idx = umults.len() - 1;
+        let m = degree.min(umults[0].max(umults[last_idx]));
+        umults[0] = m;
+        umults[last_idx] = m;
+        let nbp = knots::nb_poles(degree, true, &umults).max(0) as usize;
+        if nbp < self.poles.len() {
+            self.poles.truncate(nbp);
+            if let Some(w) = self.weights.as_mut() {
+                w.truncate(nbp);
+            }
+        } else if nbp > self.poles.len() {
+            self.poles.resize(nbp, GpPnt::zero());
+            if let Some(w) = self.weights.as_mut() {
+                w.resize(nbp, 0.0);
+            }
+        }
+        self.knots = knots::knot_sequence_periodic(&uknots, &umults, degree);
+        self.periodic = true;
+    }
+
     /// Insert knot `u` with multiplicity `mult` (Boehm knot insertion).
     pub fn insert_knot(&mut self, u: f64, mult: usize) {
         for _ in 0..mult {
@@ -137,6 +197,18 @@ impl GeomBSplineCurve {
 
 impl Curve for GeomBSplineCurve {
     fn d0(&self, u: f64) -> GpPnt {
+        if self.periodic {
+            // Periodic flat knot sequence: `BSplCLib::D0` goes through
+            // `PrepareEval` (`LocateParameter` maps the parameter into the
+            // period, `BuildEval` wraps the pole window) and `Bohm(…, 0, …)`.
+            // `curve_dn::dn` is exactly that machinery with an explicit
+            // derivative order; order 0 returns the point.
+            let v = occt_core::bspl::curve_dn::dn(
+                u, 0, 0, self.degree as i32, true, &self.poles,
+                self.weights.as_deref(), &self.knots, None,
+            );
+            return GpPnt::new(v.x(), v.y(), v.z());
+        }
         match &self.weights {
             Some(w) => eval::eval_curve_rational(&self.poles, w, &self.knots, self.degree, u),
             None => eval::eval_curve(&self.poles, &self.knots, self.degree, u),
@@ -144,6 +216,9 @@ impl Curve for GeomBSplineCurve {
     }
 
     fn d1(&self, u: f64) -> (GpPnt, GpVec) {
+        if self.periodic {
+            return (self.d0(u), self.eval_dn(u, 1));
+        }
         // `Geom_BSplineCurve::D1` / `BSplCLib::D1`. Rational uses the
         // homogeneous quotient already computed by `eval_curve_rational_d2`.
         match &self.weights {
@@ -176,6 +251,9 @@ impl Curve for GeomBSplineCurve {
     }
 
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
+        if self.periodic {
+            return (self.d0(u), self.eval_dn(u, 1), self.eval_dn(u, 2));
+        }
         match &self.weights {
             Some(w) => eval::eval_curve_rational_d2(&self.poles, w, &self.knots, self.degree, u),
             None => eval::eval_curve_d2(&self.poles, &self.knots, self.degree, u),

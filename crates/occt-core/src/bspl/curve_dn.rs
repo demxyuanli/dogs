@@ -71,6 +71,11 @@ fn build_eval(degree: i32, index: i32, poles: &[GpPnt], weights: Option<&[f64]>)
 ///
 /// `index` is the incoming knot guess (`0` from `Geom_BSplineCurve::EvalDN`).
 /// `mults == None` is `BSplCLib::NoMults` (flat knots).
+///
+/// `n == 0` reproduces `BSplCLib::D0` (`BSplCLib_1.cxx:248-267`): `Bohm` with
+/// derivative order 0 leaves the value in slot 0 and `RationalDerivative(…, 0)`
+/// divides by the weight, so the point comes back as a vector. This is the arm
+/// the periodic evaluation in `GeomBSplineCurve::{d0,d1,d2}` uses.
 pub fn dn(
     u: f64,
     n: i32,
@@ -82,7 +87,7 @@ pub fn dn(
     knots: &[f64],
     mults: Option<&[i32]>,
 ) -> GpVec {
-    if degree < 0 || n < 1 {
+    if degree < 0 || n < 0 {
         return GpVec::zero();
     }
     let (mut knot_index, uu) = locate_parameter(degree, knots, mults, u, periodic, index);
