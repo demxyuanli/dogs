@@ -116,6 +116,44 @@ pub fn pole_index(degree: i32, index: i32, periodic: bool, mults: &[i32]) -> i32
     pindex
 }
 
+/// `BSplCLib::NbPoles` (`BSplCLib.cxx:392-451`): the pole count implied by the
+/// distinct knots/multiplicities. Returns `0` exactly where OCCT returns `0`
+/// (invalid end or interior multiplicities).
+///
+/// Periodic curve: `sigma = Mf + Σ interior` with `Mf == Ml <= degree`;
+/// non-periodic curve: `sigma = Mf + Ml - (degree + 1) + Σ interior`.
+pub fn nb_poles(degree: i32, periodic: bool, mults: &[i32]) -> i32 {
+    let n = mults.len();
+    if n == 0 {
+        return 0;
+    }
+    let mf = mults[0];
+    let ml = mults[n - 1];
+    if mf <= 0 || ml <= 0 {
+        return 0;
+    }
+    let mut sigma;
+    if periodic {
+        if mf > degree || ml > degree || mf != ml {
+            return 0;
+        }
+        sigma = mf;
+    } else {
+        let deg1 = degree + 1;
+        if mf > deg1 || ml > deg1 {
+            return 0;
+        }
+        sigma = mf + ml - deg1;
+    }
+    for &m in &mults[1..n - 1] {
+        if m <= 0 || m > degree {
+            return 0;
+        }
+        sigma += m;
+    }
+    sigma
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

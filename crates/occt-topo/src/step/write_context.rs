@@ -30,17 +30,15 @@ pub(super) fn fit_bspline_surface(s: &dyn Surface) -> Result<GeomBSplineSurface,
         .map_err(|e| format!("fit_bspline_surface: {e}"))
 }
 
-/// `GeomConvert::CurveToBSplineCurve` for a Bezier curve
-/// (`GeomToStep_MakeBoundedCurve.cxx:64-75` converts every `Geom_BezierCurve`
-/// this way before writing it): a Bezier is exactly a clamped B-spline whose
-/// degree is `nb_poles - 1` and whose knots are `0`/`1` with multiplicity
-/// `degree + 1`. The port's `GeomBezierCurve` is non-rational, matching
-/// `Geom_BezierCurve::IsRational() == false` for this case.
-fn bezier_to_bspline(poles: &[GpPnt]) -> Option<GeomBSplineCurve> {
-    let degree = poles.len().checked_sub(1)?;
-    let mut knots = vec![0.0; degree + 1];
-    knots.extend(std::iter::repeat(1.0).take(degree + 1));
-    GeomBSplineCurve::new(poles.to_vec(), knots, degree).ok()
+/// `GeomConvert::CurveToBSplineCurve` (`GeomConvert.cxx:163-430`) through the
+/// ported `occt-geom` entry point; a Bezier is converted this way by
+/// `GeomToStep_MakeBoundedCurve.cxx:64-75` before it is written.
+fn curve_to_bspline(c: &dyn Curve) -> Option<GeomBSplineCurve> {
+    occt_geom::convert_bspl::curve_to_bspline_curve(
+        c,
+        occt_core::convert::ParameterisationType::TgtThetaOver2,
+    )
+    .ok()
 }
 
 /// Internal writer state: the entity writer plus identity maps so shared
@@ -230,8 +228,15 @@ impl WriteCtx {
                 }
             }
         }
-        if let Some(poles) = c.bezier_poles() {
-            if let Some(bs) = bezier_to_bspline(poles) {
+        if c.bezier_poles().is_some() {
+            // `GeomToStep_MakeCurve.cxx:77-82` trims a Bezier basis with
+            // `Geom_BezierCurve::Segment` before converting it; `Segment` is
+            // UNPORTED in this port, so a trimmed Bezier keeps the previous
+            // behaviour (convert its **basis**, the port's documented
+            // divergence) instead of dropping the edge geometry.
+            let basis = c.untrimmed_basis().map(|(b, _, _)| b);
+            let target: &dyn Curve = basis.as_deref().unwrap_or(c);
+            if let Some(bs) = curve_to_bspline(target) {
                 if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
                     return Some(id);
                 }

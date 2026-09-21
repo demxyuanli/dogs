@@ -77,6 +77,40 @@ impl GpTrsf {
         self.loc = loc;
     }
 
+    /// `gp_Trsf::SetTransformation(const gp_Ax3& theFromSystem1, const gp_Ax3& theToSystem2)`
+    /// (`gp_Trsf.cxx:172-194`): the change of basis that maps a point expressed
+    /// in `from_system1` to its coordinates in `to_system2`. The 1-arg overload
+    /// (`gp_Trsf.cxx:196-204`) is [`GpTrsf::set_transformation`], which is the
+    /// special case `to_system2 == gp::XOY()`.
+    pub fn set_transformation_from_to(&mut self, from_system1: &GpAx3, to_system2: &GpAx3) {
+        self.shape = TrsfForm::CompoundTrsf;
+        self.scale = 1.0;
+        // matrix from XOY to `to_system2` (`cxx:176-180`):
+        self.matrix.set_rows(
+            to_system2.x_direction().xyz(),
+            to_system2.y_direction().xyz(),
+            to_system2.direction().xyz(),
+        );
+        let mut loc = to_system2.location().coord;
+        loc.multiply_mat(&self.matrix);
+        loc.reverse();
+        // matrix from `from_system1` to XOY (`cxx:182-193`):
+        let mut ma1 = GpMat::default();
+        {
+            // `GpAx3::direction()` returns the axis by value, so it is bound
+            // before `xyz()` borrows it.
+            let x_dir = from_system1.x_direction();
+            let y_dir = from_system1.y_direction();
+            let z_dir = from_system1.direction();
+            ma1.set_rows(x_dir.xyz(), y_dir.xyz(), z_dir.xyz());
+        }
+        let mut ma1_loc = from_system1.location().coord;
+        ma1_loc.multiply_mat(&self.matrix);
+        loc.add(&ma1_loc);
+        self.matrix = self.matrix.multiply(&ma1);
+        self.loc = loc;
+    }
+
     /// `gp_Trsf::Value(row, col)` — 1-based, column 4 is the translation.
     pub fn value(&self, row: i32, col: i32) -> f64 {
         if col < 4 {
