@@ -432,7 +432,7 @@ cd ..; git worktree remove --force .target-headcheck
 - **随手去重**：`bspl::locate` 已有 `first_u_knot_index`/`last_u_knot_index`（`BSplCLib.cxx:111-137`），本批初稿在 `knots.rs` 重复实现，已删除改用既有件（只保留新增的 `nb_poles`）。
 - **验证（仅编译）**：`cargo check --offline --all-targets` 五个 crate **全部 exit 0、0 error**；改动文件无新告警（`bspline_curve.rs` 的 `fd_d1/fd_d2` never used 为**既有**死代码，本批未触碰，旁支上报）。
 - **门禁影响面：0**。新周期代码目前只可能经 `GeomConvert::CurveToBSplineCurve` 进入，而仓内唯一调用点（`step/write_context.rs`）只在 Bezier 分支调用 ⇒ 圆/椭圆臂不可达；读侧（`StepToGeom.cxx:873-925`）未动，批 90 的周期盒 arm 仍不可达。
-- **下一步（批 94）**：R2-21 读侧 = `StepToGeom.cxx:873-925`（`shouldBePeriodic` 判定 + 闭曲线强制 `SetPeriodic()`），并把"批 90 盒 arm / 周期求值同时变为可达"登记为门禁影响项；其后批 95 = R2-20。
+- **下一步（批 94）**：R2-21 读侧 = `StepToGeom.cxx:873-925`（`shouldBePeriodic` 判定 + 闭曲线强制 `SetPeriodic()`），并把"批 90 盒 arm / 周期求值同时变为可达"登记为门禁影响项；其后批 95 = R2-20。**起手勘察（本批顺带核对，避免下轮返工）**：① 端口 `read_topology.rs:1205-1239` 的 `B_SPLINE_CURVE_WITH_KNOTS` 臂**把重数立即展平成平结串**（`expand_knots`）再交给 `new`/`rational`，而 OCCT 是在**展平前**做 `:784-845` 的"重复结点归并 + 重数 > degree+1 钳到 degree+1 + 按首尾差值裁剪极点"、再按 distinct 重数判 `shouldBePeriodic`（`:873-894`）⇒ 移植时要先把 mults/knots 以 distinct 形式取出来（未展平），并补 `:784-871` 这段（含 `Epsilon(|lastKnot|)` 的归并容差与 `NbUniquePoles <= 0` 返回空）；② 周期描述子（`Σmults - Mults(1) == NbPoles`）**不能**走 `GeomBSplineCurve::new`（其 `check_degree` 要求 `flat = n+d+1`），须按周期约定用 `knot_sequence_periodic` 建平结串直接构造，或先非周期构造再 `set_periodic()`（等价性需按 `:907-918` 的构造器语义逐条核对）；③ `IsClosed()`（`Geom_BSplineCurve.cxx`：首末极点距离 ≤ `Precision::Confusion()`）与 STEP 的 `closed` 字段索引需在实现时以真实记录核对（端口 `read_topology.rs:1205-1216` 的两处 layout 注释不一致，需先确认）。
 
 **批 92（R2-6 后半之一：`GeomConvert::CurveToBSplineCurve` 入口 + 写侧接线；仅编译验证）—— 2026-09-21 第 100 轮**
 
