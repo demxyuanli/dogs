@@ -17,6 +17,143 @@ fn edges_stored_on_wire(wire: &Wire) -> Vec<Edge> {
         .collect()
 }
 
+/// `StepToGeom::MakeBSplineCurveCommon` (`StepToGeom.cxx:750-927`), the part
+/// shared by the `B_SPLINE_CURVE_WITH_KNOTS` and Bezier / uniform /
+/// quasi-uniform arms once the knot and multiplicity lists are known:
+///
+/// 1. duplicate knots are merged within `Epsilon(|lastKnot|)` and their
+///    multiplicities summed (`cxx:784-821`);
+/// 2. multiplicities above `degree + 1` are clamped to `degree + 1` and the
+///    corresponding leading / trailing poles (and weights) are dropped
+///    (`cxx:823-871`, `cxx:902-906`);
+/// 3. a descriptor that "looks periodic" (`cxx:873-894`: the total multiplicity
+///    is *not* `NbPoles + degree + 1`, the end multiplicities are equal and
+///    `Σmults - mults(1) == NbPoles`) is built in the periodic representation,
+///    i.e. `Geom_BSplineCurve(Poles, Knots, Mults, Degree, true)` whose flat
+///    sequence is the periodic `BSplCLib::KnotSequence`;
+/// 4. a closed curve (`ClosedCurve() && Degree() > 1 && IsClosed()`,
+///    `cxx:920-926`) is forced periodic with `SetPeriodic()`.
+///
+/// `IsClosed()` is `StartPoint().SquareDistance(EndPoint()) <=
+/// Precision::Computational()` (`Geom_BSplineCurve.cxx:146-149`).
+fn make_bspline_curve_with_knots(
+    degree: usize,
+    poles: Vec<GpPnt>,
+    weights: Option<Vec<f64>>,
+    mults: &[usize],
+    knots: &[f64],
+    closed: bool,
+) -> Result<GeomBSplineCurve, String> {
+    // 1. unique knots + summed multiplicities (`cxx:784-821`).
+    let mut uknots: Vec<f64> = Vec::new();
+    let mut umults: Vec<i32> = Vec::new();
+    for (i, &k) in knots.iter().enumerate() {
+        let m = mults.get(i).copied().unwrap_or(1) as i32;
+        if let Some(&last) = uknots.last() {
+            if k - last <= occt_core::precision::epsilon(last.abs()) {
+                *umults.last_mut().unwrap() += m;
+                continue;
+            }
+        }
+        uknots.push(k);
+        umults.push(m);
+    }
+    if uknots.len() <= 1 {
+        // `if (NbUniqueKnots <= 1) return nullptr;` (`cxx:795-798`).
+        return Err("B_SPLINE_CURVE: at most one unique knot".into());
+    }
+
+    // 2. clamp multiplicities above `degree + 1` (`cxx:823-845`).
+    let deg1 = degree as i32 + 1;
+    let n_unique = umults.len();
+    let mut first_diff = 0usize;
+    let mut last_diff = 0usize;
+    for i in 0..n_unique {
+        if umults[i] > deg1 {
+            if i == 0 {
+                first_diff = (umults[i] - deg1) as usize;
+            }
+            if i == n_unique - 1 {
+                last_diff = (umults[i] - deg1) as usize;
+            }
+            umults[i] = deg1;
+        }
+    }
+
+    // 3. drop the extra poles / weights (`cxx:847-871`).
+    let diff = first_diff + last_diff;
+    let n_unique_poles = poles
+        .len()
+        .checked_sub(diff)
+        .filter(|n| *n > 0)
+        .ok_or_else(|| "B_SPLINE_CURVE: no poles left after multiplicity trim".to_string())?;
+    let weights = match weights {
+        Some(w) if w.len() >= first_diff + n_unique_poles => {
+            Some(w[first_diff..first_diff + n_unique_poles].to_vec())
+        }
+        Some(_) => return Err("B_SPLINE_CURVE: weight count mismatch".into()),
+        None => None,
+    };
+    let poles = poles[first_diff..first_diff + n_unique_poles].to_vec();
+
+    // 4. periodic-looking descriptor (`cxx:873-894`).
+    let summary: i32 = umults.iter().sum();
+    let should_be_periodic = summary != (n_unique_poles as i32 + degree as i32 + 1)
+        && umults[0] == umults[n_unique - 1]
+        && (summary - umults[0]) == n_unique_poles as i32;
+
+    let mut curve = if should_be_periodic {
+        // `new TBSplineCurve(Poles, [Weights,] UniqueKnots, UniqueMults, Degree,
+        // true)`: `CheckCurveData` (`Geom_BSplineCurve.cxx:91-94`) requires
+        // `NbPoles(Degree, true, Mults) == Poles.Length()`.
+        if occt_core::bspl::knots::nb_poles(degree as i32, true, &umults) as usize != poles.len() {
+            return Err("B_SPLINE_CURVE: periodic pole/degree mismatch".into());
+        }
+        let flat =
+            occt_core::bspl::knots::knot_sequence_periodic(&uknots, &umults, degree as i32);
+        GeomBSplineCurve { poles, weights, knots: flat, degree, periodic: true }
+    } else {
+        let flat = occt_core::bspl::banded_interp::knot_sequence(&uknots, &umults, degree as i32);
+        match weights {
+            Some(w) => {
+                GeomBSplineCurve::rational(poles, w, flat, degree).map_err(|e| e.to_string())?
+            }
+            None => GeomBSplineCurve::new(poles, flat, degree).map_err(|e| e.to_string())?,
+        }
+    };
+
+    // 5. force periodicity on closed curves (`cxx:920-926`).
+    if closed && degree > 1 {
+        let sp = curve.d0(curve.first_parameter());
+        let ep = curve.d0(curve.last_parameter());
+        if sp.square_distance(&ep) <= occt_core::precision::COMPUTATIONAL {
+            curve.set_periodic();
+        }
+    }
+    Ok(curve)
+}
+
+/// The STEP `closed_curve` / `closed` flag of a curve record.
+///
+/// The resolver sees two layouts: a plain instance `(name, degree, poles,
+/// curve_form, closed, …)` with `closed` at index 4, and a merged rational
+/// complex `(name, degree, poles, weights, curve_form, closed, …)` with
+/// `closed` at index 5 (`transfer.rs::merge_complex_body`). The weights slot
+/// distinguishes them: the merged body puts `SELF` or a `(…)` list there, a
+/// plain body a `.FORM.` marker.
+fn curve_record_closed(rec: &Record) -> bool {
+    let merged = rec
+        .args
+        .get(3)
+        .map(|s| {
+            let t = s.trim();
+            t == "SELF" || t.starts_with('(')
+        })
+        .unwrap_or(false);
+    let idx = if merged { 5 } else { 4 };
+    parse_logical(rec.args.get(idx).map(|s| s.as_str()), false)
+}
+
 impl<'a> Resolver<'a> {
 
     pub(super) fn new(records: &'a HashMap<usize, Record>) -> Self {
@@ -1164,10 +1301,26 @@ impl<'a> Resolver<'a> {
                     .into_iter()
                     .map(|r| self.resolve_point(r))
                     .collect::<Result<Vec<_>, _>>()?;
-                let knots = match rec.type_name.as_str() {
-                    "BEZIER_CURVE" => bezier_knots(degree),
-                    "UNIFORM_CURVE" => uniform_open_knots(poles.len(), degree),
-                    _ => quasi_uniform_knots(poles.len(), degree),
+                // `MakeBSplineCurveCommon` synthesises the knot / multiplicity
+                // lists this family implies (`StepToGeom.cxx:310-317`,
+                // `:338-347`, `:362-384`) and then runs the shared periodic /
+                // closed-curve logic.
+                let n = poles.len();
+                let (mults, knots): (Vec<usize>, Vec<f64>) = match rec.type_name.as_str() {
+                    "BEZIER_CURVE" => {
+                        (vec![degree + 1, degree + 1], vec![0.0, 1.0])
+                    }
+                    "UNIFORM_CURVE" => {
+                        let nb = n + degree + 1;
+                        (vec![1; nb], (0..nb).map(|i| i as f64).collect())
+                    }
+                    _ => {
+                        let nb = n.saturating_sub(degree) + 1;
+                        let mut m = vec![1usize; nb];
+                        m[0] = degree + 1;
+                        m[nb - 1] = degree + 1;
+                        (m, (0..nb).map(|i| i as f64).collect())
+                    }
                 };
                 // A merged rational complex carries the weights at index 3; a plain
                 // entity has `curve_form` there (a marker like `.UNSPECIFIED.`).
@@ -1178,14 +1331,20 @@ impl<'a> Resolver<'a> {
                     }
                     _ => None,
                 };
-                let curve = match weights {
-                    Some(w) if w.len() == poles.len() => {
-                        GeomBSplineCurve::rational(poles, w, knots, degree)
+                if let Some(w) = weights.as_ref() {
+                    if w.len() != poles.len() {
+                        return Err(format!("{}: weight count mismatch", rec.type_name));
                     }
-                    Some(_) => return Err("BEZIER/UNIFORM_CURVE: weight count mismatch".into()),
-                    None => GeomBSplineCurve::new(poles, knots, degree),
-                };
-                Arc::new(curve.map_err(|e| format!("{}: {e}", rec.type_name))?)
+                }
+                let curve = make_bspline_curve_with_knots(
+                    degree,
+                    poles,
+                    weights,
+                    &mults,
+                    &knots,
+                    curve_record_closed(rec),
+                )?;
+                Arc::new(curve)
             }
             "CURVE_REPLICA" => {
                 // `StepToGeom::MakeCurve` CurveReplica arm (`StepToGeom.cxx:1351-1371`):
@@ -1212,30 +1371,36 @@ impl<'a> Resolver<'a> {
                     .collect::<Result<Vec<_>, _>>()?;
                 let weights_arg = rec.args.get(3).map(|s| s.trim().to_string());
                 // B_SPLINE_CURVE_WITH_KNOTS layout:
-                // (name, degree, control_points, curve_form, closed,
-                //  self_intersect, knot_multiplicities, knots, knot_spec).
-                let knots = expand_knots(
-                    &parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()")),
-                    &parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()")),
-                );
-                let curve = match weights_arg.as_deref() {
+                // (name, degree, control_points, curve_form|weights, curve_form,
+                //  closed, self_intersect, knot_multiplicities, knots, knot_spec).
+                // `MakeBSplineCurveCommon` (`StepToGeom.cxx:776-927`) merges
+                // duplicate knots, clamps the multiplicities, trims the poles and
+                // then decides the periodic / closed-curve representation.
+                let knot_mults = parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()"));
+                let knot_values = parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()"));
+                let weights = match weights_arg.as_deref() {
                     // No weights: non-rational curve (curve_form is UNSPECIFIED
                     // or a non-rational flag like CIRCULAR/LINEAR).
                     None | Some("SELF") | Some(".UNSPECIFIED.") | Some(".CIRCULAR.")
-                    | Some(".LINEAR.") => GeomBSplineCurve::new(poles, knots, degree),
-                    Some(w) if w.starts_with('.') => {
-                        // Another non-rational curve form marker.
-                        GeomBSplineCurve::new(poles, knots, degree)
-                    }
+                    | Some(".LINEAR.") => None,
+                    Some(w) if w.starts_with('.') => None,
                     Some(w) => {
                         let weights = parse_real_list(w);
                         if weights.len() != poles.len() {
                             return Err("B_SPLINE_CURVE: weight count mismatch".into());
                         }
-                        GeomBSplineCurve::rational(poles, weights, knots, degree)
+                        Some(weights)
                     }
                 };
-                Arc::new(curve.map_err(|e| format!("B_SPLINE_CURVE: {e}"))?)
+                let curve = make_bspline_curve_with_knots(
+                    degree,
+                    poles,
+                    weights,
+                    &knot_mults,
+                    &knot_values,
+                    curve_record_closed(rec),
+                )?;
+                Arc::new(curve)
             }
             "POLYLINE" => {
                 // A connected sequence of CARTESIAN_POINTs; represent it as a
