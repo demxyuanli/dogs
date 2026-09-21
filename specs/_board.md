@@ -2,7 +2,7 @@
 
 > **载体**：`D:\source\repos\dogs`，master 工作区。
 > **基线**：HEAD = `3323c66`（2026-09-14），其上有一批**未提交**改动（2026-09-15 ~ 09-17）。
-> **本画板建立**：2026-09-19 23:50 (+08:00)；**最后实测**：2026-09-20（本轮收敛 T-06 / T-21 / T-02，见 §7）。数据均为本机实跑，非引用文档。
+> **本画板建立**：2026-09-19 23:50 (+08:00)；**最后实测**：2026-09-21 第 111 轮（**门禁波次全量**：A/B = `9d8e596`(批 84 末) ↔ `2c9a66b`(批 98)，结果见 §2 / §7）。数据均为本机实跑，非引用文档。
 > **本文件同时充当 task_plan / findings / progress 三合一**（用户要求"一份画板"）；维护协议见 §8。
 > **上游文档**：`specs/_coverage.md`（覆盖矩阵，2026-09-09，已过期）、`specs/_brepmesh_align_review.md`（BRepMesh 对齐根因）、`specs/_tasks.md`（迁移清单，2026-08-29，已过期）。
 
@@ -24,27 +24,28 @@
 - **行号引用核对**：`ElCLib.cxx:176-189` = `ElCLib::EllipseValue`，`A2 = MinorRadius * sin(U)`，与 `crates/occt-core/src/elib/clib.rs` 注释中的 `cxx:176-189` 一致 ⇒ 引用树确实指向 `D:\source\OCCT-src`。
 - **⚠ 版本口径差异**：行号按 tag `V8_0_0`，参考 OBJ 由 **8.0.0p1-e52c4021** 的 DRAWEXE 生成（该 commit 不在检出里）。遇到行号错位 / 数值细差先怀疑这里。
 
-## 2. 状态快照（2026-09-20 第 90 轮实测）
+## 2. 状态快照（2026-09-21 第 111 轮：门禁波次实测；A/B = `9d8e596`（批 84 末）↔ `2c9a66b`（批 98））
 
-| 门禁 | 命令 | 当前工作区 | HEAD `3323c66` 基线 | 判定 |
+| 门禁 | 命令 | 当前工作区 `2c9a66b` | 对照 `9d8e596`（批 84 末） | 判定 |
 |---|---|---|---|---|
-| 编译 | `cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets` | ✅ exit 0（846 条警告） | ✅ | 绿 |
-| STEP→OBJ bbox parity | `cargo test --manifest-path crates/occt-topo/Cargo.toml --test step_obj_parity` | ✅ **14/14** | ✅ 12/12 | 绿 |
-| STEP→OBJ 端到端 | `--test step_to_obj` | ✅ 13/13 | ✅ | 绿 |
-| 面积对拍 | `--test step_obj_area` | ✅ 11/11 | ✅ | 绿 |
-| 几何一致性 | `--test step_geometry_parity` | ❌ 2/3（T-05 offset 体积） | ❌ 同 | 红（遗留） |
-| topo 单测 | `--lib` | ❌ **1287 通过 / 1 失败**（仅 T-01） | ❌ **1,235 / 59 失败** | 剩余仅 T-01 |
-| boss 合并 | `--test bop_builder2_boss` | ❌ 1/2（T-03） | ❌ 0/2 | 红（遗留，改善） |
-| phase19 | `--test phase19_integration` | ❌ 3/5（T-04） | ❌ 3/5（完全一致） | 红（遗留） |
-| phase10 | `--test phase10_integration` | ❌ 7/8（`curved_face_fillet_sphere_plane`；**会话前提交 `7178861` 同红** ⇒ 非本会话引入） | 未记录 | 红（本表此前误记"phase4–10 全绿"） |
-| phase20 / phase3 / phase4 / phase5 / phase6 | 各 `--test phaseN_integration` | ✅ 5/5 · 4/4 · 9/9 · 7/7 · 5/5（phase5 于批 63 修绿：陈旧断言 `starts_with('S')`） | 部分红 | 绿 |
-| phase7 / phase8 / phase9 | 各 `--test phaseN_integration` | ✅ 5/5 · 5/5 · 8/8 | ✅ | 绿 |
-| core / math / geom2d | 各 crate `--lib` | ✅ 290（1 ignored）/ 215（1 ignored）/ 72 | — | 绿 |
-| geom | `cargo test --manifest-path crates/occt-geom/Cargo.toml --lib` | ✅ **146/146** | 未记录 | 绿 |
-| IGES 结构自洽（本会话新增常驻校验，非门禁） | `cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_check -- <模型…>` | ✅ **18/18 ok**（16 个 `data/*.step` ＋ `data/occ/{bottom,top}.step`） | — | 绿 |
-| 导出总检 | `--example export_data_obj` | ✅ 16/16，顶点/面数逐位一致 | — | 绿 |
+| 编译 | `cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets` | ✅ exit 0（lib 843 条警告） | ✅ exit 0 | 绿 |
+| 五 crate 编译 | 各 crate `--all-targets` | ✅ exit 0 / 0 error（core·math·geom·geom2d·topo） | — | 绿 |
+| STEP→OBJ bbox parity | `--test step_obj_parity` | ✅ **14/14** | ✅ 14/14 | 绿 |
+| STEP→OBJ 端到端 | `--test step_to_obj` | ✅ **13/13** | ❌ 12/13（`step_to_obj_writes_output_files`） | 绿（**+1 改善**） |
+| 面积对拍 | `--test step_obj_area` | ✅ 11/11 | ✅ 11/11 | 绿 |
+| 几何一致性 | `--test step_geometry_parity` | ❌ 2/3（T-05 offset 体积） | ❌ 2/3（同名用例） | 红（遗留） |
+| topo 单测 | `--lib` | ❌ **1286 通过 / 2 失败**：T-01 `brepfeat::tests::groove_cuts_cylinder` ＋ **新登记 T-86** `iges::tests::sphere_iges_has_arc_and_solid` | ❌ **1286 / 2（同两条）** | 红（遗留，**两轮相同 ⇒ 与本批无关**） |
+| boss 合并 | `--test bop_builder2_boss` | ❌ 1/2（T-03） | ❌ 1/2 | 红（遗留） |
+| phase19 | `--test phase19_integration` | ❌ 3/5（T-04） | ❌ 3/5 | 红（遗留） |
+| phase10 | `--test phase10_integration` | ❌ 7/8（`curved_face_fillet_sphere_plane`） | ❌ 7/8 | 红（遗留） |
+| phase20 / 3 / 4 / 5 / 6 / 7 / 8 / 9 | 各 `--test phaseN_integration` | ✅ 5·4·9·7·5·5·5·8 全绿 | ✅ 同 | 绿 |
+| core / geom / geom2d / math | 各 crate `--lib` | ✅ 290（1 ignored）· **143** · 72 · 215（1 ignored） | ✅ 290(1i)·**143**·72·215(1i)（逐项相同） | 绿 |
+| topo doc-tests | `--doc` | ✅ 2 passed / 1 ignored | ✅ 同 | 绿 |
+| IGES 结构自洽（常驻校验，非门禁） | `--example iges_check -- <18 模型>` | ✅ **18/18 ok**：6 个模型（ATU01038 / screw / Shape / Shape-2 / occ-bottom / occ-top）P 段长度变化，**DE 数与 unreferenced 统计逐模型与对照完全相同** | ✅ 18/18 ok | 绿 |
+| 导出总检 | `--example export_data_obj` | ✅ 16/16（Cube 24/12、Sphere 642/1244、Torus 1369/2592、Shape-1 3343/4336、linkrods 3494/5078、ATU01038 17745/22119 …与 §13 记录的网格数逐项一致） | — | 绿 |
 
-> **计数变化说明（批 65–67 删件）**：`occt-geom --lib` 151→**146**、`occt-topo --lib` 1291→**1287**，全部来自**删除零消费方自创模块时一并删除的其自带单测**（`surface_to_grid` 3 ＋ `convert_bspl` 内 2 / `feature.rs` 4）。已用 `git worktree` 对会话前提交 `7178861` 做 A/B：`--lib` 1291/1（仅 T-01）、`phase10` 7/8 同红、`occt-core` 290/290 ⇒ **本会话未引入新的失败测试**。
+> **口径订正（R2-15 收口）**：本节旧表记"第 90 轮 lib **1287/1**、geom **146/146**、step_to_obj 13/13"。本轮以同一命令对 `9d8e596`（批 84 末）与当前树做 worktree A/B，实测 **lib 两端都是 1286/2**、**geom 两端都是 143**、`step_to_obj` 在批 84 是 **12/13**、批 98 才是 13/13。`iges.rs` 在批 84（`9d8e596`）与批 95（`83ed3f8`）之间**未被任何提交改动**（`git log -- crates/occt-topo/src/iges.rs`），故 `sphere_iges_has_arc_and_solid` 在"第 90 轮"也必然失败 ⇒ 旧表的 1287/1 与 146/146 是**记录错误**，以本节实测为准（旧表的"计数变化说明（批 65–67）"一段作废）。
+> **`step_to_obj` 由 12/13 变 13/13 的改善**出现在批 85–97 之间（本波次只做 A/B 对比，未再二分归因：该用例在批 84 的失败与 T-05/Sphere 网格回退相关，属既有红转绿）。
 
 **HEAD 基线复现方法（不改共享树）**：
 ```powershell
@@ -87,14 +88,14 @@ cd ..; git worktree remove --force .target-headcheck
 | **R2-12** | **T-69**（+ T-68 环面/带孔内环） | Torus face 20 的"同面两条 wire 的 pcurve 落在相差一个周期的 u 窗口"（`update_range` 周期钳制后 wire 0 落在范围外）⇒ 失败面集合是 OCCT 的超集 | T-69 第 1/2 轮诊断已定位到该差异；**Delaunay 层已逐行核对为忠实，不要再在该层找偏差** | 无 | T0M 计数 + 四道门禁 | 解锁后 |
 | **R2-13** | **T-67 步 3** | `math_FunctionSetRoot`（1452 行）＋ `Extrema_GenExtPS`（1195 行）＋ `Extrema_ExtPExtS`/`Extrema_ExtPRevS` ⇒ 一般曲面的点–面极值走忠实引擎 | 分步 1+2 已完成（`ExtPs` = `Extrema_ExtPS` 分派层）；一般曲面仍是 24×24 网格 + 数值 Jacobian | 无 | 解锁 A15 曲面族兜底移除、A19 相关项、**T-37**（A1 的 39 处调用点迁移） | 解锁后 |
 | **R2-14** | **T-21 / T-22** | 覆盖扩展：新模型（ATU01038 等）正式进门禁；`export_data_obj` 目录参数已支持 | T-21 done（12→14 条 parity）；T-22 门禁已锁 5 模型，3 个模型的**网格侧**缺口 pending | 无 | parity/export 计数 | 夹带 |
-| **R2-15** | 文档/快照 | §2 快照刷新（现记第 90 轮 1287/1、geom 146/146，而批 19 起多处记录 1293/1、151/151 ⇒ **口径需一次实测统一**）；A0–A31 矩阵同步 | 本节与 §14 矩阵为准 | 需跑门禁 ⇒ 等指令 | §2 与实测一致 | 等指令 |
+| **R2-15** | 文档/快照 | §2 快照刷新（旧表记第 90 轮 1287/1、geom 146/146，而批 19 起多处记录 1293/1、151/151 ⇒ **口径需一次实测统一**）；A0–A31 矩阵同步 | **✅ 第 111 轮（门禁波次）完成**：§2 已改为 `9d8e596`(批 84 末) ↔ `2c9a66b`(批 98) 的同命令 A/B 实测表，并就地订正旧表的 1287/1（实为 **1286/2**，多出未登记的 **T-86** `sphere_iges_has_arc_and_solid`）与 geom 146/146（实为 **143**）；`step_to_obj` 实为批 84 的 12/13 → 批 98 的 13/13 | 本轮已跑 | §2 与实测一致 | **done**（2026-09-21） |
 | **R2-16** | 小项池 | T-07…T-20（未提交 wave 收尾/低优先）、T-12…T-18（bnd/intf 缺口：`BoxOptimal`、三角化 arm、`CopyNMVertex`、iso 链臂、`project_act` 缺臂、`Intf_Tool`）、T-23…T-29、T-41/T-49/T-54/T-55/T-59（被 T-68/A13 阻塞）、T-64 | 见各任务行 | 多数无 | 随批夹带 | 夹带 |
 | **R2-17** | 新（批 80 派生） | **删除 OCCT 不存在的 circle/circle 快路径**：`edge_edge/solvers.rs::compute_circle_circle_full` 与 `perform` 里的 `(Circle, Circle)` 分派。OCCT `IntTools_EdgeEdge::Perform`（`:185-243`）只特判 line/line，圆–圆同样走 `FindSolutions`（忠实件已在 R2-1 落地） | 该分支为端口自创（模块内已标 UNPORTED）；被 `edge_edge/mod.rs` 的两个直调用例与 `circle_circle_two_hits` 间接覆盖 ⇒ **删除会改行为，需一次门禁验证**（这正是不能与 R2-1 同批做的事） | R2-1 已落地 | `occt-topo --lib`（尤其 `edge_edge::tests::{circle_circle_two_hits, separated_circles_empty}`、`tests_full::circle_circle_full_*`）不回归 | 门禁波次 |
 | **R2-18** | 新（批 81 派生，A16 的 2D 余项） | **2D 投影/求交采样族**：`occt-geom2d/curve_ops.rs::{curve2d_intersections, curve2d_closest_point, curve2d_length}` | **◐ 批 85（第 94 轮）投影 half（R2-18a）✅ / 批 86（第 95 轮）求交 half（R2-18b）✅**：投影改走 `extrema2d::point_curve_extrema2d`（`Extrema_ExtPC2d`），求交改走 `IntAna2d_AnaIntersection`（详见下方两行）。**仍 UNPORTED**：非解析组合（B 样条/Bezier/offset/其修剪）的求交＝256×256 采样器（忠实路线 `Extrema_ExtCC2d`）；`curve2d_length`＝Simpson 求积（OCCT `GCPnts_AbscissaPoint`）；`extrema2d` 一般曲线的网格+Newton 播种（A7 家族） | 忠实件：`extrema2d`、`occt-core::intana2d` | 该 crate `--lib` + 依赖 2D 的门禁不劣化（见 R2-18-gate） | 批 85+86 ◐ |
 | **R2-18b** | 新（批 86 完成） | **2D 求交改走 `IntAna2d_AnaIntersection`** | **✅ 批 86（第 95 轮）**：`Curve2d` trait 补三个类型查询 `gp_elips2d`/`gp_parab2d`/`gp_hypr2d`（`Geom2dAdaptor_Curve` 的 `Ellipse()/Parabola()/Hyperbola()`，`ellipse.rs`/`parabola.rs`/`hyperbola.rs` 实现 + `Geom2dTrimmedCurve` 转发）；`curve_ops::curve2d_intersections` 先走 `analytic_intersections2d`：按首个曲线给「专用操作数」（8 个 `perform_*`），第二曲线取 `IntAna2d_Conic`；`(Circ, Lin)` 按 OCCT 写法交换实参并在结果里换回参数；`IntAna2dIntPoint::{param_on_first,param_on_second,value}` 即 `(u,v,point)`；加**有界曲线语义过滤**（`IntAna2d` 是对**无界**圆锥曲线求解，越出曲线自身区间的根不算交点；周期曲线按一个周期映射；修剪曲线用其 basis 空间的 `first/last`）。非解析组合仍走采样器并就地标 UNPORTED | 同 R2-18 行 | 同 R2-18 行 | 批 86 ✅ |
-| **R2-18-gate** | 新（批 86 派生，**门禁影响面**） | **R2-18a/18b + 批 87/88/89/90 直接改 live 路径**：① 2D——`geom2d_api::{intersect_curves, project_point_on_curve}` 被 `pave_de.rs:150,154`、`pave_blocks/split_edges.rs:174`、`wire_splitter_block.rs:680` 调用；② 盒——`geom_bnd_lib_curve3d::box_curve`（批 87 起圆锥解析盒、**批 90 起周期 B 样条 knot-span 盒****（订正·批 91：曲线周期标志全仓无处置 `true` ⇒ 该 arm 当前**不可达**、门禁影响为 0，见 **R2-21**）**）被 `brep_bnd_lib.rs:64`（`BRepBndLib::Add`）、`geom_bnd_lib_surface3d.rs:496,686`、`int_tools_curve_box.rs:46`（= `IntTools_EdgeEdge::BndBuildBox`，批 80 的盒递归用它）与 `pcurve_full/surface_projector.rs:1493` 消费；③ 投影回退——批 88 改了 `ShapeAnalysis_Curve::ProjectAct` 的 `!OK` 分支，经 `step/read_geometry.rs` 进入 STEP 读侧边域投影；④ **pcurve 结点吸附**——批 89 的 `CorrectParameter`（`Proj.cxx:256-281`）被 `wire_fix.rs:3068,3074`（`ShapeFix_Wire::FixNotchedEdges`）经 `TransferParametersProj::transfer_range` 使用，正是 **T-69 诊断里 `check_pcurves_and_shift`/`fix_lacking_all` 那条链** ⇒ 可能影响 T-69 与网格门禁 ⇒ 2D 求交/投影、盒递归剪枝、STEP 边域投影与 healing 结点吸附都会变，可能改变 T-01/T-03/T-04/T-05/T-69 的结果（可能变好也可能位移） | 批 85/86/87/88/89/90 均在 P0/P1 门禁的下游 | 无 | 门禁跑完先做「批 85–90 前/后」差分（`occt-topo --lib`、phase3/4/5/6、`bop_builder2_boss`、`phase19`、四道 STEP 门禁、`export_data_obj`、`iges_check`）**＋ 批 91–94（新增：⑤ 周期曲线族——批 93 周期表示/求值 + 批 94 读侧闭曲线强制周期化 ⇒ 批 90 的周期盒 arm 自此可达；见 §6.2 第 94 行）** | **门禁波次（最高优先）** |
+| **R2-18-gate** | 新（批 86 派生，**门禁影响面**） | **R2-18a/18b + 批 87/88/89/90 直接改 live 路径**：① 2D——`geom2d_api::{intersect_curves, project_point_on_curve}` 被 `pave_de.rs:150,154`、`pave_blocks/split_edges.rs:174`、`wire_splitter_block.rs:680` 调用；② 盒——`geom_bnd_lib_curve3d::box_curve`（批 87 起圆锥解析盒、**批 90 起周期 B 样条 knot-span 盒****（订正·批 91：曲线周期标志全仓无处置 `true` ⇒ 该 arm 当前**不可达**、门禁影响为 0，见 **R2-21**）**）被 `brep_bnd_lib.rs:64`（`BRepBndLib::Add`）、`geom_bnd_lib_surface3d.rs:496,686`、`int_tools_curve_box.rs:46`（= `IntTools_EdgeEdge::BndBuildBox`，批 80 的盒递归用它）与 `pcurve_full/surface_projector.rs:1493` 消费；③ 投影回退——批 88 改了 `ShapeAnalysis_Curve::ProjectAct` 的 `!OK` 分支，经 `step/read_geometry.rs` 进入 STEP 读侧边域投影；④ **pcurve 结点吸附**——批 89 的 `CorrectParameter`（`Proj.cxx:256-281`）被 `wire_fix.rs:3068,3074`（`ShapeFix_Wire::FixNotchedEdges`）经 `TransferParametersProj::transfer_range` 使用，正是 **T-69 诊断里 `check_pcurves_and_shift`/`fix_lacking_all` 那条链** ⇒ 可能影响 T-69 与网格门禁 ⇒ 2D 求交/投影、盒递归剪枝、STEP 边域投影与 healing 结点吸附都会变，可能改变 T-01/T-03/T-04/T-05/T-69 的结果（可能变好也可能位移） | 批 85/86/87/88/89/90 均在 P0/P1 门禁的下游 | 无 | 门禁跑完先做「批 85–90 前/后」差分（`occt-topo --lib`、phase3/4/5/6、`bop_builder2_boss`、`phase19`、四道 STEP 门禁、`export_data_obj`、`iges_check`）**＋ 批 91–94（新增：⑤ 周期曲线族——批 93 周期表示/求值 + 批 94 读侧闭曲线强制周期化 ⇒ 批 90 的周期盒 arm 自此可达；见 §6.2 第 94 行）** | **门禁波次（最高优先）** — **✅ 第 111 轮已跑完差分（步骤 2）**：`9d8e596`(批 84 末) ↔ `2c9a66b`(批 98) 同命令 A/B，**逐项零差异**（唯一变化是 `step_to_obj` 12/13 → 13/13 的改善）⇒ 批 85–98 **无回归**；本轮**未做二分归因**（无失配项）。逐项结果见 §2 / §7 |
 
-**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→ R2-18 ✅（批 85 投影 + 批 86 求交；余非解析组合采样器）→ R2-16 夹带：T-12 ✅（前半批 87、后半批 90）、T-17 ✅（批 88）、T-15 的 `CorrectParameter` ✅（批 89）→ **等"导出 obj"指令 → 按 §6.2 playbook 先做 R2-18-gate 差分（批 85–90 前/后），再跑全门禁刷新 §2 = R2-15** → 按门禁结果定 R2-7…R2-10 + R2-17 → R2-11/R2-12/R2-13 → R2-6/R2-14/R2-16（余项）/R2-19/R2-20 夹带（**R2-6 已分两批：批 91 圆锥引擎 ✅ → 批 92 入口 `GeomConvert::CurveToBSplineCurve` + `Geom_BSplineCurve::SetPeriodic`（R2-21）→ 再 R2-20 整周椭圆 / R2-19 2D-UV 曲线**）。
+**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→ R2-18 ✅（批 85 投影 + 批 86 求交；余非解析组合采样器）→ R2-16 夹带：T-12 ✅（前半批 87、后半批 90）、T-17 ✅（批 88）、T-15 的 `CorrectParameter` ✅（批 89）→ **批 91–98（R2-6/R2-20/R2-21/R2-22/R2-19 前置）** → **第 111 轮门禁波次：步骤 1–5 已执行（§2 快照刷新 = R2-15 ✅；R2-18-gate 差分 = 无回归）** → 下一步按 §6.2：**步骤 6 = R2-17 单独一批**（删 `(Circle, Circle)` 快路径）→ 步骤 7 = R2-7…R2-10 分诊（T-01/T-03/T-04/T-05）→ R2-11/R2-12/R2-13 → R2-19/R2-23/R2-16（余项）夹带。
 
 ### P0 — 红门禁（收敛或显式豁免）
 
@@ -106,6 +107,7 @@ cd ..; git worktree remove --force .target-headcheck
 | T-04 | phase19 两条 PaveFiller 管道用例 | `tests/phase19_integration.rs:40`（got 84）、`:53`（got 88） | 期望"至少包含两个原始 box 之外的更多形状"；HEAD **完全一致** | 本轮未触碰；属 PaveFiller 阶段遗留，单独开波次 | `--test phase19_integration` | pending |
 | T-05 | `offset_geometry_is_consistent` 偏差 | `tests/step_geometry_parity.rs:129` | `Offset divergence 2208.0 vs shape_volume 1612.9`；HEAD **同** | 单独定位（offset 体积 vs 面类型分解）；与 T-04 同属遗留。**2026-09-20 全仓审查提示：很可能与 A0（offset 公式写错，见 T-35）同源**——先修 T-35 再看此偏差是否变化 | `--test step_geometry_parity` | pending |
 | T-06 | `extrema_pc::tests::point_ellipse_y_axis`（**唯一新增红**） | `crates/occt-geom/src/extrema_pc/tests.rs:57-64` | 期望 `u=3π/2`，实得 `π/2`；同用例的 `distance=3.0`、`p2=(0,1,0)` 断言**均通过** | **已修**：期望改 `π/2` 并注明 `ElCLib::EllipseValue`（`cxx:176-189`，`+Minor*sin(U)`）；**未**回退 `clib.rs` 符号（那是 ATU01038 面 130/140/156/216/222 的修复） | `cargo test --manifest-path crates/occt-geom/Cargo.toml --lib` → **153/153 ✅** | **done**（2026-09-20） |
+| **T-86** | **`iges::tests::sphere_iges_has_arc_and_solid`（本轮 A/B 发现：板内未登记的红，且 §2 旧表误记为"仅 T-01"）** | `crates/occt-topo/src/iges.rs:2221`（`assert!(iges.contains("100") \|\| iges.contains("128"), "expected a circular arc or NURBS curve")`）。**A/B 实测**：`9d8e596`（批 84 末）与 `2c9a66b`（批 98）**都失败**，且单独跑（`cargo test --lib iges::tests::sphere_iges_has_arc_and_solid`）同样失败 ⇒ 非测试顺序/并行导致，也非批 85–98 引入（`iges.rs` 在批 84→95 之间无提交改动）。临时探针（已删）dump 出 `BRepPrimSphere::make_sphere(2.0)` 的 IGES **DE 类型 = [144, 196, 116, 123, 123]**（5 实体），**无 100/110/128/142**（`144` 的裁剪面上没有任何边界曲线） | 期望：球面（`BRepPrim_Sphere` 的 lateral wire = **两条退化极点边 + 两条 u=0/2π 经线**，见 §3 T-68 执行方案）在 IGES 里应有经线的 **100**（`IGESGeom_ToolCircularArc`）或 128 曲线；实际：端口球面**没有边界 wire**（T-68 探针：`sphere faces=1 wires/face=[0]`）⇒ 144 无 outer bound、无曲线 | 归因 = **T-68 的下游症状**（球面 wire/pcurve 落地后此断言自然满足）。不要改这条断言来"修"它（属规则 3 禁止的"为对齐改期望"） | 与 T-68 同批：球面 `wires/face>0` 且 `--lib` 该用例转绿 | pending（被 T-68 阻塞） |
 
 | **T-35** | **A0：offset 曲线公式写错（全仓审查最高危）** | `crates/occt-geom/src/offset.rs:14-19`（3D 用 `p + Offset·Dir` **平移**）↔ `Geom_OffsetCurveUtils.pxx:53-61`（应沿**法向** `p + Offset·(D1×Dir)/‖D1×Dir‖`）；`crates/occt-geom2d/src/offset.rs:19-41` 法向 `(-dy, dx)` ↔ `Geom2d_OffsetCurveUtils.pxx:50` `(dy, -dx)`；两侧 `d1/d2` 均缺 `DNdir` 项（**已双向对读核实**） | 产出错误几何（**公式错误，非近似**）；3D 版被 STEP 读入 `step/read_topology.rs:1049` 直接使用，2D 版被 `geom_bnd_lib_offset2d.rs:101` 消费 | 按两个 `OffsetCurveUtils.pxx` 重写 D0/D1/D2（含 `DNdir` 旋转项与失败返回），并复核上述两处调用点 | 现有 offset 相关门禁不回归（`--lib` + `--test step_geometry_parity`） | pending |
 | **T-36** | **全仓忠实度审查 A1–A26 分批整改**（A0 已单列 T-35） | `specs/_audit/_index.md` §3/§7（5 区报告齐；合计自创 **71** / 未登记 **17** / 已登记 **15**，系统性条目 A0–A26） | 按 §7 分批：A6→A7 → A1 → A2+A11 → A13/A23 → A3/A24 → A20/A21/A17 → A18/A19/A22/A25 → A9/A10/A14/A26 → A12 | 逐批对着 `.cxx` 改控制流，**不加 OCCT 之外的规则/阈值**；无对应分支的标 `UNPORTED` + OCCT 文件行号 | 每批跑该 crate `--lib` + 相关门禁（parity 14/14 等）不回归 | pending |
@@ -1678,6 +1680,8 @@ cd ..; git worktree remove --force .target-pre85
 
 ### 6.2 门禁波次 playbook（收到指令后按序执行；勿跳步）
 
+> **执行状态（2026-09-21 第 111 轮）**：用户指令"导出 obj / 跑门禁" ⇒ **步骤 1–5 已执行完毕**（步骤 2 差分 = 零回归；步骤 3 全门禁见 §2；步骤 5 报告见 §7 第 111 轮）。**步骤 6/7 未执行**（按 CLAUDE.md 门禁纪律 4"完成即停、不自行发起下一步"，等指令）：步骤 6 = R2-17 单独一批，步骤 7 = R2-7…R2-10 分诊。
+
 | 步 | 动作 | 命令/判据 | 产出 |
 |---|---|---|---|
 | 1 | 工作区确认 | `git status --porcelain` 只应有未跟踪的 `data/iges/`；`git log -1` = 最新批 | — |
@@ -1833,6 +1837,21 @@ cd ..; git worktree remove --force .target-pre85
 - **意外收获**：A23 给出 round12 `a3n00` 网格 y+60.039 的**上游根因**（`wireframe.rs:face_uv_bounds` 9 点 pcurve 采样漏 UV 极值 ⇒ 窗口本身偏斜，OCCT 是 `BRepTools::AddUVBounds` 精确盒）。
 - **纪律**：审查全程**只读**——未改任何源码；`git status` 与本轮开始时逐项一致（30 D / 153 M / 35 ??，新增未跟踪仅 `specs/_audit/`、`specs/_board.md`）；门禁复核 lib 1,293/1,294、parity 14/14、geom 153/153。
 - **任务化**：新增 **T-35（A0）**、**T-36（A1–A26 按 §7 优先级分批）**，状态 `pending`（本轮不动手改）。
+
+### 2026-09-21 第 111 轮 · DSH 会话（门禁波次：`9d8e596` ↔ `2c9a66b` 全量 A/B + `iges_check` + 导出）
+
+> 用户指令："导出 obj / 跑门禁" ⇒ 按 §6.2 playbook 步骤 1–5 执行（步骤 6=R2-17、步骤 7=R2-7…R2-10 分诊，按纪律 4 等下一步指令）。
+
+- **步骤 1（工作区确认）**：`git status --porcelain` = 仅未跟踪 `data/iges/`；`git log -1` = `2c9a66b`（批 98）✓。
+- **步骤 2（R2-18-gate 差分，§6.1）**：`git worktree add --detach .target-pre85 9d8e596`（已 `worktree remove --force` 撤除；共享树未 `stash`）。两端各跑：`occt-topo --no-fail-fast`（全 16 个 test target + doc-tests）、`occt-geom/geom2d/core/math --lib`。**逐项比对结果：零差异**（唯一变化是 `step_to_obj` **12/13 → 13/13**，属既有红转绿）⇒ 批 85–98 对 live 路径（2D 求交/投影、圆锥盒、`ProjectAct`、`CorrectParameter`、周期曲线族、IGES 写侧）**没有引入任何回归**，也**没有**改变 T-01/T-03/T-04/T-05/phase10 任一红项的数字。日志：`.target-gate/{gate_before,gate_after,after_topo_raw,before_topo_raw}.txt`（`.target-gate/` 命中 `/.target-*/` 忽略，未入库）。
+- **步骤 3（全门禁 + IGES + 导出）**：见 §2 新实测表。要点：五 crate `--all-targets` exit 0/0 error；`step_obj_parity` 14/14、`step_obj_area` 11/11、`step_to_obj` **13/13**、`step_geometry_parity` 2/3（T-05）；topo `--lib` **1286/2**；phase20/3/4/5/6/7/8/9 全绿、phase10 7/8、phase19 3/5、boss 1/2；core 290(1i)/geom 143/geom2d 72/math 215(1i)；`iges_check` **18/18 ok**；`export_data_obj` **16/16**。
+- **步骤 3 附带（IGES 预期影响，§6.2 第 95/97/98 行的验收）**：`iges_check` 逐模型 A/B —— **DE 数**与**unreferenced 统计**（含类型分布）在 18 个模型上**完全相同**；只有 6 个模型（ATU01038、screw、Shape、Shape-2、occ/bottom、occ/top）的 **P 段长度变化**（= 126 参数块变大：周期/窄区间 B 样条由弦线改精确 126）。与 §6.2 的"仅实体统计变化"预期一致。
+- **步骤 4（归因）**：无失配项 ⇒ 无需二分（`.target-pre85` 只用于步骤 2 的 A/B）。
+- **步骤 5 报告（两处板内口径订正 + 一条新红）**：
+  1. **§2 旧表数字错误**（R2-15 口径问题收口）：旧记"第 90 轮 lib 1287/1、geom 146/146"；实测两端 lib 都是 **1286/2**、geom 都是 **143**。`iges.rs` 在批 84(`9d8e596`)→批 95(`83ed3f8`) 之间无提交改动 ⇒ 旧表的第二条红（`sphere_iges_has_arc_and_solid`）当时也在失败，只是没被记账。
+  2. **新登记 T-86**（板内此前未登记的红）：`iges::tests::sphere_iges_has_arc_and_solid` 在批 84 与批 98 **都失败**（单独跑也失败），断言 `iges.contains("100") || iges.contains("128")`；临时探针（已删）dump 出球面 IGES 的 DE 类型 = `[144, 196, 116, 123, 123]`（无 100/110/128/142）⇒ **归因 = T-68 的下游症状**（端口球面 face 没有边界 wire，T-68 探针 `wires/face=[0]`），不是本波次引入，也不应通过改断言"修"。
+  3. **旁支（未动手）**：`iges_check` 的 `unreferenced` 在**两端逐模型相同**（Cube 等仅 `{402:1}` = 根自身；但 `Sphere`/`Torus`/`Shape`/`linkrods`/`ATU01038`/`occ/*` 仍列出 `144/196/123/128/198/120/124` 等）⇒ 与 R2-4 卡"孤儿应归零"的预期不符，但**非本波次引入**；下一轮需判定是"统计口径（根 402 未计入引用）"还是"写侧确实漏引用"。
+- **未做（按纪律 4 停在报告）**：未执行 §6.2 步骤 6（R2-17 删 `(Circle, Circle)` 快路径）与步骤 7（R2-7…R2-10 分诊）；未改任何源码（本轮只有板内文档改动）。
 
 ---
 
