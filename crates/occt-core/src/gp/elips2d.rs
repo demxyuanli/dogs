@@ -7,6 +7,12 @@ pub struct GpElips2d { pub pos: GpAx22d, pub major_radius: f64, pub minor_radius
 impl GpElips2d {
     pub fn new(pos: GpAx22d, major: f64, minor: f64) -> Self { Self { pos, major_radius: major, minor_radius: minor } }
     pub fn area(&self) -> f64 { std::f64::consts::PI * self.major_radius * self.minor_radius }
+    /// `gp_Elips2d::Axis()`.
+    #[inline] pub const fn axis(&self) -> &GpAx22d { &self.pos }
+    /// `gp_Elips2d::XAxis()`.
+    #[inline] pub fn x_axis(&self) -> GpAx2d { self.pos.x_axis() }
+    /// `gp_Elips2d::YAxis()`.
+    #[inline] pub fn y_axis(&self) -> GpAx2d { self.pos.y_axis() }
     pub fn set_location(&mut self, p: GpPnt2d) { self.pos.set_location(p); }
     pub fn set_axis(&mut self, a: GpAx22d) { self.pos = a; }
     pub fn mirror_pnt(&mut self, p: &GpPnt2d) { let mut t=GpTrsf2d::identity(); t.set_mirror_pnt(p); self.transform(&t); }

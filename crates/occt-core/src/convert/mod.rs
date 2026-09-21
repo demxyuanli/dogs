@@ -1,11 +1,24 @@
-//! Coordinate system conversions (port-internal).
+//! Coordinate system conversions (port-internal) **and** the OCCT `Convert/`
+//! B-Spline conversion classes.
 //!
-//! **Provenance (audit A9)**: **not** an OCCT translation. OCCT's `Convert/`
+//! **Provenance (audit A9)**: the coordinate helpers below (`advanced.rs`,
+//! `mapproj.rs`) are **not** an OCCT translation. OCCT's `Convert/`
 //! package is the 18 B-Spline conversion classes (`Convert_CircleToBSplineCurve`,
 //! `Convert_CompBezierCurvesToBSplineCurve`, `Convert_ConeToBSplineSurface`, …)
 //! and contains no coordinate conversion at all; the only polar helper in the
 //! whole OCCT 8.0.0 tree is the file-static `toPolarCoords` in
 //! `V3d_View.cxx` (visualization, a screen-space helper).
+//!
+//! The faithful `Convert/` translations live next to them:
+//! `conic_to_bspline.rs` (`Convert_ConicToBSplineCurve`,
+//! `Convert_ParameterisationType`) and `conic_curves.rs`
+//! (`Convert_{Circle,Ellipse,Hyperbola,Parabola}ToBSplineCurve`).
+
+pub mod conic_curves;
+pub mod conic_to_bspline;
+
+pub use conic_curves::*;
+pub use conic_to_bspline::*;
 
 /// Polar to Cartesian 2D. Returns (x, y).
 pub fn polar_to_cartesian2d(rho: f64, theta: f64) -> (f64, f64) {

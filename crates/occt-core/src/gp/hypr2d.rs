@@ -6,6 +6,8 @@ pub struct GpHypr2d { pub pos: GpAx22d, pub major_radius: f64, pub minor_radius:
 
 impl GpHypr2d {
     pub fn new(pos: GpAx22d, major: f64, minor: f64) -> Self { Self { pos, major_radius: major, minor_radius: minor } }
+    /// `gp_Hypr2d::Axis()`.
+    #[inline] pub const fn axis(&self) -> &GpAx22d { &self.pos }
     pub fn set_location(&mut self, p: GpPnt2d) { self.pos.set_location(p); }
     pub fn set_axis(&mut self, a: GpAx22d) { self.pos = a; }
     pub fn mirror_pnt(&mut self, p: &GpPnt2d) { let mut t=GpTrsf2d::identity(); t.set_mirror_pnt(p); self.transform(&t); }

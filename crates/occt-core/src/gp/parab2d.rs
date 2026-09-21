@@ -6,6 +6,10 @@ pub struct GpParab2d { pub pos: GpAx22d, pub focal: f64 }
 
 impl GpParab2d {
     pub fn new(pos: GpAx22d, focal: f64) -> Self { Self { pos, focal } }
+    /// `gp_Parab2d::Axis()`.
+    #[inline] pub const fn axis(&self) -> &GpAx22d { &self.pos }
+    /// `gp_Parab2d::Parameter()`: twice the focal length.
+    #[inline] pub const fn parameter(&self) -> f64 { 2.0 * self.focal }
     pub fn set_location(&mut self, p: GpPnt2d) { self.pos.set_location(p); }
     pub fn set_axis(&mut self, a: GpAx22d) { self.pos = a; }
     pub fn mirror_pnt(&mut self, p: &GpPnt2d) { let mut t=GpTrsf2d::identity(); t.set_mirror_pnt(p); self.transform(&t); }
