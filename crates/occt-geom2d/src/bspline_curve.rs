@@ -11,6 +11,9 @@ pub struct Geom2dBSplineCurve {
     pub ys: Vec<f64>,
     pub knots: Vec<f64>,
     pub degree: usize,
+    /// `Geom2d_BSplineCurve::IsPeriodic()`: with `true` the flat knot vector is
+    /// the periodic `BSplCLib::KnotSequence` (extended by one period each side).
+    pub periodic: bool,
 }
 
 impl Geom2dBSplineCurve {
@@ -21,7 +24,93 @@ impl Geom2dBSplineCurve {
             return Err("Geom2dBSplineCurve: xs/ys length mismatch");
         }
         knots::check_degree(xs.len(), degree, knots.len())?;
-        Ok(Self { xs, ys, knots, degree })
+        Ok(Self { xs, ys, knots, degree, periodic: false })
+    }
+
+    /// `Geom2d_BSplineCurve::Knots()` / `Multiplicities()`: stored distinct knots
+    /// and multiplicities (see `GeomBSplineCurve::distinct_knots_and_mults` in
+    /// `occt-geom` for why the periodic period-extension knots are excluded).
+    pub fn distinct_knots_and_mults(&self) -> (Vec<f64>, Vec<i32>) {
+        let (uknots, umults) = knots::unique_knots_mults(&self.knots);
+        if !self.periodic || uknots.is_empty() {
+            return (uknots, umults);
+        }
+        let (first, last) = (self.first_parameter(), self.last_parameter());
+        let mut out_knots = Vec::new();
+        let mut out_mults = Vec::new();
+        for (k, m) in uknots.iter().zip(umults.iter()) {
+            if *k < first || *k > last {
+                continue;
+            }
+            out_knots.push(*k);
+            out_mults.push(*m);
+        }
+        if out_knots.is_empty() {
+            (uknots, umults)
+        } else {
+            (out_knots, out_mults)
+        }
+    }
+
+    /// `Geom2d_BSplineCurve::SetPeriodic()` (`Geom2d_BSplineCurve.cxx:948-…`):
+    /// same construction as `Geom_BSplineCurve::SetPeriodic`
+    /// (`Geom_BSplineCurve.cxx:777-815`).
+    pub fn set_periodic(&mut self) {
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        if uknots.is_empty() || umults.is_empty() {
+            return;
+        }
+        let degree = self.degree as i32;
+        let (first, last) = if self.periodic {
+            (1usize, uknots.len())
+        } else {
+            (
+                occt_core::bspl::locate::first_u_knot_index(degree, &umults).max(1) as usize,
+                occt_core::bspl::locate::last_u_knot_index(degree, &umults).max(1) as usize,
+            )
+        };
+        let first = first.min(uknots.len());
+        let last = last.min(uknots.len()).max(first);
+        let uknots = uknots[first - 1..last].to_vec();
+        let mut umults = umults[first - 1..last].to_vec();
+        let last_idx = umults.len() - 1;
+        let m = degree.min(umults[0].max(umults[last_idx]));
+        umults[0] = m;
+        umults[last_idx] = m;
+        let nbp = knots::nb_poles(degree, true, &umults).max(0) as usize;
+        if nbp < self.xs.len() {
+            self.xs.truncate(nbp);
+            self.ys.truncate(nbp);
+        } else if nbp > self.xs.len() {
+            // OCCT's `Resize` leaves the new poles default-constructed (`gp_Pnt2d()`).
+            self.xs.resize(nbp, 0.0);
+            self.ys.resize(nbp, 0.0);
+        }
+        self.knots = knots::knot_sequence_periodic(&uknots, &umults, degree);
+        self.periodic = true;
+    }
+
+    /// `Geom2d_BSplineCurve::SetNotPeriodic()` (`Geom2d_BSplineCurve.cxx:1087-…`):
+    /// `BSplCLib::PrepareUnperiodize` + `BSplCLib::Unperiodize`
+    /// (`BSplCLib.cxx:2967-3080`), poles re-indexed as
+    /// `NewPoles(k) = Poles((k - 1) % n_old + 1)`.
+    pub fn set_not_periodic(&mut self) {
+        if !self.periodic {
+            return;
+        }
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        let degree = self.degree as i32;
+        let (new_knots, new_mults, _index) =
+            occt_core::bspl::unperiodize::unperiodize_knots(degree, &uknots, &umults);
+        let n_new = (new_mults.iter().sum::<i32>() - degree - 1).max(0) as usize;
+        let n_old = self.xs.len();
+        if n_old == 0 || n_new == 0 {
+            return;
+        }
+        self.xs = (0..n_new).map(|k| self.xs[k % n_old]).collect();
+        self.ys = (0..n_new).map(|k| self.ys[k % n_old]).collect();
+        self.knots = occt_core::bspl::unperiodize::flat_knots_from_mults(&new_knots, &new_mults);
+        self.periodic = false;
     }
 
     pub fn nb_poles(&self) -> usize { self.xs.len() }
@@ -66,11 +155,29 @@ impl Geom2dBSplineCurve {
 }
 
 impl Curve2d for Geom2dBSplineCurve {
-    fn d0(&self, u: f64) -> GpPnt2d { self.de_boor(u) }
+    fn d0(&self, u: f64) -> GpPnt2d {
+        if self.periodic {
+            // `Geom2d_BSplineCurve::D0` on a periodic flat knot sequence:
+            // `BSplCLib::PrepareEval` wraps the pole window and `LocateParameter`
+            // maps the parameter into the period; `curve_dn::dn` with order 0 is
+            // `BSplCLib::D0`.
+            let v = occt_core::bspl::curve_dn::dn(
+                u, 0, 0, self.degree as i32, true, &self.poles_3d(), None, &self.knots, None,
+            );
+            return GpPnt2d::new(v.x(), v.y());
+        }
+        self.de_boor(u)
+    }
 
     fn d1(&self, u: f64) -> (GpPnt2d, GpVec2d) {
         // `Geom2d_BSplineCurve::D1` / `BSplCLib::D1`.
         let poles = self.poles_3d();
+        if self.periodic {
+            let d = occt_core::bspl::curve_dn::dn(
+                u, 1, 0, self.degree as i32, true, &poles, None, &self.knots, None,
+            );
+            return (self.d0(u), GpVec2d::new(d.x(), d.y()));
+        }
         let (p, d) = eval::eval_curve_d1(&poles, &self.knots, self.degree, u);
         (GpPnt2d::new(p.x(), p.y()), GpVec2d::new(d.x(), d.y()))
     }
@@ -78,6 +185,19 @@ impl Curve2d for Geom2dBSplineCurve {
     fn d2(&self, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
         // `Geom2d_BSplineCurve::D2` / `BSplCLib::D2`.
         let poles = self.poles_3d();
+        if self.periodic {
+            let d1 = occt_core::bspl::curve_dn::dn(
+                u, 1, 0, self.degree as i32, true, &poles, None, &self.knots, None,
+            );
+            let d2 = occt_core::bspl::curve_dn::dn(
+                u, 2, 0, self.degree as i32, true, &poles, None, &self.knots, None,
+            );
+            return (
+                self.d0(u),
+                GpVec2d::new(d1.x(), d1.y()),
+                GpVec2d::new(d2.x(), d2.y()),
+            );
+        }
         let (p, d1, d2) = eval::eval_curve_d2(&poles, &self.knots, self.degree, u);
         (
             GpPnt2d::new(p.x(), p.y()),
@@ -88,12 +208,20 @@ impl Curve2d for Geom2dBSplineCurve {
 
     fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
+    fn is_periodic(&self) -> bool { self.periodic }
+    fn period(&self) -> f64 {
+        if self.periodic {
+            self.last_parameter() - self.first_parameter()
+        } else {
+            0.0
+        }
+    }
     fn continuity(&self) -> u8 {
         // `Geom2d_BSplineCurve::Continuity` / `GeomAdaptor` LocalContinuity.
         occt_core::bspl::local_continuity(
             &self.knots,
             self.degree,
-            false,
+            self.periodic,
             self.first_parameter(),
             self.last_parameter(),
         )
@@ -102,7 +230,7 @@ impl Curve2d for Geom2dBSplineCurve {
         occt_core::bspl::adaptor_intervals(
             &self.knots,
             self.degree,
-            false,
+            self.periodic,
             continuity,
             self.first_parameter(),
             self.last_parameter(),
