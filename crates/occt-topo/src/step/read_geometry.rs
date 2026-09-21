@@ -788,6 +788,224 @@ pub(super) fn data_section(content: &str) -> Result<&str, String> {
     Ok(&after_data[..data_end])
 }
 
+// ---------------------------------------------------------------------------
+// SHAPE_REPRESENTATION_RELATIONSHIP composition
+// (`STEPControl_ActorRead::TransferRelatedSRR` and friends)
+// ---------------------------------------------------------------------------
+
+/// `STEPControl_ActorRead::ComputeSRRWT` (`STEPControl_ActorRead.cxx:2495-2546`).
+///
+/// Only `SHAPE_REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION` carries a
+/// transformation: either a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`
+/// (`StepToGeom::MakeTransformation3d`, `cxx:2522`) or an
+/// `ITEM_DEFINED_TRANSFORMATION` whose two `AXIS2_PLACEMENT_3D` items go through
+/// `ComputeTransformation` (`cxx:2545`, axis-pair arm at `cxx:2484-2489`).
+/// Both return "no transformation" when the result is the identity
+/// (`cxx:2527`, `cxx:2489`).
+///
+/// **UNPORTED**: the `PrepareUnits(Rep2)` / restore pair (`cxx:2517-2526`) and
+/// the `PrepareUnits(OrigContext/TargContext)` calls of `ComputeTransformation`
+/// (`cxx:2467-2482`) — the per-representation unit context; the port uses the
+/// file's global factors. Also UNPORTED: the axis-ownership / swapped-axis
+/// warnings of `cxx:2440-2464`.
+fn compute_srrwt(
+    resolver: &Resolver,
+    records: &HashMap<usize, Record>,
+    srr_id: usize,
+) -> Option<occt_core::gp::GpTrsf> {
+    let rec = records.get(&srr_id)?;
+    if rec.type_name != "SHAPE_REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION" {
+        return None;
+    }
+    let op_ref = parse_ref(rec.args.get(4)?)?;
+    let op = records.get(&op_ref)?;
+    match op.type_name.as_str() {
+        "CARTESIAN_TRANSFORMATION_OPERATOR_3D" => {
+            let t = resolver.make_transformation3d(op_ref).ok()?;
+            (t.form() != occt_core::gp::TrsfForm::Identity).then_some(t)
+        }
+        "ITEM_DEFINED_TRANSFORMATION" => {
+            let ax1 = self_axis(resolver, op.args.get(2))?;
+            let ax2 = self_axis(resolver, op.args.get(3))?;
+            let t = resolver.compute_axis_transform(&ax1, &ax2);
+            (t.form() != occt_core::gp::TrsfForm::Identity).then_some(t)
+        }
+        _ => None,
+    }
+}
+
+fn self_axis(resolver: &Resolver, arg: Option<&String>) -> Option<GpAx2> {
+    resolver.resolve_axis2(parse_ref(arg?)?).ok()
+}
+
+/// Composes shape representations the way `STEPControl_ActorRead` does.
+///
+/// * `TransferEntity(ShapeRepresentation, …)` (`STEPControl_ActorRead.cxx:2048-2092`):
+///   the representation's own shape, then — when `read.step.shape.relationship`
+///   is set, which defaults to true (`DESTEP_Parameters.hxx:170`) — every shape
+///   `TransferRelatedSRR` composes for the relations sharing it. A single child
+///   binds that shape, more than one binds a compound; a non-null related result
+///   replaces the single result (`cxx:2077-2089`).
+/// * `TransferRelatedSRR` (`cxx:2679-2729`): `theCund` grows with each related
+///   shape and the **last** one is returned (`cxx:2724-2728`).
+/// * `TransferEntity(SRR, …)` (`cxx:1337-1433`): for `nbrep` 1/2 take `Rep1` or
+///   `Rep2` (0 takes both), compose them, and apply the `ComputeSRRWT`
+///   transformation to the single result or to the compound (`cxx:1408-1417`).
+///
+/// **UNPORTED**: the `MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP` and
+/// constructive-geometry arms of `TransferRelatedSRR` (`cxx:2707-2721`), and
+/// `TransferEntity(NAUO, …)` (`cxx:859-981`) — the assembly-level path that
+/// resolves `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` / `SRRReversed`. Those need
+/// entities no sample in `data/` carries; the port reads the relation entities
+/// directly, as `TransferRelatedSRR` does.
+struct SsrComposer<'a, 'r> {
+    resolver: &'a Resolver<'r>,
+    records: &'a HashMap<usize, Record>,
+    names: RefCell<HashMap<usize, String>>,
+    cache: RefCell<HashMap<usize, Option<TopoShape>>>,
+    in_progress: RefCell<HashSet<usize>>,
+}
+
+impl<'a, 'r> SsrComposer<'a, 'r> {
+    fn new(resolver: &'a Resolver<'r>, records: &'a HashMap<usize, Record>) -> Self {
+        Self {
+            resolver,
+            records,
+            names: RefCell::new(HashMap::new()),
+            cache: RefCell::new(HashMap::new()),
+            in_progress: RefCell::new(HashSet::new()),
+        }
+    }
+
+    /// The representation name recorded by `resolve_representation`.
+    fn name(&self, rep_id: usize) -> String {
+        if let Some(n) = self.names.borrow().get(&rep_id) {
+            return n.clone();
+        }
+        match self.resolver.resolve_representation(rep_id) {
+            Ok((name, _)) => {
+                self.names.borrow_mut().insert(rep_id, name.clone());
+                name
+            }
+            Err(_) => format!("shape_{rep_id}"),
+        }
+    }
+
+    /// `TransferEntity(ShapeRepresentation, …)` (`cxx:2048-2092`).
+    fn rep_shape(&self, rep_id: usize) -> Option<TopoShape> {
+        if let Some(hit) = self.cache.borrow().get(&rep_id) {
+            return hit.clone();
+        }
+        // Rust-only guard: a cyclic SRR graph would make OCCT's transfer
+        // recurse forever (`TP->Bind` happens after the transfer, `cxx:2091`);
+        // fall back to the representation's own shape instead of recursing.
+        if !self.in_progress.borrow_mut().insert(rep_id) {
+            return self.own_shape(rep_id);
+        }
+        let own = self.own_shape(rep_id);
+        let mut cund: Vec<TopoShape> = own.into_iter().collect();
+        let new_result = self.transfer_related_srr(rep_id, &mut cund);
+        let result = if cund.is_empty() {
+            None
+        } else if cund.len() == 1 {
+            Some(new_result.unwrap_or_else(|| cund[0].clone()))
+        } else {
+            Some(TopoBuilder::new().make_compound_of(&cund).0)
+        };
+        self.in_progress.borrow_mut().remove(&rep_id);
+        self.cache.borrow_mut().insert(rep_id, result.clone());
+        result
+    }
+
+    /// The representation's own items (`TransferEntity`'s `aCund` seed,
+    /// `cxx:2048-2056`).
+    fn own_shape(&self, rep_id: usize) -> Option<TopoShape> {
+        match self.resolver.resolve_representation(rep_id) {
+            Ok((name, shapes)) => {
+                self.names.borrow_mut().insert(rep_id, name);
+                match shapes.len() {
+                    0 => None,
+                    1 => Some(shapes.into_iter().next().unwrap()),
+                    _ => Some(TopoBuilder::new().make_compound_of(&shapes).0),
+                }
+            }
+            Err(e) => {
+                self.resolver.warn(format!("representation #{rep_id}: {e}"));
+                None
+            }
+        }
+    }
+
+    /// `TransferRelatedSRR` (`cxx:2679-2729`).
+    fn transfer_related_srr(&self, rep_id: usize, cund: &mut Vec<TopoShape>) -> Option<TopoShape> {
+        // `aGraph.Sharings(theRep)` walks the graph's entity order; the parsed
+        // records live in a map, so file order is restored by entity number.
+        let mut srr_ids: Vec<usize> = self
+            .records
+            .iter()
+            .filter(|(_, r)| {
+                r.type_name == "SHAPE_REPRESENTATION_RELATIONSHIP"
+                    || r.type_name == "SHAPE_REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
+            })
+            .filter(|(_, r)| {
+                let rep1 = r.args.get(2).and_then(|a| parse_ref(a));
+                let rep2 = r.args.get(3).and_then(|a| parse_ref(a));
+                rep1 == Some(rep_id) || rep2 == Some(rep_id)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        srr_ids.sort_unstable();
+
+        let mut last: Option<TopoShape> = None;
+        for srr_id in srr_ids {
+            let Some(rec) = self.records.get(&srr_id) else { continue };
+            let rep1 = rec.args.get(2).and_then(|a| parse_ref(a));
+            let nb_rep = if rep1 == Some(rep_id) { 2 } else { 1 };
+            if let Some(shape) = self.transfer_srr(srr_id, nb_rep) {
+                cund.push(shape.clone());
+                last = Some(shape);
+            }
+        }
+        last
+    }
+
+    /// `TransferEntity(ShapeRepresentationRelationship, …)` (`cxx:1337-1433`).
+    fn transfer_srr(&self, srr_id: usize, nb_rep: usize) -> Option<TopoShape> {
+        let rec = self.records.get(&srr_id)?;
+        let rep1 = rec.args.get(2).and_then(|a| parse_ref(a))?;
+        let rep2 = rec.args.get(3).and_then(|a| parse_ref(a))?;
+        let iatrsf = compute_srrwt(self.resolver, self.records, srr_id);
+
+        let mut one_result: Option<TopoShape> = None;
+        let mut children: Vec<TopoShape> = Vec::new();
+        for i in 1..=2usize {
+            if nb_rep != 0 && nb_rep != i {
+                continue;
+            }
+            let rep = if i == 1 { rep1 } else { rep2 };
+            if let Some(shape) = self.rep_shape(rep) {
+                one_result = Some(shape.clone());
+                children.push(shape);
+            }
+        }
+        if children.is_empty() {
+            return None;
+        }
+        let mut result = if children.len() == 1 {
+            one_result.unwrap()
+        } else {
+            TopoBuilder::new().make_compound_of(&children).0
+        };
+        if let Some(t) = iatrsf {
+            // `ApplyTransformation(OneResult|Cund, Trsf)` (`cxx:1408-1417`); the
+            // `SRRReversed` inverse (`cxx:1316-1323`) belongs to the NAUO path,
+            // which is UNPORTED.
+            result = crate::transform::transformed(&result, &t);
+        }
+        Some(result)
+    }
+}
+
 pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), String> {
     let data = data_section(content)?;
     let records = parse_records(data)?;
@@ -801,32 +1019,21 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
         .map(|(id, _)| *id)
         .collect();
     rep_ids.sort_unstable();
-    // UNPORTED: `STEPControl_ActorRead::TransferEntity` composes each mapped
-    // shape representation with the shapes related to it by
-    // `SHAPE_REPRESENTATION_RELATIONSHIP` / `..._WITH_TRANSFORMATION`
-    // (`TransferRelatedSRR`, `STEPControl_ActorRead.cxx:2061-2091`, and
-    // `ComputeSRRWT`, `cxx:2493-2545`), and `read.step.shape.relationship`
-    // defaults to true (`DESTEP_Parameters.hxx:170`). Here every related
-    // representation is emitted as its own root shape instead of being composed
-    // into the product shape. No sample in `data/` carries such a relation.
 
     let mut model = BRepModel::new();
     if !rep_ids.is_empty() {
-        for id in rep_ids {
-            match resolver.resolve_representation(id) {
-                Ok((name, shapes)) => {
-                    if shapes.is_empty() {
-                        continue;
-                    }
-                    let shape = if shapes.len() == 1 {
-                        shapes.into_iter().next().unwrap()
-                    } else {
-                        let b = TopoBuilder::new();
-                        b.make_compound_of(&shapes).0
-                    };
-                    model.add(&name, shape);
-                }
-                Err(e) => resolver.warn(format!("representation #{id}: {e}")),
+        // Faithful to `STEPControl_ActorRead::TransferEntity(ShapeRepresentation)`
+        // (`STEPControl_ActorRead.cxx:2048-2092`): the representation's own shape
+        // plus everything `TransferRelatedSRR` composes for the
+        // `SHAPE_REPRESENTATION_RELATIONSHIP` entries that share it.
+        // `read.step.shape.relationship` defaults to true
+        // (`DESTEP_Parameters.hxx:170`) and the port has no per-parameter switch,
+        // so the composition always runs.
+        let composer = SsrComposer::new(&resolver, &records);
+        for id in &rep_ids {
+            if let Some(shape) = composer.rep_shape(*id) {
+                let name = composer.name(*id);
+                model.add(&name, shape);
             }
         }
     } else {

@@ -912,7 +912,7 @@ impl<'a> Resolver<'a> {
     /// (`gp_Trsf.cxx:172-192`) maps `ax3Orig`-frame coordinates into the
     /// `ax3Targ` frame, i.e. `world->ax3Orig` composed with the inverse of
     /// `world->ax3Targ`.
-    fn compute_axis_transform(&self, orig: &GpAx2, targ: &GpAx2) -> occt_core::gp::GpTrsf {
+    pub(super) fn compute_axis_transform(&self, orig: &GpAx2, targ: &GpAx2) -> occt_core::gp::GpTrsf {
         let ax3_orig = GpAx3 {
             axis: orig.axis,
             vxdir: orig.vxdir,
