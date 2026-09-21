@@ -11,15 +11,12 @@
 //! `gp_Elips` / `gp_Hypr` / `gp_Parab` queries they need exist on
 //! `occt_geom::Curve` since the A20/A29 work.
 //!
-//! PARKED: the periodic arm of `GeomBndLib_BSplineCurve::Box`
-//! (`BSplineCurve.cxx:44-49` + `:299-330`), which needs `AdjustPeriodic` plus
-//! `Geom_BSplineCurve::Segment` (`Geom_BSplineCurve.cxx:527-660`, i.e.
-//! `SetOrigin` / `SetNotPeriodic` reparameterization); `occt_geom::Curve` has
-//! no `Segment`, so periodic B-splines sample instead. The NON-periodic
-//! sub-range arm (`BSplineCurve.cxx:39-85`) is ported: for a non-periodic
-//! curve `Segment` keeps the parameterization (the knot vector is truncated,
-//! its `DU` shift stays 0), so sampling the original curve over the same knot
-//! spans yields the identical point set without rebuilding a segment object.
+//! **Ported (batch 90, task T-12 second half)**: the periodic arm of
+//! `GeomBndLib_BSplineCurve::Box` (`BSplineCurve.cxx:43-50`):
+//! `ElCLib::AdjustPeriodic` puts the range inside one period and the segmented
+//! curve's knots are the original distinct knots rotated by whole periods, so
+//! the span loop below reproduces OCCT's `Segment` + knot-span `FillBox`
+//! without a `Segment` port — see [`box_bspline`].
 
 use occt_core::bnd::BndBox;
 use occt_core::bspl::knots as bspl_knots;
@@ -446,53 +443,78 @@ fn box_bezier(curve: &dyn Curve, poles: &[GpPnt], u1: f64, u2: f64, tol: f64) ->
 
 /// `GeomBndLib_BSplineCurve::Box` (`BSplineCurve.cxx:31-113`).
 ///
-/// Non-periodic: full range and sub-range share the knot-span `FillBox` loop
-/// (`cxx:85-105`) and `ReduceSplineBox(myGeom->Poles(), ...)` (`cxx:110`,
-/// the ORIGINAL full pole array, not a window). A strict sub-range is
-/// segmented by OCCT (`cxx:39-85`) merely to truncate the knot vector; for a
-/// non-periodic curve that leaves the parameterization unchanged, so clipping
-/// the spans to `[a_u1, a_u2]` reproduces the segmented curve's samples.
+/// Full range and sub-range share the knot-span `FillBox` loop (`cxx:85-105`)
+/// and `ReduceSplineBox(myGeom->Poles(), ...)` (`cxx:110`, the ORIGINAL full pole
+/// array, not a window). A strict sub-range is segmented by OCCT (`cxx:39-85`)
+/// merely to re-parameterize/truncate the knot vector:
+///
+/// * non-periodic: `cxx:51-60` clamps the range to the curve's own bounds and
+///   `Segment` keeps the parameterization, so clipping the spans to
+///   `[a_u1, a_u2]` reproduces the segmented curve's samples;
+/// * periodic (`cxx:43-50`, batch 90 / task T-12 second half):
+///   `ElCLib::AdjustPeriodic` first moves the range inside one period, then
+///   `Segment` rotates the knot vector by whole periods and truncates it, so the
+///   segmented curve's distinct knots inside the range are the original distinct
+///   knots shifted by multiples of the period — the span list below.
 fn box_bspline(curve: &dyn Curve, poles: &[GpPnt], knots: &[f64], u1: f64, u2: f64, tol: f64) -> BndBox {
     let degree = curve.nurbs_degree().unwrap_or(1) as i32;
-    if curve.is_periodic() {
-        // PARK: periodic arm (`BSplineCurve.cxx:44-49`) needs `AdjustPeriodic`
-        // plus `Geom_BSplineCurve::Segment` (`Geom_BSplineCurve.cxx:527-660`,
-        // `SetOrigin` / `SetNotPeriodic`); `occt_geom::Curve` has no `Segment`.
+    let (a_u1, a_u2, cuts) = if curve.is_periodic() {
+        let first = curve.first_parameter();
+        let last = curve.last_parameter();
         let mut a_u1 = u1;
         let mut a_u2 = u2;
-        adjust_periodic(curve.first_parameter(), curve.last_parameter(), PCONFUSION, &mut a_u1, &mut a_u2);
-        return box_other(curve, a_u1, a_u2, tol);
-    }
-    let a_u1 = u1.max(curve.first_parameter());
-    let a_u2 = u2.min(curve.last_parameter());
-    let (uknots, _umults) = bspl_knots::unique_knots_mults(knots);
-    if uknots.len() < 2 {
+        adjust_periodic(first, last, PCONFUSION, &mut a_u1, &mut a_u2);
+        let period = last - first;
+        let (uknots, _umults) = bspl_knots::unique_knots_mults(knots);
+        let mut cuts: Vec<f64> = Vec::new();
+        if period > PCONFUSION && uknots.len() >= 2 {
+            // Knots of the segmented curve: the original distinct knots rotated
+            // by whole periods to cover `[a_u1, a_u2]`.
+            let m_lo = ((a_u1 - uknots[uknots.len() - 1]) / period).floor() - 1.0;
+            let m_hi = ((a_u2 - uknots[0]) / period).ceil() + 1.0;
+            let mut m = m_lo;
+            while m <= m_hi {
+                for k in &uknots {
+                    cuts.push(k + m * period);
+                }
+                m += 1.0;
+            }
+            cuts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        (a_u1, a_u2, cuts)
+    } else {
+        let a_u1 = u1.max(curve.first_parameter());
+        let a_u2 = u2.min(curve.last_parameter());
+        let (uknots, _umults) = bspl_knots::unique_knots_mults(knots);
+        (a_u1, a_u2, uknots)
+    };
+
+    if cuts.is_empty() && !curve.is_periodic() {
         let mut a_box = BndBox::new();
         a_box.add_point(&curve.d0(a_u1));
         a_box.add_point(&curve.d0(a_u2));
         a_box.enlarge(tol);
         return a_box;
     }
-    let lower = 0usize;
-    let upper = uknots.len() - 1;
-    let mut a_k_min = bspl_knots::hunt(&uknots, a_u1);
-    a_k_min = a_k_min.clamp(lower, upper.saturating_sub(1));
-    let mut a_k_max = bspl_knots::hunt(&uknots, a_u2);
-    a_k_max = (a_k_max + 1).clamp(lower, upper);
 
+    // `cxx:92-104`: spans `[a_u1, k1] [k1, k2] ... [kn, a_u2]` over the
+    // segmented curve's distinct knots; the interior knots outside the range are
+    // dropped (the segment's end knots carry multiplicity `degree + 1`).
     let mut a_b1 = BndBox::new();
     let mut a_tol = 0.0_f64;
     let mut a_first = a_u1;
     let n = degree.max(1);
-    for a_k in (a_k_min + 1)..=a_k_max {
-        let a_last = if a_k < a_k_max { a_u2.min(uknots[a_k]) } else { a_u2 };
+    for cut in cuts
+        .iter()
+        .copied()
+        .filter(|k| *k > a_u1 + PCONFUSION && *k < a_u2 - PCONFUSION)
+        .chain(std::iter::once(a_u2))
+    {
+        let a_last = cut.min(a_u2);
         if a_last > a_first + PCONFUSION {
             a_tol = a_tol.max(fill_box3d(&mut a_b1, curve, a_first, a_last, n));
         }
         a_first = a_last;
-        if a_first >= a_u2 - PCONFUSION {
-            break;
-        }
     }
     if a_b1.is_void() {
         let mut a_box = BndBox::new();

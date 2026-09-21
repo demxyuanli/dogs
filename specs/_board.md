@@ -88,9 +88,9 @@ cd ..; git worktree remove --force .target-headcheck
 | **R2-17** | 新（批 80 派生） | **删除 OCCT 不存在的 circle/circle 快路径**：`edge_edge/solvers.rs::compute_circle_circle_full` 与 `perform` 里的 `(Circle, Circle)` 分派。OCCT `IntTools_EdgeEdge::Perform`（`:185-243`）只特判 line/line，圆–圆同样走 `FindSolutions`（忠实件已在 R2-1 落地） | 该分支为端口自创（模块内已标 UNPORTED）；被 `edge_edge/mod.rs` 的两个直调用例与 `circle_circle_two_hits` 间接覆盖 ⇒ **删除会改行为，需一次门禁验证**（这正是不能与 R2-1 同批做的事） | R2-1 已落地 | `occt-topo --lib`（尤其 `edge_edge::tests::{circle_circle_two_hits, separated_circles_empty}`、`tests_full::circle_circle_full_*`）不回归 | 门禁波次 |
 | **R2-18** | 新（批 81 派生，A16 的 2D 余项） | **2D 投影/求交采样族**：`occt-geom2d/curve_ops.rs::{curve2d_intersections, curve2d_closest_point, curve2d_length}` | **◐ 批 85（第 94 轮）投影 half（R2-18a）✅ / 批 86（第 95 轮）求交 half（R2-18b）✅**：投影改走 `extrema2d::point_curve_extrema2d`（`Extrema_ExtPC2d`），求交改走 `IntAna2d_AnaIntersection`（详见下方两行）。**仍 UNPORTED**：非解析组合（B 样条/Bezier/offset/其修剪）的求交＝256×256 采样器（忠实路线 `Extrema_ExtCC2d`）；`curve2d_length`＝Simpson 求积（OCCT `GCPnts_AbscissaPoint`）；`extrema2d` 一般曲线的网格+Newton 播种（A7 家族） | 忠实件：`extrema2d`、`occt-core::intana2d` | 该 crate `--lib` + 依赖 2D 的门禁不劣化（见 R2-18-gate） | 批 85+86 ◐ |
 | **R2-18b** | 新（批 86 完成） | **2D 求交改走 `IntAna2d_AnaIntersection`** | **✅ 批 86（第 95 轮）**：`Curve2d` trait 补三个类型查询 `gp_elips2d`/`gp_parab2d`/`gp_hypr2d`（`Geom2dAdaptor_Curve` 的 `Ellipse()/Parabola()/Hyperbola()`，`ellipse.rs`/`parabola.rs`/`hyperbola.rs` 实现 + `Geom2dTrimmedCurve` 转发）；`curve_ops::curve2d_intersections` 先走 `analytic_intersections2d`：按首个曲线给「专用操作数」（8 个 `perform_*`），第二曲线取 `IntAna2d_Conic`；`(Circ, Lin)` 按 OCCT 写法交换实参并在结果里换回参数；`IntAna2dIntPoint::{param_on_first,param_on_second,value}` 即 `(u,v,point)`；加**有界曲线语义过滤**（`IntAna2d` 是对**无界**圆锥曲线求解，越出曲线自身区间的根不算交点；周期曲线按一个周期映射；修剪曲线用其 basis 空间的 `first/last`）。非解析组合仍走采样器并就地标 UNPORTED | 同 R2-18 行 | 同 R2-18 行 | 批 86 ✅ |
-| **R2-18-gate** | 新（批 86 派生，**门禁影响面**） | **R2-18a/18b + 批 87/88/89 直接改 live 路径**：① 2D——`geom2d_api::{intersect_curves, project_point_on_curve}` 被 `pave_de.rs:150,154`、`pave_blocks/split_edges.rs:174`、`wire_splitter_block.rs:680` 调用；② 盒——`geom_bnd_lib_curve3d::box_curve`（批 87 起圆锥解析盒）被 `brep_bnd_lib.rs:64`（`BRepBndLib::Add`）、`geom_bnd_lib_surface3d.rs:496,686`、`int_tools_curve_box.rs:46`（= `IntTools_EdgeEdge::BndBuildBox`，批 80 的盒递归用它）与 `pcurve_full/surface_projector.rs:1493` 消费；③ 投影回退——批 88 改了 `ShapeAnalysis_Curve::ProjectAct` 的 `!OK` 分支，经 `step/read_geometry.rs` 进入 STEP 读侧边域投影；④ **pcurve 结点吸附**——批 89 的 `CorrectParameter`（`Proj.cxx:256-281`）被 `wire_fix.rs:3068,3074`（`ShapeFix_Wire::FixNotchedEdges`）经 `TransferParametersProj::transfer_range` 使用，正是 **T-69 诊断里 `check_pcurves_and_shift`/`fix_lacking_all` 那条链** ⇒ 可能影响 T-69 与网格门禁 ⇒ 2D 求交/投影、盒递归剪枝、STEP 边域投影与 healing 结点吸附都会变，可能改变 T-01/T-03/T-04/T-05/T-69 的结果（可能变好也可能位移） | 批 85/86/87/88/89 均在 P0/P1 门禁的下游 | 无 | 门禁跑完先做「批 85+86+87+88+89 前/后」差分（`occt-topo --lib`、phase3/4/5/6、`bop_builder2_boss`、`phase19`、四道 STEP 门禁、`export_data_obj`、`iges_check`） | **门禁波次（最高优先）** |
+| **R2-18-gate** | 新（批 86 派生，**门禁影响面**） | **R2-18a/18b + 批 87/88/89/90 直接改 live 路径**：① 2D——`geom2d_api::{intersect_curves, project_point_on_curve}` 被 `pave_de.rs:150,154`、`pave_blocks/split_edges.rs:174`、`wire_splitter_block.rs:680` 调用；② 盒——`geom_bnd_lib_curve3d::box_curve`（批 87 起圆锥解析盒、**批 90 起周期 B 样条 knot-span 盒**）被 `brep_bnd_lib.rs:64`（`BRepBndLib::Add`）、`geom_bnd_lib_surface3d.rs:496,686`、`int_tools_curve_box.rs:46`（= `IntTools_EdgeEdge::BndBuildBox`，批 80 的盒递归用它）与 `pcurve_full/surface_projector.rs:1493` 消费；③ 投影回退——批 88 改了 `ShapeAnalysis_Curve::ProjectAct` 的 `!OK` 分支，经 `step/read_geometry.rs` 进入 STEP 读侧边域投影；④ **pcurve 结点吸附**——批 89 的 `CorrectParameter`（`Proj.cxx:256-281`）被 `wire_fix.rs:3068,3074`（`ShapeFix_Wire::FixNotchedEdges`）经 `TransferParametersProj::transfer_range` 使用，正是 **T-69 诊断里 `check_pcurves_and_shift`/`fix_lacking_all` 那条链** ⇒ 可能影响 T-69 与网格门禁 ⇒ 2D 求交/投影、盒递归剪枝、STEP 边域投影与 healing 结点吸附都会变，可能改变 T-01/T-03/T-04/T-05/T-69 的结果（可能变好也可能位移） | 批 85/86/87/88/89/90 均在 P0/P1 门禁的下游 | 无 | 门禁跑完先做「批 85–90 前/后」差分（`occt-topo --lib`、phase3/4/5/6、`bop_builder2_boss`、`phase19`、四道 STEP 门禁、`export_data_obj`、`iges_check`） | **门禁波次（最高优先）** |
 
-**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→ R2-18 ✅（批 85 投影 + 批 86 求交；余非解析组合采样器）→ R2-16 夹带：T-12 前半 ✅（批 87）、T-17 ✅（批 88）、T-15 的 `CorrectParameter` ✅（批 89）→ **等"导出 obj"指令 → 先做 R2-18-gate 差分（批 85+86+87+88+89 前/后），再跑全门禁刷新 §2 = R2-15** → 按门禁结果定 R2-7…R2-10 + R2-17 → R2-11/R2-12/R2-13 → R2-6/R2-14/R2-16（余项）/R2-19/R2-20 夹带。
+**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→ R2-18 ✅（批 85 投影 + 批 86 求交；余非解析组合采样器）→ R2-16 夹带：T-12 ✅（前半批 87、后半批 90）、T-17 ✅（批 88）、T-15 的 `CorrectParameter` ✅（批 89）→ **等"导出 obj"指令 → 按 §6.2 playbook 先做 R2-18-gate 差分（批 85–90 前/后），再跑全门禁刷新 §2 = R2-15** → 按门禁结果定 R2-7…R2-10 + R2-17 → R2-11/R2-12/R2-13 → R2-6/R2-14/R2-16（余项）/R2-19/R2-20 夹带。
 
 ### P0 — 红门禁（收敛或显式豁免）
 
@@ -120,7 +120,7 @@ cd ..; git worktree remove --force .target-headcheck
 
 | ID | 位置 | 未移植内容 | 状态 |
 |---|---|---|---|
-| T-12 | `crates/occt-topo/src/geom_bnd_lib_curve3d.rs:7` | Ellipse / Hyperbola / Parabola 解析盒（`occt_geom::Curve` 不暴露 `gp_Elips/Hypr/Parab`）→ 现走采样；周期 B 样条 arm（缺 `Segment`/`AdjustPeriodic`，`BSplineCurve.cxx:44-49,299-330`） | **◐ 批 87（第 96 轮）前半 done**：三个圆锥解析盒已移植（`GeomBndLib_Ellipse.cxx:23-114`／`_Hyperbola.cxx:25-140`／`_Parabola.cxx:23-94`），`box_curve` 分派按 OCCT 顺序补 Ellipse→Hyperbola→Parabola 三臂（`GeomBndLib_Curve.cxx:98-147`）；**后半 pending**：周期 B 样条 arm（需 `Segment`/`AdjustPeriodic`），仍在文件头就地 PARKED | **◐ 前半 done（批 87）** |
+| T-12 | `crates/occt-topo/src/geom_bnd_lib_curve3d.rs:7` | Ellipse / Hyperbola / Parabola 解析盒（`occt_geom::Curve` 不暴露 `gp_Elips/Hypr/Parab`）→ 现走采样；周期 B 样条 arm（缺 `Segment`/`AdjustPeriodic`，`BSplineCurve.cxx:44-49,299-330`） | **✅ 批 87（前半）+ 批 90（后半）全部 done**：三个圆锥解析盒已移植（`GeomBndLib_Ellipse.cxx:23-114`／`_Hyperbola.cxx:25-140`／`_Parabola.cxx:23-94`）并接入 `box_curve` 的 OCCT 分派顺序；周期 B 样条 arm 也已落地——`ElCLib::AdjustPeriodic` 把区间收进一个周期，分段曲线的结点＝原 distinct 结点按整周期旋转 ⇒ **无需移植 `Segment`** 即可用同一 knot-span `FillBox` 循环复现（`BSplineCurve.cxx:43-50` + `:85-105`），已就地写明等价性论证 | **done（批 87+90）** |
 | T-13 | `geom_bnd_lib_surface3d.rs:8` | `BoxOptimal`（`OptimizationHelpers.pxx` PSO+Powell）+ `SurfaceOfExtrusion::BoxOptimal`（`cxx:224-283`）；`catch(Standard_Failure)` 回退 | pending（`AddOptimal` 路径，当前不在 `BRepBndLib::Add` 上） |
 | T-14 | `brep_bnd_lib.rs:13` | 三角化 arm（`BRepBndLib.cxx:95-101,157-179`）、仅 pcurve 边的 `BRepAdaptor_Curve::Initialize` 回退（`cxx:93-106`） | pending（缺 `Poly_Triangulation` 存储） |
 | T-15 | `shhealing/transfer_params.rs:21` | `CopyNMVertex`（需 `BRep_PointRepresentation`）、`CorrectParameter` knot snap（`Proj.cxx:268-279`）、`myLocation` 统一 identity | **◐ 批 89（第 97 轮）`CorrectParameter` done**：新增 `Curve2d::bspline_knots2d`（`Geom2dBSplineCurve` 实现，扁平结点串），`correct_parameter` 现按 `Proj.cxx:256-281` 递归解包 trimmed/offset 后，对 `Geom2d_BSplineCurve` 在 `PConfusion` 内吸附到**首个** distinct 结点（端口 2D BSpline 非周期 ⇒ `First/LastUKnotIndex` 覆盖全部 distinct 结点）；文件头 UNPORTED 项改为已移植。**仍 UNPORTED**：`CopyNMVertex`（端口无 `BRep_PointRepresentation`，见文件头理由）与 `myLocation`（healing 路径恒 identity，文件头已证） | **◐（CorrectParameter done，其余为已论证的等价省略）** |
@@ -417,6 +417,19 @@ cd ..; git worktree remove --force .target-headcheck
   - **失败的 Torus face 20**：wire 0（v=0.05088）的 pcurve 在 **u ∈ [1.5708, 7.8540]**，wire 1（v=π/2）的在 **u ∈ [−4.7124, 1.5708]** —— **正好相差一个周期（2π）**；`update_range` 的周期钳制（`BRepMesh_DefaultRangeSplitter::updateRange` `cxx:202-235`；端口 `range_splitter/param_set.rs:214-235`，已忠实）把 `range_u` 钳成 `(−4.7124, 1.5708)` ⇒ **wire 0 的链恰好落在范围外一个周期**（缩放后 u ∈ [1,2]）。
   - 两面的**单 wire 链形状完全相同**（每 wire 2 条边、都是 `FixLacking` 复制的闭合圆 ⇒ 出-回链，37+37=74 节点），所以**目前观测到的唯一差异就是"同面两条 wire 的 u 窗口是否对齐"**。四个边的 `same_param/same_range` 全为 true，且 `pc.d0(t)=t`（每边自身一致），说明两个 u 窗口来自 STEP 文件各自的圆参数化，不是边内参数化错。
 - **参考侧证据**：`data/occ-ref/T0M.obj` 里该顶点出现 **两次且完全重合**（v962/v965）⇒ 该顶点被**两个面**各自写了一次（逐面写顶点不去重）⇒ 至少与它相邻的某个面在 OCCT 里**是**被网格化的；端口忠实路径在这些面上给 0 三角，故"OCCT 会网格化、端口失败"的面类**确实存在**，且与本轮的 u 窗口差异一致。
+**批 90（T-12 后半：周期 B 样条包围盒 arm；仅编译验证）—— 2026-09-21 第 98 轮**
+
+> 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。
+
+- **语料取证（先证明本批不是空转）**：`data/**/*.step` 里 `B_SPLINE_CURVE` 且 `closed_curve = .T.` 的模型有 **linkrods、screw、Shape、ATU01038、bottom、motoc、top**（粗匹配计数 9/1/6/135/34/25/41）⇒ 周期 B 样条**在门禁语料中真实存在**，本批必然进入门禁影响面。
+- **实现（`geom_bnd_lib_curve3d.rs::box_bspline`）**：周期分支不再退回 `box_other`（33 点包络采样），改为与 OCCT 同构的 knot-span 采样：
+  1. `ElCLib::AdjustPeriodic(first, last, PConfusion, u1, u2)`（`BSplineCurve.cxx:43-50`）；
+  2. **不移植 `Segment`，而是证等价**：`Geom_BSplineCurve::Segment` 对周期曲线做的是"结点按整周期旋转 + 端部截断 + 重新参数化"（`Geom_BSplineCurve.cxx:527-660`），几何点集不变 ⇒ 分段曲线的 distinct 结点落在区间内的就是"原 distinct 结点 ± m·period"落在 `[u1,u2]` 内的那些；据此生成 cut 列表并 `sort`；
+  3. 与非周期路径**共用**同一个 span 循环：`[u1,cut1] [cut1,cut2] … [cutn,u2]`，每段 `fill_box3d(.., n = degree)` 取最大挠度，`enlarge(1.5·maxDefl)` 后走 `reduce_spline_box3d(myGeom->Poles(), …)`（= OCCT `cxx:110` 用**原始**极点而非窗口）。
+  非周期路径的等价处理（范围钳制 + 同一循环）保持原样；退化情形（`cuts` 为空/区间为一点）仍回落到"两端点盒"分支。
+- **验证（仅编译）**：`cargo check --offline --all-targets` 五个 crate **全部 exit 0、0 error**；本文件无新告警。
+- **⚠️ 门禁影响面（已并入 R2-18-gate 第②条与 §6.2 预期影响表）**：周期 B 样条曲线（上述 7 个模型）的盒子由"33 点保守采样"变为 OCCT 的"逐 knot-span 采样 + 极点归约"，会更紧 ⇒ `IntTools_EdgeEdge::BndBuildBox`（批 80 的盒递归）与 `BRepBndLib::Add` 的剪枝随之变化。
+
 **批 89（T-15 的 `CorrectParameter`：pcurve 结点吸附；仅编译验证）—— 2026-09-21 第 97 轮**
 
 > 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。**R2-16 小项池第三个夹带项**（同为"原卡被 trait 缺口阻塞、现已可解"）。
@@ -1522,9 +1535,9 @@ cargo run --manifest-path $M --offline --example export_data_obj
 ATU01038 bbox 对拍（无测试覆盖时的临时手段；结果记进 §7）：
 解析 `output/ATU01038.obj` 与 `data/occ-ATU01038.obj` 的 `v ` 行取 min/max，当前 Δ≤9e-6。
 
-### 6.1 门禁波次的第一步：R2-18-gate 差分（批 85–89 前/后）
+### 6.1 门禁波次的第一步：R2-18-gate 差分（批 85–90 前/后）
 
-收到"导出 obj 测试"指令后，**先做本差分再看任何红项**（批 85/86 改 2D 投影与求交、批 87 改圆锥包围盒、批 88 改 STEP 边域投影回退、批 89 改 healing 的 pcurve 结点吸附；四者都在 P0/P1 门禁的下游，见 R2-18-gate 卡）。
+收到"导出 obj 测试"指令后，**先做本差分再看任何红项**（批 85/86 改 2D 投影与求交、批 87 改圆锥包围盒、批 88 改 STEP 边域投影回退、批 89 改 healing 的 pcurve 结点吸附、批 90 改周期 B 样条包围盒；四者都在 P0/P1 门禁的下游，见 R2-18-gate 卡）。
 
 ```powershell
 cd D:\source\repos\dogs
@@ -1550,7 +1563,7 @@ cd ..; git worktree remove --force .target-pre85
 | 1 | 工作区确认 | `git status --porcelain` 只应有未跟踪的 `data/iges/`；`git log -1` = 最新批 | — |
 | 2 | **R2-18-gate 差分**（§6.1） | 现工作区 vs `9d8e596`（批 84 末）逐项比对 `test result:` | `gate_before/after.txt` + 差异清单 |
 | 3 | 全门禁 + IGES 校验 + 导出门禁 | §6 的 5 条 + `cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_check -- <18 模型>`（批 84/4 改过 IGES 写侧） | 新 §2 快照（R2-15 收口） |
-| 4 | 差异/回归归因 | 若某用例由绿转红：按 **85 `e6c12c2` → 86 `2eccb5b` → 87 `ae67e92` → 88 `0ff1ac2` → 89 `d017d9f`** 顺序用 `git worktree add --detach .target-bN <commit>` 二分，定位首个 offender | 首个 offender + 差异证据 |
+| 4 | 差异/回归归因 | 若某用例由绿转红：按 **85 `e6c12c2` → 86 `2eccb5b` → 87 `ae67e92` → 88 `0ff1ac2` → 89 `d017d9f` → 90** 顺序用 `git worktree add --detach .target-bN <commit>` 二分，定位首个 offender | 首个 offender + 差异证据 |
 | 5 | 停止并报告（门禁 3/4） | 失配即停：写清"哪条门禁、哪条用例、期望 vs 实际、首个 offender"，**不**顺手修、不新写测试 | §7 报告 |
 | 6 | 无回归时：R2-17 单独一批 | 删 `perform` 的 `(Circle, Circle)` 分派与 `compute_circle_circle_full`（OCCT 无此分支）→ 复跑第 3 步 | R2-17 结项或回退 |
 | 7 | 之后才动 R2-7…R2-10 | 按第 3 步的红项顺序（T-01/T-03/T-04/T-05）分诊 | 更新 §3/§14 |
@@ -1564,6 +1577,7 @@ cd ..; git worktree remove --force .target-pre85
 | 87 `ae67e92` | `occt-topo --lib` 中依赖 bbox 的用例、`bop_builder2_boss`/`phase19`、四道 STEP 门禁（间接） | 圆锥盒由采样变解析（更紧）⇒ 盒递归剪枝变化 |
 | 88 `0ff1ac2` | 四道 STEP 门禁（边域投影回退臂） | `ProjectAct` 的 `!OK` 五臂 |
 | 89 `d017d9f` | `occt-topo --lib` 的 healing/notch 用例、网格门禁（T0M 等） | `CorrectParameter` 结点吸附经 `FixNotchedEdges` |
+| 90（§7 批 90） | `occt-topo --lib` 中依赖 bbox 的用例、`bop_builder2_boss`/`phase19`、四道 STEP 门禁（间接；语料中 linkrods/screw/Shape/ATU01038/bottom/motoc/top 含周期 B 样条曲线） | 周期 B 样条盒由 33 点采样改为 OCCT 的 knot-span 采样 + 极点归约 |
 
 > **注意**：批 80–84 在本差分对照点之前，故其影响不在第 2 步里；若要分开验证它们（R2-1 的盒递归、R2-2 的求交接线、R2-4 的 IGES 重编号、R2-5 的 SRR 组合、批 84 的 128 反周期化），用同一二分法把对照点前移到 `f4d4d0b^`（= 批 79 末）即可，共 5 个对照点。
 
