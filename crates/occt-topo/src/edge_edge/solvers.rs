@@ -88,6 +88,15 @@ impl EdgeEdge {
 
     /// Full analytic circle/circle intersection.
     ///
+    /// **OCCT has no such branch**: `IntTools_EdgeEdge::Perform`
+    /// (`IntTools_EdgeEdge.cxx:185-243`) special-cases only line/line
+    /// (`ComputeLineLine`, `:902-1058`) and sends every other pair — circles
+    /// included — through `FindSolutions`/`MergeSolutions`. This helper and the
+    /// `perform` dispatch that calls it are therefore a port-local fast path;
+    /// the faithful path now exists ([`EdgeEdge::find_solutions`]), so removing
+    /// the dispatch is a behaviour change that needs a gate run (board task
+    /// R2-17). Kept for its direct tests until then.
+    ///
     /// Mirrors the coplanar circle/circle branch of `IntTools_EdgeEdge`:
     /// - coincident circles → the overlapping arc becomes a [`CommonPrt`];
     /// - externally/internally separated circles → no intersection;

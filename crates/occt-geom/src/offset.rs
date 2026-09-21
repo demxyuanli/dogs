@@ -325,6 +325,12 @@ fn adjust_derivative(
 }
 
 impl Curve for GeomOffsetCurve {
+    /// `Geom_OffsetCurve::BasisCurve()` / `Geom_OffsetCurve::Offset()`
+    /// (`GeomAdaptor_Curve::GetType() == GeomAbs_OffsetCurve` companion).
+    fn offset_curve(&self) -> Option<(std::sync::Arc<dyn Curve>, f64)> {
+        Some((self.basis.clone(), self.offset))
+    }
+
     /// `Geom_OffsetCurve::EvalD0` (`Geom_OffsetCurve.cxx:262-276`): the basis is
     /// evaluated through `EvalD1`, so the point comes from the D1 evaluation.
     fn d0(&self, u: f64) -> GpPnt {

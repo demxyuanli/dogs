@@ -8,32 +8,33 @@
 //!   describing an overlapping sub-range of two (nearly) coincident edges
 //!   (`common_parts()`).
 //!
-//! Line–line and circle–circle are dispatched to the exact solver in
-//! `crate::inttools::edge_edge_intersections` (segment–segment, radical line);
-//! every other combination — BSpline/Bezier/general curves — is routed through
-//! `occt_geom::extrema_cc::curve_curve_extrema_all`, whose zero-distance local
-//! extrema are the intersection points, with the exact/sampling solver as a
-//! complement. Coincidence is detected by sampling one curve and projecting the
-//! samples onto the other (port of `IntTools_EdgeEdge::IsCoincident`).
+//! Line–line is dispatched to `compute_line_line` (port of
+//! `IntTools_EdgeEdge::ComputeLineLine`) and the non-coplanar-circle fallback
+//! still goes through the sampled `crate::inttools::edge_edge_intersections`
+//! (see the UNPORTED note on `compute_circle_circle_full`); **every other
+//! combination** — BSpline/Bezier/general curves — now runs the faithful
+//! `IntTools_EdgeEdge::FindSolutions` parameter-box recursion in
+//! [`find_solutions`](EdgeEdge::find_solutions) (module `find_solutions`), whose
+//! common parts and vertex parameters come from `MergeSolutions` /
+//! `AddSolution` / `FindBestSolution`. Coincidence is detected by sampling one
+//! curve and projecting the samples onto the other (port of
+//! `IntTools_EdgeEdge::IsCoincident`).
 //!
 //! The task spec suggested `geom2d_api::project_point_on_curve` for parameter
 //! refinement; that is a 2-D API, so the 3-D analog `geom_api::project_point_on_curve`
-//! (and the extrema Newton polish `extrema_cc::locate_extcc`) is used instead.
+//! is used instead.
 mod prelude {
 
-pub(crate) use std::cmp::Ordering;
 pub(crate) use std::sync::Arc;
 
 pub(crate) use occt_core::gp::{GpLin, GpPnt, GpVec};
 pub(crate) use occt_core::precision::ANGULAR;
-pub(crate) use occt_geom::extrema_cc::{curve_curve_extrema_all_range, locate_extcc};
 pub(crate) use occt_geom::geom_api;
 pub(crate) use occt_geom::Curve;
 
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::inttools::{edge_edge_intersections, EdgeEdgeHit};
-pub(crate) use crate::inttools_data::{CommonPartType, CommonPrt, IntRange, IntRoot, PntOn2Faces, RootType};
-pub(crate) use crate::inttools_roots::{remove_identical_roots, sort_roots};
+pub(crate) use crate::inttools_data::{CommonPartType, CommonPrt, IntRange, PntOn2Faces};
 pub(crate) use crate::shape::Edge;
 
 }
@@ -222,6 +223,7 @@ mod tests_full {
 }
 
 mod edge_edge;
+mod find_solutions;
 mod solvers;
 pub use edge_edge::*;
 pub use solvers::*;

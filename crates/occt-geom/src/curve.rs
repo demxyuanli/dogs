@@ -42,6 +42,11 @@ pub trait Curve: Send + Sync {
     fn gp_hyperbola(&self) -> Option<occt_core::gp::GpHypr> { None }
     /// `Geom_Parabola::Parab` / `Adaptor3d_Curve::Parabola`. `None` otherwise.
     fn gp_parabola(&self) -> Option<occt_core::gp::GpParab> { None }
+    /// `GeomAdaptor_Curve::GetType() == GeomAbs_OffsetCurve` companion:
+    /// the basis curve of a `Geom_OffsetCurve` and its offset value
+    /// (`Geom_OffsetCurve::BasisCurve()` / `Offset()`). `None` for every other
+    /// curve type; used by `IntTools_EdgeEdge::ResolutionCoeff`/`Resolution`.
+    fn offset_curve(&self) -> Option<(std::sync::Arc<dyn Curve>, f64)> { None }
     /// `Geom_TrimmedCurve`. OCCT `IsKind(STANDARD_TYPE(Geom_TrimmedCurve))`.
     fn is_geom_trimmed(&self) -> bool { false }
     /// Basis `[First, Last]` of a `Geom_TrimmedCurve` before the `[0, 1]` remap.

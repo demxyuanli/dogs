@@ -1,6 +1,10 @@
 use super::prelude::*;
 use super::*;
 
+use super::find_solutions::{
+    curve_deflection, curve_kind, resolution_coeff, resolution_of, type_to_integer, GeomCurveKind,
+};
+
 /// The analytic family of an edge curve, used to choose the intersection path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
@@ -42,9 +46,26 @@ pub struct EdgeEdge {
     pub(super) curve2: Option<Arc<dyn Curve>>,
     pub(super) ctype1: CurveType,
     pub(super) ctype2: CurveType,
+    /// `GeomAdaptor_Curve::GetType()` of each (prepared) curve — the faithful
+    /// type label used by the `FindSolutions` machinery (`GeomCurveKind`).
+    pub(super) kind1: GeomCurveKind,
+    pub(super) kind2: GeomCurveKind,
     pub(super) tol1: f64,
     pub(super) tol2: f64,
     pub(super) tol: f64,
+    /// `IntTools_EdgeEdge::myResCoeff1/2` (`ResolutionCoeff`).
+    pub(super) res_coeff1: f64,
+    pub(super) res_coeff2: f64,
+    /// `IntTools_EdgeEdge::myRes1/2` (`Resolution`).
+    pub(super) res1: f64,
+    pub(super) res2: f64,
+    /// `IntTools_EdgeEdge::myPTol1/2` (the `FindParameters` bisection tolerance).
+    pub(super) ptol1: f64,
+    pub(super) ptol2: f64,
+    /// `IntTools_EdgeEdge::mySwap`: `Prepare` exchanged the two edges because
+    /// the second one has the "higher" curve type; outputs are mapped back to
+    /// the caller's edge order by `AddSolution`.
+    pub(super) swapped: bool,
     // Results.
     pub(super) done: bool,
     pub(super) common_parts: Vec<CommonPrt>,
@@ -66,9 +87,18 @@ impl EdgeEdge {
             curve2: None,
             ctype1: CurveType::Other,
             ctype2: CurveType::Other,
+            kind1: GeomCurveKind::OtherCurve,
+            kind2: GeomCurveKind::OtherCurve,
             tol1: 0.0,
             tol2: 0.0,
             tol: 0.0,
+            res_coeff1: 0.0,
+            res_coeff2: 0.0,
+            res1: 0.0,
+            res2: 0.0,
+            ptol1: 0.0,
+            ptol2: 0.0,
+            swapped: false,
             done: false,
             common_parts: Vec::new(),
             points: Vec::new(),
@@ -199,10 +229,73 @@ impl EdgeEdge {
         self.ctype1 = classify(&*c1);
         self.ctype2 = classify(&*c2);
 
+        // `IntTools_EdgeEdge::Prepare` (`cxx:109-147`): order the two edges by
+        // curve type — the higher integer goes first, so a line/BSpline pair is
+        // analysed as BSpline/line. Equal non-line types compare the total
+        // tangent turn and decrement the first curve's integer when it is the
+        // straighter one, which then forces the swap.
+        self.kind1 = curve_kind(&*c1);
+        self.kind2 = curve_kind(&*c2);
+        let mut i_ct1 = type_to_integer(self.kind1);
+        let i_ct2 = type_to_integer(self.kind2);
+        if i_ct1 == i_ct2 && i_ct1 != 0 {
+            let a_c2 = curve_deflection(&*c2, r2);
+            let a_c1 = if a_c2 > occt_core::precision::CONFUSION {
+                curve_deflection(&*c1, r1)
+            } else {
+                1.0
+            };
+            if a_c1 < a_c2 {
+                i_ct1 -= 1;
+            }
+        }
+        if i_ct1 < i_ct2 {
+            std::mem::swap(&mut self.edge1, &mut self.edge2);
+            std::mem::swap(&mut self.curve1, &mut self.curve2);
+            std::mem::swap(&mut self.range1, &mut self.range2);
+            std::mem::swap(&mut self.ctype1, &mut self.ctype2);
+            std::mem::swap(&mut self.kind1, &mut self.kind2);
+            self.swapped = true;
+        } else {
+            self.swapped = false;
+        }
+
         let add = self.fuzzy / 2.0;
-        self.tol1 = BRepTool::edge_tolerance(&e1) + add;
-        self.tol2 = BRepTool::edge_tolerance(&e2) + add;
+        self.tol1 = BRepTool::edge_tolerance(self.edge1.as_ref().unwrap()) + add;
+        self.tol2 = BRepTool::edge_tolerance(self.edge2.as_ref().unwrap()) + add;
         self.tol = self.tol1 + self.tol2;
+
+        // `cxx:154-180`: the residues and bisection tolerances exist only when
+        // at least one curve is non-line (`iCT1`/`iCT2` are the pre-swap
+        // integers, including the deflection decrement). Otherwise OCCT leaves
+        // the constructor defaults, reproduced here.
+        if i_ct1 != 0 || i_ct2 != 0 {
+            let cu1 = self.curve1.as_ref().unwrap();
+            let cu2 = self.curve2.as_ref().unwrap();
+            let rr1 = self.range1.unwrap();
+            let rr2 = self.range2.unwrap();
+            self.res_coeff1 = resolution_coeff(&**cu1, self.kind1, rr1);
+            self.res_coeff2 = resolution_coeff(&**cu2, self.kind2, rr2);
+            self.res1 = resolution_of(&**cu1, self.kind1, self.res_coeff1, self.tol1);
+            self.res2 = resolution_of(&**cu2, self.kind2, self.res_coeff2, self.tol2);
+            self.ptol1 = 5.0e-13;
+            let a_tm1 = rr1.first.abs().max(rr1.last.abs());
+            if a_tm1 > 999.0 {
+                self.ptol1 = 5.0e-16 * a_tm1;
+            }
+            self.ptol2 = 5.0e-13;
+            let a_tm2 = rr2.first.abs().max(rr2.last.abs());
+            if a_tm2 > 999.0 {
+                self.ptol2 = 5.0e-16 * a_tm2;
+            }
+        } else {
+            self.res_coeff1 = 0.0;
+            self.res_coeff2 = 0.0;
+            self.res1 = 0.0;
+            self.res2 = 0.0;
+            self.ptol1 = 0.0;
+            self.ptol2 = 0.0;
+        }
         Ok(())
     }
 
@@ -335,115 +428,14 @@ impl EdgeEdge {
     // -----------------------------------------------------------------------
     // General curves
     // -----------------------------------------------------------------------
-
-    /// General-curve case: the extrema of the distance; a pair whose distance is
-    /// within tolerance is an intersection.
-    ///
-    /// **UNPORTED (audit A11 / task T-47 sub-item 3)** — OCCT's
-    /// `IntTools_EdgeEdge::FindSolutions` does not enumerate `Extrema_ExtCC`
-    /// solutions: it recurses on the parameter boxes
-    /// (`IntTools_EdgeEdge.cxx:290-549`) with `BndBuildBox` (`:1410-1419`),
-    /// `FindParameters` (`:553-671`), `IsIntersection` (`:1060-1146`),
-    /// `CheckCoincidence` (`:1150-1206`) and `SplitRangeOnSegments`
-    /// (`:1366-1406`), so that *every* crossing whose boxes stay in contact is
-    /// reported even when it is not a distance extremum of the whole range. The
-    /// port's substitute is the "extrema within tolerance" criterion above; the
-    /// previous body additionally merged the sampled
-    /// `inttools::edge_edge_intersections` solutions, which has no OCCT
-    /// counterpart at all and was removed (the faithful extrema engine
-    /// `Extrema_ExtCC`/`GGenExtCC` covers those cases, see T-66).
-    pub(super) fn find_solutions(&mut self) {
-        if self.is_coincident() {
-            self.push_coincident_common_part();
-            return;
-        }
-        let c1 = self.curve1.clone().unwrap();
-        let c2 = self.curve2.clone().unwrap();
-        let tol = self.tol;
-        let r1 = self.r1();
-        let r2 = self.r2();
-
-        let mut solutions: Vec<(f64, f64, GpPnt)> = Vec::new();
-        // `Extrema_ExtCC` runs over the *edge* ranges: OCCT's `IntTools_EdgeEdge`
-        // holds `BRepAdaptor_Curve` objects, whose `FirstParameter`/`LastParameter`
-        // are the edge's (`IntTools_EdgeEdge.cxx:94-95`, `:164-165`), and
-        // `Extrema_ExtCC` forwards them to the engine (`Extrema_ExtCC.cxx:180`).
-        // The curve's own range may be infinite (an edge on an infinite line).
-        for p in curve_curve_extrema_all_range(
-            &*c1,
-            &*c2,
-            r1.first,
-            r1.last,
-            r2.first,
-            r2.last,
-        ) {
-            if p.distance <= tol.max(1e-7) {
-                if let Some(sol) = self.find_parameters(p.u1, p.u2) {
-                    solutions.push(sol);
-                }
-            }
-        }
-        self.merge_solutions(solutions);
-    }
-
-    /// Polish a candidate `(u1, u2)` parameter pair into an intersection.
-    ///
-    /// The seed already comes from a local extremum of the distance; Newton
-    /// polish (`locate_extcc`) sharpens it, and the seed itself is accepted when
-    /// the polish strays. Returns `(edge1 param, edge2 param, point)`.
-    pub(super) fn find_parameters(&self, u1: f64, u2: f64) -> Option<(f64, f64, GpPnt)> {
-        let c1 = self.curve1.as_ref()?;
-        let c2 = self.curve2.as_ref()?;
-        let tol = self.tol.max(1e-7);
-        let (u1r, u2r, p1) = match locate_extcc(&**c1, &**c2, u1, u2) {
-            Some(e) if e.distance <= tol => (e.u1, e.u2, e.p1),
-            _ => {
-                let p = c1.d0(u1);
-                if p.distance(&c2.d0(u2)) <= tol {
-                    (u1, u2, p)
-                } else {
-                    return None;
-                }
-            }
-        };
-        let eu1 = self.curve_to_edge_param(1, u1r);
-        let eu2 = self.curve_to_edge_param(2, u2r);
-        if self.r1().contains(eu1) && self.r2().contains(eu2) {
-            Some((eu1, eu2, p1))
-        } else {
-            None
-        }
-    }
-
-    /// Deduplicate and sort solutions by the first parameter, then store them
-    /// as [`PntOn2Faces`]. Reuses `inttools_roots::remove_identical_roots` and
-    /// `sort_roots` on the primary parameter.
-    pub(super) fn merge_solutions(&mut self, solutions: Vec<(f64, f64, GpPnt)>) {
-        if solutions.is_empty() {
-            return;
-        }
-        let eps = self.tol.max(1e-7);
-        let mut roots: Vec<IntRoot> = solutions
-            .iter()
-            .enumerate()
-            .map(|(i, s)| IntRoot::new(i as i32, RootType::IsRoot, IntRange::new_unchecked(s.0, s.0)))
-            .collect();
-        remove_identical_roots(&mut roots, eps);
-        sort_roots(&mut roots);
-        let mut out: Vec<(f64, f64, GpPnt)> = Vec::new();
-        for r in roots {
-            let s = solutions[r.root_index() as usize];
-            let dup = out
-                .iter()
-                .any(|o| (o.0 - s.0).abs() <= eps && o.2.distance(&s.2) <= eps);
-            if !dup {
-                out.push(s);
-            }
-        }
-        for (t1, t2, p) in out {
-            self.points.push(PntOn2Faces::new(0, 1, p, p, (t1, 0.0), (t2, 0.0)));
-        }
-    }
+    //
+    // `find_solutions` now lives in `find_solutions.rs`: the faithful
+    // `IntTools_EdgeEdge::FindSolutions` parameter-box recursion (T-77/R2-1)
+    // replaced the previous substitute ("the distance extrema within tolerance
+    // are the intersections") together with its `find_parameters`/ Newton
+    // polish and its `merge_solutions` dedup. The sampled
+    // `inttools::edge_edge_intersections` complement had already been removed
+    // in T-47 sub-item 3.
 
     // -----------------------------------------------------------------------
     // Coincidence

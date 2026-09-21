@@ -265,6 +265,52 @@ impl BndBox {
         dx * dx + dy * dy + dz * dz
     }
 
+    /// True when the x extent is shorter than `tol`.
+    /// Source: `Bnd_Box::IsXThin` (`Bnd_Box.cxx:264-291`): a whole box is not
+    /// thin, a void box is, an open side makes the extent infinite.
+    pub fn is_x_thin(&self, tol: f64) -> bool {
+        if self.is_whole() {
+            return false;
+        }
+        if self.is_void() {
+            return true;
+        }
+        if self.is_open_xmin() || self.is_open_xmax() {
+            return false;
+        }
+        (self.xmax - self.xmin) < tol
+    }
+
+    /// True when the y extent is shorter than `tol`.
+    /// Source: `Bnd_Box::IsYThin` (`Bnd_Box.cxx`).
+    pub fn is_y_thin(&self, tol: f64) -> bool {
+        if self.is_whole() {
+            return false;
+        }
+        if self.is_void() {
+            return true;
+        }
+        if self.is_open_ymin() || self.is_open_ymax() {
+            return false;
+        }
+        (self.ymax - self.ymin) < tol
+    }
+
+    /// True when the z extent is shorter than `tol`.
+    /// Source: `Bnd_Box::IsZThin` (`Bnd_Box.cxx`).
+    pub fn is_z_thin(&self, tol: f64) -> bool {
+        if self.is_whole() {
+            return false;
+        }
+        if self.is_void() {
+            return true;
+        }
+        if self.is_open_zmin() || self.is_open_zmax() {
+            return false;
+        }
+        (self.zmax - self.zmin) < tol
+    }
+
     /// True when every finite axis is shorter than `tol`.
     /// Source: `Bnd_Box::IsThin` (`Bnd_Box.cxx`). Uses raw extents, not the gap.
     /// A line-sized box (thin in two axes, long in one) is not overall thin.

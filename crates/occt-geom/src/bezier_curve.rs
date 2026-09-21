@@ -163,6 +163,27 @@ impl Curve for GeomBezierCurve {
     fn nurbs_degree(&self) -> Option<usize> {
         Some(self.poles.len().saturating_sub(1))
     }
+
+    /// `Geom_BezierCurve::Resolution` (`Geom_BezierCurve.cxx`): the first call
+    /// computes `myMaxDerivInv` with `BSplCLib::Resolution(poles, weights,
+    /// nbpoles, KnotSequence(), degree, 1., inv)` and then
+    /// `UTolerance = Tolerance3D * myMaxDerivInv`. `BSplCLib::Resolution` is
+    /// linear in its tolerance argument, so calling the faithful port
+    /// (`occt_core::bspl::bspline_curve_resolution`) with `Tolerance3D`
+    /// directly is the same value. The Bezier knot sequence is `deg+1` zeros
+    /// followed by `deg+1` ones (`Geom_BezierCurve::KnotSequence`).
+    fn resolution(&self, r3d: f64) -> f64 {
+        let n = self.poles.len();
+        if n < 2 {
+            // `Geom_BezierCurve` requires at least two poles; OCCT's degenerate
+            // path (through `RealSmall()`) is what the helper returns for it.
+            return occt_core::bspl::bspline_curve_resolution(&self.poles, None, &[], 0, r3d);
+        }
+        let degree = (n - 1) as i32;
+        let mut flat_knots = vec![0.0; n];
+        flat_knots.extend(std::iter::repeat(1.0).take(n));
+        occt_core::bspl::bspline_curve_resolution(&self.poles, None, &flat_knots, degree, r3d)
+    }
 }
 
 #[cfg(test)]

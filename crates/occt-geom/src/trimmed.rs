@@ -89,6 +89,9 @@ impl Curve for GeomTrimmedCurve {
     fn gp_ellipse(&self) -> Option<occt_core::gp::GpElips> { self.basis.gp_ellipse() }
     fn gp_hyperbola(&self) -> Option<occt_core::gp::GpHypr> { self.basis.gp_hyperbola() }
     fn gp_parabola(&self) -> Option<occt_core::gp::GpParab> { self.basis.gp_parabola() }
+    /// `GeomAdaptor_Curve::load` unwrapping: the basis of a trimmed offset curve
+    /// (`Geom_OffsetCurve::BasisCurve()` / `Offset()`).
+    fn offset_curve(&self) -> Option<(std::sync::Arc<dyn Curve>, f64)> { self.basis.offset_curve() }
     fn is_geom_trimmed(&self) -> bool { true }
     fn trimmed_basis_range(&self) -> Option<(f64, f64)> {
         // `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps nested trims.
@@ -212,6 +215,7 @@ impl Curve for GeomTrimmedCurveBasis {
     fn circle_radius(&self) -> Option<f64> { self.basis.circle_radius() }
     fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { self.basis.gp_circ() }
     fn gp_ellipse(&self) -> Option<occt_core::gp::GpElips> { self.basis.gp_ellipse() }
+    fn offset_curve(&self) -> Option<(std::sync::Arc<dyn Curve>, f64)> { self.basis.offset_curve() }
     fn is_geom_trimmed(&self) -> bool { true }
     fn trimmed_basis_range(&self) -> Option<(f64, f64)> {
         // `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps nested trims. This
