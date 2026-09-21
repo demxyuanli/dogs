@@ -1,5 +1,5 @@
 //! Abstract 2D parametric curve trait. Source: `Geom2d_Curve.hxx`
-use occt_core::gp::{GpCirc2d, GpLin2d, GpPnt2d, GpVec2d, GpTrsf2d};
+use occt_core::gp::{GpCirc2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d, GpTrsf2d};
 
 /// Parametric 2D curve. Replaces OCCT Geom2d_Curve.
 pub trait Curve2d: Send + Sync {
@@ -70,6 +70,19 @@ pub trait Curve2d: Send + Sync {
     }
     /// `Geom2dAdaptor_Curve::GetType() == GeomAbs_Circle` then `Circle()`.
     fn gp_circ2d(&self) -> Option<GpCirc2d> {
+        None
+    }
+    /// `Geom2dAdaptor_Curve::GetType() == GeomAbs_Ellipse` then `Ellipse()`.
+    /// Mirrors the 3D `Curve::gp_ellipse` (`GeomAdaptor_Curve.cxx:266-270`).
+    fn gp_elips2d(&self) -> Option<GpElips2d> {
+        None
+    }
+    /// `Geom2dAdaptor_Curve::GetType() == GeomAbs_Parabola` then `Parabola()`.
+    fn gp_parab2d(&self) -> Option<GpParab2d> {
+        None
+    }
+    /// `Geom2dAdaptor_Curve::GetType() == GeomAbs_Hyperbola` then `Hyperbola()`.
+    fn gp_hypr2d(&self) -> Option<GpHypr2d> {
         None
     }
 

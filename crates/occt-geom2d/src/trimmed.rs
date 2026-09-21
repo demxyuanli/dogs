@@ -163,6 +163,19 @@ impl Curve2d for Geom2dTrimmedCurve {
     fn gp_circ2d(&self) -> Option<occt_core::gp::GpCirc2d> {
         self.basis.gp_circ2d()
     }
+    /// `Geom2dAdaptor_Curve::load` (`cxx:96-120`) unwraps a
+    /// `Geom2d_TrimmedCurve` and keeps the **basis**, so the adaptor's
+    /// `GetType()` / `Ellipse()` / `Parabola()` / `Hyperbola()` queries resolve
+    /// to the basis.
+    fn gp_elips2d(&self) -> Option<occt_core::gp::GpElips2d> {
+        self.basis.gp_elips2d()
+    }
+    fn gp_parab2d(&self) -> Option<occt_core::gp::GpParab2d> {
+        self.basis.gp_parab2d()
+    }
+    fn gp_hypr2d(&self) -> Option<occt_core::gp::GpHypr2d> {
+        self.basis.gp_hypr2d()
+    }
     fn trimmed_basis(&self) -> Option<&dyn Curve2d> {
         Some(self.basis.as_ref())
     }

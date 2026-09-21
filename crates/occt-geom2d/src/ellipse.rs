@@ -56,6 +56,8 @@ impl Curve2d for Geom2dEllipse {
     fn is_periodic(&self) -> bool { true }
     fn period(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn continuity(&self) -> u8 { 6 }
+    /// `Geom2dAdaptor_Curve::Ellipse` (Geom2dAdaptor_Curve.cxx:100-104).
+    fn gp_elips2d(&self) -> Option<occt_core::gp::GpElips2d> { Some(self.pos.clone()) }
     fn clone_dyn(&self) -> Box<dyn crate::curve::Curve2d> { Box::new(self.clone()) }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
     fn reverse(&mut self) { std::mem::swap(&mut self.pos.major_radius, &mut self.pos.minor_radius); }

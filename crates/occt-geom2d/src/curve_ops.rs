@@ -71,13 +71,25 @@ pub fn curve2d_distance_to_point(c: &dyn Curve2d, p: &GpPnt2d, tol: f64) -> f64 
 /// Approximate intersection points of two curves.
 /// Returns `(u, v, point)` where `u`/`v` are the parameters on `a`/`b`.
 ///
-/// **UNPORTED (audit A16, task R2-18b)**: 256×256 sampling with alternating 1-D
-/// minimization, not root-exact. The faithful route is `IntAna2d_AnaIntersection`
-/// for analytic pairs (already ported, see the module header) and
-/// `Extrema_ExtCC2d` for the rest; callers that matter today
-/// (`geom2d_api::intersect_curves`) dispatch line/line exactly before reaching
-/// this function.
+/// **Analytic pairs go through `IntAna2d_AnaIntersection`** (the faithful port in
+/// [`occt_core::intana2d`]): line/line (`perform_lin_lin`), line/circle
+/// (`perform_lin_circ`), circle/circle (`perform_circ_circ`), line/conic
+/// (`perform_lin_conic`), circle/conic (`perform_circ_conic`) and
+/// ellipse/parabola/hyperbola against a conic (`perform_{elips,parab,hypr}_conic`).
+/// Pairs whose first curve is not the specialized operand are evaluated with the
+/// arguments swapped and their parameters swapped back, so the result is always
+/// expressed on `a`/`b` as given.
+///
+/// **UNPORTED (audit A16, task R2-18b)**: every other pair — B-spline, Bezier,
+/// offset, trimmed-of-those — still runs the port's 256×256 sampler with
+/// alternating 1-D minimization, which is not root-exact. The faithful route for
+/// them is `Extrema_ExtCC2d`
+/// ([`crate::extrema2d::curve_curve_extrema2d_all`], whose general-curve seeding
+/// is itself the A7-family substitute) — see the module header.
 pub fn curve2d_intersections(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<(f64, f64, GpPnt2d)> {
+    if let Some(points) = analytic_intersections2d(a, b, tol) {
+        return points;
+    }
     let tol = tol.max(1e-12);
     let na = 256;
     let nb = 256;
@@ -134,6 +146,155 @@ pub fn curve2d_intersections(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<
         }
     }
     out
+}
+
+/// The analytic family of a 2D curve, in `Geom2dAdaptor_Curve::GetType` terms
+/// (`Geom2dAdaptor_Curve.cxx:96-120`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Analytic2d {
+    Lin,
+    Circ,
+    Elips,
+    Parab,
+    Hypr,
+}
+
+fn analytic_kind2d(c: &dyn Curve2d) -> Option<Analytic2d> {
+    if c.gp_lin2d().is_some() {
+        Some(Analytic2d::Lin)
+    } else if c.gp_circ2d().is_some() {
+        Some(Analytic2d::Circ)
+    } else if c.gp_elips2d().is_some() {
+        Some(Analytic2d::Elips)
+    } else if c.gp_parab2d().is_some() {
+        Some(Analytic2d::Parab)
+    } else if c.gp_hypr2d().is_some() {
+        Some(Analytic2d::Hypr)
+    } else {
+        None
+    }
+}
+
+/// The `IntAna2d_Conic` behind a 2D curve (`IntAna2d_Conic::SetLin2d` and
+/// friends, `IntAna2d_Conic.cxx`).
+fn conic_of2d(c: &dyn Curve2d) -> Option<occt_core::intana2d::IntAna2dConic> {
+    use occt_core::intana2d::IntAna2dConic;
+    if let Some(l) = c.gp_lin2d() {
+        return Some(IntAna2dConic::from_lin2d(&l));
+    }
+    if let Some(ci) = c.gp_circ2d() {
+        return Some(IntAna2dConic::from_circ2d(&ci));
+    }
+    if let Some(e) = c.gp_elips2d() {
+        return Some(IntAna2dConic::from_elips2d(&e));
+    }
+    if let Some(p) = c.gp_parab2d() {
+        return Some(IntAna2dConic::from_parab2d(&p));
+    }
+    if let Some(h) = c.gp_hypr2d() {
+        return Some(IntAna2dConic::from_hypr2d(&h));
+    }
+    None
+}
+
+/// Is `u` a parameter of the bounded curve `c`?
+///
+/// `IntAna2d_AnaIntersection` works on the *unbounded* conics, while callers of
+/// [`curve2d_intersections`] hand in bounded curves (and `Geom2dAPI_InterCurveCurve`
+/// intersects the bounded adaptors), so a conic root outside a curve's own range
+/// is not an intersection of the two curves. Periodic curves are tested through
+/// one period starting at their first parameter.
+fn param_on_curve2d(c: &dyn Curve2d, u: f64, tol: f64) -> bool {
+    let (a, b) = (c.first_parameter(), c.last_parameter());
+    if !a.is_finite() || !b.is_finite() {
+        return true;
+    }
+    let u = if c.is_periodic() {
+        let p = c.period();
+        if p > 0.0 {
+            a + (u - a).rem_euclid(p)
+        } else {
+            u
+        }
+    } else {
+        u
+    };
+    u >= a - tol && u <= b + tol
+}
+
+/// `IntAna2d_AnaIntersection` for the analytic pairs; `None` when the pair is not
+/// analytic (the caller falls back to the sampler).
+///
+/// The **first** curve supplies the specialized operand of the OCCT overload —
+/// exactly the eight `Perform` methods the port exposes (`Lin,Lin`),
+/// (`Lin,Circ`), (`Circ,Circ`), (`Lin,Conic`), (`Circ,Conic`), (`Elips,Conic`),
+/// (`Parab,Conic`), (`Hypr,Conic`) — and the second is taken as an
+/// `IntAna2d_Conic`. The one exception is `(Circ, Lin)`, which OCCT writes as
+/// `Perform(Lin, Circ)`; the port calls it with the arguments swapped and swaps
+/// the resulting parameters back, so the answer is always on `a`/`b` as given.
+fn analytic_intersections2d(
+    a: &dyn Curve2d,
+    b: &dyn Curve2d,
+    tol: f64,
+) -> Option<Vec<(f64, f64, GpPnt2d)>> {
+    use occt_core::intana2d::IntAna2dAnaIntersection;
+    let (ka, kb) = (analytic_kind2d(a)?, analytic_kind2d(b)?);
+    let cb = conic_of2d(b)?;
+
+    let mut ana = IntAna2dAnaIntersection::new();
+    let swap;
+    match (ka, kb) {
+        (Analytic2d::Lin, Analytic2d::Lin) => {
+            ana.perform_lin_lin(&a.gp_lin2d()?, &b.gp_lin2d()?);
+            swap = false;
+        }
+        (Analytic2d::Lin, Analytic2d::Circ) => {
+            ana.perform_lin_circ(&a.gp_lin2d()?, &b.gp_circ2d()?);
+            swap = false;
+        }
+        (Analytic2d::Circ, Analytic2d::Lin) => {
+            ana.perform_lin_circ(&b.gp_lin2d()?, &a.gp_circ2d()?);
+            swap = true;
+        }
+        (Analytic2d::Circ, Analytic2d::Circ) => {
+            ana.perform_circ_circ(&a.gp_circ2d()?, &b.gp_circ2d()?);
+            swap = false;
+        }
+        (Analytic2d::Lin, _) => {
+            ana.perform_lin_conic(&a.gp_lin2d()?, &cb);
+            swap = false;
+        }
+        (Analytic2d::Circ, _) => {
+            ana.perform_circ_conic(&a.gp_circ2d()?, &cb);
+            swap = false;
+        }
+        (Analytic2d::Elips, _) => {
+            ana.perform_elips_conic(&a.gp_elips2d()?, &cb);
+            swap = false;
+        }
+        (Analytic2d::Parab, _) => {
+            ana.perform_parab_conic(&a.gp_parab2d()?, &cb);
+            swap = false;
+        }
+        (Analytic2d::Hypr, _) => {
+            ana.perform_hypr_conic(&a.gp_hypr2d()?, &cb);
+            swap = false;
+        }
+    }
+
+    if !ana.is_done() {
+        return Some(Vec::new());
+    }
+    let mut out: Vec<(f64, f64, GpPnt2d)> = Vec::new();
+    for i in 1..=ana.nb_points() {
+        let p = ana.point(i);
+        let (u1, u2) = (p.param_on_first(), p.param_on_second());
+        let (u, v) = if swap { (u2, u1) } else { (u1, u2) };
+        if param_on_curve2d(a, u, tol) && param_on_curve2d(b, v, tol) {
+            out.push((u, v, *p.value()));
+        }
+    }
+    Some(out)
 }
 
 /// Exact intersection of two infinite lines (cross-product formula).
