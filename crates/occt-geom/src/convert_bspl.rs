@@ -479,11 +479,45 @@ pub fn curve_to_bspline_curve(
             return bspline_curve_builder(parab.position(), &convert);
         }
 
-        // `cxx:300-321` (`Geom_BezierCurve`: `CBez->Segment(U1, U2)`) and
-        // `cxx:322-339` (`Geom_BSplineCurve`: `AdjustPeriodic` +
-        // `SetNotPeriodic` + `Segment`).
-        if basis.bezier_poles().is_some() || basis.bspline_poles().is_some() {
+        // `cxx:300-321` (`Geom_BezierCurve`: `CBez->Segment(U1, U2)`) needs
+        // `Geom_BezierCurve::Segment` (`PLib::Trimming` + `PLib::CoefficientsPoles`)
+        // — still UNPORTED, so that arm stays [`ConvertError::Unported`].
+        if basis.bezier_poles().is_some() {
             return Err(ConvertError::Unported);
+        }
+        // `cxx:322-339` (`Geom_BSplineCurve`): the basis is copied, its range is
+        // folded into the period (`ElCLib::AdjustPeriodic`), a full-period trim
+        // drops the periodic representation (`SetNotPeriodic`) and the copy is
+        // then cut with `Segment(U1, U2)`.
+        if basis.bspline_poles().is_some() {
+            let mut bs = GeomBSplineCurve {
+                poles: basis.bspline_poles().ok_or(ConvertError::DomainError)?.to_vec(),
+                weights: basis.bspline_weights().map(|w| w.to_vec()),
+                knots: basis.bspline_knots().ok_or(ConvertError::DomainError)?.to_vec(),
+                degree: basis.nurbs_degree().ok_or(ConvertError::DomainError)?,
+                periodic: basis.is_periodic(),
+            };
+            if bs.is_periodic() {
+                let (uf, ul) = (bs.first_parameter(), bs.last_parameter());
+                occt_core::elib::clib2d::adjust_periodic(
+                    uf,
+                    ul,
+                    occt_core::precision::CONFUSION,
+                    &mut u1,
+                    &mut u2,
+                );
+                if (u1 - uf).abs() <= occt_core::precision::CONFUSION
+                    && (u2 - ul).abs() <= occt_core::precision::CONFUSION
+                {
+                    bs.set_not_periodic();
+                }
+            }
+            // `theTolerance` defaults to `Precision::PConfusion()`
+            // (`Geom_BSplineCurve.hxx:322-324`); the throw is
+            // `Standard_DomainError`.
+            bs.segment(u1, u2, occt_core::precision::PCONFUSION)
+                .map_err(|_| ConvertError::DomainError)?;
+            return Ok(bs);
         }
         // `cxx:340-354`: `GeomConvert_ApproxCurve(C, 1e-4, C2, 16, 14)`.
         if basis.offset_curve().is_some() {

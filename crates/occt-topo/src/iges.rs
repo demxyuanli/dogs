@@ -282,6 +282,25 @@ fn iges_curve_kind(c: &dyn Curve) -> IgCurveKind {
     }
 }
 
+/// `mycurve->Copy()` for the `Geom_BSplineCurve` transfer
+/// (`GeomToIGES_GeomCurve.cxx:301`, `:337`): the port cannot downcast
+/// `&dyn Curve`, so the copy is rebuilt from the same
+/// `bspline_poles`/`bspline_weights`/`bspline_knots`/`nurbs_degree`/
+/// `is_periodic` queries (equal data, no re-approximation). `None` where OCCT's
+/// `occ::down_cast` would yield a null handle.
+fn bspline_copy_of(curve: &dyn Curve) -> Option<occt_geom::bspline_curve::GeomBSplineCurve> {
+    let poles = curve.bspline_poles()?.to_vec();
+    let knots = curve.bspline_knots()?.to_vec();
+    let degree = curve.nurbs_degree()?;
+    Some(occt_geom::bspline_curve::GeomBSplineCurve {
+        poles,
+        weights: curve.bspline_weights().map(|w| w.to_vec()),
+        knots,
+        degree,
+        periodic: curve.is_periodic(),
+    })
+}
+
 /// `ArePolesPlanar` (`GeomToIGES_GeomCurve.cxx:170-199`): the area vector
 /// `P(n) x P(1) + sum_{i<n} P(i) x P(i+1)`, normalised; every pole must then sit
 /// at the same distance from the plane through `P(1)`. Fewer than three poles is
@@ -906,7 +925,7 @@ impl IgesWriter {
     /// `Precision::Confusion()`), then every pole must sit at the same distance
     /// from the plane through `P(1)`. Returns `None` for the cases this port
     /// cannot express.
-    fn emit_bspline_curve(&mut self, curve: &dyn Curve, first: f64, last: f64) -> Option<usize> {
+    fn emit_bspline_curve(&mut self, curve: &dyn Curve, u_deb: f64, u_fin: f64) -> Option<usize> {
         // `cxx:294-307`: a periodic curve is written through a non-periodic copy
         // (`SetNotPeriodic`); the 126 writer reports `periodic = 0`, which the
         // port's parameter writer already does.
@@ -928,15 +947,53 @@ impl IgesWriter {
         } else {
             curve
         };
+
+        // `cxx:309-318`: an infinite bound is replaced by `±Precision::Infinite()`.
+        let mut umin = if occt_core::precision::Precision::is_negative_infinite(u_deb) {
+            -occt_core::precision::INFINITE
+        } else {
+            u_deb
+        };
+        let mut umax = if occt_core::precision::Precision::is_positive_infinite(u_fin) {
+            occt_core::precision::INFINITE
+        } else {
+            u_fin
+        };
+
+        // `cxx:320-331`: protect against exceptions in `Segment()`; the range is
+        // pulled onto the curve's own bounds (one-sided, as OCCT writes the
+        // clamped values into the entity's `UMin`/`UMax`).
         let (curve_first, curve_last) = (curve.first_parameter(), curve.last_parameter());
-        // `cxx:320-356`: a narrower range is obtained with
-        // `Geom_BSplineCurve::Segment` — UNPORTED, so such a request still
-        // returns `None` (the caller falls back to a chord line).
-        if first > curve_first + occt_core::precision::PCONFUSION
-            || last < curve_last - occt_core::precision::PCONFUSION
-        {
-            return None;
+        if umin - curve_first < occt_core::precision::PCONFUSION {
+            umin = curve_first;
         }
+        if curve_last - umax < occt_core::precision::PCONFUSION {
+            umax = curve_last;
+        }
+
+        // `cxx:332-356`: cut the curve for E3 — a copy is `Segment`-ed and
+        // replaces the original. OCCT catches the failure and keeps the
+        // untrimmed copy; a null copy likewise leaves the curve unchanged.
+        let trimmed;
+        let curve: &dyn Curve = if umin - curve_first > occt_core::precision::PCONFUSION
+            || curve_last - umax > occt_core::precision::PCONFUSION
+        {
+            // UNPORTED: `TransferCurve(Geom_BezierCurve)` (`cxx:441-448`) puts
+            // the Bezier in a `Geom_TrimmedCurve` and converts it through
+            // `GeomConvert::CurveToBSplineCurve`, which needs
+            // `Geom_BezierCurve::Segment` (not ported) — a narrow request on a
+            // Bezier keeps returning `None` (the caller writes a chord line).
+            let bs = bspline_copy_of(curve)?;
+            let mut bs = bs;
+            if (umax - umin).abs() > occt_core::precision::PCONFUSION {
+                // default `theTolerance = Precision::PConfusion()`.
+                let _ = bs.segment(umin, umax, occt_core::precision::PCONFUSION);
+            }
+            trimmed = bs;
+            &trimmed
+        } else {
+            curve
+        };
 
         let (poles, knots, degree) = if let (Some(p), Some(k), Some(d)) = (
             curve.bspline_poles(),
@@ -997,10 +1054,12 @@ impl IgesWriter {
         for p in &poles {
             s.push_str(&format!(",{},{},{}", num(p.x()), num(p.y()), num(p.z())));
         }
+        // `cxx:419`: the entity carries the clamped/segmented `Umin`/`Umax`,
+        // not the raw requested range.
         s.push_str(&format!(
             ",{},{},{},{},{};",
-            num(first),
-            num(last),
+            num(umin),
+            num(umax),
             num(normal.x()),
             num(normal.y()),
             num(normal.z())

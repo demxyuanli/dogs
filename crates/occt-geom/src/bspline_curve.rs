@@ -2,7 +2,7 @@
 
 use crate::curve::Curve;
 use occt_core::gp::{GpPnt, GpVec, GpTrsf};
-use occt_core::bspl::{knots, eval, poles, bezier, curve_tools};
+use occt_core::bspl::{knots, eval, poles, curve_tools};
 
 /// Non-rational or rational B-spline curve in 3D.
 #[derive(Clone)]
@@ -194,13 +194,459 @@ impl GeomBSplineCurve {
         self.periodic = true;
     }
 
-    /// Insert knot `u` with multiplicity `mult` (Boehm knot insertion).
-    pub fn insert_knot(&mut self, u: f64, mult: usize) {
-        for _ in 0..mult {
-            let idx = knots::hunt(&self.knots, u);
-            bezier::boehm_insert(&mut self.poles, &self.knots, idx, u, self.degree, self.weights.as_mut());
-            self.knots = knots::insert_knot(&self.knots, u, 1);
+    /// `Geom_BSplineCurve::FirstUKnotIndex()` / `LastUKnotIndex()`
+    /// (`Geom_BSplineCurve_1.cxx:334-344`, `:404-414`): `1` / `NbKnots()` on a
+    /// periodic curve, otherwise the `BSplCLib` indices of the multiplicities.
+    fn u_knot_index_range(&self, umults: &[i32]) -> (i32, i32) {
+        if self.periodic {
+            (1, umults.len() as i32)
+        } else {
+            (
+                occt_core::bspl::locate::first_u_knot_index(self.degree as i32, umults).max(1),
+                occt_core::bspl::locate::last_u_knot_index(self.degree as i32, umults).max(1),
+            )
         }
+    }
+
+    /// `Geom_BSplineCurve::updateKnots()` (`Geom_BSplineCurve.cxx:1171-1188`):
+    /// rebuild the flat knot vector from the distinct knots and their
+    /// multiplicities (`BSplCLib::KnotSequence`; the periodic representation
+    /// uses the period-extended sequence).
+    ///
+    /// OCCT's `KnotSet == GeomAbs_Uniform && !Periodic` shortcut assigns the
+    /// distinct array directly; that array is what the non-periodic expansion
+    /// reproduces for an all-multiplicity-one curve, so the port expands in
+    /// both cases (see `set_periodic`, which relies on the same equivalence).
+    fn update_flat_knots(&mut self, uknots: &[f64], umults: &[i32]) {
+        self.knots = if self.periodic {
+            knots::knot_sequence_periodic(uknots, umults, self.degree as i32)
+        } else {
+            occt_core::bspl::banded_interp::knot_sequence(uknots, umults, self.degree as i32)
+        };
+    }
+
+    /// `Geom_BSplineCurve::InsertKnots(Knots, Mults, ParametricTolerance, Add)`
+    /// (`Geom_BSplineCurve.cxx:351-416`).
+    ///
+    /// `add_knots` are **distinct** parameters, `add_mults[i]` their
+    /// multiplicities (`None` = flat insertion, one per knot). With
+    /// `add = true` an existing knot's multiplicity grows by `M`; with
+    /// `add = false` it is raised to `M` (OCCT's default for `InsertKnots`).
+    /// The tolerance for knot equality is `max(Epsilon(U), parametric_tolerance)`.
+    pub fn insert_knots(
+        &mut self,
+        add_knots: &[f64],
+        add_mults: Option<&[i32]>,
+        parametric_tolerance: f64,
+        add: bool,
+    ) -> Result<(), &'static str> {
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        // `BSplCLib::PrepareInsertKnots` returning `false` is OCCT's
+        // `Standard_ConstructionError`.
+        let (nbpoles, _nbknots) = match occt_core::bspl::insert_knots::prepare_insert_knots(
+            self.degree as i32,
+            self.periodic,
+            &uknots,
+            &umults,
+            add_knots,
+            add_mults,
+            parametric_tolerance,
+            add,
+        ) {
+            Some(sizes) => sizes,
+            None => return Err("Geom_BSplineCurve::InsertKnots"),
+        };
+        if nbpoles as usize == self.poles.len() {
+            return Ok(());
+        }
+        let out = match occt_core::bspl::insert_knots::insert_knots(
+            self.degree as i32,
+            self.periodic,
+            &self.poles,
+            self.weights.as_deref(),
+            &uknots,
+            &umults,
+            add_knots,
+            add_mults,
+            parametric_tolerance,
+            add,
+        ) {
+            Some(out) => out,
+            None => return Err("Geom_BSplineCurve::InsertKnots"),
+        };
+        self.poles = out.poles;
+        self.weights = out.weights;
+        self.update_flat_knots(&out.knots, &out.mults);
+        Ok(())
+    }
+
+    /// `Geom_BSplineCurve::InsertKnot(U, M, ParametricTolerance, Add)`
+    /// (`Geom_BSplineCurve.cxx:337-347`), defaults `M = 1`,
+    /// `ParametricTolerance = 0.0`, `Add = true` (`Geom_BSplineCurve.hxx:239-242`).
+    pub fn insert_knot(
+        &mut self,
+        u: f64,
+        m: i32,
+        parametric_tolerance: f64,
+        add: bool,
+    ) -> Result<(), &'static str> {
+        self.insert_knots(&[u], Some(&[m]), parametric_tolerance, add)
+    }
+
+    /// `Geom_BSplineCurve::IncreaseMultiplicity(Index, M)`
+    /// (`Geom_BSplineCurve.cxx:302-309`): `InsertKnots({Knots(Index)},
+    /// {M - Mults(Index)}, Epsilon(1.), true)`.
+    pub fn increase_multiplicity(&mut self, index: i32, m: i32) -> Result<(), &'static str> {
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        let i = index - 1;
+        if i < 0 || i as usize >= uknots.len() {
+            return Err("GeomBSplineCurve::increase_multiplicity: index out of range");
+        }
+        let k = uknots[i as usize];
+        let mm = m - umults[i as usize];
+        self.insert_knots(&[k], Some(&[mm]), occt_core::precision::epsilon(1.0), true)
+    }
+
+    /// `Geom_BSplineCurve::IncreaseMultiplicity(I1, I2, M)`
+    /// (`Geom_BSplineCurve.cxx:313-323`).
+    pub fn increase_multiplicity_range(
+        &mut self,
+        i1: i32,
+        i2: i32,
+        m: i32,
+    ) -> Result<(), &'static str> {
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        if i1 < 1 || i2 < i1 || i2 as usize > uknots.len() {
+            return Err("GeomBSplineCurve::increase_multiplicity_range: index out of range");
+        }
+        let ks = uknots[(i1 - 1) as usize..i2 as usize].to_vec();
+        let ms: Vec<i32> = umults[(i1 - 1) as usize..i2 as usize]
+            .iter()
+            .map(|u| m - u)
+            .collect();
+        self.insert_knots(&ks, Some(&ms), occt_core::precision::epsilon(1.0), true)
+    }
+
+    /// `Geom_BSplineCurve::IncrementMultiplicity(I1, I2, Step)`
+    /// (`Geom_BSplineCurve.cxx:327-333`).
+    pub fn increment_multiplicity(
+        &mut self,
+        i1: i32,
+        i2: i32,
+        step: i32,
+    ) -> Result<(), &'static str> {
+        let (uknots, _) = self.distinct_knots_and_mults();
+        if i1 < 1 || i2 < i1 || i2 as usize > uknots.len() {
+            return Err("GeomBSplineCurve::increment_multiplicity: index out of range");
+        }
+        let ks = uknots[(i1 - 1) as usize..i2 as usize].to_vec();
+        let ms = vec![step; ks.len()];
+        self.insert_knots(&ks, Some(&ms), occt_core::precision::epsilon(1.0), true)
+    }
+
+    /// `Geom_BSplineCurve::SetOrigin(Index)` (`Geom_BSplineCurve.cxx:819-909`):
+    /// rotate a periodic curve so that the knot `Index` becomes the origin
+    /// (the knots after it stay, the ones before it move one period up and the
+    /// poles are rotated to match).
+    pub fn set_origin(&mut self, index: i32) -> Result<(), &'static str> {
+        if !self.periodic {
+            return Err("Geom_BSplineCurve::SetOrigin");
+        }
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        let (first, last) = self.u_knot_index_range(&umults);
+        if index < first || index > last {
+            return Err("Geom_BSplineCurve::SetOrigin");
+        }
+        let nbknots = uknots.len() as i32;
+        let nbpoles = self.poles.len() as i32;
+        if nbknots == 0 || nbpoles == 0 {
+            return Err("Geom_BSplineCurve::SetOrigin");
+        }
+
+        // set the knots and mults
+        let period = uknots[(last - 1) as usize] - uknots[(first - 1) as usize];
+        let mut newknots = Vec::with_capacity(nbknots as usize);
+        let mut newmults = Vec::with_capacity(nbknots as usize);
+        for i in index..=last {
+            newknots.push(uknots[(i - 1) as usize]);
+            newmults.push(umults[(i - 1) as usize]);
+        }
+        for i in (first + 1)..=index {
+            newknots.push(uknots[(i - 1) as usize] + period);
+            newmults.push(umults[(i - 1) as usize]);
+        }
+
+        let mut pole_first = 1i32;
+        for i in (first + 1)..=index {
+            pole_first += umults[(i - 1) as usize];
+        }
+
+        // set the poles and weights
+        let mut newpoles = Vec::with_capacity(nbpoles as usize);
+        for i in pole_first..=nbpoles {
+            newpoles.push(self.poles[(i - 1) as usize]);
+        }
+        for i in 1..pole_first {
+            newpoles.push(self.poles[(i - 1) as usize]);
+        }
+        if let Some(w) = self.weights.as_ref() {
+            let mut newweights = Vec::with_capacity(nbpoles as usize);
+            for i in pole_first..=nbpoles {
+                newweights.push(w[(i - 1) as usize]);
+            }
+            for i in 1..pole_first {
+                newweights.push(w[(i - 1) as usize]);
+            }
+            self.weights = Some(newweights);
+        }
+
+        self.poles = newpoles;
+        self.update_flat_knots(&newknots, &newmults);
+        Ok(())
+    }
+
+    /// `Geom_BSplineCurve::SetOrigin(U, Tol)` (`Geom_BSplineCurve.cxx:913-970`):
+    /// move the origin of a periodic curve to the parameter `U` (translating
+    /// the whole knot vector if `U` differs from the folded value by more than
+    /// `Tol`, inserting a knot at `U` when needed).
+    pub fn set_origin_u(&mut self, u: f64, tol: f64) -> Result<(), &'static str> {
+        if !self.periodic {
+            return Err("Geom_BSplineCurve::SetOrigin");
+        }
+        // Is U within the period?
+        let mut uf = self.first_parameter();
+        let mut ul = self.last_parameter();
+        let period = ul - uf;
+        let mut uu = u;
+        while tol < (uf - uu) {
+            uu += period;
+        }
+        while tol > (ul - uu) {
+            uu -= period;
+        }
+
+        if (u - uu).abs() > tol {
+            // Reparametrize the curve
+            let delta = u - uu;
+            uf += delta;
+            ul += delta;
+            for k in self.knots.iter_mut() {
+                *k += delta;
+            }
+        }
+        // For a periodic curve, uf and ul represent the same point
+        if (u - uf).abs() < tol || (u - ul).abs() < tol {
+            return Ok(());
+        }
+
+        let (uknots, _) = self.distinct_knots_and_mults();
+        let mut ik = 0i32;
+        let mut delta = f64::MAX;
+        for (i, k) in uknots.iter().enumerate() {
+            let dki = k - u;
+            if dki.abs() < delta.abs() {
+                ik = i as i32 + 1;
+                delta = dki;
+            }
+        }
+        if delta.abs() > tol {
+            // `InsertKnot(U)`: `M = 1`, `ParametricTolerance = 0.0`, `Add = true`.
+            self.insert_knot(u, 1, 0.0, true)?;
+            if delta < 0.0 {
+                ik += 1;
+            }
+        }
+        self.set_origin(ik)
+    }
+
+    /// `Geom_BSplineCurve::Segment(U1, U2, theTolerance)`
+    /// (`Geom_BSplineCurve.cxx:527-715`): restrict the curve to `[U1, U2]`
+    /// (`U2 < U1` and, for a periodic curve, `(U2 - U1) - Period >
+    /// Precision::PConfusion()` are `Standard_DomainError`).
+    ///
+    /// Rust has no default arguments: callers reproduce OCCT's
+    /// `theTolerance = Precision::PConfusion()` default explicitly.
+    pub fn segment(&mut self, u1: f64, u2: f64, the_tolerance: f64) -> Result<(), &'static str> {
+        if u2 < u1 {
+            return Err("Geom_BSplineCurve::Segment");
+        }
+
+        let was_periodic = self.periodic;
+        let new_u1;
+        let mut new_u2;
+        let mut du = 0.0;
+        let mut a_ddu = 0.0;
+
+        // define param distance to keep (eap, Apr 18 2002, occ311)
+        if self.periodic {
+            let period = self.last_parameter() - self.first_parameter();
+            du = u2 - u1;
+            if du - period > occt_core::precision::PCONFUSION {
+                return Err("Geom_BSplineCurve::Segment");
+            }
+            if du > period {
+                du = period;
+            }
+            a_ddu = du;
+        }
+
+        // `BSplCLib::LocateParameter(Degree, Knots, Mults, U, Periodic,
+        // Knots.Lower(), Knots.Upper(), index, NewU)` (`BSplCLib.cxx:168-185`,
+        // flat-knot form) — the port's `locate_parameter_range` with the
+        // **distinct** knots and their full range, **not** the convenience
+        // `locate_parameter` (which derives the range from the multiplicities).
+        let (uknots, _umults) = self.distinct_knots_and_mults();
+        if uknots.is_empty() {
+            return Err("Geom_BSplineCurve::Segment");
+        }
+        let (lo, hi) = (1i32, uknots.len() as i32);
+        let (_, nu1) = occt_core::bspl::locate::locate_parameter_range(
+            &uknots,
+            u1,
+            self.periodic,
+            lo,
+            hi,
+            uknots[0],
+            uknots[uknots.len() - 1],
+        );
+        let (_, nu2) = occt_core::bspl::locate::locate_parameter_range(
+            &uknots,
+            u2,
+            self.periodic,
+            lo,
+            hi,
+            uknots[0],
+            uknots[uknots.len() - 1],
+        );
+        new_u1 = nu1;
+        new_u2 = nu2;
+
+        let a_nu2 = new_u2;
+
+        let knots_pair = [new_u1.min(new_u2), new_u1.max(new_u2)];
+        let mults_pair = [self.degree as i32, self.degree as i32];
+
+        let abs_u_max = new_u1
+            .abs()
+            .max(new_u2.abs())
+            .max(self.first_parameter().abs())
+            .max(self.last_parameter().abs());
+        let eps = occt_core::precision::epsilon(abs_u_max).max(the_tolerance);
+
+        // `InsertKnots(Knots, Mults, Eps)` — `Add` defaults to **false**
+        // (`Geom_BSplineCurve.hxx:262-265`).
+        self.insert_knots(&knots_pair, Some(&mults_pair), eps, false)?;
+
+        if self.periodic {
+            // set the origin at NewU1
+            let (uk, _) = self.distinct_knots_and_mults();
+            let (mut index, u) = occt_core::bspl::locate::locate_parameter_range(
+                &uk,
+                u1,
+                true,
+                lo,
+                uk.len() as i32,
+                uk[0],
+                uk[uk.len() - 1],
+            );
+            // Test if the insertion is OK, shift otherwise.
+            if (index as usize) < uk.len() && (uk[index as usize] - u).abs() <= eps {
+                index += 1;
+            }
+            self.set_origin(index)?;
+            self.set_not_periodic();
+            new_u2 = new_u1 + du;
+        }
+
+        // compute index1 and index2 to set the new knots and mults
+        let (uk2, um2) = self.distinct_knots_and_mults();
+        if uk2.is_empty() {
+            return Err("Geom_BSplineCurve::Segment");
+        }
+        let from_u1 = 1i32;
+        let to_u2 = uk2.len() as i32;
+        let (mut index1, ua) = occt_core::bspl::locate::locate_parameter_range(
+            &uk2,
+            new_u1,
+            self.periodic,
+            from_u1,
+            to_u2,
+            uk2[0],
+            uk2[uk2.len() - 1],
+        );
+        if (index1 as usize) < uk2.len() && (uk2[index1 as usize] - ua).abs() <= eps {
+            index1 += 1;
+        }
+
+        let (mut index2, ub) = occt_core::bspl::locate::locate_parameter_range(
+            &uk2,
+            new_u2,
+            self.periodic,
+            from_u1,
+            to_u2,
+            uk2[0],
+            uk2[uk2.len() - 1],
+        );
+        if (index2 as usize) < uk2.len() && (uk2[index2 as usize] - ub).abs() <= eps
+            || index2 == index1
+        {
+            index2 += 1;
+        }
+
+        let nbknots = index2 - index1 + 1;
+        if nbknots <= 0 {
+            return Err("Geom_BSplineCurve::Segment");
+        }
+        let mut nknots = Vec::with_capacity(nbknots as usize);
+        let mut nmults = Vec::with_capacity(nbknots as usize);
+
+        // to restore changed U1
+        if du > 0.0 {
+            // if was periodic
+            du = new_u1 - u1;
+        }
+
+        for i in index1..=index2 {
+            nknots.push(uk2[(i - 1) as usize] - du);
+            nmults.push(um2[(i - 1) as usize]);
+        }
+        let last_k = nbknots as usize - 1;
+        nmults[0] = self.degree as i32 + 1;
+        nmults[last_k] = self.degree as i32 + 1;
+
+        // compute index1 and index2 to set the new poles and weights
+        let mut pindex1 = knots::pole_index(self.degree as i32, index1, self.periodic, &um2);
+        let mut pindex2 = knots::pole_index(self.degree as i32, index2, self.periodic, &um2);
+        pindex1 += 1;
+        pindex2 = (pindex2 + 1).min(self.poles.len() as i32);
+        if pindex1 < 1 || pindex2 < pindex1 {
+            return Err("Geom_BSplineCurve::Segment");
+        }
+
+        let mut newpoles = Vec::with_capacity((pindex2 - pindex1 + 1) as usize);
+        for i in pindex1..=pindex2 {
+            newpoles.push(self.poles[(i - 1) as usize]);
+        }
+        let mut newweights = self.weights.as_ref().map(|w| {
+            let mut v = Vec::with_capacity((pindex2 - pindex1 + 1) as usize);
+            for i in pindex1..=pindex2 {
+                v.push(w[(i - 1) as usize]);
+            }
+            v
+        });
+
+        if was_periodic {
+            nknots[0] = u1;
+            if a_nu2 < u2 {
+                nknots[last_k] = u1 + a_ddu;
+            }
+        }
+
+        self.poles = newpoles;
+        if self.weights.is_some() {
+            self.weights = newweights.take();
+        }        self.update_flat_knots(&nknots, &nmults);
+        Ok(())
     }
 
     /// Simple degree reduction: drop to degree-1 by removing end knots and

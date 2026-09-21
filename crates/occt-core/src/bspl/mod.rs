@@ -30,6 +30,7 @@ pub mod intervals;
 pub mod plib_rational;
 pub mod curve_dn;
 pub mod unperiodize;
+pub mod insert_knots;
 
 pub use surface_resolution::bspline_surface_resolution;
 pub use curve_resolution::bspline_curve_resolution;

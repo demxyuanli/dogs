@@ -195,13 +195,46 @@ impl WriteCtx {
         // `MakeCurve.cxx:66-92`: a `Geom_TrimmedCurve` is written through its
         // **basis** curve. For a conic basis the `gp_*` queries above already
         // returned the basis (the port's `GeomTrimmedCurve` forwards them), so
-        // only the remaining non-BSpline/Bezier bases need the recursion here;
-        // a BSpline/Bezier basis would be `Segment`-ed by OCCT (`cxx:71-82`) and
-        // is represented by this port's own remapped knots instead, so it falls
-        // through to the spline arm below.
+        // only the remaining non-BSpline/Bezier bases need the recursion here.
+        // A B-spline basis is cut first (`cxx:71-76`):
+        // `BS = B->Copy(); BS->Segment(T->FirstParameter(), T->LastParameter())`.
         if c.is_geom_trimmed() {
             if let Some((basis, _bf, _bl)) = c.untrimmed_basis() {
-                if basis.bspline_knots().is_none() && basis.bezier_poles().is_none() {
+                if let (Some(poles), Some(knots), Some(deg)) = (
+                    basis.bspline_poles(),
+                    basis.bspline_knots(),
+                    basis.nurbs_degree(),
+                ) {
+                    let bs = match basis.bspline_weights() {
+                        Some(w) if w.len() == poles.len() => GeomBSplineCurve::rational(
+                            poles.to_vec(),
+                            w.to_vec(),
+                            knots.to_vec(),
+                            deg,
+                        ),
+                        _ => GeomBSplineCurve::new(poles.to_vec(), knots.to_vec(), deg),
+                    };
+                    if let Ok(mut bs) = bs {
+                        // `theTolerance` defaults to `Precision::PConfusion()`
+                        // (`Geom_BSplineCurve.hxx:322-324`). OCCT lets a
+                        // failure escape; the port keeps the previous
+                        // behaviour (the trimmed curve's own remapped knots,
+                        // written by the arm below) instead of dropping the
+                        // edge geometry.
+                        if bs
+                            .segment(
+                                c.first_parameter(),
+                                c.last_parameter(),
+                                occt_core::precision::PCONFUSION,
+                            )
+                            .is_ok()
+                        {
+                            if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
+                                return Some(id);
+                            }
+                        }
+                    }
+                } else if basis.bezier_poles().is_none() {
                     return self.emit_curve_entity(basis.as_ref());
                 }
             }
