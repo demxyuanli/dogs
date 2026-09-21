@@ -29,7 +29,9 @@ pub mod curve_resolution;
 pub mod intervals;
 pub mod plib_rational;
 pub mod curve_dn;
+pub mod unperiodize;
 
 pub use surface_resolution::bspline_surface_resolution;
 pub use curve_resolution::bspline_curve_resolution;
 pub use intervals::{adaptor_intervals, intervals as bspline_intervals, local_continuity};
+pub use unperiodize::{flat_knots_from_mults, unperiodize_direction, unperiodize_knots};

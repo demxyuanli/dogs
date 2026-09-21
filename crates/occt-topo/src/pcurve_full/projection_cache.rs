@@ -270,7 +270,7 @@ impl Default for GetLineOut {
 }
 
 /// `ShapeAnalysis::AdjustToPeriod` (`ShapeAnalysis.cxx:66-69`).
-pub(super) fn adjust_to_period(val: f64, val_min: f64, val_max: f64) -> f64 {
+pub(crate) fn adjust_to_period(val: f64, val_min: f64, val_max: f64) -> f64 {
     adjust_by_period(val, 0.5 * (val_min + val_max), val_max - val_min)
 }
 

@@ -1131,17 +1131,16 @@ impl IgesWriter {
     /// `GeomConvert::SurfaceToBSplineSurface` would produce.
     ///
     /// `closedU/V` come from `IsUClosed`/`IsVClosed` (`cxx:347-348`, see
-    /// [`iso_rows_equal`]), `polynomial` from `Polynom = !(RationU || RationV)`
-    /// (`cxx:355`; the port's B-spline surface carries one rational flag for both
-    /// directions) and the written range from the non-periodic arm of the bounds
-    /// fix (`cxx:245-255`, `:274-284`). The periodic arm (`cxx:256-273`,
-    /// `:285-302`, `:304-343`: `ShapeAnalysis::AdjustToPeriod`,
-    /// `SetUOrigin`/`SetVOrigin`, `SetUNotPeriodic`/`SetVNotPeriodic` →
-    /// `BSplSLib::Unperiodize`) is UNPORTED (audit A26 / task T-78): OCCT re-origins
-    /// and unperiodizes the surface before reading its knots and poles and writes
-    /// `periodicU/V` from the **original** `IsUPeriodic`/`IsVPeriodic`
-    /// (`cxx:235-236`, `:448-449`), while this port keeps the periodic
-    /// representation and writes `periodicU/V = 0`.
+    /// [`iso_rows_equal`]) of the **unperiodized** surface, `polynomial` from
+    /// `Polynom = !(RationU || RationV)` (`cxx:355`; the port's B-spline surface
+    /// carries one rational flag for both directions), and `periodicU/V` from the
+    /// original `IsUPeriodic`/`IsVPeriodic` (`cxx:235-236`, `:448-449`). The
+    /// bounds fix implements both arms (`cxx:244-302`) and a periodic direction is
+    /// unperiodized before its knots and poles are read (`cxx:303-343`,
+    /// `SetUNotPeriodic`/`SetVNotPeriodic` → `BSplSLib::Unperiodize`,
+    /// [`occt_core::bspl::unperiodize_direction`]). The only UNPORTED piece is the
+    /// `SetUOrigin`/`SetVOrigin` re-origin (`cxx:310-320`, `:330-340`), see the
+    /// note inside.
     fn emit_bspline_surface(
         &mut self,
         surf: &dyn Surface,
@@ -1150,7 +1149,7 @@ impl IgesWriter {
         v0: f64,
         v1: f64,
     ) -> Option<usize> {
-        let (poles, knots_u, knots_v, deg_u, deg_v) = match (
+        let (mut poles, mut knots_u, mut knots_v, deg_u, deg_v) = match (
             surf.bspline_surface_poles(),
             surf.bspline_surface_uknots(),
             surf.bspline_surface_vknots(),
@@ -1167,11 +1166,10 @@ impl IgesWriter {
         if poles.is_empty() || poles[0].is_empty() {
             return None;
         }
-        let (nu, nv) = (poles.len(), poles[0].len());
-        if knots_u.len() != nu + deg_u + 1 || knots_v.len() != nv + deg_v + 1 {
+        let (nu0, nv0) = (poles.len(), poles[0].len());
+        if knots_u.len() != nu0 + deg_u + 1 || knots_v.len() != nv0 + deg_v + 1 {
             return None;
         }
-        let (ind_u, ind_v) = (nu - 1, nv - 1);
 
         // `TransferSurface(Geom_RectangularTrimmedSurface)` recurses on
         // `BasisSurface()` before this branch (`cxx:492-515`), so every quantity
@@ -1185,41 +1183,115 @@ impl IgesWriter {
 
         let stored_weights = bs.bspline_surface_weights();
         let rational = stored_weights.is_some();
-        let weights: Vec<Vec<f64>> = match stored_weights {
-            Some(w) if w.len() == nu && w.iter().all(|r| r.len() == nv) => w.to_vec(),
-            _ => vec![vec![1.0; nv]; nu],
+        let mut weights: Vec<Vec<f64>> = match stored_weights {
+            Some(w) if w.len() == nu0 && w.iter().all(|r| r.len() == nv0) => w.to_vec(),
+            _ => vec![vec![1.0; nv0]; nu0],
         };
         let polynomial = !rational;
-        // `CloseU = mysurface->IsUClosed()` / `CloseV` (`cxx:347-348`).
-        let closed_u = bs.is_u_periodic()
-            || (iso_rows_equal(&poles[0], &poles[nu - 1])
-                && (!rational || weights[0].iter().zip(&weights[nu - 1]).all(|(a, b)| weight_equal(*a, *b))));
-        let closed_v = bs.is_v_periodic()
-            || (0..nu).all(|i| {
-                iso_rows_equal(&poles[i][0..1], &poles[i][nv - 1..nv])
-                    && (!rational || weight_equal(weights[i][0], weights[i][nv - 1]))
-            });
 
-        // `cxx:244-255` / `:274-284`: a non-periodic surface clamps the written
-        // range to its own bounds (the periodic arm is UNPORTED, see above).
+        // `GeomToIGES_GeomSurface.cxx:235-236`: `PeriodicU/V` are read from the
+        // **original** surface and written verbatim (`:448-449`).
+        let period_u = bs.is_u_periodic();
+        let period_v = bs.is_v_periodic();
+
+        // `cxx:303-343`: a periodic B-spline surface is **unperiodized** before
+        // its knots and poles are read (`SetUNotPeriodic` / `SetVNotPeriodic` →
+        // `BSplSLib::Unperiodize`, `Geom_BSplineSurface_1.cxx:1238-1300`), so
+        // the written 128 has the open knot vector IGES expects. The pole
+        // extension is the cyclic wrap of `BSplCLib::Unperiodize`
+        // (`BSplCLib.cxx:3076-3079`); weights follow the same wrap because
+        // `BSplSLib::Unperiodize` works on homogeneous poles.
+        if period_u {
+            let (nf, map) = occt_core::bspl::unperiodize_direction(deg_u as i32, &knots_u);
+            knots_u = nf;
+            poles = map.iter().map(|k| poles[*k].clone()).collect();
+            weights = map.iter().map(|k| weights[*k].clone()).collect();
+        }
+        if period_v {
+            let (nf, map) = occt_core::bspl::unperiodize_direction(deg_v as i32, &knots_v);
+            knots_v = nf;
+            for row in poles.iter_mut() {
+                *row = map.iter().map(|k| row[*k].clone()).collect();
+            }
+            for row in weights.iter_mut() {
+                *row = map.iter().map(|k| row[*k]).collect();
+            }
+        }
+
+        let (nu, nv) = (poles.len(), poles[0].len());
+        if knots_u.len() != nu + deg_u + 1 || knots_v.len() != nv + deg_v + 1 {
+            return None;
+        }
+        let (ind_u, ind_v) = (nu - 1, nv - 1);
+
+        // `Geom_BSplineSurface_1.cxx:1026-1130` `SetUOrigin`/`SetVOrigin` — the
+        // re-origin OCCT performs when the written range crosses the period
+        // origin (`cxx:310-320`, `:330-340`) — is UNPORTED (audit A26 / T-78):
+        // it only differs when `AdjustToPeriod(Umin, U0, U1)` differs from
+        // `AdjustToPeriod(Ufin, U0, U1)`, and the port keeps the surface's own
+        // knot origin in that case.
+        //
+        // `CloseU = mysurface->IsUClosed()` / `CloseV` (`cxx:347-348`), read from
+        // the **unperiodized** surface: a periodic direction whose first and last
+        // pole rows coincide is closed, which the pole comparison below detects
+        // after the cyclic extension.
+        let closed_u = iso_rows_equal(&poles[0], &poles[nu - 1])
+            && (!rational || weights[0].iter().zip(&weights[nu - 1]).all(|(a, b)| weight_equal(*a, *b)));
+        let closed_v = (0..nu).all(|i| {
+            iso_rows_equal(&poles[i][0..1], &poles[i][nv - 1..nv])
+                && (!rational || weight_equal(weights[i][0], weights[i][nv - 1]))
+        });
+
+        // `cxx:244-284`: the written range is clamped to the surface's own
+        // bounds; the periodic arm snaps an end that already sits on a bound and
+        // otherwise shifts the range into the period
+        // (`ShapeAnalysis::AdjustToPeriod`), truncating it to one period.
         let (su0, su1) = bs.u_range();
         let (sv0, sv1) = bs.v_range();
-        let (u0, u1) = if bs.is_u_periodic() {
-            (u0, u1)
+        let (mut u0, mut u1) = (u0, u1);
+        if period_u {
+            if (u0 - su0).abs() < occt_core::precision::PCONFUSION {
+                u0 = su0;
+            }
+            if (u1 - su1).abs() < occt_core::precision::PCONFUSION {
+                u1 = su1;
+            }
+            let u_shift = crate::pcurve_full::adjust_to_period(u0, su0, su1);
+            u0 += u_shift;
+            u1 += u_shift;
+            if u1 - u0 > su1 - su0 {
+                u1 = u0 + (su1 - su0);
+            }
         } else {
-            (u0.max(su0), u1.min(su1))
-        };
-        let (v0, v1) = if bs.is_v_periodic() {
-            (v0, v1)
+            u0 = u0.max(su0);
+            u1 = u1.min(su1);
+        }
+        let (mut v0, mut v1) = (v0, v1);
+        if period_v {
+            if (v0 - sv0).abs() < occt_core::precision::PCONFUSION {
+                v0 = sv0;
+            }
+            if (v1 - sv1).abs() < occt_core::precision::PCONFUSION {
+                v1 = sv1;
+            }
+            let v_shift = crate::pcurve_full::adjust_to_period(v0, sv0, sv1);
+            v0 += v_shift;
+            v1 += v_shift;
+            if v1 - v0 > sv1 - sv0 {
+                v1 = v0 + (sv1 - sv0);
+            }
         } else {
-            (v0.max(sv0), v1.min(sv1))
-        };
+            v0 = v0.max(sv0);
+            v1 = v1.min(sv1);
+        }
 
         let mut s = format!(
-            "128,{ind_u},{ind_v},{deg_u},{deg_v},{},{},{},0,0",
+            "128,{ind_u},{ind_v},{deg_u},{deg_v},{},{},{},{},{}",
             u8::from(closed_u),
             u8::from(closed_v),
-            u8::from(polynomial)
+            u8::from(polynomial),
+            u8::from(period_u),
+            u8::from(period_v)
         );
         for k in &knots_u {
             s.push(',');
