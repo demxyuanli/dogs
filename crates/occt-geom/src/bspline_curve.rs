@@ -51,6 +51,91 @@ impl GeomBSplineCurve {
     pub fn degree(&self) -> usize { self.degree }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
 
+    /// `Geom_BSplineCurve::Knots()` / `Multiplicities()`
+    /// (`Geom_BSplineCurve_1.cxx:380-383`, `:148-151`): the stored distinct
+    /// knots and their multiplicities.
+    ///
+    /// The port stores the flat sequence only. For a periodic curve the
+    /// period-extension knots live **outside** `[FirstParameter,
+    /// LastParameter]` (they are `stored_knot ± period`), so the run lengths of
+    /// the flat array restricted to that interval are exactly `myMults` — the
+    /// equivalent of OCCT's separately stored arrays.
+    pub fn distinct_knots_and_mults(&self) -> (Vec<f64>, Vec<i32>) {
+        let (uknots, umults) = knots::unique_knots_mults(&self.knots);
+        if !self.periodic || uknots.is_empty() {
+            return (uknots, umults);
+        }
+        let (first, last) = (self.first_parameter(), self.last_parameter());
+        let mut out_knots = Vec::new();
+        let mut out_mults = Vec::new();
+        for (k, m) in uknots.iter().zip(umults.iter()) {
+            if *k < first || *k > last {
+                continue;
+            }
+            out_knots.push(*k);
+            out_mults.push(*m);
+        }
+        if out_knots.is_empty() {
+            (uknots, umults)
+        } else {
+            (out_knots, out_mults)
+        }
+    }
+
+    /// `Geom_BSplineCurve::SetKnots(K)` (`Geom_BSplineCurve.cxx:758-765`):
+    /// `CheckCurveData(myPoles, K, myMults, myDeg, myPeriodic)` followed by
+    /// `updateKnots()`. `k` holds the **distinct** knots.
+    pub fn set_knots(&mut self, distinct_knots: &[f64]) -> Result<(), &'static str> {
+        let (_, umults) = self.distinct_knots_and_mults();
+        if umults.len() != distinct_knots.len() {
+            return Err("GeomBSplineCurve::set_knots: knot count mismatch");
+        }
+        // `CheckCurveData` (`Geom_BSplineCurve.cxx:91-94`).
+        if knots::nb_poles(self.degree as i32, self.periodic, &umults) as usize != self.poles.len()
+        {
+            return Err("GeomBSplineCurve::set_knots: pole/degree mismatch");
+        }
+        self.knots = if self.periodic {
+            knots::knot_sequence_periodic(distinct_knots, &umults, self.degree as i32)
+        } else {
+            occt_core::bspl::banded_interp::knot_sequence(
+                distinct_knots,
+                &umults,
+                self.degree as i32,
+            )
+        };
+        Ok(())
+    }
+
+    /// `Geom_BSplineCurve::SetNotPeriodic()` (`Geom_BSplineCurve.cxx:974-1019`):
+    /// `BSplCLib::PrepareUnperiodize` + `BSplCLib::Unperiodize` (`BSplCLib.cxx:2967-3080`)
+    /// followed by `updateKnots()`.
+    ///
+    /// `Unperiodize` raises the end multiplicities to `degree + 1` by prepending
+    /// and appending one period of knots, and re-indexes the poles cyclically:
+    /// `NewPoles(k) = Poles((k - 1) % n_old + 1)` (`cxx:3076-3079`).
+    pub fn set_not_periodic(&mut self) {
+        if !self.periodic {
+            return;
+        }
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        let degree = self.degree as i32;
+        let (new_knots, new_mults, _index) =
+            occt_core::bspl::unperiodize::unperiodize_knots(degree, &uknots, &umults);
+        let n_new = (new_mults.iter().sum::<i32>() - degree - 1).max(0) as usize;
+        let n_old = self.poles.len();
+        if n_old == 0 || n_new == 0 {
+            return;
+        }
+        self.poles = (0..n_new).map(|k| self.poles[k % n_old]).collect();
+        if let Some(w) = self.weights.as_ref() {
+            let old = w.clone();
+            self.weights = Some((0..n_new).map(|k| old[k % n_old]).collect());
+        }
+        self.knots = occt_core::bspl::unperiodize::flat_knots_from_mults(&new_knots, &new_mults);
+        self.periodic = false;
+    }
+
     /// `Geom_BSplineCurve::SetPeriodic()` (`Geom_BSplineCurve.cxx:777-815`):
     /// convert a non-periodic representation into the periodic one.
     ///
@@ -68,25 +153,23 @@ impl GeomBSplineCurve {
     /// `ClearEvalRepresentation()` has no counterpart: this port stores no
     /// evaluation cache.
     pub fn set_periodic(&mut self) {
-        if self.periodic {
-            // OCCT's `SetPeriodic()` on an already periodic curve is a no-op:
-            // `FirstUKnotIndex()`/`LastUKnotIndex()` return `1`/`myKnots.Length()`
-            // (`Geom_BSplineCurve_1.cxx:334-344`, `:404-414`), the end
-            // multiplicities are already `<= degree`, `NbPoles(degree, true, …)`
-            // reproduces the pole count and `updateKnots()` rebuilds the same
-            // flat sequence. The port stores only the flat sequence, whose
-            // run-length decomposition would additionally expose the
-            // period-extension knots (OCCT keeps those in `myFlatKnots` only),
-            // so the no-op is taken explicitly rather than recomputed.
-            return;
-        }
-        let (uknots, umults) = knots::unique_knots_mults(&self.knots);
+        let (uknots, umults) = self.distinct_knots_and_mults();
         if uknots.is_empty() || umults.is_empty() {
             return;
         }
         let degree = self.degree as i32;
-        let first = occt_core::bspl::locate::first_u_knot_index(degree, &umults).max(1) as usize;
-        let last = occt_core::bspl::locate::last_u_knot_index(degree, &umults).max(1) as usize;
+        // `FirstUKnotIndex()` / `LastUKnotIndex()` (`Geom_BSplineCurve_1.cxx:334-344`,
+        // `:404-414`): `1` / `NbKnots()` for a periodic curve, otherwise the
+        // `BSplCLib` indices of the distinct multiplicities.
+        let (first, last) = if self.periodic {
+            (1usize, uknots.len())
+        } else {
+            (
+                occt_core::bspl::locate::first_u_knot_index(degree, &umults).max(1) as usize,
+                occt_core::bspl::locate::last_u_knot_index(degree, &umults)
+                    .max(1) as usize,
+            )
+        };
         let first = first.min(uknots.len());
         let last = last.min(uknots.len()).max(first);
         let uknots = uknots[first - 1..last].to_vec();

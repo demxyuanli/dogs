@@ -21,6 +21,35 @@ impl Default for GpAx2 {
 }
 
 impl GpAx2 {
+    /// `gp_Ax2::Rotate(const gp_Ax1&, angle)` (`gp_Ax2.hxx:301-309`): the
+    /// location and both directions are rotated about `ax1`, then the main
+    /// direction is recomputed as `X ^ Y`.
+    pub fn rotate(&mut self, ax1: &GpAx1, angle: f64) {
+        let mut loc = *self.axis.location();
+        loc.rotate(ax1, angle);
+        self.axis.set_location(loc);
+        let mut t = crate::gp::GpTrsf::identity();
+        if t.set_rotation_ax1(ax1, angle).is_err() {
+            return;
+        }
+        let vx = crate::gp::rotate_vector(&t, &crate::gp::GpVec::from_xyz(self.vxdir.xyz()));
+        let vy = crate::gp::rotate_vector(&t, &crate::gp::GpVec::from_xyz(self.vydir.xyz()));
+        if let (Ok(dx), Ok(dy)) = (GpDir::from_vec(&vx), GpDir::from_vec(&vy)) {
+            self.vxdir = dx;
+            self.vydir = dy;
+            if let Ok(n) = self.vxdir.crossed(&self.vydir) {
+                self.axis.set_direction(n);
+            }
+        }
+    }
+
+    /// `gp_Ax2::Rotated(const gp_Ax1&, angle)` (`gp_Ax2.hxx:311-318`).
+    pub fn rotated(&self, ax1: &GpAx1, angle: f64) -> Self {
+        let mut a_temp = *self;
+        a_temp.rotate(ax1, angle);
+        a_temp
+    }
+
     /// Standard: Z up, X right, Y computed.
     pub fn standard() -> Self {
         let zdir = GpDir::from_axis(crate::gp::dir::DirAxis::Z);

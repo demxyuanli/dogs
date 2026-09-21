@@ -1,5 +1,7 @@
 //! Knot vector operations. Source: `BSplCLib.cxx` — Hunt, BuildKnots, InsertKnots
 
+use crate::precision::epsilon;
+
 /// Binary search in non-decreasing knot sequence. Returns index i such that U(i) <= x < U(i+1).
 /// Port of Fortran HUNT algorithm. Source: BSplCLib::Hunt
 pub fn hunt(knots: &[f64], x: f64) -> usize {
@@ -226,6 +228,75 @@ pub fn knot_sequence_periodic(knots: &[f64], mults: &[i32], degree: i32) -> Vec<
         i += 1;
     }
     seq
+}
+
+/// `BSplCLib::KnotForm` (`BSplCLib.cxx:602-632`): `true` when the spacings of
+/// consecutive knots stay within `Epsilon(|Ui|) + Epsilon(|Uj|) + Epsilon(|DU|)`
+/// (`BSplCLib_Uniform`).
+pub fn is_uniform_knots(knots: &[f64]) -> bool {
+    if knots.len() < 2 {
+        // `if (FromK1 + 1 > Knots.Upper()) return BSplCLib_Uniform;` (`cxx:606-609`).
+        return true;
+    }
+    let mut a_ui = knots[0].abs();
+    let mut a_uj = knots[1].abs();
+    let mut a_du0 = (a_uj - a_ui).abs();
+    let mut eps = epsilon(a_ui) + epsilon(a_uj) + epsilon(a_du0);
+    for i in 1..knots.len() - 1 {
+        a_ui = knots[i].abs();
+        a_uj = knots[i + 1].abs();
+        let a_du1 = (a_uj - a_ui).abs();
+        if (a_du1 - a_du0).abs() > eps {
+            return false;
+        }
+        a_du0 = a_du1;
+        eps = epsilon(a_ui) + epsilon(a_uj) + epsilon(a_du0);
+    }
+    true
+}
+
+/// The next `f64` towards `+inf` (`std::nextafter(theValue, RealLast())`).
+fn next_up(value: f64) -> f64 {
+    if value >= 0.0 {
+        f64::from_bits(value.to_bits() + 1)
+    } else {
+        f64::from_bits(value.to_bits() - 1)
+    }
+}
+
+/// `BSplCLib::Reparametrize(U1, U2, Knots)` (`BSplCLib.cxx:756-798`): rescale a
+/// **distinct** knot array onto `[min(U1,U2), max(U1,U2)]`. Uniform vectors are
+/// rescaled by a constant step, others keep their proportions; the monotonicity
+/// guard of `cxx:788-793` is reproduced so `CheckCurveData` cannot reject the
+/// result.
+pub fn reparametrize(u1: f64, u2: f64, knots: &mut [f64]) {
+    if knots.len() < 2 {
+        return;
+    }
+    let u_first = u1.min(u2);
+    let u_last = u1.max(u2);
+    let new_length = u_last - u_first;
+    if is_uniform_knots(knots) {
+        let du = new_length / (knots.len() - 1) as f64;
+        knots[0] = u_first;
+        for i in 1..knots.len() {
+            knots[i] = knots[i - 1] + du;
+        }
+    } else {
+        let mut k1 = knots[0];
+        let length = knots[knots.len() - 1] - knots[0];
+        knots[0] = u_first;
+        for i in 1..knots.len() {
+            let k2 = knots[i];
+            let ratio = (k2 - k1) / length;
+            knots[i] = knots[i - 1] + new_length * ratio;
+            let eps = epsilon(knots[i - 1].abs());
+            if knots[i] - knots[i - 1] <= eps {
+                knots[i] = next_up(knots[i - 1] + eps);
+            }
+            k1 = k2;
+        }
+    }
 }
 
 #[cfg(test)]

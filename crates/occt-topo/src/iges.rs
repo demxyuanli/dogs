@@ -1467,6 +1467,45 @@ impl IgesWriter {
         self.emit(124, form, s)
     }
 
+    /// `GeomToIGES_GeomCurve::TransferCurve(Geom_Ellipse)` full-period arm
+    /// (`GeomToIGES_GeomCurve.cxx:620-645`): the ellipse copy is rotated by
+    /// `Udeb` (`:626-628`, direction chosen by `gp_Ax3(pos).Direct()`), converted
+    /// to a B-spline, re-parameterised onto `[Udeb, Udeb + 2*PI]` (`:641-643`)
+    /// and transferred as entity 126.
+    ///
+    /// **UNPORTED**: OCCT first tries `GeomConvert_ApproxCurve(aCopy,
+    /// Precision::Approximation(), GeomAbs_C1, 100, 6)` (`:632-636`) and only
+    /// falls back to `GeomConvert::CurveToBSplineCurve(copystart,
+    /// Convert_QuasiAngular)` (`:637-640`) when the approximation has no result.
+    /// This port has no `GeomConvert_ApproxCurve`, so the **fallback** branch is
+    /// taken unconditionally; the resulting 126 entity differs from OCCT's
+    /// approximated one in its knot vector (same conic, exact rational form).
+    fn emit_whole_period_ellipse(&mut self, e: &occt_core::gp::GpElips, a: f64, b: f64) -> Option<usize> {
+        use std::f64::consts::PI;
+        let pos = *e.position();
+        // `copystart->SetPosition(pos.Rotated(pos.Axis(), gp_Ax3(pos).Direct() ? Udeb : 2*PI - Udeb))`
+        // (`cxx:626-628`).
+        let angle = if pos.to_ax3().is_direct() { a } else { 2.0 * PI - a };
+        let mut copy = *e;
+        copy.set_position(pos.rotated(&pos.axis().clone(), angle));
+        let rotated = occt_geom::ellipse::GeomEllipse::new(copy);
+        // `GeomConvert::CurveToBSplineCurve(copystart, Convert_QuasiAngular)` (`cxx:639`).
+        let mut bs = occt_geom::convert_bspl::curve_to_bspline_curve(
+            &rotated,
+            occt_core::convert::ParameterisationType::QuasiAngular,
+        )
+        .ok()?;
+        // `Knots = Bspline->Knots(); BSplCLib::Reparametrize(Udeb, Udeb + 2*PI, Knots);
+        //  Bspline->SetKnots(Knots);` (`cxx:641-643`).
+        let (mut uknots, _) = bs.distinct_knots_and_mults();
+        occt_core::bspl::knots::reparametrize(a, a + 2.0 * PI, &mut uknots);
+        bs.set_knots(&uknots).ok()?;
+        // `TransferCurve(Bspline, Udeb, Ufin)` turns a periodic curve into a
+        // non-periodic copy first (`cxx:294-307`).
+        bs.set_not_periodic();
+        self.emit_bspline_curve(&bs, a, b)
+    }
+
     /// Entity 104 (`GeomToIGES_GeomCurve::TransferCurve(Geom_Ellipse)`,
     /// `GeomToIGES_GeomCurve.cxx:608-700`; `(Geom_Hyperbola)`, `:707-773`;
     /// `(Geom_Parabola)`, `:780-845`; written by
@@ -1480,18 +1519,19 @@ impl IgesWriter {
     /// `IGESGeom_ConicArc.cxx:33-53`), `ZT = 0` and the arc's end points in the
     /// conic's own frame (`Build.EvalXYZ`, `:669-670`). A frame other than the
     /// absolute one is recorded as entity 124 on the DE card
-    /// (`:692-697`). Returns `None` for the full-period ellipse, which OCCT routes
-    /// through `GeomConvert_ApproxCurve` instead (`:620-645`).
+    /// (`:692-697`). A full-period ellipse is routed to
+    /// [`emit_whole_period_ellipse`](IgesWriter::emit_whole_period_ellipse)
+    /// instead, exactly as OCCT does at `:620-645`.
     fn emit_conic_arc(&mut self, curve: &dyn Curve, a: f64, b: f64) -> Option<usize> {
         use std::f64::consts::PI;
         let unit = IGES_UNIT;
         let (abc, pos, u1, u2) = if let Some(e) = curve.gp_ellipse() {
             if (b - a - 2.0 * PI).abs() <= occt_core::precision::PCONFUSION {
-                // UNPORTED (audit A26 / task T-78): `cxx:620-645` converts the
-                // full-period ellipse with `GeomConvert_ApproxCurve` (then
-                // `GeomConvert::CurveToBSplineCurve` + `Reparametrize`) and
-                // transfers that B-spline; this port has no `GeomConvert_ApproxCurve`.
-                return None;
+                // `GeomToIGES_GeomCurve.cxx:620-645`: a trimmed **full-period**
+                // ellipse (IGES 104 cannot carry the whole-period semantics) is
+                // re-parameterised onto `[Udeb, Udeb + 2*PI]` and written as a
+                // B-spline (entity 126) instead.
+                return self.emit_whole_period_ellipse(&e, a, b);
             }
             // `cxx:649-654`: `|Udeb| <= gp::Resolution()` is snapped to 0.
             let u1 = if a.abs() <= occt_core::precision::REAL_SMALL {
