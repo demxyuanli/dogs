@@ -372,6 +372,25 @@ pub(super) fn expand_knots(mults: &[usize], knots: &[f64]) -> Vec<f64> {
     out
 }
 
+/// Split a STEP trimming-select list into its `PARAMETER_VALUE` numbers and its
+/// `CARTESIAN_POINT` references (`StepGeom_TrimmingSelect` is a select of
+/// `parameter_value` / `cartesian_point`; consumed by
+/// `StepToGeom::ExtractParameter`, `StepToGeom.cxx:2221-2317`).
+pub(super) fn parse_trimming_select(s: &str) -> (Vec<f64>, Vec<usize>) {
+    let mut params = Vec::new();
+    let mut rest = s;
+    while let Some(i) = rest.find("PARAMETER_VALUE") {
+        rest = &rest[i + "PARAMETER_VALUE".len()..];
+        let Some(open) = rest.find('(') else { break };
+        let Some(close) = rest[open..].find(')') else { break };
+        if let Ok(v) = rest[open + 1..open + close].trim().parse::<f64>() {
+            params.push(v);
+        }
+        rest = &rest[open + close..];
+    }
+    (params, parse_ref_list(s))
+}
+
 /// A clamped uniform knot vector for `n` poles of `degree` — the default used
 /// by STEP `B_SPLINE_CURVE` / `B_SPLINE_SURFACE` records that omit explicit
 /// knots (multiplicity `degree + 1` at each end, interior knots evenly spaced).
@@ -390,6 +409,38 @@ pub(super) fn uniform_knots_for(n: usize, degree: usize) -> Vec<f64> {
     }
     k
 }
+
+/// `StepToGeom::MakeBSplineCurve`/`MakeBSplineSurface`, `BEZIER_CURVE` /
+/// `BEZIER_SURFACE` arms (`StepToGeom.cxx:310-317`, `:537-548`): the STEP
+/// Bezier entity is converted to a B-spline whose knots are `{0, 1}` with both
+/// multiplicities `degree + 1`.
+pub(super) fn bezier_knots(degree: usize) -> Vec<f64> {
+    let mut k = vec![0.0; degree + 1];
+    k.extend(std::iter::repeat(1.0).take(degree + 1));
+    k
+}
+
+/// `UNIFORM_CURVE` / `UNIFORM_SURFACE` arms (`StepToGeom.cxx:338-347`,
+/// `:570-593`): `n_poles + degree + 1` knots `i-1` (i = 1..), every multiplicity
+/// `1` — OCCT does **not** clamp this vector.
+pub(super) fn uniform_open_knots(n_poles: usize, degree: usize) -> Vec<f64> {
+    (0..(n_poles + degree + 1)).map(|i| i as f64).collect()
+}
+
+/// `QUASI_UNIFORM_CURVE` / `QUASI_UNIFORM_SURFACE` arms
+/// (`StepToGeom.cxx:362-384`, `:612-638`): `n_poles - degree + 1` knots `i-1`
+/// with every multiplicity `1` except the first and last, which are
+/// `degree + 1`.
+pub(super) fn quasi_uniform_knots(n_poles: usize, degree: usize) -> Vec<f64> {
+    let nb = n_poles.saturating_sub(degree) + 1;
+    let mut k = vec![0.0; degree + 1];
+    for i in 1..nb.saturating_sub(1) {
+        k.push(i as f64);
+    }
+    k.extend(std::iter::repeat((nb.saturating_sub(1)) as f64).take(degree + 1));
+    k
+}
+
 
 // ---------------------------------------------------------------------------
 // B-spline entity writers

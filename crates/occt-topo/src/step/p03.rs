@@ -376,16 +376,51 @@ pub(super) fn merge_complex_body(body: &str) -> (String, Vec<String>) {
         member(t).and_then(|(_, a)| a.get(idx)).cloned()
     };
 
-    let is_curve = member("B_SPLINE_CURVE").is_some() || member("B_SPLINE_CURVE_WITH_KNOTS").is_some();
+    let is_curve = member("B_SPLINE_CURVE").is_some()
+        || member("B_SPLINE_CURVE_WITH_KNOTS").is_some()
+        || member("BEZIER_CURVE").is_some()
+        || member("UNIFORM_CURVE").is_some()
+        || member("QUASI_UNIFORM_CURVE").is_some();
     let is_surface = member("B_SPLINE_SURFACE").is_some()
-        || member("B_SPLINE_SURFACE_WITH_KNOTS").is_some();
+        || member("B_SPLINE_SURFACE_WITH_KNOTS").is_some()
+        || member("BEZIER_SURFACE").is_some()
+        || member("UNIFORM_SURFACE").is_some()
+        || member("QUASI_UNIFORM_SURFACE").is_some();
 
     if is_curve {
         // Complex members carry only the subtype's *own* attributes, no entity
         // name. B_SPLINE_CURVE args: (degree, control_points, curve_form,
         // closed, self_intersect). B_SPLINE_CURVE_WITH_KNOTS adds
         // (multiplicities, knots, knot_spec); RATIONAL_B_SPLINE_CURVE adds
-        // (weights).
+        // (weights). The Bezier / uniform / quasi-uniform families have the same
+        // base attribute list (`StepToGeom.cxx:295-458` maps them onto a
+        // B-spline with synthesized knots, which the resolver's arms do).
+        if let Some((ty, ba)) = ["BEZIER_CURVE", "UNIFORM_CURVE", "QUASI_UNIFORM_CURVE"]
+            .iter()
+            .find_map(|t| member(t))
+        {
+            let r_args = member("RATIONAL_B_SPLINE_CURVE")
+                .map(|(_, a)| a.clone())
+                .unwrap_or_default();
+            let degree = ba.get(0).cloned().unwrap_or_default();
+            let control_points = ba.get(1).cloned().unwrap_or_default();
+            let curve_form = ba.get(2).cloned().unwrap_or_else(|| ".UNSPECIFIED.".to_string());
+            let closed = ba.get(3).cloned().unwrap_or_else(|| ".F.".to_string());
+            let self_intersect = ba.get(4).cloned().unwrap_or_else(|| ".F.".to_string());
+            let weights = r_args.first().cloned().unwrap_or_else(|| "SELF".to_string());
+            return (
+                ty.clone(),
+                vec![
+                    "''".to_string(),
+                    degree,
+                    control_points,
+                    weights,
+                    curve_form,
+                    closed,
+                    self_intersect,
+                ],
+            );
+        }
         let base = member("B_SPLINE_CURVE").or_else(|| member("B_SPLINE_CURVE_WITH_KNOTS"));
         let knots = member("B_SPLINE_CURVE_WITH_KNOTS");
         let rational = member("RATIONAL_B_SPLINE_CURVE");
@@ -435,6 +470,40 @@ pub(super) fn merge_complex_body(body: &str) -> (String, Vec<String>) {
         // surface_form, closed_u, closed_v, self_intersect).
         // B_SPLINE_SURFACE_WITH_KNOTS adds (u_mults, v_mults, u_knots,
         // v_knots, knot_spec); RATIONAL_B_SPLINE_SURFACE adds (weights).
+        // The Bezier / uniform / quasi-uniform families share the base attribute
+        // list (`StepToGeom.cxx:522-743` converts them to a B-spline with
+        // synthesized knots, which the resolver's arms do) and take the weight
+        // grid from `RATIONAL_B_SPLINE_SURFACE`.
+        if let Some((ty, ba)) = ["BEZIER_SURFACE", "UNIFORM_SURFACE", "QUASI_UNIFORM_SURFACE"]
+            .iter()
+            .find_map(|t| member(t))
+        {
+            let r_args = member("RATIONAL_B_SPLINE_SURFACE")
+                .map(|(_, a)| a.clone())
+                .unwrap_or_default();
+            let deg_u = ba.get(0).cloned().unwrap_or_default();
+            let deg_v = ba.get(1).cloned().unwrap_or_default();
+            let control_points = ba.get(2).cloned().unwrap_or_default();
+            let surface_form = ba.get(3).cloned().unwrap_or_else(|| ".UNSPECIFIED.".to_string());
+            let closed_u = ba.get(4).cloned().unwrap_or_else(|| ".F.".to_string());
+            let closed_v = ba.get(5).cloned().unwrap_or_else(|| ".F.".to_string());
+            let self_intersect = ba.get(6).cloned().unwrap_or_else(|| ".F.".to_string());
+            let weights = r_args.first().cloned().unwrap_or_else(|| "SELF".to_string());
+            return (
+                ty.clone(),
+                vec![
+                    "''".to_string(),
+                    deg_u,
+                    deg_v,
+                    control_points,
+                    weights,
+                    surface_form,
+                    closed_u,
+                    closed_v,
+                    self_intersect,
+                ],
+            );
+        }
         let base = member("B_SPLINE_SURFACE").or_else(|| member("B_SPLINE_SURFACE_WITH_KNOTS"));
         let knots = member("B_SPLINE_SURFACE_WITH_KNOTS");
         let rational = member("RATIONAL_B_SPLINE_SURFACE");

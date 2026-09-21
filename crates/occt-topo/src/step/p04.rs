@@ -901,6 +901,56 @@ impl<'a> Resolver<'a> {
         Ok(ax2)
     }
 
+    /// One side of `StepToGeom::ExtractParameter` (`StepToGeom.cxx:2221-2317`):
+    /// the master representation decides which select is authoritative; a
+    /// parameter select becomes `Shift + Factor * value` (`cxx:2238`, `:2286`),
+    /// a point select is projected onto the curve (`cxx:2249-2251`,
+    /// `ShapeAnalysis_Curve::Project`; the port uses its Extrema-based
+    /// projection, `int_tools_vertex_line::project_point_on_curve_param`).
+    fn extract_parameter(
+        &self,
+        curve: &dyn Curve,
+        params: &[f64],
+        points: &[usize],
+        master_rep: i32,
+        fact: f64,
+        shift: f64,
+    ) -> Result<Option<f64>, String> {
+        if master_rep == 2 {
+            if let Some(p) = params.first() {
+                return Ok(Some(shift + fact * p));
+            }
+        } else if master_rep == 1 {
+            if let Some(&r) = points.first() {
+                let p = self.resolve_point(r)?;
+                return Ok(crate::int_tools_vertex_line::project_point_on_curve_param(curve, &p));
+            }
+        }
+        // `cxx:2278-2314`: with an unspecified master representation the parameter
+        // is preferred, and the point is projected only when no parameter exists.
+        if let Some(p) = params.first() {
+            return Ok(Some(shift + fact * p));
+        }
+        if let Some(&r) = points.first() {
+            let p = self.resolve_point(r)?;
+            return Ok(crate::int_tools_vertex_line::project_point_on_curve_param(curve, &p));
+        }
+        Ok(None)
+    }
+
+    /// `StepGeom_Axis2Placement3d::HasRefDirection` (`cxx:2404`): the STEP record
+    /// carries `$` in the reference-direction slot when it is absent.
+    pub(super) fn axis2_has_ref_direction(&self, id: usize) -> Result<bool, String> {
+        let rec = self.record(id)?;
+        if rec.type_name != "AXIS2_PLACEMENT_3D" {
+            return Ok(true);
+        }
+        Ok(match rec.args.get(3).map(|s| s.trim()) {
+            None | Some("") | Some("$") | Some(".F.") => false,
+            _ => true,
+        })
+    }
+
     pub(super) fn resolve_curve(&self, id: usize) -> Result<Arc<dyn Curve>, String> {
         if let Some(c) = self.curve_cache.borrow().get(&id) {
             return Ok(c.clone());
@@ -968,6 +1018,46 @@ impl<'a> Resolver<'a> {
                     .insert(id, parse_ref_list(&rec.args[2]));
                 self.resolve_curve(c3d)?
             }
+            "BEZIER_CURVE" | "UNIFORM_CURVE" | "QUASI_UNIFORM_CURVE" => {
+                // `StepToGeom::MakeBSplineCurve` (`StepToGeom.cxx:295-450`): the STEP
+                // Bezier / uniform / quasi-uniform curve is converted into a
+                // `BSplineCurveWithKnots` before being mapped:
+                //   Bezier       -> knots {0,1}, multiplicities degree+1 (`:310-317`)
+                //   Uniform      -> n_poles + degree + 1 knots i-1, mults 1 (`:338-347`)
+                //   QuasiUniform -> n_poles - degree + 1 knots i-1, mults 1 except
+                //                   both ends = degree+1 (`:362-384`)
+                // The `_AND_RATIONAL_B_SPLINE_CURVE` complex forms add the weights
+                // (`:385-421`, `:422-458`); a rational **Bezier** curve is the
+                // exception — OCCT has no Bezier+rational arm, and its plain
+                // `BezierCurve` arm (`:295-320`) never reads weights.
+                let degree = parse_f64(&rec.args[1])? as usize;
+                let poles: Vec<GpPnt> = parse_ref_list(&rec.args[2])
+                    .into_iter()
+                    .map(|r| self.resolve_point(r))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let knots = match rec.type_name.as_str() {
+                    "BEZIER_CURVE" => bezier_knots(degree),
+                    "UNIFORM_CURVE" => uniform_open_knots(poles.len(), degree),
+                    _ => quasi_uniform_knots(poles.len(), degree),
+                };
+                // A merged rational complex carries the weights at index 3; a plain
+                // entity has `curve_form` there (a marker like `.UNSPECIFIED.`).
+                let weights_arg = rec.args.get(3).map(|s| s.trim().to_string());
+                let weights = match weights_arg.as_deref() {
+                    Some(w) if w.starts_with('(') && rec.type_name != "BEZIER_CURVE" => {
+                        Some(parse_real_list(w))
+                    }
+                    _ => None,
+                };
+                let curve = match weights {
+                    Some(w) if w.len() == poles.len() => {
+                        GeomBSplineCurve::rational(poles, w, knots, degree)
+                    }
+                    Some(_) => return Err("BEZIER/UNIFORM_CURVE: weight count mismatch".into()),
+                    None => GeomBSplineCurve::new(poles, knots, degree),
+                };
+                Arc::new(curve.map_err(|e| format!("{}: {e}", rec.type_name))?)
+            }
             "B_SPLINE_CURVE_WITH_KNOTS" => {
                 // Layout (10 args): name, degree, control_points, weights|SELF,
                 // curve_form, closed, self_intersect, knots, multiplicities, knot_spec.
@@ -1034,20 +1124,108 @@ impl<'a> Resolver<'a> {
                 )
             }
             "TRIMMED_CURVE" => {
+                // `StepToGeom::MakeTrimmedCurve` (`StepToGeom.cxx:2323-2496`) with
+                // `ExtractParameter` (`:2221-2317`).
                 // Layout: name, basis_curve, trim_1, trim_2, sense_agreement,
-                // master_representation. The bounds are the 4th/5th attributes.
-                // UNPORTED: `StepToGeom::MakeTrimmedCurve` (`StepToGeom.cxx:2376-2394`)
-                // scales the parameter trims by `fact` (`cxx:2380` Line magnitude
-                // times LengthFactor, `cxx:2386` PlaneAngleFactor for Circle /
-                // Ellipse) and adds the `shift` of `cxx:2389-2392`; only a
-                // POINT-trimmed curve skips both (`cxx:2355-2372`). The raw
-                // parameters are used here, so the file length factor is not
-                // threaded through this arm.
+                // master_representation.
                 let basis_ref = parse_ref(&rec.args[1]).ok_or("TRIMMED_CURVE: bad basis ref")?;
+                let basis_rec = self.record(basis_ref)?;
+                let basis_kind = basis_rec.type_name.clone();
                 let basis = self.resolve_curve(basis_ref)?;
-                let a = parse_f64(&rec.args[3])?;
-                let b = parse_f64(&rec.args[4])?;
-                Arc::new(GeomTrimmedCurve::new(basis, a, b))
+                let (params1, points1) = parse_trimming_select(&rec.args[2]);
+                let (params2, points2) = parse_trimming_select(&rec.args[3]);
+                let sense = !matches!(
+                    rec.args.get(4).map(|s| s.trim()),
+                    Some(".F.") | Some("F") | Some("false")
+                );
+                // `cxx:2339-2350`: `.CARTESIAN.` = 1, `.PARAMETER.` = 2, else 0.
+                let master_rep: i32 = match rec.args.get(5).map(|s| s.trim()) {
+                    Some(".CARTESIAN.") => 1,
+                    Some(".PARAMETER.") => 2,
+                    _ => 0,
+                };
+                // `cxx:2352-2373`: with an unspecified master representation (or a
+                // parameter one carrying two selects on each side), a Cartesian
+                // point on both trims means the trims are points, not parameters.
+                let n1 = params1.len() + points1.len();
+                let n2 = params2.len() + points2.len();
+                let is_point = (master_rep == 0 || (master_rep == 2 && n1 > 1 && n2 > 1))
+                    && !points1.is_empty()
+                    && !points2.is_empty();
+                // `cxx:2375-2392`: parameter scaling per basis type.
+                let (fact, shift) = match basis_kind.as_str() {
+                    "LINE" => {
+                        let vec_ref =
+                            parse_ref(&basis_rec.args[2]).ok_or("LINE: bad vector ref")?;
+                        // `cxx:2380`: `Dir()->Magnitude() * LengthFactor` — the port's
+                        // `resolve_vector` already applies `LengthFactor`
+                        // (`StepToGeom::MakeVectorWithMagnitude`, `cxx:2577`).
+                        (self.resolve_vector(vec_ref)?.xyz().modulus(), 0.0)
+                    }
+                    "CIRCLE" | "ELLIPSE" => {
+                        // `cxx:2386`: `PlaneAngleFactor`; `cxx:2387-2392`: a π/2 shift
+                        // for an ellipse whose `SemiAxis1 - SemiAxis2 < 0`.
+                        let mut shift = 0.0;
+                        if basis_kind == "ELLIPSE" {
+                            let s1 = parse_f64(&basis_rec.args[2])?;
+                            let s2 = parse_f64(&basis_rec.args[3])?;
+                            if s1 - s2 < 0.0 {
+                                shift = 0.5 * PI;
+                            }
+                        }
+                        (self.plane_angle_factor, shift)
+                    }
+                    _ => (1.0, 0.0),
+                };
+                // `cxx:2394-2425`: a conic whose placement has no reference direction
+                // cannot be trimmed by parameters; OCCT returns the full period with
+                // the sense of `SenseAgreement` (the port's `GeomTrimmedCurve` carries
+                // no sense flag, so the full-period span is what is modelled).
+                if matches!(basis_kind.as_str(), "CIRCLE" | "ELLIPSE") && !is_point && master_rep != 1 {
+                    let ax_ref = parse_ref(&basis_rec.args[1]).ok_or("conic: bad axis ref")?;
+                    if !self.axis2_has_ref_direction(ax_ref)? {
+                        return Ok(Arc::new(GeomTrimmedCurve::new(basis, 0.0, 2.0 * PI)));
+                    }
+                }
+                let t1 = self.extract_parameter(&*basis, &params1, &points1, master_rep, fact, shift)?;
+                let t2 = self.extract_parameter(&*basis, &params2, &points2, master_rep, fact, shift)?;
+                let (Some(mut trim1), Some(mut trim2)) = (t1, t2) else {
+                    // `cxx:2495`: no parameter on either side → OCCT returns null.
+                    return Err(format!("TRIMMED_CURVE: no trimming parameters (#{id})"));
+                };
+                let cf = basis.first_parameter();
+                let cl = basis.last_parameter();
+                // `cxx:2438-2459`: clamp into the basis range when it is not periodic.
+                if !basis.is_periodic() {
+                    trim1 = trim1.clamp(cf, cl);
+                    trim2 = trim2.clamp(cf, cl);
+                }
+                if (trim1 - trim2).abs() < occt_core::precision::PCONFUSION {
+                    if basis.is_periodic() {
+                        // `cxx:2462-2465`: `ElCLib::AdjustPeriodic(cf, cl, PConfusion, …)`.
+                        occt_core::elib::clib2d::adjust_periodic(
+                            cf,
+                            cl,
+                            occt_core::precision::PCONFUSION,
+                            &mut trim1,
+                            &mut trim2,
+                        );
+                    } else {
+                        // `cxx:2466-2480`: the closed (non-periodic) basis arm is
+                        // UNPORTED — the `Curve` trait exposes no `IsClosed`, so the
+                        // null-result branch OCCT takes otherwise is returned here.
+                        return Err(format!("TRIMMED_CURVE: degenerate trim on closed basis (#{id})"));
+                    }
+                }
+                // `cxx:2486-2493`: `SenseAgreement` selects the argument order. The
+                // port's `GeomTrimmedCurve` stores only the span (no `Sense` flags,
+                // `trimmed.rs`), so an agreed trim is written as-is and an opposite one
+                // is written reversed — the reversal flags themselves are UNPORTED.
+                if sense {
+                    Arc::new(GeomTrimmedCurve::new(basis, trim1, trim2))
+                } else {
+                    Arc::new(GeomTrimmedCurve::new(basis, trim2, trim1))
+                }
             }
             "OFFSET_CURVE_3D" => {
                 // Layout: name, basis_curve, direction, distance, self_intersect,
@@ -1205,15 +1383,61 @@ impl<'a> Resolver<'a> {
                 (c, range)
             }
             "TRIMMED_CURVE" => {
-                // UNPORTED: `StepToGeom::MakeTrimmedCurve2d` (`StepToGeom.cxx:2517-2561`)
-                // scales the parameter trims by `fact` (Line magnitude at `cxx:2533`,
-                // PlaneAngleFactor at `cxx:2539`) and adds the `shift` of
-                // `cxx:2541-2545`. The raw parameters are used here.
+                // `StepToGeom::MakeTrimmedCurve2d` (`StepToGeom.cxx:2505-2563`).
                 let basis_ref = parse_ref(&rec.args[1]).ok_or("TRIMMED_CURVE: bad basis ref")?;
-                let (basis, _) = self.resolve_curve_2d(basis_ref)?;
-                let a = parse_f64(&rec.args[3])?;
-                let b = parse_f64(&rec.args[4])?;
-                (Arc::new(Geom2dTrimmedCurve::new(basis, a, b)), (a, b))
+                let basis_rec = self.record(basis_ref)?;
+                let basis_kind = basis_rec.type_name.clone();
+                let (basis, basis_range) = self.resolve_curve_2d(basis_ref)?;
+                // `cxx:2514-2517`: a basis that already is a 2-D B-spline curve is
+                // returned **untrimmed**.
+                if matches!(
+                    basis_kind.as_str(),
+                    "B_SPLINE_CURVE" | "B_SPLINE_CURVE_WITH_KNOTS"
+                ) {
+                    return Ok((basis, basis_range));
+                }
+                let (params1, _) = parse_trimming_select(&rec.args[2]);
+                let (params2, _) = parse_trimming_select(&rec.args[3]);
+                // `cxx:2523-2525`: both trims must be single parameter selects,
+                // otherwise OCCT returns a null handle.
+                if params1.len() != 1 || params2.len() != 1 {
+                    return Err(format!("TRIMMED_CURVE(2d): trims are not single parameters (#{id})"));
+                }
+                let (u1, u2) = (params1[0], params2[0]);
+                // `cxx:2528-2551`: Line → `Dir()->Magnitude()` (**no** LengthFactor in
+                // the 2-D path); Circle/Ellipse → `PlaneAngleFactor`, plus a π/2 shift
+                // for an ellipse with `SemiAxis1 - SemiAxis2 < 0`; parabola/hyperbola
+                // are left as a TODO in OCCT itself (`cxx:2547-2551`).
+                let (fact, shift) = match basis_kind.as_str() {
+                    "LINE" => {
+                        let vec_ref = parse_ref(&basis_rec.args[2]).ok_or("LINE: bad vector ref")?;
+                        let vec_rec = self.record(vec_ref)?;
+                        (parse_f64(&vec_rec.args[2])?, 0.0)
+                    }
+                    "CIRCLE" | "ELLIPSE" => {
+                        let mut shift = 0.0;
+                        if basis_kind == "ELLIPSE" {
+                            let s1 = parse_f64(&basis_rec.args[2])?;
+                            let s2 = parse_f64(&basis_rec.args[3])?;
+                            if s1 - s2 < 0.0 {
+                                shift = 0.5 * PI;
+                            }
+                        }
+                        (self.plane_angle_factor, shift)
+                    }
+                    _ => (1.0, 0.0),
+                };
+                let new_u1 = shift + u1 * fact;
+                let new_u2 = shift + u2 * fact;
+                // UNPORTED: `Geom2dConvert::CurveToBSplineCurve(theTrimmed)`
+                // (`cxx:2560`) is not ported (cf. A8/T-44 for the 3-D counterpart), so
+                // the trimmed 2-D curve is kept as the trimmed curve itself; the
+                // `SenseAgreement` argument of `Geom2d_TrimmedCurve` is likewise not
+                // modelled by the port's `Geom2dTrimmedCurve` (span only).
+                (
+                    Arc::new(Geom2dTrimmedCurve::new(basis, new_u1, new_u2)),
+                    (new_u1, new_u2),
+                )
             }
             other => {
                 self.warn(format!("unsupported 2D curve entity {other} (#{id})"));

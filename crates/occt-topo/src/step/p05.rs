@@ -186,15 +186,95 @@ impl<'a> Resolver<'a> {
                 let basis = self.resolve_surface(basis_ref)?;
                 Arc::new(GeomOffsetSurface::new(basis, distance))
             }
-            // UNPORTED: `RECTANGULAR_TRIMMED_SURFACE` has no arm here.
-            // `StepToGeom::MakeRectangularTrimmedSurface` (`StepToGeom.cxx:1835-1884`)
-            // builds the basis surface and scales the trim window by `uFact` /
-            // `vFact` taken from LengthFactor / PlaneAngleFactor (`cxx:1847-1882`),
-            // so the file length factor is not threaded through that entity. No
-            // sample in `data/` uses it. Until the arm exists, `resolve_surface`
-            // reports it as unsupported. Note `step_surface_is_reversed`
-            // (`StepToTopoDS_TranslateFace.cxx:479-491`) already recurses into the
-            // basis surface for the face-orientation test.
+            "RECTANGULAR_TRIMMED_SURFACE" => {
+                // Layout: (name, basis_surface, u1, u2, v1, v2, usense, vsense).
+                // `StepToGeom::MakeRectangularTrimmedSurface`
+                // (`StepToGeom.cxx:1834-1885`): the basis surface is built first
+                // (`:1838`), then the trim window is scaled by `uFact`/`vFact` chosen
+                // from the basis type (`:1845-1875`) before
+                // `Geom_RectangularTrimmedSurface` is constructed (`:1882`).
+                let basis_ref = parse_ref(&rec.args[1])
+                    .ok_or("RECTANGULAR_TRIMMED_SURFACE: bad basis ref")?;
+                let basis = self.resolve_surface(basis_ref)?;
+                let (u_fact, v_fact) = if basis.gp_sphere().is_some() || basis.gp_torus().is_some() {
+                    (self.plane_angle_factor, self.plane_angle_factor)
+                } else if basis.gp_cylinder().is_some() {
+                    (self.plane_angle_factor, self.length_factor)
+                } else if basis.is_surface_of_revolution() {
+                    (self.plane_angle_factor, 1.0)
+                } else if let Some(co) = basis.gp_cone() {
+                    // `cxx:1866-1871`: `vFact = LengthFact / cos(SemiAngle)`.
+                    (self.plane_angle_factor, self.length_factor / co.semi_angle().cos())
+                } else if basis.gp_pln().is_some() {
+                    (self.length_factor, self.length_factor)
+                } else {
+                    // `cxx:1845-1846`: `uFact = vFact = 1.` for any other basis.
+                    (1.0, 1.0)
+                };
+                let u1 = parse_f64(&rec.args[2])? * u_fact;
+                let u2 = parse_f64(&rec.args[3])? * u_fact;
+                let v1 = parse_f64(&rec.args[4])? * v_fact;
+                let v2 = parse_f64(&rec.args[5])? * v_fact;
+                // UNPORTED: the `Usense`/`Vsense` flags (`rec.args[6]`/`[7]`) are the
+                // reversal arguments of `Geom_RectangularTrimmedSurface`; the port's
+                // `rectangular_trimmed::uv` carries no sense state and performs no
+                // `SetTrim` normalisation (`Geom_RectangularTrimmedSurface.cxx`
+                // `SetTrim`, including `ElCLib::AdjustPeriodic` for a periodic basis).
+                Arc::new(GeomRectangularTrimmedSurface::uv(basis, u1, u2, v1, v2))
+            }
+            "BEZIER_SURFACE" | "UNIFORM_SURFACE" | "QUASI_UNIFORM_SURFACE" => {
+                // `StepToGeom::MakeSurface` (`StepToGeom.cxx:522-743`): STEP Bezier,
+                // uniform and quasi-uniform surfaces are each converted into a
+                // `BSplineSurfaceWithKnots` before being mapped onto Geom:
+                //   Bezier       -> knots {0,1}, multiplicities degree+1 (`:537-548`)
+                //   Uniform      -> n_poles + degree + 1 knots i-1, mults 1 (`:570-593`)
+                //   QuasiUniform -> n_poles - degree + 1 knots i-1, mults 1 except
+                //                   both ends = degree+1 (`:612-638`)
+                // The `_AND_RATIONAL_B_SPLINE_SURFACE` complex forms carry the
+                // weight grid (`:644-687`, `:692-739`); a rational **Bezier**
+                // surface is the exception — OCCT's Bezier arm never reads
+                // `WeightsData` (`:524-555`), so its weights are dropped just as
+                // OCCT drops them.
+                let deg_u = parse_f64(&rec.args[1])? as usize;
+                let deg_v = parse_f64(&rec.args[2])? as usize;
+                let poles: Vec<Vec<GpPnt>> = parse_nested_ref_list(&rec.args[3])
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .map(|r| self.resolve_point(r))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let nu = poles.len();
+                let nv = poles.first().map_or(0, |r| r.len());
+                let (u_knots, v_knots) = match rec.type_name.as_str() {
+                    "BEZIER_SURFACE" => (bezier_knots(deg_u), bezier_knots(deg_v)),
+                    "UNIFORM_SURFACE" => (
+                        uniform_open_knots(nu, deg_u),
+                        uniform_open_knots(nv, deg_v),
+                    ),
+                    _ => (
+                        quasi_uniform_knots(nu, deg_u),
+                        quasi_uniform_knots(nv, deg_v),
+                    ),
+                };
+                // A merged rational complex carries the weight grid at index 4; a
+                // plain entity has `surface_form` there, which never is a list.
+                let weights_arg = rec.args.get(4).map(|s| s.trim().to_string());
+                let weights = match weights_arg.as_deref() {
+                    Some(w) if w.starts_with('(') && rec.type_name != "BEZIER_SURFACE" => {
+                        Some(parse_nested_real_list(w))
+                    }
+                    _ => None,
+                };
+                let surface = match weights {
+                    Some(wgrid) => GeomBSplineSurface::rational(
+                        poles, wgrid, u_knots, v_knots, deg_u, deg_v,
+                    ),
+                    None => GeomBSplineSurface::new(poles, u_knots, v_knots, deg_u, deg_v),
+                };
+                Arc::new(surface.map_err(|e| format!("{}: {e}", rec.type_name))?)
+            }
             other => {
                 self.warn(format!("unsupported surface entity {other} (#{id})"));
                 return Err(format!("unsupported surface entity {other} (#{id})"));
