@@ -145,7 +145,7 @@ cd ..; git worktree remove --force .target-headcheck
 
 | 模型 | STEP 源 | OCCT 参考 | Rust 产物 | bbox 一致 |
 |---|---|---|---|---|
-| ATU01038 | `data/ATU01038.step`（未跟踪，19,637 行） | `data/occ-ATU01038.obj`（1,8102 v）· `output/occ/ATU01038.obj`（18,051 v） | `output/ATU01038.obj`（17,767 v / 22,160 f） | ✅ Δ≤9e-6 |
+| ATU01038 | `data/ATU01038.step`（未跟踪，19,637 行） | `data/occ-ATU01038.obj`（1,8102 v）· `output/occ/ATU01038.obj`（18,051 v） | `output/ATU01038.obj`（**第 111 轮实测 17,745 v / 22,119 f**；09-19 记录为 17,767 v / 22,160 f） | ✅ Δ≤9e-6 |
 | a3n00 / acs10 / bottom / motoc / top / T0M / TDB | `data/occ/*.step`（8 个） | `output/occ/*.obj`（8 个，9/15 20:56–22:45） | ❌ 无 | — |
 | Cube/Cone/Cylinder/Sphere/Torus/HoledPlate/Offset*/Shape*/rev/linkrods/screw/Extrusion | `data/*.step` | `data/occ-*.obj` / `occ-*.obj` | `output/*.obj`（9/17 16:40） | 12/12 门禁绿 |
 
@@ -1852,6 +1852,7 @@ cd ..; git worktree remove --force .target-pre85
   2. **新登记 T-86**（板内此前未登记的红）：`iges::tests::sphere_iges_has_arc_and_solid` 在批 84 与批 98 **都失败**（单独跑也失败），断言 `iges.contains("100") || iges.contains("128")`；临时探针（已删）dump 出球面 IGES 的 DE 类型 = `[144, 196, 116, 123, 123]`（无 100/110/128/142）⇒ **归因 = T-68 的下游症状**（端口球面 face 没有边界 wire，T-68 探针 `wires/face=[0]`），不是本波次引入，也不应通过改断言"修"。
   3. **旁支（未动手）**：`iges_check` 的 `unreferenced` 在**两端逐模型相同**（Cube 等仅 `{402:1}` = 根自身；但 `Sphere`/`Torus`/`Shape`/`linkrods`/`ATU01038`/`occ/*` 仍列出 `144/196/123/128/198/120/124` 等）⇒ 与 R2-4 卡"孤儿应归零"的预期不符，但**非本波次引入**；下一轮需判定是"统计口径（根 402 未计入引用）"还是"写侧确实漏引用"。
 - **未做（按纪律 4 停在报告）**：未执行 §6.2 步骤 6（R2-17 删 `(Circle, Circle)` 快路径）与步骤 7（R2-7…R2-10 分诊）；未改任何源码（本轮只有板内文档改动）。
+- **导出计数的一处待确认（旁支，已登记未动手）**：本轮 `export_data_obj` 的 16 个计数与 §13 记录**逐项一致**（Cube 24/12、Sphere 642/1244、Torus 1369/2592、Shape-1 3343/4336、linkrods 3494/5078），只有 **ATU01038 = 17,745 v / 22,119 f** 与 §3-P3 表的 09-19 记录（17,767 / 22,160）差 **−22 v / −41 f**；其 bbox parity 仍绿（14/14）。该模型含 `closed_curve=.T.` 的 B 样条，正是 §6.2 第 94 行预告的"读侧周期化会改 `export_data_obj`"影响面 ⇒ 判为**批 94（+96）的预期变化**；本轮**未对 export 做 A/B**（对照 worktree 按 §6.1 已撤除），下一轮如要钉死可补一次 `9d8e596` 对照。**批 98 不可能影响它**（该批只改 IGES/STEP 写侧，OBJ 导出不经过）。
 
 ---
 
