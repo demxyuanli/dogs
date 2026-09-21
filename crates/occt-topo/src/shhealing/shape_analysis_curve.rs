@@ -21,18 +21,16 @@
 //! `pcurve_full/common.rs:1423` (`next_project_on_curve_range`), so they are not
 //! duplicated here.
 //!
-//! UNPORTED, inside [`project_act`]'s `!OK` switch:
-//! * `GeomAbs_Hyperbola` / `GeomAbs_Parabola` (`cxx:376-386`): the `Curve` trait
-//!   has no hyperbola/parabola query, so those types take the `default`
-//!   segment search (`cxx:401-477`) instead of the `ElCLib::Parameter` /
-//!   `Value` shortcut.
-//! * `GeomAbs_Ellipse` (`cxx:394-399`): `ElCLib::EllipseParameter` has no port
-//!   counterpart, so the shortcut is replaced by the `default` segment search;
-//!   the arm's `anIsClosedCurve` / `aCurvePeriod` writes only feed the tail
-//!   block (`cxx:479-484`) that the `default` arm returns before reaching.
-//! * `GeomAbs_Circle` (`cxx:355-374`) and `GeomAbs_Line` (`cxx:387-393`) are
-//!   ported (`clib::circle_parameter` / `clib::circle_value`, and
-//!   `ElCLib::LineParameter` `ElCLib.cxx:1192-1195` over `Curve::d0/d1`).
+//! The `!OK` switch of [`project_act`] is **fully ported** (batch 88, task
+//! T-17): `GeomAbs_Circle` (`cxx:355-374`), `GeomAbs_Hyperbola` (`cxx:376-380`),
+//! `GeomAbs_Parabola` (`cxx:382-386`), `GeomAbs_Line` (`cxx:388-392`) and
+//! `GeomAbs_Ellipse` (`cxx:394-399`, including its `anIsClosedCurve` /
+//! `aCurvePeriod = 2π` writes), each through the matching
+//! `ElCLib::Parameter`/`Value` pair (`clib::{circle,hyperbola,parabola,ellipse}_parameter`
+//! and `clib::{circle,hyperbola,parabola,ellipse,line}_value`;
+//! `ElCLib::LineParameter` `ElCLib.cxx:1192-1195`). The three conic arms were
+//! parked until the `Curve` trait gained `gp_hyperbola`/`gp_parabola`/`gp_ellipse`
+//! (A20/A29) and `clib` gained the matching `*_parameter` helpers (T-56).
 //!
 //! `theCurve.IsClosed()` (`cxx:340`, `cxx:187`) has no `Curve` counterpart; a
 //! curve whose two range ends coincide stands in for it. A trimmed arc of a
@@ -180,6 +178,32 @@ fn project_act(
                 proj_param = clib::circle_parameter(&circ.position(), point);
                 proj_point = clib::circle_value(&circ, proj_param);
             }
+            is_closed = true;
+            period = 2.0 * std::f64::consts::PI;
+        } else if let Some(hypr) = curve.gp_hyperbola() {
+            // `cxx:376-380` (`GeomAbs_Hyperbola`).
+            proj_param =
+                clib::hyperbola_parameter(&hypr.pos, hypr.major_radius, hypr.minor_radius, point);
+            proj_point = clib::hyperbola_value(&hypr, proj_param);
+        } else if let Some(parab) = curve.gp_parabola() {
+            // `cxx:382-386` (`GeomAbs_Parabola`).
+            proj_param = clib::parabola_parameter(&parab.pos, point);
+            proj_point = clib::parabola_value(&parab, proj_param);
+        } else if let Some(lin) = curve.gp_line() {
+            // `cxx:388-392` (`GeomAbs_Line`). The parameter is taken on the port
+            // curve's own parameterisation (`ElCLib::Parameter`), the point from
+            // the `gp_Lin` (`ElCLib::Value`).
+            proj_param = line_parameter(curve, point);
+            proj_point = clib::line_value(&lin, proj_param);
+        } else if let Some(elips) = curve.gp_ellipse() {
+            // `cxx:394-399` (`GeomAbs_Ellipse`).
+            proj_param = clib::ellipse_parameter(
+                &elips.pos,
+                elips.major_radius,
+                elips.minor_radius,
+                point,
+            );
+            proj_point = clib::ellipse_value(&elips, proj_param);
             is_closed = true;
             period = 2.0 * std::f64::consts::PI;
         } else {
