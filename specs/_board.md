@@ -1543,6 +1543,30 @@ cd ..; git worktree remove --force .target-pre85
 
 > 纪律复核：差分前不要动任何源码；`git worktree` 路径命中 `.gitignore` 的 `/.target-*/`；**禁止**在共享树 `git stash`。
 
+### 6.2 门禁波次 playbook（收到指令后按序执行；勿跳步）
+
+| 步 | 动作 | 命令/判据 | 产出 |
+|---|---|---|---|
+| 1 | 工作区确认 | `git status --porcelain` 只应有未跟踪的 `data/iges/`；`git log -1` = 最新批 | — |
+| 2 | **R2-18-gate 差分**（§6.1） | 现工作区 vs `9d8e596`（批 84 末）逐项比对 `test result:` | `gate_before/after.txt` + 差异清单 |
+| 3 | 全门禁 + IGES 校验 + 导出门禁 | §6 的 5 条 + `cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_check -- <18 模型>`（批 84/4 改过 IGES 写侧） | 新 §2 快照（R2-15 收口） |
+| 4 | 差异/回归归因 | 若某用例由绿转红：按 **85 `e6c12c2` → 86 `2eccb5b` → 87 `ae67e92` → 88 `0ff1ac2` → 89 `d017d9f`** 顺序用 `git worktree add --detach .target-bN <commit>` 二分，定位首个 offender | 首个 offender + 差异证据 |
+| 5 | 停止并报告（门禁 3/4） | 失配即停：写清"哪条门禁、哪条用例、期望 vs 实际、首个 offender"，**不**顺手修、不新写测试 | §7 报告 |
+| 6 | 无回归时：R2-17 单独一批 | 删 `perform` 的 `(Circle, Circle)` 分派与 `compute_circle_circle_full`（OCCT 无此分支）→ 复跑第 3 步 | R2-17 结项或回退 |
+| 7 | 之后才动 R2-7…R2-10 | 按第 3 步的红项顺序（T-01/T-03/T-04/T-05）分诊 | 更新 §3/§14 |
+
+**预期影响表（第 2/3 步解读用，避免把"预期变化"误当回归）**：
+
+| 批次 | 预期会动的门禁 | 理由 |
+|---|---|---|
+| 85 `e6c12c2` | 2D 相关用例（`geom2d_api`/`pave_de` 消费） | 投影改 `Extrema_ExtPC2d` |
+| 86 `2eccb5b` | 同上 + 重合元素语义变化（0 个孤立点） | 求交改 `IntAna2d` |
+| 87 `ae67e92` | `occt-topo --lib` 中依赖 bbox 的用例、`bop_builder2_boss`/`phase19`、四道 STEP 门禁（间接） | 圆锥盒由采样变解析（更紧）⇒ 盒递归剪枝变化 |
+| 88 `0ff1ac2` | 四道 STEP 门禁（边域投影回退臂） | `ProjectAct` 的 `!OK` 五臂 |
+| 89 `d017d9f` | `occt-topo --lib` 的 healing/notch 用例、网格门禁（T0M 等） | `CorrectParameter` 结点吸附经 `FixNotchedEdges` |
+
+> **注意**：批 80–84 在本差分对照点之前，故其影响不在第 2 步里；若要分开验证它们（R2-1 的盒递归、R2-2 的求交接线、R2-4 的 IGES 重编号、R2-5 的 SRR 组合、批 84 的 128 反周期化），用同一二分法把对照点前移到 `f4d4d0b^`（= 批 79 末）即可，共 5 个对照点。
+
 ## 7. 进度日志
 
 ### 2026-09-19 23:00–23:55 · DSH 会话（只读盘点，未改代码）
