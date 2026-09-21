@@ -154,6 +154,13 @@ impl Curve2d for Geom2dBSplineCurve {
         Some(knots::unique_knots_mults(&self.knots).0.len())
     }
 
+    /// `Geom2d_BSplineCurve::Knots()` flat knot sequence (`Knot(j)` in
+    /// `ShapeAnalysis_TransferParametersProj::CorrectParameter`,
+    /// `Proj.cxx:268-279`).
+    fn bspline_knots2d(&self) -> Option<&[f64]> {
+        Some(&self.knots)
+    }
+
     /// `Geom2d_BSplineCurve::Degree()` (`Geom2d_BSplineCurve_1.cxx:168-171`).
     fn bspline_degree(&self) -> Option<usize> {
         Some(self.degree)

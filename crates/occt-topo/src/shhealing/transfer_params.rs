@@ -29,8 +29,10 @@
 //!   passes in scope calls it (`ShapeUpgrade_WireDivide.cxx:852`,
 //!   `ShapeFix_Wire_1.cxx:813`, `ShapeFix_Wireframe.cxx:1051`,
 //!   `ShapeFix_ComposeShell.cxx:3241` do, none of which is ported).
-//! * `CorrectParameter`'s `Geom2d_BSplineCurve` knot snap
-//!   (`Proj.cxx:268-279`) - see [`correct_parameter`].
+//! * `CorrectParameter`'s `Geom2d_BSplineCurve` knot snap (`Proj.cxx:268-279`)
+//!   was UNPORTED while `Curve2d` had no knot sequence; **ported in batch 89**
+//!   (task T-15) through the new `Curve2d::bspline_knots2d` query — see
+//!   [`correct_parameter`].
 //! * `myLocation` (`Proj.cxx:97`, `:199`, `:209`, `:318`, `:322`, `:472`): the
 //!   port's healing path keeps locations identity, exactly like the rest of
 //!   `shhealing` (`wire_fix.rs` reads edges through `BRepTool::edge_curve` /
@@ -246,11 +248,39 @@ pub(crate) fn copy_ranges(to: &Edge, from: &Edge, alpha: f64, beta: f64) {
 
 /// `CorrectParameter` (`ShapeAnalysis_TransferParametersProj.cxx:255-281`).
 ///
-/// UNPORTED: the `Geom2d_BSplineCurve` arm (`cxx:268-279`) snaps `param` onto a
-/// knot within `Precision::PConfusion()`. `Curve2d` exposes no knot sequence
-/// (only `bspline_degree` / `bspline_poles2d`), so `param` is returned
-/// unchanged; the two unwrap arms (`cxx:258-266`) alone change nothing.
-fn correct_parameter(_c2d: &Arc<dyn Curve2d>, param: f64) -> f64 {
+/// Fully ported (batch 89, task T-15): the `Geom2d_BSplineCurve` knot snap
+/// (`cxx:268-279`) runs through the new `Curve2d::bspline_knots2d` query — the
+/// blocker recorded here was that `Curve2d` exposed no knot sequence.
+fn correct_parameter(c2d: &Arc<dyn Curve2d>, param: f64) -> f64 {
+    correct_parameter_of(c2d.as_ref(), param)
+}
+
+/// `CorrectParameter` (`Proj.cxx:256-281`) on a borrowed curve, so the two
+/// unwrap arms can recurse exactly as OCCT does.
+///
+/// * `Geom2d_TrimmedCurve` / `Geom2d_OffsetCurve` (`cxx:258-266`): recurse on
+///   `BasisCurve()`.
+/// * `Geom2d_BSplineCurve` (`cxx:268-279`): return the **first** knot within
+///   `Precision::PConfusion()` of `param` (OCCT walks `Knot(j)` for
+///   `j = FirstUKnotIndex()..LastUKnotIndex()`, i.e. the distinct knots; the
+///   port's 2D B-spline is never periodic, `Curve2d::is_periodic` keeps its
+///   default `false`, so that range is every distinct knot).
+/// * Everything else: `param` unchanged.
+fn correct_parameter_of(c2d: &dyn Curve2d, param: f64) -> f64 {
+    if let Some(basis) = c2d.trimmed_basis() {
+        return correct_parameter_of(basis, param);
+    }
+    if let Some(basis) = c2d.offset_basis() {
+        return correct_parameter_of(basis, param);
+    }
+    if let Some(knots) = c2d.bspline_knots2d() {
+        let (distinct, _mults) = occt_core::bspl::unperiodize::distinct_knots_and_mults(knots);
+        for valknot in distinct {
+            if (valknot - param).abs() < PCONFUSION {
+                return valknot;
+            }
+        }
+    }
     param
 }
 

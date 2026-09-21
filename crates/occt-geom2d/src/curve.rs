@@ -127,6 +127,13 @@ pub trait Curve2d: Send + Sync {
         None
     }
 
+    /// The flat knot sequence of a `Geom2d_BSplineCurve` (`Geom2d_BSplineCurve::
+    /// Knots()`, the `Knot(j)` values `ShapeAnalysis_TransferParametersProj::
+    /// CorrectParameter` snaps onto, `Proj.cxx:268-279`); `None` otherwise.
+    fn bspline_knots2d(&self) -> Option<&[f64]> {
+        None
+    }
+
     fn transformed(&self, t: &GpTrsf2d) -> Box<dyn Curve2d> {
         let mut c = self.clone_dyn();
         c.transform(t);
