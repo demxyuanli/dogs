@@ -152,9 +152,15 @@ impl EdgeEdge {
         self.points.clear();
         self.done = false;
         self.prepare()?;
-        // OCCT `IntTools_EdgeEdge::Perform`: Line/Line is handled first and
-        // returns; the quick-coincidence shortcut then applies to every other
-        // pair (`IntTools_EdgeEdge.cxx:198-214`).
+        // OCCT `IntTools_EdgeEdge::Perform` (`cxx:185-243`): line/line is
+        // handled first and returns; the quick-coincidence shortcut then applies
+        // to every other pair; **every** remaining pair — circles included —
+        // goes through `FindSolutions`/`MergeSolutions` (`cxx:235-242`). OCCT
+        // has no circle/circle branch: the port's former
+        // `(Circle, Circle) => compute_circle_circle()` dispatch was port-local
+        // and has been removed (board task R2-17). The `line + analytic curve`
+        // minimum-distance early-out of `cxx:217-233` is still UNPORTED (it
+        // needs `BRepExtrema_DistShapeShape(..., Extrema_ExtFlag_MIN)`).
         if self.ctype1 == CurveType::Line && self.ctype2 == CurveType::Line {
             self.compute_line_line();
             self.done = true;
@@ -165,10 +171,7 @@ impl EdgeEdge {
             self.done = true;
             return Ok(());
         }
-        match (self.ctype1, self.ctype2) {
-            (CurveType::Circle, CurveType::Circle) => self.compute_circle_circle(),
-            _ => self.find_solutions(),
-        }
+        self.find_solutions();
         self.done = true;
         Ok(())
     }
@@ -394,16 +397,6 @@ impl EdgeEdge {
             return LineLineKind::Empty;
         }
         LineLineKind::Coincide
-    }
-
-    /// Circle/circle case: coincident circles become a common part, otherwise
-    /// the radical-line solver reports the up-to-two vertex hits.
-    pub(super) fn compute_circle_circle(&mut self) {
-        if self.is_coincident() {
-            self.push_coincident_common_part();
-            return;
-        }
-        self.push_hits(self.intersect_edges());
     }
 
     /// Exact (or sampling) intersection of the two edges restricted to the

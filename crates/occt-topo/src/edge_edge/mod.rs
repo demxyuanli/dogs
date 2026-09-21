@@ -9,15 +9,14 @@
 //!   (`common_parts()`).
 //!
 //! Line–line is dispatched to `compute_line_line` (port of
-//! `IntTools_EdgeEdge::ComputeLineLine`) and the non-coplanar-circle fallback
-//! still goes through the sampled `crate::inttools::edge_edge_intersections`
-//! (see the UNPORTED note on `compute_circle_circle_full`); **every other
-//! combination** — BSpline/Bezier/general curves — now runs the faithful
+//! `IntTools_EdgeEdge::ComputeLineLine`); **every other combination** —
+//! circles, BSpline/Bezier and general curves alike — runs the faithful
 //! `IntTools_EdgeEdge::FindSolutions` parameter-box recursion in
 //! [`find_solutions`](EdgeEdge::find_solutions) (module `find_solutions`), whose
 //! common parts and vertex parameters come from `MergeSolutions` /
-//! `AddSolution` / `FindBestSolution`. Coincidence is detected by sampling one
-//! curve and projecting the samples onto the other (port of
+//! `AddSolution` / `FindBestSolution`. OCCT has no circle/circle branch, so the
+//! port-local fast path was removed (board task R2-17). Coincidence is detected
+//! by sampling one curve and projecting the samples onto the other (port of
 //! `IntTools_EdgeEdge::IsCoincident`).
 //!
 //! The task spec suggested `geom2d_api::project_point_on_curve` for parameter
@@ -50,11 +49,6 @@ use prelude::*;
 #[cfg(test)]
 mod tests_full {
     use super::*;
-    use std::f64::consts::PI;
-    use std::sync::Arc;
-
-    use occt_core::gp::{GpAx2, GpCirc, GpDir};
-    use occt_geom::GeomCircle;
 
     use crate::builder::TopoBuilder;
     use crate::shape::{Edge, TopoShape};
@@ -66,10 +60,6 @@ mod tests_full {
         for c in children {
             clear_tree(&c);
         }
-    }
-
-    fn dir(x: f64, y: f64, z: f64) -> GpDir {
-        GpDir::new(x, y, z).expect("dir")
     }
 
     /// Set two edges and run `prepare`, so the full solvers can run directly.
@@ -137,65 +127,6 @@ mod tests_full {
         assert!(ee.coincident_range().is_none());
         clear_tree(&e1.0);
         clear_tree(&e2.0);
-    }
-
-    #[test]
-    fn circle_circle_full_tangent_single_point() {
-        let b = TopoBuilder::new();
-        // r = 1 at the origin and at (2,0,0): externally tangent at (1,0,0).
-        let c1 = b.make_edge(Arc::new(GeomCircle::new(GpCirc::new(GpAx2::standard(), 1.0))), 0.0, 2.0 * PI);
-        let ax2 = GpAx2::new(GpPnt::new(2.0, 0.0, 0.0), dir(0.0, 0.0, 1.0), dir(1.0, 0.0, 0.0)).unwrap();
-        let c2 = b.make_edge(Arc::new(GeomCircle::new(GpCirc::new(ax2, 1.0))), 0.0, 2.0 * PI);
-        let mut ee = prepared_ee(&c1, &c2, 1e-7);
-        let found = ee.compute_circle_circle_full().unwrap();
-        assert!(found, "tangent circles touch");
-        let pts = ee.points();
-        assert_eq!(pts.len(), 1, "points: {pts:?}");
-        assert!(pts[0].pnt1.distance(&GpPnt::new(1.0, 0.0, 0.0)) < 1e-6, "pnt={:?}", pts[0].pnt1);
-        clear_tree(&c1.0);
-        clear_tree(&c2.0);
-    }
-
-    #[test]
-    fn circle_circle_full_intersecting_two_points() {
-        let b = TopoBuilder::new();
-        let c1 = b.make_edge(Arc::new(GeomCircle::new(GpCirc::new(GpAx2::standard(), 1.0))), 0.0, 2.0 * PI);
-        let ax2 = GpAx2::new(GpPnt::new(1.0, 0.0, 0.0), dir(0.0, 0.0, 1.0), dir(1.0, 0.0, 0.0)).unwrap();
-        let c2 = b.make_edge(Arc::new(GeomCircle::new(GpCirc::new(ax2, 1.0))), 0.0, 2.0 * PI);
-        let mut ee = prepared_ee(&c1, &c2, 1e-7);
-        let found = ee.compute_circle_circle_full().unwrap();
-        assert!(found);
-        let pts = ee.points();
-        assert_eq!(pts.len(), 2, "points: {pts:?}");
-        for p in pts {
-            assert!((p.pnt1.x() - 0.5).abs() < 1e-6, "x={}", p.pnt1.x());
-            assert!((p.pnt1.y().abs() - 0.75f64.sqrt()).abs() < 1e-4, "y={}", p.pnt1.y());
-            // Both parameter pairs must fall inside the full circle range.
-            assert!(p.uv1.0 >= 0.0 && p.uv1.0 <= 2.0 * PI, "u1={}", p.uv1.0);
-            assert!(p.uv2.0 >= 0.0 && p.uv2.0 <= 2.0 * PI, "u2={}", p.uv2.0);
-        }
-        // The two hits are distinct in parameter space.
-        assert!((pts[0].uv1.0 - pts[1].uv1.0).abs() > 1e-3, "u1 pair");
-        assert!((pts[0].uv2.0 - pts[1].uv2.0).abs() > 1e-3, "u2 pair");
-        // intersection_points mirrors the discrete hits.
-        assert_eq!(ee.intersection_points().len(), 2);
-        clear_tree(&c1.0);
-        clear_tree(&c2.0);
-    }
-
-    #[test]
-    fn circle_circle_full_separated_empty() {
-        let b = TopoBuilder::new();
-        let c1 = b.make_edge(Arc::new(GeomCircle::new(GpCirc::new(GpAx2::standard(), 1.0))), 0.0, 2.0 * PI);
-        let ax2 = GpAx2::new(GpPnt::new(5.0, 0.0, 0.0), dir(0.0, 0.0, 1.0), dir(1.0, 0.0, 0.0)).unwrap();
-        let c2 = b.make_edge(Arc::new(GeomCircle::new(GpCirc::new(ax2, 1.0))), 0.0, 2.0 * PI);
-        let mut ee = prepared_ee(&c1, &c2, 1e-7);
-        let found = ee.compute_circle_circle_full().unwrap();
-        assert!(!found, "separated circles do not intersect");
-        assert!(ee.points().is_empty());
-        assert!(ee.common_parts().is_empty());
-        clear_tree(&c1.0);
-        clear_tree(&c2.0);
     }
 
     #[test]

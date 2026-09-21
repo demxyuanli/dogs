@@ -5,6 +5,14 @@ use super::*;
 // Phase 18c — full analytic edge/edge solvers (appended; the original `perform`
 // dispatch above is untouched). These mirror the analytic branches of
 // `IntTools_EdgeEdge::FindSolutions` at the level this port needs.
+//
+// The former port-local circle/circle fast path (`compute_circle_circle_full` +
+// its `(Circle, Circle)` dispatch in `perform`, with the `fallback_general` /
+// `point_hit_on_both` helpers) was removed in board task R2-17: OCCT's
+// `IntTools_EdgeEdge::Perform` (`IntTools_EdgeEdge.cxx:185-243`) has no such
+// branch — every non-line/line pair goes through
+// `FindSolutions`/`MergeSolutions`
+// (`EdgeEdge::find_solutions`, module `find_solutions`).
 // ---------------------------------------------------------------------------
 
 impl EdgeEdge {
@@ -86,83 +94,6 @@ impl EdgeEdge {
         Ok(false)
     }
 
-    /// Full analytic circle/circle intersection.
-    ///
-    /// **OCCT has no such branch**: `IntTools_EdgeEdge::Perform`
-    /// (`IntTools_EdgeEdge.cxx:185-243`) special-cases only line/line
-    /// (`ComputeLineLine`, `:902-1058`) and sends every other pair — circles
-    /// included — through `FindSolutions`/`MergeSolutions`. This helper and the
-    /// `perform` dispatch that calls it are therefore a port-local fast path;
-    /// the faithful path now exists ([`EdgeEdge::find_solutions`]), so removing
-    /// the dispatch is a behaviour change that needs a gate run (board task
-    /// R2-17). Kept for its direct tests until then.
-    ///
-    /// Mirrors the coplanar circle/circle branch of `IntTools_EdgeEdge`:
-    /// - coincident circles → the overlapping arc becomes a [`CommonPrt`];
-    /// - externally/internally separated circles → no intersection;
-    /// - externally/internally tangent circles → one vertex hit;
-    /// - intersecting circles → two vertex hits (radical-line construction).
-    ///
-    /// Non-coplanar circles fall back to the general solver
-    /// ([`intersect_edges`](Self::intersect_edges)). The result vectors are
-    /// cleared first (self-contained parse). Returns `Ok(true)` when any result
-    /// was stored. `Err` when an edge curve is not a circle.
-    pub fn compute_circle_circle_full(&mut self) -> Result<bool, String> {
-        let c1 = self.curve1.clone().ok_or("EdgeEdge: edge1 has no curve")?;
-        let c2 = self.curve2.clone().ok_or("EdgeEdge: edge2 has no curve")?;
-        let (cc1, r1, n1) = circle_of_curve(&*c1).ok_or("EdgeEdge: edge1 is not a circle")?;
-        let (cc2, r2, n2) = circle_of_curve(&*c2).ok_or("EdgeEdge: edge2 is not a circle")?;
-        let tol = self.tol.max(1e-9);
-
-        self.common_parts.clear();
-        self.points.clear();
-
-        // Non-coplanar circles → general (sampling/exact) solver.
-        if n1.crossed(&n2).magnitude() > 1e-6 {
-            return self.fallback_general();
-        }
-
-        // Coincident (same center & radius) → overlapping arc as a common part.
-        if cc1.distance(&cc2) <= tol && (r1 - r2).abs() <= tol {
-            if self.is_coincident() {
-                self.push_coincident_common_part();
-                return Ok(true);
-            }
-            return Ok(false);
-        }
-
-        let dist = GpVec::from_pnts(&cc1, &cc2).magnitude();
-        if dist <= tol {
-            return Ok(false); // concentric, distinct radii
-        }
-        let rsum = r1 + r2;
-        let rdiff = (r1 - r2).abs();
-        if dist > rsum + tol || dist < rdiff - tol {
-            return Ok(false); // external or internal separation
-        }
-
-        // Radical line: one or two intersection points in the shared plane.
-        let u = GpVec::from_pnts(&cc1, &cc2).divided(dist);
-        let x = (r1 * r1 - r2 * r2 + dist * dist) / (2.0 * dist);
-        let h2 = r1 * r1 - x * x;
-        let h = if h2 > 0.0 { h2.sqrt() } else { 0.0 };
-        let w = u.crossed(&n1);
-        let base = cc1.translated_vec(&u.multiplied_scalar(x));
-        let mut pts = vec![base.translated_vec(&w.multiplied_scalar(h))];
-        if h > tol {
-            pts.push(base.translated_vec(&w.multiplied_scalar(-h)));
-        }
-
-        let mut found = false;
-        for p in pts {
-            if let Some(hit) = self.point_hit_on_both(&p) {
-                self.points.push(hit);
-                found = true;
-            }
-        }
-        Ok(found)
-    }
-
     /// Merged output of every intersection result, for external consumers.
     ///
     /// Discrete vertex hits appear as `(t1, t2, point)`; each coincident common
@@ -201,36 +132,6 @@ impl EdgeEdge {
     }
 
     // ---- helpers for the full solvers ----
-
-    /// General fallback for non-coplanar circles (the exact/sampling solver).
-    pub(super) fn fallback_general(&mut self) -> Result<bool, String> {
-        let hits = self.intersect_edges();
-        if hits.is_empty() {
-            return Ok(false);
-        }
-        self.push_hits(hits);
-        Ok(true)
-    }
-
-    /// Map a 3D point lying on both curves to a `PntOn2Faces` hit, projecting
-    /// for the parameter on each curve and checking the edge ranges.
-    pub(super) fn point_hit_on_both(&self, p: &GpPnt) -> Option<PntOn2Faces> {
-        let c1 = self.curve1.as_ref()?;
-        let c2 = self.curve2.as_ref()?;
-        let tol = self.tol.max(1e-9);
-        let pr1 = geom_api::project_point_on_curve(&**c1, p, tol)?;
-        let pr2 = geom_api::project_point_on_curve(&**c2, p, tol)?;
-        if pr1.distance > tol || pr2.distance > tol {
-            return None;
-        }
-        let et1 = self.curve_to_edge_param(1, pr1.parameter);
-        let et2 = self.curve_to_edge_param(2, pr2.parameter);
-        if self.r1().contains(et1) && self.r2().contains(et2) {
-            Some(PntOn2Faces::new(0, 1, *p, *p, (et1, 0.0), (et2, 0.0)))
-        } else {
-            None
-        }
-    }
 
     /// The two boundary points of a common part as `(t1, t2, point)` entries.
     pub(super) fn common_part_span(&self, cp: &CommonPrt) -> Vec<(f64, f64, GpPnt)> {
