@@ -1,6 +1,20 @@
 //! 2D curve operations: arc length, closest point, intersections.
-//! Analytic ports of the line/segment cases (gp_Lin2d, IntAna2d) plus a
-//! sampler-based fallback for arbitrary curves (Geom2dAPI_ProjectPointOnCurve).
+//!
+//! **Faithful**: [`curve2d_closest_point`] / [`curve2d_distance_to_point`] go
+//! through `crate::extrema2d::point_curve_extrema2d` (`Extrema_ExtPC2d`, the
+//! engine behind `Geom2dAPI_ProjectPointOnCurve`; task R2-18a, batch 85).
+//! `lin2d_intersection` / `segment_intersection` / `project_point_on_segment`
+//! are the analytic point/segment solves they claim to be.
+//!
+//! **UNPORTED (audit A16, task R2-18b)**: [`curve2d_intersections`] is still the
+//! port's 256×256 sampler with alternating 1-D minimization. The faithful route
+//! is `IntAna2d_AnaIntersection` for the analytic pairs (`perform_lin_lin`,
+//! `perform_lin_circ`, `perform_circ_circ`, `perform_{lin,circ,elips,parab,hypr}_conic`
+//! — ported in `occt_core::intana2d::ana_intersection`) and `Extrema_ExtCC2d`
+//! (`crate::extrema2d::curve_curve_extrema2d_all`, whose general-curve seeding is
+//! itself the A7-family substitute) for the rest. [`curve2d_length`] is Simpson
+//! quadrature of `|d1|`, where OCCT integrates with
+//! `GCPnts_AbscissaPoint`/`math_GaussSingleIntegration`.
 
 use occt_core::gp::{GpLin2d, GpPnt2d, GpXY};
 use crate::curve::Curve2d;
@@ -30,26 +44,23 @@ pub fn curve2d_point(c: &dyn Curve2d, u: f64) -> GpPnt2d {
 }
 
 /// Closest point on the curve to `p`. Returns `(parameter, point)`.
-/// Works on bounded curves; unbounded curves (lines) are handled by probing an
-/// expanding window around `u = 0` until the minimum is interior.
+///
+/// Faithful route: `Geom2dAPI_ProjectPointOnCurve::Perform`
+/// (`Geom2dAPI_ProjectPointOnCurve.cxx:78-92` in 8.0.0 is
+/// `myExtPC.Perform(P)`, taking the smallest-distance solution) →
+/// `Extrema_ExtPC2d`, which [`crate::extrema2d::point_curve_extrema2d`] ports:
+/// lines/circles through `Extrema_ExtPElC2d`'s analytic arms, everything else
+/// through the Extrema engine (whose general-curve seeding is still the
+/// A7-family substitute, see `extrema2d::curve_curve`). The previous body was a
+/// 64-sample scan plus golden section with an expanding-window hack for
+/// unbounded curves (audit A16, task R2-18a).
 pub fn curve2d_closest_point(c: &dyn Curve2d, p: &GpPnt2d, _tol: f64) -> Option<(f64, GpPnt2d)> {
-    let a = c.first_parameter();
-    let b = c.last_parameter();
-    if !a.is_finite() || !b.is_finite() {
-        let base = c.d0(0.0);
-        let d = base.distance(p);
-        let mut w = (d + 1.0).max(1.0) * 8.0;
-        for _ in 0..4 {
-            if let Some((u, q)) = refine_closest(c, p, -w, w) {
-                if (u + w).abs() > 1e-9 && (u - w).abs() > 1e-9 {
-                    return Some((u, q));
-                }
-            }
-            w *= 8.0;
-        }
-        return refine_closest(c, p, -w, w);
+    let e = crate::extrema2d::point_curve_extrema2d(c, p);
+    if e.u1.is_finite() && e.p2.x().is_finite() && e.p2.y().is_finite() {
+        Some((e.u1, e.p2))
+    } else {
+        None
     }
-    refine_closest(c, p, a, b)
 }
 
 /// Distance from `p` to the nearest point on the curve.
@@ -60,9 +71,12 @@ pub fn curve2d_distance_to_point(c: &dyn Curve2d, p: &GpPnt2d, tol: f64) -> f64 
 /// Approximate intersection points of two curves.
 /// Returns `(u, v, point)` where `u`/`v` are the parameters on `a`/`b`.
 ///
-/// ponytail: approximate sampler-based intersection — not root-exact. Adequate
-/// for geometry tooling; replace with a subdivision/Newton solver (IntAna2d)
-/// if exact roots on arbitrary curves are required.
+/// **UNPORTED (audit A16, task R2-18b)**: 256×256 sampling with alternating 1-D
+/// minimization, not root-exact. The faithful route is `IntAna2d_AnaIntersection`
+/// for analytic pairs (already ported, see the module header) and
+/// `Extrema_ExtCC2d` for the rest; callers that matter today
+/// (`geom2d_api::intersect_curves`) dispatch line/line exactly before reaching
+/// this function.
 pub fn curve2d_intersections(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<(f64, f64, GpPnt2d)> {
     let tol = tol.max(1e-12);
     let na = 256;
@@ -206,29 +220,6 @@ fn minimize_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64) -> (f64, f64) {
     (x, f(x))
 }
 
-/// Coarse-to-fine closest point over a finite `[a, b]`.
-fn refine_closest(c: &dyn Curve2d, p: &GpPnt2d, a: f64, b: f64) -> Option<(f64, GpPnt2d)> {
-    if !(b > a) {
-        return None;
-    }
-    let n = 64;
-    let mut best = a;
-    let mut best_d = f64::INFINITY;
-    for i in 0..=n {
-        let u = a + (b - a) * i as f64 / n as f64;
-        let d = c.d0(u).square_distance(p);
-        if d < best_d {
-            best_d = d;
-            best = u;
-        }
-    }
-    let span = (b - a) / n as f64;
-    let lo = (best - span).max(a);
-    let hi = (best + span).min(b);
-    let (u, _) = minimize_1d(&|u| c.d0(u).square_distance(p), lo, hi);
-    Some((u, c.d0(u)))
-}
-
 /// Approximate bounding box of a bounded curve by sampling: `(xmin, xmax, ymin, ymax)`.
 fn curve_bbox(c: &dyn Curve2d, n: usize) -> Option<(f64, f64, f64, f64)> {
     let a = c.first_parameter();
@@ -281,7 +272,7 @@ mod tests {
     use super::*;
     use crate::circle::Geom2dCircle;
     use crate::line::Geom2dLine;
-    use occt_core::gp::{GpAx22d, GpCirc2d, GpDir2d, GpVec2d};
+    use occt_core::gp::{GpAx22d, GpCirc2d, GpDir2d};
 
     #[test]
     fn circle_length() {

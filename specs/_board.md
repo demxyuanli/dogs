@@ -86,9 +86,9 @@ cd ..; git worktree remove --force .target-headcheck
 | **R2-15** | 文档/快照 | §2 快照刷新（现记第 90 轮 1287/1、geom 146/146，而批 19 起多处记录 1293/1、151/151 ⇒ **口径需一次实测统一**）；A0–A31 矩阵同步 | 本节与 §14 矩阵为准 | 需跑门禁 ⇒ 等指令 | §2 与实测一致 | 等指令 |
 | **R2-16** | 小项池 | T-07…T-20（未提交 wave 收尾/低优先）、T-12…T-18（bnd/intf 缺口：`BoxOptimal`、三角化 arm、`CopyNMVertex`、iso 链臂、`project_act` 缺臂、`Intf_Tool`）、T-23…T-29、T-41/T-49/T-54/T-55/T-59（被 T-68/A13 阻塞）、T-64 | 见各任务行 | 多数无 | 随批夹带 | 夹带 |
 | **R2-17** | 新（批 80 派生） | **删除 OCCT 不存在的 circle/circle 快路径**：`edge_edge/solvers.rs::compute_circle_circle_full` 与 `perform` 里的 `(Circle, Circle)` 分派。OCCT `IntTools_EdgeEdge::Perform`（`:185-243`）只特判 line/line，圆–圆同样走 `FindSolutions`（忠实件已在 R2-1 落地） | 该分支为端口自创（模块内已标 UNPORTED）；被 `edge_edge/mod.rs` 的两个直调用例与 `circle_circle_two_hits` 间接覆盖 ⇒ **删除会改行为，需一次门禁验证**（这正是不能与 R2-1 同批做的事） | R2-1 已落地 | `occt-topo --lib`（尤其 `edge_edge::tests::{circle_circle_two_hits, separated_circles_empty}`、`tests_full::circle_circle_full_*`）不回归 | 门禁波次 |
-| **R2-18** | 新（批 81 派生，A16 的 2D 余项） | **2D 投影/求交采样族**：`occt-geom2d/curve_ops.rs::{curve2d_intersections, curve2d_closest_point, curve2d_length, minimize_1d, sample_curve, refine_closest, curve_bbox}`。真出处＝`IntAna2d_AnaIntersection`（2D 求交）与 `Extrema_ExtPC2d`/`Geom2dAPI_ProjectPointOnCurve`（投影） | `curve2d_intersections`/`curve2d_closest_point` 被 `geom2d_api.rs:6` 生产使用；`curve2d_length` 用 128 段折线（OCCT `GCPnts_AbscissaPoint`）；`minimize_1d` 有 2 处本地复制 | 忠实件已备：`occt-geom2d::extrema2d`（`Extrema_ExtPC2d`/`ExtCC2d` 忠实件，批 43–66） | 该 crate `--lib` + 依赖 2D 的门禁不劣化 | 门禁波次 |
+| **R2-18** | 新（批 81 派生，A16 的 2D 余项） | **2D 投影/求交采样族**：`occt-geom2d/curve_ops.rs::{curve2d_intersections, curve2d_closest_point, curve2d_length, minimize_1d, sample_curve, curve_bbox}` | **◐ 批 85（第 94 轮）完成投影 half（R2-18a）**：`curve2d_closest_point`（及 `curve2d_distance_to_point`）改走 `crate::extrema2d::point_curve_extrema2d`（= `Extrema_ExtPC2d`，`Geom2dAPI_ProjectPointOnCurve` 的引擎；直线/圆走 `Extrema_ExtPElC2d` 解析臂），删掉 64 点扫描＋黄金分割＋无界曲线扩窗 hack 与私有 `refine_closest`；模块头登记仍 UNPORTED 的三项：`curve2d_intersections`（R2-18b：解析对走 `occt_core::intana2d::ana_intersection` 的 `perform_*`，其余走 `extrema2d::curve_curve_extrema2d_all`）、`curve2d_length`（Simpson 代替 `GCPnts_AbscissaPoint`）、`extrema2d` 一般曲线的网格+Newton 播种（A7 家族） | 忠实件已备：`extrema2d`（`Extrema_ExtPC2d`/`ExtCC2d`）、`occt-core::intana2d`（`IntAna2d_AnaIntersection`，9 个 `perform_*`） | 该 crate `--lib` + 依赖 2D 的门禁不劣化 | 批 85 ◐ |
 
-**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→（等"导出 obj"指令跑一次全门禁，刷新 §2 = R2-15）→ 按门禁结果定 R2-7…R2-10 + R2-17 + R2-18 → R2-11/R2-12/R2-13 → R2-6/R2-14/R2-16/R2-19/R2-20 夹带。
+**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→ R2-18 ◐（批 85：投影 half；余 R2-18b 求交 half）→（等"导出 obj"指令跑一次全门禁，刷新 §2 = R2-15）→ 按门禁结果定 R2-7…R2-10 + R2-17 → R2-11/R2-12/R2-13 → R2-6/R2-14/R2-16/R2-18b/R2-19/R2-20 夹带。
 
 ### P0 — 红门禁（收敛或显式豁免）
 
@@ -415,6 +415,15 @@ cd ..; git worktree remove --force .target-headcheck
   - **失败的 Torus face 20**：wire 0（v=0.05088）的 pcurve 在 **u ∈ [1.5708, 7.8540]**，wire 1（v=π/2）的在 **u ∈ [−4.7124, 1.5708]** —— **正好相差一个周期（2π）**；`update_range` 的周期钳制（`BRepMesh_DefaultRangeSplitter::updateRange` `cxx:202-235`；端口 `range_splitter/param_set.rs:214-235`，已忠实）把 `range_u` 钳成 `(−4.7124, 1.5708)` ⇒ **wire 0 的链恰好落在范围外一个周期**（缩放后 u ∈ [1,2]）。
   - 两面的**单 wire 链形状完全相同**（每 wire 2 条边、都是 `FixLacking` 复制的闭合圆 ⇒ 出-回链，37+37=74 节点），所以**目前观测到的唯一差异就是"同面两条 wire 的 u 窗口是否对齐"**。四个边的 `same_param/same_range` 全为 true，且 `pc.d0(t)=t`（每边自身一致），说明两个 u 窗口来自 STEP 文件各自的圆参数化，不是边内参数化错。
 - **参考侧证据**：`data/occ-ref/T0M.obj` 里该顶点出现 **两次且完全重合**（v962/v965）⇒ 该顶点被**两个面**各自写了一次（逐面写顶点不去重）⇒ 至少与它相邻的某个面在 OCCT 里**是**被网格化的；端口忠实路径在这些面上给 0 三角，故"OCCT 会网格化、端口失败"的面类**确实存在**，且与本轮的 u 窗口差异一致。
+**批 85（R2-18a：2D 投影改走 `Extrema_ExtPC2d`；仅编译验证）—— 2026-09-21 第 94 轮**
+
+> 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。
+
+- **改动**：`occt-geom2d/curve_ops.rs::curve2d_closest_point` 的整段自创实现（64 点扫描取最优→黄金分割细化，无界曲线再用"扩窗探测"循环）**删除**，改为委托 `crate::extrema2d::point_curve_extrema2d`——即 `Extrema_ExtPC2d`（`Geom2dAPI_ProjectPointOnCurve::Perform` 的引擎，取最小距离解），直线/圆经 `Extrema_ExtPElC2d` 解析臂。私有 helper `refine_closest` 随之删除（`minimize_1d`/`sample_curve`/`curve_bbox` 仍被 `curve2d_intersections` 使用，保留）。
+- **模块头登记（仍 UNPORTED，含出处）**：`curve2d_intersections`（256×256 采样＋交替一维极小化；忠实路线＝解析对走 `occt_core::intana2d::ana_intersection` 的 `perform_lin_lin`/`perform_lin_circ`/`perform_circ_circ`/`perform_{lin,circ,elips,parab,hypr}_conic`，其余走 `extrema2d::curve_curve_extrema2d_all` ⇒ **R2-18b**）；`curve2d_length`（Simpson 求积代替 `GCPnts_AbscissaPoint`/`math_GaussSingleIntegration`）；`extrema2d` 一般曲线的网格+Newton 播种（A7 家族，非本卡）。
+- **验证（仅编译）**：`cargo check --offline --all-targets` 五个 crate **全部 exit 0、0 error**；`curve_ops.rs` 无新告警（顺手清掉测试模块里因此不再需要的 `GpVec2d` 导入）。
+- **待验证风险**：有无界曲线（抛物线/双曲线）投影的既有用例会改走 `extrema2d`（其一般路径本身是 A7 家族替代件，播种方式不同）——门禁时若 2D 相关用例变化，第一嫌疑＝本批。`geom2d_api::project_point_on_curve`（在其上再套一层有界 Newton）语义不变。
+
 **批 84（R2-3 周期面一半：128 反周期化 + `periodicU/V` + bounds 两臂；仅编译验证）—— 2026-09-21 第 94 轮**
 
 > 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行 ⇒ 本批**未跑 `iges_check`**。
