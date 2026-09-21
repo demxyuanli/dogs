@@ -1004,6 +1004,10 @@ pub(super) struct Resolver<'a> {
     pub(super) length_factor: f64,
     pub(super) b: TopoBuilder,
     pub(super) shape_cache: RefCell<HashMap<usize, TopoShape>>,
+    /// `StepToTopoDS_TranslateTool::Bind` for vertices: a `VERTEX_POINT` record
+    /// that another record was bound onto resolves to the bound `TopoDS_Vertex`
+    /// (`StepToTopoDS_TranslateEdgeLoop.cxx:384-396`, `:466-477`).
+    pub(super) vertex_bind: RefCell<HashMap<usize, TopoShape>>,
     pub(super) point_cache: RefCell<HashMap<usize, GpPnt>>,
     pub(super) dir_cache: RefCell<HashMap<usize, GpDir>>,
     pub(super) axis_cache: RefCell<HashMap<usize, GpAx2>>,

@@ -119,6 +119,15 @@ impl GpAx2 {
         }
     }
 
+    /// `gp_Ax2::SetXDirection` (`gp_Ax2.cxx`): set the X direction and recompute
+    /// Y as `Z ^ X`, so the frame stays right-handed.
+    pub fn set_x_direction(&mut self, x_dir: GpDir) {
+        self.vxdir = x_dir;
+        if let Ok(ydir) = self.direction().crossed(&self.vxdir) {
+            self.vydir = ydir;
+        }
+    }
+
     pub fn x_axis(&self) -> GpAx1 {
         GpAx1::new(self.location(), self.vxdir)
     }

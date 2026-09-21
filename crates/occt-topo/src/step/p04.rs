@@ -27,6 +27,7 @@ impl<'a> Resolver<'a> {
             length_factor: context_length_factor(records),
             b: TopoBuilder::new(),
             shape_cache: RefCell::new(HashMap::new()),
+            vertex_bind: RefCell::new(HashMap::new()),
             point_cache: RefCell::new(HashMap::new()),
             dir_cache: RefCell::new(HashMap::new()),
             axis_cache: RefCell::new(HashMap::new()),
@@ -55,6 +56,14 @@ impl<'a> Resolver<'a> {
             return Ok(s.clone());
         }
         let rec = self.record(id)?;
+        // `StepToTopoDS_TranslateTool::Bind` — a `VERTEX_POINT` another record was
+        // bound onto (`StepToTopoDS_TranslateEdgeLoop.cxx:384-396`, `:466-477`)
+        // resolves to that vertex instead of a fresh one.
+        if rec.type_name == "VERTEX_POINT" {
+            if let Some(v) = self.vertex_bind.borrow().get(&id) {
+                return Ok(v.clone());
+            }
+        }
         if !self.resolving.borrow_mut().insert(id) {
             return Err(format!("cyclic entity reference #{id}"));
         }
@@ -203,6 +212,12 @@ impl<'a> Resolver<'a> {
 
     pub(super) fn resolve_loop(&self, rec: &'a Record) -> Result<TopoShape, String> {
         let items = parse_ref_list(&rec.args[1]);
+        // `StepToTopoDS_TranslateEdgeLoop.cxx:288-403` and `:405-491` bind
+        // (confuse) the loop's vertices before the oriented edges are mapped, so a
+        // loop whose edges reference distinct `VERTEX_POINT` entities at the same
+        // point — or adjacent edges that share no vertex at all — still comes out
+        // connected.
+        self.bind_edge_loop_vertices(&items);
         let mut edges = Vec::with_capacity(items.len());
         for &it in &items {
             let s = self.resolve_shape(it)?;
@@ -214,18 +229,128 @@ impl<'a> Resolver<'a> {
         // Keep EDGE_LOOP order for seam SelectForwardSeam (`TranslateEdgeLoop`
         // iterates OrientedEdges in list order; last UpdateEdge wins). Reorder
         // for connectivity after pcurve association in `resolve_face`.
-        //
-        // UNPORTED: `StepToTopoDS_TranslateEdgeLoop.cxx:288-403` and `:405-491`
-        // bind (confuse) vertices through the translate tool before the loop is
-        // mapped: distinct `VERTEX` entities whose points coincide (`:385-396`,
-        // bug PRO7656) and adjacent edges that share no vertex at all
-        // (`:429-433` selects each side's meeting vertex out of
-        // `EC->EdgeStart/EdgeEnd` by `OrEdge1->Orientation()`, then `:466-477`
-        // rebinds `Vs1`/`Vs2` to one vertex, bug BUC50070 #3815). This port maps
-        // every ORIENTED_EDGE independently with its own VERTEX entities and
-        // never rebinds them, so a malformed EDGE_LOOP stays disconnected until
-        // the `ShapeFix_Wire` stage (`shhealing`) tries to close it.
         Ok(self.b.make_wire(&edges).0)
+    }
+
+    /// The `EDGE_CURVE` record an `ORIENTED_EDGE` reaches — following a nested
+    /// `ORIENTED_EDGE` (bug #29979, `StepToTopoDS_TranslateEdgeLoop.cxx:301-307`)
+    /// — together with the occurrence `Orientation` (`:429-433`).
+    fn oriented_edge_parts(&self, id: usize) -> Option<(usize, bool)> {
+        let mut cur = id;
+        for _ in 0..8 {
+            let rec = self.record(cur).ok()?;
+            if rec.type_name != "ORIENTED_EDGE" {
+                return None;
+            }
+            let ori = parse_logical(rec.args.get(4).map(String::as_str), true);
+            let next = parse_ref(&rec.args[3])?;
+            let nrec = self.record(next).ok()?;
+            if nrec.type_name == "ORIENTED_EDGE" {
+                cur = next;
+                continue;
+            }
+            if nrec.type_name != "EDGE_CURVE" {
+                return None;
+            }
+            return Some((next, ori));
+        }
+        None
+    }
+
+    /// The two vertex-binding passes of `StepToTopoDS_TranslateEdgeLoop`:
+    ///
+    /// 1. `cxx:288-403` (bug PRO7656): for every oriented edge whose
+    ///    `EDGE_CURVE`'s start/end vertices translate to points within
+    ///    `Precision::Confusion()`, bind one STEP vertex onto the other's
+    ///    `TopoDS_Vertex` — `Vend → V1` when `Vend` was not yet bound, else
+    ///    `Vstart → V2` when `Vstart` was not, else `Vend → V1` again
+    ///    (`cxx:384-396`).
+    /// 2. `cxx:405-491` (bug BUC50070 #3815): for every adjacent pair `(j, j+1)`
+    ///    whose *meeting* vertices (`OrEdge1->Orientation() ? EdgeEnd : EdgeStart`
+    ///    and the mirror for edge 2, `cxx:429-433`) are different STEP entities
+    ///    and translate to points within `Precision()` (`cxx:464-478`), bind
+    ///    `Vs1 → V2` when `EC1` is not yet translated, else `Vs2 → V1` when `EC2`
+    ///    is not.
+    ///
+    /// The port's "translate tool" is `shape_cache` (an entity is bound once
+    /// `resolve_shape` has cached it), and the binding itself is
+    /// [`Resolver::vertex_bind`], consulted by `resolve_shape` for `VERTEX_POINT`.
+    fn bind_edge_loop_vertices(&self, oriented: &[usize]) {
+        let point_of = |v: &TopoShape| BRepTool::vertex_point(&Vertex(v.clone()));
+        // Pass 1.
+        for &oe in oriented {
+            let Some((ec_id, _)) = self.oriented_edge_parts(oe) else {
+                continue;
+            };
+            let Ok(ec) = self.record(ec_id) else { continue };
+            let (Some(a), Some(b)) = (parse_ref(&ec.args[1]), parse_ref(&ec.args[2])) else {
+                continue;
+            };
+            let same_sense = parse_logical(ec.args.get(4).map(String::as_str), true);
+            // `cxx:355-365`.
+            let (vstart, vend) = if same_sense { (a, b) } else { (b, a) };
+            // `cxx:367-368`: the pre-call bound state.
+            let ist_v = self.shape_cache.borrow().contains_key(&vstart);
+            let ise_v = self.shape_cache.borrow().contains_key(&vend);
+            let (Ok(v1), Ok(v2)) = (self.resolve_shape(vstart), self.resolve_shape(vend)) else {
+                continue;
+            };
+            if point_of(&v1).distance(&point_of(&v2)) <= occt_core::precision::CONFUSION {
+                let (from, to) = if !ise_v {
+                    (vend, v1)
+                } else if !ist_v {
+                    (vstart, v2)
+                } else {
+                    (vend, v1)
+                };
+                self.vertex_bind.borrow_mut().insert(from, to);
+            }
+        }
+        // Pass 2.
+        let n = oriented.len();
+        for j in 0..n {
+            if n < 2 {
+                break;
+            }
+            let Some((ec1_id, ori1)) = self.oriented_edge_parts(oriented[j]) else {
+                continue;
+            };
+            let Some((ec2_id, ori2)) = self.oriented_edge_parts(oriented[(j + 1) % n]) else {
+                continue;
+            };
+            let (Ok(ec1), Ok(ec2)) = (self.record(ec1_id), self.record(ec2_id)) else {
+                continue;
+            };
+            let (Some(s1), Some(e1)) = (parse_ref(&ec1.args[1]), parse_ref(&ec1.args[2])) else {
+                continue;
+            };
+            let (Some(s2), Some(e2)) = (parse_ref(&ec2.args[1]), parse_ref(&ec2.args[2])) else {
+                continue;
+            };
+            // `cxx:429-433`.
+            let vs1 = if ori1 { e1 } else { s1 };
+            let vs2 = if ori2 { s2 } else { e2 };
+            let vs11 = if ori1 { s1 } else { e1 };
+            let vs22 = if ori2 { e2 } else { s2 };
+            // `cxx:435-438`: already the same STEP vertex on one of the four ends.
+            if vs1 == vs2 || vs1 == vs22 || vs2 == vs11 || vs22 == vs11 {
+                continue;
+            }
+            let (Ok(v1), Ok(v2)) = (self.resolve_shape(vs1), self.resolve_shape(vs2)) else {
+                continue;
+            };
+            if Arc::ptr_eq(&v1.tshape, &v2.tshape) {
+                continue;
+            }
+            if point_of(&v1).distance(&point_of(&v2)) <= self.precision {
+                // `cxx:466-477`.
+                if !self.shape_cache.borrow().contains_key(&ec1_id) {
+                    self.vertex_bind.borrow_mut().insert(vs1, v2);
+                } else if !self.shape_cache.borrow().contains_key(&ec2_id) {
+                    self.vertex_bind.borrow_mut().insert(vs2, v1);
+                }
+            }
+        }
     }
 
     /// A `VERTEX_LOOP(name, vertex)` is the boundary of a degenerate face — a
@@ -737,7 +862,7 @@ impl<'a> Resolver<'a> {
     /// `RWStepGeom_RWCartesianTransformationOperator.cxx:36-49`), so axis1 is
     /// param 4, axis2 param 5, local_origin param 6, scale param 7 and axis3
     /// param 8 (`RWStepGeom_RWCartesianTransformationOperator3d.cxx:82-128`).
-    fn make_transformation3d(&self, id: usize) -> Result<occt_core::gp::GpTrsf, String> {
+    pub(super) fn make_transformation3d(&self, id: usize) -> Result<occt_core::gp::GpTrsf, String> {
         let rec = self.record(id)?;
         let origin_ref = parse_ref(&rec.args[5]).ok_or("CTO3D: bad local_origin ref")?;
         // `cxx:2158`: `MakeCartesianPoint(LocalOrigin)` - scaled by LengthFactor.
@@ -976,17 +1101,21 @@ impl<'a> Resolver<'a> {
                 let ax = parse_ref(&rec.args[1]).ok_or("ELLIPSE: bad axis ref")?;
                 // `StepToGeom::MakeEllipse` (`StepToGeom.cxx:1536-1566`):
                 // `majorR = SemiAxis1 * LF`, `minorR = SemiAxis2 * LF`
-                // (`cxx:1549-1550`). OCCT also swaps the axes when
-                // `majorR < minorR` (`cxx:1552-1561`); that branch is unported
-                // here (the LF product is sign-invariant, so it does not change
-                // the swap decision).
+                // (`cxx:1549-1550`); when `majorR - minorR < 0` OCCT turns the X
+                // direction by `A.XDirection() ^ A.Direction()` and swaps the radii
+                // (`cxx:1557-1561`).
                 let maj = parse_f64(&rec.args[2])? * self.length_factor;
                 let min = parse_f64(&rec.args[3])? * self.length_factor;
-                Arc::new(GeomEllipse::new(GpElips::new(
-                    self.resolve_axis2(ax)?,
-                    maj,
-                    min,
-                )))
+                let mut ax2 = self.resolve_axis2(ax)?;
+                let (maj, min) = if maj - min >= 0.0 {
+                    (maj, min)
+                } else {
+                    if let Ok(xd) = ax2.x_direction().crossed(&ax2.direction()) {
+                        ax2.set_x_direction(xd);
+                    }
+                    (min, maj)
+                };
+                Arc::new(GeomEllipse::new(GpElips::new(ax2, maj, min)))
             }
             "HYPERBOLA" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("HYPERBOLA: bad axis ref")?;
@@ -1057,6 +1186,21 @@ impl<'a> Resolver<'a> {
                     None => GeomBSplineCurve::new(poles, knots, degree),
                 };
                 Arc::new(curve.map_err(|e| format!("{}: {e}", rec.type_name))?)
+            }
+            "CURVE_REPLICA" => {
+                // `StepToGeom::MakeCurve` CurveReplica arm (`StepToGeom.cxx:1351-1371`):
+                // `C1 = MakeCurve(ParentCurve)`, then `C1->Transform(T1)` with
+                // `T1 = MakeTransformation3d(Transformation)`. The guard
+                // `!T.IsNull() && PC != SC` (`cxx:1358`) rejects a cyclic replica.
+                let parent_ref = parse_ref(&rec.args[1]).ok_or("CURVE_REPLICA: bad parent ref")?;
+                let trsf_ref =
+                    parse_ref(&rec.args[2]).ok_or("CURVE_REPLICA: bad transformation ref")?;
+                if parent_ref == id {
+                    return Err(format!("CURVE_REPLICA: cyclic parent (#{id})"));
+                }
+                let parent = self.resolve_curve(parent_ref)?;
+                let t = self.make_transformation3d(trsf_ref)?;
+                Arc::from(parent.transformed(&t))
             }
             "B_SPLINE_CURVE_WITH_KNOTS" => {
                 // Layout (10 args): name, degree, control_points, weights|SELF,
@@ -1321,9 +1465,22 @@ impl<'a> Resolver<'a> {
             }
             "ELLIPSE" => {
                 let ax = parse_ref(&rec.args[1]).ok_or("ELLIPSE: bad axis ref")?;
+                // `StepToGeom::MakeEllipse2d` (`StepToGeom.cxx:1571-1598`): no length
+                // factor in the 2-D path (`cxx:1583-1584`), and when
+                // `majorR - minorR < 0` the X direction is mirrored in Y —
+                // `gp_Dir2d(X.X(), -X.Y())` (`cxx:1591-1593`) — with the radii swapped.
                 let maj = parse_f64(&rec.args[2])?;
                 let min = parse_f64(&rec.args[3])?;
-                let ax22 = self.resolve_axis22d(ax)?;
+                let mut ax22 = self.resolve_axis22d(ax)?;
+                let (maj, min) = if maj - min >= 0.0 {
+                    (maj, min)
+                } else {
+                    let x = ax22.x_direction();
+                    if let Ok(mirror) = GpDir2d::new(x.x(), -x.y()) {
+                        ax22.set_x_direction(mirror);
+                    }
+                    (min, maj)
+                };
                 let c: Arc<dyn Curve2d> =
                     Arc::new(Geom2dEllipse::new(GpElips2d::new(ax22, maj, min)));
                 let range = (c.first_parameter(), c.last_parameter());

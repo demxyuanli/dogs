@@ -275,6 +275,22 @@ impl<'a> Resolver<'a> {
                 };
                 Arc::new(surface.map_err(|e| format!("{}: {e}", rec.type_name))?)
             }
+            "SURFACE_REPLICA" => {
+                // `StepToGeom::MakeSurface` SurfaceReplica arm (`StepToGeom.cxx:1967-1986`):
+                // `S1 = MakeSurface(ParentSurface)`, then `S1->Transform(T1)` with
+                // `T1 = MakeTransformation3d(Transformation)`; the guard
+                // `!T.IsNull() && PS != SS` (`cxx:1973`) rejects a cyclic replica.
+                let parent_ref = parse_ref(&rec.args[1])
+                    .ok_or("SURFACE_REPLICA: bad parent ref")?;
+                let trsf_ref = parse_ref(&rec.args[2])
+                    .ok_or("SURFACE_REPLICA: bad transformation ref")?;
+                if parent_ref == id {
+                    return Err(format!("SURFACE_REPLICA: cyclic parent (#{id})"));
+                }
+                let parent = self.resolve_surface(parent_ref)?;
+                let t = self.make_transformation3d(trsf_ref)?;
+                Arc::from(parent.transformed(&t))
+            }
             other => {
                 self.warn(format!("unsupported surface entity {other} (#{id})"));
                 return Err(format!("unsupported surface entity {other} (#{id})"));

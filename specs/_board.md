@@ -385,6 +385,19 @@ cd ..; git worktree remove --force .target-headcheck
   - **失败的 Torus face 20**：wire 0（v=0.05088）的 pcurve 在 **u ∈ [1.5708, 7.8540]**，wire 1（v=π/2）的在 **u ∈ [−4.7124, 1.5708]** —— **正好相差一个周期（2π）**；`update_range` 的周期钳制（`BRepMesh_DefaultRangeSplitter::updateRange` `cxx:202-235`；端口 `range_splitter/p01.rs:214-235`，已忠实）把 `range_u` 钳成 `(−4.7124, 1.5708)` ⇒ **wire 0 的链恰好落在范围外一个周期**（缩放后 u ∈ [1,2]）。
   - 两面的**单 wire 链形状完全相同**（每 wire 2 条边、都是 `FixLacking` 复制的闭合圆 ⇒ 出-回链，37+37=74 节点），所以**目前观测到的唯一差异就是"同面两条 wire 的 u 窗口是否对齐"**。四个边的 `same_param/same_range` 全为 true，且 `pc.d0(t)=t`（每边自身一致），说明两个 u 窗口来自 STEP 文件各自的圆参数化，不是边内参数化错。
 - **参考侧证据**：`data/occ-ref/T0M.obj` 里该顶点出现 **两次且完全重合**（v962/v965）⇒ 该顶点被**两个面**各自写了一次（逐面写顶点不去重）⇒ 至少与它相邻的某个面在 OCCT 里**是**被网格化的；端口忠实路径在这些面上给 0 三角，故"OCCT 会网格化、端口失败"的面类**确实存在**，且与本轮的 u 窗口差异一致。
+**批 78（STEP 读取侧忠实补齐（续）：椭圆轴交换、EDGE_LOOP 顶点绑定两趟、CURVE/SURFACE_REPLICA）—— 2026-09-20 第 92 轮**
+
+> 继续按"**能翻译成代码的就补**、以 `cargo check` 作初步验证、未接指令不跑测试"执行。本轮同样**未跑任何 `cargo test` / 导出**。
+
+- **① 椭圆轴交换（3D＋2D）**：原臂注明"`majorR < minorR` 分支未移植"。按 `StepToGeom::MakeEllipse`（`StepToGeom.cxx:1536-1566`）补齐：`majorR = SemiAxis1*LF`、`minorR = SemiAxis2*LF`，当 `majorR - minorR < 0` 时 `A.SetXDirection(A.XDirection() ^ A.Direction())` 并交换半径（`:1552-1561`）；2D 版按 `MakeEllipse2d`（`:1571-1598`）无 LengthFactor、负差时 X 方向取 `gp_Dir2d(X.X(), -X.Y())`（`:1591-1593`）。为 3D 版新增 `GpAx2::set_x_direction`（= `gp_Ax2::SetXDirection`，重算 `Y = Z ^ X`，`occt-core/src/gp/ax2.rs`）。
+- **② `EDGE_LOOP` 顶点绑定两趟（原为 UNPORTED，`step/p04.rs`）**：按 `StepToTopoDS_TranslateEdgeLoop.cxx` 逐行移植
+  - **第 1 趟 `:288-403`（bug PRO7656）**：每条 ORIENTED_EDGE 取其 `EDGE_CURVE`（沿嵌套 ORIENTED_EDGE 下钻，`:301-307`）、按 `same_sense` 定 `Vstart/Vend`（`:355-365`）、记录调用前的 `IsBound` 状态（`:367-368`）；两顶点都在且点距 ≤ `Precision::Confusion()` 时按三分支绑定 `Vend→V1` / `Vstart→V2` / `Vend→V1`（`:384-396`）。
+  - **第 2 趟 `:405-491`（bug BUC50070 #3815）**：相邻边对 (j, j+1)，按 `Orientation` 取各自"相接顶点" `Vs1/Vs2` 与 `Vs11/Vs22`（`:429-433`），四者有二同一实体则跳过（`:435-438`）；两点距 ≤ `Precision()`（端口已有 `step_precision`）时，`EC1` 未翻译则绑 `Vs1→V2`、否则 `EC2` 未翻译则绑 `Vs2→V1`（`:466-477`）。
+  - 端口侧新增 `Resolver::vertex_bind: RefCell<HashMap<usize, TopoShape>>`（= `StepToTopoDS_TranslateTool::Bind`），由 `resolve_shape` 对 `VERTEX_POINT` 优先返回；"是否已翻译/已绑定"以 `shape_cache.contains_key` 复现（`aTool.IsBound`）。`resolve_loop` 现在**先**跑两趟绑定、再解析 ORIENTED_EDGE，等价于 OCCT 的"建 wire 前先 confuse 顶点"。
+- **③ `CURVE_REPLICA` / `SURFACE_REPLICA`（此前无臂）**：按 `StepToGeom::MakeCurve`（`:1351-1371`）与 `MakeSurface`（`:1967-1986`）实现：解析 `ParentCurve/ParentSurface` → 递归转移 → `MakeTransformation3d(Transformation)` → `Transform`；含 `PC != SC` 的循环保护（`:1358`/`:1973`，端口以 `parent_ref == id` 判并报错）。为此把 `make_transformation3d` 提为 `pub(super)`。
+- **验证（仅编译）**：`cargo check --offline --all-targets` 五 crate 全 ok。改动规模：4 文件 **+208 / −22**（`step/p04.rs` +201、`p05.rs` +16、`p03.rs` +4、`occt-core/gp/ax2.rs` +9）。
+- **STEP 读取侧余下可翻译项（只剩一条）**：`STEPControl_ActorRead::TransferRelatedSRR`（`STEPControl_ActorRead.cxx:2061-2091`）＋ `TransferEntity(SRR,…)`（`:859`/`:985` 一带，含 `ComputeSRRWT` `:2495-2546`：`SHAPE_REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION` 的 `CARTESIAN_TRANSFORMATION_OPERATOR_3D` 或 `ITEM_DEFINED_TRANSFORMATION` 两 `AXIS2_PLACEMENT_3D` 两臂）——即把 `data/` 之外可能出现的 `SHAPE_REPRESENTATION_RELATIONSHIP[_WITH_TRANSFORMATION]` 关系**组合**进产品形状（端口现在把每个相关表示各出一个根形状；`read.step.shape.relationship` 默认 true，`DESTEP_Parameters.hxx:170`）。端口已具备所需件：`make_transformation3d`、`compute_axis_transform`（= `ComputeTransformation` 的轴对臂 `:2471-2489`）、`make_compound_of`；**UNPORTED 将保留**：`PrepareUnits(Rep2)` 的逐表示单位上下文（端口用文件全局因子）与 `SRRReversed` 的 NAUO 校验（`STEPConstruct_Assembly::CheckSRRReversesNAUO`）。
+
 **批 77（STEP 读取侧忠实补齐：RECTANGULAR_TRIMMED_SURFACE、Bezier/Uniform/QuasiUniform 曲面与曲线族、TRIMMED_CURVE 3D/2D）—— 2026-09-20 第 91 轮**
 
 > 本轮按"**能翻译成代码的就补**、以**编译**作初步验证、未接到"导出 obj 测试"指令前**不自行发起测试**"执行：只跑 `cargo check`（5 个 crate × `--all-targets` 全 ok），**未跑任何 `cargo test` / 导出**。
