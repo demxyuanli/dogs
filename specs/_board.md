@@ -88,9 +88,9 @@ cd ..; git worktree remove --force .target-headcheck
 | **R2-17** | 新（批 80 派生） | **删除 OCCT 不存在的 circle/circle 快路径**：`edge_edge/solvers.rs::compute_circle_circle_full` 与 `perform` 里的 `(Circle, Circle)` 分派。OCCT `IntTools_EdgeEdge::Perform`（`:185-243`）只特判 line/line，圆–圆同样走 `FindSolutions`（忠实件已在 R2-1 落地） | 该分支为端口自创（模块内已标 UNPORTED）；被 `edge_edge/mod.rs` 的两个直调用例与 `circle_circle_two_hits` 间接覆盖 ⇒ **删除会改行为，需一次门禁验证**（这正是不能与 R2-1 同批做的事） | R2-1 已落地 | `occt-topo --lib`（尤其 `edge_edge::tests::{circle_circle_two_hits, separated_circles_empty}`、`tests_full::circle_circle_full_*`）不回归 | 门禁波次 |
 | **R2-18** | 新（批 81 派生，A16 的 2D 余项） | **2D 投影/求交采样族**：`occt-geom2d/curve_ops.rs::{curve2d_intersections, curve2d_closest_point, curve2d_length}` | **◐ 批 85（第 94 轮）投影 half（R2-18a）✅ / 批 86（第 95 轮）求交 half（R2-18b）✅**：投影改走 `extrema2d::point_curve_extrema2d`（`Extrema_ExtPC2d`），求交改走 `IntAna2d_AnaIntersection`（详见下方两行）。**仍 UNPORTED**：非解析组合（B 样条/Bezier/offset/其修剪）的求交＝256×256 采样器（忠实路线 `Extrema_ExtCC2d`）；`curve2d_length`＝Simpson 求积（OCCT `GCPnts_AbscissaPoint`）；`extrema2d` 一般曲线的网格+Newton 播种（A7 家族） | 忠实件：`extrema2d`、`occt-core::intana2d` | 该 crate `--lib` + 依赖 2D 的门禁不劣化（见 R2-18-gate） | 批 85+86 ◐ |
 | **R2-18b** | 新（批 86 完成） | **2D 求交改走 `IntAna2d_AnaIntersection`** | **✅ 批 86（第 95 轮）**：`Curve2d` trait 补三个类型查询 `gp_elips2d`/`gp_parab2d`/`gp_hypr2d`（`Geom2dAdaptor_Curve` 的 `Ellipse()/Parabola()/Hyperbola()`，`ellipse.rs`/`parabola.rs`/`hyperbola.rs` 实现 + `Geom2dTrimmedCurve` 转发）；`curve_ops::curve2d_intersections` 先走 `analytic_intersections2d`：按首个曲线给「专用操作数」（8 个 `perform_*`），第二曲线取 `IntAna2d_Conic`；`(Circ, Lin)` 按 OCCT 写法交换实参并在结果里换回参数；`IntAna2dIntPoint::{param_on_first,param_on_second,value}` 即 `(u,v,point)`；加**有界曲线语义过滤**（`IntAna2d` 是对**无界**圆锥曲线求解，越出曲线自身区间的根不算交点；周期曲线按一个周期映射；修剪曲线用其 basis 空间的 `first/last`）。非解析组合仍走采样器并就地标 UNPORTED | 同 R2-18 行 | 同 R2-18 行 | 批 86 ✅ |
-| **R2-18-gate** | 新（批 86 派生，**门禁影响面**） | **R2-18a/18b 直接改 live BOP 的 2D pcurve 路径**：`geom2d_api::{intersect_curves, project_point_on_curve}` 被 `pave_de.rs:150,154`、`pave_blocks/split_edges.rs:174`、`wire_splitter_block.rs:680` 调用 ⇒ 2D 求交/投影输入改变会波及 PaveFiller/SplitEdge，进而可能改变 T-01/T-03/T-04 的红门禁结果（可能变好也可能位移） | 两批均在 P0 红门禁的下游 | 无 | 门禁跑完先做「批 85+86 前/后」差分（`occt-topo --lib`、phase3/4/5/6、`bop_builder2_boss`、`phase19`、四道 STEP 门禁、`export_data_obj`） | **门禁波次（最高优先）** |
+| **R2-18-gate** | 新（批 86 派生，**门禁影响面**） | **R2-18a/18b 与批 87 直接改 live BOP 的 2D pcurve 与曲线包围盒**：`geom2d_api::{intersect_curves, project_point_on_curve}` 被 `pave_de.rs:150,154`、`pave_blocks/split_edges.rs:174`、`wire_splitter_block.rs:680` 调用；`geom_bnd_lib_curve3d::box_curve`（批 87 起圆锥解析盒）被 `brep_bnd_lib.rs:64`（`BRepBndLib::Add`）、`geom_bnd_lib_surface3d.rs:496,686`、`int_tools_curve_box.rs:46`（= `IntTools_EdgeEdge::BndBuildBox`，批 80 的盒递归用它）与 `pcurve_full/surface_projector.rs:1493` 消费 ⇒ 2D 求交/投影输入与**盒递归的剪枝**都会变，可能改变 T-01/T-03/T-04 红门禁的结果（可能变好也可能位移） | 批 85/86/87 均在 P0 红门禁的下游 | 无 | 门禁跑完先做「批 85+86+87 前/后」差分（`occt-topo --lib`、phase3/4/5/6、`bop_builder2_boss`、`phase19`、四道 STEP 门禁、`export_data_obj`） | **门禁波次（最高优先）** |
 
-**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→ R2-18 ✅（批 85 投影 + 批 86 求交；余非解析组合采样器）→ **等"导出 obj"指令 → 先做 R2-18-gate 差分（批 85+86 前/后），再跑全门禁刷新 §2 = R2-15** → 按门禁结果定 R2-7…R2-10 + R2-17 → R2-11/R2-12/R2-13 → R2-6/R2-14/R2-16/R2-19/R2-20 夹带。
+**R2 执行顺序（默认）**：R2-1 ✅（批 80）→ R2-2 ✅（批 81）→ R2-5 ✅（批 82）→ R2-4 ✅（批 83）→ R2-3 ◐（批 84：周期面一半；余 R2-19/R2-20）→ R2-18 ✅（批 85 投影 + 批 86 求交；余非解析组合采样器）→ R2-16 夹带：T-12 前半 ✅（批 87）→ **等"导出 obj"指令 → 先做 R2-18-gate 差分（批 85+86+87 前/后），再跑全门禁刷新 §2 = R2-15** → 按门禁结果定 R2-7…R2-10 + R2-17 → R2-11/R2-12/R2-13 → R2-6/R2-14/R2-16（含 T-12 后半）/R2-19/R2-20 夹带。
 
 ### P0 — 红门禁（收敛或显式豁免）
 
@@ -120,7 +120,7 @@ cd ..; git worktree remove --force .target-headcheck
 
 | ID | 位置 | 未移植内容 | 状态 |
 |---|---|---|---|
-| T-12 | `crates/occt-topo/src/geom_bnd_lib_curve3d.rs:7` | Ellipse / Hyperbola / Parabola 解析盒（`occt_geom::Curve` 不暴露 `gp_Elips/Hypr/Parab`）→ 现走采样；周期 B 样条 arm（缺 `Segment`/`AdjustPeriodic`，`BSplineCurve.cxx:44-49,299-330`） | pending |
+| T-12 | `crates/occt-topo/src/geom_bnd_lib_curve3d.rs:7` | Ellipse / Hyperbola / Parabola 解析盒（`occt_geom::Curve` 不暴露 `gp_Elips/Hypr/Parab`）→ 现走采样；周期 B 样条 arm（缺 `Segment`/`AdjustPeriodic`，`BSplineCurve.cxx:44-49,299-330`） | **◐ 批 87（第 96 轮）前半 done**：三个圆锥解析盒已移植（`GeomBndLib_Ellipse.cxx:23-114`／`_Hyperbola.cxx:25-140`／`_Parabola.cxx:23-94`），`box_curve` 分派按 OCCT 顺序补 Ellipse→Hyperbola→Parabola 三臂（`GeomBndLib_Curve.cxx:98-147`）；**后半 pending**：周期 B 样条 arm（需 `Segment`/`AdjustPeriodic`），仍在文件头就地 PARKED | **◐ 前半 done（批 87）** |
 | T-13 | `geom_bnd_lib_surface3d.rs:8` | `BoxOptimal`（`OptimizationHelpers.pxx` PSO+Powell）+ `SurfaceOfExtrusion::BoxOptimal`（`cxx:224-283`）；`catch(Standard_Failure)` 回退 | pending（`AddOptimal` 路径，当前不在 `BRepBndLib::Add` 上） |
 | T-14 | `brep_bnd_lib.rs:13` | 三角化 arm（`BRepBndLib.cxx:95-101,157-179`）、仅 pcurve 边的 `BRepAdaptor_Curve::Initialize` 回退（`cxx:93-106`） | pending（缺 `Poly_Triangulation` 存储） |
 | T-15 | `shhealing/transfer_params.rs:21` | `CopyNMVertex`（需 `BRep_PointRepresentation`）、`CorrectParameter` knot snap（`Proj.cxx:268-279`）、`myLocation` 统一 identity | pending |
@@ -417,6 +417,21 @@ cd ..; git worktree remove --force .target-headcheck
   - **失败的 Torus face 20**：wire 0（v=0.05088）的 pcurve 在 **u ∈ [1.5708, 7.8540]**，wire 1（v=π/2）的在 **u ∈ [−4.7124, 1.5708]** —— **正好相差一个周期（2π）**；`update_range` 的周期钳制（`BRepMesh_DefaultRangeSplitter::updateRange` `cxx:202-235`；端口 `range_splitter/param_set.rs:214-235`，已忠实）把 `range_u` 钳成 `(−4.7124, 1.5708)` ⇒ **wire 0 的链恰好落在范围外一个周期**（缩放后 u ∈ [1,2]）。
   - 两面的**单 wire 链形状完全相同**（每 wire 2 条边、都是 `FixLacking` 复制的闭合圆 ⇒ 出-回链，37+37=74 节点），所以**目前观测到的唯一差异就是"同面两条 wire 的 u 窗口是否对齐"**。四个边的 `same_param/same_range` 全为 true，且 `pc.d0(t)=t`（每边自身一致），说明两个 u 窗口来自 STEP 文件各自的圆参数化，不是边内参数化错。
 - **参考侧证据**：`data/occ-ref/T0M.obj` 里该顶点出现 **两次且完全重合**（v962/v965）⇒ 该顶点被**两个面**各自写了一次（逐面写顶点不去重）⇒ 至少与它相邻的某个面在 OCCT 里**是**被网格化的；端口忠实路径在这些面上给 0 三角，故"OCCT 会网格化、端口失败"的面类**确实存在**，且与本轮的 u 窗口差异一致。
+**批 87（T-12 前半：椭圆/双曲线/抛物线解析包围盒；仅编译验证）—— 2026-09-21 第 96 轮**
+
+> 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。**本批是 R2-16 小项池里的夹带项**（R2 主序的 R2-19/R2-20 均为大件且不可验证，故先做这件已解锁的忠实补缺）。
+
+- **解锁条件**：T-12 原卡被"`occt_geom::Curve` 不暴露 `gp_Elips/Hypr/Parab`"阻塞；这三个查询已在 A20/A29 轮补齐（`gp_ellipse`/`gp_hyperbola`/`gp_parabola`），⇒ 本批把 `geom_bnd_lib_curve3d.rs` 的 PARKED 前半落地。
+- **新增三个忠实件**（逐行对照 OCCT）：
+  - `box_ellipse_full` / `box_ellipse_range`（`GeomBndLib_Ellipse.cxx:23-45` / `:49-114`）：整椭圆按 `Amp = sqrt(Major²·Xd_k² + Minor²·Yd_k²)` 求每坐标极值；圆弧先 `AdjustPeriodic`＋加端点，再对每坐标解 `atan(MinR·Yk / MajR·Xk)` 的极值参数并用 `InPeriod` 判断落在弧内。
+  - `compute_hyperbola_box` / `box_hyperbola_range`（`_Hyperbola.cxx:25-69` / `:75-140`）：端点、`t1·t2 < 0` 时的 `t=0`、每坐标 `T3 = 0.5·ln(|B−A|/|B+A|)` 极值（`|B±A| < Epsilon(1)` 即退化跳过的分支原样保留）；无穷参数的开盒分支（`Open*Min/Max`）逐支对应。
+  - `box_parabola_range`（`_Parabola.cxx:23-94`）：端点、`u1·u2 < 0` 时的 `u=0`、无穷参数开盒分支。
+  - 三处 `throw Standard_Failure("bad parameter")`（`_Hyperbola.cxx:82,108`、`_Parabola.cxx:33,59`）**不移植为 panic**：端口按既有约定返回空盒（`IsVoid`），已就地注明出处。
+- **`box_curve` 分派**：按 `GeomBndLib_Curve.cxx:98-147` 的顺序补上 Ellipse → Hyperbola → Parabola 三臂（在 Line/Circle 之后、Bezier 之前）。
+- **仍 PARKED**：周期 B 样条 arm（需 `Geom_BSplineCurve::Segment` + `AdjustPeriodic`），文件头保留原说明；H 侧取 `location()` 的临时量已按借用规则绑定（Rust-only 写法，无语义差异）。
+- **验证（仅编译）**：`cargo check --offline --all-targets` 五个 crate **全部 exit 0、0 error**，新代码无告警。
+- **⚠️ 门禁影响面（已并入 R2-18-gate 卡）**：`box_curve` 被 `brep_bnd_lib.rs:64`（`BRepBndLib::Add`）、`geom_bnd_lib_surface3d.rs:496,686`、`int_tools_curve_box.rs:46`（`IntTools_EdgeEdge::BndBuildBox` —— 批 80 的盒递归正是用它）与 `pcurve_full/surface_projector.rs:1493` 消费 ⇒ 圆锥曲线的盒子由采样变为**解析（更紧）**，会改变盒递归的剪枝与上游 bbox 结果。门禁时与批 85/86 一起做「前/后」差分。
+
 **批 86（R2-18b：2D 求交改走 `IntAna2d_AnaIntersection`；仅编译验证）—— 2026-09-21 第 95 轮**
 
 > 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。
