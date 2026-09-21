@@ -1522,6 +1522,27 @@ cargo run --manifest-path $M --offline --example export_data_obj
 ATU01038 bbox 对拍（无测试覆盖时的临时手段；结果记进 §7）：
 解析 `output/ATU01038.obj` 与 `data/occ-ATU01038.obj` 的 `v ` 行取 min/max，当前 Δ≤9e-6。
 
+### 6.1 门禁波次的第一步：R2-18-gate 差分（批 85–89 前/后）
+
+收到"导出 obj 测试"指令后，**先做本差分再看任何红项**（批 85/86 改 2D 投影与求交、批 87 改圆锥包围盒、批 88 改 STEP 边域投影回退、批 89 改 healing 的 pcurve 结点吸附；四者都在 P0/P1 门禁的下游，见 R2-18-gate 卡）。
+
+```powershell
+cd D:\source\repos\dogs
+$M = 'crates/occt-topo/Cargo.toml'
+# ① 现工作区（batch 89 之后）
+cargo test --manifest-path $M --no-fail-fast 2>&1 | Select-String 'test result:|Running tests|panicked at' | Tee-Object $env:TEMP\gate_after.txt
+cargo test --manifest-path crates/occt-geom2d/Cargo.toml --lib 2>&1 | Select-String 'test result:' | Tee-Object -Append $env:TEMP\gate_after.txt
+# ② 批 84 结束点（= 批 85 之前）作为对照基线
+git worktree add --detach .target-pre85 9d8e596
+cd .target-pre85
+cargo test --manifest-path $M --no-fail-fast 2>&1 | Select-String 'test result:|Running tests|panicked at' | Tee-Object $env:TEMP\gate_before.txt
+cargo test --manifest-path crates/occt-geom2d/Cargo.toml --lib 2>&1 | Select-String 'test result:' | Tee-Object -Append $env:TEMP\gate_before.txt
+cd ..; git worktree remove --force .target-pre85
+# ③ 逐项比对两文件；差异项按 §3 R2-18-gate 的"第一嫌疑"顺序归因（85→86→87→88→89）
+```
+
+> 纪律复核：差分前不要动任何源码；`git worktree` 路径命中 `.gitignore` 的 `/.target-*/`；**禁止**在共享树 `git stash`。
+
 ## 7. 进度日志
 
 ### 2026-09-19 23:00–23:55 · DSH 会话（只读盘点，未改代码）
