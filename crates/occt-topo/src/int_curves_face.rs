@@ -285,7 +285,14 @@ fn lin_box_clip(lin: &GpLin, bbox: &BndBox, tmin: f64, tmax: f64) -> Option<(f64
     Some((t0, t1))
 }
 
-fn finite_uv(face: &Face) -> (f64, f64, f64, f64) {
+/// `BRepTools::UVBounds` of `face`, made finite for the intersection engines.
+///
+/// `IntCurvesFace_Intersector` / `IntTools_EdgeFace` both hand
+/// `IntCurveSurface_HInter` a surface adaptor; the port's engines need a finite
+/// UV window instead, and this is the one the port's `IntCurvesFace_Intersector`
+/// uses (unbounded directions get the `[-1e3, 1e3]` proxy window, a degenerate
+/// window is widened by 1).
+pub(crate) fn finite_uv(face: &Face) -> (f64, f64, f64, f64) {
     let (u0, u1, v0, v1) = face_uv_bounds(face);
     let clamp = |a: f64, b: f64| {
         let mut x = a;

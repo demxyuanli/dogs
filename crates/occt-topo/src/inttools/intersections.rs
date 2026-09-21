@@ -239,8 +239,10 @@ pub(super) fn param_on_edge(e: &Edge, curve: &dyn Curve, p: &GpPnt, a: f64, b: f
 
 /// All intersection points of two edges, as `(param_on_1, param_on_2, point)`.
 ///
-/// Line–line, line–circle and coplanar circle–circle are solved exactly; other
-/// combinations fall back to the sampling solver in `geom_api`.
+/// Line–line, line–circle and coplanar circle–circle are solved exactly; every
+/// other combination runs the faithful `IntTools_EdgeEdge`
+/// ([`crate::edge_edge::EdgeEdge`]) — OCCT's only route for those pairs
+/// (`IntTools_EdgeEdge.cxx:185-243`).
 pub fn edge_edge_intersections(e1: &Edge, e2: &Edge, tol: f64) -> Vec<EdgeEdgeHit> {
     let Some(c1) = BRepTool::edge_curve(e1) else {
         return Vec::new();
@@ -275,24 +277,24 @@ pub fn edge_edge_intersections(e1: &Edge, e2: &Edge, tol: f64) -> Vec<EdgeEdgeHi
             if ci2 {
                 line_circle_hits(e1, &*c2, tol, &mut points);
             } else {
-                points = geom_api::curve_curve_intersections(&*c1, &*c2, tol);
+                points = edge_edge_general_points(e1, e2);
             }
         }
         (false, true) => {
             if ci1 {
                 line_circle_hits(e2, &*c1, tol, &mut points);
             } else {
-                points = geom_api::curve_curve_intersections(&*c1, &*c2, tol);
+                points = edge_edge_general_points(e1, e2);
             }
         }
         (false, false) => {
             if ci1 && ci2 {
                 match circle_circle_exact(&*c1, &*c2, tol) {
                     Some(pts) => points = pts,
-                    None => points = geom_api::curve_curve_intersections(&*c1, &*c2, tol),
+                    None => points = edge_edge_general_points(e1, e2),
                 }
             } else {
-                points = geom_api::curve_curve_intersections(&*c1, &*c2, tol);
+                points = edge_edge_general_points(e1, e2);
             }
         }
     }
@@ -402,6 +404,55 @@ pub(super) fn dedupe_hits(mut hits: Vec<EdgeEdgeHit>, tol: f64) -> Vec<EdgeEdgeH
     out
 }
 
+/// `IntTools_EdgeEdge` for the non-analytic curve pairs: the faithful
+/// `FindSolutions` parameter-box recursion of [`crate::edge_edge::EdgeEdge`]
+/// (`IntTools_EdgeEdge.cxx:185-243`).
+///
+/// Replaces `geom_api::curve_curve_intersections` (a 256×256 sampler with
+/// alternating 1-D minimization, audit A16). The edge tolerances and the fuzzy
+/// value drive the engine exactly as OCCT's `Prepare` does; the caller's `tol`
+/// is not an `IntTools_EdgeEdge` input.
+fn edge_edge_general_points(e1: &Edge, e2: &Edge) -> Vec<GpPnt> {
+    let mut ee = crate::edge_edge::EdgeEdge::with_edges(e1.clone(), e2.clone());
+    if ee.perform().is_err() {
+        return Vec::new();
+    }
+    ee.points().iter().map(|p| p.pnt1).collect()
+}
+
+/// Non-planar edge–face points via the faithful curve/surface intersector.
+///
+/// `IntTools_EdgeFace.cxx:426-445`: `IntCurveSurface_HInter anExactIntersector;
+/// anExactIntersector.Perform(aCurve, aSurface);` and every point whose `W()`
+/// lies in `[aTF, aTL]` is kept. The port calls
+/// [`crate::intcurvesurface::perform_curve_surface`] (that same algorithm) and
+/// leaves the range filter to the caller's `param_on_edge`, which requires the
+/// point to project back onto the edge inside `[a, b]`.
+///
+/// Replaces `geom_api::curve_surface_intersections` (curve sampling + distance
+/// dip + golden section, audit A16).
+fn curve_surface_points(
+    curve: &dyn Curve,
+    face: &Face,
+    surf: &dyn Surface,
+    a: f64,
+    b: f64,
+) -> Vec<GpPnt> {
+    // OCCT hands the intersector a bare `GeomAdaptor_Surface` (the surface's own
+    // bounds); the port's engine needs a finite window, so it gets the face's UV
+    // box — the same window `crate::int_curves_face` uses.
+    let (u0, u1, v0, v1) = crate::int_curves_face::finite_uv(face);
+    // `Perform(aCurve, aSurface)` uses the curve adaptor's own range; an
+    // unbounded curve (an edge on an infinite line) is restricted to the edge
+    // range, which the caller's filter keeps anyway.
+    let (c0, c1) = (curve.first_parameter(), curve.last_parameter());
+    let cu_range = if c0.is_finite() && c1.is_finite() { (c0, c1) } else { (a, b) };
+    match crate::intcurvesurface::perform_curve_surface(curve, surf, cu_range, (u0, u1, v0, v1)) {
+        Ok(res) => res.points().iter().map(|p| p.pnt).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Edge–face intersection
 // ---------------------------------------------------------------------------
@@ -409,8 +460,10 @@ pub(super) fn dedupe_hits(mut hits: Vec<EdgeEdgeHit>, tol: f64) -> Vec<EdgeEdgeH
 /// All points where an edge meets a face: `(param_on_edge, point)`.
 ///
 /// Planar faces use the exact line/circle–plane solves and keep only the hits
-/// inside the face's 2D boundary polygon. Non-planar faces are handled by a
-/// sampled curve–surface solver.
+/// inside the face's 2D boundary polygon. Non-planar faces use the faithful
+/// `IntCurveSurface_HInter` ([`crate::intcurvesurface::perform_curve_surface`]),
+/// exactly as `IntTools_EdgeFace::Perform` does
+/// (`IntTools_EdgeFace.cxx:426-445`).
 pub fn edge_face_intersections(e: &Edge, f: &Face, tol: f64) -> Vec<(f64, GpPnt)> {
     let Some(curve) = BRepTool::edge_curve(e) else {
         return Vec::new();
@@ -447,7 +500,7 @@ pub fn edge_face_intersections(e: &Edge, f: &Face, tol: f64) -> Vec<(f64, GpPnt)
         let Some(surf) = BRepTool::face_surface(f) else {
             return Vec::new();
         };
-        let pts = geom_api::curve_surface_intersections(&*curve, &*surf, tol, 200);
+        let pts = curve_surface_points(&*curve, f, &*surf, a, b);
         let mut hits = Vec::new();
         for p in pts {
             if let Some(u) = param_on_edge(e, &*curve, &p, a, b, tol) {

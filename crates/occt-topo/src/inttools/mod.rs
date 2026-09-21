@@ -21,7 +21,7 @@ pub(crate) use occt_core::geom::polygon_ops::point_in_polygon2d;
 pub(crate) use occt_core::gp::{GpPln, GpPnt, GpPnt2d, GpVec, GpVec2d};
 pub(crate) use occt_core::int::curve_curve::segment_segment_intersection_3d;
 pub(crate) use occt_geom::geom_api;
-pub(crate) use occt_geom::Curve;
+pub(crate) use occt_geom::{Curve, Surface};
 
 pub(crate) use crate::brep_surface::face_plane;
 pub(crate) use crate::brep_tool::BRepTool;
