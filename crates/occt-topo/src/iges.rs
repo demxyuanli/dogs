@@ -13,8 +13,18 @@
 //! The physical layout is the standard sectioned format (S/G/D/P/T) with each
 //! line exactly 80 characters. Section lines carry their section letter and a
 //! 7-digit sequence number in the first 8 columns, followed by the data.
+//!
+//! **Model contents (T-85 step 2)**: only the entities reachable from the
+//! shapes handed to the writer are written, numbered in
+//! `Interface_InterfaceModel::AddWithRefs` order (`Interface_InterfaceModel.cxx:652-692`),
+//! exactly as `IGESControl_Writer::AddEntity` → `myModel->AddWithRefs`
+//! (`IGESControl_Writer.cxx:243-252`) does. Parameter pointers therefore cannot
+//! be written as they are built: the emitters record them as `#k` placeholders
+//! ([`emit_refs`](IgesWriter::emit_refs)) and
+//! [`final_entities`](IgesWriter::final_entities) resolves them after the
+//! renumbering.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt, GpVec};
@@ -93,6 +103,83 @@ fn num(x: f64) -> String {
     } else {
         format!("{s}.")
     }
+}
+
+/// Pointer placeholder for the `k`-th entry of an entity's reference list.
+///
+/// `#` never appears in IGES parameter data (strings use the `nH…` form), so a
+/// `#k` token unambiguously marks a DE pointer position until
+/// [`resolve_placeholders`] turns it into the final number.
+fn ph(k: usize) -> String {
+    format!("#{k}")
+}
+
+/// `n` comma-separated placeholders: `#0,#1,…`.
+fn ph_list(n: usize) -> String {
+    (0..n).map(ph).collect::<Vec<_>>().join(",")
+}
+
+/// True when every `#k` in `params` addresses an entry of the reference list.
+fn pointers_all_known(params: &str, n_refs: usize) -> bool {
+    placeholder_indices(params).all(|k| k < n_refs)
+}
+
+/// The `k` of every `#k` token, in text order.
+fn placeholder_indices(params: &str) -> impl Iterator<Item = usize> + '_ {
+    let bytes = params.as_bytes();
+    let mut i = 0usize;
+    let mut found: Vec<usize> = Vec::new();
+    while i < bytes.len() {
+        if bytes[i] == b'#' {
+            let start = i + 1;
+            let mut j = start;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > start {
+                if let Ok(k) = params[start..j].parse::<usize>() {
+                    found.push(k);
+                }
+                i = j;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    found.into_iter()
+}
+
+/// Replace every `#k` with the final DE number of the `k`-th referenced entity.
+///
+/// `refs` holds the referenced entities in parameter order and `new_of` the
+/// reachability renumbering; a `#k` without a target keeps its literal text
+/// (only reachable when an emitter records fewer refs than it writes
+/// placeholders, which `emit_refs` already checks in debug builds).
+fn resolve_placeholders(params: &str, refs: &[usize], new_of: &HashMap<usize, usize>) -> String {
+    let bytes = params.as_bytes();
+    let mut out = String::with_capacity(params.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'#' {
+            let start = i + 1;
+            let mut j = start;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > start {
+                if let Ok(k) = params[start..j].parse::<usize>() {
+                    if let Some(n) = refs.get(k).and_then(|r| new_of.get(r)) {
+                        out.push_str(&n.to_string());
+                        i = j;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
 }
 
 /// Finite sampling bounds of a surface (unbounded ranges clamp to ±1).
@@ -520,6 +607,11 @@ impl Ent {
 /// Incremental IGES writer holding the entity list and dedup maps.
 struct IgesWriter {
     entities: Vec<Ent>,
+    /// Top-level entity of every shape handed to [`IgesWriter::emit_shape`], in
+    /// that order. `IGESControl_Writer::AddEntity` feeds each one to
+    /// `Interface_InterfaceModel::AddWithRefs` (`IGESControl_Writer.cxx:243-252`),
+    /// so these are the DFS roots of the written model (T-85 step 2).
+    roots: Vec<usize>,
     point_entities: HashMap<usize, usize>,
     edge_curve_entities: HashMap<usize, usize>,
 }
@@ -528,6 +620,7 @@ impl IgesWriter {
     fn new() -> Self {
         Self {
             entities: Vec::new(),
+            roots: Vec::new(),
             point_entities: HashMap::new(),
             edge_curve_entities: HashMap::new(),
         }
@@ -551,7 +644,20 @@ impl IgesWriter {
 
     /// Register one entity that references others, recording those pointers in
     /// record order (T-85's prerequisite for OCCT's reachability-based writing).
+    ///
+    /// The parameter text carries a `#k` placeholder for the `k`-th entry of
+    /// `refs` instead of a DE number; [`IgesWriter::final_entities`] substitutes
+    /// the final number after the reachability renumbering. OCCT can write the
+    /// numbers directly because its model is numbered while it is built
+    /// (`Interface_InterfaceModel::AddWithRefs`, `Interface_InterfaceModel.cxx:652-692`);
+    /// the port numbers at write time, so the reference *index* is what the
+    /// parameter text can hold.
     fn emit_refs(&mut self, ty: i32, form: i32, params: String, refs: &[usize]) -> usize {
+        debug_assert!(
+            pointers_all_known(&params, refs.len()),
+            "entity type {ty}: parameter text has placeholders outside 0..{}",
+            refs.len()
+        );
         let de = self.emit(ty, form, params);
         self.entities[de - 1].refs = refs.to_vec();
         de
@@ -573,6 +679,61 @@ impl IgesWriter {
                 );
             }
         }
+    }
+
+    /// The entities OCCT's `AddWithRefs` would put in the model, in the order it
+    /// adds them, renumbered and with the `#k` placeholders resolved.
+    ///
+    /// `Interface_InterfaceModel::AddWithRefs` (`Interface_InterfaceModel.cxx:652-692`)
+    /// adds an entity and then recurses into its shared entities **in order**,
+    /// skipping anything already added: a pre-order DFS from the roots
+    /// (`IGESControl_Writer::AddEntity`, `IGESControl_Writer.cxx:243-252`). The
+    /// shared entities are `IGESData_GeneralModule::FillSharedCase`'s list —
+    /// the DE-part entities first (only field 7, the transformation matrix, is
+    /// ever set by this writer) and then the own-parameter references, which is
+    /// the record order of [`Ent::refs`].
+    fn final_entities(&self) -> Vec<Ent> {
+        let mut order: Vec<usize> = Vec::new();
+        let mut seen: HashSet<usize> = HashSet::new();
+        let mut stack: Vec<usize> = self.roots.iter().rev().copied().collect();
+        while let Some(old) = stack.pop() {
+            if old < 1 || old > self.entities.len() || !seen.insert(old) {
+                continue;
+            }
+            order.push(old);
+            let e = &self.entities[old - 1];
+            let mut kids: Vec<usize> = Vec::new();
+            if let Some(t) = e.trsf {
+                kids.push(t);
+            }
+            kids.extend(e.refs.iter().copied());
+            for k in kids.into_iter().rev() {
+                stack.push(k);
+            }
+        }
+
+        let new_of: HashMap<usize, usize> =
+            order.iter().enumerate().map(|(i, old)| (*old, i + 1)).collect();
+        order
+            .iter()
+            .map(|old| {
+                let e = &self.entities[old - 1];
+                Ent {
+                    ty: e.ty,
+                    form: e.form,
+                    // A pointer that is not in `new_of` cannot happen (every
+                    // child was pushed onto the DFS stack); keep the old number
+                    // rather than emitting a hole.
+                    trsf: e.trsf.map(|t| new_of.get(&t).copied().unwrap_or(t)),
+                    refs: e
+                        .refs
+                        .iter()
+                        .map(|r| new_of.get(r).copied().unwrap_or(*r))
+                        .collect(),
+                    params: resolve_placeholders(&e.params, &e.refs, &new_of),
+                }
+            })
+            .collect()
     }
 
     /// `IGESData_IGESEntity::InitTransf` — record the entity's transformation
@@ -860,7 +1021,7 @@ impl IgesWriter {
         self.emit_refs(
             196,
             0,
-            format!("196,{c},{},{a},{r};", num(radius)),
+            format!("196,#0,{},#1,#2;", num(radius)),
             &[c, a, r],
         )
     }
@@ -882,7 +1043,7 @@ impl IgesWriter {
         self.emit_refs(
             192,
             0,
-            format!("192,{l},{a},{},{r};", num(radius)),
+            format!("192,#0,#1,{},#2;", num(radius)),
             &[l, a, r],
         )
     }
@@ -923,7 +1084,7 @@ impl IgesWriter {
             194,
             0,
             format!(
-                "194,{l},{a},{},{},{r};",
+                "194,#0,#1,{},{},#2;",
                 num(ref_radius),
                 num(angle * 180.0 / std::f64::consts::PI)
             ),
@@ -949,7 +1110,7 @@ impl IgesWriter {
         self.emit_refs(
             198,
             0,
-            format!("198,{c},{a},{},{},{r};", num(major), num(minor)),
+            format!("198,#0,#1,{},{},#2;", num(major), num(minor)),
             &[c, a, r],
         )
     }
@@ -1135,7 +1296,7 @@ impl IgesWriter {
             120,
             0,
             format!(
-                "120,{axis_line},{generatrix},{},{};",
+                "120,#0,#1,{},{};",
                 num(tau - u1),
                 num(tau - u0)
             ),
@@ -1189,7 +1350,7 @@ impl IgesWriter {
             122,
             0,
             format!(
-                "122,{directrix},{},{},{};",
+                "122,#0,{},{},{};",
                 num(end.x()),
                 num(end.y()),
                 num(end.z())
@@ -1517,18 +1678,13 @@ impl IgesWriter {
             let curve3d = if edge_refs.len() == 1 {
                 edge_refs[0]
             } else {
-                let refs = edge_refs
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                self.emit_refs(102, 0, format!("102,{},{};", edge_refs.len(), refs), &edge_refs)
+                self.emit_refs(102, 0, format!("102,{},{};", edge_refs.len(), ph_list(edge_refs.len())), &edge_refs)
             };
             // `IGESGeom_CurveOnSurface::Init` (`IGESGeom_CurveOnSurface.cxx:26-40`)
             // with `Imode = 0` (`cxx:269`) and the "3-D only" preference above;
             // `IGESGeom_ToolCurveOnSurface::WriteOwnParams` (`:104-115`) writes
             // `142, creation_mode, surface, curve_uv, curve_3d, preference_mode;`.
-            let cs = self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{curve3d},2;"), &[surf_idx, curve3d]);
+            let cs = self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, curve3d]);
             match &outer_wire {
                 Some(o) if Arc::as_ptr(&o.0.tshape) == Arc::as_ptr(&w.0.tshape) => {
                     outer_curve = Some(cs)
@@ -1561,7 +1717,7 @@ impl IgesWriter {
                 }
             };
             curve_refs.push(idx);
-            inner_curves.push(self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{idx},2;"), &[surf_idx, idx]));
+            inner_curves.push(self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, idx]));
         }
         curve_refs.append(&mut synth);
 
@@ -1584,9 +1740,9 @@ impl IgesWriter {
         // OCCT's own primitives would have here.
         if outer_curve.is_none() && !synth.is_empty() {
             let mut it = synth.iter();
-            outer_curve = it.next().map(|c| self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{c},2;"), &[surf_idx, *c]));
+            outer_curve = it.next().map(|c| self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, *c]));
             for c in it {
-                inner_curves.push(self.emit_refs(142, 0, format!("142,0,{surf_idx},0,{c},2;"), &[surf_idx, *c]));
+                inner_curves.push(self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, *c]));
             }
         }
 
@@ -1599,24 +1755,22 @@ impl IgesWriter {
         // (`IGESGeom_ToolTrimmedSurface.cxx:196-218`): `144, surface,
         // outer_boundary_type, nb_inner_contours, outer_contour, inner...;`
         // with the outer contour written as `0` when the type is false.
-        let mut refs = match (is_whole, outer_curve) {
-            (false, Some(i)) => i.to_string(),
-            _ => "0".to_string(),
-        };
+        // `surface` and the contours are pointers (`#k`), the boundary type and
+        // the inner-contour count are plain integers.
+        let has_outer = !is_whole && outer_curve.is_some();
         let mut ref_list = vec![surf_idx];
-        if !is_whole {
-            if let Some(i) = outer_curve {
-                ref_list.push(i);
-            }
+        if has_outer {
+            ref_list.push(outer_curve.unwrap());
         }
         ref_list.extend(inner_curves.iter().copied());
-        for c in &inner_curves {
-            refs.push_str(&format!(",{c}"));
+        let mut contour_refs = if has_outer { ph(1) } else { "0".to_string() };
+        for k in if has_outer { 2 } else { 1 }..ref_list.len() {
+            contour_refs.push_str(&format!(",{}", ph(k)));
         }
         self.emit_refs(
             144,
             0,
-            format!("144,{surf_idx},{outer_flag},{n_inner},{refs};"),
+            format!("144,#0,{outer_flag},{n_inner},{contour_refs};"),
             &ref_list,
         )
     }
@@ -1632,12 +1786,7 @@ impl IgesWriter {
             0 => None,
             1 => Some(items[0]),
             n => {
-                let refs = items
-                    .iter()
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                Some(self.emit_refs(402, 0, format!("402,{n},{refs};"), &items))
+                Some(self.emit_refs(402, 0, format!("402,{n},{};", ph_list(n)), &items))
             }
         }
     }
@@ -1678,13 +1827,18 @@ impl IgesWriter {
                 }
             }
             ShapeType::Solid => {
-                self.emit_solid(&Solid(shape.clone()));
+                if let Some(r) = self.emit_solid(&Solid(shape.clone())) {
+                    self.roots.push(r);
+                }
             }
             ShapeType::Shell => {
-                self.emit_shell(&Shell(shape.clone()));
+                if let Some(r) = self.emit_shell(&Shell(shape.clone())) {
+                    self.roots.push(r);
+                }
             }
             ShapeType::Face => {
-                self.emit_face(&Face(shape.clone()));
+                let r = self.emit_face(&Face(shape.clone()));
+                self.roots.push(r);
             }
             _ => {}
         }
@@ -1708,6 +1862,11 @@ impl IgesWriter {
 
     fn finish(self) -> String {
         self.check_refs();
+        // T-85 step 2: OCCT's model holds only the entities reachable from the
+        // shapes handed to `AddEntity` (`AddWithRefs`), numbered in the order it
+        // adds them; the placeholders in the parameter text become the final
+        // numbers here.
+        let entities = self.final_entities();
         let mut out = String::new();
         let mut s_seq = 1usize;
         let mut g_seq = 1usize;
@@ -1731,7 +1890,7 @@ impl IgesWriter {
 
         // Directory entries: entity `i` owns the two DE pointers `2i-1` and `2i`.
         let mut p_start = 1usize;
-        for (i, ent) in self.entities.iter().enumerate() {
+        for (i, ent) in entities.iter().enumerate() {
             let (l1, l2) = ent.directory_lines(p_start);
             p_start += ent.param_line_count();
             out.push_str(&sec_line('D', 2 * i + 1, &l1, MAXCARS_G));
@@ -1741,7 +1900,7 @@ impl IgesWriter {
             d_seq += 2;
         }
 
-        for (i, ent) in self.entities.iter().enumerate() {
+        for (i, ent) in entities.iter().enumerate() {
             for chunk in ent.param_chunks() {
                 out.push_str(&param_line(&chunk, 2 * i + 1, p_seq));
                 out.push('\n');
