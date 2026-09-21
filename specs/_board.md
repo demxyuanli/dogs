@@ -421,6 +421,15 @@ cd ..; git worktree remove --force .target-headcheck
   - **失败的 Torus face 20**：wire 0（v=0.05088）的 pcurve 在 **u ∈ [1.5708, 7.8540]**，wire 1（v=π/2）的在 **u ∈ [−4.7124, 1.5708]** —— **正好相差一个周期（2π）**；`update_range` 的周期钳制（`BRepMesh_DefaultRangeSplitter::updateRange` `cxx:202-235`；端口 `range_splitter/param_set.rs:214-235`，已忠实）把 `range_u` 钳成 `(−4.7124, 1.5708)` ⇒ **wire 0 的链恰好落在范围外一个周期**（缩放后 u ∈ [1,2]）。
   - 两面的**单 wire 链形状完全相同**（每 wire 2 条边、都是 `FixLacking` 复制的闭合圆 ⇒ 出-回链，37+37=74 节点），所以**目前观测到的唯一差异就是"同面两条 wire 的 u 窗口是否对齐"**。四个边的 `same_param/same_range` 全为 true，且 `pc.d0(t)=t`（每边自身一致），说明两个 u 窗口来自 STEP 文件各自的圆参数化，不是边内参数化错。
 - **参考侧证据**：`data/occ-ref/T0M.obj` 里该顶点出现 **两次且完全重合**（v962/v965）⇒ 该顶点被**两个面**各自写了一次（逐面写顶点不去重）⇒ 至少与它相邻的某个面在 OCCT 里**是**被网格化的；端口忠实路径在这些面上给 0 三角，故"OCCT 会网格化、端口失败"的面类**确实存在**，且与本轮的 u 窗口差异一致。
+**批 98 工作令（第 107 轮勘察落定；未改代码）—— `Geom_BSplineCurve::Segment` + `SetOrigin`**
+
+> 本轮回合预算用于五 crate 复检（全部 exit 0 / 0 error）与把下批的实现清单落到行号，避免下轮返工。
+
+- **目标**：移植 `Geom_BSplineCurve::Segment(U1,U2,theTolerance)`（`Geom_BSplineCurve.cxx:527-715`）与其周期分支所需的 `SetOrigin(Index)`（`:819-880`）；**三个消费方**同批接线：① IGES 窄区间 B 样条回落（`iges.rs::emit_bspline_curve` 的范围检查，OCCT `GeomToIGES_GeomCurve.cxx:320-356`）；② `GeomConvert::CurveToBSplineCurve` 的 trimmed-Bezier/BSpline 臂（`GeomConvert.cxx:300-339`）；③ STEP **写**侧 `GeomToStep_MakeCurve.cxx:71-82`（trimmed 基曲线先 `Segment` 再写，正是 `write_context.rs` 里已登记的"写未裁剪基曲线"偏差）。
+- **`Segment` 的控制流（已逐句核对）**：`U2<U1` → `DomainError`；周期前置（`Period=Last-First`、`DU=U2-U1`、`DU-Period > PConfusion` → `DomainError`、`DU` 钳到 `Period`、记 `aDDU=DU`）；两次 `BSplCLib::LocateParameter(deg, myKnots, myMults, U, periodic, myKnots.Lower(), myKnots.Upper(), index=0, NewU)`——注意 OCCT 这里传的是**distinct 结点数组的 Lower/Upper**，端口应直接调 `bspl::locate::locate_parameter_range(knots, u, periodic, first, last, knots[first], knots[last])`，**不能**用便利包装 `locate_parameter`（它会按 `First/LastUKnotIndex` 自算 first/last）；随后 `Knots={min,max}`、`Mults={deg,deg}`、`Eps=max(Epsilon(AbsUMax), tol)`、`InsertKnots(Knots,Mults,Eps)`；周期分支：再 `LocateParameter(U1)` → `SetOrigin(index)` → `SetNotPeriodic()`（批 95 已有）→ `NewU2 = NewU1 + DU`；再按 `LocateParameter(NewU1/NewU2, FromU1=Lower, ToU2=Upper)` 定 `index1/index2`（含 `|myKnots(index+1)-U| <= Eps` 右移规则与 `index2==index1 ⇒ ++`）；新结点/重数取 `index1..=index2` 切片、两端重数置 `deg+1`、周期时整体减 `DU = NewU1 - U1`；极/权取 `PoleIndex(deg,index1/2,periodic,mults)`（`pindex1++`、`pindex2=min(pindex2+1,len)`）；周期尾部把首结点置 `U1`、当 `aNu2 < U2` 时末结点置 `U1 + aDDU`；最后重建平结串。
+- **落地前置（必须先对拍）**：`Geom_BSplineCurve::InsertKnots(Knots, Mults, Eps)`——OCCT 是"插到指定重数并在 `Eps` 内**合并**已有结点"，端口 `GeomBSplineCurve::insert_knot(u, mult)` 是无条件连插 `mult` 次，语义不同；先把 `InsertKnots` 按其 `.cxx` 移植（含多结点循环与容差合并），再在其上写 `Segment`。`SetOrigin(Index)` 需按 `:819-880` 移植（周期结点/极点数组的循环移位 + `LocateParameter` 归一）。
+- **验证口径**：仅五 crate 编译（门禁等指令）；`iges_check` 的实体统计与 STEP 门禁写入差分在门禁波次统一评估。
+
 **批 97（IGES：周期 B 样条按 `SetNotPeriodic` 副本写 126；仅编译验证）—— 2026-09-21 第 106 轮**
 
 > 按"能翻译成代码的就补、以 `cargo check` 作初步验证、未接指令不跑测试/导出"执行。本批把批 95 新增的 `SetNotPeriodic` 接到 IGES 写侧（`GeomToIGES_GeomCurve.cxx:294-307` 的原文控制流）。
