@@ -24,22 +24,27 @@
 - **行号引用核对**：`ElCLib.cxx:176-189` = `ElCLib::EllipseValue`，`A2 = MinorRadius * sin(U)`，与 `crates/occt-core/src/elib/clib.rs` 注释中的 `cxx:176-189` 一致 ⇒ 引用树确实指向 `D:\source\OCCT-src`。
 - **⚠ 版本口径差异**：行号按 tag `V8_0_0`，参考 OBJ 由 **8.0.0p1-e52c4021** 的 DRAWEXE 生成（该 commit 不在检出里）。遇到行号错位 / 数值细差先怀疑这里。
 
-## 2. 状态快照（2026-09-19 实测）
+## 2. 状态快照（2026-09-20 第 90 轮实测）
 
 | 门禁 | 命令 | 当前工作区 | HEAD `3323c66` 基线 | 判定 |
 |---|---|---|---|---|
 | 编译 | `cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets` | ✅ exit 0（846 条警告） | ✅ | 绿 |
-| STEP→OBJ bbox parity | `cargo test --manifest-path crates/occt-topo/Cargo.toml --test step_obj_parity` | ✅ **14/14**（含 ATU01038 与 `data/occ` 4 个新模型，2026-09-20） | ✅ 12/12 | 绿 |
-| STEP→OBJ 端到端 | `--test step_to_obj` | ✅ 13/13（83.8s） | ✅ | 绿 |
+| STEP→OBJ bbox parity | `cargo test --manifest-path crates/occt-topo/Cargo.toml --test step_obj_parity` | ✅ **14/14** | ✅ 12/12 | 绿 |
+| STEP→OBJ 端到端 | `--test step_to_obj` | ✅ 13/13 | ✅ | 绿 |
 | 面积对拍 | `--test step_obj_area` | ✅ 11/11 | ✅ | 绿 |
-| 几何一致性 | `--test step_geometry_parity` | ❌ 2/3（T-05） | ❌ 同 | 红（遗留） |
-| topo 单测 | `--lib` | ❌ **1,293 通过 / 1 失败**（2026-09-20：T-02/T-06 转绿） | ❌ **1,235 / 59 失败** | 剩余仅 T-01 |
+| 几何一致性 | `--test step_geometry_parity` | ❌ 2/3（T-05 offset 体积） | ❌ 同 | 红（遗留） |
+| topo 单测 | `--lib` | ❌ **1287 通过 / 1 失败**（仅 T-01） | ❌ **1,235 / 59 失败** | 剩余仅 T-01 |
 | boss 合并 | `--test bop_builder2_boss` | ❌ 1/2（T-03） | ❌ 0/2 | 红（遗留，改善） |
-| phase19 | `--test phase19_integration` | ❌ 3/5（T-04） | ❌ 3/5（完全一致） | 红（本轮未触碰） |
-| phase20 / phase3 | `--test phase20_integration` / `phase3_integration` | ✅ 5/5 · 4/4 | ❌ 1/5 · 3/4 | 本轮修绿 |
-| phase4–10 | 各 `--test phaseN_integration` | ✅ 全绿 | ✅ | 绿 |
-| core / math / geom2d | 各 crate `--lib` | ✅ 293 / 215 / 72 | — | 绿 |
-| geom | `cargo test --manifest-path crates/occt-geom/Cargo.toml --lib` | ✅ **153/153**（T-06 已修，2026-09-20） | ✅ 153/153 | 绿（曾 152/153） |
+| phase19 | `--test phase19_integration` | ❌ 3/5（T-04） | ❌ 3/5（完全一致） | 红（遗留） |
+| phase10 | `--test phase10_integration` | ❌ 7/8（`curved_face_fillet_sphere_plane`；**会话前提交 `7178861` 同红** ⇒ 非本会话引入） | 未记录 | 红（本表此前误记"phase4–10 全绿"） |
+| phase20 / phase3 / phase4 / phase5 / phase6 | 各 `--test phaseN_integration` | ✅ 5/5 · 4/4 · 9/9 · 7/7 · 5/5（phase5 于批 63 修绿：陈旧断言 `starts_with('S')`） | 部分红 | 绿 |
+| phase7 / phase8 / phase9 | 各 `--test phaseN_integration` | ✅ 5/5 · 5/5 · 8/8 | ✅ | 绿 |
+| core / math / geom2d | 各 crate `--lib` | ✅ 290（1 ignored）/ 215（1 ignored）/ 72 | — | 绿 |
+| geom | `cargo test --manifest-path crates/occt-geom/Cargo.toml --lib` | ✅ **146/146** | 未记录 | 绿 |
+| IGES 结构自洽（本会话新增常驻校验，非门禁） | `cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_check -- <模型…>` | ✅ **18/18 ok**（16 个 `data/*.step` ＋ `data/occ/{bottom,top}.step`） | — | 绿 |
+| 导出总检 | `--example export_data_obj` | ✅ 16/16，顶点/面数逐位一致 | — | 绿 |
+
+> **计数变化说明（批 65–67 删件）**：`occt-geom --lib` 151→**146**、`occt-topo --lib` 1291→**1287**，全部来自**删除零消费方自创模块时一并删除的其自带单测**（`surface_to_grid` 3 ＋ `convert_bspl` 内 2 / `feature.rs` 4）。已用 `git worktree` 对会话前提交 `7178861` 做 A/B：`--lib` 1291/1（仅 T-01）、`phase10` 7/8 同红、`occt-core` 290/290 ⇒ **本会话未引入新的失败测试**。
 
 **HEAD 基线复现方法（不改共享树）**：
 ```powershell
