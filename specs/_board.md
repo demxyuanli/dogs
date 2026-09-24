@@ -69,7 +69,7 @@ cd ..; git worktree remove --force .target-headcheck
 
 | ID | 门禁 / 用例 | 实测（2026-09-21） | 根因已定位？ | 归属根因批 |
 |---|---|---|---|---|
-| **T-01** | `brepfeat::tests::groove_cuts_cylinder`（`--lib`） | 批 100 后：`grooved 8.408733 vs expected 7.708990`（removed 0.909 / 应 1.6085；批 100 前为 `8.9034`，removed 0.414） | **部分**：输入侧已修（T-32 批 100：wire 成链 + 闭合实体按 `BRepTools::OrientClosedSolid` 定向 ⇒ 夹具不再是反向实体）；**剩余 0.7 的偏差落在忠实 BOP 链内部**（`bop_builder::boolean` → `bop_builder2::builder_bop_with_fuzzy` → 面级切割/装配），即原 round 2–6 诊断的 `rebuild_split_areas`/`perform_loops` 那一段 | **T-32 ✅ 输入侧** → 下一步 = T-01 round-14 复测（在输入已合法的前提下重 dump `BuildSplitFaces` 的 `area_hist`/`avoid` 分布） |
+| **T-01** | `brepfeat::tests::groove_cuts_cylinder`（`--lib`） | 批 100 后：`grooved 8.408733 vs expected 7.708990`（removed 0.909 / 应 1.6085；批 100 前为 `8.9034`，removed 0.414）。**round-14 复测**：`BuildSplitFaces tasks=112 area_hist={1:71, 2:16, 3:25}`（round 2 基线为 `{0:40, 1:41, 2:30, 3:1}`） | **部分**：输入侧已修（T-32 批 100：wire 成链 + 闭合实体按 `BRepTools::OrientClosedSolid` 定向 ⇒ 夹具不再是反向实体）；**"0 块"坏面 40→0**，但仍有 **71 面只出 1 块**（样本 `le=13/15` ⇒ 13–15 条候选边只成一个 area），与 round 3–6 的 `avoid=3` 同类 ⇒ 剩余缺口在 **`perform_loops` 的 WireSplitter 成环**（`builder_face_occt.rs`/`wire_splitter_block.rs`） | **下一批 = round-15**：按 round 3 配方对 `perform_loops` 插桩 `(in_edges, avoid, avoid_bnd, loops, areas)` 分组，对照 `BOPAlgo_BuilderFace::PerformLoops` / `BOPAlgo_WireSplitter`（`_1.cxx:112-354`/`:358-617`） |
 | **T-03** | `bop_builder2_boss::boss_single_disc_base_merges_one_solid` | `left 0 / right 1`（Fuse 结果**无 solid**） | 否（**输入有效**：`single_disc_cylinder` 是 `TopoBuilder` 手工装配 BRep；tri-fan 变体通过） | 3.2 序 5（R2-8 探测批） |
 | **T-04** | `phase19_integration::{overlapping,disjoint}_boxes_pipeline_runs*` | `ds.nb_shapes()` = 单盒 **28** / 相离 **88** / 重叠 **84**（断言 `> 2*56` 与 `>= 2*56`） | 部分：断言阈值自造（56/盒 vs 实际 28/盒 ⇒ 112 不可达）；且 84<88 反直觉 | 3.2 序 6（R2-9 对照批） |
 | **T-05** | `step_geometry_parity::offset_geometry_is_consistent` | `2208.0 vs 1612.9`（阈值 2%）；五种度量见 3.2 序 4 | 多因，非 offset 公式（T-35 已修而数字逐位不变） | **T-87** → 估计器核对 |
@@ -533,7 +533,15 @@ cd ..; git worktree remove --force .target-headcheck
 - **临时探针（已删）实测（`mesh_cylinder(1,3,24)` 夹具）**：输入网格 **signed volume = −9.3175 ⇒ 反向缠绕**（OCCT 的 BRepMesh 只会给外向三角形）；批 100 前该夹具转出的 BRep 是"材料在外"的反实体；批 100 后 `faces 96 / edges 144`、**「面法向 · wire 绕向」96 正 / 0 负**（批 100 前 round 9 记录 47/96 为负）。
 - **真实几何对照（T-01 `groove_cuts_cylinder`）**：`8.903438 → **8.408733**`（期望 7.708990，容差 0.5；等价于 removed 0.414 → **0.909**，应 1.6085）⇒ **仍红，但已明显靠近**。
 - **门禁（复跑 §6 全景）**：lib **1285 / 2**（= 1286 基线 − 3 条批 99 删除用例 + 2 条本批新增；两条红仍是 T-01 与 T-86）、`bop_builder2_boss` 1/2、`phase10` 7/8、`phase19` 3/5、`phase20/3/4/5/6/7/8/9` 全绿、`step_geometry_parity` 2/3、`step_obj_area` 11/11、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、doc-tests 2/1i；`export_data_obj` **16/16 且计数与批 98/99 逐位相同**（ATU01038 17745/22119 …）⇒ **零回归**；round 8 点名的两个易回归用例（`groove_negative_volume_delta`、`neck_*`/`rib_*`/`boss_*`）全绿。
-- **结论与下一步（失配即停）**：T-32 的**输入侧**（①链向 ②面朝向 ③闭合实体定向）已落地并验证；T-01 剩余 0.7 的偏差**不在 mesh→BRep**，而在忠实 BOP 链内部（`bop_builder::boolean` → `bop_builder2::builder_bop_with_fuzzy` → 面级切割/装配，即 round 2–6 诊断过的 `rebuild_split_areas`/`perform_loops`）⇒ 下一批 = **T-01 round-14 复测**（输入已合法后重 dump `BuildSplitFaces` 的 `area_hist` 与 `avoid` 分布，看"40 面 0 块"还剩多少），据此再决定是继续 R2-7 还是转 T-80 链。
+- **结论与下一步（失配即停）**：T-32 的**输入侧**（①链向 ②面朝向 ③闭合实体定向）已落地并验证；T-01 剩余 0.7 的偏差**不在 mesh→BRep**，而在忠实 BOP 链内部（`bop_builder::boolean` → `bop_builder2::builder_bop_with_fuzzy` → 面级切割/装配，即 round 2–6 诊断过的 `rebuild_split_areas`/`perform_loops`）⇒ 下一批 = **T-01 round-15 复测**（见下条）。
+
+**T-01 round-14 复测（第 114 轮，输入侧修好后；临时插桩已还原）**
+
+- **配方**：在 `bop_split_faces_occt.rs::build_split_faces_occt` 的 `rebuild_split_areas` 调用处临时统计 `tasks / 输入边数 / 每个面的 areas 块数直方图`，跑 `cargo test --lib brepfeat::tests::groove_cuts_cylinder -- --nocapture`；跑完已 `git checkout` 还原（`git grep dbg-t01` 复核 0 残留）。
+- **实测**：`tasks=112 edges_in=1232 **area_hist={1: 71, 2: 16, 3: 25}**`；1 块面的样本 `face 13 le=15 / face 21 le=13 / face 29 le=13 / face 37 le=15 / face 45 le=13 / face 53 le=13`。
+- **与 round 2 基线（批 100 前）对比**：round 2 = `[(0,40),(1,41),(2,30),(3,1)]` ⇒ **"0 块"面 40 → 0**（输入 law 修好后不再有整面丢弃），多块面 31 → **41**，但 **1 块面 41 → 71**。
+- **判读**：输入侧修复**消除了 round 2–3 的 40 个"0 块"坏面**（有效），但仍有 **71 个面只出 1 块**，其中样本面 `le=13/15` ⇒ **拿到 13–15 条候选边却只成一个 area**，与 round 3–6 定位的"`avoid=3`（1 条原边界碎片 + 2 条截面边未链进环）"同类。⇒ 剩余缺口仍在 **`perform_loops` 的 WireSplitter 成环**（`bop_builder` 侧的 `builder_face_occt.rs` / `wire_splitter_block.rs`），而不在 PaveFiller/FF 求交。
+- **下一批（round-15）配方**：按 round 3 的方式对 `perform_loops` 插桩统计 `(in_edges, avoid, avoid_bnd, loops, areas)` 分组，对照 `BOPAlgo_BuilderFace::PerformLoops` / `BOPAlgo_WireSplitter`（`_1.cxx:112-354`、`:358-617`）找那一类面为何仍不闭环；**禁止**为某个用例调参/加谓词。
 
 **批 99（R2-17：删除 OCCT 不存在的 circle/circle 快路径；全门禁复跑）—— 2026-09-21 第 112 轮**
 
