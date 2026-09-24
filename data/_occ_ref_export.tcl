@@ -69,6 +69,34 @@
 # products (e.g. ATU01038) yield the product name group plus an .mtl sidecar.
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Provenance addendum (2026-09-24)
+# ---------------------------------------------------------------------------
+# The references for the four remaining `data/occ/*.step` models were added on
+# 2026-09-24 20:59-21:00 (occ-bottom / occ-T0M / occ-TDB / occ-top, plus the
+# IGES pair data/iges/occ-bearing.obj and data/iges/occ-hammer.obj at 20:58).
+# They are real RWObj output -- header, product-name group, per-vertex `vn`,
+# and a colour sidecar where the STEP carries colours -- in the same vertex
+# format and the same frame as the references that were already stored
+# (`data/occ/occ-*.obj`).  The batch that wrote them left no trace in this
+# repository, so their exact producer build is unrecorded.  Header counts as
+# committed: top 16905/22800, bottom 17587/23557, T0M 60548/67366,
+# TDB 73544/79977.
+#
+# Frame caveat -- do NOT overwrite a stored reference with a blind re-run of
+# this script: run with the OCCT 8.0.0 install above it reproduces the *same*
+# mesh (top: 16905/22800, every stored vertex equal to the run's vertex rotated
+# by R_x(90); bottom: identical counts; T0M/TDB: +-1 vertex; the .mtl sidecars
+# are byte-identical) but in a frame rotated 90 degrees about X relative to
+# every stored reference.  That is the same signature as board card T-10
+# (`data/occ-ATU01038.obj` was once overwritten in place by such a run).  All
+# stored references, and the Rust port's own exports, share the un-rotated
+# frame, so a fresh run has to be validated against a stored reference before
+# it is committed.  The "Reproduction check (2026-09-14)" list above only covers
+# the non-assembly `data/*.step` models, which carry no root placement, so it
+# did not exercise this difference.
+# ---------------------------------------------------------------------------
+
 set in    $::env(OCC_IN)
 set out   $::env(OCC_OUT)
 set coeff 0.001
