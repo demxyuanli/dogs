@@ -4,7 +4,14 @@
 //! rebuild vertices, edges, wires, faces, a shell, and (when the mesh is a
 //! closed manifold) a solid. Each triangle becomes a planar face whose
 //! surface normal matches the triangle winding.
-//! Source: `BRep_Builder` / `BRepBuilderAPI_MakeSolid` + `Poly_Triangulation`.
+//!
+//! Source: `BRep_Builder` / `BRepBuilderAPI_MakeSolid` + `Poly_Triangulation`,
+//! plus `BRepLib_MakeWire` for the wires (`BRepBuilderAPI_MakeWire`): the
+//! triangle's three edges are **shared** with the neighbouring triangles and are
+//! cached here with the direction of whichever triangle created them first, so
+//! they must be re-oriented into a chain exactly as
+//! `BRepLib_MakeWire::Add` (`BRepLib_MakeWire.cxx:123-453`) does — see
+//! [`crate::brep_lib_make_wire`] (board task T-32).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,10 +20,11 @@ use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt};
 use occt_core::poly::Triangulation;
 use occt_geom::GeomPlane;
 
+use crate::brep_lib_make_wire::MakeWire;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::mesh::ShapeMesh;
-use crate::shape::{Edge, Face, Shell, Solid, Vertex};
+use crate::shape::{Edge, Face, Shell, Solid, Vertex, Wire};
 
 /// Result of converting a triangle mesh into BRep topology.
 pub struct BrepFromMesh {
@@ -56,6 +64,25 @@ fn ensure_edge(
     edge_of_pair.insert(key, e.clone());
     edges.push(e.clone());
     e
+}
+
+/// Build a face's wire through `BRepLib_MakeWire` (`BRepBuilderAPI_MakeWire`),
+/// which **decides the orientation of every edge** so that the wire chains
+/// head-to-tail (`brep_lib_make_wire`, `BRepLib_MakeWire.cxx:123-453`).
+///
+/// OCCT's caller raises `StdFail_NotDone` when the builder is not done. This
+/// function has no failure channel (it feeds the port-local mesh→BRep
+/// conversion), so a non-done result keeps the `BRep_Builder` level append as a
+/// documented fallback — unreachable for mesh triangles, whose three edges share
+/// deduplicated vertices by identity.
+fn build_wire(builder: &TopoBuilder, edges: &[Edge]) -> Wire {
+    let mut mw = MakeWire::new();
+    for e in edges {
+        if mw.add(e).is_err() {
+            return builder.make_wire(edges);
+        }
+    }
+    mw.wire()
 }
 
 /// Convert a `Poly_Triangulation` into a BRep shell (and a solid when closed).
@@ -99,7 +126,7 @@ pub fn triangulation_to_brep(tri: &Triangulation) -> BrepFromMesh {
         let normal = GpDir::from_xyz(&n).unwrap_or(GpDir::new(0.0, 0.0, 1.0).unwrap());
         let pln = GpPln::new(GpAx3::from_ax1(&GpAx1::new(pa, normal)));
 
-        let wire = builder.make_wire(&[e_ab, e_bc, e_ca]);
+        let wire = build_wire(&builder, &[e_ab, e_bc, e_ca]);
         faces.push(builder.make_face(Arc::new(GeomPlane::new(pln)), &[wire]));
 
         for &(x, y) in &[(a, b), (b, c), (c, a)] {
@@ -109,10 +136,19 @@ pub fn triangulation_to_brep(tri: &Triangulation) -> BrepFromMesh {
     }
 
     // 4. Shell; solid iff every edge borders exactly two faces (closed
-    //    2-manifold mesh).
+    //    2-manifold mesh). A closed solid must have its material **inside**:
+    //    `BRepTools::OrientClosedSolid` (`brep_class3d::orient_closed_solid`)
+    //    reverses it when the infinite point classifies as IN, which is the
+    //    case when the input triangles are wound the other way round.
     let shell = builder.make_shell(&faces);
     let closed = !edge_use.is_empty() && edge_use.values().all(|&n| n == 2);
-    let solid = if closed { Some(builder.make_solid(&[shell.clone()])) } else { None };
+    let solid = if closed {
+        let mut s = builder.make_solid(&[shell.clone()]).0;
+        crate::brep_class3d::orient_closed_solid(&mut s);
+        Solid::wrap(s)
+    } else {
+        None
+    };
 
     BrepFromMesh { solid, shell, faces, edges, vertices }
 }

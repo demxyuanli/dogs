@@ -2,7 +2,7 @@
 
 > **载体**：`D:\source\repos\dogs`，master 工作区。
 > **当前状态**：所有代码改动**均已提交**，工作树干净（唯一未跟踪项 = 语料 `data/iges/`）；门禁基线以 **§2 的 A/B 实测表**为准（不是旧文档里的数字）。
-> **本画板建立**：2026-09-19 23:50 (+08:00)；**最后实测**：2026-09-21 第 111 轮（门禁波次全量 A/B = `9d8e596`(批 84 末) ↔ `2c9a66b`(批 98)，结果 §2）；**最后重梳**：第 113 轮（§3 重写为唯一监控清单）。
+> **本画板建立**：2026-09-19 23:50 (+08:00)；**最后实测**：2026-09-21 第 114 轮（批 100 后全门禁：lib **1285/2**、`parity` 14/14、`step_to_obj` 13/13、`export` 16/16；第 111 轮的 A/B 差分见 §2）；**最后重梳**：第 113 轮（§3 重写为唯一监控清单）。
 > **读法**：**§3 = 在办任务（唯一权威，§3.1 红门禁 → §3.2 根因批 → §3.3 缺口池 → §3.4 卫生 → §3.5 归档）**；§3.6 与 §7 = 历史明细/轮次日志（查证据用，状态列已作废）；§14 = A# 查号表；§2 = 门禁快照；§6 = 刷新/差分/playbook；§8 = 维护协议。
 > **上游文档**：`specs/_coverage.md`（覆盖矩阵，2026-09-09，**已过期**，见 §3.4 T-29）、`specs/_brepmesh_align_review.md`（BRepMesh 对齐根因）、`specs/_tasks.md`（迁移清单，2026-08-29，已过期）、`specs/_audit/_index.md`（A0–A31 忠实度审查）。
 
@@ -34,7 +34,7 @@
 | STEP→OBJ 端到端 | `--test step_to_obj` | ✅ **13/13** | ❌ 12/13（`step_to_obj_writes_output_files`） | 绿（**+1 改善**） |
 | 面积对拍 | `--test step_obj_area` | ✅ 11/11 | ✅ 11/11 | 绿 |
 | 几何一致性 | `--test step_geometry_parity` | ❌ 2/3（T-05 offset 体积） | ❌ 2/3（同名用例） | 红（遗留） |
-| topo 单测 | `--lib` | ❌ **1283 通过 / 2 失败**（批 99 起；总数 −3 = R2-17 删掉的三条直调用例）：T-01 `brepfeat::tests::groove_cuts_cylinder` ＋ **T-86** `iges::tests::sphere_iges_has_arc_and_solid` | ❌ **1286 / 2（同两条）** | 红（遗留，**与批 85–99 无关**） |
+| topo 单测 | `--lib` | ❌ **1285 通过 / 2 失败**（批 100 起；+2 = 新模块 `brep_lib_make_wire` 的两条控制流单测，−3 = 批 99 删掉的 circle/circle 直调用例）：T-01 `brepfeat::tests::groove_cuts_cylinder` ＋ **T-86** `iges::tests::sphere_iges_has_arc_and_solid` | ❌ **1286 / 2（同两条）** | 红（遗留；**批 100 后 T-01 的数值已变**：`grooved 8.9034 → 8.4087`，目标 7.7090±0.5） |
 | boss 合并 | `--test bop_builder2_boss` | ❌ 1/2（T-03） | ❌ 1/2 | 红（遗留） |
 | phase19 | `--test phase19_integration` | ❌ 3/5（T-04） | ❌ 3/5 | 红（遗留） |
 | phase10 | `--test phase10_integration` | ❌ 7/8（`curved_face_fillet_sphere_plane`） | ❌ 7/8 | 红（遗留） |
@@ -69,7 +69,7 @@ cd ..; git worktree remove --force .target-headcheck
 
 | ID | 门禁 / 用例 | 实测（2026-09-21） | 根因已定位？ | 归属根因批 |
 |---|---|---|---|---|
-| **T-01** | `brepfeat::tests::groove_cuts_cylinder`（`--lib`） | `grooved 8.903438 vs expected 7.708990`（removed 0.414 / 应 1.6085） | **是**：夹具 `faceted_cyl = Solid::wrap(mesh_cylinder(r,h,24))`（mesh→BRep）造的 wire 不成链；**同一 `groove()` 喂忠实 `BRepPrimCylinder` 时断言通过**（`removed 1.5705`、`abs(after-(before-gv)) = 0.0380 < 0.5`） | **T-32** |
+| **T-01** | `brepfeat::tests::groove_cuts_cylinder`（`--lib`） | 批 100 后：`grooved 8.408733 vs expected 7.708990`（removed 0.909 / 应 1.6085；批 100 前为 `8.9034`，removed 0.414） | **部分**：输入侧已修（T-32 批 100：wire 成链 + 闭合实体按 `BRepTools::OrientClosedSolid` 定向 ⇒ 夹具不再是反向实体）；**剩余 0.7 的偏差落在忠实 BOP 链内部**（`bop_builder::boolean` → `bop_builder2::builder_bop_with_fuzzy` → 面级切割/装配），即原 round 2–6 诊断的 `rebuild_split_areas`/`perform_loops` 那一段 | **T-32 ✅ 输入侧** → 下一步 = T-01 round-14 复测（在输入已合法的前提下重 dump `BuildSplitFaces` 的 `area_hist`/`avoid` 分布） |
 | **T-03** | `bop_builder2_boss::boss_single_disc_base_merges_one_solid` | `left 0 / right 1`（Fuse 结果**无 solid**） | 否（**输入有效**：`single_disc_cylinder` 是 `TopoBuilder` 手工装配 BRep；tri-fan 变体通过） | 3.2 序 5（R2-8 探测批） |
 | **T-04** | `phase19_integration::{overlapping,disjoint}_boxes_pipeline_runs*` | `ds.nb_shapes()` = 单盒 **28** / 相离 **88** / 重叠 **84**（断言 `> 2*56` 与 `>= 2*56`） | 部分：断言阈值自造（56/盒 vs 实际 28/盒 ⇒ 112 不可达）；且 84<88 反直觉 | 3.2 序 6（R2-9 对照批） |
 | **T-05** | `step_geometry_parity::offset_geometry_is_consistent` | `2208.0 vs 1612.9`（阈值 2%）；五种度量见 3.2 序 4 | 多因，非 offset 公式（T-35 已修而数字逐位不变） | **T-87** → 估计器核对 |
@@ -83,7 +83,7 @@ cd ..; git worktree remove --force .target-headcheck
 
 | 序 | ID（旧卡） | 状态 | 任务（可翻译的 OCCT 控制流） | 证据 / 前置 | 下一步 | 验收 |
 |---|---|---|---|---|---|---|
-| 1 | **T-32** | pending | `BRepBuilderAPI_MakeWire::Add` 的 `CorrectEdgeOrientation` + `BRepBuilderAPI_MakeFace` 的绕向-法向约定，**成套**接进 `mesh_to_brep::triangulation_to_brep`（链向 + 面朝向 + shell/solid 装配一致性） | round 8/9：mesh→BRep 面 47/96 绕向为负、边全 Forward（source/sink）；round 8 单独修链向会回归 2 例；第 112 轮：忠实 BRep 输入下 T-01 断言通过 | ① 先加链向 ② 同批加面朝向 ③ 复跑 `groove_cuts_cylinder` + `groove_negative_volume_delta` + 四道 STEP 门禁 | T-01 转绿且门禁不劣化 |
+| 1 | **T-32** | **✅ 输入侧 done（批 100）**：**①链向** = `BRepLib_MakeWire::Add`（`BRepLib_MakeWire.cxx:123-453`）完整移植（新模块 `brep_lib_make_wire.rs`：VF/VL/myVertex 状态、`E.Oriented(FORWARD)` 子顶点迭代、`IsSame` 判定、`reverse && !forward` 定向决策、proximity/copy-edge 支、`DisconnectedWire`/`NonManifoldWire` 错误）；`mesh_to_brep::triangulation_to_brep` 改用它建 wire；**②面朝向** = 实测已一致（96/96 面「面法向·wire 绕向」同号）；**③装配** = 闭合实体补 `BRepTools::OrientClosedSolid`（`brep_class3d::orient_closed_solid`，批 100 实测夹具网格是**反向缠绕**：signed volume −9.3175 ⇒ 之前造出的是"材料在外"的反实体） | round 8/9 + 第 112 轮：mesh→BRep 边全 Forward（source/sink）、面 47/96 绕向为负；批 100 实测 `faces 96 / edges 144 / 已无反向面`、T-01 `removed 0.414 → 0.909`（目标 1.6085） | **T-01 仍未绿**：剩余偏差在忠实 BOP 链内部 ⇒ 转入 R2-7 的 round-14 复测（输入已合法后重 dump `BuildSplitFaces` 的 `area_hist`/`avoid` 分布，看 40 面 0 块还剩多少） | 门禁与 §2 逐项相同（lib 1285/2、parity 14/14、`step_to_obj` 13/13、export 计数逐位相同）——**已满足**；T-01 转绿归下一批 |
 | 2 | **T-68**（R2-7 上游） | ◐（球面 done） | 忠实 `BRepPrim_OneAxis` 的 lateral wire：**极点退化边**（v=±π/2 的 u 等参线跨 2π）+ 两条经线 pcurve（`BRepPrim_Sphere/Torus::SetMeridian`，含 `SetMeridianOffset(2π)`）；并补环面与带孔内环 | 探针：`sphere faces=1 wires/face=[0]`、`torus [0]`；执行方案见 §3.6「T-68 执行方案」 | 按该方案验证链（临时探针 → `--lib` 不劣化 → 重放 A13/A18 → T-59/A23） | T-86 转绿；T-49/T-54/T-55/T-59 解锁 |
 | 3 | **T-69**（R2-12） | ◐（2 轮诊断） | 带孔面 / 单闭合边 wire 的**前沿链**：`FixLacking` 追加重复闭合边 + `ModelHealer` 回绕链 ⇒ `decompose_simple_polygon` 判无耳清空；需找 OCCT"跨 wire 周期对齐"的控制流 | 探针：166 面 `wires=2 ∧ surface=Other`；Torus face 20 两 wire pcurve 差一个周期 | 判据性实验（按面类 dump）+ 对读 `BRepMesh_NodeInsertionMeshAlgo`、`BRepMesh_Delaun::frontierAdjust` | T0M 面类计数 + 四道门禁 |
 | 4 | **T-87** | pending | OBJ/面绕向：查 `brep_to_obj` 及其上游面/壳朝向为何 6 个三角反向；随后核对 `shape_volume`/`brep_gprop` 两个镶嵌型估计器（比网格奇偶体积低 36%）与 `brep_gprop_full` 只算 6 个平面面（1400.0 = (1/3)·600·7） | §3.1 的数字 | 对读 `RWObj_CafWriter`/`RWMesh_FaceIterator` 的三角形写出与 `Poly_Triangulation` 朝向语义；再核 `shape_mesh.rs::shape_volume` | `obj_volume` ≈ 网格奇偶体积（≈2610）；T-05 的断言可用（解析 oracle = Steiner ≈2610.5） |
@@ -136,7 +136,7 @@ cd ..; git worktree remove --force .target-headcheck
 | 门禁收敛 | **T-02**、**T-06** | 内腔夹具按契约建模（lib 1293/1 当时）；椭圆参数期望订正（`occt-geom --lib` 153/153） |
 | 覆盖/门禁扩展 | **T-21**、**T-22**、**R2-14**、**R2-15** | ATU01038 + `data/occ` 5 模型锁 parity（14/14）；§2 快照按 A/B 实测重写（第 111 轮） |
 | A0–A26 审计（已完成项） | **T-35**（A0）、**T-38**、**T-39**、**T-40**、**T-42**、**T-43**（余项=T-66）、**T-45**、**T-46**（3/4，余项=T-73）、**T-47**、**T-50**、**T-53**、**T-56**、**T-57**、**T-58**、**T-60**、**T-61**、**T-63**（余项=T-75）、**T-64**、**T-65**、**T-66**、**T-70**、**T-71**、**T-72**、**T-73**、**T-74**、**T-75**、**T-76**、**T-77**（=R2-1）、**T-81**、**T-84** | 各批见 §3.6「批 1–批 63」；验收一律为"该 crate `--lib` + 四道 STEP 门禁不劣化" |
-| 模块自报 PARK | **T-12**（批 87+90）、**T-15**（批 89，`CorrectParameter`）、**T-17**（批 88）、**T-31**（比 curve 句柄） | 均在全量门禁下无回归 |
+| 模块自报 PARK | **T-12**（批 87+90）、**T-15**（批 89，`CorrectParameter`）、**T-17**（批 88）、**T-31**（比 curve 句柄）、**T-32**（批 100：`BRepLib_MakeWire` 移植 + `OrientClosedSolid`；输入侧完成，T-01 剩余偏差转 R2-7） | 均在全量门禁下无回归 |
 | R2 已完成 | **R2-1**（批 80）、**R2-2**（批 81）、**R2-4**（批 83）、**R2-5**（批 82）、**R2-17**（批 99）、**R2-18**（批 85+86，余项见 3.3）、**R2-18b**（批 86）、**R2-20**（批 95）、**R2-21**（批 93+94）、**R2-22**（批 96） | 详见 §3.6 批次条与 §7 第 101–112 轮 |
 | 批次 91–99（R2-6/19 前置 + 写侧） | **R2-6 前半**（批 91 圆锥引擎、批 92 入口、批 93 非修剪圆锥臂、**批 98 trimmed-BSpline 臂**） | 批 98 另含 `Geom_BSplineCurve::{Segment,SetOrigin,InsertKnots}` 与 IGES/STEP 写侧接线 |
 | 卫生（已决） | **T-07**、**T-08**、**T-09**、**T-10**、**T-24** | 工作树已干净（仅未跟踪 `data/iges/`）；`data/occ*`、`data/occ-ref/` 已入库；`output/` 按 §11 不入库 |
@@ -521,6 +521,20 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证口径**：仅五 crate 编译（门禁等指令）；`iges_check` 的实体统计与 STEP 门禁写入差分在门禁波次统一评估。
 - **✅ 已执行 = 第 110 轮批 98**（见下条日志）：本工作令的四件（`InsertKnots` 族 + `InsertKnot`/`IncreaseMultiplicity` + `SetOrigin` 两式 + `Segment`）与三个消费方中的两个半（IGES 窄区间、`CurveToBSplineCurve` 的 trimmed-**BSpline** 臂、STEP 写侧 trimmed-**BSpline** 基曲线）均已落地；**trimmed-Bezier 臂**因缺 `Geom_BezierCurve::Segment` 另立 **R2-23**。
 
+**批 100（T-32 输入侧：移植 `BRepLib_MakeWire` + 闭合实体定向；全门禁复跑）—— 2026-09-21 第 114 轮**
+
+> 执行 §3.2 序 1。忠实移植原则：先读 `.cxx` 控制流 → 逐句翻译 → 编译 → 跑真实几何对照基线 → 失配即停报告。
+
+- **新增 `crates/occt-topo/src/brep_lib_make_wire.rs`（`MakeWire` = `BRepLib_MakeWire`）**：
+  - `Add(Edge, IsCheckGeometryProximity)`（`BRepLib_MakeWire.cxx:123-453`）**整段移植**：首边建 wire 并播种 `myVertices`（`:135-149`）、`init = myShape.Closed()`（`:153`）、`E.Oriented(TopAbs_FORWARD)` 子顶点迭代（`:154-171`）、`VF/VL` 空值 ⇒ `NonManifoldWire`（`:163-169`）、逐顶点 `Contains`（`:177`）与四路定向判定（`:184-220`）、proximity 分支（`:223-285`，含 `l < tolE || l < tolW`）、`DisconnectedWire` 早退（`:288-293`）、copy-edge 支（`:304-368`，`EmptyCopied` ≡ 用同曲线/区间重建 + `UpdateVertex` 加权点与 `max(tolW,tolE)` 容差）、**定向决策** `((forward==reverse)&&E.Reversed) || (reverse && !forward)`（`:370-379`）、`VF/VL` 更新与 `init` 特例（`:386-444`）、闭合判定 `myShape.Closed(true)`（`:445-449`）、`EmptyWire/WireDone` 语义（`:35-38`、`:451-452`）。
+  - 配套 OCCT 语义：`TopoDS_Iterator(shape, CumOri=true)`（存储序 + 存储朝向）、`TopExp::Vertices(E,V1,V2,CumOri=true)`（`:393`，朝向 REVERSED 时 V1/V2 互换）、`TopTools_ShapeMapHasher` = `TopoDS_Shape::IsSame`（`TopoDS_Shape.hxx`：同 TShape + 同 location；两个 null 句柄相等 ⇒ `is_same(None,None)=true`）。**登记边界**：`IsSame` 的 location 部分按本仓惯例退化为 identity（`bop_occt_util.rs:31`），本路径 location 恒 identity。
+  - **两条控制流单测**（+2 测试）：`reorients_shared_edges_into_a_chain`（共享顶点、外来方向的边被定向成头尾相接的闭合环）、`disconnected_edge_is_reported`。
+- **接线**：`mesh_to_brep::triangulation_to_brep` 的三角形 wire 改由 `MakeWire` 建（`build_wire`；`MakeWire` 未 done 时保底回落到 `BRep_Builder` 级 append 并就地注明——网格三角形的三边共享顶点，实际不可达）；**闭合实体补 `BRepTools::OrientClosedSolid`**（`brep_class3d::orient_closed_solid`：无穷点分类为 IN 时反转）。
+- **临时探针（已删）实测（`mesh_cylinder(1,3,24)` 夹具）**：输入网格 **signed volume = −9.3175 ⇒ 反向缠绕**（OCCT 的 BRepMesh 只会给外向三角形）；批 100 前该夹具转出的 BRep 是"材料在外"的反实体；批 100 后 `faces 96 / edges 144`、**「面法向 · wire 绕向」96 正 / 0 负**（批 100 前 round 9 记录 47/96 为负）。
+- **真实几何对照（T-01 `groove_cuts_cylinder`）**：`8.903438 → **8.408733**`（期望 7.708990，容差 0.5；等价于 removed 0.414 → **0.909**，应 1.6085）⇒ **仍红，但已明显靠近**。
+- **门禁（复跑 §6 全景）**：lib **1285 / 2**（= 1286 基线 − 3 条批 99 删除用例 + 2 条本批新增；两条红仍是 T-01 与 T-86）、`bop_builder2_boss` 1/2、`phase10` 7/8、`phase19` 3/5、`phase20/3/4/5/6/7/8/9` 全绿、`step_geometry_parity` 2/3、`step_obj_area` 11/11、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、doc-tests 2/1i；`export_data_obj` **16/16 且计数与批 98/99 逐位相同**（ATU01038 17745/22119 …）⇒ **零回归**；round 8 点名的两个易回归用例（`groove_negative_volume_delta`、`neck_*`/`rib_*`/`boss_*`）全绿。
+- **结论与下一步（失配即停）**：T-32 的**输入侧**（①链向 ②面朝向 ③闭合实体定向）已落地并验证；T-01 剩余 0.7 的偏差**不在 mesh→BRep**，而在忠实 BOP 链内部（`bop_builder::boolean` → `bop_builder2::builder_bop_with_fuzzy` → 面级切割/装配，即 round 2–6 诊断过的 `rebuild_split_areas`/`perform_loops`）⇒ 下一批 = **T-01 round-14 复测**（输入已合法后重 dump `BuildSplitFaces` 的 `area_hist` 与 `avoid` 分布，看"40 面 0 块"还剩多少），据此再决定是继续 R2-7 还是转 T-80 链。
+
 **批 99（R2-17：删除 OCCT 不存在的 circle/circle 快路径；全门禁复跑）—— 2026-09-21 第 112 轮**
 
 > §6.2 playbook 步骤 6。判据 = "`perform` 的分派与 OCCT `IntTools_EdgeEdge::Perform` 完全一致，且门禁不劣化"。
@@ -531,8 +545,7 @@ cd ..; git worktree remove --force .target-headcheck
 - **验证**：
   - `cargo check --all-targets` **exit 0 / 0 error**（无新增告警，除 `pub use solvers::*` 这条**既有**告警）；
   - `cargo test --lib edge_edge::` → **15/15 全绿**：`circle_circle_two_hits`（忠实 `FindSolutions` 给出 2 个交点，x=0.5、|y|=√0.75）、`separated_circles_empty`、`matches_inttools_circle_circle`、`line_bspline_crossing_two_hits` 全部保持；
-  - 全量门禁（playbook 步骤 3 复跑）：lib **1283 / 2**（＝原 1286/2 减去删掉的 3 条用例，两条红仍是 T-01 与 T-86）、boss 1/2、phase10 7/8、phase19 3/5、phase20·3·4·5·6·7·8·9 全绿、`step_geometry_parity` 2/3、`step_obj_area` 11/11、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、doc-tests 2/1i ⇒ **与 §2 基线逐项相同**；
-  - `export_data_obj` **16/16**，计数与 R2-17 之前**逐位相同**（ATU01038 17745/22119、Cube 24/12、Sphere 642/1244、Torus 1369/2592、Shape-1 3343/4336、linkrods 3494/5078 …）⇒ 该改动对 OBJ 导出**零影响**。
+  - 全量门禁（playbook 步骤 3 复跑）：lib **1283 / 2**（＝原 1286/2 减去删掉的 3 条用例，两条红仍是 T-01 与 T-86）、boss 1/2、phase10 7/8、phase19 3/5、phase20·3·4·5·6·7·8·9 全绿、`step_geometry_parity` 2/3、`step_obj_area` 11/11、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、doc-tests 2/1i ⇒ **与 §2 基线逐项相同**；  - `export_data_obj` **16/16**，计数与 R2-17 之前**逐位相同**（ATU01038 17745/22119、Cube 24/12、Sphere 642/1244、Torus 1369/2592、Shape-1 3343/4336、linkrods 3494/5078 …）⇒ 该改动对 OBJ 导出**零影响**。
 - **旁支登记（未动手）**：`Perform` 的 `cxx:217-233`（line + 解析曲线的最短距离早退，`BRepExtrema_DistShapeShape(..., Extrema_ExtFlag_MIN)`，`d > 1.1 * myTol` 直接 return）**仍未移植**——已在 `perform` 就地注明。它是**性能**分支（不改结果），需要 `BRepExtrema_DistShapeShape` 的 MIN 模式（仓内 `brep_extrema` 可能只有默认模式），故不随本批夹带。
 - **门禁影响面**：与 §2 基线逐项相同 ⇒ 记为"无影响"。
 
