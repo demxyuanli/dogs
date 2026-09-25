@@ -466,6 +466,26 @@ pub(super) fn compute_rect(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ: G
 }
 
 /// Boundary line integral (Green's theorem) over a trimmed face's wire arcs.
+/// `BRepGProp_Face::UKnots` (`BRepGProp_Face.cxx:343-390`): the surface's U iso
+/// knots `BRepGProp_Gauss::Compute` splits the U integration at. A plane (and any
+/// type not listed) reports its own U bounds, giving a single sub-interval;
+/// cylinders, cones, spheres and tori report `{0, 2*pi/3, 4*pi/3, 2*pi}`
+/// (`SUIntSubs()` = 4, `BRepGProp_Face.cxx:273-330`). Trailing `NaN`s never
+/// compare inside `(u1, u2)`.
+fn u_iso_knots(fa: &FaceGauss) -> [f64; 4] {
+    use crate::brep_surface::SurfaceKind;
+    let (u1, u2) = fa.surface.u_range();
+    match crate::brep_surface::classify_surface(fa.surface.as_ref()) {
+        SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::Sphere | SurfaceKind::Torus => [
+            0.0,
+            2.0 * std::f64::consts::PI / 3.0,
+            4.0 * std::f64::consts::PI / 3.0,
+            2.0 * std::f64::consts::PI,
+        ],
+        _ => [u1, u2, f64::NAN, f64::NAN],
+    }
+}
+
 pub(super) fn compute_domain(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ: GaussType) -> Result<Inertia, String> {
     // `BRepGProp_Face::Bounds` (`BRepGProp_Face.cxx:150-156`) gives `u1 = BU1` and
     // the `u2`/`v` clamps from the *surface* parameters (natural range for a
@@ -498,20 +518,40 @@ pub(super) fn compute_domain(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ:
             if dul.abs() < EPS_PARAM {
                 continue;
             }
-            let um = 0.5 * (u2v + u1);
-            let ur = 0.5 * (u2v - u1);
-            let mut local = Inertia::default();
-            for j in 0..nb_g {
-                let u = um + ur * gp_u[j];
-                let w = dul * gw_u[j];
-                let (p, n) = fa.normal_raw(u, vv);
-                match typ {
-                    GaussType::Sinert => compute_s_inertia_elem(&p, &n, loc, w, &mut local),
-                    GaussType::Vinert => compute_v_inertia_elem(&p, &n, loc, w, coeff, true, &mut local),
+            // `BRepGProp_Gauss::Compute` splits the U direction at the surface's
+            // iso knots — `FillIntervalBounds(u1, u2, UKnots, NumSubs, anInertiaU,
+            // U1, U2, ErrU, aDummy)` (`BRepGProp_Gauss.cxx:772-773`) with `UKnots`
+            // from `BRepGProp_Face::UKnots` (`BRepGProp_Face.cxx:343-390`) — and
+            // integrates each sub-interval with its own Gauss rule (`:829-871`
+            // accumulates `anUI.Mass = mult(aLocal[0].Mass, ur)` per sub-interval).
+            let mut pieces: Vec<(f64, f64)> = Vec::new();
+            let mut run = u1;
+            for k in u_iso_knots(fa) {
+                if k > u1 + EPS_PARAM && k < u2v - EPS_PARAM {
+                    pieces.push((run, k));
+                    run = k;
                 }
             }
-            local.mul(ur);
-            c_inertia.add(&local);
+            pieces.push((run, u2v));
+            for (su1, su2) in pieces {
+                let um = 0.5 * (su2 + su1);
+                let ur = 0.5 * (su2 - su1);
+                if ur.abs() < EPS_PARAM {
+                    continue;
+                }
+                let mut local = Inertia::default();
+                for j in 0..nb_g {
+                    let u = um + ur * gp_u[j];
+                    let w = dul * gw_u[j];
+                    let (p, n) = fa.normal_raw(u, vv);
+                    match typ {
+                        GaussType::Sinert => compute_s_inertia_elem(&p, &n, loc, w, &mut local),
+                        GaussType::Vinert => compute_v_inertia_elem(&p, &n, loc, w, coeff, true, &mut local),
+                    }
+                }
+                local.mul(ur);
+                c_inertia.add(&local);
+            }
         }
         c_inertia.mul(lr);
 
