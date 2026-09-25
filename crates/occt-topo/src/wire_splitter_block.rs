@@ -198,12 +198,18 @@ fn path(
 
     let mut va_slot = start_slot;
     let mut info_idx = start_info;
+    // `BOPAlgo_WireSplitter_1.cxx:518` (`aEOuta = aLS.Last()`): after the
+    // closing scan cuts the path back, the incoming edge is the truncated
+    // path's last edge; `None` means "the edge appended in this iteration".
+    let mut e_in: Option<Edge> = None;
     let eps = f64::EPSILON;
     loop {
         if ls.len() == 1 && ls[0].0.same_tshape(&map.infos[va_slot][info_idx].edge.0) {
             return;
         }
         map.infos[va_slot][info_idx].passed = true;
+        // Only the closing scan below may rewrite the incoming edge.
+        e_in = None;
         let e_out = map.infos[va_slot][info_idx].edge.clone();
         let va = map.verts[va_slot].clone();
         ls.push(e_out.clone());
@@ -274,6 +280,10 @@ fn path(
                 vert_va.truncate(i);
                 coord_va.truncate(i);
                 info_seq.truncate(i);
+                // `BOPAlgo_WireSplitter_1.cxx:518`: the incoming edge for the
+                // next choice is the truncated path's last edge, not the edge
+                // that just closed the loop.
+                e_in = ls.last().cloned();
             }
         }
 
@@ -282,7 +292,7 @@ fn path(
             .map(|&(s, ii)| !map.infos[s][ii].is_inside)
             .unwrap_or(true);
         let a_le = &map.infos[vb_slot];
-        let angle_in = angle_in(&e_out, a_le);
+        let angle_in = angle_in(e_in.as_ref().unwrap_or(&e_out), a_le);
         let i_cnt = nb_ways_out(a_le);
         let mut min_angle = 100.0;
         let mut chosen: Option<usize> = None;
