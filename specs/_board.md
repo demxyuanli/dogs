@@ -30,8 +30,12 @@
 > `--lib` 1285/2 → **1287/0**（`113b4d1` T-01、`f63c324` T-86 转绿）；`step_geometry_parity` 2/3 → **3/3**（`9cac346` T-05 收口）；
 > 其余逐项不变：boss 1/2（`boss_single_disc_base_merges_one_solid` = R2-8 定案 (b)）、phase10 7/8、phase19 3/5、
 > phase20/3-9 全绿、step_obj_area 11/11、step_obj_parity 14/14、step_to_obj 13/13、iges_check ok。
-> 另发现两处**测试隔离**问题（与引擎无关，已登记）：并行/交叉运行时 `step_to_obj_writes_output_files` 偶发假红（与 `export_data_obj` 同写 `output/`）、
+> 另发现两处**测试隔离**问题（与引擎无关，已登记）：并行/交叉运行时 `step_to_obj_writes_output_files` 偶发假红（与 `export_data_obj` 同写 `output/`），
 > `brepfeat::tests::groove_cuts_cylinder` 单跑有时与全量结果不同（全局状态依赖）。
+> **补充（round 69）**：`phase19` 由 3/5 → **5/5**（`specs/_board.md` R2-9/T-04 收口：两条断言的 `> 2*56` / `>= 2*56` 是**端口自造阈值** ✗，
+> 已按 goal ④ 换成 OCCT 依据的**关系式** —— DS ⊇ 参数自身子形状、相交情形严格更多；GT 探针新增 `--ds` 给出 OCCT 实测：
+> 两个不相交单位盒 `NbShapes == NbSourceShapes == 68`、相交对 `NbShapes = 80`）；
+> 同时把 `step_to_obj::write_output` 改为**临时文件 + 原子改名**（多个测试同写 `data/output/<name>.obj` 时读方不会再看到半写文件）。
 
 | 门禁 | 命令 | 当前工作区 `2c9a66b` | 对照 `9d8e596`（批 84 末） | 判定 |
 |---|---|---|---|---|

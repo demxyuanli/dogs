@@ -89,9 +89,18 @@ fn assert_valid_obj(name: &str, obj: &str) {
 
 /// Write the OBJ to `data/output/{name}.obj`.
 fn write_output(name: &str, obj: &str) {
+    // Several tests in this binary write the same `data/output/<name>.obj` and
+    // `step_to_obj_writes_output_files` reads it back, so the write must be
+    // atomic: a plain `fs::write` lets a concurrent reader observe a half-written
+    // file and fail (the flake registered in `specs/_board.md` §2). Write a
+    // per-process temp file and rename it into place.
     let out = data_dir().join("output").join(format!("{name}.obj"));
     std::fs::create_dir_all(out.parent().unwrap()).unwrap();
-    std::fs::write(&out, obj).unwrap_or_else(|e| panic!("write {name}.obj: {e}"));
+    let tmp = data_dir()
+        .join("output")
+        .join(format!("{name}.obj.tmp{}", std::process::id()));
+    std::fs::write(&tmp, obj).unwrap_or_else(|e| panic!("write {name}.obj: {e}"));
+    std::fs::rename(&tmp, &out).unwrap_or_else(|e| panic!("rename {name}.obj: {e}"));
 }
 
 #[test]
