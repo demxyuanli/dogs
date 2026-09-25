@@ -148,7 +148,17 @@ cd ..; git worktree remove --force .target-headcheck
 >     2D 侧 `occt-geom2d/curve_ops.rs::curve2d_length` 仍 Simpson、`curve2d_intersections` 仍 256×256 采样 ⇒
 >     需补 `Curve2d` 的 line/Bezier 类型查询 + 2D 版 `CPnts_AbscissaPoint`（`order(2d)`：Line 2 / Parabola 5 /
 >     Bezier min(24,2·deg) / BSpline min(24,2·N−1) / 其它 10）与 `Extrema_ExtCC2d`。
->   - 其余：**T-54**（约束 Delaunay，大）、**T-11**（843 条警告，低）、**T-25…T-28**（板内要求先出设计）、
+>   - **T-51 余项的真正前置 = `math_FunctionSetRoot`（round 73 查明）**：`math_FunctionRoot`（136 行）只是
+>     `math_FunctionSetRoot`（1452 行）的**薄包装**（`math_FunctionRoot.cxx:70-116` 把 1D 函数包成
+>     `math_MyFunctionSetWithDerivatives` 后交给 `math_FunctionSetRoot::Perform`）⇒ T-51 的 `gcpnts` 反解与
+>     **T-67 步 3** 共用同一前置，须先移植 `math_FunctionSetRoot`（端口缺其依赖 `math_BrentMinimum`）。
+>   - **T-11 第二批（round 73）**：`cargo fix --lib -p occt-core` 清掉 23 个文件的未用 import / 未用绑定 / 多余 `mut`
+>     （43 删除，纯中性）；其中两处 `use` 是 test 模块经 `use super::*;` 依赖的再导出 ⇒ 已按真实路径
+>     （`crate::precision::CONFUSION`、`crate::bvh::builder_tri::build_tri_bvh`）显式补回。核验：`occt-core --lib` **290/1i** 不变。
+>     同时登记三处**既有信号**（未改行为）：`geom/csg.rs` 的 `if theta < 0.0 { let t = -t; }` 是**无副作用遮蔽**（疑为
+>     `t = -t` 之误）；`bspl/plib2d.rs::flat_bezier_coefficients` 的 `weights` 与 `bspl/bezier.rs::reduce_degree`
+>     的 `tolerance` **未被使用**；`bnd/sortbox.rs` 的 `ixmin` 未被使用。
+>   - 其余：**T-54**（约束 Delaunay，大）、**T-11**（余项，低）、**T-25…T-28**（板内要求先出设计）、
 >     **T-85/T-51/T-62 余项**（本轮未展开）。
 
 | ID | 状态 | 缺口（OCCT 对应） | 下一步 | 验收 |

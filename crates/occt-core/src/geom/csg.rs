@@ -156,11 +156,11 @@ pub fn voxel_to_mesh(v: &VoxelSolid) -> (Vec<GpPnt>, Vec<(usize, usize, usize)>)
                     ((0,0,-1), [0,3,2,1], [4,7,6,5]),
                     ((0,0,1), [4,5,6,7], [0,1,2,3]),
                 ];
-                for &(_, quad, alt) in &faces {
+                for &(_, quad, _alt) in &faces {
                     // Build the 4 corner points; for boundary faces flip winding based on alt
                     let vert_indices: Vec<usize> = quad.iter().map(|&ci| {
                         let (dx, dy, dz) = corner_offsets[ci];
-                        let mut nv = verts.len();
+                        let nv = verts.len();
                         let vp = GpPnt::new(
                             base[0] + dx as f64 * step[0],
                             base[1] + dy as f64 * step[1],

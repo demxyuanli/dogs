@@ -33,7 +33,7 @@ pub fn compute_obb_pca(points: &[GpPnt]) -> BndOBB {
     for i in 0..3 { for j in 0..3 { cov[i][j] /= n as f64; } }
 
     // Jacobi eigenvalue decomposition on 3x3 symmetric matrix
-    let (vals, vecs) = jacobi_3x3(cov);
+    let (_vals, vecs) = jacobi_3x3(cov);
 
     // Principal axes = eigenvectors
     let xdir = GpDir::from_xyz(&GpXyz::new(vecs[0][0], vecs[1][0], vecs[2][0])).unwrap_or_default();
@@ -66,7 +66,7 @@ fn jacobi_3x3(mut a: [[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
 
         let theta = 0.5 * (eig[q] - eig[p]) / a[p][q];
         let t = 1.0 / (theta.abs() + (1.0 + theta*theta).sqrt());
-        if theta < 0.0 { let t = -t; }
+        if theta < 0.0 { let _t = -t; }
         let c = 1.0/(1.0+t*t).sqrt();
         let s = t * c;
         let tau = s/(1.0+c);

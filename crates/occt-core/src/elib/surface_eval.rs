@@ -1,6 +1,6 @@
 //! Elementary surface evaluation with full derivatives and normals.
 //! Source: `ElSLib.cxx` D1/D2/Norm functions.
-use crate::gp::{GpPln, GpCylinder, GpCone, GpSphere, GpTorus, GpPnt, GpVec, GpXyz};
+use crate::gp::{GpPln, GpCylinder, GpCone, GpSphere, GpTorus, GpPnt, GpVec};
 use crate::elib::slib;
 
 /// Evaluate plane D1: point + du + dv.

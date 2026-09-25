@@ -1,5 +1,4 @@
 use super::prelude::*;
-use super::*;
 
 /// Plane equation `A·x + B·y + C·z + D = 0`.
 ///

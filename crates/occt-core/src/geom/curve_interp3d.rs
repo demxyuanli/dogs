@@ -242,7 +242,7 @@ pub fn cubic_spline_interp(points: &[GpPnt]) -> Result<InterpCurve3d, String> {
     // of the actual knot spacing, since the natural spline segment is written
     // in terms of the chord-length parameter — we use the standard Hermite
     // form with second derivatives M).
-    let m_len = mx.len();
+    let _m_len = mx.len();
     let mut coeffs: Vec<[[f64; 3]; 4]> = Vec::with_capacity(n - 1);
     for i in 0..n - 1 {
         // Second derivative at node i (M_i) and node i+1 (M_{i+1}); natural

@@ -2,7 +2,7 @@
 //! (`src/ModelingAlgorithms/TKGeomAlgo/Intf/Intf_InterferencePolygon2d.hxx/.cxx`).
 
 use crate::bnd::box2d::BndBox2d;
-use crate::gp::{GpPnt2d, GpXY};
+use crate::gp::GpPnt2d;
 use crate::precision::{epsilon, Precision};
 
 use super::interference::IntfInterference;

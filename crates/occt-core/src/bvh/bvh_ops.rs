@@ -6,7 +6,7 @@
 //! in `BvhNode`), so every query prunes with the BVH then tests candidates.
 
 use crate::bnd::BndBox;
-use crate::bvh::builder_tri::{build_tri_bvh, query_triangles, TriBvh};
+use crate::bvh::builder_tri::{query_triangles, TriBvh};
 use crate::bvh::BvhNode;
 use crate::gp::{GpPnt, GpVec};
 
@@ -227,6 +227,7 @@ pub fn bvh_box_query(bvh: &TriBvh, box3d: &BndBox) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bvh::builder_tri::build_tri_bvh;
 
     fn box_mesh() -> (TriBvh, Vec<(GpPnt, GpPnt, GpPnt)>) {
         let tris = vec![

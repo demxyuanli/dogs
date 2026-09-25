@@ -20,7 +20,7 @@ pub fn build_tri_bvh(triangles: &[(GpPnt, GpPnt, GpPnt)], max_leaf: usize) -> Tr
     if tri_bboxes.is_empty() {
         return TriBvh { root: None, tri_bboxes };
     }
-    let mut indices: Vec<usize> = (0..triangles.len()).collect();
+    let indices: Vec<usize> = (0..triangles.len()).collect();
     let root = build_rec(&indices, &tri_bboxes, max_leaf);
     TriBvh { root: Some(root), tri_bboxes }
 }

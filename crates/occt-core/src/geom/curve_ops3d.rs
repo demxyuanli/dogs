@@ -1,7 +1,7 @@
 //! 3D curve helpers — arc length, curvature, closest point, offsets and
 //! projection onto curves. Source: `GCPnts_AbscissaPoint`, `math` helpers.
 
-use crate::gp::{GpDir, GpPnt, GpVec, GpXyz};
+use crate::gp::{GpDir, GpPnt, GpVec};
 
 /// Chord length of a polyline.
 pub fn polyline_length3d(pts: &[GpPnt]) -> f64 {

@@ -1,5 +1,5 @@
 //! Color manipulation utilities. Source: `Quantity_Color` advanced ops.
-use super::{Color, ColorRGBA, NameOfColor};
+use super::{Color, ColorRGBA};
 
 impl Color {
     /// Convert to HSV color space. Returns (hue[0,360), sat[0,1], val[0,1]).

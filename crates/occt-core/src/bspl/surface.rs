@@ -1,7 +1,6 @@
 //! B-spline surface evaluation. Source: `BSplSLib.cxx`
 //! Evaluates points, derivatives, and normals on tensor-product B-spline surfaces.
 use crate::gp::{GpPnt, GpVec};
-use crate::gp::GpXyz;
 
 /// Evaluate non-rational B-spline surface at (u,v).
 /// poles: flat array in row-major order (n_u × n_v).
@@ -83,8 +82,8 @@ pub fn normal(poles: &[GpPnt], n_u: usize, n_v: usize,
 
 /// Insert knot in u-direction. Returns new control points and knot vector.
 pub fn insert_knot_u(poles: &[GpPnt], n_u: usize, n_v: usize,
-                      knots_u: &[f64], knots_v: &[f64],
-                      degree_u: usize, degree_v: usize,
+                      knots_u: &[f64], _knots_v: &[f64],
+                      degree_u: usize, _degree_v: usize,
                       u: f64, mult: usize) -> (Vec<GpPnt>, Vec<f64>) {
     let new_knots = super::knots::insert_knot(knots_u, u, mult);
     let new_n_u = n_u + mult;
@@ -104,8 +103,8 @@ pub fn insert_knot_u(poles: &[GpPnt], n_u: usize, n_v: usize,
 
 /// Insert knot in v-direction.
 pub fn insert_knot_v(poles: &[GpPnt], n_u: usize, n_v: usize,
-                      knots_u: &[f64], knots_v: &[f64],
-                      degree_u: usize, degree_v: usize,
+                      _knots_u: &[f64], knots_v: &[f64],
+                      _degree_u: usize, degree_v: usize,
                       v: f64, mult: usize) -> (Vec<GpPnt>, Vec<f64>) {
     let new_knots = super::knots::insert_knot(knots_v, v, mult);
     let new_n_v = n_v + mult;
@@ -127,7 +126,7 @@ pub fn insert_knot_v(poles: &[GpPnt], n_u: usize, n_v: usize,
 pub fn degree_elevate_u(poles: &[GpPnt], n_u: usize, n_v: usize,
                          knots_u: &[f64],
                          degree_u: usize, times: usize) -> (Vec<GpPnt>, Vec<f64>) {
-    let new_degree = degree_u + times;
+    let _new_degree = degree_u + times;
     let multi = (0..degree_u + 1).map(|_| super::knots::multiplicity(knots_u, knots_u[0])).sum::<usize>();
     let mut new_knots = knots_u.to_vec();
     // Increase multiplicities

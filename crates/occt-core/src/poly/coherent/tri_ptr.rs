@@ -1,5 +1,4 @@
 use super::prelude::*;
-use super::*;
 
 /// Ring list of triangle indices incident on a node. Ported from
 /// `Poly_CoherentTriPtr`; the ring behaviour is preserved by the circular

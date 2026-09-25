@@ -4,7 +4,6 @@
 //! `Poly_ArrayOfNodes.hxx`, `Poly_ArrayOfUVNodes.hxx`.
 
 use crate::gp::{GpPnt, GpPnt2d, GpXyz};
-use crate::precision::CONFUSION;
 use super::triangulation::Triangle;
 
 /// Managed array of 3D nodes. Source: `Poly_ArrayOfNodes`.
@@ -313,6 +312,7 @@ impl PolyPolygonOnTriangulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::precision::CONFUSION;
 
     #[test]
     fn array_min_max_access() {

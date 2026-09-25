@@ -7,7 +7,6 @@
 //! equivalents are `GCPnts_AbscissaPoint` (arc length via Newton on the
 //! integral, with a tolerance) and `GProp_*` (areas/volumes).
 use crate::gp::{GpPnt, GpVec, GpLin, GpCirc, GpElips, GpHypr, GpParab, GpPln};
-use crate::elib::{clib, slib};
 
 /// Exact line length between parameters (infinite line — length unbounded).
 pub fn line_length(_l: &GpLin, a: f64, b: f64) -> f64 {

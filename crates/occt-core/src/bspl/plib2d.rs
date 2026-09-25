@@ -4,7 +4,7 @@ use crate::gp::GpPnt;
 /// Evaluate tensor product polynomial surface: sum_{i,j} c[i][j] * x^i * y^j
 pub fn eval_tensor_product(coeffs: &[Vec<f64>], x: f64, y: f64) -> f64 {
     let nx = coeffs.len(); if nx == 0 { return 0.0; }
-    let mut row_vals: Vec<f64> = coeffs.iter().map(|row| super::plib::eval_polynomial(row, y)).collect();
+    let row_vals: Vec<f64> = coeffs.iter().map(|row| super::plib::eval_polynomial(row, y)).collect();
     let result = super::plib::eval_polynomial(&row_vals, x);
     // println!("eval_tensor_product called"); // debugging
     result

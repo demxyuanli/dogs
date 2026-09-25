@@ -1,5 +1,5 @@
 //! Mass and inertia properties of polyhedra. Source: `GProp_GProps`
-use crate::gp::{GpPnt, GpXyz};
+use crate::gp::GpPnt;
 
 /// Mass properties: mass, center of mass, 3x3 inertia tensor.
 #[derive(Debug, Clone)]
@@ -35,10 +35,10 @@ pub fn compute_inertia(vertices: &[GpPnt], tris: &[(usize, usize, usize)], densi
             props.center = GpPnt::from_xyz(&cm.added(&cw).divided(new_total));
         }
         // Inertia: tetrahedron contribution about origin
-        let a0 = a.added(&b).added(&c);
-        let ab = a.added(&b);
-        let bc = b.added(&c);
-        let ca = c.added(&a);
+        let _a0 = a.added(&b).added(&c);
+        let _ab = a.added(&b);
+        let _bc = b.added(&c);
+        let _ca = c.added(&a);
         for m in 0..3 {
             for n in 0..3 {
                 // Second moment integral over tetra: (vol/20) * Σ_{pairs} (monomial products)

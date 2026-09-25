@@ -14,7 +14,7 @@ pub fn poles_to_coefficients(poles: &[GpPnt], knots: &[f64], degree: usize) -> V
     let mut temp = vec![vec![GpPnt::zero(); degree + 1]; degree + 1];
 
     for span in 0..(n - degree) {
-        let local_knots = &knots[span..span + 2 * degree + 2];
+        let _local_knots = &knots[span..span + 2 * degree + 2];
         let local_poles = &poles[span..span + degree + 1];
         // Marsden identity to convert this Bezier segment to power basis
         let bezier = power_to_bezier_basis(degree);
@@ -30,7 +30,7 @@ pub fn poles_to_coefficients(poles: &[GpPnt], knots: &[f64], degree: usize) -> V
 
     // Average coefficients from overlapping segments
     let mut count = vec![0usize; degree + 1];
-    for (ti, tseg) in temp.iter().enumerate() {
+    for (_ti, tseg) in temp.iter().enumerate() {
         for (i, p) in tseg.iter().enumerate() {
             coeffs[i] = GpPnt::new(coeffs[i].x()+p.x(), coeffs[i].y()+p.y(), coeffs[i].z()+p.z());
             count[i] += 1;
@@ -125,7 +125,7 @@ pub fn all_derivatives(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64, n_
 
     // Evaluate D0 and collect poles for derivative computation
     let n = poles.len();
-    let idx = super::knots::hunt(knots, u).max(degree).min(n - 1);
+    let _idx = super::knots::hunt(knots, u).max(degree).min(n - 1);
 
     // D0
     derivs.push(super::eval::eval_curve(poles, knots, degree, u));
@@ -136,7 +136,7 @@ pub fn all_derivatives(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64, n_
         let mut d_knots = knots.to_vec();
         let mut d_degree = degree;
 
-        for deriv in 1..=n_deriv {
+        for _deriv in 1..=n_deriv {
             // Build derivative poles: dpi = degree * (pi+1 - pi) / (ki+degree+1 - ki+1)
             let np = d_poles.len();
             if np < 2 || d_degree == 0 { derivs.push(GpPnt::zero()); continue; }
@@ -151,7 +151,7 @@ pub fn all_derivatives(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64, n_
                 ));
             }
             if new_poles.is_empty() { derivs.push(GpPnt::zero()); continue; }
-            let nd = new_poles.len();
+            let _nd = new_poles.len();
             // Knot vector for derivative: drop first and last
             let new_knots = if d_knots.len() >= 2 { d_knots[1..d_knots.len()-1].to_vec() } else { d_knots.clone() };
             derivs.push(super::eval::eval_curve(&new_poles, &new_knots, d_degree - 1, u));

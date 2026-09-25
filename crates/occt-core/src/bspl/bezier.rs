@@ -6,9 +6,9 @@ use crate::gp::GpPnt;
 /// Flat Bezier coefficients: extract Bezier segments from B-spline curve.
 /// Returns vector of (bezier_poles_per_segment, start_parameter, end_parameter).
 /// Source: BSplCLib::FlatBezierCoefficients
-pub fn flat_bezier_coefficients(poles: &[GpPnt], weights: Option<&[f64]>,
+pub fn flat_bezier_coefficients(poles: &[GpPnt], _weights: Option<&[f64]>,
                                  knots: &[f64], degree: usize,
-                                 tolerance: f64) -> Vec<Vec<GpPnt>> {
+                                 _tolerance: f64) -> Vec<Vec<GpPnt>> {
     let mut result = Vec::new();
     let n_segments = count_segments(knots, degree);
 

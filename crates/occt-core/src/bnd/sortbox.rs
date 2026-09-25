@@ -1,5 +1,4 @@
 //! Sorted bounding box for spatial indexing. Source: `Bnd_BoundSortBox.hxx`
-use crate::gp::GpPnt;
 use crate::bnd::box3d::BndBox;
 
 /// Element stored in a sorted box grid.
@@ -53,7 +52,7 @@ impl BoundSortBox {
     fn clip_range(&self, q: &BndBox) -> Option<(usize,usize,usize,usize,usize,usize)> {
         if q.is_out_box(&self.total_box) { return None; }
         let (xmin, xmax, ymin, ymax, zmin, zmax) = q.get()?;
-        let ixmin = ((xmin - self.origin[0]) / self.delta[0]).max(0.0) as usize;
+        let _ixmin = ((xmin - self.origin[0]) / self.delta[0]).max(0.0) as usize;
         let ixmin = ((xmin - self.origin[0]) / self.delta[0]).max(0.0) as usize;
         let ixmax = ((xmax - self.origin[0]) / self.delta[0]).min(self.nx as f64 - 1.0).max(0.0) as usize;
         let iymin = ((ymin - self.origin[1]) / self.delta[1]).max(0.0) as usize;

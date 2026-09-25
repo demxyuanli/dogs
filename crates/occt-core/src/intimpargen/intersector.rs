@@ -12,7 +12,7 @@
 //! monomorphised onto exactly that instantiation instead of introducing traits,
 //! which is what the C++ template expansion does anyway.
 
-use crate::gp::{GpPnt2d, GpVec2d};
+use crate::gp::GpPnt2d;
 use crate::intcurve::iconic_tool::IntCurveIConicTool;
 use crate::intcurve::pconic::IntCurvePConic;
 use crate::intcurve::{pconic_tool, project_on_pconic_tool};
@@ -646,7 +646,7 @@ impl IntImpParGenIntersector {
                     let param2_on2 = gen::normalize_on_domain(param2_on2, the_par_curve_domain);
 
                     let (mut pt2_on1, mut tan1, norm1) = the_imp_tool.d2(param2_on1);
-                    let (mut pt2_on2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2_on2);
+                    let (pt2_on2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2_on2);
 
                     let pos1 = gen::determine_position(the_imp_curve_domain, &pt2_on1, param2_on1);
                     let pos2 = gen::determine_position(the_par_curve_domain, &pt2_on2, param2_on2);
