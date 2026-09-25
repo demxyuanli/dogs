@@ -157,7 +157,17 @@ fn main() {
                         ptr_idx.extend((0..n).map(|k| 2 + k));
                     }
                 }
-                192 | 194 | 196 | 198 => ptr_idx.extend([1usize, 2, f.len() - 1]),
+                // `192/194/198` are `"<ty>,#0,#1,{radius|params},#2;"`, so their
+                // DE pointers sit at fields 1, 2 and the last one.
+                192 | 194 | 198 => ptr_idx.extend([1usize, 2, f.len() - 1]),
+                // `196` (sphere) is `"196,#0,{radius},#1,#2;"` — the radius comes
+                // *between* the location and the two directions
+                // (`IGESGeom_ToolSphere::WriteOwnParams`, mirrored by
+                // `occt-topo/src/iges.rs::emit_refs(196, …)`), so the axis
+                // direction is at field 3, not 2. Reading it as `[1, 2, last]`
+                // left the axis looking unreferenced (T-85 remainder: Sphere
+                // reported `{123: 1, 144: 1}` when only the root is an orphan).
+                196 => ptr_idx.extend([1usize, 3, f.len() - 1]),
                 120 => ptr_idx.extend([1usize, 2]),
                 122 => ptr_idx.push(1),
                 _ => {}

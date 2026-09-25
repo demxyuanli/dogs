@@ -152,6 +152,13 @@ cd ..; git worktree remove --force .target-headcheck
 >     `math_FunctionSetRoot`（1452 行）的**薄包装**（`math_FunctionRoot.cxx:70-116` 把 1D 函数包成
 >     `math_MyFunctionSetWithDerivatives` 后交给 `math_FunctionSetRoot::Perform`）⇒ T-51 的 `gcpnts` 反解与
 >     **T-67 步 3** 共用同一前置，须先移植 `math_FunctionSetRoot`（端口缺其依赖 `math_BrentMinimum`）。
+>   - **T-85 余项 = done（round 75）**：查明 `iges_check` 的 `unreferenced` 不是写侧漏引用，而是**检查自身的指针表错** ——
+>     196（球面）的参数格式是 `196,#0,{radius},#1,#2`（`IGESGeom_ToolSphere::WriteOwnParams`，端口
+>     `iges.rs::emit_refs(196, …)` 同构），三个 DE 指针在字段 **1、3、4**；检查表按 `[1, 2, last]` 读 ⇒ **轴方向被漏计** ⇒
+>     Sphere 误报 `{123: 1, 144: 1}`。按端口自身发射格式订正后：**Sphere 2 → 1**、Cube 1（不变），
+>     剩下的 1 恰是该模型的**根**（OCCT `IGESData_IGESWriter::Write(root)` 只写从根可达者 ⇒ 根自身必然无引用）。
+>     依据：`IGESGeom_ToolCurveOnSurface/ToolTrimmedSurface/ToolSurfaceOfRevolution/ToolTabulatedCylinder/ToolGroup/
+>     ToolDirection/ToolLine/ToolTransformationMatrix` 等的 `OwnShared()`（本仓发出的类型逐一核对）。
 >   - **T-11 第二批（round 73）**：`cargo fix --lib -p occt-core` 清掉 23 个文件的未用 import / 未用绑定 / 多余 `mut`
 >     （43 删除，纯中性）；其中两处 `use` 是 test 模块经 `use super::*;` 依赖的再导出 ⇒ 已按真实路径
 >     （`crate::precision::CONFUSION`、`crate::bvh::builder_tri::build_tri_bvh`）显式补回。核验：`occt-core --lib` **290/1i** 不变。
@@ -168,7 +175,7 @@ cd ..; git worktree remove --force .target-headcheck
 | **R2-6 余项** | ◐ | 仍缺三臂：trimmed-Bezier（= **R2-23**）、`RationalC1 ∧ U2-U1>=6`（缺 `GeomConvert_CompCurveToBSplineCurve`）、Offset（缺 `GeomConvert_ApproxCurve`） | 先 R2-23（前置最明确），再按消费方触发 CompCurve/ApproxCurve | `GeomConvert::CurveToBSplineCurve` 对 OCCT 全分派可用 |
 | **R2-18 余项**（T-52 余项、A16 余项） | ◐ | 非解析 2D 组合（B 样条/Bezier/offset 及其修剪）求交仍是 256×256 采样（忠实路线 `Extrema_ExtCC2d`）；`curve2d_length` = Simpson（OCCT `GCPnts_AbscissaPoint`） | 移植 `Extrema_ExtCC2d` 与 `GCPnts_AbscissaPoint` | `occt-geom2d --lib` + 依赖 2D 的门禁 |
 | **T-44** | pending（触发式） | `GeomConvert_CompCurveToBSplineCurve.cxx:135-215`；**批 98 后前置 `InsertKnots` 已就位**，仍缺 `GeomBSplineCurve::IncreaseDegree` | 等消费方出现（即 R2-6 的 `RationalC1>6` 臂）一并做 | R2-6 该臂可用 |
-| **T-85 余项** | ◐（步 1+2 done） | IGES 可达性过滤已落地（批 83），但 `iges_check` 的 `unreferenced` **未归零**，且批 84 与批 98 逐模型相同 ⇒ 需判"统计口径（根 402 未计引用）"还是"写侧漏引用" | 对照 `Interface_InterfaceModel::AddWithRefs`（`cxx:652-692`）与 `iges_check.rs:126-204` 的指针字段表 | orphan 解释清楚（归零或口径订正） |
+| **T-85 余项** | ✅（round 75 收口） | IGES 可达性过滤已落地（批 83），但 `iges_check` 的 `unreferenced` **未归零**，且批 84 与批 98 逐模型相同 ⇒ 需判"统计口径（根 402 未计引用）"还是"写侧漏引用" | 对照 `Interface_InterfaceModel::AddWithRefs`（`cxx:652-692`）与 `iges_check.rs:126-204` 的指针字段表 | orphan 解释清楚（归零或口径订正） |
 | **T-67 余项** | pending | `Extrema_ExtPExtS`/`Extrema_ExtPRevS`（就地 UNPORTED） | 随 3.2 序 8 | 同 3.2 序 8 |
 | **T-51 余项** | pending（低） | `gcpnts` 反解 UNPORTED（缺 `math_FunctionRoot`）；积分已换忠实 `CPnts_AbscissaPoint::Length`（批 50） | 移植 `math_FunctionRoot` 后接 `GCPnts_AbscissaPoint::Parameter` | `occt-core`/`occt-topo --lib` |
 | **T-41** | pending | A5：`bop_curved` 的体素/网格布尔与计票无 OCCT 对应 ⇒ **摘除并标未移植** | 与 T-79/T-80 同波次（先修曲面布尔再摘，避免 §9 记录的"全绿假象"） | 摘除后 `--lib`/门禁不劣化 |
