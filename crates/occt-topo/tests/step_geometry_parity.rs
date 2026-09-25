@@ -125,10 +125,20 @@ fn offset_geometry_is_consistent() {
         (v01 - v005).abs() / v005 < 0.01,
         "Offset volume not converging: 0.01→{v01:.1} 0.005→{v005:.1}"
     );
-    let svol = shape_volume(sh, 0.01);
+    // `BRepGProp::VolumeProperties` is analytic (`UseTriangulation = false`,
+    // `BRepGProp.cxx:417-440`), so comparing it with the *mesh* divergence is not
+    // an OCCT invariant — OCCT reports ~15% more for this shape than its own
+    // tessellation. The faithful check is the analytic engine against OCCT's own
+    // measurement of this model, taken with the OCCT 8.0.0 ground-truth probe:
+    //   BRepGProp::VolumeProperties(data/Offset.step) = 2610.501440
+    // (the port's Gauss path gives 2610.501436, i.e. 1.5e-9 relative).
+    const OCCT_ANALYTIC_VOLUME: f64 = 2610.501440;
+    let svol = occt_topo::brep_gprop_full::volume_properties(sh)
+        .expect("analytic volume of Offset.step")
+        .mass();
     assert!(
-        (svol - v01).abs() / v01 < 0.02,
-        "Offset divergence {v01:.1} vs shape_volume {svol:.1}"
+        (svol - OCCT_ANALYTIC_VOLUME).abs() / OCCT_ANALYTIC_VOLUME < 1e-4,
+        "Offset analytic volume {svol:.6} vs OCCT BRepGProp {OCCT_ANALYTIC_VOLUME:.6}"
     );
     assert_closed_solid("Offset", sh);
 }
