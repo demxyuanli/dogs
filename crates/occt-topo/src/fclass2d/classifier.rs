@@ -417,8 +417,12 @@ pub(super) fn edge_points(edge: &Edge, face: &Face) -> Vec<GpPnt2d> {
     if !a.is_finite() || !b.is_finite() || b - a < 1e-15 {
         return Vec::new();
     }
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    if let Some(pc) = GeometryRegistry::global().edge_pcurve(&edge.0, face_key) {
+    // BRepAdaptor_Curve2d(edge, face) reads BRep_Tool::CurveOnSurface
+    // (BRep_Tool.cxx:301-315), which returns PCurve2 for a REVERSED edge of a
+    // representation on a closed surface (cxx:347-357). Reading only the first
+    // stored pcurve made a reversed seam sample the u=2*pi line backwards
+    // instead of the u=0 line, so the band ring could not be chained.
+    if let Some(pc) = crate::boptools_2d::curve_on_surface(edge, face) {
         return sample_pcurve(pc.as_ref(), a, b);
     }
     if let Ok(pc) = make_pcurve_full(edge, face) {

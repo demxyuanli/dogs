@@ -250,8 +250,14 @@ impl BRepPrimCylinder {
 
         let bottom = GpPnt::new(radius, 0.0, 0.0);
         let top = GpPnt::new(radius, 0.0, height);
-        let v_bottom = b.make_vertex(bottom, 0.0);
-        let v_top = b.make_vertex(top, 0.0);
+        // BRepPrim_Builder::MakeVertex (BRepPrim_Builder.cxx:129-132) is
+        // BRep_Builder::MakeVertex(V, P, Precision::Confusion()), so the seam
+        // vertices carry the 1e-7 tolerance — it is what
+        // BOPAlgo_WireSplitter::Tolerance2D (_1.cxx:859-881) turns into the UV
+        // closing tolerance. A zero tolerance makes every anIsSameV2d test fail
+        // (aD2 < 0), so the seam loops cannot close.
+        let v_bottom = b.make_vertex(bottom, occt_core::precision::CONFUSION);
+        let v_top = b.make_vertex(top, occt_core::precision::CONFUSION);
 
         // Ring circles: parameter [0, 2π], seam at θ = 0 → shared vertices.
         let mut bottom_circle = b.make_edge(circle_curve(&ax, radius), 0.0, 2.0 * PI);
@@ -283,12 +289,16 @@ impl BRepPrimCylinder {
         // Lateral face: the cylinder surface. Wire order and orientations follow
         // `BRepPrim_OneAxis::LateralWire` (`BRepPrim_OneAxis.cxx:660-684`):
         // `AddWireEdge(TopEdge(), false)`, `AddWireEdge(EndEdge(), true)`,
-        // `AddWireEdge(BottomEdge(), true)`, `AddWireEdge(StartEdge(), false)`
-        // — i.e. top circle forward, seam reversed, bottom circle reversed, seam
-        // forward. The two seam occurrences are the same port edge (OCCT has the
-        // u=0/u=2pi meridians as separate edges), so the U winding of the loop is
-        // still zero (bottom -2pi + top +2pi, the seam contributing +h -h): the
-        // occurrence orientation written by `TopoDSToStep_MakeStepWire.cxx:262`
+        // `AddWireEdge(BottomEdge(), true)`, `AddWireEdge(StartEdge(), false)`.
+        // `BRepPrim_Builder::AddWireEdge` (`BRepPrim_Builder.cxx:184-192`)
+        // applies `EE.Reverse()` when `direct == false`, so the wire is
+        // **top circle REVERSED, seam FORWARD (u = 2*pi), bottom circle FORWARD,
+        // seam REVERSED (u = 0)**. For a full revolution `HasSides()` is false
+        // (`BRepPrim_OneAxis.cxx:331-334`), so `StartEdge()` aliases
+        // `EndEdge()` (`cxx:976-979`, `:1028-1031`) and the same seam TShape
+        // appears twice. The U winding of the loop is zero (bottom -2pi + top
+        // +2pi, the seam contributing +h -h): the occurrence orientation written
+        // by `TopoDSToStep_MakeStepWire.cxx:262`
         // (`OrientedEdge->Init(..., anEdge.Orientation() == TopAbs_FORWARD)`)
         // keeps the pcurve loop free of any periodic shift that
         // `ShapeFix_Wire::FixShifted` (`ShapeFix_Wire.cxx:1661-2125`) would have
@@ -296,18 +306,16 @@ impl BRepPrimCylinder {
         //
         // The order also drives `BOPAlgo_WireSplitter`: the edges of the face
         // enter `aLE` in this order, which fixes the vertex slots of the
-        // `mySmartMap` and therefore the entry edge of each `Path` walk. With the
-        // bottom ring first the walk entered at the bottom vertex and closed the
-        // band on the wrong side of the seam (see T-80 / batch 49).
-        let mut lateral_bottom = bottom_circle.clone();
-        lateral_bottom.0.reverse();
+        // `mySmartMap` and therefore the entry edge of each `Path` walk.
+        let mut lateral_top = top_circle.clone();
+        lateral_top.0.reverse();
         let mut lateral_seam_back = seam.clone();
         lateral_seam_back.0.reverse();
         let lateral_wire = b.make_wire(&[
-            top_circle.clone(),
-            lateral_seam_back,
-            lateral_bottom,
+            lateral_top,
             seam.clone(),
+            bottom_circle.clone(),
+            lateral_seam_back,
         ]);
         let lateral_face = b.make_face(Arc::new(GeomCylinder::new(
             GpCylinder::new(ax, radius).expect("cylinder radius"),
