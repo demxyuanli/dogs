@@ -65,9 +65,23 @@ fn shape_key(s: &TopoShape) -> usize {
     Arc::as_ptr(&s.tshape) as usize
 }
 
-/// Undirected identity keys of the boundary edges of `face`.
-fn face_edge_keys(face: &TopoShape) -> HashSet<EKey> {
-    edges_of(face).into_iter().map(|e| edge_key(&e)).collect()
+/// Undirected identity keys of the boundary edges of `face`, in boundary order
+/// with the first occurrence kept.
+///
+/// A `HashSet` here would make [`connect_faces_into_shells`] discover its
+/// neighbours in a per-process hash order, and the face order inside each shell
+/// then feeds the (order sensitive) growth/hole walk of `perform_areas` — the
+/// `groove_cuts_cylinder` Cut produced 1 instead of 2 split solids in ~10% of
+/// runs because of it. OCCT walks the Ds faces in index order.
+fn face_edge_keys(face: &TopoShape) -> Vec<EKey> {
+    let mut out: Vec<EKey> = Vec::new();
+    for e in edges_of(face) {
+        let k = edge_key(&e);
+        if !out.contains(&k) {
+            out.push(k);
+        }
+    }
+    out
 }
 
 /// Whether `edge_key` closes on `face` — the edge is used twice by the face
@@ -183,8 +197,7 @@ fn connect_faces_into_shells(faces: &[TopoShape], force_internal: bool) -> Vec<T
         return Vec::new();
     }
     // aEFMap: edge -> faces containing it.
-    let face_keys: Vec<HashSet<EKey>> =
-        faces.iter().map(|f| face_edge_keys(f)).collect();
+    let face_keys: Vec<Vec<EKey>> = faces.iter().map(|f| face_edge_keys(f)).collect();
     let mut edge_faces: HashMap<EKey, Vec<usize>> = HashMap::new();
     for (i, keys) in face_keys.iter().enumerate() {
         for &k in keys {
@@ -339,13 +352,24 @@ impl BuilderSolid {
             self.shapes.iter().filter(|s| s.is_face()).cloned().collect();
         loop {
             // MEF: edge key -> (face indices, any degenerated, any INTERNAL).
+            // `mef_order` keeps the discovery order (faces in order, each face's
+            // boundary edges in order): iterating the `HashMap` directly would
+            // mark the avoided faces in a per-process hash order, and since this
+            // whole pass repeats until nothing new is marked, that order decides
+            // *which* faces end up avoided (`groove_cuts_cylinder` then produced
+            // 1 instead of 2 split solids in ~10% of runs). OCCT walks the Ds
+            // edges in index order.
             let mut mef: HashMap<EKey, (Vec<usize>, bool, bool)> = HashMap::new();
+            let mut mef_order: Vec<EKey> = Vec::new();
             for (i, f) in faces.iter().enumerate() {
                 if self.is_avoided(f) {
                     continue;
                 }
                 for e in edges_of(f) {
                     let key = edge_key(&e);
+                    if !mef.contains_key(&key) {
+                        mef_order.push(key);
+                    }
                     let entry = mef.entry(key).or_default();
                     entry.0.push(i);
                     entry.1 |= BRepTool::is_degenerated(&e);
@@ -353,7 +377,9 @@ impl BuilderSolid {
                 }
             }
             let mut found = false;
-            for (_key, (lf, degenerated, has_internal)) in mef {
+            for _key in &mef_order {
+                let (lf, degenerated, has_internal) = &mef[_key];
+                let (lf, degenerated, has_internal) = (lf.clone(), *degenerated, *has_internal);
                 if degenerated || lf.is_empty() {
                     continue;
                 }
@@ -370,7 +396,7 @@ impl BuilderSolid {
                     let f1 = faces[lf[0]].clone();
                     let f2 = faces[lf[1]].clone();
                     if f1.same_tshape(&f2) {
-                        if edge_closed_on_face(&f1, &_key) {
+                        if edge_closed_on_face(&f1, _key) {
                             continue;
                         }
                         if has_internal {

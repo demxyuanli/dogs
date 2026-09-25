@@ -323,9 +323,16 @@ pub fn build_solid(b: &BopBuilder, rc: &TopoShape) -> Result<TopoShape, String> 
     }
 
     let mut sfs: Vec<TopoShape> = Vec::new();
-    for entry in mfs.values() {
-        if entry.sols.len() == 1 {
-            sfs.push(entry.face.clone());
+    // `BOPAlgo_BOP::BuildSolid` walks the R/C faces in the data-structure order
+    // and looks `theMFS` up per face, so the builder always receives them in
+    // that order. Iterating `mfs.values()` instead hands `BuilderSolid` a
+    // per-process `HashMap` order, and its growth/hole walk is order sensitive
+    // (`fuse_box_cylinder_is_closed_solid` produced 0 areas in ~40% of runs).
+    for f in faces_of(rc) {
+        if let Some(entry) = mfs.get(&shape_key(&f.0)) {
+            if entry.sols.len() == 1 {
+                sfs.push(entry.face.clone());
+            }
         }
     }
     let mut out: Vec<TopoShape> = Vec::new();
