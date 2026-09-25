@@ -407,13 +407,32 @@ pub fn general_boolean_trimmed(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f6
 ///    (trimmed B-Rep faces that preserve the analytic surface);
 /// 3. otherwise (spheres, and quadric-only solids) → [`curved_boolean`].
 pub fn curved_boolean_full(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
-    if all_faces_planar(a) && all_faces_planar(b) {
-        return crate::bop_builder::boolean(a, b, op, tol);
-    }
-    if has_general_curved_face(a) || has_general_curved_face(b) {
+    let result = if all_faces_planar(a) && all_faces_planar(b) {
+        crate::bop_builder::boolean(a, b, op, tol)?
+    } else if has_general_curved_face(a) || has_general_curved_face(b) {
         let shape = general_boolean_trimmed(a, b, op, tol)?;
         let faces = faces_of(&shape);
-        return Ok(boolean_result_from_shape(shape, faces, vec![]));
+        boolean_result_from_shape(shape, faces, vec![])
+    } else {
+        curved_boolean(a, b, op, tol)?
+    };
+    provision_face_pcurves(&result.shape);
+    Ok(result)
+}
+
+/// OCCT's boolean result carries a pcurve on every edge of every face: the
+/// splitter copies each `BRep_GCurve` onto the trimmed faces it produces
+/// (`BOPAlgo_Builder::BuildSplitFaces` / `BRepTools_Modifier`), and
+/// `ShapeFix_Edge::FixAddPCurve` (`ShapeFix_Edge.cxx:517-534`) *projects* one
+/// whenever an edge of the result has none. The port's trimmed faces are built
+/// from scratch, so run that projection pass here — without it the analytic
+/// passes (`BRepGProp`) fall back to the 3D→UV map on the curved faces and
+/// mis-integrate the result.
+fn provision_face_pcurves(shape: &TopoShape) {
+    for f in faces_of(shape) {
+        let mut wires = wires_of_face(&f);
+        for w in wires.iter_mut() {
+            crate::shhealing::check_pcurves_and_shift(w, &f, occt_core::precision::CONFUSION);
+        }
     }
-    curved_boolean(a, b, op, tol)
 }
