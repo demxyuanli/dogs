@@ -544,11 +544,27 @@ pub(super) struct BoundaryArc {
     pub(super) a: f64,
     pub(super) b: f64,
     pub(super) kind: ArcKind,
+    /// The edge is REVERSED, so the arc is walked from `b` to `a`.
+    pub(super) reversed: bool,
 }
 
 impl BoundaryArc {
+    /// `BRepGProp_Face::Load(const TopoDS_Edge&)` (`BRepGProp_Face.cxx:173-179`)
+    /// integrates the *reversed* pcurve over the reversed range when the edge is
+    /// REVERSED. Mirroring the parameter inside `[a, b]` walks the identical UV
+    /// points in the opposite order, which is what that replacement does
+    /// geometrically (and it keeps `a < b`, as the Gauss loops require).
+    fn param(&self, t: f64) -> f64 {
+        if self.reversed {
+            self.a + self.b - t
+        } else {
+            t
+        }
+    }
+
     pub(super) fn d12d(&self, s: &dyn Surface, t: f64) -> (GpPnt2d, GpVec2d) {
-        match &self.geom {
+        let t = self.param(t);
+        let (p, mut d) = match &self.geom {
             ArcGeom::Pcurve(pc) => pc.d1(t),
             ArcGeom::Curve3d(c, map) => {
                 let p = c.d0(t);
@@ -557,10 +573,15 @@ impl BoundaryArc {
                 let duv = map.map_deriv(s, &p, &d1, puv.x());
                 (puv, duv)
             }
+        };
+        if self.reversed {
+            d = GpVec2d::new(-d.x(), -d.y());
         }
+        (p, d)
     }
 
     pub(super) fn value(&self, s: &dyn Surface, t: f64) -> GpPnt2d {
+        let t = self.param(t);
         match &self.geom {
             ArcGeom::Pcurve(pc) => pc.d0(t),
             ArcGeom::Curve3d(c, map) => map.map_point(s, &c.d0(t)),

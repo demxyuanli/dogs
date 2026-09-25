@@ -252,6 +252,10 @@ pub(super) fn build_arc(e: &Edge, face: &Face, map: &UVMap) -> Option<BoundaryAr
                 a,
                 b,
                 kind,
+                // `BRepGProp_Face::Load(const TopoDS_Edge&)`
+                // (`BRepGProp_Face.cxx:173-179`): a REVERSED edge is integrated
+                // backwards along the same pcurve.
+                reversed: e.orientation().is_reversed(),
             });
         }
     }
@@ -271,6 +275,8 @@ pub(super) fn build_arc(e: &Edge, face: &Face, map: &UVMap) -> Option<BoundaryAr
         a,
         b,
         kind,
+        // The 3D fallback already reversed the curve and its range above.
+        reversed: false,
     })
 }
 
