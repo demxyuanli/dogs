@@ -48,9 +48,32 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
     let fb = faces_of(b);
 
     if fa.is_empty() || fb.is_empty() {
-        // OCCT has no mesh/voxel boolean: an empty argument is skipped with
-        // `BOPAlgo_AlertEmptyShape` and the operation proceeds
-        // (`BOPAlgo_BOP.cxx:162-167`, `:203-209`), which is what the engine does.
+        // `BOPAlgo_BOP::Perform`: `CheckData` raises `BOPAlgo_AlertEmptyShape`
+        // (`BOPAlgo_BOP.cxx:162-167`) and `TreatEmptyShape` (`:214-322`) then fixes
+        // the result before the operation runs — for a Fuse/Cut with one empty
+        // group that is just the surviving shapes, for a Common it is empty, and
+        // for two empty operands it is an empty result (not an error). Note this
+        // branch means "no face", which is *not* OCCT's empty test: an edge-only
+        // wire has geometry and must keep the normal path, so the decision uses
+        // `is_empty_shape`, not `fa.is_empty()`.
+        if let Some(chosen) = crate::bop_bop::treat_empty_shape(
+            std::slice::from_ref(a),
+            std::slice::from_ref(b),
+            crate::bop_builder_dispatch::to_bool_op2(op),
+        ) {
+            let mut warnings: Vec<String> = Vec::new();
+            if crate::bop_bop::is_empty_shape(a) {
+                warnings.push("BOPAlgo_AlertEmptyShape (objects)".into());
+            }
+            if crate::bop_bop::is_empty_shape(b) {
+                warnings.push("BOPAlgo_AlertEmptyShape (tools)".into());
+            }
+            let bld = TopoBuilder::new();
+            let shape: TopoShape = bld.make_compound_of(&chosen).into();
+            let mut r = single_shape_result(&shape);
+            r.warnings.extend(warnings);
+            return Ok(r);
+        }
         let shape = crate::bop_builder2::builder_bop_with_fuzzy(
             std::slice::from_ref(a),
             std::slice::from_ref(b),

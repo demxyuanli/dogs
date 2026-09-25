@@ -38,9 +38,118 @@ pub fn type_to_explore(dim: i32) -> Option<ShapeType> {
     }
 }
 
-/// `BOPTools_AlgoTools3D::IsEmptyShape`.
+/// `BOPTools_AlgoTools3D::IsEmptyShape` (`BOPTools_AlgoTools3D.cxx:732-741`):
+/// `!HasGeometry` over the **whole sub-shape tree** (`Add`, `:745-786`).
+///
+/// The port's previous test ("no vertex **and** no face") counted *sub-shape
+/// presence* rather than *geometry*, which is the opposite of OCCT in both
+/// directions: OCCT reports a wire whose edge carries a 3D curve as **non-empty**
+/// (the vertex rule is `:796-799`, the edge rule `:803-834`), and a face with no
+/// surface and no triangulation as **empty** (`:838-851`).
 pub fn is_empty_shape(s: &TopoShape) -> bool {
-    vertices_of(s).is_empty() && faces_of(s).is_empty()
+    let mut visited: HashSet<usize> = HashSet::new();
+    !tree_has_geometry(s, &mut visited)
+}
+
+/// `Add` (`BOPTools_AlgoTools3D.cxx:745-786`): depth-first over
+/// `TopoDS_Iterator(aSx, false, false)` — the same sub-shape tree, with the
+/// visited map that keeps it linear.
+fn tree_has_geometry(s: &TopoShape, visited: &mut HashSet<usize>) -> bool {
+    let key = shape_key(s);
+    if !visited.insert(key) {
+        return false;
+    }
+    if has_geometry(s) {
+        return true;
+    }
+    iter_children(s)
+        .into_iter()
+        .any(|c| tree_has_geometry(&c, visited))
+}
+
+/// `BOPAlgo_BOP::TreatEmptyShape` (`BOPAlgo_BOP.cxx:214-322`), called only when
+/// `CheckData` raised `BOPAlgo_AlertEmptyShape` (`:162-167`).
+///
+/// `None` ⇒ OCCT returns `false` and the normal pipeline continues; `Some(v)` ⇒
+/// OCCT adds `v` to `myShape` and returns `true`, i.e. the result *is* `v` (and is
+/// an empty result when `v` is empty).
+pub fn treat_empty_shape(
+    objects: &[TopoShape],
+    tools: &[TopoShape],
+    op: BoolOp2,
+) -> Option<Vec<TopoShape>> {
+    // `:223-236`: find the non-empty objects and tools.
+    let valid_obj: Vec<TopoShape> = objects
+        .iter()
+        .filter(|s| !is_empty_shape(s))
+        .cloned()
+        .collect();
+    let valid_tool: Vec<TopoShape> = tools
+        .iter()
+        .filter(|s| !is_empty_shape(s))
+        .cloned()
+        .collect();
+    let (has_obj, has_tool) = (!valid_obj.is_empty(), !valid_tool.is_empty());
+    // `:240-243`: both groups hold valid shapes ⇒ continue the operation.
+    if has_obj && has_tool {
+        return None;
+    }
+    // `:245-250`: every shape is empty ⇒ the result is always an empty shape.
+    if !has_obj && !has_tool {
+        return Some(Vec::new());
+    }
+    // `:252-320`: exactly one group is all-empty, so the result can be built at
+    // once — unless the operation would first have to split the survivors.
+    Some(match op {
+        BoolOp2::Fuse => {
+            // `:267-272`: more than one valid shape must be split before adding.
+            if valid_obj.len() + valid_tool.len() > 1 {
+                return None;
+            }
+            if has_obj {
+                valid_obj
+            } else {
+                valid_tool
+            }
+        }
+        BoolOp2::Cut => {
+            // `:280-285`: the objects must be split before adding.
+            if valid_obj.len() > 1 {
+                return None;
+            }
+            valid_obj
+        }
+        // `:305-307`: a Common with an empty group is always empty.
+        BoolOp2::Common => Vec::new(),
+    })
+}
+
+/// `HasGeometry` (`BOPTools_AlgoTools3D.cxx:790-854`).
+fn has_geometry(s: &TopoShape) -> bool {
+    let reg = crate::tgeometry::GeometryRegistry::global();
+    match s.shape_type() {
+        // `:796-799`: `TopAbs_VERTEX` always has geometry (its point).
+        ShapeType::Vertex => true,
+        // `:803-834`: any curve representation counts — `IsCurve3D()` with a
+        // non-null curve, `IsCurveOnSurface()`, `IsRegularity()`, a non-null
+        // `Polygon3D()`, `IsPolygonOnTriangulation()`, `IsPolygonOnSurface()`.
+        // UNPORTED: the three polygon arms — the port's `EdgeGeom` keeps no edge
+        // polygons (`tgeometry.rs`, `EdgeGeom`), so only curves/pcurves are seen.
+        ShapeType::Edge => {
+            let has_pcurve = reg
+                .edge_geom(s)
+                .map(|g| !g.pcurves.is_empty())
+                .unwrap_or(false);
+            has_pcurve || BRepTool::edge_curve(&Edge(s.clone())).is_some()
+        }
+        // `:838-851`: `Surface()` or `Triangulation()`.
+        // UNPORTED: the triangulation arm — the port has no shape→triangulation
+        // store reachable here, so only the surface is seen.
+        ShapeType::Face => reg.face_geom(s).is_some(),
+        // `:853`: wires / shells / solids / compounds carry no geometry of their
+        // own — they are decided by their children through `Add`.
+        _ => false,
+    }
 }
 
 /// Min/max dimension of a group (`CheckData` loop).
