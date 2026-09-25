@@ -241,7 +241,18 @@ pub(super) fn l_coeff(eps: f64) -> f64 {
 pub(super) fn build_arc(e: &Edge, face: &Face, map: &UVMap) -> Option<BoundaryArc> {
     let face_key = crate::tgeometry::GeometryRegistry::shape_key(&face.0);
     let reg = crate::tgeometry::GeometryRegistry::global();
-    if let Some(pc) = reg.edge_pcurve(&e.0, face_key) {
+    // `BRep_Tool::CurveOnSurface` (`BRep_Tool.cxx:327-373`): on a *closed*
+    // surface (`IsCurveOnClosedSurface`, i.e. a seam edge carrying two pcurves)
+    // a REVERSED edge integrates `PCurve2`, any other edge `PCurve`. Picking the
+    // first pcurve for both occurrences of a seam makes their boundary terms
+    // cancel (which is what `BRepGProp` must not do).
+    let pcurves = reg.edge_pcurves(&e.0, face_key);
+    let pc = if pcurves.len() >= 2 && e.orientation().is_reversed() {
+        pcurves.into_iter().nth(1)
+    } else {
+        pcurves.into_iter().next()
+    };
+    if let Some(pc) = pc {
         let (a, b) = reg
             .pcurve_range(&e.0, face_key)
             .unwrap_or_else(|| (pc.first_parameter(), pc.last_parameter()));
@@ -449,6 +460,7 @@ pub(super) fn compute_domain(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ:
             c_inertia.add(&local);
         }
         c_inertia.mul(lr);
+
         total.add(&c_inertia);
     }
     Ok(total)
@@ -457,15 +469,15 @@ pub(super) fn compute_domain(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ:
 /// Compute the face's contribution for the given type, applying the sign
 /// correction for the line-integral path.
 pub(super) fn compute_face(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ: GaussType) -> Result<Inertia, String> {
-    // A polygon-bounded face (all pcurves are straight, or the wire repeats an
-    // edge, e.g. a cylinder lateral face) is integrated directly over its UV
-    // bounding rectangle. Curved-boundary faces (e.g. a disk cap) use the
-    // boundary line integral, whose orientation sign comes from the UV polygon.
-    let rect_domain = fa.arcs.iter().all(|a| a.kind == ArcKind::Line);
+    // `BRepGProp_Gauss::Compute` (`BRepGProp_Gauss.cxx:533-652`) walks the face's
+    // *domain* (`theDomain.More()` + `theSurface.Load(edge)`) for every face that
+    // has wires; only `isNaturalRestriction` (`cxx:588`) integrates the natural
+    // bounds directly. OCCT has no "UV bounding rectangle" branch: the boundary
+    // line integral carries the wire orientation, which is what keeps the sign
+    // right when the face's own orientation and the wire's winding differ. The
+    // former `rect_domain` / `has_repeated_edges` shortcut is therefore gone.
     let mut inert = if fa.natural {
         compute_natural(fa, loc, coeff, typ)?
-    } else if fa.has_repeated_edges || rect_domain {
-        compute_rect(fa, loc, coeff, typ)?
     } else {
         let mut d = compute_domain(fa, loc, coeff, typ)?;
         d.mul(fa.wire_sign());
