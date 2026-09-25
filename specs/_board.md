@@ -53,7 +53,10 @@
 >   偏置球解析 = **14.137166941**）；布尔结果补 pcurve 供给（`5ed8064`，符号 −2.198 → +3.168）；
 >   `Geom_BezierCurve::Segment` 逐行移植（`2616041`，≤1.4e-15）；`math_BrentMinimum`（`3af4e4e`）。
 >   并发现既有缺陷 `occt-core/src/bspl/poles.rs::power_to_bezier_basis` 公式错（`i==j>0` 给 1，应为 `C(d,j)`）——
->   已在原处标注（KNOWN DEFECT），待订正。
+>   已在原处标注（KNOWN DEFECT）—— **round 80 已订正**：矩阵改为 `(−1)^(i−j)·C(d,j)·C(d−j, i−j)`（`7b8b57f`），
+>   并把 `poles_to_coefficients` 整体标为 **NOT USABLE / superseded shortcut**（它另有一处自创的"逐 span 平均"
+>   缺陷 —— 平均除以了未填充的 temp 行 ⇒ 单 span 二次 Bezier 结果被缩 1/3；且全仓**零调用者**）；
+>   OCCT 的真正路线是 `BSplCLib::BuildCache`（曲线版）+ `PLib::CoefficientsPoles`，即 T-44 的前置。
 > - **仍未完成（板内均有精确分步路线）**：T-80 链/T-41（布尔结果边界是折线 ✗ ⇒ 按 `BOPAlgo` 换精确裁剪曲线；
 >   **实测：`shape_volume` 接解析体积后全仓只剩这 1 条红**）、T-67 步3+T-37 与 T-51 余项（共同前置
 >   `math_FunctionSetRoot` 1452 行 ✗；其依赖 `math_BrentMinimum` 已移植 ✓）、T-44 余项（`IncreaseDegree` ✗）、
