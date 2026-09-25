@@ -101,6 +101,8 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
     let reg = GeometryRegistry::global();
     // Map source TShape ptr → copied TopoShape.
     let mut map: std::collections::HashMap<usize, TopoShape> = std::collections::HashMap::new();
+    // Source/copy pairs, for the pcurve re-keying pass below.
+    let mut pairs: Vec<(TopoShape, TopoShape)> = Vec::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
         let key = std::sync::Arc::as_ptr(&s.tshape) as usize;
@@ -142,6 +144,7 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
             _ => {}
         }
         map.insert(key, copy.clone());
+        pairs.push((s.clone(), copy.clone()));
         for k in s.tshape.read().unwrap().children.clone() {
             stack.push(k);
         }
@@ -169,6 +172,46 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
                 dst.tshape.write().unwrap().add_child(child_shape);
                 stack.push((k, copy.clone()));
             }
+        }
+    }
+    // `EdgeGeom::pcurves` / `pcurve_ranges` are keyed by
+    // `GeometryRegistry::shape_key(face)` (TShape address plus the process-unique
+    // TShape id), so re-key them onto the copied faces. `BRepBuilderAPI_Copy` /
+    // `BRepTools_ShapeSet` copy a `BRep_GCurve` together with the face it lies on,
+    // so a copied edge must still answer `BRep_Tool::CurveOnSurface(E, copiedFace)`
+    // — otherwise the analytic passes (`BRepGProp`) see pcurve-less faces and report
+    // a zero volume for every pattern/transform copy.
+    let mut key_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for (src, dst) in &pairs {
+        key_map.insert(
+            GeometryRegistry::shape_key(src),
+            GeometryRegistry::shape_key(dst),
+        );
+    }
+    for (src, dst) in &pairs {
+        if src.shape_type() != ShapeType::Edge {
+            continue;
+        }
+        let Some(g) = reg.edge_geom(src) else {
+            continue;
+        };
+        let pcurves: std::collections::HashMap<usize, Vec<Arc<dyn occt_geom2d::Curve2d>>> = g
+            .pcurves
+            .iter()
+            .filter_map(|(k, v)| key_map.get(k).map(|nk| (*nk, v.clone())))
+            .collect();
+        let ranges: std::collections::HashMap<usize, (f64, f64)> = g
+            .pcurve_ranges
+            .iter()
+            .filter_map(|(k, v)| key_map.get(k).map(|nk| (*nk, *v)))
+            .collect();
+        if pcurves.is_empty() {
+            continue;
+        }
+        if let Some(mut updated) = reg.edge_geom(dst) {
+            updated.pcurves = pcurves;
+            updated.pcurve_ranges = ranges;
+            reg.set_edge(dst, updated);
         }
     }
     Ok(map[&(std::sync::Arc::as_ptr(&shape.tshape) as usize)].clone())
