@@ -666,10 +666,74 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
             }
             new_wires.push(b.make_wire(&new_edges));
         }
+    } else if let (Some(c_src), Some(c_new)) = (
+        sphere_center(surf.as_ref()),
+        sphere_center(new_surf.as_ref()),
+    ) {
+        // `BRepOffset`'s analytic branch for `GeomAbs_Sphere`: a spherical face
+        // offsets to a *concentric* sphere and every boundary curve maps with it
+        // (`BRepOffset_MakeOffset` → `BRepOffset::MakeOffset`; the map is
+        // `gp_Trsf::SetScale(centre, (r + d) / r)`). The source wire must not be
+        // reused: it lies on the *source* surface and carries no
+        // (edge, offset-face) pcurve, so the analytic passes (`BRepGProp`) see a
+        // pcurve-less face and report a zero volume.
+        let r_src = surf.d0(0.0, 0.0).distance(&c_src);
+        let r_new = new_surf.d0(0.0, 0.0).distance(&c_new);
+        let mut rebuilt = false;
+        if r_src > 0.0 && r_new > 0.0 {
+            let mut t = occt_core::gp::GpTrsf::identity();
+            t.set_scale(&c_src, r_new / r_src).map_err(|e| e.to_string())?;
+            let mut copied: std::collections::HashMap<usize, Edge> =
+                std::collections::HashMap::new();
+            for w in &wires {
+                let w_edges = edges_of_wire(w);
+                let mut new_edges = Vec::with_capacity(w_edges.len());
+                for e in w_edges {
+                    // A seam edge appears twice in the wire; both occurrences must
+                    // stay the *same* TShape (only their orientation differs) or
+                    // `ShapeFix_Wire` no longer sees a seam and hands both sides
+                    // the same pcurve, whose boundary terms then cancel
+                    // (`data/Offset.step`'s periodic faces behave the same way).
+                    let k = std::sync::Arc::as_ptr(&e.0.tshape) as usize;
+                    let mut occ = match copied.get(&k) {
+                        Some(c) => c.clone(),
+                        None => {
+                            let te = crate::shape_ops::transformed_copy(&e.0, &t)
+                                .map_err(|e| e.to_string())?;
+                            let c = Edge(te);
+                            copied.insert(k, c.clone());
+                            c
+                        }
+                    };
+                    occ.0.set_orientation(e.orientation());
+                    new_edges.push(occ);
+                }
+                new_wires.push(b.make_wire(&new_edges));
+            }
+            rebuilt = true;
+        }
+        if !rebuilt {
+            for w in &wires {
+                new_wires.push(w.clone());
+            }
+        }
     } else {
         for w in &wires {
             new_wires.push(w.clone());
         }
     }
-    Ok(b.make_face(Arc::from(new_surf), &new_wires))
+    let face_out = b.make_face(Arc::from(new_surf), &new_wires);
+    // `BRepOffset_MakeOffset` runs `BRepLib::SameParameter` / `ShapeFix` on its
+    // result, so every edge of a rebuilt face carries a pcurve on the *offset*
+    // surface (`ShapeFix_Edge::FixAddPCurve`, `ShapeFix_Edge.cxx:517-534`).
+    // Only the rebuilt wires are touched: the reused-clone branch shares its
+    // TShapes with the source shape, and repairing those in place would mutate
+    // the input.
+    {
+        let mut ws = wires_of_face(&face_out);
+        for w in ws.iter_mut() {
+            crate::shhealing::check_pcurves_and_shift(w, &face_out, occt_core::precision::CONFUSION);
+        }
+    }
+    Ok(face_out)
 }
