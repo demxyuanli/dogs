@@ -94,7 +94,7 @@ pub fn compute_nb_u_samples(
     the_u_min: f64,
     the_u_max: f64,
 ) -> i32 {
-    let mut n = match kind {
+    let n = match kind {
         SampleSurfaceKind::Bezier => {
             let mut n = 2 * nb_u_poles as i32;
             let du = the_u_max - the_u_min;
@@ -135,7 +135,7 @@ pub fn compute_nb_v_samples(
     the_v_min: f64,
     the_v_max: f64,
 ) -> i32 {
-    let mut n = match kind {
+    let n = match kind {
         SampleSurfaceKind::Bezier => {
             let mut n = 2 * nb_v_poles as i32;
             let dv = the_v_max - the_v_min;
@@ -211,7 +211,7 @@ pub fn compute_nb_samples_3d(
     the_u_min: f64,
     the_u_max: f64,
 ) -> i32 {
-    let mut n = match kind {
+    let n = match kind {
         SampleCurveKind::Bezier => {
             let mut n = 2 * nb_poles as i32;
             let du = the_u_max - the_u_min;

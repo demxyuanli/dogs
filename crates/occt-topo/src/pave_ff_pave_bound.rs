@@ -112,7 +112,7 @@ pub fn put_bound_pave_on_curve(
         if !ok_f || !ok_g {
             continue;
         }
-        let mut vn = AlgoTools::make_new_vertex(&ps[j_end], tol_r3d)?;
+        let vn = AlgoTools::make_new_vertex(&ps[j_end], tol_r3d)?;
         let dist = BRepTool::vertex_point(&Vertex(vn.clone())).distance(&ps[j_end]);
         let need = dist + D_TOLERANCE;
         if BRepTool::vertex_tolerance(&Vertex(vn.clone())) < need {

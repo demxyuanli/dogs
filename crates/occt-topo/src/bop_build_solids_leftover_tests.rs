@@ -412,7 +412,7 @@ use crate::topo_tools_full::{edges_of, vertices_of};
 
         let mut ds = BopdsDS::new();
         ds.init(&[a.0.clone(), b.0.clone()]);
-        let mut history = BopHistory::new();
+        let history = BopHistory::new();
         // Nothing split: no images -> no solid is interfered, none gets an image.
         let mut st = stub(ds, history, vec![a.0.clone(), b.0.clone()]);
         build_split_solids_full(&mut st, &[a.0.clone()], &[b.0.clone()], FaceState::Out, FaceState::Out)

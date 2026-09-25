@@ -372,7 +372,7 @@ pub(super) fn merge_complex_body(body: &str) -> (String, Vec<String>) {
     // Helper: first member of a given type.
     let member = |t: &str| members.iter().find(|(ty, _)| ty == t);
     // Helper: arg of a member by index.
-    let arg = |t: &str, idx: usize| -> Option<String> {
+    let _arg = |t: &str, idx: usize| -> Option<String> {
         member(t).and_then(|(_, a)| a.get(idx)).cloned()
     };
 
@@ -435,7 +435,7 @@ pub(super) fn merge_complex_body(body: &str) -> (String, Vec<String>) {
         let control_points = b_args.get(1).cloned().unwrap_or_default();
         let curve_form = b_args.get(2).cloned().unwrap_or_else(|| ".UNSPECIFIED.".to_string());
         let closed = b_args.get(3).cloned().unwrap_or_else(|| ".F.".to_string());
-        let self_intersect = b_args.get(4).cloned().unwrap_or_else(|| ".F.".to_string());
+        let _self_intersect = b_args.get(4).cloned().unwrap_or_else(|| ".F.".to_string());
         let weights = r_args.first().cloned().unwrap_or_else(|| "SELF".to_string());
         let mults = k_args.get(0).cloned().unwrap_or_else(|| "()".to_string());
         let knots_list = k_args.get(1).cloned().unwrap_or_else(|| "()".to_string());

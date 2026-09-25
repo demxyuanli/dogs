@@ -193,7 +193,7 @@ impl AlgoTools2D {
 
         let a_t = 0.5 * (first + last);
         let p = curve.d0(a_t);
-        let (mut u2, mut v2) = (p.x(), p.y());
+        let (mut u2, v2) = (p.x(), p.y());
 
         // du (`cxx:273-315`)
         let mut du = 0.0;

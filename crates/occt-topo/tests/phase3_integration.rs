@@ -54,7 +54,7 @@ fn real_box_full_pipeline() {
 
     // 4. Real bounding box from geometry.
     let bb = shape_bbox(&box_.solid.0);
-    let (x0, x1, y0, y1, z0, z1) = bb.get().expect("non-empty bbox");
+    let (x0, x1, _y0, y1, _z0, z1) = bb.get().expect("non-empty bbox");
     assert!(approx(x0, 0.0) && approx(x1, 2.0) && approx(y1, 3.0) && approx(z1, 4.0));
 
     // 5. Export OBJ/STL/PLY.

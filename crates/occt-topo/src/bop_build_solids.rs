@@ -249,7 +249,7 @@ pub(crate) fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -
         .map(|f| f.0)
         .collect();
     let is_consumed = |f: &TopoShape| in_closed.iter().any(|c| c.same_tshape(f));
-    let mut loose: Vec<TopoShape> = all_faces
+    let loose: Vec<TopoShape> = all_faces
         .iter()
         .filter(|f| f.is_face() && !is_consumed(f))
         .cloned()
@@ -385,7 +385,7 @@ fn orient_face_outward(face: &TopoShape, shell: &TopoShape) -> TopoShape {
 #[allow(dead_code)]
 fn reverse_face_surface(face: &TopoShape) -> TopoShape {
     let f = Face(face.clone());
-    let Some(s) = BRepTool::face_surface(&f) else { return face.clone() };
+    let Some(_s) = BRepTool::face_surface(&f) else { return face.clone() };
     if let Some(pln) = crate::brep_surface::face_plane(&f) {
         let ax = pln.axis();
         let loc = *ax.location();

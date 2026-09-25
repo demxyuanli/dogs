@@ -90,7 +90,7 @@ pub fn update_face_info_pave_blocks(
         let mut new_on = Vec::new();
         let mut new_in = Vec::new();
         let mut new_sc = Vec::new();
-        let lists = [&on, &inn, &sc];
+        let _lists = [&on, &inn, &sc];
         let outs = [&mut new_on, &mut new_in, &mut new_sc];
         // Rewrite one list at a time without holding FaceInfo.
         drop(outs);

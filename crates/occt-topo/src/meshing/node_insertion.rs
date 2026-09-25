@@ -300,7 +300,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         insert: &[(GpPnt2d, GpPnt)],
         params: &MeshParameters,
         face_deflection: f64,
-        face_index: usize,
+        _face_index: usize,
     ) -> Result<TriangulationResult, String> {
         if self.structure.nb_nodes() == 0 {
             return Err("DelaunayNodeInsertionMeshAlgo::triangulate: no nodes registered".to_string());
@@ -337,8 +337,8 @@ impl DelaunayNodeInsertionMeshAlgo {
         for &e in &frontier {
             let _ = delaun.use_edge(e);
         }
-        let bnd_nodes = delaun.result().nb_nodes();
-        let bnd_tris = delaun.result().elements_of_domain().len();
+        let _bnd_nodes = delaun.result().nb_nodes();
+        let _bnd_tris = delaun.result().elements_of_domain().len();
 
         if !insert.is_empty() {
             let mut idxs: Vec<i32> = Vec::with_capacity(insert.len());

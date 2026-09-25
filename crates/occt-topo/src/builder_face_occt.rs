@@ -271,7 +271,7 @@ fn make_face_on(fb: &FaceBuilder, wire: &Wire) -> Result<Face, String> {
         return Err("builder_face: no surface".into());
     };
     let a_tol = BRepTool::face_tolerance(gf);
-    let mut face = TopoBuilder::new().make_face(surf, &[wire.clone()]);
+    let face = TopoBuilder::new().make_face(surf, &[wire.clone()]);
     GeometryRegistry::global().set_face_tolerance(&face.0, a_tol);
     GeometryRegistry::global().set_natural_restriction(&face.0, false);
     // OCCT CurveOnSurface is keyed by (edge, surface). Copy the generatrix
@@ -310,7 +310,7 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
     let mut a_hole_faces: Vec<TopoShape> = Vec::new();
     let mut a_mhe: HashSet<usize> = HashSet::new();
 
-    for (i_loop, a_wire) in fb.base.loops.clone().into_iter().enumerate() {
+    for (_i_loop, a_wire) in fb.base.loops.clone().into_iter().enumerate() {
         let wire = Wire(a_wire.clone());
         let a_face = make_face_on(fb, &wire)?;
         let mut b_is_growth = is_growth_wire(&a_wire, &a_mhe);

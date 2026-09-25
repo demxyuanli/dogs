@@ -127,7 +127,7 @@ pub fn point_near_edge_dt(
     if face.0.orientation() == Orientation::Reversed {
         dp = dp.reversed();
     }
-    let mut e_tol = BRepTool::edge_tolerance(edge);
+    let e_tol = BRepTool::edge_tolerance(edge);
     let mut f_tol = BRepTool::face_tolerance(face);
     let kind = classify_surface(surf.as_ref());
     if kind == SurfaceKind::Other && e_tol > 1.0e-5 {

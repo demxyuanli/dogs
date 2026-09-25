@@ -113,7 +113,7 @@ fn sphere_step_to_obj() {
     assert_valid_obj("sphere", &obj);
     // Sphere radius 5 centred at origin → extent 10 along every axis.
     let (min, max) = bbox(&obj_vertices(&obj)).unwrap();
-    for (lo, hi) in [min, max].into_iter().flatten().enumerate() {
+    for (_lo, hi) in [min, max].into_iter().flatten().enumerate() {
         assert!(hi.is_finite());
     }
     write_output(&name, &obj);

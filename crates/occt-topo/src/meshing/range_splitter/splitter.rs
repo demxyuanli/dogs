@@ -252,7 +252,7 @@ impl RangeSplitter for CylinderRangeSplitter {
         let sv = range_v.1 - range_v.0;
         let a_arc_len = su * radius;
         let mut nb_u = 0i32;
-        let mut nb_v = 0i32;
+        let nb_v = 0i32;
         if a_arc_len > deflection {
             nb_u = (su / self.du) as i32;
             // `BRepMesh_CylinderRangeSplitter.cxx:52-64`: OCCT's own V-step /

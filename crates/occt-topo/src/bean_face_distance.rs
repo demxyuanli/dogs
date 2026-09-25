@@ -21,7 +21,7 @@ impl BeanFaceIntersector {
         *u = self.umin;
         *v = self.vmin;
         let (su, sv, d) = self.closest_params_dist(&p);
-        let mut projection_found = d.is_finite();
+        let projection_found = d.is_finite();
         let mut a_distance = d;
         let mut the_u = su;
         let mut the_v = sv;

@@ -199,7 +199,7 @@ pub(crate) fn lines_to_wlines(
                 vq = v;
             }
             let mut u_prm = up;
-            let mut v_prm = vp;
+            let v_prm = vp;
             if k == 0 {
                 an_u1 = uq;
                 an_u2 = u_prm;

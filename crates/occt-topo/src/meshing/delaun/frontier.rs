@@ -7,7 +7,7 @@ impl Delaun {
         // `Frontier()` walks `LinksOfDomain()`, an OCCT `NCollection_PackedMap<int>`
         // traversed in ascending id order (`BRepMesh_MeshTool.cxx:284-300`); our
         // structure stores it in a `BTreeSet`, so the ids are already ascending.
-        let mut frontier_ids: Vec<i32> = self.frontier().into_iter().collect();
+        let frontier_ids: Vec<i32> = self.frontier().into_iter().collect();
         let mut failed_frontiers: Vec<i32> = Vec::new();
         let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
         let mut int_frontier_edges: BTreeSet<i32> = BTreeSet::new();
@@ -302,7 +302,7 @@ impl Delaun {
         for poly_it in 0..poly_len {
             if !link_bbox.is_out(&poly_boxes[poly_it]) {
                 let poly_link_id = polygon[poly_it].abs();
-                let poly_link = self.mesh_data.get_link(poly_link_id);
+                let _poly_link = self.mesh_data.get_link(poly_link_id);
                 if self.mesh_data.link_movability(poly_link_id) == VertexState::Frontier && is_frontier {
                     continue;
                 }

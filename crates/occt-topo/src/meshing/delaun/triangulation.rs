@@ -475,7 +475,7 @@ impl Delaun {
             let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
             let mut circles_list = self.circles.select(vertex.location.coord);
 
-            let mut on_edge_id = 0;
+            let _on_edge_id = 0;
             let mut triangle_id = 0;
             let mut j = 0;
             while j < circles_list.len() {
@@ -545,7 +545,7 @@ impl Delaun {
     /// `BRepMesh_BaseMeshAlgo.cxx:52-62` swallows so the face ends up with no
     /// mesh. The port reports the same condition instead of panicking, and
     /// callers abort the current polygon (`self.failed`).
-    pub(super) fn add_triangle(&mut self, edges: [i32; 3], oris: [bool; 3], nodes: [i32; 3]) -> bool {
+    pub(super) fn add_triangle(&mut self, edges: [i32; 3], oris: [bool; 3], _nodes: [i32; 3]) -> bool {
         for e in edges {
             if self.mesh_data.elements_connected_to(e.abs()).extent() >= 2 {
                 self.failed = true;

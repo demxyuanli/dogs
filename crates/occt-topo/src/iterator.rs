@@ -99,7 +99,7 @@ mod tests {
 
     #[test]
     fn iter_children() {
-        let mut c = Compound::new();
+        let c = Compound::new();
         let _ = c.0;
         let children = vec![TopoShape::new(ShapeType::Vertex), TopoShape::new(ShapeType::Edge), TopoShape::new(ShapeType::Vertex)];
         let it = ShapeIterator::new(children);

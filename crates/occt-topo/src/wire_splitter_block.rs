@@ -828,7 +828,7 @@ fn refine_angle_2d(
     None
 }
 
-fn edge_closed_on_face(e: &Edge, face: &Face, face_key: usize) -> bool {
+fn edge_closed_on_face(e: &Edge, _face: &Face, face_key: usize) -> bool {
     if BRepTool::is_degenerated(e) {
         return true;
     }

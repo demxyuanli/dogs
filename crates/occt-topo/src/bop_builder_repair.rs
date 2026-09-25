@@ -292,7 +292,7 @@ pub struct MultiResult {
 /// Split a non-compound boundary into its edge-connected components, preserving
 /// solidity: a closed component is returned as a one-shell solid, an open one
 /// as a bare shell.
-pub(crate) fn split_connected_boundaries(shape: &TopoShape, tol: f64) -> Vec<TopoShape> {
+pub(crate) fn split_connected_boundaries(shape: &TopoShape, _tol: f64) -> Vec<TopoShape> {
     let faces = faces_of(shape);
     if faces.is_empty() {
         return vec![shape.clone()];

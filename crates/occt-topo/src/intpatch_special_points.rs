@@ -37,7 +37,7 @@ pub fn add_singular_pole(
             Some(pack(apex, uq, vq, uo, vo, reversed))
         }
         SurfaceKind::Sphere => {
-            let (u, v) = surface_parameters(s_quad, pnt)?;
+            let (_u, v) = surface_parameters(s_quad, pnt)?;
             let pole = std::f64::consts::FRAC_PI_2;
             if (v - pole).abs() > 1.0e-5 && (v + pole).abs() > 1.0e-5 {
                 return None;

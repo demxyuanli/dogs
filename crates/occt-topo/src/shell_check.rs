@@ -241,7 +241,7 @@ mod tests {
         [4, 5, 6, 7],  // +Z
     ];
 
-    fn plane_face(b: &TopoBuilder, origin: GpPnt, normal: GpDir) -> GpPln {
+    fn plane_face(_b: &TopoBuilder, origin: GpPnt, normal: GpDir) -> GpPln {
         let x_dir = if normal.x().abs() > 0.9 {
             GpDir::new(0.0, 1.0, 0.0).unwrap()
         } else if normal.y().abs() > 0.9 {

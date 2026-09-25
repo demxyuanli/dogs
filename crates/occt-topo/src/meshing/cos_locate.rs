@@ -640,7 +640,7 @@ pub fn eval_first_last_surf(
         return (None, None);
     }
 
-    let mut first_surf;
+    let first_surf;
     let (uv, duv) = pcurve.d1(first);
     let mut ok = duv.magnitude() > TOL;
     if ok {
@@ -657,7 +657,7 @@ pub fn eval_first_last_surf(
         first_surf = Some(surface.clone());
     }
 
-    let mut last_surf;
+    let last_surf;
     let (uv, mut duv) = pcurve.d1(last);
     duv.reverse();
     let mut ok = duv.magnitude() > TOL;

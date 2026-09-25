@@ -4,7 +4,7 @@ use super::*;
 /// The point on a cone-tangency circle that shares a generator with the cone's
 /// base-circle seam, so the rebuilt lateral face's seam stays a straight
 /// generator from the contact circle to the apex.
-pub(super) fn cone_contact_seam(face: &Face, fillet_edge: &Edge, contact: &ContactCircleGeom) -> Result<GpPnt, String> {
+pub(super) fn cone_contact_seam(_face: &Face, fillet_edge: &Edge, contact: &ContactCircleGeom) -> Result<GpPnt, String> {
     let (se, _) = BRepTool::edge_vertices(fillet_edge)
         .ok_or("fillet_curved: cone base circle has no vertices")?;
     let base_seam = se;

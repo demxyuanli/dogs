@@ -179,7 +179,7 @@ pub fn do_split_seam_on_face(a_split: &Edge, a_f: &Face) -> bool {
     };
     let (a_umin, a_umax) = a_s.u_range();
     let (a_vmin, a_vmax) = a_s.v_range();
-    let (mut b_u, mut b_v, mut an_u_period, mut an_v_period) =
+    let (b_u, b_v, an_u_period, an_v_period) =
         surface_closed_period(a_s.as_ref(), a_tol);
     if !b_u && !b_v {
         return false;
@@ -197,8 +197,8 @@ pub fn do_split_seam_on_face(a_split: &Edge, a_f: &Face) -> bool {
     };
     let a_dox = GpDir2d::default();
     let a_doy = GpDir2d::new(0.0, 1.0).unwrap_or_else(|_| GpDir2d { x: 0.0, y: 1.0 });
-    let mut an_u = a_p2d.x();
-    let mut an_v = a_p2d.y();
+    let an_u = a_p2d.x();
+    let an_v = a_p2d.y();
     let mut an_u1 = an_u;
     let mut an_v1 = an_v;
     let (d_u, d_v) = u_v_resolution(a_s.as_ref(), a_tol);

@@ -251,7 +251,7 @@ impl Delaun {
 
         let poly_len = the_polygon.len();
         let first_edge_info = the_polygon[0];
-        let first_edge = self.mesh_data.get_link(first_edge_info.abs());
+        let _first_edge = self.mesh_data.get_link(first_edge_info.abs());
         let mut nodes = [0i32; 3];
         self.get_oriented_nodes(first_edge_info.abs(), first_edge_info > 0, &mut nodes[..2]);
 
@@ -405,7 +405,7 @@ impl Delaun {
         let mut boxes: Vec<BndB2> = Vec::new();
         let mut polygon: Vec<i32> = Vec::new();
         let mut loop_edges_count = loop_edges.len();
-        let mut keys: Vec<i32> = loop_edges.keys().copied().collect();
+        let keys: Vec<i32> = loop_edges.keys().copied().collect();
         if keys.is_empty() {
             return;
         }

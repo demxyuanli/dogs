@@ -74,7 +74,7 @@ pub fn shape_distance(a: &TopoShape, b: &TopoShape) -> f64 {
     let vb = collect_vertices(b);
     let ea = collect_edges(a);
     let eb = collect_edges(b);
-    let fa = collect_faces(a);
+    let _fa = collect_faces(a);
     let fb = collect_faces(b);
 
     let mut best = f64::INFINITY;

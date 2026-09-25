@@ -840,7 +840,7 @@ mod tests {
         let d = ds.add_node(v(2.0, 2.0));
         let ab = ds.add_link(a, b, VertexState::Free);
         let bc = ds.add_link(b, c, VertexState::Free);
-        let ca = ds.add_link(c, a, VertexState::Free);
+        let _ca = ds.add_link(c, a, VertexState::Free);
         let cd = ds.add_link(c, d, VertexState::Free);
         let da = ds.add_link(d, a, VertexState::Free);
         let bd = ds.add_link(b, d, VertexState::Free);

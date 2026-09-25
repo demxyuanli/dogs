@@ -182,7 +182,7 @@ use super::*;
         for i in 0..tris.len() {
             for j in (i + 1)..tris.len() {
                 let (id_a, verts_a) = tris[i];
-                let (id_b, verts_b) = tris[j];
+                let (id_b, _verts_b) = tris[j];
                 let mut share_edge = false;
                 for ka in 0..3 {
                     let (a, b) = (verts_a[ka], verts_a[(ka + 1) % 3]);
@@ -275,7 +275,7 @@ use super::*;
         let _ab = data.add_link(a, b, VertexState::Frontier);
         let cd = data.add_link(c, d, VertexState::Fixed);
         let _bd = data.add_link(b, d, VertexState::Free);
-        let mut delaun = Delaun {
+        let delaun = Delaun {
             mesh_data: data,
             circles: CircleTool::new(),
             sup_vert: Vec::new(),
@@ -304,7 +304,7 @@ use super::*;
             .flat_map(|i| (0..3).map(move |j| v(i as f64, j as f64)))
             .collect();
         let mut delaun = Delaun::new_vertices(&pts);
-        let ds0 = delaun.result().clone();
+        let ds0 = delaun.result();
         let n0 = ds0.elements_of_domain().len();
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary

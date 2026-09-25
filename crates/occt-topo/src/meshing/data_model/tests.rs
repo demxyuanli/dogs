@@ -166,7 +166,7 @@ use super::*;
         pc.set_deflection(0.02);
         assert_eq!(pc.deflection(), 0.02);
 
-        let mut fwd = MeshPCurve::new(0, Orientation::Forward);
+        let fwd = MeshPCurve::new(0, Orientation::Forward);
         assert!(fwd.is_forward());
     }
 

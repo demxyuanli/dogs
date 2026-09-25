@@ -353,7 +353,7 @@ pub(super) fn boolean_mesh_curves(
 
     let centroid_a = solid_centroid(a);
     let centroid_b = solid_centroid(b);
-    let mut flip_b = op == BoolOp::Cut;
+    let flip_b = op == BoolOp::Cut;
 
     let mut parts: Vec<TriMesh> = Vec::new();
     for (idx, (f, region)) in fa.iter().zip(&regions_a).enumerate() {

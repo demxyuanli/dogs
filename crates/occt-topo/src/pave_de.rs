@@ -183,7 +183,7 @@ pub fn make_split_edge1(
     a_p2: f64,
 ) -> Result<Edge, String> {
     let a_tol = 1.0e-7;
-    let mut e = AlgoTools::make_split_edge(a_e, Some(&a_v1.0), a_p1, Some(&a_v2.0), a_p2)?;
+    let e = AlgoTools::make_split_edge(a_e, Some(&a_v1.0), a_p1, Some(&a_v2.0), a_p2)?;
     if let Some(mut g) = GeometryRegistry::global().edge_geom(&e.0) {
         g.degenerated = true;
         g.tolerance = a_tol;
@@ -301,7 +301,7 @@ pub fn process_de<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                 let Some(a_vn) = f.ds().shape(n_v).cloned() else {
                     continue;
                 };
-                let mut a_e = AlgoTools::make_split_edge(
+                let a_e = AlgoTools::make_split_edge(
                     &Edge(a_de),
                     Some(&a_vn),
                     0.0,

@@ -624,7 +624,7 @@ pub fn find_point(
         the_last_point.y() - the_first_point.y(),
     );
     for i in 0..4 {
-        let (an_other_vec, an_other_vec_normal, mut aprojpoint) = if i % 2 == 0 {
+        let (an_other_vec, an_other_vec_normal, aprojpoint) = if i % 2 == 0 {
             let mut p = *the_last_point;
             if i < 2 {
                 p.set_x(the_umin);

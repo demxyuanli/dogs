@@ -52,7 +52,7 @@ impl BRepModel {
         let idx = self.by_name.remove(name)?;
         // Compact: remove at idx, fix map indices
         let removed = self.shapes.remove(idx);
-        for (n, i) in self.by_name.iter_mut() {
+        for (_n, i) in self.by_name.iter_mut() {
             if *i > idx { *i -= 1; }
         }
         Some(removed.shape)
@@ -66,7 +66,7 @@ impl BRepModel {
     /// Compute the model bounding box (union of per-shape transforms applied).
     /// children_fn: provides sub-shapes for geometry access (unused for bbox here).
     pub fn bounding_box(&self) -> BndBox {
-        let mut b = BndBox::new();
+        let b = BndBox::new();
         // Shapes have no embedded geometry in this port; bbox is empty unless
         // sub-shapes carry coordinates. Keep as a stub returning void box.
         for s in &self.shapes {
@@ -106,7 +106,7 @@ impl BRepModel {
 
     /// Collect all shapes into a single compound (top-level).
     pub fn as_compound(&self) -> TopoShape {
-        let mut comp = TopoShape::new(ShapeType::Compound);
+        let comp = TopoShape::new(ShapeType::Compound);
         // In this port compound children are not stored on TShape; return bare compound.
         comp
     }

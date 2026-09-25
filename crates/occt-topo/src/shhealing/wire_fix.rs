@@ -191,7 +191,7 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
     // (`ShapeFix_Root.lxx:34`, `ShapeFix_Root.cxx:26` = `Precision::Confusion()`).
     // The extra `Geom_SphericalSurface` arm is OCCT's own, because a sphere is
     // closed in V without being V-periodic.
-    let mut u_closed = crate::pcurve_full::sa_is_u_closed(surf.as_ref(), CONFUSION);
+    let u_closed = crate::pcurve_full::sa_is_u_closed(surf.as_ref(), CONFUSION);
     let mut v_closed =
         crate::pcurve_full::sa_is_v_closed(surf.as_ref(), CONFUSION) || surf.gp_sphere().is_some();
     let mut v_range = 1.0;
@@ -1212,7 +1212,7 @@ fn copy_replace_vertices(edge: &Edge) -> Edge {
 /// (`cxx:78-93`) and, in this port, `first_vertex` / `last_vertex`.
 fn copy_replace_vertices_with(edge: &Edge, v1: Option<&Vertex>, v2: Option<&Vertex>) -> Edge {
     let reg = GeometryRegistry::global();
-    let Some(mut geom) = reg.edge_geom(&edge.0) else {
+    let Some(geom) = reg.edge_geom(&edge.0) else {
         return edge.clone();
     };
     let builder = TopoBuilder::new();
@@ -1400,7 +1400,7 @@ pub(super) fn fix_same_parameter(edge: &Edge, face: &Face) {
 /// disables FixShifted at `cxx:368-374`). A wire that is already ordered
 /// returns true (`FixReorder(sawo)` returns false for status 0 without setting
 /// FAIL).
-pub fn fix_reorder_wire(wire: &Wire, face: &Face) -> bool {
+pub fn fix_reorder_wire(wire: &Wire, _face: &Face) -> bool {
     let stored: Vec<Edge> = edges_of_wire(wire)
         .into_iter()
         .filter(|e| {

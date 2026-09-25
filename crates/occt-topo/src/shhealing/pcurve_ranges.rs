@@ -721,7 +721,7 @@ fn check_pcurve(edge: &Edge, face: &Face, preci: f64, is_seam: bool) -> bool {
     let mut same_range = reg.edge_geom(&tmp.0).map(|g| g.same_range).unwrap_or(true);
     let mut same_param = BRepTool::same_parameter(&tmp);
     if a_tol > 1.0_f64.min(2.0 * preci) || !same_range {
-        if let Some(mut pr) = make_edge_on_curve(edge) {
+        if let Some(pr) = make_edge_on_curve(edge) {
             // `XSAlgo` drives its own `ShapeFix_Edge`, so this cache is fresh.
             let mut cache = crate::pcurve_full::ProjectorCache::new();
             let _ = fix_add_pcurve(&pr, face, is_seam, preci, &mut cache);

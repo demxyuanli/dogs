@@ -165,7 +165,7 @@ use super::*;
     #[test]
     fn curved_chain_general() {
         // Two non-interfering curved edges (two sphere caps on a box).
-        let (solid, holes) = build_two_spheres_on_box();
+        let (solid, _holes) = build_two_spheres_on_box();
         let es = edges_of(&solid.0);
         let i0 = es
             .iter()

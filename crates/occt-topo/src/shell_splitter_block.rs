@@ -298,7 +298,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
     let live: Vec<TopoShape> = a_m_faces.values().cloned().collect();
     let a_ef_map = map_edges_and_faces(&live);
     let mut added: HashSet<(usize, u8)> = HashSet::new();
-    let mut ctx = IntToolsContext::new();
+    let ctx = IntToolsContext::new();
     let mut all_taken = false;
     for a_ff in &a_lf_connected {
         if all_taken {
@@ -377,7 +377,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
         let n_sp = refined.len();
         for sh in refined {
             if shell_is_closed(&sh) {
-                let mut c = sh;
+                let c = sh;
                 c.set_closed(true);
                 block.change_loops_mut().push(c);
             } else {

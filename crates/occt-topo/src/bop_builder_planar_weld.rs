@@ -489,7 +489,7 @@ pub(crate) fn unify_result_edges(bld: &TopoBuilder, faces: &[Face], tol: f64) ->
     // One shared vertex TShape per welded point, so edges sharing an endpoint
     // reference the same vertex (meaningful Euler characteristic).
     let mut vertex_map: HashMap<usize, Vertex> = HashMap::new();
-    let mut shared_edge = |bld: &TopoBuilder,
+    let shared_edge = |bld: &TopoBuilder,
                            edge_map: &mut HashMap<(usize, usize), Edge>,
                            vertex_map: &mut HashMap<usize, Vertex>,
                            a: usize,

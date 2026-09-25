@@ -188,7 +188,7 @@ pub fn face_plane(face: &Face) -> Option<GpPln> {
     if !is_planar(surf.as_ref(), 8, 8, 1e-6) {
         return None;
     }
-    let (u0, u1, v0, v1) = sample_bounds(surf.as_ref());
+    let (u0, _u1, v0, _v1) = sample_bounds(surf.as_ref());
     let o = surf.d0(u0, v0);
     let n = surface_normal(surf.as_ref(), u0, v0);
     let d = GpDir::from_vec(&n).ok()?;

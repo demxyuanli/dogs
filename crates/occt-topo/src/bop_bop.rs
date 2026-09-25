@@ -187,7 +187,7 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
     let obj_src = collect_building(b.objects(), dim0);
     let tool_src = collect_building(b.tools(), dim1);
     let (obj_im, _obj_sets) = map_splits(b, &obj_src);
-    let (tool_im, tool_sets) = map_splits(b, &tool_src);
+    let (_tool_im, tool_sets) = map_splits(b, &tool_src);
 
     let dim_min = dim0.min(dim1);
     let common = op == BoolOp2::Common;

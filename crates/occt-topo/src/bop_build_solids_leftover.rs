@@ -131,7 +131,7 @@ pub fn build_split_solids_full<B: BopBuildOps>(
         //    themselves) cannot bound a solid and is dropped.
         let mut kept: Vec<TopoShape> = Vec::new();
         for p in pieces {
-            let c = piece_center(&p);
+            let _c = piece_center(&p);
             if piece_bbox_volume(&p) < 1e-9 {
                 continue;
             }

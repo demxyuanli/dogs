@@ -118,7 +118,7 @@ fn bounding_boxes_overlap(a: &TopoShape, b: &TopoShape) -> bool {
 /// This mirrors `BOPAlgo_Builder` returning a compound of the disconnected
 /// result solids.
 fn merge_shapes_result(shapes: Vec<TopoShape>, warnings: Vec<String>) -> BooleanResult {
-    let mut kept: Vec<TopoShape> = shapes.into_iter().filter(has_content).collect();
+    let kept: Vec<TopoShape> = shapes.into_iter().filter(has_content).collect();
     if kept.is_empty() {
         let mut r = empty_result(BoolOp::Fuse);
         r.warnings.extend(warnings);

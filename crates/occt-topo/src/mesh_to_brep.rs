@@ -183,7 +183,7 @@ pub fn triangulation_to_brep(tri: &Triangulation) -> BrepFromMesh {
     }
     let shell = builder.make_shell(&faces);
     let closed = !edge_use.is_empty() && edge_use.values().all(|&n| n == 2);
-    let solid = if closed {
+    let _solid = if closed {
         let mut s = builder.make_solid(&[shell.clone()]).0;
         // Verification step (`BRepTools::OrientClosedSolid`): with the winding
         // above it must report the material already inside and leave the solid

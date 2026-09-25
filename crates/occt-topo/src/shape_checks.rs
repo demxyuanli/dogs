@@ -194,7 +194,7 @@ fn face_centroid(f: &Face) -> Option<GpPnt> {
 fn face_normal_avg(f: &Face) -> Option<GpVec> {
     let s = BRepTool::face_surface(f)?;
     let (u0, u1, v0, v1) = BRepTool::uv_bounds(f);
-    let (u0, u1, v0, v1) = if (u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite()) {
+    let (u0, u1, v0, v1) = if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() {
         (u0, u1, v0, v1)
     } else {
         (-1.0, 1.0, -1.0, 1.0)

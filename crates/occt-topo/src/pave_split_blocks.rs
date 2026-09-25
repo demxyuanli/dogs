@@ -220,7 +220,7 @@ fn cluster_closed_common_blocks(
     a_lpb: &mut Vec<BopdsPaveBlock>,
     faces: &[usize],
 ) {
-    let mut ctx = IntToolsContext::new();
+    let ctx = IntToolsContext::new();
     let fuzzy = f.fuzzy_value();
     while !a_lpb.is_empty() {
         let mut a_lpb_cb: Vec<BopdsPaveBlock> = Vec::new();

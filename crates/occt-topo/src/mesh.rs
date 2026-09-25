@@ -86,7 +86,7 @@ pub fn mesh_cylinder(radius: f64, height: f64, slices: usize) -> ShapeMesh {
         vertices.push(GpPnt::new(x, -half, z));
         vertices.push(GpPnt::new(x, half, z));
     }
-    let n_side = (slices + 1) * 2;
+    let _n_side = (slices + 1) * 2;
     for i in 0..slices {
         let a = 2*i; let b = 2*i+1; let c = 2*i+2; let d = 2*i+3;
         triangles.push(Triangle::new(a, b, c));

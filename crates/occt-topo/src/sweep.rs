@@ -231,7 +231,7 @@ pub fn prism_from_polygon(points: &[GpPnt], direction: &GpVec, height: f64) -> P
     let b = TopoBuilder::new();
 
     // Base ring vertices.
-    let mut verts: Vec<Vertex> = points.iter().map(|p| b.make_vertex(*p, 0.0)).collect();
+    let verts: Vec<Vertex> = points.iter().map(|p| b.make_vertex(*p, 0.0)).collect();
     // Top ring.
     let mag = direction.xyz().modulus();
     assert!(mag > 1e-30, "sweep: zero sweep direction");
@@ -240,7 +240,7 @@ pub fn prism_from_polygon(points: &[GpPnt], direction: &GpVec, height: f64) -> P
         direction.y() / mag * height,
         direction.z() / mag * height,
     );
-    let top_pts: Vec<GpPnt> = points.iter().map(|p| shift(p, &d)).collect();
+    let _top_pts: Vec<GpPnt> = points.iter().map(|p| shift(p, &d)).collect();
 
     // Base wire.
     let mut base_edges = Vec::with_capacity(points.len());

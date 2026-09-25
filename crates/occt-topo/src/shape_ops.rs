@@ -107,7 +107,7 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
         if map.contains_key(&key) {
             continue;
         }
-        let mut copy = TopoShape::new(s.shape_type());
+        let copy = TopoShape::new(s.shape_type());
         match s.shape_type() {
             ShapeType::Vertex => {
                 if let Some(g) = reg.vertex_geom(&s) {
@@ -149,7 +149,7 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
     // Rebuild children: attach each copied child to its copied parent.
     let mut stack = vec![(shape.clone(), map[&(std::sync::Arc::as_ptr(&shape.tshape) as usize)].clone())];
     let mut seen = std::collections::HashSet::new();
-    while let Some((src, mut dst)) = stack.pop() {
+    while let Some((src, dst)) = stack.pop() {
         if !seen.insert(std::sync::Arc::as_ptr(&src.tshape) as usize) {
             continue;
         }

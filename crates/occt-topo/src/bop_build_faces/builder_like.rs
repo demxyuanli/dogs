@@ -377,7 +377,7 @@ pub(super) fn point_in_polygon(poly: &[occt_core::gp::GpPnt2d], p: &occt_core::g
         let (a, b) = (poly[i], poly[(i + 1) % n]);
         let ((ax, ay), (bx, by)) = ((a.x(), a.y()), (b.x(), b.y()));
         // Boundary test (point on segment).
-        let cross = (p.x() - ax) * (by - ay) - (p.y() - ay) * (bx - ax);
+        let _cross = (p.x() - ax) * (by - ay) - (p.y() - ay) * (bx - ax);
         let seg_len2 = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
         if seg_len2 > 1e-24 {
             let t = (((p.x() - ax) * (bx - ax) + (p.y() - ay) * (by - ay)) / seg_len2).clamp(0.0, 1.0);

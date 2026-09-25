@@ -152,10 +152,10 @@ fn sample_other_closed(
     v2: f64,
     tol: f64,
 ) -> (bool, bool) {
-    let mut v1 = finite_or_sign(v1);
-    let mut v2 = finite_or_sign(v2);
-    let mut u1 = finite_or_sign(u1);
-    let mut u2 = finite_or_sign(u2);
+    let v1 = finite_or_sign(v1);
+    let v2 = finite_or_sign(v2);
+    let u1 = finite_or_sign(u1);
+    let u2 = finite_or_sign(u2);
     let tol2 = (tol.max(CONFUSION)).powi(2);
     let (du, dv) = u_v_resolution(surf, tol);
     let mut is_u = true;

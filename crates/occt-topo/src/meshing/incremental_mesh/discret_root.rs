@@ -1167,7 +1167,7 @@ impl IncrementalMesh {
             let same_param = model.edge(edge_index)?.same_param();
             let pcurve = model.edge_mut(edge_index)?.pcurve_mut(pcurve_index)?;
             pcurve.clear(false);
-            let pcurve_face = pcurve.face();
+            let _pcurve_face = pcurve.face();
             // The pcurve's parameter range over this edge. A bounded curve is its
             // own `[first, last]`; an unbounded line's range is the arc length
             // between the edge's vertices projected onto the surface then the

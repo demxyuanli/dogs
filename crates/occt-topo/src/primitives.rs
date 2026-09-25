@@ -732,7 +732,7 @@ mod tests {
         let faces = collect(&b.solid, ShapeType::Face);
         for f in faces {
             let surf = BRepTool::face_surface(&Face(f.clone())).expect("face has surface");
-            let (u0, u1, v0, v1) = BRepTool::uv_bounds(&Face(f.clone()));
+            let (u0, _u1, v0, _v1) = BRepTool::uv_bounds(&Face(f.clone()));
             // Planes are unbounded: ranges are ±infinity.
             assert!(u0.is_infinite() && v0.is_infinite());
             let _ = surf;
@@ -762,7 +762,7 @@ mod tests {
         assert_eq!(faces.len(), 3);
         // At least one face is a cylinder (non-planar) and two are planar.
         let planar = faces.iter().filter(|f| {
-            let s = BRepTool::face_surface(&Face((*f).clone())).unwrap();
+            let _s = BRepTool::face_surface(&Face((*f).clone())).unwrap();
             let (u0, u1, _, _) = BRepTool::uv_bounds(&Face((*f).clone()));
             u1 - u0 > 1e9 // unbounded range → planar surface
         }).count();

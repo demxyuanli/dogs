@@ -201,7 +201,7 @@ fn attach_one_end(
     neighbour_1based: usize,
     first: bool,
 ) {
-    let mut tgline = if first {
+    let tgline = if first {
         ppoint.d3d
     } else {
         ppoint.d3d.reversed()
@@ -215,13 +215,13 @@ fn attach_one_end(
         }
         let rp = rst[i];
         let (mut u1, mut v1, mut u2, mut v2, d1u, d1v) = if !reversed {
-            let (mut uq, mut vq) = quad.parameters(&ppoint.p);
+            let (uq, mut vq) = quad.parameters(&ppoint.p);
             clamp_v(&mut vq, vmin, vmax, tol_v);
             let (up, vp) = (ppoint.u, ppoint.v);
             let (_, du, dv) = prm.d1(up, vp);
             (uq, vq, up, vp, du, dv)
         } else {
-            let (mut uq, mut vq) = quad.parameters(&ppoint.p);
+            let (uq, mut vq) = quad.parameters(&ppoint.p);
             clamp_v(&mut vq, vmin, vmax, tol_v);
             let (up, vp) = (ppoint.u, ppoint.v);
             let (_, du, dv) = prm.d1(up, vp);

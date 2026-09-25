@@ -361,7 +361,7 @@ impl BeanFaceIntersector {
                     continue;
                 }
 
-                let mut a_box_s = match the_surface_data.find_box(&a_new_range_s) {
+                let a_box_s = match the_surface_data.find_box(&a_new_range_s) {
                     Some(b) => b,
                     None => {
                         let mut box_s = BndBox::new();

@@ -23,10 +23,10 @@ pub(crate) fn point_depart(
     su2: i32,
     sv2: i32,
 ) -> Vec<PntOn2S> {
-    let mut su1 = (IC15 * su1).min(XNBI).max(2);
-    let mut sv1 = (IC15 * sv1).min(XNBI).max(2);
-    let mut su2 = (IC15 * su2).min(XNBI).max(2);
-    let mut sv2 = (IC15 * sv2).min(XNBI).max(2);
+    let su1 = (IC15 * su1).min(XNBI).max(2);
+    let sv1 = (IC15 * sv1).min(XNBI).max(2);
+    let su2 = (IC15 * su2).min(XNBI).max(2);
+    let sv2 = (IC15 * sv2).min(XNBI).max(2);
 
     let (u0_1, u1_1) = finite_uv(s1.u_range());
     let (v0_1, v1_1) = finite_uv(s1.v_range());
@@ -96,18 +96,18 @@ pub(crate) fn point_depart(
     x1 += dmax;
     y1 += dmax;
     z1 += dmax;
-    let mut bx10 = x10 - dmax;
-    let mut by10 = y10 - dmax;
-    let mut bz10 = z10 - dmax;
-    let mut bx11 = x11 + dmax;
-    let mut by11 = y11 + dmax;
-    let mut bz11 = z11 + dmax;
-    let mut bx20 = x20 - dmax;
-    let mut by20 = y20 - dmax;
-    let mut bz20 = z20 - dmax;
-    let mut bx21 = x21 + dmax;
-    let mut by21 = y21 + dmax;
-    let mut bz21 = z21 + dmax;
+    let bx10 = x10 - dmax;
+    let by10 = y10 - dmax;
+    let bz10 = z10 - dmax;
+    let bx11 = x11 + dmax;
+    let by11 = y11 + dmax;
+    let bz11 = z11 + dmax;
+    let bx20 = x20 - dmax;
+    let by20 = y20 - dmax;
+    let bz20 = z20 - dmax;
+    let bx21 = x21 + dmax;
+    let by21 = y21 + dmax;
+    let bz21 = z21 + dmax;
 
     let nbg = nb_points_grille() as f64;
     let mut dx = (x1 - x0) / nbg;

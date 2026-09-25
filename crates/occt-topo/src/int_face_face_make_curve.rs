@@ -430,8 +430,8 @@ fn wline_to_curve(
     wl: &WLine,
     ifprm: i32,
     ilprm: i32,
-    fa: &Face,
-    fb: &Face,
+    _fa: &Face,
+    _fb: &Face,
 ) -> Option<FaceFaceCurve> {
     let curve = make_bspline(wl, ifprm, ilprm)?;
     let pcurve1 = if ff.approx1 {
