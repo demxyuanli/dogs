@@ -14,11 +14,11 @@ use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::{
-    GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpLin, GpPln, GpPnt, GpPnt2d, GpSphere,
-    GpTorus, GpVec,
+    GpAx2, GpAx22d, GpAx3, GpCirc, GpCirc2d, GpCone, GpCylinder, GpDir, GpDir2d, GpLin, GpPln, GpPnt,
+    GpPnt2d, GpSphere, GpTorus, GpVec,
 };
 use occt_geom::{Curve, GeomCircle, GeomCone, GeomCylinder, GeomLine, GeomPlane, GeomSphere, GeomTorus, Surface};
-use occt_geom2d::Geom2dLine;
+use occt_geom2d::{Geom2dCircle, Geom2dLine};
 
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, Solid, Vertex, Wire};
@@ -359,6 +359,22 @@ impl BRepPrimCylinder {
                 ],
             );
             reg.set_pcurve_range(&seam.0, face_key, 0.0, height);
+
+            // Cap pcurves. `BRepPrim_OneAxis::TopFace` / `BottomFace`
+            // (`BRepPrim_OneAxis.cxx:465-468`) put a *circle* of the cap radius
+            // in the cap plane's own UV (`gp_Circ2d(gp_Ax2d(gp_Pnt2d(0,0), X),
+            // R)`). Without it the closed cap wire degenerates to a straight UV
+            // line (`dv/dl == 0`), whose boundary term vanishes and the cap
+            // contributes nothing to `BRepGProp`.
+            for (cap, circle) in [(&bottom_face, &bottom_circle), (&top_face, &top_circle)] {
+                let cap_key = GeometryRegistry::shape_key(&cap.0);
+                reg.set_edge_pcurve(
+                    &circle.0,
+                    cap_key,
+                    Arc::new(Geom2dCircle::new(GpCirc2d::new(GpAx22d::new(GpPnt2d::new(0.0, 0.0), dir_u, dir_v).expect("cap frame"), radius))),
+                );
+                reg.set_pcurve_range(&circle.0, cap_key, 0.0, 2.0 * PI);
+            }
         }
 
         let shell = b.make_shell(&[bottom_face, top_face, lateral_face]);
@@ -425,9 +441,11 @@ impl BRepPrimSphere {
 
         // `LateralWire` order and orientations (`cxx:666-679`):
         // TopEdge(fwd), EndEdge(rev), BottomEdge(rev), StartEdge(fwd).
-        end.0.reverse();
-        bottom.0.reverse();
-        let wire = b.make_wire(&[top.clone(), end.clone(), bottom.clone(), start.clone()]);
+        let mut top_r = top.clone();
+        top_r.0.reverse();
+        let mut start_r = start.clone();
+        start_r.0.reverse();
+        let wire = b.make_wire(&[top_r, end.clone(), bottom.clone(), start_r]);
 
         let surface: Arc<dyn Surface> = Arc::new(GeomSphere::new(
             GpSphere::new(GpAx3::standard(), radius).expect("sphere radius"),

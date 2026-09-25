@@ -74,6 +74,10 @@ impl FaceGauss {
         (p, du.crossed(&dv))
     }
 
+    /// `D1U × D1V` without the face-orientation flip — used by the domain path,
+    /// where `BRepGProp_Domain` + `BRepGProp_Face::Load(edge)` already carry the
+    /// face orientation through the boundary traversal.
+
     /// Unnormalised surface normal (D1U × D1V), flipped for a REVERSED face.
     pub(super) fn normal(&self, u: f64, v: f64) -> (GpPnt, GpVec) {
         let (p, du, dv) = surface_d1(self.surface.as_ref(), u, v);
@@ -468,7 +472,7 @@ pub(super) fn compute_domain(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ:
             for j in 0..nb_g {
                 let u = um + ur * gp_u[j];
                 let w = dul * gw_u[j];
-                let (p, n) = fa.normal(u, vv);
+                let (p, n) = fa.normal_raw(u, vv);
                 match typ {
                     GaussType::Sinert => compute_s_inertia_elem(&p, &n, loc, w, &mut local),
                     GaussType::Vinert => compute_v_inertia_elem(&p, &n, loc, w, coeff, true, &mut local),
@@ -498,7 +502,6 @@ pub(super) fn compute_face(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ: G
         compute_natural(fa, loc, coeff, typ)?
     } else {
         let mut d = compute_domain(fa, loc, coeff, typ)?;
-        d.mul(fa.wire_sign());
         d
     };
     // Ensure a zero total stays zero (no NaN propagation).
@@ -744,7 +747,7 @@ pub(super) fn arc_slice(
         for j in 0..nb_u {
             let u = um + ur * ugp[j];
             let w = dul * ugw[j];
-            let (p, n) = fa.normal(u, vv);
+            let (p, n) = fa.normal_raw(u, vv);
             match typ {
                 GaussType::Sinert => compute_s_inertia_elem(&p, &n, loc, w, &mut local),
                 GaussType::Vinert => compute_v_inertia_elem(&p, &n, loc, w, coeff, true, &mut local),
