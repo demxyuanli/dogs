@@ -15,11 +15,25 @@ pub struct TShape {
     pub shape_type: ShapeType,
     pub flags: ShapeFlags,
     pub location: TopLocLocation,
+    /// Process-unique id, assigned at construction. The geometry side-table is
+    /// keyed by this shape's heap address; the id lets `Drop` verify that the
+    /// entry still belongs to *this* shape, so a stale drop can never erase the
+    /// geometry of a later shape that reused the freed address (parallel tests
+    /// made that race observable — `groove_cuts_cylinder` flaked ~20% of full
+    /// `--lib` runs).
+    pub id: u64,
     /// Real children list (OCCT's `TopoDS_TShape::myShapes`, which stores
     /// `TopoDS_Shape` = TShape + Location + Orientation). A wire holds its
     /// edges, a face its wires, a solid its shells, a compound arbitrary
     /// shapes — each with its own orientation.
     pub children: Vec<TopoShape>,
+}
+
+/// Source of `TShape::id` (one per construction, process-wide).
+fn next_shape_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 impl fmt::Debug for TShape {
@@ -32,7 +46,13 @@ impl fmt::Debug for TShape {
 
 impl TShape {
     pub fn new(shape_type: ShapeType) -> Self {
-        Self { shape_type, flags: ShapeFlags::default(), location: TopLocLocation::identity(), children: Vec::new() }
+        Self {
+            shape_type,
+            flags: ShapeFlags::default(),
+            location: TopLocLocation::identity(),
+            id: next_shape_id(),
+            children: Vec::new(),
+        }
     }
 
     pub fn shape_type(&self) -> ShapeType { self.shape_type }
@@ -56,7 +76,8 @@ impl Drop for TShape {
     /// growing unbounded and, critically, prevents a stale entry (keyed by a
     /// now-reused heap address) from leaking into an unrelated later shape.
     fn drop(&mut self) {
-        crate::tgeometry::GeometryRegistry::global().remove_by_ptr(self as *const TShape as usize);
+        crate::tgeometry::GeometryRegistry::global()
+            .remove_by_ptr(self as *const TShape as usize, self.id);
     }
 }
 

@@ -163,6 +163,10 @@ pub struct GeometryRegistry {
     vertices: RwLock<HashMap<usize, VertexGeom>>,
     edges: RwLock<HashMap<usize, EdgeGeom>>,
     faces: RwLock<HashMap<usize, FaceGeom>>,
+    /// `TShape` address -> the `id` of the shape that registered it. A drop
+    /// removes the geometry only when the ids match, so a stale drop cannot
+    /// erase a later shape's entries at a reused address.
+    ids: RwLock<HashMap<usize, u64>>,
 }
 
 /// Registry key: the address of the `TShape` stored inside the shared
@@ -174,6 +178,11 @@ fn key(s: &TopoShape) -> usize {
     std::ptr::addr_of!(*lock) as usize
 }
 
+/// The shape's process-unique id (see `TShape::id`).
+fn shape_id(s: &TopoShape) -> u64 {
+    s.tshape.read().expect("poisoned TShape lock").id
+}
+
 impl GeometryRegistry {
     /// The shared registry. Shapes and geometry live for the whole process,
     /// matching OCCT's reference-counted Handle model.
@@ -183,13 +192,16 @@ impl GeometryRegistry {
             vertices: RwLock::new(HashMap::new()),
             edges: RwLock::new(HashMap::new()),
             faces: RwLock::new(HashMap::new()),
+            ids: RwLock::new(HashMap::new()),
         })
     }
 
     // ---- vertices ----
 
     pub fn set_vertex(&self, s: &TopoShape, geom: VertexGeom) {
-        self.vertices.write().unwrap().insert(key(s), geom);
+        let k = key(s);
+        self.ids.write().unwrap().insert(k, shape_id(s));
+        self.vertices.write().unwrap().insert(k, geom);
     }
 
     pub fn vertex_geom(&self, s: &TopoShape) -> Option<VertexGeom> {
@@ -208,7 +220,9 @@ impl GeometryRegistry {
     // ---- edges ----
 
     pub fn set_edge(&self, s: &TopoShape, geom: EdgeGeom) {
-        self.edges.write().unwrap().insert(key(s), geom);
+        let k = key(s);
+        self.ids.write().unwrap().insert(k, shape_id(s));
+        self.edges.write().unwrap().insert(k, geom);
     }
 
     /// `BRep_Builder::Range(E, First, Last)`: set the edge's parameter range.
@@ -463,7 +477,9 @@ impl GeometryRegistry {
     // ---- faces ----
 
     pub fn set_face(&self, s: &TopoShape, geom: FaceGeom) {
-        self.faces.write().unwrap().insert(key(s), geom);
+        let k = key(s);
+        self.ids.write().unwrap().insert(k, shape_id(s));
+        self.faces.write().unwrap().insert(k, geom);
     }
 
     pub fn face_geom(&self, s: &TopoShape) -> Option<FaceGeom> {
@@ -515,7 +531,16 @@ impl GeometryRegistry {
     /// Remove every geometry entry keyed by the raw `TShape` address. Called
     /// from `TShape::drop` so entries die with their shape — this prevents a
     /// stale entry from leaking into a future shape that reuses the address.
-    pub fn remove_by_ptr(&self, ptr: usize) {
+    pub fn remove_by_ptr(&self, ptr: usize, id: u64) {
+        {
+            let mut ids = self.ids.write().unwrap();
+            if ids.get(&ptr).copied() != Some(id) {
+                // The address has been reused by a later shape: its geometry is
+                // not ours to erase.
+                return;
+            }
+            ids.remove(&ptr);
+        }
         self.vertices.write().unwrap().remove(&ptr);
         self.edges.write().unwrap().remove(&ptr);
         self.faces.write().unwrap().remove(&ptr);
@@ -532,6 +557,7 @@ impl GeometryRegistry {
 
     /// Remove every entry (for tests / teardown).
     pub fn clear_all(&self) {
+        self.ids.write().unwrap().clear();
         self.vertices.write().unwrap().clear();
         self.edges.write().unwrap().clear();
         self.faces.write().unwrap().clear();
