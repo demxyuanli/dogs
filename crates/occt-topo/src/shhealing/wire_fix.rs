@@ -3173,22 +3173,20 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64) {
                 if (first - fp2d).abs() > PCONFUSION || (last - lp2d).abs() > PCONFUSION {
                     reg.set_same_range(&e.0, false);
                 } else if !check_pcurve_range(first, last, c2d.as_ref()) {
-                    // `GeomLib.cxx:862`: same parametrisation length uses SameRange.
-                    // Different length stays on CheckPCurveRange -> RemovePCurve +
-                    // FixAddPCurve (`ShapeFix_Wire.cxx:973-983`).
-                    if cfp.is_finite()
-                        && clp.is_finite()
-                        && !c2d.is_periodic()
-                        && ((clp - cfp) - (last - first)).abs() <= PCONFUSION
-                    {
-                        let remapped = geom_lib_same_range(c2d, cfp, clp, first, last);
-                        replace_pcurve(e, face, remapped);
-                        reg.set_same_range(&e.0, true);
-                    } else {
-                        let is_seam = is_seam_use(&edges, i);
-                        reg.remove_pcurves_on_surface(&e.0, &face.0);
-                        let _ = fix_add_pcurve(e, face, is_seam, preci, &mut cache);
-                    }
+                    // `ShapeFix_Wire.cxx:970-985`: when the pcurve cannot cover the
+                    // edge's 3D range OCCT does exactly two things —
+                    // `ShapeBuild_Edge().RemovePCurve(E, S, L)` followed by
+                    // `myFixEdge->FixAddPCurve(E, face, isSeam, myAnalyzer->Surface(),
+                    // Precision())`, i.e. it *re-projects* the pcurve from the 3D
+                    // curve. There is no range-remapping branch here, so neither is
+                    // there one in the port: a stored pcurve whose 2D points fall
+                    // outside the surface domain (e.g. the spherical pcurve of
+                    // `data/Offset.step` `#1290`, whose line sits at v = -3*pi/4,
+                    // outside v in [-pi/2, pi/2]) must be replaced by the projection,
+                    // not re-parameterised.
+                    let is_seam = is_seam_use(&edges, i);
+                    reg.remove_pcurves_on_surface(&e.0, &face.0);
+                    let _ = fix_add_pcurve(e, face, is_seam, preci, &mut cache);
                 }
             }
         }
