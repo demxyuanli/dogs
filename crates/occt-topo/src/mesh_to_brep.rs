@@ -7,11 +7,11 @@
 //!
 //! Source: `BRep_Builder` / `BRepBuilderAPI_MakeSolid` + `Poly_Triangulation`,
 //! plus `BRepLib_MakeWire` for the wires (`BRepBuilderAPI_MakeWire`): the
-//! triangle's three edges are **shared** with the neighbouring triangles and are
-//! cached here with the direction of whichever triangle created them first, so
-//! they must be re-oriented into a chain exactly as
-//! `BRepLib_MakeWire::Add` (`BRepLib_MakeWire.cxx:123-453`) does — see
-//! [`crate::brep_lib_make_wire`] (board task T-32).
+//! triangle's three edges are **shared** with the neighbouring triangles (one
+//! `TShape` per mesh edge) and each face adds them with its own traversal
+//! orientation, then they are chained exactly as `BRepLib_MakeWire::Add`
+//! (`BRepLib_MakeWire.cxx:123-453`) does — see [`crate::brep_lib_make_wire`]
+//! (board task T-32).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,6 +20,7 @@ use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt};
 use occt_core::poly::Triangulation;
 use occt_geom::GeomPlane;
 
+use crate::abs::Orientation;
 use crate::brep_lib_make_wire::MakeWire;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
@@ -45,7 +46,18 @@ fn point_key(p: &GpPnt) -> PointKey {
     )
 }
 
-/// Get (or create) the shared edge between two deduplicated vertex indices.
+/// Get (or create) the edge between two deduplicated vertex indices, **oriented
+/// along `a -> b`**.
+///
+/// The edge `TShape` is shared between the two triangles that use it (the
+/// canonical copy always runs `lo -> hi`), while the orientation is per use:
+/// `BRep_Builder`/`BRepBuilderAPI_MakeFace` add the *same* `TopoDS_Edge` to each
+/// face with that face's orientation (`e.Oriented(FORWARD|REVERSED)`), which is
+/// what keeps every face's wire wound with its own triangle. Handing the cached
+/// edge to the wire without re-orienting it would instead let whichever triangle
+/// created the edge first dictate the wire direction, and a wire wound against
+/// its plane normal reads as clockwise in UV — breaking the `FORWARD` face
+/// invariant `IntTools_FClass2d` relies on (`IsHole`).
 fn ensure_edge(
     builder: &TopoBuilder,
     edge_of_pair: &mut HashMap<(usize, usize), Edge>,
@@ -54,16 +66,23 @@ fn ensure_edge(
     a: usize,
     b: usize,
 ) -> Edge {
-    let key = if a < b { (a, b) } else { (b, a) };
-    if let Some(e) = edge_of_pair.get(&key) {
-        return e.clone();
-    }
-    let pa = BRepTool::vertex_point(&vertices[a]);
-    let pb = BRepTool::vertex_point(&vertices[b]);
-    let e = builder.make_edge_segment_with_vertices(&pa, &pb, &vertices[a], &vertices[b]);
-    edge_of_pair.insert(key, e.clone());
-    edges.push(e.clone());
-    e
+    let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+    let e = if let Some(e) = edge_of_pair.get(&(lo, hi)) {
+        e.clone()
+    } else {
+        let pa = BRepTool::vertex_point(&vertices[lo]);
+        let pb = BRepTool::vertex_point(&vertices[hi]);
+        let e = builder.make_edge_segment_with_vertices(&pa, &pb, &vertices[lo], &vertices[hi]);
+        edge_of_pair.insert((lo, hi), e.clone());
+        edges.push(e.clone());
+        e
+    };
+    let ori = if a < b {
+        Orientation::Forward
+    } else {
+        Orientation::Reversed
+    };
+    Edge(e.0.oriented(ori))
 }
 
 /// Build a face's wire through `BRepLib_MakeWire` (`BRepBuilderAPI_MakeWire`),
@@ -140,8 +159,40 @@ pub fn triangulation_to_brep(tri: &Triangulation) -> BrepFromMesh {
     //    `BRepTools::OrientClosedSolid` (`brep_class3d::orient_closed_solid`)
     //    reverses it when the infinite point classifies as IN, which is the
     //    case when the input triangles are wound the other way round.
+    //
+    //    The winding of the input mesh is read once, deterministically, from the
+    //    divergence-theorem volume (`Σ a·(b×c)`: negative for a mesh whose
+    //    normals point into the material). A face is FORWARD when its plane
+    //    normal (the triangle normal) already points away from the material, and
+    //    REVERSED otherwise; the wires stay wound with their triangle, so the
+    //    outer wire is always CCW around the plane normal, which is the
+    //    invariant `IntTools_FClass2d` (and every UV area) relies on. Relying on
+    //    the infinite-point classifier alone would leave the material side of
+    //    the faces dependent on the (unordered) result of that classification.
+    let mut signed6 = 0.0;
+    for t in &tri.triangles {
+        let a = tri.nodes[t.n0].coord;
+        let b = tri.nodes[t.n1].coord;
+        let c = tri.nodes[t.n2].coord;
+        signed6 += a.dot_cross(&b, &c);
+    }
+    if signed6 < 0.0 {
+        for f in faces.iter_mut() {
+            f.0.set_orientation(Orientation::Reversed);
+        }
+    }
     let shell = builder.make_shell(&faces);
     let closed = !edge_use.is_empty() && edge_use.values().all(|&n| n == 2);
+    let solid = if closed {
+        let mut s = builder.make_solid(&[shell.clone()]).0;
+        // Verification step (`BRepTools::OrientClosedSolid`): with the winding
+        // above it must report the material already inside and leave the solid
+        // alone.
+        crate::brep_class3d::orient_closed_solid(&mut s);
+        Solid::wrap(s)
+    } else {
+        None
+    };
     let solid = if closed {
         let mut s = builder.make_solid(&[shell.clone()]).0;
         crate::brep_class3d::orient_closed_solid(&mut s);

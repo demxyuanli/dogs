@@ -555,7 +555,16 @@ pub(super) fn solid_volume(shape: &TopoShape, _nu: usize, _nv: usize) -> f64 {
             face_vol += sign * polygon_fan_volume(&pts);
         }
         if let (Some(n), Some(on)) = (surf_n, outer_n) {
-            if on.dot(&n) < 0.0 {
+            // Outward normal = the surface/plane normal oriented by the face's
+            // (effective, `faces_of` composes ancestors) orientation: a REVERSED
+            // face turns its plane normal inwards, e.g. after
+            // `BRepTools::OrientClosedSolid` flipped the solid.
+            let n_out = if f.0.orientation() == crate::abs::Orientation::Reversed {
+                GpVec::new(-n.x(), -n.y(), -n.z())
+            } else {
+                n
+            };
+            if on.dot(&n_out) < 0.0 {
                 face_vol = -face_vol;
             }
         }
