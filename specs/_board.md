@@ -134,6 +134,22 @@ cd ..; git worktree remove --force .target-headcheck
 > - **新发现的既有缺陷（round 70，已就地标注，未改行为）**：`occt-core/src/bspl/poles.rs::power_to_bezier_basis`
 >   的矩阵公式错误（`i == j > 0` 处给 1，正确应为 `C(d,j)`）；正确形式为 `(−1)^(i−j)·C(d,j)·C(d−j, i−j)`
 >   （见 `Geom_BezierCurve.cxx` 分支所用展开）。`poles_to_coefficients` 在 degree ≥ 2 时结果错误 ⇒ 列为后续订正项。
+> - **剩余范围（round 71 收尾核验后的精确口径；均为"忠实移植可行但非单轮可成"）**：
+>   - **T-80 链 / T-41**：端口布尔结果的面边界是**折线**（`bop_curved/region_trim.rs` 用邻接点 `make_edge_segment` 建丝），
+>     且部分面环绕向与曲面法向不一致 ⇒ 贡献变号。`5ed8064` 补 pcurve 供给后解析值 −2.198 → +3.168（真值 8.50265）。
+>     忠实路线 = 按 `BOPAlgo` 语义把结果边界换成**精确裁剪曲线**（`IntPatch` 交点 → 曲线段），并把 `bop_curved` 的
+>     网格/体素布尔按 A5 摘除（T-41，须待精确布尔可用后再摘，避免"全绿假象"）。**接线解析体积的唯一残留红即此条**。
+>   - **T-67 步 3 + T-37**：端口 `occt-geom/src/extrema_surf/analytic_solvers.rs` 已含 plane/sphere/cylinder/cone/torus
+>     的解析点–面极值；余项 = `Extrema_GenExtPS`（1195 行）与 `math_FunctionSetRoot`（1452 行）的移植（一般曲面仍 24×24
+>     网格 + 数值 Jacobian），随后才谈 39–40 处调用点迁移。
+>   - **T-44 余项**：`GeomConvert_CompCurveToBSplineCurve`（274 行）需要 `Geom_BSplineCurve::IncreaseDegree`
+>     （端口只有 `decrease_degree`）+ rational Bezier 分支；trimmed-Bezier 臂已随 `2616041` 可用。
+>   - **R2-18 余项**：3D 侧 `occt-geom/src/gcpnts.rs` 已是忠实 `CPnts_AbscissaPoint`（OCCT 逐类型 Gauss 阶 + 13 次区间倍增）；
+>     2D 侧 `occt-geom2d/curve_ops.rs::curve2d_length` 仍 Simpson、`curve2d_intersections` 仍 256×256 采样 ⇒
+>     需补 `Curve2d` 的 line/Bezier 类型查询 + 2D 版 `CPnts_AbscissaPoint`（`order(2d)`：Line 2 / Parabola 5 /
+>     Bezier min(24,2·deg) / BSpline min(24,2·N−1) / 其它 10）与 `Extrema_ExtCC2d`。
+>   - 其余：**T-54**（约束 Delaunay，大）、**T-11**（843 条警告，低）、**T-25…T-28**（板内要求先出设计）、
+>     **T-85/T-51/T-62 余项**（本轮未展开）。
 
 | ID | 状态 | 缺口（OCCT 对应） | 下一步 | 验收 |
 |---|---|---|---|---|
