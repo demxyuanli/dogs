@@ -26,6 +26,13 @@
 
 ## 2. 状态快照（2026-09-21 第 111 轮：门禁波次实测；A/B = `9d8e596`（批 84 末）↔ `2c9a66b`（批 98））
 
+> **本会话（round 30 → 66，HEAD `5ed8064`）对这些数字的更新**（同一命令实测，逐项见各节）：
+> `--lib` 1285/2 → **1287/0**（`113b4d1` T-01、`f63c324` T-86 转绿）；`step_geometry_parity` 2/3 → **3/3**（`9cac346` T-05 收口）；
+> 其余逐项不变：boss 1/2（`boss_single_disc_base_merges_one_solid` = R2-8 定案 (b)）、phase10 7/8、phase19 3/5、
+> phase20/3-9 全绿、step_obj_area 11/11、step_obj_parity 14/14、step_to_obj 13/13、iges_check ok。
+> 另发现两处**测试隔离**问题（与引擎无关，已登记）：并行/交叉运行时 `step_to_obj_writes_output_files` 偶发假红（与 `export_data_obj` 同写 `output/`）、
+> `brepfeat::tests::groove_cuts_cylinder` 单跑有时与全量结果不同（全局状态依赖）。
+
 | 门禁 | 命令 | 当前工作区 `2c9a66b` | 对照 `9d8e596`（批 84 末） | 判定 |
 |---|---|---|---|---|
 | 编译 | `cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets` | ✅ exit 0（lib 843 条警告） | ✅ exit 0 | 绿 |
@@ -33,8 +40,8 @@
 | STEP→OBJ bbox parity | `--test step_obj_parity` | ✅ **14/14** | ✅ 14/14 | 绿 |
 | STEP→OBJ 端到端 | `--test step_to_obj` | ✅ **13/13** | ❌ 12/13（`step_to_obj_writes_output_files`） | 绿（**+1 改善**） |
 | 面积对拍 | `--test step_obj_area` | ✅ 11/11 | ✅ 11/11 | 绿 |
-| 几何一致性 | `--test step_geometry_parity` | ❌ 2/3（T-05 offset 体积） | ❌ 2/3（同名用例） | 红（遗留） |
-| topo 单测 | `--lib` | ❌ **1285 通过 / 2 失败**（批 100 起；+2 = 新模块 `brep_lib_make_wire` 的两条控制流单测，−3 = 批 99 删掉的 circle/circle 直调用例）：T-01 `brepfeat::tests::groove_cuts_cylinder` ＋ **T-86** `iges::tests::sphere_iges_has_arc_and_solid` | ❌ **1286 / 2（同两条）** | 红（遗留；**批 100 后 T-01 的数值已变**：`grooved 8.9034 → 8.4087`，目标 7.7090±0.5） |
+| 几何一致性 | `--test step_geometry_parity` | ✅ **3/3**（T-05 收口：断言按 OCCT 规格改为对 GT 实测解析值 `2610.501440` 校验，端口 `2610.501436`；提交 `9cac346`） | ❌ 2/3（同名用例） | 绿（**+1 改善**） |
+| topo 单测 | `--lib` | ✅ **1287 通过 / 0 失败**（T-01 由 `113b4d1` 转绿，T-86 由 `f63c324` 转绿；TShape 唯一 id 见 `933785f`） | ❌ **1286 / 2（同两条）** | 绿（**+2 改善**） |
 | boss 合并 | `--test bop_builder2_boss` | ❌ 1/2（T-03） | ❌ 1/2 | 红（遗留） |
 | phase19 | `--test phase19_integration` | ❌ 3/5（T-04） | ❌ 3/5 | 红（遗留） |
 | phase10 | `--test phase10_integration` | ❌ 7/8（`curved_face_fillet_sphere_plane`） | ❌ 7/8 | 红（遗留） |
@@ -93,6 +100,23 @@ cd ..; git worktree remove --force .target-headcheck
 | 8 | **T-67 步 3 + T-37**（R2-13） | pending | `Extrema_GenExtPS` + `Extrema_ExtPExtS`/`ExtPRevS`（+`math_FunctionSetRoot`）⇒ 一般曲面点–面极值忠实化；随后迁移 A1 的 39 处调用点（T-37） | 分步 1+2（`ExtPs` 分派层）已落地（`T-67` 行） | 移植 `Extrema_GenExtPS.cxx`（1195 行）+ `math_FunctionSetRoot`（1452 行） | 迁移后该 crate `--lib` + 门禁不劣化 |
 
 ### 3.3 移植缺口（非红门禁；按 OCCT 控制流补齐）
+
+> **本会话进度（round 30 → 66，HEAD `5ed8064`）——§3.2 状态更新（细节见各提交信息）**：
+> - **T-87 / T-05：done（§3.2 序 3）**。链路：`d04e9f4`（边界弧按 `BRepGProp_Face::Load(edge)` 处理边朝向）→
+>   `8021fca`（缝边 pcurve 侧 + 去"UV 包围矩形"捷径）→ `9ce4c69`（`Curve2d::ReversedParameter` 逐类）→
+>   `dacf235`（域路径改 OCCT 口径：未翻转法向 + 删自创 `wire_sign`；并按 `BRepPrim_OneAxis.cxx:465-468` 补圆柱盖面 pcurve、按 GT `--sph` 对齐球面丝）→
+>   `b6489c4`（`BRepGProp_Face::Bounds` = 曲面参数，非面 UV 界）→ `bd00483`（U 向按 `UKnots` 分段）→
+>   **`59fefad`（2D BSpline 反向按 `BSplCLib::Reverse`：`k' = kfirst + klast − k`，保持参数域）**。
+>   实测：`data/Offset.step` 解析体积 1559.174 → **2610.501436**（GT 实测 **2610.501440**，相对 1.5e-9）；盒/圆柱/球原语保持精确。
+>   验收面由 `9cac346` 收口（断言按 OCCT 规格改为对 GT 实测解析值校验），`step_geometry_parity` **2/3 → 3/3**。
+> - **T-69（R2-12）：◐**。`transformed_copy` 的 pcurve **面键重映射**已修（`2fcec12`）⇒ `pattern_volume_sums_copies` 在解析接线后转绿；
+>   余项 = `draw::sphere_fillet_offset`：`offset_face` 的**曲面分支复用源丝**（`curve_face_offset.rs:646-675`，注释自陈"edges are not re-projected"），
+>   解析体积为 0；忠实解法是在该分支**重建边界**（新边 TShape + 由偏置曲面重建 3D 曲线 + 再投影 pcurve），不得沿用共享 clone（实测会污染源形状）。
+> - **T-80 链（R2-11）：◐（本会话第 1 步）**。`5ed8064` 在 `curved_boolean_full` 出口补 pcurve 供给（OCCT 布尔结果的不变量；`ShapeFix_Edge::FixAddPCurve`），
+>   把 `box ∪ cyl` 的解析值从 **−2.198** 修正到 **+3.168**（真值 8.50265）。**根因已钉死**：端口布尔结果的边界是**折线**（顶盘面积 0.49643 vs π·0.16 = 0.502655 ⇒ 约 −1.2%），
+>   且部分面环绕向与曲面法向不一致 ⇒ 贡献变号（GT 探针新增 `--fuse` 模式给出 OCCT 对照：8 面 / 逐面面积与贡献）。
+>   ⇒ 忠实解法是把布尔结果的面边界从折线换成 OCCT 的精确裁剪曲线（`BOPAlgo` 语义），属**实质算法缺口**，非一轮可成。
+> - 旁支（测试隔离，与引擎无关，已登记）：`step_to_obj_writes_output_files` 与 `export_data_obj` 同写 `output/` 时偶发假红；`brepfeat::tests::groove_cuts_cylinder` 有全局状态依赖（单跑与全量结果可能不同）。
 
 | ID | 状态 | 缺口（OCCT 对应） | 下一步 | 验收 |
 |---|---|---|---|---|
