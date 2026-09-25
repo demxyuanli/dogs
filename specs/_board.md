@@ -180,7 +180,7 @@ cd ..; git worktree remove --force .target-headcheck
 | **T-51 余项** | pending（低） | `gcpnts` 反解 UNPORTED（缺 `math_FunctionRoot`）；积分已换忠实 `CPnts_AbscissaPoint::Length`（批 50） | 移植 `math_FunctionRoot` 后接 `GCPnts_AbscissaPoint::Parameter` | `occt-core`/`occt-topo --lib` |
 | **T-41** | pending | A5：`bop_curved` 的体素/网格布尔与计票无 OCCT 对应 ⇒ **摘除并标未移植** | 与 T-79/T-80 同波次（先修曲面布尔再摘，避免 §9 记录的"全绿假象"） | 摘除后 `--lib`/门禁不劣化 |
 | **T-54** | pending | `wireframe.rs:257-380` 平面耳切 + 质心角度排序 + 桥洞 → 约束 Delaunay（`BRepMesh_DelaunayBaseMeshAlgo` + `BRepMesh_Delaun`） | 与 A13/A18 同族；先看 T-68/T-69 结论 | 网格门禁 |
-| **T-62 余项** | ◐ 4/6 | A26 余项（PLY 每面 node 块等）；OBJ `vn` 缺口已订正为"网格侧不产法向"（A13/A18） | 逐项对 `.cxx` 补 | 该 crate 门禁 |
+| **T-62 余项** | ✅ 交换写侧 4/4（round 76 实测复核） | A26 的**网格交换**子项全部已忠实：① PLY 每面自成 node 块（`brep_to_ply` 明确**不**焊接；实测盒 = `element vertex 24` / `element face 12`，= 6 面 × 4 顶点，与 `RWPly_CafWriter::addFaceInfo` 的 `theNbNodes += theFace.NbNodes()` 同构）；② `property list uchar uint vertex_indices`（`RWPly_PlyWriterContext.cxx:214`）；③ STL 退化法向阈值 = `gp::Resolution() = RealSmall()`（`io/stl.rs::compute_normal`，`RWStl.cxx:325/:407`，退役的 `1e-12` 已记入注释）；④ STL 格式嗅探 = 前 5 字节 `solid`（`strncmp(aHeader,"solid",5)`，不额外判二进制长度）。余 2 项属 **IGES 侧**（曲线族 `<2%` 采样、整球自造 120）⇒ 归 **T-78/R2-19** 名下，不在本 ID 内。 | — | 该 crate 门禁 |
 | **T-13** | pending（低） | `BoxOptimal`（`OptimizationHelpers.pxx` PSO+Powell）与 `SurfaceOfExtrusion::BoxOptimal`（`cxx:224-283`） | 按 `.pxx` 移植（当前 `AddOptimal` 不在 `BRepBndLib::Add` 路径上） | bnd 相关用例 |
 | **T-14** | pending（低） | `BRepBndLib.cxx:95-101,157-179` 三角化 arm、仅 pcurve 边的 `BRepAdaptor_Curve` 回退（`cxx:93-106`） | 待 `Poly_Triangulation` 存储落地 | 同上 |
 | **T-16** | pending（低） | `pcurve_full` 的 iso 链臂、`myGap` 残差恢复、`ProjectDegenerated` 单点重载（已论证等价） | 按需补 | 同上 |
