@@ -560,20 +560,111 @@ fn curve2d_radius(c: &dyn Curve2d, t: f64) -> f64 {
     }
 }
 
+/// `BOPAlgo_WireSplitter::Tolerance2D` (`BOPAlgo_WireSplitter_1.cxx:859-881`):
+/// `max(UResolution, VResolution, tolerance)` with the 1.1 factor of
+/// `GeomAbs_BSplineSurface`.
 fn tolerance_2d(v: &Vertex, face: &Face) -> f64 {
-    let (u, vv) = uv_tolerance_2d(v, face);
     let t3 = BRepTool::vertex_tolerance(v);
-    u.max(vv).max(t3)
+    let (u, vv) = uv_tolerance_2d(v, face);
+    let mut t2 = u.max(vv).max(t3);
+    if let Some(s) = BRepTool::face_surface(face) {
+        if crate::geom_bnd_lib_surface3d::surface_kind(s.as_ref())
+            == crate::geom_bnd_lib_surface3d::SurfaceKind::BSplineSurface
+        {
+            // `cxx:875-878`.
+            t2 *= 1.1;
+        }
+    }
+    t2
 }
 
+/// `BOPAlgo_WireSplitter::UTolerance2D` / `VTolerance2D` (`_1.cxx:885-901`):
+/// `BRepAdaptor_Surface::U/VResolution` (`GeomAdaptor_Surface.cxx:1818-1945`).
+///
+/// UNPORTED: the revolution (V) and extrusion (U) arms need the *basis curve's*
+/// `Resolution`; those two keep the former finite-difference estimate.
 fn uv_tolerance_2d(v: &Vertex, face: &Face) -> (f64, f64) {
-    let t3 = BRepTool::vertex_tolerance(v).max(PCONFUSION);
+    let t3 = BRepTool::vertex_tolerance(v);
     let Some(surf) = BRepTool::face_surface(face) else {
         return (t3, t3);
     };
+    let s = surf.as_ref();
+    use crate::geom_bnd_lib_surface3d::{surface_kind, SurfaceKind};
+    // `if (Res <= 1.) return 2*asin(Res); return 2*pi;` (`cxx:1913-1916`, `:1943-1945`).
+    let angular = |res: f64| {
+        if res <= 1.0 {
+            2.0 * res.asin()
+        } else {
+            2.0 * PI
+        }
+    };
+    let exact_uv = || s.uv_resolution(t3);
+    match surface_kind(s) {
+        // `case GeomAbs_Torus: Res = R3d / (2*(Major+Minor))` (U), `Minor` (V).
+        SurfaceKind::Torus => {
+            let (major, minor) = s
+                .gp_torus()
+                .map(|t| (t.major_radius(), t.minor_radius()))
+                .unwrap_or((0.0, 0.0));
+            let ru = if major + minor > occt_core::precision::CONFUSION {
+                t3 / (2.0 * (major + minor))
+            } else {
+                0.0
+            };
+            let rv = if minor > occt_core::precision::CONFUSION { t3 / (2.0 * minor) } else { 0.0 };
+            (angular(ru), angular(rv))
+        }
+        // Sphere: both directions `R3d / (2*R)`.
+        SurfaceKind::Sphere => {
+            let r = s.gp_sphere().map(|x| x.radius()).unwrap_or(0.0);
+            let res = if r > occt_core::precision::CONFUSION { t3 / (2.0 * r) } else { 0.0 };
+            (angular(res), angular(res))
+        }
+        // Cylinder: U `R3d/(2*R)`, V `R3d`.
+        SurfaceKind::Cylinder => {
+            let r = s.gp_cylinder().map(|x| x.radius()).unwrap_or(0.0);
+            let res = if r > occt_core::precision::CONFUSION { t3 / (2.0 * r) } else { 0.0 };
+            (angular(res), t3)
+        }
+        // Cone: U uses the largest `VIso` radius over the V range, V is `R3d`.
+        SurfaceKind::Cone => {
+            let (v0, v1) = s.v_range();
+            let radius_at = |vv: f64| s.d0(0.0, vv).distance(&s.d0(PI, vv)) * 0.5;
+            let r = if v0.is_finite() && v1.is_finite() {
+                radius_at(v0).max(radius_at(v1))
+            } else {
+                0.0
+            };
+            let ru = if r > occt_core::precision::CONFUSION { t3 / r } else { 0.0 };
+            (ru, t3)
+        }
+        // Plane / extrusion (V): both `R3d`.
+        SurfaceKind::Plane => (t3, t3),
+        // Bezier / BSpline / offset: the surface's own `Resolution`.
+        SurfaceKind::BezierSurface | SurfaceKind::BSplineSurface | SurfaceKind::OffsetSurface => {
+            match exact_uv() {
+                Some((ur, vr)) => (ur, vr),
+                None => fd_uv_tolerance(v, s, t3),
+            }
+        }
+        // Revolution (V) and extrusion (U) need the basis curve's `Resolution`
+        // (UNPORTED — see the doc comment); default arm is
+        // `Precision::Parametric(R3d)` = `R3d * 0.01` (`Precision.hxx:328`).
+        SurfaceKind::SurfaceOfRevolution | SurfaceKind::SurfaceOfExtrusion => {
+            fd_uv_tolerance(v, s, t3)
+        }
+        _ => (t3 * 0.01, t3 * 0.01),
+    }
+}
+
+/// Former finite-difference estimate `t3 / |dS/du|` — kept only for the
+/// UNPORTED revolution/extrusion arms (and as a fallback when a surface
+/// reports no `Resolution`).
+fn fd_uv_tolerance(v: &Vertex, s: &dyn occt_geom::surface::Surface, t3: f64) -> (f64, f64) {
+    let t3 = t3.max(PCONFUSION);
     let p = BRepTool::vertex_point(v);
-    let (u, vv) = crate::brep_surface::surface_closest_params(surf.as_ref(), &p, 8, 8);
-    let (_, du, dv) = surf.d1(u, vv);
+    let (u, vv) = crate::brep_surface::surface_closest_params(s, &p, 8, 8);
+    let (_, du, dv) = s.d1(u, vv);
     let ur = if du.magnitude() > PCONFUSION {
         t3 / du.magnitude()
     } else {
