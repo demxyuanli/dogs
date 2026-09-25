@@ -653,6 +653,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
     let b = TopoBuilder::new();
     let wires = wires_of_face(face);
     let mut new_wires = Vec::with_capacity(wires.len());
+    let mut src_edges: Vec<(Edge, Edge)> = Vec::new();
     if is_planar(new_surf.as_ref(), 8, 8, 1e-6) {
         // Rigid translation keeps the offset boundary on the offset plane.
         let n = surface_normal(new_surf.as_ref(), 0.0, 0.0);
@@ -685,6 +686,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
             t.set_scale(&c_src, r_new / r_src).map_err(|e| e.to_string())?;
             let mut copied: std::collections::HashMap<usize, Edge> =
                 std::collections::HashMap::new();
+            let mut edge_map: Vec<(Edge, Edge)> = Vec::new();
             for w in &wires {
                 let w_edges = edges_of_wire(w);
                 let mut new_edges = Vec::with_capacity(w_edges.len());
@@ -692,8 +694,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
                     // A seam edge appears twice in the wire; both occurrences must
                     // stay the *same* TShape (only their orientation differs) or
                     // `ShapeFix_Wire` no longer sees a seam and hands both sides
-                    // the same pcurve, whose boundary terms then cancel
-                    // (`data/Offset.step`'s periodic faces behave the same way).
+                    // the same pcurve, whose boundary terms then cancel.
                     let k = std::sync::Arc::as_ptr(&e.0.tshape) as usize;
                     let mut occ = match copied.get(&k) {
                         Some(c) => c.clone(),
@@ -702,6 +703,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
                                 .map_err(|e| e.to_string())?;
                             let c = Edge(te);
                             copied.insert(k, c.clone());
+                            edge_map.push((e.clone(), c.clone()));
                             c
                         }
                     };
@@ -710,6 +712,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
                 }
                 new_wires.push(b.make_wire(&new_edges));
             }
+            src_edges = edge_map;
             rebuilt = true;
         }
         if !rebuilt {
@@ -725,10 +728,33 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
     let face_out = b.make_face(Arc::from(new_surf), &new_wires);
     // `BRepOffset_MakeOffset` runs `BRepLib::SameParameter` / `ShapeFix` on its
     // result, so every edge of a rebuilt face carries a pcurve on the *offset*
-    // surface (`ShapeFix_Edge::FixAddPCurve`, `ShapeFix_Edge.cxx:517-534`).
-    // Only the rebuilt wires are touched: the reused-clone branch shares its
-    // TShapes with the source shape, and repairing those in place would mutate
-    // the input.
+    // surface. The offset surfaces here are analytic, so the source pcurves map
+    // across unchanged (the surface's `(u, v)` frame is preserved by the
+    // homothety) — carry them over first, exactly as `BOPAlgo`'s splitter copies
+    // each `BRep_GCurve` onto the trimmed face, and only *project*
+    // (`ShapeFix_Edge::FixAddPCurve`, `ShapeFix_Edge.cxx:517-534`) the edges that
+    // arrive without one. Projecting a seam edge's two sides independently
+    // collapses them onto the same `u`, whose boundary terms then cancel.
+    let new_key = crate::tgeometry::GeometryRegistry::shape_key(&face_out.0);
+    let old_key = crate::tgeometry::GeometryRegistry::shape_key(&face.0);
+    {
+        let reg = crate::tgeometry::GeometryRegistry::global();
+        for (src, dst) in &src_edges {
+            let pcs = reg.edge_pcurves(&src.0, old_key);
+            if pcs.is_empty() {
+                continue;
+            }
+            let rng = reg.pcurve_range(&src.0, old_key);
+            if pcs.len() == 1 {
+                reg.set_edge_pcurve(&dst.0, new_key, pcs[0].clone());
+            } else {
+                reg.set_edge_pcurves(&dst.0, new_key, pcs);
+            }
+            if let Some((a, b)) = rng {
+                reg.set_pcurve_range(&dst.0, new_key, a, b);
+            }
+        }
+    }
     {
         let mut ws = wires_of_face(&face_out);
         for w in ws.iter_mut() {

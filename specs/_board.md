@@ -109,9 +109,12 @@ cd ..; git worktree remove --force .target-headcheck
 >   **`59fefad`（2D BSpline 反向按 `BSplCLib::Reverse`：`k' = kfirst + klast − k`，保持参数域）**。
 >   实测：`data/Offset.step` 解析体积 1559.174 → **2610.501436**（GT 实测 **2610.501440**，相对 1.5e-9）；盒/圆柱/球原语保持精确。
 >   验收面由 `9cac346` 收口（断言按 OCCT 规格改为对 GT 实测解析值校验），`step_geometry_parity` **2/3 → 3/3**。
-> - **T-69（R2-12）：◐**。`transformed_copy` 的 pcurve **面键重映射**已修（`2fcec12`）⇒ `pattern_volume_sums_copies` 在解析接线后转绿；
->   余项 = `draw::sphere_fillet_offset`：`offset_face` 的**曲面分支复用源丝**（`curve_face_offset.rs:646-675`，注释自陈"edges are not re-projected"），
->   解析体积为 0；忠实解法是在该分支**重建边界**（新边 TShape + 由偏置曲面重建 3D 曲线 + 再投影 pcurve），不得沿用共享 clone（实测会污染源形状）。
+> - **T-69（R2-12）：done（本会话收口）**。① `transformed_copy` 的 pcurve **面键重映射**（`2fcec12`）⇒ `pattern_volume_sums_copies` 在解析接线后转绿；
+>   ② `brep_offset::offset_face` 的曲面分支按 OCCT `BRepOffset_MakeOffset` 的球面解析分支**重建边界**（`a4a3792`：关于球心的位似 `gp_Trsf::SetScale` + 缝出现保持同一 TShape），
+>   并把**源 pcurve 搬到新面键**（BOPAlgo splitter 语义），仅在缺失时投影（否则缝两侧各自投影会被压到同一 u ⇒ 边界项相消）；
+>   ③ 顺带查明端口 `is_seam_use` 的判据是"同边在丝里出现两次"（自创）✗，而 OCCT `ShapeAnalysis_Edge::IsSeam` = **`BRep_Tool::IsClosed(edge, face)`**（该边在闭合面上有两条 pcurve）——列为后续订正项。
+>   实测：偏置球 `so`（r=1.5）解析 = **14.137166941** ✓（= 4/3π·1.5³），源球 4.188790205 ✓ 未被污染；
+>   接线解析体积后 `--lib` 由 3 条红降到 **1 条红**（仅剩 T-80 的 `trimmed_face_box_cylinder_fuse`）。
 > - **T-80 链（R2-11）：◐（本会话第 1 步）**。`5ed8064` 在 `curved_boolean_full` 出口补 pcurve 供给（OCCT 布尔结果的不变量；`ShapeFix_Edge::FixAddPCurve`），
 >   把 `box ∪ cyl` 的解析值从 **−2.198** 修正到 **+3.168**（真值 8.50265）。**根因已钉死**：端口布尔结果的边界是**折线**（顶盘面积 0.49643 vs π·0.16 = 0.502655 ⇒ 约 −1.2%），
 >   且部分面环绕向与曲面法向不一致 ⇒ 贡献变号（GT 探针新增 `--fuse` 模式给出 OCCT 对照：8 面 / 逐面面积与贡献）。
