@@ -254,22 +254,30 @@ impl Curve2d for Geom2dBSplineCurve {
     }
 
     fn reverse(&mut self) {
-        // `Geom2d_BSplineCurve::Reverse` / `BSplCLib::Reverse` on a flat
-        // knot sequence: `k' = umax - k` after reversing the array.
-        // `1 - k` is only valid when the last knot is 1 (Shape-2 pcurves
-        // use V knots on `[0, 150]`).
+        // `Geom2d_BSplineCurve::Reverse` (`Geom2d_BSplineCurve.cxx:677-696`) runs
+        // `BSplCLib::Reverse(myKnots)` + `BSplCLib::Reverse(myMults)` + reverse
+        // the poles (+ weights) + `updateKnots()`. `BSplCLib::Reverse(
+        // NCollection_Array1<double>& Knots)` (`BSplCLib.cxx:802-828`) maps every
+        // knot to `kfirst + klast - k`, so the reversed curve keeps the *same*
+        // parameter range; reversing the flat knot array already reverses the
+        // multiplicities, so applying that affine map after the swap is
+        // equivalent. `klast - k` alone (the former code) shifts the range by
+        // `-kfirst` for any curve whose first knot is not 0 — e.g. the spherical
+        // pcurves of `data/Offset.step`, whose knots start at `pi/2`:
+        // `build_arc` then evaluated the reversed curve over a parameter window
+        // the curve does not cover.
         self.xs.reverse();
         self.ys.reverse();
         let n = self.knots.len();
         if n == 0 {
             return;
         }
-        let umax = self.knots[n - 1];
+        let (kfirst, klast) = (self.knots[0], self.knots[n - 1]);
         for i in 0..n / 2 {
             self.knots.swap(i, n - 1 - i);
         }
         for k in self.knots.iter_mut() {
-            *k = umax - *k;
+            *k = kfirst + klast - *k;
         }
     }
 
