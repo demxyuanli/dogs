@@ -194,7 +194,7 @@ fn all_outputs_compare_to_occt_reference() {
         ("Cylinder", "occ-cylinder.obj"),
         ("Torus", "occ-torus.obj"),
         ("rev", "occ-rev.obj"),
-        ("Sphere", "occ-shpere.obj"),
+        ("Sphere", "occ-sphere.obj"),
     ];
     for (step, occ) in cases {
         let (obj, _) = step_to_obj(step);

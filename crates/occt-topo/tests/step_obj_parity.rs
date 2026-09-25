@@ -166,7 +166,7 @@ fn torus_bbox_matches_occt() {
 
 #[test]
 fn sphere_bbox_matches_occt() {
-    check_parity("Sphere", "occ-shpere.obj", SPHERE_TOL);
+    check_parity("Sphere", "occ-sphere.obj", SPHERE_TOL);
 }
 
 #[test]

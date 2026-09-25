@@ -100,7 +100,7 @@ fn torus_area_matches_occt() {
 
 #[test]
 fn sphere_area_matches_occt() {
-    check_area_parity("Sphere", "occ-shpere.obj", CURVED_AREA_TOL);
+    check_area_parity("Sphere", "occ-sphere.obj", CURVED_AREA_TOL);
 }
 
 #[test]
