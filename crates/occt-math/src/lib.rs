@@ -64,6 +64,8 @@ pub use polyfit::{polyfit, polyval};
 pub use levenberg::{levenberg_marquardt, LMConfig};
 pub use ode::{rk4, rk4_step};
 pub use scalar::{bisection, secant, golden_section, brent};
+pub mod brent_minimum;
+pub use brent_minimum::BrentMinimum;
 pub use polynomial::{poly_eval, poly_derivative, quadratic_roots, cubic_roots, polynomial_roots};
 pub mod matrix_ext;
 pub use matrix_ext::{
