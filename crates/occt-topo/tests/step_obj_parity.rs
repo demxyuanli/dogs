@@ -210,15 +210,16 @@ fn shape_bbox_matches_occt() {
 #[test]
 fn atu01038_bbox_matches_occt() {
     // ATU01038 is the OCCT bug-tracker model shipped with the wave-2026-09-15
-    // data set (`data/ATU01038.step`, product name + colors). Its faces sit on
-    // periodic cylinders/planes, so the old mirrored `ElCLib::EllipseValue`
+    // data set (`data/occ/ATU01038.step`, product name + colors). Its faces sit
+    // on periodic cylinders/planes, so the old mirrored `ElCLib::EllipseValue`
     // minor axis plus the un-cancelled lateral seam U winding moved faces
     // 130/140/156/216/222 off their faces. After the ElCLib sign fix
     // (`ElCLib.cxx:176-189`) and the OCCT seam/U-winding loop order
     // (`BRepSweep_Revolve` order in `primitives.rs`) the bbox agrees with the
-    // DRAWEXE reference to 1.1e-5; 1e-4 is the locked tolerance. Density stays
-    // a tracked gap (UV grid vs deflection-adaptive), so it is not asserted.
-    check_parity("ATU01038", "occ-ATU01038.obj", 1e-4);
+    // `WriteObj` reference to 1.1e-5; 1e-4 is the locked tolerance. Density
+    // stays a tracked gap (UV grid vs deflection-adaptive), so it is not
+    // asserted.
+    check_parity_at("occ/ATU01038.step", "occ/occ-ATU01038.obj", 1e-4);
 }
 
 /// Tolerance for the `data/occ/` models whose mesh and reference share a frame:
@@ -268,8 +269,8 @@ fn rev_export_is_valid() {    // rev.step is a 6-face solid (two quarter-cylinde
 
 #[test]
 fn offset_export_is_valid() {
-    // Offset.step has no matching OCCT reference (occ-OffsetPlaneHoleEdge is a
-    // different file), so no bbox parity is asserted — only that it reads and
+    // Offset.step now has its own OCCT reference (`occ-Offset.obj`, added
+    // 2026-09-24), but no bbox parity is asserted here — only that it reads and
     // exports a non-degenerate mesh. Density is recorded for reference.
     let model = read_step_file(&data_dir().join("Offset.step").to_string_lossy())
         .unwrap_or_else(|e| panic!("read Offset.step: {e}"));
@@ -278,7 +279,7 @@ fn offset_export_is_valid() {
     let nv = obj.lines().filter(|l| l.starts_with('v')).count();
     let nf = obj.lines().filter(|l| l.starts_with('f')).count();
     assert!(nv > 0 && nf > 0, "Offset OBJ degenerate: v={nv} f={nf}");
-    let occ = std::fs::read_to_string(data_dir().join("occ-OffsetPlaneHoleEdge.obj")).unwrap();
+    let occ = std::fs::read_to_string(data_dir().join("occ-Offset.obj")).unwrap();
     let h = parse_occ_header(&occ);
     eprintln!(
         "[Offset] ours v={nv} f={nf} | occ-reference(v={} f={}) | f-ratio {:.2}",
