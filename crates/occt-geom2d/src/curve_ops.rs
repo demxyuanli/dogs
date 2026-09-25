@@ -19,23 +19,111 @@
 use occt_core::gp::{GpLin2d, GpPnt2d, GpXY};
 use crate::curve::Curve2d;
 
-/// Arc length of a bounded curve by Simpson quadrature of `|d1|`.
-/// Returns `NaN` for unbounded curves.
-pub fn curve2d_length(c: &dyn Curve2d, n: usize) -> f64 {
+/// Arc length of a bounded 2D curve — the faithful `CPnts_AbscissaPoint` path.
+///
+/// Type dispatch mirrors `GCPnts_AbscissaPoint::computeType`
+/// (`GCPnts_AbscissaPoint.cxx:26-55`) and `GCPnts_AbscissaPoint::length`
+/// (`:84-140`): more than one `GeomAbs_CN` interval ⇒ sum over the intervals; a
+/// line / circle (or a 2-pole non-rational Bezier / B-spline) is
+/// *length-parametrised* ⇒ `|U2 − U1| × ratio`; everything else integrates the
+/// speed `|C'(u)|` with `math_GaussSingleIntegration` at OCCT's per-type order
+/// `order(C)` (`CPnts_AbscissaPoint.cxx:79-100`: `Line` 2, `Parabola` 5,
+/// `BezierCurve` `min(24, 2·Degree)`, `BSplineCurve` `min(24, 2·NbPoles − 1)`,
+/// everything else 10). Returns `NaN` for unbounded curves.
+pub fn curve2d_length(c: &dyn Curve2d) -> f64 {
     let a = c.first_parameter();
     let b = c.last_parameter();
     if !a.is_finite() || !b.is_finite() {
         return f64::NAN;
     }
-    let integrand = |u: f64| c.d1(u).1.magnitude();
-    let n = (n / 2 * 2).max(2);
-    let h = (b - a) / n as f64;
-    let mut sum = integrand(a) + integrand(b);
-    for i in 1..n {
-        let x = a + i as f64 * h;
-        sum += if i % 2 == 0 { 2.0 } else { 4.0 } * integrand(x);
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    // `GCPnts_AbsComposite` arm: `NbIntervals(GeomAbs_CN)` (`GeomAbs_CN = 6`,
+    // `occt-core/src/kernel/geomabs.rs`).
+    if c.nb_intervals(6) > 1 {
+        let ti = c.parameter_intervals(6);
+        let mut total = 0.0;
+        for w in ti.windows(2) {
+            let u1 = w[0].max(lo);
+            let u2 = w[1].min(hi);
+            if u2 > u1 {
+                total += gauss_length_2d(c, u1, u2);
+            }
+        }
+        return total;
     }
-    sum * h / 3.0
+    // `computeType`: length-parametrised curves need no quadrature.
+    if c.is_line() {
+        return (b - a).abs();
+    }
+    if let Some(circ) = c.gp_circ2d() {
+        return (b - a).abs() * circ.radius();
+    }
+    if let Some(n) = c.bezier_nb_poles() {
+        if n == 2 {
+            return (b - a).abs() * c.d1(0.0).1.magnitude();
+        }
+    }
+    if let Some((xs, _ys)) = c.bspline_poles2d() {
+        if xs.len() == 2 {
+            return (b - a).abs() * c.d1(c.first_parameter()).1.magnitude();
+        }
+    }
+    gauss_length_2d(c, a, b)
+}
+
+/// `order(const Adaptor2d_Curve2d&)` (`CPnts_AbscissaPoint.cxx:79-100`).
+fn gauss_order_2d(c: &dyn Curve2d) -> usize {
+    if c.is_line() {
+        return 2;
+    }
+    if c.gp_parab2d().is_some() {
+        return 5;
+    }
+    if let Some(n) = c.bezier_nb_poles() {
+        return (2 * (n - 1)).min(24).max(1);
+    }
+    if let Some((xs, _ys)) = c.bspline_poles2d() {
+        return (2 * xs.len() - 1).min(24).max(1);
+    }
+    10
+}
+
+/// `CPnts_AbscissaPoint::Length(C, U1, U2)` (`CPnts_AbscissaPoint.cxx:148-161`):
+/// `|math_GaussSingleIntegration(|C'|, U1, U2, order(C))|`.
+fn gauss_length_2d(c: &dyn Curve2d, u1: f64, u2: f64) -> f64 {
+    let n = gauss_order_2d(c);
+    let f = |u: f64| c.d1(u).1.magnitude();
+    occt_math::gauss::integrate(&f, u1, u2, n).abs()
+}
+
+/// `CPnts_AbscissaPoint::Length(C, U1, U2, Tol)` (`CPnts_AbscissaPoint.cxx:163-184`)
+/// → `math_GaussSingleIntegration(FG, U1, U2, order(C), Tol)`
+/// (`math_GaussSingleIntegration.cxx:64-98`): repeat the rule on `2^k` equal
+/// sub-intervals (`IterMax = 13`) until two successive totals differ by at most
+/// `tol`.
+///
+/// Measured: the no-tolerance overload above is only ~1.3e-3 accurate on a full
+/// ellipse (order 10 ⇒ 14.551758936716; the true perimeter is 14.532672330892 by
+/// a Jacobi-series reference, with fine Simpson agreeing to 1e-10). This overload
+/// refines to that value.
+pub fn curve2d_length_tol(c: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> f64 {
+    let n = gauss_order_2d(c);
+    let f = |u: f64| c.d1(u).1.magnitude();
+    let mut prev = occt_math::gauss::integrate(&f, u1, u2, n);
+    for k in 1..=13 {
+        let panels = 1usize << k;
+        let h = (u2 - u1) / panels as f64;
+        let mut total = 0.0;
+        for i in 0..panels {
+            let a = u1 + i as f64 * h;
+            total += occt_math::gauss::integrate(&f, a, a + h, n);
+        }
+        if tol > 0.0 && (total - prev).abs() <= tol {
+            return total.abs();
+        }
+        prev = total;
+    }
+    prev.abs()
 }
 
 /// Point on the curve at parameter `u`.
@@ -438,7 +526,7 @@ mod tests {
     #[test]
     fn circle_length() {
         let circle = Geom2dCircle::new(GpCirc2d::new(GpAx22d::standard(), 1.0));
-        let len = curve2d_length(&circle, 100);
+        let len = curve2d_length(&circle);
         assert!((len - 2.0 * std::f64::consts::PI).abs() < 1e-6, "len={len}");
     }
 
