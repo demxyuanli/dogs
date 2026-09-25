@@ -36,6 +36,29 @@
 > 已按 goal ④ 换成 OCCT 依据的**关系式** —— DS ⊇ 参数自身子形状、相交情形严格更多；GT 探针新增 `--ds` 给出 OCCT 实测：
 > 两个不相交单位盒 `NbShapes == NbSourceShapes == 68`、相交对 `NbShapes = 80`）；
 > 同时把 `step_to_obj::write_output` 改为**临时文件 + 原子改名**（多个测试同写 `data/output/<name>.obj` 时读方不会再看到半写文件）。
+> **round 80 补充（flake 口径修正）**：该 flake 比登记时**更宽** —— 并发整跑时失败的是 `cube_step_to_obj`（单跑通过），
+> 而 `step_to_obj_writes_output_files` 反而通过 ⇒ 同一测试二进制内 11 处"写后回读 `data/output/<name>.obj`"的用例
+> 彼此竞争；round 69 的原子写只消除了"读到半写文件"，未消除"读到别的用例刚写/正要写的同名文件"。
+> 后续修法（未做）：让每个用例写自己的临时目录再回读，或把该二进制标为串行执行。
+>
+> **本会话收尾记录（round 30 → 80，HEAD `24bcb44`，37 个提交）**
+> - **门禁改善两处**：`step_geometry_parity` 2/3 → **3/3**（T-05 收口）；`phase19` 3/5 → **5/5**（R2-9/T-04 收口）。
+> - **完成的 §3 条目**：T-87/T-05 ✓、T-69 ✓、R2-9/T-04 ✓、R2-23 ✓（+T-44 部分：trimmed-Bezier 臂）、
+>   R2-18 部分 ✓（2D 弧长改忠实 `CPnts_AbscissaPoint` + 容差重载）、T-85 余项 ✓、T-62 余项 ✓、T-27 ✓、T-26 ✓；
+>   §3.4 另落 T-29/T-30/T-33/T-34 与 T-11 两批；另交付 **T-25/T-26/T-27/T-28 设计文档**
+>   （`specs/_design_architecture_t25_t28.md`）与 GT 探针新增 `--fuse`/`--ds` 模式。
+> - **关键定位**：2D BSpline 反向按 `BSplCLib::Reverse`（`k' = kfirst+klast−k`）保参数域（`59fefad`，把
+>   `data/Offset.step` 从 2622.55 修到 **2610.501436**，GT 实测 2610.501440）；`transformed_copy` 的 pcurve **面键**
+>   重映射（`2fcec12`）；偏置面按 `BRepOffset` 球面解析分支重建边界 + 源 pcurve 搬新面键（`a4a3792`/`9002ed2`，
+>   偏置球解析 = **14.137166941**）；布尔结果补 pcurve 供给（`5ed8064`，符号 −2.198 → +3.168）；
+>   `Geom_BezierCurve::Segment` 逐行移植（`2616041`，≤1.4e-15）；`math_BrentMinimum`（`3af4e4e`）。
+>   并发现既有缺陷 `occt-core/src/bspl/poles.rs::power_to_bezier_basis` 公式错（`i==j>0` 给 1，应为 `C(d,j)`）——
+>   已在原处标注（KNOWN DEFECT），待订正。
+> - **仍未完成（板内均有精确分步路线）**：T-80 链/T-41（布尔结果边界是折线 ✗ ⇒ 按 `BOPAlgo` 换精确裁剪曲线；
+>   **实测：`shape_volume` 接解析体积后全仓只剩这 1 条红**）、T-67 步3+T-37 与 T-51 余项（共同前置
+>   `math_FunctionSetRoot` 1452 行 ✗；其依赖 `math_BrentMinimum` 已移植 ✓）、T-44 余项（`IncreaseDegree` ✗）、
+>   T-54（约束 Delaunay ✗）、R2-18 余项（一般 2D 求交 = `Geom2dInt_GInter` ✗）、R2-19（IGES 非平面面 2D UV 曲线 ✗）、
+>   T-25/T-28 的实施（设计已交付 ✓）、T-11 余项（低）。
 
 | 门禁 | 命令 | 当前工作区 `2c9a66b` | 对照 `9d8e596`（批 84 末） | 判定 |
 |---|---|---|---|---|
