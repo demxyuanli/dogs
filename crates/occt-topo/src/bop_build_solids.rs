@@ -152,6 +152,10 @@ pub fn fill_images_solids<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
 /// by the intersection expands into as many image solids as it has closed
 /// shells; a solid whose splits still form a single closed shell produces one
 /// image solid (the equivalent of the draft-solid fast path).
+/// **LEGACY / superseded（T-27，round 78）**：绿路径已由 [`bop_split_solids_occt`] 走 OCCT 的
+/// `BOPAlgo_Builder_3.cxx:413-618`（`build_split_solids_occt` → `SplitSolid::perform` → `builder_solid.rs`），
+/// 本函数是同一 OCCT 段的**早期重复实现**，今天只有本文件的 2 条测试调用（`:666`/`:698`），生产 0 调用。
+/// 保留是为了不删除既有测试；新代码**不要**接入它。
 pub fn build_split_solids<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
     let n = f.ds().nb_source_shapes();
     for i in 0..n {
@@ -500,8 +504,6 @@ pub fn classify_solid_state(solid: &TopoShape, point: &GpPnt, tol: f64) -> FaceS
 }
 
 
-#[path = "bop_build_solids_leftover.rs"]
-mod leftover;
 
 // ---------------------------------------------------------------------------
 // Tests

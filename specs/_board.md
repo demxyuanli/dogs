@@ -45,7 +45,7 @@
 | STEP→OBJ 端到端 | `--test step_to_obj` | ✅ **13/13** | ❌ 12/13（`step_to_obj_writes_output_files`） | 绿（**+1 改善**） |
 | 面积对拍 | `--test step_obj_area` | ✅ 11/11 | ✅ 11/11 | 绿 |
 | 几何一致性 | `--test step_geometry_parity` | ✅ **3/3**（T-05 收口：断言按 OCCT 规格改为对 GT 实测解析值 `2610.501440` 校验，端口 `2610.501436`；提交 `9cac346`） | ❌ 2/3（同名用例） | 绿（**+1 改善**） |
-| topo 单测 | `--lib` | ✅ **1287 通过 / 0 失败**（T-01 由 `113b4d1` 转绿，T-86 由 `f63c324` 转绿；TShape 唯一 id 见 `933785f`） | ❌ **1286 / 2（同两条）** | 绿（**+2 改善**） |
+| topo 单测 | `--lib` | ✅ **1281 通过 / 0 失败**（T-01 `113b4d1`、T-86 `f63c324` 转绿；T-27 `1486985`+本轮摘除 leftover 死模块**带走 6 条死测试** ⇒ 1287−6；TShape 唯一 id 见 `933785f`） | ❌ **1286 / 2（同两条）** | 绿 |
 | boss 合并 | `--test bop_builder2_boss` | ❌ 1/2（T-03） | ❌ 1/2 | 红（遗留） |
 | phase19 | `--test phase19_integration` | ❌ 3/5（T-04） | ❌ 3/5 | 红（遗留） |
 | phase10 | `--test phase10_integration` | ❌ 7/8（`curved_face_fillet_sphere_plane`） | ❌ 7/8 | 红（遗留） |
@@ -200,7 +200,7 @@ cd ..; git worktree remove --force .target-headcheck
 | **T-34** | pending（低） | §13 登记：`is_split_to_reverse_edge` 的 `edge_parameters` ↔ `BRepLib::FindValidRange` 替换需登记 | 同上 |
 | **T-25** | **设计已出**（`specs/_design_architecture_t25_t28.md` §T-25） | `GeometryRegistry` 侧表（边/面几何不在 `TShape` 内）——架构级重构；实测 127 文件/501 处引用，`global()` 279 处/88 文件；6 步增量方案（第 2 步为**纯转发层**，101 处调用零改动） | 需专门设计批 ⇒ 设计已交付；实施 5–8 轮 |
 | **T-26** | **设计已出 + 标题订正**（同上文档 §T-26） | ~~无面 operand 走 `voxel_fallback`~~ —— 该函数**已于第 59 轮 `393ebb8` 摘除**；真正余项 = 端口 `is_empty_shape`（`bop_bop.rs:42-44`「无顶点且无面」）**≠** OCCT `IsEmptyShape`（`BOPTools_AlgoTools3D.cxx:732-854`「无几何」），且 `TreatEmptyShape`（`BOPAlgo_BOP.cxx:214-256`）未移植 | 语义订正；1–2 轮 |
-| **T-27** | **设计已出**（同上文档 §T-27；结论：**摘除**而非接线） | `is_covering_face`（`bop_build_solids_leftover.rs:394-403`）是**自创谓词**，整链只在死模块内闭合（头注自述 *Not called by `BopBuilder`*；`leftover::` 生产 0 命中）；OCCT 的 `GetFaceOff`（`BOPTools_AlgoTools.cxx:994-1095`）→ `IsInternalFace`(:977) → `ClassifyFaces` → `BuilderSolid`(:673) 与 `ShellSplitter`(:359) 两条活链**端口都已有**（`algo_tools_face.rs:433`、`shell_splitter_block.rs:359`） | 1 轮（含判定性探针） |
+| **T-27** | ✅ **done（round 78）**（设计见同上文档 §T-27；动作 = **摘除**而非接线） | `is_covering_face`（`bop_build_solids_leftover.rs:394-403`）是**自创谓词**，整链只在死模块内闭合（头注自述 *Not called by `BopBuilder`*；`leftover::` 生产 0 命中）；OCCT 的 `GetFaceOff`（`BOPTools_AlgoTools.cxx:994-1095`）→ `IsInternalFace`(:977) → `ClassifyFaces` → `BuilderSolid`(:673) 与 `ShellSplitter`(:359) 两条活链**端口都已有**（`algo_tools_face.rs:433`、`shell_splitter_block.rs:359`） | 1 轮（含判定性探针） |
 | **T-28** | **设计已出**（同上文档 §T-28） | ImpPrm HVertex 合并（`IntPatch_ImpPrmIntersection.cxx:221-469` 的 `IsNew==false` 分支，端口 `intpatch_impprm.rs:243 compute_tangency` 只实现 `IsNew`）；`intana`/`intpatch` 重叠实测双份 closed form + 两套 surface×surface 分派器（清单见设计文档）；OCCT 权威 `IntPatch_ImpImpIntersection.cxx` 全部调 `IntAna_QuadQuadGeo` ⇒ 合并方向 = 删 intpatch 版 | 6–10 轮，分 6 步 |
 
 ### 3.5 已归档（完成或已决；明细见 §3.6 与 §7）
