@@ -180,8 +180,16 @@ impl TopoBuilder {
     }
 
     /// Make an unbounded planar face (`BRepBuilderAPI_MakeFace(gp_Pln)`).
+    ///
+    /// The whole plane is a *natural restriction* face (`BRepPrim_FaceBuilder.cxx:168`
+    /// sets `NaturalRestriction(myFace, true)` for the unbounded face builder),
+    /// which is what makes `BRepToIGES_BRShell.cxx:381` write it as a whole
+    /// surface. A *bounded* face — `make_face` plus wires — keeps the
+    /// `BRep_TFace` default (false).
     pub fn make_face_plane(&self, pln: &GpPln) -> Face {
-        self.make_face(Arc::new(GeomPlane::new(pln.clone())), &[])
+        let face = self.make_face(Arc::new(GeomPlane::new(pln.clone())), &[]);
+        GeometryRegistry::global().set_natural_restriction(&face.0, true);
+        face
     }
 
     /// Make a shell containing `faces` (`BRepBuilderAPI_MakeShell`).

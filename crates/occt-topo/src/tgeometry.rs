@@ -147,8 +147,13 @@ pub struct FaceGeom {
 }
 
 impl FaceGeom {
+    /// `BRep_TFace` default: `myNaturalRestriction = false`
+    /// (`BRep_TFace.cxx:30`; neither `BRep_Builder::MakeFace` overload sets it,
+    /// `BRep_Builder.cxx:500-560`). Only an *unbounded* face turns it on
+    /// (`BRepPrim_FaceBuilder.cxx:168`, `BOPAlgo_BuilderFace.cxx:407-409`), and
+    /// `BRepToIGES_BRShell.cxx:381` reads it as `isWholeSurface`.
     pub fn new(surface: Arc<dyn Surface>) -> Self {
-        Self { surface, tolerance: 0.0, natural_restriction: true }
+        Self { surface, tolerance: 0.0, natural_restriction: false }
     }
     pub fn surface(&self) -> Arc<dyn Surface> { self.surface.clone() }
 }
