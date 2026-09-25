@@ -44,6 +44,18 @@ pub trait Curve2d: Send + Sync {
     fn transform(&mut self, t: &GpTrsf2d);
     fn reverse(&mut self);
 
+    /// `Geom2d_Curve::ReversedParameter` — the parameter on the *reversed*
+    /// curve of the point at parameter `U`. OCCT implements it per class:
+    /// `Geom2d_Line` → `-U` (`Geom2d_Line.cxx:135`),
+    /// `Geom2d_Circle` → `2*pi - U` (`Geom2d_Circle.cxx:122`),
+    /// `Geom2d_BSplineCurve` → `first + last - U`
+    /// (`Geom2d_BSplineCurve.cxx:700`), `Geom2d_TrimmedCurve` → the basis
+    /// curve's (`Geom2d_TrimmedCurve.cxx:91`). The default here is the affine
+    /// form used by the polynomial classes.
+    fn reversed_parameter(&self, u: f64) -> f64 {
+        self.first_parameter() + self.last_parameter() - u
+    }
+
     fn clone_dyn(&self) -> Box<dyn Curve2d>;
 
     /// `Geom2dAdaptor_Curve::Intervals` break points for the requested shape.

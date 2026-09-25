@@ -65,6 +65,15 @@ impl FaceGauss {
         (self.u1, self.u2, self.v1, self.v2)
     }
 
+    /// `D1U × D1V` without the face-orientation flip (the domain path needs
+    /// it: `BRepGProp_Domain` walks the face's edges and every pcurve is
+    /// loaded with its edge's orientation, so the traversal already
+    /// carries the face orientation — `BRepGProp_Face.cxx:164-185`).
+    pub(super) fn normal_raw(&self, u: f64, v: f64) -> (GpPnt, GpVec) {
+        let (p, du, dv) = surface_d1(self.surface.as_ref(), u, v);
+        (p, du.crossed(&dv))
+    }
+
     /// Unnormalised surface normal (D1U × D1V), flipped for a REVERSED face.
     pub(super) fn normal(&self, u: f64, v: f64) -> (GpPnt, GpVec) {
         let (p, du, dv) = surface_d1(self.surface.as_ref(), u, v);
@@ -253,20 +262,29 @@ pub(super) fn build_arc(e: &Edge, face: &Face, map: &UVMap) -> Option<BoundaryAr
         pcurves.into_iter().next()
     };
     if let Some(pc) = pc {
-        let (a, b) = reg
+        let (a0, b0) = reg
             .pcurve_range(&e.0, face_key)
             .unwrap_or_else(|| (pc.first_parameter(), pc.last_parameter()));
-        if a.is_finite() && b.is_finite() && b > a {
+        if a0.is_finite() && b0.is_finite() && b0 > a0 {
+            // `BRepGProp_Face::Load(const TopoDS_Edge&)` (`BRepGProp_Face.cxx:173-179`):
+            // `C = C->Reversed(); a = C_old->ReversedParameter(b); b =
+            // C_old->ReversedParameter(a);` — i.e. the arc uses the *reversed*
+            // curve over the *mapped* range (per class: `-U` for a line,
+            // `2*pi - U` for a circle, `first + last - U` for a BSpline).
+            let (pc, a, b) = if e.orientation().is_reversed() {
+                let (na, nb) = (pc.reversed_parameter(b0), pc.reversed_parameter(a0));
+                (Arc::from(pc.reversed()), na, nb)
+            } else {
+                (pc, a0, b0)
+            };
             let kind = classify_arc_kind2d(pc.as_ref(), a, b);
             return Some(BoundaryArc {
                 geom: ArcGeom::Pcurve(pc),
                 a,
                 b,
                 kind,
-                // `BRepGProp_Face::Load(const TopoDS_Edge&)`
-                // (`BRepGProp_Face.cxx:173-179`): a REVERSED edge is integrated
-                // backwards along the same pcurve.
-                reversed: e.orientation().is_reversed(),
+                // The curve itself is already reversed above.
+                reversed: false,
             });
         }
     }
@@ -573,7 +591,6 @@ pub(super) fn compute_adaptive(
             let sub = arc_outer_scan(fa, loc, coeff, typ, arc, l1, l2, &l_knots, u1, u2, &u_knots, nb_u_gauss_0, &ugp0, &ugw0, jl);
             an_inertia.add(&sub);
         }
-        an_inertia.mul(fa.wire_sign());
     }
 
     let (mass, _g, _mat) = match typ {

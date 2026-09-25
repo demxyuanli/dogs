@@ -44,6 +44,10 @@ impl Curve2d for Geom2dCircle {
     fn period(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn continuity(&self) -> u8 { 6 }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
+    /// `Geom2d_Circle::ReversedParameter` (`Geom2d_Circle.cxx:122`): `2*pi - U`.
+    fn reversed_parameter(&self, u: f64) -> f64 {
+        2.0 * std::f64::consts::PI - u
+    }
     fn reverse(&mut self) { self.pos.radius = -self.pos.radius; }
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
     fn gp_circ2d(&self) -> Option<occt_core::gp::GpCirc2d> { Some(self.pos) }

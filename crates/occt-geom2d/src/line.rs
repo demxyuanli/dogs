@@ -38,6 +38,10 @@ impl Curve2d for Geom2dLine {
     fn last_parameter(&self) -> f64 { f64::INFINITY }
     fn continuity(&self) -> u8 { 6 }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
+    /// `Geom2d_Line::ReversedParameter` (`Geom2d_Line.cxx:135`): `-U`.
+    fn reversed_parameter(&self, u: f64) -> f64 {
+        -u
+    }
     fn reverse(&mut self) { self.pos.pos.vdir.reverse(); }
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
     fn is_line(&self) -> bool { true }
