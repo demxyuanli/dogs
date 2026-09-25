@@ -7,6 +7,24 @@ use crate::gp::GpPnt;
 /// Given degree d, knots, and poles, returns coefficients [c0, c1, ..., cd]
 /// where curve(u) = c0 + c1*u + c2*u² + ... + cd*u^d.
 /// Uses Marsden's identity for conversion.
+///
+/// **NOT USABLE — superseded shortcut (2026-09-25).** This is a port-invented
+/// substitute, not OCCT's algorithm, and it has **no callers**:
+///
+/// * it converts **per knot span** and then averages the results, but the average
+///   divides by every `temp` row including the ones the loop never filled — for a
+///   single-span quadratic Bezier the coefficients come out scaled by `1/3`
+///   (measured: `(0,0,0) (0.667,1.333,0) (0,−1.333,0)` where the true power
+///   coefficients are `(0,0,0) (2,4,0) (0,−4,0)`);
+/// * the Bezier→monomial matrix it uses *was* also wrong; that part is corrected
+///   in [`power_to_bezier_basis`] below, which now matches the verified
+///   `crates/occt-geom/src/bezier_curve.rs::bezier_power_entry` to the bit.
+///
+/// OCCT's route is `BSplCLib::BuildCache` (curve version, `BSplCLib.cxx`) +
+/// `PLib::CoefficientsPoles` — that is what `Geom_BezierCurve::Segment`
+/// (`Geom_BezierCurve.cxx:388-425`) and `GeomConvert::CurveToBSplineCurve` need.
+/// Port that instead of reviving the averaging below (see `specs/_board.md`
+/// §3.3 T-44).
 pub fn poles_to_coefficients(poles: &[GpPnt], knots: &[f64], degree: usize) -> Vec<GpPnt> {
     let n = poles.len();
     if n == 0 { return vec![]; }
@@ -45,27 +63,30 @@ pub fn poles_to_coefficients(poles: &[GpPnt], knots: &[f64], degree: usize) -> V
     coeffs
 }
 
-/// Bezier-to-power basis conversion matrix. Element (i,j) for degree d:
-/// B[i][j] = binomial(d, i) * binomial(i, j) * (-1)^(i-j) / binomial(d, j) scaled.
+/// Bezier-to-power basis conversion matrix (`m[i][j]` maps Bezier pole `j` to the
+/// coefficient of `t^i`).
 ///
-/// KNOWN DEFECT (found 2026-09-25 while porting `Geom_BezierCurve::Segment`): this
-/// formula is not the Bezier→monomial expansion. From
-/// `B_j^d(t) = C(d,j)·t^j·(1−t)^(d−j)` the correct entry is
-/// `(−1)^(i−j) · C(d,j) · C(d−j, i−j)`; the two agree for `i > j` but this
-/// formula returns `1` instead of `C(d,j)` when `i == j > 0`, so every
-/// `poles_to_coefficients` result for degree ≥ 2 is wrong. The faithful version
-/// lives in `crates/occt-geom/src/bezier_curve.rs` (`bezier_power_entry`), where
-/// it is verified against analytic cases to 1.4e-15. Do not build new callers on
-/// this function until it is corrected.
+/// **Corrected 2026-09-25** (the previous formula divided by `C(d, j)` and so
+/// returned `1` instead of `C(d, j)` whenever `i == j > 0`, making every
+/// `poles_to_coefficients` result for degree ≥ 2 wrong). From
+/// `B_j^d(t) = C(d,j)·t^j·(1−t)^(d−j)` the coefficient of `t^i` is
+/// `(−1)^(i−j) · C(d,j) · C(d−j, i−j)` (zero for `i < j`) — the same entry, and
+/// the same verified formula, as `crates/occt-geom/src/bezier_curve.rs`
+/// (`bezier_power_entry`, checked against analytic curves to 1.4e-15 there).
+///
+/// UNPORTED: `poles_to_coefficients` above still converts **per knot span and
+/// averages** the overlapping results, which is not OCCT's route — OCCT builds
+/// the coefficients through `BSplCLib::BuildCache` / `BSplCLib::PolesCoefficients`
+/// over the whole curve. The function has no callers today; whoever needs it
+/// should port that route rather than build on the averaging shortcut.
 fn power_to_bezier_basis(degree: usize) -> Vec<f64> {
     let n = degree + 1;
     let mut m = vec![0.0f64; n * n];
     for i in 0..n {
         for j in 0..=i {
             let sign = if (i - j) % 2 == 0 { 1.0 } else { -1.0 };
-            let c = c_binomial(degree, i) as f64 * c_binomial(i, j) as f64;
-            let d = c_binomial(degree, j) as f64;
-            m[i * n + j] = if d > 0.0 { sign * c / d } else { 0.0 };
+            m[i * n + j] =
+                sign * c_binomial(degree, j) as f64 * c_binomial(degree - j, i - j) as f64;
         }
     }
     m
