@@ -196,7 +196,7 @@ fn get1_i32(arr: &[i32], i: i32) -> i32 {
 }
 
 /// `BSplCLib::BoorIndex` (`BSplCLib.cxx:1810-1821`).
-fn boor_index(index: i32, length: i32, depth: i32) -> i32 {
+pub(super) fn boor_index(index: i32, length: i32, depth: i32) -> i32 {
     if index <= depth {
         return index;
     }
@@ -249,7 +249,7 @@ fn boor_scheme(u: f64, degree: i32, knots: &[f64], dim: i32, local: &mut [f64], 
 
 /// File-static `Copy` (`BSplCLib.cxx:2028-2059`) with both arrays' `Lower() == 1`.
 /// `nb` counts scalars (a dimension-major flat array), not poles.
-fn copy(nb: i32, old_first: &mut i32, old: &[f64], new_first: &mut i32, new: &mut [f64]) {
+pub(super) fn copy(nb: i32, old_first: &mut i32, old: &[f64], new_first: &mut i32, new: &mut [f64]) {
     let old_len = old.len() as i32;
     let new_len = new.len() as i32;
     if old_len <= 0 || new_len <= 0 || nb <= 0 {
@@ -274,7 +274,7 @@ fn copy(nb: i32, old_first: &mut i32, old: &[f64], new_first: &mut i32, new: &mu
 /// `BoorIndex(index, …)` out of the Boor work array into `pole` at `position`,
 /// wrapping `position` at `pole_upper`.
 #[allow(clippy::too_many_arguments)]
-fn get_pole(
+pub(super) fn get_pole(
     local: &[f64],
     index: i32,
     length: i32,

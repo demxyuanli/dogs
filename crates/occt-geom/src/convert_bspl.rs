@@ -8,14 +8,19 @@
 //! is covered pragmatically by `curve_approx` (polyline) plus
 //! `curve_reparam::resample_bspline` (interpolation) and is deferred.
 //!
-//! **UNPORTED (audit A8 / task T-44)**: `GeomConvert_CompCurveToBSplineCurve` and
-//! the arms of `GeomConvert::CurveToBSplineCurve` that need `Geom_BSplineCurve::Segment`,
-//! `Geom_BezierCurve::Segment`, `GeomConvert_ApproxCurve` or the periodic
-//! `Geom_BSplineCurve` representation (see the notes on `curve_to_bspline_curve`
-//! further down); the port's earlier sampling substitute was removed in batch 66.
+//! `GeomConvert_CompCurveToBSplineCurve` is ported (constructor + `Add`,
+//! `GeomConvert_CompCurveToBSplineCurve.cxx:32-273`); it needs
+//! `Geom_BSplineCurve::IncreaseDegree` and `Geom_BSplineCurve::RemoveKnot`
+//! (both ported on `bspline_curve.rs`).
+//!
+//! **UNPORTED (audit A8 / task T-44)**: the arms of
+//! `GeomConvert::CurveToBSplineCurve` that need `GeomConvert_ApproxCurve`
+//! (the `Geom_OffsetCurve` arms, see the notes on `curve_to_bspline_curve`
+//! further down).
 //!
 //! `GeomConvert::CurveToBSplineCurve` itself is ported for the trimmed
-//! line/conic arms and the Bezier / B-spline copy arms (batch 92).
+//! line/conic arms (including the `RationalC1` + `U2-U1>=6` split-stitch arm)
+//! and the Bezier / B-spline copy arms (batch 92).
 
 use crate::bezier_curve::GeomBezierCurve;
 use occt_core::bspl::bezier::boehm_insert;
@@ -382,20 +387,45 @@ fn bspline_curve_builder(
     Ok(curve)
 }
 
+/// Dynamic type test of OCCT's `IsKind(STANDARD_TYPE(Geom_BSplineCurve))`
+/// down_cast. The port's `Curve` trait is not `Any`, so the B-spline query is
+/// the discriminator; a `Geom_TrimmedCurve` delegates that query to its basis
+/// (`trimmed.rs:127`) and is excluded here exactly as the OCCT down_cast
+/// excludes it.
+fn is_bspline(c: &dyn Curve) -> bool {
+    !c.is_geom_trimmed() && c.bspline_poles().is_some()
+}
+
+/// `Geom_BSplineCurve::Copy()` (`Geom_BSplineCurve.cxx:112-115`): a verbatim
+/// copy of the `Geom_BSplineCurve` fields, recovered from the `Curve`
+/// queries (`bspline_poles`/`bspline_weights`/`bspline_knots`/
+/// `nurbs_degree`/`is_periodic`). Equal data, not a re-approximation.
+fn bspline_copy(c: &dyn Curve) -> Result<GeomBSplineCurve, ConvertError> {
+    let poles = c.bspline_poles().ok_or(ConvertError::DomainError)?;
+    let knots = c.bspline_knots().ok_or(ConvertError::DomainError)?;
+    let degree = c.nurbs_degree().ok_or(ConvertError::DomainError)?;
+    Ok(GeomBSplineCurve {
+        poles: poles.to_vec(),
+        weights: c.bspline_weights().map(|w| w.to_vec()),
+        knots: knots.to_vec(),
+        degree,
+        periodic: c.is_periodic(),
+    })
+}
+
 /// `GeomConvert::CurveToBSplineCurve(C, Parameterisation)` (`GeomConvert.cxx:163-430`);
 /// `Parameterisation` defaults to `Convert_TgtThetaOver2`
 /// (`GeomConvert.hxx:270-272`).
 ///
-/// **UNPORTED arms** (they return [`ConvertError::Unported`]; each names the
-/// OCCT control flow that is still missing in this repository):
-/// - a trimmed `Geom_BezierCurve` (`:300-321`) needs `Geom_BezierCurve::Segment`;
-/// - a trimmed `Geom_BSplineCurve` (`:322-339`) needs
-///   `Geom_BSplineCurve::Segment` (`Geom_BSplineCurve.cxx:527-660`) and
-///   `SetNotPeriodic` (`:974-...`);
-/// - the `U2 - U1 >= 6` sub-arm of a trimmed circle/ellipse under
-///   `Convert_RationalC1` (`:224-242`, `:262-280`) needs
-///   `GeomConvert_CompCurveToBSplineCurve`;
-/// - a `Geom_OffsetCurve` (`:340-354`, `:436-450`) needs `GeomConvert_ApproxCurve`.
+/// **UNPORTED arm** (it returns [`ConvertError::Unported`]): a
+/// `Geom_OffsetCurve` (`:340-354`, `:436-450`) needs
+/// `GeomConvert_ApproxCurve`.
+///
+/// The other arms are ported: the trimmed line/conic arms (including the
+/// `RationalC1` + `U2 - U1 >= 6` split-and-stitch, `:224-242`, `:262-280`),
+/// the trimmed Bezier arm (`:300-321`, its rational sub-branch is noted
+/// in place) and the trimmed/non-trimmed B-spline copy + `Segment` arms
+/// (`:322-339`, `:431-434`).
 ///
 /// The non-trimmed `Geom_Circle`/`Geom_Ellipse` arms (`:363-408`) end with
 /// `TheCurve->SetPeriodic()` (`:378`, `:383`, `:406`); the periodic
@@ -449,7 +479,18 @@ pub fn curve_to_bspline_curve(
             // `cxx:225-242`: `U2 - U1 >= 6` splits the circle in two halves and
             // stitches them with `GeomConvert_CompCurveToBSplineCurve` to avoid
             // the numerical overflow at `U2 - U1 ~ 2*PI`.
-            return Err(ConvertError::Unported);
+            let u_med = (u1 + u2) * 0.5;
+            let convert1 = circle_to_bspline_curve_range(&c2d, u1, u_med, parameterisation)?;
+            let curve1 = bspline_curve_builder(&circ.position(), &convert1)?;
+            let convert2 = circle_to_bspline_curve_range(&c2d, u_med, u2, parameterisation)?;
+            let curve2 = bspline_curve_builder(&circ.position(), &convert2)?;
+            // `cxx:237-241`: `Add(TheCurve2, Precision::PConfusion(), true)`
+            // (After = true, WithRatio = true, MinM = 0).
+            let mut cctbspl = CompCurveToBSplineCurve::from_bspline(curve1, parameterisation);
+            cctbspl.add(&curve2, occt_core::precision::PCONFUSION, true, true, 0)?;
+            return cctbspl
+                .into_curve()
+                .ok_or(ConvertError::ConstructionError);
         }
 
         if let Some(elips) = basis.gp_ellipse() {
@@ -463,7 +504,18 @@ pub fn curve_to_bspline_curve(
                 let convert = ellipse_to_bspline_curve_range(&e2d, u1, u2, parameterisation)?;
                 return bspline_curve_builder(elips.position(), &convert);
             }
-            return Err(ConvertError::Unported);
+            // `cxx:262-280`: the same split-and-stitch as the circle arm.
+            let u_med = (u1 + u2) * 0.5;
+            let convert1 = ellipse_to_bspline_curve_range(&e2d, u1, u_med, parameterisation)?;
+            let curve1 = bspline_curve_builder(elips.position(), &convert1)?;
+            let convert2 = ellipse_to_bspline_curve_range(&e2d, u_med, u2, parameterisation)?;
+            let curve2 = bspline_curve_builder(elips.position(), &convert2)?;
+            // `cxx:275-279`: `Add(TheCurve2, Precision::PConfusion(), true)`.
+            let mut cctbspl = CompCurveToBSplineCurve::from_bspline(curve1, parameterisation);
+            cctbspl.add(&curve2, occt_core::precision::PCONFUSION, true, true, 0)?;
+            return cctbspl
+                .into_curve()
+                .ok_or(ConvertError::ConstructionError);
         }
 
         if let Some(hypr) = basis.gp_hyperbola() {
@@ -576,21 +628,9 @@ pub fn curve_to_bspline_curve(
             .map_err(|_| ConvertError::ConstructionError);
     }
 
-    if let (Some(poles), Some(knots), Some(degree)) =
-        (c.bspline_poles(), c.bspline_knots(), c.nurbs_degree())
-    {
-        // `cxx:431-434`: `TheCurve = C->Copy()`. Trait objects cannot be
-        // downcast in this port, so the copy is rebuilt from the same
-        // `Geom_BSplineCurve` queries (`bspline_poles`/`bspline_weights`/
-        // `bspline_knots`/`nurbs_degree`/`is_periodic`) — equal data, not a
-        // re-approximation.
-        return Ok(GeomBSplineCurve {
-            poles: poles.to_vec(),
-            weights: c.bspline_weights().map(|w| w.to_vec()),
-            knots: knots.to_vec(),
-            degree,
-            periodic: c.is_periodic(),
-        });
+    if is_bspline(c) {
+        // `cxx:431-434`: `TheCurve = C->Copy()`.
+        return bspline_copy(c);
     }
 
     // `cxx:436-450`: `GeomConvert_ApproxCurve` for a `Geom_OffsetCurve`.
@@ -606,21 +646,273 @@ pub fn curve_to_bspline_curve(
 // CompCurveToBSplineCurve.
 // ---------------------------------------------------------------------------
 
-// UNPORTED (audit A8 / task T-44): `GeomConvert_CompCurveToBSplineCurve`
-// (`GeomConvert_CompCurveToBSplineCurve.cxx:135-215`) concatenates the **exact**
-// B-spline images of its segments - each produced by
-// `GeomConvert::CurveToBSplineCurve` (`GeomConvert_CurveToBSplineCurve.cxx` →
-// `Convert_LineToBSplineCurve` / `Convert_CircleToBSplineCurve` /
-// `Convert_EllipseToBSplineCurve` / `Convert_ParabolaToBSplineCurve` /
-// `Convert_HyperbolaToBSplineCurve`, all rational and exact) - and stitches them
-// by knot/pole surgery, reparametrising and inserting knots as needed.
-//
-// This port used to substitute a **sampled polyline fitted as a degree-1
-// B-spline** (`n = clamp((b-a)/0.1, 2, 64)` points per segment), which is not
-// OCCT's construction. That function had no production caller
-// (`git grep comp_curve_to_bspline` reached only its own tests), so it was
-// removed in batch 66 rather than left as an invented rule; porting the OCCT
-// algorithm above is deferred until a consumer needs it.
+/// `GeomConvert_CompCurveToBSplineCurve`
+/// (`GeomConvert_CompCurveToBSplineCurve.hxx:30-78`): converts and
+/// concatenates several curves into one B-spline
+/// (`GeomConvert_CompCurveToBSplineCurve.cxx:32-273`).
+pub struct CompCurveToBSplineCurve {
+    my_curve: Option<GeomBSplineCurve>,
+    my_tol: f64,
+    my_type: ParameterisationType,
+}
+
+impl CompCurveToBSplineCurve {
+    /// `GeomConvert_CompCurveToBSplineCurve(Parameterisation)`
+    /// (`cxx:32-37`): `myTol = Precision::Confusion()`.
+    pub fn new(parameterisation: ParameterisationType) -> Self {
+        Self {
+            my_curve: None,
+            my_tol: occt_core::precision::CONFUSION,
+            my_type: parameterisation,
+        }
+    }
+
+    /// `GeomConvert_CompCurveToBSplineCurve(BasisCurve, Parameterisation)`
+    /// (`cxx:41-56`): a `Geom_BSplineCurve` basis is copied, anything else is
+    /// converted with `GeomConvert::CurveToBSplineCurve(BasisCurve, myType)`.
+    pub fn from_curve(
+        basis: &dyn Curve,
+        parameterisation: ParameterisationType,
+    ) -> Result<Self, ConvertError> {
+        let mut s = Self::new(parameterisation);
+        s.my_curve = Some(if is_bspline(basis) {
+            bspline_copy(basis)?
+        } else {
+            curve_to_bspline_curve(basis, parameterisation)?
+        });
+        Ok(s)
+    }
+
+    /// The constructor's `down_cast` branch (`cxx:47-51`) for a caller that
+    /// already owns a `GeomBSplineCurve`; equivalent to `Copy()`.
+    pub fn from_bspline(curve: GeomBSplineCurve, parameterisation: ParameterisationType) -> Self {
+        Self {
+            my_curve: Some(curve),
+            my_tol: occt_core::precision::CONFUSION,
+            my_type: parameterisation,
+        }
+    }
+
+    /// `BSplineCurve()` (`cxx:264-267`).
+    pub fn bspline_curve(&self) -> Option<&GeomBSplineCurve> {
+        self.my_curve.as_ref()
+    }
+
+    /// `Clear()` (`cxx:271-274`).
+    pub fn clear(&mut self) {
+        self.my_curve = None;
+    }
+
+    /// `BSplineCurve()` by value.
+    pub fn into_curve(self) -> Option<GeomBSplineCurve> {
+        self.my_curve
+    }
+
+    /// `Add(NewCurve, Tolerance, After, WithRatio, MinM)` (`cxx:60-131`).
+    ///
+    /// `After`/`WithRatio`/`MinM` reproduce the OCCT defaults explicitly
+    /// (`GeomConvert_CompCurveToBSplineCurve.hxx:56-60`: `false` / `true` /
+    /// `0`).
+    pub fn add(
+        &mut self,
+        new_curve: &dyn Curve,
+        tolerance: f64,
+        after: bool,
+        with_ratio: bool,
+        min_m: i32,
+    ) -> Result<bool, ConvertError> {
+        // Conversion (`cxx:66-75`).
+        let mut bs = if is_bspline(new_curve) {
+            bspline_copy(new_curve)?
+        } else {
+            curve_to_bspline_curve(new_curve, self.my_type)?
+        };
+        if self.my_curve.is_none() {
+            self.my_curve = Some(bs);
+            return Ok(true);
+        }
+        self.my_tol = tolerance;
+
+        // Use actual curve endpoints instead of poles for the G0 continuity
+        // check (`cxx:85-94`).
+        let (a_curve_start, a_curve_end) = {
+            let cur = self.my_curve.as_ref().unwrap();
+            (cur.d0(cur.first_parameter()), cur.d0(cur.last_parameter()))
+        };
+        let a_bs_start = bs.d0(bs.first_parameter());
+        let a_bs_end = bs.d0(bs.last_parameter());
+
+        let mut avant = a_curve_start.distance(&a_bs_start) < self.my_tol
+            || a_curve_start.distance(&a_bs_end) < self.my_tol;
+        let mut apres = a_curve_end.distance(&a_bs_start) < self.my_tol
+            || a_curve_end.distance(&a_bs_end) < self.my_tol;
+
+        // Will myCurve be (or become) closed? Resolve the ambiguity
+        // (`cxx:96-107`).
+        if avant && apres {
+            if after {
+                avant = false;
+            } else {
+                apres = false;
+            }
+        }
+
+        if apres {
+            // Append after? (`cxx:109-118`).
+            if a_curve_end.distance(&a_bs_end) < self.my_tol {
+                bs.reverse();
+            }
+            let mut first = self.my_curve.take().unwrap();
+            self.add_pair(&mut first, &mut bs, true, with_ratio, min_m)?;
+            Ok(true)
+        } else if avant {
+            // Prepend before? (`cxx:119-128`).
+            if a_curve_start.distance(&a_bs_start) < self.my_tol {
+                bs.reverse();
+            }
+            let mut first = bs;
+            let mut second = self.my_curve.take().unwrap();
+            self.add_pair(&mut first, &mut second, false, with_ratio, min_m)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// The private `Add(FirstCurve, SecondCurve, After, WithRatio, MinM)`
+    /// (`cxx:135-260`): harmonize the degrees, reparameterize onto the common
+    /// knot, concatenate the poles/weights and optionally lower the common
+    /// knot's multiplicity down to `MinM`. Sets `myCurve`.
+    fn add_pair(
+        &mut self,
+        first: &mut GeomBSplineCurve,
+        second: &mut GeomBSplineCurve,
+        after: bool,
+        with_ratio: bool,
+        min_m: i32,
+    ) -> Result<(), ConvertError> {
+        // Harmonize the degrees (`cxx:141-150`).
+        let deg = first.degree().max(second.degree());
+        if first.degree() < deg {
+            first
+                .increase_degree(deg)
+                .map_err(|_| ConvertError::ConstructionError)?;
+        }
+        if second.degree() < deg {
+            second
+                .increase_degree(deg)
+                .map_err(|_| ConvertError::ConstructionError)?;
+        }
+
+        // Reparameterization ratio (C1 if possible) (`cxx:163-177`).
+        let mut ratio = 1.0f64;
+        if with_ratio {
+            let l1 = first.eval_dn(first.last_parameter(), 1).magnitude();
+            let l2 = second.eval_dn(second.first_parameter(), 1).magnitude();
+            if l1 > occt_core::precision::CONFUSION && l2 > occt_core::precision::CONFUSION {
+                ratio = l1 / l2;
+            }
+            if ratio < occt_core::precision::CONFUSION
+                || ratio > 1.0 / occt_core::precision::CONFUSION
+            {
+                ratio = 1.0;
+            }
+        }
+
+        let (uf, umf) = first.distinct_knots_and_mults();
+        let (us, ums) = second.distinct_knots_and_mults();
+        let nb_p1 = first.nb_poles();
+        let nb_p2 = second.nb_poles();
+        let nb_k1 = uf.len();
+        let nb_k2 = us.len();
+        if nb_k1 == 0 || nb_k2 == 0 || nb_p1 == 0 || nb_p2 == 0 {
+            return Err(ConvertError::ConstructionError);
+        }
+
+        let (ratio1, delta1, ratio2, delta2);
+        if after {
+            // Do not move the first curve (`cxx:179-186`).
+            ratio1 = 1.0;
+            delta1 = 0.0;
+            ratio2 = 1.0 / ratio;
+            delta2 = ratio2 * us[0] - uf[nb_k1 - 1];
+        } else {
+            // Do not move the second curve (`cxx:187-194`).
+            ratio1 = ratio;
+            delta1 = ratio1 * uf[nb_k1 - 1] - us[0];
+            ratio2 = 1.0;
+            delta2 = 0.0;
+        }
+
+        // The knots (`cxx:196-229`).
+        let mut noeuds = vec![0.0f64; nb_k1 + nb_k2 - 1];
+        let mut mults_out = vec![0i32; nb_k1 + nb_k2 - 1];
+        for ii in 1..=nb_k1 {
+            noeuds[ii - 1] = ratio1 * uf[ii - 1] - delta1;
+            if ii > 1 {
+                let mut eps = occt_core::precision::epsilon(noeuds[ii - 2].abs());
+                if eps < 5.0e-10 {
+                    eps = 5.0e-10;
+                }
+                if noeuds[ii - 1] - noeuds[ii - 2] <= eps {
+                    noeuds[ii - 1] += eps;
+                }
+            }
+            mults_out[ii - 1] = umf[ii - 1];
+        }
+        mults_out[nb_k1 - 1] = first.degree() as i32;
+        for ii in 2..=nb_k2 {
+            let jj = nb_k1 + ii - 1;
+            noeuds[jj - 1] = ratio2 * us[ii - 1] - delta2;
+            let mut eps = occt_core::precision::epsilon(noeuds[jj - 2].abs());
+            if eps < 5.0e-10 {
+                eps = 5.0e-10;
+            }
+            if noeuds[jj - 1] - noeuds[jj - 2] <= eps {
+                noeuds[jj - 1] += eps;
+            }
+            mults_out[jj - 1] = ums[ii - 1];
+        }
+
+        // The poles and weights (`cxx:231-247`).
+        let mut r = first.weight(nb_p1 as i32);
+        r /= second.weight(1);
+        let mut poles_out: Vec<GpPnt> = Vec::with_capacity(nb_p1 + nb_p2 - 1);
+        let mut weights_out: Vec<f64> = Vec::with_capacity(nb_p1 + nb_p2 - 1);
+        for ii in 1..nb_p1 {
+            poles_out.push(*first.pole(ii - 1));
+            weights_out.push(first.weight(ii as i32));
+        }
+        for ii in 1..=nb_p2 {
+            poles_out.push(*second.pole(ii - 1));
+            weights_out.push(r * second.weight(ii as i32));
+        }
+
+        // Create the BSpline (`cxx:249-250`): the rational constructor with
+        // `CheckRational` decides `myRational` (`Geom_BSplineCurve.cxx:205-223`).
+        let flat = knot_sequence(&noeuds, &mults_out, deg as i32);
+        let mut curve = if weights_are_rational(&weights_out) {
+            GeomBSplineCurve::rational(poles_out, weights_out, flat, deg)
+                .map_err(|_| ConvertError::ConstructionError)?
+        } else {
+            GeomBSplineCurve::new(poles_out, flat, deg)
+                .map_err(|_| ConvertError::ConstructionError)?
+        };
+
+        // Optionally reduce multiplicity down to MinM (`cxx:252-259`).
+        let mut ok = true;
+        let mut m = mults_out[nb_k1 - 1];
+        while m > min_m && ok {
+            m -= 1;
+            ok = curve
+                .remove_knot(nb_k1 as i32, m, self.my_tol)
+                .map_err(|_| ConvertError::ConstructionError)?;
+        }
+
+        self.my_curve = Some(curve);
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {

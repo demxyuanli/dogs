@@ -4,6 +4,9 @@ use crate::curve::Curve;
 use occt_core::gp::{GpPnt, GpVec, GpTrsf};
 use occt_core::bspl::{knots, eval, poles, curve_tools};
 
+/// `BSplCLib::MaxDegree()` (`BSplCLib.lxx:24-27`).
+pub const MAX_DEGREE: usize = 25;
+
 /// Non-rational or rational B-spline curve in 3D.
 #[derive(Clone)]
 pub struct GeomBSplineCurve {
@@ -647,6 +650,123 @@ impl GeomBSplineCurve {
             self.weights = newweights.take();
         }        self.update_flat_knots(&nknots, &nmults);
         Ok(())
+    }
+
+    /// `Geom_BSplineCurve::Weight(Index)` (`Geom_BSplineCurve_1.cxx:148-151`):
+    /// the stored weight, unit when the curve is not rational
+    /// (`Geom_BSplineCurve` keeps `BSplCLib::UnitWeights` in that case).
+    pub fn weight(&self, index: i32) -> f64 {
+        match &self.weights {
+            Some(w) => w.get((index - 1).max(0) as usize).copied().unwrap_or(1.0),
+            None => 1.0,
+        }
+    }
+
+    /// `Geom_BSplineCurve::IncreaseDegree(Degree)`
+    /// (`Geom_BSplineCurve.cxx:243-298`): raise the degree to `degree` using
+    /// `BSplCLib::IncreaseDegree` (the Prautzsch degree elevation,
+    /// `BSplCLib.cxx:2592-2963`), wrapped by `BSplCLib_IncreaseDegree`
+    /// (`BSplCLib_CurveComputation.pxx:537-589`).
+    ///
+    /// `degree == self.degree` is a no-op, `degree < self.degree` or
+    /// `degree > MaxDegree()` is OCCT's `Standard_ConstructionError`
+    /// (`Geom_BSplineCurve.cxx:252-255`). `MaxDegree()` is
+    /// `BSplCLib::MaxDegree()` = 25 (`BSplCLib.lxx:24-27`).
+    /// `ClearEvalRepresentation()` has no counterpart: no eval cache is kept.
+    pub fn increase_degree(&mut self, degree: usize) -> Result<(), &'static str> {
+        if degree == self.degree {
+            return Ok(());
+        }
+        if degree < self.degree || degree > MAX_DEGREE {
+            return Err("GeomBSplineCurve::increase_degree: bad degree value");
+        }
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        let (from_k1, to_k2) = self.u_knot_index_range(&umults);
+        let step = degree as i32 - self.degree as i32;
+        // `Geom_BSplineCurve.cxx:256-261`: `FromK1`/`ToK2` and the new pole
+        // count `myPoles.Length() + Step * (ToK2 - FromK1)`.
+        let nb_new_poles = self.poles.len() as i32 + step * (to_k2 - from_k1);
+        // `Geom_BSplineCurve.cxx:263`: `BSplCLib::IncreaseDegreeCountKnots`.
+        let nb_new_knots = occt_core::bspl::increase_degree::increase_degree_count_knots(
+            self.degree as i32,
+            degree as i32,
+            self.periodic,
+            &umults,
+        );
+        if nb_new_poles <= 0 || nb_new_knots <= 0 {
+            return Err("GeomBSplineCurve::increase_degree: bad degree value");
+        }
+        let out = occt_core::bspl::increase_degree::increase_degree(
+            self.degree as i32,
+            degree as i32,
+            self.periodic,
+            &self.poles,
+            self.weights.as_deref(),
+            &uknots,
+            &umults,
+            nb_new_poles as usize,
+            nb_new_knots as usize,
+        );
+        self.poles = out.poles;
+        self.weights = out.weights;
+        self.degree = degree;
+        self.update_flat_knots(&out.knots, &out.mults);
+        Ok(())
+    }
+
+    /// `Geom_BSplineCurve::RemoveKnot(Index, M, Tolerance)`
+    /// (`Geom_BSplineCurve.cxx:420-495`): lower the multiplicity of the
+    /// distinct knot `index` to `m` (`m == 0` removes the knot entirely).
+    ///
+    /// Returns `Ok(false)` exactly where `BSplCLib::RemoveKnot`
+    /// (`BSplCLib.cxx:2355-2542`) reports failure; the out-of-range index is
+    /// OCCT's `Standard_OutOfRange` (`Geom_BSplineCurve.cxx:430-437`).
+    pub fn remove_knot(&mut self, index: i32, m: i32, tolerance: f64) -> Result<bool, &'static str> {
+        if m < 0 {
+            return Ok(true);
+        }
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        let (i1, i2) = self.u_knot_index_range(&umults);
+        if !self.periodic && (index <= i1 || index >= i2) {
+            return Err("GeomBSplineCurve::remove_knot: index out of range");
+        } else if self.periodic && (index < i1 || index > i2) {
+            return Err("GeomBSplineCurve::remove_knot: index out of range");
+        }
+        let idx = (index - 1) as usize;
+        if idx >= umults.len() {
+            return Err("GeomBSplineCurve::remove_knot: index out of range");
+        }
+        let step = umults[idx] - m;
+        if step <= 0 {
+            return Ok(true);
+        }
+        let nb_new_poles = self.poles.len() as i32 - step;
+        let nb_new_knots = uknots.len() as i32 - if m == 0 { 1 } else { 0 };
+        if nb_new_poles < 0 || nb_new_knots < 0 {
+            return Err("GeomBSplineCurve::remove_knot: index out of range");
+        }
+        let out = occt_core::bspl::remove_knot::remove_knot(
+            index,
+            m,
+            self.degree as i32,
+            self.periodic,
+            &self.poles,
+            self.weights.as_deref(),
+            &uknots,
+            &umults,
+            nb_new_poles as usize,
+            nb_new_knots as usize,
+            tolerance,
+        );
+        match out {
+            Some(out) => {
+                self.poles = out.poles;
+                self.weights = out.weights;
+                self.update_flat_knots(&out.knots, &out.mults);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 
     /// Simple degree reduction: drop to degree-1 by removing end knots and
