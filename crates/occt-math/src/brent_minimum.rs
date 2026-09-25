@@ -225,7 +225,133 @@ impl BrentMinimum {
         self.done = false;
         false
     }
+
+    /// Same as [`BrentMinimum::perform`], but the objective may fail (return
+    /// `None`), mirroring `math_Function::Value` returning `false`.
+    ///
+    /// OCCT's `Perform` returns immediately, leaving `Done` untouched, when
+    /// `F.Value` fails: on the first evaluation (`math_BrentMinimum.cxx:93-97`)
+    /// and inside the loop (`math_BrentMinimum.cxx:144-148`). The return value
+    /// here is `IsDone()` after the call.
+    pub fn perform_fallible<F: FnMut(f64) -> Option<f64>>(
+        &mut self,
+        f: &mut F,
+        ax: f64,
+        bx: f64,
+        cx: f64,
+    ) -> bool {
+        let mut e = 0.0f64;
+        let mut d = f64::MAX; // RealLast()
+        let mut etemp;
+        let mut p;
+        let mut q;
+        let mut r;
+        let mut u;
+
+        self.a = if ax < cx { ax } else { cx };
+        self.b = if ax > cx { ax } else { cx };
+        self.x = bx;
+        let mut w = bx;
+        let mut v = bx;
+        if !self.my_f {
+            // math_BrentMinimum.cxx:93-97
+            match f(self.x) {
+                Some(val) => self.fx = val,
+                None => return false,
+            }
+        }
+        self.fw = self.fx;
+        self.fv = self.fx;
+
+        for iter in 1..=self.itermax {
+            let xm = 0.5 * (self.a + self.b);
+            let tol1 = self.xtol * self.x.abs() + self.epsz;
+            let tol2 = 2.0 * tol1;
+            if self.is_solution_reached() {
+                self.iter = iter;
+                self.done = true;
+                return true;
+            }
+            if e.abs() > tol1 {
+                r = (self.x - w) * (self.fx - self.fv);
+                q = (self.x - v) * (self.fx - self.fw);
+                p = (self.x - v) * q - (self.x - w) * r;
+                q = 2.0 * (q - r);
+                if q > 0.0 {
+                    p = -p;
+                }
+                q = q.abs();
+                etemp = e;
+                e = d;
+                if p.abs() >= (0.5 * q * etemp).abs()
+                    || p <= q * (self.a - self.x)
+                    || p >= q * (self.b - self.x)
+                {
+                    e = if self.x >= xm {
+                        self.a - self.x
+                    } else {
+                        self.b - self.x
+                    };
+                    d = CGOLD * e;
+                } else {
+                    d = p / q;
+                    u = self.x + d;
+                    if u - self.a < tol2 || self.b - u < tol2 {
+                        d = copysign(tol1, xm - self.x);
+                    }
+                }
+            } else {
+                e = if self.x >= xm {
+                    self.a - self.x
+                } else {
+                    self.b - self.x
+                };
+                d = CGOLD * e;
+            }
+            u = if d.abs() >= tol1 {
+                self.x + d
+            } else {
+                self.x + copysign(tol1, d)
+            };
+            // math_BrentMinimum.cxx:144-148
+            let fu = match f(u) {
+                Some(val) => val,
+                None => return false,
+            };
+            if fu <= self.fx {
+                if u >= self.x {
+                    self.a = self.x;
+                } else {
+                    self.b = self.x;
+                }
+                v = w;
+                w = self.x;
+                self.x = u;
+                self.fv = self.fw;
+                self.fw = self.fx;
+                self.fx = fu;
+            } else {
+                if u < self.x {
+                    self.a = u;
+                } else {
+                    self.b = u;
+                }
+                if fu <= self.fw || w == self.x {
+                    v = w;
+                    w = u;
+                    self.fv = self.fw;
+                    self.fw = fu;
+                } else if fu <= self.fv || v == self.x || v == w {
+                    v = u;
+                    self.fv = fu;
+                }
+            }
+        }
+        self.done = false;
+        false
+    }
 }
+
 
 /// `copysign` with OCCT's `std::copysign` semantics (magnitude of `mag`, sign of
 /// `sign`).
