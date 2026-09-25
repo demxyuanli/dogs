@@ -231,9 +231,9 @@ fn occ_test_model_bboxes_match_occt() {
     // The wave-2026-09-15 OCCT test models (`data/occ/*.stp`) and their OCCT
     // `WriteObj` references `data/occ/occ-<stem>.obj` (added 2026-09-24; see the
     // provenance addendum in `data/_occ_ref_export.tcl`). bottom / motoc / top
-    // lock the alignment the export gate measured; a3n00 / acs10 / TDB still
-    // drift and are tracked on the board instead of being asserted here.
-    // Density stays a tracked gap.
+    // lock the alignment the export gate measured; a3n00 / acs10 / TDB are
+    // asserted too (added 2026-09-25) — their bboxes match the same reference at
+    // sampling level. Density stays a tracked gap.
     check_parity_at("occ/bottom.step", "occ/occ-bottom.obj", OCC_MODEL_TOL);
     check_parity_at("occ/motoc.step", "occ/occ-motoc.obj", OCC_MODEL_TOL);
     check_parity_at("occ/top.step", "occ/occ-top.obj", OCC_MODEL_TOL);
@@ -243,6 +243,14 @@ fn occ_test_model_bboxes_match_occt() {
     // failure faces); max z agrees to 6.4e-6. The tolerance encodes that
     // mismatch, exactly as the per-shape tolerances above encode theirs.
     check_parity_at("occ/T0M.stp", "occ/occ-T0M.obj", 0.9);
+    // a3n00 / acs10 / TDB were the remaining un-asserted `data/occ` models.
+    // Measured 2026-09-25 against their `WriteObj` reference: acs10 agrees
+    // exactly, TDB to 4.9e-6, a3n00 to 6.2e-3. a3n00 keeps the looser tolerance
+    // because its mesh still misses the T-59/T-69 face classes (density 0.72);
+    // the bbox extent is the gate and is asserted here.
+    check_parity_at("occ/acs10.stp", "occ/occ-acs10.obj", OCC_MODEL_TOL);
+    check_parity_at("occ/TDB.stp", "occ/occ-TDB.obj", OCC_MODEL_TOL);
+    check_parity_at("occ/a3n00.stp", "occ/occ-a3n00.obj", 0.01);
 }
 
 #[test]
