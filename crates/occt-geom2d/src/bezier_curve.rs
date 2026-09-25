@@ -186,6 +186,12 @@ impl Curve2d for Geom2dBezierCurve {
     fn bezier_nb_poles(&self) -> Option<usize> {
         Some(self.poles.len())
     }
+
+    /// `Geom2dAdaptor_Curve::IsRational()` (`Geom2dAdaptor_Curve.cxx:1297-1298`):
+    /// `Geom2d_BezierCurve::IsRational()` is true once weights were supplied.
+    fn is_rational(&self) -> bool {
+        self.weights.is_some()
+    }
 }
 
 /// de Casteljau evaluation of a non-rational Bezier.

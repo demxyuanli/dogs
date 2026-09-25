@@ -12,118 +12,223 @@
 //! `perform_lin_circ`, `perform_circ_circ`, `perform_{lin,circ,elips,parab,hypr}_conic`
 //! — ported in `occt_core::intana2d::ana_intersection`) and `Extrema_ExtCC2d`
 //! (`crate::extrema2d::curve_curve_extrema2d_all`, whose general-curve seeding is
-//! itself the A7-family substitute) for the rest. [`curve2d_length`] is Simpson
-//! quadrature of `|d1|`, where OCCT integrates with
-//! `GCPnts_AbscissaPoint`/`math_GaussSingleIntegration`.
+//! itself the A7-family substitute) for the rest. [`curve2d_length`] /
+//! [`curve2d_length_tol`] are the faithful `GCPnts_AbscissaPoint::Length`
+//! (`GCPnts_AbscissaPoint.cxx:305-423`) → `CPnts_AbscissaPoint::Length`
+//! (`CPnts_AbscissaPoint.cxx:148-207`) → `math_GaussSingleIntegration` path.
 
 use occt_core::gp::{GpLin2d, GpPnt2d, GpXY};
 use crate::curve::Curve2d;
 
-/// Arc length of a bounded 2D curve — the faithful `CPnts_AbscissaPoint` path.
+/// Arc length of a bounded 2D curve — the faithful `GCPnts_AbscissaPoint` path.
 ///
-/// Type dispatch mirrors `GCPnts_AbscissaPoint::computeType`
-/// (`GCPnts_AbscissaPoint.cxx:26-55`) and `GCPnts_AbscissaPoint::length`
-/// (`:84-140`): more than one `GeomAbs_CN` interval ⇒ sum over the intervals; a
-/// line / circle (or a 2-pole non-rational Bezier / B-spline) is
-/// *length-parametrised* ⇒ `|U2 − U1| × ratio`; everything else integrates the
-/// speed `|C'(u)|` with `math_GaussSingleIntegration` at OCCT's per-type order
-/// `order(C)` (`CPnts_AbscissaPoint.cxx:79-100`: `Line` 2, `Parabola` 5,
-/// `BezierCurve` `min(24, 2·Degree)`, `BSplineCurve` `min(24, 2·NbPoles − 1)`,
-/// everything else 10). Returns `NaN` for unbounded curves.
+/// `GCPnts_AbscissaPoint::Length(theC)` (`GCPnts_AbscissaPoint.cxx:312-315`) is
+/// `Length(theC, FirstParameter, LastParameter)` (`:342-347`), i.e. [`length_2d`]
+/// with no tolerance. Returns `NaN` for unbounded curves (a port guard; OCCT
+/// would integrate over an infinite range).
 pub fn curve2d_length(c: &dyn Curve2d) -> f64 {
     let a = c.first_parameter();
     let b = c.last_parameter();
     if !a.is_finite() || !b.is_finite() {
         return f64::NAN;
     }
-    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-    // `GCPnts_AbsComposite` arm: `NbIntervals(GeomAbs_CN)` (`GeomAbs_CN = 6`,
-    // `occt-core/src/kernel/geomabs.rs`).
-    if c.nb_intervals(6) > 1 {
-        let ti = c.parameter_intervals(6);
-        let mut total = 0.0;
-        for w in ti.windows(2) {
-            let u1 = w[0].max(lo);
-            let u2 = w[1].min(hi);
-            if u2 > u1 {
-                total += gauss_length_2d(c, u1, u2);
-            }
-        }
-        return total;
-    }
-    // `computeType`: length-parametrised curves need no quadrature.
-    if c.is_line() {
-        return (b - a).abs();
-    }
-    if let Some(circ) = c.gp_circ2d() {
-        return (b - a).abs() * circ.radius();
-    }
-    if let Some(n) = c.bezier_nb_poles() {
-        if n == 2 {
-            return (b - a).abs() * c.d1(0.0).1.magnitude();
-        }
-    }
-    if let Some((xs, _ys)) = c.bspline_poles2d() {
-        if xs.len() == 2 {
-            return (b - a).abs() * c.d1(c.first_parameter()).1.magnitude();
-        }
-    }
-    gauss_length_2d(c, a, b)
+    length_2d(c, a, b, None)
 }
 
-/// `order(const Adaptor2d_Curve2d&)` (`CPnts_AbscissaPoint.cxx:79-100`).
+/// `GCPnts_AbscissaPoint::Length(theC, theU1, theU2, theTol)`
+/// (`GCPnts_AbscissaPoint.cxx:361-367`, body `:371-423`): the tolerance overload
+/// of [`curve2d_length`]. On the `Parametrized` arm of [`compute_type_2d`] it is
+/// exactly `CPnts_AbscissaPoint::Length(C, U1, U2, Tol)`
+/// (`CPnts_AbscissaPoint.cxx:191-207`); the length-parametrised arm ignores
+/// `tol`, and the composite arm refines each `GeomAbs_CN` interval separately.
+pub fn curve2d_length_tol(c: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> f64 {
+    length_2d(c, u1, u2, Some(tol))
+}
+
+/// `GCPnts_AbscissaType` (`GCPnts_AbscissaType.hxx`) plus the length ratio that
+/// `computeType` (`GCPnts_AbscissaPoint.cxx:26-65`) fills in for the
+/// length-parametrised case.
+enum Abs2d {
+    LengthParametrized(f64),
+    Parametrized,
+    Composite,
+}
+
+/// `computeType` (`GCPnts_AbscissaPoint.cxx:26-65`): more than one
+/// `GeomAbs_CN` interval (`GeomAbs_CN = 6`, `occt-core/src/kernel/geomabs.rs`)
+/// ⇒ `GCPnts_AbsComposite`; otherwise a line, a circle, or a two-pole
+/// **non-rational** Bezier / B-spline is length-parametrised
+/// (`aBz->NbPoles() == 2 && !aBz->IsRational()`, `:45`;
+/// `aBs->NbPoles() == 2 && !aBs->IsRational()`, `:54`); everything else is
+/// integrated.
+fn compute_type_2d(c: &dyn Curve2d) -> Abs2d {
+    if nb_intervals_cn(c) > 1 {
+        return Abs2d::Composite;
+    }
+    let base = adaptor2d(c);
+    if base.is_line() {
+        return Abs2d::LengthParametrized(1.0);
+    }
+    if let Some(circ) = base.gp_circ2d() {
+        return Abs2d::LengthParametrized(circ.radius());
+    }
+    if let Some(n) = base.bezier_nb_poles() {
+        if n == 2 && !base.is_rational() {
+            // `aBz->DN(0, 1)`: the derivative of the Bezier's own `[0, 1]`
+            // parametrisation at 0.
+            return Abs2d::LengthParametrized(base.d1(0.0).1.magnitude());
+        }
+    }
+    if let Some((xs, _ys)) = base.bspline_poles2d() {
+        if xs.len() == 2 && !base.is_rational() {
+            // `aBs->DN(aBs->FirstParameter(), 1)`.
+            return Abs2d::LengthParametrized(base.d1(base.first_parameter()).1.magnitude());
+        }
+    }
+    Abs2d::Parametrized
+}
+
+/// `GCPnts_AbscissaPoint::length` (`GCPnts_AbscissaPoint.cxx:371-423`). The
+/// length-parametrised arm returns `|U2 − U1| × ratio` (`:381-383`); the
+/// parametrized arm forwards to `CPnts_AbscissaPoint::Length` (`:384-387`); the
+/// composite arm walks the `GeomAbs_CN` break points and adds the length of the
+/// part of each interval that overlaps `[min(U1, U2), max(U1, U2)]` (`:388-420`).
+fn length_2d(c: &dyn Curve2d, u1: f64, u2: f64, tol: Option<f64>) -> f64 {
+    match compute_type_2d(c) {
+        Abs2d::LengthParametrized(ratio) => (u2 - u1).abs() * ratio,
+        Abs2d::Parametrized => match tol {
+            Some(t) => gauss_length_tol_2d(c, u1, u2, t),
+            None => gauss_length_2d(c, u1, u2),
+        },
+        Abs2d::Composite => {
+            let ti = parameter_intervals_cn(c);
+            let uu1 = u1.min(u2);
+            let uu2 = u1.max(u2);
+            let mut total = 0.0;
+            for w in ti.windows(2) {
+                if w[0] > uu2 {
+                    break;
+                }
+                if w[1] < uu1 {
+                    continue;
+                }
+                let lo = w[0].max(uu1);
+                let hi = w[1].min(uu2);
+                total += match tol {
+                    Some(t) => gauss_length_tol_2d(c, lo, hi, t),
+                    None => gauss_length_2d(c, lo, hi),
+                };
+            }
+            total
+        }
+    }
+}
+
+/// `Geom2dAdaptor_Curve::load` (`Geom2dAdaptor_Curve.cxx:285-288`) stores the
+/// **basis** of a `Geom2d_TrimmedCurve` (recursively, `:287`): every
+/// `GetType()`-driven query (`Line()`, `Circle()`, `Bezier()`, `BSpline()`,
+/// `IsRational()`, `Degree()`, `NbPoles()`) resolves on the basis, while
+/// `FirstParameter`/`LastParameter` stay the trimmed range.
+fn adaptor2d(c: &dyn Curve2d) -> &dyn Curve2d {
+    let mut cur = c;
+    while let Some(basis) = cur.trimmed_basis() {
+        cur = basis;
+    }
+    cur
+}
+
+/// `Geom2dAdaptor_Curve::NbIntervals(GeomAbs_CN)`
+/// (`Geom2dAdaptor_Curve.cxx:409-486`), resolved as the stored adaptor curve: a
+/// trimmed curve unwraps to its basis (`:285-288`), and an offset curve asks a
+/// basis adaptor with `default: BaseS = GeomAbs_CN` (`:472-474`).
+fn nb_intervals_cn(c: &dyn Curve2d) -> i32 {
+    parameter_intervals_cn(c).len().saturating_sub(1).max(1) as i32
+}
+
+/// `Geom2dAdaptor_Curve::Intervals(GeomAbs_CN)` (`:490-573`), resolved the same
+/// way as [`nb_intervals_cn`]. OCCT builds an offset's `GeomAbs_CN` break points
+/// from a basis adaptor over its own `[First, Last]` (`:559-563`) and then
+/// forces the two end points to the offset's range (`:564-565`); the basis break
+/// points are a superset of that, and [`length_2d`] clips them, so the sum is the
+/// same.
+fn parameter_intervals_cn(c: &dyn Curve2d) -> Vec<f64> {
+    if let Some(basis) = c.offset_basis() {
+        return parameter_intervals_cn(basis);
+    }
+    if let Some(basis) = c.trimmed_basis() {
+        return parameter_intervals_cn(basis);
+    }
+    c.parameter_intervals(6)
+}
+
+/// `order(const Adaptor2d_Curve2d&)` (`CPnts_AbscissaPoint.cxx:79-100`):
+/// `Line` 2, `Parabola` 5, `BezierCurve` `min(24, 2·Degree)`,
+/// `BSplineCurve` `min(24, 2·NbPoles − 1)`, everything else 10. The type queries
+/// resolve on the adaptor's stored curve ([`adaptor2d`]).
 fn gauss_order_2d(c: &dyn Curve2d) -> usize {
-    if c.is_line() {
+    let base = adaptor2d(c);
+    if base.is_line() {
         return 2;
     }
-    if c.gp_parab2d().is_some() {
+    if base.gp_parab2d().is_some() {
         return 5;
     }
-    if let Some(n) = c.bezier_nb_poles() {
-        return (2 * (n - 1)).min(24).max(1);
+    if let Some(n) = base.bezier_nb_poles() {
+        return (2 * n.saturating_sub(1)).min(24).max(1);
     }
-    if let Some((xs, _ys)) = c.bspline_poles2d() {
-        return (2 * xs.len() - 1).min(24).max(1);
+    if let Some((xs, _ys)) = base.bspline_poles2d() {
+        return (2 * xs.len()).saturating_sub(1).min(24).max(1);
     }
     10
 }
 
+/// `math::GaussPointsMax()` (`math.cxx:25-28`, returns 61), the clamp
+/// `math_GaussSingleIntegration` puts on the requested order
+/// (`math_GaussSingleIntegration.cxx:60`, `:70`).
+const GAUSS_POINTS_MAX: usize = 61;
+
 /// `CPnts_AbscissaPoint::Length(C, U1, U2)` (`CPnts_AbscissaPoint.cxx:148-161`):
-/// `|math_GaussSingleIntegration(|C'|, U1, U2, order(C))|`.
+/// `|math_GaussSingleIntegration(|C'|, U1, U2, order(C))|`, the order clamped to
+/// `min(math::GaussPointsMax(), order(C))`.
 fn gauss_length_2d(c: &dyn Curve2d, u1: f64, u2: f64) -> f64 {
-    let n = gauss_order_2d(c);
+    let n = gauss_order_2d(c).min(GAUSS_POINTS_MAX);
     let f = |u: f64| c.d1(u).1.magnitude();
     occt_math::gauss::integrate(&f, u1, u2, n).abs()
 }
 
-/// `CPnts_AbscissaPoint::Length(C, U1, U2, Tol)` (`CPnts_AbscissaPoint.cxx:163-184`)
-/// → `math_GaussSingleIntegration(FG, U1, U2, order(C), Tol)`
-/// (`math_GaussSingleIntegration.cxx:64-98`): repeat the rule on `2^k` equal
-/// sub-intervals (`IterMax = 13`) until two successive totals differ by at most
-/// `tol`.
+/// `CPnts_AbscissaPoint::Length(C, U1, U2, Tol)`
+/// (`CPnts_AbscissaPoint.cxx:191-207`) → `math_GaussSingleIntegration(FG, U1, U2,
+/// order(C), Tol)` (`math_GaussSingleIntegration.cxx:64-98`): repeat the rule on
+/// `2^k` equal sub-intervals (`IterMax = 13`) until two successive totals differ
+/// by at most `tol`.
 ///
-/// Measured: the no-tolerance overload above is only ~1.3e-3 accurate on a full
-/// ellipse (order 10 ⇒ 14.551758936716; the true perimeter is 14.532672330892 by
-/// a Jacobi-series reference, with fine Simpson agreeing to 1e-10). This overload
-/// refines to that value.
-pub fn curve2d_length_tol(c: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> f64 {
-    let n = gauss_order_2d(c);
+/// Measured: the no-tolerance overload is only ~1.3e-3 accurate on a full ellipse
+/// (order 10 ⇒ 14.551758936716; the true perimeter is 14.532672330892 by a
+/// Jacobi-series reference). This overload refines to 14.532672330821.
+fn gauss_length_tol_2d(c: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> f64 {
+    const ITER_MAX: usize = 13;
+    let n = gauss_order_2d(c).min(GAUSS_POINTS_MAX);
     let f = |u: f64| c.d1(u).1.magnitude();
-    let mut prev = occt_math::gauss::integrate(&f, u1, u2, n);
-    for k in 1..=13 {
-        let panels = 1usize << k;
-        let h = (u2 - u1) / panels as f64;
-        let mut total = 0.0;
-        for i in 0..panels {
-            let a = u1 + i as f64 * h;
-            total += occt_math::gauss::integrate(&f, a, a + h, n);
+    let mut len = occt_math::gauss::integrate(&f, u1, u2, n);
+    let mut nb_interval = 1usize;
+    for _ in 0..ITER_MAX {
+        let old_len = len;
+        len = 0.0;
+        nb_interval *= 2;
+        let du = (u2 - u1) / nb_interval as f64;
+        for i in 0..nb_interval {
+            len += occt_math::gauss::integrate(
+                &f,
+                u1 + i as f64 * du,
+                u1 + (i + 1) as f64 * du,
+                n,
+            );
         }
-        if tol > 0.0 && (total - prev).abs() <= tol {
-            return total.abs();
+        if (old_len - len).abs() <= tol {
+            break;
         }
-        prev = total;
     }
-    prev.abs()
+    len.abs()
 }
 
 /// Point on the curve at parameter `u`.

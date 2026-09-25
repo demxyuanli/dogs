@@ -118,6 +118,20 @@ pub trait Curve2d: Send + Sync {
         None
     }
 
+    /// `Geom2dAdaptor_Curve::IsRational()` (`Geom2dAdaptor_Curve.cxx:1291-1302`):
+    /// the Bezier and B-spline arms return the stored curve's `IsRational()`,
+    /// and every other `GeomAbs_CurveType` returns `false` (`:1299-1300`). The
+    /// port's 2D B-spline stores no weights, so only the Bezier arm can report
+    /// `true`.
+    ///
+    /// UNPORTED (outside this crate): the `occt-topo` wrappers
+    /// `pcurve::PlaneKeepParam2d` and `pcurve_full::ReparamCurve2d` delegate
+    /// `bezier_nb_poles` but keep this default, so a rational 2-pole Bezier
+    /// behind them still reports `false`.
+    fn is_rational(&self) -> bool {
+        false
+    }
+
     /// `Geom2d_BSplineCurve::NbKnots()` (`Geom2d_BSplineCurve_1.cxx:598`); `Some`
     /// only when this curve is a `Geom2d_BSplineCurve`, mirroring
     /// `IsKind(STANDARD_TYPE(Geom2d_BSplineCurve))` (`Geom2dAdaptor_Curve.cxx:1364-1368`).
