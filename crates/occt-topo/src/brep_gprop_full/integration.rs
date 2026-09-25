@@ -61,6 +61,25 @@ impl FaceGauss {
     }
 
     /// The face's finite UV bounds `(u1, u2, v1, v2)`.
+    /// `BRepGProp_Face::Bounds` (`BRepGProp_Face.cxx:150-156`): the *surface
+    /// adaptor* parameters — `FirstUParameter()`/`LastUParameter()` of
+    /// `BRepAdaptor_Surface`, i.e. the natural parameter range for a
+    /// cylinder/cone/sphere/torus and the face UV bounds only for a plane.
+    pub(super) fn surface_ranges(&self) -> (f64, f64, f64, f64) {
+        // `BRepAdaptor_Surface::FirstUParameter()`/`LastUParameter()`: a *plane*
+        // reports the face's UV bounds (it is otherwise unbounded), every other
+        // type its natural parameter range (`GeomAdaptor_Surface`).
+        if matches!(
+            crate::brep_surface::classify_surface(self.surface.as_ref()),
+            crate::brep_surface::SurfaceKind::Plane
+        ) {
+            return self.bounds();
+        }
+        let (u1, u2) = self.surface.u_range();
+        let (v1, v2) = self.surface.v_range();
+        (u1, u2, v1, v2)
+    }
+
     pub(super) fn bounds(&self) -> (f64, f64, f64, f64) {
         (self.u1, self.u2, self.v1, self.v2)
     }
@@ -292,6 +311,15 @@ pub(super) fn build_arc(e: &Edge, face: &Face, map: &UVMap) -> Option<BoundaryAr
             });
         }
     }
+    if std::env::var("PROBE70").is_ok() {
+        let fk = crate::tgeometry::GeometryRegistry::shape_key(&face.0);
+        let n = crate::tgeometry::GeometryRegistry::global().edge_pcurves(&e.0, fk).len();
+        let kind = crate::brep_surface::classify_surface(
+            crate::brep_tool::BRepTool::face_surface(face).unwrap().as_ref(),
+        );
+        let rng = crate::tgeometry::GeometryRegistry::global().pcurve_range(&e.0, fk);
+        eprintln!("PROBE70 FALLBACK surf={kind:?} npc={n} range={rng:?}");
+    }
     let curve = BRepTool::edge_curve_world(e)?;
     let (a0, b0) = BRepTool::edge_parameters(e);
     if !(a0.is_finite() && b0.is_finite() && b0 > a0) {
@@ -439,7 +467,11 @@ pub(super) fn compute_rect(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ: G
 
 /// Boundary line integral (Green's theorem) over a trimmed face's wire arcs.
 pub(super) fn compute_domain(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ: GaussType) -> Result<Inertia, String> {
-    let (u1, u2, v1, v2) = fa.bounds();
+    // `BRepGProp_Face::Bounds` (`BRepGProp_Face.cxx:150-156`) gives `u1 = BU1` and
+    // the `u2`/`v` clamps from the *surface* parameters (natural range for a
+    // cylinder/cone/sphere/torus, face UV bounds only for a plane), not from the
+    // face's own UV bounds.
+    let (u1, u2, v1, v2) = fa.surface_ranges();
     let nb_u = fa.u_integration_order().min(GPM);
     let nb_v = fa.v_integration_order().min(GPM);
     let nb_g = nb_u.max(nb_v);
@@ -527,7 +559,7 @@ pub(super) fn compute_adaptive(
     let an_eps = eps.abs();
     let i_gl_end = if is_error_calc { 2 } else { 1 };
 
-    let (u1, u2, v1, v2) = fa.bounds();
+    let (u1, u2, v1, v2) = fa.surface_ranges();
     if !(u1.is_finite() && u2.is_finite() && v1.is_finite() && v2.is_finite()) {
         // Fall back to the non-adaptive path for infinite ranges.
         let inert = compute_face(fa, loc, coeff, typ)?;
