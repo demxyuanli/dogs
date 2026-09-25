@@ -752,6 +752,23 @@ fn refine_angles_at_vertex(face: &Face, v: &TopoShape, infos: &mut [EdgeInfo]) {
 /// edge's p-curve with the ray through the vertex along each boundary angle and
 /// take the angle of the point where the curve leaves the wedge. Returns the
 /// refined angle, or `None` when neither ray produces a usable point.
+/// `BOPAlgo_WireSplitter_1.cxx::RefineAngle2D` (`:1033-1125`).
+///
+/// Substitutions registered for audit §13 / task T-33:
+/// * OCCT intersects through `Geom2dInt_GInter::Perform(aGAC1, aDomain1,
+///   aGAC2, aDomain2, aTolInt, aTolInt)` with an explicit `IntRes2d_Domain`
+///   (`cxx:1080`); this port calls
+///   [`occt_geom2d::geom2d_api::intersect_curves`] and applies the
+///   `[a_t1, a_t2]` restriction itself (`:1084-1100`). The two agree when the
+///   intersector returns every intersection point of that domain.
+/// * **UNPORTED**: OCCT takes the vertex parameter from the *pcurve*
+///   (`aTV = BRep_Tool::Parameter(aV, aE, myFace)`, `cxx:1060`); this port uses
+///   the **3D edge parameter** ([`vertex_parameter`]). That is only valid when
+///   the pcurve and the 3D curve share a parameterization (SameParameter): the
+///   degenerate "pcurve parameterization ≠ 3D edge parameterization" case is
+///   handled silently as if it were SameParameter. `IntTools_Curve` and
+///   `MakeSplitEdge` keep that property for the BOP inputs, but this is not
+///   line-by-line equivalent.
 fn refine_angle_2d(
     face: &Face,
     v: &TopoShape,

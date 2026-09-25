@@ -709,7 +709,16 @@ pub fn is_split_to_reverse_face(
     Ok(dn_sp.dot(&dn_or) < 0.0)
 }
 
-/// `BOPTools_AlgoTools::IsSplitToReverse` (edges).
+/// `BOPTools_AlgoTools::IsSplitToReverse` (edges)
+/// (`BOPTools_AlgoTools.cxx:1432-1500`).
+///
+/// Substitution registered for audit §13 / task T-34: OCCT narrows the sampled
+/// parameter range with `BRepLib::FindValidRange(theESp, f, l)` and only falls
+/// back to `BRep_Tool::Range` when that returns false (`cxx:1469-1472`); this
+/// port uses [`BRepTool::edge_parameters`] (`BRep_Tool::Range`) directly. For an
+/// edge whose stored range extends beyond the valid part of its curve the
+/// sampled `tm` therefore differ, so the two implementations are **not**
+/// line-by-line equivalent.
 pub fn is_split_to_reverse_edge(
     e_sp: &Edge,
     e_or: &Edge,
