@@ -198,10 +198,10 @@ cd ..; git worktree remove --force .target-headcheck
 | **T-23** | pending（需定性） | ATU01038 顶点/面 −1.8%（UV-grid vs deflection-adaptive） | 不改；parity 已明确不断言密度 |
 | **T-33** | pending（低） | §13 登记：`refine_angle_2d` 两处替换（`Geom2dInt_GInter`→`geom2d_api::intersect_curves` 等）需补注释；"pcurve 参数化 ≠ 3D 边参数化"的退化情形需标未移植 | 纯注释批（不动行为） |
 | **T-34** | pending（低） | §13 登记：`is_split_to_reverse_edge` 的 `edge_parameters` ↔ `BRepLib::FindValidRange` 替换需登记 | 同上 |
-| **T-25** | pending | `GeometryRegistry` 侧表（边/面几何不在 `TShape` 内）——架构级重构 | 需专门设计批（先出设计再动手） |
-| **T-26** | pending | 无面 operand 仍走 `voxel_fallback`（绿路径 `bop_builder2`） | 与 T-79/T-80 同族 |
-| **T-27** | pending | `GetFaceOff`/角法向：leftover `is_covering_face` 死路径未接 `BopBuilder` | 与 T-79 同族 |
-| **T-28** | pending | ImpPrm HVertex 合并（`IntPatch_ImpPrmIntersection.cxx:329-465`）未移植；`intana` 与 `intpatch` 重叠未合并 | 与 `intpatch` 合批 |
+| **T-25** | **设计已出**（`specs/_design_architecture_t25_t28.md` §T-25） | `GeometryRegistry` 侧表（边/面几何不在 `TShape` 内）——架构级重构；实测 127 文件/501 处引用，`global()` 279 处/88 文件；6 步增量方案（第 2 步为**纯转发层**，101 处调用零改动） | 需专门设计批 ⇒ 设计已交付；实施 5–8 轮 |
+| **T-26** | **设计已出 + 标题订正**（同上文档 §T-26） | ~~无面 operand 走 `voxel_fallback`~~ —— 该函数**已于第 59 轮 `393ebb8` 摘除**；真正余项 = 端口 `is_empty_shape`（`bop_bop.rs:42-44`「无顶点且无面」）**≠** OCCT `IsEmptyShape`（`BOPTools_AlgoTools3D.cxx:732-854`「无几何」），且 `TreatEmptyShape`（`BOPAlgo_BOP.cxx:214-256`）未移植 | 语义订正；1–2 轮 |
+| **T-27** | **设计已出**（同上文档 §T-27；结论：**摘除**而非接线） | `is_covering_face`（`bop_build_solids_leftover.rs:394-403`）是**自创谓词**，整链只在死模块内闭合（头注自述 *Not called by `BopBuilder`*；`leftover::` 生产 0 命中）；OCCT 的 `GetFaceOff`（`BOPTools_AlgoTools.cxx:994-1095`）→ `IsInternalFace`(:977) → `ClassifyFaces` → `BuilderSolid`(:673) 与 `ShellSplitter`(:359) 两条活链**端口都已有**（`algo_tools_face.rs:433`、`shell_splitter_block.rs:359`） | 1 轮（含判定性探针） |
+| **T-28** | **设计已出**（同上文档 §T-28） | ImpPrm HVertex 合并（`IntPatch_ImpPrmIntersection.cxx:221-469` 的 `IsNew==false` 分支，端口 `intpatch_impprm.rs:243 compute_tangency` 只实现 `IsNew`）；`intana`/`intpatch` 重叠实测双份 closed form + 两套 surface×surface 分派器（清单见设计文档）；OCCT 权威 `IntPatch_ImpImpIntersection.cxx` 全部调 `IntAna_QuadQuadGeo` ⇒ 合并方向 = 删 intpatch 版 | 6–10 轮，分 6 步 |
 
 ### 3.5 已归档（完成或已决；明细见 §3.6 与 §7）
 
