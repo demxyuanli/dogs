@@ -683,6 +683,16 @@ impl<'a> Resolver<'a> {
             // `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` uncertainty or from
             // `read.precision.val` (default 1.e-03); see `step_precision`.
             let preci = self.precision;
+            // `StepToTopoDS_TranslateEdgeLoop.cxx:875` -> `CheckPCurves`
+            // (`:105-177`) -> `XSAlgo_ShapeProcessor::CheckPCurve`
+            // (`XSAlgo_ShapeProcessor.cxx:344-401`): the reader's "advanced check"
+            // drops a pcurve whose U/V span wraps the surface or whose end
+            // points disagree with the 3D curve beyond the read precision; the
+            // dropped pcurve is re-projected by `ShapeFix_Edge::FixAddPCurve`
+            // in the `ShapeFix` pass below (OCCT's `XSAlgo` pipeline).
+            for e in &loop_edges {
+                crate::shhealing::xsalgo_check_pcurve(e, &face, self.precision);
+            }
             crate::shhealing::project_wire_pcurve_ranges(w, &face, preci);
             crate::shhealing::check_pcurves_and_shift(w, &face, preci);
         }

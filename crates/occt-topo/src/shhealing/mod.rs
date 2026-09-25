@@ -42,10 +42,12 @@ mod common;
 mod wire_heal;
 mod wire_fix;
 mod pcurve_ranges;
+mod xsalgo_check_pcurve;
 pub use common::*;
 pub use wire_heal::*;
 pub use wire_fix::*;
 pub use pcurve_ranges::*;
+pub use xsalgo_check_pcurve::*;
 
 /// `ShapeAnalysis_Curve` projection helpers (`ShapeAnalysis_Curve.cxx`).
 pub mod shape_analysis_curve;
