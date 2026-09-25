@@ -102,6 +102,36 @@ cd ..; git worktree remove --force .target-headcheck
 > **执行口径（长期有效）**：以"能翻译成代码的 OCCT 控制流"补齐缺口，以编译作初步验证；未接指令不自发起门禁/导出；禁止特例补丁、自造阈值、为对齐改断言。每批同步本表 + §7 日志。
 > **ID 对照**：`R2-7 = T-01(红) + T-32(根因)`｜`R2-8 = T-03`｜`R2-9 = T-04`｜`R2-10 = T-05 + T-87`｜`R2-11 = T-80 链(T-82/T-83)`｜`R2-12 = T-69`｜`R2-13 = T-67 步 3 + T-37`｜`R2-19 = T-78 余项`｜`R2-23 = Geom_BezierCurve::Segment`。
 
+### 3.0 本会话实测与进度（round 81→，2026-09-26；**以本节数字为准，§3.1–§3.4 的旧状态列作废**）
+
+**实测基线（HEAD = 每批提交后同一命令复测）**
+
+| 门禁 | 实测 | 与 §2 快照 |
+|---|---|---|
+| 五 crate `cargo check --all-targets` | ✅ exit 0 / 0 error | 绿 |
+| `occt-topo --lib` | ✅ **1281 / 0 failed** | 绿（T-01/T-86 已闭） |
+| `step_obj_parity` | ✅ 14/14（含 `data/occ` 三模型新断言） | 绿 |
+| `step_to_obj` | ✅ 13/13（**单跑**；`--no-fail-fast` 并发整跑仍偶发 `output/` 竞争假红，见 §3.4 旁支） | 绿 |
+| `step_obj_area` | ✅ 11/11 | 绿 |
+| `step_geometry_parity` | ✅ 3/3 | 绿 |
+| `phase3/4/5/6/7/8/9/19/20` | ✅ 4·9·7·5·5·5·8·5·5 全绿 | 绿（phase19 已闭） |
+| `phase10` | ❌ 7/8（`curved_face_fillet_sphere_plane` = T-88） | 同 |
+| `bop_builder2_boss` | ❌ 1/2（R2-8 已定案 (b)：夹具不合法，非引擎缺口） | 同 |
+| `export_data_obj` | ✅ 16/16，v/f 与 §13 逐位一致 | 绿 |
+| `iges_check` | ✅ ok（含 Sphere `unreferenced=1`＝根） | 绿 |
+| `occt-core / math / geom / geom2d --lib` | ✅ 290(1i) · 215(1i) · 143 · 72 | 绿 |
+
+**本轮已完成（提交号）**
+
+- **T-80 根因三处**（`da61a30`）：① 圆柱侧面 wire 朝向按 `BRepPrim_Builder::AddWireEdge`（`BRepPrim_Builder.cxx:184-192`）订正；② 缝顶点容差按 `BRepPrim_Builder::MakeVertex`（`cxx:129-132`）给 `Precision::Confusion()`；③ `FClass2d::edge_points` 按 `BRep_Tool::CurveOnSurface`（`BRep_Tool.cxx:301-315`、`:347-357`）对 REVERSED 边取 PCurve2。
+  实测 GT（`occt_probe --fuse`）：`box[-1,1]³ ∪ cyl(r=0.4,z∈[0,2])` = volume **8.50265** / **8 faces**；端口 GF 由「9 plane + 1 cylinder」变为「7 plane + 2 cylinder + 2 plane」= 11 faces，柱面被 z=1 正确切成两条环带、两个 area。
+- **T-80 剩余缺口（= T-82 精确化，未完成）**：`BOPAlgo_BOP::BuildSolid` 的 `BOPAlgo_BuilderSolid` 对柱体 draft 的 6 面集合给出 **loops=0**（面全被 `PerformShapesToAvoid`/`PerformLoops` 后处理判为 internal）⇒ 最终只留盒体 7 面、体积 8.29787。已定位到两处控制流语义：(i) `TopExp::MapShapesAndAncestors` 对同一面的**边出现次数**逐次追加 ancestor（`TopExp.cxx:80-120`），端口 `perform_shapes_to_avoid` 用 `edges_of`（按 TShape 去重）⇒ 缝边 `aNbF` 由 2 变 1 而被 avoid；(ii) `BRep_Tool::IsClosed(E,S,L)` 对**平面直接返回 false**（`BRep_Tool.cxx:819-822`），端口此前用「边界出现次数≥2」近似。按 (i)+(ii) 改写的实验版把 Fuse 打成空（`avoided=0`、`loops=0`），已 `git checkout` 回退；下轮从「draft 6 面集合的边出现次数直方图」与 `CloseOpenShells` 入手。
+- **T-51 / T-67 共同前置**（`a647836`）：忠实移植 `math_FunctionSetRoot` + `math_FunctionRoot`（`function_set_root.rs`）与 `math_BrentMinimum` 的失败中止分支。
+- **T-44 / R2-6 RationalC1 臂**（`2a28b8c`）：`Geom_BSplineCurve::{IncreaseDegree,RemoveKnot}`（`Geom_BSplineCurve.cxx:243-298`、`:420-495`）+ `GeomConvert_CompCurveToBSplineCurve`（`GeomConvert_CompCurveToBSplineCurve.cxx:32-273`）+ `BSplCLib::{IncreaseDegree,AntiBoorScheme,RemoveKnot}`；GT 对拍（DRAWEXE）逐字段一致。
+- **R2-18 2D 弧长**（`e8deb3d`）：`curve2d_length`/`_tol` 补 `Geom2dAdaptor_Curve` 类型解析、IsRational 判据、CN 分段与容差重载（`GCPnts_AbscissaPoint.cxx`、`CPnts_AbscissaPoint.cxx:26-65/:79-100/:191-207`）。
+- **parity 覆盖**（`63ae2b9`）：`data/occ` 的 a3n00 / acs10 / TDB 按既有 WriteObj 参考锁进 `step_obj_parity`。
+
+**进行中 / 未开始（本会话后续）**：T-67 步 3（`Extrema_GenExtPS`）与 T-51 反解已派子代理；未开始 = R2-19（IGES 2D UV 曲线）、T-54（约束 Delaunay）、T-41（`bop_curved` 网格布尔摘除，需先修 T-80/T-82）、T-25/T-28（设计已出，待实施）、T-11 余项。
 ### 3.1 红门禁（当前实测为红：2 条 `--lib` + 3 条集成 + 2 条属性/网格缺陷）
 
 | ID | 门禁 / 用例 | 实测（2026-09-21） | 根因已定位？ | 归属根因批 |
@@ -2027,6 +2057,18 @@ cd ..; git worktree remove --force .target-pre85
 
 ---
 
+### 2026-09-26 · DSH 会话（round 81→：§3.2 余项 + §3.3 缺口池；提交 `a647836`/`2a28b8c`/`e8deb3d`/`da61a30`/`63ae2b9`）
+
+- **① OCCT ground-truth 能力**：确认工具链可用（VS2022 Pro `vcvars64` + `cl.exe`），既有 GT 探针 `.target-gate/occt_probe/occt_probe.cpp` 重新构建并**跑通**（`--fuse`/`--ds`/`--cylface`/`--cyl`/`--sph`/`--facek`/`--perface`）。运行配方：`set THIRDPARTY_DIR=D:\source\occt-8.0.0\3rdparty-vc14-64 && call env.bat vc14 64`（`env.bat` 的 `THIRDPARTY_DIR` 默认相对路径在本机不成立，必须显式给绝对路径；缺少 `tbb12.dll`/`jemalloc.dll` 时 exe 报 `0xC0000135`）。
+  实测：`data/Offset.step` → `BRepCheck valid=1`、`BRepGProp volume=2610.501440`；`box[-1,1]³ ∪ cyl(r=0.4,z∈[0,2])` → **8.50265 / 8 faces**；`--ds`：相离 68=68、重叠 80。
+- **② §3.2 T-80 根因三处**（`da61a30`，见 §3.0）：wire 朝向、顶点容差、FClass2d 取 pcurve。GF 结果由「9P+1C」到「7P+2C+2P」，柱面切成 2 rings/2 areas；剩余在 `BOPAlgo_BuilderSolid` 面集合的 avoid/loops（T-82），已记录两处候选控制流语义与「实验版→Fuse 空」的回退证据。
+- **③ §3.3 缺口池**：T-44 / R2-6 的 `RationalC1 ∧ U2-U1>=6` 臂（`IncreaseDegree`+`CompCurveToBSplineCurve`，GT 逐字段一致）；R2-18 的 2D 弧长（`GCPnts_AbscissaPoint` 全分派）；T-51/T-67 共同前置 `math_FunctionSetRoot`+`math_FunctionRoot`。
+- **④ parity 覆盖**：`data/occ` 的 a3n00/acs10/TDB 断言并入 `step_obj_parity`（14/14）。
+- **⑤ 门禁**：见 §3.0 表；**逐项无回归**（含 `export_data_obj` 16/16 逐位计数）。
+- **仍红**：`phase10` 7/8（T-88）、`bop_builder2_boss` 1/2（R2-8 定案 (b)）、以及 `--no-fail-fast` 并发整跑时的 `output/` 竞争假红（与引擎无关）。
+- **下一步**：T-67 步 3（`Extrema_GenExtPS`）与 T-51 反解（子代理进行中）；R2-19；T-80/T-82 续做。
+
+---
 ## 12. goal 12 轮批次总结（2026-09-19 ~ 2026-09-20）
 
 > 说明：§12 / §13 为**追加章节**，物理位置排在 §7 进度日志之后（§8 起为维护协议/坑/五问/范围）。
