@@ -124,6 +124,16 @@ cd ..; git worktree remove --force .target-headcheck
 >   且部分面环绕向与曲面法向不一致 ⇒ 贡献变号（GT 探针新增 `--fuse` 模式给出 OCCT 对照：8 面 / 逐面面积与贡献）。
 >   ⇒ 忠实解法是把布尔结果的面边界从折线换成 OCCT 的精确裁剪曲线（`BOPAlgo` 语义），属**实质算法缺口**，非一轮可成。
 > - 旁支（测试隔离，与引擎无关，已登记）：`step_to_obj_writes_output_files` 与 `export_data_obj` 同写 `output/` 时偶发假红；`brepfeat::tests::groove_cuts_cylinder` 有全局状态依赖（单跑与全量结果可能不同）。
+> - **R2-23 = done（round 70）**：`Geom_BezierCurve::Segment`（`Geom_BezierCurve.cxx:388-425`，非有理分支）已移植
+>   （`occt-geom/src/bezier_curve.rs::segment`）：`BSplCLib::BuildCache(0,1,…)` 对 Bezier 即**幂基展开** +
+>   `PLib::Trimming`（端口既有件，实测精确）+ `PLib::CoefficientsPoles`（幂基→极点的逆展开）。实测（二次/三次/四次 ×
+>   `[0,1] [0.25,0.75] [0,0.5] [0.5,1] [0.3,0.3001]`）：与原曲线逐点最大偏差 ≤ **1.4e-15**。
+>   并接线消费者 `GeomConvert::CurveToBSplineCurve` 的 trimmed-Bezier 臂（`GeomConvert.cxx:300-321`：裁剪后按
+>   knots `{0,1}`、mults `{d+1,d+1}` 重建 BSpline）⇒ 该臂不再返回 `Unported`（**T-44 部分收口**；余下为 rational Bezier 分支与
+>   `GeomConvert_CompCurveToBSplineCurve`/`GeomConvert_ApproxCurve`）。
+> - **新发现的既有缺陷（round 70，已就地标注，未改行为）**：`occt-core/src/bspl/poles.rs::power_to_bezier_basis`
+>   的矩阵公式错误（`i == j > 0` 处给 1，正确应为 `C(d,j)`）；正确形式为 `(−1)^(i−j)·C(d,j)·C(d−j, i−j)`
+>   （见 `Geom_BezierCurve.cxx` 分支所用展开）。`poles_to_coefficients` 在 degree ≥ 2 时结果错误 ⇒ 列为后续订正项。
 
 | ID | 状态 | 缺口（OCCT 对应） | 下一步 | 验收 |
 |---|---|---|---|---|

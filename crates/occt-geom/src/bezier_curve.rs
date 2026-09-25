@@ -47,6 +47,53 @@ fn de_casteljau_vec(vs: &[GpVec], u: f64) -> GpVec {
     pts[0]
 }
 
+/// Binomial coefficient `C(n, k)` as `u64`.
+fn binomial(n: usize, k: usize) -> u64 {
+    if k > n {
+        return 0;
+    }
+    let k = k.min(n - k);
+    let mut c = 1u64;
+    for i in 0..k {
+        c = c * (n - i) as u64 / (i + 1) as u64;
+    }
+    c
+}
+
+/// Bezier → monomial matrix entry `(i, j)`: the coefficient of `t^i` in
+/// `B_j^d(t) = C(d,j)·t^j·(1−t)^(d−j)`, i.e.
+/// `(−1)^(i−j)·C(d,j)·C(d−j, i−j)` (zero for `i < j`). This is the expansion
+/// `BSplCLib::BuildCache` produces for a Bezier on `[0, 1]`.
+fn bezier_power_entry(degree: usize, i: usize, j: usize) -> f64 {
+    if i < j {
+        return 0.0;
+    }
+    let sign = if (i - j) % 2 == 0 { 1.0 } else { -1.0 };
+    sign * binomial(degree, j) as f64 * binomial(degree - j, i - j) as f64
+}
+
+/// Inverse of the Bezier → monomial matrix — the monomial → Bezier write-back of
+/// `PLib::CoefficientsPoles` (`PLib.cxx:1482-1493` + the `dim`-arm conversion).
+/// The forward matrix is triangular with nonzero diagonal, so forward
+/// substitution gives the inverse exactly in `f64`.
+fn power_to_bezier_matrix(degree: usize) -> Vec<f64> {
+    let n = degree + 1;
+    let a: Vec<f64> = (0..n * n)
+        .map(|k| bezier_power_entry(degree, k / n, k % n))
+        .collect();
+    let mut inv = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..=row {
+            let mut v = if row == col { 1.0 } else { 0.0 };
+            for k in col..row {
+                v -= a[row * n + k] * inv[k * n + col];
+            }
+            inv[row * n + col] = v / a[row * n + row];
+        }
+    }
+    inv
+}
+
 impl GeomBezierCurve {
     pub fn new(poles: Vec<GpPnt>) -> Result<Self, &'static str> {
         if poles.len() < 2 {
@@ -65,6 +112,55 @@ impl GeomBezierCurve {
 
     pub fn pole(&self, i: usize) -> &GpPnt {
         &self.poles[i]
+    }
+
+    /// `Geom_BezierCurve::Segment(U1, U2)` (`Geom_BezierCurve.cxx:388-425`),
+    /// non-rational branch:
+    ///
+    /// ```text
+    /// BSplCLib::BuildCache(0., 1., false, aDeg, KnotSequence(), myPoles,
+    ///                      BSplCLib::NoWeights(), coeffs, BSplCLib::NoWeights());
+    /// PLib::Trimming(U1, U2, coeffs, PLib::NoWeights());
+    /// PLib::CoefficientsPoles(coeffs, PLib::NoWeights(), myPoles, PLib::NoWeights());
+    /// ```
+    ///
+    /// A Bezier curve lives on `[0, 1]`, so its `BuildCache` coefficients are the
+    /// monomial (power-basis) expansion — `B_j^d(t) = C(d,j)·t^j·(1−t)^(d−j)`
+    /// gives `M[i][j] = (−1)^(i−j)·C(d,j)·C(d−j, i−j)` — and
+    /// `PLib::CoefficientsPoles` is the inverse expansion. `PLib::Trimming`
+    /// (`PLib.cxx:1642-1716`) re-expresses the sub-range in the same basis.
+    /// UNPORTED: the rational branch (`PLib::Trimming` with weights) — this curve
+    /// type carries no weights.
+    pub fn segment(&mut self, u1: f64, u2: f64) {
+        let degree = self.degree();
+        let n = degree + 1;
+        let mut coefs = vec![0.0f64; 3 * n];
+        for (i, slot) in coefs.chunks_mut(3).enumerate() {
+            let mut p = GpPnt::zero();
+            for j in 0..n {
+                let b = bezier_power_entry(degree, i, j);
+                p = GpPnt::new(
+                    p.x() + b * self.poles[j].x(),
+                    p.y() + b * self.poles[j].y(),
+                    p.z() + b * self.poles[j].z(),
+                );
+            }
+            slot[0] = p.x();
+            slot[1] = p.y();
+            slot[2] = p.z();
+        }
+        occt_core::bspl::plib::trimming(u1, u2, 3, &mut coefs);
+        let to_poles = power_to_bezier_matrix(degree);
+        for i in 0..n {
+            let (mut x, mut y, mut z) = (0.0f64, 0.0f64, 0.0f64);
+            for j in 0..n {
+                let b = to_poles[i * n + j];
+                x += b * coefs[3 * j];
+                y += b * coefs[3 * j + 1];
+                z += b * coefs[3 * j + 2];
+            }
+            self.poles[i] = GpPnt::new(x, y, z);
+        }
     }
 
     pub fn set_pole(&mut self, i: usize, p: GpPnt) {

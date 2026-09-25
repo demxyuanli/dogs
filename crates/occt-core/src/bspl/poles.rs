@@ -47,6 +47,16 @@ pub fn poles_to_coefficients(poles: &[GpPnt], knots: &[f64], degree: usize) -> V
 
 /// Bezier-to-power basis conversion matrix. Element (i,j) for degree d:
 /// B[i][j] = binomial(d, i) * binomial(i, j) * (-1)^(i-j) / binomial(d, j) scaled.
+///
+/// KNOWN DEFECT (found 2026-09-25 while porting `Geom_BezierCurve::Segment`): this
+/// formula is not the Bezier→monomial expansion. From
+/// `B_j^d(t) = C(d,j)·t^j·(1−t)^(d−j)` the correct entry is
+/// `(−1)^(i−j) · C(d,j) · C(d−j, i−j)`; the two agree for `i > j` but this
+/// formula returns `1` instead of `C(d,j)` when `i == j > 0`, so every
+/// `poles_to_coefficients` result for degree ≥ 2 is wrong. The faithful version
+/// lives in `crates/occt-geom/src/bezier_curve.rs` (`bezier_power_entry`), where
+/// it is verified against analytic cases to 1.4e-15. Do not build new callers on
+/// this function until it is corrected.
 fn power_to_bezier_basis(degree: usize) -> Vec<f64> {
     let n = degree + 1;
     let mut m = vec![0.0f64; n * n];

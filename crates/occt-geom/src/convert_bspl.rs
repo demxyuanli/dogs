@@ -17,6 +17,7 @@
 //! `GeomConvert::CurveToBSplineCurve` itself is ported for the trimmed
 //! line/conic arms and the Bezier / B-spline copy arms (batch 92).
 
+use crate::bezier_curve::GeomBezierCurve;
 use occt_core::bspl::bezier::boehm_insert;
 use occt_core::bspl::banded_interp::knot_sequence;
 use occt_core::bspl::knots::{self, hunt, insert_knot, multiplicity};
@@ -481,9 +482,21 @@ pub fn curve_to_bspline_curve(
 
         // `cxx:300-321` (`Geom_BezierCurve`: `CBez->Segment(U1, U2)`) needs
         // `Geom_BezierCurve::Segment` (`PLib::Trimming` + `PLib::CoefficientsPoles`)
-        // — still UNPORTED, so that arm stays [`ConvertError::Unported`].
-        if basis.bezier_poles().is_some() {
-            return Err(ConvertError::Unported);
+        // — ported (`bezier_curve.rs::segment`, OCCT `Geom_BezierCurve.cxx:388-425`).
+        // `cxx:300-321`: the copy is trimmed and re-wrapped as a B-spline over
+        // `[0, 1]` with multiplicities `{Degree+1, Degree+1}`. UNPORTED: the
+        // rational branch (`CBez->IsRational()` → `WeightsArray`,
+        // `GeomConvert.cxx:313-321`) — the port's `GeomBezierCurve` carries no
+        // weights.
+        if let Some(poles) = basis.bezier_poles() {
+            let mut bez = GeomBezierCurve::new(poles.to_vec())
+                .map_err(|_| ConvertError::ConstructionError)?;
+            bez.segment(u1, u2);
+            let degree = bez.degree();
+            let m = (degree + 1) as i32;
+            let flat = knot_sequence(&[0.0, 1.0], &[m, m], degree as i32);
+            return GeomBSplineCurve::new(bez.poles.clone(), flat, degree)
+                .map_err(|_| ConvertError::ConstructionError);
         }
         // `cxx:322-339` (`Geom_BSplineCurve`): the basis is copied, its range is
         // folded into the period (`ElCLib::AdjustPeriodic`), a full-period trim
