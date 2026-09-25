@@ -5,25 +5,24 @@
 //! `StepToTopoDS_TranslateEdgeLoop.cxx:875` → `CheckPCurves` (`:105-177`) →
 //! `XSAlgo_ShapeProcessor::CheckPCurve` (`XSAlgo_ShapeProcessor.cxx:344`).
 //!
-//! Ported here:
-//!   * `cxx:360-376` — a pcurve whose U or V span exceeds 6/8 of the surface span
+//! Only the two *early* rejection tests are ported here (they are the ones that
+//! drop a pcurve the file got wrong, after which `ShapeFix_Edge::FixAddPCurve`
+//! re-projects it during the `ShapeFix` pass):
+//!   * `:360-376` — a pcurve whose U or V span exceeds 6/8 of the surface span
 //!     wraps around the surface (e.g. UV in degrees on a surface in radians), so
 //!     it is discarded;
-//!   * `cxx:378-401` — the pcurve's end points must agree with the 3D curve's end
-//!     points within the read precision;
-//!   * `cxx:403-490` — "best of two": build a temporary edge carrying the stored
-//!     pcurve, run `ShapeFix_Edge::FixSameParameter` on it, and when the achieved
-//!     tolerance exceeds `min(1., 2. * thePrecision)` (or `SameRange` is false)
-//!     build a second temporary edge, let `ShapeFix_Edge::FixAddPCurve` project a
-//!     pcurve for it, run `FixSameParameter` again and keep whichever is better.
-//!     The chosen pcurve is written back onto the real edge.
+//!   * `:378-401` — the pcurve's end points must agree with the 3D curve's end
+//!     points within the read precision.
 //!
 //! OCCT tests the single pcurve `ShapeAnalysis_Edge::PCurve(edge, face, ...,
 //! false)` yields; a face can carry two (seam / two-sided edge), so every stored
 //! pcurve is tested here and only the rejected ones are dropped — dropping the
 //! good one as well would force a needless re-projection.
 //!
-//! UNPORTED: the `theIsSeam` two-pcurve write (`cxx:414-434`, `:468-490`).
+//! UNPORTED: `:403-464` (deviation between pcurve and 3D curve over the whole
+//! edge, then "best of the two" re-projection via `FixSameParameter` /
+//! `FixAddPCurve`, `:466-490` write-back) and the `theIsSeam` two-pcurve write
+//! (`:414-434`).
 
 use super::prelude::*;
 use crate::brep_tool::BRepTool;
@@ -110,97 +109,5 @@ pub fn xsalgo_check_pcurve(edge: &Edge, face: &Face, preci: f64) -> bool {
         }
         reg.set_edge_pcurves(&edge.0, face_key, kept);
     }
-
-    // ---- `cxx:403-490`: "best of two" ----
-    best_of_two(edge, face, preci);
     true
-}
-
-/// Build a detached copy of `edge` (same 3D curve, vertices and flags) carrying
-/// `pcs` on `face`, mirroring `ShapeFix_Edge::MakeEdgeOnCurve` plus
-/// `BRep_Builder::UpdateEdge/Range` (`XSAlgo_ShapeProcessor.cxx:412-439`).
-fn make_temp_edge(edge: &Edge, face: &Face, pcs: &[Arc<dyn Curve2d>]) -> Option<Edge> {
-    let curve = BRepTool::edge_curve_world(edge)?;
-    let (a, b) = BRepTool::edge_parameters(edge);
-    if !(a.is_finite() && b.is_finite()) {
-        return None;
-    }
-    let (v1, v2) = edge_vertices(edge);
-    let tb = TopoBuilder::new();
-    let mut tmp = tb.make_edge(curve, a, b);
-    if let (Some(v1), Some(v2)) = (v1, v2) {
-        tb.add_edge_vertices(&mut tmp, &v1, &v2);
-    }
-    let reg = GeometryRegistry::global();
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    if !pcs.is_empty() {
-        if pcs.len() == 1 {
-            reg.set_edge_pcurve(&tmp.0, face_key, pcs[0].clone());
-        } else {
-            reg.set_edge_pcurves(&tmp.0, face_key, pcs.to_vec());
-        }
-        reg.set_pcurve_range(&tmp.0, face_key, a, b);
-    }
-    // `ShapeAnalysis_Edge::CheckSameParameter` hands `TE->SameParameter()` to
-    // `BRepLib_ValidateEdge`, and `MakeEdgeOnCurve` keeps the source edge's flags,
-    // so the copy inherits SameParameter; only the `read.stdsameparameter.mode`
-    // config clears it (`XSAlgo_ShapeProcessor.cxx:436-439`), and that config is
-    // not set here. `SameRange` *is* forced false (`cxx:435`).
-    reg.set_same_parameter(&tmp.0, BRepTool::same_parameter(edge));
-    reg.set_edge_tolerance(&tmp.0, BRepTool::edge_tolerance(edge));
-    reg.set_same_range(&tmp.0, false);
-    Some(tmp)
-}
-
-/// `XSAlgo_ShapeProcessor.cxx:441-464`: measure the tolerance the stored pcurve
-/// achieves and, when it is worse than `min(1., 2. * preci)` — or `SameRange` is
-/// false — compare against a freshly projected pcurve, keeping the better one.
-fn best_of_two(edge: &Edge, face: &Face, preci: f64) {
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    let reg = GeometryRegistry::global();
-    let current = reg.edge_pcurves(&edge.0, face_key);
-    if current.is_empty() {
-        return;
-    }
-    let Some(tmp) = make_temp_edge(edge, face, &current) else {
-        return;
-    };
-    super::wire_fix::fix_same_parameter(&tmp, face);
-    let tol = BRepTool::edge_tolerance(&tmp);
-    let same_range = reg.edge_geom(&tmp.0).map(|g| g.same_range).unwrap_or(true);
-    if !(tol > 1f64.min(2.0 * preci) || !same_range) {
-        return;
-    }
-    // `cxx:451-453`: a second temporary edge, projected by `FixAddPCurve`.
-    let Some(pr) = make_temp_edge(edge, face, &[]) else {
-        return;
-    };
-    let mut cache = crate::pcurve_full::ProjectorCache::new();
-    let _ = super::wire_fix::fix_add_pcurve(&pr, face, false, preci, &mut cache);
-    super::wire_fix::fix_same_parameter(&pr, face);
-    let tol_pr = BRepTool::edge_tolerance(&pr);
-    // `cxx:457-463`: keep the projection when it is better (or when the stored
-    // pcurve never had a valid range).
-    if !(tol_pr < tol || !same_range) {
-        return;
-    }
-    let newpcs = reg.edge_pcurves(&pr.0, face_key);
-    if newpcs.is_empty() {
-        return;
-    }
-    // `cxx:466`: write the chosen pcurve back onto the real edge.
-    if let Some((x, y)) = reg.pcurve_range(&pr.0, face_key) {
-        reg.set_pcurve_range(&edge.0, face_key, x, y);
-    }
-    if newpcs.len() == 1 {
-        reg.set_edge_pcurve(&edge.0, face_key, newpcs[0].clone());
-    } else {
-        reg.set_edge_pcurves(&edge.0, face_key, newpcs);
-    }
-    let picked_same_range = reg
-        .edge_geom(&pr.0)
-        .map(|g| g.same_range)
-        .unwrap_or(same_range);
-    reg.set_same_range(&edge.0, picked_same_range);
-    reg.set_same_parameter(&edge.0, BRepTool::same_parameter(&pr));
 }
