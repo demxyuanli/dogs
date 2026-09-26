@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 205 —— 给新代理的范围与分步提示（`CheckWire` + `FixMissingSeam` ≈ 360 行）**
+
+`FixMissingSeam` 依赖同文件的 **static 辅助 `CheckWire`**（`ShapeFix_Face.cxx:1652-1722`），在 `:1831` 被调用（判定 wire 在 u/v 是否开口、是否退化）✓ ⇒ 本批要移植的是 **`CheckWire`(~70 行) + `FixMissingSeam`(~290 行) ≈ 360 行** ✓（该文件全长 3259 行，其余**不必**移植 ✓）。
+**已建议分两步**：① 先移 `CheckWire` 并用探针对 T0M 逐面打印两侧的 `isuopen/isvopen/isdeg` 对照验证；② 再移 `FixMissingSeam` 的插缝部分 ⇒ 即使中途预算不够也能留下可复用的忠实件 ✓。
+（其余：逐处 `文件:行号`；只改 `shhealing/**` 与必要 `step/` 接线；禁改 `pcurve_full/`、`meshing/`、`intpatch_*`；验收不变；不要提交。）
 **round 204 —— 核实 `FixMissingSeam` 的**门控**：默认**会执行** ✓**
 
 - `ShapeFix_Root::NeedFix` 声明 `static bool NeedFix(const int flag, const bool def = true)`（`ShapeFix_Root.hxx:112`），实现 `Flag < 0 ? need : (Flag > 0)`（`ShapeFix_Root.lxx:101-104`）✓；
