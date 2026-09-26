@@ -16,6 +16,37 @@ fn parse_array(name: &str) -> Vec<f64> {
     parse_array_in(DATA, name)
 }
 
+/// Removes C++ comments exactly as the compiler does before OCCT consumes the
+/// table. `plib_jacobi_data.pxx` is C++ source with inline `// ...` comments
+/// that contain digits (e.g. `:264` `{0.1e+01, // TransMatrix_C0[1][0]`); the
+/// compiled OCCT reads the initialised array, so the comment text never
+/// reaches `PLib_JacobiPolynomial` (`PLib_JacobiPolynomial.cxx:316-372`). A
+/// number scan over the raw text instead picks those digits up and shifts the
+/// whole table (`TransMatrix_C0` parsed 995 values instead of 992).
+fn strip_cpp_comments(src: &str) -> String {
+    let b = src.as_bytes();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'/' {
+            i += 2;
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+        } else if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(b.len());
+        } else {
+            out.push(b[i] as char);
+            i += 1;
+        }
+    }
+    out
+}
+
 fn parse_array_in(src: &str, name: &str) -> Vec<f64> {
     let key = format!("{name}");
     let Some(pos) = src.find(&key) else {
@@ -29,7 +60,8 @@ fn parse_array_in(src: &str, name: &str) -> Vec<f64> {
     let Some(semi) = rest.find(';') else {
         return Vec::new();
     };
-    let body = &rest[..semi];
+    let body = strip_cpp_comments(&rest[..semi]);
+    let body = body.as_str();
     let mut out = Vec::new();
     let bytes = body.as_bytes();
     let mut i = 0;
