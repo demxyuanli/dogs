@@ -140,6 +140,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 89 —— 端盖改成 OCCT 构造确实修好 pcurve，但暴露 `brep_gprop_full` 的 Reversed 面缺陷（已回退）**
+
+按 round 88b 的下一步，把 `primitives.rs` 的圆柱底盖与圆锥底面改成 OCCT 的形状（`BRepPrim_OneAxis::BottomFace` `BRepPrim_OneAxis.cxx:488-503`：+Z 平面 + `ReverseFace`；`BottomWire` `:751-770`：圆边存 `Reversed`）。实测：
+
+- ✅ **pcurve 方向缺陷修好**：`[zz-pc2]` 探针的 48→144 个「面×边」全部 `dot>0`（改前有 3 个 `dot=-0.16`）。
+- ❌ **`brep_gprop_full` 回归**：`occt-topo --lib` 的 §2 基线断言 `brep_gprop_full::tests::cylinder_surface_volume`（OCCT 正确值面积 6π、体积 2π）失败 —— `make_cylinder(1,2)` 的体积由 **2π=6.28319 变成 4.18879**（差值恰好 2π/3）。
+- 二分：只改「面 Reversed」（线边保持 Forward）与「面 Reversed + 线边 Reversed」给出**完全相同**的 4.18879 ⇒ 触发因素是**面朝向 Reversed**，与线边朝向无关。
+- 又试把面朝向合进 gprop 的边界遍历（`integration.rs::FaceGauss::new` 里对 Reversed 面的每条边先 `reverse()`，理由 = OCCT `BRepGProp_Domain` 用 `TopExp_Explorer(aFace, TopAbs_EDGE)` 默认 `CumOri=true`，`TopExp.cxx:80-120`）——**数字完全不变**。
+
+**结论（重要的新依赖）**：端口 `brep_gprop_full` 的解析体积路径**不能正确处理 `Reversed` 面**：底盖的贡献会由 `+π/3` 翻成 `−π/3`（质心在 (0,0,1)、盖在 z=0、面积 π）。它过去一直「精确」只是因为**原语原先用外向法向的平面 + Forward 面**把法向编码进了曲面本身，恰好绕开了这个 bug。⇒ **T-82 的端盖忠实化必须先修 `brep_gprop_full` 的 Reversed 面处理**（`integration.rs` 的 `normal_raw`/domain path 与 `normal`/analytic path 的朝向语义要对齐 OCCT `BRepGProp_Face`/`BRepGProp_Domain`），否则 §2 基线断言（OCCT 正确值）会红。
+
+**下一步**：① 先定位 `volume_properties` 对 Reversed 面走的是哪条路径（`normal_raw` 未翻转 vs `normal` 翻转）、sign 由 `wire_sign` 还是法向决定；② 按 `BRepGProp_Face.cxx:164-185`（`Normal`）与 `BRepGProp_Domain`（`CumOri`）对齐后，用「圆柱体积 2π」与 GT 对拍；③ 再把 round 89 的端盖改动重新落地，复跑全套门禁与 GT `8 faces / 8.50265`。
 **round 88b —— 排除「range 回退」误读，并给出最可能的产生者**
 
 对同一批面对拍了 `pcurve 自身域`、`curve_on_surface_range` 返回值与 3D 边范围：**三者完全相同**（`3d=[0,6.283] rng=[0,6.283] own=[0,6.283]`），所以 round 88 的负 `dot` **不是** range 回退造成的读数假象。48 个「面×边」里有 **3 个** `dot=-0.16`，全部落在**带整圆边界的 Plane 面**（端盖/盘）上 ⇒ 这些面的 pcurve 参数方向确实与其 3D 边相反。
