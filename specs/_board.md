@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 139 —— T-54 处置落点已定位（4 处回退 + 死码链），转交网格子代理执行**
+
+| 落点 | 现状 | 处置 |
+|---|---|---|
+| `meshing/incremental_mesh/discret_root.rs:281`、`:544`、`:1366`、`:1372` | 四处 `Err(_) => wireframe::face_to_triangles(..)`（逐面失败回退到自创 UV 网格/耳切） | 先**插桩计数**，跑 15 个 `data/*.step` 看是否真的走到 |
+| `wireframe.rs:394-421 face_to_triangles` | 头注即 **`UNPORTED (audit A19 / task T-55, T-68)`**，并写明「只在管线失败时到达；**一旦这些面走忠实路径就应连同回退一起删除**」；`nu/nv` 的 `3`/`64` 为 port-invented | 若①为「零命中」⇒ 删除 |
+| `brepmesh.rs` 四叉树 + `brep_tools.rs:72-75 write_triangulation` 的二级回退 | `write_triangulation` **全仓无调用者** ⇒ 二级回退链是**死码** | 同批删除（`write_triangulation` 若确无消费者一并摘除） |
+| `brep_exchange.rs:88-94`（导出路径） | 已无回退：失败的面**不产出三角化**（与 OCCT `RWMesh_FaceIterator.cxx:87/:89` 略过无三角化面一致） | 保持 ✓ |
+
+**验收**：删完重跑 `export_data_obj`，15 个文件仍与 round 55 的 GT 表一致（14/15 逐位 + `Shape-2` 差 6/12）；任何**新**偏差即回归，停下报数。**这是「摘除端口自创、不新增规则」的典型批次**（与 T-27 同型）。
 **round 138 —— ❗**重大订正**：round 129/135 的「网格系统性不符」是**参数比错**造成的假象；按端口真实参数，OCCT 与端口 **15 个里 14 个逐位一致**（T-90 关闭、T-54 前提不成立）**
 
 **错在哪**：我用 `occt_probe --mesh 0.1`（默认角偏 0.5 rad）当 GT，而 `export_data_obj` 的真实参数是 **`Prs3d` 相对偏转** `lin = maxComp(bbox) × 0.001 × 4`（`brep_exchange.rs:56-77`）+ 角偏 **20° = 0.349066 rad**（`:95`）；且 `:88-94` 已注明导出走 **Delaunay 管线**（`meshing::incremental_mesh`），legacy 四叉树/UV 网格回退**已按 audit A17 删除**。我当初只读 `brepmesh.rs`（四叉树）就下了结论。
