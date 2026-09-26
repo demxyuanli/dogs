@@ -30,8 +30,9 @@
 //! `ponytail:` `dyn Surface` cannot be downcast, so the analytic fast paths
 //! classify curves/surfaces by sampling geometric invariants (the established
 //! pattern in `crate::intcurvesurface`), and the local point-to-surface solve
-//! of OCCT's `Extrema_GenLocateExtPS` is replaced by the grid+refine projector
-//! `crate::brep_surface::surface_closest_params`.
+//! of OCCT's `Extrema_GenLocateExtPS` goes through the faithful
+//! `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`) via
+//! [`occt_geom::geom_api::project_point_on_surface`].
 
 use std::sync::Arc;
 
@@ -43,7 +44,7 @@ use crate::bean_face_kind::{
     classify_fast_curve, plane_geometry, sphere_geometry, FastCurveKind,
 };
 use crate::bean_face_range::MarkedRangeSet;
-use crate::brep_surface::{classify_surface, surface_closest_params, SurfaceKind};
+use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::inttools_data::IntRange;
 use crate::inttools_range::IntContext;
@@ -230,11 +231,13 @@ impl BeanFaceIntersector {
 
     /// Closest surface parameters `(u, v)` of `p` and the surface distance.
     ///
-    /// Planes and spheres are projected **exactly** (the reconstructed analytic
-    /// frame), because the grid+refine projector `surface_closest_params` is
-    /// only ~1e-3 accurate on analytic quadrics — far too coarse for the
-    /// tolerance-driven range walk (`criteria` ~ 1e-7). All other surfaces use
-    /// the grid+refine projector.
+    /// Faithful `IntTools_BeanFaceIntersector::Distance(t, u, v)`
+    /// (`IntTools_BeanFaceIntersector.cxx:465-485`): `ProjPS` =
+    /// `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`, `cxx:477-478`). Planes
+    /// and spheres keep their exact reconstructed analytic frame (the same
+    /// values `ElSLib::Parameters` returns); everything else goes through the
+    /// faithful extrema projector. A projection that is not done keeps OCCT's
+    /// `RealLast()` distance (`cxx:474`).
     pub(crate) fn closest_params_dist(&self, p: &GpPnt) -> (f64, f64, f64) {
         match classify_surface(self.surface()) {
             SurfaceKind::Plane => {
@@ -259,9 +262,10 @@ impl BeanFaceIntersector {
             }
             _ => {}
         }
-        let (u, v) = surface_closest_params(self.surface(), p, 24, 24);
-        let dist = self.surface_d0(u, v).distance(p);
-        (u, v, dist)
+        match occt_geom::geom_api::project_point_on_surface(self.surface(), p, CONFUSION) {
+            Some(ps) => (ps.u, ps.v, ps.distance),
+            None => (0.0, 0.0, f64::MAX),
+        }
     }
 
     // ---- Range expansion ----------------------------------------------------

@@ -29,7 +29,7 @@ use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::{Curve, Surface};
 
 use crate::bean_face::BeanFaceIntersector;
-use crate::brep_surface::{is_planar, surface_closest_params, SurfaceKind};
+use crate::brep_surface::{is_planar, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FaceState, FClass2d};
 use crate::edge_face_kind::*;
@@ -401,9 +401,15 @@ impl EdgeFace {
         if is_planar(surface.as_ref(), 6, 6, 1e-6) {
             plane_projection(surface.as_ref(), p)
         } else {
-            let (u, v) = surface_closest_params(surface.as_ref(), p, 24, 24);
-            let q = surface.d0(u, v);
-            (u, v, p.distance(&q))
+            // Faithful `IntTools_EdgeFace::DistanceFunction`
+            // (`IntTools_EdgeFace.cxx:200-235`): `ProjPS` =
+            // `GeomAPI_ProjectPointOnSurf` (`cxx:214-221`); a not-done
+            // projection is the `myErrorStatus = 4; return 99.` error
+            // (`cxx:224-228`).
+            match occt_geom::geom_api::project_point_on_surface(surface.as_ref(), p, CONFUSION) {
+                Some(ps) => (ps.u, ps.v, ps.distance),
+                None => (0.0, 0.0, 99.0),
+            }
         }
     }
 

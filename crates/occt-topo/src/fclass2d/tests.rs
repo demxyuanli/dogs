@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::*;
     use crate::brep_extrema::test_box::unit_box;
-    use crate::brep_surface::{face_is_planar, surface_closest_params};
+    use crate::brep_surface::face_is_planar;
     use crate::builder::TopoBuilder;
     use crate::builder_face::build_face_with_holes;
     use crate::primitives::BRepPrimCylinder;
@@ -16,8 +16,10 @@ use super::*;
     /// UV parameters of a 3D point on a face surface (for tests).
     fn project_uv(face: &Face, p: &GpPnt) -> GpPnt2d {
         let surf = GeometryRegistry::global().face_surface(&face.0).expect("face surface");
-        let (u, v) = surface_closest_params(surf.as_ref(), p, 32, 32);
-        p2(u, v)
+        // Faithful `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`).
+        let ps = occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, 1e-7)
+            .expect("projection done");
+        p2(ps.u, ps.v)
     }
 
     fn square_edges(b: &TopoBuilder, pts: &[GpPnt; 4]) -> Vec<Edge> {

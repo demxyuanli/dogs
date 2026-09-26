@@ -245,7 +245,15 @@ pub(super) fn vertex_on_face(
     let Some(surf) = BRepTool::face_surface(f) else {
         return Ok(None);
     };
-    let (u, vv) = surface_closest_params(surf.as_ref(), &p, 32, 32);
+    // Faithful `IntTools_Context::ComputeVF` (`IntTools_Context.cxx:545-590`):
+    // `ProjPS` = `GeomAPI_ProjectPointOnSurf` (`cxx:558`); a projection that is
+    // not done is the `-1` return (`cxx:561-563`), i.e. `Ok(None)` here.
+    let Some(ps) =
+        occt_geom::geom_api::project_point_on_surface(surf.as_ref(), &p, CONFUSION)
+    else {
+        return Ok(None);
+    };
+    let (u, vv) = (ps.u, ps.v);
     let dist = surf.d0(u, vv).distance(&p);
     let tol_sum = BRepTool::vertex_tolerance(v) + BRepTool::face_tolerance(f) + fuzzy.max(CONFUSION);
     if dist > tol_sum {

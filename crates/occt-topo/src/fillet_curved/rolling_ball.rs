@@ -74,7 +74,11 @@ pub fn closest_point_on_surface(s: &dyn Surface, p: &GpPnt) -> Option<(GpPnt, Gp
             Some((q, n.normalized()))
         }
         _ => {
-            // Fallback: grid closest point.
+            // UNPORTED: the curved-fillet rolling-ball closest point for surface
+            // kinds other than the analytic quadrics handled above; there is no
+            // OCCT `Extrema` control flow behind this arm (OCCT builds the
+            // fillet surface from the spine, `BRepFilletAPI_MakeFillet`). Grid
+            // stays as the last resort.
             let (u, v) = surface_closest_params(s, p, 24, 24);
             let q = s.d0(u, v);
             let n = surface_normal(s, u, v);

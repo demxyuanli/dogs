@@ -117,12 +117,20 @@ pub(super) fn face_split_to_reverse(split: &Face, orig: &Face) -> bool {
         return split.orientation() != orig.orientation();
     }
     let Some(p) = face_sample_point(split) else { return false };
-    let (uo, vo) = surface_closest_params(o.as_ref(), &p, 32, 32);
-    if !uo.is_finite() || !vo.is_finite() {
+    // Faithful `BOPTools_AlgoTools::IsSplitToReverse(Face, Face, ...)`
+    // (`BOPTools_AlgoTools.cxx:1316-1427`): the point is projected onto the
+    // original and the split supporting surfaces with `ProjPS` =
+    // `GeomAPI_ProjectPointOnSurf` (`cxx:1393-1406`, `cxx:1376`); a projection
+    // that is not done is the `NbPoints() == 0` error return, `false` here.
+    let (Some(po), Some(ps)) = (
+        occt_geom::geom_api::project_point_on_surface(o.as_ref(), &p, occt_core::precision::CONFUSION),
+        occt_geom::geom_api::project_point_on_surface(s.as_ref(), &p, occt_core::precision::CONFUSION),
+    ) else {
         return false;
-    }
-    // Normal of the split face at `p` (project back onto the split surface).
-    let (u, v) = surface_closest_params(s.as_ref(), &p, 32, 32);
+    };
+    let (uo, vo) = (po.u, po.v);
+    // Normal of the split face at `p`.
+    let (u, v) = (ps.u, ps.v);
     let mut ns = surface_normal_checked(s.as_ref(), u, v);
     let mut no = surface_normal_checked(o.as_ref(), uo, vo);
     if ns.square_magnitude() < 1e-30 || no.square_magnitude() < 1e-30 {

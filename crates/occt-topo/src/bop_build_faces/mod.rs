@@ -51,7 +51,6 @@ pub(crate) use crate::algo_tools::AlgoTools;
 pub(crate) use crate::bop_hist::BopHistory;
 pub(crate) use crate::bopds::BopdsDS;
 pub(crate) use crate::boptools_2d;
-pub(crate) use crate::brep_surface::surface_closest_params;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder_area::AreaBuilder;
 pub(crate) use crate::builder_face::{make_face_from_wire, FaceBuilder};

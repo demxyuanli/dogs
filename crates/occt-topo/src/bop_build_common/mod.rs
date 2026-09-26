@@ -50,7 +50,6 @@ pub(crate) use crate::algo_tools::AlgoTools;
 pub(crate) use crate::bop_hist::BopHistory;
 pub(crate) use crate::bopds::BopdsDS;
 pub(crate) use crate::brep_extrema::{closest_point_on_edge, closest_point_on_face, is_inside};
-pub(crate) use crate::brep_surface::surface_closest_params;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::fclass2d::FaceState;

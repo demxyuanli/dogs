@@ -40,7 +40,7 @@ pub(crate) use crate::bopds::{
 };
 pub(crate) use crate::boptools_2d::intermediate_point;
 pub(crate) use crate::bopds_ff::{BopdsCurve, BopdsInterfFf};
-pub(crate) use crate::brep_surface::{face_is_planar, surface_closest_params};
+pub(crate) use crate::brep_surface::face_is_planar;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::edge_edge::EdgeEdge;

@@ -13,8 +13,15 @@ use crate::tgeometry::GeometryRegistry;
 /// Project a 3D point onto a face's surface (closest (u,v) + surface point).
 pub fn project_point_on_face(f: &Face, p: &GpPnt) -> Option<(f64, f64, GpPnt)> {
     let s = BRepTool::face_surface(f)?;
-    let (u, v) = crate::brep_surface::surface_closest_params(s.as_ref(), p, 32, 32);
-    Some((u, v, s.d0(u, v)))
+    // Faithful `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`,
+    // `GeomAPI_ProjectPointOnSurf.cxx:214-246`); a not-done / no-solution
+    // projection is `None` (`cxx:83-86`).
+    let ps = occt_geom::geom_api::project_point_on_surface(
+        s.as_ref(),
+        p,
+        occt_core::precision::CONFUSION,
+    )?;
+    Some((ps.u, ps.v, ps.point))
 }
 
 /// Project a 3D point onto a plane.
@@ -41,9 +48,18 @@ pub fn project_edge_on_face(e: &Edge, f: &Face, samples: usize) -> Option<(Vec<G
     for i in 0..samples {
         let u = a + (b - a) * i as f64 / (samples - 1).max(1) as f64;
         let p3 = curve.d0(u);
-        let (pu, pv) = crate::brep_surface::surface_closest_params(s.as_ref(), &p3, 32, 32);
-        pcur.push(GpPnt2d::new(pu, pv));
-        pts.push(s.d0(pu, pv));
+        // Faithful `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`), the
+        // projector `ShapeConstruct_ProjectCurveOnSurface::Perform` runs for a
+        // missing pcurve; a sample that does not project is dropped.
+        let Some(ps) = occt_geom::geom_api::project_point_on_surface(
+            s.as_ref(),
+            &p3,
+            occt_core::precision::CONFUSION,
+        ) else {
+            continue;
+        };
+        pcur.push(GpPnt2d::new(ps.u, ps.v));
+        pts.push(ps.point);
     }
     Some((pcur, pts))
 }

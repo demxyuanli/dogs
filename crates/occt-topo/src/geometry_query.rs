@@ -203,6 +203,9 @@ fn point_segment_closest_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> (GpPnt, f64) {
 pub fn refine_hit_on_surface(face: &Face, approx: &GpPnt) -> GpPnt {
     match BRepTool::face_surface(face) {
         Some(s) => {
+            // UNPORTED: `refine_hit_on_surface` is a port-only mesh/ray helper;
+            // OCCT's `IntCurvesFace_ShapeIntersector` returns the surface UV
+            // with the hit and never re-projects it. Grid stays.
             let (u, v) = surface_closest_params(s.as_ref(), approx, 32, 32);
             s.d0(u, v)
         }

@@ -239,6 +239,23 @@ pub fn face_centroid(face: &Face, nu: usize, nv: usize) -> Option<GpPnt> {
 }
 
 /// Closest (u, v) parameters of `p` on a surface (grid search + refinement).
+///
+/// **UNPORTED (audit A1 / T-37)**: this is the port's invented substitute.
+/// OCCT inverts a 3-D point to surface parameters with
+/// `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`), ported as
+/// [`occt_geom::geom_api::project_point_on_surface`] and used by every migrated
+/// call site. The consumers left here are the port-only heuristics with no OCCT
+/// projection branch (each call site is marked `// UNPORTED`): the mesh-QA /
+/// voxel helpers (`brepmesh.rs`, `brepfeat/features.rs`), the UV-box
+/// reconstruction helpers (`brep_faces.rs`, `brep_class3d.rs`), the port-only
+/// closest-point fallbacks (`fillet_curved/rolling_ball.rs`,
+/// `edge_face_kind.rs`, `geometry_query.rs`, `shape_naming.rs`,
+/// `brep_connect.rs`, `bop_build_solids.rs`), the `IntCurveSurface` parameter
+/// recovery (`intcurvesurface/solvers.rs`), `int_curves_face.rs`, the
+/// `wire_splitter_block.rs` finite-difference tolerance, and the last-resort
+/// fallback inside `brep_surface.rs::edge_pcurve_on_face`. The former
+/// `int_tools_full/context.rs::project_point_on_face` fallback is gone: that
+/// function is now the windowed `IntTools_Context::ProjPS`.
 pub fn surface_closest_params(s: &dyn Surface, p: &GpPnt, nu: usize, nv: usize) -> (f64, f64) {
     let (u0, u1, v0, v1) = sample_bounds(s);
     let mut best = (u0, v0);
@@ -329,6 +346,11 @@ pub fn edge_pcurve_on_face(edge: &Edge, face: &Face, samples: usize) -> Vec<GpPn
         .iter()
         .map(|&u| {
             let p = curve.d0(u);
+            // UNPORTED: last resort when the faithful
+            // `project_curve_on_surface_perform` (ShapeConstruct) returns no
+            // pcurve; OCCT's `BRep_Tool::CurveOnSurface` returns the stored
+            // pcurve and `ShapeFix_Edge::FixAddPCurve` builds the missing one
+            // with the real projector (`ShapeFix_Edge.cxx:499-531`).
             let (pu, pv) = surface_closest_params(surf.as_ref(), &p, 32, 32);
             GpPnt2d::new(pu, pv)
         })

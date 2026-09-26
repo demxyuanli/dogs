@@ -24,9 +24,16 @@ pub(super) fn surface_params(surface: &dyn Surface, geom: Option<&SurfaceGeom>, 
             // Cylinder/cone/torus frames use a reconstructed axis/reference that
             // can differ by a constant offset from the surface's natural
             // parameterization; the sampling projector keeps (u, v) consistent.
+            // UNPORTED: OCCT's `IntCurveSurface_InterUtils::ComputeParamsOnQuadric`
+            // (`IntCurveSurface_InterUtils.pxx:1214`) and `SectionPointToParameters`
+            // (`:740-781`) recover the surface parameters through
+            // `ElSLib::Parameters` / the polyhedron, never through
+            // `Extrema_ExtPS`. The port's reconstructed cylinder/cone/torus frames
+            // differ by a constant from the natural ones, so the grid stays.
             _ => return surface_closest_params(surface, p, 24, 24),
         }
     }
+    // UNPORTED: same as above (no reconstructed geometry to pick a frame from).
     surface_closest_params(surface, p, 24, 24)
 }
 
@@ -544,6 +551,10 @@ pub(super) fn compute_state(
 /// `surface_normal` finite-difference fallback is ill-defined on unbounded
 /// parameter directions); otherwise the sampling normal is used.
 pub(super) fn signed_dist(surface: &dyn Surface, geom: Option<&SurfaceGeom>, p: &GpPnt) -> f64 {
+    // UNPORTED: this is the port-only general sampling path (see the module
+    // docs); OCCT's general `IntCurveSurface` path takes its (u, v) from the
+    // polyhedron/polygon (`IntCurveSurface_InterUtils.pxx:740-781`), not from
+    // `Extrema_ExtPS`. Grid stays.
     let (su, sv) = surface_closest_params(surface, p, 16, 16);
     let q = surface.d0(su, sv);
     let n = match geom.and_then(|g| quadric_normal(g, p)) {

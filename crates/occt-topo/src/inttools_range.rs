@@ -31,7 +31,6 @@ use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::Curve;
 
 use crate::abs::ShapeType;
-use crate::brep_surface::surface_closest_params;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::topo_tools_full::edge_vertices;
@@ -488,7 +487,16 @@ impl IntContext {
         let Some(surf) = BRepTool::face_surface(face) else {
             return false;
         };
-        let (u, v) = surface_closest_params(surf.as_ref(), p, 32, 32);
+        // Faithful `IntTools_Context::IsPointInFace(gp_Pnt, ...)`
+        // (`IntTools_Context.cxx:612-635`): `ProjPS` =
+        // `GeomAPI_ProjectPointOnSurf` (`IntTools_Context.cxx:247-265`); a
+        // projection that is not done is `false`.
+        let Some(ps) =
+            occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
+        else {
+            return false;
+        };
+        let (u, v) = (ps.u, ps.v);
         uv.set_coord(u, v);
         if surf.d0(u, v).distance(p) > tol.max(0.0) {
             return false;
@@ -502,7 +510,12 @@ impl IntContext {
     /// (`GeomAPI_ProjectPointOnSurf` equivalent).
     pub fn project_point_on_face(&self, face: &Face, p: &GpPnt) -> Option<(f64, f64)> {
         let surf = BRepTool::face_surface(face)?;
-        Some(surface_closest_params(surf.as_ref(), p, 32, 32))
+        // Faithful `IntTools_Context::ProjPS` (`IntTools_Context.cxx:247-265`,
+        // `GeomAPI_ProjectPointOnSurf` = `Extrema_ExtPS`); a not-done
+        // projection is `None`, matching `ComputeVF`/`IsValidPointForFace`
+        // (`IntTools_Context.cxx:561-563`, `:653-657`).
+        occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
+            .map(|ps| (ps.u, ps.v))
     }
 
     /// Face classifier — FClass2d arrives in wave B; a shell for now.

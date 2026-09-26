@@ -27,8 +27,7 @@ pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION};
 pub(crate) use occt_geom::Curve;
 
 pub(crate) use crate::abs::{Orientation, ShapeType};
-pub(crate) use crate::brep_surface::{face_uv_bounds, is_planar, surface_closest_params};
-pub(crate) use crate::edge_face_kind::plane_projection;
+pub(crate) use crate::brep_surface::face_uv_bounds;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::fclass2d::{FaceState, FClass2d};
 pub(crate) use crate::inttools_data::IntRange;

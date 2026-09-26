@@ -343,8 +343,19 @@ pub(super) fn wire_point_state(
             (pa.y() + pb.y()) / 2.0,
             (pa.z() + pb.z()) / 2.0,
         );
-        let (u, v) = surface_closest_params(surf.as_ref(), &mid, 16, 16);
-        let st = cl.perform(GpPnt2d::new(u, v));
+        // `BOPAlgo_BuilderFace::IsInside` classifies the 2-D midpoint of the
+        // edge's pcurve on the face (`BOPAlgo_BuilderFace.cxx:879-889`); the
+        // port projects the 3-D midpoint onto the surface — the
+        // `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`) step that builds a
+        // missing pcurve (`ShapeAnalysis_Surface::ValueOfUV`). A point that
+        // does not project contributes no classification, as a null pcurve
+        // does (`cxx:880-883`).
+        let Some(ps) =
+            occt_geom::geom_api::project_point_on_surface(surf.as_ref(), &mid, occt_core::precision::CONFUSION)
+        else {
+            continue;
+        };
+        let st = cl.perform(GpPnt2d::new(ps.u, ps.v));
         if st != FaceState::Unknown {
             return Some(st);
         }

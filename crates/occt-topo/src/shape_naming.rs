@@ -104,6 +104,9 @@ pub fn find_face_through(shape: &TopoShape, p: &GpPnt, tol: f64) -> Option<Face>
     faces_of(shape).into_iter().find(|f| {
         match GeometryRegistry::global().face_surface(&f.0) {
             Some(s) => {
+                // UNPORTED: `find_face_through` is a port-only naming helper;
+                // OCCT tracks faces through the history (`BRepTools_History`),
+                // with no point/face projection. Grid stays.
                 let (u, v) = crate::brep_surface::surface_closest_params(s.as_ref(), p, 16, 16);
                 s.d0(u, v).distance(p) <= tol
             }

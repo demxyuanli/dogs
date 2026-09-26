@@ -199,6 +199,11 @@ impl FaceIntersector {
 }
 
 fn keep_point(face: &Face, cl: &FClass2d, p: IntersectionPoint) -> Option<FaceHit> {
+    // UNPORTED: OCCT `IntCurvesFace_Intersector::InternalCall` classifies the
+    // intersection point at its own `(U, V)`
+    // (`IntCurvesFace_Intersector.cxx:254`, `:293-294`) and never re-projects
+    // it; the port re-projects because its `intcurvesurface` parameters can be
+    // in the natural (untrimmed) surface frame. No OCCT projection branch.
     let (u, v) = if let Some(surf) = BRepTool::face_surface(face) {
         crate::brep_surface::surface_closest_params(surf.as_ref(), &p.pnt, 16, 16)
     } else {

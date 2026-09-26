@@ -262,6 +262,10 @@ pub(crate) fn plane_projection(s: &dyn Surface, p: &GpPnt) -> (f64, f64, f64) {
     let (o, x, y) = match plane_frame(s) {
         Some(f) => f,
         None => {
+            // UNPORTED: last-resort fallback for a surface classified planar
+            // whose reconstructed frame is degenerate; OCCT's
+            // `ElSLib::Parameters(plane, P)` is the analytic arm and has no
+            // Extrema branch under it. Grid stays.
             let (u, v) = surface_closest_params(s, p, 24, 24);
             let q = s.d0(u, v);
             return (u, v, p.distance(&q));
@@ -270,6 +274,7 @@ pub(crate) fn plane_projection(s: &dyn Surface, p: &GpPnt) -> (f64, f64, f64) {
     let n = x.crossed(&y);
     let m = n.magnitude();
     if m < 1e-30 {
+        // UNPORTED: same degenerate-frame last resort as above.
         let (u, v) = surface_closest_params(s, p, 24, 24);
         let q = s.d0(u, v);
         return (u, v, p.distance(&q));

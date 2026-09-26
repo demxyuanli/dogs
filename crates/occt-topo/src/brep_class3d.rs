@@ -121,7 +121,16 @@ impl SolidExplorer {
             let uv_inf = !u1.is_finite() || !u2.is_finite() || !v1.is_finite() || !v2.is_finite();
             if uv_inf {
                 if let Some(surf) = BRepTool::face_surface(&face) {
-                    let (su, sv) = surface_closest_params(surf.as_ref(), p, 16, 16);
+                    // Faithful `BRepClass3d_SolidExplorer::OtherSegment`
+                    // (`BRepClass3d_SolidExplorer.cxx:493-620`): the closest
+                    // `(u, v)` comes from `Extrema_ExtPS` (`cxx:575-576`); the
+                    // `anInfFlag` early return is `cxx:606-609`.
+                    let Some(ps) =
+                        occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
+                    else {
+                        continue;
+                    };
+                    let (su, sv) = (ps.u, ps.v);
                     if surf.d0(su, sv).distance(p) <= CONFUSION {
                         if let Ok(cl) = FClass2d::new(&face, CONFUSION) {
                             let st = cl.perform(GpPnt2d::new(su, sv));
@@ -159,15 +168,23 @@ impl SolidExplorer {
                 });
             }
             if let Some(surf) = BRepTool::face_surface(&face) {
-                let (su, sv) = surface_closest_params(surf.as_ref(), p, 16, 16);
-                if surf.d0(su, sv).distance(p) <= CONFUSION {
-                    if let Ok(cl) = FClass2d::new(&face, CONFUSION) {
-                        if cl.perform(GpPnt2d::new(su, sv)) == FaceState::Out {
-                            return Some(Segment {
-                                lin: GpLin::from_pnt_dir(*p, GpDir::default_dir()),
-                                par: 0.0,
-                                flag: 3,
-                            });
+                // Same `Extrema_ExtPS` closest `(u, v)`
+                // (`BRepClass3d_SolidExplorer.cxx:575-576`); the
+                // `BRepClass_FaceClassifier` arm that consumes it is
+                // `cxx:612-620`.
+                if let Some(ps) =
+                    occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
+                {
+                    let (su, sv) = (ps.u, ps.v);
+                    if surf.d0(su, sv).distance(p) <= CONFUSION {
+                        if let Ok(cl) = FClass2d::new(&face, CONFUSION) {
+                            if cl.perform(GpPnt2d::new(su, sv)) == FaceState::Out {
+                                return Some(Segment {
+                                    lin: GpLin::from_pnt_dir(*p, GpDir::default_dir()),
+                                    par: 0.0,
+                                    flag: 3,
+                                });
+                            }
                         }
                     }
                 }
@@ -247,6 +264,10 @@ fn finite_uv_of_face(face: &Face) -> Option<(f64, f64, f64, f64)> {
     let mut vb = f64::NEG_INFINITY;
     for vtx in vertices_of(&face.0) {
         let p = BRepTool::vertex_point(&vtx);
+        // UNPORTED: `finite_uv_of_face` is a port-only helper that brackets a
+        // finite UV box for a face whose bounds are infinite; OCCT's
+        // `BRepTools::UVBounds` reads the pcurve box (`BRepTools.cxx:64-75`)
+        // and has no point-projection branch. Grid stays.
         let (u, v) = surface_closest_params(surf.as_ref(), &p, 8, 8);
         ua = ua.min(u);
         ub = ub.max(u);

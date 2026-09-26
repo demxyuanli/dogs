@@ -521,6 +521,9 @@ pub(super) fn face_point_distance(face: &crate::shape::Face, p: &GpPnt) -> f64 {
             return GpVec::from_pnts(&pln.location(), p).dot(&n).abs();
         }
     }
+    // UNPORTED: `face_point_distance` is a port-only voxel helper; OCCT's
+    // point/face distance (`BRepExtrema_DistShapeShape`) uses `Extrema_ExtPS`,
+    // but this voxel classifier has no OCCT control flow to align to. Grid stays.
     let (u, v) = crate::brep_surface::surface_closest_params(surf.as_ref(), p, 32, 32);
     surf.d0(u, v).distance(p)
 }

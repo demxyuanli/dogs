@@ -521,7 +521,16 @@ pub(super) fn record_vertex_point_on_face(ds: &mut BopdsDS, n_f: usize, n_v: usi
     let Some(face_shape) = ds.shape(n_f).cloned() else { return };
     let face = Face(face_shape);
     let Some(surf) = BRepTool::face_surface(&face) else { return };
-    let (u, v) = surface_closest_params(surf.as_ref(), p, 32, 32);
+    // `BOPAlgo_PaveFiller::PerformVF` stores the UV from
+    // `IntTools_Context::ComputeVF` (`BOPAlgo_PaveFiller_4.cxx:374-381`), whose
+    // projector is `ProjPS` = `GeomAPI_ProjectPointOnSurf`
+    // (`IntTools_Context.cxx:545-590`); a not-done projection records nothing.
+    let Some(ps) =
+        occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
+    else {
+        return;
+    };
+    let (u, v) = (ps.u, ps.v);
     record_vertex_on_face(ds, n_f, n_v, u, v);
 }
 

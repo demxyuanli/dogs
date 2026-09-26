@@ -102,6 +102,9 @@ fn face_uv_rect(face: &Face) -> Option<(f64, f64, f64, f64)> {
         let (a, z) = edge_vertices(&e);
         for v in [a, z].into_iter().flatten() {
             let p = vertex_position(&v);
+            // UNPORTED: `face_uv_rect` is a port-only fallback that brackets a
+            // face's UV box from its wire vertices; OCCT's `BRepTools::UVBounds`
+            // uses the stored pcurves (`BRepTools.cxx:64-75`), no projection.
             let (u, vv) = brep_surface::surface_closest_params(surf.as_ref(), &p, 64, 64);
             umin = umin.min(u);
             umax = umax.max(u);

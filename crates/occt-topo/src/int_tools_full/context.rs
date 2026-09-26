@@ -182,29 +182,63 @@ impl IntToolsContext {
     /// Closest `(u, v)` parameters of `p` on the face's surface
     /// (`IntTools_Context::ProjPS` + `LowerDistanceParameters`).
     ///
-    /// Planes use the analytic projector (OCCT `GeomAPI_ProjectPointOnSurf` on
-    /// `Geom_Plane`). A grid over `sample_bounds` clamps unbounded plane UV to
-    /// `[-1, 1]` and can report a ~1 unit miss for a point that lies on the
-    /// plane.
+    /// Faithful `ProjPS` (`IntTools_Context.cxx:247-265`): the projector is
+    /// `GeomAPI_ProjectPointOnSurf::Init(aS, Umin, Usup, Vmin, Vsup,
+    /// myPOnSTolerance)` over the **face's UV window** (`UVBounds`,
+    /// `IntTools_Context.cxx:252-253` = `SurfaceAdaptor(face)`'s first/last
+    /// parameters, `cxx:1028-1039`) with
+    /// `SetExtremaFlag(Extrema_ExtFlag_MIN)` (`cxx:260`). Because the
+    /// extrema are restricted to that window, a point outside it makes
+    /// `Perform` legally not-done (`GeomAPI_ProjectPointOnSurf.cxx:83-86`) and
+    /// this returns `Err`. The former grid fallback
+    /// (`surface_closest_params`) is gone: `ProjPS` has no such fallback.
     pub fn project_point_on_face(&self, face: &Face, p: &GpPnt) -> Result<(f64, f64), String> {
         let Some(surf) = BRepTool::face_surface(face) else {
             return Err("IntToolsContext::project_point_on_face: face has no surface".into());
         };
-        if is_planar(surf.as_ref(), 6, 6, 1e-6) {
-            let (u, v, _) = plane_projection(surf.as_ref(), p);
-            return Ok((u, v));
+        // `UVBounds(aF, Umin, Usup, Vmin, Vsup)`: the face's own UV window,
+        // the port of `BRepTools::AddUVBounds` (`BRepTools.cxx:126-160`),
+        // falling back to the surface bounds exactly as `BRepAdaptor_Surface`
+        // does.
+        let (umin, umax, vmin, vmax) = match crate::brep_uv_bounds::uv_box_of_face(face).get() {
+            Some((xmin, ymin, xmax, ymax)) => (xmin, xmax, ymin, ymax),
+            None => {
+                let (u0, u1) = surf.u_range();
+                let (v0, v1) = surf.v_range();
+                (u0, u1, v0, v1)
+            }
+        };
+        let tol = if self.pon_s_tolerance > 0.0 {
+            self.pon_s_tolerance
+        } else {
+            PCONFUSION
+        };
+        // `myExtPS.Initialize(myGeomAdaptor, Umin, Usup, Vmin, Vsup, Tolerance,
+        // Tolerance)` + `SetExtremaFlag(Extrema_ExtFlag_MIN)`; the flag must be
+        // set before `Perform`.
+        let mut ex = occt_geom::extrema_surf::ExtPs::new();
+        ex.set_flag(occt_geom::extrema_surf::ExtremaExtFlag::Min);
+        ex.initialize(surf.as_ref(), umin, umax, vmin, vmax, tol, tol);
+        ex.perform(p);
+        // `GeomAPI_ProjectPointOnSurf::Init()`: `IsDone() && NbExt() > 0`
+        // (`GeomAPI_ProjectPointOnSurf.cxx:83`).
+        if !ex.is_done() || ex.nb_ext() == 0 {
+            return Err(format!(
+                "IntToolsContext::project_point_on_face: ProjPS not done for point ({}, {}, {}) on UV window u[{umin}, {umax}] v[{vmin}, {vmax}]",
+                p.x(),
+                p.y(),
+                p.z()
+            ));
         }
-        // `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`): the faithful engine is
-        // exact on the elementary surfaces (cylinder/cone/sphere/torus) and is
-        // what `IntTools_Context::ProjPS` uses (`IntTools_Context.cxx:617-630`).
-        // The 32x32 `surface_closest_params` grid (audit A1) stays only as a
-        // last resort for the surfaces whose General engine is not ported yet.
-        if let Some(ps) =
-            occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
-        {
-            return Ok((ps.u, ps.v));
+        // Smallest `SquareDistance` (`GeomAPI_ProjectPointOnSurf.cxx:88-100`).
+        let mut best = 1usize;
+        for i in 2..=ex.nb_ext() {
+            if ex.square_distance(i) < ex.square_distance(best) {
+                best = i;
+            }
         }
-        Ok(surface_closest_params(surf.as_ref(), p, 32, 32))
+        let (u, v, _) = ex.point(best);
+        Ok((u, v))
     }
 
     /// Parameter of the closest point of `p` on the edge's 3D curve
@@ -398,8 +432,10 @@ impl IntToolsContext {
 
     /// Surface-projection + distance + 2D-classification of `p` against `face`.
     ///
-    /// Returns `Ok(None)` when the 3D distance from `p` to the surface at the
-    /// resolved `(u, v)` exceeds `tol`; `Ok(Some(state))` otherwise.
+    /// Returns `Ok(None)` when the `ProjPS` projection is not done (the point
+    /// is outside the face's UV window) or when the 3D distance from `p` to the
+    /// surface at the resolved `(u, v)` exceeds `tol`; `Ok(Some(state))`
+    /// otherwise.
     pub(super) fn point_face_state(
         &mut self,
         face: &Face,
@@ -412,11 +448,14 @@ impl IntToolsContext {
         };
         let (u, v) = match uv {
             Some((u, v)) => (u, v),
-            // `IsValidPointForFace` uses `ProjPS` (`GeomAPI_ProjectPointOnSurf`).
-            // The 32x32 grid in `surface_closest_params` clamps an unbounded
-            // plane to `[-1, 1]` and can report a ~1 unit miss for a point
-            // that lies on the plane (e.g. overlapping-box faces at x=1.5).
-            None => self.project_point_on_face(face, p)?,
+            // `IsValidPointForFace` / `IsPointInFace(gp_Pnt, ...)` (`ProjPS`,
+            // `IntTools_Context.cxx:612-635`, `:647-670`): a projector that is
+            // not done — the point lies outside the face's UV window — leaves
+            // the flag `false`, it is not an error.
+            None => match self.project_point_on_face(face, p) {
+                Ok(uv) => uv,
+                Err(_) => return Ok(None),
+            },
         };
         if surf.d0(u, v).distance(p) > tol.max(0.0) {
             return Ok(None);

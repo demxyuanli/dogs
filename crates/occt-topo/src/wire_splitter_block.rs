@@ -663,6 +663,10 @@ fn uv_tolerance_2d(v: &Vertex, face: &Face) -> (f64, f64) {
 fn fd_uv_tolerance(v: &Vertex, s: &dyn occt_geom::surface::Surface, t3: f64) -> (f64, f64) {
     let t3 = t3.max(PCONFUSION);
     let p = BRepTool::vertex_point(v);
+    // UNPORTED: `fd_uv_tolerance` stands in for the unported
+    // revolution/extrusion `Resolution` arms (see the caller's doc comment);
+    // the grid supplies the (u, v) at which the finite-difference derivative is
+    // evaluated.
     let (u, vv) = crate::brep_surface::surface_closest_params(s, &p, 8, 8);
     let (_, du, dv) = s.d1(u, vv);
     let ur = if du.magnitude() > PCONFUSION {
