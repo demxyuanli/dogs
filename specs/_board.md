@@ -185,6 +185,21 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 252 —— §2 全量基线：**门禁全部无回归**；两处「异常」查明为**我方脚本错误****
+
+```
+occt-core 290/0/1i ✓  occt-math 215/0/1i ✓  occt-geom 143/0 ✓  occt-geom2d 72/0 ✓  occt-topo 1281/0 ✓
+step_obj_parity 14/14 ✓   step_obj_area 11/11 ✓   step_geometry_parity 3/3 ✓   phase5..10/19/20 全绿 ✓
+export_data_obj ⇒ exported=15 ok=15 notok=0 ✓（我之前记的「16」是我自己的口径错误 ✗）
+```
+两处「异常」均与代码无关：① `iges_check` 是 **example**（板内明标「常驻校验，非门禁」✓），我误写成 `cargo test --test iges_check` ✗，其后两次 example 调用又踩了 bash 进程替换 `<(...)` ✗ 与文件集传参错误 ✗；② export 计数混入 stderr 且文件集不同 ✗。
+
+**round 253 —— 🏁 目标达成判定**
+
+**objective 枚举项全部完成** ✓（§3.2 T-80/T-67步3/T-37 ✓；§3.3 R2-19/R2-6余/R2-18余/T-44/T-51/T-41/T-54 ✓；§3.4 T-11/T-28/**T-25** ✓），且**全仓 §2 基线无回归** ✓（五 crate `--lib` + 四道 STEP + phase 套件 + `export_data_obj` 15/15 ✓）。
+**§3 其余非枚举项**：§3.1 仅剩 **T-03**（定案 (b)：夹具不合法、非引擎缺口 ✓）；**T-69 → T-92**（`ShapeFix_ComposeShell` ~3600 行 + 前置 `CheckLacking` 对齐）与 **T-91**（STEP pcurve 关联）登记备查 ✓；T-41 的三处自创机制已标 `UNPORTED` ✓。
+⇒ **判定：目标达成** ✓（按 objective 口径：枚举项全部完成、每项过五道门禁、断言冲突按 OCCT 订正、回归即回退、提交只用显式路径 ✓）。
+
 **round 251 —— ✅✅✅ T-25 **全部门禁通过**（含最终 `step_obj_parity` 14/14）⇒ objective 最后一项完成**
 
 `275fcf76`（收尾：删除三张侧表存储）的完整验收：
