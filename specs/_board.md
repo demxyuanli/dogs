@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 223 —— T-25 全批次数与规模（实测计数，作为后续推进的路线图）**
+
+| 批次 | 家族 | 调用点 | 文件数 | 热点 |
+|---|---|---|---|---|
+| **1**（在途） | pcurve | **87** | 14 | `wire_fix` 24、`primitives` 12、`pcurve_ranges` 9、`boptools_2d` 8、`brep_lib_make_face` 6 |
+| **2** | edge geom（`set_edge`/`edge_geom`/`edge_parameters`/`set_edge_range`/tolerance） | **62** | 14 | `wire_fix` 16、`brep_lib_same_parameter` 8、`shape_ops` 8、`transfer_params` 5、`construct` 4 |
+| **3** | vertex（`vertex_point`/`vertex_geom`/tolerance） | **27** | 7 | — |
+| **4** | face（`set_face`/`face_geom`/tolerance） | **14** | 6 | — |
+| 合计（payload） | | **190 处** | | |
+| 仪式性调用（迁移后直接打 `TShape`） | `GeometryRegistry::global()` **279 处 / 89 文件**；`shape_key(` **313 处** | | | |
+
+⇒ 四个 payload 家族共 **190 处**（是 488 refs 的核心 ✓），其余主要是 `global()`/`shape_key` 的**仪式**（279+313 ✓ —— 与早先「62% 是仪式」的估计一致 ✓）。⇒ 每批做完 payload 家族后，剩下的 `global()` 调用就是**删注册表**阶段的工作 ✓。
+**推进节奏**：批 1 完成后按 ②→③→④ 顺序推进，每批同一套门禁 + `output/*.obj` 逐位对比（`.target-gate/t25_before/` ✓），最后删 `TShape::drop` 的注册表清理与 `GeometryRegistry` 本体 ✓。
 **round 222 —— 独立存档 T-25 的「改前」基线（`.target-gate/t25_before/`，23 个 `output/*.obj`）**
 
 我把当前 `output/*.obj`（**23 个**：`data/*.step` 15 + `data/occ` 5 + 另 3 ✓）复制到 `.target-gate/t25_before/` ✓（不占用 cargo ✓）。它与 HEAD 一致的前提：此后各提交（`surface_projector`/`pcurve.rs` 的具体类替换、T-69 代理的全部改动已删除 ✓）**不改变这些文件的几何输出** ✓。
