@@ -185,6 +185,12 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 187 —— 排除缓存层；嫌疑缩到**投影器本体**，并给出「用探针直接 A/B `ShapeAnalysis_Surface::ValueOfUV`」的办法**
+
+- **缓存层忠实** ✓：端口 `projection_cache.rs:201-233`（`find`/`value_of_uv`/`next_value_of_uv`，对应 `cxx:205-216`/`:106-115`/`:125-138`）与 `getLine` 内的调用参数（`:495-502`/`:512`/`:585-592`/`:594`）都与 OCCT 的 lambda（`cxx:944-966`）及两处调用（`:953`/`:965`）对得上 ✓。
+- **下一嫌疑 = `surface_projector.rs` 的投影本体**（`value_of_uv` `:519-705`、`value_of_uv_with_gap` `:706-`、`next_value_of_uv` `:900-`）：其自述是「**从采样几何不变量重建曲面自身参数化**」⇒ 属**启发式重建** ✗，而 OCCT 是 `ShapeAnalysis_Surface::ValueOfUV`/`NextValueOfUV` 的解析/投影算法 ✓ ⇒ 周期坐标上的微小差异足以让 `getLine` 的判据由「拒」变「过」✓✓。
+- **已给代理一个直接 A/B 办法**：在 C++ 探针里对**同一个面**构造 `ShapeAnalysis_Surface`，对**同一条闭合边的同一批量 3D 点**调用 `ValueOfUV(pnt,tol)`/`NextValueOfUV`，打印 `(u,v)` 与 `Gap()`；再打印**端口**的 `(u,v)` 与残差；**逐点对照，第一处不同的坐标即分叉起点** ✓（并顺带打印 `IsUPeriodic/IsVPeriodic/UPeriod` 与该点是否在周期边界，以区分「周期归一化差」与「投影数值差」）。
+- 若确认是投影器在周期坐标上不同 ⇒ 按 `ShapeAnalysis_Surface::ValueOfUV`（`ShapeAnalysis_Surface.cxx`，含 `ComputeSingularities`/`ProjectDegenerated` 等分支）**逐行核端口实现并修到一致**；**不得**在 `get_line`/`check_lacking` 侧加判据 ✗。
 **round 186 —— 🔑 定位「谁存下那条 pcurve」：`fix_add_pcurve` 用 `project_curve_on_surface_perform` ⇒ T-69 主修在**投影/缓存**层，不是 `make_pcurve_full` 的解析等参臂**
 
 读 `shhealing/wire_fix.rs:771-815`（`ShapeFix_Edge::FixAddPCurve` 的移植）——**这才是把缺失 pcurve 算出来并存下的那一步**：
