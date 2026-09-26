@@ -102,6 +102,30 @@ cd ..; git worktree remove --force .target-headcheck
 > **执行口径（长期有效）**：以"能翻译成代码的 OCCT 控制流"补齐缺口，以编译作初步验证；未接指令不自发起门禁/导出；禁止特例补丁、自造阈值、为对齐改断言。每批同步本表 + §7 日志。
 > **ID 对照**：`R2-7 = T-01(红) + T-32(根因)`｜`R2-8 = T-03`｜`R2-9 = T-04`｜`R2-10 = T-05 + T-87`｜`R2-11 = T-80 链(T-82/T-83)`｜`R2-12 = T-69`｜`R2-13 = T-67 步 3 + T-37`｜`R2-19 = T-78 余项`｜`R2-23 = Geom_BezierCurve::Segment`。
 
+### 3.1b T-82 交接（本会话 round 82 实测；**未落地代码，已回退**）
+
+T-80 / T-88 / T-41 的共同阻塞 = `BOPAlgo_BuilderSolid` + `BOPAlgo_ShellSplitter` 对**曲面 split solid** 的处理。本轮把根因钉到三条可翻译的 OCCT 控制流差异（探针 `examples/zz_probe_t82.rs` 实测后**已回退**，工作树回到 `99e96d4`）：
+
+**实测锚点**（`box[-1,1]³ ∪ cyl(r=0.4,z∈[0,2])`，GT 探针 = 8 faces / volume 8.50265）：
+
+| | 端口现状 |
+|---|---|
+| FUSE | 7 plane / **8.297870**（柱面全丢） |
+| CUT | 9 face（含 1 Cylinder）/ 8.988554 |
+| COMMON | 空 |
+| GF（filler + BuildResult） | 11 faces = 7 plane + 2 cylinder + 2 plane **正确**（已由 `da61a30` 保证） |
+
+**差异 1 — `BOPAlgo_BuilderSolid::PerformShapesToAvoid` 的 `aMEF` 必须按「边出现次数」计。**
+OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-120`，内层 `TopExp_Explorer` 默认 `CumOri=true`）**每次出现都 `Append(anc)`**，所以一条在 wire 里出现两次的缝边给出 `aLF.Extent()==2`，从而走 `BOPAlgo_BuilderSolid.cxx:191-209` 的 `aNbF==2` 分支（`IsClosed(aE,aF1)` ⇒ 圆柱缝为真 ⇒ 不 avoid）。端口 `perform_shapes_to_avoid` 用 `edges_of`（按 TShape 去重）⇒ 缝边 `aLF.Extent()==1` ⇒ 整张柱面被 avoid，再经 `for(;;)` 级联：**圆柱 draft 的 6 面里 avoided=5 ⇒ start_elems=0 ⇒ loops=0 ⇒ 该 split solid 全是 Internal**。
+（对照实测：盒体 draft 11 面 avoided=2、start_elems=7 ⇒ 1 个 7 面壳；圆柱 draft 6 面 avoided=5 ⇒ 0 壳。）
+
+**差异 2 — `BOPAlgo_ShellSplitter::SplitBlock` 的 `aEFMap`/`aMEFP` 同样按出现次数计。**
+`cxx:195` 与 `cxx:266` 都调 `MapShapesAndAncestors`；端口 `shell_splitter_block::{map_edges_and_faces,merge_face_into_mef}` 对同一张面去重 ⇒ 缝边在该面内看起来是「自由边」（`aLF.Extent()==1`）⇒ 自由边清洗（`cxx:202-214`）把柱面/顶盖整片删掉并级联。
+
+**差异 3 —（1+2 都忠实修好后暴露的剩余缺口）壳行走/`RefineShell` 选面不足。**
+把 (1)(2) 都按 OCCT 改后实测：盒体 draft 的 11 面块 `start_elems=11 / avoided=0`，`ShellSplitter` 走出的壳只有 **7/11 面**，`refine_shell` 给出 `["6f/closed=false", "1f/closed=false"]` ⇒ 无闭合壳 ⇒ FUSE 变空（回归，已回退）。**正确的盒体单元应是「盒体 6 面 + 盘 1 面」= 7 面**（盘正好把顶面的孔封住，`BRep_Tool::IsClosed` 才为真），所以剩余缺口在选面判据 = `BOPTools_AlgoTools::GetFaceOff`（`BOPTools_AlgoTools.cxx:1051`，含 `GetEdgeOff` `:1099-1126`）与 `RefineShell`（`BOPAlgo_ShellSplitter.cxx:373`、其函数在 `:425` 附近）。
+
+**下一步（按序）**：① 把 `perform_shapes_to_avoid` 的 `aMEF` 改成 occurrence 版；② 把 `shell_splitter_block` 的两个 MEF 改成 occurrence 版；③ 修 `GetFaceOff`/`RefineShell` 的选面直到盒体单元 = 7 面且闭合；④ 复跑 `--lib` + `step_obj_*` + `phase*` 与 GT 的 8 faces / 8.50265。**每一步都必须整体复跑，因为 (1)(2) 单独落地会让 FUSE 变空。**
 ### 3.1a T-88 分诊结论（本会话，2026-09-26）
 
 `phase10_integration::curved_face_fillet_sphere_plane` 的失败**不是夹具错误，而是 T-80/T-82 的同族缺陷**（探针实测，已删）：
