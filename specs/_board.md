@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 240 —— 批 4 接线完成（face 家族，写入端 + 读取端 + 生命周期一次改净）**
+
+- **读取端**：`face_geom` 优先从 `TShape.face_core` 取 ✓（`surface` 为 `Some` 时才返回 ✓，否则回退侧表 ✓）；`face_surface`/`face_tolerance`/`natural_restriction` 自动跟随 ✓；
+- **写入端**：`set_face` 排空到槽 ✓；`set_natural_restriction`(563) 与 `set_face_tolerance`(570) 改写槽 ✓；
+- **生命周期**：`clear_shape` 增清 `face_core` ✓（与 `edge_pcurves`/`edge_core`/`vertex_core` 一起 ✓）；
+- 编译已入队（等批 3 的导出释放 cargo 锁 ✓），下一轮收 ✓。
+**批 3 状态**：`--lib` **1281/0** ✓ 已出；其余（`step_obj_area`/`step_geometry_parity`/phases/逐位对比）仍在跑 ✓。
 **round 239 —— 批 4（face 家族）第 0 步已**写入工作树**（未编译、未提交）；批 3 门禁仍在跑**
 
 - `FaceGeomCore { surface: Option<Arc<dyn Surface>>, tolerance: f64, natural_restriction: bool }`（对应 `tgeometry.rs:143-148` 的 `FaceGeom` ✓；`surface` 为 `Option` 因 `BRep_Builder::MakeFace(F)` 在 OCCT 里不设面 ✓；`Default` = 「无面 / tol 0 / natural_restriction false」（`BRep_TFace.cxx:30` ✓）；`Debug` 手写 ✓）；
