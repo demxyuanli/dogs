@@ -164,6 +164,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 133 —— T-28 前 3 步**也已委派**（三个工作流并行，文件面互不重叠）**
+
+在 T-80 修复后基线复绿的前提下，按 `_design_architecture_t25_t28.md` §T-28 委派**第 1–3 步**（第 4/5 步「删 `intpatch` closed form + 合并分派器」明确不做）：① 数据层（`PathPoint.is_new/vertex_id`、`TopolTool.identical`）；② 平移 `IntPatch_ImpPrmIntersection.cxx:329-465`（同顶点合并 + `AddUV` + `TopTrans_CurveTransition` + `:419-464` 回滚）；③ `attach_wline_ends` 的 `SetVertex`（`cxx:1149-1151`/`1255-1257`），删 `intpatch_impprm_ends.rs:210` 的 `IsNew` 假设。
+
+**文件面**：只在 `intpatch_impprm.rs`/`intpatch_impimp_sonb.rs`/`intpatch_impprm_ends.rs`/`geom_int_topol.rs`（+ 按语义命名的新子模块）。
+**门禁**：`--lib` 1281/0（不得新增测试）+ `step_obj_parity` 14/14 + `step_to_obj` 13/13 + `step_obj_area` 11/11 + `step_geometry_parity` 3/3 + `phase5/9/10/19/20` + `--all-targets` 0 error，**且** `export_data_obj` 的 v/f **逐位不变**（本任务不应改变网格）。
+
+⇒ 当前并行三条：**① T-54+T-90 网格**（`brepmesh.rs`/`meshing/`/`wireframe.rs`/`geom_bnd_lib_sample2d.rs`）、**② T-28 前 3 步**（`intpatch_*`/`geom_int_topol.rs`）、**③ T-80 已收尾**（`brep_gprop_full`/`primitives.rs`/`occt-geom2d`，已提交 `1a3a1a90`）。三者文件面无交集 ✓；提交一律由我用显式路径做，代理不得提交。
+另外：本轮清掉了我在探针阶段留在 `crates/occt-topo/examples/` 的临时 example（`zz_probe_t82.rs`），工作树仅剩有意改动。
 **round 132 —— T-80 修复的**全量门禁复核通过**；T-54+T-90 网格程序已委派**
 
 在 T-80 修复提交（`1a3a1a90`）后跑全量：
