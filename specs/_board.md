@@ -185,6 +185,14 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 164 —— 一条**否定证据**：端口 2D pcurve 解码器已覆盖 B 样条 ⇒「解不出 2D 曲线」不成立，重点转向「**文件里到底有没有 PCURVE**」**
+
+读码结果：`step/read_topology.rs:1697 resolve_curve_2d` 已覆盖 `LINE`/`CIRCLE`/`ELLIPSE`/**`B_SPLINE_CURVE_WITH_KNOTS`**（`:1744-1772`，引用 `StepToGeom::MakeBSplineCurve2d` `StepToGeom.cxx:952-963`）/`POLYLINE`/`B_SPLINE_CURVE` 等 2D 形态 ✓ ⇒ **「2D B 样条无法解码」这条假设大概率不成立**。
+**已让代理在批次 A 的表里加一列「该边在文件里到底有没有 PCURVE」并据此分流**：
+1. **`SURFACE_CURVE.associated_geometry` 里没有 `PCURVE`**（`read_topology.rs:892-895` 自注：`SURFACE`/交线条目会被跳过）⇒ `stored` 空，**且 OCCT 也会去算 pcurve** ⇒ 那就**不是**「保留存档」问题，而是「两端各自计算出的 pcurve 形态不同」⇒ **会推翻 round 163 的 (i) 前提**，要求**立即停下报我**；
+2. **`basis_surf != surf_ref`**（引用不同一）⇒ 查文件里这两条引用是否本就不同（端口与 OCCT 都按**实体同一性**匹配）；
+3. 否则看 `resolve_pcurve` 抛出的**具体 Err**。
+**判据**：表须能直接回答「该边在文件里有没有 PCURVE」——它决定我们做的是「保留存档」还是「对齐计算」。
 **round 163 —— T-69 第 1 处**落点钉到函数**：OCCT 保留的是**存档的闭合 pcurve**，端口丢了它 ⇒ 解析重投影成开路；已授权 (i) 并分两批**
 
 **代理新增证据（pcurve 类型/参数打印）**：OCCT 那 172 条闭合边 wire 的 pcurve 类型：
