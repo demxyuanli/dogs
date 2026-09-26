@@ -185,6 +185,10 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 216 —— ⚠️ 操作教训：独立 `CARGO_TARGET_DIR` 只避 target 锁，**避不开 cargo 包缓存锁****
+
+round 215 的后台门禁快照**卡了 ~20 分钟**（两个 `cargo` 进程各运行 10.2 分钟但 **CPU 仅 0.02s** ✗ ⇒ 在等锁 ✗，因为代理在并发构建 ✓）。事后查明：`CARGO_TARGET_DIR` 只隔离**目标目录锁**，**`$env:USERPROFILE\.cargo` 的包缓存/registry 锁是全进程共享的** ✗ ⇒ 「有代理在构建时」重型 `cargo test` 会长时间排队 ✓。
+⇒ **操作规则（记入板）**：重型门禁/测量只在**代理空闲窗口**做；或先确认 `cargo`/`rustc` 进程不在跑再启动 ✓。已 kill 该 job ✓，快照留到安静窗口补 ✓（工作树仍无 tracked 改动 ✓，快照语义不受影响 ✓）。
 **round 215 —— 基线快照（HEAD `bafaea29`，工作树无 tracked 改动）**
 
 在 T-69 的大改动落地**之前**，用独立 `CARGO_TARGET_DIR` 跑一次 §2 门禁快照（后台 job），作为「改动前后」的对照锚点 ✓。
