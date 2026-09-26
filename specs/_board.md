@@ -140,6 +140,26 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 110 —— 走对了！圆柱的 3 面单元 `{盖, 环带, 盘}` 已产生，但 `refine_shell`/`shell_is_closed` 把它毁掉**
+
+给 `shell_splitter_block::split_block` 的入口/自由边清洗后/行走后/`refine_shell` 后四处置探针，圆柱那一组（6 面块）实测：
+
+```
+[zz-s2] IN n=6 [Plane#192(盖), Cylinder#520(环带), Plane#480(盘), Plane#480(盘), Cylinder#976(环带), Plane#24(盖)]
+[zz-s2] after-free-pass n=6 （6 面全留 ✓）
+[zz-s2] WALK n=3 [Plane#192, Cylinder#520, Plane#480]      <== 正确的 3 面单元 {盖, 环带, 盘}
+[zz-s2]   pieces=["1f/closed=false","1f/closed=false","1f/closed=false"]   <== 被 refine_shell 切成 3 个单面
+[zz-s2] WALK n=3 [Cylinder#520, Plane#192, Plane#480]
+[zz-s2]   pieces=["1f/closed=false","1f/closed=false","1f/closed=false"]
+[zz-s2] WALK n=3 [Plane#480, Cylinder#976, Plane#24]
+[zz-s2]   pieces=["3f/closed=false"]                    <== 没被切，但判为**不闭合**
+```
+
+⇒ **选面与行走已经完全正确**（两次 walk 各覆盖一条环带 + 一个盖 + 一个盘 = GT 的两个单元），缺口收敛到两处：
+1. **`refine_shell` 把一个 3 面单元切成 3 个单面** ⇒ 它把这些单元内部的两条圆（底圆/截面圆）当成了停止边。对照 `BOPAlgo_ShellSplitter.cxx:443-512`（停止边只在 `aLF.Extent() > 2` 或 `Extent()==2` 且两视图**同向**时成立）。
+2. **另一次 walk 的 3 面单元 `closed=false`**：`shell_is_closed` = `!bop_build_solids::geometrically_open(shell)` 认为有边只用了一次。3 面单元 `{盖, 环带, 盘}` 的边使用次数本应各为 2（底圆：盖+环带；缝：环带×2；截面圆：环带+盘）⇒ 该判据（或 `a_mefp`）有问题。
+
+**下一步**：① 对那个 3 面单元直接 dump 每条边在该壳内的**使用次数**与 `edge_key`，核对是否真的 ≠2（若都是 2 而 `geometrically_open` 仍为真，则 bug 在 `geometrically_open`）；② 对 `refine_shell` 打印它算出的 `stop` 集合（`edge_key` + 两视图朝向 + `same_dir` + `lf.len()`），与上面①的边对照，定位是哪条圆被误判为停止边。
 **round 109 —— `collect_faces`/连接块实测：圆柱 draft 那组（6 面，含盘对）是好的；失败的是**后面一次 4 面装配**
 
 给 `ShellSplitter::collect_faces` 与 `make_connexity_blocks` 加探针后，`box∪cyl` 的 FUSE 共发生 **4 次** `ShellSplitter::perform`：
