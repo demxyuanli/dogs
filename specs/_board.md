@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 168 —— T-69 批次 A 收尾（净改动 0）：前提作废已由插桩互证；唯一还缺的输入已核到行号；下一步=对读 `ProjLib_ProjectedCurve` 分派**
+
+**① 互证 T0M 无存档 pcurve**：文本 `SURFACE_CURVE=0 PCURVE=0 SEAM_CURVE=0 EDGE_CURVE=4067` ✓；代理给 `associate_edge_pcurve`（`step/read_topology.rs:876`）加 env 门插桩在 T0M 上**输出 0 行**（因为 `:889-891` 的 `surface_curve_pcurves` 查不到就直接 return）⇒ 两者一致，**(i) 前提正式作废** ✓。
+**② OCCT 侧链条（已核到行号）**：`XSAlgo_ShapeProcessor::FixAddPCurve`（`XSAlgo_ShapeProcessor.cxx:453`/`:677`）→ `GeomProjLib::Curve2d`（`GeomProjLib.cxx:54`）→ **`ProjLib_ProjectedCurve` 构造**（`GeomProjLib.cxx:73`）—— **逐类型 analytic/approx 的分派点就在这里**（按 `GeomAbs_SurfaceType` 选 `ProjLib_Plane/Cylinder/Cone/Sphere/Torus/CompProjectedCurve`）✓。
+**③ 缩小范围的实测线索**：OCCT 对 T0M 的 **Cylinder 闭合边**给出的是 **`Geom2d_BSplineCurve`、range `0..0.741749`** —— **不是** `ProjLib_Cylinder` 的解析 u-等参线（那会是开路 `Geom2dLine`、整周期）⇒ 该边在 `ProjLib_ProjectedCurve` 里走了 **approx/BSpline 臂**得闭合表示 ✓；而端口 `pcurve_full::make_pcurve_full` 对 cylinder/cone/torus 的等参圆**无条件**走解析等参线 ⇒ 开路跨 2π ✗。
+
+**⇒ 批次 B 的题目**：**照抄 `ProjLib_ProjectedCurve` 的分派判据**（何时 analytic、何时 approx），使端口在 OCCT 会走 approx 的场合也走；**不是**把解析臂结果硬掰成闭合（属自创 ✗）。
+**已授权代理两步走**：**第 1 步**交「`ProjLib_ProjectedCurve` 分派 vs 端口对应臂」的**对读对照表**（逐臂行号 + **机制**：为何「解析圆在圆柱面」这一情形 OCCT 没走 analytic 臂 —— 是 `ProjLib_Cylinder::Project` 的适用条件不满足，还是上游走了别的分支）；若定案**直接接着做第 2 步**改代码。**第 2 步验收**：**先跑 15 文件 GT 不变**（该路径为 15 文件共用，是硬验收）→ T0M `--wires` UV 退化→0 且 `--mesh` 失败面显著降（如实报数，识别到仍有第二缺口）→ `--lib` 1281/0、`--all-targets`、四道 STEP、phase5/9/10/19/20、export 对拍。**若对读表明必须改良通用投影路径且 GT 必然动 ⇒ 立刻停下报我（单独立项）**。
+**代理两轮净改动 0**（`step/`/`shhealing/`/`meshing/` 干净，插桩已撤，临时 example 与 `.target-gate/t0m/` 已删；仅保留只读 `--wires` 探针）✓ 纪律良好。
 **round 167 —— 定位「pcurve 计算」在 OCCT 的哪一阶段（给代理的指针）**
 
 - **`TranslateEdgeLoop` 不算 pcurve**：`StepToTopoDS_Tool::ComputePCurve(bool)` 只是**置标志**（`StepToTopoDS_Tool.cxx:175-182`）；`StepToTopoDS_TranslateEdgeLoop.cxx:844-869` 那段只做**顶点参数**（`ShapeFix_EdgeProjAux::Init/Compute` + `B.Range(edge,Face,…)`，失败则 `RemoveSinglePCurve`）⇒ `:667-671` 的 `ComputePCurve(true)` 是「稍后由别阶段补」✓。
