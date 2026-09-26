@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 185 —— `get_line` 与 `generateCurvePoints` 双侧都忠实 ⇒ 分叉大概率在**输入**；代理改走 round-169 的 A 路线**
+
+**我继续把 `get_line` 读完**：端口 `projection_cache.rs:646-658` 与 OCCT `cxx:1079-1086`（2D 弦等速 ⇒ 精确 `Geom2d_Line`）+ `cxx:1088-1101`（其余给两极点 degree-1 B 样条）**逐条对应** ✓ ⇒ 函数体本身忠实 ✓。
+**又查了采样**：OCCT `generateCurvePoints`（`ShapeConstruct_ProjectCurveOnSurface.cxx:531-572`）用 **`THE_NCONTROL = 23`**（`constexpr :71`），且对 **B 样条**按用到的节点数**加长**（`aUsedKnots*(degree+1)`，按 `THE_NCONTROL-1` 递增，`:541-556`），再在 `[theFirst, theLast]` 上均匀取点 ✓；端口 `surface_projector.rs:390-406` **同样实现**（`THE_NCONTROL: usize = 23` + 同样的加长逻辑）✓ ⇒ **采样也忠实** ✓。
+⇒ 两侧 `get_line` + 采样都一致 ⇒ **分叉大概率在它拿到的**输入投影**上**（`ValueOfUV`/`NextValueOfUV` 的 (u,v) 与缓存命中状态）——与我 round 182 的假设方向一致 ✓。
+
+**代理侧进展（本轮可见）**：它已**撤掉** `projection_cache.rs` 的那段实验 ✓，转而在 **`make_pcurve.rs`（+92）与 `surface_projector.rs`（+23）** 上实现 **round-169 的 A**：新增 `CurveType` 枚举 + `curve_type()`，注释明确 `Adaptor3d_Curve::GetType()` 语义、`GeomAdaptor_Curve::load`（`GeomAdaptor_Curve.cxx:252-311`）的**解包顺序**（TrimmedCurve → Circle/Line/Ellipse/Parabola/Hyperbola/Bezier/BSpline/Offset/Other），并引用了端口既有先例 `edge_edge/find_solutions.rs:78-98` ✓ —— 质量与可追溯性良好 ✓，方向与「按曲线类型分派」一致 ✓。等它给出三列表与 T0M 指标。
 **round 184 —— ✅ 分流问题自答：失败面的 pcurve 走的是 `get_line` 路径（`project_curve_on_surface_perform`），不是 `make_pcurve_full` 的解析等参臂**
 
 读码证据（`src/brep_surface.rs:302-358`）：
