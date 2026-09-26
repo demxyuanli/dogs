@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 201 —— ❌ `is_seam_use` 线索被否（它是忠实的）；并**订正板内一条旧错误**（把两个同名不同义的 OCCT 概念混了）**
+
+**跟踪**：`fix_add_pcurve` 的 `is_seam` 参数怎么来的 —— 端口 `is_seam_use`（`wire_fix.rs:855-862`）=「同一 TShape 键在 wire 里出现 ≥2 次」；OCCT 同位置的实参是 **`sbwd->IsSeam(i)`**（`ShapeFix_Wire.cxx:657-661` ✓）⇒ `ShapeExtend_WireData::IsSeam`（`:630-647`）⇒ **`ComputeSeams()`**（`:163-...`）—— 后者是「先把 REVERSED 的边映射，再找已在映射里的 FORWARD 边」⇒ **就是「同一条边在 wire 里出现两次（一去一回）」** ✓✓。
+⇒ 端口的 `is_seam_use` **与 OCCT 同义**（仅差「OCCT 要求一去一回，端口只数 ≥2」的细节 ✓）⇒ **该线索否掉** ✗（我 round 200 的下一轮计划作废）。
+
+**❗ 同时订正板内一条**旧错误****：早前某条记录写着「端口 `is_seam_use` 是自创 ✗，OCCT `ShapeAnalysis_Edge::IsSeam` = `BRep_Tool::IsClosed(edge, face)`」—— **这是把两个同名不同义的概念混了** ✗：`ShapeAnalysis_Edge::IsSeam`（`BRep_Tool::IsClosed`）是**另一件事**，而 `ShapeFix_Wire` 传给 `FixAddPCurve` 的是 **`ShapeExtend_WireData::IsSeam`**（wire 内重复边）✓ ⇒ 端口那处**忠实** ✓。
+
+**⇒ T-69 现状（诚实）**：归因仍指向 **stored pcurve**（round 200 实测：`deg_faces_all_edges_stored = degenerate_faces = 207` ⇒ 退化面全部来自 stored pcurve ✓），而该路径的**所有已核对层**（`get_line` 本体 / `generateCurvePoints` 采样 / 缓存层 / `value_of_uv` 解析分支 / `fix_locking` 家族 / `is_seam`）**都忠实** ✗ ⇒ **分叉点仍未找到**。
+**下一步（最决定性的剩余实验）**：用代理的 C++ 探针 + 端口的 `project_curve_on_surface_perform`，对**同一条边**做**函数级 A/B**：把两侧 `ShapeConstruct_ProjectCurveOnSurface::Perform` 的**输入**（`theC3D` 类型/首末参数/`theTolFirst/theTolLast`）与**输出**（`theC2D` 是否 null、类型、首末 2D 点）逐项打印；若输入全同而输出不同 ⇒ 逐行核 `Perform` 到 `approxPCurve` 的分支（例如 `THE_NCONTROL` 之外的 `performAnalytic`/`PerformByProjLib` 分支选择 ✗）。
 **round 200 —— ⚠️ 实测：两处启发式替换后 T0M **仍有退化面**，且**全部来自 stored pcurve** ⇒ 修法不足以解决 T-69（诚实记账）**
 
 我接手后：① 复原 `make_pcurve.rs`（`CurveType` 门冗余 ✓）；② 给 `pcurve.rs:271-279` 做同样的具体类替换 ✓；`cargo check` Finished（483 warnings = 基线 ✓）。然后用代理的 `examples/zz_probe_uv.rs`（routing 普查）跑 **T0M**：
