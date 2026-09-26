@@ -164,6 +164,31 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 120 —— 根因**定案**（OCCT 逐开关实测）：缺的是 `ReadFile` 之后的 `ShapeProcess(FixShape)` 三步；并查出端口 gprop 的两处独立朝向缺陷**
+
+子代理用自建 OCCT oracle 做了逐开关判定，**并查出原探针的一处方法论错误**：`SetShapeFixParameters` 若在 `ReadFile` **之前**调用会被 work session 重置 ⇒ 旧 `--faces0` 是**无效开关**（旧 `--nofix` 之所以有效，是因为它 ReadFile 后又设了一次 flags）。把参数移到 `ReadFile` 之后、`TransferRoots` 之前后，真相如下（`data/Offset.step`，`BRepGProp::VolumeProperties`）：
+
+| OCCT 开关 | SHELL | 体积 |
+|---|---|---|
+| **default** | **REV** | **+2610.501440**（VALID=1）✓ |
+| `FixFaceOrientationMode=0` | FWD | **+1559.174028** |
+| `FixShellOrientationMode=0` | FWD | **−2610.501440** |
+| `FixOrientationMode=0` | FWD | +2610.501440（VALID=0） |
+| `FixFaceMode=0` / `FixSolidMode=0` / `FixShellMode=0` / `--nofix` / `--noflags` | FWD | **+2611.194661**（未修正）= 端口现状 |
+
+⇒ **缺的正是 `ReadFile` 之后那一步 `ShapeProcess`，且是三步合成**（缺任一步都回退）：
+1. `ShapeFix_Face::Perform(FixFaceMode)`（`FixFaceMode=0` ⇒ 2611.19）；
+2. `ShapeFix_Shell::FixFaceOrientation`（`ShapeFix_Shell.cxx:140-143` → `:1425-1653`，核心 `GetShells`）（`FixFaceOrientationMode=0` ⇒ 1559.17）；
+3. `ShapeFix_Solid::SolidFromShell`（`ShapeFix_Solid.cxx:655-703`，`BRepClass3d_SolidClassifier`+无限点）（`FixShellOrientationMode=0` ⇒ **−**2610.50）。
+入口：`STEPControl_Reader.cxx:864-869` 只注册 `FixShape`；参数读取 `ShapeProcess_OperLibrary.cxx:819/824`；默认 `DE_ShapeFixParameters.hxx:41/44`。
+
+**端口侧对照（子代理实测 + 我复核）**：端口读入的**面顺序与存储朝向与 OCCT `--noflags` 逐位相同** ⇒ **STEP 转档是忠实的**，缺的就是那一层修正。（我实测：`faces_of(Offset.step)` = 26 面 ✓ 与 OCCT 一致；1 个 shell，**端口 orientation=Forward 而 OCCT 默认=REV**；存储朝向 17 F / 9 R。）
+
+**另查出端口 gprop 的**两处独立缺陷**（与本条根因不同源，待单独修）**：
+- **OCCT 每面 `BRepGProp::SurfaceProperties(face)` 与朝向无关、全为正**（Cyl +10π、Plane +100、Sph +2π，Σ=+1027.256601）；端口对 Reversed 面给 **−31.4159**，且把 shell 整体反转后**整组带符号面积和变号**（我实测 +427.256595 ↔ −427.256595）⇒ 端口的面积积分对朝向敏感，OCCT 不敏感。
+- **OCCT 的 `VolumeProperties` 对朝向敏感**（把 solid/shell 反转 ⇒ **−**2610.501440，不取绝对值）；端口的 `volume_properties` 对 shell 翻转**完全不敏感**（我实测两次均 159.174024）⇒ 端口的体积积分与 OCCT 不同源。
+
+**已授权子代理分三段移植**（① `ShapeFix_Face::Perform` → ② `ShapeFix_Shell::FixFaceOrientation` → ③ `ShapeFix_Solid::SolidFromShell`），每段单独验收：逐面存储朝向对拍 → shell 朝向/体积离开 1559.17 → **+2610.501440**；并锁 `--lib` 1281/0 + 四道 STEP 门禁 + `export_data_obj` 16/16 逐位一致，回归即停并报告。
 **round 116 —— 逐项隔离矩阵：T-80 体积与 `cylinder_surface_volume` 要的三处/两处修复，**必然**撞上 `Offset`；缺的是 STEP 读取的**朝向修正**（OCCT `ShapeFix` 面/壳定向，默认开启）**
 
 本轮把三处改动**逐项**跑一遍（每次都回退到干净态再叠加），实测矩阵：
