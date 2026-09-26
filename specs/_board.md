@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 238 —— ✅✅ T-25 批 2 **完整收口**（`step_obj_parity` 14/14）；批 3 全套门禁已启动**
+
+批 2（`e8a405ce`，边 3D 几何 → `TShape.edge_core`）的最终验收：
+```
+--lib 1281/0 ✓   step_obj_area 11/11 ✓   step_obj_parity 14/14 ✓
+step_geometry_parity 3/3 ✓   phase5/9/10/19/20 全绿 ✓
+export_data_obj data + 逐位对比 ⇒ same=23 diff=0 ✓✓
+```
+⇒ **批 2 完成** ✓（门禁 + 逐位导出双重证明 ✓）。
+**批 3（`ca6b454c`，vertex → `TShape.vertex_core`）**：全套门禁（`--lib`/`step_obj_area`/`step_geometry_parity`/phases/逐位对比）已后台启动 ✓，下一轮收 ✓；`step_obj_parity` 随后补 ✓。
 **round 237 —— T-25 批 3（vertex 家族）落地：`tshape.rs` + `tgeometry.rs` 一次改净（编译通过）**
 
 - `VertexGeomCore { point: GpPnt, tolerance: f64 }`（对应 `tgeometry.rs:27-30` ✓）+ `TShape.vertex_core: Option<VertexGeomCore>` + `vertex_core_mut()`/`vertex_core()` ✓；`new()` 初始 `None` ✓；`Drop` 清空 ✓；
