@@ -185,6 +185,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 154 —— 网格代理首轮 T-69 总结（净改动 0，按纪律停下）+ 我的两条采纳**
+
+**它独立订正了我两条**（都已采纳，前者作废我 round 130 的「接线采样点数」方案）：
+1. `geom_bnd_lib_sample2d.rs` 那族函数是 **`GeomBndLib_SamplingHelpers`（包围盒采样预算）**，**与边离散点数无关** —— BRepMesh 的点数来自 **`GCPnts_TangentialDeflection`**（`cxx:495-518`），端口**已移植且在用**，圆柱 r=2 算 **27 点**与 `--edges` GT 逐位吻合 ⇒ **不能**把它接进边点数（否则即自创判据）。
+2. 用 probe 参数（0.1/角 0.5）自跑端口网格器 = **11/15 逐位一致**，偏差仅 `Shape-1 +4/+4`、`Shape-2 +15/+30`、`Shape +2/+4` ⇒ 与我在真实参数下的 14/15 一致，**「网格器忠实、不需移植 Delaun」双重复现**。
+
+**T-69 的关键新证据（它插桩实测）**：
+- **162 面全部** `Delaunay produced no triangles`；失败面输入签名 `nodes=74 links=72 **frontier=36 fixed=36** free=0`（正常面 `frontier=72 fixed=0`），输出 `domain=0` ⇒ cleanup 清空。
+- `fixed=36` 的成因定位到 **`BRepMesh_BaseMeshAlgo.cxx:114-119`** 的 `aWireIt != 0 && aLinkIndex <= aLinksNb`：**第 2 条 wire 的重复 edge 复用同名 link** ⇒ 整条 hole 链被标 `Fixed`，两条 wire 都成**开链** ⇒ Delaun 无闭合域。**端口 `node_insertion.rs::init_data_structure` 与 OCCT 同式**（所以缺口不在这行本身）。
+- 重复 edge 来自端口 `read_topology.rs:697 → shhealing::check_pcurves_and_shift → fix_lacking_all`；它逐行对读 `ShapeFix_Wire.cxx:3852-3862` 与 `ShapeAnalysis_Wire.cxx:1711-1793` ⇒ **算法忠实**；交叉验证 OCCT 自己 T0M `edge_occurrences=8792 > ORIENTED_EDGE=8138` ⇒ OCCT 也加了 654 条。
+
+**决定性证据（把归属钉死）**：OCCT 自跑 `--mesh 2.57431 0.349066` 得 **`zero-node FACE count = 0`、1778/1778 全部成功** ⇒ 端口那 162 面是**纯端口缺陷**，**验收 162→0 必须达成**（不接受「OCCT 也失败」类豁免）。
+
+**已给它的下一步（round 154 发出）**：在 `specs/occt_probe/` 加只读 `--wires` 模式，逐面打印 OCCT 导入后**每面 wire 数**（以及每 edge 的 3D 首末是否 Same、UV 首末 u 差）—— 只为回答一比特：**端口 face 709 那条几何在 OCCT 里是 1 条 wire 还是 2 条**。
+- **1 条** ⇒ 缺口在 **`shhealing/` 的调用条件**（端口在 OCCT 不触发的场合触发了 FixLacking）⇒ **已授权它改 `shhealing/`+`step/` 做 A/B**（只改/删自创调用条件，不动算法本体）；
+- **2 条** ⇒ 缺口在 **BRepMesh 侧** `frontier_adjust`/`cleanup` 对**开链 frontier** 的处理 ⇒ 重开该层逐行核对（板内「Delaunay 层已核对忠实」那句将在有反例后订正）。
+门禁/验收不变（162→0、15 文件 GT 不变、`--lib` 1281/0、四道 STEP、phase5/9/10/19/20、`--all-targets` 0 error）。**代理本轮净改动 0、未提交、插桩已还原** ✓ 符合纪律。
 **round 153 —— T0M 的「少 6 面」不是端口丢面：**文件里就是 1772 个 `ADVANCED_FACE`，是 OCCT 导入时**多造了 6 个面****
 
 直接在 STEP 文本上点数 `data/occ/T0M.stp`（非 cargo）：
