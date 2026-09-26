@@ -199,9 +199,12 @@ mod pave_new;
 mod pave_split;
 mod builder_face_occt;
 pub(crate) mod geom_bnd_lib_elclib2d;
-mod geom_bnd_lib_elclib2d_d2;
-mod geom_bnd_lib_elclib2d_dn;
-mod geom_bnd_lib_elclib2d_param;
+// The former `geom_bnd_lib_elclib2d_{d2,dn,param}` submodules were deleted:
+// they were a *second* port of the 2D `ElCLib` derivative/parameter surface
+// (`ElCLib::D1/D2/D3/DN/Parameter` for `gp_Lin2d`/`Circ2d`/`Elips2d`/`Hypr2d`/
+// `Parab2d`) that nothing called, while `occt_core::elib::clib2d` already
+// carries the faithful implementation the rest of the crate uses
+// (`clib2d.rs:126-531`). They accounted for 45 `never used` warnings.
 mod geom_bnd_lib_elclib_to3d;
 mod geom_bnd_lib_inf2d;
 mod geom_bnd_lib_line2d;
