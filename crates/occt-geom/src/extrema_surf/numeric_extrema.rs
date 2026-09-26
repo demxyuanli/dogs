@@ -58,8 +58,17 @@ pub(super) fn solve_point_surface(
 }
 
 /// All local extrema of |S(u,v)-P| via grid seeding + Newton, deduplicated and
-/// sorted by distance. Replaces the sampling path of `Extrema_ExtPS` for
-/// non-analytic surfaces, over the surface's natural parameter bounds.
+/// sorted by distance.
+///
+/// **UNPORTED (audit A15 / T-67 remainder)** - this is the old substitute for
+/// the general `Extrema_ExtPS` path. The dispatch now runs the faithful
+/// `Extrema_GenExtPS` ([`super::gen_ext_ps::ExtremaGenExtPs`]), so the
+/// non-test library no longer reaches this function; it is kept because the
+/// existing `newton_path_bspline_paraboloid_min` regression test calls it, and
+/// it remains the shape of the `ShapeAnalysis_Surface::ValueOfUV` fallback
+/// stand-in used by `point_surface_extrema_box` (via
+/// [`point_surface_newton_all_box`]).
+#[allow(dead_code)]
 pub(crate) fn point_surface_newton_all(s: &dyn Surface, p: &GpPnt) -> Vec<ExtremaPair> {
     let (u0, u1) = surf_bound_u(s);
     let (v0, v1) = surf_bound_v(s);

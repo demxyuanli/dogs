@@ -14,10 +14,9 @@
 //!   for SurfaceOfExtrusion / SurfaceOfRevolution (`cxx:292-343`); the port has
 //!   neither, so those two types fall through to the general arm (recorded at
 //!   the `match` below).
-//! * `Extrema_GenExtPS` — **UNPORTED** (`cxx:346`, 1195 lines in 8.0.0:
-//!   `GetGridPoints` + `BuildGrid` + `FindSolution` over a `Bnd_Sphere` UBTree
-//!   with `math_FunctionSetRoot`). The port substitutes the 24×24 grid +
-//!   numeric-Jacobian Newton of `numeric_extrema.rs`; see the module header.
+//! * `Extrema_GenExtPS` — **ported** (`cxx:346`) in
+//!   [`super::gen_ext_ps::ExtremaGenExtPs`]: `GetGridPoints` + `BuildGrid` +
+//!   `BuildTree` + `FindSolution` (`Extrema_GenExtPS.cxx:275-1193`).
 //!
 //! What *is* ported here and was missing before: the ±1e10 clamp of the window
 //! (`cxx:216-231`), the sampling counts `nbU/nbV` = 44 (B-spline/Bezier) else
@@ -188,6 +187,9 @@ pub struct ExtPs<'a> {
     p22: GpPnt,
     flag: ExtremaExtFlag,
     algo: ExtremaExtAlgo,
+    /// The ported `Extrema_GenExtPS` engine (`cxx:261` Initialize, `cxx:346`
+    /// Perform). `None` until `initialize` runs.
+    gen: Option<ExtremaGenExtPs<'a>>,
 }
 
 impl<'a> Default for ExtPs<'a> {
@@ -225,6 +227,7 @@ impl<'a> ExtPs<'a> {
             p22: GpPnt::zero(),
             flag: ExtremaExtFlag::MinMax,
             algo: ExtremaExtAlgo::Grad,
+            gen: None,
         }
     }
 
@@ -314,12 +317,18 @@ impl<'a> ExtPs<'a> {
         self.b_u_iso_deg = b_u_iso_deg;
         self.b_v_iso_deg = b_v_iso_deg;
 
-        // UNPORTED (T-67): `myExtPS.Initialize(*myS, nbU, nbV, myuinf, myusup,
-        // myvinf, myvsup, mytolu, mytolv)` (`cxx:261`) — `Extrema_GenExtPS` is
-        // not ported; the substitute of `numeric_extrema.rs` has no separate initialization,
-        // it builds its grid in `Perform`'s general arm. `cxx:263-264`
-        // (`myExtPExtS.Nullify(); myExtPRevS.Nullify();`) has no Rust
-        // counterpart: the two engines do not exist here.
+        // `myExtPS.Initialize(*myS, nbU, nbV, myuinf, myusup, myvinf, myvsup,
+        // mytolu, mytolv)` (`cxx:261`). The flag/algo reach the engine first,
+        // as in the `Extrema_ExtPS` constructors (`cxx:165-166`, `cxx:192-193`).
+        let mut gen = ExtremaGenExtPs::new();
+        gen.set_flag(self.flag);
+        gen.set_algo(self.algo);
+        gen.initialize_window(
+            s, nb_u, nb_v, self.uinf, self.usup, self.vinf, self.vsup, self.tolu, self.tolv,
+        );
+        self.gen = Some(gen);
+        // `cxx:263-264` (`myExtPExtS.Nullify(); myExtPRevS.Nullify();`) has no
+        // Rust counterpart: the two engines do not exist here.
     }
 
     /// `Extrema_ExtPS::Perform` (`cxx:269-367`).
@@ -368,11 +377,14 @@ impl<'a> ExtPs<'a> {
                 return;
             }
             ExtPsSurfaceType::SurfaceOfExtrusion | ExtPsSurfaceType::SurfaceOfRevolution => {
-                // UNPORTED (T-67): OCCT builds `Extrema_ExtPExtS` / `Extrema_ExtPRevS`
-                // here (`cxx:292-343`) — the extrusion/revolution engines are not
-                // ported. The general arm below stands in for them, which is how
-                // the port behaved before this dispatch existed; it is *not* what
-                // OCCT runs for these two types.
+                // UNPORTED (T-67 remainder): OCCT builds `Extrema_ExtPExtS` /
+                // `Extrema_ExtPRevS` here (`cxx:292-343`) — the
+                // extrusion/revolution engines are not ported, so this arm runs
+                // the general `Extrema_GenExtPS` engine instead. That is *not*
+                // what OCCT runs for these two types: `Extrema_ExtPExtS` /
+                // `Extrema_ExtPRevS` reduce the search to the generating curve
+                // (`Extrema_ExtPExtS.cxx`, 630 lines; `Extrema_ExtPRevS.cxx`,
+                // 599 lines), where OCCT's result sets and increments can differ.
                 self.perform_general(s, p);
                 return;
             }
@@ -386,35 +398,40 @@ impl<'a> ExtPs<'a> {
     }
 
     /// `default:` arm of `Extrema_ExtPS::Perform` (`cxx:345-356`) —
-    /// `myExtPS.Perform(thePoint)` then `TreatSolution` over its results.
+    /// `myExtPS.Perform(thePoint)` (`cxx:346`, the ported
+    /// [`ExtremaGenExtPs`] in `gen_ext_ps.rs`) then `TreatSolution` over its
+    /// results (`cxx:347-354`). `myDone` is the engine's `IsDone()`; the
+    /// `myExtPS.NbExt()` results are filtered by `TreatSolution`'s periodic
+    /// normalization and window test, exactly as before.
     ///
-    /// UNPORTED (T-67): the engine is `Extrema_GenExtPS` (`GenExtPS.cxx:968`),
-    /// 1195 lines over `GeomGridEval_Surface` + a `Bnd_Sphere` UBTree +
-    /// `math_FunctionSetRoot`; the port substitutes `numeric_extrema.rs`'s 24×24 grid and
-    /// numeric-Jacobian Newton. The substitute cannot sample an unbounded range,
-    /// so a window left at the `Initialize` ±1e10 clamp is replaced by the
-    /// natural-bounds clamp of `analytic_solvers::surf_bound_{u,v}` — a substitute-only
-    /// concession, not an OCCT branch.
+    /// The window handed to the engine is the one `Initialize` stored after the
+    /// ±1e10 clamp (`cxx:216-231`) — there is no natural-bounds concession any
+    /// more; that was the unported substitute's workaround.
     fn perform_general(&mut self, s: &dyn Surface, p: &GpPnt) {
-        let u_clamped = self.uinf <= -1e9 || self.usup >= 1e9;
-        let v_clamped = self.vinf <= -1e9 || self.vsup >= 1e9;
-        let sols = if u_clamped && v_clamped {
-            point_surface_newton_all(s, p)
-        } else {
-            let (gu0, gu1) = if u_clamped {
-                surf_bound_u(s)
+        if self.gen.is_none() {
+            self.done = false;
+            return;
+        }
+        let (done, sols) = {
+            let gen = self.gen.as_mut().unwrap();
+            gen.perform(p);
+            let done = gen.is_done();
+            let sols: Vec<(f64, f64, GpPnt, f64)> = if done {
+                (1..=gen.nb_ext())
+                    .map(|i| {
+                        let (u, v, q) = gen.point(i);
+                        (u, v, q, gen.square_distance(i))
+                    })
+                    .collect()
             } else {
-                (self.uinf, self.usup)
+                Vec::new()
             };
-            let (gv0, gv1) = if v_clamped {
-                surf_bound_v(s)
-            } else {
-                (self.vinf, self.vsup)
-            };
-            point_surface_newton_all_box(s, p, gu0, gu1, gv0, gv1)
+            (done, sols)
         };
-        self.done = !sols.is_empty();
-        self.treat_all(s, sols);
+        self.done = done;
+        for (u, v, q, val) in sols {
+            self.treat_solution(s, u, v, &q, val);
+        }
     }
 
     fn treat_all(&mut self, s: &dyn Surface, sols: Vec<ExtremaPair>) {
@@ -488,20 +505,24 @@ impl<'a> ExtPs<'a> {
         )
     }
 
-    /// `Extrema_ExtPS::SetFlag` (`cxx:420-423`).
-    ///
-    /// UNPORTED (T-67): OCCT forwards the flag to `Extrema_GenExtPS`, which uses
-    /// it to keep only minima / only maxima / both; with the gen engine
-    /// unported the flag is stored and has no effect (the analytic arms always
-    /// return every extremum, exactly as `Extrema_ExtPElS` does).
+    /// `Extrema_ExtPS::SetFlag` (`cxx:420-423`): forwarded to the engine so a
+    /// later `Perform` keeps only minima / only maxima / both. Stored locally
+    /// too, so a flag set before `initialize` still reaches the engine (OCCT
+    /// sets the flag before `Initialize` in its constructors, `cxx:165`).
     pub fn set_flag(&mut self, f: ExtremaExtFlag) {
         self.flag = f;
+        if let Some(gen) = self.gen.as_mut() {
+            gen.set_flag(f);
+        }
     }
 
-    /// `Extrema_ExtPS::SetAlgo` (`cxx:425-428`). UNPORTED (T-67) — see
-    /// [`ExtPs::set_flag`].
+    /// `Extrema_ExtPS::SetAlgo` (`cxx:425-428`): forwarded to the engine
+    /// (`Extrema_GenExtPS::SetAlgo`, `Extrema_GenExtPS.cxx:959-966`).
     pub fn set_algo(&mut self, a: ExtremaExtAlgo) {
         self.algo = a;
+        if let Some(gen) = self.gen.as_mut() {
+            gen.set_algo(a);
+        }
     }
 
     /// The flag last passed to [`ExtPs::set_flag`].
