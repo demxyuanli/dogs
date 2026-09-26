@@ -185,6 +185,10 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 222 —— 独立存档 T-25 的「改前」基线（`.target-gate/t25_before/`，23 个 `output/*.obj`）**
+
+我把当前 `output/*.obj`（**23 个**：`data/*.step` 15 + `data/occ` 5 + 另 3 ✓）复制到 `.target-gate/t25_before/` ✓（不占用 cargo ✓）。它与 HEAD 一致的前提：此后各提交（`surface_projector`/`pcurve.rs` 的具体类替换、T-69 代理的全部改动已删除 ✓）**不改变这些文件的几何输出** ✓。
+⇒ T-25 每批完成后，除跑门禁外，还要把新导出的 `output/*.obj` 与这份存档**逐位对比** ✓（比门禁更直接地证明「纯搬存储、行为不变」✓）。
 **round 221 —— 🚀 T-25 实施方案定稿并委派第一批（pcurve 家族 87 处/14 文件）**
 
 **读侧表实现后确认的关键语义（迁移必须保住）**：`GeometryRegistry::edge_pcurves`（`tgeometry.rs:310-337`）在**直接命中失败**时，会到**共享同一 `Geom_Surface` 句柄**的**其它 face_key** 上找并返回 ✓（注释引 `BRep_Tool::CurveOnSurface` 按 `Geom_Surface` 而非 face TShape 键控 ✓）⇒ 搬进 `EdgeShape` 后**必须保留这个 surface 身份回退** ✓（它是两跳：先取面的 surface；本批若 `FaceShape` 的 surface 还没迁，**允许暂时仍从侧表读面的 surface**，但要在注释里写明是过渡 ✓）。配套语义：`edge_pcurve` = `edge_pcurves(..).next()`（`:304-306`）✓；`set_edge_pcurves` = 缝边双 pcurve 重载 ✓。
