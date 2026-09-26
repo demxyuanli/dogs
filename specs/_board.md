@@ -185,6 +185,14 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 184 —— ✅ 分流问题自答：失败面的 pcurve 走的是 `get_line` 路径（`project_curve_on_surface_perform`），不是 `make_pcurve_full` 的解析等参臂**
+
+读码证据（`src/brep_surface.rs:302-358`）：
+- `edge_pcurve_on_face` 是端口「面未挂 pcurve」时的计算入口，对应 OCCT `BRep_Tool::CurveOnSurface` + `ShapeFix_Edge::FixAddPCurve` → `ShapeConstruct_ProjectCurveOnSurface::Perform`（注释 `:303-310` ✓）；
+- 它**优先**调用 `pcurve_full::project_curve_on_surface_perform`（`:333-344`）✓ —— 即 `ShapeConstruct_ProjectCurveOnSurface` 的移植，**含 `get_line`** ✓；只有当它返回 `None` 才退到**网格搜索兜底**（`:345-357`，已标 `UNPORTED`）；
+- 注释 `:312-315` 明确：旧的解析捷径（`project_curve_on_surface`，torus only）与网格搜索**都不是 OCCT 路径**，仅作兜底 ✓。
+⇒ **T0M 这些无存档 pcurve 的边，最终 pcurve 由 `get_line` 路径产出** ✓ ⇒ 代理的当前调查路线正确 ✓（`make_pcurve_full` 的解析等参臂只服务其它调用方：BOP/pave 等）。
+**已提醒代理**收尾时顺带确认一句：`make_pcurve_full` 的解析等参臂在这 162 面上**是否也曾被调用**（若从未调用 ⇒ 与 T-69 无关，round 169 的「按 `GeomAbs_CurveType` 分派」也**不是必需项**；若有 ⇒ 给面数）。
 **round 183 —— 提出**分流问题**：失败面的 pcurve 到底由哪条路径产出（解析等参臂 vs `get_line`）**
 
 端口能给同一条边算 pcurve 的地方**至少两处**，且对应**不同**的 OCCT 路径：
