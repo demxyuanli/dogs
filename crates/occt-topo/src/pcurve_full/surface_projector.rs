@@ -2786,14 +2786,29 @@ pub(super) fn cone_placement(s: &dyn Surface, apex: &GpPnt, z: &GpVec) -> Option
 // Analytic isoparametric pcurves
 // ---------------------------------------------------------------------------
 
-/// A straight edge (unbounded parameter range).
+/// `Adaptor3d_Curve::GetType() == GeomAbs_Line`: a `Geom_Line` (or a trimmed
+/// one). This is the *concrete class* test of
+/// `GeomAdaptor_Curve::load` (`GeomAdaptor_Curve.cxx:252-311`), which unwraps a
+/// `Geom_TrimmedCurve` to its basis (the port's trimmed wrappers forward the
+/// query) and then tests `gp_line()`. It replaces the earlier
+/// "unbounded parameter range" heuristic, which also matched an offset curve.
 pub(super) fn is_line(curve: &dyn Curve) -> bool {
-    !curve.first_parameter().is_finite() || !curve.last_parameter().is_finite()
+    curve.gp_line().is_some()
 }
 
-/// A circle edge (periodic with period 2π).
+/// `Adaptor3d_Curve::GetType() == GeomAbs_Circle`: a `Geom_Circle` (or a
+/// trimmed one). Deliberately NOT a geometric test - a `Geom_BSplineCurve`
+/// whose image is a circle stays `GeomAbs_BSplineCurve` in OCCT
+/// (`GeomAdaptor_Curve::load`, `GeomAdaptor_Curve.cxx:252-311`; the same order
+/// as `edge_edge/find_solutions.rs:78-98`), and
+/// `ProjLib_ProjectedCurve::Project` (`ProjLib_ProjectedCurve.cxx:242-270`)
+/// only has analytic overloads for `GeomAbs_Line` (`:247`), `GeomAbs_Circle`
+/// (`:250`), `GeomAbs_Ellipse` (`:253`), `GeomAbs_Hyperbola` (`:256`) and
+/// `GeomAbs_Parabola` (`:259`): `GeomAbs_BSplineCurve` / `BezierCurve` /
+/// `OffsetCurve` / `OtherCurve` break out (`:262-266`) into the general
+/// approximation (`ProjLib_ComputeApprox`, `ProjLib_ProjectedCurve.cxx:720`).
 pub(super) fn is_circle(curve: &dyn Curve) -> bool {
-    curve.is_periodic() && (curve.period() - 2.0 * PI).abs() < 1e-9
+    curve.gp_circ().is_some()
 }
 
 /// Fit a clamped B-spline through `pts` with the exact parameter range [a, b].
