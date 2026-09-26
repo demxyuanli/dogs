@@ -185,6 +185,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 165 —— ❗**推翻 (i) 前提**：`data/occ/T0M.stp` **根本没有 `SURFACE_CURVE`/`PCURVE`** ⇒ OCCT 的闭合 pcurve 是**算出来的**，题目从「保留存档」变成「对齐计算路径」**
+
+我对 `data/occ/T0M.stp`（4.09 MB）做纯文本普查：`includes("SURFACE_CURVE") === false`、`includes("PCURVE") === false` ⇒ **该文件零 `SURFACE_CURVE`、零 `PCURVE`**，所有边都是 `EDGE_CURVE`（**只有 3D 曲线**）✓。
+
+**⇒ 三条结论**：
+1. T0M 里**不存在存档 pcurve** ⇒ round 163 说的「端口丢了存档、OCCT 保留了存档」**不成立** ✗；OCCT 那 172 条闭合 pcurve（`Geom2d_Circle`×166 Plane + `Geom2d_BSplineCurve`×6）**是 OCCT 自己算的** ✓；
+2. 真正的题目 =「**两端各自的 pcurve 计算路径不同**」：对**周期面上的闭合边**（cylinder/cone/torus），OCCT 算得**闭合 2D 曲线**，端口 `pcurve_full` 的解析等参线算得**开路 `Geom2dLine`（跨 2π）** ✗；
+3. 因此 `associate_edge_pcurve`/`resolve_pcurve`（`step/`）对 T0M **本来就无事可做** ✗；批次 A 的判据表里「文件里有没有 PCURVE」一列答案必为「全都没有」，已撤回该分支。
+
+**新方向（已发代理，仍禁自创）**：① 去 OCCT 找**这条闭合边的 pcurve 具体由哪个函数、哪一行算出**（候选：`BRepLib`/`ShapeFix_Edge::FixAddPCurve` → `GeomProjLib`/`ProjLib` 的 analytic case，或 `BRepLib::BuildCurves3d` 后的投影）—— 这是唯一还缺的输入；② 对照端口 `pcurve_full::make_pcurve_full` 的 cylinder/cone/torus **等参圆**分支与 OCCT 同分支，找出「为何 OCCT 闭合、端口开路跨 2π」并按 OCCT 分支修；③ ⚠️ 这条路径**15 个 GT 文件都在走** ⇒ **GT 不变是硬验收**（当前 14 逐位 + Shape-2 差 6/12），任一 GT 动了立刻停手报数；④ 只动这一处、禁止在 `check_lacking`/`fix_lacking` 加特判。
+
+**方法论（本会话第四次同型）**：我基于「OCCT 手里有闭合曲线」就推断「文件里有存档」—— 只要**先把文件查一遍**（一条 `includes`）就能避免。以后凡「OCCT 有 X，端口没有 ⇒ 端口丢了文件里的 X」，**先证明文件里真有 X**。
 **round 164 —— 一条**否定证据**：端口 2D pcurve 解码器已覆盖 B 样条 ⇒「解不出 2D 曲线」不成立，重点转向「**文件里到底有没有 PCURVE**」**
 
 读码结果：`step/read_topology.rs:1697 resolve_curve_2d` 已覆盖 `LINE`/`CIRCLE`/`ELLIPSE`/**`B_SPLINE_CURVE_WITH_KNOTS`**（`:1744-1772`，引用 `StepToGeom::MakeBSplineCurve2d` `StepToGeom.cxx:952-963`）/`POLYLINE`/`B_SPLINE_CURVE` 等 2D 形态 ✓ ⇒ **「2D B 样条无法解码」这条假设大概率不成立**。
