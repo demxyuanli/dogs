@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 248 —— ✅✅ 批 3+4 **完整收口**（`same=23 diff=0`）⇒ **四个 payload 家族全部完成**；收尾验证电池已启动**
+
+`d6a70843`（批 4，含批 3）的单次干净电池（串行、无并发导出 ✓）：
+```
+--lib 1281/0 ✓   step_obj_area 11/11 ✓   step_geometry_parity 3/3 ✓
+phase5/9/10/19/20 全绿 ✓   step_obj_parity 14/14 ✓（193.1s）
+export_data_obj data + 逐位对比 ⇒ same=23 diff=0 ✓✓
+```
+⇒ **批 3 与批 4 一并验证通过** ✓（批 4 代码含批 3 ✓）⇒ **T-25 的四个 payload 家族**（pcurve 87 / edge 62 / vertex 27 / face 14 = **190 处**）**全部落到 `TShape` 且行为不变**（门禁 + 逐位双重证明 ✓）。
+**收尾（删存储）验证电池已启动** ✓（对工作树里未提交的收尾改动跑同一套 + `step_obj_parity` ✓）；全绿 ⇒ 提交收尾 ✓；任一失败 ⇒ 回退到 `97f2a1b5` ✓。
 **round 247 —— 收尾正题（删存储）已实施，正在编译验证（工作树未提交）**
 
 按 round 243/244/245 方案**只删存储、保留薄门面** ✓：
