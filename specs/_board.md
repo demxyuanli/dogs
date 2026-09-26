@@ -185,6 +185,21 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 149 —— T-28 前 3 步**代码已全部落地**（待门禁数字）+ T-69 状态存在**记录冲突**，需实测裁决**
+
+**① T-28 子代理回报（三步齐）**：
+- ① 数据层：`PathPoint.is_new`/`vertex_id` + `TopolTool` 顶点表/`identical`/`vertex_orientation`；
+- ② `compute_tangency` 已平移 `IntPatch_ImpPrmIntersection.cxx:221-469` 全分支（含 `:329-465` 同顶点合并、`:379/:382 AddUV`、`TopTrans_CurveTransition`）；
+- ③ `attach_one_end` 按 `Multiplicity()/Parameters(themult)` 取合并 UV 并加 `SetVertex` 门（`cxx:1149-1151`/`1255-1257`），删掉了 `intpatch_impprm_ends.rs:210` 的 `IsNew` 假设注释。
+- 实测：`cargo check --all-targets` **0 error**；`--lib` **1281/0** ✓（基线一致）；只动了我点名的 4 文件 + 新增 `intpatch_curve_transition.rs`（语义名，`#[path]` 声明）。
+- **明确标注的 UNPORTED**：`PatchPoint`（`int_tools_wline.rs`）无 HVertex 槽位 ⇒ `SetVertex` 只能落 `on_dom_s1/s2`，HVertex 存储标未移植；`WalkStart` 无 `passing` 槽 ⇒ `SetPassing` 标未移植。
+- 改后门禁（export/四道 STEP/phase*）正在**单独**跑（不与我方并行、避免抢写 `data/output/`）。**风险面**：`search_on_bounds` 的 arc-solution 端点现会被绑成非 New（OCCT `PointProcess` 顶点分支）⇒ 若 export 网格变动即「必然回退」，代理会停手报数。
+
+**② T-69 记录冲突（必须实测裁决）**：
+- `§3.3` 的会话进度注（round 30→66，HEAD `5ed8064`）写着 **「T-69（R2-12）：done（本会话收口）」**；
+- 但 `§3.2` 序 3 仍写 **◐（2 轮诊断）**，且 `meshing/incremental_mesh/discret_root.rs:462-468` 的**代码自注**说回退仍活着、理由是「**169 of 1772 faces of `data/occ/T0M.stp`** 失败」（记于 2026-09-20）；
+- ⇒ 三者不可能同时为真。**裁决实验（下一轮）**：跑 `export_data_obj -- data/occ`（打印每模型 `exact=bbox` 与 `v/f`）取 T0M 的 bbox ⇒ `lin = maxComp(bbox)*0.004` ⇒ 用 `occt_probe --mesh <lin> 0.349066` 取 T0M 的 OCCT GT ⇒ 与端口 v/f 对拍：**若逐位/接近 ⇒ 回退实际已死、代码自注过期（T-69 真 done，T-54 可回到「删回退」）；若端口明显偏离 ⇒ 169 面确实走回退（T-69 未 done，当前口径正确）**。
+- 注意：`export_data_obj -- data/occ` 单次运行超过了我单轮 120s 的执行预算（编译+8 模型导出），下一轮用**后台 job** 跑。
 **round 148 —— ❗**T-87 结案：**不是缺陷** —— OCCT 自己的网格给出**完全相同**的数字**
 
 我扩了 GT 探针的 `--mesh`（新增 `meshvol=` 与 `neg_triangles=`：逐面按 `Poly_Triangulation` 节点算 `v0·(v1×v2)/6` 求和并统计负号），跑 `data/Offset.step`（端口真实参数 `0.056 / 20°`）：
