@@ -95,7 +95,9 @@ TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
 | TDB.stp | 612.849 | 2.4514 | **72687** | **78470** | 2180 |
 | a3n00.stp | 269.03 | 1.07612 | **11052** | **12324** | 226 |
 | acs10.stp | 495.013 | 1.98005 | **37247** | **46494** | 787 |
-| ATU01038.step | （bbox maxComp≈395.1 ⇒ lin≈1.5804，待复核） | — | 待补 | 待补 | — |
+| ATU01038.step | 386.794 | 1.54718 | **18049** | **22504** | 386 |
 
 命令：`occt_probe.exe <file> --bbox` 取 `lin`，然后 `occt_probe.exe <file> --mesh <lin> 0.349066`。
 （另：`wires_probe.exe <file>` 给出 `uv_degenerate_faces`——全 19 个语料文件在 OCCT 侧均为 **0**，端口侧任何 >0 都是端口缺陷。）
+
+⚠️ **参数口径的一个细小陷阱（round 178 发现）**：端口的 `export_data_obj` 用**端口自己算的 bbox**算 `lin`，而 OCCT 探针用 **OCCT 的 bbox**；两者可能不同 —— 例：`data/occ/ATU01038.step` 端口报 `exact=[-42.156,-49.156,-12.556]~[42.156,117.546,382.546]`（maxComp=**395.102** ⇒ lin=1.5804），OCCT 报 `maxcomp=**386.794**`（lin=**1.54718**）⇒ 严格对拍时应**分别用各自的 bbox**，或至少确认差异不足以改变计数（上面 ATU01038 的 18049/22504 是用 OCCT 自己的 lin 跑的）。
