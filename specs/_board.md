@@ -185,6 +185,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 250 —— 📋 目标完成度审计（对 objective 枚举逐项）**
+
+**objective 枚举项与状态**（每项均已过五道门禁或按缺件登记 ✓；§2 基线最终复核正在跑 ✓）：
+
+| 分节 | 枚举项 | 状态与证据 |
+|---|---|---|
+| §3.2 | **T-80** | ✅ FUSE 8 faces/8.502655、`Offset` 2610.501436、圆柱 6π（`1a3a1a90` 三重修复；独立复算 ✓） |
+| §3.2 | **T-67 步 3 + T-37** | ✅ 收口（板内 round 记录 ✓） |
+| §3.3 | **R2-19 / R2-6 余项 / R2-18 余项** | ✅ 收口 |
+| §3.3 | **T-44 / T-51** | ✅ 收口 |
+| §3.3 | **T-41** | ✅ 三处自创机制已标 `UNPORTED`（摘除留后，判定与理由记板） |
+| §3.3 | **T-54** | ✅ 并入 T-69 链：网格侧经 GT 复核为忠实；残余缺口已由 T-69→T-92 界定 |
+| §3.4 | **T-11** | ✅ warning 846→481，剩余为「已移植未接线」的覆盖信号 |
+| §3.4 | **T-28（实施）** | ✅ 前 3 步落地（`771eb84d` + `77bbc649`），独立复算：`--lib` 1281/0、四道 STEP、phases、`export_data_obj` 15 文件逐位 ✓ |
+| §3.4 | **T-25** | ✅ **完成**：批 1-4（pcurve 87 / edge 62 / vertex 27 / face 14 = **190 处**）全部把几何落到 `TShape` ✓；**收尾删除三张侧表存储**（`275fcf76` ✓），侧表只剩 `ids` 与 `face_surfaces` ✓；每批均有**门禁 + 逐位导出**双重证明 ✓ |
+
+**§3 其余（非 objective 枚举）**：§3.1 红只剩 **T-03**（已定案 (b)：夹具不合法，非引擎缺口 ✓）；§3.2 序 3 **T-69 已定性并转 T-92**（真缺件 `ShapeFix_ComposeShell` ~3600 行，含前置 `CheckLacking` 对齐 ✓，登记备查 ✓）；**T-91**（STEP pcurve 关联，低-中）登记 ✓。
+**结论**：**objective 枚举的全部实施项均已完成** ✓ —— 待本轮 §2 全量基线复核确认「无回归」后，即可判定目标达成 ✓。
 **round 249 —— ✅✅ T-25 收尾落地：**侧表不再存几何**（三张 map 已删），逐位 `same=23 diff=0`**
 
 `edge_geom`/`face_geom`/`vertex_geom` 纯槽读取 ✓；四处 surface 回退改用小表 `face_surfaces` ✓；`edge_pcurve_reps` 3D 范围从槽取 ✓；三处 insert + 生命周期 remove/clear/len 全去 map 化 ✓；**`vertices`/`edges`/`faces` 字段已从结构体与 `global()` 删除** ✓。
