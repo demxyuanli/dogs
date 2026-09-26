@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 217 —— ✅ T-69 移植开工且质量良好（`face_fix.rs` + `CheckWire` 先行）**
+
+代理 `6e6be1a0` 已按建议**先做 `CheckWire`** ✓：
+- 新增 `crates/occt-topo/src/shhealing/face_fix.rs` ✓ 并在 `shhealing/mod.rs` 加 `mod face_fix;` + `pub use face_fix::*;` ✓（语义命名 ✓）；
+- 文件头注明它只移**两个函数**（`CheckWire` `ShapeFix_Face.cxx:1652-1718`、`FixMissingSeam` `:1722-2330`，调用点 `Perform:492-500`）✓，并声明「逐段注 OCCT 行号 + 未移植部分」✓；
+- `WireOpen { isuopen, isvopen, is_deg }` 结构体逐字段带行号（`:1683-1698`、`:1700-1715`、`:1666-1673`）✓；且它**读到了我漏看的一行**：`return isuopen || isvopen;`（`:1717`）⇒ 调用方需在两者为 0 时**跳过该 wire** ✓（这条我先前没记，采纳 ✓）；
+- 复用了**已有端口件**而非重造：`boptools_2d::curve_on_surface_oriented` ✓、`brep_uv_bounds::add_uv_bounds_wire` ✓、`pcurve_full::{sa_is_u_closed, sa_is_v_closed}` ✓、`topo_tools_full::wires_of_face` ✓；
+- 并在跑自建探针 `examples/zz_check_wire.rs`（CPU 34.5s ✓）验证 `CheckWire` ✓。
+⇒ 方向、范围、纪律与代码质量均符合 ✓；等它给出 `CheckWire` 的逐面对照结果与后续 `FixMissingSeam` 主体。
 **round 216 —— ⚠️ 操作教训：独立 `CARGO_TARGET_DIR` 只避 target 锁，**避不开 cargo 包缓存锁****
 
 round 215 的后台门禁快照**卡了 ~20 分钟**（两个 `cargo` 进程各运行 10.2 分钟但 **CPU 仅 0.02s** ✗ ⇒ 在等锁 ✗，因为代理在并发构建 ✓）。事后查明：`CARGO_TARGET_DIR` 只隔离**目标目录锁**，**`$env:USERPROFILE\.cargo` 的包缓存/registry 锁是全进程共享的** ✗ ⇒ 「有代理在构建时」重型 `cargo test` 会长时间排队 ✓。
