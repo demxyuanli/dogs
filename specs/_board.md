@@ -185,6 +185,21 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 193 —— ❗**撤回 round 186/189 的「正交流」结论**：`make_pcurve_full` **就在网格管线路径上**（我漏看了 `meshing/` 一族调用者）**
+
+**我错在哪**：当时只看了 `boptools_2d`/`pave_*`/`fclass2d` 一类调用者就断言「`make_pcurve_full` 只服务 BOP/pave」。把调用者列全后：
+```
+栅格管线：incremental_mesh/discret_root.rs:815, 858, 899, 1032, 1085, 1156   ← 6 处
+          model_builder/preprocessor.rs:318, 325
+          model_builder/wire_builder.rs:58, 229, 253, 364, 471
+          src/wireframe.rs:513
+BOP/pave：boptools_2d:58/323、algo_tools/construct:76、fclass2d/classifier:428、
+          int_face_face_helpers:287、pave_pcurves:230、pave_blocks/mod.rs:258/284/693/715、make_blocks:483/513/632
+```
+⇒ **`IncrementalMesh` 的 ModelBuilder / ModelPreProcessor / WireBuilder 都会调 `make_pcurve_full`** ✓ ⇒ 代理在 `make_pcurve.rs` 加的**按 `GeomAbs_CurveType` 分派正是 T-69 的可能主修** ✓✓（此前我让代理「先放一边」的指示**作废** ✗）。同时 `fix_add_pcurve` → `project_curve_on_surface_perform` 那条路径也是真实的 ✓ ⇒ **两条都可能参与**（不同阶段/调用者）。
+**已要求代理**用**分别保留单个文件**的 A/B 归因：只留 `make_pcurve.rs`（`surface_projector.rs` 恢复 HEAD）测一次 T0M 指标，再只留 `surface_projector.rs` 测一次，确定谁在起作用；若 `make_pcurve` 单独即可让 T-69 消失，则以它为主修、另一处若无必要就撤掉（避免夹带 ✗）。
+
+**方法论教训（本会话第 5 次同型，已记板）**：凡「某函数**不在**某路径上」的断言，**必须先把调用者列全**（`grep 'fn_name('` 全仓）再下结论 —— 我这轮只看了部分调用者就下了「正交」结论，白让代理绕了几轮 ✗。
 **round 192 —— T-25 **第一批（pcurve 家族）精确范围**：7 个 API / 87 处 / 15 文件**
 
 统计 `reg.{set_edge_pcurve, set_edge_pcurves, edge_pcurves, edge_pcurve, set_pcurve_range, pcurve_range, remove_pcurves_on_surface}` 的调用点：
