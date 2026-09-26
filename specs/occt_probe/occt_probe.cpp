@@ -5,6 +5,11 @@
 //   * per-face surface type, orientation, composed normal and outward sign
 //   * cylinder/spline frames, so the port's reconstruction can be compared
 #include <BRepAdaptor_Surface.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <Poly_Triangulation.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopLoc_Location.hxx>
+#include <cstdlib>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepGProp_Face.hxx>
@@ -109,6 +114,32 @@ int main(int argc, char** argv)
   {
     std::cerr << "null shape\n";
     return 4;
+  }
+
+  // T-54 oracle: OCCT's triangulation counts at a given deflection
+  // (`BRepMesh_IncrementalMesh`), per face and in total. The port's
+  // `export_data_obj` gate compares its own `v=`/`f=` counts, so this is
+  // what a faithful constrained-Delaunay port must reproduce.
+  if (argc > 2 && std::string(argv[2]) == "--mesh")
+  {
+    const double aDeflection = (argc > 3) ? std::atof(argv[3]) : 0.1;
+    BRepMesh_IncrementalMesh aMesher(aShape, aDeflection);
+    TopExp_Explorer            anEx(aShape, TopAbs_FACE);
+    int                        anIdx = 0, aNodes = 0, aTris = 0;
+    for (; anEx.More(); anEx.Next(), ++anIdx)
+    {
+      TopLoc_Location                     aLoc;
+      const occ::handle<Poly_Triangulation>& aTri =
+        BRep_Tool::Triangulation(TopoDS::Face(anEx.Current()), aLoc);
+      const int aN = aTri.IsNull() ? 0 : aTri->NbNodes();
+      const int aT = aTri.IsNull() ? 0 : aTri->NbTriangles();
+      std::cout << "FACE " << anIdx << " nodes=" << aN << " triangles=" << aT << "\n";
+      aNodes += aN;
+      aTris += aT;
+    }
+    std::cout << "TOTAL faces=" << anIdx << " nodes=" << aNodes << " triangles=" << aTris
+              << " deflection=" << aDeflection << "\n";
+    return 0;
   }
 
   if (argc > 2 && std::string(argv[2]) == "--entities")

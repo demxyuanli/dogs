@@ -164,6 +164,32 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 129 —— 新增 GT 能力（`--mesh`）并查出**网格管线与 OCCT 系统性不符**：§2 的 `export_data_obj` 逐位门禁是**端口内部**一致性，不是 OCCT 保真度**
+
+① **探针跑通 + 新能力**：GT 探针此前因缺 64 位依赖 DLL 起不来；本轮确认正确配方（记录备用）：
+```
+$env:THIRDPARTY_DIR='D:\source\occt-8.0.0\3rdparty-vc14-64'
+cmd /c "cd /d D:\source\occt-8.0.0 && call env.bat vc14 64 && <probe.exe> <file.step> [mode]"
+```
+并在 `specs/occt_probe/occt_probe.cpp` 新增 **`--mesh [deflection]`**：`BRepMesh_IncrementalMesh` 后逐面打印 `Poly_Triangulation` 的 nodes/triangles，并给 `TOTAL faces/nodes/triangles`（`build.bat` 补链 `TKMesh.lib`）。
+
+② **GT 表（OCCT 8.0.0，deflection 0.1）vs 端口 `export_data_obj` 基线**：
+
+| `data/*.step` | OCCT nodes/tris | 端口基线 v/f | 一致？ |
+|---|---|---|---|
+| Cube | 24 / 12 | 24 / 12 | **✓ 逐位一致** |
+| Cylinder | 106 / 100 | 146 / 140 | ✗ 端口偏多 |
+| Sphere | 273 / 516 | 642 / 1244 | ✗ 端口约 2.4× |
+| Torus | 810 / 1508 | 1369 / 2592 | ✗ 端口偏多 |
+| Shape | 18733 / 36444 | 6150 / 11372 | ✗ **端口偏少**（面数 11 vs 端口 11 ✓，但片数只 ~1/3） |
+| linkrods | 2184 / 2928 | 3494 / 5078 | ✗ 端口偏多 |
+| rev | 76 / 64 | 104 / 92 | ✗ |
+| screw | 652 / 944 | 600 / 790 | ✗ |
+
+⇒ **结论（重要）**：§2 里 `export_data_obj` 的「`v=`/`f=` 与基线**逐位一致**」只能证明**端口自身没变**，**不能**证明与 OCCT 一致——端口的三角化与 OCCT 在**球/环/柱**上偏多、在 `Shape` 上偏少（约 1/3）。
+因此：**(a)** 这条门禁的定位改为「**端口内部回归哨兵**」；**(b)** 另设「与 OCCT GT 表的偏差」作为**保真度**指标（本轮已把 GT 表建起来）；**(c)** T-54 的 re-baseline 策略据此确定 —— 移植忠实 Delaunay **必然**改变 `v=/f=`（Cube 会一致，其余会向 OCCT 靠拢），届时应**同时更新 §2 的 export 期望值到 OCCT GT**，而不是把「逐位一致」当作否决理由。
+
+③ **新登记 T-90**：网格管线（`brep_to_obj` + 三角化）与 OCCT 的片数/节点数**系统性不符**（见上表；`Shape.step` 甚至只有 OCCT 的 ~1/3），根因待分诊——它与 T-54（平面耳切→约束 Delaunay）、T-87（网格绕向）同属网格保真度族，但**独立于**二者。验收：以 `--mesh` 的 GT 表为准逐文件对齐（先 Cube 已 ✓）。
 **round 128 —— 剩余三项（T-54 / T-28 / T-25）的**执行前判定**：两项需先定策略，一项可委派**
 
 ### T-54（A18：`wireframe.rs` 平面耳切 → 约束 Delaunay）——**需先定 re-baseline 策略**
