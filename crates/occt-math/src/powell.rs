@@ -11,7 +11,7 @@ impl Powell {
         let mut dirs = MathMatrix::new(1, n, 1, n);
         for i in 1..=n { dirs.set_value(i, i, 1.0); }
         let mut fx = f(&x);
-        for iter in 0..self.max_iter {
+        for _iter in 0..self.max_iter {
             let x_save = x.clone();
             let mut delta_max = 0.0f64;
             let mut imax = 0usize;

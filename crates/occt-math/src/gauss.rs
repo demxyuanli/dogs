@@ -59,7 +59,6 @@ pub fn gauss_kronrod15(a: f64, b: f64) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     let xl = 0.5 * (b - a);
     let pts: Vec<f64> = nodes.iter().map(|&n| xm + xl * n).collect();
     let w_gauss: Vec<f64> = (0..7).map(|i| {
-        let j = 2 * i + 1;
         xl * gauss_w[i]
     }).collect();
     let w_kronrod: Vec<f64> = kronrod_w.iter().map(|&w| xl * w).collect();

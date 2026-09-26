@@ -57,7 +57,7 @@ impl SVD {
                 for k in l..=n { scale += u.value(i, k).abs(); }
                 if scale != 0.0 {
                     for k in l..=n { u.set_value(i, k, u.value(i, k) / scale); let s = u.value(i, k); g += s * s; }
-                    let mut f = u.value(i, l);
+                    let f = u.value(i, l);
                     g = -sign(g.sqrt(), f);
                     let h = f * g - f * f;
                     u.set_value(i, l, f - g);
@@ -124,7 +124,7 @@ impl SVD {
                     let mut c = 0.0;
                     let mut sv = 1.0;
                     for i in l..=k {
-                        let mut fs = sv * rv1.value(i);
+                        let fs = sv * rv1.value(i);
                         rv1.set_value(i, c * rv1.value(i));
                         if (fs.abs() + anorm) == anorm { break; }
                         g = w.value(i);
@@ -142,7 +142,7 @@ impl SVD {
                         }
                     }
                 }
-                let mut z = w.value(k);
+                let z = w.value(k);
                 if l == k {
                     if z < 0.0 { w.set_value(k, -z); for j in 1..=n { v.set_value(j, k, -v.value(j, k)); } }
                     break;

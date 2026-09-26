@@ -446,7 +446,7 @@ impl GlobOptMin {
 
     fn compute_init_sol<F: Fn(&MathVector) -> f64>(&mut self, f: &F) -> Result<(), String> {
         // Midpoint; protects against local optimizers failing on all inputs.
-        let mut pnt = self.glob_a.added(&self.glob_b).multiplied_scalar(0.5);
+        let pnt = self.glob_a.added(&self.glob_b).multiplied_scalar(0.5);
         let val = f(&pnt);
         if !val.is_finite() {
             return Err("function returned non-finite value".into());

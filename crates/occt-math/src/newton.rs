@@ -134,7 +134,6 @@ impl NewtonMinimum {
             // Update x
             let mut s = MathVector::new(1, n);
             for i in 1..=n { s.set_value(i, alpha * d.value(i)); }
-            let x_old = x.clone();
             for i in 1..=n { x.set_value(i, x.value(i) + s.value(i)); }
 
             let g_new = grad(&x);
