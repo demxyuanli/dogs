@@ -259,6 +259,11 @@ struct CpntsMyRootFunction<'a> {
     /// `myX0` / `myL` set by `Init(X0, L)` (`:25-30`).
     x0: f64,
     l: f64,
+    /// `myTol` (`CPnts_MyRootFunction.hxx`): `-1` from `Init(X0, L)` "to
+    /// suppress the tolerance" (`:29`); `Tol` from `Init(X0, L, Tol)`
+    /// (`:32-37`). `Value`/`Values` pick the tol-aware integration only when
+    /// `myTol > 0` (`:43-50`, `:72-79`).
+    tol: f64,
 }
 
 impl<'a> CpntsMyRootFunction<'a> {
@@ -268,6 +273,7 @@ impl<'a> CpntsMyRootFunction<'a> {
             order,
             x0: 0.0,
             l: 0.0,
+            tol: -1.0,
         }
     }
 
@@ -281,13 +287,30 @@ impl<'a> CpntsMyRootFunction<'a> {
     fn init(&mut self, x0: f64, l: f64) {
         self.x0 = x0;
         self.l = l;
+        self.tol = -1.0;
+    }
+
+    /// `Init(const double X0, const double L, const double Tol)`
+    /// (`CPnts_MyRootFunction.cxx:32-37`) -- the tolerance overload
+    /// `AdvPerform` uses with `Resolution / 10` (`CPnts_AbscissaPoint.cxx:453`).
+    fn init_tol(&mut self, x0: f64, l: f64, tol: f64) {
+        self.x0 = x0;
+        self.l = l;
+        self.tol = tol;
     }
 
     /// `math_GaussSingleIntegration(myFunction, myX0, X, myOrder)`
     /// (`:41-45`, `math_GaussSingleIntegration.cxx:55-62`).
     fn integral(&self, x: f64) -> f64 {
         let f = |u: f64| speed(self.c, u);
-        gauss_single(&f, self.x0, x, self.order)
+        // `CPnts_MyRootFunction::Value` (`:43-50`): `myTol <= 0` keeps
+        // `math_GaussSingleIntegration`; a positive `myTol` uses the
+        // adaptive form `math_GaussSingleIntegration(..., myTol)`.
+        if self.tol <= 0.0 {
+            gauss_single(&f, self.x0, x, self.order)
+        } else {
+            gauss_single_tol(&f, self.x0, x, self.order, self.tol)
+        }
     }
 }
 
@@ -361,6 +384,41 @@ impl<'a> CpntsAbscissaPoint<'a> {
         umax += du;
         self.umin = umin;
         self.umax = umax;
+    }
+
+    /// `Init(C, U1, U2, Tol)` (`CPnts_AbscissaPoint.cxx:336-351`): the same
+    /// as [`Self::init_range`] except `myL = Length(C, U1, U2, Tol)` -- the
+    /// tol-aware integration (`CPnts_AbscissaPoint.cxx:345`).
+    fn init_range_tol(&mut self, c: &'a dyn Curve, u1: f64, u2: f64, tol: f64) {
+        self.f = CpntsMyRootFunction::new(c, gauss_order(c));
+        self.l = curve_length_range(c, u1, u2, tol);
+        let mut umin = u1.min(u2);
+        let mut umax = u1.max(u2);
+        let du = umax - umin;
+        umin -= du;
+        umax += du;
+        self.umin = umin;
+        self.umax = umax;
+    }
+
+    /// `AdvPerform(Abscissa, U0, Ui, Resolution)` (`:436-...`): identical to
+    /// [`Self::perform_with_guess`] except that the root function is given
+    /// the tolerance `Resolution / 10` (rbv's modification, `:453`).
+    fn adv_perform(&mut self, abscissa: f64, u0: f64, ui: f64, resolution: f64) {
+        if self.l < CONFUSION {
+            self.done = true;
+            self.param = u0;
+            return;
+        }
+        self.done = false;
+        self.f.init_tol(u0, abscissa, resolution / 10.0);
+        let (umin, umax) = (self.umin, self.umax);
+        let solution =
+            MathFunctionRoot::new_with_bounds(&mut self.f, ui, resolution, umin, umax, 100);
+        if solution.is_done() {
+            self.done = true;
+            self.param = solution.root();
+        }
     }
 
     /// `Perform(Abscissa, U0, Resolution)` (`:374-391`): the guess
@@ -482,6 +540,65 @@ pub fn abscissa_point(c: &dyn Curve, abscissa: f64, from: f64) -> Result<f64, St
     let resolution = c.resolution(CONFUSION);
     compute_with_guess(c, abscissa, from, ui, resolution)
         .ok_or_else(|| "abscissa_point: math_FunctionRoot did not converge".to_string())
+}
+
+/// Same as [`abscissa_point`] but with the caller's tolerance -- the
+/// `GCPnts_AbscissaPoint(theC, theAbscissa, theU0, theTol)` entry, which
+/// reaches `advCompute` (`GCPnts_AbscissaPoint.cxx:464-...`) and therefore
+/// `CPnts_AbscissaPoint::Init(C, Tol)` (`:287-290`) +
+/// `AdvPerform` (`CPnts_AbscissaPoint.cxx:436-...`). The tol-aware
+/// integration replaces the fixed-order Gauss rule in the root function
+/// (`CPnts_MyRootFunction.cxx:43-50`).
+///
+/// UNPORTED: the `GCPnts_AbsComposite` arm of `AdvCompute`
+/// (`GCPnts_AbscissaPoint.cxx:187-295`, which carries an `anIndex == 0`
+/// special case) -- multi-span curves fall back to the non-adv arm, so only
+/// the integration tolerance differs there.
+pub fn abscissa_point_with_tolerance(
+    c: &dyn Curve,
+    abscissa: f64,
+    from: f64,
+    tol: f64,
+) -> Result<f64, String> {
+    let (a, b) = (c.first_parameter(), c.last_parameter());
+    if !(a.is_finite() && b.is_finite()) {
+        return Err("abscissa_point_with_tolerance: unbounded curve".to_string());
+    }
+    let resolution = c.resolution(CONFUSION);
+    // `advCompute` (`:470-481`): `aL = Length(theC, theTol)` (the
+    // `Standard_ConstructionError` throw is commented out there).
+    let al = curve_length_range(c, a, b, tol);
+    let ui = if al >= CONFUSION {
+        from + (abscissa / al) * (b - a)
+    } else {
+        0.0
+    };
+    if abscissa.abs() <= CONFUSION {
+        return Ok(from);
+    }
+    let (ty, ratio) = compute_type(c);
+    match ty {
+        // `AdvCompute` `:177-180`.
+        AbscissaType::LengthParametrized => return Ok(from + abscissa / ratio),
+        // `:187-295` UNPORTED; use the non-adv walk (`:96-158`).
+        AbscissaType::AbsComposite => {
+            return compute_abs_composite(c, abscissa, from, ui, resolution)
+                .ok_or_else(|| {
+                    "abscissa_point_with_tolerance: math_FunctionRoot did not converge"
+                        .to_string()
+                });
+        }
+        // `:183-184`: `Init(theC, theEPSILON)` + `AdvPerform`.
+        AbscissaType::Parametrized => {}
+    }
+    let mut computer = CpntsAbscissaPoint::new(c);
+    computer.init_range_tol(c, a, b, tol);
+    computer.adv_perform(abscissa, from, ui, resolution);
+    if computer.is_done() {
+        Ok(computer.parameter())
+    } else {
+        Err("abscissa_point_with_tolerance: math_FunctionRoot did not converge".to_string())
+    }
 }
 
 /// `n + 1` parameters at equal arc-length spacing across the curve

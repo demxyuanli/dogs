@@ -140,6 +140,20 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 118 —— §3.3 T-51 余项（`occt-geom` 侧）**完结**：容差重载 `Init(X0,L,Tol)` + `AdvPerform` 落地**
+
+`crates/occt-geom/src/gcpnts.rs` 续：
+- `CpntsMyRootFunction` 增加 `tol`（`myTol`）：`Init(X0,L)` 置 `-1`「抑制容差」（`CPnts_MyRootFunction.cxx:25-30`），`Init(X0,L,Tol)` 置实参（`:32-37`）；`integral` 按 `myTol <= 0` 选 `math_GaussSingleIntegration` 或其**容差变体**（`:43-50`/`:72-79`）。
+- `CpntsAbscissaPoint::init_range_tol(c,u1,u2,tol)`：`myL = Length(C, U1, U2, Tol)`（`CPnts_AbscissaPoint.cxx:336-351`，端口用现成的 `curve_length_range(.., tol)`）+ 同样的 `DU` 拓宽。
+- `CpntsAbscissaPoint::adv_perform(abscissa,u0,ui,resolution)`：与 `perform_with_guess` 相同，唯一差别是根函数带容差 `Resolution/10`（rbv 的改动，`CPnts_AbscissaPoint.cxx:436-453`）。
+- 新公开入口 **`abscissa_point_with_tolerance(c, abscissa, from, tol)`**：对应 OCCT 的 `GCPnts_AbscissaPoint(theC, theAbscissa, theU0, theTol)` → `advCompute`（`GCPnts_AbscissaPoint.cxx:464-...`）→ `AdvCompute`（`:166-297`）：LengthParametrized 仍走精确臂（`:177-180`），Parametrized 走 `Init(theC, tol)` + `AdvPerform`（`:183-184`）。
+- **UNPORTED**（已就地注明）：`AdvCompute` 的 `AbsComposite` 臂（`GCPnts_AbscissaPoint.cxx:187-295`，含 `anIndex == 0` 特例）——多区间曲线退到非 adv 的 `:96-158`，**只有积分容差不同**。
+
+自证（临时 example，用完已删）：
+- 半径 2 的圆：`abscissa_point` 与 `abscissa_point_with_tolerance(.., 1e-9)` 均 **u = 1.500000000000000**（精确）；
+- **3 极点 Bezier**（走 Parametrized-adv）：长度 3.754636412317；`u(1.0)` 两入口分别 **0.267434759339981** / **0.267434759795257**，差 **4.6e-10**（与 1e-10 容差量级一致）✓。
+
+门禁：`occt-geom --lib` **143/0**（未新增测试）。
 **round 117 —— §3.3 T-51 余项（`occt-geom` 侧）落地：`computeType` + `GCPnts_LengthParametrized` + `GCPnts_AbsComposite`**
 
 `crates/occt-geom/src/gcpnts.rs`：
