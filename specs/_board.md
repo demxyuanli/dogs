@@ -185,6 +185,10 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 206 —— `FixMissingSeam` 的两个移植要点（我读码确认，供代理与我将来的 review）**
+
+**① `CheckWire`（`ShapeFix_Face.cxx:1652-1722`）很轻** ✓：遍历 wire 的边，`isDeg = false`（只要有一条非退化边）；把 `sae.PCurve(edge, face, c2d, f, l, orient=true)` 的 **`pcurve(l) − pcurve(f)`** 累加成 `vec`；然后 `||vec.X()| − dU| < 0.1*dU` ⇒ `isuopen = ±1`（按 `vec.X()` 符号），否则 0；v 同理（`:1700-1711`）✓。依赖只有 **`ShapeAnalysis_Edge::PCurve(..., orient=true)`**（端口的 `curve_on_surface_oriented` ✓）⇒ 移植无难点 ✓。
+**② 接线是**面级**的**：`FixMissingSeam` 是 `ShapeFix_Face` 的 pass（面级 ✓），而端口的 `check_pcurves_and_shift`（`shhealing/wire_fix.rs`，被 `step/read_topology.rs:697`、`bop_curved/region_trim.rs:444`、`brep_offset/curve_face_offset.rs:761` 调用）是**丝级** ✓ ⇒ 新 pass 必须挂在**遍历面的那一层**（导入后的 face 装配/修复入口 ✓），不能塞进 `check_pcurves_and_shift` ✗。已提示代理按 `ShapeFix_Face::Perform` 的位置找对应层 ✓。
 **round 205 —— 给新代理的范围与分步提示（`CheckWire` + `FixMissingSeam` ≈ 360 行）**
 
 `FixMissingSeam` 依赖同文件的 **static 辅助 `CheckWire`**（`ShapeFix_Face.cxx:1652-1722`），在 `:1831` 被调用（判定 wire 在 u/v 是否开口、是否退化）✓ ⇒ 本批要移植的是 **`CheckWire`(~70 行) + `FixMissingSeam`(~290 行) ≈ 360 行** ✓（该文件全长 3259 行，其余**不必**移植 ✓）。
