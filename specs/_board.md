@@ -140,6 +140,26 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 96 —— 订正探针 `MinStep3D` 后逐项对拍：只剩「偶对的边视图朝向」一处**
+
+先修掉探针自身的简化：`--dir2` 原先把 `aDt` 当作 `max(2*(tolE+tolF), 5e-6)`，**没有实现 `MinStep3D` 的 switch**（`BOPTools_AlgoTools.cxx:2273-2296`：Cylinder 取半径、Cone 取轴到点的距离、Sphere 置 `aDtMin=5e-4` 并取半径、Torus 取大半径、**default（含 Plane）置 `aDtMin=5e-4`**；`aR>100` 再加 `sqrt(d²+2d·aR)`，`d=10·PConfusion`；末了 `aDtMax = max(aDtMax, aDtMin)`）。补齐后探针 `dt` 由 5e-6 变 **0.0005**，与端口 `[zz-d2] CUR … dt=5.000e-4` 一致 ⇒ **端口的 `min_step_3d` 是忠实的**（原先看似的 100× 差是探针的伪差）。
+
+补齐后的对拍（同一截面圆步）：
+
+```
+OCCT : CUR type=1(Cyl) eo=0 dt=0.0005 found1=0 dbf=(0,0,-1) dtf=(0,1,0)
+         CAND Plane eo=1 found=1 db=(-1,0,0) angle= 90   <== 最小 ⇒ 盘
+         CAND Plane eo=0 found=1 db=( 1,0,0) angle=-90
+         CAND Cyl   eo=0 found=1 db=( 0,0,1) angle=180
+         CAND Plane eo=1 found=0 db=(-1,0,0) angle= 90
+端口 : CUR Cylinder eo=Forward dt=5.000e-4 dbf=(0,0,1) dtf=(0.4136,0.9105,0)
+         CAND Plane    eo=Forward  same_dir=true db=(0.9105,-0.4136,0) angle=90
+         CAND Cylinder eo=Reversed same_dir=true db=(0,0,1)         angle=0   <== 最小 ⇒ 环带
+```
+
+**结论**：`dt`/`dbf` 的量级与符号规律、候选角度体系现在都对得上（端口 `dbf=(0,0,1)` 对应 GT 里初始 `aDB=(0,0,1)` 的那张环带面 f1/f4，OCCT 该面 `found1=0` 走后回落成 `(0,0,-1)` 是**同一张面的另一份视图**，不是矛盾）。**真正的差异只剩偶对里「候选边视图的朝向」**：`BOPAlgo_ShellSplitter::SplitBlock` 用 `GetEdgeOff`（**强制取反向视图**，`BOPTools_AlgoTools.cxx:1099-1127`）构造偶对，于是 `GetFaceOff` 的 `aE2.Orientation() == aOr`（`:1052`）由构造保证为假 ⇒ `aDTgt2` 恒反转；端口的 `get_edge_off_geo` 对**闭合环**的判据是空真（端点 key 相同），会接受同向视图 ⇒ `same_dir` 变真 ⇒ `aDTgt2` 不反转 ⇒ 角度体系错位（GT 从环带应给 90° 选盘，端口给 0° 选环带）。
+
+**下一步**：只改 `get_edge_off_geo` 的闭合环分支（要求 `e2.orientation() == reverse(e1.orientation())`，与 `GetEdgeOff` 一致）**并**把 `same_dir` 的闭合环分支改成同一朝向比较——两者必须成套（单独改任一都试过，FUSE 为空）；若成套后仍空，则说明端口面的「边视图朝向」与 OCCT 不可比，需要像 T-82 前几处那样先把产生者（`FaceBuilder` 的 loop 装配）对齐。验收仍用 `--faceoff` 6 行 + GT `8 faces / 8.50265`。
 **round 95 —— GT 完整复算 `GetFaceDir`+`FindPointInFace` 拿到真值；落地 loop 忠实订正**
 
 GT 探针新增 `--dir2`：在探针里忠实复算 `BOPTools_AlgoTools.cxx` 的 `FindPointInFace`（`:2160-2231`，用公开的 `IntTools_Context::ProjPS(face)` + `GeomAPI_ProjectPointOnSurf(aPL=aPx^nDTgt)`）与 `GetFaceDir`（`:2110-2152`，含 `found=false` 时的 `GetApproxNormalToFaceOnEdge` 回落，`:2139-2149`）。实测（box∪cyl GF 截面圆，当前面 = 环带）：
