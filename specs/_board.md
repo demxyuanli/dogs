@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 146 —— T-54 **并入 T-69**：那 169 个失败面就是 T-69 已诊断的失败面集合**
+
+查板内既有行发现：**T-54 想要的「网格保真度」与「169 面」都不是新问题 —— 它们就是 §3.2 序 3 的 T-69**：
+- `_board.md:1141`（R2-12 = T-69 行）**验收栏写着「T0M 计数 + 四道门禁」**；
+- 同一行**备注**：*「Torus face 20 的『同面两条 wire 的 pcurve 落在相差一个周期的 u 窗口』（`update_range` 周期钳制后 wire 0 落在范围外）⇒ **失败面集合是 OCCT 的超集**」*，且**明确写着「Delaunay 层已逐行核对为忠实，不要再在该层找偏差」**—— 正因如此，那 169 面走到回退；
+- `_board.md:991`（T-69 行）已给两轮诊断与下一步（按面类 dump + 对读 `BRepMesh_NodeInsertionMeshAlgo`/`BRepMesh_Delaun::frontierAdjust`）。
+
+⇒ **结论（T-54 的最终落点）**：
+1. 「移植 `BRepMesh_Delaun` 换掉自创三角化」**不需要**（round 138 已证 14/15 与 OCCT 逐位一致；且 T-69 行已证 Delaunay 层忠实）；
+2. 「删掉自创回退」**要等 T-69 修好**（169 面走通后）；
+3. 因此 **T-54 关闭为「并入 T-69」**：把 T-54 的验收（`wireframe.rs:394-421` 自注的删除条件）写成 **T-69 的下游验收**即可 —— T-69 转绿 ⇒ 169 面走通 ⇒ 回退可删。
+
+**给网格子代理的最终任务**（取代「补 Delaunay/删回退」）：**做 T-69** —— 定位「同面两条 wire 的 pcurve 相差一个周期」在 `FaceDiscret`/`update_range`/`WireDiscret` 侧的控制流缺口，对照 OCCT（`BRepMesh_FaceDiscret`/`BRepMesh_WireDiscret`/`BRepMesh_EdgeDiscret`）**忠实补分支**；验收 = `data/occ/T0M.stp` 的失败面数从 **169 → 0**、且 15 个 `data/*.step` 的 GT 表不变。**在该验收达成前，不删回退**。
 **round 145 —— ❗**订正 round 144**：回退**是活的**（`data/occ/T0M.stp` 169/1772 面走它）；T-54 的真正工作改为「先修这 169 面，再删回退」**
 
 **我 round 144 的推理有漏洞**：它依赖「15 个 `data/*.step` 与 OCCT 逐位一致 ⇒ 无面走回退」，但那 15 个文件**不含** `data/occ/` 语料；而回退处的**自带注释**（`meshing/incremental_mesh/discret_root.rs:462-468`）明确写着：
