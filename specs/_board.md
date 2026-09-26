@@ -164,6 +164,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 121 —— §3.4 T-11 余项（第一批）：删除 2D `ElCLib` 的重复死模块，warning 744 → 699**
+
+`cargo check occt-topo --lib` 的 warning 分布显示 `geom_bnd_lib_elclib2d_{d2,dn,param}.rs` 三个文件里的函数**全部**是 `never used`（45 条）。核对后确认它们是**重复实现**：这两个模块移植的是 2D `ElCLib` 的 `D1/D2/D3/DN/Parameter`（`gp_Lin2d/Circ2d/Elips2d/Hypr2d/Parab2d`），而 `occt-core/src/elib/clib2d.rs:126-531` **已经**有同名的忠实实现（`line_d1_ax2d`/`circle_d2_ax22d`/`*_dn_ax22d`/`*_parameter_ax22d` …），全 crate 消费的是后者。
+
+处置：删除三个文件 + `lib.rs:202-204` 的声明，并在原处留注释说明去向与依据。**行为零变化**（三者本就无消费者）。
+
+门禁：warning **744 → 699**（−45）；`--all-targets` 0 error；`--lib` **1281/0**（未新增/未删测试）。
+
+**T-11 余项仍未完结**（699 条）：下一批可从 `bop_occt_util.rs`(31)、`pave_intersect/face_face.rs`(20)、`bopalgo_tools_wires.rs`(17)、`bop_builder_report.rs`(16) 等继续；注意 `geom_bnd_lib_elclib2d.rs` 自身还剩 12 条 `never used`（`*_d1`/`*_axes`/`coord2` 等，同样被 `clib2d` 覆盖），但其 `*_value` 系列被 `GeomBndLib_*2d` 使用，需逐函数判断后再删（`elips_value`/`hypr_value`/`parab_value` 的 import 方也要一并处理）。
 **round 120 —— 根因**定案**（OCCT 逐开关实测）：缺的是 `ReadFile` 之后的 `ShapeProcess(FixShape)` 三步；并查出端口 gprop 的两处独立朝向缺陷**
 
 子代理用自建 OCCT oracle 做了逐开关判定，**并查出原探针的一处方法论错误**：`SetShapeFixParameters` 若在 `ReadFile` **之前**调用会被 work session 重置 ⇒ 旧 `--faces0` 是**无效开关**（旧 `--nofix` 之所以有效，是因为它 ReadFile 后又设了一次 flags）。把参数移到 `ReadFile` 之后、`TransferRoots` 之前后，真相如下（`data/Offset.step`，`BRepGProp::VolumeProperties`）：
