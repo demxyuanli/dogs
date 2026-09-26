@@ -70,7 +70,6 @@ impl ImpPrmIntersection {
         fleche: f64,
         pas: f64,
     ) {
-        eprintln!("T28PROBE perform");
         self.done = false;
         self.empty = true;
         self.slin.clear();
@@ -341,7 +340,6 @@ fn compute_tangency(
         }
 
         // traiter la transition complexe (`:329-465`)
-        eprintln!("T28PROBE complex i={i}");
         let vtx = pstart.vertex_id.expect("non-new point has a vertex");
         let bidnorm = GpDir::new(1.0, 1.0, 1.0).expect("gp_Dir(1,1,1)");
         let tole = 1.0e-8;

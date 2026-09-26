@@ -222,7 +222,6 @@ fn path_point(
 ) -> PathPoint {
     for vertex_id in domain.arc_vertexes(&arc) {
         if (t - domain.vertex_parameter(vertex_id)).abs() <= domain.vertex_resolution(vertex_id) {
-            eprintln!("T28PROBE bind t={t}");
             return PathPoint::on_vertex(p, vertex_id, u, v, t, arc);
         }
     }
