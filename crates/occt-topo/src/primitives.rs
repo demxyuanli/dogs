@@ -21,7 +21,7 @@ use occt_geom::{Curve, GeomCircle, GeomCone, GeomCylinder, GeomLine, GeomPlane, 
 use occt_geom2d::{Geom2dCircle, Geom2dLine};
 
 use crate::builder::TopoBuilder;
-use crate::shape::{Edge, Face, Shell, Solid, Vertex, Wire};
+use crate::shape::{Edge, Face, Solid, Vertex};
 use crate::tgeometry::GeometryRegistry;
 use crate::topexp::Explorer;
 use crate::abs::{Orientation, ShapeType};
@@ -283,9 +283,19 @@ impl BRepPrimCylinder {
         // and a reversed p-curve makes every direction test downstream misfire
         // (`GetFaceDir`/`GetEdgeOff` pick the wrong face in
         // `BOPAlgo_ShellSplitter::SplitBlock`, T-82).
-        let mut bottom_circle_reversed = bottom_circle.clone();
-        bottom_circle_reversed.0.reverse();
-        let bottom_wire = b.make_wire(&[bottom_circle_reversed]);
+        let bottom_circle_reversed = Edge(bottom_circle.0.clone().oriented(Orientation::Reversed));
+        let mut bottom_wire = b.make_wire(&[bottom_circle_reversed]);
+        // `BRepPrim_OneAxis::BottomFace` (`BRepPrim_OneAxis.cxx:501-503`) is
+        // `MakeFace` -> **`ReverseFace`** -> `AddFaceWire(BottomWire())`.
+        // `TopoDS_Builder::Add` (`TopoDS_Builder.cxx:77-80`) composes the
+        // parent's REVERSED orientation into the child it stores, so OCCT ends
+        // up with **face REV / wire REV / edge REV**. Reversing the wire here
+        // (before the add) reproduces that; reversing only the face afterwards
+        // would leave the wire FORWARD, and the boundary view seen through
+        // `BRepGProp_Domain::Init(F.Oriented(TopAbs_FORWARD))`
+        // (`BRepGProp_Domain.lxx:39-42`) would then be REV instead of FORWARD
+        // (a REVERSED cap integrates to -pi instead of +pi).
+        bottom_wire.0.reverse();
         let mut bottom_face = b.make_face(
             Arc::new(GeomPlane::new(plane(GpPnt::zero(), dir(0.0, 0.0, 1.0)))),
             &[bottom_wire],

@@ -6,7 +6,24 @@ impl FaceGauss {
         let surface = BRepTool::face_surface_world(face).ok_or("brep_gprop_full: face has no surface")?;
         let kind = classify_surface_kind(surface.as_ref());
         let is_reversed = face.orientation().is_reversed();
-        let wires = wires_of_face(face);
+        // `BRepGProp_Domain::Init(const TopoDS_Face& F)` (`BRepGProp_Domain.lxx:
+        // 39-42`; ctor `:29-32`) explores `F.Oriented(TopAbs_FORWARD)`: the
+        // domain's boundary edges carry only the *wire/edge* orientation, never
+        // the face's. The face orientation enters the integral in exactly one
+        // place - `BRepGProp_Face::mySReverse` (`BRepGProp_Face.cxx:196`, used
+        // by `Normal` `:201-210`).
+        //
+        // Composing the face orientation into the edge views as well (what a
+        // plain `TopExp_Explorer(face, TopAbs_EDGE)` does) makes `Dul =
+        // Vuv.Y()` (`compute_domain`, `:524`/`:527`, from the p-curve reversal
+        // of `BRepGProp_Face::Load(const TopoDS_Edge&)` `:164-185`) flip *with*
+        // the normal, so the two cancel and the face orientation has no effect
+        // on the integral at all. The fix therefore belongs here, at the
+        // boundary source, and NOT in `compute_domain` or `normal`: every
+        // single-factor change there just moves the sign between the two
+        // cancelling terms.
+        let fwd_face = Face(face.0.oriented(crate::abs::Orientation::Forward));
+        let wires = wires_of_face(&fwd_face);
         let natural = wires.is_empty();
 
         // Build the UV inverse map. The frame is taken from the surface's own
@@ -42,18 +59,13 @@ impl FaceGauss {
                     has_repeated = true;
                 }
                 seen.push(key);
-                // OCCT's `BRepGProp_Domain` walks the face with
-                // `TopExp_Explorer(aFace, TopAbs_EDGE)` (default `CumOri =
-                // true`), so every boundary edge is seen with the face's
-                // orientation composed in (`TopExp.cxx:80-120`) — the same
-                // orientation `BRepGProp_Face::Load(const TopoDS_Edge&)`
-                // (`BRepGProp_Face.cxx:164-185`) reverses the p-curve on.
-                // `edges_of_wire` only composes down to the wire.
-                let mut eb = e.clone();
-                if is_reversed {
-                    eb.0.reverse();
-                }
-                if let Some(arc) = build_arc(&eb, face, &map) {
+                // BRepGProp_Domain hands BRepGProp_Face::Load(const
+                // TopoDS_Edge&) (BRepGProp_Face.cxx:164-185) an edge whose
+                // orientation is the wire/edge composition only - the face was
+                // oriented FORWARD by Init (BRepGProp_Domain.lxx:41), and that
+                // is the orientation the p-curve reversal keys off
+                // (BRep_Tool::CurveOnSurface, BRep_Tool.cxx:334,354-361).
+                if let Some(arc) = build_arc(&e, face, &map) {
                     arcs.push(arc);
                 }
             }
