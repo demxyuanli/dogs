@@ -185,6 +185,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 236 —— ✅✅ T-25 批 2 验收（除 `step_obj_parity`）全绿，且导出**逐位一致**（`same=23 diff=0`）**
+
+`e8a405ce`（边 3D 几何：`curve` + 6 标量全部走 `TShape.edge_core` 槽）的验收：
+```
+--lib 1281/0 ✓   step_obj_area 11/11 ✓
+step_geometry_parity 3/3 ✓   phase5/9/10/19/20 全绿 ✓
+export_data_obj data + 逐位对比 .target-gate/t25_before/ ⇒ same=23 diff=0 ✓✓
+step_obj_parity      后台进行中（下一轮收）
+```
+⇒ **批 2 的存储搬移同样是「行为不变」** ✓✓（两条独立证据：门禁 + 逐位导出 ✓）。
+**批 2 的两个收尾项（非阻塞，后续轮）**：① 62 处 `edge_geom`/`set_edge` 调用点的去仪式化 ✓；② `EdgeGeom` 的 6 标量字段**最终删除**（现已被读取端绕过 ✓，仅作载体 ✓）——注意 `EdgeGeom` 作为**返回类型**会保留 ✓，要删的是侧表**存储**（`self.edges` map ✓，属末阶段「删注册表」✓）。
+**批 3 计划**：vertex 家族（`vertex_point`/`vertex_geom`/tolerance，**27 处 / 7 文件** ✓）——同样按第 6/7 条教训一次改净（写入端 + 读取端 + 生命周期 ✓），并复用 `TShape` 上的 `vertex_core` 槽模式 ✓。
 **round 235 —— T-25 批 2 接线落地（`e8a405ce`）：边 3D 几何读写全部走 `TShape` 槽**
 
 按第 6/7 条教训**一次改净**（写入端 + 读取端 + 生命周期 ✓）：
