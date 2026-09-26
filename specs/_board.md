@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 181 —— 一条**否定结果**：端口 `fix_periodicity_troubles` 也忠实 ⇒ 分叉不在这里；下一批候选与一个待查的 `is_cn_1`**
+
+逐行对读：端口 `projection_cache.rs:298-347` 与 OCCT `ShapeConstruct_ProjectCurveOnSurface.cxx:286-345` **一致**（窗口 `[0,period]`、`saved_point<0 ⇒ 0.5*period`、`is_iso_line` 判定 + 两个分支的边界点改写、4 点 `adjust_to_period` 规整）✓；调用点参数等价（OCCT `theIdx=1/2` vs 端口 `0/1` 是 1-based vs 0-based，`saved_param` 分别 `.X()/.Y()` ✓，`cxx:998-1012` ↔ `:606-613`）✓。**⇒ 分叉不在此** ✗。
+**下一批候选（已交代理）**：`cxx:1015-1018` 球面放弃（端口 `:618-623` ✓）、`cxx:1020-1034` 的 `dPar`/candidate 直线、**`cxx:1036-1058` 的 C1 法向距离检查（端口 `:641-660`）**、`cxx:1079-1086` 等速判据。做法：探针**逐点打印** `a_p2d`（规整后 4 点）、`d_par`、`a_vec0`、每样本的法向距离 `a_dist` 与容差 `a_tol_working`，与 OCCT 侧同一边对照，**第一处不同的量就是分叉点**。
+**待查点（新）**：端口 `is_cn_1(s)`（`:643`）对 **cylinder/cone/torus** 的返回值是否与 OCCT 的 `IsCn1` 等价判据一致 —— 若两者相反，法向检查就会被跳过/执行，正好解释「端口接受、OCCT 拒绝」✗。
 **round 180 —— 定位到最可疑的分叉点：`fixPeriodicityTroubles` 对 4 个探针点的**窗口规整 + `isIsoLine` 分支****
 
 读 OCCT `ShapeConstruct_ProjectCurveOnSurface.cxx:286-` 的定义（调用在 `:998`/`:1007`，见 getLine 内 `:982-1013`）：
