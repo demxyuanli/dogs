@@ -185,6 +185,14 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 180 —— 定位到最可疑的分叉点：`fixPeriodicityTroubles` 对 4 个探针点的**窗口规整 + `isIsoLine` 分支****
+
+读 OCCT `ShapeConstruct_ProjectCurveOnSurface.cxx:286-` 的定义（调用在 `:998`/`:1007`，见 getLine 内 `:982-1013`）：
+1. 窗口 `[0, period]`；`theSavedPoint<0` ⇒ `aSavedParam=0.5*period`（`:296-300`），否则把窗口**平移**到含 `aSavedParam`（`:302-315`）✓；
+2. **`isIsoLine = (aMaxParam - aSavedParam < PConfusion) || (aSavedParam - aMinParam < PConfusion)`** ⇒ `aFixIsoParam = aSavedParam`（`:317-324`）✓；
+3. **4 个探针点全部 `ShapeAnalysis::AdjustToPeriod` 折进 `[min,max)`**（`:326-332`），再按 `isIsoLine` 把边界点改 `aFixIsoParam`（`:333-340`）或改 `aMaxParam`（`:341-345`）✓。
+⇒ 对**跨整周期（首末差 2π）的闭合边**，OCCT 会把 4 点折进同一窗口 ⇒ `aP2d[3]-aP2d[0]` 很小或落进 `isIsoLine` 分支 ⇒ `:1079-1086` 的「2D 弦等速 ⇒ 精确 `Geom2d_Line`」**不会**给出那条开路直线 ✓ ⇒ 走近似臂或 `return None` ✓。
+**已让代理**：把端口 `fix_periodicity_troubles`（`projection_cache.rs:606-613` 调用）与 OCCT `:286-345` 逐行对比（重点：`isIsoLine` 两个分支是否都移植、窗口平移逻辑、`AdjustToPeriod` 语义），**打印 `a_p2d` 在规整前后 + `is_recompute`/`isIsoLine` 的两侧数字**定位第一处分叉，再照抄 OCCT 判据修（从而**不再需要**那段「闭合弦拒绝」诊断 ✗，收尾删除）。
 **round 179 —— ❗**撤回 round 178**：`FixMissingSeam` **不是**机制（被我自己的两条探针数据否掉）；分歧在 `getLine` 的判据**
 
 **反证 1**：我们的 OCCT 探针（`wires_probe` / `--wires`）对 T0M 实测 **`wires_1edge_closed = 172`** ⇒ **OCCT 并不回避「wire 只含一条自闭合边」** ✗；若它真靠 `FixMissingSeam` 先把缝边插进去，这个计数应接近 0。⇒ 代理注释里「OCCT 走的是另一条路（`FixMissingSeam`）」这条推断**被数据否掉**。
