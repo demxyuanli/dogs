@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::fmt;
-use occt_geom::Curve;
+use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 use crate::abs::{ShapeType, ShapeFlags};
 use crate::shape::TopoShape;
@@ -41,6 +41,8 @@ pub struct TShape {
     pub edge_core: Option<EdgeGeomCore>,
     /// The vertex's geometry (T-25 batch 3). `None` until something writes it.
     pub vertex_core: Option<VertexGeomCore>,
+    /// The face's geometry (T-25 batch 4). `None` until something writes it.
+    pub face_core: Option<FaceGeomCore>,
 }
 
 /// Source of `TShape::id` (one per construction, process-wide).
@@ -69,6 +71,7 @@ impl TShape {
             edge_pcurves: None,
             edge_core: None,
             vertex_core: None,
+            face_core: None,
         }
     }
 
@@ -110,6 +113,14 @@ impl TShape {
 
     /// The vertex's geometry, if it has one yet.
     pub fn vertex_core(&self) -> Option<&VertexGeomCore> { self.vertex_core.as_ref() }
+
+    /// The face's geometry store, created on first use (T-25 batch 4).
+    pub fn face_core_mut(&mut self) -> &mut FaceGeomCore {
+        self.face_core.get_or_insert_with(FaceGeomCore::default)
+    }
+
+    /// The face's geometry, if it has one yet.
+    pub fn face_core(&self) -> Option<&FaceGeomCore> { self.face_core.as_ref() }
 }
 
 impl Drop for TShape {
@@ -124,6 +135,7 @@ impl Drop for TShape {
         self.edge_pcurves = None;
         self.edge_core = None;
         self.vertex_core = None;
+        self.face_core = None;
     }
 }
 
@@ -133,6 +145,36 @@ pub struct VertexShape {
     pub base: TShape,
     pub point: occt_core::gp::GpPnt,
     pub tolerance: f64,
+}
+
+/// The geometry of a face (T-25 batch 4: lifted from `FaceGeom`,
+/// `tgeometry.rs:143-148`).
+///
+/// `surface` is optional because a face is built without one
+/// (`BRep_Builder::MakeFace(F)` leaves it null in OCCT).
+#[derive(Clone)]
+pub struct FaceGeomCore {
+    pub surface: Option<Arc<dyn Surface>>,
+    pub tolerance: f64,
+    pub natural_restriction: bool,
+}
+
+impl Default for FaceGeomCore {
+    fn default() -> Self {
+        // `BRep_TFace` defaults: no surface, tolerance 0, natural
+        // restriction false (`BRep_TFace.cxx:30`).
+        Self { surface: None, tolerance: 0.0, natural_restriction: false }
+    }
+}
+
+impl fmt::Debug for FaceGeomCore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FaceGeomCore")
+            .field("has_surface", &self.surface.is_some())
+            .field("tolerance", &self.tolerance)
+            .field("natural_restriction", &self.natural_restriction)
+            .finish()
+    }
 }
 
 /// The geometry of a vertex (T-25 batch 3: lifted from `VertexGeom`,

@@ -21,7 +21,7 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
 use crate::shape::TopoShape;
-use crate::tshape::{EdgePcurves, VertexGeomCore};
+use crate::tshape::{EdgePcurves, FaceGeomCore, VertexGeomCore};
 
 /// Vertex geometry — a 3D point and a tolerance. (BRep_TVertex)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -535,10 +535,29 @@ impl GeometryRegistry {
     pub fn set_face(&self, s: &TopoShape, geom: FaceGeom) {
         let k = key(s);
         self.ids.write().unwrap().insert(k, shape_id(s));
+        // T-25 batch 4: the face geometry lives on the shape itself now.
+        {
+            let mut ts = s.tshape.write().unwrap();
+            let c = ts.face_core_mut();
+            c.surface = Some(geom.surface.clone());
+            c.tolerance = geom.tolerance;
+            c.natural_restriction = geom.natural_restriction;
+        }
         self.faces.write().unwrap().insert(k, geom);
     }
 
     pub fn face_geom(&self, s: &TopoShape) -> Option<FaceGeom> {
+        // T-25 batch 4: read off the face's own `TShape`; the side table is the
+        // safety net while other slots are still being lifted.
+        if let Some(c) = s.tshape.read().unwrap().face_core() {
+            if let Some(surf) = c.surface.clone() {
+                return Some(FaceGeom {
+                    surface: surf,
+                    tolerance: c.tolerance,
+                    natural_restriction: c.natural_restriction,
+                });
+            }
+        }
         self.faces.read().unwrap().get(&key(s)).map(|g| FaceGeom {
             surface: g.surface.clone(),
             tolerance: g.tolerance,
@@ -561,16 +580,12 @@ impl GeometryRegistry {
 
     /// `BRep_Builder::NaturalRestriction(face, flag)`.
     pub fn set_natural_restriction(&self, s: &TopoShape, flag: bool) {
-        if let Some(g) = self.faces.write().unwrap().get_mut(&key(s)) {
-            g.natural_restriction = flag;
-        }
+        s.tshape.write().unwrap().face_core_mut().natural_restriction = flag;
     }
 
     /// `BRep_Builder::UpdateFace` tolerance write.
     pub fn set_face_tolerance(&self, s: &TopoShape, tol: f64) {
-        if let Some(g) = self.faces.write().unwrap().get_mut(&key(s)) {
-            g.tolerance = tol;
-        }
+        s.tshape.write().unwrap().face_core_mut().tolerance = tol;
     }
 
     // ---- lifecycle ----
@@ -588,6 +603,7 @@ impl GeometryRegistry {
             ts.edge_pcurves = None;
             ts.edge_core = None;
             ts.vertex_core = None;
+            ts.face_core = None;
         }
     }
 
