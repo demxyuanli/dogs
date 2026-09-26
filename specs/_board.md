@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 219 —— T-25 设计要点：把侧表搬到 `TShape` 槽需要**内部可变性****
+
+读 `tgeometry.rs` 的 API 面（`set_vertex`:201/`vertex_geom`:207/`vertex_point`:212、`set_edge`:222/`set_edge_range`:233/`edge_geom`:240/`edge_parameters`:263、`edge_pcurves`:310/`set_edge_pcurve`:341/`set_edge_pcurves`:349、`set_edge_tolerance`:404、`shape_key`:473、`set_face`:479/`face_geom`:485/`set_face_tolerance`:514 ✓）：
+- 全部是 **`&self`（注册表）** + **`&TopoShape` 借入**的**读写**方法 ✓；payload 是 `VertexGeom`/`EdgeGeom`/`FaceGeom` 三个结构体 ✓；**pcurve 以 `face_key`（=`shape_key(face)`）为键** ✓。
+- **⇒ 关键设计点**：把 payload 搬进 `VertexShape`/`EdgeShape`/`FaceShape` 之后，调用方仍普遍只持有 **`&TopoShape`**（不可变借入 ✓）⇒ 槽必须用**内部可变性** ✓：`Mutex<T>`（`Sync` ✓，开销小）或 `RwLock<T>`；`RefCell` **不可**（`TopoShape`/`Arc<TShape>` 需要 `Send`/`Sync` ✓）。
+- 另一个决定：pcurve 的键在 `TShape` 上可以改为**面的 `Arc` 指针身份**（或继续用 `shape_key` 数值 ✓，迁移更小 ✗ 但保留了全局键 ✓）；建议**先用 `shape_key` 数值键**以最小化迁移面 ✓，等全部搬完再考虑去键化 ✓。
+⇒ 这两条写入 T-25 步骤 1 的实施约定 ✓（`Mutex` 槽 + 保留数值键 ✓），第一批仍是 pcurve 家族 87 处/14 文件 ✓。
 **round 218 —— ❗❗ 中途实测**推翻 `FixMissingSeam` 路径**：它对目标文件是 **no-op**；真缺件是 **`ShapeFix_ComposeShell`（~3600 行）****
 
 代理先落 `CheckWire` 并实测（探针 `examples/zz_check_wire.rs`，忠实按 `ShapeFix_Face.cxx:1652-1718`）：
