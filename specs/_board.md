@@ -140,6 +140,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 95 —— GT 完整复算 `GetFaceDir`+`FindPointInFace` 拿到真值；落地 loop 忠实订正**
+
+GT 探针新增 `--dir2`：在探针里忠实复算 `BOPTools_AlgoTools.cxx` 的 `FindPointInFace`（`:2160-2231`，用公开的 `IntTools_Context::ProjPS(face)` + `GeomAPI_ProjectPointOnSurf(aPL=aPx^nDTgt)`）与 `GetFaceDir`（`:2110-2152`，含 `found=false` 时的 `GetApproxNormalToFaceOnEdge` 回落，`:2139-2149`）。实测（box∪cyl GF 截面圆，当前面 = 环带）：
+
+```
+CUR type=1(Cyl) eo=0 dt=5e-06 found1=0 dbf=(0,0,-1)   # 当前面 FindPointInFace **失败**
+  CAND Plane eo=1 found=1 db_fin=(-1,0,0) angle= 90     <== 最小 ⇒ 选盘
+  CAND Plane eo=0 found=1 db_fin=( 1,0,0) angle=-90
+  CAND Cyl   eo=0 found=1 db_fin=( 0,0,1) angle=180
+```
+
+⇒ 与 `--faceoff` 的实测真值（从环带 → 选 **Plane**）一致。关键有两点：① 当前面 `FindPointInFace` **返回 false**，于是走 `GetApproxNormalToFaceOnEdge` 回落，把 `aDBF` 变成 `(0,0,-1)`（朝面内）；② 候选面的 `db_fin` 就是初始值（都 `found=1`）。
+
+**端口偏差（已落地订正）**：`algo_tools_face.rs::find_point_in_face` 的循环把 `ps = p_out`（推进采样点）写在了循环体末尾，而 OCCT 的 `do{...}while` **从不推进 `aPS`**（`:2206-2227` 每轮都从同一个近边点量偏移）。端口因此「收敛」到一个朝面外的方向且 `found=true`，永不触发回落 ⇒ 当前面的 `dbf` 停在 `(0,0,1)`（错号）⇒ 角度判据选另一条环带。已删除该推进（+注释 `BOPTools_AlgoTools.cxx:2206-2227`）。
+
+落地后：`occt-topo --lib` 1281/0、`step_geometry_parity` 3/3、`step_obj_area` 11/11 均不变；T-80 仍 7 plane/8.297870（**该订正是必要非充分**：`found` 现在应与 OCCT 同为 false，但行走仍没走到盘，说明 `get_approx_normal`/`GetApproxNormalToFaceOnEdge` 这一支也需对拍）。
+
+**下一步**：① 用 `--dir2` 对拍 `GetApproxNormalToFaceOnEdge`（`BOPTools_AlgoTools3D.cxx:443/469`）输出的 `aPx`/`aDNF`（端口 `algo_tools3d.rs::get_approx_normal`）；② 再对拍一次 `--dir2` 的端口版，直到 `CUR dbf` 与 4 个 `angle` 逐位一致；③ 用 `--faceoff` 6 行验收 + 全套门禁 + GT `8 faces / 8.50265`。
 **round 94 —— ✅ 拿到 OCCT 的初始 `aDN`/`aDTgt`/`aDB`（截面圆 6 张面）**
 
 GT 探针新增 `--dir`（`build_run.bat data/Cube.step --dir`）：用公开件复算 `GetFaceDir` 的初始量 —— `BOPTools_AlgoTools3D::GetNormalToFaceOnEdge(eo, f, t, aD, ctx)` 得 `aDN`（**已含面朝向翻转**）、`BOPTools_AlgoTools2D::EdgeTangent(eo, t, tau)` 得 `aDTgt`、`aDB = aDN ^ aDTgt`。截面圆（r=0.4, z=1，中点在 θ=0 即 P=(0.4,0,1)）：

@@ -166,7 +166,15 @@ fn find_point_in_face(
         if dist <= d_tol || nb <= 0 {
             return if dist < d_tol { Some(p_out) } else { None };
         }
-        ps = p_out;
+        // `FindPointInFace` (`BOPTools_AlgoTools.cxx:2206-2227`) never advances
+        // `aPS`: every iteration measures the offset from the *same* near-edge
+        // point, so a bi-normal that leaves the face makes the offset collapse
+        // (`aV.SquareMagnitude() < anEps` → the function returns false and
+        // `GetFaceDir` takes the `GetApproxNormalToFaceOnEdge` fallback).
+        // Advancing `aPS` instead lets the walk converge on a direction that
+        // points *out* of the face, which is what made `GetFaceOff` choose the
+        // other cylinder band instead of the disc (T-82).
+        let _ = &p_out;
     }
 }
 
