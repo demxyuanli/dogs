@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 243 —— 🎯 T-25 收尾判据与决策：**步骤 1 的判据（几何不再走侧表）已由批 1-4 达成**；「删表」作为独立后续项**
+
+**T-25 步骤 1 的完成判据（设计文档口径）**：约 18 个**真实几何 API** 的读/写不再经过 `GeometryRegistry` 的侧表 ✓。批 1-4 已覆盖全部 **4 个 payload 家族 / 190 处** ✓：pcurve（87）、edge 3D 几何（62）、vertex（27）、face（14）✓ —— 现在这些几何**都存放在 `TShape` 上**（`edge_pcurves` / `edge_core` / `vertex_core` / `face_core` ✓），侧表只是**过渡载体 + 注册**（`edge_geom` 的存在性判定仍走 map ✓、`edge_pcurve_reps` 的 3D 范围回退仍读 map 的 `first/last` ✓）。
+
+**决策：把「删侧表」作为**独立后续项**，不塞进当前批次** ✓ —— 理由：
+1. 现在树是**绿的**（批次门禁 + 逐位对比 ✓），删表会动 `edge_geom` 的存在性语义（`map.get` → `slot.is_some()` ✓）等**行为敏感点** ✗，收益是**架构整洁**而非功能 ✓；
+2. 删表还需要先解决 **`edge_pcurves` 的 surface 身份回退**（`BRep_Tool::CurveOnSurface` 按 `Geom_Surface` 命中 ✓）——它需要 `face_key → 面的 `TopoShape`` 的映射 ✗，或退一步保留一张**只存面 surface 的小 map** ✓（这本身就是设计选择，值得单独做 ✓）；
+3. 去仪式化（`global()` 279 处/89 文件、`shape_key(` 313 处 ✓）是**纯机械**改动 ✓，可分批安全推进 ✓，与删表分开更稳 ✓。
+
+**后续项登记（T-25 收尾）**：① 去仪式化（按文件族分批 ✓，每批跑四道 STEP + phases ✓）；② 面 identity 回退的搬迁（`face_key → TopoShape` 映射或小 map ✓）；③ 删 `vertices`/`edges`/`faces` 三张 map、把 `edge_geom`/`face_geom`/`vertex_geom` 的存在性改为 `slot.is_some()` ✓；④ 删 `TShape::drop` 的 `remove_by_ptr` 与 `GeometryRegistry` 本体 ✓。
 **round 242 —— ⚠️ 操作事故：两个 `export_data_obj` **并发**跑 ⇒ 两次逐位对比均**作废**；已改为单次干净跑**
 
 **事故**：批 3 的电池（代码 = `ca6b454c`）与批 4 的电池（代码 = `d6a70843`）**同时**进入导出阶段 ⇒ 两个 `export_data_obj`（PID 5132/18964 ✓）**并写 `output/`** ✗ ⇒ ① 违反本板既有规则「**不要并行导出**」✗；② 且两者二进制来自**不同代码** ✗ ⇒ **两份 `same/diff` 结果都不可信** ✗✗。
