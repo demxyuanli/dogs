@@ -140,6 +140,30 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 101 —— 决定性实验：排除「偶对朝向」，锁定 T-82 的真根因 = `ProjPS` 未限制在面的 UV 窗口**
+
+① **GT 探针新增 `--faceoff2`**：候选偶对完全按 `BOPAlgo_ShellSplitter::SplitBlock` 的方式构造（用 `BOPTools_AlgoTools::GetEdgeOff`，`BOPTools_AlgoTools.cxx:1099-1127`，强制取**反向朝向**那份边视图，取不到就跳过该候选）。实测与 `--faceoff`（用 `GetEdgeOnFace` 任意朝向）**选出的面完全相同**（f0→Cyl、f1→Plane、f2→Cyl、f3→Plane、f4→Plane、f5→Cyl），只有 `done` 标志不同（`--faceoff2` 全 1）。⇒ **round 96 记的「差异 = 偶对的边视图朝向」被证伪**（这也解释了为什么 round 6/8 把 `get_edge_off_geo`/`same_dir` 的闭合环分支改成朝向比较会失败）。
+
+② **GT `--dir2` 加逐轮/逐早退打印**，定位 OCCT 侧 `FindPointInFace` 失败的**确切分支**：当前环带面在 **`early#2`** 返回 false —— 即
+```
+aPS = aPx; aProj.Perform(aPS); aPS = aProj.NearestPoint();      // #1 成功
+aProjPL.Perform(aPS); aPS = aProjPL.NearestPoint();
+aPS += 2*aTolE*aDB;
+aProj.Perform(aPS);   // <== 这里 IsDone() == false
+```
+⇒ `FindPointInFace` 返回 false ⇒ `GetFaceDir` 走 `GetApproxNormalToFaceOnEdge` 回落 ⇒ `dbf` 由 `(0,0,1)` 变 **`(0,0,-1)`**（朝面内）⇒ 四个候选角 = 90 / −90 / **180** / 90 ⇒ 最小 = **盘** ✓（与 `--faceoff` 真值一致）。
+
+③ **根因**：OCCT 的 `IntTools_Context::ProjPS(aF)`（`IntTools_Context.cxx:247-265`）把投影器**初始化在面的 UV 窗口内**且带 tolerance：
+```cpp
+UVBounds(aF, Umin, Usup, Vmin, Vsup);
+pProjPS->Init(aS, Umin, Usup, Vmin, Vsup, myPOnSTolerance);
+pProjPS->SetExtremaFlag(Extrema_ExtFlag_MIN);
+```
+所以当 `aPS += 2*tolE*aDB` 把点推出面窗口时，`Perform` **合法地返回 not-done**。端口 `int_tools_full/context.rs::project_point_on_face`（`:189-210`）**不限制窗口**（平面走解析投影、非平面走 `geom_api::project_point_on_surface`）、且失败时**回落到 `surface_closest_params` 网格**并返回 `Ok` ⇒ 永不失败 ⇒ 不触发回落 ⇒ `dbf` 停在 `(0,0,1)`。
+
+**修法（待 `occt-topo` 空闲后落地；T-37 正在改同一片调用点，避免冲突）**：把 `project_point_on_face` 改成忠实 `ProjPS`：① 搜索域取 `BRepTools::AddUVBounds`/`uv_box_of_face` 的 `(umin,umax,vmin,vmax)`；② tolerance 用已有的 `pon_s_tolerance`（现仅存字段未用）；③ **无解时返回 `Err`**，并**删掉网格回落**（= A1 替代件 `surface_closest_params` 的最后一处 live 用法）。验收：端口 `[zz-d2]` 的 `CUR dbf` 与 4 个 angle 应逐位复现 GT，然后 `--faceoff` 6 行 + 全套门禁 + GT `8 faces / 8.50265`。
+
+（探针更新已同步进仓库：`specs/occt_probe/occt_probe.cpp` 现含 `--faceoff` / `--faceoff2` / `--dir` / `--dir2`（含 verbose）与 `--cylall`。）
 **round 96 —— 订正探针 `MinStep3D` 后逐项对拍：只剩「偶对的边视图朝向」一处**
 
 先修掉探针自身的简化：`--dir2` 原先把 `aDt` 当作 `max(2*(tolE+tolF), 5e-6)`，**没有实现 `MinStep3D` 的 switch**（`BOPTools_AlgoTools.cxx:2273-2296`：Cylinder 取半径、Cone 取轴到点的距离、Sphere 置 `aDtMin=5e-4` 并取半径、Torus 取大半径、**default（含 Plane）置 `aDtMin=5e-4`**；`aR>100` 再加 `sqrt(d²+2d·aR)`，`d=10·PConfusion`；末了 `aDtMax = max(aDtMax, aDtMin)`）。补齐后探针 `dt` 由 5e-6 变 **0.0005**，与端口 `[zz-d2] CUR … dt=5.000e-4` 一致 ⇒ **端口的 `min_step_3d` 是忠实的**（原先看似的 100× 差是探针的伪差）。

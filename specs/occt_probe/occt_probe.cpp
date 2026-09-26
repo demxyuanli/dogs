@@ -216,6 +216,7 @@ int main(int argc, char** argv)
     // FindPointInFace (:2160-2231) so the final aDB of GetFaceDir (:2110-2152)
     // can be observed.
     struct FindRes { bool found; gp_Pnt pOut; gp_Dir db; };
+    static bool zzVerbose = false;
     auto FindPointInFace = [](const TopoDS_Face& aF, const gp_Pnt& aP, gp_Dir& aDB, gp_Pnt& aPOut,
                               const occ::handle<IntTools_Context>& ctx,
                               GeomAPI_ProjectPointOnSurf& aProjPL, double aDt, double aTolE) -> FindRes {
@@ -227,13 +228,13 @@ int main(int argc, char** argv)
       GeomAPI_ProjectPointOnSurf& aProj = ctx->ProjPS(aF);
       gp_Pnt aPS = aP;
       aProj.Perform(aPS);
-      if (!aProj.IsDone()) return {false, aPOut, aDB};
+      if (!aProj.IsDone()) { if (zzVerbose) std::cout << "      early#1 not done\n"; return {false, aPOut, aDB}; }
       aPS = aProj.NearestPoint();
       aProjPL.Perform(aPS);
       aPS = aProjPL.NearestPoint();
       aPS.SetXYZ(aPS.XYZ() + 2. * aTolE * aDB.XYZ());
       aProj.Perform(aPS);
-      if (!aProj.IsDone()) return {false, aPOut, aDB};
+      if (!aProj.IsDone()) { if (zzVerbose) std::cout << "      early#2 not done\n"; return {false, aPOut, aDB}; }
       aPS = aProj.NearestPoint();
       aProjPL.Perform(aPS);
       aPS = aProjPL.NearestPoint();
@@ -242,12 +243,15 @@ int main(int argc, char** argv)
       do {
         const gp_Pnt aP1(aPS.XYZ() + aDt * aDB.XYZ());
         aProj.Perform(aP1);
-        if (!aProj.IsDone()) return {false, aPOut, aDB};
+        if (!aProj.IsDone()) { if (zzVerbose) std::cout << "      early#3 not done\n"; return {false, aPOut, aDB}; }
         aPOut = aProj.NearestPoint();
         aDist = aProj.LowerDistance();
         aProjPL.Perform(aPOut);
         aPOut = aProjPL.NearestPoint();
         const gp_Vec aV(aPS, aPOut);
+        if (zzVerbose)
+          std::cout << "      it aDist=" << aDist << " |aV|=" << aV.Magnitude()
+                    << " anEps=" << anEps << " dbNow=(" << aDB.X() << "," << aDB.Y() << "," << aDB.Z() << ")\n";
         if (aV.SquareMagnitude() < anEps) return {false, aPOut, aDB};
         aDB.SetXYZ(aV.XYZ());
         aPS = aPOut;
@@ -334,7 +338,9 @@ int main(int argc, char** argv)
     const double aDt = dtMax;
     gp_Pnt p1 = aPx;
     gp_Dir db1 = aDBF;
+    zzVerbose = true;
     FindRes r1 = FindPointInFace(f1, aPx, db1, p1, aCtx, aProjPL, aDt, tolE);
+    zzVerbose = false;
     if (r1.found) {
       aDBF = db1;
     } else {
@@ -423,6 +429,75 @@ int main(int argc, char** argv)
                 << " dN=(" << aD.X() << "," << aD.Y() << "," << aD.Z() << ")"
                 << " dTgt=(" << aDTgt.X() << "," << aDTgt.Y() << "," << aDTgt.Z() << ")"
                 << " dB=(" << db.X() << "," << db.Y() << "," << db.Z() << ")\n";
+    }
+    return 0;
+  }
+  if (argc > 2 && std::string(argv[2]) == "--faceoff2")
+  {
+    // Same as --faceoff, but builds the candidate couples exactly the way
+    // BOPAlgo_ShellSplitter::SplitBlock does: BOPTools_AlgoTools::GetEdgeOff
+    // (BOPTools_AlgoTools.cxx:1099-1127) insists on the edge view whose
+    // orientation is the OPPOSITE of the current one, and skips the candidate
+    // otherwise. Compare the two modes to see whether the couple construction
+    // decides the answer.
+    TopoDS_Shape aBox = BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., -1.), gp_Pnt(1., 1., 1.)).Shape();
+    TopoDS_Shape aCyl = BRepPrimAPI_MakeCylinder(0.4, 2.0).Shape();
+    TopTools_ListOfShape aArgs;
+    aArgs.Append(aBox);
+    aArgs.Append(aCyl);
+    BOPAlgo_Builder aGF;
+    aGF.SetArguments(aArgs);
+    aGF.Perform();
+    TopoDS_Shape aRes = aGF.Shape();
+    TopoDS_Edge aSec;
+    for (TopExp_Explorer ex(aRes, TopAbs_EDGE); ex.More(); ex.Next())
+    {
+      const TopoDS_Edge e = TopoDS::Edge(ex.Current());
+      BRepAdaptor_Curve ac(e);
+      if (ac.GetType() != GeomAbs_Circle) continue;
+      const gp_Circ c = ac.Circle();
+      if (std::abs(c.Radius() - 0.4) < 1e-9 && std::abs(c.Location().Z() - 1.0) < 1e-9) { aSec = e; break; }
+    }
+    if (aSec.IsNull()) { std::cout << "no section circle\n"; return 1; }
+    NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>, TopTools_ShapeMapHasher> aMEF;
+    TopExp::MapShapesAndAncestors(aRes, TopAbs_EDGE, TopAbs_FACE, aMEF);
+    const NCollection_List<TopoDS_Shape>& aLF = aMEF.FindFromKey(aSec);
+    occ::handle<IntTools_Context> aCtx = new IntTools_Context;
+    int k = 0;
+    for (NCollection_List<TopoDS_Shape>::Iterator it(aLF); it.More(); it.Next(), ++k)
+    {
+      const TopoDS_Face f1 = TopoDS::Face(it.Value());
+      TopoDS_Edge e1;
+      if (!BOPTools_AlgoTools::GetEdgeOnFace(aSec, f1, e1)) continue;
+      NCollection_List<BOPTools_CoupleOfShape> aLC;
+      int skipped = 0, kept = 0;
+      for (NCollection_List<TopoDS_Shape>::Iterator jt(aLF); jt.More(); jt.Next())
+      {
+        const TopoDS_Face f2 = TopoDS::Face(jt.Value());
+        if (f2.IsSame(f1)) continue;
+        TopoDS_Edge e2;
+        if (!BOPTools_AlgoTools::GetEdgeOff(e1, f2, e2)) { ++skipped; continue; }
+        BOPTools_CoupleOfShape cs;
+        cs.SetShape1(e2);
+        cs.SetShape2(f2);
+        aLC.Append(cs);
+        ++kept;
+      }
+      TopoDS_Face aOff;
+      const bool done = BOPTools_AlgoTools::GetFaceOff(e1, f1, aLC, aOff, aCtx);
+      BRepAdaptor_Surface b1(f1);
+      if (!aOff.IsNull())
+      {
+        BRepAdaptor_Surface b2(aOff);
+        std::cout << "O2 from f" << k << "(type=" << (int)b1.GetType() << " eo=" << (int)e1.Orientation()
+                  << ") couples=" << kept << "/skip=" << skipped << " -> type=" << (int)b2.GetType()
+                  << " orient=" << (int)aOff.Orientation() << " done=" << (done ? 1 : 0) << "\n";
+      }
+      else
+      {
+        std::cout << "O2 from f" << k << "(type=" << (int)b1.GetType() << " eo=" << (int)e1.Orientation()
+                  << ") couples=" << kept << "/skip=" << skipped << " -> null done=" << (done ? 1 : 0) << "\n";
+      }
     }
     return 0;
   }
