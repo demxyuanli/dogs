@@ -145,7 +145,12 @@ fn main() {
                         ptr_idx.extend((0..n).map(|k| 2 + k));
                     }
                 }
-                142 => ptr_idx.extend([2usize, 4]),
+                // 142 is "142,creation_mode,#surface,#curve_uv,#curve_3d,preference;"
+                // (IGESGeom_ToolCurveOnSurface::WriteOwnParams), so the surface,
+                // the 2-D (UV) curve and the 3-D curve are at fields 2, 3 and 4.
+                // Reading only [2, 4] left every emitted UV curve looking
+                // unreferenced (same class as the T-85 pointer-table fix above).
+                142 => ptr_idx.extend([2usize, 3, 4]),
                 144 => {
                     if let Some(n) = f.get(3).and_then(|s| s.trim().parse::<usize>().ok()) {
                         ptr_idx.push(4);

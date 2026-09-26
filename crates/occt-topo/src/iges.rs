@@ -27,8 +27,20 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt, GpVec};
-use occt_geom::{Curve, Surface};
+use occt_core::gp::{
+    GpAx2, GpAx2d, GpAx22d, GpAx3, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr,
+    GpHypr2d, GpLin, GpLin2d, GpMat2d, GpParab, GpParab2d, GpPln, GpPnt, GpPnt2d, GpTrsf2d, GpVec,
+    GpVec2d, GpXY, GpXyz, TrsfForm,
+};
+use occt_geom::{
+    Curve, GeomBSplineCurve, GeomCircle, GeomEllipse, GeomHyperbola, GeomLine, GeomParabola,
+    Surface,
+};
+use occt_geom2d::curve::Curve2d;
+use occt_geom2d::trimmed::Geom2dTrimmedCurve;
+use occt_geom2d::{
+    Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dHyperbola, Geom2dLine, Geom2dParabola,
+};
 
 use crate::abs::ShapeType;
 use crate::brep_surface::{classify_surface, face_is_planar, face_plane, sphere_center, SurfaceKind};
@@ -534,6 +546,387 @@ fn conic_form_number(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64) -> i32 {
     } else {
         0
     }
+}
+
+// ---------------------------------------------------------------------------
+// 2-D (UV) curve transfer
+//
+// 'BRepToIGES_BRWire::TransferEdge(edge, face, originMap, length, false)'
+// ('BRepToIGES_BRWire.cxx:340-585') writes the edge's p-curve as an IGES curve
+// entity: the p-curve is corrected per surface type, transformed by
+// 'ShapeBuild_Edge::TransformPCurve', reversed for a REVERSED edge, and handed
+// to 'Geom2dToIGES_Geom2dCurve::Transfer2dCurve', which lifts it into the plane
+// Z=0 and reuses the 3-D 'GeomToIGES_GeomCurve::TransferCurve' dispatch.
+//
+// The port has no 'write.surfacecurve.mode' switch, so 'GetPCurveMode()' keeps
+// OCCT's default 1 (On, 'Interface_StaticStandards.cxx:85'); every call here
+// passes 'theIsBRepMode = false' ('BRepToIGES_BRShell.cxx:280', ':312', ':346'),
+// which makes 'analyticMode = (GetConvertSurfaceMode() == 0 && false)' false
+// ('BRepToIGES_BRWire.cxx:356').
+// ---------------------------------------------------------------------------
+
+/// 'gp_Dir2d::Transform' ('gp_Dir2d.cxx:80-105'). The port's
+/// 'GpTrsf2d::transforms_xy' handles points; directions follow OCCT's own rule
+/// (raw matrix, normalise, reverse for a negative scale factor).
+fn dir2d_transform(t: &GpTrsf2d, d: &GpDir2d) -> GpDir2d {
+    match t.form() {
+        TrsfForm::Identity | TrsfForm::Translation => *d,
+        TrsfForm::PntMirror => GpDir2d::new(-d.x, -d.y).unwrap_or(*d),
+        TrsfForm::Scale => {
+            if t.scale_factor() < 0.0 {
+                GpDir2d::new(-d.x, -d.y).unwrap_or(*d)
+            } else {
+                *d
+            }
+        }
+        _ => {
+            let mut xy = GpXY::new(d.x, d.y);
+            xy.multiply_mat2d(t.vectorial_part());
+            let _ = xy.normalize();
+            if t.scale_factor() < 0.0 {
+                xy.reverse();
+            }
+            GpDir2d::new(xy.x, xy.y).unwrap_or(*d)
+        }
+    }
+}
+
+/// 'gp_Pnt2d::Transform' ('gp_Pnt2d.hxx'), which is exactly what
+/// 'GpTrsf2d::transforms_xy' applies.
+fn pnt2d_transform(t: &GpTrsf2d, p: &GpPnt2d) -> GpPnt2d {
+    let mut c = p.coord;
+    t.transforms_xy(&mut c);
+    GpPnt2d::from_xy(c)
+}
+
+/// 'gp_Ax22d::Transform' ('gp_Ax22d.hxx:360-367'): location, X and Y directions
+/// are transformed independently (a mirroring transform may leave the axis
+/// indirect, exactly as OCCT's flag-free 'gp_Ax22d' does).
+fn ax22d_transform(t: &GpTrsf2d, a: &GpAx22d) -> GpAx22d {
+    GpAx22d {
+        point: pnt2d_transform(t, &a.point),
+        vxdir: dir2d_transform(t, &a.vxdir),
+        vydir: dir2d_transform(t, &a.vydir),
+    }
+}
+
+/// 'gp_Trsf2d::SetMirror(const gp_Ax2d&)' ('gp_Trsf2d.cxx:31-46').
+///
+/// The port's 'GpTrsf2d::set_mirror_ax2d' stores the *positive* reflection
+/// matrix together with 'scale = -1', so 'transforms_xy' applies '-R'; this
+/// builds OCCT's own matrix (the negative reflection, 'scale = -1') so the
+/// composite is the reflection R.
+fn mirror_ax2d_trsf(a: &GpAx2d) -> GpTrsf2d {
+    let (vx, vy) = (a.direction().x, a.direction().y);
+    let (x0, y0) = (a.location().x(), a.location().y());
+    let matrix = GpMat2d::new(
+        1.0 - 2.0 * vx * vx,
+        -2.0 * vx * vy,
+        -2.0 * vx * vy,
+        1.0 - 2.0 * vy * vy,
+    );
+    let loc = GpXY::new(
+        -2.0 * ((vx * vx - 1.0) * x0 + vx * vy * y0),
+        -2.0 * (vx * vy * x0 + (vy * vy - 1.0) * y0),
+    );
+    GpTrsf2d {
+        scale: -1.0,
+        shape: TrsfForm::Ax1Mirror,
+        matrix,
+        loc,
+    }
+}
+
+/// 'Mirror(gp_Ax2d(gp::Origin2d(), gp::Dir2d(1., 1.)))'
+/// ('BRepToIGES_BRWire.cxx:463', ':471').
+fn mirror_origin_dir11() -> GpTrsf2d {
+    let ax = GpAx2d::new(
+        GpPnt2d::zero(),
+        GpDir2d::new(1.0, 1.0).expect("gp::Dir2d(1,1) is non-null"),
+    );
+    mirror_ax2d_trsf(&ax)
+}
+
+/// 'Mirror(gp::OX2d())' ('BRepToIGES_BRWire.cxx:464', ':472').
+fn mirror_ox2d() -> GpTrsf2d {
+    let ax = GpAx2d::new(
+        GpPnt2d::zero(),
+        GpDir2d::new(1.0, 0.0).expect("gp::DX2d is non-null"),
+    );
+    mirror_ax2d_trsf(&ax)
+}
+
+/// 'Curve2d->Translate(gp_Vec2d(dx, dy))'.
+fn translate2d(dx: f64, dy: f64) -> GpTrsf2d {
+    let mut t = GpTrsf2d::identity();
+    t.set_translation_vec(&GpVec2d::new(dx, dy));
+    t
+}
+
+/// 'Geom2d_Curve::TransformedParameter' ('Geom2d_Curve.cxx:41-44' default;
+/// 'Geom2d_Line.cxx:246-253', 'Geom2d_Parabola.cxx:249-256',
+/// 'Geom2d_TrimmedCurve.cxx:297-300', 'Geom2d_OffsetCurve.cxx:423-426'): only a
+/// line, a parabola and the trimmed/offset wrappers over them rescale the
+/// parameter; every other type keeps it.
+fn transformed_parameter(curve: &dyn Curve2d, u: f64, t: &GpTrsf2d) -> f64 {
+    if curve.gp_lin2d().is_some() || curve.gp_parab2d().is_some() {
+        if occt_core::precision::Precision::is_infinite(u) {
+            u
+        } else {
+            u * t.scale_factor().abs()
+        }
+    } else if let Some(b) = curve.trimmed_basis() {
+        transformed_parameter(b, u, t)
+    } else if let Some(b) = curve.offset_basis() {
+        transformed_parameter(b, u, t)
+    } else {
+        u
+    }
+}
+
+/// 'Geom2d_*::Transform' for the concrete types this port stores as p-curves -
+/// 'Geom2d_Line', 'Geom2d_Circle', 'Geom2d_Ellipse', 'Geom2d_Hyperbola',
+/// 'Geom2d_Parabola', 'Geom2d_BSplineCurve', 'Geom2d_TrimmedCurve'.
+///
+/// The port's 'Curve2d::transform' only moves the *location* of a line / circle /
+/// conic ('GpLin2d::transform' etc. leave the axis directions untouched), so the
+/// transform is rebuilt from the exact-type queries instead of delegating to it.
+/// Any other curve (Bezier / Offset) keeps the port's own 'transform'.
+fn curve2d_transformed(curve: &Arc<dyn Curve2d>, t: &GpTrsf2d) -> Arc<dyn Curve2d> {
+    // 'Geom2d_TrimmedCurve::Transform' ('Geom2d_TrimmedCurve.cxx:287-293'):
+    // transform the basis, then set the trim to the transformed parameters.
+    if let Some(b) = curve.trimmed_basis() {
+        let nb = curve2d_transformed(&Arc::from(b.clone_dyn()), t);
+        let u1 = transformed_parameter(b, curve.first_parameter(), t);
+        let u2 = transformed_parameter(b, curve.last_parameter(), t);
+        return Arc::new(Geom2dTrimmedCurve::new_sense(nb, u1, u2, true, false));
+    }
+    if let Some(l) = curve.gp_lin2d() {
+        // 'Geom2d_Line::Transform' ('Geom2d_Line.cxx:239-242') ->
+        // 'gp_Lin2d::Position().Transform' (location and direction).
+        return Arc::new(Geom2dLine::new(GpAx2d::new(
+            pnt2d_transform(t, &l.location()),
+            dir2d_transform(t, l.direction()),
+        )));
+    }
+    if let Some(c) = curve.gp_circ2d() {
+        // 'gp_Circ2d::Transform': axis transformed, 'radius *= |ScaleFactor|'.
+        return Arc::new(Geom2dCircle::new(GpCirc2d::new(
+            ax22d_transform(t, c.position()),
+            c.radius() * t.scale_factor().abs(),
+        )));
+    }
+    if let Some(e) = curve.gp_elips2d() {
+        // 'gp_Elips2d::Transform': axis transformed, both radii scaled.
+        let s = t.scale_factor().abs();
+        return Arc::new(Geom2dEllipse::new(GpElips2d::new(
+            ax22d_transform(t, e.axis()),
+            e.major_radius * s,
+            e.minor_radius * s,
+        )));
+    }
+    if let Some(h) = curve.gp_hypr2d() {
+        let s = t.scale_factor().abs();
+        return Arc::new(Geom2dHyperbola::new(GpHypr2d::new(
+            ax22d_transform(t, h.axis()),
+            h.major_radius * s,
+            h.minor_radius * s,
+        )));
+    }
+    if let Some(p) = curve.gp_parab2d() {
+        return Arc::new(Geom2dParabola::new(GpParab2d::new(
+            ax22d_transform(t, p.axis()),
+            p.focal * t.scale_factor().abs(),
+        )));
+    }
+    if let (Some((xs, ys)), Some(knots), Some(degree)) = (
+        curve.bspline_poles2d(),
+        curve.bspline_knots2d(),
+        curve.bspline_degree(),
+    ) {
+        // 'Geom2d_BSplineCurve::Transform': the poles carry the affine map. The
+        // port's 2-D B-spline is non-rational (no weights).
+        let poles: Vec<GpPnt2d> = xs
+            .iter()
+            .zip(ys.iter())
+            .map(|(x, y)| pnt2d_transform(t, &GpPnt2d::new(*x, *y)))
+            .collect();
+        let (out_xs, out_ys): (Vec<f64>, Vec<f64>) =
+            poles.iter().map(|p| (p.x(), p.y())).unzip();
+        return Arc::new(Geom2dBSplineCurve {
+            xs: out_xs,
+            ys: out_ys,
+            knots: knots.to_vec(),
+            degree,
+            periodic: curve.is_periodic(),
+        });
+    }
+    Arc::from(curve.transformed(t))
+}
+
+/// 'ShapeBuild_Edge::TransformPCurve(pcurve, trans, uFact, aFirst, aLast)'
+/// ('ShapeBuild_Edge.cxx:596-699').
+///
+/// Returns 'None' for the arms this port cannot reproduce - the caller then
+/// writes no UV curve for that edge (the null handle of the OCCT transfer).
+fn transform_pcurve(
+    pcurve: &Arc<dyn Curve2d>,
+    trans: &GpTrsf2d,
+    u_fact: f64,
+    first: &mut f64,
+    last: &mut f64,
+) -> Option<Arc<dyn Curve2d>> {
+    // 'cxx:602-608': a non-identity trans is applied and the range ends are
+    // mapped through 'TransformedParameter'.
+    let mut result: Arc<dyn Curve2d> = if trans.form() != TrsfForm::Identity {
+        let r = curve2d_transformed(pcurve, trans);
+        *first = transformed_parameter(r.as_ref(), *first, trans);
+        *last = transformed_parameter(r.as_ref(), *last, trans);
+        r
+    } else {
+        Arc::from(pcurve.clone_dyn())
+    };
+    if u_fact == 1.0 {
+        return Some(result); // 'cxx:609-612'
+    }
+    // 'cxx:614-618': a trimmed curve is replaced by its basis.
+    if let Some(b) = result.trimmed_basis() {
+        result = Arc::from(b.clone_dyn());
+    }
+    // 'tMatu.SetAffinity(gp::OY2d(), uFact)' ('cxx:620-621') scales the X (U)
+    // coordinate by uFact ('gp_GTrsf2d::SetAffinity', 'gp_GTrsf2d.cxx:24-38',
+    // with the Y axis: 'matrix = (uFact, 0; 0, 1)').
+    if result.gp_lin2d().is_some() {
+        // 'cxx:624-641': scale the two range points, rebuild the line through
+        // them and take the range from 'ElCLib::Parameter'.
+        let pf = result.d0(*first);
+        let pl = result.d0(*last);
+        let pf = GpPnt2d::new(pf.x() * u_fact, pf.y());
+        let pl = GpPnt2d::new(pl.x() * u_fact, pl.y());
+        let v = GpVec2d::new(pl.x() - pf.x(), pl.y() - pf.y());
+        let dir = GpDir2d::from_vec2d(&v).ok()?;
+        let line = GpLin2d::from_pnt_dir(pf, dir);
+        *first = occt_core::elib::clib2d::parameter_lin2d(&line, &pf);
+        *last = occt_core::elib::clib2d::parameter_lin2d(&line, &pl);
+        return Some(Arc::new(Geom2dLine::new(GpAx2d::new(pf, dir))));
+    }
+    if result.bezier_nb_poles().is_some() {
+        // UNPORTED ('cxx:642-656'): the arm transforms the Bezier's poles, but
+        // the port's 'Curve2d' exposes only 'bezier_nb_poles', never the poles.
+        return None;
+    }
+    let is_conic = result.gp_circ2d().is_some()
+        || result.gp_elips2d().is_some()
+        || result.gp_hypr2d().is_some()
+        || result.gp_parab2d().is_some();
+    if is_conic {
+        // UNPORTED ('cxx:660-678'): OCCT reruns the trimmed conic through
+        // 'Geom2dConvert_ApproxCurve' and falls back to
+        // 'Geom2dConvert::CurveToBSplineCurve(thecurve, Convert_QuasiAngular)'.
+        // Neither converter is ported.
+        return None;
+    }
+    let (xs, ys) = match result.bspline_poles2d() {
+        Some(p) => p,
+        None => {
+            // UNPORTED ('cxx:679-682'): any remaining 2-D type goes through
+            // 'Geom2dConvert::CurveToBSplineCurve(result, Convert_QuasiAngular)'.
+            return None;
+        }
+    };
+    let knots = result.bspline_knots2d()?.to_vec();
+    let degree = result.bspline_degree()?;
+    // 'cxx:688-698': transform the poles. 'aFirst'/'aLast' are only rewritten in
+    // the conic arm above, so a plain B-spline keeps its range.
+    Some(Arc::new(Geom2dBSplineCurve {
+        xs: xs.iter().map(|x| x * u_fact).collect(),
+        ys: ys.to_vec(),
+        knots,
+        degree,
+        periodic: result.is_periodic(),
+    }))
+}
+
+/// 'Adaptor3d_CurveOnSurface.cxx:72-78' (to3d of a 'gp_Ax22d' on
+/// 'gp_Pln(0,0,1,0)'): 'gp_Ax2(P, VX.Crossed(VY), VX)' with 'P = (x, y, 0)'.
+fn promote_ax22d(a: &GpAx22d) -> Option<GpAx2> {
+    let p = GpPnt::new(a.point.x(), a.point.y(), 0.0);
+    let vx = GpDir::from_xyz(&GpXyz::new(a.vxdir.x, a.vxdir.y, 0.0)).ok()?;
+    let vy = GpDir::from_xyz(&GpXyz::new(a.vydir.x, a.vydir.y, 0.0)).ok()?;
+    let n = vx.crossed(&vy).ok()?;
+    Some(GpAx2::new(p, n, vx).unwrap_or_else(|_| GpAx2::from_axis(p, n)))
+}
+
+/// 'Geom2dToIGES_Geom2dCurve::Transfer2dCurve' ('Geom2dToIGES_Geom2dCurve.cxx:52-68'):
+/// 'GC.TransferCurve(GeomAPI::To3d(start, gp_Pln(0,0,1,0)), Udeb, Ufin)'.
+///
+/// 'GeomAPI::To3d' ('GeomAPI.cxx:56-65') puts the 2-D curve in an
+/// 'Adaptor3d_CurveOnSurface' over the plane Z=0 and 'GeomAdaptor::MakeCurve'
+/// ('GeomAdaptor.cxx:45-92') builds the concrete 'Geom_*' curve of the same
+/// type. 'Geom2dAdaptor_Curve::load' unwraps a 'Geom2d_TrimmedCurve' and keeps
+/// the basis, and 'GeomToIGES_GeomCurve::TransferCurve(Geom_TrimmedCurve)'
+/// ('GeomToIGES_GeomCurve.cxx:456-477') transfers that basis with the requested
+/// range - so promoting the basis with '[First, Last]' is equivalent.
+fn promote_curve2d(curve: &dyn Curve2d) -> Option<Box<dyn Curve>> {
+    let basis: &dyn Curve2d = curve.trimmed_basis().unwrap_or(curve);
+    if let Some(l) = basis.gp_lin2d() {
+        let p = GpPnt::new(l.location().x(), l.location().y(), 0.0);
+        let d = GpDir::from_xyz(&GpXyz::new(l.direction().x, l.direction().y, 0.0)).ok()?;
+        return Some(Box::new(GeomLine::new(GpLin::from_pnt_dir(p, d))));
+    }
+    if let Some(c) = basis.gp_circ2d() {
+        return Some(Box::new(GeomCircle::new(GpCirc::new(
+            promote_ax22d(c.position())?,
+            c.radius(),
+        ))));
+    }
+    if let Some(e) = basis.gp_elips2d() {
+        return Some(Box::new(GeomEllipse::new(GpElips::new(
+            promote_ax22d(e.axis())?,
+            e.major_radius,
+            e.minor_radius,
+        ))));
+    }
+    if let Some(h) = basis.gp_hypr2d() {
+        return Some(Box::new(GeomHyperbola::new(GpHypr::new(
+            promote_ax22d(h.axis())?,
+            h.major_radius,
+            h.minor_radius,
+        ))));
+    }
+    if let Some(p) = basis.gp_parab2d() {
+        return Some(Box::new(GeomParabola::new(GpParab::new(
+            promote_ax22d(p.axis())?,
+            p.focal,
+        ))));
+    }
+    if let (Some((xs, ys)), Some(knots), Some(degree)) = (
+        basis.bspline_poles2d(),
+        basis.bspline_knots2d(),
+        basis.bspline_degree(),
+    ) {
+        // 'Adaptor3d_CurveOnSurface::BSpline()' ('cxx:1489-1520') lifts every
+        // pole to Z=0 and keeps knots/degree/periodicity. The port's 2-D
+        // B-spline is non-rational, so the 'IsRational()' arm of OCCT (weights
+        // array) has no ported source.
+        let poles: Vec<GpPnt> = xs
+            .iter()
+            .zip(ys.iter())
+            .map(|(x, y)| GpPnt::new(*x, *y, 0.0))
+            .collect();
+        return Some(Box::new(GeomBSplineCurve {
+            poles,
+            weights: None,
+            knots: knots.to_vec(),
+            degree,
+            periodic: basis.is_periodic(),
+        }));
+    }
+    // UNPORTED: a 2-D Bezier ('Adaptor3d_CurveOnSurface::Bezier()',
+    // 'cxx:1458-1485') has no pole accessor on the port's 'Curve2d'; any other
+    // type has no 'GeomAdaptor::MakeCurve' arm either ('GeomAdaptor.cxx:79-80'
+    // throws OtherCurve).
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -1806,6 +2199,173 @@ impl IgesWriter {
         (self.emit_plane(&pln), Vec::new())
     }
 
+    /// 'Geom2dToIGES_Geom2dCurve::Transfer2dCurve' +
+    /// 'GeomToIGES_GeomCurve::TransferCurve': lift the 2-D curve to the plane
+    /// Z=0 and reuse the 3-D emitter of 'emit_curve_range'.
+    fn emit_curve2d_range(&mut self, curve: &dyn Curve2d, first: f64, last: f64) -> Option<usize> {
+        let promoted = promote_curve2d(curve)?;
+        self.emit_curve_range(promoted.as_ref(), first, last)
+    }
+
+    /// 'BRepToIGES_BRWire::TransferEdge(edge, face, originMap, length, false)'
+    /// ('BRepToIGES_BRWire.cxx:340-585'): the edge's p-curve, corrected for the
+    /// face's surface type and emitted as an IGES curve entity.
+    ///
+    /// 'theOriginMap' has no port equivalent - OCCT only uses it to look up the
+    /// origin edge of a reversed face before 'SetShapeResult', whose transfer-map
+    /// bookkeeping this port does not keep - so it is treated as empty.
+    fn transfer_edge_uv(
+        &mut self,
+        e: &Edge,
+        f: &Face,
+        uv_bounds: (f64, f64, f64, f64),
+    ) -> Option<usize> {
+        // 'cxx:348-352': 'GetPCurveMode() == 0' cannot happen (the default is
+        // On) and 'theIsBRepMode' is false, so only the degeneracy guard applies.
+        if BRepTool::is_degenerated(e) {
+            return None;
+        }
+        let surf = BRepTool::face_surface(f)?;
+        // 'cxx:374-377': only a bare 'Geom_Plane' returns here. A
+        // 'Geom_RectangularTrimmedSurface' over a plane is *not* a plane for
+        // OCCT's 'IsKind'; the port's trimmed surface delegates 'gp_pln', so the
+        // raw type is required.
+        if surf.rectangular_trimmed_basis().is_none() && surf.gp_pln().is_some() {
+            return None;
+        }
+        let (ufirst, _ulast, vfirst, vlast) = uv_bounds; // 'BRepTools::UVBounds' ('cxx:379')
+        // 'cxx:380-397': peel a rectangular trim, then (from the raw surface
+        // handle) an offset surface.
+        let mut surf_base: Arc<dyn Surface> = match surf.rectangular_trimmed_basis() {
+            Some(b) => b,
+            None => surf.clone(),
+        };
+        if surf.is_offset_surface() {
+            if let Some(b) = surf.offset_basis_surface() {
+                surf_base = b;
+            }
+        }
+        let is_cyl = surf_base.gp_cylinder().is_some();
+        let is_cone = surf_base.gp_cone().is_some();
+        let is_sphere = surf_base.gp_sphere().is_some();
+        let is_torus = surf_base.gp_torus().is_some();
+        let is_rev = surf_base.is_surface_of_revolution();
+        let is_extr = surf_base.is_surface_of_linear_extrusion();
+        let is_bspline = surf_base.is_bspline_surface();
+
+        // 'cxx:359-360': the p-curve and the range of its CurveOnSurface
+        // representation.
+        let (curve2d, mut first, mut last) = crate::boptools_2d::curve_on_surface_range(e, f)?;
+
+        // 'cxx:403-422': 'analyticMode' is false, so the '!analyticMode' guard
+        // holds; a surface of revolution whose (trim-unwrapped) basis curve is a
+        // line also needs the shift.
+        let mut need_shift = is_cyl || is_cone;
+        if is_rev {
+            if let Some(c) = surf_base.revolution_basis_curve() {
+                let c: Arc<dyn Curve> = if c.is_geom_trimmed() {
+                    c.untrimmed_basis().map(|(b, _, _)| b).unwrap_or(c)
+                } else {
+                    c
+                };
+                if c.is_line() {
+                    need_shift = true;
+                }
+            }
+        }
+        let mut curve2d: Arc<dyn Curve2d> = if need_shift {
+            // 'cxx:425-428': translate by '-Vfirst'.
+            curve2d_transformed(&curve2d, &translate2d(0.0, -vfirst))
+        } else {
+            // 'cxx:431': 'Curve2d->Copy()'.
+            Arc::from(curve2d.clone_dyn())
+        };
+
+        // 'cxx:435-455': a periodic B-spline surface is brought back into its
+        // own period.
+        if is_bspline {
+            let (su0, su1) = surf_base.u_range();
+            let (sv0, sv1) = surf_base.v_range();
+            let mut u_shift = 0.0;
+            let mut v_shift = 0.0;
+            if surf_base.is_u_periodic() && (ufirst - su0).abs() > occt_core::precision::PCONFUSION {
+                u_shift = crate::pcurve_full::adjust_to_period(ufirst, su0, su1);
+            }
+            if surf_base.is_v_periodic() && (vfirst - sv0).abs() > occt_core::precision::PCONFUSION {
+                v_shift = crate::pcurve_full::adjust_to_period(vfirst, sv0, sv1);
+            }
+            if u_shift.abs() > occt_core::precision::PCONFUSION
+                || v_shift.abs() > occt_core::precision::PCONFUSION
+            {
+                curve2d = curve2d_transformed(&curve2d, &translate2d(u_shift, v_shift));
+            }
+        }
+
+        // 'cxx:457-474': the IGES surface of revolution inverts (u, v). The
+        // cylinder / cone / sphere arm sits behind the '!analyticMode' guard,
+        // which is true here; the revolution / torus arm has no such guard.
+        if is_cyl || is_cone || is_sphere {
+            curve2d = curve2d_transformed(&curve2d, &mirror_origin_dir11());
+            curve2d = curve2d_transformed(&curve2d, &mirror_ox2d());
+            curve2d = curve2d_transformed(
+                &curve2d,
+                &translate2d(0.0, 2.0 * std::f64::consts::PI),
+            );
+        }
+        if is_rev || is_torus {
+            curve2d = curve2d_transformed(&curve2d, &mirror_origin_dir11());
+            curve2d = curve2d_transformed(&curve2d, &mirror_ox2d());
+            curve2d = curve2d_transformed(
+                &curve2d,
+                &translate2d(0.0, 2.0 * std::f64::consts::PI),
+            );
+        }
+
+        // UNPORTED ('cxx:476-502', all under 'analyticMode'): the cylinder /
+        // cone 'myLen = PI/180' arm, the sphere / torus '180/PI' scaling and the
+        // cone-apex translation are unreachable because every 'TransferEdge'
+        // call from the face path passes 'theIsBRepMode = false'.
+        // 'cxx:504-538': the 'theIsBRepMode && Surf->IsKind(Geom_Plane)' branch
+        // is false too, so 'trans' only carries the extrusion scale.
+        let my_len = surface_transfer_length(surf_base.as_ref(), vfirst, vlast);
+        let mut trans = GpTrsf2d::identity();
+        let mut u_fact = 1.0;
+        if is_extr {
+            // 'cxx:510-532' (emv, bug OCC22126): scale by '1/(Vlast-Vfirst)',
+            // then 'uFact = (Vlast - Vfirst) / (us2 - us1)'.
+            let _ = trans.set_scale(&GpPnt2d::zero(), 1.0 / (vlast - vfirst));
+            let (us1, us2) = surf_base.u_range();
+            let du = us2 - us1;
+            u_fact = (vlast - vfirst) / du;
+        }
+        if is_cyl || is_cone || is_rev {
+            // 'cxx:533-538': 'uFact = 1. / myLen'.
+            u_fact = 1.0 / my_len;
+        }
+        curve2d = transform_pcurve(&curve2d, &trans, u_fact, &mut first, &mut last)?;
+
+        // 'cxx:546-556': a second 'TransformPCurve' pass on a surface of linear
+        // extrusion, shifting the p-curve range onto [0, 1] in u and v.
+        if is_extr {
+            let (us1, us2) = surf_base.u_range();
+            let du = us2 - us1;
+            let trans1 = translate2d(-us1 / du, -vfirst / (vlast - vfirst));
+            curve2d = transform_pcurve(&curve2d, &trans1, 1.0, &mut first, &mut last)?;
+        }
+
+        // 'cxx:558-565': a REVERSED edge reverses the 2-D curve.
+        if e.0.orientation() == crate::abs::Orientation::Reversed {
+            let tmp_first = curve2d.reversed_parameter(last);
+            let tmp_last = curve2d.reversed_parameter(first);
+            curve2d = Arc::from(curve2d.reversed());
+            first = tmp_first;
+            last = tmp_last;
+        }
+
+        // 'cxx:566-568': 'Geom2dToIGES_Geom2dCurve::Transfer2dCurve'.
+        self.emit_curve2d_range(curve2d.as_ref(), first, last)
+    }
+
     /// A face as `BRepToIGES_BRShell::TransferFace` builds it
     /// (`BRepToIGES_BRShell.cxx:250-405`): the base surface entity, one
     /// `CurveOnSurface` (142) per wire, and a `TrimmedSurface` (144) that carries
@@ -1814,12 +2374,11 @@ impl IgesWriter {
     /// The 3-D curve of a wire comes from `BRepToIGES_BRWire::TransferWire`
     /// (`BRepToIGES_BRWire.cxx:662-781`): a single-edge wire is that edge's curve
     /// entity, a wire with two or more edges a `CompositeCurve` (102, form 0).
-    /// The 2-D (UV) curve, which OCCT builds with
-    /// `TransferEdge(edge, face, originMap, length, false)` (`:720`), is UNPORTED
-    /// (audit A26 / task T-78) - the transfer therefore takes the "3-D only" arm
-    /// of `BRepToIGES_BRShell.cxx:285-288`, writing a null `CurveUV` and
-    /// `PreferenceMode = 2`. Edges of the face that belong to no wire
-    /// (`:334-365`) are likewise UNPORTED.
+    /// The 2-D (UV) curve comes from the same `TransferWire` loop (R2-19): OCCT
+    /// calls `TransferEdge(edge, face, originMap, length, false)` (`:720`) per
+    /// edge and collects the results exactly as it does the 3-D curves
+    /// (`:755-774`). The `142` preference is 3 when both curves transferred, 2
+    /// for the 3-D-only case and 1 for UV-only (`BRepToIGES_BRShell.cxx:281-292`).
     ///
     /// **Registered remainder (T-84)**: `510` still carries this port's earlier
     /// layout instead of `IGESSolid_ToolFace::WriteOwnParams`
@@ -1828,6 +2387,18 @@ impl IgesWriter {
     fn emit_face(&mut self, f: &Face) -> usize {
         let (surf_idx, mut synth) = self.emit_face_surface(f);
         let wires = wires_of_face(f);
+        // `BRepTools::UVBounds(aFace, U1, U2, V1, V2)` (`BRepToIGES_BRShell.cxx:253`),
+        // kept once for every `TransferEdge` call of this face (OCCT recomputes
+        // them inside `TransferEdge`, `BRepToIGES_BRWire.cxx:379`).
+        // A bare plane face never reaches `TransferEdge`'s UV computation
+        // (`BRepToIGES_BRWire.cxx:374-377`), so the (non-trivial) bounds are only
+        // derived for the faces that need them.
+        let uv_bounds = match BRepTool::face_surface(f) {
+            Some(s) if !(s.rectangular_trimmed_basis().is_none() && s.gp_pln().is_some()) => {
+                face_uv_bounds_finite(f)
+            }
+            _ => (0.0, 1.0, 0.0, 1.0),
+        };
         // `ShapeAlgo::AlgoContainer()->OuterWire(aFace)` (`cxx:275`) resolves to
         // `ShapeAnalysis::OuterWire` (`ShapeAnalysis.cxx`: the last wire, or the
         // first one with a non-negative `TotCross2D`).
@@ -1835,6 +2406,18 @@ impl IgesWriter {
         let mut curve_refs: Vec<usize> = Vec::new();
         let mut outer_curve: Option<usize> = None;
         let mut inner_curves: Vec<usize> = Vec::new();
+        // `BRepToIGES_BRShell.cxx:270`: `Iprefer` is initialised once and only
+        // updated by the wires / free edges that transfer (OCCT never resets it).
+        // The OCCT initial value is 0; every 142 below assigns it before reading,
+        // so the initialiser is dead code but kept for fidelity.
+        #[allow(unused_assignments)]
+        let mut iprefer = 0i32;
+        // `TransferWire` only writes `theCurve2d` when at least one edge
+        // produced a UV curve (`cxx:755-774`), so a wire with none leaves the
+        // caller's handle untouched (`BRepToIGES_BRShell.cxx:271`); the port
+        // carries it the same way.
+        #[allow(unused_assignments)]
+        let mut carried_uv: Option<usize> = None;
         // The outer wire is transferred first (`cxx:276-294`), then the inner ones
         // (`:301-331`).
         let ordered: Vec<&crate::shape::Wire> = outer_wire
@@ -1847,6 +2430,8 @@ impl IgesWriter {
             .collect();
         for w in ordered {
             let mut edge_refs: Vec<usize> = Vec::new();
+            let mut uv_refs: Vec<usize> = Vec::new();
+            let mut last_uv: Option<usize> = None;
             for e in edges_of_wire(w) {
                 let key = Arc::as_ptr(&e.0.tshape) as usize;
                 let idx = match self.edge_curve_entities.get(&key) {
@@ -1859,6 +2444,13 @@ impl IgesWriter {
                 };
                 edge_refs.push(idx);
                 curve_refs.push(idx);
+                // `BRepToIGES_BRWire::TransferWire` (`cxx:715-724`): every edge's
+                // 2-D curve, collected in the same order as the 3-D ones.
+                let uv = self.transfer_edge_uv(&e, f, uv_bounds);
+                last_uv = uv;
+                if let Some(u) = uv {
+                    uv_refs.push(u);
+                }
             }
             if edge_refs.is_empty() {
                 continue;
@@ -1868,11 +2460,35 @@ impl IgesWriter {
             } else {
                 self.emit_refs(102, 0, format!("102,{},{};", edge_refs.len(), ph_list(edge_refs.len())), &edge_refs)
             };
+            // `cxx:755-774`: one 2-D entity is used directly, two or more become
+            // a `CompositeCurve` (102). The single-entity arm mirrors
+            // `theCurve2d = ent2d` (`cxx:760`), i.e. the last edge's transfer
+            // result rather than `Seq2d(1)`; zero 2-D entities leave the caller's
+            // handle from the previous wire in place.
+            let curve_uv = if uv_refs.len() == 1 {
+                last_uv
+            } else if uv_refs.len() >= 2 {
+                Some(self.emit_refs(102, 0, format!("102,{},{};", uv_refs.len(), ph_list(uv_refs.len())), &uv_refs))
+            } else {
+                carried_uv
+            };
+            carried_uv = curve_uv;
+            // `BRepToIGES_BRShell.cxx:281-324`: the preference follows which of
+            // the two representations transferred.
+            iprefer = if curve_uv.is_some() { 3 } else { 2 };
             // `IGESGeom_CurveOnSurface::Init` (`IGESGeom_CurveOnSurface.cxx:26-40`)
-            // with `Imode = 0` (`cxx:269`) and the "3-D only" preference above;
-            // `IGESGeom_ToolCurveOnSurface::WriteOwnParams` (`:104-115`) writes
-            // `142, creation_mode, surface, curve_uv, curve_3d, preference_mode;`.
-            let cs = self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, curve3d]);
+            // with `Imode = 0` (`cxx:269`);
+            // `IGESGeom_ToolCurveOnSurface::WriteOwnParams` (`:144-152`) writes
+            // `142, creation_mode, surface, curve_uv, curve_3d, preference_mode;`
+            // - field 3 is the UV curve, field 4 the 3-D one.
+            let cs = match curve_uv {
+                Some(uv) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,#1,#2,{iprefer};"), &[surf_idx, uv, curve3d])
+                }
+                None => {
+                    self.emit_refs(142, 0, format!("142,0,#0,0,#1,{iprefer};"), &[surf_idx, curve3d])
+                }
+            };
             match &outer_wire {
                 Some(o) if Arc::as_ptr(&o.0.tshape) == Arc::as_ptr(&w.0.tshape) => {
                     outer_curve = Some(cs)
@@ -1881,10 +2497,9 @@ impl IgesWriter {
             }
         }
         // `cxx:334-365`: edges of the face that are not part of any wire become
-        // further inner contours. OCCT transfers their 3-D curve and their UV curve
-        // (`TransferEdge(edge, face, originMap, length, false)`); the UV curve is
-        // UNPORTED here, so the contour takes the "3-D only" preference 2, exactly
-        // as the wire contours do.
+        // further inner contours. OCCT transfers both their 3-D curve (`:344`) and
+        // their UV curve (`TransferEdge(edge, face, originMap, length, false)`,
+        // `:346`).
         let wire_edge_keys: std::collections::HashSet<usize> = wires
             .iter()
             .flat_map(|w| edges_of_wire(w))
@@ -1905,7 +2520,18 @@ impl IgesWriter {
                 }
             };
             curve_refs.push(idx);
-            inner_curves.push(self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, idx]));
+            let uv = self.transfer_edge_uv(&edge, f, uv_bounds);
+            // `BRepToIGES_BRShell.cxx:347-358`.
+            iprefer = if uv.is_some() { 3 } else { 2 };
+            let cs = match uv {
+                Some(u) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,#1,#2,{iprefer};"), &[surf_idx, u, idx])
+                }
+                None => {
+                    self.emit_refs(142, 0, format!("142,0,#0,0,#1,{iprefer};"), &[surf_idx, idx])
+                }
+            };
+            inner_curves.push(cs);
         }
         curve_refs.append(&mut synth);
 
@@ -2134,6 +2760,52 @@ fn face_uv_bounds_finite(f: &Face) -> (f64, f64, f64, f64) {
     } else {
         (0.0, 1.0, 0.0, 1.0)
     }
+}
+
+/// 'GeomToIGES_GeomSurface::Length()' ('GeomToIGES_GeomSurface.cxx:1441-1443'):
+/// the 'TheLength' the matching 'TransferSurface' overload stored for the
+/// face's surface. Only two arms are not 1:
+///
+/// * 'TransferSurface(Geom_ConicalSurface)' ('cxx:777-823') sets it to the
+///   generatrix span 'gen1.Distance(gen2)', and the generatrix is a unit
+///   direction, so the value is '|V2 - V1|' over the (infinite-substituted) V
+///   bounds;
+/// * 'TransferSurface(Geom_SurfaceOfRevolution)' ('cxx:1111-1169') sets it the
+///   same way only when the trim-unwrapped basis curve is a line.
+///
+/// Every other overload ('cxx:618', '714', '879', '947', '1047', '1132', '1253')
+/// leaves it at 1.
+fn surface_transfer_length(surf: &dyn Surface, v0: f64, v1: f64) -> f64 {
+    let bound = |v: f64, positive: bool| -> f64 {
+        if positive {
+            if occt_core::precision::Precision::is_positive_infinite(v) {
+                occt_core::precision::INFINITE
+            } else {
+                v
+            }
+        } else if occt_core::precision::Precision::is_negative_infinite(v) {
+            -occt_core::precision::INFINITE
+        } else {
+            v
+        }
+    };
+    let (vv0, vv1) = (bound(v0, false), bound(v1, true));
+    if surf.gp_cone().is_some() {
+        return (vv1 - vv0).abs();
+    }
+    if surf.is_surface_of_revolution() {
+        if let Some(c) = surf.revolution_basis_curve() {
+            let c: Arc<dyn Curve> = if c.is_geom_trimmed() {
+                c.untrimmed_basis().map(|(b, _, _)| b).unwrap_or(c)
+            } else {
+                c
+            };
+            if c.is_line() {
+                return (vv1 - vv0).abs();
+            }
+        }
+    }
+    1.0
 }
 
 // ---------------------------------------------------------------------------
