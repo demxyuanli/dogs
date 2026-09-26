@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 203 —— 🚀 T-69 忠实修法**已立项并委派**：移植 `ShapeFix_Face::FixMissingSeam`（`ShapeFix_Face.cxx:1722-2011`）**
+
+新代理（`102148e6`）已启动，brief 含全部已钉死证据（不重复调查）：
+- **症状**：T0M 207 个面的 wire 是 UV 零面积退化环 ⇒ `CheckLacking`（`ShapeAnalysis_Wire.cxx:1711-1793`）读到整周期 gap ⇒ `FixLacking`（`ShapeFix_Wire.cxx:3617-3975`，端口忠实）插重合边 ⇒ `Delaunay produced no triangles` ⇒ 走自创回退；OCCT 侧同文件 `uv_degenerate_faces = 0` ✓；
+- **第一处分歧 = 面的 wire/缝结构**（探针实测）：文件面 `#28229`（`CYLINDRICAL_SURFACE #1304`）只有 **2 个 FACE_BOUND、各 1 条自闭合边**（`#4308=[#17632]`、`#4309=[#17633]`，**无缝边**），而 OCCT 导入后是 **1 wire / 5 edges，含 2 条缝边**（pcurve = Line at u=1.5708）⇒ **OCCT 自己插缝** ✓；
+- **pcurve 计算侧已全部排除**（`get_line` / `generateCurvePoints` / 缓存层 / `value_of_uv` 解析分支逐行一致；C++ 探针直调 OCCT `ShapeConstruct_ProjectCurveOnSurface::Perform` 得与端口**相同**结果 ✓）。
+
+**要实现的**（逐处给 `文件:行号`）：`FixMissingSeam()`（`:1722-2011`：闭合性判定 `:1729-1735`、B 样条周期检查 `:1743-1751`、`Bounds`+`UVBounds` `:1753-1756`、无穷兜底 `:1758-1780`、**缝边插入** `:1780-2011` 含球面分支 `:1920-1925`）+ `Perform` 的门与调用（`:492-500`，`myFixMissingSeamMode` 默认 −1 `:137`，由 ShapeProcessing 设置 `ShapeProcess_OperLibrary.cxx:830`/`XSAlgo_ShapeProcessor.cxx:619-620`；**先核实端口读入路径下该 mode 与 `NeedFix` 语义** `ShapeFix_Root.lxx:101-104`）。落点建议 `shhealing/face_fix.rs` + 必要 `step/` 接线；**禁改** `pcurve_full/`、`meshing/`、`intpatch_*`。
+**验收**：T0M 端口 UV 退化面 **207 → 0**、`--mesh` 失败面 → 0、`v/f` 向 GT **60050/66576** 靠；**15 个 `data/*.step` 三列表**（OCCT 基准见 `specs/_occt_mesh_gt.md`，当前 14 完整一致 + `Shape-2` 差 6/12；**与 OCCT 一致才算过**）；门禁全套（`--lib` 1281/0、`--all-targets`、四道 STEP、`phase5/9/10/19/20`）；任一回归即停手报数。**不要提交**；临时件收尾删。
 **round 202 —— 📥 代理交回（含**决定性证据**，并**纠正我 round 179 的错**）：分歧在**面的 wire/缝结构**，`FixMissingSeam` 重回首位**
 
 代理停手交回 ✓（`git status` 只剩 `surface_projector.rs`）并给了三类硬证据：
