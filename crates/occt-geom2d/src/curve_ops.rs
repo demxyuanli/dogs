@@ -16,14 +16,14 @@
 //! `Extrema_ExtCC2d` only returns *extrema*; the `distance <= tol` intersection
 //! filter is this caller's semantics (see [`curve2d_intersections`]).
 //!
-//! **Fallback retained**: the old 256x256 sampler still runs alongside the
-//! faithful result (see [`sampler_intersections`]). OCCT bounds the local
-//! refinement inside `math_GlobOptMin` (`math_NewtonMinimum::SetBoundary`,
-//! `math_GlobOptMin.cxx:278`; `math_BFGS::SetBoundary`, `:299`) while the
-//! port's `occt_math::globoptmin::GlobOptMin` does not
-//! (`globoptmin.rs:541-566`, UNPORTED engine selection), so the faithful engine
-//! currently misses extrema. The fallback is a fallback, not a specification,
-//! and should be deleted once `GlobOptMin` is faithful.
+//! The old 256x256 sampler and its helpers were **deleted** once
+//! `occt_math::globoptmin::GlobOptMin` grew OCCT's bounded local refinement --
+//! `math_GlobOptMin.cxx:276-301` calls `math_NewtonMinimum::SetBoundary`
+//! (`:278`) / `math_BFGS::SetBoundary` (`:299`), and `crates/occt-math/src/bfgs.rs`
+//! now ports `math_BFGS::SetBoundary` (`math_BFGS.cxx:505-510`) with the
+//! `ComputeMinMaxScale` feasibility box (`:144-196`). With the unbounded BFGS
+//! the engine enumerated one extremum for a two-crossing pair; it now returns
+//! both (verified: unit circle vs the degree-1 segment `(-2,0.5)-(2,0.5)`).
 //!
 //! The R2-18b premise named an `Extrema_CCF` function set solved by
 //! `math_FunctionSetRoot`. **No such class exists in OCCT 8.0.0**: a tree-wide
@@ -298,8 +298,8 @@ pub fn curve2d_distance_to_point(c: &dyn Curve2d, p: &GpPnt2d, tol: f64) -> f64 
 /// tolerance. The caller-level filter `distance <= tol` (and the midpoint
 /// convention for the reported point) is therefore this port's intersection
 /// semantics, not an OCCT branch: an intersection is a zero-distance extremum.
-/// The faithful general route is the primary source; the port's 256x256 sampler
-/// is **retained as a fallback** (see the [`sampler_intersections`] note).
+/// The faithful general route is the only source (the 256x256 sampler was
+/// deleted once `math_GlobOptMin` gained OCCT's bounded local refinement).
 pub fn curve2d_intersections(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<(f64, f64, GpPnt2d)> {
     if let Some(points) = analytic_intersections2d(a, b, tol) {
         return points;
@@ -315,11 +315,6 @@ pub fn curve2d_intersections(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<
         }
     }
 
-    // Retained fallback (see the note below): top up with the port's sampler so
-    // that extrema the ported `math_GlobOptMin` fails to enumerate are not lost.
-    for (u, v, pa, pb) in sampler_intersections(a, b, tol) {
-        push_intersection2d(&mut out, u, v, &pa, &pb, tol);
-    }
     out
 }
 
@@ -339,81 +334,6 @@ fn push_intersection2d(
         return;
     }
     out.push((u, v, mid));
-}
-
-/// **Fallback (not OCCT)** -- the port's original 256x256 sampler with
-/// alternating 1-D minimization, kept because the faithful engine above cannot
-/// be trusted to enumerate *all* extrema yet.
-///
-/// `Extrema_GGenExtCC::Perform` finds its extrema with `math_GlobOptMin`
-/// (`Extrema_GGenExtCC.hxx:617-688`), whose local refinement is **bounded** to
-/// `myGlobA`/`myGlobB` in OCCT -- `math_NewtonMinimum::SetBoundary`
-/// (`math_GlobOptMin.cxx:278`) and `math_BFGS::SetBoundary`
-/// (`math_GlobOptMin.cxx:299`). The port's `occt_math::globoptmin::GlobOptMin`
-/// runs an **unbounded** `BFGS` with numerical gradients
-/// (`crates/occt-math/src/globoptmin.rs:541-566`, declared UNPORTED for the
-/// engine selection), so its iterates leave the curve ranges, hit
-/// `Extrema_GlobOptFuncCCC2::Value`'s out-of-range `false`
-/// (`Extrema_GlobOptFuncCC.cxx:57-61`) and the search loses extrema. Measured
-/// (this port): a unit circle vs the degree-1 B-spline segment
-/// `(-2,0.5)-(2,0.5)` -- two crossings -- yields one extremum; a line `y=0.5`
-/// vs the degree-2 arc `(0,0),(2,2),(4,0)` yields none.
-///
-/// Until `occt-math` grows the bounded local search, this sampler keeps those
-/// intersections. It is a **fallback, not a specification**: once `GlobOptMin`
-/// is faithful, delete it (and `minimize_1d`/`curve_bbox`/`sample_curve`).
-fn sampler_intersections(
-    a: &dyn Curve2d,
-    b: &dyn Curve2d,
-    tol: f64,
-) -> Vec<(f64, f64, GpPnt2d, GpPnt2d)> {
-    let tol = tol.max(1e-12);
-    let na = 256;
-    let nb = 256;
-    let sa = sample_curve(a, b, na);
-    let sb = sample_curve(b, a, nb);
-    if sa.is_empty() || sb.is_empty() {
-        return Vec::new();
-    }
-    let ua0 = sa[0].0;
-    let ua1 = sa[sa.len() - 1].0;
-    let vb0 = sb[0].0;
-    let vb1 = sb[sb.len() - 1].0;
-    let du = ((ua1 - ua0) / na as f64).max(1e-12);
-    let dv = ((vb1 - vb0) / nb as f64).max(1e-12);
-
-    let coarse = tol * 100.0 + 1e-9;
-    let mut out: Vec<(f64, f64, GpPnt2d, GpPnt2d)> = Vec::new();
-    for (ui, ai) in &sa {
-        for (vj, bj) in &sb {
-            if ai.square_distance(bj) >= coarse * coarse {
-                continue;
-            }
-            // Refine the candidate pair by alternating 1-D minimization.
-            let mut u = *ui;
-            let mut v = *vj;
-            for _ in 0..6 {
-                let (nu, _) = minimize_1d(
-                    &|t| a.d0(t).square_distance(&b.d0(v)),
-                    (u - du).max(ua0),
-                    (u + du).min(ua1),
-                );
-                u = nu;
-                let (nv, _) = minimize_1d(
-                    &|t| a.d0(u).square_distance(&b.d0(t)),
-                    (v - dv).max(vb0),
-                    (v + dv).min(vb1),
-                );
-                v = nv;
-            }
-            let pa = a.d0(u);
-            let pb = b.d0(v);
-            if pa.distance(&pb) <= tol {
-                out.push((u, v, pa, pb));
-            }
-        }
-    }
-    out
 }
 
 /// The analytic family of a 2D curve, in `Geom2dAdaptor_Curve::GetType` terms
@@ -617,83 +537,6 @@ pub fn project_point_on_segment(p: &GpPnt2d, a: &GpPnt2d, b: &GpPnt2d) -> (GpPnt
         (((p.x() - a.x()) * abx + (p.y() - a.y()) * aby) / len2).clamp(0.0, 1.0)
     };
     (GpPnt2d::new(a.x() + t * abx, a.y() + t * aby), t)
-}
-
-// --- internals (256x256 sampler fallback) ----------------------------------
-
-/// Golden-section minimization of `f` over `[lo, hi]`. Returns `(argmin, min)`.
-fn minimize_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64) -> (f64, f64) {
-    const GOLD: f64 = 0.6180339887498949;
-    let mut a = lo;
-    let mut b = hi;
-    let mut c = b - GOLD * (b - a);
-    let mut d = a + GOLD * (b - a);
-    let mut fc = f(c);
-    let mut fd = f(d);
-    while (b - a) > 1e-12 {
-        if fc < fd {
-            b = d;
-            d = c;
-            fd = fc;
-            c = b - GOLD * (b - a);
-            fc = f(c);
-        } else {
-            a = c;
-            c = d;
-            fc = fd;
-            d = a + GOLD * (b - a);
-            fd = f(d);
-        }
-    }
-    let x = 0.5 * (a + b);
-    (x, f(x))
-}
-
-/// Approximate bounding box of a bounded curve by sampling: `(xmin, xmax, ymin, ymax)`.
-fn curve_bbox(c: &dyn Curve2d, n: usize) -> Option<(f64, f64, f64, f64)> {
-    let a = c.first_parameter();
-    let b = c.last_parameter();
-    if !a.is_finite() || !b.is_finite() {
-        return None;
-    }
-    let mut minx = f64::INFINITY;
-    let mut maxx = f64::NEG_INFINITY;
-    let mut miny = f64::INFINITY;
-    let mut maxy = f64::NEG_INFINITY;
-    for i in 0..=n {
-        let q = c.d0(a + (b - a) * i as f64 / n as f64);
-        minx = minx.min(q.x());
-        maxx = maxx.max(q.x());
-        miny = miny.min(q.y());
-        maxy = maxy.max(q.y());
-    }
-    Some((minx, maxx, miny, maxy))
-}
-
-/// Sample a curve over a finite parameter window. Unbounded curves get a
-/// window that comfortably covers the other curve's bounding box.
-fn sample_curve(c: &dyn Curve2d, other: &dyn Curve2d, n: usize) -> Vec<(f64, GpPnt2d)> {
-    let a = c.first_parameter();
-    let b = c.last_parameter();
-    let (lo, hi) = if a.is_finite() && b.is_finite() {
-        (a, b)
-    } else {
-        let span = match curve_bbox(other, 32) {
-            Some((x0, x1, y0, y1)) => {
-                let size = (x1 - x0).max(y1 - y0).max(1e-6);
-                let speed = c.d1(0.0).1.magnitude().max(1e-30);
-                (4.0 * size / speed).max(1.0)
-            }
-            None => 100.0,
-        };
-        (-span, span)
-    };
-    (0..=n)
-        .map(|i| {
-            let u = lo + (hi - lo) * i as f64 / n as f64;
-            (u, c.d0(u))
-        })
-        .collect()
 }
 
 
