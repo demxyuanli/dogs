@@ -140,6 +140,28 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 115 —— 判别实验完成：冲突根源 = **STEP 导入面**与**端口自造面**对同一「Reversed」用不同的符号约定（两错相消）**
+
+对 `data/Offset.step` 与端口自造圆柱逐面 dump（临时探针，用完即删；当前为**已回退**状态）：
+
+```
+shape0 type=Solid ori=Forward
+   volume_properties = 2610.501436        <== 与 OCCT 实测 2610.501440 一致（差 4e-6）✓
+   f0  Cylinder ori=Reversed  area=-31.4159      <== Reversed 面在**当前**状态下是负面积
+   f1  Plane    ori=Forward   area=+100.0000
+   f3  Cylinder ori=Forward   area=+ 31.4159
+   f7  Cylinder ori=Reversed  area=-31.4159
+   f11 Cylinder ori=Reversed  area=-31.4159
+   SUM(face areas) = 650.265476          <== 带符号求和（非真实表面积）
+```
+端口自造圆柱：底盖 `Plane ori=Reversed area=+3.141593`（**正**）、顶盖 `Forward +3.141593`、侧柱 `Forward +12.566371` —— 同一状态下，Reversed 的平面是 **+pi**，而 Reversed 的 STEP 圆柱是 **−31.4**。
+
+⇒ **结论**：`FaceGauss::new` 里那次「按 `is_reversed` 再反转一次」对**端口自造面**是**重复折算**（我把 `wires_of_face`/`edges_of_wire` 的 CumOri 复合算进去了，故应删），但对 **STEP 导入面**是**必要补偿**——因为 STEP 的 `same_sense=.F.` 在端口里没有在导入阶段被复合进面/环（OCCT 的 STEP 转档会处理 `same_sense`）。于是：
+- 保留该反转 ⇒ `Offset.step` 的 `volume_properties` = **2610.501436** ✓（OCCT 值），但 T-80 体积 8.737、圆柱面积 4π ✗；
+- 删掉该反转 ⇒ T-80 = **8 faces / 8.502655** ✓ 且圆柱 = **6π** ✓，但 `Offset.step` 体积 = **159.174024** ✗。
+即**两错相消**：必须先把 STEP 导入侧的 `same_sense` 复合做对，两处才能同时为真。
+
+**下一步（已定位到模块）**：查 STEP 导入路径里 `same_sense`／`Orientation::Reversed` 落到哪一层——OCCT 的 STEP 转档（`StepToTopoDS_TranslateFace` + `ShapeFix`）对 `same_sense=.F.` 到底是**反转曲面**、**反转面**还是**反转 pcurve**；把端口 `crates/occt-topo/src/step/`（面转档处）改成与之一致，使导入面「自洽」；随后删掉 `FaceGauss::new` 的重复折算并重落 round-32 的三处修复（`Geom2dCircle::reverse` 忠实化 + 端盖 `oriented(Reversed)` + 删重复折算），**判定标准**：`offset_geometry_is_consistent`(2610.501440) 与 `cylinder_surface_volume`(6π) 与 `box∪cyl`(8 faces/8.502655) **三条同时成立**。
 **round 114 —— 三处忠实修复**同时**满足 T-80 GT 与圆柱面积，但红 `offset_geometry_is_consistent`（OCCT 实测值 2610.501440 → 159.174024）⇒ 已按「回归即回退」整体撤回**
 
 本轮把 round 112/113 的三处改动**一起**落地后实测（提交 `d0b5279`，随后 `db52d9e` 撤回）：
