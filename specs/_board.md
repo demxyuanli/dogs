@@ -140,6 +140,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 88b —— 排除「range 回退」误读，并给出最可能的产生者**
+
+对同一批面对拍了 `pcurve 自身域`、`curve_on_surface_range` 返回值与 3D 边范围：**三者完全相同**（`3d=[0,6.283] rng=[0,6.283] own=[0,6.283]`），所以 round 88 的负 `dot` **不是** range 回退造成的读数假象。48 个「面×边」里有 **3 个** `dot=-0.16`，全部落在**带整圆边界的 Plane 面**（端盖/盘）上 ⇒ 这些面的 pcurve 参数方向确实与其 3D 边相反。
+
+**最可能的产生者（修正 round 83 的「等价」结论）**：`primitives.rs` 的圆柱/圆锥/球端盖用 `GeomPlane(origin, ±Z)` 直接把法向做成 ∓Z，而 OCCT 是 `gp_Pln(axes)`（法向 **+Z**）+ `BRepPrim_OneAxis.cxx:502` 的 **`ReverseFace`**（并配 `BottomWire` 的 `AddWireEdge(..., false)`，`:761`）。两者对**法向**等价，但对**面的 UV 坐标系**不等价：`gp_Ax3(origin, -Z)` 的 X 轴选取与 `gp_Ax3(origin, +Z)` 不同，端盖的 2D 圆 pcurve 是按该 UV 帧构造的 ⇒ **UV 帧镜像 ⇒ pcurve 参数方向反向**。这与实测「只有 Plane 端盖类面出现负 dot」完全吻合。
+
+**下一步（顺序明确）**：① 把 `primitives.rs` 圆柱/圆锥/球的端盖改成 OCCT 的构造（+Z 平面 + `ReverseFace` + `BottomWire`/`TopWire` 的边朝向），先用 `[zz-pc2]` 探针确认 48 个 dot 全为正、且盘/环带之间符合「相邻面反向」；② 再重试 round 86/87 的判据（`GetFaceOff` 的闭合环/几何方向）——它们之前失败正是因为输入数据被这个反向 pcurve 污染；③ 用 GT `--faceoff` 的 6 行输出验收，复跑全套门禁与 GT `8 faces / 8.50265`。
 **round 88 —— 抓到具体缺陷：某张面的 pcurve 方向与 3D 边反向（违反 `CurveOnSurface` 约定）**
 
 按 round 87 的下一步做便宜的决定性检查：在 `build_split_solids_occt` 里对每个 draft 的每张 face、每条边界边打印 `dot(pcurve 推回的 3D 切向, edge_curve.d1)`（pcurve 取 `boptools_2d::curve_on_surface_range`，推 3D 用 `dS/du·du/dt + dS/dv·dv/dt`）。实测（`box∪cyl`）：
