@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 194 —— 补：`make_pcurve_full` 在网格侧的**作用点**（wire 排序 / PreProcessor），与 `fix_add_pcurve` 不同**
+
+完整路径与上下文：
+- `meshing/incremental_mesh/discret_root.rs:815, 858, 899, 1032, 1085, 1156`；
+- `meshing/model_builder/preprocessor.rs:318, 325`；
+- `meshing/model_builder/wire_builder.rs:58, 229, 253, 364, 471` —— 其中 **`:58` 在 `ShapeAnalysis_Wire::CheckOrder` 的移植里**（注释 `:50-57`）：取每条边的 pcurve、按 `PCurve(...,orient=true)` 语义取 `(f/l)` 端点**排序** ✓。
+⇒ **两条路径作用点不同**：`fix_add_pcurve`/`project_curve_on_surface_perform` 决定**存下来的 pcurve**（`CheckLacking` 读的那个）；`make_pcurve_full` 决定**网格管线内部**（wire 排序、`PreProcessor` 一致性）用的 pcurve ✓。**两者都可能导致 162 面失败** ⇒ 已让代理分别报「各自单独开启」的 T0M 指标 ✓。
 **round 193 —— ❗**撤回 round 186/189 的「正交流」结论**：`make_pcurve_full` **就在网格管线路径上**（我漏看了 `meshing/` 一族调用者）**
 
 **我错在哪**：当时只看了 `boptools_2d`/`pave_*`/`fclass2d` 一类调用者就断言「`make_pcurve_full` 只服务 BOP/pave」。把调用者列全后：
