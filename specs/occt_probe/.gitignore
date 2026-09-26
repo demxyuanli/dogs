@@ -3,4 +3,8 @@ occt_probe.exe
 occt_probe.obj
 occt_probe.exp
 occt_probe.lib
+wires_probe.exe
+wires_probe.obj
+wires_probe.exp
+wires_probe.lib
 *.pdb
