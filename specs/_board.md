@@ -185,6 +185,14 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 189 —— ③ 被自己否掉（端口无 B 样条→解析转换）⇒ 提出**调用序列**层面的对照**
+
+- 端口 STEP 侧无「把 `B_SPLINE_CURVE_WITH_KNOTS` 认成解析曲线」的转换：`read_topology.rs:1308` 只在记录为 `CIRCLE` 时 `GeomCircle::new`（`format.rs:631`、`read_geometry.rs:452` 同，属回读/写出用途）；B 样条走 `transfer.rs:361` 产出 `GeomBSplineCurve` ✓ ⇒ **两层 3D 曲线类型应一致**，③ 大概率不成立 ✗。
+- **⇒ 若 ①/②/④（4 探针点/params 首末/面 bounds）也完全相同而结果相反 ⇒ 我们比较的可能不是同一次调用** ✗。已要求代理改做**调用序列**对照：
+  1. 端口侧打印「谁、按什么顺序」调用 `fix_add_pcurve`（`wire_fix.rs:771`）与 `project_curve_on_surface_perform`：调用者、**边的身份**（TShape/STEP `EDGE_CURVE` 记录号）、`first/last`、`is_seam`、`prec`、**是否已有 pcurve**（`:782-785` 的门）；
+  2. OCCT 侧对同一几何边打印 `ShapeFix_Edge::FixAddPCurve`（`ShapeFix_Edge.cxx:475-531`）的调用序列与同样输入；
+  3. **对照点**：哪一侧更早/更晚建 pcurve？是否有一侧**根本不走** `getLine`（例如 OCCT 在 `FixAddPCurve` 前已由别的 pass 建好，如 `FixMissingSeam` 的缝边、或 `FixAddCurve3d` 之后的 Project 分支）？
+**这条「序列」对照常能一举解释「逐行一致但结果不同」**——差异可能不在函数里，而在**谁先跑了什么** ✓。
 **round 188 —— 排除 `value_of_uv` 解析分支（与 OCCT 逐字一致）⇒ 把 A/B 目标改为 **`getLine` 的四点两参与输入****
 
 端口 `surface_projector.rs:532-565`（Plane/Cylinder/Cone/Sphere/Torus）= `ElSLib::Parameters(...)` + `AdjustByPeriod(S, 0.5*(uf+ul), 2π)`（torus 另调 v），对应 OCCT `ShapeAnalysis_Surface.cxx:1264-1292` **逐行一致** ✓；两处「NOT PORTED」（`myExtOK` 缓存、`ComputeBoxes` 早退）均注明**只影响开销不影响结果** ✓。
