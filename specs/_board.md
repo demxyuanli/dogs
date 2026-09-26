@@ -185,6 +185,17 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 144 —— T-54：不必先插桩也能判定「回退实际未命中」，证据就在 GT 表里**
+
+推理链（无需改库代码）：
+1. 逐面回退 `wireframe_face_triangulation`（`discret_root.rs:538-`）用的是**自创 UV 网格**（`wireframe::face_to_triangles`，其头注自述 `nu/nv` 与 `3`/`64` 上下限是 **port-invented**）；
+2. 它给的片数**不可能**与 OCCT 的「边离散化 + 约束 Delaunay」逐位相同——除非恰好撞上；
+3. 而 round 55 的实测里，**15 个文件有 14 个与 OCCT 在同参数下逐位一致**（唯一不一的 `Shape-2` 只差 6 节点/12 三角，且已定位为「那 3 个平面面在文件里没有可用 PCURVE、两侧都靠计算 pcurve」造成的边界微差，见 round 142）；
+4. ⇒ **这 14 个文件里没有任何一面走过回退**（否则那一面的片数会偏离 OCCT）。
+
+⇒ **结论**：回退在导出路径上**实际不可达（或至少对全部 15 个基线文件不可达）**，可以直接按 `wireframe.rs:394-421` 自注执行「**连同回退一起删除**」，并把验收定为「删后 15 文件 `--mesh` 仍与 GT 一致」。插桩计数可作为**补充佐证**（不是前置条件）。
+**删除范围**（与 T-27 同型的「摘除端口自创」批次）：`wireframe::face_to_triangles`(+其对 `planar_polygon_triangulate` 的使用)、`discret_root.rs:281`/`:544`/`:1366`/`:1372` 四处回退、`brepmesh.rs` 的四叉树网格器、`brep_tools.rs:72-75 write_triangulation` 的二级回退。**保留**：`planar_polygon_triangulate` 本身若仍被别处引用则只删调用点（删前 grep 确认，零消费者才删）。
+**注意**：`discret_root.rs:270 build_shape_mesh_wireframe`（整模型回退）与 `:539 wireframe_face_triangulation`（逐面）删除后，「失败的面」应改为**不产出三角化**（与 OCCT `RWMesh_FaceIterator.cxx:87/:89` 略过一致），而不是报错或补网格。
 **round 143 —— T-54 的 4 处回退**角色**厘清（供判定可达性）**
 
 | 位置 | 函数 | 触发的语义 |
