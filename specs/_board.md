@@ -140,6 +140,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 108 —— 订正 round 107：圆柱 draft 的面集合是**对的**（6 面含盘对）；短缺发生在 `ShellSplitter` 的**连接块**一级**
+
+在 `bop_split_solids_occt.rs` 的 `SplitSolid` 构造点插桩（打印每个 `a_s` 的 `in_parts` 长度与 `a_sfs` 种类）后实测，`box∪cyl` 的 FUSE 只有 **2 个** `SplitSolid`：
+
+```
+[zz-s] solid idx=0  in_parts=2 draft_faces=11 total_sfs=11 kinds=[Plane×9, Cylinder×2]      # 盒体
+[zz-s] solid idx=28 in_parts=1 draft_faces=6  total_sfs=6  kinds=[Plane,Plane,Cylinder,Cylinder,Plane,Plane]  # 圆柱
+```
+⇒ **圆柱 draft 的 6 面是对的**（4 plane + 2 cylinder = 2 盖 + 2 环带 + 盘 F/R 对）—— round 107 说的「缺盘对」**是错的层级**：那 4 面是 `SplitSolid`（`BuilderSolid`）内部 `ShellSplitter::make_connexity_blocks` 切出来的一个**块**（`split_block` 的 `my_shapes` = `block.shapes()`，不是整组面）。
+
+**修正后的结论**：圆柱的 6 面在 `ShellSplitter` 里被切成「4 面块（2 盖 + 2 环带）」+ 其余（盘），于是那个 4 面块永远闭不上（`refined=[1f,3f]` 全 `closed=false`）。正确的两单元 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 需要「盘」与「环带/盖」在**同一个块**里。
+
+**下一步**：给 `ShellSplitter::perform` 的 `collect_faces` + `make_connexity_blocks` 加探针，打印圆柱那一组的块划分（每块的 `(种类, 朝向)` 列表）与 `a_ef_map`（`edge_key → 邻面`），判定 ① 是被 `collect_faces` 的 `(TShape, orientation)` 去重/过滤掉了盘，② 还是 `make_connexity_blocks` 在盘与环带之间没有建立邻接（`edge_key` 不一致），③ 还是自由边清洗（`lf.len()==1`）把盘删了。对照 `BOPAlgo_ShellSplitter::MakeConnexityBlocks`（`BOPAlgo_ShellSplitter.cxx:96-135`）与 `BOPAlgo_BuilderSolid::PerformLoops`。
 **round 107 —— 再进一步：圆柱的 `SplitBlock` 输入只有 4 面（缺盘对），所以两单元无法闭合**
 
 插桩 `shell_splitter_block::split_block` 入口（打印 `my_shapes` 的面种类与朝向）后实测，`box∪cyl` 的 FUSE 过程中 `SplitBlock` 被调用 **4 次**、输入集合各不相同：
