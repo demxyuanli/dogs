@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 235 —— T-25 批 2 接线落地（`e8a405ce`）：边 3D 几何读写全部走 `TShape` 槽**
+
+按第 6/7 条教训**一次改净**（写入端 + 读取端 + 生命周期 ✓）：
+- **读取端**：`edge_geom` 的 `curve`/`first`/`last`/`tolerance`/`same_parameter`/`same_range`/`degenerated` 改为**从 `TShape.edge_core` 取** ✓（`curve` 为 `None` 时才回退侧表旧值 ✓ 安全网 ✓）；
+- **写入端**：`set_edge` **排空**到槽 ✓；5 个内部直写点 `set_edge_range`(243)/`set_degenerated`(300)/`set_same_range`(406)/`set_same_parameter`(413)/`set_edge_tolerance`(420) **改写槽** ✓；
+- **生命周期**：`clear_shape` 与 `TShape::drop` 同时清 `edge_pcurves` 与 `edge_core` ✓。
+
+**验收（已跑）**：`--lib` **1281/0** ✓、`step_obj_area` **11/11** ✓。
+**后台进行中**：`step_geometry_parity` + `phase5/9/10/19/20` + `export_data_obj data` + `output/*.obj` 与 `.target-gate/t25_before/` **逐位对比**（下一轮收 ✓）；`step_obj_parity` 随后补 ✓。**未跑完不得视为批 2 通过** ✗。
+**批 2 剩余**：`edge_geom`/`set_edge` 的 62 处调用点去仪式化（可选，后续轮 ✓）；`EdgeGeom` 结构体的 6 标量字段最终删除（待全部读路径确认走槽 ✓）。
 **round 234 —— ✅✅ T-25 批 1 **完整收口**（`step_obj_parity` 14/14）；并开工批 2（第 0 步 `7ed46cfa`）**
 
 **批 1（pcurve 家族，`cb5d3892`）全部验收**：
