@@ -88,7 +88,7 @@ use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
 use crate::shell_splitter::{EKey, ShellSplitter};
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
 
 /// Stable identity key of a shape (the address of its shared `TShape`).
 fn shape_key(s: &TopoShape) -> usize {
@@ -311,22 +311,52 @@ pub(crate) fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -
     out
 }
 
-/// The directed edge keys of a face.
+/// The undirected edge keys of a face, **one entry per edge occurrence**
+/// (`TopExp_Explorer(face, EDGE)` with the default `CumOri = true`, as in
+/// [`face_edge_occurrences`]). `edges_of` uniquifies by `TShape`, so a seam
+/// stored twice in one wire would be counted once — `geometrically_open` then
+/// reports a perfectly closed band as open.
 fn face_edges(f: &Face) -> Vec<EKey> {
-    edges_of(&f.0).into_iter().map(|e| edge_key(&e)).collect()
+    face_edge_occurrences(f).iter().map(edge_key).collect()
 }
 
-/// Whether `shell` has an edge (by undirected key) used by other than exactly
-/// two faces — the geometric-open test complementing
-/// [`AlgoTools::is_open_shell`]'s `TShape`-identity count.
+/// Boundary-edge **occurrences** of a face (see `builder_solid.rs`'s twin).
+fn face_edge_occurrences(f: &Face) -> Vec<Edge> {
+    let mut out = Vec::new();
+    for w in wires_of_face(f) {
+        out.extend(edges_of_wire(&w));
+    }
+    out
+}
+
+/// `BRep_Tool::IsClosed(Shell)` (`BRep_Tool.cxx:1707-1728`) negated: OCCT walks
+/// every edge **occurrence** of the shell (`TopExp_Explorer(shell, EDGE)`,
+/// cumulated orientation), skips degenerated / `INTERNAL` / `EXTERNAL` edges,
+/// and toggles each edge in a map (`Add`, and `Remove` when it was already
+/// there). The shell is closed when at least one boundary edge was seen and
+/// the map ends up **empty**, i.e. every edge occurs an even number of times.
+/// Requiring exactly two occurrences per edge instead misreports a seam that a
+/// single face stores twice (Forward and Reversed) as an open boundary.
 pub(crate) fn geometrically_open(shell: &TopoShape) -> bool {
-    let mut counts: HashMap<EKey, usize> = HashMap::new();
+    let mut odd: HashSet<EKey> = HashSet::new();
+    let mut has_bound = false;
     for f in faces_of(shell) {
-        for k in face_edges(&f) {
-            *counts.entry(k).or_insert(0) += 1;
+        for e in face_edge_occurrences(&f) {
+            if BRepTool::is_degenerated(&e) {
+                continue;
+            }
+            let o = e.orientation();
+            if o == Orientation::Internal || o == Orientation::External {
+                continue;
+            }
+            has_bound = true;
+            let k = edge_key(&e);
+            if !odd.insert(k) {
+                odd.remove(&k);
+            }
         }
     }
-    counts.values().any(|&c| c != 2)
+    !(has_bound && odd.is_empty())
 }
 
 /// The set of undirected edge keys of a shell that are shared by exactly one
@@ -351,6 +381,10 @@ fn open_edges_of_shell(shell: &TopoShape) -> Vec<EKey> {
 fn orient_face_outward(face: &TopoShape, shell: &TopoShape) -> TopoShape {
     let Some(p) = face_sample_point(&Face(face.clone())) else { return face.clone() };
     let Some(s) = BRepTool::face_surface(&Face(face.clone())) else { return face.clone() };
+    // UNPORTED: `orient_face_outward` is a port-only heuristic for open shells
+    // with no OCCT control flow that projects the sample point to UV; OCCT
+    // decides face orientation from the face's pcurves / `BRepGProp` frame
+    // (`BOPAlgo_BuilderSolid.cxx`). The grid stays.
     let (u, v) = surface_closest_params(s.as_ref(), &p, 16, 16);
     if !u.is_finite() || !v.is_finite() {
         return face.clone();
@@ -440,11 +474,19 @@ fn is_split_to_reverse(split: &TopoShape, original: &TopoShape) -> bool {
         return split.orientation() != original.orientation();
     }
     let Some(p) = face_sample_point(&Face(split.clone())) else { return false };
-    let (u, v) = surface_closest_params(s.as_ref(), &p, 32, 32);
-    let (uo, vo) = surface_closest_params(o.as_ref(), &p, 32, 32);
-    if !u.is_finite() || !v.is_finite() || !uo.is_finite() || !vo.is_finite() {
+    // Faithful `BOPTools_AlgoTools::IsSplitToReverse(Face, Face, ...)`
+    // (`BOPTools_AlgoTools.cxx:1316-1427`): the point is projected onto each
+    // supporting surface with `ProjPS` = `GeomAPI_ProjectPointOnSurf`
+    // (`cxx:1393-1406`); `NbPoints() == 0` is the error return
+    // (`cxx:1395-1403`), `false` here.
+    let (Some(ps), Some(po)) = (
+        occt_geom::geom_api::project_point_on_surface(s.as_ref(), &p, occt_core::precision::CONFUSION),
+        occt_geom::geom_api::project_point_on_surface(o.as_ref(), &p, occt_core::precision::CONFUSION),
+    ) else {
         return false;
-    }
+    };
+    let (u, v) = (ps.u, ps.v);
+    let (uo, vo) = (po.u, po.v);
     let mut ns = surface_normal(s.as_ref(), u, v);
     let mut no = surface_normal(o.as_ref(), uo, vo);
     if ns.square_magnitude() < 1e-30 || no.square_magnitude() < 1e-30 {
