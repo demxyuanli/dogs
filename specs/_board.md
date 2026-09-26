@@ -185,6 +185,22 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 155 —— 新探针 `wires_probe`：OCCT 导入 T0M 的逐面 wire 直方图；T-69 的假设收窄到「造边/tol2d」**
+
+新建**独立**只读探针（避免与代理并发改 `occt_probe.cpp`）：`specs/occt_probe/wires_probe.cpp` + `build_wires.bat`（cl 命令行同 `build.bat`），跑法 `wires_probe.exe <file.stp> [面序] [--nofix]`，输出每面 wire 数、每 wire 的 edge 数，以及总计/直方图。
+
+**在 `data/occ/T0M.stp` 上实测**：
+```
+TOTAL faces=1778 wires=1921
+hist(wires->faces): 1->1672   2->92   3->8   5->1   6->1   7->2   8->2
+```
+⇒ **OCCT 也有 92 个 2-wire 面（还有 3/5/6/7/8-wire 面），且 1778 面全部网格化成功** ⇒ **「多 wire」本身不是病**，病在后续处理（与我们已确认的 `frontier=36 fixed=36 / domain=0` 一致）。
+
+**对读 OCCT 后的假设收窄**：
+- `ShapeAnalysis_Wire::CheckLacking`（`ShapeAnalysis_Wire.cxx:1711-1793`）的 lacking 门槛是 **`tol2d = 2 * max(UResolution(tol), VResolution(tol))`**（`:1774-1775`），另有 `:1786-1788` 的 DONE2 条件；**无显式周期归一化** ⇒ 对「pcurve 首末差 2π」的闭合边 **OCCT 也会报 lacking**（与「OCCT 也加边 8792>8138」自洽）；
+- `ShapeFix_Wire::FixLacking`（`ShapeFix_Wire.cxx:3852-3862`）造的是 **`Geom2d_Line(p2d1,p2d2)` + `B.Range(edge,face,0,dist2d)`** 的新边。
+⇒ **差异应不在「报不报」而在「造出来的边是什么」**。已让代理先验两点：① 端口 `check_lacking`（`wire_fix.rs:2192-2252`）的 `tol2d` 是否用**同一公式**（若更小 ⇒ 多报 lacking ⇒ 多造闭合边 ⇒ 零面积退化环，正好解释 face 709）；② 端口造出的边的 3D 表示与 OCCT 的 `B.Range` 语义是否一致（它实测那 4 条边 3D 端点相同、UV 重合）。
+判别法：用 `wires_probe` 在 OCCT 里找与端口 face 709 几何对应的面（Cylinder、2 wire、每 wire 2 边），看其边/pcurve 是否也重合。
 **round 154 —— 网格代理首轮 T-69 总结（净改动 0，按纪律停下）+ 我的两条采纳**
 
 **它独立订正了我两条**（都已采纳，前者作废我 round 130 的「接线采样点数」方案）：
