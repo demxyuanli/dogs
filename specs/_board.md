@@ -142,8 +142,15 @@ cd ..; git worktree remove --force .target-headcheck
 - **T-51 收口**（`962e195`）：`CPnts_MyRootFunction` + `CPnts_AbscissaPoint`（弧长反解）由 `math_FunctionRoot` 驱动，旧 local Newton/bisection 与越界守卫删除；`uniform_abscissa` 内层同走此件。**余项**：`computeType`/`LengthParametrized`/`AbsComposite` 臂（依赖到 basis 参数区间的解包）；`quasi_uniform_abscissa` 仍是替身。
 - **T-88 分诊**（`707fcc3`，见 §3.1a）：非夹具问题，属 T-80/T-82 同族（内部盘未丢 + 圆边重复不共享），由 T-82 收口时一并转绿。
 
-**进行中**：R2-19（IGES 2D UV 曲线，子代理）、R2-18 余项的另一半（`Extrema_ExtCC2d`，子代理）。
-**未开始**：T-54（约束 Delaunay）、T-41（`bop_curved` 网格布尔摘除，需先修 T-82）、T-25/T-28（设计已出，待实施）、T-11 余项。
+- **R2-19 收口**（`d61dcaf`）：非平面面写 UV 曲线 —— `Geom2dToIGES_Geom2dCurve::Transfer2dCurve` 等价发射器 + `ShapeBuild_Edge::TransformPCurve` + `TransferEdge` 主流程（`BRepToIGES_BRWire.cxx:340-585`），非平面面写 `142,0,#0,#UV,#3D,3`；`iges_check` 18/18 ok。同批订正 `iges_check` 的 142 指针表（字段 3 = `curve_uv`，与 T-85 同类检查器缺陷）。
+- **R2-18 余项收口（2D 求交）**（`ec7dbe5`）：规格订正 —— OCCT 8.0.0 **无** `Extrema_CCF`；真实链 = `Extrema_ExtCC2d::Perform`（`:101-453`）→ `Extrema_ECC2d`=`Extrema_GGenExtCC<Adaptor2d_Curve2d,…>`（`.hxx:27-34`）→ `Extrema_GlobOptFuncCCC2`（`Extrema_GlobOptFuncCC.cxx:318-388`）→ `math_GlobOptMin`。新增 `occt-geom2d/src/extrema2d/`（`curve2d_tool`/`glob_opt_func`/`general_extrema`/`ext_cc2d`），`curve2d_intersections` 走忠实件。
+
+**新登记的阻塞（本会话发现）**：
+
+- **`occt-math` 的 `GlobOptMin::compute_local_extremum` 用无界 BFGS**（`globoptmin.rs:541-566`），OCCT 用 `SetBoundary`（`math_GlobOptMin.cxx:276-301`）⇒ 忠实 2D 求交件**无法枚举多极值**（实测：单位圆 vs 1 次 B-spline 线段 2 交点只得 1 个）。已派子代理补 `math_BFGS`/`math_NewtonMinimum` 的 boundary 语义与引擎选择；修好后应删掉 `curve_ops::curve2d_intersections` 的采样回退。**3D 的 `occt-geom/src/extrema_cc/general_extrema.rs` 结构相同，大概率同缺口**，需一并复核。
+- **`occt-core` 的两处 2D 变换替身**（`d61dcaf` 的旁支）：`GpTrsf2d::set_mirror_ax2d` 合成结果为 `-R`（OCCT `gp_Trsf2d::SetMirror` `gp_Trsf2d.cxx:31-46` 为 `R`）；`GpLin2d`/`GpCirc2d`/`GpElips2d::transform` 只移 location、不动轴方向 ⇒ 当前在 `iges.rs` 内自建 OCCT 矩阵并按精确类型重建。**忠实解法是订正 `occt-core`**，登记待办。
+
+**未开始**：T-54（约束 Delaunay）、T-41（`bop_curved` 网格布尔摘除，需先修 T-82）、T-25/T-28（设计已出，待实施）、T-11 余项、T-67 余项（`ExtPExtS`/`ExtPRevS`）。
 ### 3.1 红门禁（当前实测为红：2 条 `--lib` + 3 条集成 + 2 条属性/网格缺陷）
 
 | ID | 门禁 / 用例 | 实测（2026-09-21） | 根因已定位？ | 归属根因批 |
