@@ -185,6 +185,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 175 —— T-69 实施中的**正向信号**（网格计数向 OCCT 靠）+ 一处需查的**导出中断****
+
+我用独立 target 目录跑 `export_data_obj data/occ`（当时新代理正在改 `pcurve_full/projection_cache.rs`），得到：
+```
+ATU01038.step -> v=17927 f=22227     （旧基线 18052/22483）
+T0M.step      -> v=56218 f=55422     （旧基线 46517/46967；OCCT GT 60050/66576）
+```
+⇒ **T0M 的计数明显向 OCCT 靠** ✓（节点 46517→56218 vs GT 60050；三角 46967→55422 vs GT 66576）—— 说明按 `GeomAbs_CurveType` 分派 + 闭合/周期处理的方向是对的 ✓。
+⚠️ **但那次导出在 2 个文件后以 exit 1 结束**（缺 `TDB/a3n00/...`）⇒ 疑似第三个文件 panic/报错；**已要求代理用不过滤输出的方式重跑并查清**（不允许留半通过状态）。
+⚠️ **口径提醒**：round 174 报的「15 个 `data/*.step` v/f 逐位等于基线」是**改动之前**的状态（那次 job 跨过了编辑窗口），**不能**当作 T-69 的验收；代理须在改动稳定后重跑，并按「**与 OCCT 一致才算过**」判定。
+
+**T-28 代理已确认停手** ✓，并独立复核 `step_to_obj` 13/13、export v/f 逐位一致（与我一致）。工作树中 `pcurve_full/projection_cache.rs`、`examples/zz_probe_uv.rs`、`specs/occt_probe/zz_*`、`data/occ_t69/` 属 T-69 代理；`.target-gate/t28_export.txt` 为 T-28 的日志。
 **round 174 —— ✅ T-28 前 3 步**收尾完成**（我独立复算：`step_to_obj` 13/13 + export v/f 逐位一致）**
 
 我在**独立 `CARGO_TARGET_DIR`**（`.target-gate/verify`）串行跑完两项收尾：
