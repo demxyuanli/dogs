@@ -185,6 +185,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 142 —— T-91 判定：端口在 pcurve **关联**这一层是忠实的；28 条「无 pcurve」的边是**文件属性**，OCCT 同样走「自己算 pcurve」**
+
+**① 实测（临时探针，逐面逐边，`Shape-2.step`）**：
+```
+edges with 0 pcurves = 28,  1 pcurve = 136,  >1 = 0,  attached-but-unresolvable = 0
+faces with >=1 pcurve-less edge = 3 (of 31)：face 3 (Plane) 14 条、face 8 (Plane) 12 条、face 30 (Plane) 2 条
+```
+恰好就是文件里那 **3 个 `PLANE`** 面（普查得 `PLANE = 3`）⇒ 这 28 条边的 `SURFACE_CURVE` 里**没有 basis surface 指向该平面实体的 PCURVE**。
+
+**② 对读 OCCT：端口那行 `basis_surf == surf_ref` 过滤是**忠实的****：
+- `StepToTopoDS_GeometricTool::PCurve(SurfCurve, BasisSurf, thePCurve, last)`（`cxx:49-69`）逐个 `AssociatedGeometry`，**`if (thePCurve->BasisSurface() == BasisSurf) return i;`**（`:61`）—— 正是按 **STEP 实体同一性**过滤；
+- 找不到时上游就 `aTool.ComputePCurve(true)`（`StepToTopoDS_TranslateEdgeLoop.cxx:667-671` 注释 *「The edge geometry has no 2D representation」*）⇒ **OCCT 也是自己算 pcurve**，与端口的投影路径同类 ✓；
+- 而 `StepToTopoDS_TranslateEdge::MakePCurve`（`cxx:557-587`）本身**不比较** basis ref（它只把该 PCURVE 的 2D 曲线按 face surface 做 `DegreeToRadian`）—— 过滤是在 `PCurve()` 里做的，所以端口把它放在关联处是对的 ✓。
+
+⇒ **T-91 的「端口漏挂 pcurve」假设被证伪**：端口在「关联/过滤」这一层与 OCCT 同构；`Shape-2` 那 28 条边在 OCCT 侧同样没有可用 pcurve、同样要**计算**出来。
+
+**③ T-91 残余候选（收窄后）**：差异只可能来自**计算 pcurve** 这一步——OCCT 的 `ComputePCurve(true)`（`BRepLib`/`ShapeFix_Edge::FixAddPCurve`，`ShapeFix_Edge.cxx:517-534`）与端口的投影器对同样的 28 条边给出**略微不同**的 2D 曲线 ⇒ 边界微差 ⇒ `Shape-2` 的 6 节点/12 三角（0.2%）。**优先级维持低-中**（仅 1/15 文件、0.2%、不影响任何门禁）；下一步若要收，就对比这 28 条边两侧算出的 2D 曲线端点/采样差。
+（另：`brep_exchange.rs:50-52` 的自注把成因说成「pcurves **are dropped**」并指向 `step.rs`，与本轮实测不符（文件里 pcurve 数量吻合、端口关联忠实）⇒ 该注释应改写为「这 3 个平面面的边在文件里就没有对应 basis surface 的 PCURVE，只能计算」。）
 **round 141 —— T-91 首轮诊断：`Shape-2.step` 的 pcurve **在文件里**（该自注可能已过期）**
 
 直接在 STEP 文本上做的普查（非 cargo，零冲突）：
