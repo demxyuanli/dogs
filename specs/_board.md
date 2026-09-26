@@ -185,6 +185,22 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 162 —— T-25 准备：`GeometryRegistry` 的**调用面画像**（迁移要覆盖的 API 清单）**
+
+统计全仓 610 处调用、**28 个不同 API**，按调用次数：
+```
+ 279  global            101  shape_key            28  edge_geom        26  set_edge_pcurve
+  23  set_pcurve_range   18  set_edge             15  set_edge_pcurves 15  set_same_range
+  13  vertex_point        9  edge_pcurves          9  edge_parameters   9  set_same_parameter
+   7  face_geom           7  vertex_geom           7  set_edge_tolerance 5  set_face
+   5  set_vertex          5  edge_curve            5  remove_pcurves_on_surface
+   4  edge_pcurve         4  clear_shape           3  pcurve_range     （其余 6 个 API 各 1-2 次）
+```
+**读法（对 T-25 的三点指导）**：
+1. **`global`(279) + `shape_key`(101) 占 62%** —— 这两个是「取全局单例 / 取子形状键」的仪式性调用；T-25 的迁移就是**让它们消失**（几何随 `TShape` 走、不再需要键）⇒ 也是收益主体；
+2. **实际几何 API 约 18 个**（上表去掉 `global`/`shape_key` 后的去重集合）⇒ **T-25 第 1 步（给 `TShape` 加几何槽 + 访问器）要能一一对应这 18 个**，这是可核对的完成判据；
+3. 迁移顺序建议仍按热文件（`shhealing/wire_fix.rs` 30、`boptools_2d.rs` 23），但**每搬完一个 API 家族**（例如 pcurve 家族：`set/get_edge_pcurve`+`set_pcurve_range`+`edge_pcurves`+`remove_pcurves_on_surface`）就跑一次全量门禁，避免 501 处改动一次爆。
+**前置仍成立**：须等 T-69（在改 `pcurve_full`/`step`）与 T-28 落地、基线安静后再动（T-25 改 `TShape`，会让所有在改文件同时失效）。
 **round 161 —— 🎯 T-69 根因实测定位：**周期面闭合边的 pcurve 2D 未闭合** ⇒ `CheckLacking` 误报 ⇒ `FixLacking` 忠实造出重合边 ⇒ 零面积 wire**
 
 代理交回三条互相印证的硬数字（我接受，且与我 round 158 的逐行结论**不矛盾**：代码忠实，问题在**它读到的 pcurve**）：
