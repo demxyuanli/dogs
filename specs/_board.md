@@ -164,6 +164,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 128 —— 剩余三项（T-54 / T-28 / T-25）的**执行前判定**：两项需先定策略，一项可委派**
+
+### T-54（A18：`wireframe.rs` 平面耳切 → 约束 Delaunay）——**需先定 re-baseline 策略**
+- 现状：`wireframe.rs:260-380 planar_polygon_triangulate` = 自创「按质心径向排序 + 扇形三角化 + 耳切带孔桥接」，且自述**非凸即返回 `None`**、回落到 UV 网格 ⇒ 网格结果与 OCCT 必然不同。
+- OCCT 侧体量：`BRepMesh_Delaun.cxx` **2348 行** + `BRepMesh_DelaunayBaseMeshAlgo.cxx`。
+- **关键冲突**：移植后**平面三角化会变** ⇒ `export_data_obj` 的 `v=/f=` 计数**必然**变化，而 §2 把「16/16 且逐位一致」当作回归门禁。
+  ⇒ 必须先定策略：**(a)** 以 OCCT 真值重建基线（用 GT 探针对同批 STEP 输出面片数/节点数，再替换 §2 的 export 期望值）；**(b)** 或把 export 门禁改为「与 OCCT 的偏差在既有容差内」而非逐位相等。**在此决定之前不动 T-54**（否则只能「改完即回退」）。
+
+### T-28（ImpPrm HVertex 合并 + `intana`/`intpatch` 重叠）——**可委派，分 3 步做前段**
+- 设计见 `specs/_design_architecture_t25_t28.md` §T-28（6 步；权威 = `IntPatch_ImpPrmIntersection.cxx:221-469`，本段从 `:329` 起）。
+- 可委派的是**第 1–3 步**（数据层 `PathPoint.is_new/vertex_id` + `TopolTool.identical`；平移 `cxx:329-465`；`attach_wline_ends` 的 `SetVertex` `cxx:1149-1151`/`1255-1257`），因为它们的门禁是**四道 STEP + phase + export 逐位一致**（不涉及网格 re-baseline）✓。
+- 第 4/5 步（删 `intpatch` 版 closed form、统一分派器）体量与风险更大，且会动 `intpatch.rs` 的既有断言（须按 goal ④ 以 OCCT 为准订正），留后。
+- **委派前置**：当前 `--lib` 因 T-80 的 `brep_gprop_full` 中间态而红（1280/1）⇒ 等那项落地、基线复绿后再启动，避免新代理对着红基线度量。
+
+### T-25（`GeometryRegistry` 侧表 → 几何进 `TShape`）——**架构级，最后做**
+- 设计见同文档 §T-25：127 文件 / 501 处引用、6 步、含 `clear_shape` 29 文件测试夹具清理；**必须等 §3.2/§3.3 全部落地、门禁全绿后再动**，否则每次都会与在改的文件互斥。
+
+⇒ 本轮结论：**三项都不是「可以直接开工」的状态**（两项等策略/基线、一项等前置），故不动手，只记录判定与前置条件（符合「完成即停；旁支写报告」）。当前**唯一在跑的实质工作**是 T-80 的 `compute_domain` 朝向修复（子代理）。
 **round 127 —— §3.3 T-41 第一步：三处自创机制**就地标 UNPORTED**（摘除留待回归批次）**
 
 按审计 A5 的三处落点，逐处读代码确认它们**确为端口自创**并**当前可达**（故本轮只标注、不摘除）：
