@@ -185,6 +185,10 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 246 —— 收尾准备：新增小 `face_surfaces` map（纯增量）**
+
+`GeometryRegistry` 加 `face_surfaces: RwLock<HashMap<usize, Arc<dyn Surface>>>` ✓（面 identity 回退专用 ✓，比整张 `FaceGeom` 小 ✓，surface 不变 ⇒ 无同步问题 ✓）；写入点：`set_face` ✓；清理点：`clear_shape` / `remove_by_ptr` / `clear_all` ✓（三处都补了 ✓）。**纯增量、无读取方、行为不变** ✓；编译已入队（等当前电池释放锁 ✓）。
+**下一步（收尾正题，下一轮）**：① `edge_geom`/`face_geom`/`vertex_geom` 的存在性改判 `slot.is_some()`（前置已核实等价 ✓，见 round 245）；② 回退改用 `face_surfaces`（`edge_pcurves`/`pcurve_range`/`edge_pcurve_reps`/`remove_pcurves_on_surface` 四处 ✓）；③ 删三张 map 字段与其 12 个写点（改为清槽 ✓）；④ 编译 + `--lib` + `step_obj_area` + 逐位对比 ✓。
 **round 245 —— ✅ 收尾前置已核实：三张 map 只有 **12 个写点**，且**全部**在建槽路径或生命周期上**
 
 `grep '(vertices|edges|faces)\.write\(\)\.unwrap\(\)\.(insert|remove|clear|get_mut)'` ⇒ **12 处**：

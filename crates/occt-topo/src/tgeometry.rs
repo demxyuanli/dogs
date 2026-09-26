@@ -168,6 +168,11 @@ pub struct GeometryRegistry {
     /// removes the geometry only when the ids match, so a stale drop cannot
     /// erase a later shape's entries at a reused address.
     ids: RwLock<HashMap<usize, u64>>,
+    /// T-25 end phase: `face_key` -> the face's `Geom_Surface`, kept for the
+    /// `BRep_Tool::CurveOnSurface` identity fallback while the full `faces`
+    /// map is on its way out. Surfaces never change, so this never needs
+    /// resynchronising (unlike the tolerances in `FaceGeom`).
+    face_surfaces: RwLock<HashMap<usize, Arc<dyn Surface>>>,
 }
 
 /// Registry key: the address of the `TShape` stored inside the shared
@@ -194,6 +199,7 @@ impl GeometryRegistry {
             edges: RwLock::new(HashMap::new()),
             faces: RwLock::new(HashMap::new()),
             ids: RwLock::new(HashMap::new()),
+            face_surfaces: RwLock::new(HashMap::new()),
         })
     }
 
@@ -543,6 +549,7 @@ impl GeometryRegistry {
             c.tolerance = geom.tolerance;
             c.natural_restriction = geom.natural_restriction;
         }
+        self.face_surfaces.write().unwrap().insert(k, geom.surface.clone());
         self.faces.write().unwrap().insert(k, geom);
     }
 
@@ -597,6 +604,7 @@ impl GeometryRegistry {
         self.vertices.write().unwrap().remove(&k);
         self.edges.write().unwrap().remove(&k);
         self.faces.write().unwrap().remove(&k);
+        self.face_surfaces.write().unwrap().remove(&k);
         // T-25: the edge geometry lives on the shape itself now.
         {
             let mut ts = s.tshape.write().unwrap();
@@ -623,6 +631,7 @@ impl GeometryRegistry {
         self.vertices.write().unwrap().remove(&ptr);
         self.edges.write().unwrap().remove(&ptr);
         self.faces.write().unwrap().remove(&ptr);
+        self.face_surfaces.write().unwrap().remove(&ptr);
     }
 
     /// Number of live entries (vertices + edges + faces).
@@ -640,6 +649,7 @@ impl GeometryRegistry {
         self.vertices.write().unwrap().clear();
         self.edges.write().unwrap().clear();
         self.faces.write().unwrap().clear();
+        self.face_surfaces.write().unwrap().clear();
     }
 }
 
