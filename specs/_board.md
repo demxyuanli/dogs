@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 207 —— 接线位置的**结论**：端口没有面级修复 pass ⇒ 必须**新建调用点****
+
+- `step/` 里**没有**面遍历的修复循环（grep `faces_of(` 只命中 `tests.rs` ✗）；
+- 端口对 `XSAlgo_ShapeProcessor` 只移植了 **`CheckPCurve`** 一支（`shhealing/xsalgo_check_pcurve.rs`，引 `XSAlgo_ShapeProcessor.cxx:344` ✓），**没有**面级 `ShapeFix_Shape`/`ShapeFix_Face::Perform` 走查 ✗；
+- 现有 `check_pcurves_and_shift`/`fix_edge_curves_all` 都是**丝级** ✓。
+⇒ 本批要**同时**加两件：① `shhealing/face_fix.rs` 里的 `CheckWire` + `FixMissingSeam`（忠实移植）；② **面级调用点**：STEP 导入把面装配好之后，对该 shape 的每个面调用一次 ✓（OCCT 侧对应 `ShapeFix_Shape` 的面循环，`ShapeFix_Shape.cxx:200` 一带，经 `XSAlgo_ShapeProcessor` 的 FixShape 处理器 ✓）。**已要求代理**在注释里写明这是**新增接线**及其 OCCT 对应行号 ✓。
+**风险提示（已发）**：新增调用点会让**所有** STEP 导入路径都过一遍该 pass ⇒ 15 个 `data/*.step` 的计数**可能变化**（允许，但按「与 OCCT 一致才算过」判定 ✓；若某文件**变差**则停下报数 ✗）。
 **round 206 —— `FixMissingSeam` 的两个移植要点（我读码确认，供代理与我将来的 review）**
 
 **① `CheckWire`（`ShapeFix_Face.cxx:1652-1722`）很轻** ✓：遍历 wire 的边，`isDeg = false`（只要有一条非退化边）；把 `sae.PCurve(edge, face, c2d, f, l, orient=true)` 的 **`pcurve(l) − pcurve(f)`** 累加成 `vec`；然后 `||vec.X()| − dU| < 0.1*dU` ⇒ `isuopen = ±1`（按 `vec.X()` 符号），否则 0；v 同理（`:1700-1711`）✓。依赖只有 **`ShapeAnalysis_Edge::PCurve(..., orient=true)`**（端口的 `curve_on_surface_oriented` ✓）⇒ 移植无难点 ✓。
