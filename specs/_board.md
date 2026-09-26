@@ -185,6 +185,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 148 —— ❗**T-87 结案：**不是缺陷** —— OCCT 自己的网格给出**完全相同**的数字**
+
+我扩了 GT 探针的 `--mesh`（新增 `meshvol=` 与 `neg_triangles=`：逐面按 `Poly_Triangulation` 节点算 `v0·(v1×v2)/6` 求和并统计负号），跑 `data/Offset.step`（端口真实参数 `0.056 / 20°`）：
+
+```
+OCCT :  TOTAL faces=26 nodes=712 triangles=892 meshvol=2207.96 neg_triangles=6
+端口 :  output/Offset.obj  vertices=712 triangles=892 signedvol=2207.9557 neg=6
+```
+**逐位相同**（节点/三角/带符号体积/负号个数全等）。
+
+⇒ **T-87 结案为「非缺陷」**：
+1. 那 **6 个负号三角**全在 **3 个 `Reversed` 平面面**（face 2/5/6，每面 2 个，整面同号）—— 而**每面**对原点的带符号体积本来就**可以为负**（散度定理的参考点选择），只看「形状凸不凸」去断言「应全正」**不成立**（`Offset.step` 并非凸体）。OCCT 自己的网格也正是这 6 个负号；
+2. **网格发散体积 2207.96 vs 解析 2610.50** 也是 **OCCT 网格自身**的值（逐面独立节点块、未焊接 ⇒ 面缝处不闭合，散度积分本就偏低）⇒ 端口的 OBJ 与 OCCT 同构 ✓；
+3. 因此 `output/Offset.obj` 无需改动，§3.1 那条「非用例：`brep_to_obj` 网格绕向」与 §3.2 序 4 的 T-87 均可关闭。
+
+**方法论（第三次同型教训）**：T-87 的立项依据是「凸体应全正 + 2208≠2610.5」这类**未经 OCCT 验证的直觉**；一旦把 OCCT 自身网格的同量算出来（本轮 `meshvol`/`neg_triangles`），症状立刻消失。以后凡「绕向/体积符号」类怀疑，**先跑这条 GT**。
+
+另：我此前为 T-91 建的临时探针与本轮的 T-87 探针已删除；T-91 的结论已在 round 142 记账。
 **round 147 —— T-87 现状复核（用一条**非 cargo**的复现法，可随时重跑）**
 
 **复现**（直接读 `output/Offset.obj`，无需编译 —— 已记入本板供以后每轮快速核对）：

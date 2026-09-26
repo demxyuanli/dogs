@@ -126,7 +126,8 @@ int main(int argc, char** argv)
     const double anAngle      = (argc > 4) ? std::atof(argv[4]) : 0.5;
     BRepMesh_IncrementalMesh aMesher(aShape, aDeflection, false, anAngle);
     TopExp_Explorer            anEx(aShape, TopAbs_FACE);
-    int                        anIdx = 0, aNodes = 0, aTris = 0;
+    int                        anIdx = 0, aNodes = 0, aTris = 0, aNegTris = 0;
+    double                     aMeshVol = 0.0;
     for (; anEx.More(); anEx.Next(), ++anIdx)
     {
       TopLoc_Location                     aLoc;
@@ -137,8 +138,28 @@ int main(int argc, char** argv)
       std::cout << "FACE " << anIdx << " nodes=" << aN << " triangles=" << aT << "\n";
       aNodes += aN;
       aTris += aT;
+      // Signed mesh volume of this face's triangles w.r.t. the origin -- the
+      // quantity T-87 compares (divergence theorem over the triangulation).
+      if (!aTri.IsNull())
+      {
+        for (int t = 1; t <= aTri->NbTriangles(); ++t)
+        {
+          int n1, n2, n3;
+          aTri->Triangle(t).Get(n1, n2, n3);
+          const gp_Pnt a = aTri->Node(n1).Transformed(aLoc.Transformation());
+          const gp_Pnt b = aTri->Node(n2).Transformed(aLoc.Transformation());
+          const gp_Pnt c = aTri->Node(n3).Transformed(aLoc.Transformation());
+          const double v = a.XYZ().Dot(b.XYZ().Crossed(c.XYZ())) / 6.0;
+          aMeshVol += v;
+          if (v < 0.0)
+          {
+            ++aNegTris;
+          }
+        }
+      }
     }
     std::cout << "TOTAL faces=" << anIdx << " nodes=" << aNodes << " triangles=" << aTris
+              << " meshvol=" << aMeshVol << " neg_triangles=" << aNegTris
               << " deflection=" << aDeflection << " angle=" << anAngle << "\n";
     return 0;
   }
