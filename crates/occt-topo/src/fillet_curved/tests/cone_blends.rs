@@ -1,12 +1,12 @@
 use super::*;
 
-use super::*;
 
-    use occt_core::gp::{GpCone, GpCylinder, GpLin, GpPln, GpSphere};
-    use occt_geom::{GeomCone, GeomCylinder, GeomLine, GeomPlane, GeomSphere};
-    use crate::shape::{Shell, Solid, Vertex};
+
+    use occt_core::gp::{GpCone, GpCylinder, GpSphere};
+    use occt_geom::{GeomCone, GeomCylinder, GeomPlane, GeomSphere};
+    use crate::shape::{Solid};
     use crate::shell_check::shell_is_closed;
-    use crate::tgeometry::GeometryRegistry;
+
     use crate::topo_tools_full::{faces_of, vertices_of};
 
     // ------------------------------------------------------------------

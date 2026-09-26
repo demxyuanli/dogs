@@ -20,7 +20,7 @@ use crate::builder::TopoBuilder;
 use crate::builder_area::AreaBuilder;
 use crate::builder_face::FaceBuilder;
 use crate::iterator::ShapeIterator;
-use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
+use crate::shape::{Edge, TopoShape};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{edges_of, vertices_of};
 

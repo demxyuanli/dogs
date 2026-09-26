@@ -1,5 +1,5 @@
-use super::prelude::*;
-use super::*;
+
+
 
 /// The built-in 5×7 glyph set: `A–Z`, `0–9`, space and `':'`.
 pub(super) const BITMAP_GLYPHS: &[(char, [[u8; 5]; 7])] = &[

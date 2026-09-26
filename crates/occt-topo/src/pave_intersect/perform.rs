@@ -1,4 +1,4 @@
-use super::prelude::*;
+
 use super::*;
 
 /// `BOPAlgo_PaveFiller::PutSEInOtherFaces` (`BOPAlgo_PaveFiller_6.cxx:4277`).

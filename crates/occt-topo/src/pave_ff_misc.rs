@@ -8,11 +8,11 @@ use std::collections::HashSet;
 
 use crate::bopds::BopdsDS;
 use crate::bopds_ff::BopdsCurve;
-use crate::inttools_roots;
-use crate::pave_common::update_vertex_sd;
+
+
 use crate::pave_filler::PaveFiller;
-use crate::shape::Vertex;
-use crate::brep_tool::BRepTool;
+
+
 
 /// `BOPAlgo_PaveFiller::GetFullShapeMap`.
 pub fn get_full_shape_map(ds: &BopdsDS, n_f: usize, mi: &mut HashSet<usize>) {

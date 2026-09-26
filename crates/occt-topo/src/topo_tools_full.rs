@@ -13,7 +13,7 @@ use occt_core::gp::GpPnt;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::iterator::cumulated_children;
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
+use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
 
 /// Map every distinct sub-shape of the given types, keyed by type.

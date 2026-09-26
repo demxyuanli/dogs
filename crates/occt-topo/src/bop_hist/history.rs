@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Stable key of a shape inside the history: the address of its shared TShape.
 ///

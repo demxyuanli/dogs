@@ -30,7 +30,7 @@ use crate::bop_split_to_reverse::{emit_warnings, orient_split_with_warn, Reverse
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::int_tools_full::IntToolsContext;
-use crate::shape::{Edge, Face, TopoShape, Wire};
+use crate::shape::{Edge, Face, TopoShape};
 use crate::topo_tools_full::edge_vertices;
 
 /// Vertex → incident edges map used by `HasMultiConnected`.

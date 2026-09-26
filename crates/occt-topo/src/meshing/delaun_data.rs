@@ -15,10 +15,10 @@
 //! Indices follow OCCT: vertices/links/elements are **1-based** in the public
 //! API; storage is 0-based `Vec`s.
 
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use occt_core::gp::{GpPnt2d, GpXY};
-use occt_core::precision::{CONFUSION, PCONFUSION};
+use occt_core::precision::{CONFUSION};
 
 use super::delaun_types::{DelaunLink, DelaunPairOfIndex, DelaunTriangle, DelaunVertex, VertexState};
 

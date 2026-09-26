@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 
 use occt_core::gp::{GpDir, GpPnt, GpVec};
-use occt_core::precision::{ANGULAR, CONFUSION, RESOLUTION};
+use occt_core::precision::{ANGULAR, CONFUSION};
 
 use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::AlgoTools;

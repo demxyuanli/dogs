@@ -12,7 +12,7 @@ use crate::abs::Orientation;
 use crate::algo_tools::AlgoTools;
 use crate::bopalgo_tools::compute_tolerance_of_cb;
 use crate::bopds::{BopdsPaveBlock, BopdsShapeInfo};
-use crate::brep_tool::BRepTool;
+
 use crate::pave_common::{update_common_blocks_with_sd_vertices, update_edge_tolerance};
 use crate::pave_ff_exist::{pb_key, PbKey};
 use crate::pave_filler::PaveFiller;

@@ -2,8 +2,8 @@ use super::*;
 use super::tests::{box_vol, clear_tree, disjoint_box_shapes, overlapping_boxes, test_box_at};
 use crate::builder::TopoBuilder;
 use crate::primitives::BRepPrimBox;
-use crate::shape::{Face, Shell, Solid};
-use crate::tgeometry::GeometryRegistry;
+use crate::shape::{Shell};
+
 use occt_core::gp::GpPnt;
 
     #[test]

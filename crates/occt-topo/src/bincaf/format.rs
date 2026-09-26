@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 // ---- surface / curve kind tags ------------------------------------------
 

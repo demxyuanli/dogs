@@ -4,7 +4,7 @@
 //! area, normal, world centroid, planarity, perimeter, a degree-1 B-spline
 //! surface approximation, and UV sub-rectangle splitting.
 
-use std::sync::Arc;
+
 
 use occt_core::gp::{GpPnt, GpTrsf, GpVec, GpXyz};
 use occt_geom::Surface;

@@ -284,7 +284,7 @@ pub fn boolean_triangle_count(a: &TopoShape, b: &TopoShape, resolution: usize, o
 mod tests {
     use super::*;
     use crate::primitives::BRepPrimBox;
-    use occt_core::gp::GpTrsf;
+
 
     #[test]
     fn point_in_mesh_box() {

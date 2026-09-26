@@ -258,7 +258,7 @@ mod tests {
     use std::sync::Arc;
     use crate::builder::TopoBuilder;
     use crate::mesh::{mesh_box, mesh_surface_area};
-    use crate::shape::{Face, Solid, Vertex};
+    use crate::shape::{Solid, Vertex};
     use crate::tgeometry::GeometryRegistry;
     use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpPnt, GpVec};
     use occt_geom::{GeomLine, GeomPlane};

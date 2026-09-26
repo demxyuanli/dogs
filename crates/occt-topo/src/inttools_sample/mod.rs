@@ -47,7 +47,7 @@ pub(crate) use crate::meshing::range_splitter::{classify_surface, SurfaceType};
 mod samples;
 mod surface_sample;
 pub use samples::*;
-pub use surface_sample::*;
+
 
 #[cfg(test)]
 #[path = "tests.rs"]

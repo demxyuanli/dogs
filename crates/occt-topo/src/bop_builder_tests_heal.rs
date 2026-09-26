@@ -1,10 +1,10 @@
 use super::*;
-use super::tests::{box_vol, clear_tree, disjoint_box_shapes, overlapping_boxes, test_box_at};
+use super::tests::{box_vol, clear_tree, overlapping_boxes, test_box_at};
 use super::tests_api::crossing_shell;
 use crate::builder::TopoBuilder;
 use crate::primitives::BRepPrimBox;
 use crate::shape::{Face, Shell};
-use crate::tgeometry::GeometryRegistry;
+
 use occt_core::gp::GpPnt;
 
     #[test]

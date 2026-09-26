@@ -13,7 +13,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::bopds::BopdsPaveBlock;
-use crate::brep_tool::BRepTool;
+
 use crate::int_tools_full::IntToolsContext;
 use crate::pave_ff::CoupleOfPaveBlocks;
 use crate::pave_ff_exist::{pb_in_face, pb_key, prepare_post_treat_ff, PbKey};

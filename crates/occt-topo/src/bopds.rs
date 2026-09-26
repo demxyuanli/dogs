@@ -29,7 +29,7 @@
 //! the other Phase-15 wave-1 modules.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+
 
 use occt_core::bnd::BndBox;
 use occt_core::kernel::containers::IndexedMap;

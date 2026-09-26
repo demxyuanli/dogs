@@ -11,7 +11,7 @@
 //! Swap for `delaun_index::CircleTool` when it lands.
 mod prelude {
 
-pub(crate) use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+pub(crate) use std::collections::{BTreeMap, BTreeSet, HashMap};
 pub(crate) use std::f64::consts::PI;
 
 pub(crate) use occt_core::gp::{GpPnt2d, GpVec2d, GpXY};
@@ -29,9 +29,9 @@ mod triangulation;
 mod frontier;
 mod polygon_meshing;
 pub use constants::*;
-pub use triangulation::*;
-pub use frontier::*;
-pub use polygon_meshing::*;
+
+
+
 
 #[cfg(test)]
 #[path = "tests.rs"]

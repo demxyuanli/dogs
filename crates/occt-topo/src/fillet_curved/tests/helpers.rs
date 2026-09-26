@@ -1,6 +1,6 @@
 use super::*;
 
-use super::*;
+
 
     use occt_core::gp::{GpCone, GpCylinder, GpLin, GpPln, GpSphere};
     use occt_geom::{GeomCone, GeomCylinder, GeomLine, GeomPlane, GeomSphere};

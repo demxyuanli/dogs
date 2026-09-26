@@ -157,7 +157,7 @@ mod edge_edge;
 mod find_solutions;
 mod solvers;
 pub use edge_edge::*;
-pub use solvers::*;
+
 
 #[cfg(test)]
 #[path = "tests.rs"]

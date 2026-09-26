@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpPnt, GpVec};
-use occt_geom::{Curve, GeomLine, GeomPlane, Surface};
+use occt_geom::{GeomLine, GeomPlane, Surface};
 
 use crate::abs::Orientation;
 use crate::brep_surface;

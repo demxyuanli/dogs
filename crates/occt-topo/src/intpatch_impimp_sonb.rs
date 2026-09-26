@@ -2,7 +2,7 @@
 //! Source: `IntStart_SearchOnBoundaries.gxx` BoundedArc, `IntPatch_ArcFunction.cxx`.
 
 use occt_core::gp::GpPnt;
-use occt_core::precision::Precision;
+
 use occt_geom::Surface;
 
 use crate::geom_int::{RestrictionArc, TopolTool};

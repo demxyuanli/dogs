@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 pub(super) const ANG_DEV_1DEG: f64 = PI / 180.0;
 pub(super) const ANG_DEV_90DEG: f64 = 90.0 * ANG_DEV_1DEG;

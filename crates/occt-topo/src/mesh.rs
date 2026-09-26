@@ -1,6 +1,6 @@
 //! Shape → mesh conversion (deflection-based tessellation).
 //! Source: `BRepMesh_IncrementalMesh` (simplified wireframe/box meshing).
-use crate::shape::{Solid, TopoShape, Face};
+
 use crate::abs::ShapeType;
 use occt_core::gp::GpPnt;
 use occt_core::bnd::BndBox;

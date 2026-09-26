@@ -24,7 +24,7 @@ use crate::builder::TopoBuilder;
 use crate::builder_solid::BuilderSolid;
 use crate::fclass2d::FaceState;
 use crate::shape::{Edge, TopoShape};
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools_full::{edges_of, faces_of};
 
 /// Shape type of the building element for a given dimension
 /// (`TypeToExplore` in `BOPAlgo_BOP.cxx`).

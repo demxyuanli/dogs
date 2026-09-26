@@ -52,14 +52,14 @@ pub(crate) use crate::bop_hist::BopHistory;
 pub(crate) use crate::bopds::BopdsDS;
 pub(crate) use crate::boptools_2d;
 pub(crate) use crate::brep_tool::BRepTool;
-pub(crate) use crate::builder_area::AreaBuilder;
-pub(crate) use crate::builder_face::{make_face_from_wire, FaceBuilder};
+
+pub(crate) use crate::builder_face::{make_face_from_wire};
 pub(crate) use crate::fclass2d::{FClass2d, FaceState};
 pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, vertex_position};
-pub(crate) use crate::wire_splitter::{WireEdgeSet, WireSplitter};
+pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position};
+
 
 }
 

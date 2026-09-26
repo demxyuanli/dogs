@@ -35,9 +35,9 @@ mod prelude {
 pub(crate) use std::f64::consts::PI;
 pub(crate) use std::sync::Arc;
 
-pub(crate) use occt_core::gp::{GpAx2, GpAx3, GpCone, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus, GpVec};
-pub(crate) use occt_geom::bspline_surface::fit_surface_grid;
-pub(crate) use occt_geom::{GeomCylinder, GeomPlane, GeomSphere, GeomTorus, Surface};
+pub(crate) use occt_core::gp::{GpAx2, GpAx3, GpCylinder, GpDir, GpPnt, GpSphere, GpTorus, GpVec};
+
+pub(crate) use occt_geom::{GeomCylinder, GeomSphere, GeomTorus, Surface};
 
 pub(crate) use crate::brep_surface::{
     classify_surface, is_planar, sphere_center, surface_closest_params, surface_normal, SurfaceKind,

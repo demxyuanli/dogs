@@ -1,4 +1,4 @@
-use super::prelude::*;
+
 use super::*;
     use crate::bbox_from_geometry::shape_bbox;
     use crate::brep_tool::BRepTool;

@@ -24,7 +24,7 @@
 //! through `dyn Surface` (`NbUIntervals` / `NbUPoles`).
 mod prelude {
 
-pub(crate) use std::collections::BTreeSet;
+
 pub(crate) use std::f64::consts::PI;
 pub(crate) use std::sync::Arc;
 

@@ -17,7 +17,7 @@ use crate::fclass2d::FaceState;
 use crate::int_tools_full::IntToolsContext;
 use crate::pave_common::update_vertex_sd;
 use crate::pave_filler::{EdgeRangeDistance, PaveFiller};
-use crate::shape::{Edge, Face, Vertex};
+use crate::shape::{Face, Vertex};
 
 /// `BOPAlgo_PaveFiller::CheckFacePaves` (vertex index vs On/In maps).
 pub fn check_face_paves_index(n_vx: usize, on: &[usize], inn: &[usize]) -> bool {

@@ -75,7 +75,7 @@ pub fn split_edges_at(edges: &[Edge], params_by_edge: &[Vec<f64>]) -> Vec<Edge> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use occt_geom::Curve;
+
     use crate::shape::TopoShape;
     use crate::tgeometry::GeometryRegistry;
     use crate::brep_tool::BRepTool;

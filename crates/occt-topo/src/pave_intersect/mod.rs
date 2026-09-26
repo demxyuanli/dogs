@@ -26,7 +26,7 @@
 mod prelude {
 
 pub(crate) use std::collections::{HashMap, HashSet};
-pub(crate) use std::sync::Arc;
+
 
 pub(crate) use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
 pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, RESOLUTION};
@@ -610,5 +610,5 @@ mod face_face;
 mod perform;
 pub use fill_ctx::*;
 pub use vertex_face::*;
-pub use face_face::*;
+
 pub use perform::*;

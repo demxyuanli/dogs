@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Combined analytic mass properties of a closed solid.
 #[derive(Debug, Clone)]

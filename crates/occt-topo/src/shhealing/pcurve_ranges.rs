@@ -2,12 +2,12 @@ use super::prelude::*;
 use super::*;
 
 use occt_core::elib::{clib, slib};
-use occt_core::gp::{GpCirc, GpPnt, GpPnt2d, GpVec};
+use occt_core::gp::{GpCirc, GpPnt, GpVec};
 use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION, Precision};
 use occt_geom::Surface;
 use occt_geom2d::curve::Curve2d;
 
-use crate::abs::Orientation;
+
 use crate::boptools_2d::{curve_on_surface_oriented, replace_pcurve};
 use crate::brep_surface::SurfaceKind;
 use crate::brep_tool::BRepTool;

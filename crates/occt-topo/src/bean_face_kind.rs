@@ -2,7 +2,7 @@
 use occt_core::gp::{GpDir, GpPnt, GpVec};
 use occt_geom::{Curve, Surface};
 
-use crate::brep_surface::sphere_center;
+
 
 const PI: f64 = std::f64::consts::PI;
 

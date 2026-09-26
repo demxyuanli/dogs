@@ -126,7 +126,7 @@ mod tests {
     use super::*;
     use crate::primitives::BRepPrimBox;
     use crate::shape::Face;
-    use crate::topo_tools_full::faces_of;
+
 
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-3 * b.abs().max(1.0)

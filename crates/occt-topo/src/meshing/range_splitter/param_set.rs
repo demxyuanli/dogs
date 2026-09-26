@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 use occt_geom::Curve;
 
 /// Sorted set of real parameters used to track boundary U/V values. Mirrors

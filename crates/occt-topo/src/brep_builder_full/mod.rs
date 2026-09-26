@@ -73,7 +73,7 @@ pub(crate) use occt_geom::{Curve, GeomBSplineCurve, GeomEllipse, GeomLine, GeomP
 pub(crate) use crate::brep_builder_api;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
-pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
+pub(crate) use crate::shape::{Edge, Face, Shell, Solid, Vertex, Wire};
 pub(crate) use crate::topo_tools_full;
 
 }

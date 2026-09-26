@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpPnt, GpVec};
 
-use crate::abs::{Orientation, ShapeType};
+use crate::abs::{ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, TopoShape, Wire};
 use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};

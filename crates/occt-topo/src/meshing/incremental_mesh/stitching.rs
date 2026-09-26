@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Append an edge's UV points to a boundary chain, reversing the edge when
 /// needed so the chain stays a continuous closed polygon.

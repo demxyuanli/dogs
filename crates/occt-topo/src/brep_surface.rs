@@ -10,7 +10,7 @@
 use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
 use occt_geom::Surface;
 
-use crate::brep_tool::BRepTool;
+
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 

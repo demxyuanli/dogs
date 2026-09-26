@@ -32,7 +32,7 @@ use occt_geom::Curve;
 
 use crate::abs::ShapeType;
 use crate::brep_tool::BRepTool;
-use crate::shape::{Edge, Face, TopoShape, Vertex};
+use crate::shape::{Edge, Face, Vertex};
 use crate::topo_tools_full::edge_vertices;
 
 // ---------------------------------------------------------------------------

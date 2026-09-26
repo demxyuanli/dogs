@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Deflection used to derive the angular sampling step of analytic surfaces.
 /// Source: `IntTools_TopolTool::ComputeSamplePoints` (1.e-02).

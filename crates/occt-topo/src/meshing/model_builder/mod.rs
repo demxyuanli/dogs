@@ -27,7 +27,7 @@ pub(crate) use crate::abs::{Orientation, ShapeType};
 pub(crate) use crate::bbox_from_geometry::shape_bbox;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
-pub(crate) use crate::pcurve_full::{make_pcurve_full, project_point_on_surface, project_uv_on_curve2d};
+pub(crate) use crate::pcurve_full::{make_pcurve_full};
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
 pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, wires_of_face};

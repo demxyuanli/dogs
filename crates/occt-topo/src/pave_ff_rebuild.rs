@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 
-use crate::abs::ShapeType;
+
 use crate::bopds::{BopdsDS, BopdsPave, BopdsPaveBlock};
 use crate::brep_tool::BRepTool;
 use crate::pave_blocks::make_split_edge;

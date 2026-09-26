@@ -4,10 +4,10 @@
 
 use std::collections::HashMap;
 
-use occt_core::gp::{GpPnt, GpPnt2d};
+use occt_core::gp::{GpPnt};
 
 use crate::builder::TopoBuilder;
-use crate::shape::{Face, Shell, Solid, TopoShape, Vertex};
+use crate::shape::{Face, Solid, TopoShape, Vertex};
 use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
 
 /// Weld vertices of a shape that lie within `tol` of each other (spatial-hash

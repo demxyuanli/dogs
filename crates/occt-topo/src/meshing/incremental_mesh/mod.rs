@@ -31,7 +31,7 @@ pub(crate) use occt_geom::Surface;
 pub(crate) use crate::abs::{Orientation, ShapeType};
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::intpatch::refine_point_on_surface;
-pub(crate) use crate::mesh::{mesh_surface_area, ShapeMesh};
+pub(crate) use crate::mesh::{ShapeMesh};
 pub(crate) use crate::shape::{Edge, Face, TopoShape};
 pub(crate) use crate::wireframe;
 
@@ -44,13 +44,13 @@ pub(crate) use super::super::edge_discret::{
 };
 pub(crate) use super::super::shape_tool::ShapeTool;
 pub(crate) use super::super::face_discret::FaceChecker;
-pub(crate) use super::super::mesh_tool::MeshTool;
+
 pub(crate) use super::super::model_builder::{ModelBuilder, ModelPreProcessor};
 pub(crate) use super::super::model_healer::ModelHealer;
 pub(crate) use super::super::node_insertion::{DelaunayNodeInsertionMeshAlgo, TriangulationResult};
 pub(crate) use super::super::parameters::MeshParameters;
 pub(crate) use super::super::range_splitter::{classify_surface, SurfaceType};
-pub(crate) use super::super::triangulator::{FaceTriangulation, Triangulator};
+pub(crate) use super::super::triangulator::{FaceTriangulation};
 
 }
 

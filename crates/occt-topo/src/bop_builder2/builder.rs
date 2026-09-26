@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Result-shape assembly order — matches the per-type `BuildResult` calls of
 /// OCCT `BOPAlgo_Builder::PerformInternal1` (lowest type first).

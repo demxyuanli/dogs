@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Tolerance used when merging adjacent intervals (`MarkedRangeSet`,
 /// `LocalizeData`). Two intervals are considered adjacent / touching when their

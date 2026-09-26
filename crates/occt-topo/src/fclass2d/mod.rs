@@ -29,7 +29,7 @@ pub(crate) use occt_core::cslib::{Class2d, Class2dResult};
 pub(crate) use occt_core::geom::polygon_ops::{point_in_polygon2d, polygon_area2d};
 pub(crate) use occt_core::gp::GpPnt2d;
 pub(crate) use occt_core::precision::SQUARE_CONFUSION;
-pub(crate) use occt_geom::Surface;
+
 pub(crate) use occt_geom2d::curve::Curve2d;
 
 pub(crate) use crate::abs::Orientation;

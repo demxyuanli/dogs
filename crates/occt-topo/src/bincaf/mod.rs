@@ -26,8 +26,8 @@ pub(crate) use occt_geom::{Curve, GeomCircle, GeomLine, GeomPlane, GeomSphere, S
 pub(crate) use crate::abs::ShapeType;
 pub(crate) use crate::brep_surface::{classify_surface, face_plane, sphere_center, SurfaceKind};
 pub(crate) use crate::builder::TopoBuilder;
-pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Wire};
-pub(crate) use crate::tgeometry::{FaceGeom, GeometryRegistry};
+pub(crate) use crate::shape::{Edge, Face, Shell, TopoShape, Wire};
+pub(crate) use crate::tgeometry::{GeometryRegistry};
 
 }
 

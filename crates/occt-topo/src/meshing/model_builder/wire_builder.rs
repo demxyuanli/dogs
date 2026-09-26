@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Port of `BRepMesh_ShapeVisitor::addWire` (2D pcurve mode).
 ///

@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Approximate length of an edge from its curve endpoints.
 fn edge_length(e: &Edge) -> f64 {

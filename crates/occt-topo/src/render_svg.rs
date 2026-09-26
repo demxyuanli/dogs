@@ -16,7 +16,7 @@ use occt_core::quantity::Color;
 
 use crate::hlr;
 use crate::hlr::ProjectedMesh;
-use crate::mesh::ShapeMesh;
+
 use crate::model::BRepModel;
 use crate::shape::TopoShape;
 

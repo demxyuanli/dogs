@@ -61,22 +61,22 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use occt_core::bnd::BndBox;
+
 use occt_core::gp::{GpAx3, GpPln, GpPnt};
 use occt_geom::GeomPlane;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::AlgoTools;
-use crate::bbox_from_geometry::{shape_bbox, shape_bbox_with_margin};
+
 use crate::bop_build_common::{build_draft_solid, BopBuildOps};
 use crate::brep_extrema::{closest_point_on_face, is_inside};
-use crate::brep_surface::{face_plane, surface_closest_params, surface_normal};
+use crate::brep_surface::{surface_closest_params, surface_normal};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
-use crate::shell_splitter::{EKey, ShellSplitter};
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
+use crate::shape::{Edge, Face, Shell, TopoShape};
+use crate::shell_splitter::{EKey};
+use crate::topo_tools_full::{edges_of_wire, faces_of, vertices_of, wires_of_face};
 
 /// Stable identity key of a shape (the address of its shared `TShape`).
 fn shape_key(s: &TopoShape) -> usize {
@@ -542,16 +542,16 @@ pub fn classify_solid_state(solid: &TopoShape, point: &GpPnt, tol: f64) -> FaceS
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
 
-    use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpPnt, GpVec};
-    use occt_geom::{GeomLine, GeomPlane, Surface};
+
+    use occt_core::gp::{GpPnt};
+
 
     use crate::bop_hist::BopHistory;
     use crate::bopds::BopdsDS;
     use crate::brep_gprop::volume;
     use crate::primitives::BRepPrimBox;
-    use crate::shape::{Face, Solid, Vertex};
+    use crate::shape::{Face, Solid};
     use crate::topo_tools_full::{edges_of, shapes_of, vertices_of};
 
     /// A minimal `BopBuildOps` host for the isolated tests.

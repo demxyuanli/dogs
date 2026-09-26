@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Finite, sane sampling bounds for a surface (unbounded ranges clamp to ±1).
 

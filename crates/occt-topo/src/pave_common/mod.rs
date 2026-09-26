@@ -42,11 +42,11 @@
 //!   excluded.
 mod prelude {
 
-pub(crate) use std::collections::HashSet;
+
 
 pub(crate) use crate::abs::ShapeType;
-pub(crate) use crate::algo_tools::AlgoTools;
-pub(crate) use crate::bopds::{BopdsDS, BopdsInterf, BopdsPaveBlock, BopdsShapeInfo};
+
+pub(crate) use crate::bopds::{BopdsDS, BopdsInterf, BopdsPaveBlock};
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::inttools_range::ShrunkRange;
 pub(crate) use crate::pave_filler::PaveFiller;

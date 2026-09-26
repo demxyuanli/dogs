@@ -25,7 +25,7 @@ use crate::pave_filler::PaveFiller;
 use crate::pave_intersect::collect_pairs;
 use crate::pcurve_full;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::tgeometry::GeometryRegistry;
+
 use crate::topo_tools_full::edge_vertices;
 
 /// `UpdateVertices` (`BOPAlgo_PaveFiller_7.cxx:808`).

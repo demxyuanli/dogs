@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx1, GpAx3, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus, GpVec};
+use occt_core::gp::{GpAx3, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus, GpVec};
 use occt_geom::{
     Curve, GeomCylinder, GeomLine, GeomPlane, GeomSphere, GeomTorus, Surface,
 };

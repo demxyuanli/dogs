@@ -24,7 +24,7 @@ use crate::int_tools_segpln::compute_tolerance;
 use crate::int_tools_wline::{
     decomposition_of_wline, not_use_surfaces_for_approx_wline, WLine,
 };
-use crate::inttools_data::{CurveKind, IntRange};
+use crate::inttools_data::{CurveKind};
 use crate::shape::Face;
 
 use super::{curve_range, cylinder_from_surface, sphere_from_surface, FaceFace, FaceFaceCurve};

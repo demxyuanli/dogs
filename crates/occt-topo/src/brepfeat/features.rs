@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Result of a feature operation: the modified solid and its volume.
 #[derive(Debug, Clone)]

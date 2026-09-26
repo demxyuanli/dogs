@@ -8,12 +8,12 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx3, GpDir, GpPln, GpVec};
+use occt_core::gp::{GpAx3, GpPln, GpVec};
 
 use crate::brep_surface::surface_normal;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Face, Shell, TopoShape};
-use crate::tgeometry::GeometryRegistry;
+
 use crate::topo_tools_full::{faces_of, wires_of_face};
 
 /// Unit normal of a face at its centroid (robust FD normal).
@@ -185,7 +185,7 @@ pub fn shell_area(shell: &Shell, deflection: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::primitives::BRepPrimBox;
-    use occt_core::gp::GpPnt;
+
 
     fn box_shell() -> Shell {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);

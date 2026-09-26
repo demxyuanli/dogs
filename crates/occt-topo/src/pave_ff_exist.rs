@@ -14,7 +14,7 @@ use occt_geom::Curve;
 
 use crate::bbox_from_geometry::shape_bbox;
 use crate::bopds::{BopdsDS, BopdsPave, BopdsPaveBlock};
-use crate::boptools_2d::intermediate_point;
+
 use crate::brep_tool::BRepTool;
 use crate::int_tools_full::IntToolsContext;
 use crate::pave_ff::CoupleOfPaveBlocks;

@@ -5,7 +5,7 @@
 //! `BndLib_AddSurface::Add` for the non-BSpline path.
 
 use occt_core::bnd::BndBox;
-use occt_core::gp::{GpPnt, GpVec};
+use occt_core::gp::{GpVec};
 use occt_geom::Surface;
 
 use crate::bean_face_sample::SurfaceRangeLocalizeData;

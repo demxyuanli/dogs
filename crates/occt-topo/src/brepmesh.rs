@@ -11,16 +11,16 @@
 
 use std::collections::HashMap;
 
-use occt_core::gp::{GpPnt, GpXyz};
+use occt_core::gp::{GpPnt};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::Curve;
 
-use crate::brep_surface::{face_is_planar, face_plane, surface_closest_params, surface_normal};
+use crate::brep_surface::{face_is_planar, surface_closest_params, surface_normal};
 use crate::brep_tool::BRepTool;
 use crate::mesh::ShapeMesh;
 use crate::shape::{Face, TopoShape};
-use crate::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
-use crate::wireframe::{edge_to_polyline, face_to_triangles, orient3, planar_polygon_triangulate};
+use crate::topo_tools_full::{faces_of};
+use crate::wireframe::{face_to_triangles, orient3, planar_polygon_triangulate};
 
 /// Result of an incremental meshing pass.
 #[derive(Debug, Clone)]

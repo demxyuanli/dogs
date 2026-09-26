@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// State of a 2D point relative to the face region. Source: `TopAbs_State`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

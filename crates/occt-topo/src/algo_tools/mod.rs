@@ -48,8 +48,8 @@ pub(crate) use crate::fclass2d::{FClass2d, FaceState};
 pub(crate) use crate::pcurve_full;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};
-pub(crate) use crate::tshape::HandleTShape;
+pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, wires_of_face};
+
 
 }
 

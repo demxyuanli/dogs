@@ -1,9 +1,9 @@
 use super::*;
 
-use super::*;
 
-    use crate::primitives::{BRepPrimBox, BRepPrimSphere};
-    use crate::render_svg::svg_polygon_count;
+
+    use crate::primitives::{BRepPrimSphere};
+
 
     // -- Phase 12: picking / selection highlight / font styles ----------------
 

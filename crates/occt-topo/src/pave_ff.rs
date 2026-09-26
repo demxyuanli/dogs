@@ -18,7 +18,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
-use crate::pave_filler::{GlueEnum, PaveFiller};
+use crate::pave_filler::{PaveFiller};
 use crate::pave_intersect::make_sd_vertices;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;

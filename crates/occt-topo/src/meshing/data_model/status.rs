@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// OCCT `RealLast()` — largest finite double, used as the "unset" deflection
 /// sentinel (matches `IMeshData_TessellatedShape` default).

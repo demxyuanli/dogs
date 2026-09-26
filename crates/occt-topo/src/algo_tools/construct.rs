@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// OCCT `BOPTools_AlgoTools::DTolerance()` — the extra tolerance added to new
 /// or updated entities so their tolerance is *slightly* larger than the actual

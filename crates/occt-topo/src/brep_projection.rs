@@ -1,14 +1,14 @@
 //! Wire and edge projection onto surfaces and planes.
 //! Source: `BRepProj_Projection`, `BRepLib::BuildCurve3d` (pcurve).
 
-use std::sync::Arc;
+
 
 use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
 
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Wire};
-use crate::tgeometry::GeometryRegistry;
+
 
 /// Project a 3D point onto a face's surface (closest (u,v) + surface point).
 pub fn project_point_on_face(f: &Face, p: &GpPnt) -> Option<(f64, f64, GpPnt)> {
@@ -153,7 +153,7 @@ pub fn edge_crosses_plane(e: &Edge, pln: &occt_core::gp::GpPln) -> bool {
 mod tests {
     use super::*;
     use crate::builder::TopoBuilder;
-    use occt_core::gp::{GpAx3, GpDir, GpPln};
+    use occt_core::gp::{GpAx3, GpPln};
 
     fn z0_plane() -> GpPln {
         GpPln::new(GpAx3::standard())

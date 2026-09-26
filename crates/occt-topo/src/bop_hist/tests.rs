@@ -1,4 +1,4 @@
-use super::prelude::*;
+
 use super::*;
     use crate::brep_extrema::test_box::unit_box;
     use crate::shape::TopoShape;

@@ -1,5 +1,5 @@
 use super::prelude::*;
-use super::*;
+
 
 /// Default number of samples along the filleted edge for the variable-radius
 /// blend (mirrors the `NbSamples` default used by the OCCT fillet builder).
