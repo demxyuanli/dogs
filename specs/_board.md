@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 244 —— 收尾方案精化：保留**薄门面**、只删**存储**（避免 279 处改写与锁序风险）**
+
+**再评估「去仪式化」**：端口的 `GeometryRegistry` 现已退化为**薄转发层**（pcurve/edge/vertex/face 的读写都转发到 `TShape` 槽 ✓）。把 279 处 `global()` 调用改成直接 `s.tshape.read().unwrap().…` ✗ 会：① 让调用点变啰嗦 ✗；② 把**锁守卫**散布到 279 处 ⇒ 嵌套 `tshape.read()`/`write()` 的**死锁与锁序**风险显著上升 ✗；③ 收益仅为「少一层转发」✓。
+⇒ **改为**：**保留薄门面** ✓（它就是端口的 `BRep_Tool`/`BRep_Builder` 语义层 ✓），把收尾限定为**只删存储** ✓：
+1. **删三张 map**（`vertices`/`edges`/`faces` ✓）⇒ `edge_geom`/`face_geom`/`vertex_geom` 的**存在性**改判 `slot.is_some()` ✓（语义等价：批 1-4 后**写路径都会建槽** ✓；唯一差异是「注册了但没几何」的形状 ✗ —— 需先核对 `set_edge`/`set_face`/`set_vertex` 之外是否有**只写 map 不写槽**的路径 ✗，若有则补上 ✓）；
+2. **面 identity 回退**：保留一张**只存 `face_key → Arc<dyn Surface>`** 的小 map ✓（比整张 `FaceGeom` 小得多 ✓，且 surface 不变 ⇒ 无需同步 tolerance ✓），或建 `face_key → TopoShape` 弱引用表 ✓ —— **取小 map**（更简单、无生命周期问题 ✓）；
+3. 删 `TShape::drop` 的 `remove_by_ptr`/`clear_shape` 的 map 清理 ✓，最后删 `GeometryRegistry` 的 map 字段本体 ✓。
+**⇒ 收益不变**（侧表**不再存几何** ✓ = 步骤 1 判据的实质 ✓），**风险小得多** ✓（不动 279 处调用点 ✓）。
+**执行前置**：先跑一次「全仓 `edges|faces|vertices` map 的**写**点清单」✓，确认每个写点都能在建槽路径上 ✓（或补上 ✓）—— 这正是第 6 条教训的应用 ✓。
 **round 243 —— 🎯 T-25 收尾判据与决策：**步骤 1 的判据（几何不再走侧表）已由批 1-4 达成**；「删表」作为独立后续项**
 
 **T-25 步骤 1 的完成判据（设计文档口径）**：约 18 个**真实几何 API** 的读/写不再经过 `GeometryRegistry` 的侧表 ✓。批 1-4 已覆盖全部 **4 个 payload 家族 / 190 处** ✓：pcurve（87）、edge 3D 几何（62）、vertex（27）、face（14）✓ —— 现在这些几何**都存放在 `TShape` 上**（`edge_pcurves` / `edge_core` / `vertex_core` / `face_core` ✓），侧表只是**过渡载体 + 注册**（`edge_geom` 的存在性判定仍走 map ✓、`edge_pcurve_reps` 的 3D 范围回退仍读 map 的 `first/last` ✓）。
