@@ -4,18 +4,34 @@
 //! through `crate::extrema2d::point_curve_extrema2d` (`Extrema_ExtPC2d`, the
 //! engine behind `Geom2dAPI_ProjectPointOnCurve`; task R2-18a, batch 85).
 //! `lin2d_intersection` / `segment_intersection` / `project_point_on_segment`
-//! are the analytic point/segment solves they claim to be.
-//!
-//! **UNPORTED (audit A16, task R2-18b)**: [`curve2d_intersections`] is still the
-//! port's 256×256 sampler with alternating 1-D minimization. The faithful route
-//! is `IntAna2d_AnaIntersection` for the analytic pairs (`perform_lin_lin`,
-//! `perform_lin_circ`, `perform_circ_circ`, `perform_{lin,circ,elips,parab,hypr}_conic`
-//! — ported in `occt_core::intana2d::ana_intersection`) and `Extrema_ExtCC2d`
-//! (`crate::extrema2d::curve_curve_extrema2d_all`, whose general-curve seeding is
-//! itself the A7-family substitute) for the rest. [`curve2d_length`] /
+//! are the analytic point/segment solves they claim to be. [`curve2d_length`] /
 //! [`curve2d_length_tol`] are the faithful `GCPnts_AbscissaPoint::Length`
-//! (`GCPnts_AbscissaPoint.cxx:305-423`) → `CPnts_AbscissaPoint::Length`
-//! (`CPnts_AbscissaPoint.cxx:148-207`) → `math_GaussSingleIntegration` path.
+//! (`GCPnts_AbscissaPoint.cxx:305-423`) -> `CPnts_AbscissaPoint::Length`
+//! (`CPnts_AbscissaPoint.cxx:148-207`) -> `math_GaussSingleIntegration` path.
+//!
+//! **Faithful (task R2-18b)**: [`curve2d_intersections`] runs the faithful
+//! `Extrema_ExtCC2d` -> `Extrema_ECC2d` (=`Extrema_GGenExtCC`) engine
+//! (`crate::extrema2d::ExtremaExtCC2d`) for every non-analytic pair and keeps
+//! the extrema whose distance is within the caller's tolerance.
+//! `Extrema_ExtCC2d` only returns *extrema*; the `distance <= tol` intersection
+//! filter is this caller's semantics (see [`curve2d_intersections`]).
+//!
+//! **Fallback retained**: the old 256x256 sampler still runs alongside the
+//! faithful result (see [`sampler_intersections`]). OCCT bounds the local
+//! refinement inside `math_GlobOptMin` (`math_NewtonMinimum::SetBoundary`,
+//! `math_GlobOptMin.cxx:278`; `math_BFGS::SetBoundary`, `:299`) while the
+//! port's `occt_math::globoptmin::GlobOptMin` does not
+//! (`globoptmin.rs:541-566`, UNPORTED engine selection), so the faithful engine
+//! currently misses extrema. The fallback is a fallback, not a specification,
+//! and should be deleted once `GlobOptMin` is faithful.
+//!
+//! The R2-18b premise named an `Extrema_CCF` function set solved by
+//! `math_FunctionSetRoot`. **No such class exists in OCCT 8.0.0**: a tree-wide
+//! search finds no `Extrema_CCF` and `Extrema_ExtCC2d.cxx:20` includes
+//! `Extrema_ECC2d.hxx`. The 8.0.0 engine is `Extrema_ECC2d` =
+//! `Extrema_GGenExtCC<...>` (`Extrema_ECC2d.hxx:27-34`) driven by
+//! `Extrema_GlobOptFuncCCC2` (`Extrema_GlobOptFuncCC.cxx:318-388`) and
+//! `math_GlobOptMin` -- the route this port witnesses.
 
 use occt_core::gp::{GpLin2d, GpPnt2d, GpXY};
 use crate::curve::Curve2d;
@@ -261,8 +277,8 @@ pub fn curve2d_distance_to_point(c: &dyn Curve2d, p: &GpPnt2d, tol: f64) -> f64 
     curve2d_closest_point(c, p, tol).map_or(f64::INFINITY, |(_, q)| q.distance(p))
 }
 
-/// Approximate intersection points of two curves.
-/// Returns `(u, v, point)` where `u`/`v` are the parameters on `a`/`b`.
+/// Intersection points of two curves. Returns `(u, v, point)` where `u`/`v`
+/// are the parameters on `a`/`b`.
 ///
 /// **Analytic pairs go through `IntAna2d_AnaIntersection`** (the faithful port in
 /// [`occt_core::intana2d`]): line/line (`perform_lin_lin`), line/circle
@@ -273,16 +289,84 @@ pub fn curve2d_distance_to_point(c: &dyn Curve2d, p: &GpPnt2d, tol: f64) -> f64 
 /// arguments swapped and their parameters swapped back, so the result is always
 /// expressed on `a`/`b` as given.
 ///
-/// **UNPORTED (audit A16, task R2-18b)**: every other pair — B-spline, Bezier,
-/// offset, trimmed-of-those — still runs the port's 256×256 sampler with
-/// alternating 1-D minimization, which is not root-exact. The faithful route for
-/// them is `Extrema_ExtCC2d`
-/// ([`crate::extrema2d::curve_curve_extrema2d_all`], whose general-curve seeding
-/// is itself the A7-family substitute) — see the module header.
+/// **Every other pair runs the faithful `Extrema_ExtCC2d`** (task R2-18b): the
+/// extrema engine behind `Extrema_ExtCC2d::Perform`'s general arm
+/// (`Extrema_ExtCC2d.cxx:435-451`) is `Extrema_ECC2d` = `Extrema_GGenExtCC`
+/// (`Extrema_ECC2d.hxx:27-34`), ported in [`crate::extrema2d::ExtremaExtCC2d`].
+/// Its solutions are pairs `(C1(u1), C2(u2))` that are stationary points of the
+/// distance; `Extrema_ExtCC2d` itself never compares that distance with a
+/// tolerance. The caller-level filter `distance <= tol` (and the midpoint
+/// convention for the reported point) is therefore this port's intersection
+/// semantics, not an OCCT branch: an intersection is a zero-distance extremum.
+/// The faithful general route is the primary source; the port's 256x256 sampler
+/// is **retained as a fallback** (see the [`sampler_intersections`] note).
 pub fn curve2d_intersections(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<(f64, f64, GpPnt2d)> {
     if let Some(points) = analytic_intersections2d(a, b, tol) {
         return points;
     }
+    let mut out: Vec<(f64, f64, GpPnt2d)> = Vec::new();
+
+    // Faithful route: `Extrema_ExtCC2d` -> `Extrema_ECC2d` (`Extrema_GGenExtCC`).
+    let ext = crate::extrema2d::ExtremaExtCC2d::new(a, b);
+    for n in 1..=ext.nb_ext() {
+        let (u, pa, v, pb) = ext.points(n);
+        if pa.distance(&pb) <= tol {
+            push_intersection2d(&mut out, u, v, &pa, &pb, tol);
+        }
+    }
+
+    // Retained fallback (see the note below): top up with the port's sampler so
+    // that extrema the ported `math_GlobOptMin` fails to enumerate are not lost.
+    for (u, v, pa, pb) in sampler_intersections(a, b, tol) {
+        push_intersection2d(&mut out, u, v, &pa, &pb, tol);
+    }
+    out
+}
+
+/// Append one intersection `(u, v)` with its point, skipping points already
+/// recorded within `max(tol, 1e-6)` (the same caller-level dedup the 256x256
+/// sampler used, `curve_ops.rs` history).
+fn push_intersection2d(
+    out: &mut Vec<(f64, f64, GpPnt2d)>,
+    u: f64,
+    v: f64,
+    pa: &GpPnt2d,
+    pb: &GpPnt2d,
+    tol: f64,
+) {
+    let mid = GpPnt2d::new((pa.x() + pb.x()) * 0.5, (pa.y() + pb.y()) * 0.5);
+    if out.iter().any(|(_, _, p)| p.distance(&mid) <= tol.max(1e-6)) {
+        return;
+    }
+    out.push((u, v, mid));
+}
+
+/// **Fallback (not OCCT)** -- the port's original 256x256 sampler with
+/// alternating 1-D minimization, kept because the faithful engine above cannot
+/// be trusted to enumerate *all* extrema yet.
+///
+/// `Extrema_GGenExtCC::Perform` finds its extrema with `math_GlobOptMin`
+/// (`Extrema_GGenExtCC.hxx:617-688`), whose local refinement is **bounded** to
+/// `myGlobA`/`myGlobB` in OCCT -- `math_NewtonMinimum::SetBoundary`
+/// (`math_GlobOptMin.cxx:278`) and `math_BFGS::SetBoundary`
+/// (`math_GlobOptMin.cxx:299`). The port's `occt_math::globoptmin::GlobOptMin`
+/// runs an **unbounded** `BFGS` with numerical gradients
+/// (`crates/occt-math/src/globoptmin.rs:541-566`, declared UNPORTED for the
+/// engine selection), so its iterates leave the curve ranges, hit
+/// `Extrema_GlobOptFuncCCC2::Value`'s out-of-range `false`
+/// (`Extrema_GlobOptFuncCC.cxx:57-61`) and the search loses extrema. Measured
+/// (this port): a unit circle vs the degree-1 B-spline segment
+/// `(-2,0.5)-(2,0.5)` -- two crossings -- yields one extremum; a line `y=0.5`
+/// vs the degree-2 arc `(0,0),(2,2),(4,0)` yields none.
+///
+/// Until `occt-math` grows the bounded local search, this sampler keeps those
+/// intersections. It is a **fallback, not a specification**: once `GlobOptMin`
+/// is faithful, delete it (and `minimize_1d`/`curve_bbox`/`sample_curve`).
+fn sampler_intersections(
+    a: &dyn Curve2d,
+    b: &dyn Curve2d,
+    tol: f64,
+) -> Vec<(f64, f64, GpPnt2d, GpPnt2d)> {
     let tol = tol.max(1e-12);
     let na = 256;
     let nb = 256;
@@ -299,43 +383,34 @@ pub fn curve2d_intersections(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<
     let dv = ((vb1 - vb0) / nb as f64).max(1e-12);
 
     let coarse = tol * 100.0 + 1e-9;
-    let mut found: Vec<(f64, f64)> = Vec::new();
+    let mut out: Vec<(f64, f64, GpPnt2d, GpPnt2d)> = Vec::new();
     for (ui, ai) in &sa {
         for (vj, bj) in &sb {
-            if ai.square_distance(bj) < coarse * coarse {
-                // Refine the candidate pair by alternating 1-D minimization.
-                let mut u = *ui;
-                let mut v = *vj;
-                for _ in 0..6 {
-                    let (nu, _) = minimize_1d(
-                        &|t| a.d0(t).square_distance(&b.d0(v)),
-                        (u - du).max(ua0),
-                        (u + du).min(ua1),
-                    );
-                    u = nu;
-                    let (nv, _) = minimize_1d(
-                        &|t| a.d0(u).square_distance(&b.d0(t)),
-                        (v - dv).max(vb0),
-                        (v + dv).min(vb1),
-                    );
-                    v = nv;
-                }
-                if a.d0(u).distance(&b.d0(v)) <= tol {
-                    found.push((u, v));
-                }
+            if ai.square_distance(bj) >= coarse * coarse {
+                continue;
             }
-        }
-    }
-
-    // Dedupe candidates that converge to the same geometric point.
-    let mut out: Vec<(f64, f64, GpPnt2d)> = Vec::new();
-    for (u, v) in found {
-        let pa = a.d0(u);
-        let pb = b.d0(v);
-        let mid = GpPnt2d::new((pa.x() + pb.x()) * 0.5, (pa.y() + pb.y()) * 0.5);
-        let dup = out.iter().any(|(_, _, p)| p.distance(&mid) <= tol.max(1e-6));
-        if !dup {
-            out.push((u, v, mid));
+            // Refine the candidate pair by alternating 1-D minimization.
+            let mut u = *ui;
+            let mut v = *vj;
+            for _ in 0..6 {
+                let (nu, _) = minimize_1d(
+                    &|t| a.d0(t).square_distance(&b.d0(v)),
+                    (u - du).max(ua0),
+                    (u + du).min(ua1),
+                );
+                u = nu;
+                let (nv, _) = minimize_1d(
+                    &|t| a.d0(u).square_distance(&b.d0(t)),
+                    (v - dv).max(vb0),
+                    (v + dv).min(vb1),
+                );
+                v = nv;
+            }
+            let pa = a.d0(u);
+            let pb = b.d0(v);
+            if pa.distance(&pb) <= tol {
+                out.push((u, v, pa, pb));
+            }
         }
     }
     out
@@ -416,7 +491,7 @@ fn param_on_curve2d(c: &dyn Curve2d, u: f64, tol: f64) -> bool {
 }
 
 /// `IntAna2d_AnaIntersection` for the analytic pairs; `None` when the pair is not
-/// analytic (the caller falls back to the sampler).
+/// analytic (the caller falls back to the faithful `Extrema_ExtCC2d` route).
 ///
 /// The **first** curve supplies the specialized operand of the OCCT overload —
 /// exactly the eight `Perform` methods the port exposes (`Lin,Lin`),
@@ -544,7 +619,7 @@ pub fn project_point_on_segment(p: &GpPnt2d, a: &GpPnt2d, b: &GpPnt2d) -> (GpPnt
     (GpPnt2d::new(a.x() + t * abx, a.y() + t * aby), t)
 }
 
-// --- internals -------------------------------------------------------------
+// --- internals (256x256 sampler fallback) ----------------------------------
 
 /// Golden-section minimization of `f` over `[lo, hi]`. Returns `(argmin, min)`.
 fn minimize_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64) -> (f64, f64) {
@@ -620,6 +695,7 @@ fn sample_curve(c: &dyn Curve2d, other: &dyn Curve2d, n: usize) -> Vec<(f64, GpP
         })
         .collect()
 }
+
 
 #[cfg(test)]
 mod tests {

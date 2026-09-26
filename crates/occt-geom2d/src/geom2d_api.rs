@@ -70,7 +70,8 @@ pub struct CurveIntersection2d {
 }
 
 /// Intersections of two curves. Exact for line/line (via [`intersect_line_line`]);
-/// otherwise falls back to the sampler-based [`curve2d_intersections`].
+/// otherwise falls back to [`curve2d_intersections`] (the faithful
+/// `Extrema_ExtCC2d` -> `Extrema_ECC2d` route).
 pub fn intersect_curves(a: &dyn Curve2d, b: &dyn Curve2d, tol: f64) -> Vec<CurveIntersection2d> {
     if let (Some(l1), Some(l2)) = (curve_as_line(a), curve_as_line(b)) {
         return match intersect_line_line(&l1, &l2) {
