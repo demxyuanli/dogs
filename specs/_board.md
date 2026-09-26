@@ -185,6 +185,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 169 —— 🎯 T-69 机制钉死（我独立读到同一处）：**OCCT 按 `GeomAbs_CurveType` 分派，端口按几何不变量分派****
+
+**OCCT 侧**：`GeomProjLib::Curve2d`（`GeomProjLib.cxx:54`）→ `ProjLib_ProjectedCurve::Perform`（`ProjLib_ProjectedCurve.cxx:369`）：先取 **`SType = Surface->GetType()` 与 `CType = Curve->GetType()`**（`:375-376`），再按 `SType` 分派（`:391 Plane`、`:398 **Cylinder** → `ProjLib_Cylinder`、`:405 Cone`…）；**关键在下一层 `Project(P, myCurve)` 按 `CType` 再分派** —— `Line/Circle/Ellipse/Parabola/Hyperbola` 走**解析**，**`BSplineCurve`/`BezierCurve`/`Other` 走一般近似** ✓。
+
+**机制（回答「为何 T0M 没走解析圆」）**：T0M 的圆边在文件里是 **`B_SPLINE_CURVE_WITH_KNOTS`**（`EDGE_CURVE=4067`、无 PCURVE）⇒ `CType == GeomAbs_BSplineCurve` ⇒ 落**一般近似臂** ⇒ 得**闭合** 2D 曲线（实测 `Geom2d_BSplineCurve`、`range 0..0.741749` ✓）。
+**端口侧**：`pcurve_full::make_pcurve_full` 的分派依据是**几何不变量**（自述 “recovers the surface's own parameterization from sampled geometry invariants” —— 判为 generatrix/latitude 等参线即直接给 `Geom2dLine`），**没有按 `GeomAbs_CurveType` 分派** ⇒ 把「B 样条表示的圆」也当等参圆 ⇒ 开路 `Geom2dLine` 跨 2π ⇒ `CheckLacking` 报 gap ⇒ `fix_lacking` 造重合边 ⇒ 零面积环 ✓✓。
+
+**⇒ 结论行：端口少的就是「按 `GeomAbs_CurveType` 分派」这一条判据**；最小改动位置 = `pcurve_full`（`make_pcurve_full` 的 cylinder/cone/torus 等参臂 + `pcurve/surface_projector` 对应臂）——**只有解析曲线类型**（OCCT 的 `CType` 集合）才允许走等参/解析臂，`BSpline/Bezier/Other` 走一般近似臂。
+
+**我的验收口径订正（重要，已发代理）**：⚠️ **「15 文件 GT 逐位不变」不是定律，OCCT 保真度才是**。GT 探针存在（`--mesh <lin> 0.349066`，`lin=maxComp(bbox)*0.004`，bbox 用我加的 `--bbox`）：因此**允许**某文件计数改变，**当且仅当**改后仍等于 **OCCT 在同一文件同参数**的计数；要求逐文件给「**改前端口 / 改后端口 / OCCT 探针**」三列，由我判定是「更忠实」还是「回归」。**注意**：GT 族多数文件有存档 pcurve（Cube 12/24、Offset 48/96、Shape-2 82/164…）⇒ 那些边不走 `pcurve_full`；受影响的主要是 **`HoledPlate`/`Sphere`/`Torus`（0 pcurve）** 与各文件里**没有存档 pcurve 的边** —— 这正是要实测出来的。
+**已授权第 2 步（按序）**：① 先读完 `ProjLib_Cylinder::Project` 的逐曲线类型臂 + `ProjLib_ProjectedCurve::Project` 模板（把「BSpline → 一般近似、因 3D 闭合而输出闭合」100% 钉死，给行号）；② 改 `pcurve_full` 的判据（照抄分派，禁止自创「看起来闭合」）；③ 实测并交三列表 + T0M（`--wires` 的 `uv_degenerate_faces`、`--mesh` 失败面、v/f vs GT `60050/66576`）；④ 门禁全套（`--lib` 1281/0、`--all-targets`、四道 STEP、`phase5/9/10/19/20`、export）。**停止条件**：改后无法更接近 OCCT，或必须新增判据才能过 ⇒ 停手报我。**不要提交**。
+**代理至今净改动 0**（`step/`/`shhealing/`/`meshing/`/`pcurve_full/` 全干净；插桩已撤；保留只读 `--wires` 探针）✓。
 **round 168 —— T-69 批次 A 收尾（净改动 0）：前提作废已由插桩互证；唯一还缺的输入已核到行号；下一步=对读 `ProjLib_ProjectedCurve` 分派**
 
 **① 互证 T0M 无存档 pcurve**：文本 `SURFACE_CURVE=0 PCURVE=0 SEAM_CURVE=0 EDGE_CURVE=4067` ✓；代理给 `associate_edge_pcurve`（`step/read_topology.rs:876`）加 env 门插桩在 T0M 上**输出 0 行**（因为 `:889-891` 的 `surface_curve_pcurves` 查不到就直接 return）⇒ 两者一致，**(i) 前提正式作废** ✓。
