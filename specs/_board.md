@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 195 —— 🎯 T-69 的**真正修法**已认出：把两个**自创启发式**换成 OCCT 的具体类测试**
+
+代理的 `surface_projector.rs` 改动就是正解 ✓✓（round-169 的 A）：
+```diff
+- is_line:   !first_parameter().is_finite() || !last_parameter().is_finite()   // 启发式：无界参数
+- is_circle: is_periodic() && (period() - 2π).abs() < 1e-9                    // 启发式：周期 2π
++ is_line:   curve.gp_line().is_some()
++ is_circle: curve.gp_circ().is_some()
+```
+**旧 `is_circle` 会把任何周期 2π 的曲线（含用 B 样条表示的圆 ✗）判成解析圆** ⇒ 走等参臂 ⇒ 得到**开路 2π 直线** ✓✓ —— 这就是 162 个面失败的**直接机制**。新写法 = `Adaptor3d_Curve::GetType()` / `GeomAdaptor_Curve::load`（`GeomAdaptor_Curve.cxx:252-311`）的**具体类**语义，与 `ProjLib_ProjectedCurve::Project` 的 analytic 重载集合（`:242-270`）一致 ✓；注释与行号也齐 ✓。
+
+**同时判出 `make_pcurve.rs` 的 `CurveType` 门属**行为冗余** ✗**：既然 `is_line`/`is_circle` 已是类型测试，`make_pcurve_full` 里那层 `analytic_overload` 门（含包住两个 `if`）**不改变任何行为** ✓（Ellipse/Hyperbola/Parabola 本无臂，注释自述 OCCT 亦为空体 ⇒ 落一般臂 ✓）。
+**已建议代理**：**把 `make_pcurve.rs` 恢复 HEAD，只提交 `surface_projector.rs`**（最小 diff、不夹带；显式分派的说明价值可写进 doc 注释 ✓）；并给「单文件/组合」的 T0M 指标 + 15 文件三列表 + 门禁全绿后再收口 ✓。
 **round 194 —— 补：`make_pcurve_full` 在网格侧的**作用点**（wire 排序 / PreProcessor），与 `fix_add_pcurve` 不同**
 
 完整路径与上下文：
