@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 170 —— T-69 的**精确编辑方案**与一个关键保留（general 臂不是 OCCT 的近似件）⇒ 改派**新代理**续作**
+
+**代理给出的最后一段（行号已核）**：`ProjLib_Cylinder` **只对解析类型**提供 `Project` 重载 —— `:95 Project(gp_Lin&)`、`:122 Project(gp_Circ&)`、`:161/:167/:172` 的 Elips/Parab/Hypr **为空或基类回退**；**没有** `Project(BSplineCurve/BezierCurve)` ⇒ 那两类由模板按 `CType` 落到 **`ProjLib_ComputeApprox`/`ProjLib_ComputeApproxOnPolarSurface`**（`ProjLib_ProjectedCurve.cxx:23-24`）做一般近似 ⇒ 3D 闭合 ⇒ 结果闭合 ✓ 机制闭环。
+
+**我已读端口 general 臂**（`pcurve_full/make_pcurve.rs:141-148`）：`edge_pcurve_on_face(edge, face, 48)` + `bspline_from_samples(&pts, a, b, 1)` —— 即 **48 点采样的 degree-1 拟合**，**不是** `ProjLib_ComputeApprox` 的移植 ✗ ⇒ 代理的保留成立：
+- **只切分派（A）不够**：B 样条边被路由到 degree-1 折线拟合，**其首末 UV 点仍可能差 2π**（圆在柱面上采样 u:0→2π ⇒ 首末 (0,v) 与 (2π,v) 不同）⇒ 零面积环可能**仍在** ✗；
+- 真正要补的是 **B：让 general 臂在「3D 边闭合」时产出**闭合**的 2D 曲线** —— 需照抄 `ProjLib_ComputeApprox.cxx`（及 `...OnPolarSurface.cxx`）对**闭合/周期曲线**的处理与**周期归一化**（若有），给出行号；**不得自创**「u 取模」之类规则 ✗。
+
+**⇒ 处置**：该代理预算已尽（净改动 0，纪律良好），我把 A+B 的完整前置调研（机制、行号、端口现状、两处落点、保留、验收、停止条件）打包交给**新代理**（`921cca6c`）续作。**新验收口径已写清**：
+- **T0M**：`wires_probe` 的 `uv_degenerate_faces` ↓（目标 0）+ `--mesh` 失败面 162 → 目标 0；v/f vs GT `60050/66576`（已知可能仍有第二缺口）；
+- **15 文件三列表**（改前端口 / 改后端口 / OCCT 探针）——⚠️ **与旧基线逐位一致不是硬要求，与 OCCT 一致才是**；
+- 门禁：`--lib` 1281/0、`--all-targets`、四道 STEP、`phase5/9/10/19/20`、export 对拍；任一回退即停手报数；
+- 操作提示：独立 `CARGO_TARGET_DIR` 避 LNK1104；`step_to_obj`/`export` 不并行；期望它**先只做 A 并把 B 的证据+工作量报我**（若 B 工作量大，不硬造）。
 **round 169 —— 🎯 T-69 机制钉死（我独立读到同一处）：**OCCT 按 `GeomAbs_CurveType` 分派，端口按几何不变量分派****
 
 **OCCT 侧**：`GeomProjLib::Curve2d`（`GeomProjLib.cxx:54`）→ `ProjLib_ProjectedCurve::Perform`（`ProjLib_ProjectedCurve.cxx:369`）：先取 **`SType = Surface->GetType()` 与 `CType = Curve->GetType()`**（`:375-376`），再按 `SType` 分派（`:391 Plane`、`:398 **Cylinder** → `ProjLib_Cylinder`、`:405 Cone`…）；**关键在下一层 `Project(P, myCurve)` 按 `CType` 再分派** —— `Line/Circle/Ellipse/Parabola/Hyperbola` 走**解析**，**`BSplineCurve`/`BezierCurve`/`Other` 走一般近似** ✓。
