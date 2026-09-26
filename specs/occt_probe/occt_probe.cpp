@@ -123,7 +123,8 @@ int main(int argc, char** argv)
   if (argc > 2 && std::string(argv[2]) == "--mesh")
   {
     const double aDeflection = (argc > 3) ? std::atof(argv[3]) : 0.1;
-    BRepMesh_IncrementalMesh aMesher(aShape, aDeflection);
+    const double anAngle      = (argc > 4) ? std::atof(argv[4]) : 0.5;
+    BRepMesh_IncrementalMesh aMesher(aShape, aDeflection, false, anAngle);
     TopExp_Explorer            anEx(aShape, TopAbs_FACE);
     int                        anIdx = 0, aNodes = 0, aTris = 0;
     for (; anEx.More(); anEx.Next(), ++anIdx)
@@ -138,7 +139,7 @@ int main(int argc, char** argv)
       aTris += aT;
     }
     std::cout << "TOTAL faces=" << anIdx << " nodes=" << aNodes << " triangles=" << aTris
-              << " deflection=" << aDeflection << "\n";
+              << " deflection=" << aDeflection << " angle=" << anAngle << "\n";
     return 0;
   }
 
@@ -149,7 +150,8 @@ int main(int argc, char** argv)
   if (argc > 2 && std::string(argv[2]) == "--edges")
   {
     const double aDeflection = (argc > 3) ? std::atof(argv[3]) : 0.1;
-    BRepMesh_IncrementalMesh aMesher(aShape, aDeflection);
+    const double anAngle      = (argc > 4) ? std::atof(argv[4]) : 0.5;
+    BRepMesh_IncrementalMesh aMesher(aShape, aDeflection, false, anAngle);
     TopExp_Explorer aFaceEx(aShape, TopAbs_FACE);
     int             aFaceIdx = 0, anEdgeIdx = 0, aTotal = 0, aNoPoly = 0;
     for (; aFaceEx.More(); aFaceEx.Next(), ++aFaceIdx)

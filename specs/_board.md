@@ -185,6 +185,37 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 138 —— ❗**重大订正**：round 129/135 的「网格系统性不符」是**参数比错**造成的假象；按端口真实参数，OCCT 与端口 **15 个里 14 个逐位一致**（T-90 关闭、T-54 前提不成立）**
+
+**错在哪**：我用 `occt_probe --mesh 0.1`（默认角偏 0.5 rad）当 GT，而 `export_data_obj` 的真实参数是 **`Prs3d` 相对偏转** `lin = maxComp(bbox) × 0.001 × 4`（`brep_exchange.rs:56-77`）+ 角偏 **20° = 0.349066 rad**（`:95`）；且 `:88-94` 已注明导出走 **Delaunay 管线**（`meshing::incremental_mesh`），legacy 四叉树/UV 网格回退**已按 audit A17 删除**。我当初只读 `brepmesh.rs`（四叉树）就下了结论。
+
+**按真实参数重跑（探针本轮加了角偏参数 `--mesh <defl> <angle>`）**：
+
+| 文件 | 端口 v/f | OCCT@同参数 | |
+|---|---|---|---|
+| Cone | 195/301 | 195/301 | ✅ |
+| Cube | 24/12 | 24/12 | ✅ |
+| Cylinder | 146/140 | 146/140 | ✅ |
+| Extrusion | 24/12 | 24/12 | ✅ |
+| HoledPlate | 180/128 | 180/128 | ✅ |
+| linkrods | 3494/5078 | 3494/5078 | ✅ |
+| Offset | 712/892 | 712/892 | ✅ |
+| OffsetPlaneHoleEdge | 48/32 | 48/32 | ✅ |
+| rev | 104/92 | 104/92 | ✅ |
+| screw | 600/790 | 600/790 | ✅ |
+| Shape-1 | 3343/4336 | 3343/4336 | ✅ |
+| **Shape-2** | **3105/4792** | **3099/4780** | ❌ 差 6/12（0.2%） |
+| Shape | 6150/11372 | 6150/11372 | ✅ |
+| Sphere | 642/1244 | 642/1244 | ✅ |
+| Torus | 1369/2592 | 1369/2592 | ✅ |
+
+⇒ **结论订正**：
+1. **T-90（网格管线系统性不符）不成立，关闭**；§2 的 `export_data_obj` 逐位门禁**本来就是 OCCT 保真度**（在端口参数下），不必重订期望值。
+2. `Shape-2` 的 0.2% 差：`brep_exchange.rs:50-52` 自注写明是 **STEP 导入丢 `SURFACE_CURVE` pcurve** 导致的边界漂移 ⇒ 属 **STEP 侧缺口**，另登记。
+3. **T-54 的前提也不成立**：导出路径既不用 `brepmesh.rs` 的四叉树、也不用 `wireframe.rs` 的平面耳切（两者已是**失败回退**，且 `:88-94` 说已删）⇒ 不该「移植约束 Delaunay 替换之」。T-54 改为：**先确认这两个回退是否仍可达**；不可达 ⇒ 按 T-27 先例摘除并标 UNPORTED；可达 ⇒ 只在回退臂内忠实化。
+4. **已紧急通知网格子代理暂停 `BRepMesh_Delaun` 移植**（数千行、且无必要），改为：复算确认 + 处理 `Shape-2` 的归属 + 更新 `specs/_occt_mesh_gt.md`。`specs/_occt_mesh_gt.md` 已由我改为**以真实参数表为主表**，旧表标注「已作废，仅留档对照」。
+
+**方法论教训（记入本板）**：拿 GT 对拍前**必须先确认两侧的参数完全一致**；`export_data_obj` 的偏转不是线性 deflection 而是 `Prs3d::GetDeflection` 的相对值 —— 这一条值 2348 行。
 **round 131 —— 🎉 §3.2 T-80 **完全收官**（`1a3a1a90`）：三条 oracle 同时绿**
 
 | oracle | 期望（OCCT/GT） | 实测 |

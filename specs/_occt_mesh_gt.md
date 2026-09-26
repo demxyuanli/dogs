@@ -1,4 +1,6 @@
-# OCCT 面网格 GT 表（`BRepMesh_IncrementalMesh`，deflection 0.1）
+# OCCT 面网格 GT 表（`BRepMesh_IncrementalMesh`）
+
+> ⚠️ **必读（round 138 重大订正）**：本文开头那张「deflection 0.1」表**参数用错了**，不能用来判断端口保真度。导出路径 `export_data_obj` 实际用的是 **`Prs3d` 相对偏转**（`lin = maxComp(bbox) × 0.001 × 4`，`brep_exchange.rs:56-77`）+ **角偏 20°**（`:95`），且走的是 **Delaunay 管线**（`:88-94` 注明 legacy 四叉树/UV 网格回退已按 audit A17 删除）。**按端口真实参数重跑后，15 个文件里 14 个与 OCCT 逐位一致**（见下方「端口真实参数下的 GT 表」）。
 
 > 用途：T-54+T-90（网格保真度）的**验收基准**，以及 §2 `export_data_obj` 期望值重订的依据。
 > 生成命令（探针 `--mesh` 模式，round 129 加入）：
@@ -53,3 +55,32 @@ TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
 ⇒ 半径 4、高 10 的圆柱在 deflection 0.1 下 OCCT 给**每圆 27 点**；端口的 `compute_nb_samples*`（对应 `BRepMesh_EdgeDiscret`/`BRepMesh_Deflection` 的 nb-points 公式）必须给出同一数字，之后约束 Delaunay 才能给出同样的 100 三角形。
 
 其它文件的逐边表可用同一条命令自取（`--edges 0.1`），必要时逐面对齐。
+
+## ✅ 端口真实参数下的 GT 表（round 138 订正，**这是判断保真度的唯一正确表**）
+
+参数：对每个文件 `lin = maxComp(bbox) × 0.004`（= `Prs3d::GetDeflection`，`brep_exchange.rs:56-77`）、角偏 **20° = 0.349066 rad**（`brep_exchange.rs:95`）。命令：`occt_probe.exe <file> --mesh <lin> 0.349066`。
+
+| `data/*.step` | bbox maxComp | `lin` | OCCT nodes/tris | 端口 v/f | 判定 |
+|---|---|---|---|---|---|
+| Cone | 10 | 0.04 | 195 / 301 | 195 / 301 | ✅ 逐位一致 |
+| Cube | 10 | 0.04 | 24 / 12 | 24 / 12 | ✅ |
+| Cylinder | 10 | 0.04 | 146 / 140 | 146 / 140 | ✅ |
+| Extrusion | 20 | 0.08 | 24 / 12 | 24 / 12 | ✅ |
+| HoledPlate | 102.144 | 0.408576 | 180 / 128 | 180 / 128 | ✅ |
+| linkrods | 5.115 | 0.02046 | 3494 / 5078 | 3494 / 5078 | ✅ |
+| Offset | 14 | 0.056 | 712 / 892 | 712 / 892 | ✅ |
+| OffsetPlaneHoleEdge | 14 | 0.056 | 48 / 32 | 48 / 32 | ✅ |
+| rev | 10 | 0.04 | 104 / 92 | 104 / 92 | ✅ |
+| screw | 42.3 | 0.1692 | 600 / 790 | 600 / 790 | ✅ |
+| Shape-1 | 77 | 0.308 | 3343 / 4336 | 3343 / 4336 | ✅ |
+| **Shape-2** | 150 | 0.6 | 3099 / 4780 | **3105 / 4792** | ❌ 差 6 节点 / 12 三角（**0.2%**） |
+| Shape | 112.106 | 0.448424 | 6150 / 11372 | 6150 / 11372 | ✅ |
+| Sphere | 10 | 0.04 | 642 / 1244 | 642 / 1244 | ✅ |
+| Torus | 25.978 | 0.103912 | 1369 / 2592 | 1369 / 2592 | ✅ |
+
+**结论（取代 round 129/135 的判断）**：
+1. **端口的网格管线在相同参数下与 OCCT 逐位一致（14/15）** ⇒ round 129/135 说的「系统性不符」是**我用错参数**（拿 0.1/0.5rad 的 GT 去比 0.004·bbox/20° 的端口输出）造成的假象；**T-90 不成立**（应关闭）。
+2. `Shape-2` 的 0.2% 差**已由源码自注给出方向**：`brep_exchange.rs:50-52` 写明「B-spline 面的 STEP `SURFACE_CURVE` pcurve 被丢 ⇒ 边界错 ⇒ Delaunay bbox 漂移」，即 **STEP 导入侧缺口**，不是 BRepMesh 侧。
+3. **T-54 也必须重新评估**：导出路径**不再**用 `brepmesh.rs` 的四叉树、也不用 `wireframe.rs` 的平面耳切（`brep_exchange.rs:88-94`：这两个非 OCCT 回退已按 audit A17 删除）——它们只在**失败回退**里存在。因此「移植约束 Delaunay 以提高保真度」这个前提**不成立**；`brepmesh.rs`/`wireframe.rs` 的处置应改为「确认回退是否可达 + 可达则接线/不可达则摘除」，而不是大规模替换。
+
+## 附：旧表（参数 0.1 / 0.5rad，**已作废，仅留档对照**）
