@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 182 —— 排除 `is_cn_1`，并给出**缓存命中状态 ⇒ 窗口折叠**的分叉假设**
+
+**排除项**：端口 `is_cn_1`（`projection_cache.rs:409-429`）实现的就是 `Geom_Surface::IsCNu(1) && IsCNv(1)`（`cxx:1035`），**非 B 样条面返回 true**（与 `Geom_Surface` 基类 `Standard_True` 一致）⇒ cylinder/cone/torus 上两侧 `is_normal_check` **都是 true** ⇒ `cxx:1036-1058` 的法向检查**两侧都执行** ✓，不是「一边跳过一边执行」✗。
+
+**新假设（可解释「代码逐行一致但结果不同」）**：
+- 闭合边 `d_par = 2π`，候选直线由 `a_vec0 = a_p2d[3]-a_p2d[0]` 决定（`:634-635`）；
+- 若 4 探针点**被正确折进同一窗口** ⇒ `a_vec0 ≈ 0` ⇒ candidate ≈ 常量点 ⇒ 其法线是过该点的直线（圆柱上为径向线）⇒ 圆周其它样本离它远 ⇒ `a_dist > tol` ⇒ **`return None`**（= OCCT 行为 ✓）；
+- 若端点**未被折/折到不同窗口** ⇒ `a_vec0` = 整周期向量 ⇒ candidate 正是那条 v=const 直线，其 3D 像就是圆本身 ⇒ 样本都落在其上 ⇒ 检查**通过** ⇒ 返回开路直线（= 端口行为 ✗）。
+⇒ 既然 `fix_periodicity_troubles` 与调用参数已逐行核对一致，差异最可能来自**它拿到的输入 = 缓存命中状态**：端口 `:487-516` 的 cache 查找是否与 OCCT `:944-961` **同样命中**？一个 `saved_point_num=-1`、一个有值 ⇒ `a_saved_param` 不同 ⇒ **窗口平移不同** ⇒ 折叠不同 ⇒ 分叉 ✓✓。
+**已要求代理打印两侧**：`saved_point_num`、`a_saved_param`、`a_min_param/a_max_param`、规整前后 `a_p2d`(4)、`is_iso_line`、`d_par`、`a_vec0`、每样本 `a_dist` 与 `a_tol_working`；**第一处不同即分叉点**，然后照抄 OCCT 修（不保留「闭合弦拒绝」✗）。
 **round 181 —— 一条**否定结果**：端口 `fix_periodicity_troubles` 也忠实 ⇒ 分叉不在这里；下一批候选与一个待查的 `is_cn_1`**
 
 逐行对读：端口 `projection_cache.rs:298-347` 与 OCCT `ShapeConstruct_ProjectCurveOnSurface.cxx:286-345` **一致**（窗口 `[0,period]`、`saved_point<0 ⇒ 0.5*period`、`is_iso_line` 判定 + 两个分支的边界点改写、4 点 `adjust_to_period` 规整）✓；调用点参数等价（OCCT `theIdx=1/2` vs 端口 `0/1` 是 1-based vs 0-based，`saved_param` 分别 `.X()/.Y()` ✓，`cxx:998-1012` ↔ `:606-613`）✓。**⇒ 分叉不在此** ✗。
