@@ -21,7 +21,7 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
 use crate::shape::TopoShape;
-use crate::tshape::EdgePcurves;
+use crate::tshape::{EdgePcurves, VertexGeomCore};
 
 /// Vertex geometry — a 3D point and a tolerance. (BRep_TVertex)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -202,10 +202,21 @@ impl GeometryRegistry {
     pub fn set_vertex(&self, s: &TopoShape, geom: VertexGeom) {
         let k = key(s);
         self.ids.write().unwrap().insert(k, shape_id(s));
+        // T-25 batch 3: the vertex geometry lives on the shape itself now.
+        let mut ts = s.tshape.write().unwrap();
+        let c = ts.vertex_core_mut();
+        c.point = geom.point;
+        c.tolerance = geom.tolerance;
+        drop(ts);
         self.vertices.write().unwrap().insert(k, geom);
     }
 
     pub fn vertex_geom(&self, s: &TopoShape) -> Option<VertexGeom> {
+        // T-25 batch 3: read off the vertex's own `TShape`; the side table is
+        // only a fallback for shapes registered before this batch.
+        if let Some(c) = s.tshape.read().unwrap().vertex_core().copied() {
+            return Some(VertexGeom { point: c.point, tolerance: c.tolerance });
+        }
         self.vertices.read().unwrap().get(&key(s)).copied()
     }
 
@@ -576,6 +587,7 @@ impl GeometryRegistry {
             let mut ts = s.tshape.write().unwrap();
             ts.edge_pcurves = None;
             ts.edge_core = None;
+            ts.vertex_core = None;
         }
     }
 

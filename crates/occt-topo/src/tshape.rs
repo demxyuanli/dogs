@@ -39,6 +39,8 @@ pub struct TShape {
     pub edge_pcurves: Option<EdgePcurves>,
     /// The edge's 3D geometry (T-25 batch 2). `None` until something writes it.
     pub edge_core: Option<EdgeGeomCore>,
+    /// The vertex's geometry (T-25 batch 3). `None` until something writes it.
+    pub vertex_core: Option<VertexGeomCore>,
 }
 
 /// Source of `TShape::id` (one per construction, process-wide).
@@ -66,6 +68,7 @@ impl TShape {
             children: Vec::new(),
             edge_pcurves: None,
             edge_core: None,
+            vertex_core: None,
         }
     }
 
@@ -99,6 +102,14 @@ impl TShape {
 
     /// The edge's 3D geometry, if it has one yet.
     pub fn edge_core(&self) -> Option<&EdgeGeomCore> { self.edge_core.as_ref() }
+
+    /// The vertex's geometry store, created on first use (T-25 batch 3).
+    pub fn vertex_core_mut(&mut self) -> &mut VertexGeomCore {
+        self.vertex_core.get_or_insert_with(VertexGeomCore::default)
+    }
+
+    /// The vertex's geometry, if it has one yet.
+    pub fn vertex_core(&self) -> Option<&VertexGeomCore> { self.vertex_core.as_ref() }
 }
 
 impl Drop for TShape {
@@ -112,6 +123,7 @@ impl Drop for TShape {
         // T-25: the geometry lives on the shape itself, so it dies with it.
         self.edge_pcurves = None;
         self.edge_core = None;
+        self.vertex_core = None;
     }
 }
 
@@ -119,6 +131,14 @@ impl Drop for TShape {
 #[derive(Debug)]
 pub struct VertexShape {
     pub base: TShape,
+    pub point: occt_core::gp::GpPnt,
+    pub tolerance: f64,
+}
+
+/// The geometry of a vertex (T-25 batch 3: lifted from `VertexGeom`,
+/// `tgeometry.rs:27-30`).
+#[derive(Default, Clone, Copy, PartialEq)]
+pub struct VertexGeomCore {
     pub point: occt_core::gp::GpPnt,
     pub tolerance: f64,
 }
