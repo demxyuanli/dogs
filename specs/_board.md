@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 214 —— 订正范围：`FixMissingSeam` 实为 **609 行**（`:1722-2330`）⇒ 按四段分步移植；改派新代理**
+
+我量了函数的**真实边界**：`ShapeFix_Face::FixMissingSeam` 从 `:1722` 一直到 `:2330`（下一个方法 `FixSmallAreaWire` 在 `:2331`）⇒ **约 609 行**（先前估的 ~290 行偏小 ✗）。分四段：
+1. **门与边界** `:1729-1805`（`IsU/VClosed`、B 样条周期性检查、`Bounds`+`BRepTools::UVBounds`、无穷边界兜底、`URange/VRange`）；
+2. **收集并与配 wire** `:1810-1894`（`ws`、`w1`/`w2`、`isModeU/V`、`isDeg1/2`，含「反向 wire」与「多于两条开口 wire 时的删除」分支）；
+3. **缝边构造** `:1895-1992`（四支：torus-degenerate `:1909-1919`、sphere `:1920-1926`、BSpline-v `:1927-1948`、BSpline-u `:1949-1971`；每支算 `p`/`d`/`aRange` ⇒ `Geom2d_Line` + `MakeEdge` + `Degenerated(true)` + `UpdateEdge(...,Confusion)` + `Range(0,aRange)` + 两端点同一 `V`（FORWARD 后 REVERSED）+ `MakeWire` + `Append`）；
+4. **两 wire 定向一致性检查** `:1994-2330`（`EmptyCopied` + `ShapeAnalysis::GetFaceUVBounds` 比 m1/m2，按 U/V 闭合与最小坐标决定是否 `Reverse`）。
+⇒ **改派新代理 `6e6be1a0`**（前一个代理准备 8 轮未落代码、已停手），brief 含：精确范围（609 行 + `CheckWire` 70 行）、四段结构、**面级调用点需新建**（`step/` 无面遍历、`XSAlgo` 只移了 `CheckPCurve`、其余皆丝级；OCCT 对应 `ShapeFix_Shape.cxx:200` 一带）、**依赖已预检齐备**、**验收与五文件预测**（T0M 207/acs10 110/a3n00 46 → 0 且 v/f 向 GT 靠；TDB 1/ATU01038 0 保持；15 文件三列表以**与 OCCT 一致**为准）、门禁全套、临时件收尾删除 ✓。
+（我尝试自己写第一片，因内联代码模板的转义问题未落盘 ⇒ 改为委派，避免半成品 ✗。）
 **round 213 —— 依赖预检：`FixMissingSeam` 所需的端口件齐备 ✓（无缺件风险）**
 
 - `BRepTools::UVBounds` 等价物：`algo_tools/construct.rs:186`/`:197` ✓；
