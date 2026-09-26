@@ -140,6 +140,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 105 —— ✅ T-37 已把 round-101 的根因修法落进工作树（待其收尾后验证）**
+
+`crates/occt-topo/src/int_tools_full/context.rs::project_point_on_face` 已由 T-37 代理改写（+51/−17），逐项对照我 round 101 的要求：
+
+- **搜索域 = 面的 UV 窗口**：`crate::brep_uv_bounds::uv_box_of_face(face)`（= `BRepTools::AddUVBounds`），取不到时回退到曲面自身 `u_range/v_range`（与 `BRepAdaptor_Surface` 一致）；
+- **容差 = `self.pon_s_tolerance`**（正是 `IntTools_Context::myPOnSTolerance`，此前只存不用）；
+- **走忠实 `ExtPs`**：`set_flag(Min)` + `initialize(surf, umin, umax, vmin, vmax, tol, tol)` + `perform(p)`；
+- **无解返回 `Err`**：`!is_done() || nb_ext()==0`（对应 `GeomAPI_ProjectPointOnSurf` 的 `IsDone() && NbExt()>0`，`GeomAPI_ProjectPointOnSurf.cxx:83`）；
+- 取 `SquareDistance` 最小者（`cxx:88-100`）；
+- **`surface_closest_params` 网格回落已删除** ⇒ `occt-topo` 里该 A1 替代件的最后一处 live 用法消失。
+
+⇒ 这正是让 OCCT 的 `FindPointInFace` 在 `aPS += 2*tolE*aDB` 后合法 not-done、从而触发 `GetFaceDir` 回落、把当前面 `aDBF` 翻向面内（GT `--dir2` 实测 `(0,0,-1)`）的那一步。**待 T-37 收尾后验证**：① 其声明的门禁（`--lib` + 四道 STEP + phase9）不得劣化（若劣化，按我发去的指令应已回退该项）；② 用 GT `--faceoff` 6 行 + T-80 的 `8 faces / 8.50265` 验收；③ 若 T-80 转绿，`phase10`(T-88) 与 T-41 也应随之推进。
 **round 101 —— 决定性实验：排除「偶对朝向」，锁定 T-82 的真根因 = `ProjPS` 未限制在面的 UV 窗口**
 
 ① **GT 探针新增 `--faceoff2`**：候选偶对完全按 `BOPAlgo_ShellSplitter::SplitBlock` 的方式构造（用 `BOPTools_AlgoTools::GetEdgeOff`，`BOPTools_AlgoTools.cxx:1099-1127`，强制取**反向朝向**那份边视图，取不到就跳过该候选）。实测与 `--faceoff`（用 `GetEdgeOnFace` 任意朝向）**选出的面完全相同**（f0→Cyl、f1→Plane、f2→Cyl、f3→Plane、f4→Plane、f5→Cyl），只有 `done` 标志不同（`--faceoff2` 全 1）。⇒ **round 96 记的「差异 = 偶对的边视图朝向」被证伪**（这也解释了为什么 round 6/8 把 `get_edge_off_geo`/`same_dir` 的闭合环分支改成朝向比较会失败）。
