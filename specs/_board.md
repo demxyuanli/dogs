@@ -902,7 +902,12 @@ OFF from Plane    -> Cylinder   done=1
 | T-23 | 密度差是否要收 | ATU01038 顶点 −1.85%（vs `data/occ-ATU01038.obj`）/ −1.57%（vs `output/occ`），面 −1.89% / −1.21%。parity 注释明确"不断言密度，UV-grid vs deflection-adaptive 是已知差" ⇒ 若收，需先证明 OCCT 侧公式逐项对上 | pending（待定性） |
 | T-24 | `output/` 与 `data/occ/` 的归档策略 | 见 T-09 | pending |
 
-#### P4 — 继承缺口（`specs/_coverage.md` 列出，本轮未处理）（留档）
+#### P4 — 继承缺口（`specs/_coverage.md` 列出）（留档）
+
+> **状态订正（round 119 复核）**：本表是立项时的留档，**其后已有进展**，勿按下表「pending」理解——
+> **T-26 ✅**（标题已过期，见 `_design_architecture_t25_t28.md` §T-26「重要订正」）、**T-27 ✅ done（round 78，「摘除」而非接线：`is_covering_face` 自创谓词与整个 leftover 死模块连同 6 条死测试已被删除，见 §2 行与 `1486985`）**；
+> **T-28 pending**（设计见同文档 §T-28）、**T-25 pending**（架构级，设计见同文档 §T-25，127 文件/501 处引用）、T-29 pending。
+> 《`bop_build_solids.rs:18/:21/:25/:43` 的注释仍提到 `leftover`/`classify_faces_in_solid`，属**遗留注释**（模块已删），随 T-11 余项一并清理。》
 
 | ID | 任务 | 状态 |
 |---|---|---|
