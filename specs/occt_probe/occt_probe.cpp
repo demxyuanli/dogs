@@ -56,6 +56,14 @@
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
 
+#include <Geom2d_Curve.hxx>
+#include <Geom2dAdaptor_Curve.hxx>
+#include <gp_Pnt2d.hxx>
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <vector>
+
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -163,6 +171,164 @@ int main(int argc, char** argv)
     std::cout << "TOTAL faces=" << anIdx << " nodes=" << aNodes << " triangles=" << aTris
               << " meshvol=" << aMeshVol << " neg_triangles=" << aNegTris
               << " deflection=" << aDeflection << " angle=" << anAngle << "\n";
+    return 0;
+  }
+
+  // T-69 oracle: wire/edge structure of the *imported* shape. Answers "how many
+  // wires does OCCT's import produce for a face whose port twin has two wires of
+  // coincident closed edges". Read-only.
+  if (argc > 2 && std::string(argv[2]) == "--wires")
+  {
+    struct EW
+    {
+      bool          deg = false, closed = false, hasPC = false;
+      TopoDS_Vertex v1, v2;
+      double        u1 = 0, w1 = 0, u2 = 0, w2 = 0;
+      int           idx = 0;
+    };
+
+    int                nFaces = 0, nWires = 0, nFaces2 = 0, nFacesDup = 0;
+    int                nWires1Closed = 0, nWiresDupAny = 0, nFaces1Closed = 0, nFacesDupAny = 0;
+    std::map<int, int> aHist;
+    TopExp_Explorer    aFaceEx(aShape, TopAbs_FACE);
+    for (; aFaceEx.More(); aFaceEx.Next())
+    {
+      const TopoDS_Face aFace = TopoDS::Face(aFaceEx.Current());
+      ++nFaces;
+      int             aWireNb = 0;
+      bool            isDup    = false;
+      bool            isDupAny = false;
+      std::string     aDetail;
+      TopExp_Explorer aWireEx(aFace, TopAbs_WIRE);
+      for (; aWireEx.More(); aWireEx.Next(), ++aWireNb)
+      {
+        ++nWires;
+        std::vector<EW> aEdges;
+        int             anEdgeIdx = 0;
+        TopExp_Explorer anEdgeEx(aWireEx.Current(), TopAbs_EDGE);
+        for (; anEdgeEx.More(); anEdgeEx.Next(), ++anEdgeIdx)
+        {
+          const TopoDS_Edge anEdge = TopoDS::Edge(anEdgeEx.Current());
+          EW                anE;
+          anE.idx = anEdgeIdx;
+          anE.deg = BRep_Tool::Degenerated(anEdge);
+          TopExp::Vertices(anEdge, anE.v1, anE.v2);
+          anE.closed = (!anE.v1.IsNull() && !anE.v2.IsNull() && anE.v1.IsSame(anE.v2));
+          double                    aF = 0, aL = 0;
+          occ::handle<Geom2d_Curve> aC2d = BRep_Tool::CurveOnSurface(anEdge, aFace, aF, aL);
+          if (!aC2d.IsNull())
+          {
+            const gp_Pnt2d aP1 = aC2d->Value(aF);
+            const gp_Pnt2d aP2 = aC2d->Value(aL);
+            anE.hasPC          = true;
+            anE.u1 = aP1.X(); anE.w1 = aP1.Y();
+            anE.u2 = aP2.X(); anE.w2 = aP2.Y();
+          }
+          aEdges.push_back(anE);
+        }
+        if (aEdges.size() == 1 && aEdges[0].closed)
+        {
+          ++nWires1Closed;
+          ++nFaces1Closed;
+          if (nWires1Closed <= 400)
+          {
+            const EW& e0 = aEdges[0];
+            BRepAdaptor_Surface aSurf0(aFace);
+            const double aD2 = std::sqrt((e0.u2 - e0.u1) * (e0.u2 - e0.u1)
+                                         + (e0.w2 - e0.w1) * (e0.w2 - e0.w1));
+            int                      aType = -1;
+            double                   aF = 0, aL = 0, aCF = 0, aCL = 0;
+            TCollection_AsciiString  aTN("none");
+            {
+              TopExp_Explorer ex0(aWireEx.Current(), TopAbs_EDGE);
+              for (; ex0.More(); ex0.Next())
+              {
+                const TopoDS_Edge         e0x = TopoDS::Edge(ex0.Current());
+                double                    f0 = 0, l0 = 0;
+                occ::handle<Geom2d_Curve> c0 = BRep_Tool::CurveOnSurface(e0x, aFace, f0, l0);
+                if (c0.IsNull())
+                  continue;
+                Geom2dAdaptor_Curve ad0(c0);
+                aType = (int)ad0.GetType();
+                aF    = f0; aL = l0;
+                aCF   = c0->FirstParameter(); aCL = c0->LastParameter();
+                aTN   = c0->DynamicType()->Name();
+                break;
+              }
+            }
+            std::cout << "C1 face=" << nFaces << " surf=" << (int)aSurf0.GetType()
+                      << " d2d=" << aD2 << " hasPC=" << (e0.hasPC ? 1 : 0)
+                      << " pctype=" << aType << " tn=" << aTN.ToCString()
+                      << " range=" << aF << ".." << aL << " cfl=" << aCF << ".." << aCL
+                      << " u=" << e0.u1 << ".." << e0.u2
+                      << " v=" << e0.w1 << ".." << e0.w2 << "\n";
+          }
+        }
+        for (size_t a = 0; a < aEdges.size(); ++a)
+        {
+          for (size_t b = a + 1; b < aEdges.size(); ++b)
+          {
+            const EW& ea = aEdges[a];
+            const EW& eb = aEdges[b];
+            if (!ea.hasPC || !eb.hasPC)
+              continue;
+            {
+              const double aF2 = std::abs(ea.u1 - eb.u1) + std::abs(ea.w1 - eb.w1)
+                                 + std::abs(ea.u2 - eb.u2) + std::abs(ea.w2 - eb.w2);
+              const double aR2 = std::abs(ea.u1 - eb.u2) + std::abs(ea.w1 - eb.w2)
+                                 + std::abs(ea.u2 - eb.u1) + std::abs(ea.w2 - eb.w1);
+              if (std::min(aF2, aR2) < 1e-7)
+                isDupAny = true;
+            }
+            if (isDup)
+              continue;
+            if (!ea.closed || !eb.closed)
+              continue;
+            if (!ea.v1.IsSame(eb.v1) || !ea.v2.IsSame(eb.v2))
+              continue;
+            const double aFwd = std::abs(ea.u1 - eb.u1) + std::abs(ea.w1 - eb.w1)
+                                + std::abs(ea.u2 - eb.u2) + std::abs(ea.w2 - eb.w2);
+            const double aRev = std::abs(ea.u1 - eb.u2) + std::abs(ea.w1 - eb.w2)
+                                + std::abs(ea.u2 - eb.u1) + std::abs(ea.w2 - eb.w1);
+            if (std::min(aFwd, aRev) < 1e-7)
+              isDup = true;
+          }
+        }
+        char aBuf[256];
+        std::snprintf(aBuf, sizeof(aBuf), " w%d(e=%d)", aWireNb, (int)aEdges.size());
+        aDetail += aBuf;
+        for (const EW& e : aEdges)
+        {
+          std::snprintf(aBuf, sizeof(aBuf), " [cl=%d dg=%d u=%.4f..%.4f v=%.4f..%.4f]",
+                        e.closed ? 1 : 0, e.deg ? 1 : 0, e.u1, e.u2, e.w1, e.w2);
+          aDetail += aBuf;
+        }
+      }
+      if (isDupAny)
+      {
+        ++nWiresDupAny;
+        ++nFacesDupAny;
+      }
+      aHist[aWireNb]++;
+      if (aWireNb >= 2)
+        ++nFaces2;
+      if (isDup)
+      {
+        ++nFacesDup;
+        BRepAdaptor_Surface aSurf(aFace);
+        std::cout << "DUP face=" << nFaces << " surf=" << (int)aSurf.GetType()
+                  << " wires=" << aWireNb << aDetail << "\n";
+      }
+    }
+    std::cout << "TOTAL faces=" << nFaces << " wires=" << nWires
+              << " faces_with_2plus_wires=" << nFaces2
+              << " faces_with_coincident_closed_edges=" << nFacesDup
+              << " wires_1edge_closed=" << nWires1Closed << " faces_1edge_closed=" << nFaces1Closed
+              << " wires_dup_pc_any=" << nWiresDupAny << " faces_dup_pc_any=" << nFacesDupAny << "\n";
+    std::cout << "WIREHIST";
+    for (const auto& aPair : aHist)
+      std::cout << " " << aPair.first << ":" << aPair.second;
+    std::cout << "\n";
     return 0;
   }
 
