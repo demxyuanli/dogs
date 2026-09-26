@@ -185,6 +185,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 191 —— 📍 中点状态（goal round 100/200）：§3 只剩**两项**（T-69 在飞、T-25 待启），其余全部收口并有一次完整 §2 复核**
+
+**§3.1 红门禁**：**只剩 T-03**（`boss_single_disc_base_merges_one_solid`），已**定案 (b)**：夹具不合法（OCCT 的 `BOPAlgo` 下也不成立），**非引擎缺口** ✓。其余 6 条（T-01/T-04/T-05/T-86/T-88 等）均已转绿或按 OCCT 订正断言 ✓。
+
+**§3.2 根因批（8 序）**：序 1 T-32 ✓、序 2 T-68 ✓（球面）、序 4 **T-87 结案为非缺陷**（OCCT 自身网格给出与端口**逐位相同**的 712/892/2207.96/6 负号 ✓）、序 5 R2-8 探测完成并定案 (b) ✓、序 6 R2-9 完成（`phase19` 5/5 ✓）、序 7 **T-80 链 ✅**（FUSE 8 faces/8.502655、`Offset` 2610.501436、圆柱 6π；`1a3a1a90`）、序 8 T-67 步 3 + T-37 ✓；**仅序 3 T-69 在飞**。
+
+**§3.3 缺口池**：R2-6 / R2-18 / R2-19 / T-04 / T-05 / T-18 / T-20 / T-26 / T-27 / T-30 / T-44 / T-51 / T-88 / T-89 / **T-90（关闭：网格管线经 GT 复核为忠实）** / **T-54（并入 T-69）** / T-41（三处自创机制已标 `UNPORTED`，摘除留后）均收口 ✓。
+
+**§3.4**：T-11 收口（warning 846→481，剩余为「已移植未接线」的覆盖信号）✓；**T-28 前 3 步已落地并提交**（`771eb84d` + 调试清理 `77bbc649`），**门禁全绿**（我独立复算：`--lib` 1281/0、`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 3/3、`phase5/9/10/19/20`、`export_data_obj` 15 文件 v/f 逐位）✓；**T-25 待启**（步骤 1 落点已具体化，前置＝等 T-69 落地）。
+
+**新增登记**：**T-91**（STEP pcurve 关联，低-中；已判定端口关联层忠实，残余候选在「计算 pcurve」路径）。
+
+**本会话新建的 GT 资产（长期复用）**：
+- `specs/occt_probe/occt_probe.cpp`：`--mesh [defl] [angle]`（逐面/总 nodes·triangles + `meshvol` + `neg_triangles`）、`--edges`（逐 (face,edge) 节点数）、`--bbox`（`maxComp` ⇒ `lin`）、`--wires`（逐面 wire/edge 结构 + pcurve 类型/参数）；
+- `specs/occt_probe/wires_probe.cpp` + `build_wires.bat`：独立只读探针（wire 普查 + **UV 退化普查**）；
+- **`specs/_occt_mesh_gt.md`**：`data/*.step` 15 + `data/occ/*.stp` 5 的 OCCT 网格 GT（真实参数口径）与端口基线对照；**全 19 个语料 OCCT 侧 `uv_degenerate_faces = 0`**。
+
+**方法论沉淀（本会话四次同型教训，均已记板）**：① 批量清理告警前先确认编译口径（`--lib` 不含 `cfg(test)`）；② 拿 GT 对拍前先确认两侧**参数完全一致**；③ 用「某文件集合一致」证明「某分支不可达」前，先确认该集合**覆盖所有会触发该分支的输入**；④ 机制假设**先用已有探针数据检验**，再去读实现（`wires_1edge_closed=172` 一举否掉 `FixMissingSeam`）。
 **round 190 —— T-25 步骤 1 的落点已具体化（读 `tshape.rs`）：**端口已有 `BRep_T*` 形结构**，只差曲线/曲面/pcurve 三类槽**
 
 读 `crates/occt-topo/src/tshape.rs:84-134`：端口**已经**有：
