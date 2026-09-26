@@ -185,6 +185,20 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 153 —— T0M 的「少 6 面」不是端口丢面：**文件里就是 1772 个 `ADVANCED_FACE`，是 OCCT 导入时**多造了 6 个面****
+
+直接在 STEP 文本上点数 `data/occ/T0M.stp`（非 cargo）：
+```
+ADVANCED_FACE = 1772        EDGE_CURVE = 4067        ORIENTED_EDGE = 8138
+CLOSED_SHELL  =    7        FACE_SURFACE = 0
+（MANIFOLD_SOLID_BREP / SHELL_BASED_SURFACE_MODEL / OPEN_SHELL = 0）
+```
+⇒ **端口报的 model faces=1772 与文件逐一对齐** ✓；而 OCCT 的 `--mesh` 报 **1778** ⇒ **多出的 6 个面是 OCCT 导入链自己产生的**（`STEPControl_Reader` 的 `ShapeFix`/`ShapeProcessing` 会拆分面，例如闭合/周期面按缝拆、`StepToTopoDS` 的分面处理）。
+
+**意义**：
+1. 排除了「端口 STEP 读侧丢 6 面」这个方向（我 round 152 的措辞「属 STEP 读侧」**应订正为**：端口忠实于文件，差异由 OCCT 额外造面产生）；
+2. 因此 T-69 的失败面分母用 **1772** 是对的，验收仍是「162 → 0」；
+3. 「OCCT 比端口多 6 面」本身可另立为**低优先**观察项（若要完全对齐 OCCT 的面数，需移植 `ShapeProcessing`/拆面逻辑；但端口与**文件**一致，且该差异不影响任何既有门禁）。
 **round 152 —— ✅ T-69 分诊到位（网格子代理实测）：**mesher 忠实、回退 162 面、根因=边界链一半被标 FIXED**
 
 **【A】复算 round-138 订正 ⇒ 结论加固**：用探针参数（0.1 / 角 0.5）跑端口 `IncrementalMesh::from_deflection`，**11/15 逐位一致**（Cone 103/141、Cube 24/12、Cylinder 106/100、Extrusion 24/12、HoledPlate 180/128、Offset 496/556、OffsetPlaneHoleEdge 48/32、Sphere 273/516、Torus 810/1508、linkrods 2184/2928、rev 76/64、screw 652/944），偏差仅 `Shape-1 +4/+4`、`Shape-2 +15/+30`、`Shape +2/+4` ⇒ **「网格器本身已忠实、不需要移植 `BRepMesh_Delaun`」得到独立复现** ✓（与我 round-138 在端口真实参数下的 14/15 一致）。
