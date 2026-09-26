@@ -185,6 +185,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 192 —— T-25 **第一批（pcurve 家族）精确范围**：7 个 API / 87 处 / 15 文件**
+
+统计 `reg.{set_edge_pcurve, set_edge_pcurves, edge_pcurves, edge_pcurve, set_pcurve_range, pcurve_range, remove_pcurves_on_surface}` 的调用点：
+```
+87 处，涉及 15 个文件（去掉 examples 后 14 个）：
+  24  shhealing/wire_fix.rs
+  12  src/primitives.rs
+   9  shhealing/pcurve_ranges.rs
+   8  src/boptools_2d.rs
+   6  src/brep_lib_make_face.rs
+   5  brep_offset/curve_face_offset.rs
+   4  src/pave_ff_make.rs / src/pave_ff.rs / src/pcurve.rs
+   3  src/brep_lib_same_parameter.rs / shhealing/xsalgo_check_pcurve.rs
+   2  src/tgeometry.rs          1  src/bop_split_seam.rs
+```
+⇒ **T-25 的第一步第一批就做这一族**：给 `EdgeShape` 加 pcurve 槽（按面键的有序表 + range）与访问器，把这 87 处从 `GeometryRegistry` 改到 `TShape` 上；跑 `--lib` 1281/0 + 四道 STEP + `phase5/9/10/19/20`；绿了再开下一族（`edge_geom`/`set_edge`/`vertex_point`/`face_geom` …）。
+这样每批都有**可核对的范围与门禁**，避免 488 处一次爆 ✗。**前置不变**：等 T-69 代理落地、基线安静（T-25 改 `TShape` 会让所有在改文件同时失效）。
 **round 191 —— 📍 中点状态（goal round 100/200）：§3 只剩**两项**（T-69 在飞、T-25 待启），其余全部收口并有一次完整 §2 复核**
 
 **§3.1 红门禁**：**只剩 T-03**（`boss_single_disc_base_merges_one_solid`），已**定案 (b)**：夹具不合法（OCCT 的 `BOPAlgo` 下也不成立），**非引擎缺口** ✓。其余 6 条（T-01/T-04/T-05/T-86/T-88 等）均已转绿或按 OCCT 订正断言 ✓。
