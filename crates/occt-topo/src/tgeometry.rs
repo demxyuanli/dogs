@@ -308,27 +308,25 @@ impl GeometryRegistry {
     /// All pcurves of edge `s` on the face identified by `face_key`
     /// (forward-then-reversed for a seam edge, one for a normal edge).
     pub fn edge_pcurves(&self, s: &TopoShape, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
-        // T-25: the pcurves live on the edge's own `TShape` now; the
-        // same-surface fallback still needs this registry's face map.
-        let candidates: Vec<(usize, Vec<Arc<dyn Curve2d>>)> = {
-            let ts = s.tshape.read().unwrap();
-            let Some(p) = ts.edge_pcurves() else {
-                return Vec::new();
-            };
-            let direct = p.get_pcurves(face_key);
-            if !direct.is_empty() {
-                return direct;
-            }
-            p.curves
-                .iter()
-                .filter(|(&fk, _)| fk != face_key)
-                .map(|(&fk, cs)| (fk, cs.clone()))
-                .collect()
-        };
         let want = self.faces.read().unwrap().get(&face_key).map(|g| g.surface.clone());
+        let edges = self.edges.read().unwrap();
+        let Some(g) = edges.get(&key(s)) else {
+            return Vec::new();
+        };
+        let direct = g.get_pcurves(face_key);
+        if !direct.is_empty() {
+            return direct;
+        }
         let Some(want) = want else {
             return Vec::new();
         };
+        let candidates: Vec<(usize, Vec<Arc<dyn Curve2d>>)> = g
+            .pcurves
+            .iter()
+            .filter(|(&fk, _)| fk != face_key)
+            .map(|(&fk, cs)| (fk, cs.clone()))
+            .collect();
+        drop(edges);
         let faces = self.faces.read().unwrap();
         for (fk, cs) in candidates {
             if faces.get(&fk).is_some_and(|fg| Arc::ptr_eq(&fg.surface, &want)) {
@@ -341,48 +339,48 @@ impl GeometryRegistry {
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
     /// Mirrors `BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`.
     pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
-        let (first, last) = self.edge_parameters(s);
-        s.tshape.write().unwrap().edge_pcurves_mut().set_pcurve(face_key, curve, first, last);
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.set_pcurve(face_key, curve);
+        }
     }
 
     /// Replace the pcurves of edge `s` on the face identified by `face_key`.
     /// Mirrors the seam overload `BRep_Builder::UpdateEdge(edge, c1, c2, face)`.
     pub fn set_edge_pcurves(&self, s: &TopoShape, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
-        let (first, last) = self.edge_parameters(s);
-        s.tshape.write().unwrap().edge_pcurves_mut().set_pcurves(face_key, curves, first, last);
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.set_pcurves(face_key, curves);
+        }
     }
 
     /// `BRep_Builder::Range(edge, face, first, last)` (`BRep_Builder.cxx:1121`).
     pub fn set_pcurve_range(&self, s: &TopoShape, face_key: usize, first: f64, last: f64) {
-        s.tshape
-            .write()
-            .unwrap()
-            .edge_pcurves_mut()
-            .ranges
-            .insert(face_key, (first, last));
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
+            g.pcurve_ranges.insert(face_key, (first, last));
+        }
     }
 
     /// COS representation `[First, Last]` for `face_key`, with the same
     /// same-surface fallback as [`GeometryRegistry::edge_pcurve`].
     pub fn pcurve_range(&self, s: &TopoShape, face_key: usize) -> Option<(f64, f64)> {
-        // T-25: read off the edge's own `TShape`; the same-surface fallback
-        // still consults this registry's face map.
-        let candidates: Vec<(usize, (f64, f64))> = {
-            let ts = s.tshape.read().unwrap();
-            let p = ts.edge_pcurves()?;
-            if let Some(&r) = p.ranges.get(&face_key) {
-                return Some(r);
-            }
-            p.ranges.iter().filter(|(&fk, _)| fk != face_key).map(|(&fk, &r)| (fk, r)).collect()
-        };
+        let edges = self.edges.read().unwrap();
+        let g = edges.get(&key(s))?;
+        if let Some(&r) = g.pcurve_ranges.get(&face_key) {
+            return Some(r);
+        }
         let want = self.faces.read().unwrap().get(&face_key).map(|fg| fg.surface.clone());
         let Some(want) = want else {
             return None;
         };
-        let faces = self.faces.read().unwrap();
-        for (fk, r) in candidates {
-            if faces.get(&fk).is_some_and(|fg| Arc::ptr_eq(&fg.surface, &want)) {
-                return Some(r);
+        for (&fk, r) in &g.pcurve_ranges {
+            if fk != face_key
+                && self
+                    .faces
+                    .read()
+                    .unwrap()
+                    .get(&fk)
+                    .is_some_and(|fg| Arc::ptr_eq(&fg.surface, &want))
+            {
+                return Some(*r);
             }
         }
         None
@@ -414,25 +412,21 @@ impl GeometryRegistry {
         &self,
         s: &TopoShape,
     ) -> Vec<(Arc<dyn Surface>, Arc<dyn Curve2d>, f64, f64)> {
+        let edges = self.edges.read().unwrap();
         let faces = self.faces.read().unwrap();
-        // The 3D range still lives on the edge's `EdgeGeom` in this batch;
-        // the pcurves and their COS ranges come off the `TShape` slot (T-25).
-        let (edge_pcurves, three_d) = {
-            let edges = self.edges.read().unwrap();
-            let Some(g) = edges.get(&key(s)) else {
-                return Vec::new();
-            };
-            (s.tshape.read().unwrap().edge_pcurves().cloned(), (g.first, g.last))
-        };
-        let Some(g) = edge_pcurves else {
+        let Some(g) = edges.get(&key(s)) else {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for (&fk, pcs) in &g.curves {
+        for (&fk, pcs) in &g.pcurves {
             let Some(fg) = faces.get(&fk) else {
                 continue;
             };
-            let (a, b) = g.ranges.get(&fk).copied().unwrap_or(three_d);
+            let (a, b) = g
+                .pcurve_ranges
+                .get(&fk)
+                .copied()
+                .unwrap_or((g.first, g.last));
             for pc in pcs {
                 out.push((fg.surface.clone(), pc.clone(), a, b));
             }
@@ -448,11 +442,11 @@ impl GeometryRegistry {
         };
         let drop_keys: Vec<usize> = {
             let faces = self.faces.read().unwrap();
-            let ts = edge.tshape.read().unwrap();
-            let Some(g) = ts.edge_pcurves() else {
+            let edges = self.edges.read().unwrap();
+            let Some(g) = edges.get(&key(edge)) else {
                 return;
             };
-            g.curves
+            g.pcurves
                 .keys()
                 .copied()
                 .filter(|&fk| {
@@ -466,11 +460,10 @@ impl GeometryRegistry {
         if drop_keys.is_empty() {
             return;
         }
-        let mut ts = edge.tshape.write().unwrap();
-        if let Some(g) = ts.edge_pcurves.as_mut() {
+        if let Some(g) = self.edges.write().unwrap().get_mut(&key(edge)) {
             for fk in drop_keys {
-                g.curves.remove(&fk);
-                g.ranges.remove(&fk);
+                g.pcurves.remove(&fk);
+                g.pcurve_ranges.remove(&fk);
             }
         }
     }

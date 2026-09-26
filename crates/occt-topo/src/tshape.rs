@@ -120,52 +120,12 @@ pub struct VertexShape {
 /// lookup falls back to another face key on the same surface (see
 /// `GeometryRegistry::edge_pcurves`, `tgeometry.rs:310-337`).
 /// `Debug` is manual because `dyn Curve2d` is not `Debug`.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct EdgePcurves {
     /// Forward-then-reversed for a seam edge, one entry for a normal edge.
     pub curves: HashMap<usize, Vec<Arc<dyn Curve2d>>>,
     /// `BRep_GCurve` First/Last of the CurveOnSurface representation.
     pub ranges: HashMap<usize, (f64, f64)>,
-}
-
-impl EdgePcurves {
-    /// Attach the (single) pcurve on `face_key`, replacing any previous ones
-    /// (`EdgeGeom::set_pcurve`, `tgeometry.rs:104-107`).
-    pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>, first: f64, last: f64) {
-        self.curves.insert(face_key, vec![c.clone()]);
-        self.init_range(face_key, Some(c.as_ref()), first, last);
-    }
-
-    /// Replace the pcurves on `face_key` (one for a normal edge, two in
-    /// forward-then-reversed order for a seam edge).
-    pub fn set_pcurves(&mut self, face_key: usize, cs: Vec<Arc<dyn Curve2d>>, first: f64, last: f64) {
-        let head = cs.first().cloned();
-        self.curves.insert(face_key, cs);
-        self.init_range(face_key, head.as_deref(), first, last);
-    }
-
-    /// `UpdateCurves` (`BRep_Builder.cxx:149-164`): the new COS range is the
-    /// 3D range when finite, else the pcurve's own `[First, Last]`.
-    fn init_range(&mut self, face_key: usize, pc: Option<&dyn Curve2d>, first: f64, last: f64) {
-        let (f, l) = if first.is_finite() && last.is_finite() {
-            (first, last)
-        } else if let Some(c) = pc {
-            (c.first_parameter(), c.last_parameter())
-        } else {
-            return;
-        };
-        self.ranges.insert(face_key, (f, l));
-    }
-
-    /// The first pcurve on `face_key`.
-    pub fn get_pcurve(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
-        self.curves.get(&face_key).and_then(|v| v.first().cloned())
-    }
-
-    /// All pcurves on `face_key`.
-    pub fn get_pcurves(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
-        self.curves.get(&face_key).cloned().unwrap_or_default()
-    }
 }
 
 impl fmt::Debug for EdgePcurves {
