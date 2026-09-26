@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 224 —— 🔍 发现：侧表 payload 与 `TShape` 槽**已重复存 6 个标量**（T-25 的统一点）**
+
+`tgeometry.rs:64-83` 的 `EdgeGeom` 有 8 字段：`curve`、`first`、`last`、`tolerance`、`same_parameter`、`same_range`、`degenerated`、`pcurves`、`pcurve_ranges`（后两个 `HashMap<usize, _>`，键 = `shape_key(face)` ✓；注释明确 `BRep_Tool::CurveOnSurface` 按 `Geom_Surface` 句柄命中、**共享同一 surface 的面共用这些 pcurve** ✓）。而 `tshape.rs:94-102` 的 `EdgeShape` **已经有** `first`/`last`/`tolerance`/`same_parameter`/`same_range`/`degenerated` ✓ ⇒ **6 个标量是两份存储** ✗。
+⇒ **批 1 只搬 `pcurves` + `pcurve_ranges`** ✓；`curve` 与那 6 个标量的**统一**留给后续批次 ✓（届时要判定哪一份权威、是否一直同步 ✓）——已要求代理在报告里记一行 ✓。
+**并发一致性建议（已发）**：两个 map 键相同 ⇒ 放进**同一个 `RwLock`** 的一个结构（如 `EdgePcurves { curves, ranges }` ✓），保证两次 map 的键**原子一致** ✓（否则会读到「有 curve 没 range」的中间态 ✗）。
 **round 223 —— T-25 全批次数与规模（实测计数，作为后续推进的路线图）**
 
 | 批次 | 家族 | 调用点 | 文件数 | 热点 |
