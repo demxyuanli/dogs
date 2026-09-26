@@ -185,6 +185,31 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 220 —— 📕 T-69 最终定性（代理交回，实测证伪「两函数」路径）+ 新立项 T-92**
+
+**代理已按裁决 (b) 收尾**：未接线（避免 no-op pass ✗）、未移植 `ComposeShell`、**未提交**；临时件全删（`face_fix.rs`、3 个 example、`specs/occt_probe/zz_t69_*`、`zz_run_wires.bat`、`data/occ_t69/`）、`shhealing/mod.rs` 已还原；**我复核 `git status --porcelain` 为空** ✓、`cargo check` 0 error ✓。
+（`face_fix.rs` 曾写到**完整可编译 435 行 / 0 warning**，但**主动删除** ✓：不可验证、唯一可触发路径（③）在五个目标文件上**一次都不发生**、留 `pub` 反而成**静默死代码** ✗。其价值已固化为下面的行号地图 ✓ —— 这个判断正确 ✓。）
+
+**探针表（忠实 `CheckWire`，`ShapeFix_Face.cxx:1652-1718`）**：
+
+| 文件 | 有 u/v-closed 范围的面 | 判开口 ≥1 | 其中 ≥2（②配对） | 退化面 | 退化面中判开口 |
+|---|---|---|---|---|---|
+| T0M | 745 | 12 | 12 | 207 | 12 |
+| acs10 | 364 | **0** | 0 | 110 | 0 |
+| a3n00 | 99 | **0** | 0 | 46（18 个不满足 closed 门 ⇒ 仅 28 进 CheckWire） | 0 |
+| TDB | 826 | **0** | 0 | 1 | 0 |
+| ATU01038 | 185 | **0** | 0 | 0 | 0 |
+
+⇒ **`FixMissingSeam` 对 acs10/a3n00/TDB 是纯 no-op；T0M 的 12 个面走②配对、永不进③** ⇒ 「两函数」范围**不足以**达成 207/110/46→0 ✗（**证伪**我 round 202/203 的假设 ✗）。
+
+**📌 新立项：T-92 —— 移植 `ShapeFix_ComposeShell`（seam 插入/面重构本体）**
+- 调用点：`ShapeFix_Face.cxx:2252-2261`（`CompShell.Init(G,L,tmpF,Confusion)`、`ClosedMode()=true`、`SetMaxTolerance`、`Perform()`）；`ShapeFix_ComposeShell` 全部调用点仅 3 处（`ShapeFix_Face.cxx:2252`、`ShapeUpgrade_FaceDivide.cxx:183`、`ShapeUpgrade_ClosedFaceDivide.cxx:267`）⇒ STEP 路径只能是前者 ✓；
+- 本体 `ShapeFix_ComposeShell.cxx` **3603 行**：`Init/Perform/SplitEdges/Result` `:96-282`、`LoadWires` `:499-646`、`ComputeCode` `:647-941`、`SplitWire` `:942-1432`、`SplitByLine` `:1433-2130`、`SplitByGrid` `:2131-2278`、`BreakWires` `:2279-2511`、`CollectWires` `:2512-2977`、`MakeFacesOnPatch` `:2978-3274`、`DispatchWires` `:3275-3587`；
+- **必须一并补齐**：① `ShapeFix_WireSegment`（`.hxx` ~120 行，未移植）；② `ShapeExtend_CompositeSurface`（输入网格；端口已有 `occt-geom` 的 `rectangular_trimmed.rs` ✓）；③ `ShapeFix_Wire::FixReorder` 的**可变重排**（现在只有谓词 `shhealing/wire_fix.rs:1403 fix_reorder_wire->bool` 不改 wire ✗，`ShapeFix_Face.cxx:2023-2034`）；④ `ShapeAnalysis::IsOuterBound`（`:2058`；端口最近的是 `meshing/wire_order.rs:79 chain_area()` ✓）；
+- **⚠️ 前置子项（代理的关键洞察）**：端口喂进去的面**已被 `fix_lacking_all` 追加过重复闭合边**（±2π∓2π 相消 ⇒ `CheckWire vec≈0`）⇒ **必须先对齐 `ShapeAnalysis_Wire::CheckLacking`（`:1711-1793`）/ `ShapeFix_Wire::FixLacking`（`:3617-3975`）或调整修复阶段次序** ✓，否则 ComposeShell 输入不对、seam 仍插不出 0 退化面 ✓；
+- 工作量：Rust **≈3300–4600 行**（ComposeShell 2500–3400 + 辅助 800–1200），建议拆 4 批（输入结构 → ComposeShell 主体 → 接线 → 对拍），风险集中在 `ComputeCode`/`SplitWire`/`CollectWires`（~60%）；
+- 验收（沿用现有基线）：`zz_probe_uv` 的 `degenerate_faces`（207/110/46/1/0）+ 五文件 `v/f`（`specs/_occt_mesh_gt.md`）+ 15 文件三列表 + `--lib`/`--all-targets`/四道 STEP/`phase5,9,10,19,20` ✓。
+- **与 objective 的关系**：`objective` 枚举**不含 T-69/T-92** ✓ ⇒ **不阻塞 objective 收口** ✓；登记备查 ✓。
 **round 219 —— T-25 设计要点：把侧表搬到 `TShape` 槽需要**内部可变性****
 
 读 `tgeometry.rs` 的 API 面（`set_vertex`:201/`vertex_geom`:207/`vertex_point`:212、`set_edge`:222/`set_edge_range`:233/`edge_geom`:240/`edge_parameters`:263、`edge_pcurves`:310/`set_edge_pcurve`:341/`set_edge_pcurves`:349、`set_edge_tolerance`:404、`shape_key`:473、`set_face`:479/`face_geom`:485/`set_face_tolerance`:514 ✓）：
