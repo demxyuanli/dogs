@@ -232,6 +232,17 @@ impl GeometryRegistry {
                 ranges: geom.pcurve_ranges.clone(),
             });
         }
+        {
+            let mut ts = s.tshape.write().unwrap();
+            let c = ts.edge_core_mut();
+            c.curve = Some(geom.curve.clone());
+            c.first = geom.first;
+            c.last = geom.last;
+            c.tolerance = geom.tolerance;
+            c.same_parameter = geom.same_parameter;
+            c.same_range = geom.same_range;
+            c.degenerated = geom.degenerated;
+        }
         self.edges.write().unwrap().insert(k, geom);
     }
 
@@ -241,24 +252,47 @@ impl GeometryRegistry {
     /// `BRepPrim_OneAxis.cxx:407`, `:418`): the 3D curve is absent but the range
     /// still spans the full period so the edge's pcurve is a full u-isoline.
     pub fn set_edge_range(&self, s: &TopoShape, first: f64, last: f64) {
-        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
-            g.first = first;
-            g.last = last;
-        }
+        let mut ts = s.tshape.write().unwrap();
+        let c = ts.edge_core_mut();
+        c.first = first;
+        c.last = last;
     }
 
     pub fn edge_geom(&self, s: &TopoShape) -> Option<EdgeGeom> {
         self.edges.read().unwrap().get(&key(s)).map(|g| {
             // EdgeGeom is not Clone (Arc<dyn Curve> is Clone, but we rebuild a
             // fresh struct to avoid needing Clone on the whole thing).
+            // T-25 batch 2: the curve and the six `BRep_TEdge` scalars come
+            // off the edge's own `TShape` (map values only as a safety net).
+            let core = s.tshape.read().unwrap().edge_core().cloned();
+            let (curve, first, last, tolerance, sp, sr, deg) = match core {
+                Some(c) => (
+                    c.curve.unwrap_or_else(|| g.curve.clone()),
+                    c.first,
+                    c.last,
+                    c.tolerance,
+                    c.same_parameter,
+                    c.same_range,
+                    c.degenerated,
+                ),
+                None => (
+                    g.curve.clone(),
+                    g.first,
+                    g.last,
+                    g.tolerance,
+                    g.same_parameter,
+                    g.same_range,
+                    g.degenerated,
+                ),
+            };
             EdgeGeom {
-                curve: g.curve.clone(),
-                first: g.first,
-                last: g.last,
-                tolerance: g.tolerance,
-                same_parameter: g.same_parameter,
-                same_range: g.same_range,
-                degenerated: g.degenerated,
+                curve,
+                first,
+                last,
+                tolerance,
+                same_parameter: sp,
+                same_range: sr,
+                degenerated: deg,
                 // T-25: pcurves come off the edge's own `TShape`.
                 pcurves: s.tshape.read().unwrap().edge_pcurves().map(|p| p.curves.clone()).unwrap_or_default(),
                 pcurve_ranges: s.tshape.read().unwrap().edge_pcurves().map(|p| p.ranges.clone()).unwrap_or_default(),
@@ -298,9 +332,8 @@ impl GeometryRegistry {
     /// stores what `BRepAdaptor_Curve(edge, face)` would build from the pcurve
     /// instead (`Adaptor3d_CurveOnSurface`).
     pub fn set_degenerated(&self, s: &TopoShape, v: bool) {
-        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
-            g.degenerated = v;
-        }
+        let mut ts = s.tshape.write().unwrap();
+        ts.edge_core_mut().degenerated = v;
     }
 
     // ---- edge p-curves ----
@@ -371,9 +404,6 @@ impl GeometryRegistry {
             .edge_pcurves_mut()
             .ranges
             .insert(face_key, (first, last));
-        if false {
-            let _ = (first, last);
-        }
     }
 
     /// COS representation `[First, Last]` for `face_key`, with the same
@@ -404,23 +434,17 @@ impl GeometryRegistry {
 
     /// `BRep_Builder::SameRange`.
     pub fn set_same_range(&self, s: &TopoShape, value: bool) {
-        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
-            g.same_range = value;
-        }
+        s.tshape.write().unwrap().edge_core_mut().same_range = value;
     }
 
     /// `BRep_Builder::SameParameter`.
     pub fn set_same_parameter(&self, s: &TopoShape, value: bool) {
-        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
-            g.same_parameter = value;
-        }
+        s.tshape.write().unwrap().edge_core_mut().same_parameter = value;
     }
 
     /// `BRep_Builder::UpdateEdge` tolerance write.
     pub fn set_edge_tolerance(&self, s: &TopoShape, tol: f64) {
-        if let Some(g) = self.edges.write().unwrap().get_mut(&key(s)) {
-            g.tolerance = tol;
-        }
+        s.tshape.write().unwrap().edge_core_mut().tolerance = tol;
     }
 
     /// CurveOnSurface representations: surface, pcurve, COS `[first, last]`.
@@ -547,8 +571,12 @@ impl GeometryRegistry {
         self.vertices.write().unwrap().remove(&k);
         self.edges.write().unwrap().remove(&k);
         self.faces.write().unwrap().remove(&k);
-        // T-25: the pcurves live on the shape itself now.
-        s.tshape.write().unwrap().edge_pcurves = None;
+        // T-25: the edge geometry lives on the shape itself now.
+        {
+            let mut ts = s.tshape.write().unwrap();
+            ts.edge_pcurves = None;
+            ts.edge_core = None;
+        }
     }
 
     /// Remove every geometry entry keyed by the raw `TShape` address. Called
