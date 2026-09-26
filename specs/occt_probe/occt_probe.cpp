@@ -142,6 +142,50 @@ int main(int argc, char** argv)
     return 0;
   }
 
+  // T-54 step-1 oracle: OCCT's **per-edge** discretization, i.e. how many
+  // nodes `BRepMesh` put on each edge's polygon-on-triangulation. The port has
+  // already ported the `compute_nb_samples*` family but never wired it, so this
+  // is the table that family must reproduce.
+  if (argc > 2 && std::string(argv[2]) == "--edges")
+  {
+    const double aDeflection = (argc > 3) ? std::atof(argv[3]) : 0.1;
+    BRepMesh_IncrementalMesh aMesher(aShape, aDeflection);
+    TopExp_Explorer aFaceEx(aShape, TopAbs_FACE);
+    int             aFaceIdx = 0, anEdgeIdx = 0, aTotal = 0, aNoPoly = 0;
+    for (; aFaceEx.More(); aFaceEx.Next(), ++aFaceIdx)
+    {
+      TopLoc_Location                     aFaceLoc;
+      const occ::handle<Poly_Triangulation>& aFaceTri =
+        BRep_Tool::Triangulation(TopoDS::Face(aFaceEx.Current()), aFaceLoc);
+      TopExp_Explorer anEdgeEx(aFaceEx.Current(), TopAbs_EDGE);
+      for (; anEdgeEx.More(); anEdgeEx.Next(), ++anEdgeIdx)
+      {
+        const TopoDS_Edge& anEdge = TopoDS::Edge(anEdgeEx.Current());
+        int                aN      = 0;
+        if (!aFaceTri.IsNull())
+        {
+          const occ::handle<Poly_PolygonOnTriangulation>& aPoly =
+            BRep_Tool::PolygonOnTriangulation(anEdge, aFaceTri, aFaceLoc);
+          if (aPoly.IsNull())
+          {
+            ++aNoPoly;
+          }
+          else
+          {
+            aN = aPoly->NbNodes();
+          }
+        }
+        aTotal += aN;
+        std::cout << "EDGE face=" << aFaceIdx << " i=" << anEdgeIdx << " nodes=" << aN
+                  << " degenerated=" << (BRep_Tool::Degenerated(anEdge) ? 1 : 0) << "\n";
+      }
+    }
+    std::cout << "TOTAL faces=" << aFaceIdx << " edge_occurrences=" << anEdgeIdx
+              << " edge_nodes=" << aTotal << " without_polygon=" << aNoPoly
+              << " deflection=" << aDeflection << "\n";
+    return 0;
+  }
+
   if (argc > 2 && std::string(argv[2]) == "--entities")
   {
     occ::handle<StepData_StepModel> aModel = aReader.StepModel();

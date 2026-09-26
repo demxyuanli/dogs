@@ -36,3 +36,20 @@
 4. `screw` 偏少（652/944 vs 600/790，约 0.95×）——它多为平直/柱面混合，偏离最小，量级上更像「点数公式差一点」而非算法差。
 
 ⇒ 给 T-54+T-90 的优先级建议：**先把 `Shape`/`Shape-2` 这一类（带内环/非凸平面 + 内部边）补上**（收益最大），再统一曲面面的 Deflection→点数公式与约束 Delaunay。
+
+## 逐边离散化 GT（`--edges` 模式，round 136 新增）
+
+> 用途：T-54+T-90 的**第 1 步**（把已移植未接线的 `compute_nb_samples*` 族接进网格管线）的**逐边验收基准** —— 它要复现的正是「每条边放几个点」。
+> 命令同上，把 `--mesh` 换成 `--edges`（可选 deflection 参数）。输出 `EDGE face=<面序> i=<边序> nodes=<边上节点数> degenerated=<0/1>` 逐条 + `TOTAL faces/edge_occurrences/edge_nodes/without_polygon`。注意：同一几何边会被它相邻的**每个面各列一次**（`Poly_PolygonOnTriangulation` 是 (edge, face) 对的），所以 `edge_nodes` 是「面×边」的总和。
+
+**示例（`Cylinder.step`，deflection 0.1）**：
+```
+EDGE face=0 i=2 nodes=27 degenerated=0      <- 底圆（每圈 27 点）
+EDGE face=0 i=3 nodes= 2 degenerated=0      <- 缝边 occurrence A
+EDGE face=1 i=4 nodes=27 degenerated=0      <- 顶圆
+EDGE face=2 i=5 nodes=27 degenerated=0      <- 侧柱面里的圆
+TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
+```
+⇒ 半径 4、高 10 的圆柱在 deflection 0.1 下 OCCT 给**每圆 27 点**；端口的 `compute_nb_samples*`（对应 `BRepMesh_EdgeDiscret`/`BRepMesh_Deflection` 的 nb-points 公式）必须给出同一数字，之后约束 Delaunay 才能给出同样的 100 三角形。
+
+其它文件的逐边表可用同一条命令自取（`--edges 0.1`），必要时逐面对齐。
