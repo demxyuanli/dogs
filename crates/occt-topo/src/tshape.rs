@@ -29,6 +29,13 @@ pub struct TShape {
     /// edges, a face its wires, a solid its shells, a compound arbitrary
     /// shapes — each with its own orientation.
     pub children: Vec<TopoShape>,
+    /// Per-face 2D pcurves of an EDGE shape (T-25: lifted from the
+    /// `GeometryRegistry` side table, `tgeometry.rs:64-83`). `None` on
+    /// non-edge shapes and on edges that never got one.
+    ///
+    /// `TopoShape` already carries `Arc<RwLock<TShape>>`, so the guard
+    /// provides the interior mutability: no extra lock per slot.
+    pub edge_pcurves: Option<EdgePcurves>,
 }
 
 /// Source of `TShape::id` (one per construction, process-wide).
@@ -54,6 +61,7 @@ impl TShape {
             location: TopLocLocation::identity(),
             id: next_shape_id(),
             children: Vec::new(),
+            edge_pcurves: None,
         }
     }
 
@@ -70,6 +78,15 @@ impl TShape {
     pub fn set_location(&mut self, l: &TopLocLocation) { self.location = l.clone(); }
     pub fn child(&self, i: usize) -> Option<TopoShape> { self.children.get(i).cloned() }
     pub fn add_child(&mut self, c: TopoShape) { self.children.push(c); }
+
+    /// The edge's pcurve store, created on first use (only meaningful for
+    /// `ShapeType::Edge`; other shapes are simply never asked).
+    pub fn edge_pcurves_mut(&mut self) -> &mut EdgePcurves {
+        self.edge_pcurves.get_or_insert_with(EdgePcurves::default)
+    }
+
+    /// The edge's pcurve store, if it has one yet.
+    pub fn edge_pcurves(&self) -> Option<&EdgePcurves> { self.edge_pcurves.as_ref() }
 }
 
 impl Drop for TShape {
@@ -130,8 +147,6 @@ pub struct EdgeShape {
     pub same_parameter: bool,
     pub same_range: bool,
     pub degenerated: bool,
-    /// Per-face pcurves (T-25: moved off the `GeometryRegistry` side table).
-    pub pcurves: RwLock<EdgePcurves>,
 }
 
 /// Wire shape data.
@@ -160,53 +175,7 @@ pub struct CompoundShape { pub base: TShape }
 
 impl VertexShape { pub fn new(p: occt_core::gp::GpPnt) -> Self { Self { base: TShape::new(ShapeType::Vertex), point: p, tolerance: 0.0 } } }
 impl EdgeShape {
-    /// All pcurves of this edge on `face_key` (`GeometryRegistry::edge_pcurves`
-    /// direct hit; the surface-identity fallback stays in the registry until
-    /// the face surface slot moves too).
-    pub fn pcurves_on(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
-        self.pcurves.read().unwrap().curves.get(&face_key).cloned().unwrap_or_default()
-    }
-
-    /// The first pcurve on `face_key` (`GeometryRegistry::edge_pcurve`).
-    pub fn pcurve_on(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
-        self.pcurves_on(face_key).into_iter().next()
-    }
-
-    /// Attach a pcurve (`BRep_Builder::UpdateEdge(edge, c2d, face, tol)`).
-    pub fn set_pcurve_on(&self, face_key: usize, curve: Arc<dyn Curve2d>) {
-        let mut g = self.pcurves.write().unwrap();
-        let v = g.curves.entry(face_key).or_default();
-        if v.is_empty() {
-            v.push(curve);
-        } else {
-            v[0] = curve;
-        }
-    }
-
-    /// Replace the pcurves of `face_key` (seam overload
-    /// `BRep_Builder::UpdateEdge(edge, c1, c2, face)`).
-    pub fn set_pcurves_on(&self, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
-        self.pcurves.write().unwrap().curves.insert(face_key, curves);
-    }
-
-    /// `BRep_GCurve` range of the curve-on-surface on `face_key`.
-    pub fn pcurve_range_on(&self, face_key: usize) -> Option<(f64, f64)> {
-        self.pcurves.read().unwrap().ranges.get(&face_key).copied()
-    }
-
-    /// `BRep_Builder::Range(edge, face, first, last)`.
-    pub fn set_pcurve_range_on(&self, face_key: usize, range: (f64, f64)) {
-        self.pcurves.write().unwrap().ranges.insert(face_key, range);
-    }
-
-    /// Drop the curve-on-surface representation(s) on `face_key`.
-    pub fn remove_pcurves_on(&self, face_key: usize) {
-        let mut g = self.pcurves.write().unwrap();
-        g.curves.remove(&face_key);
-        g.ranges.remove(&face_key);
-    }
-
-    pub fn new() -> Self { Self { base: TShape::new(ShapeType::Edge), first: f64::NEG_INFINITY, last: f64::INFINITY, tolerance: 0.0, same_parameter: false, same_range: false, degenerated: false, pcurves: RwLock::new(EdgePcurves::default()) } } }
+    pub fn new() -> Self { Self { base: TShape::new(ShapeType::Edge), first: f64::NEG_INFINITY, last: f64::INFINITY, tolerance: 0.0, same_parameter: false, same_range: false, degenerated: false } } }
 impl WireShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Wire) } } }
 impl FaceShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Face), tolerance: 0.0, natural_restriction: false } } }
 impl ShellShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Shell) } } }
