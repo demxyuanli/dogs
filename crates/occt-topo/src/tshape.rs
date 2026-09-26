@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::fmt;
+use occt_geom::Curve;
 use occt_geom2d::curve::Curve2d;
 use crate::abs::{ShapeType, ShapeFlags};
 use crate::shape::TopoShape;
@@ -36,6 +37,8 @@ pub struct TShape {
     /// `TopoShape` already carries `Arc<RwLock<TShape>>`, so the guard
     /// provides the interior mutability: no extra lock per slot.
     pub edge_pcurves: Option<EdgePcurves>,
+    /// The edge's 3D geometry (T-25 batch 2). `None` until something writes it.
+    pub edge_core: Option<EdgeGeomCore>,
 }
 
 /// Source of `TShape::id` (one per construction, process-wide).
@@ -62,6 +65,7 @@ impl TShape {
             id: next_shape_id(),
             children: Vec::new(),
             edge_pcurves: None,
+            edge_core: None,
         }
     }
 
@@ -87,6 +91,14 @@ impl TShape {
 
     /// The edge's pcurve store, if it has one yet.
     pub fn edge_pcurves(&self) -> Option<&EdgePcurves> { self.edge_pcurves.as_ref() }
+
+    /// The edge's 3D geometry store, created on first use (T-25 batch 2).
+    pub fn edge_core_mut(&mut self) -> &mut EdgeGeomCore {
+        self.edge_core.get_or_insert_with(EdgeGeomCore::default)
+    }
+
+    /// The edge's 3D geometry, if it has one yet.
+    pub fn edge_core(&self) -> Option<&EdgeGeomCore> { self.edge_core.as_ref() }
 }
 
 impl Drop for TShape {
@@ -97,8 +109,9 @@ impl Drop for TShape {
     fn drop(&mut self) {
         crate::tgeometry::GeometryRegistry::global()
             .remove_by_ptr(self as *const TShape as usize, self.id);
-        // T-25: the pcurves live on the shape itself, so they die with it.
+        // T-25: the geometry lives on the shape itself, so it dies with it.
         self.edge_pcurves = None;
+        self.edge_core = None;
     }
 }
 
@@ -108,6 +121,32 @@ pub struct VertexShape {
     pub base: TShape,
     pub point: occt_core::gp::GpPnt,
     pub tolerance: f64,
+}
+
+/// The 3D geometry of an edge (T-25 batch 2: lifted from `EdgeGeom`,
+/// `tgeometry.rs:64-83` — `curve` plus the six `BRep_TEdge` scalars).
+///
+/// `curve` is optional because a `BRep_TEdge` may carry no 3D curve.
+#[derive(Default, Clone)]
+pub struct EdgeGeomCore {
+    pub curve: Option<Arc<dyn Curve>>,
+    pub first: f64,
+    pub last: f64,
+    pub tolerance: f64,
+    pub same_parameter: bool,
+    pub same_range: bool,
+    pub degenerated: bool,
+}
+
+impl fmt::Debug for EdgeGeomCore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EdgeGeomCore")
+            .field("has_curve", &self.curve.is_some())
+            .field("first", &self.first)
+            .field("last", &self.last)
+            .field("tolerance", &self.tolerance)
+            .finish()
+    }
 }
 
 /// Per-face 2D pcurves of an edge, and their `BRep_GCurve` ranges.
