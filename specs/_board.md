@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 245 —— ✅ 收尾前置已核实：三张 map 只有 **12 个写点**，且**全部**在建槽路径或生命周期上**
+
+`grep '(vertices|edges|faces)\.write\(\)\.unwrap\(\)\.(insert|remove|clear|get_mut)'` ⇒ **12 处**：
+```
+211 set_vertex   insert   ← 同时建 vertex_core 槽 ✓
+257 set_edge     insert   ← 同时建 edge_core 槽 ✓（含 pcurves 排空 ✓）
+546 set_face     insert   ← 同时建 face_core 槽 ✓
+597-599 clear_shape   remove ×3   ← 生命周期（已同时清三个槽 ✓）
+623-625 remove_by_ptr  remove ×3   ← 生命周期（Drop 路径 ✓）
+640-642 clear()       clear ×3    ← 生命周期 ✓
+```
+⇒ **没有任何「只写 map 不建槽」的路径** ✓✓ ⇒ 把 `edge_geom`/`face_geom`/`vertex_geom` 的**存在性判定改为 `slot.is_some()`** 与现状**语义等价** ✓（差异仅限「注册了但从未设几何」的形状 ✗ —— 由 211/257/546 的成对写入可知不存在 ✓）；`clear_shape`/`remove_by_ptr`/`clear` 只需把「删 map」换成「清槽」✓。
+⇒ **收尾的风险从「行为敏感」降为「等价改写」** ✓（第 6 条教训的又一次应用：先列全写点再动 ✓）。
 **round 244 —— 收尾方案精化：保留**薄门面**、只删**存储**（避免 279 处改写与锁序风险）**
 
 **再评估「去仪式化」**：端口的 `GeometryRegistry` 现已退化为**薄转发层**（pcurve/edge/vertex/face 的读写都转发到 `TShape` 槽 ✓）。把 279 处 `global()` 调用改成直接 `s.tshape.read().unwrap().…` ✗ 会：① 让调用点变啰嗦 ✗；② 把**锁守卫**散布到 279 处 ⇒ 嵌套 `tshape.read()`/`write()` 的**死锁与锁序**风险显著上升 ✗；③ 收益仅为「少一层转发」✓。
