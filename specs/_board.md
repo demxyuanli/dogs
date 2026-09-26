@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 227 —— ❗ 第 0 步位置**订正**：槽必须在 `TShape` 上，不能在 `EdgeShape` 上（`0a19d191`）**
+
+**为何错**：`EdgeShape`/`FaceShape`/`VertexShape`（`tshape.rs`）**不是端口的拓扑表示** —— 全仓仅 **3 个文件**引用（`tshape.rs` 定义、`lib.rs` re-export、`brep_face_intersect.rs` 42 处局部用途 ✗）。端口的边是 `Edge(TopoShape)`，而
+```rust
+pub struct TopoShape { pub tshape: HandleTShape /* = Arc<RwLock<TShape>> */, pub location, pub orientation }   // shape.rs:11-15
+```
+⇒ 只有放进 `TShape` 才能被 `TopoShape` 触达 ✓；且 `Arc<RwLock<TShape>>` **本身就提供内部可变性**（写守卫即 `&mut TShape` ✓）⇒ **不需要每槽再加锁** ✓，形态更简单 ✓。
+
+**订正（`0a19d191`，+18/−49）**：`EdgeShape` 的字段与方法移除并还原 `new()` ✓；改在 `TShape` 上加 `pub edge_pcurves: Option<EdgePcurves>`（`new()` 初始 `None` ✓）＋ `edge_pcurves_mut()`（首次使用创建 ✓）/`edge_pcurves()` ✓；保留 `EdgePcurves { curves, ranges }` 类型 ✓（两个同键 map 同结构 ⇒ 键原子一致 ✓，`Debug` 手写 ✓）。`cargo check --lib` = Finished、0 error ✓。
+**下一步**：让 `GeometryRegistry` 的 pcurve 读写**改为经该槽**（surface 身份回退用侧表现有 face→surface 映射做，`tgeometry.rs:310-337` ✓）—— 这样**调用点签名不变**（87 处可暂不改 ✓，先把存储真正搬过去 ✓），随后再分文件去仪式化 ✓。
 **round 226 —— 🚀 T-25 批 1 开工：我自己接手（代理 `dfa64179` 停住 5 轮未落代码，已停），第 0 步已提交 `5019ac4b`**
 
 - 新增 `EdgePcurves { curves, ranges }`（两个同键 map 同锁 ⇒ 键原子一致 ✓；`Debug` 手写因 `dyn Curve2d` 无 `Debug` ✓），对应 `tgeometry.rs:64-83` 的两字段 ✓；
