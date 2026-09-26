@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 232 —— 只读诊断（第一步）：`torus_area_matches_occt` = `check_area_parity("Torus", "occ-torus.obj", CURVED_AREA_TOL)`**
+
+`tests/step_obj_area.rs:96-99` ⇒ 该测试把**端口导出的 `output/Torus.obj`** 面积与仓库里的参考 `occ-torus.obj` 比 ✓ ⇒ **Torus 的 OBJ 在存储搬移下变了** ✗ ⇒ 说明 torus 的 pcurve **确实经过被搬的存储** ✓ 且某条写/读路径语义漂移 ✓。
+**下一轮的具体步骤（定点，不再整族搬迁）**：
+1. 加一个**临时探针**（用完删 ✓）对 `data/Torus.step` 逐边比较「`edge_geom(e).pcurves`」与「`e.tshape.edge_pcurves()`」两处内容 ✓，找出**分歧的边** ✓（这能直接指出哪条写入路径没落到槽 ✓）；
+2. 特别检查 `remove_pcurves_on_surface`：我的版本**去掉了**「edge 无 `EdgeGeom` 就 return」的早退 ✗ 且持 `faces` 读锁跨到 `tshape` 写锁 ✗ —— 两者都可能改变 torus（面/缝较多）的时序 ✓；
+3. 据分歧点做**最小**修改 ✓，然后只跑 `step_obj_area` + `--lib` ✓（两者都绿了才继续 ✓）。
 **round 231 —— 显式合并语义修好了 `--lib`（**1281/0 ✓**），但 **`torus_area_matches_occt` 仍红 ✗** ⇒ 回退，转**只读**诊断**
 
 第三版（`set_edge` 改为**只在 geom 携带 pcurve 时更新槽** ✓，不再置 `None` ✓）实测：
