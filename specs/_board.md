@@ -164,6 +164,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 132 —— T-80 修复的**全量门禁复核通过**；T-54+T-90 网格程序已委派**
+
+在 T-80 修复提交（`1a3a1a90`）后跑全量：
+- `export_data_obj`：**16/16 全 ok 且 v/f 与既有基线**逐位一致**（Cube 24/12、Cylinder 146/140、Sphere 642/1244、Torus 1369/2592、Shape 6150/11372、Shape-1 3343/4336、Shape-2 3105/4792、linkrods 3494/5078、rev 104/92、screw 600/790、Offset 712/892、OffsetPlaneHoleEdge 48/32 等）⇒ gprop 修复**未触碰**网格输出 ✓；
+- `iges_check`：Cube / Sphere **ok**，DE/section 统计与基线一致；
+- `phase3` 4/4、`phase4` 9/9、`phase5` 7/7、`phase6` 5/5、`phase7` 5/5、`phase8` 5/5、`phase9` 8/8、`phase10` **8/8**、`phase19` 5/5、`phase20` 5/5、`step_obj_area` 11/11、`step_geometry_parity` **3/3**；`bop_builder2_boss` 1/2（既有 T-03）；`occt-topo --lib` **1281/0**。
+（`step_obj_parity`/`step_to_obj` 因前一轮在子代理改文件中途编译而结果为空，已在新基线复跑，下一轮收。）
+
+**T-54+T-90 已委派**（新子代理，只在 `brepmesh.rs`/`meshing/**`/`wireframe.rs`(平面三角化一族)/`geom_bnd_lib_sample2d.rs`/`brep_exchange.rs`(网格调用处) 内工作，与 `step/`、`brep_gprop_full/` 不重叠）：
+① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
+**oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
+**门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
 **round 131 —— 🎉 §3.2 T-80 **完全收官**（`1a3a1a90`）：三条 oracle 同时绿**
 
 | oracle | 期望（OCCT/GT） | 实测 |
