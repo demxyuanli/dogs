@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 196 —— 端到端核验修法可达性：`gp_circ()` 无几何兜底 ⇒ 与 OCCT 具体类语义严格一致**
+
+查 `Curve::gp_circ` 的全部实现：
+```
+occt-geom2d/src/curve.rs:38        fn gp_circ(&self) -> Option<GpCirc> { None }            // trait 默认 ⇒ B 样条/其它都得 None ✓
+occt-geom2d/src/circle.rs:33       fn gp_circ(&self) { Some(self.pos.clone()) }           // Geom2dCircle ✓
+occt-geom2d/src/trimmed.rs:84/216  fn gp_circ(&self) { self.basis.gp_circ() }              // TrimmedCurve 解包到 basis ✓（= OCCT 的 load 语义）
+occt-geom2d/src/curve_reparam.rs:68 / meshing/edge_discret.rs:1252 / shhealing/transfer_params.rs:104  // 包装类转发 ✓
+```
+⇒ **没有几何拟合/近似兜底** ✓ ⇒ 一条 `B_SPLINE_CURVE_WITH_KNOTS` 得到的曲线 `gp_circ()` **必为 `None`** ✓ ⇒ 新的 `is_circle` 必为 `false` ⇒ 不再走等参臂 ⇒ 不再产生开路 2π 直线 ✓✓。**修法在语义上端到端成立** ✓（与 `GeomAdaptor_Curve::load` 的 TrimmedCurve 解包 + 具体类测试一致 ✓）。
 **round 195 —— 🎯 T-69 的**真正修法**已认出：把两个**自创启发式**换成 OCCT 的具体类测试**
 
 代理的 `surface_projector.rs` 改动就是正解 ✓✓（round-169 的 A）：
