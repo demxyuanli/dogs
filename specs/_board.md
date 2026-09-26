@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 188 —— 排除 `value_of_uv` 解析分支（与 OCCT 逐字一致）⇒ 把 A/B 目标改为 **`getLine` 的四点两参与输入****
+
+端口 `surface_projector.rs:532-565`（Plane/Cylinder/Cone/Sphere/Torus）= `ElSLib::Parameters(...)` + `AdjustByPeriod(S, 0.5*(uf+ul), 2π)`（torus 另调 v），对应 OCCT `ShapeAnalysis_Surface.cxx:1264-1292` **逐行一致** ✓；两处「NOT PORTED」（`myExtOK` 缓存、`ComputeBoxes` 早退）均注明**只影响开销不影响结果** ✓。
+⇒ 对同一 3D 点两侧 (u,v) 必然相同 ⇒ 分歧只能在 `getLine` 的**输入**上。**已要求代理把 A/B 目标改为**：同一边同面两侧打印 ① `aP[0..3]`（4 个 3D 探针点）② `params` 首末（⇒`d_par`）③ `aNb` + **3D 曲线类型** + 首末参数 ④ `IsU/VPeriodic`、`U/VPeriod`、`Bounds`；**若 1/2/4 有任一不同 ⇒ 分歧在上游**（`edge_parameters`/`CurveOnSurface` 的 `[first,last]`/面 bounds）✓；**若全同 ⇒ 必矛盾**，则再打印 `tol`/`myPreci`/`myCache.Length()` 与前两个 cache 点。
+**我的重点怀疑**：**③ 端口这条边的 3D 曲线类型可能与 OCCT 不同**（例如把 `B_SPLINE_CURVE_WITH_KNOTS` 认成解析圆或反之）—— 这会把 `value_of_uv` 之外的其它分支也带偏 ⇒ 已要求优先确认。
 **round 187 —— 排除缓存层；嫌疑缩到**投影器本体**，并给出「用探针直接 A/B `ShapeAnalysis_Surface::ValueOfUV`」的办法**
 
 - **缓存层忠实** ✓：端口 `projection_cache.rs:201-233`（`find`/`value_of_uv`/`next_value_of_uv`，对应 `cxx:205-216`/`:106-115`/`:125-138`）与 `getLine` 内的调用参数（`:495-502`/`:512`/`:585-592`/`:594`）都与 OCCT 的 lambda（`cxx:944-966`）及两处调用（`:953`/`:965`）对得上 ✓。
