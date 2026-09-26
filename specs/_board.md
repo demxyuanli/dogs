@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 143 —— T-54 的 4 处回退**角色**厘清（供判定可达性）**
+
+| 位置 | 函数 | 触发的语义 |
+|---|---|---|
+| `discret_root.rs:281` | `build_shape_mesh_wireframe`（`:270-`，**整模型**回退） | 管线整体失败时，逐面用 UV 网格重造 —— 与 OCCT「失败的面不产出三角化、写出时跳过」（`RWMesh_FaceIterator.cxx:87/:89`）**相反** |
+| `discret_root.rs:544` | `wireframe_face_triangulation`（`:538-`，**逐面**回退） | 某面 Delaunay 失败时用 UV 网格顶上（自注：「Per-face wireframe fallback when Delaunay fails for one face」） |
+| `discret_root.rs:1366` / `:1372` | `IncrementalMesh::discretize_face`（单面 API） | `ModelBuilder::build_model` 或 `build_shape_mesh` 返回 `Err` 时回退 |
+
+⇒ 判定可达性只需在这些点插桩计数后跑 15 个 `data/*.step`（**这正是已交付网格子代理并重申过的动作**）。若零命中 ⇒ 连同 `wireframe::face_to_triangles` 一起删除（其自注 `wireframe.rs:394-421` 本来就写着「once those faces mesh through the faithful path, delete it together with the fallback」）；若有命中 ⇒ 报「哪个文件哪个面 + 失败原因」，判断是缺分支还是数据问题，**不得**为它保留自创网格。
+**另**：`mesh()` 的成功路径（`perform`）里 `:262` 还有一处 `no triangles generated` 的 `Err`；`triangulate_model_faces` 的 `:403`/`:438` 会把「面无 surface」「面失败」变成 `Err` ⇒ 这些错误的**上游触发条件**也要在插桩时一并统计。
 **round 142 —— T-91 判定：端口在 pcurve **关联**这一层是忠实的；28 条「无 pcurve」的边是**文件属性**，OCCT 同样走「自己算 pcurve」**
 
 **① 实测（临时探针，逐面逐边，`Shape-2.step`）**：
