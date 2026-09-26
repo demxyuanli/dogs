@@ -140,6 +140,22 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 107 —— 再进一步：圆柱的 `SplitBlock` 输入只有 4 面（缺盘对），所以两单元无法闭合**
+
+插桩 `shell_splitter_block::split_block` 入口（打印 `my_shapes` 的面种类与朝向）后实测，`box∪cyl` 的 FUSE 过程中 `SplitBlock` 被调用 **4 次**、输入集合各不相同：
+
+```
+[zz-in] n=4  [Plane(cap)/1, Cylinder(band)/0, Cylinder(band)/0, Plane(cap)/0]        <== 圆柱走的就是这一组
+[zz-in] n=11 [6 盒面 + 顶面(带孔) + 盘F + 盘R + 环带F + 环带R]                        <== 盒体 draft
+[zz-in] n=6  [Plane(cap)/1, Cylinder(band), Plane(盘F)/1, Plane(盘R)/0, Cylinder(band), Plane(cap)]  <== 正确的圆柱 draft（含盘对）
+[zz-in] n=8  [...]
+```
+
+配合 `[zz-c]`：**n=4 那一组的 `connected` 只有 4 面**（`Plane#696, Cylinder#360, Cylinder#816, Plane#520`），行走得到 `walked=[1 cap, 2 bands, 1 cap]` ⇒ `refined=["1f/closed=false","3f/closed=false"]`（无闭合单元）；盒体那组（n=11）走 7 面 ⇒ `closed=true` ✓。
+
+⇒ **根因后移**：圆柱的 split-solid 面集合**缺少「盘对」（doubled IN faces）**，因此 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 无法闭合。正确的那一组（n=6，含 `Plane(盘F)/1` 与 `Plane(盘R)/0`）是**另一次** `SplitBlock` 调用（另一 stage/draft）。
+
+**下一步**：在 `bop_split_solids_occt.rs` 的循环里对每个 `a_s` 打印「`a_s` 种类 + `p_lfin` 长度 + `a_sfs` 长度/种类」，与上面 4 次 `SplitBlock` 调用一一对应；重点查为什么圆柱那一组的 `a_sfs` 只有 4（`fill.in_parts` 为空走了 `a_sd` 直通分支，还是 `doubled_in_faces` 没给出盘对），对照 `BOPAlgo_Builder_3.cxx` 的 `BuildSplitSolids`（`in_parts` 的填充与 `MakeSplits`）。
 **round 106 —— 实测 T-37 的 ProjPS 修法：行走**已选对盘**，但 T-80 仍不变（必要非充分，缺口后移到壳装配）**
 
 在 T-37 的 `project_point_on_face` 改动**已在工作树**（可编译）的状态下实测（探针用完即删，插桩已回退）：
