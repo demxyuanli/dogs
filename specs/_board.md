@@ -164,6 +164,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 122 —— §3.4 T-11 余项（第二批）：清 `bop_builder_*` 家族的未用 import，warning 699 → 602**
+
+warning 分类统计（本轮实测）：**unused import 254 / unused var·mut 3 / never used 427 / 其它 28**。选「纯 hygiene、零行为风险」的 unused import 作为本批，取 `bop_builder_*.rs` 九个文件（111 条警告）。
+
+做法：按 `cargo check` 报告的 `(文件, 行, 名字列表)` **重建整条 `use` 语句**（解析 `{}` 内的条目、按名字过滤、空则整行删除），而不是做名字级删除 —— 第一版按名字删会留下 `{ , , X}` 这类逗号残渣（已 `git checkout` 回退后重做）。
+
+门禁：warning **699 → 602（−97）**；`--lib` **1281/0**；`--all-targets` 0 error；`--lib` 编译含全部 `#[cfg(test)]` 模块，故测试专用 import 未被误删（这是上一轮会话里 `cargo fix --lib` 踩过的坑，故本轮不依赖 `cargo fix`）。
+
+剩余（**602**）结构：`never used` 约 427、`unused import` 约 157、其它 28。下一批：继续未用 import（非 `bop_builder_*` 的其余文件），再逐文件判断 `never used` 的函数（需对照 `occt-core` 是否已有忠实实现，如 round 121 的 `clib2d` 那批）。
 **round 121 —— §3.4 T-11 余项（第一批）：删除 2D `ElCLib` 的重复死模块，warning 744 → 699**
 
 `cargo check occt-topo --lib` 的 warning 分布显示 `geom_bnd_lib_elclib2d_{d2,dn,param}.rs` 三个文件里的函数**全部**是 `never used`（45 条）。核对后确认它们是**重复实现**：这两个模块移植的是 2D `ElCLib` 的 `D1/D2/D3/DN/Parameter`（`gp_Lin2d/Circ2d/Elips2d/Hypr2d/Parab2d`），而 `occt-core/src/elib/clib2d.rs:126-531` **已经**有同名的忠实实现（`line_d1_ax2d`/`circle_d2_ax22d`/`*_dn_ax22d`/`*_parameter_ax22d` …），全 crate 消费的是后者。

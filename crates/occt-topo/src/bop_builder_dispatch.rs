@@ -4,20 +4,20 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use occt_core::geom::polygon_ops::{point_in_polygon2d, polygon_area2d};
-use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d};
-use occt_geom::{GeomPlane, Surface};
+use occt_core::geom::polygon_ops::{point_in_polygon2d};
+use occt_core::gp::{GpPnt};
+
 
 use crate::abs::ShapeType;
-use crate::brep_tool::BRepTool;
-use crate::builder::TopoBuilder;
-use crate::inttools::{edge_edge_intersections, edge_face_intersections};
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-use crate::shell_check::{shell_invariants, shell_is_closed};
-use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, wires_of_face};
 
-use crate::bop_builder::boolean;
+use crate::builder::TopoBuilder;
+
+use crate::shape::{Face, Shell, TopoShape};
+use crate::shell_check::{shell_is_closed};
+use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::{edges_of, faces_of, shapes_of};
+
+
 use crate::bop_builder_core::{empty_result, single_shape_result, BooleanResult, BoolOp};
 use crate::bop_builder_planar::*;
 

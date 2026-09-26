@@ -3,31 +3,31 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use occt_core::geom::polygon_ops::{point_in_polygon2d, polygon_area2d};
-use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
-use occt_geom::{GeomPlane, Surface};
 
-use crate::abs::ShapeType;
-use crate::brep_extrema::is_inside;
+use occt_core::gp::{GpPln, GpPnt, GpVec};
+use occt_geom::{GeomPlane};
+
+
+
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
-use crate::inttools::{edge_edge_intersections, edge_face_intersections};
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-use crate::shell_check::{shell_invariants, shell_is_closed};
-use crate::tgeometry::GeometryRegistry;
+
+use crate::shape::{Edge, Face, TopoShape, Wire};
+use crate::shell_check::{shell_is_closed};
+
 use crate::topo_tools_full::{
     edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
     wires_of_face,
 };
 
-use crate::bop_builder::boolean;
-use crate::bop_builder_core::{BoolOp, BooleanResult};
-use crate::bop_builder_dispatch::{connected_components, expand_compound};
+
+
+use crate::bop_builder_dispatch::{expand_compound};
 use crate::bop_builder_repair::{
     analyze_boundary, boolean_repaired, decompose_multi_result, face_connectivity_groups,
     repair_self_intersections, BoundaryAnalysisReport, MultiResult, RepairResult,
 };
-use crate::bop_builder_report::{component_kind, repair_self_intersections_loop, ComponentKind};
+
 use crate::bop_builder_planar::*;
 
 // ---------------------------------------------------------------------------

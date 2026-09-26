@@ -1,26 +1,26 @@
 //! Boolean result analysis helpers. Split from `bop_builder.rs`.
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
-use occt_core::geom::polygon_ops::{point_in_polygon2d, polygon_area2d};
-use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
-use occt_geom::{GeomPlane, Surface};
+
+
+
+
+
 
 use crate::abs::ShapeType;
-use crate::brep_extrema::is_inside;
-use crate::brep_tool::BRepTool;
+
+
 use crate::builder::TopoBuilder;
-use crate::inttools::{edge_edge_intersections, edge_face_intersections};
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-use crate::shell_check::{shell_invariants, shell_is_closed};
-use crate::tgeometry::GeometryRegistry;
+
+use crate::shape::{Edge, Face, Solid, TopoShape};
+use crate::shell_check::{shell_is_closed};
+
 use crate::topo_tools_full::{
     edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
     wires_of_face,
 };
 
-use crate::bop_builder::boolean;
+
 use crate::bop_builder_core::{single_shape_result, BoolOp, BooleanResult};
 use crate::bop_builder_dispatch::{
     boolean_multi, boolean_with_check, connected_components, decompose_compound,
