@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 167 —— 定位「pcurve 计算」在 OCCT 的哪一阶段（给代理的指针）**
+
+- **`TranslateEdgeLoop` 不算 pcurve**：`StepToTopoDS_Tool::ComputePCurve(bool)` 只是**置标志**（`StepToTopoDS_Tool.cxx:175-182`）；`StepToTopoDS_TranslateEdgeLoop.cxx:844-869` 那段只做**顶点参数**（`ShapeFix_EdgeProjAux::Init/Compute` + `B.Range(edge,Face,…)`，失败则 `RemoveSinglePCurve`）⇒ `:667-671` 的 `ComputePCurve(true)` 是「稍后由别阶段补」✓。
+- **真正的计算在导入后的 ShapeProcessing/ShapeFix 阶段**：即 `STEPControl_Controller` 的 `FixShape` → `ShapeFix_Shape` → `ShapeFix_Face::Perform` → **`ShapeFix_Edge::FixAddPCurve`**（端口自己在 `shhealing/wire_fix.rs:3179` 就引过 `myFixEdge->FixAddPCurve(...)` ✓，该段已移植）。重点看 `FixAddPCurve` 的**投影分支选择**（`GeomProjLib`/`ProjLib`）：解析圆→analytic 分支；**B 样条近似的圆**（T0M 多为 `B_SPLINE_CURVE_WITH_KNOTS`）→ 一般投影/近似 ⇒ **闭合 B 样条**（与实测 `pctype=6` 吻合 ✓）。
+**⇒ 已给代理的待证假设**：端口 `pcurve_full::make_pcurve_full` 把某类边**识别成等参圆**并直接给解析 `Geom2dLine`（跨 2π 开路），而 OCCT 在那些例子走的是**一般投影分支**得闭合曲线 ✗ ⇒ **修法应是让识别/分支条件与 OCCT 一致**，而**不是**在解析分支里硬造「看起来闭合」的曲线。
 **round 166 —— 全语料 `SURFACE_CURVE`/`PCURVE` 普查：**失败语料恰好是「文件里完全没有 pcurve」的那一族****
 
 | 文件 | SURFACE_CURVE | PCURVE |
