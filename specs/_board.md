@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 178 —— T-69 的忠实修法确定为**移植 `ShapeFix_Face::FixMissingSeam`**（不是 `get_line` 里加判据）**
+
+代理在 `pcurve_full/projection_cache.rs:536-571` 写了有理有据的注释，因果链与我的独立复核一致：OCCT 之所以不会得到「开路 2π pcurve」，是因为**更早的 `ShapeFix_Face::FixMissingSeam` 阶段就把缝边插进了 wire** ⇒ 端口缺的是**这一整段 pass** ✗。
+**事实核对**：`bool ShapeFix_Face::FixMissingSeam()` 在 **`ShapeFix_Face.cxx:1722`**；由 **`ShapeFix_Face::Perform` 的 `:492-500`** 在 `NeedFix(myFixMissingSeamMode)` 下调用（`myFixMissingSeamMode` 默认 `-1`，`:137`；`ShapeProcessing` 设置它：`ShapeProcess_OperLibrary.cxx:830`、`XSAlgo_ShapeProcessor.cxx:619-620`）✓；函数体百餘行：闭合性判定 `:1729-1735`、B 样条面周期检查 `:1743-1751`、`Bounds`+`BRepTools::UVBounds` `:1753-1756`、无穷边界兜底 `:1758-1780`、随后**缝边插入**（`:1780-1930`，含球面分支 `:1920-1925`）✓。
+⇒ **端口 `projection_cache.rs` 里那段「闭合弦拒绝」是自创判据** ✗（`getLine` 是 `ShapeConstruct_ProjectCurveOnSurface::getLine` 的忠实移植，OCCT `cxx:902-935` **没有**该判据）—— 只能作诊断证据，**不能**作最终改动。
+**已给代理二选一**：**(甲)** 移植 `FixMissingSeam` + 按 `Perform` 位置接线（正解，先交可行性与最小实现计划）；**(乙)** 不移植 ⇒ **删掉** `projection_cache.rs` 的那段拒绝、恢复 HEAD，并把结论写成「忠实修法 = 移植 `FixMissingSeam`（`:1722`，wired at `:492-500`）；先前的网格改善（T0M 46517→56218）来自自创捷径、不计入成果」。两者都**不提交**。
+（端口侧已有相关记录：`shhealing/wire_fix.rs:1801-1806` 的注释明确写着 `FixMissingSeam` **未移植**并引了 `ShapeFix_Face.cxx:1920-1925` ✓，与本次结论一致。）
 **round 177 —— T-69：验证代理的「实验」不是忠实修法，并指向真正的分歧点**
 
 代理在 `pcurve_full/projection_cache.rs::get_line` 里加了标注 `T69 EXPERIMENT` 的两处早期返回（当 3D 弦闭合时 `return None`）✓ **它证明了方向**（T0M `46517/46967` → `56218/55422`，向 GT `60050/66576` 靠），**但我核了 OCCT 原文**：
