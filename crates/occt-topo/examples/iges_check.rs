@@ -124,7 +124,18 @@ fn main() {
         let de_set: HashSet<usize> = des.iter().map(|d| d.4).collect();
         // Directories nothing points at (roots are legitimately unreferenced).
         let mut referenced: HashSet<usize> = HashSet::new();
-        for (ty, pstart, pcount, _trsf, de) in &des {
+        for (ty, pstart, pcount, trsf, de) in &des {
+            // Every entity may carry a *transformation matrix* pointer in the
+            // DE's field 7 (columns 48-56, `IGESData_IGESWriter`). Those
+            // pointers are references too: type 124 (Transformation Matrix)
+            // entities are reachable only through them, so leaving them out
+            // of `referenced` reported every 124 as an orphan (ATU01038: 63).
+            if *trsf != 0 {
+                referenced.insert(*trsf);
+                if !de_set.contains(trsf) {
+                    problems.push(format!("DE{de} ty={ty} trsf -> {trsf} (no such DE)"));
+                }
+            }
             let mut body = String::new();
             for k in 0..*pcount {
                 if let Some(c) = p_by_seq.get(&(pstart + k)) {
