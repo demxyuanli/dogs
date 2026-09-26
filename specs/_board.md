@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 239 —— 批 4（face 家族）第 0 步已**写入工作树**（未编译、未提交）；批 3 门禁仍在跑**
+
+- `FaceGeomCore { surface: Option<Arc<dyn Surface>>, tolerance: f64, natural_restriction: bool }`（对应 `tgeometry.rs:143-148` 的 `FaceGeom` ✓；`surface` 为 `Option` 因 `BRep_Builder::MakeFace(F)` 在 OCCT 里不设面 ✓；`Default` = 「无面 / tol 0 / natural_restriction false」（`BRep_TFace.cxx:30` ✓）；`Debug` 手写 ✓）；
+- `TShape.face_core: Option<FaceGeomCore>` + `face_core_mut()`/`face_core()` ✓；`new()` 初始 `None` ✓；`Drop` 清空 ✓；
+- 以上**仅在编辑器里**（`tshape.rs`）✓ —— **下一轮**：① `cargo check` 编译 ✓；② 接线（`face_geom` 从槽填充 ✓、`set_face` 排空 ✓、`set_face_tolerance` 等内部直写点改写槽 ✓、`clear_shape` 清 `face_core` ✓）；③ 跑 `--lib` + `step_obj_area` + 逐位对比 ✓ 再提交 ✓。
+**批 4 的关键连带点（下次接线时一并处理）**：`edge_pcurves` 的 **surface 身份回退**（`BRep_Tool::CurveOnSurface` 按 `Geom_Surface` 命中 ✓）现在仍读侧表 `self.faces` 的 **surface 副本** ✓ —— 面 surface 落在 `TShape.face_core` 后，回退的**身份判定**仍可用侧表（surface 不会变，只有 tolerance 会变 ✓ ⇒ 判定仍有效 ✓）；**真正去掉侧表**需要一张「face_key → 面的 `TopoShape`」的映射 ✗（属末阶段 ✓）。
+**批 3 状态**：全套门禁（`--lib`/`step_obj_area`/`step_geometry_parity`/phases/逐位对比）后台运行中 ✓（下一轮收 ✓）；`step_obj_parity` 随后补 ✓。
 **round 238 —— ✅✅ T-25 批 2 **完整收口**（`step_obj_parity` 14/14）；批 3 全套门禁已启动**
 
 批 2（`e8a405ce`，边 3D 几何 → `TShape.edge_core`）的最终验收：
