@@ -185,6 +185,27 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 157 —— 全语料 UV 退化参考普查（19 文件）：OCCT 一律 `uv_degenerate_faces = 0`**
+
+用 `wires_probe`（新增 UV 退化普查）跑 `data/*.step`（15）+ `data/occ/*.stp`（4）：
+
+| 文件 | faces | wires | multiwire | **uv_degenerate** |
+|---|---|---|---|---|
+| Cone / Cube / Cylinder / Extrusion | 2 / 6 / 3 / 6 | 2 / 6 / 3 / 6 | 0 | **0** |
+| HoledPlate | 32 | 38 | 2 | **0** |
+| linkrods | 37 | 42 | 5 | **0** |
+| Offset | 26 | 26 | 0 | **0** |
+| OffsetPlaneHoleEdge | 10 | 12 | 2 | **0** |
+| rev / screw | 6 / 10 | 6 / 10 | 0 | **0** |
+| Shape-1 / Shape-2 / Shape | 60 / 31 / 11 | 63 / 32 / 12 | 3 / 1 / 1 | **0 / 0 / 0** |
+| Sphere / Torus | 1 / 1 | 1 / 1 | 0 | **0** |
+| a3n00 / acs10 | 226 / 787 | 294 / 913 | 18 / 45 | **0 / 0** |
+| T0M | 1778 | 1921 | 106 | **0** |
+| TDB | 2180 | 2384 | 137 | **0** |
+
+⇒ **OCCT 在全部 19 个文件上都没有 UV 退化 wire** ⇒ 端口在任何文件上出现 `uv_degenerate_faces > 0` 都是**端口导入侧的缺陷**（当前 T0M 上有 162 面如此）。
+**这是 T-69 的可量化验收**：修后端口在 T0M 上的 `uv_degenerate_faces` 应从 162 级降到 **0**，并同时 `--mesh` 失败面 162→0、15 个 GT 文件计数不变。
+（附：此表的 `faces` 是 OCCT **导入后**的面数，与 `--mesh` 的面数一致；`data/*.step` 与文件里的 `ADVANCED_FACE` 相等，`T0M` 则是 1778 > 文件的 1772，即 round 153 说的「OCCT 导入多造 6 面」。）
 **round 156 —— ❗**归属钉死**：OCCT 导入 T0M 的 `uv_degenerate_faces = 0`，端口却有 162 ⇒ **缺陷在导入侧**（`shhealing`/`step`），不在 BRepMesh 层**
 
 把 `wires_probe` 扩成「wire 普查 + **UV 退化普查**」（判据：该 wire 所有 pcurve 采样点的 UV 包围盒 `spanU<1e-9` 或 `spanV<1e-9`），在 `data/occ/T0M.stp` 上实测：
