@@ -48,12 +48,13 @@ impl FaceGauss {
                 // orientation composed in (`TopExp.cxx:80-120`) — the same
                 // orientation `BRepGProp_Face::Load(const TopoDS_Edge&)`
                 // (`BRepGProp_Face.cxx:164-185`) reverses the p-curve on.
-                // `edges_of_wire` only composes down to the wire.
-                let mut eb = e.clone();
-                if is_reversed {
-                    eb.0.reverse();
-                }
-                if let Some(arc) = build_arc(&eb, face, &map) {
+                // `wires_of_face` already composes the face's orientation
+                // into the wire views and `edges_of_wire` composes the wire
+                // down to the edges, so `e` *is* that explorer view:
+                // reversing it again here double-counted the face
+                // orientation and flipped the sign of a REVERSED face's
+                // boundary integral (a cylinder's two caps then cancelled).
+                if let Some(arc) = build_arc(&e, face, &map) {
                     arcs.push(arc);
                 }
             }

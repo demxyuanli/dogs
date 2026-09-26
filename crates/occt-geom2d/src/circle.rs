@@ -56,7 +56,7 @@ impl Curve2d for Geom2dCircle {
     fn reversed_parameter(&self, u: f64) -> f64 {
         2.0 * std::f64::consts::PI - u
     }
-    fn reverse(&mut self) { self.pos.radius = -self.pos.radius; }
+    fn reverse(&mut self) { let mut a = *self.pos.position(); a.y_reverse(); self.pos.set_axis(a); }
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
     fn gp_circ2d(&self) -> Option<occt_core::gp::GpCirc2d> { Some(self.pos) }
 }
