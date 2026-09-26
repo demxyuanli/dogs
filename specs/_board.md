@@ -164,6 +164,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 131 —— 🎉 §3.2 T-80 **完全收官**（`1a3a1a90`）：三条 oracle 同时绿**
+
+| oracle | 期望（OCCT/GT） | 实测 |
+|---|---|---|
+| `box∪cyl` FUSE | 8 faces / vol 8.50265 | **8 faces / 8.502655** ✓ |
+| `BRepGProp` on `data/Offset.step` | 2610.501440 | **2610.501436**（差 4e-6）✓；整体反转后精确取负 ✓ |
+| 圆柱实体表面积 | 6π = 18.849555922 | **18.849555922** ✓ |
+
+三处改动（相互依赖）：① `occt-geom2d/circle.rs` 的 `Geom2dCircle::reverse()` 忠实化（`Geom2d_Conic.cxx:37-42`≡`gp_Circ2d.hxx:166-171`：反转 Y 方向，而非取负半径）；② `brep_gprop_full/integration.rs` 的 `FaceGauss::new` 改为**从 FORWARD 朝向的面**取边界 wire（镜像 `BRepGProp_Domain::Init` 的 `F.Oriented(TopAbs_FORWARD)`，`BRepGProp_Domain.lxx:39-42`），从而打破「`Dul` 与 `fa.normal()` 同号抵消」；③ `primitives.rs` 端盖在 `make_face` **前**反向 wire，复现 `BRepPrim_OneAxis.cxx:501-503` 的 `MakeFace→ReverseFace→AddFaceWire` 复合顺序（`TopoDS_Builder.cxx:77-80`）。
+
+门禁：`occt-topo --lib` **1281/0**（`cylinder_surface_volume` 转绿）；`step_geometry_parity` **3/3**；`step_obj_area` 11/11；`phase3/4/5/6/7/8/9/**10**/19/20` 全绿；`bop_builder2_boss` 1/2（既有 T-03）；`occt-geom2d --lib` 72/0。
+
+⇒ **§3.1 现存红只剩 T-03 一条**（R2-8 已定案 (b)：夹具不合法、非引擎缺口），且 `phase10`（T-88）本轮已确认 8/8。**§3.2 全部项收官**（T-32/T-68/T-69/T-87/T-03→定案/T-80/**T-67 步3**/**T-37** 均已有结论或落地）。
 **round 130 —— T-54 与 T-90 **合并为一个程序**并定位机制：端口用「四叉树细分 / UV 网格」顶替了 OCCT 的「边离散化 + 约束 Delaunay」**
 
 读 `crates/occt-topo/src/brepmesh.rs`（自述是 `BRepMesh_IncrementalMesh` 的移植）+ `brep_exchange.rs:44`（导出走 `meshing::incremental_mesh::IncrementalMesh::from_deflection`）后确认端口网格机制：
