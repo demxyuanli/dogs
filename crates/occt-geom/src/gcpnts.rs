@@ -12,11 +12,26 @@
 //! computes the same values with [`occt_math::gauss::gauss_legendre`] and clamps
 //! the order to 61 the same way.
 //!
-//! **UNPORTED (A15/T-51 remainder)**: the abscissa *inversion* below
-//! ([`abscissa_point`], [`uniform_abscissa`]) still uses a local
-//! safest-Newton/bisection solver; OCCT drives it with `math_FunctionRoot` on
-//! `CPnts_MyGaussFunction` (`CPnts_AbscissaPoint.cxx:395-432`), which needs the
-//! `math_FunctionRoot` port.
+//! The abscissa *inversion* (`GCPnts_AbscissaPoint::Parameter`) is the faithful
+//! `CPnts_AbscissaPoint::Init`/`Perform` path
+//! (`CPnts_AbscissaPoint.cxx:270-313`, `:374-432`) driven by
+//! `math_FunctionRoot` on `CPnts_MyRootFunction` / `CPnts_MyGaussFunction`
+//! (`CPnts_MyRootFunction.cxx:19-90`, `CPnts_MyGaussFunction.cxx:17-27`);
+//! `math_FunctionRoot` itself runs `math_FunctionSetRoot`
+//! (`math_FunctionRoot.cxx:73-119`).
+//!
+//! **UNPORTED (A15/T-51 remainder)**: `GCPnts_AbscissaPoint::Compute`'s type
+//! dispatch (`GCPnts_AbscissaPoint.cxx:26-65`, `:67-161`) is not reproduced —
+//! only its `GCPnts_Parametrized` arm (`:91-95`, reached from `compute`
+//! `:428-442`) is. The `GCPnts_LengthParametrized` (`:87-90`) and
+//! `GCPnts_AbsComposite` (`:96-158`) arms read `GeomAdaptor_Curve`'s
+//! `GetType`/`NbIntervals`/`Intervals`; the port's `GeomTrimmedCurve` view
+//! remaps a trim onto `[0, 1]` instead of unwrapping to the basis parameter
+//! range the adaptor keeps (`GeomAdaptor_Curve.cxx:239-254`), so those arms
+//! cannot be expressed faithfully here. `uniform_abscissa` /
+//! `quasi_uniform_abscissa` keep their own outer shape — `uniform_abscissa`
+//! is "n intervals" (`n + 1` points), not `GCPnts_UniformAbscissa`'s
+//! `NbPoints` point count.
 //!
 //! `GCPnts_UniformDeflection` / `GCPnts_QuasiUniformDeflection` are **UNPORTED**
 //! (see `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
@@ -25,6 +40,7 @@
 use occt_core::gcpnts::{perform_tangential_curve, CurveSecondDeriv};
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::precision::{CONFUSION, PCONFUSION};
+use occt_math::function_set_root::{MathFunctionRoot, MathFunctionWithDerivative};
 
 use crate::curve::Curve;
 
@@ -117,85 +133,239 @@ pub fn curve_length(c: &dyn Curve) -> f64 {
     }
 }
 
-/// Parameter `u` at arc length `abscissa` from the point of parameter `from`.
+/// `CPnts_AbscissaPoint::Length(C, U1, U2)` (`CPnts_AbscissaPoint.cxx:148-161`):
+/// `|math_GaussSingleIntegration(f3d, U1, U2, order(C))|` — the no-tolerance
+/// overload, which is the one `CPnts_AbscissaPoint::Init` uses for `myL`
+/// (`:307`).
+fn cpnts_length(c: &dyn Curve, u1: f64, u2: f64) -> f64 {
+    let f = |u: f64| speed(c, u);
+    gauss_single(&f, u1, u2, gauss_order(c)).abs()
+}
+
+/// `CPnts_MyRootFunction` (`CPnts_MyRootFunction.hxx:32-64`,
+/// `CPnts_MyRootFunction.cxx:19-90`): `Value(X) = Integral(X0, X, |C'|) - L`,
+/// `Derivative(X) = |C'(X)|`, the `math_FunctionWithDerivative` that
+/// `math_FunctionRoot` drives. Its `myFunction` is `CPnts_MyGaussFunction`
+/// wrapping the `f3d` speed (`CPnts_AbscissaPoint.cxx:41-47`); `Derivative` is
+/// `myFunction.Value` (`CPnts_MyRootFunction.cxx:63-66`).
+struct CpntsMyRootFunction<'a> {
+    c: &'a dyn Curve,
+    /// `myOrder` set by `Init(F, D, Order)` (`:19-23`).
+    order: usize,
+    /// `myX0` / `myL` set by `Init(X0, L)` (`:25-30`).
+    x0: f64,
+    l: f64,
+}
+
+impl<'a> CpntsMyRootFunction<'a> {
+    fn new(c: &'a dyn Curve, order: usize) -> Self {
+        Self {
+            c,
+            order,
+            x0: 0.0,
+            l: 0.0,
+        }
+    }
+
+    /// `Init(const double X0, const double L)` (`:25-30`): `myTol = -1` "to
+    /// suppress the tolerance", so `Integral` uses the no-tolerance
+    /// `math_GaussSingleIntegration`.
+    ///
+    /// UNPORTED: the tolerance overload `Init(X0, L, Tol)` (`:32-37`) and the
+    /// `AdvPerform` path that uses it (`CPnts_AbscissaPoint.cxx:436-474`) are
+    /// not exposed by this port's public API.
+    fn init(&mut self, x0: f64, l: f64) {
+        self.x0 = x0;
+        self.l = l;
+    }
+
+    /// `math_GaussSingleIntegration(myFunction, myX0, X, myOrder)`
+    /// (`:41-45`, `math_GaussSingleIntegration.cxx:55-62`).
+    fn integral(&self, x: f64) -> f64 {
+        let f = |u: f64| speed(self.c, u);
+        gauss_single(&f, self.x0, x, self.order)
+    }
+}
+
+impl MathFunctionWithDerivative for CpntsMyRootFunction<'_> {
+    /// `CPnts_MyRootFunction::Value` (`:39-61`). `math_GaussSingleIntegration`
+    /// fails only when the integrand's `Value` returns false
+    /// (`math_GaussSingleIntegration.cxx:128-147`), and
+    /// `CPnts_MyGaussFunction::Value` always returns true
+    /// (`CPnts_MyGaussFunction.cxx:23-27`), so the port always succeeds here.
+    fn value(&mut self, x: f64, f: &mut f64) -> bool {
+        *f = self.integral(x) - self.l;
+        true
+    }
+
+    /// `CPnts_MyRootFunction::Derivative` (`:63-66`) = `myFunction.Value(X)`.
+    fn derivative(&mut self, x: f64, df: &mut f64) -> bool {
+        *df = speed(self.c, x);
+        true
+    }
+
+    /// `CPnts_MyRootFunction::Values` (`:68-90`).
+    fn values(&mut self, x: f64, f: &mut f64, df: &mut f64) -> bool {
+        *f = self.integral(x) - self.l;
+        *df = speed(self.c, x);
+        true
+    }
+}
+
+/// `CPnts_AbscissaPoint` (`CPnts_AbscissaPoint.hxx:35-198`): the arc-length
+/// inversion solving `Integral(U0, X, |C'|) = Abscissa` with
+/// `math_FunctionRoot` (`CPnts_AbscissaPoint.cxx:395-432`).
+struct CpntsAbscissaPoint<'a> {
+    done: bool,
+    l: f64,
+    param: f64,
+    umin: f64,
+    umax: f64,
+    f: CpntsMyRootFunction<'a>,
+}
+
+impl<'a> CpntsAbscissaPoint<'a> {
+    /// `CPnts_AbscissaPoint()` (`:211-218`): everything zero except
+    /// `myDone = false`. `Init` replaces `myF` and fills the rest.
+    fn new(c: &'a dyn Curve) -> Self {
+        Self {
+            done: false,
+            l: 0.0,
+            param: 0.0,
+            umin: 0.0,
+            umax: 0.0,
+            f: CpntsMyRootFunction::new(c, gauss_order(c)),
+        }
+    }
+
+    /// `Init(const Adaptor3d_Curve& C)` (`:270-273`).
+    fn init(&mut self, c: &'a dyn Curve) {
+        self.init_range(c, c.first_parameter(), c.last_parameter());
+    }
+
+    /// `Init(C, U1, U2)` (`:301-313`): `myF.Init(f3d, &C, order(C))`,
+    /// `myL = Length(C, U1, U2)`, and the widened bracket
+    /// `myUMin = min - DU`, `myUMax = max + DU` with `DU = max - min`
+    /// (`:308-312`).
+    fn init_range(&mut self, c: &'a dyn Curve, u1: f64, u2: f64) {
+        self.f = CpntsMyRootFunction::new(c, gauss_order(c));
+        self.l = cpnts_length(c, u1, u2);
+        let mut umin = u1.min(u2);
+        let mut umax = u1.max(u2);
+        let du = umax - umin;
+        umin -= du;
+        umax += du;
+        self.umin = umin;
+        self.umax = umax;
+    }
+
+    /// `Perform(Abscissa, U0, Resolution)` (`:374-391`): the guess
+    /// `Ui = U0 + (Abscissa / myL) * (myUMax - myUMin) / 3` ("exercise : why
+    /// 3 ?", `:387-388` — the `/3` undoes the `DU` widening on both sides),
+    /// then the 4-argument `Perform`.
+    fn perform(&mut self, abscissa: f64, u0: f64, resolution: f64) {
+        if self.l < CONFUSION {
+            self.done = true;
+            self.param = u0;
+        } else {
+            let ui = u0 + (abscissa / self.l) * (self.umax - self.umin) / 3.0;
+            self.perform_with_guess(abscissa, u0, ui, resolution);
+        }
+    }
+
+    /// `Perform(Abscissa, U0, Ui, Resolution)` (`:395-432`). The validity test
+    /// on `Solution.Value()` / `Derivative` is commented out in OCCT
+    /// (`:415-425`); only `Solution.IsDone()` is consulted (`:426-430`), so the
+    /// port does the same.
+    fn perform_with_guess(&mut self, abscissa: f64, u0: f64, ui: f64, resolution: f64) {
+        if self.l < CONFUSION {
+            self.done = true;
+            self.param = u0;
+            return;
+        }
+        self.done = false;
+        self.f.init(u0, abscissa);
+        let (umin, umax) = (self.umin, self.umax);
+        let solution =
+            MathFunctionRoot::new_with_bounds(&mut self.f, ui, resolution, umin, umax, 100);
+        if solution.is_done() {
+            self.done = true;
+            self.param = solution.root();
+        }
+    }
+
+    /// `IsDone()` (`CPnts_AbscissaPoint.lxx:19-22`).
+    fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// `Parameter()` (`CPnts_AbscissaPoint.lxx:26-30`): OCCT raises
+    /// `StdFail_NotDone` when `!myDone`; the caller checks `is_done()` first
+    /// (the port's `Parameter` does not hard-crash on misuse).
+    fn parameter(&self) -> f64 {
+        self.param
+    }
+}
+
+/// `GCPnts_AbscissaPoint::Compute` on the `GCPnts_Parametrized` arm
+/// (`GCPnts_AbscissaPoint.cxx:77-95`): the `Precision::Confusion()` shortcut
+/// (`:77-81`) then `Init(theC)` + `Perform(theAbscis, theU0, theUi,
+/// theEPSILON)` (`:91-95`). `None` stands for OCCT's `!IsDone()`, whose
+/// `Parameter()` raises `StdFail_NotDone`.
+///
+/// UNPORTED: `GCPnts_LengthParametrized` (`:87-90`) and
+/// `GCPnts_AbsComposite` (`:96-158`); see the module header.
+fn compute_with_guess(
+    c: &dyn Curve,
+    abscissa: f64,
+    u0: f64,
+    ui: f64,
+    resolution: f64,
+) -> Option<f64> {
+    if abscissa.abs() <= CONFUSION {
+        return Some(u0);
+    }
+    let mut computer = CpntsAbscissaPoint::new(c);
+    computer.init(c);
+    computer.perform_with_guess(abscissa, u0, ui, resolution);
+    if computer.is_done() {
+        Some(computer.parameter())
+    } else {
+        None
+    }
+}
+
+/// Parameter `u` at arc length `abscissa` from the point of parameter `from` —
+/// the `GCPnts_AbscissaPoint::Parameter()` entry
+/// (`GCPnts_AbscissaPoint.hxx:153`).
 ///
 /// Positive `abscissa` walks forward, negative backward. Mirrors
-/// `GCPnts_AbscissaPoint`; errors if the requested distance exceeds the
-/// available curve length.
+/// `GCPnts_AbscissaPoint(theC, theAbscissa, theU0)`
+/// (`GCPnts_AbscissaPoint.cxx:446-451` → `compute` `:428-442` →
+/// `Compute` `:67-161`). `Err` covers OCCT's `Standard_ConstructionError`
+/// for a zero-length curve (`:433-436`) and `StdFail_NotDone` when the root
+/// search does not converge (`CPnts_AbscissaPoint.lxx:26-30`). As OCCT documents
+/// (`CPnts_AbscissaPoint.hxx:78`), the result may lie outside the curve's
+/// parameter bounds: the `Perform` bracket is widened by `DU` on each side
+/// (`CPnts_AbscissaPoint.cxx:310-312`).
 pub fn abscissa_point(c: &dyn Curve, abscissa: f64, from: f64) -> Result<f64, String> {
-    if abscissa.abs() <= CONFUSION {
-        return Ok(from);
-    }
     let (a, b) = (c.first_parameter(), c.last_parameter());
     if !(a.is_finite() && b.is_finite()) {
+        // Port guard: OCCT would integrate over an infinite range.
         return Err("abscissa_point: unbounded curve".to_string());
     }
-    if from < a - 1e-12 || from > b + 1e-12 {
-        return Err(format!("abscissa_point: from {from} outside [{a}, {b}]"));
+    // `aL = Length(theC)` and `Standard_ConstructionError` below
+    // `Precision::Confusion()` (`GCPnts_AbscissaPoint.cxx:432-436`).
+    let al = cpnts_length(c, a, b);
+    if al < CONFUSION {
+        return Err("abscissa_point: zero-length curve".to_string());
     }
-    let from = from.clamp(a, b);
-    let tol = CONFUSION * 0.1;
-
-    let (lo, hi): (f64, f64) = if abscissa > 0.0 {
-        (from, b)
-    } else {
-        (a, from)
-    };
-    // g(u) is monotone increasing with the signed arc length from `from`.
-    // For abscissa < 0 the walk is backward: g(u) = |abscissa| − arc_len(u, from).
-    let g = |u: f64| -> f64 {
-        if abscissa > 0.0 {
-            curve_length_range(c, from, u, tol) - abscissa
-        } else {
-            -abscissa - curve_length_range(c, u, from, tol)
-        }
-    };
-    let sp = |u: f64| speed(c, u);
-
-    let glo = g(lo);
-    let ghi = g(hi);
-    // The tolerance guard mirrors OCCT's widened search bracket
-    // (`CPnts_AbscissaPoint.cxx:367-369`: `myUMin = U1 - DU`, `myUMax = U2 + DU`
-    // with `DU = U2 - U1`): an abscissa equal to the curve's length must land on
-    // the end parameter even though the Gauss length carries a rounding error,
-    // while a request genuinely beyond the length is still rejected.
-    if glo > tol || ghi < -tol {
-        return Err("abscissa_point: abscissa beyond curve length".to_string());
-    }
-    if ghi <= 0.0 {
-        return Ok(hi);
-    }
-    if (ghi - glo).abs() < 1e-15 {
-        return Ok(0.5 * (lo + hi));
-    }
-
-    let mut lo = lo;
-    let mut hi = hi;
-    let mut u = 0.5 * (lo + hi);
-    for _ in 0..80 {
-        let gu = g(u);
-        if gu.abs() < 1e-9 * (1.0 + u.abs()) {
-            return Ok(u);
-        }
-        let s = sp(u);
-        let step = if s > 1e-14 { gu / s } else { 0.0 };
-        let un = if step.is_finite() && step.abs() <= hi - lo {
-            u - step
-        } else {
-            0.5 * (lo + hi)
-        };
-        let un = un.clamp(lo, hi);
-        if g(un) <= 0.0 {
-            lo = un;
-        } else {
-            hi = un;
-        }
-        u = un;
-        if hi - lo < 1e-12 * (1.0 + hi.abs()) {
-            break;
-        }
-    }
-    Ok(u)
+    // `aUUi = theU0 + (anAbscis / aL) * (Last - First)` (`:440`),
+    // `theC.Resolution(Precision::Confusion())` (`:441`).
+    let ui = from + (abscissa / al) * (b - a);
+    let resolution = c.resolution(CONFUSION);
+    compute_with_guess(c, abscissa, from, ui, resolution)
+        .ok_or_else(|| "abscissa_point: math_FunctionRoot did not converge".to_string())
 }
 
 /// `n + 1` parameters at equal arc-length spacing across the curve
@@ -212,44 +382,24 @@ pub fn uniform_abscissa(c: &dyn Curve, n: usize) -> Result<Vec<f64>, String> {
         return Ok(vec![a; n + 1]);
     }
     let step = total / n as f64;
+    let resolution = c.resolution(CONFUSION);
     let mut params = Vec::with_capacity(n + 1);
     params.push(a);
     let mut prev = a;
     for _ in 1..n {
-        // Find u with arc_length(prev, u) = step, in [prev, b].
-        let tol = CONFUSION * 0.1;
-        let g = |u: f64| curve_length_range(c, prev, u, tol) - step;
-        let sp = |u: f64| speed(c, u);
-        let mut lo = prev;
-        let mut hi = b;
-        let mut u = 0.5 * (lo + hi);
-        let mut result = u;
-        for _ in 0..80 {
-            let gu = g(u);
-            if gu.abs() < 1e-9 * (1.0 + u.abs()) {
-                result = u;
-                break;
-            }
-            let s = sp(u);
-            let step_n = if s > 1e-14 { gu / s } else { 0.0 };
-            let un = if step_n.is_finite() && step_n.abs() <= hi - lo {
-                u - step_n
-            } else {
-                0.5 * (lo + hi)
-            };
-            let un = un.clamp(lo, hi);
-            if g(un) <= 0.0 {
-                lo = un;
-            } else {
-                hi = un;
-            }
-            u = un;
-            result = u;
-            if hi - lo < 1e-12 * (1.0 + hi.abs()) {
-                break;
-            }
+        // Find u with arc length `step` from `prev`, inside `[prev, b]`,
+        // through the faithful `CPnts_AbscissaPoint::Init(C, U1, U2)` +
+        // `Perform(Abscissa, U0, Resolution)` (`CPnts_AbscissaPoint.cxx:301-313`,
+        // `:374-391`), i.e. `math_FunctionRoot` on the integral of the speed.
+        let mut computer = CpntsAbscissaPoint::new(c);
+        computer.init_range(c, prev, b);
+        computer.perform(step, prev, resolution);
+        if !computer.is_done() {
+            return Err(
+                "uniform_abscissa: math_FunctionRoot did not converge".to_string(),
+            );
         }
-        let u = result.min(b);
+        let u = computer.parameter().min(b);
         params.push(u);
         prev = u;
     }
@@ -410,8 +560,13 @@ mod tests {
         let c = unit_circle();
         let u = abscissa_point(&c, 2.0 * PI, 0.0).unwrap();
         assert!((u - 2.0 * PI).abs() < 1e-6, "u {u}");
-        // Beyond total length errors.
-        assert!(abscissa_point(&c, 3.0 * PI, 0.0).is_err());
+        // `CPnts_AbscissaPoint.hxx:78`: "The computed point can be outside
+        // of the curve 's bounds". `CPnts_AbscissaPoint::Perform` widens the
+        // root bracket to `[U1 - DU, U2 + DU]` (`CPnts_AbscissaPoint.cxx:310-312`),
+        // so an abscissa past the total length is not rejected: on the periodic
+        // circle the integral `Length(0, X)` still matches it at `X = 3*pi`.
+        let u = abscissa_point(&c, 3.0 * PI, 0.0).unwrap();
+        assert!((u - 3.0 * PI).abs() < 1e-6, "u {u}");
     }
 
     #[test]
