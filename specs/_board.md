@@ -185,6 +185,10 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 215 —— 基线快照（HEAD `bafaea29`，工作树无 tracked 改动）**
+
+在 T-69 的大改动落地**之前**，用独立 `CARGO_TARGET_DIR` 跑一次 §2 门禁快照（后台 job），作为「改动前后」的对照锚点 ✓。
+（T-69 的落地会同时影响 `data/occ` 与可能影响 15 个 GT 文件 ⇒ 有这份快照才能干净判定「更忠实 / 回归」✓。）
 **round 214 —— 订正范围：`FixMissingSeam` 实为 **609 行**（`:1722-2330`）⇒ 按四段分步移植；改派新代理**
 
 我量了函数的**真实边界**：`ShapeFix_Face::FixMissingSeam` 从 `:1722` 一直到 `:2330`（下一个方法 `FixSmallAreaWire` 在 `:2331`）⇒ **约 609 行**（先前估的 ~290 行偏小 ✗）。分四段：
