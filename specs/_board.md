@@ -185,6 +185,26 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 163 —— T-69 第 1 处**落点钉到函数**：OCCT 保留的是**存档的闭合 pcurve**，端口丢了它 ⇒ 解析重投影成开路；已授权 (i) 并分两批**
+
+**代理新增证据（pcurve 类型/参数打印）**：OCCT 那 172 条闭合边 wire 的 pcurve 类型：
+
+| pctype | 类型 | 数量 | 面类型 |
+|---|---|---|---|
+| 1 | **`Geom2d_Circle`** | **166** | 全 Plane，range `0..2π` / `π..3π` |
+| 6 | **`Geom2d_BSplineCurve`** | **6** | 含唯一 Cylinder：`face=1777 range=0..0.741749` |
+
+⇒ OCCT 这些边持有的是**闭合 2D 曲线**（首末重合）⇒ `CheckLacking` 的 `myMax2d = 0 < tol2d²` ⇒ **不报 lacking**。它们来自**存档 pcurve**（STEP `SURFACE_CURVE`），链路 `StepToTopoDS_TranslateEdgeLoop.cxx:875 → CheckPCurves(:105-177) → XSAlgo_ShapeProcessor::CheckPCurve(XSAlgo_ShapeProcessor.cxx:344-401)`。
+**关键排除（有证明）**：端口 `shhealing/xsalgo_check_pcurve.rs:36-113` 与该 CheckPCurve **逐行一致**；且**闭合 pcurve 必被保留**（`q1==q2 ⇒ spanX=spanY=0 ⇒ 6/8 测试必过`；闭合 3D 边 `pv1==pv2 ⇒ 一致性测试必过`）⇒ 它不是 dropper ✓。
+
+**⇒ 收窄后的最小落点**：端口手里那条边的 pcurve **本来就不闭合**（face 709：`edge1852 (−π,0.36)→(π,0.36)`，开路 `Geom2dLine`，首末差 2π）—— **存档 pcurve 没被保留**，随后 `fix_add_pcurve` 用 `pcurve_full::make_pcurve_full` 对 cylinder/cone/torus 的等参圆**解析重投影成开路直线** ✗。落点 = `step/read_topology.rs:676 associate_edge_pcurve`（`:907-926` 决定 `stored`，非 seam 走 `matched.pop()` at `:922`）/ `resolve_pcurve` ✓。
+**这自洽解释了全部数字**：失败面恰好是 Cylinder 97 / Cone 47 / Torus 18（走解析等参线投影的曲面族），而 166 个 Plane 全 OK（Plane+圆本就产出闭合 `Geom2dCircle`，与 OCCT 同形 ✓）。
+
+**我的决定：走 (i)**（在 `step/` 保留存档闭合 2D 表示），**否 (ii)**（在 `pcurve_full` 造「像闭合」的表示属**改类型选择**，参数化与 OCCT 的 `0.741749` 不同 ⇒ 自创 ✗）。**已授权代理，并给出两批执行**：
+- **批次 A（纯诊断、零生产代码改动）**：插桩 `associate_edge_pcurve`/`resolve_pcurve`，按曲面类统计 `stored` 非空/为空，并对为空者打印 `SURFACE_CURVE` 记录号 + `associated_geometry` 形态 + **失败原因**（`expected PCURVE` / `expected DEFINITIONAL_REPRESENTATION` / `resolve_curve_2d` 失败 / `basis_surf != surf_ref`）⇒ 判定是「解不出」还是「匹配失败」；
+- **批次 B（按 A 的结论最小忠实修复）**：解不出 ⇒ 对照 `XSAlgo_ShapeProcessor.cxx:344-401` 与 `StepToGeom::MakeCurve2d` 的 2D 曲线种类**补解码**；匹配失败 ⇒ 对照 `StepToTopoDS_GeometricTool::PCurve`（`cxx:49-69`）的**实体同一性**匹配修匹配（**禁止**放宽成几何近似 ✗）。**禁止**在 `check_lacking`/`fix_lacking`/`pcurve_full` 侧加特判。
+**验收**：T0M `--wires` UV 退化面→0 且 `--mesh` 失败面 162→0；15 文件 GT 不变；`--lib` 1281/0；`--all-targets`；四道 STEP；`phase5/9/10/19/20`；export 对拍。**代理本两轮净改动 0**（临时件已删，仅保留只读 `--wires` 探针）。
+（我自己的 `closed_edge_probe` 尝试因缺 `TopExp` 头编译失败，已被代理的 `--wires` 类型打印**取代**，故删除，不留在仓库。）
 **round 162 —— T-25 准备：`GeometryRegistry` 的**调用面画像**（迁移要覆盖的 API 清单）**
 
 统计全仓 610 处调用、**28 个不同 API**，按调用次数：
