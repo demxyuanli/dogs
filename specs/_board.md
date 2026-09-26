@@ -125,7 +125,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 **差异 3 —（1+2 都忠实修好后暴露的剩余缺口）壳行走/`RefineShell` 选面不足。**
 把 (1)(2) 都按 OCCT 改后实测：盒体 draft 的 11 面块 `start_elems=11 / avoided=0`，`ShellSplitter` 走出的壳只有 **7/11 面**，`refine_shell` 给出 `["6f/closed=false", "1f/closed=false"]` ⇒ 无闭合壳 ⇒ FUSE 变空（回归，已回退）。**正确的盒体单元应是「盒体 6 面 + 盘 1 面」= 7 面**（盘正好把顶面的孔封住，`BRep_Tool::IsClosed` 才为真），所以剩余缺口在选面判据 = `BOPTools_AlgoTools::GetFaceOff`（`BOPTools_AlgoTools.cxx:1051`，含 `GetEdgeOff` `:1099-1126`）与 `RefineShell`（`BOPAlgo_ShellSplitter.cxx:373`、其函数在 `:425` 附近）。
 
-**下一步（按序）**：① 把 `perform_shapes_to_avoid` 的 `aMEF` 改成 occurrence 版；② 把 `shell_splitter_block` 的两个 MEF 改成 occurrence 版；③ **先 dump 那 7 个被走出面的 kind/TShape**，判定是「选面走错（`GetFaceOff` 角度判据）」还是「走对了但 `refine_shell` 在多连通边（截面圆）上错切」；④ 修到盒体单元 = 7 面且闭合；⑤ 复跑 `--lib` + `step_obj_*` + `phase*` 与 GT 的 8 faces / 8.50265。**每一步都必须整体复跑，因为 (1)(2) 单独落地会让 FUSE 变空。**
+**round 83 更新（提交 `87ae49a`）：①②③ 已落地，无回归。** 实测（`--lib` 1281/0；parity 14/14；`step_to_obj` 13/13；area 11/11；geometry 3/3；`export_data_obj` 16/16 计数逐位不变；FUSE/CUT/COMMON 最终值不变）：
+
+- 盒体 draft（11 面）由「avoided=2 / 7 面被 `refine_shell` 切成 6+1、全 `closed=false`」变为 **avoided=0 / 1 个 7 面壳 / `stop=0` / `closed=true`** = 正确的盒体单元（盒 6 面 + 盘）。
+- 三处落地：`builder_solid.rs::{face_edge_occurrences, edge_closed_on_face}`（`TopExp.cxx:80-120`、`BRep_Tool.cxx:795-841`、`BOPAlgo_BuilderSolid.cxx:191-209`）+ `shell_splitter_block.rs::{map_edges_and_faces, merge_face_into_mef}`（`BOPAlgo_ShellSplitter.cxx:195/266`）+ `refine_shell` 的闭合环判据回落朝向（`:475-482`）。
+
+**剩余缺口（已精确定位）**：圆柱 draft 的 **6 面**集合（2 环带 + 2 顶底盖 + 盘×2）`avoided=0`、`start_elems=6`，但 `ShellSplitter` 交出 **0 个壳** ⇒ 该 split solid 仍是 `Solid/5f` 全 `Internal`。壳行走只覆盖 **4 面**（2 环带 + 2 盖，**没有走到盘**），随后 `refine_shell` 只能切成非闭合碎片。
+
+用 GT 探针 `--cylall` 核实：OCCT 的柱面是 `FACE0 侧面 Forward`（底圆 Forward、顶圆 Reversed）、`FACE1 顶盖 Forward`（顶圆 Forward）、`FACE2 底盖 **Reversed**`（底圆 Reversed ⇒ 累积 Forward）。所以**底圆在两个面上同向 ⇒ OCCT 的 `RefineShell` 也会在此停**，该缺口**不在 refine**，而在壳行走的**邻面选择**（`GetFaceOff`，`BOPTools_AlgoTools.cxx:1051`，或 `aMEFP`「只走壳内自由边」的时序）：正确单元应是两个 3 面闭壳 `{下环带, 底盖, 盘}` 与 `{上环带, 顶盖, 盘}`，走法必须在中途（只含一个环带时）就跨过截面圆进到盘。
+
+**下一步**：dump 圆柱 draft 行走每一步的 `a_mefp` 自由边集合与 `get_face_off` 的候选/角度，对照 `BOPTools_AlgoTools::GetFaceOff`（`cxx:1051-1126`）修选面；复跑 `--lib` + `step_obj_*` + `phase*` + `export` 与 GT 的 8 faces / 8.50265。
 
 **T-11 余项的新证据（本轮实测）**：对 `occt-topo` 直接跑 `cargo fix --lib` 会**编译失败**（98 文件被改、~100 处 `error[E0433/E0425]`）——机器可修复建议只看非 `#[cfg(test)]` 代码，删掉了 test 模块经 `use super::*;` 依赖的再导出（与板内 T-11 记录的 `occt-core` 两处同因，但规模大得多）；`cargo fix --lib --tests` 亦以 build failed 结束且会改 `tests/*.rs`。⇒ T-11 余项只能**逐文件手工**清 unused import（或先 `--lib` 再按报错逐条补回真实路径），本轮已回退，工作树保持绿。
 ### 3.1a T-88 分诊结论（本会话，2026-09-26）
