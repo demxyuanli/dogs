@@ -140,6 +140,25 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 88 —— 抓到具体缺陷：某张面的 pcurve 方向与 3D 边反向（违反 `CurveOnSurface` 约定）**
+
+按 round 87 的下一步做便宜的决定性检查：在 `build_split_solids_occt` 里对每个 draft 的每张 face、每条边界边打印 `dot(pcurve 推回的 3D 切向, edge_curve.d1)`（pcurve 取 `boptools_2d::curve_on_surface_range`，推 3D 用 `dS/du·du/dt + dS/dv·dv/dt`）。实测（`box∪cyl`）：
+
+```
+[zz-pc] face kind=Cylinder ori=Forward     # 下环带
+    E ori=Forward  range=[0,2π] uv=(3.142,0.000) |tan3d|=0.4 dot=+0.16000
+    E ori=Reversed range=[0,1]  uv=(0.000,0.500) |tan3d|=1.0 dot=+1.00000
+    E ori=Reversed range=[0,2π] uv=(3.142,1.000) |tan3d|=0.4 dot=+0.16000   # 截面圆
+    E ori=Forward  range=[0,1]  uv=(6.283,0.500) |tan3d|=1.0 dot=+1.00000
+[zz-pc] face kind=Cylinder ori=Reversed    # 上环带（注意面朝向是 Reversed）
+    ... 全部 dot=+0.16 / +1.0
+[zz-pc] face kind=Plane ori=Forward        # 端盖/盘
+    E ori=Forward range=[0,2π] uv=(-0.400,0.000) |tan3d|=0.4 dot=-0.16000  <== 反向！
+```
+
+⇒ **同一批面里，环带的 pcurve 与 3D 同向（`+0.16`/`+1.0`），而那张 Plane 面的 pcurve 与 3D 反向（`-0.16`，量值相等、符号相反）。** `BRep_Tool::CurveOnSurface` 要求 pcurve 与边的 3D 参数同向（同 `f,l`），反向即违反约定 ⇒ `edge_direction_3d`、`GetFaceDir` 的遍历判定、以及任何「两份视图同向/反向」的比较都会在这张面上失真 ⇒ 解释了为什么 round 86/87 的三种判据都失败。
+
+**下一步（真正的根因落点）**：定位这张 Plane 面的 pcurve 生产者并修到与 OCCT 同向。候选：`pcurve::make_pcurve_on_face` / `boptools_2d::{make_2d, build_pcurve_for_edge_on_face}` / 圆柱端盖的 pcurve 装配（`primitives.rs` 的 `make_cylinder`）；也可能是 `FaceBuilder` 在重建 loop 时把 `Reversed` 视图的 pcurve 用反。判据用上面的 `dot` 探针（同一面内应恒正；盘/环带之间应符合「相邻面反向」），修完复跑全套门禁与 GT `8 faces / 8.50265`。
 **round 87 —— 几何（pcurve）遍历判据也失败，收敛到「重建面的 pcurve 方向本身可疑」**
 
 按 round 86 的方向实现了几何判据：在 `shell_splitter.rs` 新增 `edge_direction_3d(edge, face)`（取 `boptools_2d::curve_on_surface_range` 的 pcurve，把中点切向 `dS/du·du/dt + dS/dv·dv/dt` 推到 3D，再乘视图累积朝向定号）与 `same_traversal(e1,f1,e2,f2)`（`dot > 0`），并接到 `get_edge_off_geo`（新增 `the_f1` 形参，`!same` = 取反向视图）与 `get_face_off::same_dir`，保留旧的 endpoint-key 作为无 pcurve 时的回退。**编译通过，但实测 `box∪cyl` 的 FUSE 仍变空**（Cut 不变 9 面/‑4.611446）⇒ 已整体回退。
