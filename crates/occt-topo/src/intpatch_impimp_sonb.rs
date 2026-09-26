@@ -17,6 +17,51 @@ pub(crate) struct PathPoint {
     pub v: f64,
     pub param_on_arc: f64,
     pub arc: RestrictionArc,
+    /// `IsNew()` (`IntPatch_ThePathPointOfTheSOnBounds.hxx:117-120`): false
+    /// when the solution coincides with a restriction vertex
+    /// (`IntStart_SearchOnBoundaries.gxx:957`), true otherwise (`:996`).
+    pub is_new: bool,
+    /// Table index of `Vertex()` in `TopolTool`
+    /// (`IntPatch_ThePathPointOfTheSOnBounds.hxx:122-129`); `None` iff `is_new`.
+    pub vertex_id: Option<usize>,
+}
+
+impl PathPoint {
+    /// `IntPatch_ThePathPointOfTheSOnBounds(P, Tol, V, A, Parameter)`
+    /// (`IntPatch_ThePathPointOfTheSOnBounds_0.cxx:31-44`) — the point falls on
+    /// the arc vertex `V`.
+    fn on_vertex(
+        p: GpPnt,
+        vertex_id: usize,
+        u: f64,
+        v: f64,
+        param_on_arc: f64,
+        arc: RestrictionArc,
+    ) -> Self {
+        Self {
+            p,
+            u,
+            v,
+            param_on_arc,
+            arc,
+            is_new: false,
+            vertex_id: Some(vertex_id),
+        }
+    }
+
+    /// `IntPatch_ThePathPointOfTheSOnBounds(P, Tol, A, Parameter)`
+    /// (`IntPatch_ThePathPointOfTheSOnBounds_0.cxx:46-57`).
+    fn new_at(p: GpPnt, u: f64, v: f64, param_on_arc: f64, arc: RestrictionArc) -> Self {
+        Self {
+            p,
+            u,
+            v,
+            param_on_arc,
+            arc,
+            is_new: true,
+            vertex_id: None,
+        }
+    }
 }
 
 /// Result of `TheSOnBounds::Perform`.
@@ -60,6 +105,7 @@ pub(crate) fn search_on_bounds(
         bounded_arc(
             surf,
             quad,
+            domain,
             arc,
             tol_boundary,
             tol_tangency,
@@ -80,6 +126,7 @@ pub(crate) fn search_on_bounds(
 fn bounded_arc(
     surf: &dyn Surface,
     quad: &ImplicitQuad,
+    domain: &TopolTool,
     arc: &RestrictionArc,
     tol_boundary: f64,
     tol_tangency: f64,
@@ -112,22 +159,10 @@ fn bounded_arc(
     if *arc_sol {
         let (t0, _, p0, u0, v0) = vals[0];
         let (t1, _, p1, u1, v1) = vals[vals.len() - 1];
-        let pf = PathPoint {
-            p: p0,
-            u: u0,
-            v: v0,
-            param_on_arc: t0,
-            arc: *arc,
-        };
-        let pl = PathPoint {
-            p: p1,
-            u: u1,
-            v: v1,
-            param_on_arc: t1,
-            arc: *arc,
-        };
-        push_point(points, p0, u0, v0, t0, n_tol, *arc);
-        push_point(points, p1, u1, v1, t1, n_tol, *arc);
+        let pf = path_point(domain, p0, u0, v0, t0, *arc);
+        let pl = path_point(domain, p1, u1, v1, t1, *arc);
+        push_point(domain, points, p0, u0, v0, t0, n_tol, *arc);
+        push_point(domain, points, p1, u1, v1, t1, n_tol, *arc);
         segments.push(BoundSegment {
             arc: *arc,
             first: Some(pf),
@@ -139,7 +174,7 @@ fn bounded_arc(
     for i in 0..vals.len() {
         let (t, f, p, u, v) = vals[i];
         if f.abs() <= n_tol {
-            push_point(points, p, u, v, t, n_tol, *arc);
+            push_point(domain, points, p, u, v, t, n_tol, *arc);
         }
         if i + 1 < vals.len() {
             let (t2, f2, _, _, _) = vals[i + 1];
@@ -147,14 +182,17 @@ fn bounded_arc(
                 if let Some((tr, pr, ur, vr)) =
                     root_on_interval(surf, quad, arc, t, t2, f, f2, n_tol)
                 {
-                    push_point(points, pr, ur, vr, tr, n_tol, *arc);
+                    push_point(domain, points, pr, ur, vr, tr, n_tol, *arc);
                 }
             }
         }
     }
 }
 
+/// `PointProcess(Pt, Para, A, Domain, pnt, Tol, Range)`
+/// (`IntStart_SearchOnBoundaries.gxx:880-1001`).
 fn push_point(
+    domain: &TopolTool,
     points: &mut Vec<PathPoint>,
     p: GpPnt,
     u: f64,
@@ -166,13 +204,29 @@ fn push_point(
     if points.iter().any(|q| q.p.square_distance(&p) <= tol * tol) {
         return;
     }
-    points.push(PathPoint {
-        p,
-        u,
-        v,
-        param_on_arc: t,
-        arc,
-    });
+    points.push(path_point(domain, p, u, v, t, arc));
+}
+
+/// Vertex branch of `PointProcess` (`IntStart_SearchOnBoundaries.gxx:902-968`):
+/// the solution coincides with an arc vertex when the parameter distance is
+/// within `Adaptor3d_HVertex::Resolution` (`Adaptor3d_HVertex.cxx:48-51`), and
+/// is then stored bound to it (`:957`). Otherwise
+/// `ptsol.SetValue(Pt, TOL, A, Para)` (`:996`) creates a new point.
+fn path_point(
+    domain: &TopolTool,
+    p: GpPnt,
+    u: f64,
+    v: f64,
+    t: f64,
+    arc: RestrictionArc,
+) -> PathPoint {
+    for vertex_id in domain.arc_vertexes(&arc) {
+        if (t - domain.vertex_parameter(vertex_id)).abs() <= domain.vertex_resolution(vertex_id) {
+            eprintln!("T28PROBE bind t={t}");
+            return PathPoint::on_vertex(p, vertex_id, u, v, t, arc);
+        }
+    }
+    PathPoint::new_at(p, u, v, t, arc)
 }
 
 fn root_on_interval(

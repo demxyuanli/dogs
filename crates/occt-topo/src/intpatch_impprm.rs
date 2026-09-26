@@ -2,10 +2,12 @@
 //! Source: `IntPatch_ImpPrmIntersection.cxx` Perform: TheSOnBounds,
 //! ComputeTangency, SearchInside, TheIWalking.
 
-use occt_core::gp::{GpDir2d, GpVec};
+use occt_core::gp::{GpDir, GpDir2d, GpVec};
 use occt_geom::Surface;
 
+use crate::abs::Orientation;
 use crate::brep_surface::{classify_surface, SurfaceKind};
+use crate::fclass2d::FaceState;
 use crate::geom_int::{GeomIntLine, RestrictionArc, TopolTool};
 use crate::int_tools_wline::{u_resolution, v_resolution, WLine};
 use crate::intpatch::impimp::{
@@ -19,7 +21,10 @@ mod surf_func;
 mod search_inside;
 #[path = "intpatch_iwalking.rs"]
 mod iwalking;
+#[path = "intpatch_curve_transition.rs"]
+mod curve_transition;
 
+use curve_transition::CurveTransition;
 use iwalking::{iwalking_perform, lines_to_wlines, WalkStart};
 use search_inside::search_inside;
 use surf_func::SurfFunction;
@@ -65,6 +70,7 @@ impl ImpPrmIntersection {
         fleche: f64,
         pas: f64,
     ) {
+        eprintln!("T28PROBE perform");
         self.done = false;
         self.empty = true;
         self.slin.clear();
@@ -107,7 +113,7 @@ impl ImpPrmIntersection {
             return;
         }
 
-        let (seqpdep, dest) = compute_tangency(&solrst.points, &mut func, prm);
+        let (seqpdep, dest) = compute_tangency(&solrst.points, d_prm, &mut func, prm);
         let mut search_ins = true;
         if matches!(quad, ImplicitQuad::Plane(_)) && !solrst.segments.is_empty() {
             search_ins = plane_needs_interior(&mut func, prm, d_prm);
@@ -237,53 +243,210 @@ fn plane_needs_interior(func: &mut SurfFunction<'_>, prm: &dyn Surface, d: &Topo
     false
 }
 
-/// `ComputeTangency` for UV-box restriction zeros (`IsNew` branch).
-/// Vertex/`TopTrans_CurveTransition` merge (`cxx` 329–465) is not-ported:
-/// UV-box `TopolTool` has no `HVertex`.
+/// `ComputeTangency` (`IntPatch_ImpPrmIntersection.cxx:221-469`).
+///
+/// `dest[i]` is the 1-based index in the returned sequence of the start point
+/// `points[i]` is merged into: `0` = not treated yet, a shared positive value =
+/// merged with an identical vertex (`:365-418` / `:274-296`), a negative value =
+/// the group was rejected and rolled back (`:455-464`).
 fn compute_tangency(
     points: &[PathPoint],
+    domain: &TopolTool,
     func: &mut SurfFunction<'_>,
     prm: &dyn Surface,
 ) -> (Vec<WalkStart>, Vec<i32>) {
-    let mut out = Vec::new();
-    let mut dest = vec![0i32; points.len()];
-    for (i, pt) in points.iter().enumerate() {
-        let _ = func.values(pt.u, pt.v);
+    let mut out: Vec<WalkStart> = Vec::new();
+    let nb_points = points.len();
+    let mut dest = vec![0i32; nb_points];
+    let mut seqlength: i32 = 0;
+
+    for i in 0..nb_points {
+        if dest[i] != 0 {
+            continue;
+        }
+        let pstart = points[i];
+        let thearc = pstart.arc;
+        let theparam = pstart.param_on_arc;
+        // `Adaptor3d_TopolTool::Orientation(Curve2d)` always returns FORWARD
+        // (`Adaptor3d_TopolTool.cxx:606-609`).
+        let arcorien = Orientation::Forward;
+        let mut ispassing =
+            arcorien == Orientation::Internal || arcorien == Orientation::External;
+
+        let (x1, x2) = (pstart.u, pstart.v);
+        func.values(x1, x2);
         if func.is_tangent() {
-            dest[i] = (out.len() + 1) as i32;
+            // `:267-301` — tangency point, still merged per identical vertex.
+            dest[i] = seqlength + 1;
+            if !pstart.is_new {
+                let vtx = pstart.vertex_id.expect("non-new point has a vertex");
+                for k in (i + 1)..nb_points {
+                    if dest[k] != 0 {
+                        continue;
+                    }
+                    let pk = points[k];
+                    if pk.is_new {
+                        continue;
+                    }
+                    let vtxbis = pk.vertex_id.expect("non-new point has a vertex");
+                    if domain.identical(vtx, vtxbis) {
+                        // `:286-288` and `PPoint.AddUV` at `:291`.
+                        let arcorien = Orientation::Forward;
+                        ispassing = ispassing
+                            && (arcorien == Orientation::Internal
+                                || arcorien == Orientation::External);
+                        dest[k] = seqlength + 1;
+                    }
+                }
+            }
             out.push(WalkStart {
-                p: pt.p,
-                u: pt.u,
-                v: pt.v,
+                p: pstart.p,
+                u: pstart.u,
+                v: pstart.v,
                 d3d: GpVec::zero(),
                 d2d: GpDir2d::default(),
                 tangent: true,
             });
+            seqlength += 1;
             continue;
         }
+
+        // on a un point de depart potentiel (`:303-327`)
         let mut vectg = func.direction3d();
         let mut dirtg = func.direction2d();
-        let (_, d1u, d1v) = prm.d1(pt.u, pt.v);
-        let (_p2d, d2d) = RestrictionArc::d1(&pt.arc, pt.param_on_arc);
-        let v2 = d1u
+        let (_ptbid, d1u, d1v) = prm.d1(x1, x2);
+        let (_p2d, d2d) = RestrictionArc::d1(&thearc, theparam);
+        let mut v2 = d1u
             .multiplied_scalar(d2d.x())
             .added(&d1v.multiplied_scalar(d2d.y()));
         let v1 = d1u.crossed(&d1v);
-        let test = vectg.dot(&v1.crossed(&v2));
-        // `Adaptor3d_TopolTool::Orientation(Curve2d)` is always FORWARD.
-        if test < 0.0 {
-            vectg.reverse();
-            dirtg.reverse();
+        let mut test = vectg.dot(&v1.crossed(&v2));
+        if pstart.is_new {
+            // `:314-327` — `arcorien` is FORWARD, so the test is `test < 0`.
+            if test < 0.0 {
+                vectg.reverse();
+                dirtg.reverse();
+            }
+            dest[i] = seqlength + 1;
+            out.push(WalkStart {
+                p: pstart.p,
+                u: pstart.u,
+                v: pstart.v,
+                d3d: vectg,
+                d2d: dirtg,
+                tangent: false,
+            });
+            seqlength += 1;
+            continue;
         }
-        dest[i] = (out.len() + 1) as i32;
-        out.push(WalkStart {
-            p: pt.p,
-            u: pt.u,
-            v: pt.v,
-            d3d: vectg,
-            d2d: dirtg,
-            tangent: false,
-        });
+
+        // traiter la transition complexe (`:329-465`)
+        eprintln!("T28PROBE complex i={i}");
+        let vtx = pstart.vertex_id.expect("non-new point has a vertex");
+        let bidnorm = GpDir::new(1.0, 1.0, 1.0).expect("gp_Dir(1,1,1)");
+        let tole = 1.0e-8;
+        let mut loc_trans = Orientation::Forward;
+        let mut comptrans = CurveTransition::new();
+        let mut vtxorien = domain.vertex_orientation(vtx);
+        comptrans.reset(&vectg, &bidnorm, 0.0);
+        if arcorien == Orientation::Forward || arcorien == Orientation::Reversed {
+            // pour essai (`:335-363`)
+            if test.abs() <= tole {
+                loc_trans = Orientation::External; // et pourquoi pas INTERNAL
+            } else {
+                if (test > 0.0 && arcorien == Orientation::Forward)
+                    || (test < 0.0 && arcorien == Orientation::Reversed)
+                {
+                    loc_trans = Orientation::Forward;
+                } else {
+                    loc_trans = Orientation::Reversed;
+                }
+                if arcorien == Orientation::Reversed {
+                    v2.reverse();
+                }
+            }
+            comptrans.compare(tole, &v2, &bidnorm, 0.0, loc_trans, vtxorien);
+        }
+        dest[i] = seqlength + 1;
+        for k in (i + 1)..nb_points {
+            if dest[k] != 0 {
+                continue;
+            }
+            let pk = points[k];
+            if pk.is_new {
+                continue;
+            }
+            let vtxbis = pk.vertex_id.expect("non-new point has a vertex");
+            if !domain.identical(vtx, vtxbis) {
+                continue;
+            }
+            // `thearc`/`theparam` become `Point(k)`'s (`:375-377`).
+            let arcbis = pk.arc;
+            let parambis = pk.param_on_arc;
+            let arcorien = Orientation::Forward;
+            // `PPoint.AddUV(X(1), X(2))` (`:379`) then
+            // `PPoint.AddUV(p2d.X(), p2d.Y())` (`:382`).
+            if arcorien == Orientation::Forward || arcorien == Orientation::Reversed {
+                ispassing = false;
+                let (_p2d_bis, d2d_bis) = RestrictionArc::d1(&arcbis, parambis);
+                v2 = d1u
+                    .multiplied_scalar(d2d_bis.x())
+                    .added(&d1v.multiplied_scalar(d2d_bis.y()));
+                test = vectg.dot(&v1.crossed(&v2));
+                vtxorien = domain.vertex_orientation(vtxbis);
+                if test.abs() <= tole {
+                    loc_trans = Orientation::External; // et pourquoi pas INTERNAL
+                } else {
+                    if (test > 0.0 && arcorien == Orientation::Forward)
+                        || (test < 0.0 && arcorien == Orientation::Reversed)
+                    {
+                        loc_trans = Orientation::Forward;
+                    } else {
+                        loc_trans = Orientation::Reversed;
+                    }
+                    if arcorien == Orientation::Reversed {
+                        v2.reverse();
+                    }
+                }
+                comptrans.compare(tole, &v2, &bidnorm, 0.0, loc_trans, vtxorien);
+            }
+            dest[k] = seqlength + 1;
+        }
+        let mut fairpt = true;
+        if !ispassing {
+            let before = comptrans.state_before();
+            let after = comptrans.state_after();
+            if before == FaceState::Unknown || after == FaceState::Unknown {
+                fairpt = false;
+            } else if before == FaceState::In {
+                if after == FaceState::In {
+                    ispassing = true;
+                } else {
+                    vectg.reverse();
+                    dirtg.reverse();
+                }
+            } else if after != FaceState::In {
+                fairpt = false;
+            }
+        }
+        if fairpt {
+            out.push(WalkStart {
+                p: pstart.p,
+                u: pstart.u,
+                v: pstart.v,
+                d3d: vectg,
+                d2d: dirtg,
+                tangent: false,
+            });
+            seqlength += 1;
+        } else {
+            // il faut remettre en "ordre" si on ne garde pas le point (`:456-463`)
+            for k in i..nb_points {
+                if dest[k] == seqlength + 1 {
+                    dest[k] = -dest[k];
+                }
+            }
+        }
     }
     (out, dest)
 }

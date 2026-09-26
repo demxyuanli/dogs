@@ -6,13 +6,43 @@
 use std::sync::Arc;
 
 use occt_core::gp::{GpDir2d, GpPnt2d, GpVec2d};
-use occt_core::precision::Precision;
+use occt_core::precision::{Precision, CONFUSION, INFINITE};
 use occt_geom::Surface;
 use occt_geom2d::{curve::Curve2d, Geom2dLine};
 
+use crate::abs::Orientation;
 use crate::brep_surface::{classify_surface, face_uv_bounds, SurfaceKind};
 use crate::fclass2d::{FClass2d, FaceState};
 use crate::shape::Face;
+
+/// Resolution stored on the restriction vertexes built by
+/// `Adaptor3d_TopolTool::Initialize(C)` (`Adaptor3d_TopolTool.cxx:245`,
+/// `:251`).
+const HVERTEX_RESOLUTION: f64 = 1.0e-8;
+
+/// `Adaptor3d_HVertex` (`Adaptor3d_HVertex.hxx:24-51`) — a 2D point on a
+/// restriction arc, its orientation and its parametric resolution.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct HVertex {
+    /// `Value()` (`Adaptor3d_HVertex.cxx:38-41`).
+    pnt: GpPnt2d,
+    /// `Orientation()` (`Adaptor3d_HVertex.cxx:53-56`).
+    orientation: Orientation,
+    /// `Resolution(C)` (`Adaptor3d_HVertex.cxx:48-51`).
+    resolution: f64,
+    /// `Parameter(C)` (`Adaptor3d_HVertex.cxx:43-46`). The port's restriction
+    /// arcs are straight 2D isolines, so `ElCLib::Parameter(Line, P)` is the
+    /// arc parameter the vertex was built at.
+    param: f64,
+}
+
+/// One entry of `Adaptor3d_TopolTool::myVtx` (`Adaptor3d_TopolTool.hxx`) plus
+/// the restriction arc it was built on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ArcVertex {
+    arc: RestrictionArc,
+    hvertex: HVertex,
+}
 
 /// Domain classifier for one surface (`Adaptor3d_TopolTool`).
 #[derive(Clone)]
@@ -22,6 +52,11 @@ pub struct TopolTool {
     vmin: f64,
     vmax: f64,
     class2d: Option<FClass2d>,
+    /// `Adaptor3d_TopolTool::myVtx` — the vertexes of the restriction arcs.
+    /// OCCT rebuilds them per arc in `Initialize(C)`
+    /// (`Adaptor3d_TopolTool.cxx:235-254`); the port holds every arc's
+    /// vertexes in one table and identifies them by index.
+    vertices: Vec<ArcVertex>,
 }
 
 impl TopolTool {
@@ -35,7 +70,9 @@ impl TopolTool {
             vmin,
             vmax,
             class2d: None,
+            vertices: Vec::new(),
         }
+        .with_arc_vertices()
     }
 
     /// Face domain via `FClass2d`, falling back to UV bounds.
@@ -55,7 +92,9 @@ impl TopolTool {
             vmin,
             vmax,
             class2d,
+            vertices: Vec::new(),
         }
+        .with_arc_vertices()
     }
 
     pub fn u_bounds(&self) -> (f64, f64) {
@@ -64,6 +103,81 @@ impl TopolTool {
 
     pub fn v_bounds(&self) -> (f64, f64) {
         (self.vmin, self.vmax)
+    }
+
+    /// Fill `myVtx` from the restriction arcs, i.e. run
+    /// `Adaptor3d_TopolTool::Initialize(C)` (`Adaptor3d_TopolTool.cxx:235-254`)
+    /// once per arc of the UV box.
+    fn with_arc_vertices(mut self) -> Self {
+        let mut vertices = Vec::new();
+        for arc in self.restriction_arcs() {
+            // `theUinf > -myInfinite` (`Adaptor3d_TopolTool.cxx:243`).
+            if arc.first > -INFINITE {
+                vertices.push(ArcVertex {
+                    arc,
+                    hvertex: HVertex {
+                        pnt: arc.value(arc.first),
+                        orientation: Orientation::Forward,
+                        resolution: HVERTEX_RESOLUTION,
+                        param: arc.first,
+                    },
+                });
+            }
+            // `theUsup < myInfinite` (`Adaptor3d_TopolTool.cxx:249`).
+            if arc.last < INFINITE {
+                vertices.push(ArcVertex {
+                    arc,
+                    hvertex: HVertex {
+                        pnt: arc.value(arc.last),
+                        orientation: Orientation::Reversed,
+                        resolution: HVERTEX_RESOLUTION,
+                        param: arc.last,
+                    },
+                });
+            }
+        }
+        self.vertices = vertices;
+        self
+    }
+
+    /// Table indexes of the vertexes `Initialize(arc)` builds for `arc`
+    /// (`Adaptor3d_TopolTool.cxx:235-254`), in table order.
+    pub fn arc_vertexes(&self, arc: &RestrictionArc) -> Vec<usize> {
+        self.vertices
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.arc == *arc)
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// `IntPatch_HInterTool::Parameter(V, C)` (`IntPatch_HInterTool.cxx:312-316`)
+    /// = `Adaptor3d_HVertex::Parameter` (`Adaptor3d_HVertex.cxx:43-46`).
+    pub fn vertex_parameter(&self, index: usize) -> f64 {
+        self.vertices[index].hvertex.param
+    }
+
+    /// `IntPatch_HInterTool::Tolerance(V, C)` (`IntPatch_HInterTool.cxx:306-310`)
+    /// = `Adaptor3d_HVertex::Resolution` (`Adaptor3d_HVertex.cxx:48-51`).
+    pub fn vertex_resolution(&self, index: usize) -> f64 {
+        self.vertices[index].hvertex.resolution
+    }
+
+    /// `Adaptor3d_TopolTool::Identical(V1, V2)`
+    /// (`Adaptor3d_TopolTool.cxx:616-620`) = `Adaptor3d_HVertex::IsSame`
+    /// (`Adaptor3d_HVertex.cxx:58-61`).
+    pub fn identical(&self, first: usize, second: usize) -> bool {
+        self.vertices[first]
+            .hvertex
+            .pnt
+            .distance(&self.vertices[second].hvertex.pnt)
+            <= CONFUSION
+    }
+
+    /// `Adaptor3d_TopolTool::Orientation(HVertex)`
+    /// (`Adaptor3d_TopolTool.cxx:611-614`).
+    pub fn vertex_orientation(&self, index: usize) -> Orientation {
+        self.vertices[index].hvertex.orientation
     }
 
     /// `Adaptor3d_TopolTool::Classify(P, Tol)`.

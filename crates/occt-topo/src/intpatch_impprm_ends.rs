@@ -207,23 +207,40 @@ fn attach_one_end(
         ppoint.d3d.reversed()
     };
     let _ = tgline;
-    // `Multiplicity() == sequv.Length()-1`; UV-box PathPoints are IsNew (one UV).
-    let mut themult: i32 = 0;
-    for i in (0..rst.len()).rev() {
-        if dest.get(i).copied().unwrap_or(0) != ind {
-            continue;
+    // `PPoint` is `seqpdep(indfirst)` (`cxx:1083`/`:1189`). Its UV sequence is
+    // built by `IntSurf_PathPoint::AddUV` (`IntSurf_PathPoint.lxx:20-23`): the
+    // base UV, then for every merged restriction solution the base UV again
+    // followed by that solution's UV (`IntPatch_ImpPrmIntersection.cxx:379`/
+    // `:382`). A restriction solution's UV is its own `(u, v)`.
+    let mut matches: Vec<usize> = (0..rst.len())
+        .filter(|&i| dest.get(i).copied().unwrap_or(0) == ind)
+        .collect();
+    let mut seq_uv: Vec<(f64, f64)> = Vec::new();
+    if let Some(&base) = matches.first() {
+        seq_uv.push((rst[base].u, rst[base].v));
+        for &k in &matches[1..] {
+            seq_uv.push((rst[base].u, rst[base].v));
+            seq_uv.push((rst[k].u, rst[k].v));
         }
+    }
+    // `Multiplicity() == sequv.Length()-1` (`IntSurf_PathPoint.lxx:89-93`):
+    // OCCT walks `i` from `NbPointRst` down to 1 (`cxx:1086`/`:1192`) and each
+    // pass reads `PPoint.Parameters(themult, U, V)` (`cxx:1103`/`:1209`).
+    let mut themult = seq_uv.len() as i32 - 1;
+    matches.reverse();
+    for i in matches {
         let rp = rst[i];
+        let (uv_u, uv_v) = seq_uv[themult as usize];
         let (mut u1, mut v1, mut u2, mut v2, d1u, d1v) = if !reversed {
             let (uq, mut vq) = quad.parameters(&ppoint.p);
             clamp_v(&mut vq, vmin, vmax, tol_v);
-            let (up, vp) = (ppoint.u, ppoint.v);
+            let (up, vp) = (uv_u, uv_v);
             let (_, du, dv) = prm.d1(up, vp);
             (uq, vq, up, vp, du, dv)
         } else {
             let (uq, mut vq) = quad.parameters(&ppoint.p);
             clamp_v(&mut vq, vmin, vmax, tol_v);
-            let (up, vp) = (ppoint.u, ppoint.v);
+            let (up, vp) = (uv_u, uv_v);
             let (_, du, dv) = prm.d1(up, vp);
             (up, vp, uq, vq, du, dv)
         };
@@ -266,6 +283,20 @@ fn attach_one_end(
             pt.on_dom_s2 = true;
             pt.trans2 = t_arc;
             pt.trans1 = t_line;
+        }
+        // Then `ptdeb.SetVertex(reversed, solrst.Point(i).Vertex())`
+        // (`IntPatch_ImpPrmIntersection.cxx:1149-1151`, `:1255-1257`) -
+        // `IntPatch_Point::SetVertex` (`IntPatch_Point.cxx:37-51`) stores the
+        // `Adaptor3d_HVertex` and sets `onS1`/`onS2` on the `OnFirst` side,
+        // guarded by `!solrst.Point(i).IsNew()`. `PatchPoint`, the port's
+        // `IntPatch_Point` (`int_tools_wline.rs:113-129`), has no HVertex slot,
+        // so only the `on_dom_s1`/`on_dom_s2` part is stored here.
+        if !rp.is_new {
+            if reversed {
+                pt.on_dom_s1 = true;
+            } else {
+                pt.on_dom_s2 = true;
+            }
         }
         w.vertices.push(pt);
         if themult == 0 {
