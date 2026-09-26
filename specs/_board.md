@@ -185,6 +185,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 151 —— T-25（最后一项）开工前的**基准态实测**（非 cargo）**
+
+用 grep 重新点数（**取代设计文档里的旧值 `501 refs / 127 files`**）：
+```
+GeometryRegistry 引用总数 = 488 ，涉及文件 = 116
+最热文件（引用数）：
+  30  shhealing/wire_fix.rs
+  23  boptools_2d.rs
+  15  sweep.rs
+  13  brep_tool.rs
+  12  wire_splitter_block.rs
+  11  bop_split_seam.rs / brep_surface.rs / builder.rs / primitives.rs
+  10  tgeometry.rs
+   9  pave_blocks/make_blocks.rs / pave_ff.rs
+```
+⇒ 执行 T-25 时：① 步骤边界按**这 116 文件 / 488 处**重新划分（设计文档的 127/501 已过期），② 头几批**优先攻最热文件**（`wire_fix.rs` 30 处、`boptools_2d.rs` 23 处一次性吃掉，收益/风险比最高），③ 每批都必须跑 `--lib` 1281/0 + 四道 STEP + phase5/9/10/19/20（T-25 是架构级改动，回归面最宽）。
+**前置条件（仍成立）**：必须等 T-28 与 T-69 两条在改的工作流落地、基线稳定后再动（它改 `TShape`，会让所有在改文件同时失效）。
 **round 150 —— T0M 的 OCCT GT 已取得（可复用）；端口侧数字暂为**陈旧件**，不能据此裁决**
 
 **新 GT 能力**：探针加 `--bbox`（`BRepBndLib::Add` → `maxComp` → `Prs3d::GetDeflection` 口径的 `lin = maxComp×0.001×4`），于是 GT 不再依赖端口运行：
