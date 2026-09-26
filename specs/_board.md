@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 158 —— 我逐行复核后**否掉**「`fix_lacking` 造成退化 wire」；新假设指向端口明确的 UNPORTED 项 `FixSelfIntersection`**
+
+我直接把两处读了（都忠实）：
+- **`check_lacking`（`shhealing/wire_fix.rs:2192-2252`）**：`tol2d = 2*max(u_resolution(surf,tol), v_resolution(surf,tol))`（`:2230-2232`）= OCCT `ShapeAnalysis_Wire.cxx:1774-1775`；`max2d < tol2d²` 门槛（`:2233`）、`max3d = tol*max2d/max(tol2d,RealSmall)`（`:2237`）、DONE2 三条件（`:2240-2244`）逐条对应 `cxx:1768-1791` ✓；
+- **`fix_lacking_one` 的造边（`:2566-2626`）**：`do_add_long||do_add_degen||do_add_closed` 门（`:2566`）、`do_add_long` 才建新顶点（`:2569`）、`Geom2dLine::from_pnt_dir(p2d1,dir2d)` + `pcurve_range 0..dist2d`（`:2585`/`:2599`）对应 `Geom2d_Line` + `B.Range(edge,face,0,dist2d)`（`ShapeFix_Wire.cxx:3860-3862`）、3D 用 `CurveOnSurface` 适配器对应 `ShapeBuild_Edge::BuildCurve3d`（`cxx:3866`）、重指相邻边（`:2607-2615`）对应 `cxx:3873-3901`、插入位（`:2622-2626`）对应 `cxx:3919` ✓。
+⇒ **「fix_lacking 在 OCCT 不触发处触发/造重复边」被否**（除非有新数字推翻）。
+
+**新假设（值得优先验）**：那对「同一条 UV 折线走两遍」的边可能是**文件里就有**，而 **OCCT 靠后续修复阶段把它消掉** —— 端口恰好把 `ShapeFix_Wire::FixSelfIntersection`（`ShapeFix_Wire.cxx:1083-1280`，含 `FixSelfIntersectingEdge`/`RemoveLoop`/`TryNewPCurve` 与 `Geom2dInt_GInter`）标为**明确 UNPORTED**（`wire_fix.rs:3216-3226` 有完整依赖清单）✓✓ —— 若成立，**T-69 的本质就是「补这一大段」**（工作量大，需先评估）。
+
+**已让代理做的可判定实验**：对端口 face 709 的 4 条边，打印其 **STEP `ORIENTED_EDGE`/`EDGE_CURVE`/`SURFACE_CURVE` 记录号**与该 face 的 `ADVANCED_FACE.bounds` 原始记录号，再直接看文件：**文件里这个 face 的 bounds 是否本来就是两条几何相同的边**。
+- **是** ⇒ 缺口在 OCCT 的后续修复链（`FixSelfIntersection` 等）⇒ 需先立项评估；
+- **否** ⇒ 缺口在端口的 bounds 装配 / `SURFACE_CURVE` 关联 ⇒ 查 `read_topology.rs`。
+并要求：**若判断需移植 `FixSelfIntersection`，先只交「证据 + 工作量估计 + 最小可验证子集」，不要直接开动**。
 **round 157 —— 全语料 UV 退化参考普查（19 文件）：OCCT 一律 `uv_degenerate_faces = 0`**
 
 用 `wires_probe`（新增 UV 退化普查）跑 `data/*.step`（15）+ `data/occ/*.stp`（4）：
