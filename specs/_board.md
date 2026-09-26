@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 183 —— 提出**分流问题**：失败面的 pcurve 到底由哪条路径产出（解析等参臂 vs `get_line`）**
+
+端口能给同一条边算 pcurve 的地方**至少两处**，且对应**不同**的 OCCT 路径：
+1. `pcurve_full::make_pcurve_full` 的**解析等参臂**（`make_pcurve.rs:128-139`：`is_line`/`is_circle` + `Projector::from_surface`）—— round 169 的机制分析指向这里（按几何不变量判等参线 ⇒ 无条件给 `Geom2dLine`）；
+2. `pcurve_full::projection_cache.rs::get_line`（对应 `ShapeConstruct_ProjectCurveOnSurface::getLine`）—— 代理现在改的这处。
+**已要求代理插桩**（两处各加 env 门控的调用/返回计数与曲线类型、参数范围），回答「T0M 那 162 个失败面上，最终 pcurve 是哪条路径产出的」：
+- 若是 (2) ⇒ 继续现路线（缓存/折叠/法向检查）；
+- 若是 (1) ⇒ `get_line` 不是主犯 ✗，正解回到 **round 169 的 A：按 `GeomAbs_CurveType` 分派**（+ 补齐闭合/周期表示 B），`get_line` 的诊断撤掉；
+- 若两者分摊 ⇒ 给出各占多少面以定优先级。
+（另：我核对了 OCCT `approxPCurve`（`ShapeConstruct_ProjectCurveOnSurface.cxx:1106-1142`）**无条件**调用 `getLine` ✓，以及 `projectPoint` 缓存 lambda（`:944-966`）与端口 `:489-516` 的命中条件 `< aTol2`、`aSavedPointNum=theIndex`、`i=3` 覆盖 `i=0` 的语义**一致** ✓ ⇒ 在 `getLine` 内部暂时找不到差异，更凸显上述分流问题的重要性。）
 **round 182 —— 排除 `is_cn_1`，并给出**缓存命中状态 ⇒ 窗口折叠**的分叉假设**
 
 **排除项**：端口 `is_cn_1`（`projection_cache.rs:409-429`）实现的就是 `Geom_Surface::IsCNu(1) && IsCNv(1)`（`cxx:1035`），**非 B 样条面返回 true**（与 `Geom_Surface` 基类 `Standard_True` 一致）⇒ cylinder/cone/torus 上两侧 `is_normal_check` **都是 true** ⇒ `cxx:1036-1058` 的法向检查**两侧都执行** ✓，不是「一边跳过一边执行」✗。
