@@ -37,14 +37,19 @@ fn curved_face_fillet_sphere_plane() {
     use occt_topo::shape_ops::translated_copy;
     let sphere_at = translated_copy(&sphere.solid.0, &GpVec::new(2.0, 2.0, 2.0)).expect("translate");
     let fused = boolean_compound(&box_.solid.0, &sphere_at, BoolOp::Fuse, 1e-6).expect("fuse");
-    // The circular edge where sphere meets box top → fillet it.
+    // The circular edge where sphere meets box top → fillet it. The edge must
+    // be the sphere/box intersection **circle**: a box top edge is a
+    // plane/plane pair, which `fillet_edge_curved` refuses
+    // (`fillet_curved` supports plane+sphere etc.; a plane/plane edge belongs
+    // to the straight `fillet::fillet_edge`). Selecting by z alone picked the
+    // box outline first (T-88 fixture bug, not an engine gap).
     let edge = occt_topo::topo_tools_full::edges_of(&fused.shape)
         .into_iter()
         .find(|e| {
             occt_topo::brep_tool::BRepTool::edge_curve(e)
                 .map(|c| {
                     let p = c.d0((c.first_parameter() + c.last_parameter()) * 0.5);
-                    (p.z() - 2.0).abs() < 0.5
+                    c.gp_circ().is_some() && (p.z() - 2.0).abs() < 0.5
                 })
                 .unwrap_or(false)
         });
