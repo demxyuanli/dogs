@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 160 —— 文件侧普查口径修正 + 按面类型分布（供 T-69 对账）**
+
+上一轮我报的「75」是**只算「顶点对重复但 EDGE_CURVE 不同」**的那一档；把「连 EDGE_CURVE 也相同」的 21 并回来，**合计 96 个面**有 wire 内顶点对重复：
+```
+T0M.stp：wire 内顶点对重复的面 = 96 （其中 21 个连 EDGE_CURVE 相同）
+按面类型：B_SPLINE/BOUNDED_SURFACE 45｜PLANE 40｜CYLINDRICAL **8**｜SPHERICAL 2｜TOROIDAL 1
+```
+⇒ 文件自带 **96**，端口退化面 **162** ⇒ **至少 66 个面在文件里是干净的**（若两者有交集）—— 这正是对账表要分辨的 **C 类（端口自造）**。
+**已要求代理**：给出 `162 = A+B+C` 的**面类型分布**，与上面这张文件侧分布对拍（注意文件侧**只有 8 个 Cylinder**；若端口 162 里 Cylinder 占比远高于 8，本身就说明端口在圆柱面上额外造了重复边）。
 **round 159 —— 文件侧普查：T0M 自带「同边重复」结构的面最多 **75 个**，而端口有 **162 个**退化面 ⇒ 需对账**
 
 直接按文本解析 `data/occ/T0M.stp`（路径 `ADVANCED_FACE → FACE_BOUND/FACE_OUTER_BOUND → EDGE_LOOP → ORIENTED_EDGE → EDGE_CURVE`，统计同一 wire 内重复）：
