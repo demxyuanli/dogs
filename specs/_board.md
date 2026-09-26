@@ -185,6 +185,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 228 —— 🔴 T-25 存储搬移**回归**（`--lib` 1280/1、`step_obj_area` 10/1）⇒ 已**回退**（`67748def`）；并列出真正的搬迁范围（~30 处直写点）**
+
+**回归事实**：`4a6fb460`（把 registry 的 pcurve 读写改经 `TShape.edge_pcurves` 槽）跑门禁得 **`--lib` 1280 passed / 1 failed** ✗、**`step_obj_area` 10/1** ✗（其余 `step_geometry_parity` 3/3、`phase5/9/10/19/20` 全绿 ✓）。⇒ 按纪律**回归即回退**：`git revert 4a6fb460` ⇒ **`67748def`**，工作树恢复干净 ✓（`0a19d191` 的槽定义仍是纯增量，保留 ✓）。
+
+**根因（已定位）**：`EdgeGeom` 的 `pcurves`/`pcurve_ranges` 在**很多地方被直接读写** ✗，我只改了 registry 自己的方法 ⇒ 存储**分裂**。`edge_geom(s)`（`tgeometry.rs:240-256`）就会**从旧 map 拷贝**（`:252-253` ✗）⇒ 读 `edge_geom(..).pcurves` 的调用方拿到**空** ✗。
+
+**真正的搬迁范围（完整清单，`grep '\.pcurves|\.pcurve_ranges'` = 74 处，去掉 mesh `data_model/status.rs` 的同名结构后，`EdgeGeom` 侧约 30 处 / 5 文件）**：
+```
+src/tgeometry.rs      registry 自身（edge_geom:252-253、324、358、367、374、421、426、449、465-466 等 ~13 处）
+shhealing/wire_fix.rs 969/971/979/1283/1287/2897/2898/2902/2923/2924                 (10 处)
+shhealing/transfer_params.rs 217/219/223/230/243/819/821/828/887                     ( 9 处)
+src/shape_ops.rs      50/51/130/131/199/204/212/213                                  ( 8 处)
+algo_tools/construct.rs:518（g.pcurves = geom.pcurves.clone()）                      ( 1 处)
+src/bop_bop.rs:141（!g.pcurves.is_empty()）                                          ( 1 处)
+```
+⇒ **重做方案（下一轮起）**：把这些点**一次性**纳入同一次改动 ✓，其中 `edge_geom(s)` 必须**从槽填充** `pcurves`/`pcurve_ranges` ✓（这是回归的直接触发点 ✓）；`set_edge`/写回路径（`construct.rs:518`、`shape_ops`、`wire_fix:2923-2924`、`transfer_params:243/887` ✓）必须**写到槽** ✓；`bop_bop.rs:141` 读槽 ✓。若某处一时难以改净 ✓，允许**过渡期双写**（槽 + 旧 map ✓，注释标明过渡 ✓），但**读取必须统一到槽** ✓。
+**教训（第 6 条）**：搬存储前先 `grep` **被搬字段的直接使用点**（不只搬 API ✓）—— 我这次只看了 API 就动手 ✗，导致分裂存储 ✓。
 **round 227 —— ❗ 第 0 步位置**订正**：槽必须在 `TShape` 上，不能在 `EdgeShape` 上（`0a19d191`）**
 
 **为何错**：`EdgeShape`/`FaceShape`/`VertexShape`（`tshape.rs`）**不是端口的拓扑表示** —— 全仓仅 **3 个文件**引用（`tshape.rs` 定义、`lib.rs` re-export、`brep_face_intersect.rs` 42 处局部用途 ✗）。端口的边是 `Edge(TopoShape)`，而
