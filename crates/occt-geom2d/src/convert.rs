@@ -6,48 +6,13 @@ use occt_core::gp::{GpPnt2d, GpVec2d};
 
 use crate::curve::Curve2d;
 
-/// Sample a 2D curve into an open polyline of `n` segments (`n + 1` points).
-///
-/// Points are evaluated with [`Curve2d::d0`] at uniformly spaced parameters in
-/// `[a, b]`.
-pub fn sample_curve2d(curve: &Arc<dyn Curve2d>, a: f64, b: f64, n: usize) -> Vec<GpPnt2d> {
-    if n == 0 {
-        return vec![curve.d0(a)];
-    }
-    (0..=n)
-        .map(|i| curve.d0(a + (b - a) * i as f64 / n as f64))
-        .collect()
-}
-
-/// Axis-aligned bounding box of a sampled curve, as `(xmin, xmax, ymin, ymax)`.
-///
-/// Computed from the polyline produced by [`sample_curve2d`].
-pub fn curve2d_bbox(
-    curve: &Arc<dyn Curve2d>,
-    a: f64,
-    b: f64,
-    n: usize,
-) -> (f64, f64, f64, f64) {
-    let mut xmin = f64::INFINITY;
-    let mut xmax = f64::NEG_INFINITY;
-    let mut ymin = f64::INFINITY;
-    let mut ymax = f64::NEG_INFINITY;
-    for p in sample_curve2d(curve, a, b, n) {
-        xmin = xmin.min(p.x());
-        xmax = xmax.max(p.x());
-        ymin = ymin.min(p.y());
-        ymax = ymax.max(p.y());
-    }
-    (xmin, xmax, ymin, ymax)
-}
-
-/// Approximate 2D curve length by summing chord lengths of a sampled polyline.
-pub fn curve2d_length(curve: &Arc<dyn Curve2d>, a: f64, b: f64, n: usize) -> f64 {
-    sample_curve2d(curve, a, b, n)
-        .windows(2)
-        .map(|w| (w[1] - w[0]).magnitude())
-        .sum()
-}
+// The former polyline substitutes `sample_curve2d` / `curve2d_bbox` /
+// `curve2d_length(curve, a, b, n)` were removed here: they had no consumer
+// left once the faithful ports landed (2-D length is
+// `crate::curve_ops::curve2d_length` = `GCPnts_AbscissaPoint::Length`; the
+// bounding box used in production is `crate::geom2d_api::curve2d_bbox`).
+// Removing them closes the "curve2d_length = Simpson/chord" leftovers of
+// board card R2-18.
 
 /// Unit tangent vector at parameter `u`, computed from the normalized first
 /// derivative. Degenerate derivatives yield the +X axis.
