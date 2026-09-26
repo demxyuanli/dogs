@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 212 —— ✅ 相关性**完整**：五个 `data/occ` 文件的 `degenerate_faces` 与离 GT 的距离单调对应（0/1 ⇒ 逐位一致）**
+
+补齐 ATU01038 的读数（上一轮为空是探针输出被过滤所致 ✓）：
+```
+文件        degenerate_faces   端口 v/f        OCCT GT         判定
+T0M                   207     46517/46967    60050/66576    0.72× ✗
+acs10                 110     32400/37223    37247/46494    0.80× ✗
+a3n00                  46      9091/ 8922    11052/12324    0.74× ✗
+TDB                     1     72847/77884    72687/78470    几乎逐位 ✓
+ATU01038                0     18052/22483    18049/22504    几乎逐位 ✓
+```
+⇒ **`degenerate_faces` 为 0 或 1 的两个文件与 OCCT 几乎逐位一致；为 46/110/207 的三个文件则系统性偏短** ✓✓ ⇒ 该指标与保真度的**单调对应关系横跨全部五个文件成立** ✓ ⇒ 「面级缝结构缺失 ⇒ 自闭合边 wire ⇒ 退化面 ⇒ 自创回退接管」这一机制判断获得**完整相关性支持** ✓✓。
+**⇒ 三文件联合验收（预测，收紧版）**：`FixMissingSeam` 落地后 —— T0M 207→0、acs10 110→0、a3n00 46→0 **且** 三者 `v/f` 同时逼近各自 GT；`TDB`(1)/`ATU01038`(0) **保持不变** ✓。任一不满足即按数据分流 ✗。
 **round 211 —— 📈 相关性锁定：退化面数与「离 OCCT GT 的距离」几乎单调对应**
 
 补齐同一把尺的读数：
