@@ -79,7 +79,7 @@
 | core / geom / geom2d / math | 各 crate `--lib` | ✅ 290（1 ignored）· **143** · 72 · 215（1 ignored） | ✅ 290(1i)·**143**·72·215(1i)（逐项相同） | 绿 |
 | topo doc-tests | `--doc` | ✅ 2 passed / 1 ignored | ✅ 同 | 绿 |
 | IGES 结构自洽（常驻校验，非门禁） | `--example iges_check -- <18 模型>` | ✅ **18/18 ok**：6 个模型（ATU01038 / screw / Shape / Shape-2 / occ-bottom / occ-top）P 段长度变化，**DE 数与 unreferenced 统计逐模型与对照完全相同** | ✅ 18/18 ok | 绿 |
-| 导出总检 | `--example export_data_obj` | ✅ 16/16（Cube 24/12、Sphere 642/1244、Torus 1369/2592、Shape-1 3343/4336、linkrods 3494/5078、ATU01038 17745/22119 …与 §13 记录的网格数逐项一致） | — | 绿 |
+| 导出总检 | `--example export_data_obj` | ✅ 16/16（Cube 24/12、Sphere 642/1244、Torus 1369/2592、Shape-1 3343/4336、linkrods 3494/5078、ATU01038 17745/22119 …与 §13 记录的网格数逐项一致）。**定位说明（round 129/132 起）**：此门禁的「`v=`/`f=` 逐位一致」是**端口内部回归哨兵**，**不是** OCCT 保真度——实测端口与 OCCT 的三角化在曲面面偏多（Sphere 2.4×、Torus 1.7×）、在 `Shape`/`Shape-2` 偏少（~1/3）。**保真度指标另见 `specs/_occt_mesh_gt.md`**（15 个 `data/*.step` 的 OCCT `--mesh 0.1` GT 表；其中 Cube/Extrusion/HoledPlate/OffsetPlaneHoleEdge **4 例已逐位一致**）。T-54+T-90 落地后本行的期望值将按 GT 重订 | — | 绿（哨兵；保真度另计） |
 
 > **口径订正（R2-15 收口）**：本节旧表记"第 90 轮 lib **1287/1**、geom **146/146**、step_to_obj 13/13"。本轮以同一命令对 `9d8e596`（批 84 末）与当前树做 worktree A/B，实测 **lib 两端都是 1286/2**、**geom 两端都是 143**、`step_to_obj` 在批 84 是 **12/13**、批 98 才是 13/13。`iges.rs` 在批 84（`9d8e596`）与批 95（`83ed3f8`）之间**未被任何提交改动**（`git log -- crates/occt-topo/src/iges.rs`），故 `sphere_iges_has_arc_and_solid` 在"第 90 轮"也必然失败 ⇒ 旧表的 1287/1 与 146/146 是**记录错误**，以本节实测为准（旧表的"计数变化说明（批 65–67）"一段作废）。
 > **`step_to_obj` 由 12/13 变 13/13 的改善**出现在批 85–97 之间（本波次只做 A/B 对比，未再二分归因：该用例在批 84 的失败与 T-05/Sphere 网格回退相关，属既有红转绿）。
