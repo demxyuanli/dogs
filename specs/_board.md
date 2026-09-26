@@ -164,6 +164,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 124 —— T-11 第三批**成功**：改用 `cargo test --lib --no-run` 告警基础，warning 602 → 481**
+
+按 round 123 的教训改用**含 `cfg(test)` 的构建**取告警：`cargo test --manifest-path crates/occt-topo/Cargo.toml --lib --no-run`（lib test 构建 ≡ lib 的超集，故「在 test 构建里未被使用」的 import 在两种构建里都未被使用 ⇒ **删除必安全**）。基础告警：lib-test **603** 条（未用 import **175**、never used 331、其它）。
+
+排除子代理正在改的 `src/step/`、`src/brep_gprop_full/` 与 `src/primitives.rs` 后，对 **102 个文件 / 168 条**未用 import 施加「整条 `use` 语句重建」（解析 `{}` 内条目 → 按名字过滤 → 空则整行删）。
+
+门禁：warning **602 → 481（−121）**；`--lib` **1281/0**；`--all-targets` **0 error**（提交 `ba4acbfa`，91 文件净变、146 行改动）。
+
+**剩余 481**：never used 约 331、未用 import 约 42、其它。下一步：逐文件判断 `never used`（先确认 `occt-core` 是否已有忠实实现 —— 如 round 121 的 `clib2d` 那批），整族重复实现可整模块删除；端口自有的死代码则先确认无 OCCT 对应物再摘除（T-27 的先例）。
 **round 123 —— T-11 第三批**失败并全量回退**（方法论教训）；T-80 根因**再前移**到 `associate_edge_pcurve` 的缝边注册**
 
 **① T-11 教训（务必记住）**：用 `cargo check --lib` 报告的 `unused import` 做批量清理是**错的**——`--lib` **不编译 `#[cfg(test)]` 模块**，于是「测试专用 import」（含**跨文件**：`bop_builder_heal.rs` 的 `use` 被 `bop_builder_tests*.rs` 用）会被误判为未用。我的两版解析器（名字级删除、整语句重建）都会打断测试编译；`cargo fix --lib --tests` 同样改动 100 个文件。**三次都已精确回退**（`git checkout` 到只剩 4 个意向改动文件），`--lib` 复原 **1281/0**。正确基础应是 `cargo test --lib --no-run` 的告警集合，或逐文件人工判断；本轮不再尝试自动批处理。
