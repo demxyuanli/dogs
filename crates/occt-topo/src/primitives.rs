@@ -272,12 +272,25 @@ impl BRepPrimCylinder {
         let mut seam = b.make_edge(line_curve(&bottom, &top), 0.0, height);
         b.add_edge_vertices(&mut seam, &v_bottom, &v_top);
 
-        // Bottom cap: planar face bounded by the bottom circle.
-        let bottom_wire = b.make_wire(&[bottom_circle.clone()]);
-        let bottom_face = b.make_face(
-            Arc::new(GeomPlane::new(plane(GpPnt::zero(), dir(0.0, 0.0, -1.0)))),
+        // Bottom cap. `BRepPrim_OneAxis::BottomFace` (`BRepPrim_OneAxis.cxx:488
+        // -503`) builds the plane from the *untranslated* axes — normal +Z —
+        // then `ReverseFace`s it, and `BottomWire` (`cxx:751-770`) stores the
+        // circle REVERSED (`AddWireEdge(..., false)`, `cxx:761`). Building the
+        // cap with a -Z normal instead leaves the face Forward but mirrors the
+        // plane's UV frame (`plane()` picks X = (0,0,1) for a -Z normal), so the
+        // cap's circle p-curve runs *opposite* to the edge's 3-D
+        // parameterization; `BRep_Tool::CurveOnSurface` requires the same sense
+        // and a reversed p-curve makes every direction test downstream misfire
+        // (`GetFaceDir`/`GetEdgeOff` pick the wrong face in
+        // `BOPAlgo_ShellSplitter::SplitBlock`, T-82).
+        let mut bottom_circle_reversed = bottom_circle.clone();
+        bottom_circle_reversed.0.reverse();
+        let bottom_wire = b.make_wire(&[bottom_circle_reversed]);
+        let mut bottom_face = b.make_face(
+            Arc::new(GeomPlane::new(plane(GpPnt::zero(), dir(0.0, 0.0, 1.0)))),
             &[bottom_wire],
         );
+        bottom_face.0.reverse();
 
         // Top cap: planar face bounded by the top circle.
         let top_wire = b.make_wire(&[top_circle.clone()]);
@@ -538,12 +551,18 @@ impl BRepPrimCone {
         let mut seam = b.make_edge(line_curve(&base_p, &apex), 0.0, GpPnt::new(radius, 0.0, 0.0).distance(&apex));
         b.add_edge_vertices(&mut seam, &v_base, &v_apex);
 
-        // Base: planar face bounded by the base circle.
-        let base_wire = b.make_wire(&[base_circle.clone()]);
-        let base_face = b.make_face(
-            Arc::new(GeomPlane::new(plane(GpPnt::zero(), dir(0.0, 0.0, -1.0)))),
+        // Base cap — same construction as the cylinder's bottom cap
+        // (`BRepPrim_OneAxis::BottomFace`, `BRepPrim_OneAxis.cxx:488-503`;
+        // `BottomWire`, `cxx:751-770`): +Z plane, `ReverseFace`, circle stored
+        // REVERSED. See `make_cylinder` for why a -Z plane is not equivalent.
+        let mut base_circle_reversed = base_circle.clone();
+        base_circle_reversed.0.reverse();
+        let base_wire = b.make_wire(&[base_circle_reversed]);
+        let mut base_face = b.make_face(
+            Arc::new(GeomPlane::new(plane(GpPnt::zero(), dir(0.0, 0.0, 1.0)))),
             &[base_wire],
         );
+        base_face.0.reverse();
 
         // Lateral: conical surface, wire = base circle + seam + seam.
         let semi_angle = (radius / height).atan();

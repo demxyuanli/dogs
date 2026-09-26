@@ -140,6 +140,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 91 —— ✅ 三处组合落地，两个 oracle 同时满足（T-82 的 gprop 前置条件解除）**
+
+round 90 的缺口补上第三块后全部成立。落地三处（都在同一次改动里，缺一不可）：
+
+1. `brep_gprop_full/integration.rs::FaceGauss::new`：把**面朝向合进边界遍历** —— 对 `is_reversed` 的面，先把每条边界边 `reverse()` 再 `build_arc`（OCCT `BRepGProp_Domain` 用 `TopExp_Explorer(face, EDGE)`，默认 `CumOri=true`，`TopExp.cxx:80-120`；`edges_of_wire` 只合到 wire 一级）。
+2. `brep_gprop_full/integration.rs::compute_domain`：两处 `fa.normal_raw(u, vv)` → `fa.normal(u, vv)`（OCCT `BRepGProp_Face::Normal` 在 `mySReverse` 时翻转 `D1U×D1V`，`BRepGProp_Face.cxx:196/206`）。
+3. `primitives.rs`：圆柱底盖与圆锥底面改成 OCCT 形状（`BRepPrim_OneAxis::BottomFace` `:488-503`：+Z 平面 + `ReverseFace`；`BottomWire` `:751-770`：圆边存 `Reversed`）。
+
+**验收（两个 oracle 同时绿）**：
+
+| oracle | GT（OCCT） | 改前三处拆开 | 三处齐备 |
+|---|---|---|---|
+| `brep_gprop_full::tests::cylinder_surface_volume` | 面积 6π / 体积 **2π** | 端盖改后 4π/3 ✗ | **ok** |
+| `step_geometry_parity::offset_geometry_is_consistent` | `BRepGProp(data/Offset.step)` = **2610.501440** | 只改 gprop 法向 → 159.174 ✗ | **ok** |
+
+⇒ 「法向翻转」与「边界累积朝向」必须同时成立，且与端盖忠实化配套；三者只在 OCCT 的分工下自洽（`BRepGProp_Face::Normal` 管符号、`BRepGProp_Domain` 管遍历）。这一条也说明端口原先的「不翻转法向」并非有意为之，而是与圆环 `wire_sign` 的退化互相掩盖。
+
+**下一步**：重跑 T-82 的 FUSE/CUT/COMMON 探针（端盖 pcurve 修好后 `GetFaceDir` 的输入应当正确），若仍卡在行走选面则按 round 86 的 `--faceoff` 真值继续；然后复跑全套门禁与 GT `8 faces / 8.50265`。
 **round 90 —— gprop 的 Reversed 面语义：OCCT 原文已核实，但正确组合需要「法向翻转 + 累积遍历」同时成立（已回退）**
 
 读 OCCT 原文确认：`BRepGProp_Face::Load(const TopoDS_Face&)`（`BRepGProp_Face.cxx:189-197`）把 `mySReverse = (F.Orientation() == TopAbs_REVERSED)`，`Normal`（`:201-209`）在 `mySReverse` 时把 `D1U × D1V` **翻转**；而 `BRepGProp_Domain` 用 `TopExp_Explorer(face, EDGE)`（默认 `CumOri=true`）取边界，所以**遍历也带上面朝向** —— 而 `Load(edge)`（`:164-185`）在边为 `REVERSED` 时把 pcurve 反向。⇒ OCCT 是「法向翻转 + 累积遍历」两者同时生效。

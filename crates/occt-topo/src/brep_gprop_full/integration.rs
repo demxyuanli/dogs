@@ -42,7 +42,18 @@ impl FaceGauss {
                     has_repeated = true;
                 }
                 seen.push(key);
-                if let Some(arc) = build_arc(&e, face, &map) {
+                // OCCT's `BRepGProp_Domain` walks the face with
+                // `TopExp_Explorer(aFace, TopAbs_EDGE)` (default `CumOri =
+                // true`), so every boundary edge is seen with the face's
+                // orientation composed in (`TopExp.cxx:80-120`) — the same
+                // orientation `BRepGProp_Face::Load(const TopoDS_Edge&)`
+                // (`BRepGProp_Face.cxx:164-185`) reverses the p-curve on.
+                // `edges_of_wire` only composes down to the wire.
+                let mut eb = e.clone();
+                if is_reversed {
+                    eb.0.reverse();
+                }
+                if let Some(arc) = build_arc(&eb, face, &map) {
                     arcs.push(arc);
                 }
             }
@@ -543,7 +554,7 @@ pub(super) fn compute_domain(fa: &FaceGauss, loc: &GpPnt, coeff: &[f64; 3], typ:
                 for j in 0..nb_g {
                     let u = um + ur * gp_u[j];
                     let w = dul * gw_u[j];
-                    let (p, n) = fa.normal_raw(u, vv);
+                    let (p, n) = fa.normal(u, vv);
                     match typ {
                         GaussType::Sinert => compute_s_inertia_elem(&p, &n, loc, w, &mut local),
                         GaussType::Vinert => compute_v_inertia_elem(&p, &n, loc, w, coeff, true, &mut local),
@@ -819,7 +830,7 @@ pub(super) fn arc_slice(
         for j in 0..nb_u {
             let u = um + ur * ugp[j];
             let w = dul * ugw[j];
-            let (p, n) = fa.normal_raw(u, vv);
+            let (p, n) = fa.normal(u, vv);
             match typ {
                 GaussType::Sinert => compute_s_inertia_elem(&p, &n, loc, w, &mut local),
                 GaussType::Vinert => compute_v_inertia_elem(&p, &n, loc, w, coeff, true, &mut local),
