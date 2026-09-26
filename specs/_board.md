@@ -185,6 +185,14 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 174 —— ✅ T-28 前 3 步**收尾完成**（我独立复算：`step_to_obj` 13/13 + export v/f 逐位一致）**
+
+我在**独立 `CARGO_TARGET_DIR`**（`.target-gate/verify`）串行跑完两项收尾：
+- **`step_to_obj` = 13/13** ✓（414s）；
+- **`export_data_obj`（`data/*.step`）v/f 逐位等于基线** ✓：Cube 24/12、Cylinder 146/140、Cone/Extrusion 24/12、HoledPlate 180/128、Offset 712/892、OffsetPlaneHoleEdge 48/32、Shape-1 3343/4336、Shape-2 3105/4792、Shape 6150/11372、Sphere 642/1244、Torus 1369/2592、linkrods 3494/5078、rev 104/92、screw 600/790（`data/occ` 那半在同一 job 内继续跑）。
+
+⇒ **T-28 前 3 步至此完全收口**：`--lib` 1281/0、`--all-targets` 0 error、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` 11/11、`step_geometry_parity` 3/3、`phase5/9/10/19/20` 全绿、export v/f 逐位一致 ✓。（并按 round 173 的覆盖度结论注明：export 的一致性对 T-28 是**结构性必然**，真正的证据是布尔门禁套件。）
+**代理已按要求停手**，不碰第 4/5 步（那两步＝删 `intpatch` closed form + 合并分派器，属独立批次）。
 **round 173 —— 收尾：删除误提交的 3 行调试探针（`77bbc649`）+ 一条有价值的**覆盖度**结论**
 
 **① 调试行清理**：`771eb84d` 误带了 3 行 `eprintln!` 调试输出（`intpatch_impprm.rs:73` `T28PROBE perform`、`:344` `T28PROBE complex i={i}`、`intpatch_impimp_sonb.rs:225` `T28PROBE bind t={t}`）—— 代理发现后从工作树删除（**未自行 amend/commit**，交我处理 ✓ 纪律良好）。已提交 `77bbc649`（纯删 3 行，无行为变化）。
