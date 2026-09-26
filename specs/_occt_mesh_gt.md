@@ -84,3 +84,18 @@ TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
 3. **T-54 也必须重新评估**：导出路径**不再**用 `brepmesh.rs` 的四叉树、也不用 `wireframe.rs` 的平面耳切（`brep_exchange.rs:88-94`：这两个非 OCCT 回退已按 audit A17 删除）——它们只在**失败回退**里存在。因此「移植约束 Delaunay 以提高保真度」这个前提**不成立**；`brepmesh.rs`/`wireframe.rs` 的处置应改为「确认回退是否可达 + 可达则接线/不可达则摘除」，而不是大规模替换。
 
 ## 附：旧表（参数 0.1 / 0.5rad，**已作废，仅留档对照**）
+
+## `data/occ/*.stp` 的 OCCT GT（端口真实参数，round 177 补）
+
+参数口径同前：`lin = maxComp(bbox) × 0.004`（`--bbox` 取）＋角偏 **20° = 0.349066 rad**。这些文件**全都没有任何存档 pcurve**（`SURFACE_CURVE=0`、`PCURVE=0`，见 round 166 普查）⇒ 每条边的 pcurve 都要算，正是 T-69 症状所在。
+
+| 文件 | `maxComp` | `lin` | OCCT nodes | OCCT triangles | OCCT faces |
+|---|---|---|---|---|---|
+| T0M.stp | 643.578 | 2.57431 | **60050** | **66576** | 1778 |
+| TDB.stp | 612.849 | 2.4514 | **72687** | **78470** | 2180 |
+| a3n00.stp | 269.03 | 1.07612 | **11052** | **12324** | 226 |
+| acs10.stp | 495.013 | 1.98005 | **37247** | **46494** | 787 |
+| ATU01038.step | （bbox maxComp≈395.1 ⇒ lin≈1.5804，待复核） | — | 待补 | 待补 | — |
+
+命令：`occt_probe.exe <file> --bbox` 取 `lin`，然后 `occt_probe.exe <file> --mesh <lin> 0.349066`。
+（另：`wires_probe.exe <file>` 给出 `uv_degenerate_faces`——全 19 个语料文件在 OCCT 侧均为 **0**，端口侧任何 >0 都是端口缺陷。）
