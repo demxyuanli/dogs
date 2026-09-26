@@ -140,6 +140,29 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 86 —— 拿到 OCCT 的 `GetFaceOff` 真值（决定性验收目标）**
+
+给 GT 探针新增 `--faceoff` 模式：用 `BOPAlgo_Builder` 跑 `box[-1,1]³ ∪ cyl(r=0.4,z∈[0,2])` 的 GF，在**截面圆**（r=0.4, z=1）上用 `TopExp::MapShapesAndAncestors` 取相邻面，再对每个相邻面调用 **`BOPTools_AlgoTools::GetFaceOff`**（公开静态）打印它选出的面。实测：
+
+```
+SEC eo=1 adj_faces=6        # 3×Plane + 3×Cylinder（GF 未滤，含边界/内部两份）
+  face type=0 orient=0 eo=1 / type=1 orient=1 eo=0 / type=0 orient=0 eo=0
+  face type=1 orient=0 eo=1 / type=1 orient=0 eo=0 / type=0 orient=1 eo=1
+OFF from Plane    -> Cylinder   done=0
+OFF from Cylinder -> Plane      done=1     <== 关键
+OFF from Plane    -> Cylinder   done=0
+OFF from Cylinder -> Plane      done=0     <== 关键
+OFF from Cylinder -> Plane      done=0     <== 关键
+OFF from Plane    -> Cylinder   done=1
+```
+
+⇒ **从环带（Cylinder）面出发，OCCT 在截面圆上选的是平面（盘），不是另一条环带。** 这正是端口走错的那一步（端口给出：环带 π/2 最小、盘 π 与 3π/2 ⇒ 选环带 ⇒ 进不到盘 ⇒ 圆柱 draft 出 0 个闭壳）。**这条 `--faceoff` 输出就是 T-82 的验收断言**（探针源码已保留在 `.target-gate/occt_probe/occt_probe.cpp` 的 `--faceoff` 分支）。
+
+**机制（已定位到具体退化）**：`BOPAlgo_ShellSplitter::SplitBlock` 用 `GetEdgeOff`（`BOPTools_AlgoTools.cxx:1099-1127`）为每个候选面取「方向相反的那一份边视图」；因此 `GetFaceOff` 里 `aOr`/`aDTgt2` 的比较（`:1052`）在 SplitBlock 路径上**恒为反转**。端口面不共享 TShape，用 `shell_splitter::edge_traversal`（端点几何 key 的顺序）代替朝向比较；**闭合环（两端同一顶点）的 traversal 恒相等** ⇒ `get_edge_off_geo` 的「反向」判据变成恒真、`same_dir` 变成恒真 ⇒ `dtgt2` 永不反转 ⇒ 盘的 bi-normal 朝**外**（实测 `db=(-0.9105,0.4136,0)`，应朝盘内）⇒ 角度为 π 而非最小值。
+
+**试过并已回退（都回归）**：① 只给 `get_face_off::same_dir` 加闭合环→朝向回落；② 同时给 `get_edge_off_geo` 加闭合环→要求朝向相反。两者都让 `box∪cyl` 的 FUSE 变空，且**盒体 split solid 由 7 面闭合退化成 9 面全 Internal** —— 因为端口的面不共享 TShape，「两份视图的朝向」跨独立构造的视图没有可比性：加严后盘/环带候选被误拒，行走连盒体的盘都进不去。
+
+**下一步（正确的修法方向）**：闭合环需要一个**几何可判定**的遍历方向，而不是拿两份独立视图的朝向硬比。可行做法：用该边在面上的 pcurve 与 3D 曲线在同一个 3D 参数处切向的点积定号（`BRep_Tool::CurveOnSurface` 已有，`boptools_2d::curve_on_surface`），把 `edge_traversal` 在闭合环上扩展成「pcurve 切向 vs 3D 切向」；这样 `get_edge_off_geo`/`same_dir`/`get_face_off` 三处都能拿到与 OCCT 等价的「反/同向」判据。修完用 `--faceoff` 的 6 行输出作验收，并复跑全套门禁与 GT `8 faces / 8.50265`。
 **round 85 核对结果**：逐行读了 OCCT 的 `GetFaceOff`（`BOPTools_AlgoTools.cxx:994-1095`）、`GetFaceDir`（`:2110-2152`）、`FindPointInFace`（`:2160-2231`）、`MinStep3D`（`:2235-`）与端口对应件 —— `get_face_off`/`get_face_dir`/`find_point_in_face`/`min_step_3d`（`algo_tools_face.rs:120-350`）、`get_normal_to_face_on_edge_at`/`get_approx_normal`（`algo_tools3d.rs:49-82/175-`）。**结构上是忠实对应**（含 `aPL=Px^nDTgt` 的投影面、`aPS += 2*TolE*aDB`、15 次迭代与 `aDist<aDTol` 判据、平面投影 `project_on_plane`）。因此盘的角度为 π 只能来自**数值**差异，候选三处：① `get_normal_to_face_on_edge_at` 取 pcurve 的方式（新盘的截面圆 pcurve 是否挂在盘上、还是走了 `make_2d` 投影）；② `FindPointInFace` 里 `project_point_on_face`（`ProjPS`+`NearestPoint`）与 `LowerDistance` 的等价性；③ `MinStep3D` 的 `aDt3D`/`bSmallFaces`（`small=true` 会整段跳过 `FindPointInFace`，直接走 `GetApproxNormalToFaceOnEdge` 分支把 `aDB` 设成 `P→Px`）。
 
 **下一步（决定性对拍）**：给 GT 探针加一个模式，对同一『截面圆（z=1, r=0.4）+ 盘/环带』打印 OCCT 的 `GetFaceDir` 输出（`aDN`、`aDB`、`aPx`、`aDt3D`、`bSmallFaces`）与 `aDBF`；端口侧加同字段探针，逐字段 diff。定位后修 `get_face_dir` 链上的对应分支，再复跑 `--lib` + `step_obj_*` + `phase*` + `export` 与 GT 8 faces / 8.50265。
