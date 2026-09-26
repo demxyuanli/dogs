@@ -140,6 +140,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 87 —— 几何（pcurve）遍历判据也失败，收敛到「重建面的 pcurve 方向本身可疑」**
+
+按 round 86 的方向实现了几何判据：在 `shell_splitter.rs` 新增 `edge_direction_3d(edge, face)`（取 `boptools_2d::curve_on_surface_range` 的 pcurve，把中点切向 `dS/du·du/dt + dS/dv·dv/dt` 推到 3D，再乘视图累积朝向定号）与 `same_traversal(e1,f1,e2,f2)`（`dot > 0`），并接到 `get_edge_off_geo`（新增 `the_f1` 形参，`!same` = 取反向视图）与 `get_face_off::same_dir`，保留旧的 endpoint-key 作为无 pcurve 时的回退。**编译通过，但实测 `box∪cyl` 的 FUSE 仍变空**（Cut 不变 9 面/‑4.611446）⇒ 已整体回退。
+
+**结论/新假设**：三种判据（端点遍历、跨视图朝向、pcurve 几何方向）**都**不能修好这一步，说明问题不在「怎么比较两份视图」，而在**被比较的数据本身**：端口重建的 split face（`FaceBuilder` 走出的 loop）上那条截面圆的 pcurve，其参数方向与 3D 曲线方向可能并不满足 OCCT 的约定（`CurveOnSurface` 必须与边的 3D 参数同向）。若 pcurve 参数方向错，则 `GetFaceDir` 的 `aDN`（用 pcurve 取 UV，再取法向——对平面无害）与「遍历方向」同时错，任何基于朝向/切向的比较都会失真。
+
+**下一步（决定性且便宜）**：对 `box∪cyl` 的圆柱 draft 那 6 张 split face，dump 每条边在其面上的 `curve_on_surface_range`（pcurve 的 `d0/d1` 与范围）以及同参数的 3D `edge_curve.d1`，检查 `dot(pcurve 推回的 3D 切向, 3D 切向)` 的符号是否在**同一张面内**自洽、并在盘/环带之间符合「相邻面反向」；同时用 GT 探针对同一批面打印 OCCT 的 `CurveOnSurface` 中点与朝向作对拍。定位到具体是哪张面/哪条边的 pcurve 方向错，再去 `FaceBuilder`/`make_2d`/`build_pcurve_for_edge_on_face` 里修（这是 T-82 的真正根因候选）。
 **round 86 —— 拿到 OCCT 的 `GetFaceOff` 真值（决定性验收目标）**
 
 给 GT 探针新增 `--faceoff` 模式：用 `BOPAlgo_Builder` 跑 `box[-1,1]³ ∪ cyl(r=0.4,z∈[0,2])` 的 GF，在**截面圆**（r=0.4, z=1）上用 `TopExp::MapShapesAndAncestors` 取相邻面，再对每个相邻面调用 **`BOPTools_AlgoTools::GetFaceOff`**（公开静态）打印它选出的面。实测：
