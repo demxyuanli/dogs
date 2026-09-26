@@ -185,6 +185,12 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 242 —— ⚠️ 操作事故：两个 `export_data_obj` **并发**跑 ⇒ 两次逐位对比均**作废**；已改为单次干净跑**
+
+**事故**：批 3 的电池（代码 = `ca6b454c`）与批 4 的电池（代码 = `d6a70843`）**同时**进入导出阶段 ⇒ 两个 `export_data_obj`（PID 5132/18964 ✓）**并写 `output/`** ✗ ⇒ ① 违反本板既有规则「**不要并行导出**」✗；② 且两者二进制来自**不同代码** ✗ ⇒ **两份 `same/diff` 结果都不可信** ✗✗。
+**处置**：kill 两个电池 job ✓ + `Stop-Process -Force` 清掉两个导出与所有 `cargo`（已确认剩 0 ✓）✓；然后对**当前 HEAD `d6a70843`（批 4，含批 1-3）**跑**单次**干净电池 ✓（`--lib` → `step_obj_area` → `step_geometry_parity` → phases → **`step_obj_parity`** → `export_data_obj` + 逐位对比 ✓）。
+**逻辑依据**：批 4 的代码**包含**批 3 的改动 ✓ ⇒ 若这次单跑全绿，则**批 3 与批 4 同时得到验证** ✓（且批 3 的 `--lib`/`step_obj_area`/`step_geometry_parity`/phases 已单独绿过 ✓）。
+**教训（第 8 条）**：**同一时刻只允许一个导出** ✓ —— 不仅 `output/` 会互相覆盖 ✗，更危险的是**不同代码的两个二进制**同时写同一目录 ✗，会让「逐位对比」这种强证据**静默失效** ✗。规则：**派发需要导出的验证前，先确认没有别的电池在跑** ✓（`job_list` + 进程双查 ✓）。
 **round 241 —— 批 4 编译通过并提交（`d6a70843`）；批 3 两项关键验收绿（`--lib` 1281/0、`step_obj_area` 11/11）**
 
 - 批 4（`d6a70843`）：`cargo check --lib` = Finished、0 error ✓；全套门禁已**入队**（等批 3 的导出释放锁 ✓）。
