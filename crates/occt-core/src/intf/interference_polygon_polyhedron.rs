@@ -43,19 +43,14 @@
 //!   and marked here instead of being approximated. `IsInSegment`
 //!   (`gxx:36-56`) has no other caller and is likewise not ported.
 //!
-//! `Bnd_BoundSortBox` (`gxx:127, 171, 224, 266, 303`) is modelled
-//! by [`IntfPolyhGrid`] below: `Initialize(enclosing, components)`
-//! plus `Compare`, whose result set is exactly the component boxes that
-//! are not `IsOut(theBox)` (`Bnd_BoundSortBox.cxx:410-504`; the voxel
-//! grid only accelerates that filter). The port scans `components_bounding`
-//! directly.
-//!
-//! It deliberately does *not* use `crate::bnd::BoundSortBox`: that port
-//! models one grid cell per element, and its `find_overlapping` returns an
-//! empty set when a component box is larger than a cell - verified against a
-//! tetrahedron in the T-18 self-check - so it is not an equivalent of
-//! `Bnd_BoundSortBox::Compare`. Components-bounding indices are 1-based,
-//! as in the OCCT `NCollection_HArray1` handed to
+//! `Bnd_BoundSortBox` (`gxx:127, 171, 224, 266, 303`) is
+//! [`IntfPolyhGrid`] below, which now delegates to
+//! [`crate::bnd::BoundSortBox`] -- the faithful port of `Bnd_BoundSortBox`
+//! (`Bnd_BoundSortBox.cxx`) added by task T-89. Earlier this file carried a
+//! brute-force surrogate because the crate's `bnd::sortbox` was a self-made
+//! grid that returned an empty candidate set for a component box larger than
+//! one cell; that implementation is gone. Components-bounding indices are
+//! 1-based, as in the OCCT `NCollection_HArray1` handed to
 //! `Bnd_BoundSortBox::Initialize`.
 
 use std::marker::PhantomData;
@@ -140,21 +135,22 @@ pub trait IntfPolyhedronTool {
     fn get_border_deflection(the_polyh: &Self::Polyhedron) -> f64;
 }
 
-/// Surrogate for the `Bnd_BoundSortBox` the gxx builds
-/// (`gxx:126-127, 170-171, 223-224, 265-266, 302-303`): it stores the
-/// `ComponentsBounding` array and answers `Compare` with the boxes
-/// that are not `IsOut(theBox)`, matching the observable result of
-/// `Bnd_BoundSortBox::Compare` (`Bnd_BoundSortBox.cxx:410-504`).
+/// The `Bnd_BoundSortBox` the gxx builds
+/// (`gxx:126-127, 170-171, 223-224, 265-266, 302-303`), holding the
+/// `ComponentsBounding` array and answering with the boxes touched by the
+/// query -- [`crate::bnd::BoundSortBox`], the faithful port of
+/// `Bnd_BoundSortBox` (`Bnd_BoundSortBox.cxx`), so `Compare` is the OCCT
+/// voxel-grid voxel candidate set (`cxx:410-504`) rather than a re-scan.
 ///
 /// Indices returned by [`IntfPolyhGrid::compare`] are 1-based, so they can
 /// be passed straight to `ToolPolyh::Triangle` / `Point`, as in OCCT.
 #[derive(Clone, Debug, Default)]
 pub struct IntfPolyhGrid {
-    /// `myEnclosingBox` (`Bnd_BoundSortBox.hxx`).
-    enclosing: BndBox,
-    /// `myBoxes->Value(1..Length)` (`Bnd_BoundSortBox.hxx`);
-    /// `boxes[i]` has index `i + 1`.
-    boxes: Vec<BndBox>,
+    /// `myEnclosingBox` + `myBoxes` (`Bnd_BoundSortBox.hxx:139-147`).
+    /// `BoundSortBox::Compare` is `&mut self` in the port (it caches the last
+    /// result, `myLastResult`), and the gxx passes the grid as a shared
+    /// reference, so the cell is what bridges the two.
+    grid: std::cell::RefCell<crate::bnd::BoundSortBox>,
 }
 
 impl IntfPolyhGrid {
@@ -162,24 +158,23 @@ impl IntfPolyhGrid {
     /// (`Bnd_BoundSortBox.cxx:352-368`).
     pub fn initialize<TH: IntfPolyhedronTool>(the_polyh: &TH::Polyhedron) -> Self {
         Self {
-            enclosing: *TH::bounding(the_polyh),
-            boxes: TH::components_bounding(the_polyh).to_vec(),
+            grid: {
+                let mut g = crate::bnd::BoundSortBox::new();
+                g.initialize_with_enclosing(
+                    TH::bounding(the_polyh),
+                    &TH::components_bounding(the_polyh).to_vec(),
+                );
+                std::cell::RefCell::new(g)
+            },
         }
     }
 
     /// `Bnd_BoundSortBox::Compare(const Bnd_Box&)`
     /// (`Bnd_BoundSortBox.cxx:410-504`): the boxes touched by `the_box`.
+    /// OCCT's indices are 1-based; `BoundSortBox` already returns them that
+    /// way, so only the width is narrowed here.
     pub fn compare(&self, the_box: &BndBox) -> Vec<i32> {
-        let mut result = Vec::new();
-        if the_box.is_void() || the_box.is_out_box(&self.enclosing) {
-            return result;
-        }
-        for (i, a_box) in self.boxes.iter().enumerate() {
-            if !a_box.is_out_box(the_box) {
-                result.push((i + 1) as i32);
-            }
-        }
-        result
+        self.grid.borrow_mut().compare(the_box).iter().map(|i| *i as i32).collect()
     }
 }
 
