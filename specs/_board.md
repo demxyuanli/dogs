@@ -185,6 +185,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 171 —— 我查到 T-69「B 部分」的 OCCT 机制（**周期信息 + 周期结果**），已交新代理**
+
+`ProjLib_ComputeApprox.cxx` 里的三处（行号已核）：
+- **把曲面周期交给近似器**：`myIsPeriodic[0]=mySurface->IsUPeriodic(); myIsPeriodic[1]=mySurface->IsVPeriodic();`（`:1050-1051`），`myPeriod[0/1]=UPeriod()/VPeriod()`（`:1053-1069`），对外重载 `PeriodInformation(theDimIdx, IsPeriodic, thePeriod)`（`:1072-1076`）✓；
+- **3D 曲线闭合/周期驱动处理**：`bool isclandper = (!(myCurve->IsClosed()) && !(myCurve->IsPeriodic()));`（`:354`）、`if (!myCurve->IsClosed())`（`:477`）✓；
+- **结果保留周期标志**：`new Geom2d_BSplineCurve(..., BS->Degree(), **BS->IsPeriodic()**)`（`:1222`/`:1226`）✓。
+
+⇒ **B 的忠实做法**：① general 臂在拟合前/中**引入曲面周期信息**（`UPeriod/VPeriod` + `IsUPeriodic/IsVPeriodic`），使 2D 采样点在周期方向**归一化**（对齐理由 `:1050-1069`）；② 当 3D 曲线 `IsClosed()/IsPeriodic()` 时，构造成**周期/闭合**的 2D B 样条（对齐 `:1222`/`:1226` 的 `IsPeriodic()` 语义）—— **不是**把首末点硬拉齐 ✗。逐处写行号；端口若无「周期 BSpline2d」构造能力则标 `UNPORTED` 报我。
+**已允许的可选顺序**：先只做 A（按 `GeomAbs_CurveType` 分派）并跑一次 T0M 指标，再决定是否做 B —— **验收不变**。
 **round 170 —— T-69 的**精确编辑方案**与一个关键保留（general 臂不是 OCCT 的近似件）⇒ 改派**新代理**续作**
 
 **代理给出的最后一段（行号已核）**：`ProjLib_Cylinder` **只对解析类型**提供 `Project` 重载 —— `:95 Project(gp_Lin&)`、`:122 Project(gp_Circ&)`、`:161/:167/:172` 的 Elips/Parab/Hypr **为空或基类回退**；**没有** `Project(BSplineCurve/BezierCurve)` ⇒ 那两类由模板按 `CType` 落到 **`ProjLib_ComputeApprox`/`ProjLib_ComputeApproxOnPolarSurface`**（`ProjLib_ProjectedCurve.cxx:23-24`）做一般近似 ⇒ 3D 闭合 ⇒ 结果闭合 ✓ 机制闭环。
