@@ -185,6 +185,22 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 202 —— 📥 代理交回（含**决定性证据**，并**纠正我 round 179 的错**）：分歧在**面的 wire/缝结构**，`FixMissingSeam` 重回首位**
+
+代理停手交回 ✓（`git status` 只剩 `surface_projector.rs`）并给了三类硬证据：
+
+**① 修法（`surface_projector.rs` 的两处具体类替换）对 T0M **中性** ✗**：A（`make_pcurve` 门 + `surface_projector` 两处）单独跑 ⇒ `v/f = 46517/46967` **= 改前基线**；它上轮报的 `56218/55422` 来自 **`get_line` 的闭合弦诊断桥**（已撤 ✗）⇒ 与 `surface_projector` 无关。端口侧 UV 退化面：**基线 207**，加诊断桥 108；OCCT 侧恒 **0** ✓。
+⇒ **`surface_projector.rs` 的改动仍是忠实且必要的正确性修正** ✓（把两处自创启发式换成 OCCT 具体类测试），但**不是 T-69 的解** ✗。
+
+**② 决定性：`get_line`/投影/缓存三层与 OCCT **无分歧** ✓**：它的 C++ 探针**直接调用 OCCT 的 `ShapeConstruct_ProjectCurveOnSurface::Perform`**（同面同边、空 cache）⇒ 返回 **`Geom2d_Line, range ±2e100, v=42`**，与端口 `project_curve_on_surface_perform` **相同** ✓ ⇒ 我们此前逐层排除的结论成立 ✓，`get_line` 那条线**到此关闭** ✗。
+
+**③ 第一处分歧 = 面的 wire/缝结构 ✓✓**：OCCT 里该面（cylinder r=9.75, urange 1.5708..7.85398, vrange −40.5..42）导入后是 **1 wire / 5 edges**，其中**含 2 条缝边**（e2/e5，pcurve = Line at u=1.5708）；而文件里对应面 `#28229`（`CYLINDRICAL_SURFACE #1304`）只有 **2 个 FACE_BOUND、各 1 条自闭合边**（`#4308=[#17632]`、`#4309=[#17633]`）⇒ **是 OCCT 导入时自己插入了 2 条缝边**，而端口**没有这个 pass** ✗ ⇒ **第一处分歧在面结构，不在 `get_line`** ✓。
+
+**④ 并纠正我 round 179 的错误反驳 ✓（我接受）**：我当时用「OCCT T0M 有 172 条单自闭合边 wire」否掉 `FixMissingSeam`；但那 172 条里 **166 条在 Plane 面**（平面无需缝 ✓）、其余 6 条含 1 条 Cylinder ✗ ⇒ **该证据不能反驳圆柱面需要插缝** ✗。**`FixMissingSeam`（`ShapeFix_Face.cxx:1722`，wired at `Perform:492-500`）重回首位假设** ✓。
+
+**⑤ 其它数字（代理实测，均可复用）**：`data/occ` 导出 exit=0、8 文件全 ok（之前的 exit 1 系并发编辑窗口 ✓）；`data/*.step` **14/15 与 OCCT 探针 nodes/triangles 完全一致**（仅 `Shape-2` 差：端口 3105/4792 vs OCCT 3099/4780 ✓）；`data/occ` 端口 vs GT：T0M 46517/46967(GT 60050/66576)、**TDB 72847/77884(GT 72687/78470，很接近 ✓)**、a3n00 9091/8922(GT 11052/12324 ✗)、acs10 32400/37223(GT 37247/46494 ✗)、**ATU01038 18052/22483(GT 18049/22504，几乎逐位 ✓)**。
+
+**⇒ T-69 的下一步（方向已明确）**：查 OCCT 是**哪个 pass 给 `#28229` 插了两条缝边**并按该 pass **忠实移植**（首选＝`ShapeFix_Face::FixMissingSeam` **`ShapeFix_Face.cxx:1722`**，调用点 `Perform:492-500`，`myFixMissingSeamMode` 默认 −1、由 ShapeProcessing 设置 ✓）。这也是**忠实补分支**而非自创 ✓，符合门禁纪律。
 **round 201 —— ❌ `is_seam_use` 线索被否（它是忠实的）；并**订正板内一条旧错误**（把两个同名不同义的 OCCT 概念混了）**
 
 **跟踪**：`fix_add_pcurve` 的 `is_seam` 参数怎么来的 —— 端口 `is_seam_use`（`wire_fix.rs:855-862`）=「同一 TShape 键在 wire 里出现 ≥2 次」；OCCT 同位置的实参是 **`sbwd->IsSeam(i)`**（`ShapeFix_Wire.cxx:657-661` ✓）⇒ `ShapeExtend_WireData::IsSeam`（`:630-647`）⇒ **`ComputeSeams()`**（`:163-...`）—— 后者是「先把 REVERSED 的边映射，再找已在映射里的 FORWARD 边」⇒ **就是「同一条边在 wire 里出现两次（一去一回）」** ✓✓。
