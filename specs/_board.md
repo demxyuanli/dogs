@@ -185,6 +185,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 150 —— T0M 的 OCCT GT 已取得（可复用）；端口侧数字暂为**陈旧件**，不能据此裁决**
+
+**新 GT 能力**：探针加 `--bbox`（`BRepBndLib::Add` → `maxComp` → `Prs3d::GetDeflection` 口径的 `lin = maxComp×0.001×4`），于是 GT 不再依赖端口运行：
+```
+T0M.stp:  BBOX maxcomp=643.578  lin=2.57431
+GT(--mesh 2.57431 0.349066):  faces=1778 nodes=60050 triangles=66576 meshvol=1.48796e+06 neg_triangles=31373
+```
+（注意 GT 的**面数 1778**，与 `discret_root.rs:462-468` 自注里的「1772 faces」略有出入 —— 说明那条自注的采样口径或早于当前导入路径，引用时应以实测为准。）
+
+**端口侧**：仓内只有 `output/T0M.obj`（**陈旧**，非 `output/occ/` 路径、生成时间早于本会话），计得 `v=46517 f=46967`（≈ OCCT 的 **70%**）。**方向**与「169 面走 UV 网格回退」相容（回退网格更粗 ⇒ 片数偏低），但**因是陈旧件 + 网格器此后有改动，不能据此裁决**。
+
+**所以裁决仍待一次**新鲜**端口运行**（`export_data_obj -- data/occ`）—— 它需要 cargo；本轮那次后台 job 因两位代理正在改库（编译中断）而以 exit 1 无输出结束。**下一次安静窗口**：① `-- data/occ` 取 T0M 的新 `v/f`；② 与上面 GT 对拍；③ 结论写入 T-69 行并决定 T-54 是「删回退」还是「保持」。（或者直接采信网格子代理在 `discret_root.rs` 的插桩计数——它正在做这件事，那是**最直接**的证据。）
 **round 149 —— T-28 前 3 步**代码已全部落地**（待门禁数字）+ T-69 状态存在**记录冲突**，需实测裁决**
 
 **① T-28 子代理回报（三步齐）**：

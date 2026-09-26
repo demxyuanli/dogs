@@ -5,6 +5,8 @@
 //   * per-face surface type, orientation, composed normal and outward sign
 //   * cylinder/spline frames, so the port's reconstruction can be compared
 #include <BRepAdaptor_Surface.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <Poly_Triangulation.hxx>
 #include <TopExp_Explorer.hxx>
@@ -206,6 +208,21 @@ int main(int argc, char** argv)
     std::cout << "TOTAL faces=" << aFaceIdx << " edge_occurrences=" << anEdgeIdx
               << " edge_nodes=" << aTotal << " without_polygon=" << aNoPoly
               << " deflection=" << aDeflection << "\n";
+    return 0;
+  }
+
+  // `Prs3d::GetDeflection` needs `maxComp(BRepBndLib::Add(shape, box, false))`; print
+  // it so a GT run can use the same parameters the port's export path uses.
+  if (argc > 2 && std::string(argv[2]) == "--bbox")
+  {
+    Bnd_Box aBox;
+    BRepBndLib::Add(aShape, aBox, false);
+    const double aMaxComp = aBox.IsVoid() || aBox.IsOpen()
+                              ? 0.0
+                              : std::max({aBox.CornerMax().X() - aBox.CornerMin().X(),
+                                          aBox.CornerMax().Y() - aBox.CornerMin().Y(),
+                                          aBox.CornerMax().Z() - aBox.CornerMin().Z()});
+    std::cout << "BBOX maxcomp=" << aMaxComp << " lin=" << aMaxComp * 0.001 * 4.0 << "\n";
     return 0;
   }
 
