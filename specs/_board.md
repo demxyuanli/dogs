@@ -140,6 +140,20 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 90 —— gprop 的 Reversed 面语义：OCCT 原文已核实，但正确组合需要「法向翻转 + 累积遍历」同时成立（已回退）**
+
+读 OCCT 原文确认：`BRepGProp_Face::Load(const TopoDS_Face&)`（`BRepGProp_Face.cxx:189-197`）把 `mySReverse = (F.Orientation() == TopAbs_REVERSED)`，`Normal`（`:201-209`）在 `mySReverse` 时把 `D1U × D1V` **翻转**；而 `BRepGProp_Domain` 用 `TopExp_Explorer(face, EDGE)`（默认 `CumOri=true`）取边界，所以**遍历也带上面朝向** —— 而 `Load(edge)`（`:164-185`）在边为 `REVERSED` 时把 pcurve 反向。⇒ OCCT 是「法向翻转 + 累积遍历」两者同时生效。
+
+实测两个 oracle 的冲突：
+
+| 组合 | `cylinder_surface_volume`（GT 2π） | `offset_geometry_is_consistent`（GT 2610.501440） |
+|---|---|---|
+| 原样（domain 用 `normal_raw`，即不翻转） | 2π ✓（旧 −Z 盖） | 2610.501436 ✓（板内注释记的 1.5e-9） |
+| 端盖忠实化 + `compute_domain` 改用 `normal`（翻转） | **2π ✓**（`--lib` 1281/0） | **159.174 ✗** |
+
+⇒ 端盖忠实化需要「法向翻转」，而 Offset.step 的 2610.5 只有在「不翻转」时才对 —— 说明端口的 `wire_sign`（domain 路径靠它携带遍历朝向）**没有携带 `is_reversed` 面朝向**，于是翻转法向后变成双重/缺失翻转。已验证：在 `FaceGauss::new` 里对 Reversed 面的边界边先 `reverse()` 后 **数字完全不变**（因为 `uv_polygon_signed_area` 对 `ArcKind::Circle` 走的采样与 `L_knots` 的 `Circle` 分支都不受该反向影响），所以「让 `wire_sign` 表达累积朝向」还需要改 `BoundaryArc`/`build_arc` 的圆环处理。
+
+**下一步**：① 先给 `FaceGauss` 加探针，确认圆柱底盖实际走的是 `compute_face` 的解析路径还是 `compute_domain`，并打印 `wire_sign`/法向符号；② 按 `BRepGProp_Face.cxx:164-197` 把「法向翻转」与「边界累积朝向（含圆环的 a/b 方向与 `L_knots`）」都做对，使 `cylinder_surface_volume`(2π) 与 `Offset`(2610.501440) **同时**成立；③ 再把端盖忠实化落地，复跑全套门禁与 GT `8 faces / 8.50265`。
 **round 89 —— 端盖改成 OCCT 构造确实修好 pcurve，但暴露 `brep_gprop_full` 的 Reversed 面缺陷（已回退）**
 
 按 round 88b 的下一步，把 `primitives.rs` 的圆柱底盖与圆锥底面改成 OCCT 的形状（`BRepPrim_OneAxis::BottomFace` `BRepPrim_OneAxis.cxx:488-503`：+Z 平面 + `ReverseFace`；`BottomWire` `:751-770`：圆边存 `Reversed`）。实测：
