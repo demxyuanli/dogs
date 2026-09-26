@@ -101,3 +101,5 @@ TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
 （另：`wires_probe.exe <file>` 给出 `uv_degenerate_faces`——全 19 个语料文件在 OCCT 侧均为 **0**，端口侧任何 >0 都是端口缺陷。）
 
 ⚠️ **参数口径的一个细小陷阱（round 178 发现）**：端口的 `export_data_obj` 用**端口自己算的 bbox**算 `lin`，而 OCCT 探针用 **OCCT 的 bbox**；两者可能不同 —— 例：`data/occ/ATU01038.step` 端口报 `exact=[-42.156,-49.156,-12.556]~[42.156,117.546,382.546]`（maxComp=**395.102** ⇒ lin=1.5804），OCCT 报 `maxcomp=**386.794**`（lin=**1.54718**）⇒ 严格对拍时应**分别用各自的 bbox**，或至少确认差异不足以改变计数（上面 ATU01038 的 18049/22504 是用 OCCT 自己的 lin 跑的）。
+
+✅ **round 197 复核：该「参数陷阱」对本语料**无实际影响**** —— 用端口的 `lin=1.580408`（端口自身 bbox）重跑 `ATU01038.step` 的 `--mesh`，得到**同样**的 `faces=386 nodes=18049 triangles=22504`（与用 OCCT 自身 `lin=1.54718` 的结果一致 ✓）。⇒ 上述差异不足以改变计数，三列表可以直接用表中数值。
