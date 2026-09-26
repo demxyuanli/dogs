@@ -140,6 +140,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 92 —— 端盖修复后重试行走判据：仍失败（p-curve 缺陷是必要非充分）**
+
+在三处修复落地（`2db1574`）之后重试 round 86/87 的 `GetFaceOff` 闭合环判据（`algo_tools_face.rs` 的 `same_dir` 对闭合环回落「累积朝向比较」，`BOPTools_AlgoTools.cxx:1052`）：`box∪cyl` 的 **FUSE 仍是空**（Cut 9 面/‑4.644956，Common 空）。已回退。
+
+⇒ 端盖的 p-curve 方向缺陷（round 88/89 的 144 个 `dot>0`）是 T-82 的**必要**前置，但**不充分**：行走选面 `GetFaceOff` 还有别的偏差点。当前端口数据与 round 86 的 OCCT 真值（从环带出发 `GetFaceOff` 应选 **Plane/盘**）不符。
+
+**当前端口实测（修复后）**：FUSE 7 plane/8.297870、CUT 9 面/8.955044、COMMON 空；GT 8 faces / 8.50265。
+
+**下一步**：用 round 86 的 `--faceoff` 真值逐字段对拍 `get_face_off` 的中间量 —— 现在 p-curve 已正确，重点应是 `get_face_dir` 的 `aDB`（`FindPointInFace` 收敛点）与 `angle_with_ref` 的符号约定，以及 `min_step_3d` 的 `aDt3D`/`bSmallFaces`（`small=true` 会整段跳过 `FindPointInFace`，直接走 `GetApproxNormalToFaceOnEdge` 分支把 `aDB` 设成 `P→Px`）。
 **round 91 —— ✅ 三处组合落地，两个 oracle 同时满足（T-82 的 gprop 前置条件解除）**
 
 round 90 的缺口补上第三块后全部成立。落地三处（都在同一次改动里，缺一不可）：
