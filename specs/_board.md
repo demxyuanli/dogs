@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 230 —— 🎯 定位到具体失败断言：**`torus_area_matches_occt`**（`step_obj_area`）⇒ 环面接缝/pcurve 路径**
+
+重新施加「边界载体法」后只跑 `step_obj_area`（`2>$null` 过滤 warning ✓）：
+```
+test torus_area_matches_occt ... FAILED
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.17s
+```
+⇒ **现有证据收窄到「环面（torus）」这一条几何** ✓ —— torus 面含**接缝边**（同面双 pcurve ✓），因此嫌疑集中在：① `set_edge` **排空语义**（当传入 `EdgeGeom` 的两 map 为空时我把槽置 `None` ✗ —— 旧行为是**整体替换** `EdgeGeom`（含空 map）✓，两者在「先有 pcurve 再 `set_edge` 一个空 map 的 geom」序列上**语义不同** ✗✗，这正是 torus 这类「先建面/缝后补范围」的路径会踩到的 ✓）；② `edge_pcurve_reps` 的 **3D 范围回退**（`g.first/g.last` ✓）；③ `remove_pcurves_on_surface` 的读写顺序 ✓。
+**已回退到绿** ✓（`git checkout -- tgeometry.rs`，树 == `a029bc5b` 的代码状态 ✓）。
+**下一轮的一次性修法（有据可依）**：不再用「排空/置 None」语义 ✗，改成**显式合并**：`set_edge` 只在传入 geom **确实携带** pcurve 时更新槽 ✓，否则**保持槽原值** ✓；并把「清空」只留给显式的 `remove_pcurves_on_surface` ✓（它本来就是显式语义 ✓）。这样既不改旧行为（旧行为对空 map 的替换在「先有后无」序列上等价于保持 ✗ hmm —— 需要按 `torus_area` 的实测判定 ✓），又能在 torus 路径上对齐 ✓。**改动后立即只跑 `step_obj_area` + `--lib`** ✓（廉价、直接针对失败 ✓），绿了再跑全套 ✓。
 **round 229 —— 第二次尝试（边界载体法）**仍红** ⇒ 再次回退（未提交）；策略需改**
 
 **方案**：`EdgeGeom` 的两张 map 降级为**临时载体** —— `edge_geom(s)` **从槽填充** ✓、`set_edge(s, geom)` **排空到槽** ✓（`construct.rs:506-526 copy_edge` 这类「读 A 写 B」因此自动正确 ✓，`bop_bop.rs:141` 的 `!pcurves.is_empty()` 也自动正确 ✓）。编译通过 ✓，但门禁：**`step_obj_area` 10/1 FAILED** ✗（`step_geometry_parity` 3/3、`phase5/9/10/19/20` 全绿 ✓）。⇒ 按纪律**回退**（`git checkout -- tgeometry.rs`，未提交 ✓，工作树回到 `2b2742a6` ✓）。
