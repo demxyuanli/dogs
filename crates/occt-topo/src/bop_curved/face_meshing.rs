@@ -406,6 +406,15 @@ pub(super) fn boolean_mesh_curves(
 }
 
 /// Compute the retained triangle mesh of the boolean.
+///
+/// UNPORTED (audit A5 / T-41): a **mesh-level boolean**. OCCT never boolean-
+/// combines triangulations — `BOPAlgo_BOP` works on the BRep via
+/// `BOPAlgo_Builder` + `BOPAlgo_BuilderSolid`, and `BRepMesh_*` only
+/// triangulates faces (`BRepMesh_IncrementalMesh.cxx`). This engine, its
+/// `classify_face` sampling and the `weld_mesh` pass have no OCCT
+/// counterpart; it is still reachable as the `bop_curved` fallback, so it is
+/// annotated and queued for removal with the rest of T-41 (removal needs the
+/// full regression battery).
 pub(super) fn boolean_mesh(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<TriMesh, String> {
     let fa = faces_of(a);
     let fb = faces_of(b);

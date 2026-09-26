@@ -38,7 +38,16 @@ pub(super) fn region_interior_points_2d(region: &[Vec<GpPnt2d>]) -> Vec<GpPnt2d>
     pts
 }
 
-/// Classify a UV region of `face` against `other` by sampling interior points.
+/// Classify a UV region of `face` against `other` by sampling interior points
+/// and taking a **majority vote**.
+///
+/// UNPORTED (audit A5 / T-41): OCCT classifies a point/region against a solid
+/// with `BRepClass3d_SolidClassifier` (`BRepClass3d_SolidClassifier.cxx`
+/// `Perform`) or, inside BOP, with `IntTools_Context::ComputeState`
+/// (`IntTools_Context.cxx:545-590`); the face regions themselves come from
+/// the split faces' pcurves (`BOPAlgo_BuilderFace`), never from UV sampling.
+/// The `inside * 2 >= total` tie-break below is likewise port-invented.
+/// Queued for removal with the rest of T-41.
 pub(super) fn region_inside_other(
     _face: &Face,
     surf: &dyn Surface,

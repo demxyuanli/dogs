@@ -164,6 +164,17 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 127 —— §3.3 T-41 第一步：三处自创机制**就地标 UNPORTED**（摘除留待回归批次）**
+
+按审计 A5 的三处落点，逐处读代码确认它们**确为端口自创**并**当前可达**（故本轮只标注、不摘除）：
+
+| 落点 | 自创内容 | 可达性（实测） | 标注里对照的 OCCT 真值 |
+|---|---|---|---|
+| `bop_builder_core.rs:80 validate` | 用**网格估计体积**（`brep_gprop::volume(..,0.02)`）与操作数比较，越界就 push warning | **在产**：`bop_builder.rs:93`、`bop_builder_planar.rs:185` | OCCT `BOPAlgo_BOP` 无此类后检；错误面是 `BOPAlgo_ArgumentAnalyzer`(`Perform`/`HasFaulty`) + `BOPAlgo_Builder::Perform` |
+| `bop_curved/face_meshing.rs:409 boolean_mesh` | **网格级布尔**（`classify_face` 采样 + `weld_mesh`） | **可达回落**：`general_mesh.rs:218 general_boolean_mesh → boolean_mesh_curves`、`:245/:279` | OCCT 从不在三角化上做布尔：`BOPAlgo_BOP`/`Builder`/`BuilderSolid` 走 BRep，`BRepMesh_*` 只三角化（`BRepMesh_IncrementalMesh.cxx`） |
+| `bop_curved/region_trim.rs:42 region_inside_other` | 采 UV 内点 + **多数票**（含 `inside*2>=total` 断平） | **在产**：`classify_face` 路径 | OCCT 用 `BRepClass3d_SolidClassifier::Perform` 或 BOP 内 `IntTools_Context::ComputeState`(`IntTools_Context.cxx:545-590`)；面区域来自切分面的 pcurve（`BOPAlgo_BuilderFace`），从不靠 UV 采样 |
+
+**为何不本轮摘除**：三处中两处**在产**、一处是可达回落，而当前工作树正被 T-80 的 `brep_gprop_full` 修复占用（同一套门禁要用来判定那次修复），此刻摘除会污染归因。**标注已落地（含 OCCT 对照行号）**，摘除将在 T-80 收尾后作为独立批次做，届时须跑完整回归（含 `export_data_obj` 逐位一致）。
 **round 126 —— T-11 余项**收口判定**：剩余告警是「已移植但未接线」的**覆盖信号**，不是垃圾；不再做批量删除**
 
 抽样核查 481 条告警中占比最大的 `never used`（329 条 / 78 文件）：

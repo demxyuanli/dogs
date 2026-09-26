@@ -77,6 +77,16 @@ pub(crate) fn disjoint_result(a: &TopoShape, b: &TopoShape, op: BoolOp) -> Boole
 }
 
 
+/// Port-only post-check: compares **mesh-estimated** volumes of the result
+/// against the operands and pushes a warning on a gross violation.
+///
+/// UNPORTED (audit A5 / T-41): OCCT's `BOPAlgo_BOP` emits no such check —
+/// its error surface is `BOPAlgo_ArgumentAnalyzer` (`BOPAlgo_ArgumentAnalyzer.cxx`
+/// `Perform`/`HasFaulty`) plus the per-argument checks inside
+/// `BOPAlgo_Builder::Perform` (`BOPAlgo_Builder_1.cxx`), none of which
+/// compares triangulated volumes. This is a port-invented heuristic whose
+/// numbers come from `brep_gprop::volume(..., 0.02)` (a mesher), so it is
+/// kept only as a warning and is queued for removal with the rest of T-41.
 pub(crate) fn validate(a: &TopoShape, b: &TopoShape, op: BoolOp, result: &mut BooleanResult) {
     if result.faces.is_empty() {
         return;
