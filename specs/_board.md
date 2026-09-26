@@ -138,8 +138,12 @@ cd ..; git worktree remove --force .target-headcheck
 - **T-44 / R2-6 RationalC1 臂**（`2a28b8c`）：`Geom_BSplineCurve::{IncreaseDegree,RemoveKnot}`（`Geom_BSplineCurve.cxx:243-298`、`:420-495`）+ `GeomConvert_CompCurveToBSplineCurve`（`GeomConvert_CompCurveToBSplineCurve.cxx:32-273`）+ `BSplCLib::{IncreaseDegree,AntiBoorScheme,RemoveKnot}`；GT 对拍（DRAWEXE）逐字段一致。
 - **R2-18 2D 弧长**（`e8deb3d`）：`curve2d_length`/`_tol` 补 `Geom2dAdaptor_Curve` 类型解析、IsRational 判据、CN 分段与容差重载（`GCPnts_AbscissaPoint.cxx`、`CPnts_AbscissaPoint.cxx:26-65/:79-100/:191-207`）。
 - **parity 覆盖**（`63ae2b9`）：`data/occ` 的 a3n00 / acs10 / TDB 按既有 WriteObj 参考锁进 `step_obj_parity`。
+- **T-67 步 3 收口**（`6e07cde`）：忠实 `Extrema_GenExtPS`（`gen_ext_ps.rs`，~1300 行）+ `Extrema_FuncPSNorm`，`Extrema_ExtPS` 通用面臂由 24×24 网格替代件接忠实引擎。**余项**：`Extrema_ExtPExtS`/`Extrema_ExtPRevS`（`Extrema_ExtPS.cxx:292-343` 的分派，约 1200 行）。
+- **T-51 收口**（`962e195`）：`CPnts_MyRootFunction` + `CPnts_AbscissaPoint`（弧长反解）由 `math_FunctionRoot` 驱动，旧 local Newton/bisection 与越界守卫删除；`uniform_abscissa` 内层同走此件。**余项**：`computeType`/`LengthParametrized`/`AbsComposite` 臂（依赖到 basis 参数区间的解包）；`quasi_uniform_abscissa` 仍是替身。
+- **T-88 分诊**（`707fcc3`，见 §3.1a）：非夹具问题，属 T-80/T-82 同族（内部盘未丢 + 圆边重复不共享），由 T-82 收口时一并转绿。
 
-**进行中 / 未开始（本会话后续）**：T-67 步 3（`Extrema_GenExtPS`）与 T-51 反解已派子代理；未开始 = R2-19（IGES 2D UV 曲线）、T-54（约束 Delaunay）、T-41（`bop_curved` 网格布尔摘除，需先修 T-80/T-82）、T-25/T-28（设计已出，待实施）、T-11 余项。
+**进行中**：R2-19（IGES 2D UV 曲线，子代理）、R2-18 余项的另一半（`Extrema_ExtCC2d`，子代理）。
+**未开始**：T-54（约束 Delaunay）、T-41（`bop_curved` 网格布尔摘除，需先修 T-82）、T-25/T-28（设计已出，待实施）、T-11 余项。
 ### 3.1 红门禁（当前实测为红：2 条 `--lib` + 3 条集成 + 2 条属性/网格缺陷）
 
 | ID | 门禁 / 用例 | 实测（2026-09-21） | 根因已定位？ | 归属根因批 |
