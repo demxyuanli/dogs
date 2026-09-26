@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 249 —— ✅✅ T-25 收尾落地：**侧表不再存几何**（三张 map 已删），逐位 `same=23 diff=0`**
+
+`edge_geom`/`face_geom`/`vertex_geom` 纯槽读取 ✓；四处 surface 回退改用小表 `face_surfaces` ✓；`edge_pcurve_reps` 3D 范围从槽取 ✓；三处 insert + 生命周期 remove/clear/len 全去 map 化 ✓；**`vertices`/`edges`/`faces` 字段已从结构体与 `global()` 删除** ✓。
+**验收**：`cargo check` 0 error ✓；`--lib` **1281/0** ✓；`step_obj_area` **11/11** ✓；`step_geometry_parity` **3/3** ✓；`phase5/9/10/19/20` 全绿 ✓；**逐位对比 `same=23 diff=0`** ✓✓。`step_obj_parity` 随后补 ✓。
+**⇒ T-25 步骤 1（几何不再走侧表）**从「读写走槽」推进到「**侧表根本不存几何**」** ✓ —— 侧表只剩 `ids`（形状 id）与 `face_surfaces`（面 identity 回退所需 ✓）。**剩余的纯清理项**（可选）：`TShape::drop` 的 `remove_by_ptr`、`GeometryRegistry` 的 `ids` 是否还需要 ✓、以及 `clear_shape` 语义 ✓。
 **round 248 —— ✅✅ 批 3+4 **完整收口**（`same=23 diff=0`）⇒ **四个 payload 家族全部完成**；收尾验证电池已启动**
 
 `d6a70843`（批 4，含批 3）的单次干净电池（串行、无并发导出 ✓）：
