@@ -185,6 +185,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 159 —— 文件侧普查：T0M 自带「同边重复」结构的面最多 **75 个**，而端口有 **162 个**退化面 ⇒ 需对账**
+
+直接按文本解析 `data/occ/T0M.stp`（路径 `ADVANCED_FACE → FACE_BOUND/FACE_OUTER_BOUND → EDGE_LOOP → ORIENTED_EDGE → EDGE_CURVE`，统计同一 wire 内重复）：
+```
+ADVANCED_FACE = 1772
+wire 内同一 EDGE_CURVE 出现两次的面   = 21
+wire 内同一 (v1,v2) 顶点对出现两次的面 = 75
+两者同时                              = 21
+（示例 #28418 #28425 #28432 #28439 #28633 #28634）
+```
+**含义**：① 这种结构**有一部分是文件自带的**（OCCT 也要处理，而 OCCT `uv_degenerate_faces=0` ⇒ OCCT 在**后续修复链**里处理掉了）⇒ 支持「缺口在修复链（`FixSelfIntersection` 等）」的假设；② 但 **162 > 75** ⇒ 端口**还额外制造了**一部分，需对账。
+**已让代理交对账表**：对 162 个退化面逐个给文件身份（`ADVANCED_FACE`/`EDGE_LOOP`/`ORIENTED_EDGE` 记录号）并归类 **(A)** 文件自带重复 EDGE_CURVE、**(B)** 文件自带重复顶点对、**(C)** 文件干净（**端口自造**，最要紧），汇总 `162 = A+B+C`；并要求它在端口侧也做「同面 wire 内顶点对重复」计数器以与文件侧 75 直接对拍。**先出对账表，再决定是否立项移植 `FixSelfIntersection`**。
 **round 158 —— 我逐行复核后**否掉**「`fix_lacking` 造成退化 wire」；新假设指向端口明确的 UNPORTED 项 `FixSelfIntersection`**
 
 我直接把两处读了（都忠实）：
