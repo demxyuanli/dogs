@@ -185,6 +185,10 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 199 —— 🚨 发现第二处同名启发式：`pcurve.rs:271-279`（平面路径）也必须一并替换**
+
+`crates/occt-topo/src/pcurve.rs:271-279` 有与 `surface_projector.rs` **一模一样的两个私有启发式**：`is_line` = 「无界参数」、`is_circle` = 「周期 2π」；它们被 `make_pcurve_on_face` 用在 `:250/253`，而 `make_pcurve_on_face` 正是 **`make_pcurve_full` 对平面面的早退分支**（`make_pcurve_full`: `if kind == Plane { return crate::pcurve::make_pcurve_on_face(...) }`）以及其它调用方的入口 ✓。
+⇒ **修法必须覆盖两处**：代理已改 `surface_projector.rs`（`:2795`/`:2810` ✓），**`pcurve.rs` 尚未改** ✗。已请代理一并替换（`gp_line()`/`gp_circ()`，保留同样的 doc 与行号引用），或**删掉私有副本、复用** `pcurve_full::surface_projector` 的两个函数（需放宽可见性）——两者取更小者 ✓。若它本轮不做，则我在收口时一并处理 ✓。
 **round 198 —— 请代理停手交回，我接手收口（修法已认出并核验）**
 
 理由：T-69 的**根因修复**已在 round 195/196 认出并端到端核验（`surface_projector.rs` 把两处**自创启发式**换成 OCCT 的**具体类测试**：`is_line → curve.gp_line().is_some()`、`is_circle → curve.gp_circ().is_some()`；`gp_circ` 无几何兜底 ⇒ B 样条边必 `None` ⇒ 不再走等参臂 ⇒ 不再产出开路 2π 直线 ✓），剩下的都是**机械验收** ✓，由我做更可靠（剩余 ~93 轮）。
