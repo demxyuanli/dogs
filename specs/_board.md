@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 204 —— 核实 `FixMissingSeam` 的**门控**：默认**会执行** ✓**
+
+- `ShapeFix_Root::NeedFix` 声明 `static bool NeedFix(const int flag, const bool def = true)`（`ShapeFix_Root.hxx:112`），实现 `Flag < 0 ? need : (Flag > 0)`（`ShapeFix_Root.lxx:101-104`）✓；
+- 调用点 `if (NeedFix(myFixMissingSeamMode))`（`ShapeFix_Face.cxx:492-500`，单参 ⇒ `need = true`），`myFixMissingSeamMode` 默认 **−1**（`:137`），且 `FromSTEP.FixShape.*` 列表（`STEPControl_Controller.cxx:228-259`）**未设置它** ✓；
+⇒ `NeedFix(-1)` = **true** ⇒ **该 pass 在 OCCT 默认路径下会执行** ✓✓，与「OCCT 自己给 `#28229` 插了 2 条缝边」的实测一致 ✓。**已告知新代理**：可直接按 `Perform` 的顺序调用它，无需为 mode 加条件（或写成 `NeedFix(mode, true)` 并注明行号 ✓）。
 **round 203 —— 🚀 T-69 忠实修法**已立项并委派**：移植 `ShapeFix_Face::FixMissingSeam`（`ShapeFix_Face.cxx:1722-2011`）**
 
 新代理（`102148e6`）已启动，brief 含全部已钉死证据（不重复调查）：
