@@ -185,6 +185,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 152 —— ✅ T-69 分诊到位（网格子代理实测）：**mesher 忠实、回退 162 面、根因=边界链一半被标 FIXED**
+
+**【A】复算 round-138 订正 ⇒ 结论加固**：用探针参数（0.1 / 角 0.5）跑端口 `IncrementalMesh::from_deflection`，**11/15 逐位一致**（Cone 103/141、Cube 24/12、Cylinder 106/100、Extrusion 24/12、HoledPlate 180/128、Offset 496/556、OffsetPlaneHoleEdge 48/32、Sphere 273/516、Torus 810/1508、linkrods 2184/2928、rev 76/64、screw 652/944），偏差仅 `Shape-1 +4/+4`、`Shape-2 +15/+30`、`Shape +2/+4` ⇒ **「网格器本身已忠实、不需要移植 `BRepMesh_Delaun`」得到独立复现** ✓（与我 round-138 在端口真实参数下的 14/15 一致）。
+
+**【B】T0M 回退面 = 162**（分母：端口 model faces=1772；`triangulate_model_faces` processed=1771，1 面因 FAILURE/REUSED 跳过；**OCCT GT faces=1778 ⇒ 端口少 6 面，属 STEP 读侧**）。162 面**全部**同一原因：`map_triangulation: Delaunay produced no triangles`（不是 panic / 不是 MESH_FAIL / 不是 range invalid）。端口 T0M `v=46517 f=46967` vs GT `60050/66576`（`lin=2.574309`、角 `0.349066`）⇒ **回退是活的，代码自注正确；§3.3 会话进度注里「T-69 done」那句已过期，以本条为准**。
+
+**【C】失败面的结构签名（插桩实测）**：失败面（如 model face 709）Delaun **输入** `nodes=74 links=72 frontier=36 fixed=36 free=0`；正常面 `nodes=72 links=72 frontier=72 fixed=0` ⇒ **一半边界链被标 `Fixed` 而非 `Frontier`**；Delaun 输出 `links=225 domain=0` ⇒ cleanup 把 72 个三角形全删 ⇒ 无三角化。**这是可直接下手的控制流缺口**。
+
+**【D】face 709 边界实测**：`wires=2`，共 4 条 edge、每条 37 点，`pts=148` 却只合成 **74 个 node**（每条 edge 的点与另一条完全重合）：
+```
+wire0: edge1852 (−π,0.36)→(π,0.36)；edge1853 (π,0.36)→(−π,0.36)   ← 同一条 UV 折线来回
+wire1: edge1854 (3π,0)→(π,0)；    edge1776 (3π,0)→(π,0)          ← 同一条 UV 折线走两遍
+```
+即每个 wire 的 UV 边界是**零面积退化环**，且 wire1 的 u 窗口比 wire0 **整整差一个周期**（[π,3π] vs [−π,π]）—— 与板内 T-69 原诊断措辞完全吻合 ✓。
+
+**【E】待确认**：这 4 条 edge 的 **3D 端点是否真的不同**（以判定「UV 重合」是 pcurve/投影所致，还是 wire 本身含重复边）。
+
+**下一步（给代理）**：定位「为什么一半链被标 Fixed」——对照 OCCT `BRepMesh_FaceDiscret`/`BRepMesh_WireDiscret`（wire 的离散化与 frontier 初始化）与端口 `ModelHealer`/`FixLacking`（板内原诊断怀疑它「追加重复闭合边」造成回绕链）；**忠实补分支**，禁止自创判据。**验收**：T0M 的失败面 **162 → 0**、端口 T0M 的 `v/f` 与 GT（60050/66576）在一致口径下对齐，且 15 个 `data/*.step` 的 GT 不变、四道 STEP + `--lib` 1281/0 + phase5/9/10/19/20 全绿。**达成前不删回退**。
 **round 151 —— T-25（最后一项）开工前的**基准态实测**（非 cargo）**
 
 用 grep 重新点数（**取代设计文档里的旧值 `501 refs / 127 files`**）：
