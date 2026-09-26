@@ -185,6 +185,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 141 —— T-91 首轮诊断：`Shape-2.step` 的 pcurve **在文件里**（该自注可能已过期）**
+
+直接在 STEP 文本上做的普查（非 cargo，零冲突）：
+
+| 实体 | `Shape-2.step` 计数 |
+|---|---|
+| `SURFACE_CURVE` | **82**（每条形如 `#26 = SURFACE_CURVE('',#27,(#39,#124),.PCURVE_S1.);` ⇒ **携带 2 条 pcurve**） |
+| `PCURVE` | **164**（= 82×2 ✓ 数量吻合） |
+| `ADVANCED_FACE` / `EDGE_LOOP` | 31 / 32 |
+| `B_SPLINE_CURVE_WITH_KNOTS` / `LINE` | 134 / 62 |
+| 曲面 | `PLANE` 3；多数面用的是**复事实体**：`#40 = ( BOUNDED_SURFACE() B_SPLINE_SURFACE(6,10,(…`（跨多行、`= ( A() B(...) )` 形态） |
+
+⇒ 两点推论：
+1. **文件里 pcurve 齐全**（82 条 `SURFACE_CURVE` 各带 2 条 `PCURVE`）⇒ `brep_exchange.rs:50-52` 那句「pcurves **are dropped**」**未必成立**（该注释里 `step.rs` 的路径写法也已过期），需要重新验证是**解析/关联**哪一步漏了。
+2. 端口的记录解析器**已支持**复事实体与多行记录：`step/transfer.rs:566-611 parse_records` 用 `parse_entity_body_text`（按配对括号扫到 `;`）+ `merge_complex_body`（`:187-254`，含 `_AND_RATIONAL_B_SPLINE_SURFACE` 家族）⇒ 不是「复事实体读不了」这么简单。
+
+**T-91 下一步（收敛到可执行判定）**：插桩 `step/read_topology.rs:869-928 associate_edge_pcurve`，对 `Shape-2.step` 与 `Shape.step` 分别统计三类计数 —— ① `associated_geometry` 里根本没有 `PCURVE`（应为 0，若不为 0 即新发现）；② 有 `PCURVE` 但 `basis_surf != surf_ref`（**引用面不匹配**，最可疑）；③ 成功挂上。再把「无 pcurve 的面」与 `--mesh` 偏差面求交集 ⇒ 若不是 pcurve 的问题，则改查 Delaunay 边界/离散化那侧（并据此**订正或删除** `brep_exchange.rs:50-52` 的自注）。
 **round 140 —— 新登记 T-91：STEP 导入的 pcurve 关联缺口（`Shape-2` 唯一 0.2% 偏差的候选成因）**
 
 **证据**：
