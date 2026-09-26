@@ -134,6 +134,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 
 用 GT 探针 `--cylall` 核实：OCCT 的柱面是 `FACE0 侧面 Forward`（底圆 Forward、顶圆 Reversed）、`FACE1 顶盖 Forward`（顶圆 Forward）、`FACE2 底盖 **Reversed**`（底圆 Reversed ⇒ 累积 Forward）。所以**底圆在两个面上同向 ⇒ OCCT 的 `RefineShell` 也会在此停**，该缺口**不在 refine**，而在壳行走的**邻面选择**（`GetFaceOff`，`BOPTools_AlgoTools.cxx:1051`，或 `aMEFP`「只走壳内自由边」的时序）：正确单元应是两个 3 面闭壳 `{下环带, 底盖, 盘}` 与 `{上环带, 顶盖, 盘}`，走法必须在中途（只含一个环带时）就跨过截面圆进到盘。
 
+**round 84 实测（未落地，已回退）—— 排除「朝向」嫌疑，锁定 `GetFaceDir`**
+
+- 用探针 dump 圆柱 draft 的 6 张 split face（`build_split_solids_occt` 的 `a_sfs`）每条边的累积朝向与 pcurve 中点，与 GT `--cylall` 对拍：**朝向与 OCCT 一致**（底盖 `Forward`+底圆 `Forward`，累积仍是 OCCT `Reversed`+`Reversed` 的同一个 Forward；上环带顶圆 `Reversed`；下环带底圆 `Forward`；盘 `Forward`/`Reversed` 两份）。⇒ round 83 记的「第 4 处差异 = 朝向」**被排除**。
+- 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
+- ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
+
+**下一步**：逐行核对 `BOPTools_AlgoTools::GetFaceDir`（尤其平面分支与 `MinStep3D`/`aDt3D` 的使用），必要时移植缺失分支；然后复跑 `--lib` + `step_obj_*` + `phase*` + `export` 与 GT 8 faces / 8.50265。
 **round 83 追加实测（未落地，已回退）**：把 `GetFaceOff` 的邻面判据（`algo_tools_face.rs::get_face_off`）也按 OCCT 对闭合环回落到朝向比较（`BOPTools_AlgoTools.cxx:1052` 的 `aE2.Orientation() == aOr`）后，**FUSE 变空**（Cut 仍是 9 面/‑4.611446）。⇒ 说明**端口 split face 自身的朝向语义与 OCCT 不一致**（第 4 处差异）。注意首轮怀疑的「端盖表示」经 GT 核实**不是**原因：OCCT 的底盖是 `face Reversed + 底圆 Reversed`，两者累积后仍是 Forward，与端口 `BRepPrimCylinder::make_cylinder`（盖面用 `GeomPlane(·, −Z)`、圆边 Forward）**等价**。故嫌疑集中在 `FixFaceOrientation`/`FaceBuilder` 产出的 split face（新面的 wire 边是否保留了与相邻面相反的遍历）与 `get_face_dir`（`BOPTools_AlgoTools.cxx:990-1043` 的 `GetFaceDir`/bi-normal）两处——需先用探针 dump split face 每条边的累积朝向并与 OCCT 对拍。
 
 **下一步（顺序很重要）**：① 用临时探针 dump 圆柱 draft 的 6 张 split face 每条边的**累积朝向**，与 OCCT 的 `--cylall`（侧面底圆 Forward/顶圆 Reversed、顶盖顶圆 Forward、底盖底圆 Reversed）对拍，定位是新面 wire 的遍历朝向还是 `get_face_dir`；② 修好朝向后再重试 `GetFaceOff` 的闭合环判据；③ 复跑 `--lib` + `step_obj_*` + `phase*` + `export` 与 GT 的 8 faces / 8.50265。
