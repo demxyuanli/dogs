@@ -185,6 +185,12 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 177 —— T-69：验证代理的「实验」不是忠实修法，并指向真正的分歧点**
+
+代理在 `pcurve_full/projection_cache.rs::get_line` 里加了标注 `T69 EXPERIMENT` 的两处早期返回（当 3D 弦闭合时 `return None`）✓ **它证明了方向**（T0M `46517/46967` → `56218/55422`，向 GT `60050/66576` 靠），**但我核了 OCCT 原文**：
+> `ShapeConstruct_ProjectCurveOnSurface::getLine`（`ShapeConstruct_ProjectCurveOnSurface.cxx:902-1102`）**开头没有任何「闭合弦则返回」的判据** —— 直接 `:910-915` 取 4 探针点、`:920-935` 处理容差、随后进入投影与 2D 判据（`:960-1102`）。
+⇒ **OCCT 是在后面的 2D 判据里自然拒掉闭合弦的**，端口提前 return 等价**自创判据** ✗。
+**已要求代理收口**：① 最终提交**必须去掉**这两处早期返回（可临时留作证据）；② **真正要做的是找到端口与 OCCT 在 `:960-1102` 的一处分歧**并逐行对齐（可疑点：2D 探针点在**周期方向未归一化** ⇒ 首末差 2π 时仍被判「共线」；「平行/等速」判据用在未折叠的 2D 向量上；端点缓存/`is_recompute` 分支差异），**先给 OCCT↔端口的行号对应与判定，再改那一处**；③ 若分歧在上游（曲线类型分派/进入 `getLine` 的条件）同样先给证据再改。
 **round 176 —— T-28 代理正式收尾（含**三项 UNPORTED**的完整标注）**
 
 **交付物**（已提交为 `771eb84d` + 探针清理 `77bbc649`）：
