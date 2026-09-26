@@ -140,6 +140,29 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 116 —— 逐项隔离矩阵：T-80 体积与 `cylinder_surface_volume` 要的三处/两处修复，**必然**撞上 `Offset`；缺的是 STEP 读取的**朝向修正**（OCCT `ShapeFix` 面/壳定向，默认开启）**
+
+本轮把三处改动**逐项**跑一遍（每次都回退到干净态再叠加），实测矩阵：
+
+| 改动组合 | `box∪cyl` FUSE 体积 | 圆柱实体面积 | `step_geometry_parity`(Offset) |
+|---|---|---|---|
+| 无（基线） | 8.737227 | 6π ✓ | **3/3 ✓**（2610.5） |
+| 仅端盖出现级反转（`primitives.rs`） | 8.737227 | 6π ✓ | **3/3 ✓** |
+| 仅删 `FaceGauss` 重复折算 | 8.737227 | 6π ✓ | **2/3 ✗**（159.174） |
+| 端盖 + 忠实 `Geom2dCircle::reverse` | **8.502655 ✓** | **4π ✗** | **3/3 ✓** |
+| 端盖 + 忠实圆反转 + 删重复折算 | **8.502655 ✓** | 6π ✓ | **2/3 ✗**（159.174） |
+
+⇒ 结论：
+- **T-80 体积**只需 {端盖出现级反转 + 忠实 `Geom2dCircle::reverse`}，且该组合**不碰** Offset ✓；但它让圆柱实体面积变成 4π（两端盖 +π/−π 抵消）⇒ 红一个 lib 测试；
+- **圆柱面积/两端盖符号**需要「删 `FaceGauss` 重复折算」；
+- 而**删重复折算**必然把 Offset 打成 159.174（OCCT 真值 2610.501440）——`FaceGauss` 那次反转对 **`data/Offset.step` 的导入面**是**必要补偿**。
+⇒ 三条 oracle **无法同时**由这三处改动满足 ⇒ **根因在 STEP 导入侧**：OCCT 的 `STEPControl_Reader` 默认跑 `ShapeFix` 的**面/壳朝向修正**（`DE_ShapeFixParameters::FixFaceOrientationMode` / `FixShellOrientationMode`），端口没有移植这一步，于是导入面的朝向是「未修正」的，只能靠 gprop 里的额外反转代偿。
+
+**旁证（强）**：项目自带的 GT 探针（`specs/occt_probe/occt_probe.cpp`）里就带着 `--faces0`（`FixFaceOrientationMode = 0`）与 `--nofix`（关掉整个 `ShapeProcess`）两个开关（`:63-88`, `:94-105`）——正是为调查这件事准备的；即 OCCT 侧「默认修正 vs 不修正」是**两个不同的朝向世界**。
+
+**下一步**：在 `crates/occt-topo/src/step/` 里移植 OCCT 约定的朝向修正（`ShapeFix_FixFaceOrientation`/`ShapeFix_Shell` 的面/壳定向逻辑，先定位 `DE_ShapeFixParameters` 默认值对应的 OCCT 类与行号），使导入的实体在**未做任何 gprop 代偿**时就得到 2610.501440；然后同时落 {端盖出现级反转 + 忠实 `Geom2dCircle::reverse`}、**删除** `FaceGauss` 重复折算。**判定标准**：`offset_geometry_is_consistent`(2610.501440) + `cylinder_surface_volume`(6π) + `box∪cyl`(8 faces / 8.502655) 三条**同时**绿。
+
+（本轮所有实验改动已全部回退：`git status` 干净，`occt-topo --lib` **1281/0** 复原。另：`.target-gate/occt_probe/occt_probe.exe` 因缺 64 位 3rdparty DLL（`0xC0000135`）暂未能跑起来，已把 `tbb-2021.13.0-x64\bin` 加进 PATH 仍缺件，下轮修 build_run 的 DLL 复制。）
 **round 115 —— 判别实验完成：冲突根源 = **STEP 导入面**与**端口自造面**对同一「Reversed」用不同的符号约定（两错相消）**
 
 对 `data/Offset.step` 与端口自造圆柱逐面 dump（临时探针，用完即删；当前为**已回退**状态）：
