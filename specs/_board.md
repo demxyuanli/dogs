@@ -164,6 +164,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 125 —— §3.1 最后一条红 **T-88 转绿**：`phase10_integration` 7/8 → **8/8**（夹具选边订正）**
+
+`tests/phase10_integration.rs::curved_face_fillet_sphere_plane` 的夹具按「z≈2 且是圆」选边，会先撞上 **plane/plane** 的圆（`fillet_edge_curved` 按设计拒绝，直边对归 `fillet::fillet_edge`）⇒ 报 `unsupported face pair (Plane, Plane)`。
+
+订正（**按 OCCT/引擎语义订正夹具**，不是放宽断言）：夹具改为显式选中**相邻两面为 (Sphere, Plane)** 的那条圆 —— 用公开 API（`faces_of` + `wires_of_face` + `edges_of_wire` + `GeometryRegistry::shape_key` 比对 + `classify_surface`）实现，注释写明 T-88 的选边陷阱。改后**真的走到了** `fillet_edge_curved` 并断言产出面 > 0（比原来更强）。
+
+门禁：`phase10_integration` **8/8**；邻接全绿 `phase3` 4/4、`phase9` 8/8、`phase19` 5/5、`phase20` 5/5、`step_obj_area` 11/11；`occt-topo --lib` 1281/0。（`step_geometry_parity` 2/3 是**已知在改**的 Offset 态，由子代理正在修的 `compute_domain` 朝向问题引起，与本次夹具订正无关。）
+
+⇒ **§3.1 不再有未定位的红**：T-88 收官；余下 2 条已知红为 T-03（R2-8 已定案 (b)：夹具不合法，非引擎缺口）与 `step_geometry_parity`（在修）。
 **round 124 —— T-11 第三批**成功**：改用 `cargo test --lib --no-run` 告警基础，warning 602 → 481**
 
 按 round 123 的教训改用**含 `cfg(test)` 的构建**取告警：`cargo test --manifest-path crates/occt-topo/Cargo.toml --lib --no-run`（lib test 构建 ≡ lib 的超集，故「在 test 构建里未被使用」的 import 在两种构建里都未被使用 ⇒ **删除必安全**）。基础告警：lib-test **603** 条（未用 import **175**、never used 331、其它）。

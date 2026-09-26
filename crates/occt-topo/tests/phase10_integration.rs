@@ -43,15 +43,40 @@ fn curved_face_fillet_sphere_plane() {
     // (`fillet_curved` supports plane+sphere etc.; a plane/plane edge belongs
     // to the straight `fillet::fillet_edge`). Selecting by z alone picked the
     // box outline first (T-88 fixture bug, not an engine gap).
+    // T-88: selecting by z (and even by "is a circle") can land on a
+    // **plane/plane** circle, which `fillet_edge_curved` refuses by design
+    // (a straight edge pair belongs to `fillet::fillet_edge`). Pick the circle
+    // whose two adjacent faces are the sphere and the box top, i.e. the pair
+    // `fillet_edge_curved_general` supports.
+    use occt_topo::brep_surface::{classify_surface, SurfaceKind};
+    use occt_topo::brep_tool::BRepTool;
+    use occt_topo::tgeometry::GeometryRegistry;
+    use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
+    let faces = faces_of(&fused.shape);
     let edge = occt_topo::topo_tools_full::edges_of(&fused.shape)
         .into_iter()
         .find(|e| {
-            occt_topo::brep_tool::BRepTool::edge_curve(e)
+            let is_circ_at_2 = BRepTool::edge_curve(e)
                 .map(|c| {
                     let p = c.d0((c.first_parameter() + c.last_parameter()) * 0.5);
                     c.gp_circ().is_some() && (p.z() - 2.0).abs() < 0.5
                 })
-                .unwrap_or(false)
+                .unwrap_or(false);
+            if !is_circ_at_2 {
+                return false;
+            }
+            let ek = GeometryRegistry::shape_key(&e.0);
+            let adj: Vec<SurfaceKind> = faces
+                .iter()
+                .filter(|f| {
+                    wires_of_face(f).iter().any(|w| {
+                        edges_of_wire(w).iter().any(|x| GeometryRegistry::shape_key(&x.0) == ek)
+                    })
+                })
+                .filter_map(|f| BRepTool::face_surface(f))
+                .map(|s| classify_surface(s.as_ref()))
+                .collect();
+            adj.contains(&SurfaceKind::Sphere) && adj.contains(&SurfaceKind::Plane)
         });
     if let Some(e) = edge {
         let f = fillet_edge_curved(&fused.shape, &e, 0.2, 1e-6).expect("curved fillet");
