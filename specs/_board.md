@@ -140,6 +140,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 93 —— 逐字段对拍：缺口在 `GetFaceDir` 的 `aDB`（盘的双法向朝外）**
+
+修复后的完整链路探针（`zz-walk2` + `zz-off3/4`）：
+
+```
+# 圆柱 draft 行走（截面圆那一步）
+[zz-walk2] cur=Cylinder(344) cands=["Cylinder(56)", "Plane(16)", "Plane(16)"] ways=2 sel=Some("Cylinder(56)")   <== 选错
+# get_face_off 角度（当前面 = 环带，dbf=(0,0,1)；dtf=(-0.4136,-0.9105,0)）
+[zz-off4] cand=Cylinder dbf2=(0,0,1)  angle= 0.000000     <== 另一条环带（最小）
+[zz-off4] cand=Plane    dbf2=(-0.9105,0.4136,0) angle= 1.570796   <== 盘：双法向沿**径向朝外**
+```
+
+⇒ 盘的 `aDBF2` 落在**朝外的径向**（应为「指向盘内」），而另一条环带的 `aDBF2` 与当前面完全相同（角 0）⇒ 角度判据必然选环带。`dbf` 对当前环带为 `(0,0,1)`（沿面内法向/切向的合法方向），所以问题集中在**候选面一侧的 `get_face_dir`**：`db = dn × dtgt2` 起步就是 ±径向，随后 `find_point_in_face` **报 `found=true` 却保持朝外**——因为它量的是到**曲面**（未裁剪）的距离，平面面下恒为 0，于是循环立刻以 `aDist ≤ aDTol` 成功返回。
+
+OCCT 的 `FindPointInFace`（`BOPTools_AlgoTools.cxx:2160-2231`）用的也是「面曲面」投影器（`theContext->ProjPS(aF)`），所以在平面面下 OCCT 似乎也会同样「成功」；但 `--faceoff` 的实测真值是**选盘**。⇒ 必须拿 OCCT 的 `GetFaceDir` 内部量对拍才能定论（`aDN`/`aDB`/`aPx`/`aDt3D`/`bSmallFaces`）。`GetFaceDir` 是 `.cxx` 内静态函数、不可导出，但它的公开输入可拼：`BOPTools_AlgoTools3D::GetNormalToFaceOnEdge`（可得 `aDN`）+ `BOPTools_AlgoTools2D::EdgeTangent`（可得 `aDTgt`）⇒ 可在探针里复算「初始 `aDB = aDN ^ aDTgt`」并与端口对拍，从而区分差异在初始 `aDB` 还是在 `FindPointInFace`。
+
+**下一步**：① 探针复算 OCCT 的初始 `aDN`/`aDB`（环带与盘各一）并与端口对拍；② 若初始值一致，则在探针里实现 `FindPointInFace` 的等价复算（`ProjPS` + `aProjPL`）看 OCCT 收敛到哪个 `aDB`；③ 据此修 `find_point_in_face`/`get_face_dir`，用 `--faceoff` 的 6 行输出验收。
 **round 92 —— 端盖修复后重试行走判据：仍失败（p-curve 缺陷是必要非充分）**
 
 在三处修复落地（`2db1574`）之后重试 round 86/87 的 `GetFaceOff` 闭合环判据（`algo_tools_face.rs` 的 `same_dir` 对闭合环回落「累积朝向比较」，`BOPTools_AlgoTools.cxx:1052`）：`box∪cyl` 的 **FUSE 仍是空**（Cut 9 面/‑4.644956，Common 空）。已回退。
