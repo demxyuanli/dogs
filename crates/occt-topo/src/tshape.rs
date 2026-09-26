@@ -1,7 +1,9 @@
 //! TShape — underlying shape data (geometric + topological content).
 //! Source: `TopoDS_TShape`
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::fmt;
+use occt_geom2d::curve::Curve2d;
 use crate::abs::{ShapeType, ShapeFlags};
 use crate::shape::TopoShape;
 use occt_core::toploc::TopLocLocation;
@@ -89,6 +91,35 @@ pub struct VertexShape {
     pub tolerance: f64,
 }
 
+/// Per-face 2D pcurves of an edge, and their `BRep_GCurve` ranges.
+///
+/// Lifted from `GeometryRegistry`'s `EdgeGeom` payload (`tgeometry.rs:64-83`)
+/// as part of T-25: the two maps are kept under **one** lock so that a
+/// `(curves, ranges)` pair can never be observed half-updated.
+///
+/// Keyed by `face_key` (`GeometryRegistry::shape_key(face)`).
+/// `BRep_Tool::CurveOnSurface` keys a representation by the `Geom_Surface`, so
+/// faces sharing one surface share these pcurves: `GeometryRegistry`'s
+/// lookup falls back to another face key on the same surface (see
+/// `GeometryRegistry::edge_pcurves`, `tgeometry.rs:310-337`).
+/// `Debug` is manual because `dyn Curve2d` is not `Debug`.
+#[derive(Default)]
+pub struct EdgePcurves {
+    /// Forward-then-reversed for a seam edge, one entry for a normal edge.
+    pub curves: HashMap<usize, Vec<Arc<dyn Curve2d>>>,
+    /// `BRep_GCurve` First/Last of the CurveOnSurface representation.
+    pub ranges: HashMap<usize, (f64, f64)>,
+}
+
+impl fmt::Debug for EdgePcurves {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EdgePcurves")
+            .field("curves", &self.curves.len())
+            .field("ranges", &self.ranges.len())
+            .finish()
+    }
+}
+
 /// Edge shape data — curve + parameter range (from BRep_TEdge).
 #[derive(Debug)]
 pub struct EdgeShape {
@@ -99,6 +130,8 @@ pub struct EdgeShape {
     pub same_parameter: bool,
     pub same_range: bool,
     pub degenerated: bool,
+    /// Per-face pcurves (T-25: moved off the `GeometryRegistry` side table).
+    pub pcurves: RwLock<EdgePcurves>,
 }
 
 /// Wire shape data.
@@ -126,7 +159,54 @@ pub struct SolidShape { pub base: TShape }
 pub struct CompoundShape { pub base: TShape }
 
 impl VertexShape { pub fn new(p: occt_core::gp::GpPnt) -> Self { Self { base: TShape::new(ShapeType::Vertex), point: p, tolerance: 0.0 } } }
-impl EdgeShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Edge), first: f64::NEG_INFINITY, last: f64::INFINITY, tolerance: 0.0, same_parameter: false, same_range: false, degenerated: false } } }
+impl EdgeShape {
+    /// All pcurves of this edge on `face_key` (`GeometryRegistry::edge_pcurves`
+    /// direct hit; the surface-identity fallback stays in the registry until
+    /// the face surface slot moves too).
+    pub fn pcurves_on(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
+        self.pcurves.read().unwrap().curves.get(&face_key).cloned().unwrap_or_default()
+    }
+
+    /// The first pcurve on `face_key` (`GeometryRegistry::edge_pcurve`).
+    pub fn pcurve_on(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
+        self.pcurves_on(face_key).into_iter().next()
+    }
+
+    /// Attach a pcurve (`BRep_Builder::UpdateEdge(edge, c2d, face, tol)`).
+    pub fn set_pcurve_on(&self, face_key: usize, curve: Arc<dyn Curve2d>) {
+        let mut g = self.pcurves.write().unwrap();
+        let v = g.curves.entry(face_key).or_default();
+        if v.is_empty() {
+            v.push(curve);
+        } else {
+            v[0] = curve;
+        }
+    }
+
+    /// Replace the pcurves of `face_key` (seam overload
+    /// `BRep_Builder::UpdateEdge(edge, c1, c2, face)`).
+    pub fn set_pcurves_on(&self, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
+        self.pcurves.write().unwrap().curves.insert(face_key, curves);
+    }
+
+    /// `BRep_GCurve` range of the curve-on-surface on `face_key`.
+    pub fn pcurve_range_on(&self, face_key: usize) -> Option<(f64, f64)> {
+        self.pcurves.read().unwrap().ranges.get(&face_key).copied()
+    }
+
+    /// `BRep_Builder::Range(edge, face, first, last)`.
+    pub fn set_pcurve_range_on(&self, face_key: usize, range: (f64, f64)) {
+        self.pcurves.write().unwrap().ranges.insert(face_key, range);
+    }
+
+    /// Drop the curve-on-surface representation(s) on `face_key`.
+    pub fn remove_pcurves_on(&self, face_key: usize) {
+        let mut g = self.pcurves.write().unwrap();
+        g.curves.remove(&face_key);
+        g.ranges.remove(&face_key);
+    }
+
+    pub fn new() -> Self { Self { base: TShape::new(ShapeType::Edge), first: f64::NEG_INFINITY, last: f64::INFINITY, tolerance: 0.0, same_parameter: false, same_range: false, degenerated: false, pcurves: RwLock::new(EdgePcurves::default()) } } }
 impl WireShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Wire) } } }
 impl FaceShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Face), tolerance: 0.0, natural_restriction: false } } }
 impl ShellShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Shell) } } }
