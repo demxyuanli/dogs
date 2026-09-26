@@ -185,6 +185,17 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 231 —— 显式合并语义修好了 `--lib`（**1281/0 ✓**），但 **`torus_area_matches_occt` 仍红 ✗** ⇒ 回退，转**只读**诊断**
+
+第三版（`set_edge` 改为**只在 geom 携带 pcurve 时更新槽** ✓，不再置 `None` ✓）实测：
+```
+test result: ok.    1281 passed; 0 failed; ...        ← --lib 已修好 ✓
+test torus_area_matches_occt ... FAILED              ← 仍然红 ✗
+test result: FAILED. 10 passed; 1 failed; ...
+```
+⇒ **合并语义确实修掉了 `--lib` 那条回归** ✓（说明它命中了一个真实语义差异 ✓），但 **torus 的失败另有原因** ✗ ⇒ 按纪律**回退**（`git checkout -- tgeometry.rs`，树回绿 ✓）。
+**下一轮改为纯只读诊断**（不跑门禁 ✓）：直接读 `step_obj_area::torus_area_matches_occt` 的断言内容 ✓，确认它触发的是**哪一条 pcurve 访问路径**（`edge_pcurve`/`edge_pcurves`/`pcurve_range`/`edge_pcurve_reps`/`remove_pcurves_on_surface` ✓），再据此定点修 ✗ —— 而不是继续整族搬迁 ✗。
+**另记一条操作事项**：本轮有两个 **7.6 分钟、CPU 仅 0.03–0.16s 的 `cargo` 残留进程**卡住锁 ✗（应是先前 `job_kill` 杀 pwsh 时**孤立的 cargo 子进程** ✓ 仍持有 target 锁 ✗）⇒ 已 `Stop-Process -Force` 清掉 ✓（**清理后立即恢复正常** ✓）。**规则**：`job_kill` 之后若再次 `cargo` 长时间 0 CPU，先 `Get-Process cargo | Stop-Process -Force` ✓。
 **round 230 —— 🎯 定位到具体失败断言：**`torus_area_matches_occt`**（`step_obj_area`）⇒ 环面接缝/pcurve 路径**
 
 重新施加「边界载体法」后只跑 `step_obj_area`（`2>$null` 过滤 warning ✓）：
