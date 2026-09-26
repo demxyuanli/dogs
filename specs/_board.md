@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 200 —— ⚠️ 实测：两处启发式替换后 T0M **仍有退化面**，且**全部来自 stored pcurve** ⇒ 修法不足以解决 T-69（诚实记账）**
+
+我接手后：① 复原 `make_pcurve.rs`（`CurveType` 门冗余 ✓）；② 给 `pcurve.rs:271-279` 做同样的具体类替换 ✓；`cargo check` Finished（483 warnings = 基线 ✓）。然后用代理的 `examples/zz_probe_uv.rs`（routing 普查）跑 **T0M**：
+```
+ROUTING pairs=8591 stored_pcurve=4917 fresh_perform_some=8591 fresh_kind_line=5072
+        degenerate_faces=207  deg_faces_all_edges_stored=207
+```
+**关键读数**：`deg_faces_all_edges_stored = 207` = `degenerate_faces` ⇒ **这 207 个退化面的边**全部**已带 stored pcurve** ✗ ⇒ 它们的退化**不是**来自「新算」（我改的 `is_line`/`is_circle` 影响的是 fresh 路径 ✓），而是来自 **stored pcurve 的构造路径**（`fix_add_pcurve` → `project_curve_on_surface_perform`，即 `get_line` 那条 ✓✓）。
+⇒ **结论（必须先说清）**：`surface_projector.rs` + `pcurve.rs` 的具体类替换**是忠实且必要的修正** ✓（把两处自创启发式对齐到 `GeomAdaptor_Curve::load` ✓），**但它不足以解决 T-69** ✗ —— T-69 的主路径是 **stored pcurve**（ShapeConstruct/`get_line`），而那一层我们已逐层排除（本体/采样/缓存/`value_of_uv` 解析分支 ✓）却仍未找到分叉 ✗。
+**⇒ 下一轮的新线索（很可能就是它）**：`fix_add_pcurve` 的第三个参数 `is_seam` 决定「闭合/缝边是否需要 2 条 pcurve」（`:782-785` 的门 ✓），而端口的 `is_seam_use` 判据是**已知的自创项** —— 板内早已记录：「端口 `is_seam_use` = 同边在丝里出现两次（自创 ✗），而 OCCT `ShapeAnalysis_Edge::IsSeam` = **`BRep_Tool::IsClosed(edge, face)`**（该边在闭合面上有两条 pcurve）」✗。若 `is_seam` 被误判，闭合边可能只存 **1** 条 pcurve ⇒ `CheckLacking` 读到首末差 2π 的开路 pcurve ⇒ 与观察一致 ✓✓。**下一轮先查这一条**。
 **round 199 —— 🚨 发现第二处同名启发式：`pcurve.rs:271-279`（平面路径）也必须一并替换**
 
 `crates/occt-topo/src/pcurve.rs:271-279` 有与 `surface_projector.rs` **一模一样的两个私有启发式**：`is_line` = 「无界参数」、`is_circle` = 「周期 2π」；它们被 `make_pcurve_on_face` 用在 `:250/253`，而 `make_pcurve_on_face` 正是 **`make_pcurve_full` 对平面面的早退分支**（`make_pcurve_full`: `if kind == Plane { return crate::pcurve::make_pcurve_on_face(...) }`）以及其它调用方的入口 ✓。

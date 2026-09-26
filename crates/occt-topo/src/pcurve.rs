@@ -268,14 +268,27 @@ pub fn make_pcurve_on_face(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>,
     Ok(Arc::new(bs))
 }
 
-/// Whether a 3D curve is a line: unbounded parameter range.
+/// `Adaptor3d_Curve::GetType() == GeomAbs_Line`: a `Geom_Line` (or a trimmed
+/// one). This is the *concrete class* test of `GeomAdaptor_Curve::load`
+/// (`GeomAdaptor_Curve.cxx:252-311`), which unwraps a `Geom_TrimmedCurve` to
+/// its basis and then tests `gp_line()`. It replaces the earlier
+/// "unbounded parameter range" heuristic, which also matched an offset curve.
 fn is_line(curve: &dyn Curve) -> bool {
-    !curve.first_parameter().is_finite() || !curve.last_parameter().is_finite()
+    curve.gp_line().is_some()
 }
 
-/// Whether a 3D curve is a circle: periodic with period 2π.
+/// `Adaptor3d_Curve::GetType() == GeomAbs_Circle`: a `Geom_Circle` (or a
+/// trimmed one). Deliberately NOT a geometric test - a `Geom_BSplineCurve`
+/// whose image is a circle stays `GeomAbs_BSplineCurve` in OCCT
+/// (`GeomAdaptor_Curve.cxx:252-311`), and `ProjLib_ProjectedCurve::Project`
+/// only has analytic overloads for `GeomAbs_Line/Circle/Ellipse/Hyperbola/
+/// Parabola` (`ProjLib_ProjectedCurve.cxx:247-259`): `GeomAbs_BSplineCurve`
+/// and the rest break out (`:262-266`) into the general approximation. The
+/// earlier "periodic with period 2π" heuristic classified a B-spline circle
+/// as an analytic one, which produced an open `Geom2d_Line` spanning a full
+/// period for a closed edge (T-69).
 fn is_circle(curve: &dyn Curve) -> bool {
-    curve.is_periodic() && (curve.period() - 2.0 * std::f64::consts::PI).abs() < 1e-9
+    curve.gp_circ().is_some()
 }
 
 /// UV projection for an analytic face (plane or cylinder). Recovered from the
