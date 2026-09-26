@@ -406,7 +406,25 @@ OFF from Plane    -> Cylinder   done=1
 - **`occt-core` 的两处 2D 变换替身**（`d61dcaf` 的旁支）：`GpTrsf2d::set_mirror_ax2d` 合成结果为 `-R`（OCCT `gp_Trsf2d::SetMirror` `gp_Trsf2d.cxx:31-46` 为 `R`）；`GpLin2d`/`GpCirc2d`/`GpElips2d::transform` 只移 location、不动轴方向 ⇒ 当前在 `iges.rs` 内自建 OCCT 矩阵并按精确类型重建。**忠实解法是订正 `occt-core`**，登记待办。
 
 **未开始**：T-54（约束 Delaunay）、T-41（`bop_curved` 网格布尔摘除，需先修 T-82）、T-25/T-28（设计已出，待实施）、T-11 余项、T-67 余项（`ExtPExtS`/`ExtPRevS`）。
-### 3.1 红门禁（当前实测为红：2 条 `--lib` + 3 条集成 + 2 条属性/网格缺陷）
+### 3.1 红门禁（**round 102 实测：只剩 2 条**；下表为 2026-09-21 的历史快照）
+
+**当前实测（本会话逐项复跑）**：
+
+| 门禁 | 现状 | 证据（本会话实测） |
+|---|---|---|
+| `occt-topo --lib` | **1281 / 0** | round 6/8/9 多次复跑；T-01(`groove_cuts_cylinder`) 与 T-86(`sphere_iges_has_arc_and_solid`) **均已转绿** |
+| `step_geometry_parity` | **3 / 3** | `offset_geometry_is_consistent` 已绿（**T-05 / T-87 收口**）：`BRepGProp(data/Offset.step)` = 2610.501440 与 OCCT 一致；另两条同类 |
+| `phase19_integration` | **5 / 5** | **T-04 收口**（断言已按 OCCT 订正） |
+| `step_obj_parity` / `step_to_obj` / `step_obj_area` | 14/14 / 13/13 / 11/11 | round 6 全量 + round 8 复跑 |
+| `phase3…9 / 19 / 20` | 全绿 | round 6 全量 |
+| `export_data_obj` / `iges_check` | 16/16（v/f 计数与基线逐位一致）/ 全 ok | round 6 |
+| **`phase10_integration`** | **7 / 8（红）** | 仅 `curved_face_fillet_sphere_plane` = **T-88**，已分诊为 T-82 同族（T-80 链） |
+| **`bop_builder2_boss`** | **1 / 2（红）** | `boss_single_disc_base_merges_one_solid` = **T-03 / R2-8**，已定案 (b)（夹具不合法、非引擎缺口） |
+
+（`occt-core` 290/0/1i、`occt-math` 215/0/1i、`occt-geom` 143/0、`occt-geom2d` 72/0。）
+
+<details><summary>历史快照（2026-09-21，当时为 2 条 `--lib` + 3 条集成 + 2 条属性/网格缺陷）</summary>
+
 
 | ID | 门禁 / 用例 | 实测（2026-09-21） | 根因已定位？ | 归属根因批 |
 |---|---|---|---|---|
@@ -419,6 +437,8 @@ OFF from Plane    -> Cylinder   done=1
 | **T-87**（新） | 非用例：`brep_to_obj` 网格绕向（T-05 的病根） | `Offset.step` 网格 892 三角中 **6 个有符号体积为负**（‑116.67 vs +116.67，形状为凸 ⇒ 应全正） | **是**：面/壳朝向（与 round 9"面法向·wire 绕向 112/128 为负"同源） | — |
 
 > 其余门禁全绿：`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`phase20/3/4/5/6/7/8/9`、doc-tests 2/1i；五个 `--lib`：topo **1283/2**（= T-01 + T-86）、core 290(1i)、geom 143、geom2d 72、math 215(1i)；`iges_check` 18/18 ok；`export_data_obj` 16/16。
+
+</details>
 
 ### 3.2 根因批（修完才可能让 §3.1 转绿；建议按序）
 
