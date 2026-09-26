@@ -185,6 +185,20 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 166 —— 全语料 `SURFACE_CURVE`/`PCURVE` 普查：**失败语料恰好是「文件里完全没有 pcurve」的那一族****
+
+| 文件 | SURFACE_CURVE | PCURVE |
+|---|---|---|
+| Cone / Cube / Extrusion / Cylinder / rev | 1 / 12 / 12 / 2 / 12 | 4 / 24 / 24 / 6 / 24 |
+| **HoledPlate** / Sphere / Torus | **0 / 0 / 0** | **0 / 0 / 4** |
+| Offset / OffsetPlaneHoleEdge / Shape-1 / Shape-2 / Shape | 48 / 8 / 112 / 82 / 10 | 96 / 8 / 232 / 164 / 36 |
+| linkrods / screw | 99 / 19 | 216 / 44 |
+| ATU01038 / bottom / motoc / top | 880 / 698 / 484 / 730 | 1892 / 1442 / 1020 / 1490 |
+| **T0M / TDB / a3n00 / acs10** | **0 / 0 / 0 / 0** | **0 / 0 / 0 / 0** |
+
+⇒ **两族泾渭分明**：`data/occ/*.stp`（T0M/TDB/a3n00/acs10）**整个文件里一条 pcurve 都没有**，而 GT 族大多有（HoledPlate/Sphere 也没有，但它们**全部网格化成功** ✓）。
+⇒ 这解释了为何 T-69 的症状**只在 occ 语料**上出现：在这些文件里，**每条边的 pcurve 都只能由两端各自计算** ✓ ⇒ 计算路径不同就会分叉；而 GT 族里那些**有**存档 pcurve 的文件走的是「保留存档」路径（端口在这一环已被 round 163 的逐行核对证明忠实 ✓），所以 14/15 逐位一致 ✓。
+⇒ 也说明：**新方向（对齐 pcurve 计算路径）本质上是「补 occ 语料暴露的缺口」，而 GT 族的计数不受影响的可能性较高** —— 但**不变是硬验收**，仍需实测（round 165 已警示）。
 **round 165 —— ❗**推翻 (i) 前提**：`data/occ/T0M.stp` **根本没有 `SURFACE_CURVE`/`PCURVE`** ⇒ OCCT 的闭合 pcurve 是**算出来的**，题目从「保留存档」变成「对齐计算路径」**
 
 我对 `data/occ/T0M.stp`（4.09 MB）做纯文本普查：`includes("SURFACE_CURVE") === false`、`includes("PCURVE") === false` ⇒ **该文件零 `SURFACE_CURVE`、零 `PCURVE`**，所有边都是 `EDGE_CURVE`（**只有 3D 曲线**）✓。
