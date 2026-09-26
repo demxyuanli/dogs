@@ -164,6 +164,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 126 —— T-11 余项**收口判定**：剩余告警是「已移植但未接线」的**覆盖信号**，不是垃圾；不再做批量删除**
+
+抽样核查 481 条告警中占比最大的 `never used`（329 条 / 78 文件）：
+- `bop_occt_util.rs`（31 条）：`same_shape`=`TopoDS_Shape::IsSame`、`fence_add`/`list_append_unique`=`TopTools_MapOfShape/ListOfShape`、`reverse_shape`=`TopoDS_Shape::Reverse`、`oriented`/`as_solid`/`as_shell`/`as_wire`/`as_vertex`（`TopoDS::…` 向下转型）、`faces_of_shell`=`TopExp_Explorer(shell,FACE)`、`*_or_images`/`bind_images`（`BRepTools_History`）… —— **全是 OCCT/BRep 工具原语的忠实移植**，只是当前调用图没用上；
+- `geom_bnd_lib_elclib2d.rs`(12)/`_elclib_to3d.rs`(10)/`_spline_helpers.rs`(9)/`_sample2d.rs`(8)：2D `ElCLib` 值/D1、`ElCLib::To3d`、`GeomBndLib` 的 2D 盒/采样助手 —— 同为覆盖（3D 版本在用，2D 版本尚未接线）。
+
+⇒ **判定**：这类 `never used` 是**端口覆盖信号**（哪些 OCCT 能力已移植但尚未被消费），把它们删掉等于**降低 §3.3 的移植覆盖**，与审计的意图相反（对比 round 121 删掉的那批：那是 `clib2d` 的**重复**实现，删了不丢覆盖）。**T-11 余项到此收口**：噪声类（未用 import）已由三批从 **254** 降到约 **42**（累计 warning **846 → 481**），其余 481 条中的 329 条是覆盖信号，保留并作为「未接线移植件」的导航。
+
+后续若要继续压 T-11，只有两条正当路径：① 把已移植件**接线**（功能工作，不是清理）；② 逐项对照 `occt-core`/`occt-geom` 确认**重复**后删除（如 round 121 的 `clib2d` 先例），需逐个给证据，不做批量。
 **round 125 —— §3.1 最后一条红 **T-88 转绿**：`phase10_integration` 7/8 → **8/8**（夹具选边订正）**
 
 `tests/phase10_integration.rs::curved_face_fillet_sphere_plane` 的夹具按「z≈2 且是圆」选边，会先撞上 **plane/plane** 的圆（`fillet_edge_curved` 按设计拒绝，直边对归 `fillet::fillet_edge`）⇒ 报 `unsupported face pair (Plane, Plane)`。
