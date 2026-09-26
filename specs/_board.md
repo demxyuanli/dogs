@@ -140,6 +140,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 109 —— `collect_faces`/连接块实测：圆柱 draft 那组（6 面，含盘对）是好的；失败的是**后面一次 4 面装配**
+
+给 `ShellSplitter::collect_faces` 与 `make_connexity_blocks` 加探针后，`box∪cyl` 的 FUSE 共发生 **4 次** `ShellSplitter::perform`：
+
+```
+[zz-cf] out=[Plane×7]                                         → block n=7   （盒体单元，闭合 ✓）
+[zz-cf] out=[Plane#472/1, Plane#224/0, Cylinder#632/0, Cylinder#8/0]        → block n=4   <== 失败的那次
+[zz-cf] out=[Plane×7, Plane#472/0, Plane#472/1, Cylinder#8/0, Cylinder#8/1] → block n=11 （盒体 draft）
+[zz-cf] out=[Plane#472/1, Plane#224/0, Cylinder#632/0, Cylinder#8/0, Plane#216/0, Plane#216/1] → block n=6（圆柱 draft，**含盘对** ✓）
+```
+
+（`#N/ori` = 面种类 + `shape_key%1000` + 朝向 0=Forward/1=Reversed。）
+
+⇒ **两点结论**：
+1. **圆柱 draft 的 6 面组是完整的**（4 plane + 2 cylinder，含 `Plane#216/0` 与 `Plane#216/1` 的盘对），且**连成一个 n=6 的块** —— 连接块划分本身没问题；round 108 的怀疑（盘与环带不在同一块）**被否定**。
+2. 真正失败的是**另一处 n=4 的 `ShellSplitter` 调用**：输入只有 `[盖/1, 盖/0, 环带/0, 环带/0]`（**没有盘**）。它不来自 `SplitSolid`（round 108 只测到 2 个：11 面的盒 draft 与 6 面的圆柱 draft），因此来自**后面的装配阶段**（把 split-solid 的 areas 装成最终实体那一步）。
+
+**下一步**：查出这次 n=4 调用的调用者（在 `bop_build_solids.rs`/`builder_solid.rs` 的装配路径上打调用点标签），并核对「圆柱的 areas 集合」里为何没有盘（盘是 `Internal` 面、被 `perform_internal_shapes` 收进内壳后，装配时是否被漏掉），对照 `BOPAlgo_BuilderSolid::PerformAreas`/`PerformInternalShapes`（`BOPAlgo_BuilderSolid.cxx`）与 `BOPAlgo_BOP::BuildSolid`。
 **round 108 —— 订正 round 107：圆柱 draft 的面集合是**对的**（6 面含盘对）；短缺发生在 `ShellSplitter` 的**连接块**一级**
 
 在 `bop_split_solids_occt.rs` 的 `SplitSolid` 构造点插桩（打印每个 `a_s` 的 `in_parts` 长度与 `a_sfs` 种类）后实测，`box∪cyl` 的 FUSE 只有 **2 个** `SplitSolid`：
