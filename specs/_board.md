@@ -140,6 +140,28 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 114 —— 三处忠实修复**同时**满足 T-80 GT 与圆柱面积，但红 `offset_geometry_is_consistent`（OCCT 实测值 2610.501440 → 159.174024）⇒ 已按「回归即回退」整体撤回**
+
+本轮把 round 112/113 的三处改动**一起**落地后实测（提交 `d0b5279`，随后 `db52d9e` 撤回）：
+
+| 改动 | 依据 |
+|---|---|
+| `occt-geom2d/src/circle.rs`：`Geom2dCircle::reverse()` 由「半径取负」改为 `position().y_reverse()` | `Geom2d_Conic::Reverse()` `Geom2d_Conic.cxx:37-42`（`Geom2d_Circle` 仅覆盖 `ReversedParameter`，`Geom2d_Circle.hxx:95`）≡ `gp_Circ2d::Reverse()` `gp_Circ2d.hxx:166-171`；`ReversedParameter(U)=2π−U` `Geom2d_Circle.cxx:122` |
+| `occt-topo/src/primitives.rs`：底盖边改为 `oriented(Orientation::Reversed)`（出现级，不改形状） | `BRepPrim_Builder::AddWireEdge(W,E,false)` `BRepPrim_Builder.cxx:184-192`（`EE.Reverse(); Add(W,EE);`）+ `BottomWire` `BRepPrim_OneAxis.cxx:761` |
+| `occt-topo/src/brep_gprop_full/integration.rs`：删掉 `FaceGauss::new` 里按 `is_reversed` 的**第二次**边界边反转 | `wires_of_face` 已把面朝向复合进 wire、`edges_of_wire` 再复合到边 = `TopExp_Explorer(aFace, EDGE)`（CumOri）的那个视图；再反转即重复折算 |
+
+**同时达成的两条**（实测）：
+- `BRepPrimCylinder(1,2)` 表面积 = **18.849556 = 6π** ✓（两端盖各 +π，`brep_gprop_full::tests::cylinder_surface_volume` 绿）；
+- `box∪cyl` FUSE = **8 faces / vol 8.502655 / area 26.513274** = GT 与手算**逐位一致** ✓；分面 f5 环面 3.497345、f6 圆柱 2.513274、f7 顶盖 0.502655、f0..f4 各 4.000000；
+- 门禁：`occt-topo --lib` **1281/0**、`occt-geom2d --lib` **72/0**、`step_obj_parity` **14/14**、`step_to_obj` **13/13**、`step_obj_area` **11/11**、`phase3/9/19/20` 全绿、`--all-targets` 0 error。
+
+**但**：`step_geometry_parity::offset_geometry_is_consistent` = `159.174024` vs **OCCT 实测 2610.501440** ✗（与 round 6 同一现象）。该值是早前用 GT 探针对**已安装 OCCT** 实测得到的硬 oracle，故本轮判为回归并整体回退（`git revert d0b5279` → `db52d9e`；复测 `step_geometry_parity` **3/3**、`--lib` **1281/0** 已复原）。
+
+⇒ **两条 OCCT 真值互相冲突**，必须找到区分它们的性质：
+- `data/Offset.step` 的 6 个**圆柱面** `same_sense=.F.`（Reversed）需要那次额外反转；
+- 圆柱**端盖**（平面，`TopoDS::Reverse` 造出的 Reversed）不需要。
+
+**下一步（判别实验）**：对这两类面 dump 同一个 `FaceGauss` 输入三元组——① `face.orientation()`/`is_reversed`；② `wires_of_face`+`edges_of_wire` 得到的边**视图**朝向；③ `build_arc` 取的 pcurve（`pcurves.len()` 与走 `PCurve` 还是 `PCurve2`，`integration.rs:286-323`）与 `pc_dot_3d`——找出到底哪一项不同（重点怀疑**闭合曲面**的缝边：`data/Offset.step` 的圆柱有 seam，端盖平面没有，而 `BRepGProp_Face::Load(edge)` 对 `IsCurveOnClosedSurface` 才走 `PCurve2`）。
 **round 113 —— 端盖侧对读 OCCT 完成：OCCT 端盖 = +Z 平面 + `ReverseFace` + **wire 里该边是 Reversed 的「出现」**；端口这边把「Reversed」丢了（`make_wire` 重定向），故忠实 `reverse()` 修法仍差一个端盖面积**
 
 对读 `BRepPrim_OneAxis.cxx` 的原始控制流（新增事实）：
