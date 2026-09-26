@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 198 —— 请代理停手交回，我接手收口（修法已认出并核验）**
+
+理由：T-69 的**根因修复**已在 round 195/196 认出并端到端核验（`surface_projector.rs` 把两处**自创启发式**换成 OCCT 的**具体类测试**：`is_line → curve.gp_line().is_some()`、`is_circle → curve.gp_circ().is_some()`；`gp_circ` 无几何兜底 ⇒ B 样条边必 `None` ⇒ 不再走等参臂 ⇒ 不再产出开路 2π 直线 ✓），剩下的都是**机械验收** ✓，由我做更可靠（剩余 ~93 轮）。
+**已请代理只回 ≤10 行**（是否停手 / 已有 T0M 指标与文件组合 / `surface_projector.rs` 是否仅那两处 / 是否同意 `make_pcurve.rs` 冗余 / 有无我不知道的发现），并明确**它不必再跑门禁或清临时件** ✓。
+
+**我的收口步骤（待其确认停手后执行）**：
+1. `make_pcurve.rs` 恢复 HEAD（`git checkout -- crates/occt-topo/src/pcurve_full/make_pcurve.rs`），保留 `surface_projector.rs` 的改动；
+2. `cargo check --all-targets`（0 error）+ `--lib`（1281/0）；
+3. **T0M**：`uv_degenerate_faces`、`--mesh` 失败面（目标 162→0）、`v/f` vs GT `60050/66576`；其余 `data/occ` 4 个 vs GT（TDB 72687/78470、a3n00 11052/12324、acs10 37247/46494、ATU01038 18049/22504）；
+4. **15 个 `data/*.step` 三列表**（改前 / 改后 / OCCT 探针 —— 与 OCCT 一致才算过）；
+5. 门禁：`step_obj_parity` 14/14、`step_to_obj` 13/13、`step_obj_area` 11/11、`step_geometry_parity` 3/3、`phase5/9/10/19/20`、`export_data_obj`（含 `data/occ`）对拍；
+6. 全绿 ⇒ 用**显式路径**提交（只提 `surface_projector.rs` + 记账）；任一回归 ⇒ 停手报数、**回退** ✓；
+7. 清理代理临时件（`examples/zz_probe_uv.rs`、`specs/occt_probe/zz_t69_*`、`data/occ_t69/`）。
 **round 197 —— 复核 round 178 的「参数陷阱」：**对本语料无影响****
 
 用**端口的** `lin=1.580408`（端口自身 bbox）重跑 `data/occ/ATU01038.step` 的 OCCT `--mesh`，结果 **与用 OCCT 自身 `lin=1.54718` 完全相同**：`faces=386 nodes=18049 triangles=22504` ✓。
