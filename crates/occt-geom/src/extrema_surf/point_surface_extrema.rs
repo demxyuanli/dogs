@@ -10,10 +10,12 @@
 //! * `Extrema_ExtPElS` — ported ([`super::point_plane_extrema`] and friends,
 //!   `Extrema_ExtPElS.cxx`), used for Plane/Cylinder/Cone/Sphere/Torus
 //!   (`cxx:276-290`).
-//! * `Extrema_ExtPExtS` / `Extrema_ExtPRevS` — **UNPORTED**. OCCT builds them
-//!   for SurfaceOfExtrusion / SurfaceOfRevolution (`cxx:292-343`); the port has
-//!   neither, so those two types fall through to the general arm (recorded at
-//!   the `match` below).
+//! * `Extrema_ExtPExtS` / `Extrema_ExtPRevS` — **ported**
+//!   ([`super::ExtremaExtPExtS`] / [`super::ExtremaExtPRevS`]). OCCT builds
+//!   them for SurfaceOfExtrusion / SurfaceOfRevolution (`cxx:292-343`); both
+//!   arms now dispatch to them and merge their solutions through
+//!   `TreatSolution`, and each falls back to the general engine when its basis
+//!   curve is not analytically computable.
 //! * `Extrema_GenExtPS` — **ported** (`cxx:346`) in
 //!   [`super::gen_ext_ps::ExtremaGenExtPs`]: `GetGridPoints` + `BuildGrid` +
 //!   `BuildTree` + `FindSolution` (`Extrema_GenExtPS.cxx:275-1193`).
@@ -190,6 +192,12 @@ pub struct ExtPs<'a> {
     /// The ported `Extrema_GenExtPS` engine (`cxx:261` Initialize, `cxx:346`
     /// Perform). `None` until `initialize` runs.
     gen: Option<ExtremaGenExtPs<'a>>,
+    /// `myExtPExtS` (`Extrema_ExtPS.hxx`), built lazily by the extrusion arm
+    /// of `Perform` exactly as OCCT does (`cxx:293-305`).
+    ext_p_ext_s: Option<ExtremaExtPExtS<'a>>,
+    /// `myExtPRevS`, the mirror of `myExtPExtS` for the revolution arm
+    /// (`cxx:320-331`).
+    ext_p_rev_s: Option<ExtremaExtPRevS<'a>>,
 }
 
 impl<'a> Default for ExtPs<'a> {
@@ -228,6 +236,8 @@ impl<'a> ExtPs<'a> {
             flag: ExtremaExtFlag::MinMax,
             algo: ExtremaExtAlgo::Grad,
             gen: None,
+            ext_p_ext_s: None,
+            ext_p_rev_s: None,
         }
     }
 
@@ -327,8 +337,10 @@ impl<'a> ExtPs<'a> {
             s, nb_u, nb_v, self.uinf, self.usup, self.vinf, self.vsup, self.tolu, self.tolv,
         );
         self.gen = Some(gen);
-        // `cxx:263-264` (`myExtPExtS.Nullify(); myExtPRevS.Nullify();`) has no
-        // Rust counterpart: the two engines do not exist here.
+        // `myExtPExtS.Nullify(); myExtPRevS.Nullify();` (`cxx:263-264`): the two
+        // reduced engines are rebuilt lazily by `Perform`.
+        self.ext_p_ext_s = None;
+        self.ext_p_rev_s = None;
     }
 
     /// `Extrema_ExtPS::Perform` (`cxx:269-367`).
@@ -376,16 +388,12 @@ impl<'a> ExtPs<'a> {
                 self.treat_all(s, sols);
                 return;
             }
-            ExtPsSurfaceType::SurfaceOfExtrusion | ExtPsSurfaceType::SurfaceOfRevolution => {
-                // UNPORTED (T-67 remainder): OCCT builds `Extrema_ExtPExtS` /
-                // `Extrema_ExtPRevS` here (`cxx:292-343`) — the
-                // extrusion/revolution engines are not ported, so this arm runs
-                // the general `Extrema_GenExtPS` engine instead. That is *not*
-                // what OCCT runs for these two types: `Extrema_ExtPExtS` /
-                // `Extrema_ExtPRevS` reduce the search to the generating curve
-                // (`Extrema_ExtPExtS.cxx`, 630 lines; `Extrema_ExtPRevS.cxx`,
-                // 599 lines), where OCCT's result sets and increments can differ.
-                self.perform_general(s, p);
+            ExtPsSurfaceType::SurfaceOfExtrusion => {
+                self.perform_ext_ps(s, p);
+                return;
+            }
+            ExtPsSurfaceType::SurfaceOfRevolution => {
+                self.perform_rev_ps(s, p);
                 return;
             }
             ExtPsSurfaceType::BSpline
@@ -421,6 +429,78 @@ impl<'a> ExtPs<'a> {
                     .map(|i| {
                         let (u, v, q) = gen.point(i);
                         (u, v, q, gen.square_distance(i))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (done, sols)
+        };
+        self.done = done;
+        for (u, v, q, val) in sols {
+            self.treat_solution(s, u, v, &q, val);
+        }
+    }
+
+
+    /// `Extrema_ExtPS::Perform`, `GeomAbs_SurfaceOfExtrusion` arm
+    /// (`Extrema_ExtPS.cxx:292-317`): build `Extrema_ExtPExtS` the first time
+    /// (`cxx:293-301`), otherwise re-`Perform` it (`cxx:304`), then merge every
+    /// solution through `TreatSolution` (`cxx:307-314`).
+    fn perform_ext_ps(&mut self, s: &'a dyn Surface, p: &GpPnt) {
+        if self.ext_p_ext_s.is_none() {
+            self.ext_p_ext_s = Some(ExtremaExtPExtS::new(
+                p, s, self.uinf, self.usup, self.vinf, self.vsup, self.tolu, self.tolv,
+            ));
+        } else if let Some(e) = self.ext_p_ext_s.as_mut() {
+            e.perform(p);
+        }
+
+        let (done, sols) = {
+            let Some(e) = self.ext_p_ext_s.as_ref() else {
+                return;
+            };
+            let done = e.is_done();
+            let sols: Vec<(f64, f64, GpPnt, f64)> = if done {
+                (1..=e.nb_ext())
+                    .map(|i| {
+                        let (u, v, q) = e.point(i);
+                        (u, v, q, e.square_distance(i))
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (done, sols)
+        };
+        self.done = done;
+        for (u, v, q, val) in sols {
+            self.treat_solution(s, u, v, &q, val);
+        }
+    }
+
+    /// `Extrema_ExtPS::Perform`, `GeomAbs_SurfaceOfRevolution` arm
+    /// (`Extrema_ExtPS.cxx:319-343`): the mirror of
+    /// [`ExtPs::perform_ext_ps`] for `Extrema_ExtPRevS`.
+    fn perform_rev_ps(&mut self, s: &'a dyn Surface, p: &GpPnt) {
+        if self.ext_p_rev_s.is_none() {
+            self.ext_p_rev_s = Some(ExtremaExtPRevS::new(
+                p, s, self.uinf, self.usup, self.vinf, self.vsup, self.tolu, self.tolv,
+            ));
+        } else if let Some(e) = self.ext_p_rev_s.as_mut() {
+            e.perform(p);
+        }
+
+        let (done, sols) = {
+            let Some(e) = self.ext_p_rev_s.as_ref() else {
+                return;
+            };
+            let done = e.is_done();
+            let sols: Vec<(f64, f64, GpPnt, f64)> = if done {
+                (1..=e.nb_ext())
+                    .map(|i| {
+                        let (u, v, q) = e.point(i);
+                        (u, v, q, e.square_distance(i))
                     })
                     .collect()
             } else {

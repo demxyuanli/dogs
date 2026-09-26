@@ -4,10 +4,11 @@
 //!
 //! The analytic point-to-surface solvers (`Extrema_ExtPElS`: plane, sphere,
 //! cylinder, cone, torus) are ported exactly from the OCCT `.cxx`. Revolved
-//! and extruded surfaces (`ExtPRevS` / `ExtPExtS`) are heavy (they reduce to a
-//! point-curve extrema on the generating curve) and are routed through the
-//! general Newton path, exactly as OCCT does for the non-analytically-
-//! computable cases.
+//! and extruded surfaces (`ExtPRevS` / `ExtPExtS`) are **ported** too
+//! (`revolution_point_extrema.rs` / `extrusion_point_extrema.rs`): they reduce
+//! to a point-curve extrema on the generating curve and fall back to the
+//! general `Extrema_GenExtPS` engine exactly where OCCT does
+//! (`IsCaseAnalyticallyComputable` false).
 //!
 //! The general point-surface engine **is ported**: [`gen_ext_ps`] is
 //! `Extrema_GenExtPS` (8.0.0, 1195 lines): `Initialize`, the per-geometry
@@ -21,9 +22,10 @@
 //! the type dispatch to the analytic `Extrema_ExtPElS` arms, the ±1e10 window
 //! clamp, the `nbU/nbV` sampling counts with the 300 sample `IsoIsDeg` rule,
 //! `TreatSolution`'s periodic normalization and window test, and the
-//! `IsDone`/`NbExt` semantics. Its remaining unported engine is
+//! `IsDone`/`NbExt` semantics. Its two reduced engines
 //! `Extrema_ExtPExtS` / `Extrema_ExtPRevS` (extrusion/revolution,
-//! `Extrema_ExtPS.cxx:292-343`), recorded at its dispatcher.
+//! `Extrema_ExtPS.cxx:292-343`) are ported and dispatched to; the shared
+//! `Extrema_ExtPElC` reduction lives in `elementary_curve_extrema.rs`.
 //!
 //! **UNPORTED (audit A15 / T-67 remainder)** — `point_surface_newton_all*`
 //! (`numeric_extrema.rs`) is still a **substitute, not a port**: a 24x24 grid
@@ -47,8 +49,8 @@ mod prelude {
 pub(crate) use std::cmp::Ordering;
 
 pub(crate) use occt_core::elib::{clib, slib};
-pub(crate) use occt_core::gp::{GpAx3, GpCone, GpCylinder, GpDir, GpLin, GpPln, GpPnt, GpSphere, GpTorus, GpVec};
-pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION};
+pub(crate) use occt_core::gp::{GpAx1, GpAx2, GpAx3, GpCone, GpCylinder, GpDir, GpLin, GpPln, GpPnt, GpSphere, GpTorus, GpTrsf, GpVec};
+pub(crate) use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION, RESOLUTION, SQUARE_CONFUSION};
 
 pub(crate) use crate::curve::Curve;
 pub(crate) use crate::extrema::ExtremaPair;
@@ -58,13 +60,18 @@ pub(crate) use crate::surface::Surface;
 
 
 mod analytic_solvers;
+mod elementary_curve_extrema;
+mod extrusion_point_extrema;
 mod gen_ext_ps;
 mod numeric_extrema;
 mod point_surface_extrema;
+mod revolution_point_extrema;
 pub use analytic_solvers::*;
+pub use extrusion_point_extrema::*;
 pub use gen_ext_ps::*;
 pub use numeric_extrema::*;
 pub use point_surface_extrema::*;
+pub use revolution_point_extrema::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

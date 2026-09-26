@@ -31,8 +31,10 @@
 //!   [ExtremaGenExtPs::perform] instead of maintaining the tree. Bnd_Sphere
 //!   itself is occt_core::bnd::BndSphere.
 //!
-//! Extrema_ExtPExtS / Extrema_ExtPRevS are **UNPORTED** (T-67 remainder);
-//! see the dispatch note in point_surface_extrema.rs (Extrema_ExtPS.cxx:292-343).
+//! Extrema_ExtPExtS / Extrema_ExtPRevS are ported in
+//! extrusion_point_extrema.rs / revolution_point_extrema.rs and dispatched from
+//! point_surface_extrema.rs (Extrema_ExtPS.cxx:292-343); they drive this engine
+//! whenever their basis curve is not analytically computable.
 
 use super::prelude::*;
 use super::*;
