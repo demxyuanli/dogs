@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 208 —— 把现成 GT 工具交给新代理（step ① 的对照不必从零写）**
+
+- `specs/occt_probe/wires_probe.exe <file.stp> [面序]`：**面结构** oracle（每面 wire 数 / 每 wire 边数 / 多 wire 面数 / **`uv_degenerate_faces`**，OCCT 对 T0M = **0** ✓）；
+- `specs/occt_probe/occt_probe.exe <file.step> --wires`：逐面 wire/edge 结构 + **pcurve 类型/参数** ✓；
+- `crates/occt-topo/examples/zz_probe_uv.rs`：**端口侧** routing 普查，打印 `degenerate_faces=<N>` ✓ —— 即我量「T0M 207 → 0」的同一把尺 ✓（临时件，收尾与 `specs/occt_probe/zz_t69_*`、`data/occ_t69/` 一并删除 ✓）。
+跑法：`$env:THIRDPARTY_DIR='D:\source\occt-8.0.0\3rdparty-vc14-64'` + `cmd /c "cd /d D:\source\occt-8.0.0 && call env.bat vc14 64 && <exe> ..."` ✓。
+（`CheckWire` 的 `isuopen/isvopen` OCCT 不对外暴露 ⇒ 逐面对照可自写小 C++ 探针直接调公开头 `ShapeFix_Face.hxx`，或用 `wires_probe` 的面结构间接验证 ✓。）
 **round 207 —— 接线位置的**结论**：端口没有面级修复 pass ⇒ 必须**新建调用点****
 
 - `step/` 里**没有**面遍历的修复循环（grep `faces_of(` 只命中 `tests.rs` ✗）；
