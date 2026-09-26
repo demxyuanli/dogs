@@ -164,6 +164,24 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 130 —— T-54 与 T-90 **合并为一个程序**并定位机制：端口用「四叉树细分 / UV 网格」顶替了 OCCT 的「边离散化 + 约束 Delaunay」**
+
+读 `crates/occt-topo/src/brepmesh.rs`（自述是 `BRepMesh_IncrementalMesh` 的移植）+ `brep_exchange.rs:44`（导出走 `meshing::incremental_mesh::IncrementalMesh::from_deflection`）后确认端口网格机制：
+
+| | 端口 | OCCT |
+|---|---|---|
+| 平面面 | `planar_face_mesh` → `planar_polygon_triangulate`（**耳切/质心径向排序/带孔桥接**，非凸即回落 UV 网格） | 边离散化 + **约束 Delaunay**（`BRepMesh_Delaun.cxx` 2348 行 + `BRepMesh_DelaunayBaseMeshAlgo.cxx`） |
+| 曲面面 | `adaptive_face_mesh`：**递归 UV 四叉树**（中点偏离 > deflection 就四分，深度封顶，每格出 2 三角） | 同上：`BRepMesh_EdgeDiscret` 按 deflection+角度定每边点数，再约束 Delaunay（`BRepMesh_IncrementalMesh.cxx`） |
+| 采样点数 | 端口另行计算 | `BRepMesh` 的 `compute_nb_samples*` 公式 —— **端口其实已移植该族（`geom_bnd_lib_sample2d.rs` 的 `compute_nb_samples2d`/`compute_nb_u/v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`），但 round 45 实测**全部 `never used`** ⇒ 没接进网格管线 |
+
+⇒ **这就是 round 129 那张 GT 表系统性偏差的机制**（曲面偏多/偏少取决于四叉树与 Delaunay 的差异；`Shape.step` 只有 OCCT 的 ~1/3）。
+
+**合并后的执行方案（一个程序，取代 T-54 单列）**：
+1. 把已移植但未接线的**采样点数**族接进 `meshing/`（先只改「点数来源」，三角化暂不动）⇒ 用 `--mesh` GT 表看每面 nodes 是否向 OCCT 靠；
+2. 移植 **`BRepMesh_Delaun`（约束 Delaunay）+ `BRepMesh_DelaunayBaseMeshAlgo`**，替换 `planar_polygon_triangulate` 与 `adaptive_face_mesh` 的曲面细分；
+3. 按 round 129 的策略**把 §2 的 `export_data_obj` 期望值更新为 OCCT GT**（Cube 24/12 已一致；其余按 GT 表逐文件对齐），并把该门禁的定位写成「以 GT 表为保真度、以逐位为哨兵」。
+**验收**：`data/*.step` 的 `--mesh 0.1` 逐文件与 OCCT GT 表在容差内一致（先 Cube 逐位、再柱/球/环/rev/screw/linkrods/Shape）。
+**体量提示**：这是数千行量级（Delaun 2348 + algo + EdgeDiscret），与 T-28 前 3 步同属「可委派但需独占文件」的大项 —— 与当前在跑的 `brep_gprop_full` 无文件重叠（`brepmesh.rs`/`meshing/`/`wireframe.rs`），**可在基线复绿后并行委派**。
 **round 129 —— 新增 GT 能力（`--mesh`）并查出**网格管线与 OCCT 系统性不符**：§2 的 `export_data_obj` 逐位门禁是**端口内部**一致性，不是 OCCT 保真度**
 
 ① **探针跑通 + 新能力**：GT 探针此前因缺 64 位依赖 DLL 起不来；本轮确认正确配方（记录备用）：
