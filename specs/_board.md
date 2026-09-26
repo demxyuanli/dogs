@@ -140,6 +140,26 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 112 —— T-80 体积残差的**真根因**已定位并验证到 GT 精度；但忠实修法会暴露端口端盖构造的第二处偏差（已按「回归即回退」撤回，留给下一轮）**
+
+① **根因**：`crates/occt-geom2d/src/circle.rs` 的 `Geom2dCircle::reverse()` 写成 `self.pos.radius = -self.pos.radius`（把半径取负 ⇒ 参数映射 `u -> u + π`：点集相同、**绕向不变**）。OCCT 是 `Geom2d_Conic::Reverse()`（`Geom2d_Conic.cxx:37-42`，`Geom2d_Circle` 只覆盖 `ReversedParameter`，见 `Geom2d_Circle.hxx:95`）≡ `gp_Circ2d::Reverse()`（`gp_Circ2d.hxx:166-171`）：**把局部系的 Y 方向取负**，与 `ReversedParameter(U) = 2*pi - U`（`Geom2d_Circle.cxx:122`）一致。
+    影响面：`build_arc`（`brep_gprop_full/integration.rs:286-323`，忠实 `BRepGProp_Face::Load(edge)`）对 Reversed 边正是走 `pc.reversed()` + `reversed_parameter` ⇒ 环内孔（Reversed 圆）的边界积分**加**而不是**减**（`[zz-arc]` 实测：方框 +4.000000 + 内圆 **+0.502655** = 4.502655）。
+
+② **忠实修法（已验证）**：`reverse()` 改为 `let mut a = *self.pos.position(); a.y_reverse(); self.pos.set_axis(a);`（= `gp_Ax22d(loc, X, -Y)`）。实测 `box∪cyl`：
+```
+Fuse: faces=8 vol=8.502655 area=26.513274     <== 与 GT **逐位一致**（8 faces / 8.50265；面积 26.513274 亦等于手算）
+   f5 Plane area=3.497345   <== 环面 = 4 - pi*r^2 ✓（修前 4.502655）
+   f6 Cylinder 2.513274 ✓   f7 Plane 0.502655 ✓   f0..f4 各 4.000000 ✓
+Cut:  faces=9 vol=8.653451                       （仍偏，见下）
+```
+
+③ **但会红一个既有 lib 测试**（故已 `git checkout` 回退，未提交）：`brep_gprop_full::tests::cylinder_surface_volume` 报 `area 12.566371 (want 18.849556 = 6*pi)` ⇒ 差的正是 2*pi = 两个**端盖**的面积：忠实反转后两个端盖的带符号贡献变成 +pi 与 -pi 而**相互抵消**（只剩侧面积 4*pi）。
+    ⇒ 说明端口的**端盖构造**（`primitives.rs`，`2db1574` 依 `BRepPrim_OneAxis.cxx:488-503`/`:751-770` 造的「+Z 平面 + `ReverseFace` + 圆存 Reversed」）当年是为了**补偿这个坏掉的 `reverse()`** 才自洽；忠实反转把补偿暴露成反向。
+
+④ **下一步（二选一或都要）**：
+   (a) 重查 `BRepPrim_OneAxis::BottomFace/TopFace`：OCCT 用的平面法向到底是 +Z 还是 -Z、`Reverse()` 加在哪一步、圆的边朝向如何；把端口端盖改成「不依赖坏 `reverse()`」的忠实形态；
+   (b) 查 `BRepGProp_Gauss::Compute`（`BRepGProp_Gauss.cxx:533-652`）是否把**面朝向**折算进积分（即 `compute_s_inertia_elem`（`brep_gprop_full/gauss.rs:233`）是否必须以翻转后的法向参与、且对符号敏感），据此判断该抵消是构造问题还是积分符号约定问题。
+   判定标准：修好后 `cylinder_surface_volume`（6*pi）与 `box∪cyl` 的 `8 faces / 8.502655` **同时成立**。
 **round 111 —— ✅ T-37 落地（`1fad000`）；T-80 余项 = z=+1 顶环面的**面积把孔加进去了****
 
 ① **T-37 完成并提交**（`1fad000`，27 文件 +280/−75）：57 处 `surface_closest_params` 分类为「定义 1 + 非调用 20 + 调用点 36」，其中**迁移 17**（走忠实 `project_point_on_surface`，逐处附 OCCT 行号）、**保留 UNPORTED 19**（端口独有启发式，原样网格 + 就地注明）；并落地**窗口化 `ProjPS`**（搜索域 = `brep_uv_bounds::uv_box_of_face`、容差 = `pon_s_tolerance`、`ExtPs` MIN 标志、not-done ⇒ `Err`、删网格回落与平面快速路径），配合改动仅 `point_face_state` 把 Err 映射为 `Ok(None)`（忠实 `IntTools_Context.cxx:647-670`）。门禁全绿：`--lib` 1281/0、parity 14/14、area 11/11、geometry 3/3、phase9 8/8、phase10 7/8（既有 T-88）、phase20 5/5、boss 1/2（既有 T-03）、`export_data_obj` **16/16 v/f 计数逐位一致**。**工作树至此全清**。
