@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 210 —— 缺口同源证据：`a3n00`/`acs10` 的退化面**同样全部来自 stored pcurve****
+
+用端口侧同一把尺（`examples/zz_probe_uv.rs`）跑其余 `data/occ` 文件：
+```
+a3n00    pairs=1070  stored_pcurve= 622  fresh_perform_some=1070  fresh_kind_line= 565  degenerate_faces= 46  deg_faces_all_edges_stored= 46
+acs10    pairs=3689  stored_pcurve=2214  fresh_perform_some=3689  fresh_kind_line=2414  degenerate_faces=110  deg_faces_all_edges_stored=110
+T0M      pairs=8591  stored_pcurve=4917  fresh_perform_some=8591  fresh_kind_line=5072  degenerate_faces=207  deg_faces_all_edges_stored=207
+```
+⇒ 三个文件的签名**完全同型**：`deg_faces_all_edges_stored == degenerate_faces` ⇒ **退化面全部来自 stored pcurve**（即 `fix_add_pcurve → project_curve_on_surface_perform` 存下的那条）✓ ⇒ **同一机制**（面级缝结构缺失 ⇒ 自闭合边 wire ⇒ `CheckLacking` 读整周期 gap ✓）。
+**⇒ 可检验的预测**：`FixMissingSeam` 落地后，三个文件的 `degenerate_faces` **应同时**趋 0（207 / 46 / 110 → 0 ✓），且 `v/f` 同时向各自 GT 靠 ✓；**若只有 T0M 变好**，说明 a3n00/acs10 另有成因 ✗（届时分流）。这也给 `T-25` 之外的收口提供了**三文件联合验收** ✓。
 **round 209 —— 记账：T-69 不止 T0M —— `data/occ` 里还有两个文件明显偏短**
 
 代理给的三列表（端口 vs OCCT GT，参数口径见 `specs/_occt_mesh_gt.md`）：
