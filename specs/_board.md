@@ -185,6 +185,18 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 186 —— 🔑 定位「谁存下那条 pcurve」：`fix_add_pcurve` 用 `project_curve_on_surface_perform` ⇒ T-69 主修在**投影/缓存**层，不是 `make_pcurve_full` 的解析等参臂**
+
+读 `shhealing/wire_fix.rs:771-815`（`ShapeFix_Edge::FixAddPCurve` 的移植）——**这才是把缺失 pcurve 算出来并存下的那一步**：
+- `:782-785` 已挂 pcurve 直接返回；`:794` 平面不计算；`:797-810` 取 3D 曲线/参数/`preci`(=`ShapeFix_Edge.cxx:499`)/两端顶点容差(`cxx:521-531`)；
+- **`:811` 起调用 `project_curve_on_surface_perform(...)`** ✓（即 `ShapeConstruct_ProjectCurveOnSurface`，**含 `get_line`**）。
+同理 `src/brep_surface.rs:316-358` 的 `edge_pcurve_on_face` 也优先走它 ✓。
+⇒ **`CheckLacking` 读到的那条 pcurve 出自 `project_curve_on_surface_perform` / `get_line` 路径** ✓；**不是** `pcurve_full::make_pcurve_full` 的解析等参臂（`:128-139`）✗（后者只服务 BOP/pave 等其它调用方，不参与本症状）。
+
+**⇒ 结论与对代理的指示（已发）**：
+1. `make_pcurve.rs` 里正在做的 `CurveType`/`curve_type` 分派（round-169 A）**本身忠实且有价值** ✓，但**不是 T-69 症状的那一处**；不要把它当作 T-69 的验收依据。
+2. **主修落在** `project_curve_on_surface_perform`/`get_line` 的**输入**上：`get_line` 本体（`:445-658`）与采样（`generateCurvePoints`，端口 `surface_projector.rs:390-406`）**均已逐行核对忠实** ✓ ⇒ 剩下就是**投影与缓存**：`SurfaceProjectorWithCache::ValueOfUV`/`NextValueOfUV`（对应 `ShapeAnalysis_Surface::ValueOfUV`/`NextValueOfUV`）与 `myCache` 命中状态 ✓；要求对照 OCCT 逐行核，并用探针打印两侧同批量的 `(u,v)`、`Gap()≈myGap`、`isFromCache`、`saved_point_num`。
+3. 若代理有反证（例如探针显示这些边在 `fix_add_pcurve` 之前就已挂上等参臂的 pcurve）⇒ 按数字再定。
 **round 185 —— `get_line` 与 `generateCurvePoints` 双侧都忠实 ⇒ 分叉大概率在**输入**；代理改走 round-169 的 A 路线**
 
 **我继续把 `get_line` 读完**：端口 `projection_cache.rs:646-658` 与 OCCT `cxx:1079-1086`（2D 弦等速 ⇒ 精确 `Geom2d_Line`）+ `cxx:1088-1101`（其余给两极点 degree-1 B 样条）**逐条对应** ✓ ⇒ 函数体本身忠实 ✓。
