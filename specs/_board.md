@@ -185,6 +185,20 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 161 —— 🎯 T-69 根因实测定位：**周期面闭合边的 pcurve 2D 未闭合** ⇒ `CheckLacking` 误报 ⇒ `FixLacking` 忠实造出重合边 ⇒ 零面积 wire**
+
+代理交回三条互相印证的硬数字（我接受，且与我 round 158 的逐行结论**不矛盾**：代码忠实，问题在**它读到的 pcurve**）：
+
+**① A/B 反例（仅 env 跳过 `wire_fix.rs:3275` 的 `fix_lacking_all`，其余不动）**：T0M `v=46517 f=46967` → **`v=50117 f=47802`** ⇒ `fix_lacking` **确实在开火并改变结果** ✓。
+**② 端口 162 失败面的面类型分布**：**Cylinder 97 / Cone 47 / Torus 18** = 162，**100% 是周期面**；而我文件侧「wire 内顶点对重复」96 个的分布是 B样条 45 / 平面 40 / 柱 8 / 球 2 / 环 1 ⇒ **两者几乎不相交**（失败面里 0 平面 0 B样条，而那 85 个在端口全部成功）⇒ 对账结论 **A≈0、B≈0、C≈162（端口自造）**，且「失败集恰等于周期面集」本身就是根因指纹。
+**③ 根因（实测）**：OCCT 导入 T0M 有 **172 条「单闭合边 wire」**，其 pcurve **首末 2D 点完全重合**（`d2d = 9.7e-16 … 1.8e-15`，按面类型 Plane 166 / Sphere 5 / Cylinder 1）⇒ `CheckLacking`（`ShapeAnalysis_Wire.cxx:1711-1793`）算 `myMax2d = |p2d2−p2d1|² ≈ 0 < tol2d²` ⇒ **不报 lacking、`FixLacking` 什么都不做**。而端口同一条闭合边是**开路 2D 线**（face 709：`edge1852 (−π,0.36)→(π,0.36)`，首末差 **2π**）⇒ `myMax2d = 39.5 ≫ tol2d²` ⇒ 报 lacking ⇒ **忠实地**造出 `Geom2d_Line(p2d1,p2d2)`（`ShapeFix_Wire.cxx:3852-3862`）⇒ 与既有边完全重合 ⇒ 零面积 wire ⇒ `domain=0` ✓✓。
+
+**④ 立项判断**：**不需要**移植 `FixSelfIntersection`（分歧发生在 `CheckLacking` **之前**，那段走不到）✓。
+**⑤ 最小子集**：让**周期面上的闭合边**其 pcurve **2D 闭合**（首末点重合）；落点在 `pcurve_full` 的解析构造或 `step/` 的 `SURFACE_CURVE` 关联，**不在** `shhealing` 的 `fix_lacking` 本体。**已授权代理实施**（并强调：先给出 OCCT 侧该 pcurve 的真实来源与类型 + 行号；只改构造点，**禁止**在 `check_lacking`/`fix_lacking` 侧加任何跳过/特判/阈值；只动这一处）。
+**⑥ 已知的第二缺口**：跳过 `fix_lacking` 也只到 50117/47802（GT 60050/66576）⇒ 修好第 1 处后再测，不要一次动两处。
+
+**另：我独立复算了当前工作树的 `--lib`**（用**独立 target 目录** `.target-gate/verify` 避开两个代理的 cargo 锁，含 T-28 代理的 4 文件改动）：**1281 passed / 0 failed** ✓ —— 基线干净，可以动手。
+（代理本轮净改动 0，`shhealing`/`meshing` 干净，env 门已撤；仅保留只读 `--wires` 探针。）
 **round 160 —— 文件侧普查口径修正 + 按面类型分布（供 T-69 对账）**
 
 上一轮我报的「75」是**只算「顶点对重复但 EDGE_CURVE 不同」**的那一档；把「连 EDGE_CURVE 也相同」的 21 并回来，**合计 96 个面**有 wire 内顶点对重复：
