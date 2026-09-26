@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 213 —— 依赖预检：`FixMissingSeam` 所需的端口件齐备 ✓（无缺件风险）**
+
+- `BRepTools::UVBounds` 等价物：`algo_tools/construct.rs:186`/`:197` ✓；
+- `ShapeAnalysis::AdjustByPeriod` 等价物：`shhealing/wire_fix.rs:38` 的 `adjust_by_period` ✓（另有 `pcurve_full/projection_cache.rs:273` 的 `adjust_to_period` ✓）；
+- 构造/装配：`builder.rs` 的 `make_edge:94`、`make_edge_segment:116`、`make_edge_circle:158`、`make_wire:163`、`add_edge:72`、`add_wire:74`、`add_edge_vertices:147` ✓；
+- 面/串级辅助：`shhealing/wire_fix.rs` 的 `check_pcurves_and_shift`/`fix_degenerated_all` + `topo_tools_full` 的 `edges_of_wire`/`wires_of_face` ✓。
+⇒ 移植**无缺件风险** ✓；若主体里遇到端口确实没有的 OCCT 调用，按纪律标 `UNPORTED` + 行号并报回（不自造替代 ✓）。已告知代理；并要求回一份「将新增/修改的文件清单 + 面级调用点位置」的计划 ✓。
 **round 212 —— ✅ 相关性**完整**：五个 `data/occ` 文件的 `degenerate_faces` 与离 GT 的距离单调对应（0/1 ⇒ 逐位一致）**
 
 补齐 ATU01038 的读数（上一轮为空是探针输出被过滤所致 ✓）：
