@@ -68,6 +68,8 @@ pub mod extrema_ss;
 pub mod intana;
 pub mod gcpnts;
 pub mod convert_bspl;
+pub mod convert_approx_curve;
+pub use convert_approx_curve::GeomConvertApproxCurve;
 pub mod surface_of_revolution;
 pub mod surface_of_linear_extrusion;
 pub mod projlib;

@@ -397,6 +397,42 @@ impl Curve for GeomOffsetCurve {
     fn first_parameter(&self) -> f64 { self.basis.first_parameter() }
     fn last_parameter(&self) -> f64 { self.basis.last_parameter() }
 
+    /// `GeomAdaptor_Curve::Intervals` (`cxx:466-556`) on the offset branch:
+    /// `GeomAbs_C0 -> C1`, `C1 -> C2`, `C2 -> C3`, `C3`/`CN -> CN` on a basis
+    /// adaptor, keeping only basis break points strictly inside the range and
+    /// forcing the range ends (`cxx:538-555`). `GeomAbs_G1`/`G2` raise
+    /// `Standard_DomainError` (`cxx:518-521`); the `Curve` trait has no raise
+    /// channel, so those fall back to the `CN` arm.
+    fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
+        // `GeomAbs_Shape` codes (`occt_core::kernel::geomabs::Shape`):
+        // C0=0, G1=1, C1=2, G2=3, C2=4, C3=5, CN=6.
+        let base_s = match continuity {
+            0 => 2, // GeomAbs_C0 -> GeomAbs_C1
+            2 => 4, // GeomAbs_C1 -> GeomAbs_C2
+            4 => 5, // GeomAbs_C2 -> GeomAbs_C3
+            _ => 6, // C3 / CN (and the unraisable G1 / G2) -> GeomAbs_CN
+        };
+        let first = self.first_parameter();
+        let last = self.last_parameter();
+        let mut out = vec![first];
+        for u in self.basis.parameter_intervals(base_s) {
+            if u > first && u < last {
+                out.push(u);
+            }
+        }
+        out.push(last);
+        out
+    }
+
+    /// `GeomAdaptor_Curve::NbIntervals` (`cxx:371-456`) on the offset branch,
+    /// from the same basis break points as [`Self::parameter_intervals`].
+    fn nb_intervals(&self, continuity: u8) -> i32 {
+        self.parameter_intervals(continuity)
+            .len()
+            .saturating_sub(1)
+            .max(1) as i32
+    }
+
     /// `Geom_OffsetCurve::EvalD3` (`Geom_OffsetCurve.cxx:342-380`) →
     /// `Geom_OffsetCurveUtils::EvaluateD3` (`pxx:495-529`) → [`Self::calculate_d3`].
     /// The basis fourth derivative is `EvalDN(U, 4)` (`pxx:510`) and feeds the

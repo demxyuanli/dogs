@@ -5,18 +5,18 @@
 //!
 //! Curve→Bezier is already covered by `crate::bspline_to_bezier` and is not
 //! duplicated here; `GeomConvert_ApproxCurve` (adaptive spline approximation)
-//! is covered pragmatically by `curve_approx` (polyline) plus
-//! `curve_reparam::resample_bspline` (interpolation) and is deferred.
+//! is ported in `crate::convert_approx_curve` on top of
+//! `crate::adv_approx::ApproxAFunction3d` (the `AdvApprox_ApproxAFunction`
+//! port) and `AdvApprox_PrefAndRec` cutting.
 //!
 //! `GeomConvert_CompCurveToBSplineCurve` is ported (constructor + `Add`,
 //! `GeomConvert_CompCurveToBSplineCurve.cxx:32-273`); it needs
 //! `Geom_BSplineCurve::IncreaseDegree` and `Geom_BSplineCurve::RemoveKnot`
 //! (both ported on `bspline_curve.rs`).
 //!
-//! **UNPORTED (audit A8 / task T-44)**: the arms of
-//! `GeomConvert::CurveToBSplineCurve` that need `GeomConvert_ApproxCurve`
-//! (the `Geom_OffsetCurve` arms, see the notes on `curve_to_bspline_curve`
-//! further down).
+//! Both `Geom_OffsetCurve` arms of `GeomConvert::CurveToBSplineCurve`
+//! (`GeomConvert.cxx:340-354`, `:436-450`) call `GeomConvert_ApproxCurve(C,
+//! 1e-4, C2, 16, 14)`; they are wired to `crate::convert_approx_curve`.
 //!
 //! `GeomConvert::CurveToBSplineCurve` itself is ported for the trimmed
 //! line/conic arms (including the `RationalC1` + `U2-U1>=6` split-stitch arm)
@@ -37,7 +37,9 @@ use occt_core::gp::{
 
 use crate::bspline_curve::GeomBSplineCurve;
 use crate::bspline_surface::GeomBSplineSurface;
+use crate::convert_approx_curve::GeomConvertApproxCurve;
 use crate::curve::Curve;
+use occt_core::kernel::geomabs::Shape;
 
 // ---------------------------------------------------------------------------
 // Knot splitting (GeomConvert_BSplineCurveKnotSplitting /
@@ -417,9 +419,9 @@ fn bspline_copy(c: &dyn Curve) -> Result<GeomBSplineCurve, ConvertError> {
 /// `Parameterisation` defaults to `Convert_TgtThetaOver2`
 /// (`GeomConvert.hxx:270-272`).
 ///
-/// **UNPORTED arm** (it returns [`ConvertError::Unported`]): a
-/// `Geom_OffsetCurve` (`:340-354`, `:436-450`) needs
-/// `GeomConvert_ApproxCurve`.
+/// The two `Geom_OffsetCurve` arms (`:340-354`, `:436-450`) approximate the
+/// (possibly trimmed) curve through `GeomConvert_ApproxCurve(C, 1e-4, C2, 16,
+/// 14)` and raise `Standard_ConstructionError` when there is no result.
 ///
 /// The other arms are ported: the trimmed line/conic arms (including the
 /// `RationalC1` + `U2 - U1 >= 6` split-and-stitch, `:224-242`, `:262-280`),
@@ -584,9 +586,15 @@ pub fn curve_to_bspline_curve(
                 .map_err(|_| ConvertError::DomainError)?;
             return Ok(bs);
         }
-        // `cxx:340-354`: `GeomConvert_ApproxCurve(C, 1e-4, C2, 16, 14)`.
+        // `cxx:340-354`: `GeomConvert_ApproxCurve(C, 1e-4, C2, 16, 14)` on the
+        // original (possibly trimmed) curve `C`; a missing result raises
+        // `Standard_ConstructionError` (`:352`).
         if basis.offset_curve().is_some() {
-            return Err(ConvertError::Unported);
+            let appr = GeomConvertApproxCurve::new(c, 1.0e-4, Shape::C2, 16, 14);
+            return match appr.curve() {
+                Some(curve) => Ok(curve.clone()),
+                None => Err(ConvertError::ConstructionError),
+            };
         }
         // `throw Standard_DomainError("No such curve")` (`cxx:355-358`).
         return Err(ConvertError::DomainError);
@@ -633,9 +641,14 @@ pub fn curve_to_bspline_curve(
         return bspline_copy(c);
     }
 
-    // `cxx:436-450`: `GeomConvert_ApproxCurve` for a `Geom_OffsetCurve`.
+    // `cxx:436-450`: `GeomConvert_ApproxCurve(C, 1e-4, C2, 16, 14)`; a missing
+    // result raises `Standard_ConstructionError` (`:448`).
     if c.offset_curve().is_some() {
-        return Err(ConvertError::Unported);
+        let appr = GeomConvertApproxCurve::new(c, 1.0e-4, Shape::C2, 16, 14);
+        return match appr.curve() {
+            Some(curve) => Ok(curve.clone()),
+            None => Err(ConvertError::ConstructionError),
+        };
     }
 
     // `throw Standard_DomainError("No such curve")` (`cxx:451-454`).

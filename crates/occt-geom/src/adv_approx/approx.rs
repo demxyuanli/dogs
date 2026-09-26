@@ -9,6 +9,7 @@ use occt_core::gp::GpPnt;
 use occt_core::kernel::geomabs::Shape;
 use occt_core::precision::PCONFUSION;
 
+use super::cutting::{Cutting, DichoCutting};
 use super::simple::{EvalFn, SimpleApprox};
 
 /// `AdvApprox_ApproxAFunction::PrepareConvert` (`cxx:123-311`).
@@ -177,7 +178,7 @@ fn prepare_convert(
     tab_continuity
 }
 
-/// Result of a 3D `ApproxAFunction` run.
+/// Result of a 3D `ApproxAFunction` run (`Perform` `cxx:663-956`).
 pub struct ApproxAFunction3d {
     pub done: bool,
     pub has_result: bool,
@@ -185,6 +186,13 @@ pub struct ApproxAFunction3d {
     pub knots: Vec<f64>,
     pub mults: Vec<i32>,
     pub degree: i32,
+    /// `MaxError(3, 1)` (`cxx:1004-1035`): maximum over the produced spans of
+    /// the error bound accumulated by `PrepareConvert` (the per-span
+    /// `SimpleApprox::MaxError` plus its `Prec`/`Suivant` continuity terms).
+    pub max_error: f64,
+    /// `AverageError(3, 1)` (`cxx:1039-1070`): mean over the produced spans of
+    /// `SimpleApprox::AverageError`.
+    pub average_error: f64,
 }
 
 /// Result of `AdvApprox_ApproxAFunction` with `Num1DSS=2` (`Approx_SameParameter`).
@@ -209,16 +217,54 @@ impl ApproxAFunction3d {
         tol: f64,
         eval: EvalFn<'_>,
     ) -> Result<Self, ()> {
+        Self::approx(
+            first,
+            last,
+            Shape::C1,
+            max_deg,
+            max_seg,
+            tol,
+            &DichoCutting,
+            eval,
+        )
+    }
+
+    /// `AdvApprox_ApproxAFunction` (`cxx:632-659`) / `Perform`
+    /// (`cxx:663-956`) / `Approximation` (`cxx:364-599`) for
+    /// `Num1DSS = Num2DSS = 0`, `Num3DSS = 1`.
+    ///
+    /// `continuity` is the requested `GeomAbs_Shape`; `Perform` maps it to the
+    /// `ContinuityOrder` 0/1/2 and raises `Standard_ConstructionError`
+    /// otherwise (`cxx:687-701`). `cut` is the caller's `AdvApprox_Cutting`
+    /// (`cxx:526`). `max_deg` is clamped to 14 (`cxx:673-676`) and a cut span
+    /// is raised to `2*ContinuityOrder + 1` (`cxx:570-575`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn approx(
+        first: f64,
+        last: f64,
+        continuity: Shape,
+        max_deg: i32,
+        max_seg: i32,
+        tol: f64,
+        cut: &dyn Cutting,
+        eval: EvalFn<'_>,
+    ) -> Result<Self, ()> {
         if last < first || max_deg < 1 || max_seg < 0 {
             return Err(());
         }
+        let continuity_order = match continuity {
+            Shape::C0 => 0i32,
+            Shape::C1 => 1i32,
+            Shape::C2 => 2i32,
+            // `cxx:699-700` throws `Standard_ConstructionError`.
+            _ => return Err(()),
+        };
         let max_deg = max_deg.min(14);
-        let continuity_order = 1i32;
         let num_max_coeffs = (max_deg + 1).max(2 * continuity_order + 2);
         let max_degree = num_max_coeffs - 1;
-        let (nb_gauss, work_degree) = jacobi_parameters(Shape::C1, max_degree, 1)?;
-        let jac = JacobiPolynomial::new(work_degree, Shape::C1)?;
-        let mut approx = SimpleApprox::new(3, 1, Shape::C1, work_degree, nb_gauss, jac.clone())?;
+        let (nb_gauss, work_degree) = jacobi_parameters(continuity, max_degree, 1)?;
+        let jac = JacobiPolynomial::new(work_degree, continuity)?;
+        let mut approx = SimpleApprox::new(3, 1, continuity, work_degree, nb_gauss, jac.clone())?;
         let local_dim = [3i32];
         let local_tol = [tol];
         let mut intervals = vec![0.0; (max_seg as usize) + 1];
@@ -232,6 +278,7 @@ impl ApproxAFunction3d {
         let mut coeff = vec![0.0; (max_seg * num_max_coeffs * 3) as usize];
         let mut err_max = vec![0.0; max_seg as usize];
         let mut err_avg = vec![0.0; max_seg as usize];
+        // `cxx:415-419`: `MaxSegments < 1 || |Last - First| < 1e-9` -> ErrorCode 1.
         if max_seg < 1 || (last - first).abs() < 1.0e-9 {
             return Err(());
         }
@@ -248,15 +295,19 @@ impl ApproxAFunction3d {
                 error_code = 1;
                 break;
             }
+            // `cxx:505-519`: the error must be satisfied on the single subspace.
             let ok_tol = approx.max_error(0) <= tol;
             if ok_tol {
                 num_curves += 1;
             } else {
                 let a = intervals[num_curves as usize];
                 let b = intervals[num_curves as usize + 1];
-                let large = (b - a).abs() >= 20.0 * PCONFUSION;
-                let tmil = 0.5 * (a + b);
+                // `cxx:526`: `Large = CutTool.Value(a, b, TMIL)`.
+                let mut tmil = 0.0;
+                let large = cut.value(a, b, &mut tmil);
                 if nupil < max_seg && large {
+                    // `cxx:532-545`: insert TMIL as the new right end of the
+                    // current interval and shift the remaining stack.
                     is_cut = true;
                     let from = num_curves as usize + 1;
                     for i in (from..=nupil as usize).rev() {
@@ -268,12 +319,14 @@ impl ApproxAFunction3d {
                 }
                 num_curves += 1;
             }
+            // `cxx:561-566`.
             err_max[(num_curves - 1) as usize] = approx.max_error(0);
             err_avg[(num_curves - 1) as usize] = approx.average_error(0);
             let mut the_deg = approx.degree();
             if is_cut && the_deg < 2 * continuity_order + 1 {
                 the_deg = 2 * continuity_order + 1;
             }
+            // `cxx:577-584`.
             num_coeff[(num_curves - 1) as usize] = the_deg + 1;
             let canon = jac.to_coefficients(3, the_deg, approx.coefficients());
             let f = ((the_deg + 1) * 3) as usize;
@@ -284,7 +337,6 @@ impl ApproxAFunction3d {
                 }
             }
         }
-        let _ = (&err_max, &err_avg);
         if error_code != 0 && error_code != -1 {
             return Ok(Self {
                 done: false,
@@ -293,16 +345,20 @@ impl ApproxAFunction3d {
                 knots: Vec::new(),
                 mults: Vec::new(),
                 degree: 0,
+                max_error: 0.0,
+                average_error: 0.0,
             });
         }
+        if num_curves <= 0 {
+            return Err(());
+        }
+        // `cxx:782-788`: force a minimum degree of 1 (PRO5474).
         for i in 0..num_curves as usize {
             num_coeff[i] = num_coeff[i].max(2);
         }
-        let mut poly_iv = vec![[-1.0, 1.0]; num_curves as usize];
-        for i in 0..num_curves as usize {
-            poly_iv[i] = [-1.0, 1.0];
-        }
+        let poly_iv = vec![[-1.0, 1.0]; num_curves as usize];
         let true_iv = intervals[..=num_curves as usize].to_vec();
+        // `cxx:790-802`.
         let continuity = prepare_convert(
             num_curves,
             max_degree,
@@ -317,6 +373,7 @@ impl ApproxAFunction3d {
             &local_tol,
             &mut err_max,
         );
+        // `cxx:804-811`.
         let conv = CompPolynomialToPoles::new(
             num_curves,
             3,
@@ -330,6 +387,14 @@ impl ApproxAFunction3d {
         if !conv.done {
             return Err(());
         }
+        // `cxx:923-943`: `MaxError(3, 1)` is the maximum over the produced
+        // spans of the error bounds accumulated by `PrepareConvert`;
+        // `AverageError(3, 1)` is the mean of the per-span average errors.
+        let max_error = (0..num_curves as usize)
+            .map(|i| err_max[i])
+            .fold(0.0f64, f64::max);
+        let average_error =
+            (0..num_curves as usize).map(|i| err_avg[i]).sum::<f64>() / num_curves as f64;
         let poles = conv
             .poles
             .iter()
@@ -343,6 +408,8 @@ impl ApproxAFunction3d {
             knots: conv.knots,
             mults: conv.mults,
             degree: conv.degree,
+            max_error,
+            average_error,
         })
     }
 }
