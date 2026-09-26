@@ -140,6 +140,15 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 106 —— 实测 T-37 的 ProjPS 修法：行走**已选对盘**，但 T-80 仍不变（必要非充分，缺口后移到壳装配）**
+
+在 T-37 的 `project_point_on_face` 改动**已在工作树**（可编译）的状态下实测（探针用完即删，插桩已回退）：
+
+- ✅ **选面已对**：`[zz-d2]` 显示当前环带面的 `dbf=(0,0,1)`、候选为 `Plane dbf2=(0.9105,-0.4136,0) angle=90` 与 `Cylinder dbf2=(0,0,-1) angle=180` ⇒ **最小 = 90 = 盘** —— 与 OCCT `--dir2` 真值同构（OCCT：90 / −90 / 180 / 90 ⇒ 选盘）。即 round 101 的根因修法**确实修好了那一步**。
+- ❌ **T-80 仍不变**：`box∪cyl` FUSE 仍 `7 plane / 8.297870`（GT 8 faces / 8.50265）；CUT 9 面/8.955044；COMMON 空。
+- 缺口后移：`[zz-ss]` 显示**盒体 draft = `Solid/9f`（7 Forward + 2 Internal）**，而**圆柱 draft 仍 `Solid/5f` 全 Internal**。`[zz-w]` 行走轨迹：盒体 draft 走 7 面 → `refined=["7f/closed=true"]` ✓；**圆柱 draft 走 4 面 → `refined=["1f/closed=false","3f/closed=false"]`**（无闭合单元）。
+
+⇒ 现在的问题不再是「选错面」，而是**圆柱 draft 的这一次行走覆盖的面集合/`refine_shell` 切割**得不到两个闭合单元（应为 `{下环带, 底盖, 盘}` 与 `{上环带, 顶盖, 盘}`）。下一步：按 round 9 的探针配方 dump 圆柱 draft 行走每一步的 `a_mefp` 自由边集合、`is_boundary`/`a_nb_ways_inside` 与 `a_lf_connected` 顺序，对照 `BOPAlgo_ShellSplitter::SplitBlock`（`BOPAlgo_ShellSplitter.cxx:250-420`）逐点核对（尤其 `aBoundaryFaces` 的奇偶计数与 `isBoundary && aNbWaysInside==1` 分支）。
 **round 105 —— ✅ T-37 已把 round-101 的根因修法落进工作树（待其收尾后验证）**
 
 `crates/occt-topo/src/int_tools_full/context.rs::project_point_on_face` 已由 T-37 代理改写（+51/−17），逐项对照我 round 101 的要求：
