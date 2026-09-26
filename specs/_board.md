@@ -140,6 +140,25 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 94 —— ✅ 拿到 OCCT 的初始 `aDN`/`aDTgt`/`aDB`（截面圆 6 张面）**
+
+GT 探针新增 `--dir`（`build_run.bat data/Cube.step --dir`）：用公开件复算 `GetFaceDir` 的初始量 —— `BOPTools_AlgoTools3D::GetNormalToFaceOnEdge(eo, f, t, aD, ctx)` 得 `aDN`（**已含面朝向翻转**）、`BOPTools_AlgoTools2D::EdgeTangent(eo, t, tau)` 得 `aDTgt`、`aDB = aDN ^ aDTgt`。截面圆（r=0.4, z=1，中点在 θ=0 即 P=(0.4,0,1)）：
+
+```
+face  type   face_ori  eo  aDN          aDTgt        aDB
+f0    Plane  F         R   (0,0,1)      (0,1,0)      (-1,0,0)   # 盘，朝内径向
+f1    Cyl    R         F   (-1,0,0)     (0,-1,0)     (0,0,1)
+f2    Plane  F         F   (0,0,1)      (0,-1,0)     (1,0,0)    # 盘，朝外径向
+f3    Cyl    F         R   (-1,0,0)     (0,1,0)      (0,0,-1)
+f4    Cyl    F         F   (-1,0,0)     (0,-1,0)     (0,0,1)
+f5    Plane  R         R   (0,0,1)      (0,1,0)      (-1,0,0)   # 盘，朝内径向
+```
+
+**用法/推论**：`aDTgt` 已随边视图朝向翻转（`eo=R` 给 +θ、`eo=F` 给 −θ）。端口 `edge_tangent_3d` 同样按 Reversed 翻转，所以**初始 `aDB` 的结构与端口一致**；`aDTgt2` 的规则 = 「候选的边视图朝向 == 当前边的朝向则保留 `aDTgt`，否则反向」（`BOPTools_AlgoTools.cxx:1052`，而该偶对由 `GetEdgeOff` 保证是反向视图）。以当前面 f3（`aOr=R`）为例按初始 `aDB` 算角：f1/f4（eo=F → 反转）180°、f0/f5（eo=R → 保留）270°、f2（eo=F → 反转）**90°** ⇒ 最小 = f2（**盘**），与 `--faceoff` 的实测真值一致。
+
+⇒ 端口的偏差因此收敛到两处之一：① `same_dir` 对闭合环给出 `t1==t2` 恒真（应为「候选视图朝向 == 当前朝向」），② `find_point_in_face` 对初始朝外的 `aDB`（如 f2）不翻转/不失败。**必须把 `FindPointInFace` 的复算也搬进探针**（`theContext->ProjPS(face)` + `aProjPL`，`BOPTools_AlgoTools.cxx:2160-2231`）才能定论，因为「初始 aDB」在 f1/f4/f2 上都可能被 refine 改变。
+
+**下一步**：① 探针里复算 `FindPointInFace`（含 `aProjPL` 的构造 `GeomAPI_ProjectPointOnSurf(aPL=Px^nDTgt, bounds)`）与 `GetFaceDir` 的最终 `aDB`；② 对拍端口 `get_face_dir` 的最终 `db`；③ 修 `same_dir`/`find_point_in_face` 后用 `--faceoff` 6 行验收 + 复跑全套门禁与 GT `8 faces / 8.50265`。
 **round 93 —— 逐字段对拍：缺口在 `GetFaceDir` 的 `aDB`（盘的双法向朝外）**
 
 修复后的完整链路探针（`zz-walk2` + `zz-off3/4`）：
