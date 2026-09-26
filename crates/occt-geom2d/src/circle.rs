@@ -1,6 +1,6 @@
 //! 2D circle curve. Source: `Geom2d_Circle.hxx`
 use occt_core::elib::{clib, clib2d};
-use occt_core::gp::{GpCirc2d, GpPnt2d, GpVec2d, GpTrsf2d};
+use occt_core::gp::{GpAx22d, GpCirc2d, GpDir2d, GpPnt2d, GpVec2d, GpTrsf2d};
 use crate::curve::Curve2d;
 
 #[derive(Debug, Clone)]
@@ -8,7 +8,15 @@ pub struct Geom2dCircle { pos: GpCirc2d }
 
 impl Geom2dCircle {
     pub fn new(c: GpCirc2d) -> Self { Self { pos: c } }
-    pub fn from_center_radius(center: GpPnt2d, radius: f64) -> Self { Self { pos: GpCirc2d::new(GpCirc2d::default().pos, radius) } }
+    /// Circle of `radius` centred at `center` in the standard frame
+    /// (`gp_Ax22d::from_xdir(center, +X)`, i.e. what
+    /// `gce_MakeCirc(P1, P2, P3)` / `GC_MakeArcOfCircle` end up with once the
+    /// location is fixed). Before this the `center` argument was dropped and
+    /// every such circle landed on the origin.
+    pub fn from_center_radius(center: GpPnt2d, radius: f64) -> Self {
+        let ax = GpAx22d::from_xdir(center, GpDir2d::default());
+        Self { pos: GpCirc2d::new(ax, radius) }
+    }
     pub fn circ(&self) -> &GpCirc2d { &self.pos }
 }
 

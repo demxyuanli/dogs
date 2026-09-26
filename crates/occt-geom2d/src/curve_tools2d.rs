@@ -18,8 +18,11 @@ pub fn arc_from_three_points(p1: GpPnt2d, p2: GpPnt2d, p3: GpPnt2d) -> Option<(G
     if r < 1e-12 {
         return None;
     }
+    // P2 enters only through the circumcentre: OCCT's
+    // `GC_MakeArcOfCircle(P1, P2, P3)` (`GC_MakeArcOfCircle.cxx:33-61`) sets
+    // `Alpha1 = 0.` and `Alpha3 = ElCLib::Parameter(C, P3)` with `sense = true`
+    // and leaves the `Alpha2` lines **commented out** (`cxx:41-51`).
     let a1 = (p1.y() - cy).atan2(p1.x() - cx);
-    let a2 = (p2.y() - cy).atan2(p2.x() - cx);
     let a3 = (p3.y() - cy).atan2(p3.x() - cx);
     Some((center, r, a1, a3))
 }
