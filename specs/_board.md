@@ -185,6 +185,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 190 —— T-25 步骤 1 的落点已具体化（读 `tshape.rs`）：**端口已有 `BRep_T*` 形结构**，只差曲线/曲面/pcurve 三类槽**
+
+读 `crates/occt-topo/src/tshape.rs:84-134`：端口**已经**有：
+```
+VertexShape { base: TShape, point: GpPnt, tolerance: f64 }                                  // BRep_TVertex
+EdgeShape   { base, first, last, tolerance, same_parameter, same_range, degenerated }        // BRep_TEdge
+FaceShape   { base, tolerance, natural_restriction }                                         // BRep_TFace
+WireShape / ShellShape / SolidShape / CompoundShape { base }
+```
+⇒ 缺的只是**几何本体**：`EdgeShape` 无 `curve`、`FaceShape` 无 `surface`、pcurve **全在** `GeometryRegistry` 侧表（键 = `shape_key`/指针 ✗），且 `TShape::drop`（`:73-82`）**专门**去清注册表项（T-25 之后这个钩子就该删掉 ✓）。
+**⇒ T-25 步骤 1（可动手时的第一批）**：
+1. 给 `EdgeShape` 加 `curve: Option<Arc<dyn Curve>>`、`FaceShape` 加 `surface: Option<Arc<dyn Surface>>`；
+2. 给 `EdgeShape` 加 **pcurve 槽**（按面键的有序表：`Vec<(usize, Arc<dyn Curve2d>)>` 或小 map）与 `pcurve_range`；
+3. 加**访问器**并把 `GeometryRegistry` 的**读**路径逐个改成走访问器（`global`(279)/`shape_key`(101) 这两类仪式性调用是**收益主体**，约 62%）；
+4. 每批（按 round 169 的 API 家族：pcurve 家族 / edge_geom / vertex_point / face_geom …）跑一次 `--lib` 1281/0 + 四道 STEP + `phase5/9/10/19/20`；
+5. 全部搬完后再删 `TShape::drop` 的注册表清理与 `GeometryRegistry` 本体。
+**前置不变**：等 T-69 代理落地、基线安静后再动（T-25 改 `TShape` 会让所有在改文件同时失效 ✗）。
 **round 189 —— ③ 被自己否掉（端口无 B 样条→解析转换）⇒ 提出**调用序列**层面的对照**
 
 - 端口 STEP 侧无「把 `B_SPLINE_CURVE_WITH_KNOTS` 认成解析曲线」的转换：`read_topology.rs:1308` 只在记录为 `CIRCLE` 时 `GeomCircle::new`（`format.rs:631`、`read_geometry.rs:452` 同，属回读/写出用途）；B 样条走 `transfer.rs:361` 产出 `GeomBSplineCurve` ✓ ⇒ **两层 3D 曲线类型应一致**，③ 大概率不成立 ✗。
