@@ -185,6 +185,23 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 147 —— T-87 现状复核（用一条**非 cargo**的复现法，可随时重跑）**
+
+**复现**（直接读 `output/Offset.obj`，无需编译 —— 已记入本板供以后每轮快速核对）：
+```js
+// 读 v/f 行 → 三角化 → 逐三角 (v0·(v1×v2))/6 求带符号体积，统计负号个数与总和
+```
+**实测（T-80 修复后的最新一次导出，`output/Offset.obj`）**：
+```
+vertices=712  triangles=892  signedvol=2207.9557  neg=6  pos=886
+```
+⇒ **T-87 仍然成立**（症状与立项时一致：892 三角中 **6 个带符号体积为负**），且另有第二症状：**网格发散体积 2207.96 vs 解析 2610.50**（低 ~15%），与板内 T-05/T-87 记录的 2208 vs 2610.5 吻合。
+
+**本轮定位到的边界**：
+- `brep_to_obj`（`brep_exchange.rs:116-119`）= `export_mesh` → `shape_mesh_to_obj` → `occt_core::io::obj::write_obj`；**写盘层不做绕向决策**，三角形顺序直接来自 `ShapeMesh`（即网格器逐面产出，`IncrementalMesh` 的 `MeshFace` 朝向/`orient3` 逻辑）。
+- 因此这 6 个反向三角只可能来自**网格器对特定面的绕向**（例如 UV 帧翻向的面、或 `Shape-2`/`Offset` 里那些靠**计算 pcurve** 的面），而**不是** OBJ 写出层。
+
+**下一步（下一轮做，需 cargo）**：在网格器侧按面统计「该面所有三角的带符号体积是否同号」，定位那 6 个反向三角属于哪个面、该面的 `SurfaceKind`/朝向/是否有 pcurve；再对照 OCCT `BRepMesh` 的面片写入（`Poly_Triangulation` 的三角形顺序由 `BRepMesh_Delaun` 依面朝向给出）判断是「网格器绕向」还是「面的朝向」问题。**验收**：`output/Offset.obj` 的 `neg=0`，且 15 文件 GT 表不变（网格计数不该动，只动绕向）。
 **round 146 —— T-54 **并入 T-69**：那 169 个失败面就是 T-69 已诊断的失败面集合**
 
 查板内既有行发现：**T-54 想要的「网格保真度」与「169 面」都不是新问题 —— 它们就是 §3.2 序 3 的 T-69**：
