@@ -140,6 +140,27 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 113 —— 端盖侧对读 OCCT 完成：OCCT 端盖 = +Z 平面 + `ReverseFace` + **wire 里该边是 Reversed 的「出现」**；端口这边把「Reversed」丢了（`make_wire` 重定向），故忠实 `reverse()` 修法仍差一个端盖面积**
+
+对读 `BRepPrim_OneAxis.cxx` 的原始控制流（新增事实）：
+
+- `TopFace`（`:448-484`）：`MakeFace(gp_Pln(myAxes.Translated(V)))`（法向 = 轴方向 **+Z**）→ `AddFaceWire(TopWire())` → `SetPCurve(ETOP, FTOP, gp_Circ2d(gp_Ax2d(P(0,0), +X), r))`（**标准圆**）。
+- `BottomFace`（`:488-503`）：**同样**用 +Z 平面（`axes = myAxes.Translated(V)`）→ **`ReverseFace`** → `SetPCurve(EBOTTOM, FBOTTOM, 同一个标准 gp_Circ2d)`。**没有用 -Z 平面**。
+- `TopWire`（`:726-747`）：`AddWireEdge(TopEdge(), true)` ⇒ 顶边**顺**。
+- `BottomWire`（`:751-773`）：`AddWireEdge(BottomEdge(), **false**)` ⇒ 底边**反**——而 `BRepPrim_Builder::AddWireEdge(wire, edge, theForward)` 的语义是把 `edge.Reversed()` 作为**出现**加进 wire，**不改边自身的几何**。
+
+⇒ ① 端口 `primitives.rs:275-293` 的「+Z 平面 + `ReverseFace`」**与 OCCT 一致** ✓（无需改）；② 但端口用 `bottom_circle.0.reverse()`（改形状）/ `oriented(Reversed)` 表达那个「反」，实测 `edges_of_wire` 最终仍报 **`[Forward]`** ⇒ **wire 构造把该出现朝向丢掉了**。端口用的是忠实 `BRepLib_MakeWire::Add`（`brep_lib_make_wire.rs`，批 100），它会为了成链**重新定向**边；而这里 OCCT 走的是 `BRep_Builder::Add`（原样加入、保留出现朝向）——**这是端盖这一处的真实分歧**。
+
+③ 实证链：把 `Geom2dCircle::reverse()` 改成忠实（`y_reverse`）后，`BRepPrimCylinder(1,2)` 的逐面实测为
+```
+f0 Plane ori=Reversed area=-3.141593 wires:[Forward]   <== 底盖变成 -pi
+f1 Plane ori=Forward  area=+3.141593 wires:[Forward]
+f2 Cylinder ori=Forward area=+12.566371
+total = 12.566371（应 6*pi）= 12.849556-2*pi  ← 两端盖抵消
+```
+⇒ 底盖的面积符号依赖「该边是否作为 Reversed 出现」；端口把出现朝向丢了，于是忠实反转后符号反转。
+
+**下一步（顺序明确）**：① 先确定 `make_wire` 在该处是否**必须**重定向：对照 `BRepLib_MakeWire::Add`（`BRepLib_MakeWire.cxx:123-453`）与 `BRep_Builder::Add` 的差别，给端盖这条单边 wire 用不重定向的忠实构造（OCCT 在 `BRepPrim_Builder` 里就是 `BRep_Builder::Add`）；② 再落 `Geom2dCircle::reverse()` 的忠实修法（round 112 已验证它使 `box∪cyl` 得到 **8 faces / vol 8.502655 / area 26.513274**，逐位等于 GT）；③ 判定标准：`brep_gprop_full::tests::cylinder_surface_volume`（6π）与 `box∪cyl` 的 `8 faces / 8.502655` **同时成立**。两处实验本轮均已回退（`--lib` 1281/0 复原）。
 **round 112 —— T-80 体积残差的**真根因**已定位并验证到 GT 精度；但忠实修法会暴露端口端盖构造的第二处偏差（已按「回归即回退」撤回，留给下一轮）**
 
 ① **根因**：`crates/occt-geom2d/src/circle.rs` 的 `Geom2dCircle::reverse()` 写成 `self.pos.radius = -self.pos.radius`（把半径取负 ⇒ 参数映射 `u -> u + π`：点集相同、**绕向不变**）。OCCT 是 `Geom2d_Conic::Reverse()`（`Geom2d_Conic.cxx:37-42`，`Geom2d_Circle` 只覆盖 `ReversedParameter`，见 `Geom2d_Circle.hxx:95`）≡ `gp_Circ2d::Reverse()`（`gp_Circ2d.hxx:166-171`）：**把局部系的 Y 方向取负**，与 `ReversedParameter(U) = 2*pi - U`（`Geom2d_Circle.cxx:122`）一致。
