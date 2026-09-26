@@ -164,6 +164,17 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
 
 **仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
+**round 123 —— T-11 第三批**失败并全量回退**（方法论教训）；T-80 根因**再前移**到 `associate_edge_pcurve` 的缝边注册**
+
+**① T-11 教训（务必记住）**：用 `cargo check --lib` 报告的 `unused import` 做批量清理是**错的**——`--lib` **不编译 `#[cfg(test)]` 模块**，于是「测试专用 import」（含**跨文件**：`bop_builder_heal.rs` 的 `use` 被 `bop_builder_tests*.rs` 用）会被误判为未用。我的两版解析器（名字级删除、整语句重建）都会打断测试编译；`cargo fix --lib --tests` 同样改动 100 个文件。**三次都已精确回退**（`git checkout` 到只剩 4 个意向改动文件），`--lib` 复原 **1281/0**。正确基础应是 `cargo test --lib --no-run` 的告警集合，或逐文件人工判断；本轮不再尝试自动批处理。
+
+**② T-80 根因再前移（子代理用逐面诊断定案）**：
+- 端口 `data/Offset.step` 逐面 Vinert：**12 个柱面贡献全等 ±87.610618（代数和 0）**、6 个平面 ±233.33（0）、8 个球面 +19.896753（Σ=159.174024 = 端口总数）。OCCT 对照：planes 1400 + cylinders **154.277/87.6106/20.944（三档）**=1051.327 + spheres 159.174 = **2610.501440**。⇒ 柱/平两两抵消，只剩球面。
+- **端口 `volume_properties` 对朝向完全不敏感**：四种强制重建（as-imported / ALL faces FWD / ALL REV / shell REV + faces REV）**全得 159.174024** ⇒ **朝向修正（ShapeFix 面/壳定向）对端口体积零效果**，所以「移植 ShapeFix 换取 2610.5015」这条路径不成立。
+- 把 `integration.rs` 那次反转临时改回可得 2610.501436，且 ALL-FWD=+159.174 / ALL-REV=−159.174 ⇒ 它实际作用在 `build_arc` 的 `pcurves.len()>=2 && reversed → PCurve2` **缝边侧选择**（`BRep_Tool.cxx:327-373`）。
+
+⇒ **已改派（选 1）**：先查 `step/read_topology.rs::associate_edge_pcurve`/`order_seam_pcurves`/`is_seam_curve`/`nb_oe` 的 pcurve **注册顺序与缝两侧取值**（对照 `StepToTopoDS_TranslateEdgeLoop.cxx:645-667`/`:786-793`、缝判定 `StepToTopoDS_GeometricTool.cxx:104-116`）；**同时必须修好「朝向敏感」这条性质**（OCCT 整体反转 ⇒ −2610.501440）。**验收三条**：(a) 逐面对拍 OCCT 表（planes 1400 / cylinders 三档和为 1051.327 / spheres 159.174 ⇒ Σ=**2610.501440**）；(b) 反转后 **−2610.501440**；(c) `--lib` 1281/0 + parity 14/14 + step_to_obj 13/13 + area 11/11 + geometry 3/3 + phase19 5/5 + export 16/16 逐位一致。
+**ShapeFix 三段（`ShapeFix_Face` 3259 + `ShapeFix_Shell` 1727 + `ShapeFix_Solid` 749 行）仍是真实缺口**，已在 OCCT 侧实测能改变 Offset 体积（2610.50/1559.17/−2610.50/2611.19 四态），但**只有在端口 gprop 的朝向/缝边修好后才可判其收益**，故暂缓。
 **round 122 —— §3.4 T-11 余项（第二批）：清 `bop_builder_*` 家族的未用 import，warning 699 → 602**
 
 warning 分类统计（本轮实测）：**unused import 254 / unused var·mut 3 / never used 427 / 其它 28**。选「纯 hygiene、零行为风险」的 unused import 作为本批，取 `bop_builder_*.rs` 九个文件（111 条警告）。
