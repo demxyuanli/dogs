@@ -147,7 +147,9 @@ cd ..; git worktree remove --force .target-headcheck
 
 **新登记的阻塞（本会话发现）**：
 
-- **`occt-math` 的 `GlobOptMin::compute_local_extremum` 用无界 BFGS**（`globoptmin.rs:541-566`），OCCT 用 `SetBoundary`（`math_GlobOptMin.cxx:276-301`）⇒ 忠实 2D 求交件**无法枚举多极值**（实测：单位圆 vs 1 次 B-spline 线段 2 交点只得 1 个）。已派子代理补 `math_BFGS`/`math_NewtonMinimum` 的 boundary 语义与引擎选择；修好后应删掉 `curve_ops::curve2d_intersections` 的采样回退。**3D 的 `occt-geom/src/extrema_cc/general_extrema.rs` 结构相同，大概率同缺口**，需一并复核。
+- ~~**`occt-math` 的 `GlobOptMin` 用无界 BFGS**~~ → **已收口（`99785d6`）**：新增 `math_BracketMinimum`，重写 `bfgs.rs` 为忠实 `math_BFGS::{Perform,MinimizeDirection,ComputeMinMaxScale,SetBoundary}`（`math_BFGS.cxx:327-443/203-321/144-196/505-510`），`compute_local_extremum` 按 `math_GlobOptMin.cxx:266-339` 选引擎并 `SetBoundary`。实测单位圆 vs 1 次 B-spline 线段由 1 个极值变为 **2 个**；据此删除 `curve2d_intersections` 的 256×256 采样回退（`267451e`），2D 求交现在只有忠实件。**UNPORTED**：Newton 臂（端口无 Hessian 输入引擎）、Powell 臂。
+  **待复核**：3D 的 `occt-geom/src/extrema_cc/general_extrema.rs` 与两边 `glob_opt_func.rs` 的文档仍写着「无边界 BFGS / 引擎选择 UNPORTED」，已成过时描述。
+- **`iges_check` 另两处指针表缺口**（`2c53883`）：DE 字段 7 的 transformation matrix 指针此前未计入引用 ⇒ ATU01038 的 63 个 `124` 被误报 orphan（bottom 3 个）；补上后 **18 模型全部 `unreferenced=1`（只剩根）**。
 - **`occt-core` 的两处 2D 变换替身**（`d61dcaf` 的旁支）：`GpTrsf2d::set_mirror_ax2d` 合成结果为 `-R`（OCCT `gp_Trsf2d::SetMirror` `gp_Trsf2d.cxx:31-46` 为 `R`）；`GpLin2d`/`GpCirc2d`/`GpElips2d::transform` 只移 location、不动轴方向 ⇒ 当前在 `iges.rs` 内自建 OCCT 矩阵并按精确类型重建。**忠实解法是订正 `occt-core`**，登记待办。
 
 **未开始**：T-54（约束 Delaunay）、T-41（`bop_curved` 网格布尔摘除，需先修 T-82）、T-25/T-28（设计已出，待实施）、T-11 余项、T-67 余项（`ExtPExtS`/`ExtPRevS`）。
