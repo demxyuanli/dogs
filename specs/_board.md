@@ -185,6 +185,21 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 176 —— T-28 代理正式收尾（含**三项 UNPORTED**的完整标注）**
+
+**交付物**（已提交为 `771eb84d` + 探针清理 `77bbc649`）：
+- `geom_int_topol.rs`：`HVertex`/顶点表/`identical`（`Adaptor3d_TopolTool.cxx:235-254`、`:616-620`、`Adaptor3d_HVertex.cxx:43-51`）；
+- `intpatch_impimp_sonb.rs`：`PathPoint.is_new/vertex_id` + `PointProcess` 顶点分支（`IntStart_SearchOnBoundaries.gxx:902-996`）；
+- `intpatch_impprm.rs`：`compute_tangency` 平移 `IntPatch_ImpPrmIntersection.cxx:221-469`；
+- `intpatch_impprm_ends.rs`：`Multiplicity()/Parameters(themult)` + `SetVertex`（`cxx:1086-1159`/`:1192-1265`）；
+- 新增 `intpatch_curve_transition.rs` = `TopTrans_CurveTransition`（`TopTrans_CurveTransition.cxx`）。
+
+**UNPORTED 三项（如实标注，未自创替代）**：
+1. `PatchPoint` 无 HVertex 槽位 ⇒ `SetVertex` 只落 `on_dom_s1/s2`（`IntPatch_Point.cxx:37-51` 的 handle/vtxon 部分未承载）；
+2. `WalkStart` 无 `passing` 槽 ⇒ `IntSurf_PathPoint::SetPassing`/`IsPassingPnt`（`IntSurf_PathPoint.lxx:39-43`、`IntWalk_IWalking.gxx:193/332`）未承载；
+3. **`FindVertex`（`IntStart_SearchOnBoundaries.gxx:131-165`）未移植**（新增登记，本轮记账时补上）。
+
+**收尾复核（代理自测，与我一致）**：`step_to_obj` **13/13**；`export_data_obj` 15 个 `data/*.step` 的 `v/f` **逐位等于基线** ✓。**代理已停手**，不碰第 4/5 步；临时探针全删 ✓。
 **round 175 —— T-69 实施中的**正向信号**（网格计数向 OCCT 靠）+ 一处需查的**导出中断****
 
 我用独立 target 目录跑 `export_data_obj data/occ`（当时新代理正在改 `pcurve_full/projection_cache.rs`），得到：
