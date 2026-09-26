@@ -185,6 +185,17 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 156 —— ❗**归属钉死**：OCCT 导入 T0M 的 `uv_degenerate_faces = 0`，端口却有 162 ⇒ **缺陷在导入侧**（`shhealing`/`step`），不在 BRepMesh 层**
+
+把 `wires_probe` 扩成「wire 普查 + **UV 退化普查**」（判据：该 wire 所有 pcurve 采样点的 UV 包围盒 `spanU<1e-9` 或 `spanV<1e-9`），在 `data/occ/T0M.stp` 上实测：
+```
+OCCT:  TOTAL faces=1778 wires=1921 multiwire_faces=106 uv_degenerate_faces=0
+端口:  162 个失败面，每个 wire 都是零面积退化环（代理插桩实测，face 709：两 wire 的 UV 折线各自一来一回/走两遍）
+```
+⇒ **OCCT 一个 UV 退化 wire 都没有** ⇒ 端口那 162 面是**导入链自己造出来的**（`read_topology.rs:697 → check_pcurves_and_shift → fix_lacking_all` 把本不该重合的边造成重合边），**不是**「BRepMesh 对开链 frontier 处理不当」。
+
+**⇒ T-69 的处置方向定为 (i)（导入侧），并已授权代理改 `shhealing/`+`step/`**；要验的两点：① `check_lacking`（`wire_fix.rs:2192-2252`）的 `tol2d` 是否 = `2*max(UResolution(tol),VResolution(tol))`（`ShapeAnalysis_Wire.cxx:1774-1775`）；② 更可能的是 **`FixLacking` 造出的边本身**——OCCT 造 `Geom2d_Line(p2d1,p2d2)` + `B.Range(edge,face,0,dist2d)`（`ShapeFix_Wire.cxx:3852-3862`），端口若造成「3D 端点相同、UV 重合」的重复边，就正好得到零面积退化环 ✓。
+**新的可量化验收辅助**：修后 `wires_probe` 的 `uv_degenerate_faces` 应趋近 OCCT 的 **0**，同时 `--mesh` 失败面 162→0。
 **round 155 —— 新探针 `wires_probe`：OCCT 导入 T0M 的逐面 wire 直方图；T-69 的假设收窄到「造边/tol2d」**
 
 新建**独立**只读探针（避免与代理并发改 `occt_probe.cpp`）：`specs/occt_probe/wires_probe.cpp` + `build_wires.bat`（cl 命令行同 `build.bat`），跑法 `wires_probe.exe <file.stp> [面序] [--nofix]`，输出每面 wire 数、每 wire 的 edge 数，以及总计/直方图。
