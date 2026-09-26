@@ -185,6 +185,11 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 229 —— 第二次尝试（边界载体法）**仍红** ⇒ 再次回退（未提交）；策略需改**
+
+**方案**：`EdgeGeom` 的两张 map 降级为**临时载体** —— `edge_geom(s)` **从槽填充** ✓、`set_edge(s, geom)` **排空到槽** ✓（`construct.rs:506-526 copy_edge` 这类「读 A 写 B」因此自动正确 ✓，`bop_bop.rs:141` 的 `!pcurves.is_empty()` 也自动正确 ✓）。编译通过 ✓，但门禁：**`step_obj_area` 10/1 FAILED** ✗（`step_geometry_parity` 3/3、`phase5/9/10/19/20` 全绿 ✓）。⇒ 按纪律**回退**（`git checkout -- tgeometry.rs`，未提交 ✓，工作树回到 `2b2742a6` ✓）。
+**结论**：仍有未覆盖的直写/直读点（清单里 `wire_fix.rs`、`transfer_params.rs`、`shape_ops.rs` 那些**对局部 `geom` 写回**的路径 ✗ —— 它们可能**不经过 `set_edge`**，而是直接 `edges.write().get_mut()` ✗，或 `shape_ops` 自己 `updated.pcurves = pcurves` 后另走一条路 ✓）。
+**下一步策略（下一轮）**：先**定位失败断言**（跑 `step_obj_area` 取测试名 + `--nocapture` ✓），再据它反推是哪个写入点没走槽 ✓；然后**一次性**把该家族改净（含 `shape_ops`/`write_fix`/`transfer_params` 的写回 ✓），**再**跑门禁 ✓。避免第三次盲改 ✗。
 **round 228 —— 🔴 T-25 存储搬移**回归**（`--lib` 1280/1、`step_obj_area` 10/1）⇒ 已**回退**（`67748def`）；并列出真正的搬迁范围（~30 处直写点）**
 
 **回归事实**：`4a6fb460`（把 registry 的 pcurve 读写改经 `TShape.edge_pcurves` 槽）跑门禁得 **`--lib` 1280 passed / 1 failed** ✗、**`step_obj_area` 10/1** ✗（其余 `step_geometry_parity` 3/3、`phase5/9/10/19/20` 全绿 ✓）。⇒ 按纪律**回归即回退**：`git revert 4a6fb460` ⇒ **`67748def`**，工作树恢复干净 ✓（`0a19d191` 的槽定义仍是纯增量，保留 ✓）。
