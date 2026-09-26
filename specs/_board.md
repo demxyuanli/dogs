@@ -185,6 +185,12 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 173 —— 收尾：删除误提交的 3 行调试探针（`77bbc649`）+ 一条有价值的**覆盖度**结论**
+
+**① 调试行清理**：`771eb84d` 误带了 3 行 `eprintln!` 调试输出（`intpatch_impprm.rs:73` `T28PROBE perform`、`:344` `T28PROBE complex i={i}`、`intpatch_impimp_sonb.rs:225` `T28PROBE bind t={t}`）—— 代理发现后从工作树删除（**未自行 amend/commit**，交我处理 ✓ 纪律良好）。已提交 `77bbc649`（纯删 3 行，无行为变化）。
+
+**② 覆盖度结论（有信息量，影响**验证策略**）**：代理插桩计数显示，`export_data_obj` 的 15 个模型下 `ImpPrmIntersection::perform` 调用次数 = **0** ⇒ **导出管线（`read_step` → `brep_to_obj` 网格）根本不走 `IntPatch_ImpPrmIntersection`** ⇒ 「`export_data_obj` 的 v/f 逐位一致」对 T-28 来说是**结构性必然**，**不是**本改动被触发过的证据 ✗。
+⇒ **T-28 的真实覆盖面是跑布尔的门禁套件**：`step_obj_parity`(**14/14**)、`step_obj_area` 11/11、`step_geometry_parity` 3/3、`phase5/9/10/19/20`（我已独立复算全绿 ✓），以及布尔类用例（如 `bop_builder2_boss` 1/2 已知、`fuse_box_cylinder*` 等）。这一点记入板，供以后同类改动的验收设计参考。
 **round 172 —— ✅ §3.4 T-28 前 3 步**落地并提交**（`771eb84d`，5 文件 +762/−63）**
 
 **内容**（每处均有 OCCT `文件:行号`）：① 数据层 `PathPoint.is_new`/`vertex_id` + `TopolTool` 顶点表/`identical`/`vertex_orientation`；② `compute_tangency` 平移 `IntPatch_ImpPrmIntersection.cxx:221-469`（`:329-465` 同顶点合并、`:365-418` `k>i` 扫描/`Identical`/`Destination(k)=Destination(i)`、`:379/:382 AddUV`、`:419-464` `ispassing/vectg/dirtg` 与回滚），新增 `intpatch_curve_transition.rs` = `TopTrans_CurveTransition`（`TopTrans_CurveTransition.cxx:20-22`/`:26-34` 等逐成员带行号）；③ `attach_one_end` 按 `Multiplicity()/Parameters(themult)` 取合并 UV + `SetVertex` 门（`cxx:1149-1151`/`1255-1257`），删 `intpatch_impprm_ends.rs:210` 的 `IsNew` 假设。**UNPORTED 如实标注**：`PatchPoint` 无 HVertex 槽（`SetVertex` 只落 `on_dom_s1/s2`）、`WalkStart` 无 `passing` 槽。
