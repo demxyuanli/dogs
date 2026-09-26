@@ -185,6 +185,20 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 145 —— ❗**订正 round 144**：回退**是活的**（`data/occ/T0M.stp` 169/1772 面走它）；T-54 的真正工作改为「先修这 169 面，再删回退」**
+
+**我 round 144 的推理有漏洞**：它依赖「15 个 `data/*.step` 与 OCCT 逐位一致 ⇒ 无面走回退」，但那 15 个文件**不含** `data/occ/` 语料；而回退处的**自带注释**（`meshing/incremental_mesh/discret_root.rs:462-468`）明确写着：
+
+> *「This UV-grid rescue is kept only because the ported pipeline still fails **169 of 1772 faces of `data/occ/T0M.stp`** (measured 2026-09-20); delete it once those faces mesh through the faithful path.」*
+
+⇒ 结论修正：
+1. **回退可达且被大量命中**（T0M 的 169 面）⇒ **不能删**；我 round 144 拟的「直接删除」作废（若照删，T0M 的这 169 面会变成无三角化 ⇒ 属回归）。
+2. **T-54 的真正内容 = 「修好 T0M 上这 169 个面为什么走不到忠实管线」**（这正符合该注释与 `wireframe.rs:394-421` 的「once those faces mesh through the faithful path, delete it together with the fallback」）。也就是说 T-54 不是「摘除自创件」而是**「补忠实分支」**：查这 169 面在哪一步返回 `Err`（`triangulate_model_faces` 的 `:403`「face has no surface」/`:438`「face {i}: {e}」/`:262`「no triangles generated」/Delaunay 空集 `:530-533`），按 OCCT 对应分支补上。
+3. `data/occ/T0M.stp` **必须加入 GT 语料**（当前 `--mesh` GT 表只覆盖 `data/*.step`，正好漏掉了唯一触发回退的文件）。
+
+**修订后的 T-54 三步**：① 给 `T0M.stp` 建 GT 表（OCCT `--mesh`，参数同 `export_data_obj`：`lin = maxComp(bbox)*0.004`、角偏 20°）；② 在这 169 面上定位失败点并**忠实补分支**（禁止自创判据）；③ 169 面全部走通后，**再**按 `wireframe.rs:394-421` 自注删除四处回退与 `face_to_triangles`（届时它应已零消费者；注意 `brepmesh::incremental_mesh` 仍被 `tests/phase5_integration.rs:8`、`tests/step_to_obj.rs:155` 使用，删它需另行处置那两个测试）。
+
+**方法论教训（第二次同型）**：用「某个文件集合与 OCCT 一致」去证明「某分支不可达」时，**必须先确认该集合覆盖了所有会触发该分支的输入** —— 这次漏了 `data/occ/`。
 **round 144 —— T-54：不必先插桩也能判定「回退实际未命中」，证据就在 GT 表里**
 
 推理链（无需改库代码）：
