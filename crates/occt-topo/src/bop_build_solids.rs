@@ -15,43 +15,31 @@
 //! independent of the concrete `BopBuilder` fields and is verified standalone.
 //!
 //! Live GF path is [`crate::bop_images_solids`] → [`crate::bop_split_solids_occt`]
-//! (`aMST`). Leftover `build_split_solids_full` lives in the private `leftover`
-//! submodule (not called by `BopBuilder`).
+//! (`aMST`): the OCCT `FillIn3DParts` + `BuildSplitSolids` pair
+//! (`BOPAlgo_Builder_3.cxx:97-263` / `:413-618`).
 //!
-//! * **Full flow** — [`build_split_solids_full`] (not called by `BopBuilder`).
-//!   Historical mix of two OCCT stages:
-//!   1. **`FillIn3DParts`** — [`collect_all_candidate_faces`] gathers every
-//!      source face and its split images into the global candidate list
-//!      (OCCT `aLFaces` + `aMFence`), and [`classify_faces_in_solid`] runs one
-//!      `BOPAlgo_FillIn3DParts::Perform` per solid: candidates already part of
-//!      the solid are skipped (`aMSF`), faces whose box does not reach the
-//!      solid's box are culled (the `BOPTools_BoxTree` BVH selector, ported as
-//!      a pairwise [`crate::bbox_from_geometry::shape_bbox`] overlap check),
-//!      and the survivors are classified with [`face_state_in_solid`].
-//!      Live FillIn3DParts uses `GetFaceOff` (`algo_tools_face::is_internal_face`).
-//!   2. **`BuildSplitSolids`** — the split faces of each solid (own split
-//!      faces + the classified internal faces, each FORWARD and REVERSED) are
-//!      grouped into closed shells with [`crate::shell_splitter::ShellSplitter`]
-//!      and wrapped into solids.
+//! The historical *full flow* port (`build_split_solids_full` with its
+//! `classify_faces_in_solid` / `face_state_in_solid` /
+//! `collect_all_candidate_faces` helpers) was **removed in T-27 (round 78)**:
+//! it lived in a private submodule that `BopBuilder` never called, and its only
+//! distinguishing rule, `is_covering_face`, was a port-invented predicate with
+//! no OCCT counterpart. Its live replacements are the two OCCT chains below.
 //!
 //! ## Translation boundaries vs OCCT
 //!
 //! * `IsInternalFace` uses `GetFaceOff` (angle-normals around a shared edge)
 //!   then `ComputeState(Face, Solid)` when angles cannot decide
-//!   ([`crate::algo_tools_face::is_internal_face`]).
+//!   ([`crate::algo_tools_face::is_internal_face`]) — the live
+//!   `BOPAlgo_Tools::ClassifyFaces` path (`BOPAlgo_Tools.cxx:1622`), reached
+//!   from `BOPAlgo_FillIn3DParts::Perform` (`:1334`) and
+//!   `BOPAlgo_BuilderSolid::PerformInternalShapes` (`BOPAlgo_BuilderSolid.cxx:673`).
 //! * The connexity-block grouping (`BOPAlgo_FillIn3DParts::MakeConnexityBlock`)
-//!   is ported in [`classify_faces_in_solid`]: candidates connect into blocks
-//!   through edges that are not on the solid and not degenerated, one
-//!   representative face (the first block face carrying a solid/degenerated
-//!   edge) is classified, and its verdict applies to the whole block — a cost
-//!   reduction with no semantic change, since every block face lies in the
-//!   same region of the solid.
-//! * Classification runs against the *original* solid, whose volume equals the
-//!   draft solid's; only the boundary-edge set passed to
-//!   [`face_state_in_solid`] comes from the split faces (OCCT classifies
-//!   against the draft solid built by `BuildDraftSolid`).
-//! * Leftover: `BOPAlgo_SplitSolid` replaced here by [`ShellSplitter`] +
-//!   [`close_open_shells`]; live assembly is [`crate::builder_solid::BuilderSolid`].
+//!   is ported in [`crate::bop_classify_occt`]; classification runs against the
+//!   *original* solid, whose volume equals the draft solid's (only the
+//!   boundary-edge set comes from the split faces, OCCT classifying against
+//!   the draft solid built by `BuildDraftSolid`).
+//! * `BOPAlgo_SplitSolid` is replaced here by [`crate::shell_splitter::ShellSplitter`]
+//!   + [`close_open_shells`]; live assembly is [`crate::builder_solid::BuilderSolid`].
 //!
 //! * **Draft pass** — [`fill_images_solids`] rebuilds every source solid from
 //!   its face splits: each face of the solid is replaced by its image pieces
