@@ -185,6 +185,14 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 179 —— ❗**撤回 round 178**：`FixMissingSeam` **不是**机制（被我自己的两条探针数据否掉）；分歧在 `getLine` 的判据**
+
+**反证 1**：我们的 OCCT 探针（`wires_probe` / `--wires`）对 T0M 实测 **`wires_1edge_closed = 172`** ⇒ **OCCT 并不回避「wire 只含一条自闭合边」** ✗；若它真靠 `FixMissingSeam` 先把缝边插进去，这个计数应接近 0。⇒ 代理注释里「OCCT 走的是另一条路（`FixMissingSeam`）」这条推断**被数据否掉**。
+**反证 2**：那 172 条边的 pcurve 类型是 **`Geom2d_Circle`×166（全 Plane）+ `Geom2d_BSplineCurve`×6**，**没有一条是 `Geom2d_Line`** ⇒ OCCT 在这些边上**根本没走 `getLine` 的直线臂** ⇒ 分歧就在**端口把 OCCT 会拒掉的输入接受了**这一层 ✓（即 `getLine` 判据差异），不在更早的 face-fix pass。
+
+**⇒ 已发代理订正（甲/乙作废）**：保留闭合弦拒绝仅作**临时诊断**；**找出 OCCT 在 `ShapeConstruct_ProjectCurveOnSurface::getLine`（`cxx:902-1102`）里拒掉该输入的具体那一处**并逐行对出端口差异 —— 重点：`cxx:960-1010` 的**4 探针点投影与周期跳变处理**（最可疑：2D 点未按周期归一化 ⇒ 首末差 2π 仍被当共线等速）、`cxx:1015-1018` 球面周期跳变放弃、`cxx:1079-1086` 2D 弦等速才给精确 `Geom2d_Line`；要求**打印两侧探针点的数字**定位分叉，再**照抄 OCCT 判据**修那一处（**不得**保留「闭合弦就拒绝」这种 OCCT 没有的规则 ✗）；若分歧在上游（进入 `getLine` 的 `thePoints/theParams` 或曲线类型分派）同样先给数字与行号。
+
+**方法论（本案第 2 次同型）**：我又一次用「OCCT 的某段控制流看起来会导致 X」去推断「端口少了它」——**只要先看一眼探针的计数**（`wires_1edge_closed=172`）就能否定。规则：**先用已有探针数据检验机制假设，再去读实现**。
 **round 178 —— T-69 的忠实修法确定为**移植 `ShapeFix_Face::FixMissingSeam`**（不是 `get_line` 里加判据）**
 
 代理在 `pcurve_full/projection_cache.rs:536-571` 写了有理有据的注释，因果链与我的独立复核一致：OCCT 之所以不会得到「开路 2π pcurve」，是因为**更早的 `ShapeFix_Face::FixMissingSeam` 阶段就把缝边插进了 wire** ⇒ 端口缺的是**这一整段 pass** ✗。
