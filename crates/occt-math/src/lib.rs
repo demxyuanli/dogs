@@ -66,6 +66,8 @@ pub use ode::{rk4, rk4_step};
 pub use scalar::{bisection, secant, golden_section, brent};
 pub mod brent_minimum;
 pub use brent_minimum::BrentMinimum;
+pub mod bracket_minimum;
+pub use bracket_minimum::BracketMinimum;
 pub use polynomial::{poly_eval, poly_derivative, quadratic_roots, cubic_roots, polynomial_roots};
 pub mod matrix_ext;
 pub use matrix_ext::{

@@ -31,6 +31,20 @@ pub struct GlobOptMin {
     pub functional_minimal_value: f64,
     /// `myCont` (`math_GlobOptMin.hxx:264`), default 2 (`cxx:69`).
     pub cont: i32,
+    /// Stand-in for OCCT's
+    /// `dynamic_cast<math_MultipleVarFunctionWithGradient*>(myFunc)`
+    /// (`math_GlobOptMin.cxx:294`); see [`GlobOptMin::compute_local_extremum`].
+    /// The port's objective is a plain value closure, but any such closure can be
+    /// numerically differentiated, so this defaults to `true` — matching the
+    /// runtime type OCCT actually sees, since `Extrema_GlobOptFuncCCC2` is a
+    /// `math_MultipleVarFunctionWithGradient` (`Extrema_GlobOptFuncCC.hxx`).
+    pub has_gradient: bool,
+    /// Stand-in for OCCT's
+    /// `dynamic_cast<math_MultipleVarFunctionWithHessian*>(myFunc)`
+    /// (`math_GlobOptMin.cxx:273`). Defaults to `false`: the port has no
+    /// Hessian-input local engine, so the Newton arm is UNPORTED (see
+    /// [`GlobOptMin::compute_local_extremum`]).
+    pub has_hessian: bool,
     /// Pending `SetLocalParams` sub-box (`myLocalA`/`myLocalB` are not stored in
     /// OCCT — `SetLocalParams` writes `myA`/`myB` directly; the port keeps the
     /// request until `perform` reaches the same point of the sequence).
@@ -80,6 +94,8 @@ impl GlobOptMin {
             lip_const_locked: false,
             functional_minimal_value: -INF,
             cont: 2,
+            has_gradient: true,
+            has_hessian: false,
             local_params: None,
             done: false,
             n: 0,
@@ -132,9 +148,10 @@ impl GlobOptMin {
     /// OCCT uses it to choose the local-refinement engine inside
     /// `computeLocalExtremum` (`cxx:266-339`: `myCont >= 2` → `math_NewtonMinimum`
     /// on a `math_MultipleVarFunctionWithHessian`, `myCont >= 1` → `math_BFGS`
-    /// on a `WithGradient`, else `math_Powell`). The port's `GlobOptMin` takes a
-    /// plain value closure, so the stored value has no engine to switch —
-    /// **UNPORTED** (see the note on `compute_local_extremum`).
+    /// on a `WithGradient`, else `math_Powell`). The port has no function-class
+    /// hierarchy, so the two `dynamic_cast` tests are the explicit
+    /// [`GlobOptMin::has_gradient`] / [`GlobOptMin::has_hessian`] flags and the
+    /// engine selection lives in [`GlobOptMin::compute_local_extremum`].
     pub fn set_continuity(&mut self, the_cont: i32) {
         self.cont = the_cont;
     }
@@ -440,7 +457,9 @@ impl GlobOptMin {
         for i in 1..=3 {
             let t = (i as f64 - 1.0) / 2.0;
             let start = self.a.added(&self.b.subtracted(&self.a).multiplied_scalar(t));
-            if let Some((out_pnt, out_val)) = self.compute_local_extremum(f, &start) {
+            if let Some((out_pnt, out_val)) =
+                self.compute_local_extremum(f, &start, self.has_gradient, self.has_hessian)
+            {
                 self.check_add_candidate(&out_pnt, out_val);
             }
         }
@@ -489,7 +508,9 @@ impl GlobOptMin {
                     if (a_val < d && a_val < a_prev_val)
                         || distance_to_border(&self.x, &self.a, &self.b) < self.e1
                     {
-                        if let Some((out_pnt, out_val)) = self.compute_local_extremum(f, &self.x) {
+                        if let Some((out_pnt, out_val)) =
+                            self.compute_local_extremum(f, &self.x, self.has_gradient, self.has_hessian)
+                        {
                             is_inside = true;
                             val = out_val;
                             self.tmp = out_pnt;
@@ -534,34 +555,70 @@ impl GlobOptMin {
         }
     }
 
-    /// Run a local descent from `pnt`; returns the minimizing point and its
-    /// value if it lies inside the global box.
-    /// Local refinement from a seed point.
+    /// `math_GlobOptMin::computeLocalExtremum` (`math_GlobOptMin.cxx:266-339`):
+    /// run a local descent from `pnt` and return the minimizing point and its
+    /// value, or `None` when every available engine failed or left the global
+    /// box.
     ///
-    /// **UNPORTED (audit A7/T-66)**: OCCT's `computeLocalExtremum`
-    /// (`math_GlobOptMin.cxx:266-339`) selects the engine from `myCont` and the
-    /// runtime type of `myFunc`: `myCont >= 2` + `math_MultipleVarFunctionWithHessian`
-    /// → `math_NewtonMinimum` (with `SetBoundary(myGlobA, myGlobB)`), `myCont >= 1`
-    /// + `WithGradient` → `math_BFGS`, else `math_Powell` with an identity
-    /// direction matrix. The port's `GlobOptMin` takes a plain value closure and
-    /// has no function-class hierarchy, so only the BFGS arm exists and its
-    /// gradient is a numeric difference. `set_continuity` is therefore stored
-    /// but does not switch engines.
+    /// OCCT picks the engine from `myCont` and the runtime type of `myFunc`
+    /// (the `dynamic_cast`s at `cxx:273` and `cxx:294`). The port has no
+    /// function-class hierarchy, so the two casts are the explicit
+    /// `has_hessian` / `has_gradient` arguments:
+    ///
+    /// * Newton (`cxx:272-291`): `myCont >= 2` + `WithHessian` →
+    ///   `math_NewtonMinimum` with `SetBoundary(myGlobA, myGlobB)` — **UNPORTED**,
+    ///   see below.
+    /// * BFGS (`cxx:293-312`): `myCont >= 1` + `WithGradient` → `math_BFGS` with
+    ///   `SetBoundary(myGlobA, myGlobB)` (`cxx:299`). Landed here; the gradient
+    ///   is a central difference of the value closure.
+    /// * Powell (`cxx:314-336`): the base-class cast always succeeds in OCCT, so
+    ///   this is the unconditional fallback — **UNPORTED**, see below.
+    ///
+    /// Unlike OCCT, a BFGS run that is not `IsDone` does **not** fall through to
+    /// the Newton/Powell arms (`cxx:281-291` / `cxx:326-335`): those arms do not
+    /// exist in the port, so the function returns `None` exactly as if their
+    /// `dynamic_cast` had failed.
     fn compute_local_extremum<F: Fn(&MathVector) -> f64>(
         &self,
         f: &F,
         pnt: &MathVector,
+        has_gradient: bool,
+        has_hessian: bool,
     ) -> Option<(MathVector, f64)> {
-        let bfgs = BFGS::new();
-        let grad = |x: &MathVector| numeric_gradient(f, x);
-        if let Ok(x) = bfgs.minimize(f, grad, pnt) {
-            if self.is_inside(&x) {
-                let val = f(&x);
-                if val.is_finite() {
-                    return Some((x, val));
+        // Newton method — cxx:272-291.
+        //
+        // UNPORTED: `math_NewtonMinimum::Perform` (`math_NewtonMinimum.cxx:77-263`)
+        // needs `math_MultipleVarFunctionWithHessian::Values(pnt, val, grad, hess)`
+        // (`cxx:100`), a Jacobi eigen-decomposition for the convexity treatment
+        // (`cxx:115-142`) and a Gauss solve of the Hessian (`cxx:146-153`), plus
+        // `SetBoundary` projection (`math_NewtonMinimum.cxx:155-205`). The port's
+        // `newton::NewtonMinimum` (`newton.rs:94-169`) is a BFGS-update descent
+        // without a Hessian input, so grafting that boundary control flow onto it
+        // would invent an algorithm. The arm is skipped, as a failed cast would be.
+        let _ = has_hessian;
+
+        // BFGS method used — cxx:293-312.
+        if self.cont >= 1 && has_gradient {
+            let mut bfgs = BFGS::new();
+            bfgs.set_boundary(&self.glob_a, &self.glob_b); // cxx:299
+            let grad = |x: &MathVector| numeric_gradient(f, x);
+            if let Ok(x) = bfgs.minimize(f, grad, pnt) {
+                if self.is_inside(&x) {
+                    let val = f(&x);
+                    if val.is_finite() {
+                        return Some((x, val));
+                    }
                 }
             }
         }
+
+        // Powell method used — cxx:314-336.
+        //
+        // UNPORTED: OCCT builds an identity direction matrix and runs
+        // `math_Powell(*myFunc, 1e-10); powell.Perform(*myFunc, thePnt, m)`
+        // (`cxx:317-324`). The port's `Powell` (`powell.rs:8-39`) neither accepts a
+        // direction matrix nor follows `math_Powell::Perform`, and OCCT's Powell
+        // has no `SetBoundary`, so it cannot stand in for the missing arm.
         None
     }
 

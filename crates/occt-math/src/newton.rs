@@ -77,6 +77,20 @@ fn finite_difference_jacobian<F: Fn(&MathVector) -> MathVector>(f: &F, x: &MathV
 
 /// Newton's method for unconstrained minimization of f: R^n → R.
 /// Uses gradient and approximate Hessian via BFGS updates.
+///
+/// **Not `math_NewtonMinimum` (boundary API UNPORTED).** OCCT's class
+/// (`math_NewtonMinimum.hxx:33-...`) solves `Hessian * TheStep = TheGradient`
+/// with a Gauss LU (`math_NewtonMinimum.cxx:146-153`) and its `SetBoundary`
+/// (`math_NewtonMinimum.cxx:67-73`) is consumed by the projection step in
+/// `Perform` (`math_NewtonMinimum.cxx:155-205`): the step is scaled by the
+/// smallest factor that keeps `precedent - TheStep` inside `[myLeft, myRight]`,
+/// or the coordinates that push out of a border the point already sits on are
+/// zeroed (`cxx:182-204`). This struct instead runs a BFGS-update quasi-Newton
+/// descent with an Armijo backtracking line search and takes no Hessian, so it
+/// has no equivalent branch to attach that control flow to — `SetBoundary` and
+/// the bounded `Perform` are **UNPORTED here**, and
+/// `math_GlobOptMin::computeLocalExtremum`'s Newton arm is skipped for the same
+/// reason (`globoptmin.rs`, `compute_local_extremum`).
 pub struct NewtonMinimum {
     pub max_iter: usize,
     pub tolerance: f64,
