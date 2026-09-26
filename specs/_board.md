@@ -185,6 +185,19 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 209 —— 记账：T-69 不止 T0M —— `data/occ` 里还有两个文件明显偏短**
+
+代理给的三列表（端口 vs OCCT GT，参数口径见 `specs/_occt_mesh_gt.md`）：
+
+| 文件 | 端口 v/f | OCCT nodes/tri | 差 |
+|---|---|---|---|
+| T0M | 46517/46967 | 60050/66576 | 端口约 **0.72×** ✗ |
+| **a3n00** | 9091/8922 | 11052/12324 | 端口约 **0.74×** ✗ |
+| **acs10** | 32400/37223 | 37247/46494 | 端口约 **0.80×** ✗（三角 0.80×） |
+| TDB | 72847/77884 | 72687/78470 | **几乎逐位一致 ✓**（差 +160 节点 / −586 三角） |
+| ATU01038 | 18052/22483 | 18049/22504 | **几乎逐位一致 ✓**（差 +3 / −21） |
+
+⇒ 退化面缺口**不是 T0M 独有** ✓：`a3n00`/`acs10` 同样明显偏短（与「自创回退接管了退化面」一致 ✓），而 `TDB`/`ATU01038` 已基本对齐 ✓ ⇒ **`FixMissingSeam` 落地后应同时看这五个文件**（验收 brief 已包含 ✓）；若只有 T0M 变好而 a3n00/acs10 不动，说明还有**另一类**成因 ✗（届时按数据分流）。
 **round 208 —— 把现成 GT 工具交给新代理（step ① 的对照不必从零写）**
 
 - `specs/occt_probe/wires_probe.exe <file.stp> [面序]`：**面结构** oracle（每面 wire 数 / 每 wire 边数 / 多 wire 面数 / **`uv_degenerate_faces`**，OCCT 对 T0M = **0** ✓）；
