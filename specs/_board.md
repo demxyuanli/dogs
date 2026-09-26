@@ -140,6 +140,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 - 再给 `ShellSplitter::split_block` 的行走与 `get_face_off` 加角度探针，实测（`box∪cyl` FUSE）：走到**截面圆**时候选 = [另一条环带, 盘, 盘]，端口给出的角度是 **环带 π/2（最小）**、盘 π 与 3π/2 ⇒ 选环带 ⇒ 行走永远进不到盘 ⇒ 圆柱 draft 出 0 个闭壳。两次 `same_dir` 变体（开边用遍历、闭合环用朝向；以及纯 OCCT 的 `aE2.Orientation() == aOr`）**都把环带留在最小值**，且 FUSE 都变空 ⇒ `same_dir` 不是决定项。
 - ⇒ 剩余缺口在 **`GetFaceDir` / 双法向**（`BOPTools_AlgoTools.cxx:990-1043`，含平面的特殊路径 `aProjPL`/`PointInFace`）——它决定 `angle_with_ref` 的输入；平面的 bi-normal 现在给出 π，而 OCCT 必须让盘成为最小角才能形成 `{下环带,底盖,盘}`、`{上环带,顶盖,盘}` 两个 3 面闭壳。
 
+**round 117 —— §3.3 T-51 余项（`occt-geom` 侧）落地：`computeType` + `GCPnts_LengthParametrized` + `GCPnts_AbsComposite`**
+
+`crates/occt-geom/src/gcpnts.rs`：
+- 新增 `AbscissaType`（`GCPnts_AbscissaType.hxx:22-27`）与 `compute_type`（**`GCPnts_AbscissaPoint.cxx:25-65` 忠实移植**）：`NbIntervals(GeomAbs_CN) > 1` ⇒ AbsComposite；Line ⇒ ratio 1；Circle ⇒ ratio = 半径；**两极点**非有理 Bezier/BSpline ⇒ ratio = `|D1(First)|`；其余 Parametrized。（端口 `GeomBezierCurve` 不带权重，故只按极点数判，已在注释注明。）
+- `compute_with_guess` 加 **`GCPnts_LengthParametrized` 臂**（`cxx:87-90`）：`u = u0 + abscis / ratio` —— 精确解，不再迭代。
+- 加 **`GCPnts_AbsComposite` 臂**（`cxx:96-158`）：按 `GeomAbs_CN` 区间累积 `CPnts_AbscissaPoint::Length`（`BSplCLib::Hunt` 定位起始区间，1-based 映射到端口 0-based `knots::hunt`），命中区间内再解；末段 `cxx:153-156` 的「推出去一点」兜底也照搬。
+
+自证（临时 example，用完已删）：半径 2 的圆，`abscissa_point(c, 3.0, 0.0)` ⇒ **u = 1.500000000000000（精确 3/2）**；反向 `abscissa_point(c, -1.0, 2.0)` ⇒ 同样 **1.5** ✓。门禁：`occt-geom --lib` **143/0**（未新增测试）。
+
+**仍未移植**（T-51 余项的另一半，已就地注明）：`Init(X0, L, Tol)` 容差重载（`CPnts_AbscissaPoint.cxx:32-37`）与 `AdvPerform`/`advCompute`（`cxx:436-474`）——端口 `CpntsMyRootFunction` 目前固定走无容差的 `math_GaussSingleIntegration`（对应 OCCT `myTol = -1`）。
 **round 116 —— 逐项隔离矩阵：T-80 体积与 `cylinder_surface_volume` 要的三处/两处修复，**必然**撞上 `Offset`；缺的是 STEP 读取的**朝向修正**（OCCT `ShapeFix` 面/壳定向，默认开启）**
 
 本轮把三处改动**逐项**跑一遍（每次都回退到干净态再叠加），实测矩阵：

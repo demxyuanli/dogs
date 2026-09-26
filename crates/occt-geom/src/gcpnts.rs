@@ -47,6 +47,110 @@ use crate::curve::Curve;
 /// `math::GaussPointsMax()` (`math.cxx:24-27`).
 const GAUSS_POINTS_MAX: usize = 61;
 
+/// `GeomAbs_CN` (`GeomAbs_Shape.hxx:29-45`), the continuity `computeType`
+/// and `Intervals` use (`GCPnts_AbscissaPoint.cxx:28`, `:97`, `:99`).
+const GEOM_ABS_CN: u8 = 6;
+
+/// `GCPnts_AbscissaType` (`GCPnts_AbscissaType.hxx:22-27`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AbscissaType {
+    LengthParametrized,
+    Parametrized,
+    AbsComposite,
+}
+
+/// `computeType` (`GCPnts_AbscissaPoint.cxx:25-65`): the curve's abscissa
+/// type plus the length ratio `theRatio` the `GCPnts_LengthParametrized`
+/// arm divides by (`:36` line, `:40` circle radius, `:47`/`:56` the first
+/// derivative magnitude of a two-pole curve).
+fn compute_type(c: &dyn Curve) -> (AbscissaType, f64) {
+    if c.nb_intervals(GEOM_ABS_CN) > 1 {
+        return (AbscissaType::AbsComposite, 1.0);
+    }
+    if c.is_line() {
+        return (AbscissaType::LengthParametrized, 1.0);
+    }
+    if let Some(r) = c.circle_radius() {
+        return (AbscissaType::LengthParametrized, r);
+    }
+    // `GeomAbs_BezierCurve` (`cxx:43-51`): a two-pole non-rational Bezier is
+    // a straight segment. This port's `GeomBezierCurve` carries no weights
+    // (see its module note), so `IsRational()` is always false and only the
+    // pole count decides.
+    if let Some(p) = c.bezier_poles() {
+        return if p.len() == 2 {
+            (AbscissaType::LengthParametrized, c.d1(c.first_parameter()).1.magnitude())
+        } else {
+            (AbscissaType::Parametrized, 1.0)
+        };
+    }
+    // `GeomAbs_BSplineCurve` (`cxx:52-60`).
+    if let Some(p) = c.bspline_poles() {
+        return if p.len() == 2 && c.bspline_weights().is_none() {
+            (AbscissaType::LengthParametrized, c.d1(c.first_parameter()).1.magnitude())
+        } else {
+            (AbscissaType::Parametrized, 1.0)
+        };
+    }
+    (AbscissaType::Parametrized, 1.0)
+}
+
+/// `GCPnts_AbsComposite` (`GCPnts_AbscissaPoint.cxx:96-158`): walk the
+/// `GeomAbs_CN` intervals accumulating `CPnts_AbscissaPoint::Length`, then
+/// solve inside the interval that contains the target. The final
+/// "push a little bit outside the limits" bracket is `:153-156`.
+fn compute_abs_composite(
+    c: &dyn Curve,
+    abscissa: f64,
+    u0: f64,
+    ui: f64,
+    resolution: f64,
+) -> Option<f64> {
+    let nb = c.nb_intervals(GEOM_ABS_CN);
+    let ti = c.parameter_intervals(GEOM_ABS_CN);
+    if nb < 1 || ti.len() < 2 {
+        return None;
+    }
+    let mut abscis = abscissa;
+    let mut u_start = u0;
+    let mut ui = ui;
+    let mut sign = 1.0;
+    // `BSplCLib::Hunt(aTI, theU0, anIndex)` (`cxx:102`) yields a 1-based
+    // interval index; `knots::hunt` is the 0-based form of the same search.
+    let mut index = occt_core::bspl::knots::hunt(&ti, u0) as i32 + 1;
+    let mut direction = 1i32;
+    if abscis < 0.0 {
+        direction = 0;
+        abscis = -abscis;
+        sign = -1.0;
+    }
+    while index >= 1 && index <= nb {
+        let l = cpnts_length(c, u_start, ti[(index + direction) as usize - 1]);
+        if (l - abscis).abs() <= CONFUSION {
+            return Some(ti[(index + direction) as usize - 1]);
+        }
+        if l > abscis {
+            if ui < ti[(index - 1) as usize] || ui > ti[index as usize] {
+                let du = (abscis / l) * (ti[index as usize] - u_start);
+                ui = if direction != 0 { u_start + du } else { u_start - du };
+            }
+            let mut computer = CpntsAbscissaPoint::new(c);
+            computer.init_range(c, ti[(index - 1) as usize], ti[index as usize]);
+            computer.perform_with_guess(sign * abscis, u_start, ui, resolution);
+            return if computer.is_done() { Some(computer.parameter()) } else { None };
+        }
+        u_start = ti[(index + direction) as usize - 1];
+        abscis -= l;
+        index += if direction != 0 { 1 } else { -1 };
+    }
+    // `cxx:153-156`.
+    ui = u_start + 0.1;
+    let mut computer = CpntsAbscissaPoint::new(c);
+    computer.init_range(c, u_start, u_start + 0.2);
+    computer.perform_with_guess(sign * abscis, u_start, ui, resolution);
+    if computer.is_done() { Some(computer.parameter()) } else { None }
+}
+
 fn speed(c: &dyn Curve, u: f64) -> f64 {
     let (_, d1) = c.d1(u);
     d1.magnitude()
@@ -324,6 +428,18 @@ fn compute_with_guess(
 ) -> Option<f64> {
     if abscissa.abs() <= CONFUSION {
         return Some(u0);
+    }
+    // `GCPnts_AbscissaPoint.cxx:83-158`: `computeType` picks the arm.
+    let (ty, ratio) = compute_type(c);
+    match ty {
+        // `:87-90`: the abscissa *is* the parameter up to the ratio.
+        AbscissaType::LengthParametrized => return Some(u0 + abscissa / ratio),
+        // `:96-158`.
+        AbscissaType::AbsComposite => {
+            return compute_abs_composite(c, abscissa, u0, ui, resolution);
+        }
+        // `:91-95`: the iterative root search below.
+        AbscissaType::Parametrized => {}
     }
     let mut computer = CpntsAbscissaPoint::new(c);
     computer.init(c);
