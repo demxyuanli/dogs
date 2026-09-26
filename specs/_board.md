@@ -185,6 +185,16 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 140 —— 新登记 T-91：STEP 导入的 pcurve 关联缺口（`Shape-2` 唯一 0.2% 偏差的候选成因）**
+
+**证据**：
+- round 55 的 GT 对拍（端口真实参数下）里，**15 个文件只有 `Shape-2` 不一致**：端口 **3105/4792** vs OCCT **3099/4780**（差 6 节点 / 12 三角，0.2%）；其余 14 个逐位一致。
+- `crates/occt-topo/src/brep_exchange.rs:50-52` 的自注直接指向这里：*「B-spline faces whose STEP `SURFACE_CURVE` pcurves are dropped (`step.rs`) get a wrong boundary, so the Delaunay bbox drifts past `EXACT_TOL` on `Shape.step`/`Shape-2.step` — a STEP-import gap, not a BRepMesh one.」*（其中 `step.rs` 的写法已过期，现为 `step/` 模块）。
+
+**候选机制（待验证）**：`step/read_topology.rs:869-928 associate_edge_pcurve` 只接受 **`PCURVE`** 形态的 `associated_geometry`（`:892-895` 自注「a SURFACE entry fails to resolve and is skipped」）。若某面的 `SURFACE_CURVE.associated_geometry` 里给的是 **`SURFACE_CURVE`（交线）/`SURFACE`** 而非 `PCURVE`，端口就**不挂 pcurve**，边界只能靠 3D 曲线**投影**重建 ⇒ 与 OCCT（同样会拒交线，但对 B 样条面带自己的 pcurve 生成/`ShapeFix_Edge::FixAddPCurve` 路径）产生轻微边界差 ⇒ `Shape-2` 那 6/12 的差。
+
+**待做**：① 对 `Shape-2.step`（与对照的 `Shape.step`）逐面统计「有/无挂到 pcurve」，列出无 pcurve 的面类型；② 查那些面的 STEP `associated_geometry` 实际形态（`PCURVE` vs `SURFACE_CURVE` vs 缺省），与 `StepToTopoDS_TranslateEdgeLoop.cxx:645-667`/`:786-793` 的取舍对照；③ 若确属端口应生成而未生成 ⇒ 按 `ShapeFix_Edge::FixAddPCurve`（`ShapeFix_Edge.cxx:517-534`）补忠实路径；④ 验收 = `Shape-2` 的 `--mesh`（真实参数）与 OCCT 逐位一致，且 `export_data_obj` 其余 14 个不动。
+**优先级**：低-中（当前仅影响 1/15 文件 0.2%，且**不影响任何既有门禁**）。文件面在 `step/`（T-28/网格两个代理都不在其中）。
 **round 139 —— T-54 处置落点已定位（4 处回退 + 死码链），转交网格子代理执行**
 
 | 落点 | 现状 | 处置 |
