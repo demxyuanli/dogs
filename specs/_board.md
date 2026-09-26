@@ -185,6 +185,28 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 218 —— ❗❗ 中途实测**推翻 `FixMissingSeam` 路径**：它对目标文件是 **no-op**；真缺件是 **`ShapeFix_ComposeShell`（~3600 行）****
+
+代理先落 `CheckWire` 并实测（探针 `examples/zz_check_wire.rs`，忠实按 `ShapeFix_Face.cxx:1652-1718`）：
+
+| 文件 | 有 u/v-closed 范围的面 | `CheckWire` 判开口的 wire(≥1) | 其中 ≥2（会被②配对） | `zz_probe_uv` 退化面 | 退化面里判开口的 |
+|---|---|---|---|---|---|
+| T0M | 745 | 12 | 12 | 207 | 12 |
+| acs10 | 364 | **0** | 0 | 110 | 0 |
+| a3n00 | 99 | **0** | 0 | 46（其中 18 个面无 u/v-closed 范围 ⇒ 扫描计 28） | 0 |
+| TDB | 826 | 0 | 0 | 1 | 0 |
+| ATU01038 | 185 | 0 | 0 | 0 | 0 |
+
+**两条硬结论**：
+1. **`acs10/a3n00/TDB` 上 `CheckWire` 一次都不判开口**（0/0/0）⇒ `FixMissingSeam` 在 `:1831` 的 `if (!CheckWire(...)) continue;` 跳过**每条 wire** ⇒ `w1.IsNull()` ⇒ `:1895-1898 return false` ⇒ **面级 pass 对这三个文件完全是 no-op** ✗ ⇒ 不是「只有 T0M 变好」，而是「**连 T0M 也不会变好**」✗✗。
+2. T0M 上判开口的 12 个面**两条 wire 都开口**（≥1==≥2==12）⇒ 走 `:1844-1865` 的**配对分支** ⇒ **永不进 ③ 缝边构造**（`:1899 else if (w2.IsNull())`）⇒ OCCT 在那里真正用的是 **`:2237-2261` 的 `ShapeFix_ComposeShell`**（把面重构；OCCT face 0 = 1 wire/5 edges/2 seam 就是它产出的 ✓）⇒ **③ 在三个目标文件上一次都不触发**，④ 只是 `ComposeShell` 的输入准备 ✓。
+
+**⇒ 本任务的「两函数」范围不足** ✗。**真缺件**：`ShapeFix_ComposeShell`（`ShapeFix_ComposeShell.cxx`，~**3600 行**，含 `ShapeFix_WireSegment`/`CompositeSurface`/`SplitByGrid`/`CollectWires`/`MakeFacesOnPatch` ✓），外加 `ShapeFix_Wire::FixReorder`（`:2023-2034`）在端口**只有谓词**（`fix_reorder_wire` 返回 bool、**不改 wire** ✗）与 `ShapeAnalysis::IsOuterBound`（`:2058`）**未移植** ✗。
+
+**额外洞察（很关键）**：端口在 `check_pcurves_and_shift`（≡ `ShapeFix_Wire`，`step/read_topology.rs:697`）之后，wire 里**已经有** `fix_lacking_all` 追加的闭合边，且两条边的 pcurve 增量**相消**（±2π∓2π）⇒ `CheckWire` 的 `vec ≈ 0` ⇒ 判「不开口」✓ ⇒ **喂给 `FixMissingSeam` 的面结构已经不是文件里的结构** ✓。
+
+**我的裁决（已发代理）**：**(b)** —— 不移植 `ComposeShell`（~3600 行，另立项 ✓）；**不把 `fix_missing_seam` 接进导入路径**（那会是 no-op pass ✗）；由代理决定 `face_fix.rs` 去留（我倾向**不提交 inert 代码** ✗，改为只提交**证据 + 缺口登记** ✓）；并交回完整报告（探针表 / 两条结论 / 缺件清单与工作量估计 ✓）与清理临时件 ✓。
+**⇒ T-69 的最终归属（本会话结论）**：根因 = **面级缝重构缺失（`ShapeFix_ComposeShell`）**；在此之前的一切（pcurve 计算侧、`FixLacking`、`CheckWire`/`FixMissingSeam`）都已排除 ✓；**这是一个 ~3600 行量级的独立立项** ✓（`objective` 枚举里**没有** T-69 ✓，故不阻塞 objective 收口 ✓）。
 **round 217 —— ✅ T-69 移植开工且质量良好（`face_fix.rs` + `CheckWire` 先行）**
 
 代理 `6e6be1a0` 已按建议**先做 `CheckWire`** ✓：
