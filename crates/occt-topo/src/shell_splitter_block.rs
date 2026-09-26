@@ -105,30 +105,34 @@ fn make_shell(faces: &[TopoShape]) -> TopoShape {
     shell.0
 }
 
+/// edge → ancestor faces, appending the face once per **edge occurrence**
+/// (`TopExp::MapShapesAndAncestors`, `TopExp.cxx:80-120`: the inner explorer
+/// walks `TopAbs_EDGE` with the default `CumOri = true` and calls
+/// `M(index).Append(anc)` for every occurrence). Deduplicating the face per edge
+/// key makes a seam stored twice in one wire (Forward and Reversed) look like a
+/// *free* edge (`aLF.Extent() == 1`), so `SplitBlock`'s free-edge pass
+/// (`BOPAlgo_ShellSplitter.cxx:202-214`) removes the whole lateral face and the
+/// removal cascades through its neighbours.
 fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> {
     let mut mef: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
     for f in faces {
         for e in face_boundary_edges(f) {
             let k = edge_ek(&e);
-            let ent = mef.entry(k).or_default();
-            if !ent.iter().any(|x| ori_key(x) == ori_key(f)) {
-                ent.push(f.clone());
-            }
+            mef.entry(k).or_default().push(f.clone());
         }
     }
     mef
 }
 
+/// `TopExp::MapShapesAndAncestors(aShell, EDGE, FACE, aMEFP)`
+/// (`BOPAlgo_ShellSplitter.cxx:266`): occurrence-counting append, as above.
 fn merge_face_into_mef(
     mef: &mut HashMap<crate::shell_splitter::EKey, Vec<TopoShape>>,
     face: &TopoShape,
 ) {
     for e in face_boundary_edges(face) {
         let k = edge_ek(&e);
-        let ent = mef.entry(k).or_default();
-        if !ent.iter().any(|x| ori_key(x) == ori_key(face)) {
-            ent.push(face.clone());
-        }
+        mef.entry(k).or_default().push(face.clone());
     }
 }
 
@@ -171,7 +175,15 @@ fn refine_shell(
                     crate::shell_splitter::edge_traversal(&a),
                     crate::shell_splitter::edge_traversal(&b),
                 ) {
-                    (Some(ta), Some(tb)) => ta == tb,
+                    // A closed ring (both endpoints the same vertex) carries no
+                    // traversal direction, so its two views would always compare
+                    // equal and every such edge would become a stop edge — the
+                    // port's box∪cylinder shell was split on the section circle
+                    // for exactly that reason. OCCT's `RefineShell` compares only
+                    // the cumulated orientations of the two occurrence views
+                    // (`BOPAlgo_ShellSplitter.cxx:475-482`, `FindShape`), which is
+                    // the one signal a closed ring still carries.
+                    (Some(ta), Some(tb)) if ta.0 != ta.1 => ta == tb,
                     _ => a.0.orientation() == b.0.orientation(),
                 };
                 if same_dir {
@@ -284,6 +296,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
     if a_m_faces.is_empty() {
         return;
     }
+
     let mut a_lf_connected: Vec<TopoShape> = Vec::new();
     let mut a_boundary: HashSet<usize> = HashSet::new();
     for f in &my_shapes {
@@ -375,6 +388,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
         let mut a_l_sh_nc: Vec<TopoShape> = Vec::new();
         let refined = refine_shell(&walked, &a_mefp);
         let n_sp = refined.len();
+
         for sh in refined {
             if shell_is_closed(&sh) {
                 let c = sh;

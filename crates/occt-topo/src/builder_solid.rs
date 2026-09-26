@@ -56,7 +56,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::int_tools_full::IntToolsContext;
-use crate::shape::{Face, Shell, Solid, TopoShape};
+use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
 use crate::shell_splitter::{ShellSplitter, edge_key, EKey};
 use crate::topo_tools_full::{edges_of, faces_of};
 
@@ -84,10 +84,42 @@ fn face_edge_keys(face: &TopoShape) -> Vec<EKey> {
     out
 }
 
-/// Whether `edge_key` closes on `face` — the edge is used twice by the face
-/// boundary (OCCT `BRep_Tool::IsClosed(aE, aF)`).
+/// Boundary-edge **occurrences** of `face` — `TopExp_Explorer(face, EDGE)` with
+/// the default `CumOri = true` (`TopExp.cxx:80-120`): a seam stored twice in the
+/// wire (Forward and Reversed) yields two entries. `edges_of` uniquifies by
+/// `TShape` and hides the second occurrence, so `PerformShapesToAvoid` reads
+/// `aNbF == 1` for a seam and avoids the whole lateral face instead of taking
+/// the `aNbF == 2` branch (`BOPAlgo_BuilderSolid.cxx:182-209`).
+fn face_edge_occurrences(face: &TopoShape) -> Vec<Edge> {
+    let mut out = Vec::new();
+    for w in crate::topo_tools_full::wires_of_face(&Face(face.clone())) {
+        out.extend(crate::topo_tools_full::edges_of_wire(&w));
+    }
+    out
+}
+
+/// `BRep_Tool::IsClosed(E, F)` (`BRep_Tool.cxx:795-841`): false outright for a
+/// plane (`cxx:819-822`), otherwise true when the edge is used twice by this
+/// face's boundary — the port's stand-in for a `CurveOnClosedSurface`
+/// representation (a seam of a cylinder/sphere/torus).
 fn edge_closed_on_face(face: &TopoShape, key: &EKey) -> bool {
-    edges_of(face).iter().filter(|e| edge_key(e) == *key).count() >= 2
+    if let Some(surf) = BRepTool::face_surface(&Face(face.clone())) {
+        if crate::brep_surface::classify_surface(surf.as_ref())
+            == crate::brep_surface::SurfaceKind::Plane
+        {
+            return false;
+        }
+    }
+    let mut seen = false;
+    for e in face_edge_occurrences(face) {
+        if edge_key(&e) == *key {
+            if seen {
+                return true;
+            }
+            seen = true;
+        }
+    }
+    false
 }
 
 /// Whether a face is unbounded (its bounding box is open in some direction).
@@ -365,7 +397,7 @@ impl BuilderSolid {
                 if self.is_avoided(f) {
                     continue;
                 }
-                for e in edges_of(f) {
+                for e in face_edge_occurrences(f) {
                     let key = edge_key(&e);
                     if !mef.contains_key(&key) {
                         mef_order.push(key);
