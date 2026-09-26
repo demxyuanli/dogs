@@ -185,6 +185,13 @@ OCCT 用 `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`（`TopExp.cxx:80-
 ① 先把**已移植但未接线**的采样点数族（`compute_nb_samples2d`/`compute_nb_u|v_samples_full`/`compute_nb_samples_3d`/`compute_nb_samples_t_{2,3}d`）接进网格管线；② 忠实移植 `BRepMesh_Delaun` + `BRepMesh_DelaunayBaseMeshAlgo` 替换耳切与四叉树；③ 逐文件对齐 GT 表。
 **oracle 已交给它**：`specs/occt_probe/occt_probe.exe <file> --mesh 0.1`（GT 表：Cube 24/12、Cylinder 106/100、Sphere 273/516、Torus 810/1508、Shape 18733/36444、linkrods 2184/2928、rev 76/64、screw 652/944）。
 **门禁口径已写明**：`--lib` 1281/0（不得新增测试）+ 四道 STEP + phase5/9/10/19/20 + `--all-targets` 0 error；`export_data_obj` 本轮**允许**合法变化（§2 期望值随后按 OCCT GT 重订），但要求「仍全 ok + 向 GT 收敛 + 报前后对照表」。
+**round 237 —— T-25 批 3（vertex 家族）落地：`tshape.rs` + `tgeometry.rs` 一次改净（编译通过）**
+
+- `VertexGeomCore { point: GpPnt, tolerance: f64 }`（对应 `tgeometry.rs:27-30` ✓）+ `TShape.vertex_core: Option<VertexGeomCore>` + `vertex_core_mut()`/`vertex_core()` ✓；`new()` 初始 `None` ✓；`Drop` 清空 ✓；
+- **读取端** `vertex_geom` 优先读槽 ✓（无则回退侧表 ✓）；`vertex_point`/`vertex_tolerance` 自动跟随 ✓；**写入端** `set_vertex` 排空到槽 ✓；**生命周期** `clear_shape` 增清 `vertex_core` ✓；
+- `cargo check --lib` = Finished、0 error ✓。
+**待办**：`--lib` 1281/0 + `step_obj_area` + 逐位对比（等批 2 的 `step_obj_parity` job 释放 cargo 锁后立即跑 ✓）；**未跑完不得视为批 3 通过** ✗。
+**批 4（face 家族，14 处/6 文件）**：同一模式 ✓（`FaceGeom { surface: Arc<dyn Surface>, tolerance, natural_restriction }` ✓ **注意 surface 也是 `edge_pcurves` 的 surface 身份回退所依赖的** ✗ ⇒ 批 4 完成后即可把回退从侧表迁到 `TShape` ✓）。
 **round 236 —— ✅✅ T-25 批 2 验收（除 `step_obj_parity`）全绿，且导出**逐位一致**（`same=23 diff=0`）**
 
 `e8a405ce`（边 3D 几何：`curve` + 6 标量全部走 `TShape.edge_core` 槽）的验收：
