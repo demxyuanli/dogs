@@ -33,6 +33,14 @@ fn main() {
         let parts: Vec<_> = model.shapes.iter().map(|s| s.shape.clone()).collect();
         TopoBuilder::new().make_compound_of(&parts).0
     };
+    if std::env::args().any(|a| a == "--roots") {
+        println!("ROOTS count={}", model.shapes.len());
+        for (i, s) in model.shapes.iter().enumerate() {
+            let ptr = std::sync::Arc::as_ptr(&s.shape.tshape) as usize;
+            println!("ROOT i={i} ptr={ptr:#x} type={:?} faces={}", s.shape.shape_type(), faces_of(&s.shape).len());
+        }
+        return;
+    }
     if std::env::args().any(|a| a == "--volroots") {
         println!("VOLROOT count={}", model.shapes.len());
         for (i, s) in model.shapes.iter().enumerate() {

@@ -1853,6 +1853,28 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.82 round 81 —— 【口径修正】端口按「去重面」计数，OCCT 探针按「出现次数」计数
+
+`--roots` sweep（`.target-gate/roots_sweep.txt`）：
+```
+a3n00.stp : ROOTS count=2  i0 ptr=0x...860 Solid faces=226   i1 ptr=0x...860 Solid faces=226   # 同一 TShape 两次
+T0M.stp   : ROOTS count=2  i0 ptr=0x...4e0 Compound faces=1772 i1 ptr=0x...0e0 Solid faces=1772
+acs10.stp : ROOTS count=2  i0 ptr=0x...f00 Compound faces=786  i1 ptr=0x...d60 Solid faces=786
+bottom.step: ROOTS count=1  i0 Solid faces=323
+```
+
+两个 root 分别是 **Compound** 与其内含 **Solid**（同一几何登记两次）；a3n00 更极端——两个 root 指针相同。
+
+更关键的计数口径：
+- 端口 `topo_tools_full::faces_of` = `shapes_of` = **`map_shapes`（去重）**；
+- OCCT 探针 `--mesh`/`--perface` 用 **`TopExp_Explorer`（按出现次数，不去重）**。
+
+⇒ 上一节表格里的 `Δ面`（T0M −6、acs10 −1、a3n00 0）很可能是**同一个面 TShape 出现多次**的计数差，
+而不是几何缺失；三角形总数同理可能因此偏小。**在与 OCCT 对拍前必须统一到同一口径**
+（建议端口探针另加 occurrence 版遍历）。
+
+**下一步**：给端口探针加 occurrence 版统计（`TopExp_Explorer` 等价遍历），重跑 8 模型，再判断哪些是真差异。
+
 ### 9.81 round 80+ —— 【首次全模型对拍】6/8 接近，`acs10` 与 `T0M` 明显偏离
 
 协议：端口 `IncrementalMesh::from_deflection(shape, d, false, 20°)` ↔ OCCT `--mesh <d> 0.349066`，`d` = 端口 `computed_lin`。
