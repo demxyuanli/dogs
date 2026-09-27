@@ -1853,6 +1853,31 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.93 round 92 —— 单面网格管线与失败点（`discret_root.rs:1357-1374`）
+
+```rust
+pub fn discretize_face(&mut self, face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
+    let mut model = match ModelBuilder::build_model(&face.0, &params) {
+        Ok(m) => m,
+        Err(_) => return wireframe::face_to_triangles(face, deflection),   // 回退 1
+    };
+    ModelPreProcessor::perform(&mut model, &params);
+    match self.build_shape_mesh(&mut model) {
+        Ok(m) => (m.vertices, m.triangles),
+        Err(_) => wireframe::face_to_triangles(face, deflection),          // 回退 2
+    }
+}
+```
+
+⇒ 单面路径有三种可能来源：**主流水线**（`ModelBuilder`+`ModelPreProcessor`+`build_shape_mesh`），
+或两处 **`wireframe` UV 网格回退**。`f1495` 的 `mv=118` 说明**边界点很多**（回退的 UV 网格在
+`du≈6.25, def≈2.57` 下只会给 ~8 点），因此更像**主流水线跑通但三角化几乎没产出**（118 边界点 → 仅 6 三角形）。
+
+**下一步（确定性）**：给 `f1495` 加一次性探针，分别打印：
+1. 是否走了回退（两条 `Err` 分支）；
+2. 主流水线里 `ModelBuilder` 的边界点数 / `ModelPreProcessor` 后点数 / `build_shape_mesh` 产出的三角形数；
+3. 失败时 `build_shape_mesh` 的具体 `Err` 文案。
+
 ### 9.92 round 91 —— 修正 9.91：那条 UV 网格属于**回退路径**，主路径另有实现
 
 调用关系（grep 结果）：
