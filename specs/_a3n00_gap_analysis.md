@@ -1853,6 +1853,19 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.92 round 91 —— 修正 9.91：那条 UV 网格属于**回退路径**，主路径另有实现
+
+调用关系（grep 结果）：
+- `FaceDiscret::discretize_face`（`face_discret.rs:555`，docs 自述「Port of `BRepMesh_FaceDiscret`」，内部是 UV 网格）
+  只被 `meshing/fast_discret.rs:72`（`FastDiscret`，其自身注释也说是 fallback）、`face_discret.rs:801`（测试）、`meshing/context.rs:283` 调用；
+- `incremental_mesh/discret_root.rs:1361` **另有** `discretize_face(face, deflection) -> (Vec<Gpnt>, Vec<Triangle>)`，这才是 `IncrementalMesh` 的主路径（Delaunay）。
+
+⇒ §9.91 的措辞需修正：那套 UV 网格是**回退实现**（与 `step_obj_parity` 头注释一致），
+**不能断定** T0M 的 `f1495` 走的是它。**主路径 `discret_root.rs:1361` 失败**才是更可能的原因。
+
+**下一步（确定性）**：在 `--dev`/专门模式里打印每个面实际走的分支（主 Delaunay vs FastDiscret fallback）与失败原因；
+对 `f1495` 打印其 UV 界、边界点数、内部点数、以及三角化输出点数。
+
 ### 9.91 round 90 —— 【根因候选·高危】`face_discret` 的内部加点仍是 **UV 网格**（用 3D 偏转当 UV 步长）
 
 `crates/occt-topo/src/meshing/face_discret.rs`：
