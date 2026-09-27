@@ -1853,6 +1853,29 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.90 round 89 —— 【强假设】`f1495` 的 pcurve `u` 超出曲面周期区间（最高 9.4 > 2π）
+
+`--checkwire` 对 T0M `f1495`（Cylinder，mv=118 mt=6）：
+```
+CW face=1495 u=[0.0000,6.2832] v=[-inf,inf] dU=6.2832 dV=inf
+  w0 e0 Forward f=3.160726 l=9.238343 df=(9.405644,0.067712) dl=(3.328027,0.067712) delta=(-6.077617,0)
+  w0 e1 Forward f=1.374517 l=1.551663 df=(9.228499,1.300000) dl=(9.405644,0.067712) delta=(0.177145,-1.232288)
+  w0 e2 Reversed f=3.337872 l=9.415310 df=(9.228499,1.300000) dl=(3.151061,1.300000) delta=(-6.077438,0)
+  w0 e3 Forward f=4.525954 l=4.702921 df=(3.328027,0.067712) dl=(3.151061,1.300000) delta=(-0.176967,1.232288)
+```
+
+两个关键点：
+1. **`v` 范围是 `-inf .. inf`**（圆柱的自然 V 域无限）——面网格必须用 **pcurve 围出的 UV 界**（OCCT `BRepTools::UVBounds(face)`），
+   不能用曲面自身无限区间；
+2. **pcurve 的 `u` 达 9.23–9.41**，超出曲面周期区间 `[0, 2π]≈[0, 6.2832]`（≈ 2π 再 +3.0），
+   而 `df.x=9.405644 > 6.2832`。
+
+⇒ 若端口的 face 三角化直接把 pcurve 的 `(u,v)`（u 最高 9.4、v 来自无限域）灌给 range splitter / Delaunay，
+UV 域与曲面参数域**不一致**，约束三角化就会大量丢弃三角形 —— 这正好解释 `mv=118 mt=6`。
+
+**下一步（验证）**：在端口 face 三角化入口打印实际使用的 UV 界，与 `BRepTools::UVBounds(face)`（可由 pcurve 端点算出）对比；
+若确认没有 wrap/夹取，则按 OCCT 的 `BRepMesh_FaceDiscret`/`BRepMesh_ShapeTool::UVBounds` 处理（周期面按周期平移 pcurve）。
+
 ### 9.89 round 88 —— 病态面的结构（可复现样本）
 
 | 面 | 类型 | wires / edges | mv | mt |
