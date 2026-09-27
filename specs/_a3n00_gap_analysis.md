@@ -1853,6 +1853,20 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.86 round 85 —— 偏粗问题的入口盘点
+
+`IncrementalMesh::from_deflection(shape, d, false, angle)`（`meshing/incremental_mesh/discret_root.rs:117-130`）
+把 `d`/`angle`/`relative` 原样装进 `MeshParameters`（`meshing/parameters.rs:27`）再 `perform()` —— 参数传递本身无损耗。
+
+`angle`/`deflection` 在端口内的使用点（按文件计数）：
+`incremental_mesh/discret_root.rs` 23、`model_builder/preprocessor.rs` 19、`meshing/edge_discret.rs` 14、
+`range_splitter/splitter.rs` 12、`meshing/parameters.rs` 11、`meshing/deflection.rs` 8。
+
+⇒ 下一步应固定**一个面**，比较两侧：
+1. **边界节点数**（端口 `edge_discret` ↔ OCCT `BRepMesh_EdgeDiscret`/`GCPnts`）
+2. **内部加点数**（端口 `range_splitter/splitter.rs` ↔ OCCT `BRepMesh_DefaultRangeSplitter`）
+3. `meshing/deflection.rs` 是否等价于 `BRepMesh_Deflection`（在 `relative=false` 下 OCCT 仍会做 per-face 容差处理）
+
 ### 9.85 round 84 —— 【新目标】端口网格系统性偏粗（逐面分布对比，acs10）
 
 对 `acs10.stp`（OCCT 787 面 / 46494 tris；端口 786 面 / 37223 tris）做**逐面三角形数的分布**对比：
