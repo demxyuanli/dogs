@@ -27,12 +27,16 @@ fn main() {
     let mode_fixms = std::env::args().any(|a| a == "--fixms");
     let override_lin: Option<f64> = std::env::args().nth(2).and_then(|s| s.parse().ok());
     let model = read_step_file(&path).expect("read step");
-    let shape = if model.shapes.len() == 1 {
-        model.shapes[0].shape.clone()
-    } else {
-        let parts: Vec<_> = model.shapes.iter().map(|s| s.shape.clone()).collect();
-        TopoBuilder::new().make_compound_of(&parts).0
-    };
+    // Match the OCCT probe's `aReader.OneShape()`: the FIRST transfer root.
+    // `model.shapes` can hold both a wrapper `Compound` and the `Solid` inside
+    // it, so compounding every root would traverse the solid 2-3 times.
+    let shape = model.shapes[0].shape.clone();
+    if std::env::args().any(|a| a == "--occ") {
+        use occt_topo::iterator::ShapeExplorer;
+        let occ = ShapeExplorer::new(vec![shape.clone()], occt_topo::abs::ShapeType::Face).count();
+        println!("OCC faces_distinct={} faces_occ={}", faces_of(&shape).len(), occ);
+        return;
+    }
     if std::env::args().any(|a| a == "--roots") {
         println!("ROOTS count={}", model.shapes.len());
         for (i, s) in model.shapes.iter().enumerate() {

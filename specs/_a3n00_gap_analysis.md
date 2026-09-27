@@ -1853,6 +1853,23 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.83 round 82 —— 口径澄清后重跑：**三角形缺口是真的**
+
+给探针改用 `model.shapes[0].shape`（对齐 OCCT `aReader.OneShape()` = 第一个 transfer root），
+避免把 `Compound` 与其内含 `Solid` 叠加遍历；重跑结果与改前**逐位相同**：
+
+| 模型 | 端口F | 端口 tris | OCCT F | OCCT tris | Δtris |
+|---|---|---|---|---|---|
+| a3n00.stp | 226 | 12283 | 226 | 12324 | −0.33% |
+| acs10.stp | 786 | 37223 | 787 | 46494 | **−19.9%** |
+| T0M.stp | 1772 | 46678 | 1778 | 66576 | **−29.9%** |
+
+⇒ 面数的小差（−1/−6）可用「去重 vs 出现次数」解释，但**三角形缺口（−20%/−30%）与口径无关，是真实差异**
+（端口的 `stats` 也显示有 1/3 个面未产出网格）。§9.82 的保留只影响面数，不影响三角形结论。
+
+**下一步**：对 T0M 用 OCCT `--perface`（逐面 contrib）与端口 `--facevol` 配对，找出欠网格的面；
+但需先修端口 `face_volume_contribution` 的取向语义（§9.76）。
+
 ### 9.82 round 81 —— 【口径修正】端口按「去重面」计数，OCCT 探针按「出现次数」计数
 
 `--roots` sweep（`.target-gate/roots_sweep.txt`）：
