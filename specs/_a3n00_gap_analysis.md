@@ -1853,6 +1853,27 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.87 round 86 —— 【收敛】网格管线**不是全局偏粗**，缺口集中在 T0M/acs10
+
+`step_obj_parity -- --nocapture` 的 `f-ratio`（端口 `brep_to_obj(shape, 0.1)` ↔ `occ-*.obj` 头部 `# Faces`）：
+
+| 模型 | f-ratio | | 模型 | f-ratio |
+|---|---|---|---|---|
+| Cube/Cylinder/Cone/Sphere/Torus | **1.00** | | occ/bottom.step | 0.99 |
+| HoledPlate/Offset/OffsetPlaneHoleEdge | **1.00** | | occ/motoc.step | 0.98 |
+| Shape/Shape-1/Shape-2/reversed | **1.00** | | occ/ATU01038.step | 1.00 |
+| | | | occ/top.step | 1.00 |
+| | | | occ/TDB.stp | 0.97 |
+| | | | occ/a3n00.stp | 0.99 |
+| | | | **occ/T0M.stp** | **0.69** |
+| | | | **occ/acs10.stp** | **0.80** |
+
+⇒ 在**所有简单/中等形状上端口与 OCCT 完全一致（1.00）**，说明网格管线本身没问题；
+§9.85 的「系统性偏粗」只在 **T0M / acs10** 这两个模型上成立（bottom/motoc/TDB 仅 1-3%）。
+
+**下一步（聚焦）**：只查 T0M 与 acs10 —— 大概率是**这些模型里某类面**（如特定 B 样条/裁剪面）的 UV 域或离散没被正确细分，
+而不是全局参数问题。可先用 `--mesh` 的逐面 nodes/triangles 找出两侧差异最大的面。
+
 ### 9.86 round 85 —— 偏粗问题的入口盘点
 
 `IncrementalMesh::from_deflection(shape, d, false, angle)`（`meshing/incremental_mesh/discret_root.rs:117-130`）
