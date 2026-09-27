@@ -1853,6 +1853,30 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.85 round 84 —— 【新目标】端口网格系统性偏粗（逐面分布对比，acs10）
+
+对 `acs10.stp`（OCCT 787 面 / 46494 tris；端口 786 面 / 37223 tris）做**逐面三角形数的分布**对比：
+
+| 区间 | OCCT 面数 | 端口面数 |
+|---|---|---|
+| 0 | 0 | 1 |
+| 1-10 | 237 | 232 |
+| 11-50 | 264 | **315** |
+| 51-200 | **239** | 205 |
+| 201-1000 | **47** | 33 |
+| >1000 | 0 | 0 |
+
+⇒ 缺口不是「丢面」，而是**本该 51-1000 的面被端口压到了 11-50**：端口在同一名义偏转下**系统性偏粗**。
+这解释了 §9.81 里 `acs10 −19.9%`、`T0M −29.9%` 的三角形缺口（面数只差 1/6）。
+
+**候选根因（按优先级）**：
+1. `IncrementalMesh::from_deflection` 的**角偏转/相对偏转**处理与 `BRepMesh_IncrementalMesh(deflection, false, Angle)` 不一致；
+2. 边界离散（`GCPnts_*`/`BRepAdaptor`）产点少于 OCCT；
+3. Delaunay 内部加点（`BRepMesh_DefaultRangeSplitter`/refinement）判据不同。
+
+**下一步**：固定一个面（OCCT `--mesh` 逐面可定位），对比两侧的**边界节点数**与**内部加点数**；
+`occt_probe` 已有 `--mesh` 的逐面 nodes/triangles，端口探针有 `mv`/`mt`。
+
 ### 9.84 round 83 —— 【工具不可用】端口的体积积分在这些 STEP 形状上产生垃圾值
 
 对若干模型同时跑 `--voltotal`（`volume_properties`）与 `--facevol`（逐面 `face_volume_contribution`）：
