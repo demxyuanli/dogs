@@ -1853,6 +1853,32 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.84 round 83 —— 【工具不可用】端口的体积积分在这些 STEP 形状上产生垃圾值
+
+对若干模型同时跑 `--voltotal`（`volume_properties`）与 `--facevol`（逐面 `face_volume_contribution`）：
+
+| 模型 | `VOLTOTAL mass` | `facevol_sum` |
+|---|---|---|
+| bottom.step | **9.78e+26** | **1.03e+27** |
+| ATU01038.step | 731093.75 | 495606.14 |
+| motoc.stp | (空/失败) | 0 |
+| a3n00.stp | −3,336,973.4 | −4,827,776.1 |
+
+⇒ 端口的 **`BRepGProp` 体积积分（Vinert）在这些形状上完全不可信**（1e26 量级、或两个口径互不相等）。
+注意 `bottom.step` 通过 `step_obj_parity` 与 `step_obj_area`（**面积**走 `Sinert`，与体积是两条路径），
+所以「面积门禁绿」并不能说明体积积分正确。
+
+**结论与影响**：
+- **§9.71/§9.73 基于 `contrib` 的逐面配对结论全部作废**（工具本身不成立）；
+- `--facevol` 目前只能用于「同一形状内相对比较」，不能与 OCCT `--perface` 绝对对拍；
+- 若要继续逐面对拍，需先让端口的 `volume_properties`/`face_volume_contribution` 可信
+  （对照 `BRepGProp_Vinert::Perform` 与 `GProp_GProps::Add`；并区分**闭壳**与**开壳**：
+  开壳的 `VolumeProperties` 在 OCCT 里也不是体积）。
+
+**下一步（择一）**：
+1. 先修端口体积积分（`brep_gprop_full`），再回到逐面配对；
+2. 或改用**不依赖体积**的配对键（端口 `uv=[...]` + 面类型 + 边数 ↔ OCCT `--perface` 的 type + `--fface` 的边数）。
+
 ### 9.83 round 82 —— 口径澄清后重跑：**三角形缺口是真的**
 
 给探针改用 `model.shapes[0].shape`（对齐 OCCT `aReader.OneShape()` = 第一个 transfer root），
