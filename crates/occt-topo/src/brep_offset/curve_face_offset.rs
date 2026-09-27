@@ -758,7 +758,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
     {
         let mut ws = wires_of_face(&face_out);
         for w in ws.iter_mut() {
-            crate::shhealing::check_pcurves_and_shift(w, &face_out, occt_core::precision::CONFUSION);
+            crate::shhealing::check_pcurves_and_shift(w, &face_out, occt_core::precision::CONFUSION, true);
         }
     }
     Ok(face_out)

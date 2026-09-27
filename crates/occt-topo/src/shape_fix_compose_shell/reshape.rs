@@ -62,19 +62,49 @@ fn key(s: &TopoShape) -> usize {
 
 impl ReShape for MapReShape {
     fn apply(&self, s: &TopoShape) -> TopoShape {
-        match self.map.get(&key(s)) {
-            Some(r) => r.clone(),
-            None => s.clone(),
-        }
+        // `BRepTools_ReShape::Apply` (`BRepTools_ReShape.cxx:...`) goes through
+        // `Status` -> `Value`.
+        self.value(s).unwrap_or_else(|| s.clone())
     }
+    /// `BRepTools_ReShape::replace` (`BRepTools_ReShape.cxx:164-209`): the
+    /// replacement is stored **orientation-normalised** — when the key shape is
+    /// REVERSED, both it and the replacement are reversed before the bind; for
+    /// INTERNAL/EXTERNAL the replacement keeps the relative orientation and the
+    /// key becomes FORWARD. `Value` re-applies the query's orientation.
     fn replace(&mut self, old: &TopoShape, new: &TopoShape) {
-        self.map.insert(key(old), new.clone());
+        let mut shape = old.clone();
+        let mut newshape = new.clone();
+        if shape.orientation() == Orientation::Reversed {
+            shape.reverse();
+            newshape.reverse();
+        } else if matches!(shape.orientation(), Orientation::Internal | Orientation::External) {
+            newshape.set_orientation(if newshape.orientation() == shape.orientation() {
+                Orientation::Forward
+            } else {
+                Orientation::Reversed
+            });
+            shape.set_orientation(Orientation::Forward);
+        }
+        self.map.insert(key(&shape), newshape);
     }
     fn is_recorded(&self, s: &TopoShape) -> bool {
         self.map.contains_key(&key(s))
     }
+    /// `BRepTools_ReShape::Value` (`BRepTools_ReShape.cxx:230-279`): the stored
+    /// replacement, REVERSED again when the queried shape is REVERSED.
+    ///
+    /// Without this a seam edge that appears twice in a wire (Forward and
+    /// Reversed) got the *same* stored orientation for both occurrences, which
+    /// collapsed the periodic face's boundary (a3n00 f173/f176).
     fn value(&self, s: &TopoShape) -> Option<TopoShape> {
-        self.map.get(&key(s)).cloned()
+        let mut res = self.map.get(&key(s))?.clone();
+        if s.orientation() == Orientation::Reversed {
+            res.reverse();
+        }
+        if matches!(s.orientation(), Orientation::Internal | Orientation::External) {
+            res.set_orientation(s.orientation());
+        }
+        Some(res)
     }
 }
 

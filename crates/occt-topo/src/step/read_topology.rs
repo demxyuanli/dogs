@@ -711,7 +711,7 @@ impl<'a> Resolver<'a> {
                 crate::shhealing::xsalgo_check_pcurve(e, &face, self.precision);
             }
             crate::shhealing::project_wire_pcurve_ranges(w, &face, preci);
-            crate::shhealing::check_pcurves_and_shift(w, &face, preci);
+            crate::shhealing::check_pcurves_and_shift(w, &face, preci, false);
         }
         // `BRepLib_MakeFace.cxx:860-866` forced SameParameter is already in
         // `make_face_uv` for natural-bound Offset faces. Wiring it on STEP
@@ -724,9 +724,27 @@ impl<'a> Resolver<'a> {
         // `occ/bottom.step` (seam added, single face) but the result diverges
         // (mesh f 23557 -> 23408) because `ShapeFix_ComposeShell` still has the
         // UNPORTED branches of specs/_a3n00_gap_analysis.md §9.33/§9.32.
-        // NOT wired yet: it triggers on `occ/bottom.step` / `motoc.step`; the
-        // CompShell output still diverges (ours f < occ f), see §9.43/§9.47/§9.63.
-        let _ = &face;
+        // Wired 2026: `FromSTEP.FixShape` (`ShapeProcess_OperLibrary.cxx:830`)
+        // runs `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:345-498`) on every
+        // imported face; the `FixMissingSeam` step is `cxx:492-494`. The reader
+        // pass above (`check_pcurves_and_shift`) is the first wire round
+        // (`cxx:365-480`), which leaves `FixLacking` off (`cxx:372`); the second
+        // round (`cxx:509+`) is not run here.
+        {
+            let mut sff = crate::shhealing::ShapeFixFace::with_face(&face);
+            sff.result = Some(face.0.clone());
+            if sff.fix_missing_seam() {
+                if let Some(res) = sff.result.clone() {
+                    if res.shape_type() == crate::abs::ShapeType::Face {
+                        let rf = crate::shape::Face(res.clone());
+                        for mut w in crate::topo_tools_full::wires_of_face(&rf) {
+                            crate::shhealing::check_pcurves_and_shift(&mut w, &rf, self.precision, false);
+                        }
+                        return Ok(res);
+                    }
+                }
+            }
+        }
         Ok(face.0)
     }
 

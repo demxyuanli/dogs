@@ -113,15 +113,18 @@ impl WireSegment {
         self.orient
     }
 
-    /// FirstVertex() (cxx:89-93): ShapeAnalysis_Edge::FirstVertex of the first
-    /// edge, i.e. the child stored FORWARD.
+    /// FirstVertex() (cxx:89-93): `ShapeAnalysis_Edge::FirstVertex(Edge(1))`.
+    /// That respects the edge orientation (a REVERSED edge's first vertex is
+    /// its TShape's LAST child); returning the raw first child made a closed
+    /// segment report the wrong extremity, so `CollectWires` could not join a
+    /// seam edge to it (a3n00: 16 extra 2-wire faces).
     pub fn first_vertex(&self) -> Option<Vertex> {
-        self.edges.first().and_then(|e| edge_vertices(e).0)
+        self.edges.first().and_then(crate::shhealing::first_vertex)
     }
 
-    /// LastVertex() (cxx:97-101).
+    /// LastVertex() (cxx:97-101): `ShapeAnalysis_Edge::LastVertex(Edge(NbEdges))`.
     pub fn last_vertex(&self) -> Option<Vertex> {
-        self.edges.last().and_then(|e| edge_vertices(e).1)
+        self.edges.last().and_then(crate::shhealing::last_vertex)
     }
 
     /// IsClosed() (cxx:105-110): FirstVertex().IsSame(LastVertex()).

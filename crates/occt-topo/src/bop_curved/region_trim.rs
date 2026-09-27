@@ -441,7 +441,7 @@ fn provision_face_pcurves(shape: &TopoShape) {
     for f in faces_of(shape) {
         let mut wires = wires_of_face(&f);
         for w in wires.iter_mut() {
-            crate::shhealing::check_pcurves_and_shift(w, &f, occt_core::precision::CONFUSION);
+            crate::shhealing::check_pcurves_and_shift(w, &f, occt_core::precision::CONFUSION, true);
         }
     }
 }

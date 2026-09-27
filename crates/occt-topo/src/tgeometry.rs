@@ -301,8 +301,17 @@ impl GeometryRegistry {
     }
 
     pub fn edge_parameters(&self, s: &TopoShape) -> (f64, f64) {
-        match self.edge_geom(s) {
-            Some(g) => (g.first, g.last),
+        // `BRep_TEdge` always carries `myRange`; the 3D curve is a *separate*
+        // CurveRepresentation (`BRep_Curve3D`) and may be absent.
+        // `ShapeFix_ComposeShell::SplitByLine` builds exactly such an edge
+        // (`cxx:2061-2070`: `MakeEdge` + two pcurves + `Range`), so the range
+        // must be read from the edge core even when `edge_geom` reports no
+        // curve. Returning `(-inf, inf)` here made `set_pcurves` /
+        // `set_pcurve_range` consumers store an infinite COS window and the
+        // seam edge never meshed.
+        let ts = s.tshape.read().expect("poisoned TShape lock");
+        match ts.edge_core() {
+            Some(c) => (c.first, c.last),
             None => (f64::NEG_INFINITY, f64::INFINITY),
         }
     }
@@ -368,6 +377,38 @@ impl GeometryRegistry {
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurves(key, curves, first, last);
+    }
+
+    /// `ShapeBuild_Edge::CopyPCurves` (`ShapeBuild_Edge.cxx:360-413`) at the
+    /// `BRep_TEdge` level: copy every CurveOnSurface representation (pcurve
+    /// list + range) of `from` onto `to`, keyed by the surface pointer.
+    ///
+    /// Deliberately independent of `edge_geom`: OCCT's CurveRepresentation
+    /// list exists for edges that carry **only** pcurves.
+    /// `ShapeFix_ComposeShell::SplitByLine` (`ShapeFix_ComposeShell.cxx:2061-2070`)
+    /// creates exactly such an edge (no 3D curve, two pcurves + range), and
+    /// `DispatchWires` copies it with `ShapeBuild_Edge::Copy`; routing that
+    /// through `edge_geom` dropped the pcurves and the resulting face had
+    /// mesh-less edges.
+    pub fn copy_edge_pcurve_slots(&self, to: &TopoShape, from: &TopoShape) {
+        if Arc::ptr_eq(&from.tshape, &to.tshape) {
+            return;
+        }
+        let (curves, ranges) = {
+            let fts = from.tshape.read().expect("poisoned TShape lock");
+            match fts.edge_pcurves() {
+                Some(g) => (g.curves.clone(), g.ranges.clone()),
+                None => return,
+            }
+        };
+        let mut tts = to.tshape.write().expect("poisoned TShape lock");
+        let slot = tts.edge_pcurves_mut();
+        for (k, v) in curves {
+            slot.curves.insert(k, v);
+        }
+        for (k, v) in ranges {
+            slot.ranges.insert(k, v);
+        }
     }
 
     /// `BRep_Builder::Range(edge, face, first, last)` (`BRep_Builder.cxx:1121`).

@@ -1276,18 +1276,13 @@ pub fn combine_vertex(v1: &Vertex, v2: &Vertex, tol_factor: f64) -> Vertex {
 /// representation on the same surface, `cxx:376-398`) together with its
 /// pcurve `Copy()` and range (`cxx:400-411`).
 pub fn copy_pcurves(to: &Edge, from: &Edge) {
-    let reg = GeometryRegistry::global();
-    let Some(geom) = reg.edge_geom(&from.0) else {
-        return;
-    };
-    for (face_key, pcurves) in &geom.pcurves {
-        let copies: Vec<Arc<dyn Curve2d>> =
-            pcurves.iter().map(|pc| Arc::from(pc.clone_dyn())).collect();
-        reg.set_edge_pcurves(&to.0, *face_key, copies);
-        if let Some(&(first, last)) = geom.pcurve_ranges.get(face_key) {
-            reg.set_pcurve_range(&to.0, *face_key, first, last);
-        }
-    }
+    // `ShapeBuild_Edge::CopyPCurves` (`ShapeBuild_Edge.cxx:360-413`) walks the
+    // `BRep_TEdge` CurveRepresentation list, which is independent of the 3D
+    // curve. Copying through `edge_geom` dropped the pcurves of curve-less
+    // edges (the `ShapeFix_ComposeShell::SplitByLine` seam edges,
+    // `ShapeFix_ComposeShell.cxx:2061-2070`), so dispatch produced a face
+    // whose seam edges had no pcurve and never meshed.
+    GeometryRegistry::global().copy_edge_pcurve_slots(&to.0, &from.0);
 }
 
 /// `ShapeFix_Edge::FixSameParameter` (`ShapeFix_Edge.cxx:798-935`).
@@ -3166,7 +3161,7 @@ fn fix_notched_edges(wire: &mut Wire, face: &Face, min_tol: f64, max_tol: f64) -
 /// ported in `check_pcurve_rep_range` below (`cxx:110-114`), together with the
 /// non-planar `XSAlgo_ShapeProcessor::CheckPCurve` call at `cxx:175`. The
 /// `ShapeFix_Wire` passes that follow are independent of the face type.
-pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64) {
+pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lacking: bool) {
     check_pcurve_rep_range(wire, face, preci);
     // `ShapeFix_Wire::Perform` (`cxx:317-325`): FixReorder before FixEdgeCurves.
     let mut reorder_ok = fix_reorder_wire(wire, face);
@@ -3318,7 +3313,17 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64) {
     // `FromSTEP.FixShape.FixLackingMode` is "-1"
     // (`STEPControl_Controller.cxx:237`), so OCCT runs the pass exactly when
     // ReorderOK is true.
-    if reorder_ok {
+    // `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:369-374`) *disables*
+    // `FixLacking` for its first wire round and restores it (`cxx:457`) only
+    // for the post-`FixMissingSeam` second round (`cxx:509+`). This reader-time
+    // pass is that first round (`TranslateEdgeLoop::CheckPCurves` +
+    // `ShapeFix_Face::Perform.cxx:365-480`), so `FixLacking` must not run
+    // here: on a periodic face whose bounds are single closed seam edges it
+    // inserted a spurious back-going edge, which made `FixMissingSeam`'s
+    // `check_wire` sum to 0 and never merge the two wires (see
+    // specs/_a3n00_gap_analysis.md 9.95). The second-round call belongs after
+    // `FixMissingSeam`, which is not wired into the reader yet.
+    if reorder_ok && fix_lacking {
         let _ = fix_lacking_all(wire, face, false, preci, SHAPE_FIX_MAX_TOLERANCE);
     }
 }

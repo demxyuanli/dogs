@@ -74,6 +74,10 @@ impl DiscretRoot {
 #[derive(Clone, Copy, Debug)]
 pub struct FaceMeshStat {
     pub index: usize,
+    /// Pointer-identity key of the source face, so a caller can pair the stat
+    /// with its face without relying on traversal order (the mesh model skips
+    /// faces, so a positional lookup is off by the number of skipped faces).
+    pub shape_key: usize,
     pub surface: SurfaceType,
     pub vertices: usize,
     pub triangles: usize,
@@ -247,6 +251,11 @@ impl IncrementalMesh {
                 .unwrap_or(SurfaceType::OtherSurface);
             self.face_stats.push(FaceMeshStat {
                 index: ft.face_index,
+                shape_key: model
+                    .face(ft.face_index)
+                    .ok()
+                    .map(|f| crate::tgeometry::GeometryRegistry::shape_key(&f.face().0))
+                    .unwrap_or(0),
                 surface: ty,
                 vertices: ft.vertices.len(),
                 triangles: ft.triangles.len(),
@@ -294,6 +303,7 @@ impl IncrementalMesh {
                 .unwrap_or(SurfaceType::OtherSurface);
             self.face_stats.push(FaceMeshStat {
                 index: i,
+                shape_key: crate::tgeometry::GeometryRegistry::shape_key(&face.0),
                 surface: ty,
                 vertices: vs.len(),
                 triangles: ts.len(),

@@ -624,11 +624,12 @@ impl CircleTool {
         // `aSqPrecision = aPrecision * aPrecision`.
         const PRECISION: f64 = 1e-9;
         const SQ_PRECISION: f64 = PRECISION * PRECISION;
-        // UNPORTED: the determinant guard in `BRepMesh_CircleTool.cxx:112` is
-        // `std::abs(aD) < gp::Resolution()`, i.e. `RealSmall()` = `DBL_MIN`
-        // (`gp.hxx:60`, `Standard_Real.hxx:132-135`); 1e-9 is not OCCT-derived.
-        // `delaun/constants.rs:167` uses `REAL_SMALL` for the same test.
-        const UNPORTED_DETERMINANT_GUARD: f64 = 1e-9;
+        // `BRepMesh_CircleTool.cxx:112`: `std::abs(aD) < gp::Resolution()`,
+        // i.e. `RealSmall()` = `DBL_MIN` (`gp.hxx:60`,
+        // `Standard_Real.hxx:132-135`). `delaun/constants.rs:167` already uses
+        // the same constant for this test; the former port-local 1e-9 guard was
+        // not OCCT-derived and rejected near-degenerate circumcircles.
+        const DETERMINANT_GUARD: f64 = occt_core::precision::REAL_SMALL;
 
         let (x1, y1) = p1;
         let (x2, y2) = p2;
@@ -648,7 +649,7 @@ impl CircleTool {
         }
 
         let d = 2.0 * (x1 * l1.1 + x2 * l2.1 + x3 * l3.1);
-        if d.abs() < UNPORTED_DETERMINANT_GUARD {
+        if d.abs() < DETERMINANT_GUARD {
             return None;
         }
         let inv_d = 1.0 / d;

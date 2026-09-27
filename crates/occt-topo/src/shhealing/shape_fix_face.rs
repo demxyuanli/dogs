@@ -155,7 +155,6 @@ impl ShapeFixFace {
             Some(f) => f.clone(),
             None => return false,
         };
-
         // cxx:1729-1735.
         let uclosed = crate::pcurve_full::sa_is_u_closed(surf.as_ref(), CONFUSION);
         let vclosed = crate::pcurve_full::sa_is_v_closed(surf.as_ref(), CONFUSION);
@@ -607,18 +606,70 @@ impl ShapeFixFace {
         comp.set_context(self.context.clone()); // cxx:2259
         comp.set_max_tolerance(self.max_tol); // cxx:2260
         comp.perform(); // cxx:2261
-
         // cxx:2263-2264: reset mySurf to the trimmed surface.
         self.surf = Some(rts);
-        self.result = comp.result().cloned(); // cxx:2266
+        // cxx:2266 myResult = CompShell.Result().
+        let mut result = comp.result().cloned();
+        // cxx:2270-2322: drop the small wires / faces ComposeShell can generate.
+        //  * cxx:2273-2300: every wire of every result face goes through
+        //    ShapeFix_Wire::FixSmall(true, Precision()); a wire that loses all
+        //    its edges is discarded and a face that loses all its wires is
+        //    removed (Context()->Remove).
+        //  * cxx:2303-2321: when the result keeps more than one face
+        //    (nbFaces > 1), FixSmallAreaWire(true) (cxx:2331-2394) discards
+        //    every wire for which ShapeAnalysis_Wire::CheckSmallArea (cxx:2004)
+        //    reports a null area; a face whose wires all disappear is removed.
+        // UNPORTED: Context()->Apply (cxx:2302/2322) is expressed by rebuilding
+        // the result here; BRepTools::Update (cxx:2320) is a no-op.
+        if let Some(res) = &result {
+            if res.shape_type() != ShapeType::Face {
+                let builder = TopoBuilder::new();
+                // First round: FixSmall.
+                let mut round1: Vec<(Face, Vec<Wire>)> = Vec::new();
+                for f in crate::topo_tools_full::faces_of(res) {
+                    let mut kept: Vec<Wire> = Vec::new();
+                    for w in wires_of_face(&f) {
+                        let mut w2 = w.clone();
+                        crate::shhealing::fix_small_all(&mut w2, &f, CONFUSION, CONFUSION, false);
+                        if !edges_of_wire(&w2).is_empty() {
+                            kept.push(w2);
+                        }
+                    }
+                    if !kept.is_empty() {
+                        round1.push((f, kept));
+                    }
+                }
+                let nb_faces = round1.len();
+                let mut kept_faces: Vec<Face> = Vec::new();
+                for (f, wires) in round1 {
+                    let mut kept_wires = wires;
+                    if nb_faces > 1 {
+                        kept_wires.retain(|w| !crate::shhealing::check_small_area(w, &f));
+                    }
+                    if kept_wires.is_empty() {
+                        continue; // cxx:2377-2385 / 2294-2298: remove the face
+                    }
+                    let orig_n = wires_of_face(&f).len();
+                    if kept_wires.len() == orig_n {
+                        kept_faces.push(f);
+                    } else if let Some(s) = BRepTool::face_surface(&f) {
+                        let mut nf = builder.make_face(s, &kept_wires);
+                        nf.0.set_orientation(f.0.orientation());
+                        kept_faces.push(nf);
+                    }
+                }
+                result = match kept_faces.len() {
+                    0 => None,
+                    1 => Some(kept_faces.remove(0).0.clone()),
+                    _ => Some(builder.make_shell(&kept_faces).0),
+                };
+            }
+        }
+        self.result = result;
         // cxx:2268: Context()->Replace(myFace, myResult).
         if let Some(res) = &self.result {
             self.context.replace(&face.0, res);
         }
-
-        // UNPORTED (cxx:2268-2325): the `Context()->Remove` small-wire/face
-        // cleanup (the port's `MapReShape` has no null binding),
-        // `ShapeFix_Wire::FixSmall` and `BRepTools::Update`.
         true
     }
 }

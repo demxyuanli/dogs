@@ -46,6 +46,7 @@ impl ComposeShell {
         // order keeps it aligned with the shrunk sequence.
         let mut shorts: Vec<i32> = vec![0; seqw.len()];
 
+
         // cxx:2519-2549: move vertex / INTERNAL segments out, measure the rest.
         let mut i = 0usize;
         while i < seqw.len() {
@@ -99,7 +100,6 @@ impl ComposeShell {
             let mut mindist = f64::MAX; // RealLast()
             let mut weigth = 0i32;
             let (mut shiftu, mut shiftv) = (0.0f64, 0.0f64);
-
             // cxx:2570-2724: find the next segment to connect.
             for i in 0..seqw.len() {
                 let seg = &seqw[i];
@@ -252,15 +252,16 @@ impl ComposeShell {
                     }
                 }
                 let seg_external = seg.orientation() == Orientation::External;
-                if !reverse {
-                    sbwd.extend(seg.edges().iter().cloned()); // cxx:2760
+                let appended: Vec<Edge> = if !reverse {
+                    seg.edges().to_vec() // cxx:2760
                 } else {
                     // cxx:2762-2768: wire->Add then WireData::Reverse(myFace)
                     // (cxx:483-572: Reverse + ComputeSeams + SwapSeam).
                     let mut wire = seg.edges().to_vec();
                     reverse_wire_data_on_face(&mut wire, &face);
-                    sbwd.extend(wire);
-                }
+                    wire
+                };
+                sbwd.extend(appended);
                 if seg_external {
                     seg.set_orientation(if reverse { Orientation::Reversed } else { Orientation::Forward });
                 } else {

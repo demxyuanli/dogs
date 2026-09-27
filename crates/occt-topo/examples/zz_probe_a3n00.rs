@@ -6,6 +6,7 @@ use occt_topo::builder::TopoBuilder;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::meshing::range_splitter::{classify_surface, SurfaceType};
 use occt_topo::step::read_step_file;
+use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
 
 fn tname(t: SurfaceType) -> &'static str {
@@ -87,13 +88,35 @@ fn main() {
                     match curve_on_surface_range(e, f) {
                         Some((c, a, b)) => {
                             let pa = c.d0(a); let pb = c.d0(b);
-                            println!("  w{wi} e{ei} ori={:?} f={a:.6} l={b:.6} df=({:.6},{:.6}) dl=({:.6},{:.6}) delta=({:.6},{:.6})",
-                                e.0.orientation(), pa.x(), pa.y(), pb.x(), pb.y(), pb.x()-pa.x(), pb.y()-pa.y());
+                            let (e3f, e3l) = occt_topo::brep_tool::BRepTool::edge_parameters(e);
+                            println!("  w{wi} e{ei} ptr={:#x} ori={:?} er=({e3f:.4},{e3l:.4}) f={a:.6} l={b:.6} df=({:.6},{:.6}) dl=({:.6},{:.6}) delta=({:.6},{:.6})",
+                                std::sync::Arc::as_ptr(&e.0.tshape) as usize, e.0.orientation(), pa.x(), pa.y(), pb.x(), pb.y(), pb.x()-pa.x(), pb.y()-pa.y());
                         }
                         None => println!("  w{wi} e{ei} no pcurve"),
                     }
                 }
             }
+        }
+        return;
+    }
+    if std::env::args().any(|a| a == "--raw") {
+        for (i, f) in faces_of(&shape).iter().enumerate() {
+            let wires = wires_of_face(f);
+            if wires.len() != 2 { continue; }
+            let surf = BRepTool::face_surface(f);
+            let tn = surf.as_ref().map(|s| tname(classify_surface(s.as_ref()))).unwrap_or("none");
+            if tn != "BSpline" { continue; }
+            let face_children = f.0.tshape.read().unwrap().children.len();
+            let mut s = format!("RAW face={i} {tn} face_children={face_children} wires={}", wires.len());
+            for (wi, w) in wires.iter().enumerate() {
+                let raw = w.0.tshape.read().unwrap().children.clone();
+                s += &format!(" w{wi}.children={} [", raw.len());
+                for c in &raw {
+                    s += &format!("{:?}:{:#x}:{:?} ", c.shape_type(), std::sync::Arc::as_ptr(&c.tshape) as usize, c.orientation());
+                }
+                s += "]";
+            }
+            println!("{s}");
         }
         return;
     }
@@ -255,14 +278,35 @@ fn main() {
     let mut vtv: Vec<f64> = vertices_of(&shape).iter().map(|v| BRepTool::vertex_tolerance(v)).collect();
     vtv.sort_by(|a, b| b.partial_cmp(a).unwrap());
     println!("TOP VERT TOLS: {}", vtv.iter().take(8).map(|t| format!("{t:.6}")).collect::<Vec<_>>().join(" "));
+    let mut matched = 0usize;
+    let mut sum_mt = 0usize;
+    let mut unmatched = 0usize;
+    for f in faces.iter() {
+        let key = GeometryRegistry::shape_key(&f.0);
+        if let Some(s) = stats.iter().find(|s| s.shape_key == key) {
+            matched += 1;
+            sum_mt += s.triangles;
+        } else {
+            unmatched += 1;
+        }
+    }
+    println!("STATMAP matched={matched} unmatched={unmatched} sum_mt={sum_mt} flat_mt={mt}");
     for (i, f) in faces.iter().enumerate() {
         let surf = BRepTool::face_surface(f);
         let tn = surf.as_ref().map(|s| tname(classify_surface(s.as_ref()))).unwrap_or("none");
         let wires = wires_of_face(f);
         let we: Vec<usize> = wires.iter().map(|w| edges_of_wire(w).len()).collect();
-        let st = stats.get(i);
-        println!("F {} type={} tol={:.6} wires={} edges={:?} mv={} mt={}",
+        // Pair the stat with the face by pointer identity: the mesh model skips
+        // faces, so a positional lookup is off by the number of skipped faces.
+        let key = GeometryRegistry::shape_key(&f.0);
+        let st = stats.iter().find(|s| s.shape_key == key);
+        let (sp_u, sp_v) = surf.as_ref().map(|s| { let (a, b) = s.u_range(); let (c, d) = s.v_range(); ((b - a).abs(), (d - c).abs()) }).unwrap_or((0.0, 0.0));
+        let bb = brep_bnd_lib::shape_bnd_box(&f.0);
+        let (bmin, bmax) = (bb.corner_min(), bb.corner_max());
+        println!("F {} type={} tol={:.6} wires={} edges={:?} mv={} mt={} du={:.5} dv={:.5} stat_idx={:?} box=({:.5},{:.5},{:.5})-({:.5},{:.5},{:.5})",
             i, tn, BRepTool::face_tolerance(f), wires.len(), we,
-            st.map(|s| s.vertices).unwrap_or(0), st.map(|s| s.triangles).unwrap_or(0));
+            st.map(|s| s.vertices).unwrap_or(0), st.map(|s| s.triangles).unwrap_or(0),
+            sp_u, sp_v, st.map(|s| s.index),
+            bmin.x(), bmin.y(), bmin.z(), bmax.x(), bmax.y(), bmax.z());
     }
 }

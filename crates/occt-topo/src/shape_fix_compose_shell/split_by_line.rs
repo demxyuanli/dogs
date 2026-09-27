@@ -294,7 +294,11 @@ impl ComposeShell {
 
         // cxx:1722-1767: remove duplicated points in closed mode.
         if self.closed_mode && int_edge_par.len() > 1 {
-            let mut j = int_edge_par.len();
+            // `ShapeFix_ComposeShell.cxx:1722`: `int j = IntEdgePar.Length();`
+            // with **1-based** `NCollection_Sequence` indexing; the port's
+            // `Vec` is 0-based, so the last index is `len - 1` (using
+            // `len` made `int_edge_ind[j]` read past the end below).
+            let mut j = int_edge_par.len() - 1;
             let mut i = 0usize;
             while i < int_edge_par.len() {
                 if i == j {
@@ -464,6 +468,7 @@ impl ComposeShell {
             split_line_vertex.push(int_vertices[i - 1].clone());
         }
 
+
         let _ = (first_dev, first_pos, GpDir2d::new(0.0, 1.0), BndBox2d::new());
         true
     }
@@ -528,6 +533,12 @@ impl ComposeShell {
                 split_line_par.remove(i);
                 split_line_code.remove(i);
                 split_line_vertex.remove(i);
+                // `ShapeFix_ComposeShell.cxx:1949` is a `for (i = 1; i <
+                // Length(); i++)`: OCCT advances `i` after the removal too, so
+                // the next comparison is between the elements that were at
+                // `i+1`/`i+2` before the erase. The port's `while` must do the
+                // same or it compares one extra (already merged) pair.
+                i += 1;
             } else {
                 i += 1;
             }
@@ -612,6 +623,7 @@ impl ComposeShell {
             reg.set_edge_pcurves(&edge, face_key, vec![lin1, lin2]);
             reg.set_pcurve_range(&edge, face_key, split_line_par[i - 2], split_line_par[i - 1]);
             reg.set_edge_range(&edge, split_line_par[i - 2], split_line_par[i - 1]);
+
 
             // cxx:2072-2074.
             let mut seg = WireSegment::with_edges(vec![Edge(edge)], Orientation::External);

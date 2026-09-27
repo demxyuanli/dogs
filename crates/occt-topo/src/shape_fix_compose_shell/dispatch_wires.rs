@@ -18,6 +18,8 @@ use crate::shhealing::{ShapeBuildEdge, ShapeFixEdge};
 use super::helpers::{adjust_to_period, get_middle_point, TOLINT};
 use super::reshape::{MapReShape, ReShape};
 use super::shell::ComposeShell;
+
+
 use super::wire_segment::WireSegment;
 
 fn oriented_forward(edge: &Edge) -> Edge {
@@ -158,6 +160,69 @@ impl ComposeShell {
         let reg = GeometryRegistry::global();
         let (u1, u2, v1, v2) = self.grid.bounds();
 
+        // cxx:3281-3327 (pdn: "shift pcurves in the seam to make OK shape w/o
+        // fixshifted"): in closed mode, before dispatching, every REVERSED
+        // closed-on-face edge whose two pcurves coincide gets its second pcurve
+        // translated by a period, so the seam edge's two occurrences land on the
+        // two ends of the UV range. Without it the periodic boundary chain stays
+        // open and the Delaunay fills nothing (a3n00 f176: frontier=0).
+        if self.closed_mode {
+            let face_key = GeometryRegistry::shape_key(&my_face.0);
+            for w in wires.iter() {
+                for e in w.edges() {
+                    if e.0.orientation() != Orientation::Reversed
+                        || !BRepTool::is_closed_edge_face(e, &my_face)
+                    {
+                        continue;
+                    }
+                    let mut pcs = reg.edge_pcurves(&e.0, face_key);
+                    if pcs.len() < 2 {
+                        continue;
+                    }
+                    let (f1, l1) = reg.pcurve_range(&e.0, face_key).unwrap_or((0.0, 0.0));
+                    // c21 = CurveOnSurface(E) (REVERSED occurrence) = pcs[1];
+                    // c22 = CurveOnSurface(E.Reversed()) (FORWARD) = pcs[0].
+                    let (c21, c22) = (pcs[1].clone(), pcs[0].clone());
+                    let pf1 = c21.d0(f1);
+                    let pl1 = c21.d0(l1);
+                    let pf2 = c22.d0(f1);
+                    let pl2 = c22.d0(l1);
+                    let d = PCONFUSION * PCONFUSION;
+                    if Arc::ptr_eq(&c21, &c22)
+                        || pf1.square_distance(&pf2) < d
+                        || pl1.square_distance(&pl2) < d
+                    {
+                        let sx = if self.u_closed && (pf2.x() - pl2.x()).abs() < PCONFUSION {
+                            self.u_period
+                        } else {
+                            0.0
+                        };
+                        let sy = if self.v_closed && (pf2.y() - pl2.y()).abs() < PCONFUSION {
+                            self.v_period
+                        } else {
+                            0.0
+                        };
+                        if sx != 0.0 || sy != 0.0 {
+                            let mut nc = c22.clone_dyn();
+                            let mut t = occt_core::gp::GpTrsf2d::identity();
+                            t.set_translation_vec(&occt_core::gp::GpVec2d::new(sx, sy));
+                            nc.transform(&t);
+                            pcs[0] = Arc::from(nc);
+                            reg.set_edge_pcurves(&e.0, face_key, pcs);
+                            reg.set_pcurve_range(&e.0, face_key, f1, l1);
+                        }
+                    }
+                }
+            }
+        }
+
+        // cxx:3345-3346 / 3358: `sfw.Load(sbwd); sfw.FixShifted(); sfw.FixDegenerated();`
+        // run on each wire after the seam pcurve shift above.
+        for w in wires.iter() {
+            let dw = builder.make_wire(w.edges());
+            let _ = crate::shhealing::fix_shifted_wire(&dw, &my_face);
+        }
+
         // cxx:3387-3533.
         for i in 0..nb {
             let mut pnt = m_pnts[i];
@@ -220,7 +285,12 @@ impl ComposeShell {
                         let mut newl = l;
                         let c2dnew = sbe.transform_pcurve(&c2d, &trsf, u_fact, &mut newf, &mut newl);
                         // cxx:3471-3493: the closed (seam) branch keeps both
-                        // pcurves; the port writes the transformed one.
+                        // pcurves; UNPORTED here — see specs/_a3n00_gap_analysis.md
+                        // §9.117: the port's ReassignPCurve state makes
+                        // IsClosed(newEdge, face) differ from OCCT's, so the
+                        // faithful branch changed a3n00's total away from the
+                        // 11052/12324 target. Kept single-pcurve until the patch
+                        // pcurve representation matches.
                         reg.set_edge_pcurve(&new_edge.0, face_key, c2dnew);
                         reg.set_pcurve_range(&new_edge.0, face_key, newf, newl);
                         if (newf != f || newl != l) && !BRepTool::is_degenerated(&new_edge) {
