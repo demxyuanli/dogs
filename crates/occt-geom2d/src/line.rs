@@ -44,6 +44,12 @@ impl Curve2d for Geom2dLine {
     }
     fn reverse(&mut self) { self.pos.pos.vdir.reverse(); }
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
+    fn transformed_parameter(&self, u: f64, t: &GpTrsf2d) -> f64 {
+        if !u.is_finite() {
+            return u;
+        }
+        u * t.scale_factor().abs()
+    }
     fn is_line(&self) -> bool { true }
     fn gp_lin2d(&self) -> Option<GpLin2d> { Some(self.pos) }
 }

@@ -18,9 +18,11 @@
 //! * **Sampling** — [`intermediate_point`] returns the OCCT ~43.2% division
 //!   parameter between two values.
 //!
-//! The `Arc<dyn Curve2d>` p-curves are stored per-face in `EdgeGeom::pcurves`,
-//! keyed by face pointer identity (`GeometryRegistry::shape_key`), mirroring
-//! `BRep_TEdge`'s `(face → Geom2d_Curve)` map.
+//! The `Arc<dyn Curve2d>` p-curves are stored on the edge's `TShape`
+//! (`EdgeGeom::pcurves`) keyed by the face's **surface data pointer**
+//! (`GeometryRegistry::repr_key`), mirroring `BRep_TEdge`'s
+//! `BRep_GCurve` list matched by `(surface, location)`.
+//! [`is_closed_edge_face`] ports `BRep_Tool::IsClosed(E, F)`.
 //!
 //! Source: `BOPTools_AlgoTools2D.hxx/.cxx` and `BOPTools_AlgoTools2D_1.cxx`
 //! (TKBO).

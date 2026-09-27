@@ -49,6 +49,12 @@ impl Curve2d for Geom2dParabola {
     /// `Geom2dAdaptor_Curve::Parabola` (Geom2dAdaptor_Curve.cxx:108-112).
     fn gp_parab2d(&self) -> Option<occt_core::gp::GpParab2d> { Some(self.pos.clone()) }
     fn clone_dyn(&self) -> Box<dyn crate::curve::Curve2d> { Box::new(self.clone()) }
+    fn transformed_parameter(&self, u: f64, t: &GpTrsf2d) -> f64 {
+        if !u.is_finite() {
+            return u;
+        }
+        u * t.scale_factor().abs()
+    }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
     fn reverse(&mut self) { self.pos.focal = -self.pos.focal; }
 }

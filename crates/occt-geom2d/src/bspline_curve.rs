@@ -282,6 +282,18 @@ impl Curve2d for Geom2dBSplineCurve {
     }
 
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
+    fn is_bspline2d(&self) -> bool {
+        true
+    }
+    fn poles2d(&self) -> Option<Vec<GpPnt2d>> {
+        Some(self.xs.iter().zip(self.ys.iter()).map(|(x, y)| GpPnt2d::new(*x, *y)).collect())
+    }
+    fn set_poles2d(&mut self, poles: &[GpPnt2d]) {
+        for (i, p) in poles.iter().enumerate() {
+            self.xs[i] = p.x();
+            self.ys[i] = p.y();
+        }
+    }
 
     /// `Geom2d_BSplineCurve::NbKnots()` (`Geom2d_BSplineCurve_1.cxx:598-601`):
     /// the number of distinct knots. The curve stores the expanded knot

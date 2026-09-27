@@ -49,11 +49,40 @@ use occt_geom2d::curve::Curve2d;
 use crate::boptools_2d::curve_on_surface_oriented;
 use crate::brep_tool::BRepTool;
 use crate::meshing::edge_discret::CurveOnSurface;
-use crate::shape::{Edge, Face};
+use crate::shape::{Edge, Face, Vertex};
+use crate::abs::Orientation;
+use crate::pcurve_full::surface_value_of_uv_with_gap;
 use crate::tgeometry::GeometryRegistry;
 
 use super::adjust_by_period;
 use super::shape_analysis_curve::{next_project, project_adaptor, project_range};
+
+/// `ShapeAnalysis_TransferParametersProj::CopyNMVertex(V, toFace, fromFace)`
+/// (`Proj.cxx:715-802`).
+///
+/// UNPORTED: the `BRep_PointRepresentation` copy loop (`Proj.cxx:734-797`) and
+/// `BRep_Builder::UpdateVertex(V, U, V, Face, Tol)` (`Proj.cxx:800`) — this port
+/// stores vertex geometry as a single point (`GeometryRegistry`), so there is no
+/// representation list to copy. The vertex point/tolerance transfer and the
+/// `ValueOfUV` + `Gap` tolerance widening (`Proj.cxx:782-794`) are ported.
+pub fn copy_nm_vertex_face(v: &Vertex, to_face: &Face, _from_face: &Face) -> Option<Vertex> {
+    if !matches!(v.0.orientation(), Orientation::Internal | Orientation::External) {
+        return None; // cxx:720-723
+    }
+    // cxx:731: anewV = theV.EmptyCopied(); the port's vertex carries only its
+    // point / tolerance / orientation, which Clone preserves.
+    let mut anew = v.clone();
+    if let Some(s) = BRepTool::face_surface(to_face) {
+        let apv = BRepTool::vertex_point(v);
+        let (_p2d, gap) = surface_value_of_uv_with_gap(s.as_ref(), &apv, CONFUSION);
+        let mut a_tol = BRepTool::vertex_tolerance(&anew);
+        if a_tol < gap {
+            a_tol = gap + 0.1 * CONFUSION; // cxx:791-794
+        }
+        anew.set_tolerance(a_tol);
+    }
+    Some(anew)
+}
 
 /// `GeomAdaptor_Curve(C, first, last)` (`GeomAdaptor_Curve.cxx:239-245`,
 /// `cxx:679-691`): the same parameter space as `curve`, restricted to

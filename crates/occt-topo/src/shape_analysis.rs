@@ -20,6 +20,61 @@ use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
 use crate::topexp::Explorer;
+use occt_core::gp::GpPnt2d;
+
+/// ShapeAnalysis::TotCross2D (ShapeAnalysis.cxx:114-150): signed 2D area of the
+/// pcurves of a wire on a face. Positive means the UV walk is counter-clockwise
+/// (an outer bound). Sampling is the shared ShapeAnalysis_Curve::GetSamplePoints
+/// count (ShapeAnalysis_Curve.cxx:1317-1337).
+pub fn tot_cross_2d(edges: &[Edge], face: &Face) -> f64 {
+    let mut nbc = 0usize;
+    let mut fuv = GpPnt2d::new(0.0, 0.0);
+    let mut uv0 = GpPnt2d::new(0.0, 0.0);
+    let mut totcross = 0.0f64;
+    for edge in edges {
+        let Some((c2d, f2d, l2d)) =
+            crate::boptools_2d::curve_on_surface_oriented(edge, face, false)
+        else {
+            continue;
+        };
+        nbc += 1;
+        let mut seq = crate::meshing::model_builder::sample_pcurve(c2d.as_ref(), f2d, l2d);
+        if edge.0.orientation().is_reversed() {
+            seq.reverse();
+        }
+        if nbc == 1 {
+            if let Some(p) = seq.first() {
+                fuv = *p;
+                uv0 = fuv;
+            }
+        }
+        for p in seq {
+            totcross += (fuv.x() - p.x()) * (fuv.y() + p.y()) / 2.0;
+            fuv = p;
+        }
+    }
+    totcross += (fuv.x() - uv0.x()) * (fuv.y() + uv0.y()) / 2.0;
+    totcross
+}
+
+/// ShapeAnalysis::IsOuterBound (ShapeAnalysis.cxx:203-230).
+pub fn is_outer_bound(face: &Face) -> bool {
+    let wires = crate::topo_tools_full::wires_of_face(face);
+    if wires.len() == 1 {
+        let edges = crate::topo_tools_full::edges_of_wire(&wires[0]);
+        return tot_cross_2d(&edges, face) >= 0.0;
+    }
+    let tol = BRepTool::face_tolerance(face);
+    let Some(surf) = BRepTool::face_surface(face) else {
+        return false;
+    };
+    let toluv = occt_geom::approx_same_parameter::u_resolution(surf.as_ref(), tol)
+        .min(occt_geom::approx_same_parameter::v_resolution(surf.as_ref(), tol));
+    match crate::fclass2d::FClass2d::new(face, toluv) {
+        Ok(fcl) => fcl.perform_infinite_point() == crate::fclass2d::FaceState::Out,
+        Err(_) => false,
+    }
+}
 
 /// Outcome of a shape analysis.
 #[derive(Debug, Clone, Default)]

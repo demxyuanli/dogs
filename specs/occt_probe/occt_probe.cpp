@@ -379,6 +379,48 @@ int main(int argc, char** argv)
 
   // `Prs3d::GetDeflection` needs `maxComp(BRepBndLib::Add(shape, box, false))`; print
   // it so a GT run can use the same parameters the port's export path uses.
+  if (argc > 2 && std::string(argv[2]) == "--topo")
+  {
+    int k = 0;
+    for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++k)
+    {
+      const TopoDS_Face aF = TopoDS::Face(fx.Current());
+      BRepAdaptor_Surface aS(aF);
+      std::cout << "TOPO face " << k << " type=" << (int)aS.GetType()
+                << " uper=" << (aS.IsUPeriodic() ? 1 : 0) << " vper=" << (aS.IsVPeriodic() ? 1 : 0)
+                << " uw=[" << aS.FirstUParameter() << "," << aS.LastUParameter() << "]"
+                << " vw=[" << aS.FirstVParameter() << "," << aS.LastVParameter() << "]";
+      int aNW = 0;
+      for (TopExp_Explorer wx(aF, TopAbs_WIRE); wx.More(); wx.Next(), ++aNW)
+      {
+        int anE = 0, aSeam = 0, anOriented = 0;
+        for (TopExp_Explorer ex(wx.Current(), TopAbs_EDGE); ex.More(); ex.Next(), ++anE)
+        {
+          if (BRep_Tool::IsClosed(TopoDS::Edge(ex.Current()), aF))
+            ++aSeam;
+        }
+        std::cout << " w" << aNW << "={e" << anE << ",seam" << aSeam << "}";
+      }
+      std::cout << "\n";
+    }
+    return 0;
+  }
+  if (argc > 2 && std::string(argv[2]) == "--period")
+  {
+    int k = 0;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next(), ++k)
+    {
+      const TopoDS_Face aF = TopoDS::Face(ex.Current());
+      BRepAdaptor_Surface aS(aF);
+      std::cout << "PER face " << k << " type=" << (int)aS.GetType()
+                << " uper=" << (aS.IsUPeriodic() ? 1 : 0) << " vper=" << (aS.IsVPeriodic() ? 1 : 0)
+                << " up=" << aS.UPeriod() << " vp=" << aS.VPeriod()
+                << " uclo=" << (aS.IsUClosed() ? 1 : 0) << " vclo=" << (aS.IsVClosed() ? 1 : 0)
+                << " u=[" << aS.FirstUParameter() << "," << aS.LastUParameter() << "]"
+                << " v=[" << aS.FirstVParameter() << "," << aS.LastVParameter() << "]\n";
+    }
+    return 0;
+  }
   if (argc > 2 && std::string(argv[2]) == "--bbox")
   {
     Bnd_Box aBox;

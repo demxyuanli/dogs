@@ -154,6 +154,10 @@ impl Curve2d for Geom2dTrimmedCurve {
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(self.clone())
     }
+    /// `Geom2d_TrimmedCurve::TransformedParameter` (`Geom2d_TrimmedCurve.cxx:297-300`).
+    fn transformed_parameter(&self, u: f64, t: &GpTrsf2d) -> f64 {
+        self.basis.transformed_parameter(u, t)
+    }
     fn is_line(&self) -> bool {
         self.basis.is_line()
     }

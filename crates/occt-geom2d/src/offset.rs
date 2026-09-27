@@ -459,6 +459,10 @@ impl Curve2d for Geom2dOffsetCurve {
     }
 
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
+    /// `Geom2d_OffsetCurve::TransformedParameter` (`Geom2d_OffsetCurve.cxx:423-426`).
+    fn transformed_parameter(&self, u: f64, t: &GpTrsf2d) -> f64 {
+        self.basis.transformed_parameter(u, t)
+    }
 
     /// `Geom2d_OffsetCurve::BasisCurve()` (`Geom2d_OffsetCurve.cxx:174-177`).
     fn offset_basis(&self) -> Option<&dyn Curve2d> { Some(&*self.basis) }

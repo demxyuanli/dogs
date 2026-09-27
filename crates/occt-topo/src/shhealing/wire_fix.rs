@@ -48,7 +48,7 @@ pub fn adjust_by_period(val: f64, to_val: f64, period: f64) -> f64 {
     (if diff > 0.0 { -p } else { p }) * (d / p + 0.5).floor()
 }
 
-pub(super) fn first_vertex(edge: &Edge) -> Option<Vertex> {
+pub fn first_vertex(edge: &Edge) -> Option<Vertex> {
     let (f, l) = edge_vertices(edge);
     if edge.0.orientation().is_reversed() {
         l
@@ -57,7 +57,7 @@ pub(super) fn first_vertex(edge: &Edge) -> Option<Vertex> {
     }
 }
 
-pub(super) fn last_vertex(edge: &Edge) -> Option<Vertex> {
+pub fn last_vertex(edge: &Edge) -> Option<Vertex> {
     let (f, l) = edge_vertices(edge);
     if edge.0.orientation().is_reversed() {
         f
@@ -1202,7 +1202,7 @@ fn fix_vertex_tolerance_edge(edge: &Edge) {
 /// appends a `Copy()` of every `BRep_GCurve` including its pcurve).
 /// `EmptyCopied` also keeps the source orientation (`TopoDS_Shape.hxx:294-302`)
 /// and `CopyRanges` (`cxx:125`) re-ranges every representation.
-fn copy_replace_vertices(edge: &Edge) -> Edge {
+pub fn copy_replace_vertices(edge: &Edge) -> Edge {
     copy_replace_vertices_with(edge, None, None)
 }
 
@@ -1210,7 +1210,7 @@ fn copy_replace_vertices(edge: &Edge) -> Edge {
 /// (`ShapeBuild_Edge.cxx:59-140`). A null argument keeps the edge's own
 /// endpoint (`cxx:65-96`), which is the `TopExp` FORWARD / REVERSED vertex
 /// (`cxx:78-93`) and, in this port, `first_vertex` / `last_vertex`.
-fn copy_replace_vertices_with(edge: &Edge, v1: Option<&Vertex>, v2: Option<&Vertex>) -> Edge {
+pub fn copy_replace_vertices_with(edge: &Edge, v1: Option<&Vertex>, v2: Option<&Vertex>) -> Edge {
     let reg = GeometryRegistry::global();
     let Some(geom) = reg.edge_geom(&edge.0) else {
         return edge.clone();
@@ -1245,7 +1245,7 @@ fn vertices_coincide(a: &Vertex, b: &Vertex) -> bool {
 
 /// `ShapeBuild_Vertex::CombineVertex(V1, V2, tolFactor)`
 /// (`ShapeBuild_Vertex.cxx:26-71`).
-pub(super) fn combine_vertex(v1: &Vertex, v2: &Vertex, tol_factor: f64) -> Vertex {
+pub fn combine_vertex(v1: &Vertex, v2: &Vertex, tol_factor: f64) -> Vertex {
     let p1 = BRepTool::vertex_point(v1);
     let p2 = BRepTool::vertex_point(v2);
     let tol1 = BRepTool::vertex_tolerance(v1);
@@ -1275,7 +1275,7 @@ pub(super) fn combine_vertex(v1: &Vertex, v2: &Vertex, tol_factor: f64) -> Verte
 /// `CurveOnSurface` representation of `from` onto `to` (replacing the
 /// representation on the same surface, `cxx:376-398`) together with its
 /// pcurve `Copy()` and range (`cxx:400-411`).
-fn copy_pcurves(to: &Edge, from: &Edge) {
+pub fn copy_pcurves(to: &Edge, from: &Edge) {
     let reg = GeometryRegistry::global();
     let Some(geom) = reg.edge_geom(&from.0) else {
         return;
@@ -1401,33 +1401,79 @@ pub(super) fn fix_same_parameter(edge: &Edge, face: &Face) {
 /// returns true (`FixReorder(sawo)` returns false for status 0 without setting
 /// FAIL).
 pub fn fix_reorder_wire(wire: &Wire, _face: &Face) -> bool {
-    let stored: Vec<Edge> = edges_of_wire(wire)
+    let (ok, _status) = fix_reorder_wire_3d(wire);
+    ok
+}
+
+/// The stored FORWARD/REVERSED edges of `wire` (`ShapeExtend_WireData::Init`).
+fn stored_manifold_edges(wire: &Wire) -> Vec<Edge> {
+    edges_of_wire(wire)
         .into_iter()
         .filter(|e| {
             let o = e.0.orientation();
             o == Orientation::Forward || o == Orientation::Reversed
         })
-        .collect();
+        .collect()
+}
+
+/// `ShapeAnalysis_Wire::CheckOrder(..., isClosed, mode3d=true)` -> WireOrder
+/// (`ShapeFix_Wire.cxx:496-505`). `None` is the FAIL2 short-circuit of
+/// `ShapeAnalysis_Wire.cxx:617-621` (a missing edge vertex), for which the
+/// caller sees ReorderOK = true and status 0.
+fn build_wire_order_3d(wire: &Wire) -> Option<(WireOrder, Vec<Edge>)> {
+    let stored = stored_manifold_edges(wire);
     if stored.len() < 2 {
-        return true;
+        return None;
     }
     let mut order = WireOrder::new();
     for e in &stored {
-        // `ShapeAnalysis_Wire::CheckOrder` (`ShapeAnalysis_Wire.cxx:617-621`)
-        // sets FAIL2 and leaves the order flag unset, so `Perform` sees
-        // `ReorderOK == true` and does not even attempt FixReorder.
         let (Some(v1), Some(v2)) = (first_vertex(e), last_vertex(e)) else {
-            return true;
+            return None;
         };
         order.add_edge_xyz(BRepTool::vertex_point(&v1), BRepTool::vertex_point(&v2));
     }
     order.perform();
-    if order.status() == WireOrderStatus::Same {
-        return true;
+    Some((order, stored))
+}
+
+/// `ShapeFix_Wire::FixReorder()` (`ShapeFix_Wire.cxx:487-534`): reorder the
+/// wire in 3D. Returns (ReorderOK, `ShapeAnalysis_WireOrder::Status`);
+/// `Reversed` is the `myStatusReorder` DONE3 case of `cxx:524-527`.
+pub fn fix_reorder_wire_3d(wire: &Wire) -> (bool, WireOrderStatus) {
+    let Some((order, stored)) = build_wire_order_3d(wire) else {
+        return (true, WireOrderStatus::Same);
+    };
+    let status = order.status();
+    let ok = if status == WireOrderStatus::Same {
+        true
+    } else if order.nb_edges() != stored.len() {
+        false
+    } else {
+        apply_wire_order(wire, &stored, &order)
+    };
+    (ok, status)
+}
+
+/// `ShapeFix_Wire::FixReorder(sawo)` (`ShapeFix_Wire.cxx:1351-1400`): apply a
+/// prebuilt order. `true` is the DONE1 of `cxx:1398`; the status 0 guard
+/// (`cxx:1360-1363`) and the FAIL1/2/3 guards (`cxx:1364-1385`) return false.
+pub fn fix_reorder_wire_with_order(wire: &Wire, order: &WireOrder) -> bool {
+    let stored = stored_manifold_edges(wire);
+    if stored.len() != order.nb_edges() {
+        return false; // cxx:1372-1376 FAIL2
     }
-    if order.nb_edges() != stored.len() {
-        return false;
+    for i in 1..=stored.len() {
+        if order.ordered(i) == 0 {
+            return false; // cxx:1380-1385 FAIL3
+        }
     }
+    apply_wire_order(wire, &stored, order)
+}
+
+/// The `ShapeFix_Wire::FixReorder` tail (`cxx:1387-1399` / `cxx:1431-1474`):
+/// build the reordered edge list from the signed order and store it back,
+/// keeping the non-edge children and the port's wire-orientation convention.
+fn apply_wire_order(wire: &Wire, stored: &[Edge], order: &WireOrder) -> bool {
     let mut new_edges = Vec::with_capacity(stored.len());
     for i in 1..=stored.len() {
         let signed = order.ordered(i);
@@ -1762,7 +1808,7 @@ fn fix_small_one(
 /// "-1" (`STEPControl_Controller.cxx:233`), so with `myTopoMode` true on the
 /// face path (`ShapeFix_Shape.cxx:200`) the pass runs on every read-in wire,
 /// with `lockvtx = !myTopoMode || !ReorderOK` and `precsmall = MinTolerance()`.
-fn fix_small_all(
+pub fn fix_small_all(
     wire: &mut Wire,
     face: &Face,
     my_precision: f64,
@@ -2132,7 +2178,7 @@ fn fix_degenerated(wire: &mut Wire, face: &Face, prec: f64, num: usize) -> (bool
 
 /// `ShapeFix_Wire::FixDegenerated()` (`ShapeFix_Wire.cxx:1034-1076`), the
 /// driver `ShapeFix_Wire::Perform` calls at `cxx:386-392`.
-fn fix_degenerated_all(wire: &mut Wire, face: &Face, prec: f64) -> bool {
+pub fn fix_degenerated_all(wire: &mut Wire, face: &Face, prec: f64) -> bool {
     let mut done = false;
     let mut last_coded = -1i32;
     let mut prev_coded = 0i32;
@@ -2436,9 +2482,9 @@ fn fix_lacking_one(
     };
     let reg = GeometryRegistry::global();
     let face_key = GeometryRegistry::shape_key(&face.0);
-    // `BRep_Tool::IsClosed(E, face)` is "the edge carries two pcurves on this
-    // face" (`BRep_Tool.cxx:372-381`).
-    let is_closed = |e: &Edge| reg.edge_pcurves(&e.0, face_key).len() >= 2;
+    // `BRep_Tool::IsClosed(E, face)` (`BRep_Tool.cxx:795-841`): a plane is
+    // never closed; otherwise the edge carries two pcurves on this face.
+    let is_closed = |e: &Edge| crate::brep_tool::BRepTool::is_closed_edge_face(e, face);
     let tol_e1 = BRepTool::edge_tolerance(&e1);
     let tol_e2 = BRepTool::edge_tolerance(&e2);
     let mut tol1 = CONFUSION; // `cxx:3659-3660`

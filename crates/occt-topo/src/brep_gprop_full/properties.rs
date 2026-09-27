@@ -126,6 +126,20 @@ pub fn surface_properties(shape: &TopoShape) -> Result<(GProps, f64), String> {
 // Entry: volume properties
 // ---------------------------------------------------------------------------
 
+
+/// `BRepGProp_Vinert` for a single face about the origin — the per-face
+/// accumulation inside `BRepGProp::VolumeProperties` (`BRepGProp.cxx`,
+/// `BRepGProp_Vinert::Perform`). Used to pair faces against the OCCT probe's
+/// `--perface` `contrib`.
+pub fn face_volume_contribution(face: &Face) -> Result<f64, String> {
+    let org = GpPnt::new(0.0, 0.0, 0.0);
+    let coeff = [0.0, 0.0, 0.0];
+    let fa = FaceGauss::new(face)?;
+    let inert = compute_face(&fa, &org, &coeff, GaussType::Vinert)?;
+    let (mass, _g, _mat) = convert_v(&inert, &coeff);
+    Ok(mass)
+}
+
 /// Volume global properties of a shape — the divergence-theorem surface
 /// integral over every face. The mass equals the (signed) volume.
 pub fn volume_properties(shape: &TopoShape) -> Result<GProps, String> {

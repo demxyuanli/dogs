@@ -181,6 +181,17 @@ impl Curve2d for Geom2dBezierCurve {
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(self.clone())
     }
+    fn is_bezier2d(&self) -> bool {
+        true
+    }
+    fn poles2d(&self) -> Option<Vec<GpPnt2d>> {
+        Some(self.poles.clone())
+    }
+    fn set_poles2d(&mut self, poles: &[GpPnt2d]) {
+        for (i, p) in poles.iter().enumerate() {
+            self.poles[i] = *p;
+        }
+    }
 
     /// `Geom2d_BezierCurve::NbPoles()` (`Geom2d_BezierCurve.cxx:600-603`).
     fn bezier_nb_poles(&self) -> Option<usize> {

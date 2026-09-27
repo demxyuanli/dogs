@@ -18,6 +18,24 @@ use crate::tgeometry::GeometryRegistry;
 pub struct BRepTool;
 
 impl BRepTool {
+    /// `BRep_Tool::IsClosed(E, F)` (`BRep_Tool.cxx:795-805`): true when the
+    /// edge has a CurveOnSurface representation with two pcurves on the face's
+    /// surface (`BRep_Tool.cxx:814-841`).
+    ///
+    /// UNPORTED: the triangulation arm (`BRep_Tool.cxx:803-804`, `:849-...`);
+    /// the port does not attach a `Poly_Triangulation` to faces for this query.
+    pub fn is_closed_edge_face(edge: &Edge, face: &Face) -> bool {
+        let Some(surf) = GeometryRegistry::global().face_surface(&face.0) else {
+            return false;
+        };
+        // `BRep_Tool.cxx:819-822`: a plane is never a closed surface.
+        if surf.gp_pln().is_some() {
+            return false;
+        }
+        let face_key = GeometryRegistry::shape_key(&face.0);
+        GeometryRegistry::global().edge_pcurves(&edge.0, face_key).len() > 1
+    }
+
     /// The location of a vertex (from `BRep_TVertex`), or the origin when
     /// the vertex has no registered geometry.
     pub fn vertex_point(v: &Vertex) -> GpPnt {

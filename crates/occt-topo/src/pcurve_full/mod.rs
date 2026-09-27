@@ -49,6 +49,28 @@ pub use make_pcurve::*;
 pub use projection_cache::*;
 pub use singularities::*;
 
+/// `ShapeAnalysis_Surface::ValueOfUV` (`ShapeAnalysis_Surface.cxx:1245-1515`).
+/// Re-exported for `ShapeFix_ComposeShell::SplitWire` and `GetMiddlePoint`,
+/// which sit outside this module.
+pub fn surface_value_of_uv(
+    s: &dyn occt_geom::Surface,
+    p: &occt_core::gp::GpPnt,
+    preci: f64,
+) -> occt_core::gp::GpPnt2d {
+    surface_projector::value_of_uv(s, p, preci)
+}
+
+/// `ShapeAnalysis_Surface::ValueOfUV` plus the `Gap` it leaves behind
+/// (`value_of_uv` + `gap`), for `ShapeAnalysis_TransferParametersProj::CopyNMVertex`
+/// (`Proj.cxx:785-794`).
+pub fn surface_value_of_uv_with_gap(
+    s: &dyn occt_geom::Surface,
+    p: &occt_core::gp::GpPnt,
+    preci: f64,
+) -> (occt_core::gp::GpPnt2d, f64) {
+    surface_projector::value_of_uv_with_gap(s, p, preci)
+}
+
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;

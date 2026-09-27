@@ -445,7 +445,7 @@ fn swap_wire_seams(wire: &Wire, face: &Face) {
 
 /// `SwapSeam` (`ShapeExtend_WireData.cxx:511-543`): exchange PCurve/PCurve2
 /// once, on the FORWARD occurrence only (`cxx:518-520`).
-fn swap_seam_pcurves(edge: &Edge, face: &Face) {
+pub(crate) fn swap_seam_pcurves(edge: &Edge, face: &Face) {
     if edge.0.orientation().is_reversed() {
         return;
     }
@@ -499,7 +499,7 @@ fn wire_area_2d(wire: &Wire, face: &Face) -> f64 {
 /// (`ShapeAnalysis_Curve::GetSamplePoints`, `ShapeAnalysis_Curve.cxx:1317-1337`)
 /// and the `BRepTopAdaptor_FClass2d` boundary polygon
 /// (`BRepTopAdaptor_FClass2d.cxx:179-185`).
-fn sample_pcurve(pc: &dyn Curve2d, a: f64, b: f64) -> Vec<GpPnt2d> {
+pub(crate) fn sample_pcurve(pc: &dyn Curve2d, a: f64, b: f64) -> Vec<GpPnt2d> {
     let n = sample_count_2d(pc, a, b);
     let mut pts = Vec::with_capacity(n);
     for i in 0..n {
@@ -518,7 +518,7 @@ fn sample_pcurve(pc: &dyn Curve2d, a: f64, b: f64) -> Vec<GpPnt2d> {
 ///
 /// Both apply the `*4` at their own call site, so it stays here rather than in
 /// [`crate::curve_sampling_2d::nb_samples`].
-fn sample_count_2d(pc: &dyn Curve2d, a: f64, b: f64) -> usize {
+pub(crate) fn sample_count_2d(pc: &dyn Curve2d, a: f64, b: f64) -> usize {
     let mut nbs = crate::curve_sampling_2d::nb_samples(pc, a, b);
     if nbs > 2 {
         nbs *= 4;

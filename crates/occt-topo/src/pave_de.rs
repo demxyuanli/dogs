@@ -190,10 +190,7 @@ pub fn make_split_edge1(
         GeometryRegistry::global().set_edge(&e.0, g);
     }
     let face_key = GeometryRegistry::shape_key(&a_f.0);
-    if let Some(pc) = GeometryRegistry::global()
-        .edge_geom(&a_e.0)
-        .and_then(|g| g.get_pcurve(face_key))
-    {
+    if let Some(pc) = GeometryRegistry::global().edge_pcurve(&a_e.0, face_key) {
         GeometryRegistry::global().set_edge_pcurve(&e.0, face_key, pc);
     }
     Ok(e)

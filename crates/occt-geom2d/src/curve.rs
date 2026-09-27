@@ -56,6 +56,35 @@ pub trait Curve2d: Send + Sync {
         self.first_parameter() + self.last_parameter() - u
     }
 
+    /// `Geom2d_Curve::TransformedParameter` (`Geom2d_Curve.cxx:41-44`): the
+    /// parameter on `me->Transformed(T)` of the point at `U`. Base returns `U`;
+    /// `Geom2d_Line`/`Geom2d_Parabola` scale it by `|T.ScaleFactor()|`, and
+    /// `Geom2d_TrimmedCurve`/`Geom2d_OffsetCurve` delegate to the basis curve.
+    fn transformed_parameter(&self, u: f64, _t: &GpTrsf2d) -> f64 {
+        u
+    }
+
+    /// `Geom2d_BSplineCurve::Pole` / `Geom2d_BezierCurve::Pole`: the control
+    /// points, for `ShapeBuild_Edge::TransformPCurve`'s affinity branch
+    /// (`ShapeBuild_Edge.cxx:642-698`). `None` for curves that are not
+    /// pole-based.
+    fn poles2d(&self) -> Option<Vec<GpPnt2d>> {
+        None
+    }
+
+    /// Setter counterpart of [`Curve2d::poles2d`].
+    fn set_poles2d(&mut self, _poles: &[GpPnt2d]) {}
+
+    /// `STANDARD_TYPE(Geom2d_BSplineCurve)` — for `Geom2dConvert::CurveToBSplineCurve`.
+    fn is_bspline2d(&self) -> bool {
+        false
+    }
+
+    /// `STANDARD_TYPE(Geom2d_BezierCurve)`.
+    fn is_bezier2d(&self) -> bool {
+        false
+    }
+
     fn clone_dyn(&self) -> Box<dyn Curve2d>;
 
     /// `Geom2dAdaptor_Curve::Intervals` break points for the requested shape.

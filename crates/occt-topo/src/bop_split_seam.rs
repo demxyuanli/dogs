@@ -25,25 +25,13 @@ fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
 }
 
-/// `BRep_Tool::IsClosed(edge, face)`: two p-curves, or the edge appears twice
-/// on the face wires.
+/// `BRep_Tool::IsClosed(edge, face)` (`BRep_Tool.cxx:795-841`): a plane is
+/// never closed; otherwise the edge carries two p-curves on the face. OCCT's
+/// `BOPTools_AlgoTools3D::DoSplitSEAMOnFace` uses exactly this predicate
+/// (`BOPTools_AlgoTools3D.cxx:240,245`) — there is no "edge appears twice"
+/// arm (that is `BRepTools::IsReallyClosed`).
 pub fn is_closed_on_face(edge: &Edge, face: &Face) -> bool {
-    let fk = shape_key(&face.0);
-    if GeometryRegistry::global().edge_pcurves(&edge.0, fk).len() >= 2 {
-        return true;
-    }
-    let mut n = 0usize;
-    for w in ShapeIterator::of_shape(&face.0) {
-        if w.shape_type() != crate::abs::ShapeType::Wire {
-            continue;
-        }
-        for e in ShapeIterator::of_shape(&w) {
-            if e.shape_type() == crate::abs::ShapeType::Edge && e.same_tshape(&edge.0) {
-                n += 1;
-            }
-        }
-    }
-    n >= 2
+    BRepTool::is_closed_edge_face(edge, face)
 }
 
 /// `(isUIso, isVIso)` from the p-curve tangent (`IsEdgeIsoline`).

@@ -589,6 +589,23 @@ impl<'a> Resolver<'a> {
             parse_ref(&rec.args[1]).ok_or("ADVANCED_FACE: bad surface ref")?
         };
         let surface = self.resolve_surface(surf_ref)?;
+        // StepToTopoDS_TranslateFace.cxx:557-567: a B-spline surface STEP face
+        // is forced periodic when geometrically closed (ShapeCustom_Surface::
+        // ConvertToPeriodic). Without it a pcurve running once around the closed
+        // direction leaves the parameter window and is extrapolated.
+        let is_bspline_surface_entity = self
+            .record(surf_ref)
+            .map(|r| {
+                r.type_name == "B_SPLINE_SURFACE"
+                    || r.type_name == "B_SPLINE_SURFACE_WITH_KNOTS"
+            })
+            .unwrap_or(false);
+        let surface = if is_bspline_surface_entity {
+            crate::shape_custom_surface::convert_to_periodic(&surface, self.precision)
+                .unwrap_or(surface)
+        } else {
+            surface
+        };
         // Bounds are the other of the two leading arguments.
         let bounds = if rec.args.get(2).map(|s| s.starts_with('(')).unwrap_or(false) {
             parse_ref_list(&rec.args[2])
@@ -700,6 +717,16 @@ impl<'a> Resolver<'a> {
         // `make_face_uv` for natural-bound Offset faces. Wiring it on STEP
         // Offset faces (after EdgeProjAux) densifies Shape 6141 -> 6213 vs
         // occ 6150; TranslateFace.cxx has no equivalent call.
+        //
+        // `FromSTEP.FixShape` (`ShapeProcess_OperLibrary.cxx:830`) runs
+        // `ShapeFix_Face::Perform`, whose `FixMissingSeam` step is
+        // `ShapeFix_Face.cxx:492-498`. NOT wired yet: it triggers on
+        // `occ/bottom.step` (seam added, single face) but the result diverges
+        // (mesh f 23557 -> 23408) because `ShapeFix_ComposeShell` still has the
+        // UNPORTED branches of specs/_a3n00_gap_analysis.md §9.33/§9.32.
+        // NOT wired yet: it triggers on `occ/bottom.step` / `motoc.step`; the
+        // CompShell output still diverges (ours f < occ f), see §9.43/§9.47/§9.63.
+        let _ = &face;
         Ok(face.0)
     }
 
