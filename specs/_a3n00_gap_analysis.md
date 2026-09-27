@@ -1853,6 +1853,61 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.81 round 80+ —— 【首次全模型对拍】6/8 接近，`acs10` 与 `T0M` 明显偏离
+
+协议：端口 `IncrementalMesh::from_deflection(shape, d, false, 20°)` ↔ OCCT `--mesh <d> 0.349066`，`d` = 端口 `computed_lin`。
+
+| 模型 | 端口面数 | 端口 nodes | 端口 tris | OCCT 面数 | OCCT nodes | OCCT tris | Δ面 | Δnodes | Δtris |
+|---|---|---|---|---|---|---|---|---|---|
+| a3n00.stp | 226 | 11931 | 12283 | 226 | 11052 | 12324 | 0 | +8.0% | −0.33% |
+| acs10.stp | 786 | 32400 | 37223 | 787 | 37247 | 46494 | **−1** | **−13.0%** | **−19.9%** |
+| ATU01038.step | 386 | 18090 | 22529 | 386 | 18008 | 22426 | 0 | +0.5% | +0.46% |
+| bottom.step | 323 | 17587 | 23408 | 323 | 17472 | 23369 | 0 | +0.7% | +0.17% |
+| motoc.step | 223 | 11713 | 13646 | 223 | 11713 | 13944 | 0 | **0.0%** | −2.1% |
+| T0M.stp | 1772 | 46375 | 46678 | 1778 | 60050 | 66576 | **−6** | **−22.8%** | **−29.9%** |
+| TDB.stp | 2180 | 72812 | 77814 | 2180 | 72687 | 78470 | 0 | +0.2% | −0.84% |
+| top.step | 324 | 16902 | 22794 | 324 | 16744 | 22520 | 0 | +0.9% | +1.2% |
+
+**结论**：
+- `motoc.step` 节点数**完全相同**，`bottom.step`/`TDB.step`/`ATU01038` 误差 ≤1%，`top.step` +1.2%，`a3n00` 三角形 −0.33%（节点 +8%）。
+- **`acs10.stp`（面数 −1、三角形 −19.9%）与 `T0M.stp`（面数 −6、三角形 −29.9%）严重偏离** —— 这两个是新的首要目标。
+
+端口侧 sweep 与 OCCT 侧 sweep 已分别落盘；本节表格同时写入 `.target-gate/sweep_compare.txt`。
+
+### 9.80 round 80+ —— 【环境已解决】OCCT 探针可用 + 8 组对拍件 + 对拍协议
+
+**DLL 问题根因与解法**：`occt_probe.exe` 是 `/MD` 构建，直接运行会因找不到 OCCT 运行库而 `0xC0000135`。
+OCCT 8.0.0 安装在 **`D:\source\occt-8.0.0`**（不是 `D:\source\OCCT-src`，后者是源码树）；
+运行库在 `win64\vc14\bin`，第三方在 `3rdparty-vc14-64`（`tbb12.dll`/`jemalloc.dll` 等）。
+必须先用该目录的 `env.bat vc14 64` 设好 `PATH`，且 `THIRDPARTY_DIR` 必须**绝对**。
+
+- `specs\occt_probe\probe.bat <绝对路径> ...` —— 会 `cd /d %OCCT%`，所以输入路径必须绝对；
+- **新增 `specs\occt_probe\run_here.bat <相对/绝对路径> ...`** —— 用 `pushd/popd` 只在设 PATH 时进入 OCCT 目录，
+  **保留调用者的 cwd**，可直接用相对路径。两者均已验证。
+
+验证：`run_here.bat data\occ\a3n00.stp --mesh 1.07612 0.349066` →
+`TOTAL faces=226 nodes=11052 triangles=12324 meshvol=1.8897e+06 neg_triangles=3232`（与既有 dump 逐位一致）。
+
+**8 组对拍件**（`data/occ/`）：`a3n00.stp↔occ-a3n00.obj`、`acs10.stp↔occ-acs10.obj`、`ATU01038.step↔occ-ATU01038.obj`、
+`bottom.step↔occ-bottom.obj`、`motoc.step↔occ-motoc.obj`、`T0M.stp↔occ-T0M.obj`、`TDB.stp↔occ-TDB.obj`、`top.step↔occ-top.obj`。
+
+**对拍协议**（同口径）：端口 `IncrementalMesh::from_deflection(shape, d, false, angle)` 的 `mesh_v/mesh_t`
+↔ OCCT `--mesh <d> <angle>` 的 `nodes/triangles`，其中 `d = 端口 computed_lin`（`prs3d_get_deflection(shape, 0.1)`）、`angle = 20°`。
+
+**端口侧 sweep（本轮）**：
+| 模型 | 面数 | d | stats | mesh_v | mesh_t |
+|---|---|---|---|---|---|
+| a3n00.stp | 226 | 1.076007 | 226 | 11931 | 12283 |
+| acs10.stp | 786 | 1.980053 | 785 | 32400 | 37223 |
+| ATU01038.step | 386 | 1.547176 | 386 | 18090 | 22529 |
+| bottom.step | 323 | 0.558549 | 323 | 17587 | 23408 |
+| motoc.step | 223 | 0.836000 | 223 | 11713 | 13646 |
+| T0M.stp | 1772 | 2.574309 | 1769 | 46375 | 46678 |
+| TDB.stp | 2180 | 2.451395 | 2179 | 72812 | 77814 |
+| top.step | 324 | 0.451778 | 324 | 16902 | 22794 |
+
+OCCT 侧 sweep 已启动（同 d、angle=20°），结果见下一节。
+
 ### 9.79 round 79 —— 【已确认】同一 TShape 被登记为两个 root；且单体体积为负
 
 探针 `--volroots` 打印指针后：
