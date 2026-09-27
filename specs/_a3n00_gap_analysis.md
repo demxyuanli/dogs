@@ -1853,6 +1853,30 @@ VOLROOT i=1 faces=226 mass=-3336973.416029
 而不是两个真实的半体。这解释了 `VOLTOTAL mass` 与 root 相同、以及 `BBOX roots=2`。
 
 
+### 9.91 round 90 —— 【根因候选·高危】`face_discret` 的内部加点仍是 **UV 网格**（用 3D 偏转当 UV 步长）
+
+`crates/occt-topo/src/meshing/face_discret.rs`：
+```rust
+557:  pts.extend(Self::interior_grid(face, self.params.deflection, 4096));   // 仍在被调用
+573:  pub fn interior_grid(face: &MeshFace, deflection: f64, max_points: usize) -> Vec<GpPnt2d> {
+578:      let (umin, umax, vmin, vmax) = Self::uv_bounds(&face.outer_wire);
+584:      let mut nu = (du / def).ceil() as usize + 1;      // def = self.params.deflection（3D 线性偏转）
+585:      let mut nv = (dv / def).ceil() as usize + 1;
+```
+
+两点问题：
+1. 这是 **UV 均匀网格 + 内外判定**，而 OCCT `BRepMesh_FaceDiscret` 走的是
+   `BRepMesh_DefaultRangeSplitter` + **按曲面局部度量换算的 UV 容差**（`BRepMesh_Deflection`/`ShapeTool`）做自适应加点；
+2. 把 **3D 偏转** 直接当 **UV 步长**是**量纲错误**：圆柱上 `u` 走 Δu 对应 3D 长度 `r·Δu`，
+   UV 步长应为 `deflection / r`，即 `nu = du·r / deflection`；端口少了 `r` 因子。
+   半径小的面会被**严重欠采样**（正合 `f1495`：du≈6.25、def=2.574 → nu≈4、nv≈2）。
+
+**这与 `step_obj_parity` 文件头的自述矛盾**（那里写「export 路径已不再回退 UV-grid/quadtree 网格器 —— audit A17」），
+即该回退**仍存在于 `IncrementalMesh` 路径**。
+
+**下一步**：确认 `IncrementalMesh` 是否也走 `face_discret`（而非纯 Delaunay）；
+若是，则把 `interior_grid` 换成 OCCT 的 `BRepMesh_DefaultRangeSplitter`/UV 偏转换算，并以此解释 T0M/acs10 的缺口。
+
 ### 9.90 round 89 —— 【强假设】`f1495` 的 pcurve `u` 超出曲面周期区间（最高 9.4 > 2π）
 
 `--checkwire` 对 T0M `f1495`（Cylinder，mv=118 mt=6）：
