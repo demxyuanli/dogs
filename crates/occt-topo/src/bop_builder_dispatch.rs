@@ -188,7 +188,7 @@ fn fuse_components(shapes: &[TopoShape], tol: f64) -> Result<BooleanResult, Stri
 /// * either operand is not a solid → [`boolean_non_solid`] (`BOPAlgo_BOP`'s
 ///   `CheckData` decides legality — OCCT has no best-effort layer);
 /// * otherwise the full curved/planar boolean dispatcher.
-fn boolean_dispatch(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
+pub(crate) fn boolean_dispatch(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
     // `BOPAlgo_BOP::Perform` order: `CheckData` raises `BOPAlgo_AlertEmptyShape`
     // (`BOPAlgo_BOP.cxx:162-167`) and `TreatEmptyShape` (`:214-322`) then fixes the
     // result **before** anything else happens — in particular before any compound

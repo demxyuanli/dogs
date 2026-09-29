@@ -311,11 +311,17 @@ use occt_core::gp::GpPnt;
 
     #[test]
     fn boolean_repaired_warns_on_fix() {
-        // A self-intersecting shell fused with a disjoint box keeps the
-        // crossing inside the compound; the repaired wrapper flags it.
+        // A self-intersecting shell fused with an **empty** shape. T-41 (a): the
+        // old fixture fused the shell with a *solid* — a FUSE of unequal
+        // dimensions, which `BOPAlgo_BOP::CheckData` rejects
+        // (`BOPAlgo_BOP.cxx:181-186`) and only the removed `bop_curved` engine
+        // tolerated. Fusing with an empty group is the legal route:
+        // `TreatEmptyShape` (`BOPAlgo_BOP.cxx:214-322`) returns the surviving
+        // shapes, so the crossing shell reaches the repair unchanged and the
+        // wrapper flags it.
         let shell = crossing_shell();
-        let boxy = BRepPrimBox::make_box_corner(&GpPnt::new(5.0, 5.0, 5.0), &GpPnt::new(6.0, 6.0, 6.0));
-        let r = boolean_repaired(&shell.0, &boxy.solid.0, BoolOp::Fuse, 1e-6).expect("repaired fuse ok");
+        let empty = TopoBuilder::new().make_compound_of(&[]);
+        let r = boolean_repaired(&shell.0, &empty.0, BoolOp::Fuse, 1e-6).expect("repaired fuse ok");
         assert!(
             r.warnings.iter().any(|w| w.contains("fixed")),
             "warning mentions fixed faces: {:?}",
@@ -333,7 +339,7 @@ use occt_core::gp::GpPnt;
         clear_tree(&r.shape);
         clear_tree(&r2.shape);
         clear_tree(&shell.0);
-        clear_tree(&boxy.solid.0);
+        clear_tree(&empty.0);
         clear_tree(&a.0);
         clear_tree(&b.0);
     }

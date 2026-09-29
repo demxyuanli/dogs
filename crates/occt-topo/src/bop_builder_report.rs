@@ -385,7 +385,8 @@ pub fn boolean_fuse_all_components(shapes: &[TopoShape], tol: f64) -> Result<Mul
 /// so callers can inspect exactly which faces were fixed/removed.
 pub fn boolean_repaired_report(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<(BooleanResult, RepairResult), String> {
     let tol = tol.max(1e-9);
-    let r = crate::bop_curved::curved_boolean_full(a, b, op, tol)?;
+    // T-41: faithful `BOPAlgo_BOP` dispatch (see `boolean_repaired`).
+    let r = crate::bop_builder_dispatch::boolean_dispatch(a, b, op, tol)?;
     let rep = repair_self_intersections(&r.shape, tol)?;
     if rep.fixed_faces == 0 && rep.removed_faces == 0 {
         return Ok((r, rep));

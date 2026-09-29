@@ -236,7 +236,8 @@ pub fn repair_self_intersections(shape: &TopoShape, tol: f64) -> Result<RepairRe
 /// returned unchanged.
 pub fn boolean_repaired(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
     let tol = tol.max(1e-9);
-    let r = crate::bop_curved::curved_boolean_full(a, b, op, tol)?;
+    // T-41: faithful `BOPAlgo_BOP` dispatch (no OCCT `bop_curved` engine).
+    let r = crate::bop_builder_dispatch::boolean_dispatch(a, b, op, tol)?;
     Ok(repair_boolean_result(r, tol))
 }
 
@@ -402,7 +403,8 @@ pub fn decompose_multi_result(r: &BooleanResult) -> MultiResult {
 /// inputs (a compound), a Cut that leaves two or more pieces (a multi-shell
 /// solid) — yields a [`MultiResult`] with one shape per piece.
 pub fn boolean_split_result(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<MultiResult, String> {
-    let r = crate::bop_curved::curved_boolean_full(a, b, op, tol)?;
+    // T-41: faithful `BOPAlgo_BOP` dispatch (see `boolean_repaired`).
+    let r = crate::bop_builder_dispatch::boolean_dispatch(a, b, op, tol)?;
     Ok(decompose_multi_result(&r))
 }
 

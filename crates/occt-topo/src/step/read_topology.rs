@@ -723,28 +723,16 @@ impl<'a> Resolver<'a> {
         // `ShapeFix_Face.cxx:492-498`. NOT wired yet: it triggers on
         // `occ/bottom.step` (seam added, single face) but the result diverges
         // (mesh f 23557 -> 23408) because `ShapeFix_ComposeShell` still has the
-        // UNPORTED branches of specs/_a3n00_gap_analysis.md §9.33/§9.32.
-        // Wired 2026: `FromSTEP.FixShape` (`ShapeProcess_OperLibrary.cxx:830`)
-        // runs `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:345-498`) on every
-        // imported face; the `FixMissingSeam` step is `cxx:492-494`. The reader
-        // pass above (`check_pcurves_and_shift`) is the first wire round
-        // (`cxx:365-480`), which leaves `FixLacking` off (`cxx:372`); the second
-        // round (`cxx:509+`) is not run here.
-        {
-            let mut sff = crate::shhealing::ShapeFixFace::with_face(&face);
-            sff.result = Some(face.0.clone());
-            if sff.fix_missing_seam() {
-                if let Some(res) = sff.result.clone() {
-                    if res.shape_type() == crate::abs::ShapeType::Face {
-                        let rf = crate::shape::Face(res.clone());
-                        for mut w in crate::topo_tools_full::wires_of_face(&rf) {
-                            crate::shhealing::check_pcurves_and_shift(&mut w, &rf, self.precision, false);
-                        }
-                        return Ok(res);
-                    }
-                }
-            }
-        }
+        // T-93 (a): OCCT does **not** run `ShapeFix_Face::Perform` on this read
+        // path — a patched OCCT build whose `ZZ_ShapeFix_Face.obj` provides
+        // `?Perform@ShapeFix_Face@@…` (proved present by the link map) printed
+        // nothing during `STEPControl_Reader::TransferRoots` for a3n00 and T0M
+        // (specs/_a3n00_gap_analysis.md 9.219). The port used to bolt on
+        // `FixMissingSeam` here; that compensated for the port reader on most
+        // T0M faces but damaged a3n00's F113, because the discarded `Shell(5)`
+        // still rewrote the shared `GeometryRegistry` (9.228). Removing it
+        // matches OCCT: F113 meshes, and the T0M area ratio shift is recorded in
+        // the `step_obj_gates` baseline.
         Ok(face.0)
     }
 
