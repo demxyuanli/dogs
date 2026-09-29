@@ -226,9 +226,29 @@ fn plane_cylinder_parallel_generatrices() {
         )
         .unwrap(),
     );
-    let ax1 = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap());
-    let ref_ic = intpatch::intersect_plane_cylinder(&pln, &ax1, 1.0).expect("reference lines");
-    let ref_mid = ref_ic.curve.d0(0.0);
+    // Reference: `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder)` (`intana`),
+    // which yields `TwoLines` for the parallel case (T-28 step 4: the closed
+    // form now has a single home, so the reference source moved from
+    // `intpatch::intersect_plane_cylinder` to `intana`).
+    let cyl = occt_core::gp::GpCylinder::new(
+        GpAx3::new(
+            GpPnt::zero(),
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+        )
+        .unwrap(),
+        1.0,
+    )
+    .unwrap();
+    let (l1, l2) = match occt_geom::intana::quadric_quadric_plane_cylinder(&pln, &cyl, 1e-12, 1e-7) {
+        occt_geom::intana::QuadricIntersection::TwoLines(a, b) => (a, b),
+        other => panic!("IntAna(gp_Pln, gp_Cylinder) should give TwoLines, got {other:?}"),
+    };
+    let dist_to_line = |p: &GpPnt, l: &occt_core::gp::GpLin| {
+        let d = occt_core::gp::GpVec::from_xyz(l.direction().xyz()).normalized();
+        let v = occt_core::gp::GpVec::from_pnts(&l.location(), p);
+        v.crossed(&d).magnitude()
+    };
 
     let mut ff = FaceFace::new();
     ff.set_face1(plane_face(&pln));
@@ -236,12 +256,25 @@ fn plane_cylinder_parallel_generatrices() {
     ff.set_tolerance(TOL);
     ff.perform().expect("perform");
     let res = ff.result();
-    assert!(res.nb_curves() >= 1, "at least one generatrix line");
-    let c = res.curve(0);
-    assert_eq!(c.kind, CurveKind::Line);
-    let (a, b) = (c.range.first, c.range.last);
-    let mid_pt = c.curve.d0(0.5 * (a + b));
-    assert!(mid_pt.distance(&ref_mid) < 1e-6, "FaceFace line {mid_pt:?} != intpatch {ref_mid:?}");
+    assert_eq!(res.nb_curves(), 2, "plane ∥ cylinder: two generatrix lines (IntAna TwoLines)");
+    let mut hit = [false, false];
+    for i in 0..2 {
+        let c = res.curve(i);
+        assert_eq!(c.kind, CurveKind::Line);
+        let (a, b) = (c.range.first, c.range.last);
+        let mid_pt = c.curve.d0(0.5 * (a + b));
+        let (d1, d2) = (dist_to_line(&mid_pt, &l1), dist_to_line(&mid_pt, &l2));
+        assert!(
+            d1 < 1e-6 || d2 < 1e-6,
+            "FaceFace curve {i} at {mid_pt:?} is on neither generatrix (d1={d1}, d2={d2})"
+        );
+        if d1 <= d2 {
+            hit[0] = true;
+        } else {
+            hit[1] = true;
+        }
+    }
+    assert!(hit[0] && hit[1], "both generatrices must be present");
 }
 
 #[test]

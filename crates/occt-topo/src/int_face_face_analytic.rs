@@ -126,21 +126,26 @@ impl FaceFace {
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
         let is_plane_a = classify_surface(sa) == SurfaceKind::Plane;
-        let (pln, (c, r)) = if is_plane_a {
+        let (pln, sphere) = if is_plane_a {
             (
                 intpatch::plane_from_surface(sa).ok_or("FaceFace: plane extraction")?,
-                intpatch::sphere_params(sb).ok_or("FaceFace: sphere extraction")?,
+                sphere_from_surface(sb).ok_or("FaceFace: sphere extraction")?,
             )
         } else {
             (
                 intpatch::plane_from_surface(sb).ok_or("FaceFace: plane extraction")?,
-                intpatch::sphere_params(sa).ok_or("FaceFace: sphere extraction")?,
+                sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?,
             )
         };
         let mut out = Vec::new();
-        if let Some(ic) = intpatch::intersect_plane_sphere(&pln, c, r) {
-            out.push(self.curve_from_ic(ic, CurveKind::Circle, fa, fb));
-        }
+        // T-28 step 4: the closed form comes from `intana`
+        // (`IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Sphere)`); `intpatch` no
+        // longer carries its own copy.
+        out.extend(self.conics_to_curves(
+            occt_geom::intana::quadric_quadric_plane_sphere(&pln, &sphere),
+            fa,
+            fb,
+        ));
         if out.is_empty() {
             out = self.general(sa, sb, fa, fb, tol)?;
         }
@@ -157,12 +162,17 @@ impl FaceFace {
         fb: &Face,
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
-        let (c1, r1) = intpatch::sphere_params(sa).ok_or("FaceFace: sphere extraction (a)")?;
-        let (c2, r2) = intpatch::sphere_params(sb).ok_or("FaceFace: sphere extraction (b)")?;
+        let s1 = sphere_from_surface(sa).ok_or("FaceFace: sphere extraction (a)")?;
+        let s2 = sphere_from_surface(sb).ok_or("FaceFace: sphere extraction (b)")?;
         let mut out = Vec::new();
-        if let Some(ic) = intpatch::intersect_sphere_sphere(c1, r1, c2, r2) {
-            out.push(self.curve_from_ic(ic, CurveKind::Circle, fa, fb));
-        }
+        // T-28 step 4: `IntAna_QuadQuadGeo::Perform(gp_Sphere, gp_Sphere)`; the
+        // 1e-7 linear tolerance is the same one `brep_face_intersect.rs:189`
+        // passes to intana for this pair.
+        out.extend(self.conics_to_curves(
+            occt_geom::intana::quadric_quadric_sphere_sphere(&s1, &s2, 1e-7),
+            fa,
+            fb,
+        ));
         if out.is_empty() {
             out = self.general(sa, sb, fa, fb, tol)?;
         }
@@ -191,13 +201,15 @@ impl FaceFace {
                 sa,
             )
         };
-        let (center, ax, rad) = cylinder_params(cyl).ok_or("FaceFace: cylinder extraction")?;
-        let ax1 = GpAx1::new(center, GpDir::from_vec(&ax).map_err(|e| e.to_string())?);
-        let kind = plane_cylinder_kind(&pln, &ax1);
+        let cylinder = cylinder_from_surface(cyl).ok_or("FaceFace: cylinder extraction")?;
         let mut out = Vec::new();
-        if let Some(ic) = intpatch::intersect_plane_cylinder(&pln, &ax1, rad) {
-            out.push(self.curve_from_ic(ic, kind, fa, fb));
-        }
+        // T-28 step 4: `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder)`; the
+        // angular/linear tolerances follow the migrated `plane_cone` arm below.
+        out.extend(self.conics_to_curves(
+            occt_geom::intana::quadric_quadric_plane_cylinder(&pln, &cylinder, 1e-12, 1e-7),
+            fa,
+            fb,
+        ));
         if out.is_empty() {
             out = self.general(sa, sb, fa, fb, tol)?;
         }

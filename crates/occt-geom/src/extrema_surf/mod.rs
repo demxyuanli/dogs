@@ -27,13 +27,13 @@
 //! `Extrema_ExtPS.cxx:292-343`) are ported and dispatched to; the shared
 //! `Extrema_ExtPElC` reduction lives in `elementary_curve_extrema.rs`.
 //!
-//! **UNPORTED (audit A15 / T-67 remainder)** — `point_surface_newton_all*`
-//! (`numeric_extrema.rs`) is still a **substitute, not a port**: a 24x24 grid
-//! seeding plus a numeric-Jacobian Newton. It is no longer on the
-//! `Extrema_ExtPS` path (that now runs [`gen_ext_ps`]); it survives as the
-//! `ShapeAnalysis_Surface::ValueOfUV` fallback stand-in in
-//! `point_surface_extrema_box` and as the existing
-//! `newton_path_bspline_paraboloid_min` regression surface.
+//! **UNPORTED substitute (audit A15, closed by T-67)** — `point_surface_newton_all*`
+//! (`numeric_extrema.rs`) is a **substitute, not a port** (24x24 grid seeding plus a
+//! numeric-Jacobian Newton). It is no longer on any library path: the `Extrema_ExtPS`
+//! dispatch runs [`gen_ext_ps`], and `point_surface_extrema_box` now reports
+//! "no solution" on an empty window so its caller takes the OCCT `UVFromIso` branch
+//! (`ShapeAnalysis_Surface.cxx:1449-1459`, ported as `pcurve_full::uv_from_iso`).
+//! It survives only for the `newton_path_bspline_paraboloid_min` regression test.
 //!
 //! `Surface::d2` **does** exist (`surface.rs:12`, analytic surfaces override
 //! it; the trait default is a central difference, see A15/T-51), so the numeric

@@ -164,20 +164,28 @@ pub(super) fn general_pair_curves_windowed(fa: &[Face], fb: &[Face], tol: f64) -
             // The surface_surface_intersection dispatcher handles plane∩sphere,
             // sphere∩sphere and plane∩plane; add the analytic plane∩cylinder
             // (and cone/torus) closed forms so those traces are exact too.
-            let cyl_a = surface_cylinder_params(sa.as_ref());
-            let cyl_b = surface_cylinder_params(sb.as_ref());
+            let cyl_a = crate::int_face_face::cylinder_from_surface(sa.as_ref());
+            let cyl_b = crate::int_face_face::cylinder_from_surface(sb.as_ref());
             let plane_a = crate::intpatch::plane_from_surface(sa.as_ref());
             let plane_b = crate::intpatch::plane_from_surface(sb.as_ref());
-            let ax_of = |cyl: (GpPnt, GpVec, f64)| GpAx1::new(cyl.0, GpDir::from_vec(&cyl.1).unwrap_or_default());
-            let analytic = match (plane_a, cyl_b) {
-                (Some(pln), Some(cyl)) => crate::intpatch::intersect_plane_cylinder(&pln, &ax_of(cyl), cyl.2),
+            // T-28 step 4: the plane∩cylinder closed form lives in `intana`
+            // (`IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder)`).
+            let cyl_pair = match (plane_a, cyl_b) {
+                (Some(pln), Some(cyl)) => Some((pln, cyl)),
                 _ => match (cyl_a, plane_b) {
-                    (Some(cyl), Some(pln)) => crate::intpatch::intersect_plane_cylinder(&pln, &ax_of(cyl), cyl.2),
+                    (Some(cyl), Some(pln)) => Some((pln, cyl)),
                     _ => None,
                 },
             };
-            if let Some(ic) = analytic {
-                curves = vec![ic.points.clone()];
+            let analytic = cyl_pair.map(|(pln, cyl)| {
+                crate::intpatch::ic_list_from_quadric(
+                    occt_geom::intana::quadric_quadric_plane_cylinder(&pln, &cyl, 1e-12, 1e-7),
+                    sa.as_ref(),
+                    sb.as_ref(),
+                )
+            });
+            if let Some(ics) = analytic.filter(|v| !v.is_empty()) {
+                curves = ics.iter().map(|ic| ic.points.clone()).collect();
             } else {
                 match crate::intpatch::surface_surface_intersection(sa.as_ref(), sb.as_ref(), tol) {
                     crate::intpatch::SurfaceIntersection::Curves(ics) => {

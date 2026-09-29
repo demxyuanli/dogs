@@ -4,7 +4,7 @@ use super::*;
 use occt_core::bnd::BndBox2d;
 use occt_core::bspl::curve_tools::reparameterize;
 use occt_core::gp::{
-    GpAx3, GpDir, GpDir2d, GpLin, GpPln, GpPnt, GpPnt2d, GpTrsf2d, GpVec, GpVec2d,
+    GpAx3, GpDir2d, GpLin, GpPln, GpPnt, GpPnt2d, GpTrsf2d, GpVec, GpVec2d,
 };
 use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL};
 use occt_geom::{Curve, GeomPlane, Surface};
@@ -2847,9 +2847,13 @@ fn check_notched_edges(
         return None; // `cxx:1880-1883`
     }
 
-    // `cxx:1885-1898`: `sae.LastVertex(E1)` / `sae.FirstVertex(E2)` with
-    // `CumOri = false`, then `BRepTools::Compare(V1, V2)`.
-    let (Some(v1), Some(v2)) = (edge_vertices(&e1).1, edge_vertices(&e2).0) else {
+    // `cxx:1885-1898`: `V1 = sae.LastVertex(E1)`, `V2 = sae.FirstVertex(E2)`,
+    // then `BRepTools::Compare(V1, V2)`. Both accessors are orientation-aware
+    // (`ShapeAnalysis_Edge.cxx:228-258`): on a REVERSED edge the first vertex
+    // is the raw *last* one and vice versa. Reading the raw `edge_vertices`
+    // here swapped the pair for every REVERSED edge, so the notched pair was
+    // never recognised (F113 of `data/occ/a3n00.stp` is exactly that).
+    let (Some(v1), Some(v2)) = (last_vertex(&e1), first_vertex(&e2)) else {
         return None;
     };
     if !vertices_coincide(&v1, &v2) {

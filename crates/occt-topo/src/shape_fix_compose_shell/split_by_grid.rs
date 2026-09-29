@@ -4,7 +4,6 @@
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::{GpDir2d, GpLin2d, GpPnt2d, GpVec2d};
 
-use crate::brep_tool::BRepTool;
 use crate::brep_tools::add_uv_bounds_on_wire;
 use crate::builder::TopoBuilder;
 

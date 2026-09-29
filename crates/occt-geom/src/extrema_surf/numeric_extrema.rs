@@ -60,14 +60,15 @@ pub(super) fn solve_point_surface(
 /// All local extrema of |S(u,v)-P| via grid seeding + Newton, deduplicated and
 /// sorted by distance.
 ///
-/// **UNPORTED (audit A15 / T-67 remainder)** - this is the old substitute for
-/// the general `Extrema_ExtPS` path. The dispatch now runs the faithful
-/// `Extrema_GenExtPS` ([`super::gen_ext_ps::ExtremaGenExtPs`]), so the
-/// non-test library no longer reaches this function; it is kept because the
-/// existing `newton_path_bspline_paraboloid_min` regression test calls it, and
-/// it remains the shape of the `ShapeAnalysis_Surface::ValueOfUV` fallback
-/// stand-in used by `point_surface_extrema_box` (via
-/// [`point_surface_newton_all_box`]).
+/// **UNPORTED substitute (audit A15)** - the old grid+Newton substitute for the
+/// general `Extrema_ExtPS` path. Nothing in the library reaches it any more
+/// (T-67): the `Extrema_ExtPS` dispatch runs the faithful
+/// `Extrema_GenExtPS` ([`super::gen_ext_ps::ExtremaGenExtPs`]), and
+/// `point_surface_extrema_box` now reports "no solution" on an empty window
+/// instead of falling back here (OCCT lets its caller `ValueOfUV` take the
+/// `UVFromIso` branch, `ShapeAnalysis_Surface.cxx:1449-1459`). Kept only because
+/// the `newton_path_bspline_paraboloid_min` regression test calls it; delete
+/// together with that test.
 #[allow(dead_code)]
 pub(crate) fn point_surface_newton_all(s: &dyn Surface, p: &GpPnt) -> Vec<ExtremaPair> {
     let (u0, u1) = surf_bound_u(s);
@@ -441,11 +442,13 @@ pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
 ///
 /// The window search itself is [`ExtPs`] (`point_surface_extrema.rs`): elementary surfaces are
 /// solved analytically and then filtered by the window (`TreatSolution`), the
-/// rest go through the general arm. When the window yields no solution — OCCT's
-/// `ValueOfUV` then runs `SurfaceNewton` + `UVFromIso` over the face boundary
-/// (`ShapeAnalysis_Surface.cxx:1449-1459`) — the port's stand-in is the general
-/// substitute restricted to the same window, and only if that is empty too the
-/// natural-bounds `fallback_point_surface` (UNPORTED, see its note).
+/// rest go through the general arm. When the window yields no solution the
+/// faithful answer is **no solution**: OCCT's `ValueOfUV` then runs`UVFromIso`
+/// over the face boundary (`ShapeAnalysis_Surface.cxx:1449-1459`), which the
+/// caller [`crate::pcurve_full`] implements. The returned pair then carries
+/// `v2 == None` (and a non-finite `u2`), which is what the caller filters on.
+/// The former Newton-substitute / natural-bounds fallbacks here were port
+/// additions with no OCCT counterpart and were removed (audit A15 / T-67).
 pub fn point_surface_extrema_box(
     s: &dyn Surface,
     p: &GpPnt,
@@ -468,12 +471,22 @@ pub fn point_surface_extrema_box(
     if let Some(e) = best {
         return e;
     }
-    match point_surface_newton_all_box(s, p, u0, u1, v0, v1)
-        .into_iter()
-        .next()
-    {
-        Some(e) => e,
-        None => fallback_point_surface(s, p),
+    // OCCT (A15 / T-67 remainder): `Extrema_ExtPS::Perform` over the expanded
+    // window can return no solution, and `ShapeAnalysis_Surface::ValueOfUV`
+    // then takes its own `UVFromIso` branch (`ShapeAnalysis_Surface.cxx:1449-1459,
+    // implemented by the caller `pcurve_full::surface_projector::value_of_uv`).
+    // The port used to run its own Newton substitute
+    // (`point_surface_newton_all_box`) plus a natural-bounds fallback here; both
+    // are port additions with no OCCT counterpart, so the faithful answer is
+    // "no solution" (`v2 == None`, which is what the caller filters on).
+    ExtremaPair {
+        p1: *p,
+        p2: *p,
+        distance: f64::INFINITY,
+        u1: f64::NAN,
+        v1: None,
+        u2: f64::NAN,
+        v2: None,
     }
 }
 

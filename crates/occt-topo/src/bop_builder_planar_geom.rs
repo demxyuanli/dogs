@@ -9,7 +9,7 @@ use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
 
 
 use crate::bop_builder_core::{
-    disjoint_result, empty_result, validate, BoolOp, BooleanResult,
+    disjoint_result, empty_result, validate, BooleanResult,
 };
 
 use crate::brep_tool::BRepTool;

@@ -73,10 +73,7 @@ mod trace;
 
 pub use geom::*;
 pub use bspline::*;
-pub use analytic::{
-    intersect_plane_cone, intersect_plane_cylinder, intersect_plane_sphere, intersect_plane_torus,
-    intersect_sphere_sphere,
-};
+pub use analytic::{ic_list_from_quadric, ic_list_from_torus};
 pub use trace::{
     chain_intersection_points, intersect_general_surfaces, intersection_curve_points,
     polyline_to_curve, surfaces_intersect_general, trace_surface_curve, PolylineCurve,
@@ -172,42 +169,52 @@ pub fn surface_surface_intersection(a: &dyn Surface, b: &dyn Surface, tol: f64) 
                 Some(p) => p,
                 None => return SurfaceIntersection::None,
             };
-            let (c, r) = match sphere_params(b) {
-                Some(x) => x,
+            let sphere = match crate::int_face_face::sphere_from_surface(b) {
+                Some(s) => s,
                 None => return SurfaceIntersection::None,
             };
-            return match intersect_plane_sphere(&pa, c, r) {
-                Some(ic) => SurfaceIntersection::Curves(vec![ic]),
-                None => SurfaceIntersection::None,
-            };
+            // T-28 step 4: the closed form comes from `intana`
+            // (`IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Sphere)`).
+            let ics = analytic::ic_list_from_quadric(
+                occt_geom::intana::quadric_quadric_plane_sphere(&pa, &sphere),
+                a,
+                b,
+            );
+            return if ics.is_empty() { SurfaceIntersection::None } else { SurfaceIntersection::Curves(ics) };
         }
         (SurfaceKind::Sphere, SurfaceKind::Plane) => {
             let pb = match plane_from_surface(b) {
                 Some(p) => p,
                 None => return SurfaceIntersection::None,
             };
-            let (c, r) = match sphere_params(a) {
-                Some(x) => x,
+            let sphere = match crate::int_face_face::sphere_from_surface(a) {
+                Some(s) => s,
                 None => return SurfaceIntersection::None,
             };
-            return match intersect_plane_sphere(&pb, c, r) {
-                Some(ic) => SurfaceIntersection::Curves(vec![ic]),
-                None => SurfaceIntersection::None,
-            };
+            // T-28 step 4: `intana` closed form (see the arm above).
+            let ics = analytic::ic_list_from_quadric(
+                occt_geom::intana::quadric_quadric_plane_sphere(&pb, &sphere),
+                a,
+                b,
+            );
+            return if ics.is_empty() { SurfaceIntersection::None } else { SurfaceIntersection::Curves(ics) };
         }
         (SurfaceKind::Sphere, SurfaceKind::Sphere) => {
-            let (c1, r1) = match sphere_params(a) {
-                Some(x) => x,
-                None => return SurfaceIntersection::None,
+            let (s1, s2) = match (
+                crate::int_face_face::sphere_from_surface(a),
+                crate::int_face_face::sphere_from_surface(b),
+            ) {
+                (Some(x), Some(y)) => (x, y),
+                _ => return SurfaceIntersection::None,
             };
-            let (c2, r2) = match sphere_params(b) {
-                Some(x) => x,
-                None => return SurfaceIntersection::None,
-            };
-            return match intersect_sphere_sphere(c1, r1, c2, r2) {
-                Some(ic) => SurfaceIntersection::Curves(vec![ic]),
-                None => SurfaceIntersection::None,
-            };
+            // T-28 step 4: `intana` closed form; 1e-7 matches
+            // `brep_face_intersect.rs:189`.
+            let ics = analytic::ic_list_from_quadric(
+                occt_geom::intana::quadric_quadric_sphere_sphere(&s1, &s2, 1e-7),
+                a,
+                b,
+            );
+            return if ics.is_empty() { SurfaceIntersection::None } else { SurfaceIntersection::Curves(ics) };
         }
         _ => {}
     }
@@ -236,11 +243,105 @@ mod tests {
         GpPln::new(GpAx3::new(GpPnt::new(0.0, 0.0, z), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap())
     }
 
+    fn cyl_sh(radius: f64) -> GpCylinder {
+        let ax3 = GpAx3::new(
+            GpPnt::zero(),
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+        )
+        .unwrap();
+        GpCylinder::new(ax3, radius).unwrap()
+    }
+
+    fn cone_sh(semi_angle: f64) -> Arc<dyn Surface> {
+        // `gp_Cone` puts the apex at `location - (radius / tan(semi)) * axis`,
+        // so the reference circle sits at `radius / tan(semi)` to place the
+        // apex at the origin (the convention these tests use).
+        let radius = 1.0;
+        let z0 = radius / semi_angle.tan();
+        let ax3 = GpAx3::new(
+            GpPnt::new(0.0, 0.0, z0),
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+        )
+        .unwrap();
+        Arc::new(occt_geom::GeomCone::new(
+            occt_core::gp::GpCone::new(ax3, radius, semi_angle).unwrap(),
+        ))
+    }
+
+    fn cyl_plane_ics(
+        pln: &GpPln,
+        cyl: &GpCylinder,
+        a: &dyn Surface,
+        b: &dyn Surface,
+    ) -> Vec<IntersectionCurve> {
+        analytic::ic_list_from_quadric(
+            occt_geom::intana::quadric_quadric_plane_cylinder(pln, cyl, 1e-12, 1e-7),
+            a,
+            b,
+        )
+    }
+
+    /// T-28 step 4: the closed form lives in `intana` now; build the sampled
+    /// curve exactly as the dispatcher does (`ic_list_from_quadric`).
+    fn plane_sphere_ic(
+        pln: &GpPln,
+        center: GpPnt,
+        r: f64,
+        a: &dyn Surface,
+        b: &dyn Surface,
+    ) -> Option<IntersectionCurve> {
+        let ax3 = GpAx3::new(
+            center,
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+        )
+        .unwrap();
+        let sp = GpSphere::new(ax3, r).unwrap();
+        analytic::ic_list_from_quadric(
+            occt_geom::intana::quadric_quadric_plane_sphere(pln, &sp),
+            a,
+            b,
+        )
+        .into_iter()
+        .next()
+    }
+
+    fn sphere_sh(c: GpPnt, r: f64) -> GpSphere {
+        let ax3 = GpAx3::new(
+            c,
+            GpDir::new(0.0, 0.0, 1.0).unwrap(),
+            &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+        )
+        .unwrap();
+        GpSphere::new(ax3, r).unwrap()
+    }
+
+    fn sphere_sphere_ic(
+        c1: GpPnt,
+        r1: f64,
+        c2: GpPnt,
+        r2: f64,
+        a: &dyn Surface,
+        b: &dyn Surface,
+    ) -> Option<IntersectionCurve> {
+        analytic::ic_list_from_quadric(
+            occt_geom::intana::quadric_quadric_sphere_sphere(&sphere_sh(c1, r1), &sphere_sh(c2, r2), 1e-7),
+            a,
+            b,
+        )
+        .into_iter()
+        .next()
+    }
+
     #[test]
     fn plane_sphere_circle_radius_and_on_surface() {
         // Plane z = 0.5 cutting the unit sphere at origin: circle radius sqrt(1-0.25) ≈ 0.866.
         let pln = plane_z(0.5);
-        let ic = intersect_plane_sphere(&pln, GpPnt::zero(), 1.0).expect("circle");
+        let s = unit_sphere(GpPnt::zero());
+        let a: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
+        let ic = plane_sphere_ic(&pln, GpPnt::zero(), 1.0, a.as_ref(), s.as_ref()).expect("circle");
         assert_eq!(ic.points.len(), 48);
         for p in &ic.points {
             let r = p.distance(&GpPnt::zero());
@@ -251,8 +352,6 @@ mod tests {
         let rad = ic.points[0].distance(&GpPnt::new(0.0, 0.0, 0.5));
         assert!((rad - (0.75f64.sqrt())).abs() < 1e-9, "circle radius {rad}");
         // Every sampled point is within tol of both surfaces.
-        let s = unit_sphere(GpPnt::zero());
-        let a: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
         for p in &ic.points {
             assert!(distance_to_surface(p, a.as_ref()) < TOL);
             assert!(distance_to_surface(p, s.as_ref()) < TOL);
@@ -262,24 +361,42 @@ mod tests {
     #[test]
     fn plane_sphere_no_intersection() {
         let pln = plane_z(2.0); // above the unit sphere
-        assert!(intersect_plane_sphere(&pln, GpPnt::zero(), 1.0).is_none());
+        let s = unit_sphere(GpPnt::zero());
+        let a: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
+        assert!(plane_sphere_ic(&pln, GpPnt::zero(), 1.0, a.as_ref(), s.as_ref()).is_none());
     }
 
     #[test]
     fn plane_sphere_tangent() {
+        // `IntAna_QuadQuadGeo` reports tangency as a single **point**, not a
+        // zero-radius circle, and a point yields no curve (the caller falls
+        // back to the tracer) — `conics_to_curves` doc.
         let pln = plane_z(1.0);
-        let ic = intersect_plane_sphere(&pln, GpPnt::zero(), 1.0).expect("tangent circle");
-        // Tangent: radius 0, all points collapse to the tangent point.
-        let p = ic.points[0];
-        assert!(p.distance(&GpPnt::new(0.0, 0.0, 1.0)) < 1e-9, "tangent point {p:?}");
+        let s = unit_sphere(GpPnt::zero());
+        let a: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
+        match occt_geom::intana::quadric_quadric_plane_sphere(&pln, &sphere_sh(GpPnt::zero(), 1.0)) {
+            occt_geom::intana::QuadricIntersection::Point(p) => {
+                assert!(p.distance(&GpPnt::new(0.0, 0.0, 1.0)) < 1e-9, "tangent point {p:?}");
+            }
+            other => panic!("expected Point for tangency, got {other:?}"),
+        }
+        assert!(plane_sphere_ic(&pln, GpPnt::zero(), 1.0, a.as_ref(), s.as_ref()).is_none());
     }
 
     #[test]
     fn sphere_sphere_circle_on_both() {
         // Two unit spheres, centers 1.5 apart.
-        let ic = intersect_sphere_sphere(GpPnt::zero(), 1.0, GpPnt::new(1.5, 0.0, 0.0), 1.0).expect("circle");
         let s1 = unit_sphere(GpPnt::zero());
         let s2 = unit_sphere(GpPnt::new(1.5, 0.0, 0.0));
+        let ic = sphere_sphere_ic(
+            GpPnt::zero(),
+            1.0,
+            GpPnt::new(1.5, 0.0, 0.0),
+            1.0,
+            s1.as_ref(),
+            s2.as_ref(),
+        )
+        .expect("circle");
         // Intersection plane at x = 0.75, radius sqrt(1 - 0.75²).
         let expected_r = (1.0 - 0.75f64 * 0.75).sqrt();
         for p in &ic.points {
@@ -293,21 +410,38 @@ mod tests {
 
     #[test]
     fn sphere_sphere_tangent_or_none() {
-        // Tangent spheres (d = r1 + r2) → degenerate single point (radius 0).
-        let ic = intersect_sphere_sphere(GpPnt::zero(), 1.0, GpPnt::new(2.0, 0.0, 0.0), 1.0).expect("tangent circle");
-        let p = ic.points[0];
-        assert!(p.distance(&GpPnt::new(1.0, 0.0, 0.0)) < 1e-6, "tangent point {p:?}");
+        // Tangent spheres (d = r1 + r2) → `IntAna_QuadQuadGeo` reports a single
+        // point, hence no curve.
+        match occt_geom::intana::quadric_quadric_sphere_sphere(
+            &sphere_sh(GpPnt::zero(), 1.0),
+            &sphere_sh(GpPnt::new(2.0, 0.0, 0.0), 1.0),
+            1e-7,
+        ) {
+            occt_geom::intana::QuadricIntersection::Point(p) => {
+                assert!(p.distance(&GpPnt::new(1.0, 0.0, 0.0)) < 1e-6, "tangent point {p:?}");
+            }
+            other => panic!("expected Point for tangency, got {other:?}"),
+        }
+        let s1 = unit_sphere(GpPnt::zero());
+        let s2 = unit_sphere(GpPnt::new(2.0, 0.0, 0.0));
+        assert!(sphere_sphere_ic(GpPnt::zero(), 1.0, GpPnt::new(2.0, 0.0, 0.0), 1.0, s1.as_ref(), s2.as_ref()).is_none());
 
         // Disjoint spheres → None.
-        assert!(intersect_sphere_sphere(GpPnt::zero(), 1.0, GpPnt::new(5.0, 0.0, 0.0), 1.0).is_none());
+        let s3 = unit_sphere(GpPnt::new(5.0, 0.0, 0.0));
+        assert!(sphere_sphere_ic(GpPnt::zero(), 1.0, GpPnt::new(5.0, 0.0, 0.0), 1.0, s1.as_ref(), s3.as_ref()).is_none());
     }
 
     #[test]
     fn plane_cylinder_circle() {
         // Plane z = 1 perpendicular to the Z-axis cylinder radius 2 → circle radius 2 at z=1.
         let pln = plane_z(1.0);
-        let ax = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap());
-        let ic = intersect_plane_cylinder(&pln, &ax, 2.0).expect("circle");
+        let cyl = cyl_sh(2.0);
+        let pln_surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
+        let cyl_surf: Arc<dyn Surface> = Arc::new(GeomCylinder::new(cyl.clone()));
+        let ic = cyl_plane_ics(&pln, &cyl, pln_surf.as_ref(), cyl_surf.as_ref())
+            .into_iter()
+            .next()
+            .expect("circle");
         for p in &ic.points {
             assert!((p.z() - 1.0).abs() < 1e-9);
             let r = GpPnt::new(p.x(), p.y(), 0.0).distance(&GpPnt::zero());
@@ -323,13 +457,19 @@ mod tests {
             GpDir::new(1.0, 0.0, 0.0).unwrap(),
             &GpDir::new(0.0, 1.0, 0.0).unwrap(),
         ).unwrap());
-        let ax = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap());
-        let ic = intersect_plane_cylinder(&pln, &ax, 1.0).expect("lines");
-        assert!(ic.points.len() >= 2);
-        let mut ys: Vec<f64> = ic.points.iter().map(|p| p.y().abs()).collect();
-        ys.sort_by(f64::total_cmp);
+        let cyl = cyl_sh(1.0);
+        let pln_surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
+        let cyl_surf: Arc<dyn Surface> = Arc::new(GeomCylinder::new(cyl.clone()));
+        let ics = cyl_plane_ics(&pln, &cyl, pln_surf.as_ref(), cyl_surf.as_ref());
+        // `IntAna_QuadQuadGeo` reports the parallel case as **TwoLines**, not a
+        // single merged curve (T-28 step 4 reference change).
+        assert_eq!(ics.len(), 2, "plane ∥ cylinder axis gives two generatrices");
         let target = (0.75f64).sqrt();
-        assert!((ys[0] - target).abs() < 1e-6, "line y {target}, got {}", ys[0]);
+        for ic in &ics {
+            for p in &ic.points {
+                assert!((p.y().abs() - target).abs() < 1e-6, "line y {target}, got {}", p.y());
+            }
+        }
     }
 
     #[test]
@@ -397,9 +537,18 @@ mod tests {
     fn plane_cone_circle() {
         // Cone apex at origin, semi-angle 30°, plane z = 2 → circle radius 2·tan30 ≈ 1.155.
         let pln = plane_z(2.0);
-        let ax = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap());
         let semi = 30f64.to_radians();
-        let ic = intersect_plane_cone(&pln, GpPnt::zero(), &ax, semi).expect("circle");
+        let pln_surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
+        let cone_surf = cone_sh(semi);
+        let cone = crate::int_face_face::cone_from_surface(cone_surf.as_ref()).expect("cone");
+        let ic = analytic::ic_list_from_quadric(
+            occt_geom::intana::quadric_quadric_plane_cone(&pln, &cone, 1e-12, 1e-7),
+            pln_surf.as_ref(),
+            cone_surf.as_ref(),
+        )
+        .into_iter()
+        .next()
+        .expect("circle");
         let expected_r = 2.0 * semi.tan();
         for p in &ic.points {
             assert!((p.z() - 2.0).abs() < 1e-9);
@@ -416,11 +565,19 @@ mod tests {
             GpDir::new(0.0, 1.0, 0.0).unwrap(),
             &GpDir::new(1.0, 0.0, 0.0).unwrap(),
         ).unwrap());
-        let ax = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap());
-        let ic = intersect_plane_torus(&pln, GpPnt::zero(), &ax, 3.0, 1.0).expect("two circles");
-        assert!(!ic.points.is_empty());
         let torus_ax3 = GpAx3::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
-        let t: Arc<dyn Surface> = Arc::new(GeomTorus::new(GpTorus::new(torus_ax3, 3.0, 1.0).unwrap()));
+        let tor = GpTorus::new(torus_ax3, 3.0, 1.0).unwrap();
+        let pln_surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
+        let t: Arc<dyn Surface> = Arc::new(GeomTorus::new(tor.clone()));
+        // T-28 step 4: `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Torus)`
+        // (`intana::quadric_quadric_plane_torus`).
+        let ics = analytic::ic_list_from_torus(
+            occt_geom::intana::quadric_quadric_plane_torus(&pln, &tor, TOL),
+            pln_surf.as_ref(),
+            t.as_ref(),
+        );
+        assert!(!ics.is_empty());
+        let ic = &ics[0];
         for p in &ic.points {
             assert!((p.y()).abs() < 1e-9, "in plane y {}", p.y());
             assert!(distance_to_surface(p, t.as_ref()) < 1e-6);

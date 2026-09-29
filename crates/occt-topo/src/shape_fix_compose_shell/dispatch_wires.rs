@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpPnt2d, GpVec2d};
 use occt_core::precision::PCONFUSION;
-use occt_geom2d::curve::Curve2d;
 use occt_geom::Surface;
 
 use crate::abs::{Orientation, ShapeType};

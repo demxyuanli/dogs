@@ -309,43 +309,18 @@ pub(super) fn all_faces_planar(shape: &TopoShape) -> bool {
 
 /// Combine `solid` with the `tool` solid.
 ///
-/// Planar inputs run [`crate::bop_builder::boolean`] (`BOPAlgo_BOP`).
-/// Any curved input runs the voxel boolean: `curved_boolean`'s mesh path would
-/// leave cut-through faces with the tool's outward orientation, and its
-/// independent per-face grids do not reliably weld along the intersection
-/// curve, so the exact-path volume is unreliable for curved fuses. The voxel
-/// boolean always emits a consistently outward mesh.
+/// T-41: OCCT's only boolean is `BRepAlgoAPI_*` / `BOPAlgo_BOP` (audit A5: the
+/// port's `bop_curved` voxel/mesh boolean has no counterpart). Both the planar
+/// and the curved case run the exact `BOPAlgo_BOP` path.
 pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: f64) -> Result<FeatResult, String> {
-    if all_faces_planar(&solid.0) && all_faces_planar(tool) {
-        let r = crate::bop_curved::curved_boolean(&solid.0, tool, op, tol.max(1e-6))
-            .map_err(|e| format!("feature boolean: {e}"))?;
-        let shape = r.solid.map(|s| s.0).unwrap_or(r.shape);
-        // `shape_mesh::shape_volume` meshes each face over its UV bounding box,
-        // ignoring the wire boundary, so it overcounts every non-rectangular
-        // planar face. Use a wire-respecting volume instead.
-        let volume = solid_volume(&shape, 48, 48);
-        return Ok(FeatResult { shape, volume });
-    }
-    let vop = match op {
-        BoolOp::Fuse => crate::boolean_ops::BoolOp::Union,
-        BoolOp::Cut => crate::boolean_ops::BoolOp::Subtraction,
-        BoolOp::Common => crate::boolean_ops::BoolOp::Intersection,
-    };
-    let resolution = resolution_for(solid, tool, tol);
-    let mesh = crate::boolean_ops::voxel_boolean(&solid.0, tool, resolution, vop)
+    let r = crate::bop_builder::boolean(&solid.0, tool, op, tol.max(1e-9))
         .map_err(|e| format!("feature boolean: {e}"))?;
-    let volume = mesh_volume_signed(&mesh);
-    let brep = crate::mesh_to_brep::shape_mesh_to_brep(&mesh);
-    let solid_out = match brep.solid {
-        Some(s) => s,
-        // A voxel staircase can be non-manifold in places; still expose it as a
-        // solid so the result is usable for further processing.
-        None => {
-            let b = crate::builder::TopoBuilder::new();
-            b.make_solid(&[brep.shell])
-        }
-    };
-    Ok(FeatResult { shape: solid_out.0, volume })
+    let shape = r.solid.map(|s| s.0).unwrap_or(r.shape);
+    // `shape_mesh::shape_volume` meshes each face over its UV bounding box,
+    // ignoring the wire boundary, so it overcounts every non-rectangular
+    // planar face. Use a wire-respecting volume instead.
+    let volume = solid_volume(&shape, 48, 48);
+    Ok(FeatResult { shape, volume })
 }
 
 /// Revolve `profile` around the Z axis and align the tool so its axis is the

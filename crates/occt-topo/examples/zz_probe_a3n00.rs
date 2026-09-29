@@ -74,6 +74,133 @@ fn main() {
         }
         return;
     }
+    if std::env::args().any(|a| a == "--wirehist") {
+        use std::collections::BTreeMap;
+        let faces = faces_of(&shape);
+        let mut hist: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut n_wires = 0usize;
+        let mut n2 = 0usize;
+        for f in faces.iter() {
+            let ws = wires_of_face(f);
+            n_wires += ws.len();
+            if ws.len() >= 2 {
+                n2 += 1;
+                let bb = brep_bnd_lib::shape_bnd_box(&f.0);
+                let (mn, mx) = (bb.corner_min(), bb.corner_max());
+                println!(
+                    "MULTI bbox=({:.3},{:.3},{:.3})-({:.3},{:.3},{:.3}) wires={}",
+                    mn.x(), mn.y(), mn.z(), mx.x(), mx.y(), mx.z(), ws.len()
+                );
+            }
+            *hist.entry(ws.len()).or_insert(0) += 1;
+        }
+        let mut n1c = 0usize;
+        let mut nf1c = 0usize;
+        for f in faces.iter() {
+            let mut hit = false;
+            for w in wires_of_face(f).iter() {
+                let es = edges_of_wire(w);
+                if es.len() == 1 {
+                    let fv = occt_topo::shhealing::first_vertex(&es[0]);
+                    let lv = occt_topo::shhealing::last_vertex(&es[0]);
+                    let closed = match (&fv, &lv) {
+                        (Some(a), Some(b)) => occt_topo::topo_tools_full::is_same(&a.0, &b.0),
+                        _ => false,
+                    };
+                    if closed {
+                        n1c += 1;
+                        hit = true;
+                    }
+                }
+            }
+            if hit {
+                nf1c += 1;
+            }
+        }
+        println!(
+            "TOTAL faces={} wires={} faces_with_2plus_wires={} wires_1edge_closed={} faces_1edge_closed={}",
+            faces.len(),
+            n_wires,
+            n2,
+            n1c,
+            nf1c
+        );
+        let s: Vec<String> = hist.iter().map(|(k, v)| format!("{k}:{v}")).collect();
+        println!("WIREHIST {}", s.join(" "));
+        return;
+    }
+    if std::env::args().any(|a| a == "--fdump") {
+        // `--fdump <idx>` dumps that face index; bare `--fdump` matches the
+        // a3n00 F113 bbox (its original use).
+        let want: Option<usize> = {
+            let args: Vec<String> = std::env::args().collect();
+            args.iter()
+                .position(|a| a == "--fdump")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+        };
+        for (i, f) in faces_of(&shape).iter().enumerate() {
+            let bb = brep_bnd_lib::shape_bnd_box(&f.0);
+            let (bmin, bmax) = (bb.corner_min(), bb.corner_max());
+            match want {
+                Some(w) => {
+                    if i != w {
+                        continue;
+                    }
+                }
+                None => {
+                    let bybox = (bmin.x() + 87.5).abs() < 1.0
+                        && (bmax.x() - 87.5).abs() < 1.0
+                        && (bmin.z() + 100.0).abs() < 1.0
+                        && (bmax.z() + 32.0).abs() < 1.0;
+                    if !bybox {
+                        continue;
+                    }
+                }
+            }
+            println!(
+                "FDUMP face={i} box=({:.5},{:.5},{:.5})-({:.5},{:.5},{:.5})",
+                bmin.x(),
+                bmin.y(),
+                bmin.z(),
+                bmax.x(),
+                bmax.y(),
+                bmax.z()
+            );
+            for (wi, w) in wires_of_face(f).iter().enumerate() {
+                let es = edges_of_wire(w);
+                println!("FDUMP  wire[{wi}] ori={:?} nEdges={}", w.0.orientation(), es.len());
+                for (ei, e) in es.iter().enumerate() {
+                    let fv = occt_topo::shhealing::first_vertex(e);
+                    let lv = occt_topo::shhealing::last_vertex(e);
+                    let p = |v: &Option<occt_topo::shape::Vertex>| match v {
+                        Some(v) => {
+                            let q = BRepTool::vertex_point(v);
+                            format!("{:.6},{:.6},{:.6}", q.x(), q.y(), q.z())
+                        }
+                        None => "none".to_string(),
+                    };
+                    let ptr = |v: &Option<occt_topo::shape::Vertex>| match v {
+                        Some(v) => format!("{:x}", std::sync::Arc::as_ptr(&v.0.tshape) as usize),
+                        None => "0".to_string(),
+                    };
+                    println!(
+                        "FDUMP   e[{ei}] ori={:?} first={}({}) last={}({}) deg={} closed={}",
+                        e.0.orientation(),
+                        ptr(&fv),
+                        p(&fv),
+                        ptr(&lv),
+                        p(&lv),
+                        BRepTool::is_degenerated(e),
+                        BRepTool::is_closed_edge_face(e, f)
+                    );
+                }
+            }
+            return;
+        }
+        println!("FDUMP none");
+        return;
+    }
     let mode_cw = std::env::args().any(|a| a == "--checkwire");
     if mode_cw {
         use occt_topo::boptools_2d::curve_on_surface_range;

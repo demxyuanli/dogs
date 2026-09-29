@@ -8,7 +8,6 @@
 
 use std::f64::consts::PI;
 
-use occt_core::gp::GpPnt2d;
 use occt_core::intres2d::{
     IntRes2dDomain, IntRes2dIntersection, IntRes2dIntersectionPoint,
     IntRes2dIntersectionSegment,

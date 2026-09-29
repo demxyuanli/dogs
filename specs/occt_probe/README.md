@@ -30,4 +30,4 @@ specs\occt_probe\build_run.bat <step-file> [mode]
 | `--dir2` | faithful re-implementation of the file-local `FindPointInFace` (`BOPTools_AlgoTools.cxx:2160-2231`) and `GetFaceDir` (`:2110-2152`, including the `GetApproxNormalToFaceOnEdge` fallback at `:2139-2149`) and `MinStep3D` (`:2235-2346`), so the *final* `aDB`/angle of every candidate can be read |
 
 The `--faceoff` / `--dir` / `--dir2` outputs are the acceptance assertions for
-task T-82 (`specs/_board.md` §3.1b/§3.2).
+task T-82 (see `specs/board.canvas.tsx`).

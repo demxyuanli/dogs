@@ -1,6 +1,6 @@
 # 架构级四项设计（T-25 / T-26 / T-27 / T-28）
 
-> 依据 `specs/_board.md` §3.4 的要求：「**架构级项（T-25/T-26/T-27/T-28）先出设计再动手**」。
+> 依据 `specs/board.canvas.tsx`（架构 lane）的要求：「**架构级项（T-25/T-26/T-27/T-28）先出设计再动手**」。
 > 本文件只做设计，**不改行为**。每项给出：现状（实测）、OCCT 权威控制流（文件:行号）、影响面、分步方案、验收门禁、风险。
 >
 > 基线（本文件撰写时实测，HEAD `4db3743`）：topo `--lib` **1287/0**；`bop_builder2_boss` 1/2（R2-8 已定案 (b)）；
@@ -114,7 +114,7 @@
    （`classify_faces_in_solid`、`connexity_blocks`、`face_state_in_solid`、`collect_all_candidate_faces`、`piece_bbox*`、`BopOp`）。
 4. 同批登记 `build_split_solids`（`bop_build_solids.rs:155`）与 `close_open_shells`（`:240`）的去留（调用者同为测试：`:666`/`:698`、`builder_solid.rs:452`）；
    保留则标 `UNPORTED` + 理由。
-5. 文档化：在 `algo_tools_face.rs`/`builder_solid.rs` 注释写清上述两条活链的 OCCT 行号；更新 `specs/_coverage.md:33` 与 `specs/_board.md` 对应行。
+5. 文档化：在 `algo_tools_face.rs`/`builder_solid.rs` 注释写清上述两条活链的 OCCT 行号；更新 `specs/_coverage.md:33` 与 `specs/board.canvas.tsx` 对应行。
 6. 验证：`cargo check` → 复跑步 1 的全部门禁（逐位一致）→ `graphify update .`；任一计数变动即回退并报告。
 
 ### 风险

@@ -5,7 +5,7 @@
 
 use crate::abs::Orientation;
 use crate::shape::{Edge, Vertex};
-use crate::topo_tools_full::{edge_vertices, is_same};
+use crate::topo_tools_full::is_same;
 
 /// ShapeFix_WireSegment.cxx:116-117.
 pub(super) const MININD: i32 = -32000;

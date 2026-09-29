@@ -95,7 +95,7 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
 }
 
 /// `BOPAlgo_BOP` wrapper: Fuse/Cut/Common through [`crate::bop_builder2`].
-fn boolean_via_bopalgo(
+pub(crate) fn boolean_via_bopalgo(
     a: &TopoShape,
     b: &TopoShape,
     op: BoolOp,

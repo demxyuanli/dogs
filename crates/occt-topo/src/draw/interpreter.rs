@@ -411,15 +411,14 @@ pub(super) fn cmd_torus(session: &mut DrawSession, args: &[String]) -> Result<()
 /// `fuse a b out` / `cut a b out` / `common a b out` — boolean operation.
 ///
 /// Both operands are looked up by name and combined with `op`, storing the
-/// result under `out`. Routing goes through [`curved_boolean_ext`], which
-/// dispatches to the exact planar [`boolean`] when both operands are
-/// planar-faced and to the curved / voxel paths otherwise, so a single entry
-/// point covers all inputs (OCCT's `BRepAlgoAPI_BooleanOperation`).
+/// result under `out`. Routing goes through the exact [`boolean`]
+/// (`BOPAlgo_BOP`, OCCT's `BRepAlgoAPI_BooleanOperation`); the former
+/// `bop_curved` curved/voxel dispatcher had no OCCT counterpart (T-41).
 pub(super) fn cmd_boolean(session: &mut DrawSession, args: &[String], op: BoolOp) -> Result<(), String> {
     need_args(args, 3, bool_op_name(op))?;
     let a = shape_owned(session, &args[0])?;
     let b = shape_owned(session, &args[1])?;
-    let result = curved_boolean_ext(&a, &b, op, BOOL_TOL)
+    let result = boolean(&a, &b, op, BOOL_TOL)
         .map_err(|e| format!("draw: {}: {e}", bool_op_name(op)))?;
     register_shape(session, &args[2], result.shape);
     Ok(())

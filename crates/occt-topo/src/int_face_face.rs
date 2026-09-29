@@ -132,7 +132,7 @@ mod helpers;
 pub(crate) use helpers::{
     cone_from_surface, curve_range, cylinder_from_surface, cylinder_params, lin2d_through,
     line_in_uv_rect, mid, pcurve_of_curve, plane_cylinder_kind, plane_torus_circles, same_curve,
-    sphere_from_surface, surface_sort_index, DEFAULT_WINDOW,
+    sphere_from_surface, surface_sort_index,
 };
 
 #[path = "int_face_face_bounds.rs"]

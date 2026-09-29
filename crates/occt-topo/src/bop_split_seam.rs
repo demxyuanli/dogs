@@ -17,7 +17,6 @@ use occt_geom2d::Curve2d;
 use crate::abs::Orientation;
 use crate::boptools_2d::{curve_on_surface, intermediate_point};
 use crate::brep_tool::BRepTool;
-use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
 

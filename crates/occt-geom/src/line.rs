@@ -1,5 +1,5 @@
 //! 3D line curve. Source: `Geom_Line.hxx`
-use occt_core::gp::{GpLin, GpPnt, GpVec, GpTrsf, GpAx1};
+use occt_core::gp::{GpLin, GpPnt, GpVec, GpTrsf};
 use crate::curve::Curve;
 use occt_core::elib::clib;
 

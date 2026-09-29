@@ -224,7 +224,12 @@ fn boolean_dispatch(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Resul
     if !is_solid_input(a) || !is_solid_input(b) {
         return boolean_non_solid(a, b, op, tol);
     }
-    crate::bop_curved::curved_boolean_full(a, b, op, tol)
+    // T-41: OCCT has no `bop_curved` mesh/voxel engine; two non-compound
+    // solids go through `BOPAlgo_BOP` like every other operand pair. The old
+    // `curved_boolean_full` routing (UV-sampling / voxel boolean) had no OCCT
+    // counterpart (audit A5 / T-41) and is removed here; its module-level tests
+    // that call it directly are unaffected.
+    crate::bop_builder::boolean_via_bopalgo(a, b, op, tol)
 }
 
 /// `BOPAlgo_BOP` on operands that are not both usable solids (faces, wires,

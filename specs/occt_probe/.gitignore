@@ -8,3 +8,12 @@ wires_probe.obj
 wires_probe.exp
 wires_probe.lib
 *.pdb
+
+# local OCCT-side debug build (patched ComposeShell copy)
+_dbg/
+zz_wires_probe.*
+
+ZZ_*.obj
+ZZ_*.lib
+ZZ_*.exp
+ZZ_*.map

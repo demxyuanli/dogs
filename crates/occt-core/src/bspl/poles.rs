@@ -23,8 +23,8 @@ use crate::gp::GpPnt;
 /// OCCT's route is `BSplCLib::BuildCache` (curve version, `BSplCLib.cxx`) +
 /// `PLib::CoefficientsPoles` — that is what `Geom_BezierCurve::Segment`
 /// (`Geom_BezierCurve.cxx:388-425`) and `GeomConvert::CurveToBSplineCurve` need.
-/// Port that instead of reviving the averaging below (see `specs/_board.md`
-/// §3.3 T-44).
+/// Port that instead of reviving the averaging below (see
+/// `specs/board.canvas.tsx`, task T-44).
 pub fn poles_to_coefficients(poles: &[GpPnt], knots: &[f64], degree: usize) -> Vec<GpPnt> {
     let n = poles.len();
     if n == 0 { return vec![]; }

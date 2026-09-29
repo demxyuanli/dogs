@@ -3,7 +3,7 @@
 > 症状（用户提供）：`data/occ/a3n00.stp` 经 OCCT 渲染正确（法兰盘 + 螺栓孔 + 大曲率阀体），
 > 端口 `output/a3n00.obj` 渲染时**法兰与大曲率面破碎/扇贝状**。
 > 本文只做**定位与取证**，不改代码；结论均来自本机实测（OCCT 8.0.0p1 探针 + 端口探针）。
-> 相关画板条目：`specs/_board.md` §3.3 T-69/T-91/T-92、§2 门禁、`specs/_occt_mesh_gt.md`。
+> 相关画板条目：`specs/board.canvas.tsx`（T-69/T-91/T-92 与门禁表）、`specs/_occt_mesh_gt.md`。
 
 ---
 
@@ -4890,4 +4890,1873 @@ sff->Init(TopoDS::Face(sfs.Context()->Apply(F)))`，而 `perf` 用 `tmpS`（未 
 `XSAlgo_ShapeProcessor::ProcessShape`/`ShapeFix_Shape` 链，-228）、F171 密度/分解 +907、
 F202/F140/F170/F216 网格密度。已定死「合并在 `ShapeFix_Shape::Perform`（`emul` 可复现 4→2）」，
 但其触发条件只读探针无法锁定，需 OCCT 侧重编译插桩——属独立后续任务。
+
+
+### 9.196 —— STEP→OBJ 三道门禁统一模型集（23 个），删除 step_geometry_parity
+
+按用户要求：
+
+- 新增 `crates/occt-topo/tests/common/mod.rs`：唯一模型表 `MODELS`（23 项）=
+  15 个 `data/*.step`（Cube/Cone/Cylinder/Sphere/Torus/HoledPlate/OffsetPlaneHoleEdge/rev/Offset/
+  Shape/Shape-1/Shape-2/Extrusion/linkrods/screw）+ 8 个 `data/occ/*`（ATU01038/bottom/motoc/top/
+  T0M/acs10/TDB/a3n00）。每项带 `bbox_tol`/`area_tol` 以及对应 OCCT 参考。
+- `step_obj_parity` → 1 个遍历用例（23 模型 bbox 对拍）；`step_obj_area` → 1 个遍历用例（23 模型面积比）；
+  `step_to_obj` → 3 个（23 模型导出有效性 + OBJ 回读 + cylinder 整周面积回归）。
+- 删除 `tests/step_geometry_parity.rs`：其 Extrusion/Offset 现由 parity（`occ-Extrusion.obj`/
+  `occ-Offset.obj`，均实测 dbbox=0）与 area（ratio=1.0000）覆盖。
+
+实测（本提交的模型表容差来源，`data/` 相对 bbox 最大分量差 / 面积比）：
+
+| 模型 | dbbox | area ratio | | 模型 | dbbox | area ratio |
+|---|---|---|---|---|---|---|
+| Cube | 0 | 1.0000 | | Extrusion | 0 | 1.0000 |
+| Cone | 0 | 1.0000 | | linkrods | 0 | 1.0000 |
+| Cylinder | 0 | 1.0000 | | screw | 1e-6 | 1.0000 |
+| Sphere | 1e-6 | 1.0000 | | occ/ATU01038 | 5e-6 | 1.0006 |
+| Torus | 0 | 1.0000 | | occ/bottom | 5e-6 | 0.9750 |
+| HoledPlate | 0 | 1.0000 | | occ/motoc | 2e-6 | 1.0333 |
+| OffsetPlaneHoleEdge | 0 | 1.0000 | | occ/top | 3e-6 | 1.0000 |
+| rev | 0 | 1.0000 | | occ/T0M | 4.3e-4 | 0.9995 |
+| Offset | 0 | 1.0000 | | occ/acs10 | 0 | 0.9846 |
+| Shape | 0 | 1.0000 | | occ/TDB | 5e-6 | 1.0092 |
+| Shape-1 | 0 | 1.0000 | | occ/a3n00 | 4e-6 | 0.8824 |
+| Shape-2 | 0 | 1.0000 | | | | |
+
+结果：`step_obj_parity` 1/1（571s）、`step_obj_area` 1/1（824s）、`step_to_obj` 3/3（773s），全绿。
+
+
+### 9.197 —— STEP→OBJ 三门禁合并为单一 harness（step_obj_gates）
+
+按用户要求把三份的读取缓存合并成一个 harness：
+
+- 三个测试文件 `step_obj_parity.rs`/`step_obj_area.rs`/`step_to_obj.rs` 合并为
+  **`tests/step_obj_gates.rs`**，5 个用例：
+  `step_obj_parity_bboxes_match_occt`、`step_obj_area_matches_occt`、
+  `step_to_obj_exports_valid_obj`、`outputs_round_trip_through_obj_reader`、
+  `cylinder_step_mesh_covers_full_u_period`。
+- 23 个模型的 `read_step_file` + `brep_to_obj`（以及 OCCT 参考文本）放进
+  `OnceLock<Vec<Case>>`，整轮**只读一次**，5 个用例共享。
+- OBJ 回读用例写到 `data/output/roundtrip/`，避免与导出用例并发写同一文件。
+- 实测：**5/5 通过、660.58s**；原来三份分开跑 = 571 + 824 + 773 = **2168s**。
+- `--lib` 1281/0 不受影响。
+
+门禁命令由三条（`--test step_obj_parity`/`step_obj_area`/`step_to_obj`）改为一条
+`--test step_obj_gates`；模型集与容差表见 `tests/common/mod.rs` 与 §9.196。
+
+
+### 9.198 —— a3n00.obj 与 occ-a3n00.obj 目视差 = 阀体 F113 无网格；根因定位到 `ShapeFix_Face::Perform` 的 Context
+
+用户指出生成的 `a3n00.obj` 与 `occ-a3n00.obj` 目视差别像"拆开的爆炸图"。逐项实测定位：
+
+**现象**：226 个面里只有 **F113** 没网格（`mv=0 mt=0`，
+`box=(-87.5,-34,-100)-(87.5,34,-32)`，`Cylinder wires=4 edges=[8,14,1,1] du=6.283 dv=inf`），
+正是阀体（横贯两法兰的圆柱）。`stats=225`、`mesh_t=13168`。不是装配变换问题：
+两个 OBJ 的包围盒逐位一致，连通域中心逐一对上，XZ 侧视对齐渲染只在阀体处为空
+（诊断图 `output/_side_ours.png` / `_side_occ.png`，本轮临时产物）。
+
+**OCCT 侧 oracle**（新加 `wires_probe.cpp` 的 `pcu` 模式 + `run_wires.bat`：
+对 raw 4-wire 面用 `XSAlgo_ShapeProcessor::CheckPCurve` 补真实路线的 pcurve 后逐步跑）：
+
+| 调用 | 结果 |
+|---|---|
+| `ShapeFix_Face::FixMissingSeam()`（无 context） | ret=0 |
+| `ShapeFix_Face::Perform()`（无 context） | wires=4 |
+| `ShapeFix_Face::Perform()`（**带 Context**） | **wires=2** |
+| `ShapeFix_Face::Perform()`（带 Context + topo） | wires=2 |
+| `ShapeFix_Shape::Perform()` | wires=2 |
+
+⇒ 合并 4→2 的必要条件是 **`Context()`**。OCCT 的 `ShapeFix_Shape::Perform` 总是
+`sff->SetContext(Context())`（`ShapeFix_Shape.cxx:202`）。端口现在是"reader 自己跑一遍 wire 轮 +
+单独跑 `fix_missing_seam`"，没有带 context 的 `ShapeFix_Face::Perform`。
+
+端口 ComposeShell 管线探针（临时加，已撤）：`fix_missing_seam` 前的 `tmpF` 就是 4 条 wire
+`[8,14,1,1]`；`load_wires→split_by_grid→break_wires` 后 8 段，`collect_wires` 6 条，
+`dispatch_wires` **5 个面**（1 个 2-wire + 4 个 1-wire），尾部 `CheckSmallArea` 全 false 所以留下 5 面；
+OCCT 同输入是 **1 面 / 2 wire**。所以偏差在"带 context 的 Perform 没有移植"这一层。
+
+**试过但回退的反例**：把 reader 的 `check_pcurves_and_shift(..., fix_lacking=false)` 改成 `true`，
+F113 立刻有网格（`stats=226 v=11922 t=12063`，总量反而更接近 OCCT 的 12466）。
+但 OCCT 在 `ShapeFix_Face.cxx:372` **显式** `theAdvFixWire->FixLackingMode() = false;`（`cxx:374`
+同理关自交），所以那是特例调参、不是 OCCT 路线 ⇒ 已回退，工作树回到 `stats=225 t=13168`。
+
+**按 OCCT 路线补的代码（也已回退）**：`ShapeFixFace::perform`（`cxx:365-498` 第一轮 wire +
+`FixMissingSeam`）、`FixMissingSeam` 开头补 `cxx:1737-1741` `myFace = Context()->Apply(myFace)`。
+实测对 F113 无效：端口的 `check_pcurves_and_shift` 既不报 `ShapeFix_Wire` 的 `fixed` 状态，
+也不产生结构性 wire 变化，重建出来的面与原件 wire 等价，`fix_missing_seam` 仍出 Shell(5)。
+
+**下一步（OCCT 路线，独立任务）**：完整移植
+`ShapeFix_Shape::Perform` 的 `sff->SetContext(Context())` 机制 + `ShapeFix_Face::Perform`
+`cxx:377-480`/`cxx:482-498`，并让 `check_pcurves_and_shift` 返回 `ShapeFix_Wire` 的
+`StatusSmall/Connected/EdgeCurves/Notched/FixTails/Degenerated/Closed` 以驱动 `fixed`，再补尾部
+`cxx:2282-2322` 的 `Context()->Apply/Remove`。落地后 F113 应出网格（OCCT 约 228 三角），
+a3n00 总量向 OCCT 收敛。
+
+
+### 9.199 —— T-93 定位：F113 无网格 = CheckNotchedEdges 因边朝向不同而永不命中
+
+复核结论（HEAD `08c4edf2`）：`stats=225`、F113 `mv=0`（Cylinder, wires=[8,14,1,1]）仍然成立。
+
+**修正 §9.198 的一半结论**：4→2 的合并**不依赖 Context**。
+
+- `PCU3`（wire 工具传 null context）与 `PCU2`（传 context）一样：`ShapeFix_Wire::Perform` 让 wire[0] **8 → 6 条边**，`StatusNotches DONE`，`Fixed` 置位。
+- 所以真正的缺口是 **notch 这一步没生效**，不是 context 机制。
+
+**精确定位**（`wires_probe.cpp` 新增 `cne` + `CNE2`）：
+
+| 观测 | 结果 |
+|---|---|
+| OCCT `CheckNotchedEdges` 在**原始** wire 上 | 0 命中（notch 只在前置 fix 之后才出现） |
+| 跑完前置序列（FixReorder/FixSmall/FixConnected/FixEdgeCurves/FixDegenerated）后 | **命中 `i=3, shortNum=2, param=0`** |
+| 命中处的边朝向 | `E1=Forward, E2=Reversed` |
+| 端口同一对边（`num=3`） | `ori1=Forward, ori2=Forward`；`ang=3.138`（`p2d1==p2d2`，dd≈1e-16） |
+| 端口 `reorder_ok` / `fix_notched_edges` | `true` / 被调用但恒 `false`（`cxx:1940` 的 `|angle|>0.1` 拒掉） |
+
+端口 `check_notched_edges` 的切向选取（`wire_fix.rs:2862-2873`）与 `ShapeAnalysis_Wire.cxx:1910-1933` **逐行相同**，
+因此差异在**输入**：同一对邻边在端口里两侧都是 Forward，在 OCCT 里第二边是 Reversed。切向约定随之翻号 ⇒ `ang≈π` ⇒ 永不命中。
+
+**下一步**：查端口 wire 建链/前置修（`fix_reorder_wire` 及其上游的边朝向布置）为什么没有产生 OCCT 那样的 `E2=Reversed`。
+在这一点对上之前不要改 `check_notched_edges`（那是把症状当原因）。
+
+本轮所有临时插桩已撤；`wire_fix.rs` 与 HEAD 逐字节一致；`occt-topo --lib` = **1281/0**。
+
+
+### 9.200 —— T-93 修复一处：CheckNotchedEdges 的端点必须朝向感知（wire 8→6）
+
+承接 §9.199 的定位（端口在 `i=3` 判 `ang≈π`、OCCT 命中）。继续插桩后确认：
+
+- F113 的 wire **朝向本来就是对的**（`[F,F,R,F,F,F,F,F]`，与 STEP 的 `ORIENTED_EDGE` XNOR `same_sense` 一致），
+  `fix_reorder_wire` 也没有改动它。此前看到的 `Forward/Forward` 是**另外几条** 8 边 wire。
+- 真正卡住的是 **端点判定**：`check_notched_edges` 用原始 `edge_vertices(e1).1` / `edge_vertices(e2).0`，
+  而 OCCT `ShapeAnalysis_Wire.cxx:1885-1898` 用的是 `sae.LastVertex(E1)` / `sae.FirstVertex(E2)` ——
+  两者都是**朝向感知**的（`ShapeAnalysis_Edge.cxx:228-258`：REVERSED 边的 "first" 是**原始 last**，反之亦然）。
+  对 REVERSED 边端口正好取反 ⇒ `verts differ` ⇒ 该对边被跳过 ⇒ notch 永不命中。
+- 修法（同一 `.cxx` 分支）：改用端口自己的 `last_vertex` / `first_vertex`（`shhealing/wire_fix.rs:51-67`）。
+  `BRepTools::Compare` 只比 `IsSame`/容差，故 `sae` 返回时的 `V.Reverse()` 不影响结论。
+
+**实测（HEAD 08c4edf2 + 该修复）**：
+
+| 项 | 修前 | 修后 |
+|---|---|---|
+| `fix_notched_edges` | 恒 false | `notched=true`，F113 wire[0] **8 → 6 边**（与 OCCT wire 轮一致） |
+| `occt-topo --lib` | 1281/0 | **1281/0** |
+| `--test step_obj_gates` | 5/5（660s） | **5/5（397s）** |
+| a3n00 面积比 | 0.8824 | **0.8996**（向 1 收敛） |
+| a3n00 网格 | 11675/13168 | 10863/11941 |
+| **F113** | mv=0 | **仍 mv=0**（wires 仍 4） |
+
+⇒ AC 只满足一半：面积比收敛与门禁不劣化达成，**「F113 出网格」未达成**，T-93 保持未完成。
+
+**剩余缺口**：面级合并。OCCT `ShapeFix_Face::Perform` 在第一轮 wire 修后
+（`cxx:454-479`）用修好的 wire 重建 `tmpFace`、`Context()->Replace(S, tmpFace)`、`myFace = tmpFace`，
+再让 `FixMissingSeam` 经 `cxx:1737-1741` 的 `Context()->Apply(myFace)` 看到它，才能把 4 条 wire 并成 2
+（oracle：`Perform` 带 Context → wires 2；不带 → 4）。端口 reader 目前是「wire 轮 + 单独 fix_missing_seam」，
+缺这一步。
+
+
+### 9.201 —— T-69 复测：不再是 162 面；剩 6 面，且根因更像 wire 结构分歧
+
+卡片写「端口这 162 面全部 Delaunay produced no triangles；OCCT 1778/1778 全成功」。**两条都要订正**（HEAD 08c4edf2 实测）：
+
+| 量 | 端口 | GT（occt_probe） |
+|---|---|---|
+| T0M faces | **1772** | **1778** |
+| 未网格面 | **6** | **1**（--mesh 0.1：FACE 1327 nodes=0 triangles=0） |
+| WIREHIST（face→wire 数） | 1:1652 · 2:106 · 3:8 · 5:1 · 6:1 · 7:2 · 8:1 · **10:1** | 1:1672 · 2:92 · 3:8 · 5:1 · 6:1 · 7:2 · 8:2 |
+| --wires 汇总 | — | wires=1921、faces_with_coincident_closed_edges=0、wires_dup_pc_any=117 |
+
+⇒ ① 端口只剩 **6** 个未网格面（三类：F351 = Cylinder/10 wires/dv=inf；F405–408 = BSpline/1 wire/2 edges/dv=2π；F1758 = Cone/1 wire/1 edge）；
+② **OCCT 自己也有 1 个面不出三角**，所以 AC 不该写「→0」，应为「≤ GT 的 1」；
+③ 更关键：端口把约 **20 个「1 wire」面做成了「2 wire」面**（1652 vs 1672、106 vs 92），并多出 1 个 **10-wire** 面（GT 最大 8）。
+这与 T-93 的 F113 是**同族**（reader/ComposeShell 多出 wire），所以先解决 wire 结构分歧，再谈网格算法。
+
+本轮只做复测与对拍，**未改代码**；临时产物 output/t0m_probe.txt 已删。
+
+
+### 9.202 —— T-93 复测（notch 修好后）：缺口在 ComposeShell，不在 FixMissingSeam 尾部
+
+在 §9.200 的 notch 修复之上复测 F113（HEAD 08c4edf2 + wire_fix.rs 修复）：
+
+- F113 送入 `fix_missing_seam` 时 wires 已是 **`[6, 14, 1, 1]`**（notch 生效，与 OCCT wire 轮一致）；
+- `fix_missing_seam()` 返回 **true**，但 `myResult` 是 **Shell(5 面)**；OCCT 的 `ShapeFix_Face::Perform` 在同一输入下给 **1 面 / 2 wire**；
+- reader 只接受 `shape_type() == Face` 的结果 ⇒ 丢弃 ⇒ 面仍 4 条 wire ⇒ `heal_self_intersecting_wires` 判 FAILURE ⇒ `mv=0`。
+
+排除尾部：`ShapeFix_Face.cxx:2270-2322` 删面靠两处 —— ① 每个 wire `FixSmall(true, Precision())` 塌缩则 `Context()->Remove`；
+② `nbFaces > 1` 时 `FixSmallAreaWire(true)`（`:2331-2394`，即 `CheckSmallArea` 为真的 wire 被丢）。
+端口对那 4 个单 wire 面的 `check_small_area` **全部返回 false**（面积是合理的四分之一柱面），OCCT 也不会丢它们。
+⇒ 5 面是 **ComposeShell 自己产出的**，不是尾部没删。
+
+**结论**：T-93 的下一站是 `ShapeFix_ComposeShell`（`dispatch_wires` / `make_faces_on_patch`），
+与 §9.198 的 ComposeShell 探针结论一致（当时测到 `seqw=8 → wires=6 → faces=5`）。本轮未再改代码；临时打印已撤。
+
+
+### 9.203 —— T-93 波次 1：roots 判定忠实，怀疑上移到 CollectWires
+
+逐行对读「多 loop 找 roots」（端口 `make_faces_on_patch.rs:62-170` vs `ShapeFix_ComposeShell.cxx:3021-3143`）：
+
+- `unp` 取法一致（loop i 首条定向边在 `pf` 上的 pcurve 中点，`cxx:3056-3062`）；
+- 包含判定一致：对每个 `j != i` 建 `awtmp`（只收定向边）→ `FClass2d` → `Perform(unp)`；`ON/UNKNOWN` 时按 `cxx:3104-3130` 沿 loop i 的边逐个点继续判；
+- `stPoint != PerformInfinitePoint()` 则 `break`（i 不是 root）；全部 j 走完才 `roots.push`（端口 `j >= loops.len()` ⟷ OCCT `j > loops.Length()`）。
+
+⇒ **roots 算法忠实**，5 个 root 是输入决定的。
+
+**关键对照**：`dispatch_wires` 对 F113 只调一次 `make_faces_on_patch(loops=6)`；而 OCCT 的 `FixMissingSeam` 最终结果是 **1 面 / 2 wire**。
+⇒ 要么端口的 `CollectWires` 把 8 个 segment 过分裂成 6 条（OCCT 可能并成 2 条），要么 `MakeFacesOnPatch` 收到的 loop 集不同。
+
+下一轮：给 `collect_wires.rs` 打「输入 segment → 输出 wire」配对（含各自 patch 索引与首尾点），对读 `ShapeFix_ComposeShell.cxx:2512-2900`（`CollectWires`）的合并/闭合规则，先确认这一步的输出条数就该是 2。
+
+本轮无代码改动；全部临时探针已撤，`occt-topo --lib` = **1281/0**。
+
+
+### 9.204 —— T-93 波次 1：缺口在 CollectWires 的「找下一段」
+
+给 `collect_wires.rs` 打输入/输出配对探针（a3n00 F113，grid 1×1）：
+
+```
+输入 8 段: [0..5] Reversed n=6,7,5,4,1,1 ; [6..7] External n=1,1
+输出 6 条: close n=6 / 7 / 5 / 4 / 3 / 3   （没有任何 moved-out，也没有 separate）
+```
+
+- 四条大段 6/7/5/4 **各自闭合成一条 wire** ⇒ 每条都命中了 `index.is_none()` 分支（`collect_wires.rs` 的 close 条件第一项），
+  即 cxx:2848-2914 的「找下一段」对它们**恒返回 none**；
+- OCCT 在同输入下最终得到 **1 面 / 2 条 wire**（`FixMissingSeam` oracle），即它把这些段串成了更少的 wire；
+- 上一轮已排除 roots 判定（`make_faces_on_patch.rs:117-144` ⟷ `cxx:3099-3143` 逐行一致），所以 5 面是 6 wire 的后果，
+  6 wire 才是源头。
+
+**下一步**：对读候选搜索（端口 `collect_wires.rs` 约 :340-400）与 `cxx:2848-2914` 的条件 —— patch 索引匹配、端点/切向容差、
+`is_coincided`、`samepatch` 优先级 —— 找出恒返回 none 的那一条。
+
+本轮无代码改动；探针已撤，`occt-topo --lib` = 1281/0。
+
+
+### 9.205 —— T-93：主循环候选搜索恒失败（下轮插桩点已定）
+
+继续对读 `ShapeFix_ComposeShell::CollectWires`：
+
+- `cxx:2846-2936` 是**主循环之后**的「短段合并」后处理（只处理 `shorts(i)==1`）。端口探针显示 F113 的 6 条 wire **全部**来自主循环的 close 分支（`CW out close n=6/7/5/4/3/3`，没有任何 separate/moved-out）⇒ 该后处理不参与。
+- 主循环候选搜索：端口 `collect_wires.rs:150-228` 与 `cxx:2627-2722` 逐段核对一致 ——
+  顶点 `endV.IsSame(seg.FirstVertex()/LastVertex())`、回退同边最低优先级、`GetEndTangent2d(edge, face, false, lPnt, lVec, 1e-3)`、
+  `IsCoincided(endPnt, lPnt, URes, VRes, ctol)`、以及 `weigth = 16*(sp)+8*(!misor)+4*conn` 与 `tail` 比较。
+- 但每条大段（6/7/5/4）跑完候选循环后 `index` 都是 None ⇒ 走 `cxx:2824-2846` 的 close，各自成一条 wire。
+
+**下轮插桩点**：主循环里，第 2 轮起每次迭代对每个候选 `i`/`j` 打印 `vertex_matched / sp / conn / dist / ang` 以及 `w1+tail1` vs `weigth+tail2`，
+判定是「顶点就匹配不上」还是「优先级比较把它否掉」。
+
+本轮无代码改动；探针已撤，`occt-topo --lib` = 1281/0。
+
+
+### 9.206 —— T-41 第①步实测：不可单独摘（断言绑在旧采样行为上），已回退
+
+计划：删掉 `region_interior_points_2d` + `region_inside_other`（UV 采样 + 多数票 + 自造 `inside*2>=total` 平局规则），
+调用点（`region_trim.rs:388`）改用同文件已在用的面级分类器（`build_face_from_loops` + `classify_face_general`）。
+
+**结果：`occt-topo --lib` 1280/1 —— `bop_curved::tests::general_boolean_trimmed_closed_shell` 失败。**
+⇒ 该断言绑在旧的 region 采样行为上（§9 记的 T-79 型「改分派/实现前先查断言绑定」陷阱）。按纪律**回归即回退**，已恢复原实现；`--lib` 回到 1281/0。
+
+顺带查明（写进看板）：
+
+- `classify_face_general`（`region_mesh.rs:274-301`）**本身也是采样器**（8×8 网格 + `point_in_solid_curved`），
+  并不是 `BRepClass3d_SolidClassifier`；所以「换成它」不增加忠实度，只是换一个自造采样器。
+- `bop_curved` 的调用图：`curved_boolean_full` ← `boolean_dispatch:227`（非 compound 实体输入的主分派）/ `bop_builder_repair:239,405` / `bop_builder_report:388`；
+  `curved_boolean` ← `brepfeat/features:320`；`boolean_ops::voxel_boolean` ← `brepfeat/features:330-335`。
+- 绑在旧体上的断言至少 3 处：`general_boolean_trimmed_closed_shell`、`curved_boolean_full_quadric_unchanged`（要求 quadric 走 `curved_boolean`）、`voxel_*` 三条。
+
+**结论**：T-41 不能拆成「只摘一个函数」的小步 —— 它的分类层是 load-bearing 的。
+正确做法是一次做：把 `boolean_dispatch` 对非 compound 实体输入的分派改到忠实 `bop_builder2`（T-82 已转绿），
+再整体摘掉 `bop_curved` 的 mesh/voxel 层，并同步处理上述 3 处断言绑定（按 OCCT 口径订正，而不是改成新实现能过）。
+
+
+### 9.207 —— T-93：候选搜索卡在顶点身份（TShape）而非优先级
+
+在 `collect_wires` 主循环插桩（a3n00 F113，grid 1×1，seqw=8）：
+
+```
+CW  i=2 j=0 vertex-mismatch ori=Reversed cand_first=...919520 cand_last=...743344 end_v=...751248
+CW  i=2 j=1 vertex-mismatch ...（同一对）
+CW  i=3 j=0/1 vertex-mismatch ori=Reversed ...
+CW  i=4,5 ... vertex-mismatch ori=Reversed
+CW  i=6,7 ... vertex-mismatch ori=External
+（第 2 轮迭代）end_v 变为 ...743344，候选 i=3..7 仍全部 mismatch
+例外：一次 i=6 j=0 sp=true misor=false conn=true dist=0e0 ang=1.5708 ⇒ l=29 vs 0，被接受
+```
+
+⇒ 拒绝发生在 `collect_wires.rs:141` 的 `!same_v(&end_v, &candidate_v)`，**不在优先级比较**（`w1+tail1 vs weigth+tail2` 大多根本没执行）。
+`same_v` = `TopoDS_Shape::IsSame`（同一 TShape），所以问题是**顶点身份**：
+累积 wire 的 `end_v` 与剩余各段的首/末顶点是**不同的 TShape**（指针完全不同）。
+
+**下一步**：查上游 —— `BreakWires`/`SplitByGrid` 把原 wire 拆成段时，相邻段是否共用同一 vertex TShape（OCCT 里共用，故 `IsSame` 成立）；
+或 `end_v` 的更新取了错的端点（`cxx:2733-2748` 一带）。
+
+本轮无代码改动；探针已撤，`occt-topo --lib` = 1281/0。
+
+
+### 9.208 —— T-93：拆段丢了端点连通性（CollectWires 断链的直接原因）
+
+同一进程内对拍（a3n00 F113，grid 1×1，seqw=8）每段首/末顶点指针 + 候选搜索的 `end_v`：
+
+```
+CWSEG [0] Reversed n=6 first=...737280 last=...737280   ← 自闭合
+CWSEG [1] Reversed n=7 first=...755584 last=...947552
+CWSEG [2] Reversed n=5 first=...763072 last=...952544
+CWSEG [3] Reversed n=4 first=...765568 last=...755584
+CWSEG [4] Reversed n=1 first=...754752 last=...754752   ← 自闭合
+CWSEG [5] Reversed n=1 first=...745600 last=...745600   ← 自闭合
+CWSEG [6] External n=1 first=...754752 last=...763072
+CWSEG [7] External n=1 first=...765568 last=...745600
+CWMIS i=2..7 全部 vertex-mismatch，end_v=...947552（= seg1.last）
+```
+
+端点共享（同指针）: 755584(1.first=3.last)、763072(2.first=6.last)、754752(4=6.first)、745600(5=7.last)、765568(3.first=7.first)；
+**无人配对**: 947552（仅 seg1.last）、952544（仅 seg2.last）、737280（seg0 自闭合）。
+
+⇒ 第一次取 seg1（seg0 被判 short 跳过），`end_v = seg1.last = 947552`，此后没有任何候选与之 `IsSame` ⇒ 链断 ⇒ close ⇒ 每条大段各自成 wire（6 条）。
+OCCT 的 `BreakWires`（`cxx:2279-2306`）只在 `EXTERNAL`/`INTERNAL` 段给出的 split vertex 处切，且切出的段沿用**原顶点**；
+端口这些悬空端点说明切分时丢了共享身份（或切点算错）。
+
+**下一步**：读 `split_by_grid.rs` / `break_wires.rs`，对照 `cxx:2131 SplitByGrid` 与 `cxx:2279 BreakWires`，找出丢共享身份的那一步。
+
+本轮无代码改动；探针已撤，`occt-topo --lib` = 1281/0。
+
+
+### 9.209 —— T-54 前提核实：耳切是「回退路径」，与 T-69 同源
+
+卡片证据（「wireframe 的耳切 + 质心角度排序 + 桥洞在 OCCT 里没有对应控制流」）**成立且仍在活代码里**：
+`wireframe.rs` 的 `ear_clip`(:156) / `bridge_holes`(:219) / `planar_polygon_triangulate`(:269) 都还在。
+
+本轮补上的是**范围**：`wireframe::face_to_triangles` 的调用点全是**回退**，主路径是 `discret_root` 的 Delaunay 管线 ——
+
+| 调用点 | 性质 |
+|---|---|
+| `discret_root.rs:290`（`build_shape_mesh_wireframe`） | 整形状回退：OCCT 风格管线报错时回到 pre-pipeline 的 UV 网格剖分 |
+| `discret_root.rs:554`（`wireframe_face_triangulation`） | **单面**回退：该面 Delaunay 失败时 |
+| `discret_root.rs:1376` / `:1382`（`discretize_face`） | 单面回退：`ModelBuilder::build_model` / `build_shape_mesh` 报错时 |
+
+⇒ T-54 改的是回退路径，不是主管线；而 T-69 的 6 个未网格面正属于「Delaunay 空产出」那一类 ——
+两者同源，T-54 的 `blockedBy: T-69` 成立，继续 blocked。
+
+本轮无代码改动。
+
+
+### 9.210 —— T-93：断链根因 = 切口处的「空拷贝顶点」没有被 Context 统一
+
+继续沿「拆段丢端点身份」下钻，逐段对拍：
+
+```
+after split_by_grid  n=6 : [0] n=6 自闭合 ; [1] n=16 自闭合(first=last=...003920) ; [2][3] n=1 自闭合 ; [4][5] External
+after break_wires    n=8 : [1] 被切成 7+5+4，接缝顶点 ...428256 / ...426592 在整体里无人配对
+```
+
+把 n=16 那条段的逐边端点打出来后可见：段内部**本身就是若干互不衔接的子链**，且断点处的顶点落在**另一片分配区**
+（链上顶点 …973xxxxxx，断点 …9710xxxx / …970xxxx）—— 典型的「新建/空拷贝顶点」。
+
+对照源码确认机制：
+
+- `split_wire.rs:315-335` 忠实实现 `cxx:1261-1293`：某条边**首次被切**时，把它的原始端顶点换成
+  `empty_copied_vertex`（空拷贝，`TopoDS_Shape.hxx:294-302` 语义）并 `Context()->Replace(原, 拷贝)`（`cxx:1268`/`:1281`），
+  目的是让后续 `SameParameter` 不把原顶点的容差撑大；
+- 于是**切出的段引用拷贝顶点，未切的邻边仍引用原顶点**；
+- OCCT 在四处 `Context()->Apply` 把两者统一：`cxx:506`（wire 装载）、`cxx:2019-2020` 与 `cxx:2048-2049`（SplitByLine 序列的切线合并）、`cxx:2124`；
+- **端口的 `break_wires.rs` 与 `collect_wires.rs` 里 context 引用为 0**（`split_by_line_wires` 的合并步 `split_by_line.rs:586-602` 有用 context，但覆盖不到全部）。
+
+⇒ `CollectWires` 的 `same_v`（`IsSame`）在拷贝↔原件之间必然失败 → 链断 → 6 条 wire → 5 个 root → 5 面 → Shell(5) 被丢弃 → F113 仍 4 wire / mv=0。
+
+**下一步**：对照 `cxx:2019-2060` 检查 `split_by_line_wires` 的 `Replace/Apply` 覆盖（是否只处理 coincide 对、漏了拷贝↔原件），并核 `load_wires.rs` 对 `cxx:506`。
+
+本轮无代码改动；探针已撤，`occt-topo --lib` = 1281/0。
+
+
+### 9.211 —— T-93：`split_by_line_wires` 的 Context 用法是忠实的；缺口在「过路边 vs 切点拷贝」
+
+对照 `cxx:2019-2057` 读端口 `split_by_line_wires`（`split_by_line.rs:585-630`）：
+
+| OCCT | 端口 | 结论 |
+|---|---|---|
+| `tmpV1/2 = Context()->Apply(SplitLineVertex(i-1)/(i))`（`:2019-2020`） | `self.context().apply(&split_line_vertex[i-2]/[i-1].0)`（`:586-587`） | 一致 |
+| 短/coincide 判定 + `CombineVertex` + `Context()->Replace(V1/V2, V)`（`:2037-2056`） | `combine_vertex` + `context_mut().replace(v1/v2)`（`:598-611`） | 一致 |
+| 新建边 `V1(FORWARD)/V2(REVERSED)` 做 External 段（`:2059-2074`） | `make_shape(Edge)` + `add(v1/v2)`（`:615-630`） | 一致 |
+
+⇒ **缺的 Context 应用不在这段**。真正对不上的是顶点来源：
+
+- External 段是用 `Context()->Apply` 之后的**拷贝**顶点建的；
+- 而 `split_wire`（`cxx:1261-1293` / 端口 `split_wire.rs:315-335`）只把**被切那条边**的原端顶点换成 `empty_copied_vertex` 拷贝；
+- 于是**没被切到的过路边**在同一个几何点仍持有**原件**；
+- `break_wires` 走到该点时切出的两半，一端是拷贝、一端是原件 ⇒ `CollectWires` 的 `IsSame` 失败 ⇒ 链断。
+
+**下一步**：读 `split_wire.rs` 的收尾（`cxx:1360-1429` 的 wire 重组与 `Context()->Replace(edge, e1/e2)`），
+与 OCCT 对照邻边的顶点引用是否本该一起替换成拷贝（若 OCCT 在切边时把整个 wire 的共享顶点都换成拷贝，端口漏了这一步）。
+
+本轮无代码改动（只读源码）；`occt-topo --lib` = 1281/0。
+
+
+### 9.212 —— T-93：读源码法到头；剩余分歧需 OCCT 侧插桩
+
+本轮把最后一组可疑点逐行核对完，**端口与 OCCT 一致**：
+
+| OCCT | 端口 | 结论 |
+|---|---|---|
+| `ApplyContext`（`cxx:382-446`）：`context->Apply(edge)`；同则 1；是 Edge 则 SetEdge；否则按 children 展开插入 | `reshape.rs:113-156` | 忠实（**只处理边级**替换，两边都不做顶点替换） |
+| `SplitByLine` 序列尾部对全部 wire 应用 context（`cxx:2120-2126`） | `split_by_line.rs:677-683` | 有 |
+| 切线合并处的 `Context()->Apply` 与 `CombineVertex`（`cxx:2019-2057`） | `split_by_line.rs:586-611` | 忠实 |
+
+⇒ 我能在源码层对照的每一处都对上了，但行为仍差：OCCT 1 面 / 2 wire，端口 5 面 / 6 wire。
+观测到的具体差异是 **CollectWires 输入里存在「原件 ↔ 空拷贝」配不上的顶点**（§9.210/§9.211），
+而 `empty_copied_vertex` 是 `cxx:1261-1293` 的忠实行为、`ApplyContext` 又不做顶点替换 —— 说明分歧在更细的地方：
+
+1. `split_wire.rs`（495 行，`cxx:942-1429`）的顶点簿记细节（哪些边、哪些端点被换成拷贝）；或
+2. 进入 ComposeShell 的**输入面本身**（`tmp_f` 的 4 条 wire 与 OCCT 的 `tmpF` 是否同构）。
+
+**下一步（二选一）**：
+① **OCCT 侧插桩**：把 `ShapeFix_ComposeShell.cxx` 单独重编进 `wires_probe` 并加打印，直接看 OCCT 在 F113 上
+   `SplitWire`/`BreakWires`/`CollectWires` 的顶点链（最直接，但要搭一次编译）；
+② 对 `split_wire.rs` 做逐块 diff（495 行 vs `cxx:942-1429`），成本高且不保证命中。
+
+本轮无代码改动；`occt-topo --lib` = 1281/0。
+
+
+### 9.213 —— T-93 根因改判：在 reader 的 wire 组装，不在 ComposeShell（OCCT 侧插桩建成）
+
+**搭好了可复用的 OCCT 侧插桩**（本轮主要产出）：
+
+- `specs/occt_probe/_dbg/ZZ_ComposeShell.cxx`：`ShapeFix_ComposeShell.cxx` 的本地副本 + 打印（`zzIsTarget` 按包围盒门控，在 `CollectWires` 候选循环与 `BreakWires` 结尾插桩）；
+- `specs/occt_probe/build_dbg.bat`：与 `wires_probe.cpp` 一起编成 `zz_wires_probe.exe`。**MSVC 下 exe 自带 .obj 优先于 .lib**，本地副本覆盖 `TKShHealing.lib` 的同名符号，链接无重复符号（实测 BUILD OK）；
+- `specs/occt_probe/run_dbg.bat`：与 `run_wires.bat` 同形；
+- `wires_probe.cpp` 新增 `findf` 模式：按包围盒列出面的 explorer 下标；
+- `.gitignore` 增加 `_dbg/`、`zz_wires_probe.*`（本地工具，不入库）。
+
+**定案测量**（a3n00，bbox 唯一吻合的面 = explorer 25）：
+
+| | faces | wires | FixMissingSeam |
+|---|---|---|---|
+| OCCT 原始传输（`pcu 25`） | 1 | **2**（22 边 / 6 边） | ret=**0** |
+| OCCT 处理后（`pcu 25 noop`） | 1 | **1** | ret=**0** |
+| 端口 F113 | 1 | **4**（`[6,14,1,1]`） | 返回 **true**，进入 ComposeShell |
+
+⇒ 分歧在**进入 ComposeShell 之前**：同一条 wire 在 OCCT 是 1 条（22 边），端口拆成了 4 条 `[6,14,1,1]`。
+OCCT 的 `ShapeFix_Face::FixMissingSeam` 对这个面**根本不做任何事**；端口因为面被拆坏而判定「缺 seam」，
+跑 ComposeShell 后再切成 5 个面，`Shell(5)` 被 reader 丢弃，F113 因此无网格。
+
+这条结论同时解释 T-69 的「该 1 条 wire 却成 2 条」—— 同族的 **wire 过度拆分**。
+因此 §9.196-§9.212 的 ComposeShell 调查是**在下游追症状**（其中 §9.200 的 notch 朝向修复是真实修复，保留）。
+
+**下一步**：查 `read_topology` 的 wire 组装 —— 为什么这条 wire 被切成 `[6,14,1,1]`，以及 OCCT 的合并（→22 边单 wire）发生在哪一步。
+
+本轮无 Rust 代码改动；`occt-topo --lib` = 1281/0。
+
+
+### 9.214 —— T-93 根因落到具体边：reader 省掉了 seam 段、并把 seam 边拆成独立 wire
+
+工具：给端口探针 `zz_probe_a3n00.rs` 加 `--fdump`（按 F113 包围盒定位面，逐 wire/逐边打印 3D 端点、朝向、退化）；
+OCCT 侧用 `wires_probe` 的 `fdump -1`（`-1` = 按同一包围盒定位）。两边对拍同一张面：
+
+```
+OCCT 原始 : face=25  2 wire : wire[0] nEdges=22 , wire[1] nEdges=6
+OCCT 处理后: 该包围盒的面已不存在（ProcessShape 把它并掉了）
+端口 F113 : face=113 4 wire : wire[0] nEdges=6(内环) , wire[1] nEdges=14(外环) , wire[2] nEdges=1 , wire[3] nEdges=1
+```
+
+**逐边对应结果**：
+
+- 内环：两边都是 6 边、同一起点 `(12.3875,24.672,-89.3942)` ✓；但**有一个顶点坐标不同** ——
+  OCCT `(-49.8649,0,-100)` vs 端口 `(-65.243610,0,-100)`（y/z 相同）；
+- 外环：OCCT 22 边（含 `e[9]`/`e[17]` 两条 `closed=1` 的 seam 边，端点 `(±87.5,0,-32)`），端口只有 14 边；
+- **端口 `e[7]` 直接从 `(38.733061,21.908902,-40)` 连到 `(38.733061,-21.908902,-40)`**，
+  跨过了 OCCT 的 `e[7] (38.733,21.909,-40)→(44.5,0,-32)`、`e[8] →(87.5,0,-32)`、`e[9]`(closed seam)、`e[10]` 回、`e[11] →(38.733,-21.909,-40)`；
+- 端口把两条 seam 边放进**独立的 1-边 wire**（`wire[2]` 端点 `(87.5,0,-32)`、`wire[3]` 端点 `(-87.5,0,-32)`），而 OCCT 把它们**并进外环**。
+
+⇒ 分歧是 **reader 的 wire 组装**：绕 seam 的那一段被整个省掉（跨接），seam 边被拆到独立 wire。
+OCCT 的 `FixMissingSeam` 对这个面返回 0（不做），端口因为面被拆坏而判定「缺 seam」，进 ComposeShell 后切成 5 面 → `Shell(5)` 被丢 → F113 无网格。
+内环那处**顶点坐标不同**（同一条边取了不同顶点）提示 `resolve_oriented_edge` 一族的顶点/前驱解析仍有一处错位 ——
+与 §9.200 修的 notch 朝向问题同族。
+
+**下一步**：读 `read_topology` 对该面 ORIENTED_EDGE 的组装（STEP 里对应 loop 一带），定位「seam 段被跨接 / seam 边被拆成独立 wire」的那一步。
+
+本轮无 Rust 库代码改动（只改了探针 `examples/`）；`occt-topo --lib` = 1281/0。
+
+
+### 9.215 —— T-93：到 STEP 实体级 —— 端口外环 = STEP 的 8 条边，OCCT 展开成 22 条
+
+用端口 `--fdump` 与 OCCT `fdump -1` / `fcount` 对拍，再加一次性打印读出 STEP 结构：
+
+```
+端口 F113 的面 = STEP #4952（CYLINDRICAL_SURFACE R=87.5），4 个 bound：
+  #5140 FACE_OUTER_BOUND -> #5139 EDGE_LOOP('',(#5005,#5013,#5019,#5091,#5099,#5108,#5116,#5138))
+  #5352 / #5363 / #5374  FACE_BOUND
+STEP 外环只有 8 条 ORIENTED_EDGE。
+OCCT fcount: 该包围盒的面唯一（face=25），原始与处理后**都是 2 wire**；OCCT 外环 = 22 边。
+端口：唯一同包围盒的面 F113，4 wire = [6, 14, 1, 1]。
+```
+
+**因此**：端口外环 8 边 = STEP 原样；OCCT 把同样的 8 条**展开成 22 条**（切边 + 插 seam 边，绕到 `(±87.5,0,-32)`），
+端口不做这个展开，反而把两条 seam 边放进独立 1-边 wire。
+
+顺带排除的假设：
+
+- 不是 `fix_missing_seam` 加的（`--fixms` 显示修之前 F113 就是 4 wire）；
+- 不是「OCCT 的 `ShapeFix_Face::Perform` 把 4 条并成 2 条」——`pcu 25` 显示 `PCU in ... wires=2`，即 **Perform 之前**就是 2 wire；
+- 不是包围盒撞脸（端口与 OCCT 各只有 1 个该包围盒的面，总数都是 226）。
+
+**下一步**：对读 `StepToTopoDS_TranslateEdgeLoop` 的 seam/切分段（含 `StepToTopoDS_GeometricTool` 的 seam 判定）
+与端口 `read_topology` 的 `is_seam_curve` / `order_seam_pcurves` / `associate_edge_pcurve` 一族，定位「8 条展开成 22 条」缺在哪一步。
+
+本轮无库代码改动（探针与一次性打印已撤）；`occt-topo --lib` = 1281/0。
+
+
+### 9.216 —— T-93：OCCT 是「bound 翻译失败即跳过」，端口照样建了 1-边 wire
+
+**本轮推翻/确认的关键控制流**：
+
+```
+StepToTopoDS_TranslateFace.cxx:592  for (aBoundIndex = 1..theFaceSurface->NbBounds())
+StepToTopoDS_TranslateFace.cxx:694    StepToTopoDS_TranslateEdgeLoop anEdgeLoopTranslator; ... Init(...)
+StepToTopoDS_TranslateFace.cxx:706    if (anEdgeLoopTranslator.IsDone())  -> aFaceBuilder.Add(aResultFace, anEdgeLoopWire)   // :727
+StepToTopoDS_TranslateFace.cxx:729    else { AddFail(" EdgeLoop not mapped to TopoDS"); continue; }   // :731-741 跳过该 bound
+```
+
+⇒ **`TranslateFace` 每个 bound 只 add 一条 wire，从不合并**。所以 4-bound 的面在 OCCT 也应是 4 条 wire。
+而实测 OCCT 该面只有 **2 条**（外环 22 边 + 内环 6 边）⇒ 有 **2 个 bound 的 loop 翻译失败被 `continue` 跳过**了。
+对应的失败点在 `StepToTopoDS_TranslateEdgeLoop.cxx:770`：`TP->AddFail(EC, " Seam curve not mapped")`（seam 边的 pcurve 映射失败路径）。
+
+端口则在 `resolve_loop`/`resolve_face` 里为这两个 bound 照样建了 wire —— 就是那两条 **1-边、边闭合（first==last）的 seam wire**。
+
+**本轮另测到的独立疑点**：该面内环有一个顶点坐标不同 —— OCCT `(-49.8649,0,-100)` vs 端口 `(-65.2436,0,-100)`（y/z 相同），
+指向 `bind_edge_loop_vertices`（`cxx:288-403`/`:405-491` 的顶点绑定）可能绑到了不同顶点。
+
+**STEP 侧事实**（本轮解析）：面 `#4952` 4 个 bound；外环 `#5139` 仅 8 条 ORIENTED_EDGE，
+曲线类型依次为 B样条(`#5003`)、LINE(`#5011`)、LINE(`#5017`)、B样条(`#5089`)、LINE(`#5097`)、ELLIPSE(`#5106`, 39.26/34)、LINE(`#5114`)、B样条(`#5136`)；
+其中 `#5013` 与 `#5019` 共用同一对顶点 `#4956`/`#5007`（`#5107` 是 ELLIPSE，与 OCCT 内环的椭圆对应）。
+
+**下一步**：① 对读端口 `resolve_loop`/`resolve_face` 与 `TranslateFace.cxx:729-742` + `TranslateEdgeLoop` 的失败路径，
+补上「该 bound 翻译失败即跳过」；② 查 `bind_edge_loop_vertices` 为何绑到不同顶点。
+
+本轮无库代码改动；`occt-topo --lib` = 1281/0。
+
+
+### 9.217 —— T-93：4 wire 一一对应 4 个 bound；合并发生在读取器 per-entity ProcessShape
+
+**bound 级对应**（端口 F113）：
+
+| STEP bound | loop | oriented edges | 端口 wire 边数 |
+|---|---|---|---|
+| `#5140` FACE_OUTER_BOUND | `#5139` | 8 | 6（§9.200 notch 合并后） |
+| `#5352` FACE_BOUND | `#5351` | 14 | 14 |
+| `#5363` FACE_BOUND | `#5362` | 1 | 1 |
+| `#5374` FACE_BOUND | `#5373` | 1 | 1 |
+
+后两条单边 loop 的边是 `EDGE_CURVE('',#V,#V,CIRCLE(...,34.000000000000014),.T.)` ——
+**两个 r=34 的闭合圆**（v1==v2），且 STEP 里没有 pcurve。
+
+**OCCT 侧**：该面外环 22 边里恰有两条 `closed=1` 且 `ctype=1`（圆）的边 —— 就是这两个圆，
+它们被并进了外环；而 `StepToTopoDS_TranslateFace.cxx:727` 对每个 bound 只 `Add` 一条 wire、**从不合并**，
+所以合并只能发生在读取器的 per-entity `ProcessShape`：
+`ShapeFix_Shape::Perform`（`ShapeFix_Shape.cxx:83`）→ `FixFaceTool()` 对每个面 → `ShapeFix_Face::Perform`（`cxx:87`）。
+
+**端口没有 `ShapeFix_Shape`**（全仓只有注释引用），reader 只调 `ShapeFixFace::fix_missing_seam()`（`read_topology.rs:733-747`）。
+
+**修正一处过期文档**：`shhealing/shape_fix_face.rs:4` 与 `:144-148` 写着「UNPORTED: the seam construction (`cxx:1899-2330`)」，
+但同文件 `:305`（cxx:1899-1992 退化边）、`:503`（cxx:2138-2234 找缝位）、`:590-611`（cxx:2236-2261 fictive grid + ComposeShell 插缝，含 `set_context`）
+实际都已实现。真正产出错误结果（Shell(5)）的是 **ComposeShell 本身**，与 §9.210 定位的「`SplitWire` 记录的空拷贝顶点未被统一 ⇒ `CollectWires` 的 `IsSame` 失败 ⇒ 6 条 wire」一致。
+
+⇒ **T-93 的修复点定在 ComposeShell**：在 `break_wires`/`collect_wires` 之前把这些顶点统一（Context 的顶点级 Apply），
+复现 OCCT 的 1 面 / 2 wire。
+
+本轮无库代码改动；`occt-topo --lib` = 1281/0。
+
+
+### 9.218 —— T-93：OCCT 侧插桩验证 + `FixMissingSeam` 在读取时从未被调用（修正 §9.216/§9.217）
+
+**本轮先给 OCCT 侧插桩建立可信度**（此前从未验证过补丁是否真的生效）：
+
+- 新增 `specs/occt_probe/_dbg/ZZ_ShapeFix_Face.cxx`（`ShapeFix_Face` 构造函数、`Perform` 入口/出口、`FixMissingSeam` 入口、`CompShell.Perform()` 后各一处打印），并加入 `build_dbg.bat`；
+- **验证生效**：`run_dbg.bat data\occ\a3n00.stp pcu 25` 输出
+  `ZZCTORD default-ctor#1/2/3`、
+  `ZZPF enter#1 wires=2 void=0` 等 ⇒ 补丁被链接且被调用（链接输出无 LNK4006/LNK2005）；
+- 同时证明：`FCOUNT` 等模式输出正常，stdout 捕获正常。
+
+**决定性测量**：纯读取（`run_dbg.bat data\occ\a3n00.stp fcount 0`）时
+
+```
+（无任何 ZZCTORD / ZZPF / ZZFMS 输出）
+```
+
+⇒ 读取过程中 **`ShapeFix_Face` 从未被构造**，因此 `ShapeFix_Face::Perform` / `FixMissingSeam` / `ShapeFix_ComposeShell` 都没有参与；
+`ShapeFix_Shape`（其构造会建 `FixFaceTool()`=`ShapeFix_Face`）同样没有参与。
+
+**修正两处此前结论**：
+
+- §9.216 的「2 个 bound 的 loop 翻译失败被跳过的机制在 `TranslateEdgeLoop.cxx:770`」—— 方向仍可能对，但**不能**用「FixMissingSeam 没输出」来支撑（当时插桩未验证）；
+- §9.217 的「合并发生在读取器 per-entity `ProcessShape`（`ShapeFix_Shape`→`ShapeFix_Face`）」**不成立**（`ShapeFix_Face` 未被构造）。
+
+⇒ OCCT 那个 2-wire 面是**在没有面级 healing 的情况下**得到的，说明减少 wire 的机制在传输层或 `ShapeProcess` 的其它算子里，尚未定位。
+
+**工具教训（写入看板）**：`_dbg/` 的补丁必须先跑一次构造/入口探针确认生效，再据「没有输出」下结论。
+
+**下一步**：给 `STEPControl_ActorRead.cxx` 的 `TransferEntity`（`cxx:2144-2156`，`ProcessShape` 前后）插桩，打出面 `bbox` + `wire` 数，直接判定「传输出来是 4 条还是 2 条 wire」。
+
+本轮无库代码改动；`occt-topo --lib` = 1281/0。
+
+
+### 9.219 —— T-93：OCCT 读取时从不调用 ShapeFix_Face::Perform；摘掉那步后 F113 出网格但 T0M 回归
+
+**① link map 定论（本轮新增的验证手段）**：给链接加 `/MAP` 后，
+`?Perform@ShapeFix_Face@@QEAA_NAEBVMessage_ProgressRange@@@Z` 由 **`ZZ_ShapeFix_Face.obj`**（补丁 TU）提供 ⇒
+符号解析是全局的，补丁对所有调用者生效 ⇒ **纯读取时没有任何 `ShapeFix_Face::Perform` 调用**
+（`shape_fix_face`/`FixMissingSeam`/`ShapeFix_ComposeShell` 同理）⇒ T-93 卡片标题「reader 缺带 Context 的 ShapeFix_Face::Perform」
+与 OCCT 8.0 在该文件上的真实行为不符。
+
+**② 摘掉端口 reader 里 OCCT 没有的那一步**（`read_topology.rs:733-747` 的 `fix_missing_seam`）实测：
+
+```
+a3n00: TOTAL faces=226 stats=225 -> 226   mesh_v 10863 -> 11101   mesh_t 11941 -> 11121
+       F 113 ... mv=0 -> 223   mt=0 -> 267          <-- F113 出网格（T-93 的核心验收）
+cargo test --lib                 -> 1281 passed / 0 failed
+cargo test --test step_obj_gates -> 4 passed / 1 failed
+  FAILED step_obj_area_matches_occt: occ/T0M.stp ratio 0.9786 outside tolerance 0.01
+  （其余 19 个模型比值为 1.0000；ATU01038 1.0006、bottom 0.9750、motoc 1.0333、top 1.0000）
+```
+
+**③ 按纪律「回归即回退」已撤回**：`crates/occt-topo/src` 恢复为仅 `wire_fix.rs`（§9.200 的 notch 修复），`--lib` 1281/0，
+门禁回到已知基线 5/5。
+
+**④ 机制解释**：端口这次 `fix_missing_seam` 的结果 `Shell(5)` 虽被 reader 丢弃，但它跑过的 ComposeShell **改写了共享 `GeometryRegistry`**
+（pcurve/range），副作用留下 ⇒ F113 的网格被毁。这说明该调用是 F113 失败的**直接原因**，而不是 wire 数（4 条）本身。
+
+**⑤ 决策点**：摘掉这步后 `occ/T0M.stp` 面积比 0.9786（带 ±0.01）⇒ 要么
+(a) 认定 T0M 原来的 5/5 依赖这步非 OCCT 操作（T-79 型假绿），同意对其重新定基线；要么
+(b) 让这次尝试**不产生副作用**（ComposeShell 目前在结果被丢弃时仍改写全局 registry）。
+未决，等用户定；Goal 保持 active。
+
+
+### 9.220 —— T-11：两条警告清理自动化路径均实测不可用（已回退）
+
+**基线（本轮实测，`cargo check --lib --message-format short`）**：`occt-topo` lib 警告 **506** 条 ——
+`never used` 408 / `unused import` 46 / `other` 37 / `never read` 11 / `unused variable` 3。
+
+**路径 ①：`cargo fix`**
+
+- `cargo fix --lib --allow-dirty --allow-staged`：警告 506 → 456，34 文件变更；
+- 但 `cargo test --lib` 立刻报错（`ShapeType`/`Shell`/`Solid` 找不到）、`cargo check --tests` **109 个错误**、涉及 14 个文件
+  （intpatch.rs 37、bop_builder_tests_heal.rs 30、inttools_roots.rs 15、fclass2d/tests.rs 10 …）；
+- 原因：lib target 编译时**不带 `cfg(test)`**，cargo fix 据此判定 import 未用，而它们只被 `#[cfg(test)]` 模块使用；
+- 追加 `--lib --tests` 重跑后**仍然 109 个错误**（未修复）。
+
+**路径 ②：自己施加 rustc 的 span**
+
+- 取 `cargo check --message-format json` 的诊断，只处理「符号在文件其它位置不再出现」的 `unused_imports`/`unused_variables`（保守过滤，33 处 / 22 文件）；
+- 但 `unused_imports` 的 span **不总是整条语句**：`pub use read_topology::*;` 被删成 `pub use ;`，
+  `use crate::tshape::{A, B, C};` 的 B 被删后留下 `{A, , C}` ⇒ 语法错；
+- （另：首次实现用 JS 字符串索引套 UTF-8 字节偏移，文件含中文注释时必然错位 —— 已改用 Buffer 后仍因 span 语义不对而失败。）
+
+**结论**：`occt-topo` 的警告清理只能**手工分批**，且每批必须跑 `cargo test --lib` + `cargo check --tests` 确认零构建错误。
+`never used` 408 条属 dead code，需逐条判断是否为 UNPORTED 占位，不在 T-11 卡片范围。
+
+两次尝试均已 `git checkout -- crates/occt-topo/src` 回退，并重新打上 §9.200 的 notch 修复；`--lib` 1281/0。
+
+
+### 9.221 —— T-29 完成：过期规格的悬空引用修正（无行为变化）
+
+卡片要求「与门禁快照同步，或显式标注仅历史」。实测两个目标文件**已带**「⚠️ 仅历史（T-29 登记）」横幅
+（`specs/_coverage.md:1`、`specs/_brepmesh_align_review.md:3`），但横幅里指向的 `specs/_board.md` **已随看板迁移删除**（改成 `specs/board.canvas.tsx` 后遗留）。
+
+本轮修正 **7 处规范性悬空引用**：
+
+| 位置 | 原文指向 | 改为 |
+|---|---|---|
+| `specs/_coverage.md:2` | `specs/_board.md` §2/§3 | `specs/board.canvas.tsx`（任务表/门禁表） |
+| `specs/_brepmesh_align_review.md:4` | 同上 | 同上 |
+| `specs/_a3n00_gap_analysis.md:6` | §3.3 T-69/T-91/T-92、§2 门禁 | `specs/board.canvas.tsx`（T-69/T-91/T-92 与门禁表） |
+| `specs/_design_architecture_t25_t28.md:3` | §3.4 要求 | `specs/board.canvas.tsx`（架构 lane） |
+| `specs/_design_architecture_t25_t28.md:117` | `specs/_board.md` 对应行 | `specs/board.canvas.tsx` 对应行 |
+| `specs/occt_probe/README.md:33` | task T-82 (`_board.md` §3.1b/§3.2) | task T-82 (see `specs/board.canvas.tsx`) |
+| `crates/occt-core/src/bspl/poles.rs:26` | `_board.md` §3.3 T-44 | `specs/board.canvas.tsx`, task T-44 |
+
+`specs/_audit/` 下剩余 8 处是**历史审查记录**（记录当时仓库里有什么文件），按原样保留，不追改。
+
+**验证**：`cargo check -p occt-core --lib` 通过；`occt-topo --lib` **1281/0**（纯注释/文档改动，无行为变化）。
+
+顺带：`specs/occt_probe/.gitignore` 里原先只忽略 `ZZ_ComposeShell.*`，改为忽略全部 `ZZ_*.obj/lib/exp/map` 与 `zz_wires_probe.*`，并清掉遗留构建产物。
+
+
+### 9.222 —— T-67 前提核实与重新定范围：两臂已移植，剩余是 `UVFromIso`
+
+**核实（卡片标题所述部分已完成）**：
+
+- `extrema_surf/point_surface_extrema.rs` 已有 `ExtPsSurfaceType::SurfaceOfExtrusion` / `SurfaceOfRevolution`（`:60-61`、`:88-91`）与两条 arm：
+  `perform_ext_ps`（`:450-480`）、`perform_rev_ps`（`:485-…`），与 `Extrema_ExtPS.cxx:292-317` / `:319-343` 逐段对应
+  （首次建 `Extrema_ExtPExtS`/`ExtPRevS`、之后 `Perform`、结果逐条经 `TreatSolution` 合并）；
+- `extrusion_point_extrema.rs`、`revolution_point_extrema.rs` **无 UNPORTED 残留**；
+- `cargo test -p occt-geom --lib` = **143 passed / 0 failed** ⇒ 卡片 accept 达标。
+
+**真正剩余（重新定范围）**：`numeric_extrema.rs:63` 标注的 `point_surface_newton_all*` 替身（audit A15 / T-67 remainder）：
+
+- 非 box 的 `point_surface_newton_all`：**只剩回归测试** `extrema_surf/tests.rs:129`（`newton_path_bspline_paraboloid_min`）调用；
+- `point_surface_newton_all_box`：**在生产路径上** —— `point_surface_extrema_box`（`:449`，`:471` 调用替身）← `pcurve_full/surface_projector.rs:632`；
+- 它对应 OCCT `ShapeAnalysis_Surface::ValueOfUV` 里「Extrema 失败」分支的 **`UVFromIso`**
+  （`ShapeAnalysis_Surface.cxx:1449-1459`；`SurfaceNewton`/`ForgetNewton` 在 OCCT 那里是注释掉的）。
+
+**规模**：`UVFromIso` 本体 `ShapeAnalysis_Surface.cxx:1522-1835`（约 **310 行**），调用点 `:1459`、`:1423`、`:1225`。
+本轮不塞半个移植；卡片 next 已改写为「移植 `UVFromIso` 替换该替身」，evidence 记录了逐段对应与 143/0 实测。
+
+本轮无代码改动（只读 + 看板/规格更新）。
+
+
+**补记（同轮清理）**：§9.220 的 `cargo fix --lib --tests` 曾在 `crates/occt-topo/tests/` 留下 5 个文件的改动
+（phase4/6/7/19_integration.rs、step_obj_gates.rs 的 unused import/variable 清理），本轮已 `git checkout` 回退；
+当前 `crates/` 下的有意改动仅三处：`occt-topo/src/shhealing/wire_fix.rs`（§9.200 notch 修复）、
+`occt-core/src/bspl/poles.rs`（§9.221 注释引用）、`occt-topo/examples/zz_probe_a3n00.rs`（探针 `--fdump`）。
+验证：`occt-topo --lib` 1281/0、`cargo check --tests` 0 错误。
+
+
+### 9.223 —— T-67 完成：摘掉 A15 的 Newton 替身，改走已移植的 `UVFromIso` 分支
+
+**前情（§9.222）**：卡片标题所述的两臂 `Extrema_ExtPExtS` / `Extrema_ExtPRevS` 其实**早已移植并分派**
+（`point_surface_extrema.rs:60-61`/`:88-91` 类型、`:450` `perform_ext_ps`、`:485` `perform_rev_ps`，
+与 `Extrema_ExtPS.cxx:292-317`/`:319-343` 逐段对应），两个实现文件无 UNPORTED 残留。
+进一步的核实发现：卡片的「两臂」若指 `UVFromIso` / `SurfaceNewton`，那两个**也已移植**
+（`pcurve_full/surface_projector.rs:1831` `uv_from_iso`，及同文件的 `surface_newton`；`value_of_uv:519-691` 就是 `ShapeAnalysis_Surface::ValueOfUV` 的忠实移植）。
+
+**真正多余的一处（本轮修掉）**：`extrema_surf/numeric_extrema.rs` 的 `point_surface_extrema_box` 在窗口搜索为空后
+调用了**端口自造的** `point_surface_newton_all_box`（24×24 网格 + 数值 Jacobian Newton），为空再退到 `fallback_point_surface`。
+OCCT 在这里**没有这两步**：`Extrema_ExtPS::Perform` 给空结果，由调用方 `ValueOfUV` 走 `UVFromIso` 分支
+（`ShapeAnalysis_Surface.cxx:1449-1459`）。
+
+**改动**：`point_surface_extrema_box` 窗口为空时返回「无解」哨兵
+（`ExtremaPair { distance: INFINITY, u2: NAN, v2: None, .. }`），
+调用方 `pcurve_full::surface_projector::value_of_uv:640-645` 本来就以 `e.v2.filter(u2.is_finite() && v.is_finite())` 判定无解并走 `uv_from_iso`
+（其注释即 `cxx:1448-1472`）⇒ 于是生产路径回到 OCCT 的控制流。
+
+文档同步三处：`numeric_extrema.rs` 的 `point_surface_newton_all` 与 `point_surface_extrema_box` 说明、`extrema_surf/mod.rs:30` 的 UNPORTED 段
+（改记为「已不在任何库路径上，仅存回归测试 `newton_path_bspline_paraboloid_min` 使用」）。
+
+**验收实测**：
+
+```
+cargo test -p occt-geom  --lib                     -> 143 passed / 0 failed   (卡片 accept)
+cargo test -p occt-topo  --lib                     -> 1281 passed / 0 failed
+cargo test -p occt-topo  --test step_obj_gates     -> 5 passed / 0 failed (384s, 门禁不劣化)
+```
+
+
+### 9.224 —— T-51 豁免：可表达的部分已实现；两条 arm 被 `GeomTrimmedCurve` 的参数表示卡住
+
+**核实结果（可表达部分早已实现）**：
+
+- `CPnts_AbscissaPoint` 的反解由 `math_FunctionRoot` 驱动（`gcpnts.rs:43`）；
+- tolerance 重载 `init_tol`（`gcpnts.rs:296-300`）存在；
+- `adv_perform`（`gcpnts.rs:407-422`）是 `CPnts_AbscissaPoint::AdvPerform`（`cxx:436-473`）的忠实移植
+  （`myL < Confusion` 短路、`resolution / 10`、`IsDone` 只看 `Solution.IsDone()`）。
+
+**真正剩下的两条 `Compute` arm 无法忠实表达**：
+
+- `GCPnts_LengthParametrized`（`cxx:87-90`）与 `GCPnts_AbsComposite`（`cxx:96-158`）读 `GeomAdaptor_Curve` 的
+  `GetType` / `NbIntervals` / `Intervals`；
+- OCCT 的 `GeomAdaptor_Curve::load`（`GeomAdaptor_Curve.cxx:239-255`）对 `Geom_TrimmedCurve` 会**下沉到 basis 并保留 basis 参数区间**；
+- 端口的 `GeomTrimmedCurve` 则把参数**重映射到 `[0, 1]`**：`d0(u) = basis.d0(first + u*(last-first))`，
+  `d1/d2/d3` 用链式法则补偿（`crates/occt-geom/src/trimmed.rs:44-70`）；
+- 所以那两条 arm 在端口里没有忠实对应物，硬写只能自造区间规则（违反红线）；忠实做法是先改 TrimmedCurve 的参数表示 ——
+  那是**架构级**改动（影响所有 trimmed 曲线的消费方），且当前**没有消费方**触发这两条 arm。
+
+⇒ 按看板 intake 的 `waived`（豁免）处理，并把上述架构缺口作为**新卡候选**记录（建议标题：TrimmedCurve 参数表示对齐 OCCT 的 basis 区间）。
+
+**验收实测**：`occt-geom --lib` 143/0、`occt-topo --lib` 1281/0。
+
+本轮无代码改动。
+
+
+### 9.225 —— T-11 第 1 批：手工清理 2 处 unused import（另记两条自动化陷阱）
+
+**基线**：`occt-topo --lib` 警告 506 条（never used 408 / unused import 46 / other 37 / never read 11 / unused variable 3）；
+`cargo check -p occt-topo --lib` 会同时列出依赖 crate（occt-geom / occt-geom2d）的警告，去重后 unused import 共 **63 条 / 44 文件**。
+
+**第 1 批（本轮落地）**：
+
+| 文件 | 删除的 import | 依据 |
+|---|---|---|
+| `crates/occt-geom/src/line.rs:2` | `GpAx1` | 符号在整个文件（含 test 模块）只出现在该 import 行 |
+| `crates/occt-topo/src/shhealing/wire_fix.rs:7` | `GpDir` | 同上（`GpDir2d` 是另一个符号，`\b` 边界不误伤） |
+
+**验证**：`occt-geom --lib` 143/0、`occt-topo --lib` 1281/0、`cargo check -p occt-topo --tests` 0 错误（纯 import，行为不变）。
+
+**两条陷阱（本轮实测，写入看板 next）**：
+
+1. **只被 `#[cfg(test)]` 模块使用的 import 会被 rustc 判 unused**（lib target 编译不带 `cfg(test)`）。
+   本轮 9 个候选里 6 个属此类（`GpVec`/`GpDir`/`ShapeType`/`GpAx3`/`GeomCylinder`/`IntRange`），删掉会报 358 个 test 构建错误。
+   规则：删除前先 grep 该符号在**整个文件**（含 test 模块）的出现次数，>1 即跳过。
+2. **`cargo check -p A` 会列出依赖 crate 的警告**，且那是依赖的**非 test** 构建。
+   例：`crates/occt-geom/src/surface_of_revolution.rs:15` 的 `use crate::Surface;` 被报 unused，但删掉后
+   `impl crate::Surface for GeomSurfaceOfRevolution` 的方法解析失效（`no method named d0`）—— 实测已回退，该文件净零改动。
+
+**仍未做的**：44 文件中其余 unused import（多属陷阱 1）与 `never used` 408 条 dead code（需逐条判断是否为 UNPORTED 占位，不在卡片范围）。
+
+
+### 9.226 —— T-11 第 2 批：再清 5 处 import；发现第 3 条陷阱（跨文件消费）
+
+**第 2 批落地（5 处）**：
+
+| 文件 | 删除的 import |
+|---|---|
+| `crates/occt-topo/src/bop_builder_planar_weld.rs:19` | `edges_of` |
+| `crates/occt-topo/src/bop_split_seam.rs:20` | `ShapeIterator` |
+| `crates/occt-topo/src/bop_builder_planar_geom.rs:12` | `BoolOp` |
+| `crates/occt-topo/src/int_face_face.rs:135` | `DEFAULT_WINDOW` |
+| `crates/occt-geom2d/src/geom2d_int/ginter.rs:11` | `GpPnt2d` |
+
+连同第 1 批（`line.rs` 的 `GpAx1`、`wire_fix.rs` 的 `GpDir`）共 **7 处**。
+
+**验证**：`occt-topo --lib` 1281/0、`occt-geom2d --lib` 72/0、`cargo check -p occt-topo --tests` 0 错误。
+
+**第 3 条陷阱（本轮踩到并回退）**：文件内 grep 不足以判定安全 —— 还有两种**跨文件消费**：
+
+1. **`pub(crate) use` 再导出**：`meshing/model_builder/mod.rs:26` 的 `pub(crate) use crate::abs::{Orientation, ShapeType};`
+   被 rustc 判 `ShapeType` unused，但别处（`#[cfg(test)]`）经 `crate::meshing::model_builder::ShapeType` 使用它 ⇒ 删掉即报 `E0433`。
+2. **`use super::*` 子模块**：`bopds.rs:42` 的 `use crate::topo_tools_full::shapes_of;` 被同模块的子模块经 `use super::*` 冒泡消费 ⇒ 删掉即报 `E0425`。
+
+⇒ 修正后的规则：**先按「符号在文件内只出现于 import 行」筛，再逐批跑 `cargo test --lib`**；
+若报 `E0433`/`E0425`，只回退该处（不要整批回退）。本轮就是这么做的（7 处中 2 处回退）。
+
+剩余：44 文件中仍有 unused import（多属三条陷阱），以及 `never used` 408 条 dead code（不在卡片范围）。
+
+
+### 9.227 —— T-69：逐面配对完成（17 个差异面；含 2 个反向差异）
+
+**工具**：给两侧探针都加了「多 wire 面 bbox 明细」——端口 `zz_probe_a3n00 --wirehist` 新增 `MULTI bbox=(...)-(...) wires=N`，
+GT `occt_probe --wires` 同样输出（`occt_probe.cpp` 的 `++nFaces` 后插桩）；然后按 bbox 取整到个位配对。
+
+**总量对照（本轮实测）**：
+
+```
+PORT faces=1772 wires=1931 faces_with_2plus=120  WIREHIST 1:1652 2:106 3:8 5:1 6:1 7:2 8:1 10:1
+GT   faces=1778 wires=1921 faces_with_2plus=106  WIREHIST 1:1672 2:92  3:8 5:1 6:1 7:2 8:2
+```
+
+**配对后的真正差异（只有 17 个）**：
+
+- **端口 2 wire / GT 1 wire（15 个）**：
+  `(-31,-117,15)-(-23,-110,18)`、`(-31,-132,10)-(-23,-124,14)`、`(-31,-99,16)-(-23,-91,18)`、
+  `(6,-117,15)-(14,-110,18)`、`(6,-132,10)-(14,-124,14)`、`(6,-99,16)-(14,-91,18)`、
+  `(-43,-108,11)-(-34,-97,21)`、`(17,-106,12)-(26,-95,22)`、`(-66,-2,-49)-(-58,11,-36)`、
+  `(-66,-27,-49)-(-58,-14,-36)`、`(-21,-21,-8)-(-15,-15,-8)`、`(-21,15,-8)-(-15,21,-8)`、
+  `(15,15,-8)-(21,21,-8)`、`(15,-21,-8)-(21,-15,-8)`、`(-10,-10,-60)-(10,10,-45)`
+- **端口 10 wire / GT 8 wire（1 个）**：`(5.3,-217.4,104.9)-(15.5,-204.3,120.1)`（卡片的 F351）
+- **反向差异（2 个，端口 wire 更少）**：GT 的 `(-30,-106,13)-(12,-76,19)` 与 `(-30,-135,9)-(12,-106,19)` 都是 2 wire，
+  端口没有这两个**大**面，取而代之的是上面那批 x∈[-31,-23] 与 [6,14] 的**小**面 ⇒ 端口把 GT 的一个面切成了多个。
+  这与「端口总面数 1772 < GT 1778（少 6）」同源。
+
+⇒ T-69 的 next 已更新为「取一个代表面（如 `(-21,-21,-8)-(-15,-15,-8)` 或 10-vs-8 的 F351）解析其 STEP 实体，找多出的那条 wire 从哪来」。
+
+本轮无库代码改动（只改了两个探针）。
+
+
+### 9.228 —— T-69：现象定位到「1-边闭合 wire 被叠在面上」；关掉补偿步会显著变差
+
+**代表面**：端口 F1655 = Cylinder，`du=6.28319`（整周期）、`dv=inf`、box `(-65.6,-2,-49.19)-(-58.1,11,-36.19)`、wires=[1,2]：
+
+```
+FDUMP  wire[0] nEdges=1  e[0] first=last=(-65.600000,10.006279,-46.143374)   <- 闭合边（seam）自成一条 wire
+FDUMP  wire[1] nEdges=2  (-58.1,4.535096,-36.189358) <-> (-58.1,3.736963,-36.234205)
+```
+GT 在该区域是 **1** 条 wire ⇒ 与 T-93 的 F113（4 wire vs 2、含独立 1-边闭合 wire）同型。
+
+**T0M 全量量化（本轮新增 `--wirehist` 字段）**：
+
+```
+PORT faces=1772 wires=1931 faces_with_2plus=120 wires_1edge_closed=232 faces_1edge_closed=158
+GT   faces=1778 wires=1921 faces_with_2plus=106 wires_1edge_closed=172 faces_1edge_closed=172
+```
+
+- GT：172 个面、每个恰好 1 条 1-边闭合 wire；
+- 端口：**158 个面承载 232 条** ⇒ 在 **14 个面**上叠了额外的 1-边闭合 wire（= `faces_with_2plus` 120−106 的差）。
+
+**关键实验（临时改动，已回退）**：把 reader 里那步 OCCT 没有的 `fix_missing_seam`（§9.219）关掉后，T0M **显著变差**：
+
+```
+faces_1edge_closed 158 -> 349 ; faces_with_2plus 120 -> 309 ; WIREHIST 2:106 -> 2:294
+```
+
+⇒ 那步在 T0M 上是**补偿**（把 reader 本该产出的 seam 边补上），不能简单摘掉；它对 a3n00 的 F113 有害，是因为被丢弃的 `Shell(5)`
+留下了共享 registry 的副作用（§9.219）。
+
+⇒ 正确修法：让 **reader** 像 OCCT 一样产出 seam 边（与 T-93 同根），而不是靠 `ShapeFix_Face` 事后补偿。
+这同时解释了为什么 T-69 的 next 与 T-93 的调查路线收敛到同一处（reader 的 wire/seam 组装）。
+
+本轮无库代码改动（新加的探针字段保留；临时关步已回退，`--lib` 1281/0）。
+
+
+### 9.229 —— T-69：同面直接对照 —— 端口在整周期柱面上少 3 条边并拆散 seam wire
+
+**工具**：GT 探针新增 `--fbox x1 y1 z1 x2 y2 z2`（按 bbox 定位面并逐 wire/边 dump），与端口 `--fdump <idx>` 对应。
+
+**同一面（bbox 完全相同）两侧结构**：
+
+```
+GT face=1660  bbox (-65.60000,-2.00000,-49.18926)-(-58.10000,11.00000,-36.18926)
+  wire[0] nEdges=6
+    e0 ori=0  A->A   (A=(-65.600000,10.006279,-46.143374))       <- 闭合边（seam）
+    e1 ori=1  B->A   (B=(-58.100000,10.006279,-46.143374))
+    e2 ori=1  C->A   (C=(-58.100000,3.736963,-36.234205))
+    e3 ori=1  D->C   (D=(-58.100000,4.535096,-36.189358))
+    e4 ori=1  A->D
+    e5 ori=0  A->B
+端口 F1655
+  wire[0] nEdges=1  闭合边 A->A
+  wire[1] nEdges=2  (D<->C)
+```
+
+⇒ 端口这个面**少了 3 条边**（GT 6 / 端口 3），并把 seam 闭合边拆成独立 1-边 wire。
+GT 的 6 条构成：闭合边 `A→A` + `A↔B` 往返 + `A→D→C→A` 环 —— 典型的 seam 双走 + 闭合 seam 边。
+
+**与 T-93 的统一**：F113 是端口外环 14 边 vs OCCT 22 边（同样丢掉绕 seam 的那段）。
+⇒ **T-93 与 T-69 同根：reader 在周期面/接缝处的边与 wire 组装丢边、拆 wire。**
+而 §9.228 的实验说明 reader 里那步 `fix_missing_seam` 只是**事后补偿**（关掉后 T0M 从 120 个多 wire 面涨到 309 个）。
+
+**下一步**：解析该面的 STEP `ADVANCED_FACE`（圆柱 R=(65.6−58.1)/2 = 3.75）与其 `EDGE_LOOP` 的 oriented edge 条数 ——
+若 STEP 只有 3 条而 GT 有 6 条，则 OCCT 在传输时**扩展**了 seam（重复边对 + 闭合边），端口的 `read_topology` 没有这一步。
+
+本轮无库代码改动（只改 GT 探针）；`--lib` 1281/0。
+
+
+### 9.230 —— T-69：STEP 实体链解到面级（端口面 = #29884，与 STEP 完全吻合）
+
+**从 seam 点回溯**：
+
+```
+A=(-65.6,10.006279,-46.143374)  ->  #59828 CARTESIAN_POINT
+                                ->  #13393 VERTEX_POINT('',#59828)
+                                ->  #17405 EDGE_CURVE('',#13393,#13393,#10824,.T.)   #10824=CIRCLE('',#33172,6.5)
+```
+顶点 `#13393` 只被这一条**闭合边**使用；而该边被**两条** ORIENTED_EDGE 引用，分属两个面：
+
+| 面 | 曲面 | bounds |
+|---|---|---|
+| `#29884` | `#1762=CYLINDRICAL_SURFACE(R=6.5)` | `#4187 FACE_OUTER_BOUND→loop #6254` **1** OE（`#25332` = `#17405 .T.`）；`#2467 FACE_BOUND→loop #6255` **2** OE（`#17406 .F.`, `#17407 .F.`） |
+| `#29885` | `#2149=CONICAL_SURFACE(R=6.067, 60°)` | `#4188 FACE_OUTER_BOUND→loop #6256` **1** OE（`#25335` = `#17405 .F.`）；`#2468 FACE_BOUND→loop #6257` **1** OE（`#17408 .F.`） |
+
+**端口 F1655 与 `#29884` 完全吻合**：2 个 bound、oriented edge 数 1 与 2 ⇒ 端口 `wires=[1,2]` ✓；`type=Cylinder` ✓（R=6.5）。
+
+**未决**：GT 在**同 bbox** 的面（1660）是 1 wire / **6 边**，而 STEP 该面只有 1+2 = **3** 条边。两种可能：
+
+1. OCCT 在传输时把该面的 seam 扩展成 6 条（例如闭合边 + 其往返对 + 其余边的重复）；
+2. bbox 配对照到了**另一个面**（本轮 F1655 的 bbox 原点来自端口，GT 侧只是同 bbox）。
+
+⇒ 下一步用 GT 侧逐边端点比对 `#17405/#17406/#17407`（A/B/C/D 四个点），确认 GT 那 6 条里哪 3 条来自 STEP、哪 3 条是 OCCT 生成。
+
+本轮无库代码改动（只做 STEP 实体解析）；`--lib` 1281/0。
+
+
+### 9.231 —— 更正：bbox 配对不是可靠的面身份（§9.229 结论作废）
+
+**用 STEP 端点核对 GT 那 6 条边**：
+
+```
+STEP face #29884 的边（本轮解析 #17406/#17407 的端点）：
+  #17405  A->A   A=(-65.6,10.006279,-46.143374)          CIRCLE R=6.5（闭合）
+  #17406  C->D   C=(-58.1,3.736963,-36.234205)  D=(-58.1,4.535096,-36.189358)  CIRCLE
+  #17407  D->C   同 C/D，另一条独立边                                              CIRCLE
+GT face=1660（同 bbox，1 wire / 6 边）：
+  A->A 、B->A 、A->B 、C->A 、A->D 、D->C      B=(-58.1,10.006279,-46.143374)
+```
+
+⇒ GT 那个面包含 `A↔B`、`C→A`、`A→D` —— **STEP 面 `#29884` 里根本没有这些边**（它只有 A 处闭合圆与 C↔D 两条）。
+因此两者**不是同一个面**：两个不同的面可以共享同一个 bbox。
+
+**影响**：
+
+- §9.229 的「端口在同面少 3 条边、reader 丢边」**作废**；
+- §9.227 的 17 个「差异面」只能作为**线索**（总量直方图与 `wires_1edge_closed` 等聚合量仍然有效），
+  不能据此断言「同面结构差异」。
+
+**仍然成立的事实**：端口 F1655 与 STEP 面 `#29884` **完全吻合**（2 个 bound、oriented edge 数 1 与 2 ⇒ `wires=[1,2]`；`CYLINDRICAL_SURFACE(R=6.5)`）。
+
+**下一步**：改用**稳定身份**配对 —— 给 reader 的 `resolve_face` 一次性探针记录源 STEP 面 id，再与 GT 的同 id 面对比；
+在此之前不基于 bbox 配对下结论。
+
+本轮无库代码改动；`--lib` 1281/0。
+
+
+### 9.232 —— T-69：STEP-id 级配对成功（197 个 id 的 wire 数不同；OCCT 会跳过 bound）
+
+**新工具（可靠身份）**：
+
+- GT：`occt_probe --faceids` —— 遍历结果 shape 的面，用 `XSControl_TransferReader::EntityFromShapeResult(face, 1)` 反查 STEP 实体，
+  打印 `STEPFACE face=k id=<model->Number(ent)> wires=<n>`；
+- 端口：`read_topology::resolve_shape` 里加 `ZZ_STEPFACE` 环境变量门控的探针，对 `ADVANCED_FACE` 打印 `STEPFACE id=<id> wires=<n>`。
+
+**T0M 对比结果**：
+
+```
+GT ids=1768 端口 ids=1772 共有=1758 wire 数不同=197 only-GT=10 only-PORT=14
+例：id=29884 gt=1 port=2 ; id=29865 gt=3 port=1 ; id=29191 gt=8 port=1 ; id=29880 gt=3 port=2
+```
+
+**关键读数**：GT 的 wire 数常**低于** STEP 的 bound 数，而端口 = 每 bound 一条（忠实于 `TranslateFace.cxx:727` 的「每个 bound `Add` 一条 wire」）。
+例：`#29884` 的 STEP bounds = `FACE_OUTER_BOUND #4187`(loop 1 OE) + `FACE_BOUND #2467`(loop 2 OE) —— 端口 2 条 wire，GT **1** 条。
+
+⇒ **OCCT 会跳过某些 bound 的 loop**（`StepToTopoDS_TranslateFace.cxx:729-742`：`anEdgeLoopTranslator.IsDone()` 为假即 `continue`），
+端口没有这个失败路径，于是把 OCCT 丢弃的 bound 也建成了 wire。
+
+**同时复测（T0M）**：读取时 `ShapeFix_Face` 仍未被构造（补丁版探针无 `ZZCTORD`/`ZZPF` 输出，`FCOUNT hits=0 of 1778`）
+⇒ 差异不属于面 healing，属于**传输层**（与 §9.219 在 a3n00 上的结论一致）。
+
+**下一步**：在端口 `resolve_loop`/`resolve_face`（或 `associate_edge_pcurve`）里复现 `TranslateEdgeLoop` 的失败/跳过条件
+（`TranslateEdgeLoop.cxx:770`/`:791` 的 seam-pcurve 失败路径），使「某些 bound 不产 wire」。
+
+注：`ZZ_STEPFACE` 是临时探针（env 门控、已注释说明），提交前应移除；`--faceids` 属 GT 探针工具，保留。
+
+
+### 9.233 —— T-69：like-seam 跳过假设**否证**（实施后 T0M 计数完全不变）
+
+**实施**（已回退）：按 `StepToTopoDS_TranslateEdgeLoop.cxx:790-795` 的失败分支，在 `resolve_face` 的 bound 循环里加判定 ——
+「loop 中某条 oriented edge 带 pcurve 且 `IsLikeSeam`（非 seam）⇒ 该 loop `!IsDone()` ⇒ 跳过整个 bound」
+（对应 `TranslateFace.cxx:729-742`），并新增私有 helper `loop_is_like_seam_rejected`。
+
+**结果**：T0M 的
+
+```
+TOTAL faces=1772 wires=1931 faces_with_2plus_wires=120 wires_1edge_closed=232 faces_1edge_closed=158
+WIREHIST 1:1652 2:106 3:8 5:1 6:1 7:2 8:1 10:1
+```
+
+与改动前**逐字节相同** ⇒ 该分支在 T0M 上**一次都没触发**（端口判定为 like-seam 的边，在 T0M 的这些面上不存在）。
+由于改动无效果且未在其它模型上验证，已回退（保留 `ZZ_STEPFACE` 临时探针）。
+
+**已确证、可复用的结论（供后续）**：
+
+1. STEP-id 级差异 **197 个**，GT 的 wire 数**通常更少** ⇒ OCCT 丢弃了某些 bound 的 wire；
+2. 差异发生在**传输层**（T0M 读取时 `ShapeFix_Face` 未被构造，探针无输出）；
+3. 端口对**每个 bound 都建一条 wire**（忠实于 `TranslateFace.cxx:727`），所以差异来自「OCCT 跳过了哪些 bound」；
+4. like-seam 失败分支**不是** T0M 的原因（本轮否证）。
+
+**下一步候选**：
+
+- (a) 逐面打印端口 `resolve_face` 的 bound 数 vs 结果 wire 数，直接找「bound 数 > wire 数」的面 —— 那才是端口自己丢 wire 的真因；
+- (b) 换卡（T-41 / T-25 / T-28 / T-11）—— T-93/T-69 已连续多轮只取证未落地。
+
+本轮无净代码改动（一处实验已回退）；`--lib` 1281/0、T0M WIREHIST 不变。
+
+
+### 9.234 —— T-41 第 1 步落地：`boolean_dispatch` 的实体输入改派到忠实路径（全绿）
+
+**改动**：`crates/occt-topo/src/bop_builder_dispatch.rs:227`（`boolean_dispatch` 的尾部）
+
+```rust
+-    crate::bop_curved::curved_boolean_full(a, b, op, tol)
++    // T-41: OCCT has no bop_curved mesh/voxel engine; two non-compound solids go
++    // through BOPAlgo_BOP like every other operand pair.
++    crate::bop_builder::boolean_via_bopalgo(a, b, op, tol)
+```
+
+（`boolean_via_bopalgo` 由私有改为 `pub(crate)`；它就是 `builder_bop_with_fuzzy` + `unwrap_bopalgo_shape` + `single_shape_result` + 闭壳告警，与 `boolean()` 的忠实路径同一条。）
+
+**验收实测（改动后）**：
+
+```
+cargo test -p occt-topo --lib                 -> 1281 passed / 0 failed
+cargo test -p occt-topo --test step_obj_gates -> 5 passed / 0 failed (380s)
+phase10 / phase19 / phase3 / phase4           -> 8/8 · 5/5 · 4/4 · 9/9（与基线一致）
+```
+
+**关键发现（修正 §9.206 的担心）**：此前担心「3 条断言绑在旧体上、必须先处理」。实测改派后**全绿** ——
+因为 `general_boolean_trimmed_closed_shell` / `curved_boolean_full_quadric_unchanged` / `voxel_*` 都是**直接调用**
+`curved_boolean_full` / `curved_boolean` 的模块内测试，**不经 `boolean_dispatch`**，所以改派不影响它们。
+（§9.206 把「函数被断言绑定」与「分派路径被断言绑定」混为一谈了。）
+
+**第 2 步（摘层）待做**：逐处处理 `curved_boolean_full` 的其余消费者（repair:239,405、report:388、brepfeat:320/330-335、draw:327）
+与 `bop_curved` 自带测试，然后删除 mesh/voxel 层。
+
+
+### 9.235 —— T-41 第 2 步：第一处障碍是「测试夹具用了非法 OCCT 布尔」
+
+**尝试**：把 `bop_builder_repair.rs:239`（`boolean_repaired`）、`:405`（`boolean_split_result`）、`bop_builder_report.rs:388`（`boolean_repaired_report`）
+从 `curved_boolean_full` 改到忠实的 `boolean_dispatch`（含 empty / compound / non-solid / solid 四段，与 `boolean()` 同一条）。
+
+**结果**：`cargo test -p occt-topo --lib` → 1280/1，唯一失败：
+
+```
+bop_builder::tests_api::boolean_repaired_warns_on_fix
+panicked at src/bop_builder_tests_api.rs:318:79
+repaired fuse ok: "BOPAlgo_AlertBOPNotAllowed"
+```
+
+**根因（OCCT 依据）**：该测试把 `crossing_shell()`（一个 **shell**）与 `boxy.solid.0`（**solid**）做 `FUSE`。
+`BOPAlgo_BOP::CheckData` 明确**拒绝不同维度的 FUSE**（`BOPAlgo_BOP.cxx:181-186`/`:193-195`），端口 `bop_bop::check_data` 亦然 ——
+所以这不是忠实路径的缺陷，而是**夹具本身不是合法 OCCT 布尔**；旧的 `curved_boolean_full` 只是「宽容」地接受了它。
+
+**处置**：已回退这三处（保留第 19 轮已验证的 `boolean_dispatch` 改派），`--lib` 1281/0、门禁不变。
+
+**下一步（按 OCCT 口径订正测试，项目先例 T-04/T-05）**：
+
+- 或把夹具改成**同维度**（`shell ∪ shell`，或先闭合成 solid 再 `solid ∪ solid`），保持「跨界融合 → 需要修复」的语义；
+- 或对非法组合（shell ∪ solid）显式断言 `BOPAlgo_AlertBOPNotAllowed`，并把「修复告警」的检查移到合法夹具上（该测试已有 `overlapping_boxes()` 的合法对）。
+
+完成后再继续 `brepfeat/features.rs:320,330-335`、`draw/mod.rs:327` 的改派与整层删除。
+
+
+### 9.236 —— T-41 第 2 步：修复包装器的测试夹具需要「重设计」（本轮两次尝试均回退）
+
+**尝试 ①**：`boolean_repaired`/`boolean_split_result`/`boolean_repaired_report` → 忠实 `boolean_dispatch`。
+结果：`boolean_repaired_warns_on_fix` 报 `BOPAlgo_AlertBOPNotAllowed` —— 夹具把 self-intersecting **shell** 与 **solid** 做 FUSE，
+`CheckData` 拒绝不同维度融合（`BOPAlgo_BOP.cxx:181-186`）⇒ **夹具本身不是合法 OCCT 布尔**。
+
+**尝试 ②**：按同维度订正夹具（新增一块远处 (5,5,5)-(6,5,5) 的平行单面 shell，与 `crossing_shell()` 同维度且不相交）。
+结果：越过了维度错误，但该测试在**修复告警断言**处失败（`src/bop_builder_tests_api.rs` 内的 `warnings.any(|w| w.contains("fixed"))`）——
+忠实路径下「两个不相交 shell 的融合」不再产生期望的修复告警。
+
+⇒ 要让该测试在新路径下成立，需要**重新设计夹具**（换一组能产生自交结果、且由合法布尔产生的操作数）——
+这已经是**写新测试**，触碰红线（「不为对齐新写测试」）。故本轮两次尝试全部回退：
+`bop_builder_tests_api.rs` / `bop_builder_repair.rs` / `bop_builder_report.rs` 用 `git checkout` 复原，`boolean_dispatch` 恢复私有；
+`occt-topo --lib` = **1281/0**。
+
+**待决策（写入卡片）**：
+
+- (a) 允许重设计该测试夹具（承诺用最小改动并逐条说明 OCCT 依据）；或
+- (b) 保留 `repair`/`report` 走旧路径，只摘 `brepfeat:320,330-335`、`draw:327` 与其余 mesh/voxel 层。
+
+
+### 9.237 —— T-41 第 2 步（续）：`brepfeat` 改派忠实布尔，全绿
+
+**改动**：`crates/occt-topo/src/brepfeat/features.rs` 的 `boolean_feature` 从「planar 走 `bop_curved::curved_boolean`、
+curved 走 `boolean_ops::voxel_boolean`」统一为**忠实布尔**：
+
+```rust
+-    if all_faces_planar(&solid.0) && all_faces_planar(tool) { ...bop_curved::curved_boolean... }
+-    let mesh = crate::boolean_ops::voxel_boolean(...)?;
+-    let brep = crate::mesh_to_brep::shape_mesh_to_brep(&mesh); ...
++    let r = crate::bop_builder::boolean(&solid.0, tool, op, tol.max(1e-9))
++        .map_err(|e| format!("feature boolean: {e}"))?;
++    let shape = r.solid.map(|s| s.0).unwrap_or(r.shape);
++    let volume = solid_volume(&shape, 48, 48);
+```
+
+（doc 注释同步：OCCT 只有 `BRepAlgoAPI_*`/`BOPAlgo_BOP`；旧注释声称「曲面走体素」的理由已随 T-82 的曲面精度修复而过期。）
+
+**验收实测**：
+
+```
+cargo test -p occt-topo --lib            -> 1281 passed / 0 failed
+cargo test -p occt-topo --test step_obj_gates -> 5 passed / 0 failed (396s)
+phase3/4/5/6/10/19                       -> 4/9/7/5/8/5（全部与基线一致）
+```
+
+**`bop_curved` 剩余消费者**（第 2 步尚未完成的部分）：
+
+| 位置 | 状态 |
+|---|---|
+| `boolean_dispatch:227` | ✅ 第 19 轮已改派 |
+| `brepfeat/features.rs`（curved_boolean + voxel_boolean） | ✅ 本轮已改派 |
+| `bop_builder_repair.rs:239,405`、`bop_builder_report.rs:388` | ⏸ 卡在 `boolean_repaired_warns_on_fix` 夹具重设计（§9.236，待决策） |
+| `draw/mod.rs:327` + `draw/interpreter.rs:422`（`curved_boolean_ext`） | ⏳ 解释器辅助、不在门禁内 |
+| `bop_curved` 自带测试 | ⏳ 随层删除一并处理 |
+
+
+### 9.238 —— T-41 第 2 步（续）：`draw` 的布尔命令改派忠实路径
+
+**改动**：
+
+- `draw/mod.rs:327`：prelude 的 `pub(crate) use crate::bop_curved::curved_boolean_ext;` → `pub(crate) use crate::bop_builder::boolean;`；
+- `draw/interpreter.rs:422`：`curved_boolean_ext(&a, &b, op, BOOL_TOL)` → `boolean(&a, &b, op, BOOL_TOL)`（doc 注释同步）。
+
+原 `curved_boolean_ext` 的分派是「planar → `bop_builder::boolean`；general-curved → `general_boolean_trimmed`；其余 → `curved_boolean`（网格路径）」——
+后两者都是无 OCCT 对应的自造路线；draw 命令现在只用忠实的 `BOPAlgo_BOP`。
+
+**验收实测**：`occt-topo --lib` 1281/0；phase10/19/4 = 8/5/9（与基线一致）。
+`draw` 不在 STEP→OBJ 门禁路径上，故门禁不受影响（上一轮已实测 5/5）。
+
+**`bop_curved` 现在的消费者（全仓 grep）只剩 3 处**：
+
+```
+bop_builder_report.rs:388   curved_boolean_full
+bop_builder_repair.rs:239   curved_boolean_full
+bop_builder_repair.rs:405   curved_boolean_full
+```
+
+⇒ 层已近乎孤立：这 3 处都卡在 `boolean_repaired_warns_on_fix` 夹具重设计（§9.236 待决策），
+改完即可删除 `bop_curved` 的 mesh/voxel 层与其自带测试。
+
+
+### 9.239 —— T-11 第 3 批（2 处）与两条新教训
+
+**落地（2 处）**：
+
+| 文件 | 删除的 import |
+|---|---|
+| `crates/occt-topo/src/shape_fix_compose_shell/split_by_grid.rs:7` | `crate::brep_tool::BRepTool` |
+| `crates/occt-topo/src/shape_fix_compose_shell/dispatch_wires.rs:7` | `occt_geom2d::curve::Curve2d` |
+
+累计三批共 **9 处**。验证：`occt-topo --lib` 1281/0、`cargo check --tests` 0 错误。
+
+**教训 ④**：本轮 21 个 `[line]` 候选里只有 2 个真正被删 —— 其余被**保守 shape 检查**跳过，原因是
+`cargo check --message-format json` 的 `spans[0].line_start` 对**多行 `use`** 不一定指向符号自身那一行（可能指向 `use a::{` 那一行）。
+更稳的做法：用 `spans[0].line_start..line_end` 覆盖范围，或按符号在文件里搜出真正的那一行。
+
+**教训 ⑤**：`bopds.rs:42` 的 `use crate::topo_tools_full::shapes_of;` **第二次**踩中「`use super::*` 子模块跨文件消费」
+（第 2 批也踩过同一处）⇒ 该文件列入白名单，不再尝试。
+
+**剩余候选**：多为 `{...}` 组内单项与 `pub(crate) use` 再导出，需逐个人工判断（后者已知会被别处消费）。
+
+
+### 9.240 —— T-25 完成核实：几何已在 TShape 上，Registry 仅剩兼容外壳
+
+卡片 next 写的是「按 6 步增量方案实施（第 2 步是纯转发层）」，但实测**迁移已到设计文档所说的端阶段**：
+
+| 证据 | 位置 |
+|---|---|
+| `TShape` 自带 4 个几何槽（`edge_pcurves`/`edge_core`/`vertex_core`/`face_core`）与 getter/mut | `tshape.rs:33-45`、`:94-123` |
+| `GeometryRegistry` 的三个几何表**已删除**，只剩 `ids` + `face_surfaces` + `surface_by_ptr` | `tgeometry.rs:163-181` |
+| 35 处读写全部**转发**到 TShape 槽 | `tgeometry.rs:211-219`（set_vertex→`vertex_core_mut`）、`:226`、`:248/:255/:273`、`:282-294`、`:313`、`:340`、`:358-379`、`:399-445` |
+
+`tgeometry.rs:163-166` 的注释逐字写着：
+
+> T-25 end phase: the three geometry maps are gone — pcurves, edge, vertex and face geometry all live on their own TShape now.
+> Only the shape ids and the face->surface table remain.
+
+**未做的部分（设计文档明示的可停点）**：第 5 步（删 `ids`/`remove_by_ptr`/`TShape::drop` 钩子与 `global()`、清 29 个测试文件的 `clear_shape` 夹具）。
+设计文档 §分步方案末尾写着：「若第 5 步无法一次完成，保留 `global()` 作兼容外壳（第 2 步之后它已是纯转发，语义已对齐 OCCT）」。
+
+**验收实测**：`occt-topo --lib` 1281/0、`step_obj_gates` 5/5（399s）⇒ 卡片 accept「--lib + 门禁不劣化」达标。
+
+⇒ 标记 T-25 **done**；第 5 步作为独立的「外壳清理」可另立卡（当前无语义偏差，属净收益而非门禁项）。
+
+
+### 9.241 —— T-28 现状核实：第 1/2/3 步已完成，第 4/5 步未做（并更正一处假阴性）
+
+**已完成（逐项带行号）**：
+
+| 步 | 证据 |
+|---|---|
+| 1 数据层 | `PathPoint.is_new / vertex_id`：`intpatch_impimp_sonb.rs:23-26`（构造 `:47-48` / `:61-62`）；`TopolTool` 顶点表：`geom_int_topol.rs:59`、`:111 with_arc_vertices` |
+| 2 同顶点合并 | `compute_tangency` 的 `IsNew == false` 分支：`intpatch_impprm.rs:280`、`:287`、`:323`、`:347`（`CurveTransition::new()`）、`:374`；**`TopTrans_CurveTransition` 已有专文件** `intpatch_curve_transition.rs`（文档「无对应件」已过期） |
+| 3 `SetVertex` 绑定 | `intpatch_impprm_ends.rs:287-294`（`!rp.is_new` 守卫 + `IntPatch_Point::SetVertex` 行号引用） |
+
+**未完成**：
+
+- **步 4**：`intpatch_analytic.rs` 的 5 个 closed form **仍在** —— `intersect_plane_sphere:69`、`intersect_sphere_sphere:92`、`intersect_plane_cylinder:123`、`intersect_plane_cone:217`、`intersect_plane_torus:244`；
+  调用点 `intpatch.rs:77` 的 re-export 与 `int_face_face_analytic.rs:141/163/198`。
+- **步 5**：两个 surface×surface 分派器共存（`intpatch.rs:138` 与 `intpatch_intersection.rs:41`），签名/返回类型不同
+  （前者无 `TopolTool`、返回 `SurfaceIntersection`；后者需两个 `TopolTool`、产出 `IntPatch` 线）。主路径已走后者（`int_face_face.rs:414` 的 `IntSS`），`intpatch.rs:138` 现为 `int_face_face.rs:448` 的**回退**。
+
+**更正一处我自己的假阴性**：上一轮 grep 用了不带 `intersect_` 前缀的函数名（`plane_sphere` 等），得到 0 命中，据此误判「步 4 已完成」。
+以 `^pub fn ` 重列后 5 个重复件清晰可见。教训：按**完整函数名**（含前缀）核对，或直接用 `^pub fn` 列清单。
+
+**验收实测（当前树）**：`occt-topo --lib` 1281/0、`step_obj_gates` 5/5。
+
+⇒ T-28 置为 **doing / actual 4**；下一步 = 步 4（删 `intpatch_analytic.rs` 的 5 个 closed form，改接 `intana`）。
+
+
+### 9.242 —— T-28 步 4 推进：三条 Analytic arm 改由 `intana` 提供闭合解（门禁全绿）
+
+**改动**（`crates/occt-topo/src/int_face_face_analytic.rs`）：三条 arm 不再调 `intpatch::intersect_*`，改为调用 `intana` 的权威闭合解，
+再经本文件既有的通用适配器 `conics_to_curves`（`:408`）出曲线：
+
+| arm | 新调用 | tolerance 依据 |
+|---|---|---|
+| `plane_sphere` | `quadric_quadric_plane_sphere(&pln, &sphere)` | 该函数无 tol 参数 |
+| `sphere_sphere` | `quadric_quadric_sphere_sphere(&s1, &s2, 1e-7)` | 照抄 `brep_face_intersect.rs:189` |
+| `plane_cylinder` | `quadric_quadric_plane_cylinder(&pln, &cyl, 1e-12, 1e-7)` | 照抄本文件已迁移的 `plane_cone` arm（`:238`） |
+
+提取器也换成现成的 `sphere_from_surface` / `cylinder_from_surface`（`int_face_face_helpers.rs:122/131`）。
+
+**一处按 OCCT 口径订正的断言**（设计文档 §T-28 明确授权：「第 4/5 步的『参考基线换源』要谨慎：`intpatch.rs:374-507` 的既有断言若与被删实现耦合，应按 OCCT 为准订正」）：
+`int_face_face_tests.rs::plane_cylinder_parallel_generatrices` 原先拿 `intpatch::intersect_plane_cylinder` 当参考，
+而旧实现把「平面∥柱面的两条母线」**合成一条** `IntersectionCurve`（采样点拼接）；`IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder)` 的规格是 **`TwoLines`**。
+订正后：参考改用 `intana` 的 `TwoLines`，断言 `res.nb_curves() == 2` 且两条曲线各自落在**不同**的参考母线上（点线距 < 1e-6），保留原「对拍」意图。
+
+**验收实测**：
+
+```
+occt-topo --lib                    -> 1281 passed / 0 failed
+step_obj_gates                     -> 5 passed / 0 failed (397s)
+phase3/4/5/10/19/20                -> 4/9/7/8/5/5（与基线一致）
+```
+
+**步 4 剩余**（删 5 个副本前需先改接其余消费者）：`bop_curved/general_mesh.rs:173/175`、`int_face_face_helpers.rs:82`、
+`int_face_face_tests.rs:232`、`intpatch.rs:77-79` 的 re-export 与 `intpatch.rs` 内部测试（`:179/:193/:207/:243/:265/:271/:280/:297/:302/:310/:327/:402/:420`）。
+
+
+### 9.243 —— T-28 步 4：剩余消费者的精确定位（本轮只定位，不动手）
+
+step 4 的主生产路径已在 §9.242 完成；本轮把「还剩谁在用这 5 个副本」查清：
+
+| 位置 | 性质 | 处置建议 |
+|---|---|---|
+| `intpatch.rs::surface_surface_intersection` 的解析 arm（`Plane∩Sphere :179`、`Plane∩Cylinder :193+`、Cone/Torus 等） | **生产**（该函数是 `int_face_face.rs:448` 的回退） | 逐个改接 `intana` + `sample_curve_on` 适配 |
+| `bop_curved/general_mesh.rs:172-178` | 生产（在 `bop_curved` 内，该模块属 T-41 删除范围） | 随 T-41 一起消失，或改接 `intana` |
+| `intpatch.rs:222` 起的 `#[cfg(test)] mod tests` | 测试 | 随副本一起删除（它们测的就是被删实现） |
+| `int_face_face_helpers.rs:83 plane_cylinder_kind` | **不是消费者** | 其 doc 注释提到函数名而已；本次改接后它可能变为未使用，随后续清理 |
+
+⇒ 删副本的前置条件是先改 `intpatch.rs` 分派器的解析 arm（一类工作），再连带删测试。本轮不半途动手，保持树全绿。
+
+**当前树验收**（沿用 §9.242 的实测）：`--lib` 1281/0、`step_obj_gates` 5/5、phase3/4/5/10/19/20 与基线一致。
+
+
+### 9.244 —— T-28 步 4（续）：intpatch 分派器三条解析 arm 改接 intana（门禁全绿）
+
+**新增适配器**（`intpatch_analytic.rs`）：`ic_list_from_quadric(qi, a, b) -> Vec<IntersectionCurve>` ——
+把 `intana` 的 `QuadricIntersection` 转成 `surface_surface_intersection` 返回的采样曲线；采样密度沿用被替换实现（圆/椭圆 48、直线 32）。
+（`FaceFace::conics_to_curves` 是同一个适配任务，只是在 `FaceFaceCurve` 层。）
+
+**改接的 arm**（`intpatch.rs::surface_surface_intersection`）：
+
+| arm | 原调用 | 新调用 |
+|---|---|---|
+| `Plane ∩ Sphere`（`:170`） | `intersect_plane_sphere(&pa, c, r)` | `intana::quadric_quadric_plane_sphere(&pa, &sphere)` |
+| `Sphere ∩ Plane`（`:184`） | `intersect_plane_sphere(&pb, c, r)` | 同上（参数对调） |
+| `Sphere ∩ Sphere`（`:198`） | `intersect_sphere_sphere(c1,r1,c2,r2)` | `intana::quadric_quadric_sphere_sphere(&s1,&s2,1e-7)` |
+
+提取器改用 `crate::int_face_face::sphere_from_surface`（`int_face_face_helpers.rs:131` 的 re-export；注意模块路径是 `int_face_face::` 而非 `int_face_face_helpers::`，该文件经 `#[path]` 挂在 `int_face_face.rs:130`）。
+
+**验收实测**：
+
+```
+occt-topo --lib        -> 1281 passed / 0 failed
+step_obj_gates         -> 5 passed / 0 failed (389s)
+phase3/4/5/10/19/20    -> 4/9/7/8/5/5（与基线一致）
+```
+
+**步 4 剩余**：`intpatch_analytic.rs` 的 `intersect_plane_sphere` / `intersect_sphere_sphere` 已无生产消费者，
+只剩 `intpatch.rs:253/275/281/290/307/312` 六处**测试**调用；按设计文档「参考基线换源」把它们改到 `intana` 后即可删副本
+（注意：`intana` 对切点可能返回 `Point` 而非半径 0 的 `Circle`，需逐个核对再改断言）。
+`intersect_plane_cylinder` / `intersect_plane_cone` / `intersect_plane_torus` 的消费者是分派器其余 arm 与 `bop_curved/general_mesh.rs:172-178`。
+
+
+### 9.245 —— T-28 步 4 收口 4/5：删四个副本，全部消费者改接 intana（门禁全绿）
+
+**删除**（`intpatch_analytic.rs`）：`intersect_plane_sphere`、`intersect_sphere_sphere`、`intersect_plane_cylinder`、`intersect_plane_cone`。
+它们的全部消费者已改接 `intana` 并经 `ic_list_from_quadric` 适配：
+
+| 消费者 | 处置 | 小节 |
+|---|---|---|
+| `int_face_face_analytic.rs` 三条 arm | `conics_to_curves` + intana | §9.242 |
+| `intpatch.rs::surface_surface_intersection` 三条 arm | `ic_list_from_quadric` + intana | §9.244 |
+| `bop_curved/general_mesh.rs:167-188` | 改用 `cylinder_from_surface` + `quadric_quadric_plane_cylinder` | 本节 |
+
+**测试按「参考基线换源」订正**（设计文档 §T-28 授权），两处语义差异均已按 OCCT 修正：
+
+1. **相切**：`IntAna_QuadQuadGeo` 对 plane∩sphere 与 sphere∩sphere 的相切返回 `Point`，**不是**半径 0 的圆；
+   适配器对一个 `Point` 产出**无曲线**（与 `conics_to_curves` 的既有约定一致：调用方转 tracer）。
+   两处测试改为：先断言 intana 给出 `Point`（并校验切点坐标），再断言采样列表为空。
+2. **plane ∥ cylinder**：intana 给 **`TwoLines`**（两条母线），旧实现把两条的采样点拼成**一条** `IntersectionCurve`；
+   测试改为断言 2 条、且每条的点都落在 |y| = √0.75 上。
+
+其间还踩到一个 `gp_Cone` 约定：**顶点在 `location − (radius/tan(semi))·axis`**，
+所以测试里要把参考圆放在 `z = radius/tan(semi)` 才能让顶点落在原点（否则半径会差 `(radius/tan)·tan` 这一段）。
+
+**验收实测**：
+
+```
+occt-topo --lib        -> 1281 passed / 0 failed
+step_obj_gates         -> 5 passed / 0 failed (386s)
+phase3/4/5/10/19/20    -> 4/9/7/8/5/5（与基线一致）
+```
+
+**步 4 剩 1/5**：`intersect_plane_torus` —— intana 的对应件是 `quadric_quadric_plane_torus(pln, tor, tol)`，
+返回**另一种类型** `TorusIntersection`（`intana_torus.rs:80`，经 `intana/mod.rs:29` re-export），
+需要一个 `TorusIntersection → Vec<IntersectionCurve>` 适配器；其测试是 `intpatch.rs::plane_torus_two_circles`。
+
+
+### 9.246 —— T-28 步 4 完成：五个 closed form 副本全部删除（门禁全绿）
+
+**最后一个副本**：`intersect_plane_torus`。其 intana 对应件 `quadric_quadric_plane_torus(pln, tor, tol)` 返回的是
+**另一种类型** `TorusIntersection { Fail, Empty, Same, Circles(Vec<GpCirc>) }`（`intana_torus.rs:17-22`，经 `intana/mod.rs:29` re-export），
+故新增第二个适配器：
+
+```rust
+pub fn ic_list_from_torus(qi: TorusIntersection, a: &dyn Surface, b: &dyn Surface) -> Vec<IntersectionCurve>
+// Circles(cs) -> 每个圆 sample_curve_on(.., 32)（密度沿用被删实现）；其余变体 -> 空
+```
+
+其测试 `plane_torus_two_circles` 也按「参考基线换源」改到 `intana`（平面 y=0 含轴 → 两个 minor 圆）。
+
+**结果核实**：
+
+```
+grep -E 'fn intersect_plane_sphere|fn intersect_sphere_sphere|fn intersect_plane_cylinder|fn intersect_plane_cone|fn intersect_plane_torus' crates/occt-topo/src  ->  0 命中
+```
+
+即 `occt-topo` 里**不再有**这五个 closed form 的任何副本；唯一实现在 `crates/occt-geom/src/intana*` ✓（符合设计文档「方向 = 删 intpatch 版，统一到 IntAna」）。
+
+**验收实测**：
+
+```
+occt-topo --lib        -> 1281 passed / 0 failed
+step_obj_gates         -> 5 passed / 0 failed (393s)
+phase3/4/5/10/19/20    -> 4/9/7/8/5/5（与基线一致）
+```
+
+**步 5（最后一步）**：两个 surface×surface 分派器 ——
+`intpatch.rs:138 surface_surface_intersection`（无 `TopolTool`、返回 `SurfaceIntersection`、现为 `int_face_face.rs:448` 的回退）
+与 `intpatch_intersection.rs:41 PatchIntersection::perform`（需两个 `TopolTool`、产出 IntPatch 线；主路径 `int_face_face.rs:414` 的 `IntSS`）。
+两者签名与返回类型都不同，需要把回退路径并入后者，或让前者内部转调后者。
+
+
+### 9.247 —— T-28 步 5 的接线障碍（本轮试做后回退）
+
+**尝试**：把 `intpatch.rs:138` 的通用/tracer 回退（`intersect_general_surfaces`）改为走端口真正的单一入口 ——
+建 `TopolTool::from_surface(a/b)`，调 `PatchIntersection::perform(a,&d1,b,&d2,tol,tol)`，再把 `lines()` 采样成 `IntersectionCurve`。
+
+**结果：无法完成转换，已回退**（`--lib` 1281/0）：
+
+1. `PatchIntersection::lines()` 返回 `&[GeomIntLine]`（`intpatch_intersection.rs:24/138`），而**主路径**用的是
+   `crate::geom_int::IntSS` 的 `IntSSLine`（`geom_int_intss.rs:21`，`int_face_face.rs:428-439` 从它取 `curve/pcurve1/pcurve2`）——**两者不是同一类型**，`GeomIntLine` 没有 `curve` 字段 ✗。
+2. `IntSS::perform_loaded(tol, approx, approx1, approx2)` 需要三个近似参数，调用方传的是 `FaceFace` 的
+   `self.approx/approx1/approx2`（`int_face_face.rs:421`）；而 `surface_surface_intersection(a, b, tol)` 是**自由函数**，签名里既没有 `TopolTool` 域也没有这三个参数 ✗。
+
+⇒ 步 5 的「合并分派器」实际需要**先改 `surface_surface_intersection` 的签名**，并在两个调用点
+（`int_face_face.rs:448`、`bop_curved/general_mesh.rs:182`）把域与 approx 传进来 —— 是一次跨签名重构，
+不是文档设想的「让 `:138` 内部转调一次」那么小。建议单独排一轮做（届时验收仍按文档：BOP 三处调用点的 phase 套件 + 四道 STEP 门禁）。
+
+**当前树**：第 1–4 步的成果全部保留，`--lib` 1281/0、`step_obj_gates` 5/5、phase3/4/5/10/19/20 与基线一致。
+
+
+### 9.248 —— T-11 第 4 批（2 处）与「诊断假阳性」教训；T-28 步 5 的 API 障碍
+
+**T-11 第 4 批落地 2 处**（均经 `Select-String` 逐符号核对，确认真只在 import 行出现）：
+
+| 文件 | 删除 |
+|---|---|
+| `crates/occt-topo/src/tgeometry.rs:24` | `FaceGeomCore` |
+| `crates/occt-topo/src/shape_fix_compose_shell/wire_segment.rs:8` | `edge_vertices` |
+
+累计四批 **11 处**。验收：`occt-topo --lib` 1281/0、`cargo check --tests` 0 错误。
+
+**教训 ⑥（本条推进缓慢的真实原因）**：`cargo check --lib` 的 `unused_imports` 里有**相当一部分是假阳性** ——
+符号只被**同一个文件的 `#[cfg(test)]` 代码**使用，而 lib 目标不编译那段。删掉就炸 test 目标。本轮实测踩到三例：
+`bop_builder.rs` 的 `std::sync::Arc`、`GpAx3`、`GeomPlane`（各自删一次都立即报 `cannot find type ... in this scope`，均已回退）。
+⇒ **不能靠诊断裁剪**；必须逐符号在文件内（含 `#[cfg(test)]` 区）核对「只出现在 import 行」才能删。
+剩余约 60 条同类警告大多属此类假阳性，是净噪音而不是缺陷（因此 T-11 的剩余收益很低）。
+
+**T-28 步 5 的 API 障碍（本轮另做）**：端口真正的单一入口是 `crate::geom_int::IntSS`（内部即 `PatchIntersection`），但其
+`load()` 需要 `Arc<dyn Surface>`（`surface_surface_intersection` 只拿得到 `&dyn Surface`），`perform_loaded()` 又要三个 approx 参数，
+`lines()` 返回的 `IntSSLine` 与 `PatchIntersection::lines()` 的 `GeomIntLine` 也不是同一类型。
+⇒ 步 5 需要先改 `surface_surface_intersection` 的签名（6 个生产调用点 + 5 个测试），属跨签名重构（详见 §9.247）。
+
+
+### 9.249 —— T-11 waive（带证据）：11 处真实清理已完成，剩余为不可安全清除的假阳性
+
+**已完成的真实清理（四批共 11 处）**：`line.rs` GpAx1、`wire_fix.rs` GpDir、`bop_builder_planar_weld.rs` edges_of、
+`bop_split_seam.rs` ShapeIterator、`bop_builder_planar_geom.rs` BoolOp、`int_face_face.rs` DEFAULT_WINDOW、
+`geom2d_int/ginter.rs` GpPnt2d、`shape_fix_compose_shell/split_by_grid.rs` BRepTool、`split_by_grid`→`dispatch_wires.rs` Curve2d、
+`tgeometry.rs` FaceGeomCore、`shape_fix_compose_shell/wire_segment.rs` edge_vertices。每批后 `--lib` 1281/0、`check --tests` 0 错误。
+
+**为何 waive（剩余项不可安全清除）**：
+
+1. **假阳性占多数**：`cargo check --lib` 报的 `unused_imports` 中，符号往往只被**同文件的 `#[cfg(test)]`** 使用
+   （lib 目标不编译那段，但 test 目标需要它）。本轮实测三例：`bop_builder.rs` 的 `std::sync::Arc` / `GpAx3` / `GeomPlane` ——
+   逐个删除都会立即让 test 目标报 `cannot find type ... in this scope`，均已回退。
+2. **两类结构性陷阱**：`brep_gprop_full/gauss.rs` 的 `use super::*`（glob，删了会丢整片名字）；
+   `bopds.rs` 的 `shapes_of`（被别的文件经 `use super::*` 消费，本项目已两次踩中）。
+3. **两条自动化路径已实测失败**：`cargo fix --lib`（会删 cfg(test) 专用 import ⇒ 109 个错误）；
+   自行按 `--message-format json` 的 span 替换（span 不总是整条语句 ⇒ 产出 `pub use ;`、`{A, , C}` 之类语法错）。
+4. **「never used」408 条不在本卡范围**：那是删 API 面（保留给后续接线/对齐的实现），不是「清 import」。
+
+⇒ 人工逐符号是唯一安全路径，而剩余可清项已极少 ⇒ **T-11 置为 waived**（accept「无行为变化」由 11 处清理 + 每批全绿满足）。
+
+
+### 9.250 —— T-28 步 5：可编译版本实测到语义回归（B 样条×球 曲线离面），已回退
+
+**本轮把步 5 真正做出来了**（并解决了上一轮的类型障碍）：
+
+1. 转换件其实**现成**：`GeomIntLine::arc_type() -> IntPatchIType`（`geom_int_types.rs:193`）+
+   `geom_int::intss_make::gline_curve(typl, line) -> Option<Arc<dyn Curve>>`（`geom_int_intss_make.rs:103`）—— 只需把后者的模块与函数提到 `pub(crate)`；
+2. `intpatch.rs:138` 的通用回退改成：`TopolTool::from_surface(a/b)` → `intersection::PatchIntersection::perform(a,&d1,b,&d2,tol,tol)` →
+   `lines()` 经 `gline_curve` 转曲线 → `sample_curve_on` 采样 → `SurfaceIntersection::Curves`。
+
+**编译通过，但语义回归**（只有 1 个测试失败，恰好覆盖该路径）：
+
+```
+FAILED int_face_face::tests::general_bspline_sphere_uses_fallback
+src/int_face_face_tests.rs:442  near sphere: GpPnt(0.23698894, 0.68926194, 0.43886637)
+```
+
+该点到球心 `(0.5,0.5,0.5)` 的距离 ≈ **0.33**，而球半径是 **1.0** ⇒ 新路径给出的曲线**不在球面上**；
+原 `intersect_general_surfaces`（采样 tracer）的结果是正确的。⇒ 按门禁 3「失配即停」，**已整体回退**（`--lib` 1281/0）。
+
+**结论**：步 5 不是「接线」问题 —— 统一入口（`PatchIntersection`）**必须先能正确覆盖「一般 B 样条 × 球」这类 case**，
+否则不能替换 tracer。下一步应先查：该 case 在 `PatchIntersection` 下走了 ImpPrm/PrmPrm 的哪一支、为何给出离面曲线
+（或本应落到 tracer 分支而没落）。这也解释了设计文档把第 5 步排在最后（它依赖前面各步都真正等价）。
+
+
+### 9.251 —— T-28 结项：标题两项完成；步 5 经实测判为有害、不做
+
+**标题两项的完成情况**：
+
+| 标题项 | 步骤 | 证据 |
+|---|---|---|
+| ImpPrm 的 HVertex 合并 | 步 1–3 | `PathPoint.is_new/vertex_id`（`intpatch_impimp_sonb.rs:23-26`）、`TopolTool` 顶点表（`geom_int_topol.rs:59/111`）、`ComputeTangency` 的 `IsNew==false` 分支（`intpatch_impprm.rs:280/287/323/347/374`）、`TopTrans_CurveTransition` 专文件 `intpatch_curve_transition.rs`、`SetVertex` 绑定（`intpatch_impprm_ends.rs:287-294`） |
+| intana/intpatch 的 closed form 重叠合并 | 步 4 | 五个副本（plane/sphere、sphere/sphere、plane/cylinder、plane/cone、plane/torus）全部删除，全仓 grep 0 残留；消费者全部走 intana，经 `ic_list_from_quadric` / `ic_list_from_torus` 适配（§9.242–§9.246） |
+
+**设计文档第 5 步（合并两个 surface×surface 分派器）判为有害、不做**：
+可编译版本已实现（`TopolTool::from_surface` + `PatchIntersection::perform` + `gline_curve` 转换 + 采样，转换件现成），
+但 `general_bspline_sphere_uses_fallback` 立即失败 —— 新路径的曲线离球面约 0.67，而原 tracer 正确（§9.250）。
+按门禁 3「失配即停」回退 ⇒ **保留双分派器是当前唯一正确形态**；若日后重开，前提是先把 `PatchIntersection` 对
+「一般 B 样条 × 球」这类 case 的产出修正到与 tracer 等价。
+
+**验收实测（本轮，结项依据）**：
+
+```
+occt-topo --lib        -> 1281 passed / 0 failed
+step_obj_gates         -> 5 passed / 0 failed (400s)
+phase3/4/5/10/19/20    -> 4/9/7/8/5/5（与基线一致）
+```
+
+
+### 9.252 —— T-69 候选 (a)：端口自己就有 190 个面「bound 数 > wire 数」
+
+**探针扩展**：`ZZ_STEPFACE` 现在同时报 bound 数 —— `ADVANCED_FACE('', (bounds), surface, .T.)` 的第一个参数是名字（`''`），
+**bounds 在 `args[1]`**（第一版我错取了 `args[0]`，得到全 0），计数方式为该参数里的 `#` 个数。
+
+**T0M 实测**：
+
+```
+faces=1772   wires < bounds : 190   wires > bounds : 0
+STEPFACE id=28229 bounds=2 wires=1   （28232/28233/28234/28235/28236 同）
+STEPFACE id=29884 bounds=2 wires=2
+STEPFACE id=29885 bounds=2 wires=1
+```
+
+⇒ **端口自己就已经在 190 个面上产出的 wire 少于 bound 数**（而且从不多于）。
+这修正了此前「端口忠实于每 bound 一条 wire、差异全部来自 OCCT 丢弃 bound」的单向图景：
+，两端都在丢，端口侧的量级（190）与 GT 侧的 197 个 id 差相当。
+
+**下一步（有界、可直接动手）**：查 `resolve_face` 为何对 190 个面产出少于 bound 数的 wire。候选：
+
+1. 某个 bound 解析成**非 wire**（如 `VERTEX_LOOP` → 点/退化边）被跳过或并入；
+2. `make_face_from_surface` / `make_face` 把同 key 的 wire 合并；
+3. bounds 列表里**重复引用**同一个 loop。
+
+取 `id=28229` 做单面透视（对照其 STEP bounds/loops 的实际构成）即可定案。
+
+本轮无库语义改动（只扩了 env 门控的临时探针）；`--lib` 1281/0、门禁沿用 §9.251 的实测（5/5）。
+
+
+### 9.253 —— T-69：定位到「两个闭合单边 bound → 1 条 wire」的具体机制
+
+**单面透视 id=28229**（端口报 bounds=2 wires=1）：
+
+```
+#28229=ADVANCED_FACE('',(#2532,#2176),#1304,.T.)
+  #2532=FACE_OUTER_BOUND('',#4308,.T.)  loop #4308=EDGE_LOOP('',(#17632))  1 OE
+  #2176=FACE_BOUND('',#4309,.T.)        loop #4309=EDGE_LOOP('',(#17633))  1 OE
+  oe #17632 -> edge #13545 = EDGE_CURVE('',#10906,#10906,#9439,.T.)   <- v1==v2，闭合边
+  oe #17633 -> edge #13546 = EDGE_CURVE('',#10907,#10907,#9440,.T.)   <- v1==v2，闭合边
+```
+
+⇒ 两个 bound 是**两个独立的 1-OE loop**，各带一条**闭合边**；端口只产 1 条 wire。
+即「重复引用同一 loop」被排除，问题落在 `resolve_face`/`resolve_loop` 对**闭合单边 bound** 的处理。
+`id=29885` 同样是两个 1-OE loop（#6256→#17405、#6257→#17408，两条都是闭合边）而 ports=1 wire ✓ 同型。
+
+**已排除「探针假象」**：`wires_of_face`（`topo_tools_full.rs:103-109`）只是 `cumulated_children` 过滤出 wire、**不去重**，
+所以 190 这个数字是真实的端口行为，不是计数问题。
+
+**下一步（最后一个未查环节）**：在 `resolve_face` 里按 bound 打印「解析结果的形状类型 + 是否被跳过 / 是否与已有 wire 相同」，
+对 `id=28229` 这类面看**第二个闭合单边 bound** 究竟发生了什么：是 `VERTEX_LOOP` 走了别的分支？还是 `resolve_loop` 对闭合单边
+返回了与第一条相同的 wire（例如 shape_cache 以 edge id 为键命中）？还是 `make_face_from_surface` 合并了同 key 的 wire？
+
+本轮无库语义改动；`--lib` 1281/0。
+
+
+### 9.254 —— T-69：排除两处、把损失窗口缩到「bound 解析 ↔ add」之间
+
+**已排除**：
+
+| 环节 | 结论 |
+|---|---|
+| `wires_of_face`（`topo_tools_full.rs:103-109`） | 只用 `cumulated_children`（`iterator.rs:13-28`），该函数**返回全部 children、不去重** ⇒ §9.252 的 190 是**真实行为**，不是探针假象 |
+| `TopoBuilder::add`（`builder.rs:32-52`） | **不去重**：仅做 `compatible` 检查，然后 `add_child`；`make_face`（`builder.rs:173-180`）逐 wire 调 `add_wire` ⇒ 两个 wire 都该被加入 |
+
+⇒ 损失只能发生在两处之间：
+
+1. `resolve_shape(bound)` 对**第二个闭合单边 bound** 的解析 —— 是否返回了与第一条**同一个** `TopoShape`/tshape（例如某个按 tshape 缓存/命中的路径），或走了 `VERTEX_LOOP`/退化分支；
+2. `add` 里的 `if !shape.free() { return; }`（`builder.rs:35-37`）—— `add` 会 `sub.set_free(false)`（清的是**被加入者**的 free），若同一 wire 被第二次 `add` 就会被这行挡掉；
+   若第 1 步返回的是**同一个 wire 对象**，则第 2 步正好把它挡掉 ⇒ 两个现象自洽。
+
+**下一步（唯一动作）**：在 `resolve_face` 的 bound 循环里加 env 门控打点 —— 打印每个 bound 的 `s.shape_type()`、`Arc::as_ptr(&s.tshape)`，
+以及循环末尾的 `wires.len()` 与 `wires_of_face(&face.0).len()`，对 `id=28229` 一跑即可定案。
+
+本轮无库语义改动；`--lib` 1281/0。
+
+
+### 9.255 —— T-69：打点把丢 wire 的窗口收窄到 `resolve_face` 尾部
+
+**两处 env 门控打点**：
+
+1. bound 循环内：每个 bound 的 `shape_type` / `Arc::as_ptr(tshape)` / `free`；
+2. `make_face` **之后**：`bounds` / `wires_pushed` / `wires_on_face`。
+
+**T0M 全场对照**：
+
+```
+ZZBOUNDF（make_face 之后）  total=1772  wires < bounds = 0      <- 建面时永远相等
+STEPFACE（resolve_shape 里）total=1772  wires < bounds = 190    <- 之后少了
+ZZBOUNDF b0=2532  bounds=2 wires=2      vs   STEPFACE id=28229 bounds=2 wires=1
+```
+
+bound 循环自身的打点显示两个 bound 都是**不同的** wire 对象（指针不同）且 `free=true`，`wires_pushed=2` ⇒
+**§9.254 的「同一 wire 被 add 两次被 free 挡掉」假设被否证**，`make_face` 与 bound 解析都是正确的。
+
+⇒ 丢 wire 发生在 **`make_face` 之后、`resolve_face` 返回之前**（`resolve_shape` 的观察点已少 190 条）：
+即 `resolve_face` 尾部那段 ——（a）逐 wire 关联 pcurve 的循环（`read_topology.rs:689+`）、
+（b）`project_wire_pcurve_ranges`、（c）`check_pcurves_and_shift`。
+
+**下一步**：在这三段之间各插一个计数打点，二分定位是哪一步把 wire 去掉的。
+（另：`ZZBOUNDF` 已改用 `bounds[0]` 对齐面，避免沿用 `STEPFACE` 的 id 假设。）
+
+本轮无库语义改动（仅临时探针）；`--lib` 1281/0。
+
+
+### 9.256 —— T-69：窗口收窄到 `resolve_face` 尾部的 4 个调用；代码面无显式删除
+
+`resolve_face` 尾部（`read_topology.rs:703-745`）依次是：
+
+| 序 | 调用 | 签名要点 |
+|---|---|---|
+| (a) | `associate_edge_pcurve` 循环（`:719-724`） | `&self` + `&Edge` |
+| (b) | `xsalgo_check_pcurve` 循环（`:740-742`） | `&Edge, &Face, f64` |
+| (c) | `project_wire_pcurve_ranges`（`shhealing/pcurve_ranges.rs:60`） | `&Wire, &Face, f64` |
+| (d) | `check_pcurves_and_shift`（`shhealing/wire_fix.rs:3168`） | **`&mut Wire`**, `&Face`, f64, bool |
+
+**读代码的结论**：这 4 个调用**没有任何显式删 wire** —— `wires` 是局部 `Vec`、`make_face`（`:697`）之后没有代码再动 face 的 children。
+⇒ 机制比预期隐蔽：(d) 收 `&mut Wire` 且可按需修 pcurve，最可疑；也可能是某 helper 经 registry/重建路径改了面，
+或 wire 被替换成**与另一条共享 tshape** 的实例而被后续去重。
+
+**下一步（一次实测即可定案）**：在 (a)(b)(c) **之后**与 (d) **之后**各插一个 `wires_of_face(&face.0).len()` 打点，
+对 T0M 跑一次，看计数在**哪一步**从 2 变 1；若仍不变，则说明丢的不是 face 的 children，而要看 `resolve_shape` 的返回值路径。
+
+本轮无库语义改动（仅临时探针）；`--lib` 1281/0。
+
+
+### 9.257 —— 重要更正：撤回「端口自己丢 190 条 wire」；resolve_face 经二分证明是干净的
+
+**二分打点**（`ZZBIS`，带 `b0=bounds[0]` 便于定位面）：在 `resolve_face` 尾部 4 个调用之间各插一次计数 ——
+`S`（循环前）、`A`（associate 之后）、`B`（xsalgo_check_pcurve 之后）、`C`（project_wire_pcurve_ranges 之后）、`D`（check_pcurves_and_shift 之后）。
+
+**T0M 实测（b0=2532，即文件 `#28229`）**：
+
+```
+ZZBIS S b0=2532 wires=2
+ZZBIS A b0=2532 wires=2
+ZZBIS B b0=2532 wires=2
+ZZBIS C b0=2532 wires=2
+ZZBIS D b0=2532 wires=2      （第二圈 bound 同样一路 2）
+```
+
+⇒ **`resolve_face` 从头到尾都不丢 wire**；且 `ZZBOUNDF`（每 `resolve_face` 一次）全场统计也是 **`wires < bounds = 0`**。
+
+**与 `STEPFACE` 的冲突**：`STEPFACE`（在 `resolve_shape` 里按 `id` 打印）报 `wires < bounds = 190`。
+两者对**同一批 `resolve_face` 调用**给出互斥结果 ⇒ **问题在 `STEPFACE` 那条链路**：
+要么端口 `resolve_shape` 的 `id` **不等于**文件的 `#N`（我此前一直这么假设），要么打印时命中了 `shape_cache` 里的旧形状。
+
+**据此撤回前几轮的论断**（STEP 侧对文件 `#28229`/`#29885` 的实体事实仍然成立，结论不成立的是「端口丢 wire」这一因果）：
+
+- §9.252「端口自己在 190 个面上丢 wire」——**撤回**；
+- §9.253（同型机制）、§9.254（同一 wire 被 add 两次）、§9.255（窗口在 make_face 之后）、§9.256（窗口=4 个调用）——**随之撤回**。
+
+**下一步**：先核实端口 `resolve_shape` 的 `id` 与文件 `#N` 的对应关系（打印 `id` 与 `bounds[0]` 的联表），
+再在此基础上重做与 GT 的 id 级配对（§9.232 的 197 也需按同一前提复查）。
+
+本轮无库语义改动（仅临时探针）；`--lib` 1281/0。
+
+
+### 9.258 —— T-69：id 对应成立；矛盾定位为「同一 id 的两个观察点互斥」
+
+**给 `STEPFACE` 加了 `b0`（`args[1]` 里第一个 `#N`）** —— 这是核实 id 归属的关键：
+
+```
+STEPFACE id=28229 b0=2532 bounds=2 wires=1
+STEPFACE id=29884 b0=4187 bounds=2 wires=2
+（b0==id 的计数为 0，符合预期：b0 是 bound 的 id，不是面的 id）
+```
+
+文件侧：`#28229=ADVANCED_FACE('',(#2532,#2176),#1304,.T.)` ⇒ **`id=28229` 的 b0 正是 #2532** ⇒ **端口的 `resolve_shape` id 与文件 `#N` 一致** ✓
+（因此 §9.257「id 可能不对应」这一撤回理由不成立，需要修正为「两个观察点自身矛盾」）。
+
+**矛盾依旧**：
+
+| 观察点 | 位置 | b0=2532 面的 wire 数 |
+|---|---|---|
+| `ZZBIS`（S/A/B/C/D） | `resolve_face` 尾部各处 | **2**（全程） |
+| `ZZBOUNDF` | `resolve_face` 的 `make_face` 之后 | **2** |
+| `STEPFACE` | `resolve_shape` 的返回处 | **1** |
+
+**⇒ 下一步（一次判定）**：在 `resolve_face` 返回处与 `resolve_shape` 打印处各输出 `Arc::as_ptr(&face.0.tshape)` / `Arc::as_ptr(&s.tshape)`，
+看这两处是否**同一个 tshape**。若不同，则说明该 id 还有**另一条产面路径**或缓存命中（那条路径只产出 1 条 wire）；若相同，则说明 `wires_of_face` 在两个时点的输入不同（例如 location/orientation 组合影响 `cumulated_children`）。
+
+本轮无库语义改动（仅临时探针）；`--lib` 1281/0。
+
+
+### 9.259 —— T-69：判定为「两条产生路径」——同 id 两个不同 tshape
+
+**tshape 指针比对**（给 `ZZBIS` 与 `STEPFACE` 都加了 `ptr=`）：
+
+```
+ZZBIS D  b0=2532 wires=2 ptr=21fdcedfdb0     <- resolve_face 刚建的面
+ZZBIS S  b0=2532 wires=2 ptr=21fdcedfdb0     <- 同一对象（循环前）
+STEPFACE id=28229 b0=2532 bounds=2 wires=1 ptr=21fdce8cf10   <- resolve_shape 返回的却是另一个对象
+```
+
+⇒ **同一个 id 对应两个不同的 `tshape`**：`resolve_shape(28229)` 返回的不是 `resolve_face` 刚建的（2 条 wire），
+而是**另一条路径写入 `shape_cache` 的条目**（只带 1 条 wire）。
+
+这解释了此前所有看似矛盾的观测：`resolve_face` 内部（`ZZBOUNDF`/`ZZBIS`）永远 `wires == bounds`，
+而 `resolve_shape` 的返回处有 190 个面少一条 wire —— 因为它们**根本没走 `resolve_face` 的这条结果**。
+
+**下一步（有界）**：grep 全部 `shape_cache` 的**写入点**，找出除 `resolve_shape` 尾部之外谁还会为该 id 插入形状。
+候选：`resolve_shell`/`resolve_solid` 顺带缓存子面；bound/loop 解析时误用同一 id；
+或历史上一次失败的解析把中间结果也缓存了。定位后即可判断该缓存条目是否本就不该存在：
+若不该 ⇒ 删掉该写入点即修复；若该存在 ⇒ 说明 `resolve_face` 的这条路径根本没被用到。
+
+本轮无库语义改动（仅临时探针）；`--lib` 1281/0。
+
+
+### 9.260 —— T-69：shape_cache 只有一个写入点 ⇒ 「另一条路径写缓存」被否证；指向 resolve_face 非幂等
+
+**全文件 `shape_cache` 引用（8 处）**：
+
+```
+:229  shape_cache: RefCell::new(HashMap::new())     <- 初始化
+:255  if let Some(s) = self.shape_cache...get(&id) <- 唯一的读（命中即返回）
+:320  self.shape_cache.borrow_mut().insert(id, s.clone())   <- **唯一的写**
+:504  文档注释
+:522/:523/:576/:578  contains_key(...)              <- 都是判断，不写
+```
+
+⇒ 「另一条路径把该 id 的形状写进缓存」（§9.259 的假设）**也被否证**。
+既然两个不同 `tshape` 都出自 `resolve_face`（唯二的产面处），那只能是**对同一 id 调用了两次 `resolve_face`**（每次新建一个面）——
+即 **`resolve_face` 对同一 id 不是幂等的**：第一次得 2 条 wire，第二次只得 1 条。
+
+**为什么值得注意**：这解释了「`resolve_face` 内部永远 `wires == bounds`」与「`resolve_shape` 返回处 190 个面少一条」为何能并存 ——
+探针（`ZZBOUNDF`/`ZZBIS`）看到的是**第一次**调用，而返回给上层的是**第二次**的结果。
+
+**下一步（决定性、有界）**：在 `resolve_face` 里加「调用序号 + 该次 `bounds`/`wires` 结果」打点（静态 `AtomicUsize` 计数），
+对 id=28229 对比第一次与第二次调用的差异，找出第二次为何少一条 wire。
+最可能是：第二次复用了 cached 子形状，使某个 bound 的解析走进与第一次不同的分支
+（注意 §9.254 曾查过 `add` 里的 `if !shape.free() { return; }`，但当时只验证了**单次调用内**的 bound 解析）。
+
+本轮无库语义改动（仅 grep + 记录）；`--lib` 1281/0。
+
+
+### 9.261 —— T-69：resolve_face 对 b0=2532 只调用一次 ⇒ 需把 id 串进去才能对联
+
+**加静态调用序号后的实测**：
+
+```
+ZZBIS D call=0 b0=2532 wires=2 ptr=290c05f93a0
+ZZBIS D call=0 b0=2532 wires=2 ptr=290c05f93a0    <- 同属 call=0（一次调用内的两条 wire 循环）
+```
+
+⇒ `b0=2532` 的 `resolve_face` **只被调用一次**，且该次结果稳定为 2 条 wire。
+叠加 §9.260（`shape_cache` 唯一写入点在 `resolve_shape` 尾部），逻辑上 `resolve_shape(28229)` 拿到的就该是这次 2-wire 的面 ——
+但 `STEPFACE` 打印的是**另一个 tshape** 且只有 1 条 wire。
+
+⇒ 唯一剩下的解释：那条 `STEPFACE id=28229 b0=2532` 属于**另一个记录**（其首 bound 恰好也是 `#2532`，或该 id 经别的入口被解析）。
+
+**下一步（一次即定案）**：把 `id` 串进 `resolve_face` —— 在 `resolve_shape` 调 `resolve_face` 之前把当前 `id` 存进一个 `RefCell<usize>`，
+打点时一并输出 `id`，即可把 `ZZBIS` 与 `STEPFACE` 两串按 `id` 对联，直接看出这些 1-wire 的条目到底是哪些记录。
+
+**本轮小结（T-69 的排查链）**：§9.252-256 的「端口丢 wire」已被 §9.257-261 逐层否证/收窄 ——
+确定的事实是：`resolve_face` 内部 `wires == bounds` 恒成立（全场 0 例外），问题只在「某个观察点拿到的是另一个对象」。
+
+本轮无库语义改动（仅临时探针）；`--lib` 1281/0。
+
+
+### 9.262 —— T-69：矛盾隔离到 `resolve_shape` 的返回/缓存一环（下一步需模块级 static）
+
+**已确立的三条硬事实**：
+
+1. `resolve_face`（首 bound `#2532`）全场**只调用一次**，且稳定产出 2-wire 面（`ptr=...f93a0`，§9.261）；
+2. 文件 `#28229` 的 bounds 恰是 `(#2532,#2176)`（STEP 实体解析，§9.253）；
+3. `shape_cache` **唯一写入点**在 `resolve_shape` 尾部（`read_topology.rs:320`，§9.260）。
+
+**与观测的冲突**：`STEPFACE id=28229` 打印的是**另一个 `tshape`**（`ptr=...cf10`）且只有 **1** 条 wire。
+
+⇒ 唯一未排除的可能落在 `resolve_shape` 的**空节**上：`read_topology.rs:255` 的**缓存命中路径**
+（该 id 的条目究竟何时、由谁写入，需与 `:320` 的调用序对齐），或 `resolving` 环路短路的返回。
+
+**下一步（一次即定案）**：在 `read_topology.rs` **模块作用域**加 `static ZZ_CUR_ID: AtomicUsize`；
+`resolve_shape` 进入 match 前 `store(id)`，`resolve_face` 打点时一并输出 `id` —— 即可把
+`ZZBIS`/`ZZBOUNDF`（resolve_face 内）与 `STEPFACE`（resolve_shape 返回处）三串**按 id 对联**，
+直接看清这些 1-wire 条目对应的到底是哪些 `resolve_shape` 调用与缓存条目。
+
+**本轮说明**：预算已接近上限，为避免留下半成品，本轮只做矛盾隔离与下一步的精确设计，未再开新的多编辑实验。
+当前树无库语义改动；`--lib` 1281/0（上一轮实测）。
+
+
+### 9.263 —— T-69：id 串接打点被证伪（静态会被嵌套调用覆盖）；正解是参数化
+
+**做法**：在 `read_topology.rs` 模块作用域加 `static ZZ_CUR_ID: AtomicUsize`，`resolve_shape` 进 match 前 `store(id)`，
+`resolve_face` 打点时一并输出。
+
+**实测（证伪）**：
+
+```
+ZZBIS S call=0 id=13546 b0=2532 wires=2 ptr=213e91f0900
+```
+
+`#13546` 正是该面那条**闭合边**的 id（§9.253 解析所得）⇒ 说明**嵌套的 `resolve_shape(13546)` 先写入了静态**，
+外层 `resolve_face` 打点时读到的已是内层的 id ⇒ **模块级静态无法表达「当前外层实体」**，该打点方法不可用。
+
+**正确做法（下一步第一件事）**：把 `id` 作为**参数**传进 `resolve_face`（`resolve_face(&self, id: usize, rec)`）；
+调用点唯一（`resolve_shape` 的 `ADVANCED_FACE` 分支），改动极小。完成后即可把 `ZZBIS`/`ZZBOUNDF` 与 `STEPFACE` 按 id 对联，
+回答「这些 1-wire 条目从哪来」（候选仍是 `resolve_shape:255` 的缓存命中路径或 `resolving` 短路）。
+
+**不受影响的事实**：§9.253/§9.258 的 **STEP 侧实体事实**（`#28229` 的 bounds/loops/闭合边、`id` 与 `b0` 的对应）仍然成立。
+
+本轮无库语义改动（探针本身 env 门控）；构建通过、`--lib` 1281/0。
+
+
+### 9.264 —— T-69：对联做成，矛盾来源是「两个 Resolver 实例」
+
+**参数化 id 后对联（`resolve_face(&self, id, rec)`）**：
+
+```
+ZZBIS S call=0 id=28229 b0=2532 wires=2 ptr=217b82f93a0     <- resolve_face(28229) 只调用一次，稳定 2 条 wire
+（全场 ZZBIS S 行中 wires=1 的 1463 条，都是本就单 bound 的面）
+```
+
+⇒ 同一实例内 `resolve_face` 完全干净。
+
+**真正的来源**：`Resolver::new` 在 `read_geometry.rs` 有**两处**：
+
+| 位置 | 入口 |
+|---|---|
+| `read_geometry.rs:1012` | `read_step_impl`（主读取，`read_step_file`） |
+| `read_geometry.rs:1089` | `read_step_assembly`（装配读取） |
+
+两者**各自 `parse_records` + `Resolver::new`** ⇒ **各自一份 `shape_cache`**。
+⇒ 我此前把「`resolve_shape` 的返回处」与「`resolve_face` 的打点处」当作同一条流比较，实际可能是**两个实例**，
+因此「同一 id 两个 `tshape`、wire 数不同」是**跨实例比较**，而不是同一实例内的不一致。
+
+**下一步**：把探针输出**按实例打标**（给每个 `Resolver` 一个自增实例号，或把两处入口分开跑），
+确认这 190 是否只来自其中一个实例；若是，问题即收敛为「装配读取那条路径的面结构」，范围立刻缩小一半。
+
+**不受影响的事实**：§9.253/§9.258 的 STEP 侧实体事实仍成立；§9.252 的「190」作为**观察值**也仍成立（只是归属待定）。
+
+本轮无库语义改动（探针 env 门控）；构建通过、`--lib` 1281/0。
+
+
+### 9.265 —— T-69：取证线收束（「两实例」也被否证；该观察值需先独立复核）
+
+**本轮否证**：
+
+- `read_step_assembly`（`read_geometry.rs:1086`，会 `Resolver::new`）**不在** `read_step_file` 路径上 —— 只被 `read_step_assembly_file`（`:1228`）与测试调用；
+- `read_step`（`:1063`）只调用 `read_step_impl` **一次**（`:1064`）；另一处 `:1070` 是独立 API `read_step_with_warnings`，本 run 不走。
+
+⇒ **本 run 全程只有一个 `Resolver` 实例** ⇒ §9.264 的「跨实例比较」解释也被否证。
+
+**已穿过全部假设的矛盾**：
+
+| 假设 | 小节 | 结果 |
+|---|---|---|
+| like-seam 失败分支导致跳 bound | §9.233 | 否证（T0M 计数逐字节不变） |
+| `add` 的 `!free` 挡掉第二条 wire | §9.254 | 否证（两 wire 指针不同、free=true、wires_pushed=2） |
+| `shape_cache` 另有写入点 | §9.260 | 否证（全文件唯一 insert 在 `:320`） |
+| 同一 id 两次 `resolve_face` | §9.261 | 否证（call 序号显示仅一次） |
+| 模块级静态串 id | §9.263 | 否证（被嵌套调用覆盖） |
+| 两个 `Resolver` 实例 | §9.264/§9.265 | 否证（本 run 只有一个实例） |
+
+而实测事实是：**同一次 `resolve_face(28229)` 稳定产出 2-wire 面（`ptr=...f93a0`）**，
+而 `resolve_shape` 的 `STEPFACE` 打点对同一 id 报 **1 条 wire、`ptr=...cf10`**。
+
+**结论与下一步**：这条 1-wire 观察值**本身需要先被独立复核** —— 例如换一条完全独立的取面路径
+（从 `BRepModel` 的最终 faces 列表按 bbox/形状键取 `#28229` 对应的面，**绕开 `resolve_shape` 的探针**），
+确认它是否只是探针在某处的取值偏差。**在复核之前不应基于它下任何结论。**
+
+本轮无库语义改动；构建通过、`--lib` 1281/0。
 

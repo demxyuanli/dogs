@@ -11,6 +11,14 @@
 #include <Interface_Static.hxx>
 #include <ShapeProcess.hxx>
 #include <ShapeFix_Face.hxx>
+#include <ShapeFix_Edge.hxx>
+#include <ShapeExtend.hxx>
+#include <ShapeAnalysis_Wire.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Iterator.hxx>
+#include <ShapeFix_Wire.hxx>
+#include <ShapeExtend_WireData.hxx>
+#include <ShapeAnalysis_Surface.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <ShapeBuild_ReShape.hxx>
 #include <ShapeFix.hxx>
@@ -27,6 +35,13 @@
 #include <iostream>
 #include <map>
 #include <cmath>
+
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <TopExp.hxx>
+#include <BRep_Tool.hxx>
+#include <gp_Pnt.hxx>
 
 int main(int argc, char** argv)
 {
@@ -204,6 +219,335 @@ int main(int argc, char** argv)
   }
 
   // "emul <faceIndex> [noop]": emulate ShapeFix_Shape::Perform step by step.
+  // "cne <faceIndex> [noop]": add CheckPCurve pcurves, then report every
+  // ShapeAnalysis_Wire::CheckNotchedEdges((i, shortNum, param, tol)) hit.
+  if (argc > 3 && std::string(argv[2]) == "cne")
+  {
+    const int idx = std::atoi(argv[3]);
+    TopExp_Explorer ex(aShape, TopAbs_FACE);
+    int k = 0;
+    for (; ex.More(); ex.Next(), ++k)
+    {
+      if (k != idx) continue;
+      TopoDS_Face F = TopoDS::Face(ex.Current());
+      for (TopExp_Explorer we(F, TopAbs_WIRE); we.More(); we.Next())
+        for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next())
+        {
+          TopoDS_Edge E = TopoDS::Edge(ee.Current());
+          XSAlgo_ShapeProcessor::CheckPCurve(E, F, 1e-7, BRep_Tool::IsClosed(E, F));
+        }
+      for (TopExp_Explorer we(F, TopAbs_WIRE); we.More(); we.Next())
+      {
+        {
+          TopoDS_Wire wire = TopoDS::Wire(we.Current());
+          ShapeFix_Wire sfw;
+          sfw.Load(wire);
+          sfw.SetFace(F, new ShapeAnalysis_Surface(BRep_Tool::Surface(F)));
+          sfw.SetPrecision(1e-7);
+          sfw.FixLackingMode() = false;
+          sfw.FixSelfIntersectionMode() = false;
+          sfw.FixReorder();
+          sfw.FixSmall(false, 1e-7);
+          sfw.FixConnected();
+          sfw.FixEdgeCurves();
+          sfw.FixDegenerated();
+          occ::handle<ShapeExtend_WireData> wd2 = sfw.WireData();
+          ShapeAnalysis_Wire sw2;
+          sw2.Load(wd2);
+          sw2.SetFace(F, new ShapeAnalysis_Surface(BRep_Tool::Surface(F)));
+          sw2.SetPrecision(1e-7);
+          for (int i = 1; i <= wd2->NbEdges(); ++i)
+          {
+            int sn = 0; double pr = 0.;
+            if (sw2.CheckNotchedEdges(i, sn, pr, 1e-7))
+            {
+              int j1 = (i > 1) ? i - 1 : wd2->NbEdges();
+              TopoDS_Edge ea = wd2->Edge(j1), eb = wd2->Edge(i);
+              std::cout << "CNE2 ori nb=" << wd2->NbEdges() << " i=" << i << " shortNum=" << sn << " param=" << pr
+                        << " ori1=" << (int)ea.Orientation() << " ori2=" << (int)eb.Orientation() << "\n";
+            }
+          }
+        }
+        occ::handle<ShapeExtend_WireData> wd = new ShapeExtend_WireData(TopoDS::Wire(we.Current()));
+        ShapeAnalysis_Wire saw;
+        saw.Load(wd);
+        saw.SetFace(F, new ShapeAnalysis_Surface(BRep_Tool::Surface(F)));
+        saw.SetPrecision(1e-7);
+        const int nb = wd->NbEdges();
+        int hits = 0;
+        for (int i = 1; i <= nb; ++i)
+        {
+          int shortNum = 0; double param = 0.;
+          bool ok = saw.CheckNotchedEdges(i, shortNum, param, 1e-7);
+          if (ok) { ++hits; std::cout << "CNE nb=" << nb << " i=" << i << " shortNum=" << shortNum << " param=" << param << "\n"; }
+        }
+        std::cout << "CNE wire nb=" << nb << " hits=" << hits << "\n";
+      }
+      break;
+    }
+    return 0;
+  }
+
+  // "pcu <faceIndex> [noop]": on the raw face, add a pcurve to every edge via
+  // ShapeFix_Edge::FixAddPCurve, then report FixMissingSeam / Perform outcomes.
+  if (argc > 2 && std::string(argv[2]) == "flist")
+  {
+    TopExp_Explorer ex(aShape, TopAbs_FACE);
+    int k = 0;
+    for (; ex.More(); ex.Next(), ++k)
+    {
+      Bnd_Box b; BRepBndLib::Add(ex.Current(), b);
+      if (b.IsVoid()) { std::cout << "FLIST " << k << " void\n"; continue; }
+      double x1, y1, z1, x2, y2, z2; b.Get(x1, y1, z1, x2, y2, z2);
+      int nw = 0;
+      for (TopExp_Explorer cw(ex.Current(), TopAbs_WIRE); cw.More(); cw.Next()) ++nw;
+      std::cout << "FLIST " << k << " wires=" << nw << " bbox " << x1 << " " << y1 << " " << z1
+                << " .. " << x2 << " " << y2 << " " << z2 << "\n";
+    }
+    return 0;
+  }
+
+  if (argc > 2 && std::string(argv[2]) == "fcount")
+  {
+    TopExp_Explorer ex(aShape, TopAbs_FACE);
+    int k = 0, hits = 0;
+    for (; ex.More(); ex.Next(), ++k)
+    {
+      Bnd_Box b; BRepBndLib::Add(ex.Current(), b);
+      if (b.IsVoid()) continue;
+      double x1, y1, z1, x2, y2, z2; b.Get(x1, y1, z1, x2, y2, z2);
+      if (!(std::abs(x1 + 87.5) < 1.0 && std::abs(x2 - 87.5) < 1.0 && std::abs(z1 + 100.0) < 1.0
+            && std::abs(z2 + 32.0) < 1.0))
+        continue;
+      int nw = 0;
+      for (TopExp_Explorer cw(ex.Current(), TopAbs_WIRE); cw.More(); cw.Next()) ++nw;
+      std::cout << "FCOUNT face=" << k << " wires=" << nw << " bbox " << x1 << " " << y1 << " " << z1
+                << " .. " << x2 << " " << y2 << " " << z2 << "\n";
+      ++hits;
+    }
+    std::cout << "FCOUNT hits=" << hits << " of " << k << "\n";
+    return 0;
+  }
+
+  if (argc > 3 && std::string(argv[2]) == "fdump")
+  {
+    const int idx = std::atoi(argv[3]);
+    TopExp_Explorer ex(aShape, TopAbs_FACE);
+    int k = 0;
+    for (; ex.More(); ex.Next(), ++k)
+    {
+      TopoDS_Face F = TopoDS::Face(ex.Current());
+      Bnd_Box b; BRepBndLib::Add(F, b);
+      double x1, y1, z1, x2, y2, z2; b.Get(x1, y1, z1, x2, y2, z2);
+      const bool byBox = (idx < 0) && !b.IsVoid() && std::abs(x1 + 87.5) < 1.0
+                         && std::abs(x2 - 87.5) < 1.0 && std::abs(z1 + 100.0) < 1.0
+                         && std::abs(z2 + 32.0) < 1.0;
+      if (k != idx && !byBox) continue;
+      std::cout << "FDUMP face=" << k << " bbox " << x1 << " " << y1 << " " << z1 << " .. " << x2 << " " << y2 << " " << z2 << "\n";
+      int wi = 0;
+      for (TopExp_Explorer we(F, TopAbs_WIRE); we.More(); we.Next(), ++wi)
+      {
+        const TopoDS_Shape& W = we.Current();
+        int ntot = 0;
+        for (TopExp_Explorer ce(W, TopAbs_EDGE); ce.More(); ce.Next()) ++ntot;
+        std::cout << "FDUMP  wire[" << wi << "] ori=" << (int)W.Orientation() << " nEdges=" << ntot << "\n";
+        int ei = 0;
+        for (TopExp_Explorer ee(W, TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+        {
+          TopoDS_Edge E = TopoDS::Edge(ee.Current());
+          TopoDS_Vertex vf = TopExp::FirstVertex(E, Standard_True);
+          TopoDS_Vertex vl = TopExp::LastVertex(E, Standard_True);
+          gp_Pnt pf = BRep_Tool::Pnt(vf), pl = BRep_Tool::Pnt(vl);
+          if (ei < 40)
+            std::cout << "FDUMP   e[" << ei << "] ori=" << (int)E.Orientation()
+                      << " first=" << (void*)vf.TShape().get() << "(" << pf.X() << "," << pf.Y() << "," << pf.Z() << ")"
+                      << " last=" << (void*)vl.TShape().get() << "(" << pl.X() << "," << pl.Y() << "," << pl.Z() << ")"
+                      << " deg=" << BRep_Tool::Degenerated(E)
+                      << " closed=" << BRep_Tool::IsClosed(E)
+                      << " ctype=" << (int)BRepAdaptor_Curve(E).GetType() << "\n";
+        }
+      }
+      return 0;
+    }
+    std::cout << "FDUMP no such face\n";
+    return 0;
+  }
+
+  if (argc > 2 && std::string(argv[2]) == "findf")
+  {
+    TopExp_Explorer ex(aShape, TopAbs_FACE);
+    int k = 0;
+    for (; ex.More(); ex.Next(), ++k)
+    {
+      Bnd_Box b;
+      BRepBndLib::Add(ex.Current(), b);
+      if (b.IsVoid()) continue;
+      double x1, y1, z1, x2, y2, z2;
+      b.Get(x1, y1, z1, x2, y2, z2);
+      if (std::abs(x1 + 87.5) < 1.0 && std::abs(x2 - 87.5) < 1.0 && std::abs(z1 + 100.0) < 1.0
+          && std::abs(z2 + 32.0) < 1.0)
+        std::cout << "FACEMATCH k=" << k << " bbox " << x1 << " " << y1 << " " << z1 << " .. " << x2
+                  << " " << y2 << " " << z2 << "\n";
+    }
+    std::cout << "FACEMATCH total=" << k << "\n";
+    return 0;
+  }
+
+  if (argc > 3 && std::string(argv[2]) == "pcu")
+  {
+    const int idx = std::atoi(argv[3]);
+    TopExp_Explorer ex(aShape, TopAbs_FACE);
+    int k = 0;
+    auto cntw = [](const TopoDS_Shape& s) {
+      int w = 0;
+      if (!s.IsNull())
+        for (TopExp_Explorer e(s, TopAbs_WIRE); e.More(); e.Next()) ++w;
+      return w;
+    };
+    auto cntf = [](const TopoDS_Shape& s) {
+      int f = 0;
+      if (!s.IsNull())
+        for (TopExp_Explorer e(s, TopAbs_FACE); e.More(); e.Next()) ++f;
+      return f;
+    };
+    for (; ex.More(); ex.Next(), ++k)
+    {
+      if (k != idx) continue;
+      TopoDS_Face F = TopoDS::Face(ex.Current());
+      std::cout << "PCU in faces=" << cntf(F) << " wires=" << cntw(F) << "\n";
+      for (TopExp_Explorer we(F, TopAbs_WIRE); we.More(); we.Next())
+      {
+        for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next())
+        {
+          TopoDS_Edge E = TopoDS::Edge(ee.Current());
+          XSAlgo_ShapeProcessor::CheckPCurve(E, F, 1e-7, BRep_Tool::IsClosed(E, F));
+        }
+      }
+      {
+        ShapeFix_Face m;
+        m.Init(F);
+        bool r = m.FixMissingSeam();
+        std::cout << "PCU miss ret=" << r << " faces=" << cntf(m.Result()) << " wires=" << cntw(m.Result()) << "\n";
+      }
+      {
+        ShapeFix_Face p;
+        p.Init(F);
+        p.FixWireTool()->ModifyTopologyMode() = true;
+        bool r = p.Perform();
+        std::cout << "PCU perf(topo) ret=" << r << " faces=" << cntf(p.Result()) << " wires=" << cntw(p.Result()) << "\n";
+      }
+      {
+        ShapeFix_Face p;
+        p.Init(F);
+        p.SetContext(new ShapeBuild_ReShape);
+        bool r = p.Perform();
+        std::cout << "PCU perf(ctx) ret=" << r << " faces=" << cntf(p.Result()) << " wires=" << cntw(p.Result()) << "\n";
+      }
+      {
+        ShapeFix_Face p;
+        p.Init(F);
+        p.SetContext(new ShapeBuild_ReShape);
+        p.FixWireTool()->ModifyTopologyMode() = true;
+        bool r = p.Perform();
+        std::cout << "PCU perf(ctx+topo) ret=" << r << " faces=" << cntf(p.Result()) << " wires=" << cntw(p.Result()) << "\n";
+      }
+      {
+        ShapeFix_Shape s;
+        s.Init(F);
+        bool r = s.Perform();
+        TopoDS_Shape res = s.Shape();
+        std::cout << "PCU shape ret=" << r << " faces=" << cntf(res) << " wires=" << cntw(res) << "\n";
+      }
+      {
+        // Same as PCU2 but the wire tool gets a NULL context.
+        occ::handle<ShapeBuild_ReShape> nullctx;
+        TopoDS_Shape S = F;
+        TopoDS_Shape emptyCopied = S.EmptyCopied();
+        TopoDS_Face tmpFace = TopoDS::Face(emptyCopied);
+        tmpFace.Orientation(TopAbs_FORWARD);
+        int k3 = 0;
+        BRep_Builder B3;
+        for (TopoDS_Iterator it(S, false); it.More(); it.Next(), ++k3)
+        {
+          if (it.Value().ShapeType() != TopAbs_WIRE) { B3.Add(tmpFace, it.Value()); continue; }
+          TopoDS_Wire wire = TopoDS::Wire(it.Value());
+          ShapeFix_Wire sfw;
+          sfw.SetContext(nullctx);
+          sfw.Load(wire);
+          sfw.SetFace(F, new ShapeAnalysis_Surface(BRep_Tool::Surface(F)));
+          int n0 = sfw.NbEdges();
+          sfw.FixLackingMode() = false;
+          sfw.FixSelfIntersectionMode() = false;
+          sfw.Perform();
+          std::cout << "PCU3 wire[" << k3 << "] n0=" << n0 << " n1=" << sfw.NbEdges()
+                    << " notch=" << sfw.StatusNotches(ShapeExtend_DONE) << " ec=" << sfw.StatusEdgeCurves(ShapeExtend_DONE) << "\n";
+          B3.Add(tmpFace, sfw.Wire());
+        }
+      }
+      {
+        // Emulate ShapeFix_Face::Perform cxx:377-455 with a Context.
+        occ::handle<ShapeBuild_ReShape> ctx = new ShapeBuild_ReShape;
+        TopoDS_Shape S = ctx->Apply(F);
+        TopoDS_Shape emptyCopied = S.EmptyCopied();
+        TopoDS_Face tmpFace = TopoDS::Face(emptyCopied);
+        tmpFace.Orientation(TopAbs_FORWARD);
+        bool fixed = false;
+        int k2 = 0;
+        BRep_Builder B;
+        for (TopoDS_Iterator it(S, false); it.More(); it.Next(), ++k2)
+        {
+          if (it.Value().ShapeType() != TopAbs_WIRE) { B.Add(tmpFace, it.Value()); continue; }
+          TopoDS_Wire wire = TopoDS::Wire(it.Value());
+          ShapeFix_Wire sfw;
+          sfw.SetContext(ctx);
+          sfw.Load(wire);
+          sfw.SetFace(F, new ShapeAnalysis_Surface(BRep_Tool::Surface(F)));
+          int n0 = sfw.NbEdges();
+          sfw.FixLackingMode() = false;
+          sfw.FixSelfIntersectionMode() = false;
+          bool r = sfw.Perform();
+          bool reord = sfw.StatusReorder(ShapeExtend_DONE);
+          bool small = sfw.StatusSmall(ShapeExtend_DONE);
+          bool conn = sfw.StatusConnected(ShapeExtend_DONE);
+          bool ec = sfw.StatusEdgeCurves(ShapeExtend_DONE);
+          bool notch = sfw.StatusNotches(ShapeExtend_DONE);
+          bool tails = sfw.StatusFixTails(ShapeExtend_DONE);
+          bool deg = sfw.StatusDegenerated(ShapeExtend_DONE);
+          bool closed = sfw.StatusClosed(ShapeExtend_DONE);
+          std::cout << "PCU2 wire[" << k2 << "] n0=" << n0 << " n1=" << sfw.NbEdges() << " ret=" << r
+                    << " reord=" << reord << " small=" << small << " conn=" << conn << " ec=" << ec
+                    << " notch=" << notch << " tails=" << tails << " deg=" << deg << " closed=" << closed << "\n";
+          if (reord || small || conn || ec || notch || tails || deg || closed) fixed = true;
+          TopoDS_Wire w = sfw.Wire();
+          B.Add(tmpFace, w);
+        }
+        std::cout << "PCU2 fixed=" << fixed << " tmpWires=" << cntw(tmpFace) << "\n";
+      }
+      {
+        ShapeFix_Shape s;
+        s.Init(F);
+        TopoDS_Shape S = s.Context()->Apply(F);
+        ShapeFix_Face sf;
+        sf.Init(TopoDS::Face(S));
+        sf.SetContext(s.Context());
+        sf.FixWireTool()->ModifyTopologyMode() = true;
+        sf.Perform();
+        std::cout << "PCU e1 face=" << cntf(sf.Result()) << " wires=" << cntw(sf.Result()) << "\n";
+        TopoDS_Shape mr = s.Context()->Apply(S);
+        std::cout << "PCU e2 apply wires=" << cntw(mr) << "\n";
+        ShapeFix::SameParameter(mr, false, 0.0);
+        std::cout << "PCU e3 same wires=" << cntw(mr) << "\n";
+        ShapeFix_Edge sfe;
+        for (TopExp_Explorer fe(mr, TopAbs_FACE); fe.More(); fe.Next())
+          for (TopExp_Explorer ee2(fe.Current(), TopAbs_EDGE); ee2.More(); ee2.Next())
+            sfe.FixVertexTolerance(TopoDS::Edge(ee2.Current()), TopoDS::Face(fe.Current()));
+        std::cout << "PCU e4 vtol wires=" << cntw(mr) << "\n";
+      }
+      break;
+    }
+    return 0;
+  }
+
   if (argc > 3 && std::string(argv[2]) == "emul")
   {
     const int idx = std::atoi(argv[3]);

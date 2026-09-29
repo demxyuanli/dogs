@@ -324,7 +324,9 @@ pub(crate) use occt_core::gp::{GpAx1, GpDir, GpMat, GpPnt, GpTrsf, GpVec, GpXyz,
 
 pub(crate) use crate::abs::ShapeType;
 pub(crate) use crate::bop_builder::BoolOp;
-pub(crate) use crate::bop_curved::curved_boolean_ext;
+// T-41: the draw boolean routes through the exact `BOPAlgo_BOP` path; the
+// `bop_curved` mesh/voxel dispatcher has no OCCT counterpart.
+pub(crate) use crate::bop_builder::boolean;
 pub(crate) use crate::brep_exchange::{brep_to_obj, brep_to_stl_binary};
 pub(crate) use crate::brep_offset::offset_shell;
 pub(crate) use crate::fillet_edge::fillet_edge;

@@ -21,7 +21,7 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
 use crate::shape::TopoShape;
-use crate::tshape::{EdgePcurves, FaceGeomCore, VertexGeomCore};
+use crate::tshape::{EdgePcurves, VertexGeomCore};
 
 /// Vertex geometry — a 3D point and a tolerance. (BRep_TVertex)
 #[derive(Debug, Clone, Copy, PartialEq)]

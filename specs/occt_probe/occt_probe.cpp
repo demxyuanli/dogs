@@ -20,6 +20,9 @@
 #include <GProp_GProps.hxx>
 #include <GeomAbs_SurfaceType.hxx>
 #include <STEPControl_Reader.hxx>
+#include <XSControl_WorkSession.hxx>
+#include <XSControl_TransferReader.hxx>
+#include <Interface_InterfaceModel.hxx>
 #include <ShapeProcess.hxx>
 #include <DE_ShapeFixParameters.hxx>
 #include <StepData_StepModel.hxx>
@@ -177,6 +180,69 @@ int main(int argc, char** argv)
   // T-69 oracle: wire/edge structure of the *imported* shape. Answers "how many
   // wires does OCCT's import produce for a face whose port twin has two wires of
   // coincident closed edges". Read-only.
+  if (argc > 2 && std::string(argv[2]) == "--faceids")
+  {
+    occ::handle<XSControl_TransferReader>  tr = aReader.WS()->TransferReader();
+    occ::handle<Interface_InterfaceModel>  model = aReader.Model();
+    int k = 0;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next(), ++k)
+    {
+      occ::handle<Standard_Transient> ent = tr->EntityFromShapeResult(ex.Current(), 1);
+      int id = 0;
+      if (!ent.IsNull())
+      {
+        id = model->Number(ent);
+      }
+      int nw = 0;
+      for (TopExp_Explorer we(ex.Current(), TopAbs_WIRE); we.More(); we.Next()) ++nw;
+      std::cout << "STEPFACE face=" << k << " id=" << id << " wires=" << nw << "\n";
+    }
+    return 0;
+  }
+
+  if (argc > 8 && std::string(argv[2]) == "--fbox")
+  {
+    const double q[6] = {atof(argv[3]), atof(argv[4]), atof(argv[5]),
+                         atof(argv[6]), atof(argv[7]), atof(argv[8])};
+    int k = 0;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next(), ++k)
+    {
+      Bnd_Box b;
+      BRepBndLib::Add(ex.Current(), b);
+      if (b.IsVoid()) continue;
+      double v[6];
+      b.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+      bool ok = true;
+      for (int i = 0; i < 6; ++i)
+        if (std::abs(v[i] - q[i]) > 0.5) ok = false;
+      if (!ok) continue;
+      std::cout << std::fixed << std::setprecision(5) << "FBOX face=" << k << " bbox (" << v[0] << "," << v[1]
+                << "," << v[2] << ")-(" << v[3] << "," << v[4] << "," << v[5] << ")\n";
+      int wi = 0;
+      for (TopExp_Explorer we(ex.Current(), TopAbs_WIRE); we.More(); we.Next(), ++wi)
+      {
+        int ne = 0;
+        for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next()) ++ne;
+        std::cout << "FBOX  wire[" << wi << "] nEdges=" << ne << "\n";
+        int ei = 0;
+        for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+        {
+          TopoDS_Edge   E = TopoDS::Edge(ee.Current());
+          TopoDS_Vertex vf, vl;
+          TopExp::Vertices(E, vf, vl);
+          gp_Pnt pf = BRep_Tool::Pnt(vf), pl = BRep_Tool::Pnt(vl);
+          std::cout << std::fixed << std::setprecision(6) << "FBOX   e[" << ei
+                    << "] ori=" << (int)E.Orientation() << " first=(" << pf.X() << "," << pf.Y() << ","
+                    << pf.Z() << ") last=(" << pl.X() << "," << pl.Y() << "," << pl.Z()
+                    << ") deg=" << BRep_Tool::Degenerated(E) << "\n";
+        }
+      }
+      return 0;
+    }
+    std::cout << "FBOX none\n";
+    return 0;
+  }
+
   if (argc > 2 && std::string(argv[2]) == "--wires")
   {
     struct EW
@@ -195,6 +261,22 @@ int main(int argc, char** argv)
     {
       const TopoDS_Face aFace = TopoDS::Face(aFaceEx.Current());
       ++nFaces;
+      {
+        int zzW = 0;
+        for (TopExp_Explorer cwe(aFace, TopAbs_WIRE); cwe.More(); cwe.Next()) ++zzW;
+        if (zzW >= 2)
+        {
+          Bnd_Box zb;
+          BRepBndLib::Add(aFace, zb);
+          if (!zb.IsVoid())
+          {
+            double x1, y1, z1, x2, y2, z2;
+            zb.Get(x1, y1, z1, x2, y2, z2);
+            std::cout << std::fixed << std::setprecision(3) << "MULTI bbox=(" << x1 << "," << y1 << ","
+                      << z1 << ")-(" << x2 << "," << y2 << "," << z2 << ") wires=" << zzW << "\n";
+          }
+        }
+      }
       int             aWireNb = 0;
       bool            isDup    = false;
       bool            isDupAny = false;
