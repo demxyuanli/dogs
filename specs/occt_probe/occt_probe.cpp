@@ -100,7 +100,15 @@
 #include <BRepMesh_Delaun.hxx>
 #include <BRepMesh_Vertex.hxx>
 #include <BRepMesh_DataStructureOfDelaun.hxx>
+#include <BRepMesh_VertexTool.hxx>
+#include <BRepMesh_Context.hxx>
+#include <IMeshTools_Context.hxx>
+#include <NCollection_IncAllocator.hxx>
 #include <IMeshData_Types.hxx>
+#include <array>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 static int runDelaunCheck()
 {
@@ -123,6 +131,12 @@ static int runDelaunCheck()
 // --- end TEMP T-99 ---------------------------------------------------------------
 
 // --- TEMP T-99 (`--delaunfeed <dir>`) ---------------------------------------------
+// SUPERSEDED by `--delaunstruct` below (§9.368). Feeding only the points leaves the
+// structure with **zero** frontier links, and `cleanupMesh` (`BRepMesh_Delaun.cxx:1028`,
+// which skips only Frontier links at `:832-835`) then deletes every triangle, so the
+// `domain=0` this mode prints is an artifact of the missing constraints - it is **not**
+// evidence that the point set cannot be triangulated. Kept only as a record of the
+// §9.367 run; use `--delaunstruct` for comparisons.
 // Feeds the port's own registered Delaun points (dumped by `OCCT_TOPO_DUMP_DELAUN`)
 // straight into OCCT's `BRepMesh_Delaun`, bypassing the reader and the whole
 // `IMeshData` pipeline. §9.365 showed OCCT meshes all 226 faces (min 2 triangles)
@@ -203,6 +217,282 @@ static int runDelaunFeed(const std::string& theDir)
   }
   return 0;
 }
+// --- TEMP T-99 (`--delaunstruct <dir>`) -------------------------------------------
+// Feeds OCCT's `BRepMesh_Delaun` the *identical* structure the port builds: same
+// nodes (face-basis coordinates), same constraint links, same tolerance/cell size
+// and the same vertex order (dumped by `OCCT_TOPO_DUMP_DELAUN`). §9.367 could only
+// feed the bare points (0 constraints), and with no frontier links `cleanupMesh`
+// deletes every triangle, so that run's `domain=0` said nothing about the points.
+// This closes the gap: constraints are inserted through the public
+// `AddLink` + `BRepMesh_Delaun(structure, indices, cellsU, cellsV)` constructor,
+// which reaches `ProcessConstraints()` as a member call (§9.366's LNK2019 trap is
+// avoided entirely).
+static int runDelaunStruct(const std::string& theDir)
+{
+  const int aFaces[] = {0,   208, 209, 169, 174, 189, 192, 193, 194,
+                        195, 196, 197, 198, 199, 204, 206, 210, 212};
+  for (int f : aFaces)
+  {
+    char aName[512];
+    std::snprintf(aName, sizeof(aName), "%s/delaun_in_f%d.txt", theDir.c_str(), f);
+    std::ifstream aIn(aName);
+    if (!aIn)
+    {
+      std::cout << "DELAUNSTRUCT f=" << f << " (missing " << aName << ")" << std::endl;
+      continue;
+    }
+
+    std::vector<std::array<double, 3>> aNodes; // x, y, movability
+    std::vector<std::array<int, 3>>    aLinks; // first, last, movability
+    std::vector<int>                   aOrder;
+    double                             aTolU = 0.0, aTolV = 0.0;
+    int                                aCellsU = -1, aCellsV = -1;
+    std::string                        aLine;
+    while (std::getline(aIn, aLine))
+    {
+      if (aLine.empty() || aLine[0] == '#')
+      {
+        continue;
+      }
+      std::istringstream aSS(aLine);
+      std::string        aTag;
+      aSS >> aTag;
+      if (aTag == "TOL")
+      {
+        aSS >> aTolU >> aTolV;
+      }
+      else if (aTag == "CELLS")
+      {
+        aSS >> aCellsU >> aCellsV;
+      }
+      else if (aTag == "N")
+      {
+        int i, m;
+        double x, y;
+        aSS >> i >> x >> y >> m;
+        aNodes.push_back({x, y, static_cast<double>(m)});
+      }
+      else if (aTag == "L")
+      {
+        int i, a, b, m;
+        aSS >> i >> a >> b >> m;
+        aLinks.push_back({a, b, m});
+      }
+      else if (aTag == "V")
+      {
+        int v;
+        while (aSS >> v)
+        {
+          aOrder.push_back(v);
+        }
+      }
+      else if (aTag == "AFTER_CTOR" || aTag == "FINAL")
+      {
+        // Echo what the port itself measured on this very structure.
+        std::cout << "PORT   f=" << f << " " << aTag;
+        std::string aTok;
+        while (aSS >> aTok)
+        {
+          const size_t aEq = aTok.find('=');
+          if (aEq != std::string::npos)
+          {
+            std::cout << " " << aTok;
+          }
+        }
+        std::cout << std::endl;
+      }
+    }
+
+    if (aNodes.empty())
+    {
+      std::cout << "DELAUNSTRUCT f=" << f << " (no nodes)" << std::endl;
+      continue;
+    }
+
+    occ::handle<NCollection_IncAllocator>       anAlloc = new NCollection_IncAllocator(IMeshData::MEMORY_BLOCK_SIZE_HUGE);
+    occ::handle<BRepMesh_DataStructureOfDelaun> aStruct =
+      new BRepMesh_DataStructureOfDelaun(anAlloc, static_cast<int>(aNodes.size()));
+    aStruct->Data()->SetTolerance(aTolU, aTolV);
+    aStruct->Data()->SetCellSize(14.0 * aTolU, 14.0 * aTolV);
+
+    std::vector<int> aMap(aNodes.size() + 1, 0);
+    int              aIdxMismatch = 0;
+    for (size_t i = 0; i < aNodes.size(); ++i)
+    {
+      const BRepMesh_Vertex aVertex(gp_XY(aNodes[i][0], aNodes[i][1]),
+                                    static_cast<int>(i),
+                                    static_cast<BRepMesh_DegreeOfFreedom>(static_cast<int>(aNodes[i][2])));
+      const int aId = aStruct->AddNode(aVertex);
+      aMap[i + 1]     = aId;
+      if (aId != static_cast<int>(i) + 1)
+      {
+        ++aIdxMismatch;
+      }
+    }
+    for (const std::array<int, 3>& aL : aLinks)
+    {
+      aStruct->AddLink(BRepMesh_Edge(aMap[aL[0]],
+                                     aMap[aL[1]],
+                                     static_cast<BRepMesh_DegreeOfFreedom>(aL[2])));
+    }
+    const int aLinksDumped = static_cast<int>(aLinks.size());
+    const int aLinksInStruct = aStruct->NbLinks();
+
+    IMeshData::VectorOfInteger aIndices;
+    for (int v : aOrder)
+    {
+      aIndices.Append(aMap[v]);
+    }
+
+    BRepMesh_Delaun aDelaun(aStruct, aIndices, aCellsU, aCellsV);
+    const occ::handle<BRepMesh_DataStructureOfDelaun>& aSt = aDelaun.Result();
+
+    int aFrontier = 0, aFixed = 0, aFree = 0, aDeleted = 0;
+    for (int e = 1; e <= aSt->NbLinks(); ++e)
+    {
+      switch (aSt->GetLink(e).Movability())
+      {
+        case BRepMesh_Frontier: ++aFrontier; break;
+        case BRepMesh_Fixed:    ++aFixed;    break;
+        case BRepMesh_Free:     ++aFree;     break;
+        default:                ++aDeleted;  break;
+      }
+    }
+
+    std::cout << "OCCT   f=" << f << " nodes=" << aSt->NbNodes() << " links=" << aSt->NbLinks()
+              << " domain=" << aSt->ElementsOfDomain().Extent() << " frontier=" << aFrontier
+              << " fixed=" << aFixed << " free=" << aFree << " deleted=" << aDeleted
+              << " idx_mismatch=" << aIdxMismatch << " links_dumped=" << aLinksDumped
+              << " links_in_struct=" << aLinksInStruct << std::endl;
+  }
+  return 0;
+}
+
+// --- TEMP T-99 (`--boundary <dir>`) ----------------------------------------------
+// Dumps, for the faces of interest, the pcurve points OCCT's real pipeline feeds
+// into `BRepMesh_BaseMeshAlgo::initDataStructure` (wire -> edge -> pcurve ->
+// `GetPoint(0..ParametersNb()-1)`, i.e. exactly the loop at
+// `BRepMesh_BaseMeshAlgo.cxx:87-125`). The model is built through
+// `BRepMesh_Context` in `IMeshTools_MeshBuilder`'s order (BuildModel ->
+// DiscretizeEdges -> HealModel -> PreProcessModel) so the points are the ones the
+// real mesher sees, and each face's bbox is printed so the port's face can be
+// paired by geometry rather than by index (D21).
+static int runBoundary(const TopoDS_Shape& theShape, const std::string& theDir)
+{
+  Bnd_Box aShapeBox;
+  BRepBndLib::Add(theShape, aShapeBox, false);
+  double aBox[6] = {0, 0, 0, 0, 0, 0};
+  if (!aShapeBox.IsVoid())
+  {
+    aShapeBox.Get(aBox[0], aBox[1], aBox[2], aBox[3], aBox[4], aBox[5]);
+  }
+  const double aMaxComp =
+    std::max(std::max(aBox[3] - aBox[0], aBox[4] - aBox[1]), aBox[5] - aBox[2]);
+
+  IMeshTools_Parameters aParams;
+  // The port's a3n00 gate meshes with `prs3d_get_deflection(shape, 0.1)`
+  // (`maxComp * 0.001 * 4`) and 20 degrees, so match that exactly.
+  aParams.Deflection    = aMaxComp * 0.001 * 4.0;
+  aParams.Angle         = 20.0 * M_PI / 180.0;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  aParams.MinSize       = Precision::Confusion();
+  aParams.AdjustMinSize = false;
+
+  occ::handle<BRepMesh_Context> aCtx = new BRepMesh_Context;
+  aCtx->SetShape(theShape);
+  aCtx->ChangeParameters()            = aParams;
+  aCtx->ChangeParameters().CleanModel = false;
+  const bool aBuilt     = aCtx->BuildModel();
+  const bool aDiscret   = aBuilt && aCtx->DiscretizeEdges();
+  const bool aHealed    = aDiscret && aCtx->HealModel();
+  const bool aPreproc   = aHealed && aCtx->PreProcessModel();
+  const occ::handle<IMeshData_Model>& aModel = aCtx->GetModel();
+  std::cout << "BOUNDARY defl=" << aParams.Deflection << " angle=" << aParams.Angle
+            << " built=" << (aBuilt ? 1 : 0) << " discret=" << (aDiscret ? 1 : 0)
+            << " healed=" << (aHealed ? 1 : 0) << " preproc=" << (aPreproc ? 1 : 0)
+            << " model_null=" << (aModel.IsNull() ? 1 : 0) << std::endl;
+  if (aModel.IsNull())
+  {
+    return 0;
+  }
+
+  const int aFaces[] = {0,   208, 209, 169, 174, 189, 192, 193, 194,
+                        195, 196, 197, 198, 199, 204, 206, 210, 212};
+  (void)aFaces;
+
+  std::ostringstream anOut;
+  for (int f = 0; f < aModel->FacesNb(); ++f)
+  {
+    const IMeshData::IFaceHandle& aDFace = aModel->GetFace(f);
+    Bnd_Box                       aFaceBox;
+    BRepBndLib::Add(aDFace->GetFace(), aFaceBox, false);
+    double v[6] = {0, 0, 0, 0, 0, 0};
+    if (!aFaceBox.IsVoid())
+    {
+      aFaceBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+    }
+    int aPts = 0;
+    for (int w = 0; w < aDFace->WiresNb(); ++w)
+    {
+      const IMeshData::IWireHandle& aDWire = aDFace->GetWire(w);
+      for (int e = 0; e < aDWire->EdgesNb(); ++e)
+      {
+        const IMeshData::ListOfInteger& aList = aDWire->GetEdge(e)->GetPCurves(aDFace.get());
+        for (IMeshData::ListOfInteger::Iterator it(aList); it.More(); it.Next())
+        {
+          aPts += aDWire->GetEdge(e)->GetPCurve(it.Value())->ParametersNb();
+        }
+      }
+    }
+    anOut << std::fixed << "BOUND f=" << f << " type=" << (int)aDFace->GetSurface()->GetType()
+          << " wires=" << aDFace->WiresNb() << " pts=" << aPts << " bbox=(" << v[0] << "," << v[1]
+          << "," << v[2] << ")-(" << v[3] << "," << v[4] << "," << v[5] << ")\n";
+    for (int w = 0; w < aDFace->WiresNb(); ++w)
+    {
+      const IMeshData::IWireHandle& aDWire = aDFace->GetWire(w);
+      anOut << "W " << w << " edges=" << aDWire->EdgesNb()
+            << " selfint=" << (aDWire->IsSet(IMeshData_SelfIntersectingWire) ? 1 : 0)
+            << " open=" << (aDWire->IsSet(IMeshData_OpenWire) ? 1 : 0) << "\n";
+      for (int e = 0; e < aDWire->EdgesNb(); ++e)
+      {
+        const IMeshData::IEdgeHandle& aDEdge = aDWire->GetEdge(e);
+        // Exactly `BRepMesh_BaseMeshAlgo.cxx:91-96`: the pcurves of this edge on
+        // this face, in the structure's own order.
+        const IMeshData::ListOfInteger& aListOfPCurves = aDEdge->GetPCurves(aDFace.get());
+        for (IMeshData::ListOfInteger::Iterator aPCurveIt(aListOfPCurves); aPCurveIt.More();
+             aPCurveIt.Next())
+        {
+          const IMeshData::IPCurveHandle& aPCurve = aDEdge->GetPCurve(aPCurveIt.Value());
+          anOut << "E w=" << w << " e=" << e << " pcId=" << aPCurveIt.Value()
+                << " ori=" << static_cast<int>(aPCurve->GetOrientation())
+                << " fwd=" << (aPCurve->IsForward() ? 1 : 0)
+                << " n=" << aPCurve->ParametersNb() << "\n";
+          for (int p = 0; p < aPCurve->ParametersNb(); ++p)
+          {
+            const gp_Pnt2d& aP2 = aPCurve->GetPoint(p);
+            char            aBuf[128];
+            std::snprintf(aBuf, sizeof(aBuf), "P %.17e %.17e\n", aP2.X(), aP2.Y());
+            anOut << aBuf;
+          }
+        }
+      }
+    }
+  }
+
+  const std::string aPath = theDir + "/boundary.txt";
+  std::ofstream     aFile(aPath.c_str());
+  if (!aFile)
+  {
+    std::cout << "BOUNDARY cannot write " << aPath << std::endl;
+    return 0;
+  }
+  aFile << anOut.str();
+  aFile.close();
+  std::cout << "BOUNDARY wrote " << aPath << std::endl;
+  return 0;
+}
+
 // --- end TEMP T-99 ---------------------------------------------------------------
 
 int main(int argc, char** argv)
@@ -223,6 +513,10 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--delaunfeed" && i + 1 < argc)
     {
       return runDelaunFeed(argv[i + 1]);
+    }
+    if (std::string(argv[i]) == "--delaunstruct" && i + 1 < argc)
+    {
+      return runDelaunStruct(argv[i + 1]);
     }
   }
   bool       nofix  = false;
@@ -273,6 +567,14 @@ int main(int argc, char** argv)
   {
     std::cerr << "null shape\n";
     return 4;
+  }
+  // TEMP T-99: `--boundary <dir>` dumps the real pipeline's Delaunay boundary UV.
+  for (int i = 2; i + 1 < argc; ++i)
+  {
+    if (std::string(argv[i]) == "--boundary")
+    {
+      return runBoundary(aShape, argv[i + 1]);
+    }
   }
 
   // T-54 oracle: OCCT's triangulation counts at a given deflection

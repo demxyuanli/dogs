@@ -14674,3 +14674,250 @@ crates\occt-topo\target\debug\examples\zz_uv_feed.exe data/occ/a3n00.stp --ids
 cmd /c "specs\occt_probe\build.bat"
 cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --delaunfeed D:\source\repos\dogs\.target-gate\delaun_dump"
 ```
+
+---
+
+### 9.368 —— 【决定性 + 三处更正】把端口的**完整结构**（74 个点 + 72 条约束链 + 容差/格/顶点序）喂给 OCCT 的 `BRepMesh_Delaun`：**18/18 逐字段完全相同** ⇒ Delaunay 层忠实；病灶是**输入端的面拓扑**（端口 2 wires vs OCCT 1 条由 seam 边闭合的 wire）
+
+#### 9.368.1 结论先行（本轮四件事，按证据强度排序）
+
+1. **等价性证明**：把端口**当前这套结构**（同样的节点坐标、同样的 72 条约束链、同样的
+   `SetCellSize`/`SetTolerance`、同样的顶点序、同样的 `cellsU/cellsV`）原样喂给 OCCT 的
+   `BRepMesh_Delaun`，OCCT 输出的 `NbNodes/NbLinks/ElementsOfDomain` 与四种链状态计数
+   **与端口逐字段相同**（18 个面全部如此，`idx_mismatch=0`）。
+   ⇒ **端口的 Delaunay 层（含 `createTrianglesOnNewVertices` / `ProcessConstraints` /
+   `frontierAdjust` / `cleanupMesh`）在这一层是忠实的**，§9.359 留下的
+   「同一批点、顺序不同就归零」问题**不是这层的实现差异**。
+2. **更正 §9.367**：那次「只喂点、不喂链」得到的 `domain=0` **不是**关于点集的证据 ——
+   结构里一条 Frontier 链都没有时，`cleanupMesh` 会把所有三角删光（见 §9.368.4）。
+   该条「**能推出**：这 74 个点本身不足以三角化出域内元素」**作废**。
+3. **更正 §9.365.2**：a3n00 上**两侧的面序号根本不对应**（226 个面里只有 **3 个**同序号同几何）。
+   按「六坐标 bbox」重新配对后，那 16 个面的 GT 三角数是 **52–80**，不是 2–15。
+   §9.365 的「OCCT 只铺 2–15 个、端口多铺 50–114 倍」是**配错面**得出的。
+4. **定位到真正的输入差**：这 16 个面在 STEP 里声明 **2 个 `FACE_BOUND`**，端口忠实建成
+   **2 条 wire**；OCCT 读入后（`ShapeProcess`/`FixShape`）把它们**合并成 1 条 wire**，
+   并由**两条 seam 边**把两个圆连成一个环。实测直方图见 §9.368.6。
+
+#### 9.368.2 做法（两条新探针路 + 一段临时插桩）
+
+**端口侧（TEMP T-99，env `OCCT_TOPO_DUMP_DELAUN=<dir>`；已撤除）**：
+
+* `node_insertion.rs::finish_mesh`：在 `Delaun::new_with_data_cells` 之前落盘
+  `delaun_in_f<f>.txt` —— `TOL u v`、`CELLS cu cv`、`N i x y mov`（**face-basis 坐标**，
+  即真正进入结构的那个坐标）、`L i first last mov`、`V <顶点序>`；
+  构造之后追加 `AFTER_CTOR …`，`add_vertices` 之后追加 `FINAL …`；
+* `node_insertion.rs::init_data_structure`：落盘 `delaun_uv_f<f>.txt` —— 登记顺序的
+  **原始曲面 UV**（`E wire=… edge=… ori=… reverse_walk=… n=…` + `P u v`）；
+* `delaun/triangulation.rs::create_triangles_on_new_vertices`：`OCCT_TOPO_TRACE_CTNV`
+  打印 `verts/d0/f0/pre/post/failed`（§9.360 的同名仪器，本轮复测）。
+
+**OCCT 侧（探针新增两个分支，保留作仪器）**：
+
+* `--delaunstruct <dir>`：读上面的 dump，`AddNode` 逐个**核对返回值 == 声明序号**，
+  `AddLink` × dump 的链数，`Data()->SetTolerance/SetCellSize`，再
+  `BRepMesh_Delaun(aStruct, indices, cellsU, cellsV)`（`BRepMesh_Delaun.hxx:56-59` 的 public
+  构造，内部经 `perform → compute → createTrianglesOnNewVertices → ProcessConstraints`
+  走完整条路）。**这条路径完全不需要从探针调用 `ProcessConstraints()`**，
+  §9.366 记下的 LNK2019 陷阱不适用。
+* `--boundary <dir>`：用 `BRepMesh_Context` 按 `IMeshTools_MeshBuilder` 的顺序跑
+  `BuildModel → DiscretizeEdges → HealModel → PreProcessModel`（`IMeshTools_MeshBuilder.cxx:52-60`），
+  再对每个面照 `BRepMesh_BaseMeshAlgo.cxx:87-125` 的循环落盘
+  （wire → edge → `GetPCurves(face)` → `GetPoint(0 … ParametersNb()-1)`），
+  并打印面型与 bbox（**配对用 bbox，不用序号**，D21）。
+
+**口径**：探针用 `Deflection = maxComp * 0.001 * 4 = 1.07612`、`Angle = 20°`
+（= 端口 a3n00 门禁的 `prs3d_get_deflection(shape, 0.1)`，`brep_exchange.rs:56-77`）。
+
+#### 9.368.3 结果一：同结构下 OCCT 与端口**逐字段相同**（18/18）
+
+```text
+PORT   f=0   AFTER_CTOR nodes=71 links=207 domain=66 free=65 fixed=0 frontier=68 deleted=74
+OCCT   f=0              nodes=71 links=207 domain=66 frontier=68 fixed=0 free=65 deleted=74  idx_mismatch=0
+PORT   f=208 AFTER_CTOR nodes=75 links=221 domain=1  free=6  fixed=0 frontier=72 deleted=143
+OCCT   f=208            nodes=75 links=221 domain=1  frontier=72 fixed=0 free=6  deleted=143  idx_mismatch=0
+PORT   f=192 AFTER_CTOR nodes=75 links=245 domain=0  free=0  fixed=0 frontier=72 deleted=173
+OCCT   f=192            nodes=75 links=245 domain=0  frontier=72 fixed=0 free=0  deleted=173  idx_mismatch=0
+PORT   f=212 AFTER_CTOR nodes=75 links=221 domain=0  free=2  fixed=0 frontier=72 deleted=147
+OCCT   f=212            nodes=75 links=221 domain=0  frontier=72 fixed=0 free=2  deleted=147  idx_mismatch=0
+```
+
+18 个面（`f=0, 208, 209, 169, 174, 189, 192–199, 204, 206, 210, 212`）**全部**如此：
+
+| 面 | 结构头 | OCCT == 端口 |
+|---|---|---|
+| 0（健康对照） | nodes=72 links=72 cells=? | `nodes=71 links=207 domain=66 frontier=68 free=65 deleted=74` |
+| 208（健康对照） | nodes=72 links=72 cells=4 2 | `nodes=75 links=221 domain=1 frontier=72 free=6 deleted=143` |
+| 209/169/174/189/204/210 | nodes=72 links=72 | `nodes=75 links=221 domain=0 frontier=72 free=0 deleted=149` |
+| 192–199 | nodes=72 links=72 cells=3 4 | `nodes=75 links=245 domain=0 frontier=72 free=0 deleted=173` |
+| 206 | nodes=72 links=72 | `nodes=75 links=227 domain=0 frontier=72 free=0 deleted=155` |
+| 212 | nodes=72 links=72 | `nodes=75 links=221 domain=0 frontier=72 free=2 deleted=147` |
+
+三条读数：
+
+1. `idx_mismatch=0`：端口结构的 72 个节点用 dump 里的坐标 + 容差逐个 `AddNode`，
+   OCCT 返回的序号**与端口完全一致**（没有多合并、没有错位）⇒ 节点集合等价；
+2. `links_dumped == links_in_struct == 72`：**72 条约束链一条不多一条不少**地进了 OCCT 的结构；
+3. 域内元素数与**四种链状态的分布**逐字段相同 ⇒ 分歧不在这一层。
+
+端口侧 CTNV 复测（243 条记录）也逐字复现 §9.360：那 16 个面是
+`CTNV verts=72 d0=3 f0=72 pre=145 post=0 failed=false`
+（142 个三角是在 `createTrianglesOnNewVertices` 里建出来的，随后被
+`ProcessConstraints` 删光），而 OCCT 在**同一结构**上给出同样的 `domain=0`。
+
+#### 9.368.4 结果二：更正 §9.367 —— 「只喂点」的 `domain=0` 是 `cleanupMesh` 造成的
+
+§9.367 喂的是 74 个点 + **0 条链**，得到 `domain=0 / frontier=0 / fixed=0 / free=0 / deleted=219`。
+当时把它读成「这批点本身三角化不出域内元素」。**实际机制**：
+`frontierAdjust()` 末尾无条件调用 `cleanupMesh()`（`BRepMesh_Delaun.cxx:1028`），而
+`cleanupMesh` 遍历 `FreeEdges()` 时**只跳过 `BRepMesh_Frontier` 的链**
+（`cxx:832-835`）；结构里若**一条 Frontier 链都没有**，所有链都是 Free，
+`isConnected[]` 必为 false（`cxx:908-911`）⇒ 所有三角被判为"外部"并删除。
+⇒ 那次读数**只反映"结构里没有约束"**，与点集无关。§9.367 的「能推出」作废，
+「不能推出」那半边（有约束时的行为未测）由本轮 §9.368.3 补齐。
+
+#### 9.368.5 结果三：a3n00 的面序号两侧**不对应**（3/226）⇒ §9.365.2 的表作废
+
+用六坐标 bbox 配对（容差 1e-3，`.target-gate/pair368b.py`）：
+
+```text
+port faces=226  model faces=226
+same-index bbox matches: 3 / 226          ← 同序号同几何只有 3 个
+paired 1:1 by bbox:      201 / 226
+```
+
+**端口 → OCCT 离散模型**的实际置换（16 个失败面）：
+
+```text
+port 169 -> model  87   port 192 -> model 85   port 199 -> model 82
+port 174 -> model  42   port 193 -> model 84   port 204 -> model 43
+port 189 -> model  41   port 194 -> model 83   port 206 -> model 86
+                        port 195 -> model 78   port 209 -> model 12
+                        port 196 -> model 79   port 210 -> model 13
+                        port 197 -> model 80   port 212 -> model 15
+                        port 198 -> model 81
+```
+
+⇒ **§9.365.2 的「GT `triangles`」列取的是另一些面**（例如它配给 port 192 的
+「GT f=192」其实是 y=52 那个平面小面，`triangles=2`）。按正确配对重取
+（`--uvsum 1.07612`，模型序），那 16 个面的真实读数是：
+
+| port f | model g | GT tri | port mt | | port f | model g | GT tri | port mt |
+|---|---|---|---|---|---|---|---|---|
+| 169 | 87 | **54** | 204 | | 196 | 79 | **52** | 228 |
+| 174 | 42 | **80** | 288 | | 197 | 80 | **52** | 228 |
+| 189 | 41 | **54** | 36 | | 198 | 81 | **52** | 228 |
+| 192 | 85 | **52** | 228 | | 199 | 82 | **52** | 228 |
+| 193 | 84 | **52** | 228 | | 204 | 43 | **54** | 36 |
+| 194 | 83 | **52** | 228 | | 206 | 86 | **52** | 336 |
+| 195 | 78 | **52** | 228 | | 209/210/212 | 12/13/15 | **52**（近邻配对） | 224 |
+
+⇒ 真实倍数是 **约 4 倍（个别 6.5 倍）**，不是 50–114 倍；且**方向是双向的**：
+`189`/`204` 是端口**少**铺（36 vs 54）。
+13 个精确配对面的合计：**GT 710 vs 端口 2724**。
+§9.365.4 的「三角形预算被这 16 个面吃掉」这一说法方向仍成立，量级需按新表重述。
+
+#### 9.368.6 结果四：真正的输入差 = **面拓扑**（STEP 2 bounds vs OCCT 1 条 seam 闭合 wire）
+
+**（a）STEP 侧**：§9.364 已实测这 16 个面在文件里就是 **2 个 `FACE_BOUND`**，
+端口照建 2 条 wire（端口 wire 直方图 `{1:163, 2:53, 4:2, 6:4, 10:4}`）。
+
+**（b）OCCT 侧**：`--faceids` 逐面数 `TopExp_Explorer(face, TopAbs_WIRE)`：
+
+```text
+默认（ShapeProcess/FixShape 开）  wire 直方图 {1:208, 2:9, 4:1, 6:4, 10:4}
+--nofix（ShapeProcess 关）        wire 直方图 {1:163, 2:53, 4:2, 6:4, 10:4}   ← 与 STEP、与端口逐字相同
+```
+
+⇒ **是读入期的 `ShapeProcess` 把 45 个「2 bound」面并成了 1 条 wire**
+（163+45=208、53−44=9、4: 2→1）。端口即使按 D27 接了 `fix_missing_seam`，
+这 16 个面**仍是 2 条 wire**。
+
+**（c）逐边对照**（port f=192 ↔ model f=85，两侧都是原始曲面 UV）：
+
+```text
+端口：2 条 wire，各 1 条闭合 pcurve × 37 点（74 点 / 72 条 frontier 链）
+      wire0 edge=449 FWD n=37   圆 A  v=-267.805924  u∈[-π, π]
+      wire1 edge=457 FWD n=37   圆 B  v=-287.805924  u∈[ 0, 2π]
+
+OCCT：1 条 wire，5 条边 / 7 条 pcurve（83 点）
+      e0 pcId=1 FWD n=19   u: π → 0      v=-267.805924      ← 圆 A 的**上半弧**
+      e1 pcId=0 REV n=2  \  seam 边（同一条边在该面上的两条 pcurve）
+         pcId=1 FWD n=2  /  u=0 / u=2π，v: -287.805924 → -267.805924
+      e2 pcId=1 FWD n=37   u: 0 → 2π     v=-287.805924      ← 圆 B 整圈
+      e3 pcId=0 REV n=2  \  第二条 seam 边（同上）
+         pcId=1 FWD n=2  /
+      e4 pcId=1 FWD n=19   u: 2π → π     v=-267.805924      ← 圆 A 的**下半弧**
+```
+
+⇒ **两条 seam 边把两个圆连成一个环**，这才是 OCCT 那 1 条 wire 的来源；
+端口的两条 wire 是**两个互不相连的水平线段**（圆 A 在 `v=-267.805924`、
+圆 B 在 `v=-287.805924`），frontier 是 72 条互不闭合的链。
+这解释了为什么同一套 Delaunay 代码在 OCCT 那里留下 52 个三角、在端口这里 `post=0`。
+
+**（d）两处**更正**§9.364/§9.365.6**：`--uvsum` 的 `wires=` 字段**就是**该面的拓扑 wire 数
+（`--faceids` 的直方图与它逐字相同 `{1:208, 2:9, 4:1, 6:4, 10:4}`），**不是"第三个量"**；
+真正的两个量是「文件 bound 数 = 端口 wire 数 = OCCT `--nofix` wire 数」与
+「OCCT 读入整形后的 wire 数」。§9.363.3 的假说（"OCCT 把它们合并了 / 端口缺合并"）
+**据此恢复成立**，§9.364 对它的否证作废（它当时的依据是"STEP 里就是 2 个 bound ⇒ OCCT 必然也是 2 条"，
+而已实测 OCCT 会改）。
+
+**（e）一处次生差异**（须记）：同一个圆 A，端口取 u 的 `[-π, π]` 分支，OCCT 取 `[0, 2π]`
+并在 `u=π` 处切开成 19+19。两侧是同一几何、不同参数分支；合并 seam 时选哪条分支
+要按 `.cxx` 的分支走，不能按端口现有取值反推。
+
+#### 9.368.7 下一轮落点（含可证伪的预测）
+
+1. **实现读入期那条"把 2 个 bound 并成 1 条 seam 闭合 wire"的控制流** ——
+   端口已经标出候选位置：`crates/occt-topo/src/shhealing/shape_fix_face.rs:147`
+   （«UNPORTED: the seam construction and the `w2 != null` merge»）与
+   `:406` 处 `FixReorder`（`cxx:2029-2032`）的未移植注记；
+   对照 `ShapeFix_Face.cxx:492-498 / :1722-2330` 与 `ShapeProcess_OperLibrary.cxx:785-899`。
+   **不要**在 Delaunay 层加任何东西（§9.368.3 已证这层忠实），
+   **不要**在 `frontier_adjust` / `cleanup_mesh` 里加阈值或特例。
+2. **可证伪的预测**（下一轮的验收就是它）：这条控制流接上后，
+   端口 f=192（及其同类）的结构应变成 **1 wire / 83 点 / 含两条 2 点 seam pcurve**，
+   `AFTER_CTOR domain` 应从 **0 变成 >0**、`mt` 应从 **228 降到 ~52**，
+   a3n00 面积比从 **0.8627** 上升（T-99 的 accept）；
+   若结构变了而 `domain` 仍是 0，则说明输入侧还差别的（那时再回到
+   `range_splitter`/tolerance 一侧量）。
+3. **配对纪律**（本轮最大的方法论教训）：a3n00 上**任何按面序号的对拍都作废**，
+   一律先按六坐标 bbox 配对（`--boundary` 已把每个模型面的 bbox 落盘）；
+   沿用这条再复读 §9.354/§9.357/§9.365 里所有"GT 面号"的结论。
+
+#### 9.368.8 本轮改动与门禁
+
+* **Rust 源码零改动**：端口侧插桩（`node_insertion.rs`、`delaun/triangulation.rs`）
+  已按 §9.353 规程**用 `edit` 反向撤除、未用 `git checkout`** ⇒
+  `git status --porcelain` 对 `crates/` **无输出**（`git diff --stat` 只剩探针）；
+* **探针新增** `--delaunstruct <dir>` 与 `--boundary <dir>`（TEMP T-99，保留作仪器）；
+* 门禁（本轮实测）：`cargo check` **0 error**；
+  `cargo test --lib` → `test result: ok. 1281 passed; 0 failed; 0 ignored`；
+  a3n00 `TOTAL faces=226 computed_lin=1.076007 used_lin=1.076007 stats=226 mesh_v=11101 mesh_t=11121`、
+  `STATMAP matched=226 unmatched=0`。
+  （口径说明：§9.367.6 记的是「--lib 1255/26」，本轮 `rtk cargo test` 与
+  `cargo test --lib` 两种调用都给出 **1281 passed / 0 failed**，那条记录与实测不符，以本轮实测为准。）
+
+#### 9.368.9 复跑
+
+```text
+# 1) 端口结构 dump（插桩须先按 §9.368.2 重新加回，本轮已撤除）
+$env:OCCT_TOPO_DUMP_DELAUN=(Resolve-Path .target-gate\delaun_in).Path
+$env:OCCT_TOPO_TRACE_CTNV="1"
+crates\occt-topo\target\debug\examples\zz_uv_feed.exe data/occ/a3n00.stp --ids 2> .target-gate\ctnv368.txt
+
+# 2) 同结构喂 OCCT
+cmd /c "specs\occt_probe\build.bat"
+cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --delaunstruct D:\source\repos\dogs\.target-gate\delaun_in" > .target-gate\delaunstruct368.txt
+
+# 3) OCCT 真实管线的边界点 + 面 bbox
+cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --boundary D:\source\repos\dogs\.target-gate"
+# 4) 面拓扑（有/无 ShapeProcess）
+cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --faceids"
+cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --faceids --nofix"
+
+# 5) 配对与逐面读数
+cd .target-gate; python pair368b.py ; python pair368c.py
+```
+
+> 数据留在 `.target-gate/delaun_in/`（端口结构 dump，452 个文件，本轮的
+> `--delaunstruct` 输入）与 `.target-gate/{delaunstruct368,uvfeed368,gtmesh368,gtuvsum368,faceids368,faceids_nofix368,boundary}.txt`。
