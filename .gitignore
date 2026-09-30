@@ -7,6 +7,8 @@
 **/.codegraph/
 **/__pycache__/
 graphify-out/
+# Windows 沙箱 ACL 恢复工具的本地产物（非源码）
+/.acl-recovery/
 
 # Session state
 .remember/
