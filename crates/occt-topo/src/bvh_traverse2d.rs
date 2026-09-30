@@ -5,6 +5,12 @@
 //! whose metric is `bool` (`theIsInside`). PerformAreas only needs the
 //! single-tree walk; the pair walk is the same algorithm used by
 //! `BOPTools_PairSelector<2>`.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use crate::bvh_box2d::{BvhBox2d, BvhVec2d};
 

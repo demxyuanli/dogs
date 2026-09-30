@@ -3,6 +3,12 @@
 //! Source: `BOPTools_PairSelector.hxx`. Not used by PerformAreas (that uses
 //! `BoxSelector`); kept because `BOPTools_BoxTree.hxx` typedefs
 //! `BOPTools_Box2dPairSelector = BOPTools_PairSelector<2>`.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use crate::bvh_box2d::{BvhBox2d, BvhVec2d};
 use crate::bvh_traverse2d::{select_pair_tree, PairTraverse2d, BvhTree2d};

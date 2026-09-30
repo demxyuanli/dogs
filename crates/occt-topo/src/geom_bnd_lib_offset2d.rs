@@ -7,6 +7,12 @@
 //!   `GeomBndLib_Circle2d::Box` (or the centre if the radius vanishes).
 //! Generic fallback: `GeomBndLib_OtherCurve2d::Box` on the offset curve
 //! itself (not `basis_box.Enlarge(|offset|)`).
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::{GpCirc2d, GpLin2d, GpPnt2d, GpVec2d};

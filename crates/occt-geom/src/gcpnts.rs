@@ -20,18 +20,32 @@
 //! `math_FunctionRoot` itself runs `math_FunctionSetRoot`
 //! (`math_FunctionRoot.cxx:73-119`).
 //!
-//! **UNPORTED (A15/T-51 remainder)**: `GCPnts_AbscissaPoint::Compute`'s type
-//! dispatch (`GCPnts_AbscissaPoint.cxx:26-65`, `:67-161`) is not reproduced —
-//! only its `GCPnts_Parametrized` arm (`:91-95`, reached from `compute`
-//! `:428-442`) is. The `GCPnts_LengthParametrized` (`:87-90`) and
-//! `GCPnts_AbsComposite` (`:96-158`) arms read `GeomAdaptor_Curve`'s
-//! `GetType`/`NbIntervals`/`Intervals`; the port's `GeomTrimmedCurve` view
-//! remaps a trim onto `[0, 1]` instead of unwrapping to the basis parameter
-//! range the adaptor keeps (`GeomAdaptor_Curve.cxx:239-254`), so those arms
-//! cannot be expressed faithfully here. `uniform_abscissa` /
-//! `quasi_uniform_abscissa` keep their own outer shape — `uniform_abscissa`
-//! is "n intervals" (`n + 1` points), not `GCPnts_UniformAbscissa`'s
-//! `NbPoints` point count.
+//! **`GCPnts_AbscissaPoint::Compute` is ported.** Its type dispatch
+//! (`GCPnts_AbscissaPoint.cxx:26-65`, `:67-161`) is [`compute_type`], and all
+//! three arms are reachable: `GCPnts_LengthParametrized` (`:87-90`, when
+//! `NbIntervals(GeomAbs_CN) == 1` and the type is Line/Circle or a 2-pole
+//! non-rational Bezier/BSpline), `GCPnts_Parametrized` (`:91-95`, the iterative
+//! root search) and `GCPnts_AbsComposite` (`:96-158`, [`compute_abs_composite`]).
+//!
+//! T-96 (2026-09-30) checked the earlier claim that these arms "cannot be
+//! expressed faithfully" because this port's `GeomTrimmedCurve` remaps a trim
+//! onto `[0, 1]` while OCCT's `GeomAdaptor_Curve` unwraps to the basis. **The
+//! claim is stale**: the `[0, 1]` convention is applied consistently to *every*
+//! quantity the three arms read —
+//! `d1`/`d2`/`d3`/`eval_dn` carry the `s = last - first` chain rule
+//! (`trimmed.rs:45-79`), `parameter_intervals` remaps the basis knots by the same
+//! `s` (`trimmed.rs:130-140`), and `resolution` divides by the same `s`
+//! (`trimmed.rs:147-153`). That is a plain reparameterisation: the numerical
+//! values the arms consume keep their meaning, so the arms are expressible and
+//! are expressed. See `specs/_a3n00_gap_analysis.md` §9.295 / §9.296.
+//!
+//! `uniform_abscissa` / `quasi_uniform_abscissa` take an **interval count** and
+//! return `n + 1` parameters. That is equivalent to OCCT's `NbPoints` overload,
+//! not a shape difference: `GCPnts_UniformAbscissa::initialize` sets
+//! `anAbscissa = aL / (theNbPoints - 1)` (`GCPnts_UniformAbscissa.cxx:510`), i.e.
+//! it uses `NbPoints - 1` **intervals** for `NbPoints` points (endpoints
+//! included). So `uniform_abscissa(c, n)` == OCCT with `NbPoints = n + 1`; only
+//! the argument naming differs (intervals here, points there).
 //!
 //! `GCPnts_UniformDeflection` / `GCPnts_QuasiUniformDeflection` are **UNPORTED**
 //! (see `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
@@ -475,8 +489,10 @@ impl<'a> CpntsAbscissaPoint<'a> {
 /// theEPSILON)` (`:91-95`). `None` stands for OCCT's `!IsDone()`, whose
 /// `Parameter()` raises `StdFail_NotDone`.
 ///
-/// UNPORTED: `GCPnts_LengthParametrized` (`:87-90`) and
-/// `GCPnts_AbsComposite` (`:96-158`); see the module header.
+/// All three `GCPnts_AbscissaType` arms are implemented below: the
+/// `GCPnts_LengthParametrized` shortcut (`:87-90`), the `GCPnts_AbsComposite`
+/// walk (`:96-158`) and the `GCPnts_Parametrized` root search (`:91-95`); the
+/// dispatch is `compute_type` (`:26-65`).
 fn compute_with_guess(
     c: &dyn Curve,
     abscissa: f64,
@@ -580,7 +596,9 @@ pub fn abscissa_point_with_tolerance(
     match ty {
         // `AdvCompute` `:177-180`.
         AbscissaType::LengthParametrized => return Ok(from + abscissa / ratio),
-        // `:187-295` UNPORTED; use the non-adv walk (`:96-158`).
+        // The non-adv composite walk (`:96-158`). The adv variant
+        // (`:187-295`) is the UNPORTED item described on
+        // `abscissa_point_with_tolerance` above.
         AbscissaType::AbsComposite => {
             return compute_abs_composite(c, abscissa, from, ui, resolution)
                 .ok_or_else(|| {

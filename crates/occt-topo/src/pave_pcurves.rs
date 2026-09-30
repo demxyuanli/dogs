@@ -7,6 +7,12 @@
 //! of F/F interferences are then updated (vertices compared 3D vs 2D).
 //! `Prepare` builds missing p-curves of edges on planar faces unless
 //! non-destructive mode is on.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use std::collections::HashSet;
 use std::sync::Arc;

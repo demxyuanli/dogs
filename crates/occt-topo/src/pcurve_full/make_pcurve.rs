@@ -47,12 +47,6 @@ pub fn project_point_on_pcurve(
     u
 }
 
-/// Construct the pcurve of `edge` on `face` — the edge's 3D curve projected
-/// into the face surface's `(u, v)` parameter domain, with analytic cases for
-/// every analytic surface and a sampling fallback for B-spline faces.
-///
-/// The returned pcurve is parameterized over the edge's range `[a, b]` so
-/// `d0(a)` / `d0(b)` land on the projected endpoints.
 /// Select which of two seam pcurves is the forward one (its 2D direction matches
 /// the edge's 3D direction), port of `ShapeAnalysis_Curve::SelectForwardSeam`.
 /// Returns 1 (first pcurve) or 2 (second pcurve).
@@ -91,6 +85,25 @@ pub fn select_forward_seam(c1: &dyn Curve2d, c2: &dyn Curve2d) -> usize {
     }
 }
 
+/// Construct the pcurve of `edge` on `face` — the edge's 3D curve projected
+/// into the face surface's `(u, v)` parameter domain, with analytic cases for
+/// every analytic surface and a sampling fallback for B-spline faces.
+///
+/// The returned curve carries **its own** parameter range, which is not always
+/// the edge's range: when the projection lands on a `Geom2d_Line` the curve
+/// reports `(-inf, inf)`, exactly as OCCT does —
+/// `Geom2d_Line::FirstParameter()` / `LastParameter()` return
+/// `∓Precision::Infinite()` (`Geom2d_Line.cxx:142-150`), and
+/// `GeomProjLib::Curve2d` returns that untrimmed `Geom2d_Line` inline
+/// (`GeomProjLib.cxx:81`) unless the input was itself a `Geom_TrimmedCurve`
+/// (`:118-128`). A cone generatrix is the reproducible case: the surface's
+/// `Bounds` is `V = (-inf, inf)` (`Geom_ConicalSurface.cxx:207-215`) and the
+/// projection maps it to a constant-`V` line, so `(-inf, inf)` is **correct**.
+///
+/// Consequence for callers and diagnostics: do not sample a pcurve over its
+/// self-reported range without an `is_finite` check — use the 3D edge's range
+/// instead. Sampling at `-inf` is what produced the retracted "d0 is all NaN"
+/// reading (see `specs/_a3n00_gap_analysis.md` §9.313 / D14).
 pub fn make_pcurve_full(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, String> {
     // A STEP-imported pcurve (BRep_TEdge's stored `(face -> Geom2d_Curve)`)
     // wins over projection: it is the exact trimming curve of the face, so a

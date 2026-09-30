@@ -4,6 +4,12 @@
 //! when `[U1,U2]` is a proper sub-range, then adds every pole. This port adds
 //! the live poles when the range covers the knot span; otherwise it uses
 //! `GeomBndLib_OtherCurve2d::Box` (the adaptor fallback).
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::GpPnt2d;

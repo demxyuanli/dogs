@@ -5,6 +5,12 @@
 //! and 976). Shared-edge glue (`BOPAlgo_Builder`) is left to the caller via
 //! `the_shared`; when `the_shared` is false the edges are packed into a
 //! compound without a nested boolean.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

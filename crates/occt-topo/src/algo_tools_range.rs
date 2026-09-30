@@ -7,6 +7,12 @@
 //!   187/224/254, `CorrectRange` at 284/364, `Dimensions` at 467)
 //! - `IntTools_Tools.cxx` (`VertexParameters` at 593, `VertexParameter` at
 //!   615, `IsOnPave1` at 627, `IsInRange` at 650)
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::gp::GpPnt;
 use occt_core::precision::{PCONFUSION, RESOLUTION};

@@ -2,6 +2,12 @@
 //!
 //! Source: `ElCLib.cxx` `To3d` overloads (1339-1421). A `gp_Ax2` is the
 //! embedding plane: `P3 = Loc + X * Xd + Y * Yd`.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::gp::{
     GpAx1, GpAx2, GpAx2d, GpAx22d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr,

@@ -18,6 +18,12 @@
 //! replaced by the same sampled iso test: the port's `dyn Surface` does not
 //! expose poles, and sampling the iso is the geometric statement those pole
 //! tests encode (opposite isos coincide within `2*Tol`).
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::Surface;

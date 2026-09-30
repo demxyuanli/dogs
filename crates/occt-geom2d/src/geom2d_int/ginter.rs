@@ -167,14 +167,19 @@ impl Geom2dIntGInter {
                     icc.perform_line_line(&l1, d1, &l2, d2, tol_conf, tol);
                     self.base.set_values(icc.result());
                 }
-                GeomAbsCurveType::Circle
-                | GeomAbsCurveType::Ellipse
-                | GeomAbsCurveType::Parabola
-                | GeomAbsCurveType::Hyperbola => {
-                    // UNPORTED (IntCurve_IntConicConic_1.cxx:2236 Line/Circle,
-                    // :2861 Line/Ellipse, and the parabolic/hyperbolic
-                    // overloads): only the Line/Line `Perform` is ported.
-                }
+                // T-100: OCCT routes Line/Circle, Line/Ellipse and the
+                // parabolic/hyperbolic pairs to the dedicated `IntConicConic`
+                // overloads (`IntCurve_IntConicConic_1.cxx:2236`, `:2861`, ...),
+                // of which this port only has Line/Line. Those overloads are a
+                // **specialisation**, not new capability: the generic arm below
+                // builds `IntCurveIConicTool::from_lin2d` and calls
+                // `IntConicCurveGen::perform` (`gxx:245-779`), whose
+                // `MyImpParTool` takes *any* `Curve2d`, and
+                // `IntCurveIConicTool` already represents every conic
+                // (`from_circ2d` / `from_elips2d` / `from_parab2d` /
+                // `from_hypr2d`). So a Line/Conic pair is handled correctly here;
+                // the dedicated overloads remain unported as an optimisation
+                // only. See specs/_a3n00_gap_analysis.md §9.305.
                 _ => {
                     // `gxx:327-339`: Line/default -> IntConicCurve.
                     let l1 = curve_tool::line(c1).expect("line");
@@ -186,9 +191,11 @@ impl Geom2dIntGInter {
             }
         } else {
             // UNPORTED (IntCurve_IntCurveCurveGen.gxx:339-...): the typ1 != Line
-            // arms. `SplitByLine` never reaches them (its first curve is the
-            // cutting line), and the conic/curve and curve/curve kernels they
-            // need are not fully ported.
+            // arms (conic/curve and curve/curve). **Unreachable from this
+            // codebase**: the only caller is
+            // `shape_fix_compose_shell/split_by_line.rs:203-204`, whose first
+            // curve is always `Geom2dLine` (`:42`), so `typ1` is always `Line`.
+            // Left unimplemented rather than guessed; see §9.305.
         }
     }
 }

@@ -3,6 +3,12 @@
 //! Source: `GeomBndLib_Parabola2d.cxx`. Infinite parameters open X/Y min or
 //! max together. Finite interval adds endpoints and the vertex at `t=0` when
 //! the parameter range crosses zero.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::GpParab2d;

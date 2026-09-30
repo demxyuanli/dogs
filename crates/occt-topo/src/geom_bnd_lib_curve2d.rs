@@ -9,6 +9,12 @@
 //! concrete `gp_*2d` (the analytic `box_*` functions remain available).
 //!
 //! `BoxOptimal` is not dispatched: PerformAreas uses `Add(..., 0.)` → `Box()`.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::{GpCirc2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d};

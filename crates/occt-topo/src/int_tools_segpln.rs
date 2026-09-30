@@ -9,6 +9,12 @@
 //! `ComputeTolerance` in OCCT uses `GeomLib_CheckCurveOnSurface`. The port
 //! samples the 3D curve against the surface image of the pcurve and returns
 //! the max distance inflated by `1 + 1e-5`, matching the OCCT `anEps` margin.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use occt_core::gp::{GpLin, GpPln, GpPnt};
 use occt_geom::{Curve, Surface};

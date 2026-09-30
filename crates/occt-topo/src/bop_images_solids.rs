@@ -17,6 +17,12 @@
 //! overlapping boxes could emit two solids instead of the one GF image.
 //!
 //! Host: [`crate::bop_occt_util::BopSolidHost`]. `BopBuilder` implements it.
+//! T-97: items below are faithful ports of the named OCCT source, but their
+//! OCCT-side consumers are not all ported yet, so parts are not called from this
+//! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
+//! code. Do not delete them to silence warnings (see
+//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+#![allow(dead_code)]
 
 use crate::bop_fill_in3d::fill_in_3d_parts_builder;
 use crate::bop_fill_internals_occt::fill_internal_shapes_occt;
