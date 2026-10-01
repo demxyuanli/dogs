@@ -16451,3 +16451,47 @@ cxx:2195      for (int i2 = 1; i1 <= nb1 && i2 <= nb2; i2++)
 3. 跑验收：`zz_seam_fix 113` → Face、`--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、
    a3n00 面积比从 0.8996 起上升，再跑 `pwsh -File .target-gate\t101_verify.ps1` 全量门禁；
 4. 若证实「其实等价」（例如端口的 `i1 += 1` 恰好复刻了 OCCT 2186-2194 里的自增），则继续在这段里找下一处。
+
+---
+
+### 9.401 —— T-101（F113）：§9.400 的 off-by-one 假设**被证伪**（端口忠实复刻了 `for` 头的自增语义）
+
+读齐两边的原文后否掉：
+
+```cpp
+// cxx:2183-2195
+if (skipU && skipV) {
+  if (i1 <= nb1) { continue; }      // ← for(i1…; i1++) 的 continue **会执行自增** ⇒ i1 进一
+  else           { break; }
+}
+for (int i2 = 1; i1 <= nb1 && i2 <= nb2; i2++) { … }   // 内层条件用「当前」i1（未自增）
+```
+```rust
+// shape_fix_face.rs:542-553
+if skip_u && skip_v {
+    if i1 <= nb1 { i1 += 1; continue; }   // ← 显式补上 for 头那次自增，语义等价
+    else { break; }
+}
+for i2 in 1..=nb2 {
+    if i1 > nb1 { break; }                // ← 等价于 C 的 `i1 <= nb1` 每轮判
+```
+
+⇒ 端口的 `i1 += 1` 只出现在 `skip_u && skip_v` 这一支里，正是 OCCT `continue` 触发 `for` 头自增的等价写法；
+内层守卫也与 C 的循环条件等价。**这一段没有分歧**（§9.400 的怀疑撤回）。
+
+#### 该循环里**仍未逐行读过的部分**（下一轮的目标，按嫌疑排序）
+
+```text
+1) shape_fix_face.rs:441-503  ↔ cxx:2138-2155 附近
+   —— `shiftw2` / `other` / `w1`、`w2` 的选取与 UV 界比较、`period`（端口 :377-390 的 wire_uv_bounds/period）
+      ← 这段决定 pos1 的来源与两条 wire 的身份，**嫌疑最大**
+2) shape_fix_face.rs:563-588  ↔ cxx:2203-2234
+   —— `pos2` 的 U/V 两支状态机（found=2）与收尾 adjust_to_period
+```
+
+#### 下一步
+
+读 `shape_fix_face.rs:441-503` 与 `cxx:2138-2155`，逐项比 `w1/w2` 的取法与 `shiftw2`/`other` 的取值；
+若仍一致，再读 563-588 与 cxx:2203-2234。命中即按 .cxx 修并跑验收（`zz_seam_fix 113` → Face、
+`--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起、
+最后 `pwsh -File .target-gate\t101_verify.ps1`）。
