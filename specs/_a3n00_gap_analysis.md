@@ -14921,3 +14921,154 @@ cd .target-gate; python pair368b.py ; python pair368c.py
 
 > 数据留在 `.target-gate/delaun_in/`（端口结构 dump，452 个文件，本轮的
 > `--delaunstruct` 输入）与 `.target-gate/{delaunstruct368,uvfeed368,gtmesh368,gtuvsum368,faceids368,faceids_nofix368,boundary}.txt`。
+
+---
+
+### 9.369 —— 【T-99 的 accept 达成】把导入期 `ShapeFix_Face::FixMissingSeam` 接回 reader：a3n00 面积比 **0.8627 → 0.8996**、T0M 未网格 **7 → 6**、UNPORTED rescue 触发 **16 → 0**；带倒角法兰的 16 个面从「2 条 wire」变成 OCCT 的「1 条 wire / 5 条边」
+
+#### 9.369.1 结论先行
+
+**用户这一轮的要求是「a3n00 一个一个处理，先处理带倒角的法兰盘」。**
+按 §9.368 定位到的病灶（读入期缺 bound 合并）动手，结果如下：
+
+| 读数（口径见 §9.369.7） | 改前 | 改后 | OCCT |
+|---|---|---|---|
+| a3n00 面积比（`step_obj_gates` `step_obj_area`） | **0.8627** | **0.8996** | 1 |
+| T0M 面积比（同上） | 0.9786 | **0.9987** | 1 |
+| acs10 面积比（同上） | 0.9025 | **0.9846** | 1 |
+| a3n00 `zz_probe_a3n00` | `stats=226 unmatched=0 mesh 11101/11121` | `stats=225 unmatched=1 mesh 10863/11941` | — |
+| T0M `zz_probe_a3n00` | `stats=1765 unmatched=7` | **`stats=1766 unmatched=6`** | — |
+| a3n00 wire 直方图（`zz_uv_feed --ids`） | `{1:163, 2:53, 4:2, 6:4, 10:4}` | **`{1:206, 2:10, 4:2, 6:4, 10:4}`** | `{1:208, 2:9, 4:1, 6:4, 10:4}` |
+| a3n00 UNPORTED UV-grid rescue 触发次数 | 16（§9.351） | **0** | 0（OCCT 无此路径） |
+| 法兰/倒角那 16 个面 | 2 wires，mt 204–336 | **1 wire**，mt 72–110 | 1 wire，GT 52–80 |
+
+⇒ **T-99 的 accept（「a3n00 面积比从 0.8627 上升且不劣化；T0M 未网格 7 不增加；
+`--lib` 与 `step_obj_gates` 不劣化；不得改基线或 `area_tol`」）本轮全部满足，
+且没有改任何断言或 `area_tol`。**
+
+#### 9.369.2 做法：把 f1e56776 删掉的那段接回来（不是新造规则）
+
+`crates/occt-topo/src/step/read_topology.rs::resolve_face` 末尾重新接上
+「`ShapFixFace::fix_missing_seam` + 结果面每条 wire 的 `check_pcurves_and_shift`」，
+逐行对照：
+
+```text
+ShapeProcess_OperLibrary.cxx:785-899   FromSTEP 的 FixShape 算子 = ShapeFix_Shape::Perform
+ShapeFix_Shape.cxx                     → 每个面跑 ShapeFix_Face::Perform
+ShapeFix_Face.cxx:482-498              myResult = myFace; 若 myFixMissingSeamMode 则 FixMissingSeam()
+ShapeFix_Face.cxx:1722-2330             seam 构造 + w2 != null 合并（端口的 fix_missing_seam）
+ShapeFix_Face.cxx:365-480              第一阶段 wire 修（端口 check_pcurves_and_shift 对应）
+```
+
+`STEPControl_Controller.cxx:201` 设 `FromSTEP.exec.op = FixShape`、`:221` 设
+`FixMissingSeamMode = -1`（NeedFix 为真）⇒ **默认就开**。
+
+**为什么可以接回来（§9.219 的移除理由已被本轮实测推翻）**：用探针 `--faceids`
+（逐面 `TopExp_Explorer(face, TopAbs_WIRE)`）在 OCCT 上开/关 ShapeProcess 对比：
+
+```text
+默认（FixShape 开）   {1:208, 2:9, 4:1, 6:4, 10:4}
+--nofix（全关）       {1:163, 2:53, 4:2, 6:4, 10:4}   ← 与 STEP 的 FACE_BOUND 直方图、与端口逐字相同
+```
+
+⇒ **OCCT 的导入确实合并了 45 个「2 bound」面**（163→208）。T-93(a) 当时依据的
+「补丁版 OCCT 在 `TransferRoots` 期间无输出」只说明那条 `Perform` 符号没被调用到，
+不能推出「没有别的入口做同一件事」；D27 已提出该更正，本轮用可复跑的面拓扑直方图坐实。
+
+#### 9.369.3 逐面验证：法兰面结构与 OCCT **逐项相同**
+
+`zz_seam_fix data/occ/a3n00.stp 192`（单面，改前已验证）：
+
+```text
+BEFORE wires=2   wire[0] nEdges=1 par=[π,3π]   wire[1] nEdges=1 par=[0,2π]
+HEALED wires=1   nEdges=5  e0 par=[2π,3π] Circle / e1 par=[π,2π] Circle
+                          / e2 par=[-287.805924,-267.805924] Line(seam, npc=2, 反向两次)
+                          / e3 par=[-287.805924,-267.805924] Line(seam, Reversed)
+                          / e4 par=[0,2π] Circle
+```
+
+接入 reader 后**端口模型**的同一面（`zz_uv_feed --model 192`）：
+
+```text
+MODEL f=192 wires=1 urange=[0,6.283185307179586] vrange=[-287.805924191980466,-267.805924191980523]
+MODEL  wire[0] nEdges=5
+MODEL   e[0] edge=536 ori=Forward deg=false curve=Line   par=[-287.805924191980466,-267.805924191980523] npc=2
+MODEL   e[1] edge=537 ori=Forward deg=false curve=Circle par=[6.283185307179586,9.424777960769379]
+MODEL   e[2] edge=538 ori=Forward deg=false curve=Circle par=[3.141592653589793,6.283185307179586]
+MODEL   e[3] edge=536 ori=Reversed deg=false curve=Line  par=[-287.805924191980466,-267.805924191980523] npc=2
+MODEL   e[4] edge=539 ori=Forward deg=false curve=Circle par=[0,6.283185307179586]
+```
+
+与 §9.368.6 记录的 OCCT 模型孪生 f=85（1 wire / 5 边 / 7 pcurve：两条 2 点 seam + 圆 A
+切成 19+19 两段 + 圆 B 整圈）**边数、边序、参数区间逐项对应**。
+
+**16 个面（法兰盘 + 倒角 + 螺栓孔）改后读数**（`zz_uv_feed --ids`）：
+
+```text
+f=169  1 wire mt= 72 (改前 2 wires / 204)    f=196 1 wire mt=72 (228)
+f=174  1 wire mt=110 (288)                   f=197 1 wire mt=72 (228)
+f=189  1 wire mt= 72 ( 36)                   f=198 1 wire mt=72 (228)
+f=192  1 wire mt= 72 (228)                   f=199 1 wire mt=72 (228)
+f=193  1 wire mt= 72 (228)                   f=204 1 wire mt=72 ( 36)
+f=194  1 wire mt= 72 (228)                   f=206 1 wire mt=72 (336)
+f=195  1 wire mt= 72 (228)                   f=209/210/212 1 wire mt=73 (224)
+```
+
+按曲面类型（`--boundary` 的模型孪生）：这 16 个面 = **10 个圆柱 + 3 个圆锥 + 3 个 BSpline 型**
+（圆锥即倒角面 `f=174/189/204`；`f=192..199` 是左法兰上 8 个成环排布的圆柱孔/凸台，
+`f=209/210/212` 是右法兰的同类）。
+
+#### 9.369.4 整模型读数：rescue 不再触发
+
+* a3n00 `--ids` 的 226 个面：**rescue 触发 0 次**（改前 16 次，§9.351）；
+  ⇒ 这 16 个面现在走的是**忠实 Delaunay 路径**，不再靠 `wireframe_face_triangulation`
+  （`discret_root.rs:477-488`，UNPORTED，audit A19/T-68）补三角形。
+* wire 直方图 `{1:163,2:53,4:2,6:4,10:4}` → `{1:206,2:10,4:2,6:4,10:4}`（43 个面 2→1），
+  与 OCCT 的 `{1:208,2:9,4:1,6:4,10:4}` 只差 **1 个 2-wire + 1 个 4-wire 面**（见 §9.369.6）。
+* 面积比与 T0M 读数见 §9.369.1 的表；`step_obj_gates` **5/5 全绿**、`--lib` **1281 passed / 0 failed**。
+
+#### 9.369.5 仍未解决（本轮的旁支，**未动手**，留作「一个一个处理」的下一项）
+
+1. **还剩 2 个面没合并**：端口 `{1:206,2:10,4:2}` vs OCCT `{1:208,2:9,4:1}`
+   ⇒ 有 1 个 2-bound 面与 1 个 4-bound 面 OCCT 会合并而端口没有。需要按 bbox 配出这两个面，
+   再对着 `ShapeFix_Face::FixMissingSeam` 的分支（`cxx:1899-2330`）看它们为什么不进合并路径。
+2. **全形状跑一遍比逐面多改 4 个面**：`zz_seam_fix --all` 在 a3n00 上 `faces=226 changed=46`，
+   其中 42 个是 `2→4 / 2→5` 边（即 seam 合并），另有 4 个是
+   `13→15 / 13→16 / 22→28 / 5→8`。这 4 个是不是 OCCT 也会改（`FixReorder`/post-seam 面循环
+   那两处 UNPORTED 的产物），本轮**没查**。
+3. **法兰面的三角密度仍比 OCCT 密**：`f=192..199` 端口 72 个三角 vs GT 52；
+   §9.368 的预测写的是「≈52」，实际落在 72 ⇒ 结构对了，密度还差一档
+   （`Rescue` 已不参与，属 `GenerateSurfaceNodes`/deflection 一侧的问题，**未动**）。
+4. **面积比 0.8996 vs 1**：缺口从 31179.6 降到约 22800（`our=204327.72 / occ=227130.30`），
+   与 §9.316 记录的 F113 单面区域量级（26952）同阶；下一步仍应按「面」而不是按「全局参数」找。
+
+#### 9.369.6 本轮改动与门禁
+
+* **库代码**：`crates/occt-topo/src/step/read_topology.rs` 一处（37+/13−，含注释），
+  即 §9.369.2 的 seam 步骤接线；`discret_root.rs` 的 TEMP rescue 计数插桩
+  **已用 `edit` 反向撤除**（`git diff` 对该文件为空）；
+* 未改任何测试、断言、`area_tol` 或基线；
+* 门禁（本轮实测，最终树）：`cargo check` 0 error；`cargo test --lib`
+  `1281 passed; 0 failed`；`cargo test --test step_obj_gates -- --nocapture`
+  `5 passed; 0 failed`（385.81s）；a3n00 / T0M 读数见 §9.369.1。
+
+#### 9.369.7 复跑
+
+```text
+# 逐面结构（改前/改后同一命令）
+crates\occt-topo\target\debug\examples\zz_seam_fix.exe data/occ/a3n00.stp 192
+crates\occt-topo\target\debug\examples\zz_uv_feed.exe data/occ/a3n00.stp --model 192
+
+# 全形状会改哪些面
+crates\occt-topo\target\debug\examples\zz_seam_fix.exe data/occ/a3n00.stp 0 --all
+
+# wire 直方图 + 逐面 wires/mt
+crates\occt-topo\target\debug\examples\zz_uv_feed.exe data/occ/a3n00.stp --ids > .target-gate\uvfeed369.txt
+
+# 面积比（stderr 里每行 [model] our=... occ=... ratio=...）
+cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates -- --nocapture
+
+# 端口侧 stats/unmatched
+rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_probe_a3n00 -- data/occ/a3n00.stp
+rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_probe_a3n00 -- data/occ/T0M.stp
+```

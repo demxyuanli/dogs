@@ -720,19 +720,43 @@ impl<'a> Resolver<'a> {
         //
         // `FromSTEP.FixShape` (`ShapeProcess_OperLibrary.cxx:830`) runs
         // `ShapeFix_Face::Perform`, whose `FixMissingSeam` step is
-        // `ShapeFix_Face.cxx:492-498`. NOT wired yet: it triggers on
-        // `occ/bottom.step` (seam added, single face) but the result diverges
-        // (mesh f 23557 -> 23408) because `ShapeFix_ComposeShell` still has the
-        // T-93 (a): OCCT does **not** run `ShapeFix_Face::Perform` on this read
-        // path — a patched OCCT build whose `ZZ_ShapeFix_Face.obj` provides
-        // `?Perform@ShapeFix_Face@@…` (proved present by the link map) printed
-        // nothing during `STEPControl_Reader::TransferRoots` for a3n00 and T0M
-        // (specs/_a3n00_gap_analysis.md 9.219). The port used to bolt on
-        // `FixMissingSeam` here; that compensated for the port reader on most
-        // T0M faces but damaged a3n00's F113, because the discarded `Shell(5)`
-        // still rewrote the shared `GeometryRegistry` (9.228). Removing it
-        // matches OCCT: F113 meshes, and the T0M area ratio shift is recorded in
-        // the `step_obj_gates` baseline.
+        // `ShapeFix_Face.cxx:492-498`. Measured this round on `data/occ/a3n00.stp`
+        // by toggling the operator in the OCCT probe (`--faceids` counts
+        // `TopExp_Explorer(face, TopAbs_WIRE)`): ShapeProcess ON gives
+        // `{1:208, 2:9, 4:1, 6:4, 10:4}`, `--nofix` gives
+        // `{1:163, 2:53, 4:2, 6:4, 10:4}` — the latter is the file's own
+        // `FACE_BOUND` histogram and the port's, so the operator demonstrably
+        // merges 45 two-bound faces into one seam-closed wire during import
+        // (specs/_a3n00_gap_analysis.md §9.368.6). §9.219's link-map reading
+        // ("`Perform` is not called on this read path") is superseded by that
+        // measurement; see D27/§9.290.
+        //
+        // The seam construction and the `w2 != null` merge this needs are
+        // `ShapeFix_Face.cxx:1899-2330`, ported in
+        // `shhealing/shape_fix_face.rs::fix_missing_seam` (verified per face:
+        // a3n00 f=192 turns 2 wires / 1 edge each into 1 wire / 5 edges, the same
+        // structure the OCCT model has). `check_pcurves_and_shift` then repairs
+        // the pcurves of the rebuilt wires (`cxx:365-480` first wire round).
+        {
+            let mut sff = crate::shhealing::ShapeFixFace::with_face(&face);
+            sff.result = Some(face.0.clone());
+            if sff.fix_missing_seam() {
+                if let Some(res) = sff.result.clone() {
+                    if res.shape_type() == crate::abs::ShapeType::Face {
+                        let rf = crate::shape::Face(res.clone());
+                        for mut w in crate::topo_tools_full::wires_of_face(&rf) {
+                            crate::shhealing::check_pcurves_and_shift(
+                                &mut w,
+                                &rf,
+                                self.precision,
+                                false,
+                            );
+                        }
+                        return Ok(res);
+                    }
+                }
+            }
+        }
         Ok(face.0)
     }
 
