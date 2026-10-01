@@ -15208,3 +15208,79 @@ PORTID f=192        wires=1 mt=72 bbox=(同上)          ← 与 --ids 的读数
   **库代码零改动**；
 * 复跑：`zz_probe_a3n00.exe data/occ/a3n00.stp --fstats > .target-gate\fstats370.txt`
   然后 `python .target-gate\t101_density4.py`。
+
+---
+
+### 9.372 —— T-101 迭代（3）：③ 密度差找到**代码级候选**（Torus 的 `fillParams` 依赖参数容器的遍历顺序：OCCT 是插入序的 `IndexedMap`，端口是**排序**的 `ParamSet`）；同时记下密度图的配对质量警告
+
+#### 9.372.1 按曲面类型归并（199 个 bbox 配对面）
+
+```text
+type      n     port_mt  occ_tri  diff     ratio
+Torus     7     1507     706      801      2.135
+BSpline   15    2540     1751     789      1.451
+Cyl       61    2390     1782     608      1.341
+Plane     86    2168     1614     554      1.343
+Cone      30    667      539      128      1.237
+```
+
+**Torus 2.14× 最突出**。但先看 §9.372.3 的警告：这 199 个配对面的 GT 三角和只有 6392，
+而全模型 GT 是 12324 ⇒ 26 个未配上的面吃掉了 5932（均值 228），
+说明**配对在「大面」上系统性失败**（大面的 bbox 在整形/合并后与本侧不完全一致）。
+⇒ 上表的**比例不能直接当结论**，只能当「哪一类值得先查」的线索；Torus 的面数少、bbox 唯一性好，
+是其中最可信的一组。
+
+#### 9.372.2 候选根因：参数容器的**遍历顺序**（只影响 Torus）
+
+OCCT：
+
+```cpp
+// IMeshData_Types.hxx:144
+typedef NCollection_Shared<NCollection_IndexedMap<double>> IMapOfReal;
+// BRepMesh_TorusRangeSplitter.cxx:116-123
+void AddPoint(const gp_Pnt2d& thePoint) { … GetParametersU().Add(thePoint.X()); GetParametersV().Add(thePoint.Y()); }
+// :129-176 fillParams(theParams, range, stepsNb, scale, alloc):
+//   aParamArray(j) = theParams(j);            ← 按**索引序**（= 插入序，IndexedMap 不去重排序）
+//   贪心抽稀：aParams 已收的每个值与 pp 的距离都要 > aStdStep 才收 pp   ← 结果依赖遍历顺序
+```
+
+端口：
+
+```rust
+// crates/occt-topo/src/meshing/range_splitter/param_set.rs:5-28
+/// Sorted set of real parameters … Mirrors OCCT's `IMeshData::IMapOfReal`;
+pub struct ParamSet { values: Vec<f64> }
+pub fn insert(&mut self, v: f64) { /* binary_search + insert —— **保持升序** */ }
+// crates/occt-topo/src/meshing/range_splitter/splitter.rs:485-511 fill_params 用 params.iter()（升序）
+```
+
+⇒ 同一批边界参数，OCCT 按**首次出现顺序**抽稀，端口按**升序**抽稀，
+**贪心保留的子集不同** ⇒ Torus 内部网格点数不同 ⇒ 三角数不同。
+`fillParams` 在 OCCT 里**只有 TorusRangeSplitter 用**（`BRepMesh_*RangeSplitter.cxx/hxx` 全量 grep：
+只有 `BRepMesh_TorusRangeSplitter.cxx:89/92` 两处），与本轮「Torus 偏差最大」的观察一致。
+
+**这是「没有同等分支」类的差异**：端口 `ParamSet` 的注释自己声称「Mirrors
+`IMeshData::IMapOfReal`」，但语义（插入序 vs 升序）不同。下一轮要做的是：
+1. 先做**判定实验**（不先改代码）：探针同时构造两侧的 torus splitter
+   （同一面、同一 `AddPoint` 序列、同一 `AdjustRange`），打印
+   `GenerateSurfaceNodes(...)` 的**点数**；OCCT 侧用 `BRepMesh_TorusRangeSplitter`（public、`Standard_EXPORT`），
+   端口侧用 `crates/occt-topo/examples/` 里的仪器。
+   预期：端口点数 > OCCT 点数，且比值与 `2.135` 同量级。
+2. 若成立，把 `ParamSet` 改成**插入序 + 去重**（`NCollection_IndexedMap` 语义），
+   并全量 grep 其消费者确认没有别处依赖升序（`calc_average_duv` 自己会排序，不受影响）。
+3. 改完按门禁实测：`--lib`、`step_obj_gates`（逐模型 area ratio）、a3n00/T0M stats。
+
+#### 9.372.3 密度图的配对质量警告（下一轮先修）
+
+* 配对用六坐标 bbox ≤1e-3；**26 个面配不上**，且未配上的 GT 面承担了 5932/12324 个三角
+  ⇒ 大面（10 wire / 6 wire / 合并后 bbox 变化的面）系统性失配；
+* 已实证同类陷阱：`--mesh`（TopExp_Explorer 序）的 FACE bbox 会因「三角化不完整」而变小
+  （§9.368.5 的 `--fbbox` 教训）⇒ 用 `--mesh` 的 bbox 配对不可靠；
+  本轮改用 `--boundary`（模型序、全程 DiscretizeEdges 后的面）才对；
+* 下一轮：配对后**必须先核对「配对面的 GT 三角和 ≈ 全模型 GT 三角和」**，对不上就不下结论。
+
+#### 9.372.4 本轮改动与复跑
+
+* 库代码零改动（纯分析 + 读 OCCT 源码）；
+* 新增脚本 `.target-gate/t101_bytype.py`（按类型归并）；
+* 复跑：`python .target-gate\t101_bytype.py`。
