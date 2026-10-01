@@ -17323,3 +17323,38 @@ zz_uv_feed --model 113 → MODEL f=113 wires=4（**不变**）；zz_seam_fix 113
 3. 若确认 `:2900` 是笔误 ⇒ 改 `&ad2` 并按验收（`--model 113` → 2 wires、`zz_seam_fix 113` → Face、
    `--fstats` → `face=113 mt≈228`、面积比从 0.8996 起、`t101_verify.ps1`）全量复跑；
    若确认不是笔误 ⇒ 分歧在 `param1` 的计算（`project_inside` ↔ `ProjectInside` 的实现）。
+
+---
+
+### 9.422 —— T-101（F113）：`check_notched_edges` 的**命名没有交叉** ⇒ `:2900` 确实是相对 `cxx:1963` 的转写笔误；但它不是 F113 的病灶（F113 走 `param1` 那一支）
+
+读齐端口 `wire_fix.rs:2866-2901` 后确认语义（与 OCCT `ShapeAnalysis_Wire.cxx:1960-1963` 逐项对应）：
+
+```rust
+let pt2 = if e2.forward { c2d2.d0(b2) } else { c2d2.d0(a2) };   // :2895  = cxx:1960 的 p2d2  ✓
+let pt1 = if e1.forward { c2d1.d0(a1) } else { c2d1.d0(b1) };   // :2896  = cxx:1961 的 p2d1  ✓
+let proj1 = project_inside(&ad1, &start2, tolerance, false);     // :2899  = cxx:1962 ProjectInside(Ad1, p2d2) ✓
+let proj2 = project_inside(&ad1, &start1, tolerance, false);     // :2900  ≠ cxx:1963 ProjectInside(**Ad2**, p2d1)
+```
+
+⇒ 端口 `start1/start2` **没有**与 `p2d1/p2d2` 交叉 ⇒ `:2900` 的目标写 `&ad1` 是**真的转写不一致**
+（应为 `&ad2`）。但 §9.421 实测把它改成 `&ad2` 后 **F113 的读数一字不变**（仍 `wires=4`、`wire[0] nEdges=6`）。
+
+⇒ 由此反推：**F113 在 `:2906` 的分支里走的是 `proj1.distance < proj2.distance`（即 `param = param1`、
+`short_num = n2`）那一支** —— 与 `proj2` 的目标无关。所以 F113 的病灶在更前面：
+`param1` 的计算（`project_inside` ↔ `ProjectInside` 实现）或 `:2906` 的分支选择依据。
+
+#### 结论与下一步（两条，按性价比）
+
+```text
+A) 修笔误（保持 .cxx 对齐）：把 :2900 的目标改成 &ad2。它会影响所有 `dist1 >= dist2` 的面，
+   ⇒ **必须整跑验收**（pwsh -File .target-gate\t101_verify.ps1：--fixms 无 Shell / 直方图贴近
+   {1:208,2:9,4:1,6:4,10:4} / a3n00 ≥ 0.8996 / T0M ≤ 6 / --lib 1281-0 / step_obj_gates 5/5），
+   绿则提交、红则回退。**F113 不会因此变好**（本节已证），所以它是独立的一处对齐修复。
+B) 抓 F113 的真病灶：在 `:2906` 之后（`param` 落定时）打一次 `(dist1, dist2, short_num, param)`（TEMP），
+   与 OCCT 侧同面读数比；若 `param1` 与 OCCT 的 `param` 不同，再进 `project_inside` /
+   `ShapeAnalysis_Curve::Project`（cxx 里 `ProjectInside` 的实现）逐行比。
+```
+
+判据（不变）：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
+a3n00 面积比从 0.8996 起上升；`idx171 #7415`、`idx203 #8243` 同法一并看。
