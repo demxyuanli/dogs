@@ -16012,3 +16012,42 @@ SPLITTER f=77 preset=1 ru=[0.000000000000000,6.283185307179586] rv=[-43.75000000
 （本轮 `noop` census 里既没有 box 等于/包含 F113 的面，也没有 `u=6.2832`/`v=175` 的面 ——
 原因是未整形 shape 的面 box/span 是从**另一套数据**（无 pcurve）算出来的，
 所以「按 box 匹配 raw 面」这条路不可靠，下一轮 (b) 改用 `wdump <idx>`。）
+
+---
+
+### 9.390 —— T-101（F113）：**这张面根本没走到 range splitter** —— 空面的原因在更早的早退（`collect_boundary_uv` 返回 Err/空），与 ComposeShell 无关
+
+同口径仪器（TEMP `OCCT_TOPO_TRACE_SPLITTER_P`，加在端口 `node_insertion.rs::perform`
+的 `sp.adjust_range()` 之后，**含 invalid 也打**，已撤除）：
+
+```text
+225 条 SPLITTERP（226 面里缺的正是 face=113），且 valid=false 一条都没有
+⇒ face=113 连 splitter 那一步都没到 —— 它在 perform 更早处就返回了
+```
+
+对照 OCCT 侧同面（model 77）：`SPLITTER f=77 ru=[0,6.2832] rv=[-43.75,131.25] …`（有效、有限）。
+
+端口 `perform`（`node_insertion.rs:471-553`）在 splitter 之前的早退只有三处：
+
+```text
+1) let (uv, …) = Self::collect_boundary_uv(model, face_index)?;   ← 返回 Err 会直接冒泡
+2) if uv.is_empty() { return Err("…has no boundary UV points") }
+3) if let Some(surface) = face.surface() { … }                    ← surface 为 None 时整块跳过
+   （已排除 3：`--model 113` 能打出 urange/vrange，说明 surface 是 Some）
+```
+
+⇒ **F113 变空的第一现场是 `collect_boundary_uv`（或它返回的 `uv` 为空）**，
+即「这张面的边界 UV 取不出来」。这与 §9.377–§9.389 在 ComposeShell 里的一切无关 ——
+前者是「面根本没进网格管线」，后者是「进了也合不拢」。
+
+#### 下一步
+
+给 `collect_boundary_uv`（或 `perform` 的入口）加同口径 TEMP 打印，量 F113 走到哪一步失败：
+
+```text
+· collect_boundary_uv 是 Err 还是 Ok(空)？（错误串会给出原因，例：某条 pcurve 缺失/参数非有限）
+· 若是 Ok 且 uv 非空，则问题在 `if let Some(surface)` 块里的 sp.reset/add_point（例如
+  wires_uv 为空 ⇒ add_point 一个都没加 ⇒ adjust_range 后 valid=false —— 但那样会打出 valid=false 行）
+```
+
+验收不变：`--fstats` 出现 `face=113 mt≈228`、`--model 113` → 2 wires、`zz_seam_fix 113` → Face、a3n00 面积比从 0.8996 起上升。
