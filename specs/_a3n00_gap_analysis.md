@@ -15767,3 +15767,39 @@ cxx:1722-1767（remove duplicated points in closed mode）        ↔ 端口 spl
 逐条比：比较的是**参数**还是**3D 点**、用的容差是哪一个（`prevVTol` / `Precision::Confusion()` / `IsSame`）、
 以及「重合时保留哪个顶点」。改对后判据同 §9.381.4（`--model 113` 2 wires、`--fstats` 出现 face=113 mt≈228、
 `zz_seam_fix 113` 的 result 为 Face、a3n00 面积比继续上升）。
+
+---
+
+### 9.383 —— T-101：`split_by_line` 的**去重/吸附**这一步也忠实 ⇒ 嫌疑落到四个 helper 与网格输入（不再是「哪一步」）
+
+逐行对照 `cxx:1722-1767` ↔ 端口 `split_by_line.rs:295-341`（0/1 基已正确换算）：
+
+```text
+cxx:1722  int j = IntEdgePar.Length();        ↔ 端口 :301  let mut j = len - 1;（1-based → 0-based，注释已写明）
+cxx:1725  for (i = 1; i <= Length();)         ↔ 端口 :303  while i < len（两边都每轮重取长度）
+cxx:1727  if (i == j) break;                  ↔ 端口 :304  if i == j { break }
+cxx:1731-1742  同边号 + |Δpar| < PConfusion → Remove(i)、j>i 则 j--、continue
+                                              ↔ 端口 :307-337 同判据、同删除、同 j--
+cxx:1743-1763  相邻边端口重合（nbe==1 或 Ind(i)==Ind(j)%nbe+1）→ 用 BRep_Tool::Range 的端点比 PConfusion
+                                              ↔ 端口 :311-325 用 curve_on_surface_range 取 (a,b) 再按朝向取端点比 PCONFUSION
+cxx:1765  j = i++;                            ↔ 端口 :338-339  j = i; i += 1;
+```
+
+⇒ **这一步也是忠实的**。至此，端口 ComposeShell 这条链上**每一个「步骤」都已逐行对过**并且一致：
+剪枝（no-op，§9.377）· `split_wire.rs:289-296`（§9.378）· split_wire 的两个匹配分支（§9.379/§9.381）·
+`curr_pnt/curr_par` 取法（§9.381）· `split_by_grid.rs:93-133`（§9.382）· 本节去重/吸附。
+
+#### 那么差异只可能在**被这些步骤调用的 helper 或网格输入**上。下一轮按此顺序比（都在端口侧有成对实现）：
+
+```text
+1) helpers.rs:173  check_by_curve_3d      ↔ ShapeFix_ComposeShell.cxx 的 CheckByCurve3d
+      —— 它同时把门两个匹配分支；签名里的容差与曲线取值若不同，两分支都会失败 ⇒ 走到「新造顶点」
+2) helpers.rs:156  get_grid_resolution + split_wire.rs:484 split_res
+      ↔ GetGridResolution(...)/prevVTol 再与 myU/VResolution 取小（喂给 IsCoincided 的分辨率）
+3) helpers.rs:84   is_coincided           ↔ IsCoincided（容差语义）
+4) 网格输入本身：composite_surface.rs:339 value_pnt / u_joint_values / v_joint_values /
+      myUResolution / myVResolution（若与 OCCT 的 grid 不同，上面两分支同样会失败）
+```
+
+**可观测签名不变**：`breakwires` 处出现新顶点 `D` 而应有 junction 顶点 `C`（差 (0.056, 2.175, 0.056)）；
+修好后判据同 §9.381.4（`zz_seam_fix 113` → Face、`--model 113` → 2 wires 22+6 边、`--fstats` 出现 `face=113 mt≈228`、a3n00 面积比从 0.8996 起继续上升）。
