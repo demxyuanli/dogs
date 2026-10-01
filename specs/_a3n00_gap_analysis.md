@@ -17281,3 +17281,45 @@ OCCT  ShapeAnalysis_Wire::CheckNotchedEdges（ShapeAnalysis_Wire.cxx 内；用�
 判据  --model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、
       a3n00 面积比从 0.8996 起上升、t101_verify.ps1 全绿（idx171/idx203 同法一并看）。
 ```
+
+---
+
+### 9.421 —— T-101（F113）：`check_notched_edges` 里的**投影目标**存疑（端口 `&ad1` vs .cxx `Ad2`），但**实测对 F113 无影响**，已回退；下一步必须先核变量语义
+
+对标结果（端口 `wire_fix.rs:2899-2924` ↔ `ShapeAnalysis_Wire.cxx:1962-1987`）：
+
+```cpp
+// OCCT
+double dist1 = ProjectInside(Ad1, gp_Pnt(p2d2...), Tolerance, Proj1, param1, false);   // :1962  E2 的点 -> Ad1
+double dist2 = ProjectInside(**Ad2**, gp_Pnt(p2d1...), Tolerance, Proj2, param2, false); // :1963 E1 的点 -> **Ad2**
+if (dist1 > Tolerance && dist2 > Tolerance) return false;                              // :1965-1968
+if (dist1 < dist2) { shortAD=Ad2; longAD=Ad1; lenP=b2-a2; firstP=a2; shortNum=n2; param=param1; }   // :1970-1978
+else               { shortAD=Ad1; longAD=Ad2; lenP=b1-a1; firstP=a1; shortNum=n1; param=param2; }   // :1979-1987
+```
+```rust
+// 端口
+let proj1 = project_inside(&ad1, &start2, tolerance, false);      // :2899  ✓ 同 :1962
+let proj2 = project_inside(**&ad1**, &start1, tolerance, false);  // :2900  ← 与 :1963 的 Ad2 不一致
+if proj1.distance > tolerance && proj2.distance > tolerance { … } // :2901  ✓ 同 :1965
+let (long_ad, short_ad, len_p, first_p, short_num, param) = if proj1.distance < proj2.distance { … }  // :2906  ✓
+```
+
+**实测**：把 `:2900` 的目标从 `&ad1` 改成 `&ad2`（严格照 `:1963`），编译通过后：
+
+```text
+zz_uv_feed --model 113 → MODEL f=113 wires=4（**不变**）；zz_seam_fix 113 的 BEFORE 仍是 wire[0] nEdges=6
+```
+
+⇒ **对 F113 无影响**（可能：F113 走的是 `dist1 < dist2` 那一支，`param = param1`，与 `proj2` 无关；
+也可能端口的 `start1`/`start2` 命名与 OCCT 的 `p2d1`/`p2d2` 是**交叉**的，于是原来的 `&ad1` 反而等价于 `:1963` 的 `Ad2`）。
+因为改动的语义在剩余预算内无法确证、且实测无改进，**已按原样回退**（`git diff` 为空、`cargo check` 0 error）。
+
+#### 下一步（先核语义，再决定是否改）
+
+1. 读 `wire_fix.rs:2880-2900`，确认 `start1`/`start2` 各自对应 OCCT 的哪个 `p2d*`
+   （`p2d1 = c2d1->Value(FORWARD ? a1 : b1)`、`p2d2 = c2d2->Value(FORWARD ? b2 : a2)`）；
+2. 再看 F113 走哪一支：在 `param` 落定时打一次 `(dist1, dist2, param, short_num)`（TEMP，用完 edit 反撤），
+   与 OCCT 侧同面读数比；
+3. 若确认 `:2900` 是笔误 ⇒ 改 `&ad2` 并按验收（`--model 113` → 2 wires、`zz_seam_fix 113` → Face、
+   `--fstats` → `face=113 mt≈228`、面积比从 0.8996 起、`t101_verify.ps1`）全量复跑；
+   若确认不是笔误 ⇒ 分歧在 `param1` 的计算（`project_inside` ↔ `ProjectInside` 的实现）。
