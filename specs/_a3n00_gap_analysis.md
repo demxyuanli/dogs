@@ -17121,3 +17121,66 @@ OCCT  ShapeFix_Wire::FixNotchedEdges（含 ShapeFix_Face.cxx:365-492 的调用�
       与 `FixTailMode = 0`（:249）—— 先确认门是否与 OCCT 一致。
 判据  --model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、
       a3n00 面积比从 0.8996 起上升、t101_verify.ps1 全绿。
+
+---
+
+### 9.418 —— T-101：**a3n00 逐面数据级审计**（子任务，226 面全量）+ 与 §9.417 的互相印证 ⇒ 覆盖缺口的**量化口径**确定
+
+#### A. 全量数字（口径见子任务原文：文件侧正则解析 `.target-gate/step_side.py`；端口侧新增只读
+`--ecensus` 开关；OCCT 侧 `run_dbg.bat … [noop]`；配对用**顶点坐标集合**几何配对，`PAIR exact=202`）
+
+```text
+wire 级（bound 数 vs wires=）：
+  STEP 文件        {1:163, 2:53, 4:2, 6:4, 10:4}
+  OCCT noop        {1:163, 2:53, 4:2, 6:4, 10:4}   —— **226/226 逐面相等**
+  port             {1:206, 2:10, 4:2, 6:4, 10:4}   —— **183/226 相等，43 面不等**（方向全是 port 把多 bound 并成 1 wire）
+  OCCT 整形后      {1:208, 2:9, 4:1, 6:4, 10:4}    —— 索引被重排，按干净 bbox 配 200/226
+
+边级（STEP 每环边数 vs port 每 wire 边数）：**45/226 面不一致**，其中**只有 2 面 net 丢边**：
+  idx113  #5375  Cyl     STEP [8,14,1,1] → port [6,14,1,1]   净 +2   （OCCT 整形后 [22,6]）
+  idx171  #7415  BSpline STEP [8,8,8,8]  → port [8,8,8,6]    净 +2   （OCCT 整形后 [8,8,8,7]）
+  其余 43 面是「port 合并多 bound」（净 −2 ×22 面、净 −3 ×21 面），即 fix_missing_seam 的正常产物
+```
+
+#### B. 两处丢边的形态**完全一致**（与 §9.405/§9.406 我自己测到的 F113 一致）
+
+```text
+idx113  bound #5140 / loop #5139 的 #5012、#5018 都是 LINE，端点对完全相同（#4956↔#5007），一条 .F.
+        port 把这对**整对删掉**，并把邻边收到**新顶点** (-65.243610,0,-100)（≈ 毛刺中点 -65.24379）
+        OCCT 整形后 FACE 25 同样只剩 6 边，但**收在原顶点** (-49.8649,0,-100) ⇒ 几何/拓扑都不同
+idx171  loop #7413 里 #7405 被**同一 loop 引用两次**（全 341 个 loop 中唯一的重复引用）
+        port 同样整对删掉，收到新顶点 (-35.250069,0,-116.9011)（≈ 另两顶点中点 -35.249943）
+        OCCT 整形后 FACE 2 的 wire[3] 是 **7** 边、收在原顶点
+```
+
+#### C. 与 §9.417 的互相印证（**第一现场同一处**）
+
+```text
+我（§9.417，实测配对探针）：打开 `wire_fix.rs:3249` 的 fix_notched_edges 前后打印边数
+    CP notched 8 -> 8  x10 ；  CP notched 8 -> 6  x2   ⇒ **单次调用内 8→6**
+子任务（读代码 + 数据）：候选链 `read_topology.rs:714 check_pcurves_and_shift`
+    → `wire_fix.rs:3249 fix_notched_edges`，并指出其 `cxx:4051-4067` 的「两半分拆」落在
+    `wire_fix.rs:3103-3116`（**会造新顶点**）——与观测到的「中点新顶点 + 少 2 边」吻合
+⇒ 两条独立路径指向同一函数：**`fix_notched_edges` 就是这一处 reader 覆盖缺口的现场**
+   （子任务当时把该步标为「未验证」，本节与 §9.417 合起来把它验证了）
+```
+
+#### D. 计数看不见的同类隐患（子任务发现，重要）
+
+```text
+341 个 EDGE_LOOP 中：1 个含重复边引用（#7413），**3 个含「同端点反向边对」**：#5139(→idx113)、
+#7413(→idx171)、**#8243(→port idx 203)**。第三个的 file/OCCT/port 计数都是 [2]，
+所以**只数边数的 census 看不到它** —— 同类问题可能不止 2 面。
+```
+
+#### E. 下一步（窗口已具体到行）
+
+```text
+1) 读 `wire_fix.rs:3103-3116`（两半分拆）与 `fix_notched_edges` 本体，
+   对照 `ShapeFix_Wire::FixNotchedEdges`（cxx:4051-4067）与门 `FixNotchedEdgesMode = -1`
+   （STEPControl_Controller.cxx:248）、`FixTailMode = 0`（:249）；
+2) 关键差异先记着：OCCT 整形后同样少 2 边但**收在原顶点**，port 收在**中点新顶点** ——
+   这一条既是「该不该动拓扑」也是「动到哪个顶点」的判据；
+3) 改完按验收：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
+   `--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`pwsh -File .target-gate\t101_verify.ps1` 全绿。
+   （另外 idx171/idx203 也应按同一改法一起看。）
