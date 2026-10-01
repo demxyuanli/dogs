@@ -15803,3 +15803,38 @@ cxx:1765  j = i++;                            ↔ 端口 :338-339  j = i; i += 1
 
 **可观测签名不变**：`breakwires` 处出现新顶点 `D` 而应有 junction 顶点 `C`（差 (0.056, 2.175, 0.056)）；
 修好后判据同 §9.381.4（`zz_seam_fix 113` → Face、`--model 113` → 2 wires 22+6 边、`--fstats` 出现 `face=113 mt≈228`、a3n00 面积比从 0.8996 起继续上升）。
+
+---
+
+### 9.384 —— T-101：四个 helper + 常量 `TOLINT` 全部忠实 ⇒ 分歧不在切分逻辑，而在**喂进去的那个假想 grid**（`uf/vf` 与网格范围）
+
+本轮把 §9.383 列的四项逐个对完，**全部一致**：
+
+```text
+cxx:876-892  CheckByCurve3d      ↔ helpers.rs:173-189 check_by_curve_3d
+             （c3d 为空→true；c3d->Value(param)；T.Form()!=gp_Identity 才变换；SquareDistance <= tol*tol）   一致
+cxx:929-938  GetGridResolution   ↔ helpers.rs:156-170 get_grid_resolution
+             （leftLen/rightLen 的四支与 wrap 分支、/3.；1-based↔0-based 换算核对无误）                     一致
+cxx:1163-1174/1199-1210 的 min(myU/VResolution, gridRes) 组合
+                                 ↔ split_wire.rs:484-494 split_res（grid_res = get_grid_resolution(...)/vtol）  一致
+cxx:451-462  IsCoincided         ↔ helpers.rs:84-88 is_coincided
+             （U/VTolerance = Resolution*tol；std::max(TOLINT, ·)；逐轴比较）                              一致
+cxx:290      #define TOLINT 1.e-10 ↔ helpers.rs:13 pub const TOLINT: f64 = 1.0e-10                          一致
+```
+
+⇒ **端口的 ComposeShell 切分逻辑（步骤 + helper + 常量）已逐行对完且一致**，分歧只能来自
+**被切分的那个假想 grid 本身**：`shape_fix_face.rs:591-598` 用 `GeomRectangularTrimmedSurface::uv(surf, uf2, uf2+u_range, vf2, vf2+v_range)` + `CompositeSurface::with_grid(...)`
+构造它，而 `uf2/vf2` 来自 `shape_fix_face.rs` 的「找 seam 插入位置」循环（`cxx:2138-2234`）。
+
+#### 下一步（已有一份现成读数，只需再取一份对照）
+
+两侧同标签的阶段普查里**已经打印了这三个量**：
+
+```text
+端口  .target-gate/zzfms_port140.txt   →  ZZFMS compshell-in uf=3.141592653590 vf=34.000000000000 URange=6.283185307180 VRange=2.000000000000
+OCCT  specs/occt_probe/_dbg/ZZ_ShapeFix_Face.cxx / ZZ_ComposeShell.cxx（wires_probe seamfix <bbox> 模式）应打同一行
+```
+
+⇒ 下一轮第一件事：**比 `uf`/`vf`/`URange`/`VRange` 这四个数**（以及 grid 的 `u/v_joint_values` 个数）。
+若它们不同，分歧就在 `shape_fix_face.rs` 的 `uf2/vf2` 循环（`cxx:2138-2234`）里，与 `split_*` 无关；
+若相同，则继续比 grid 的 joint values 个数与 `myU/VResolution`。
