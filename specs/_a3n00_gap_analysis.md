@@ -16918,3 +16918,63 @@ OCCT  ShapeFix_Face.cxx:365-480（CheckPCurves 一线的首个 wire 轮次）
       顺带核 -65.243610 的产生点（中点切边）是否出自该函数内部的某个 split。
 判据  --model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、
       a3n00 面积比从 0.8996 起上升、t101_verify.ps1 全绿。
+
+---
+
+### 9.413 —— T-101：**STEP 解析/处理的覆盖矩阵**（子任务结论，用户指令的直接回答）+ `check_pcurves_and_shift` 的落点定位
+
+#### A. 覆盖/一致性总判定（读代码 + 实测，逐条见矩阵）
+
+**OCCT 侧**：`FromSTEP.exec.op = FixShape`（`STEPControl_Controller.cxx:201`）在传输期逐实体跑
+`ProcessShape`（`STEPControl_ActorRead.cxx:1942`）⇒ `XSAlgo_ShapeProcessor::ProcessShape`（`:63`）
+⇒ `ShapeProcess::Perform`（`ShapeProcess.cxx:189`）⇒ 算子 `fixshape`（`ShapeProcess_OperLibrary.cxx:785`，
+参数下发 `:806-865`）⇒ `ShapeFix_Shape::Perform`（`ShapeFix_Shape.cxx:83`，分派 `:130`：
+SOLID `:160` / SHELL `:176` / FACE `:193` / WIRE `:212`）⇒ `ShapeFix_Face::Perform`（`:345`，`FixMissingSeam` 调用点 `:492`）。
+
+**实测该算子承重**（同一文件，探针开/关 ShapeProcess）：
+
+```text
+默认（整形）  226/226 面全部有三角化，wire 直方图 {1:208, 2:9, 4:1, 6:4, 10:4}
+noop          **131/226 面无三角化**（全为 UV-DEGENERATE-WIRE），{1:163, 2:53, 4:2, 6:4, 10:4}
+端口现状      225/226 有三角化，**1 面无三角化**（wires=4、mv=mt=0、dv=inf），{1:206, 2:10, 4:2, 6:4, 10:4}
+```
+
+⇒ 端口**没有 ShapeProcess/FixShape 驱动器**（全仓无 `ShapeProcess`/`OperLibrary`/`ShapeFix_Shape` 实现），
+只在 `read_topology.rs:753-773` 按面直接调 `fix_missing_seam` + `check_pcurves_and_shift` ——
+相当于只搬了「SOLID/SHELL/FACE/WIRE 分派」下的一个子步，**分派器与参数下发缺失**。
+
+**已一致的部分**：`FixMissingSeam` 本体（找 seam 循环 + ComposeShell 调用，§9.377–§9.413）、
+`TranslateEdgeLoop`/`TranslateFace` 的 bound/loop 解析（`resolve_loop`/`bind_edge_loop_vertices`/
+`associate_edge_pcurve`）、`GeometricTool` 的 seam 判定、`XSAlgo_ShapeProcessor::CheckPCurve`
+（`xsalgo_check_pcurve.rs:33`）、网格侧 ModelHealer/FaceChecker 主流程。
+
+**覆盖缺口（按严重度，子任务原文）**：
+
+```text
+1) 无 ShapeProcess/FixShape 驱动器 —— 最高；实测 noop 时 131/226 面空
+2) SHELL/SOLID 级 fixer 缺席（ShapeFix_Shell/Solid；端口无实现）
+3) FixReorder 结果不落盘（ShapeFix_Face.cxx:2029-2032 ↔ shape_fix_face.rs:406-411「只报告不重写边表」）
+4) ModelPostProcessor 未接线（生产路径在 discret_root.rs:519 另写一份）
+5) 生产路径绕过 MeshContext + 多一条 OCCT 不存在的逐面 wireframe 兜底（discret_root.rs:476-489，注释自认 UNPORTED）
+6) 阶段顺序被交织（端口先 PreProcessor 再 heal，OCCT 相反）—— 数值影响未验证
+7) read 侧参数面缺一半（read.maxprecision/surfacecurve/encoderegularity/read.step.* 无开关）
+8) 陈旧文档/工件：shape_fix_face.rs:4-6/130-132/147-148 仍写「seam construction UNPORTED」（实际已到 cxx:2330）；
+   .target-gate/a3n00_port_faces.txt 是接 seam 之前的直方图，勿当现状
+```
+
+#### B. 与 F113 这条线的关系
+
+`check_pcurves_and_shift` 位于 `crates/occt-topo/src/shhealing/wire_fix.rs:3168`
+（子任务把它对应到 `ShapeFix_Face.cxx:365-492` 的前置 wire-fix，状态「部分，未逐行对拍」）。
+本轮在 3168-3288 窗口内扫到的**唯一拓扑动作**是 `:3233 reg.remove_pcurves_on_surface(&e.0, &face.0)`
+（只删 pcurve，不删边）⇒ **8→6 的丢边点不在这个窗口内**，需把窗口扩到该函数全程（或看它是否经由
+`ShapeFix_Wire` 一类的重建路径）。这与缺口 3（`FixReorder` 不落盘）方向一致：端口在 wire 级修复上
+只做了一部分，个别面会被改写成与 OCCT 不同的边表。
+
+#### 下一步
+
+1. 读 `wire_fix.rs:3168` 起的**完整** `check_pcurves_and_shift`，找出把 8 条边变 6 条的那一步
+   （判据：`-65.243610` = `#5012` 两端点的中点，是切边指纹）；
+2. 对照 `ShapeFix_Face.cxx:365-492` 的同等分支，确认 OCCT 在该处**是否改拓扑**；
+3. 仍按验收：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
+   `--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
