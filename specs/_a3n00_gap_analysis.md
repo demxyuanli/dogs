@@ -18227,3 +18227,58 @@ result: ShapeFixFace::fix_missing_seam → true，result = **Shell(5)** ⇒ read
 `breakwires` 后的段列表、`dispatchwires` 输出的面数与各自 wire 数），并与其 .cxx 对应行一起判读。
 命中即按 .cxx 修，然后第③步验收（`--model 113` → wires=2；`zz_seam_fix 113` → Face；
 `--fstats` → face=113 mt≈228；面积比 ≥0.8996 且上升）。
+
+---
+
+### 9.444 —— T-101：结果打包逻辑**与 `.cxx` 一致**（`1 → Face`、`>1 → Shell`）⇒ 「Shell(5)」是 ComposeShell **产出 5 个面**的忠实后果；问题回到 ComposeShell 的**输出面数**
+
+端口 `shape_fix_face.rs:661-665`：
+
+```rust
+result = match kept_faces.len() {
+    0 => None,
+    1 => Some(kept_faces.remove(0).0.clone()),      // 单面 → Face
+    _ => Some(builder.make_shell(&kept_faces).0),   // 多面 → **Shell**
+};
+self.result = result;
+if let Some(res) = &self.result { self.context.replace(&face.0, res); }   // cxx:2268
+```
+
+OCCT `ShapeFix_Face.cxx:2302-2322`：
+
+```cpp
+myResult = Context()->Apply(myResult);
+for (TopExp_Explorer exp(myResult, TopAbs_FACE); exp.More(); exp.Next()) {
+  myFace = TopoDS::Face(Context()->Apply(exp.Current()));
+  if (nbFaces > 1) { FixSmallAreaWire(true); … }      // 只有 >1 面才做小面积裁剪
+  BRepTools::Update(myFace);
+}
+myResult = Context()->Apply(myResult);                 // ← 同样**不把多面强并成一个 Face**
+```
+
+⇒ 端口与 OCCT 在这一点上**同构**（都不做「多面 → 单面」的强并）。因此：
+
+```text
+zz_seam_fix 113 实测：result faces=**5**，其中 HEALED face 0 = wires=2（v 范围 [-43.75,131.25] = OCCT 口径）
+⇒ 端口把「正确的那张 2-wire 面」连同另外 4 张一起打包成 Shell(5)，reader 只收 Face ⇒ 全丢
+而 OCCT 的整形后模型 **仍是 226 面**（与文件相同）⇒ 它的 ComposeShell 在 F113 上**没有多产出 4 张面**
+```
+
+⇒ **真正剩下的分歧 = 端口 ComposeShell 在 F113 上产出的面数是 5，OCCT 是 1。**
+这与 §9.377 在 f=140（cone）上看到的「同一 patch 两张重合面 + 未配对半边」同源；而 §9.377 已实测
+**剪枝（FixSmall / CheckSmallArea）是 no-op**（只能删、不能合）⇒ 必须回到 **dispatch/collect 阶段**找多产出的来源。
+
+#### 下一轮（对 F113 做 §9.377 同规格的阶段普查）
+
+```text
+在 ComposeShell 的 perform 里，对 F113 那次调用打同标签阶段日志（TEMP，env gated，用完 edit 反撤）：
+  loadwires / splitbygrid / breakwires / collectwires / **dispatchwires** 各阶段的段列表与段数，
+以及 dispatch 出的**每个面的 wire 数 + bbox**（重点看是否出现两张同 bbox 的重合面）。
+对照 ShapeFix_ComposeShell.cxx 的 DispatchWires（cxx:2770-2860 一线）判读；
+命中即按 .cxx 修，然后第③步验收：
+  zz_seam_fix 113 → **Face**；--model 113 → wires=2（22+6 边）；--fstats → face=113 mt≈228；
+  a3n00 面积比 ≥0.8996 且上升；pwsh -File .target-gate\t101_verify.ps1 全绿。
+```
+
+**注意**：`read_topology.rs:745` 的 `if res.shape_type() == Face` 这一条**不要动**（那是 reader 的既有语义；
+OCCT 侧同理：`ShapeFix_Face` 的结果以 Context 替换原面，若结果是壳，OCCT 也会把它当壳用）。
