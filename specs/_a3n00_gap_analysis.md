@@ -16182,3 +16182,39 @@ node_insertion.rs:555/594/611                        perform 内部（§9.391 �
 先读 `discret_root.rs` 的 `face_intersecting_edges` 与 `:510` 两处的局部变量名，
 再各插一行同口径打印，跑一次即可确定；随后对照 `BRepMesh_ModelHealer.cxx:248-278`
 的同等分支查它为何对 F113 判相交。
+
+---
+
+### 9.395 —— 【第一现场确定】F113 被 **healer 的 face-checker 判成 `SELF_INTERSECTING_WIRE` 而标 FAILURE** ⇒ 整张面被网格管线跳过（这就是「空面」的直接原因）
+
+在 `incremental_mesh/discret_root.rs:606-610`（healer 的 face-checker 结算循环，
+注释指向 `BRepMesh_FaceChecker::Perform` + `BRepMesh_ModelHealer.cxx:248-278`；
+局部变量就是 `i`）插一行同口径打印（env gated，**已撤除**）：
+
+```text
+FACECHECK face=113 self_intersecting_wire        ← 全模型**只有这一张**面命中
+```
+
+⇒ F113 空面的因果链现在是完整的、逐段有读数的：
+
+```text
+face_intersecting_edges(model, 113) 返回 Some(edges)
+  ⇒ model.face(113) 标 SELF_INTERSECTING_WIRE + FAILURE        （discret_root.rs:606-610）
+  ⇒ 三角化循环 `if f.is_status(FAILURE) … continue`（:400）跳过它  （§9.391 SKIPPRE face=113 failure=true）
+  ⇒ 该面没有三角                                               （§9.368/§9.371：--fstats 里连 face=113 都没有）
+```
+
+而 OCCT 对同一张面（已整形为 2 wires / 22+6 边）**没有**判自交，正常铺了 228 个三角。
+
+#### 两个待分辨的可能（下一步就分开它们）
+
+```text
+(a) 端口 face-checker 的判据与 `BRepMesh_FaceChecker.cxx` 不等价（例如 SegmentsFiller/相交判定的
+    参数、采样、含端点处理不同）⇒ 按 .cxx 修 `face_intersecting_edges`（discret_root.rs:616+）；
+(b) 判据等价，但**输入**确实自交 —— 端口的 F113 还是 4 条未合并的 wire（OCCT 已并成 2 条）
+    ⇒ 那就要回到 ComposeShell 的合并缺口（§9.377–§9.389 已把该链逐行对完，剩 grid 数据一项）。
+```
+
+分辨方法：在 `face_intersecting_edges` 内部打印被判相交的边对（端口侧），
+与 OCCT `BRepMesh_FaceChecker` 在同一张面上的判定（可用 `_dbg` ZZ 版或 `--boundary` 的采样）对照；
+若端口判的是「同一 wire 内相邻边」「不同 wire 之间」这类 OCCT 不判的组合，即归 (a)。
