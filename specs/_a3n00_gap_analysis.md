@@ -15838,3 +15838,35 @@ OCCT  specs/occt_probe/_dbg/ZZ_ShapeFix_Face.cxx / ZZ_ComposeShell.cxx（wires_p
 ⇒ 下一轮第一件事：**比 `uf`/`vf`/`URange`/`VRange` 这四个数**（以及 grid 的 `u/v_joint_values` 个数）。
 若它们不同，分歧就在 `shape_fix_face.rs` 的 `uf2/vf2` 循环（`cxx:2138-2234`）里，与 `split_*` 无关；
 若相同，则继续比 grid 的 joint values 个数与 `myU/VResolution`。
+
+---
+
+### 9.385 —— T-101：端口侧 `compshell-in` 读数已齐（`uf=0, vf=-2.020725942164, URange=2π, VRange=4.041451884328`），但**档案里没有 OCCT 侧的同面读数**
+
+本轮查了 `.target-gate/zz*.txt` 全部 dump：目标面（bbox `(16.704518,-30,-167.130925)-(59.130925,30,-124.704518)`，
+`in f0 wires=2 edges=13`）的 `ZZFMS compshell-in` 在 **5 个 dump 里逐字相同**：
+
+```text
+ZZFMS compshell-in uf=0.000000000000 vf=-2.020725942164 URange=6.283185307180 VRange=4.041451884328 uclosed=true vclosed=false …
+ZZFMS in f0 wires=2 edges=13 bbox=(16.70451829506937,59.13092516455243,-30.0)-(30.0,-16.5,…)
+```
+
+即：假想 grid 的 U 幅 = 2π（面本身 u 周期）、V 幅 = **4.041451884328 = 2 × 2.020725942164**，
+seam 落在 v 的**下端** `vf = -2.020725942164`。这些读数**全部来自端口侧**：
+`zzfms_a3n00.txt` 里该 bbox 的 `compshell-in` 命中数为 **0** ⇒ **档案里没有 OCCT 侧的同面读数可比**。
+
+原因就是上一轮子任务报告过的取证边界：ZZ 插桩**只对「探针自己发起的调用」生效**，
+DLL 内部的 `ShapeFix_Face::FixMissingSeam` 仍走 DLL；而对**已愈合的 1-wire 面**调 OCCT `FixMissingSeam`
+会直接崩（exit 1）。所以 OCCT 侧这条 `compshell-in` 必须用**未愈合 / 或专门准备的输入**去取。
+
+#### 下一步（唯一动作，已备好工具链）
+
+```text
+1) 用 specs/occt_probe/_dbg/ 的 ZZ 版（ZZ_ShapeFix_Face.cxx / ZZ_ComposeShell.cxx，含 bbox 目标表）
+   + wires_probe 的 seamfix <x0 y0 z0 x1 y1 z1> 模式（上一轮子任务用过、能把 OCCT 侧的 ZZFMS 打出来）
+   取到 OCCT 侧同一面的 compshell-in 四个数；
+2) 若 uf/vf/URange/VRange 与端口不同 ⇒ 分歧在 shape_fix_face.rs 的 uf2/vf2 循环（cxx:2138-2234）；
+   若相同 ⇒ 打印两侧 grid 的 u/v_joint_values 个数与 myU/VResolution（端口 grid 构造在 composite_surface.rs）。
+```
+
+（`_dbg/ZZ_ShapeFix_Face.cxx` 目前带着上一轮子任务加的 bbox 目标表 + stage dump，是 git-ignored 的调试件，可复用它重建。）
