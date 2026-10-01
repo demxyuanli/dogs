@@ -15940,3 +15940,38 @@ fn value_pnt(&self, pnt) { let (i,j)=self.locate_uv_point(pnt); let uv=self.glob
 ```
 
 验收不变：`zz_seam_fix 113` → Face；`--model 113` → 2 wires（22+6 边）；`--fstats` 出现 `face=113 mt≈228`；a3n00 面积比从 0.8996 起上升。
+
+---
+
+### 9.388 —— T-101（F113）路 A 结果：**OCCT 的未整形 shape 里根本没有这张面** —— F113 是整形过程**造出来的**；端口的对应面还是 4 wires 且 **v 范围是无穷**
+
+路 A 的两条读数（`cmd /c "specs\occt_probe\run_dbg.bat <a3n00.stp> [noop]"`，逐面 `FACE k type= wires= edges_per_wire: … spans: u=… v=… box=…`）：
+
+```text
+默认（ShapeProcess 开，已整形）  FACE 25 type=1 wires=2 edges_per_wire: 22 6
+                                 spans: u=6.2832 v=175.0000 | u=2.1968 v=113.7919
+                                 box=(-87.5,-34,-100)-(87.5,34,-32)        ← 与端口 F113 同 box，但只有 2 wires
+noop（关 ShapeProcess，未整形）  全 226 面：wire 直方图 {1:163, 2:53, 4:2, 6:4, 10:4}（= 文件 FACE_BOUND 直方图 = 端口）
+                                 **没有任何一面的 box 是 (-87.5,-34,-100)-(87.5,34,-32)**，也没有 u=6.2832 或 v=175 的面
+```
+
+⇒ 两点结论：
+
+1. **F113 不是文件里的一张面，而是整形过程造出来的面**（未整形 shape 里不存在这个 box/参数范围）。
+   端口这条 reader 路径（`fix_missing_seam` 直接吃 reader 的原始面）与 OCCT 的
+   `ShapeFix_Shape`→`ShapeFix_Face::Perform` **作用在不同形态的输入上**：
+   OCCT 那一步拿到的是整形后的面，端口拿到的是未整形、**v 范围为 `[-inf, inf]`** 的面
+   （端口 `zz_uv_feed --model 113` 打印的正是 `vrange=[-inf,inf]`，而 OCCT 侧该面的 v span 是 175 / 113.79）。
+2. 因此「端口 ComposeShell 每一步都忠实却给出 Shell(5)」并不矛盾：**喂进去的 grid 范围本身是无穷/未定**，
+   切分自然落在不同的位置上。这与 §9.372–§9.387 把控制流全部排除的结果自洽。
+
+#### 下一步（新的第一嫌疑，比继续对 ComposeShell 更靠前）
+
+```text
+(a) 量端口 F113 的**面上界**：surface 的 u/v range 为什么是 [-inf, inf]（`--model 113` 的
+    vrange=[-inf,inf] 来自 `face.surface().v_range()`）—— 与该面在 OCCT 侧的 v span（175 / 113.79）
+    对照；若端口拿到的 adaptor 没有有限界，则 ComposeShell/range splitter 的输入就已经不同。
+(b) 同时量端口 F113 的四条 wire 与 OCCT `noop` 里「覆盖同一空间」的那张 raw 面（用 box 包含关系找，
+    不再要求 box 相等）—— 确认端口 F113 的 4 wires 是 raw 结构与 OCCT 一致（则分歧在整形），
+    还是 raw 就不同（则分歧在 reader 构面）。
+```
