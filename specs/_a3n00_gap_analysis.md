@@ -16741,3 +16741,40 @@ read_topology.rs:369 resolve_oriented_edge   ← ORIENTED_EDGE → EDGE（含 sa
 
 （注：工作树里 `crates/occt-topo/examples/zz_probe_a3n00.rs` 的 +64 行是**并行审计子任务**
 `d91ca45d` 正在加的 `--ecensus` 探针，属它的在飞工作，**不要动**；本轮的库代码改动已全部撤净。）
+
+---
+
+### 9.408 —— T-101（F113）：`resolve_loop` 与 `make_wire` **都不丢边**（341 个 loop 全部 items == edges == wire_edges）⇒ 丢边发生在**建好 bound wire 之后**
+
+在 `resolve_loop`（`read_topology.rs:413-433`）里加同口径打印（TEMP，env `T101_DUMP_SEAM`，**已撤除**）：
+
+```text
+LOOP 行数 = 341
+  分布：items=1:168 / items=4:89 / items=3:28 / items=5:26 / items=8:12 / items=6:9 / items=12:3 / items=7:2
+  **items == edges 恒成立**（含 12 个 items=8 → edges=8 的 loop，F113 外环是其中之一）
+再打印 make_wire 之后的 wire 边数：wire_edges 也 == items，**全 341 个 loop 零处不一致**
+```
+
+交叉验证：226 面的 FACE_BOUND 直方图 `{1:163, 2:53, 4:2, 6:4, 10:4}` ⇒ 总 bound 数
+`163 + 106 + 8 + 24 + 40 = 341` ✓ 与 LOOP 行数正好相等 ⇒ 一个 bound 一次 `resolve_loop`，没有遗漏/重复。
+
+⇒ **丢边不在 `resolve_loop`，也不在 `make_wire`**。而 `resolve_face` 的 seam 块处已经是 `[1,1,6,14]`
+（§9.407）⇒ 8→6 只能发生在「bound wire 建好之后、seam 块之前」，即：
+
+```text
+resolve_face 内部 578 → 740 之间（bound 解析 → Face 组装 → 缓存）
+或在 resolve_outer_bound（read_topology.rs:277 分派）/ 形状缓存的取用上
+```
+
+#### 下一步（一次插桩）
+
+在 `resolve_face` 入口（`read_topology.rs:578` 之后）打印该面的 `wires / edges_per_wire`，与 seam 块前的
+`[1,1,6,14]` 对照：
+
+```text
+入口若 = [1,1,8,14] ⇒ 丢边在 resolve_face 内部 578-740 段（逐句看 bound→Face 组装）
+入口若 = [1,1,6,14] ⇒ 丢边在更早（resolve_outer_bound / 缓存 / Face 构造），往那边找
+```
+
+判据不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
+a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
