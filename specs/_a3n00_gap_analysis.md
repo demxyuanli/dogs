@@ -16092,3 +16092,32 @@ OCCT 该面有 228 三角）。这也解释了 `--model 113` 打印的 `vrange=[
    量 F113 的外环为什么建不出来；
 2. 对照 OCCT `BRepMesh_ShapeVisitor::Visit(face)` → `AddWire`（`IMeshData` 侧）的同名分支；
    判据仍是 §9.381.4：`--fstats` 出现 `face=113 mt≈228`、`--model 113` → 2 wires、a3n00 面积比从 0.8996 起上升。
+
+---
+
+### 9.392 —— T-101（F113）：`add_wire` 的**四个早退分支一个都没触发** ⇒ FAILURE 不是建 wire 时设的，来自更晚的管线阶段
+
+给 `wire_builder.rs::add_wire` 的四个失败返回都加了 TEMP 打印（`stored_empty` / `pcurve_err` / 参数非有限或退化 / `order.nb_edges() != stored.len()`；env gated，**已用 `edit` 反向撤除**），
+跑 a3n00 全流程：
+
+```text
+ADDWIRE lines: 0        ← 四次早退全没触发
+```
+
+即 `add_wire` 在本次运行里**没有从这四条路失败**。于是 F113 的 `MeshStatus::FAILURE`
+（§9.391 的 `SKIPPRE face=113 failure=true`）只能来自**别的置位点**。剩余候选（都在网格循环之前）：
+
+```text
+model_healer.rs:812                          ModelHealer 阶段
+shape_tool.rs:243 / :281 / :296              ShapeTool 辅助（ModelPreProcessor/PreProcessor 阶段）
+incremental_mesh/discret_root.rs:298 / :618  管线各阶段的失败分支
+model_builder/wire_builder.rs:577-582        已排除（本轮四次早退都没触发；仅当 add_wire 返回 false 才置位）
+```
+
+#### 下一步（一次插桩即可定位）
+
+在上述 6 处各加同口径 TEMP 打印（带 face 序号与阶段名），跑一次 a3n00，即可确定是
+`ModelHealer` 还是 `PreProcessor`/`ShapeTool` 把 F113 标成 FAILURE；随后按该处的 `.cxx`
+同等分支（`BRepMesh_ModelHealer` / `BRepMesh_ModelPreProcessor`）查它为什么对 F113 判失败。
+**注意**：这与 §9.391 之前的一切（ComposeShell、`fix_missing_seam`、`add_wire` 早退）都不同，
+是新的第一现场。
