@@ -16584,3 +16584,45 @@ OCCT census：edges_per_wire = 8 14 1 1 ；端口模型：6 14 1 1
    `par=[f,l]` 逐边比；
 3. 命中即按 .cxx 修 reader 侧的组装（不加特例），再跑验收：`zz_seam_fix 113` → Face、
    `--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起。
+
+---
+
+### 9.404 —— 【文件级铁证】F113 的**外环在 STEP 里是 8 条边，端口 reader 只留了 6 条** ⇒ 首个「覆盖不全」的数据级证据（用户新指令的靶心）
+
+从 `data/occ/a3n00.stp` 直接读出该面的定义（实体号经 `#4952 CYLINDRICAL_SURFACE R=34` 反查）：
+
+```text
+#5375 = ADVANCED_FACE('',(#5140,#5352,#5363,#5374),#4952,.T.)
+#5140 = FACE_OUTER_BOUND('',#5139,.T.)   → #5139 = EDGE_LOOP 有 **8** 个 ORIENTED_EDGE
+#5352 = FACE_BOUND('',#5351,.T.)         → #5351 = EDGE_LOOP 有 **14**
+#5363 = FACE_BOUND('',#5362,.T.)         → #5362 = 1
+#5374 = FACE_BOUND('',#5373,.T.)         → #5373 = 1
+
+外环的 8 条（ORIENTED_EDGE → EDGE / 朝向）：
+  5005→#5004 .T.   5013→#5012 .T.   5019→#5018 .F.   5091→#5090 .T.
+  5099→#5098 .T.   5108→#5107 .T.   5116→#5115 .T.   5138→#5137 .T.
+  8 条边 **互不相同**（distinct = 8，无重复）
+```
+
+这与 OCCT 未整形 shape 的 census **完全一致**：`FACE 113 type=1 wires=4 edges_per_wire: 8 14 1 1`。
+
+而端口 reader 出来的形状（`zz_probe_a3n00 --fdump`，形状级、非模型级）：
+
+```text
+FDUMP face=113 … wire[0] ori=Forward nEdges=6     ← 外环只剩 6 条（? 文件是 8）
+                                  wire[1] 14 / wire[2] 1 / wire[3] 1   ← 这三条与文件一致
+```
+
+⇒ **端口 reader 在该外环上丢了 2 条边**（文件 8 → 端口 6），且丢在 **reader 组装阶段**
+（`--fdump` 已经是形状级读数，早于建模/网格）。这与 §9.377 观测到的
+`breakwires` 出 `5e/O[A→D]` 与 `8e/O[C→A]`（`D ≠ C`）方向一致：外环少了两段，
+ComposeShell 的两半自然对不上 ⇒ 两张重合面 ⇒ Shell(5) 被丢 ⇒ 4 wires ⇒ face-checker 判自交 ⇒ 空面。
+
+#### 下一步（两条并行）
+
+```text
+1) 定位丢掉的那 2 条边：把文件里外环 8 条（#5004/#5012/#5018/#5090/#5098/#5107/#5115/#5137）
+   与端口 6 条（模型边 289…294 / 形状 wire[0] 的 6 条）按几何端点做配对，
+   找出缺的两条 → 在 read_topology.rs 的 FACE_BOUND/EDGE_LOOP 组装里定位丢边点
+   （对照 OCCT 的 ShapeExtend_WireData / ShapeFix_Face 对同环的处理）。
+2) 按用户新指令做「STEP 解析与处理」的**覆盖/一致性对照**（见 §9.405 的计划）。
