@@ -17445,3 +17445,62 @@ step_obj_gates: test result: ok. 5 passed; 0 failed; 0 ignored; finished in 288.
 F113 的**最后病灶**（下一批的起点）：`check_notched_edges` 的 `param1`
   （`project_inside` ↔ `ShapeAnalysis_Curve::Project`）或 `wire_fix.rs:2906` 的分支判据 ——
   因为 F113 走 `proj1.distance < proj2.distance` 那一支。
+
+---
+
+### 9.425 —— T-101（F113）：调用方循环忠实，但 `check_notched_edges` 的**切线/距离预检用的是「方向取反」的点**（`p2d1/p2d2`）——新候选
+
+**① 调用方循环：忠实。** 端口 `wire_fix.rs:3046-3060` ↔ OCCT `ShapeFix_Wire.cxx:3993-4002`：
+
+```text
+while i <= nb && nb > 2                 ↔ for (i = 1; i <= NbEdges() && NbEdges() > 2; i++)
+n2 = if i > 0 { i } else { nb }         ↔ n2 = (i > 0) ? i : NbEdges()
+n1 = if n2 > 1 { n2 - 1 } else { nb }   ↔ n1 = (n2 > 1) ? n2 - 1 : NbEdges()
+is_remove_first = n1 == short_num       ↔ isRemoveFirst = (n1 == toRemove)
+to_split = if n2 == short_num { n1 } else { n2 } ↔ toSplit = (n2 == toRemove ? n1 : n2)
+```
+
+**② 新候选：`check_notched_edges` 里 `p2d1/p2d2` 的方向判据写反了。** 端口 `:2866-2877`：
+
+```rust
+let (p2d1, tan1) = if e1.0.orientation().is_reversed() { c2d1.d1(a1) }      // reversed -> a1
+                   else { let (p,d) = c2d1.d1(b1); (p, d.reversed()) };    // forward  -> b1
+let (p2d2, tan2) = if e2.0.orientation().is_reversed() { … d1(b2) … }      // reversed -> b2
+                   else { c2d2.d1(a2) };                                   // forward  -> a2
+```
+OCCT `ShapeAnalysis_Wire.cxx:1960-1961`：
+
+```cpp
+p2d2 = c2d2->Value(E2.Orientation() == TopAbs_FORWARD ? **b2** : **a2**);   // forward -> b2, reversed -> a2
+p2d1 = c2d1->Value(E1.Orientation() == TopAbs_FORWARD ? **a1** : **b1**);   // forward -> a1, reversed -> b1
+```
+
+⇒ 两边**正好相反**（端口 forward 取 b、reversed 取 a；OCCT forward 取 a、reversed 取 b）。这两个点被
+`:2883` 的**预检**用到：
+
+```rust
+if tan2.angle(&tan1).abs() > 0.1 || p2d1.distance(&p2d2) > tolerance { return None; }
+```
+
+**注意**：紧接着 `:2895-2896` 又用**另一套正确**的取法算投影点：
+
+```rust
+let pt2 = if e2.forward { c2d2.d0(b2) } else { c2d2.d0(a2) };   // ✓ = OCCT p2d2
+let pt1 = if e1.forward { c2d1.d0(a1) } else { c2d1.d0(b1) };   // ✓ = OCCT p2d1
+let proj1 = project_inside(&ad1, &start2, tolerance, false);
+let proj2 = project_inside(&ad2, &start1, tolerance, false);    // （上一轮已按 cxx:1963 修好目标）
+```
+
+⇒ 端口的同一个函数里存在**两套取点逻辑**：参与「角度/距离预检」的 `p2d1/p2d2` 方向反了，
+参与投影的 `pt1/pt2` 是对的。当两条边里有 `REVERSED` 时，**预检比较的是错的那一对端点**
+（例如把「尾对尾」当成「首对首」），于是「哪两条边算 notch、谁是 short、`param` 取哪个投影」
+都可能与 OCCT 不同 —— 这与 F113 观测到的「新顶点落在毛刺中点、OCCT 收在原顶点」方向一致。
+
+#### 下一步（一次读数即可判定）
+
+在 `:2883` 的预检处按 `p2d1/p2d2`（现写法）与 `pt1/pt2`（OCCT 写法）各判一次，
+打印两条边的朝向与两个距离，看 F113 的那对毛刺边是否**只有用 OCCT 写法才被判为 notch**
+（或只有用 OCCT 写法 `short/param` 才落到原顶点）。
+
+判据（不变）：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
+`--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
