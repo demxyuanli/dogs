@@ -18516,3 +18516,47 @@ C：先用只读探针加 **逐面面积**（--farea），查清 f=171（#7415�
 A：重做 F113 五阶段普查（loadwires/splitbygrid/breakwires/collectwires/dispatchwires，
    对照 cxx:2131-2275 / 1433-1914 / 2824-2846 / 2770-2860）—— 上一次派出的子任务未完成。
 ```
+
+---
+
+### 9.450 —— **更正**（§9.445/§9.448 与 README 的数字错误）：F113 这一步**不丢边**，分歧是「28 条边被分成 6 条 wire」，不是「6/5/4/3/3 五块单 wire 补丁」
+
+#### A. 错误与原因
+
+§9.445 写「Shell(5) = 5 块**单 wire** 补丁（6/5/4/3/3 边）」，§9.448/README 沿用。**这是错的**：
+我当时的解析脚本把每个 `HEALED face` 的扫描窗口限成 8 行，**漏掉了 `wire[1]`**，于是 face 0 的
+第二条 wire（7 边）被吞掉。正确分组（口径见 B）是：
+
+```text
+HEALED face 0 : wires=**2**   wire[0]=6e   wire[1]=**7e**
+HEALED face 1 : wires=1       wire[0]=5e
+HEALED face 2 : wires=1       wire[0]=4e
+HEALED face 3 : wires=1       wire[0]=3e
+HEALED face 4 : wires=1       wire[0]=3e
+合计：6 条 wire / 28 条边
+OCCT 整形后 FACE 25：**2 条 wire（22 + 6）/ 28 条边**
+```
+
+#### B. 更正后的事实（口径）
+
+```text
+命令：crates\occt-topo\target\debug\examples\zz_seam_fix.exe data/occ/a3n00.stp 113
+字段：HEALED 段逐面 `wires=`，每条 `wire[i] nEdges=`；OCCT 侧 `run_dbg.bat data\occ\a3n00.stp wdump 25`（整形后）
+结论：**总边数两侧相同（28）** ⇒ 这一步 **没有丢边**；
+      差别在**分组**：端口 28 条边 → **6 条 wire / 5 张面**；OCCT → **2 条 wire / 1 张面**。
+      其中 6e 那条与 OCCT 的 6e 内环对应；22 边外环在端口被拆成 **7+5+4+3+3 = 22** 五段
+      （7 段还挂在同一张 2-wire 面上）。
+```
+
+⇒ 这把 §9.445 的「外环被切碎」**从描述升级为可核对的数字**（7/5/4/3/3=22，且总数不丢），
+同时否掉了「丢边/重合面」两种说法（前者由 §9.412 的 8→6 属于更上游、后者从未成立）。
+
+#### C. 仍缺的一块数据：**五段在哪里断开**
+
+该探针的 HEALED 边只打 `par=[f,l] dpar=`，**不打端点** ⇒ 无法直接看出断点位置。
+下一步（只读、example 级）：给 `zz_seam_fix` 的 HEALED 逐边打印加 `first_vertex/last_vertex` 的三维坐标，
+然后按端点把 7/5/4/3/3 五段与 OCCT 的 22 边外环逐点对齐 ⇒ 直接指认「哪两个端点之间被多切了一刀」。
+
+#### D. 已同步修正
+
+`README.md` 的「现状/未结个案」段已按本节改写（去掉“5 块单 wire 补丁/6/5/4/3/3”的说法）。

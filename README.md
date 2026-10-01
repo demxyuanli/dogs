@@ -134,7 +134,8 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 - **已知最大缺口**：**没有 `ShapeProcess`/`FixShape` 驱动器**（端口在 reader 里按面直调子步）。
   实测关掉该算子时 OCCT 有 **131/226 面无法网格化**，说明它是承重环节；端口仅缺分派器与参数下发。
 - **未结个案**：a3n00 的“螺母斜切面”（端口 F113）仍为 **4 wires / 空面**。
-  已定位到：`fix_missing_seam` 其实产出了正确的 2-wire 面，但被 `ComposeShell` 的 5 块补丁
-  打包成 `Shell(5)`，而 reader 只接受 `Face` ⇒ 结果被丢弃；打包与剪枝语义均已证明与 `.cxx` 同构，
-  分歧指向 `SplitWires/BreakWires` 的切分。全过程与三条后续路径见
-  `specs/_a3n00_gap_analysis.md` §9.370–§9.449 与看板 T-101。
+  已定位到：`fix_missing_seam` 在该面上把 28 条边分成了 **6 条 wire / 5 张面**（其中 1 张 2-wire 面 = 6e+7e，
+  另 4 张单 wire 面 = 5/4/3/3），而 OCCT 是 **2 条 wire（22+6）/ 1 张面**——**总边数相同（28），这一步不丢边**；
+  结果被包成 `Shell(5)`，而 reader 只接受 `Face` ⇒ 整包被丢弃。打包与剪枝语义均已证明与 `.cxx` 同构
+  （更正记录见 §9.450：早期文档里的「5 块单 wire 补丁 6/5/4/3/3」是解析错误），分歧指向
+  `SplitWires/BreakWires` 的 **wire 分组**。全过程与后续路径见 `specs/_a3n00_gap_analysis.md` §9.370–§9.450 与看板 T-101。
