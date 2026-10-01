@@ -2897,7 +2897,7 @@ fn check_notched_edges(
     let start2 = GpPnt::new(pt2.x(), pt2.y(), 0.0);
     let start1 = GpPnt::new(pt1.x(), pt1.y(), 0.0);
     let proj1 = project_inside(&ad1, &start2, tolerance, false);
-    let proj2 = project_inside(&ad1, &start1, tolerance, false);
+    let proj2 = project_inside(&ad2, &start1, tolerance, false);
     if proj1.distance > tolerance && proj2.distance > tolerance {
         return None;
     }
