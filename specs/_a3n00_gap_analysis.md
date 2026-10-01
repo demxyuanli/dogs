@@ -15459,3 +15459,37 @@ Torus 的网格路径只剩「输入量」没比过：`range_u/range_v`（`Adjus
 
 * 库代码零改动；纯读 `.cxx`/端口源码 + 排除候选；
 * 无新增仪器（Torus 对拍所需的 `--facestats`（OCCT 侧）与 `--fstats`（端口侧）都已在 §9.374 就位）。
+
+---
+
+### 9.376 —— T-101 迭代（7）：备好一条命令的**落地验收 harness**；item ① 的对照实验仍在子任务手里（已要求本轮收尾）
+
+#### 9.376.1 落地验收 harness（`.target-gate/t101_verify.ps1`，不进版本库）
+
+把 §9.370 那条尾巴修好之后，落地只需跑：
+
+```text
+pwsh -File .target-gate\t101_verify.ps1
+```
+
+它按顺序跑并落盘 `.target-gate/t101_verify.txt`：`cargo check` →
+`zz_probe_a3n00 --fixms`（113/140/170 不应再出现 `Shell`）→ 三个面的
+`zz_seam_fix`（BEFORE/result/HEALED 的 wire 数）→ `zz_uv_feed --ids` 的 wire 直方图
+（目标贴近 `{1:208,2:9,4:1,6:4,10:4}`）→ a3n00 / T0M 的 `TOTAL`+`STATMAP`
+→ `--lib` → `step_obj_gates -- --nocapture` 的逐模型 `ratio=`。
+判据写死在脚本注释里：**a3n00 面积比 ≥ 0.8996、T0M unmatched ≤ 6、`--lib` 1281/0、
+`step_obj_gates` 5/5**（= T-101 卡面的 accept 在同一口径下重测）。
+
+#### 9.376.2 item ① 的当前方法（子任务侧，供接手者复核）
+
+子任务用的是**两侧同标签的阶段普查**：OCCT 侧 `specs/occt_probe/_dbg/` 的
+`ZZ_ShapeFix_Face.cxx` / `ZZ_ComposeShell.cxx` 打 `ZZFMS`/`ZZCS`/`ZZCW`，
+端口侧在 `shape_fix_compose_shell/perform.rs` 打同名的 `ZZCS <tag> n= [段列表]`
+（只对 bbox = port 140 那个锥面展开逐段明细），逐阶段比 `loadwires / splitbygrid /
+breakwires / collectwires / dispatchwires` 的段数与非流形标志。
+已产 `zzfms_port140.txt`、`zzcs_port140.txt`、`zzcs2_port140.txt`、`zzcs3_port140.txt`。
+本轮结束时其工作树只剩 `specs/occt_probe/wires_probe.cpp`（OCCT 侧 `seamfix <bbox>` 模式）。
+
+#### 9.376.3 本轮改动
+
+* 库代码零改动；新增一个验收脚本（`.target-gate/`，不进库）。
