@@ -16362,3 +16362,46 @@ helpers: CheckByCurve3d / GetGridResolution / split_res / IsCoincided / TOLINT  
 2. 用 §9.389 的基准比 `ru/rv` 与 `u/v_joint_values` 个数；
 3. 命中即按 .cxx 修，然后按验收：`zz_seam_fix 113` → Face、`--model 113` → 2 wires（22+6 边）、
    `--fstats` 出现 `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.399 —— T-101（F113）：假想 grid 的构造也**逐行忠实** ⇒ 只剩「**找 seam 位置的那个循环**」没对过（`cxx:2138-2234` ↔ `shape_fix_face.rs:441-588`）
+
+逐行对照 `ShapeFix_Face.cxx:2236-2261` ↔ `shape_fix_face.rs:590-608`：
+
+```text
+cxx:2237-2238  RTS = new Geom_RectangularTrimmedSurface(mySurf->Surface(), uf, uf+URange, vf, vf+VRange)
+端口 :591-597  GeomRectangularTrimmedSurface::uv(surf, uf2, uf2+u_range, vf2, vf2+v_range)            一致
+cxx:2239-2242  1×1 数组 + new ShapeExtend_CompositeSurface(grid)
+端口 :598       CompositeSurface::with_grid(vec![vec![rts]], Parametrisation::Natural)                一致
+cxx:2245-2250  non-manifold 子形状加回 tmpF
+端口 :599-602  同一循环                                                                                一致
+cxx:2252-2261  CompShell.Init(G, L, tmpF, Precision::Confusion()) / ClosedMode()=true /
+               SetContext / SetMaxTolerance(MaxTolerance()) / Perform()
+端口 :603-608  一致（CONFUSION / closed_mode(true) / context / max_tol / perform）                      一致
+cxx:2264       mySurf = new ShapeAnalysis_Surface(RTS)
+端口 :610       self.surf = Some(rts)                                                                  一致
+```
+
+⇒ grid 构造这一层也**没有分歧**。
+
+#### 结论：seam 链里唯一还没对过的只剩「**算 `uf2/vf2` 的循环**」
+
+```text
+ShapeFix_Face.cxx:2138-2234        （找 seam 插入位置，产出 uf/vf，被上面那句 RTS 使用）
+shape_fix_face.rs:441-588          （端口对应实现，441 起、588 止，已见它算 uf2/vf2 并做
+                                    cxx:2226-2234 的 adjust_to_period 收尾）
+```
+
+这就是 **F113 空面的最后一段未核对的控制流**：`uf2/vf2` 决定假想 grid 的锚点，
+锚点一偏，`SplitByGrid/SplitByLine` 的切点就落不到已有顶点上（§9.377 的 `D ≠ C`），
+于是 `breakwires` 出两个不配对的半边 ⇒ ComposeShell 出两张重合面 ⇒ Shell(5) 被丢 ⇒ 4 wires ⇒
+face-checker 判自交 ⇒ 空面（§9.391/§9.395/§9.396 已确证后半段）。
+
+#### 下一步（下一轮起点）
+
+逐行对照 `ShapeFix_Face.cxx:2138-2234` ↔ `shape_fix_face.rs:441-588`，重点：
+`i1/i2` 的选取、`pos1/pos2`、`uf2/vf2` 的赋值分支、`w1/w2` 的 UV 界比较与 `period`
+（端口 :377-390 的 `wire_uv_bounds` / `period`）。命中即按 .cxx 修，随后跑验收：
+`zz_seam_fix 113` → Face、`--model 113` → 2 wires（22+6 边）、`--fstats` 出现 `face=113 mt≈228`、
+a3n00 面积比从 0.8996 起上升、`pwsh -File .target-gate\t101_verify.ps1` 全绿。
