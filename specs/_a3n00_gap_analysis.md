@@ -17008,3 +17008,39 @@ noop          **131/226 面无三角化**（全为 UV-DEGENERATE-WIRE），{1:16
 （`-65.243610` 中点 = 切边指纹，指向「把一对去-回边合并成一条、并取中点」的动作）。
 验收不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
 `--fstats` → `face=113 mt≈228`、面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.415 —— T-101（F113）：删边点收窄到 `check_pcurves_and_shift` 的**最后一段**（`fix_notched_edges` 调用处 → 函数末尾），**只影响 2 条 wire**
+
+在 `wire_fix.rs` 的 `fix_notched_edges`（:3249）调用**之前**与函数末尾各打一次边数（TEMP，env gated，**已撤除**）：
+
+```text
+CP pre_notched edges=8 → CP fn_end edges=6      x **2**      ← 就是那两张面
+CP pre_notched edges=8 → CP fn_end edges=8      x 10         ← 其余 8 边 wire 不变
+（另有 384 条读数覆盖各种边数，全部 pre == end）
+```
+
+配套读数（同函数内，前面几轮）：`entry 8 → after_fixsmall 8`（§9.414），
+而 `read_topology.rs:714` 调用返回后是 6（§9.412）。
+
+⇒ 删边发生在 **:3249 之后到函数末尾（:3333）之间**，两个候选：
+
+```text
+1) fix_notched_edges(wire, face, MIN_TOLERANCE, MAX_TOLERANCE)   （:3249 调用）
+2) :3250-3333 的收尾分支（fix_lacking / check_wire 一线的合并逻辑）
+```
+
+且它**只对这两条 wire 生效**（其余 8 边 wire 原样通过）——这与「STEP 里那对同端点去-回边
+（`#5012/#5018`，跨度 -49.864906 ⇄ -80.622679、宽度 0）」的指纹完全吻合：
+只有存在这种退化对时才会触发合并，并留下中点 `-65.243610`。
+
+#### 下一步
+
+在 `fix_notched_edges` 调用前后各打一次（补一条即可分流）：
+- `pre_notched 8 → post_notched 6` ⇒ 就是 `fix_notched_edges`（再对它内部逐句看，并对照
+  `ShapeFix_Wire::FixNotchedEdges` / `ShapeFix_Face.cxx:365-492` 的同等分支）；
+- 否则 ⇒ 收尾的 `fix_lacking` 一线（`:3305-3333`）。
+
+验收不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
+`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
