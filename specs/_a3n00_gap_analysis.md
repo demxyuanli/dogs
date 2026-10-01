@@ -17226,3 +17226,58 @@ wire_insert_edge_before(wire, at, &ins);                             // :3139
 
 `--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
 a3n00 面积比从 0.8996 起上升、`pwsh -File .target-gate\t101_verify.ps1` 全绿。
+
+---
+
+### 9.420 —— T-101（F113）：notch 修复**机器本身逐行忠实** ⇒ 分歧就在 `check_notched_edges` 返回的 `param`（或 `on_end` 分支）
+
+两侧对照（端口 `wire_fix.rs:3046-3151` ↔ OCCT `ShapeFix_Wire.cxx:3977-4067`）：
+
+```cpp
+// OCCT
+double param;
+if (theAdvAnalyzer->CheckNotchedEdges(i, toRemove, param, MinTolerance())) {      // :3997
+  ... isRemoveFirst = (n1 == toRemove) ...                                        // :4000-4010 附近
+  if (|param - (isRemoveFirst ? b : a)| <= PConfusion || ... ) { … }              // :4014-4016
+  if (|(isRemoveFirst ? b : a) - param| < PConfusion) { … }                       // :4026
+  ShapeAnalysis_TransferParametersProj transferParameters; … Init(splitE, face);  // :4031-4034
+  aV = B.MakeVertex(Analyzer()->Surface()->Value(c2d->Value(param)), …);          // :4049
+  transferParameters->TransferRange(newE1, first, param, true);                   // :4057
+```
+```rust
+// 端口
+fn fix_notched_edges(wire, face, min_tol, max_tol) -> bool {                      // :3046
+    let Some(check) = check_notched_edges(wire, face, i, min_tol) else { … };     // :3051  ↔ :3997
+    let is_remove_first = n1 == check.short_num;                                  // :3059
+    let to_split = if n2 == check.short_num { n1 } else { n2 };                   // :3060
+    let on_end = (check.param - …).abs() <= PCONFUSION …                          // :3074-3076 ↔ :4014-4016
+    if ((…) - check.param).abs() < PCONFUSION { … }                               // :3083      ↔ :4026
+    let uv = c2d.d0(check.param);                                                 // :3100
+    let vnew = make_vertex(surface.d0(uv.x(), uv.y()), CONFUSION);                // :3101      ↔ :4049
+    transfer_range(&mut new_e1, first, check.param, true);                        // :3113      ↔ :4057
+    transfer_range(&mut new_e2, check.param, last, true);                         // :3119
+```
+
+⇒ **notch 修复的动作序列、新顶点构造方式（`Surface()->Value(c2d->Value(param))`）、两半的 range 转移
+都与 OCCT 一致**。所以「端口把邻边切在中点、OCCT 收在原顶点」的差别只能来自：
+
+```text
+1) `check_notched_edges` 返回的 `param`（↔ `ShapeAnalysis_Wire::CheckNotchedEdges(i, toRemove, param, MinTolerance())`）
+   —— 端口此处给的是「邻边上靠近毛刺中部的参数」，OCCT 给的应落在**毛刺端点**（= 已有顶点）；
+2) 或 `on_end` / `isRemoveFirst` 两个分支判据（:3074-3083 ↔ :4014-4026）在端口侧没命中，
+   于是走了「切边 + 造新顶点」而不是「接已有顶点」。
+```
+
+与审计观测一致：端口 idx113 的新顶点 `≈ -65.243610`（毛刺中点），OCCT 整形后保留 `-49.864906`
+（毛刺端点）——**边数相同、几何不同**。
+
+#### 下一步（最后一个窗口）
+
+```text
+端口  wire_fix.rs 的 check_notched_edges（:3051 调用的实现）
+OCCT  ShapeAnalysis_Wire::CheckNotchedEdges（ShapeAnalysis_Wire.cxx 内；用参数 (i, toRemove, param, tol) 定位）
+做法  逐行比 param 的算法与 min_tol 的取值，以及它接受 notch 的条件（长度/容差/重合判定）；
+      再看 on_end / isRemoveFirst 两支的判据是否等价。
+判据  --model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、
+      a3n00 面积比从 0.8996 起上升、t101_verify.ps1 全绿（idx171/idx203 同法一并看）。
+```
