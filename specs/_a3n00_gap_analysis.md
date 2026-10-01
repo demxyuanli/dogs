@@ -17044,3 +17044,38 @@ CP pre_notched edges=8 → CP fn_end edges=8      x 10         ← 其余 8 边 
 
 验收不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
 `--fstats` → `face=113 mt≈228`、面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.416 —— T-101（F113）：本轮探针**未配对**（`pre_notched` 行在 §9.415 清理时一并被删），结论待下一轮配对重跑
+
+本轮把 `fix_notched_edges(...)` 调用包成 `let t101_notched = ...;` 并只打印 `post_notched`，
+结果**无法与 pre 配对**（§9.415 的清理把 `pre_notched`/`fn_end` 两条打印一起删掉了）。读数本身：
+
+```text
+CP post_notched 分布：edges=1:168 / 4:110 / 5:47 / 3:28 / 6:11 / 8:10    （共 374 次调用）
+```
+
+`edges=6` 出现 11 次而 §9.415 只有 2 条 wire 最终是 6 ⇒ 说明这条 wire 在多次调用里重复出现
+（同一个面/同一条 wire 会被反复处理），**单看 post 无法判定是不是 `fix_notched_edges` 干的**。
+
+另外：本轮把调用包成 `let ... = cond; if cond {` 的还原动作一度写坏了两行（多出一个 `{` 且缩进丢失），
+已按原文修回，`cargo check` 复原、`git diff` 为空（**未用 `git checkout`**）。
+
+#### 下一步（一次配对探针即可定论）
+
+同一次插入里同时保留两行：
+
+```rust
+let t101_pre = crate::topo_tools_full::edges_of_wire(wire).len();
+let t101_notched = reorder_ok && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, SHAPE_FIX_MAX_TOLERANCE);
+if std::env::var_os("T101_DUMP_SEAM").is_some() {
+    eprintln!("CP notched {} -> {}", t101_pre, crate::topo_tools_full::edges_of_wire(wire).len());
+}
+if t101_notched { … }
+```
+
+按「哪一次调用把 8 变 6」判定是 `fix_notched_edges` 还是收尾的 `fix_lacking` 一线；随后对照
+`ShapeFix_Wire::FixNotchedEdges` / `ShapeFix_Face.cxx:365-492` 的同等分支决定改法。
+验收不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
+面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
