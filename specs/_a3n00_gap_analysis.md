@@ -17931,3 +17931,47 @@ u = [0.523598776, 1.570796327] = [π/6, π/2]                  （其中点 π/3
 **下一个探针**：在 `:3100` 前后打印 `(short_num, check.param, 被切边的 [a,b], uv, vnew 的 3D 坐标)`
 —— 直接把「`vnew` 落在毛刺中点」与 `check.param`/`uv`/`surface.d0` 三者对上号，
 从而判定是 **`check.param` 本身**、还是 **`c2d.d0(param)` / `surface.d0(uv)` 的求值**把点送到中点。
+
+---
+
+### 9.437 —— T-101：那 2 条 wire 的 8→6 **不走切边路径**（`:3100-3101` 探针 0 次命中）⇒ 分叉在 `on_end`/`:3083` 一带
+
+在 `:3101`（`let vnew = make_vertex(surface.d0(uv), CONFUSION)`）后插入打印（TEMP，env gated，**已撤除**）：
+
+```text
+NOTCHFIX lines: **0**
+```
+
+即在 `zz_uv_feed --ids` 这一趟里，`fix_notched_edges` **从未执行到「造新顶点」那一步** ——
+而 §9.417 的配对探针（在 `:3249` 调用前后）明确显示该函数**单次调用内把 8 变成 6**（2 条 wire）。
+⇒ 这两条 wire 的删边走的是**另一条路**，在 `:3100` 之前就分出去了：
+
+```text
+:3051  check_notched_edges(...) → short_num / param
+:3059  is_remove_first = n1 == short_num
+:3060  to_split = if n2 == short_num { n1 } else { n2 }
+:3066  curve_on_surface_oriented(&split_e, face, true) → (c2d, a, b)
+:3074  on_end = |param - (is_remove_first ? b : a)| <= PCONFUSION || (closed && …)
+:3083  if |(is_remove_first ? a : b) - param| < PCONFUSION { … }      ← **待查分支**
+:3096  let Some(surface) = face_surface(face) else { i += 1; continue };  ← 也可能在这里 continue 掉
+:3100  uv = c2d.d0(check.param)
+:3101  vnew = make_vertex(surface.d0(uv), CONFUSION)                  ← 本次 0 次命中
+:3132  wire_set_edge_composed / :3135-3139 wire_insert_edge_before     ← 组装两半
+```
+
+#### 由此产生的两个待解问题（下一轮一起打）
+
+```text
+① 删边路径：`:3074/:3083` 的 `on_end` 分支（或 `:3096` 的 surface 缺失分支）如何处理 notch
+   —— 它是否**不造新顶点**就直接删掉毛刺对？若是，则端口在两处实现同一件事、行为不同；
+② 新顶点 `-65.243610` 从哪来：既然不是 `:3101` 造的，就要在 `check_pcurves_and_shift` 的更上游
+   （`:3171 fix_reorder_wire` / `:3177 fix_small_all` 之后、`:3189` 之前）以及
+   `read_topology.rs:710-714` 的另外两个调用（`xsalgo_check_pcurve` / `project_wire_pcurve_ranges`）里找。
+   **注意**：§9.412 已证 `read_topology.rs:714` 返回后是 6 边，而 §9.414 证 `fix_small_all` 之后仍是 8
+   ⇒ 删边确实发生在 `check_pcurves_and_shift` 内、且在 `fix_small_all` 之后 ⇒ 与本节「不走 :3100」合起来
+   指向 `:3074-3095` 那一小段。
+```
+
+**下一轮探针**：在 `:3074`（`on_end` 计算处）与 `:3083`（第二个 PCONFUSION 分支）各打一次
+`(i, short_num, is_remove_first, to_split, param, a, b, on_end)`，并在 `:3132`（组装）打一次；
+跑 `--ids` 后按「哪几次把 wire 少 2 条」定位到具体分支。
