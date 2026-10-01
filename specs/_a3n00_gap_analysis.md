@@ -17559,3 +17559,41 @@ OCCT 的预检点在 `:1939` 之前那一段（不在 `:1960-1963`），所以�
 进 `param1` 的算法：`project_inside`（`wire_fix.rs:2800-2815` 的越界钳位：钳到 `u_first`/`u_last`）
 ↔ `ProjectInside`（`ShapeAnalysis_Wire.cxx:1837` 起）逐行比 —— 因为 F113 走 `proj1.distance < proj2.distance`
 分支（`param = param1`），而观测到的新顶点落在**毛刺中点**，像「投影落到区间中部」而非「端点」。
+
+---
+
+### 9.428 —— T-101 第②步：`project_inside` **逐行忠实**（`wire_fix.rs:2799-2818` ↔ `ShapeAnalysis_Wire.cxx:1837-1862`）⇒ 下一窗口 = `project_adaptor` ↔ `ShapeAnalysis_Curve::Project`
+
+```cpp
+// OCCT ProjectInside (:1844-1861)
+double dist = sac.Project(AD, pnt, preci, proj, param, adjustToEnds);
+if (param < uFirst) { param = uFirst; proj = AD.Value(uFirst); return proj.Distance(pnt); }
+if (param > uLast)  { param = uLast;  proj = AD.Value(uLast);  return proj.Distance(pnt); }
+return dist;
+```
+```rust
+// 端口 project_inside (:2806-2817)
+let proj = project_adaptor(ad, pnt, preci, adjust_to_ends);
+let (u_first, u_last) = (ad.first_parameter(), ad.last_parameter());
+if proj.param < u_first { let p = ad.d0(u_first); return Projection { distance: p.distance(pnt), point: p, param: u_first }; }
+if proj.param > u_last  { let p = ad.d0(u_last);  return Projection { distance: p.distance(pnt), point: p, param: u_last }; }
+proj
+```
+
+⇒ **一致**（越界钳位到端点、距离按钳位后的点重算、否则返回投影结果）。所以 `param1` 的分歧不在这一层。
+
+#### 下一个窗口（也是 `CheckNotchedEdges` 里最后没对过的一环）
+
+```text
+端口  project_adaptor（project_inside :2806 调用；即 ShapeAnalysis_Curve::Project 的移植）
+OCCT  ShapeAnalysis_Curve::Project（ShapeAnalysis_Curve.cxx）
+看什么 1) 求解失败时的**兜底**：OCCT 在找不到解时返回「区间中点」——**这正是 F113 观测到的
+         新顶点落在毛刺中点 (-65.243610) 的形态**；端口若在更多情形下走兜底（或反之），
+         `param1` 就会落在中部而不是端点；
+       2) 采样/迭代（`nbSamples`、`preci`、`adjustToEnds` 的传递）是否一致。
+```
+
+判定方式：在 `project_adaptor` 的兜底分支打一次（TEMP），看 F113 那对毛刺边上是否**走了兜底**；
+同时比 OCCT 同函数的兜底条件。命中即按 `.cxx` 修 → 第③步验收。
+（`--model 113` → wires=2、`zz_seam_fix 113` → Face、`--fstats` → face=113 mt≈228、
+面积比 ≥0.8996 且上升、`t101_verify.ps1` 全绿。）
