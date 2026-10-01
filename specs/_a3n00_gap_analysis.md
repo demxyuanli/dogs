@@ -18197,3 +18197,33 @@ OCCT 整形基准（审计 §9.418）：[8, 8, 8, 7]        STEP 文件： [8, 8
 ```
 
 （当前树为**改前**状态：`git diff crates/` 为空、基线 `sum_mt=11941` ✓。）
+
+---
+
+### 9.443 —— T-101：回到目标本身 —— F113 的 `fix_missing_seam` 当前行为（改写前的精确读数）
+
+```text
+（本轮读数见 .target-gate/sf113.txt；下面为摘要）
+BEFORE wires=4   wire[0]=6 / wire[1]=14 / wire[2]=1 / wire[3]=1
+result: ShapeFixFace::fix_missing_seam → true，result = **Shell(5)** ⇒ read_topology.rs::resolve_face 只收 Face ⇒ 丢弃
+⇒ 该面保持 4 wires ⇒ 建模 wire[0]=6 / wire[1]=14（§9.393）⇒ face-checker 判 SELF_INTERSECTING_WIRE
+  ⇒ 三角化循环跳过（§9.395/§9.391）⇒ **空面**
+```
+
+**两个已确认的周边事实**（帮助下一轮聚焦）：
+
+```text
+· §9.439 已证：即使把毛刺合并点从「中点」改回 OCCT 的「原顶点」（.cxx 正确），F113 **仍然** 4 wires
+  ⇒ 合并失败与那个顶点无关；
+· §9.410/§9.412 已证：进 seam 步之前的外环结构已与 OCCT 同形（6 边、去掉 #5012/#5018 后），
+  即 ComposeShell 面对的输入在结构层面已对齐。
+```
+
+⇒ 于是「F113 仍是空的」这条线**只剩一个问题**：**为什么端口 ComposeShell 在 F113 上产出 Shell(5)（两张同 patch 重合面 + 未配对半边），而 OCCT 产出合并后的 Face**。
+§9.377 的阶段性普查当时是对 **f=140（cone）** 做的；对 F113 本身还没有同等普查。
+
+**下一轮**：对 **F113** 做一次与 §9.377 同规格的阶段性普查（在 `ShapeFixFace::fix_missing_seam`
+的关键节点打同标签 `ZZCS`：找 seam 循环后的 `uf2/vf2`、`ComposeShell` 之前的 grid 范围、
+`breakwires` 后的段列表、`dispatchwires` 输出的面数与各自 wire 数），并与其 .cxx 对应行一起判读。
+命中即按 .cxx 修，然后第③步验收（`--model 113` → wires=2；`zz_seam_fix 113` → Face；
+`--fstats` → face=113 mt≈228；面积比 ≥0.8996 且上升）。
