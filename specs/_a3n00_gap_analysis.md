@@ -16702,3 +16702,42 @@ grep -c "80\.62267"   data/occ/a3n00.stp   → 6        （合法顶点）
 3) 验收：--model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、
    a3n00 面积比从 0.8996 起上升，最后 pwsh -File .target-gate\t101_verify.ps1。
 ```
+
+---
+
+### 9.407 —— T-101（F113）：§9.406 的「seam 步原地改写」假设**被证伪** —— 8→6 的丢边发生在**更早**（EDGE_LOOP → wire 组装）
+
+在 `read_topology.rs` 的 seam 调用前后各打一次该面的 `wires / edges_per_wire`（TEMP，env `T101_DUMP_SEAM`，**已撤除**；`cargo check` 0 error）：
+
+```text
+SEAM pre  wires=4 edges=[1, 1, 6, 14]      ← 就是端口 F113（wire0=6 / wire1=14 / 两个 1）
+SEAM post wires=4 edges=[1, 1, 6, 14]      ← 一模一样 ⇒ **seam 步没有改它**
+（另一个 4-wire 面：pre=post=[6, 8, 8, 8]）
+```
+
+而 STEP 文件里 F113 四个 bound 是 **8 / 14 / 1 / 1**、OCCT raw census 同样是 `8 14 1 1`。
+
+⇒ **外环少掉的那 2 条边（`#5012/#5018` 去-回对）以及那个文件里不存在的顶点 `-65.243610`
+在进 `resolve_face` 的 seam 步之前就已经是这样了** —— 即丢边发生在
+**EDGE_LOOP/FACE_BOUND 的解析与组装**里（`resolve_loop` / `bind_edge_loop_vertices` /
+`resolve_oriented_edge`），不在 seam 步。§9.406 的怀疑撤回。
+
+#### 下一步（第一现场已定位到函数级）
+
+```text
+read_topology.rs:403 resolve_loop            ← EDGE_LOOP → 逐 ORIENTED_EDGE 组装
+read_topology.rs:478 bind_edge_loop_vertices ← 把 loop 的顶点绑到边上（Pass 1 已读，Pass 2 在 509+）
+read_topology.rs:369 resolve_oriented_edge   ← ORIENTED_EDGE → EDGE（含 same_sense/朝向）
+
+做法：在 resolve_loop 里打印「本 loop 的 ORIENTED_EDGE 条数」与「组装出来的 wire 的边数」，
+      F113 外环应打印 8 → ? ；差值出现的位置就是丢边点；
+      再检查 bind_edge_loop_vertices Pass 2（509+）是否把同端点的一对边合并/消掉，
+      以及 -65.243610（= #5012 两端点的中点）是 Pass 2 里切出来的还是别处产生的。
+对照：StepToTopoDS_TranslateEdgeLoop.cxx（端口注释里引的 cxx:288-403 / 355-365 / 367-368）
+      与 ShapeExtend_WireData 对重复 seam 边的处理。
+验收（不变）：--model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、
+      --fstats → face=113 mt≈228、a3n00 面积比从 0.8996 起上升、t101_verify.ps1 全绿。
+```
+
+（注：工作树里 `crates/occt-topo/examples/zz_probe_a3n00.rs` 的 +64 行是**并行审计子任务**
+`d91ca45d` 正在加的 `--ecensus` 探针，属它的在飞工作，**不要动**；本轮的库代码改动已全部撤净。）
