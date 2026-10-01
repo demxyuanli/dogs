@@ -15599,3 +15599,49 @@ OCCT `FixMissingSeam` 直接崩，exit 1）。已证的是：**端口这一段�
 #### 9.378.3 本轮改动
 
 * 库代码零改动（只读 + 停止一个无产出的子任务）；文档追加本节。
+
+---
+
+### 9.379 —— T-101 迭代（10）：§9.378.2 的**检查 1 结果是「忠实」**（顶点匹配分支三条件逐条对应）⇒ 下一个嫌疑上移到 `currPnt` 的来源
+
+#### 9.379.1 逐条对照（`cxx:1185-1197` ↔ 端口 `split_wire.rs:251-276`）
+
+```cpp
+// ShapeFix_ComposeShell.cxx:1185-1197
+else if (currPnt.Distance(prevVPnt) <= prevVTol &&
+         CheckByCurve3d(prevVPnt, c3d,
+                        f3d + (currPar - firstPar) * (l3d - f3d) / span2d, T,
+                        prevVTol + 2 * Precision::Confusion()) &&
+         prevPnt.Distance(myGrid->Value(C2d->Value(0.5 * (currPar + prevPar)))) <= prevVTol)
+{ … V = prevV; … }                       // 1211-1222: IsCoincided(prevPnt2d, currPnt2d, uRes, vRes, prevVTol)
+                                         //             && IsCoincided(prevPnt2d, C2d->Value(0.5*(…)), …)
+```
+
+端口同三条件，容差与 `mid` 取样一致：`curr_pnt.distance(prev_v_pnt) <= prev_v_tol`
+→（3D 曲线检查，`prev_v_tol + 2.0 * CONFUSION`）→ `prev_pnt.distance(grid.value_pnt(&mid_prev)) <= prev_v_tol`；
+`u_res/v_res` 来自 `split_res(is_cut_by_u, cut_index, prev_v_tol)`（对应 `GetGridResolution(...)/prevVTol`
+再 `std::min(myU/VResolution, …)`）。⇒ **这一支写法上没有可指认的差异**，检查 1 判为**忠实**。
+
+#### 9.379.2 结论与下一步（检查 2）
+
+既然匹配分支忠实，`v_opt == None`（新造顶点 `D`）只能是**三条件中至少一条在数值上没成立**，
+而三条里两条是「距离 ≤ 容差」、一条是 3D 曲线检查 —— 共同的输入是 **`curr_pnt`（当前切割点）**。
+⇒ 下一个嫌疑就是 §9.378.2 的**检查 2**：`currPnt` 的来源。
+
+对照窗口（下一轮直接开这两个窗口）：
+
+```text
+OCCT  ShapeFix_ComposeShell.cxx:1100-1185（currPnt / currPar / C2d->Value(currPar) 的取法，
+      以及 CheckByCurve3d 的入参 span2d/f3d/l3d 从哪来）
+端口  crates/occt-topo/src/shape_fix_compose_shell/split_wire.rs:150-258（同段）
+判据  「`curr_pnt` 是否等于 OCCT 的 `currPnt`」——若不等，先按 .cxx 把取法改对，
+      再看 `D` 是否消失（`zz_seam_fix 140` 的 result 应从 Shell(2) 变 Face/1 wire/16 边）
+```
+
+另记：`cxx:1238-1242`（端口 `split_wire.rs:289-296`）的写法本身忠实（§9.378.1），
+不要在那一支上打补丁。
+
+#### 9.379.3 本轮改动
+
+* 库代码零改动（只读 `.cxx` + 端口对照）；文档追加本节。
+* 剩余轮次预算：本目标 10/12 轮已用；① 的定位已细到「`curr_pnt` 取法」一个窗口。
