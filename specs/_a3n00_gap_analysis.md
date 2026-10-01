@@ -15740,3 +15740,30 @@ cxx:1185-1197  「匹配 prevV」分支（§9.379 已判忠实） ↔ 端口 spl
 核「切割边端点/参数集是否复用 wire 上的已有顶点与已有参数」。
 成功后 `zz_uv_feed --model 113` 应为 2 wires（22+6 边）、`--fstats` 应出现 `face=113 mt≈228`、
 `zz_seam_fix 113` 的 `result` 应为 Face，且 a3n00 面积比应从 0.8996 继续上升（§9.303 记该面解析面积约 29053，是缺口主项）。
+
+---
+
+### 9.382 —— T-101：`split_by_grid` 那一层也是忠实的 ⇒ 分歧收敛到 `split_by_line` 的**去重/吸附**那一步（cxx:1722-1767）
+
+本轮把嫌疑窗口从 `split_by_grid` 往下走了一层，结果如下（逐行对照）：
+
+```text
+cxx:2227-2251 / 2253-2273（SplitByGrid 的 U/V 线循环）
+端口 split_by_grid.rs:93-133（u_start/v_start、closed_mode 的 period 平移、get_patch_index、split_by_line_wires 调用）   ← 一致
+cxx:1446-1471（SplitByLine 的表 + aB.MakeVertex(aVertNew, aP3d, BRep_Tool::Tolerance(aVert))）
+端口 split_by_line.rs:44-81（同表 + builder.make_vertex(a_p3d, vertex_tolerance(&a_vert))）                        ← 一致
+cxx:1577-1602（detect intersections at junction of two edges）  ↔ 端口 split_by_line.rs:180（注释即 cxx:1577-1602）   ← 有这一步
+cxx:1722-1767（remove duplicated points in closed mode）        ↔ 端口 split_by_line.rs:295（注释即 cxx:1722-1767）   ← 有这一步
+```
+
+⇒ `split_by_line.rs` 的骨架是逐段映射的（1443→1911），**分歧不在「缺了哪一步」，而在某一步的数值判据**。
+结合阶段普查的可观测签名（`breakwires` 出 `5e/O[A→D]` 与 `8e/O[C→A]`，`D≠C`、差 (0.056,2.175,0.056)）：
+
+> **首要嫌疑 = cxx:1722-1767 的去重/吸附**（端口 `split_by_line.rs:295-343`）：
+> 新交点 `D` 本应被判定与已有的 junction 顶点 `C` 重合而吸附过去。
+
+#### 下一步（具体到窗口）
+对照 `ShapeFix_ComposeShell.cxx:1722-1767` ↔ 端口 `split_by_line.rs:295-343`，
+逐条比：比较的是**参数**还是**3D 点**、用的容差是哪一个（`prevVTol` / `Precision::Confusion()` / `IsSame`）、
+以及「重合时保留哪个顶点」。改对后判据同 §9.381.4（`--model 113` 2 wires、`--fstats` 出现 face=113 mt≈228、
+`zz_seam_fix 113` 的 result 为 Face、a3n00 面积比继续上升）。
