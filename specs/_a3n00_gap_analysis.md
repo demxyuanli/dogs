@@ -17079,3 +17079,45 @@ if t101_notched { … }
 `ShapeFix_Wire::FixNotchedEdges` / `ShapeFix_Face.cxx:365-492` 的同等分支决定改法。
 验收不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.417 —— 【第一现场锁定】`fix_notched_edges` 就是把外环 8 条边变 6 条的那一步（配对探针）
+
+同一次插入里成对打印（`wire_fix.rs:3249` 的 `fix_notched_edges` 调用前后，TEMP，env gated，**已撤除**；
+用 `zz_uv_feed --ids` 跑，因为另一审计子任务当时正占用 `zz_probe_a3n00.exe` 的链接目标）：
+
+```text
+CP notched 8 -> 8     x 10
+CP notched 8 -> 6     x **2**      ← 就是那两张面（含 F113）
+（共 384 条 notched 读数，覆盖各种边数）
+```
+
+⇒ **`fix_notched_edges`（`:3249`）单次调用内把 wire 从 8 条边变成 6 条**，
+删掉 STEP 里的 `#5012/#5018`（同端点「去-回」对），并留下中点切点 `-65.243610`。
+
+完整定位链（每一环都有读数，终于到底）：
+
+```text
+STEP 8 条 → resolve_loop 8 → make_wire 8 → make_face 8
+  → check_pcurves_and_shift(wire_fix.rs:3168)
+      · fix_reorder_wire           8 → 8
+      · fix_small_all              8 → 8
+      · **fix_notched_edges**      **8 → 6**   ← 第一现场（本节）
+      · （其后的 fix_lacking 一线未涉及）
+  → 外环 6 条 → fix_missing_seam 出 Shell(5)（§9.377）→ 面停在 4 wires
+  → 模型 wire[0]=6/wire[1]=14（§9.393）→ face-checker 判 SELF_INTERSECTING_WIRE（§9.395）
+  → 三角化循环跳过（§9.391）→ **螺母斜切面为空**
+```
+
+#### 下一步（读两窗口，然后才是改）
+
+```text
+端口  crates/occt-topo/src/shhealing/wire_fix.rs 的 fix_notched_edges
+OCCT  ShapeFix_Wire::FixNotchedEdges（含 ShapeFix_Face.cxx:365-492 的调用上下文与 FixNotchedEdgesMode 默认 -1）
+做法  逐条比：哪些「notch」判据被接受、是否允许把一对同端点去-回边**合并成一条并取中点**、
+      以及 OCCT 在该输入（#5012/#5018 宽 30 的去-回对）下是否也会动拓扑。
+      注意端口注释里已提到 FromSTEP 的 `FixNotchedEdgesMode = -1`（STEPControl_Controller.cxx:248）
+      与 `FixTailMode = 0`（:249）—— 先确认门是否与 OCCT 一致。
+判据  --model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、
+      a3n00 面积比从 0.8996 起上升、t101_verify.ps1 全绿。
