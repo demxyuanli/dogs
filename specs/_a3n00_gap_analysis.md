@@ -17810,3 +17810,35 @@ cxx:493  theProjParam = anOldParam;                                  ← 端口�
 ① 三轮采样的**段数序列**是否就是 `[40,20,25,40]`；② `theProjParam` 在这些调用之间是否被**额外重设**；
 ③ `anOldParam` 的语义（`:493` 在什么条件下回滚）与端口 `computed_param`/`computed_point`（:146 一线）是否对应。
 命中即按 .cxx 改 → 第③步验收。
+
+---
+
+### 9.434 —— T-101：精修支**每次都进**（Some 102/102）；尾巴返回与中心值无关 ⇒ 中心来自 default 支的「记住值」= 第一阶段 `Extrema_ExtPC`
+
+两组新读数（都是 TEMP，env gated，**已撤除**）：
+
+```text
+① 在 `Extrema_LocateExtPC` 调用处打印：NEWTON calls  None = 0   Some = **102**
+   样本：u0=0.000 u=[0.000,0.300] seg_d=2.009446 -> Some(t=0.000000, d=2.009446)
+         u0=0.600 u=[0.000,1.000] seg_d=0.116767 -> Some(t=0.599092, d=0.116679)
+   ⇒ §9.432 的「整支没进（返回 None）」解释**否掉**；那次 `proj_param = t` 无效，是因为
+     在**守卫不成立**的那类输入上 `t ≈ proj_param`（两者本就相同），写入是 no-op。
+
+② 在 `project_act` 尾巴打 `(param, dist, computed, old)`：RET rows = 42，
+   **param == computed == old（42/42）、dist = 0.0**（点就在曲线上）
+   样本：(1.337294471, 0.0, 1.337294471, 1.337294471) …
+   ⇒ 走到尾巴的路径**不是**中心值的来源（中心值那批带着大距离，如 1.429）。
+```
+
+⇒ 中心值只能来自 **default 支的 `:255`**：`if seg_dist > mod_min { return Projection::new(mod_min, computed_point, computed_param) }`
+—— 即**「记住值」`computed_*`**。而 `computed_param` 在 `:146` 被赋值，来源是**第一阶段**
+`cxx:275-303`（`Extrema_ExtPC` 在区间上取最近的 `IsMin` 解）。
+
+#### 最后窗口（唯一还没对过的子件）
+
+```text
+端口  shape_analysis_curve.rs:128-149  第一阶段（Extrema_ExtPC 等价物 + computed_param/computed_proj 的赋值）
+OCCT  ShapeAnalysis_Curve.cxx:275-303  Extrema_ExtPC / 最近 IsMin 解 与 aComputedParam/aComputedProj 的赋值
+看什么 该阶段在「找不到 IsMin 解」时把 param 取到什么（OCCT 是否有 (_u1+_u2)/2 之类），
+       以及 `mod_min`（aModMin）的初值与更新是否一致 —— 因为 default 支最终会拿 `computed_*` 返回。
+```
