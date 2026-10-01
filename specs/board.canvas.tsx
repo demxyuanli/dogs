@@ -47,7 +47,7 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
   asOf: "2026-09-30",
-  revision: "r18",
+  revision: "r19",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -628,7 +628,7 @@ export const DATA = {
       status: "pending",
       priority: "P1",
       owner: "agent",
-      progress: 5,
+      progress: 25,
       estimate: 8,
       actual: 1,
       startedAt: "2026-09-30",
@@ -636,13 +636,13 @@ export const DATA = {
       completedAt: "",
       blocker: "",
       goal: "按「面」继续推进 a3n00 到面积比 1：先把剩下的 seam 合并缺口补齐（端口 {1:206,2:10,4:2} vs OCCT {1:208,2:9,4:1}），再查法兰面密度差（端口 72 vs GT 52）",
-      next: "**【§9.369 之后：a3n00 只剩 2 个面没做 seam 合并（端口 `{1:206,2:10,4:2}` vs OCCT `{1:208,2:9,4:1}`），且法兰孔面密度 72 vs GT 52】** ① 起点：§9.369 把导入期 `ShapeFix_Face::FixMissingSeam` 接回 reader，a3n00 面积比 **0.8627→0.8996**、T0M 未网格 **7→6**、UNPORTED UV-grid rescue **16→0**，带倒角法兰的 16 个面（10 圆柱 + 3 圆锥 + 3 BSpline 型）从 2 wires 变成 **1 wire / 5 条边** 并与 OCCT 模型孪生 f=85 逐项相同。② **第一件事（先做）**：按 bbox 把「端口 10 个 2-wire 面 + 2 个 4-wire 面」与「OCCT 9 个 2-wire + 1 个 4-wire」逐面配出来，锁死那 2 个 OCCT 合并而端口没合并的面，再对着 `ShapeFix_Face.cxx:1899-2330` 的分支看它们为何不进取合路径 —— **不许按面加特例，只按 .cxx 的分支走**。③ **第二件事**：`zz_seam_fix --all` 在 a3n00 上 `faces=226 changed=46`，其中 42 个是 `2→4 / 2→5` 边（seam 合并），另 4 个是 `13→15 / 13→16 / 22→28 / 5→8`；查这 4 个在 OCCT 里是否也改（对应 `FixReorder` `cxx:2029-2032` 与 post-seam 面循环那两处 UNPORTED）。④ **第三件事**：法兰孔/凸台面端口 **72** 个三角 vs GT **52**（rescue 已不参与）⇒ 在 `GenerateSurfaceNodes` / deflection 一侧按 `.cxx` 查密度差的来源，不要动阈值。⑤ 上一轮的仪器与数据可直接复用：探针 `--delaunstruct` / `--boundary`、`.target-gate/delaun_in/`、`.target-gate/pair368b.py`、`zz_uv_feed --ids` / `--model <f>`、`zz_seam_fix <file> <f> [--all]`。门禁：a3n00 面积比从 **0.8996** 上升且不劣化、T0M 未网格 **6** 不增加、`--lib` 1281/0、`step_obj_gates` 5/5。",
+      next: "**【§9.370 迭代（1）：只剩 3 个面的 seam 缺口（113/140/170），坏在「结果面 vs 结果 shell」】** ① 已定：这 3 个面 `fix_missing_seam` 返回 true 但结果是 **Shell**（5 / 2 / 2 个面），而**合并本身与 OCCT 逐一相同**（后置边数 113: 28=28、140: 16=16、170: 8=8，口径用 `W k edges=N` 不用 `E` 行）⇒ 分歧只能落在 `crates/occt-topo/src/shhealing/shape_fix_face.rs:590-673` 这段尾巴：假想 grid（`cxx:2236-2245`）→ `ComposeShell`（`cxx:2246-2261`）→ `myResult = CompShell.Result()`（`cxx:2263-2268`）→ 两轮剪枝（`FixSmall` / `FixSmallAreaWire`，`cxx:2270-2322`；判据 `crate::shhealing::check_small_area` ↔ `ShapeAnalysis_Wire::CheckSmallArea` `cxx:2004`）。reader 现在只接受 `ShapeType::Face`，所以这 3 个面保持 4/2/2 wires。**修的方向是让那段尾巴给出 OCCT 的单面结果** —— 不是改 seam 位置选择、更不是按下标/bbox 加特例；该段的分歧定位已交给一个并行子任务。② 同批的 138 已核：`--fixms` 对它返回 false，不属 Shell 类（`--all` 里它的 13→15 与 `zz_seam_fix` 的单面口径不同源）。③ 密度（法兰孔面端口约 72 vs GT 52）**先要解决测量**：`zz_probe_a3n00 --fstats` 与 `zz_uv_feed --ids` 的逐面三角数在 **89/226** 个面上不同（而逐面 bbox 226/226 相同）⇒ 逐面读数必须在**同一次运行内**取；下一轮先把逐面统计改成与模型序同源，再逐面比密度。④ 复跑命令见 `specs/_a3n00_gap_analysis.md` §9.370.4。",
       acceptance: "a3n00 面积比从 **0.8996** 上升且不劣化（step_obj_gates 的 step_obj_area 实测口径）；T0M 未网格 **6** 不增加；--lib 1281/0 与 step_obj_gates 5/5 不劣化；不得改基线或 area_tol；不新写测试、不改断言",
-      evidence: "§9.369：接回导入期 seam 步骤后的基线为 a3n00 0.8996 / stats=225 unmatched=1 mesh 10863/11941，T0M 0.9987 / stats=1766 unmatched=6。待查项均已量化（见 next）",
       write: "crates/occt-topo/src/shhealing/shape_fix_face.rs",
       ref: "specs/_a3n00_gap_analysis.md §9.368 §9.369 · ShapeFix_Face.cxx:1722-2330",
-      note: "本卡由§9.369 的残余差异立卡；不要在 Delaunay 侧或按序号对拍上动手（§9.368）",
       dependsOn: [],
+      evidence: "§9.370：`zz_probe_a3n00 --fixms` 实测只有 113/140/170 返回 Shell（5/2/2 个面）；`--all` 里“多改”的 4 个面就是 113/138/140/170，且后置边数与 OCCT 孪生逐一相同（113:28=28、140:16=16、170:8=8，`W k edges=N` 口径）",
+      note: "① 的尾巴分歧已交给并行子任务对照 ShapeFix_Face.cxx + shape_fix_compose_shell 深挖；不要在 reader 里按面号/bbox 特例地接受 Shell",
     },
   ],
   gates: [
@@ -680,6 +680,14 @@ export const DATA = {
   ],
   // 新条目插到数组**开头**（brief 取前 3 条当最近活动；早于 a29 的看提交历史）
   activity: [
+    {
+      id: "a69",
+      at: "2026-09-30",
+      title: "T-101 迭代（1）：seam 缺口只剩 113/140/170 三个面，且合并正确、坏在「结果面 vs shell」",
+      tone: "success",
+      detail: "① 上一轮接回导入期 seam 步骤后，端口 wire 直方图 {1:206,2:10,4:2,6:4,10:4} 与 OCCT {1:208,2:9,4:1,6:4,10:4} 只差 2 个面。② 本轮把缺口锁到 3 个面：113（§9.303 的 F113，面积缺口主要贡献者）、140、170；用**既有**探针 `zz_probe_a3n00 --fixms` 实测：只有这 3 个面 `ret=true` 且 `result=Shell`（5/2/2 个面），其余 115 个周期面要么 `ret=false`（已在 reader 里修好）要么 Face。③ 合并本身是对的：`zz_seam_fix --all` 里“多改”的 4 个面（113/138/140/170）就是这批，且后置边数与 OCCT 孪生逐一相同（113: 22→28 = model 77 的 22+6；140: 13→16 = model 39 的 16；170: 5→8 = model 69 的 8；比边数要用 `W k edges=N` 而非 `E` 行）⇒ 分歧只在 `shape_fix_face.rs:590-673` 的尾巴（假想 grid → ComposeShell → myResult → 两轮剪枝），已交并行子任务对照 `ShapeFix_Face.cxx` + `shape_fix_compose_shell` 深挖（子任务还在跑）。④ 密度（法兰孔面 ~72 vs GT 52）先遭遇一个测量问题：新增的 `--fstats` 与 `zz_uv_feed --ids` 逐面三角数在 **89/226** 个面上不同（bbox 226/226 相同）⇒ D16 同类，跨探针逐面读数不可互比，需同一 run 内取数。⑤ 本轮库代码零改动（新增一个 example 仪器 `--fstats`），未跑全量门禁。",
+      ref: "specs/_a3n00_gap_analysis.md §9.370",
+    },
     {
       id: "a68",
       at: "2026-09-30",

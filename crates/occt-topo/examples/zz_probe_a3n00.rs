@@ -26,6 +26,10 @@ fn main() {
     let mode_dev = std::env::args().any(|a| a == "--dev");
     let mode_low = std::env::args().any(|a| a == "--low");
     let mode_fixms = std::env::args().any(|a| a == "--fixms");
+    // T-101: per-face vertex/triangle counts + bbox, so a face's mesh density can
+    // be paired with OCCT's `occt_probe --mesh` `FACE k nodes=N triangles=T` line
+    // by the six bbox coordinates (never by index).
+    let mode_fstats = std::env::args().any(|a| a == "--fstats");
     let override_lin: Option<f64> = std::env::args().nth(2).and_then(|s| s.parse().ok());
     let model = read_step_file(&path).expect("read step");
     // Match the OCCT probe's `aReader.OneShape()`: the FIRST transfer root.
@@ -260,6 +264,32 @@ fn main() {
             let res = sff.result.clone();
             let desc = res.as_ref().map(|t| format!("{:?} faces={}", t.shape_type(), faces_of(t).len())).unwrap_or_else(|| "none".into());
             println!("FIXMS face={i} uper={uper} vper={vper} before_wires={before_wires} ret={r} result={desc}");
+        }
+        return;
+    }
+    if mode_fstats {
+        let inc = IncrementalMesh::from_deflection(
+            &shape,
+            prs3d_get_deflection(&shape, 0.1),
+            false,
+            20.0_f64.to_radians(),
+        );
+        let stats = inc.face_stats();
+        for (i, f) in faces_of(&shape).iter().enumerate() {
+            let st = stats.get(i);
+            let bb = occt_topo::brep_bnd_lib::shape_bnd_box(&f.0);
+            let (b0, b1) = (bb.corner_min(), bb.corner_max());
+            println!(
+                "FSTAT face={i} mv={} mt={} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
+                st.map(|s| s.vertices).unwrap_or(0),
+                st.map(|s| s.triangles).unwrap_or(0),
+                b0.x(),
+                b0.y(),
+                b0.z(),
+                b1.x(),
+                b1.y(),
+                b1.z()
+            );
         }
         return;
     }

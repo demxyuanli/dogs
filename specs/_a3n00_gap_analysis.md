@@ -15072,3 +15072,89 @@ cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj
 rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_probe_a3n00 -- data/occ/a3n00.stp
 rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_probe_a3n00 -- data/occ/T0M.stp
 ```
+
+---
+
+### 9.370 —— T-101 迭代（1）：剩下的 seam 合并缺口**只剩 3 个面**，且合并本身是对的 —— 坏在「结果面 vs 结果 shell」；另外发现探针间的面三角数不可互比（D16 同类）
+
+#### 9.370.1 本轮的三个结论
+
+1. **② 解决（否定「全形状比逐面多改」这个疑点）**：`zz_seam_fix --all` 比逐面多改的那 4 个面
+   （`13→15 / 13→16 / 22→28 / 5→8`）**就是 ① 的那批面**（113 / 138 / 140 / 170），
+   而且它们的**后置边数与 OCCT 成形后的面逐一相同**：
+
+   ```text
+   port f=113  22 -> 28 边   OCCT 孪生 model f=77 = W0 22 边 + W1 6 边 = 28  ✓
+   port f=140  13 -> 16 边   OCCT 孪生 model f=39 = W0 16 边              ✓
+   port f=170   5 ->  8 边   OCCT 孪生 model f=69 = W0  8 边              ✓
+   ```
+
+   （比边数要用 `W k edges=N`，**不能**用 `E` 行 —— `E` 行把 seam 边在该面上的两条 pcurve 各算一次。）
+   ⇒ 缝合并这一步是忠实的，此前「多改 4 个面」的疑问作废。
+
+2. **① 收敛到 3 个面、且病灶是「结果装配」而不是「合并算法」**：用**既有探针**
+   `zz_probe_a3n00 <file> --fixms`（逐周期面打印 `before_wires / ret / result=<kind> faces=N`）
+   实测 a3n00：**只有 3 个面返回 Shell**，其余 115 个周期面要么 `ret=false`
+   （说明它们已经在 reader 里被修好了，现在只剩 1 条 wire）、要么返回 Face：
+
+   ```text
+   FIXMS face=113 uper=true vper=false before_wires=4 ret=true result=Shell faces=5
+   FIXMS face=140 uper=true vper=false before_wires=2 ret=true result=Shell faces=2
+   FIXMS face=170 uper=true vper=false before_wires=2 ret=true result=Shell faces=2
+   ```
+
+   而 OCCT 的离散模型这 3 个面各是**一个 Face**（wire 数 2 / 1 / 1）。
+   端口的 `resolve_face` 只接受 `ShapeType::Face`，所以这 3 个 Shell 被丢弃、
+   面保持原始 wire 数 —— 这正是 `{1:206,2:10,4:2}` 与 OCCT `{1:208,2:9,4:1}` 的全部差值。
+
+   结合 ① 的边数对照（合并结果与 OCCT 相同），病灶**只能**落在
+   `shhealing/shape_fix_face.rs:590-673` 这段尾巴：
+   假想 grid（`cxx:2236-2245`）→ `ComposeShell`（`cxx:2246-2261`）→
+   `myResult = CompShell.Result()`（`cxx:2263-2268`）→ 两轮剪枝
+   （`FixSmall` / `FixSmallAreaWire`，`cxx:2270-2322`，端口 `:624-667`，
+   判据是 `crate::shhealing::check_small_area` ↔ `ShapeAnalysis_Wire::CheckSmallArea` `cxx:2004`）。
+   **这一段的分歧定位已交给一个并行子任务深挖**（对照 `ShapeFix_Face.cxx` 与
+   `crates/occt-topo/src/shape_fix_compose_shell/`），本轮未动代码。
+
+3. **③ 的仪器与一个必须先修的测量问题**：新增端口逐面 `mv/mt/bbox` 仪器
+   `zz_probe_a3n00 <file> --fstats`。用它和 `zz_uv_feed --ids` **同文件同参数**对拍发现：
+   两个探针的**逐面三角数在 226 个面里有 89 个不同**（例：`f=204` 在 `--fstats` 是 376、
+   在 `--ids` 是 72），而**逐面 bbox 226/226 完全一致**。
+   ⇒ 这是 D16 记过的同类现象（端口的逐面结果依赖调用序列/预热），
+   **跨探针的逐面读数不可互比**；密度对拍必须在**同一次运行内**取数。
+   本轮据此只做「同一 run 内 port ↔ 另一次 OCCT run」的 bbox 配对，得到
+   **双向**差异（既有 4–8 倍感度更高的面，也有明显更疏的面），但 26 个面配不上，
+   总量不可比 ⇒ ③ 留到下一轮，先把逐面统计改成与模型序同源。
+
+#### 9.370.2 新增/沿用的仪器
+
+* `crates/occt-topo/examples/zz_probe_a3n00.rs`：新增 `--fstats`
+  （逐面 `FSTAT face=i mv= mt= bbox=`，模型序，与 `PORTID`/`FSTAT` 同序已实测 226/226 bbox 相同）；
+* 沿用（本轮才发现已经存在、不需要库内插桩）：`--fixms`
+  （逐周期面 `fix_missing_seam` 的返回值与结果形状）、`--low`、`--fdump`；
+* `specs/occt_probe/occt_probe.cpp`：沿用 `--boundary` / `--uvsum` / `--mesh` / `--faceids`。
+
+#### 9.370.3 本轮改动与门禁
+
+* **库代码零改动**（诊断轮）：`crates/occt-topo/src/` 的 `git diff` 为空；
+  唯一改动是上面那个 **example 仪器**（不在库路径上）；
+* 未跑全量门禁（无库改动，上一轮的 `--lib` / `step_obj_gates` 结论仍然成立）；
+* 相关读数（同上一轮最终树）：a3n00 面积比 0.8996、`stats=225 unmatched=1 mesh 10863/11941`；
+  T0M 0.9987、`stats=1766 unmatched=6`。
+
+#### 9.370.4 复跑
+
+```text
+# 逐面 seam 步结果（不需要库内插桩）
+crates\occt-topo\target\debug\examples\zz_probe_a3n00.exe data/occ/a3n00.stp --fixms
+# 逐面 mv/mt/bbox
+crates\occt-topo\target\debug\examples\zz_probe_a3n00.exe data/occ/a3n00.stp --fstats
+# 单面结构（BEFORE / result / HEALED）
+crates\occt-topo\target\debug\examples\zz_seam_fix.exe data/occ/a3n00.stp 113
+# 全形状会改哪些面（edges a -> b）
+crates\occt-topo\target\debug\examples\zz_seam_fix.exe data/occ/a3n00.stp 0 --all
+# OCCT 侧对照
+cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --boundary D:\source\repos\dogs\.target-gate"
+python .target-gate\t101_extra2.py     # 4 个面的 post 边数 vs OCCT 孪生
+python .target-gate\t101_density2.py   # 逐面密度图（注意 §9.370.1 ③ 的可比性限制）
+```
