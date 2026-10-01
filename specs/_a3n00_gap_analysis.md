@@ -16878,3 +16878,43 @@ cxx:344-401；check_pcurves_and_shift ↔ cxx:365-480），确认「是否应当
 
 判据（不变）：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
 `--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.412 —— 【第一现场确认】丢边的就是 `check_pcurves_and_shift`（`read_topology.rs:714`）：8 → 6
+
+在 `:711 / :713 / :714` 三条调用各自前后打印该 wire 的边数（TEMP，env gated，**已撤除**）：
+
+```text
+W entry edges=8  →  W after711 edges=8  →  W after713 edges=8  →  W after714 edges=6     （两张面如此）
+其余全部 entry=8 → after714=8（1364 条读数，只有这两张 4-wire 面在 :714 变成 6）
+```
+
+⇒ **`crate::shhealing::check_pcurves_and_shift(w, &face, preci, false)` 就地改写了 wire**，
+把 STEP 里的 8 条边（含 `#5012/#5018` 那对同端点去-回边）变成 6 条，并留下中点接点 `-65.243610`。
+`xsalgo_check_pcurve`（:711）与 `project_wire_pcurve_ranges`（:713）都无辜。
+
+#### 已完整的因果链（每一环都有读数）
+
+```text
+STEP 文件    外环 8 条（#5004/#5012/#5018/#5090/#5098/#5107/#5115/#5137，8 条 distinct）
+resolve_loop 8 → 8（§9.408 341 loop 全 items==edges）
+make_wire    8 → 8（§9.408）
+make_face    8 → 8（§9.410）
+check_pcurves_and_shift (read_topology.rs:714)   **8 → 6**（本节）—— 丢 #5012/#5018，造中点 -65.243610
+seam 块入口  [1,1,6,14]（§9.407）⇒ fix_missing_seam 拿到的已是残缺外环
+  ⇒ ComposeShell 出两张重合面（§9.377）⇒ Shell(5) 被 resolve_face 丢 ⇒ 面停在 4 wires
+  ⇒ 建模型 wire[0]=6 / wire[1]=14（§9.393）⇒ face-checker 判 SELF_INTERSECTING_WIRE ⇒ FAILURE
+  ⇒ 三角化循环跳过（§9.391）⇒ **螺母斜切面为空**（§9.368/§9.371）
+```
+
+#### 下一步（该看的就是这一个函数 + 其 .cxx）
+
+```text
+端口  crates/occt-topo/src/shhealing/ 的 check_pcurves_and_shift（注释指向 cxx:365-480）
+OCCT  ShapeFix_Face.cxx:365-480（CheckPCurves 一线的首个 wire 轮次）
+做法  逐行对照：确认 OCCT 在该处是否也「就地重建 wire / 合并同端点去-回边」；
+      若 OCCT 只是 shift pcurve 参数而**不动拓扑**，端口这里就是在做多余的重建（应改为只改 pcurve 且写回副本）。
+      顺带核 -65.243610 的产生点（中点切边）是否出自该函数内部的某个 split。
+判据  --model 113 → 2 wires（22+6 边）、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、
+      a3n00 面积比从 0.8996 起上升、t101_verify.ps1 全绿。
