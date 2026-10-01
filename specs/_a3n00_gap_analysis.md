@@ -18429,3 +18429,54 @@ pwsh -File .target-gate\t101_verify.ps1  ：一条命令的落地验收（判据
 ```
 
 （当前树：库代码零改动；基线 `STATMAP matched=225 unmatched=1 sum_mt=11941` ✓。）
+
+---
+
+### 9.448 —— T-101 **收尾**（第 71-72 轮）：子任务无产出被停止、插桩已清回 HEAD、目标如实留在 active
+
+#### A. 第 71 轮的事件与处理
+
+派出的 F113 五阶段普查子任务（`56ebc0dd`，brief 见 §9.446）**未产出任何读数或结论**即被我停止
+（无 closing message），但它在工作树里留下 4 个库文件的 TEMP 插桩：
+
+```text
+perform.rs +131 / break_wires.rs +17 / split_by_grid.rs +19 / split_by_line.rs +39   （标签 ZZCS×14、T101_ZZ×1）
+```
+
+处理（**未用 `git checkout`**）：用 `git show HEAD:<file>` 取回原字节 + python 归一化写回 4 个文件；
+`split_by_line.rs` 另按其 HEAD 形态去掉尾部换行。复验：
+
+```text
+标签残留 ZZCS 0 / T101_ZZ 0；cargo check 0 error
+git status --porcelain → 仅 M crates/occt-topo/examples/zz_probe_a3n00.rs（审计留下的只读 instrument）
+基线：STATMAP matched=225 unmatched=1 sum_mt=11941   （与 §9.374 基线逐字相同）
+```
+
+#### B. 目标终态（如实）
+
+```text
+未达成：F113 仍 4 wires（wire[0]=6 / wire[1]=14 / 1 / 1）→ 无网格（空面）
+        a3n00 面积比仍 0.8996（未上升）；T0M 0.9987；acs10 0.9846；--lib 1281/0；step_obj_gates 5/5
+```
+
+#### C. 结论与「接着做的第一条命令」
+
+```text
+已确证：端口已算出正确的 2-wire 面（v 范围 [-43.75,131.25]），但被 ComposeShell 的 5 块补丁
+        （6/5/4/3/3 边）打包成 Shell(5) ⇒ reader 只收 Face ⇒ 全丢 ⇒ 面停 4 wires ⇒ face-checker 自交 ⇒ 空面。
+最强假设：分歧在 SplitWires/BreakWires 的**切分**（外环被切成 4 块补丁；OCCT 成一条 22 边 wire）。
+
+第一条命令（复现现状，约 1 分钟）：
+  crates\occt-topo\target\debug\examples\zz_seam_fix.exe data/occ/a3n00.stp 113
+  期望看到：BEFORE wires=4（6/14/1/1）→ result type=Shell, result faces=5（HEALED 各 1 wire：6/5/4/3/3）
+
+第二件事（继续定位，见 §9.447-E 的三条路）：
+  A 五阶段普查（loadwires/splitbygrid/breakwires/collectwires/dispatchwires，对照
+    cxx:2131-2275 / :1433-1914 / :2824-2846 / :2770-2860）
+  B 后路：5 块补丁的切分点参数 vs OCCT 同输入逐值对比（不需新插桩）
+  C 并行：f=171 的三角化为何一改顶点就丢 1763 面积（需逐面面积口径 --farea）
+```
+
+**纪律提示（留给接手者）**：§9.439 那处 `.cxx` 正确的顶点修复（`FixDummySeam` 朝向感知）**已被证明会
+让 a3n00 面积比 0.8996 → 0.8918**，在弄清 f=171 之前**不要再落地**；不要改 reader 的
+`res.shape_type() == Face`；不要按面号/bbox/面积加特例；TEMP 插桩一律用 `edit` 反撤。

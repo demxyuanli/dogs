@@ -47,7 +47,7 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
   asOf: "2026-09-30",
-  revision: "r29",
+  revision: "r30",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -304,7 +304,7 @@ export const DATA = {
     },
   ],
   nextAction:   { taskId: "T-101",
-    action: "【T-101 新一轮（四步计划，见 §9.426）】目标：让 F113 与 OCCT 一致 —— 2 wires（22+6 边）/228 节点/228 三角 + a3n00 面积比从 0.8996 起上升 + 门禁全绿。① 在 wire_fix.rs:2883 的预检处，按现写法(p2d1/p2d2)与 OCCT 写法(pt1/pt2)各判一次，判定 F113 的毛刺边是否只有在 OCCT 写法下 short/param 落到原顶点(-49.864906 而非中点 -65.243610)；命中即按 .cxx 修并跑验收。② 否则进 param1 算法：project_inside(wire_fix.rs:2800-2815 的越界钳位) ↔ ProjectInside(ShapeAnalysis_Wire.cxx:1837 起) 逐行比。③ 每处改动后跑：zz_uv_feed --model 113 → wires=2、zz_seam_fix 113 → Face、--fstats → face=113 mt≈228、a3n00 面积比 ≥0.8996 且上升、T0M unmatched ≤6、pwsh -File .target-gate\t101_verify.ps1 全绿。④ 同法处理 idx171 #7415 与 idx203 #8243。禁止按面号/bbox/面积加特例；TEMP 插桩必须 edit 反撤。",
+    action: "【T-101 收尾（§9.448）：目标未达成，F113 仍 4 wires/空面，面积比仍 0.8996】已确证：端口 fix_missing_seam 其实产出正确的 2-wire 面（v 范围 [-43.75,131.25]），但被 ComposeShell 的 5 块补丁（6/5/4/3/3 边）打包成 Shell(5)，reader 只收 Face ⇒ 全丢 ⇒ 面停 4 wires ⇒ face-checker 判自交 ⇒ 三角化跳过 ⇒ 空面。最强假设 = 分歧在 SplitWires/BreakWires 的切分（外环被切碎，OCCT 成一条 22 边 wire）。第一条命令：zz_seam_fix.exe data/occ/a3n00.stp 113（期望 BEFORE wires=4 [6,14,1,1] → result Shell faces=5，HEALED 各 1 wire 6/5/4/3/3）。三条继续路径：A 五阶段普查(cxx:2131-2275/1433-1914/2824-2846/2770-2860)；B 切分点参数逐值对比；C f=171 逐面面积(--farea)。红线：§9.439 的 FixDummySeam 朝向感知修复会让面积比 0.8996→0.8918，弄清 f=171 前不要落地；不要改 reader 的 Face 判定；禁止面号/bbox/面积特例；TEMP 插桩用 edit 反撤。",
     why: "用户要求「a3n00 一个一个处理，先处理带有倒角的法兰盘」，本轮就把那一步做完并达成 T-99 的 accept。① 做法是把 f1e56776 删掉的导入期 seam 步骤接回 reader（`ShapeFixFace::fix_missing_seam` + 结果面 wire 的 `check_pcurves_and_shift`），这不是新造规则：`ShapeProcess_OperLibrary.cxx:785-899` 的 FixShape 算子 → `ShapeFix_Face::Perform` → `FixMissingSeam`（`cxx:482-498`，构造在 `cxx:1722-2330`），`STEPControl_Controller.cxx:201/:221` 默认就开。② 移除理由（T-93(a)/§9.219「OCCT 在这条路径上不跑 Perform」）被本轮实测推翻：探针 `--faceids` 开/关 ShapeProcess 得 `{1:208,2:9,4:1,6:4,10:4}` vs `{1:163,2:53,4:2,6:4,10:4}`，后者与 STEP 的 FACE_BOUND 直方图、与端口逐字相同 ⇒ OCCT 的导入确实合并了 45 个 2-bound 面。③ 结果方向与量级都对：法兰面结构变成 OCCT 的 1 wire / 5 边（边序、参数区间逐项相同），a3n00 面积比 0.8627→0.8996、T0M 未网格 7→6、T0M 面积比 0.9786→0.9987、acs10 0.9025→0.9846、rescue 16→0，且**没有改任何断言或 area_tol**。④ 剩余问题都已量化成有界的下一步（还差 1 个 2-bound + 1 个 4-bound 面没合并；全形状多改 4 个面待查；法兰面密度 72 vs GT 52），所以 T-99 按 accept 结项，另立 T-100 按「面」继续推进，而不是再调全局参数。",
   },
   tasks: [
@@ -680,6 +680,14 @@ export const DATA = {
   ],
   // 新条目插到数组**开头**（brief 取前 3 条当最近活动；早于 a29 的看提交历史）
   activity: [
+    {
+      id: "a72",
+      at: "2026-10-01",
+      title: "T-101 收尾：目标未达成；已把 F113 收敛到「切分阶段把外环切碎」，插桩清回 HEAD",
+      tone: "warn",
+      detail: "第 71-72 轮：F113 五阶段普查子任务无产出被停止，其留下的 4 个库文件 TEMP 插桩（perform/break_wires/split_by_grid/split_by_line，ZZCS×14）已用 git show HEAD + 归一化清回，标签残留 0、cargo check 0 error、基线 sum_mt=11941 复验一致。目标终态：F113 仍 4 wires/空面、面积比 0.8996 未上升。已确证端口能算出正确的 2-wire 面但被打包成 Shell(5)=5 块补丁(6/5/4/3/3)；打包与 .cxx 同构，剪枝 no-op，投影链全部忠实；唯一已确认的 .cxx 分歧（FixDummySeam 顶点须朝向感知）因面积退步 0.8996→0.8918（仅 f=171 一张面 +26 三角/总面积 -1763）暂缓落地。",
+      ref: "specs/_a3n00_gap_analysis.md \u00a79.448",
+    },
     {
       id: "a71",
       at: "2026-10-01",
