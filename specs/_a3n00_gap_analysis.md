@@ -16978,3 +16978,33 @@ noop          **131/226 面无三角化**（全为 UV-DEGENERATE-WIRE），{1:16
 2. 对照 `ShapeFix_Face.cxx:365-492` 的同等分支，确认 OCCT 在该处**是否改拓扑**；
 3. 仍按验收：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
    `--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.414 —— T-101（F113）：`check_pcurves_and_shift` 内部再分流 —— `fix_reorder_wire` / `fix_small_all` **都不丢边**，丢边在函数**后半段**
+
+在 `wire_fix.rs:3168` 的 `check_pcurves_and_shift` 里，于 `fix_reorder_wire`（:3171）与
+`fix_small_all` 块之后（`let edges = edges_of_wire(wire);`，:3189 之前）各打一次 wire 边数
+（TEMP，env gated，**已撤除**）：
+
+```text
+12 x  CP entry edges=8  →  CP after_fixsmall edges=8        （全部 12 条 8 边 wire 都是 8 → 8）
+（共 5494 条 CP 读数）
+```
+
+⇒ `fix_reorder_wire` 与 `fix_small_all`（`ShapeFix_Wire::FixSmall`）**都没有删边**；
+而 `read_topology.rs:714` 的调用返回后是 6（§9.412）⇒ 删边发生在
+`check_pcurves_and_shift` 的**后半段**（:3189 之后）：
+
+```text
+候选：fix_notched_edges（:3249）、以及 :3305-3333 的收尾分支（fix_lacking / check_wire 一线）
+已排除：fix_reorder_wire（:3171/3182）、fix_small_all（:3177）、pcurve 循环本身（:3208-3247，只动 pcurve）
+```
+
+#### 下一步
+
+在该函数后半段的每个候选调用前后再打一次边数（同样三行探针），指名那一步；
+然后对照 `ShapeFix_Face.cxx:365-492` 的同等分支判断 OCCT 是否也删这两条边
+（`-65.243610` 中点 = 切边指纹，指向「把一对去-回边合并成一条、并取中点」的动作）。
+验收不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
+`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
