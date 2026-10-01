@@ -16298,3 +16298,67 @@ OCCT Precision::Infinite()          = 1e100
 
 逐行对照 `ShapeFix_Face.cxx:1758-1802` ↔ `shape_fix_face.rs:175-206`（含 `INFINITE` 的取值），
 这是 §9.397 之后 seam 定位链里**最后一段没对过的控制流**。
+
+---
+
+### 9.398 —— T-101（F113）：`cxx:1758-1802` 也**逐行忠实**（含「覆盖后再判」的语义） ⇒ seam 定位链已全部对完，最后未对过的是 **grid 的构造**（`shape_fix_face.rs:591-598` + `CompositeSurface::with_grid`）
+
+逐行对照结果（关键点是 `IsInfinite` 判据作用在**已被覆盖后**的变量上）：
+
+```cpp
+// cxx:1759-1780（V 向完全同构）
+if (IsInfinite(SUF) || IsInfinite(SUL)) {
+  if (IsInfinite(SUF)) SUF = fU1;
+  if (IsInfinite(SUL)) SUL = fU2;
+  if (|SUL - SUF| < PConfusion) {
+    if (IsInfinite(SUF)) SUF -= 1000.;   // SUF 已被 fU1 覆盖 ⇒ 实际走 else
+    else                 SUL += 1000.;
+  }
+}
+```
+```rust
+// shape_fix_face.rs:176-190
+if Precision::is_infinite(suf) || Precision::is_infinite(sul) {
+    if Precision::is_infinite(suf) { suf = f_u1; }
+    if Precision::is_infinite(sul) { sul = f_u2; }
+    if (sul - suf).abs() < PCONFUSION {
+        if Precision::is_infinite(suf) { suf -= 1000.0; } else { sul += 1000.0; }
+    }
+}
+```
+
+⇒ 同构（端口同样在覆盖**之后**判 `is_infinite`，所以两边都会走 `sul += 1000` 那一支）；
+`INFINITE = 2e100` vs `Precision::Infinite() = 1e100` 只在数值真的到达 ~1e100 时才可能分叉，
+而 F113 的面界是 ±inf（`--model 113` 实测 `vrange=[-inf,inf]`）⇒ 两边都判「无穷」并同样被面界覆盖，
+这一处**不构成分歧**。
+
+#### 结论（本目标的 seam 定位链状态）
+
+`FixMissingSeam` 从入口到 `ComposeShell` 的调用为止，**逐段都已对过且一致**：
+
+```text
+cxx:1753-1756  面/界取法            ↔ shape_fix_face.rs:171-173      一致（§9.397）
+cxx:1758-1802  无穷面界→面UV界      ↔ shape_fix_face.rs:175-206      一致（本节）
+cxx:1804-1805  URange/VRange        ↔ :208-209                       一致（同 min(…, INFINITE)）
+cxx:2131-2275  SplitByGrid          ↔ split_by_grid.rs:93-133        一致（§9.382）
+cxx:1433-1914  SplitByLine          ↔ split_by_line.rs（逐段映射）    一致（§9.382/§9.383）
+cxx:1151-1197  SplitWire 两匹配分支 ↔ split_wire.rs:237/260          一致（§9.379/§9.381）
+cxx:1238-1242  新造顶点             ↔ split_wire.rs:289-296          一致（§9.378）
+cxx:2824-2846  CollectWires 收尾    ↔ collect_wires.rs:309-330       一致（§9.386）
+helpers: CheckByCurve3d / GetGridResolution / split_res / IsCoincided / TOLINT  全一致（§9.384）
+剪枝判据                                                               实测 no-op（§9.377）
+```
+
+⇒ **唯一还没对过的是「喂给 ComposeShell 的那个假想 grid 的构造」**：
+`shape_fix_face.rs:591-598`（`GeomRectangularTrimmedSurface::uv(surf, uf2, uf2+u_range, vf2, vf2+v_range)`
++ `CompositeSurface::with_grid(...)`）以及 `CompositeSurface` 的 parametrisation / joint values
+（§9.389 已备好 OCCT 侧同口径基准 `SPLITTER f=77 ru=[0,2π] rv=[-43.75,131.25]`）。
+
+#### 下一步（下一轮的起点）
+
+1. 读 `shape_fix_face.rs:560-600`（grid 构造）与 `CompositeSurface::with_grid` / `compute_joint_values`，
+   对照 `ShapeFix_Face.cxx:2280-2330`（构造 `Geom_RectangularTrimmedSurface` 与 `BRepMesh_CompositeSurface`）
+   与 `ShapeExtend_CompositeSurface::ComputeJointValues`（cxx:603-653）；
+2. 用 §9.389 的基准比 `ru/rv` 与 `u/v_joint_values` 个数；
+3. 命中即按 .cxx 修，然后按验收：`zz_seam_fix 113` → Face、`--model 113` → 2 wires（22+6 边）、
+   `--fstats` 出现 `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
