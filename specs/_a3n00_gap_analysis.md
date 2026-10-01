@@ -17975,3 +17975,71 @@ NOTCHFIX lines: **0**
 **下一轮探针**：在 `:3074`（`on_end` 计算处）与 `:3083`（第二个 PCONFUSION 分支）各打一次
 `(i, short_num, is_remove_first, to_split, param, a, b, on_end)`，并在 `:3132`（组装）打一次；
 跑 `--ids` 后按「哪几次把 wire 少 2 条」定位到具体分支。
+
+---
+
+### 9.438 —— 【第一现场锁定】删边走 `on_end` → `fix_dummy_seam`；中点顶点 = `CombineVertex(V1, V2, 1.0001)`（OCCT 同式）⇒ 下一窗口 = `combine_vertex` 本体
+
+两处探针（TEMP，env gated，**已撤除**）给出：
+
+```text
+NF1（check_notched_edges 返回 Some 之后）: 2 行
+NF2（:3132 组装块）:                      **0 行**
+⇒ 这 2 次都没有走「切边 + 造新顶点」那条路，而是在 `:3078` 的 `if on_end` 分支里处理掉的
+   （与 §9.417「正好 2 条 wire 8→6」完全对应）
+```
+
+**该分支（`wire_fix.rs:3073-3082`）**：
+
+```rust
+let on_end = (check.param - if is_remove_first { b } else { a }).abs() <= PCONFUSION
+    || (edge_is_closed_3d(&split_e) && (check.param - if is_remove_first { a } else { b }).abs() <= PCONFUSION);
+if on_end {
+    fix_dummy_seam(wire, n1);        // ← 删毛刺对发生在这里，注释引 cxx:4019-4021
+} else { … 切边路径（本次未走）… }
+```
+
+**`fix_dummy_seam`（`wire_fix.rs:2980-3027`）↔ `ShapeFix_Wire::FixDummySeam`（`ShapeFix_Wire.cxx:4213-…`）**逐行对照：
+
+```cpp
+// OCCT
+int num1 = (num == NbEdges()) ? 1 : num + 1;
+E1 = sewd->Edge(num); E2 = sewd->Edge(num1);
+V1 = sae.FirstVertex(E1); V2 = sae.LastVertex(E2);
+Vm = sbv.CombineVertex(V1, V2, **1.0001**);           // ← **新顶点（观测到的中点）**
+bool toRemove = false;                                // :4227 硬编码 false
+Vs = sae.FirstVertex(E2); if (Vs.IsSame(V1) || Vs.IsSame(V2)) Vs = Vm;
+newEdge = sbe.CopyReplaceVertices(E2, Vs, Vm);
+CopyReversePcurves(newEdge, E1, E1.Orientation() == E2.Orientation());
+B.SameRange(newEdge,false); B.SameParameter(newEdge,false);
+if (!Context().IsNull()) { if (toRemove) { Context()->Remove(E2); Context()->Remove(E1); } … }
+```
+```rust
+// 端口（:2980-3027）
+let nb = wire_edges_nb(wire);
+if nb < 2 || num == 0 || num > nb { return; }                    // ← OCCT 无此守卫
+let num1 = if num == nb { 1 } else { num + 1 };                  ✓
+let vm = combine_vertex(&v1, &v2, 1.0001);                       ← 同上式（待比）
+…
+let (n1, n2) = if num < num1 { (num, num1) } else { (num1, num) };
+wire_remove_edge(wire, n2); wire_remove_edge(wire, n1);          // ← 直接就地删（OCCT 走 Context()->Remove，且 toRemove=false）
+```
+
+⇒ 观测到的顶点 `-65.243610` **正是 `Vm = CombineVertex(V1, V2, 1.0001)` 的位置**（`#5012/#5018` 两端点的中点：
+`(-49.864906 + -80.622679)/2 = -65.24379` ≈ 实测 `-65.243610`）。
+
+#### 下一个窗口（最后一次对拍）
+
+```text
+端口  wire_fix.rs 的 combine_vertex(&v1, &v2, 1.0001)
+OCCT  ShapeBuild_Vertex::CombineVertex(V1, V2, tolFactor)（ShapeBuild_Vertex.cxx）
+看什么 该函数对**相距 30 单位、容差 1e-7** 的两个顶点返回什么：
+       OCCT 是按容差**加权**取点还是直接取中点？端口是否无条件取中点（那就会与 OCCT 差出 (0.056,2.175,0.056) 这种量级）。
+       注意：**OCCT 的结果未必是精确中点**，而端口的实测值接近中点 —— 若 OCCT 加权后落在
+       `-49.8649` 一侧（即近似原顶点），就正好解释「OCCT 收在原顶点、端口收在中点」。
+另需核：OCCT 里 `toRemove=false` ⇒ `Context()->Remove(...)` 的**延迟删除**语义（端口是就地删）。
+```
+
+**下一轮**：读 `combine_vertex` 与 `ShapeBuild_Vertex::CombineVertex`，命中即按 `.cxx` 修 → 第③步验收
+（`--model 113` → wires=2、`zz_seam_fix 113` → Face、`--fstats` → face=113 mt≈228、面积比 ≥0.8996 且上升、
+`t101_verify.ps1` 全绿）。
