@@ -248,6 +248,31 @@ fn main() {
     for (i, hf) in healed_faces.iter().enumerate() {
         println!("--- HEALED face {i} ---");
         describe("HEALED", hf);
+        // `--ep`: per-edge endpoints of the healed result (read-only instrument, §9.450).
+        if std::env::args().any(|a| a == "--ep") {
+            for (wi, w) in occt_topo::topo_tools_full::wires_of_face(hf).iter().enumerate() {
+                let es = occt_topo::topo_tools_full::edges_of_wire(w);
+                let segs: Vec<String> = es
+                    .iter()
+                    .map(|e| {
+                        let f = occt_topo::shhealing::first_vertex(e)
+                            .map(|v| {
+                                let q = BRepTool::vertex_point(&v);
+                                format!("({:.3},{:.3},{:.3})", q.x(), q.y(), q.z())
+                            })
+                            .unwrap_or_else(|| "none".to_string());
+                        let l = occt_topo::shhealing::last_vertex(e)
+                            .map(|v| {
+                                let q = BRepTool::vertex_point(&v);
+                                format!("({:.3},{:.3},{:.3})", q.x(), q.y(), q.z())
+                            })
+                            .unwrap_or_else(|| "none".to_string());
+                        format!("{f}->{l}")
+                    })
+                    .collect();
+                println!("HEALEDP face={i} wire={wi} n={} {}", es.len(), segs.join(" "));
+            }
+        }
         probe_splitter(hf, &format!("face{i}"));
     }
     let _ = (create_range_splitter, MeshFace::new, MeshModel::new, TopoBuilder::new);
