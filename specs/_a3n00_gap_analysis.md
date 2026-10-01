@@ -17504,3 +17504,33 @@ let proj2 = project_inside(&ad2, &start1, tolerance, false);    // （上一轮�
 
 判据（不变）：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
 `--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.426 —— T-101 **新一轮的四步计划**（本轮启动；螺帽 F113 仍未解决，如实记录）
+
+用户明确指出「螺帽问题没有解决」。目标已改写为本计划并提高轮次上限（同一 goal id：工具限制下
+新建 goal 需先 complete 旧目标，而旧目标未达成，故不 complete 腾位）。四步按序、每步以读数判定：
+
+| 步 | 动作 | 判定依据 | 命中后的验收 |
+|---|---|---|---|
+| ① | 在 `wire_fix.rs:2883` 的预检处，按**现写法**（`p2d1/p2d2`，`:2866-2877` 朝向判据与 `ShapeAnalysis_Wire.cxx:1960-1961` **相反**）与 **OCCT 写法**（`:2895-2896` 的 `pt1/pt2`，正确）各判一次 | F113 那对毛刺边（`#5012/#5018`）是否**只有**在 OCCT 写法下 `short`/`param` 落到**原顶点** `-49.864906`（现为毛刺中点 `-65.243610`） | 按 `.cxx` 修 → 跑验收 |
+| ② | 若①不成立：`param1` 的算法 | `project_inside`（`wire_fix.rs:2800-2815` 的越界钳位：钳到 `u_first`/`u_last`）↔ `ProjectInside`（`ShapeAnalysis_Wire.cxx:1837` 起）逐行比 | 按 `.cxx` 修 → 跑验收 |
+| ③ | 每次改动的验收（一条命令） | `zz_uv_feed --model 113` → **wires=2**（22+6 边）；`zz_seam_fix 113` → **Face**；`--fstats` → **face=113 mt≈228**；a3n00 面积比 **≥0.8996 且上升**；T0M unmatched ≤6 | `pwsh -File .target-gate\t101_verify.ps1` → `--lib` 1281/0、`step_obj_gates` 5/5、直方图贴近 `{1:208,2:9,4:1,6:4,10:4}` |
+| ④ | 同法处理 `idx171 #7415`（同症状 8→6）与 `idx203 #8243`（计数看不见的同类：file/OCCT/port 都是 `[2]`） | 同上 | 同上 |
+
+**已确证的链（供接手者复核，各环读数见 §9.404-§9.425）**：
+
+```text
+STEP 外环 8 条（#5004/#5012/#5018/#5090/#5098/#5107/#5115/#5137，8 条 distinct）
+→ resolve_loop 8 → make_wire 8 → make_face 8     （§9.408/§9.410）
+→ check_pcurves_and_shift → fix_notched_edges（:3249）**8 → 6**（§9.417 配对探针）
+   丢 #5012/#5018（同端点去-回对），中点 -65.243610 造新顶点；OCCT 收在原顶点 -49.864906（§9.418）
+→ 外环 6 条 → fix_missing_seam 出 Shell(5) 被 resolve_face 丢弃（§9.377/§9.412）
+→ 面停在 4 wires → 建模 wire[0]=6/wire[1]=14（§9.393）→ face-checker 判 SELF_INTERSECTING_WIRE+FAILURE（§9.395）
+→ 三角化循环跳过（§9.391）→ **面为空**（§9.368/§9.371）
+```
+
+**另有两处独立对齐项**（不属于螺帽本身，勿混入本计划的验收）：
+① reader 缺 `ShapeProcess`/`FixShape` 驱动器（实测 `noop` 时 131/226 面无三角化）；
+② `wire_fix.rs:2900` 投影目标笔误（已修，`--lib` 1281/0、`step_obj_gates` 5/5、a3n00 0.8996 与基线逐字相同）。
