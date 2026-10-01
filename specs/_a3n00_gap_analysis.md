@@ -16778,3 +16778,32 @@ resolve_face 内部 578 → 740 之间（bound 解析 → Face 组装 → 缓存
 
 判据不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
 a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.409 —— T-101（F113）：`resolve_face` 内部定位尝试（本轮插桩**编译未过、已撤净**）；已把范围钉到 `:663 make_face` 前后
+
+本轮想在 `resolve_face` 的 `self.b.make_face(surface, &wires)`（`read_topology.rs:663`）前后各打一次
+`wires / edges_per_wire`，用 §9.408 的分流法判定 8→6 是否发生在 `make_face` 内部。
+插桩**编译报 1 个错**（`wires` 的元素类型与 `edges_of_wire(&Wire)` 不匹配，需先看 663 之前 `wires`
+是怎么收集的），因此已用 `edit` 反向撤除，`cargo check` 复原、库文件回到 HEAD。
+
+已确定的周边事实（本轮新增）：
+
+```text
+resolve_face 的关键节点：:634 make_face_from_surface(...)   :663 self.b.make_face(surface, &wires)
+                        :655 注释「Bound orientation is already on the wire from resolve_outer_bound」
+        :717 make_face_uv（natural-bound Offset 面用）      :740-758 seam 块（§9.407 实测此处已是 [1,1,6,14]）
+上游已排除：resolve_loop（341 loop 全部 items==edges，:413-433）与 make_wire（同轮 wire_edges==items，§9.408）
+```
+
+#### 下一步（先看清再插）
+
+1. 读 `read_topology.rs:600-665`，确认 `wires` 的构造与元素类型（`Vec<Wire>` 还是 `Vec<TopoShape>`），
+   以及 `make_face_from_surface`（:634）与 `make_face`（:663）分别覆盖哪些分支；
+2. 再在同口径打印下分流：
+   `pre = [1,1,8,14] & post = [1,1,6,14]` ⇒ 丢边在 `make_face`（对照 OCCT `BRep_Builder::MakeFace` /
+   `StepToTopoDS_TranslateFace` 的同分支）；
+   `pre` 已是 `[1,1,6,14]` ⇒ 丢边在 `600-663` 的 wires 收集段（那段的过滤/去重条件就是第一现场）。
+3. 判据不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
+   a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
