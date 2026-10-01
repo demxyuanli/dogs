@@ -18324,3 +18324,28 @@ result type=Shell    result faces=5
 ⇒ 命中即按 .cxx 修；验收：zz_seam_fix 113 → Face、--model 113 → wires=2（22+6 边）、
    --fstats → face=113 mt≈228、面积比 ≥0.8996 且上升、t101_verify.ps1 全绿。
 ```
+
+---
+
+### 9.446 —— T-101：把「F113 五阶段普查」派给子任务（含完整上下文与硬约束）
+
+本轮把这件需要完整工作记忆的活派给子任务 `56ebc0dd`，brief 要点（可复现）：
+
+```text
+任务：对端口 F113（bbox (-87.5,-34,-100)-(87.5,34,-32)）做 ShapeFix_ComposeShell 的五阶段普查
+  loadwires / splitbygrid / breakwires / collectwires / dispatchwires
+  重点：breakwires 是否出现 §9.377 那种「D ≠ C 两端点不配对」，以及 dispatchwires 为何出 5 块补丁
+对照：ShapeFix_ComposeShell.cxx:2131-2275(SplitByGrid) / :1433-1914(SplitByLine) /
+      :2824-2846(CollectWires 收尾) / :2770-2860(DispatchWires)
+已有事实（brief 里直接给出，不重做）：Shell(5) 是 5 块单 wire 补丁（6/5/4/3/3）；
+  打包逻辑与 .cxx 同构（不要去改打包或 reader 的 Face 判定）；剪枝实测 no-op。
+硬约束：TEMP 插桩 env gated、判定条件必须**结构性**（禁止面号/bbox 特例）、
+  必须用 edit 反向撤除（禁 git checkout）、不提交、报告附 git status/diff。
+交付：第一处分歧(.cxx 行号 ↔ 端口 行号) + 机制 + 五阶段关键读数 + 是否小改可修 + git status/diff。
+```
+
+（同时保留一条后路：若子任务判「超范围」，则按 §9.399 已确认的结论——`split_wire.rs`/`split_by_line.rs`
+的控制流已逐行对完且忠实——把那 5 块补丁的**切分点参数**与 OCCT 在同一输入下的对应量逐值对比。）
+
+**当前树状态**：库代码零改动（基线 `sum_mt=11941`），工作树只剩审计留下的只读 instrument
+`crates/occt-topo/examples/zz_probe_a3n00.rs`。
