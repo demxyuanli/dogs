@@ -18088,3 +18088,37 @@ F113：仍 wires=4（bound 合并那一步 = `fix_missing_seam` 出 Shell(5) 被
 与 `combine_vertex` 逐行忠实并不矛盾：分歧在**传入 CombineVertex 的顶点**上）。
 
 **门禁**：`t101_verify.ps1` 已在后台启动（job 见报告）——绿则提交本改动，红则回退这两处。
+
+---
+
+### 9.440 —— T-101：§9.439 的修复**门禁退步**（a3n00 面积比 0.8996 → **0.8918**）⇒ 已回退，但保留全部证据
+
+`t101_verify.ps1`（job `pwsh-1404`，exit 0）关键行：
+
+```text
+[occ/a3n00.stp] our=202564.34 occ=227130.30 **ratio=0.8918**     ← 改前是 0.8996（§9.369 基线）
+[occ/a3n00.stp] ours v=10876 f=11967 | occ v=11145 f=12466 | f-ratio 0.96
+[occ/T0M.stp]   our=192416.44 occ=192658.64 ratio=0.9987        （不变）
+[occ/acs10.stp] our=267047.23 occ=271219.68 ratio=0.9846        （不变）
+step_obj_gates: test result: ok. 5 passed; 0 failed
+```
+
+⇒ 这处改动**是 `.cxx` 忠实的**（`FixDummySeam` 的 `sae.FirstVertex/LastVertex` 确为朝向感知，§9.439），
+并且**确实修好了 F113 外环的几何**（中点 `-65.24` 消失、回到 `-49.86`，与 OCCT 的 W1 逐点一致），
+但它让**整个 a3n00 的覆盖面积变差**（0.8996 → 0.8918）——说明这处顶点语义还牵动了别的面的合并/网格结果。
+
+按纪律（面积比不得退、不得为对齐某模型加特例）：**已回退**这两处，库代码回到门禁绿的状态
+（`cargo check` 0 error、`git diff crates/…/wire_fix.rs` 为空），基线读数复验 `mesh_v=10863 mesh_t=11941` ✓。
+
+**保留的证据与后续**（下次可继续）：
+
+```text
+· 改动文本（2 处，精确）：
+    let (Some(v1), Some(v2)) = (first_vertex(&e1), last_vertex(&e2)) else { … };   // cxx:4221
+    let mut vs = first_vertex(&e2);                                                // cxx:4230
+· 收益：F113 外环几何与 OCCT 逐点一致（-49.864906 而非中点）
+· 代价：a3n00 面积比 -0.0078（0.8996 → 0.8918），T0M/acs10 不变
+· 下一步要先弄清「这处改动让哪些面的网格变了」：
+    用 `--fstats` 逐面比「改前 / 改后」的 mt（按 bbox 配对），看是否有面从有网格变成 `mt=0`
+    或面积显著变化 —— 若能把退步归因到某个具体面，就可判断是「另一处 bug 被暴露」还是「本处改法不对」。
+    在弄清之前不要再次落地这处改动。
