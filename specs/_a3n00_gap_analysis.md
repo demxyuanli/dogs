@@ -16540,3 +16540,47 @@ OCCT  wires_probe wdump 113（raw）  → 同一张面每条边的 pcurve 参数
 命中即按 .cxx 修对应环节（pcurve 构造/range/朝向），再跑验收：`zz_seam_fix 113` → Face、
 `--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起、
 最后 `pwsh -File .target-gate\t101_verify.ps1`。
+
+---
+
+### 9.403 —— T-101（F113）：数值级对拍第一击 —— **W0 的边分解不同**（OCCT raw 8 边含重复 seam 边 / 端口 6 边），W1/W2/W3 一致
+
+用 `cmd /c "specs\occt_probe\run_dbg.bat <a3n00.stp> wdump 113 noop"` dump **OCCT 未整形 shape 的第 113 张面**
+（正好就是我们要的那张，见 §9.402），输出按 wire 列出每条边的端点：
+
+```text
+W0 edges= [12.3875,24.672,-89.3942 -> -49.8649,-2.8e-16,-100]
+          [-49.8649,0,-100 -> -80.6227,0,-100]
+          [-49.8649,0,-100 -> -80.6227,0,-100]      ← **同一条边出现两次（seam 边两侧）**
+          [-49.8649,-5.6e-16, …
+W1 edges= [-8.9,28.8444,-48 -> -8.9,33.8048,-69.6384] …          （14 条）
+W2 edges= [87.5,0,-32 -> 87.5,-8.3e-15,-32]                      （1 条，闭圆）
+W3 edges= [-87.5,0,-32 -> -87.5,-8.3e-15,-32]                    （1 条，闭圆）
+```
+
+与端口侧（`zz_uv_feed --model 113` / `--fdump`）对照：
+
+```text
+wire[0] 端口 6 边（289…294），首边起点 (12.387499,24.672033,-89.394247) **与 OCCT 相同**，
+        但端口 `--fdump` 里这条边 last=(-65.243610,0,-100) ≠ OCCT 的 -49.8649 ⇒ **边的切分不同**
+wire[1] 端口 14 边（295,296,297,111,298…306,113）  ← 与 OCCT W1 的 14 **一致**
+wire[2]/[3] 端口各 1 条 Circle par=[0,2π]（307/308） ← 与 OCCT W2/W3 **一致**
+OCCT census：edges_per_wire = 8 14 1 1 ；端口模型：6 14 1 1
+```
+
+⇒ **除 W0 外全部一致**；W0 是 **8（OCCT，含一条重复的 seam 边）vs 6（端口）**。
+这正是「切点 D ≠ 已有顶点 C」这类现象的温床：W0 的边分解/重复 seam 边不同，
+`SplitByGrid/SplitByLine` 面对的边界段就不同，端点自然对不上。
+
+（注意：OCCT 这里 dump 的是**未整形** shape，端口 `--fdump/--model` 也是 reader 原始面 —— 两边层次相同，
+可以直接比。）
+
+#### 下一步
+
+1. 查端口 reader 为什么 W0 只有 6 条边：STEP `FACE_BOUND` 里该环的边表是什么（`read_topology.rs` 的
+   FACE_BOUND/EDGE_LOOP 组装），有没有把同一条 seam 边去重/丢边；对照 OCCT `ShapeExtend_WireData`
+   保留重复 seam 边的行为；
+2. 顺带扩展 OCCT `wdump` 打印每条边的 **pcurve 参数区间**（现在只有端点），与端口 `--model 113` 的
+   `par=[f,l]` 逐边比；
+3. 命中即按 .cxx 修 reader 侧的组装（不加特例），再跑验收：`zz_seam_fix 113` → Face、
+   `--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起。
