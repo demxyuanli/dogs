@@ -16253,3 +16253,48 @@ FACECHECK face=113 edges=[290, 292, 293, 294, 295, 297]
 该链 §9.377–§9.389 已逐行对完，只剩「假想 grid 的数据」：
 `uf/vf/URange/VRange`（§9.389 已取到 OCCT 侧基准 `ru=[0,2π] rv=[-43.75,131.25]`，
 端口侧需按同口径打印 splitter 的 `range_u/range_v` 才可比）与 `u/v_joint_values`/`myU/VResolution`。
+
+---
+
+### 9.397 —— T-101（F113）：回到 `shape_fix_face` 的 seam 定位段；**已缩小到唯一还没对过的一段 = `cxx:1758-1802`（用面的 UV 界替换无穷的面界）**，这正好是「圆柱会走到、法兰面不会走到」的分支
+
+本轮想验的假设（「端口用 `surf.v_range()` 而 OCCT 用面界」）**被 .cxx 否掉**：
+
+```cpp
+// ShapeFix_Face.cxx:1753-1756（FixMissingSeam 开头）
+double URange, VRange, SUF, SUL, SVF, SVL;
+mySurf->Bounds(SUF, SUL, SVF, SVL);              // 面的几何范围（圆柱的 V 是 ±Infinite）
+BRepTools::UVBounds(myFace, fU1, fU2, fV1, fV2); // 面的 UV 界
+// 1804-1805
+URange = std::min(std::abs(SUL - SUF), Precision::Infinite());
+VRange = std::min(std::abs(SVL - SVF), Precision::Infinite());
+```
+
+端口 `shape_fix_face.rs:171-172 / 208-209` 与之一致（同源 + 同样的 `min(…, INFINITE)`），
+而且端口**已经**实现了紧接着的替换块（`cxx:1758-1802` ↔ 端口 `:175-206`，
+用面的 UV 界覆盖无穷的面界，`Precision::is_infinite` 阈值 = `1e100`）。
+
+⇒ 仍然没有找到不等价的点，但**范围已经收窄到一个具体段落**：
+
+```text
+cxx:1758-1802   ←→   shape_fix_face.rs:175-206      （**唯一还没逐行对过的一段**）
+```
+
+它之所以是第一嫌疑，是因为**只有它会对「面界为无穷」的面（= 圆柱 F113）生效**，
+而带倒角的法兰那批（平面/圆锥，面界有限）根本不进这一段 —— 这正好解释了
+「法兰解析已经对了，圆柱这张还是坏的」这个现象。
+
+附带一个待核的数值差（次要）：
+
+```text
+端口 occt_core::precision::INFINITE = 2e100        （is_infinite 阈值 = 1e100）
+OCCT Precision::Infinite()          = 1e100
+```
+
+`min(|SVL-SVF|, INFINITE)` 与各处 `is_infinite` 判据都会受这个 2× 影响，需与 `cxx:1758-1802`
+一起核。
+
+#### 下一步
+
+逐行对照 `ShapeFix_Face.cxx:1758-1802` ↔ `shape_fix_face.rs:175-206`（含 `INFINITE` 的取值），
+这是 §9.397 之后 seam 定位链里**最后一段没对过的控制流**。
