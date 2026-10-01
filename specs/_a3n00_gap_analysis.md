@@ -16121,3 +16121,31 @@ model_builder/wire_builder.rs:577-582        已排除（本轮四次早退都�
 同等分支（`BRepMesh_ModelHealer` / `BRepMesh_ModelPreProcessor`）查它为什么对 F113 判失败。
 **注意**：这与 §9.391 之前的一切（ComposeShell、`fix_missing_seam`、`add_wire` 早退）都不同，
 是新的第一现场。
+
+---
+
+### 9.393 —— T-101（F113）：FAILURE 置位点的**定位尝试未完成**（本轮插桩编译不过，已全部撤除）；六个候选点的作用域已摸清
+
+本轮想一次插桩定位「谁把 F113 标成 FAILURE」，结果如下（都只用 `edit`/脚本反向撤除，未用 `git checkout`）：
+
+```text
+model_healer.rs:812     ← 不是管线路径：它 new 了一个临时 MeshModel 再 add_face 后标 FAILURE（自检/辅助），排除
+shape_tool.rs:243/281/296  ← 三处都是 `self.model.face_mut(face_index).expect("face exists").set_status(FAILURE);`
+                             写成了多行，`face_index` 在作用域内（首选目标）
+discret_root.rs:298/618    ← 这两处的 set_status 所在作用域**没有** `face_index` 变量名
+                             （本轮插桩因此编译不过：E0425 cannot find value `face_index`）
+incremental_mesh/discret_root.rs:400  ← 已确认只是「读」状态后 skip（§9.391），不是置位点
+```
+
+⇒ 已知的 `MeshStatus::FAILURE` 置位点里，**还没被排除**的是 `shape_tool.rs` 的三处
+（`BRepMesh_ShapeTool` 侧的失败分支）与 `discret_root.rs:618`（`face_intersecting_edges` 相关路径）。
+
+#### 下一步（把插入写成「用该站点自己的变量名」）
+
+1. 先读 `shape_tool.rs:230-300` 确认这三处的条件与变量名（`face_index` 在作用域内）；
+2. 在每处的前一行插入 `eprintln!("FAILSET stage=shapetool face={face_index}")`（env gated），
+   以及 `discret_root.rs:618` 按其实际变量名插入；
+3. 跑一次 `zz_uv_feed --ids` 看 F113 是否命中，即可确定第一现场；随后对照
+   `BRepMesh_ShapeTool.cxx` / `BRepMesh_ModelPreProcessor.cxx` 的同等分支查它为何对 F113 判失败。
+
+（本轮 6 个编译错的教训：**不能用统配正则插桩**，每个站点的变量名不同；下次逐站点用其自身作用域的变量。）
