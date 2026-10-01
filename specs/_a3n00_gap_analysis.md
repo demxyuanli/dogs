@@ -15975,3 +15975,40 @@ noop（关 ShapeProcess，未整形）  全 226 面：wire 直方图 {1:163, 2:5
     不再要求 box 相等）—— 确认端口 F113 的 4 wires 是 raw 结构与 OCCT 一致（则分歧在整形），
     还是 raw 就不同（则分歧在 reader 构面）。
 ```
+
+---
+
+### 9.389 —— T-101（F113）：取到 **OCCT 侧该面的 range splitter 读数**（`ru=[0,2π] rv=[-43.75,131.25]`，有限、跨度 175）；端口侧只差一个 `splitter.range_*` 打印
+
+用 OCCT 探针自带的仪器（`OCCT_TOPO_TRACE_SPLITTER=1` + `--uvsum`，模型序）拿到 F113 孪生（model 77）的 splitter 值：
+
+```text
+SPLITTER f=77 preset=1 ru=[0.000000000000000,6.283185307179586] rv=[-43.750000000000000,131.250000000000000]
+               delta=[0.029533064822176,1.000000000000000] tol=[6.283185e-07,1.750000e-05]
+               vnb=0 defl=0.100000 cells_vnb0=[2,2] bbox=(-87.981961,…
+```
+
+⇒ OCCT 侧这张面的 splitter 范围是**有限的**：`ru` 一个整周期、`rv` 跨度 **175**（与 census 的 `v=175`、
+`--uvsum` 的 `vrange=[-43.75,131.25]` 三处自洽）。注意 `defl=0.100000` 是探针该分支写死的常数，
+所以 `delta/tol/cells` 只能在 0.1 偏转下比；**`ru/rv` 与偏转无关**，可以直接比。
+
+而端口 `zz_uv_feed --model 113` 打印的是 `surface().v_range()` = **`[-inf, inf]`**（圆柱的**几何**范围），
+**不是** splitter 在 `reset + add_point(每条 pcurve) + adjust_range` 之后拿到的范围
+（端口 `node_insertion.rs` 用的正是这套配方）。⇒ **(a) 的读数目前不是同口径**，不能据此下结论。
+
+#### 下一步（一步就能闭合口径）
+
+给端口侧加一个同口径打印（只在 example/探针里，不进库）：对 `--model <f>` 加
+`sp.range_u()/range_v()/delta()/tolerance_uv()` 的输出，跑 `--model 113` 与上面这行对照：
+
+```text
+判据：端口 sp.range_v() 是否 = [-43.75, 131.25]（OCCT），以及 range_u 是否 = [0, 2π]
+ · 若不同 ⇒ 分歧在 splitter 的 reset/add_point/adjust_range（即 pcurve 取点或 UV 界计算），
+   与 ComposeShell 完全无关；
+ · 若相同 ⇒ 回到 §9.388 的 (b)：确认端口 F113 的 4 wires 与 OCCT 未整形 shape 的对应结构，
+   用 `wires_probe wdump <idx>`（按 face 序号 dump）而不是按 box 匹配。
+```
+
+（本轮 `noop` census 里既没有 box 等于/包含 F113 的面，也没有 `u=6.2832`/`v=175` 的面 ——
+原因是未整形 shape 的面 box/span 是从**另一套数据**（无 pcurve）算出来的，
+所以「按 box 匹配 raw 面」这条路不可靠，下一轮 (b) 改用 `wdump <idx>`。）
