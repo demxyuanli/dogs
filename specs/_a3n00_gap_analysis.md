@@ -15413,3 +15413,49 @@ crates\occt-topo\target\debug\examples\zz_probe_a3n00.exe data/occ/a3n00.stp --f
 python .target-gate\t101_density5.py     # 按类型 + 自检
 python .target-gate\t101_flange16.py     # 那 16 个面
 ```
+
+---
+
+### 9.375 —— T-101 迭代（6）：Torus 残差的候选逐个排除（`ArcAngularStep` 忠实、`torus_radii` 有回退不除零）；item ① 等子任务收尾
+
+#### 9.375.1 已排除的两处（读 `.cxx` 逐行比）
+
+1. **`arc_angular_step` ↔ `GCPnts_TangentialDeflection::ArcAngularStep`** —— 忠实：
+
+```cpp
+Standard_ConstructionError_Raise_if(theRadius < 0.0, …);
+constexpr double aPrecision = Precision::Confusion();      // 1e-7
+double Du = 0.0, aMinSizeAng = 0.0;
+if (theRadius > aPrecision) {
+  Du = std::max(1.0 - (theLinearDeflection / theRadius), 0.0);
+  if (theMinLength > aPrecision) aMinSizeAng = std::min(theMinLength / theRadius, M_PI_2);
+}
+Du = 2.0 * std::acos(Du);   …  std::min(Du, theAngularDeflection) 再 max(aMinSizeAng)
+```
+
+端口 `param_set.rs:173-189` 是同一套阈值/公式/顺序，且 `occt_core::precision::CONFUSION == 1e-7`
+就是 `Precision::Confusion()` ⇒ **不是分歧**（Torus 网格的这一步输入同构）。
+
+2. **`torus_radii` 不会除零**：`gp_torus()` 为 `None` 时有弦长回退
+（`param_set.rs:156-163`）。但**回退值与 OCCT 的 `BRepAdaptor_Surface::Torus()` 是否一致尚未验**：
+若某个面被分类成 Torus 而 `gp_torus()` 为 `None`，两侧的 `r`/`R` 可能不同
+⇒ 这是 Torus 九量对拍里**要单独打出来的一列**。
+
+#### 9.375.2 Torus 残差的下一步（收窄到一次对拍）
+
+Torus 的网格路径只剩「输入量」没比过：`range_u/range_v`（`AdjustRange` 之后）、
+`GetDelta`、`GetToleranceUV`、`r`/`R`（含上面的回退分支）、
+以及 `AddPoint` 收到的参数集（`u_params/v_params` 的**个数**）。
+下一次对拍就把这 6 项 + `GenerateSurfaceNodes` 点数在两侧同时打印，第一个不同的量即分歧点。
+
+#### 9.375.3 item ① 的状态
+
+子任务仍在跑（已在 `shape_fix_face.rs`、`shape_fix_compose_shell/{perform,collect_wires}.rs`
+与 `specs/occt_probe/wires_probe.cpp` 加了 TEMP 插桩，产出 `zzfms_port140.txt` / `zzcs_port140.txt` /
+`zzcs2_port140.txt`，用 OCCT 侧的 ZZ 插桩（`ZZFMS/ZZCS/ZZCW` 标签）对同一面的 ComposeShell 阶段做对拍）。
+本轮已让它**收尾给结论**（第一处分歧 + 是否小改可修 + TEMP 插桩清单），结论到达后我再验证、跑门禁、合入。
+
+#### 9.375.4 本轮改动
+
+* 库代码零改动；纯读 `.cxx`/端口源码 + 排除候选；
+* 无新增仪器（Torus 对拍所需的 `--facestats`（OCCT 侧）与 `--fstats`（端口侧）都已在 §9.374 就位）。
