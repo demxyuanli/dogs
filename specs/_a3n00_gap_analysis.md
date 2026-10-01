@@ -15554,3 +15554,48 @@ OCCT `FixMissingSeam` 直接崩，exit 1）。已证的是：**端口这一段�
   a3n00 面积比 ≥ 0.8996、T0M unmatched ≤ 6、`--lib` 1281/0、`step_obj_gates` 5/5）；
 * 本轮**库代码零改动**（子任务的 TEMP 插桩全部已用 `edit` 反向撤除；
   `git status --porcelain` 与 `git diff --stat` 均为空）。
+
+---
+
+### 9.378 —— T-101 迭代（9）：① 的实现交接与**进一步收窄**（`split_wire.rs:289-296` 的 `v_opt == None` 分支）；派出的实现子任务无产出、已停止
+
+#### 9.378.1 本轮的事实
+
+* 上一轮派出的实现子任务（「修 ClosedMode 切割顶点同一性」）跑了三轮，**没有落任何改动、没有任何读数**，
+  也没回答状态请求 ⇒ 本轮 `interrupt_agent` 停止它；工作树保持干净（`git status --porcelain` 空，HEAD = `c5107c65`）。
+* 本轮我自己按 §9.377 的定位往下读了一处（只读、未改）：
+
+```text
+端口 crates/occt-topo/src/shape_fix_compose_shell/split_wire.rs:289-296
+    match v_opt {
+        None => {                                     // cxx:1238-1242
+            let nv = builder.make_vertex(curr_pnt, tol_edge);   // ← 新造顶点（= 观测到的 D）
+            vertices.push(nv.clone()); v = nv;
+        }
+        Some(vv) if !do_cut => { … }                   // cxx:1243-1255
+        Some(vv) => { vertices.push(vv.clone()); v = vv; }
+    }
+```
+
+⇒ 「新造顶点 `D`」确实来自 `v_opt == None` 这一支（与 `cxx:1238-1242` 对应，端口这一支本身是忠实的写法）。
+**但 `D ≠ C` 的偏移 (0.056, 2.175, 0.056) 不是在这一支产生的**：这里只是把 `curr_pnt` 造成顶点，
+所以分歧在**上游**——`curr_pnt`（切割点）与切割边端点 `C` 的差，或
+`v_opt` 本应命中 `Some(已有顶点)` 却没命中。
+
+#### 9.378.2 收窄后的下一步（给接手者）
+
+按 `ShapeFix_ComposeShell.cxx` 的顺序核这三点，一次只查一个：
+
+1. `cxx:1185-1222`（端口 `split_wire.rs:258-276`）：**顶点匹配**分支——
+   `prev_ok`/`is_coincided` 的容差用的是 `prev_v_tol` 与 `split_res(...)`；
+   若这里的容差比 OCCT 严（或 `split_res` 取值不同），`v_opt` 就会落到 `None`，
+   于是新造一个与 `C` 只差 2.175 的顶点。**这是最可疑的一处**（偏移量 2.175 与锥面 v 半幅 2.0207 同量级）。
+2. `cxx:1238-1242` 的 `curr_pnt` 来源：切割点是否应当**取切割边的端点**而不是网格求交得到的点。
+3. `split_by_grid.rs:93-133` 新增的那条 `1e/O[B→C]`（切割边）端点 `C` 是否带上了正确的顶点
+   （OCCT 让切割边复用 wire 上的已有顶点）。
+
+判据仍是 §9.376 的 `pwsh -File .target-gate\t101_verify.ps1`；**不许按面号/bbox 加特例**。
+
+#### 9.378.3 本轮改动
+
+* 库代码零改动（只读 + 停止一个无产出的子任务）；文档追加本节。

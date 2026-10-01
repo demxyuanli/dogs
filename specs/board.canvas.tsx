@@ -47,7 +47,7 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
   asOf: "2026-09-30",
-  revision: "r24",
+  revision: "r25",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -642,7 +642,7 @@ export const DATA = {
       ref: "specs/_a3n00_gap_analysis.md §9.368 §9.369 · ShapeFix_Face.cxx:1722-2330",
       dependsOn: [],
       evidence: "§9.370：`zz_probe_a3n00 --fixms` 实测只有 113/140/170 返回 Shell（5/2/2 个面）；`--all` 里“多改”的 4 个面就是 113/138/140/170，且后置边数与 OCCT 孪生逐一相同（113:28=28、140:16=16、170:8=8，`W k edges=N` 口径）",
-      note: "① 的根因**已在 ComposeShell 内部定位**（§9.377）：第一处分歧 = OCCT `ShapeFix_ComposeShell.cxx:2131-2275`(SplitByGrid)→`:1433-1914`(SplitByLine) ↔ 端口 `split_by_grid.rs:93-133` + `split_by_line.rs`/`split_wire.rs`；机制 = breakwires 把闭合 wire 切成 5e/O[A→D] 与 8e/O[C→A] 而 **D≠C**（差 (0.056,2.175,0.056)、D 别无出处）⇒ 两半端点不配对 ⇒ collectwires 对 5e 走 `!index` 分支 ⇒ dispatchwires 出 **同一 patch 两张重合面** ⇒ FixMissingSeam 返回 Shell(2) 被丢弃；剪枝已实测是 no-op（只能删不能合）⇒ 下一个动作是在 ClosedMode 切割路径上修**顶点同一性**（复用已有顶点，别留新造顶点 D），不加特例；落地后跑 `pwsh -File .target-gate\t101_verify.ps1`；③ 的逐面统计口径已按 §9.371 修正（FaceMeshStat.index）；§9.372 把密度差按曲面类型归并后 Torus 2.14× 最突出，§9.373 **自我否定**：ParamSet 升序**不是**分歧（OCCT 的 FUN_CalcAverageDUV 形参是非 const 引用、会就地排序 aParamArray，两侧抽稀都在升序上做）⇒ 不要动 ParamSet；③ **已基本结案**：新增 OCCT `--facestats <defl> <angle>`（同参数、模型序、可配对）后重测 —— 法兰/倒角/孔那 16 个面 port 1193 vs OCCT 1188（1.004×，逐面 74/72↔74/72），「72 vs GT 52」是 `--uvsum` 写死 0.5 rad 角度的口径问题（其逐面 triangles 和只有 8054，20° 网格是 12324）；真正还差的只有 Torus 7 个面（1.241×，+293）。下一步只做 Torus 的九量对拍；ParamSet 升序已证伪、不要动",
+      note: "① 的根因**已在 ComposeShell 内部定位**（§9.377）：第一处分歧 = OCCT `ShapeFix_ComposeShell.cxx:2131-2275`(SplitByGrid)→`:1433-1914`(SplitByLine) ↔ 端口 `split_by_grid.rs:93-133` + `split_by_line.rs`/`split_wire.rs`；机制 = breakwires 把闭合 wire 切成 5e/O[A→D] 与 8e/O[C→A] 而 **D≠C**（差 (0.056,2.175,0.056)、D 别无出处）⇒ 两半端点不配对 ⇒ collectwires 对 5e 走 `!index` 分支 ⇒ dispatchwires 出 **同一 patch 两张重合面** ⇒ FixMissingSeam 返回 Shell(2) 被丢弃；剪枝已实测是 no-op（只能删不能合）；§9.378 再收窄一层：新造顶点 D 出自 `split_wire.rs:289-296` 的 `v_opt == None` 分支（对应 cxx:1238-1242，写法本身忠实），所以分歧在**上游**——最可疑是 `cxx:1185-1222` 的顶点匹配分支（端口 `split_wire.rs:258-276` 的 `prev_ok`/`is_coincided`/`split_res` 容差），偏移 2.175 与锥面 v 半幅 2.0207 同量级；下一个动作就按这三处（匹配容差 → curr_pnt 来源 → 切割边端点 C 是否复用已有顶点）逐条核，不加特例；落地后跑 `pwsh -File .target-gate\t101_verify.ps1`；③ 的逐面统计口径已按 §9.371 修正（FaceMeshStat.index）；§9.372 把密度差按曲面类型归并后 Torus 2.14× 最突出，§9.373 **自我否定**：ParamSet 升序**不是**分歧（OCCT 的 FUN_CalcAverageDUV 形参是非 const 引用、会就地排序 aParamArray，两侧抽稀都在升序上做）⇒ 不要动 ParamSet；③ **已基本结案**：新增 OCCT `--facestats <defl> <angle>`（同参数、模型序、可配对）后重测 —— 法兰/倒角/孔那 16 个面 port 1193 vs OCCT 1188（1.004×，逐面 74/72↔74/72），「72 vs GT 52」是 `--uvsum` 写死 0.5 rad 角度的口径问题（其逐面 triangles 和只有 8054，20° 网格是 12324）；真正还差的只有 Torus 7 个面（1.241×，+293）。下一步只做 Torus 的九量对拍；ParamSet 升序已证伪、不要动",
     },
   ],
   gates: [
