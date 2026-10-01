@@ -16218,3 +16218,38 @@ face_intersecting_edges(model, 113) 返回 Some(edges)
 分辨方法：在 `face_intersecting_edges` 内部打印被判相交的边对（端口侧），
 与 OCCT `BRepMesh_FaceChecker` 在同一张面上的判定（可用 `_dbg` ZZ 版或 `--boundary` 的采样）对照；
 若端口判的是「同一 wire 内相邻边」「不同 wire 之间」这类 OCCT 不判的组合，即归 (a)。
+
+---
+
+### 9.396 —— T-101（F113）：被判相交的边**跨 wire[0] 与 wire[1]** ⇒ 倾向结论 (b)：**未合并的 4-wire 结构本身就让 face-checker 判自交**（与 ① 同源）
+
+打印 `face_intersecting_edges` 返回的边集（TEMP，env gated，**已撤除**），并对照 `zz_uv_feed --model 113` 的模型结构：
+
+```text
+FACECHECK face=113 edges=[290, 292, 293, 294, 295, 297]
+
+端口 F113 的模型结构（--model 113）：
+  wire[0] 6 边 : 289 290 291 292 293 294
+  wire[1] 14 边: 295 296 297 111 298 299 300 301 302 303 304 305 306 113
+  wire[2] 1 边 : 307  Circle par=[0, 2π]
+  wire[3] 1 边 : 308  Circle par=[0, 2π]
+```
+
+被判相交的 6 条边里：**290/292/293/294 属于 wire[0]，295/297 属于 wire[1]**
+⇒ checker 报的是**跨 wire 的重叠**（wire[0] 与 wire[1] 的边互相相交），外加 wire[0] 内部相交。
+
+对照 OCCT：同一张面整形后是 **2 wires（22+6 边）**，checker 不判自交。
+端口则是 **4 wires（6 / 14 / 1 / 1）** —— 即 `fix_missing_seam` 的合并结果被丢弃后留下的
+**未合并边界**：两条本应合成一条的环（6+14 边）互相重叠 ⇒ face-checker 判 `SELF_INTERSECTING_WIRE`
+⇒ 标 FAILURE ⇒ 三角化循环跳过 ⇒ 空面。
+
+#### 结论与下一步
+
+本轮把 §9.395 的 (a)/(b) 分开了，证据指向 **(b)**：
+**空面的直接原因（face-checker 判自交）是上游「seam 未合并」的必然后果**，
+不是 face-checker 判据不等价（它判的跨 wire 重叠在 4-wire 结构下是真实存在的）。
+
+⇒ 修复目标重新收敛为**一件事**：让 `fix_missing_seam` 对 F113 产出 Face（而不是 Shell(5)）。
+该链 §9.377–§9.389 已逐行对完，只剩「假想 grid 的数据」：
+`uf/vf/URange/VRange`（§9.389 已取到 OCCT 侧基准 `ru=[0,2π] rv=[-43.75,131.25]`，
+端口侧需按同口径打印 splitter 的 `range_u/range_v` 才可比）与 `u/v_joint_values`/`myU/VResolution`。
