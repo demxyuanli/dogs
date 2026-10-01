@@ -15903,3 +15903,40 @@ if (!index || (canBeClosed && !lastEdge.IsSame(firstEdge) && IsCoincided(endPnt,
 
 下一轮第一件事 = 取 OCCT 侧那四个数（①），不等就先按 ② 打两侧的 joint values 个数与分辨率。
 验收不变：zz_seam_fix 113 → Face；--model 113 → 2 wires（22+6 边）；--fstats 出现 face=113 mt≈228；a3n00 面积比从 0.8996 起上升。
+
+---
+
+### 9.387 —— T-101（F113）：`CompositeSurface::Value` 也忠实；并把「下一步」明确成**两条可执行的路**（含一条不需要重建 ZZ 版的）
+
+本轮对照 `ShapeExtend_CompositeSurface.cxx:591-599` ↔ 端口 `composite_surface.rs:339-346`：
+
+```cpp
+gp_Pnt Value(const gp_Pnt2d& pnt) { i=LocateUParameter(U); j=LocateVParameter(V);
+                                    uv = GlobalToLocal(i,j,pnt); patches(i,j)->D0(uv, point); }
+```
+```rust
+fn value_pnt(&self, pnt) { let (i,j)=self.locate_uv_point(pnt); let uv=self.global_to_local(i,j,pnt);
+                           self.patch(i,j).d0(uv.x(), uv.y()) }
+```
+
+⇒ **忠实**（结构、调用序一致）。仍未对过的只剩 `locate_uv_point`/`global_to_local`
+↔ `LocateUParameter`/`LocateVParameter`/`GlobalToLocal`（三个小函数）。
+
+#### 本轮新增的一条「不需要重建 ZZ 版」的路（决定分歧在**输入**还是**行为**）
+
+档案里 `.target-gate/noopwires.txt` 是**OCCT 关掉 ShapeProcess（`--nofix`）后的逐面结构 dump**
+（`FACE k type=… wires=… edges_per_wire: … spans: u=… v=… box=…`），正是「读入期原始输入」的镜像；
+本轮查过：它**不含 F113 的 box `(-87.5,-34,-100)-(87.5,34,-32)`**（只覆盖了子任务当时的目标面清单）。
+
+⇒ 下一轮据此两路并行（按代价排序）：
+
+```text
+路 A（便宜，先做）：用 wires_probe 的 raw/noop 模式**只针对 F113 的 bbox** 重跑一次，
+   拿到 OCCT 侧「未整形」的 F113 = wires 数 / 各 wire 边数 / UV spans / UV 是否退化。
+   · 若 OCCT raw 也是 4 wires（6/14/1/…）⇒ 输入一致，分歧在 FixMissingSeam 的行为 ⇒ 走路 B；
+   · 若 OCCT raw 是别的结构 ⇒ 分歧在端口 reader 构面阶段（更上游），要在 read_topology 侧查。
+路 B（贵）：把 wires_probe 的 seamfix 模式加回、用 _dbg 重建 ZZ 版，取 OCCT 侧 compshell-in 的
+   uf/vf/URange/VRange，与端口的 (0, -2.020725942164, 2π, 4.041451884328) 比。
+```
+
+验收不变：`zz_seam_fix 113` → Face；`--model 113` → 2 wires（22+6 边）；`--fstats` 出现 `face=113 mt≈228`；a3n00 面积比从 0.8996 起上升。
