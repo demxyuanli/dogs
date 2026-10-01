@@ -18349,3 +18349,83 @@ result type=Shell    result faces=5
 
 **当前树状态**：库代码零改动（基线 `sum_mt=11941`），工作树只剩审计留下的只读 instrument
 `crates/occt-topo/examples/zz_probe_a3n00.rs`。
+
+---
+
+### 9.447 —— T-101：**阶段性交接**（目标未达成；因果链、已排除项、可落地候选、下一步全部就位）
+
+#### A. 目标状态（如实）
+
+```text
+目标：F113 → 2 wires（22+6 边）/ 228 节点 / 228 三角；a3n00 面积比 ≥0.8996 且上升；门禁全绿
+现状：F113 仍 4 wires（wire[0]=6 / wire[1]=14 / 1 / 1）→ 无网格（空面）
+      a3n00 面积比 0.8996（未上升）、T0M 0.9987、acs10 0.9846、--lib 1281/0、step_obj_gates 5/5
+```
+
+#### B. 已确证的因果链（每环都有可复跑读数）
+
+```text
+STEP 外环 8 条（#5004/#5012/#5018/#5090/#5098/#5107/#5115/#5137，8 条 distinct）
+→ resolve_loop 8 → make_wire 8 → make_face 8                     （§9.408/§9.410）
+→ check_pcurves_and_shift 内：fix_notched_edges → on_end 分支 → fix_dummy_seam
+     **8 → 6**（单次调用，配对探针 8→8 ×10 / 8→6 ×2）              （§9.417/§9.437/§9.438）
+     新顶点 = CombineVertex(V1,V2,1.0001)：端口得**中点** -65.243610，
+     OCCT 得**原顶点** -49.864906（wdump 25 实测：OCCT 外环含 -49.86、不含 -65.24）  （§9.405/§9.438/§9.439）
+→ 面停在 4 wires；fix_missing_seam 产出的结果其实是 **2 wires**（v 范围 [-43.75,131.25] = OCCT 口径），
+   但被打包成 **Shell(5)**=5 块单 wire 补丁（6/5/4/3/3 边）⇒ reader 只收 Face ⇒ 全丢  （§9.443/§9.445）
+   （打包逻辑与 .cxx 同构：1 面→Face、>1→Shell；**不要去改打包或 reader 的 Face 判定**）  （§9.444）
+→ 建模 wire[0]=6 / wire[1]=14 → face-checker 判 SELF_INTERSECTING_WIRE(+FAILURE)   （§9.393/§9.395）
+→ 三角化循环跳过 → **空面**                                                       （§9.391）
+```
+
+#### C. 已排除（都逐行对过、判定忠实）
+
+```text
+ComposeShell 全链控制流（split_by_grid/split_by_line/split_wire/collect_wires/剪枝）
+五个 helper + TOLINT；FixMissingSeam 定位段与假想 grid 构造（含 uf/vf/URange/VRange 与 OCCT 逐位一致）
+project_adaptor/ProjectOnSegments/ProjectInside/AdjustByPeriod 及其各阶段（第一阶段极值 None 仅 3/144、
+  采样逐行一致、精修 Some 102/102、尾巴 param==computed==old、周期性修正 0/42 触发）
+make_wire/make_face 不丢边；add_wire 四条早退 0 命中；visit_face 三处 FAILURE 0 命中
+剪枝实测 no-op（只能删不能合）
+```
+
+#### D. 唯一已确认的 `.cxx` 分歧（**已量化，但因门禁退步暂缓落地**）
+
+```text
+分歧：ShapeFix_Wire::FixDummySeam 的顶点必须**朝向感知**（cxx:4221/4230 的 sae.FirstVertex/LastVertex）
+      端口用的是朝向无关的 edge_vertices(...).0/.1
+改法（2 处，精确）：
+  let (Some(v1), Some(v2)) = (first_vertex(&e1), last_vertex(&e2)) else { … };   // wire_fix.rs:2992
+  let mut vs = first_vertex(&e2);                                              // wire_fix.rs:2999
+收益：F113 外环与 OCCT 逐点一致（中点消失，回到 -49.864906）
+代价：a3n00 面积比 0.8996 → **0.8918**（t101_verify job pwsh-1404 实测）
+归因：全模型只有 **f=171**（= 审计 idx171 #7415）的 mt 变化（349→375，+26），但总面积 −1763
+      ⇒ 该面的三角化几何本身有问题（本处修复把它暴露出来），不是顶点改错        （§9.440/§9.441/§9.442）
+结论：**在弄清 f=171 之前不要再次落地这处改动**
+```
+
+#### E. 当前最强假设与下一步（两条，按性价比）
+
+```text
+假设：分歧在 **SplitWires/BreakWires 的切分** —— 端口把 F113 外环切成 4 块补丁（5/4/3/3 边），
+      OCCT 把它成一条 **22 边** wire；与 §9.377 在 f=140 上看到的「breakwires 两端点不配对 D≠C」同源。
+      （打包、剪枝、顶点语义、投影链都已排除，故只剩切分本身。）
+
+下一步 A（正统）：对 F113 做 §9.377 同规格的五阶段普查（loadwires/splitbygrid/breakwires/collectwires/
+      dispatchwires），对照 cxx:2131-2275(SplitByGrid)/1433-1914(SplitByLine)/2770-2860(DispatchWires)/
+      2824-2846(CollectWires)；已有子任务 brief（§9.446）。
+下一步 B（后路，不需新插桩）：把 5 块补丁的**切分点参数**与 OCCT 在同一输入下的对应量逐值对比
+      （split_wire.rs/split_by_line.rs 控制流已逐行判定忠实，故差异应在**数值输入**上）。
+下一步 C（并行、独立）：查 f=171 的三角化为何一改顶点就丢 1763 面积（需要逐面面积口径 --farea）。
+```
+
+#### F. 现成仪器与验收
+
+```text
+zz_seam_fix <stp> <f>      ：BEFORE/result/HEALED 逐面（wire 数、每 wire 边数、v 范围）
+zz_uv_feed --model <f> | --ids   ：模型结构 / wire 直方图
+zz_probe_a3n00 --fstats | --fdump | --ecensus（审计留下的只读 instrument，工作树里未提交）
+pwsh -File .target-gate\t101_verify.ps1  ：一条命令的落地验收（判据见文件头注释）
+```
+
+（当前树：库代码零改动；基线 `STATMAP matched=225 unmatched=1 sum_mt=11941` ✓。）
