@@ -17358,3 +17358,38 @@ B) 抓 F113 的真病灶：在 `:2906` 之后（`param` 落定时）打一次 `(
 
 判据（不变）：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
 a3n00 面积比从 0.8996 起上升；`idx171 #7415`、`idx203 #8243` 同法一并看。
+
+---
+
+### 9.423 —— T-101：落地尝试（待门禁判定）—— `wire_fix.rs:2900` 改为 `&ad2`（对齐 `cxx:1963`），a3n00 读数**零回归**；验收 harness 已在后台运行
+
+本轮把 §9.422 确认的那处转写笔误改掉（**唯一改动**，一行）：
+
+```diff
+-            let proj2 = project_inside(&ad1, &start1, tolerance, false);
++            let proj2 = project_inside(&ad2, &start1, tolerance, false);   // 对齐 ShapeAnalysis_Wire.cxx:1963
+```
+
+`cargo check`/`cargo build` 0 error；快速读数：
+
+```text
+zz_uv_feed --model 113   → MODEL f=113 wires=4（**如 §9.422 所预测：F113 不受此改影响**）
+zz_probe_a3n00 a3n00     → TOTAL faces=226 computed_lin=1.076007 stats=225 mesh_v=10863 mesh_t=11941
+                           STATMAP matched=225 unmatched=1 sum_mt=11941 flat_mt=11941
+                           （与 §9.374 记录的基线**逐字相同** ⇒ a3n00 无回归）
+```
+
+**验收 harness 已在后台启动**（job `pwsh-1350`：`pwsh -File .target-gate\t101_verify.ps1`，
+结果落盘 `.target-gate/t101_verify.txt`，判据 = `--fixms` 无 Shell / wire 直方图贴近
+`{1:208,2:9,4:1,6:4,10:4}` / a3n00 ≥ 0.8996 / T0M unmatched ≤ 6 / `--lib` 1281-0 /
+`step_obj_gates` 5/5）。
+
+#### 落地规则（下一轮按此执行）
+
+```text
+harness 全绿 ⇒ 提交这一行改动（commit message 说明对齐 cxx:1963），并更新 §9.x 与看板；
+harness 有任何红 ⇒ **回退这一行**（`edit` 反向替换回 &ad1），只保留本节与 §9.422 的记录。
+```
+
+注意：这处修复**不会**让 F113 变好（§9.422 已证 F113 走 `param1` 分支）——它是独立的一处对齐修复；
+F113 的真病灶仍在 `param1`（`project_inside` ↔ `ShapeAnalysis_Curve::Project`）或 `:2906` 的分支判据。
