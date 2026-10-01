@@ -15158,3 +15158,53 @@ cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --bou
 python .target-gate\t101_extra2.py     # 4 个面的 post 边数 vs OCCT 孪生
 python .target-gate\t101_density2.py   # 逐面密度图（注意 §9.370.1 ③ 的可比性限制）
 ```
+
+---
+
+### 9.371 —— T-101 迭代（2）：修正逐面统计仪器的**配对口径**（`FaceMeshStat.index`，不是位置下标），拿到可信的逐面密度图
+
+#### 9.371.1 修正了什么
+
+§9.370 里新增的 `zz_probe_a3n00 --fstats` 用 `faces_of(&shape)[i]` 去配 `face_stats()[i]` ——
+**这是错的**。端口自己的类型注释已写明原因（`crates/occt-topo/src/meshing/incremental_mesh/discret_root.rs:81-88`）：
+
+> `FaceMeshStat` 带 `index`（网格模型自己的面序号）与 `shape_key`（源面 TShape 的指针身份键），
+> **就是为了让调用方不必依赖遍历顺序**（网格模型会跳面，按位置查会错开「被跳过的面数」）。
+
+改用 `stat.index` 并通过同一条管线的模型 `model.face(stat.index)` 取 bbox 之后：
+
+```text
+FSTAT face=192 key=… mv=74 mt=72 bbox=(-132.500000,-64.932772,-52.538994)-(…)
+PORTID f=192        wires=1 mt=72 bbox=(同上)          ← 与 --ids 的读数一致
+```
+
+修正前同一面是 `mt=376`（把别的面的统计贴到了它身上）—— 89/226 个面受影响。
+⇒ **`--low`（同一处 `stats.get(i)` 口径）的历史读数也带这个偏差**，本卡后续引用 `--low` 的
+逐面 mv/mt 时要按修正后的口径重取。
+
+#### 9.371.2 修正后的逐面密度图（199 个面按 bbox 配对，port `--fstats` ↔ OCCT `--uvsum`）
+
+```text
+端口更疏（前 5）： 171 BSpline 349 vs 495 | 140 Cone 5 vs 65 | 170 Cyl 27 vs 58
+                  146 Cyl 6 vs 12 | 39 BSpline 46 vs 50
+端口更密（前 6）： 129 BSpline 802 vs 160 | 202 Torus 548 vs 167 | 118/122 Torus 211 vs 98
+                  117/121 Torus 162 vs 98 | 191/200/205 376 vs 277 | 114/132 Plane 228 vs 170
+配对面合计: port mt=9272 vs occ 6392（1.45×）
+```
+
+两条要点：
+
+1. **差异是双向的**，不是「整体更密」：`171`（BSpline）与 `140/170`（正是 §9.370 里那 3 个
+   未被合并的面）端口明显**少铺**，而 Torus/BSpline 类端口明显**多铺**；
+2. `140/170` 的少铺与 §9.370 的结论自洽：这两个面的 seam 合并被当成 Shell 丢掉了，
+   面还是 2 条 wire、三角化停在 5/27 个三角（GT 65/58）。
+
+⇒ **③（密度）不能只看那 16 个法兰面**；下一轮应先按「每类曲面」统计差值分布，
+再挑面数最集中的那一类（Torus / BSpline）回到 `.cxx` 找控制流。
+
+#### 9.371.3 本轮改动与复跑
+
+* 只改 example 仪器（`crates/occt-topo/examples/zz_probe_a3n00.rs` 的 `--fstats`），
+  **库代码零改动**；
+* 复跑：`zz_probe_a3n00.exe data/occ/a3n00.stp --fstats > .target-gate\fstats370.txt`
+  然后 `python .target-gate\t101_density4.py`。

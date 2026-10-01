@@ -268,21 +268,35 @@ fn main() {
         return;
     }
     if mode_fstats {
-        let inc = IncrementalMesh::from_deflection(
-            &shape,
-            prs3d_get_deflection(&shape, 0.1),
-            false,
-            20.0_f64.to_radians(),
-        );
-        let stats = inc.face_stats();
-        for (i, f) in faces_of(&shape).iter().enumerate() {
-            let st = stats.get(i);
-            let bb = occt_topo::brep_bnd_lib::shape_bnd_box(&f.0);
-            let (b0, b1) = (bb.corner_min(), bb.corner_max());
+        // `FaceMeshStat` carries `index` (the mesh model's own face index) and
+        // `shape_key` precisely because a positional lookup is off by the number
+        // of skipped faces (`discret_root.rs:81-88`). Pair through `stat.index`
+        // and resolve the bbox from the same pipeline's model, never from
+        // `faces_of(&shape)[i]` (that ordering is a different traversal).
+        let params = occt_topo::meshing::parameters::MeshParameters {
+            deflection: prs3d_get_deflection(&shape, 0.1),
+            angle: 20.0_f64.to_radians(),
+            ..Default::default()
+        };
+        let inc = IncrementalMesh::from_deflection(&shape, params.deflection, false, params.angle);
+        let stats = inc.face_stats().to_vec();
+        let model = occt_topo::meshing::model_builder::ModelBuilder::build_model(&shape, &params)
+            .expect("build_model");
+        for st in &stats {
+            let bb = model
+                .face(st.index)
+                .ok()
+                .map(|f| occt_topo::brep_bnd_lib::shape_bnd_box(&f.face().0));
+            let (b0, b1) = match bb {
+                Some(b) => (b.corner_min(), b.corner_max()),
+                None => (occt_core::gp::GpPnt::zero(), occt_core::gp::GpPnt::zero()),
+            };
             println!(
-                "FSTAT face={i} mv={} mt={} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
-                st.map(|s| s.vertices).unwrap_or(0),
-                st.map(|s| s.triangles).unwrap_or(0),
+                "FSTAT face={} key={} mv={} mt={} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
+                st.index,
+                st.shape_key,
+                st.vertices,
+                st.triangles,
                 b0.x(),
                 b0.y(),
                 b0.z(),
