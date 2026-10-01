@@ -15342,3 +15342,74 @@ double BRepMesh_TorusRangeSplitter::FUN_CalcAverageDUV(NCollection_Array1<double
 ```text
 grep -n "FUN_CalcAverageDUV" -A 24 D:\source\OCCT-src\src\ModelingAlgorithms\TKMesh\BRepMesh\BRepMesh_TorusRangeSplitter.cxx
 ```
+
+---
+
+### 9.374 —— T-101 迭代（5）：③ 的「法兰孔面 72 vs GT 52」**是口径问题、不是缺陷** —— 用**同参数**的 OCCT 逐面统计重测：那 16 个面端口 1193 vs OCCT 1188（1.004×）；真正还差的只有 **Torus**（1.24×）
+
+#### 9.374.1 新的 OCCT 逐面仪器（同参数、模型序、可配对）
+
+`specs/occt_probe/occt_probe.cpp` 新增 `--facestats <defl> <angle>`：
+用 `BRepMesh_ModelBuilder` 建模型（**模型序**），再跑一次 `BRepMesh_IncrementalMesh(shape, defl, false, angle)`，
+逐面打印 `FSTAT_OCC face= nodes= triangles= bbox=`。
+
+**为什么不能用 `--uvsum`**：那个分支里另外跑的一次网格化把角度**写死成 0.5 rad**
+（`BRepMesh_IncrementalMesh aSumMesher(aShape, aUvDefl, false, 0.5)`），
+所以它的逐面 `triangles=` 在 a3n00 上只有 **8054**，而同参数的 20° 网格是 **12324** ⇒
+**§9.365.2 与 §9.368.5 的 GT 列都不可与端口的读数相比**（这也解释了「GT 只铺 2–15 个三角」的错觉）。
+
+#### 9.374.2 重测结果（225 个面 1:1 配对，自检通过）
+
+自检：配对后 port `mt=11941` / GT `triangles=12096`；全模型 port `11941` / GT `12324`
+（差的一个面是未配上的那一张）⇒ 配对可信。
+
+```text
+type      n     port_mt  occ_tri  diff     ratio
+Torus     7     1507     1214     293      1.241     ← 唯一系统性偏密的一类
+Plane     95    2848     2832     16       1.006
+Cyl       61    2390     2445     -55      0.978
+Cone      30    667      727      -60      0.917
+BSpline   32    4529     4878     -349     0.928
+```
+
+最差 3 个面：`port(pair)202 ↔ model 33`（Torus，548 vs 355）、
+`118/122 ↔ 36/37`（Torus，211 vs 162）。方向明确的偏疏面只剩
+`171 ↔ 1`（BSpline，349 vs 669）、`140 ↔ 39`（Cone，5 vs 81）、`170 ↔ 69`（Cyl，27 vs 77）——
+后两个正是 §9.370 里 seam 合并没有落地的面。
+
+#### 9.374.3 ③ 的结论更正：法兰/倒角/孔那 16 个面的密度**已经对齐**
+
+同参数逐面（`--fstats` ↔ `--facestats`，bbox 全 0.0000 或近邻）：
+
+```text
+169 74/72↔74/72   174 94/110↔93/108   189 74/72↔74/72
+192..199 各 74/72↔74/72（8 个面全同）   204 74/72↔74/72   206 74/72↔74/72
+209/210/212 75/73↔74/72
+合计 port mt=1193  vs OCCT triangles=1188   → 1.004×
+```
+
+⇒ 卡面写的「法兰孔面端口 72 vs GT 52」**作废**：那个 52 来自 `--uvsum` 的 0.5 rad 网格。
+**法兰（含倒角）这 16 个面的网格密度与 OCCT 已经逐面相同**（边结构见 §9.369.3，密度见本节）。
+
+#### 9.374.4 ③ 剩下的唯一问题与下一步
+
+只剩 **Torus**（7 个面，+293 个三角，1.241×）。下一步是 Torus 的**九量对拍**：
+两侧同时打印 `range_u/range_v/delta/tolerance`、`r`/`R`、
+`GCPnts_TangentialDeflection::ArcAngularStep(r, deflection, angle, min_size)`、
+`oldDv`、`nbV`、`Du`、`nbU` 与 `GenerateSurfaceNodes` 的**点数**（OCCT 侧
+`BRepMesh_TorusRangeSplitter` 是 `Standard_EXPORT`，探针里 `Reset/AddPoint/AdjustRange`
+已经能用；端口侧照 `linkrods_dbg.rs:120-158` 的写法）。第一个不同的量就是分歧点。
+**注意**：`ParamSet` 的升序**不是**分歧（§9.373 已证伪），不要再往那条路走。
+
+#### 9.374.5 本轮改动与复跑
+
+* 探针新增 `--facestats`（TEMP T-101，保留作仪器）；库代码零改动；
+* 复跑：
+
+```text
+cmd /c "specs\occt_probe\build.bat"
+cmd /c "specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --facestats 1.076007 0.349066" > .target-gate\fstatocc.txt
+crates\occt-topo\target\debug\examples\zz_probe_a3n00.exe data/occ/a3n00.stp --fstats > .target-gate\fstats370.txt
+python .target-gate\t101_density5.py     # 按类型 + 自检
+python .target-gate\t101_flange16.py     # 那 16 个面
+```

@@ -493,7 +493,59 @@ static int runBoundary(const TopoDS_Shape& theShape, const std::string& theDir)
   return 0;
 }
 
-// --- end TEMP T-99 ---------------------------------------------------------------
+// --- TEMP T-101 (`--facestats <defl> <angle>`) -------------------------------------
+// Per-model-face `nodes/triangles/bbox` with the *same* mesher parameters the port
+// uses, in the model's own face order (`IMeshData_Model::GetFace`), so a face can be
+// paired with the port's `zz_probe_a3n00 --fstats` by the six bbox coordinates.
+// `--uvsum` cannot be used for this: that branch meshes with a hard-coded 0.5 rad
+// angle (its per-face `triangles=` sums to 8054 on a3n00 while the 20-degree mesh has
+// 12324), so its counts are not comparable with the port's.
+static int runFaceStats(const TopoDS_Shape& theShape, const double theDeflection,
+                        const double theAngle)
+{
+  IMeshTools_Parameters aParams;
+  aParams.Deflection    = theDeflection;
+  aParams.Angle         = theAngle;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  aParams.MinSize       = Precision::Confusion();
+  aParams.AdjustMinSize = false;
+
+  occ::handle<BRepMesh_ModelBuilder> aBuilder = new BRepMesh_ModelBuilder;
+  const occ::handle<IMeshData_Model> aModel   = aBuilder->Perform(theShape, aParams);
+  if (aModel.IsNull())
+  {
+    std::cout << "FSTAT_OCC model-null\n";
+    return 0;
+  }
+  {
+    BRepMesh_IncrementalMesh aMesher(theShape, theDeflection, false, theAngle);
+  }
+  std::cout << "FSTAT_OCC defl=" << theDeflection << " angle=" << theAngle
+            << " faces=" << aModel->FacesNb() << std::endl;
+  for (int f = 0; f < aModel->FacesNb(); ++f)
+  {
+    const IMeshData::IFaceHandle& aDFace = aModel->GetFace(f);
+    const TopoDS_Face&            aFace  = aDFace->GetFace();
+    Bnd_Box                       aBox;
+    BRepBndLib::Add(aFace, aBox, false);
+    double v[6] = {0, 0, 0, 0, 0, 0};
+    if (!aBox.IsVoid())
+    {
+      aBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+    }
+    TopLoc_Location                     aLoc;
+    const occ::handle<Poly_Triangulation>& aTri = BRep_Tool::Triangulation(aFace, aLoc);
+    const int aNodes = aTri.IsNull() ? 0 : aTri->NbNodes();
+    const int aTris  = aTri.IsNull() ? 0 : aTri->NbTriangles();
+    std::cout << std::fixed << std::setprecision(6) << "FSTAT_OCC face=" << f
+              << " nodes=" << aNodes << " triangles=" << aTris << " bbox=(" << v[0] << "," << v[1]
+              << "," << v[2] << ")-(" << v[3] << "," << v[4] << "," << v[5] << ")" << std::endl;
+  }
+  return 0;
+}
+
+// --- end TEMP T-101 ---------------------------------------------------------------
 
 int main(int argc, char** argv)
 {
@@ -574,6 +626,11 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--boundary")
     {
       return runBoundary(aShape, argv[i + 1]);
+    }
+    // TEMP T-101: `--facestats <defl> <angle>` — per-model-face nodes/triangles/bbox.
+    if (std::string(argv[i]) == "--facestats" && i + 2 < argc)
+    {
+      return runFaceStats(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]));
     }
   }
 
