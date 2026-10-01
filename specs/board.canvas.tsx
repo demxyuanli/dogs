@@ -47,7 +47,7 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
   asOf: "2026-09-30",
-  revision: "r21",
+  revision: "r22",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -642,7 +642,7 @@ export const DATA = {
       ref: "specs/_a3n00_gap_analysis.md §9.368 §9.369 · ShapeFix_Face.cxx:1722-2330",
       dependsOn: [],
       evidence: "§9.370：`zz_probe_a3n00 --fixms` 实测只有 113/140/170 返回 Shell（5/2/2 个面）；`--all` 里“多改”的 4 个面就是 113/138/140/170，且后置边数与 OCCT 孪生逐一相同（113:28=28、140:16=16、170:8=8，`W k edges=N` 口径）",
-      note: "① 的尾巴分歧已交给并行子任务对照 ShapeFix_Face.cxx + shape_fix_compose_shell 深挖；不要在 reader 里按面号/bbox 特例地接受 Shell；③ 的逐面统计口径已按 §9.371 修正（FaceMeshStat.index）；§9.372 把密度差按曲面类型归并后 Torus 2.14× 最突出，并找到代码级候选：OCCT 的 IMapOfReal 是**插入序** IndexedMap，端口 ParamSet 是**升序**，而 fillParams 的贪心抽稀依赖遍历顺序、且 fillParams 只被 TorusRangeSplitter 使用 ⇒ 下一轮先做两侧 torus splitter 的 GenerateSurfaceNodes 点数判定实验，再决定是否把 ParamSet 改成插入序",
+      note: "① 的尾巴分歧已交给并行子任务对照 ShapeFix_Face.cxx + shape_fix_compose_shell 深挖；不要在 reader 里按面号/bbox 特例地接受 Shell；③ 的逐面统计口径已按 §9.371 修正（FaceMeshStat.index）；§9.372 把密度差按曲面类型归并后 Torus 2.14× 最突出，§9.373 **自我否定**：ParamSet 升序**不是**分歧（OCCT 的 FUN_CalcAverageDUV 形参是非 const 引用、会就地排序 aParamArray，两侧抽稀都在升序上做）⇒ 不要动 ParamSet；③ 的正确下一步是先修配对（199 个配对面的 GT 三角和只有 6392/12324，大面系统性失配），再做 Torus 面的九量对拍（range/delta/r/R/ArcAngularStep/oldDv/nbV/Du/nbU/节点数）",
     },
   ],
   gates: [

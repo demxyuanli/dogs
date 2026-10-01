@@ -15284,3 +15284,61 @@ pub fn insert(&mut self, v: f64) { /* binary_search + insert —— **保持升�
 * 库代码零改动（纯分析 + 读 OCCT 源码）；
 * 新增脚本 `.target-gate/t101_bytype.py`（按类型归并）；
 * 复跑：`python .target-gate\t101_bytype.py`。
+
+---
+
+### 9.373 —— 【自我否定】T-101 迭代（4）：§9.372.2 的「`ParamSet` 升序 vs `IMapOfReal` 插入序」**不是分歧** —— OCCT 的 `FUN_CalcAverageDUV` 会把参数数组**就地排序**，两侧的抽稀都是升序
+
+#### 9.373.1 否定依据（读 `.cxx` 到能证伪自己为止）
+
+```cpp
+// BRepMesh_TorusRangeSplitter.hxx:41  —— 形参是**非 const 引用**
+double FUN_CalcAverageDUV(NCollection_Array1<double>& P, const int PLen) const;
+
+// BRepMesh_TorusRangeSplitter.cxx:181-201
+double BRepMesh_TorusRangeSplitter::FUN_CalcAverageDUV(NCollection_Array1<double>& P, const int PLen) const
+{
+  for (i = 1; i <= PLen; i++)
+  {
+    for (j = i + 1; j <= PLen; j++)      // ← 选择排序，**就地**改写 P
+      if (P(i) > P(j)) { swap(P(i), P(j)); }
+    ...                                    // 累加相邻差
+  }
+}
+
+// BRepMesh_TorusRangeSplitter.cxx:129-176 fillParams:
+//   aParamArray(j) = theParams(j);                      // 先按 IndexedMap 的插入序装入
+//   aStep = FUN_CalcAverageDUV(aParamArray, aLength);   // ← 这一步把 aParamArray 排成升序
+//   for (j = 1; j <= aLength; ++j) { pp = aParamArray(j); ... }   // 抽稀时已在升序上迭代
+```
+
+端口 `fill_params`（`crates/occt-topo/src/meshing/range_splitter/splitter.rs:485-511`）同样是
+「先收集 → `calc_average_duv(&mut arr)` **就地排序** → 在 `arr` 上抽稀」，
+而 `ParamSet` 本来就保持升序。⇒ **两侧的贪心抽稀都在升序遍历上进行，
+`IMapOfReal` 是 `IndexedMap`（插入序）这件事在 `fillParams` 里被就地排序抹平了。**
+
+⇒ §9.372.2 提出的「把 `ParamSet` 改成插入序」若照做，**是白改甚至有害**（会引入与
+`calc_average_duv` 之外的消费者不一致的顺序语义）。该候选作废，**不要动 `ParamSet`**。
+
+#### 9.373.2 更正后的 ③ 现状与下一步
+
+* 仍成立：按曲面类型归并后 Torus 的倍数最大（7 面 1507 vs 706 = 2.135×），
+  且 `fillParams` 只有 TorusRangeSplitter 用 —— 但「参数容器顺序」这条解释已被证伪；
+* 仍成立：§9.372.3 的**配对质量警告**（199 个配对面的 GT 三角和只有 6392/12324
+  ⇒ 大面系统性失配），所以**下结论前必须先修配对**；
+* 下一步（按顺序）：
+  1. **修配对**：配对后先核对「配对面的 GT 三角和 ≈ 全模型 GT 三角和」；
+     失配的大面用「同类型 + bbox 容差按整形外扩放宽 + 面数守恒」重配。
+  2. 配对可信后，再对 Torus 面做**九量对拍**（照 §9.346 的做法）：
+     两侧同时打印 `range_u/range_v/delta/tolerance`、`r`/`R`、
+     `ArcAngularStep(r,…)`、`oldDv`、`nbV`、`Du`、`nbU` 与 `GenerateSurfaceNodes` 的**点数**，
+     第一个不同的量就是分歧点。OCCT 侧可直接构造 `BRepMesh_TorusRangeSplitter`
+     （`Standard_EXPORT`，`Reset/AddPoint/AdjustRange/GenerateSurfaceNodes` 探针里都已能用，
+     见 `specs/occt_probe/occt_probe.cpp` 的 `OCCT_TOPO_TRACE_SPLITTER` 段）。
+* 本轮**未改任何库代码**（只读 `.cxx` 与更正文档）。
+
+#### 9.373.3 复跑
+
+```text
+grep -n "FUN_CalcAverageDUV" -A 24 D:\source\OCCT-src\src\ModelingAlgorithms\TKMesh\BRepMesh\BRepMesh_TorusRangeSplitter.cxx
+```
