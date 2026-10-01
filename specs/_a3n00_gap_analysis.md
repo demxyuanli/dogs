@@ -16149,3 +16149,36 @@ incremental_mesh/discret_root.rs:400  ← 已确认只是「读」状态后 skip
    `BRepMesh_ShapeTool.cxx` / `BRepMesh_ModelPreProcessor.cxx` 的同等分支查它为何对 F113 判失败。
 
 （本轮 6 个编译错的教训：**不能用统配正则插桩**，每个站点的变量名不同；下次逐站点用其自身作用域的变量。）
+
+---
+
+### 9.394 —— T-101（F113）：`shape_tool::visit_face` 三处 FAILURE 也**一处都没触发** ⇒ 置位点在剩下的未插桩站点（首要嫌疑 = healer 的 `face_intersecting_edges`）
+
+本轮把 `shape_tool.rs::visit_face`（`BRepMesh_ShapeVisitor` 的等价物）的三处 FAILURE 全部插桩
+（`wires.is_empty()` / `wi == 0` 的首环无边 / `!outer_ok`，都用同一作用域内的 `face_index`/`wi`；
+env gated，**已撤除**），并加了该面的 `wires=/edges per wire=` 打印。跑 a3n00 全流程：
+
+```text
+VISITF fail lines: 0        ← 三处 FAILURE 一处没触发（连 face=113 的 VISITF 行都没有）
+```
+
+结合前两轮（`wire_builder.rs::add_wire` 四条早退 0 命中、`model_healer.rs:812` 在 `mod tests` 里）：
+**已插桩的 FAILURE 置位点全部沉默**。剩下的未插桩站点：
+
+```text
+incremental_mesh/discret_root.rs:510                管线内的面级失败分支（待看条件）
+incremental_mesh/discret_root.rs:618                `fn face_intersecting_edges`，注释指向
+                                                    `BRepMesh_ModelHealer.cxx:248-278` ← **首要嫌疑**
+delabella.rs:132 / mesh_algo.rs:184                  三角化侧（面已进管线才会到）
+node_insertion.rs:555/594/611                        perform 内部（§9.391 已证 F113 不进口 perform）
+```
+
+理由：F113 是 6/14/1/… 四条 wire 的复杂面，healer 的「边相交」检查
+（`BRepMesh_ModelHealer.cxx:248-278`）正是会把它判失败的那类检查；而 §9.391 的
+`SKIPPRE face=113 failure=true` 表明失败发生在**进三角化循环之前**，与 healer 的位置吻合。
+
+#### 下一步
+
+先读 `discret_root.rs` 的 `face_intersecting_edges` 与 `:510` 两处的局部变量名，
+再各插一行同口径打印，跑一次即可确定；随后对照 `BRepMesh_ModelHealer.cxx:248-278`
+的同等分支查它为何对 F113 判相交。
