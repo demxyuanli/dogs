@@ -16807,3 +16807,36 @@ resolve_face 的关键节点：:634 make_face_from_surface(...)   :663 self.b.ma
    `pre` 已是 `[1,1,6,14]` ⇒ 丢边在 `600-663` 的 wires 收集段（那段的过滤/去重条件就是第一现场）。
 3. 判据不变：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
    a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
+
+---
+
+### 9.410 —— 【关键定位】F113 在 `make_face` 调用处**还是文件里的 [1, 1, 8, 14]**，`make_face` 也没丢 ⇒ 8→6 的丢边发生在 `resolve_face` 的 **664-740** 段
+
+在 `read_topology.rs:663` 的 `self.b.make_face(surface, &wires)` 前后各打一次同口径 census（TEMP，env gated，**已撤除**）：
+
+```text
+FACE pre-make_face  wires=[1, 1, 8, 14]      ← F113：与 STEP 文件 8/14/1/1 **完全一致**
+FACE post-make_face wires=[1, 1, 8, 14]      ← make_face 没有改动
+（其余面 pre == post，逐条一致；共 226 条）
+```
+
+而 §9.407 测得 seam 块处已是 `[1, 1, 6, 14]`。⇒ **丢边（`#5012/#5018` 那对同端点去-回边）与那个
+文件里不存在的接点 `-65.243610` 产生在 `resolve_face` 的 664-740 段**（`make_face` 之后、seam 块之前）。
+
+已排除的所有上游环节（每一处都有读数）：
+
+```text
+STEP 文件本身                8 / 14 / 1 / 1（distinct 8）
+resolve_loop (:413-433)     341 loop 全部 items == edges（含 8→8）
+make_wire                    同轮 wire_edges == items，零不一致（§9.408）
+resolve_face 的 wires 收集   :649-661 → [1, 1, 8, 14]
+make_face (:663)             [1, 1, 8, 14] → [1, 1, 8, 14]（本节）
+seam 块 (:740-758)           入口已是 [1, 1, 6, 14]（§9.407）⇒ 丢边在此之前
+```
+
+#### 下一步（窗口已经很小）
+
+读 `read_topology.rs:664-740`，逐句找「重建/修补 wire 或切边」的动作（`-65.243610` 是
+`#5012` 两端点的中点，是**切边**的指纹），并与 OCCT `StepToTopoDS_TranslateFace` /
+`ShapeFix_Face` 在该处的同等分支对照。命中即按 .cxx 修，验收：`--model 113` → 2 wires（22+6 边）、
+`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升。
