@@ -15493,3 +15493,64 @@ breakwires / collectwires / dispatchwires` 的段数与非流形标志。
 #### 9.376.3 本轮改动
 
 * 库代码零改动；新增一个验收脚本（`.target-gate/`，不进库）。
+
+---
+
+### 9.377 —— T-101 迭代（8）：item ① 的根因落在 **ComposeShell 内部**（不是剪枝判据）——两侧阶段普查给出第一处分歧与数值证据
+
+#### 9.377.1 方法与复跑（两侧同标签阶段普查）
+
+* OCCT 侧：`specs/occt_probe/_dbg/ZZ_ShapeFix_Face.cxx` / `ZZ_ComposeShell.cxx` + 探针
+  `wires_probe <file> seamfix <x0 y0 z0 x1 y1 z1>`（本轮为该面加的模式，**未提交**），
+  用 `ZZFMS`/`ZZCS`/`ZZCW` 打 ComposeShell 各阶段；
+* 端口侧：`shape_fix_compose_shell/perform.rs` 里同名 `ZZCS <tag> n=[段列表]`（TEMP，已撤除），
+  只对 bbox = port 140 的锥面展开逐段明细；
+* 落盘：`.target-gate/{zzfms_port140,zzcs_port140,zzcs2_port140,zzcs3_port140}.txt`。
+
+#### 9.377.2 第一处分歧与数值证据（a3n00 f=140，Cone）
+
+```text
+OCCT  ShapeFix_ComposeShell.cxx:2131-2275（SplitByGrid）→ :1433-1914（SplitByLine，ClosedMode 的 U 切）
+端口  shape_fix_compose_shell/split_by_grid.rs:93-133 + split_by_line.rs(+/split_wire.rs)
+```
+
+```text
+loadwires      12e/C[A→A]                              干净
+splitbygrid    13e/C[A→A] + 新外部 1e/O[B→C]
+breakwires     切成 5e/O[A→D] 与 8e/O[C→A]
+               A=…463f0(59.075088,2.175248,-124.760355)
+               B=…45070(17.750523,0,-163.227182)
+               C=…6b6c40(16.704518,0,-167.130925)
+               D=…42970(16.760355,2.175248,-167.075088)  ≠ C，差 (0.056,2.175,0.056)
+               D 在 seqw 里别无出处 ⇒ 两半端点不配对
+collectwires   5e 那一半 index=None（cxx:2826 的 !index 分支）⇒ 输出 [5e/O, 8e/O, 3e/C]
+dispatchwires  出 2 张**同一 patch** [0,2π]×[-2.0207,2.0207] 的重合面（13e + 3e）
+OCCT 孪生      = 1 face / 1 wire / 16e
+```
+
+⇒ `FixMissingSeam` 返回 Shell(2)，`resolve_face` 只接受 `ShapeType::Face` ⇒ 结果被丢弃 ⇒
+该面保持 2 wires。**这与 §9.370 的结构读数一致**（合并出的 wire 是对的，坏在装配）。
+
+#### 9.377.3 判定：根因在 ComposeShell，剪枝不是原因（实测）
+
+* 剪枝是 **no-op**：第 1 轮 `fix_small` 5→5 / 8→8 / 3→3；第 2 轮
+  `check_small_area` 三次全 false（剪枝只能删、不能把两张重合面合成一张）；
+* 最小忠实修法范围：`split_by_line.rs` / `split_wire.rs` 在 **ClosedMode** 下把切割边插入
+  wire 时必须让 wire 顶点与切割段端点**同一**（OCCT 复用已有顶点对；端口这里留下了
+  陈旧/新造顶点 `D`）⇒ 先按 `ShapeFix_ComposeShell.cxx:1433-1914` 的分支核
+  「切割点匹配已有顶点」那几处，不加任何特例。
+
+**未验证（如实记录）**：OCCT 在同一输入下必产 1 face **没有直接测到**
+（ZZ 覆盖只对探针发起的调用生效，DLL 内部调用仍走 DLL；对已愈合的 1-wire 面调
+OCCT `FixMissingSeam` 直接崩，exit 1）。已证的是：**端口这一段自己的输出自相矛盾**
+（同一 patch 两张重合面 + 一个未配对的半边），与 OCCT 模型孪生的 1 face/1 wire 不符。
+
+#### 9.377.4 对本卡的影响
+
+* ① 不是「小改可修」：需要在 ComposeShell 的闭合模式切割路径上修顶点同一性
+  （范围已给到具体文件与 `.cxx` 分支）；
+* 落地验收仍用 §9.376 的 `pwsh -File .target-gate\t101_verify.ps1`
+  （`--fixms` 不再出现 Shell、wire 直方图贴近 `{1:208,2:9,4:1,6:4,10:4}`、
+  a3n00 面积比 ≥ 0.8996、T0M unmatched ≤ 6、`--lib` 1281/0、`step_obj_gates` 5/5）；
+* 本轮**库代码零改动**（子任务的 TEMP 插桩全部已用 `edit` 反向撤除；
+  `git status --porcelain` 与 `git diff --stat` 均为空）。
