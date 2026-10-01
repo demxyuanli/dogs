@@ -17597,3 +17597,33 @@ OCCT  ShapeAnalysis_Curve::Project（ShapeAnalysis_Curve.cxx）
 同时比 OCCT 同函数的兜底条件。命中即按 `.cxx` 修 → 第③步验收。
 （`--model 113` → wires=2、`zz_seam_fix 113` → Face、`--fstats` → face=113 mt≈228、
 面积比 ≥0.8996 且上升、`t101_verify.ps1` 全绿。）
+
+---
+
+### 9.429 —— T-101：`param1` 的分歧抓到机制 —— `project_adaptor` 的**「区间中点兜底」在 a3n00 上被触发 48/106 次**
+
+在 `project_inside` 的两个调用点（`wire_fix.rs:2899-2900`）成对打印「区间 + 结果」（TEMP，env gated，已撤除）：
+
+```text
+PROJ 行数 106（= 通过预检的那些边对）
+param == 区间中点 : **48**      ← 兜底路径（且距离残差很大，例：u=[5.759586532, 6.806784083] param=6.283185307 d=1.42906236）
+param == u_first  : 3           ← 钳到端点
+param == u_last   : 4
+其他（正常投影）  : 51
+```
+
+⇒ **F113 那个「毛刺中点」新顶点就是中点兜底的产物**（`param` 恰好等于区间中点）。
+也就是说：这些边对在 `project_adaptor`（↔ `ShapeAnalysis_Curve::Project`）里**没找到有效投影**，
+于是退化成「取区间中点」。
+
+#### 最后一个窗口
+
+```text
+端口  crates/occt-topo/src/shhealing/shape_analysis_curve.rs:280 project_adaptor
+      → :289/:299/:303/:307 四个出口 → project_act（ShapeAnalysis_Curve::ProjectAct 一线）
+OCCT  ShapeAnalysis_Curve.cxx 的 Project(:205 重载) 与 ProjectAct（定义在 :126/:147/:205 三处重载附近）
+看什么 1) OCCT 的兜底条件与兜底值（是否也是 (u1+u2)/2、在什么判据下走）；
+       2) 端口为何在这 48 例上「找不到解」——采样数/迭代上限/精度（`preci` 与 `CONFUSION` 的取用）是否一致。
+判定   F113 那对毛刺边上：OCCT 若在同样输入下**找到投影**（落在端点），端口却走兜底 ⇒ 就是这一处；
+       按 .cxx 修后跑第③步验收（`--model 113` → wires=2、`zz_seam_fix 113` → Face、
+       `--fstats` → face=113 mt≈228、面积比 ≥0.8996 且上升、`t101_verify.ps1` 全绿）。
