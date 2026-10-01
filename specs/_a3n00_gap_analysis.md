@@ -15870,3 +15870,36 @@ DLL 内部的 `ShapeFix_Face::FixMissingSeam` 仍走 DLL；而对**已愈合的 
 ```
 
 （`_dbg/ZZ_ShapeFix_Face.cxx` 目前带着上一轮子任务加的 bbox 目标表 + stage dump，是 git-ignored 的调试件，可复用它重建。）
+
+---
+
+### 9.386 —— T-101（新目标：**螺母斜切面 = F113**）：候选 ③ 也忠实 ⇒ 剩下只有「假想 grid 的数据」（候选 ①②）
+
+逐行对照 `cxx:2824-2846`（CollectWires 的「无候选/可闭合 → 收尾成 wire」）↔ 端口
+`collect_wires.rs:309-330`：
+
+```text
+canBeClosed = endV.IsSame(firstV)                     ↔ can_be_closed = same_v(&end_v, &first_v)
+if (!index || (canBeClosed && !lastEdge.IsSame(firstEdge) && IsCoincided(endPnt, firstPnt, myU/VResolution, 2.*tol)))
+                                                      ↔ index.is_none() || (can_be_closed && !same_e(…) && is_coincided(…, 2.0*tol))
+  if (!endV.IsSame(sae.FirstVertex(firstEdge))) FAIL5 ↔ first_vertex(first_edge) 后 same_v 比较 → SHAPEEXTEND_FAIL5
+  wires.Append(s); sbwd.Nullify(); endV.Nullify()     ↔ wires.push(s); sbwd.clear(); has_sbwd=false; end_v=None
+```
+
+⇒ **忠实**。这意味着：在**同样的输入**下，OCCT 也会走「无候选 → 收尾」这条路；
+端口之所以收尾成 `[5e/O, 8e/O, 3e/C]`（进而两张重合面），是因为**喂进来的段本身就已经不配对**
+（`breakwires` 出的 `5e/O[A→D]` 与 `8e/O[C→A]`，`D≠C`）。
+
+#### 结论（本轮把 ③ 也划掉后的唯一去路）
+
+端口 ComposeShell 这条链上**所有控制流步骤 + 全部 helper + 常量**都已逐行对过且一致
+（§9.377–§9.379、§9.381–§9.384、本节）。⇒ 分歧只能在**数据**：
+
+```text
+① 假想 grid 的 uf/vf/URange/VRange（端口读数已知：uf=0, vf=-2.020725942164, URange=2π, VRange=4.041451884328）
+   —— 缺 OCCT 侧同面读数，取法：specs/occt_probe/_dbg 的 ZZ 版（ZZ_ShapeFix_Face.cxx/ZZ_ComposeShell.cxx，
+      已带 bbox 目标表 + stage dump）+ wires_probe 的 seamfix <bbox> 模式（上一轮子任务验证过可用）
+② grid 的 u/v_joint_values 个数与 myU/VResolution（端口构造在 composite_surface.rs）
+
+下一轮第一件事 = 取 OCCT 侧那四个数（①），不等就先按 ② 打两侧的 joint values 个数与分辨率。
+验收不变：zz_seam_fix 113 → Face；--model 113 → 2 wires（22+6 边）；--fstats 出现 face=113 mt≈228；a3n00 面积比从 0.8996 起上升。
