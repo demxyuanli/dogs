@@ -17725,3 +17725,46 @@ if let Some((t, q)) = crate::int_tools_vertex_line::extrema_locate_ext_pc(curve,
    `--model 113` → wires=2（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
    a3n00 面积比 ≥0.8996 且上升、`T0M unmatched ≤6`、`pwsh -File .target-gate\t101_verify.ps1` 全绿；
 3. 若 F113 达标 ⇒ 按第④步看 idx171 `#7415` 与 idx203 `#8243`，然后提交 + 更新看板/§9.x。
+
+---
+
+### 9.432 —— T-101：§9.431 的修法**实测无效**（已回退）⇒ 中点是被**采样路径**留下的，下一窗口 = `ProjectOnSegments`
+
+落地内容（照 `cxx:429` 的无条件写入）：
+
+```rust
+if let Some((t, q)) = extrema_locate_ext_pc(curve, point, proj_param, u_inf, u_sup) {
+    proj_param = t;                     // 新增：cxx:429 的无条件写入
+    let newton_dist = point.distance(&q);
+    if newton_dist < mod_min { return Projection::new(newton_dist, q, t); }
+}
+```
+
+实测（`cargo build` 0 error）：
+
+```text
+F113    MODEL f=113 wires=4；wire[0] nEdges=6                ← **不变**
+a3n00   stats=225 mesh_v=10863 mesh_t=11941 （= 基线）        ← **不变**
+直方图  {1:206, 2:10, 4:2, 6:4, 10:4}                        ← **不变**
+```
+
+⇒ 精修参数的写入**不足以**改变结果（两种可能：① F113 那几例 `extrema_locate_ext_pc` 返回 `None`，
+整支没进；② 进了但随后的 40/20/25/40 轮 `project_on_segments` 又把 `proj_param` 采样覆盖）。
+按纪律**已回退**（`git diff` 为空、`cargo check` 0 error）。
+
+#### 下一窗口：`ProjectOnSegments` 本体
+
+```text
+端口  shape_analysis_curve.rs:69-99  project_on_segments
+      let step = (*end - *start) / n;
+      let mut min_sq = *proj_dist * *proj_dist;        ← 以「传入的 dist」为初值
+      for i in 0..=n { u = *start + step*i; if sq < min_sq { min_sq = sq; *proj_param = u; } }
+      *end = (*end).min(*proj_param + step);
+      *start = (*start).max(*proj_param - step);        ← ±step 收窄
+OCCT  ShapeAnalysis_Curve.cxx 里 `ProjectOnSegments` 的定义（调用点见 :408 / :451）
+看什么 1) 收窄公式（±step vs 直接设为 param±step，或收窄**在循环前/后**）；
+       2) `MinSqDist` 的初值（OCCT 是否用传入 dist 的平方）；
+       3) 采样点数与端点是否含 `i = n`（端口含）。
+判定  若 OCCT 的收窄/初值使「偶分格中点样本」不参与或少参与 ⇒ 端口多采了中点 ⇒ 与观测吻合；
+       改后按第③步验收（`--model 113` → wires=2、`zz_seam_fix 113` → Face、`--fstats` → face=113 mt≈228、
+       面积比 ≥0.8996 且上升、`t101_verify.ps1` 全绿）。
