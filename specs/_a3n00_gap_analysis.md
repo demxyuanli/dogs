@@ -17768,3 +17768,45 @@ OCCT  ShapeAnalysis_Curve.cxx 里 `ProjectOnSegments` 的定义（调用点见 :
 判定  若 OCCT 的收窄/初值使「偶分格中点样本」不参与或少参与 ⇒ 端口多采了中点 ⇒ 与观测吻合；
        改后按第③步验收（`--model 113` → wires=2、`zz_seam_fix 113` → Face、`--fstats` → face=113 mt≈228、
        面积比 ≥0.8996 且上升、`t101_verify.ps1` 全绿）。
+
+---
+
+### 9.433 —— T-101：`ProjectOnSegments` **也逐行忠实**（`shape_analysis_curve.rs:69-99` ↔ `ShapeAnalysis_Curve.cxx:88-122`）⇒ 只剩 default 支的**调用序列**没对过
+
+```cpp
+// OCCT :99-121
+const double aParamStep = (anEndParam - aStartParam) / theSegmentCount;
+double aMinSqDistance = aProjDistance * aProjDistance;
+bool aHasChanged = false;
+for (i = 0; i <= theSegmentCount; i++) {
+  aCurrentParam = aStartParam + aParamStep*i; ...
+  if (aCurrentSqDistance < aMinSqDistance) { aMinSqDistance = …; aProjPoint = …; aProjParam = aCurrentParam; aHasChanged = true; }
+}
+if (aHasChanged) aProjDistance = sqrt(aMinSqDistance);
+anEndParam = min(anEndParam, aProjParam + aParamStep);
+aStartParam = max(aStartParam, aProjParam - aParamStep);
+```
+```rust
+// 端口 :81-98 —— 同式（仅不写 aProjPoint，端口用 param 重算）
+```
+
+⇒ 一致（含 `i = 0..=n` 含端点、`MinSqDist` 初值取传入 dist 的平方、`±step` 收窄）。
+
+#### 结论与最后未对过的块
+
+`project_act` 的**每个子件**都已逐行对过且一致：`project_on_segments`（本节）、`AdjustByPeriod`（§9.430）、
+`project_inside` 钳位（§9.428）。⇒ 剩下的是 **default 支的调用序列本身**（`cxx:401-500` ↔ 端口 `:210-276`）：
+
+```text
+cxx:408  ProjectOnSegments(25)
+cxx:421  Extrema_LocateExtPC(P, C, theProjParam, uMin, uMax, TolU)   （:429-430 无条件写入；:432-435 才提前返回）
+cxx:441  注释「After each call to ProjectOnSegments, uMin and uMax ...」
+cxx:451  ProjectOnSegments(...)
+cxx:493  theProjParam = anOldParam;                                  ← 端口对应哪一行？
+端口:216/229/238/253-257  同序，但 **:238 的循环是 [40,20,25,40]**，且 :255 用的是 computed_*（记住值）
+```
+
+**下一个窗口**：读 `ShapeAnalysis_Curve.cxx:401-500` 与 `shape_analysis_curve.rs:210-276` 并排比：
+① 三轮采样的**段数序列**是否就是 `[40,20,25,40]`；② `theProjParam` 在这些调用之间是否被**额外重设**；
+③ `anOldParam` 的语义（`:493` 在什么条件下回滚）与端口 `computed_param`/`computed_point`（:146 一线）是否对应。
+命中即按 .cxx 改 → 第③步验收。
