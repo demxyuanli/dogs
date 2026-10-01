@@ -17888,3 +17888,46 @@ if (anIsClosedCurve && (theProjParam < uMin || theProjParam > uMax)) {
    「收窄后的区间」是否存在（端口是否有 `seg_lo/seg_hi` 的局部收窄、是否应传到 :262）；
 2. 对照 `cxx:479-496`：`anIsClosedCurve`、`aCurvePeriod` 的取值，以及收窄后 `uMin/uMax` 的语义；
 3. 命中即把 :262 的区间换成与 OCCT 同源的（收窄后的）区间 → 第③步验收。
+
+---
+
+### 9.436 —— T-101：周期性修正**从不触发**（守卫 0/42）⇒ 该候选也死；并**重新解释**「中点」观测
+
+读数（TEMP，env gated，**已撤除**）：
+
+```text
+PERIOD rows: 42    guard true: **0**    guard true AND after == mid: 0
+```
+
+⇒ `project_act` 收尾的周期性修正（`cxx:479-484` ↔ 端口 `:262-263`）在这份数据上**一次都没进**，
+它既不是中心值的来源，也不是任何差异的来源。
+
+#### 重新解释：那 48 例的 `param` 其实是 **2π**，不是「随机落在中点」
+
+§9.429 我按 `mid = 0.5*(u_first+u_last)` 判定，但样本揭示了一个更简单的事实：
+
+```text
+u = [5.759586532, 6.806784083] = [2π - π/3, 2π + π/3]        （2π = 6.283185307）
+u = [0.523598776, 1.570796327] = [π/6, π/2]                  （其中点 π/3 亦为常见角度）
+```
+
+第一例的「中点」**恰好等于 2π**（因为区间关于 2π 对称）⇒ 那些命中更像是**合法投影参数**
+（投到 pcurve 的接缝/中段），而不是「兜底取中点」。⇒ **「中点兜底」这个叙事需要修正**：
+`project_act` 的每个阶段都已量过（第一阶段真实极值、采样逐行忠实、精修 Some 102/102、尾巴
+`param == computed == old` 且 `dist = 0`、周期性修正 0 次触发），**没有一处是「取中点」的兜底**。
+
+#### 结论 + 下一个真问题
+
+所以 F113 的**中点新顶点**（3D `-65.243610` ≈ `#5012/#5018` 两端点的 3D 中点）不是投影兜底造成的，
+而要回到**切分那一侧**去量：`fix_notched_edges` 里
+
+```text
+:3051 check_notched_edges(...) → short_num / param
+:3100 let uv = c2d.d0(check.param);
+:3101 let vnew = make_vertex(surface.d0(uv.x(), uv.y()), CONFUSION)   ← 3D 新顶点在这里定下来
+:3113/:3119 transfer_range(new_e1/new_e2, …, check.param, true)
+```
+
+**下一个探针**：在 `:3100` 前后打印 `(short_num, check.param, 被切边的 [a,b], uv, vnew 的 3D 坐标)`
+—— 直接把「`vnew` 落在毛刺中点」与 `check.param`/`uv`/`surface.d0` 三者对上号，
+从而判定是 **`check.param` 本身**、还是 **`c2d.d0(param)` / `surface.d0(uv)` 的求值**把点送到中点。
