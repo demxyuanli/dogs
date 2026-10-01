@@ -15645,3 +15645,52 @@ OCCT  ShapeFix_ComposeShell.cxx:1100-1185（currPnt / currPar / C2d->Value(currP
 
 * 库代码零改动（只读 `.cxx` + 端口对照）；文档追加本节。
 * 剩余轮次预算：本目标 10/12 轮已用；① 的定位已细到「`curr_pnt` 取法」一个窗口。
+
+---
+
+### 9.380 —— T-101 **交接**：① 剩最后一步（`curr_pnt` 取法窗口），② 已结，③ 按原措辞已作废；下一会话从这一节接手
+
+#### 9.380.1 三项的准确状态（都带可复跑证据）
+
+| 项 | 状态 | 证据/位置 |
+|---|---|---|
+| **②** 全形状 seam 步比逐面多改的 4 个面是否 OCCT 也改 | **已结：是**（那 4 个面就是 ① 的那批，后置边数与 OCCT 孪生逐一相同：113 `22→28` = model 77 的 22+6；140 `13→16` = model 39 的 16；170 `5→8` = model 69 的 8。比边数用 `W k edges=N`，不用 `E` 行） | §9.370 |
+| **③** 「法兰孔面端口 72 vs GT 52」 | **按原措辞作废**：52 来自 `--uvsum` 那次网格化写死 0.5 rad 角度（它逐面 triangles 和只有 8054，同参数 20° 网格是 12324）。用同参数的 OCCT `--facestats` 重测：那 16 个面 **port 1193 vs OCCT 1188（1.004×，逐面 74/72↔74/72）** ⇒ 法兰/倒角/孔面的密度**已经对齐**。**仅剩** Torus 7 面偏密 **1.241×**（`port 1507 vs 1214`） | §9.374 · §9.375 |
+| **①** 补上 OCCT 会合并、端口未合并的面 | **部分完成**：reader 侧的 seam 步骤已接回（a3n00 面积比 0.8627→**0.8996**、T0M 未网格 7→6、UNUSED rescue 16→0、法兰 16 面 2 wires→OCCT 的 1 wire/5 边）。**仍剩 3 个面**（113/140/170）被 `fix_missing_seam` 装成 **Shell** 而 reader 只收 Face ⇒ 被丢弃（端口 wire 直方图 `{1:206,2:10,4:2,6:4,10:4}` vs OCCT `{1:208,2:9,4:1,6:4,10:4}`） | §9.369 落地 · §9.377 根因 · §9.378/§9.379 收窄 |
+
+#### 9.380.2 ① 的最后一步：**只差 `curr_pnt` 取法这一个窗口**
+
+已完成的三次排除（都对着 `.cxx`，都不是分歧）：
+
+1. 剪枝判据 —— 实测 no-op（r1 `fix_small` 5→5/8→8/3→3；r2 `check_small_area` 三次 false）§9.377.3；
+2. `split_wire.rs:289-296`（`v_opt == None` → `builder.make_vertex(curr_pnt, …)`，对应 `cxx:1238-1242`）—— 写法忠实，新顶点 `D` 只是被动产生 §9.378.1；
+3. **顶点匹配分支** `cxx:1185-1197` ↔ 端口 `split_wire.rs:251-276`（三条数值条件 + `IsCoincided` + `uRes/vRes` 由 `GetGridResolution/prevVTol` 取小）—— 逐条对应，判为忠实 §9.379.1。
+
+⇒ `v_opt` 落到 `None` 只能是三条数值条件没成立，而三条的共同输入是 `curr_pnt`。**要开的就是这两个窗口**：
+
+```text
+OCCT  ShapeFix_ComposeShell.cxx:1100-1185   （currPnt / currPar / C2d->Value(currPar) 的取法；
+                                             CheckByCurve3d 的 span2d/f3d/l3d 从哪来）
+端口  crates/occt-topo/src/shape_fix_compose_shell/split_wire.rs:150-258
+判据  curr_pnt 是否等于 OCCT 的 currPnt
+成功标志  zz_seam_fix 140 → result Face / 1 wire / 16 边（170 → 1 wire / 8 边；113 → 2 wires / 22+6 边）
+         zz_probe_a3n00 --fixms 不再出现 result=Shell
+         wire 直方图贴近 {1:208,2:9,4:1,6:4,10:4}、a3n00 面积比 ≥ 0.8996
+```
+
+若这个窗口也忠实，则按 §9.378.2 的检查 3 上移到 `split_by_grid.rs:93-133` 生成的那条
+`1e/O[B→C]` 切割边端点是否复用 wire 上的已有顶点。**任何一步都不许按面号/bbox/面积加特例。**
+
+#### 9.380.3 落地验收（一条命令，判据已写死）
+
+```text
+pwsh -File .target-gate\t101_verify.ps1      # 结果落盘 .target-gate/t101_verify.txt
+# 判据：--fixms 无 Shell；wire 直方图贴近 {1:208,2:9,4:1,6:4,10:4}；
+#       a3n00 面积比 ≥ 0.8996；T0M unmatched ≤ 6；--lib 1281/0；step_obj_gates 5/5
+```
+
+#### 9.380.4 本目标最后一轮的实际产出
+
+* 库代码零改动（本轮为交接整理）；`crates/` 与工作树均干净；
+* 本目标 11/12 轮：②③ 已按上表结清（③ 是口径更正，不是代码缺陷），① 由「3 个面 / ComposeShell 内部」
+  收窄到「1 个窗口 / `curr_pnt` 取法」，并留下验收脚本与复跑命令。
