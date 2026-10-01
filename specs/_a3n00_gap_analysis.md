@@ -17184,3 +17184,45 @@ idx171  loop #7413 里 #7405 被**同一 loop 引用两次**（全 341 个 loop 
 3) 改完按验收：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
    `--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`pwsh -File .target-gate\t101_verify.ps1` 全绿。
    （另外 idx171/idx203 也应按同一改法一起看。）
+
+---
+
+### 9.419 —— T-101（F113）：`fix_notched_edges` 的机制读清了 —— 它**在 notch 参数处把邻边对半切开**并接到新顶点 `vnew`；与 OCCT「收在原顶点」的差别就在这个参数/顶点上
+
+端口 `wire_fix.rs:3096-3141`（对应 `ShapeFix_Wire::FixNotchedEdges`，端口注释给的是 `cxx:4051-4067`）：
+
+```rust
+let uv   = c2d.d0(check.param);                                     // :3100  notch 参数处的曲面点
+let vnew = TopoBuilder::new().make_vertex(surface.d0(uv.x(), uv.y()), CONFUSION);   // :3101 **新顶点**
+// 第一半：边首 -> vnew，range [first, check.param]                     // :3103-3115
+// 第二半：vnew -> 边尾，range [check.param, last]                      // :3116-3121
+wire_set_edge_composed(wire, to_split, &new_e1);                     // :3133 用两半替换原边
+wire_insert_edge_before(wire, at, &ins);                             // :3139
+```
+
+⇒ 机制是：**检出 notch（一对同端点的去-回边）→ 删掉它 → 把与它相邻的那条边在 `check.param`
+处一分为二 → 两半之间插入新顶点 `vnew`**。对 F113 来说，`vnew` 就是观测到的 `-65.243610`
+（≈ 毛刺中点 `-65.24379`），而**OCCT 整形后同样只剩 6 条边，但收在原顶点 `-49.864906`**。
+
+#### 由此得到**具体的分歧候选**（下一步只查这一处）
+
+```text
+分歧点 = 「切邻边的那个顶点/参数」：
+  端口：vnew = surface.d0(c2d.d0(check.param))（由 notch 参数算出的新点，落在毛刺中部）
+  OCCT：整形结果保留原顶点 -49.864906（= 毛刺 #5012/#5018 的端点之一，即 notch 的起点）
+⇒ 需要核 `check.param` 的来源与 OCCT 的对应量：
+  · notch 检测（`ShapeFix_Wire::CheckNotchedEdges` 一线）里 `param` 是怎么取的
+    （毛刺中点？交点？还是毛刺端点？）
+  · 以及 OCCT 在该分支是否**根本不做「对半切邻边」**，而是直接把两半接到已有顶点上
+读法：端口 `wire_fix.rs` 的 notch 检测段（`fix_notched_edges` 里 `check.param` 的产生处）
+      ↔ `ShapeFix_Wire.cxx:4051-4067` 与 `CheckNotchedEdges` 的同段。
+```
+
+这条与 §9.418 的审计观测**完全对得上**（端口：新顶点=毛刺中点；OCCT：收在原顶点），
+也解释了为什么两个模型在 idx113/idx171 上「边数相同、几何不同」——**不是丢边方向的问题，
+而是切在哪个顶点的问题**。
+
+#### 验收（不变）
+
+`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
+a3n00 面积比从 0.8996 起上升、`pwsh -File .target-gate\t101_verify.ps1` 全绿。
