@@ -17627,3 +17627,42 @@ OCCT  ShapeAnalysis_Curve.cxx 的 Project(:205 重载) 与 ProjectAct（定义�
 判定   F113 那对毛刺边上：OCCT 若在同样输入下**找到投影**（落在端点），端口却走兜底 ⇒ 就是这一处；
        按 .cxx 修后跑第③步验收（`--model 113` → wires=2、`zz_seam_fix 113` → Face、
        `--fstats` → face=113 mt≈228、面积比 ≥0.8996 且上升、`t101_verify.ps1` 全绿）。
+
+---
+
+### 9.430 —— T-101：`AdjustByPeriod` 逐行忠实 ⇒ 48 例「中心值」来自 `project_act` 内部（下一个窗口已到行）
+
+```cpp
+// OCCT ShapeAnalysis.cxx:48-62
+double diff = Val - ToVal; double D = |diff|; double P = |Period|;
+if (D <= 0.5*P) return 0.;
+if (P < 1e-100) return diff;
+return (diff > 0 ? -P : P) * floor(D/P + 0.5);
+```
+```rust
+// 端口 wire_fix.rs:38-49
+let diff = val - to_val; let d = diff.abs(); let p = period.abs();
+if d <= 0.5 * p { return 0.0; }
+if p < 1e-100 { return diff; }
+(if diff > 0.0 { -p } else { p }) * (d / p + 0.5).floor()
+```
+
+⇒ **逐行一致**。所以 §9.429 观测到的「`param` 恰好等于 `0.5*(u_inf+u_sup)`」**不是**这处周期性修正造成的
+（端口 `project_act` 里唯一的 `0.5` 就是 `:263` 那次修正调用，且它与 OCCT `:479-484` 同式）。
+
+⇒ 那 48 例的中心值必来自 `project_act` 内部某个分支的**兜底**（把参数取到区间中心）。
+
+#### 下一个窗口（具体到行）
+
+```text
+端口  shape_analysis_curve.rs:121-276 project_act
+      分支（端口注释已标 cxx 行）：:167-183 circle(cxx:355-374) / :184-188 hyperbola(:376-380) /
+      :189-192 parabola(:382-386) / :193-198 line(:388-392) / :199-209 ellipse(:394-399) /
+      :210-260 default(:401-477: ProjectOnSegments(25) + Extrema_LocateExtPC) / :261-275 收尾(:479-496)
+OCCT  ShapeAnalysis_Curve.cxx:355-496（同分支）
+看什么 1) 是否有一处把 `param` 取成「区间中心」（`0.5*(uMin+uMax)`）——端口此刻没有，OCCT 可能有，
+         但我们的观测是**端口**返回中心值，所以要找的是端口在哪条路上走到中心（例如 `Extrema` 未命中后
+         用 `proj_param` 的初值、或 default 支的分段采样落在中点）；
+       2) 端口自带的 extrema 与 `Extrema_ExtPC` / `Extrema_LocateExtPC` 的等价性（:128/:229 两处）。
+判定方式：在 `project_act` 的每个分支出口打一次 `(branch, param, u_inf, u_sup, dist)`（TEMP），
+按「param == 中心」筛选，指名分支；随后按 .cxx 修那一支 → 第③步验收。
