@@ -16051,3 +16051,44 @@ SPLITTER f=77 preset=1 ru=[0.000000000000000,6.283185307179586] rv=[-43.75000000
 ```
 
 验收不变：`--fstats` 出现 `face=113 mt≈228`、`--model 113` → 2 wires、`zz_seam_fix 113` → Face、a3n00 面积比从 0.8996 起上升。
+
+---
+
+### 9.391 —— 【决定性】F113 变空的真正原因是**建模型时 `add_wire` 失败把该面标成 FAILURE**（`wire_builder.rs:577-582`）⇒ 它根本没被网格管线处理；ComposeShell 那条线解释的是「结构差」，不是「空面」
+
+两处 TEMP 插桩（都已用 `edit` 撤除）给出的链：
+
+```text
+1) node_insertion.rs::perform 入口插桩（env OCCT_TOPO_TRACE_SPLITTER_P）
+   225 条 BCUV（缺 face=113）、无 err、无 uv=0   ⇒ perform 根本没被调用
+2) incremental_mesh/discret_root.rs:400 的「跳过前」插桩
+   SKIPPRE face=113 failure=true reused=false   ⇒ 该面在进入网格循环前就已是 MeshStatus::FAILURE
+   （同一次运行 BCUV 仍是 225 条，与 1 自洽）
+```
+
+`FAILURE` 的唯一「早于网格循环」的置位点在 **`model_builder/wire_builder.rs:577-582`**：
+
+```rust
+let outer = outer_of_wires(&wires, &f);
+if let Some(outer_wire) = &outer {
+    if !add_wire(&mut model, face_index, outer_wire, &mut edge_index) {
+        if let Ok(fm) = model.face_mut(face_index) { fm.set_status(MeshStatus::FAILURE); }
+        continue;        // ← 外环建不出来 ⇒ 面失败、其余 wire 也不再建
+    }
+}
+```
+
+⇒ **F113 的「空」= 外环 `add_wire` 失败**（`BRepMesh_ShapeVisitor` 在 OCCT 侧对同一张**已整形**面建模型是成功的：
+OCCT 该面有 228 三角）。这也解释了 `--model 113` 打印的 `vrange=[-inf,inf]` 与 4 wires —— 模型只是把面登记进去，
+外环没能建成。
+
+**对整条研究线的影响**：§9.369 落地（法兰 16 面）与 §9.377–§9.389 的 ComposeShell 逐行排除，解释的是
+**结构差异**（4 wires vs OCCT 的 2 wires）与 `fix_missing_seam` 的 Shell 输出；
+**F113 空面的第一现场是建模型的 `add_wire`**，比 ComposeShell 更早、也是新的第一嫌疑。
+
+#### 下一步
+
+1. 在 `add_wire` 内部加同口径 TEMP 打印（哪一步失败：找边/pcurve/朝向/`edge_index` 复用），
+   量 F113 的外环为什么建不出来；
+2. 对照 OCCT `BRepMesh_ShapeVisitor::Visit(face)` → `AddWire`（`IMeshData` 侧）的同名分支；
+   判据仍是 §9.381.4：`--fstats` 出现 `face=113 mt≈228`、`--model 113` → 2 wires、a3n00 面积比从 0.8996 起上升。
