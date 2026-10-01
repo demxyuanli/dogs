@@ -15694,3 +15694,49 @@ pwsh -File .target-gate\t101_verify.ps1      # 结果落盘 .target-gate/t101_ve
 * 库代码零改动（本轮为交接整理）；`crates/` 与工作树均干净；
 * 本目标 11/12 轮：②③ 已按上表结清（③ 是口径更正，不是代码缺陷），① 由「3 个面 / ComposeShell 内部」
   收窄到「1 个窗口 / `curr_pnt` 取法」，并留下验收脚本与复跑命令。
+
+---
+
+### 9.381 —— 用户报的「a3n00 里大的六角螺帽切面是空的」= **F113**（同一张面、同一根因）
+
+#### 9.381.1 认定（三个独立读数指向同一张面）
+
+```text
+crates\occt-topo\target\debug\examples\zz_probe_a3n00.exe data/occ/a3n00.stp --fstats   # 225 条，缺 face=113
+… --ids   → PORTID f=113 … wires=4 mt=18446744073709551615 bbox=(-87.5,-34,-100)-(87.5,34,-32)
+… --fdump → 只打印这一张面：FDUMP face=113 box=(同) wire[0] nEdges=6（6/14/1/… 共 4 条 wire）
+OCCT 同面（model 77, type=1 Cylinder）: FSTAT_OCC face=77 nodes=228 triangles=228 / BOUND wires=2 pts=264
+```
+
+⇒ 端口的 F113 **完全没有网格统计**（`mt` 是「无统计」哨兵 `usize::MAX`），OCCT 同面是
+**2 条 wire（22+6 边、264 个采样点）+ 228 个节点 / 228 个三角**。这就是用户看到的「空面」。
+
+#### 9.381.2 为什么空（与卡上 ① 同一根因）
+
+`fix_missing_seam` 对 f=113 返回 **Shell(5)**（§9.370/§9.377 实测），
+`read_topology.rs::resolve_face` 只接受 `ShapeType::Face` ⇒ 丢弃 ⇒ F113 停在 **4 wires**
+（OCCT 是 2）⇒ Delaunay 出不了域内元素 ⇒ 该面**一个三角都没有**。
+所以「六角螺帽切面为空」不是新问题，就是 §9.380 里 ① 的同一个面、同一个 ComposeShell 分歧。
+
+#### 9.381.3 本轮又排除两处（对照 `.cxx` 逐行）
+
+```text
+cxx:1149-1150  currPnt2d = C2d->Value(currPar); currPnt = myGrid->Value(currPnt2d);
+端口 split_wire.rs:227   curr_pnt = self.grid.value_pnt(&curr_pnt2d)        ← 一致
+cxx:1151-1180  「匹配 lastV」分支（currPnt.Distance(lastVPnt) <= lastVTol + CheckByCurve3d + lastPnt.Distance(grid(0.5*(currPar+lastPar))) <= lastVTol）
+端口 split_wire.rs:237   同三条件、同容差                                         ← 一致
+cxx:1185-1197  「匹配 prevV」分支（§9.379 已判忠实） ↔ 端口 split_wire.rs:260      ← 一致
+```
+
+⇒ 「`curr_pnt` 取法」这一层也忠实。**下一个嫌疑只剩循环用的参数表 `values` 的来源**，
+即 `split_by_grid.rs:93-133` 生成的那条切割边（`1e/O[B→C]`）及其参数集
+（对应 `ShapeFix_ComposeShell.cxx:2131-2275` SplitByGrid）——**可观测签名就是 `D ≠ C`**
+（(0.056, 2.175, 0.056)）。
+
+#### 9.381.4 下一步
+
+对照 `ShapeFix_ComposeShell.cxx:2131-2275`（SplitByGrid）↔ 端口
+`crates/occt-topo/src/shape_fix_compose_shell/split_by_grid.rs:93-133`，
+核「切割边端点/参数集是否复用 wire 上的已有顶点与已有参数」。
+成功后 `zz_uv_feed --model 113` 应为 2 wires（22+6 边）、`--fstats` 应出现 `face=113 mt≈228`、
+`zz_seam_fix 113` 的 `result` 应为 Face，且 a3n00 面积比应从 0.8996 继续上升（§9.303 记该面解析面积约 29053，是缺口主项）。

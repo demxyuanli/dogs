@@ -47,7 +47,7 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
   asOf: "2026-09-30",
-  revision: "r27",
+  revision: "r28",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -304,7 +304,7 @@ export const DATA = {
     },
   ],
   nextAction:   { taskId: "T-101",
-    action: "【T-101 交接（§9.380）：① 只剩 `curr_pnt` 取法这一个窗口；② 已结；③ 按原措辞已作废（法兰 16 面 1193 vs 1188 = 1.004×，仅剩 Torus 1.241×）】① 的下一步：开 `ShapeFix_ComposeShell.cxx:1100-1185` ↔ `crates/occt-topo/src/shape_fix_compose_shell/split_wire.rs:150-258` 两个窗口做差，判据是 `curr_pnt` 是否等于 OCCT 的 `currPnt`；成功标志 = `zz_seam_fix 140` 由 Shell(2) 变 Face/1 wire/16 边（170→1 wire/8 边、113→2 wires/22+6 边）、`--fixms` 不再出 Shell、wire 直方图贴近 {1:208,2:9,4:1,6:4,10:4}、a3n00 面积比 ≥ 0.8996；若该窗口也忠实就按 §9.378.2 检查 3 上移到 `split_by_grid.rs:93-133` 的切割边端点复用。落地验收一条命令：`pwsh -File .target-gate\t101_verify.ps1`（无 Shell / a3n00 ≥ 0.8996 / T0M unmatched ≤ 6 / --lib 1281-0 / step_obj_gates 5/5）。已排除（都对过 .cxx）：剪枝判据（no-op）、`split_wire.rs:289-296` 新造顶点那一支（忠实）、顶点匹配分支 `cxx:1185-1197`（忠实）。**不许按面号/bbox/面积加特例**。",
+    action: "【T-101 交接（§9.380）：① 只剩 `curr_pnt` 取法这一个窗口；② 已结；③ 按原措辞已作废（法兰 16 面 1193 vs 1188 = 1.004×，仅剩 Torus 1.241×）】① 的下一步：开 `ShapeFix_ComposeShell.cxx:1100-1185` ↔ `crates/occt-topo/src/shape_fix_compose_shell/split_wire.rs:150-258` 两个窗口做差，判据是 `curr_pnt` 是否等于 OCCT 的 `currPnt`；成功标志 = `zz_seam_fix 140` 由 Shell(2) 变 Face/1 wire/16 边（170→1 wire/8 边、113→2 wires/22+6 边）、`--fixms` 不再出 Shell、wire 直方图贴近 {1:208,2:9,4:1,6:4,10:4}、a3n00 面积比 ≥ 0.8996；若该窗口也忠实就按 §9.378.2 检查 3 上移到 `split_by_grid.rs:93-133` 的切割边端点复用。落地验收一条命令：`pwsh -File .target-gate\t101_verify.ps1`（无 Shell / a3n00 ≥ 0.8996 / T0M unmatched ≤ 6 / --lib 1281-0 / step_obj_gates 5/5）。已排除（都对过 .cxx）：剪枝判据（no-op）、`split_wire.rs:289-296` 新造顶点那一支（忠实）、顶点匹配分支 `cxx:1185-1197`（忠实）。§9.381：用户报的「a3n00 大的六角螺帽切面是空的」**就是 F113**（`--fstats` 缺 face=113、`--ids` 的 mt 是无统计哨兵、`--fdump` 只打印这张面；OCCT 同面 model 77 = 2 wires/228 节点/228 三角）⇒ 与 ① 同一根因、同一张面；本轮又排除 `curr_pnt`/`curr_par` 取法与两个匹配分支（cxx:1149-1197 ↔ split_wire.rs:227/237/260 全一致）⇒ 下一嫌疑上移到 `split_by_grid.rs:93-133`（切割边 `1e/O[B→C]` 的端点/参数集）↔ `ShapeFix_ComposeShell.cxx:2131-2275`，可观测签名是 D≠C。**不许按面号/bbox/面积加特例**。",
     why: "用户要求「a3n00 一个一个处理，先处理带有倒角的法兰盘」，本轮就把那一步做完并达成 T-99 的 accept。① 做法是把 f1e56776 删掉的导入期 seam 步骤接回 reader（`ShapeFixFace::fix_missing_seam` + 结果面 wire 的 `check_pcurves_and_shift`），这不是新造规则：`ShapeProcess_OperLibrary.cxx:785-899` 的 FixShape 算子 → `ShapeFix_Face::Perform` → `FixMissingSeam`（`cxx:482-498`，构造在 `cxx:1722-2330`），`STEPControl_Controller.cxx:201/:221` 默认就开。② 移除理由（T-93(a)/§9.219「OCCT 在这条路径上不跑 Perform」）被本轮实测推翻：探针 `--faceids` 开/关 ShapeProcess 得 `{1:208,2:9,4:1,6:4,10:4}` vs `{1:163,2:53,4:2,6:4,10:4}`，后者与 STEP 的 FACE_BOUND 直方图、与端口逐字相同 ⇒ OCCT 的导入确实合并了 45 个 2-bound 面。③ 结果方向与量级都对：法兰面结构变成 OCCT 的 1 wire / 5 边（边序、参数区间逐项相同），a3n00 面积比 0.8627→0.8996、T0M 未网格 7→6、T0M 面积比 0.9786→0.9987、acs10 0.9025→0.9846、rescue 16→0，且**没有改任何断言或 area_tol**。④ 剩余问题都已量化成有界的下一步（还差 1 个 2-bound + 1 个 4-bound 面没合并；全形状多改 4 个面待查；法兰面密度 72 vs GT 52），所以 T-99 按 accept 结项，另立 T-100 按「面」继续推进，而不是再调全局参数。",
   },
   tasks: [
