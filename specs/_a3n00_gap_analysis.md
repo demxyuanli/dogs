@@ -17393,3 +17393,55 @@ harness 有任何红 ⇒ **回退这一行**（`edit` 反向替换回 &ad1），
 
 注意：这处修复**不会**让 F113 变好（§9.422 已证 F113 走 `param1` 分支）——它是独立的一处对齐修复；
 F113 的真病灶仍在 `param1`（`project_inside` ↔ `ShapeAnalysis_Curve::Project`）或 `:2906` 的分支判据。
+
+---
+
+### 9.424 —— T-101：`wire_fix.rs:2900` 的转写笔误**已按 `.cxx` 修正并通过全量门禁**（本目标最后一轮）
+
+改动（一行，对齐 `ShapeAnalysis_Wire.cxx:1963` 的 `ProjectInside(Ad2, p2d1, …)`）：
+
+```diff
+-            let proj2 = project_inside(&ad1, &start1, tolerance, false);
++            let proj2 = project_inside(&ad2, &start1, tolerance, false);
+```
+
+**验收读数**（`pwsh -File .target-gate\t101_verify.ps1`，后台 job `pwsh-1350`，exit 0）：
+
+```text
+step_obj_gates: test result: ok. 5 passed; 0 failed; 0 ignored; finished in 288.47s
+[occ/a3n00.stp] our=204327.72 occ=227130.30 ratio=0.8996      ← 与 §9.369 基线逐字相同
+[occ/T0M.stp]   our=192416.40 occ=192658.64 ratio=0.9987      ← 与 §9.369 基线相同
+[occ/acs10.stp] our=267047.23 occ=271219.68 ratio=0.9846      ← 与 §9.369 基线相同
+其余模型（Cube/Cone/Cylinder/Sphere/Torus/HoledPlate/…）全部 ratio=1.0000 / f-ratio 1.00
+```
+
+⇒ 这处对齐**零回归**，按 §9.423 规则提交。**F113 本身不变**（§9.422 证明它走 `param1` 分支），
+所以它是一处独立的 reader 对齐修复，而不是本目标的解药。
+
+#### 本目标（48 轮）结论汇总
+
+```text
+已确证并逐环有读数的因果链（螺母斜切面为空）：
+  STEP 外环 8 条 → resolve_loop 8 → make_wire 8 → make_face 8
+  → check_pcurves_and_shift → **fix_notched_edges 把一对同端点「去-回」毛刺边删掉**
+    （并把邻边切在 check.param 处的新顶点；OCCT 整形后同样少 2 边但收在原顶点）
+  → 外环 6 条 → fix_missing_seam 出 Shell(5) 被 resolve_face 丢弃 → 面停在 4 wires
+  → 建模 wire[0]=6/wire[1]=14 → face-checker 判 SELF_INTERSECTING_WIRE(+FAILURE)
+  → 三角化循环跳过 → **该面无三角**
+
+全量数据级审计（226 面，顶点集合几何配对，禁按面号）：
+  wire 级 183/226 与文件相等（43 面不等 = fix_missing_seam 的正常合并产物）
+  边级 45 面不一致，其中**只有 2 面净丢边**：idx113 #5375、idx171 #7415
+  同类隐患（计数看不见）：idx203 #8243（file/OCCT/port 都是 [2]）
+
+已逐行对过并判定「忠实」：ComposeShell 全链（split_by_grid/split_by_line/split_wire/collect_wires/剪枝）、
+  五个 helper + TOLINT、FixMissingSeam 定位段与假想 grid 构造、notch 修复机器（动作/新顶点/range 转移）、
+  resolve_loop/make_wire/make_face、xsalgo_check_pcurve、project_wire_pcurve_ranges、fix_reorder_wire、fix_small_all
+
+已确认的两处**独立**对齐问题（都可单独验证）：
+  1) reader 没有 ShapeProcess/FixShape 驱动器（实测 noop 时 131/226 面无三角化）—— 最大缺口；
+  2) wire_fix.rs:2900 的投影目标笔误（本节已修并过门禁）。
+
+F113 的**最后病灶**（下一批的起点）：`check_notched_edges` 的 `param1`
+  （`project_inside` ↔ `ShapeAnalysis_Curve::Project`）或 `wire_fix.rs:2906` 的分支判据 ——
+  因为 F113 走 `proj1.distance < proj2.distance` 那一支。
