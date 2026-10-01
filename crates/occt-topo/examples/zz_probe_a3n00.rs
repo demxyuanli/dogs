@@ -133,6 +133,70 @@ fn main() {
         println!("WIREHIST {}", s.join(" "));
         return;
     }
+    if std::env::args().any(|a| a == "--ecensus") {
+        // T-102 read-only census: one line per face with `wires=` and the
+        // per-wire edge counts, plus the geometric bbox and the face's
+        // vertex-point signature, so the port's face can be paired with the
+        // STEP entity table by GEOMETRY alone (never by face index).
+        // No library call is added -- same traversal the default dump uses,
+        // just without building the mesh.
+        for (i, f) in faces_of(&shape).iter().enumerate() {
+            let bb = brep_bnd_lib::shape_bnd_box(&f.0);
+            let (mn, mx) = (bb.corner_min(), bb.corner_max());
+            let ws = wires_of_face(f);
+            let we: Vec<usize> = ws.iter().map(|w| edges_of_wire(w).len()).collect();
+            let mut vs: Vec<(i64, i64, i64)> = Vec::new();
+            for w in ws.iter() {
+                for e in edges_of_wire(w) {
+                    for v in [occt_topo::shhealing::first_vertex(&e),
+                              occt_topo::shhealing::last_vertex(&e)]
+                        .into_iter()
+                        .flatten()
+                    {
+                        let p = BRepTool::vertex_point(&v);
+                        vs.push((
+                            (p.x() * 1e6).round() as i64,
+                            (p.y() * 1e6).round() as i64,
+                            (p.z() * 1e6).round() as i64,
+                        ));
+                    }
+                }
+            }
+            vs.sort_unstable();
+            vs.dedup();
+            let (vmn, vmx) = if vs.is_empty() {
+                ((0i64, 0i64, 0i64), (0i64, 0i64, 0i64))
+            } else {
+                (
+                    (
+                        vs.iter().map(|v| v.0).min().unwrap(),
+                        vs.iter().map(|v| v.1).min().unwrap(),
+                        vs.iter().map(|v| v.2).min().unwrap(),
+                    ),
+                    (
+                        vs.iter().map(|v| v.0).max().unwrap(),
+                        vs.iter().map(|v| v.1).max().unwrap(),
+                        vs.iter().map(|v| v.2).max().unwrap(),
+                    ),
+                )
+            };
+            let vlist: Vec<String> = vs
+                .iter()
+                .map(|v| format!("{:.6},{:.6},{:.6}", v.0 as f64 / 1e6, v.1 as f64 / 1e6, v.2 as f64 / 1e6))
+                .collect();
+            println!(
+                "CENSUS face={i} wires={} edges={:?} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6}) vbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6}) nv={} verts=[{}]",
+                ws.len(),
+                we,
+                mn.x(), mn.y(), mn.z(), mx.x(), mx.y(), mx.z(),
+                vmn.0 as f64 / 1e6, vmn.1 as f64 / 1e6, vmn.2 as f64 / 1e6,
+                vmx.0 as f64 / 1e6, vmx.1 as f64 / 1e6, vmx.2 as f64 / 1e6,
+                vs.len(),
+                vlist.join(";")
+            );
+        }
+        return;
+    }
     if std::env::args().any(|a| a == "--fdump") {
         // `--fdump <idx>` dumps that face index; bare `--fdump` matches the
         // a3n00 F113 bbox (its original use).
