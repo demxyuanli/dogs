@@ -18282,3 +18282,45 @@ zz_seam_fix 113 实测：result faces=**5**，其中 HEALED face 0 = wires=2（v
 
 **注意**：`read_topology.rs:745` 的 `if res.shape_type() == Face` 这一条**不要动**（那是 reader 的既有语义；
 OCCT 侧同理：`ShapeFix_Face` 的结果以 Context 替换原面，若结果是壳，OCCT 也会把它当壳用）。
+
+---
+
+### 9.445 —— T-101：F113 的 Shell(5) 是**5 块单 wire 补丁**（6/5/4/3/3 边），不是重合面 ⇒ 分歧在「切」而不是「合」
+
+利用已有捕获（`.target-gate/sf113.txt`，`zz_seam_fix 113` 的全文）逐面读出：
+
+```text
+result type=Shell    result faces=5
+  HEALED face 0 : 1 wire, **6** edges      （v 范围 [-43.75,131.25] = OCCT 口径；这张是 OCCT 的第 2 条 wire！）
+  HEALED face 1 : 1 wire, 5 edges
+  HEALED face 2 : 1 wire, 4 edges
+  HEALED face 3 : 1 wire, 3 edges
+  HEALED face 4 : 1 wire, 3 edges
+合计 6+5+4+3+3 = 21 条边；OCCT 整形后 FACE 25 = 2 wires（**22 + 6** 边）
+```
+
+⇒ 两点结论：
+
+1. **face 0（6 边）就是 OCCT 那条 6 边内环** —— 端口确实产出了正确的那部分；
+2. 其余 4 张（5/4/3/3=15 边）是**外环被切碎**的结果，而 OCCT 把它成一条 **22 边** wire
+   ⇒ 端口的 ComposeShell 在 F113 上**把边界切成 5 块补丁**，而 OCCT 得到 1 面 2 wire。
+
+这与 §9.377 在 f=140（cone）上观测到的「`breakwires` 出两段端点不配对（`D ≠ C`）⇒ 多张同 patch 面」
+**同源**：问题在 **`SplitWires`/`BreakWires` 的切分**（§9.377 的普查对象），而**不在**结果打包（§9.444 已证打包与 `.cxx` 同构）。
+
+（另注：端口上游外环只有 6 边 vs 文件 8 边（§9.412 的 `FixDummySeam` 丢边），所以它的补丁边数合计
+（21）与 OCCT 的 28 本来就不同；两件事都要在 `.cxx` 同一处分清。）
+
+#### 下一轮（唯一剩下的动作：对 F113 做 §9.377 同规格的阶段普查）
+
+```text
+在 ComposeShell::perform 的五个阶段各打一次（TEMP/env gated/edit 反撤），**只针对 F113 这次调用**：
+  loadwires      ：输入 wire 数 + 每 wire 边数（期望 4 / [6,14,1,1]）
+  splitbygrid    ：切后段数 + 是否新增外部段（§9.377 在 f=140 上看到新增 1e/O）
+  breakwires     ：每段的两端点（重点：是否出现 §9.377 的「D ≠ C 不配对」）
+  collectwires   ：每段是否找到候选（`index=None` 的那几段）
+  dispatchwires  ：输出的**面数 + 每面 wire 数 + bbox**（期望能解释 5 块补丁）
+对照 ShapeFix_ComposeShell.cxx 的 SplitWires/BreakWires/CollectWires/DispatchWires（§9.377 已定的行号）
+⇒ 命中即按 .cxx 修；验收：zz_seam_fix 113 → Face、--model 113 → wires=2（22+6 边）、
+   --fstats → face=113 mt≈228、面积比 ≥0.8996 且上升、t101_verify.ps1 全绿。
+```
