@@ -17666,3 +17666,62 @@ OCCT  ShapeAnalysis_Curve.cxx:355-496（同分支）
        2) 端口自带的 extrema 与 `Extrema_ExtPC` / `Extrema_LocateExtPC` 的等价性（:128/:229 两处）。
 判定方式：在 `project_act` 的每个分支出口打一次 `(branch, param, u_inf, u_sup, dist)`（TEMP），
 按「param == 中心」筛选，指名分支；随后按 .cxx 修那一支 → 第③步验收。
+
+---
+
+### 9.431 —— 【分歧点确认】`project_act` 的 Newton 精修**只在「提前返回」时才生效** ⇒ 粗采样（偶分格的中点样本）被留下 —— 这就是 F113 中点新顶点的来源
+
+OCCT `ShapeAnalysis_Curve.cxx:421-436`：
+
+```cpp
+Extrema_LocateExtPC aProjector(thePoint, theCurve, theProjParam /*U0*/, uMin, uMax, theTolerance);
+if (aProjector.IsDone())
+{
+  theProjParam = aProjector.Point().Parameter();     // ← **无条件写入**当前投影参数
+  theProjPoint = aProjector.Point().Value();
+  const double aDistNewton = thePoint.Distance(theProjPoint);
+  if (aDistNewton < aModMin) { return aDistNewton; } // ← 只是**是否提前返回**
+}
+```
+
+端口 `shape_analysis_curve.rs:229-237`：
+
+```rust
+if let Some((t, q)) = crate::int_tools_vertex_line::extrema_locate_ext_pc(curve, point, proj_param, u_inf, u_sup) {
+    let newton_dist = point.distance(&q);
+    if newton_dist < mod_min {
+        return Projection::new(newton_dist, q, t);   // ← 只有提前返回时才用 t/q
+    }
+}                                                    // ← 否则 t/q 被丢弃，proj_param 仍是粗采样值
+```
+
+⇒ **差别**：OCCT 无论是否提前返回，都把 `theProjParam` 更新成精修值；端口在守卫不成立时**丢弃精修结果**，
+`proj_param` 保持 `project_on_segments` 的**采样参数**。而采样网格是 `i = 0..=n`、`u = u_min + (u_max-u_min)/n * i`
+——**当 n 为偶数时 `i = n/2` 的样本正好等于区间中点**！所以：
+「粗采样留下」+「偶分格」⇒ `param` 恰好等于 `0.5*(u_inf+u_sup)`（§9.429 观测到的 48 例），
+带一个**非零距离**（1.429…）✓ 与观测完全吻合；OCCT 因为带着精修值，落点回到**真实投影**（毛刺端点）。
+
+#### 精确修法（照 `cxx:429-430`，一行语义）
+
+```rust
+if let Some((t, q)) = crate::int_tools_vertex_line::extrema_locate_ext_pc(curve, point, proj_param, u_inf, u_sup) {
+    proj_param = t;                     // `cxx:429` 无条件写入
+    <当前投影点变量> = q;                // `cxx:430`（需先确认端口变量名：`proj_point` / `computed_point`？）
+    let newton_dist = point.distance(&q);
+    if newton_dist < mod_min {          // `cxx:432-435`
+        return Projection::new(newton_dist, q, t);
+    }
+}
+```
+
+**注意**：`cxx:430` 写的是 `theProjPoint`（当前投影点），不是 `theProjPoint` 之外的「记住值」；
+端口里同时存在 `computed_param/computed_point`（:146 一线，给 `:255` 的兜底用）与当前投影变量，
+必须先读 `project_act` 头部（:129-166）确认哪个对应 `theProjParam/theProjPoint`，**只改当前投影那一对**。
+
+#### 下一步（下次直接落地）
+
+1. 读 `shape_analysis_curve.rs:121-170` 确认 `proj_param` / 当前投影点 / `computed_*` / `mod_min` 的角色；
+2. 照 `cxx:429-430` 加「无条件写入」，跑第③步验收：
+   `--model 113` → wires=2（22+6 边）、`zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、
+   a3n00 面积比 ≥0.8996 且上升、`T0M unmatched ≤6`、`pwsh -File .target-gate\t101_verify.ps1` 全绿；
+3. 若 F113 达标 ⇒ 按第④步看 idx171 `#7415` 与 idx203 `#8243`，然后提交 + 更新看板/§9.x。
