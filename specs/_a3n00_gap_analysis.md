@@ -16495,3 +16495,48 @@ for i2 in 1..=nb2 {
 若仍一致，再读 563-588 与 cxx:2203-2234。命中即按 .cxx 修并跑验收（`zz_seam_fix 113` → Face、
 `--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起、
 最后 `pwsh -File .target-gate\t101_verify.ps1`）。
+
+---
+
+### 9.402 —— T-101（F113）：**grid 锚点与 OCCT 完全一致**（假设彻底否掉）；且 **OCCT 的未整形 shape 里就是同一张 4-wire 面**（FACE 113, type=1, wires=4: 8/14/1/1）⇒ 输入一致、分歧在「同一输入下的执行」
+
+两处决定性读数（都是现成档案，不需要新跑）：
+
+```text
+端口侧（.target-gate/zzfms_port140.txt L49 / zzcs*_port140.txt L121，对 F113 那张面）：
+  ZZFMS compshell-in uf=0.000000000000  vf=-43.750000000000  URange=6.283185307180  VRange=175.000000000000
+                    uclosed=true vclosed=false ismodeu=1 ismodev=0
+  ZZFMS in f0 wires=4 edges=22 bbox=(-87.5,87.5,-34)-(34,-100,-32)
+
+OCCT 侧（§9.389 的 TRACE_SPLITTER / census）：
+  SPLITTER f=77  ru=[0, 6.283185307179586]  rv=[-43.750000000000000, 131.250000000000000]
+```
+
+⇒ 端口的假想 grid = **u=[0, 2π] × v=[-43.75, 131.25]**，与 OCCT 的 `ru/rv` **逐位相同**
+（`-43.75 + 175 = 131.25`）⇒ §9.389/§9.397 关于「grid 锚点/范围不同」的怀疑**全部否掉**。
+
+```text
+OCCT 未整形（noop census，.target-gate/wires_noop14.txt）：
+  FACE 113 type=1 wires=4 edges_per_wire: 8 14 1 1   box=(-1e+100,-34,-100)-(1e+100,34,-32)
+```
+
+⇒ **OCCT 拿到的也是同一张 4 wires 的未合并圆柱面**（type=1、wires=4、边分布 8/14/1/1），
+它在 `FixMissingSeam` 里被并成 2 wires；端口拿到同样结构、同样的 grid，却得到 Shell(5)。
+**输入的拓扑与 grid 都一致** ⇒ 分歧发生在「同一输入下的执行」里。
+
+（一处待核的小差：端口的模型 wire[0] 是 **6** 边，OCCT raw 的第一条 wire 是 **8** 边
+—— 可能是模型构建期丢了 2 条 seam 边，也可能是阅读期差异，需在下一次对拍里一并看。）
+
+#### 下一步（首次进入**数值级**对拍）
+
+```text
+端口  zz_uv_feed --model 113        → 每条边的 curve 类型 + par=[f,l] + npc/朝向（已有输出）
+OCCT  wires_probe wdump 113（raw）  → 同一张面每条边的 pcurve 参数区间/朝向
+判据  逐边比 par=[f,l] 与朝向：若端口的 pcurve 参数区间与 OCCT 不同（哪怕 0.05 量级），
+      就解释了 §9.377 观测到的「切点 D 与已有顶点 C 差 (0.056, 2.175, 0.056)」——
+      即分歧不在 ComposeShell 的控制流（已全部对完），而在**喂进去的 pcurve 数据**。
+```
+
+命中即按 .cxx 修对应环节（pcurve 构造/range/朝向），再跑验收：`zz_seam_fix 113` → Face、
+`--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、面积比从 0.8996 起、
+最后 `pwsh -File .target-gate\t101_verify.ps1`。
