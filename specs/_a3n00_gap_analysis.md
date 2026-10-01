@@ -17842,3 +17842,49 @@ OCCT  ShapeAnalysis_Curve.cxx:275-303  Extrema_ExtPC / 最近 IsMin 解 与 aCom
 看什么 该阶段在「找不到 IsMin 解」时把 param 取到什么（OCCT 是否有 (_u1+_u2)/2 之类），
        以及 `mod_min`（aModMin）的初值与更新是否一致 —— 因为 default 支最终会拿 `computed_*` 返回。
 ```
+
+---
+
+### 9.435 —— T-101：第一阶段也**不是**中心值来源（`None` 仅 3/144，命中值都是真实极值参数）⇒ 剩下唯一候选 = **周期性修正用的「区间」**
+
+读数（TEMP，env gated，**已撤除**）：在 `extrema_ext_pc_min_in_range` 调用处打印：
+
+```text
+FIRST lines: 144    -> None: **3**
+  FIRST u=[0.000000000,0.300000000] mid=0.150000000 -> None
+  FIRST u=[0.000000000,1.000000000] mid=0.500000000 -> Some(u=0.599092399, d=0.116679122)
+  FIRST u=[0.000000000,1.000000000] mid=0.500000000 -> Some(u=0.400907601, d=0.116679122)
+```
+
+⇒ 第一阶段返回的是**真实极值参数**（0.599/0.401…），**从不等于区间中点**；`None` 只 3 次且此时
+OCCT 的 `theProjParam` 同样保持 `0.`（`cxx:273`）。结合 §9.434（精修支 Some 102/102、尾巴返回
+`param == computed == old` 且 `dist = 0`），**所有内部阶段都不是中心值的产生者**。
+
+#### 唯一剩下的候选：**周期性修正那一句用的区间**
+
+```rust
+// 端口 :262-263
+if is_closed && (proj_param < u_inf || proj_param > u_sup) {
+    proj_param += adjust_by_period(proj_param, 0.5 * (u_inf + u_sup), period);
+}
+```
+```cpp
+// OCCT cxx:480-483
+if (anIsClosedCurve && (theProjParam < uMin || theProjParam > uMax)) {
+    theProjParam += ShapeAnalysis::AdjustByPeriod(theProjParam, 0.5 * (uMin + uMax), aCurvePeriod);
+}
+```
+
+**关键差异候选**：OCCT 的 `uMin/uMax` 是 `ProjectAct` 的**局部变量**，在 default 支里被
+`ProjectOnSegments` **就地收窄**过；端口 `:262` 用的是**函数参数** `u_inf/u_sup`（未收窄的整区间）。
+两者不同 ⇒ 守卫条件与「中心」都不同。
+
+而且 `AdjustByPeriod(v, c, P)` 在 `|v - c| = k·P` 时正好把结果**送到 c**（观测到的 `param == 0.5*(u_inf+u_sup)`
+即由此而来，`d` 非零也说得通——参数被映射到区间中心的等价点）。
+
+#### 下一步（下一次直接做）
+
+1. 读 `shape_analysis_curve.rs:151-276` 确认**哪些分支能走到 :262**，并在那些分支里核对
+   「收窄后的区间」是否存在（端口是否有 `seg_lo/seg_hi` 的局部收窄、是否应传到 :262）；
+2. 对照 `cxx:479-496`：`anIsClosedCurve`、`aCurvePeriod` 的取值，以及收窄后 `uMin/uMax` 的语义；
+3. 命中即把 :262 的区间换成与 OCCT 同源的（收窄后的）区间 → 第③步验收。
