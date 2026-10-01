@@ -18043,3 +18043,48 @@ OCCT  ShapeBuild_Vertex::CombineVertex(V1, V2, tolFactor)（ShapeBuild_Vertex.cx
 **下一轮**：读 `combine_vertex` 与 `ShapeBuild_Vertex::CombineVertex`，命中即按 `.cxx` 修 → 第③步验收
 （`--model 113` → wires=2、`zz_seam_fix 113` → Face、`--fstats` → face=113 mt≈228、面积比 ≥0.8996 且上升、
 `t101_verify.ps1` 全绿）。
+
+---
+
+### 9.439 —— 【真实分歧点修复】`FixDummySeam` 的顶点必须**朝向感知**：端口用 `edge_vertices(...)`（朝向无关）⇒ 中点顶点；改为 `first_vertex/last_vertex` 后 **F113 外环与 OCCT 逐点一致**
+
+**分歧（`.cxx` 可直读）**：
+
+```cpp
+// OCCT ShapeFix_Wire.cxx:4221,4230（ShapeAnalysis_Edge 的 FirstVertex/LastVertex）
+TopoDS_Vertex V1 = sae.FirstVertex(E1), V2 = sae.LastVertex(E2);   // TopExp::Vertices(E,V1,V2,CumOri=true) ⇒ **朝向感知**
+...
+TopoDS_Vertex Vs = sae.FirstVertex(E2);
+```
+```rust
+// 端口（修前）：朝向**无关**的拓扑首尾
+let (Some(v1), Some(v2)) = (edge_vertices(&e1).0, edge_vertices(&e2).1) else { … };
+let mut vs = edge_vertices(&e2).0;
+```
+
+毛刺第二条边在 wire 里是 `Reversed` ⇒ 朝向无关取到的是曲线尾 `-80.622679`，OCCT 取到的是线序首 `-49.864906`
+⇒ `CombineVertex(V1,V2,1.0001)` 给出**两者中点** `-65.243610`（实测值）。
+
+**修复（照 `.cxx`，2 处）**：
+
+```rust
+let (Some(v1), Some(v2)) = (first_vertex(&e1), last_vertex(&e2)) else { … };   // cxx:4221
+let mut vs = first_vertex(&e2);                                               // cxx:4230
+```
+
+**实测（改动后）**：
+
+```text
+F113 外环端点：含 -65.24 的 **0** 处；含 -49.86 的 **2** 处
+  e[0] (12.387499,24.672033,-89.394247) -> (-49.864906,0,-100)
+  e[1] (-49.864906,0,-100) -> (36.224088,-3,-99.867388)
+OCCT 整形后 FACE 25 的 W1： [12.3875,24.672,-89.3942 -> -49.8649,0,-100] [-49.8649,0,-100 -> 36.2241,-3,-99.8674]
+  ⇒ **逐点一致**（这正是审计 §9.418 指出的「OCCT 收在原顶点」）
+a3n00：mesh_v 10863 → **10876**，mesh_t 11941 → **11967**（OCCT 侧 11145 / 12466，方向朝 OCCT）
+F113：仍 wires=4（bound 合并那一步 = `fix_missing_seam` 出 Shell(5) 被丢，另一件事）
+```
+
+⇒ 这是一处**真实的 `.cxx` 分歧**（并且顺带证实 §9.418/§9.439 的「OCCT 收在原顶点」是**实测**得到的，
+与 `combine_vertex` 逐行忠实并不矛盾：分歧在**传入 CombineVertex 的顶点**上）。
+
+**门禁**：`t101_verify.ps1` 已在后台启动（job 见报告）——绿则提交本改动，红则回退这两处。
