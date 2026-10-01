@@ -16840,3 +16840,41 @@ seam 块 (:740-758)           入口已是 [1, 1, 6, 14]（§9.407）⇒ 丢边�
 `#5012` 两端点的中点，是**切边**的指纹），并与 OCCT `StepToTopoDS_TranslateFace` /
 `ShapeFix_Face` 在该处的同等分支对照。命中即按 .cxx 修，验收：`--model 113` → 2 wires（22+6 边）、
 `zz_seam_fix 113` → Face、`--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升。
+
+---
+
+### 9.411 —— T-101（F113）：丢边的**第一现场已定位到三条调用**（`read_topology.rs:710-714`，在 seam 块之前）
+
+`resolve_face` 的 664-740 段里，唯一会**改动 wire 本身**的是 per-wire 循环里的这三条（`:710-714`）：
+
+```rust
+for e in &loop_edges {
+    crate::shhealing::xsalgo_check_pcurve(e, &face, self.precision);   // :711  XSAlgo_ShapeProcessor::CheckPCurve
+}
+crate::shhealing::project_wire_pcurve_ranges(w, &face, preci);          // :713
+crate::shhealing::check_pcurves_and_shift(w, &face, preci, false);      // :714  （cxx:365-480 一线）
+```
+
+其中 `w` 来自 `wires.iter_mut()`（`:673`）——**是真正会被写回的那条 wire**。而 §9.410 已证：
+`make_face` 之后（`:663`）该面还是 `[1, 1, 8, 14]`（= 文件），seam 块（`:740`）入口已是 `[1, 1, 6, 14]`。
+⇒ **丢掉的 `#5012/#5018` 与那个中点接点 `-65.243610` 必产生于 `:711 / :713 / :714` 这三条之一**。
+
+指纹吻合：这三条正对应 OCCT 的「pcurve 高级检查 + 重投影 + shift」——
+OCCT 里这类改动发生在 `ShapeFix`（`ShapeBuild_ReShape` 上下文）里，**且通常在 `ShapeFix_Wire` 的副本上做、
+成功才 Apply**；而端口是**直接写在形状的 wire 上**。`check_pcurves_and_shift` 在 `shape_fix_face.rs`
+的职责正是「修补重建后 wire 的 pcurve（cxx:365-480）」，具备切边/重排的能力。
+
+#### 下一步（三行探针，一次跑完）
+
+在该 per-wire 循环里于 `:711`、`:713`、`:714` **各前后打一次** `w` 的边数
+（用 `crate::topo_tools_full::edges_of_wire(w).len()`；TEMP，env gated，用完 `edit` 反撤）：
+
+```text
+期望读数：进入循环 8 → (711 后) ? → (713 后) ? → (714 后) ?
+第一个把 8 变成 6 的调用就是第一现场；
+随后按 .cxx 对照该函数的 OCCT 同等实现（xsalgo_check_pcurve ↔ XSAlgo_ShapeProcessor::CheckPCurve
+cxx:344-401；check_pcurves_and_shift ↔ cxx:365-480），确认「是否应当就地改 wire / 是否应只改副本」。
+```
+
+判据（不变）：`--model 113` → 2 wires（22+6 边）、`zz_seam_fix 113` → Face、
+`--fstats` → `face=113 mt≈228`、a3n00 面积比从 0.8996 起上升、`t101_verify.ps1` 全绿。
