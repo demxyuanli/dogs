@@ -16405,3 +16405,49 @@ face-checker 判自交 ⇒ 空面（§9.391/§9.395/§9.396 已确证后半段�
 （端口 :377-390 的 `wire_uv_bounds` / `period`）。命中即按 .cxx 修，随后跑验收：
 `zz_seam_fix 113` → Face、`--model 113` → 2 wires（22+6 边）、`--fstats` 出现 `face=113 mt≈228`、
 a3n00 面积比从 0.8996 起上升、`pwsh -File .target-gate\t101_verify.ps1` 全绿。
+
+---
+
+### 9.400 —— T-101（F113）：seam 定位循环（`cxx:2138-2234` ↔ `shape_fix_face.rs:441-588`）**首次发现候选分歧** = `i1` 自增与内层循环守卫的先后（疑似 off-by-one）
+
+本轮把这一段的骨架逐项对上（U/V 两条链、`foundU/foundV` 的 0/1/2 状态机、`skipU/skipV`、
+`|abs|` 比较惯用法、`AdjustByPeriod` 与 `AdjustToPeriod` 的两种用法）：
+
+```cpp
+// cxx:2144-2183（i1 外层）
+for (int i1 = 1; i1 <= nb1 + nb2; i1++) { … }              // ← i1++ 在**循环头**（体末）
+if (uclosed && ismodeu) {
+    pos1.SetX(pos1.X() + AdjustByPeriod(pos1.X(), SUF, URange));
+    if (foundU == 2 && |pos1.X()| > |uf|) skipU = true;
+    else if (!foundU || (foundU == 1 && |pos1.X()| < |uf|)) { foundU = 1; uf = pos1.X(); }
+}
+bool skipV = !vclosed;
+if (vclosed && !ismodeu) { … foundV = 1; vf = pos1.Y(); }
+if (skipU && skipV) { … }
+if (i1 <= nb1) { … for (int i2 = 1; i1 <= nb1 && i2 <= nb2; i2++) { … foundU = 2; … } }
+```
+
+端口（`shape_fix_face.rs:504-580`）逐项对应：`found_u/found_v` 0/1/2 ✓、`i1 → 1` / `i2 → 2` ✓、
+`adjust_by_period(pos1.x(), suf, u_range)` ✓、`(pos2.x() - pos1.x()).abs() < PCONFUSION` ✓、
+收尾 `adjust_to_period(uf2, suf, suf + u_range)` ✓。
+
+**唯一对不上的一处（候选分歧）**：
+
+```text
+cxx:2144      i1++ 在 for 头（体末才自增）⇒ 体内的内层 for 条件 `i1 <= nb1` 用的是**未自增**的 i1
+cxx:2195      for (int i2 = 1; i1 <= nb1 && i2 <= nb2; i2++)
+端口 :544      在进入 i2 循环**之前**就 `i1 += 1;`
+端口 :551      在 i2 循环体内以 `if i1 > nb1 { … }` 做守卫 ⇒ 用的是**已自增**的 i1
+```
+
+⇒ 若确如所读，端口在 `i1 == nb1` 时会比 OCCT 提前一次退出内层循环（少跑一轮 `edge1 ∈ wd1 × edge2 ∈ wd2`
+的配对），`pos2` 那一支（`foundU/foundV = 2`，即 cxx:2206-2220 的「端点重合」判定）就可能少命中一次 ——
+而 `uf2/vf2` 正是由这个状态机决定的。**这与 F113 的 `D ≠ C` 现象方向一致**（切点没落在已有顶点上）。
+
+#### 下一步（先证实，再改）
+
+1. 读 `cxx:2183-2200` 与 `shape_fix_face.rs:543-560`，确认 `i1` 自增位置与内层守卫的先后；
+2. 若证实是 off-by-one：把自增移回「体末 / 内层循环之后」（`for` 头的等价位置），**不加任何特例**；
+3. 跑验收：`zz_seam_fix 113` → Face、`--model 113` → 2 wires（22+6 边）、`--fstats` → `face=113 mt≈228`、
+   a3n00 面积比从 0.8996 起上升，再跑 `pwsh -File .target-gate\t101_verify.ps1` 全量门禁；
+4. 若证实「其实等价」（例如端口的 `i1 += 1` 恰好复刻了 OCCT 2186-2194 里的自增），则继续在这段里找下一处。
