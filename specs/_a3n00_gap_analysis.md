@@ -19493,3 +19493,45 @@ OCCT noop（未整形）：
 做法：先用端口侧只读探针确认「那两条 1 边段在 collect_wires 里是否配对成功过」（§9.453 的 COLLECT-OUT 已显示
 它们被组装成两张 3 边薄片 ⇒ 端口**没有丢弃**），再逐行对 cxx:2512-2936 的对应分支找差异。
 ```
+
+---
+
+### 9.476 —— `collect_wires` 的「合并短 3D 段」读到关键结构；靶点推进到 `dispatch_wires`（由 §9.453 的读数反推）
+
+端口 `collect_wires.rs:333-396`（`cxx:2853-2935`）：
+
+```rust
+for i in 0..seqw.len() {
+    if shorts[i] != 1 || seqw[i].is_vertex()
+        || seqw[i].orientation() == Orientation::Internal
+        || seqw[i].orientation() == Orientation::External { continue; }   // 只处理「短且非 vertex/Internal/External」的段
+    let wd = seqw[i].edges(); let v = seqw[i].first_vertex();
+    … 遍历 wires[j] 的每条边 k：要求 same_v(&v, &first_vertex(&cand[k]))（**目标边的首顶点 == 本段首顶点**）
+      + is_same_patch(…) + 2D 端切向距离最小者 ⇒ (minj, mink, mindist)
+    let Some(target_idx) = minj else {
+        // cxx:2914-2923: keep it as a separate wire.
+        wires.push(WireSegment::with_edges(wd.clone(), Orientation::Forward)); continue;
+    };
+    // cxx:2925-2931: 把 wd 的边依次 add 到目标 wire（mink 起）
+}
+```
+
+**关键推论（结合 §9.453 的既有读数）**：那两条 1 边退化段**并没有**停在 `minj == None` 的
+「keep it as a separate wire」分支 —— 因为在 `COLLECT-OUT-wires` 里它们各自成了 **3 边 wire**
+（`(±87.5,0,-32)->(44.5,0,-32)`，含零长度边 + 两条邻边），即**它们被成功并进了别的 wire**。
+
+⇒ 所以问题不在这里「是否丢弃」，而更可能在**最后一步 `dispatch_wires`**：端口把最终 wires **逐条变成一张面**
+（5 条 wire ⇒ 5 张面，含两张由退化段参与的 3 边薄片），而 OCCT 收敛成 1 张 2-wire 面
+⇒ 需要核对 OCCT 的 `DispatchWires` 是否**跳过/并入**这类由退化段参与的小 wire。
+
+#### 下一轮（最后一次对拍）
+
+```text
+读端口 `dispatch_wires.rs`（~几百行）与 `ShapeFix_ComposeShell.cxx` 的 DispatchWires 段
+（§9.377 记录过 cxx:2770-2860 一线；本文件头注释应也标了 cxx 行号），专找：
+  · 对「小/退化 wire」的判据（ShapeAnalysis_Wire 的小面积/小边长检查、或 wire 边数阈值、
+    `CheckSmallArea`/`CheckSmall` 一类）——OCCT 有而端口缺 ⇒ 命中；
+  · 若两侧都有该判据 ⇒ 退一步核 `shorts[]` 数组的**下标错位**（`cxx:2524-2526` 明确「不随元素删除而平移」，
+    端口注释也承认；但两侧若在上游删了不同数量的元素，`shorts[i]` 就会指向不同的段 ⇒ 该并的没并）。
+命中即按 .cxx 修 → 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2（22+6）；--fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
