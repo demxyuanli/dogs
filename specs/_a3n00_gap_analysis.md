@@ -23080,3 +23080,56 @@ grep `a_nm_params` / `a_nm_vertices` 在 `split_wire.rs` 的全部出现，读�
   （若端口只收某一类顶点——例如仅 INTERNAL、或仅「其它边共享的」——而 OCCT 收的是**该边上全部已有顶点**，
    即为此处差异）⇒ 命中即按 .cxx 补齐收集口径 ⇒ 跑 §9.565-C 五步验收。
 ```
+
+---
+
+### 9.576 —— 对照完成：`a_nm_vertices` 收集**忠实**（端口 :119-130 ↔ cxx:1006-1014）⇒ §9.575 的「收集口径不同」否掉；**0 次触发是预期**，两 TShape 的来源需重新解释
+
+#### A. 逐条对照
+
+```cpp
+// OCCT cxx:1006-1014
+NCollection_Sequence<TopoDS_Shape> aNMVertices;
+TopoDS_Iterator aIt(edge, false);                       // 遍历 edge 的**直接**子形状（不递归）
+for (; aIt.More(); aIt.Next())
+  if (aIt.Value().Orientation() != TopAbs_FORWARD && != TopAbs_REVERSED)
+    aNMVertices.Append(aIt.Value());
+```
+```rust
+// 端口 split_wire.rs:119-130
+let a_nm_vertices: Vec<Vertex> = {
+    let ts = edge.0.tshape.read()…;
+    ts.children.iter()
+        .filter(|c| c.is_vertex())                      // 与 OCCT 的「子形状」等价（边的子形状即顶点）
+        .filter(|c| { let o = c.orientation(); o != Forward && o != Reversed })
+        .map(|c| Vertex(c.clone()))
+        .collect()
+};
+```
+⇒ **语义一致** ⇒ §9.575 的「收集口径不同」**否掉**。
+
+#### B. 由此得到的**重新解释**（推翻 §9.574/§9.575 的因果）
+
+```text
+· 那些边的顶点都是 FORWARD/REVERSED ⇒ `a_nm_vertices` **本就为空** ⇒ 统一循环 0 次触发
+  **是 OCCT 也会有的行为** ⇒ 「内部顶点未被绑定」**不是**两 TShape 的成因；
+· 结合 §9.563 已读的 `copy_replace_vertices_with`：它**新建边**并把传入的顶点（可能来自
+  `empty_copied_vertex`，即**副本**）装上去；`Context()->Replace(原 → 副本)` 把「原→副本」记进 Context，
+  于是**经过 Context 的查询**会看到副本，而**绕过 Context 的查询**（例如直接读 `WireSegment` 里
+  缓存的端点顶点）会看到**原来的对象** ⇒ 同一几何点上出现两个 TShape。
+⇒ 新的（也是更贴合已测数据的）靶点：**`WireSegment` 的端点顶点是否经 Context 查询**，
+  即 `WireSegment::first_vertex()/last_vertex()`（`shape_fix_compose_shell/wire_segment.rs`）的实现：
+  若它直接读边的顶点、而 §9.558 的 `IsShortSegment` 用的是 `saE.LastVertex(edge)`（边的顶点），
+  两者在「副本已替换进 Context」后就会指向不同 TShape。
+```
+
+#### C. 下一轮（最后一读：`WireSegment` 端点实现）
+
+```text
+读 `shape_fix_compose_shell/wire_segment.rs` 的 `first_vertex/last_vertex/nb_edges` 实现，
+确认它们**是否经 Context 查询**、以及是否读取边自身的顶点：
+  · 若直接读边顶点（不经 Context）⇒ 与 OCCT 的 `ShapeFix_WireSegment::FirstVertex/LastVertex`
+    （应读 wire 的首/末边顶点）对照，找出差异并按 .cxx 对齐；
+  · 若经 Context ⇒ 改查 §9.558 的 `IsShortSegment` 侧为何仍见旧对象（可能是 `saE.LastVertex` 的实现口径）。
+（本目标还剩 3 轮：158-160；本轮已把因果链修正到「WireSegment 端点 vs 边顶点」这一最后分叉。）
+```
