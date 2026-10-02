@@ -18702,3 +18702,33 @@ COLLECT-OUT-wires k=0..3 nb=6/7/5/4（= 内环 + 7/5/4 三段外环）
 **下一轮靶点**：`split_by_line.rs` 的切分输出（同样的结构性筛选：只在出现零长度段时打印），
 对照 `ShapeFix_ComposeShell.cxx:1433-1914`（`SplitByLine`）判读：**哪一次「按线切」把一段切成了零长度**。
 命中即按 `.cxx` 修（不加特例），然后跑 §9.448 的验收口径。
+
+---
+
+### 9.454 —— **定位完成**：零长度段诞生于 `split_by_grid`（`load_wires` 干净；`break_wires`/`collect_wires` 已排）
+
+在**编排器** `perform.rs`（`ShapeFix_ComposeShell::Perform`，`cxx:206-255`）里按阶段埋一次二分
+（env `T101_ZZ3`，**仅当该阶段段列表含零长度边时打印**；插桩已用 `git show HEAD` 还原）。
+F113 那一次（`.target-gate/stage113.txt`，同一 face 出现两次 = 导入路径 + 探针显式调用）：
+
+```text
+A_load_wires      : **未打印** ⇒ 该阶段 zero=0（筛选条件：仅当 zero>0 时打印）
+B_split_by_grid   : segs=6 zero=**2** nb=[6, 16, 1, 1, 1, 1] p0=(-65.244,0.000,-100.000)
+C_break_wires     : segs=8 zero=2     nb=[6, 7, 5, 4, 1, 1, 1, 1]
+D_collect_wires   : segs=6 zero=2     nb=[6, 7, 5, 4, 3, 3]
+```
+
+**结论（链条已经完全闭合到单一函数）**：
+
+```text
+零长度段(±87.5,0,-32)->同点 **由 `split_by_grid` 产生**（它在内部调用 `split_by_line`）；
+  · `load_wires` 干净（zero=0，故 A 阶段无输出）；
+  · `break_wires` 只把 16 边切成 7+5+4（zero 不变，§9.452）；
+  · `collect_wires` 只把 1 边段组装成 3 边薄片（zero 不变，§9.453）。
+另注：`perform.rs` 揭示 **`split_by_line` 不在编排器里**，它由 `split_by_grid` 内部调用
+  ⇒ 下一步要么进 `split_by_grid`（`cxx:2131-2275`），要么进它调用的 `split_by_line`（`cxx:1433-1914`）。
+```
+
+**下一轮靶点（二选一，见下一问）**：
+  (i) 在 `split_by_grid` 内、`split_by_line` 调用**前后**各打一次 ⇒ 判定是 `split_by_grid` 自己造的，还是它调用的 `split_by_line` 造的；
+  (ii) 直接进 `split_by_line` 的切分输出，打印每次「按线切」的切点参数与切前/切后段。
