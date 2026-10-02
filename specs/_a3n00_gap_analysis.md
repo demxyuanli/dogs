@@ -20143,3 +20143,40 @@ pub fn is_short_segment(seg, face, grid_surface, u_resolution, v_resolution) -> 
 ```
 
 （下一轮据此逐条核对端口 `helpers.rs:347-390` 的三处判据：①/② 的顶点**朝向语义**、④ 的「2d 参数中点 → 3d」口径。）
+
+---
+
+### 9.491 —— `IsShortSegment` 逐条对拍：发现**两处真实的朝向语义分歧**（`cxx:2417`/`cxx:2423`），但实测**全中性**（F113/a3n00 逐字不变）⇒ 已还原
+
+#### A. 逐条对拍（OCCT `:2394-2447` 原文见 §9.490）
+
+| OCCT | 端口 `helpers.rs:347-390` | 判定 |
+|---|---|---|
+| `Vf = seg.FirstVertex()`；`Vf.IsSame(seg.LastVertex())`（:2401-2402） | `seg.first_vertex()` / `last_vertex()` + `is_same`（:356-361） | ✓ |
+| `pnt/tol/tol2`（:2407-2409） | `:362-364` | ✓ |
+| `code = 1`（:2411） | `:365` | ✓ |
+| **`Vf.IsSame(sae.LastVertex(edge))`**（:2417） | **`is_same(&vf.0, &edge_vertices(edge).1)`**（:367-372） | ✗ **分歧**（`sae.LastVertex` 朝向感知 vs `edge_vertices(…).1` 朝向无关） |
+| **`sae.PCurve(edge, myFace, c2d, f, l)`**（:2423，`CumOri` 默认 **true**） | **`curve_on_surface_oriented(edge, face, false)`**（:373-377） | ✗ **分歧**（CumOri 取 false） |
+| `endPnt/midPnt` + `IsCoincided`（:2429-2434） | `:378-382` | ✓ |
+| `myGrid->Value(midPnt)`（+ 非恒等 myLoc 变换）+ `SquareDistance > tol2`（:2437-2445） | `grid_surface.value_uv(...)` + `distance(...).powi(2) > tol2`（:383-387；端口注释已说明 myLoc 恒等） | ✓ |
+
+#### B. 实测（两处都按 `.cxx` 改后）
+
+```text
+F113：result type=Shell, result faces=5；HEALED wires=2 / 1 / 1 / 1 / 1   ——**与改前逐字相同**
+模型：MODEL f=113 wires=4（6/14/1/1）                                    ——**不变**
+a3n00：STATMAP matched=225 unmatched=1 sum_mt=11941 flat_mt=11941        ——**不变**
+```
+
+⇒ 这两处**是真实分歧**（都应修，且与 §9.439 的 `FixDummySeam` 同族：朝向语义），
+   但它们**不是 F113 的杠杆**（与 §9.439/§9.463 的结论一致：能改的都是「几何/判据正确性」，
+   而 F113 的成败取决于 `CollectWires` 之后**串接成几条 wire**）。
+
+#### C. 处置与后续
+
+```text
+· 已 **还原**（两处 edit 反向替换；库 diff 为空）——按纪律，库改动须过完整门禁方可落地，
+  本环境的门禁需 ~5 分钟且必须在后台跑完再判定（参见 §9.463 的落地流程）。
+· 建议单独一轮做（与 §9.463 同法）：应用这两处 → 后台跑 `t101_verify.ps1` →
+  绿则提交（这两处是 `.cxx` 忠实修正），红则还原并记录退步。
+```
