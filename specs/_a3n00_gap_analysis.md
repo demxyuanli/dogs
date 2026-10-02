@@ -23005,3 +23005,39 @@ CRPL 行: 35   分布: {'CRPL318': 28, 'CRPL325': 7}
 · 若 `CRPL358`/`CRPL363`（内部顶点与 prevV/V 统一）为 0 ⇒ 那些顶点从未被绑定 ⇒ 靶点=「绑定未覆盖」；
 · 若它们有触发，则需看**绑定的 old 是否就是** §9.558 那些段所用顶点（下一轮再打 old/new 的坐标对比）。
 ```
+
+---
+
+### 9.574 —— 【假设①成立】`split_wire.rs:358/363`（内部顶点统一的两处 `replace`）**一次都没触发**（318:28 次、325:7 次、358/363:**0**）⇒ 那些顶点从未被绑定
+
+#### 数据（§9.573，`build_ok=1`、精确撤除、`T101_ZZ2` 残留 0、库 diff 空）
+
+```text
+CRPL 行: 35        分布: { 'CRPL318': 28, 'CRPL325': 7 }      ← CRPL358 = 0, CRPL363 = 0
+（318 = `replace(&prev_v.0, &f_v.0)`；325 = `replace(&last_v.0, &nv.0)`；
+  358 = `replace(&atmp_v, &prev_v.0)`；363 = `replace(&atmp_v, &v.0)`）
+```
+
+**判定**：
+
+```text
+· 「保护原始端顶点」的两处（318/325）**确实触发** ⇒ 该机制在工作；
+· 而「**内部顶点与 prevV/V 统一**」的两处（358/363，对应 `cxx:1318`/`cxx:1325`）**从未触发**
+  ⇒ 那些内部顶点（`aNMVertices`）**从未被 `Replace` 绑定**
+  ⇒ 它们所参与的边不会被统一到同一顶点对象 ⇒ §9.558 的「同点两 TShape」**由此而来**（假设①成立）。
+· 触发条件（`|apar − prev_par| ≤ PCONFUSION` 或 `|apar − curr_par| ≤ PCONFUSION`）未满足
+  ⇒ 最可能是 **`a_nm_params` / `a_nm_vertices`（边上已存在的顶点）在端口里为空或算得不对**
+    ⇒ 靶点上移到它们的**填充处**（对应 OCCT 在 `SplitEdge` 里对 `aNMVertParams`/`aNMVertices` 的初始化）。
+```
+
+#### 下一轮（最后一次对拍：`a_nm_params`/`a_nm_vertices` 的填充）
+
+```text
+grep `a_nm_params` / `a_nm_vertices` 在 `split_wire.rs` 的全部出现，读其**填充段**，与 OCCT 同段对照：
+  · OCCT 侧这两个序列来自该边上**已存在的内部顶点**（由 `ShapeAnalysis_Edge`/`BRep_Tool` 在
+    `SplitEdge` 前置段收集，约 `cxx:1180-1240`）；
+  · 若端口**没有收集**（或只收集了交点、未收集已有顶点）⇒ 按 .cxx 补齐收集逻辑
+    （不改判据、不加启发式）；
+  · 修后跑 §9.565-C 五步验收：cargo check → zz_seam_fix 113 → **Face** → --model 113 → wires=2(22+6)
+    → t101_verify.ps1 全绿 + 逐模型基线对照。
+```
