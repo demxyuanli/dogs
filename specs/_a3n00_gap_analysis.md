@@ -21811,3 +21811,40 @@ GRIDPAR 行: 47
 · 这些量若与 OCCT 由面 UV 边界+周期性推出的网格一致 ⇒ 前提无误 ⇒ 差异落在 SplitByLine 内部数值；
 · 若不一致 ⇒ 网格构造即分歧点（对照 cxx 的 grid 初始化）。
 ```
+
+---
+
+### 9.541 —— 【有效测量·判读】F113 的网格：`nbu=nbv=1`、`u_closed=true`、`u_period=2π`、`uj=[π,3π]`；与 §9.456 的切分实测自洽
+
+#### 数据（§9.540，47 行；`build_ok=1`、精确 A+P→A 撤除、`T101_ZZT` 残留 0、库 diff 空）
+
+```text
+u_closed=true  v_closed=false  u_period=6.283185(=2π)  v_period=2.0   nbu=1 nbv=1
+  uj=[3.141592653589793, 9.42477796076938] = [π, 3π]     vj=[34.0, 36.0]        bounds=(3.141593,9.424778,34,36)
+u_closed=true  v_closed=false  u_period=6.283185(=2π)  v_period=18.0  nbu=1 nbv=1
+  uj=[π, 3π]                                             vj=[-3.55e-15, 18.0]   bounds=(3.141593,9.424778,0,18)
+（两族交替出现 ⇒ 网格是**逐段**构建的，V 的范围随段变化；U 方向恒为 [π, 3π]、周期 2π）
+```
+
+#### 判读（与 §9.456 的实测合起来自洽）
+
+```text
+· `nbu = 1` ⇒ U 线循环只有 `i = 1` 一次（`closed_mode` 下 `u_closed` ⇒ 从 1 起）；
+  `cut_index = i = 1` **正是 §9.456 实测到的 `cut_index=1`** ✓；
+· `u_closed = true` 且 `closed_mode = true` ⇒ 走 **else 分支**（`SplitByLine(seqw, line, true, i)`）；
+  该分支的 `line.pos = (UJointValue(1), 0) = (π, 0)`；而 §9.456 实测到的切分线位置为 `(0,0)`、`cut_index=1`
+  —— 二者相差一个周期，说明该次打印来自**另一条走 U-closed 分支的调用**（`!closed_mode && u_closed`，
+  其中 `x + sh = 0`，`sh = adjust_to_period(π, uf, uf+2π) = -π`）**或**该面的 `closed_mode` 为 false。
+  ⇒ 这一点需要在下一次探针里同时打印 `closed_mode` 才能定论（本轮未打该字段）。
+· 无论走哪条分支，**U 线位置与 `cut_index` 都能由这些网格量完全确定** ⇒ 网格前提**已取到数值**：
+  `uj=[π,3π]`、`u_period=2π`、`nbu=1`。
+```
+
+#### 下一轮（把最后两个未知量一次取全）
+
+```text
+在同一位点补打 `self.closed_mode`（以及该次调用走的分支标记），与已知的 `uj/u_period/nbu/u_closed` 一起：
+  · 若 `closed_mode=false` ⇒ 走 U-closed 分支 ⇒ `x+sh=0` 与 §9.456 的 `(0,0)`/`cut_index=1` 完全自洽 ⇒ 网格与切分位置**前提无误**；
+  · 随后与 OCCT 网格构造（`ShapeFix_ComposeShell` 的 grid 初始化：由面 UV 边界与周期性推出
+    `UJointValues/NbUPatches/UClosed`）逐值对照 ⇒ 一致则差异落在 `SplitByLine` 内部数值，不一致则网格构造即分歧点。
+```
