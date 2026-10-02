@@ -235,6 +235,45 @@ fn main() {
     println!("--- BEFORE ---");
     describe("BEFORE", &face);
     if std::env::args().any(|a| a == "--ep") {
+        let ws = occt_topo::topo_tools_full::wires_of_face(&face);
+        let vpt = |v: &occt_topo::shape::Vertex| {
+            let q = BRepTool::vertex_point(v);
+            (q.x(), q.y(), q.z())
+        };
+        for (i, wa) in ws.iter().enumerate() {
+            for (j, wb) in ws.iter().enumerate() {
+                if i >= j { continue; }
+                for ea in occt_topo::topo_tools_full::edges_of_wire(wa) {
+                    for eb in occt_topo::topo_tools_full::edges_of_wire(wb) {
+                        let pa = [
+                            occt_topo::shhealing::first_vertex(&ea),
+                            occt_topo::shhealing::last_vertex(&ea),
+                        ];
+                        let pb = [
+                            occt_topo::shhealing::first_vertex(&eb),
+                            occt_topo::shhealing::last_vertex(&eb),
+                        ];
+                        for (x, va) in pa.iter().enumerate() {
+                            for (y, vb) in pb.iter().enumerate() {
+                                let (Some(va), Some(vb)) = (va.as_ref(), vb.as_ref()) else { continue };
+                                let (ax, ay, az) = vpt(va);
+                                let (bx, by, bz) = vpt(vb);
+                                let close = (ax - bx).abs() < 1e-9 && (ay - by).abs() < 1e-9 && (az - bz).abs() < 1e-9;
+                                if close {
+                                    let id = occt_topo::topo_tools_full::is_same(&va.0, &vb.0);
+                                    println!(
+                                        "WIREEND w{}e{}[{}] vs w{}e{}[{}] close={} is_same={} at ({:.3},{:.3},{:.3})",
+                                        i, 0, x, j, 0, y, close, id, ax, ay, az
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if std::env::args().any(|a| a == "--ep") {
         for (wi, w) in occt_topo::topo_tools_full::wires_of_face(&face).iter().enumerate() {
             let es = occt_topo::topo_tools_full::edges_of_wire(w);
             let mut segs: Vec<String> = Vec::new();
