@@ -22459,3 +22459,35 @@ B.Add(newEdge, atmpV);                                             // :1332  装
 ④ 修后跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
    面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.561 —— 顶点统一这一环**端口也有**（`context().apply` / `context_mut().replace`）⇒ §9.560 的「缺失」假设被读码否掉；嫌疑转到「Context 的内容/实例」
+
+#### 逐条对照（端口 `split_wire.rs:315-378` ↔ `cxx:1261-1336`）
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `cxx:1261-1293` 保护原始端顶点（`EmptyCopy` + `Context()->Replace`） | `:316-335` `empty_copied_vertex` + `self.context_mut().replace(&prev_v.0, &f_v.0)` 等 | ✓ **端口有 Context 等价物** |
+| `splitted = true; prevV.Orientation(FORWARD); V.Orientation(REVERSED);`（:1296-1298） | `:337-339` 同 | ✓ |
+| `ismanifold = (orient == FORWARD \|\| REVERSED); if (!ismanifold) anInitEdge.Orientation(FORWARD);`（:1301-1306） | `:341-347` 同 | ✓ |
+| `newEdge = sbe.CopyReplaceVertices(anInitEdge, prevV, V)`（:1307） | `:348-350` `copy_replace_vertices_with(&an_init_edge, Some(&prev_v), Some(&v))` | ✓ |
+| `atmpV = Context()->Apply(aNMVert)`（:1315） | `:355` `self.context().apply(&a_nm_vertices[n].0)` | ✓ |
+| `if (fabs(apar-prevPar) <= PConfusion) { Context()->Replace(atmpV, prevV); Remove; n--; }`（:1316-1322） | `:357-361` 同（`replace(&atmp_v, &prev_v.0)` + remove + `removed = true`） | ✓ |
+| `else if (fabs(apar-currPar) <= …) { Replace(atmpV, V); … }`（:1323-1329） | `:362-367` 同 | ✓ |
+| `if (apar > prevPar && apar < currPar) { B.Add(newEdge, atmpV); Remove; n--; }`（:1330-1335） | `:368-375` 同（`builder.add(&mut new_edge.0, &atmp_v)`） | ✓ |
+
+⇒ **结构逐条一致，且端口确实实现了 Context 的 `apply/replace`** ⇒ §9.560 的「端口缺少这一环」**不成立**。
+
+#### 剩余嫌疑（下一轮，只读）
+
+```text
+既然机制在、对应关系也在，那 93 处「同点两 TShape」只能来自 **Context 的内容/实例**：
+  ① `split_wire` 用的 Context 与构建**输入边**时用的 Context 是否为**同一个实例**；
+  ② 输入边（reader 来的原边）的顶点有没有在**任何时刻**被 `replace`/`apply` 注册进该 Context
+     （OCCT 侧通常在装载 wire 时经 `myContext` 注册；端口是否漏了这一步，或在 `perform` 里被重置）；
+  ③ `empty_copied_vertex` 是否**新建** TShape（若是，则「保护」用的 f_v/l_v 是**新对象**，
+     必须靠后续 `replace` 把它们与已有顶点统一；若某条路径漏了 replace，就会出现同点两 TShape）。
+下一轮：读 `Self::context/_mut` 的定义与 `replace/apply` 的实现（`shape_build` 等价模块），
+并用 grep 列出 `context_mut().replace(` 的全部调用点 —— 看**输入顶点的注册**是否覆盖这里用到的那些顶点。
+```
