@@ -21767,3 +21767,25 @@ for i in (if self.u_closed { 1 } else { 2 })..=self.grid.nb_u_patches() {
 插桩前**必须**先 grep 目标符号（第 1 步），本目标是：函数签名（§9.520 E0308）、
 借用/移动位置（§9.521 E0382）、**结构体字段名**（§9.538 E0609）。
 ```
+
+---
+
+### 9.539 —— 撤回操作本身出错（撤除切过头，多删 `let pprec = TOLINT;` 等 4 行 ⇒ 14 errors）；已从 HEAD 还原；纪律再加一条
+
+```text
+本次链条：GRIDPAR 探针（字段名错 ⇒ build 失败，未运行）→ 撤除时我用
+  `P = s[index(A)+len(A) : index("        if self.closed_mode {")]` 计算「插入的文本」，
+  但该区间**包含原始代码**（`// cxx:2142.` / `let pprec = TOLINT;` 及其空行）⇒ 删除后 `pprec` 未定义
+  ⇒ `cargo build: **14 errors**`（git diff --stat 显示 4 行删除）。
+处置：`git show HEAD:` 精确还原该文件 ⇒ `cargo check: 0 errors`、库 diff 空、`pprec` 复原。
+```
+
+**纪律（本目标累计第 4 条，均为我自身失误的产物）**：
+```text
+撤除插桩**不得用「两端锚点切片」**推断插入文本（§9.515 的花括号配平、§9.539 的锚点切片都出过错）：
+必须把**插入时使用的字符串常量原样保存**并做 `s.replace(P, A, 1)` 的精确反向替换；
+若无法保存（跨调用），则改为 `git show HEAD:<file>` 还原 **且** 先确认 HEAD 版本即期望版本
+（本次即如此：探针未入库，HEAD 就是干净版本）。
+```
+
+（本轮两次失败（字段名、撤除切头）都**未产生任何被解读的数据**，也未留下库改动：当前 `cargo check` 0 errors、库 diff 空。）
