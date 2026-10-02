@@ -21402,3 +21402,52 @@ CBO ori=Reversed nb=1 p0=(-87.500,0.000,-32.000)
    靶点应回到「**为什么 OCCT 能用同样的段拼成 22 边而端口不能**」——即段的**生成**差异
    （§9.452 的 BREAK-IN：端口 16 边 vs OCCT 侧对应段的构成），而不是候选搜索。
 ```
+
+---
+
+### 9.528 —— `:265-269` ↔ `cxx:2770-2775` 对照：`if External` 分支**一致**；`else` 分支（端口设 `Internal`）对应的 OCCT 原文如下
+
+```rust
+// 端口 collect_wires.rs:264-270
+sbwd.extend(appended);
+if seg_external {
+    seg.set_orientation(if reverse { Reversed } else { Forward });   // ↔ cxx:2770-2773 ✓ 一致
+} else {
+    seg.set_orientation(Orientation::Internal);                      // :268 ↔ cxx:2775 起（原文见下）
+}
+seqw[idx] = seg; // cxx:2778
+```
+
+```cpp
+// OCCT cxx:2774-2783
+ 2775       {
+ 2776         seg.Orientation(TopAbs_INTERNAL);
+ 2777       }
+ 2778       seqw.SetValue(index, seg);
+ 2779     }
+ 2780     else if (sbwd.IsNull())
+ 2781     {
+ 2782       break; // stop when no free segments available
+ 2783     }
+ 2784     // for first segment, remember start point
+```
+
+**判读**：
+```text
+· 端口把「非 External 的段」在**连接成功后**设为 `Internal`（:268）——这与 `:110` 的「Internal 段作候选时跳过」
+  形成一对：**已连接的段被标记 Internal，从而不会再次被选为候选**（这正是「已消费」标记的机制）。
+⇒ 与 §9.527 的重新解释一致：§9.508 统计到的 A 类（43 个 Internal）候选**是已消费段**，
+  「index == None」在这些时刻是**规格行为**，不是缺陷。
+⇒ 因此靶点回到「**段的生成差异**」：端口在 BREAK-IN 有 16 边段、最终拼出 [6,7,5,4,3,3]，
+  OCCT 同一步得到 [22,6] ⇒ 差异在 `split_by_grid`/`break_wires` 产出的**段的构成**（而非候选搜索）。
+```
+
+#### 下一轮（最后一步）
+
+```text
+① 确认 `cxx:2775-2783` 与端口 :268 同构（上面已入库原文；若不构则按 .cxx 修）；
+② 重做候选统计时**排除已消费段**（`sg` 的边与 `sbwd` 无交集才计入）⇒ 验证 A=0（预期）；
+③ 把 ② 得到的「未消费且可接」候选若为 0 ⇒ 转为对比**段的生成**：
+   端口 BREAK-IN 的 16 边段（§9.452）在 OCCT 侧对应哪几步产物（16 = 14 + 2 插入，见 §9.460 的 split_by_line_wires），
+   与 cxx:2131-2275（SplitByGrid）在该面上的切分点逐一对齐。
+```
