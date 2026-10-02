@@ -22331,3 +22331,38 @@ SHORT 标记行: 233   分布: {'SHORT edge_last': 93, 'SHORT code_minus1_2d': 7
 · `code_minus1_2d` 居多 ⇒ `is_coincided` 的 UResolution/VResolution/tol 口径；
 · 三者皆 0 且 `shorts` 仍为 0 ⇒ 说明非 1 来自更前面（`seg.first_vertex()/last_vertex()` 为 None 的第一个 else 分支）。
 ```
+
+---
+
+### 9.558 —— 【结论】`shorts=0` 的成因 = **逐边 `Vf.IsSame(LastVertex(edge))` 失败**（命中 93 次，与 `same=true` 段数 93 **完全吻合**）⇒ **顶点未统一**（同坐标、不同 TShape）
+
+#### 数据（§9.557，`build_ok=1`、精确撤除、`T101_ZZ1` 残留 0、库 diff 空）
+
+```text
+SHORT 标记行: 233       分布: { 'SHORT edge_last': **93**, 'SHORT code_minus1_2d': 70, 'SHORT ret0_3d': 70 }
+```
+
+**判定**：
+
+```text
+· `edge_last` = `IsShortSegment` 里 `if (!Vf.IsSame(sae.LastVertex(edge))) return 0;` 命中；
+· 命中数 **93 = §9.555 里 `same=true`（首末顶点同一）的段数** ⇒ **一一对应**：
+  凡「段的首末顶点是同一对象」的段，其**逐边 LastVertex 却不是该对象** ⇒
+  ⇒ 同一位置上存在**两个不同的顶点 TShape**（坐标相同、对象不同）= **顶点未统一**；
+· 对照 OCCT：其合并循环（`cxx:2853-2935`）只处理 `shorts(i)==1` 的段，而 `IsShortSegment` 要求
+  **段的每条边的 LastVertex 都与 `Vf` 是同一对象** ⇒ OCCT 侧参与合并的段（以及 `22 = 8 + 14` 的形成）
+  必然建立在**顶点已统一**的前提上；
+· `code_minus1_2d` 与 `ret0_3d` 各 70 次是**同一批非闭合段**沿另一路径的表现（不影响本条结论）。
+```
+
+#### 由此得到的最终靶点（与前几轮的 B 类线索汇合）
+
+```text
+**顶点统一**：需要让「同坐标的首末顶点」成为**同一个 TShape**，然后 `IsShortSegment` 才会对这些退化段
+返回 1 ⇒ 合并循环才会执行 ⇒ 才可能出现 `22 = 8 + 14` 的合并（§9.484 的 OCCT 对照）。
+下一步（下一次取证）：在 `load_wires`（`cxx:499-640` 的对应段）与端口侧确认**顶点从哪来**：
+  · OCCT 是否通过 `BRep_Builder`/`ShapeBuild_Vertex`/Context 把共享顶点合并（`MakeVertex`/`Add(vertex)` 的复用）；
+  · 端口侧是否每次 `Edge`/`Vertex` 构造都新建顶点（⇒ 需要按 .cxx 的同一分支统一）。
+命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
+--fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
