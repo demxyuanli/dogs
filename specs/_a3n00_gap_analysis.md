@@ -21241,3 +21241,66 @@ CNM3 行: 0        A 类候选(§9.512 CACAND): 43        命中: 0
 ④ 若两处都为空 ⇒ Internal 身份来自**切分阶段**（`split_by_grid`/`split_by_line_wires`/`break_wires`
    生成段时赋的朝向），下一步在那些生成点打印（§9.458 曾读到一个生成点是 `Orientation::External`）。
 ```
+
+---
+
+### 9.523 —— 【有效测量】`is_non_manifold`（整条 wire ⇒ Internal 段）分支：`CWM = 0`
+
+```text
+CWM 行: 0   A 类候选: 43   命中: 0
+```
+
+CWM 样本（整条 wire 被判定非流形 ⇒ 建成 Internal 段）：
+```text
+
+```
+
+判读：
+```text
+· 命中 > 0 ⇒ A 类段来自该分支 ⇒ 与 cxx:499-640 的对应判据对照；
+· CWM = 0 且 CNM3 = 0（§9.521）⇒ `load_wires` **两条分支都不产生** Internal ⇒ Internal 身份来自**切分阶段**
+  （split_by_grid / split_by_line_wires / break_wires 生成段时的朝向）⇒ 下一步在那些生成点打印。
+```
+
+---
+
+### 9.524 —— 【有效测量】`CWM = 0` + `CNM3 = 0` ⇒ **`load_wires` 两条分支都不产生 Internal 段** ⇒ Internal 身份来自**切分阶段**（靶点上移）
+
+#### 数据（§9.523，`build_ok=1`、精确反向撤除、`T101_ZZO` 残留 0、库 diff 空）
+
+```text
+CWM 行: 0（is_non_manifold 整条 wire 分支）      CNM3 行: 0（§9.521，逐边非流形分支）
+A 类候选: 43（全部 Internal，§9.508）            命中: 0
+```
+
+**结论**：
+
+```text
+`load_wires.rs` 的**两条**可能产生 `Orientation::Internal` 的分支（:52-59 与 :63-73）在本次运行中**都未触发**
+⇒ 那 43 个 A 类段的 `Internal` 身份**不是 load_wires 给的**，而是在**切分阶段**
+   （`split_by_grid` → `split_by_line_wires`/`split_by_line`/`split_wire` → `break_wires`）被赋上的。
+```
+
+#### 已读过的候选「赋 Internal 处」（供下一步逐一排查）
+
+```text
+· `break_wires.rs:113-117`：`if ori == Internal && edge.orientation() == External { cur_ori = External; … }`
+  —— 方向相反（Internal ⇒ External），不是「设成 Internal」；
+· `break_wires.rs:92/:102/:121`：`let mut newwire = WireSegment::new(); … newwire.set_orientation(cur_ori)`
+  —— 其中 `cur_ori` 初始为 `ori`（**保留**输入段的朝向）⇒ 若输入已是 Internal 则输出也是；
+· `split_by_line_wires`（`split_by_line.rs:620-630`）：`WireSegment::with_edges(vec![Edge(edge)], Orientation::External)` —— External；
+· `split_wire`：对新边 `set_orientation(edge.0.orientation())`（**拷贝源边朝向**）——若源边是 INTERNAL/EXTERNAL
+  就会一路带下来（但 §9.521 已证没有边是非 F/R）。
+```
+
+#### 下一轮（一次探针定位 setter）
+
+```text
+在 **`collect_wires` 入口**（`:38` 之后立即）打印 `seqw` 里每段的 `(orientation, nb_edges, 首点坐标)`：
+  · 与 43 个 A 类候选坐标比对 ⇒ 确认「进入 collect_wires 时就已是 Internal」；
+  · 再在 **`break_wires` 出口**与 **`split_by_grid` 出口**各打一次同一格式（§9.452/§9.455 已有先例），
+    用「哪一步之后首次出现 Internal」把 setter 夹出来（三段二分，一次运行可同时打三处）。
+判读与验收：定位到具体 setter 后与 `cxx` 同段对照（§9.439/§9.491/§9.492 同族的朝向语义问题），
+按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
+面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
