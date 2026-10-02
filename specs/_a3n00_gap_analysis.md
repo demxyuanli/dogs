@@ -18854,3 +18854,40 @@ if (code[i-1] & ITP_ENDSEG != 0 && code[i] & ITP_BEGSEG != 0) || (…) {
     · cxx 若有而端口缺 ⇒ 命中（端口中 seam 时切出零长度子段）；
     · 两侧都有 ⇒ 分歧在**交点参数**本身（即线与边的求交），转去比 `SplitByLine` 的求交段（cxx:1433-1948）。
 ```
+
+---
+
+### 9.458 —— 切线建边这步也**忠实**（cxx:2019-2057 ↔ 端口 :586-613）；由排除法锁定**逐 wire 切分器 `split_by_line`（:1-478 ↔ cxx:1433-1914）**
+
+逐项对拍（OCCT 1-based `(i-1, i)` ↔ 端口 0-based `(i-2, i-1)`）：
+
+```text
+cxx:2019-2022  tmpV1/tmpV2 = Context()->Apply(SplitLineVertex(i-1)/(i))   ↔ 端口 :586-587   ✓
+cxx:2025       canbeMerged = (i - 1 > 1 || i < SplitLinePar.Length())     ↔ 端口 :590       ✓ **含边界**
+cxx:2026-2031  aMaxTol <= 2*Confusion ⇒ Infinite                          ↔ 端口 :592-594   ✓
+cxx:2032-2033  aTol1/aTol2 = min(BRep_Tool::Tolerance(·), aMaxTol)        ↔ 端口 :595-596   ✓
+cxx:2036       aD = aP1.SquareDistance(aP2)                               ↔ 端口 :597       ✓
+cxx:2037-2038  if (par(i)-par(i-1) < PConfusion() || (canbeMerged && (aD<=tol1² || aD<=tol2²)))
+                                                                          ↔ 端口 :598-600   ✓ **有符号比较一致**
+cxx:2044-2056  !V1.IsSame(V2) ⇒ CombineVertex + Context()->Replace，然后 **continue**（不建边）
+                                                                          ↔ 端口 :601-612   ✓
+cxx:2059+      否则建边（两条 pcurve + pcurve_range/edge_range）           ↔ 端口 :616-625   ✓
+```
+
+**结论（排除法闭环）**：
+
+```text
+迄今已逐个排除或判定忠实：
+  load_wires · split_by_grid 的网格构造/切分循环调度 · break_wires · collect_wires ·
+  SplitByLine 的「交点合并」(cxx:1948-1965) · 「沿切线建边」(cxx:2019-2057)
+⇒ 剩下的唯一去处：**逐 wire 切分器** `split_by_line`（端口 `split_by_line.rs:1-478` ↔ `cxx:1433-1914`），
+  即「把**原始 wire 的边**按与切线的交点切成若干子段」那一步——
+  两条零长度 WireSegment（(±87.5,0,-32)->同点）只可能由它把一条边切出一个零长度子段而来。
+```
+
+**下一轮（唯一剩下的读）**：端口 `split_by_line`（:1-478）里**生成子段**的那段，与 `cxx:1433-1914` 对拍，
+专找「子段参数区间长度 ≈ 0 ⇒ 跳过/并入」的判据；若两侧都有，则分歧在**交点参数**（线与边的求交）。
+命中即按 `.cxx` 修 → 跑 §9.448 验收（`zz_seam_fix 113` → Face；`--model 113` → wires=2（22+6）；
+`--fstats` → face=113 mt≈228；a3n00 面积比 ≥0.8996 且上升；`t101_verify.ps1` 全绿）。
+
+（本轮所有 TEMP 插桩均已 `git show HEAD` 还原；`git diff --stat crates/occt-topo/src` 为空。）
