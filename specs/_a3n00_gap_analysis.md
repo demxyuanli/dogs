@@ -23133,3 +23133,45 @@ let a_nm_vertices: Vec<Vertex> = {
   · 若经 Context ⇒ 改查 §9.558 的 `IsShortSegment` 侧为何仍见旧对象（可能是 `saE.LastVertex` 的实现口径）。
 （本目标还剩 3 轮：158-160；本轮已把因果链修正到「WireSegment 端点 vs 边顶点」这一最后分叉。）
 ```
+
+---
+
+### 9.577 —— 对照完成：`WireSegment` 端点访问器**忠实**（`wire_segment.rs:121-128` ↔ `ShapeFix_WireSegment.cxx:89-101`）⇒ §9.576 的「缓存旧顶点」假设否掉；由此把「93 处 edge_last 失败」解释为**规格行为**
+
+#### A. 对照（逐条一致）
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `FirstVertex() = sae.FirstVertex(myWire->Edge(1))`（:89-93） | `self.edges.first().and_then(crate::shhealing::first_vertex)`（:121-123） | ✓ |
+| `LastVertex() = sae.LastVertex(myWire->Edge(NbEdges))`（:97-101） | `self.edges.last().and_then(crate::shhealing::last_vertex)`（:126-128） | ✓ |
+| `IsClosed() = FirstVertex().IsSame(LastVertex())`（:105-110） | `is_same(&a.0, &b.0)`（:130-136） | ✓ |
+| `Edge(i)` 1-based（:128-132） | `edges.get(i-1)`（:143-146） | ✓ |
+
+⇒ 访问器**读的是边上的活顶点**（与 OCCT 同），**不缓存副本** ⇒ §9.576 的假设**否掉**。
+
+#### B. 把 §9.558 的 93 次 `edge_last` 失败解释为**规格行为**
+
+```text
+`IsShortSegment` 的循环要求**段的每一条边**的 `LastVertex` 都与 `Vf` 是同一对象
+（`cxx:2414-2420` = 端口 :… 同式，§9.554 已八项对齐）：
+  · 对**单边闭合退化段**：`first_vertex(edge) == last_vertex(edge)` ⇒ 检查通过；
+  · 对**多边段**（例如 §9.531 见到的 nb=7 / nb=5，或闭合的多边环）：除首尾外的边必然终止于**别的顶点**
+    ⇒ 检查**必然失败** ⇒ `return 0` ⇒ `shorts=0`。
+⇒ 因此 93 次 `edge_last` 命中在**给定该段集合**的前提下，是**与 OCCT 相同的行为**，不是缺陷。
+```
+
+#### C. 本目标的最终状态（诚实结论）
+
+```text
+· 至本轮为止，`ShapeFix_ComposeShell` 链上**每一处能够与 .cxx 对照的环节都被判定忠实**：
+  LoadWires（§9.521/§9.523 两条产 Internal 分支实测 0 次）、SplitByGrid（头部/closed/调用侧 §9.534-§9.536）、
+  SplitByLine 内部（守卫①精确命中 §9.551；交点参数 §9.546/§9.547）、SplitWire 的三个建顶点分支与
+  顶点统一机制（§9.560/§9.561/§9.563 逐条一致）、BreakWires（§9.452/§9.525）、CollectWires
+  （候选/连接/消费标记/合并入口 §9.498-§9.558）、DispatchWires（§9.477）、FixDegenerated/CheckDegenerated
+  （§9.478-§9.483）、IsShortSegment（§9.554 八项一致）、WireSegment 访问器（本节）；
+· 唯一**实测到的差异事实**仍是：`shorts` 全为 0 ⇒ 合并循环空转 ⇒ 8+14 不成 22；
+  但该事实**已被解释为在相同段集合下的规格行为** ⇒ 真正的差异应落在**段集合本身**
+  （§9.452 的 BREAK-IN：端口 16 边 vs OCCT 侧构成），而要在 OCCT 侧取到同一时点的段列表，
+  需要 OCCT 侧插桩（本环境未做）。
+· 已落地且经门禁验证的修正仍为两处（§9.463、§9.492）；红线 §9.439 未触碰。
+```
