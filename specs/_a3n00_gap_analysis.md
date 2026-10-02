@@ -21900,3 +21900,26 @@ GRIDC 行: 47        closed_mode 分布: {'true': 47}
 随后与 OCCT `cxx:2229-2251` 的分支/取值逐项对齐（`UJointValue(1)`、`cutIndex=i`），
 若一致 ⇒ 差异确定在 `SplitByLine` 内部数值（线与边的求交），转入该输入上的交点数/参数取证。
 ```
+
+---
+
+### 9.544 —— 单行无歧义探针（网格量 + line.pos/cut_index + 切后零长度数），只对 U-else 分支
+
+```text
+CUTU 行: 29
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+   CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=2
+```
+
+判读：
+```text
+· 若输出显示 `pos=3.141593`（=UJointValue(1)=π）、`cut_index=1`、`zero>=1` ⇒ 产生 F113 零长度段的正是
+  走 **else 分支** 的这次 U 线切分（线在 π）——则 §9.456 的 `line=0` 记录确属他面 ⇒ 以本条为准；
+· 若 `zero` 在 else 分支始终为 0 ⇒ 零长度段由**别的调用**（U-closed 分支或 V 线）产生 ⇒ 需扩展到四处调用点。
+```
