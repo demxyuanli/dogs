@@ -20806,3 +20806,41 @@ A 类合计：Fwd=0  Rev=0  **Internal=43**  Other=0   |   vertex=0  段=43
 · 若 vertex 占多数 ⇒ 命中 `:106`；
 · 若 Fwd/Rev 占多数且非 vertex ⇒ 两处均非原因，需重新审视 :133 之后是否还有未计入的过滤。
 ```
+
+---
+
+### 9.509 —— 【决定性确认】「无候选」时刻的 A 类候选**43/43 全是 `Internal` 段**（vertex 0 个）⇒ 挡住它们的就是 `:110`
+
+#### 实测（§9.508，25 行，`sbwd_nb ≥ 3`）
+
+```text
+A 类合计：Fwd=0   Rev=0   **Internal=43**   Other=0   |   vertex=0   段=43
+CAOR sbwd_nb=7  A_int=1 A_seg=1     CAOR sbwd_nb=4  A_int=2 A_seg=2
+CAOR sbwd_nb=3  A_int=2 A_seg=2     CAOR sbwd_nb=15 A_int=1 A_seg=1
+CAOR sbwd_nb=8  A_int=2 A_seg=2     CAOR sbwd_nb=6  A_int=1 A_seg=1
+（25/25 行同型：A 类候选**全部**为 Internal、**无一**为 vertex）
+```
+
+**判定**：
+
+```text
+· `:106 seg.is_vertex()` 未命中（A_vertex = 0）；
+· `:110 if an_or == Orientation::Internal { continue; }` **正好命中全部 A 类候选**
+  ⇒ 端口把「顶点相接、本可接续」的候选**因它们是 Internal 段而全部跳过**
+  ⇒ `index` 只能为 None ⇒ 链在此断开 ⇒ 外环被拆成多条 wire（[6,7,5,4,3,3]）
+  ⇒ 与 OCCT 的 [22,6] 差异的直接机制**找到了**。
+· 这些段的 Internal 身份来自 `collect_wires.rs:68-72`（`isshort > 0 && (External || one_degenerated) ⇒ set Internal`）
+  或 `load_wires` 的非流形段（§9.476/§9.486 已读）。
+```
+
+#### 最后一步（唯一剩余对照）
+
+```text
+读 `ShapeFix_ComposeShell.cxx:2570-2624`（找下一个要连接的段），核对 OCCT 是否**同样**用
+「`TopAbs_INTERNAL` ⇒ 跳过」这一条：
+  · 若 OCCT **不跳过** Internal（或只在更窄条件下跳过）⇒ 端口多了一条不该有的过滤 ⇒ 按 .cxx 修
+    （把 `:110` 的条件对齐 cxx）⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
+    --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）；
+  · 若 OCCT 同样跳过 ⇒ 分歧在**更上游**：那些段在 OCCT 里**不该是 Internal**
+    （即端口在 `:68-72` 或 `load_wires` 里把带 External 身份的段错标成 Internal）⇒ 需对拍该处判据。
+```
