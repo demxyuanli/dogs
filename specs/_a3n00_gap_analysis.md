@@ -18808,3 +18808,49 @@ dispatch_wires       → 5 张面 → Shell(5) → reader 只收 Face ⇒ 丢弃
   zz_seam_fix 113 → Face；--model 113 → wires=2（22+6 边）；--fstats → face=113 mt≈228；
   a3n00 面积比 ≥0.8996 且上升；t101_verify.ps1 全绿。
 ```
+
+---
+
+### 9.457 —— 「合并零长度切向段」这一步**忠实**（含删除后 `i += 1`）；靶点移向逐 wire 的切分器 `split_by_line`
+
+对拍 `ShapeFix_ComposeShell.cxx:1948-1965` ↔ 端口 `split_by_line.rs:518-545`：
+
+```cpp
+// OCCT:1949-1964（1-based，比较 (i, i+1)）
+for (i = 1; i < SplitLinePar.Length(); i++) {
+  if (std::abs(SplitLinePar(i+1) - SplitLinePar(i)) > PConfusion && !SplitLineVertex(i).IsSame(SplitLineVertex(i+1))) continue;
+  if ((Code(i)&ITP_ENDSEG && Code(i+1)&ITP_BEGSEG) || (Code(i)&ITP_BEGSEG && Code(i+1)&ITP_ENDSEG)) {
+    int code = (Code(i) | Code(i+1)) & IOR_BOTH;
+    Code.SetValue(i, code | (code == IOR_BOTH ? ITP_INTER : ITP_TANG));
+    Par.Remove(i+1); Code.Remove(i+1); Vertex.Remove(i+1);
+  }
+}
+```
+```rust
+// 端口:519-545（0-based，等价配对 (i-1, i)）
+if (par[i]-par[i-1]).abs() > PCONFUSION && !is_same(&vertex[i-1].0, &vertex[i].0) { i += 1; continue; }
+if (code[i-1] & ITP_ENDSEG != 0 && code[i] & ITP_BEGSEG != 0) || (…) {
+    let code = (split_line_code[i-1] | split_line_code[i]) & IOR_BOTH;
+    split_line_code[i-1] = code | (if code == IOR_BOTH { ITP_INTER } else { ITP_TANG });
+    par.remove(i); code.remove(i); vertex.remove(i);
+    i += 1;      // 与 OCCT 的 for 增量一致（端口已有注释论证）
+}
+```
+
+⇒ **判定：忠实**（配对、条件、`code` 合成、删除「后者」、删除后 `i += 1` 全都对上）。
+
+#### 关键澄清与新的靶点
+
+```text
+`split_line_par/code/vertex` 是「切线与该 wire 的交点序列」，**不是**结果里的 WireSegment 列表
+⇒ 这一步合并的是**交点**，它不可能消掉已经生成成段的两条「零长度 WireSegment」。
+那两条 (±87.5,0,-32)->同点 的段来自**逐 wire 的切分器** `split_by_line`
+（端口 `split_by_line.rs:1-478` ↔ `ShapeFix_ComposeShell.cxx:1433-1914`）——
+即「把一条边按与切线的交点切成若干子段」的那一步。
+
+下一轮（最后一个函数、最后一次对拍）：
+  读端口 `:1-478` 里**生成子段**的那段（沿 `split_line_par` 走线、按奇偶与 code 建子段），
+  与 cxx:1967-2110 同行对拍，专找 **「子段参数区间长度 ≈ 0 ⇒ 跳过」** 这类判据：
+    · cxx 若有而端口缺 ⇒ 命中（端口中 seam 时切出零长度子段）；
+    · 两侧都有 ⇒ 分歧在**交点参数**本身（即线与边的求交），转去比 `SplitByLine` 的求交段（cxx:1433-1948）。
+```
