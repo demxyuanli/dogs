@@ -20553,3 +20553,41 @@ for j in 0..2usize {
 ② 读 `:171-230`（2D 切向 / 距离 / w1 / tail1 / tail2）↔ `cxx:2654-2722`，逐项核对权重构造。
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收。
 ```
+
+---
+
+### 9.502 —— `can_be_closed` 是**瞬态标志** ⇒ `:135` 过滤退化为「patch 优先级规则」，不是阻塞点；唯一剩余嫌疑 = `:215` 权重比较
+
+`can_be_closed` 的全部出现（`collect_wires.rs`）：
+
+```text
+:89   let mut can_be_closed = false;                                  // 初始化
+:135  if !sp && (can_be_closed || (index.is_some() && samepatch)) { continue; }   // 候选过滤
+:152  if index.is_none() && !can_be_closed { … 同边分支设 index … }
+:310  can_be_closed = same_v(&end_v, &first_v);                      // ← 仅在「推出前」判定
+:312  || (can_be_closed && …)                                        // 推出条件的一部分
+:329  can_be_closed = false;                                         // 推出后复位
+```
+
+**判读**：
+
+```text
+· `:310` 处于**推出分支**（`:309` 的 cxx:2824-2846 段）内，`:329` 紧随其后复位
+  ⇒ `can_be_closed == true` 只存在于「`:310` → `:312`/`:329`」这几行之间，
+    **不可能存活到下一次候选搜索**（搜索发生在循环开头的 `:104-230`）。
+  ⇒ 在候选搜索里 `:135` 的 `can_be_closed` 项**实际恒为 false**
+  ⇒ `:135` 退化为：`!sp && index.is_some() && samepatch ⇒ continue`
+    （即「已有同 patch 候选时，跳过非同 patch 候选」——这是合理的优先级规则）✓ **不是阻塞点**。
+· `:152` 的 `!can_be_closed` 同理恒为 true ⇒ 同边分支的条件实为 `index.is_none()` ✓（§9.501 已判）。
+```
+
+#### 唯一剩余嫌疑（本目标的最后一个对拍窗口）
+
+```text
+`:215` `if w1 + tail1 <= weigth + tail2 { continue; }`（cxx:2696-2722）
+  ⇒ `w1 / tail1 / tail2 / weigth` 的构造若与 `cxx` 不同构，就会出现「存在同一对象候选却 index=None」。
+  读数（§9.500）：25/25 行的「无候选」时刻都存在 A 类（同一对象）候选 ⇒ 说明它们**进到了比较**却被否掉
+  ⇒ 要么 `w1` 算得偏小，要么 `weigth` 初值/更新偏大。
+  下一轮：读 `:171-230`（2D 切向 / 距离 / w1 / tail1 / tail2）↔ `cxx:2654-2722`，逐项核对；
+  必要时用同一「一轮内插桩→跑→撤除」流程打印每次比较的 `w1/tail1/weigth/tail2`（4 个数即可定论）。
+```
