@@ -22664,3 +22664,51 @@ occt-topo/src/shhealing/shape_fix_face.rs                3     ← 另一处使�
 · 与 §9.439 红线无冲突（本次不动 FixDummySeam 顶点朝向）；
 · 本次改动属于「**有同等分支才改**」：OCCT 有深度重建、端口注释自述省掉了它（§9.564）。
 ```
+
+---
+
+### 9.566 —— OCCT `ShapeBuild_ReShape::Apply` / `BRepTools_ReShape::Apply` 实现规格（读码）——下一轮据此实现端口 `MapReShape::apply` 的深度重建
+
+#### A. OCCT 骨架（两处同名实现同构）
+
+```cpp
+TopoDS_Shape Apply(const TopoDS_Shape& shape, const TopAbs_ShapeEnum until) {
+  NCollection_Map<handle<TopoDS_TShape>> anInFlight;
+  return applyImpl(shape, until, anInFlight);
+}
+TopoDS_Shape applyImpl(const TopoDS_Shape& theShape, TopAbs_ShapeEnum theUntil,
+                       NCollection_Map<handle<TopoDS_TShape>>& theInFlight) {
+  if (theShape.IsNull()) return theShape;
+  TopoDS_Shape aNewShape = Value(theShape);        // ① 直接替换（Replace 记录的绑定）
+  if (aNewShape.IsNull()) return aNewShape;        //    被移除 ⇒ 返回空
+  if (theShape.ShapeType() == theUntil) return aNewShape;   // ② 到 until 即停
+  … DFS 循环保护（theInFlight：若该 TShape 已在上层处理中 ⇒ 直接返回，避免自环）…
+  … 按 st（COMPOUND / COMPSOLID / SOLID / SHELL / FACE / WIRE / EDGE）用 **apply 后的子形状**重建，
+    以 `modif` 记录「是否发生过替换」，**仅当 modif 时**返回重建后的形状，否则返回原形状 …
+}
+```
+
+#### B. 端口实现规格（唯一改动点：`reshape.rs::MapReShape::apply`）
+
+```text
+1) 保留现状「直接绑定优先」：`if let Some(r) = self.map.get(&key(s)) { return r.clone(); }`；
+2) 增加 DFS 防环（`HashSet<usize>`，键同 `key`）——OCCT 的 `theInFlight`；
+3) 按 `ShapeType` 重建**仅当子形状确有替换**（等价 OCCT 的 `modif` 判定）：
+   · EDGE   ：对首末顶点各 `apply` 一次；若任一结果与原顶点**非同一**（`key` 不同）⇒ 用
+              `copy_replace_vertices_with`（§9.563 已证语义正确）重建边，保留曲线/容差/朝向/位置；
+   · WIRE   ：对每条边 `apply`；若有变化 ⇒ 用原有构建路径重建 wire；
+   · FACE / SHELL / COMPOUND：对子形状 `apply`；若有变化 ⇒ 重建（组合式装配）；
+   · VERTEX / 其它：直接返回（现状）；
+4) **无替换路径必须与现状逐位相同**（返回原对象，不重建）⇒ 基线不应变化；
+5) `replace` 语义不动（键仍是 TShape 身份，与 OCCT 的 `TopTools_ShapeMapHasher`=`IsSame` 一致）。
+```
+
+#### C. 验收（按 §9.565-C 的五步）
+
+```text
+a) `cargo check` 0 errors；
+b) `zz_seam_fix 113` → result **Face**；
+c) `zz_uv_feed --model 113` → wires=2（22+6）；`--fstats` → face=113 mt≈228；
+d) `pwsh -File .target-gate\t101_verify.ps1` 全绿 **且** 逐模型面积比对照基线（任何偏移立即报告，不动容差/基线）；
+e) 单独提交并记录修改前后实测数字。
+```
