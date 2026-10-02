@@ -21063,3 +21063,23 @@ CFLIP 样本（`isshort>0 && (External || one_degenerated)` 命中并被改 Inte
 3) 用精确字符串反向替换撤除（保留插入文本常量），复核 `T101_*/CFLIP` 计数为 0 且 `cargo check` 0 errors。
 4) 判读：A 类候选 p0 是否出现在 CFLIP 集合中。
 ```
+
+---
+
+### 9.516 —— 修正配方重跑（单一探针 CFLIP，build 已确认 0 errors）：A 类候选与「真正被改 Internal 的段」的交叉比对
+
+```text
+CFLIP 行: 0   A 类候选(§9.512 CACAND): 43
+A 类候选中 p0 出现在 CFLIP 里的: 0 / 43
+```
+
+CFLIP 样本（`isshort>0 && (External || one_degenerated)` 命中并**真正被改** Internal 的段）：
+```text
+
+```
+
+判读：
+```text
+· 命中 > 0 ⇒ A 类段的 Internal 身份来自 :68-72（isshort/one_degenerated 判据）⇒ 靶点=该判据 ↔ cxx:2519-2549；
+· 命中 = 0（且 CFLIP 行数可为 0，说明本次没有任何段在 :71 被改）⇒ A 类段本就是 Internal ⇒ 靶点上移到 load_wires/切分阶段。
+```
