@@ -22315,3 +22315,19 @@ SV 行: 154        same=true: **93**      （61 段 same=false，属正常非闭
 ⇒ 若多为 `2d`（code = -1）⇒ `IsCoincided` 的 `UResolution/VResolution/tol` 口径问题。
 三条都是**可对照 .cxx 修正的具体判据**，命中即修 ⇒ 跑 §9.448 验收。
 ```
+
+---
+
+### 9.557 —— `is_short_segment` 内三处「非 1」路径的分支标记实测（单探针、build 断言、精确撤除）
+
+```text
+SHORT 标记行: 233   分布: {'SHORT edge_last': 93, 'SHORT code_minus1_2d': 70, 'SHORT ret0_3d': 70}
+```
+
+判读（按 §9.556）：
+```text
+· `edge_last` 居多 ⇒ **顶点未统一**（同位置两个 TShape）⇒ 靶点=顶点统一；
+· `ret0_3d` 居多 ⇒ 3D 检查口径（`grid_surface.value_uv` / `vertex_tolerance`）；
+· `code_minus1_2d` 居多 ⇒ `is_coincided` 的 UResolution/VResolution/tol 口径；
+· 三者皆 0 且 `shorts` 仍为 0 ⇒ 说明非 1 来自更前面（`seg.first_vertex()/last_vertex()` 为 None 的第一个 else 分支）。
+```
