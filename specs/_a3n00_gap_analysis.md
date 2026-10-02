@@ -22278,3 +22278,40 @@ same=true 样本：
 · 若某段 `f` 与 `l` 坐标相同而 `same=false` ⇒ **顶点未统一**（同位置两个 TShape）⇒ 靶点=顶点统一；
 · 若 `f` 与 `l` 坐标不同 ⇒ 段不闭合 ⇒ shorts=0 合理 ⇒ 靶点回到段的生成（但切分已证忠实）。
 ```
+
+---
+
+### 9.556 —— 【有效测量】93/154 段**首末顶点同一**（`same=true`）⇒ `shorts=0` 的原因在 `IsShortSegment` 的**后续检查**（三选一）
+
+#### 数据（§9.555，`build_ok=1`、精确撤除、`T101_ZZ0` 残留 0、库 diff 空）
+
+```text
+SV 行: 154        same=true: **93**      （61 段 same=false，属正常非闭合段）
+样本：
+  i=0 nb=1 ori=Internal f=(-39.598,34.598,-18.000) l=(-39.598,34.598,-18.000) same=true
+  i=2 nb=1 ori=Internal f=(-39.598,34.598,-16.000) l=(-39.598,34.598,-18.000) same=false
+  i=0 nb=1 ori=Internal f=(34.598,39.598,-18.000)  l=(34.598,39.598,-18.000)  same=true
+```
+
+**判定**：
+
+```text
+· 93 段通过 `IsShortSegment` 的**第一道检查**（`FirstVertex.IsSame(LastVertex)`，且坐标相同）
+  ⇒ 它们的 `shorts` 若为 0，必是**后续**某处导致（注意：`code = -1` 也会让 `shorts != 1` 而被合并循环跳过）；
+· `IsShortSegment` 内可能导致「非 1」的三处（按执行顺序）：
+   ① 逐边检查 `if (!Vf.IsSame(sae.LastVertex(edge))) return 0;` —— 若同位置存在**未统一**的两个顶点 ⇒ 命中；
+   ② `sae.PCurve(...)` 失败 ⇒ `continue`（**不**返回 0）⇒ 不会单独造成 0；
+   ③ 2D 检查 `IsCoincided(endPnt, midPnt, URes, VRes, tol)` 失败 ⇒ `code = -1`（⇒ 合并循环同样跳过）；
+   ④ 3D 检查 `myGrid->Value(midPnt)` 与 `pnt` 的距离 > `tol` ⇒ `return 0`。
+```
+
+#### 下一轮（一次探针即可定论：在 `IsShortSegment` 内打**分支标记**）
+
+```text
+在该函数内对**首末同一**的段（或全部段，输出量 154 行内）打印命中的分支：
+  `i / return0_reason(first|edge_last|3d) | code = 1 | code = -1 (2d) / 边序号 j`
+⇒ 若多为 `edge_last` ⇒ **顶点未统一**（同位置两个 TShape）⇒ 靶点=顶点统一（对照 cxx:499-640 的 LoadWires/MakeVertex）；
+⇒ 若多为 `3d` ⇒ 3D 检查的容差/取值口径问题（`myGrid->Value` ↔ `grid_surface.value_uv`、`Tolerance(Vf)`）；
+⇒ 若多为 `2d`（code = -1）⇒ `IsCoincided` 的 `UResolution/VResolution/tol` 口径问题。
+三条都是**可对照 .cxx 修正的具体判据**，命中即修 ⇒ 跑 §9.448 验收。
+```
