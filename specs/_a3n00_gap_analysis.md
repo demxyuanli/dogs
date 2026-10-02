@@ -22074,3 +22074,28 @@ GUARD4 行: 62
 据此可直接判定：唯一交点落在首/末参数时，端口走的是哪条守卫、以及为何仍产生零长度段
 （若两条守卫都不命中而 `curr` 与端点数值相同 ⇒ **比较口径/容差**问题，与 §9.439/§9.491/§9.492 同族）。
 ```
+
+---
+
+### 9.550 —— 循环体内的四参数实测（单探针、build 断言、精确 A+P→A 撤除）
+
+```text
+GLOOP 行: 78
+   GLOOP j=1 stop=2 start=1 nv=1 first=3.141592654 last=9.424777961 prev=3.141592654 curr=9.424777961 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=3.141592654 last=9.424777961 prev=3.141592654 curr=9.424777961 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=3.141592654 last=9.424777961 prev=3.141592654 curr=9.424777961 dlast=0.000e0 dprev=6.283e0
+   GLOOP j=1 stop=2 start=1 nv=1 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654 dlast=0.000e0 dprev=6.283e0
+```
+
+判读：
+```text
+· 看 `dlast/dprev` 是否 < PCONFUSION ⇒ 守卫①/②是否命中；
+· 若循环体**根本没执行**（GLOOP=0）⇒ 该边的交点列表为空或 `start > stop` ⇒ 分歧在**循环入口条件/交点列表**；
+· 若执行且两守卫都不命中而 curr 数值上等于端点 ⇒ **容差口径**问题。
+```
