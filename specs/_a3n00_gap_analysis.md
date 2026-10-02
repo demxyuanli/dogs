@@ -19147,3 +19147,31 @@ PIECE 总行: 56       其中 **len < 1e-3 的行: 0**
 **下一轮**：给 `:113/:446/:448/:466` 四处各加同款 `plen` 取证（同一次运行即可判完），找出零长度段真正的产生点；
 若四处都干净 ⇒ 说明零长度 `WireSegment` 不是 `split_wire` 造的，需回头查 `split_by_line` 里
 `split_wire` 返回后的装配（`:465-469` 把 `int_line_par/int_code/int_vertices` 推入三个输出数组）是否有错位。
+
+---
+
+### 9.466 —— 反直觉读数：`split_by_line` → `split_wire` 这条切分路径在本次运行里**从未以 `n_par ≥ 6` 执行**（0 行）
+
+在 `split_by_line` 调 `split_wire` 之前（`cxx:1900-1903`）插入参数取证（env `T101_ZZ7`，
+条件 `int_edge_par.len() >= 6`；**已 `git show HEAD` 还原**）：
+
+```text
+PAR 行数: **0**
+```
+
+⇒ 整趟运行中，**没有任何一次** `split_by_line` 在 `int_edge_par.len() >= 6` 时走到 `split_wire`。
+这有两种解释，都必须先分清（下一轮一次运行即可）：
+
+```text
+(a) F113 的那些长 wire（16 边/6 边）在 `split_by_line` 里**提前返回**了：
+      · `:345-347`  `if n_par == 0 { return false; }`（无交点）
+      · `:369-397`  `wire.orientation() == Internal` 分支 / `:398-400` `if int_edge_par.is_empty() { return false; }`
+      · 或更早的 `return`（`:31-290` 段里的各处）
+    ⇒ 那这些 wire 根本没被「按线切」，零长度段另有来源；
+(b) 过滤条件太严（该次切分实际只有 1–5 个交点）⇒ 把条件放宽到 `>= 1` 并同时打印**走到了哪个提前返回点**。
+```
+
+**下一轮**：把探针放宽为「`n_par >= 1` 时打印 `n/ind/par`」，并在 `split_by_line` 的**每个 early-return 处**打一次标记
+（`RET-n0` / `RET-internal` / `RET-empty`），一次运行即可判定 F113 的 6 边与 16 边 wire 究竟走哪条路；
+若确认是「提前返回 ⇒ 根本没切」，则零长度段必然来自 `split_by_grid` 里**切分之外的**部分
+（网格构造写回 `seqw` 的那几行），需回头对拍 `cxx:2131-2210`。
