@@ -20591,3 +20591,29 @@ for j in 0..2usize {
   下一轮：读 `:171-230`（2D 切向 / 距离 / w1 / tail1 / tail2）↔ `cxx:2654-2722`，逐项核对；
   必要时用同一「一轮内插桩→跑→撤除」流程打印每次比较的 `w1/tail1/weigth/tail2`（4 个数即可定论）。
 ```
+
+---
+
+### 9.503 —— `:215` 权重比较的四数取证（一轮内插桩→跑→撤除；库 diff 空）
+
+```text
+CWT 行: 180   被否(rej=true): 42   被采纳: 138
+weigth 取值分布: {'0': 137, '28': 29, '24': 13, '20': 1}
+被否样本（前 8）：
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+   j=1 w1=20 tail1=0 weigth=28 tail2=1 lhs=20 rhs=29
+```
+
+判读（下一轮据四数定论）：
+
+```text
+· 若被否样本多为 `lhs <= rhs` 且 `w1` 明显偏小/`weigth` 偏大 ⇒ 权重构造（w1/tail1/tail2）与 cxx:2696-2722 不等价；
+· 若 `weigth` 恒为 0（初始值）而 `lhs <= 0` 才被否 ⇒ 说明候选 `w1` 算得 0 ⇒ 回到 `:200-213` 的 w1/tail 构造；
+· 若被否的 lhs/rhs 差为 0（相等）⇒ 检查判据用的是 `<=`（端口）还是 `<`（cxx）。
+```
