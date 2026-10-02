@@ -21014,3 +21014,23 @@ CACAND 样本: ori=Internal nb=7 p0=(-8.900,33.805,-69.638) · nb=5 p0=(38.733,2
     Internal 身份来自 `:68-72` ⇒ 靶点 = 该判据（isshort / one_degenerated）↔ cxx:2519-2549；
   · 若不在 ⇒ 它们本就是 Internal（来自 load_wires 的非流形分类或切分阶段）⇒ 靶点相应上移。
 ```
+
+---
+
+### 9.514 —— 修正探针实测（只报**真正被改**的段）：`CFLIP` 与 A 类候选的交叉比对
+
+```text
+CFLIP 行: 0   CACAND2 行: 43
+A 类候选中 p0 出现在 CFLIP 里的: 0 / 43
+```
+
+CFLIP 样本（`isshort>0 && (External || one_degenerated)` 命中并被改 Internal 的段）：
+```text
+
+```
+
+判读：
+```text
+· 命中数 > 0 ⇒ A 类段的 Internal 身份**确实来自 :68-72** ⇒ 靶点 = 该判据(isshort/one_degenerated) ↔ cxx:2519-2549；
+· 命中数 = 0 ⇒ A 类段本就是 Internal(load_wires 非流形分类或切分阶段) ⇒ 靶点上移。
+```
