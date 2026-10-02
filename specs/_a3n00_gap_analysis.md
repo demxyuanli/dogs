@@ -18768,3 +18768,43 @@ dispatch_wires    : 5 张面 → perform 包成 Shell(5) → reader 只收 Face 
 **下一轮靶点**：给 `split_by_line_wires` 的 **4 个调用点**各埋一次「切前/切后」打印，
 **带上该次切的参数**（线的 `pos/dir`、`cut_index`、U/V 标志），从而指认**是哪一条线、切点参数是多少**
 把段切成了零长度；随后与 `cxx:1433-1914` 的同分支判读（切点是否落在端点 ⇒ 应跳过却没跳过）。
+
+---
+
+### 9.456 —— **抓到那一次切分**：U 方向、线 u=0.000000（seam 线）、`cut_index=1`；切完立刻出现两条零长度段（位置=两个 seam 点 ±87.5）
+
+在 `split_by_grid` 的 **4 个 `split_by_line_wires` 调用点**各埋一次「切后」打印，并带上该次切的参数
+（env `T101_ZZ5`，仅当段列表含零长度段时打印；插桩已 `git show HEAD` 还原）。
+F113 那一次（`.target-gate/cut113.txt`）：
+
+```text
+CUT U uv=U line=(0.000000,0.000000) cut_index=1 segs=6 nb=[6, 16, 1, 1, 1, 1]
+      ZEROS=["nb=1 ( 87.500,0.000,-32.000)->( 87.500,0.000,-32.000)",
+             "nb=1 (-87.500,0.000,-32.000)->(-87.500,0.000,-32.000)"]
+```
+
+⇒ **元凶是「按 U 线切」中，线落在 u=0（本面的 seam 线）、`cut_index=1` 的那一次**：
+切完之后段列表里立刻出现两条 **零长度段**，其顶点正是这张圆柱面的**两个 seam 点**
+（`x=±87.5, y=0, z=-32`）。
+
+配合 §9.455（`GRID-PRE` 干净、`GRID-POST` 出现 zero=2）与 §9.454/§9.453/§9.452，链条现在是：
+
+```text
+load_wires           干净
+split_by_grid        PRE 干净 → **U 线 u=0 / cut_index=1 的这一次切分** → 出现 2 条零长度段(±87.5)
+break_wires          只切链（16 → 7+5+4），zero 不变
+collect_wires        只组装（1 边段 → 3 边薄片），zero 不变
+dispatch_wires       → 5 张面 → Shell(5) → reader 只收 Face ⇒ 丢弃
+```
+
+#### 下一轮（最后一个未知量已定位到一个分支）
+
+```text
+读 `split_by_line_wires`（`SplitByLine`：cxx:1433-1914）里 **U 方向、线在 u=0/seam、closed-mode** 那条分支，
+与 cxx 同行对拍，重点看 **「切点与边端点重合」时的处理**：
+  · OCCT 侧该处是否有「切点 ≈ 端点 ⇒ 不切 / 直接把边并入」的判据（如 `Precision::PConfusion()` 比较）；
+  · 端口是否缺这条判据（于是把一个端点切成了一段零长度边）。
+命中即按 .cxx 修（不加特例），验收口径见 §9.448：
+  zz_seam_fix 113 → Face；--model 113 → wires=2（22+6 边）；--fstats → face=113 mt≈228；
+  a3n00 面积比 ≥0.8996 且上升；t101_verify.ps1 全绿。
+```
