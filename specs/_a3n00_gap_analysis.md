@@ -20354,3 +20354,47 @@ CREJ 行: 25；其中 sbwd_nb>=3 的 25 行
   （Context/CombineVertex 路径），按 .cxx 统一顶点；
 · 若 cand_near=0 ⇒ 剩余段**根本不相邻** ⇒ 靶点回到候选循环的更早判据（misoriented/is_same_patch 的优先序）。
 ```
+
+---
+
+### 9.497 —— 判读 §9.496：两类机制**同时存在**（多数是「根本不相邻」`cand_near=0`；至少一处是「顶点未统一」`near=1/same=0`）
+
+#### 数据（25 行，`sbwd_nb ≥ 3` 的「无候选 ⇒ 推出」时刻）
+
+```text
+CREJ sbwd_nb=7  seqw=8 cand_total=26 cand_near=0 cand_same=0
+CREJ sbwd_nb=5  seqw=8 cand_total=26 cand_near=0 cand_same=0
+CREJ sbwd_nb=4  seqw=8 cand_total=26 cand_near=1 cand_same=1
+CREJ sbwd_nb=3  seqw=8 cand_total=26 cand_near=1 cand_same=1
+CREJ sbwd_nb=15 seqw=4 cand_total=15 cand_near=0 cand_same=0
+CREJ sbwd_nb=5  seqw=4 cand_total=15 cand_near=0 cand_same=0
+CREJ sbwd_nb=8  seqw=4 cand_total=15 cand_near=1 cand_same=1
+CREJ sbwd_nb=6  seqw=4 cand_total=7  cand_near=1 cand_same=**0**     ← 坐标相邻、对象不同
+CREJ sbwd_nb=5  seqw=3 cand_total=4  cand_near=1 cand_same=1
+…（合计 cand_near=19，cand_same=18）
+```
+
+#### 判读
+
+```text
+① **多数行 `cand_near=0`**：推出 7 / 5 / 15 边 wire 时，剩余段中**没有**任何段的顶点落在
+   该 wire 的 `end_v` 上（1e-6 内）⇒ 按「顶点相接」这条规则，链确实到此为止。
+   ⇒ 说明端口把「顶点相接」当作**唯一**的延伸入口；而 OCCT 能把 16 边的段与外环另外的段并成 22 边，
+     **必然用了不止「顶点相接」**——回看候选循环里的选择项（`samepatch` / `reverse` / `angle`(2D 切向) /
+     `mindist` / 同边返回最低优先级），这些是**在顶点相接的前提下**做优先级；若 OCCT 在 `cxx:2570-2724`
+     里允许「不相接但同 patch 且切向连续」的候选，端口就少了一类入口。
+② **至少一行 `near=1 / same=0`**：确实存在「坐标相邻但顶点非同一对象」⇒ §9.485 的怀疑在该点成立，
+   这类点会因 `same_v` 失败而少一个候选（可用 `Context()->Apply` 统一顶点修复）。
+```
+
+#### 下一轮（本目标的最后一步对拍）
+
+```text
+读端口 `collect_wires.rs:104-230` 的候选循环，列出**所有** `continue`（跳过候选）的条件与其顺序，
+逐条对 `ShapeFix_ComposeShell.cxx:2570-2724`；重点看：
+  · 端口是否有「仅当 `same_v(顶点相接)` 成立才进入后续优先级比较」这一硬前置；
+  · `cxx` 是否在同一处允许 `IsSame` 失败但 `samepatch && 切向连续` 的候选（即**少一条入口**）。
+若确认端口少了该类入口 ⇒ 按 .cxx 补（不加启发式）⇒ 跑 §9.448 验收
+（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
+ 面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
