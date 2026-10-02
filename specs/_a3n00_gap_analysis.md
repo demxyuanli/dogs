@@ -21034,3 +21034,32 @@ CFLIP 样本（`isshort>0 && (External || one_degenerated)` 命中并被改 Inte
 · 命中数 > 0 ⇒ A 类段的 Internal 身份**确实来自 :68-72** ⇒ 靶点 = 该判据(isshort/one_degenerated) ↔ cxx:2519-2549；
 · 命中数 = 0 ⇒ A 类段本就是 Internal(load_wires 非流形分类或切分阶段) ⇒ 靶点上移。
 ```
+
+---
+
+### 9.515 —— **撤回 §9.514**：该次运行的 `cargo build` **失败（2 errors）**，探针未编进二进制 ⇒ `CFLIP 行: 0` / 「命中 0/43」**不是测量结果**；库已还原
+
+```text
+问题链：§9.514 的探针撤除用了「花括号配平」删除法，未删净（残留 1 处 T101_ZZJ）⇒ 目标文件编译失败：
+        cargo build: **2 errors** ⇒ 随后执行的二进制是**上一版**（不含 CFLIP）
+      ⇒ 输出 `CFLIP 行: 0`、`A 类候选中 p0 出现在 CFLIP 里的: 0 / 43` **无意义**（不是「未被改」的证据）。
+处置：已用 `git show HEAD:` 还原 `collect_wires.rs`（并把尾部换行按 HEAD 形态处理），
+      复核 `cargo check` 与 `git diff --stat crates/occt-topo/src` 为空。
+```
+
+**教训（记入文档，避免重犯）**：
+```text
+· 撤除插桩优先用「精确字符串反向替换」（本次 P1 就是这么做的，成功）；
+  「按花括号配平删除」在多层嵌套里不可靠（本次 P2 因此残留 1 处并导致编译失败）；
+· **每次探针运行的判读必须以下一步 `cargo build: 0 errors` 为前提**：本次 build 失败仍照跑照记，
+  是本轮的方法错误（应把 `0 errors` 作为数据有效性的前置条件写进配方）。
+```
+
+**修正后的重跑配方（下一轮，一次即定论）**：
+```text
+1) 只加 **一个** 探针：`set_orientation(Orientation::Internal)` 之后（if 体内）打印
+   `CFLIP i nb short one_degen p0`；CACAND 那侧改为在 §9.508 的既有数据里查（A 类 43 个）。
+2) `cargo build` **必须 0 errors**，否则不解读数据。
+3) 用精确字符串反向替换撤除（保留插入文本常量），复核 `T101_*/CFLIP` 计数为 0 且 `cargo check` 0 errors。
+4) 判读：A 类候选 p0 是否出现在 CFLIP 集合中。
+```
