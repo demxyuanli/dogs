@@ -22013,3 +22013,27 @@ PARAM 行: 60 —— 全部同型（两种取值交替）：
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
 --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.548 —— 那次切分在 `split_wire` 里的四参数实测（单探针、build 断言、精确 A+P→A 撤除）
+
+```text
+GUARD4 行: 62
+   GUARD4 first=3.141592654 last=9.424777961 prev=3.141592654 curr=9.424777961
+   GUARD4 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654
+   GUARD4 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654
+   GUARD4 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654
+   GUARD4 first=3.141592654 last=9.424777961 prev=3.141592654 curr=9.424777961
+   GUARD4 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654
+   GUARD4 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654
+   GUARD4 first=9.424777961 last=3.141592654 prev=9.424777961 curr=3.141592654
+```
+
+判读（用四参数直接算守卫，无需再插桩）：
+```text
+· 守卫① `|curr − last| < PCONFUSION`；守卫② `|curr − prev| < PCONFUSION`；
+· 若两者都不成立而 `curr` 实际等于边端点 ⇒ **容差口径**（PCONFUSION 数值/使用位置）问题 ⇒ 按 .cxx 修；
+· 若守卫①成立（`curr≈last`）⇒ 走 `do_cut=false`（不切）⇒ 不应产生零长度段 ⇒ 则分歧在其后的装配；
+· 若守卫②成立（`curr≈prev`）⇒ 直接跳过 ⇒ 同样不应产生零长度段。
+```
