@@ -19700,3 +19700,43 @@ fn fix_degenerated(wire: &mut Wire, face: &Face, prec: f64, num: usize) -> (bool
 → 下一轮读它（端口 + cxx），对拍**检测判据**（pcurve 端点距离、`IsClosed`、`myMax2d/myMax3d` 阈值、
   以及 `.cxx` 里对 `Precision::Confusion()` 的使用与 `LastCheckStatus` 的置位）。
 ```
+
+---
+
+### 9.481 —— 退化**检测**核心（端口 `wire_fix.rs:1878-1975`）读完；并更正一处：`ShapeAnalysis_Wire.cxx:488` 是 `CheckClosed` 里的一段，不是逐边 `CheckDegenerated`
+
+#### A. 端口 `check_degenerated` 的三段结构（每段都带 `.cxx` 出处）
+
+```text
+① cxx:913-934（OCC7630）：若 e2 **已被标记退化且带 pcurve**：
+     若 e1/e3 也带 pcurve，则比较 |d(p12,p31) − d(p21,p22)| > 2·PCONFUSION ⇒ **Remove**；
+     否则一律 **None**（不做处理）。            ← 「已标记退化边」的快捷分支
+② cxx:938-948：`n1 != n2 && is_degenerated(e1) && !has_pcurve(e1)`：
+     e2 也退化 ⇒ **Remove**，否则 **None**。     ← 「前一条是无 pcurve 的退化边」
+③ cxx:950-970 / cxx:974-991 / cxx:995-999（**通用检测**）：
+     取 e1/e2 的首末顶点 (vp,v0,v1,v2) 与 tol1 ⇒ prec_first = min(prec,tol1)、prec_fin = max、prec_vtx = …
+     若 **p1.distance(p2) <= prec_first**（该边两端点 3D 重合 ⇒ 「在奇异点上闭合」）：
+         用 `SurfaceSingularities::compute(surf)` + `sing.min_gap(&p1, prec_vtx)` 得 (p2d1,p2d2)，dgnr = true；
+         再走 **cxx:979-990 的中点守卫**：若该边**中点**到 p1 的距离 > prec_vtx ⇒ **dgnr = false**
+            （「不要把中点远离奇异点的闭合边变成退化边」）
+     若 !dgnr ⇒ 落到 **cxx:995-999** 的 lack 路径（后续返回 `Found{lack:true}` ⇒ `fix_degenerated` 走 **插入** 分支）
+```
+
+#### B. 更正
+
+`ShapeAnalysis_Wire.cxx:488` 那一段属于 **`CheckClosed`**（`CheckDegenerated(1)` 的调用点），
+**不是逐边 `CheckDegenerated(i)` 的定义**。逐边定义尚未定位（候选行号 226/360/364 里 360 是无参驱动 `CheckDegenerated()`）；
+下一轮应先精确定位逐边版本再对拍。
+
+#### C. 下一轮的具体假设（可直接判定）
+
+```text
+F113 那两条 0 长度退化边位于**圆柱面**（R=34）。圆柱**没有奇异点**（周期面，无退化点）⇒
+  · 端口：`sing.min_gap(...)` 很可能返回 None ⇒ `dgnr = false` ⇒ 走 lack 路径 ⇒ 返回 `Found{lack:true}`
+    ⇒ `fix_degenerated` 走「插入新退化边」分支 ⇒ 薄片**存活/变长**（与 §9.453 观测到的 3 边 wire 吻合）。
+  · OCCT：`ShapeAnalysis_Surface::DegeneratedValues` 对圆柱同样返回 false，但它可能在**更早的判据**
+    （例如 `BRep_Tool::IsClosed(edge, face)` 或 pcurve 跨度 = 周期）上把这种「seam 处的零长度 3D 边」判为
+    **应当移除**（`DegeneratedCheck::Remove`）⇒ 薄片被清掉。
+做法：先定位 `ShapeAnalysis_Wire::CheckDegenerated(const int num, …)` 的定义行，逐行对拍端口 :1878-1975；
+若确认差异在「圆柱/seam 这种无奇异点但 pcurve 跨整周期的边」，按 .cxx 补上同一条判据 ⇒ 跑 §9.448 验收。
+```
