@@ -21923,3 +21923,37 @@ CUTU 行: 29
   走 **else 分支** 的这次 U 线切分（线在 π）——则 §9.456 的 `line=0` 记录确属他面 ⇒ 以本条为准；
 · 若 `zero` 在 else 分支始终为 0 ⇒ 零长度段由**别的调用**（U-closed 分支或 V 线）产生 ⇒ 需扩展到四处调用点。
 ```
+
+---
+
+### 9.545 —— 【决定性·无歧义】产生 F113 两条零长度段的那次切分 = **U 线 else 分支、`pos=UJointValue(1)=π`、`cut_index=1`**；§9.456 的 `line=0` 记录确属他面
+
+#### 数据（§9.544，`build_ok=1`、精确 A+P→A 撤除、`T101_ZZV` 残留 0、库 diff 空）
+
+```text
+CUTU 行: 29 —— **全部同型**：
+  CUTU closed=true nbu=1 uj=[3.141592653589793, 9.42477796076938] i=1 pos=3.141593 cut_index=1 zero=**2**
+```
+
+**判定**：
+
+```text
+· 该探针只在 **U-else 分支**调用后、且**切后存在零长度段**时输出 ⇒ 命中的这次调用**就是**产生 F113
+  两条零长度段的那一次：`closed_mode=true`、`nbu=1`、`i=1`、`line.pos = UJointValue(1) = π`、`cut_index=1`；
+· 与 OCCT `cxx:2229-2251` 的对应分支**完全一致**（`myClosedMode ⇒ else` ⇒ `SplitByLine(seqw, line, true, i)`，
+  `line.pos = (myGrid->UJointValue(i), 0)`，`i=1`）；
+· §9.456 的 `CUT U line=(0.000000,0.000000)` 记录**确系他面**（本次无歧义探针已取代它，§9.543 的「归属未定」结案）。
+```
+
+#### 由此确定：差异在 `SplitByLine` **内部数值**（这是本目标最后一个可对拍处）
+
+```text
+调用侧已完全对齐（分支/线位/cut_index/网格量）⇒ 端口与 OCCT 在同一调用上得到不同结果
+⇒ 差异必在 `SplitByLine`（`split_by_line_wires` → `split_by_line` → `split_wire`）处理**这条线（u=π）与该 wire**
+   的求交/切片数值上。
+下一轮（最后一次取证，仍是单探针 + build 断言 + 精确反向撤除）：
+   在 `split_by_line` 内打印该次调用的 `int_edge_par`（交点参数数组）与 `int_edge_ind`（对应边号），
+   以及 `n_par`；与 OCCT `SplitByLine` 在同一线/同一 wire 上的交点数与参数对照：
+     · 若端口给出的交点数/参数与 OCCT 不符 ⇒ 差异在**求交**（`cxx:1433-1914` 的求交段）⇒ 按 .cxx 修；
+     · 若一致 ⇒ 差异在**切片/装配**（`split_wire` 的区间与顶点处理），继续在该函数内取数。
+```
