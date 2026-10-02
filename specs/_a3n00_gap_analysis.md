@@ -21619,3 +21619,47 @@ CAUN 行: 3
 4) 撤除一律用**精确字符串反向替换**（§9.515 的花括号配平删除法不可靠）；
 5) 统计口径写清楚（段级端点 vs 每条边端点、是否排除已消费段 —— §9.500/§9.505/§9.530 的教训）。
 ```
+
+---
+
+### 9.534 —— 读 `SplitByGrid` 头部（`cxx:2131-2163`）：与端口 `split_by_grid.rs:24-72` 语义一致；下一段（切分循环）是唯一未对拍部分
+
+```cpp
+void ShapeFix_ComposeShell::SplitByGrid(NCollection_Sequence<ShapeFix_WireSegment>& seqw)   // :2131
+{
+  double Uf, Ul, Vf, Vl;  BRepTools::UVBounds(myFace, Uf, Ul, Vf, Vl);                     // :2135-2136
+  double Umin, Umax, Vmin, Vmax;  myGrid->Bounds(Umin, Umax, Vmin, Vmax);                  // :2137-2138
+  double pprec = TOLINT;                                                                   // :2142
+  int    i     = 1;
+  if (myClosedMode) {                                                                      // :2144
+    // closed 模式：把各 wire 段移入「首个与末个 joint 值之间」的 patch 区间（使切分后 index 只为 (0,1)/(1,2)）
+    for (i = 1; i <= seqw.Length(); i++) {                                                 // :2152
+      ShapeFix_WireSegment& wire = seqw(i);
+      TopoDS_Shape atmpF = myFace.EmptyCopied(); …  aB.Add(atmpF, wire.WireData()->Wire()); // :2156-2159
+      double Uf1, Ul1, Vf1, Vl1;  ShapeAnalysis::GetFaceUVBounds(…, Uf1, Ul1, Vf1, Vl1);  // :2160-2161
+      …
+```
+
+**对照（§9.468-A 已读端口同段）**：
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `BRepTools::UVBounds(myFace,…)` / `myGrid->Bounds(…)` | `split_by_grid.rs:22-23` `uv_bounds(&face)` / `self.grid.bounds()` | ✓ |
+| `pprec = TOLINT`（:2142） | `let pprec = TOLINT;`（:26） | ✓ |
+| closed mode 段位移：`EmptyCopied + Add(wire) + GetFaceUVBounds`（:2152-2161） | `for w in seqw.iter_mut()` + `make_wire + add_uv_bounds_on_wire`（:33-37） | ✓（端口注释已说明等价） |
+| `shift_u / shift_v` 与 `define_iu_min/…` | `:47-71` 同 | ✓ |
+
+⇒ 头部**语义一致**；**唯一未对拍的是切分循环本体**（OCCT `:2163-2275` ↔ 端口 `:73-133`），
+   即「U/V 线位置如何取、`cut_index` 如何算、以及 seam 处（u=0）那一次切分」。
+
+#### 下一轮（本目标最后一段未对拍代码）
+
+```text
+读 `cxx:2163-2275`（SplitByGrid 的切分循环：U 线与 V 线的构造 + 调用 SplitByLine 的条件），
+与端口 `split_by_grid.rs:73-133` 逐行对照；重点：
+  · U 线的位置取值（端口在 seam 处取 `pos + sh`，`sh` 来自 `adjust_to_period`）；
+  · `cut_index` 的算法（`get_patch_index(...)`）在 seam 处的取值；
+  · V 线循环的起止（`v_start = if v_closed {1} else {2}`）与 `nb_v_patches`。
+命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
+--fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
