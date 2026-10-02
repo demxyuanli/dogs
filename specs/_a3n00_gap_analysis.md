@@ -21083,3 +21083,35 @@ CFLIP 样本（`isshort>0 && (External || one_degenerated)` 命中并**真正被
 · 命中 > 0 ⇒ A 类段的 Internal 身份来自 :68-72（isshort/one_degenerated 判据）⇒ 靶点=该判据 ↔ cxx:2519-2549；
 · 命中 = 0（且 CFLIP 行数可为 0，说明本次没有任何段在 :71 被改）⇒ A 类段本就是 Internal ⇒ 靶点上移到 load_wires/切分阶段。
 ```
+
+---
+
+### 9.517 —— 【有效测量】`CFLIP = 0`：本次运行**没有任何段在 `:71` 被改成 Internal** ⇒ A 类段的 Internal 身份来自**上游**（`load_wires` 的非流形分类）
+
+#### 数据（§9.516，build 已确认 0 errors、精确反向撤除、库 diff 空）
+
+```text
+CFLIP 行: 0        A 类候选(§9.512 的 CACAND): 43        A 类候选中 p0 出现在 CFLIP 里的: 0 / 43
+```
+
+**判读**：
+
+```text
+· `:68-72` 的规则 `isshort > 0 && (External || one_degenerated) ⇒ set Internal` 在本次运行中**一次都没触发**
+  ⇒ 那 43 个 A 类段（§9.508 实测 ori 全为 Internal）**不是在 `collect_wires` 里被改成 Internal 的**；
+· 结合 §9.460 对 `load_wires.rs` 的阅读：非流形（non-manifold）部分的段被建成
+  `WireSegment::with_edges(sbwd, Orientation::Internal)`（对应 `cxx:499-640` 的同一分类）
+  ⇒ **最可能的上游来源就是 `load_wires` 的非流形分类**（或切分阶段赋的朝向）。
+```
+
+#### 下一轮（本目标的最后一环）
+
+```text
+在 `load_wires.rs` 的分类处打印：每条被归入**非流形**（→Internal）的段的坐标/边数/边朝向，
+与 A 类候选坐标（`.target-gate/int117.txt` 里的 43 个 `CACAND ... p0=`）比对：
+  · 若吻合 ⇒ 端口把本应属于流形部分的边归到了非流形（朝向判据 `eo == Forward || eo == Reversed` 处），
+    而 OCCT 的同一读法不会 ⇒ 分歧在 **reader/`load_wires` 的朝向判定**（与 §9.439/§9.491 同族：朝向语义）；
+  · 若不吻合 ⇒ 继续向上（`split_by_grid`/`break_wires` 生成段时的朝向）。
+命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
+--fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
