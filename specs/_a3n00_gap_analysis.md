@@ -21789,3 +21789,25 @@ for i in (if self.u_closed { 1 } else { 2 })..=self.grid.nb_u_patches() {
 ```
 
 （本轮两次失败（字段名、撤除切头）都**未产生任何被解读的数据**，也未留下库改动：当前 `cargo check` 0 errors、库 diff 空。）
+
+---
+
+### 9.540 —— 【有效测量】F113 的网格参数（单探针、字段名经 grep 核实、build 断言 0 errors、A+P→A 精确反向替换）
+
+```text
+GRIDPAR 行: 47
+   GRIDPAR u_closed=true v_closed=false u_period=6.283185 v_period=2.000000 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] vj=[34.0, 36.0] bounds=(3.141593,9.424778,34.000000,36.000000)
+   GRIDPAR u_closed=true v_closed=false u_period=6.283185 v_period=18.000000 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] vj=[-3.552713678800501e-15, 18.0] bounds=(3.141593,9.424778,-0.000000,18.000000)
+   GRIDPAR u_closed=true v_closed=false u_period=6.283185 v_period=2.000000 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] vj=[34.0, 36.0] bounds=(3.141593,9.424778,34.000000,36.000000)
+   GRIDPAR u_closed=true v_closed=false u_period=6.283185 v_period=18.000000 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] vj=[-3.552713678800501e-15, 18.0] bounds=(3.141593,9.424778,-0.000000,18.000000)
+   GRIDPAR u_closed=true v_closed=false u_period=6.283185 v_period=2.000000 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] vj=[34.0, 36.0] bounds=(3.141593,9.424778,34.000000,36.000000)
+   GRIDPAR u_closed=true v_closed=false u_period=6.283185 v_period=18.000000 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] vj=[-3.552713678800501e-15, 18.0] bounds=(3.141593,9.424778,-0.000000,18.000000)
+```
+
+判读：
+```text
+· F113 的 U 线在 u=0（§9.456）⇒ 若 `uj` 的首值为 0 且 `u_period` 与面周期一致，则**网格前提与切分位置一致**；
+· `nbu/nbv` 给出 patch 数（closed_mode 下 U 循环自 1 起、cut_index = i）；
+· 这些量若与 OCCT 由面 UV 边界+周期性推出的网格一致 ⇒ 前提无误 ⇒ 差异落在 SplitByLine 内部数值；
+· 若不一致 ⇒ 网格构造即分歧点（对照 cxx 的 grid 初始化）。
+```
