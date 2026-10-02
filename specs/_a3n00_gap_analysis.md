@@ -22871,3 +22871,61 @@ zz_seam_fix 113:  BEFORE wires=4 …   result type=**Shell**   result faces=**5*
      而 OCCT 在装载/构造 wire 时就把它们统一了 ⇒ 靶点上移到 `load_wires`/reader 侧；
   ③ 判据①优先（一次探针即可），若①成立则回到 §9.564 的 `Context()->Replace` 调用点排查绑定对象。
 ```
+
+---
+
+### 9.570 —— 收敛固化（本轮无代码改动）：根因链、唯一负结果、剩余三条假设与各自的一次性探针
+
+#### A. 根因链（每一环都有实测或逐行引证）
+
+```text
+① 输入：F113 的 wire 含两条**首尾同点的零长度边**（§9.471），另有 8 边与 14 边 wire（§9.484：OCCT 侧 8/14）
+② 切分侧**忠实**：U 线 else 分支 `pos=UJointValue(1)=π`、`cut_index=1`（§9.545，29/29 同型）；
+   `split_wire` 守卫① `|curr−last|=0` **精确命中 ⇒ 不切**（§9.551，78/78）⇒ 零长度段是**输入端带下来的**
+③ `break_wires` 出口 154 段**无一行 Internal**（§9.525/§9.526）；`load_wires` 两条产 Internal 的分支实测均 0 次（§9.521/§9.523）
+④ `collect_wires` 候选搜索/连接块/消费标记(:268↔:110) 与 `cxx:2570-2778` **逐条同构**（§9.498-§9.532）；
+   合并入口 `shorts` **全为 0**（§9.552，154/154）⇒ 合并循环**空转**
+⑤ `IsShortSegment` 与 `cxx:2394-2448` **8 项逐行一致**（§9.554）；`shorts=0` 来自分支 `edge_last`
+   （§9.557：93 次），且**恰好等于**「段首末顶点同一」的段数 93（§9.555/§9.558）
+   ⇒ **同一几何点上存在两个顶点 TShape（顶点未统一）**
+⑥ ⇒ `IsShortSegment` 恒 0 ⇒ 8+14 不成 22 ⇒ 段列表 [6,7,5,4,3,3] ⇒ 6 条 wire / **5 面**
+   ⇒ perform 包成 **Shell(5)** ⇒ reader 只收 Face ⇒ 整包丢弃 ⇒ 面停 4 wires ⇒ face_checker 判自交 ⇒ **空面**
+```
+
+#### B. 唯一负结果（已还原，但**信息量最大**）
+
+```text
+§9.569：给 `MapReShape::apply` 补 OCCT `ShapeBuild_ReShape::Apply` 语义的 **EDGE 重建分支**
+（`EDGE ← apply 后的首末顶点`，复用 `copy_replace_vertices_with`）：
+  · **编译 0 errors**（说明 `Edge(..)`/`Vertex(..)`/`first_vertex`/`last_vertex`/`copy_replace_vertices_with`
+    /`ShapeType::Edge`/`key(..)` 用法全部正确）；
+  · 但 `zz_seam_fix 113` 仍 `result type=Shell / faces=5` ⇒ **仅补 EDGE 重建不足以修复**。
+⇒ 该分支虽与 OCCT 语义一致但在本目标**无收益**，且 `MapReShape` 被 `shape_fix_face` 共用（§9.565）
+  ⇒ 已按原文精确还原（库 diff 空、cargo check 0 errors）。
+```
+
+#### C. 剩余三条假设与**一次性探针**（按证据强度排序）
+
+```text
+假设①（最强）：那些顶点**从未被 `Replace` 绑定过**（`apply` 的 `changed` 恒 false）
+  探针：在 `split_wire.rs:318/325/358/363` 四处 `context_mut().replace(...)` 各加 env-gated 计数打印，
+        运行后统计各点触发次数；若全为 0 或未覆盖我们的顶点 ⇒ 靶点=「谁该登记这些顶点的替换」
+        （对照 `cxx:1261-1293`/`1315-1332` 的绑定对象：`prevV`/`V`/`atmpV` 到底是哪些顶点）。
+
+假设②：统一应发生在**更上游**（装载/构造 wire 时）
+  探针：在 `load_wires` 里对输入 wire 的相邻边打印 `(末顶点 key, 下一条边首顶点 key)`，
+        统计「坐标相同但 key 不同」的对数；>0 ⇒ 输入本身就没统一 ⇒ 靶点在 reader/`load_wires`。
+
+假设③：`empty_copied_vertex` 造出的「保护顶点」f_v/l_v 未能在所有路径上被 `replace` 统一
+  探针：在 `split_wire.rs:317/324` 打印 `empty_copied_vertex` 得到的 key 及其 `replace` 后的映射查询结果。
+```
+
+#### D. 纪律（本目标累计，含 4 次编译失败与 4 次负结果/口径更正）
+
+```text
+1) 先 grep 确认 API（签名/借用位置/字段名/构造方式）再插桩或改代码；
+2) 单探针 + `cargo build` **断言 0 errors** 才解读数据；
+3) 撤除用**插入时的原文常量**做精确反向替换（禁用两端锚点切片/花括号配平）；
+4) 统计口径写明（段级 vs 每条边端点、是否排除已消费段、是否只算未消费……）；
+5) 无收益的改动一律还原，横切组件（`MapReShape`）尤其如此。
+```
