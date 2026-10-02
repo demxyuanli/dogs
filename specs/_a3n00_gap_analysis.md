@@ -22616,3 +22616,51 @@ impl ReShape for MapReShape {
      （zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
       面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.565 —— 影响面评估与落地计划：`MapReShape` 被 **compose-shell（5 文件）** 与 **`shhealing/shape_fix_face.rs`（3 处）** 共用 ⇒ 改 `apply` 是横切改动，须以全量门禁 + 全部基线验收
+
+#### A. 引用面（只读 grep，共 16 处）
+
+```text
+occt-topo/src/shape_fix_compose_shell/shell.rs           6
+occt-topo/src/shape_fix_compose_shell/reshape.rs         3
+occt-topo/src/shape_fix_compose_shell/dispatch_wires.rs  2
+occt-topo/src/shape_fix_compose_shell/load_wires.rs      1
+occt-topo/src/shape_fix_compose_shell/mod.rs             1
+occt-topo/src/shhealing/shape_fix_face.rs                3     ← 另一处使用者
+（`impl ReShape for` 仅出现在 reshape.rs：MapReShape 与 IdentityReShape）
+```
+
+⇒ 修改 `MapReShape::apply` 会**同时**影响 `ShapeFix_ComposeShell` 与 `ShapeFix_Face` 的等价路径
+⇒ 必须按门禁第 3 条验收：`t101_verify.ps1` 全绿 **且** 全部模型基线（a3n00/T0M/acs10/motoc/TDB/top/bottom/ATU01038）逐字对照。
+
+#### B. 落地计划（按 OCCT 同名类补分支，零启发式）
+
+```text
+1) 读 OCCT `ShapeBuild_ReShape::Apply`（及 `BRepTools_ReShape::Apply`）的**递归顺序**：
+   · 顶点：直接绑定；
+   · 边：用 `apply` 后的首末顶点重建（保留曲线/容差/朝向/位置）；
+   · wire/face/shell：用 `apply` 后的子形状重建。
+2) 端口实现要点：
+   · **保留** 现有「直接绑定优先」的快路径（避免无谓重建、保持既有行为）；
+   · **仅当**子形状中存在被记录的替换时才重建（等价于 OCCT 的 `IsRecorded` 短路），
+     这样「无替换」路径行为与现状**逐位相同** ⇒ 基线不应变化；
+   · 重建边时复用 `copy_replace_vertices_with`（§9.563 已证其语义正确）。
+3) 验收顺序（每步失败即停并报告）：
+   a) `cargo check` 0 errors；
+   b) `zz_seam_fix 113` → 期望 result **Face**；
+   c) `zz_uv_feed --model 113` → 期望 wires=2（22+6）；`--fstats` → face=113 mt≈228；
+   d) `pwsh -File .target-gate\t101_verify.ps1` 全绿 + **逐模型面积比对照基线**（任何回落都要报告）；
+   e) 单独提交，commit message 记录修改前后的**实测数字**。
+```
+
+#### C. 风险与红线
+
+```text
+· 横切面：`shape_fix_face.rs` 也走该 ReShape ⇒ 若门禁出现非 a3n00 模型的偏移，**立即停**并报告差异
+  （不调整容差/基线/断言来掩盖）；
+· 与 §9.439 红线无冲突（本次不动 FixDummySeam 顶点朝向）；
+· 本次改动属于「**有同等分支才改**」：OCCT 有深度重建、端口注释自述省掉了它（§9.564）。
+```
