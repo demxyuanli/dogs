@@ -21749,3 +21749,21 @@ for i in (if self.u_closed { 1 } else { 2 })..=self.grid.nb_u_patches() {
     不一致 ⇒ 网格构造是分歧点（在端口 `CompositeSurface`/grid 初始化处对照 `cxx`）⇒ 按 .cxx 修；
   · 若一致 ⇒ 差异在 `SplitByLine` 的内部数值（线与边的求交），转而在该输入上取交点数/参数并与 cxx 对照。
 ```
+
+---
+
+### 9.538 —— 撤回本次 GRIDPAR 探针（字段名猜错，E0609 ×2）；真实字段名待用 grep 确认后再跑
+
+```text
+错误：`no field u_close on type &mut ComposeShell` / `no field v_close …`
+⇒ 我在 `split_by_grid.rs` 里写了 `self.u_close/self.v_close`，但 `ComposeShell` 上并无这两个字段
+   （实际使用处是 `get_patch_index(..., self.u_close)` 一类的调用？需重新 grep 确认字段归属：
+    可能在 `self.grid`（CompositeSurface）上，或字段名不同，如 `u_closed/v_closed` + 另有 `close` 标志）。
+处置：已**精确反向替换**撤除探针（`T101_ZZS` 残留 0）；`cargo check` 复核 0 errors；库 diff 为空。
+```
+
+**纪律再确认（这是本目标第 3 次「先猜 API/字段名」导致的编译失败）**：
+```text
+插桩前**必须**先 grep 目标符号（第 1 步），本目标是：函数签名（§9.520 E0308）、
+借用/移动位置（§9.521 E0382）、**结构体字段名**（§9.538 E0609）。
+```
