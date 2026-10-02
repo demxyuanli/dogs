@@ -20326,3 +20326,31 @@ CPUSH nb=4 <- CDEC index=Some(2) samepatch=true reverse=true  connected=true sbw
 若统计出「大量坐标相同但 `same_v` 为假」⇒ 根因 = **切口处顶点未统一**（`Context`/`CombineVertex` 路径），
    修法按 `.cxx` 在该处统一顶点；否则靶点落到 `is_same_patch` 的优先序判据。
 ```
+
+---
+
+### 9.496 —— 「找不到候选」时刻的重扫诊断（一轮内插桩→跑→撤除；库 diff 空）
+
+```text
+CREJ 行: 25；其中 sbwd_nb>=3 的 25 行
+样本：
+   CREJ sbwd_nb=7 seqw=8 cand_total=26 cand_near=0 cand_same=0
+   CREJ sbwd_nb=5 seqw=8 cand_total=26 cand_near=0 cand_same=0
+   CREJ sbwd_nb=4 seqw=8 cand_total=26 cand_near=1 cand_same=1
+   CREJ sbwd_nb=3 seqw=8 cand_total=26 cand_near=1 cand_same=1
+   CREJ sbwd_nb=15 seqw=4 cand_total=15 cand_near=0 cand_same=0
+   CREJ sbwd_nb=5 seqw=4 cand_total=15 cand_near=0 cand_same=0
+   CREJ sbwd_nb=8 seqw=4 cand_total=15 cand_near=1 cand_same=1
+   CREJ sbwd_nb=6 seqw=4 cand_total=7 cand_near=1 cand_same=0
+   CREJ sbwd_nb=5 seqw=3 cand_total=4 cand_near=1 cand_same=1
+   CREJ sbwd_nb=5 seqw=3 cand_total=4 cand_near=1 cand_same=1
+合计：cand_near=19  cand_same=18
+```
+
+判读（下一轮据表定论）：
+
+```text
+· 若 cand_near>0 而 cand_same=0 ⇒ 剩余段**坐标相邻但顶点不是同一对象** ⇒ 根因 = 切口处顶点未统一
+  （Context/CombineVertex 路径），按 .cxx 统一顶点；
+· 若 cand_near=0 ⇒ 剩余段**根本不相邻** ⇒ 靶点回到候选循环的更早判据（misoriented/is_same_patch 的优先序）。
+```
