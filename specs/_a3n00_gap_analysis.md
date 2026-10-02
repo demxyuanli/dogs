@@ -19369,3 +19369,34 @@ BEFOREP wire=3 n=1  zero=**1**   (-87.500,0.000,-32.000)->(-87.500,0.000,-32.000
 ② 端口侧已具备的同类判据（供参考）：`BRepTool::is_degenerated(edge)`、`check_small_area`、
    `fix_small_all` —— 检查 `.cxx` 在同一位置用的是哪一条。
 ```
+
+---
+
+### 9.472 —— OCCT 侧未整形（`noop`）普查：**退化 wire 普遍存在**（58 张面含 ≥2 条 1 边 wire）⇒ 分歧在「整形过程中如何处理它们」，不在输入
+
+`cmd /c "specs\occt_probe\run_dbg.bat data\occ\a3n00.stp noop"`（关 ShapeProcess，取**未整形输入**），
+输出 453 行；解析 `FACE <idx> wires=<n> edges_per_wire: …`：
+
+```text
+含 >=2 条 1 边 wire 的面数: **58**      样本：
+  FACE idx=41 wires=2 edges=[1, 1]      FACE idx=42 wires=2 edges=[1, 1]
+  FACE idx=44 wires=2 edges=[1, 1]      FACE idx=47 wires=2 edges=[1, 1]      FACE idx=77 wires=2 edges=[1, 1]
+（探针自身还把部分面标注为 `[UV-DEGENERATE-WIRE]`，例如 FACE 0 / FACE 2）
+```
+
+⇒ **OCCT 的原始输入同样带大量退化（1 边）wire** —— 端口 F113 输入里的 wire[2]/wire[3]（§9.471）
+   **不是端口独有的产物**。结合 OCCT 整形后 F113 = 2 wires（22+6）可知：
+
+```text
+分歧 = **整形过程中「如何处理输入的退化 wire」**：
+  · OCCT 的 ShapeProcess/FixShape（ComposeShell → CollectWires/DispatchWires，或 ShapeFix_Wire 的
+    FixSmall/CheckDegenerated 一线）把退化 wire 清掉/并掉，最终收成 1 张 2-wire 面；
+  · 端口保留了它们 ⇒ 结果里多出 2 条零长度段 ⇒ 5 张面（含两张 3 边薄片）⇒ Shell(5) 被丢 ⇒ 空面。
+```
+
+**下一步（本轮已尝试、只差一步）**：在 `noop` 普查里按**结构指纹**定位 OCCT 的 F113 原始面
+（含 **14 边与 6 边** wire 的那张；本轮 grep `87.5` 只命中另一张 `FACE 201 box=(-112.5,-39,-105)-(-87.5,39,-27)`），
+确认其 `edges_per_wire` 是否恰为 `[6,14,1,1]`：
+  · 是 ⇒ 两侧输入一致 ⇒ 直接在 `cxx` 里找**退化 wire 的清理点**（LoadWires/CollectWires/DispatchWires/FixSmall）
+         并按 `.cxx` 在端口补上；
+  · 否 ⇒ 端口 reader 侧的 wire 组装（`resolve_loop`/`make_wire`）与 OCCT 不同，回头核 STEP 构造。
