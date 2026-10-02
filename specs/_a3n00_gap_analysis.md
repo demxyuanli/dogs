@@ -19973,3 +19973,31 @@ while i < seqw.len() {
 若确认 ⇒ 对照 `cxx:2519-2549` 的同一分支核对「改 Internal 的条件」与「Internal 段的串接规则」，
    差异处按 .cxx 修 ⇒ 跑 §9.448 验收。
 ```
+
+---
+
+### 9.487 —— `collect_wires` 起始段探针（一轮内插桩→跑→撤除）：F113 的退化段朝向与 short 标记
+
+探针（env `T101_ZZB`，插在 `:74` 之后打印每段 `(k, nb, ori, short, p0)`；**已在同一次调用内撤除**，库 diff 为空）
+输出摘录（`.target-gate/coll100.txt`）：
+
+```text
+CSHORT k=4/8 nb=1 ori=Reversed short=0 p0=(87.500,0.000,-32.000)
+CSHORT k=5/8 nb=1 ori=Reversed short=0 p0=(-87.500,0.000,-32.000)
+CSHORT k=7/8 nb=1 ori=External short=0 p0=(-87.500,0.000,-32.000)
+CSHORT k=1/3 nb=1 ori=Reversed short=0 p0=(87.500,0.000,-32.000)
+CSHORT k=0/3 nb=1 ori=Reversed short=0 p0=(-87.500,0.000,-32.000)
+CSHORT k=2/3 nb=1 ori=External short=0 p0=(-87.500,0.000,-32.000)
+CSHORT k=4/8 nb=1 ori=Reversed short=0 p0=(87.500,0.000,-32.000)
+CSHORT k=5/8 nb=1 ori=Reversed short=0 p0=(-87.500,0.000,-32.000)
+```
+
+共捕获 `nb=1` 或含 87.5 的行 **120** 条；完整输出见 `.target-gate/coll100.txt`。
+
+判读（下一轮据表判定）：
+
+```text
+· 若那两条段的 `ori` 已是 `Internal` 且 `short=1` ⇒ §9.486 的规则确实命中，它们以 Internal 身份参与串接；
+  下一步即对拍 cxx:2519-2549 同分支的「改 Internal 条件」与其后的「Internal 段串接规则」。
+· 若 `ori` 仍是 `Reversed/Forward`（未被改） ⇒ `is_short_segment` 对它们返回 0 ⇒ 靶点转为 is_short_segment 的判据。
+```
