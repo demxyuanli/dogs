@@ -18999,3 +18999,47 @@ a3n00：STATMAP matched=225 unmatched=1 sum_mt=11941 flat_mt=11941  ——**不�
 :430-478  子段生成的其余部分（after `ipcode` computation）——仍可能含「子段长度≈0 ⇒ 跳过」判据
 :31-290   与切线的求交（int_edge_par/int_line_par/int_edge_ind 的产生地）
 ```
+
+---
+
+### 9.462 —— **靶点重定向**：子段生成不在 `split_by_line` 内，而是委托给 `split_wire`（`split_by_line.rs:454-462`，注释指 `cxx:1900-1903`）
+
+读 `split_by_line.rs:430-478`（该函数最后一段）：
+
+```rust
+                int_code.push(ipcode);
+                j = i;
+            }
+        }
+        // cxx:1900-1903.
+        let mut int_vertices: Vec<Vertex> = Vec::new();
+        let mut indexes = int_edge_ind.clone();
+        *wire = self.split_wire(
+            wire, &mut indexes, &int_edge_par, &mut int_vertices, &a_new_seg_codes, is_cut_by_u, cut_index,
+        );
+        // cxx:1906-1911.
+        for i in 1..=int_line_par.len() {
+            split_line_par.push(int_line_par[i - 1]);
+            split_line_code.push(int_code[i - 1]);
+            split_line_vertex.push(int_vertices[i - 1].clone());
+        }
+```
+
+⇒ **「把原始 wire 的边按交点切成子段」这一步在 `split_wire` 里**（`split_wire.rs`，496 行），
+   `split_by_line` 只负责算交点/代码并把结果交给它。故 objective 里写的「`split_by_line` 的子段生成段」
+   实际落点是 **`split_wire`**（这就是 §9.399 曾判「控制流忠实」的那个函数——当时没有零长度段这个靶点）。
+
+#### `split_wire.rs` 的判据/建边位点（本轮 grep 结果，供下一轮直接读）
+
+```text
+:58   pub fn split_wire(...)
+:201-224  PCONFUSION 过滤区（hi/lo = max/min(par) ± PCONFUSION；(curr_par-last_par).abs()<PCONFUSION ⇒ :224 continue）
+:275  continue（另一处跳过）
+:319-330  is_same(prev_v,last_v) / is_same(v,last_v) / is_same(v,prev_v) 分支
+:357-372  第二处 PCONFUSION 过滤（(apar-prev_par).abs()<=PCONFUSION ⇒ remove …）
+:402/446/448/466  add_edge_patch(...) —— **子段真正被造出来的地方**
+```
+
+**下一轮**：读 `split_wire.rs:190-240` 与 `:340-410`（两处过滤区 + 紧随的建边），与
+`ShapeFix_ComposeShell.cxx` 对应段（`cxx:1900-1903` 调用的 `SplitWire` 实现）对拍，
+专找「子段参数区间长度 ≈ 0 ⇒ 跳过」判据；命中即按 `.cxx` 修 → 跑 §9.448 验收。
