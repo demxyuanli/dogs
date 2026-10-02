@@ -20667,3 +20667,31 @@ weigth 取值分布: {0: 137, 28: 29, 24: 13, 20: 1}
 · 若 C 占多数 ⇒ 该 wire 的末端确实没有可接的段终端 ⇒ 说明 **OCCT 用了端口没有的另一种延伸规则**
   （需回 `cxx:2570-2724` 找「非顶点相接」的入口是否存在）。
 ```
+
+---
+
+### 9.505 —— 按修正口径（**段级端点**）重测（一轮内插桩→跑→撤除；库 diff 空）
+
+```text
+CSEG 行: 25    sbwd_nb>=3: 25
+合计：A(段级端点且同一对象)=58   B(坐标相接但非同一对象)=1   C(不相接)=179
+样本：
+   CSEG sbwd_nb=7 A_same=1 B_near_not_same=0 C_far=15
+   CSEG sbwd_nb=5 A_same=1 B_near_not_same=0 C_far=15
+   CSEG sbwd_nb=4 A_same=2 B_near_not_same=0 C_far=14
+   CSEG sbwd_nb=3 A_same=3 B_near_not_same=0 C_far=13
+   CSEG sbwd_nb=15 A_same=1 B_near_not_same=0 C_far=7
+   CSEG sbwd_nb=5 A_same=1 B_near_not_same=0 C_far=7
+   CSEG sbwd_nb=8 A_same=2 B_near_not_same=0 C_far=6
+   CSEG sbwd_nb=6 A_same=1 B_near_not_same=1 C_far=6
+   CSEG sbwd_nb=5 A_same=3 B_near_not_same=0 C_far=3
+   CSEG sbwd_nb=5 A_same=3 B_near_not_same=0 C_far=3
+```
+
+判读（按 §9.504-C 的三分支）：
+
+```text
+· A>=1 而 index=None ⇒ 另有条件挡住（再查 :106 is_vertex / :144 misoriented）；
+· B 占多数 ⇒ 根因 = 切口处顶点未统一 ⇒ 按 .cxx 统一顶点 ⇒ 跑 §9.448 验收；
+· C 占多数 ⇒ 末端确实没有可接的**段**终端 ⇒ OCCT 用了端口没有的延伸规则（回 cxx:2570-2724 找）。
+```
