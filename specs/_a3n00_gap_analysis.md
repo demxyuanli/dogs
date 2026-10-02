@@ -19117,3 +19117,33 @@ if (curr_par - last_par).abs() < PCONFUSION {      // cxx:1136-1140
 （比较运算符、`PConfusion` 用法、比较对象是 `first_par/last_par/prev_par/curr_par` 哪一个）；
 若一致 ⇒ 转**数值取证**：在 `:402` 前对 F113 那次调用打印 `(prev_par, curr_par, last_par, first_par)`，
 直接看零长度子段落进哪条分支。
+
+---
+
+### 9.465 —— 数值取证（否）: `split_wire.rs:402` **不是**零长度段的产地；剩余建边点已列出
+
+在 `:402`（`result.add_edge_patch(0, new_edge, …)`）前插入近零长度取证（env `T101_ZZ6`；**已 `git show HEAD` 还原**），
+过滤 `plen<1e-4 || p_end<1e-6 || c_end<1e-6 || p_first<1e-6`，打印
+`len/prev/curr/first/last/p_end/c_end/p_first/degen/is_cut_by_u`。实测（`.target-gate/piece113.txt`）：
+
+```text
+PIECE 总行: 56       其中 **len < 1e-3 的行: 0**
+（56 行全部来自 `p_first < 1e-6` 这类良性情形：段起点恰为该边的 first_par，例如
+ len=3.142e0 prev=6.283185307 curr=3.141592654 first=6.283185307 last=0.000000000 p_first=0.000e0）
+```
+
+⇒ **`split_wire.rs:402` 处的正常切分支不产生任何近零长度子段**（`len` 最小也在 1e-3 以上）。
+
+#### `split_wire.rs` 里全部的建边点（grep 已确认 4 处），逐个排除的清单
+
+```text
+:113  result.add_edge_patch(0, edge.clone(), …)      —— **未测**（疑为「不切、整边拷贝」的快路径）
+:402  result.add_edge_patch(0, new_edge, …)          —— **本轮已测：无近零长度（0 行）**
+:446  result.add_edge_patch(0, e1, …)                —— **未测**（内部/非流形分支）
+:448  result.add_edge_patch(0, edge.clone(), …)      —— **未测**（同上）
+:466  result.add_edge_patch(0, edge.clone(), …)      —— **未测**（同上）
+```
+
+**下一轮**：给 `:113/:446/:448/:466` 四处各加同款 `plen` 取证（同一次运行即可判完），找出零长度段真正的产生点；
+若四处都干净 ⇒ 说明零长度 `WireSegment` 不是 `split_wire` 造的，需回头查 `split_by_line` 里
+`split_wire` 返回后的装配（`:465-469` 把 `int_line_par/int_code/int_vertices` 推入三个输出数组）是否有错位。
