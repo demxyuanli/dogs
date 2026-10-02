@@ -21690,3 +21690,62 @@ void ShapeFix_ComposeShell::SplitByGrid(NCollection_Sequence<ShapeFix_WireSegmen
 ② `cxx:2218-2275`（真正的切分循环：U 线/V 线的构造与 `SplitByLine` 调用条件）↔ 端口 `:74-133`
    —— 其中「U 线 u=0/seam 那一次」正是产生两条零长度段的动作（§9.456）。
 ```
+
+---
+
+### 9.536 —— `SplitByGrid` U 线循环（`cxx:2229-2251` ↔ 端口 `split_by_grid.rs:88-111`）结构一致；由 F113 的实测（`cut_index=1`、u=0）推出**剩余嫌疑=网格的 joint 值**
+
+#### 对照
+
+```cpp
+// OCCT cxx:2229-2251
+for (i = (myUClosed ? 1 : 2); i <= myGrid->NbUPatches(); i++) {
+  gp_Pnt2d pos(myGrid->UJointValue(i), 0.);
+  gp_Lin2d line(pos, gp_Dir2d(gp_Dir2d::D::Y));
+  if (!myClosedMode && myUClosed) {                       // ← 非 closed 且 U 周期
+    double period = Umax - Umin; double X = pos.X();
+    double sh = AdjustToPeriod(X, Uf, Uf + period);
+    for (; X + sh <= Ul + pprec; sh += period) {
+      gp_Lin2d ln = line.Translated(gp_Vec2d(sh, 0));
+      int cutIndex = GetPatchIndex(X + sh + pprec, myGrid->UJointValues(), myUClosed);
+      SplitByLine(seqw, ln, true, cutIndex);
+    }
+  } else {
+    SplitByLine(seqw, line, true, **i**);                 // ← cutIndex = 循环下标
+  }
+}
+```
+```rust
+// 端口 split_by_grid.rs:88-111（§9.456 曾读该段的调用点）
+for i in (if self.u_closed { 1 } else { 2 })..=self.grid.nb_u_patches() {
+    let pos = GpPnt2d::new(self.grid.u_joint_value(i), 0.0);
+    let dir = GpDir2d::new(0.0, 1.0);
+    let line = GpLin2d::from_pnt_dir(pos, dir);
+    if !self.closed_mode && self.u_closed { … adjust_to_period(x, uf, uf + period) … }
+    else { self.split_by_line_wires(seqw, &line, true, i as i32); }
+}
+```
+⇒ **结构逐项一致**（循环起止 `u_closed ? 1 : 2`、`pos = UJointValue(i)`、方向为 Y、period 分支、`cutIndex` 取 `i` 或 `GetPatchIndex`）。
+
+#### 由 F113 实测推出的关键结论
+
+```text
+§9.456 实测：产生两条零长度段的那次切分是 **`CUT U uv=U line=(0.000000, 0.000000) cut_index=1`**。
+对照上式：端口在 `closed_mode == true` 时走 **else** 分支 ⇒ `cutIndex = i`；实测 `cut_index=1` ⇒ **i == 1**
+⇒ 即 `UJointValue(1) == 0.0` 且循环从 1 开始（`u_closed == true`）——**与 OCCT 同分支同取值** ✓。
+⇒ 因此这条切分的「调用侧」无误 ⇒ 差异只能在：
+   (a) **网格的 joint 值**（`NbUPatches` / `UJointValue(1..)` 的取值）；
+   (b) `SplitByLine` 内部（§9.457-§9.482 已逐段对拍并判定一致，但未在该输入上取数）。
+```
+
+#### 下一轮（一次探针即可定论；仍按 §9.533-C 的纪律）
+
+```text
+在 `split_by_grid` 的 U 线循环入口打印该次调用的网格参数：
+   `nb_u_patches / nb_v_patches / u_joint_values / v_joint_values / u_closed / v_closed / u_close / v_close`
+   （仅 F113 那次；env gated）。
+判读：
+  · 若 `u_joint_values` 与 OCCT 网格构造（`ShapeFix_ComposeShell` 里由面 UV 边界与周期性推出的 joint 值）
+    不一致 ⇒ 网格构造是分歧点（在端口 `CompositeSurface`/grid 初始化处对照 `cxx`）⇒ 按 .cxx 修；
+  · 若一致 ⇒ 差异在 `SplitByLine` 的内部数值（线与边的求交），转而在该输入上取交点数/参数并与 cxx 对照。
+```
