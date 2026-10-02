@@ -21363,3 +21363,42 @@ CBO ori=Reversed nb=1 p0=(-87.500,0.000,-32.000)
   **break_wires 之后、collect_wires 入口之前**（该区间只剩 perform 的调用与 collect_wires 自身；
   而 §9.517 的 CFLIP(=:71) 为 0 ⇒ 需重新审视 collect_wires 入口处是否还有别的 set_orientation）。
 ```
+
+---
+
+### 9.527 —— 【关键发现】`collect_wires.rs:268 seg.set_orientation(Orientation::Internal)`：**漏掉的第二个 Internal 写点**⇒ 重新解释 §9.500-§9.509 的「A 类候选」结论
+
+#### A. grep 出该文件所有朝向写点（`Internal` / `set_orientation` / `with_edges`）
+
+```text
+:53   if seqw[i].is_vertex() || seqw[i].orientation() == Internal { … }      // 移动，不设
+:71   seqw[i].set_orientation(Orientation::Internal);                        // §9.486/§9.517 覆盖过（CFLIP=0）
+:110  if an_or == Internal { continue; }                                     // 候选跳过（忠实 cxx:2577-2581）
+:266  seg.set_orientation(if reverse { Reversed } else { Forward });         // 连接时设正反
+:268  **seg.set_orientation(Orientation::Internal);**                        // ← **本轮才发现的写点**
+:320  with_edges(sbwd.clone(), Orientation::Forward)                         // 推出时用 Forward
+:386  with_edges(wd.clone(), Orientation::Forward)                           // merge 分支用 Forward
+```
+
+#### B. 数据与重新解释（§9.525/§9.526 的有效测量）
+
+```text
+· `break_wires` 出口：154 行朝向 = {Reversed 105, External 49}，**无一行 Internal**；
+· 与 A 类同坐标的 22 行在出口处是 `Reversed`；而 A 类候选在候选搜索时（§9.508）是 `Internal`；
+· 我此前的 CFLIP 探针只覆盖 `:71`（=0）⇒ 真正的写点是 **`:268`**（连接成功后把该段设为 Internal）。
+⇒ **重新解释**：A 类候选很可能是**已经被连接、被 `:268` 标记为 Internal 的段**（即已在 `sbwd` 里），
+   它们出现在 `seqw` 中但**不应再被当作候选**（`:110` 的跳过正是为此）。
+⇒ 因此 §9.500/§9.505/§9.509 的推断「存在可接候选却未被采纳」**并未成立**：
+   我统计的是**已消费**的段，真正的「未消费且可接」候选数尚未测过。
+```
+
+#### C. 下一轮（两件事，先做 ①）
+
+```text
+① 读 `:255-275`（连接块）与 `cxx:2752-2768`（其注释在端口 `:259-261`），核对 `:266-268` 的朝向设定
+   是否与 OCCT 同构（尤其「设 Internal」的条件）；
+② 重做候选统计：把「已在 sbwd 中（已消费）」的段排除后再数 A/B/C，
+   即 `sg` 的边集合与 `sbwd` 无交集时才计入 ⇒ 若那时 A=0 ⇒ 串接终止是**规格行为**，
+   靶点应回到「**为什么 OCCT 能用同样的段拼成 22 边而端口不能**」——即段的**生成**差异
+   （§9.452 的 BREAK-IN：端口 16 边 vs OCCT 侧对应段的构成），而不是候选搜索。
+```
