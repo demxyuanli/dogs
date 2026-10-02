@@ -19535,3 +19535,51 @@ for i in 0..seqw.len() {
     端口注释也承认；但两侧若在上游删了不同数量的元素，`shorts[i]` 就会指向不同的段 ⇒ 该并的没并）。
 命中即按 .cxx 修 → 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2（22+6）；--fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.477 —— `dispatch_wires` 确有「丢退化 wire」守卫，但**只覆盖「单条退化边」**；我们的薄片是 **3 边 wire 含 1 条退化边** ⇒ 不被拦 ⇒ 成为 2 张面（与观测一致）
+
+端口 `dispatch_wires.rs:94-121`：
+
+```rust
+while i < wires.len() {
+    if wires[i].is_vertex() { i += 1; continue; }
+    // cxx:3337-3343: skip a wire with a single degenerated edge.
+    if wires[i].nb_edges() == 0
+        || (wires[i].nb_edges() == 1 && BRepTool::is_degenerated(&wires[i].edges()[0])) {
+        wires.remove(i); continue;                        // ← 丢弃
+    }
+    // cxx:3345-3346: sfw.Load(sbwd); sfw.FixShifted().
+    let wire = builder.make_wire(wires[i].edges());
+    let _ = fix_shifted_wire(&wire, &my_face);
+    // cxx:3348-3357: ShapeBuild_Edge::RemovePCurve on degenerated edges.
+    for j in 0..wires[i].nb_edges() {
+        if BRepTool::is_degenerated(&wires[i].edges()[j]) { sbe.remove_pcurve(&wires[i].edges()[j], &my_face); }
+    }
+    // cxx:3358: sfw.FixDegenerated()  → 端口 fix_degenerated_all（重建段 + 恢复 patch 索引）
+    …
+}
+```
+
+**判读**：
+
+```text
+· 该守卫与 `.cxx:3337-3343` 一致（**只**跳 0 边或「单条退化边」的 wire）——忠实；
+· 但 F113 那两条退化段在 §9.453 里已被 collect_wires 并成 **3 边 wire**（零长度边 + 两条邻边）
+  ⇒ `nb_edges() == 3` ⇒ **不被这条守卫拦下** ⇒ 它们继续走到 `make_faces_on_patch` ⇒ 成为 5 张面里的 2 张
+  （与 §9.445 观测的 5 张面、其中两张 3 边薄片 **完全吻合**）。
+```
+
+#### 下一轮（最后一个未对拍的函数）
+
+```text
+`cxx:3358` 的 `sfw.FixDegenerated()` ↔ 端口 `fix_degenerated_all`（`dispatch_wires.rs:117-121` 之后）：
+  · OCCT 的 `ShapeFix_Wire::FixDegenerated` 对「含退化边的 wire」做的是——移除退化边并把**两侧邻边合并**
+    （必要时重建顶点）；若一条 wire 只剩退化边构成的环，它会被**清空**，随后 `DispatchWires` 里
+    `nb_edges()==0` 的守卫（:101）就会把它丢掉。
+  · 若端口的 `fix_degenerated_all` 在「3 边 wire（含 1 条退化边）」上没有实现同样的**邻边合并/清空**
+    ⇒ 该 wire 存活 ⇒ 多出一张面 ⇒ 5 面 ⇒ Shell(5) 被丢 ⇒ 空面。
+做法：读端口 `fix_degenerated_all`（在 `crates/occt-topo/src/shhealing/` 内）↔ `ShapeFix_Wire.cxx::FixDegenerated`，
+按 `.cxx` 补齐；命中即跑 §9.448 验收。
+```
