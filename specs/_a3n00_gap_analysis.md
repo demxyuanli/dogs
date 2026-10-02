@@ -20083,3 +20083,63 @@ pub fn is_short_segment(seg, face, grid_surface, u_resolution, v_resolution) -> 
 若确认 ①/② 的朝向语义或 ④ 的中点口径有差异 ⇒ 按 .cxx 修 `is_short_segment` ⇒ 跑 §9.448 验收。
 （该函数的读数影响面广：`shorts[]` 决定段是否被改成 Internal，进而影响 `CollectWires` 的串接归属。）
 ```
+
+---
+
+### 9.490 —— OCCT `IsShortSegment` 原文（`ShapeFix_ComposeShell.cxx:2394-2447`）
+
+```cpp
+ 2394 static int IsShortSegment(const ShapeFix_WireSegment&      seg,
+ 2395                           const TopoDS_Face&               myFace,
+ 2396                           const occ::handle<Geom_Surface>& myGrid,
+ 2397                           const TopLoc_Location&           myLoc,
+ 2398                           const double                     UResolution,
+ 2399                           const double                     VResolution)
+ 2400 {
+ 2401   TopoDS_Vertex Vf = seg.FirstVertex();
+ 2402   if (!Vf.IsSame(seg.LastVertex()))
+ 2403   {
+ 2404     return 0;
+ 2405   }
+ 2407   gp_Pnt pnt  = BRep_Tool::Pnt(Vf);
+ 2408   double tol  = BRep_Tool::Tolerance(Vf);
+ 2409   double tol2 = tol * tol;
+ 2411   int                                      code = 1;
+ 2412   ShapeAnalysis_Edge                       sae;
+ 2413   const occ::handle<ShapeExtend_WireData>& sbwd = seg.WireData();
+ 2414   for (int i = 1; i <= sbwd->NbEdges(); i++)
+ 2415   {
+ 2416     TopoDS_Edge edge = sbwd->Edge(i);
+ 2417     if (!Vf.IsSame(sae.LastVertex(edge)))
+ 2418     {
+ 2419       return 0;
+ 2420     }
+ 2421     occ::handle<Geom2d_Curve> c2d;
+ 2422     double                    f, l;
+ 2423     if (!sae.PCurve(edge, myFace, c2d, f, l))
+ 2424     {
+ 2425       continue;
+ 2426     }
+ 2428     // check 2d
+ 2429     gp_Pnt2d endPnt = c2d->Value(l);
+ 2430     gp_Pnt2d midPnt = c2d->Value((f + l) / 2);
+ 2431     if (!IsCoincided(endPnt, midPnt, UResolution, VResolution, tol))
+ 2432     {
+ 2433       code = -1;
+ 2434     }
+ 2436     // check 3d
+ 2437     gp_Pnt midPnt3d = myGrid->Value(midPnt.X(), midPnt.Y());
+ 2438     if (!myLoc.IsIdentity())
+ 2439     {
+ 2440       midPnt3d.Transform(myLoc.Transformation());
+ 2441     }
+ 2442     if (midPnt3d.SquareDistance(pnt) > tol2)
+ 2443     {
+ 2444       return 0;
+ 2445     }
+ 2446   }
+ 2447   return code;
+ 2448 }
+```
+
+（下一轮据此逐条核对端口 `helpers.rs:347-390` 的三处判据：①/② 的顶点**朝向语义**、④ 的「2d 参数中点 → 3d」口径。）
