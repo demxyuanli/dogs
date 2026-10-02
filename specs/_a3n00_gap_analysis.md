@@ -22532,3 +22532,38 @@ split_wire.rs:432/445     replace(&edge.0, &res_wire.0) / (&edge.0, &e1.0)
 ③ 若其中一处**不深入子形状**（只映射顶层），则 93 处「同点两 TShape」即由此产生
    ⇒ 按 `ShapeBuild_ReShape`/`ShapeBuild_Edge` 的同等分支修 ⇒ 跑 §9.448 验收。
 ```
+
+---
+
+### 9.563 —— `copy_replace_vertices_with` 读到且**忠实**（不查 Context，与 `ShapeBuild_Edge::CopyReplaceVertices` 同义）；`MapReShape` 定义位置待下一轮读取
+
+#### A. `copy_replace_vertices_with`（`shhealing/wire_fix.rs:1213-1234`）
+
+```rust
+pub fn copy_replace_vertices_with(edge: &Edge, v1: Option<&Vertex>, v2: Option<&Vertex>) -> Edge {
+    let reg = GeometryRegistry::global();
+    let Some(geom) = reg.edge_geom(&edge.0) else { return edge.clone(); };
+    let builder = TopoBuilder::new();
+    let mut copy = builder.make_edge(geom.curve.clone(), geom.first, geom.last);
+    let fv = v1.cloned().or_else(|| first_vertex(edge));
+    let lv = v2.cloned().or_else(|| last_vertex(edge));
+    if let (Some(v1), Some(v2)) = (fv, lv) { builder.add_edge_vertices(&mut copy, &v1, &v2); }
+    copy.0.set_orientation(edge.0.orientation());
+    copy.0.set_location(edge.0.location());
+    reg.set_edge(&copy.0, geom);
+    copy
+}
+```
+**判定**：按给定顶点建边、复现 `EmptyCopy` 的朝向/容差/曲线表示 ⇒ 与 OCCT `ShapeBuild_Edge::CopyReplaceVertices` 的**语义一致**；
+**它不接收也不查询 Context**（与 OCCT 同名方法一致：Context 的应用发生在**调用方**）⇒ 本函数**忠实**。
+
+#### B. 待查（下一轮，最后一处实现）
+
+```text
+`impl MapReShape` **不在 `crates/occt-topo/src` 下**（本轮的 glob 未命中）⇒ 需在整个 workspace 找其定义
+（预期在 `occt-core`/`occt-maths` 的 shape-build 等价模块），然后读：
+  ① `replace(old, new)`：是否记录映射（含**顶点/边/子形状**）；
+  ② `apply(shape)`：是否**深度**重建（OCCT 的 `ShapeBuild_ReShape::Apply` 会重建含子形状的形状 ——
+     这是「同点两 TShape」能否被消除的关键）；
+  ③ `apply` 对**顶点**的返回值（`split_wire.rs:355` 依赖它对 `a_nm_vertices[n]` 的映射）。
+```
