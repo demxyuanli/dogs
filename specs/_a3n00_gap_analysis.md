@@ -22142,3 +22142,31 @@ GLOOP 行: 78 —— 全部同型（两种镜像）：
   · 若 `shorts[i] == 1` 而未并入 ⇒ 差异在 merge 的目标匹配（`:357-383` 的 same_v/is_same_patch）。
 对照 `cxx:2853-2935`（merge 短段）与 `IsShortSegment`（§9.489-§9.492 已对拍，且已修正两处朝向）。
 ```
+
+---
+
+### 9.552 —— 合并循环入口的 `shorts[i]` 实测（单探针、build 断言、精确反向撤除）
+
+```text
+SHORTS 行: 154   shorts 取值分布: {'0': 154}
+shorts != 1 的行（前 12）：
+   SHORTS i=0 shorts=0 nb=1 ori=Internal
+   SHORTS i=1 shorts=0 nb=1 ori=Internal
+   SHORTS i=2 shorts=0 nb=1 ori=Internal
+   SHORTS i=0 shorts=0 nb=1 ori=Internal
+   SHORTS i=1 shorts=0 nb=1 ori=Internal
+   SHORTS i=2 shorts=0 nb=1 ori=Internal
+   SHORTS i=0 shorts=0 nb=1 ori=Internal
+   SHORTS i=1 shorts=0 nb=1 ori=Internal
+   SHORTS i=2 shorts=0 nb=1 ori=Internal
+   SHORTS i=0 shorts=0 nb=1 ori=Internal
+   SHORTS i=1 shorts=0 nb=1 ori=Internal
+   SHORTS i=2 shorts=0 nb=1 ori=Internal
+```
+
+判读（按 §9.551）：
+```text
+· 若两条退化段（`nb=1`、坐标 ±87.5,0,-32）的 `shorts != 1` ⇒ 它们在 `:335` 被跳过 ⇒ 不会被合并 ⇒ 靶点即该判据
+  （`IsShortSegment` 对首尾同点边的判定）；
+· 若 `shorts == 1` 却未并入 ⇒ 靶点在合并的目标匹配（`:357-383` 的 same_v/is_same_patch）。
+```
