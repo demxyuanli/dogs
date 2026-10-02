@@ -19203,3 +19203,51 @@ SPLIT 总行数: **96**
 定位零长度段是在**哪一条写操作**之后出现的；随后与 `cxx:2131-2210` 同段对拍（尤其
 `ShapeExtend_WireData` 相关的 add/insert 与 seam 处的顶点段生成）。
 ```
+
+---
+
+### 9.468 —— 收窄：`split_by_grid:28-72` 只写 patch 索引（不产段）；新假设 = 零长度段由 `split_by_line_wires` 的**切线建边**在 `canbeMerged == false` 的端点情形下造出
+
+#### A. 读 `split_by_grid.rs:24-72`（`cxx:2152-2199`）：**不产段**
+
+```rust
+if self.closed_mode {
+    for w in seqw.iter_mut() {                                  // 只读/只改段属性
+        let wire = builder.make_wire(w.edges());
+        add_uv_bounds_on_wire(&face, &wire, &mut box2d);        // 该段的 UV 盒
+        … shift_u/shift_v = adjust_to_period(…)                 // cxx:2165-2174
+        let iumin/iumax/ivmin/ivmax = …get_patch_index(…)        // cxx:2182-2198
+        for j in 1..=w.nb_edges() { w.define_iu_min(j, iumin); w.define_iu_max(j, iumax);
+                                    w.define_iv_min(j, ivmin); w.define_iv_max(j, ivmax); }
+    }
+}
+```
+⇒ 只是**给每段每条边写 patch 索引**，没有任何 `push/insert/remove`、也不切边 ⇒ **不是零长度段的产地**。
+
+#### B. §9.467 捕获里的新数据（修正 §9.467 的表述）
+
+```text
+SPLIT（split_by_line 调用）96 次：n 分布 {1:94, 2:2}；edges 分布 {1:91, **14:2**, **12:2**, 4:1}
+```
+
+⇒ **F113 的 14 边 wire（模型侧 `MODEL f=113 wire[1] nEdges=14`）确实进了 `split_by_line`**（2 次，`n_par` 为 1 或 2），
+   而 **6 边与 16 边那两条没有**。所以更准确的说法是：**长 wire 中只有 14 边那条被「按线切」**，
+   但它的交点只有 1–2 个 ⇒ 按线切不可能把 16 边切成 7+5+4（那由 `break_wires` 完成，§9.452）。
+
+#### C. 新假设（比 §9.467 更具体，下一轮一次运行即可判定）
+
+零长度段（`(±87.5,0,-32)->同点`）来自 **`split_by_line_wires` 里「沿切线建边」**（`cxx:2059-2108` ↔ 端口 `:616-625`）：
+
+```text
+cxx:2025  canbeMerged = (i - 1 > 1 || i < SplitLinePar.Length())
+cxx:2037  if (Par(i) - Par(i-1) < PConfusion() || (canbeMerged && (aD<=tol1² || aD<=tol2²))) { 合并顶点; continue; }
+⇒ 若退化的一对**落在端点**（`canbeMerged == false` 的那些 i），该守卫**不成立** ⇒ **照样建边**
+   ⇒ 建出来的边两端点重合 ⇒ 正是「零长度段」。
+端口 :590/:598-600 的实现与 cxx 相同（§9.458 已逐项对过），所以**不是端口写错**，
+而是「端点处退化对」这一情形在两侧都被允许 —— 需要看 OCCT **在同一输入下**是否也会走到这一步
+（即：分歧可能在**交点个数/位置**：端口给出 seam 处多一个交点，OCCT 不会）。
+```
+
+**下一轮**：给 `split_by_line_wires` 的沿切线建边段（端口 `:590-630`）加一次「仅当 `canbeMerged == false`
+且建出的边两端点重合时」的打印，并同时打印 `i / Length / par(i-1), par(i) / aD / tol1, tol2`；
+一次运行即可确认「零长度段是否诞生于此」，并给出该退化对的参数值（用于与 OCCT 同输入对照）。
