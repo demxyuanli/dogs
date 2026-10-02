@@ -19631,3 +19631,43 @@ pub fn fix_degenerated_all(wire: &mut Wire, face: &Face, prec: f64) -> bool {
 **当前状态（如实）**：F113 仍 4 wires / 空面；面积比 0.8996；门禁 5/5 绿。本目标（goal 91/120）已把差异候选
 收敛到**一个函数**（`fix_degenerated` 逐边 worker），且它所在的那条链（LoadWires → SplitByGrid → BreakWires →
 CollectWires → DispatchWires → FixDegenerated）此前每一环都已判定忠实或有明确结论。
+
+---
+
+### 9.479 —— 逐边 worker `fix_degenerated` 前半段与 `ShapeFix_Wire.cxx:2130-2186` 逐段一致；剩余待读 = 邻居重接段（`:2148-2185` ↔ `cxx:2171-2205`）
+
+端口 `wire_fix.rs:2092-2148`（文档注释即声明对拍对象：`ShapeFix_Wire::FixDegenerated(const int num)`，`cxx:2130-2205`）：
+
+```rust
+fn fix_degenerated(wire: &mut Wire, face: &Face, prec: f64, num: usize) -> (bool, bool) {
+    let nb = wire_edges_nb(wire);
+    if nb < 1 { return (false, false); }
+    match check_degenerated(wire, face, prec, num) {
+        None => (false, false),
+        // cxx:2148-2152: FAIL2 -> WireData()->Remove(num) + DONE3
+        Remove => { wire_remove_edge(wire, num); (true, false) }
+        Found { p2d1, p2d2, lack } => {
+            let vect2d = GpVec2d::new(p2d2.x()-p2d1.x(), p2d2.y()-p2d1.y());   // cxx:2160-2163
+            let line2d = Geom2dLine::from_pnt_dir(p2d1, dir2d);
+            let mag = vect2d.magnitude();
+            // cxx:2165-2168: MakeEdge(degEdge) + Degenerated(true) + UpdateEdge(line2d, Confusion)
+            //                + Range(0, |vect2d|)
+            … 构造 deg（用 CurveOnSurface 代替被清空的 3D 曲线，端口 EdgeGeom 不能存 null 曲线）…
+            // cxx:2171-2186
+            let n2 = if num > 0 { num } else { nb };
+            let n1 = if n2 > 1 { n2 - 1 } else { nb };
+            …
+```
+
+**判定**：前半段（空 wire 早退、`check_degenerated` 三态、`Remove ⇒ wire_remove_edge`、`vect2d/line2d/mag`、
+`MakeEdge/Degenerated/UpdateEdge/Range` 的等价构造）与 `.cxx:2130-2168` **一致**；端口还为「不能存 null 3D 曲线」
+给出了等价替代（用 pcurve 在面上的像 `CurveOnSurface`），并已注明依据（`cxx:1082-1084`）。
+
+#### 剩余待读（本目标的最后一段）
+
+```text
+端口 `wire_fix.rs:2148-2185`（n1/n2 邻居重接：把 n1/n2 两条邻边的顶点改成新退化边的两端点，
+必要时 `CombineVertex`） ↔ `ShapeFix_Wire.cxx:2171-2205`。
+看点：OCCT 在此处是否**把 n1/n2 邻边接到新退化边上并合并顶点**（从而让「3 边含 1 退化边」的薄片折成
+      1–2 边甚至清空）；端口若只改顶点不重接（或 n1/n2 选取不同），薄片就会存活 ⇒ 5 张面 ⇒ Shell(5) 被丢。
+```
