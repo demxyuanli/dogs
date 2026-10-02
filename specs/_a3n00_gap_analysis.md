@@ -19837,3 +19837,51 @@ if n1 != n2 && BRepTool::is_degenerated(&e1) && !has_pcurve(&e1, face) {
 ② 读 `ShapeProcess_OperLibrary.cxx`/`ShapeFix_Shape.cxx` 的算子序列（审计给过 `:785-865`/`:83-250`），
    找出**哪一步会清掉「1 边退化 wire」**，再对照端口 `step/read_topology.rs:710-714` 的按面调用清单。
 ```
+
+---
+
+### 9.484 —— 【对照完成】OCCT 整形：`noop` 的 **8/14/1/1** → 整形后 **22/6**；而 **22 = 8 + 14** ⇒ 分歧是「外环两条 wire 没被合并」，不是「退化边没被清理」
+
+`cmd /c "specs\occt_probe\run_dbg.bat data\occ\a3n00.stp"`（默认整形，547 行）中与 F113 同 box 的面：
+
+```text
+OCCT 整形后：FACE 25 type=1 **wires=2 edges_per_wire: 22 6**  spans: u=6.2832 v=175.0000 · u=2.1968 v=113.7919
+             box=(-87.5,-34,-100)-(87.5,34,-32)          ← 与端口 F113 的 box 逐字一致
+OCCT 未整形：FACE 113 type=1 wires=4 edges_per_wire: **8 14 1 1**（§9.475）
+端口 F113 输入：wires=4  **6 14 1 1**（§9.471，第一条第 8 边在导入期被 FixDummySeam 丢成 6）
+```
+
+**关键算术**：
+
+```text
+22 = **8 + 14** ✓ 精确 —— OCCT 把外环的两条 wire（8 边与 14 边）**合并成一条 22 边 wire**；
+6  → 端口与 OCCT **都有**那条 6 边内环（端口输入里就是 6）；
+1+1（两条零长度退化 wire）在整形后不再单独存在（被并入/吸收）。
+⇒ 整形后 (22, 6) 与 noop 的 (8, 14, 1, 1) 是**同一批边的两种分组**（28 条边不变，§9.450 已证）。
+
+端口整形后：**6 条 wire / 5 张面**（face0 = 6e+7e，face1 = 5e，face2 = 4e，face3/4 = 3e），
+边总数同样 28 —— 但**没有发生 8+14 的合并**，那一趟反而把（16 边 = 14 边被切分插入 2 条后的）段切成了 7+5+4。
+```
+
+#### 结论（把目标再收紧一格）
+
+```text
+**分歧 = 端口没有把外环的两条 wire（对应 OCCT 的 8 与 14）合并成一条 22 边 wire**，
+   而 OCCT 的 ComposeShell 做到了（22 = 8 + 14，且两条 1 边退化 wire 被吸收）。
+⇒ 这条**否掉** §9.483 的「清理来自 ComposeShell 之外（ShapeProcess）」推断：noop→整形的差
+   就发生在这一趟整形里（run_dbg 默认跑 ShapeProcess/FixShape，ComposeShell 是 FixMissingSeam 内部一步）。
+⇒ 也把 §9.452-§9.482 那 30 节的「逐环忠实」限定清楚：它们在**端口自己的输入与分支上**忠实，
+   但端口的 `CollectWires` 配对/合并**没有把这两条 wire 连起来**（OCCT 连起来了）——
+   最可能落在 `collect_wires.rs:357-383` 的**目标边选取条件**（`same_v(本段首顶点, 目标边首顶点)`）
+   或 `is_same_patch` 的判据上：若这两条 wire 的首顶点不「same_v」（例如顶点对象不同但坐标相同），
+   端口就不会把它们并到同一条 wire。
+```
+
+#### 下一轮（一次探针即可判定）
+
+```text
+在 `collect_wires.rs` 的配对循环里，对 F113 那次调用打印：
+  每个候选段的首顶点指针/坐标、每条目标 wire 的首边首顶点，以及 `same_v` / `is_same_patch` 的判定结果，
+  看**14 边 wire 的段与 8 边（端口为 6 边）wire 的段**为何没有被连起来（`same_v` 假？patch 不同？还是顺序/初始 wire 集合为空）。
+命中即按 `.cxx`（CollectWires 的 C++ 同段）修 ⇒ 跑 §9.448 验收。
+```
