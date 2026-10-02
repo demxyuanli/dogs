@@ -20735,3 +20735,46 @@ CSEG sbwd_nb=5  A_same=3 B=0 C_far=3
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
 --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.507 —— 最后一处未读代码 `:104-132` 读完：候选段的两个跳过点是 `:106 is_vertex` 与 **`:110 Internal`**；`:113-117` 只作用于「尚无累积 wire」时
+
+```rust
+for i in 0..seqw.len() {
+    let seg = &seqw[i];
+    if seg.is_vertex() { continue; }                       // :106  跳过 vertex 段
+    let an_or = seg.orientation();
+    if an_or == Orientation::Internal { continue; }        // :110  **跳过 Internal 段**
+    if !has_sbwd {
+        // cxx:2584-2604: for the first segment, take any.
+        if shorts[i] > 0 || an_or == Orientation::External { continue; }   // :115  首段不用「短段/External」
+        if an_or == Orientation::Forward { reverse = true; }
+        index = Some(i); … break;                           // :121-131
+    }
+    // :133 起 = cxx:2607-2614 同 patch 测试与优先级（已读过，§9.498/§9.501）
+}
+```
+
+**判读（结合 §9.505 的实测 A ≥ 1 / 25 行）**：
+
+```text
+· 候选被挡的两个位置只有 `:106`（vertex 段）与 `:110`（**Internal 段**）；
+· `:115` 只作用于 `!has_sbwd`（即「还没有任何累积 wire」的首段选择），与「推出前 index=None」无关；
+· 而 §9.486 已确认：`collect_wires.rs:68-72` 会把「`isshort > 0` 且（External 或单条退化边）」的段**就地改成 Internal**；
+  §9.488 实测那两条零长度段 `short=0` 未被改——但**别的段**（例如被 `break_wires` 切出的、或 `load_wires` 的
+  非流形段）可能是 Internal ⇒ 它们会**在 `:110` 被永久跳过**，即使其段级端点与 `end_v` 同一对象（A 类）。
+⇒ 新假设（比前几轮更贴近代码）：**A 类候选多数是 Internal 段**（被 `:110` 跳过）
+  ⇒ 若 OCCT 的 `cxx:2570-2624` 同处**不**排除 Internal 段（或排除条件不同），即为分歧点。
+```
+
+#### 下一轮（一次探针即可定论；仍是一轮内插桩→跑→撤除）
+
+```text
+在「无候选 ⇒ 推出」时刻（`index.is_none() && sbwd.len() >= 3`）对 A 类候选（段级端点 `same_v(&end_v, …)` 为真）
+打印其 `orientation()` 与 `is_vertex()`，统计其中 Internal / vertex 各占多少：
+  · 若 A 类**全部或多数是 Internal** ⇒ 命中 `:110`；随后读 `cxx:2570-2624` 核对 OCCT 是否同样排除 Internal，
+    差异处按 .cxx 修 ⇒ 跑 §9.448 验收；
+  · 若 A 类多为 Forward/Reversed 且 is_vertex=false ⇒ `:106`/`:110` 都不是原因，需回 `:133` 之后
+    逐条复核（但 §9.500-§9.504 已把它们排除，故届时需重新审视是否漏了别的过滤）。
+```
