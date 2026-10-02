@@ -19583,3 +19583,51 @@ while i < wires.len() {
 做法：读端口 `fix_degenerated_all`（在 `crates/occt-topo/src/shhealing/` 内）↔ `ShapeFix_Wire.cxx::FixDegenerated`，
 按 `.cxx` 补齐；命中即跑 §9.448 验收。
 ```
+
+---
+
+### 9.478 —— 端口 `fix_degenerated_all`（循环层）已读完，与 `.cxx` 对齐；最后未对拍的是**逐边 worker** `fix_degenerated`
+
+端口 `wire_fix.rs:2176-2214`（`ShapeFix_Wire::FixDegenerated` 的 whole-wire 循环）：
+
+```rust
+pub fn fix_degenerated_all(wire: &mut Wire, face: &Face, prec: f64) -> bool {
+    let mut done = false; let mut last_coded = -1i32; let mut prev_coded = 0i32;
+    // myClosedMode = true ⇒ stop = 0（cxx:1045），故从 nb 扫到 1
+    let mut i = wire_edges_nb(wire) as isize;
+    while i > 0 {
+        let (d, coded2) = fix_degenerated(wire, face, prec, i as usize);   // ← 逐边 worker
+        done |= d; let coded = i32::from(coded2);
+        if last_coded == -1 { last_coded = coded; }
+        // cxx:1050-1071 PRO7226：丢掉重复的退化边，并清掉其后继边的标记
+        if coded == 1 && (prev_coded == 1 || (i == 1 && last_coded == 1)) && wire_edges_nb(wire) > 1 {
+            wire_remove_edge(wire, i as usize);
+            if prev_coded == 0 { i = wire_edges_nb(wire) as isize; }
+            if let Some(e) = edges_of_wire(wire).get(i as usize - 1) {
+                GeometryRegistry::global().set_degenerated(&e.0, false);
+            }
+            i += 1; prev_coded = 0;      // `B.Degenerated(sbwd->Edge(i++), false)`：i++ 被循环 i-- 抵消
+        } else { prev_coded = coded; }
+        i -= 1;
+    }
+    done
+}
+```
+
+⇒ 循环层（遍历方向、`last_coded/prev_coded` 状态机、PRO7226 的「重复退化边」删除与其后继清标记、`i++`/`i--` 抵消）
+   与 `.cxx:1045-1071` 对齐，**未见差异**。
+
+#### 最后未对拍的函数（下一轮，若仍要做）
+
+```text
+逐边 worker：端口 `fix_degenerated(wire, face, prec, idx)`（`wire_fix.rs` 内，被 :2185 调用）
+        ↔ `ShapeFix_Wire::FixDegenerated(const int num)`（ShapeFix_Wire.cxx，PRO7226 段之前）
+看点：对「3 边 wire 含 1 条退化边」这种输入，OCCT 是否
+  ① 移除退化边并把**两侧邻边合并**（`CombineVertex` + 交换邻边的顶点），使 wire 变短甚至清空；
+  ② 清空后由 `DispatchWires` 的 `nb_edges()==0` 守卫（`cxx:3337-3343`，§9.477）丢弃它。
+若端口 worker 在 ① 上不等价（例如只清标记不移除/不合并），就会让那两条 3 边薄片存活 ⇒ 5 张面 ⇒ Shell(5) 被丢。
+```
+
+**当前状态（如实）**：F113 仍 4 wires / 空面；面积比 0.8996；门禁 5/5 绿。本目标（goal 91/120）已把差异候选
+收敛到**一个函数**（`fix_degenerated` 逐边 worker），且它所在的那条链（LoadWires → SplitByGrid → BreakWires →
+CollectWires → DispatchWires → FixDegenerated）此前每一环都已判定忠实或有明确结论。
