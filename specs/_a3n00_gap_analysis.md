@@ -22491,3 +22491,44 @@ B.Add(newEdge, atmpV);                                             // :1332  装
 下一轮：读 `Self::context/_mut` 的定义与 `replace/apply` 的实现（`shape_build` 等价模块），
 并用 grep 列出 `context_mut().replace(` 的全部调用点 —— 看**输入顶点的注册**是否覆盖这里用到的那些顶点。
 ```
+
+---
+
+### 9.562 —— Context 清点：`MapReShape`（`shell.rs:162-173`，`ShapeBuild_ReShape` 的移植）+ 14 处 `replace/apply` 调用点，**与 OCCT 的 Context 用法同构** ⇒ 嫌疑转到 `apply/replace` 的**语义**
+
+#### A. Context 本体
+
+```text
+shell.rs:162  pub fn context(&self) -> &MapReShape { &self.context }
+shell.rs:166  pub fn context_mut(&mut self) -> &mut MapReShape { &mut self.context }
+shell.rs:171  pub fn set_context(&mut self, ctx: MapReShape)   // ShapeFix_Root::SetContext
+```
+
+#### B. 全部 `context(_mut)().replace/apply` 调用点（14 处，均与 OCCT 对应位置一致）
+
+```text
+dispatch_wires.rs:275     replace(&edge.0, &new_edge.0)      // cxx:3457
+make_faces_on_patch.rs:228 replace(&a_v.0, &a_new_v.0)
+split_by_line.rs:79       replace(&a_vert.0, &a_vert_new.0)  // cxx:1471 建新顶点后统一
+split_by_line.rs:586/587  apply(&split_line_vertex[...].0)   // cxx 的 Context()->Apply
+split_by_line.rs:607/608  replace(&v1.0, &r1.0) / (&v2.0, &r2.0)
+split_wire.rs:318/325     replace(&prev_v.0, &f_v.0) / (&last_v.0, &nv.0)   // cxx:1261-1293
+split_wire.rs:355         apply(&a_nm_vertices[n].0)         // cxx:1315
+split_wire.rs:358/363     replace(&atmp_v, &prev_v.0) / (&atmp_v, &v.0)     // cxx:1318/1325
+split_wire.rs:432/445     replace(&edge.0, &res_wire.0) / (&edge.0, &e1.0)
+```
+
+⇒ **机制与调用点都齐备且位置对应** ⇒ 「同点两 TShape」的原因只能出在 **`apply/replace` 的语义或它们与
+`copy_replace_vertices_with` 的配合**上（即替换是否**深入子形状**、产生的边是否**查询 Context**）。
+
+#### 下一轮（读两个函数的实现，这是本目标最后一处未读实现）
+
+```text
+① 读 `MapReShape` 的 `replace` / `apply` 实现（grep `impl MapReShape`）：
+   重点：`apply` 对一个**顶点**是否返回映射后的顶点；对**边**是否递归映射其子形状（OCCT 的
+   `ShapeBuild_ReShape::Apply` 是深度的，会重建含子形状的形状）；
+② 读 `copy_replace_vertices_with`（`shhealing`）：它是否经 Context 查询首末顶点（OCCT 的
+   `ShapeBuild_Edge::CopyReplaceVertices` 会做 `Context()->Apply`）；
+③ 若其中一处**不深入子形状**（只映射顶层），则 93 处「同点两 TShape」即由此产生
+   ⇒ 按 `ShapeBuild_ReShape`/`ShapeBuild_Edge` 的同等分支修 ⇒ 跑 §9.448 验收。
+```
