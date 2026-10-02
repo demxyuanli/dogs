@@ -19931,3 +19931,45 @@ OCCT 侧同一步应得到 `[22, 6]`（两条）。⇒ 靶点 = **段的串接�
     按 `.cxx` 修顶点统一（这解释了 6 条而非 2 条，也解释了 §9.453 里那两张 3 边薄片）；
   · 若 is_same 普遍为真而仍没串成 2 条 ⇒ 靶点回到 `same_v` 之外的判据（`is_same_patch` 优先序、同边返回最低优先级）。
 ```
+
+---
+
+### 9.486 —— `collect_wires` 起始段（`:50-74`）：**单条退化边且「短」的段会被就地改成 `Internal`** —— 直接关系到 F113 那两条零长度段
+
+端口 `collect_wires.rs:50-74`（`cxx:2519-2549`）：
+
+```rust
+while i < seqw.len() {
+    if seqw[i].is_vertex() || seqw[i].orientation() == Orientation::Internal {
+        wires.push(seqw[i].clone());      // vertex / Internal 段**直接进 wires**
+        seqw.remove(i); continue;         // cxx:2525-2526: i-- 与 i++ 抵消
+    }
+    let isshort = is_short_segment(&seqw[i], &face, &self.grid, self.u_resolution, self.v_resolution);
+    shorts[i] = isshort;
+    let one_degenerated = seqw[i].nb_edges() == 1
+        && seqw[i].edge(1).map(BRepTool::is_degenerated).unwrap_or(false);
+    if isshort > 0 && (seqw[i].orientation() == Orientation::External || one_degenerated) {
+        seqw[i].set_orientation(Orientation::Internal);      // ← **就地改朝向**
+    }
+    i += 1;
+}
+```
+
+**与 F113 的直接关联**：那两条段正是「`nb_edges()==1` 且该边退化」⇒ `one_degenerated == true`
+⇒ 只要 `is_short_segment(...) > 0`，它们就会被**就地改成 `Internal`**，随后进入串接主循环（而不会被
+`:53-56` 提前搬进 `wires`——那段判定发生在改朝向**之前**）。
+
+⇒ 于是「这两条段以 `Internal` 身份参与串接」这一点，很可能就是它们与相邻段被拼成
+   **两张 3 边薄片**（§9.453 的 COLLECT-OUT `[6,7,5,4,3,3]` 里的两个 3）而**不是**被并进外环的原因；
+   OCCT 同一步应得到 `[22, 6]`。
+
+#### 下一轮（一次探针，仍是库内 env-gated，用完 `edit` 反撤）
+
+```text
+在 `collect_wires` 的 `:74` 之后打印：每个段的 (i, nb_edges, orientation, is_short, one_degenerated)，
+并在主循环结束时打印最终 `wires` 的每条 wire 的边数与朝向 —— 一次运行即可确认：
+  · 那两条段是否确实被改成 Internal；
+  · Internal 段在串接里是否只与「彼此」相连（⇒ 生成 3 边薄片），而没与外环段相连。
+若确认 ⇒ 对照 `cxx:2519-2549` 的同一分支核对「改 Internal 的条件」与「Internal 段的串接规则」，
+   差异处按 .cxx 修 ⇒ 跑 §9.448 验收。
+```
