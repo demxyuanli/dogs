@@ -19797,3 +19797,43 @@ if n1 != n2 && BRepTool::is_degenerated(&e1) && !has_pcurve(&e1, face) {
       若 OCCT 在此另有判据（例如用 `BRep_Tool::IsClosed(E2, myFace)` 或 pcurve 跨度≈周期）判为 FAIL2 ⇒ 移除，
       那就是分歧点。
 ```
+
+---
+
+### 9.483 —— 通用检测段两侧对照（`:960-1016` ↔ 端口 `:1928-1975`）**等价**；由此推出更关键的怀疑：**清理动作来自 ComposeShell 之外的 wire 级修复（ShapeProcess/FixShape）**
+
+#### A. 逐项对照（OCCT → 端口）
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `pp/p0/p1/p2 = Pnt(Vp/V0/V1/V2)`（:960-963） | `:1929-1940` 同（`first/last_vertex` + `vertex_point`） | ✓ |
+| `precFirst=min(prec,Tol(V1))`、`precFin=max`、`precVtx=(prec<Tol? 2*precFin : precFin)`（:968-970） | `:1942-1944` 同 | ✓ |
+| `forward = (E2.Orientation()==FORWARD)`（:972） | 端口注释说明 `forward` 未被 `DegeneratedValues` 使用（引 `cxx:373-411` 的 `const bool /*forward*/`） | ✓（等价，已注明） |
+| `if (p1.Distance(p2) <= precFirst) dgnr = mySurf->DegeneratedValues(p1,precVtx,p2d1,p2d2,par1,par2,forward)`（:975-977） | `if p1.distance(&p2) <= prec_first { if let Some((a,b,_,_)) = SurfaceSingularities::compute(surf).min_gap(&p1, prec_vtx) { p2d1=a; p2d2=b; dgnr=true } }`（:1949-1972） | ✓（端口用**最近奇异点**口径，正对 OCCT `#77 rln S4135` 在 :1014-1016 的注释「using singularity which has minimum gap…」） |
+| 中点守卫：`C3d->Value(0.5*(a+b))` 与 `p1` 的平方距离 > `precVtx²` ⇒ `dgnr=false`（:979-990） | `:1960-1970` 同（`edge_parameters` + `edge_curve` + `d0` + `square_distance`） | ✓ |
+| `if (!dgnr) { if (n1 != n2 && p1.Distance(pp) <= precFirst && mySurf->IsDegenerated(pp, precFirst) && !Degenerated(E1)) return false; … }`（:992-999） | 端口 `:1973-1975` 起（注释即引 `cxx:995-999`），**该分支代码本轮未读完** | 待读（下轮） |
+
+#### B. 由 A 推出的**关键怀疑**（可能是本目标真正的根因）
+
+```text
+圆柱（R=34）**没有奇异点** ⇒ 无论 `DegeneratedValues` 还是 `min_gap`，在这个 seam 零长度边上都**取不到退化值**
+⇒ `dgnr = false`，随后 lack 路径同样查的是「奇异点 + 缺口」，在圆柱上也不会判定为退化
+⇒ **OCCT 的 `CheckDegenerated` 对这条边同样不会给出 FAIL2 / Remove**
+⇒ 那么 OCCT 整形后 FACE 113 收敛成 2 wires（22+6）的「清理动作」**不可能出自 ComposeShell 内部的退化处理**
+   而更可能出自**每个面的 wire 级修复链**（`ShapeFix_Shape`/`ShapeProcess` 驱动的 `ShapeFix_Wire`
+   的 `FixDegenerated`/`FixSmall`/`FixLacking` 等）——**这正是覆盖度审计列的第 1 大缺口：
+   「没有 ShapeProcess/FixShape 驱动器，端口在 reader 里按面直调子步」**！
+```
+
+这与审计结论**相互印证**：不是某个子判据写错了，而是**少了一趟整形的编排**（哪些 Fix* 在什么顺序、以什么参数作用到面上）。
+
+#### C. 下一轮（两条，先做 ①，成本最低）
+
+```text
+① 数据核对（无需读代码）：比较 OCCT 侧 FACE 113 在 **noop** 与 **默认整形** 下的 wire 结构
+   （noop 已是：wires=4 edges 8/14/1/1，见 §9.475；默认整形那趟取 `run_dbg.bat <stp>` 输出里同 box 的那张面）
+   · 若整形后那两条 1 边 wire **消失或并入** ⇒ 结论 = 清理发生在整形编排里 ⇒ 按 ② 找具体的 Fix* 与顺序；
+   · 若整形后**仍在**（只是 F113 的 wire 数从 4 变成 2 是别的合并造成的）⇒ 假设需修正。
+② 读 `ShapeProcess_OperLibrary.cxx`/`ShapeFix_Shape.cxx` 的算子序列（审计给过 `:785-865`/`:83-250`），
+   找出**哪一步会清掉「1 边退化 wire」**，再对照端口 `step/read_topology.rs:710-714` 的按面调用清单。
+```
