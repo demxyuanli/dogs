@@ -21866,3 +21866,37 @@ GRIDC 行: 47   closed_mode 分布: {'true': 47}
 · `closed_mode=false` ⇒ 走 U-closed 分支（`!closed_mode && u_closed`）⇒ `x + sh` 可为 0，与 §9.456 的 `line=(0,0)`/`cut_index=1` 自洽 ⇒ 网格与切分位置前提无误；
 · `closed_mode=true` ⇒ 走 else 分支 ⇒ 线在 `UJointValue(1)=π`、`cut_index=1` ⇒ 则 §9.456 的 `(0,0)` 打印属于**另一面**的调用，需要重新归属。
 ```
+
+---
+
+### 9.543 —— 【有效测量】`closed_mode=true`（47/47）、`uj=[π,3π]`、`nbu=1` ⇒ U 线应在 **u=π** 且 `cut_index=1`；**与 §9.456 记录的 `line=(0.000000,0.000000)` 矛盾**（需重新归属）
+
+#### 数据（§9.542，`build_ok=1`、精确 A+P→A 撤除、`T101_ZZU` 残留 0、库 diff 空）
+
+```text
+GRIDC 行: 47        closed_mode 分布: {'true': 47}
+  closed_mode=true  u_closed=true  v_closed=false  u_period=6.283185  nbu=1  nbv=1
+  uj=[3.141592653589793, 9.42477796076938] = [π, 3π]     ubounds=(3.141593, 9.424778)
+```
+
+#### 矛盾与处置
+
+```text
+· `closed_mode = true`（全部 47 次）⇒ U 线循环走 **else 分支** ⇒ `SplitByLine(seqw, line, true, i)`
+  且 `line.pos = (UJointValue(1), 0) = (π, 0)`；`nbu=1` ⇒ 只有 `i=1` 一次 ⇒ `cut_index = 1` ✓；
+· 但 §9.456 的探针输出记的是 `CUT U uv=U line=(0.000000, 0.000000) cut_index=1` 且其 `ZEROS` 含
+  `(±87.5,0,-32)`（确属 F113）⇒ 二者**不可能同时成立**（`uj[0]=π` 与 `line=0`）。
+⇒ 结论：§9.456 的那条 `CUT U line=(0,0)` **不是** F113 在这次网格状态下的 else 分支调用
+  （可能属于**另一张面**的调用，或该次运行的网格与本次不同：`CompositeSurface` 逐面构建）。
+  该记录**标记为「归属未定」**，不作为后续推理依据。
+```
+
+#### 下一轮（一次探针即可给出**无歧义**的 F113 切分读数）
+
+```text
+在同一行里同时打印 **网格量 + 该次切分参数 + 切后零长度段数**（仅当切后新增零长度段时输出）：
+   `closed_mode / nbu / uj / i / 该次 line.pos / cut_index / 切后 zero_len 数`
+⇒ 这样「产生 F113 零长度段的那一次切分」会被**唯一确定**（不再依赖跨运行的坐标比对）。
+随后与 OCCT `cxx:2229-2251` 的分支/取值逐项对齐（`UJointValue(1)`、`cutIndex=i`），
+若一致 ⇒ 差异确定在 `SplitByLine` 内部数值（线与边的求交），转入该输入上的交点数/参数取证。
+```
