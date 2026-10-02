@@ -22403,3 +22403,59 @@ split_wire.rs:348/369 copy_replace_vertices_with(...) + builder.add(&mut new_edg
 ④ 修后跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
    面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.560 —— 关键对照：端口的三分支与 `cxx:1238-1255` **一致**；但 OCCT 另有 **`cxx:1315-1332` 的 `Context()->Apply/Replace` 顶点统一**（端口侧这一环尚未对上）
+
+#### A. 已对上（端口 `split_wire.rs:289-313` ↔ `cxx:1238-1255`）
+
+```rust
+let v;
+match v_opt {
+    None => { let nv = builder.make_vertex(curr_pnt, tol_edge); vertices.push(nv.clone()); v = nv; }  // cxx:1238-1242
+    Some(vv) if !do_cut => { while j < stop { vertices.push(last_v.clone()); j += 1; } … v = vv; }      // cxx:1243-1255
+    Some(vv) => { vertices.push(vv.clone()); v = vv; }                                                  // 复用
+}
+```
+```cpp
+// cxx:1240
+B.MakeVertex(V, currPnt.Transformed(myLoc.Transformation()), tolEdge);
+```
+⇒ 三分支**逐条一致**（`None` 恒新建 ✓）。
+
+#### B. **尚未对上的一环（很可能是根因）**：OCCT 在把边装进结果时经 **Context 统一顶点**
+
+```cpp
+// cxx:1315-1332（OCCT）
+TopoDS_Vertex atmpV = TopoDS::Vertex(Context()->Apply(aNMVert));   // :1315  经 Context 映射新顶点
+…
+Context()->Replace(atmpV, prevV);                                  // :1318  与前一顶点统一
+…
+Context()->Replace(atmpV, V);                                      // :1325  与当前顶点统一
+…
+B.Add(newEdge, atmpV);                                             // :1332  装入统一后的顶点
+```
+
+**判读**：
+
+```text
+· OCCT 的 `Context()->Apply(aNMVert)` + 两次 `Context()->Replace(atmpV, …)` 正是**顶点统一**机制：
+  **同一个几何位置**的新建顶点与已有顶点被替换成**同一个 TShape**；
+· §9.558 的实测（93 段首末顶点同一、逐边 LastVertex 却是另一 TShape）与「端口缺少这一环」高度吻合；
+· 端口侧 `split_wire.rs:315` 起是「保护原始端顶点」（`cxx:1261-1293`），`:348-369` 是
+  `copy_replace_vertices_with(...)` + `builder.add(&mut new_edge.0, &atmp_v)` —— **需核对这两段是否等价于
+  `cxx:1295-1332`（特别是 `Context()->Apply/Replace` 有没有对应实现）**。
+```
+
+#### 下一轮（只读对拍，指向可落地的修改）
+
+```text
+① 读端口 `split_wire.rs:315-380`（保护端顶点 + copy_replace_vertices_with + add）与 `cxx:1295-1332` 并列；
+② 在端口查 **Context 等价的 Apply/Replace** 是否存在（grep `context`/`apply`/`replace` 于
+   `shape_fix_compose_shell/` 与 `shape_build*`），确认「新建顶点 → 与已有顶点统一」这条路端口是否有实现；
+③ 若缺失 ⇒ **按 `cxx:1315-1332` 的同等分支补上**（在加入新边前把顶点经等价 Context 应用/替换为已有顶点），
+   不引入任何 OCCT 没有的启发式；
+④ 修后跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
+   面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
