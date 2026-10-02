@@ -19328,3 +19328,44 @@ ASM 行: **96**        三数组不等长的行: **0**
   · 若「有」⇒ 目标改为「OCCT 如何处理输入中的零长度边」（查 `cxx` 的 LoadWires/FixReorder 段），
     按 `.cxx` 在端口补上同样的处理 ⇒ 才可能让 F113 收敛成 2 wires；
   · 若「没有」⇒ 回到 `:113/:446/:448/:466` 四个未测建边点逐一取证。
+
+---
+
+### 9.471 —— 【决定性】F113 的**输入** wire 里本来就带两条零长度退化边（±87.5 seam）⇒ 「零长度段」不是被造出来的，而是**从未被清理**
+
+给 `zz_seam_fix` 的 **BEFORE** 段加了 `--ep` 端点打印（example 级、只读、已入库），直接量输入：
+
+```text
+BEFORE wires=4  u=[0,6.283185307]  v=[-inf,inf]  bbox=(-87.5,-34,-100)-(87.5,34,-32)
+BEFOREP wire=0 n=6  zero=0
+BEFOREP wire=1 n=14 zero=0
+BEFOREP wire=2 n=1  zero=**1**   ( 87.500,0.000,-32.000)->( 87.500,0.000,-32.000)
+BEFOREP wire=3 n=1  zero=**1**   (-87.500,0.000,-32.000)->(-87.500,0.000,-32.000)
+```
+
+⇒ **F113 的输入 wire[2] / wire[3] 各是一条首尾同点的退化边**（位于两侧 seam x=±87.5）。
+
+**这把整条链重新解释了一遍**：
+
+```text
+· GRID-POST / BREAK-IN / COLLECT-IN 里看到的「两条零长度段 (±87.5,0,-32)」**就是这两条输入退化边的副本**；
+  它们是经 `split_wire` 的「不切、整边拷贝」路径（`:113` / `:446`/`:448`/`:466`，端口 §9.465 列出的未测路径）
+  原样搬进结果段的 —— **不是**任何切分/建边操作「造」出来的。
+· 因此前面所有「切分侧」的对拍都判定忠实（§9.452-§9.470 共 19 节）都**没有找错**，只是找错了对象：
+  真正的分歧是 **「OCCT 会清掉/并掉输入里的退化边，端口不会」**。
+· 这也解释了 §9.443/§9.444 的结构差：端口 4 wires（6/14/1/1）→ fix_missing_seam 出 **5 张面**（含两张 3 边薄片）；
+  OCCT 收敛成 **2 wires（22+6）** —— 差别就在那两条退化 wire 是否被处理掉。
+```
+
+#### 下一轮（判定「谁该清、在哪清」，用 OCCT 侧探针即可，不动端口库代码）
+
+```text
+① OCCT 侧：`cmd /c "specs\occt_probe\run_dbg.bat data\occ\a3n00.stp noop"`（关 ShapeProcess，取未整形输入）
+   看 F113 那张面的 wire 数与每 wire 边数：
+     · 若也是 [6,14,1,1] ⇒ 分歧在**整形过程中的某一步**（ComposeShell/DispatchWires/FixSmall 清退化边）
+       ⇒ 翻 `cxx` 的 CollectWires/DispatchWires/LoadWires 段找「退化边/零长度段」的处理并补上；
+     · 若 OCCT 的输入**没有**那两条 1 边 wire ⇒ 分歧在**端口的 reader**（把退化边建成了独立 wire）
+       ⇒ 回到 `step/read_topology.rs` 的 resolve_loop/make_wire 侧核对该 STEP 构造（DEGENERATED edge 标记）。
+② 端口侧已具备的同类判据（供参考）：`BRepTool::is_degenerated(edge)`、`check_small_area`、
+   `fix_small_all` —— 检查 `.cxx` 在同一位置用的是哪一条。
+```

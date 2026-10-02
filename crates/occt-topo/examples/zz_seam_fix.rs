@@ -234,6 +234,26 @@ fn main() {
     let face = Face(faces[want].0.clone());
     println!("--- BEFORE ---");
     describe("BEFORE", &face);
+    if std::env::args().any(|a| a == "--ep") {
+        for (wi, w) in occt_topo::topo_tools_full::wires_of_face(&face).iter().enumerate() {
+            let es = occt_topo::topo_tools_full::edges_of_wire(w);
+            let mut segs: Vec<String> = Vec::new();
+            for e in &es {
+                let f = occt_topo::shhealing::first_vertex(e)
+                    .map(|v| { let q = BRepTool::vertex_point(&v); format!("({:.3},{:.3},{:.3})", q.x(), q.y(), q.z()) })
+                    .unwrap_or_else(|| "none".to_string());
+                let l = occt_topo::shhealing::last_vertex(e)
+                    .map(|v| { let q = BRepTool::vertex_point(&v); format!("({:.3},{:.3},{:.3})", q.x(), q.y(), q.z()) })
+                    .unwrap_or_else(|| "none".to_string());
+                segs.push(format!("{f}->{l}"));
+            }
+            let zero = segs
+                .iter()
+                .filter(|t| { let p: Vec<&str> = t.split("->").collect(); p.len() == 2 && p[0] == p[1] })
+                .count();
+            println!("BEFOREP wire={wi} n={} zero={} {}", es.len(), zero, segs.join(" "));
+        }
+    }
 
     let mut sff = ShapeFixFace::with_face(&face);
     let ret = sff.fix_missing_seam();
