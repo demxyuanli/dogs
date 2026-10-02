@@ -20778,3 +20778,31 @@ for i in 0..seqw.len() {
   · 若 A 类多为 Forward/Reversed 且 is_vertex=false ⇒ `:106`/`:110` 都不是原因，需回 `:133` 之后
     逐条复核（但 §9.500-§9.504 已把它们排除，故届时需重新审视是否漏了别的过滤）。
 ```
+
+---
+
+### 9.508 —— 验证 §9.507 的假设：A 类候选的朝向与 is_vertex 分布（一轮内插桩→跑→撤除；库 diff 空）
+
+```text
+CAOR 行: 25   sbwd_nb>=3: 25
+A 类合计：Fwd=0  Rev=0  **Internal=43**  Other=0   |   vertex=0  段=43
+样本：
+   CAOR sbwd_nb=7 A_fwd=0 A_rev=0 A_int=1 A_other=0 A_vertex=0 A_seg=1
+   CAOR sbwd_nb=5 A_fwd=0 A_rev=0 A_int=1 A_other=0 A_vertex=0 A_seg=1
+   CAOR sbwd_nb=4 A_fwd=0 A_rev=0 A_int=2 A_other=0 A_vertex=0 A_seg=2
+   CAOR sbwd_nb=3 A_fwd=0 A_rev=0 A_int=2 A_other=0 A_vertex=0 A_seg=2
+   CAOR sbwd_nb=15 A_fwd=0 A_rev=0 A_int=1 A_other=0 A_vertex=0 A_seg=1
+   CAOR sbwd_nb=5 A_fwd=0 A_rev=0 A_int=1 A_other=0 A_vertex=0 A_seg=1
+   CAOR sbwd_nb=8 A_fwd=0 A_rev=0 A_int=2 A_other=0 A_vertex=0 A_seg=2
+   CAOR sbwd_nb=6 A_fwd=0 A_rev=0 A_int=1 A_other=0 A_vertex=0 A_seg=1
+   CAOR sbwd_nb=5 A_fwd=0 A_rev=0 A_int=2 A_other=0 A_vertex=0 A_seg=2
+   CAOR sbwd_nb=5 A_fwd=0 A_rev=0 A_int=2 A_other=0 A_vertex=0 A_seg=2
+```
+
+判读（按 §9.507）：
+
+```text
+· 若 Internal 占多数 ⇒ 命中 `:110`（Internal 段被永久跳过）⇒ 读 cxx:2570-2624 核对 OCCT 是否同样排除；
+· 若 vertex 占多数 ⇒ 命中 `:106`；
+· 若 Fwd/Rev 占多数且非 vertex ⇒ 两处均非原因，需重新审视 :133 之后是否还有未计入的过滤。
+```
