@@ -19671,3 +19671,32 @@ fn fix_degenerated(wire: &mut Wire, face: &Face, prec: f64, num: usize) -> (bool
 看点：OCCT 在此处是否**把 n1/n2 邻边接到新退化边上并合并顶点**（从而让「3 边含 1 退化边」的薄片折成
       1–2 边甚至清空）；端口若只改顶点不重接（或 n1/n2 选取不同），薄片就会存活 ⇒ 5 张面 ⇒ Shell(5) 被丢。
 ```
+
+---
+
+### 9.480 —— 邻居重接段**逐行一致**（忠实）⇒ `FixDegenerated` 全路径已对完；最后一环是 `check_degenerated`（退化**检测**）
+
+两侧并列（左端口 / 右 OCCT）：
+
+| 项 | 端口 `wire_fix.rs` | OCCT `ShapeFix_Wire.cxx` | 判定 |
+|---|---|---|---|
+| n2 | `if num > 0 { num } else { nb }` (:2147) | `(num > 0 ? num : sbwd->NbEdges())` (:2172) | ✓ |
+| n1 | `if n2 > 1 { n2 - 1 } else { nb }` (:2148) | `(n2 > 1 ? n2 - 1 : sbwd->NbEdges())` (:2173) | ✓ |
+| lack | `check` 的 DONE1 位 | `myAnalyzer->LastCheckStatus(DONE1)` (:2175) | ✓ |
+| n3 | `if lack { n2 } else if n2 < nb { n2+1 } else { 1 }` (:2149) | `(lack ? n2 : (n2 < NbEdges() ? n2+1 : 1))` (:2176) | ✓ |
+| V1/V2 | `last_vertex(edges[n1-1])` / `first_vertex(edges[n3-1])` (:2151/:2156) | `sae.LastVertex(Edge(n1))` / `sae.FirstVertex(Edge(n3))` (:2179-2180) | ✓ |
+| 朝向 | V1 `Forward`、V2 `Reversed`、deg `Forward` (:2152-2161) | `V1.Orientation(FORWARD)`、`V2.Orientation(REVERSED)`、`degEdge.Orientation(FORWARD)` (:2182-2186) | ✓ |
+| 插入/替换 | `lack ⇒ wire_insert_edge_before(wire, n2, deg)` 否则 `wire_set_edge(wire, n2, deg)`；返回 `(true, !lack)` (:2164-2169) | `lack ⇒ sbwd->Add(degEdge, n2)` + DONE1 否则 `Set(degEdge, n2)` + DONE2；`return true` (:2188-2203) | ✓ |
+
+⇒ **`ShapeFix_Wire::FixDegenerated(num)` 全路径（`:2130-2204`）在端口已逐行等价**。
+
+#### 最后一环（唯一未对拍者）
+
+```text
+端口 `check_degenerated(wire, face, prec, num)`（`fix_degenerated` 的第一句）
+   ↔ `ShapeAnalysis_Wire::CheckDegenerated(num, tol, p2d1, p2d2)`
+若它在我们这个输入（**3 边 wire，其中一条零长度边位于 seam**）上返回 `None`，
+而 OCCT 返回 `Found`/`Remove`，那么退化处理根本不会启动 ⇒ 薄片存活 ⇒ 5 张面 ⇒ Shell(5) 被丢 ⇒ 空面。
+→ 下一轮读它（端口 + cxx），对拍**检测判据**（pcurve 端点距离、`IsClosed`、`myMax2d/myMax3d` 阈值、
+  以及 `.cxx` 里对 `Precision::Confusion()` 的使用与 `LastCheckStatus` 的置位）。
+```
