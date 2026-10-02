@@ -20398,3 +20398,41 @@ CREJ sbwd_nb=5  seqw=3 cand_total=4  cand_near=1 cand_same=1
 （zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
  面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.498 —— 候选循环的跳过条件全表（`:104-225`）：`same_v` 硬前置**忠实**（`cxx:2629-2632`）⇒ §9.497 的「少一条入口」假设**否掉**；并发现 §9.496 探针有一处口径缺陷
+
+#### A. 端口候选循环的过滤结构（逐条带 `.cxx` 出处）
+
+```text
+:106  if seg.is_vertex() { continue; }                                  // 跳过 vertex 段
+:135  if !sp && (can_be_closed || (index.is_some() && samepatch)) { continue; }   // patch 过滤
+:140  let candidate_v = if j == 1 { seg.last_vertex() } else { seg.first_vertex() };
+:141  if !same_v(&end_v, &candidate_v) { continue; }                     // cxx:2629-2632 ← **顶点相接硬前置**
+:151  if same_e(&last_edge, &Some(back_edge)) { … 最低优先级 … }         // cxx:2639-2652 同边返回
+:215  if w1 + tail1 <= weigth + tail2 { continue; }                      // cxx:2696-2722 权重比较（patch/tangent/dist）
+```
+
+⇒ `same_v` 这条**硬前置在两端是等价的**（端口 :141 ↔ cxx:2629-2632）
+⇒ §9.497 猜测的「OCCT 允许 IsSame 失败但 samepatch+切向连续的候选」**不成立**（两侧都要求顶点同一性）。
+⇒ 因此唯一存活的解释是：**OCCT 在该处顶点是同一对象，而端口不是**（即 §9.485 / §9.496 的 `near=1, same=0` 那一行）。
+
+#### B. **更正 §9.496 的探针口径缺陷**（自查）
+
+```text
+§9.496 的重扫只统计了候选边的 `first_vertex`，而候选循环 `:140` 对 `j == 1` 用的是 `seg.last_vertex()`
+⇒ 我的 `cand_near=0` 那些行**可能只是漏查了 last_vertex**（不是「真的不相邻」）。
+⇒ 该数据只能作为「存在 near=1/same=0 的顶点未统一实例」的证据，**不能**用来断言「多数点根本不相邻」。
+```
+
+#### 下一轮（修正口径重测，一次即可定论）
+
+```text
+把重扫改为对每个候选段的 **first_vertex 与 last_vertex 都查**，并分三类计数：
+  A) 坐标相接(is_same 为真)  B) 坐标相接但 is_same 为假  C) 完全不相接
+若 B 占多数 ⇒ 根因 = **切口处顶点未统一**（`Context`/`CombineVertex` 路径）；
+  按 `.cxx` 在切口处统一顶点（`cxx:1900-1911` 的 `int_vertices` 与 `SplitByGrid` 的上下文替换路径）
+  ⇒ 让 `same_v` 能匹配上 ⇒ 链能延伸成 22 边 ⇒ 跑 §9.448 验收。
+若 A 占多数而仍不成链 ⇒ 靶点回到 `:215` 的权重比较（w1/w2/tail1/tail2 的取舍）。
+```
