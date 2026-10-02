@@ -20910,3 +20910,41 @@ CAOR sbwd_nb=8  A_int=2 A_seg=2     CAOR sbwd_nb=6  A_int=1 A_seg=1
 · OCCT 的首段选择分支（对应端口 `:113-131` 的 `!has_sbwd`）条件是否一致；
 · 端口的 `:106 seg.is_vertex()` 在 OCCT 里对应哪一句。
 ```
+
+---
+
+### 9.511 —— 【对照完成】OCCT `:2573-2581` **同样跳过 Internal 段** ⇒ 端口 `:110` 忠实；靶点**上移一层**：那些段为何被打成 `Internal`
+
+#### 逐条对照（`cxx:2570-2624` ↔ 端口 `:104-132`）
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `if (seg.IsVertex()) continue;`（:2573-2576） | `if seg.is_vertex() { continue; }`（:106-108） | ✓ |
+| `if (anOr == TopAbs_INTERNAL) continue;`（:2577-2581） | `if an_or == Orientation::Internal { continue; }`（:110-112） | ✓ **两侧都跳过 Internal** |
+| `if (sbwd.IsNull()) { if (shorts(i) > 0) continue; if (anOr == EXTERNAL) continue; if (anOr == FORWARD) reverse = true; index = i; … break; }`（:2584-2604） | `if !has_sbwd { if shorts[i] > 0 \|\| an_or == External { continue; } if an_or == Forward { reverse = true; } index = Some(i); … break; }`（:113-131） | ✓ |
+| `bool sp = IsSamePatch(...)`（:2607-2608） | `let sp = is_same_patch(...)`（:134） | ✓ |
+| `if (!sp && (canBeClosed \|\| (index && samepatch))) continue;`（:2611-2614） | `:135` 同式 | ✓ |
+| 权重表（:2616-2625：samepatch 16 / misorientation 8 / connected 4 / distance 2 / angle 1） | 端口的 `w1/tail1/tail2`（§9.503 实测 28 = 16+8+4，20 = 16+4） | ✓（数值与表一致） |
+
+⇒ **候选搜索段整体忠实**；§9.509 的「若 OCCT 不跳过 Internal ⇒ 端口多了一条过滤」这一支**不成立**。
+
+#### 靶点上移到「这些段为何是 Internal」
+
+```text
+A 类候选（43/43）都是 Internal ⇒ 它们被 `:110` 跳过是**规格行为**。
+⇒ 于是问题变成：**在 OCCT 里这些段不该是 Internal**。它们被打成 Internal 的可能来源（端口侧）：
+  ① `collect_wires.rs:68-72`：`isshort > 0 && (External || one_degenerated) ⇒ set_orientation(Internal)`
+     （其引用为 cxx:2519-2549，需逐条对照）；
+  ② `load_wires`：非流形（non-manifold）段被建成 `Internal`（§9.460 已读该文件，语义忠实）；
+  ③ `split_by_line`/`break_wires` 在生成/切分时赋的朝向。
+```
+
+#### 下一轮（一次插桩即可定位来源）
+
+```text
+在 `collect_wires.rs:71`（`seqw[i].set_orientation(Internal)`）打印被改段的坐标/边数/isshort，
+再与 §9.508 的 A 类候选坐标对照：
+  · 若 A 类段**正是**在 :71 被改的那批 ⇒ 靶点 = `:68-72` 的判据（`isshort` 或 `one_degenerated`）
+    与 cxx:2519-2549 的差异 ⇒ 按 .cxx 修 ⇒ 跑 §9.448 验收；
+  · 若 A 类段**不是**在 :71 改的（而是 load_wires/切分阶段就是 Internal）⇒ 靶点相应上移到那里。
+```
