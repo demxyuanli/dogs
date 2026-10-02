@@ -20218,3 +20218,44 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 待查：  F113 的成败取决于 CollectWires 之后**串接成几条 wire**（OCCT [22,6] vs 端口 [6,7,5,4,3,3]）；
         串接判据（:357-383 的 same_v / is_same_patch）尚未用探针实测其顶点同一性
 ```
+
+---
+
+### 9.493 —— 下一轮可执行配方：`CollectWires` 串接决策探针（一次运行定论，照 §9.487 的一轮内插桩→跑→撤除流程）
+
+#### 目标问题
+
+```text
+F113 的段在切口之后为何串成 [6,7,5,4,3,3]（6 条）而不是 OCCT 的 [22,6]（2 条）？
+需要量的是**决策点**：主循环每次「找不到候选 ⇒ append 到 wires」时，是 `index == None`
+（真的没有候选）还是被 `is_same_patch` / 同边最低优先级等**判据筛掉**了候选。
+```
+
+#### 插桩（库内、env `T101_ZZC`、用完 `edit`/反向替换撤除；两个位点）
+
+```text
+① 主循环候选搜索结束处（`collect_wires.rs:231` 之前，"cxx:2726-2779: connect the found segment" 那行之前）：
+   eprintln!("CDEC i={} cur_nb={} index={:?} samepatch={} reverse={} connected={} sbwd_nb={}",
+             i, seqw[i].nb_edges(), index, samepatch, reverse, connected, sbwd.len());
+
+② append-to-wires 分支处（":309-330  // cxx:2824-2846: if closed or no next segment found, append to wires" 内）：
+   eprintln!("CPUSH nb={} first=(...) last=(...) seqw_left={}", sbwd.len(), …, seqw.len());
+```
+
+#### 判读规则
+
+```text
+· 若 `CDEC` 里出现「`index == None` 紧接着 `CPUSH nb=6`（或 7/5/4/3）」⇒ 是**候选搜索没找到**
+  ⇒ 靶点 = 候选循环里的匹配条件（`same_v` 用 TShape 同一性 / `is_same_patch`）；
+· 若 `CDEC` 显示 `index = Some(k)` 却仍 `CPUSH`（或循环提前退出）⇒ 靶点在连接/退出条件
+  （`connected` / `can_be_closed` / 闭合判定）；
+· 若 `CDEC` 显示 `index = Some(k)` 且 `sbwd_nb` 持续增长到 22 ⇒ 串接本身没问题，问题在**更后面的分面**。
+```
+
+#### 与 `.cxx` 的对照点
+
+```text
+ShapeFix_ComposeShell.cxx:2570-2724（找下一个要连接的段）与 :2726-2779（连接）：
+  端口 `collect_wires.rs:103-230` 与 `:231-275` 已逐行判定忠实（§9.399 的旧结论 + 本轮 §9.476 局部复核），
+  但**没有在 F113 这个具体输入上取过数**。本配方的价值就是把「忠实」从代码层推进到**该输入上的实测层**。
+```
