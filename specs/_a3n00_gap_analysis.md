@@ -18922,3 +18922,40 @@ OCCT 的 `E1.Orientation()` 是 **sewd（wire 数据）里存的朝向** —— 
 **下一轮（唯一剩余检查，成本一次读）**：读 `load_wires.rs`（很小），确认它存进 `WireSegment.edges` 的边
 **是否带 wire 遍历朝向**（对照 `ShapeExtend_WireData` 的 Add/Edge 语义）；若不带 ⇒ 按 `.cxx` 修（使
 `WireSegment::edge()` 的语义与 `sewd->Edge()` 一致，或在该判据处用朝向感知取边），然后跑 §9.448 验收。
+
+---
+
+### 9.460 —— 前提已验证、**朝向假设被否**：去重块忠实；靶点推进到 `split_by_line` 剩余未读段（`:345-478`）
+
+读 `load_wires.rs:11-27` 的 `wire_data_edges`（其文档注释直接写明语义）：
+
+```rust
+/// ShapeExtend_WireData(wire, chkseam, manifold) (ShapeExtend_WireData.cxx:80-120):
+/// the stored edges keep the composed orientation of the wire, so a REVERSED
+/// wire flips every edge.
+fn wire_data_edges(wire: &Wire) -> Vec<crate::shape::Edge> {
+    let edges = crate::topo_tools_full::edges_of_wire(wire);
+    if wire.0.orientation() == Orientation::Reversed { edges.into_iter().map(|mut e| { e.0.reverse(); e }).collect() }
+    else { edges }
+}
+```
+
+⇒ 存进 `WireSegment.edges` 的边**带 wire 遍历朝向**（与 `ShapeExtend_WireData` 一致）
+⇒ `WireSegment::edge(i).0.orientation()` ≡ OCCT `sewd->Edge(i).Orientation()`
+⇒ §9.459 里 `:322-323` 的 `e1_ref/e2_ref` **与 OCCT `:1750-1752` 语义相同** ⇒ **去重块（:295-341）判定忠实**，
+   「朝向选反 ⇒ 重复点存活」这条假设**否掉**。（同时把 `WireSegment::edge` 的语义也钉下来了，供后续复用。）
+
+#### `split_by_line`（:1-478）已读/未读盘点
+
+```text
+已读并判定忠实：:295-341 去重点块（cxx:1722-1767）、:518-545 交点合并（cxx:1948-1965，属 split_by_line_wires）、
+                :586-613 沿切线建边（cxx:2019-2057）
+**未读（剩余靶点）**：
+  · :343-378  segment codes（cxx:1771-1782）
+  · :379-393  第二处移除路径（按边端点参数；本文件里另一个 `continue`）
+  · :394-478  子段生成：把原始 wire 的边按 `int_edge_par` 切成子段 —— **零长度子段的最后可能来源**
+  · :31-290   与切线的求交（`int_edge_par/int_line_par/int_edge_ind` 的产生地）—— 若 394-478 判定忠实则回头查这里
+```
+
+**下一轮**：读 `:379-478`（约 100 行，含第二处移除 + 子段生成），与 `cxx:1782-1914` 对拍，专找
+「子段参数区间长度 ≈ 0 ⇒ 跳过/并入」判据。命中即按 `.cxx` 修 → 跑 §9.448 验收。
