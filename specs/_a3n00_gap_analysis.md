@@ -22170,3 +22170,44 @@ shorts != 1 的行（前 12）：
   （`IsShortSegment` 对首尾同点边的判定）；
 · 若 `shorts == 1` 却未并入 ⇒ 靶点在合并的目标匹配（`:357-383` 的 same_v/is_same_patch）。
 ```
+
+---
+
+### 9.553 —— 【结论】合并循环入口 `shorts` **全为 0**（154/154）⇒ 端口的 merge-short-segments **一次都不执行**；靶点收敛到 `IsShortSegment` 的**几何判据**
+
+#### 数据（§9.552，`build_ok=1`、精确反向撤除、`T101_ZZZ` 残留 0、库 diff 空）
+
+```text
+SHORTS 行: 154        shorts 取值分布: {'0': 154}      （全部为 0；样本 `SHORTS i=0 shorts=0 nb=1 ori=Internal`）
+```
+
+**判定**：
+
+```text
+· `collect_wires` 的合并短段循环在 `:335` 以 `shorts[i] != 1 ⇒ continue` 过滤 ⇒ 因全部 `shorts=0`
+  ⇒ **该循环空转** ⇒ 端口**从不合并任何短段**；
+· 而 OCCT 在同一面上确实发生了合并（§9.484：整形后 **22 = 8 + 14**）⇒ 在 OCCT 侧，参与合并的段
+  其 `shorts(i)` 必为 1（`cxx:2853-2935` 的合并循环同式）；
+⇒ **分歧确定在 `IsShortSegment` 的返回值**（`shorts[i] = is_short_segment(...)`，`cxx:2394-2447`）。
+```
+
+#### 已知与该函数有关的既有工作
+
+```text
+· §9.489-§9.492 已读过 `IsShortSegment` 并与端口 `is_short_segment` 对拍，**修了两处朝向语义**：
+    cxx:2417 取 `sae.LastVertex`（朝向感知）  与  cxx:2423 PCurve 的 `CumOri` 默认 true；
+· 该修正**中性**（门禁基线逐字不动）⇒ 说明它没有改变本输入上的 `shorts` 结果 ⇒ 剩余差异在
+  **几何判据本身**（3D 长度/容差的构造与比较），而不是朝向取值。
+```
+
+#### 下一轮（最后一次对拍：`IsShortSegment` 的几何判据逐条）
+
+```text
+把 `cxx:2394-2447` 与 `is_short_segment`（`shape_fix_compose_shell/helpers.rs`）**逐行并列**，重点：
+  ① 3D 长度从哪里量（两顶点距离 / 边的 pcurve 参数区间 / BRep 的 `BRep_Tool::Curve`）；
+  ② 阈值如何构造（`TOLERANCE`、`prec`、`*10`、`Max`/`Min` 的组合顺序）；
+  ③ `nb_edges` / `one_degenerated` / `nb_vertices` 等前置条件在两侧是否同式；
+  ④ 是否存在 OCCT 里**对退化边（首尾同点）直接判短**的分支而端口缺失。
+命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
+--fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
