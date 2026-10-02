@@ -21163,3 +21163,24 @@ CNM 样本（被归入**非流形** ⇒ 建成 Internal 段的边）：
 或把需要的 `use` 一并临时加入并在撤除时一起还原；
 其余步骤按上面的 1)-6) 执行，并与 `.target-gate/int117.txt` 的 43 个 A 类候选坐标比对。
 ```
+
+---
+
+### 9.520 —— 撤回「§9.518 重跑」并记下精确修正：`topo_tools_full::edge_vertices` **签名猜错**（E0308 ×2）⇒ 应改用 `BRepTool::edge_vertices`
+
+```text
+本次探针（§9.519 配方的重跑）编译失败：**error[E0308]: mismatched types ×2** ⇒ 数据未产生（未解读）。
+原因：我在 `load_wires.rs` 里写了 `crate::topo_tools_full::edge_vertices(&e)` 并假设它返回 `Option<(GpPnt, GpPnt)>`，
+      但该函数签名不是这个（§9.462 曾读到 `crate::topo_tools_full::edge_vertices(edge)` 在别处用于**取顶点**）。
+精确修正（已由 `brep_tool.rs:78-82` 的读数确认）：
+      **`crate::brep_tool::BRepTool::edge_vertices(e: &Edge) -> Option<(GpPnt, GpPnt)>`**  ← 这才是「按曲线首末参数取点」的那个
+      ⇒ 探针应写 `match crate::brep_tool::BRepTool::edge_vertices(&e) { Some((p, _)) => …, None => … }`。
+处置：已按**精确反向替换**撤除探针（`T101_ZZM` 残留 0）；`cargo check` 复核 0 errors；库 diff 为空。
+```
+
+**方法层面（第三次同型，配方再收紧）**：
+```text
+1) **先确认要用的 API 签名再插桩**（本次若先 `grep -n "fn edge_vertices"` 就不会猜错）；
+2) 插入 → `cargo build` **断言 0 errors**（失败则打印 error 行并**先撤除**，不解读）；
+3) 运行并保存原始输出 → 4) 精确反向替换撤除 → 5) `cargo check` 0 errors + 库 diff 空 → 6) 才解读。
+```
