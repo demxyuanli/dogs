@@ -20948,3 +20948,37 @@ A 类候选（43/43）都是 Internal ⇒ 它们被 `:110` 跳过是**规格行�
     与 cxx:2519-2549 的差异 ⇒ 按 .cxx 修 ⇒ 跑 §9.448 验收；
   · 若 A 类段**不是**在 :71 改的（而是 load_wires/切分阶段就是 Internal）⇒ 靶点相应上移到那里。
 ```
+
+---
+
+### 9.512 —— 「这些段为何是 Internal」定位实测（两处插桩、一轮内跑完撤除；库 diff 空）
+
+```text
+CINT 行: 154   CACAND 行: 43
+CINT 中与候选 p0 坐标相同者: 42
+```
+
+CINT 样本（:71 被改 Internal 的段）：
+```text
+CINT i=0 nb=1 short=0 one_degen=false p0=(-39.598,34.598,-18.000)
+CINT i=1 nb=1 short=0 one_degen=false p0=(-39.598,34.598,-16.000)
+CINT i=2 nb=1 short=0 one_degen=false p0=(-39.598,34.598,-18.000)
+CINT i=0 nb=1 short=0 one_degen=false p0=(-39.598,34.598,18.000)
+CINT i=1 nb=1 short=0 one_degen=false p0=(-39.598,34.598,0.000)
+CINT i=2 nb=1 short=0 one_degen=false p0=(-39.598,34.598,0.000)
+CINT i=0 nb=1 short=0 one_degen=false p0=(34.598,39.598,-18.000)
+CINT i=1 nb=1 short=0 one_degen=false p0=(34.598,39.598,-16.000)
+```
+CACAND 样本（「无候选」时刻 A 类候选）：
+```text
+CACAND ori=Internal nb=7 p0=(-8.900,33.805,-69.638)
+CACAND ori=Internal nb=5 p0=(38.733,21.909,-40.000)
+CACAND ori=Internal nb=7 p0=(-8.900,33.805,-69.638)
+CACAND ori=Internal nb=4 p0=(-38.733,-21.909,-40.000)
+CACAND ori=Internal nb=1 p0=(-87.500,0.000,-32.000)
+CACAND ori=Internal nb=1 p0=(-87.500,0.000,-32.000)
+CACAND ori=Internal nb=7 p0=(68.238,2.175,-133.923)
+CACAND ori=Internal nb=5 p0=(49.828,24.825,-134.007)
+```
+
+判读（按 §9.511）：坐标相同者多 ⇒ A 类段正是 `:71` 被改的那批 ⇒ 靶点 = `:68-72` 的判据（`isshort`/`one_degenerated`）↔ cxx:2519-2549；否则靶点上移到 load_wires/切分阶段。
