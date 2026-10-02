@@ -364,14 +364,18 @@ pub fn is_short_segment(
     let tol2 = tol * tol;
     let mut code = 1i32;
     for edge in seg.edges() {
-        let Some(last) = crate::topo_tools_full::edge_vertices(edge).1 else {
+        // `cxx:2417`: `sae.LastVertex(edge)` is orientation aware, so a REVERSED
+        // edge in the wire must yield the other topological vertex.
+        let Some(last) = crate::shhealing::last_vertex(edge) else {
             return 0;
         };
         if !crate::topo_tools_full::is_same(&vf.0, &last.0) {
             return 0;
         }
+        // `cxx:2423`: `sae.PCurve(edge, myFace, c2d, f, l)` keeps the default
+        // `CumOri = true`.
         let Some((c2d, f, l)) =
-            crate::boptools_2d::curve_on_surface_oriented(edge, face, false)
+            crate::boptools_2d::curve_on_surface_oriented(edge, face, true)
         else {
             continue;
         };

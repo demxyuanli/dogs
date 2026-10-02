@@ -20180,3 +20180,41 @@ a3n00：STATMAP matched=225 unmatched=1 sum_mt=11941 flat_mt=11941        ——
 · 建议单独一轮做（与 §9.463 同法）：应用这两处 → 后台跑 `t101_verify.ps1` →
   绿则提交（这两处是 `.cxx` 忠实修正），红则还原并记录退步。
 ```
+
+---
+
+### 9.492 —— ✅ **落地**：`IsShortSegment` 两处朝向语义修正（`cxx:2417`/`cxx:2423`），门禁 5/5、全部基线逐字不动
+
+改动（`crates/occt-topo/src/shape_fix_compose_shell/helpers.rs`）：
+
+```rust
+// ① cxx:2417 —— `sae.LastVertex(edge)` 是**朝向感知**的
+- let Some(last) = crate::topo_tools_full::edge_vertices(edge).1 else { return 0; };
++ let Some(last) = crate::shhealing::last_vertex(edge) else { return 0; };
+// ② cxx:2423 —— `sae.PCurve(edge, myFace, c2d, f, l)` 的 `CumOri` 默认 **true**
+- crate::boptools_2d::curve_on_surface_oriented(edge, face, false)
++ crate::boptools_2d::curve_on_surface_oriented(edge, face, true)
+```
+
+**门禁实测**（`pwsh -File .target-gate\t101_verify.ps1`，job `pwsh-117`，exit 0）：
+
+```text
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 267.16s
+[occ/a3n00.stp] ours v=10863 f=11941 | occ v=11145 f=12466 | f-ratio 0.96
+[occ/a3n00.stp] our=204327.72 occ=227130.30 ratio=**0.8996**   ← 与基线逐字相同
+[occ/T0M.stp] 0.9987 · [occ/acs10.stp] 0.9846 · [occ/bottom.step] 0.9750 · [occ/motoc.step] 1.0333
+[occ/TDB.stp] 1.0092 · [occ/top.step] 1.0000 · [occ/ATU01038.step] 1.0006   ← 全部逐字相同
+```
+
+⇒ 两处均为 `.cxx` 忠实修正（含注释引证），对既有全部基线中性。**已落地**。
+
+#### 本目标累计落地/暂缓清单
+
+```text
+已落地：§9.463 split_by_line 第二处移除路径簿记（cxx:1820）
+        §9.492 IsShortSegment 两处朝向语义（cxx:2417 / cxx:2423）  ← 本次
+暂缓：  §9.439 FixDummySeam 顶点朝向感知（cxx:4221/4230）—— .cxx 正确，但会让 a3n00 面积比 0.8996→0.8918
+        （仅 f=171 一张面 +26 三角 / 总面积 −1763），按红线在弄清 f=171 前不落地
+待查：  F113 的成败取决于 CollectWires 之后**串接成几条 wire**（OCCT [22,6] vs 端口 [6,7,5,4,3,3]）；
+        串接判据（:357-383 的 same_v / is_same_patch）尚未用探针实测其顶点同一性
+```

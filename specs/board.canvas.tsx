@@ -47,7 +47,7 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
   asOf: "2026-09-30",
-  revision: "r32",
+  revision: "r33",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -680,6 +680,14 @@ export const DATA = {
   ],
   // 新条目插到数组**开头**（brief 取前 3 条当最近活动；早于 a29 的看提交历史）
   activity: [
+    {
+      id: "a75",
+      at: "2026-10-02",
+      title: "T-101：IsShortSegment 两处朝向语义修正落地（门禁 5/5、基线逐字不动）",
+      tone: "info",
+      detail: "§9.489-§9.492：对拍 OCCT IsShortSegment(ShapeFix_ComposeShell.cxx:2394-2447) 发现端口 helpers.rs:347-390 两处朝向语义分歧 —— (1) cxx:2417 sae.LastVertex 朝向感知 vs 端口 edge_vertices(...).1 朝向无关；(2) cxx:2423 sae.PCurve 的 CumOri 默认 true vs 端口传 false。按 .cxx 修正后实测对 F113/a3n00 中性（Shell(5) 与 STATMAP 逐字不变），门禁 t101_verify 5/5、a3n00 0.8996/T0M 0.9987/acs10 0.9846 等全部逐字不动 ⇒ 已落地。累计：已落地 §9.463(cxx:1820 簿记) 与 §9.492(cxx:2417/2423 朝向)；暂缓 §9.439(cxx:4221/4230，因面积退步)。",
+      ref: "specs/_a3n00_gap_analysis.md \u00a79.492",
+    },
     {
       id: "a74",
       at: "2026-10-02",
