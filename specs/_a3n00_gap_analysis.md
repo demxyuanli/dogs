@@ -20288,3 +20288,41 @@ CPUSH nb=3 seqw_left=8
 ```
 
 原始输出见 `.target-gate/chain106.txt`；判读按 §9.493 的三条规则（下一轮据分布与样本判定靶点：候选匹配条件 / 连接退出条件 / 更后面的分面）。
+
+---
+
+### 9.495 —— 判定：端口的串接是**「连到找不到候选为止」**（`index=Some… → sbwd 增长 → 无候选 ⇒ CPUSH`）⇒ 靶点落在**候选匹配条件**（§9.493 规则 1）
+
+对 §9.494 捕获（`.target-gate/chain106.txt`：CDEC 277 行 / CPUSH 230 行）做配对分析：
+取 `CPUSH nb ∈ {3,4,5,6,7,15}` 的 132 次（F113 相关），看其前一条 `CDEC`：
+
+```text
+CPUSH nb=3 <- CDEC index=Some(1) samepatch=true reverse=false connected=true sbwd_nb=2
+CPUSH nb=4 <- CDEC index=Some(2) samepatch=true reverse=false connected=true sbwd_nb=3
+CPUSH nb=3 <- CDEC index=Some(1) samepatch=true reverse=false connected=true sbwd_nb=2
+CPUSH nb=4 <- CDEC index=Some(2) samepatch=true reverse=true  connected=true sbwd_nb=3
+（同型重复；样本见 .target-gate/chain106.txt）
+```
+
+**判读**：
+
+```text
+最后一次 CDEC 总是 `index=Some(k)` 且 `connected=true`，且 `sbwd_nb = nb-1`
+⇒ 该段被连上（accumulated 变成 nb 条边），**随后的一次迭代里候选搜索返回 `index=None`**，
+  才走 `cxx:2824-2846` 的 append 分支把这条 wire 推出（CDEC 中 `index=None` 共 **74/277** 次）。
+⇒ 按 §9.493 的**规则 1**：**不是**连接/退出条件提前掐断，而是**候选搜索在那些点找不到任何候选**
+   ⇒ 靶点 = 候选循环（`collect_wires.rs:104-230`）里的匹配条件：
+      `same_v`（TShape 同一性）/ `is_same_patch`（patch 优先序）/ 同边返回最低优先级 / `misoriented`。
+```
+
+#### 下一轮（最后一次探针，按同一「一轮内插桩→跑→撤除」流程）
+
+```text
+在候选循环内、`continue`/跳过处统计**被拒原因**（仅对 F113 那次调用、仅在 `index` 最终为 None 的那趟打印）：
+  · `same_v` 为假（顶点非同一对象，但**坐标可能相同**——这正是 §9.485 之后要回答的问题）；
+  · `is_same_patch` 为假；
+  · 同边返回（最低优先级）被跳过；
+  · `misoriented` / 其他。
+若统计出「大量坐标相同但 `same_v` 为假」⇒ 根因 = **切口处顶点未统一**（`Context`/`CombineVertex` 路径），
+   修法按 `.cxx` 在该处统一顶点；否则靶点落到 `is_same_patch` 的优先序判据。
+```
