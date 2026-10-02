@@ -20436,3 +20436,29 @@ CREJ sbwd_nb=5  seqw=3 cand_total=4  cand_near=1 cand_same=1
   ⇒ 让 `same_v` 能匹配上 ⇒ 链能延伸成 22 边 ⇒ 跑 §9.448 验收。
 若 A 占多数而仍不成链 ⇒ 靶点回到 `:215` 的权重比较（w1/w2/tail1/tail2 的取舍）。
 ```
+
+---
+
+### 9.499 —— 修正口径后的重测（A/B/C 三分类；一轮内插桩→跑→撤除，库 diff 空）
+
+对「无候选 ⇒ 推出」时刻（`sbwd_nb >= 3`，共 25 次）重扫剩余段的**两个端点**：
+
+```text
+合计：A(坐标相接且 is_same)=58   B(坐标相接但 is_same 为假)=7   C(完全不相接)=559
+样本：
+   CABC sbwd_nb=7 A_same=1 B_near_not_same=1 C_far=50
+   CABC sbwd_nb=5 A_same=1 B_near_not_same=1 C_far=50
+   CABC sbwd_nb=4 A_same=2 B_near_not_same=0 C_far=50
+   CABC sbwd_nb=3 A_same=3 B_near_not_same=0 C_far=49
+   CABC sbwd_nb=15 A_same=1 B_near_not_same=1 C_far=28
+   CABC sbwd_nb=5 A_same=1 B_near_not_same=1 C_far=28
+   CABC sbwd_nb=8 A_same=2 B_near_not_same=0 C_far=28
+   CABC sbwd_nb=6 A_same=1 B_near_not_same=1 C_far=12
+```
+
+判读（据 §9.498 的两条分支）：
+
+```text
+· B 占多数 ⇒ 根因 = 切口处顶点未统一（Context/CombineVertex 路径）⇒ 按 .cxx 统一顶点（跑 §9.448 验收）；
+· A 占多数仍不成链 ⇒ 靶点回到 :215 的权重比较（w1/w2/tail1/tail2）。
+```
