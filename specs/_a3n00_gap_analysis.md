@@ -22929,3 +22929,24 @@ zz_seam_fix 113:  BEFORE wires=4 …   result type=**Shell**   result faces=**5*
 4) 统计口径写明（段级 vs 每条边端点、是否排除已消费段、是否只算未消费……）；
 5) 无收益的改动一律还原，横切组件（`MapReShape`）尤其如此。
 ```
+
+---
+
+### 9.571 —— 假设②判定：输入 wire 相邻边接点的同一性实测（单探针、build 断言、精确撤除）
+
+```text
+LOADX 行: 61   same=false: 0
+样本：
+   LOADX d=0.000e0 same=true p=(-65.244,0.000,-100.000)
+   LOADX d=0.000e0 same=true p=(36.224,-3.000,-99.867)
+   LOADX d=0.000e0 same=true p=(63.927,-3.000,-99.867)
+   LOADX d=0.000e0 same=true p=(63.927,3.000,-99.867)
+   LOADX d=0.000e0 same=true p=(36.224,3.000,-99.867)
+   LOADX d=0.000e0 same=true p=(-8.900,33.805,-69.638)
+```
+
+判读：
+```text
+· `same=false` 的行（尤其 d≈0 的）⇒ **输入本身就没统一**（同坐标不同 TShape）⇒ 靶点在 reader/`load_wires`；
+· 若全部 `same=true` ⇒ 输入是统一的 ⇒ 两个 TShape 是**过程产物** ⇒ 回到假设①（`Replace` 绑定问题）。
+```
