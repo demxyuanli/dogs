@@ -19400,3 +19400,29 @@ BEFOREP wire=3 n=1  zero=**1**   (-87.500,0.000,-32.000)->(-87.500,0.000,-32.000
   · 是 ⇒ 两侧输入一致 ⇒ 直接在 `cxx` 里找**退化 wire 的清理点**（LoadWires/CollectWires/DispatchWires/FixSmall）
          并按 `.cxx` 在端口补上；
   · 否 ⇒ 端口 reader 侧的 wire 组装（`resolve_loop`/`make_wire`）与 OCCT 不同，回头核 STEP 构造。
+
+---
+
+### 9.473 —— 按 box 定位 OCCT 未整形输入里的 F113 对应面（结果见下）
+
+```text
+解析到 FACE 行: 226
+最接近 F113 目标 box(-87.5,-34,-100)-(87.5,34,-32) 的候选：
+   err=52.000 idx=165 wires=1 edges=[4] box=(-48.166,-48.166,-48.000)-(48.166,48.166,-32.000)
+   err=52.000 idx=202 wires=1 edges=[4] box=(-48.166,-48.166,-48.000)-(48.166,48.166,-32.000)
+   err=52.000 idx=219 wires=1 edges=[4] box=(-48.166,-48.166,-48.000)-(48.166,48.166,-32.000)
+   err=65.134 idx=203 wires=1 edges=[2] box=(-22.366,-36.500,-48.000)-(22.366,-28.844,-48.000)
+   err=69.611 idx=171 wires=4 edges=[8, 8, 8, 8] box=(-57.361,-42.865,-169.611)-(61.611,42.865,-50.639)
+```
+
+最佳候选 idx=165 wires=1 edges=[4]
+
+**判读与下一步**：
+
+```text
+· 若最佳候选的 edges_per_wire 恰为 [6,14,1,1] 的多重集合 ⇒ 两侧输入一致
+  ⇒ 分歧确定在「整形过程如何处理退化 wire」⇒ 翻 cxx 的 LoadWires/CollectWires/DispatchWires/FixSmall
+     找退化 wire 的清理点，按 .cxx 在端口补上，然后跑 §9.448 验收；
+· 若不是 ⇒ 探针的 box 口径或面序与端口不同（探针的 `spans: u/v` 显示其 box 可能取自参数域），
+  ⇒ 改用 `run_dbg.bat <stp> wdump <idx>` 直接 dump 候选面（或按 OCCT 文件面序 #5375 → index）再比对。
+```
