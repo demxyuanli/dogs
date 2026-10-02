@@ -21663,3 +21663,30 @@ void ShapeFix_ComposeShell::SplitByGrid(NCollection_Sequence<ShapeFix_WireSegmen
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
 --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.535 —— `SplitByGrid` closed-mode 段（`cxx:2163-2199`）**逐项一致**；剩余未对拍 = else 分支（`:2201-2216`）与切分循环（`:2218-2275`）
+
+#### 对照（OCCT `:2163-2199` ↔ 端口 `split_by_grid.rs:47-71`）
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `shiftU = (myClosedMode && myUClosed ? AdjustToPeriod(Ul1 - pprec, UJointValue(1), UJointValue(2)) : 0.)` | `let shift_u = if self.closed_mode && self.u_closed { adjust_to_period(ul1 - pprec, self.grid.u_joint_value(1), self.grid.u_joint_value(2)) } else { 0.0 };` | ✓ |
+| `shiftV = …(Vl1 - pprec, VJointValue(1), VJointValue(2))…` | 同构（`v_joint_value`） | ✓ |
+| `Uf1/Ul1/Vf1/Vl1 += shift*` | `uf1/ul1/vf1/vl1 += shift_*` | ✓ |
+| `iumin = std::max(0, GetPatchIndex(Uf1 + pprec, UJointValues(), myUClosed))` | `0.max(get_patch_index(uf1 + pprec, …, self.u_closed))` | ✓ |
+| `iumax = GetPatchIndex(Ul1 - pprec, …) + 1` | 同 | ✓ |
+| `ivmin = std::max(0, GetPatchIndex(Vf1 + pprec, VJointValues(), myVClosed))` / `ivmax = … + 1` | 同 | ✓ |
+| `for j: DefineIUMin/IUMax/IVMin/IVMax` | `for j in 1..=w.nb_edges() { define_iu_min/… }` | ✓ |
+
+⇒ **closed-mode 段完全一致**（连 `std::max(0,…)` 与 `AdjustToPeriod` 的入参 `Ul1 - pprec` 都对上）。
+
+#### 剩余未对拍（下一轮）
+
+```text
+① `cxx:2201-2216`（**else 分支**：非 closed 时用**面的** `Uf + pprec` / `Ul - pprec` 调 `GetPatchIndex`，
+   **不带** `max(0,…)`）↔ 端口 `split_by_grid.rs:73-…`；
+② `cxx:2218-2275`（真正的切分循环：U 线/V 线的构造与 `SplitByLine` 调用条件）↔ 端口 `:74-133`
+   —— 其中「U 线 u=0/seam 那一次」正是产生两条零长度段的动作（§9.456）。
+```
