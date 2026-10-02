@@ -22567,3 +22567,52 @@ pub fn copy_replace_vertices_with(edge: &Edge, v1: Option<&Vertex>, v2: Option<&
      这是「同点两 TShape」能否被消除的关键）；
   ③ `apply` 对**顶点**的返回值（`split_wire.rs:355` 依赖它对 `a_nm_vertices[n]` 的映射）。
 ```
+
+---
+
+### 9.564 —— 【根因定位】端口 `MapReShape::apply` **刻意不重建复合形状**（注释自述 "Unlike OCCT …"），而 OCCT 的 `ShapeBuild_ReShape::Apply` **会用被替换的顶点重建边** ⇒ 93 处「同点两 TShape」由此而来
+
+#### A. 端口实现（`reshape.rs:43-64`）
+
+```rust
+/// Minimal ShapeBuild_ReShape: the direct old->new bindings recorded by Replace.
+/// **Unlike OCCT this does not rebuild composite shapes from per-sub replacements**,
+/// which is all ComposeShell needs: it binds whole edges to the wire of their sub-edges
+/// and vertices to vertices, then reads those bindings back through Apply.
+pub struct MapReShape { map: HashMap<usize, TopoShape> }     // key = Arc::as_ptr(tshape)（TShape 身份）
+
+impl ReShape for MapReShape {
+    fn apply(&self, s: &TopoShape) -> TopoShape { /* 只在 map 里直接命中才返回替换体 */ }
+    fn replace(&mut self, old: &TopoShape, new: &TopoShape) { /* 记 old→new 直接绑定 */ }
+    fn is_recorded(&self, _) -> bool { false }
+    fn value(&self, _) -> Option<TopoShape> { None }
+}
+```
+
+#### B. 与 OCCT 的差异（这正是本目标的根因）
+
+```text
+· OCCT `ShapeBuild_ReShape::Apply(shape)` 是**深度重建**：对**边**会用其（可能已被 `Replace` 的）**顶点**
+  重建边，对 **wire** 会用其（可能已被重建的）**边**重建 wire；
+· 端口的 `apply` **只做直接绑定查表**，**不重建**（注释自述这是**有意简化**）；
+⇒ `split_wire.rs:355` 的 `self.context().apply(&a_nm_vertices[n].0)` 之后，
+   `context_mut().replace(&atmp_v, &prev_v.0)` / `(&atmp_v, &v.0)` 只登记了**顶点**的替换；
+   而随后 `copy_replace_vertices_with(...)`（**不查 Context**，§9.563 已证）产出的新边、
+   以及**已装入的其它边**，在没有「按顶点重建边」的情况下**不会**被统一到同一顶点对象
+⇒ **同一几何点存在两个 TShape** ⇒ `IsShortSegment` 的 `Vf.IsSame(LastVertex(edge))` 失败（§9.558 实测 93 次）
+⇒ `shorts` 全 0 ⇒ 合并循环空转 ⇒ 8+14 不成 22 ⇒ 6 条 wire / 5 面 ⇒ Shell(5) 被 reader 丢弃 ⇒ **空面**。
+```
+
+#### C. 修复方向（按 OCCT 同名类的行为补分支，不引入任何启发式）
+
+```text
+`ShapeFix_ComposeShell` 依赖 `Context()->Apply` 的**深度重建**语义（它把「新顶点与已有顶点统一」寄托于此）。
+⇒ 端口需让 `MapReShape::apply` 具备**同等重建行为**：
+   · 顶点：直接绑定查表（现状即可）；
+   · 边：用 `apply` 后的**首末顶点**重建（并保留曲线/容差/朝向/位置 —— 可复用 `copy_replace_vertices_with`）；
+   · wire/face/shell：用 `apply` 后的**子形状**重建（按 OCCT `ShapeBuild_ReShape::Apply` 的同一递归口径）。
+下一轮：读 OCCT `ShapeBuild_ReShape::Apply`（`BRepTools_ReShape::Apply` / `ShapeBuild_ReShape.cxx`）
+     的**递归与替换顺序**，按同名同类落地；然后跑 §9.448 验收
+     （zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
+      面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
