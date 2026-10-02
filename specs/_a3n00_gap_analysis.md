@@ -21135,3 +21135,31 @@ CNM 样本（被归入**非流形** ⇒ 建成 Internal 段的边）：
   ⇒ 下一步=与 cxx:499-640 的同段对照，看端口是否把本应属流形部分的边判成非流形（朝向语义，与前几处同族）；
 · 命中 = 0 ⇒ 继续上移到 split_by_grid/break_wires 生成段时的朝向。
 ```
+
+---
+
+### 9.519 —— **撤回 §9.518**：该次 `cargo build` 失败（`build_ok=0`）⇒ `CNM 行: 0` **不是测量结果**；库已还原（库 diff 空、`cargo check` 0 errors）
+
+```text
+问题：`load_wires.rs` 里插入的探针用了 `crate::shhealing::first_vertex` / `crate::brep_tool::BRepTool`
+      的**全限定路径**，但该文件未 import 对应模块（或路径别名不同）⇒ 编译失败 ⇒ 执行的仍是**旧二进制**
+      ⇒ `CNM 行: 0`、`命中: 0/43` **无意义**（与 §9.514 同型错误，本轮是第二次）。
+处置：文件已用**精确字符串反向替换**撤除（`T101_ZZL` 残留 0）⇒ `cargo check: 0 errors`、
+      `git diff --stat crates/occt-topo/src` 为空。
+```
+
+**方法教训（第二次同型，已升级为硬约束）**：
+```text
+**任何探针脚本必须在解读数据之前断言 `cargo build: 0 errors`，否则中止并输出「数据无效」。**
+本目标内两次违反（§9.514、§9.518）都是「build 失败仍照跑照记」；此后配方一律：
+  1) 插入 → 2) `cargo build` 并**断言** 0 errors → 3) 运行并保存原始输出 → 4) 精确反向撤除 →
+  5) `cargo check` 0 errors + `git diff --stat crates/occt-topo/src` 为空 → 6) 才解读数据。
+```
+
+**修正后的重跑配方（下一轮；`load_wires.rs` 的探针要写对该文件的可见路径）**：
+```text
+先在 `load_wires.rs` 顶部确认可用路径（该文件已有 `use crate::abs::Orientation;` 等），
+探针里改用该文件当前作用域内**已可见**的符号（例如若已有 `BRepTool` 的 import 则直接用），
+或把需要的 `use` 一并临时加入并在撤除时一起还原；
+其余步骤按上面的 1)-6) 执行，并与 `.target-gate/int117.txt` 的 43 个 A 类候选坐标比对。
+```
