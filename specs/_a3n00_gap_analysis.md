@@ -20001,3 +20001,36 @@ CSHORT k=5/8 nb=1 ori=Reversed short=0 p0=(-87.500,0.000,-32.000)
   下一步即对拍 cxx:2519-2549 同分支的「改 Internal 条件」与其后的「Internal 段串接规则」。
 · 若 `ori` 仍是 `Reversed/Forward`（未被改） ⇒ `is_short_segment` 对它们返回 0 ⇒ 靶点转为 is_short_segment 的判据。
 ```
+
+---
+
+### 9.488 —— 【实测】那两条零长度段 **`short = 0`**（`is_short_segment` 返回 0）⇒ §9.486 的「会被改成 Internal」**不成立**；新靶点 = `is_short_segment`
+
+探针输出（env `T101_ZZB`，`.target-gate/coll100.txt`，154 条 `CSHORT`）中与 F113 退化段相关的行：
+
+```text
+CSHORT k=4/8 nb=1 ori=Reversed short=**0** p0=( 87.500,0.000,-32.000)
+CSHORT k=5/8 nb=1 ori=Reversed short=**0** p0=(-87.500,0.000,-32.000)
+（另有 k=7/8 nb=1 ori=External short=0 p0=(-87.5,0,-32) 等，属同一面其它次调用）
+整体分布：ori ∈ {Reversed:105, External:49}；nb ∈ {1:120, 2:21, 6:3, 7:3, 5:3, 4:3, 8:1}
+```
+
+**判读**：
+
+```text
+· `short = 0` ⇒ §9.486 的规则 `isshort > 0 && (External || one_degenerated)` **不触发**
+  ⇒ 那两条段**保持 `Reversed`**（未改成 Internal） ⇒ §9.486 的假设**被实测否掉**（这正是探针的价值）。
+· 「一条 **3D 零长度**、只含 1 条退化边的段」竟然被判为 **不短**（`short=0`）——这本身就很可疑：
+  OCCT 侧同一步若判 `short=1`，则该段会被改成 Internal，**其后的串接归属就会完全不同**
+  （可能正是 OCCT 得到 `[22, 6]` 而端口得到 `[6,7,5,4,3,3]` 的原因）。
+```
+
+#### 下一轮（一次对拍，靶点已是一个函数）
+
+```text
+读端口 `is_short_segment(...)`（`shape_fix_compose_shell/helpers.rs` 或 `wire_segment.rs`）
+  ↔ OCCT 对应者（`ShapeFix_ComposeShell` 里构造 `shorts` 的那一步，`cxx:2519-2549` 段内调用的判据；
+     也可能是 `ShapeAnalysis_Wire::CheckSmall`/`IsSmall` 一线）。
+专看：对「1 条边、首尾同点（3D 零长度）」的段，OCCT 是否判为 short；
+  若 OCCT 判 1 而端口判 0 ⇒ 按 .cxx 修 `is_short_segment`（不加启发式）⇒ 跑 §9.448 验收。
+```
