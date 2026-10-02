@@ -22211,3 +22211,42 @@ SHORTS 行: 154        shorts 取值分布: {'0': 154}      （全部为 0；样
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
 --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.554 —— `IsShortSegment` 逐行对拍：**结构完全一致**（忠实）⇒ `shorts=0` 的原因只能是**第一道检查**（段的首末顶点不相同）
+
+#### 并列结果（`cxx:2394-2448` ↔ 端口 `helpers.rs::is_short_segment`）
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `Vf = seg.FirstVertex(); if (!Vf.IsSame(seg.LastVertex())) return 0;`（:2401-2405） | `let (Some(vf), Some(vl)) = (seg.first_vertex(), seg.last_vertex()) else { return 0 }; if !is_same(&vf.0, &vl.0) { return 0; }` | ✓ |
+| `pnt = BRep_Tool::Pnt(Vf); tol = BRep_Tool::Tolerance(Vf); tol2 = tol*tol;`（:2407-2409） | `vertex_point(&vf)` / `vertex_tolerance(&vf)` / `tol * tol` | ✓ |
+| `for i in 1..=sbwd->NbEdges()` + `if (!Vf.IsSame(sae.LastVertex(edge))) return 0;`（:2414-2420） | `for edge in seg.edges()` + `last_vertex(edge)` + `is_same` | ✓（§9.492 修） |
+| `if (!sae.PCurve(edge, myFace, c2d, f, l)) continue;`（:2421-2426） | `curve_on_surface_oriented(edge, face, true)` ⇒ `else { continue; }` | ✓（§9.492 修） |
+| `IsCoincided(c2d->Value(l), c2d->Value((f+l)/2), URes, VRes, tol) ⇒ code = -1`（:2428-2434） | `is_coincided(&end_pnt, &mid_pnt, u_res, v_res, tol) ⇒ code = -1` | ✓ |
+| `midPnt3d = myGrid->Value(midPnt.X(), midPnt.Y()); if SquareDistance(pnt) > tol2 return 0;`（:2436-2445） | `grid_surface.value_uv(...)` + `distance(&pnt).powi(2) > tol2` ⇒ `return 0` | ✓ |
+| `return code;` | `code` | ✓ |
+
+⇒ **该函数忠实**（含 `myLoc` 恒为 identity 的注记 ✓）。
+
+#### 由此得出 `shorts = 0` 的唯一解释
+
+```text
+`IsShortSegment` 的**第一道检查**是 `FirstVertex.IsSame(LastVertex)`，不满足**立即返回 0**
+⇒ 端口全部 154 段 `shorts = 0` ⇒ 这些段的**首末顶点都不相同**（不是闭合环）；
+而 OCCT 的合并循环 `cxx:2853-2935` 只处理 `shorts(i) == 1` 的段 ⇒ OCCT 侧参与 `22 = 8 + 14` 的那些段
+**必须是「首末顶点相同」的闭合段**。
+⇒ 差异不在 `IsShortSegment` 本身，而在**段的顶点/连通性**：
+   端口这些段的 `first_vertex` 与 `last_vertex` 不是同一个顶点对象（或坐标上不闭合），
+   而 OCCT 侧是 —— 这正是 §9.500/§9.530 反复出现的 **B 类（顶点未统一）** 主题。
+```
+
+#### 下一轮（一次探针即可判定，仍是单探针 + build 断言 + 精确反向撤除）
+
+```text
+对**进入 merge 循环的段**打印：`i / nb_edges / ori / first_vertex 坐标 / last_vertex 坐标 / is_same(first,last)`：
+  · 若坐标相同而 `is_same=false` ⇒ **顶点未统一**（同一位置两个 TShape）⇒ 靶点在顶点统一（Context/CombineVertex，
+    与 §9.500 的 B 类同）；参照 OCCT 侧该处顶点的来源（`cxx:499-640` 的 LoadWires / `MakeVertex`）；
+  · 若坐标确实不同（段不闭合）⇒ 段本身在生成时就没有闭合 ⇒ 靶点回到切分/装配（但 §9.550/§9.551 已证切分忠实）。
+```
