@@ -21184,3 +21184,60 @@ CNM 样本（被归入**非流形** ⇒ 建成 Internal 段的边）：
 2) 插入 → `cargo build` **断言 0 errors**（失败则打印 error 行并**先撤除**，不解读）；
 3) 运行并保存原始输出 → 4) 精确反向替换撤除 → 5) `cargo check` 0 errors + 库 diff 空 → 6) 才解读。
 ```
+
+---
+
+### 9.521 —— 【有效测量】`load_wires` 非流形分类处探针：签名与借用位置修正后跑通（build 0 errors、精确反向撤除、库 diff 空）
+
+```text
+CNM3 行: 0   A 类候选(§9.512 CACAND): 43   命中(A 类 p0 出现在 CNM3 里): 0
+```
+
+CNM3 样本（被归入**非流形** ⇒ 建 Internal 段的边及其朝向/首点）：
+```text
+
+```
+
+附带修正记录：
+```text
+① `topo_tools_full::edge_vertices` 返回 **(Option<Vertex>, Option<Vertex>)**（不是 Option）—— 上轮 E0308 的根因；
+② `sbwd_nm.push(e)` **移动** e ⇒ 探针必须在 push **之前**（否则 E0382）；
+③ 本次为三次失败后的首次有效测量（build 断言 0 errors 后才解读）。
+```
+
+判读：
+```text
+· 命中 > 0 ⇒ A 类段的 Internal 身份来自 **load_wires 的非流形分类** ⇒ 与 cxx:499-640 同段对照（朝向判据）；
+· 命中 = 0 ⇒ 继续上移到 split_by_grid/break_wires 生成段时的朝向。
+```
+
+---
+
+### 9.522 —— 【有效测量】`CNM3 = 0`：没有边走进「非流形**边**」分支 ⇒ 该来源排除；但本轮探针**漏了另一条分支**（`:52-59` 整条 wire 非流形 ⇒ 直接建 Internal 段）
+
+#### 数据（§9.521，`build_ok=1`、精确反向撤除、`T101_ZZN` 残留 0、库 diff 空）
+
+```text
+CNM3 行: 0        A 类候选(§9.512 CACAND): 43        命中: 0
+⇒ 本次运行中**没有任何边**在 `load_wires` 的「非流形边」分支（`eo != Forward && eo != Reversed`）被收集
+  ⇒ A 类段的 Internal 身份**不是**来自该分支（此结论建立在 build 0 errors 的有效运行上）。
+```
+
+#### 自我发现：探针覆盖不全（本轮第二次口径问题）
+
+```text
+`load_wires.rs` 里产生 Internal 段的分支有两处，我只覆盖了第二处：
+  :52-59   若 **整条 wire** 的朝向不是 F/R（`is_non_manifold`）⇒ 直接
+           `seqw.push(WireSegment::with_edges(sbwd, Orientation::Internal))`   ← **未覆盖**
+  :63-73   逐边分类：`eo == Forward || Reversed ⇒ sbwd_m`，否则 `sbwd_nm`（→ Internal）  ← 已覆盖（CNM3）
+```
+
+#### 下一轮（一次探针即可定论；两个分支都打）
+
+```text
+① 在 `:55-58`（`is_non_manifold` 为真的分支）内打印：wire 的朝向、边数、首边首点坐标；
+② 在 `:63-73` 的非流形边分支内打印（同 §9.521 的写法，位置在 push **之前**）；
+③ build 断言 0 errors → 运行 → 精确反向撤除 → 与 43 个 A 类候选坐标比对；
+④ 若两处都为空 ⇒ Internal 身份来自**切分阶段**（`split_by_grid`/`split_by_line_wires`/`break_wires`
+   生成段时赋的朝向），下一步在那些生成点打印（§9.458 曾读到一个生成点是 `Orientation::External`）。
+```
