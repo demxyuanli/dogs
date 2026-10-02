@@ -386,10 +386,10 @@ impl ComposeShell {
                         int_edge_par.remove(i - 1);
                         int_line_par.remove(i - 1);
                         segment_codes.remove(i - 1);
-                        i -= 1;
-                        if i == 0 {
-                            i = 1;
-                        }
+                        // `cxx:1820` is `i--` inside `for (i = 1; i <= IntEdgePar.Length(); i++)`:
+                        // the implicit `i++` cancels it, so `i` stays put and the element that
+                        // shifted into position `i` is re-checked. The port's `while` has no
+                        // implicit increment, so `i` must simply not move here.
                         continue;
                     }
                     i += 1;

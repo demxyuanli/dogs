@@ -47,7 +47,7 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
   asOf: "2026-09-30",
-  revision: "r31",
+  revision: "r32",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -304,7 +304,7 @@ export const DATA = {
     },
   ],
   nextAction:   { taskId: "T-101",
-    action: "【T-101 已止损（用户决定，见 §9.449）：goal blocked（72/72 轮次用尽），F113 仍 4 wires/空面，面积比仍 0.8996】账目：T-101 这 72 轮落到 crates/ 的库改动只有 1 行（wire_fix.rs:2900 投影目标，门禁绿但 a3n00 中性）；两个「真实分歧」里 ① p2d1/p2d2 朝向已自证为误判，② FixDummySeam 顶点须朝向感知（cxx:4221/4230）几何正确但让面积比 0.8996→0.8918（仅 f=171 一张面）被门禁拦下回退。后续三条路径：B 导 5 块补丁边界顶点与 OCCT 的 22+6 边逐点对齐（最快出结论）；C 加只读 --farea 查 f=171 丢 1763 面积后再落地那处 cxx 修复；A 重做 F113 五阶段普查(cxx:2131-2275/1433-1914/2824-2846/2770-2860)。红线不变：不改 reader 的 Face 判定、禁止面号/bbox/面积特例、TEMP 插桩用 edit 反撤。",
+    action: "【T-101 进行中（§9.452-§9.463）】8 轮二分已把 F113 空面锁到「split_by_grid 按 U 线 u=0(seam)/cut_index=1 切分 ⇒ 产生两条零长度子段 (±87.5,0,-32)」；上游全部判定忠实；子段生成实际在 split_wire（split_by_line:454-462 委托）。已落地 §9.463：split_by_line 第二处移除路径的簿记修复（cxx:1820 的 i-- 被 for 的 i++ 抵消 ⇒ 净不前移），门禁 5/5 且 a3n00 0.8996 / T0M 0.9987 / acs10 0.9846 等基线逐字不动（对该目标中性）。下一步：读 split_wire.rs:190-240 与 :340-410（两处 PCONFUSION 过滤 + :402/446/448/466 建边）↔ cxx:1116-1184 / cxx:1900-1903，找「子段长度≈0 ⇒ 跳过」判据；命中即修并跑 t101_verify.ps1。红线：§9.439 的 FixDummySeam 朝向感知修复会让面积比 0.8996→0.8918（仅 f=171），弄清 f=171 前不落地。",
     why: "用户要求「a3n00 一个一个处理，先处理带有倒角的法兰盘」，本轮就把那一步做完并达成 T-99 的 accept。① 做法是把 f1e56776 删掉的导入期 seam 步骤接回 reader（`ShapeFixFace::fix_missing_seam` + 结果面 wire 的 `check_pcurves_and_shift`），这不是新造规则：`ShapeProcess_OperLibrary.cxx:785-899` 的 FixShape 算子 → `ShapeFix_Face::Perform` → `FixMissingSeam`（`cxx:482-498`，构造在 `cxx:1722-2330`），`STEPControl_Controller.cxx:201/:221` 默认就开。② 移除理由（T-93(a)/§9.219「OCCT 在这条路径上不跑 Perform」）被本轮实测推翻：探针 `--faceids` 开/关 ShapeProcess 得 `{1:208,2:9,4:1,6:4,10:4}` vs `{1:163,2:53,4:2,6:4,10:4}`，后者与 STEP 的 FACE_BOUND 直方图、与端口逐字相同 ⇒ OCCT 的导入确实合并了 45 个 2-bound 面。③ 结果方向与量级都对：法兰面结构变成 OCCT 的 1 wire / 5 边（边序、参数区间逐项相同），a3n00 面积比 0.8627→0.8996、T0M 未网格 7→6、T0M 面积比 0.9786→0.9987、acs10 0.9025→0.9846、rescue 16→0，且**没有改任何断言或 area_tol**。④ 剩余问题都已量化成有界的下一步（还差 1 个 2-bound + 1 个 4-bound 面没合并；全形状多改 4 个面待查；法兰面密度 72 vs GT 52），所以 T-99 按 accept 结项，另立 T-100 按「面」继续推进，而不是再调全局参数。",
   },
   tasks: [
@@ -680,6 +680,14 @@ export const DATA = {
   ],
   // 新条目插到数组**开头**（brief 取前 3 条当最近活动；早于 a29 的看提交历史）
   activity: [
+    {
+      id: "a74",
+      at: "2026-10-02",
+      title: "T-101：8 轮二分锁定零长度段成因链；落地 split_by_line 簿记修复（门禁 5/5、基线逐字不动）",
+      tone: "info",
+      detail: "§9.452-§9.458：break_wires/collect_wires/split_by_grid 网格与调度/交点合并/沿切线建边 逐项排除或判忠实；§9.454-§9.456 定位到 split_by_grid 的 U 线 u=0(seam)/cut_index=1 切分产生两条零长度段 (±87.5,0,-32)；§9.459-§9.460 验证 WireSegment 边朝向语义(load_wires.rs:11-27)并否掉朝向假设；§9.461-§9.463 发现并落地簿记修复（cxx:1820 语义），t101_verify 5/5 通过、a3n00 0.8996 等基线逐字不变；§9.462 靶点重定向到 split_wire。",
+      ref: "specs/_a3n00_gap_analysis.md \u00a79.463",
+    },
     {
       id: "a73",
       at: "2026-10-01",

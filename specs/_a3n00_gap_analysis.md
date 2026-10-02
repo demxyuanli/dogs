@@ -19043,3 +19043,42 @@ a3n00：STATMAP matched=225 unmatched=1 sum_mt=11941 flat_mt=11941  ——**不�
 **下一轮**：读 `split_wire.rs:190-240` 与 `:340-410`（两处过滤区 + 紧随的建边），与
 `ShapeFix_ComposeShell.cxx` 对应段（`cxx:1900-1903` 调用的 `SplitWire` 实现）对拍，
 专找「子段参数区间长度 ≈ 0 ⇒ 跳过」判据；命中即按 `.cxx` 修 → 跑 §9.448 验收。
+
+---
+
+### 9.463 —— ✅ **落地**：`split_by_line` 第二处移除路径的簿记修复（`cxx:1820` 语义），门禁全绿且全部基线逐字不动
+
+改动（`crates/occt-topo/src/shape_fix_compose_shell/split_by_line.rs`，第二处移除路径）：
+
+```rust
+// 修前（与 OCCT 不等价：while 无隐式自增，却仍 i -= 1 ⇒ 净前移 −1，去重查了前一个元素）
+int_edge_ind.remove(i - 1); int_edge_par.remove(i - 1); int_line_par.remove(i - 1); segment_codes.remove(i - 1);
+i -= 1; if i == 0 { i = 1; } continue;
+// 修后（等价 cxx:1820 的 `i--` 被 `for` 的隐式 `i++` 抵消 ⇒ 净不前移，重查移位到位置 i 的元素）
+int_edge_ind.remove(i - 1); int_edge_par.remove(i - 1); int_line_par.remove(i - 1); segment_codes.remove(i - 1);
+continue;
+```
+
+**门禁实测**（`pwsh -File .target-gate\t101_verify.ps1`，job `pwsh-58`，exit 0）：
+
+```text
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 269.51s
+
+[occ/a3n00.stp] ours v=10863 f=11941 | occ v=11145 f=12466 | f-ratio 0.96
+[occ/a3n00.stp] our=204327.72 occ=227130.30 ratio=**0.8996**   ← 与基线逐字相同
+[occ/T0M.stp]   our=192416.40 occ=192658.64 ratio=0.9987      ← 相同
+[occ/acs10.stp] our=267047.23 occ=271219.68 ratio=0.9846      ← 相同
+[occ/bottom.step] 0.9750 · [occ/motoc.step] 1.0333 · [occ/TDB.stp] 1.0092 · [occ/top.step] 1.0000 · [occ/ATU01038.step] 1.0006（均相同）
+```
+
+⇒ 该修复**忠实于 `.cxx` 且对所有既有基线完全中性**（F113 也仍为 Shell(5)，与 §9.461 的实测一致：
+它是簿记正确性问题，不是 F113 的成因）。**已落地**。
+
+#### 与目标的关系
+
+```text
+F113 仍未解决（4 wires / 空面）；路线图不变：
+  零长度段 ← split_by_line 的 U 线 u=0 切分 ← 子段生成委托给 split_wire（§9.462）
+  下一步：split_wire.rs:190-240 / :340-410（两处 PCONFUSION 过滤 + :402/446/448/466 建边）
+          ↔ cxx:1116-1184 / cxx:1900-1903 的 SplitWire 实现，找「子段长度 ≈ 0 ⇒ 跳过」判据
+```
