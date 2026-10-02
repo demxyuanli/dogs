@@ -21848,3 +21848,21 @@ u_closed=true  v_closed=false  u_period=6.283185(=2π)  v_period=18.0  nbu=1 nbv
   · 随后与 OCCT 网格构造（`ShapeFix_ComposeShell` 的 grid 初始化：由面 UV 边界与周期性推出
     `UJointValues/NbUPatches/UClosed`）逐值对照 ⇒ 一致则差异落在 `SplitByLine` 内部数值，不一致则网格构造即分歧点。
 ```
+
+---
+
+### 9.542 —— 【有效测量】`closed_mode` 与网格量同点实测
+
+```text
+GRIDC 行: 47   closed_mode 分布: {'true': 47}
+   GRIDC closed_mode=true u_closed=true v_closed=false u_period=6.283185 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] ubounds=(3.141593,9.424778)
+   GRIDC closed_mode=true u_closed=true v_closed=false u_period=6.283185 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] ubounds=(3.141593,9.424778)
+   GRIDC closed_mode=true u_closed=true v_closed=false u_period=6.283185 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] ubounds=(3.141593,9.424778)
+   GRIDC closed_mode=true u_closed=true v_closed=false u_period=6.283185 nbu=1 nbv=1 uj=[3.141592653589793, 9.42477796076938] ubounds=(3.141593,9.424778)
+```
+
+判读：
+```text
+· `closed_mode=false` ⇒ 走 U-closed 分支（`!closed_mode && u_closed`）⇒ `x + sh` 可为 0，与 §9.456 的 `line=(0,0)`/`cut_index=1` 自洽 ⇒ 网格与切分位置前提无误；
+· `closed_mode=true` ⇒ 走 else 分支 ⇒ 线在 `UJointValue(1)=π`、`cut_index=1` ⇒ 则 §9.456 的 `(0,0)` 打印属于**另一面**的调用，需要重新归属。
+```
