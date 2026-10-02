@@ -18732,3 +18732,39 @@ D_collect_wires   : segs=6 zero=2     nb=[6, 7, 5, 4, 3, 3]
 **下一轮靶点（二选一，见下一问）**：
   (i) 在 `split_by_grid` 内、`split_by_line` 调用**前后**各打一次 ⇒ 判定是 `split_by_grid` 自己造的，还是它调用的 `split_by_line` 造的；
   (ii) 直接进 `split_by_line` 的切分输出，打印每次「按线切」的切点参数与切前/切后段。
+
+---
+
+### 9.455 —— 再收一层：零长度段由 `split_by_grid` 里的**按线切分循环**（`split_by_line_wires` = `SplitByLine`）产生
+
+在 `split_by_grid`（`cxx:2131-2275`）的**切分循环之前**与**函数末尾**各埋一次（env `T101_ZZ4`，
+仅当含零长度段时打印；插桩已 `git show HEAD` 还原）。F113 那一次：
+
+```text
+GRID-PRE  : **未打印** ⇒ 切分循环之前 zero=**0**（段列表干净）
+GRID-POST : segs=6 zero=**2** nb=[6, 16, 1, 1, 1, 1]     ← 零长度段在按线切分之后出现
+```
+
+⇒ 零长度段是 `split_by_grid` 内部**按 U/V 线切分**这一步造的，即调用：
+
+```rust
+self.split_by_line_wires(seqw, &ln, true,  cut_index);   // U 线（cxx:2131-2251 段）
+self.split_by_line_wires(seqw, &line, false, i as i32);  // V 线（cxx:2253-2273 段）
+```
+
+（`split_by_line_wires` 是 `SplitByLine`（`cxx:1433-1914`）的移植；4 个调用点：
+U 的 closed/普通分支、V 的 closed/普通分支。）
+
+#### 完整链条（现已闭合到「某一次按线切」）
+
+```text
+load_wires        : 干净
+split_by_grid     : PRE 干净 → 按 U/V 线切 → POST 出现 2 条零长度段 (±87.5,0,-32)→同点   ← **元凶在此**
+break_wires       : 只切链（16 → 7+5+4），zero 不变
+collect_wires     : 只组装（1 边段 → 3 边薄片），zero 不变
+dispatch_wires    : 5 张面 → perform 包成 Shell(5) → reader 只收 Face ⇒ 整包丢弃
+```
+
+**下一轮靶点**：给 `split_by_line_wires` 的 **4 个调用点**各埋一次「切前/切后」打印，
+**带上该次切的参数**（线的 `pos/dir`、`cut_index`、U/V 标志），从而指认**是哪一条线、切点参数是多少**
+把段切成了零长度；随后与 `cxx:1433-1914` 的同分支判读（切点是否落在端点 ⇒ 应跳过却没跳过）。
