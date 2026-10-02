@@ -20259,3 +20259,32 @@ ShapeFix_ComposeShell.cxx:2570-2724（找下一个要连接的段）与 :2726-27
   端口 `collect_wires.rs:103-230` 与 `:231-275` 已逐行判定忠实（§9.399 的旧结论 + 本轮 §9.476 局部复核），
   但**没有在 F113 这个具体输入上取过数**。本配方的价值就是把「忠实」从代码层推进到**该输入上的实测层**。
 ```
+
+---
+
+### 9.494 —— `CollectWires` 串接决策实测（§9.493 配方执行；一轮内插桩→跑→撤除，库 diff 空）
+
+```text
+CDEC 行: 277   CPUSH 行: 230
+CPUSH nb 分布: {'1': 44, '2': 51, '3': 36, '4': 46, '5': 40, '6': 4, '7': 4, '8': 3, '15': 2}
+CDEC 中 index=None 的行: 74 / 277
+```
+
+末尾样本：
+
+```text
+CDEC index=Some(6) samepatch=true reverse=true connected=true sbwd_nb=2
+CDEC index=Some(5) samepatch=false reverse=false connected=false sbwd_nb=0
+CDEC index=Some(7) samepatch=true reverse=true connected=true sbwd_nb=1
+CDEC index=Some(7) samepatch=true reverse=false connected=true sbwd_nb=2
+CDEC index=None samepatch=false reverse=false connected=false sbwd_nb=3
+CDEC index=None samepatch=false reverse=false connected=false sbwd_nb=0
+CPUSH nb=2 seqw_left=8
+CPUSH nb=3 seqw_left=8
+CPUSH nb=1 seqw_left=8
+CPUSH nb=2 seqw_left=8
+CPUSH nb=3 seqw_left=8
+CPUSH nb=3 seqw_left=8
+```
+
+原始输出见 `.target-gate/chain106.txt`；判读按 §9.493 的三条规则（下一轮据分布与样本判定靶点：候选匹配条件 / 连接退出条件 / 更后面的分面）。
