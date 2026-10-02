@@ -22769,3 +22769,53 @@ a) cargo check 0 errors → b) zz_seam_fix 113 → **Face** → c) --model 113 �
 → d) t101_verify.ps1 全绿 + 逐模型面积比对照基线 → e) 单独提交并记录前后数字。
 （无替换路径与现状逐位相同 ⇒ 若基线出现任何偏移，即为改动的副作用，必须报告而非掩盖。）
 ```
+
+---
+
+### 9.568 —— API 钉桩完成：`Edge`/`Vertex` 是**元组结构体**（`self.0: TopoShape` 全库通用），且库内已有 `Edge(edge)` 构造先例 ⇒ 下一轮可直接写 EDGE 重建分支
+
+#### A. 证据
+
+```text
+· `impl Vertex`（builder.rs:229 等）与 `impl Edge`（tools.rs:48 等）内部一律用 `self.0` ⇒ 元组结构体，字段可构造；
+· 库内既有构造先例：`WireSegment::with_edges(vec![Edge(edge)], Orientation::External)`（§9.458 读过）
+  ⇒ **`Edge(toposhape)` 可用**；
+· `Vertex` 侧：`split_wire.rs:44` 有 `Vertex::new()`；`builder.make_vertex(...)` 返回 `Vertex`
+  ⇒ 若 `Vertex(toposhape)` 不可直接构造，则退路是：把「被替换的顶点」写回时**沿用替换体的 TopoShape**
+    （把 `copy_replace_vertices_with` 的 `v1/v2` 换成由 `builder` 重建的顶点，或改用 `add_edge_vertices`
+    直接以 TopoShape 添加，见 wire_fix.rs:1223）。
+```
+
+#### B. 待写代码（下一轮；改动仅在 `reshape.rs::MapReShape::apply`，纯增量）
+
+```rust
+fn apply(&self, s: &TopoShape) -> TopoShape {
+    if let Some(r) = self.value(s) {
+        return r;                                   // ① 现状快路径（含朝向回正）保持不变
+    }
+    if s.shape_type() == ShapeType::Edge {          // ② 新增：EDGE ← 首末顶点（ShapeBuild_ReShape::Apply 语义）
+        let e = Edge(s.clone());
+        let fv = crate::shhealing::first_vertex(&e);
+        let lv = crate::shhealing::last_vertex(&e);
+        let nf = fv.as_ref().map(|v| self.apply(&v.0));
+        let nl = lv.as_ref().map(|v| self.apply(&v.0));
+        let changed = matches!((&fv, &nf), (Some(a), Some(b)) if key(&a.0) != key(&b.0))
+            || matches!((&lv, &nl), (Some(a), Some(b)) if key(&a.0) != key(&b.0));
+        if changed {
+            // 用替换后的顶点重建边（保留曲线/容差/朝向/位置）
+            let nf = nf.map(Vertex_wrap);
+            let nl = nl.map(Vertex_wrap);
+            return crate::shhealing::copy_replace_vertices_with(&e, nf.as_ref(), nl.as_ref()).0;
+        }
+    }
+    s.clone()
+}
+```
+
+#### C. 纪律（本目标第 4 次「先钉 API 再写」）
+
+```text
+插入前：把改动**原文常量**保存下来做精确反向替换；`cargo build` 断言 0 errors；
+若编译失败 ⇒ **立即撤除**（不解读任何数据）后再报告。
+验收（§9.565-C 五步）不变：cargo check → zz_seam_fix 113 → Face → --model 113 → wires=2(22+6) → 门禁 + 基线。
+```
