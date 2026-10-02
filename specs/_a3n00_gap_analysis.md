@@ -21516,3 +21516,58 @@ CUNA sbwd_nb=6  A=0 B=**1** C=1  consumed=3
     靶点**只剩段的生成差异**（下一步对比端口 BREAK-IN 的 16 边段与 `cxx:2131-2275` 的切分点）；
   · 若有 `is_vertex=false` 且非 Internal ⇒ 才是真正的「未被采纳」⇒ 回到候选判据复查（但已逐条排除）。
 ```
+
+---
+
+### 9.531 —— 【定性】未消费 A 类候选的 `is_vertex/ori/nb`（单探针、build 断言、精确撤除）
+
+```text
+CAUN 行: 3
+   CAUN sbwd_nb=4 is_vertex=false ori=Internal nb=7
+   CAUN sbwd_nb=8 is_vertex=false ori=Internal nb=5
+   CAUN sbwd_nb=4 is_vertex=false ori=Internal nb=7
+```
+
+判读：
+```text
+· 全为 `is_vertex=true` ⇒ 被 `:106` 按规格跳过 ⇒ **候选搜索这条线彻底收束为忠实**，
+  靶点只剩**段的生成差异**（对比端口 BREAK-IN 的 16 边段与 cxx:2131-2275 的切分点）；
+· 出现 `is_vertex=false` 且 ori 非 Internal ⇒ 真正的「未被采纳」⇒ 回候选判据复查。
+```
+
+---
+
+### 9.532 —— 【收束】残余 3 例是**在前一条 wire 中被消费过**的段（`sbwd` 是**逐 wire** 缓冲）⇒ 候选搜索这条线**完全收束为忠实**
+
+#### 数据（§9.531，`build_ok=1`、精确撤除、`T101_ZZR` 残留 0、库 diff 空）
+
+```text
+CAUN 行: 3
+   sbwd_nb=4  is_vertex=false  ori=Internal  nb=7
+   sbwd_nb=8  is_vertex=false  ori=Internal  nb=5
+   sbwd_nb=4  is_vertex=false  ori=Internal  nb=7
+```
+
+#### 判读（解释了残余，且无需任何进一步探针）
+
+```text
+· 它们不是 vertex 段（`is_vertex=false`），也确实是 Internal（被 `:110` 跳过）；
+· 但 `collect_wires` 的主循环**逐条 wire 构建**：`sbwd` 是**当前 wire** 的累积缓冲，
+  每构建完一条 wire 就 append 并清空（`cxx:2824-2846` / 端口 `:309-330`）。
+  ⇒ 我的「已消费」过滤只检查了**当前** `sbwd` ⇒ 在**前一条 wire**中被连接过的段会被判为「未消费」，
+    而它们早已被 `:268` 标为 `Internal` ⇒ `:110` 跳过它们**完全正确**（不能跨 wire 复用）。
+· 因此：**候选搜索的全部判据 + 连接块 + 消费标记机制** 都与 `cxx:2570-2778` 一致且实测自洽。
+```
+
+#### 由此确定的目标（本目标最后一个方向）
+
+```text
+串接之所以断成 6 条 wire，**不是**候选搜索的问题，而是：
+  **段被消费的顺序/归属** 与段本身的生成 —— 即端口在 `split_by_grid`/`break_wires` 阶段
+  产出的**段构成**与 OCCT 不同：
+    · §9.452 的 BREAK-IN：端口外环段为 `[6, 16, 1, 1, 1, 1]`（16 = 14 + 2 插入）；
+    · §9.484：OCCT 整形后为 **22 + 6**（22 = 8 + 14 合并）；
+    · 端口最终 `[6,7,5,4,3,3]`（§9.453）。
+⇒ 下一步（下一轮）：把端口在 `split_by_grid` 出口的**段列表**（边数 + 每条边的端点参数）
+  与 OCCT `cxx:2131-2275`（SplitByGrid）在同一面上应有的切分点对齐 —— 找「切分点/插入段」的差异。
+```
