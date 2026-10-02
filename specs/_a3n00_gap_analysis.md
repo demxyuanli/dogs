@@ -18891,3 +18891,34 @@ cxx:2059+      否则建边（两条 pcurve + pcurve_range/edge_range）        
 `--fstats` → face=113 mt≈228；a3n00 面积比 ≥0.8996 且上升；`t101_verify.ps1` 全绿）。
 
 （本轮所有 TEMP 插桩均已 `git show HEAD` 还原；`git diff --stat crates/occt-topo/src` 为空。）
+
+---
+
+### 9.459 —— `split_by_line` 的「closed mode 去重点」(cxx:1722-1767 ↔ 端口 :295-341) 逐项对拍：**公式全同**，剩一个未验证前提（边的朝向语义）
+
+| OCCT | 端口 | 判定 |
+|---|---|---|
+| `int i, j = IntEdgePar.Length();`（1-based，j=末索引） | `let mut j = int_edge_par.len() - 1;`（:301，含解释注释） | ✓ |
+| `if (myClosedMode && j > 1)` | `if self.closed_mode && int_edge_par.len() > 1` (:296) | ✓ |
+| `for (i = 1; i <= Length();)` / `if (i == j) break;` | `while i < len()` / `if i == j { break; }` (:303-305) | ✓ |
+| `IntEdgeInd(i) == IntEdgeInd(j) && abs(Par(i)-Par(j)) < PConfusion` → `Remove(i)`，`if (j>i) j--`，`continue` | :307-309 / :329-336 | ✓ |
+| `else if (nbe == 1 \|\| IntEdgeInd(i) == (IntEdgeInd(j) % nbe) + 1)` | :311 | ✓ |
+| `E1 = sewd->Edge(IntEdgeInd(j)); E2 = sewd->Edge(IntEdgeInd(i));`（**j→E1，i→E2**） | `e1 = wire.edge(int_edge_ind[j])`, `e2 = wire.edge(int_edge_ind[i])` (:312-313) | ✓ |
+| `BRep_Tool::Range(E1, myFace, a1, b1)` | `curve_on_surface_range(&e1, &face)` (:314-321) | ✓ |
+| `abs(Par(j) - (E1.Orientation()==FORWARD ? b1 : a1)) < PConfusion && abs(Par(i) - (E2.Orientation()==FORWARD ? a2 : b2)) < PConfusion` | :322-325 `e1_ref = Forward ? b1 : a1`、`e2_ref = Forward ? a2 : b2` | ✓（公式同） |
+| `j = i++;` | :338-339 `j = i; i += 1;` | ✓ |
+
+#### 剩一个**未验证前提**（也是唯一可疑处）
+
+```text
+OCCT 的 `E1.Orientation()` 是 **sewd（wire 数据）里存的朝向** —— `ShapeExtend_WireData::Add` 存的是
+按 wire 遍历朝向过的边；而端口 :312-313 取的是 `WireSegment::edge(i)`，
+其实现（wire_segment.rs:144）只是 `self.edges.get(i-1)`，**原样返回所存边**。
+⇒ 若端口的 `load_wires` 存边时**已施加 wire 朝向**，则两侧语义一致（本块忠实）；
+  若存的是**未施加朝向**的原始边，则 :322-323 的 `e1_ref/e2_ref` 会选反 ⇒ 去重判据失效
+  ⇒ **重复点存活 ⇒ 后面切出零长度子段**（与 §9.439 的 `FixDummySeam` 同族：朝向语义）。
+```
+
+**下一轮（唯一剩余检查，成本一次读）**：读 `load_wires.rs`（很小），确认它存进 `WireSegment.edges` 的边
+**是否带 wire 遍历朝向**（对照 `ShapeExtend_WireData` 的 Add/Edge 语义）；若不带 ⇒ 按 `.cxx` 修（使
+`WireSegment::edge()` 的语义与 `sewd->Edge()` 一致，或在该判据处用朝向感知取边），然后跑 §9.448 验收。
