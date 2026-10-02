@@ -19451,3 +19451,45 @@ BEFOREP wire=3 n=1  zero=**1**   (-87.500,0.000,-32.000)->(-87.500,0.000,-32.000
 
 （另注：该行的 `box` 在 x 上无界这一点本身也是一个可用判据——端口 F113 的 box 是 `(-87.5,…)-(87.5,…)`
 （有界），说明端口在读入时已把周期 pcurve 收窄；这属于既有差异，但不影响本节的 wire 数对照。）
+
+---
+
+### 9.475 —— 【两侧输入对照完成】OCCT `noop` FACE 113 与端口 F113 的 wire 结构**几乎一致**（含那两条 1 边退化 wire）；差异只有第一条 wire 的边数（8 vs 6）
+
+**更正 §9.474**：那一节说「对照成功」但没取到 wire 列表（我按 `-34.0/-100.0` 字面去 grep，而文件里打印的是 `-34`/`-100`，故漏匹配）。
+本轮用 `1e+100,34` 精确定位到第 114 行：
+
+```text
+OCCT noop（未整形）：
+  FACE 113 type=1 wires=4 edges_per_wire: **8 14 1 1**  spans: u=0 v=0 ×4
+  box=(-1e+100,-34,-100)-(1e+100,34,-32)  [UV-DEGENERATE-WIRE]
+
+端口 F113（`zz_seam_fix 113 --ep` 的 BEFORE）：
+  wires=4   wire[0]=**6**  wire[1]=14  wire[2]=1 (zero=1)  wire[3]=1 (zero=1)
+  box=(-87.5,-34,-100)-(87.5,34,-32)
+```
+
+**判读（本条把问题钉死）**：
+
+```text
+① wire 数一致（4 条），且**两侧都有两条 1 边（退化）wire** ⇒ §9.471/§9.472 的结论成立：
+   退化 wire 不是端口独有，**分歧在「整形过程如何处理它们」**。
+② 唯一差异 = 第一条 wire 的边数：OCCT raw 8 vs 端口 6 ⇒ 正是 §9.412 那条 `FixDummySeam` 丢边
+   （端口在导入期就把 #5012/#5018 毛刺对删掉了；OCCT raw 还留着，其**整形后**同样变成 6，见 §9.439 的 wdump）。
+③ 因此「端口 4 wires → 5 张面 → Shell(5) 被丢 ⇒ 空面」vs「OCCT 4 wires → 1 张 2-wire 面」的差别，
+   **既不是丢边（两侧整形后一致）、也不是切分（§9.452-§9.470 全判忠实），而是：
+     OCCT 的整形把两条 1 边退化 wire 清掉/并掉，端口保留**。
+```
+
+#### 下一轮（唯一剩余目标，方向明确）
+
+```text
+在 cxx 里定位「退化/1 边 wire 在整形中被清理」的那一步。候选（按可能性排序）：
+  1) `ShapeFix_ComposeShell::CollectWires`（cxx:2512-2936）—— 配对阶段若 1 边段无法配对，
+     OCCT 可能直接丢弃（端口 `collect_wires.rs` 的 `index=None` 分支需逐行核对）；
+  2) `ShapeFix_ComposeShell::LoadWires`（cxx:499-640）—— 载入时是否已把退化 wire 排除；
+  3) `ShapeFix_Wire::FixSmall(true, Precision())` / `ShapeAnalysis_Wire` 的小边/退化检查；
+  4) `ShapeFix_Face::FixMissingSeam` 之后的 `FixSmallAreaWire`（§9.444 已对过打包，但可再看裁剪路径）。
+做法：先用端口侧只读探针确认「那两条 1 边段在 collect_wires 里是否配对成功过」（§9.453 的 COLLECT-OUT 已显示
+它们被组装成两张 3 边薄片 ⇒ 端口**没有丢弃**），再逐行对 cxx:2512-2936 的对应分支找差异。
+```
