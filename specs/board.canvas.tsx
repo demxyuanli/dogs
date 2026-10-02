@@ -46,8 +46,8 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 // —— 体量增长只应来自，也只需来自散文，而长段分析要写成 §编号引用（specs/_a3n00_gap_analysis.md），不要粘贴。
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V8_0_0）",
-  asOf: "2026-09-30",
-  revision: "r33",
+  asOf: "2026-10-02",
+  revision: "r34",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -304,7 +304,7 @@ export const DATA = {
     },
   ],
   nextAction:   { taskId: "T-101",
-    action: "【T-101 进行中（§9.452-§9.463）】8 轮二分已把 F113 空面锁到「split_by_grid 按 U 线 u=0(seam)/cut_index=1 切分 ⇒ 产生两条零长度子段 (±87.5,0,-32)」；上游全部判定忠实；子段生成实际在 split_wire（split_by_line:454-462 委托）。已落地 §9.463：split_by_line 第二处移除路径的簿记修复（cxx:1820 的 i-- 被 for 的 i++ 抵消 ⇒ 净不前移），门禁 5/5 且 a3n00 0.8996 / T0M 0.9987 / acs10 0.9846 等基线逐字不动（对该目标中性）。下一步：读 split_wire.rs:190-240 与 :340-410（两处 PCONFUSION 过滤 + :402/446/448/466 建边）↔ cxx:1116-1184 / cxx:1900-1903，找「子段长度≈0 ⇒ 跳过」判据；命中即修并跑 t101_verify.ps1。红线：§9.439 的 FixDummySeam 朝向感知修复会让面积比 0.8996→0.8918（仅 f=171），弄清 f=171 前不落地。",
+    action: "【T-101 进行中（§9.452-§9.578，goal 160 轮终态）】F113 空面锁到一个拓扑事实：93 段「首末顶点同一、逐边 LastVertex 是另一 TShape」⇒ IsShortSegment 恒 0 ⇒ shorts 全 0 ⇒ 合并循环空转 ⇒ 8+14 合不成 22 ⇒ [6,7,5,4,3,3] ⇒ 6 wire/5 面 ⇒ Shell(5) 被 reader 丢弃。链上每处能与 .cxx 对照的环节均已判定忠实：LoadWires（两条产 Internal 分支实测 0 次）、SplitByGrid（头部/closed 段/U 线循环/调用侧）、SplitByLine 内部（交点 1 个且在端点；守卫① dlast=0 精确命中 ⇒ 不切）、SplitWire（三建顶点分支 + 顶点统一机制 + copy_replace_vertices_with）、BreakWires（出口 154 段无一行 Internal）、CollectWires（候选判据/连接块/消费标记 :268↔:110/合并入口）、DispatchWires、FixDegenerated/CheckDegenerated、IsShortSegment（八项）、WireSegment 访问器。已排除：输入未统一（61/61 same=true）、MapReShape 缺 EDGE 深度重建（补上编译通过但 F113 不变 ⇒ 无收益已还原）、内部顶点未绑定（收集与 cxx:1006-1014 一致、该批边无非流形顶点 ⇒ 0 次触发是规格行为）、93 次 edge_last 失败（多边段上亦为规格行为）。唯一剩余入口：用既有 specs/occt_probe 在 SplitEdges/SplitByGrid 后 dump seqw 每段 {NbEdges, First/LastVertex 坐标, Orientation}，与端口 BREAK-IN 记录逐段比对（段集合是否同构）。命中即按 .cxx 修 ⇒ 跑 §9.565-C 五步验收。红线：§9.439 的 FixDummySeam 朝向感知修复会让面积比 0.8996→0.8918（仅 f=171），弄清 f=171 前不落地。",
     why: "用户要求「a3n00 一个一个处理，先处理带有倒角的法兰盘」，本轮就把那一步做完并达成 T-99 的 accept。① 做法是把 f1e56776 删掉的导入期 seam 步骤接回 reader（`ShapeFixFace::fix_missing_seam` + 结果面 wire 的 `check_pcurves_and_shift`），这不是新造规则：`ShapeProcess_OperLibrary.cxx:785-899` 的 FixShape 算子 → `ShapeFix_Face::Perform` → `FixMissingSeam`（`cxx:482-498`，构造在 `cxx:1722-2330`），`STEPControl_Controller.cxx:201/:221` 默认就开。② 移除理由（T-93(a)/§9.219「OCCT 在这条路径上不跑 Perform」）被本轮实测推翻：探针 `--faceids` 开/关 ShapeProcess 得 `{1:208,2:9,4:1,6:4,10:4}` vs `{1:163,2:53,4:2,6:4,10:4}`，后者与 STEP 的 FACE_BOUND 直方图、与端口逐字相同 ⇒ OCCT 的导入确实合并了 45 个 2-bound 面。③ 结果方向与量级都对：法兰面结构变成 OCCT 的 1 wire / 5 边（边序、参数区间逐项相同），a3n00 面积比 0.8627→0.8996、T0M 未网格 7→6、T0M 面积比 0.9786→0.9987、acs10 0.9025→0.9846、rescue 16→0，且**没有改任何断言或 area_tol**。④ 剩余问题都已量化成有界的下一步（还差 1 个 2-bound + 1 个 4-bound 面没合并；全形状多改 4 个面待查；法兰面密度 72 vs GT 52），所以 T-99 按 accept 结项，另立 T-100 按「面」继续推进，而不是再调全局参数。",
   },
   tasks: [
@@ -318,11 +318,11 @@ export const DATA = {
       estimate: 8,
       actual: 12,
       startedAt: "2026-09-30",
-      updatedAt: "2026-09-30",
+      updatedAt: "2026-10-02",
       completedAt: "2026-09-30",
       blocker: "",
       goal: "把 a3n00 的面积比从当前真实值 **0.8627** 推向 1（缺口 31179.6）。**注意**：F113 在当前 HEAD **已经出网格**（`wires=4 mt=267`），所以「让 F113 出网格」不再是本卡目标；旧表述里的 0.8996 / 缺口 22802 / F113 不出网格来自本会话丢失的未提交改动，已按 §9.324 更正",
-      next: "**【§9.368 把端口的完整结构（72 个结构节点 + 72 条约束链 + 容差/格/顶点序）喂给 OCCT 的 `BRepMesh_Delaun`：18/18 逐字段完全相同 ⇒ Delaunay 层忠实；病灶在输入端的面拓扑】** ① 做法：端口侧 TEMP 落盘 `delaun_in_f<f>.txt`（`TOL/CELLS/N/L/V` + `AFTER_CTOR`/`FINAL`）与 `delaun_uv_f<f>.txt`（登记序原始 UV）；探针新增 `--delaunstruct <dir>` —— `AddNode` 逐个核对返回值等于声明序号、`AddLink`×72、`SetTolerance/SetCellSize`，再用 public 构造 `BRepMesh_Delaun(aStruct, indices, cellsU, cellsV)` 跑完整条路，**绕开** §9.366 的 LNK2019。② **结果**：18 个面（含 f=0、f=208 两个健康对照）OCCT 的 `NbNodes/NbLinks/ElementsOfDomain` 与四种链状态计数**与端口逐字段相同**（`idx_mismatch=0`、`links_dumped == links_in_struct == 72`；f=0 是 `nodes=71 links=207 domain=66 frontier=68 free=65 deleted=74`，f=192 是 `nodes=75 links=245 domain=0 frontier=72 deleted=173`）⇒ **这一层的实现是忠实的**，§9.359 的「同一批点、顺序不同就归零」不是这层的代码差异。③ **更正 §9.367**：只喂点（0 条链）时的 `domain=0` 是 `cleanupMesh` 造成的 —— `BRepMesh_Delaun.cxx:1028` 无条件调用它，而它遍历 `FreeEdges()` 时只跳过 Frontier 链（`cxx:832-835`），结构里一条 Frontier 都没有时所有三角都被判为外部删掉（`cxx:908-911`）⇒ 那条的「能推出：这 74 个点本身不足以三角化」**作废**。④ **更正 §9.365.2**：a3n00 两侧面序号**只有 3/226 对应**；按六坐标 bbox 配对（201/226 精确 1:1）后 port 192 的真孪生是 model 85、port 169 是 model 87、port 174 是 model 42……那 16 个面的 GT 三角数是 **52–80**（不是 2–15），端口是 204–336 ⇒ 真实倍数约 **4 倍**且**方向双向**（189/204 是端口少铺：36 vs 54）。⑤ **真正的输入差**：这 16 个面在 STEP 里声明 **2 个 `FACE_BOUND`**，端口忠实建成 2 条 wire；OCCT 读入期 `ShapeProcess` 把它们并成 **1 条 wire**（`--faceids` 直方图：默认 `{1:208,2:9,4:1,6:4,10:4}`，`--nofix` `{1:163,2:53,4:2,6:4,10:4}` 与 STEP、与端口**逐字相同**）⇒ 整形合并了 45 个 2-bound 面。逐边对照 port 192 ↔ model 85：OCCT 是 **1 条 wire / 5 条边 / 7 条 pcurve / 83 点**，由**两条 2 点 seam 边**把上下两圆连成一个环、圆 A 被切成 19+19；端口是 **2 条互不相连的闭合 pcurve**（v=-267.805924 与 v=-287.805924 各 37 点）。同时更正 §9.364/§9.365.6：`UVSUM` 的 `wires` 就是拓扑 wire 数，**不是第三个量**。⑥ **下一轮**：实现读入期把 2 个 bound 并成 1 条 seam 闭合 wire 的那段控制流（候选位置 `crates/occt-topo/src/shhealing/shape_fix_face.rs:147` 的 `w2 != null` 合并、`:406` 的 `FixReorder`；对照 `ShapeFix_Face.cxx:492-498` `:1722-2330`）。**可证伪的预测**：接上后 port 192 的结构应变成 1 wire / 83 点 / 含两条 2 点 seam pcurve，`AFTER_CTOR domain` 由 0 变 >0、`mt` 由 228 降到约 52，a3n00 面积比从 0.8627 上升。⑦ 本轮改动：**Rust 零改动**（插桩已按 §9.353 规程用 `edit` 反向撤除，`crates/` diff 为空），探针新增 `--delaunstruct` 与 `--boundary` 保留作仪器。门禁：`cargo check` 0 error、`--lib` 1281 passed / 0 failed、a3n00 `stats=226 unmatched=0 mesh=11101/11121`。",
+      next: "**【唯一入口：段集合（BREAK-IN）同构性，须在 OCCT 侧取证】** 端口侧能对照的环节已全部判定忠实（§9.577 清单），且「shorts 全 0 ⇒ 合并空转」「93 次 edge_last 失败」在相同段集合下均为规格行为 ⇒ 只剩「同一时点 OCCT 的 seqw 段集合是否与端口相同」。① 用 specs/occt_probe（本节此前用过）在 ShapeFix_ComposeShell::SplitEdges/SplitByGrid 切分后 dump 每段 {NbEdges, FirstVertex 坐标, LastVertex 坐标, Orientation}；② 与端口 §9.452 的 BREAK-IN 记录（外环 [6,16,1,1,1,1]）逐段比对：同构 ⇒ 差异在后续步骤（继续二分）；不同构 ⇒ 差异即在此 ⇒ 回 SplitByLine/SplitEdges 产出逐点对齐；③ 命中即按 .cxx 修 ⇒ 跑 §9.565-C 五步验收（cargo check → zz_seam_fix 113 → Face → --model 113 → wires=2(22+6) → --fstats mt≈228 → t101_verify.ps1 全绿 + 逐模型基线对照）。纪律（§9.570-D）：先确认 API → 单探针 + cargo build 断言 0 errors 才解读 → 用插入原文精确反向撤除 → 写明统计口径 → 无收益改动一律还原。",
       acceptance: "a3n00 面积比从 **0.8627** 上升且不劣化；T0M 未网格 7 不增加（`f1e56776` 已记 T0M 6→7 的代价）；--lib 与 step_obj_gates 5/5 不劣化；**不得改基线或 area_tol 来绕过**；不新写测试、不改断言",
       evidence: "**2026-09-30，十三轮**。**(1) 面已 100% 锁定**（§9.303.1）：STEP `#5375` = `CYLINDRICAL_SURFACE` **R=34**、高 68，解析面积 `2πrh = 29053.4` 与该区域缺口逐字吻合。**(2) 下游逐级实测忠实**：reader `FACE_BOUND 到 wire` **1:1**；读入路径**无 healing 阶段**；4 条 wire **不共享顶点 TShape**；4 条 wire 在 3D 上**各自闭合**（gap 精确 0）⇒ `CheckWire` 拒绝**正确**；范围守卫逐行忠实 `cxx:1781-1802`；`ComposeShell` 的 `load_wires` 入口即 `[6,14,1,1]`。**(3) 病根由实验确认**（§9.315）：`shape_fix_face.rs:453` 的 `surf.clone()` 让 `tmp_f` 与原面共用 `repr_key`，seam 写入落到原面槽位；摘掉 `tmp_f` 的曲面注册后 ⇒ `unmatched` **1 到 0**、F113 出网格 `mt=267`、全 226 面出网格，但面积比 **0.8996 到 0.8627** ⇒ 不能落地。**(4) 面积差成因（§9.316 + §9.319）**：逐三角对比显示两版**最大的三角完全同名同值**（不存在多出一张巨大错误面）；实验版 `v` 更多却 `f` 更少、总面积少 8377 ⇒ **少铺**；逐面边数差集显示差异落在 **43 个面上、每个少 2–3 条 seam 边、合计 −107**。原因是 `fix_missing_seam` 要**读回自己刚写下的 pcurve**（`check_pcurves_and_shift`/`curve_on_surface_range` 都按 `repr_key` 取），摘注册后写与读不在同一个键上 ⇒ 读不到 ⇒ seam 边加不上。**(5) 核心改动试并否决（§9.320，本轮）**：把 `repr_key` 改为 `face_key` ⇒ 三个指标与摘注册实验**逐字相同**（`stats` 226、`unmatched` 0、`mesh` 11101/11121、面积比 0.862724、`edges` 976 对基线 1083、同样 43 面退化）⇒ **单纯改键的归属无效**。**(6) 已排除 11 条假设**：CheckWire 口径、`v_range`、ComposeShell 内部拆分、返回 Shell/compound、顶点身份/邻接口径、两个退化边同母线、`heal_shape` 接在读入路径、D18 的 n1 到 n2、该写回可中性解耦、「每面的每条边都要有 pcurve」、以及**让 pcurve 的键跟随面身份**。**(7) 量化**：F113 单面区域占 +26952 面积缺口，全模型净缺口仅 22802.58",
       write: "crates/occt-topo/src/shhealing/shape_fix_face.rs",
@@ -628,7 +628,7 @@ export const DATA = {
       status: "blocked",
       priority: "P1",
       owner: "agent",
-      progress: 25,
+      progress: 40,
       estimate: 8,
       actual: 1,
       startedAt: "2026-09-30",
@@ -680,6 +680,22 @@ export const DATA = {
   ],
   // 新条目插到数组**开头**（brief 取前 3 条当最近活动；早于 a29 的看提交历史）
   activity: [
+    {
+      id: "a77",
+      at: "2026-10-02",
+      title: "T-101：goal（160 轮）终态 —— 全链判定忠实、差异锁到「段集合（BREAK-IN）」，门禁 5/5",
+      tone: "info",
+      detail: "§9.493-§9.578 逐段对拍，把差异逼到一点：93 段「首末顶点同一、逐边 LastVertex 是另一 TShape」（edge_last 命中 93 次，与 same=true 段数完全吻合）⇒ IsShortSegment 恒 0 ⇒ shorts 全 0（154/154）⇒ 合并循环空转 ⇒ 8+14 不成 22 ⇒ [6,7,5,4,3,3] ⇒ 6 wire/5 面 ⇒ Shell(5) 被 reader 丢弃 ⇒ F113 空面。四处负结果/自我更正入库：输入未统一（61/61 same=true ⇒ 否，§9.571）、MapReShape 缺 EDGE 深度重建（补上编译通过但 F113 仍 Shell(5) ⇒ 无收益已还原，§9.569，实现原文已具备可直接重放）、内部顶点未绑定（收集与 cxx:1006-1014 一致 ⇒ 0 次触发是规格行为，§9.576）、93 次 edge_last 失败（多边段上亦为规格行为，§9.577）。终态：门禁 5/5、a3n00 0.8996（未上升）、STATMAP 225/1/11941、apply/probe 插桩全部撤除、库 diff 空、树净。",
+      ref: "specs/_a3n00_gap_analysis.md §9.578"
+    },
+    {
+      id: "a76",
+      at: "2026-10-02",
+      title: "T-101：切分侧与 WireSegment 访问器逐条对照完成（全部忠实）",
+      tone: "info",
+      detail: "§9.534-§9.536 SplitByGrid（UVBounds/Bounds/TOLINT/closed 段位移/U 线循环）逐条一致；§9.545-§9.551 用无歧义探针确定「产生两条零长度段的那次切分 = U-else 分支 pos=UJointValue(1)=π/cut_index=1」（29/29 同型），并实测 split_wire 守卫① |curr−last|=0 精确命中 ⇒ 不切（78/78）⇒ 零长度段是输入端带下来的；§9.560-§9.563 SplitWire 建顶点三分支、context().apply/context_mut().replace 的 14 处调用点、copy_replace_vertices_with 均与 .cxx 同义；§9.575-§9.577 a_nm_vertices 收集（↔ cxx:1006-1014）与 WireSegment::first_vertex/last_vertex（↔ ShapeFix_WireSegment.cxx:89-101）一致。",
+      ref: "specs/_a3n00_gap_analysis.md §9.577"
+    },
     {
       id: "a75",
       at: "2026-10-02",
