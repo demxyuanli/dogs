@@ -22819,3 +22819,55 @@ fn apply(&self, s: &TopoShape) -> TopoShape {
 若编译失败 ⇒ **立即撤除**（不解读任何数据）后再报告。
 验收（§9.565-C 五步）不变：cargo check → zz_seam_fix 113 → Face → --model 113 → wires=2(22+6) → 门禁 + 基线。
 ```
+
+---
+
+### 9.569 —— 【负结果·已还原】给 `MapReShape::apply` 补 EDGE 重建分支：**编译通过但 F113 结果未变**（仍 Shell(5)/5 面）⇒ 仅靠 EDGE 重建不足以修复
+
+#### A. 改了什么（编译通过 ⇒ 所有 API 猜对了）
+
+```rust
+fn apply(&self, s: &TopoShape) -> TopoShape {
+    if let Some(r) = self.value(s) { return r; }          // 现状快路径
+    // 新增（ShapeBuild_ReShape::Apply 语义）：EDGE ← 用 apply 后的首末顶点重建
+    if s.shape_type() == crate::abs::ShapeType::Edge {
+        let e = crate::shape::Edge(s.clone());
+        let fv = crate::shhealing::first_vertex(&e);
+        let lv = crate::shhealing::last_vertex(&e);
+        let nf = fv.as_ref().map(|v| self.apply(&v.0));
+        let nl = lv.as_ref().map(|v| self.apply(&v.0));
+        let changed = /* 任一子顶点 key 变化 */;
+        if changed {
+            let nf = nf.map(crate::shape::Vertex);
+            let nl = nl.map(crate::shape::Vertex);
+            return crate::shhealing::copy_replace_vertices_with(&e, nf.as_ref(), nl.as_ref()).0;
+        }
+    }
+    s.clone()
+}
+```
+`cargo build: 0 errors` ⇒ `Edge(..)` / `Vertex(..)` / `first_vertex` / `last_vertex` /
+`copy_replace_vertices_with` / `ShapeType::Edge` / `key(..)` **全部调用正确**。
+
+#### B. 实测结果（未改善）
+
+```text
+zz_seam_fix 113:  BEFORE wires=4 …   result type=**Shell**   result faces=**5**
+                  HEALED wires=2（face 0）… SPLIT face0 modelface=0 wires=2 …
+⇒ 与改动前**相同**（目标要求 `result type=Face`、wires=2(22+6)、5 面应收敛为 1 面）。
+（`zz_uv_feed --model 113` 退出码 1 —— 可能是调用方式问题，本轮未追。）
+```
+
+#### C. 处置与下一轮假设
+
+```text
+处置：已用**改动前原文**精确还原该文件（库 diff 空、cargo check 0 errors）——
+      理由：该分支虽与 OCCT 语义一致，但对本目标无收益，且 `MapReShape` 被 `shape_fix_face` 共用（§9.565），
+      在无收益的情况下不应引入横切风险。
+下一轮假设（按本目标的证据链）：
+  ① `Replace(atmpV → prev_v/V)` 的绑定可能**没覆盖**到那些边的顶点（即 `changed` 恒为 false）；
+     ⇒ 用一次探针在 `apply` 里对 EDGE 分支打印 `changed` 与两次 key 比较结果即可判定；
+  ② 或者统一应发生在**更上游**：输入 wire 里**同坐标的顶点**（reader 给的）本来就不是同一 TShape，
+     而 OCCT 在装载/构造 wire 时就把它们统一了 ⇒ 靶点上移到 `load_wires`/reader 侧；
+  ③ 判据①优先（一次探针即可），若①成立则回到 §9.564 的 `Context()->Replace` 调用点排查绑定对象。
+```
