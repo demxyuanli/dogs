@@ -22366,3 +22366,40 @@ SHORT 标记行: 233       分布: { 'SHORT edge_last': **93**, 'SHORT code_minu
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
 --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.559 —— 「顶点未统一」的产生点清点（只读 grep）：切分路径上有 4 处**新建顶点**，其中 `split_wire.rs:293` 最可疑
+
+```text
+split_by_line.rs:77   let mut a_vert_new = builder.make_vertex(a_p3d, BRepTool::vertex_tolerance(&a_vert));
+                      —— 沿切线建新边时的交点顶点（`cxx:2019-2057` 对应段）
+split_wire.rs:40      // 注释：point and tolerance (BRep_TVertex::EmptyCopy) and the same orientation
+split_wire.rs:44      let mut nv = Vertex::new();          —— 空拷贝顶点（对应 OCCT 的 atmpV 机制）
+split_wire.rs:293     let nv = builder.make_vertex(curr_pnt, tol_edge);     —— **每个切分点新建顶点**
+split_wire.rs:348/369 copy_replace_vertices_with(...) + builder.add(&mut new_edge.0, &atmp_v)
+                      —— 用复制替换顶点后加入新边
+```
+
+**假设（与 §9.558 的实测一致）**：
+
+```text
+§9.558 实测：93 个「段首末顶点同一」的段，其**逐边 LastVertex 却是另一个 TShape**（同坐标）。
+最可能的机制：切分/装配时对**同一个几何点**用了两条不同的顶点来源 ——
+  一条是原边自带的顶点（reader 给的），另一条是切分时**新建**的（`make_vertex(curr_pnt, tol_edge)`），
+  ⇒ 同点两个 TShape ⇒ `Vf.IsSame(sae.LastVertex(edge))` 失败 ⇒ `IsShortSegment` 返回 0 ⇒ 合并循环空转。
+⇒ 与 OCCT 的关键对照：OCCT 在「切分点与已有顶点重合」时**复用**该顶点（其 `atmpV`/`ShapeBuild_Vertex`
+  一路传递），而不是新建 —— 端口是否在这条路径上漏了「复用」分支，是本目标最后一个待对拍点。
+```
+
+#### 下一轮（先读码对拍，再决定是否修；仍守「有同等分支才改」）
+
+```text
+① 读 `split_wire.rs:280-310`（`make_vertex(curr_pnt, tol_edge)` 的上下文）与其在 `cxx` 的对应段
+   （切分点建顶点的位置，约 `cxx:1150-1260` 的 split-edge 块）；
+② 判断 OCCT 在该处是 `BRep_Builder::MakeVertex` **恒新建**，还是在「与首/末顶点重合」时**复用**已有顶点；
+③ 若 OCCT 复用而端口恒新建 ⇒ 在端口补上同等分支（条件与 OCCT 同式：比较参数/顶点同一性），
+   不得引入 OCCT 没有的启发式；
+④ 修后跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
+   面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
