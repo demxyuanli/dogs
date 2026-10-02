@@ -20034,3 +20034,52 @@ CSHORT k=5/8 nb=1 ori=Reversed short=**0** p0=(-87.500,0.000,-32.000)
 专看：对「1 条边、首尾同点（3D 零长度）」的段，OCCT 是否判为 short；
   若 OCCT 判 1 而端口判 0 ⇒ 按 .cxx 修 `is_short_segment`（不加启发式）⇒ 跑 §9.448 验收。
 ```
+
+---
+
+### 9.489 —— 端口 `is_short_segment` 全文（`helpers.rs:347-390` ↔ `cxx:2394-2447`）；三处判据里有一处**朝向语义混用**
+
+```rust
+/// IsShortSegment (cxx:2394-2447): 1 for a closed segment whose interior
+/// collapses to its vertex, -1 when only the 2d check fails, 0 otherwise.
+pub fn is_short_segment(seg, face, grid_surface, u_resolution, v_resolution) -> i32 {
+    let (Some(vf), Some(vl)) = (seg.first_vertex(), seg.last_vertex()) else { return 0; };
+    if !is_same(&vf.0, &vl.0) { return 0; }                       // ① 段首尾必须**同一对象**
+    let pnt = vertex_point(&vf); let tol = vertex_tolerance(&vf); let tol2 = tol*tol;
+    let mut code = 1;
+    for edge in seg.edges() {
+        let Some(last) = edge_vertices(edge).1 else { return 0; };
+        if !is_same(&vf.0, &last.0) { return 0; }                 // ② 每条边的「末端顶点」须与 vf 同一对象
+        let Some((c2d, f, l)) = curve_on_surface_oriented(edge, face, false) else { continue; };
+        let end_pnt = c2d.d0(l); let mid_pnt = c2d.d0(0.5*(f+l));
+        if !is_coincided(&end_pnt, &mid_pnt, u_resolution, v_resolution, tol) { code = -1; }   // ③2d
+        let mid3d = grid_surface.value_uv(mid_pnt.x(), mid_pnt.y());
+        if mid3d.distance(&pnt).powi(2) > tol2 { return 0; }       // ④ 中点 3D 须落在 vf 容差内
+    }
+    code
+}
+```
+
+**三处可疑点（下一轮对 `cxx:2394-2447` 逐条核）**：
+
+```text
+① `①`/`②` 都用 **对象同一性** `is_same`（TShape）——这是 OCCT `IsSame` 的忠实语义；
+   但 `②` 取的是 `edge_vertices(edge).1`（**朝向无关**的原始末顶点），而 `vf` 来自
+   `seg.first_vertex()`（**朝向感知**）⇒ **两种语义混用**，对一个 `Reversed` 方向的单边段，
+   两者可能指向**不同的顶点对象** ⇒ `②` 直接 `return 0`。这与 §9.439 的 `FixDummySeam` 同族（朝向语义）。
+② `④` 的判据是「边中点（2d 参数中点映射到面再求 3d）到 `vf` 的距离 ≤ tol」——对**3D 零长度**的退化边，
+   这条本应恒成立（中点在参数中点，其 3d 像未必等于端点！**参数中点 ≠ 3D 中点**：若该边的 pcurve 跨
+   整个周期（seam 边），2d 中点对应的是**对面**的点，3d 距离会很大 ⇒ `④` 失败 ⇒ `return 0`）。
+   **这正可能是 `short=0` 的直接原因**，且它同样是「pcurve 跨周期」这一特殊几何造成的。
+③ `③` 只降级为 -1（不改变返回 0/1 的性质）。
+```
+
+#### 下一轮（读 `cxx:2394-2447` 定论）
+
+```text
+读 OCCT `ShapeFix_ComposeShell.cxx:2394-2447`（IsShortSegment）原文，逐条核对：
+  · `②` 在 OCCT 里用的是 `sae.LastVertex(E)`（朝向感知）还是 `TopExp::Vertices` 的原始末顶点？
+  · `④` 在 OCCT 里比较的是 `myGrid->Value(mid2d)` 与 `pnt` 的距离（同样口径）还是有别（例如用 3D 端点而非 2D 中点）？
+若确认 ①/② 的朝向语义或 ④ 的中点口径有差异 ⇒ 按 .cxx 修 `is_short_segment` ⇒ 跑 §9.448 验收。
+（该函数的读数影响面广：`shorts[]` 决定段是否被改成 Internal，进而影响 `CollectWires` 的串接归属。）
+```
