@@ -20844,3 +20844,69 @@ CAOR sbwd_nb=8  A_int=2 A_seg=2     CAOR sbwd_nb=6  A_int=1 A_seg=1
   · 若 OCCT 同样跳过 ⇒ 分歧在**更上游**：那些段在 OCCT 里**不该是 Internal**
     （即端口在 `:68-72` 或 `load_wires` 里把带 External 身份的段错标成 Internal）⇒ 需对拍该处判据。
 ```
+
+---
+
+### 9.510 —— 入库 OCCT `ShapeFix_ComposeShell.cxx:2570-2624` 原文（候选搜索的跳过条件），供与端口 `collect_wires.rs:104-132` 对照
+
+```cpp
+ 2570     for (i = 1; i <= seqw.Length(); i++)
+ 2571     {
+ 2572       const ShapeFix_WireSegment& seg = seqw.Value(i);
+ 2573       if (seg.IsVertex())
+ 2574       {
+ 2575         continue;
+ 2576       }
+ 2577       TopAbs_Orientation anOr = seg.Orientation();
+ 2578       if (anOr == TopAbs_INTERNAL)
+ 2579       {
+ 2580         continue;
+ 2581       }
+ 2583       // for first segment, take any
+ 2584       if (sbwd.IsNull())
+ 2585       {
+ 2586         if (shorts(i) > 0)
+ 2587         {
+ 2588           continue;
+ 2589         }
+ 2590         if (anOr == TopAbs_EXTERNAL)
+ 2591         {
+ 2592           continue;
+ 2593         }
+ 2594         if (anOr == TopAbs_FORWARD)
+ 2595         {
+ 2596           reverse = true;
+ 2597         }
+ 2598         index = i;
+ 2599         seg.GetPatchIndex(1, iumin, iumax, ivmin, ivmax);
+ 2601         misoriented = false;
+ 2602         dsu = dsv = 0.;
+ 2603         break;
+ 2604       }
+ 2606       // check whether current segment is on the same patch with previous
+ 2607       bool sp =
+ 2608         IsSamePatch(seg, myGrid->NbUPatches(), myGrid->NbVPatches(), iumin, iumax, ivmin, ivmax);
+ 2610       // not same patch has lowest priority
+ 2611       if (!sp && (canBeClosed || (index && samepatch)))
+ 2612       {
+ 2613         continue;
+ 2614       }
+ 2616       // try to connect, with the following priorities:
+ 2617       // The name of property      Weigth:
+ 2618       // sharing vertex            auto
+ 2619       // samepatch = 1             16
+ 2620       // ! sameedge                auto
+ 2621       // misorientation = 0        8
+ 2622       // connected in 2d           4
+ 2623       // distance                  2
+ 2624       // short                     auto
+ 2625       // angle ->> PI              1
+ 2626       const occ::handle<ShapeExtend_WireData>& wire = seg.WireData();
+```
+
+**要点提示（对照时逐条看）**：
+```text
+· OCCT 在此是否对 `TopAbs_INTERNAL` 的段有跳过（端口的 :110 是 `if an_or == Internal { continue; }`）；
+· OCCT 的首段选择分支（对应端口 `:113-131` 的 `!has_sbwd`）条件是否一致；
+· 端口的 `:106 seg.is_vertex()` 在 OCCT 里对应哪一句。
+```
