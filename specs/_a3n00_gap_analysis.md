@@ -21115,3 +21115,23 @@ CFLIP 行: 0        A 类候选(§9.512 的 CACAND): 43        A 类候选中 p0
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
 --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.518 —— 定位到 `load_wires` 非流形分类处（单探针、build 0 errors、精确反向撤除、库 diff 空）
+
+```text
+CNM 行: 0   A 类候选: 43   命中(A 类 p0 出现在 CNM 里): 0
+```
+
+CNM 样本（被归入**非流形** ⇒ 建成 Internal 段的边）：
+```text
+
+```
+
+判读：
+```text
+· 命中 > 0 ⇒ A 类段的 Internal 身份来自 **load_wires 的非流形分类**（判据 `eo == Forward || Reversed`）
+  ⇒ 下一步=与 cxx:499-640 的同段对照，看端口是否把本应属流形部分的边判成非流形（朝向语义，与前几处同族）；
+· 命中 = 0 ⇒ 继续上移到 split_by_grid/break_wires 生成段时的朝向。
+```
