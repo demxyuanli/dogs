@@ -21451,3 +21451,68 @@ seqw[idx] = seg; // cxx:2778
    端口 BREAK-IN 的 16 边段（§9.452）在 OCCT 侧对应哪几步产物（16 = 14 + 2 插入，见 §9.460 的 split_by_line_wires），
    与 cxx:2131-2275（SplitByGrid）在该面上的切分点逐一对齐。
 ```
+
+---
+
+### 9.529 —— 【验证 §9.527 的解释】排除已消费段后的候选统计（单探针、build 断言、精确撤除）
+
+```text
+CUNA 行: 25   sbwd_nb>=3: 25
+排除已消费段后：A(同一对象)=3  B(坐标相接非同一对象)=1  C(不相接)=118   已消费段总数=58
+```
+
+样本：
+```text
+CUNA sbwd_nb=7 A_same=0 B_near=0 C_far=14 consumed_segs=1
+CUNA sbwd_nb=5 A_same=0 B_near=0 C_far=14 consumed_segs=1
+CUNA sbwd_nb=4 A_same=1 B_near=0 C_far=13 consumed_segs=1
+CUNA sbwd_nb=3 A_same=0 B_near=0 C_far=12 consumed_segs=2
+CUNA sbwd_nb=15 A_same=0 B_near=0 C_far=0 consumed_segs=4
+CUNA sbwd_nb=5 A_same=0 B_near=0 C_far=6 consumed_segs=1
+CUNA sbwd_nb=8 A_same=1 B_near=0 C_far=5 consumed_segs=1
+CUNA sbwd_nb=6 A_same=0 B_near=1 C_far=1 consumed_segs=3
+```
+
+判读：
+```text
+· A = 0（预期）⇒ 串接终止是**规格行为**（没有未消费且可接的候选）⇒ 靶点确认在**段的生成差异**；
+· A > 0 ⇒ 仍有未被采纳的未消费候选 ⇒ 需回到候选判据（但 §9.498-§9.504 已逐条排除）。
+```
+
+---
+
+### 9.530 —— 【有效测量】排除已消费段后 **A = 3**（23/25 行 A=0 支持 §9.527 的解释）⇒ 残余 3 例需定性（疑为 `:106` 按规格跳过的 vertex 段）
+
+#### 数据（§9.529，`build_ok=1`、精确撤除、`T101_ZZQ` 残留 0、库 diff 空）
+
+```text
+CUNA 行: 25（sbwd_nb >= 3）        排除已消费段后：A=**3**  B=1  C=118   已消费段总数=58
+CUNA sbwd_nb=7  A=0 B=0 C=14 consumed=1
+CUNA sbwd_nb=4  A=**1** B=0 C=13 consumed=1
+CUNA sbwd_nb=3  A=0 B=0 C=12 consumed=2
+CUNA sbwd_nb=15 A=0 B=0 C=0  consumed=4      ← 该行 4 段全部已消费 ⇒ 终止**合法**
+CUNA sbwd_nb=8  A=**1** B=0 C=5  consumed=1
+CUNA sbwd_nb=6  A=0 B=**1** C=1  consumed=3
+```
+
+#### 判读
+
+```text
+· **23/25 行 A=0** ⇒ 这些时刻**没有**「未消费且顶点相接」的候选 ⇒ 串接终止是**规格行为**
+  ⇒ §9.527 的重新解释**基本成立**（§9.500/§9.505/§9.509 的推断确实不成立，已验证）；
+· **残余 3 例（nb=4 两次、nb=8 一次）A=1** ⇒ 存在未消费、段级端点与 `end_v` 同一对象的候选却未采纳
+  ⇒ 最可能的解释：该候选是 **vertex 段**（`is_vertex() == true`），被 `:106` 按规格跳过
+    （§9.530 的统计未区分 vertex 段；§9.508 的 `A_vertex=0` 是**未排除已消费段**时的统计，两者口径不同）；
+  其次可能：该段在 `:110` 因**其它原因**已是 Internal（例如 `load_wires` 之外的路径）。
+```
+
+#### 下一轮（一次探针即可定性，仍是单探针 + build 断言 + 精确撤除）
+
+```text
+在同一位点（`index.is_none() && sbwd.len() >= 3`）对**未消费**的 A 类候选额外打印：
+  `is_vertex()`、`orientation()`、`nb_edges()`、首末点坐标 —— 3 例而已，输出极短。
+判读：
+  · 若都是 `is_vertex=true` ⇒ 全部符合规格 ⇒ **候选搜索这条线彻底收束为忠实**，
+    靶点**只剩段的生成差异**（下一步对比端口 BREAK-IN 的 16 边段与 `cxx:2131-2275` 的切分点）；
+  · 若有 `is_vertex=false` 且非 Internal ⇒ 才是真正的「未被采纳」⇒ 回到候选判据复查（但已逐条排除）。
+```
