@@ -20506,3 +20506,50 @@ CABC sbwd_nb=6  A_same=1 B_near_not_same=1 C_far=12
 命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
 --fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.501 —— 读 `:151-165`：同边（最低优先级）分支**确实会设 `index`** ⇒ §9.500 的第三条假设被否；嫌疑收敛到 `:135`（patch 过滤，含 `can_be_closed`）与 `:215`（权重）
+
+端口 `collect_wires.rs:133-165`（`cxx:2607-2614` / `cxx:2639-2652`）：
+
+```rust
+let sp = is_same_patch(&seqw[i], nu, nv, &mut iumin, …);           // cxx:2607-2614
+if !sp && (can_be_closed || (index.is_some() && samepatch)) { continue; }   // ← 过滤 ①
+for j in 0..2usize {
+    let candidate_v = if j == 1 { seg.last_vertex() } else { seg.first_vertex() };
+    if !same_v(&end_v, &candidate_v) { continue; }                  // cxx:2629-2632（硬前置）
+    let misor = an_or == if j == 1 { Reversed } else { Forward };
+    let back_edge = if j == 1 { wire_edges.last } else { wire_edges[0] };
+    if same_e(&last_edge, &Some(back_edge)) {                       // cxx:2639-2652（同边最低优先级）
+        if index.is_none() && !can_be_closed {                      // ← **确实设 index**
+            index = Some(i); reverse = j != 0; connected = true; misoriented = misor;
+            samepatch = sp;
+            weigth = (if sp {16} else {0}) + (if connected {8} else {0}) + (if !misor {4} else {0});
+            dsu = 0.0; dsv = 0.0;
+        }
+        continue;
+    }
+    … cxx:2654-2673 起算 2D 切向 / 距离 / 权重 …
+}
+```
+
+**判定**：
+
+```text
+· `:151` 同边分支在 `index.is_none() && !can_be_closed` 时**会设 index** ⇒ §9.500 的假设③**否掉**。
+· 结合 §9.500 实测「每行 A ≥ 1（存在同一对象候选）却 index=None」，剩下的可能只有两处：
+    ① `:135` 的 patch 过滤：`!sp`（非同一 patch）且 `can_be_closed` 为真时，**所有**非同 patch 候选被跳过；
+       ⇒ `can_be_closed` 的置位时机（`:89` 初始化、后续按闭合条件更新）成为关键；
+    ② `:215` 的权重比较：`w1 + tail1 <= weigth + tail2 ⇒ continue`
+       ⇒ `w1/tail1/weigth/tail2` 的构造若与 `cxx:2696-2722` 不同构，会造成「有候选却不采纳」。
+```
+
+#### 下一轮（两处，先看 `can_be_closed`）
+
+```text
+① 读 `can_be_closed` 的全部置位点（与 `cxx:2551-2567` 及后续段对照），确认在本输入上它是否长期为真
+   （若长期为真 ⇒ `:135` 把非同 patch 候选全挡掉 ⇒ 与 OCCT 的差异就在这）；
+② 读 `:171-230`（2D 切向 / 距离 / w1 / tail1 / tail2）↔ `cxx:2654-2722`，逐项核对权重构造。
+命中即按 .cxx 修 ⇒ 跑 §9.448 验收。
+```
