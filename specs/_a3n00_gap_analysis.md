@@ -18959,3 +18959,43 @@ fn wire_data_edges(wire: &Wire) -> Vec<crate::shape::Edge> {
 
 **下一轮**：读 `:379-478`（约 100 行，含第二处移除 + 子段生成），与 `cxx:1782-1914` 对拍，专找
 「子段参数区间长度 ≈ 0 ⇒ 跳过/并入」判据。命中即按 `.cxx` 修 → 跑 §9.448 验收。
+
+---
+
+### 9.461 —— 发现一处**真实的循环簿记分歧**（`cxx:1820` ↔ 端口 `:389`），但**实测与 F113 无关**；已还原待带门禁落地
+
+**分歧**（第二处移除路径，`cxx:1799-1822` ↔ 端口 `:370-397`）：
+
+```cpp
+// OCCT：for (i = 1; i <= IntEdgePar.Length(); i++)
+if (SegmentCodes(j) == IOR_UNDEF && SegmentCodes(i) == IOR_UNDEF) {
+  if (myClosedMode && (IntLinePar(i)-IntLinePar(j))*(IntLinePar(k)-IntLinePar(i)) <= 0.) continue;
+  IntEdgeInd.Remove(i); IntEdgePar.Remove(i); IntLinePar.Remove(i); SegmentCodes.Remove(i);
+  i--;        // ← 被 for 的隐式 i++ 抵消 ⇒ **净不前移**（重查移位到位置 i 的元素）
+}
+```
+```rust
+// 端口（修前）：删除后 `i -= 1` 再 `continue`（while 无隐式自增）⇒ 净**前移 −1**，会去重查前一个元素
+int_edge_ind.remove(i - 1); … i -= 1; if i == 0 { i = 1; } continue;
+```
+
+**修法**（已实现并实测，随后**已 `git show HEAD` 还原**）：删除后 `i` 保持不变、直接 `continue`（等价 OCCT 的 `i--` + `i++`）。
+
+**实测（修后）**：
+
+```text
+F113：result type=Shell faces=5；HEALED wires=2 (6e+7e) / 5e / …  ——**与修前逐字相同**
+模型：MODEL f=113 wires=4（6/14/1/1）                              ——**不变**
+a3n00：STATMAP matched=225 unmatched=1 sum_mt=11941 flat_mt=11941  ——**不变**
+```
+
+⇒ 该分歧**真实**（簿记不等价，属于应修的对齐点），但**不是 F113 的成因**；
+它是「忠实性」问题而非本目标的阻塞点。若要落地，须按纪律跑完整门禁
+（`--lib 1281/0`、`step_obj_gates 5/5`、面积比不降）——建议下次单独一轮做：应用 → 后台跑 `t101_verify.ps1` → 绿则提交、红则还原。
+
+#### 靶点继续（`split_by_line` 剩余未读）
+
+```text
+:430-478  子段生成的其余部分（after `ipcode` computation）——仍可能含「子段长度≈0 ⇒ 跳过」判据
+:31-290   与切线的求交（int_edge_par/int_line_par/int_edge_ind 的产生地）
+```
