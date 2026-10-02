@@ -23041,3 +23041,42 @@ grep `a_nm_params` / `a_nm_vertices` 在 `split_wire.rs` 的全部出现，读�
   · 修后跑 §9.565-C 五步验收：cargo check → zz_seam_fix 113 → **Face** → --model 113 → wires=2(22+6)
     → t101_verify.ps1 全绿 + 逐模型基线对照。
 ```
+
+---
+
+### 9.575 —— 结构对照：两侧都有「边上已有顶点 → 参数」的收集；§9.573 的 0 次触发 ⇒ 端口侧 `a_nm_vertices`/`a_nm_params` **在该输入上为空**（最后一个待读点）
+
+#### A. 端口（`split_wire.rs`）
+
+```text
+:119   let a_nm_vertices: Vec<Vertex> = { … }                  ← 收集「边上已有顶点」（与 cxx:1006-1013 对应）
+:156   let mut a_nm_vertices = a_nm_vertices;
+:157   let mut a_nm_params: Vec<f64> = Vec::new();
+:158   if !a_nm_vertices.is_empty() {                          ← **为空则 params 保持为空**
+:159       for v in &a_nm_vertices { … }
+:175       a_nm_params.push(apar);                             ← 与 cxx:1085 对应
+:353-372 统一循环（§9.573 实测 **0 次触发**）
+```
+
+#### B. OCCT
+
+```text
+:1006  NCollection_Sequence<TopoDS_Shape> aNMVertices;
+:1013  aNMVertices.Append(aIt.Value());                        ← 由某迭代器收集（**待读 :1000-1013 的 aIt 是什么**）
+:1046  int nbNMVert = aNMVertices.Length();
+:1047  NCollection_Sequence<double> aNMVertParams;
+:1054  gp_Pnt apV = BRep_Tool::Pnt(TopoDS::Vertex(aNMVertices.Value(n)));
+:1085  aNMVertParams.Append(apar);                             ← 逐顶点求参数
+:1311-1334 统一循环（cxx:1318/1325 的两处 Replace 即端口 :358/:363）
+```
+
+#### C. 结论与最后一次读取
+
+```text
+· 两侧**都有**这套收集（端口 :119/:156-175 ↔ OCCT :1006-1013/:1046-1085）⇒ 机制齐备（不是缺失）；
+· 但 §9.573 实测统一循环 **0 次触发** ⇒ 在 F113 的这些边上，端口侧 `a_nm_vertices`（或由此算出的
+  `a_nm_params`）**为空**（`:158` 的守卫直接跳过）；
+⇒ **最后一个待读点**：端口 `:110-130` 的收集来源 ↔ OCCT `cxx:1000-1013` 的 `aIt` 是什么迭代器
+  （若端口只收某一类顶点——例如仅 INTERNAL、或仅「其它边共享的」——而 OCCT 收的是**该边上全部已有顶点**，
+   即为此处差异）⇒ 命中即按 .cxx 补齐收集口径 ⇒ 跑 §9.565-C 五步验收。
+```
