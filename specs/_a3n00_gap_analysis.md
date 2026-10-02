@@ -22712,3 +22712,60 @@ c) `zz_uv_feed --model 113` → wires=2（22+6）；`--fstats` → face=113 mt�
 d) `pwsh -File .target-gate\t101_verify.ps1` 全绿 **且** 逐模型面积比对照基线（任何偏移立即报告，不动容差/基线）；
 e) 单独提交并记录修改前后实测数字。
 ```
+
+---
+
+### 9.567 —— 实现前 API 钉桩（本轮只读）：`apply` 现状**忠实且朝向感知**；改法纯增量；`Edge/Vertex` 包装定义处待定位
+
+#### A. 已钉住
+
+```text
+reshape.rs:64-68   fn apply(&self, s: &TopoShape) -> TopoShape { self.value(s).unwrap_or_else(|| s.clone()) }
+                   —— 现状：**直接绑定 + 朝向感知**（`value` 会按查询朝向回正）⇒ 与 `BRepTools_ReShape` 的
+                      `Status → Value` 路径一致，**本身忠实**；缺的只是「复合形状重建」（§9.564 的注释自述）；
+reshape.rs:74-88   fn replace(...)  朝向归一化后入库（与 `BRepTools_ReShape::replace` 一致）
+reshape.rs:93-100  fn value(...)    查询时按朝向回正（注释记录曾修复 a3n00 f173/f176 的 seam 朝向问题）
+shape.rs:28        pub fn shape_type(&self) -> ShapeType
+abs.rs:5           pub enum ShapeType
+```
+
+#### B. 待钉（下一轮第一步，避免第三次「猜 API」失败）
+
+```text
+`Edge` / `Vertex` **包装类型的定义与构造方式**（本轮 `pub struct Edge` 未命中：可能在 `shape.rs` 以
+`pub struct Edge(pub TopoShape);` 之外的写法定义，或经宏生成）⇒ 需先 `grep -n "struct Edge"`/`"impl Edge"` 定位，
+确认 `Edge(s.clone())` / `Vertex(t)` 可用后，再写 `apply` 的 **EDGE 重建分支**。
+```
+
+#### C. 待插入的代码骨架（API 确认后即可落地；改动仅限 `apply`，纯增量）
+
+```rust
+fn apply(&self, s: &TopoShape) -> TopoShape {
+    // ① 现状快路径：直接绑定（含朝向回正）——**保持不变**
+    if let Some(r) = self.value(s) {
+        return r;
+    }
+    // ② 新增：按 ShapeBuild_ReShape::Apply 的语义重建**仅当子形状确有替换**
+    //    （示例：EDGE ← 首末顶点；wire/face/shell 同法递归）
+    //    if s.shape_type() == ShapeType::Edge {
+    //        let e = Edge(s.clone());
+    //        let fv = crate::shhealing::first_vertex(&e);
+    //        let lv = crate::shhealing::last_vertex(&e);
+    //        let nf = fv.as_ref().map(|v| self.apply(&v.0));
+    //        let nl = lv.as_ref().map(|v| self.apply(&v.0));
+    //        let changed = /* 任一子顶点 key 变化 */;
+    //        if changed {
+    //            return crate::shhealing::copy_replace_vertices_with(&e, nf.as_ref(), nl.as_ref()).0;
+    //        }
+    //    }
+    s.clone()
+}
+```
+
+#### D. 验收（不变，§9.565-C）
+
+```text
+a) cargo check 0 errors → b) zz_seam_fix 113 → **Face** → c) --model 113 → wires=2(22+6)；--fstats mt≈228
+→ d) t101_verify.ps1 全绿 + 逐模型面积比对照基线 → e) 单独提交并记录前后数字。
+（无替换路径与现状逐位相同 ⇒ 若基线出现任何偏移，即为改动的副作用，必须报告而非掩盖。）
+```
