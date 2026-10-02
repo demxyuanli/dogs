@@ -20462,3 +20462,47 @@ CREJ sbwd_nb=5  seqw=3 cand_total=4  cand_near=1 cand_same=1
 · B 占多数 ⇒ 根因 = 切口处顶点未统一（Context/CombineVertex 路径）⇒ 按 .cxx 统一顶点（跑 §9.448 验收）；
 · A 占多数仍不成链 ⇒ 靶点回到 :215 的权重比较（w1/w2/tail1/tail2）。
 ```
+
+---
+
+### 9.500 —— 【定论】「无候选」时刻**每一行都存在同一对象的候选顶点**（A ≥ 1，25/25 行）⇒ 拒绝发生在**后续判据**，不是 `same_v`
+
+#### 数据（§9.499，25 行，`sbwd_nb ≥ 3`）
+
+```text
+合计：A(坐标相接且 is_same)=58   B(坐标相接但 is_same 为假)=7   C(完全不相接)=559
+样本：
+CABC sbwd_nb=7  A_same=1 B_near_not_same=1 C_far=50
+CABC sbwd_nb=5  A_same=1 B_near_not_same=1 C_far=50
+CABC sbwd_nb=4  A_same=2 B_near_not_same=0 C_far=50
+CABC sbwd_nb=3  A_same=3 B_near_not_same=0 C_far=49
+CABC sbwd_nb=15 A_same=1 B_near_not_same=1 C_far=28
+CABC sbwd_nb=8  A_same=2 B_near_not_same=0 C_far=28
+CABC sbwd_nb=6  A_same=1 B_near_not_same=1 C_far=12
+```
+
+#### 判读（按 §9.498 的分支）
+
+```text
+· **A ≥ 1 出现在全部 25 行** ⇒ 在每次「无候选 ⇒ 推出」的时刻，剩余段里**确实有与 `end_v` 同一对象**
+  的端点 ⇒ 那么 `:141 same_v` 硬前置**至少放过了一个候选** ⇒ **`index` 仍为 None 只能由后续判据解释**：
+     :135 `if !sp && (can_be_closed || (index.is_some() && samepatch)) { continue; }`（patch 过滤）
+     :151 `same_e(last_edge, back_edge)` ⇒ 同边返回（最低优先级，可能不落 index）
+     :215 `if w1 + tail1 <= weigth + tail2 { continue; }`（权重比较：w1 = sp*16 + connected*8 + …）
+· B = 7（坐标相接但对象不同）⇒ 「顶点未统一」**确实存在但是少数**，不是主因。
+· C = 559 ⇒ 绝大多数端点与该 wire 末端不相接（正常，属其它段）。
+
+⇒ 结论：**靶点 = 候选被拒的后续判据**，最可能是 `:135` 的 patch 过滤与 `:200-225` 的权重比较
+   （`w1/tail1/weigth/tail2` 的取舍），对应 `cxx:2607-2614`（同 patch 测试与优先级）与 `cxx:2696-2722`（权重）。
+```
+
+#### 下一轮（本目标最后一个对拍窗口）
+
+```text
+读端口 `collect_wires.rs:128-230` 的 **patch 过滤 + 权重比较** 全段，逐条对 `cxx:2607-2614` / `cxx:2696-2722`：
+  · `is_same_patch(...)` 的返回与 `samepatch` 的更新时机；
+  · `w1`/`tail1`/`tail2` 的构造（`sp*16 + connected*8 + …`）与 `cxx` 的 `iW1/iW2` 是否同构；
+  · `:151 same_e` 分支是否漏设 `index`（该分支若不设 index，同边候选会被永久丢弃）。
+命中即按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；
+--fstats → face=113 mt≈228；面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
+```
