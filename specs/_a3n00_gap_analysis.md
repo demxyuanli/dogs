@@ -23175,3 +23175,50 @@ let a_nm_vertices: Vec<Vertex> = {
   需要 OCCT 侧插桩（本环境未做）。
 · 已落地且经门禁验证的修正仍为两处（§9.463、§9.492）；红线 §9.439 未触碰。
 ```
+
+---
+
+### 9.578 —— 收尾固化与下一步入口（含 **OCCT 侧插桩**配方）：唯一剩余可疑点 = **段集合（BREAK-IN）**
+
+#### A. 本轮状态核验（实测）
+
+```text
+· 工作树干净（git status --porcelain 空）；库 diff 空；`cargo check: 0 errors`；
+· a3n00 基线：`STATMAP matched=225 unmatched=1 sum_mt=11941 flat_mt=11941`（与既有基线一致）；
+· 门禁此前多轮均为 5/5 绿；HEAD 见上。
+```
+
+#### B. 为什么下一步必须做 **OCCT 侧**取证
+
+```text
+本目标已把端口侧能对照的环节**全部**判定忠实（§9.577-C 清单），且已证明：
+  · 输入顶点已统一（§9.571，61/61 same=true）；
+  · 切分调用侧与切片守卫均忠实（§9.545/§9.551，守卫① dlast=0 精确命中）；
+  · `IsShortSegment` 的 93 次 `edge_last` 失败在多边段上是**规格行为**（§9.577-B）；
+  · `shorts` 全 0 ⇒ 合并循环空转 —— 在**相同段集合**下同样是规格行为。
+⇒ 因此剩下的唯一问题是：**同一时点上，OCCT 的 `seqw` 段集合与端口是否相同**。
+   这需要**在 OCCT 侧**打印该点的段列表（边数+首末点），与端口侧（§9.452 的 BREAK-IN 记录）逐段对照。
+```
+
+#### C. 可用的 OCCT 侧插桩通道（本环境已有）
+
+```text
+`specs/occt_probe/`（`run_dbg.bat <stp> [noop|wdump <idx>]` / `probe.bat`）——此前已用于 OCCT 侧对照
+（§9.475/§9.484 的 noop 与整形后读数即由它取得）。
+配方（下一轮/后续会话）：
+  1) 在 `ShapeFix_ComposeShell::SplitEdges`/`SplitByGrid` 的切分后位置插桩，dump
+     `seqw` 每段 `{NbEdges, FirstVertex 坐标, LastVertex 坐标, Orientation}`；
+  2) 对同一张面（F113）与端口侧同一时点的段列表逐段比对：
+     · 若 OCCT 侧也存在「8 边/14 边/退化 1 边」同构段 ⇒ 段集合一致 ⇒ 差异在**后续步骤**（需继续二分）；
+     · 若 OCCT 侧的段构成不同（例如已合并/未切出 16 边段）⇒ **差异即在此** ⇒ 回到 `SplitByLine`/`SplitEdges`
+       的产出逐点对齐（§9.452 的端口 16 边 vs 对照）。
+  3) 命中后按 .cxx 修 ⇒ 跑 §9.565-C 五步验收（cargo check → zz_seam_fix 113 → Face →
+     --model 113 → wires=2(22+6) → t101_verify.ps1 全绿 + 逐模型基线对照）。
+```
+
+#### D. 纪律（沿用，§9.570-D）
+
+```text
+先 grep 确认 API → 单探针 + build 断言 0 errors 才解读 → 原文常量精确反向撤除 → 写明统计口径 →
+无收益改动一律还原（横切组件尤其如此）；不动断言/基线/area_tol，不按面号/bbox/面积加特例。
+```
