@@ -19251,3 +19251,41 @@ cxx:2037  if (Par(i) - Par(i-1) < PConfusion() || (canbeMerged && (aD<=tol1² ||
 **下一轮**：给 `split_by_line_wires` 的沿切线建边段（端口 `:590-630`）加一次「仅当 `canbeMerged == false`
 且建出的边两端点重合时」的打印，并同时打印 `i / Length / par(i-1), par(i) / aD / tol1, tol2`；
 一次运行即可确认「零长度段是否诞生于此」，并给出该退化对的参数值（用于与 OCCT 同输入对照）。
+
+---
+
+### 9.469 —— 假设（§9.468-C）**否掉**：`canbeMerged == false` 的那些下标处**没有**退化对（45 行，|Δpar| 最小 2.0）
+
+在沿切线建边处打印 `!can_be_merged` 的情形（env `T101_ZZ9`；**已还原**）：
+
+```text
+ENDSEG 行: **45**
+len 分布: {2: 45}    i 分布: {2: 45}        ← 全部是 `Length()==2` 时 `i=2` 那一个下标
+|par_i - par_im1| < 1e-6 的行（真正的退化对）: **0**
+|Δpar| 最小值: 2.0
+样本: ENDSEG i=2 len=2 par_im1=34.000000000 par_i=36.000000000 a_d=4.000e0 tol1=7.944e-15 tol2=7.105e-15
+      ENDSEG i=2 len=2 par_im1=-0.000000000 par_i=18.000000000 a_d=3.240e2 tol1=7.105e-15 tol2=7.105e-15
+```
+
+⇒ `canbeMerged == false` 只出现在 `Length()==2, i==2` 这一种情形，而那里的两点**相距很远**（≥2.0），
+   守卫不成立也无害 ⇒ **「端点退化对 ⇒ 建出零长度边」这条假设不成立**（§9.468-C 否掉）。
+
+#### 至此的净结论（把「产地」重新归零到两处，且都还没测）
+
+```text
+零长度段 (±87.5,0,-32)->同点 已排除的产地：
+  ✗ split_wire 的 :402 正常切分支（§9.465：无近零长度）
+  ✗ split_by_line_wires 的沿切线建边端点退化（§9.469 本轮）
+  ✗ split_by_grid:28-72 的 patch 索引写回（§9.468-A：不产段）
+  — split_by_line 的按线切（§9.467：6/16 边 wire 根本没进这个函数）
+剩余未测产地（两处）：
+  ① `split_by_line_wires` 里「沿切线建边」的**非端点**情形（即 canbeMerged==true 且守卫成立处之外的正常建边，
+     :616-625）——需要在建边处直接量 `new_edge` 的两端点是否重合（本轮只量了参数对，未量建边结果）
+  ② `split_by_line.rs:465-469` 的装配：把 `int_line_par/int_code/int_vertices` 三个数组按同一 `i` 推入
+     `split_line_par/code/vertex` —— 若三者长度不一致（例如 `int_code` 少一个元素），后续按
+     `split_line_par` 遍历时就会错位（顶点配错边 ⇒ 零长度段）。**这是目前最可疑的一处**（端口用三个独立 Vec，
+     OCCT 用 `NCollection_Sequence` 同时 Append，长度天然一致）。
+```
+
+**下一轮（优先做 ②，成本最低）**：在 `:465` 前打印 `int_line_par.len() / int_code.len() / int_vertices.len()`
+（以及 `split_line_par.len()` 的增量），一次运行即可判定三数组是否等长；不等长即为分歧点（按 `.cxx` 修成同源同长）。
