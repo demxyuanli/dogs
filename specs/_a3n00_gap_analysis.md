@@ -20982,3 +20982,35 @@ CACAND ori=Internal nb=5 p0=(49.828,24.825,-134.007)
 ```
 
 判读（按 §9.511）：坐标相同者多 ⇒ A 类段正是 `:71` 被改的那批 ⇒ 靶点 = `:68-72` 的判据（`isshort`/`one_degenerated`）↔ cxx:2519-2549；否则靶点上移到 load_wires/切分阶段。
+
+---
+
+### 9.513 —— 更正 §9.512：探针打在了 `if` **块外**，`CINT` 的 154 行是「遍历到的段」而非「被改 Internal 的段」⇒ 42/43 的坐标吻合**不能**证明来源
+
+#### 数据回顾（§9.512）
+
+```text
+CINT 行: 154   CACAND 行: 43   CINT 中与候选 p0 坐标相同者: 42 / 43
+CINT 样本: i=0 nb=1 short=0 one_degen=false p0=(-39.598,34.598,-18.000) …
+CACAND 样本: ori=Internal nb=7 p0=(-8.900,33.805,-69.638) · nb=5 p0=(38.733,21.909,-40.000) · nb=1 p0=(-87.500,0.000,-32.000) …
+```
+
+**问题**：我的 `P1` 是加在 `A1`（**整个 if 块**）**之后**，因此 `CINT` 对**每一次循环**都打印
+（154 = 该次调用遍历到的段数），**不是**「被 `set_orientation(Internal)` 改掉的段」。
+注意样本里 `short=0 one_degen=false` —— 按 `:68` 的条件它们**根本不该被改**，这正说明这些行属于「未改」的情形。
+⇒ **§9.512 的「42/43 坐标吻合」不能作为「A 类段来自 :71」的证据**（该口径下坐标吻合几乎是必然的）。
+
+#### 修正后的探针（下一轮，一次即可定论）
+
+```text
+把打印放进 **if 块体内**（即 `seqw[i].set_orientation(Orientation::Internal);` 之后），
+只对**真正被改**的段输出坐标/边数/isshort/one_degenerated：
+    if isshort > 0 && (… External || one_degenerated) {
+        seqw[i].set_orientation(Orientation::Internal);
+        if env("T101_ZZJ").is_some() { eprintln!("CFLIP i={} nb={} short={} one_degen={} p0=…", …); }
+    }
+判读：
+  · 若 A 类候选（§9.508：ori 全为 Internal 的 43 个）坐标出现在 `CFLIP` 列表中 ⇒
+    Internal 身份来自 `:68-72` ⇒ 靶点 = 该判据（isshort / one_degenerated）↔ cxx:2519-2549；
+  · 若不在 ⇒ 它们本就是 Internal（来自 load_wires 的非流形分类或切分阶段）⇒ 靶点相应上移。
+```
