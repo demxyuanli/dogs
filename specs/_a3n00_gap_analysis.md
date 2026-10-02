@@ -21304,3 +21304,62 @@ A 类候选: 43（全部 Internal，§9.508）            命中: 0
 按 .cxx 修 ⇒ 跑 §9.448 验收（zz_seam_fix 113 → Face；--model 113 → wires=2(22+6)；--fstats → face=113 mt≈228；
 面积比 ≥0.8996 且上升；t101_verify.ps1 全绿）。
 ```
+
+---
+
+### 9.525 —— `break_wires` 出口的段朝向（单探针、build 断言、精确撤除）
+
+```text
+CBO 行: 154   A 类候选: 43   命中(A 类坐标出现在 break_wires 出口): 22
+```
+
+CBO 样本：
+```text
+CBO ori=Reversed nb=1 p0=(-39.598,34.598,-18.000)
+CBO ori=Reversed nb=1 p0=(-39.598,34.598,-16.000)
+CBO ori=External nb=1 p0=(-39.598,34.598,-16.000)
+CBO ori=Reversed nb=1 p0=(-39.598,34.598,18.000)
+CBO ori=Reversed nb=1 p0=(-39.598,34.598,0.000)
+CBO ori=External nb=1 p0=(-39.598,34.598,18.000)
+CBO ori=Reversed nb=1 p0=(34.598,39.598,-18.000)
+CBO ori=Reversed nb=1 p0=(34.598,39.598,-16.000)
+```
+
+判读：
+```text
+· 命中 > 0（说明这些段在 break_wires 出口已是 Internal）⇒ setter ∈ {split_by_grid, break_wires}，需再打 split_by_grid 出口；
+· 命中 = 0 ⇒ setter = **break_wires**（它把段变成了 Internal）；
+· 若 CBO 里根本没有 ori=Internal 的段 ⇒ 结合 §9.508（collect_wires 入口全 Internal）⇒ setter 在 **collect_wires 之前**的某处
+  （break_wires 之后到 collect_wires 入口之间只剩 perform 的调用与 collect_wires 入口本身）。
+```
+
+---
+
+### 9.526 —— `break_wires` 出口：命中的 22 行**朝向分布**（有效测量，只用已有捕获；库零改动）
+
+```text
+CBO 全部 154 行的朝向分布: {'Reversed': 105, 'External': 49}
+命中的 16 行朝向分布: {'Reversed': 16}
+```
+
+样本（A 类坐标在 break_wires 出口的行）：
+```text
+CBO ori=Reversed nb=1 p0=(-87.500,0.000,-32.000)
+CBO ori=Reversed nb=2 p0=(-112.500,-48.715,-49.757)
+CBO ori=Reversed nb=2 p0=(-112.500,-45.933,-88.961)
+CBO ori=Reversed nb=2 p0=(-112.500,-16.243,-114.715)
+CBO ori=Reversed nb=2 p0=(-112.500,22.961,-111.933)
+CBO ori=Reversed nb=2 p0=(-112.500,48.715,-82.243)
+CBO ori=Reversed nb=2 p0=(-112.500,45.933,-43.039)
+CBO ori=Reversed nb=2 p0=(-112.500,16.243,-17.285)
+CBO ori=Reversed nb=2 p0=(-112.500,-22.961,-20.067)
+CBO ori=Reversed nb=1 p0=(-87.500,0.000,-32.000)
+```
+
+判读：
+```text
+· 若命中行的朝向**已是 Internal** ⇒ setter ∈ {split_by_grid, break_wires}（需再打 split_by_grid 出口）；
+· 若命中行是 Reversed/External 而 collect_wires 入口同坐标段却是 Internal（§9.508）⇒ setter 在
+  **break_wires 之后、collect_wires 入口之前**（该区间只剩 perform 的调用与 collect_wires 自身；
+  而 §9.517 的 CFLIP(=:71) 为 0 ⇒ 需重新审视 collect_wires 入口处是否还有别的 set_orientation）。
+```
