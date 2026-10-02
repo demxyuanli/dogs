@@ -19740,3 +19740,60 @@ F113 那两条 0 长度退化边位于**圆柱面**（R=34）。圆柱**没有�
 做法：先定位 `ShapeAnalysis_Wire::CheckDegenerated(const int num, …)` 的定义行，逐行对拍端口 :1878-1975；
 若确认差异在「圆柱/seam 这种无奇异点但 pcurve 跨整周期的边」，按 .cxx 补上同一条判据 ⇒ 跑 §9.448 验收。
 ```
+
+---
+
+### 9.482 —— 逐边 `CheckDegenerated(num,p2d1,p2d2)` 定义在 `ShapeAnalysis_Wire.cxx:896`；前两段（①cxx:913-935 / ②cxx:938-948）与端口**等价**（避免了一次误报）
+
+#### ① 已标记退化且带 pcurve（`cxx:913-935` ↔ 端口 `wire_fix.rs:1895-1916`）
+
+```cpp
+// OCCT
+if (BRep_Tool::Degenerated(E2) && sae.HasPCurve(E2, Face())) {
+  if (sae.HasPCurve(E1, Face()) && sae.HasPCurve(E3, Face())) {
+    … p21/p22 = pc2(fp/lp), p12 = pc1(lp), p31 = pc3(fp)
+    if (fabs(p12.Distance(p31) - p21.Distance(p22)) > 2*PConfusion())
+      myStatus = ShapeExtend::EncodeStatus(ShapeExtend_FAIL2);   // ← 置 **FAIL2**
+  }
+  return false;
+}
+```
+```rust
+// 端口：把「置 FAIL2」直接映射成 `Remove`（因为 fix_degenerated 的 cxx:2148-2152 就是 FAIL2 ⇒ Remove）
+if BRepTool::is_degenerated(&e2) && has_pcurve(&e2, face) {
+    if has_pcurve(&e1, face) && has_pcurve(&e3, face) {
+        … if (p12.distance(&p31) - p21.distance(&p22)).abs() > 2.0*PCONFUSION { return DegeneratedCheck::Remove; }
+    }
+    return DegeneratedCheck::None;
+}
+```
+
+**判定：等价** —— OCCT 用「状态位 FAIL2」表达，调用方 `ShapeFix_Wire::FixDegenerated(num)` 读到 FAIL2 就
+`WireData()->Remove(num)`（`cxx:2148-2152`）；端口用枚举 `Remove` 表达同一件事（其 `fix_degenerated`
+`:2105-2108` 的注释正引 `cxx:2148-2152`）。**不是分歧**（此处若草率下结论就会误报）。
+
+#### ② 连续退化边无 pcurve（`cxx:938-948` ↔ 端口 `:1918-1926`）
+
+```cpp
+if (n1 != n2 && BRep_Tool::Degenerated(E1) && !sae.HasPCurve(E1, Face())) {
+  if (BRep_Tool::Degenerated(E2)) myStatus |= ShapeExtend::EncodeStatus(ShapeExtend_FAIL2);
+  return false;                                   // 未置位时 myStatus 仍是 :898 的 OK ⇒ 不移除
+}
+```
+```rust
+if n1 != n2 && BRepTool::is_degenerated(&e1) && !has_pcurve(&e1, face) {
+    if BRepTool::is_degenerated(&e2) { return DegeneratedCheck::Remove; }
+    return DegeneratedCheck::None;
+}
+```
+**判定：等价** ✓（含「E2 非退化 ⇒ 状态为 OK ⇒ 不移除」这一细节）。
+
+#### 下一轮（最后一段：通用检测）
+
+```text
+读 `ShapeAnalysis_Wire.cxx:950-1010`（Vp/V0/V1/V2 取点、DegeneratedValues、中点守卫、lack 与 p2d1/p2d2 的产出）
+ ↔ 端口 `wire_fix.rs:1928-1990`（已读到 :1975：p1.distance(p2) <= prec_first 分支 + sing.min_gap + cxx:979-990 中点守卫 + :1975 起的 lack 路径）。
+看点：**圆柱（无奇异点）**上那条「3D 零长度、pcurve 跨整周期」的 seam 边，两侧是否都走 lack（插入）分支；
+      若 OCCT 在此另有判据（例如用 `BRep_Tool::IsClosed(E2, myFace)` 或 pcurve 跨度≈周期）判为 FAIL2 ⇒ 移除，
+      那就是分歧点。
+```
