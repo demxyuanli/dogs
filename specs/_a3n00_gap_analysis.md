@@ -19082,3 +19082,38 @@ F113 仍未解决（4 wires / 空面）；路线图不变：
   下一步：split_wire.rs:190-240 / :340-410（两处 PCONFUSION 过滤 + :402/446/448/466 建边）
           ↔ cxx:1116-1184 / cxx:1900-1903 的 SplitWire 实现，找「子段长度 ≈ 0 ⇒ 跳过」判据
 ```
+
+---
+
+### 9.464 —— `split_wire` 子段**创建处没有局部零长度守卫**（守卫在更上游两处）；下一处对拍已精确到 20 行
+
+读 `split_wire.rs:350-403`（含内部顶点处理与第一个建边点）：
+
+```rust
+// :352-379 内部顶点：apar≈prev_par ⇒ 合并到 prev_v 并删除；apar≈curr_par ⇒ 合并到 v 并删除；
+//           prev_par < apar < curr_par ⇒ 作为 new_edge 的内部顶点加入（并删掉该条目）
+// :381-385 cxx:1339-1344：copy_pcurves + TransferParametersProj.init + **transfer_range(new_edge, prev_par, curr_par, true)**
+// :395-397 cxx:1358-1361：!sp && !is_degenerated ⇒ set_same_range(false)
+// :398-403 cxx:1362-1371：code 修正 + **result.add_edge_patch(0, new_edge, …)** + define_patch
+```
+
+⇒ **`new_edge` 的参数区间直接取 `[prev_par, curr_par]`，此处没有任何「区间长度 ≈ 0 ⇒ 跳过」的局部守卫**。
+  `is_degenerated` 只用于 `set_same_range`（:395），**不用来拦截建边**。
+
+#### 真正的守卫在更上游（round 77 已读到，`split_wire.rs:214-224`）
+
+```rust
+if (curr_par - last_par).abs() < PCONFUSION {      // cxx:1136-1140
+    v_opt = Some(last_v.clone()); do_cut = false;  // 端点重合 ⇒ 不切
+} else if (curr_par - prev_par).abs() < PCONFUSION { // cxx:1141-1146
+    vertices.push(prev_v.clone()); code = code_at(j); prev_par = curr_par; j += 1; continue;  // 与前一切点重合 ⇒ 跳过
+} else { … 正常切 … }
+```
+
+⇒ 零长度子段若从这条路径逃出，只可能是：**两处守卫都没命中，而 `prev_par` 与 `curr_par` 仍近乎相等**
+（例如 `|curr−prev| ≥ PCONFUSION` 但 `|prev−last| < PCONFUSION` 这类端点/切点交叉情形）。
+
+**下一轮（精确到 ~20 行）**：读 OCCT `cxx:1120-1150`（这两处守卫的原文），与端口 `:214-224` **逐字符对拍**
+（比较运算符、`PConfusion` 用法、比较对象是 `first_par/last_par/prev_par/curr_par` 哪一个）；
+若一致 ⇒ 转**数值取证**：在 `:402` 前对 F113 那次调用打印 `(prev_par, curr_par, last_par, first_par)`，
+直接看零长度子段落进哪条分支。
