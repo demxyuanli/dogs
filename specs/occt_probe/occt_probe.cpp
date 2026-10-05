@@ -18,6 +18,11 @@
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepMesh_ModelBuilder.hxx>
 #include <BRepMesh_EdgeDiscret.hxx>
+#include <BRepMesh_ModelHealer.hxx>
+#include <ShapeAnalysis_Wire.hxx>
+#include <ShapeAnalysis_WireOrder.hxx>
+#include <ShapeExtend_WireData.hxx>
+#include <ShapeExtend.hxx>
 #include <IMeshData_Model.hxx>
 #include <IMeshData_Face.hxx>
 #include <IMeshData_Wire.hxx>
@@ -41,7 +46,9 @@
 #include <XSControl_WorkSession.hxx>
 #include <XSControl_TransferReader.hxx>
 #include <Interface_InterfaceModel.hxx>
+#include <Interface_Static.hxx>
 #include <ShapeProcess.hxx>
+#include <ShapeAnalysis_Surface.hxx>
 #include <DE_ShapeFixParameters.hxx>
 #include <StepData_StepModel.hxx>
 #include <BRepGProp_Domain.hxx>
@@ -78,6 +85,8 @@
 #include <gp_Vec.hxx>
 
 #include <Geom2d_Curve.hxx>
+#include <Bnd_Box2d.hxx>
+#include <Geom2d_BSplineCurve.hxx>
 #include <Geom2dAdaptor_Curve.hxx>
 #include <gp_Pnt2d.hxx>
 #include <algorithm>
@@ -545,7 +554,371 @@ static int runFaceStats(const TopoDS_Shape& theShape, const double theDeflection
   return 0;
 }
 
-// --- end TEMP T-101 ---------------------------------------------------------------
+// --- TEMP T-103 (`--torusdbg <defl> <angle>`) --------------------------------------
+// Replays OCCT's own `BRepMesh_TorusRangeSplitter` on every torus face of the
+// discrete model built with the given parameters, printing the exact interior
+// node count it produces. `_dbg/ZZ_TorusRangeSplitter.cxx` supplies both the
+// byte-identical splitter copy and `ZZTorDbgFace`.
+void ZZTorDbgFace(const IMeshData::IFaceHandle& theDFace,
+                  const IMeshTools_Parameters&  theParameters,
+                  const int                     theFaceIdx);
+
+static int runTorusDbg(const TopoDS_Shape& theShape, const double theDeflection,
+                       const double theAngle)
+{
+  IMeshTools_Parameters aParams;
+  aParams.Deflection    = theDeflection;
+  aParams.Angle         = theAngle;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  // Mirror `BRepMesh_IncrementalMesh::initParameters` (`hxx:91-96`): the real
+  // mesher runs with `MinSize = max(RelMinSize * min(defl, deflInterior), Confusion)`.
+  // The earlier Confusion setting made `BRepMesh_EdgeDiscret` emit finer pcurves
+  // than the real run, so the splitter inputs were not comparable.
+  aParams.MinSize       = (std::max)(IMeshTools_Parameters::RelMinSize() * theDeflection,
+                                     Precision::Confusion());
+  aParams.AdjustMinSize = false;
+
+  occ::handle<BRepMesh_ModelBuilder> aBuilder = new BRepMesh_ModelBuilder;
+  const occ::handle<IMeshData_Model> aModel   = aBuilder->Perform(theShape, aParams);
+  if (aModel.IsNull())
+  {
+    std::cout << "ZZTORDBG model-null\n";
+    return 0;
+  }
+  // The builder only enumerates the faces; the pcurves that
+  // `collectWirePoints` walks are filled by `BRepMesh_EdgeDiscret`
+  // (`BRepMesh_ModelBuilder` + `BRepMesh_ModelHealer` + `BRepMesh_EdgeDiscret`
+  // is the `IMeshTools_Context` chain). Without this every replay reports
+  // `ParametersNb() == 0` and `AdjustRange` leaves the splitter invalid.
+  occ::handle<BRepMesh_EdgeDiscret> anEdgeDiscret = new BRepMesh_EdgeDiscret;
+  anEdgeDiscret->Perform(aModel, aParams, Message_ProgressRange());
+  for (int f = 0; f < aModel->FacesNb(); ++f)
+  {
+    const IMeshData::IFaceHandle& aDFace = aModel->GetFace(f);
+    if (aDFace->GetSurface()->GetType() != GeomAbs_Torus)
+    {
+      continue;
+    }
+    ZZTorDbgFace(aDFace, aParams, f);
+  }
+  return 0;
+}
+
+// --- TEMP T-103 (`--healerdbg <defl> <angle> <x1> <y1> <z1> <x2> <y2> <z2>`) ---------
+// Dumps the per-wire-edge pcurve state of every discrete face whose bbox matches
+// the given target, BEFORE and AFTER `BRepMesh_ModelHealer::Perform`. This is the
+// oracle for the port's `ModelHealer::fix_face_boundaries` snap: the pre-heal
+// columns must be bit-equal to the port's EdgeDiscret output, and the post-heal
+// columns show what OCCT's own `connectClosestPoints`/`adjustSamePoints` write.
+static void dumpFacePcurves(const IMeshData::IFaceHandle& theDFace,
+                            const int                     theFaceIdx,
+                            const char*                   theTag)
+{
+  for (int aWireIt = 0; aWireIt < theDFace->WiresNb(); ++aWireIt)
+  {
+    const IMeshData::IWireHandle& aDWire = theDFace->GetWire(aWireIt);
+    for (int aEdgeIt = 0; aEdgeIt < aDWire->EdgesNb(); ++aEdgeIt)
+    {
+      const IMeshData::IEdgeHandle&   aDEdge  = aDWire->GetEdge(aEdgeIt);
+      const IMeshData::IPCurveHandle& aPCurve = aDEdge->GetPCurve(
+        theDFace.get(), aDWire->GetEdgeOrientation(aEdgeIt));
+      const int aNb = aPCurve->ParametersNb();
+      std::printf("HDBG %s face=%d w=%d e=%d nb=%d fwd=%d ori=%d same=%d free=%d int=%d "
+                  "first=(%.9f,%.9f) last=(%.9f,%.9f)\n",
+                  theTag,
+                  theFaceIdx,
+                  aWireIt,
+                  aEdgeIt,
+                  aNb,
+                  aPCurve->IsForward() ? 1 : 0,
+                  (int)aPCurve->GetOrientation(),
+                  aDEdge->GetSameParam() ? 1 : 0,
+                  aDEdge->IsFree() ? 1 : 0,
+                  aPCurve->IsInternal() ? 1 : 0,
+                  aNb > 0 ? aPCurve->GetPoint(0).X() : 0.0,
+                  aNb > 0 ? aPCurve->GetPoint(0).Y() : 0.0,
+                  aNb > 0 ? aPCurve->GetPoint(aNb - 1).X() : 0.0,
+                  aNb > 0 ? aPCurve->GetPoint(aNb - 1).Y() : 0.0);
+      if (aNb > 0 && aNb <= 64)
+      {
+        std::printf("HDBG %s face=%d e=%d pts=[", theTag, theFaceIdx, aEdgeIt);
+        for (int k = 0; k < aNb; ++k)
+        {
+          std::printf("%s(%.6f,%.6f)", k ? " " : "", aPCurve->GetPoint(k).X(), aPCurve->GetPoint(k).Y());
+        }
+        std::printf("]\n");
+      }
+    }
+  }
+}
+
+static int runHealerDbg(const TopoDS_Shape& theShape,
+                        const double        theDeflection,
+                        const double        theAngle,
+                        const double*       theBBox)
+{
+  IMeshTools_Parameters aParams;
+  aParams.Deflection    = theDeflection;
+  aParams.Angle         = theAngle;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  aParams.MinSize       = (std::max)(IMeshTools_Parameters::RelMinSize() * theDeflection,
+                                     Precision::Confusion());
+  aParams.AdjustMinSize = false;
+
+  occ::handle<BRepMesh_ModelBuilder> aBuilder = new BRepMesh_ModelBuilder;
+  const occ::handle<IMeshData_Model> aModel   = aBuilder->Perform(theShape, aParams);
+  if (aModel.IsNull())
+  {
+    std::cout << "HDBG model-null" << std::endl;
+    return 0;
+  }
+  occ::handle<BRepMesh_EdgeDiscret> anEdgeDiscret = new BRepMesh_EdgeDiscret;
+  anEdgeDiscret->Perform(aModel, aParams, Message_ProgressRange());
+
+  std::vector<int> aHits;
+  for (int f = 0; f < aModel->FacesNb(); ++f)
+  {
+    const TopoDS_Face& aFace = aModel->GetFace(f)->GetFace();
+    Bnd_Box            aBox;
+    BRepBndLib::Add(aFace, aBox, false);
+    if (aBox.IsVoid())
+    {
+      continue;
+    }
+    double v[6] = {0, 0, 0, 0, 0, 0};
+    aBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+    if (std::abs(v[0] - theBBox[0]) < 1e-3 && std::abs(v[1] - theBBox[1]) < 1e-3
+        && std::abs(v[2] - theBBox[2]) < 1e-3 && std::abs(v[3] - theBBox[3]) < 1e-3
+        && std::abs(v[4] - theBBox[4]) < 1e-3 && std::abs(v[5] - theBBox[5]) < 1e-3)
+    {
+      aHits.push_back(f);
+    }
+  }
+  std::cout << "HDBG hits=" << aHits.size() << std::endl;
+  for (size_t i = 0; i < aHits.size(); ++i)
+  {
+    dumpFacePcurves(aModel->GetFace(aHits[i]), aHits[i], "pre");
+  }
+
+  occ::handle<BRepMesh_ModelHealer> aHealer = new BRepMesh_ModelHealer;
+  aHealer->Perform(aModel, aParams, Message_ProgressRange());
+
+  for (size_t i = 0; i < aHits.size(); ++i)
+  {
+    dumpFacePcurves(aModel->GetFace(aHits[i]), aHits[i], "post");
+  }
+  return 0;
+}
+
+// --- TEMP T-103 (`--orderdbg <defl> <angle> <x1> <y1> <z1> <x2> <y2> <z2>`) -----------
+// Dumps, for every face whose bbox matches, the `BRepMesh_ShapeVisitor::addWire`
+// ordering stage: `ShapeExtend_WireData` list + `ShapeAnalysis_Wire::CheckOrder`
+// (`ShapeAnalysis_WireOrder::Perform`) result, i.e. the exact `Ordered(i)` chain
+// the port's `WireOrder` must reproduce.
+static int runOrderDbg(const TopoDS_Shape& theShape, const double* theBBox)
+{
+  int aFound = 0;
+  TopExp_Explorer aEx(theShape, TopAbs_FACE);
+  for (; aEx.More(); aEx.Next())
+  {
+    const TopoDS_Face& aFace = TopoDS::Face(aEx.Current());
+    Bnd_Box            aBox;
+    BRepBndLib::Add(aFace, aBox, false);
+    if (aBox.IsVoid())
+    {
+      continue;
+    }
+    double v[6] = {0, 0, 0, 0, 0, 0};
+    aBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+    if (!(std::abs(v[0] - theBBox[0]) < 1e-3 && std::abs(v[1] - theBBox[1]) < 1e-3
+          && std::abs(v[2] - theBBox[2]) < 1e-3 && std::abs(v[3] - theBBox[3]) < 1e-3
+          && std::abs(v[4] - theBBox[4]) < 1e-3 && std::abs(v[5] - theBBox[5]) < 1e-3))
+    {
+      continue;
+    }
+    ++aFound;
+    int aWireIt = 0;
+    for (TopExp_Explorer aW(aFace, TopAbs_WIRE); aW.More(); aW.Next(), ++aWireIt)
+    {
+      const TopoDS_Wire& aWire     = TopoDS::Wire(aW.Current());
+      occ::handle<ShapeExtend_WireData> aWireData = new ShapeExtend_WireData(aWire, true, false);
+      std::printf("ODBG wire=%d stored=%d ori=%d\n", aWireIt, aWireData->NbEdges(),
+                  (int)aWire.Orientation());
+      for (int i = 1; i <= aWireData->NbEdges(); ++i)
+      {
+        const TopoDS_Edge&   anEdge = aWireData->Edge(i);
+        BRepAdaptor_Curve    aC3d(TopoDS::Edge(anEdge.Oriented(TopAbs_FORWARD)));
+        double               f = 0., l = 0.;
+        const occ::handle<Geom2d_Curve> aC2d = BRep_Tool::CurveOnSurface(
+          TopoDS::Edge(anEdge.Oriented(TopAbs_FORWARD)), aFace, f, l);
+        gp_Pnt2d aB(0., 0.), aE(0., 0.);
+        if (!aC2d.IsNull())
+        {
+          const bool aRev = (anEdge.Orientation() == TopAbs_REVERSED);
+          aB = aC2d->Value(aRev ? l : f);
+          aE = aC2d->Value(aRev ? f : l);
+        }
+        const gp_Pnt aP0 = aC3d.Value(aC3d.FirstParameter());
+        const gp_Pnt aP1 = aC3d.Value(aC3d.LastParameter());
+        const char*  aKind = aC2d.IsNull() ? "null" : aC2d->DynamicType()->Name();
+        const bool   aPer  = !aC2d.IsNull() && aC2d->IsPeriodic();
+        std::printf("ODBG   i=%d edge=%p ori=%d closed=%d deg=%d uv=(%.9f,%.9f)->(%.9f,%.9f) "
+                    "p3d=(%.6f,%.6f,%.6f)->(%.6f,%.6f,%.6f)\n",
+                    i,
+                    (void*)anEdge.TShape().get(),
+                    (int)anEdge.Orientation(),
+                    BRep_Tool::IsClosed(anEdge, aFace) ? 1 : 0,
+                    BRep_Tool::Degenerated(anEdge) ? 1 : 0,
+                    aB.X(),
+                    aB.Y(),
+                    aE.X(),
+                    aE.Y(),
+                    aP0.X(),
+                    aP0.Y(),
+                    aP0.Z(),
+                    aP1.X(),
+                    aP1.Y(),
+                    aP1.Z());
+        std::printf("ODBG     c2d=%s per=%d range2d=(%.9f,%.9f) range3d=(%.9f,%.9f) sameParam=%d "
+                    "sameRange=%d v(f)=(%.9f,%.9f) v(l)=(%.9f,%.9f)\n",
+                    aKind,
+                    aPer ? 1 : 0,
+                    f,
+                    l,
+                    aC3d.FirstParameter(),
+                    aC3d.LastParameter(),
+                    BRep_Tool::SameParameter(TopoDS::Edge(anEdge.Oriented(TopAbs_FORWARD))) ? 1 : 0,
+                    BRep_Tool::SameRange(TopoDS::Edge(anEdge.Oriented(TopAbs_FORWARD))) ? 1 : 0,
+                    aC2d.IsNull() ? 0.0 : aC2d->Value(f).X(),
+                    aC2d.IsNull() ? 0.0 : aC2d->Value(f).Y(),
+                    aC2d.IsNull() ? 0.0 : aC2d->Value(l).X(),
+                    aC2d.IsNull() ? 0.0 : aC2d->Value(l).Y());
+      }
+      ShapeAnalysis_Wire       aWireTool(aWireData, aFace, Precision::Confusion());
+      ShapeAnalysis_WireOrder  aOrderTool;
+      aWireTool.CheckOrder(aOrderTool, true, false);
+      std::printf("ODBG wire=%d status: fail=%d done3=%d nb=%d ordered=[",
+                  aWireIt,
+                  aWireTool.LastCheckStatus(ShapeExtend_FAIL) ? 1 : 0,
+                  aWireTool.LastCheckStatus(ShapeExtend_DONE3) ? 1 : 0,
+                  aOrderTool.NbEdges());
+      for (int i = 1; i <= aOrderTool.NbEdges(); ++i)
+      {
+        std::printf("%s%d", i > 1 ? " " : "", aOrderTool.Ordered(i));
+      }
+      std::printf("]\n");
+    }
+    break;
+  }
+  std::printf("ODBG found=%d\n", aFound);
+  return 0;
+}
+
+// --- TEMP T-103 (`--wiredbg <defl> <angle> <x1> <y1> <z1> <x2> <y2> <z2>`) ------------
+// Ground truth for the port's `CWDBG`/`CBWIN`. Replays the real `IMeshTools_MeshBuilder`
+// prefix (`BuildModel` -> `DiscretizeEdges` -> `HealModel`) and dumps, for every wire
+// slot of the target face, the `IMeshData_Wire` order: the slot orientation, the
+// pcurve orientation / `IsForward`, `SameParam` / `SameRange`, both parameter ranges
+// and the full 3D + 2D point arrays in `GetPoint(i)` order (the arrays the classifier
+// polygon and the Delaunay frontier are built from).
+static int runWireDbg(const TopoDS_Shape& theShape,
+                      const double        theDeflection,
+                      const double        theAngle,
+                      const double*       theBBox)
+{
+  IMeshTools_Parameters aParams;
+  aParams.Deflection    = theDeflection;
+  aParams.Angle         = theAngle;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  aParams.MinSize       = (std::max)(IMeshTools_Parameters::RelMinSize() * theDeflection,
+                                     Precision::Confusion());
+  aParams.AdjustMinSize = false;
+
+  occ::handle<BRepMesh_ModelBuilder> aBuilder = new BRepMesh_ModelBuilder;
+  const occ::handle<IMeshData_Model> aModel   = aBuilder->Perform(theShape, aParams);
+  if (aModel.IsNull())
+  {
+    std::printf("WDBG model-null\n");
+    return 0;
+  }
+  // `IMeshTools_MeshBuilder::Perform` (`cxx:52-56`): DiscretizeEdges runs BEFORE
+  // HealModel, so the pre-heal arrays below are the EdgeDiscret output.
+  occ::handle<BRepMesh_EdgeDiscret> anEdgeDiscret = new BRepMesh_EdgeDiscret;
+  anEdgeDiscret->Perform(aModel, aParams, Message_ProgressRange());
+  occ::handle<BRepMesh_ModelHealer> aHealer = new BRepMesh_ModelHealer;
+  aHealer->Perform(aModel, aParams, Message_ProgressRange());
+
+  for (int f = 0; f < aModel->FacesNb(); ++f)
+  {
+    const IMeshData::IFaceHandle& aDFace = aModel->GetFace(f);
+    const TopoDS_Face&            aFace  = aDFace->GetFace();
+    Bnd_Box                       aBox;
+    BRepBndLib::Add(aFace, aBox, false);
+    if (aBox.IsVoid())
+    {
+      continue;
+    }
+    double v[6] = {0, 0, 0, 0, 0, 0};
+    aBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+    if (!(std::abs(v[0] - theBBox[0]) < 1e-3 && std::abs(v[1] - theBBox[1]) < 1e-3
+          && std::abs(v[2] - theBBox[2]) < 1e-3 && std::abs(v[3] - theBBox[3]) < 1e-3
+          && std::abs(v[4] - theBBox[4]) < 1e-3 && std::abs(v[5] - theBBox[5]) < 1e-3))
+    {
+      continue;
+    }
+    std::printf("WDBG face=%d surfType=%d wires=%d\n", f, (int)aDFace->GetSurface()->GetType(),
+                aDFace->WiresNb());
+    for (int w = 0; w < aDFace->WiresNb(); ++w)
+    {
+      const IMeshData::IWireHandle& aDWire = aDFace->GetWire(w);
+      std::printf("WDBG  w=%d edges=%d\n", w, aDWire->EdgesNb());
+      for (int e = 0; e < aDWire->EdgesNb(); ++e)
+      {
+        const IMeshData::IEdgeHandle& aDEdge  = aDWire->GetEdge(e);
+        const TopAbs_Orientation      aSlotOri = aDWire->GetEdgeOrientation(e);
+        const IMeshData::IPCurveHandle& aPCurve = aDEdge->GetPCurve(aDFace.get(), aSlotOri);
+        const TopoDS_Edge&              aEdge   = aDEdge->GetEdge();
+        double                          r3f = 0., r3l = 0.;
+        BRep_Tool::Range(TopoDS::Edge(aEdge.Oriented(TopAbs_FORWARD)), r3f, r3l);
+        std::printf("WDBG   e=%d ptr=%p slotOri=%d pcsNb=%d pcOri=%d fwd=%d sameParam=%d "
+                    "sameRange=%d deg=%d range3d=(%.9f,%.9f) nb3d=%d nb2d=%d\n",
+                    e,
+                    (void*)aEdge.TShape().get(),
+                    (int)aSlotOri,
+                    aDEdge->PCurvesNb(),
+                    (int)aPCurve->GetOrientation(),
+                    aPCurve->IsForward() ? 1 : 0,
+                    aDEdge->GetSameParam() ? 1 : 0,
+                    aDEdge->GetSameRange() ? 1 : 0,
+                    aDEdge->GetDegenerated() ? 1 : 0,
+                    r3f,
+                    r3l,
+                    aDEdge->GetCurve()->ParametersNb(),
+                    aPCurve->ParametersNb());
+        std::printf("WDBG   p2d=[");
+        for (int k = 0; k < aPCurve->ParametersNb(); ++k)
+        {
+          std::printf("%s(%.9f,%.9f)", k ? " " : "", aPCurve->GetPoint(k).X(),
+                      aPCurve->GetPoint(k).Y());
+        }
+        std::printf("]\n");
+        std::printf("WDBG   p3d=[");
+        for (int k = 0; k < aDEdge->GetCurve()->ParametersNb(); ++k)
+        {
+          const gp_Pnt& p = aDEdge->GetCurve()->GetPoint(k);
+          std::printf("%s(%.6f,%.6f,%.6f)", k ? " " : "", p.X(), p.Y(), p.Z());
+        }
+        std::printf("]\n");
+      }
+    }
+  }
+  return 0;
+}
+
+// --- end TEMP T-103 ----------------------------------------------------------------
 
 int main(int argc, char** argv)
 {
@@ -581,6 +954,93 @@ int main(int argc, char** argv)
       faces0 = true;
   }
 
+  // TEMP T-102: `--fix <field> <int>` overrides one `DE_ShapeFixParameters`
+  // field (applied after `ReadFile`, see below). `--set <static> <ival>`
+  // overrides one `Interface_Static` (also after `ReadFile`: the controller
+  // registers the `FromSTEP.FixShape.*` statics lazily as type 't', and the
+  // `ShapeProcess_ShapeContext` only reads them while the FixShape operator runs
+  // inside TransferRoots). See also `wires_probe.cpp` (`set`/`setc`/`setp`).
+  DE_ShapeFixParameters aFixParams;
+  bool                 anyFixParam = false;
+  {
+    auto setFixMode = [&](const std::string& n, int v) -> bool {
+      const DE_ShapeFixParameters::FixMode m =
+        static_cast<DE_ShapeFixParameters::FixMode>(v);
+      if (false)
+      {
+      }
+#define FIXMODE(N) else if (n == #N) { aFixParams.N = m; }
+      FIXMODE(FixFreeShellMode)
+      FIXMODE(FixFreeFaceMode)
+      FIXMODE(FixFreeWireMode)
+      FIXMODE(FixSameParameterMode)
+      FIXMODE(FixSolidMode)
+      FIXMODE(FixShellOrientationMode)
+      FIXMODE(CreateOpenSolidMode)
+      FIXMODE(FixShellMode)
+      FIXMODE(FixFaceOrientationMode)
+      FIXMODE(FixFaceMode)
+      FIXMODE(FixWireMode)
+      FIXMODE(FixOrientationMode)
+      FIXMODE(FixAddNaturalBoundMode)
+      FIXMODE(FixMissingSeamMode)
+      FIXMODE(FixSmallAreaWireMode)
+      FIXMODE(RemoveSmallAreaFaceMode)
+      FIXMODE(FixIntersectingWiresMode)
+      FIXMODE(FixLoopWiresMode)
+      FIXMODE(FixSplitFaceMode)
+      FIXMODE(AutoCorrectPrecisionMode)
+      FIXMODE(ModifyTopologyMode)
+      FIXMODE(ModifyGeometryMode)
+      FIXMODE(ClosedWireMode)
+      FIXMODE(PreferencePCurveMode)
+      FIXMODE(FixReorderMode)
+      FIXMODE(FixSmallMode)
+      FIXMODE(FixConnectedMode)
+      FIXMODE(FixEdgeCurvesMode)
+      FIXMODE(FixDegeneratedMode)
+      FIXMODE(FixLackingMode)
+      FIXMODE(FixSelfIntersectionMode)
+      FIXMODE(RemoveLoopMode)
+      FIXMODE(FixReversed2dMode)
+      FIXMODE(FixRemovePCurveMode)
+      FIXMODE(FixRemoveCurve3dMode)
+      FIXMODE(FixAddPCurveMode)
+      FIXMODE(FixAddCurve3dMode)
+      FIXMODE(FixSeamMode)
+      FIXMODE(FixShiftedMode)
+      FIXMODE(FixEdgeSameParameterMode)
+      FIXMODE(FixNotchedEdgesMode)
+      FIXMODE(FixTailMode)
+      FIXMODE(MaxTailAngle)
+      FIXMODE(MaxTailWidth)
+      FIXMODE(FixSelfIntersectingEdgeMode)
+      FIXMODE(FixIntersectingEdgesMode)
+      FIXMODE(FixNonAdjacentIntersectingEdgesMode)
+      FIXMODE(FixVertexPositionMode)
+      FIXMODE(FixVertexToleranceMode)
+#undef FIXMODE
+      else
+      {
+        return false;
+      }
+      return true;
+    };
+    for (int i = 2; i + 2 < argc; ++i)
+    {
+      if (std::string(argv[i]) == "--fix")
+      {
+        if (!setFixMode(argv[i + 1], std::atoi(argv[i + 2])))
+        {
+          std::cerr << "unknown fix parameter: " << argv[i + 1] << "\n";
+          return 5;
+        }
+        anyFixParam = true;
+        std::cout << "FIX " << argv[i + 1] << " = " << argv[i + 2] << "\n";
+      }
+    }
+  }
+
   STEPControl_Reader aReader;
   if (nofix)
   {
@@ -591,15 +1051,31 @@ int main(int argc, char** argv)
   }
   if (faces0)
   {
-    DE_ShapeFixParameters aFix;
-    aFix.FixFaceOrientationMode = static_cast<DE_ShapeFixParameters::FixMode>(0); // NeedFix(0) => do not fix
-    aReader.SetShapeFixParameters(aFix);
+    aFixParams.FixFaceOrientationMode =
+      static_cast<DE_ShapeFixParameters::FixMode>(0); // NeedFix(0) => do not fix
+    anyFixParam = true;
     std::cout << "SHP-FIX face-orientation disabled\n";
   }
   if (aReader.ReadFile(argv[1]) != IFSelect_RetDone)
   {
     std::cerr << "read failed: " << argv[1] << "\n";
     return 3;
+  }
+  // NOTE: `SetShapeProcessFlags` / `SetShapeFixParameters` delegate to the
+  // transfer actor, which only exists after `ReadFile`; calling them earlier is
+  // a no-op (see `XSControl_Reader::GetActor`), and the same holds for the
+  // `FromSTEP.FixShape.*` statics.
+  for (int i = 2; i + 2 < argc; ++i)
+  {
+    if (std::string(argv[i]) == "--set")
+    {
+      Interface_Static::SetIVal(argv[i + 1], std::atoi(argv[i + 2]));
+      std::cout << "SET " << argv[i + 1] << " = " << Interface_Static::IVal(argv[i + 1]) << "\n";
+    }
+  }
+  if (anyFixParam)
+  {
+    aReader.SetShapeFixParameters(aFixParams);
   }
   if (nofix)
   {
@@ -631,6 +1107,46 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--facestats" && i + 2 < argc)
     {
       return runFaceStats(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]));
+    }
+    // TEMP T-103: `--torusdbg <defl> <angle>` — replay OCCT's torus range
+    // splitter per torus face of the discrete model (see _dbg/ZZ_TorusRangeSplitter.cxx).
+    if (std::string(argv[i]) == "--torusdbg" && i + 2 < argc)
+    {
+      return runTorusDbg(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]));
+    }
+    // TEMP T-103: `--healerdbg <defl> <angle> <x1> <y1> <z1> <x2> <y2> <z2>` — dump the
+    // per-edge pcurve state of the matching face(s) before/after the model healer.
+    if (std::string(argv[i]) == "--healerdbg" && i + 8 < argc)
+    {
+      double aBB[6];
+      for (int k = 0; k < 6; ++k)
+      {
+        aBB[k] = std::atof(argv[i + 3 + k]);
+      }
+      return runHealerDbg(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]), aBB);
+    }
+    // TEMP T-103: `--orderdbg <x1> <y1> <z1> <x2> <y2> <z2>` — dump the wire ordering
+    // (`ShapeAnalysis_Wire::CheckOrder`) for the matching face.
+    if (std::string(argv[i]) == "--orderdbg" && i + 6 < argc)
+    {
+      double aBB[6];
+      for (int k = 0; k < 6; ++k)
+      {
+        aBB[k] = std::atof(argv[i + 1 + k]);
+      }
+      return runOrderDbg(aShape, aBB);
+    }
+    // TEMP T-103: `--wiredbg <defl> <angle> <x1> <y1> <z1> <x2> <y2> <z2>` — ground
+    // truth for the port's `CWDBG`/`CBWIN` (per-slot pcurve point arrays after
+    // DiscretizeEdges + HealModel).
+    if (std::string(argv[i]) == "--wiredbg" && i + 8 < argc)
+    {
+      double aBB[6];
+      for (int k = 0; k < 6; ++k)
+      {
+        aBB[k] = std::atof(argv[i + 3 + k]);
+      }
+      return runWireDbg(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]), aBB);
     }
   }
 
@@ -1401,7 +1917,142 @@ int main(int argc, char** argv)
       }
       int nw = 0;
       for (TopExp_Explorer we(ex.Current(), TopAbs_WIRE); we.More(); we.Next()) ++nw;
-      std::cout << "STEPFACE face=" << k << " id=" << id << " wires=" << nw << "\n";
+      // TEMP T-102: attach the face bbox so an id=0 (created by healing) face can
+      // be paired with the port's `--ecensus` bbox.
+      Bnd_Box aBox;
+      BRepBndLib::Add(TopoDS::Face(ex.Current()), aBox, false);
+      double v[6] = {0, 0, 0, 0, 0, 0};
+      if (!aBox.IsVoid())
+      {
+        aBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+      }
+      std::cout << std::fixed << std::setprecision(6) << "STEPFACE face=" << k << " id=" << id
+                << " wires=" << nw << " bbox=(" << v[0] << "," << v[1] << "," << v[2] << ")-("
+                << v[3] << "," << v[4] << "," << v[5] << ")\n";
+    }
+    return 0;
+  }
+
+  // TEMP T-104: `--fid <i0>[:<i1>]` dumps the same per-face detail as `--fbox`
+  // but selects by INDEX. `--fbox` accepts a match within 0.5 of the query box,
+  // which is ambiguous when two faces share a box (the failure mode behind the
+  // "cone vs cylinder" reading), and the transferred entity id printed here is
+  // the only key that survives healing renumbering.
+  if (argc > 3 && std::string(argv[2]) == "--fid")
+  {
+    int i0 = 0, i1 = 0;
+    {
+      const std::string s(argv[3]);
+      const size_t      c = s.find(':');
+      i0 = std::atoi(s.c_str());
+      i1 = (c == std::string::npos) ? i0 : std::atoi(s.c_str() + c + 1);
+    }
+    occ::handle<XSControl_TransferReader> tr    = aReader.WS()->TransferReader();
+    occ::handle<Interface_InterfaceModel> model = aReader.Model();
+    int                                   k     = 0;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next(), ++k)
+    {
+      if (k < i0 || k > i1)
+        continue;
+      const TopoDS_Face& aF = TopoDS::Face(ex.Current());
+      BRepAdaptor_Surface anAS(aF);
+      TopLoc_Location     aLoc;
+      const occ::handle<Geom_Surface>& aRaw = BRep_Tool::Surface(aF, aLoc);
+      int                              aNs = -1, aUc = 0, aVc = 0;
+      if (!aRaw.IsNull())
+      {
+        occ::handle<ShapeAnalysis_Surface> aSAS = new ShapeAnalysis_Surface(aRaw);
+        aNs = (int)aSAS->NbSingularities(1.e-7);
+        aUc = aSAS->IsUClosed(1.e-7) ? 1 : 0;
+        aVc = aSAS->IsVClosed(1.e-7) ? 1 : 0;
+      }
+      int                            id = 0;
+      occ::handle<Standard_Transient> ent = tr->EntityFromShapeResult(aF, 1);
+      if (!ent.IsNull())
+        id = model->Number(ent);
+      Bnd_Box aBox;
+      BRepBndLib::Add(aF, aBox);
+      double v[6] = {0, 0, 0, 0, 0, 0};
+      if (!aBox.IsVoid())
+        aBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+      std::cout << std::fixed << std::setprecision(6) << "FID face=" << k << " id=" << id
+                << " surf=" << (int)anAS.GetType()
+                << " raw=" << (aRaw.IsNull() ? "null" : aRaw->DynamicType()->Name())
+                << " nsing=" << aNs << " uclosed=" << aUc << " vclosed=" << aVc << " bbox=(" << v[0]
+                << "," << v[1] << "," << v[2] << ")-(" << v[3] << "," << v[4] << "," << v[5] << ")\n";
+      int wi = 0;
+      for (TopExp_Explorer we(aF, TopAbs_WIRE); we.More(); we.Next(), ++wi)
+      {
+        int ne = 0;
+        for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next())
+          ++ne;
+        std::cout << "FID  wire[" << wi << "] nEdges=" << ne << "\n";
+        int ei = 0;
+        for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+        {
+          const TopoDS_Edge E = TopoDS::Edge(ee.Current());
+          TopoDS_Vertex     vf, vl;
+          TopExp::Vertices(E, vf, vl);
+          std::cout << std::setprecision(6) << "FID   e[" << ei << "] ori=" << (int)E.Orientation()
+                    << " deg=" << (BRep_Tool::Degenerated(E) ? 1 : 0);
+          if (!vf.IsNull())
+          {
+            const gp_Pnt pf = BRep_Tool::Pnt(vf), pl = BRep_Tool::Pnt(vl);
+            std::cout << " first=(" << pf.X() << "," << pf.Y() << "," << pf.Z() << ") last=("
+                      << pl.X() << "," << pl.Y() << "," << pl.Z() << ")";
+          }
+          else
+          {
+            std::cout << " first=null last=null";
+          }
+          double                        f = 0, l = 0;
+          const occ::handle<Geom_Curve>& aC3 = BRep_Tool::Curve(E, f, l);
+          std::cout << " c3=" << (aC3.IsNull() ? "null" : aC3->DynamicType()->Name())
+                    << " r3=" << f << ".." << l;
+          double                            f2 = 0, l2 = 0;
+          const occ::handle<Geom2d_Curve>& aC2 = BRep_Tool::CurveOnSurface(E, aF, f2, l2);
+          std::cout << " c2=" << (aC2.IsNull() ? "null" : aC2->DynamicType()->Name())
+                    << " r2=" << f2 << ".." << l2;
+          if (!aC2.IsNull())
+          {
+            // TEMP T-104: pcurve own range + control-net hull (live and segmented).
+            std::cout << " c2own=" << std::setprecision(9) << aC2->FirstParameter() << ".."
+                      << aC2->LastParameter();
+            occ::handle<Geom2d_BSplineCurve> aBS = occ::down_cast<Geom2d_BSplineCurve>(aC2);
+            if (!aBS.IsNull())
+            {
+              Bnd_Box2d pb;
+              for (int q = 1; q <= aBS->NbPoles(); ++q)
+              {
+                pb.Add(aBS->Pole(q));
+              }
+              double x1, y1, x2, y2;
+              pb.Get(x1, y1, x2, y2);
+              std::cout << " nbpoles=" << aBS->NbPoles() << " polebox=(" << x1 << "," << y1 << ")-("
+                        << x2 << "," << y2 << ")";
+              occ::handle<Geom2d_BSplineCurve> aCopy = occ::down_cast<Geom2d_BSplineCurve>(aBS->Copy());
+              try
+              {
+                aCopy->Segment(f2, l2);
+                Bnd_Box2d sb;
+                for (int q = 1; q <= aCopy->NbPoles(); ++q)
+                {
+                  sb.Add(aCopy->Pole(q));
+                }
+                double a1, b1, a2, b2;
+                sb.Get(a1, b1, a2, b2);
+                std::cout << " nbpoles2=" << aCopy->NbPoles() << " segbox=(" << a1 << "," << b1 << ")-("
+                          << a2 << "," << b2 << ")";
+              }
+              catch (const Standard_Failure&)
+              {
+                std::cout << " segthrow";
+              }
+            }
+          }
+          std::cout << "\n";
+        }
+      }
     }
     return 0;
   }
@@ -1422,8 +2073,19 @@ int main(int argc, char** argv)
       for (int i = 0; i < 6; ++i)
         if (std::abs(v[i] - q[i]) > 0.5) ok = false;
       if (!ok) continue;
+      const TopoDS_Face& aF = TopoDS::Face(ex.Current());
+      BRepAdaptor_Surface anAS(aF);
+      TopLoc_Location aLoc;
+      const occ::handle<Geom_Surface>& aRaw = BRep_Tool::Surface(aF, aLoc);
+      occ::handle<ShapeAnalysis_Surface> aSAS = new ShapeAnalysis_Surface(aRaw);
       std::cout << std::fixed << std::setprecision(5) << "FBOX face=" << k << " bbox (" << v[0] << "," << v[1]
-                << "," << v[2] << ")-(" << v[3] << "," << v[4] << "," << v[5] << ")\n";
+                << "," << v[2] << ")-(" << v[3] << "," << v[4] << "," << v[5] << ")"
+                << " surf=" << (int)anAS.GetType()
+                << " raw=" << (aRaw.IsNull() ? "null" : aRaw->DynamicType()->Name())
+                << " astype=" << (int)aSAS->Adaptor3d()->GetType()
+                << " nsing=" << aSAS->NbSingularities(1.e-7)
+                << " uclosed=" << aSAS->IsUClosed(1.e-7)
+                << " vclosed=" << aSAS->IsVClosed(1.e-7) << "\n";
       int wi = 0;
       for (TopExp_Explorer we(ex.Current(), TopAbs_WIRE); we.More(); we.Next(), ++wi)
       {

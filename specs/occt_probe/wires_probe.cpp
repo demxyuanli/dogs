@@ -31,10 +31,14 @@
 #include <TopoDS_Wire.hxx>
 #include <Poly_Triangulation.hxx>
 #include <TopLoc_Location.hxx>
+#include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <map>
 #include <cmath>
+#include <string>
+#include <vector>
 
 #include <Bnd_Box.hxx>
 #include <BRepBndLib.hxx>
@@ -50,12 +54,13 @@ int main(int argc, char** argv)
     std::cout << "usage: wires_probe <file.step> [faceIndex]\n";
     return 2;
   }
-  // "raw <...>": disable the FromSTEP FixShape operator to inspect the shape as
+  // "raw": disable the FromSTEP FixShape operator to inspect the shape as
   // transferred, before any healing (oracle for the port's 4-vs-2 wire question).
-  if (argc > 2 && std::string(argv[2]) == "raw")
-  {
-    Interface_Static::SetCVal("FromSTEP.exec.op", "");
-  }
+  // Accepted anywhere in the argument list so it can be combined with a mode
+  // (`fms all raw`), which is the oracle for the per-face healing pipeline.
+  for (int i = 2; i < argc; ++i)
+    if (std::string(argv[i]) == "raw")
+      Interface_Static::SetCVal("FromSTEP.exec.op", "");
 
   STEPControl_Reader aReader;
   if (aReader.ReadFile(argv[1]) != IFSelect_RetDone)
@@ -301,8 +306,50 @@ int main(int argc, char** argv)
       double x1, y1, z1, x2, y2, z2; b.Get(x1, y1, z1, x2, y2, z2);
       int nw = 0;
       for (TopExp_Explorer cw(ex.Current(), TopAbs_WIRE); cw.More(); cw.Next()) ++nw;
-      std::cout << "FLIST " << k << " wires=" << nw << " bbox " << x1 << " " << y1 << " " << z1
+        std::cout << "FLIST " << k << " wires=" << nw << " bbox " << x1 << " " << y1 << " " << z1
                 << " .. " << x2 << " " << y2 << " " << z2 << "\n";
+    }
+    return 0;
+  }
+
+  // "sig": per-face fingerprint carrying the same fields as the Rust probe's
+  // `--ecensus` line (wire count, per-wire edge counts, sorted/deduped endpoint
+  // point set), so the two shapes can be paired by geometry alone instead of by
+  // face index or by a bbox that BRepBndLib widens through the curve poles.
+  if (argc > 2 && std::string(argv[2]) == "sig")
+  {
+    int k = 0;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next(), ++k)
+    {
+      std::vector<std::string> aVs;
+      int nw = 0;
+      std::string aWe;
+      for (TopExp_Explorer wex(ex.Current(), TopAbs_WIRE); wex.More(); wex.Next())
+      {
+        int ne = 0;
+        for (TopExp_Explorer ee(wex.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ne)
+        {
+          TopoDS_Edge E = TopoDS::Edge(ee.Current());
+          for (const TopoDS_Vertex& aV :
+               {TopExp::FirstVertex(E, Standard_True), TopExp::LastVertex(E, Standard_True)})
+          {
+            if (aV.IsNull())
+              continue;
+            gp_Pnt p = BRep_Tool::Pnt(aV);
+            char aBuf[64];
+            std::snprintf(aBuf, sizeof(aBuf), "%.6f,%.6f,%.6f", p.X(), p.Y(), p.Z());
+            aVs.push_back(aBuf);
+          }
+        }
+        aWe += (nw == 0 ? "" : ",") + std::to_string(ne);
+        ++nw;
+      }
+      std::sort(aVs.begin(), aVs.end());
+      aVs.erase(std::unique(aVs.begin(), aVs.end()), aVs.end());
+      std::cout << "SIG " << k << " wires=" << nw << " edges=" << aWe;
+      for (size_t i = 0; i < aVs.size(); ++i)
+        std::cout << " " << aVs[i];
+      std::cout << "\n";
     }
     return 0;
   }
@@ -694,6 +741,38 @@ int main(int argc, char** argv)
       }
       std::cout << "PERF idx=" << idx << " in_wires=" << w0 << " ret=" << r
                 << " null=" << res.IsNull() << " faces=" << faces << " wires=" << wires << "\n";
+      // Per-wire edge census of the single-face Perform result (one-face oracle
+      // for the torus 4-vs-5 edge question on the cross-face seam split).
+      if (!res.IsNull())
+      {
+        std::vector<std::string> aVs;
+        int wi = 0;
+        std::cout << "PERF edges=";
+        for (TopExp_Explorer we(res, TopAbs_WIRE); we.More(); we.Next(), ++wi)
+        {
+          int ne = 0;
+          for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ne)
+          {
+            TopoDS_Edge E = TopoDS::Edge(ee.Current());
+            for (const TopoDS_Vertex& aV :
+                 {TopExp::FirstVertex(E, Standard_True), TopExp::LastVertex(E, Standard_True)})
+            {
+              if (aV.IsNull())
+                continue;
+              gp_Pnt p = BRep_Tool::Pnt(aV);
+              char aBuf[64];
+              std::snprintf(aBuf, sizeof(aBuf), "%.6f,%.6f,%.6f", p.X(), p.Y(), p.Z());
+              aVs.push_back(aBuf);
+            }
+          }
+          std::cout << (wi == 0 ? "" : ",") << ne;
+        }
+        std::sort(aVs.begin(), aVs.end());
+        aVs.erase(std::unique(aVs.begin(), aVs.end()), aVs.end());
+        for (size_t i = 0; i < aVs.size(); ++i)
+          std::cout << " " << aVs[i];
+        std::cout << "\n";
+      }
       break;
     }
     return 0;
@@ -701,16 +780,23 @@ int main(int argc, char** argv)
 
   // "fms <faceIndex>": run ShapeFix_Face::FixMissingSeam on one face and report
   // the result's type / face / wire counts (OCCT oracle for the port's Shell).
+  // "fms all": the same for every face with a periodic surface, one line per
+  // face, which is the shape the Rust probe's `--fixms` dumps.
   if (argc > 3 && std::string(argv[2]) == "fms")
   {
-    const int idx = std::atoi(argv[3]);
+    const bool aAll = (std::string(argv[3]) == "all");
+    const int idx = aAll ? -1 : std::atoi(argv[3]);
     TopExp_Explorer ex(aShape, TopAbs_FACE);
     int k = 0;
     for (; ex.More(); ex.Next(), ++k)
     {
-      if (k != idx) continue;
+      if (!aAll && k != idx) continue;
       TopoDS_Face F = TopoDS::Face(ex.Current());
-      if (BRep_Tool::Surface(F).IsNull()) { std::cout << "FMS no surface\n"; return 0; }
+      occ::handle<Geom_Surface> aSurf = BRep_Tool::Surface(F);
+      if (aSurf.IsNull()) { if (!aAll) std::cout << "FMS no surface\n"; continue; }
+      int before_wires = 0;
+      for (TopExp_Explorer cw(F, TopAbs_WIRE); cw.More(); cw.Next()) ++before_wires;
+      if (aAll && !aSurf->IsUPeriodic() && !aSurf->IsVPeriodic()) continue;
       ShapeFix_Face sff;
       sff.Init(F);
       bool r = sff.FixMissingSeam();
@@ -721,10 +807,54 @@ int main(int argc, char** argv)
         for (TopExp_Explorer e2(res, TopAbs_FACE); e2.More(); e2.Next()) ++faces;
         for (TopExp_Explorer e2(res, TopAbs_WIRE); e2.More(); e2.Next()) ++wires;
       }
-      std::cout << "FMS idx=" << idx << " ret=" << r << " null=" << res.IsNull()
+      std::cout << "FMS idx=" << k << " uper=" << (aSurf->IsUPeriodic() ? 1 : 0)
+                << " vper=" << (aSurf->IsVPeriodic() ? 1 : 0)
+                << " before_wires=" << before_wires
+                << " ret=" << r << " null=" << res.IsNull()
                 << " type=" << (res.IsNull() ? -1 : (int)res.ShapeType())
-                << " faces=" << faces << " wires=" << wires << "\n";
-      break;
+                << " faces=" << faces << " wires=" << wires;
+      // Per-wire edge census + sorted/deduped endpoint set: the one-face oracle
+      // for the cross-face question (does FixMissingSeam alone produce the
+      // 5-edge torus wire, or does the split arrive from the shared context).
+      if (!res.IsNull())
+      {
+        std::vector<std::string> aVs;
+        int wi = 0;
+        std::cout << " edges=";
+        for (TopExp_Explorer we(res, TopAbs_WIRE); we.More(); we.Next(), ++wi)
+        {
+          int ne = 0;
+          for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ne)
+          {
+            TopoDS_Edge E = TopoDS::Edge(ee.Current());
+            for (const TopoDS_Vertex& aV :
+                 {TopExp::FirstVertex(E, Standard_True), TopExp::LastVertex(E, Standard_True)})
+            {
+              if (aV.IsNull())
+                continue;
+              gp_Pnt p = BRep_Tool::Pnt(aV);
+              char aBuf[64];
+              std::snprintf(aBuf, sizeof(aBuf), "%.6f,%.6f,%.6f", p.X(), p.Y(), p.Z());
+              aVs.push_back(aBuf);
+            }
+          }
+          std::cout << (wi == 0 ? "" : ",") << ne;
+        }
+        std::sort(aVs.begin(), aVs.end());
+        aVs.erase(std::unique(aVs.begin(), aVs.end()), aVs.end());
+        for (size_t i = 0; i < aVs.size(); ++i)
+          std::cout << " " << aVs[i];
+      }
+      Bnd_Box aBB;
+      BRepBndLib::Add(F, aBB);
+      if (!aBB.IsVoid())
+      {
+        double x1, y1, z1, x2, y2, z2;
+        aBB.Get(x1, y1, z1, x2, y2, z2);
+        std::cout << " bbox=" << x1 << "," << y1 << "," << z1 << "," << x2 << "," << y2 << "," << z2;
+      }
+      std::cout << "\n";
+      if (!aAll) break;
     }
     return 0;
   }
