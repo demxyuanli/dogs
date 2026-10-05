@@ -16,7 +16,7 @@ use crate::shape::{Edge, Face, TopoShape};
 
 use super::composite_surface::CompositeSurface;
 use super::helpers::*;
-use super::reshape::MapReShape;
+use super::reshape::{MapReShape, SharedReShape};
 
 /// ShapeExtend_Status bits: ShapeExtend::EncodeStatus (ShapeExtend.cxx:54-98).
 pub const SHAPEEXTEND_OK: i32 = 0x0000;
@@ -67,7 +67,7 @@ pub struct ComposeShell {
     pub(super) result: Option<TopoShape>,
     /// myContext: the ShapeBuild_ReShape shared by every SplitWire call
     /// (`ShapeFix_Root::Context()`).
-    pub(super) context: MapReShape,
+    pub(super) context: SharedReShape,
     /// myInvertEdgeStatus (cxx:84 sets true in the ctor; Perform resets it at
     /// cxx:209 and CollectWires raises it at cxx:2731; MakeFacesOnPatch reads
     /// it at cxx:2997).
@@ -102,7 +102,7 @@ impl ComposeShell {
             min_tolerance: CONFUSION,
             max_tolerance: 1.0,
             result: None,
-            context: MapReShape::new(),
+            context: SharedReShape::new(),
             invert_edge_status: true,
         }
     }
@@ -159,16 +159,16 @@ impl ComposeShell {
     }
 
     /// `ShapeFix_Root::Context()`.
-    pub fn context(&self) -> &MapReShape {
+    pub fn context(&self) -> &SharedReShape {
         &self.context
     }
 
-    pub fn context_mut(&mut self) -> &mut MapReShape {
+    pub fn context_mut(&mut self) -> &mut SharedReShape {
         &mut self.context
     }
 
     /// `ShapeFix_Root::SetContext` (`ShapeFix_Root.cxx:...`).
-    pub fn set_context(&mut self, ctx: MapReShape) {
+    pub fn set_context(&mut self, ctx: SharedReShape) {
         self.context = ctx;
     }
 

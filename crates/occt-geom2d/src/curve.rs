@@ -1,6 +1,8 @@
 //! Abstract 2D parametric curve trait. Source: `Geom2d_Curve.hxx`
 use occt_core::gp::{GpCirc2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d, GpTrsf2d};
 
+use crate::Geom2dBSplineCurve;
+
 /// Parametric 2D curve. Replaces OCCT Geom2d_Curve.
 pub trait Curve2d: Send + Sync {
     fn d0(&self, u: f64) -> GpPnt2d;
@@ -140,6 +142,35 @@ pub trait Curve2d: Send + Sync {
         None
     }
 
+    /// `Geom2d_OffsetCurve::Offset()` (`Geom2d_OffsetCurve.cxx:169-172`); the
+    /// companion of [`Curve2d::offset_basis`]. Needed by `GeomLib::To3d`'s
+    /// `Geom2d_OffsetCurve` arm (`GeomLib.cxx:575-581`).
+    fn offset_value(&self) -> Option<f64> {
+        None
+    }
+
+    /// `Geom2d_BSplineCurve::Weights()`. `None` when the curve is not a
+    /// B-spline or is not rational. `Geom2dBSplineCurve` reports its stored
+    /// weights; it exists so that `GeomLib::To3d`'s B-spline arm
+    /// (`GeomLib.cxx:598-620`) can be written the way OCCT writes it.
+    fn bspline_weights2d(&self) -> Option<&[f64]> {
+        None
+    }
+
+    /// `Geom2d_BezierCurve::Weights()` (`GeomLib.cxx:582-597`).
+    fn bezier_weights2d(&self) -> Option<&[f64]> {
+        None
+    }
+
+    /// `Geom2d_BSplineCurve::Knots()` / `Multiplicities()`: the **distinct**
+    /// knots and their multiplicities, i.e. what `GeomLib::To3d`'s B-spline arm
+    /// feeds to the `Geom_BSplineCurve(Poles, Knots, Mults, Degree, IsPeriodic)`
+    /// constructor (`GeomLib.cxx:610-618`). Mirror of
+    /// `GeomBSplineCurve::distinct_knots_and_mults`; `None` for every other type.
+    fn bspline_distinct_knots_mults(&self) -> Option<(Vec<f64>, Vec<i32>)> {
+        None
+    }
+
     /// `Geom2d_BezierCurve::NbPoles()` (`Geom2d_BezierCurve.cxx:600`); `Some`
     /// only when this curve is a `Geom2d_BezierCurve`, mirroring
     /// `IsKind(STANDARD_TYPE(Geom2d_BezierCurve))` (`Geom2dAdaptor_Curve.cxx:1360-1363`).
@@ -149,14 +180,12 @@ pub trait Curve2d: Send + Sync {
 
     /// `Geom2dAdaptor_Curve::IsRational()` (`Geom2dAdaptor_Curve.cxx:1291-1302`):
     /// the Bezier and B-spline arms return the stored curve's `IsRational()`,
-    /// and every other `GeomAbs_CurveType` returns `false` (`:1299-1300`). The
-    /// port's 2D B-spline stores no weights, so only the Bezier arm can report
-    /// `true`.
+    /// and every other `GeomAbs_CurveType` returns `false` (`:1299-1300`).
     ///
     /// UNPORTED (outside this crate): the `occt-topo` wrappers
     /// `pcurve::PlaneKeepParam2d` and `pcurve_full::ReparamCurve2d` delegate
-    /// `bezier_nb_poles` but keep this default, so a rational 2-pole Bezier
-    /// behind them still reports `false`.
+    /// `bezier_nb_poles` but keep this default, so a rational curve behind them
+    /// still reports `false`.
     fn is_rational(&self) -> bool {
         false
     }
@@ -179,6 +208,16 @@ pub trait Curve2d: Send + Sync {
     /// Feeds the control-net branch of `GeomBndLib_BSplineCurve2d::Box`
     /// (`GeomBndLib_BSplineCurve2d.cxx:52-57`).
     fn bspline_poles2d(&self) -> Option<(&[f64], &[f64])> {
+        None
+    }
+
+    /// `Geom2d_BSplineCurve::Copy()` as fed to
+    /// `GeomBndLib_BSplineCurve2d::Box`'s `Segment` arm
+    /// (`GeomBndLib_BSplineCurve2d.cxx:45-49`): the owned B-spline the evaluator
+    /// was built from (`GeomBndLib_Curve2d.cxx:137-143`), which for a
+    /// `Geom2d_TrimmedCurve` is its `BasisCurve()` (`:150-157`). `None` for
+    /// every non-`Geom2d_BSplineCurve` — OCCT then picks a different evaluator.
+    fn bspline_copy2d(&self) -> Option<Geom2dBSplineCurve> {
         None
     }
 

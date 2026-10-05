@@ -87,7 +87,7 @@ impl ComposeShell {
         let mut i = 1usize;
         while i <= wire.nb_edges() {
             // cxx:969: for an already split seam edge, redistribute its split points.
-            let nsplit = apply_context(wire, i, self.context());
+            let nsplit = apply_context(wire, i, self.context_mut());
             let mut redo = false;
             if nsplit != 1 {
                 distribute_split_points(wire.edges(), i, nsplit.max(0) as usize, indexes, values);
@@ -352,7 +352,7 @@ impl ComposeShell {
                                     let mut n = 0usize;
                                     while n < a_nm_params.len() {
                                         let apar = a_nm_params[n];
-                                        let atmp_v = self.context().apply(&a_nm_vertices[n].0);
+                                        let atmp_v = self.context_mut().apply(&a_nm_vertices[n].0);
                                         let mut removed = false;
                                         if (apar - prev_par).abs() <= PCONFUSION {
                                             self.context_mut().replace(&atmp_v, &prev_v.0);

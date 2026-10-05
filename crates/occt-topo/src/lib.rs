@@ -108,6 +108,7 @@ pub mod brep_builder_full;
 pub mod brep_lib_make_face;
 pub mod brep_lib_make_wire;
 pub mod brep_lib_same_parameter;
+pub mod brep_lib_same_range;
 pub mod viz_scene;
 pub mod draw;
 pub mod gprop_analytic;

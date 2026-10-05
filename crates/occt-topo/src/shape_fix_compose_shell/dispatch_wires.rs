@@ -9,7 +9,7 @@ use occt_geom::Surface;
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
-use crate::shape::{Edge, Face, TopoShape};
+use crate::shape::{Edge, TopoShape};
 use crate::shhealing::fix_shifted_wire;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
 use crate::shhealing::{ShapeBuildEdge, ShapeFixEdge};
@@ -307,7 +307,7 @@ impl ComposeShell {
                     } else {
                         sbe.copy(&new_edge, false)
                     };
-                    sfe.fix_add_curve3d(&etmp, &face);
+                    sfe.fix_add_curve3d(&etmp);
                     if let Some(c3d) = reg.edge_curve(&etmp.0) {
                         let (cf, cl) = reg.edge_parameters(&etmp.0);
                         let mut g = EdgeGeom::new(c3d, cf, cl);
@@ -321,7 +321,7 @@ impl ComposeShell {
                         sbe.set_range3d(&new_edge, cf, cl);
                     }
                 } else {
-                    sfe.fix_add_curve3d(&new_edge, &face); // cxx:3529
+                    sfe.fix_add_curve3d(&new_edge); // cxx:3529
                 }
                 wires[i].set_edge(j, new_edge); // cxx:3531
                 let _ = face_key;

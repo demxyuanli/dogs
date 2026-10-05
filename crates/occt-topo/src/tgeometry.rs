@@ -23,6 +23,14 @@ use occt_geom2d::curve::Curve2d;
 use crate::shape::TopoShape;
 use crate::tshape::{EdgePcurves, VertexGeomCore};
 
+/// Monotonic sequence number used by the in-tree pcurve/ReShape diagnostics to
+/// order an attach/remove against a recorded `Replace`.
+pub fn next_pcseq() -> usize {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
+    SEQ.fetch_add(1, Ordering::Relaxed)
+}
+
 /// Vertex geometry — a 3D point and a tolerance. (BRep_TVertex)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VertexGeom {
@@ -324,6 +332,12 @@ impl GeometryRegistry {
         self.edge_geom(s).map(|g| g.same_parameter).unwrap_or(false)
     }
 
+    /// `BRep_Tool::SameRange(E)`: the flag, not the ranges themselves.
+    pub fn same_range(&self, s: &TopoShape) -> bool {
+        let ts = s.tshape.read().unwrap();
+        ts.edge_core().map(|c| c.same_range).unwrap_or(false)
+    }
+
     pub fn is_degenerated_edge(&self, s: &TopoShape) -> bool {
         self.edge_geom(s).map(|g| g.degenerated).unwrap_or(false)
     }
@@ -530,6 +544,37 @@ impl GeometryRegistry {
             .unwrap_or(face_key)
     }
 
+    /// Debug accessor for `repr_key`, for the in-tree pcurve diagnostics.
+    pub fn debug_repr_key(&self, face_key: usize) -> usize {
+        self.repr_key(face_key)
+    }
+
+    /// (face_key, surface_ptr) pairs currently registered.
+    pub fn debug_face_surfaces(&self) -> Vec<(usize, usize)> {
+        self.face_surfaces
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(k, s)| (*k, Arc::as_ptr(s) as *const () as usize))
+            .collect()
+    }
+
+    /// Kind + u/v range of the surface registered under `ptr`.
+    pub fn debug_surface_desc(&self, ptr: usize) -> String {
+        let by_ptr = self.surface_by_ptr.read().unwrap();
+        match by_ptr.get(&ptr) {
+            Some(s) => {
+                let (u0, u1) = s.u_range();
+                let (v0, v1) = s.v_range();
+                format!(
+                    "{:?} u=[{u0:.6},{u1:.6}] v=[{v0:.6},{v1:.6}]",
+                    crate::pcurve_full::classify_surface_kind(s.as_ref())
+                )
+            }
+            None => format!("ptr{ptr}:unregistered"),
+        }
+    }
+
     pub fn face_geom(&self, s: &TopoShape) -> Option<FaceGeom> {
         // T-25 batch 4: read off the face's own `TShape`; the side table is the
         // safety net while other slots are still being lifted.
@@ -565,6 +610,22 @@ impl GeometryRegistry {
     /// `BRep_Builder::UpdateFace` tolerance write.
     pub fn set_face_tolerance(&self, s: &TopoShape, tol: f64) {
         s.tshape.write().unwrap().face_core_mut().tolerance = tol;
+    }
+
+    /// Register the surface side-table entry for a face whose `TFace` surface
+    /// was written directly (a rebuild through `TopoDS_Shape::EmptyCopied`,
+    /// `BRep_TFace.cxx:37-43`). `repr_key` resolves pcurves through
+    /// `face_surfaces`, so a rebuilt face whose entry is missing would fall back
+    /// to the face pointer and lose every pcurve: OCCT instead finds a
+    /// CurveOnSurface representation by the face's own surface
+    /// (`BRep_Tool::CurveOnSurface`, `BRep_Tool.cxx:347-357`), which survives a
+    /// face-only rebuild because the surface handle is carried over.
+    pub fn register_face_surface(&self, s: &TopoShape, surface: &Arc<dyn Surface>) {
+        let k = key(s);
+        self.face_surfaces
+            .write()
+            .unwrap()
+            .insert(k, surface.clone());
     }
 
     // ---- lifecycle ----

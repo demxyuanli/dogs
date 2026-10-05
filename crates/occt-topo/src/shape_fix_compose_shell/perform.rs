@@ -21,7 +21,7 @@ impl ComposeShell {
         };
 
         // cxx:214-219.
-        let mut seqw = load_wires(&face);
+        let mut seqw = load_wires(&face, &self.context);
         if seqw.is_empty() {
             self.status = SHAPEEXTEND_FAIL6;
             return false;
@@ -62,7 +62,7 @@ impl ComposeShell {
             Some(f) => f.clone(),
             None => return,
         };
-        let mut seqw = load_wires(&face);
+        let mut seqw = load_wires(&face, &self.context);
         self.split_by_grid(&mut seqw);
     }
 }

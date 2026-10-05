@@ -448,6 +448,9 @@ impl IncrementalMesh {
                         .map(|f| f.is_status(MeshStatus::FAILURE))
                         .unwrap_or(false)
                     {
+                        if std::env::var("MBDIAG").is_ok() {
+                            eprintln!("MBDIAG err face={i} FAILURE=1 msg={e}");
+                        }
                         (None, false)
                     } else {
                         return Err(format!(
@@ -456,6 +459,9 @@ impl IncrementalMesh {
                     }
                 }
                 Err(_) => {
+                    if std::env::var("MBDIAG").is_ok() {
+                        eprintln!("MBDIAG panic face={i}");
+                    }
                     (None, true)
                 }
             };

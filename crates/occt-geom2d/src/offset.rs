@@ -466,4 +466,7 @@ impl Curve2d for Geom2dOffsetCurve {
 
     /// `Geom2d_OffsetCurve::BasisCurve()` (`Geom2d_OffsetCurve.cxx:174-177`).
     fn offset_basis(&self) -> Option<&dyn Curve2d> { Some(&*self.basis) }
+
+    /// `Geom2d_OffsetCurve::Offset()` (`Geom2d_OffsetCurve.cxx:169-172`).
+    fn offset_value(&self) -> Option<f64> { Some(self.offset) }
 }

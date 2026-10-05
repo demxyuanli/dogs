@@ -76,34 +76,6 @@ impl WireOrder {
         self.status
     }
 
-    /// Signed area of the ordered chain (`IsOuterBound` / `TotCross2D` sign).
-    /// Negative means the CheckOrder walk is clockwise in UV.
-    pub fn chain_area(&self) -> f64 {
-        let n = self.nb_edges();
-        if n < 2 {
-            return 0.0;
-        }
-        let mut area = 0.0;
-        for i in 1..=n {
-            let a = self.point_at(self.ordered(i), true);
-            let b = self.point_at(self.ordered(if i == n { 1 } else { i + 1 }), true);
-            area += a.x() * b.y() - b.x() * a.y();
-        }
-        area * 0.5
-    }
-
-    /// Reverse the ordered chain so a clockwise walk becomes counter-clockwise
-    /// (`ShapeFix_Face::FixOrientation` / `IsOuterBound` on the discrete loop).
-    pub fn reverse_chain(&mut self) {
-        if self.ord.is_empty() {
-            return;
-        }
-        self.ord.reverse();
-        for v in &mut self.ord {
-            *v = -*v;
-        }
-    }
-
     /// Signed edge number at chain position `idx` (1-based): positive = forward,
     /// negative = reversed. Identity when `perform()` has not run yet.
     pub fn ordered(&self, idx: usize) -> i32 {

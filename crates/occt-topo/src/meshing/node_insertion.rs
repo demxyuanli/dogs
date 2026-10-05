@@ -475,6 +475,14 @@ impl DelaunayNodeInsertionMeshAlgo {
         params: &MeshParameters,
     ) -> Result<TriangulationResult, String> {
         let (uv, _p3d, _constraints, wires_uv) = Self::collect_boundary_uv(model, face_index)?;
+        if std::env::var("MBDIAG").is_ok() && uv.len() <= 1 {
+            eprintln!(
+                "MBDIAG thin face={face_index} uv={} wires={} edges={:?}",
+                uv.len(),
+                wires_uv.len(),
+                wires_uv.iter().map(|w| w.len()).collect::<Vec<_>>()
+            );
+        }
         if uv.is_empty() {
             return Err(format!(
                 "DelaunayNodeInsertionMeshAlgo::perform: face {face_index} has no boundary UV points"
@@ -512,6 +520,21 @@ impl DelaunayNodeInsertionMeshAlgo {
                             .register_wire(w, sp.tolerance_uv(), sp.range_u(), sp.range_v());
                     }
                 } else {
+                    if std::env::var("MBDIAG").is_ok() {
+                        let (su0, su1) = surface.as_ref().u_range();
+                        let (sv0, sv1) = surface.as_ref().v_range();
+                        let (ru0, ru1) = sp.range_u();
+                        let (rv0, rv1) = sp.range_v();
+                        let (du, dv) = sp.delta();
+                        let (bu0, bu1, bv0, bv1) = uv_bounds(&uv);
+                        eprintln!(
+                            "MBDIAG rng face={face_index} surf={:?} sup={} svp={} su=[{su0:.6},{su1:.6}] sv=[{sv0:.6},{sv1:.6}] du=[{ru0:.6},{ru1:.6}] dv=[{rv0:.6},{rv1:.6}] delta=({du:.6},{dv:.6}) buv=[{bu0:.6},{bu1:.6}]x[{bv0:.6},{bv1:.6}] nuv={}",
+                            classify_surface(surface.as_ref()),
+                            surface.as_ref().is_u_periodic(),
+                            surface.as_ref().is_v_periodic(),
+                            uv.len()
+                        );
+                    }
                     range_invalid = true;
                 }
                 if !range_invalid {
@@ -549,7 +572,6 @@ impl DelaunayNodeInsertionMeshAlgo {
                     .register_wire(w, (1e-9, 1e-9), (umin, umax), (vmin, vmax));
             }
         }
-
         self.init_data_structure(model, face_index)?;
 
         // Internal (in-face) 3D points -> UV via the face surface, dropped when
@@ -666,10 +688,16 @@ impl DelaunayNodeInsertionMeshAlgo {
                     }
                 }
 
-                // `collectWirePoints` (`hxx:153-180`): walk `IsForward` only.
-                // `reverse_walk` is ShapeExtend `Ordered<0` / seam PCurve2; cxx
-                // does not XOR it into the classifier polygon.
-                if pcurve.is_forward() {
+                // `collectWirePoints` (`hxx:153-180`): walk the pcurve in the
+                // effective edge orientation. `reverse_walk` models
+                // `ShapeExtend_WireData::Edge(signed)` = `Edge.Reverse()` on a
+                // seam; `BRepMesh_ShapeVisitor::addWire` stores that reversed
+                // orientation into `IMeshData_Wire`, so `GetEdgeOrientation`
+                // (and thus `IMeshData_PCurve::IsForward`) already includes it.
+                // The port keeps the original orientation plus `reverse_walk`,
+                // so the classifier polygon must XOR it exactly like the
+                // frontier links above.
+                if !reverse {
                     classifier_wire.extend_from_slice(&pts[..n.saturating_sub(1)]);
                 } else {
                     for i in (1..n).rev() {

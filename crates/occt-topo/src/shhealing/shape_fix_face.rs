@@ -1,11 +1,17 @@
-//! `ShapeFix_Face` subset: `CheckWire` (`ShapeFix_Face.cxx:1652-1718`) and the
-//! setup / wire-pair selection of `FixMissingSeam` (`ShapeFix_Face.cxx:1722-1898`).
+//! `ShapeFix_Face` subset: `CheckWire` (`ShapeFix_Face.cxx:1652-1718`), the
+//! setup / wire-pair selection plus seam construction of `FixMissingSeam`
+//! (`ShapeFix_Face.cxx:1722-2330`), `IsPeriodicConicalLoop`
+//! (`cxx:3018-3098`) and `FixPeriodicDegenerated` (`cxx:3101-3259`).
 //!
-//! UNPORTED: the seam construction itself (`ShapeFix_Face.cxx:1899-2330`) and
-//! `ShapeFix_Face::Perform` (`cxx:345-...`, the `FixMissingSeam` call is
-//! `cxx:492-494`). See `specs/_a3n00_gap_analysis.md` §9.35.
+//! UNPORTED: `ShapeFix_Face::Perform` (`cxx:345-...`) beyond its
+//! `FixPeriodicDegenerated` / `FixMissingSeam` tail (`cxx:482-498`) — the
+//! wire-fixing first part (`cxx:365-480`, needs `ShapeFix_Wire::Perform`) and
+//! the post-`FixMissingSeam` face loop (`cxx:500-...`). See
+//! `specs/_a3n00_gap_analysis.md` §9.35.
 
 use std::sync::Arc;
+
+use std::f64::consts::PI;
 
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::{GpDir2d, GpPnt2d, GpVec2d};
@@ -79,19 +85,116 @@ pub fn check_wire(
     }
 }
 
+/// `IsPeriodicConicalLoop` out-parameters (`ShapeFix_Face.cxx:3018-3098`).
+#[derive(Debug, Clone, Copy)]
+struct PeriodicConicalLoop {
+    min_u: f64,
+    max_u: f64,
+    min_v: f64,
+    max_v: f64,
+    is_u_decrease: bool,
+}
+
+/// `IsPeriodicConicalLoop(theSurf, theWire, theTolerance, theMinU, theMaxU,
+/// theMinV, theMaxV, isUDecrease)` (`ShapeFix_Face.cxx:3018-3098`): true when
+/// the wire belts the conical surface by exactly one period (the absolute sum
+/// of the pcurve `dU` is `2*pi` and the U span covers the apex). `None` is
+/// `false`.
+///
+/// `cxx:3027-3032` (null surface) is the caller's `BRep_Tool::Surface(myFace)`
+/// test; `ShapeAnalysis_Edge::PCurve` here is
+/// `boptools_2d::curve_on_surface_oriented` keyed by the face's surface
+/// (`tgeometry.rs::repr_key`), which is the same handle OCCT looks the pcurve
+/// up by.
+fn is_periodic_conical_loop(
+    wire: &Wire,
+    face: &Face,
+    tolerance: f64,
+) -> Option<PeriodicConicalLoop> {
+    let mut cumul_delta_u = 0.0f64;
+    let mut cumul_delta_u_abs = 0.0f64;
+    // `cxx:3037-3040`: `RealLast()` / `-RealLast()` (`Standard_Real.hxx:179`).
+    let mut min_u = f64::MAX;
+    let mut min_v = min_u;
+    let mut max_u = -min_u;
+    let mut max_v = max_u;
+
+    // `cxx:3043`: `TopoDS_Iterator(theWire, false)`.
+    for edge in edges_of_wire(wire) {
+        let (c2d, p_first, p_last) = match boptools_2d::curve_on_surface_oriented(&edge, face, true)
+        {
+            Some(v) => v,
+            None => return None, // cxx:3051-3054
+        };
+
+        let uv_first = c2d.d0(p_first);
+        let uv_last = c2d.d0(p_last);
+
+        let (u_first, u_last) = (uv_first.x(), uv_last.x());
+        let (v_first, v_last) = (uv_first.y(), uv_last.y());
+
+        // cxx:3062-3079.
+        let cur_max_u = u_first.max(u_last);
+        let cur_min_u = u_first.min(u_last);
+        let cur_max_v = v_first.max(v_last);
+        let cur_min_v = v_first.min(v_last);
+        if cur_min_u < min_u {
+            min_u = cur_min_u;
+        }
+        if cur_max_u > max_u {
+            max_u = cur_max_u;
+        }
+        if cur_min_v < min_v {
+            min_v = cur_min_v;
+        }
+        if cur_max_v > max_v {
+            max_v = cur_max_v;
+        }
+
+        // cxx:3081-3084.
+        let delta_u = u_last - u_first;
+        cumul_delta_u += delta_u;
+        cumul_delta_u_abs += delta_u.abs();
+    }
+
+    // cxx:3094-3098.
+    let is_2pi_delta = (cumul_delta_u_abs - 2.0 * PI).abs() <= tolerance;
+    let is_around_apex = (max_u - min_u).abs() > 2.0 * PI - tolerance;
+    if is_2pi_delta && is_around_apex {
+        Some(PeriodicConicalLoop {
+            min_u,
+            max_u,
+            min_v,
+            max_v,
+            is_u_decrease: cumul_delta_u < 0.0,
+        })
+    } else {
+        None
+    }
+}
+
 /// `ShapeFix_Face` state needed by `FixMissingSeam` (`ShapeFix_Face.hxx`).
 pub struct ShapeFixFace {
     pub face: Option<Face>,
     pub surf: Option<Arc<dyn Surface>>,
     pub status: i32,
     /// `ShapeFix_Root::myContext` (`ShapeBuild_ReShape`).
-    pub context: crate::shape_fix_compose_shell::MapReShape,
+    ///
+    /// `ShapeFix_ComposeShell` is handed the same handle
+    /// (`SetContext(Context())`, `ShapeFix_ComposeShell.cxx:2259`).
+    pub context: crate::shape_fix_compose_shell::SharedReShape,
     /// `ShapeFix_Root::MaxTolerance` (`FromSTEP.FixShape.MaxTolerance3d`).
     pub max_tol: f64,
     /// `ShapeFix_Face::myResult`.
     pub result: Option<TopoShape>,
     /// `myFixMissingSeamMode` (`ShapeFix_Face.cxx:137`, default `-1` = auto).
     pub fix_missing_seam_mode: bool,
+    /// `myFixPeriodicDegenerated` (`ShapeFix_Face.cxx:144`, default `-1`).
+    /// `NeedFix(-1)` is true (`ShapeFix_Root.lxx:101`) and the STEP
+    /// `ShapeProcess` operator never sets this flag — it only sets
+    /// `FixMissingSeamMode` (`ShapeProcess_OperLibrary.cxx:830`) — so the
+    /// conic degenerate-apex fix always runs on the reader path.
+    pub fix_periodic_degenerated_mode: bool,
 }
 
 impl Default for ShapeFixFace {
@@ -100,15 +203,29 @@ impl Default for ShapeFixFace {
             face: None,
             surf: None,
             status: 0,
-            context: crate::shape_fix_compose_shell::MapReShape::new(),
+            context: crate::shape_fix_compose_shell::SharedReShape::new(),
             max_tol: 1.0,
             result: None,
             fix_missing_seam_mode: true,
+            fix_periodic_degenerated_mode: true,
         }
     }
 }
 
 impl ShapeFixFace {
+    /// `ShapeFix_Face(face)` with an externally owned context: OCCT's
+    /// `ShapeFix_Shape` / `ShapeFix_Shell` call `myFixFace->SetContext(Context())`
+    /// (`ShapeFix_Shell.cxx:108`, `ShapeFix_Shape.cxx:202`) before `Init`, so
+    /// every face of one `FixShape` pass shares one `ShapeBuild_ReShape`.
+    pub fn with_face_and_context(
+        face: &Face,
+        context: crate::shape_fix_compose_shell::SharedReShape,
+    ) -> Self {
+        let mut s = Self::with_face(face);
+        s.context = context;
+        s
+    }
+
     /// `ShapeFix_Face(face)` + `mySurf = ShapeAnalysis_Surface(surface)`
     /// (`ShapeFix_Face.cxx:181-224`).
     pub fn with_face(face: &Face) -> Self {
@@ -116,22 +233,28 @@ impl ShapeFixFace {
             face: Some(face.clone()),
             surf: BRepTool::face_surface(face),
             status: 0,
-            context: crate::shape_fix_compose_shell::MapReShape::new(),
+            context: crate::shape_fix_compose_shell::SharedReShape::new(),
             max_tol: 1.0,
             result: None,
             fix_missing_seam_mode: true,
+            fix_periodic_degenerated_mode: true,
         }
     }
 
     /// `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:345-...`) reduced to the
-    /// `FixMissingSeam` step (`cxx:482-498`): `myResult = myFace;` then, when
-    /// `myFixMissingSeamMode` is on, `FixMissingSeam()`.
+    /// `FixPeriodicDegenerated` / `FixMissingSeam` tail (`cxx:482-498`):
+    /// `myResult = myFace;` then, when `myFixPeriodicDegeneratedMode` is on,
+    /// `FixPeriodicDegenerated()` (`cxx:486-489`), then `FixMissingSeam()`
+    /// (`cxx:492-498`).
     ///
     /// UNPORTED: the wire-fixing first part (`cxx:365-480`, needs
     /// `ShapeFix_Wire::Perform`) and the post-`FixMissingSeam` face loop
     /// (`cxx:500-...`).
     pub fn perform_fix_missing_seam(&mut self) -> Option<TopoShape> {
         self.result = self.face.as_ref().map(|f| f.0.clone()); // cxx:482
+        if self.fix_periodic_degenerated_mode {
+            self.fix_periodic_degenerated(); // cxx:486-489
+        }
         if self.fix_missing_seam_mode {
             // cxx:492-498.
             if self.fix_missing_seam() {
@@ -139,6 +262,150 @@ impl ShapeFixFace {
             }
         }
         self.result.clone()
+    }
+
+    /// `ShapeFix_Face::FixPeriodicDegenerated` (`ShapeFix_Face.cxx:3101-3259`):
+    /// a conical face whose single wire belts the surface by one period gets a
+    /// degenerated apex edge and a second (apex) wire, so that the following
+    /// `FixMissingSeam` sees the 2-wire configuration and stitches the seam.
+    /// Without it a cone read from STEP keeps 1 edge and 0 V-span, and the
+    /// face's discrete range is empty (`IMeshData_Failure`).
+    ///
+    /// `Precision()` in this routine is `ShapeFix_Root::Precision()`
+    /// (`ShapeFix_Root.lxx:34`) = `Precision::Confusion()` by default
+    /// (`ShapeFix_Root.cxx:26`; the STEP operator does not `SetPrecision`).
+    pub fn fix_periodic_degenerated(&mut self) -> bool {
+        // cxx:3105-3112.
+        let mut face = match &self.face {
+            Some(f) => f.clone(),
+            None => return false,
+        };
+        {
+            let applied = self.context.apply(&face.0);
+            if applied.is_face() {
+                face = Face(applied);
+                self.face = Some(face.clone());
+            }
+        }
+
+        // cxx:3116-3129: `TopoDS_Iterator(myFace, false)` — oriented wires only.
+        let children: Vec<TopoShape> = {
+            let ts = face.0.tshape.read().unwrap();
+            ts.children.clone()
+        };
+        let mut wire_seq: Vec<Wire> = Vec::new();
+        for child in children {
+            let o = child.orientation();
+            if child.shape_type() != ShapeType::Wire
+                || (o != Orientation::Forward && o != Orientation::Reversed)
+            {
+                continue;
+            }
+            wire_seq.push(Wire(child));
+        }
+
+        // cxx:3131-3139: only a single wire on a conical surface is checked.
+        let surf = match BRepTool::face_surface(&face) {
+            Some(s) => s,
+            None => return false,
+        };
+        let cone = match surf.gp_cone() {
+            Some(c) => c,
+            None => return false,
+        };
+        if wire_seq.len() != 1 {
+            return false;
+        }
+        let mut sole_wire = wire_seq.remove(0);
+
+        // cxx:3146-3161: does the wire belt the cone by one period?
+        let lp = match is_periodic_conical_loop(&sole_wire, &face, CONFUSION) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        // cxx:3167-3180: the base circle the cone was built from
+        // (`VIso(0.0)` -> `Geom_Circle`, whose radius is `Radius`).
+        let base_r = match surf.v_iso_curve(0.0).and_then(|c| c.circle_radius()) {
+            Some(r) => r,
+            None => return false,
+        };
+        let semi_angle = cone.semi_angle();
+        if semi_angle.abs() <= CONFUSION {
+            return false; // cxx:3177-3180: bad surface
+        }
+
+        // cxx:3183-3184: the V parameter of the apex.
+        let apex_v = -(base_r / semi_angle.sin());
+
+        // cxx:3187: `BRepBuilderAPI_MakeVertex(aConeSurf->Apex())`.
+        let builder = TopoBuilder::new();
+        let apex_pnt = cone.apex();
+
+        // cxx:3198-3201: reject when the apex V sits on or between the wire's
+        // V bounds — the 2D support line would not be consistent with the wire.
+        if (apex_v - lp.min_v).abs() <= CONFUSION
+            || (apex_v - lp.max_v).abs() <= CONFUSION
+            || (apex_v < lp.max_v && apex_v > lp.min_v)
+        {
+            return false;
+        }
+
+        // cxx:3205-3223: the 2D apex support line plus the wire flip that puts
+        // the apex before the wire along the seam direction. Exactly one of the
+        // two branches holds, the third V relationship was rejected above.
+        let (line_pnt, line_dir, flip_wire) = if apex_v < lp.min_v {
+            (
+                GpPnt2d::new(lp.min_u, apex_v),
+                GpDir2d::new(1.0, 0.0).expect("dir"),
+                !lp.is_u_decrease,
+            )
+        } else if apex_v > lp.max_v {
+            (
+                GpPnt2d::new(lp.max_u, apex_v),
+                GpDir2d::new(-1.0, 0.0).expect("dir"),
+                lp.is_u_decrease,
+            )
+        } else {
+            return false;
+        };
+
+        // cxx:3226-3232: `UpdateEdge` (pcurve on `myFace` with the
+        // `Precision()` tolerance), the degenerate vertex twice, the
+        // `Degenerated` flag and `Range(E, First, Last)` (the edge's own range,
+        // which `BRep_TEdge` shares between the 3D curve and the pcurves).
+        let reg = GeometryRegistry::global();
+        let face_key = GeometryRegistry::shape_key(&face.0);
+        let line: Arc<dyn Curve2d> = Arc::new(Geom2dLine::from_pnt_dir(line_pnt, line_dir));
+        let mut apex_edge = builder.make_shape(ShapeType::Edge);
+        reg.set_edge_pcurve(&apex_edge, face_key, line);
+        reg.set_edge_tolerance(&apex_edge, CONFUSION);
+        reg.set_degenerated(&apex_edge, true);
+        // cxx:3232 `Range(E, First, Last)`: `BRep_TEdge` carries a single range
+        // shared by the 3D curve and every CurveOnSurface representation, so
+        // the apex edge's pcurve range becomes `[0, dU]` as well.
+        reg.set_edge_range(&apex_edge, 0.0, (lp.max_u - lp.min_u).abs());
+        reg.set_pcurve_range(&apex_edge, face_key, 0.0, (lp.max_u - lp.min_u).abs());
+        let mut apex = builder.make_vertex(apex_pnt, CONFUSION);
+        apex.0.set_orientation(Orientation::Forward);
+        builder.add(&mut apex_edge, &apex.0);
+        apex.0.set_orientation(Orientation::Reversed);
+        builder.add(&mut apex_edge, &apex.0);
+        let apex_wire = builder.make_wire(&[Edge(apex_edge)]);
+
+        // cxx:3239-3253: the new face over the old surface, carrying the old
+        // face's location and orientation (`EmptyCopied`) with the two wires.
+        if flip_wire {
+            sole_wire.0.reverse();
+        }
+        let mut new_face = builder.make_face(surf.clone(), &[sole_wire, apex_wire]);
+        new_face.0.set_location(face.0.location());
+        new_face.0.set_orientation(face.0.orientation());
+
+        // cxx:3255-3257.
+        self.result = Some(new_face.0.clone());
+        self.context.replace(&face.0, &new_face.0);
+        true
     }
 
     /// `ShapeFix_Face::FixMissingSeam` (`ShapeFix_Face.cxx:1722-2330`), ported
@@ -151,7 +418,7 @@ impl ShapeFixFace {
             Some(s) => s.clone(),
             None => return false, // cxx:1724-1727
         };
-        let face = match &self.face {
+        let mut face = match &self.face {
             Some(f) => f.clone(),
             None => return false,
         };
@@ -160,6 +427,16 @@ impl ShapeFixFace {
         let vclosed = crate::pcurve_full::sa_is_v_closed(surf.as_ref(), CONFUSION);
         if !uclosed && !vclosed {
             return false;
+        }
+
+        // cxx:1737-1741: `myFace = TopoDS::Face(Context()->Apply(myFace))`.
+        // This is what hands the face built by `FixPeriodicDegenerated`
+        // (`cxx:3108-3111` applies the context as well) to the wire-pair
+        // selection below.
+        let applied = self.context.apply(&face.0);
+        if applied.is_face() {
+            face = Face(applied);
+            self.face = Some(face.clone());
         }
 
         // cxx:1744-1751: a BSpline surface must be U- or V-periodic.
@@ -388,8 +665,13 @@ impl ShapeFixFace {
         let coord = if ismodeu != 0 { 1usize } else { 0usize };
         let isneg = if ismodeu != 0 { ismodeu } else { -ismodev };
         let period = if ismodeu != 0 { u_range } else { v_range };
+        // `m1[coord]` / `m2[coord]` in `ShapeFix_Face.cxx:1996-2127`: the arrays
+        // are filled by `ShapeAnalysis::GetFaceUVBounds(F, UMin, UMax, VMin,
+        // VMax)` (cxx:268-273), so `m[..][0]` holds the U bounds and `m[..][1]`
+        // the V bounds, while `coord = (ismodeu ? 1 : 0)` — `coord == 1`
+        // therefore selects **V**, not U. `pick(m, 1)` returns the V pair.
         let pick = |m: &(f64, f64, f64, f64), c: usize| -> (f64, f64) {
-            if c == 1 { (m.0, m.1) } else { (m.2, m.3) }
+            if c == 1 { (m.2, m.3) } else { (m.0, m.1) }
         };
         let mut w1 = w1;
         let mut w2 = w2;
@@ -449,12 +731,15 @@ impl ShapeFixFace {
             );
             let (m2c0, m2c1) = pick(&m2, coord);
             let (m1c0, m1c1) = pick(&m1, coord);
+            // cxx:2077-2078: `m1[coord][0] = min(...)`, `m1[coord][1] = max(...)`
+            // — the update lands on whichever pair `coord` selects (V when
+            // `ismodeu`), not on U.
             if coord == 1 {
+                m1.2 = m1c0.min(m2c0 + shiftw2);
+                m1.3 = m1c1.max(m2c1 + shiftw2);
+            } else {
                 m1.0 = m1c0.min(m2c0 + shiftw2);
                 m1.1 = m1c1.max(m2c1 + shiftw2);
-            } else {
-                m1.2 = m1.2.min(m2c0 + shiftw2);
-                m1.3 = m1.3.max(m2c1 + shiftw2);
             }
             let tmp_face_wires = wires_of_face(&tmp_f);
             for w in &tmp_face_wires {
@@ -472,10 +757,12 @@ impl ShapeFixFace {
                     )
                 };
                 if shift != 0.0 {
+                    // cxx:2107 `V.SetCoord(coord + 1, shift)`: `coord == 1`
+                    // writes gp_Vec2d's Y (V) component, `coord == 0` its X (U).
                     let vshift = if coord == 1 {
-                        GpVec2d::new(shift, 0.0)
-                    } else {
                         GpVec2d::new(0.0, shift)
+                    } else {
+                        GpVec2d::new(shift, 0.0)
                     };
                     let tkey = GeometryRegistry::shape_key(&tmp_f.0);
                     for e in edges_of_wire(w) {

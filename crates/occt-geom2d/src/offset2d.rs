@@ -124,6 +124,14 @@ impl Curve2d for OffsetCurve2d {
     fn offset_basis(&self) -> Option<&dyn Curve2d> {
         Some(&*self.basis)
     }
+
+    /// `Geom2d_OffsetCurve::Offset()` (`Geom2d_OffsetCurve.cxx:169-172`): the
+    /// signed distance. The port stores the magnitude in `offset` and the
+    /// sign in `direction` (`reverse` negates `direction`), so the signed
+    /// value is their product.
+    fn offset_value(&self) -> Option<f64> {
+        Some(self.offset * self.direction)
+    }
 }
 
 /// Wrap a basis curve in an [`OffsetCurve2d`] with the default sign convention

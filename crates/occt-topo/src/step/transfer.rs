@@ -1022,4 +1022,16 @@ pub(super) struct Resolver<'a> {
     pub(super) edge_curve_ref: RefCell<HashMap<usize, usize>>,
     pub(super) resolving: RefCell<HashSet<usize>>,
     pub(super) warnings: RefCell<Vec<String>>,
+    /// `ShapeFix_Shape::myContext` (`ShapeFix_Shape.cxx:75`): the
+    /// `ShapeBuild_ReShape` handle shared by every fix tool of one `FixShape`
+    /// pass. `FromSTEP.exec.op` is exactly `FixShape`
+    /// (`STEPControl_Controller.cxx:201`) and
+    /// `ShapeProcess_OperLibrary.cxx:830` runs it once per transferred root,
+    /// so one context covers a whole root shape. `ShapeFix_Shape::Perform`
+    /// materialises it with `myResult = Context()->Apply(S)`
+    /// (`ShapeFix_Shape.cxx:257`, `ShapeFix_Shell.cxx:139`), which is what
+    /// rewrites a face whose *neighbour* was split (T0M face 1693 vs 1695).
+    /// The stack is pushed per root in `resolve_shell` / `resolve_solid` and
+    /// popped together with that `Apply`.
+    pub(super) heal_context: RefCell<Vec<crate::shape_fix_compose_shell::SharedReShape>>,
 }

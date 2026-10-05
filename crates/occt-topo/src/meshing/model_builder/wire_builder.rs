@@ -1,5 +1,32 @@
 use super::prelude::*;
 
+/// `BRep_Tool::CurveOnSurface(edge, face, f, l)` (`BRep_Tool.cxx:327-361`): the
+/// edge's pcurve on the face together with the **`BRep_CurveOnSurface`
+/// representation's own** parameter range (`GC->Range(First, Last)`, cxx:353),
+/// not the edge's 3D range. `ShapeAnalysis_Edge::PCurve` (cxx:192-208) hands
+/// exactly these `f`/`l` to its callers (the 2D branch of
+/// `ShapeAnalysis_Wire::CheckOrder`, cxx:627-649, reads `c2d->Value(f)` /
+/// `c2d->Value(l)`). Falls back to the 3D range when the edge carries no stored
+/// COS range for this face (what the port's earlier code always used).
+///
+/// The distinction only matters when the two differ: after a split of a
+/// periodic edge the child keeps the parent's pcurve but its COS range is the
+/// sliced window (`ShapeBuild_Edge::CopyRanges`, `ShapeBuild_Edge.cxx:206-334`),
+/// so evaluating at the 3D range would move every 2D endpoint by one period.
+/// `ShapeAnalysis_Wire::CheckOrder` (cxx:593-651) and `ShapeAnalysis::TotCross2D`
+/// both read the pcurve *through* this accessor, so the port has to as well.
+fn pcurve_and_range(e: &Edge, face: &Face) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
+    if let Some(v) = crate::boptools_2d::curve_on_surface_oriented(e, face, false) {
+        return Some(v);
+    }
+    let pc = make_pcurve_full(e, face).ok()?;
+    let fwd = Edge(e.0.oriented(Orientation::Forward));
+    let (a, b) = BRepTool::edge_parameters(&fwd);
+    if !a.is_finite() || !b.is_finite() {
+        return None;
+    }
+    Some((pc, a, b))
+}
 
 /// Port of `BRepMesh_ShapeVisitor::addWire` (2D pcurve mode).
 ///
@@ -52,16 +79,19 @@ fn add_wire(
     // (reversed edges swap cf/cl).
     let mut order = WireOrder::new();
     for e in &stored {
-        // Pass the edge's *actual* orientation: a seam edge has two pcurves
-        // (one per side) and must hand each traversal its own side, not the
-        // forward pcurve twice.
-        let pc = match make_pcurve_full(e, &face_fwd) {
-            Ok(pc) => pc,
-            Err(_) => return false,
+        // Port of `ShapeAnalysis_Wire::CheckOrder` (`ShapeAnalysis_Wire.cxx:627-649`):
+        //   ShapeAnalysis_Edge EA; EA.PCurve(E, face.Oriented(FORWARD), c2d, f, l);
+        //   gp_Pnt2d (c2d->Value(f)), (c2d->Value(l));
+        // `PCurve(..., orient=true)` (`ShapeAnalysis_Edge.cxx:192-208`) reads
+        // `BRep_Tool::CurveOnSurface(E, F, f, l)` - the **COS representation's**
+        // range - and swaps f/l on a REVERSED edge. Seam edges have two pcurves
+        // (one per side) and each traversal must get its own side, so the pcurve
+        // is selected by the edge's *actual* orientation.
+        let (pc, a, b) = match pcurve_and_range(e, &face_fwd) {
+            Some(v) => v,
+            None => return false,
         };
-        let fwd = Edge(e.0.oriented(Orientation::Forward));
-        let (a, b) = BRepTool::edge_parameters(&fwd);
-        if !a.is_finite() || !b.is_finite() || b - a < 1e-15 {
+        if !a.is_finite() || !b.is_finite() || (b - a).abs() < 1e-15 {
             return false;
         }
         // `ShapeAnalysis_Wire::CheckOrder` (`cxx:648-649`): `c2d->Value(f/l)`
@@ -75,14 +105,13 @@ fn add_wire(
         order.add_edge(begin, end);
     }
     order.perform();
-    // CheckOrder follows the first stored chord. After `Reverse(face)` that
-    // chord can still start a clockwise UV cycle. On a single-wire face,
-    // flip the chain when its area is negative so the discrete walk is an
-    // outer bound (`ShapeAnalysis::IsOuterBound`, `TotCross2D >= 0`).
-    // Multi-wire holes stay clockwise.
-    if wires_of_face(&face_fwd).len() == 1 && order.chain_area() < 0.0 {
-        order.reverse_chain();
-    }
+    // `BRepMesh_ShapeVisitor::addWire` (`BRepMesh_ShapeVisitor.cxx:99-134`)
+    // applies no chain-level reversal after `CheckOrder`: it only reads
+    // `aOrderTool.Ordered(i)` and lets `ShapeExtend_WireData::Edge(signed)`
+    // reverse each edge individually (`ShapeExtend_WireData.cxx:583-588`). The
+    // wire's UV winding stays whatever the oriented edges give (hole wires stay
+    // clockwise); the inside/outside split is done later by the classifier, not
+    // by flipping the whole chain on the sign of a signed area.
 
     if order.status() == WireOrderStatus::Reversed {
         if let Ok(f) = model.face_mut(face_index) {
@@ -104,8 +133,7 @@ fn add_wire(
         let mut orientation = e.0.orientation();
         if orientation == Orientation::External {
             continue;
-        }
-        // `ShapeExtend_WireData::Edge(signed)` is `Edge.Reverse()`. On a plane
+        }        // `ShapeExtend_WireData::Edge(signed)` is `Edge.Reverse()`. On a plane
         // that is the same pcurve walked backwards. On a seam `Reverse` selects
         // PCurve2 (`BRep_Tool.cxx:354-357`), leaving the CheckOrder iso; walk
         // that measured chord backwards instead.
@@ -226,12 +254,7 @@ fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
 }
 
 fn edge_uv_ends(e: &Edge, face: &Face) -> Option<(GpPnt2d, GpPnt2d)> {
-    let pc = make_pcurve_full(e, face).ok()?;
-    let fwd = Edge(e.0.oriented(Orientation::Forward));
-    let (a, b) = BRepTool::edge_parameters(&fwd);
-    if !a.is_finite() || !b.is_finite() {
-        return None;
-    }
+    let (pc, a, b) = pcurve_and_range(e, face)?;
     let (pa, pb) = (pc.d0(a), pc.d0(b));
     if e.0.orientation().is_reversed() {
         Some((pb, pa))
@@ -250,14 +273,9 @@ fn uv_close(a: &GpPnt2d, b: &GpPnt2d) -> bool {
 fn wire_uv_points(wire: &Wire, face: &Face) -> Vec<GpPnt2d> {
     let mut pts = Vec::new();
     for e in wire_edges_explorer(wire, face) {
-        let Ok(pc) = make_pcurve_full(&e, face) else {
+        let Some((pc, a, b)) = pcurve_and_range(&e, face) else {
             continue;
         };
-        let fwd = Edge(e.0.oriented(Orientation::Forward));
-        let (a, b) = BRepTool::edge_parameters(&fwd);
-        if !a.is_finite() || !b.is_finite() {
-            continue;
-        }
         let mut s = sample_pcurve(pc.as_ref(), a, b);
         if e.0.orientation().is_reversed() {
             s.reverse();
@@ -361,14 +379,9 @@ fn fix_multiwire_orientation(face: &Face, wires: &mut [Wire]) {
             }
             let mut stb: Option<bool> = None;
             for e in wire_edges_sewd(&wires[j]) {
-                let Ok(pc) = make_pcurve_full(&e, face) else {
+                let Some((pc, a, b)) = pcurve_and_range(&e, face) else {
                     continue;
                 };
-                let fwd = Edge(e.0.oriented(Orientation::Forward));
-                let (a, b) = BRepTool::edge_parameters(&fwd);
-                if !a.is_finite() || !b.is_finite() {
-                    continue;
-                }
                 let unp = pc.d0((a + b) * 0.5);
                 match classify_on_wire(clas, *orient_ccw, &unp) {
                     PointState::On => {}
@@ -467,13 +480,11 @@ fn wire_area_2d(wire: &Wire, face: &Face) -> f64 {
     let mut nbc = 0usize;
     for e in wire_edges_sewd(wire) {
         // `BRep_Tool::CurveOnSurface(edge, face)` picks PCurve2 on a reversed
-        // seam (`BRep_Tool.cxx:354-357`); then TotCross2D reverses the samples.
-        let Ok(pc) = make_pcurve_full(&e, face) else { continue };
-        let fwd = Edge(e.0.oriented(Orientation::Forward));
-        let (a, b) = BRepTool::edge_parameters(&fwd);
-        if !a.is_finite() || !b.is_finite() {
+        // seam (`BRep_Tool.cxx:354-357`) and returns the COS range; then
+        // TotCross2D reverses the samples for a REVERSED edge.
+        let Some((pc, a, b)) = pcurve_and_range(&e, face) else {
             continue;
-        }
+        };
         let mut pts = sample_pcurve(pc.as_ref(), a, b);
         if e.0.orientation().is_reversed() {
             pts.reverse();

@@ -235,6 +235,16 @@ fn main() {
                 bmax.y(),
                 bmax.z()
             );
+            if let Some(surf) = BRepTool::face_surface(f) {
+                let (u0, u1) = surf.u_range();
+                let (v0, v1) = surf.v_range();
+                println!(
+                    "FDUMP  surf={} u=[{u0:.6},{u1:.6}] v=[{v0:.6},{v1:.6}] uper={} vper={}",
+                    tname(classify_surface(surf.as_ref())),
+                    surf.is_u_periodic(),
+                    surf.is_v_periodic()
+                );
+            }
             for (wi, w) in wires_of_face(f).iter().enumerate() {
                 let es = edges_of_wire(w);
                 println!("FDUMP  wire[{wi}] ori={:?} nEdges={}", w.0.orientation(), es.len());
@@ -324,10 +334,13 @@ fn main() {
             let mut sff = occt_topo::shhealing::ShapeFixFace::with_face(f);
             let before_wires = wires_of_face(f).len();
             eprintln!("FIXMS-BEGIN face={i} uper={uper} vper={vper} wires={before_wires}");
+            sff.fix_periodic_degenerated();
             let r = sff.fix_missing_seam();
             let res = sff.result.clone();
             let desc = res.as_ref().map(|t| format!("{:?} faces={}", t.shape_type(), faces_of(t).len())).unwrap_or_else(|| "none".into());
-            println!("FIXMS face={i} uper={uper} vper={vper} before_wires={before_wires} ret={r} result={desc}");
+            let bb = brep_bnd_lib::shape_bnd_box(&f.0);
+            let (mn, mx) = (bb.corner_min(), bb.corner_max());
+            println!("FIXMS face={i} uper={uper} vper={vper} before_wires={before_wires} ret={r} result={desc} bbox={:.4},{:.4},{:.4},{:.4},{:.4},{:.4}", mn.x(), mn.y(), mn.z(), mx.x(), mx.y(), mx.z());
         }
         return;
     }
@@ -361,6 +374,48 @@ fn main() {
                 st.shape_key,
                 st.vertices,
                 st.triangles,
+                b0.x(),
+                b0.y(),
+                b0.z(),
+                b1.x(),
+                b1.y(),
+                b1.z()
+            );
+        }
+        return;
+    }
+    if std::env::args().any(|a| a == "--fsurf") {
+        let params = occt_topo::meshing::parameters::MeshParameters {
+            deflection: prs3d_get_deflection(&shape, 0.1),
+            angle: 20.0_f64.to_radians(),
+            ..Default::default()
+        };
+        let inc = IncrementalMesh::from_deflection(&shape, params.deflection, false, params.angle);
+        let stats = inc.face_stats().to_vec();
+        let model = occt_topo::meshing::model_builder::ModelBuilder::build_model(&shape, &params)
+            .expect("build_model");
+        for st in &stats {
+            let Ok(f) = model.face(st.index) else { continue };
+            let surf = f.surface();
+            let tn = surf.as_ref().map(|s| tname(classify_surface(s.as_ref()))).unwrap_or("none");
+            let (u0, u1, v0, v1) = surf
+                .as_ref()
+                .map(|s| (s.u_range().0, s.u_range().1, s.v_range().0, s.v_range().1))
+                .unwrap_or((0.0, 0.0, 0.0, 0.0));
+            let (uper, vper) = surf
+                .as_ref()
+                .map(|s| (s.is_u_periodic(), s.is_v_periodic()))
+                .unwrap_or((false, false));
+            let bb = brep_bnd_lib::shape_bnd_box(&f.face().0);
+            let (b0, b1) = (bb.corner_min(), bb.corner_max());
+            println!(
+                "FSURF face={} key={} type={} mv={} mt={} wires={} urange=[{u0:.6},{u1:.6}] vrange=[{v0:.6},{v1:.6}] uper={uper} vper={vper} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
+                st.index,
+                st.shape_key,
+                tn,
+                st.vertices,
+                st.triangles,
+                f.wires().len(),
                 b0.x(),
                 b0.y(),
                 b0.z(),

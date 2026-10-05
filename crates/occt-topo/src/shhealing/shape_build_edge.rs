@@ -9,16 +9,42 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx2d, GpDir2d, GpGTrsf2d, GpLin2d, GpPnt2d, GpTrsf2d, GpVec2d, TrsfForm};
+use occt_core::gp::{GpAx2, GpAx2d, GpDir2d, GpGTrsf2d, GpLin2d, GpPnt2d, GpTrsf2d, GpVec2d, TrsfForm};
+use occt_core::kernel::geomabs::Shape;
+use occt_core::precision::CONFUSION;
+use occt_geom::geom_lib;
+use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
 use crate::abs::Orientation;
 use crate::boptools_2d;
+use crate::brep_lib_same_range::{check_same_range, same_range, set_rep_ranges};
+use crate::meshing::edge_discret::CurveOnSurface;
 use crate::shape::{Edge, Face};
-use crate::tgeometry::GeometryRegistry;
+use crate::tgeometry::{EdgeGeom, GeometryRegistry};
 
 /// `ShapeBuild_Edge` (`ShapeBuild_Edge.hxx`).
 pub struct ShapeBuildEdge;
+
+/// `evaluateMaxSegment` (`BRepLib.cxx:275-295`): the `MaxSegment` handed to
+/// `GeomLib::BuildCurve3d` when the caller passes 0.
+fn evaluate_max_segment(
+    max_segment: i32,
+    surface: &Arc<dyn Surface>,
+    pcurve: &Arc<dyn Curve2d>,
+) -> i32 {
+    if max_segment != 0 {
+        return max_segment;
+    }
+    let mut nb_s_knots = 0usize;
+    if surface.is_bspline_surface() {
+        let nu = surface.bspline_surface_uknots().map_or(0, |k| k.len());
+        let nv = surface.bspline_surface_vknots().map_or(0, |k| k.len());
+        nb_s_knots = nu.max(nv);
+    }
+    let nb_c2d_knots = pcurve.bspline_nb_knots().unwrap_or(0);
+    (30 + nb_s_knots.max(nb_c2d_knots)) as i32
+}
 
 /// `edge.Reversed()` (`TopoDS_Shape::Reversed`): same TShape, flipped
 /// orientation.
@@ -58,6 +84,143 @@ impl ShapeBuildEdge {
     /// `SetRange3d(edge, first, last)` (`cxx:338-356`).
     pub fn set_range3d(&self, edge: &Edge, first: f64, last: f64) {
         GeometryRegistry::global().set_edge_range(&edge.0, first, last);
+    }
+
+    /// `BuildCurve3d(edge)` (`ShapeBuild_Edge.cxx:714-775`), i.e.
+    /// `BRepLib::BuildCurve3d(edge, max(1.e-5, BRep_Tool::Tolerance(edge)))`
+    /// (`BRepLib.cxx:301-455`) with its defaults `GeomAbs_C1`, `MaxDegree = 14`
+    /// and `MaxSegment = 0` (`BRepLib.hxx:90-94`, `ShapeBuild_Edge.cxx:723`).
+    ///
+    /// The plane arm (`BRepLib.cxx:358-375`) converts the 2D curve analytically
+    /// through `GeomLib::To3d`; the general arm (`cxx:377-447`) approximates the
+    /// curve-on-surface through `GeomLib::BuildCurve3d`. Both replace the edge's
+    /// 3D curve, widen the edge tolerance to at least `max(1.e-5, Tol)` and, for
+    /// a single curve-on-surface representation, force `SameParameter`.
+    ///
+    /// UNPORTED: `BRep_Tool::CurveOnSurface` is indexed over the pcurves of the
+    /// edge's CurveOnSurface representations (`BRep_Tool.cxx:488-533`); the
+    /// port's `GeometryRegistry::edge_pcurve_reps` resolves the surface of each
+    /// representation through `surface_by_ptr`, so a representation whose
+    /// surface is not registered is invisible here (OCCT cannot build that
+    /// representation at all).
+    pub fn build_curve3d(&self, edge: &Edge) -> bool {
+        let reg = GeometryRegistry::global();
+        // `BRepLib.cxx:320-325`: an edge that already has a 3D curve returns
+        // true without touching it.
+        if reg.edge_curve(&edge.0).is_some() {
+            return true;
+        }
+        // `ShapeBuild_Edge.cxx:723`.
+        let tolerance = reg.edge_tolerance(&edge.0).max(1.0e-5);
+        // `BRepLib.cxx:330-333`.
+        if !check_same_range(&edge.0, CONFUSION) {
+            same_range(&edge.0, tolerance);
+        }
+
+        // `BRepLib.cxx:335-357`: search a curve on a plane.
+        let reps = reg.edge_pcurve_reps(&edge.0);
+        let mut plane: Option<(Arc<dyn Curve2d>, f64, f64, GpAx2)> = None;
+        for (surf, pc, f, l) in &reps {
+            let basis = surf.rectangular_trimmed_basis().unwrap_or_else(|| surf.clone());
+            if let Some(pln) = basis.gp_pln() {
+                plane = Some((pc.clone(), *f, *l, pln.position().ax2()));
+                break;
+            }
+        }
+
+        if let Some((pc, f, l, axes)) = plane {
+            // `cxx:358-368`: `GeomLib::To3d(axes, PC)`; a null handle is the
+            // `Standard_NotImplemented` throw and returns false.
+            let Some(c3d) = geom_lib::to_3d(&axes, pc.as_ref()) else {
+                return false;
+            };
+            // `cxx:369-373`: `B.UpdateEdge(AnEdge, C3d, LocalLoc, 0.0e0)` then
+            // `BRep_Tool::Range(AnEdge, S, LC, First, Last)` +
+            // `B.Range(AnEdge, First, Last)`. `UpdateEdge` cannot lower the edge
+            // tolerance, so it is carried over together with the edge flags.
+            let mut g = EdgeGeom::new(c3d, f, l);
+            g.tolerance = reg.edge_tolerance(&edge.0);
+            g.same_parameter = reg.same_parameter(&edge.0);
+            g.same_range = reg.same_range(&edge.0);
+            g.degenerated = reg.is_degenerated_edge(&edge.0);
+            reg.set_edge(&edge.0, g);
+            set_rep_ranges(&edge.0, f, l);
+        } else {
+            // `cxx:377-452`.
+            if reg.is_degenerated_edge(&edge.0) {
+                return false; // `cxx:449-452`
+            }
+            // `cxx:385-408`: `BRep_Tool::CurveOnSurface` at index 1 and 2; `jj`
+            // counts the representations found.
+            let jj = reps.len().min(2);
+            let Some((surf, pc, f, l)) = reps.first().cloned() else {
+                return false;
+            };
+            // `cxx:410-418`: `Adaptor3d_CurveOnSurface` over the pcurve and the
+            // surface; the port's `CurveOnSurface` is the same evaluator.
+            let cos: Arc<dyn Curve> = Arc::new(CurveOnSurface::new(pc.clone(), surf.clone(), f, l));
+            // `evaluateMaxSegment(MaxSegment, CurveOnSurface)` (`cxx:430`).
+            let max_segment = evaluate_max_segment(0, &surf, &pc);
+            let result = geom_lib::build_curve3d(
+                tolerance,
+                cos.as_ref(),
+                &surf,
+                &pc,
+                f,
+                l,
+                Shape::C1,
+                14,
+                max_segment,
+            );
+            // `cxx:433-438`. The commented-out `max(tolerance, max_deviation)`
+            // of this OCCT revision is a no-op: `Tolerance` is already
+            // `max(1.e-5, BRep_Tool::Tolerance(edge))`.
+            let max_deviation = reg.edge_tolerance(&edge.0).max(tolerance);
+            let Some(c3d) = result.curve else {
+                return false; // `cxx:437-440`
+            };
+            let mut g = EdgeGeom::new(c3d, f, l);
+            g.tolerance = max_deviation;
+            g.same_parameter = reg.same_parameter(&edge.0);
+            g.same_range = reg.same_range(&edge.0);
+            g.degenerated = reg.is_degenerated_edge(&edge.0);
+            reg.set_edge(&edge.0, g);
+            // `cxx:441-447`: with only one curve-on-surface representation the
+            // edge "can be qualified sameparameter".
+            if jj == 1 {
+                reg.set_same_parameter(&edge.0, true);
+            }
+        }
+
+        // `ShapeBuild_Edge.cxx:728-733`.
+        if reg.same_range(&edge.0) {
+            let (f, l) = reg.edge_parameters(&edge.0);
+            set_rep_ranges(&edge.0, f, l);
+        }
+        // `cxx:734-738`.
+        let Some(c3d) = reg.edge_curve(&edge.0) else {
+            return false;
+        };
+        // `cxx:741-758` (OCC966): a non-periodic curve whose own range is
+        // narrower than the edge range clamps the edge range and clears
+        // SameRange.
+        if !c3d.is_periodic() {
+            let (mut f, mut l) = reg.edge_parameters(&edge.0);
+            let mut is_less = false;
+            if f < c3d.first_parameter() {
+                is_less = true;
+                f = c3d.first_parameter();
+            }
+            if l > c3d.last_parameter() {
+                is_less = true;
+                l = c3d.last_parameter();
+            }
+            if is_less {
+                self.set_range3d(edge, f, l);
+                reg.set_same_range(&edge.0, false);
+            }
+        }
+        true
     }
 
     /// `ReassignPCurve(edge, old, sub)` (`cxx:530-592`).

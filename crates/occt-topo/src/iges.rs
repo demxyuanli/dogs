@@ -762,6 +762,7 @@ fn curve2d_transformed(curve: &Arc<dyn Curve2d>, t: &GpTrsf2d) -> Arc<dyn Curve2
         return Arc::new(Geom2dBSplineCurve {
             xs: out_xs,
             ys: out_ys,
+            weights: None,
             knots: knots.to_vec(),
             degree,
             periodic: curve.is_periodic(),
@@ -847,6 +848,7 @@ fn transform_pcurve(
     Some(Arc::new(Geom2dBSplineCurve {
         xs: xs.iter().map(|x| x * u_fact).collect(),
         ys: ys.to_vec(),
+        weights: None,
         knots,
         degree,
         periodic: result.is_periodic(),

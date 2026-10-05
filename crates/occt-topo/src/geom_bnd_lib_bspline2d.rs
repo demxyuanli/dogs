@@ -1,9 +1,8 @@
 //! Bounding box of a 2D B-spline from its control polygon.
 //!
 //! Source: `GeomBndLib_BSplineCurve2d.cxx` `Box`. OCCT copies and `Segment`s
-//! when `[U1,U2]` is a proper sub-range, then adds every pole. This port adds
-//! the live poles when the range covers the knot span; otherwise it uses
-//! `GeomBndLib_OtherCurve2d::Box` (the adaptor fallback).
+//! when `[U1,U2]` is a proper sub-range, then adds every pole of the trimmed
+//! control net; otherwise it adds the live poles.
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
@@ -20,14 +19,21 @@ use occt_geom2d::Geom2dBSplineCurve;
 use crate::geom_bnd_lib_other2d::box_other;
 
 /// `GeomBndLib_BSplineCurve2d::Box(theU1, theU2, theTol)` on an owned B-spline.
+///
+/// `aCurve->FirstParameter()` / `LastParameter()` (`:33-34`), the trim window
+/// (`:35-42`), then `Copy()` + `Segment(aTrim1, aTrim2)` when the window is a
+/// proper sub-range (`:44-50`), then the pole hull of the result (`:52-57`).
+/// OCCT's `Segment` default tolerance is `Precision::PConfusion()`; the port
+/// passes it explicitly (no default arguments in Rust).
 pub fn box_bspline_poles(
     curve: &Geom2dBSplineCurve,
     the_u1: f64,
     the_u2: f64,
     the_tol: f64,
 ) -> BndBox2d {
-    let a_u1 = curve.first_parameter();
-    let a_u2 = curve.last_parameter();
+    let mut a_curve = curve.clone();
+    let a_u1 = a_curve.first_parameter();
+    let a_u2 = a_curve.last_parameter();
     let mut a_trim1 = the_u1.max(a_u1);
     let mut a_trim2 = the_u2.min(a_u2);
     if a_trim2 < a_trim1 {
@@ -35,11 +41,13 @@ pub fn box_bspline_poles(
         a_trim2 = a_u2;
     }
     if (a_u1 - a_trim1).abs() > PCONFUSION || (a_u2 - a_trim2).abs() > PCONFUSION {
-        return box_other(curve, a_trim1, a_trim2, the_tol);
+        if a_curve.segment(a_trim1, a_trim2, PCONFUSION).is_err() {
+            return box_other(curve, a_trim1, a_trim2, the_tol);
+        }
     }
     let mut a_box = BndBox2d::new();
-    for i in 0..curve.nb_poles() {
-        a_box.add_point(&GpPnt2d::new(curve.xs[i], curve.ys[i]));
+    for i in 0..a_curve.nb_poles() {
+        a_box.add_point(&GpPnt2d::new(a_curve.xs[i], a_curve.ys[i]));
     }
     a_box.enlarge(the_tol);
     a_box
@@ -56,28 +64,19 @@ pub fn box_bspline_xy(xs: &[f64], ys: &[f64], the_tol: f64) -> BndBox2d {
     a_box
 }
 
-/// B-spline box from the `Curve2d` trait without a downcast: the
-/// `GeomBndLib_BSplineCurve2d::Box(theU1, theU2, theTol)` control-net branch
-/// when the curve exposes its poles, otherwise `GeomBndLib_OtherCurve2d::Box`.
+/// `GeomBndLib_BSplineCurve2d::Box(theU1, theU2, theTol)` from the `Curve2d`
+/// trait without a downcast.
 ///
-/// PARK: when `[theU1, theU2]` is a proper sub-range of the B-spline's own
-/// range, `GeomBndLib_BSplineCurve2d.cxx:45-51` copies the curve and calls
-/// `Geom2d_BSplineCurve::Segment(aTrim1, aTrim2)` before taking the pole box.
-/// This port has no `Segment` on `Geom2dBSplineCurve`, so that branch falls
-/// back to `OtherCurve2d` exactly as before.
+/// `GeomBndLib_Curve2d.cxx:150-157` feeds the evaluator the handle itself, or
+/// `Geom2d_TrimmedCurve::BasisCurve()` when the handle is trimmed; the
+/// evaluator is `GeomBndLib_BSplineCurve2d` only when that curve is a
+/// `Geom2d_BSplineCurve` (`:137-143`). [`Curve2d::bspline_copy2d`] exposes
+/// exactly that curve; when it is `None`, OCCT picked a different evaluator
+/// (Line / Circle / ... / OtherCurve2d) and the port keeps the
+/// `GeomBndLib_OtherCurve2d::Box` fallback.
 pub fn box_bspline_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
-    if let Some((xs, ys)) = curve.bspline_poles2d() {
-        let a_u1 = curve.first_parameter();
-        let a_u2 = curve.last_parameter();
-        let mut a_trim1 = the_u1.max(a_u1);
-        let mut a_trim2 = the_u2.min(a_u2);
-        if a_trim2 < a_trim1 {
-            a_trim1 = a_u1;
-            a_trim2 = a_u2;
-        }
-        if (a_u1 - a_trim1).abs() <= PCONFUSION && (a_u2 - a_trim2).abs() <= PCONFUSION {
-            return box_bspline_xy(xs, ys, the_tol);
-        }
+    match curve.bspline_copy2d() {
+        Some(a_curve) => box_bspline_poles(&a_curve, the_u1, the_u2, the_tol),
+        None => box_other(curve, the_u1, the_u2, the_tol),
     }
-    box_other(curve, the_u1, the_u2, the_tol)
 }

@@ -6,38 +6,40 @@
 use crate::abs::Orientation;
 use crate::shape::{Face, TopoShape, Vertex, Wire};
 
+use super::reshape::{ReShape, SharedReShape};
 use super::wire_segment::WireSegment;
 
-/// ShapeExtend_WireData(wire, chkseam, manifold) (ShapeExtend_WireData.cxx:80-120):
-/// the stored edges keep the composed orientation of the wire, so a REVERSED
-/// wire flips every edge.
+/// The `ShapeExtend_WireData` edge list of `wire`: the edges in iterator order
+/// with the wire's own orientation composed in, which is what `Add` stores
+/// (`ShapeExtend_WireData.cxx:80-120`) and what the caller sees at
+/// `ShapeFix_ComposeShell.cxx:629` (`TopoDS_Iterator aIt(wire)` composes
+/// `wire`'s orientation exactly once). `edges_of_wire` already performs that
+/// composition (`TopoDS_Iterator` semantics), so nothing else is applied here.
 fn wire_data_edges(wire: &Wire) -> Vec<crate::shape::Edge> {
-    let edges = crate::topo_tools_full::edges_of_wire(wire);
-    if wire.0.orientation() == Orientation::Reversed {
-        edges
-            .into_iter()
-            .map(|mut e| {
-                e.0.reverse();
-                e
-            })
-            .collect()
-    } else {
-        edges
-    }
+    crate::topo_tools_full::edges_of_wire(wire)
 }
 
 /// ShapeFix_ComposeShell::LoadWires (cxx:499-640).
 ///
-/// Context Apply (cxx:506) runs through the ComposeShell context (a
-/// `MapReShape`; see `reshape.rs`). The ShapeFix_Wire::FixReorder block
-/// (cxx:582-631) is ported through `shhealing::fix_reorder_wire*`.
-pub fn load_wires(face: &Face) -> Vec<WireSegment> {
+/// `Context()->Apply(iw.Value())` (cxx:506) runs through the ComposeShell
+/// context, so the edges a *previous* face of the same `ShapeFix_Shape` pass
+/// substituted come back rebuilt, and only then is the wire ordered
+/// (cxx:582-634) - which is what keeps an injected split edge inside the
+/// chain. The ShapeFix_Wire::FixReorder block (cxx:582-631) is ported through
+/// `shhealing::fix_reorder_wire*`.
+pub fn load_wires(face: &Face, context: &SharedReShape) -> Vec<WireSegment> {
     let mut seqw: Vec<WireSegment> = Vec::new();
     let children: Vec<TopoShape> = {
         let ts = face.0.tshape.read().expect("poisoned TShape lock");
         ts.children.clone()
     };
+    let mut ctx = context.clone();
     for child in children {
+        // cxx:506: `TopoDS_Shape tmpW = Context()->Apply(iw.Value());`. The
+        // iterator at cxx:505 is `TopoDS_Iterator iw(myFace, false)`, i.e. the
+        // wire keeps the very orientation stored in `myFace`, which `children`
+        // already holds, so only `Apply` has to be added.
+        let child = ctx.apply(&child);
         if !child.is_wire() {
             if child.is_vertex() {
                 let mut seg = WireSegment::new();

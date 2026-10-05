@@ -76,6 +76,7 @@ pub mod projlib;
 pub mod adv_approx;
 pub mod approx_same_parameter;
 pub use approx_same_parameter::ApproxSameParameter;
+pub mod geom_lib;
 
 pub type HandleCurve = Arc<dyn Curve>;
 pub type HandleSurface = Arc<dyn Surface>;

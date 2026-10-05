@@ -124,6 +124,22 @@ impl GeomBSplineSurface {
         (knots, mults)
     }
 
+    /// `Geom_BSplineSurface::UKnots()` / `UMultiplicities()`: the distinct U
+    /// knots and their multiplicities as stored, i.e. restricted to the
+    /// surface's own parameter window. The port keeps only the flat periodic
+    /// sequence, whose extension knots lie outside that window, so the
+    /// periodic arm drops them (mirror of
+    /// `GeomBSplineCurve::distinct_knots_and_mults`).
+    pub fn distinct_knots_and_mults_u(&self) -> (Vec<f64>, Vec<i32>) {
+        distinct_km(&self.knots_u, self.u_periodic, self.u_range())
+    }
+
+    /// `Geom_BSplineSurface::VKnots()` / `VMultiplicities()`; see
+    /// [`Self::distinct_knots_and_mults_u`].
+    pub fn distinct_knots_and_mults_v(&self) -> (Vec<f64>, Vec<i32>) {
+        distinct_km(&self.knots_v, self.v_periodic, self.v_range())
+    }
+
     /// `StepToGeom::MakeBSplineSurface` periodic test (`cxx:1101-1129`).
     pub fn should_be_periodic(n_poles: usize, degree: usize, mults: &[i32]) -> bool {
         let sum_mult: i32 = mults.iter().sum();

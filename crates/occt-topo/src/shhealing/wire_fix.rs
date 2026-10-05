@@ -953,49 +953,6 @@ fn check_pcurve_rep_range(wire: &Wire, face: &Face, preci: f64) {
 /// for the on/off measurements that replaced the earlier block on it.
 const T312_WIRE_XSALGO_CHECKPCURVE: bool = true;
 
-/// `ShapeFix_Edge.cxx:335-464` `TempSameRange`.
-/// Remap each COS pcurve whose representation range differs from the 3D
-/// range onto that 3D range, then `B.Range` all representations and
-/// `B.SameRange(true)`.
-fn temp_same_range(edge: &Edge) {
-    let reg = GeometryRegistry::global();
-    let Some(g) = reg.edge_geom(&edge.0) else {
-        return;
-    };
-    let (current_first, current_last) = (g.first, g.last);
-    if !current_first.is_finite() || !current_last.is_finite() {
-        return;
-    }
-    let face_keys: Vec<usize> = g.pcurves.keys().copied().collect();
-    for fk in &face_keys {
-        let Some((first, last)) = g.pcurve_ranges.get(fk).copied() else {
-            continue;
-        };
-        if (first - current_first).abs() <= PCONFUSION
-            && (last - current_last).abs() <= PCONFUSION
-        {
-            continue;
-        }
-        let pcs = g.pcurves.get(fk).cloned().unwrap_or_default();
-        if pcs.is_empty() {
-            continue;
-        }
-        let new_pcs: Vec<Arc<dyn Curve2d>> = pcs
-            .into_iter()
-            .map(|pc| geom_lib_same_range(pc, first, last, current_first, current_last))
-            .collect();
-        if new_pcs.len() == 1 {
-            reg.set_edge_pcurve(&edge.0, *fk, new_pcs.into_iter().next().unwrap());
-        } else {
-            reg.set_edge_pcurves(&edge.0, *fk, new_pcs);
-        }
-    }
-    for fk in face_keys {
-        reg.set_pcurve_range(&edge.0, fk, current_first, current_last);
-    }
-    reg.set_same_range(&edge.0, true);
-}
-
 /// `Extrema_LocateExtPC` Newton walk (`int_tools_vertex_line` / ValidateEdge).
 /// Returns square distance at the local extremum, or `None` when `!IsDone`.
 fn locate_ext_pc_sq<D0, D1>(
@@ -1217,18 +1174,32 @@ pub fn copy_replace_vertices_with(edge: &Edge, v1: Option<&Vertex>, v2: Option<&
     };
     let builder = TopoBuilder::new();
     let mut copy = builder.make_edge(geom.curve.clone(), geom.first, geom.last);
-    let fv = v1.cloned().or_else(|| first_vertex(edge));
-    let lv = v2.cloned().or_else(|| last_vertex(edge));
-    if let (Some(v1), Some(v2)) = (fv, lv) {
-        builder.add_edge_vertices(&mut copy, &v1, &v2);
-    }
     // `TopoDS_Shape::EmptyCopied` (`TopoDS_Shape.hxx:294-302`) keeps the source
     // orientation, and `BRep_TEdge::EmptyCopy` (`BRep_TEdge.cxx:104-129`) keeps
     // the tolerance, the `SameParameter` / `SameRange` / `Degenerated` flags and
     // a `Copy()` of every curve representation - the 3D curve and the pcurves.
     // Registering the source `geom` reproduces all of that (see `EdgeGeom`).
+    //
+    // Order matters: `ShapeBuild_Edge.cxx:103` runs `edge.EmptyCopied()`, which
+    // keeps the source orientation and location (`TopoDS_Shape.hxx:297-302`),
+    // *before* the two `B.Add(E, V)` calls (`cxx:107-114`).
+    // `TopoDS_Builder::Add` (`TopoDS_Builder.cxx:74-91`) composes E's own
+    // orientation into each child: for a REVERSED E the stored children are V1
+    // with REVERSED and V2 with FORWARD storage orientation.
+    // `TopExp::Vertices(E, V1, V2, true)` (`TopExp.cxx:214-253`) iterates with
+    // `CumOri = true` (`TopoDS_Iterator.cxx:26-83`, `Compose` at :73-82), so the
+    // cumulated orientation is V1 FORWARD / V2 REVERSED again and
+    // `TopExp::FirstVertex` is V1, `TopExp::LastVertex` is V2 - independent of
+    // E's orientation. Setting the orientation and the location first reproduces
+    // exactly that; `first_vertex` / `last_vertex` below are the cumulated
+    // accessors.
     copy.0.set_orientation(edge.0.orientation());
     copy.0.set_location(edge.0.location());
+    let fv = v1.cloned().or_else(|| first_vertex(edge));
+    let lv = v2.cloned().or_else(|| last_vertex(edge));
+    if let (Some(v1), Some(v2)) = (fv, lv) {
+        builder.add_edge_vertices(&mut copy, &v1, &v2);
+    }
     reg.set_edge(&copy.0, geom);
     copy
 }
@@ -1307,7 +1278,7 @@ pub(super) fn fix_same_parameter(edge: &Edge, face: &Face) {
     let same_range = reg.edge_geom(&edge.0).map(|g| g.same_range).unwrap_or(true);
     if reg.is_degenerated_edge(&edge.0) {
         if !same_range {
-            temp_same_range(edge);
+            crate::shhealing::temp_same_range(edge);
         }
         reg.set_same_parameter(&edge.0, true);
         return;
@@ -1328,7 +1299,7 @@ pub(super) fn fix_same_parameter(edge: &Edge, face: &Face) {
     let mut copy_edge: Option<Edge> = None;
     let mut sp = false;
     if !same_range {
-        temp_same_range(edge);
+        crate::shhealing::temp_same_range(edge);
     }
     if !was_sp {
         // `cxx:839-858`: heal on a copy of the edge, keeping the original.
@@ -1676,8 +1647,8 @@ const SHAPE_FIX_MIN_TOLERANCE: f64 = CONFUSION;
 /// (`ShapeAnalysis_Wire.cxx:765-835`): `ok` is that function's own return value,
 /// `fail` and `done2` are the `ShapeExtend` bits it leaves in `myStatus`
 /// (`DONE1` is `ok && !done2`, `DONE2` is `ok && done2`).
-struct SmallCheck {
-    ok: bool,
+pub(super) struct SmallCheck {
+    pub(super) ok: bool,
     /// `ShapeExtend_FAIL1` / `FAIL2`. OCCT only ORs these into
     /// `ShapeFix_Wire::myLastFixStatus` (`ShapeFix_Wire.cxx:1420-1423`,
     /// `1434-1443`), a status no caller of this port reads.
@@ -1688,7 +1659,7 @@ struct SmallCheck {
 
 /// `ShapeAnalysis_Wire::CheckSmall(num, precsmall)`
 /// (`ShapeAnalysis_Wire.cxx:765-835`). `num == 0` means the last edge (`cxx:774`).
-fn check_small(wire: &Wire, face: &Face, precsmall: f64, num: usize) -> SmallCheck {
+pub(super) fn check_small(wire: &Wire, face: &Face, precsmall: f64, num: usize) -> SmallCheck {
     let nb = wire_edges_nb(wire);
     // `cxx:768-771`: `!IsLoaded() || NbEdges() <= 1`.
     if nb <= 1 {
@@ -2989,14 +2960,17 @@ fn fix_dummy_seam(wire: &mut Wire, num: usize) {
     };
     // `cxx:4219-4221`: `V1 = sae.FirstVertex(E1)`, `V2 = sae.LastVertex(E2)`,
     // `Vm = sbv.CombineVertex(V1, V2, 1.0001)` (`CumOri = false`).
-    let (Some(v1), Some(v2)) = (edge_vertices(&e1).0, edge_vertices(&e2).1) else {
+    // `ShapeAnalysis_Edge::FirstVertex/LastVertex` are the cumulated
+    // (`CumOri = true`) accessors, i.e. orientation-aware, so the port must use
+    // `first_vertex` / `last_vertex`, not the raw stored children.
+    let (Some(v1), Some(v2)) = (first_vertex(&e1), last_vertex(&e2)) else {
         return;
     };
     let vm = combine_vertex(&v1, &v2, 1.0001);
 
     // `cxx:4230-4233`: `Vs = sae.FirstVertex(E2)`, replaced by `Vm` when it is
     // already one of the two merged vertices.
-    let mut vs = edge_vertices(&e2).0;
+    let mut vs = first_vertex(&e2);
     if let Some(vs_ref) = vs.as_ref() {
         if is_same(&vs_ref.0, &v1.0) || is_same(&vs_ref.0, &v2.0) {
             vs = Some(vm.clone());

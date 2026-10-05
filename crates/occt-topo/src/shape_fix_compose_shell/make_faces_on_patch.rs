@@ -114,13 +114,18 @@ impl ComposeShell {
                         continue;
                     }
                 };
-                let mut st_point = clas.perform(unp);
+                // `clas.Perform(unp, false)` (`cxx:3100`): `RecadreOnPeriodic` is
+                // false at every `BRepTopAdaptor_FClass2d::Perform` call in
+                // `MakeFacesOnPatch` (`cxx:3100`, `cxx:3110`, `cxx:3223`), so the
+                // UV point is classified as-is; only `PerformInfinitePoint`
+                // (`cxx:3132/3181`) goes through the periodic search.
+                let mut st_point = clas.perform_recadre(unp, false);
                 if st_point == FaceState::On || st_point == FaceState::Unknown {
                     // cxx:3104-3130.
                     let mut eidx = k;
                     let mut a_cw = cw.clone();
                     loop {
-                        st_point = clas.perform(a_cw.d0(cl));
+                        st_point = clas.perform_recadre(a_cw.d0(cl), false); // cxx:3110
                         eidx += 1;
                         if eidx >= ew.len() {
                             break;
@@ -210,7 +215,7 @@ impl ComposeShell {
                         continue;
                     }
                 };
-                let state = clas.perform(unp);
+                let state = clas.perform_recadre(unp, false); // cxx:3223
                 if (state == FaceState::Out) == reverse {
                     holes.push(loops[j].clone());
                     loops.remove(j);

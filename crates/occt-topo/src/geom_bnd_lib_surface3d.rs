@@ -109,9 +109,6 @@ fn spline_of(s: &dyn Surface) -> Option<GeomBSplineSurface> {
 }
 
 /// `unique knots / mults` of a flat knot vector, plus its unique-knot count.
-fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<i32>) {
-    GeomBSplineSurface::unique_knots_mults(knots)
-}
 
 // ---------------------------------------------------------------------------
 // Sampling helpers (`GeomBndLib_SamplingHelpers.pxx:109-222`)
@@ -136,7 +133,7 @@ fn nb_u_samples(s: &dyn Surface, u_min: f64, u_max: f64) -> i32 {
         }
         SurfaceKind::BSplineSurface => match spline_of(s) {
             Some(b) => {
-                let (knots, _) = unique_knots(&b.knots_u);
+                let knots = b.distinct_knots_and_mults_u().0;
                 let mut n = 2 * (b.deg_u as i32 + 1) * (knots.len() as i32 - 1);
                 let (u_min_g, u_max_g) = (s.u_range().0, s.u_range().1);
                 let du = (u_max - u_min) / (u_max_g - u_min_g);
@@ -167,7 +164,7 @@ fn nb_v_samples(s: &dyn Surface, v_min: f64, v_max: f64) -> i32 {
         }
         SurfaceKind::BSplineSurface => match spline_of(s) {
             Some(b) => {
-                let (knots, _) = unique_knots(&b.knots_v);
+                let knots = b.distinct_knots_and_mults_v().0;
                 let mut n = 2 * (b.deg_v as i32 + 1) * (knots.len() as i32 - 1);
                 let (v_min_g, v_max_g) = (s.v_range().0, s.v_range().1);
                 let dv = (v_max - v_min) / (v_max_g - v_min_g);
@@ -190,7 +187,7 @@ fn nb_u_samples_full(s: &dyn Surface) -> i32 {
         SurfaceKind::BezierSurface => 2 * s.nb_u_poles(),
         SurfaceKind::BSplineSurface => match spline_of(s) {
             Some(b) => {
-                let (knots, _) = unique_knots(&b.knots_u);
+                let knots = b.distinct_knots_and_mults_u().0;
                 2 * (b.deg_u as i32 + 1) * (knots.len() as i32 - 1)
             }
             None => 33,
@@ -206,7 +203,7 @@ fn nb_v_samples_full(s: &dyn Surface) -> i32 {
         SurfaceKind::BezierSurface => 2 * s.nb_v_poles(),
         SurfaceKind::BSplineSurface => match spline_of(s) {
             Some(b) => {
-                let (knots, _) = unique_knots(&b.knots_v);
+                let knots = b.distinct_knots_and_mults_v().0;
                 2 * (b.deg_v as i32 + 1) * (knots.len() as i32 - 1)
             }
             None => 33,
@@ -284,7 +281,7 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
         let mut v_max_idx = nb_v_poles;
 
         if u1 > u_min_param || u2 < u_max_param {
-            let (knots, mults) = unique_knots(&b.knots_u);
+            let (knots, mults) = b.distinct_knots_and_mults_u();
             let (mn, mx) = compute_poles_indexes(
                 &knots,
                 &mults,
@@ -298,7 +295,7 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
             u_max_idx = mx;
         }
         if v1 > v_min_param || v2 < v_max_param {
-            let (knots, mults) = unique_knots(&b.knots_v);
+            let (knots, mults) = b.distinct_knots_and_mults_v();
             let (mn, mx) = compute_poles_indexes(
                 &knots,
                 &mults,

@@ -1,7 +1,7 @@
 //! Elementary Curves Library. Source: `ElCLib.hxx`
 use crate::gp::{
-    GpAx2, GpAx22d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr, GpHypr2d, GpLin,
-    GpLin2d, GpParab, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXY,
+    GpAx1, GpAx2, GpAx22d, GpAx2d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr,
+    GpHypr2d, GpLin, GpLin2d, GpParab, GpParab2d, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXY,
 };
 use crate::precision::{COMPUTATIONAL, REAL_SMALL, RESOLUTION};
 
@@ -519,4 +519,81 @@ pub fn parameter_hypr(h: &GpHypr, p: &GpPnt) -> f64 {
 /// `ElCLib::Parameter(gp_Parab, gp_Pnt)` (`ElCLib.lxx:347-351`).
 pub fn parameter_parab(prb: &GpParab, p: &GpPnt) -> f64 {
     parabola_parameter(&prb.pos, p)
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Pnt2d&)` (`ElCLib.cxx:1339-1344`):
+/// `Pos.Location() + X * V.X() + Y * V.Y()`.
+pub fn to_3d_pnt(pos: &GpAx2, p: &GpPnt2d) -> GpPnt {
+    pt_add(
+        &pos.location().coord,
+        pos.x_direction().xyz(),
+        p.x(),
+        pos.y_direction().xyz(),
+        p.y(),
+    )
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Vec2d&)` (`ElCLib.cxx:1360-1368`).
+pub fn to_3d_vec(pos: &GpAx2, v: &GpVec2d) -> GpVec {
+    vec_add(
+        pos.x_direction().xyz(),
+        v.x(),
+        pos.y_direction().xyz(),
+        v.y(),
+    )
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Dir2d&)` (`ElCLib.cxx:1348-1356`).
+pub fn to_3d_dir(pos: &GpAx2, v: &GpDir2d) -> Result<GpDir, &'static str> {
+    GpDir::from_xyz(to_3d_vec(pos, &GpVec2d::new(v.x, v.y)).xyz())
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Ax2d&)` (`ElCLib.cxx:1372-1377`).
+pub fn to_3d_ax2d(pos: &GpAx2, a: &GpAx2d) -> GpAx1 {
+    let p = to_3d_pnt(pos, a.location());
+    let d = to_3d_dir(pos, a.direction()).unwrap_or_else(|_| *pos.x_direction());
+    GpAx1::new(p, d)
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Ax22d&)` (`ElCLib.cxx:1381-1387`):
+/// `gp_Ax2(P, VX.Crossed(VY), VX)`.
+pub fn to_3d_ax22d(pos: &GpAx2, a: &GpAx22d) -> Result<GpAx2, &'static str> {
+    let p = to_3d_pnt(pos, a.location());
+    let vx = to_3d_dir(pos, a.x_direction())?;
+    let vy = to_3d_dir(pos, a.y_direction())?;
+    let z = vx.crossed(&vy)?;
+    GpAx2::new(p, z, vx)
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Lin2d&)` (`ElCLib.cxx:1391-1394`).
+pub fn to_3d_lin(pos: &GpAx2, l: &GpLin2d) -> GpLin {
+    GpLin::new(to_3d_ax2d(pos, l.position()))
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Circ2d&)` (`ElCLib.cxx:1398-1401`).
+pub fn to_3d_circ(pos: &GpAx2, c: &GpCirc2d) -> Result<GpCirc, &'static str> {
+    Ok(GpCirc::new(to_3d_ax22d(pos, c.position())?, c.radius()))
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Elips2d&)` (`ElCLib.cxx:1405-1408`).
+pub fn to_3d_elips(pos: &GpAx2, e: &GpElips2d) -> Result<GpElips, &'static str> {
+    Ok(GpElips::new(
+        to_3d_ax22d(pos, e.axis())?,
+        e.major_radius,
+        e.minor_radius,
+    ))
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Hypr2d&)` (`ElCLib.cxx:1412-1415`).
+pub fn to_3d_hypr(pos: &GpAx2, h: &GpHypr2d) -> Result<GpHypr, &'static str> {
+    Ok(GpHypr::new(
+        to_3d_ax22d(pos, h.axis())?,
+        h.major_radius,
+        h.minor_radius,
+    ))
+}
+
+/// `ElCLib::To3d(const gp_Ax2&, const gp_Parab2d&)` (`ElCLib.cxx:1419-1422`).
+pub fn to_3d_parab(pos: &GpAx2, prb: &GpParab2d) -> Result<GpParab, &'static str> {
+    Ok(GpParab::new(to_3d_ax22d(pos, prb.axis())?, prb.focal))
 }

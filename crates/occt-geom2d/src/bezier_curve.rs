@@ -47,6 +47,121 @@ impl Geom2dBezierCurve {
     pub fn pole(&self, i: usize) -> GpPnt2d {
         self.poles[i]
     }
+
+    /// `Geom2d_BezierCurve::Segment(U1, U2)` (`Geom2d_BezierCurve.cxx:356-391`):
+    /// restrict the curve to `[U1, U2]` through the `BSplCLib::BuildCache` ->
+    /// `PLib::Trimming` -> `PLib::CoefficientsPoles` round trip. A Bezier lives
+    /// on `[0, 1]`, so `BuildCache` is the monomial (power-basis) expansion and
+    /// the write-back is its inverse. The rational branch (`cxx:362-374`) trims
+    /// the homogeneous control points `(w*P, w)` in dimension 3.
+    pub fn segment(&mut self, u1: f64, u2: f64) {
+        let degree = self.degree();
+        let n = degree + 1;
+        let to_bezier = power_to_bezier_matrix(degree);
+        match &self.weights {
+            None => {
+                let mut coefs = vec![0.0f64; 2 * n];
+                for i in 0..n {
+                    let (mut px, mut py) = (0.0f64, 0.0f64);
+                    for j in 0..n {
+                        let b = bezier_power_entry(degree, i, j);
+                        px += b * self.poles[j].x();
+                        py += b * self.poles[j].y();
+                    }
+                    coefs[2 * i] = px;
+                    coefs[2 * i + 1] = py;
+                }
+                occt_core::bspl::plib::trimming(u1, u2, 2, &mut coefs);
+                for i in 0..n {
+                    let (mut px, mut py) = (0.0f64, 0.0f64);
+                    for j in 0..n {
+                        let b = to_bezier[i * n + j];
+                        px += b * coefs[2 * j];
+                        py += b * coefs[2 * j + 1];
+                    }
+                    self.poles[i] = GpPnt2d::new(px, py);
+                }
+            }
+            Some(w) => {
+                let mut coefs = vec![0.0f64; 3 * n];
+                for i in 0..n {
+                    let (mut hx, mut hy, mut hw) = (0.0f64, 0.0f64, 0.0f64);
+                    for j in 0..n {
+                        let b = bezier_power_entry(degree, i, j);
+                        hx += b * w[j] * self.poles[j].x();
+                        hy += b * w[j] * self.poles[j].y();
+                        hw += b * w[j];
+                    }
+                    coefs[3 * i] = hx;
+                    coefs[3 * i + 1] = hy;
+                    coefs[3 * i + 2] = hw;
+                }
+                occt_core::bspl::plib::trimming(u1, u2, 3, &mut coefs);
+                let mut new_poles = vec![GpPnt2d::zero(); n];
+                let mut new_weights = vec![0.0f64; n];
+                for i in 0..n {
+                    let (mut hx, mut hy, mut hw) = (0.0f64, 0.0f64, 0.0f64);
+                    for j in 0..n {
+                        let b = to_bezier[i * n + j];
+                        hx += b * coefs[3 * j];
+                        hy += b * coefs[3 * j + 1];
+                        hw += b * coefs[3 * j + 2];
+                    }
+                    new_weights[i] = hw;
+                    new_poles[i] = GpPnt2d::new(hx / hw, hy / hw);
+                }
+                self.poles = new_poles;
+                self.weights = Some(new_weights);
+            }
+        }
+    }
+}
+
+/// Binomial coefficient `C(n, k)` as `u64`.
+fn binomial(n: usize, k: usize) -> u64 {
+    if k > n {
+        return 0;
+    }
+    let k = k.min(n - k);
+    let mut c = 1u64;
+    for i in 0..k {
+        c = c * (n - i) as u64 / (i + 1) as u64;
+    }
+    c
+}
+
+/// Bezier -> monomial matrix entry `(i, j)`: the coefficient of `t^i` in
+/// `B_j^d(t) = C(d,j)*t^j*(1-t)^(d-j)`, i.e. `(-1)^(i-j)*C(d,j)*C(d-j,i-j)`
+/// (zero for `i < j`). This is the expansion `BSplCLib::BuildCache` produces for
+/// a Bezier on `[0, 1]` (same helper as the 3D port).
+fn bezier_power_entry(degree: usize, i: usize, j: usize) -> f64 {
+    if i < j {
+        return 0.0;
+    }
+    let sign = if (i - j) % 2 == 0 { 1.0 } else { -1.0 };
+    sign * binomial(degree, j) as f64 * binomial(degree - j, i - j) as f64
+}
+
+/// Inverse of the Bezier -> monomial matrix (the write-back of
+/// `PLib::CoefficientsPoles`, `PLib.cxx:1482-1493`). The forward matrix is
+/// triangular with nonzero diagonal, so forward substitution gives the inverse
+/// exactly in `f64`.
+fn power_to_bezier_matrix(degree: usize) -> Vec<f64> {
+    let n = degree + 1;
+    let a: Vec<f64> = (0..n * n)
+        .map(|k| bezier_power_entry(degree, k / n, k % n))
+        .collect();
+    let mut inv = vec![0.0f64; n * n];
+    for row in 0..n {
+        for col in 0..=row {
+            let mut v = if row == col { 1.0 } else { 0.0 };
+            for k in col..row {
+                v -= a[row * n + k] * inv[k * n + col];
+            }
+            inv[row * n + col] = v / a[row * n + row];
+        }
+    }
+    inv
 }
 
 impl Curve2d for Geom2dBezierCurve {
@@ -202,6 +317,11 @@ impl Curve2d for Geom2dBezierCurve {
     /// `Geom2d_BezierCurve::IsRational()` is true once weights were supplied.
     fn is_rational(&self) -> bool {
         self.weights.is_some()
+    }
+
+    /// `Geom2d_BezierCurve::Weights()`.
+    fn bezier_weights2d(&self) -> Option<&[f64]> {
+        self.weights.as_deref()
     }
 }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpPnt2d, GpVec2d, GpTrsf2d};
 use occt_core::precision::{PCONFUSION, Precision};
 use crate::curve::Curve2d;
+use crate::Geom2dBSplineCurve;
 
 /// `ElCLib::AdjustPeriodic` (`ElCLib.cxx:115`).
 fn adjust_periodic(u_first: f64, u_last: f64, preci: f64, u1: &mut f64, u2: &mut f64) {
@@ -182,5 +183,13 @@ impl Curve2d for Geom2dTrimmedCurve {
     }
     fn trimmed_basis(&self) -> Option<&dyn Curve2d> {
         Some(self.basis.as_ref())
+    }
+
+    /// `GeomBndLib_Curve2d` (`GeomBndLib_Curve2d.cxx:150-157`) unwraps a
+    /// `Geom2d_TrimmedCurve` to `BasisCurve()` before down-casting, so a
+    /// trimmed B-spline exposes the **basis** to
+    /// `GeomBndLib_BSplineCurve2d::Box` (and thus to its `Segment` arm).
+    fn bspline_copy2d(&self) -> Option<Geom2dBSplineCurve> {
+        self.basis.bspline_copy2d()
     }
 }

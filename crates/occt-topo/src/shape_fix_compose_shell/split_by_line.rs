@@ -583,8 +583,8 @@ impl ComposeShell {
             }
 
             // cxx:2019-2057.
-            let tmp_v1 = self.context().apply(&split_line_vertex[i - 2].0);
-            let tmp_v2 = self.context().apply(&split_line_vertex[i - 1].0);
+            let tmp_v1 = self.context_mut().apply(&split_line_vertex[i - 2].0);
+            let tmp_v2 = self.context_mut().apply(&split_line_vertex[i - 1].0);
             let mut v1 = Vertex(tmp_v1);
             let mut v2 = Vertex(tmp_v2);
             let can_be_merged = i - 1 > 1 || i < split_line_par.len();
@@ -678,7 +678,7 @@ impl ComposeShell {
         for w in wires.iter_mut() {
             let mut j = 1usize;
             while j <= w.nb_edges() {
-                j += apply_context(w, j, self.context()) as usize;
+                j += apply_context(w, j, self.context_mut()) as usize;
             }
         }
     }
