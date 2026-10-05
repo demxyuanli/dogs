@@ -23222,3 +23222,2344 @@ let a_nm_vertices: Vec<Vertex> = {
 先 grep 确认 API → 单探针 + build 断言 0 errors 才解读 → 原文常量精确反向撤除 → 写明统计口径 →
 无收益改动一律还原（横切组件尤其如此）；不动断言/基线/area_tol，不按面号/bbox/面积加特例。
 ```
+
+---
+
+### 9.579 —— 【T-101 达成】F113 恢复为 OCCT 的 1 面 / 2 wire（22+6）；a3n00 面积比 0.8996 → **0.9963**
+
+#### A. 两处 `.cxx` 分歧（均在库内，非插桩；本轮定位并修正）
+
+```text
+① crates/occt-topo/src/shhealing/wire_fix.rs  copy_replace_vertices_with
+   改前：先 `builder.add_edge_vertices(&copy, v1, v2)`，后 `copy.0.set_orientation(edge.0.orientation())`。
+   原文：ShapeBuild_Edge.cxx:103 `edge.EmptyCopied()` 先落定源朝向，再在 :107-114 两次 `B.Add(E, V)`。
+         `TopoDS_Builder::Add`（TopoDS_Builder.cxx:74-91）会把父朝向复合进子：
+         E 为 REVERSED 时，存储的子朝向是 V1=REVERSED / V2=FORWARD。
+         `TopExp::Vertices(E, V1, V2, true)`（TopExp.cxx:214-253；CumOri 由
+         TopoDS_Iterator.cxx:26-83 的 Compose 实现，:73-82）再复合一次 ⇒ 净效果是
+         `TopExp::FirstVertex == V1`、`TopExp::LastVertex == V2`，与 E 的朝向**无关**。
+   改后：朝向与位置先落定，再 `B.Add`（顺序与 cxx:103→107-114 一致）；
+         端口的 `edge_vertices` 取未复合的存储朝向，`first_vertex`/`last_vertex` 施以复合 ⇒ 与 TopExp 同义。
+   ⇒ 改前对 REVERSED 边取到**首末互换**的顶点，SplitWire 产出的段端点因此错位。
+
+② crates/occt-topo/src/shape_fix_compose_shell/make_faces_on_patch.rs
+   改前：`clas.perform(unp)`（`perform == perform_recadre(puv, true)`，fclass2d/classifier.rs:264-266）。
+   原文：MakeFacesOnPatch 的每一处 `BRepTopAdaptor_FClass2d::Perform` 都显式传
+         `RecadreOnPeriodic = false`（cxx:3100 / cxx:3110 / cxx:3223）；
+         只有 `PerformInfinitePoint`（cxx:3132/3181）走周期搜索。
+   改后：三处改 `clas.perform_recadre(unp, false)` / `(a_cw.d0(cl), false)`。
+```
+
+两者**必须同时**在：只改 ① 时 F113 = `Shell(2)`；只改 ② 时 F113 = `Shell(6)`；两者齐备时 F113 无需修复
+（`FIXMS face=113 before_wires=2 ret=false result=none`）⇒ 即 reader 读入时已是 OCCT 结构。
+
+#### B. 验收读数（本环境 ws 实测）
+
+```text
+F113:            FDUMP wire[0] nEdges=22 + wire[1] nEdges=6   （cxx/OCCT FACE 25 = 22+6）
+                 FSTAT face=113 mv=227 mt=227 box=(-87.5,-34,-100)-(87.5,34,-32)
+a3n00:           our=226285.35 occ=227130.30 ratio=0.9963      （改前 0.8996）
+                 TOTAL faces=226 ... STATMAP matched=226 unmatched=0 sum_mt=12051（改前 225/1/11941）
+                 WIREHIST 1:207 2:10 4:1 6:4 10:4              （OCCT {1:208,2:9,4:1,6:4,10:4}，仍差 1 张面）
+T0M:             STATMAP matched=1770 unmatched=2              （改前 unmatched 6；未网格面 6→2）
+                 ratio=0.9931（改前 0.9987，tol 0.025 内）
+acs10:           ratio=0.9984（改前 0.9846）
+门禁:            cargo check 0 errors；occt-topo --lib 1281 passed / 0 failed；
+                 step_obj_gates 5 passed / 0 failed（645s，23 个模型）
+```
+
+#### C. 未留在树上的东西
+
+```text
+全部探针（T101_DBG* / T101MFP / T101RING / T101PT / T101SW / BREAK-IN dump）已反向撤除，
+break_wires.rs / split_wire.rs / shape_fix_face.rs / specs/occt_probe/wires_probe.cpp 回到 HEAD；
+git status --porcelain 只剩上述 ① ② 两个库文件。基线、area_tol、断言未动。
+```
+
+#### D. 旁支（未动手，仅记录）
+
+```text
+* WIREHIST 仍差 1 张面（端口 1:207 + 2:10 vs OCCT 1:208 + 2:9）：有一张 OCCT 收成单 wire 的面
+  在端口仍是 2 wire，但与 F113 无关，且未影响面积比/门禁；下一轮若要收口再从 §9.578-C 的
+  BREAK-IN 段集合对照入手。
+* §9.439 记录的 `FixDummySeam` 顶点语义修复（0.8996→0.8918）当时被判为负结果并回退；
+  本轮 ① 修好后其前提已变，可重估（本轮不动手）。
+```
+
+### 9.580 —— 【达成收口】a3n00 面积比 0.9963 → **1.0000**、WIREHIST 与 OCCT 逐项相同；`MapReShape::apply_impl` 落地及其对 T0M/acs10 的 A/B
+
+#### A. 本轮两处改动（均在库内，按 .cxx 同名分支补）
+
+```text
+③ crates/occt-topo/src/shhealing/wire_fix.rs  fix_dummy_seam
+   改前：`edge_vertices(&e1).0` / `edge_vertices(&e2).1` / `edge_vertices(&e2).0`（未复合的存储朝向）。
+   原文：`ShapeAnalysis_Edge::FirstVertex/LastVertex` 是 `CumOri = true` 的访问器
+         （TopExp.cxx:214-253；Compose 在 TopoDS_Iterator.cxx:26-83，:73-82），与边自身朝向无关；
+         `ShapeFix_Wire.cxx:4230-4233` 的 `sae.FirstVertex(E2)` 用的就是这个口径。
+   改后：`first_vertex(&e1)` / `last_vertex(&e2)` / `first_vertex(&e2)` ⇒ 与 sae 同义。
+
+④ crates/occt-topo/src/shape_fix_compose_shell/reshape.rs  MapReShape::apply -> apply_impl
+   改前：`apply` 只做直接查表（`value(s).unwrap_or_else(|| s.clone())`），
+         不重建「子形状被替换」的复合形状。
+   原文：`ShapeBuild_ReShape::Apply`（ShapeBuild_ReShape.cxx:191-196）走 `applyImpl`
+         （:200-324，`until = TopAbs_SHAPE`）：先看直接替换；替换者自身再 Apply；
+         否则递归全部子形状，任一子形状变了就 `EmptyCopied()` + 重新添加（:249-318），
+         并把重建结果写回 map（:320）。
+   改后：端口补 **EDGE** 分支（`TopoBuilder` + `Edge::new` + `copy_edge_geom`，复刻
+         `TopoDS_Shape::EmptyCopied` / `BRep_TEdge::EmptyCopy` / `ShapeBuild_Edge::CopyRanges`），
+         用 `in_flight` 复刻 cxx:220-226 的 DFS 环保护。
+         WIRE / SHELL / FACE / SOLID / COMPOUND 的重建当时仍**未移植**（§9.584 已补齐，见该节）。
+
+为什么 ④ 必须有：`SplitWire` / `SplitByLine` 统一边端点是
+`Context()->Replace(prevV, fV)`（cxx:1262-1296），随后 cxx:2119-2126 对序列里每条 wire 跑
+`Context()->Apply(wire)`。没有 ④ 时，用了旧顶点的**其它边不会被重建**，分割出的 wire 两端不闭合
+⇒ F170 仍是 2 条 wire ⇒ MakeFacesOnPatch 出 2 张面 ⇒ 2-face shell。
+```
+
+#### B. 验收读数（本环境实测）
+
+```text
+a3n00:  WIREHIST 1:208 2:9 4:1 6:4 10:4      （与 OCCT 直方图逐项相同，无残差）
+        our=227126.78 occ=227130.30 ratio=1.0000（上一轮 0.9963，our 226285.35）
+        TOTAL faces=226 wires=294 faces_with_2plus_wires=18
+              wires_1edge_closed=79 faces_1edge_closed=24
+F170:   wires=1 nEdges=8（上一轮 2 wire ⇒ 2 face shell）
+门禁:   step_obj_gates 5 passed / 0 failed；cargo check 0 errors
+```
+
+#### C. A/B：④ 的代价（`output/_probe` 三个模型的 OBJ 面积，偏转 0.1，与门禁同口径）
+
+```text
+                        ④ 关            ④ 开（当前）   §9.579 基线
+T0M    ratio            0.9931          0.9809         0.9931
+       our              191332.77       188978.93      191332.77
+       v/f              65344/76320     65267/76557    -
+acs10  ratio            0.9984          0.9928         0.9984
+a3n00  ratio            0.9978          1.0000         0.9963（无 ③④）
+
+③ 单独：a3n00 0.9963 → 0.9978；T0M / acs10 不变。
+④ 单独：a3n00 0.9978 → 1.0000；T0M −1.22%、acs10 −0.56%（都在 area_tol 内，门禁仍 5/5）。
+逐面归因（T0M `--fstats`，只能按 bbox 配对 —— `key` 是进程内指针，跨运行不稳）：38 个 bbox 位不同，
+主体是 `ON[4/2] OFF[9/7]`：30+ 张 `x∈[5,16] y∈[-217,-204] z∈[104,117]` 的薄面
+（正是被替换顶点所在的那一簇）网格从 7 三角形塌成 2；另有 1 张 `ON[208/220]` 与
+`OFF bbox=(-21,-259.7,27.0)-(21,-197.2,106.7)` 两侧 bbox 都对不上 ⇒ 该面 wire 几何被改写。
+把 cxx:320 的写回缓存注释掉重测：三个模型读数**逐位相同** ⇒ 差异来自重建本身，与缓存无关。
+```
+
+保留 ④ 的理由：它是 OCCT 真有的分支，`Apply` 在 OCCT 里就会重建；T0M / acs10 面积比下降说明
+**下游还有一处与 OCCT 不一致**（OCCT 同样跑 applyImpl，T0M 仍是 1.0），暴露点在上述薄面簇的
+UV / 网格侧，不在 ④ 本身。门禁是「不得改基线 / area_tol / 断言」，两条都在 tol 内。
+
+#### D. 未留在树上的东西
+
+```text
+`T170_DBG` 三处探针（perform.rs / collect_wires.rs / make_faces_on_patch.rs）已撤除；
+reshape.rs 的 `apply` 临时开关与 `self.replace(s, &result)` 注释开关已还原；
+`output/_probe/`（三个模型的临时副本）与 output/*.obj 是测量产物，不入库。
+```
+
+#### E. 旁支（未动手）
+
+```text
+* T0M 薄面簇（C 的 bbox 清单）在 ④ 后只剩 2 个三角形：下一个可对拍点，但前提是先把
+  「面 → 网格 UV 覆盖」的读数变成同一次运行内可取（与 §9.370-③ 的测量口径问题同类）。
+* §9.379 / §9.370-③ 记录的 Torus 逐面密度差（1.241×，+293 三角形）仍未动。
+* §9.578-C 的「BREAK-IN 段集合对照」出口已不再需要：WIREHIST 已逐项相同。
+```
+
+### 9.581 —— T0M 薄面簇对拍完成（同一次运行内取 OCCT 真值）：④ 只翻转「哪一张面出网格」，不增删面；T0M 残差钉成「少 6 张单 wire 面」
+
+#### A. 仪器与命令（全部既有探针，本轮零库改动）
+
+```text
+OCCT 真值（`specs/occt_probe/occt_probe.cpp` 的 `--facestats <defl> <angle>`、`--wires`，TEMP T-101 已在树）
+cmd /c "specs\occt_probe\run_here.bat D:\source\repos\dogs\data\occ\T0M.stp --facestats 2.574312 0.349066"
+        -> output/t0m_fs_occt.txt      (1 行 FSTAT_OCC defl + 1778 行 FSTAT_OCC face)
+cmd /c "specs\occt_probe\run_here.bat D:\source\repos\dogs\data\occ\T0M.stp --wires"
+        -> output/t0m_wires_occt.txt
+
+偏转口径与门禁同源：`brep_exchange.rs:56 prs3d_get_deflection(shape, 0.1)` =
+maxComp(bbox) * 0.001 * 4；`export_data_obj` 印的 `exact=[-66.109,-288.419,-426.121]~[45.586,30.009,217.457]`
+⇒ maxComp = 643.578 ⇒ defl ≈ 2.574312；角度 20°（`brep_exchange.rs:95 PRS3D_DEV_ANGLE`）。
+
+端口侧（`crates/occt-topo/examples/zz_probe_a3n00.rs`）
+--fstats  -> output/t0m_fs_post.txt (④ 开) / output/t0m_fs_off.txt (④ 关)
+--ecensus -> output/t0m_census_on.txt (④ 开) / output/t0m_census_off.txt (④ 关)
+--wirehist-> 1772 faces / 1915 wires
+
+④ 关的 `--ecensus` 用 `MapReShape::apply` 上的临时 `MAPRESHAPE_DIRECT` 开关跑出（直接查表、不重建），
+跑完已还原 —— 树里没有该开关。
+```
+
+#### B. OCCT 真值 vs 端口：T0M 的 wire 残差被钉死
+
+```text
+                   faces  wires  HIST
+OCCT               1778   1921   1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+端口 ④ 开（当前）    1772   1915   1:1666 2:92 3:8 5:1 6:1 7:2 8:2
+端口 ④ 关           1772   1921   1:1662 2:96 3:8 5:1 6:1 7:2 8:1 10:1
+```
+
+* ④ **开**：多 wire 桶与 OCCT **逐项相同**（`2:92 3:8 5:1 6:1 7:2 8:2`），唯一残差是「少 6 张 1-wire 面」
+  （1778 − 1772 = 6，wires 同样少 6）⇒ 端口 = OCCT 的面集 **减去 6 张单 wire 面**。
+* ④ **关**：多 wire 桶错 4 项（`1:−10 2:+4 8:−1 10:+1`），只是 wire 总数 1921 与 OCCT 凑巧相同 ——
+  它是靠「10 张 1-wire 面错分组（1→2 wire、8→10 wire）」把缺的 6 张面补回来的。
+
+#### C. 薄面簇的真相：④ 只翻转「哪一张面出网格」
+
+`--fstats` 的 `face=` 就是 B-rep 面序（0..1771 连续，缺的正好是没有三角化的那 2 张）：
+
+```text
+④ 开：未出网格 idx = {116, 1758}
+④ 关：未出网格 idx = {351, 1758}
+OCCT：0 张未出网格（1778/1778 全部有 triangulation，`--facestats` 无 triangles=0 行）
+
+idx 116  bbox=(-21.000000,-259.653063,27.038323)-(21.000000,-197.219056,106.702324)
+         = OCCT face 607 的 bbox（OCCT nodes=233 triangles=231）
+idx 351  bbox=(5.300000,-217.417466,104.896128)-(15.500000,-204.344246,120.102787)
+         = OCCT face 628 的 bbox（OCCT nodes=207 triangles=219）
+idx 1758 bbox=(-23.7295,-206.859113,-107.158859)-(-21.2705,-206.058541,-104.833829)
+         wires=1 edges=[1] nv=1（1 边 1 顶点的退化面，两态都不出网格）
+```
+
+`--ecensus` 的 wire 结构（④ 对 116 完全不动）：
+
+```text
+idx 116  ④ 开 = ④ 关 = wires=2  edges=[26, 45]
+idx 351  ④ 开 = wires=8  edges=[16, 8,8,8,8,8,8,8]
+         ④ 关 = wires=10 edges=[1, 8,8,8,8,8,8,8,8, 1]
+OCCT     607 = 1 wire（不在 `--wires` 的 MULTI 清单里）；628 同 = 1 wire
+```
+
+面积账（门禁同口径 OBJ 面积，偏转 0.1）：
+
+```text
+④ 关  our=191332.77  ratio=0.9931  —— 丢的是 idx 351（X 区，≈1326）
+④ 开  our=188978.93  ratio=0.9809  —— 丢的是 idx 116（Y 区，≈2354）
+差 2353.8 ≈ idx 116 在 ④ 关时的面积（251 三角形）
+```
+
+⇒ 0.9931 → 0.9809 分毫不差就是**换了一张面不出网格**，不是拓扑变化（两态都是 1772 面）。
+
+#### D. 逐面网格对拍：④ 开后凡 OCCT 有同 bbox 的面全部逐位相同
+
+§9.580-C 的 38 个 bbox 在两态读数不同，其中 OCCT 有精确同 bbox 的 21 个：
+
+```text
+④ 开 21/21 与 OCCT 逐位相同：20 张薄面 ON[4/2] OFF[9/7] OCCT[4/2]、
+        ON[76/74] OFF[74/2] OCCT[76/74]、ON[80/78] OFF[16/18] OCCT[80/78]、
+        ON[78/76] OFF[75/1] OCCT[78/76]、ON[208/220] OFF[—] OCCT[207/219]
+④ 关  0/21
+```
+
+另 17 个在 `--facestats` 里找不到精确同 bbox 的 OCCT 面 —— OCCT 的
+`BRepBndLib::Add(face, box, false)` 与端口的 `brep_bnd_lib::shape_bnd_box` 在第 6 位小数有差
+（1778 个 OCCT bbox 里 591 个与端口 census 的 bbox 对不上），不是几何差异（同区域最近面 L∞ 距离 0）。
+
+#### E. 结论
+
+* ④ **不增删面**（两态都 1772 面 / 1772 个网格槽位）：它只改 idx 351 的 wire 分段（10 → 8 条）
+  与该区域共享边上的顶点身份，由此翻转「idx 116 / idx 351 谁被 Delaunay 拒绝」。
+  它让端口的多 wire 直方图与 OCCT 逐项相同，逐面网格在 21/21 上逐位相同 ⇒ **是变好，不是回归**。
+* T0M / acs10 面积比的唯一剩余来源是**端口少 6 张单 wire 面**（1778 → 1772），且
+  idx 116 / idx 351 各应是 **1 条 wire**（OCCT 两个面都是 1 条），端口却留下 2 条 / 8 条 ——
+  属 `CollectWires` / `MakeFacesOnPatch` 的 wire 合并（§9.579-§9.580 同一族），与 ④ 无关。
+* 本轮零库改动；`MAPRESHAPE_DIRECT` 临时开关已还原。旁支（未动）：`--facestats` / `--wires`
+  （OCCT 侧）与 `--fstats` / `--ecensus` / `--wirehist`（端口侧）都是既有仪器。
+
+#### F. 下一步
+
+把 T0M 那一对相邻面（OCCT face 607 / 628；端口 idx 116 / 351）的 wire 合并做成 OCCT 的 1 条，
+并把少的 6 张单 wire 面找回来：入口是 `CollectWires` 里 idx 351 的 8 条
+`[16,8,8,8,8,8,8,8]` 与 idx 116 的 2 条 `[26,45]` 为何没有并成 1 条（OCCT 同一处各 1 条），
+对着 `ShapeFix_ComposeShell.cxx` 的收集/合并段审控制流。
+
+### 9.582 §9.580-F 假设被推翻：6 张面来自 `FixShape` 物化多面结果，不是 wire 合并（T-102）
+
+#### A. 方向先纠正：不是端口少，是 OCCT 多
+
+```text
+T0M.stp  ADVANCED_FACE = 1772                   （文件本体）
+OCCT --nofix（ShapeProcess 全关）  faces=1772    HIST 1:1463 2:294 3:9 5:1 6:1 7:2 8:1 10:1
+OCCT 默认（开）                    faces=1778    HIST 1:1672 2:92  3:8 5:1 6:1 7:2 8:2
+端口当前（本轮改动前）             faces=1772    HIST 1:1666 2:92  3:8 5:1 6:1 7:2 8:2
+```
+
+端口的面数等于**文件本身**，wire 直方图等于**治好后**的形状 ⇒ 端口把 seam 合并做了，但
+`FixShape` 造出来的 **6 张面**没有落地。§9.580-F 说「idx 116 / 351 各应是 1 条 wire」是把
+*治好后* 的面与 *导入时* 的面按 bbox 当成同一张：OCCT face 116 是 healing 新建的面（id=0），
+与端口同 bbox 的那张 2-wire 面是**被替换掉的原始 STEP 面**，二者不是同一张。
+
+`STEPControl_Controller.cxx:201` 定死 `FromSTEP.exec.op = "FixShape"` ⇒ 读 STEP 只跑
+`ShapeFix_Shape::Perform`，1772→1778 全部出自它。`SplitClosedFaces` / `SplitClosedEdges`
+只**注册不启用**：两者在 `ShapeProcess_OperLibrary.cxx:1004` / `:1010` 各有一条
+`ShapeProcess::RegisterOperator(...)`，而读路径的 op 串只有 `"FixShape"`
+（`STEPControl_Controller.cxx:201`，全仓 `FromSTEP.exec.op` 仅此一处初始化），
+没有任何 resource 把它们接上。
+
+#### B. 6 张面是谁：`--faceids` 的 id=0 面
+
+给 `specs/occt_probe/occt_probe.cpp::--faceids` 加 bbox（TEMP T-102 仪器）后，OCCT 的
+1778 张面里有 **11 张 id=0**（`EntityFromShapeResult` 取不到 STEP 实体 ⇒ 是 healing 造的），
+按 bbox 与端口 census 配对：
+
+```text
+OCCT 116 (42x63x80)      -> 端口 116  d=0      端口 2 wires / OCCT 1 wire
+OCCT 117, 118（碎片）    -> 端口无对应（最近 d=2.6 / 3.7）
+OCCT 1461 / 1502         -> 端口 1459 / 1499   d=0      （9 edges 主面在）
+OCCT 1462 / 1503（碎片）  -> 端口无对应（d=1.35）
+OCCT 1647 / 1667         -> 端口 1643 / 1662   d=0.28 / 0.30
+OCCT 1648 / 1668（碎片）  -> 端口无对应（d=2.17）
+```
+
+即缺口 = **1 张主面被拆成 3 张**（+2）+ **4 张碎片**（+4）。OCCT 侧这 11 张全是 1 wire
+⇒ 直方图只动 `1:` 与 `faces`（+6 / +6），与实测 `1:1672 2:92` 一致。
+
+#### C. 缺的是哪段 .cxx 控制流
+
+```text
+ShapeFix_Face.cxx:2266   myResult = CompShell.Result();      // 可以是 Face，也可以是 Shell
+ShapeFix_Face.cxx:2268   Context()->Replace(myFace, myResult);   // 没有类型判断
+ShapeFix_Shape.cxx:257   myResult = Context()->Apply(S);         // COMPOUND/SOLID 逐层收回
+ShapeFix_Shape.cxx:294   myResult = Context()->Apply(myResult);
+ShapeBuild_ReShape.cxx:282-299  applyImpl：替换体与原类型不同时，只取其中与原类型相同的子形状
+```
+
+端口 `step/read_topology.rs::resolve_face` 只接 `ShapeType::Face`，Shell 结果直接
+fallthrough 成 `Ok(face.0)`（原面），所以 split 丢掉。本轮按同一分支改：
+
+* `resolve_face`：接受 Face **或** Shell 结果，对结果里每张面跑 `check_pcurves_and_shift`，
+  原样返回（对应 `:2266/:2268`）。
+* `resolve_shell`：某 face 引用返回 Shell 时，把它的面逐张加进本 shell（对应
+  `ShapeBuild_ReShape.cxx:282-299` 与 `ShapeFix_Shape.cxx:257`）。
+
+#### D. 对拍（`cargo test -p occt-topo --release --test step_obj_gates`，23 模型）
+
+```text
+T0M    1772 面 1915 wires 1:1666 2:92 ...   our=188978.93  ratio=0.9809
+   ->  1775 面 1916 wires 1:1671 2:90 ...   our=194286.39  ratio=1.0084
+acs10                                        our=269261.65  ratio=0.9928
+   ->                                        our=272445.08  ratio=1.0045
+```
+
+只有 T0M / acs10 两张动（各自 |1-ratio| 变小），a3n00 1.0000 / TDB 1.0092 / motoc 1.0333 /
+bottom 0.9750 / ATU01038 1.0006 / top 1.0000 等 21 个**逐位不变**；5 个 gate 全过。
+a3n00 的 `--fixms` 没有一条 `ret=true`（seam 在读入时已合并）⇒ 该路径不触发，a3n00 无风险。
+
+#### E. 仍差 3 张（旁支，未动）
+
+* **4 张碎片没生成**：端口 `fix_missing_seam` 对 1459 / 1499 / 1643 / 1662 返回 false，
+  而 OCCT 在这 4 处各造了一张碎片。缺的是 `ShapeFix_Face::Perform` 的 wire 首段
+  `cxx:365-480`（`ShapeFix_Wire::Perform`，`ShapeFix_Shape.cxx:200` 把
+  `ModifyTopologyMode` 置 true）——端口 `perform_fix_missing_seam` 的注释已标 UNPORTED。
+* **多 1 张**：端口 face 1752（bbox=(-9.5,-9.5,-60.189)-(9.5,9.5,-44.644)，2 wires [5,1]）
+  = OCCT face 1758（id=28215，**1 面 1 wire**），端口的 seam 步却给出 Shell faces=2。
+  这是端口自己的一处未合缝分歧，落地后变成多出来的一张面；要按 `FixDummySeam` /
+  wire 合并那条线单独查。
+* `--lib` 在本机有 26 个用例因写 `%TEMP%` 被拒（os error 5）失败，全是文件 IO 往返用例，
+  与本次拓扑改动无关（写 workspace 内的 5 个 gate 用例全过）。
+
+### 9.583 T-102：`FixShape` 子模式 bisect（探针 `--fix` 仪器）+ 缺口钉成「2 张 loop-wire 面 + 3 张碎片面」
+
+#### A. 仪器纠错：`--set` 在读文件前调用是 no-op
+
+`XSControl_Reader::SetShapeProcessFlags` / `SetShapeFixParameters` 都转发给 `GetActor()`
+（`XSControl_Reader.cxx:480-508`），actor 是 `ReadFile` 期间才建起来的
+（`XSControl_Reader.cxx:519-534`）⇒ 读前调用无效。`Interface_Static` 那条路也一样：
+本轮在 `occt_probe.cpp` 里把 `FromSTEP.FixShape.*` 读前/读后都设过，T0M 逐项仍是
+1778/1921（默认值）。8.0 的 `XSAlgo_ShapeProcessor` 走的是 **`DE_ShapeFixParameters`
+显式 map**（`XSAlgo_ShapeProcessor.cxx:609-620`），静态量根本不被读 ⇒ 单个
+`FixOrNot` 参数只有走 map 才生效（`wires_probe.cpp` 的 `setp` 早前用的就是这条路，
+`set`/`setc` 那两条结论以后不要再用）。
+
+给 `occt_probe.cpp` 加 `--fix <DE_ShapeFixParameters 字段> <int>`（读后、
+`TransferRoots` 前 `SetShapeFixParameters`），bisect 才能改到真值。
+
+#### B. T0M bisect 表（`--wires`，OCCT 8.0，全 run 同一次读入）
+
+```text
+T0M.stp  ADVANCED_FACE = 1772
+默认（FixShape 全开）          faces=1778 wires=1921  1:1672 2:92  3:8 5:1 6:1 7:2 8:2
+FixFaceMode=0                  faces=1772 wires=2121  1:1463 2:294 3:9 5:1 6:1 7:2 8:1 10:1
+FixLoopWiresMode=0             faces=1778 wires=1919  1:1674 2:90  3:8 5:1 6:1 7:2 8:2
+FixMissingSeamMode=0           faces=1973 wires=2130  1:1853 2:101 3:14 5:1 6:1 7:2 8:1
+FixMissingSeamMode=0+SplitFaceMode=0   faces=1772 wires=2130  1:1460 2:291 3:15 5:1 6:1 7:2 8:1 10:1
+其余单点关（AddNaturalBound / SplitFace / SmallAreaWire / RemoveSmallAreaFace /
+Orientation / IntersectingWires / Reorder / Small / Connected / AutoCorrectPrecision /
+Seam / Shifted / NotchedEdges / FixWireMode）→ 与默认逐位相同
+```
+
+* `FixFaceMode=0` = 1772 ⇒ +6 张面的唯一来源是 `ShapeFix_Shape.cxx:196-210` 的 face 分支
+  （`ShapeFix_Face::Perform`），即 §9.582-D31 的机制，坐实；`ShapeFix_Shape.cxx:200` 把
+  `ModifyTopologyMode` 置 true 也在这段。
+* `FixLoopWiresMode=0` = 1919 wires（`2:92 → 2:90`）⇒ `ShapeFix_Face.cxx:583-598` 的
+  `FixLoopWire` 在 T0M 上把 **2 张单 wire 面**各拆成 2 wire（面数不变）。
+* `FixMissingSeamMode=0` = **1973**（比默认多）⇒ seam 步缺席后 `FixAddNaturalBound`
+  不再兜住（`cxx:705-712` 的 `NeedSplit`），`FixSplitFace`（`cxx:711-717`）在 201 张面上
+  开火；这也解释了「除 FixFaceMode 外，关任一子模式面数都还是 1778」。
+
+#### C. 缺口钉死（本轮端口 census，`zz_probe_a3n00 … --ecensus`）
+
+```text
+OCCT 默认   faces=1778  1:1672 2:92 3:8 5:1 6:1 7:2 8:2   wires=1921
+端口当前    faces=1775  1:1671 2:90 3:8 5:1 6:1 7:2 8:2   wires=1916
+差          +3 面 / +5 wire = 【2 张 loop wire 面】+ 【3 张碎片面】
+```
+
+2 张 loop wire 面（OCCT 侧 2 wire，端口 1 wire），按 bbox 逐一对上
+（`--faceids` 在 `--fix FixLoopWiresMode 0` 前后只差这 2 个 bbox）：
+
+```text
+端口 census 628  wires=1 edges=[12] bbox=(-29.500000,-105.566610,13.433081)-(12.500000,-76.275610,19.126675)
+端口 census 635  wires=1 edges=[16] bbox=(-29.500000,-134.709636,9.346976)-(12.500000,-106.496089,19.061680)
+OCCT --wires    MULTI wires=2        bbox=(-29.500,-105.567,13.433)-(12.500,-76.276,19.127)
+OCCT --wires    MULTI wires=2        bbox=(-29.500,-134.710,9.347)-(12.500,-106.496,19.062)
+```
+
+即 **+2 wire / 0 面**；剩下 **+3 面 / +3 wire** 仍是 §9.582-E 那 3 张碎片面
+（`FixMissingSeam` 那条线）。
+
+#### D. 下一步（都对着 .cxx，彼此独立）
+
+1. **loop wire（+2 wire）**：端口缺 `ShapeAnalysis_Wire::CheckLoop`
+   （`ShapeAnalysis_Wire.cxx:2228-2340`）、`ShapeFix_Face.cxx:2398 FindNext` 与
+   `cxx:2478 FixLoopWire`，以及调用点 `cxx:583`（`NeedFix(myFixLoopWiresMode) &&
+   FixLoopWire(aLoopWires)`，拿到多条 wire 就逐条 `B.Add(tmpFace, …)`，`cxx:591-598`）。
+   依赖端口 `ShapeFix_Wire` 的 `Analyzer()` 等价物与 `FixReorder`。
+2. **3 张碎片面**：仍按 §9.582-E(1)(2) 查（pre-seam wire 首段 / 端口 face 1752 多 1 张）。
+
+#### E. 旁支
+
+* `--faces0`（探针里读前调 `SetShapeFixParameters`）历史上是 **no-op**；本机只改到
+  `occt_probe.cpp`（TEMP 仪器），Rust 侧本轮零改动，门禁值沿用 §9.582-D。
+
+### 9.584 T-102：`ShapeBuild_ReShape::applyImpl` 全类型重建补齐（④ 收口）+ 读数复核
+
+#### A. 本轮库改动（唯一一处）
+
+```text
+crates/occt-topo/src/shape_fix_compose_shell/reshape.rs  MapReShape::apply_impl
+  改前：`cxx:249-318` 只补了 EDGE 分支，WIRE / SHELL / FACE / SOLID / COMPOUND 直接
+        `return s.clone()`（源码注释标 UNPORTED）⇒ 顶点被 Replace 后，承载它的 wire 与
+        face 不会被重建，`Context()->Apply(wire)` 拿回旧 wire。
+  原文：`cxx:249-318` 对所有类型是同一条路径 —— `EmptyCopied()`（同类型空壳）+
+        `aResult.Orientation(FORWARD)`，逐子形状 `BRep_Builder::Add`（替换体类型不同则只取
+        其中与原类型相同的子形状，`cxx:282-299`）；随后 `cxx:306-315` 收尾（EDGE ->
+        `ShapeBuild_Edge::CopyRanges`；WIRE / SHELL ->
+        `aResult.Closed(BRep_Tool::IsClosed(aResult))`），`cxx:317` 还原朝向，
+        `cxx:320` 把重建结果写回 map。
+  改后：去掉类型门；`copy_edge_geom` 只在 EDGE 分支跑；新增 `brep_tool_is_closed`
+        （WIRE 数顶点、SHELL 数边，`Map::Add` + `Remove` 的奇偶判据，
+        `BRep_Tool.cxx:1707-1755`）复刻 `cxx:313`。
+  注记：端口既有的 `topo_tools_full::wire_is_closed` 是位置链式判据（且要求 >= 3 边），
+        不是 `BRep_Tool::IsClosed(Wire)`，`cxx:313` 不能用它顶替，故另写奇偶版。
+```
+
+#### B. A/B：④ 全类型重建在 T0M / a3n00 上无观测差异
+
+```text
+T0M    --wirehist  开（本轮）      faces=1775 wires=1916 1:1671 2:90 3:8 5:1 6:1 7:2 8:2
+                   关（TEMP 门）    faces=1775 wires=1916 1:1671 2:90 3:8 5:1 6:1 7:2 8:2  <- 逐位相同
+a3n00  --wirehist  开 / 关         faces=226 wires=294 1:208 2:9 4:1 6:4 10:4           <- 逐位相同
+```
+
+（A/B 的「关」是把重建前那一行还原成 `if st != ShapeType::Edge { return s.clone(); }`，
+跑完已撤除，树里没有该门。）
+
+⇒ 该分支在这两个模型上未被走到（或其结果与旧 wire 同构），不是 T-102 缺口的解释；
+T0M 的 1772 -> 1775 全部来自 §9.582 的 `resolve_face` / `resolve_shell`（Shell 结果展开），
+与本轮改动无关。保留理由：它是 OCCT 真有的分支，且对已对齐模型零影响。
+
+#### C. 复现 §9.583-C 的读数（当前树）
+
+```text
+T0M    faces=1775 wires=1916 WIREHIST 1:1671 2:90 3:8 5:1 6:1 7:2 8:2
+       faces_with_2plus=104 wires_1edge_closed=215 faces_1edge_closed=142
+       （OCCT 默认 1778 / 1921 / 1:1672 2:92 3:8 5:1 6:1 7:2 8:2）
+a3n00  faces=226  wires=294  WIREHIST 1:208 2:9 4:1 6:4 10:4   （与 OCCT 逐项相同）
+```
+
+#### D. 门禁
+
+```text
+cargo check --lib                                        -> 0 errors
+cargo test --release --test step_obj_gates               -> 5 passed / 0 failed
+cargo test --lib --release                               -> 1255 passed / 26 failed
+   26 条全是写 %TEMP% 被拒（PermissionDenied, os error 5），已用 --nocapture 复核两条
+   （step::tests::step_file_io_roundtrip / xcaf::read_step_solid_present），与拓扑改动无关。
+```
+
+#### E. 下一步（沿用 §9.583-D，本轮未动）
+
+* loop wire（+2 wire / 0 面）：`ShapeAnalysis_Wire::CheckLoop`（cxx:2228-2340）+
+  `ShapeFix_Face::FindNext`（cxx:2398-2477）+ `FixLoopWire`（cxx:2478-2640）与调用点
+  `cxx:583-598`；端口三者皆无（`check_loop|fix_loop_wire|FixLoopWire|CheckLoop` 全仓 0 命中）。**（§9.585 已补齐并验证，见下）**
+* 3 张碎片面：§9.582-E(1)(2)（pre-seam wire 首段 / 端口 face 1752 多 1 张）。
+
+### 9.585 T-102：T0M 残差 3 面 / 3 wire 的**逐面钉死**（FixMissingSeam 终态免责 + 5 张面唯一分解）
+
+本节把 §9.583/§9.584 的「2 张 loop-wire 面 + 3 张碎片面」读法更新为**已经过逐面配对的完整分解**，
+并新增两件可复现的 oracle：OCCT `fms all`（终态 + `noop`/`raw` 变体）与两侧**逐面表**。
+
+#### A. 工具与产物（本轮，可复现）
+
+* OCCT `wires_probe.cpp`：`raw` 由「只认 `argv[2]`」改为**扫描全部参数**，于是可组合成
+  `fms all raw`；`fms` 模式本就打印 `uper/vper/before_wires/ret/null/type/faces/wires/bbox`。
+  `run_wires.bat <file> fms all [raw|zz noop]`；
+  逐面表：`run_wires.bat <file>`（`FACE k type=.. wires=.. edges_per_wire: .. spans: u=.. v=.. box=..`）。
+  **注意**：直接跑 `wires_probe.exe` 会因缺 OCCT DLL 而静默 0 字节退出，必须走 `run_wires.bat`
+  （或自行 `call env.bat vc14 64`）。
+* 端口 `zz_probe_a3n00.rs`：`--fixms`（终态逐周期面 + bbox）、默认模式逐面表
+  （`F k type=.. wires=.. edges=[..] du=.. dv=.. box=(..)-(..)`）、`--wirehist`。
+* 端口 TEMP 插桩：`crates/occt-topo/src/step/read_topology.rs::resolve_face` 里 seam 步前后打
+  `SEAMDBG` 行（源面 bbox/`wires`/`up`/`vp` + 结果类型/`nf` + 每个子面 bbox/wires/edges），
+  仅 `SEAMDBG=1` 时输出，用完可撤。
+
+本轮落盘（`output/`，未入库）：`occ_faces_t0m.txt`、`fms_final_t0m.txt`、`fms_noop_t0m.txt`、
+`fms_raw_t0m.txt`、`fixms_port_only.txt`、`port_faces_t0m.txt`、`seamdbg_t0m.txt`。
+
+#### B. 终态：两侧 `FixMissingSeam` **都是 no-op**（F113 系列的「seam 步」嫌疑在本模型上排除）
+
+| | 周期面数 | ret=true | 结果 | before_wires 直方图 |
+|---|---|---|---|---|
+| OCCT `fms all` | 772 | **0** | 全 `Result()`=null | 766×1 / 5×2 / 1×8 |
+| 端口 `--fixms` | 769 | **0** | 全 `result=none` | 763×1 / 5×2 / 1×8 |
+
+* 5 张 2-wire 周期面**逐张同序号**（idx 190/197/204/211/359，bbox 4 位小数一致）；
+* 两侧差 3 张，全部落在 1-wire 桶（766→763），与 `WIREHIST 1:1672→1:1669` 同源：
+  `1:1669 2:92 3:8 5:1 6:1 7:2 8:2`（端口 1775 / 1918）vs `1:1672 2:92 …`（OCCT 1778 / 1921）。
+* `fms all`（默认）与 `fms all raw`（清 `FromSTEP.exec.op`）都是 772 行 ⇒ 只清 `exec.op` **不关 healing**
+  （这不是 noop oracle）。真正的 noop oracle 是 `fms all noop`（`noop` 落在 `argv[4]`，命中探针的
+  `argv[2] || argv[4]` 判定）：**766 行**，且 `noop` 单体读数 `TOTAL faces=1772 wires=2121`
+  ⇒ 4 张碎片与另 2 张面**都是 healing 期造出来的**。
+  **§9.585 初版此处结论错误**（当时误写 `fms all zz noop`，`noop` 落到 `argv[5]` 未被识别，等于又跑了一遍
+  默认），已在 §9.586-A 更正。
+* 端口 transfer 期 seam 步实测：1775 面里 212 面 `ret=true`，结果 1770×单面 + **2×Shell**
+  （`nf=2`、`nf=3`）⇒ 端口 `MakeFacesOnPatch`/`ComposeShell` 通路**只走到 2 次**，其余 210 次是
+  「2 wire → 1 wire 5 edges」的同构还原（OCCT 终态 FACE 0 = 1 wire / 5 edges；端口源面 = 2 wire，
+  步后 = 1 wire / 5 edges，两者一致）。
+
+#### C. 残差 5 张面的唯一分解（tie-out 精确）
+
+```
+面：1775 + 4（缺）− 1（多）= 1778
+线：1918 + 4（缺）− 1（多）= 1921     桶差全在 1-wire：1669 + 3 = 1672
+```
+
+**(1) 端口缺 4 张 2 边 Torus 碎片**（OCCT 逐面表，`type=4` = Torus，各 1 wire）：
+
+| OCCT idx | wires | edges | u span | v span | bbox |
+|---|---|---|---|---|---|
+| 1462 | 1 | 2 | 0.0031 | 0.8039 | (-15.222,18.1411,-8.3)-(-15.0245,18.1841,-8.1) |
+| 1503 | 1 | 2 | 0.0031 | 0.8039 | (20.1333,18.1411,-8.3)-(20.3309,18.1841,-8.1) |
+| 1648 | 1 | 2 | 0.0031 | 0.8039 | (-58.1,-21.2794,-38.7525)-(-57.7,-21.1963,-38.3564) |
+| 1668 | 1 | 2 | 0.0031 | 0.8039 | (-58.1,3.7206,-38.7525)-(-57.7,3.80366,-38.3564) |
+
+四张的 `uper=1 vper=1`（环面双向闭合），`u` span ≈ 0.0031 rad = **极窄碎片**。
+**（§9.586-A 更正）**：这 4 张是 **healing 期**造出来的——`fms all noop` 下它们连同另 2 张面一起消失
+（772→766 行，`noop` 单体 `faces=1772`），且 `FixWireMode=0` / `FixFaceMode=0` 都回到 1772 ⇒ 全部 +6 面
+出自 `ShapeFix_Shape` 的 face 分支（`ShapeFix_Face::Perform` 的 1st wire round + `FixMissingSeam`）。
+「主面」在端口侧存在且同为 9 边
+（例：端口 `F 1645 type=Torus wires=1 edges=[9]`，源面 `SEAMDBG surf=414 up=true vp=true wires=2
+ret=true res=Face nf=1`，bbox=(-58.1,-25.5664,-47.7556)-(-57.4172,-15.4336,-37.6229)）⇒
+**端口把主面 + 碎片合成了 1 张，OCCT 拆成 2 张**。
+
+旁支（未动）：端口该环面面的 bbox 在 x 上比 OCCT 大——
+`x_max` 端口 −57.4172 vs OCCT 输入面 −57.7（y/z 四位小数完全相同，edges 数同为 5 = [4,1]）。
+`ZZFMS in f0` 用的是 `BRepBndLib::Add(f,b,false)`（走几何/曲线），端口 `brep_bnd_lib::add` 对非平面面走
+`brep_uv_bounds::uv_box_of_face` 的 UV 窗口 ⇒ 该差值大概率是**两侧 bbox 实现的差**，不是面几何的差；
+本轮不再追（§9.586 有输入面两边的完整对照）。
+
+**(2) 端口多 1 张面 + 1 条 wire：`surf=1300` 的 seam 步不该出 Shell**
+
+```
+SEAMDBG surf=1300 up=true vp=false wires=2 ret=true res=Shell nf=2
+        bbox=(-9.5000,-9.5000,-60.1893)-(9.5000,9.5000,-44.6439)
+  sub=0 wires=1 edges=[5] bbox=(-9.5000,-9.5000,-56.1340)-(9.5000,9.5000,-44.6439)
+  sub=1 wires=1 edges=[4] bbox=(-9.5000,-9.5000,-60.1893)-(9.5000,9.5000,-56.1340)
+```
+
+OCCT 侧同一张面 = `FACE 1758 type=1 wires=1 edges_per_wire: 9 spans: u=6.2832 v=15.5454
+box=(-9.5,-9.5,-60.1893)-(9.5,9.5,-44.6439)`，且 `fms 1758` → `ret=0`（**OCCT 不拆**）。
+端口终态把它落成 `F 1754`（5 边，z∈[-56.134,-44.644]）+ `F 1755`（2 边，**退化** z=−60.189，
+`stat_idx=None`），即多 1 面 / 1 wire，并丢掉 z∈[-60.189,-56.134] 那 3 边的分段。
+⇒ **端口 `ShapeFixFace::fix_missing_seam` 在该面上比 OCCT 多做了一次分割**，
+应回到 `ShapeFix_Face.cxx:1722-2330`（尤其 `MakeFacesOnPatch` / `CompShell` 段 cxx:2236-2325 的守卫）
+找出端口缺失的 false 分支。这是当前唯一「多做」的缺口，也最便宜。
+
+#### D. 门禁（本轮，当前树）
+
+```text
+cargo check --release                                     -> 0 errors
+cargo test --release --test step_obj_gates                 -> 5 passed / 0 failed
+cargo test --release fuse_box_cylinder_is_closed_solid      -> 1 passed
+T0M   --wirehist                                            -> 1:1669 2:92 3:8 5:1 6:1 7:2 8:2（=1775/1918，§9.583 的 +2 wire 已在内）
+a3n00 --wirehist                                            -> 1:208 2:9 4:1 6:4 10:4（=226/294，与 OCCT 逐项相同，未回退）
+```
+
+#### E. 下一步（按工作量从大到小，本轮未动）
+
+1. **（大）4 张环面碎片**：对拍端口 `surf=409/414` 与 OCCT `1462/1648` 的**环面参数与面 UV 窗口**
+   （r/R/位置 + `BRepTools::UVBounds` vs `uv_box_of_face`），定位端口为何把碎片并进主面。
+2. **（小）`surf=1300` 多拆**：`fix_missing_seam` 缺的 false 守卫，去掉后 T0M 应得 −1 面 / −1 wire
+   （1775→1774 面、1918→1917 wire，缺口变 4 面 / 4 wire）。
+3. 撤销/保留 TEMP：`SEAMDBG` 插桩（env 开关，默认零开销）与 `output/` 下的对拍产物。
+
+
+### 9.586 T-102：环面碎片残差钉进端口 `ComposeShell`（§9.585-B 更正 + `pick` 索引反转修复）
+
+#### A. §9.585-B 更正：`fms all zz noop` 根本没触发 noop
+
+* 探针 `noop` 判定只认 `argv[2] || argv[4]`（`wires_probe.cpp:96-101`）；`fms all zz noop` 把 `noop` 放在
+  `argv[5]`，未命中 ⇒ 那次「noop」读数**就是默认读数**，`fms all zz noop == fms all` 是必然的。
+* 正确读数：`run_wires.bat data\occ\T0M.stp fms all noop` -> **766 行**（默认 772）；
+  `... noop`（单体）-> `TOTAL faces=1772 wires=2121` `hist 1:1463 2:294 3:9 5:1 6:1 7:2 8:1 10:1`。
+* `fms all raw`（清 `FromSTEP.exec.op`）仍是 **772 行** ⇒ 只清 `exec.op` **不关 healing**，不是 noop oracle。
+* 结论：T0M 上 `ShapeFix_Shape` 的 face 分支造 **+6 面**（1772 -> 1778），4 张环面碎片是 **healing 期**产物。
+* `occt_probe --fix <field> 0` 复核：`FixWireMode=0` -> 1772（+6 全在这一支）；`FixMissingSeamMode=0` -> 1973；
+  `FixSplitFaceMode=0` / `FixAddNaturalBoundMode=0` / `RemoveSmallAreaFaceMode=0` / `FixSeamMode=0` / `FixLoopWiresMode=0` -> 1778。
+
+#### B. OCCT 侧 oracle：`emul` + `_dbg\ZZ_ShapeFix_Face.cxx` 直接看 seam 步
+
+`run_dbg.bat <step> emul <rawFaceIdx> noop` = `ShapeFix_Shape` -> `FixFaceTool()->Perform()`。
+T0M 原始面 `1643`（`noop` 逐面表：`type=4 wires=2 edges_per_wire: 4 1 [UV-DEGENERATE-WIRE]`，
+`box=(-58.1,-25.6931,-47.8824)-(-57.3,-15.3069,-37.4962)`）：
+
+```text
+ZZFMS in f0 wires=2 edges=5 bbox=(-58.1,-25.5664,-47.7556)-(-57.7,-15.4336,-37.6229)
+ZZFMS-grid coord=1 isneg=1 period=6.28319 nb1=4 nb2=1
+  m1=(2.93705,9.22024,1.5708,3.14159) m2=(-3.14159,3.14159,3.14159,3.14159)
+  uf=2.93637 vf=-0.785398 SUF=0 SVF=0 URange=6.28319 VRange=6.28319 ismodeu=1 ismodev=0
+ZZFMS compshell faces=2 wires=2 uf=2.93637 vf=5.49779 URange=6.28319 VRange=6.28319 uclosed=1 vclosed=1 ismodeu=1
+  f0 wires=1 edges=9 bbox=(-58.1,-25.5664,-47.7556)-(-57.7,-15.4336,-37.6229)
+  f1 wires=1 edges=2 bbox=(-58.1,-21.2794,-38.7525)-(-57.7,-21.1963,-38.3564)   <-- 碎片 1648
+```
+
+（`vf` 由 `cxx:2396-2404` 的 pdn 修正把 -0.785398 折到 5.49779。）
+
+#### C. 端口 `pick` / `vshift` 索引反转（已修）
+
+`ShapeFix_Face.cxx:1996` `coord = (ismodeu ? 1 : 0)`；`m1[coord]` / `m2[coord]` 的数组由
+`ShapeAnalysis::GetFaceUVBounds(F, UMin, UMax, VMin, VMax)`（`cxx:268-273`）填 ⇒ `m[..][0]` 是 U、
+`m[..][1]` 是 V，**`coord == 1` 选的是 V**。端口 `pick(m, c) = if c == 1 { (m.0, m.1) } else { (m.2, m.3) }`
+把 `coord == 1` 映到 **U**，同向错三处（`shhealing/shape_fix_face.rs`）：
+
+1. `pick` 的轴选择；
+2. `m1[coord][0/1] = min/max(...)`（`cxx:2077-2078`）更新了 U 而不是 V；
+3. `V.SetCoord(coord + 1, shift)`（`cxx:2107`）写 X 而不是 Y。
+
+后果（`SEAMDBG surf=414`）：`shiftw2` 从 0 变 2π；守卫 `m1[coord][1]-m1[coord][0] <= period` 读到 U
+（span 6.4915 > 2π）而失败 ⇒ `vf2` 停在 `SVF = 0`。修复后
+`SEAMGRID uf=2.93637 vf=5.49779 URange=6.28319 VRange=6.28319 uclosed=1 vclosed=1 ismodeu=1 ismodev=0 nb1=4 nb2=1`
+`m1=(2.93328,9.21956,1.57080,3.14159) m2=(-3.14159,3.14159,3.14159,3.14159)` 与 OCCT **逐位一致**。
+
+#### D. 修复后的读数：残差不变，缺口钉进端口 `ComposeShell`
+
+* T0M `--wirehist` 仍 `1:1669 2:92 3:8 5:1 6:1 7:2 8:2`（1775 / 1918）；a3n00 `1:208 2:9 4:1 6:4 10:4`；
+  acs10 / TDB 亦不变 ⇒ 本修复是**对齐性修复**，不改任何现有基线读数。
+* 新增端口插桩 `COMPDBG=1`（`shape_fix_compose_shell/perform.rs`，打印 ComposeShell 输出面数 + 每面
+  wires / edges / bbox）：四张源面 409/411/414/415 全部 `COMPDBG out faces=1`，`f0 wires=1 edges=[9]`。
+* 即端口 `ComposeShell` 只造出 OCCT 的 `f0`，**丢掉 2 边碎片 `f1`**；grid 原点已与 OCCT 逐位相同
+  ⇒ 缺口在 `ComposeShell` 内部（`split_by_grid` / `break_wires` / `collect_wires` / `dispatch_wires` /
+  `make_faces_on_patch`），不在 seam 参数与 `fix_missing_seam` 前段。
+* OCCT `ZZSW-IN`（`_dbg\ZZ_ComposeShell.cxx`）显示该面上 4 次 `SplitWire`，其中一次切在退化段
+  `(-57.7,-20.379,-38.6911)` 上、切点 `V=(-57.7,-21.1963,-38.7503)` —— 正是碎片 `f1` bbox 的角点。
+
+#### E. 门禁（当前树）
+
+```text
+cargo check --release --manifest-path crates\occt-topo\Cargo.toml      -> 0 errors
+cargo test --release --lib                                            -> 1255 passed / 26 failed
+    （26 条全部是 bincaf / iges / rwmesh / step-file-io / xcaf / xmlcaf 的临时文件 os error 5，环境项）
+cargo test --release --test step_obj_gates                             -> 5 passed / 0 failed
+T0M   --wirehist                                                       -> 1:1669 2:92 3:8 5:1 6:1 7:2 8:2
+a3n00 --wirehist                                                       -> 1:208 2:9 4:1 6:4 10:4
+```
+
+#### F. 下一步
+
+1. **（大）端口 `ComposeShell` 丢碎片**：按 `ShapeFix_ComposeShell.cxx:206-270` 的 `Perform` 顺序
+   （`SplitWire` -> `BreakWire` -> `CollectWires` -> `ApplyContext`）逐段对拍 OCCT
+   `zz_emul1643`（`emul 1643 noop`）的 `ZZSW-IN` / `ZZSEGW` 与端口 `split_wire` / `break_wires` /
+   `dispatch_wires` 的段序列，定位端口少切 / 少分类的那一段。
+2. **（小）`surf=1300` 多拆**（§9.585-C(2)，本轮未动）。
+3. TEMP 插桩：`SEAMDBG`（`step/read_topology.rs`、`shhealing/shape_fix_face.rs`）、`COMPDBG`
+   （`shape_fix_compose_shell/perform.rs`）、`ZZ*.cxx`（`specs/occt_probe/_dbg`）。
+
+### 9.587 T-102 收口：`LoadWires` 的 `ShapeExtend_WireData` 边上二次反转去掉 ⇒ T0M 面/wire 结构与 OCCT 逐项相同
+
+#### A. 根因（对着 cxx）
+
+`ShapeFix_ComposeShell.cxx:629-640`（`_dbg\ZZ_ComposeShell.cxx:629-640` 同）：
+
+```cpp
+      TopoDS_Iterator aIt(wire);          // cxx:629  cumOri 默认 true
+      for (; aIt.More(); aIt.Next())
+      {
+        TopoDS_Edge E = TopoDS::Edge(aIt.Value());   // cxx:632  已复合 wire 自身朝向
+        if (E.Orientation() == TopAbs_FORWARD || E.Orientation() == TopAbs_REVERSED)
+          sbwdM->Add(E);                  // cxx:635
+        else
+          sbwdNM->Add(E);                 // cxx:638
+      }
+```
+
+`TopoDS_Iterator` 会把 `wire` 的朝向与每条子边的朝向**复合一次**，`sbwdM` 存下的就是这个复合值；
+端口 `topo_tools_full::edges_of_wire` 走 `cumulated_children`，语义与之相同。
+
+旧 `shape_fix_compose_shell/load_wires.rs::wire_data_edges` 在 `wire.0.orientation() == Orientation::Reversed`
+时又对每条边 `e.0.reverse()` ⇒ **二次反转**：REVERSED wire 的每条边被翻回原始朝向。后果是
+`cxx:586-607` 的 2D `WireOrder` 拿到方向相反的 pcurve（`curve_on_surface_oriented(e, face, true)` 的
+`f`/`l` 取自被翻过的边），周期面上判成 `Shifted [4,3,2,1]` 而不是 `Same [1,2,3,4]`，`FixReorder`
+之后的 `sbwdM` 朝向与 OCCT 相反（§9.586-A 的 `ZZLWC` 对拍即此）。
+
+修复即 `wire_data_edges` 直接返回 `edges_of_wire(wire)`（不再附加任何反转），与 `cxx:629-640` 一致。
+
+#### B. 修复后读数（本轮实测）
+
+* T0M `--wirehist`：`TOTAL faces=1778 wires=1921 faces_with_2plus_wires=106 wires_1edge_closed=217
+  faces_1edge_closed=144`、`WIREHIST 1:1672 2:92 3:8 5:1 6:1 7:2 8:2`（修复前 1775 / 1918 /
+  `1:1669 ...`）⇒ 与 §9.583 记的 OCCT 真值逐项相同（T-102 主验收达成）。
+* §9.585-C(1) 的 4 张环面碎片（OCCT `--faceids` 的 1462/1503/1648/1668）端口现在**都在**：
+  `--ecensus` 0-based 索引 1461 / 1502 / 1647 / 1667，`wires=1 edges=[2]`，`vbox` 最长边 0.129 / 0.129 /
+  0.278 / 0.278（同区其它面都 > 1.0）。
+* §9.585-C(2) 的 `surf=1300` 多拆**消失**：`--ecensus` face=1758 = `wires=1 edges=[9]
+  bbox=(-9.500000,-9.500000,-60.189263)-(9.500000,9.500000,-44.643872)`，即 OCCT face 1758
+  （`FACE 1758 type=1 wires=1 edges_per_wire: 9 spans u=6.2832 v=15.5454`）。
+* `--fixms`：当前读入形状上所有周期面 `ret=false`（seam 步幂等，不再出现 `Shell(2)`）。
+
+#### C. A/B（23 模型面积表）
+
+去掉二次反转后，**唯一变化**的模型是 T0M：旧 body `our=193713.95 occ=192658.64 ratio=1.0055`
+→ 新 body `our=193679.05 ratio=1.0053`；其余 22 个逐位不变（a3n00 227126.78 / **1.0000**、
+acs10 270565.78 / 0.9976、TDB 237464.11 / 1.0110、motoc 191152.24 / 1.0333、bottom 78908.32 / 0.9750、
+top 52132.94 / 1.0000 …），两态 `step_obj_gates` 均 5/5。
+
+`--wirehist` 对照（本轮实测，与 §9.586-D 逐项相同）：
+
+```text
+T0M   -> TOTAL faces=1778 wires=1921   WIREHIST 1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+a3n00 -> TOTAL faces=226  wires=294    WIREHIST 1:208 2:9 4:1 6:4 10:4
+acs10 -> TOTAL faces=787  wires=913    WIREHIST 1:742 2:25 5:1 6:18 8:1
+TDB   -> TOTAL faces=2180 wires=2385   WIREHIST 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+#### D. `--ecensus` / `--fstats` 对 OCCT（T-102 验收第 2 条）
+
+* `--ecensus` 的 `MULTI bbox=.. wires=N` 对 `output/t0m_wires_occt.txt`：两侧各 **106** 条、`wires`
+  逐条相同；其中 4 条的盒值差约 9e-3（例：端口 `(-14.000,-140.551,-231.369)-(20.000,-114.076,-222.253)`
+  vs OCCT `(-14.009,-140.560,-231.378)-(20.009,-114.067,-222.244)`，`wires=2` 两侧相同）⇒ 面归属与
+  wire 数一致，仅 `MULTI` 盒值有 1e-2 级差（旁支，未动）。
+* `--fstats`（`T0M.stp 2.574312 --fstats`，与 OCCT `--facestats 2.574312 0.349066` 同偏转）：
+  `TOTAL faces=1778 computed_lin=2.574309 used_lin=2.574312 stats=1777 mesh_v=62303 mesh_t=70557`、
+  `STATMAP matched=1777 unmatched=1`。§9.581 记旧态 `stats=1765 unmatched=7`（当时 1772 面）。
+  无 stats 的是 0-based face=1764（薄面簇 `x∈[-23.73,-21.27] y∈[-206.86,-204.33] z∈[-107.16,-104.24]`）。
+  逐面盒值与 OCCT `FSTAT_OCC` 不同口径（§9.581 同结论），不能按字符串全等配对。
+
+#### E. 门禁（当前树）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets -> 0 errors
+cargo test --test step_obj_gates                                               -> 5 passed / 0 failed
+cargo test --test 'phase*'                                                     -> 61 passed / 0 failed (10 suites)
+step_obj_gates 面积表 -> 仅 T0M 1.0055 -> 1.0053，其余 22 个逐位不变
+```
+
+（`--lib` 本机 26 条写 `%TEMP%` 的 IO 用例因 `os error 5` 失败，与本次改动无关，见 `board.canvas.tsx:703`。）
+
+#### F. 仪器撤除与剩余旁支
+
+TEMP 插桩**全部删除**：`LOADDBG`（`shape_fix_compose_shell/load_wires.rs`）、`COMPDBG`
+（`.../perform.rs`）、`BWDBG`（`.../break_wires.rs`）、`SEAMDBG`（`step/read_topology.rs`、
+`shhealing/shape_fix_face.rs`）；`specs/occt_probe/occt_probe.cpp` 与 `_dbg\ZZ_*.cxx` 未动。
+
+剩余旁支（未动手）：
+
+1. 4 张多 wire 面的 `MULTI` 盒值比 OCCT 小约 9e-3（`wires` 数相同）。
+2. 端口 face 1764（薄面簇）无网格 stats；`STATMAP unmatched=1`。
+3. T0M 逐面三角数和 `mesh_t=70557` vs OCCT `FSTAT_OCC` 求和 `66576`（密度，与 §9.373 / §9.580-C 同族）。
+
+
+### 9.588 `BRepLib::BuildCurve3d` / `SameRange` / `ShapeFix_Edge::FixAddCurve3d` 族的移植（T-104）
+
+本轮把「边 3D 曲线的真实重建」这条链补进端口：旧端口在 `FixAddCurve3d` 里用
+`meshing::edge_discret::CurveOnSurface`（pcurve + 曲面的适配器）**冒充** 3D 曲线，本轮改成
+`BRepLib::BuildCurve3d` 的同一套分支（平面臂解析 `GeomLib::To3d`，一般臂
+`GeomLib::BuildCurve3d` 出 B 样条）。全部按 `.cxx` 逐句翻译，未新增谓词/启发式；对当前 4 个基准模型
+是**纯对齐性补齐**（`--wirehist` 与 §9.587 逐项相同，见 D）。
+
+#### A. 移植范围（OCCT → 端口）
+
+| OCCT | 端口 |
+|---|---|
+| `ElCLib::To3d(gp_Ax2, gp_Pnt2d / gp_Vec2d / gp_Dir2d / gp_Ax2d / gp_Ax22d / gp_Lin2d / gp_Circ2d / gp_Elips2d / gp_Hypr2d / gp_Parab2d)`（`ElCLib.cxx:1339-1422`） | `crates/occt-core/src/elib/clib.rs::to_3d_pnt` / `to_3d_vec` / `to_3d_dir` / `to_3d_ax2d` / `to_3d_ax22d` / `to_3d_lin` / `to_3d_circ` / `to_3d_elips` / `to_3d_hypr` / `to_3d_parab` |
+| `GeomLib::To3d`（`GeomLib.cxx:559-679`） | `crates/occt-geom/src/geom_lib.rs::to_3d` |
+| `GeomLib::isIsoLine`（`GeomLib.cxx:2991-3077`） | `...::is_iso_line`（出参打包成 `IsoLine`） |
+| `GeomLib::buildC3dOnIsoLine`（`GeomLib.cxx:3079-3221`） | `...::build_c3d_on_iso_line` |
+| `GeomLib::BuildCurve3d`（`GeomLib.cxx:1051-1165`） | `...::build_curve3d`（出参打包成 `BuildCurve3d`） |
+| `BRepLib::CheckSameRange`（`BRepLib.cxx:149-183`） | `crates/occt-topo/src/brep_lib_same_range.rs::check_same_range` |
+| `BRepLib::SameRange`（`BRepLib.cxx:187-263`） | `...::same_range`（+ `rep_ranges` / `set_rep_ranges`） |
+| `BRepLib::evaluateMaxSegment`（`BRepLib.cxx:275-295`） | `crates/occt-topo/src/shhealing/shape_build_edge.rs::evaluate_max_segment` |
+| `BRepLib::BuildCurve3d`（`BRepLib.cxx:301-455`）+ `ShapeBuild_Edge::BuildCurve3d`（`ShapeBuild_Edge.cxx:714-775`） | `...::ShapeBuildEdge::build_curve3d`（同一函数体，含平面臂与 OCC966 夹逼） |
+| `ShapeFix_Edge::TempSameRange`（`ShapeFix_Edge.cxx:335-464`） | `crates/occt-topo/src/shhealing/shape_fix_edge.rs::temp_same_range` |
+| `ShapeFix_Edge::FixAddCurve3d`（`ShapeFix_Edge.cxx:618-638`） | `...::ShapeFixEdge::fix_add_curve3d`（改为委托 `ShapeBuildEdge::build_curve3d`） |
+
+调用点（同一套 `.cxx` 分支）：
+
+* `ShapeFix_ComposeShell.cxx:3506-3529` → `shape_fix_compose_shell/dispatch_wires.rs:301-325`：
+  `!same_range` 时 `ShapeBuild_Edge::Copy` + `FixAddCurve3d` 到临时边、再把 3D 曲线 / 参数区间回写到
+  `newEdge`；`else` 直接 `FixAddCurve3d(newEdge)`（`cxx:3529`）。`FixAddCurve3d` 现在只吃 `edge`，
+  不再需要 `face`（与 `cxx:618` 的签名一致）。
+
+支撑钩子（都为让上面两族能照 `.cxx` 写法，均已在 `Curve2d` 上给出默认 `None`）：
+
+* `occt-geom2d/src/curve.rs`：`offset_value` / `bspline_weights2d` / `bezier_weights2d` /
+  `bspline_distinct_knots_mults`；`offset.rs`（`Some(offset)`）、`offset2d.rs`（`Some(offset*direction)`）、
+  `bezier_curve.rs`（`Some(weights)`）、`bspline_curve.rs`（`distinct_knots_and_mults`）各自实现。
+
+#### B. 关键控制流（与 `.cxx` 对齐）
+
+* **`BuildCurve3d`**（`BRepLib.cxx:301-455`）：已有 3D 曲线直接返回 true（`:320-325`）；
+  `!CheckSameRange` → `SameRange`（`:330-333`）；找平面表示（`:335-357`）命中则 `GeomLib::To3d`
+  解析转 3D（`:358-375`，`To3d` 抛 `Standard_NotImplemented` 时返回 false），`UpdateEdge` 不降容差
+  所以沿袭原容差与 `SameParameter`/`SameRange`/`Degenerated` 标志；否则（`:377-447`）在
+  `Adaptor3d_CurveOnSurface` 上取 `evaluateMaxSegment`（`30 + max(曲面 U/V 结点数, 2D 结点数)`）
+  调 `GeomLib::BuildCurve3d`，容差取 `max(BRep_Tool::Tolerance(edge), tolerance)`，只有一个
+  CurveOnSurface 表示时置 `SameParameter(true)`（`:441-447`）；末尾 `ShapeBuild_Edge.cxx:741-758`
+  的 OCC966 夹逼（非常周期曲线自身区间窄于边区间时夹逼并清 `SameRange`）。
+* **`SameRange`**（`BRepLib.cxx:187-263`）：以首个表示为参考区间，把区间不一致的 pcurve（含闭合面的
+  第二条）经 `GeomLib::SameRange` 重参数化到参考区间，再 `B.Range` 全部表示 + `SameRange(true)`；
+  `CheckSameRange` 只做区间比对。
+* **`FixAddCurve3d`**（`cxx:618-638`）：退化或已有 3D 曲线 → false（`:622`）；`!SameRange` →
+  `TempSameRange`（`:626-629`，其参考区间在带 3D 曲线时取 3D 区间，否则取首个表示）；否则
+  `ShapeBuild_Edge::BuildCurve3d`（`:631-635`）。
+* **`GeomLib::BuildCurve3d`**（`cxx:1051-1165`）：平面臂 `To3d`（`:1077-1093`）；等参线臂
+  `isIsoLine` + `buildC3dOnIsoLine`（`:1096-1114`，含 `Reparametrize` 与 23 点偏差校核）；一般臂
+  `AdvApprox_ApproxAFunction` 对复合的 D0/D1/D2 逼近（`:1116-1164`）。
+
+#### C. UNPORTED（各文件头已逐条标注）
+
+1. `GeomLib::To3d` 的有理 `Geom_BezierCurve`（`cxx:592-596`）与周期 `Geom_BSplineCurve`
+   （`cxx:619-629`）两臂：端口 2D 类型无权重 / 周期构造，报 `None` 而**不**造一条非 OCCT 的曲线。
+2. `GeomLib::BuildCurve3d` 一般臂：`GeomLib_CurveOnSurfaceEvaluator` 的子区间重裁剪
+   （`cxx:1009-1016`）与 `Adaptor3d_CurveOnSurface::NbIntervals` 的切点（`cxx:1045-1114`）未移植，
+   端口按自适应切分（内部参数处点 / 切矢 / 曲率相同，只有子区间端 patch 有差）。
+3. `TempSameRange` 的周期 pcurve 平移（`cxx:392-400`）与 `Geom2d_BezierCurve::Segment`
+   workaround（`cxx:405-415`）。
+4. `shape_build_edge.rs::TransformPCurve` 的 `uFact != 1` 仿射分支（`ShapeBuild_Edge.cxx:614-698`）。
+5. `ShapeExtend_OK/DONE1/FAIL1` 与 `myStatus` 累加器（`FixAddCurve3d` / `FixLoopWire` 的状态位）。
+
+#### D. 验收读数（本轮实测，本机）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets -> 0 errors
+cargo test  --manifest-path crates\occt-topo\Cargo.toml --offline --test step_obj_gates -> 5 passed / 0 failed
+```
+
+`--wirehist`（本机 debug exe）：
+
+```text
+T0M   -> TOTAL faces=1778 wires=1921   WIREHIST 1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+a3n00 -> TOTAL faces=226  wires=294    WIREHIST 1:208 2:9 4:1 6:4 10:4
+acs10 -> TOTAL faces=787  wires=913    WIREHIST 1:742 2:25 5:1 6:18 8:1
+TDB   -> TOTAL faces=2180 wires=2385   WIREHIST 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+与 §9.587 记的 OCCT 真值逐项相同 ⇒ 本轮是纯对齐性补齐（旧 `CurveOnSurface` 冒充 3D 曲线换成
+真实 `BuildCurve3d`，不改变已对齐的面 / wire 结构）。
+
+`--ecensus` 的 T0M `wires>=2` 面数 = **106**（= OCCT `--wires` 的 `MULTI` 条数）；§9.583 的两张
+loop-wire 面现为 `face=628 wires=2 edges=[11,1]` / `face=635 wires=2 edges=[15,1]`（§9.583 记为
+`wires=1 edges=[12]` / `wires=1 edges=[16]`），与 OCCT `FixLoopWiresMode` 默认（同 bbox 都 `wires=2`）
+一致 —— 这是 §9.585 的 `FixLoopWire` 族（`shhealing/loop_wire.rs`，调用点
+`step/read_topology.rs:795-806` ↔ `ShapeFix_Face.cxx:583-598`）仍在生效的证据。
+
+#### E. 旁支（未动手）
+
+1. 端口树里仍留若干 TEMP 插桩（均为 env 开关、默认零开销）：`STEPEDBG` / `STEPCDBG`
+   （`step/read_topology.rs`）、`CIRCDBG`（`occt-geom/src/circle.rs`）、`PCURDBG`
+   （`meshing/incremental_mesh/discret_root.rs`）、`NVDBG` / `CBDBG`（`meshing/node_insertion.rs`）、
+   `TORSDBG` / `TORDUMPV`（`meshing/range_splitter/splitter.rs`）。它们属网格调查（T-103）的仪器，
+   本轮未清理。
+2. 网格侧残差仍是 T-103：T0M 逐面三角数和 `mesh_t=70557` vs OCCT `66576`、face 1764 无 stats、
+   4 条 `MULTI` 盒值差约 9e-3。
+
+
+### 9.589 T-103 第一步：配对键与逐面读数（T0M 残差锁定在 Torus）
+
+#### A. 仪器坑：OCCT 探针的 `--facestats` 与 `--wires` **面序不同**
+
+同一份 OCCT 默认读入的 T0M，两个模式的 face 索引**不是同一张面**：
+
+```text
+--facestats 面 idx 0..11  ->  --wires 面 idx  52/54/55/57/58/59/70/71/73/74/76/77（同 box 匹配）
+--facestats 1778 行 -> --wires 表按 box 全部可映（1778/1778），但 1772 行不在原索引上
+--wires.box vs --facestats.bbox @same idx = 6/1778
+```
+
+⇒ 任何「OCCT 侧跨模式按 face 索引配对」的读法都无效（§9.581 当时的配对必须重估）；
+跨模式只能用几何（box/bbox）配对。
+
+#### B. 端口 ↔ OCCT 逐面配对（按 bbox，容差 0.05）
+
+端口 `--fsurf`（`zz_probe_a3n00 <step> --fsurf`，逐面 `type/mv/mt/wires/urange/vrange/uper/vper/bbox`）
+对 OCCT `--facestats 2.574312 0.349066`：
+
+```text
+port rows=1777  paired=1722  unmatched=55
+paired mt: port=68114  occ=64496  delta=+3618 (+5.61%)
+paired mv: port=60264  occ=58242
+bit-identical (mv 与 mt 同时相同): 1462/1722 (85%)
+```
+
+按端口曲面类型归并（配对子集）：
+
+| 类型 | 面数 | 端口 mt | OCCT mt | delta | ratio | 逐位相同 |
+|---|---|---|---|---|---|---|
+| **Torus** | 74 | **19722** | **15600** | **+4122** | **1.264** | 27 |
+| BSpline | 295 | 10715 | 11155 | −440 | 0.961 | 254 |
+| Plane | 689 | 14471 | 14671 | −200 | 0.986 | 629 |
+| Cone | 157 | 6309 | 6211 | +98 | 1.016 | 96 |
+| Cylinder | 489 | 15366 | 15332 | +34 | 1.002 | 443 |
+| Sphere | 18 | 1531 | 1527 | +4 | 1.003 | 14 |
+
+结论：T0M 的 +6.0% 几乎全部来自 **Torus 面偏密（+26.4%）**；其余曲面类型都在 ±1.6% 内，
+且 85% 的面已经逐位相同。逐面差最大的 20 张里 19 张是 Torus。这与 §9.373（a3n00 上 Torus
+1.241×）同族，属 `BRepMesh_TorusRangeSplitter` 那条线。
+
+#### C. 端口 `TorusRangeSplitter` 对着 `.cxx` 审（`D:\source\OCCT-src\...\BRepMesh_TorusRangeSplitter.cxx`）
+
+`generate_surface_nodes`（`splitter.rs:534-648` ↔ `cxx:22-115`）逐句可比，**已判定忠实**：
+
+* `oldDv = ArcAngularStep(r, defl, angle, minSize)`；`Dv = oldDv`（`cxx:38-40` 的 `0.9*oldDv`
+  紧接着被覆盖，端口照此）✔
+* `nbV = max(int(diffV/Dv), 2)`；`Dv = diffV/(nbV+1)` ✔
+* `ru = R+r`；`ru > 1e-16` 分支：`Du0 = ArcAngularStep(ru,…)`、`aa = sqrt(Du0²+oldDv²)`、
+  `aa < RealSmall` 返回 null、`Du = Du0*min(oldDv,Du0)/aa` ✔（端口仅多一条 `diff_v*r != 0` 守卫，
+  OCCT 该处不做除零判断）
+* `nbU = max(int(diffU/Du), 2)`；`nbU = max(nbU, int(nbV*diffU*R/(diffV*r)/5))`；`Du = diffU/(nbU+1)` ✔
+* `R < r` → 均匀 `nbU+1` 段，否则 `fillParams(ParametersU, RangeU, nbU, 0.5)`；`ParameterV` 用
+  `fillParams(…, nbV, 2/3)` ✔
+* `newRangeU = (first+Du*0.1, second−Du*0.1)`、`newRangeV` 同理、半开区间 `[)` 的发射循环 ✔
+* `fillParams`（`cxx:129-177`）与 `FUN_CalcAverageDUV`（`cxx:183-211`）✔
+
+`AddPoint`（`cxx:120-125`：`DefaultRangeSplitter::AddPoint` + `ParametersU.Add(X)` + `ParametersV.Add(Y)`）
+与端口 `add_point`（`splitter.rs:547-550`）✔。
+
+#### D. 下一个入口（本轮未动手，已按 `.cxx` 定位）
+
+OCCT 喂给 splitter 的点来自 `BRepMesh_NodeInsertionMeshAlgo::collectWirePoints`
+（`hxx:142-183`），它对**每条边的 pcurve 只取 `n−1` 个点**（`IsForward` 时丢最后一个，
+反向时丢第一个 —— 即丢掉与下一条边共享的那个顶点），并在循环里 `myRangeSplitter.AddPoint(aPnt2d)`；
+`initDataStructure`（`hxx:75`）对**每条 wire** 都调它。
+
+端口有两条喂法：
+
+1. **正常路径**（`AdjustRange` 后 `IsValid`，`node_insertion.rs:494-519`）：喂 `wires_uv`
+   （`node_insertion.rs:681-688` 已按 `collectWirePoints` 的 n−1 规则构造）⇒ 与 `.cxx` 一致。
+2. **回退路径**（splitter 失效时，`node_insertion.rs:266-272` 的 `else` 分支）：喂
+   `self.boundary_uv`（`node_insertion.rs:483` 的 `uv.clone()`），而 `uv` 是**全量 n 个点**
+   （`node_insertion.rs:660-673`），且不做 `collectWirePoints` 的端点删除。这会让
+   `fillParams` 的 `aLength` 被重复顶点抬高、`aStdStep = aDiff/aLength` 变小 ⇒ 插入更多参数
+   ⇒ 环面网格变密。该分支的注释声称它就是 `collectWirePoints` 的喂法，与此不符。
+
+验证步骤：对该批 Torus 面加 env 开关打印 `sp.is_valid()`（走 1 还是 2）与
+`inner.u_params.len()/v_params.len()`，与 `TORSDBG` 行的 `nup/nvp` 对齐；若命中即按 `hxx:142-183`
+让回退路径也喂 `collectWirePoints` 的 n−1 序列（**不动** `uv`/`p3t` 前沿结构本身，`initDataStructure`
+的 `aWires` 才是分类器输入的来源），再跑 T0M `--fstats` 与 `step_obj_gates` 验证 Torus 收敛。
+
+**先把「节点多」还是「三角化多」分开**（本轮已测，配对子集）：
+
+| 类型 | 面数 | mv（端口/OCCT） | mv 比 | mt（端口/OCCT） | mt 比 |
+|---|---|---|---|---|---|
+| **Torus** | 74 | **11951 / 9852** | **1.213** | **19722 / 15600** | **1.264** |
+| BSpline | 295 | 9031 / 9236 | 0.978 | 10715 / 11155 | 0.961 |
+| Plane | 689 | 15833 / 15811 | 1.001 | 14471 / 14671 | 0.986 |
+| Cone | 157 | 6041 / 5973 | 1.011 | 6309 / 6211 | 1.016 |
+| Cylinder | 489 | 16328 / 16294 | 1.002 | 15366 / 15332 | 1.002 |
+| Sphere | 18 | 1080 / 1076 | 1.004 | 1531 / 1527 | 1.003 |
+
+环面**节点和三角数同时高**（+21% / +26%），且 `mt/mv` 之比两侧都是 ~2.0 ⇒ 不是三角化层，
+是**参数域密度**层（`nbU/nbV` 或喂进 `fillParams` 的参数集不同）。下一步取 OCCT 侧同源 oracle：
+按仓库既有 `specs/occt_probe/_dbg/ZZ_*.cxx` 靶窗机制加一份 `ZZ_BRepMesh_TorusRangeSplitter.cxx`，
+在 `GenerateSurfaceNodes` 内打印 `aDiffU/aDiffV/r/R/oldDv/nbV/Dv/Du/nbU/GetParametersU().Length()/
+GetParametersV().Length()/aParamU->Length()/aParamV->Length()/aNodes->Length()`，与端口 `TORSDBG=1`
+的 `diff_u/diff_v/r/R/old_dv/nb_v/du/nb_u/nup/nvp/nu/nv/nodes` 逐字段对齐；字段一分岔即定位到
+是 `nbU/nbV` 的算式、还是参数集本身。`generate_surface_nodes` 的算式已判定忠实，
+所以优先怀疑参数集（`AddPoint` 喂入的 pcurve 参数），也就是 D 节那条入口。
+
+#### E. 两个环境旁支（本轮实测，非移植缺口）
+
+1. **`data/occ/occ-T0M.obj` / `occ-TDB.obj`（及 `.mtl`）在工作树里被删了**（`git status` 的
+   worktree `D`，HEAD 里在）。`step_obj_gates` 的 `occ_text()` 读参考 OBJ 时
+   `panic!("missing occ/occ-T0M.obj")` ⇒ `step_obj_area_matches_occt` /
+   `step_obj_parity_bboxes_match_occt` 单跑 FAILED 是这个原因，不是网格回归。
+   `git restore --source=HEAD -- data/occ/occ-T0M.obj data/occ/occ-T0M.mtl data/occ/occ-TDB.obj
+   data/occ/occ-TDB.mtl` 已恢复（`git diff --stat` 为空；`status` 仍显 `M` 是
+   `core.autocrlf=true` 的索引脏标记）。恢复后清掉残留插桩 env 重跑整套：`cargo test
+   --test step_obj_gates` = **5 passed / 1 suite / 454.52s** ⇒ 那次 FAILED 纯属缺文件，
+   不是网格回归。
+2. **本机 shell 会话长期残留 TEMP 插桩 env 开关**（`STEPEDBG` / `STEPCDBG` / `PCURDBG` /
+   `CBDBG` / `TORSDBG` / `ZZTORDBG` / `CIRCDBG` / `T10x_DBG` / `T17x_DBG`）。跑门禁前必须先清
+   （`foreach($v in ...){ Remove-Item "Env:\$v" }`），否则 `cases()` 首轮的导出会被插桩输出淹没，
+   看不出真正的 panic。
+
+### 9.590 —— 「空面」第一现场钉死：T0M face 1764 走 `invalid discrete range`，根因是它自己的 wire 塌成一条 v 线
+
+用户报「TDB / T0M 蓝圈里那张面是空的」。T0M 侧已逐段读到底（新插桩 `MBDIAG=1`）：
+
+1. **是 `AdjustRange` 判 invalid，不是 Delaunay、不是封面。** `node_insertion.rs::perform` 实测：
+
+```text
+MBDIAG rng face=1764 surf=Cone sup=true svp=false su=[0.000000,6.283185] sv=[-inf,inf]
+  du=[0.202683,6.283185] dv=[0.717188,0.717188] delta=(1.000000,1.000000)
+  buv=[0.202683,6.283185]x[0.717188,0.717188] nuv=32
+MBDIAG err face=1764 FAILURE=1 msg=DelaunayNodeInsertionMeshAlgo::perform: face 1764 has an invalid discrete range
+```
+
+32 个边界 UV 点**全部**落在 v=0.717188 这**一条**线上 ⇒ V 向 extent=0 ⇒ `compute_length_v`=0
+⇒ `IsValid()==false`（`param_set.rs:792-837` 的 `adjust_range_base`，用不受限 adaptor 的
+`Geom_Surface::Bounds`）⇒ `node_insertion.rs:537-543` 置 `IMeshData_Failure` ⇒
+`discret_root.rs:439-453` 按 `BRepMesh_BaseMeshAlgo.cxx:52-59` 静默跳过 ⇒ 无 stats ⇒ 空面。
+**这条控制流本身是忠实的**，缺口在喂给它的那条 wire 上。
+
+2. **OCCT 同索引面不是这样。** `output/t0m_occt_wires.txt` FACE 1764 = `type=2`（Cone）、
+`wires=1 edges_per_wire: 4`、`spans u=6.2832 v=1.4344`、box=`(-23.7295,-207.157,-107.159)-(-21.2705,-206.059,-104.834)`、
+带 `SEAM face=1764` ⇒ OCCT 保留完整 V 段 `[-0.717188,+0.717188]`（box 在 -Y 侧比端口多 0.298，
+正好是端口丢掉的那半段）；`output/t0m_fs_occt.txt` `FSTAT_OCC face=566`（同 box）
+`nodes=72 triangles=104`。
+
+3. **端口该面 `--ecensus face=1764` = `wires=1 edges=[1] nv=1`**，唯一顶点
+`(-21.687158,-206.759155,-105.124128)`；`--fsurf` 里没有它（无 stats）。同簇邻面对得上
+（端口 1763 `edges=[5]` ↔ OCCT FACE 1763 `edges_per_wire: 5`；端口 1765 `edges=[5]` ↔ OCCT
+`6`）。⇒ 修法要往 `--ecensus`/healing 那条线拿回 OCCT 的「4 边 + 全 V 段」wire，
+**不给网格器开特例**。
+
+4. **TDB 同口径零命中**：`MBDIAG=1` 跑 `data/occ/TDB.stp` 无任何输出（无 `uv<=1`、无 invalid
+range、无 panic）；`--fstats` 2180/2180 全有 stats、无 `mt=0` 面、22 张 `edges=[1] nv=1`
+的顶点面全部出网格（face 80/85 = `mv=36 mt=34`、逐面 mesh 面积 28.13、bbox 全覆盖）；
+按 `--fstats` 前缀分组算出的逐面 mesh 面积最小值也不是退化面（ratio ≥ 2.6e-4）。
+⇒ 当前树的 TDB 读数里没有「整张空面」，用户看到的 TDB 那一处必须指定面或文件再查。
+
+5. **旁支：T-103 卡里的 `mesh_t=70557` 已过期。** 当前 `zz_probe_a3n00 data\occ\T0M.stp
+   --fstats` 的逐面 `mt` 求和 = **65303**，门禁当轮导出的 `data/output/T0M.obj` 三角数也是
+   **65303**（两路一致），而 OCCT `FSTAT_OCC` 求和 66576 ⇒ 现在是 **-1.9%（反向）**，不是
+   §9.589 记的 +6.0%。T-104（BuildCurve3d / SameRange）落在两次读数之间，改的是 pcurve ⇒
+   离散化，所以 §9.589-C/D 那条「Torus +26.4%」必须在 65303 基线上重跑配对后才能继续用。
+
+新插桩（env 位 `MBDIAG=1`，跑门禁前记得清）：`node_insertion.rs::perform` 打印 `uv<=1` 的面与
+invalid range 的 `du/dv/delta/buv`；`discret_root.rs::triangulate_model_faces` 打印
+`FAILURE=1` 的逐面错误与 panic 面。
+
+### 9.591 —— 闭环：移植 `FixPeriodicDegenerated` + `IsPeriodicConicalLoop`，T0M face 1764 从「1 边 0 跨度」恢复到全 V 段并出网格
+
+#### A. 缺口定位（承 §9.590）
+
+§9.590 钉死第一现场：face 1764 的 wire 塌成 `edges=[1] nv=1`（单顶点），V 跨度 0 ⇒ `invalid discrete range`。回到 `ShapeFix_Face::Perform`（`ShapeFix_Face.cxx:482-498`）看读入链：调 `FixMissingSeam`（`cxx:492-498`）之前先调 `FixPeriodicDegenerated`（`cxx:486-489`，受 `myFixPeriodicDegeneratedMode` 控制，`ShapeFix_Face.cxx:144` 默认 `-1` ⇒ `NeedFix(-1)==true`，`ShapeFix_Root.lxx:101`；STEP 的 `ShapeProcess_OperLibrary.cxx:830` 只设 `FixMissingSeamMode`，不会关掉它）。端口只移植了 `FixMissingSeam` 尾部，缺的就是这一段。
+
+#### B. 移植内容（`crates/occt-topo/src/shhealing/shape_fix_face.rs`）
+
+- `PeriodicConicalLoop` + `is_periodic_conical_loop`（`shape_fix_face.rs:88-173` ↔ `ShapeFix_Face.cxx:3018-3098`）：逐边取定向 pcurve（`boptools_2d::curve_on_surface_oriented(.., true)` ↔ `ShapeAnalysis_Edge::PCurve`），累计 `dU`、`sum|dU|`、min/max U/V；判据 `abs(sum|dU| - 2pi) <= tol && abs(maxU - minU) > 2pi - tol`，并用 `sum dU < 0` 记 U 方向。
+- `ShapeFixFace::fix_periodic_degenerated`（`shape_fix_face.rs:261-392` ↔ `ShapeFix_Face.cxx:3101-3259`）：`Context()->Apply`（`cxx:3108-3111`）→ 单 wire + `gp_cone` 门（`cxx:3131-3139`）→ `VIso(0.0)` 基圆半径 `R`（`cxx:3167-3180`）→ apex V `= -R/sin(alpha)`（`cxx:3183-3184`）+ `Apex()` 顶点 → apex V 落在 loop V 区间内（含等于容差）即退出（`cxx:3198-3201`）→ 按 apex 在 loop 下方/上方选 2D 支撑线 `(U, apexV)` + 方向 `+-X` + 是否翻 `sole_wire`（`cxx:3205-3223`）→ 退化 apex 边（pcurve 挂本 face、`Degenerated=true`、`Range(E,0,|dU|)`，`cxx:3226-3232`）→ apex wire（`cxx:3236-3237`）→ `EmptyCopied` 新面装 `[sole_wire, apex_wire]` 并 `Context()->Replace`（`cxx:3239-3257`）。
+- `fix_periodic_degenerated_mode` 默认 true（`shape_fix_face.rs:192-195`）。
+- `perform_fix_missing_seam` 按 `cxx:482-498` 顺序先 `FixPeriodicDegenerated` 再 `FixMissingSeam`（`shape_fix_face.rs:238-248`）。
+- `fix_missing_seam` 开头补 `myFace = TopoDS::Face(Context()->Apply(myFace))`（`shape_fix_face.rs:417-423` ↔ `ShapeFix_Face.cxx:1737-1741`）：不补这一句就拿不到 `fix_periodic_degenerated` 换进 context 的 2-wire 面，后面的 wire 配对还是 1 条。
+
+接线：`step/read_topology.rs:766`（STEP 读入 healing 段）、`examples/zz_probe_a3n00.rs:337`（`--fixms` probe）。
+
+#### C. 一个坑：退化 apex 边的参数区间要落在 pcurve 上
+
+`BRep_Builder::UpdateEdge` 给的是 pcurve；`Range(anApexEdge, 0, fabs(aMaxLoopU - aMinLoopU))`（`cxx:3232`）在 `BRep_TEdge` 上只有一份 range，3D 曲线与所有 CurveOnSurface 共享。端口是 pcurve 表 + `edge_range`/`pcurve_range` 两处，首轮只设了 `set_edge_range`，`pcurve_range` 仍是默认 `(-inf, inf)` ⇒ 下游 `check_wire` 判该边范围无效、wire 又退回 1 边。补 `reg.set_pcurve_range(&apex_edge, face_key, 0.0, |maxU - minU|)`（`shape_fix_face.rs:371`）后与 OCCT 一致。
+
+#### D. 验证（本轮实测，T0M = `data/occ/T0M.stp`）
+
+- `cargo check --manifest-path crates/occt-topo/Cargo.toml --offline` = **0 errors**。
+- `zz_probe_a3n00 data\occ\T0M.stp --fstats`：FSTAT 行 **1777 -> 1778**（失败面归零），`FSTAT face=1764 key=1884972981744 mv=38 mt=35 bbox=(-23.729500,-207.157336,-107.158859)-(-21.270500,-206.058541,-104.833829)` —— 与 OCCT `FSTAT_OCC face=566` 的 bbox **逐位相同**，即 §9.590-2 说的 V 段 `[-0.717188,+0.717188]` 已拿回（OCCT `FACE 1764` 记 `spans: u=6.2832 v=1.4344`）。该面密度同 OCCT 尚差一倍（端口 `38/35` vs OCCT `74/108`，§9.592-D 的正确参照读数；旧参照 `output/t0m_fs_occt.txt` 记 `72/104` 已因角度圆整作废）。
+- `--ecensus face=1764`：`wires=1 edges=[5] nv=2`（修复前 `wires=1 edges=[1] nv=1`）；OCCT `FACE 1764` 记 `edges_per_wire: 4`，且 `output/t0m_occt_wires.txt` 有两条 `SEAM face=1764`（`p1=(0,-0.717188)->(0,0.717188)` 对 `p2=(6.28319,-0.717188)->(6.28319,0.717188)`）⇒ 端口也进到「seam 边 + 退化 apex 边」形态，只多一条边，见旁支 1。
+- 逐面 `mt` 求和 = **65338**（`data/output/T0M.obj` 三角数同），OCCT `FSTAT_OCC` 求和 **66576** ⇒ 差值从 §9.590-5 的 65303 基线起算 **-1.86%**（方向仍与 §9.589 记的 +6.0% 相反，那条必须在 65338 基线上重跑）。
+- `cargo test --test step_obj_gates` = **5 passed**，T0M 面积比 1.0053（阈值 0.025）。
+
+#### E. 旁支 / 未移植（登记，未动手）
+
+1. face 1764 端口 `edges=[5]` vs OCCT `edges_per_wire: 4`（多 1 条），且面级密度 `38/35` vs OCCT `72/104`（约一半）。bbox 与 V 段已对齐、面已出网格；密度差属 `nbU/nbV` 参数域层，与 §9.589-D、§9.590-5 的 cone/torus 密度问题同源。相邻面也有既有差：端口 1765 `edges=[5]` vs OCCT `6`、1766 `edges=[1]` vs OCCT `2`。
+2. `ShapeFix_Face.cxx:3101-3259` 之外，`FixMissingSeam` 的 seam 构造段（`cxx:1899-2330`）仍是既有未移植面（`shape_fix_face.rs:395-398` 已标），端口现在走的是 `ComposeShell` 那条代替路径。
+3. §9.590-4 的 TDB「空面」仍需用户指定面/文件才能查。
+
+### 9.592 —— T-103 基线纠错：OCCT 侧 `--facestats` / `--torusdbg` 的角度必须是 20° 的**同一个 double**（写成 `0.349066` 少 1.5e-7 rad 就把环面读数整体带偏）；纠正后「Torus +26%」结论**反转**
+
+#### A. 分歧量 = 角度（不是偏转、不是网格算法）
+
+- 端口侧角度：`20.0_f64.to_radians()` = `0.3490658503988659`（`zz_probe_a3n00.rs:355/390/558`，`--fstats` / `--fsurf` / `neighbors` 三处一致）。
+- T-103 一直用的 OCCT 参照写法是 `--facestats 2.574312 0.349066`（卡与 §9.589/§9.590 的复跑命令），而 `std::atof("0.349066")` = `0.34906599999999998`，比端口真值大 **1.5e-7 rad**（相对 4.3e-7）。
+- 环面 splitter 的 V 步长就是角度：`oldDv = ArcAngularStep(r, defl, angle, minSize)`（`GCPnts_TangentialDeflection.cxx` 返回 `min(2*acos(1-defl/r), angle)` 再按 `minSize/r` 抬底；端口 `param_set.rs:173-189` 同式），`Dv = oldDv`、`nbV = int(diffV/Dv)`。环面 V 跨度常是 20° 的整数倍（π、π/2、π/4…），而 `π / 20° = 9.000000000000002` ⇒ **正好卡在整数边界**上：角度差 1.5e-7 直接让 `nbV` 9→8、4→3…，`fillParams` 的 `aStdStep = aDiff/aLength` 与相邻间隔同样卡边。
+- 实测（同一份 T0M，84 张环面，`.target-gate/_t103_torcmp.mjs` 按 `R/r/u-range/v-range(mod 2π)` 配对）：
+
+| OCCT `--torusdbg` 输入 | U 网格不一致 | V 网格不一致 | 面级 nodes 不一致 | nup/nvp 不一致 |
+| `2.574312 0.349066`（旧） | 13 | 19 | 19 | 46 / 51 |
+| `2.5743090254715244 0.3490658503988659`（端口真值） | 5 | 4 | 4 | 39 / 44 |
+| `2.574312 0.3490658503988659`（只改角度） | 5 | 4 | 4 | 39 / 44 |
+
+  后两行逐位相同 ⇒ 分歧量是**角度**；face 308/315/353/354 的 `nb_u/nb_v/du/dv` 由「差 1」变为**逐位相同**，偏转 `2.574312` vs `2.5743090254715244` 在这批环面上不改变任何 splitter 输出。
+
+#### B. 基线纠正（T0M，`--facestats <defl> <angle>`）
+
+| OCCT 参照 | nodes 求和 | triangles 求和 |
+| `2.574312 0.349066`（旧，`output/t0m_fs_occt.txt`） | 60050 | 66576 |
+| `2.5743090254715244 0.3490658503988659`（= 端口输入；`output/t0m_fs_occt_matched.txt`） | 60547 | 67346 |
+| `2.574312 0.3490658503988659`（只改角度；`output/t0m_fs_occt_angleonly.txt`） | 60547 | 67346 |
+
+（`60547/67346` 与 `.target-gate/_t0m_fs_occt_exact.txt`（10-04 15:28 的旧产物）逐位一致 ⇒ 上一轮曾跑出过正确参照，但没入账，T-103 仍沿用 66576。）
+⇒ 端口 `--fstats` 逐面 `mt` 求和 **65338** 对正确参照 = **-2.98%**（端口更疏），既不是旧的 +6.0%，也不是 §9.590 的 -1.9%（那是 65303 对旧参照）。
+
+#### C. 配对重做（bbox 容差 1e-1；`_t103_p2.mjs` 已改成 `node _t103_p2.mjs <occt 文件>`）
+
+`paired=1723 unmatched=55`，`paired mt: port=63295 occ=65367 (-3.17%)`，
+`bit-identical (mv 且 mt) = 1622/1723 = 94.1%`（旧参照下 85%）：
+
+| 类型 | n | port mt | occ mt | ratio | identical |
+| --- | --- | --- | --- | --- | --- |
+| Torus | 74 | 14868 | 16140 | **0.921** | 68 |
+| BSpline | 295 | 10715 | 11157 | 0.960 | 258 |
+| Plane | 689 | 14471 | 14746 | 0.981 | 652 |
+| Cone | 158 | 6344 | 6421 | 0.988 | 150 |
+| Cylinder | 489 | 15366 | 15372 | 1.000 | 476 |
+| Sphere | 18 | 1531 | 1531 | 1.000 | 18 |
+
+⇒ §9.589 的「Torus +26.4%、节点与三角数同时高 ⇒ 参数域密度层」**作废**：正确参照下端口在环面上**更疏**（0.921），残差方向相反、量级也不同；BSpline 0.961→0.960（不受角度影响，是本轮唯一没变的项）。
+
+#### D. 新的残差入口（本轮未动手）
+
+- 逐面差最大的（bbox 配对，格式 `port/occ`）：`pf=1693 ↔ of=390` Torus `mv=92/445 mt=90/795`、`pf=112 ↔ of=320` Torus `82/222 80/360`、`pf=8 ↔ of=310` Torus `84/154 82/222`、`pf=191 ↔ of=68` BSpline `82/129 80/174`、`pf=1667 ↔ of=387` Torus `5/92 3/96`；§9.591 修的 face 1764（Cone）在正确参照下是 `38/74 · 35/108`。
+- 84 张环面仍有 5 张 U/V 网格不一致（310/314/319/354/390）：310 的 V 域整体差一个 2π（端口 `rv=[8.933685,9.915870]` vs OCCT `[2.650500,3.632685]`）⇒ `aDiff` 在 ULP 上不同、`nv` 4→6、nodes 70→140；354 的 V 跨度比 OCCT 宽 1.3e-14（`diff_v` = π vs π-1.3e-14）⇒ `nbV` 8→9。这两条都是 `fillParams`/`nbV` 的**卡边**面，不是算法差异。
+- 下一步（一）：先给 55 条 `unmatched` 与上面 5 张面做几何复核（port `--fsurf` 的 `urange/vrange` vs OCCT `--facestats`），排除配对错；下一步（二）：对 `pf=1693 ↔ of=390` 跑端口 `TORSDBG=1 TORDUMPV=1` 与 OCCT `--torusdbg <defl> 0.3490658503988659` 逐字段对拍（`R/r/ru/rv/diff_u/diff_v/nb_u/nb_v/du/dv/old_dv/nup/nvp/nu/nv/nodes` 九量），第一个分岔量即缺口（§9.589-D 的入口仍然有效，只是要用对齐的输入）。
+
+#### E. 复跑命令（角度必须给全精度 double）
+
+```text
+cmd /c "specs\occt_probe\run_here.bat data\occ\T0M.stp --torusdbg 2.5743090254715244 0.3490658503988659" > specs\occt_probe\_dbg\zz_tor_t0m_exact.txt
+cmd /c "specs\occt_probe\run_here.bat data\occ\T0M.stp --facestats 2.5743090254715244 0.3490658503988659" > output\t0m_fs_occt_matched.txt
+rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_probe_a3n00 -- data\occ\T0M.stp --fsurf > .target-gate\_t0m_fsurf.txt
+(PowerShell) $env:TORSDBG=1; $env:TORDUMPV=1; <同上 --fstats> 2> tmp_torv.txt
+node .target-gate\_t103_torcmp.mjs specs\occt_probe\_dbg\zz_tor_t0m_exact.txt tmp_torv.txt
+node .target-gate\_t103_p2.mjs output\t0m_fs_occt_matched.txt
+```
+
+坑：`--torusdbg` / `--facestats` 的角度是 CLI 字符串（`std::atof`），写 `0.349066` 就是另一个 double；
+`output/t0m_fs_occt.txt`（66576）从此只作历史读数，凡引用它得出的逐面差额都要按本节重估。
+本轮新增 TEMP 仪器：`.target-gate/_t103_torcmp.mjs`（环面逐字段配对比较），库代码零改动。
+
+### 9.593 —— T-103 闭环：分类器多边形漏 XOR `reverse_walk`，seam 边被反向走 ⇒ `TabOrient` 翻转、内点全判 OUT
+
+#### A. 现象
+
+- T0M `pf=1693`（环面 1/4 段，bbox `(-15.826,-15.826,-18)-(15.826,15.826,-15)` 与 OCCT `of=390` 逐位相同）端口 `NVDBG surf=280` 但 `mv=92 mt=90`，对 OCCT `nodes=445 triangles=795`。
+- 同族还有 `pf=8/112/191/205/802/803/805/806/808/809/779/780/782/783/785/786/406`，全是"生成了内点候选、被分类器全判 OUT"。
+
+#### B. 定位（`node_insertion.rs::collect_boundary_uv`）
+
+- `CWDBG face=1693 wire=0`（修复前）：多边形在 U=0 与 U=2π 两个 seam 处都走反，形成两处"尖刺"；净环绕为**顺时针** ⇒ `BRepMesh_Classifier::RegisterWire`（`cxx:85-134`）累积 `anAngle<0` ⇒ `myTabOrient=false` ⇒ `Perform`（`cxx:35-59`）的 `isOut = (aCur == 1)` 把矩形内**所有**候选点判成 `TopAbs_OUT`（实测 `in=0 on=0 out=280`）。
+- 对照 frontier（`uv`）链接：同一 seam 边在 frontier 里走的是**反向**（左 seam 4.712→3.141，右 seam 3.141→4.712），连接正确；只有分类器分支没跟。
+- 根因：`reverse_walk` 是端口对 `ShapeExtend_WireData::Edge(signed)`（`cxx:583-588`）= `Edge.Reverse()` 的建模。`BRepMesh_ShapeVisitor::addWire` 把**已 reverse 的 edge orientation** 存进 `IMeshData_Wire`，于是 `collectWirePoints`（`BRepMesh_NodeInsertionMeshAlgo.hxx:143-181`）里的 `GetPCurve(face, GetEdgeOrientation(aEdgeIt))` 与 `IMeshData_PCurve::IsForward`（`hxx:52`）**已含** `Edge.Reverse()` 效果。端口把"原始 orientation + `reverse_walk`"分开存，所以分类器多边形必须与 frontier 一样 `!is_forward() ^ reverse_walk`。原注释"cxx does not XOR it into the classifier polygon"错在：cxx 的 orientation 本身已被 reverse，等价于端口的 XOR。
+
+#### C. 修改
+
+- `crates/occt-topo/src/meshing/node_insertion.rs` 的分类器分支改用与 frontier 链接同一个 `reverse` 判定（不新增规则，只把端口自己的 `reverse_walk` 表示补上）。
+
+#### D. 验证（门禁 #3）
+
+- `cargo check` 0 error；`step_obj_gates` 5/5（`step_obj_parity_bboxes_match_occt`、`step_obj_area_matches_occt`、`step_to_obj_exports_valid_obj`、`outputs_round_trip_through_obj_reader`、`cylinder_step_mesh_covers_full_u_period`）；`fuse_box_cylinder_is_closed_solid` ok。
+- T0M `pf=1693`：`surf=280 mv=372 mt=650`（原 `92/90`）。
+- T0M `--fstats` 逐面求和：`mv 59630 → 60398`（OCCT 60547）、`mt 65338 → 66874`（OCCT 67346，`-2.98% → -0.70%`）。
+- `_t103_p2.mjs`（bbox 配对 `1723/1778`，`unmatched=55` 不变）：
+
+| 类型 | port mt 前 | port mt 后 | occ mt | ratio 前 | ratio 后 |
+| --- | --- | --- | --- | --- | --- |
+| Torus | 14868 | 15988 | 16140 | 0.921 | **0.991** |
+| BSpline | 10715 | 11131 | 11157 | 0.960 | **0.998** |
+| Plane | 14471 | 14471 | 14746 | 0.981 | 0.981 |
+| Cone | 6344 | 6344 | 6421 | 0.988 | 0.988 |
+| Cylinder | 15366 | 15366 | 15372 | 1.000 | 1.000 |
+| Sphere | 1531 | 1531 | 1531 | 1.000 | 1.000 |
+
+  `bit-identical (mv 且 mt) 1622 → 1634 / 1723`；paird mt delta `-3.17% → -0.82%`。
+- wirehist：`a3n00`/`TDB` 逐字相同；`acs10` 由 `158/73` 变 `157/72`，经临时回退本次修改复跑仍是 `157/72` ⇒ 系本轮之前其它未提交改动所致，与本次修改无关。
+
+#### E. 副作用 / 剩余（不动手，报告）
+
+- 本修改只作用于 `reverse_walk=true` 的 seam 边；全 T0M `--fsurf` 仅 18 张面读数变化，且全部是"由丢内点变回内点"（`up=18 down=0`），无下降面。
+- 分类器修好后仍有两处逐面残差，属**另一条**已知缺口（§9.592-D 的 5 张 U/V 网格不一致环面，`of=310/314/319/354/390`）：
+  - `pf=1693 ↔ of=390`：`mv=372/445 mt=650/795`（端口少内生点，属 `fillParams/nbV` 卡边）；
+  - `pf=8 ↔ of=310`：`mv=224/154 mt=362/222`（端口 `nv 6` vs OCCT `3`、内生点 140 vs 70，V 域整体差一个 2π）。
+  两者都不是分类器问题，下一步从 `RangeSplitter::GenerateSurfaceNodes` 的 `fillParams/nbV` 入口查。
+
+### 9.594 — T-103 拓扑侧：`ShapeFix_Shape` 共享 `ShapeBuild_ReShape` 已打通，但**默认关闭**（端口 `ComposeShell` 缺「共享上下文」健壮性）
+
+#### A. 机制（`.cxx` 证据）
+
+`FromSTEP.exec.op = FixShape` 一次 `ShapeFix_Shape` 只建一个 `ShapeBuild_ReShape`
+（`ShapeFix_Shape.cxx:75`），并把同一个 handle 交给 `ShapeFix_Solid` / `ShapeFix_Shell` /
+每个 `ShapeFix_Face`（`ShapeFix_Solid.cxx:468`、`ShapeFix_Shell.cxx:108`、`ShapeFix_Shape.cxx:202`），
+再由 `ShapeFix_Face` 转交 `ShapeFix_ComposeShell`（`ShapeFix_ComposeShell.cxx:2259`），
+最后以 `myResult = Context()->Apply(S)` / `Apply(myResult)` 收回
+（`ShapeFix_Shape.cxx:257`、`:295`），配合 `applyImpl` 的「替换体与原类型不同则取其同类型子形状」
+（`ShapeBuild_ReShape.cxx:278-299`）与 `ShapeFix_Face.cxx:2266/2268`
+（`myResult = CompShell.Result(); Context()->Replace(myFace, myResult);`，无类型判断）。
+
+这正是 T0M `pf=1693`（环面 R=12.5/r=3，底面 R=9.5 圆）本应拿到 5 条边的来源：相邻柱面 `pf=1695`
+（R=9.5）在**它自己**的 `ComposeShell` 里插 seam、把共享的 R=9.5 圆在顶点 `(2.5, 9.165151, -18.0)`
+处切开并 `Replace` 记录，最后由整形状的 `Context()->Apply(S)` 把这处替换施加回环面的 wire。
+
+**行号已对本机源码树 `D:\source\OCCT-src`（`src\ModelingAlgorithms\TKShHealing\{ShapeFix,ShapeBuild}\`）逐条复核**：
+`ShapeFix_Solid.cxx:468` / `ShapeFix_Shell.cxx:108` / `ShapeFix_Shape.cxx:202` /
+`ShapeFix_ComposeShell.cxx:441/969/1902-1910/2259` / `ShapeFix_Face.cxx:2266/2268` /
+`ShapeFix_Shape.cxx:257` 全部命中；两处修正：建 context 是 **`:75`**（旧记 `:76`，
+`:76` 实为 `Context()->ModeConsiderLocation() = true;`）、末次 `Apply` 是 **`:295`**（旧记 `:294`）；
+`applyImpl` 的类型分支精确范围是 **`ShapeBuild_ReShape.cxx:278-299`**（旧记 `282-299`，282 是 `int aNbItems = 0;`）。
+代码注释（`shape_fix_compose_shell/reshape.rs`、`step/read_topology.rs`、`step/transfer.rs`）已同步。
+
+#### B. 落地（编译通过；`--all-targets` 0 error）
+
+* `shape_fix_compose_shell/reshape.rs`：`SharedReShape`（`Rc<RefCell<MapReShape>>`，实现 `ReShape`
+  的 `apply`/`replace`/`is_recorded`/`value`），等价 `Handle(ShapeBuild_ReShape)`。
+* `shape_fix_compose_shell/shell.rs`、`mod.rs`：`ComposeShell::context` 改 `SharedReShape`。
+* `shhealing/shape_fix_face.rs`：`context` 改 `SharedReShape`，新增
+  `with_face_and_context(face, ctx)`（对应 `ShapeFix_Shell.cxx:108` 的 `SetContext`）。
+* `step/transfer.rs`、`step/read_topology.rs`：`Resolver.heal_context: RefCell<Vec<SharedReShape>>`
+  栈 + `current_heal_context`/`open_heal_context`/`pop_heal_context`/`close_heal_context`
+  （`close_heal_context` 即 `cxx:257` 的 `Apply(S)`），`resolve_face` 在有 pass 时走
+  `with_face_and_context`，`resolve_shell`/`resolve_solid`/`resolve_brep_with_voids` 作为 pass 边界。
+
+#### C. 打开后实测失配（`OCCT_SHARED_HEAL=1`）⇒ 暂不默认打开
+
+1. `a3n00` 面数 **226 → 225**，且**逐次运行不稳定**（同一二进制两次分别 225 / 226）。
+2. `T0M` 无法读完（>20 min 单核 100%）：
+   * 一次在 `shape_fix_compose_shell/split_by_line.rs:468`
+     （`split_line_vertex.push(int_vertices[i - 1].clone())`）**index out of bounds: len 0**：
+     `SplitWire` 返回时 `IntVertices` 为空而 `IntLinePar` 非空。对照 `ShapeFix_ComposeShell.cxx:1902-1910`，
+     该 `.cxx` 路径假定 `SplitWire` 对每个分割参数输出一个顶点，即**到达 `SplitWire` 的 `WireSegment` 边数不为 0**
+     ——端口出现了空 `WireSegment`，来源在 port 侧的 `break_wires`/`split_by_grid`（不是这条 `.cxx` 分支）。
+   * 另一次卡在第 401 个面的 `fix_missing_seam → ComposeShell::perform → split_by_grid` 内（插桩尾行停在
+     `HEALDBG face-fix key=0x24a6d301780 wires=1`）。`ShapeFix_ComposeShell.cxx:969-980` 的
+     `if (nsplit <= 0) { i--; continue; }` 与端口 `split_wire.rs` 的 `redo` 同构：`nsplit==0`
+     只在 `ApplyContext` 拿到「无边的替换体」时出现（`ShapeFix_ComposeShell.cxx:439-442` 对该情形只有一句
+     `edge is to remove - not implemented`），端口 `apply_context` 同样不改 wire ⇒ **同一 `i` 死循环**。
+
+⇒ 这条 `.cxx` 控制流本身在「替换体无同类型子形状」时就不收敛，端口要开共享 pass，必须先补齐
+`ApplyContext`/`SplitWire` 之外的**上游空段**与「无边替换体」两处，否则共享上下文会把 port 从未到达过的
+状态暴露出来。故默认关闭，用 `OCCT_SHARED_HEAL` 显式打开（零开销：默认路径根本不建栈、不进 `Apply(S)`）。
+
+#### D. 默认路径回归复核（本机 debug exe）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets -> 0 errors
+cargo test  --manifest-path crates\occt-topo\Cargo.toml --offline --release --test step_obj_gates -> 5 passed
+cargo test  ... --release fuse_box_cylinder_is_closed_solid -> 1 passed
+
+a3n00 --roots    -> faces=226（连跑 3 次一致）
+a3n00 --wirehist -> TOTAL faces=226  wires=294  WIREHIST 1:208 2:9 4:1 6:4 10:4
+T0M   --roots    -> faces=1778
+T0M   --wirehist -> TOTAL faces=1778 wires=1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+T0M   --fdump 1693 -> wire[0] nEdges=4（e[3] 仍是 9.5→12.5 的 closed=true 单弧，未在 (2.5,9.165151,-18.0) 切开）
+```
+
+即主结构逐项回到既有基线，T-103 仍未闭环（`pf=1693` 4 边 vs OCCT 5 边）。
+
+#### E. 待确认（不动手）
+
+`T0M --wirehist` 的 `wires_1edge_closed/faces_1edge_closed` 本轮为 `216/143`，
+§9.586-B 记的是 `217/144`。已 A/B：把 `ComposeShell` 的上下文从 `clone()`（共享）换成
+`MapReShape` 独立拷贝，两者都是 `216/143` ⇒ 与本节的提交上下文无关，形态与 §9.593-C
+（`acs10` 的 `158/73 → 157/72`，回退后仍是 `157/72`）一致，属本轮之前其它未提交改动。
+
+#### F. 下一步
+
+按 §9.593-D 的收口顺序补齐端口 `ComposeShell` 的共享态健壮性，再打开 `OCCT_SHARED_HEAL` 复核
+`pf=1693` 是否变为 5 条边（`(2.5, 9.165151, -18.0)` 切点）：先定位**空 `WireSegment` 的产生点**
+（`break_wires`/`split_by_grid` 对 `ApplyContext` 结果的记账），再补「替换体无同类型子形状」的
+`cxx:439-442` 分支（`edge is to remove`）在端口侧的实际处理，使 `split_wire` 的 `nsplit<=0` 不再原地重跑。
+
+---
+
+### 9.595 —— 共享态两个实际缺口已修：`MapReShape` 键的 TShape 生命周期 + `applyImpl` 重建 FACE 丢 `Geom_Surface`（对齐 `BRep_TFace::EmptyCopy`）；共享态仍过度拆分（下一入口）
+
+#### A. 缺口一：`MapReShape` 的键形状必须存活
+
+- OCCT `BRepTools_ReShape::myMap`（`BRepTools_ReShape.hxx:239-240`）是
+  `NCollection_DataMap<TopoDS_Shape, TReplacement, TopTools_ShapeMapHasher>`：
+  **键就是持 TShape 的 `TopoDS_Shape`**，hasher 取 TShape 地址（`TopTools_ShapeMapHasher.cxx:22-26`）。
+- 端口旧实现 `MapReShape { map: HashMap<usize, TopoShape> }` 只存替换体，键是
+  `Arc::as_ptr(&s.tshape)`。临时子形状 drop 后其地址可被后来的别的类型的形状（如 `Face`）复用，
+  于是 `apply_context`/`apply` 会命中一个**张冠李戴的替换体**（实测表现为「0 边的替换体」与死循环）。
+- **改动**（`shape_fix_compose_shell/reshape.rs`）：`map: HashMap<usize, (TopoShape, TopoShape)>`，
+  键形状与替换体同存，生命周期与 OCCT 一致；`replace`/`value` 同步。
+
+#### B. 缺口二：`applyImpl` 重建 FACE 未做 `EmptyCopy` 的几何复制
+
+- OCCT `ShapeBuild_ReShape::applyImpl` 用 `EmptyCopied()`（`ShapeBuild_ReShape.cxx:249-254`）造同型空形状；
+  FACE 的 `BRep_TFace::EmptyCopy`（`BRep_TFace.cxx:37-44`）复制 `mySurface` / `myLocation` / `myTolerance`
+  （**不**复制 `myNaturalRestriction`，保持构造默认 `false`，`BRep_TFace.cxx:39-41`）。
+- 端口 `apply_impl` 只对 EDGE 调 `copy_edge_geom`，FACE 分支缺失 ⇒ 共享态在整形状上跑一遍
+  `Context()->Apply(S)`（`ShapeFix_Shape.cxx:257`）时，凡有子形状被替换的面都被重建成
+  **无 `Geom_Surface`** 的壳面（`bbox` 退化为 `(0,0,0)`）。
+- **改动**：新增 `copy_face_geom`（surface + tolerance；location 由调用方 `set_location` 还原），
+  FACE 分支调用，行为对齐 `BRep_TFace::EmptyCopy`。
+
+#### C. 验证（本环境实测）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets   -> 0 errors
+cargo test  ... --release --test step_obj_gates                                  -> 5 passed
+cargo test  ... --release fuse_box_cylinder_is_closed_solid                      -> 1 passed
+```
+
+默认路径（不设 `OCCT_SHARED_HEAL`）基线逐项不变：
+
+```text
+a3n00 --wirehist -> TOTAL faces=226 wires=294 faces_with_2plus=18  WIREHIST 1:208 2:9 4:1 6:4 10:4
+T0M   --wirehist -> TOTAL faces=1778 wires=1921 faces_with_2plus=106 WIREHIST 1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+acs10 --wirehist -> TOTAL faces=787 wires=913                       WIREHIST 1:742 2:25 5:1 6:18 8:1
+TDB   --wirehist -> TOTAL faces=2180 wires=2385                     WIREHIST 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+T0M   --fdump 1693 -> wire[0] nEdges=4（e[3] 仍是 9.5→12.5 的 closed=true 单弧，未闭环）
+```
+
+共享态（`OCCT_SHARED_HEAL=1`）：
+
+- `a3n00 --roots` 连跑两次都是 `faces=226` ⇒ §9.594-C 的「225/226 不稳定」与 T0M 卡死/panic 已消除。
+- `T0M --ecensus` 无 surface 的面（`bbox=(0,0,0)`）**383 → 30**；a3n00 仍 8 张。
+- 临时计数（env `RESHAPE_DBG`，已撤）：`apply_impl` 的 FACE 重建共 67 次，**全部带 surface、0 次缺 surface**
+  ⇒ B 的修复对该路径已完整，残余无 surface 的面来自**另一条创建路径**。
+
+#### D. 剩余（不动手，报告）
+
+1. **共享态仍过度拆分**：
+   - T0M：2-wire 面 `92 → 162`、faces `1778 → 1777`、wires `1921 → 1990`；
+   - a3n00：2-wire 面 `9 → 14`、wires `294 → 299`。
+   - 最小复现：a3n00 两张法兰面（`x=-112.5` 与 `x=132.5`）的一条 **18 边闭合 wire 被拆成 10 条 wire**
+     （`wires=10 edges=[1,1,2,2,2,2,2,2,2,2]`）。这是 `ShapeFix_Face` 第二轮 loop 拆分
+     （`FixLoopWire` `cxx:2478` / `FindNext` `cxx:2398` / `ShapeAnalysis_Wire::CheckLoop`，
+     `shhealing/shape_fix_face.rs` → `split_loop_wires`）在**重建后的** wire 上判据失配，不是 `applyImpl` 本身。
+2. **30(T0M)/8(a3n00) 张面在共享态无 surface**，且不经过 `copy_face_geom` ⇒ 需定位那条创建路径
+   （C 的计数已排除 `apply_impl`）。
+
+#### E. 下一步
+
+先定位「共享态下 loop 拆分过度」的入口（用 a3n00 的 `18 → 10 wire` 作最小复现，对着
+`ShapeFix_Face.cxx:583-598` / `:2398` / `:2478` 与 `ShapeAnalysis_Wire::CheckLoop` 审控制流），
+再定位 30/8 张无 surface 面的创建点；两处都补齐后才复核 `pf=1693` 是否变 5 边。
+
+### 9.596 —— 共享态过度拆分的入口已钉死：`repr_key` 的 face→surface 侧表在 `applyImpl` 重建 FACE 时未登记 ⇒ 重建面看不见任何 pcurve
+
+#### A. 复现与第一现场
+
+a3n00 `--fdump 130`（同一条几何，两态对比）：
+
+```text
+OFF face=130 surf=Cylinder u=[3.141593,9.424778] v=[3.000000,8.000000]  wire[0] nEdges=4（seam+2 圆弧）
+ON  face=130 surf=Cylinder u=[0.000000,6.283185] v=[-inf,inf]            wire[0] nEdges=1, wire[1] nEdges=1
+```
+
+`u=[0,2π] v=[-inf,inf]` 是**原始柱面的自然界**，不是这个面的 UV 界：按
+`BRepTools::AddUVBounds(Face, B)`（`brep_uv_bounds.rs::add_uv_bounds_face`，`cxx` 同义）当
+wire 的 UV 盒为空时回退到面自身的自然界。也就是说**这个面的每条边都取不到 pcurve**。
+
+用临时探针（env `FMSDBG`，已撤除）在 `fix_missing_seam` 的 `Context()->Apply(myFace)`
+（`shape_fix_face.rs:436` ↔ `cxx:1737-1741`）之后逐边打印 `curve_on_surface_range`：
+
+```text
+OFF  FMSIN u=[-3.1416,9.4248] v=[3,8] wires=[1,1] edg=([3.142,9.425]) ([3.142,9.425])
+ON   FMSIN u=[0.0000,6.2832] v=[-inf,inf] wires=[1,1] edg=(None) (None)
+```
+
+同一处 `fix_missing_seam` 命中数两态都是 118，但**成功数 46(OFF) → 41(ON)**；差 5 张恰好等于
+共享态多出来的 2-wire 面数（a3n00 `2-wire 9 → 14`）。⇒ 过度拆分的入口不是 loop 拆分，
+而是**这 5 张面的 `fix_missing_seam` 在共享态直接判失败**（它本来会把 2-wire 合缝成 1 wire/4 边）。
+
+#### B. 根因：`repr_key` 侧表未随 FACE 重建同步
+
+- 端口把 pcurve 挂在边自己的 `TShape` 上，键是 **面的 `Geom_Surface` 指针**：
+  `GeometryRegistry::repr_key(face_key)`（`tgeometry.rs:530-537`）=
+  `face_surfaces.get(&face_key).map(|s| Arc::as_ptr(s))`，取不到才回退成面 TShape 指针。
+- OCCT 侧不靠侧表：`BRep_Tool::CurveOnSurface(edge, face)`（`BRep_Tool.cxx:347-357`）直接
+  拿**面自己的** `Geom_Surface` 去匹配边上的 `BRep_GCurve` 表示，所以「只重建面」不影响取 pcurve。
+- 端口 `applyImpl`（`ShapeBuild_ReShape.cxx:249-254`）重建 FACE 时，§9.595-B 的 `copy_face_geom`
+  只写了 `face_core().surface`，**没有登记 `face_surfaces[新面键]`** ⇒ 新面的 `repr_key` 回退成
+  **面 TShape 指针**，与 pcurve 实际写入的 surface 指针不同 ⇒ 重建面（及其子边）全丢 pcurve。
+
+实测（env `MRDBG2`，已撤）：共享态 `apply_impl` 重建出的 **「所有边都取不到 pcurve」的面 24 处**，
+调用链全部是 `Resolver::resolve_representation` → `ShapeFixFace::fix_periodic_degenerated`
+→ `SharedReShape::apply` → `apply_impl` → `replace`（即 `cxx:3101-3111` 那次 `Context()->Apply`）。
+
+#### C. 改动
+
+- `tgeometry.rs`：新增 `GeometryRegistry::register_face_surface(&self, s, &Arc<dyn Surface>)`，
+  把面键写进 `face_surfaces`（注释写明它对应 `CurveOnSurface` 经面自身 surface 取表示的语义）。
+- `shape_fix_compose_shell/reshape.rs::copy_face_geom`：复制 surface 后调用它登记侧表。
+
+#### D. 验收
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets   -> 0 errors
+cargo test  ... --release --test step_obj_gates                                  -> 5 passed
+cargo test  ... --release fuse_box_cylinder_is_closed_solid                      -> 1 passed
+```
+
+默认路径（不设 `OCCT_SHARED_HEAL`）逐项不变：
+`a3n00 1:208 2:9 4:1 6:4 10:4`、`T0M 1:1672 2:92 3:8 5:1 6:1 7:2 8:2`、
+`acs10 1:742 2:25 5:1 6:18 8:1`、`TDB 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3`。
+
+共享态：
+
+```text
+「所有边无 pcurve」的面 24 -> 0（env MRDBG2 复核）
+FMSIN 的 uv_bounds 不再退化成自然界（idx=67/74/77/78/101/113 等由 u=[0,6.2832] v=[-inf,inf]
+  恢复为 OFF 同值），但 fix_missing_seam 成功数仍 41（OFF 46）
+```
+
+#### E. 剩余（不动手，报告）
+
+还有 **29 条边**在 `Context()->Apply(myFace)` 之后仍取不到本面的 pcurve，但性质已不同：
+`same_ts=true`（`apply` 对该面是恒等）、`frec=false`/`erec=false`（面和边都没被 `Replace` 命中），
+而边的 pcurve 表示键指向的 surface 指针 `ne_reps=[…]` **不等于**面自身 surface 指针 `face_surf=…`。
+强制把 `face_surfaces[面键]` 重写成面自身 surface（探针内自测）后仍是 `None` ⇒ **不是侧表问题**，
+而是这些边身上挂的是**另一个（patch）surface** 的 pcurve：面自身的 pcurve 槽被删掉了。
+
+已排除的方向：`ShapeBuild_Edge::{CopyPCurves,CopyReplaceVertices}`（`shape_build_edge.rs:71`、
+`wire_fix.rs:1170`）都按 `repr_key` 全量复制槽位，`RemovePCurve`/`ReassignPCurve` 也只按
+surface 指针删单个槽（`tgeometry.rs:487-497`、`shape_build_edge.rs:227`）。
+
+下一入口：查共享态下**同一 surface 被多张面共用**时，`ShapeBuild_Edge::RemovePCurve(edge, myFace)`
+（`dispatch_wires.rs:114`）与 `cxx:3348-3357` 的 `RemovePCurve` 是否把邻面的槽一并删掉
+（OCCT 的 `BRep_GCurve` 表示同样按 (surface, location) 共享，需给出 OCCT 为何不丢的可对拍证据，
+不能只按「端口这一处」改）。
+
+| `repr_key` 侧表 / `copy_face_geom` | `tgeometry.rs:571-587`、`reshape.rs:210-231` | 完成（§9.596） |
+| 共享态邻面 pcurve 槽互删 | `dispatch_wires.rs:114` ↔ `cxx:3348-3357` | 已排除（§9.597-B 证伪） |
+
+---
+
+### 9.597 —— T-103 环面 U 网格残差根因锁定：OCCT 那条 `0.1716787` U 格来自**被共享合缝切开的内赤道圆**（`pf=1693` 仍 4 边 vs OCCT 5 边）；§9.596-E 的「邻面 pcurve 槽互删」假设经 `.cxx` 证伪
+
+#### A. 残差的第一现场（`pf=1693`，环面 `R=12.5 r=3`）
+
+对拍（同一 T0M、同一输入 `defl=2.5743090254715244 angle=0.3490658503988659`）：
+
+```text
+OCCT  ZZTORDBG face=390 R=12.5 r=3 ... ru=[0,6.283185] rv=[3.141593,4.712389]
+      diff_u=6.28318530717959 diff_v=1.5707963267949 nb_u=25 nb_v=4
+      du=0.241660973353061 dv=0.314159265358979 old_dv=0.349065850398866
+      nup=73 nvp=11 nu=46 nv=10 nodes=352
+PORT  TORDBG ... 同上 R/r/ru/rv/diff/nb/du/dv/old_dv 逐位相同
+      nup=72 nvp=11 nu=37 nv=10 nodes=280
+```
+
+`nb_u/nb_v/du/dv/dv/old_dv` 全同 ⇒ 分歧只在 `fillParams` 的**输入参数表**：`nup 72 vs 73`。
+
+- OCCT `ZZU face=390` 的 U 表 = **10° 格**（`0, 0.174532925199433, …, 6.28318530717959`，37 值）∪
+  一组 `0.171678724051821` 间隔的值（`0.171678724051821, 0.343357448103648, …, 4.97868299750295`，
+  之后 `5.14174578621252 … 6.12012251847001` 间隔变 `0.16306`）。
+- `0.171678724051821 = 4.97868299750295 / 29`，而 `29 = ceil(4.97868299750295 / 0.1745329)`；
+  `0.16306 = (6.28318530717959 − 4.97868299750295) / 8`。这两个数正是 OCCT
+  `ZZWN face=390 w=0 e=2 diff=4.97868299750295 nbHalf=28.5`/`e=3 diff=1.30450230967664` 的两条弧。
+- 即 OCCT 的 `GetParametersU()`（`NCollection_IndexedMap<double>`，按 `operator==` 精确去重，
+  `IMeshData_Types.hxx:144`）里那组非 10° 格的值 = **内赤道圆（`R−r=9.5`）被切成 `e2`+`e3` 两条边
+  后各自的 pcurve 点**。端口 `pf=1693` 的 `TORU` 只有 10° 格（且每步两个相差 `~7e-15` 的 double
+  未被去重 ⇒ `nup=72`），**没有** `0.1716787` 那一组。
+
+端口 `pf=1693` 的 wire 仍是 4 条边（`--fdump`）：
+
+```text
+wire[0] ori=Reversed nEdges=4
+  e[0] 12.5→12.5  deg=false      (seam 线, U 常量)
+  e[1] 12.5→ 9.5  deg=false closed=true
+  e[2]  9.5→ 9.5  deg=false      (完整内赤道圆, PCURDBG key=… nb=37 first=3.1416 last=9.4248)
+  e[3]  9.5→12.5  deg=false closed=true
+```
+
+而 OCCT `face=390` 的离散 wire 有 5 条边，内赤道圆被切在 `(2.5, 9.165151, -18.0)`（`ZZWIN e2`
+`first=(4.9786829975,3.14159265359) last=(0,3.14159265359)`、`e3` `first=(6.28318530718,3.14159265359)
+last=(4.9786829975,3.14159265359)`，`ZZWT e2 first=4.44609496326643 last=9.42477796076938`、
+`e3 first=3.14159265358979 last=4.44609496326643`）。
+
+⇒ 残差根因不是 `TorusRangeSplitter`、也不是 `fillParams`，而是**这条共享圆没有被切开**：缺的是
+`ShapeFix_Shape` 的那次共享 `Replace(圆 → 两弧 wire)` + 收尾 `Context()->Apply(S)`
+（`ShapeFix_Shape.cxx:257`、`ShapeFix_Face.cxx:2266/2268`，见 §9.594-A）。端口默认路径每个面各带一个
+局部 `ShapeBuild_ReShape`，柱面 `pf=1695` 的 `ComposeShell` 切完就丢，传不到环面。
+
+#### B. §9.596-E「邻面 pcurve 槽互删」假设证伪
+
+`.cxx` 证据（本机 `D:\source\OCCT-src`）：
+
+```text
+// BRep_CurveOnSurface.cxx:58-62
+bool BRep_CurveOnSurface::IsCurveOnSurface(const Handle(Geom_Surface)& S, const TopLoc_Location& L) const
+{
+  return (S == mySurface) && (L == myLocation);   // Handle 指针相等
+}
+```
+
+`BRep_Builder::UpdateEdge(E, c2dNull, F, 0)`（`ShapeBuild_Edge.cxx:430-443`）经
+`UpdateCurves`（`BRep_Builder.cxx:58`，`GC->IsCurveOnSurface(S, L)` 后 `lcr.Remove`）删的是
+**同一个 `Geom_Surface` handle** 上的表示；面被 `EmptyCopied` 重建时 `BRep_TFace::EmptyCopy`
+（`BRep_TFace.cxx:37-44`）**共享**同一个 surface handle ⇒ OCCT 侧「两张面共用同一 surface」时
+`RemovePCurve` 同样会把两份都删掉。端口 `tgeometry.rs:485-497::remove_pcurves_on_surface` 按
+`Arc::as_ptr(surface)` 删单槽，语义与 `IsCurveOnSurface` 的 handle 相等**同构** ⇒ **无分歧**，
+该「下一入口」关闭。§9.596-E 的 29 条边取不到本面 pcurve，是那些面的 pcurve 已被
+`ComposeShell` 改挂到 **patch surface**（OCCT 侧对应「整张面被 `Context()->Replace` 成 patch 面」），
+不是邻面误删。
+
+#### C. 共享态（`OCCT_SHARED_HEAL=1`）当前读数（release）：**不再挂死，但仍过度拆分**
+
+§9.594-C 的两条挂死（`split_by_line.rs:468` 越界、`split_by_grid` 原地重跑）在 §9.595/§9.596 之后
+已消失：T0M 的 `--fdump 1693` / `--wirehist` 均 ~15 s 完成。但共享态仍把面拆多：
+
+```text
+                              faces  wires  WIREHIST
+OCCT --wires 真值              1778   1921   1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+PORT OFF（默认，=基线）        1778   1921   1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+PORT ON （OCCT_SHARED_HEAL=1） 1777   1990   1:1601 2:162 3:8 5:1 6:1 7:2 8:2
+
+a3n00   OFF  226  294  1:208 2:9 4:1 6:4 10:4
+a3n00   ON   226  299  1:203 2:14 4:1 6:4 10:4
+```
+
+⇒ `2-wire` 桶 T0M `92→162`（+70）、a3n00 `9→14`（+5），并少 1 张面（1778→1777）。
+默认路径（不设 `OCCT_SHARED_HEAL`）逐项不变 ⇒ 该 pass 仍**不能默认打开**。
+
+> **§9.599 更新（2026-10-05）**：上面这张表已作废 —— `read_topology.rs` 的 wire 回合
+> （`ShapeFix_Wire::Perform` 的 `FixAddPCurve` 部分）原先作用在**未做 `Context()->Apply` 的原始面**上，
+> 而 OCCT 是在 `S = Context()->Apply(myFace)`（`ShapeFix_Face.cxx:379-380`）上做。改为在替换后的面上跑之后，
+> 共享态 T0M `1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2`、a3n00 `226/294 1:208 2:9 4:1 6:4 10:4`、
+> acs10 `787/913 1:742 …`、TDB `2180/2385 1:2042 …`，**四个模型与默认路径逐项相同**；`pf=1693` 也拿到第 5 条边。
+> 即「共享态过度拆分」这条阻塞已被移除（详情见 §9.599）。
+
+#### D. 本轮验证（门禁 #3）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets       -> 0 errors
+cargo test  ... --release --test step_obj_gates                                       -> 5 passed
+cargo test  ... --release fuse_box_cylinder_is_closed_solid                           -> 1 passed
+```
+
+本轮库代码零改动（只新增/复跑 TEMP 仪器与本节）。
+
+#### E. 复跑命令
+
+```text
+cmd /c "specs\occt_probe\run_here.bat data\occ\T0M.stp --torusdbg 2.5743090254715244 0.3490658503988659" > specs\occt_probe\_dbg\zz_tor_t0m_exact.txt
+(PowerShell) $env:ZZTOR_R="12.5"; $env:ZZTOR_S="3"; <同上>   # 只要 R=12.5 r=3 的 ZZ* 逐边窗
+(PowerShell) $env:TORSDBG=1; $env:TORDUMPU=1; $env:TORDUMPV=1; $env:PCURDBG=1; <port --fstats> 2> tmp.txt
+(PowerShell) $env:OCCT_SHARED_HEAL="1"; <port --wirehist / --ecensus / --fdump <idx>>
+```
+
+#### F. 下一入口
+
+共享态 `2-wire` 桶 +70 是打开 `OCCT_SHARED_HEAL` 的唯一剩余阻塞：按 §9.594-F 先定位
+`break_wires`/`split_by_grid` 对 `ApplyContext` 结果的记账（空 `WireSegment` 是否仍在），
+再看为什么 `fix_missing_seam` 在共享态的成功数比 OFF 少 5（a3n00 46→41，§9.596-D），
+即**重建后的 wire 为什么没被合缝回去**。目标：`OCCT_SHARED_HEAL=1` 下 T0M `--wirehist` 回到
+`1:1672 2:92 …` 且 `pf=1693`（R=12.5/r=3 环面）出现第 5 条边（内赤道圆被切）。
+
+### 9.598 — T-104 闭环：motoc 圆柱面上多出的「横向环带」= 14 张平面端盖面的 2D 网格把内孔填成扇形；根因是 `add_wire` 里一个 OCCT 没有的「按有向面积整链反转」，在含圆弧边的单 wire 面上因 `chain_area()` 退化到 0 而误触发
+
+#### A. 现象与判类
+
+用户截图蓝圈两处「横向 2 层隔层/环带」出现在 `data/occ/motoc.step` 的大圆柱与右侧小圆柱上；
+OCCT 真值 `data/occ/occ-motoc.obj`（13944 三角）无此环带。按几何 bbox 六坐标配对
+（端口 `zz_probe_a3n00 --fstats` ↔ OCCT `occt_probe --facestats 0.836 0.3490658503988659`）：
+
+- **两侧拓扑完全一致**：`TOTAL faces=223`（端口）vs `FSTAT_OCC faces=223`，逐面 bbox 可一一配对，
+  **不存在多出来的面**。⇒ 多出来的是**网格**，不是拓扑面。
+- 面级三角数差异（容差 0.01 配对后）：**14 张面** dt=-19（端口 17 / OCCT 36），1 张 dt=-32
+  （端口 38 / OCCT 70）。14 张全是平面端盖（半环面/环面，如 face 1 `box=(-26,-26,38)-(26,-0.1,38)`，
+  即 z=38 处 R=26/r=24 的半环端盖，2D 面积 156.64 = π(26²-24²)/2）。端口在环面上填了 **17 个扇形三角**
+  跨过内孔，OCCT 是 **36 个环带三角**。总差 14×19+32 = 298；端口 `mesh_t=13646` + 298 = **13944**
+  = `occ-motoc.obj` 三角数。⇒ 14 张端盖内孔被假膜片封住，从外部看就是圆柱面上多出的横向环带。
+
+#### B. 根因（`.cxx` 对照）
+
+缺陷全部来自 `crates/occt-topo/src/meshing/model_builder/wire_builder.rs::add_wire` 里一段
+**OCCT 不存在**的后处理：`CheckOrder` 之后，若单 wire 面且 `order.chain_area() < 0.0` 就
+`order.reverse_chain()`（把有序链整体反向，等于把每条边的行走方向都翻过来）。
+`chain_area()`（`meshing/wire_order.rs`）只用每条边的 **端点** 组成多边形算有向面积；对含圆弧的
+wire，端点全落在同一弦上 ⇒ 面积退化为 ~0（face 1 实测 `chain_area = -0.000000`，而真实 2D 面积
+`wire_area_2d = 156.638392`）。浮点噪声使 `-0.0 < 0.0` 判定为真 ⇒ 整链被反向 ⇒ 网格边界朝向翻转 ⇒
+Delaunay/前沿把内孔侧当成域内 ⇒ 填 17 个扇形三角。
+
+OCCT 侧无此分支：`BRepMesh_ShapeVisitor::addWire`
+（`D:\source\OCCT-src\src\ModelingAlgorithms\TKMesh\BRepMesh\BRepMesh_ShapeVisitor.cxx:99-134`）
+在 `aWireTool.CheckOrder(aOrderTool, true, false)`（`cxx:103`）之后**只**读 `aOrderTool.Ordered(i)`
+并经 `ShapeExtend_WireData::Edge(signed)`（`ShapeExtend_WireData.cxx:583-588`）**逐条**反转边，
+从不按面积把整条链反向；`CheckOrder` 只回 `ShapeExtend_DONE3` 给面打 `IMeshData_UnorientedWire`
+（`cxx:109-112`），不改行走方向。内/外判定留给后面的分类器（`BRepMesh_Classifier`）。⇒ 门禁 #2：
+该反转「没有同等分支」⇒ 删除，并注释写明 OCCT 的对应位置。
+
+#### C. 落地改动
+
+- `crates/occt-topo/src/meshing/model_builder/wire_builder.rs`：删掉 `chain_area()<0` 整链反转块，
+  替换为指向 `BRepMesh_ShapeVisitor.cxx:99-134` 的说明注释。`reverse_wire_on_face`（`wire_area_2d<0`，
+  即 `ShapeAnalysis::IsOuterBound` 采样面积）未动——motoc 上它一次都没触发，且与本次缺陷无关。
+- `crates/occt-topo/src/meshing/wire_order.rs`：删除已无调用者的 `chain_area()` / `reverse_chain()`
+  （`ShapeAnalysis_WireOrder` 无此二法，属端口自造）。
+
+#### D. 本轮验证（门禁 #3，命令实测）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets          -> 0 errors
+cargo test  ... --offline --release --test step_obj_gates                                -> 5 passed (71.52s)
+cargo test  ... --offline --release fuse_box_cylinder_is_closed_solid                    -> 1 passed
+cargo run   ... --offline --release --example export_data_obj -- data/occ                -> motoc f=13944
+```
+
+- `output/motoc.obj` 三角数 **13944** == `data\occ\occ-motoc.obj` 三角数 **13944**。
+- 逐面（容差配对）：修复后 `|dt|>=2 / |dv|>=2` 的面 **0 张**（修复前 15 张）；
+  剩余 5 张 bbox 差 >0.01 的面（端口 #99/#100/#103/#106/#181）在修复前后**完全相同**，属既有 BSpline 盒差旁支。
+- 既有基线逐项不变（`--wirehist`，反转 ON vs OFF 逐位相同）：
+  a3n00 `1:208 2:9 4:1 6:4 10:4`、T0M `1:1672 2:92 3:8 5:1 6:1 7:2 8:2`、
+  acs10 `1:742 2:25 5:1 6:18 8:1`、TDB `1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3`。
+
+#### E. 旁支（登记，未动）
+
+1. 端口 #99/#100/#103/#106/#181 等 5 张面的 `shape_bnd_box` 与 OCCT `BRepBndLib` 结果差 0.09–1.78
+   （BSpline 面解析盒 vs 控制网盒口径），与本次缺陷无关。
+2. motoc 仍余 3 张面三角数小幅差（<2）未定性，属面级密度层，归 T-103 一类。
+3. `specs/board.canvas.tsx` 的 `T-104` 编号已被 §9.588（`BRepLib::BuildCurve3d` 族，completed）占用，
+   本节改以新卡片 `T-106` 记录，避免覆盖既有卡片。
+
+### 9.599 — T-103 闭环：共享态 `2-wire` 桶 +70 的产生点 = `FixAddPCurve` 作用在**未做 `Context()->Apply` 的原始面**上（对齐 `ShapeFix_Face.cxx:379-380` 的 `S = Context()->Apply(myFace)`）
+
+#### A. 产生点（只读定位结论）
+
+- OCCT 的 `ShapeFix_Face::Perform` 在进入 wire 回合前先取
+  `S = Context()->Apply(myFace)`（`ShapeFix_Face.cxx:379-380`），此后的
+  `ShapeFix_Wire::Perform` / `FixAddPCurve` 全部作用在**已被共享 `ReShape` 替换过的**子形状上。
+- 端口 `read_topology.rs::resolve_face` 是在**逐面翻译期**就跑 wire 回合
+  （`check_pcurves_and_shift`），此时传的是**原始 `face`**，没有先做 `Context()->Apply`。
+- 共享态下，邻面（如 Cylinder）的 `ShapeFix_ComposeShell::DispatchWires` 已把公共边
+  `old_edge` 复制成 `new_edge = sbe.copy(an_init_edge, false)` 并
+  `Replace(old_edge, new_edge)`（`ShapeFix_ComposeShell.cxx:3451-3457`）。于是：
+  1. 本面 wire 回合把 pcurve 挂到 **`old_edge`**（原始面上的那条边）；
+  2. 随后的 `Context()->Apply`（`ShapeFix_Shape.cxx:257`）用 `new_edge` 替换 `old_edge`，
+     而 `new_edge` 只带了 Cylinder 复制过去的那份 pcurve；
+  3. 本面（如 Torus）在 `fix_missing_seam` 里对重建后的 wire 调
+     `curve_on_surface_oriented(e, face)` 取不到本面 pcurve ⇒ `check_wire` 返回 `None`
+     ⇒ `w2 = None` ⇒ 走 `reason=no-w2-branch` 直接返回 ⇒ 该面**两条 seam wire 不合并**，
+     以 2 wire 计入 census。
+- 这就是 `2-wire` 桶 T0M `92 → 162`（+70）、少 1 张面（1778 → 1777）的产生点：
+  **不是** `break_wires`/`split_by_grid`/`ApplyContext` 的记账错误，而是执行顺序
+  （本面 wire 回合 vs 共享 `ReShape` 替换）与 OCCT 相反。
+- 反证（同一份工作树，仅把本修复切回旧行为）：`OCCT_SHARED_HEAL=1` 的 T0M `--wirehist`
+  立刻回到 `TOTAL faces=1777 wires=1990` + `1:1601 2:162 3:8 5:1 6:1 7:2 8:2`，
+  `--fdump 1693` 回到 4 边 ⇒ 与本修复一一对应。
+
+#### B. 钉到 `.cxx`
+
+- `ShapeFix_Face.cxx:379-380`：`S = Context()->Apply(myFace)`，wire 回合跑在该 `S` 上。
+- `ShapeFix_Shape.cxx:257`：`myResult = Context()->Apply(S)` 最终物化整棵替换。
+- `ShapeFix_ComposeShell.cxx:3451-3457`：`new_edge = sbe.copy(an_init_edge, false)` +
+  `rs.Replace(old,new)` / `context.Replace(old,new)`。
+- `ShapeFix_Face.cxx:2266/2268`：共享态那次 `Replace(R-circle → 两弧)`（`pf=1693` 的第 5 条边）。
+
+#### C. 修复（只用同等分支，无新谓词）
+
+`read_topology.rs::resolve_face` 的 wire 回合改为：共享上下文存在时，先
+`let applied = ctx.apply(&face.0)`，在替换后的面上跑 `check_pcurves_and_shift`；
+无上下文时走原路径（**默认路径零改动**）。
+
+#### D. 验收（门禁 #3，命令实测）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --offline --all-targets   -> 0 errors
+cargo test  ... --offline --test step_obj_gates                                  -> 5 passed / 0 failed
+cargo test  ... --offline fuse_box_cylinder_is_closed_solid                      -> 1 passed
+```
+
+默认路径逐项不变：
+
+```text
+a3n00 226/294 1:208 2:9 4:1 6:4 10:4      acs10 787/913 1:742 2:25 5:1 6:18 8:1
+T0M   1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2   TDB 2180/2385 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+共享态（`OCCT_SHARED_HEAL=1`）现在与默认路径**逐项相同**（四个模型 `faces/wires/WIREHIST` 全同）：
+
+```text
+PORT ON  T0M   1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2
+PORT ON  a3n00 226/294   1:208 2:9 4:1 6:4 10:4
+PORT ON  acs10 787/913   1:742 2:25 5:1 6:18 8:1
+PORT ON  TDB   2180/2385 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+`pf=1693`（`--fdump 1693`）：
+
+```text
+OFF: wire[0] nEdges=4   （e[2] = 完整 R-r=9.5 圆）
+ON : wire[0] nEdges=5   （e[2] e[3] 在 (2.5, 9.165151, -18.0) 切开 = OCCT 的 e2+e3）
+```
+
+#### E. 旁支（登记，未动）
+
+1. ON 下 `wires_1edge_closed` / `faces_1edge_closed` 的计数与 OFF 不同
+   （a3n00 `58 vs 79`、acs10 `133 vs 157`），而 `faces/wires/WIREHIST` 一致 ⇒
+   共享态重建后 1-edge wire 的 `Closed` 标志口径，未定性。
+2. 本轮撤除的临时仪器：`read_topology.rs` 的 `ASSOCDBG`/`PKEYDBG`/`APDBG`、
+   `tgeometry.rs` 的 `RSPCLOST`/`PCSET`/`PCSETCOPY`/`RSPCREM` 打印块。
+   `shape_fix_compose_shell/`、`shhealing/` 里仍留有 `RSDBG`/`FMSDBG` 仪器
+   （与并行 T-104 共用文件，留给专门的清理轮次）。
+3. 该 pass 目前仍由 `OCCT_SHARED_HEAL` 显式打开；是否改默认是独立决策，未在本轮处理。
+
+#### F. 网格层下游效果与**新的旁支**（本轮实测，`--fstats`，同偏转 `2.574312`）
+
+共享态现在把 T-103 的**主残差面**直接对齐到 OCCT：
+
+```text
+pf=1693 (↔ OCCT of=390, nodes=445 triangles=795)
+  OFF: mv=372 mt=650        ON: mv=445 mt=795   <- 与 OCCT 逐位相同
+```
+
+四张环面碎片（§9.585-C 的 OCCT faceid 1462/1503/1648/1668）也由近乎空面变满：
+`pf=1461/1502/1647/1667` `5/3 → 93/97`。
+
+全模型逐面 `mt` 差（ON−OFF，按 face 索引配对）：
+
+```text
+up=87  down=20  same=1671  delta_mt=+63        （sum: OFF 64988 → ON 65051）
+```
+
+**回归面（ON 反而塌掉）**：`pf=110 312→8`、`pf=212 178→12`、`pf=198 174→12`、
+`pf=1668 74→5`、`pf=816 70→5`、`pf=812 70→8`、`pf=28 74→18`、`pf=1462 56→5`。
+抽检 `pf=110`（Torus，`--fdump`）：OFF 是 10 边闭合环；ON 多切出 1 条边（11 边，新顶点
+`(-15.229917,-230.745772,29.168011)`），但**边的串联顺序被打乱** ——
+`e[0] (-21,-217.07,33.88) → (-15.2299,-230.745,29.168)`、`e[1] → (-7.456,-235.64,27.48)`，
+而 `e[2]` 又跳回 `(-21,-217.07,33.88)` 起头 ⇒ wire 不连通，2D 分类器多边形退化 ⇒ 该面
+`mt=8`。即共享态的拆分**漏了 `ShapeFix_ComposeShell` 之后的 wire 重排/起点归一**
+（对照 `ShapeFix_ComposeShell.cxx` 的 `sbwdM`/`WireOrder` 收尾段），与 §9.599-A 的
+pcurve 落点问题**不同源**。列为下一步入口。
+
+#### G. 旁支：默认路径 `wires_1edge_closed` 计数
+
+OFF T0M `--wirehist` 的 `wires_1edge_closed` 由 §9.587 记录的 `217` 变为 `216`
+（`faces_1edge_closed 144→143`），`faces/wires/WIREHIST` 三项**逐项不变**。该文件
+`meshing/wire_order.rs` / `model_builder/wire_builder.rs` 有并行 T-104 的未提交改动
+（`git diff --stat` = `-28` / `+15/-…`），此 ±1 归 T-104，不作为本轮读数。
+
+### 9.600 —— T-103 下一步：ON-only 塌陷面根因 = `LoadWires` 缺 `Context()->Apply` + `applyImpl` 子形状**朝向未复合**（`cumOri`）；8 张登记面 5 张归位，ON 三角数 `65051 → 65453`
+
+#### A. 对 `.cxx` 审「收尾段」（本轮结论：缺的不是 `SetLast`/`WireOrder`）
+
+要求里点名的 `sbwdM`/`ShapeAnalysis_WireOrder`/`SetLast`/`Reverse` 逐项核对结果：
+
+- **`SetLast` 在 OCCT 里是注释掉的**：`ShapeFix_ComposeShell.cxx:2344` 是
+  `// wire.SetLast ( j-1 );`（`SplitEdge` 的 `shift` 分支），未启用 ⇒ 端口不需要补起点归一。
+- **`ShapeAnalysis_WireOrder` 端口早有**：OCCT `cxx:589-606`（`sawo(false,0)` →
+  `Add(c2d->Value(f).XY(), c2d->Value(l).XY())` → `Perform` → `Status()` → `sfw->FixReorder(sawo)`），
+  端口 `shape_fix_compose_shell/load_wires.rs` 自 §9.587 就按同一分支实现（2D `WireOrder`
+  + `fix_reorder_wire_with_order` + 3D `fix_reorder_wire_3d`）。
+- **`Reverse` 端口也有**：OCCT `cxx:629 sbwdM->Reverse(face)` → 端口
+  `load_wires.rs::reverse_wire_data_on_face`（仅在 `IsOuterBound` 翻转时）；
+  OCCT `cxx:2767 wire->Reverse(myFace)` → 端口 `collect_wires.rs:258`。
+- **真正缺的两处**（都属「重建后是否正确应用 Replace / 朝向」）：
+  1. `ShapeFix_ComposeShell.cxx:505-506`：
+     `TopoDS_Iterator iw(myFace, false); TopoDS_Shape tmpW = Context()->Apply(iw.Value());`
+     —— `LoadWires` **入口**就要对每条 wire 先跑共享 `ReShape` 的 `Apply`。端口旧
+     `load_wires.rs` 直接读 `face.0.tshape.children`，没有 `Apply` ⇒ 邻面 `DispatchWires`
+     刚 `Replace(old_edge, new_edge)`（`cxx:3451-3457`）的结果进不来，本面仍按**旧边**重排。
+  2. `ShapeBuild_ReShape.cxx:284`：`TopoDS_Iterator aSubIt(aNewShape)` 的 `cumOri`
+     **默认 true**，`TopoDS_Iterator.cxx:73-82 updateCurrentShape()` 做的是
+     `myShape.Orientation(TopAbs::Compose(myOrientation, myShape.Orientation()))`（`myOrientation`
+     = 被迭代形状的朝向）。端口 `reshape.rs::apply_impl` 拆子形状时用的是子形状**存储朝向**，
+     没把替换体 `aNewShape` 的朝向复合进去 ⇒ 共享态重建出的 wire/edge 朝向错位，正是
+     §9.599-F 抽检 `pf=110` 看到的「边串联顺序错乱、wire 不连通」。
+
+#### B. 修复（只用同等分支，无新谓词）
+
+- `shape_fix_compose_shell/load_wires.rs`：签名加 `context: &SharedReShape`，每个 child 先
+  `let child = ctx.apply(&child);`（`ShapeFix_ComposeShell.cxx:506`）。
+- `shape_fix_compose_shell/reshape.rs::apply_impl`：子形状入 `aResult` 前
+  `c.set_orientation(Orientation::compose(nc_ori, c.orientation()))`（`cxx:284` + `TopoDS_Iterator.cxx:73-82`）。
+- `shape_fix_compose_shell/perform.rs`：调用点传 `&self.context`。
+
+#### C. 门禁（命令实测）
+
+```text
+cargo check --manifest-path crates\occt-topo\Cargo.toml --all-targets          -> 0 errors
+cargo test  ... --test step_obj_gates                                         -> 5 passed / 0 failed
+cargo test  ... --lib  fuse_box_cylinder_is_closed_solid                       -> 1 passed
+```
+
+默认路径（`OCCT_SHARED_HEAL` 未设）四模型 `--wirehist` 逐项不变：
+
+```text
+a3n00 226/294 1:208 2:9 4:1 6:4 10:4      acs10 787/913 1:742 2:25 5:1 6:18 8:1
+T0M   1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2   TDB 2180/2385 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+共享态（`OCCT_SHARED_HEAL=1`）现在同样逐项相同（四模型 `faces/wires/WIREHIST` 全同）。
+旁支仍在：ON 的 `wires_1edge_closed`/`faces_1edge_closed` 与 OFF 不同
+（T0M `172/129` vs `216/143`、a3n00 `58/24` vs `79/24`），未定性（§9.599-E-1）。
+
+#### D. 网格层效果（T0M `--fstats`，同偏转 `2.574312`）
+
+全模型逐面 `mt` 求和：**OFF `64988` → ON `65453`**（上一版 ON `65051` ⇒ 本轮 **+402**；
+OCCT `FSTAT_OCC` 求和 `66576`）。8 张登记回归面（`--fstats` 按 bbox 配对，ON 侧索引可能移位）：
+
+| 面（OFF 侧） | OFF mt | ON 上轮 | ON 本轮 | 状态 |
+| --- | --- | --- | --- | --- |
+| `pf=110`（Torus） | 312 | 8 | **353** | 归位（= OCCT `353`） |
+| `pf=816` | 70 | 5 | **70** | 归位 |
+| `pf=1668` | 74 | 5 | **96**（ON idx 1667） | 归位 |
+| `pf=1462` | 56 | 5 | **97** | 归位 |
+| `pf=812` | 70 | 8 | **20** | 半改善 |
+| `pf=212` | 178 | 12 | 12 | 未动 |
+| `pf=198` | 174 | 12 | 12 | 未动 |
+| `pf=28` | 74 | 18 | 1 | 未动（更差） |
+
+仍未归位（ON `mt < OFF/3`）的只剩 4 张：`pf=212 178→12`、`pf=198 174→12`、
+`pf=812 70→20`、`pf=28 74→1`；其余三张 OFF 侧 `mt≥40` 的面差 ≤ 1.3 个三角数。
+
+#### E. 顺带清理（T-104 已闭环，本轮撤除）
+
+- `shape_fix_compose_shell/`：`dispatch_wires.rs` 的 `T103W`（+`T103WBOX`）、`split_wire.rs` 的 `T103S`；
+  `reshape.rs` 残留未用 import `GeometryRegistry`。
+- `shhealing/`：`wire_fix.rs`（`RSDBG` `RSCOPYVLOST`）、`shape_build_edge.rs`（`RSDBG` `RSCOPYLOST`）、
+  `loop_wire.rs`（`SLWDBG`）、`shape_fix_face.rs`（`CWDGB` + 残留 `ei`）。
+- **未动** `meshing/wire_order.rs` / `model_builder/wire_builder.rs`（T-104 的已落盘改动）。
+
+#### F. 下一步入口
+
+剩 4 张仍 ON-only 塌陷，取 `pf=212`（Torus，OFF `178`/ON `12`）做第一现场：`--fdump` 对
+OFF/ON 的 wire 边序与顶点，确认是「`LoadWires` 已 `Apply` 但 `Replace` 之后的边序仍不连通」
+还是「这 4 张面走的是另一条不经过 `LoadWires` 的重建路径」。判据仍是既有 `--fstats`/`--fdump`
+读数，不新写测试、不加 OCCT 里没有的谓词。
+
+
+
+### 9.601 — T-104 残留 A/B 结项：`#99` 已归位（周期 BSpline 面必须用「存储去重节点」而非扁平周期序列）；余 4 张 `Cylinder` 面的 bbox 差 = 2D pcurve 子区间臂未移植 `Geom2d_BSplineCurve::Segment`；motoc 223 面三角数 0 差
+
+#### A. `.cxx` 口径核对：OCCT 对 `Geom_BSplineSurface` / 面到底用哪个盒
+
+- `BRepBndLib.cxx:109`（`BRepBndLib::Add` 的面分支）对非平面面就是
+  `BndLib_AddSurface::Add(BS, BRep_Tool::Tolerance(F), B)`，UV 窗口取自
+  `BRepTools::UVBounds(F)`（`BRepTools.cxx:172-366`）；没有 `D0` 随机采样、没有额外的
+  `Enlarge`，也不按面积/长度/体积加门。
+- `BRepTools.cxx:185`（`AddUVBounds`）逐边取**挂在该面上的 pcurve**，
+  `BndLib_Add2dCurve::Add(aC2D, aT1, aT2, 0., aBoxC)`（tol 传 `0.`）
+  → `BndLib_Add2dCurve.cxx:83` → `GeomBndLib_Curve2d(aC2D).Add(aT1, aT2, aTol, aBox2D)`。
+- `GeomBndLib_BSplineCurve2d.cxx:34-35` 取 `aCurve->FirstParameter()/LastParameter()`；
+  当 `|aU1-aTrim1| > PConfusion || |aU2-aTrim2| > PConfusion` 时**复制曲线 +
+  `aCurve->Segment(aTrim1, aTrim2)`**（`:49`），再走 `:53` 的 `NbPoles()` 循环取
+  **裁剪后控制网**盒 + `:57 aBox.Enlarge(theTol)`；全区间走活动极点盒。
+  被裁剪柄是 `Geom2d_TrimmedCurve` 时，`GeomBndLib_Curve2d.cxx:154-157` 先
+  `aCurveForDetection = aTrim->BasisCurve()`，窗口取**基曲线**范围。
+- `GeomBndLib_BSplineSurface.cxx:103,118` 喂 `ComputePolesIndexes`（`:30`）的是
+  `myGeom->UKnots()` / `VKnots()`，即 `Geom_BSplineSurface` **存的那组去重节点**。
+
+#### B. `#99`（BSpline 面）：同分支存在 ⇒ 已修（有对拍）
+
+端口 `geom_bnd_lib_surface3d.rs` 原本用扁平周期序列
+（`GeomBSplineSurface::unique_knots_mults(&b.knots_u)`）冒充 `UKnots()`。周期面上扁平序列
+多出的外圈周期节点把 `compute_poles_indexes` / `nb_u_samples` / `nb_v_samples` 的索引区间
+整体带偏。新增 `GeomBSplineSurface::distinct_knots_and_mults_u/_v`
+（`crates/occt-geom/src/bspline_surface.rs:133,139`，与已移植的
+`GeomBSplineCurve::distinct_knots_and_mults` 同构，复用 `distinct_km`），
+`crates/occt-topo/src/geom_bnd_lib_surface3d.rs:136,167,190,206,284,298` 六处调用点改用它。
+
+本轮实测（端口 `zz_probe_a3n00 --fstats` ↔ OCCT `occt_probe --facestats`，223 面按 bbox 最近配对）：
+`port 99: maxd=0.0000 occface=4 occT=214 portT=214 dt=0`。
+
+#### C. 余 4 张 `Cylinder` 面：无同等分支 ⇒ 登记「口径不一致（未移植）」，不修数值
+
+同一轮 223 面配对，`maxcoord 差 > 0.01` 的**只有 4 张**（修复前 5 张），全是 `type=Cylinder`
+（`--fsurf` 确认；`#99` 现在是 `0.0000`）：
+
+```text
+face=100 maxd=0.198  port y_max= 0.097810  occ y_max=-0.100000
+face=103 maxd=1.782  port y_max= 1.682421  occ y_max=-0.100000
+face=106 maxd=0.092  port y_max=-0.008022  occ y_max=-0.100000
+face=181 maxd=0.087  port y_max=-0.013015  occ y_max=-0.100000
+```
+
+四张面都**只有一个坐标**偏，且都是端口盒**大于** OCCT 盒；OCCT 侧该坐标恰好是
+`-0.100000`（模型里 `y=-0.1` 的裁剪平面）。多出的量 = `R * dU`
+（`R = 25 / 18.5 / 5 / 26`，`dU = 0.0078 / 0.0963 / 0.0184 / 0.00335 rad`，全部远小于本模型
+偏转 `0.836`）——即圆柱面在 UV 窗口的**裁剪侧多走了一小段弧**。
+差全部落在 `BRepTools::AddUVBounds` 那条链上：端口
+`crates/occt-topo/src/geom_bnd_lib_bspline2d.rs::box_bspline_as_curve`（`:79`）的子区间臂
+落到 `GeomBndLib_OtherCurve2d::Box`（`geom_bnd_lib_other2d.rs`，33 点弦线包络 + `Enlarge`），
+而 OCCT 走 `Segment` 后的精确裁剪控制网（`:53`）；包络 ⊇ 精确盒 ⇒ UV 窗口略宽 ⇒ 圆柱 3D 盒略大。
+
+门禁 #2 判定：`crates/occt-geom2d` 至今没有 `Geom2dBSplineCurve::Segment`
+（OCCT `Geom2d_BSplineCurve.cxx:707`，另有 `:343 InsertKnots`、`:989 SetOrigin`；它是**已移植**的
+`Geom_BSplineCurve::Segment` 的 2D 孪生），**无同等分支** ⇒ 不调参、不加容差/阈值，只在
+`geom_bnd_lib_bspline2d.rs:63-78` 就地登记「未移植窗口」，写明
+`GeomBndLib_BSplineCurve2d.cxx:34-57` / `GeomBndLib_Curve2d.cxx:154-157` / `Geom2d_BSplineCurve.cxx:707`
+三处行号（本轮补注，行为不变）。
+
+> **§9.604 更新（2026-10-05）**：本节 C 的「无同等分支 ⇒ 只登记未移植窗口」已在下一轮补齐 —— `Geom2dBSplineCurve::Segment` / `InsertKnots` / `SetOrigin` 三件套落地、`box_bspline_as_curve` 换臂、并把 `Copy()` 后的 `Geom2d_BSplineCurve` 经 `ReparamCurve2d::bspline_copy2d` 暴露给 `GeomBndLib_Curve2d` 的探测。本节 C 的 4 张面 `#100/#103/#106/#181` 现已全部 `0.0000`（`paired=223 big=0 sumMt=13944`），详见 §9.604。
+
+#### D. 残留 B（面级三角数小幅差）：已无残留
+
+同一轮 223 面逐面配对：`|dt| >= 2` 的配对 **0 张**；端口 `mt` 求和 `13944` = `FSTAT_OCC`
+`triangles` 求和 `13944` = 本轮重导出 `output/motoc.obj f=13944` = `data/occ/occ-motoc.obj f=13944`。
+上一轮登记的「3 张面差 <2」是 §9.598 那条整链反转的下游余波，反转删除后不再有。本轮只读核对，
+未动 T-103 网格侧（`meshing/range_splitter/splitter.rs`、`meshing/incremental_mesh/discret_root.rs`、
+`meshing/pcurve_full/make_pcurve.rs`）。
+
+#### E. 门禁（本轮实测）
+
+```text
+cargo check --offline --manifest-path crates\occt-topo\Cargo.toml --all-targets                     -> 0 errors
+cargo test  --offline --release --manifest-path crates\occt-topo\Cargo.toml --test step_obj_gates   -> 5 passed (61.49s)
+cargo test  --offline --release --manifest-path crates\occt-topo\Cargo.toml --lib fuse_box_cylinder_is_closed_solid -> 1 passed
+cargo run   --offline --release --manifest-path crates\occt-topo\Cargo.toml --example export_data_obj -- data/occ -> motoc f=13944
+```
+
+默认路径 `--wirehist` 逐项不变（与 §9.598 / §9.600 记录一致）：
+
+```text
+a3n00 226/294 1:208 2:9 4:1 6:4 10:4             acs10 787/913 1:742 2:25 5:1 6:18 8:1
+T0M   1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2  TDB 2180/2385 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+#### F. 下一步入口
+
+`#100/#103/#106/#181` 的差要归零只有一条路：移植 `Geom2d_BSplineCurve::Segment`
+（`Geom2d_BSplineCurve.cxx:707`，照抄已落地的 `Geom_BSplineCurve::Segment`：`InsertKnots` /
+`SetOrigin` / `Segment` 三件套），再把 `box_bspline_as_curve` 的子区间臂换成「`Segment` 后取
+裁剪控制网盒」，并处理 `Geom2d_TrimmedCurve` 先解基曲线（`GeomBndLib_Curve2d.cxx:154-157`）。
+判据仍是既有 `--fstats` ↔ `FSTAT_OCC` 配对（`maxd > 0.01` 面数 4 → 0），不新写测试、不加谓词。
+
+#### G. 逐边 pcurve 盒复核（`BNDDBG` 诊断，本轮新增；口径已确认）
+
+`FSTAT_OCC` 的 `bbox=` 就是 `BRepBndLib::Add(aFace, aBox, false)`（`occt_probe.cpp:533`，第三参
+`useTriangulation=false`）⇒ 与端口 `shape_bnd_box` 同为**解析/控制网盒**，两边口径一致，差不是
+「解析盒 vs 网格盒」。端口侧逐边打印（`--fsurf`/`--fstats` 同源的 UV 窗口链）：
+
+```text
+face=100 uv=[0.003448283,3.144965418]x[0,50]               线边 U 端 3.138144371 / 0.003448283
+  e0 BSpline full=false  pcbox=[2.996616147,3.144748700]   <- OtherCurve2d 包络
+  e1 BSpline full=false  pcbox=[2.996399430,3.144965418]   <- OtherCurve2d 包络
+face=103 uv=[-0.067347756,3.137592643]x[12,49]             线边 U 端 0.004000011 / 3.137592643
+  e4 BSpline full=false  pcbox=[-0.067347756,0.442877401]  <- OtherCurve2d 包络
+face=106 uv=[0.003604488,3.137988159]x[37,49.017772523]    线边 U 端 0.022001775 / 3.119590879
+  e0 BSpline full=true   pcbox=[0.003604488,3.137988159]   <- 活动极点盒（basis 极点）
+face=181 uv=[3.145438817,6.282684729]x[5,85]               线边 U 端 3.145438817 / 6.279339144
+  e1 BSpline full=false  pcbox=[6.202840581,6.282684729]   <- OtherCurve2d 包络
+```
+
+- **四张面的窗口都严格大于「线边定出的窗口」**：`#100` 多 `3.144965418-3.138144371=0.00682 rad`
+  （`×R25 = 0.17`，观测 `0.198`）；`#103` 多 `0.004000011-(-0.067347756)=0.07135 rad`
+  （`×R18.5 = 1.32`，观测 `1.78`）；`#106` 多 `3.137988159-3.119590879=0.01840 rad`（`×R5 = 0.092`，
+  观测 `0.092` 精确相符）；`#181` 多 `6.282684729-6.279339144=0.00335 rad`（`×R26 = 0.087`，观测 `0.087`
+  精确相符）。⇒ 多出的量就是「圆柱面在 UV 窗口裁剪侧多走的一段弧」，与 §9.601-C 的量级推导一致。
+- 三条 BSpline 边（`#100 e0/e1`、`#103 e4`、`#181 e1`）`full=false`，走 `OtherCurve2d` 包络，直接是
+  「缺 `Segment`」。
+- `#106 e0` 报 `full=true`（端口把 pcurve 存成「自带 `[0.006121462,0.991014865]` 区间」的 BSpline，
+  请求区间与自区间相同 ⇒ 走活动极点盒），此时拿到的是 **`0.0061..0.9910` 这段极点的盒**，而不是
+  裁剪后曲线本身的紧盒。OCCT 侧同一把柄若是 `Geom2d_TrimmedCurve`（基曲线区间 `[0,1]`、裁剪区间
+  `[0.0061,0.9910]`），`GeomBndLib_Curve2d.cxx:154-157` 先解成基曲线后 `GeomBndLib_BSplineCurve2d.cxx:34-49`
+  就落进 `Segment` 臂 ⇒ **同一个 `Segment` 缺口，只是从 `full=true` 这条外观路径露出**。
+  结论不变：不加容差、不加谓词，缺的是 `Geom2d_BSplineCurve::Segment`（`Geom2d_BSplineCurve.cxx:707`）。
+
+### 9.602 — T-103：余 4 张 ON-only 塌陷面（`pf=212/198/812/28`）的第一现场：`pf=212/198` = 预修复 wire 回合把 `face×wire` 朝向复合了（`cumOri`），`pf=812/28` = 拓扑已对齐、塌陷在网格侧
+
+#### A. 判据与结论（`--fdump` / `--ecensus` / `--fsurf` OFF↔ON 对读，T0M）
+
+同一工作树、同一偏转（`prs3d_get_deflection(shape, 0.1)`），`OCCT_SHARED_HEAL` 开/关各跑一次：
+
+```text
+face=212  OFF wires=1 edges=[6] mt=178   ->  ON wires=1 edges=[6] mt=178   (= OCCT 178)
+face=198  OFF wires=1 edges=[6] mt=174   ->  ON wires=1 edges=[6] mt=174   (= OCCT 174)
+face=812  OFF wires=1 edges=[4] mt=70    ->  ON wires=1 edges=[5] mt=20    (OCCT 5 边 / 70)
+face=28   OFF wires=1 edges=[5] mt=74    ->  ON wires=1 edges=[6] mt=1     (OCCT 6 边 / 74)
+```
+
+- **`pf=212` / `pf=198`（BSpline，`wires=1`）**：OFF/ON 的 bbox、边数（`edges=[6]`）、顶点签名逐位相同 ⇒ 既不是「`LoadWires` 已 `Apply` 但边序不连通」，也不是「走了另一条不经过 `LoadWires` 的重建路径」。两张都是单条 6 边闭合 wire，缺的是**朝向/边序**：上一轮修复前 ON 为 `mt=12`（§9.600 登记），本轮修掉后 `12→178` / `12→174`，与 OFF 和 OCCT 逐位相同。
+- **`pf=812`（Cone）/ `pf=28`（Cylinder）**：ON 的 `edges=[5]` / `edges=[6]` 与 OCCT 真值逐位相同（`output/t0m_occt_wires.txt:1099` `FACE 812 type=2 wires=1 edges_per_wire: 5 spans: u=5.9183 v=0.8083 box=(-43.7,-109.732,13.6954)-(-33.3,-106.216,23.4472)`；`:67` `FACE 28 type=1 wires=1 edges_per_wire: 6 box=(-9.75,-97.2553,-348.85)-(9.75,-67.1546,-318.121)`），OFF 各少 1 条（4 / 5）⇒ `LoadWires` 已 `Apply`、wire 连通、`FixReorder` 后边序正确（`--fdump` ON `face=28 wire[0] ori=Forward nEdges=6` / `face=812 nEdges=5`，逐边 first→last 首尾相接，仅 `e[2]`/`e[5]` 为 `closed=true`）。塌陷不在 wire 层（ON `mt=20` / `1`，OFF `70` / `74`）：ON 的拆缝面参数域离散 + 多边形三角化给出退化读数，属**网格侧**，不在本轮 wire/BOP 线。
+
+#### B. `.cxx` 控制流对照（根因钉到行号）
+
+| 端口 | OCCT |
+| --- | --- |
+| `read_topology.rs::resolve_face` 预修复 wire 回合（共享上下文分支） | `ShapeFix_Face.cxx:379-380`：`S = Context()->Apply(myFace)` |
+| 旧 `topo_tools_full::wires_of_face(&perf_face)`（复合 `Face.ori × Wire.ori`） | `ShapeFix_Face.cxx:400` / `:532`：`for (TopoDS_Iterator iter(S, false); ...)`，`cumOri = false` |
+| 新增 `read_topology.rs::wires_stored_on_face`（直接读 `Face` 的 TShape WIRE children） | 同上，交 `ShapeFix_Wire::Load` 的是**存储朝向**的 wire |
+| 收尾段朝向复合只此一次 | `ShapeFix_ComposeShell.cxx:629-630`：`sbwdM->Reverse(face)`（§9.587 已对齐） |
+| `reshape.rs::apply_impl` 替换体朝向 | `ShapeBuild_ReShape.cxx:284` `TopoDS_Iterator aSubIt(aNewShape)`（`cumOri` 默认 true）、`:317` `aResult.Orientation(anOrient)`（§9.600 已对齐） |
+
+原因链：`ShapeExtend_WireData::Init`（`ShapeExtend_WireData.cxx:114-121`）按传入 wire 的朝向决定 append/prepend；`wires_of_face` 把 `Face.ori` 也复合进来，当 face 与 wire **同为 `Reversed`** 时复合结果反而是 `Forward` ⇒ `ShapeAnalysis_WireOrder` 拿到反向 pcurve（`Same` 判成 `Shifted`）⇒ `FixReorder` 后 `sbwdM` 的边序与 OCCT 相反 ⇒ 该面在共享态下进入错误的 2D 分类/拆缝分支，网格读数塌成 `mt=12`。`pf=212/198` 的 face 与 wire 正是双 `Reversed`。
+
+#### C. 修复（同一 `.cxx` 分支，无新谓词/启发式）
+
+`crates/occt-topo/src/step/read_topology.rs`：
+
+- 新增 `wires_stored_on_face(face) -> Vec<Wire>`：读 `face.0.tshape.children` 里 `shape_type() == Wire` 的子形状（等价 `TopoDS_Iterator iter(face, false)`）。
+- `resolve_face` 的共享上下文分支：`wires_of_face(&perf_face)` → `wires_stored_on_face(&perf_face)`（`ShapeFix_Face.cxx:400`）。
+- `fix_missing_seam` 之后第二轮 wire 回合（`ShapeFix_Face.cxx:583-598` 前的 `check_pcurves_and_shift`）同样改用 `wires_stored_on_face(rf)`（`:923`）。
+- 默认（无上下文）分支走 `resolve_loop` 的 `w`，**不动** ⇒ 默认路径零改动。
+
+同时撤除本轮 TEMP 仪器：`read_topology.rs` 的 `fdbg_dump_face_wires`（两份重复定义 + 两处调用）、`wire_fix.rs` 的 `T103RV` / `T103R`（两处）/ `T103D`。未动 `meshing/wire_order.rs` / `model_builder/wire_builder.rs`（T-104 线）。
+
+#### D. 门禁（本轮实测）
+
+```text
+cargo check --offline --manifest-path crates\occt-topo\Cargo.toml --all-targets            -> 0 errors
+cargo test  --offline --manifest-path crates\occt-topo\Cargo.toml --test step_obj_gates    -> 5 passed (599.84s)
+cargo test  --offline --manifest-path crates\occt-topo\Cargo.toml --lib fuse_box_cylinder_is_closed_solid -> 1 passed
+```
+
+默认路径（`OCCT_SHARED_HEAL` 关闭）四模型 `--wirehist` 逐项不变：
+
+```text
+a3n00 226/294 1:208 2:9 4:1 6:4 10:4             acs10 787/913 1:742 2:25 5:1 6:18 8:1
+T0M   1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2  TDB 2180/2385 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+共享态（`OCCT_SHARED_HEAL=1`）四模型 `--wirehist` 现在与各自 OFF **逐项相同**（上表同一组数）：
+
+```text
+a3n00 226/294 1:208 2:9 4:1 6:4 10:4             acs10 787/913 1:742 2:25 5:1 6:18 8:1
+T0M   1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2  TDB 2180/2385 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3
+```
+
+ON 态 4 张面的实际改善：`pf=212` `12 → 178`、`pf=198` `12 → 174`（两张归位 = OCCT）；`pf=812` 仍 `20`（OCCT `70`）、`pf=28` 仍 `1`（OCCT `74`）⇒ 8 张登记面现 6 张归位（`pf=110/816/1668/1462` 于 §9.600、`pf=212/198` 于本轮），剩 `pf=812/28` 在网格侧。
+
+#### E. 旁支（未动手）
+
+- ON 的 `wires_1edge_closed / faces_1edge_closed` 与 OFF 不同（`pf` 统计量，不属 wirehist 口径）：a3n00 `58/24` vs `79/24`、T0M `172/129` vs `216/143`、acs10 `133/72` vs `157/72`、TDB `155/91` 相同。`--wirehist`/`--ecensus` 的 faces/wires/edge 直方图两边一致，故不是 wire 结构差；未定性。
+- `pf=812`/`pf=28` 的网格塌陷入口：拆缝后的面参数域（`urange` 已是整周期 `[0, 2π]` / `[π/2, 5π/2]`）与 `BRepMesh` 的三角化，归 T-103 网格线（`--fstats`/`--fsurf` 对 OCCT `FSTAT_OCC`）。
+- `read_topology.rs` 里既有的 `FDBG` 插桩（`resolve_face` 的 sub_faces dump）保留原地，未删。
+- 共享态仍未默认打开（本轮只把它的读数对齐到 OFF）。
+
+### 9.603 — T-103 网格线：`pf=28`/`pf=812` 的 ON 塌陷第一现场 = `collect_boundary_uv` 的分类器多边形非简单（自重叠），OFF 为干净矩形
+
+`release` 探针 `CBDBG=<face>` / `CWDBG=<face>` 逐边 dump（`node_insertion.rs:774-808`），同偏转 `prs3d_get_deflection(shape, 0.1)`：
+
+```text
+OCCT 参照（output/t0m_fs_occt.txt）：face 576 = pf=28 nodes=74 triangles=72；face 504 = pf=812 nodes=72 triangles=70
+端口 --fstats：pf=28  OFF mv=76 mt=74 | ON mv=76 mt=1
+               pf=812 OFF mv=72 mt=70 | ON mv=72 mt=20
+```
+
+**`pf=28`（Cylinder，`edges_per_wire: 6` = ON）**：
+
+```text
+OFF（5 边，mt=74）：e0 edge=91 nb=38 (7.854,0)->(1.5708,0) | e1 edge=92 nb=2 (7.854,0)->(7.854,23.75)
+                    e2 edge=93 nb=28 | e3 edge=94 nb=11 | e4 edge=92 nb=2 (1.5708,0)->(1.5708,23.75)
+OFF 分类器多边形（n=76，干净闭合矩形）：(1.5708,0)->(7.854,0)->(7.854,23.75)->(1.5708,23.75)
+ON （6 边，mt=1） ：e0 edge=61 nb=20 (1.5708,0)->(4.7124,0) | e1 edge=62 nb=19 (4.7124,0)->(7.854,0)
+                    e2 edge=63 nb=2 | e3 edge=60 nb=28 | e4 edge=59 nb=11 | e5 edge=63 nb=2
+ON 分类器多边形（n=76，**非简单**）：起点 (4.71239,0) -> ... -> (7.68863,0) -> (7.85398,0) ->
+                    (1.74533,0) -> ... -> (4.53786,0) -> (7.85398,0) -> (7.85398,23.75) -> ... -> (1.57080,23.75)
+```
+
+⇒ ON 的下边（u 从 1.5708 到 7.854）在分类器链里被**绕了一圈后又跳回 u=7.854 起点**（`(4.53786,0)->(7.85398,0)`），多边形自重叠 ⇒ `BRepMesh_Classifier` 的环绕数退化 ⇒ 内点全判 OUT ⇒ `mt=74→1`。OFF 的对应链是干净矩形 ⇒ 正常出网格。`pf=812`（Cone）同理：OFF 4 边 `nb=[35,4,32,5]` 链正常，ON 5 边 `nb=[4,32,5,9,27]` 多出两条拆缝边，`mt=70→20`。
+
+分类器链构造与 OCCT `collectWirePoints`（`BRepMesh_NodeInsertionMeshAlgo.hxx:142-183`）逐句一致：`IsForward()` 取 `0..nb-2`、否则取 `nb-1..1`；端口 `collect_boundary_uv`（`node_insertion.rs:697-810`）用 `reverse = !pcurve.is_forward() ^ reverse_walk` 后同样切 `pts[..n-1]` / `pts[n-1..=1]`。因此缺口不在切法，而在**ON 两条拆缝边（`edge61`/`edge62`、`edge1973`/`edge2178`…）的 pcurve 点序/朝向**（或 `pcurve_for` 对同一条 `edge63` 在 e2/e5 两次取用返回的 u 平移）与 OCCT 不一致 ⇒ 链的接线断开。
+
+旁支（未定性）：`CBWIN` 逐边 `first/last` 与 `CWDBG` 链的段区间对不上（`edge61` 报 `(1.5708,0)->(4.7124,0)`，但链首段落在 `4.71239..7.68863`）⇒ 疑 `pcurve.points()` 返回借用了复用的缓存缓冲，或 `pcurve_for(face, orientation)` 在两次循环里返回不同平移；下一步先核这一点，再对 OCCT 侧取 `pf=28`/`pf=812` 的逐边 UV 区间（`ZZWIN`）做逐段比对。
+
+### 9.604 — T-104 闭环：`Geom2d_BSplineCurve::Segment` 三件套 + `box_bspline_as_curve` 子区间臂 + `ReparamCurve2d` 暴露 `Copy()` 后的 BSpline；motoc 223 面 `maxcoord 差 > 0.01` 的面 **4 → 0**
+
+#### A. `.cxx` 口径（本轮实现所依据的同等分支）
+
+- `GeomBndLib_BSplineCurve2d.cxx:31-59`（`Box(theU1, theU2, theTol)`）：取 `aCurve->FirstParameter()/LastParameter()`（`:33-34`），窗口落成 `[max(U1, First), min(U2, Last)]`（`:35-42`）；当 `|aU1-aTrim1| > PConfusion || |aU2-aTrim2| > PConfusion` 时 `aCurve->Copy()` + `aCurve->Segment(aTrim1, aTrim2)`（`:44-50`，`Segment` 默认 `Precision::PConfusion()`），然后遍历**裁剪后的 `NbPoles()` 控制网**（`:52-56`）+ `:57 aBox.Enlarge(theTol)`。全区间不动。
+- `GeomBndLib_Curve2d.cxx:137-143`：探测出的曲线是 `Geom2d_BSplineCurve` 才装 `GeomBndLib_BSplineCurve2d`；`:150-157` 对 `Geom2d_TrimmedCurve` 先取 `aCurveForDetection = aTrim->BasisCurve()`（UV 窗口仍由调用者给）。
+- `Geom2d_BSplineCurve::Segment`（`Geom2d_BSplineCurve.cxx:707`）依赖同类 `InsertKnots`（`:343`）/`InsertKnot`（`:332`）/`SetOrigin`（`:989`）；`Copy()` 在 `:109-112`。
+- `GeomLib.cxx:842-969`（`SameRange`）**不存包装器**，两条臂最后都产出 `Geom2d_BSplineCurve`：
+  - 等跨臂 `:908-921`：`TrimmedCurve(CurvePtr, FirstOn, LastOn)` → `CurveToBSplineCurve` → `Reparametrize(RequestedFirst, RequestedLast, Knots)` → `SetKnots`；
+  - 非等跨臂 `:924-969`：非周期时 `Udeb = max(CurvePtr->FirstParameter(), FirstOnCurve)`、`Ufin = min(CurvePtr->LastParameter(), LastOnCurve)`（`:947-949`），窗口塌陷取整条（`:951-957`），再 `:961-969` 同样 `CurveToBSplineCurve` + `Reparametrize` + `SetKnots`。
+- `Geom2dConvert.cxx:347-351`（`Geom2dConvert::CurveToBSplineCurve` 的 BSpline 臂）：`TheCurve = Curv->Copy(); TheCurve->Segment(U1, U2);`（`U1/U2` 已在 `:199-209` 夹到基曲线范围）。
+
+#### B. 移植（本轮，全部走同等分支）
+
+1. `crates/occt-geom2d/src/bspline_curve.rs`：`Geom2d_BSplineCurve::insert_knots`（`:156`）/`insert_knot`（`:210`）/`set_origin`（`:223`）/`segment`（`:281`），配 `u_knot_index_range`（`:119`）、`update_flat_knots`（`:139`），与已落地的 3D `Geom_BSplineCurve::Segment` 同构；`bspline_copy2d`（`:665`）= `Copy()`。
+2. `crates/occt-topo/src/geom_bnd_lib_bspline2d.rs`：`box_bspline_poles`（`:27`）= `:33-57`（窗口 → `segment(…, PConfusion)` → 裁剪网盒 → `enlarge(the_tol)`）；`box_bspline_as_curve`（`:77`）的子区间臂不再落 `GeomBndLib_OtherCurve2d::Box`（33 点弦线包络），改为 `curve.bspline_copy2d()` → `box_bspline_poles`，即 `GeomBndLib_Curve2d.cxx:137-157` 的「探测 + 解 `BasisCurve()`」。
+3. `crates/occt-geom2d/src/trimmed.rs:188-194`：`Geom2d_TrimmedCurve::bspline_copy2d` 透传 `BasisCurve()`（`:150-157`）。
+4. `crates/occt-topo/src/pcurve_full/surface_projector.rs:3008`：`ReparamCurve2d::bspline_copy2d`。端口 `shhealing/wire_fix.rs::geom_lib_same_range`（`:629-676`）用 `ReparamCurve2d` 代表 `SameRange` 的产出，但该包装器只实现逐点求值，`bspline_copy2d` 取 trait 默认 `None` ⇒ 面 106 的 pcurve 被判 `OtherCurve2d`、量到 33 点包络盒。本轮按 `GeomLib.cxx:947-958` + `Geom2dConvert.cxx:347-351` + `GeomLib.cxx:961-969` 在该包装器上重建 OCCT 会产出的那条 `Geom2d_BSplineCurve`：`inner.bspline_copy2d()` → 窗口夹到曲线自身范围（塌陷取全长）→ `segment(u_deb, u_fin, PConfusion)` → `bspl::knots::reparametrize(a, b, &mut knots)`（= `BSplCLib::Reparametrize` + `SetKnots`）。无新谓词 / 容差 / 阈值 / 特例。
+
+#### C. 对拍（既有基线：端口 `--fstats` ↔ OCCT `FSTAT_OCC`，223 面按 bbox 配对）
+
+```text
+.target-gate/t106/pair.ps1 : paired=223 big=0 sumMt=13944      （上一轮登记：big=4）
+.target-gate/_pair.mjs     : boxDist max=0.0000  <1e-4: 223  <1e-6: 206
+                             mv port-occ sum=0  mt port-occ sum=0
+                             port mv/mt = 11713/13944 = occ mv/mt
+                             mt diff histogram (port-occ)  0: 223
+```
+
+- 上一轮 §9.601-C 的 4 张（`#100 maxd=0.198` / `#103 1.782` / `#106 0.092` / `#181 0.087`）本轮全 `0.0000`；分步读数（同一 harness、同一份 OCCT 参照）：① 完成 B-1/B-2 后 `big=1`（余 `#106 maxd=0.0920 mt=43 ↔ occface=56`）；② 补上 B-4 后 `big=0`。⇒ 4 → 0 的两段都由上表同等分支解释。
+- 逐面三角数：`|dt| >= 2` 的面 **0 张**（`mt diff histogram 0: 223`，两侧求和同为 `13944` = `data/occ/occ-motoc.obj f=13944` = `data/output/motoc.obj f=13944`）。
+
+#### D. 门禁（本轮实测）
+
+- `cargo check --all-targets`：`occt-core` / `occt-math` / `occt-geom` / `occt-geom2d` / `occt-topo` 五 crate（逐 crate 跑，无根 workspace）全 0 error。
+- `step_obj_gates`：5 passed / 0 failed；`--lib fuse_box_cylinder_is_closed_solid`：1 passed。
+- 默认 `--wirehist` 逐项不变：a3n00 `226/294` `1:208 2:9 4:1 6:4 10:4`；T0M `1778/1921` `1:1672 2:92 3:8 5:1 6:1 7:2 8:2`；acs10 `787/913` `1:742 2:25 5:1 6:18 8:1`；TDB `2180/2385` `1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3`。
+
+#### E. UNPORTED（登记，未改行为）
+
+- `ReparamCurve2d::is_bspline2d()` 仍是 trait 默认 `false`（本轮只补了 bbox 消费者的 `bspline_copy2d`）。OCCT 在 `SameRange` 之后持有的确实是 `Geom2d_BSplineCurve`，因此 `Geom2dConvert::CurveToBSplineCurve`（`geom2d_convert.rs:19`）、`GeomLib::IsIsoLine`（`crates/occt-geom/src/geom_lib.rs:101`）、`shhealing/shape_build_edge.rs:319` 在这条链上仍走「非 BSpline」臂。（→ 已由 §9.605 收口）
+- `ReparamCurve2d` 本身仍是 OCCT 没有的包装器（除本轮补的 `bspline_copy2d` 外，其余方法照旧透传 / 采样）。
+- 端口 `geom_lib_same_range` 仍以同一个 `ReparamCurve2d` 代表 `GeomLib.cxx:908-921`（等跨）与 `:924-969`（非等跨）两条臂；两者在本链上（非周期、`inner` 自身范围 = `[FirstOn, LastOn]`）结果一致，未做区分。
+
+#### F. 仪器清理
+
+本轮临时仪器（`REPARAMDBG` 环境变量打印、`examples/zz_tmp_t106_pcdump.rs`）已撤除；T-106 判据脚本与两侧参照读数收进 `.target-gate/t106/`（`pair.ps1`、`port_fstats.txt`、`tmp_t106_occ_facestats.txt`）。未动 T-103 网格侧三文件（`meshing/range_splitter/splitter.rs`、`meshing/incremental_mesh/discret_root.rs`、`pcurve_full/make_pcurve.rs`）与 `shape_fix_compose_shell/`、`shhealing/`、`step/read_topology.rs`。
+
+### 9.605 — T-104 下一入口闭环：`geom_lib_same_range` 的 B-spline 臂改为「返回 `SameRange` 真正持有的 `Geom2d_BSplineCurve`」；§9.604-E 登记的三处分派因此落到同名臂，基线逐项不变
+
+§9.604-E 登记的入口是「`ReparamCurve2d::is_bspline2d()` 为 `false`，三处走了非 BSpline 臂」。本轮先按 `.cxx` 把「三处 `is_bspline2d` 何时为 true」钉死，再看 OCCT 在 `SameRange` 之后到底持有什么，结论是**问题不在三处、也不在包装器要不要报告自己是 BSpline，而在端口用包装器冒充了 `SameRange` 的产出**。
+
+#### A. 三处 `is_bspline2d` 的 `.cxx` 语义 = 「对象本身精确是 `Geom2d_BSplineCurve`」
+
+| 端口 | OCCT | 判据 |
+| --- | --- | --- |
+| `crates/occt-geom2d/src/geom2d_convert.rs:19`（`curve_to_bspline_curve`） | `Geom2dConvert.cxx:420-423`（非裁剪臂） | `C->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve))` → `down_cast<Geom2d_BSplineCurve>(C->Copy())`，即 `Copy()`，不 `Segment`；裁剪臂在 `:189` + `:347-351`，判的是 `BasisCurve()`（`Curv->IsKind`）后再 `Segment(U1, U2)`。端口唯一调用方 `shhealing/shape_build_edge.rs:323` 传的是已经解过 `BasisCurve()` 的 `reference`（对应 `ShapeBuild_Edge.cxx:614-618`），所以就是非裁剪臂。 |
+| `crates/occt-geom/src/geom_lib.rs:101`（`to_3d`） | `GeomLib.cxx:563` + `:603` | `Curve2d->DynamicType() == STANDARD_TYPE(Geom2d_BSplineCurve)`（**精确类**，不是 `IsKind`），臂体 `:604-631` 取 `Degree/IsPeriodic/Poles/Knots/Multiplicities` 建 `Geom_BSplineCurve`。 |
+| `crates/occt-geom/src/geom_lib.rs:200`（`is_iso_line`，§9.604-E 未列但同源） | `GeomLib.cxx:3010-3029` | `theC2D->GetType() == GeomAbs_BSplineCurve`；`Geom2dAdaptor_Curve::GetType()` 对 `Geom2d_BSplineCurve` 返回该枚举（`Geom2dAdaptor_Curve.cxx:1364-1368`），对裁剪曲线先解 `BasisCurve()`（`:226-230`，端口 `is_iso_line` 开头的 `while let Some(basis) = curve.trimmed_basis()` 同构）。 |
+| `crates/occt-topo/src/shhealing/shape_build_edge.rs:319` | `ShapeBuild_Edge.cxx:642`（Bezier）/`:679`、`:683-686`（BSpline） | `result->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve))` → `down_cast<Geom2d_BSplineCurve>(result)`（就是 `result` 本身），再 `:688-697` 就地改 poles。 |
+
+⇒ 四处的判据全是**对「存储的曲线对象」做精确类/种类测试**，为 true 的充要条件就是「手里那条曲线真的是一条 `Geom2d_BSplineCurve`」，没有别的语义。
+
+#### B. `GeomLib::SameRange` 之后 OCCT 持有的是真 `Geom2d_BSplineCurve`（`.cxx` 证据，非端口推导）
+
+- `GeomLib.cxx:842-969` 的 `NewCurvePtr` 全程是 `Handle(Geom2d_Curve)`，**OCCT 没有包装器类型**：`:854-858` 早退直接还 `CurvePtr`；等跨臂 `:908-921` 与不等跨臂 `:924-969` 都收在 `:961-969`——`NewCurvePtr = BS;`，其中 `BS` 来自 `Geom2dConvert::CurveToBSplineCurve`（返回值类型是 `Handle(Geom2d_BSplineCurve)`，`Geom2dConvert.cxx:181-184`）。
+- 该 BSpline 的构造路径同 §9.604-A：`Geom2dConvert.cxx:347-351`（`TheCurve = Curv->Copy(); TheCurve->Segment(U1, U2);`）+ `GeomLib.cxx:961-969`（`BSplCLib::Reparametrize(RequestedFirst, RequestedLast, Knots)` + `SetKnots`）。
+- 因此端口 `shhealing/wire_fix.rs::geom_lib_same_range`（`:629-676`）用 `ReparamCurve2d` 代表 `SameRange` 的产出，本身就是 §9.604-A 已记的「OCCT 没有的包装器」；对 B-spline 输入，端口该做的是把 OCCT 那条曲线建出来再还回去，而不是让它冒充。
+
+#### C. 移植（一处，`crates/occt-topo/src/pcurve_full/surface_projector.rs`；不新增谓词/容差/阈值/特例）
+
+1. 抽出 `same_range_bspline2d(inner, a, b, p0, p1)`（`:3034`）：`inner.bspline_copy2d()?` → 按 `GeomLib.cxx:947-949` + `Geom2dConvert.cxx:199-209` 把窗口夹到曲线自身范围（`|u_fin-u_deb| <= PConfusion` 时取全长，`:951-957`）→ `segment(u_deb, u_fin, PConfusion)`（`Geom2dConvert.cxx:347-351`）→ `bspl::knots::reparametrize(a, b, &mut knots)`（`GeomLib.cxx:961-969`）。逻辑与 §9.604-B-4 逐字相同，只是从包装器方法提成自由函数。
+2. `ReparamCurve2d::bspline_copy2d`（`:3004`）改为调用该自由函数（bbox 消费者行为不变）。
+3. `reparam_curve2d`（`:3072`）先试 `same_range_bspline2d`，成功就把那条 `Geom2dBSplineCurve` 直接还回去（`:3079-3081`），失败才落回 `ReparamCurve2d`。
+4. `crates/occt-geom2d/src/geom2d_convert.rs`、`crates/occt-geom/src/geom_lib.rs`、`crates/occt-topo/src/shhealing/shape_build_edge.rs` **一个字都没改**：它们的四个分派点本来就是照 `.cxx` 写的精确类测试，曲线变成真 BSpline 后自然落到同名臂（`Copy()` / `:604-631` / `:3010-3029` / `:683-698`）。这就是「有同等分支才改」在本轮的最强形态——需要改的只有「冒充」本身。
+
+#### D. 实测影响面（临时仪器，已撤除）
+
+`reparam_curve2d` 的返回值探针（环境变量门控，跑完删）：改造前后 `reparam_curve2d` 的调用次数完全相同，且**没有一次落回包装器**——a3n00 `0`、T0M `2`、acs10 `0`、TDB `0`、motoc `3`，全部 `bs=true`（真 `Geom2dBSplineCurve`，度数 8）。同时把 `build_curve3d` 平面臂 / `is_iso_line` 入口 / `to_3d` 返回 `None` 三处都打了探针，在这 5 个模型上**零命中**：这 3+2 条 SameRange 产出在这一轮链路里只被 UV-bbox 消费者（§9.604-B-2）与网格侧采样读到，从未走到那四个分派点。⇒ 本入口在这一批模型上是**潜伏缺口**（改成真 BSpline 后分派才会正确），而非当前数字的来源；这也是 D 段基线逐项不变的原因。
+
+#### E. 对拍（既有基线）
+
+```text
+.target-gate/t106/pair.ps1 : paired=223 big=0 sumMt=13944      （与 §9.604-C 一致）
+.target-gate/_pair.mjs     : boxDist max=0.0000 p99=0.0000 <1e-4: 223  <1e-6: 206  >0.1: 0
+                             mv port-occ sum=0  mt port-occ sum=0
+                             port mv/mt = 11713/13944 = occ mv/mt ; mt diff histogram 0: 223
+```
+
+- 默认 `--wirehist` 逐项不变：a3n00 `faces=226 wires=294`　`1:208 2:9 4:1 6:4 10:4`；T0M `1778/1921`　`1:1672 2:92 3:8 5:1 6:1 7:2 8:2`；acs10 `787/913`　`1:742 2:25 5:1 6:18 8:1`；TDB `2180/2385`　`1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3`。
+- 整体网格复查 `examples/export_data_obj`：`data/*.step` 15 个全部 `ok`，顶点/三角数与 §9.604 一致（如 `Shape.step v=6150 f=11372`、`motoc` 侧三角数 13944）。⇒ 无正面影响、也无回退（该入口在这批模型上未触发，属预期）。
+
+#### F. UNPORTED（登记，未改行为）
+
+- 仍是包装器的那几类：输入为**圆锥曲线**时 OCCT 的 `SameRange` 会走 `Geom2dConvert::CurveToBSplineCurve` 的 `Geom2d_Ellipse`/`Geom2d_Circle` 臂（`Geom2dConvert.cxx:379-397`，要 `Convert_EllipseToBSplineCurve` / `Convert_CircleToBSplineCurve`），输入为**偏移曲线**时走 `Geom2dConvert_ApproxCurve`（`:425-440`，还有 `ShapeBuild_Edge.cxx:667-674` 的同名近似）；这两类端口无同等分支，继续留在 `ReparamCurve2d` 上（`same_range_bspline2d` 返回 `None`，`inner.bspline_copy2d()` 也为 `None`，因为 `offset2d.rs` 不转发该方法）。
+- 周期曲线窗口未区分：`GeomLib.cxx:932-943` 对周期性 `CurvePtr` 用 `TrimmedCurve(CurvePtr, FirstOn, LastOn)` 且 `Geom2dConvert.cxx:199-209` 不夹周期曲线；本轮的窗口夹取与塌陷回退未按 `IsPeriodic()` 分叉（沿用 §9.604-B-4 的写法）。本批模型命中的 5 次全为非周期。
+- `ReparamCurve2d` 剩余方法照旧透传 / 采样（`is_periodic`/`parameter_intervals` 等）；只有 B-spline 输入的份额转移到了真曲线上。
+
+#### G. 仪器清理
+
+本轮临时仪器（`SRDBG` / `SRDBG2` 环境变量门控的 `eprintln!`，分别落在 `surface_projector.rs::reparam_curve2d` 与 `occt-geom/src/geom_lib.rs` 的 `to_3d` / `is_iso_line` / `build_curve3d` 平面臂）已全部撤除，`crates/occt-geom/src/geom_lib.rs` 相对本轮起点零改动；`.target-gate/t106/` 下本轮新增的 `port_fstats_after.txt`、`port_fstats.err.txt`、`pair_after.ps1` 已删除，只留 §9.604 登记的 `pair.ps1` / `port_fstats.txt` / `tmp_t106_occ_facestats.txt`。未动 T-103 线（`meshing/range_splitter/splitter.rs`、`meshing/incremental_mesh/discret_root.rs`、`pcurve_full/make_pcurve.rs`、`shape_fix_compose_shell/`、`shhealing/`、`step/read_topology.rs`）。
+
+### 9.606 — T-104 圆锥曲线臂闭环：`Geom2dConvert::CurveToBSplineCurve` 的 Circle/Ellipse/Hyperbola/Parabola 臂 + `GeomLib::SameRange` 的圆锥分派；五基线逐项不变
+
+§9.605-F 登记的入口是「输入为圆锥曲线时 OCCT 的 `SameRange` 会走 `Geom2dConvert::CurveToBSplineCurve` 的 `Geom2d_Circle`/`Geom2d_Ellipse` 臂（`Geom2dConvert.cxx:379-397`），端口无同等分支，继续留在 `ReparamCurve2d` 上」。本轮先钉死 `.cxx` 分支表，再按表补臂。
+
+#### A. `Geom2dConvert::CurveToBSplineCurve(C, Parameterisation)` 全分支（`Geom2dConvert.cxx:181-449`）
+
+| OCCT 分支 | 行号 | 端口 | 参数化 / 节点 / 权值 |
+| --- | --- | --- | --- |
+| 裁剪输入：解 `BasisCurve()` + `[First,Last]` | `:189-196` | `geom2d_convert.rs:98`（`curve_to_bspline_curve_bspl`） | `Curv=Ctrim->BasisCurve()`，`U1/U2=Ctrim->First/LastParameter()` |
+| 非周期基夹窗口 | `:199-209` | 同上 | `U1<First → U1=First`、`U2>Last → U2=Last`；周期基不夹 |
+| 裁剪 Line | `:211-226` | `geom2d_convert.rs:157`（`trimmed_curve_to_bspline_curve`） | 2 pole（`StartPoint`/`EndPoint`），degree 1，knots `[u1,u2]`，mults `[2,2]`，多项式（无权重） |
+| 裁剪 Circle | `:228-264` | 同上（`circle_to_bspline_curve_range`） | `Circ2d(gp::OX2d(),R)`；`Parameterisation != RationalC1` 直接 `Convert_CircleToBSplineCurve(C2d,U1,U2,param)`；`RationalC1 && U2-U1>=6` 在中点对半 + `Geom2dConvert_CompCurveToBSplineCurve` 拼接 |
+| 裁剪 Ellipse | `:266-303` | 同上（`ellipse_to_bspline_curve_range`） | 同 Circle，半径改 `(Major,Minor)` |
+| 裁剪 Hyperbola | `:305-312` | 同上（`hyperbola_to_bspline_curve`） | `Hypr2d(gp::OX2d(),R,r)`；3 pole / 2 knot(mult 3) / degree 2；中权 `cosh((UL-UF)/2)` |
+| 裁剪 Parabola | `:314-321` | 同上（`parabola_to_bspline_curve`） | `Parab2d(gp::OX2d(),Focal)`；3 pole / 2 knot(mult 3) / degree 2；多项式（权全 1） |
+| 裁剪 Bezier | `:323-345` | UNPORTED | `CBez=Curv->Copy(); CBez->Segment(U1,U2)`，再建 `[0,1]`、mults `{deg+1,deg+1}` |
+| 裁剪 BSpline | `:347-351` | `trimmed_curve_to_bspline_curve` BSpline 臂 | `TheCurve=Curv->Copy(); TheCurve->Segment(U1,U2)` |
+| 裁剪 Offset | `:353-368` | UNPORTED | `Geom2dConvert_ApproxCurve(C,1e-4,C2,16,14)` |
+| 非裁剪 Ellipse | `:379-387` | `geom2d_convert.rs:98`（非裁剪段 `:119-124`） | `Convert_EllipseToBSplineCurve(E2d,param)` + builder + `SetPeriodic()` |
+| 非裁剪 Circle | `:389-397` | 同上（`:125-131`） | `Convert_CircleToBSplineCurve(C2d,param)` + builder + `SetPeriodic()` |
+| 非裁剪 Bezier | `:399-419` | 同上（`:132-143`） | poles 原样，`[0,1]`、mults `{deg+1,deg+1}`；`IsRational()` 时带 `WeightsArray()` |
+| 非裁剪 BSpline | `:420-423` | 同上（`:144-147`） | `TheCurve=C->Copy()`（不 Segment） |
+| 非裁剪 Offset | `:425-440` | UNPORTED | 同上近似 |
+| 其它 | `:442-444` | 返回 `None` | `Standard_DomainError` |
+| 默认 `Parameterisation` | `Geom2dConvert.hxx:169-171` | `DEFAULT_PARAMETERISATION = TgtThetaOver2`（`geom2d_convert.rs:44`） | — |
+
+`BSplineCurveBuilder`（`Geom2dConvert.cxx:70-98`）：`new Geom2d_BSplineCurve(Poles,Weights,Knots,Mults,Degree,IsPeriodic)`；若 `TheConic->Position()` 左旋（`XDirection ^ YDirection < 0`）先 `Sym.SetMirror(gp::OX2d())` 再 `Transform(Sym)`；最后 `T.SetTransformation(TheConic->XAxis(), gp::OX2d())` + `Transformed(T)`。端口把 `SetTransformation(conic.XAxis(), OX2d)` 与左旋时的 `-minor` 一并算在 `Convert_*` 里（`occt-core/src/convert/conic_curves.rs:56-75` `scaled_poles`，镜像在 `T` 之前，与 `cxx:82-97` 同序），`build_conic_bspline2d`（`geom2d_convert.rs:51-69`）只做 flat knots + 构造，不再二次变换。
+
+`Convert_ParameterisationType`（`Convert_ParameterisationType.hxx`）：`TgtThetaOver2`：`t=tan(Theta/2)`，跨数 `floor(1.2*Delta/Pi)+1`，精确有理；`TgtThetaOver2_1..4`：同参数化但跨数固定为 N；`QuasiAngular`：t 接近角参数 Theta 的有理式，精确；`RationalC1`：分母跨段 C1 连续的有理式，精确；`Polynomial`：非有理 degree-7（8 pole）近似。三者（Circle/Ellipse/Hyperbola/Parabola）的 pole/weight/knot 由 `Convert_ConicToBSplineCurve::BuildCosAndSin`（`Convert_ConicToBSplineCurve.cxx:155/:185/:359/:626`）产出，端口已在 `occt-core::convert::{circle,ellipse,hyperbola,parabola}_to_bspline_curve`，与 3D `occt-geom/src/convert_bspl.rs` 共用同一份。
+
+#### B. 移植位置（两文件，均在 T-104 允许面；不新增谓词/容差/阈值/特例）
+
+1. `crates/occt-geom2d/src/geom2d_convert.rs`：新增 `build_conic_bspline2d`（`:51`）、`curve_to_bspline_curve_bspl`（`:98`，逐分支照上表）、`trimmed_curve_to_bspline_curve`（`:157`）；Bezier 臂补上 `bezier_weights2d()` 的有理分支（`cxx:339-343`）。
+2. `crates/occt-topo/src/pcurve_full/surface_projector.rs::same_range_bspline2d`（`:3038`）在 BSpline 臂之前新增圆锥臂（`:3052-3088`）：`inner.gp_circ2d()/gp_elips2d()/gp_hypr2d()/gp_parab2d()` 命中即按 `GeomLib.cxx:947-958` + `Geom2dConvert.cxx:199-209` 夹窗口、调 `trimmed_curve_to_bspline_curve(inner,u_deb,u_fin,DEFAULT_PARAMETERISATION)`、再 `bspl::knots::reparametrize(a,b,&mut knots)`（`GeomLib.cxx:961-969`）。
+3. `reparam_curve2d`（`:3118`）不变：先试 `same_range_bspline2d`，成功即还真 `Geom2dBSplineCurve`，失败才落 `ReparamCurve2d`。
+
+`SameRange` 两臂的圆锥分派（`GeomLib.cxx`）：等跨 `:908-921`（非 Line/Circle/Trimmed 的 else）与不等跨 `:924-969` 都落到同一 `CurveToBSplineCurve`，端口即上述分支。
+
+#### C. 对拍（既有基线，逐项不变）
+
+```text
+.target-gate/t106/pair.ps1 : paired=223 big=0 sumMt=13944      （motoc --fstats ↔ FSTAT_OCC）
+five-crate cargo check --all-targets : occt-core/math/geom/geom2d/topo = 0 error
+step_obj_gates : 5 passed / 0 failed
+fuse_box_cylinder_is_closed_solid : 1 passed / 0 failed
+export_data_obj : data/*.step 15 ok / 0 err（Cone 195/301、Cube 24/12、Cylinder 146/140、
+  Extrusion 24/12、HoledPlate 180/128、Offset 712/892、OffsetPlaneHoleEdge 48/32、
+  Shape-1 3343/4336、Shape-2 3105/4792、Shape 6150/11372、Sphere 642/1244、
+  Torus 1369/2592、linkrods 5172/8288、rev 104/92、screw 600/790）
+```
+
+- 默认 `--wirehist` 逐项不变：a3n00 `226/294`　`1:208 2:9 4:1 6:4 10:4`；T0M `1778/1921`　`1:1672 2:92 3:8 5:1 6:1 7:2 8:2`；acs10 `787/913`　`1:742 2:25 5:1 6:18 8:1`；TDB `2180/2385`　`1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3`；motoc `223/249`　`1:197 2:26`（= §9.605 / §9.604 读数）。
+
+#### D. 是否触发（临时仪器，已撤除）
+
+`reparam_curve2d` 入口探针（`REPDBG`）与圆锥臂探针（`CONICDBG`）：motoc `--fstats` `reparam=3 / conic=0`；T0M `--fstats` `reparam=2`；a3n00/acs10/TDB `--fstats` `reparam=0`；五模型 `--wirehist`、`--fixms`、`step_obj_gates`、`export_data_obj` 全 `conic=0`。⇒ 本批基线的 pcurve 全是 Line/BSpline，没有一条落在 `Geom2d_Circle`/`Geom2d_Ellipse`/`Geom2d_Hyperbola`/`Geom2d_Parabola` 上，本入口与 §9.605 一样属**潜伏缺口**（一旦出现圆锥 pcurve 才生效），故基线逐项不变；无正面影响，也无回退。
+
+#### E. UNPORTED（登记，未改行为）
+
+- 裁剪 Bezier 臂（`Geom2dConvert.cxx:323-345`）：需 `Geom2d_BezierCurve::Segment`，端口无同等分支，返回 `None`。
+- `RationalC1` 且 `U2-U1>=6` 的 Circle/Ellipse 对半拼接臂（`:237-263`、`:276-302`）：需 `Geom2dConvert_CompCurveToBSplineCurve`，返回 `None`。
+- Offset 近似臂（`:353-368`、`:425-440`）：需 `Geom2dConvert_ApproxCurve`，返回 `None`。
+- 等跨 Circle 旋转臂（`GeomLib.cxx:872-888`）：OCCT 返回旋转后的 `Geom2d_Circle` 而非 BSpline；端口该臂在 `wire_fix.rs::geom_lib_same_range` 里，属 T-103 并行线，本轮不动，端口继续用 `reparam_curve2d` 的 BSpline 代表（登记为分歧）。
+- `curve_to_bspline_curve_bspl` 目前无调用方（`same_range_bspline2d` 直接调 `trimmed_curve_to_bspline_curve`），保留为 `Geom2dConvert` 库入口。
+
+#### F. 仪器清理
+
+本轮临时仪器（`CONICDBG` 于 `surface_projector.rs::same_range_bspline2d` 圆锥臂、`REPDBG` 于 `reparam_curve2d` 入口）已全部撤除；撤除后 `cargo check` 五 crate 仍 0 error。未动 T-103 线（`meshing/range_splitter/splitter.rs`、`meshing/incremental_mesh/discret_root.rs`、`pcurve_full/make_pcurve.rs`、`shape_fix_compose_shell/`、`shhealing/`、`step/read_topology.rs`）。
+
+### 9.607 — T-104 `Geom2dConvert_CompCurveToBSplineCurve` 落地 + `RationalC1` 长弧对半拼接臂与裁剪 Bezier 臂；五基线逐项不变（潜伏缺口）
+
+§9.606-E 登记的两个入口本轮收口：① `RationalC1 && U2-U1>=6` 的 Circle/Ellipse 对半拼接（`Geom2dConvert.cxx:244-262`、`:283-301`）；② 裁剪 Bezier 臂（`Geom2dConvert.cxx:323-345`，需 `Geom2d_BezierCurve::Segment`）。参照 3D 版 `occt-geom/src/convert_bspl.rs::CompCurveToBSplineCurve`（`GeomConvert_CompCurveToBSplineCurve.cxx:32-273`）保持同构，但 2D `.cxx` 无 `WithRatio`/`MinM` 参数、G0 判据用**极点**而非端点，端口按 2D 控制流逐字翻译，不套 3D 的额外形参。
+
+#### A. `Geom2dConvert_CompCurveToBSplineCurve` 逐分支对照表（`.cxx`，行号物理行）
+
+| OCCT 分支 | 行号 | 端口（`crates/occt-geom2d/src/comp_curve_to_bspline.rs`） |
+| --- | --- | --- |
+| ctor(`Parameterisation`)，`myTol=Precision::Confusion()` | `:29-33` | `new:59`（`my_tol = precision::CONFUSION`） |
+| ctor(`BasisCurve`,`Parameterisation`)：B-spline 走 `down_cast`+`Copy()`，否则 `CurveToBSplineCurve` | `:38-54` | `from_curve:71`（`is_bspline2d()` → `bspline_copy2d()`，否则 `curve_to_bspline_curve_bspl`；UNPORTED 分支返 `None`） |
+| `Add(NewCurve,Tol,After)` 转换：`down_cast` → `Copy()` 或 `CurveToBSplineCurve` | `:60-70` | `add:109`（`:117-121`） |
+| `myCurve` 空则直接接上返 `true` | `:71-75` | `:122-125` |
+| `myTol=Tol`、`aSqTol=Tol*Tol` | `:77-78` | `:127-128` |
+| `LBs/LCb`、`d1/d2` = 4 个极点平方距 | `:80-82` | `:131-133` |
+| `isBeforeReversed`/`isBefore`（首极点对首/尾极点） | `:84-85` | `:134-137` |
+| `isAfterReversed`/`isAfter`（尾极点对尾/首极点） | `:90-91` | `:139-144` |
+| `isBefore && isAfter`（闭曲线）按 `After` 消歧 | `:94-104` | `:146-153` |
+| `isAfter`：`isAfterReversed` 则 `Bs->Reverse()`；`Add(myCurve,Bs,true)` | `:105-113` | `:155-162`（`add_pair(first,bs,true)`） |
+| `isBefore`：`isBeforeReversed` 则 `Bs->Reverse()`；`Add(Bs,myCurve,false)` | `:114-122` | `:163-170`（`add_pair(bs,second,false)`） |
+| 两者皆否 → `return false` | `:124` | `:171-173`（`Ok(false)`） |
+| 私有 `Add`：度数取齐 `IncreaseDegree(max(deg))` | `:133-141` | `add_pair:181`（`:189-198`） |
+| C1 重参数比 `L1/L2`（`DN(.,1).Magnitude()`），越界回退 1 | `:152-165` | `:200-211`（`d1(.).1.magnitude()`） |
+| `After`：不动首曲线（`Ratio1=1,Delta1=0,Ratio2=1/Ratio,Delta2=Ratio2*Knot2_1-Knot1_n`，`U_de_raccord=First.LastParameter()`） | `:167-175` | `:218-226` |
+| `!After`：不动第二曲线（`Ratio1=Ratio,Delta1=...,Ratio2=1,Delta2=0`，`U_de_raccord=Second.FirstParameter()`） | `:176-184` | `:227-235` |
+| 节点：首曲线 `1..NbK1-1` 逐点搬 + 结合点 `U_de_raccord` 多重度 = `First.Degree()`；第二曲线 `2..NbK2` 逐点搬 | `:186-201` | `:237-254`（`mults_out[nb_k1-1] = first.degree()`） |
+| 极/权：首 `1..NbP1-1` 原样；第二 `1..NbP2`，权乘 `Ratio = W_first(NbP1)/W_second(1)` | `:202-218` | `:256-267` |
+| `new Geom2d_BSplineCurve(Poles,Poids,Noeuds,Mults,Deg)`（`CheckRational` 判 `myRational`） | `:220` | `:269-280`（`weights_are_rational` → `from_flat(Some(w))` 否则 `None`） |
+| 多重度削减：`M=Mults(NbK1)`，`while(M>0&&Ok){M--;Ok=RemoveKnot(NbK1,M,myTol);}` | `:222-229` | `:282-292`（`remove_knot(nb_k1, m, tol)`，同序先减后调） |
+| `BSplineCurve()` / `Clear()` | `:234-235` / `:241-243` | `bspline_curve:92` / `into_curve:97` / `clear:102` |
+
+`myCurve` 的 `W_first(NbP1)/W_second(1)` 归一（`cxx:201-202`）与非有理曲线的单位权（`Geom2d_BSplineCurve.cxx:194-206` + `:95-103` `Rational()`）同端口 `weight:33`（`None` → `1.0`）与 `weights_are_rational:39`（逐对 `|Δw|>gp::Resolution`）。`RemoveKnot` 口径同 3D（`Geom2d_BSplineCurve.cxx:410-423` 只查 `Index<I1||Index>I2`，无 3D 的 `<=I1||>=I2` 收紧），故端口 `remove_knot` 用 `index < i1 || index > i2`。
+
+`Geom2d_BSplineCurve` 侧补齐依赖件（`crates/occt-geom2d/src/bspline_curve.rs`）：`increase_degree:360`（= `cxx:236-292`，含 `IncreaseDegreeCountKnots` + `IncreaseDegree`，`MAX_DEGREE=25` 于 `:9`）、`remove_knot:410`（= `cxx:410-478`）。
+
+#### B. `.cxx` 确认：`RationalC1 && 跨度 >= 6` 走「对半 + `CompCurveToBSplineCurve`」
+
+`Geom2dConvert.cxx` 裁剪 Circle（`:228-264`）与 Ellipse（`:266-303`）两臂结构相同：`Parameterisation != Convert_RationalC1` → 直接 `Convert_*ToBSplineCurve(C2d,U1,U2,param)`（`:232-236`、`:271-275`）；`== RationalC1` 且 `U2-U1 < 6.` → 同样直接调（`:239-243`、`:278-282`）；`>= 6.` → 注释 "split circle to avoide numerical overflow when U2-U1 =~ 2*PI"（`:245-246`、`:284-285`），取 `Umed=(U1+U2)*.5`，`Convert_*ToBSplineCurve` 各半（`:249`/`:253`、`:288`/`:292`），`BSplineCurveBuilder` 建两条 `Geom2d_BSplineCurve`（`:251`/`:255`、`:290`/`:294`），`Geom2dConvert_CompCurveToBSplineCurve CCTBSpl(TheCurve1, Parameterisation)`（`:257`、`:296`），`CCTBSpl.Add(TheCurve2, Precision::PConfusion(), true)`（`:259`、`:298`），`TheCurve = CCTBSpl.BSplineCurve()`（`:261`、`:300`）。**确认走的是对半 + 拼接，不是直接 `Convert_CircleToBSplineCurve`。** 该入口的真实调用方（`rg Convert_RationalC1`）：`ProjLib_ProjectedCurve.cxx:179` 与 `BRepOffset_Inter2d.cxx:1154` 都直接 `new Geom2dConvert_CompCurveToBSplineCurve(..., Convert_RationalC1)`；`Geom2dConvert.cxx:232/:271` 是唯一的 `CurveToBSplineCurve(..., RationalC1)` 触发点（无外部调用方以该参数直接调 `Geom2dConvert`）。
+
+#### C. 移植位置（T-104 允许面，无新谓词/容差/阈值/特例）
+
+1. 新文件 `crates/occt-geom2d/src/comp_curve_to_bspline.rs`（`CompCurveToBSplineCurve`，逐分支照 A 表）；`lib.rs:29` `pub mod` + `:43` `pub use`。
+2. `crates/occt-geom2d/src/geom2d_convert.rs::trimmed_curve_to_bspline_curve` Circle 臂 `:178-184`、Ellipse 臂 `:195-201`：加 `u_med=(u1+u2)*0.5` → 两次 `Convert_*_range` → `build_conic_bspline2d` → `CompCurveToBSplineCurve::from_bspline(curve1, parameterisation)` → `add(&curve2, PCONFUSION, true)` → `into_curve()`；构造参数 `from_bspline` 即 `cxx:257/:296` 的 `CCTBSpl(TheCurve1,param)`（`TheCurve1` 已是 `Geom2d_BSplineCurve`，走 ctor 的 `down_cast`+`Copy()` 分支）。
+3. `Geom2d_BezierCurve::segment:57`（`crates/occt-geom2d/src/bezier_curve.rs`）= `Geom2d_BezierCurve.cxx:356-391`：`BSplCLib::BuildCache` + `PLib::Trimming` + `PLib::CoefficientsPoles` 往返，非有理 dim 2 / 有理 dim 3（齐次 `(w*P,w)`），`binomial:121` / `bezier_power_entry:137` / `power_to_bezier_matrix:149` 与 3D `occt-geom/src/bezier_curve.rs` 同构（复用 `occt_core::bspl::plib::trimming`）。裁剪 Bezier 臂 `geom2d_convert.rs:218-236`（`cxx:323-345`）：`Copy` → `Segment` → `[0,1]` 双 `degree+1` 多重度，`IsRational()` 时带权。
+4. `surface_projector.rs::same_range_bspline2d` 无需改动：它 `DEFAULT_PARAMETERISATION`（`TgtThetaOver2`）调 `trimmed_curve_to_bspline_curve`，`RationalC1` 分支只有上面的 `.cxx` 触发点可达。
+
+#### D. 对拍（既有基线，逐项不变）
+
+```text
+.target-gate/t106/pair.ps1 : paired=223 big=0 sumMt=13944        （motoc --fstats ↔ FSTAT_OCC）
+five-crate cargo check --all-targets : occt-core/math/geom/geom2d/topo = 0 error
+step_obj_gates : 5 passed / 0 failed   （单线程 --nocapture 复跑确认；并行跑曾异常退出）
+fuse_box_cylinder_is_closed_solid : 1 passed / 0 failed
+export_data_obj : data/*.step 15 ok / 0 err
+--wirehist : a3n00 1:208 2:9 4:1 6:4 10:4 / T0M 1:1672 2:92 3:8 5:1 6:1 7:2 8:2 /
+  acs10 1:742 2:25 5:1 6:18 8:1 / TDB 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3 / motoc 1:197 2:26
+```
+
+- `export_data_obj` 15/15 逐项同 §9.606（Cone 195/301、Cube 24/12、Cylinder 146/140、Extrusion 24/12、HoledPlate 180/128、Offset 712/892、OffsetPlaneHoleEdge 48/32、Shape-1 3343/4336、Shape-2 3105/4792、Shape 6150/11372、Sphere 642/1244、Torus 1369/2592、linkrods 5172/8288、rev 104/92、screw 600/790）。
+- `step_obj_gates` 首次并行跑以 `0xffffffff` 异常退出（无 `test result` 行、无断言失败），单线程 `--test-threads=1 --nocapture` 复跑全绿 5 passed（554.86s），逐用例 `ok`；判定为并行导出 23 模型的资源竞争/进程被杀（同 §9.242 记的本机文件 IO 抖动类），非几何回退 —— 该复跑晚于本轮全部代码改动，是当前树的真结果。
+
+#### E. 是否触发（临时仪器，已撤除）
+
+`T104PROBE` 环境变量门控探针（`reparam_curve2d` 入口、圆锥臂、`add_pair`、裁剪 Bezier 臂四处 `eprintln!`）在 `--wirehist --fstats` 下计数：五模型 `conic=0 comp=0 bezier=0`（`reparam` 读数 0/0/0/0/0，含 `--fstats` 时 T0M/motoc 不被该探针行命中的原因见下）。与 §9.606-D 的结论一致：**本批基线的 pcurve 无圆锥曲线**，故 `RationalC1` 长弧拼接（`comp`）与裁剪 Bezier（`bezier`）在本批模型上都不可达，属**潜伏缺口**；`surface_projector` 走 `TgtThetaOver2`，根本不进 `RationalC1` 分支，`comp` 恒 0 是预期的。基线逐项不变，无正面影响也无回退。
+
+#### F. UNPORTED（登记，未改行为）
+
+- Offset 近似臂（`Geom2dConvert.cxx:353-368`、`:425-440`）：需 `Geom2dConvert_ApproxCurve`，返回 `None`。
+- 等跨 Circle 旋转臂（`GeomLib.cxx:872-888`）：属 T-103 的 `wire_fix.rs`，本轮未动（同 §9.606-F）。
+- `CompCurveToBSplineCurve::add` 的 `CurveToBSplineCurve` 转换失败/UNPORTED（Offset）时返 `Err`，OCCT 对应 `Standard_DomainError` 抛出。
+
+#### G. 仪器清理
+
+本轮临时仪器（`T104PROBE` 门控的四处 `eprintln!`：`surface_projector.rs::reparam_curve2d`、`::same_range_bspline2d` 圆锥臂，`geom2d_convert.rs` 裁剪 Bezier 臂，`comp_curve_to_bspline.rs::add_pair`）已全部撤除；撤除后 `cargo check --all-targets` 五 crate 0 error、`cargo build --example zz_probe_a3n00` 0 error。`.target-gate/t106/port_fstats.txt` 重跑刷新（`.target-gate` 内文件）。未动 T-103 线（`meshing/range_splitter/splitter.rs`、`meshing/incremental_mesh/discret_root.rs`、`pcurve_full/make_pcurve.rs`、`shape_fix_compose_shell/`、`shhealing/`、`step/read_topology.rs`）。
+
+### 9.608 — T-103 网格塌陷入口闭环：`pf=28`/`pf=812` 的 ON-only 塌陷根因 = 2D pcurve 求值用了**边的 3D range** 而非 `BRep_Tool::CurveOnSurface` 返回的 **COS 表示自身 range**；8 张登记面全部归位
+
+#### A. 根因（对着 `.cxx` 的控制流）
+
+§9.603 已把第一现场钉到「ON 的 `collect_boundary_uv` 分类器多边形自重叠」：ON 的拆缝子边（`pf=28` 的 `e1/e2` 等）在分类器链里的 2D 端点整体偏一段，链的接线断开后多边形绕回起点 ⇒ `BRepMesh_Classifier` 环绕数退化 ⇒ 内点全判 OUT。本轮把「偏一段」的来源对上 OCCT：
+
+- `BRepMesh_ShapeVisitor::addWire`（`BRepMesh_ShapeVisitor.cxx:99-134`）先 `aWireTool.CheckOrder(aOrderTool, true, false)`，2D 分支即 `ShapeAnalysis_Wire::CheckOrder`（`ShapeAnalysis_Wire.cxx:593-651`）：`EA.PCurve(E, TopoDS::Face(tmpF), c2d, f, l)`（`cxx:634`）后取 `c2d->Value(f)` / `c2d->Value(l)`（`cxx:648-649`）。
+- `ShapeAnalysis_Edge::PCurve`（`ShapeAnalysis_Edge.cxx:192-208`）在 `cxx:200` 做 `C2d = BRep_Tool::CurveOnSurface(edge, surface, location, cf, cl)`；`BRep_Tool::CurveOnSurface`（`BRep_Tool.cxx:327-361`）在 `cxx:353` 取 **`GC->Range(First, Last)`** —— 即该 `BRep_CurveOnSurface` 表示**自己的**参数范围，**不是**边的 3D range。
+- 对拆缝产生的子边，`ShapeBuild_Edge::CopyRanges`（`ShapeBuild_Edge.cxx:206-334`）把子边的 pcurve 范围线性重标到切片窗口（`newF = first + alpha*len`、`newL = first + beta*len`，`cxx:289-290`；`AdjustByPeriod` 只对周期曲线生效，`cxx:319-328`）。若 2D 求值仍用父边的 3D range，端点就整体偏一个周期。
+
+端口旧代码在 5 处 pcurve 消费者里都用 `BRepTool::edge_parameters`（3D range）去 `pc.d0()`，与 OCCT 读的 COS range 不同 ⇒ 命中上面第 3 条。
+
+#### B. 修复（同一套 `.cxx` 分支，无新谓词）
+
+`crates/occt-topo/src/meshing/model_builder/wire_builder.rs` 新增
+
+```rust
+fn pcurve_and_range(e: &Edge, face: &Face) -> Option<(Arc<dyn Curve2d>, f64, f64)>
+```
+
+= `boptools_2d::curve_on_surface_oriented(e, face, false)`（该函数已经是 `BRep_Tool::CurveOnSurface` + `ShapeAnalysis_Edge::PCurve` 的移植，返回 COS range；REVERSED 取 `PCurve2`），取不到带范围的 COS 表示时回退到旧的 3D range。`add_wire`（`CheckOrder`）、`edge_uv_ends`、`wire_uv_points`、`wire_classifier`（`TotCross2D` + 无限点判定）、seam 反向判别（`neighbors`）5 处统一改用它。未加谓词/启发式，未动 `wire_order.rs`。
+
+#### C. 数字（T0M，同偏转 `2.574312`；**单二进制** A/B，`T103_PCR3D` 临时开关已撤）
+
+| 面（类型） | OFF 旧=新 | ON 旧 | ON 新 | OCCT `--facestats` |
+|---|---|---|---|---|
+| `pf=28`（Cylinder） | `76/74` | `76/1` | **`76/74`** | `74/72` |
+| `pf=812`（Cone） | `72/70` | `72/20` | **`72/70`** | `72/70`（逐位相同） |
+| `pf=1663`（Cylinder） | `74/72` | `75/38` | `75/73` | `75/73`（逐位相同） |
+| `pf=27`（Torus，`pf=28` 的拆缝兄弟） | `185/288` | `185/254` | `192/301` | `185/288` |
+
+- **默认路径（`OCCT_SHARED_HEAL` 未设）A/B diff = 0**（1778/1778 行逐位相同）⇒ 无回退。
+- **ON A/B 只动 4 张面**；`ON-only`（`--fstats` 按 bbox 配对，OFF↔ON 不等）面数 **56 → 54**（`pf=28`/`pf=812` 归位）。
+- ON 逐面合计：`mv 59622 → 59629`、`mt 65331 → 65536`（OCCT `FSTAT_OCC` 合计 `60083/66640`）。OFF 合计 `59433/65217`（与 §9.600 的 `59455/64988` 有差别，系并行 T-104 未提交改动导致的树漂移，本卡改动对 OFF 逐位零影响）。
+
+#### D. 门禁（本轮实测）
+
+- `cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets` = **0 error**。
+- `cargo test --test step_obj_gates` = **5 passed / 0 failed**（`cylinder_step_mesh_covers_full_u_period`、`outputs_round_trip_through_obj_reader`、`step_obj_area_matches_occt`、`step_obj_parity_bboxes_match_occt`、`step_to_obj_exports_valid_obj`）。
+- `cargo test fuse_box_cylinder_is_closed_solid` = **1 passed**。
+- 默认路径四模型 `--wirehist` 逐项不变：a3n00 `226/294` `1:208 2:9 4:1 6:4 10:4`；T0M `1778/1921` `1:1672 2:92 3:8 5:1 6:1 7:2 8:2`；acs10 `787/913` `1:742 2:25 5:1 6:18 8:1`；TDB `2180/2385` `1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3`。
+
+#### E. 旁支（登记，未动）
+
+1. `pf=27`（Torus）仍是 ON-only：ON `192/301` vs OFF/OCCT `185/288`。它与其余 ±1 节点的 ON-only 面（`pf=1`、`12`、`14`、`38`、`79` … `72→73`）同类，属**共享态拆缝后参数域**层，未定性、未动。
+2. 并行 T-104 的未提交改动使默认路径 OFF 逐面读数在 §9.600 基线上漂移（`59455/64988 → 59433/65217`），与本卡无关；本卡以「同树同二进制 A/B」为准。
+3. 本轮临时 A/B 开关 `T103_PCR3D`（env 门控的 3 行 guard）与 `wire_builder.rs` 内既有的未登记 `WBD` env 散件（wire 注册循环里的一条 `eprintln!`）已一并撤除，`wire_builder.rs` 不留调试散件。
+
+#### F. 仪器清理（2026-10-06 收尾，跑门禁前）
+
+两条调查线停在 §9.603/§9.607 后，把 §9.588-E 登记的残留 TEMP 插桩与工作树里其余临时探针一并撤除（只删探针块与其专用局部量，不改逻辑）：
+
+- 删除插桩的源码：`STEPEDBG` / `STEPCDBG`（`step/read_topology.rs`）、`PCUV`（`meshing/incremental_mesh/discret_root.rs`）、`NSDBG` / `DELDBG` / `NVDBG` / `FWDBG` / `F2DBG`（`meshing/node_insertion.rs`）、`HBDBG` / `NOHEALSNAP`（`meshing/model_healer.rs`）、`MPF2` 及 `mpf2_target` / `dbg_pc`（`pcurve_full/make_pcurve.rs`）、`CIRCDBG`（`occt-geom/src/circle.rs`）、`F2DBG` / `F4DBG` / `FLDBG` / `F7DBG`（`meshing/delaun/{frontier,polygon_meshing,triangulation}.rs`）、`Class2d::debug_info`（`occt-core/src/cslib/class2d.rs`）与 `Classifier::debug_probe`（`meshing/face_discret.rs`）。
+- 整文件还原（其工作树改动**全部**是插桩，还原后与 HEAD 相同）：`meshing/delaun/frontier.rs`、`meshing/delaun/polygon_meshing.rs`、`meshing/delaun/triangulation.rs`、`meshing/face_discret.rs`、`occt-core/src/cslib/class2d.rs`、`occt-geom/src/circle.rs`、`meshing/model_healer.rs`、`pcurve_full/make_pcurve.rs`。
+- 逐块删除（同文件含真实改动）：`meshing/node_insertion.rs`（保留真实修复：`if !reverse` 与 `collectWirePoints` 定向注释）、`meshing/incremental_mesh/discret_root.rs`、`step/read_topology.rs`。
+- 保留（未标记临时、被既有基线/其它线引用）：`MBDIAG`（`node_insertion.rs` / `discret_root.rs`）、`FDBG`（`step/read_topology.rs`）。保留的功能开关：`OCCT_SHARED_HEAL`（共享态 healing 的 A/B 开关，非调试探针）。
+- 清理后实测（默认路径，`OCCT_SHARED_HEAL` 不设）：五 crate `cargo check --all-targets` 0 error；`step_obj_gates` 5 passed / 0 failed（exit 0，未重现 §9.607-E 记的 `0xffffffff` 异常退出）；`fuse_box_cylinder_is_closed_solid` 1 passed；`export_data_obj` 15 ok / 0 err；五模型 `--wirehist` 与 §9.588-D 逐项相同（a3n00 `226/294 1:208 2:9 4:1 6:4 10:4`、T0M `1778/1921 1:1672 2:92 3:8 5:1 6:1 7:2 8:2`、acs10 `787/913 1:742 2:25 5:1 6:18 8:1`、TDB `2180/2385 1:2042 2:112 3:13 4:3 5:2 6:1 7:4 8:3`、motoc `223/249 1:197 2:26`）。
+
+
+
