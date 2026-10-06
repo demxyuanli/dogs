@@ -27,6 +27,7 @@ mod prelude {
 
 pub(crate) use std::cmp::Ordering;
 
+pub(crate) use occt_core::elib::slib;
 pub(crate) use occt_core::gp::{GpAx3, GpDir, GpLin, GpPnt, GpTorus, GpVec};
 pub(crate) use occt_geom::intana::line_torus_intersect;
 pub(crate) use occt_geom::{Curve, Surface};

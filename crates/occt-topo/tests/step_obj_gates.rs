@@ -18,7 +18,6 @@ use occt_core::io::obj::{read_obj_file, ObjMesh};
 /// One model, read and exported once, plus its OCCT reference text.
 struct Case {
     step: &'static str,
-    occ: &'static str,
     bbox_tol: Option<f64>,
     area_tol: Option<f64>,
     obj: String,
@@ -33,7 +32,6 @@ fn cases() -> &'static [Case] {
             .iter()
             .map(|m| Case {
                 step: m.step,
-                occ: m.occ,
                 bbox_tol: m.bbox_tol,
                 area_tol: m.area_tol,
                 obj: export(m.step),
@@ -93,7 +91,8 @@ fn step_obj_area_matches_occt() {
     }
 }
 
-/// step_to_obj: every export is a non-degenerate, finite OBJ; write it out.
+/// step_to_obj: every export is a non-degenerate, finite OBJ; write it to
+/// `data/output/<stem>.obj` and read it back through the OBJ reader.
 #[test]
 fn step_to_obj_exports_valid_obj() {
     for c in cases() {
@@ -106,24 +105,9 @@ fn step_to_obj_exports_valid_obj() {
             c.step
         );
         write_output(c.step, &c.obj);
-    }
-}
-
-/// The written OBJ round-trips through the OBJ reader. Writes to its own
-/// subdirectory so it never races the export gate's data/output/<stem>.obj.
-#[test]
-fn outputs_round_trip_through_obj_reader() {
-    let dir = data_dir().join("output").join("roundtrip");
-    std::fs::create_dir_all(&dir).expect("create data/output/roundtrip");
-    for c in cases() {
-        let stem = std::path::Path::new(c.step)
-            .file_stem()
-            .expect("stem")
-            .to_string_lossy()
-            .to_string();
-        let out = dir.join(format!("{stem}.obj"));
-        std::fs::write(&out, &c.obj).unwrap_or_else(|e| panic!("write {}: {e}", out.display()));
-        let mesh = read_obj_file(&out.to_string_lossy()).expect("round-trip OBJ parse");
+        let out = output_path(c.step);
+        let mesh = read_obj_file(&out.to_string_lossy())
+            .unwrap_or_else(|e| panic!("round-trip {}: {e}", out.display()));
         assert!(!mesh.vertices.is_empty(), "{}: round-trip lost vertices", c.step);
         assert!(!mesh.faces.is_empty(), "{}: round-trip lost faces", c.step);
     }

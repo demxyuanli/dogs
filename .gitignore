@@ -15,10 +15,9 @@ graphify-out/
 
 # Example build output
 examples/output/
-# 门禁导出的生成物（export_data_obj 默认输出目录；board §11：生成物不入库）
-/output/
 
-# Test-generated STEP → OBJ outputs
+# Test-generated STEP → OBJ outputs (export_data_obj and step_obj_gates share
+# the single data/output/ dump directory)
 data/output/
 data/output2/
 /.target-*/

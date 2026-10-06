@@ -24,7 +24,7 @@
 **绿路径（已接线）**
 - 布尔：`boolean` → `bop_builder2::builder_bop_with_fuzzy` → PaveFiller（含 RepeatIntersection / ForceInterfEE/EF / ProcessDE）→ FillImages* → BuildBOP。平面 `boolean_planar_legacy` **不再**作回退；无面 operand 仍 **voxel_fallback**。
 - 面交：`PatchIntersection` = ImpImp →（Fail）PrmPrm；单侧解析二次曲面 → ImpPrm（SearchInside+IWalking）；否则 PrmPrm。IntPatch 相关 ~**8.3k** 行。
-- **整体测试导出（STEP→OBJ）**：`rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj`。读 `data/*.step`，偏转 0.1，写仓库根 `output/<stem>.obj`。对照基线仍是 `tests/step_obj_parity` / `data/occ-*.obj`。
+- **整体测试导出（STEP→OBJ）**：`rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj`。读 `data/*.step`，偏转 0.1，写 `data/output/<stem>.obj`。对照基线仍是 `tests/step_obj_parity` / `data/occ-*.obj`。
 
 **语义偏差 / 缺陷（现行代码）**
 1. **`cylinder.rs` / `sphere.rs` / `torus.rs` 的 `d1`** — 已改走 `surface_eval` / ElSLib（2026-09-09）。

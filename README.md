@@ -56,7 +56,7 @@ cargo test  --manifest-path crates/occt-topo/Cargo.toml --offline --lib
 # 3) 逐模型网格对齐门禁（area ratio / f-ratio，当前 5 passed / 0 failed）
 cargo test  --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates -- --nocapture
 
-# 4) 导出 OBJ（data/*.step → output/<stem>.obj，偏转 0.1）
+# 4) 导出 OBJ（data/*.step → data/output/<stem>.obj，偏转 0.1）
 cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj
 ```
 
@@ -86,7 +86,7 @@ cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export
 
 | 探针 | 用途 |
 |---|---|
-| `export_data_obj` | 批量导出 OBJ（`data/*.step` → `output/<stem>.obj`） |
+| `export_data_obj` | 批量导出 OBJ（`data/*.step` → `data/output/<stem>.obj`） |
 | `zz_probe_a3n00` | a3n00 逐面读数：`--fstats`（每面 mv/mt/bbox）、`--fdump`、`--fixms`、`--ecensus`（逐面 wire/边数） |
 | `zz_uv_feed` | 面/模型结构：`--model <f>`、`--ids`（逐面 wire 数 + 直方图） |
 | `zz_seam_fix` | 单面 `FixMissingSeam` 前后结构（`<stp> <face>`：BEFORE/result/HEALED） |
@@ -110,7 +110,7 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 
 - 输入：`data/occ/*.stp`（a3n00、acs10、ATU01038、bottom、motoc、T0M、top、TDB…）
 - 参考（GT）：`data/occ/occ-*.obj` —— 逐模型面积比与 f-ratio 的对照基准
-- 产物：`output/<stem>.obj`（已 gitignore）；`output/` 当前为空
+- 产物：`data/output/<stem>.obj`（已 gitignore）—— STEP→OBJ 唯一导出目录（`export_data_obj` 与 `step_obj_gates` 共用）
 - 临时：`.target-gate/`（已 gitignore）存放门禁输出、对拍脚本与探针 dump
 
 ---

@@ -1,4 +1,4 @@
-//! Overall-test dump: every `data/*.step` (and `.stp`) to `output/<stem>.obj`.
+//! Overall-test dump: every `data/*.step` (and `.stp`) to `data/output/<stem>.obj`.
 //!
 //! Pipeline: `read_step_file` → compound if multiple roots → `brep_to_obj(..., 0.1)`.
 //! The second argument is the drawer's `MaximalChordialDeviation` (the fallback
@@ -7,6 +7,9 @@
 //! `maxComp(bbox) * 0.001 * 4` (`Prs3d.hxx:82-103`), so changing `0.1` does not
 //! change the export density. Re-run before visual / mesh overall checks. Do not
 //! add a second exporter.
+//!
+//! Writes into the single `data/output/` dump directory shared with the
+//! `step_obj_gates` test, so there is one artifact location to inspect.
 //!
 //! Optional positional arguments name extra source directories (relative to the
 //! repository root) to scan instead of `data/`, so the OCCT test models under
@@ -21,8 +24,8 @@ use occt_topo::step::read_step_file;
 
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
-    let out = root.join("output");
-    fs::create_dir_all(&out).expect("create output/");
+    let out = root.join("data").join("output");
+    fs::create_dir_all(&out).expect("create data/output/");
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let dirs: Vec<PathBuf> = if args.is_empty() {
@@ -57,7 +60,7 @@ fn main() {
                 let nv = obj.lines().filter(|l| l.starts_with("v ")).count();
                 let nf = obj.lines().filter(|l| l.starts_with("f ")).count();
                 fs::write(&dest, obj).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
-                println!("ok  {stem}.step -> output/{stem}.obj  v={nv} f={nf}{exact}");
+                println!("ok  {stem}.step -> data/output/{stem}.obj  v={nv} f={nf}{exact}");
             }
             Err(e) => {
                 failed += 1;

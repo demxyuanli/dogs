@@ -1,9 +1,11 @@
 use super::prelude::*;
 use super::*;
 
-/// Surface `(u, v)` parameters of a point, exact for reconstructed quadrics
-/// (so the reported parameters are precise and the UV-bounds validation is
-/// meaningful), falling back to the sampling projector for other surfaces.
+/// Surface `(u, v)` parameters of a point — `IntCurveSurface_InterUtils.pxx:901-925`
+/// (`ComputeParamsOnQuadric`): Plane / Cylinder / Cone / Sphere take
+/// `ElSLib::Parameters`; torus and non-quadric surfaces fall back to the
+/// sampling projector (OCCT's `default:` arm is a no-op because its templates
+/// are only instantiated for quadrics).
 /// Periodic U/V directions are wrapped into the surface's natural range.
 pub(super) fn surface_params(surface: &dyn Surface, geom: Option<&SurfaceGeom>, p: &GpPnt) -> (f64, f64) {
     let (u0, _, _, _) = sample_bounds(surface);
@@ -21,19 +23,30 @@ pub(super) fn surface_params(surface: &dyn Surface, geom: Option<&SurfaceGeom>, 
                 let s = snap_pole(d.dot(z) / r);
                 return (u, s.asin());
             }
-            // Cylinder/cone/torus frames use a reconstructed axis/reference that
-            // can differ by a constant offset from the surface's natural
-            // parameterization; the sampling projector keeps (u, v) consistent.
-            // UNPORTED: OCCT's `IntCurveSurface_InterUtils::ComputeParamsOnQuadric`
-            // (`IntCurveSurface_InterUtils.pxx:1214`) and `SectionPointToParameters`
-            // (`:740-781`) recover the surface parameters through
-            // `ElSLib::Parameters` / the polyhedron, never through
-            // `Extrema_ExtPS`. The port's reconstructed cylinder/cone/torus frames
-            // differ by a constant from the natural ones, so the grid stays.
-            _ => return surface_closest_params(surface, p, 24, 24),
+            // `IntCurveSurface_InterUtils.pxx:901-925` (`ComputeParamsOnQuadric`)
+            // takes the Cylinder / Cone parameters with `ElSLib::Parameters` on
+            // the surface's **own** placement (`SurfaceTool::Cylinder(surface)`).
+            // The reconstructed `SurfaceGeom` frame can sit at a different U
+            // origin, so read the placement off the surface itself.
+            SurfaceGeom::Cylinder { .. } => {
+                if let Some(cy) = surface.gp_cylinder() {
+                    return slib::cylinder_parameters(&cy.pos, p);
+                }
+            }
+            SurfaceGeom::Cone { .. } => {
+                if let Some(co) = surface.gp_cone() {
+                    return slib::cone_parameters(&co.pos, co.radius, co.semi_angle, p);
+                }
+            }
+            // OCCT's `ComputeParamsOnQuadric` switch has no Torus case: the
+            // `default: break` leaves `(u, v)` untouched, and the templates are
+            // only instantiated for quadrics. The port reaches this arm through
+            // the general path, so the sampling projector stays.
+            SurfaceGeom::Torus { .. } => {}
         }
     }
-    // UNPORTED: same as above (no reconstructed geometry to pick a frame from).
+    // UNPORTED: no reconstructed geometry to pick a frame from, or a surface
+    // type outside OCCT's quadric switch.
     surface_closest_params(surface, p, 24, 24)
 }
 
