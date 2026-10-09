@@ -50,7 +50,7 @@ pub(crate) fn box_max_dimension(b: &BndBox) -> Option<f64> {
 
 }
 
-mod wire_builder;
+pub(crate) mod wire_builder;
 mod preprocessor;
 pub use wire_builder::*;
 pub use preprocessor::*;

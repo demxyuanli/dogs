@@ -130,7 +130,7 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 
 - **已对齐**：STEP 读入/拓扑组装、`ShapeFix_Face::FixMissingSeam`（导入期接回，
   a3n00 面积比 0.8627 → **0.8996**，带倒角法兰 16 面 2 wires → 1 wire/5 边）、
-  网格侧 ModelBuilder/Healer/FaceChecker 主流程；逐模型门禁 `step_obj_gates` 5/5，
+  网格侧 ModelBuilder/Healer/FaceChecker 主流程；逐模型门禁 `step_obj_gates` 4/4（2026-10-09 复跑通过，逐模型比值沿用 §9.633 记录），
   其中 a3n00 0.8996、T0M 0.9987、acs10 0.9846。
 - **已知最大缺口**：**没有 `ShapeProcess`/`FixShape` 驱动器**（端口在 reader 里按面直调子步）。
   实测关掉该算子时 OCCT 有 **131/226 面无法网格化**，说明它是承重环节；端口仅缺分派器与参数下发。

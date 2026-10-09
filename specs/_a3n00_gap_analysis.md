@@ -26422,8 +26422,58 @@ fn pcurve_and_range(e: &Edge, face: &Face) -> Option<(Arc<dyn Curve2d>, f64, f64
 2. `ShapeFix_Face::Perform` 仍未整体移植：第二段循环里的 `NeedCheckSplitWire`/`SplitWire`（`cxx:562-575 :629-674`）、`FixAddNaturalBound`（`cxx:704-708`，`cxx:876-1110`）、`FixSplitFace`（`cxx:711-716`，`cxx:2905-3100`）、第三段 `FixSmallAreaWire`（`cxx:723-738`，`cxx:2331-2477`），以及第一段线框修复（`cxx:365-480`）都还没有落地。
 3. 现有四条门禁里没有哪一条会真正驱动"一个面有两条相交边界线"或"一条线两条重合边"的几何，所以这两步的落线是结构对齐 + 23 模型面积/包围盒不劣化，而非该分支专属实例的实测。
 
+---
 
+### 9.634 STEP 读取回归定位与提交门禁（2026-10-09）
 
+#### A. 回归定位
 
+- `2fe76614`（2026-10-06）上 `step_obj_area_matches_occt` 通过，是最后一个通过该用例的提交。
+- 干净 HEAD `da0d0253` 上该用例失败，HEAD 本身不完整。
+- `5c4989fa` 单独不能编译，不能作为独立检查点；混合还原其修改文件会导致模块冲突，二分无效，已弃用。
 
+#### B. HEAD 状态与本次补交
 
+| 组合 | 结果 |
+|---|---|
+| `da0d0253`（旧 HEAD） | `step_obj_area_matches_occt` 失败 |
+| `da0d0253` + 工作区 8 个源文件与夹具 | `step_obj_gates` 4/4 通过（清理增量构建产物后，见 C） |
+| `689b641a`（当前 HEAD，用户提交并已推送） | **无法编译**：`fclass2d/classifier.rs:159` 报 E0603，`wire_builder` 模块私有 |
+| `689b641a` + 本次 3 个代码文件 | 编译通过；`step_obj_gates` 4/4 通过 |
+
+本次补交的 3 个代码/测试文件（仅在 `689b641a` 之上叠加），外加 2 个文档：
+
+- `meshing/model_builder/mod.rs`、`meshing/model_builder/wire_builder.rs`：`wire_edges_explorer` 与模块改为 `pub(crate)`。`classifier.rs` 调用该函数，缺此改动 HEAD 无法编译。只是可见性改动，无逻辑改动。
+- `tests/bop_builder2_boss.rs`：`single_disc_cylinder` 夹具改为共享顶点（`make_edge_segment_with_vertices`）。原夹具每条边各自新建顶点，壳不闭合；`BOPDS_Iterator.cxx:435` 对同一 argument 内的对象跳过相交，OCCT 也不会合并这些重合顶点，因此原输入不合法，布尔失败不是布尔算法问题。
+- `README.md`（`step_obj_gates` 5/5 改为 4/4）、`specs/_a3n00_gap_analysis.md`（本节）。
+
+`689b641a` 已包含（用户提交）：几何内核 5 个文件（`curve_tools.rs`、`circ2d.rs`、`pln.rs`、两处 `bspline_curve.rs`）、`fclass2d/classifier.rs`（`BRepTools_WireExplorer` 连通顺序 + 存储顺序拼接，未恢复 `chain_ring`）、`brep_class3d.rs`、`iges.rs`。
+
+未纳入本次提交：`shhealing/split_tool.rs`、`shhealing/wire_self_inter.rs`（工作区仍未提交；HEAD + 本次文件的编译与门禁均不依赖它们）；`examples/zz_pcface_dump.rs`（未跟踪的调试文件）。
+
+#### C. 先前 "3/4 失败" 的原因
+
+工作区内 `step_obj_gates` 曾出现 3/4 失败，原先归因于 classifier 的 `chain_ring`。该归因被证伪：串行运行同样失败，干净 HEAD worktree 也失败。随后确认是增量编译产物陈旧（源文件被改写后测试二进制未真正重编）。执行 `cargo clean -p occt-topo` 并重建后，`step_obj_gates` 为 4/4。结论：该 3/4 失败是构建缓存问题，不是源码回归。
+
+#### D. 门禁结果（`689b641a` + 本次 3 个代码文件，改动范围为 `occt-topo`）
+
+| 项 | 结果 |
+|---|---|
+| `--lib` | 1275 passed / **6 failed**（1281 个用例） |
+| `bop_builder2_boss` | 2/2 passed |
+| `phase3`–`phase20` 集成测试（`phase3`、`4`、`5`、`6`、`7`、`8`、`9`、`10`、`19`、`20`） | 全部通过 |
+| `step_obj_gates` | **4/4 passed**（307.53s） |
+
+lib 的 6 个失败：
+
+- 4 个 bop/builder_solid 用例：`bop_builder::tests::cube_minus_internal_box`、`bop_builder::tests_api::boolean_compound_cut`、`bop_builder::tests_api::boolean_cut_many_works`、`builder_solid::tests::inner_cavity_is_absorbed_as_a_hole`。在不含 `brep_class3d.rs` 改动的候选树上这 4 个用例通过，因此由 `brep_class3d.rs` 的 WIP 改动引起。该改动随 `689b641a` 进入了 HEAD。
+- 2 个周期折叠用例：`fclass2d::tests::cylinder_lateral_periodic_folding`、`brepfeat::tests::boss_thru_all_pierces`。这是 classifier 改为存储顺序拼接后的已知回归，分支选择经用户确认。
+
+#### E. 旁支（登记，未动）
+
+1. `689b641a` 中的 `brep_class3d.rs` 改动使 4 个 bop/builder_solid lib 用例失败。是回退还是修复需要用户决定，本次未动。
+2. 周期折叠回归（2 个 lib 用例）未修。需要复核这两个用例的期望是否与 OCCT 行为一致；复核结论出来之前，不恢复 `chain_ring` 折叠逻辑。
+3. `occt-topo` lib 在并行运行时偶发 `PermissionDenied` 写临时文件失败（同类现象见 §9.633），单独运行通过，判断为临时文件竞争。
+4. `occt-math` 的 `lsq_nonlinear::scale_invariance_sanity` 在 debug、release、多次重复及全量运行中均未复现，用户报告的失败未能确认。
+5. 本次未重新抽取逐模型面积比，README 中的逐模型比值沿用 §9.633。
+6. `689b641a` 的提交说明为 "port(iges)"，但其 diff 还包含几何内核、classifier、`brep_class3d` 等非 IGES 改动，提交说明与内容不一致，记录备查。

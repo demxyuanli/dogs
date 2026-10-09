@@ -293,7 +293,7 @@ fn edge_oriented_ends(e: &Edge) -> (Option<Vertex>, Option<Vertex>) {
 /// `BRepTools_WireExplorer` order: follow `LastVertex` → next `FirstVertex`
 /// (`CumOri=true`). When vertices are distinct TShapes at the same UV
 /// point, `Next` with a face compares pcurve ends (`cxx:428-475`).
-fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
+pub(crate) fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
     let mut unused = wire_edges_sewd(wire);
     if unused.len() <= 1 {
         return unused;

@@ -26,17 +26,34 @@ fn single_disc_cylinder(radius: f64, height: f64, slices: usize) -> TopoShape {
         &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
     let top_ax = GpAx3::new(GpPnt::new(0.0, 0.0, height), GpDir::new(0.0, 0.0, -1.0).unwrap(),
         &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
+    // Vertices are shared between adjacent edges so the shell is closed,
+    // as a solid produced by BRepPrimAPI_MakeCylinder is.
+    let bv: Vec<_> = (0..slices).map(|i| {
+        let th = 2.0 * std::f64::consts::PI * i as f64 / slices as f64;
+        b.make_vertex(GpPnt::new(radius * th.cos(), radius * th.sin(), 0.0), 0.0)
+    }).collect();
+    let tv: Vec<_> = (0..slices).map(|i| {
+        let th = 2.0 * std::f64::consts::PI * i as f64 / slices as f64;
+        b.make_vertex(GpPnt::new(radius * th.cos(), radius * th.sin(), height), 0.0)
+    }).collect();
+    let vv: Vec<Edge> = (0..slices).map(|k| {
+        let th = 2.0 * std::f64::consts::PI * k as f64 / slices as f64;
+        let p0 = GpPnt::new(radius * th.cos(), radius * th.sin(), 0.0);
+        let p1 = GpPnt::new(radius * th.cos(), radius * th.sin(), height);
+        b.make_edge_segment_with_vertices(&p0, &p1, &bv[k], &tv[k])
+    }).collect();
     let mut rim_bot: Vec<Edge> = Vec::new();
     let mut rim_top: Vec<Edge> = Vec::new();
     for i in 0..slices {
+        let j0 = (i + 1) % slices;
         let th = 2.0 * std::f64::consts::PI * i as f64 / slices as f64;
         let th2 = 2.0 * std::f64::consts::PI * (i + 1) as f64 / slices as f64;
         let a = GpPnt::new(radius * th.cos(), radius * th.sin(), 0.0);
         let c = GpPnt::new(radius * th2.cos(), radius * th2.sin(), 0.0);
-        rim_bot.push(b.make_edge_segment(&a, &c));
+        rim_bot.push(b.make_edge_segment_with_vertices(&a, &c, &bv[i], &bv[j0]));
         let at = GpPnt::new(radius * th.cos(), radius * th.sin(), height);
         let ct = GpPnt::new(radius * th2.cos(), radius * th2.sin(), height);
-        rim_top.push(b.make_edge_segment(&ct, &at));
+        rim_top.push(b.make_edge_segment_with_vertices(&ct, &at, &tv[j0], &tv[i]));
     }
     let mut side_faces: Vec<Face> = Vec::new();
     for i in 0..slices {
@@ -45,8 +62,8 @@ fn single_disc_cylinder(radius: f64, height: f64, slices: usize) -> TopoShape {
         let thj = 2.0 * std::f64::consts::PI * j as f64 / slices as f64;
         let a = GpPnt::new(radius * th.cos(), radius * th.sin(), 0.0);
         let c = GpPnt::new(radius * thj.cos(), radius * thj.sin(), 0.0);
-        let vert_i = b.make_edge_segment(&a, &GpPnt::new(a.x(), a.y(), height));
-        let vert_j = b.make_edge_segment(&c, &GpPnt::new(c.x(), c.y(), height));
+        let vert_i = vv[i].clone();
+        let vert_j = vv[j].clone();
         let mut e1 = rim_bot[i].clone();
         e1.0.set_orientation(occt_topo::abs::Orientation::Forward);
         let mut e2 = vert_j.clone();
