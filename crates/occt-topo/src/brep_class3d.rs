@@ -7,20 +7,23 @@
 //! nearest IN hit's CS transition decides IN/OUT (`Trans`); |W| <= Tol is ON.
 
 use occt_core::bnd::BndBox;
-use occt_core::gp::{GpDir, GpDir2d, GpLin, GpLin2d, GpPnt, GpPnt2d, GpVec, GpVec2d};
-use occt_core::precision::{CONFUSION, INFINITE, PCONFUSION};
+use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
+use occt_core::precision::{CONFUSION, PCONFUSION};
 
 use crate::abs::Orientation;
-use crate::boptools_2d::curve_on_surface_range;
-use crate::brep_class::{BRepClassEdge, BRepClassFacePassiveClassifier};
 use crate::brep_extrema::closest_point_on_edge;
-use crate::brep_surface::{face_uv_bounds, surface_normal};
+use crate::brep_surface::surface_normal;
 use crate::brep_tool::BRepTool;
-use crate::fclass2d::{FaceState, FClass2d};
+use crate::fclass2d::FaceState;
 use crate::int_curves_face::{FaceIntersector, Transition};
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools_full::{edges_of_wire, faces_of, vertices_of, wires_of_face};
+use crate::topo_tools_full::faces_of;
+
+mod other_segment;
+
+/// `myParamOnEdge` after `InitShape` (`BRepClass3d_SolidExplorer.cxx:905`).
+const PARAM_ON_EDGE_INIT: f64 = 0.512345;
 
 /// Probe line produced by `SolidExplorer::OtherSegment`.
 struct Segment {
@@ -39,17 +42,29 @@ pub struct SolidExplorer {
     /// ON test in `BRepClass3d_SClassifier::Perform` (`cxx:217-227`).
     map_ev: Vec<TopoShape>,
     first_face: i32,
+    /// `myMapOfInter` (`InitShape`, `cxx:921-926`): one intersector per face,
+    /// indexed like `faces`. Rebound by `OtherSegment` (`cxx:537-542`).
+    inters: Vec<FaceIntersector>,
+    /// `myParamOnEdge` (`InitShape`, `cxx:905`); updated by the `OtherSegment`
+    /// retry ladder (`cxx:700-784`).
+    param_on_edge: f64,
 }
 
 impl SolidExplorer {
     pub fn load(shape: TopoShape) -> Self {
         let faces = faces_of(&shape);
         let map_ev = Self::edge_vertex_map(&shape);
+        let inters = faces
+            .iter()
+            .map(|f| FaceIntersector::new(f.clone(), CONFUSION, true, false))
+            .collect();
         Self {
             shape,
             faces,
             map_ev,
             first_face: 0,
+            inters,
+            param_on_edge: PARAM_ON_EDGE_INIT,
         }
     }
 
@@ -112,97 +127,6 @@ impl SolidExplorer {
     pub fn reset_segment(&mut self) {
         self.first_face = 0;
     }
-
-    /// `Segment` / `OtherSegment`. `flag`: 0 ok, 1 ON infinite face, 2 empty,
-    /// 3 ON surface but OUT of face.
-    fn other_segment(&mut self, p: &GpPnt) -> Option<Segment> {
-        while (self.first_face as usize) < self.faces.len() {
-            let face = self.faces[self.first_face as usize].clone();
-            self.first_face += 1;
-            let (u1, u2, v1, v2) = face_uv_bounds(&face);
-            let uv_inf = !u1.is_finite() || !u2.is_finite() || !v1.is_finite() || !v2.is_finite();
-            if uv_inf {
-                if let Some(surf) = BRepTool::face_surface(&face) {
-                    // Faithful `BRepClass3d_SolidExplorer::OtherSegment`
-                    // (`BRepClass3d_SolidExplorer.cxx:493-620`): the closest
-                    // `(u, v)` comes from `Extrema_ExtPS` (`cxx:575-576`); the
-                    // `anInfFlag` early return is `cxx:606-609`.
-                    let Some(ps) =
-                        occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
-                    else {
-                        continue;
-                    };
-                    let (su, sv) = (ps.u, ps.v);
-                    if surf.d0(su, sv).distance(p) <= CONFUSION {
-                        if let Ok(cl) = FClass2d::new(&face, CONFUSION) {
-                            let st = cl.perform(GpPnt2d::new(su, sv));
-                            if st == FaceState::In || st == FaceState::On {
-                                return Some(Segment {
-                                    lin: GpLin::from_pnt_dir(*p, GpDir::default_dir()),
-                                    par: 0.0,
-                                    flag: 1,
-                                });
-                            }
-                            return Some(Segment {
-                                lin: GpLin::from_pnt_dir(*p, GpDir::default_dir()),
-                                par: 0.0,
-                                flag: 3,
-                            });
-                        }
-                    }
-                }
-            } else if (u2 - u1).abs() < PCONFUSION || (v2 - v1).abs() < PCONFUSION {
-                return Some(Segment {
-                    lin: GpLin::from_pnt_dir(*p, GpDir::default_dir()),
-                    par: 0.0,
-                    flag: 2,
-                });
-            }
-            let Some((ap, _u, _v)) = find_a_point_in_the_face(&face) else {
-                continue;
-            };
-            let dist = p.distance(&ap);
-            if dist <= CONFUSION {
-                return Some(Segment {
-                    lin: GpLin::from_pnt_dir(*p, GpDir::default_dir()),
-                    par: 0.0,
-                    flag: 1,
-                });
-            }
-            if let Some(surf) = BRepTool::face_surface(&face) {
-                // Same `Extrema_ExtPS` closest `(u, v)`
-                // (`BRepClass3d_SolidExplorer.cxx:575-576`); the
-                // `BRepClass_FaceClassifier` arm that consumes it is
-                // `cxx:612-620`.
-                if let Some(ps) =
-                    occt_geom::geom_api::project_point_on_surface(surf.as_ref(), p, CONFUSION)
-                {
-                    let (su, sv) = (ps.u, ps.v);
-                    if surf.d0(su, sv).distance(p) <= CONFUSION {
-                        if let Ok(cl) = FClass2d::new(&face, CONFUSION) {
-                            if cl.perform(GpPnt2d::new(su, sv)) == FaceState::Out {
-                                return Some(Segment {
-                                    lin: GpLin::from_pnt_dir(*p, GpDir::default_dir()),
-                                    par: 0.0,
-                                    flag: 3,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            let dir = GpVec::from_pnts(p, &ap);
-            let Ok(d) = GpDir::from_vec(&dir) else {
-                continue;
-            };
-            return Some(Segment {
-                lin: GpLin::from_pnt_dir(*p, d),
-                par: dist,
-                flag: 0,
-            });
-        }
-        None
-    }
 }
 
 /// `BRepClass3d_SClassifier::Perform` (`cxx:217-227`): a query point within
@@ -227,180 +151,6 @@ fn on_vertex_or_edge(map_ev: &[TopoShape], p: &GpPnt, tol: f64) -> bool {
         }
     }
     false
-}
-
-fn find_a_point_in_the_face(face: &Face) -> Option<(GpPnt, f64, f64)> {
-    let surf = BRepTool::face_surface(face)?;
-    let (u1, u2, v1, v2) = finite_uv_of_face(face)?;
-    let cl = FClass2d::new(face, CONFUSION).ok()?;
-    const PAR_T: f64 = 0.43213918;
-    for k in 0..12 {
-        let s = 0.45 * (0.75_f64).powi(k);
-        let u = u1 + (u2 - u1) * (0.5 + (PAR_T - 0.5) * (1.0 - 2.0 * s));
-        let v = v1 + (v2 - v1) * (0.5 + (PAR_T - 0.5) * s.max(0.1));
-        // `FindAPointInTheFace` (`BRepClass3d_SolidExplorer.cxx:186-191`)
-        // accepts the sample only when `FClass2d::Perform` is IN. That
-        // classifier is TabOrien (`BRepTopAdaptor_FClass2d.cxx:595-620`),
-        // so a clockwise wire reports its geometric interior as OUT.
-        if cl.perform_tab_orien(GpPnt2d::new(u, v)) == FaceState::In {
-            return Some((surf.d0(u, v), u, v));
-        }
-    }
-    // Fallback once the grid above finds no IN sample: `PointInTheFace` hands
-    // over to `FindAPointInTheFace` (`BRepClass3d_SolidExplorer.cxx:418`).
-    find_a_point_in_the_face_occt(face, &cl, PARAM_ON_EDGE_INIT)
-}
-
-/// `myParamOnEdge` after `InitShape` (`BRepClass3d_SolidExplorer.cxx:905`).
-/// The retry ladder of `OtherSegment` (`cxx:700-776`) is not ported, so only
-/// this first value is used.
-const PARAM_ON_EDGE_INIT: f64 = 0.512345;
-
-/// `TopExp_Explorer` edge occurrence test `OtherEdge != Edge` (`cxx:127`).
-/// TShape and orientation are compared; `TopLoc_Location` has no equality in
-/// this port, so the location is not part of the test.
-fn is_same_edge_occurrence(a: &Edge, b: &Edge) -> bool {
-    a.0.same_tshape(&b.0) && a.0.orientation() == b.0.orientation()
-}
-
-/// `FClassifier.Compare(AEdge, Or)` followed by the `ClosestIntersection`
-/// update of `ParamInit` / `APointExist` (`cxx:129-138` and `cxx:144-153`).
-fn passive_compare(
-    fc: &mut BRepClassFacePassiveClassifier,
-    edge: &Edge,
-    face: &Face,
-    param_init: &mut f64,
-    apoint_exist: &mut bool,
-) {
-    let ae = BRepClassEdge::from_edge_face(edge.clone(), face.clone());
-    fc.compare(&ae, edge.0.orientation());
-    if fc.closest_intersection() != 0 && *param_init > fc.parameter() {
-        *param_init = fc.parameter();
-        *apoint_exist = true;
-    }
-}
-
-/// Port of `BRepClass3d_SolidExplorer::FindAPointInTheFace`
-/// (`BRepClass3d_SolidExplorer.cxx:74-190`). For each edge of the forward face
-/// a probe starts at the edge point at `param` and runs along the inward
-/// normal of the edge tangent. The nearest hit over the other edges comes from
-/// `BRepClass_FacePassiveClassifier`; the probe is shrunk by `0.41234` until it
-/// is IN the face with a regular surface normal.
-fn find_a_point_in_the_face_occt(
-    face: &Face,
-    cl: &FClass2d,
-    param: f64,
-) -> Option<(GpPnt, f64, f64)> {
-    const TOL_INIT: f64 = 0.00001;
-    let face = Face(face.0.oriented(Orientation::Forward));
-    let surf = BRepTool::face_surface(&face)?;
-    // `TopExp_Explorer(face, TopAbs_EDGE)`: cumulated orientations, duplicates kept.
-    let edges: Vec<Edge> = wires_of_face(&face)
-        .iter()
-        .flat_map(|w| edges_of_wire(w))
-        .collect();
-    let nb_edges = edges.len();
-    for edge in &edges {
-        // `BRepAdaptor_Curve2d c(Edge, face)`; a null curve is skipped (`cxx:91-95`).
-        let Some((pcurve, first, last)) = curve_on_surface_range(edge, &face) else {
-            continue;
-        };
-        let (p0, t) = pcurve.d1((last - first) * param + first);
-        // `cxx:101-108`: rotate the tangent by +90 deg for FORWARD, else -90 deg.
-        let rot = if edge.0.orientation() == Orientation::Forward {
-            GpVec2d::new(-t.y(), t.x())
-        } else {
-            GpVec2d::new(t.y(), -t.x())
-        };
-        // `T.Normalize()` throws on a zero vector (`cxx:115`).
-        let tang = rot.normalized().ok()?;
-        let p = GpPnt2d::new(p0.x() + TOL_INIT * tang.x(), p0.y() + TOL_INIT * tang.y());
-        let dir = GpDir2d::from_vec2d(&tang).ok()?;
-        let lin = GpLin2d::from_pnt_dir(p, dir);
-
-        let mut param_init = INFINITE;
-        let mut apoint_exist = false;
-        let mut fc = BRepClassFacePassiveClassifier::new();
-        // `FClassifier.Reset(gp_Lin2d(P, T), ParamInit, RealEpsilon())` (`cxx:118`).
-        fc.reset(&lin, param_init, f64::EPSILON);
-
-        for other in &edges {
-            // `OtherEdge.Orientation() != TopAbs_EXTERNAL && OtherEdge != Edge` (`cxx:127`).
-            if other.0.orientation() == Orientation::External || is_same_edge_occurrence(other, edge)
-            {
-                continue;
-            }
-            passive_compare(&mut fc, other, &face, &mut param_init, &mut apoint_exist);
-        }
-        // `if (aNbEdges == 1)` (`cxx:142-154`).
-        if nb_edges == 1 {
-            passive_compare(&mut fc, edge, &face, &mut param_init, &mut apoint_exist);
-        }
-
-        while apoint_exist {
-            param_init *= 0.41234;
-            let (uu, vv) = (p.x() + param_init * tang.x(), p.y() + param_init * tang.y());
-            // `BRepTopAdaptor_FClass2d::Perform` (`cxx:163-169`); TabOrien variant.
-            if cl.perform_tab_orien(GpPnt2d::new(uu, vv)) != FaceState::In {
-                return None;
-            }
-            let (pnt, d1u, d1v) = surf.d1(uu, vv);
-            // `theVecD1U.CrossMagnitude(theVecD1V) > gp::Resolution()` (`cxx:175`).
-            if d1u.cross(&d1v).magnitude() > f64::MIN_POSITIVE {
-                return Some((pnt, uu, vv));
-            }
-            if param_init < PCONFUSION {
-                return None;
-            }
-        }
-    }
-    None
-}
-
-fn finite_uv_of_face(face: &Face) -> Option<(f64, f64, f64, f64)> {
-    let (u1, u2, v1, v2) = face_uv_bounds(face);
-    if u1.is_finite()
-        && u2.is_finite()
-        && v1.is_finite()
-        && v2.is_finite()
-        && (u2 - u1).abs() > PCONFUSION
-        && (v2 - v1).abs() > PCONFUSION
-    {
-        return Some((u1, u2, v1, v2));
-    }
-    let surf = BRepTool::face_surface(face)?;
-    let mut ua = f64::INFINITY;
-    let mut ub = f64::NEG_INFINITY;
-    let mut va = f64::INFINITY;
-    let mut vb = f64::NEG_INFINITY;
-    for vtx in vertices_of(&face.0) {
-        let p = BRepTool::vertex_point(&vtx);
-        // OCCT's `BRepTools::UVBounds` reads the pcurve box
-        // (`BRepTools.cxx:64-75`) and has no point-projection branch; this
-        // port-only helper brackets a finite UV box from the face's vertices,
-        // mapped through OCCT's point-on-surface projection (`Extrema_ExtPS`).
-        let Some(ps) = occt_geom::geom_api::project_point_on_surface(
-            surf.as_ref(),
-            &p,
-            occt_core::precision::CONFUSION,
-        ) else {
-            continue;
-        };
-        ua = ua.min(ps.u);
-        ub = ub.max(ps.u);
-        va = va.min(ps.v);
-        vb = vb.max(ps.v);
-    }
-    if !ua.is_finite() || !ub.is_finite() {
-        return None;
-    }
-    if ub - ua < PCONFUSION {
-        ub = ua + 1.0;
-    }
-    if vb - va < PCONFUSION {
-        vb = va + 1.0;
-    }
-    Some((ua, ub, va, vb))
 }
 
 /// `BRepClass3d_SClassifier`.
@@ -513,9 +263,26 @@ impl SClassifier {
         }
         self.state = FaceState::Out;
         for f in &expl.faces {
-            let Some((ap, u, v)) = find_a_point_in_the_face(f) else {
+            let mut ap = GpPnt::new(0.0, 0.0, 0.0);
+            let mut u = 0.0_f64;
+            let mut v = 0.0_f64;
+            let mut d1u = GpVec::new(0.0, 0.0, 0.0);
+            let mut d1v = GpVec::new(0.0, 0.0, 0.0);
+            // `FindAPointInTheFace` (`cxx:74-190`) with one probe parameter.
+            // OCCT draws `aParam` from [0.1, 0.9] and retries up to 10 times
+            // per face (`BRepClass3d_SClassifier.cxx:125-135`); that loop is
+            // not ported yet.
+            if !other_segment::find_a_point_in_the_face(
+                f,
+                PARAM_ON_EDGE_INIT,
+                &mut ap,
+                &mut u,
+                &mut v,
+                &mut d1u,
+                &mut d1v,
+            ) {
                 continue;
-            };
+            }
             let Some(surf) = BRepTool::face_surface(f) else {
                 continue;
             };
