@@ -87,6 +87,8 @@ const MAXCARS_P: usize = 64;
 /// One IGES card: the data field left-justified in `width` columns, then
 /// `section` and the card's sequence number in the last seven columns
 /// (`IGESData_IGESWriter.cxx:836-880` for D, `:769-794` for G/S).
+/// The sequence is `%7.7d` (`Sprintf(finlin, "G%7.7d", i)` and `D%7.7d`),
+/// zero-filled, not blank-filled.
 fn sec_line(section: char, seq: usize, content: &str, width: usize) -> String {
     let mut s = String::with_capacity(80);
     for ch in content.chars().take(width) {
@@ -94,20 +96,21 @@ fn sec_line(section: char, seq: usize, content: &str, width: usize) -> String {
     }
     s.push_str(&" ".repeat(width - s.len()));
     s.push(section);
-    s.push_str(&format!("{seq:>7}"));
+    s.push_str(&format!("{seq:07}"));
     s
 }
 
 /// One Parameter card (`IGESData_IGESWriter.cxx:902-925`):
 /// `data` (64 columns) + blank + the owning entity's directory-entry pointer
 /// (`2*i - 1`) + `P` + the card's sequence number.
+/// `Sprintf(finlin, " %7.7dP%7.7d", 2*i-1, j)` (`cxx:903`).
 fn param_line(content: &str, de_pointer: usize, seq: usize) -> String {
     let mut s = String::with_capacity(80);
     for ch in content.chars().take(MAXCARS_P) {
         s.push(ch);
     }
     s.push_str(&" ".repeat(MAXCARS_P - s.len()));
-    s.push_str(&format!(" {de_pointer:>7}P{seq:>7}"));
+    s.push_str(&format!(" {de_pointer:07}P{seq:07}"));
     s
 }
 
@@ -273,6 +276,42 @@ fn num(x: f64) -> String {
         || (x <= -FLOAT_RANGE_MIN && x > -FLOAT_RANGE_MAX);
     let text = if in_range { float_fixed(x) } else { float_sci(x) };
     float_zero_suppress(&text)
+}
+
+/// `nH` text parameter (`IGESData_GlobalSection::MakeHollerith`,
+/// `IGESData_GlobalSection.cxx:47-69`). An empty string is an empty field.
+fn hollerith(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    format!("{}H{text}", text.len())
+}
+
+/// `IGESData_GlobalSection::NewDateString(..., year < 0)` (`IGESData.cxx:247`):
+/// `YYYYMMDD.HHMMSS`, always 15 characters.
+fn iges_date_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0) as i64;
+    let tod = secs.rem_euclid(86400);
+    let days = secs.div_euclid(86400);
+    let z = days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let mut y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = ((5 * doy + 2) / 153) as i64;
+    let d = doy as i64 - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    if m <= 2 {
+        y += 1;
+    }
+    let hh = tod / 3600;
+    let mm = (tod % 3600) / 60;
+    let ss = tod % 60;
+    format!("{y:04}{m:02}{d:02}.{hh:02}{mm:02}{ss:02}")
 }
 
 /// Pointer placeholder for the `k`-th entry of an entity's reference list.
@@ -1297,14 +1336,17 @@ fn promote_curve2d(curve: &dyn Curve2d) -> Option<Box<dyn Curve>> {
         basis.bspline_knots2d(),
         basis.bspline_degree(),
     ) {
-        // 'Adaptor3d_CurveOnSurface::BSpline()' ('cxx:1489-1520') lifts every
-        // pole to Z=0 and keeps knots/degree/periodicity. The port's 2-D
-        // B-spline is non-rational, so the 'IsRational()' arm of OCCT (weights
-        // array) has no ported source.
+        // `Adaptor3d_CurveOnSurface::BSpline()` (`cxx:1489-1520`) lifts every
+        // pole with `to3d` (`cxx:57-60`): `ElSLib::Value` on the plane, not
+        // `(x, y, 0)`. `GeomAPI::To3d` uses `gp_Pln(0, 0, 1, 0)`
+        // (`Geom2dToIGES_Geom2dCurve.cxx:52-68`). The port's 2-D B-spline is
+        // non-rational, so the `IsRational()` arm (weights array) has no
+        // ported source.
+        let plane = occt_core::gp::GpPln::from_coefficients(0.0, 0.0, 1.0, 0.0).ok()?;
         let poles: Vec<GpPnt> = xs
             .iter()
             .zip(ys.iter())
-            .map(|(x, y)| GpPnt::new(*x, *y, 0.0))
+            .map(|(x, y)| occt_core::elib::slib::plane_value(&plane, *x, *y))
             .collect();
         return Some(Box::new(GeomBSplineCurve {
             poles,
@@ -1323,10 +1365,11 @@ fn promote_curve2d(curve: &dyn Curve2d) -> Option<Box<dyn Curve>> {
     // equivalent - `occt_geom::GeomBezierCurve` is non-rational, the same gap
     // noted in `occt_geom::convert_bspl::curve_to_bspline_curve` (`cxx:313-321`).
     if basis.is_bezier2d() {
+        let plane = occt_core::gp::GpPln::from_coefficients(0.0, 0.0, 1.0, 0.0).ok()?;
         let poles: Vec<GpPnt> = basis
             .poles2d()?
             .iter()
-            .map(|p| GpPnt::new(p.x(), p.y(), 0.0))
+            .map(|p| occt_core::elib::slib::plane_value(&plane, p.x(), p.y()))
             .collect();
         return Some(Box::new(GeomBezierCurve::new(poles).ok()?));
     }
@@ -1538,6 +1581,10 @@ struct IgesWriter {
     /// so these are the DFS roots of the written model (T-85 step 2).
     roots: Vec<usize>,
     point_entities: HashMap<usize, usize>,
+    /// Largest absolute model coordinate (`IGESControl_Writer.cxx:180-189`,
+    /// `MaxMaxCoords` of the shape box). `0` leaves global field 20 empty,
+    /// which is `hasMaxCoord == false` (`IGESData_GlobalSection.cxx:519-527`).
+    max_coord: f64,
 }
 
 impl IgesWriter {
@@ -1546,6 +1593,7 @@ impl IgesWriter {
             entities: Vec::new(),
             roots: Vec::new(),
             point_entities: HashMap::new(),
+            max_coord: 0.0,
         }
     }
 
@@ -2057,14 +2105,22 @@ impl IgesWriter {
         // `Rational(Weights)` (`Geom_BSplineCurve.cxx:98-108`, `:206-208`).
         // A stored weight array whose values are all equal is not rational, and
         // the entity then carries `BSplCLib::UnitWeights` (`:220-222`).
+        //
+        // `WriteOwnParams` does not send that flag. It sends
+        // `IGESGeom_BSplineCurve::IsPolynomial()` (`IGESGeom_BSplineCurve.cxx:105-124`,
+        // called from `IGESGeom_ToolBSplineCurve.cxx:242`), which reports
+        // polynomial when every weight is within `1e-10` of the first one.
         let stored = curve.bspline_weights().filter(|w| w.len() == poles.len());
-        let rational = stored.is_some_and(weights_are_rational);
-        let weights: Vec<f64> = if rational {
+        let geom_rational = stored.as_ref().is_some_and(|w| weights_are_rational(w));
+        let weights: Vec<f64> = if geom_rational {
             stored.unwrap().to_vec()
         } else {
             vec![1.0; poles.len()]
         };
-        let polynomial = !rational;
+        let polynomial = !geom_rational
+            || weights
+                .first()
+                .is_none_or(|w0| weights.iter().all(|wi| (wi - w0).abs() <= 1.0e-10));
         let closed = poles
             .first()
             .zip(poles.last())
@@ -3691,13 +3747,15 @@ impl IgesWriter {
     /// writes `402, n, entity...;` and both `BRepToIGES_BRShell::TransferShell`
     /// (`BRepToIGES_BRShell.cxx:463-471`) and
     /// `BRepToIGES_BRSolid::TransferSolid` (`BRepToIGES_BRSolid.cxx:154-163`) use
-    /// exactly this rule.
+    /// exactly this rule. The form is 1: `IGESBasic_Group::IGESBasic_Group`
+    /// calls `InitTypeAndForm(402, 1)` (`IGESBasic_Group.cxx:29-31`), and
+    /// `DirChecker` requires that form (`IGESBasic_ToolGroup.cxx:161`).
     fn group_or_single(&mut self, items: Vec<usize>) -> Option<usize> {
         match items.len() {
             0 => None,
             1 => Some(items[0]),
             n => {
-                Some(self.emit_refs(402, 0, format!("402,{n},{};", ph_list(n)), &items))
+                Some(self.emit_refs(402, 1, format!("402,{n},{};", ph_list(n)), &items))
             }
         }
     }
@@ -3737,7 +3795,33 @@ impl IgesWriter {
         self.group_or_single(refs)
     }
 
+    fn note_max_coord(&mut self, shape: &TopoShape) {
+        // `BRepBndLib::Add` then skip a void or open box
+        // (`IGESControl_Writer.cxx:181-189`).
+        let box_ = crate::bopalgo_tools_wires::shape_box_of(shape);
+        if box_.is_void()
+            || box_.is_open_xmin()
+            || box_.is_open_xmax()
+            || box_.is_open_ymin()
+            || box_.is_open_ymax()
+            || box_.is_open_zmin()
+            || box_.is_open_zmax()
+        {
+            return;
+        }
+        let Some((xmin, xmax, ymin, ymax, zmin, zmax)) = box_.get() else {
+            return;
+        };
+        for v in [xmin, xmax, ymin, ymax, zmin, zmax] {
+            let a = v.abs();
+            if a.is_finite() && a > self.max_coord {
+                self.max_coord = a;
+            }
+        }
+    }
+
     fn emit_shape(&mut self, shape: &TopoShape) {
+        self.note_max_coord(shape);
         match shape.shape_type() {
             ShapeType::Compound => {
                 let kids: Vec<TopoShape> = shape
@@ -3774,13 +3858,38 @@ impl IgesWriter {
     // ---- file assembly ----
 
     fn global_lines(&self) -> Vec<String> {
+        // `IGESData::Init` (`IGESData.cxx:249-279`) plus the per-shape update
+        // in `IGESControl_Writer::AddShape` (`IGESControl_Writer.cxx:177-189`).
+        // Default comma and semicolon are written as two empty fields
+        // (`IGESData_GlobalSection::Params`, `cxx:445-462`), not as `1H,`.
+        // Single and double precision are both `RealLast10Exp()` / `RealDigits()`
+        // (`cxx:258-261`), which is `308` / `15`, and the version is
+        // `SetIGESVersion(11)` (`cxx:276`). The date is `YYYYMMDD.HHMMSS`
+        // (`NewDateString`, `cxx:247`); its Hollerith count has to be the
+        // character length or every later field, including the version, shifts.
+        let date = iges_date_now();
+        let product = "Open CASCADE IGES processor 8.0";
+        let system = "Open CASCADE 8.0";
+        let max_coord = if self.max_coord > 0.0 {
+            num(self.max_coord)
+        } else {
+            String::new()
+        };
         let data = format!(
-            "1H,,1H;,4HIGES,5Hmodel,7Hocctp2,8H20260731,32,38,6,308,15,14,1,2,2Hmm,1,1,8H20260731.01,1.0E-6,1.0E6,8Hocct-rs,4Hrust,3,1,8H20260731.01,0;"
+            ",,{product_h},{file_h},{system_h},{product_h},32,308,15,308,15,,{scale},2,{unit},1,{weight},{date_h},{resolution},{max_coord},,,11,0,{date_h},;",
+            product_h = hollerith(product),
+            file_h = hollerith("Filename.iges"),
+            system_h = hollerith(system),
+            scale = num(1.0),
+            unit = hollerith("MM"),
+            weight = num(0.01),
+            date_h = hollerith(&date),
+            resolution = num(occt_core::CONFUSION),
         );
         let mut out = Vec::new();
         let mut s = data.as_str();
         while !s.is_empty() {
-            let end = s.len().min(64);
+            let end = s.len().min(MAXCARS_G);
             out.push(s[..end].to_string());
             s = &s[end..];
         }

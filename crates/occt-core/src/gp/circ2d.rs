@@ -1,6 +1,6 @@
 //! 2D circle. Source: `gp_Circ2d.hxx`
 //! Not in standard OCCT gp but needed by Geom2d.
-use crate::gp::{ax22d::GpAx22d, pnt2d::GpPnt2d, vec2d::GpVec2d, ax2d::GpAx2d, trsf2d::GpTrsf2d};
+use crate::gp::{ax22d::GpAx22d, dir2d::GpDir2d, pnt2d::GpPnt2d, vec2d::GpVec2d, ax2d::GpAx2d, trsf2d::GpTrsf2d};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpCirc2d { pub pos: GpAx22d, pub radius: f64 }
@@ -23,11 +23,20 @@ impl GpCirc2d {
     /// `gp_Circ2d::Reversed()` (`gp_Circ2d.hxx:288-295`): reverse the Y
     /// direction of the local frame, which flips the implicit orientation of
     /// the circle. `SetYDirection` recomputes `XDirection` as `(vy.Y, -vy.X)`.
+    /// Keeps the XDirection and rebuilds Y as `gp_Ax22d(P, X, -Y)` does
+    /// (`gp_Ax22d.hxx:60-66`): Y is perpendicular to X, with the sign chosen
+    /// so that `X ^ (-Y)` keeps its sign. `set_y_direction` must not be used
+    /// here, because it rebuilds X instead and shifts the parametrisation by PI.
     pub fn reversed(&self) -> Self {
         let mut r = *self;
-        let mut vy = r.pos.vydir;
-        vy.reverse();
-        r.pos.set_y_direction(vy);
+        let vx = r.pos.vxdir;
+        let vy_in = GpDir2d { x: -r.pos.vydir.x, y: -r.pos.vydir.y };
+        let vy = if vx.crossed(&vy_in) >= 0.0 {
+            GpDir2d { x: -vx.y, y: vx.x }
+        } else {
+            GpDir2d { x: vx.y, y: -vx.x }
+        };
+        r.pos.vydir = vy;
         r
     }
     pub fn mirror_pnt(&mut self, p: &GpPnt2d) { self.pos.mirror_pnt(p); }

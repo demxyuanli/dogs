@@ -52,6 +52,70 @@ pub fn centripetal_params(poles: &[GpPnt]) -> Vec<f64> {
 /// every parameter by `First` and desynchronizes the two.
 pub fn reverse_curve(poles: &mut [GpPnt], knots: &mut [f64]) {
     poles.reverse();
+    mirror_flat_knots(knots);
+}
+
+/// `BSplCLib::Reverse(Knots)` (`BSplCLib.cxx:802-824`).
+///
+/// `Knots(Lower)` and the original `Knots(Upper)` are the range ends. The
+/// walk rewrites every later knot from the reversed successive gaps and never
+/// stores into the first slot, so a first knot that does not survive
+/// `K_first + K_last` in f64 stays put. Multiplicities are reversed by the
+/// caller (`BSplCLib::Reverse(Mults)`, `cxx:828`) before the flat sequence is
+/// rebuilt.
+pub fn reverse_distinct_knots(knots: &mut [f64]) {
+    if knots.len() < 2 {
+        return;
+    }
+    let mut first: i32 = 0;
+    let mut last: i32 = knots.len() as i32 - 1;
+    let mut kfirst = knots[0];
+    let mut klast = knots[last as usize];
+    let mut tfirst = kfirst;
+    let mut tlast = klast;
+    first += 1;
+    last -= 1;
+    while first <= last {
+        let fi = first as usize;
+        let li = last as usize;
+        tfirst += klast - knots[li];
+        tlast -= knots[fi] - kfirst;
+        kfirst = knots[fi];
+        klast = knots[li];
+        knots[fi] = tfirst;
+        knots[li] = tlast;
+        first += 1;
+        last -= 1;
+    }
+}
+
+/// `BSplCLib_Reverse` (`BSplCLib_CurveComputation.pxx:275-288`) for a periodic
+/// curve. `Geom_BSplineCurve::Reverse` (`Geom_BSplineCurve.cxx:502-510`) passes
+/// `theL = myFlatKnots.Upper() - myDeg - 1`, not the last pole. When the
+/// periodic end multiplicity equals the degree that window is a single pole,
+/// so the seam pole stays put and only the rest of the array is reversed.
+pub fn reverse_periodic_span<T>(items: &mut [T], flat_knot_len: usize, degree: usize) {
+    let n = items.len() as i32;
+    if n <= 0 {
+        return;
+    }
+    let last = flat_knot_len as i32 - degree as i32 - 1;
+    let a_l = 1 + (last - 1).rem_euclid(n);
+    let a = a_l as usize;
+    items[..a].reverse();
+    if a < items.len() {
+        items[a..].reverse();
+    }
+}
+
+/// Affine reflection of a flat knot vector, `K -> K_first + K_last - K`.
+///
+/// In exact arithmetic this matches [`reverse_distinct_knots`]. In f64,
+/// `K_first + K_last` drops a first knot smaller than half an ulp of the
+/// last knot, so the reflected value is `0` (or one ulp). `BSplCLib::Reverse`
+/// never writes `Knots(Lower)` and keeps that knot. Callers that reverse a
+/// curve must use [`reverse_distinct_knots`] on the distinct knots.
+pub fn mirror_flat_knots(knots: &mut [f64]) {
     let n = knots.len();
     if n < 2 {
         return;

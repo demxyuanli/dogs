@@ -236,14 +236,21 @@ fn find_a_point_in_the_face(face: &Face) -> Option<(GpPnt, f64, f64)> {
         let s = 0.45 * (0.75_f64).powi(k);
         let u = u1 + (u2 - u1) * (0.5 + (PAR_T - 0.5) * (1.0 - 2.0 * s));
         let v = v1 + (v2 - v1) * (0.5 + (PAR_T - 0.5) * s.max(0.1));
-        if cl.perform(GpPnt2d::new(u, v)) == FaceState::In {
+        // `FindAPointInTheFace` (`BRepClass3d_SolidExplorer.cxx:186-191`)
+        // accepts the sample only when `FClass2d::Perform` is IN. That
+        // classifier is TabOrien (`BRepTopAdaptor_FClass2d.cxx:595-620`),
+        // so a clockwise wire reports its geometric interior as OUT.
+        if cl.perform_tab_orien(GpPnt2d::new(u, v)) == FaceState::In {
             return Some((surf.d0(u, v), u, v));
         }
     }
     let mut ctx = crate::int_tools_full::IntToolsContext::new();
-    crate::algo_tools3d::point_in_face(face, &mut ctx)
-        .ok()
-        .map(|(p, uv)| (p, uv.x(), uv.y()))
+    let (p, uv) = crate::algo_tools3d::point_in_face(face, &mut ctx).ok()?;
+    if cl.perform_tab_orien(uv) == FaceState::In {
+        Some((p, uv.x(), uv.y()))
+    } else {
+        None
+    }
 }
 
 fn finite_uv_of_face(face: &Face) -> Option<(f64, f64, f64, f64)> {
@@ -442,14 +449,18 @@ impl SClassifier {
                     tran_keep = t;
                     found = true;
                     self.face = Some(g.clone());
-                    if std::env::var("IGES_TRACE_ORI").is_ok() {
-                        eprintln!(
-                            "  hit w={w:.4} tran={t:?} hit_face={:?} state={:?}",
-                            g.0.orientation(),
-                            inter.state(i)
-                        );
-                    }
                 }
+            }
+            // The probe is `gp_Lin(aPoint, -aDN)` (`BRepClass3d_SClassifier.cxx:141`),
+            // so W = 0 is an intersection with the probe face. `ComputeTransitions`
+            // (`IntCurveSurface_InterUtils.pxx:856-894`) of that inward direction is
+            // `In`, and the reversed-face flip in `IntCurvesFace_Intersector.cxx:303-314`
+            // keeps it `In`. Non-quadric surfaces (offset) miss this root; a closer
+            // negative hit, when one exists, stays the minimum.
+            if parmin > tol {
+                tran_keep = Transition::In;
+                found = true;
+                self.face = Some(f.clone());
             }
             if found {
                 // `_cxx:182-195`: Out => infinite point is IN, In => OUT.
@@ -458,19 +469,6 @@ impl SClassifier {
                 } else {
                     FaceState::Out
                 };
-        if std::env::var("IGES_TRACE_ORI").is_ok() {
-            eprintln!(
-                "SOLID inf={:?} tran={tran_keep:?} w={parmin:.6} from=({:.3},{:.3},{:.3}) n=({:.3},{:.3},{:.3}) face={:?}",
-                self.state,
-                ap.x(),
-                ap.y(),
-                ap.z(),
-                dn.x(),
-                dn.y(),
-                dn.z(),
-                f.0.orientation()
-            );
-        }
                 return;
             }
         }

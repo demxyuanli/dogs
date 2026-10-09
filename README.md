@@ -90,7 +90,7 @@ cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export
 | `zz_probe_a3n00` | a3n00 逐面读数：`--fstats`（每面 mv/mt/bbox）、`--fdump`、`--fixms`、`--ecensus`（逐面 wire/边数） |
 | `zz_uv_feed` | 面/模型结构：`--model <f>`、`--ids`（逐面 wire 数 + 直方图） |
 | `zz_seam_fix` | 单面 `FixMissingSeam` 前后结构（`<stp> <face>`：BEFORE/result/HEALED） |
-| `zz_share_probe` / `zz_pcurve_key_probe` / `cone_dbg` / `linkrods_dbg` / `iges_check` | 专题排查 |
+| `zz_share_probe` / `zz_pcurve_key_probe` / `cone_dbg` / `linkrods_dbg` / `iges_check` | 专题排查。`iges_check` 写 IGES 并做卡片结构检查：参数是 `data/<name>.step`，含 `/` 的参数按仓库根路径读 `.step` 或 `.stp`。`IGES_DUMP` 指向目录时写出 `<参数名>.iges` |
 
 **OCCT 侧**（`specs/occt_probe/`，需本机 OCCT）：
 
@@ -108,9 +108,10 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 
 ## 数据与产物
 
-- 输入：`data/occ/*.stp`（a3n00、acs10、ATU01038、bottom、motoc、T0M、top、TDB…）
+- 输入：`data/occ/*.stp` 与 `data/occ/*.step`（a3n00、acs10、ATU01038、bottom、motoc、T0M、top、TDB），以及 `data/*.step`（含 `linkrods.step`）
 - 参考（GT）：`data/occ/occ-*.obj` —— 逐模型面积比与 f-ratio 的对照基准
 - 产物：`data/output/<stem>.obj`（已 gitignore）—— STEP→OBJ 唯一导出目录（`export_data_obj` 与 `step_obj_gates` 共用）
+- IGES 对拍：`_igesdump/oracle/` 是 OCCT 写出的 14 个样例。端口导出用 `iges_check`，`IGES_DUMP` 只作人工对照，不入库
 - 临时：`.target-gate/`（已 gitignore）存放门禁输出、对拍脚本与探针 dump
 
 ---
@@ -133,6 +134,7 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
   其中 a3n00 0.8996、T0M 0.9987、acs10 0.9846。
 - **已知最大缺口**：**没有 `ShapeProcess`/`FixShape` 驱动器**（端口在 reader 里按面直调子步）。
   实测关掉该算子时 OCCT 有 **131/226 面无法网格化**，说明它是承重环节；端口仅缺分派器与参数下发。
+- **IGES 写侧**（读侧未做）：`write_iges` 一条路径服务全部模型。全局段按 `IGESData.cxx` 写 IGES 5.3（版本 `11`，精度 `308,15,308,15`，单位 `MM`），序号 `%7.7d` 补零，壳组 402 的 form 为 `1`。初等面在 Faces 模式下是 120 回转面 + 124，不是 192/194/196/198。`iges_check` 已通过：`linkrods`，以及 `data/occ` 的 4 个 `.step` 和 4 个 `.stp`。与 oracle 参数段一致的有 Cube、Sphere、Cone、Extrusion、HoledPlate、rev、Offset；Cone 的目录 form 与全局段对齐后，查看器里是完整圆锥。仍有几何差的是 Cylinder、Torus、screw、Shape、Shape-1、Shape-2，以及 OffsetPlaneHoleEdge 的颜色/名字尾。
 - **未结个案**：a3n00 的“螺母斜切面”（端口 F113）仍为 **4 wires / 空面**。
   已定位到：`fix_missing_seam` 在该面上把 28 条边分成了 **6 条 wire / 5 张面**（其中 1 张 2-wire 面 = 6e+7e，
   另 4 张单 wire 面 = 5/4/3/3），而 OCCT 是 **2 条 wire（22+6）/ 1 张面**——**总边数相同（28），这一步不丢边**；

@@ -938,9 +938,26 @@ impl Curve for GeomBSplineCurve {
     }
 
     fn reverse(&mut self) {
-        curve_tools::reverse_curve(&mut self.poles, &mut self.knots);
-        if let Some(w) = self.weights.as_mut() {
-            w.reverse();
+        // `Geom_BSplineCurve::Reverse` (`cxx:496-511`): `BSplCLib::Reverse` on
+        // the distinct knots and on the multiplicities, then the poles
+        // (periodic window `myFlatKnots.Upper() - Deg - 1`, `cxx:502-510`),
+        // then `updateKnots()`.
+        let (mut uknots, mut umults) = self.distinct_knots_and_mults();
+        curve_tools::reverse_distinct_knots(&mut uknots);
+        umults.reverse();
+        if self.periodic {
+            curve_tools::reverse_periodic_span(&mut self.poles, self.knots.len(), self.degree);
+            if let Some(w) = self.weights.as_mut() {
+                curve_tools::reverse_periodic_span(w, self.knots.len(), self.degree);
+            }
+            self.knots = knots::knot_sequence_periodic(&uknots, &umults, self.degree as i32);
+        } else {
+            self.poles.reverse();
+            if let Some(w) = self.weights.as_mut() {
+                w.reverse();
+            }
+            self.knots =
+                occt_core::bspl::banded_interp::knot_sequence(&uknots, &umults, self.degree as i32);
         }
     }
 

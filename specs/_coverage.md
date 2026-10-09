@@ -129,7 +129,7 @@
 
 ### ◔ 新增（Phase 5，2026-08-01）
 - **精确布尔（平面多面体）**：inttools + bop_builder（Fuse/Cut/Common 体积验证）✅ 平面；NURBS 曲面仍采样近似
-- **IGES 写器**（ANSI Y14.26M，POINT/LINE/ARC/NURBS/FACE/SHELL/MSB）✅
+- **IGES 写器**（ANSI Y14.26M，Faces 模式：120 回转面 + 124，壳组 402 form 1；全局段版本 11、精度 308/15）写侧结构检查已通过 `linkrods` 与 `data/occ` 的 step/stp。读侧未做。与 `_igesdump/oracle` 参数段仍有差的模型：Cylinder、Torus、screw、Shape、Shape-1、Shape-2，以及 OffsetPlaneHoleEdge 的 314/402/406 尾
 - **真实 BRepMesh**（Deflection 自适应四叉树）✅ 曲面细分；BRepMesh 完整 59 类仍缺
 - **SVG 渲染**（投影+画家算法）· **特征建模**（boss/hole/protrusion/pocket）· **XCAF-lite**
 - **数学深度**：分布/二维插值/稀疏矩阵 CG/FFT2D/特征值/统计/优化器/多边形/Delaunay/BVH/曲面拟合

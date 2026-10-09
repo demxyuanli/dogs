@@ -24,6 +24,41 @@ impl GpPln {
         GpPln { pos }
     }
 
+    /// `gp_Pln(A, B, C, D)` (`gp_Pln.cxx:86-128`).
+    ///
+    /// The axis is `gp_Ax3(P, N, Vx)` (`gp_Ax3.hxx:84-91`): `X = N × (Vx × N)`
+    /// and `Y = N × X`. For `gp_Pln(0, 0, 1, 0)` that leaves `Location.Z` and
+    /// `XDirection.Z` as `-0`, which `ElSLib::Value` (`ElSLib` plane arm) then
+    /// copies into a lifted pole whose V coordinate is not strictly positive.
+    pub fn from_coefficients(a: f64, b: f64, c: f64, d: f64) -> Result<Self, &'static str> {
+        let aa = a.abs();
+        let ab = b.abs();
+        let ac = c.abs();
+        let (origin, vx) = if ab <= aa && ab <= ac {
+            if aa > ac {
+                (GpPnt::new(-d / a, 0.0, 0.0), GpDir::new(-c, 0.0, a)?)
+            } else {
+                (GpPnt::new(0.0, 0.0, -d / c), GpDir::new(c, 0.0, -a)?)
+            }
+        } else if aa <= ab && aa <= ac {
+            if ab > ac {
+                (GpPnt::new(0.0, -d / b, 0.0), GpDir::new(0.0, -c, b)?)
+            } else {
+                (GpPnt::new(0.0, 0.0, -d / c), GpDir::new(0.0, c, -b)?)
+            }
+        } else if aa > ab {
+            (GpPnt::new(-d / a, 0.0, 0.0), GpDir::new(-b, a, 0.0)?)
+        } else {
+            (GpPnt::new(0.0, -d / b, 0.0), GpDir::new(b, -a, 0.0)?)
+        };
+        let normal = GpDir::new(a, b, c)?;
+        // `gp_XYZ::CrossCross` (`gp_XYZ.hxx:551-565`): `this × (V1 × V2)`.
+        let x_xyz = normal.xyz().crossed(&vx.xyz().crossed(normal.xyz()));
+        let x_dir = GpDir::new(x_xyz.x(), x_xyz.y(), x_xyz.z())?;
+        let pos = GpAx3::new(origin, normal, &x_dir)?;
+        Ok(GpPln { pos })
+    }
+
     pub fn location(&self) -> GpPnt {
         self.pos.location()
     }

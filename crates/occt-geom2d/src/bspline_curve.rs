@@ -1,7 +1,7 @@
 //! 2D B-spline curve (rational and non-rational). Source: `Geom2d_BSplineCurve.hxx`
 
 use crate::curve::Curve2d;
-use occt_core::bspl::{eval, knots};
+use occt_core::bspl::{curve_tools, eval, knots};
 use occt_core::gp::{GpPnt, GpPnt2d, GpTrsf2d, GpVec2d};
 
 /// `Geom2d_BSplineCurve::MaxDegree()` = `BSplCLib::MaxDegree()`
@@ -838,33 +838,32 @@ impl Curve2d for Geom2dBSplineCurve {
     }
 
     fn reverse(&mut self) {
-        // `Geom2d_BSplineCurve::Reverse` (`Geom2d_BSplineCurve.cxx:677-696`) runs
+        // `Geom2d_BSplineCurve::Reverse` (`Geom2d_BSplineCurve.cxx:677-696`):
         // `BSplCLib::Reverse(myKnots)` + `BSplCLib::Reverse(myMults)` + reverse
-        // the poles (+ weights) + `updateKnots()`. `BSplCLib::Reverse(
-        // NCollection_Array1<double>& Knots)` (`BSplCLib.cxx:802-828`) maps every
-        // knot to `kfirst + klast - k`, so the reversed curve keeps the *same*
-        // parameter range; reversing the flat knot array already reverses the
-        // multiplicities, so applying that affine map after the swap is
-        // equivalent. `klast - k` alone (the former code) shifts the range by
-        // `-kfirst` for any curve whose first knot is not 0 — e.g. the spherical
-        // pcurves of `data/Offset.step`, whose knots start at `pi/2`:
-        // `build_arc` then evaluated the reversed curve over a parameter window
-        // the curve does not cover.
-        self.xs.reverse();
-        self.ys.reverse();
-        if let Some(w) = self.weights.as_mut() {
-            w.reverse();
-        }
-        let n = self.knots.len();
-        if n == 0 {
-            return;
-        }
-        let (kfirst, klast) = (self.knots[0], self.knots[n - 1]);
-        for i in 0..n / 2 {
-            self.knots.swap(i, n - 1 - i);
-        }
-        for k in self.knots.iter_mut() {
-            *k = kfirst + klast - *k;
+        // the poles (+ weights) + `updateKnots()`. The knot walk
+        // (`BSplCLib.cxx:802-824`) keeps `Knots(Lower)` and rebuilds the gaps,
+        // so a first knot below half an ulp of the last knot is not flushed to
+        // 0. Reflecting the flat vector (`K -> K_first + K_last - K`) does that
+        // flush. Periodic poles use the same window as the 3D curve
+        // (`Geom_BSplineCurve.cxx:502-510`).
+        let (mut uknots, mut umults) = self.distinct_knots_and_mults();
+        curve_tools::reverse_distinct_knots(&mut uknots);
+        umults.reverse();
+        if self.periodic {
+            curve_tools::reverse_periodic_span(&mut self.xs, self.knots.len(), self.degree);
+            curve_tools::reverse_periodic_span(&mut self.ys, self.knots.len(), self.degree);
+            if let Some(w) = self.weights.as_mut() {
+                curve_tools::reverse_periodic_span(w, self.knots.len(), self.degree);
+            }
+            self.knots = knots::knot_sequence_periodic(&uknots, &umults, self.degree as i32);
+        } else {
+            self.xs.reverse();
+            self.ys.reverse();
+            if let Some(w) = self.weights.as_mut() {
+                w.reverse();
+            }
+            self.knots =
+                occt_core::bspl::banded_interp::knot_sequence(&uknots, &umults, self.degree as i32);
         }
     }
 

@@ -154,7 +154,9 @@ impl FClass2d {
         let mut vmax = f64::NEG_INFINITY;
 
         for wire in wires_of_face(face) {
-            let edges = edges_of_wire(&wire);
+            // BRepTopAdaptor_FClass2d::Init walks the wire with BRepTools_WireExplorer
+            // (cxx:352), so edges are visited in connection order, not storage order.
+            let edges = crate::meshing::model_builder::wire_builder::wire_edges_explorer(&wire, face);
             let mut polylines: Vec<Vec<GpPnt2d>> = Vec::new();
             for edge in &edges {
                 let or = edge.orientation();
@@ -176,10 +178,10 @@ impl FClass2d {
             if polylines.is_empty() {
                 continue;
             }
-            let ring = match chain_ring(&polylines, self.u_period, self.v_period) {
-                Some(r) => dedup_ring(&r),
-                None => continue,
-            };
+            // BRepTopAdaptor_FClass2d::Init (cxx:370-410): samples are appended in
+            // wire order, the shared first sample of each later edge is skipped, and
+            // the closing chord is implicit. No chaining or closure test applies.
+            let ring = concat_wire_polylines(&polylines);
             if ring.len() < 3 {
                 continue;
             }
@@ -535,150 +537,17 @@ pub(super) fn sample_count(pc: &dyn Curve2d, first: f64, last: f64) -> usize {
     nbs.max(2)
 }
 
-/// Chain edge polylines into a single closed ring by UV continuity.
-///
-/// The first polyline is taken in its natural direction; every following edge
-/// is appended (forward or reversed) so its start connects to the current ring
-/// end, shifting by whole periods when the surface is periodic. Among the
-/// candidate connections the one with the fewest period shifts wins (ties go to
-/// the natural direction). Returns `None` when the polylines do not form a
-/// closed chain.
-pub(super) fn chain_ring(polylines: &[Vec<GpPnt2d>], u_per: f64, v_per: f64) -> Option<Vec<GpPnt2d>> {
-    if polylines.is_empty() {
-        return None;
+/// Concatenate edge polylines in wire order (BRepTopAdaptor_FClass2d::Init,
+/// cxx:370-410). Each later polyline drops its first sample, which repeats the
+/// shared vertex of the previous edge; the ring is not required to close.
+pub(super) fn concat_wire_polylines(polylines: &[Vec<GpPnt2d>]) -> Vec<GpPnt2d> {
+    let mut ring: Vec<GpPnt2d> = Vec::new();
+    for (k, pl) in polylines.iter().enumerate() {
+        let skip = if k == 0 { 0 } else { 1 };
+        ring.extend(pl.iter().skip(skip).copied());
     }
-    let mut ring: Vec<GpPnt2d> = polylines[0].clone();
-    let mut used = vec![false; polylines.len()];
-    used[0] = true;
-
-    for _ in 0..(polylines.len() * 2 + 16) {
-        if used.iter().all(|&u| u) {
-            break;
-        }
-        let cur_end = *ring.last().expect("ring is non-empty");
-        let mut best: Option<(usize, bool, i64, i64)> = None;
-        for i in 0..polylines.len() {
-            if used[i] {
-                continue;
-            }
-            let pl = &polylines[i];
-            let fwd_start = *pl.first().expect("polyline is non-empty");
-            let fwd_end = *pl.last().expect("polyline is non-empty");
-            // Natural direction.
-            if let Some((ku, kv)) = wrap_offset(&fwd_start, &cur_end, u_per, v_per) {
-                if is_better(best, (i, false, ku, kv), u_per, v_per) {
-                    best = Some((i, false, ku, kv));
-                }
-            }
-            // Reversed direction.
-            if let Some((ku, kv)) = wrap_offset(&fwd_end, &cur_end, u_per, v_per) {
-                if is_better(best, (i, true, ku, kv), u_per, v_per) {
-                    best = Some((i, true, ku, kv));
-                }
-            }
-        }
-        let (idx, rev, ku, kv) = best?;
-        let pl = &polylines[idx];
-        if rev {
-            ring.extend(pl.iter().rev().map(|p| shift_pnt(p, ku, kv, u_per, v_per)).skip(1));
-        } else {
-            ring.extend(pl.iter().map(|p| shift_pnt(p, ku, kv, u_per, v_per)).skip(1));
-        }
-        used[idx] = true;
-    }
-
-    if !used.iter().all(|&u| u) {
-        return None;
-    }
-    // Closure: the last point must coincide with the first (periodically).
-    let start = *ring.first()?;
-    let end = *ring.last()?;
-    if wrap_offset(&start, &end, u_per, v_per).is_none() {
-        return None;
-    }
-    Some(ring)
+    ring
 }
-
-/// Whether candidate `(idx, rev, ku, kv)` beats `best` for the next chain link:
-/// fewer period shifts wins; ties prefer the natural (non-reversed) direction.
-pub(super) fn is_better(
-    best: Option<(usize, bool, i64, i64)>,
-    cand: (usize, bool, i64, i64),
-    _u_per: f64,
-    _v_per: f64,
-) -> bool {
-    match best {
-        None => true,
-        Some((_, brev, bku, bkv)) => {
-            let bcost = bku.unsigned_abs() + bkv.unsigned_abs();
-            let cost = cand.2.unsigned_abs() + cand.3.unsigned_abs();
-            cost < bcost || (cost == bcost && !cand.1 && brev)
-        }
-    }
-}
-
-/// The integer period offsets `(ku, kv)` such that `a + (ku*u_per, kv*v_per)`
-/// equals `b` within tolerance; `None` when no such offsets exist.
-pub(super) fn wrap_offset(a: &GpPnt2d, b: &GpPnt2d, u_per: f64, v_per: f64) -> Option<(i64, i64)> {
-    let du = b.x() - a.x();
-    let dv = b.y() - a.y();
-    let tol = 1e-6;
-    let ku = if u_per > 0.0 && u_per.is_finite() {
-        let k = (du / u_per).round();
-        if (du - k * u_per).abs() <= tol * (1.0 + u_per.abs()) {
-            k as i64
-        } else {
-            return None;
-        }
-    } else if du.abs() <= tol {
-        0
-    } else {
-        return None;
-    };
-    let kv = if v_per > 0.0 && v_per.is_finite() {
-        let k = (dv / v_per).round();
-        if (dv - k * v_per).abs() <= tol * (1.0 + v_per.abs()) {
-            k as i64
-        } else {
-            return None;
-        }
-    } else if dv.abs() <= tol {
-        0
-    } else {
-        return None;
-    };
-    Some((ku, kv))
-}
-
-/// Translate a point by the periodic offset `(ku, kv)`.
-pub(super) fn shift_pnt(p: &GpPnt2d, ku: i64, kv: i64, u_per: f64, v_per: f64) -> GpPnt2d {
-    let du = if u_per > 0.0 && u_per.is_finite() {
-        ku as f64 * u_per
-    } else {
-        0.0
-    };
-    let dv = if v_per > 0.0 && v_per.is_finite() {
-        kv as f64 * v_per
-    } else {
-        0.0
-    };
-    GpPnt2d::new(p.x() + du, p.y() + dv)
-}
-
-/// Remove consecutive duplicate points (degenerate zero-length segments).
-pub(super) fn dedup_ring(pts: &[GpPnt2d]) -> Vec<GpPnt2d> {
-    let mut out: Vec<GpPnt2d> = Vec::with_capacity(pts.len());
-    for &p in pts {
-        if let Some(&last) = out.last() {
-            if p.distance(&last) < 1e-9 {
-                continue;
-            }
-        }
-        out.push(p);
-    }
-    out
-}
-
 /// Fold `u` into `[umin, umax]` by adding/subtracting whole periods
 /// (`GeomInt::AdjustPeriodic` semantics). Returns `(folded, offset)`.
 pub(super) fn adjust_periodic(u: f64, umin: f64, umax: f64, period: f64) -> (f64, f64) {
