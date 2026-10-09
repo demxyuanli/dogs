@@ -7,10 +7,12 @@
 //! nearest IN hit's CS transition decides IN/OUT (`Trans`); |W| <= Tol is ON.
 
 use occt_core::bnd::BndBox;
-use occt_core::gp::{GpDir, GpLin, GpPnt, GpPnt2d, GpVec};
-use occt_core::precision::{CONFUSION, PCONFUSION};
+use occt_core::gp::{GpDir, GpDir2d, GpLin, GpLin2d, GpPnt, GpPnt2d, GpVec, GpVec2d};
+use occt_core::precision::{CONFUSION, INFINITE, PCONFUSION};
 
 use crate::abs::Orientation;
+use crate::boptools_2d::curve_on_surface_range;
+use crate::brep_class::{BRepClassEdge, BRepClassFacePassiveClassifier};
 use crate::brep_extrema::closest_point_on_edge;
 use crate::brep_surface::{face_uv_bounds, surface_normal};
 use crate::brep_tool::BRepTool;
@@ -18,7 +20,7 @@ use crate::fclass2d::{FaceState, FClass2d};
 use crate::int_curves_face::{FaceIntersector, Transition};
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools_full::{faces_of, vertices_of};
+use crate::topo_tools_full::{edges_of_wire, faces_of, vertices_of, wires_of_face};
 
 /// Probe line produced by `SolidExplorer::OtherSegment`.
 struct Segment {
@@ -244,13 +246,115 @@ fn find_a_point_in_the_face(face: &Face) -> Option<(GpPnt, f64, f64)> {
             return Some((surf.d0(u, v), u, v));
         }
     }
-    let mut ctx = crate::int_tools_full::IntToolsContext::new();
-    let (p, uv) = crate::algo_tools3d::point_in_face(face, &mut ctx).ok()?;
-    if cl.perform_tab_orien(uv) == FaceState::In {
-        Some((p, uv.x(), uv.y()))
-    } else {
-        None
+    // Fallback once the grid above finds no IN sample: `PointInTheFace` hands
+    // over to `FindAPointInTheFace` (`BRepClass3d_SolidExplorer.cxx:418`).
+    find_a_point_in_the_face_occt(face, &cl, PARAM_ON_EDGE_INIT)
+}
+
+/// `myParamOnEdge` after `InitShape` (`BRepClass3d_SolidExplorer.cxx:905`).
+/// The retry ladder of `OtherSegment` (`cxx:700-776`) is not ported, so only
+/// this first value is used.
+const PARAM_ON_EDGE_INIT: f64 = 0.512345;
+
+/// `TopExp_Explorer` edge occurrence test `OtherEdge != Edge` (`cxx:127`).
+/// TShape and orientation are compared; `TopLoc_Location` has no equality in
+/// this port, so the location is not part of the test.
+fn is_same_edge_occurrence(a: &Edge, b: &Edge) -> bool {
+    a.0.same_tshape(&b.0) && a.0.orientation() == b.0.orientation()
+}
+
+/// `FClassifier.Compare(AEdge, Or)` followed by the `ClosestIntersection`
+/// update of `ParamInit` / `APointExist` (`cxx:129-138` and `cxx:144-153`).
+fn passive_compare(
+    fc: &mut BRepClassFacePassiveClassifier,
+    edge: &Edge,
+    face: &Face,
+    param_init: &mut f64,
+    apoint_exist: &mut bool,
+) {
+    let ae = BRepClassEdge::from_edge_face(edge.clone(), face.clone());
+    fc.compare(&ae, edge.0.orientation());
+    if fc.closest_intersection() != 0 && *param_init > fc.parameter() {
+        *param_init = fc.parameter();
+        *apoint_exist = true;
     }
+}
+
+/// Port of `BRepClass3d_SolidExplorer::FindAPointInTheFace`
+/// (`BRepClass3d_SolidExplorer.cxx:74-190`). For each edge of the forward face
+/// a probe starts at the edge point at `param` and runs along the inward
+/// normal of the edge tangent. The nearest hit over the other edges comes from
+/// `BRepClass_FacePassiveClassifier`; the probe is shrunk by `0.41234` until it
+/// is IN the face with a regular surface normal.
+fn find_a_point_in_the_face_occt(
+    face: &Face,
+    cl: &FClass2d,
+    param: f64,
+) -> Option<(GpPnt, f64, f64)> {
+    const TOL_INIT: f64 = 0.00001;
+    let face = Face(face.0.oriented(Orientation::Forward));
+    let surf = BRepTool::face_surface(&face)?;
+    // `TopExp_Explorer(face, TopAbs_EDGE)`: cumulated orientations, duplicates kept.
+    let edges: Vec<Edge> = wires_of_face(&face)
+        .iter()
+        .flat_map(|w| edges_of_wire(w))
+        .collect();
+    let nb_edges = edges.len();
+    for edge in &edges {
+        // `BRepAdaptor_Curve2d c(Edge, face)`; a null curve is skipped (`cxx:91-95`).
+        let Some((pcurve, first, last)) = curve_on_surface_range(edge, &face) else {
+            continue;
+        };
+        let (p0, t) = pcurve.d1((last - first) * param + first);
+        // `cxx:101-108`: rotate the tangent by +90 deg for FORWARD, else -90 deg.
+        let rot = if edge.0.orientation() == Orientation::Forward {
+            GpVec2d::new(-t.y(), t.x())
+        } else {
+            GpVec2d::new(t.y(), -t.x())
+        };
+        // `T.Normalize()` throws on a zero vector (`cxx:115`).
+        let tang = rot.normalized().ok()?;
+        let p = GpPnt2d::new(p0.x() + TOL_INIT * tang.x(), p0.y() + TOL_INIT * tang.y());
+        let dir = GpDir2d::from_vec2d(&tang).ok()?;
+        let lin = GpLin2d::from_pnt_dir(p, dir);
+
+        let mut param_init = INFINITE;
+        let mut apoint_exist = false;
+        let mut fc = BRepClassFacePassiveClassifier::new();
+        // `FClassifier.Reset(gp_Lin2d(P, T), ParamInit, RealEpsilon())` (`cxx:118`).
+        fc.reset(&lin, param_init, f64::EPSILON);
+
+        for other in &edges {
+            // `OtherEdge.Orientation() != TopAbs_EXTERNAL && OtherEdge != Edge` (`cxx:127`).
+            if other.0.orientation() == Orientation::External || is_same_edge_occurrence(other, edge)
+            {
+                continue;
+            }
+            passive_compare(&mut fc, other, &face, &mut param_init, &mut apoint_exist);
+        }
+        // `if (aNbEdges == 1)` (`cxx:142-154`).
+        if nb_edges == 1 {
+            passive_compare(&mut fc, edge, &face, &mut param_init, &mut apoint_exist);
+        }
+
+        while apoint_exist {
+            param_init *= 0.41234;
+            let (uu, vv) = (p.x() + param_init * tang.x(), p.y() + param_init * tang.y());
+            // `BRepTopAdaptor_FClass2d::Perform` (`cxx:163-169`); TabOrien variant.
+            if cl.perform_tab_orien(GpPnt2d::new(uu, vv)) != FaceState::In {
+                return None;
+            }
+            let (pnt, d1u, d1v) = surf.d1(uu, vv);
+            // `theVecD1U.CrossMagnitude(theVecD1V) > gp::Resolution()` (`cxx:175`).
+            if d1u.cross(&d1v).magnitude() > f64::MIN_POSITIVE {
+                return Some((pnt, uu, vv));
+            }
+            if param_init < PCONFUSION {
+                return None;
+            }
+        }
+    }
+    None
 }
 
 fn finite_uv_of_face(face: &Face) -> Option<(f64, f64, f64, f64)> {
