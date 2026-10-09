@@ -102,14 +102,21 @@ fn face_uv_rect(face: &Face) -> Option<(f64, f64, f64, f64)> {
         let (a, z) = edge_vertices(&e);
         for v in [a, z].into_iter().flatten() {
             let p = vertex_position(&v);
-            // UNPORTED: `face_uv_rect` is a port-only fallback that brackets a
-            // face's UV box from its wire vertices; OCCT's `BRepTools::UVBounds`
-            // uses the stored pcurves (`BRepTools.cxx:64-75`), no projection.
-            let (u, vv) = brep_surface::surface_closest_params(surf.as_ref(), &p, 64, 64);
-            umin = umin.min(u);
-            umax = umax.max(u);
-            vmin = vmin.min(vv);
-            vmax = vmax.max(vv);
+            // OCCT's `BRepTools::UVBounds` reads the stored pcurves
+            // (`BRepTools.cxx:64-75`) and has no point-projection branch; this
+            // port-only fallback brackets the box from the wire vertices, mapped
+            // through OCCT's point-on-surface projection (`Extrema_ExtPS`).
+            let Some(ps) = occt_geom::geom_api::project_point_on_surface(
+                surf.as_ref(),
+                &p,
+                occt_core::precision::CONFUSION,
+            ) else {
+                continue;
+            };
+            umin = umin.min(ps.u);
+            umax = umax.max(ps.u);
+            vmin = vmin.min(ps.v);
+            vmax = vmax.max(ps.v);
         }
     }
     if !(umin.is_finite() && umax.is_finite() && vmin.is_finite() && vmax.is_finite()) {

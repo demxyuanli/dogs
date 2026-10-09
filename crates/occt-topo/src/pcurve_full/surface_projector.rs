@@ -475,8 +475,8 @@ fn analytic_basis(s: &dyn Surface) -> Option<Arc<dyn Surface>> {
 /// (`cxx:1346-1352`, extended by one resolution) and then polished with
 /// `SurfaceNewton` (`cxx:1390-1401`).
 /// [`occt_geom::extrema_surf`] ports both (`Extrema_GenExtPS` grid seeds +
-/// Newton on `F = ((S-P)·Su, (S-P)·Sv)`), so it replaces the coarse
-/// grid + axis-descent of `brep_surface::surface_closest_params`, whose
+/// Newton on `F = ((S-P)·Su, (S-P)·Sv)`), replacing the removed coarse
+/// grid + axis-descent projector, whose
 /// coordinate descent stalls ~1e-3 short along a curved valley.
 ///
 /// This is the `mpt[i] == 3`-independent numeric inversion the whole
@@ -2384,7 +2384,47 @@ pub fn project_curve_on_surface_perform(
     // `Geom2d_Line` / 2-pole pcurve OCCT stores for an isoparametric edge and
     // refills `myCache` from its two endpoints (`cxx:1122-1142`).
     let mut gl = super::projection_cache::GetLineOut::default();
-    if let Some(c2d) = super::projection_cache::get_line(surf, &pts3d, &t_vals, preci, cache, &mut gl) {
+    let trace_gl = std::env::var("IGES_TRACE").is_ok();
+    let hit = super::projection_cache::get_line(surf, &pts3d, &t_vals, preci, cache, &mut gl);
+    if trace_gl {
+        let a = &pts3d[0];
+        let b = &pts3d[pts3d.len() - 1];
+        eprintln!(
+            "TRACE getLine kind={:?} n={} cache_n={} hit={} is_recompute={} from_cache={} lin2d={} np2={} curve=({},{},{})-({},{},{}) probes=({:.4},{:.4})({:.4},{:.4})({:.4},{:.4})({:.4},{:.4})",
+            classify_surface_kind(surf),
+            pts3d.len(),
+            cache.len(),
+            hit.is_some(),
+            gl.is_recompute,
+            gl.is_from_cache,
+            hit.as_ref().map_or(false, |c| c.gp_lin2d().is_some()),
+            hit.as_ref().map_or(0, |c| c.bspline_poles2d().map_or(0, |(p, _)| p.len())),
+            a.x(), a.y(), a.z(),
+            b.x(), b.y(), b.z(),
+            gl.probes2d[0].x(), gl.probes2d[0].y(),
+            gl.probes2d[1].x(), gl.probes2d[1].y(),
+            gl.probes2d[2].x(), gl.probes2d[2].y(),
+            gl.probes2d[3].x(), gl.probes2d[3].y(),
+        );
+    }
+    if std::env::var("IGES_TRACE_GL").is_ok() && surf.gp_sphere().is_some() {
+        eprintln!(
+            "GLSPH is_recompute={} hit={} up={} vp={} uprd={:?} vprd={:?} tval0={:.17e} tvaln={:.17e} p0=({:.17e},{:.17e}) p1=({:.17e},{:.17e}) p2=({:.17e},{:.17e}) p3=({:.17e},{:.17e})",
+            gl.is_recompute,
+            hit.is_some(),
+            surf.is_u_periodic(),
+            surf.is_v_periodic(),
+            surf.u_period(),
+            surf.v_period(),
+            t_vals[0],
+            t_vals[t_vals.len() - 1],
+            gl.probes2d[0].x(), gl.probes2d[0].y(),
+            gl.probes2d[1].x(), gl.probes2d[1].y(),
+            gl.probes2d[2].x(), gl.probes2d[2].y(),
+            gl.probes2d[3].x(), gl.probes2d[3].y(),
+        );
+    }
+    if let Some(c2d) = hit {
         let change_cycle = cache.change_cycle(&pts3d[0], &pts3d[pts3d.len() - 1]);
         cache.store(&pts3d, &[gl.first2d, gl.last2d], change_cycle);
         return Some(c2d);

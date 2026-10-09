@@ -36,6 +36,29 @@ fn main() {
     // `model.shapes` can hold both a wrapper `Compound` and the `Solid` inside
     // it, so compounding every root would traverse the solid 2-3 times.
     let shape = model.shapes[0].shape.clone();
+    // TEMP: per-face occurrence orientation + bbox, to pair the OBJ winding
+    // clusters with the faces whose surface normal opposes the solid.
+    if std::env::args().any(|a| a == "--faccori") {
+        for (i, f) in faces_of(&shape).iter().enumerate() {
+            let bb = brep_bnd_lib::shape_bnd_box(&f.0);
+            let (b0, b1) = (bb.corner_min(), bb.corner_max());
+            println!(
+                "FACCORI face={} ori={:?} type={} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
+                i,
+                f.0.orientation(),
+                BRepTool::face_surface(f)
+                    .map(|s| tname(classify_surface(s.as_ref())))
+                    .unwrap_or("none"),
+                b0.x(),
+                b0.y(),
+                b0.z(),
+                b1.x(),
+                b1.y(),
+                b1.z()
+            );
+        }
+        return;
+    }
     if std::env::args().any(|a| a == "--occ") {
         use occt_topo::iterator::ShapeExplorer;
         let occ = ShapeExplorer::new(vec![shape.clone()], occt_topo::abs::ShapeType::Face).count();
@@ -382,6 +405,47 @@ fn main() {
                 b1.z()
             );
         }
+        return;
+    }
+    if std::env::args().any(|a| a == "--eshare") {
+        // Edge-sharing census: per model edge, how many pcurves (faces) reference
+        // it and how many pcurve samples it carries. An edge with one pcurve is
+        // not shared between two faces even though a coincident edge may exist.
+        let params = occt_topo::meshing::parameters::MeshParameters {
+            deflection: prs3d_get_deflection(&shape, 0.1),
+            angle: 20.0_f64.to_radians(),
+            ..Default::default()
+        };
+        let model = occt_topo::meshing::model_builder::ModelBuilder::build_model(&shape, &params)
+            .expect("build_model");
+        let mut unshared = 0usize;
+        let mut hist = std::collections::BTreeMap::new();
+        for i in 0..model.edges_nb() {
+            let e = model.edge(i).expect("edge");
+            let npc = e.pcurves_nb();
+            *hist.entry(npc).or_insert(0usize) += 1;
+            if npc <= 1 {
+                unshared += 1;
+            }
+            let bb = brep_bnd_lib::shape_bnd_box(e.edge());
+            let (b0, b1) = (bb.corner_min(), bb.corner_max());
+            let faces: Vec<usize> = (0..npc)
+                .filter_map(|p| e.pcurve(p).ok().map(|pc| pc.face()))
+                .collect();
+            println!(
+                "ESHARE edge={} pcurves={} faces={:?} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
+                i,
+                npc,
+                faces,
+                b0.x(),
+                b0.y(),
+                b0.z(),
+                b1.x(),
+                b1.y(),
+                b1.z()
+            );
+        }
+        println!("ESHARE total={} unshared={} hist={:?}", model.edges_nb(), unshared, hist);
         return;
     }
     if std::env::args().any(|a| a == "--fsurf") {

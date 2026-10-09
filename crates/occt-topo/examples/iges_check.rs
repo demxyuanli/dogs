@@ -12,7 +12,8 @@
 //!     (`IGESData_IGESWriter.cxx:903`), and every DE's `pstart`/`pcount`
 //!     (`cxx:834-835`) addresses that entity's own parameter cards;
 //!  3. the leading **pointer fields** of each composite entity resolve to
-//!     existing directories (102 curve list, 142 surface/curve3d, 144
+//!     existing directories (102 curve list, 140 offset basis, 142
+//!     surface/curve3d, 144
 //!     surface/outer+inner, 402 entity list, 192/194/196/198 point/axis/refdir,
 //!     120 axis/generatrix, 122 directrix);
 //!  4. the Terminate card's four counts equal the actual section sizes
@@ -58,6 +59,15 @@ fn main() {
             TopoBuilder::new().make_compound_of(&parts).0
         };
         let iges = write_shape_iges(&shape);
+        // Optional raw dump for manual inspection against OCCT's own output:
+        // set `IGES_DUMP` to a directory and each model's text is written there
+        // as `<name>.iges`. Off by default, so the gate's behaviour is unchanged.
+        if let Ok(dir) = std::env::var("IGES_DUMP") {
+            let _ = std::fs::write(
+                std::path::Path::new(&dir).join(format!("{name}.iges")),
+                &iges,
+            );
+        }
         let mut problems: Vec<String> = Vec::new();
         let mut counts: BTreeMap<char, usize> = BTreeMap::new();
         let mut p_by_seq: BTreeMap<usize, String> = BTreeMap::new();
@@ -121,7 +131,13 @@ fn main() {
             }
         }
         // (3) pointer fields
-        let de_set: HashSet<usize> = des.iter().map(|d| d.4).collect();
+        // In-model references name the referenced entity's **first Directory
+        // card** (`Interface_InterfaceModel::DNum` = `2 * Number(entity) - 1`,
+        // written through `DNum` by `IGESData_IGESWriter::Send`), so the set of
+        // valid pointer targets is the odd D-section line numbers. Checking
+        // against this set also rejects an even number (an entity's second
+        // Directory card) because it is not a legal reference target.
+        let de_set: HashSet<usize> = des.iter().map(|d| 2 * d.4 - 1).collect();
         // Directories nothing points at (roots are legitimately unreferenced).
         let mut referenced: HashSet<usize> = HashSet::new();
         for (ty, pstart, pcount, trsf, de) in &des {
@@ -162,6 +178,12 @@ fn main() {
                 // Reading only [2, 4] left every emitted UV curve looking
                 // unreferenced (same class as the T-85 pointer-table fix above).
                 142 => ptr_idx.extend([2usize, 3, 4]),
+                // 140 is "140,indicator.x,indicator.y,indicator.z,distance,surface;"
+                // (IGESGeom_ToolOffsetSurface::WriteOwnParams, :101-109), so the
+                // offset basis surface is the last field - the only reference the
+                // entity owns (OwnShared, :111-115). Reading no field left the basis
+                // of every 140 looking unreferenced.
+                140 => ptr_idx.push(5),
                 144 => {
                     if let Some(n) = f.get(3).and_then(|s| s.trim().parse::<usize>().ok()) {
                         ptr_idx.push(4);
@@ -224,9 +246,18 @@ fn main() {
         }
         let orphans: Vec<(usize, i32)> = des
             .iter()
-            .filter(|(_, _, _, _, de)| !referenced.contains(de))
+            .filter(|(_, _, _, _, de)| !referenced.contains(&(2 * *de - 1)))
             .map(|(ty, _, _, _, de)| (*de, *ty))
             .collect();
+        // Entity type histogram: the geometry contract of the written file
+        // (which IGES entities each basis surface / curve became). This is the
+        // alignment signal that a byte/geometry oracle would need; it is
+        // reported, not asserted.
+        let mut by_type: BTreeMap<i32, usize> = BTreeMap::new();
+        for (ty, _, _, _, _) in &des {
+            *by_type.entry(*ty).or_insert(0) += 1;
+        }
+        let types: Vec<String> = by_type.iter().map(|(t, n)| format!("{t}x{n}")).collect();
         if problems.is_empty() {
             println!(
                 "ok  {name}: DE={} P={} sections={counts:?} unreferenced={}",
@@ -234,6 +265,7 @@ fn main() {
                 p_by_seq.len(),
                 orphans.len()
             );
+            println!("    types: {}", types.join(" "));
             if !orphans.is_empty() {
                 let mut by_ty: BTreeMap<i32, usize> = BTreeMap::new();
                 for (_, ty) in &orphans {
@@ -247,6 +279,7 @@ fn main() {
             for p in problems.iter().take(6) {
                 println!("    {p}");
             }
+            println!("    types: {}", types.join(" "));
         }
     }
     if bad > 0 {

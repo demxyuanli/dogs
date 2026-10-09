@@ -113,7 +113,12 @@ pub fn make_pcurve_full(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, St
     let face_key = GeometryRegistry::shape_key(&face.0);
     let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
     if pcs.len() >= 2 {
-        let idx = if edge.0.orientation().is_reversed() { 1 } else { 0 };
+        // `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`, `:354-357`):
+        // a REVERSED face flips the edge before the closed-surface arm picks
+        // `PCurve2`.
+        let edge_rev = edge.0.orientation().is_reversed();
+        let face_rev = face.0.orientation().is_reversed();
+        let idx = usize::from(edge_rev != face_rev);
         return Ok(pcs[idx].clone());
     }
     if let Some(pc) = pcs.first() {

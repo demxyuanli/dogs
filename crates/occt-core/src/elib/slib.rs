@@ -3,9 +3,9 @@ use std::f64::consts::PI;
 
 use crate::gp::{
     GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpLin, GpPln, GpPnt, GpSphere, GpTorus, GpTrsf,
-    GpVec,
+    GpVec, GpXyz,
 };
-use crate::precision::RESOLUTION;
+use crate::precision::{COMPUTATIONAL, REAL_SMALL};
 
 fn pt_add2(o: &crate::gp::GpXyz, a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpPnt {
     GpPnt::from_xyz(&o.added(&a.multiplied(sa)).added(&b.multiplied(sb)))
@@ -22,12 +22,25 @@ fn pt_add3(
     GpPnt::from_xyz(&o.added(&a.multiplied(sa)).added(&b.multiplied(sb)).added(&c.multiplied(sc)))
 }
 
+/// `ElSLib.cxx:37-57` `normalizeAngle`.
+///
+/// `NEGATIVE_RESOLUTION` is `-Precision::Computational()` = `-DBL_EPSILON`
+/// (`Precision.hxx:192`), **not** `Precision::Resolution()`: a projected `y/x`
+/// of `-1.3e-14` (a point on a periodic surface's seam meridian, where `atan2`
+/// sees a few-ULP-negative `y`) is wrapped to `~2*PI` by OCCT but left negative
+/// and clipped to `0.` by a `1e-12` threshold. That clips the four `getLine`
+/// probes of a seam edge onto one meridian and turns the pcurve into a
+/// `Geom2d_Line` (IGES 110) where OCCT writes a `Geom2d_BSplineCurve` (126).
+///
+/// The upper test is `PIPI * (1.0 + gp::Resolution())` (`ElSLib.cxx:50`) with
+/// `gp::Resolution() == RealSmall() == DBL_MIN` (`gp.hxx:60`), so the factor is
+/// exactly `1.0` and the loop wraps everything strictly above `2*PI`.
 fn normalize_angle(mut u: f64) -> f64 {
     let two_pi = 2.0 * PI;
-    while u < -RESOLUTION {
+    while u < -COMPUTATIONAL {
         u += two_pi;
     }
-    while u > two_pi * (1.0 + RESOLUTION) {
+    while u > two_pi * (1.0 + REAL_SMALL) {
         u -= two_pi;
     }
     if u < 0.0 {
@@ -105,10 +118,14 @@ pub fn cone_value(co: &GpCone, u: f64, v: f64) -> GpPnt {
     )
 }
 
-/// `ElSLib::ConeParameters`.
+/// `ElSLib::ConeParameters` (`ElSLib.cxx:1573-1611`).
+///
+/// The apex guard is `|x| < gp::Resolution() && |y| < gp::Resolution()`
+/// (`ElSLib.cxx:1586`) with `gp::Resolution() == RealSmall() == DBL_MIN`, i.e.
+/// "exactly on the axis". A `1e-12` window would swallow points off the axis.
 pub fn cone_parameters(pos: &GpAx3, radius: f64, s_angle: f64, p: &GpPnt) -> (f64, f64) {
     let loc = to_local(pos, p);
-    let mut u = if loc.x().abs() < RESOLUTION && loc.y().abs() < RESOLUTION {
+    let mut u = if loc.x().abs() < REAL_SMALL && loc.y().abs() < REAL_SMALL {
         0.0
     } else if -radius > loc.z() * s_angle.tan() {
         (-loc.y()).atan2(-loc.x())
@@ -137,11 +154,18 @@ pub fn sphere_value(s: &GpSphere, u: f64, v: f64) -> GpPnt {
     )
 }
 
-/// `ElSLib::SphereParameters`.
+/// `ElSLib::SphereParameters` (`ElSLib.cxx:1615-1646`).
+///
+/// The pole guard is `l < gp::Resolution()` (`ElSLib.cxx:1627`) with
+/// `gp::Resolution() == RealSmall() == DBL_MIN`: only a point *exactly* on the
+/// axis takes the `U = 0` branch. With a `1e-12` window, a pole vertex whose
+/// `l` is a few `1e-16` (the usual case - the 3D point comes from `cos(3*PI/2)`,
+/// not from an exact zero) is forced to `U = 0` instead of OCCT's
+/// `atan2(y, x) = PI` feed into `normalizeAngle`.
 pub fn sphere_parameters(pos: &GpAx3, p: &GpPnt) -> (f64, f64) {
     let loc = to_local(pos, p);
     let l = (loc.x() * loc.x() + loc.y() * loc.y()).sqrt();
-    if l < RESOLUTION {
+    if l < REAL_SMALL {
         let v = if loc.z() > 0.0 {
             std::f64::consts::FRAC_PI_2
         } else {
@@ -168,7 +192,16 @@ pub fn torus_value(t: &GpTorus, u: f64, v: f64) -> GpPnt {
     )
 }
 
-/// `ElSLib::TorusParameters`.
+/// `ElSLib::TorusParameters` (`ElSLib.cxx:1649-1701`).
+///
+/// The `V` branch is `dx.AngleWithRef(dP, dx ^ DZ)` on the *normalized*
+/// `dPV` (`ElSLib.cxx:1688-1699`), guarded by `aMag <= gp::Resolution()`.
+/// It must not be folded into a closed form: `AngleWithRef` goes through
+/// `acos`/`asin` of the rounded normalized components, so a point that is
+/// mathematically on the torus at `V = PI` comes out a few ULP *below* `PI`.
+/// `BndLib::Add(gp_Torus)` then reads `floor(VMin / (PI/4))`
+/// (`BndLib.cxx:1559-1562`), so that residue changes the sampled
+/// cross-section ring set.
 pub fn torus_parameters(pos: &GpAx3, major: f64, minor: f64, p: &GpPnt) -> (f64, f64) {
     let loc = to_local(pos, p);
     let mut u = loc.y().atan2(loc.x());
@@ -188,8 +221,22 @@ pub fn torus_parameters(pos: &GpAx3, major: f64, minor: f64, p: &GpPnt) -> (f64,
         }
     }
     u = normalize_angle(u);
-    let radial = (loc.x() - major * u.cos()) * u.cos() + (loc.y() - major * u.sin()) * u.sin();
-    (u, loc.z().atan2(radial))
+    // `ElSLib.cxx:1686-1699`.
+    let cosu = u.cos();
+    let sinu = u.sin();
+    let dx = GpDir::from_xyz(&GpXyz::new(cosu, sinu, 0.0)).unwrap_or_else(|_| *pos.x_direction());
+    let dpv = GpVec::new(loc.x() - major * cosu, loc.y() - major * sinu, loc.z());
+    let mag = dpv.magnitude();
+    let mut v = if mag <= REAL_SMALL {
+        0.0
+    } else {
+        let d_p = GpDir::from_vec(&dpv).unwrap_or(dx);
+        let dz = GpDir::from_xyz(&GpXyz::new(0.0, 0.0, 1.0)).unwrap_or(dx);
+        let vref = dx.crossed(&dz).unwrap_or(dx);
+        dx.angle_with_ref(&d_p, &vref)
+    };
+    v = normalize_angle(v);
+    (u, v)
 }
 
 /// `ElSLib::SphereUIso` (`ElSLib.cxx:1738`).

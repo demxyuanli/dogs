@@ -45,8 +45,11 @@ pub use quadric::IntAnaQuadric;
 
 mod analytic_intersections;
 mod line_torus;
+#[path = "../intana_intconicquad.rs"]
+mod intconicquad;
 pub use analytic_intersections::*;
 pub use line_torus::*;
+pub use intconicquad::IntAnaIntConicQuad;
 
 #[cfg(test)]
 #[path = "tests.rs"]

@@ -246,14 +246,16 @@ pub(super) fn circle2d_val(c: &GpCirc2d, u: f64) -> GpPnt2d {
     GpPnt2d::new(o.x() + r * u.cos() * xd.x + r * u.sin() * yd.x, o.y() + r * u.cos() * xd.y + r * u.sin() * yd.y)
 }
 
-/// Point on a 2D ellipse: O + a·cos·xd − b·sin·yd (matches `Geom2d_Ellipse`).
+/// Point on a 2D ellipse: `O + a·cos·xd + b·sin·yd`
+/// (`ElCLib::EllipseValue`, `ElCLib.cxx:543-555`, and
+/// `Geom2d_Ellipse::EvalD0`, `Geom2d_Ellipse.cxx:256-259`).
 pub(super) fn ellipse2d_val(e: &GpElips2d, u: f64) -> GpPnt2d {
     let a = e.major_radius;
     let b = e.minor_radius;
     let o = e.pos.point;
     let xd = e.pos.vxdir;
     let yd = e.pos.vydir;
-    GpPnt2d::new(o.x() + a * u.cos() * xd.x - b * u.sin() * yd.x, o.y() + a * u.cos() * xd.y - b * u.sin() * yd.y)
+    GpPnt2d::new(o.x() + a * u.cos() * xd.x + b * u.sin() * yd.x, o.y() + a * u.cos() * xd.y + b * u.sin() * yd.y)
 }
 
 /// Point on a 2D hyperbola: O + a·cosh·xd + b·sinh·yd.
@@ -335,7 +337,11 @@ pub(super) fn ellipse_all2d(e: &GpElips2d, p: &GpPnt2d, uinf: f64, usup: f64) ->
     if v.magnitude() < CONFUSION && (a - b).abs() < CONFUSION {
         return Vec::new();
     }
-    let us = trig_roots_sincos(b * b - a * a, b * y, a * x, uinf, usup);
+    // `F(u) = (P - E(u))·E'(u) = (b² - a²)·cos·sin - b·y·cos + a·x·sin = 0`
+    // (`Extrema_ExtPElC2d.cxx:192`, `math_TrigonometricFunctionRoots(0,
+    // (b² - a²)/2, -b·y, a·x, 0, Uinf, Usup)`), in the
+    // `d·cos·sin + e·cos + f·sin` form `trig_roots_sincos` solves.
+    let us = trig_roots_sincos(b * b - a * a, -b * y, a * x, uinf, usup);
     us.into_iter().map(|u| pair2d(p, u, ellipse2d_val(e, u))).collect()
 }
 

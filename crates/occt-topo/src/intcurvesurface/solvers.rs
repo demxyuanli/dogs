@@ -1,53 +1,41 @@
 use super::prelude::*;
 use super::*;
+use occt_math::MathFunctionSetRoot;
 
-/// Surface `(u, v)` parameters of a point — `IntCurveSurface_InterUtils.pxx:901-925`
-/// (`ComputeParamsOnQuadric`): Plane / Cylinder / Cone / Sphere take
-/// `ElSLib::Parameters`; torus and non-quadric surfaces fall back to the
-/// sampling projector (OCCT's `default:` arm is a no-op because its templates
-/// are only instantiated for quadrics).
-/// Periodic U/V directions are wrapped into the surface's natural range.
-pub(super) fn surface_params(surface: &dyn Surface, geom: Option<&SurfaceGeom>, p: &GpPnt) -> (f64, f64) {
-    let (u0, _, _, _) = sample_bounds(surface);
-    if let Some(g) = geom {
-        match g {
-            // Plane and sphere frames are reconstructed from the surface's own
-            // natural parameterization, so the recovered (u, v) are exact.
-            SurfaceGeom::Plane { o, x, y, .. } => {
-                let d = GpVec::from_pnts(o, p);
-                return (d.dot(x), d.dot(y));
-            }
-            SurfaceGeom::Sphere { o, r, x, y, z } => {
-                let d = GpVec::from_pnts(o, p);
-                let u = wrap_periodic(d.dot(y).atan2(d.dot(x)), u0, 2.0 * std::f64::consts::PI);
-                let s = snap_pole(d.dot(z) / r);
-                return (u, s.asin());
-            }
-            // `IntCurveSurface_InterUtils.pxx:901-925` (`ComputeParamsOnQuadric`)
-            // takes the Cylinder / Cone parameters with `ElSLib::Parameters` on
-            // the surface's **own** placement (`SurfaceTool::Cylinder(surface)`).
-            // The reconstructed `SurfaceGeom` frame can sit at a different U
-            // origin, so read the placement off the surface itself.
-            SurfaceGeom::Cylinder { .. } => {
-                if let Some(cy) = surface.gp_cylinder() {
-                    return slib::cylinder_parameters(&cy.pos, p);
-                }
-            }
-            SurfaceGeom::Cone { .. } => {
-                if let Some(co) = surface.gp_cone() {
-                    return slib::cone_parameters(&co.pos, co.radius, co.semi_angle, p);
-                }
-            }
-            // OCCT's `ComputeParamsOnQuadric` switch has no Torus case: the
-            // `default: break` leaves `(u, v)` untouched, and the templates are
-            // only instantiated for quadrics. The port reaches this arm through
-            // the general path, so the sampling projector stays.
-            SurfaceGeom::Torus { .. } => {}
-        }
+/// Surface `(u, v)` parameters of a point — `IntCurveSurface_InterUtils.pxx:899-925`
+/// (`ComputeParamsOnQuadric`): switch on `Adaptor3d_Surface::GetType()` and take
+/// `ElSLib::Parameters` on the surface's **own** placement
+/// (`SurfaceTool::Plane/Cylinder/Cone/Sphere`). The port reads the placement off
+/// the surface's own gp accessors, so the parameters share the surface's U/V
+/// origin and are exact (a reconstructed frame can sit at a different origin).
+///
+/// OCCT's switch has no Torus case (`default: break`), but the line-torus arm
+/// reaches this helper through `ProcessLinTorus`, whose source
+/// `IntAna_IntLinTorus::Perform` stores the torus parameters from the same
+/// `ElSLib::Parameters(gp_Torus, P)` call (`IntAna_IntLinTorus.cxx:98-113`;
+/// consumed at `IntCurveSurface_InterUtils.pxx:1283-1316`), so Torus maps to
+/// that source.
+///
+/// Returns `None` for a surface outside the five elementary types. OCCT never
+/// selects this arm for such a surface (`Adaptor3d_Surface::GetType` routes it
+/// to the polygon/polyhedron path), so the caller must not invent parameters.
+pub(super) fn surface_params(surface: &dyn Surface, p: &GpPnt) -> Option<(f64, f64)> {
+    if let Some(pln) = surface.gp_pln() {
+        return Some(slib::plane_parameters(&pln.pos, p));
     }
-    // UNPORTED: no reconstructed geometry to pick a frame from, or a surface
-    // type outside OCCT's quadric switch.
-    surface_closest_params(surface, p, 24, 24)
+    if let Some(cyl) = surface.gp_cylinder() {
+        return Some(slib::cylinder_parameters(&cyl.pos, p));
+    }
+    if let Some(cone) = surface.gp_cone() {
+        return Some(slib::cone_parameters(&cone.pos, cone.radius(), cone.semi_angle(), p));
+    }
+    if let Some(sph) = surface.gp_sphere() {
+        return Some(slib::sphere_parameters(&sph.pos, p));
+    }
+    if let Some(tor) = surface.gp_torus() {
+        return Some(slib::torus_parameters(&tor.pos, tor.major_radius(), tor.minor_radius(), p));
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +172,11 @@ pub fn perform_curve_surface(
     // calls `HICS.Perform(HLL, Hsurface)` with no polygon when the surface is
     // a plane/quadric. The sampling fallback needs a finite interval.
     let finite_window = t0.is_finite() && t1.is_finite();
+    // `IntCurveSurface_InterImpl::PerformBounds` (`Inter.pxx:105-182`) routes
+    // every non-quadric surface (torus, B-spline, offset, ...) through the
+    // polygon-polyhedron interference regardless of the curve type; only
+    // plane / cylinder / cone / sphere have the analytic quadric arms.
+    let polyhedron_path = matches!(surface_kind, SurfaceKind::Torus | SurfaceKind::Other);
     if curve_kind != CurveKind::Other {
         if let Some((mut pts, mut segs)) = geom
             .as_ref()
@@ -191,12 +184,23 @@ pub fn perform_curve_surface(
         {
             points.append(&mut pts);
             segments.append(&mut segs);
+        } else if polyhedron_path && finite_window {
+            let mut pts = polyhedron_curve_surface(curve, surface, uv);
+            points.append(&mut pts);
         } else if finite_window {
-            let mut pts = general_curve_surface(curve, surface, geom.as_ref(), t0, t1, uv, GENERAL_TOL);
+            // `InternalPerformCurveQuadric` (`Inter.pxx:423-439` +
+            // `IntCurveSurface_InterUtils.pxx:1243-1274`): non-conic curve
+            // against a plane / cylinder / cone / sphere.
+            let mut pts = quadric_curve_exact(curve, surface, geom.as_ref(), uv);
             points.append(&mut pts);
         }
+    } else if polyhedron_path && finite_window {
+        let mut pts = polyhedron_curve_surface(curve, surface, uv);
+        points.append(&mut pts);
     } else if finite_window {
-        let mut pts = general_curve_surface(curve, surface, geom.as_ref(), t0, t1, uv, GENERAL_TOL);
+        // `InternalPerformCurveQuadric` (`Inter.pxx:423-439` +
+        // `IntCurveSurface_InterUtils.pxx:1243-1274`).
+        let mut pts = quadric_curve_exact(curve, surface, geom.as_ref(), uv);
         points.append(&mut pts);
     } else {
         return Err("perform_curve_surface: unbounded curve parameter range".into());
@@ -260,6 +264,101 @@ pub(super) fn effective_uv_range(surface: &dyn Surface, uv: (f64, f64, f64, f64)
     Ok((u0, u1, v0, v1))
 }
 
+/// Whether `(kind, geom)` is an analytic conic/quadric arm that OCCT routes
+/// through `IntAna_IntConicQuad`.
+///
+/// `PerformConicSurfCircle` (`IntCurveSurface_Inter.pxx:711-759`),
+/// `PerformConicSurfEllipse` (`:761-809`), `PerformConicSurfParabola`
+/// (`:811-887`) and `PerformConicSurfHyperbola` (`:890-966`) each switch on
+/// `SurfaceTool::GetType` and hand the conic plus the surface quadric to
+/// `IntAna_IntConicQuad`. The arms already solved directly in
+/// [`perform_conic_surf`] (`line` against Plane/Cylinder/Cone/Sphere/Torus,
+/// `circle`/`ellipse` against Plane, `circle` against Sphere) are excluded:
+/// they reach the same result with the same `IntAna` formulas, so they keep
+/// their existing exact solves. Everything else in the four switches is
+/// dispatched to `IntAna_IntConicQuad`.
+fn uses_int_ana(kind: CurveKind, geom: &SurfaceGeom) -> bool {
+    match (kind, geom) {
+        (CurveKind::Circle, SurfaceGeom::Cylinder { .. })
+        | (CurveKind::Circle, SurfaceGeom::Cone { .. })
+        | (CurveKind::Ellipse, SurfaceGeom::Cylinder { .. })
+        | (CurveKind::Ellipse, SurfaceGeom::Cone { .. })
+        | (CurveKind::Ellipse, SurfaceGeom::Sphere { .. })
+        | (CurveKind::Parabola, SurfaceGeom::Plane { .. })
+        | (CurveKind::Parabola, SurfaceGeom::Cylinder { .. })
+        | (CurveKind::Parabola, SurfaceGeom::Cone { .. })
+        | (CurveKind::Parabola, SurfaceGeom::Sphere { .. })
+        | (CurveKind::Hyperbola, SurfaceGeom::Plane { .. })
+        | (CurveKind::Hyperbola, SurfaceGeom::Cylinder { .. })
+        | (CurveKind::Hyperbola, SurfaceGeom::Cone { .. })
+        | (CurveKind::Hyperbola, SurfaceGeom::Sphere { .. }) => true,
+        _ => false,
+    }
+}
+
+/// `SurfaceTool::Plane/Cylinder/Cone/Sphere(theSurface)` as an
+/// `IntAna_Quadric` (`IntAna_IntConicQuad.hxx:41-48`): the implicit quadric
+/// the conic arms pass to `IntAna_IntConicQuad`. The conic/plane overloads of
+/// `IntAna_IntConicQuad` only forward to this same quadric solve
+/// (`IntAna_IntConicQuad.cxx:562-575`), so the port calls the quadric
+/// constructor directly.
+fn surface_quadric(surface: &dyn Surface) -> Option<IntAnaQuadric> {
+    if let Some(p) = surface.gp_pln() {
+        return Some(IntAnaQuadric::from_plane(&p));
+    }
+    if let Some(c) = surface.gp_cylinder() {
+        return Some(IntAnaQuadric::from_cylinder(&c));
+    }
+    if let Some(c) = surface.gp_cone() {
+        return Some(IntAnaQuadric::from_cone(&c));
+    }
+    if let Some(s) = surface.gp_sphere() {
+        return Some(IntAnaQuadric::from_sphere(&s));
+    }
+    None
+}
+
+/// `IntCurveSurface_InterUtils::ProcessIntAna` (`IntCurveSurface_InterUtils.pxx:1188-1227`)
+/// plus `IntCurveSurface_HInter::AppendIntAna` (`IntCurveSurface_Inter.pxx:967-1002`):
+/// every `IntAna_IntConicQuad` point becomes an intersection point through
+/// `ComputeAppendPoint`, after its surface parameters are read by
+/// `ComputeParamsOnQuadric`.
+///
+/// `ProcessIntAna` sets `theIsParallel` and appends no point when the conic is
+/// in the quadric or parallel to it; `IntCurvesFace_Intersector` reads that
+/// back as `IsParallel()` (`IntCurvesFace_Intersector.cxx:361`) and the port
+/// represents it by the `On` segment (`int_curves_face.rs:171`).
+fn process_int_ana(
+    curve: &dyn Curve,
+    surface: &dyn Surface,
+    geom: &SurfaceGeom,
+    ia: &IntAnaIntConicQuad,
+    t0: f64,
+    t1: f64,
+    uv: (f64, f64, f64, f64),
+) -> (Vec<IntersectionPoint>, Vec<IntersectionSegment>) {
+    if !ia.is_done() {
+        return (Vec::new(), Vec::new());
+    }
+    if ia.is_in_quadric() || ia.is_parallel() {
+        return (Vec::new(), on_surface_segment(curve, surface, t0, t1));
+    }
+    let mut pts = Vec::new();
+    for i in 1..=ia.nb_points() {
+        let w = ia.param_on_conic(i);
+        // The analytic solve searches the conic's own period, so the caller's
+        // parameter window is the only filter left (same window the direct
+        // arms apply to their roots).
+        if w < t0 - ANALYTIC_TOL || w > t1 + ANALYTIC_TOL {
+            continue;
+        }
+        if let Some(pt) = compute_append_point(curve, surface, Some(geom), w, uv, ANALYTIC_TOL) {
+            pts.push(pt);
+        }
+    }
+    (pts, Vec::new())
+}
+
 /// Analytic dispatch for conic curves against quadric surfaces. Returns
 /// `None` when the combination has no analytic solve (caller falls back to the
 /// general path).
@@ -273,6 +372,34 @@ pub(super) fn perform_conic_surf(
     uv: (f64, f64, f64, f64),
 ) -> Option<(Vec<IntersectionPoint>, Vec<IntersectionSegment>)> {
     let empty = (Vec::new(), Vec::new());
+
+    // `IntAna_IntConicQuad` arms of the four `PerformConicSurf*` switches.
+    if uses_int_ana(kind, geom) {
+        let Some(quad) = surface_quadric(surface) else {
+            return Some(empty);
+        };
+        let ia = match kind {
+            CurveKind::Circle => match curve.gp_circ() {
+                Some(c) => IntAnaIntConicQuad::circle_quadric(&c, &quad),
+                None => return Some(empty),
+            },
+            CurveKind::Ellipse => match curve.gp_ellipse() {
+                Some(e) => IntAnaIntConicQuad::ellipse_quadric(&e, &quad),
+                None => return Some(empty),
+            },
+            CurveKind::Parabola => match curve.gp_parabola() {
+                Some(p) => IntAnaIntConicQuad::parabola_quadric(&p, &quad),
+                None => return Some(empty),
+            },
+            CurveKind::Hyperbola => match curve.gp_hyperbola() {
+                Some(h) => IntAnaIntConicQuad::hyperbola_quadric(&h, &quad),
+                None => return Some(empty),
+            },
+            _ => return Some(empty),
+        };
+        return Some(process_int_ana(curve, surface, geom, &ia, t0, t1, uv));
+    }
+
     let result = match (kind, geom) {
         (CurveKind::Line, SurfaceGeom::Plane { o, n, .. }) => {
             let (loc, v) = match line_geometry(curve) {
@@ -356,6 +483,12 @@ pub(super) fn perform_conic_surf(
             // so the Y coefficient carries the same sign as `b`.
             trig_solve(a * n.dot(&x), b * n.dot(&y), n.dot(&dq), t0, t1, ANALYTIC_TOL)
         }
+        // `PerformConicSurfParabola` / `PerformConicSurfHyperbola`
+        // (`IntCurveSurface_Inter.pxx:811-966`) default arm: the quadric
+        // Plane / Cylinder / Cone / Sphere cases were taken above by
+        // `uses_int_ana`, so any other surface falls through to the general
+        // (polygon/polyhedron) arm, exactly as OCCT's `default` does.
+        (CurveKind::Parabola, _) | (CurveKind::Hyperbola, _) => return None,
         _ => return None,
     };
 
@@ -372,7 +505,7 @@ pub(super) fn perform_conic_surf(
                 .collect();
             (pts, Vec::new())
         }
-        SolveResult::OnSurface => (Vec::new(), on_surface_segment(curve, surface, geom, t0, t1)),
+        SolveResult::OnSurface => (Vec::new(), on_surface_segment(curve, surface, t0, t1)),
         SolveResult::None => (Vec::new(), Vec::new()),
     })
 }
@@ -381,14 +514,17 @@ pub(super) fn perform_conic_surf(
 pub(super) fn on_surface_segment(
     curve: &dyn Curve,
     surface: &dyn Surface,
-    geom: &SurfaceGeom,
     t0: f64,
     t1: f64,
 ) -> Vec<IntersectionSegment> {
     let p0 = curve.d0(t0);
     let p1 = curve.d0(t1);
-    let (u0, v0) = surface_params(surface, Some(geom), &p0);
-    let (u1, v1) = surface_params(surface, Some(geom), &p1);
+    let Some((u0, v0)) = surface_params(surface, &p0) else {
+        return Vec::new();
+    };
+    let Some((u1, v1)) = surface_params(surface, &p1) else {
+        return Vec::new();
+    };
     let a = IntersectionPoint::new(t0, u0, v0, p0, State::On);
     let b = IntersectionPoint::new(t1, u1, v1, p1, State::On);
     vec![IntersectionSegment::new(a, b)]
@@ -406,17 +542,23 @@ pub(super) fn compute_append_point(
     tol: f64,
 ) -> Option<IntersectionPoint> {
     let pnt = curve.d0(w);
-    let (su, sv) = surface_params(surface, geom, &pnt);
+    let Some((su, sv)) = surface_params(surface, &pnt) else {
+        return None;
+    };
     let (u0, u1, v0, v1) = uv;
     if su < u0 - tol || su > u1 + tol || sv < v0 - tol || sv > v1 + tol {
         return None;
     }
     // Validate the point lies on the surface. Analytic points are checked
     // against the quadric's implicit equation (exact, and independent of the
-    // reported (u, v)); the general path uses the normal (signed) distance.
+    // reported (u, v)). Without a reconstructed quadric there is nothing to
+    // check against: OCCT's `ComputeAppendPoint` (`InterUtils.pxx:1116-1176`)
+    // itself only validates the parameter windows and periodicity, never a
+    // point-on-surface residual, and the `GetType`-based dispatch above never
+    // reaches this with a non-elementary surface.
     let on_surface = match geom {
         Some(g) => quadric_on_surface(g, &pnt, tol.max(1e-6)),
-        None => signed_dist(surface, None, &pnt).abs() <= tol.max(1e-6),
+        None => true,
     };
     if !on_surface {
         return None;
@@ -555,155 +697,151 @@ pub(super) fn compute_state(
 }
 
 // ---------------------------------------------------------------------------
-// General path (sampling + bisection)
+// Quadric arm (exact roots of the implicit distance)
 // ---------------------------------------------------------------------------
 
-/// Signed distance from a point to `surface`: positive when the point is on the
-/// side of the surface normal, negative otherwise. When the reconstructed
-/// quadric geometry is available its exact normal is used (the trait-level
-/// `surface_normal` finite-difference fallback is ill-defined on unbounded
-/// parameter directions); otherwise the sampling normal is used.
-pub(super) fn signed_dist(surface: &dyn Surface, geom: Option<&SurfaceGeom>, p: &GpPnt) -> f64 {
-    // UNPORTED: this is the port-only general sampling path (see the module
-    // docs); OCCT's general `IntCurveSurface` path takes its (u, v) from the
-    // polyhedron/polygon (`IntCurveSurface_InterUtils.pxx:740-781`), not from
-    // `Extrema_ExtPS`. Grid stays.
-    let (su, sv) = surface_closest_params(surface, p, 16, 16);
-    let q = surface.d0(su, sv);
-    let n = match geom.and_then(|g| quadric_normal(g, p)) {
-        Some(n) => n,
-        None => surface_normal(surface, su, sv),
-    };
-    let d = GpVec::from_pnts(&q, p);
-    let nm = n.magnitude();
-    if nm < 1e-12 {
-        d.magnitude()
-    } else {
-        d.dot(&n) / nm
-    }
-}
-
-/// General sampling path: uniform curve sampling, sign-change bisection for
-/// transverse crossings, golden-section refinement of near-zero distance
-/// minima for tangencies.
-pub(super) fn general_curve_surface(
+/// `InternalPerformCurveQuadric` (`Inter.pxx:423-439`) via
+/// `IntCurveSurface_InterUtils::PerformCurveQuadric`
+/// (`IntCurveSurface_InterUtils.pxx:1243-1274`): a non-conic curve against a
+/// plane / cylinder / cone / sphere.
+///
+/// `TheQuadCurvExactHInter` runs `math_FunctionAllRoots` on the signed distance
+/// `Q(w)` over each C1 interval of the curve; every returned root becomes an
+/// intersection point through `ComputeAppendPoint`. OCCT searches the curve's
+/// own range (no caller window) and lets `ComputeAppendPoint` filter by the
+/// surface box, so no curve-parameter filter is applied here.
+pub(super) fn quadric_curve_exact(
     curve: &dyn Curve,
     surface: &dyn Surface,
     geom: Option<&SurfaceGeom>,
-    t0: f64,
-    t1: f64,
     uv: (f64, f64, f64, f64),
-    tol: f64,
 ) -> Vec<IntersectionPoint> {
-    let n = 512usize;
-    let mut points: Vec<IntersectionPoint> = Vec::new();
-    let mut prev_u = t0;
-    let mut prev_s = signed_dist(surface, geom, &curve.d0(t0));
-    for i in 1..=n {
-        let u = t0 + (t1 - t0) * i as f64 / n as f64;
-        let s = signed_dist(surface, geom, &curve.d0(u));
-        if prev_s * s < 0.0 {
-            // Transverse crossing.
-            if let Some(w) = bisect_root(curve, surface, geom, prev_u, u, prev_s, tol) {
-                if let Some(pt) = compute_append_point(curve, surface, geom, w, uv, tol) {
-                    points.push(pt);
-                }
-            }
-        } else if s.abs() <= tol.max(1e-6) && prev_s.abs() > s.abs() {
-            // Near-zero minimum → likely tangency.
-            if let Some(w) = refine_min(curve, surface, geom, prev_u, u, tol) {
-                if let Some(mut pt) = compute_append_point(curve, surface, geom, w, uv, tol) {
-                    pt.state = State::On;
-                    points.push(pt);
-                }
-            }
-        }
-        prev_u = u;
-        prev_s = s;
+    let mut out: Vec<IntersectionPoint> = Vec::new();
+    let exact = TheQuadCurvExactHInter::new(surface, curve);
+    if !exact.is_done() {
+        return out;
     }
-    points
+    let nb_roots = exact.nb_roots();
+    for i in 1..=nb_roots {
+        let w = exact.root(i);
+        if let Some(pt) = compute_append_point(curve, surface, geom, w, uv, ANALYTIC_TOL) {
+            out.push(pt);
+        }
+    }
+    out
 }
 
-/// Bisect a sign change of the signed distance over `[ua, ub]`.
-pub(super) fn bisect_root(
+// ---------------------------------------------------------------------------
+// General path (polyhedron interference + exact root refinement)
+// ---------------------------------------------------------------------------
+
+/// `IntCurveSurface_InterImpl::PerformBounds` default arm plus
+/// `InternalPerformPolygonBounds` / `InternalPerform`
+/// (`IntCurveSurface_Inter.pxx:105-182, 262-523`) for a non-quadric surface:
+///
+/// 1. `DecomposeSurfaceIntervals` splits the surface into C2 rectangles;
+/// 2. `SamplePars` + `ThePolygonOfHInter` build the curve polygon per C2
+///    interval of the curve;
+/// 3. `ThePolyhedronOfHInter` builds the surface grid with the
+///    `Adaptor3d_HSurfaceTool::NbSamplesU/V` counts;
+/// 4. `TheInterferenceOfHInter` collects start points, which
+///    `TheExactHInter` refines with `math_FunctionSetRoot`.
+///
+/// Unlike the sampling fallback this never projects a point onto the surface:
+/// the `(u, v)` come straight out of the polyhedron
+/// (`SectionPointToParameters`).
+pub(super) fn polyhedron_curve_surface(
     curve: &dyn Curve,
     surface: &dyn Surface,
-    geom: Option<&SurfaceGeom>,
-    ua: f64,
-    ub: f64,
-    sa: f64,
-    tol: f64,
-) -> Option<f64> {
-    let mut lo = ua;
-    let mut hi = ub;
-    let mut flo = sa;
-    for _ in 0..80 {
-        let mid = 0.5 * (lo + hi);
-        let sm = signed_dist(surface, geom, &curve.d0(mid));
-        if flo * sm <= 0.0 {
-            hi = mid;
-        } else {
-            lo = mid;
-            flo = sm;
-        }
-        if (hi - lo).abs() < 1e-10 {
-            break;
-        }
-        if sm.abs() < 1e-10 {
-            break;
-        }
-    }
-    let w = 0.5 * (lo + hi);
-    let p = curve.d0(w);
-    if signed_dist(surface, geom, &p).abs() <= tol.max(1e-6) {
-        Some(w)
-    } else {
-        None
-    }
-}
+    uv: (f64, f64, f64, f64),
+) -> Vec<IntersectionPoint> {
+    /// `defl` / `NbMin` of `PerformBounds` (`Inter.pxx:155-157`).
+    const DEFL: f64 = 0.1;
+    const NB_MIN: usize = 10;
 
-/// Golden-section refinement of the unsigned distance minimum over `[lo, hi]`.
-pub(super) fn refine_min(
-    curve: &dyn Curve,
-    surface: &dyn Surface,
-    geom: Option<&SurfaceGeom>,
-    lo: f64,
-    hi: f64,
-    tol: f64,
-) -> Option<f64> {
-    let f = |u: f64| signed_dist(surface, geom, &curve.d0(u)).abs();
-    let (u, d) = golden_1d(&f, lo, hi, 1e-10);
-    if d <= tol.max(1e-6) {
-        Some(u)
-    } else {
-        None
-    }
-}
+    let mut intervals = Vec::new();
+    decompose_surface_intervals(surface, &mut intervals);
 
-/// Golden-section minimization of `f` over `[lo, hi]`. Returns `(argmin, min)`.
-pub(super) fn golden_1d<F: Fn(f64) -> f64>(f: &F, lo: f64, hi: f64, eps: f64) -> (f64, f64) {
-    pub(super) const GOLD: f64 = 0.618_033_988_749_894_9;
-    let mut a = lo;
-    let mut b = hi;
-    let mut c = b - GOLD * (b - a);
-    let mut d = a + GOLD * (b - a);
-    let mut fc = f(c);
-    let mut fd = f(d);
-    while (b - a) > eps {
-        if fc < fd {
-            b = d;
-            d = c;
-            fd = fc;
-            c = b - GOLD * (b - a);
-            fc = f(c);
+    let mut result: Vec<IntersectionPoint> = Vec::new();
+    for iv in &intervals {
+        let mut u1 = iv.u0;
+        let mut u2 = iv.u1;
+        let mut v1 = iv.v0;
+        let mut v2 = iv.v1;
+        clamp_uv_parameters(&mut u1, &mut u2, &mut v1, &mut v2);
+
+        // The port intersects one face's UV box rather than the whole surface,
+        // so the caller window is intersected with the C2 interval. Both the
+        // polyhedron (inside `InternalPerformPolygonBounds`) and the Newton
+        // domain (`ProcessSortedPoints`) receive this box.
+        let (cu0, cv0, cu1, cv1) = uv;
+        let (u1, u2) = (u1.max(cu0), u2.min(cu1));
+        let (v1, v2) = (v1.max(cv0), v2.min(cv1));
+        if u2 - u1 <= 1e-15 || v2 - v1 <= 1e-15 {
+            continue;
+        }
+
+        // `InternalPerformPolygonBounds` (`Inter.pxx:461-477`).
+        let mut nbsu = surface_nb_samples_u_range(surface, u1, u2);
+        let mut nbsv = surface_nb_samples_v_range(surface, v1, v2);
+        if nbsu > 40 {
+            nbsu = 40;
+        }
+        if nbsv > 40 {
+            nbsv = 40;
+        }
+        let polyhedron = ThePolyhedronOfHInter::new(surface, nbsu.max(1), nbsv.max(1), u1, v1, u2, v2);
+
+        // `PerformBounds` (`Inter.pxx:139-178`): one polygon per C2 interval.
+        let nb_intervals = curve.nb_intervals(2);
+        let mut pars_list: Vec<Vec<f64>> = Vec::new();
+        if nb_intervals > 1 {
+            let tab_w = curve.parameter_intervals(2);
+            for i in 0..nb_intervals as usize {
+                pars_list.push(sample_pars(curve, tab_w[i], tab_w[i + 1], DEFL, NB_MIN));
+            }
         } else {
-            a = c;
-            c = d;
-            fc = fd;
-            d = a + GOLD * (b - a);
-            fd = f(d);
+            pars_list.push(sample_pars(
+                curve,
+                curve.first_parameter(),
+                curve.last_parameter(),
+                DEFL,
+                NB_MIN,
+            ));
+        }
+
+        for pars in &pars_list {
+            if pars.len() < 2 {
+                continue;
+            }
+            let polygon = ThePolygonOfHInter::with_params(curve, pars);
+            let interference = TheInterferenceOfHInter::of_polygon_polyhedron(&polygon, &polyhedron);
+            let mut start_points = SortedStartPoints::new();
+            collect_interference_points(&interference, &polyhedron, &polygon, &mut start_points);
+            sort_start_points(&mut start_points);
+
+            // `InternalPerform` (`Inter.pxx:358-416`).
+            let func = TheCSFunctionOfHInter::new(surface, curve);
+            let mut exact = TheExactHInter::new(func, THE_TOLTANGENCY);
+            let mut rsnld = MathFunctionSetRoot::with_iterations(exact.function(), 100);
+
+            let mut pts: Vec<IntersectionPoint> = Vec::new();
+            process_sorted_points(
+                &mut exact,
+                &mut rsnld,
+                &start_points,
+                u1,
+                u2,
+                v1,
+                v2,
+                polygon.inf_parameter(),
+                polygon.sup_parameter(),
+                curve,
+                surface,
+                &mut pts,
+            );
+            result.extend(pts);
         }
     }
-    let x = 0.5 * (a + b);
-    (x, f(x))
+    result
 }

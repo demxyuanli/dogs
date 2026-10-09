@@ -19,16 +19,25 @@
 //! through it.
 //!
 //! UNPORTED in this module:
-//! * `ShapeAnalysis_TransferParametersProj::CopyNMVertex` (`Proj.cxx:562-710`
-//!   and `:715-803`): both overloads walk the vertex's
+//! * `ShapeAnalysis_TransferParametersProj::CopyNMVertex` (`Proj.cxx:562-710`,
+//!   the **edge** overload `(V, toEdge, fromEdge)`): it is not ported because
+//!   no caller is ported. Its callers are `ShapeFix_Wire::FixGap3d`
+//!   (`ShapeFix_Wire_1.cxx:812-818`, `:838-845`) / `FixGap2d` (`:1958`,
+//!   `:1988`), which are reached only from
+//!   `ShapeFix_Wireframe::FixWireGaps` (`ShapeFix_Wireframe.cxx:1051`,
+//!   `:1617`), plus `ShapeUpgrade_WireDivide.cxx:852`; `ShapeFix_Wireframe`
+//!   and `ShapeUpgrade_*` are not ported and are not part of the STEP
+//!   `FromSTEP` sequence (which runs only the `FixShape` op,
+//!   `STEPControl_Controller.cxx:201`). The walk of the vertex's
 //!   `BRep_PointRepresentation` list (`BRep_TVertex::ChangePoints`,
-//!   `BRep_PointOnCurve` / `BRep_PointOnSurface` / `BRep_PointOnCurveOnSurface`)
-//!   and rebuild it with `BRep_Builder::UpdateVertex`. This port stores vertex
+//!   `BRep_PointOnCurve` / `BRep_PointOnCurveOnSurface` /
+//!   `BRep_PointOnSurface`) also has no equivalent in the port, which stores vertex
 //!   geometry as a single point in the `GeometryRegistry` (no point
-//!   representations), so there is nothing to copy; none of the three wire
-//!   passes in scope calls it (`ShapeUpgrade_WireDivide.cxx:852`,
-//!   `ShapeFix_Wire_1.cxx:813`, `ShapeFix_Wireframe.cxx:1051`,
-//!   `ShapeFix_ComposeShell.cxx:3241` do, none of which is ported).
+//!   representations). Its projecting part (`ShapeAnalysis_Curve::Project` on
+//!   `C2`, `Proj.cxx:665-671`) and its tolerance update loop
+//!   (`Proj.cxx:675-709`) are therefore also unported. The **face** overload
+//!   (`Proj.cxx:715-802`) is ported as [`copy_nm_vertex_face`] for its one call
+//!   site, `ShapeFix_ComposeShell::MakeFacesOnPatch` (`cxx:3241`).
 //! * `CorrectParameter`'s `Geom2d_BSplineCurve` knot snap (`Proj.cxx:268-279`)
 //!   was UNPORTED while `Curve2d` had no knot sequence; **ported in batch 89**
 //!   (task T-15) through the new `Curve2d::bspline_knots2d` query — see
@@ -63,15 +72,18 @@ use super::shape_analysis_curve::{next_project, project_adaptor, project_range};
 /// UNPORTED: the `BRep_PointRepresentation` copy loop (`Proj.cxx:734-797`) and
 /// `BRep_Builder::UpdateVertex(V, U, V, Face, Tol)` (`Proj.cxx:800`) — this port
 /// stores vertex geometry as a single point (`GeometryRegistry`), so there is no
-/// representation list to copy. The vertex point/tolerance transfer and the
-/// `ValueOfUV` + `Gap` tolerance widening (`Proj.cxx:782-794`) are ported.
+/// representation list to carry over. `theV.Orientation()` is preserved by the
+/// clone (`cxx:731` `EmptyCopied` keeps the orientation). The `ValueOfUV` +
+/// `Gap` tolerance widening (`Proj.cxx:782-794`) is ported. Returns `None` for a
+/// vertex that is neither INTERNAL nor EXTERNAL (`Proj.cxx:720-723` returns a
+/// null `TopoDS_Vertex` there).
 pub fn copy_nm_vertex_face(v: &Vertex, to_face: &Face, _from_face: &Face) -> Option<Vertex> {
     if !matches!(v.0.orientation(), Orientation::Internal | Orientation::External) {
         return None; // cxx:720-723
     }
     // cxx:731: anewV = theV.EmptyCopied(); the port's vertex carries only its
     // point / tolerance / orientation, which Clone preserves.
-    let mut anew = v.clone();
+    let anew = v.clone();
     if let Some(s) = BRepTool::face_surface(to_face) {
         let apv = BRepTool::vertex_point(v);
         let (_p2d, gap) = surface_value_of_uv_with_gap(s.as_ref(), &apv, CONFUSION);

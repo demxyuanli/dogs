@@ -82,11 +82,19 @@ pub const MODELS: &[Model] = &[
     // bolt-on was removed because OCCT does not run `ShapeFix_Face::Perform` on
     // this path (specs/_a3n00_gap_analysis.md 9.219, proven by the link map), so
     // T0M's ratio moved 0.9995 -> 0.9786 (ours 188536.30 / occ 192658.64) while
-    // a3n00's F113 started meshing (mv 0 -> 223).
+    // a3n00's F113 started meshing (mv 0 -> 223). Re-measured at 9.625 (after
+    // `ShapeFix_Face::FixOrientation`): 0.99998 (192654.62 / 192658.64), 67524
+    // vs 67366 triangles - the tolerance is now slack, kept as-is. 9.626 wired
+    // `ShapeFix_IntersectionTool::FixSelfIntersectWire`: 67526 vs 67366
+    // (v 60641 vs 60548).
     Model { step: "occ/T0M.stp", occ: "occ/occ-T0M.obj", bbox_tol: Some(0.9), area_tol: Some(0.025) },
     // acs10: widened 0.05 -> 0.12 by the same T-93 (a) change (ratio 0.9846 ->
-    // 0.9025, ours 244773.63 / occ 271219.68).
+    // 0.9025, ours 244773.63 / occ 271219.68). Re-measured at 9.625: 1.00004
+    // (271230.61 / 271219.68), 46548 vs 46558 triangles. 9.626: 46544 vs 46558
+    // (v 37287 vs 37296).
     Model { step: "occ/acs10.stp", occ: "occ/occ-acs10.obj", bbox_tol: Some(1e-3), area_tol: Some(0.12) },
+    // TDB: 9.626 (FixSelfIntersectWire): 79912 vs 79977 faces
+    // (v 73702 vs 73544).
     Model { step: "occ/TDB.stp", occ: "occ/occ-TDB.obj", bbox_tol: Some(1e-3), area_tol: Some(0.02) },
     // a3n00: the tracked T-59/T-69 face classes (density 0.72); the wide area
     // tolerance encodes the missing coverage, not a meshing approximation.

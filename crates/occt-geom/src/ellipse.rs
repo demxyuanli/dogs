@@ -30,7 +30,15 @@ impl Curve for GeomEllipse {
     fn period(&self) -> f64 { 2.0 * std::f64::consts::PI }
     fn gp_ellipse(&self) -> Option<GpElips> { Some(self.pos.clone()) }
     fn continuity(&self) -> u8 { 6 }
+    /// `GeomAdaptor_Curve::Resolution`'s `GeomAbs_Ellipse` arm
+    /// (`GeomAdaptor_Curve.cxx:1133-1135`).
+    fn resolution(&self, r3d: f64) -> f64 { r3d / self.pos.major_radius.abs() }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
-    fn reverse(&mut self) { std::mem::swap(&mut self.pos.major_radius, &mut self.pos.minor_radius); }
+    /// `Geom_Ellipse::Reverse` -> `Geom_Conic::Reverse` (`Geom_Conic.cxx:23-28`):
+    /// reverse the frame's main direction.
+    fn reverse(&mut self) {
+        let z = self.pos.pos.direction().reversed();
+        self.pos.pos.set_direction(z);
+    }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
 }

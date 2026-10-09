@@ -1,7 +1,6 @@
 use crate::gp::ax1::GpAx1;
 use crate::gp::ax2::GpAx2;
 use crate::gp::ax3::GpAx3;
-use crate::gp::dir::GpDir;
 use crate::gp::pnt::GpPnt;
 use crate::gp::trsf::GpTrsf;
 use crate::gp::vec::GpVec;
@@ -99,18 +98,18 @@ impl GpCylinder {
         ]
     }
 
+    /// `gp_Cylinder::UReverse` (`gp_Cylinder.hxx:86`): `pos.YReverse()`.
     pub fn u_reverse(&mut self) {
-        self.pos.x_reverse();
-    }
-
-    pub fn v_reverse(&mut self) {
         self.pos.y_reverse();
     }
 
+    /// `gp_Cylinder::VReverse` (`gp_Cylinder.hxx:90`): `pos.ZReverse()`.
+    pub fn v_reverse(&mut self) {
+        self.pos.z_reverse();
+    }
+
     pub fn mirror_pnt(&mut self, p: &GpPnt) {
-        let mut t = GpTrsf::identity();
-        t.set_mirror_pnt(p);
-        self.transform(&t);
+        self.pos.mirror_pnt(p);
     }
 
     pub fn mirrored_pnt(&self, p: &GpPnt) -> GpCylinder {
@@ -120,9 +119,7 @@ impl GpCylinder {
     }
 
     pub fn mirror_ax1(&mut self, ax1: &GpAx1) {
-        let mut t = GpTrsf::identity();
-        t.set_mirror_ax1(ax1);
-        self.transform(&t);
+        self.pos.mirror_ax1(ax1);
     }
 
     pub fn mirrored_ax1(&self, ax1: &GpAx1) -> GpCylinder {
@@ -132,9 +129,7 @@ impl GpCylinder {
     }
 
     pub fn mirror_ax2(&mut self, ax2: &GpAx2) {
-        let mut t = GpTrsf::identity();
-        t.set_mirror_ax2(ax2);
-        self.transform(&t);
+        self.pos.mirror_ax2(ax2);
     }
 
     pub fn mirrored_ax2(&self, ax2: &GpAx2) -> GpCylinder {
@@ -144,9 +139,7 @@ impl GpCylinder {
     }
 
     pub fn rotate(&mut self, ax1: &GpAx1, angle: f64) {
-        let mut t = GpTrsf::identity();
-        let _ = t.set_rotation_ax1(ax1, angle);
-        self.transform(&t);
+        self.pos.rotate(ax1, angle);
     }
 
     pub fn rotated(&self, ax1: &GpAx1, angle: f64) -> GpCylinder {
@@ -156,10 +149,11 @@ impl GpCylinder {
     }
 
     pub fn scale(&mut self, p: &GpPnt, s: f64) {
-        let mut t = GpTrsf::identity();
-        let _ = t.set_scale(p, s);
-        self.radius *= s.abs();
-        self.transform(&t);
+        self.pos.scale(p, s);
+        self.radius *= s;
+        if self.radius < 0.0 {
+            self.radius = -self.radius;
+        }
     }
 
     pub fn scaled(&self, p: &GpPnt, s: f64) -> GpCylinder {
@@ -168,22 +162,13 @@ impl GpCylinder {
         result
     }
 
+    /// `gp_Cylinder::Transform` (`gp_Cylinder.hxx:229-237`).
     pub fn transform(&mut self, t: &GpTrsf) {
-        let mut loc = self.pos.location().coord;
-        t.transforms_xyz(&mut loc);
-        self.pos.set_location(GpPnt::from_xyz(&loc));
-
-        let mut x_xyz = *self.pos.x_direction().xyz();
-        t.transforms_xyz_dir(&mut x_xyz);
-        let mut y_xyz = *self.pos.y_direction().xyz();
-        t.transforms_xyz_dir(&mut y_xyz);
-
-        if let (Ok(xd), Ok(yd)) = (GpDir::from_xyz(&x_xyz), GpDir::from_xyz(&y_xyz)) {
-            self.pos.set_x_direction(&xd);
-            self.pos.set_y_direction(&yd);
-        }
-
+        self.pos.transform(t);
         self.radius *= t.scale_factor();
+        if self.radius < 0.0 {
+            self.radius = -self.radius;
+        }
     }
 
     pub fn transformed(&self, t: &GpTrsf) -> GpCylinder {

@@ -227,6 +227,15 @@ impl Surface for GeomOffsetSurface {
         Some(self.offset)
     }
 
+    /// `Geom_Surface::UReversed` (`Geom_Surface.cxx:33-38`) =
+    /// `Geom_OffsetSurface::UReverse` (`Geom_OffsetSurface.cxx:281-286`):
+    /// the basis is U-reversed and the signed offset is negated. `None` when
+    /// the basis itself has no `UReversed` branch.
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let basis = self.basis.u_reversed()?;
+        Some(Arc::new(Self::new(basis, -self.offset)))
+    }
+
     fn u_iso_curve(&self, u: f64) -> Option<Arc<dyn Curve>> {
         self.u_iso(u)
     }

@@ -41,6 +41,79 @@ fn wires_stored_on_face(face: &Face) -> Vec<Wire> {
         .collect()
 }
 
+/// `ShapeFix_Face::Perform`'s second-part loop, `FixOrientation` step
+/// (`ShapeFix_Face.cxx:687-697`): the loop points the single `ShapeFix_Face` at
+/// each face of `myResult` (`cxx:503-505`) and, for every one of them, runs
+/// `FixOrientation(MapWires)` when `NeedFix(myFixOrientationMode)` holds. The
+/// rebuilt face is recorded with `Context()->Replace(myFace, S)`
+/// (`cxx:1639-1641`) and materialised later by `ShapeFix_Shape`'s
+/// `Context()->Apply` (`ShapeFix_Shape.cxx:257`), which is why the caller has to
+/// take the face back off the tool.
+fn fix_face_orientation(sff: &mut crate::shhealing::ShapeFixFace, face: &Face) -> Face {
+    if !sff.fix_orientation_mode {
+        return face.clone(); // cxx:691-697: `NeedFix(myFixOrientationMode)`.
+    }
+    sff.face = Some(face.clone()); // cxx:505: `myFace = TopoDS::Face(exp.Current())`.
+    sff.fix_orientation();
+    sff.face.clone().unwrap_or_else(|| face.clone())
+}
+
+/// `ShapeFix_Face::Perform`'s second-part loop, the wire steps that precede
+/// `FixOrientation` (`ShapeFix_Face.cxx:676-685`): `FixWiresTwoCoincEdges`
+/// (`cxx:676-679`) then, under `NeedFix(myFixIntersectingWiresMode)`,
+/// `FixIntersectingWires` (`cxx:680-685`).
+///
+/// Both substitutes rebuild the face and record `Context()->Replace`
+/// (`cxx:2894`, `cxx:2526`), so the current face has to be taken back off the
+/// tool before `FixOrientation` runs on it.
+fn fix_face_wire_pairs(sff: &mut crate::shhealing::ShapeFixFace, face: &Face) -> Face {
+    sff.face = Some(face.clone()); // cxx:505
+    sff.fix_wires_two_coinc_edges(); // cxx:676-679, `ShapeExtend_DONE7`
+    if sff.fix_intersecting_wires_mode {
+        sff.fix_intersecting_wires(); // cxx:680-685, `ShapeExtend_DONE6`
+    }
+    sff.face.clone().unwrap_or_else(|| face.clone())
+}
+
+/// `ShapeFix_Face::Perform`'s second-part loop for one face of `myResult`
+/// (`ShapeFix_Face.cxx:676-716`): the intersected-wire pair steps
+/// (`cxx:676-685`), `FixOrientation(MapWires)` (`cxx:687-697`),
+/// `FixAddNaturalBound` (`cxx:702-708`, whose `true` turns `NeedSplit` off) and
+/// `FixSplitFace` (`cxx:710-716`, gated on `NeedFix(myFixSplitFaceMode)`,
+/// `NeedSplit` and `MapWires.Extent() > 1`).
+///
+/// Returns `myResult` for this face, which `FixSplitFace` replaces by a
+/// compound (`cxx:2993`); every other step keeps it a face.
+///
+/// UNPORTED: `NeedCheckSplitWire` / `SplitWire` (`cxx:629-674`) and the first
+/// wire round (`cxx:365-480`, `ShapeFix_Wire::Perform`) run in the caller, on
+/// the substituted wire data.
+fn fix_face_second_part(
+    sff: &mut crate::shhealing::ShapeFixFace,
+    face: &Face,
+) -> crate::shape::TopoShape {
+    let face = fix_face_wire_pairs(sff, face); // cxx:676-685
+    let face = fix_face_orientation(sff, &face); // cxx:687-697
+    // cxx:700: `BRepTools::Update(myFace)` is a no-op in the port.
+    // cxx:702-708.
+    let mut need_split = true;
+    sff.face = Some(face.clone());
+    if sff.fix_add_natural_bound() {
+        need_split = false;
+    }
+    let face = sff.face.clone().unwrap_or(face);
+    // cxx:710-716.
+    if sff.fix_split_face_mode && need_split && sff.map_wires.len() > 1 {
+        sff.face = Some(face.clone());
+        if sff.fix_split_face() {
+            if let Some(res) = sff.result.clone() {
+                return res;
+            }
+        }
+    }
+    face.0.clone()
+}
+
 /// The pole-type-independent part of `StepToGeom::MakeBSplineCurveCommon`
 /// (`StepToGeom.cxx:776-894`), shared by the 3D and 2D arms (OCCT implements
 /// both with one template, `:938-944` vs `:952-963`).
@@ -280,30 +353,29 @@ impl<'a> Resolver<'a> {
     /// (`ShapeFix_Shape::myContext`), or `None` when a face is resolved outside
     /// a shell/solid (no shared pass to take part in).
     ///
-    /// UNVERIFIED / OFF BY DEFAULT. `ShapeFix_Shape` really does hand one
-    /// `ShapeBuild_ReShape` to every face of a pass (`ShapeFix_Shape.cxx:75`,
-    /// `ShapeFix_Shell.cxx:108`, `ShapeFix_Face.cxx:379`) and really does close
-    /// the pass with `myResult = Context()->Apply(S)` (`ShapeFix_Shape.cxx:257`),
-    /// so sharing is what cuts T0M face 1693's R=9.5 circle at U=4.97868 after
-    /// the neighbouring cylinder 1695 inserts the seam. It is still off by
-    /// default because the result does not match the verified baseline yet
-    /// (see specs/_a3n00_gap_analysis.md §9.595):
-    ///  * `T0M` loses one face (1778 -> 1777) through the shared pass.
-    ///  * `T0M` face 1693 still keeps its 4-edge wire: the shared context does
-    ///    carry 213 multi-edge `Replace(edge, wire)` records at close, but the
-    ///    final `Context()->Apply(S)` never rebuilds that face's wire, so the
-    ///    cylinder's split of the common R=9.5 circle does not reach it.
-    ///  * `ShapeFix_ComposeShell::ApplyContext` (`cxx:415-442`) can still spin in
-    ///    `j += ApplyContext(...)` (`cxx:2120-2126`, `:969-980`) if a replacement
-    ///    ever has no edge; that was one symptom of the `ReShape` key-lifetime
-    ///    defect fixed in `shape_fix_compose_shell/reshape.rs` (`myMap` now
-    ///    keeps the key shape alive, `BRepTools_ReShape.hxx:239`).
+    /// `ShapeFix_Shape` hands one `ShapeBuild_ReShape` to every face of a pass
+    /// (`ShapeFix_Shape.cxx:75`, `ShapeFix_Shell.cxx:108`,
+    /// `ShapeFix_Face.cxx:379`) and closes it with `myResult = Context()->Apply(S)`
+    /// (`ShapeFix_Shape.cxx:257`), so a face fix that splits/rebuilds an edge is
+    /// substituted on the *neighbouring* faces too. Sharing is therefore what
+    /// keeps one `TopoDS_Edge` TShape per geometric edge: without it the seam
+    /// rebuild of one face leaves a coincident duplicate edge beside the
+    /// neighbour's, and BRepMesh discretizes the two independently (T-junctions).
+    ///
+    /// ALWAYS ON (2026-10-07). The pass used to sit behind an `OCCT_SHARED_HEAL`
+    /// switch while it was unverified; it is now the only path, because OCCT has
+    /// no such switch. Verified this round on the 23-model gate table plus the
+    /// eight `data/occ` models:
+    ///  * T0M open edges (edges used by one triangle, welded at 1e-6) 3643 -> 250
+    ///    (OCCT reference 4); model edges 5005 -> 4437 with single-pcurve edges
+    ///    1298 -> 78 (the remaining pairs are the genuinely unshared STEP edges).
+    ///  * a3n00 open edges 571 -> 0 (OCCT 0); acs10 646 -> 4 (OCCT 0).
+    ///  * All 15 `data/step` exports are byte-identical to the previous default.
+    ///  * `step_obj_gates` 4 passed; mesh areas move toward OCCT (T0M 192654.648 ->
+    ///    192654.622 vs OCCT 192658.641).
     pub(super) fn current_heal_context(
         &self,
     ) -> Option<crate::shape_fix_compose_shell::SharedReShape> {
-        if std::env::var_os("OCCT_SHARED_HEAL").is_none() {
-            return None;
-        }
         self.heal_context.borrow().last().cloned()
     }
 
@@ -315,11 +387,8 @@ impl<'a> Resolver<'a> {
     /// sub-shape a face fix recorded, including on the faces it did not touch.
     /// Returns the owned context to `Apply` when this call opened the pass.
     fn open_heal_context(&self) -> Option<crate::shape_fix_compose_shell::SharedReShape> {
-        // See `current_heal_context`: the shared `FixShape` context is not
-        // enabled by default.
-        if std::env::var_os("OCCT_SHARED_HEAL").is_none() {
-            return None;
-        }
+        // See `current_heal_context`: the shared `FixShape` context is the only
+        // path (OCCT has no switch for it).
         if self.heal_context.borrow().is_empty() {
             let ctx = crate::shape_fix_compose_shell::SharedReShape::new();
             self.heal_context.borrow_mut().push(ctx.clone());
@@ -867,96 +936,92 @@ impl<'a> Resolver<'a> {
         // a3n00 f=192 turns 2 wires / 1 edge each into 1 wire / 5 edges, the same
         // structure the OCCT model has). `check_pcurves_and_shift` then repairs
         // the pcurves of the rebuilt wires (`cxx:365-480` first wire round).
-        {
-            let mut sff = match self.current_heal_context() {
-                Some(ctx) => crate::shhealing::ShapeFixFace::with_face_and_context(&face, ctx),
-                None => crate::shhealing::ShapeFixFace::with_face(&face),
-            };
-            sff.result = Some(face.0.clone());
-            // `ShapeFix_Face::Perform`'s tail (`ShapeFix_Face.cxx:482-498`):
-            // `myResult = myFace`, then `FixPeriodicDegenerated` (`cxx:486-489`)
-            // — the conic degenerate-apex edge — then `FixMissingSeam`
-            // (`cxx:492-498`), which picks up the 2-wire cone face through
-            // `Context()->Apply` (`cxx:1737-1741`).
-            sff.fix_periodic_degenerated();
-            let seam_ret = sff.fix_missing_seam();
-            if seam_ret {
-                if let Some(res) = sff.result.clone() {
-                    // `ShapeFix_Face::FixMissingSeam` returns `CompShell.Result()`
-                    // (`cxx:2266`), which is a face **or** a shell when
-                    // `MakeFacesOnPatch` splits the periodic face into several
-                    // patches (`ShapeFix_ComposeShell.cxx:2978-3271`). OCCT
-                    // stores it with `Context()->Replace(myFace, myResult)`
-                    // (`cxx:2268`) without a type test; `ShapeFix_Shape`
-                    // materialises it through `Context()->Apply(S)`
-                    // (`ShapeFix_Shape.cxx:257/294`), which re-adds a
-                    // replacement's children of the original type
-                    // (`ShapeBuild_ReShape.cxx:282-299`). The shell is expanded
-                    // by the caller (`resolve_shell`).
-                    let sub_faces = if res.shape_type() == crate::abs::ShapeType::Face {
-                        vec![crate::shape::Face(res.clone())]
-                    } else if res.shape_type() == crate::abs::ShapeType::Shell {
-                        crate::topo_tools_full::faces_of(&res)
-                    } else {
-                        Vec::new()
-                    };
-                    if !sub_faces.is_empty() {
-                        for rf in &sub_faces {
-                            for mut w in wires_stored_on_face(rf) {
-                                crate::shhealing::check_pcurves_and_shift(
-                                    &mut w,
-                                    rf,
-                                    self.precision,
-                                    false,
-                                );
-                            }
+        let mut sff = match self.current_heal_context() {
+            Some(ctx) => crate::shhealing::ShapeFixFace::with_face_and_context(&face, ctx),
+            None => crate::shhealing::ShapeFixFace::with_face(&face),
+        };
+        sff.result = Some(face.0.clone());
+        // `ShapeFix_Face::Perform`'s tail (`ShapeFix_Face.cxx:482-498`):
+        // `myResult = myFace`, then `FixPeriodicDegenerated` (`cxx:486-489`)
+        // — the conic degenerate-apex edge — then `FixMissingSeam`
+        // (`cxx:492-498`), which picks up the 2-wire cone face through
+        // `Context()->Apply` (`cxx:1737-1741`).
+        sff.fix_periodic_degenerated();
+        let seam_ret = sff.fix_missing_seam();
+        if seam_ret {
+            if let Some(res) = sff.result.clone() {
+                // `ShapeFix_Face::FixMissingSeam` returns `CompShell.Result()`
+                // (`cxx:2266`), which is a face **or** a shell when
+                // `MakeFacesOnPatch` splits the periodic face into several
+                // patches (`ShapeFix_ComposeShell.cxx:2978-3271`). OCCT
+                // stores it with `Context()->Replace(myFace, myResult)`
+                // (`cxx:2268`) without a type test; `ShapeFix_Shape`
+                // materialises it through `Context()->Apply(S)`
+                // (`ShapeFix_Shape.cxx:257/294`), which re-adds a
+                // replacement's children of the original type
+                // (`ShapeBuild_ReShape.cxx:282-299`). The shell is expanded
+                // by the caller (`resolve_shell`).
+                let sub_faces = if res.shape_type() == crate::abs::ShapeType::Face {
+                    vec![crate::shape::Face(res.clone())]
+                } else if res.shape_type() == crate::abs::ShapeType::Shell {
+                    crate::topo_tools_full::faces_of(&res)
+                } else {
+                    Vec::new()
+                };
+                if !sub_faces.is_empty() {
+                    for rf in &sub_faces {
+                        for mut w in wires_stored_on_face(rf) {
+                            crate::shhealing::check_pcurves_and_shift(
+                                &mut w,
+                                rf,
+                                self.precision,
+                                false,
+                            );
                         }
-                        // `ShapeFix_Face::Perform`'s second wire round
-                        // (`ShapeFix_Face.cxx:583-598`): `FixLoopWire` splits a
-                        // boundary wire that revisits a vertex into one wire per
-                        // loop. It runs on `myResult`'s wires, i.e. after the
-                        // seam step, for every face (not only the healed ones).
-                        for rf in &sub_faces {
-                            crate::shhealing::split_loop_wires(rf);
-                        }
-                        if std::env::var_os("FDBG").is_some() {
-                            let bb = crate::brep_bnd_lib::shape_bnd_box(&res);
-                            let (mn, mx) = (bb.corner_min(), bb.corner_max());
-                            for (k, rf) in sub_faces.iter().enumerate() {
-                                let ws = crate::topo_tools_full::wires_of_face(rf);
-                                let we: Vec<usize> = ws
-                                    .iter()
-                                    .map(|w| crate::topo_tools_full::edges_of_wire(w).len())
-                                    .collect();
-                                eprintln!(
-                                    "FDBG src=fms sub={k} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6}) wires={} edges={:?}",
-                                    mn.x(), mn.y(), mn.z(), mx.x(), mx.y(), mx.z(),
-                                    ws.len(), we
-                                );
-                            }
-                        }
-                        return Ok(res);
                     }
+                    // `ShapeFix_Face::Perform`'s second wire round
+                    // (`ShapeFix_Face.cxx:583-598`): `FixLoopWire` splits a
+                    // boundary wire that revisits a vertex into one wire per
+                    // loop. It runs on `myResult`'s wires, i.e. after the
+                    // seam step, for every face (not only the healed ones).
+                    for rf in &sub_faces {
+                        crate::shhealing::split_loop_wires(rf);
+                    }
+                    // `ShapeFix_Face::Perform`'s second-part loop
+                    // (`ShapeFix_Face.cxx:676-716`) runs on every face of
+                    // `myResult`, substituting the rebuilt faces through the
+                    // shared context (`cxx:1639-1641`, `cxx:917`, `cxx:1098`).
+                    let mut healed: Vec<crate::shape::TopoShape> =
+                        Vec::with_capacity(sub_faces.len());
+                    for rf in &sub_faces {
+                        healed.push(fix_face_second_part(&mut sff, rf));
+                    }
+                    let split_happened = healed
+                        .iter()
+                        .any(|s| s.shape_type() != crate::abs::ShapeType::Face);
+                    let res = if split_happened {
+                        // `FixSplitFace` replaced a face by a compound
+                        // (`ShapeFix_Face.cxx:2988-2999`).
+                        self.b.make_compound_of(&healed).0
+                    } else if res.shape_type() == crate::abs::ShapeType::Shell {
+                        let faces: Vec<crate::shape::Face> = healed
+                            .iter()
+                            .map(|s| crate::shape::Face(s.clone()))
+                            .collect();
+                        self.b.make_shell(&faces).0
+                    } else {
+                        healed.remove(0)
+                    };
+                    return Ok(res);
                 }
             }
         }
         crate::shhealing::split_loop_wires(&face);
-        if std::env::var_os("FDBG").is_some() {
-            let bb = crate::brep_bnd_lib::shape_bnd_box(&face.0);
-            let (mn, mx) = (bb.corner_min(), bb.corner_max());
-            let ws = crate::topo_tools_full::wires_of_face(&face);
-            let we: Vec<usize> = ws
-                .iter()
-                .map(|w| crate::topo_tools_full::edges_of_wire(w).len())
-                .collect();
-            eprintln!(
-                "FDBG src=plain key={} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6}) wires={} edges={:?}",
-                crate::tgeometry::GeometryRegistry::shape_key(&face.0),
-                mn.x(), mn.y(), mn.z(), mx.x(), mx.y(), mx.z(),
-                ws.len(), we
-            );
-        }
-        Ok(face.0)
+        // `ShapeFix_Face::Perform`'s second-part loop (`ShapeFix_Face.cxx:676-716`):
+        // the wire steps (`cxx:676-685`), `FixOrientation` (`cxx:687-697`),
+        // `FixAddNaturalBound` (`cxx:702-708`) and `FixSplitFace` (`cxx:710-716`).
+        let res = fix_face_second_part(&mut sff, &face);
+        Ok(res)
     }
 
     /// True when `bound_id` is a `FACE_BOUND` / `FACE_OUTER_BOUND` whose loop
@@ -1192,7 +1257,13 @@ impl<'a> Resolver<'a> {
         let owned = self.open_heal_context();
         let out = self.resolve_shell_faces(rec);
         match out {
-            Ok(shell) => Ok(self.close_heal_context(&owned, shell)),
+            Ok(shell) => {
+                // `ShapeFix_Shell::Perform` runs `FixFaceOrientation` after the
+                // per-face `ShapeFix_Face` pass (`ShapeFix_Shell.cxx:139-142`),
+                // on `Context()->Apply(myShell)`.
+                let applied = self.close_heal_context(&owned, shell);
+                Ok(crate::shhealing::fix_shell_face_orientation(applied))
+            }
             Err(e) => {
                 self.pop_heal_context(&owned);
                 Err(e)
@@ -1246,6 +1317,10 @@ impl<'a> Resolver<'a> {
         if !s.is_shell() {
             return Err("MANIFOLD_SOLID_BREP: outer is not a shell".into());
         }
+        // `ShapeFix_Solid::Perform` single-shell arm (`ShapeFix_Solid.cxx:520-565`)
+        // calls `SolidFromShell` (`:655-702`) after `ShapeFix_Shell`.
+        let mut s = s;
+        crate::shhealing::orient_single_shell_solid(&mut s);
         Ok(self.b.make_solid(&[Shell(s)]).0)
     }
 

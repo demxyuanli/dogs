@@ -73,7 +73,7 @@ pub use convert_approx_curve::GeomConvertApproxCurve;
 pub mod surface_of_revolution;
 pub mod surface_of_linear_extrusion;
 pub mod projlib;
-pub mod adv_approx;
+pub use occt_core::adv_approx;
 pub mod approx_same_parameter;
 pub use approx_same_parameter::ApproxSameParameter;
 pub mod geom_lib;

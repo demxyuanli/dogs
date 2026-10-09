@@ -2,6 +2,8 @@ use crate::gp::ax1::GpAx1;
 use crate::gp::ax2::GpAx2;
 use crate::gp::dir::GpDir;
 use crate::gp::pnt::GpPnt;
+use crate::gp::trsf::GpTrsf;
+use crate::gp::vec::GpVec;
 use crate::precision::ANGULAR;
 
 /// Right-handed coordinate system.
@@ -108,19 +110,20 @@ impl GpAx3 {
             && c.dot(self.axis.direction()) > 0.0
     }
 
+    /// `gp_Ax3::XReverse` (`gp_Ax3.hxx:125`): reverses the X direction only, so
+    /// a right-handed placement becomes left-handed (`is_direct` turns false).
     pub fn x_reverse(&mut self) {
         self.vxdir.reverse();
-        self.vydir.reverse();
     }
 
+    /// `gp_Ax3::YReverse` (`gp_Ax3.hxx:128`): reverses the Y direction only.
     pub fn y_reverse(&mut self) {
-        self.vxdir.reverse();
         self.vydir.reverse();
     }
 
+    /// `gp_Ax3::ZReverse` (`gp_Ax3.hxx:131`): reverses the main direction only.
     pub fn z_reverse(&mut self) {
         self.axis.reverse();
-        self.vydir.reverse();
     }
 
     pub fn ax2(&self) -> GpAx2 {
@@ -128,6 +131,16 @@ impl GpAx3 {
             axis: self.axis,
             vxdir: self.vxdir,
             vydir: self.vydir,
+        }
+    }
+
+    /// `gp_Ax3::gp_Ax3(const gp_Ax2&)` (`gp_Ax3.hxx:477-482`): the axis and
+    /// both directions are copied as they are.
+    pub fn from_ax2(a: &GpAx2) -> Self {
+        Self {
+            axis: a.axis,
+            vxdir: a.vxdir,
+            vydir: a.vydir,
         }
     }
 
@@ -145,5 +158,51 @@ impl GpAx3 {
 
     pub fn set_y_direction(&mut self, ydir: &GpDir) {
         self.vydir = *ydir;
+    }
+
+    /// `gp_Ax3::Rotate` (`gp_Ax3.hxx:265-270`): rotate the axis and both
+    /// directions about `a1`.
+    pub fn rotate(&mut self, a1: &GpAx1, ang: f64) {
+        self.axis.rotate(a1, ang);
+        self.vxdir.rotate(a1, ang);
+        self.vydir.rotate(a1, ang);
+    }
+    /// `gp_Ax3::Scale` (`gp_Ax3.hxx:282-290`): scale the axis and reverse both
+    /// directions when the factor is negative.
+    pub fn scale(&mut self, p: &GpPnt, s: f64) {
+        self.axis.scale(p, s);
+        if s < 0.0 {
+            self.vxdir.reverse();
+            self.vydir.reverse();
+        }
+    }
+    /// `gp_Ax3::Transform` (`gp_Ax3.hxx:306-310`): transform the axis and both
+    /// directions.
+    pub fn transform(&mut self, t: &GpTrsf) {
+        self.axis.transform(t);
+        self.vxdir.transform(t);
+        self.vydir.transform(t);
+    }
+    /// `gp_Ax3::Mirror(const gp_Pnt&)` (`gp_Ax3.cxx:82-87`).
+    pub fn mirror_pnt(&mut self, p: &GpPnt) {
+        self.axis.mirror_pnt(p);
+        self.vxdir.reverse();
+        self.vydir.reverse();
+    }
+    /// `gp_Ax3::Mirror(const gp_Ax1&)` (`gp_Ax3.cxx:96-101`).
+    pub fn mirror_ax1(&mut self, a1: &GpAx1) {
+        self.vydir.mirror_ax1(a1);
+        self.vxdir.mirror_ax1(a1);
+        self.axis.mirror_ax1(a1);
+    }
+    /// `gp_Ax3::Mirror(const gp_Ax2&)` (`gp_Ax3.cxx:110-115`).
+    pub fn mirror_ax2(&mut self, a2: &GpAx2) {
+        self.vydir.mirror_ax2(a2);
+        self.vxdir.mirror_ax2(a2);
+        self.axis.mirror_ax2(a2);
+    }
+    /// `gp_Ax3::Translate(const gp_Vec&)` (`gp_Ax3.hxx:325`).
+    pub fn translate_vec(&mut self, v: &GpVec) {
+        self.axis.translate_vec(v);
     }
 }

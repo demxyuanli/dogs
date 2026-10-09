@@ -12,7 +12,7 @@ use occt_core::precision::{CONFUSION, PCONFUSION};
 
 use crate::abs::Orientation;
 use crate::brep_extrema::closest_point_on_edge;
-use crate::brep_surface::{face_uv_bounds, surface_closest_params, surface_normal};
+use crate::brep_surface::{face_uv_bounds, surface_normal};
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FaceState, FClass2d};
 use crate::int_curves_face::{FaceIntersector, Transition};
@@ -264,15 +264,21 @@ fn finite_uv_of_face(face: &Face) -> Option<(f64, f64, f64, f64)> {
     let mut vb = f64::NEG_INFINITY;
     for vtx in vertices_of(&face.0) {
         let p = BRepTool::vertex_point(&vtx);
-        // UNPORTED: `finite_uv_of_face` is a port-only helper that brackets a
-        // finite UV box for a face whose bounds are infinite; OCCT's
-        // `BRepTools::UVBounds` reads the pcurve box (`BRepTools.cxx:64-75`)
-        // and has no point-projection branch. Grid stays.
-        let (u, v) = surface_closest_params(surf.as_ref(), &p, 8, 8);
-        ua = ua.min(u);
-        ub = ub.max(u);
-        va = va.min(v);
-        vb = vb.max(v);
+        // OCCT's `BRepTools::UVBounds` reads the pcurve box
+        // (`BRepTools.cxx:64-75`) and has no point-projection branch; this
+        // port-only helper brackets a finite UV box from the face's vertices,
+        // mapped through OCCT's point-on-surface projection (`Extrema_ExtPS`).
+        let Some(ps) = occt_geom::geom_api::project_point_on_surface(
+            surf.as_ref(),
+            &p,
+            occt_core::precision::CONFUSION,
+        ) else {
+            continue;
+        };
+        ua = ua.min(ps.u);
+        ub = ub.max(ps.u);
+        va = va.min(ps.v);
+        vb = vb.max(ps.v);
     }
     if !ua.is_finite() || !ub.is_finite() {
         return None;
@@ -436,6 +442,13 @@ impl SClassifier {
                     tran_keep = t;
                     found = true;
                     self.face = Some(g.clone());
+                    if std::env::var("IGES_TRACE_ORI").is_ok() {
+                        eprintln!(
+                            "  hit w={w:.4} tran={t:?} hit_face={:?} state={:?}",
+                            g.0.orientation(),
+                            inter.state(i)
+                        );
+                    }
                 }
             }
             if found {
@@ -445,6 +458,19 @@ impl SClassifier {
                 } else {
                     FaceState::Out
                 };
+        if std::env::var("IGES_TRACE_ORI").is_ok() {
+            eprintln!(
+                "SOLID inf={:?} tran={tran_keep:?} w={parmin:.6} from=({:.3},{:.3},{:.3}) n=({:.3},{:.3},{:.3}) face={:?}",
+                self.state,
+                ap.x(),
+                ap.y(),
+                ap.z(),
+                dn.x(),
+                dn.y(),
+                dn.z(),
+                f.0.orientation()
+            );
+        }
                 return;
             }
         }

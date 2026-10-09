@@ -88,6 +88,9 @@ fn static_cast_int(v: f64) -> i64 {
 /// std::clamp(index, 0, myResolution - 1) (cxx:582-593).
 #[inline]
 fn clamp_voxel_index(index: i64, the_resolution: usize) -> usize {
+    if the_resolution == 0 {
+        return 0;
+    }
     index.clamp(0, the_resolution as i64 - 1) as usize
 }
 
@@ -389,29 +392,33 @@ impl BoundSortBox {
             the_box.get().expect("Bnd_Box is void"); // cxx:562
         let a_resolution = self.my_resolution;
 
-        // cxx:582-593. The -1 / +1 safety margin is OCCT's.
+        // cxx:582-593. The -1 / +1 safety margin is OCCT's. `static_cast<int>`
+        // of a coordinate far outside the grid saturates, and the following
+        // `+/- 1` is then `std::clamp`ed into `[0, myResolution - 1]`. Saturating
+        // arithmetic keeps that clamp reachable: a wrapping `i64` subtract
+        // overflows before `clamp_voxel_index` runs.
         let a_xmin_index = clamp_voxel_index(
-            static_cast_int((a_xmin - a_grid_start.x()) * self.my_coeff_x) - 1,
+            static_cast_int((a_xmin - a_grid_start.x()) * self.my_coeff_x).saturating_sub(1),
             a_resolution,
         );
         let a_ymin_index = clamp_voxel_index(
-            static_cast_int((a_ymin - a_grid_start.y()) * self.my_coeff_y) - 1,
+            static_cast_int((a_ymin - a_grid_start.y()) * self.my_coeff_y).saturating_sub(1),
             a_resolution,
         );
         let a_zmin_index = clamp_voxel_index(
-            static_cast_int((a_zmin - a_grid_start.z()) * self.my_coeff_z) - 1,
+            static_cast_int((a_zmin - a_grid_start.z()) * self.my_coeff_z).saturating_sub(1),
             a_resolution,
         );
         let a_xmax_index = clamp_voxel_index(
-            static_cast_int((a_xmax - a_grid_start.x()) * self.my_coeff_x) + 1,
+            static_cast_int((a_xmax - a_grid_start.x()) * self.my_coeff_x).saturating_add(1),
             a_resolution,
         );
         let a_ymax_index = clamp_voxel_index(
-            static_cast_int((a_ymax - a_grid_start.y()) * self.my_coeff_y) + 1,
+            static_cast_int((a_ymax - a_grid_start.y()) * self.my_coeff_y).saturating_add(1),
             a_resolution,
         );
         let a_zmax_index = clamp_voxel_index(
-            static_cast_int((a_zmax - a_grid_start.z()) * self.my_coeff_z) + 1,
+            static_cast_int((a_zmax - a_grid_start.z()) * self.my_coeff_z).saturating_add(1),
             a_resolution,
         );
 

@@ -3,7 +3,7 @@
 范围：`crates/occt-topo/src/`。只读，未改源码。
 统计：自创 14 条、等价替换未登记 4 条（共 18 条，按严重度排序）。
 
-**结论摘要**：最高危三条 —— ①`brepfeat/features.rs:109` 用解析公式**覆盖布尔结果的体积**；②`wireframe.rs:399+407` 对曲面按**未裁剪自然 UV 域**建网格，`shape_volume`/`shape_surface_area`/`brep_gprop` 全链失真且被 `bop_builder_report` 当修复判据；③`feature.rs:100`+`brepfeat/features.rs:318`+`boolean_ops.rs:173` 体素布尔在精确 `bop_builder::boolean`（BOPAlgo_BOP）已存在时仍是 feature 默认路径，注释仍称"exact BRep boolean 不可用"（过期）。另：`hlr.rs`/`viz_scene/`/`draw/`/`xcaf/`/`render_svg.rs` 借用了 OCCT 包名，但不是移植。所有条目均未进入 `export_data_obj`/`step_obj_parity` 主门禁，除第 6、11、13 条（经 `bop_builder_report`/`shape_mesh` 间接进入）。
+**结论摘要**：最高危三条 —— ①`brepfeat/features.rs:109` 用解析公式**覆盖布尔结果的体积**；②`wireframe.rs:423+431`（2026-10-06 复核；原 `:399+407` 已漂移）对曲面按**未裁剪自然 UV 域**建网格，`shape_volume`/`shape_surface_area`/`brep_gprop` 全链失真且被 `bop_builder_report` 当修复判据；③`brepfeat/features.rs:394`+`boolean_ops.rs:173`（`feature.rs` 已删，订正 2026-10-06） 体素布尔在精确 `bop_builder::boolean`（BOPAlgo_BOP）已存在时仍是 feature 默认路径，注释仍称"exact BRep boolean 不可用"（过期）。另：`hlr.rs`/`viz_scene/`/`draw/`/`xcaf/`/`render_svg.rs` 借用了 OCCT 包名，但不是移植。所有条目均未进入 `export_data_obj`/`step_obj_parity` 主门禁，除第 6、11、13 条（经 `bop_builder_report`/`shape_mesh` 间接进入）。
 
 ## 发现
 
@@ -62,7 +62,7 @@ let nu = ((du / def).ceil() as usize + 1).clamp(3, 64);
 - OCCT：`BRepMesh` 沿面裁剪边界离散；`BRepGProp_Gauss::Compute`（`BRepGProp.cxx:277`、`BRepGProp_Sinert.cxx:80-109`）为精确积分。
 - 影响/建议：90° 圆柱面片段会被当整圈 2π 曲面计面积/体积（`brep_measure.rs:37` 自承 "samples the full natural surface"）。按 `BRepGProp_Gauss` 落地（`brep_gprop_full` 已有基础）。
 
-### 7. `feature.rs` 是 `brepfeat` 的重复体素实现 + 过期注释
+### 7. ~~`feature.rs` 是 `brepfeat` 的重复体素实现 + 过期注释~~（订正 2026-10-06：文件已删）
 - 判定：自创 ｜ live：**是**（公有 `protrusion`/`pocket`/`boss`/`hole`；仓库内仅 `feature.rs:217` 自测）
 - 证据：`crates/occt-topo/src/feature.rs:101`
 ```rust
@@ -172,6 +172,20 @@ for i in 0..=8 {
 ```
 - OCCT：`BRepBndLib::Add`/`BndLib` 解析极值；`BRepClass3d_SolidExplorer::FindAPointInTheFace`（`BRepClass3d_SolidExplorer.cxx:512-560`）逐面取参数点并带 `aTestInvert` 反转重试。
 - 影响/建议：9×9 格点会漏极值 → 体素网格范围偏小；探针方向固定，不等价于 OCCT 多方向重试。包围盒改 `geom_bnd_lib_*` 解析路径；`OtherSegment` 补 `aTestInvert` 分支并登记简化。
+
+## 补记（2026-10-06）：T-104 / T-105 / T-106 落地的忠实件
+
+本节补记 §9.588–§9.623 中落在本报告范围内的新移植件。这些都属于"原本缺失、现已按 OCCT 补齐"的控制流，故不改变上文 14 条自创的判定，但修正了若干"未移植"的隐含前提与多处行号漂移。
+
+- **`BRepLib::BuildCurve3d` 族（§9.588）** —— `crates/occt-topo/src/brep_lib_same_range.rs`（新模块）：`rep_ranges:42`、`check_same_range:86`（= `BRepLib::CheckSameRange`）、`same_range:106`（= `BRepLib::SameRange`；文件内 `:35` 登记一处 **UNPORTED (ordering)**：OCCT 走插入有序表，端口未对齐顺序；`:103` 注明 `Tolerance` 是 `GeomLib::SameRange` 的第一实参）。**订正**：旧端口用 `CurveOnSurface` 适配器伪造 3D 曲线，现 `shhealing/shape_build_edge.rs::ShapeBuildEdge::build_curve3d`（`:110`）走真实 `BRepLib::BuildCurve3d`（OCCT `BRepLib.cxx:301-455`；同族 `BRepLib::CheckSameRange` = `:149-183`、`BRepLib::SameRange` = `:187-263`、`evaluateMaxSegment`（`BRepLib.cxx` 文件内静态，`:273-297`）），平面臂用 `GeomLib::To3d`（`occt-geom/src/geom_lib.rs::to_3d:63`，`GeomLib.cxx:559-679`；`geom_lib.rs:403` 注明平面臂上 `GeomLib::To3d` 抛 `Standard_NotImplemented` 的情形），一般臂用 `GeomLib::build_curve3d`（`geom_lib.rs:434`，`GeomLib.cxx:1051-1165`，内部 `is_iso_line:185` / `build_c3d_on_iso_line:258` = `GeomLib::isIsoLine`（`GeomLib.cxx:2991-3077`）/ `GeomLib::buildC3dOnIsoLine`（`GeomLib.cxx:3079-3221`），经 `AdvApprox`）。相配套 `shhealing/shape_fix_edge.rs::{temp_same_range:30, ShapeFixEdge::fix_add_curve3d:84}`（`ShapeFix_Edge.cxx:335-464` / `:618-638`）与 `BRepLib.cxx:149-183`（`CheckSameRange`）/ `:1237`（`SameParameter` 本体）入口。
+- **周期锥 loop 修复（§9.590–§9.591）** —— `crates/occt-topo/src/shhealing/shape_fix_face.rs::is_periodic_conical_loop`（`:109`）与 `ShapeFixFace::fix_periodic_degenerated`（`:277`）；接线顺序为 `perform_fix_missing_seam`（`:253`）先 `FixPeriodicDegenerated` 再 `FixMissingSeam`（`:416`）。OCCT：`ShapeFix_Face.cxx:3018-3098`（`IsPeriodicConicalLoop`）、`:3101-3259`（`FixPeriodicDegenerated`）、`:486-489`（先调 `FixPeriodicDegenerated`）/`:492-498`（后调 `FixMissingSeam`）、`:1739`（`FixMissingSeam` 头部 `Context()->Apply(myFace)`）、`ShapeFix_Root.lxx:101`、`ShapeProcess_OperLibrary.cxx:830`。实证（§9.591）：T0M face 1764 由"1 边 0 跨度、`invalid discrete range`"恢复为全 V 段并出网格。
+- **`GeomLib::SameRange` 的 2D 臂与 `TransformPCurve`（§9.601 / §9.614–§9.623）** —— `crates/occt-topo/src/shhealing/wire_fix.rs::geom_lib_same_range`（`:669`）：等跨 `Geom2d_Circle` 旋转臂（`GeomLib.cxx:863-921`，含 `:872-888` / `:908-921`）、等跨 `other` 臂、不等跨 `other` 臂（`GeomLib.cxx:924-969`，含 `:947-958` / `:961-969`）；`shhealing/shape_build_edge.rs::ShapeBuildEdge::transform_pcurve`（`:280`，`ShapeBuild_Edge.cxx:596-700`，圆锥臂 + 兜底臂 + Bezier 臂 + BSpline 臂）；`crates/occt-topo/src/geom_bnd_lib_bspline2d.rs`（`GeomBndLib_BSplineCurve2d.cxx:34-57`、`GeomBndLib_Curve2d.cxx:137-157` / `:150-157`、`GeomBndLib_BSplineSurface.cxx:30` / `:103` / `:118`；文件头 `:3-7` 登记"忠实但 OCCT 侧消费方尚未全部接线"）；`crates/occt-topo/src/pcurve_full/surface_projector.rs` 的 `ReparamCurve2d`（`:2903`）/ `same_range_bspline2d`（`:3038`）/ `reparam_curve2d`（`:3118`）（该文件 `:3016-3017` / `:3048-3058` / `:3102-3111` 逐段引用 `GeomLib.cxx:908-921` / `:924-969`、`Geom2dConvert.cxx:228-321`、`GeomLib.cxx:842-969`、`Geom2dConvert.cxx:420-423`、`GeomLib.cxx:603-632`、`GeomLib.cxx:3010-3029`）。`occt-geom2d` 侧的 `CompCurveToBSplineCurve` / `ApproxCurve` / `Geom2d_BSplineCurve` 操作族见 `occt-geom.md` 的 2026-10-06 补记；网格侧 `add_wire` 整链反转删除与 `pcurve_and_range` 见 `mesh-exchange.md` 发现 5c。
+- **订正：上文条目的行号与前提（2026-10-06 逐条 grep 复核）**
+  - 发现 1/2/3/4/5（`brepfeat/features.rs`）：文件仍在，物理行号已漂移 —— `result.volume = ...` 现 `:109`（未变）；`revolve_profile_about` 现 `:336`（原文写 `:361`）；`mesh_cylinder(radius, height, 24)` 现 `:394`（原文写 `:419`）；`r.clamp(16, 64)` 现 `:483`（原文写 `:508`）；`GeometryRegistry::global().set_face` 现 `:37`（未变）。
+  - 发现 6（`wireframe.rs:399` / `:407-408`）：现为 `:423`（`face_uv_bounds(f, surface.as_ref())`）与 `:431-432`（`clamp(3, 64)`）；`face_uv_bounds` 函数本体现 `:486`。**仍未修**（被 A13/A18/T-69 阻塞）。
+  - 发现 7（`feature.rs` 顶层重复体素实现）：**该文件已不存在**（`crates/occt-topo/src/feature.rs` 已删除），仅 `brepfeat/features.rs` 保留 —— 本条据此订正为"重复体素实现已收敛到 `brepfeat`"。
+  - 发现 8/9/10/11/13 的行号经复核仍成立：`validate.rs:150` 的 `is_valid()` 恒真仍在（`:3` 已加 **UNPORTED**）；`brep_gprop.rs:98`、`brep_measure.rs:12`、`shape_metrics.rs:146`、`solid_union.rs:103` 均在。
+  - `补充说明` 的 `brep_check.rs:56-72 edge_check`：`BRepCheck_Edge` 的 SameParameter/SameRange/重合边检查**仍未移植**；`BRepLib::CheckSameRange` 已随 §9.588 落地（见上），两者不是同一函数，勿混同。
 
 ## 补充说明
 - `brep_offset/shell_offset.rs:130` 对非凸/曲面直接 `Err`（保守拒绝而非自创几何），但未登记"未移植 `BRepOffset_MakeOffset` 迭代求交"。

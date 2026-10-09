@@ -32,7 +32,23 @@ impl Curve for GeomCircle {
     fn circle_radius(&self) -> Option<f64> { Some(self.pos.radius.abs()) }
     fn gp_circ(&self) -> Option<GpCirc> { Some(self.pos.clone()) }
     fn continuity(&self) -> u8 { 6 }
+    /// `GeomAdaptor_Curve::Resolution`'s `GeomAbs_Circle` arm
+    /// (`GeomAdaptor_Curve.cxx:1122-1132`).
+    fn resolution(&self, r3d: f64) -> f64 {
+        let r = self.pos.radius.abs();
+        if r > r3d / 2.0 {
+            2.0 * (r3d / (2.0 * r)).asin()
+        } else {
+            2.0 * std::f64::consts::PI
+        }
+    }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
-    fn reverse(&mut self) { self.pos.radius = -self.pos.radius; }
+    /// `Geom_Circle::Reverse` -> `Geom_Conic::Reverse` (`Geom_Conic.cxx:23-28`):
+    /// reverse the frame's main direction. `ReversedParameter` is the affine
+    /// form (`reversed_parameter` default), i.e. `2*pi - U` here.
+    fn reverse(&mut self) {
+        let z = self.pos.pos.direction().reversed();
+        self.pos.pos.set_direction(z);
+    }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
 }

@@ -17,16 +17,24 @@ impl GpLin2d {
         let dot = dx * self.pos.vdir.x + dy * self.pos.vdir.y;
         (dx*dx + dy*dy - dot*dot).sqrt()
     }
+    /// `gp_Lin2d::Coefficients(A, B, C)` (`gp_Lin2d.hxx:91-96`): the normalized
+    /// coefficients of `A*X + B*Y + C = 0`.
+    pub fn coefficients(&self) -> (f64, f64, f64) {
+        let a = self.pos.vdir.y;
+        let b = -self.pos.vdir.x;
+        let c = -(a * self.pos.loc.x() + b * self.pos.loc.y());
+        (a, b, c)
+    }
     pub fn contains(&self, p: &GpPnt2d, tol: f64) -> bool { self.distance(p) <= tol }
-    pub fn mirror_pnt(&mut self, p: &GpPnt2d) { let mut t=GpTrsf2d::identity(); t.set_mirror_pnt(p); t.transforms_xy(&mut self.pos.loc.coord); }
+    pub fn mirror_pnt(&mut self, p: &GpPnt2d) { self.pos.mirror_pnt(p); }
     pub fn mirrored_pnt(&self, p: &GpPnt2d) -> Self { let mut r=*self; r.mirror_pnt(p); r }
-    pub fn mirror_ax2d(&mut self, a: &GpAx2d) { let mut t=GpTrsf2d::identity(); t.set_mirror_ax2d(a); t.transforms_xy(&mut self.pos.loc.coord); }
+    pub fn mirror_ax2d(&mut self, a: &GpAx2d) { self.pos.mirror_ax2d(a); }
     pub fn mirrored_ax2d(&self, a: &GpAx2d) -> Self { let mut r=*self; r.mirror_ax2d(a); r }
-    pub fn rotate(&mut self, p: &GpPnt2d, angle: f64) { self.pos.loc.rotate(p, angle); }
+    pub fn rotate(&mut self, p: &GpPnt2d, angle: f64) { self.pos.rotate(p, angle); }
     pub fn rotated(&self, p: &GpPnt2d, angle: f64) -> Self { let mut r=*self; r.rotate(p, angle); r }
-    pub fn scale(&mut self, p: &GpPnt2d, s: f64) { self.pos.loc.scale(p, s); }
+    pub fn scale(&mut self, p: &GpPnt2d, s: f64) { self.pos.scale(p, s); }
     pub fn scaled(&self, p: &GpPnt2d, s: f64) -> Self { let mut r=*self; r.scale(p, s); r }
-    pub fn transform(&mut self, t: &GpTrsf2d) { t.transforms_xy(&mut self.pos.loc.coord); }
+    pub fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
     pub fn transformed(&self, t: &GpTrsf2d) -> Self { let mut r=*self; r.transform(t); r }
     pub fn translate_vec(&mut self, v: &GpVec2d) { self.pos.loc.translate_vec(v); }
     pub fn translated_vec(&self, v: &GpVec2d) -> Self { let mut r=*self; r.translate_vec(v); r }

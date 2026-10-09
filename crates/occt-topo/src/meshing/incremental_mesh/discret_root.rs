@@ -244,6 +244,7 @@ impl IncrementalMesh {
     /// per-face 3D nodes/triangles are concatenated into the flat triangle soup.
     pub(super) fn build_shape_mesh(&mut self, model: &mut MeshModel) -> Result<ShapeMesh, String> {
         let source_shape = model.shape().map(|s| s.shape_type()).unwrap_or(ShapeType::Shape);
+        let reversed_faces = model.shape().map(Self::face_occurrence_reversed).unwrap_or_default();
         let mut vertices: Vec<GpPnt> = Vec::new();
         let mut triangles: Vec<Triangle> = Vec::new();
         self.face_stats.clear();
@@ -266,9 +267,40 @@ impl IncrementalMesh {
                 vertices: ft.vertices.len(),
                 triangles: ft.triangles.len(),
             });
+            let reversed = reversed_faces.get(ft.face_index).copied().unwrap_or(false);
             let offset = vertices.len();
+            if let Ok(spec) = std::env::var("VPROBE") {
+                let parts: Vec<f64> =
+                    spec.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+                if parts.len() == 4 {
+                    let near: Vec<GpPnt> = ft
+                        .vertices
+                        .iter()
+                        .copied()
+                        .filter(|p| {
+                            (p.x() - parts[0]).abs() <= parts[3]
+                                && (p.y() - parts[1]).abs() <= parts[3]
+                                && (p.z() - parts[2]).abs() <= parts[3]
+                        })
+                        .collect();
+                    if !near.is_empty() {
+                        eprintln!(
+                            "VPROBE face={} surf={:?} nv={} nt={} near={}",
+                            ft.face_index,
+                            ty,
+                            ft.vertices.len(),
+                            ft.triangles.len(),
+                            near.len()
+                        );
+                        for p in near.iter().take(80) {
+                            eprintln!("VPROBE p ({:.6},{:.6},{:.6})", p.x(), p.y(), p.z());
+                        }
+                    }
+                }
+            }
             vertices.extend(ft.vertices);
             for t in ft.triangles {
+                let t = Self::oriented_triangle(&t, reversed);
                 triangles.push(Triangle::new(offset + t.n0, offset + t.n1, offset + t.n2));
             }
         }
@@ -279,11 +311,41 @@ impl IncrementalMesh {
         Ok(ShapeMesh { vertices, triangles, source_shape })
     }
 
+    /// `RWMesh_FaceIterator::TriangleOriented` (`RWMesh_FaceIterator.hxx`):
+    /// `Poly_Triangulation` holds the UV-Delaunay winding, i.e. the normal of the
+    /// **surface**, not of the face occurrence, so a REVERSED face must be
+    /// emitted with its last two nodes swapped (`(1,2,3) -> (1,3,2)`). The
+    /// header's second term, `myIsMirrored` (an occurrence transform with a
+    /// negative determinant), has no counterpart here: the port's shapes carry no
+    /// location yet.
+    fn oriented_triangle(t: &Triangle, reversed: bool) -> Triangle {
+        if reversed {
+            Triangle::new(t.n0, t.n2, t.n1)
+        } else {
+            *t
+        }
+    }
+
+    /// Per-face occurrence orientation of `shape`, in `faces_of` order.
+    ///
+    /// `ModelBuilder::build_model` adds faces by iterating `faces_of(shape)`
+    /// (`wire_builder.rs:586`) and stores `Oriented(FORWARD)` copies
+    /// (`wire_builder.rs:587` = `IMeshTools_ShapeExplorer.cxx:101`), so the
+    /// discrete model keeps no trace of the occurrence orientation. Index `i`
+    /// here is the same `i` as `MeshModel::face(i)`.
+    fn face_occurrence_reversed(shape: &TopoShape) -> Vec<bool> {
+        crate::topo_tools_full::faces_of(shape)
+            .iter()
+            .map(|f| f.0.orientation().is_reversed())
+            .collect()
+    }
+
     /// Wireframe UV-grid fallback — the pre-pipeline behavior. Faces are
     /// tessellated with `wireframe::face_to_triangles` (deflection-bounded UV
     /// grid) when the OCCT-style pipeline errors.
     pub(super) fn build_shape_mesh_wireframe(&mut self, model: &mut MeshModel) -> Result<ShapeMesh, String> {
         let source_shape = model.shape().map(|s| s.shape_type()).unwrap_or(ShapeType::Shape);
+        let reversed_faces = model.shape().map(Self::face_occurrence_reversed).unwrap_or_default();
         let mut vertices: Vec<GpPnt> = Vec::new();
         let mut triangles: Vec<Triangle> = Vec::new();
         self.face_stats.clear();
@@ -317,6 +379,10 @@ impl IncrementalMesh {
             let offset = vertices.len();
             vertices.extend(vs);
             for t in ts {
+                let t = Self::oriented_triangle(
+                    &t,
+                    reversed_faces.get(i).copied().unwrap_or(false),
+                );
                 triangles.push(Triangle::new(offset + t.n0, offset + t.n1, offset + t.n2));
             }
         }
@@ -431,6 +497,7 @@ impl IncrementalMesh {
 
             let (tri, needs_fallback) = match outcome {
                 Ok(Ok(result)) => {
+                    crate::meshing::node_insertion::diag_dump_result(&result, i);
                     let mapped = Self::map_triangulation(&result, surface.as_ref(), i);
                     let tri = mapped.ok();
                     let needs_fallback = tri.is_none();
@@ -489,6 +556,17 @@ impl IncrementalMesh {
                     // `data/occ/T0M.stp` (measured 2026-09-20); delete it once
                     // those faces mesh through the faithful path.
                     Self::wireframe_face_triangulation(&p.topo_face, p.deflection, p.index)
+                        .map(|t| {
+                            if std::env::var("MBDIAG").is_ok() {
+                                eprintln!(
+                                    "MBDIAG fallback face={} verts={} tris={}",
+                                    p.index,
+                                    t.vertices.len(),
+                                    t.triangles.len()
+                                );
+                            }
+                            t
+                        })
                 } else {
                     None
                 }
@@ -1248,6 +1326,44 @@ impl IncrementalMesh {
                 // + `Tessellate2d` (`BRepMesh_EdgeDiscret.cxx:312-317`).
                 let u = provider.parameter_of(t, p3d, &cos);
                 pcurve.add_point(pc.d0(u), t);
+            }
+        }
+        if let Ok(spec) = std::env::var("EPROBE") {
+            let parts: Vec<f64> =
+                spec.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+            if parts.len() == 4 {
+                for i in 0..model.edges_nb() {
+                    let e = model.edge(i)?;
+                    let pts = e.discretization().points();
+                    let hit = pts.iter().any(|p| {
+                        (p.x() - parts[0]).abs() <= parts[3]
+                            && (p.y() - parts[1]).abs() <= parts[3]
+                            && (p.z() - parts[2]).abs() <= parts[3]
+                    });
+                    if hit {
+                        eprintln!(
+                            "EPROBE edge={} np3d={} defl={:e} pcurves={} same_param={} free={}",
+                            i,
+                            pts.len(),
+                            e.deflection(),
+                            e.pcurves_nb(),
+                            e.same_param(),
+                            e.is_free()
+                        );
+                        for p in 0..e.pcurves_nb() {
+                            let pc = e.pcurve(p)?;
+                            eprintln!(
+                                "EPROBE   pc={} face={} ori={:?} n={} interior={}",
+                                p,
+                                pc.face(),
+                                pc.orientation(),
+                                pc.parameters_nb(),
+                                pc.is_internal()
+                            );
+                        }
+                        eprintln!("EPROBE   pts={:?}", &pts[..pts.len().min(40)]);
+                    }
+                }
             }
         }
         Ok(())

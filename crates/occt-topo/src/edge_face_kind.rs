@@ -3,7 +3,7 @@ use occt_core::gp::{GpPnt, GpVec};
 use occt_core::precision::PCONFUSION;
 use occt_geom::{Curve, Surface};
 
-use crate::brep_surface::{is_planar, sphere_center, surface_closest_params, SurfaceKind};
+use crate::brep_surface::{is_planar, sphere_center, SurfaceKind};
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -257,27 +257,57 @@ pub(crate) fn plane_frame(s: &dyn Surface) -> Option<(GpPnt, GpVec, GpVec)> {
     Some((o, x.divided(mx), y.divided(my)))
 }
 
+/// `ElSLib::Parameters(gp_Pln, P)` plus the signed plane distance, read from the
+/// surface's own `gp_Pln` placement. This is OCCT's analytic arm for a planar
+/// surface (`IntCurveSurface_InterUtils.pxx:906-909`); it needs no reconstructed
+/// frame, so it is also the fallback when `plane_frame`'s `d1(0, 0)` sampling is
+/// degenerate.
+fn analytic_plane_projection(s: &dyn Surface, p: &GpPnt) -> Option<(f64, f64, f64)> {
+    let pln = s.gp_pln()?;
+    let (u, v) = occt_core::elib::slib::plane_parameters(&pln.pos, p);
+    let n = GpVec::from_xyz(pln.axis().direction().xyz()).normalized();
+    if n.square_magnitude() < 1e-30 {
+        return None;
+    }
+    let d = GpVec::from_pnts(&pln.location(), p);
+    Some((u, v, d.dot(&n).abs()))
+}
+
 /// Exact projection of `p` onto a planar surface: `(u, v, distance)`.
 pub(crate) fn plane_projection(s: &dyn Surface, p: &GpPnt) -> (f64, f64, f64) {
     let (o, x, y) = match plane_frame(s) {
         Some(f) => f,
         None => {
-            // UNPORTED: last-resort fallback for a surface classified planar
-            // whose reconstructed frame is degenerate; OCCT's
-            // `ElSLib::Parameters(plane, P)` is the analytic arm and has no
-            // Extrema branch under it. Grid stays.
-            let (u, v) = surface_closest_params(s, p, 24, 24);
-            let q = s.d0(u, v);
-            return (u, v, p.distance(&q));
+            // Degenerate `d1(0, 0)` frame: take the analytic `gp_Pln` placement
+            // (`ElSLib::Parameters`), which does not need the frame; else fall
+            // back to OCCT's point-on-surface projection (`Extrema_ExtPS`).
+            if let Some(proj) = analytic_plane_projection(s, p) {
+                return proj;
+            }
+            return match occt_geom::geom_api::project_point_on_surface(
+                s,
+                p,
+                occt_core::precision::CONFUSION,
+            ) {
+                Some(ps) => (ps.u, ps.v, ps.distance),
+                None => (0.0, 0.0, f64::INFINITY),
+            };
         }
     };
     let n = x.crossed(&y);
     let m = n.magnitude();
     if m < 1e-30 {
-        // UNPORTED: same degenerate-frame last resort as above.
-        let (u, v) = surface_closest_params(s, p, 24, 24);
-        let q = s.d0(u, v);
-        return (u, v, p.distance(&q));
+        if let Some(proj) = analytic_plane_projection(s, p) {
+            return proj;
+        }
+        return match occt_geom::geom_api::project_point_on_surface(
+            s,
+            p,
+            occt_core::precision::CONFUSION,
+        ) {
+            Some(ps) => (ps.u, ps.v, ps.distance),
+            None => (0.0, 0.0, f64::INFINITY),
+        };
     }
     let n = n.divided(m);
     let d = GpVec::from_pnts(&o, p);

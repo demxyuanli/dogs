@@ -51,15 +51,21 @@ fn add_wire(
     // `ShapeExtend_WireData::Init`: FORWARD/REVERSED only; a REVERSED wire
     // prepends each edge so the list is the reverse of iterator order
     // (`ShapeExtend_WireData.cxx:115-122`).
-    // `ShapeFix_Face::FixOrientation` single-wire branch (`cxx:1254-1271`):
-    // `!IsOuterBound` → `ShapeExtend_WireData::Reverse(face)` (edge Reverse +
-    // list Reverse + SwapSeam on FORWARD seams). STEP `FACE_BOUND(.F.)` leaves
-    // the torus loop clockwise. Multi-wire faces keep hole winding.
+    //
+    // OCCT's mesh model builder applies NO orientation fixup here:
+    // `BRepMesh_ShapeVisitor::addWire` (`BRepMesh_ShapeVisitor.cxx:93-134`) only
+    // runs `ShapeExtend_WireData(wire, true, false)` + `ShapeAnalysis_Wire::
+    // CheckOrder` and stores the resulting chain as-is. `ShapeFix_Face::
+    // FixOrientation` is a `ShapeFix` pass and is not part of the mesher, so the
+    // wire's UV winding is left untouched (the clockwise/ccw split is the
+    // classifier's job, not this loop's).
+    //
+    // Reversing a single clockwise wire here flipped face 433/435 of
+    // `data/occ/acs10.stp` from `ShapeAnalysis_WireOrder`'s reference chain
+    // (`e0,e15,e14,...,e1`) to its mirror (`e15,e0,...,e14`) and starved the
+    // Delaunay cavity: 49/50 triangles instead of OCCT's 73/74.
     let mut work = wire.clone();
     let face_fwd = Face(face.0.oriented(Orientation::Forward));
-    if wires_of_face(&face_fwd).len() == 1 && wire_area_2d(&work, &face_fwd) < 0.0 {
-        reverse_wire_on_face(&mut work, &face_fwd);
-    }
     let mut stored: Vec<Edge> = edges_of_wire(&work)
         .into_iter()
         .filter(|e| {
@@ -127,6 +133,79 @@ fn add_wire(
     // (`BRepMesh_ShapeVisitor.cxx:123-130`). On a seam `Reverse` selects
     // PCurve2 (`BRep_Tool.cxx:354-357`).
     let wire_index = model.add_wire(wire.clone());
+    // TEMPORARY diagnostic (DELREGSKEL): the `ShapeExtend_WireData` list fed to
+    // `ShapeAnalysis_WireOrder::Perform` and the `Ordered(i)` chain it returns, in
+    // the `occt_probe --orderdbg` `ODBG` line format.
+    if std::env::var("DELREGSKEL").is_ok() {
+        {
+            let raw = work.0.tshape.read().expect("lock").children.clone();
+            let rawlist = raw
+                .iter()
+                .map(|c| format!("{:?}:{:?}", c.shape_type(), c.orientation()))
+                .collect::<Vec<_>>()
+                .join(" ");
+            eprintln!(
+                "WIRE face={} wire={} work_ori={:?} raw_children=[{}]",
+                face_index, wire_index, work.0.orientation(), rawlist
+            );
+        }
+        let list = stored
+            .iter()
+            .map(|e| format!("{:p}:{:?}", Arc::as_ptr(&e.0.tshape), e.0.orientation()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let chain = (1..=stored.len())
+            .map(|i| order.ordered(i).to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        eprintln!(
+            "WIRE face={} wire={} ori={:?} stored=[{}] ordered=[{}]",
+            face_index,
+            wire_index,
+            work.0.orientation(),
+            list,
+            chain
+        );
+        for (i, e) in stored.iter().enumerate() {
+            let n_pc = GeometryRegistry::global()
+                .edge_pcurves(&e.0, GeometryRegistry::shape_key(&face_fwd.0))
+                .len();
+            match pcurve_and_range(e, &face_fwd) {
+                Some((pc, a, b)) => {
+                    let (pa, pb) = (pc.d0(a), pc.d0(b));
+                    let (bu, eu) = if e.0.orientation().is_reversed() {
+                        (pb, pa)
+                    } else {
+                        (pa, pb)
+                    };
+                    eprintln!(
+                        "WIRE   i={} ptr={:p} ori={:?} npc={} pc2d=({:.9},{:.9})->({:.9},{:.9}) trav=({:.9},{:.9})->({:.9},{:.9})",
+                        i + 1,
+                        Arc::as_ptr(&e.0.tshape),
+                        e.0.orientation(),
+                        n_pc,
+                        pa.x(),
+                        pa.y(),
+                        pb.x(),
+                        pb.y(),
+                        bu.x(),
+                        bu.y(),
+                        eu.x(),
+                        eu.y()
+                    );
+                }
+                None => {
+                    eprintln!(
+                        "WIRE   i={} ptr={:p} ori={:?} npc={} no-pcurve",
+                        i + 1,
+                        Arc::as_ptr(&e.0.tshape),
+                        e.0.orientation(),
+                        n_pc
+                    );
+                }
+            }
+        }
+    }
     for i in 1..=stored.len() {
         let signed = order.ordered(i);
         let e = &stored[signed.unsigned_abs() as usize - 1];

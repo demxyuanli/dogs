@@ -251,7 +251,28 @@ impl GpVec {
         }
     }
 
-    /// self = a1*v1 + a2*v2 (consuming self)
+    /// `gp_Vec::Transform(const gp_Trsf&)` (`gp_Vec.cxx:120-136`): a vector
+    /// picks up the linear part only, never the translation. The `Scale` arm is
+    /// separate in OCCT because `ScaleFactor()` is not folded into the matrix
+    /// there; the `_` arm uses `VectorialPart()` (scale folded in).
+    pub fn transform(&mut self, t: &crate::gp::trsf::GpTrsf) {
+        use crate::gp::trsf_form::TrsfForm;
+        match t.form() {
+            TrsfForm::Identity | TrsfForm::Translation => {}
+            TrsfForm::PntMirror => self.coord.reverse(),
+            TrsfForm::Scale => self.coord = self.coord.multiply(t.scale_factor()),
+            _ => self.coord.multiply_mat(&t.vectorial_part()),
+        }
+    }
+
+    /// `gp_Vec::Transformed(const gp_Trsf&)`.
+    pub fn transformed(&self, t: &crate::gp::trsf::GpTrsf) -> Self {
+        let mut r = *self;
+        r.transform(t);
+        r
+    }
+
+    /// `self = a1*v1 + a2*v2 (consuming self)
     pub fn set_linear_form_2(mut self, a1: f64, v1: &GpVec, a2: f64, v2: &GpVec) -> Self {
         self.coord = v1.coord.multiplied(a1).added(&v2.coord.multiplied(a2));
         self

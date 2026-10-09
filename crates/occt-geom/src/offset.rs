@@ -514,5 +514,9 @@ impl Curve for GeomOffsetCurve {
         self.offset = -self.offset;
     }
 
+    /// `Geom_OffsetCurve::ReversedParameter` (`Geom_OffsetCurve.cxx:104-107`):
+    /// the basis curve's.
+    fn reversed_parameter(&self, u: f64) -> f64 { self.basis.reversed_parameter(u) }
+
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
 }

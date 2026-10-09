@@ -147,8 +147,8 @@ pub mod pcurve_full;
 pub mod inttools_roots;
 // Phase 17 modules (precise NURBS boolean — wave C1: curve-surface intersect + 2D classify).
 pub mod intcurvesurface;
-pub mod intcurvesurface_poly;
 pub mod int_curves_face;
+pub mod int_surf_quadric;
 pub mod brep_class;
 pub mod brep_class3d;
 pub mod fclass2d;

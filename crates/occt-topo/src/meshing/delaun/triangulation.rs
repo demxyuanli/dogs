@@ -18,6 +18,7 @@ impl Delaun {
             init_circles: false,
             failed: false,
             sup_trian: DelaunTriangle::default(),
+            diag_tag: -1,
         };
         delaun.perform(&mut indices, -1, -1);
         delaun
@@ -44,9 +45,119 @@ impl Delaun {
             init_circles: false,
             failed: false,
             sup_trian: DelaunTriangle::default(),
+            diag_tag: -1,
         };
         delaun.perform(vertex_indices, cells_u, cells_v);
         delaun
+    }
+
+    /// TEMPORARY diagnostic (DELSTAGE): tags this triangulator so `diag_stage`
+    /// prints the structure sizes when `DELSTAGE` equals this tag.
+    pub fn set_diag_tag(&mut self, tag: i32) {
+        self.diag_tag = tag;
+    }
+
+    /// `BRepMesh_Delaun(oldMesh, vertices, cellsU, cellsV)` with a DELSTAGE tag
+    /// applied before the pipeline runs (TEMPORARY diagnostic).
+    pub fn new_with_data_cells_diag(
+        data_structure: DelaunDataStructure,
+        vertex_indices: &mut Vec<i32>,
+        cells_u: i32,
+        cells_v: i32,
+        tag: i32,
+    ) -> Self {
+        let mut delaun = Self {
+            mesh_data: data_structure,
+            circles: CircleTool::new(),
+            sup_vert: Vec::new(),
+            init_circles: false,
+            failed: false,
+            sup_trian: DelaunTriangle::default(),
+            diag_tag: tag,
+        };
+        delaun.perform(vertex_indices, cells_u, cells_v);
+        delaun
+    }
+
+    /// TEMPORARY diagnostic (DELSTAGE).
+    pub(super) fn diag_on(&self) -> bool {
+        self.diag_tag >= 0
+            && std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
+                == Some(self.diag_tag)
+    }
+
+    /// TEMPORARY diagnostic (DELSTAGE).
+    pub(super) fn diag_stage(&self, stage: &str) {
+        if self.diag_tag < 0 {
+            return;
+        }
+        match std::env::var("DELSTAGE") {
+            Ok(v) if v.parse::<i32>() == Ok(self.diag_tag) => {}
+            _ => return,
+        }
+        eprintln!(
+            "DELSTAGE tag={} {} tris={} links={} nodes={} frontier={} fixed={} free={}",
+            self.diag_tag,
+            stage,
+            self.mesh_data.elements_of_domain().len(),
+            self.mesh_data.nb_links(),
+            self.mesh_data.nb_nodes(),
+            self.frontier().len(),
+            self.internal_edges().len(),
+            self.free_edges().len(),
+        );
+        // TEMPORARY diagnostic (DELTRIS): dumps the live triangles of the tagged
+        // face, one line per triangle, so each stage of `processConstraints` can
+        // be classified against the face's boundary polygon in UV space.
+        if std::env::var("DELTRIS").is_err() {
+            return;
+        }
+        let ids: Vec<i32> = self.mesh_data.elements_of_domain().iter().copied().collect();
+        for id in ids {
+            let element = self.mesh_data.get_element(id);
+            let n = self.mesh_data.element_nodes(&element);
+            let p = |k: i32| self.mesh_data.get_node(k).location;
+            let (a, b, c) = (p(n[0]), p(n[1]), p(n[2]));
+            eprintln!(
+                "DELTRI {stage} {id} {:.9} {:.9} {:.9} {:.9} {:.9} {:.9}",
+                a.x(),
+                a.y(),
+                b.x(),
+                b.y(),
+                c.x(),
+                c.y()
+            );
+        }
+        // TEMPORARY diagnostic (DELTRIS): link/adjacency dump at the same stages.
+        let mut link_ids: Vec<i32> = self.mesh_data.links_of_domain().iter().copied().collect();
+        link_ids.sort_unstable();
+        for lid in link_ids {
+            let link = self.mesh_data.get_link(lid);
+            let pair = self.mesh_data.elements_connected_to(lid);
+            let state = self.mesh_data.link_movability(lid);
+            let na = self.mesh_data.get_node(link.first_node()).location;
+            let nb = self.mesh_data.get_node(link.last_node()).location;
+            let mut conn = String::new();
+            for it in 1..=pair.extent() {
+                let tid = pair.index(it);
+                let el = self.mesh_data.get_element(tid);
+                let mut orient = ' ';
+                for k in 0..3 {
+                    if el.link_at(k).abs() == lid {
+                        orient = if el.link_at(k) > 0 { '+' } else { '-' };
+                    }
+                }
+                conn.push_str(&format!(" {tid}{orient}"));
+            }
+            eprintln!(
+                "DELLINK {stage} {lid} {state} {:.9} {:.9} {:.9} {:.9}{conn}",
+                na.x(),
+                na.y(),
+                nb.x(),
+                nb.y(),
+                state = state.to_str()
+            );
+        }
     }
 
     /// `BRepMesh_MeshTool::EraseFreeLinks` (`BRepMesh_MeshTool.cxx:204-219`).
@@ -188,8 +299,11 @@ impl Delaun {
     /// Forces insertion of constraint edges and frontier adjustment.
     /// Source: `ProcessConstraints`.
     pub fn process_constraints(&mut self) {
+        self.diag_stage("before_insert_internal_edges");
         self.insert_internal_edges();
+        self.diag_stage("after_insert_internal_edges");
         self.frontier_adjust();
+        self.diag_stage("after_frontier_adjust");
     }
 
     /// `BRepMesh_DataStructureOfDelaun::ElementNodes` (`cxx:259-286`).
@@ -322,9 +436,11 @@ impl Delaun {
         if vertex_indexes.len() > 0 {
             let first = vertex_indexes[0];
             self.create_triangles(first, &mut loop_edges);
+            self.diag_stage("after_first_triangle");
             self.create_triangles_on_new_vertices(vertex_indexes);
         }
         self.remove_aux_elements();
+        self.diag_stage("after_remove_aux");
     }
 
     pub(super) fn delete_triangle(&mut self, index: i32, loop_edges: &mut BTreeMap<i32, bool>) {
@@ -520,6 +636,7 @@ impl Delaun {
             }
             i += 1;
         }
+        self.diag_stage("after_vertex_loop");
 
         // `ProcessConstraints()` is called UNCONDITIONALLY at the tail of
         // `BRepMesh_Delaun::createTrianglesOnNewVertices`
@@ -619,10 +736,19 @@ impl Delaun {
     }
 
     pub(super) fn is_bound_to_frontier(&self, ref_node_id: i32, ref_link_id: i32) -> bool {
+        let trace = self.diag_on()
+            && std::env::var("FBPROBE").ok().and_then(|v| v.parse::<i32>().ok())
+                == Some(ref_link_id);
         let mut stack: Vec<i32> = vec![ref_link_id];
         let mut visited: BTreeSet<i32> = BTreeSet::new();
         while let Some(cur) = stack.pop() {
             let pair = self.mesh_data.elements_connected_to(cur);
+            if trace {
+                eprintln!(
+                    "FBPROBE node={ref_node_id} link={ref_link_id} pop={cur} extent={}",
+                    pair.extent()
+                );
+            }
             if pair.is_empty() {
                 return false;
             }
@@ -640,6 +766,12 @@ impl Delaun {
                     let edge = self.mesh_data.get_link(edge_id);
                     if edge.first_node() != ref_node_id && edge.last_node() != ref_node_id {
                         continue;
+                    }
+                    if trace {
+                        eprintln!(
+                            "FBPROBE   tri={tri_id} edge={edge_id} mov={} hit",
+                            self.mesh_data.link_movability(edge_id).to_str()
+                        );
                     }
                     if self.mesh_data.link_movability(edge_id) != VertexState::Free {
                         return true;
@@ -719,6 +851,19 @@ impl Delaun {
                 if !is_connected[0] || !is_connected[1] {
                     del_triangles.insert(tri_id);
                 }
+                if self.diag_on() {
+                    eprintln!(
+                        "CMPROBE free={} mov={} ext={} tri={} cnr={} c0={} c1={} del={}",
+                        free_edge_id,
+                        self.mesh_data.link_movability(free_edge_id).to_str(),
+                        pair.extent(),
+                        tri_id,
+                        can_not_be_removed,
+                        is_connected[0],
+                        is_connected[1],
+                        !is_connected[0] || !is_connected[1]
+                    );
+                }
             }
 
             let mut deleted_nb = 0;
@@ -739,6 +884,8 @@ impl Delaun {
             if deleted_nb == 0 {
                 break;
             }
+            self.diag_stage(&format!("cleanup_mesh_iter deleted={deleted_nb}"));
         }
+        self.diag_stage("cleanup_mesh_done");
     }
 }

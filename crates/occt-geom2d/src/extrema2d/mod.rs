@@ -16,7 +16,7 @@ pub(crate) use occt_core::gp::{
     GpAx22d, GpCirc2d, GpDir2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d,
 };
 pub(crate) use occt_core::precision::{
-    Precision, ANGULAR, CONFUSION, INFINITE, PCONFUSION, RESOLUTION,
+    Precision, ANGULAR, CONFUSION, INFINITE, PCONFUSION, RESOLUTION, SQUARE_CONFUSION,
 };
 
 pub(crate) use crate::curve::Curve2d;
@@ -30,9 +30,11 @@ mod curve2d_tool;
 mod general_extrema;
 mod glob_opt_func;
 mod ext_cc2d;
+mod ext_el_c2d;
 pub use analytic_solvers::*;
 pub use curve_curve::*;
 pub use ext_cc2d::*;
+pub use ext_el_c2d::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

@@ -355,23 +355,138 @@ impl GeomBSplineSurface {
 
     /// `Geom_BSplineSurface::LocateU` (`Geom_BSplineSurface_1.cxx:1464-1514`),
     /// unique knots (`WithKnotRepetition = false`).
+    ///
+    /// `false` selects `myUKnots` (`:1471`) - the distinct knot **window**
+    /// `FirstUKnotIndex()..LastUKnotIndex()` (`:1408-1445` returns `1..Length`
+    /// for a periodic surface), not the flat sequence, whose extension knots
+    /// would shift the returned indices by the wrapped tail and widen the
+    /// `PeriodicNormalization` period.
     pub fn locate_u(&self, u: f64, parametric_tolerance: f64) -> (i32, i32) {
-        Self::locate_param(
-            u,
-            parametric_tolerance,
-            &Self::unique_knots(&self.knots_u),
-            self.u_periodic,
-        )
+        let (knots, _) = self.distinct_knots_and_mults_u();
+        Self::locate_param(u, parametric_tolerance, &knots, self.u_periodic)
     }
 
-    /// `Geom_BSplineSurface::LocateV` (`Geom_BSplineSurface_1.cxx:1518-1560`).
+    /// `Geom_BSplineSurface::LocateV` (`Geom_BSplineSurface_1.cxx:1518-1560`);
+    /// see [`Self::locate_u`] for the `myVKnots` window.
     pub fn locate_v(&self, v: f64, parametric_tolerance: f64) -> (i32, i32) {
-        Self::locate_param(
-            v,
-            parametric_tolerance,
-            &Self::unique_knots(&self.knots_v),
-            self.v_periodic,
-        )
+        let (knots, _) = self.distinct_knots_and_mults_v();
+        Self::locate_param(v, parametric_tolerance, &knots, self.v_periodic)
+    }
+
+    /// Knot window + pole offset rotation shared by `SetUOrigin` / `SetVOrigin`
+    /// (`Geom_BSplineSurface_1.cxx:1050-1074` / `:1157-1177`): the distinct knot
+    /// window is re-cut at `index` - `knots(index..=last)` followed by
+    /// `knots(first+1..=index)` shifted by one period - and the returned offset
+    /// is the 1-based pole/weight index the rotation starts from,
+    /// `1 + sum(mults(first+1..=index))`.
+    fn rotate_origin(knots: &[f64], mults: &[i32], index: i32) -> (Vec<f64>, Vec<i32>, usize) {
+        // `FirstUKnotIndex()` / `LastUKnotIndex()` are `1` / `Knots().Length()`
+        // for a periodic direction (`Geom_BSplineSurface_1.cxx:1408-1445`).
+        let first = 1i32;
+        let last = knots.len() as i32;
+        let period = knots[(last - 1) as usize] - knots[(first - 1) as usize];
+        let mut newknots = Vec::with_capacity(knots.len());
+        let mut newmults = Vec::with_capacity(mults.len());
+        for i in index..=last {
+            newknots.push(knots[(i - 1) as usize]);
+            newmults.push(mults[(i - 1) as usize]);
+        }
+        for i in (first + 1)..=index {
+            newknots.push(knots[(i - 1) as usize] + period);
+            newmults.push(mults[(i - 1) as usize]);
+        }
+        let mut offset = 1usize;
+        for i in (first + 1)..=index {
+            offset += mults[(i - 1) as usize] as usize;
+        }
+        (newknots, newmults, offset)
+    }
+
+    /// `Geom_BSplineSurface::SetUOrigin` (`Geom_BSplineSurface_1.cxx:1026-1127`):
+    /// rotate the periodic U representation so its knot window starts at the
+    /// 1-based window index `index` (as [`Self::locate_u`] reports it), carrying
+    /// the poles and weights along. `updateUKnots()` is the flat periodic
+    /// sequence rebuilt at the end.
+    pub fn set_u_origin(&mut self, index: i32) -> Result<(), String> {
+        if !self.u_periodic {
+            return Err("Geom_BSplineSurface::SetUOrigin: surface is not U periodic".to_string());
+        }
+        let (knots, mults) = self.distinct_knots_and_mults_u();
+        if knots.is_empty() || index < 1 || index > knots.len() as i32 {
+            return Err("Geom_BSplineSurface::SetUOrigin: Index out of range".to_string());
+        }
+        let (newknots, newmults, offset) = Self::rotate_origin(&knots, &mults, index);
+        let nb_u = self.poles.len();
+        if offset > nb_u + 1 {
+            return Err("Geom_BSplineSurface::SetUOrigin: pole offset out of range".to_string());
+        }
+        // `for (i = index; i <= last; i++)` then `for (i = first; i < index; i++)`
+        // over the pole rows (`:1073-1121`); `first` is the pole array's lower
+        // index (1).
+        let order: Vec<usize> = (offset..=nb_u).chain(1..offset).map(|i| i - 1).collect();
+        let old = std::mem::take(&mut self.poles);
+        self.poles = order.iter().map(|&i| old[i].clone()).collect();
+        if let Some(w) = self.weights.as_mut() {
+            let old = std::mem::take(w);
+            *w = order.iter().map(|&i| old[i].clone()).collect();
+        }
+        // `myUKnots`/`myUMults` assigned, then `updateUKnots()` rebuilds the flat
+        // periodic sequence (`Geom_BSplineSurface.cxx:1148-1192`).
+        let flat = occt_core::bspl::knots::knot_sequence_periodic(
+            &newknots,
+            &newmults,
+            self.deg_u as i32,
+        );
+        // `BSplCLib::NbPoles(degree, true, mults)` (`BSplCLib.cxx:392-451`): for a
+        // periodic direction `Mults(first) == Mults(last)` and the pole count is
+        // `sum(mults) - Mults(first)`.
+        let sum: i32 = newmults.iter().sum();
+        if sum - newmults[0] != nb_u as i32 {
+            return Err("Geom_BSplineSurface::SetUOrigin: pole count mismatch".to_string());
+        }
+        self.knots_u = flat;
+        Ok(())
+    }
+
+    /// `Geom_BSplineSurface::SetVOrigin` (`Geom_BSplineSurface_1.cxx:1132-1233`);
+    /// the V pole rotation moves whole columns. See [`Self::set_u_origin`].
+    pub fn set_v_origin(&mut self, index: i32) -> Result<(), String> {
+        if !self.v_periodic {
+            return Err("Geom_BSplineSurface::SetVOrigin: surface is not V periodic".to_string());
+        }
+        let (knots, mults) = self.distinct_knots_and_mults_v();
+        if knots.is_empty() || index < 1 || index > knots.len() as i32 {
+            return Err("Geom_BSplineSurface::SetVOrigin: Index out of range".to_string());
+        }
+        let (newknots, newmults, offset) = Self::rotate_origin(&knots, &mults, index);
+        let nb_v = self.nb_poles_v();
+        if offset > nb_v + 1 {
+            return Err("Geom_BSplineSurface::SetVOrigin: pole offset out of range".to_string());
+        }
+        // `for (j = index; j <= last; j++)` then `for (j = first; j < index; j++)`
+        // over the pole columns (`:1185-1228`).
+        let order: Vec<usize> = (offset..=nb_v).chain(1..offset).map(|j| j - 1).collect();
+        for row in self.poles.iter_mut() {
+            let old = std::mem::take(row);
+            *row = order.iter().map(|&j| old[j]).collect();
+        }
+        if let Some(w) = self.weights.as_mut() {
+            for row in w.iter_mut() {
+                let old = std::mem::take(row);
+                *row = order.iter().map(|&j| old[j]).collect();
+            }
+        }
+        let flat = occt_core::bspl::knots::knot_sequence_periodic(
+            &newknots,
+            &newmults,
+            self.deg_v as i32,
+        );
+        let sum: i32 = newmults.iter().sum();
+        if sum - newmults[0] != nb_v as i32 {
+            return Err("Geom_BSplineSurface::SetVOrigin: pole count mismatch".to_string());
+        }
+        self.knots_v = flat;
+        Ok(())
     }
 
     fn locate_param(u: f64, parametric_tolerance: f64, knots: &[f64], periodic: bool) -> (i32, i32) {
@@ -1184,6 +1299,40 @@ impl Surface for GeomBSplineSurface {
 
     fn is_u_periodic(&self) -> bool {
         self.u_periodic
+    }
+
+    /// `Geom_Surface::UReversed` (`Geom_Surface.cxx:33-38`) = `Copy()` +
+    /// `Geom_BSplineSurface::UReverse` (`Geom_BSplineSurface_1.cxx:1572-1592`):
+    /// `BSplCLib::Reverse(UMults)` / `Reverse(UKnots)` mirror the distinct knots
+    /// `K(i) -> K(1) + K(n) - K(n+1-i)` and reverse the multiplicities, then
+    /// `BSplSLib::Reverse(Poles, last, true)` reverses the U rows with
+    /// `last = myPoles.UpperRow()` for a non-periodic U, and `updateUKnots()`
+    /// rebuilds the flat sequence. On the flat sequence the two steps collapse to
+    /// one mirror about its own ends plus a reverse, since the flat sequence is
+    /// the distinct knots repeated by multiplicity in increasing order; the
+    /// endpoints are preserved, so `Bounds`/`UKnot(1)+UKnot(n)` - the mirror axis
+    /// `BRepToIGES_BRShell::TransferFace` uses (`BRepToIGES_BRShell.cxx:176-182`)
+    /// - are unchanged too.
+    ///
+    /// The periodic-U arm takes `last = myUFlatKnots.Upper() - myUDeg - 1` instead,
+    /// whose pole order is not the flat sequence reversed; it is UNPORTED here and
+    /// returns `None`, like the surface classes with no branch at all.
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        if self.u_periodic || self.knots_u.len() < 2 || self.poles.is_empty() {
+            return None;
+        }
+        let mut out = self.clone();
+        let n = out.knots_u.len();
+        let mirror = out.knots_u[0] + out.knots_u[n - 1];
+        out.knots_u.reverse();
+        for k in out.knots_u.iter_mut() {
+            *k = mirror - *k;
+        }
+        out.poles.reverse();
+        if let Some(w) = out.weights.as_mut() {
+            w.reverse();
+        }
+        Some(Arc::new(out) as Arc<dyn Surface>)
     }
 
     fn is_v_periodic(&self) -> bool {

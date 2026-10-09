@@ -13,6 +13,7 @@ impl Delaun {
         let mut int_frontier_edges: BTreeSet<i32> = BTreeSet::new();
 
         for _pass in 1..=2 {
+            self.diag_stage(&format!("pass{_pass}_start"));
             for &frontier_id in &frontier_ids {
                 let pair = self.mesh_data.elements_connected_to(frontier_id);
                 let nb = pair.extent();
@@ -42,11 +43,15 @@ impl Delaun {
                 }
             }
 
-            let loop_keys: Vec<i32> = loop_edges.keys().copied().collect();            for &e in &loop_keys {
+            self.diag_stage(&format!("pass{_pass}_after_delete"));
+
+            let loop_keys: Vec<i32> = loop_edges.keys().copied().collect();
+            for &e in &loop_keys {
                 if self.mesh_data.elements_connected_to(e).is_empty() {
                     self.mesh_data.remove_link(e, false);
                 }
             }
+            self.diag_stage(&format!("pass{_pass}_after_cleanup_loop_edges"));
 
             for &frontier_id in &frontier_ids {
                 if !self.mesh_data.elements_connected_to(frontier_id).is_empty() {
@@ -61,9 +66,11 @@ impl Delaun {
                     failed_frontiers.push(frontier_id);
                 }
             }
+            self.diag_stage(&format!("pass{_pass}_after_mesh_left_polygon"));
         }
 
         self.cleanup_mesh();
+        self.diag_stage("after_cleanup_mesh");
 
         for &frontier_id in failed_frontiers.iter() {
             if !self.mesh_data.elements_connected_to(frontier_id).is_empty() {
@@ -75,6 +82,7 @@ impl Delaun {
                 int_frontier_edges = s;
             }
         }
+        self.diag_stage("after_failed_retries");
     }
 
     pub(super) fn fill_bnd_box(&self, boxes: &mut Vec<BndB2>, v1: i32, v2: i32) {
@@ -90,6 +98,7 @@ impl Delaun {
     pub(super) fn mesh_left_polygon_of(&mut self, start_edge_id: i32, is_forward: bool, skipped: &mut Option<BTreeSet<i32>>) -> bool {
         if let Some(s) = skipped.as_ref() {
             if s.contains(&start_edge_id) {
+                self.diag_stage(&format!("mesh_left_polygon_of e={start_edge_id} fwd={is_forward} SKIPPED"));
                 return true;
             }
         }
@@ -110,6 +119,7 @@ impl Delaun {
         let mut a_pivot_vertex = self.mesh_data.get_node(a_pivot_node).location.coord;
         let mut ref_link_dir = GpVec2d::from_xy(a_pivot_vertex.subtracted(&start_edge_vertex_s));
         if ref_link_dir.square_magnitude() < PREC2 {
+            self.diag_stage(&format!("mesh_left_polygon_of e={start_edge_id} fwd={is_forward} DEGENERATE"));
             return true;
         }
 
@@ -150,6 +160,7 @@ impl Delaun {
                 is_skip_leprous = true;
             } else {
                 if polygon.len() == 1 {
+                    self.diag_stage(&format!("mesh_left_polygon_of e={start_edge_id} fwd={is_forward} DEAD_END"));
                     return false;
                 }
                 let dead_link_id = polygon.last().copied().unwrap().abs();

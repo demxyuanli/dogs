@@ -23,13 +23,15 @@
 //! (`Convert_*ToBSplineCurve` applies `SetTransformation(conic.XAxis(), OX2d)`),
 //! so no extra transform is needed.
 //!
-//! UNPORTED: `Geom2dConvert_ApproxCurve` (the `Geom2d_OffsetCurve` arms
-//! `:353-368`, `:425-440`). Callers hitting them get `None`.
+//! The `Geom2d_OffsetCurve` arms (`:353-368` trimmed input, `:425-440` plain
+//! input) go through [`Geom2dConvertApproxCurve`].
 
 use crate::bezier_curve::Geom2dBezierCurve;
 use crate::bspline_curve::Geom2dBSplineCurve;
 use crate::comp_curve_to_bspline::CompCurveToBSplineCurve;
+use crate::convert_approx_curve::Geom2dConvertApproxCurve;
 use crate::curve::Curve2d;
+use crate::trimmed::Geom2dTrimmedCurve;
 use occt_core::bspl::banded_interp::knot_sequence;
 use occt_core::bspl::knots::knot_sequence_periodic;
 use occt_core::convert::{
@@ -37,6 +39,8 @@ use occt_core::convert::{
     ellipse_to_bspline_curve_range, hyperbola_to_bspline_curve, parabola_to_bspline_curve,
     ConicToBSplineCurve, ParameterisationType,
 };
+use occt_core::kernel::geomabs::Shape;
+use std::sync::Arc;
 
 /// Default parameterisation of `Geom2dConvert::CurveToBSplineCurve`
 /// (`Geom2dConvert.hxx:169-171`).
@@ -145,7 +149,13 @@ pub fn curve_to_bspline_curve_bspl(
         // `cxx:420-423`: `TheCurve = C->Copy()`.
         return c.bspline_copy2d();
     }
-    // `cxx:425-440` (Offset -> `Geom2dConvert_ApproxCurve`) is UNPORTED;
+    // `cxx:425-440`: `Geom2d_OffsetCurve` -> `Geom2dConvert_ApproxCurve(C,
+    // 1e-4, GeomAbs_C2, 16, 14)`, its result when `HasResult()`, otherwise
+    // `Standard_ConstructionError` (reported here as `None`).
+    if c.offset_basis().is_some() {
+        let appr = Geom2dConvertApproxCurve::new(c, 1.0e-4, Shape::C2, 16, 14);
+        return appr.curve().cloned();
+    }
     // `cxx:442-444` else throws `Standard_DomainError`.
     None
 }
@@ -240,6 +250,15 @@ pub fn trimmed_curve_to_bspline_curve(
         return Some(bs);
     }
 
-    // `cxx:353-368` (Offset -> `Geom2dConvert_ApproxCurve`) is UNPORTED.
+    // `cxx:353-368`: `Curv->IsKind(Geom2d_OffsetCurve)` -> `CurveToBSplineCurve`
+    // approximates the caller's curve `C` (the trim). This function receives
+    // only the resolved basis plus window, so a trimmed view over `[u1, u2]`
+    // stands in for `C`: same evaluation (delegation) and same range.
+    if basis.offset_basis().is_some() {
+        let trimmed =
+            Geom2dTrimmedCurve::new_sense(Arc::from(basis.clone_dyn()), u1, u2, true, false);
+        let appr = Geom2dConvertApproxCurve::new(&trimmed, 1.0e-4, Shape::C2, 16, 14);
+        return appr.curve().cloned();
+    }
     None
 }

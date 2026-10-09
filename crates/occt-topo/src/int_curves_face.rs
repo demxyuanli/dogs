@@ -24,7 +24,9 @@ use crate::brep_surface::{classify_surface, face_uv_bounds, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FaceState, FClass2d};
 use crate::intcurvesurface::{self, IntersectionPoint, State};
-use crate::intcurvesurface_poly::{ThePolygon, ThePolyhedron};
+use crate::intcurvesurface::{
+    ThePolygonOfHInter as ThePolygon, ThePolyhedronOfHInter as ThePolyhedron,
+};
 use crate::shape::{Face, TopoShape};
 use crate::topo_tools_full::faces_of;
 
@@ -138,7 +140,7 @@ impl FaceIntersector {
         // polygon out-test. `ThePolygon::of_line` with +/-inf yields a void
         // box and would reject every hit.
         if let Some(ph) = &self.polyhedron {
-            match lin_box_clip(lin, &ph.box_, lo, hi) {
+            match lin_box_clip(lin, ph.bounding(), lo, hi) {
                 None => {
                     self.done = true;
                     return;
@@ -205,16 +207,13 @@ impl FaceIntersector {
 }
 
 fn keep_point(face: &Face, cl: &FClass2d, p: IntersectionPoint) -> Option<FaceHit> {
-    // UNPORTED: OCCT `IntCurvesFace_Intersector::InternalCall` classifies the
-    // intersection point at its own `(U, V)`
-    // (`IntCurvesFace_Intersector.cxx:254`, `:293-294`) and never re-projects
-    // it; the port re-projects because its `intcurvesurface` parameters can be
-    // in the natural (untrimmed) surface frame. No OCCT projection branch.
-    let (u, v) = if let Some(surf) = BRepTool::face_surface(face) {
-        crate::brep_surface::surface_closest_params(surf.as_ref(), &p.pnt, 16, 16)
-    } else {
-        (p.u, p.v)
-    };
+    // OCCT `IntCurvesFace_Intersector::InternalCall` classifies the intersection
+    // point at its own `(U, V)` (`IntCurvesFace_Intersector.cxx:254`, `:293-294`)
+    // and never re-projects it. `intcurvesurface` reports those parameters in the
+    // surface's own frame (`IntCurveSurface_InterUtils.pxx:901-925`), and
+    // `Perform` above feeds it the very `BRepTool::face_surface` the classifier
+    // uses, so the re-projection this used to do is redundant.
+    let (u, v) = (p.u, p.v);
     let st = cl.perform(GpPnt2d::new(u, v));
     if st != FaceState::In && st != FaceState::On {
         return None;
@@ -340,7 +339,7 @@ fn build_polyhedron(face: &Face) -> Option<ThePolyhedron> {
         return None;
     }
     let (u0, u1, v0, v1) = finite_uv(face);
-    Some(ThePolyhedron::of_surface(
+    Some(ThePolyhedron::new(
         surf.as_ref(),
         20,
         20,

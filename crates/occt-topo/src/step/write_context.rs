@@ -2,32 +2,95 @@ use super::prelude::*;
 use super::*;
 
 // ---------------------------------------------------------------------------
-// B-spline approximation helpers
+// B-spline surface access
 // ---------------------------------------------------------------------------
 
-/// Approximate a non-analytic surface with an interpolating B-spline surface.
+/// The surface's own B-spline data: exact poles / knots / weights.
 ///
-/// Trait objects cannot be downcast, so a genuine `GeomBSplineSurface` is
-/// recovered by sampling and re-fitting (`fit_surface_grid`). The fit passes
-/// through every grid node, so a sampled B-spline reproduces itself closely;
-/// analytic surfaces should never reach this path.
-pub(super) fn fit_bspline_surface(s: &dyn Surface) -> Result<GeomBSplineSurface, String> {
-    let (u0, u1, v0, v1) = surf_bounds(s);
-    let nu = 6;
-    let nv = 6;
-    let mut pts = Vec::with_capacity(nu);
-    for i in 0..nu {
-        let mut row = Vec::with_capacity(nv);
-        for j in 0..nv {
-            let u = u0 + (u1 - u0) * i as f64 / (nu - 1) as f64;
-            let v = v0 + (v1 - v0) * j as f64 / (nv - 1) as f64;
-            row.push(s.d0(u, v));
-        }
-        pts.push(row);
+/// `GeomToStep_MakeBoundedSurface.cxx:41-70`: the
+/// `IsKind(STANDARD_TYPE(Geom_BSplineSurface))` arm reads the surface itself,
+/// and the `IsKind(STANDARD_TYPE(Geom_BezierSurface))` arm first converts it
+/// with `GeomConvert::SurfaceToBSplineSurface`. A
+/// `Geom_RectangularTrimmedSurface` is peeled to its basis, which goes through
+/// this same chain (`cxx:82-88` -> `GeomToStep_MakeRectangularTrimmedSurface.cxx:46-53`).
+/// `Surface::osculating_bspline` covers the first two arms exactly (the
+/// B-spline clone, the Bezier conversion), so the pole accessors below only
+/// serve a basis reached through a wrapper.
+fn exact_bspline_of(s: &dyn Surface) -> Option<GeomBSplineSurface> {
+    if let Some(bs) = s.osculating_bspline() {
+        return Some(bs);
     }
-    occt_geom::bspline_surface::fit_surface_grid(&pts, 2, 2)
-        .or_else(|_| occt_geom::bspline_surface::fit_surface_grid(&pts, 1, 1))
-        .map_err(|e| format!("fit_bspline_surface: {e}"))
+    if let Some(basis) = s.rectangular_trimmed_basis() {
+        return exact_bspline_of(basis.as_ref());
+    }
+    let poles = s.bspline_surface_poles()?.to_vec();
+    let knots_u = s.bspline_surface_uknots()?.to_vec();
+    let knots_v = s.bspline_surface_vknots()?.to_vec();
+    let deg_u = usize::try_from(s.u_degree()).ok()?;
+    let deg_v = usize::try_from(s.v_degree()).ok()?;
+    match s.bspline_surface_weights() {
+        Some(w) => {
+            GeomBSplineSurface::rational(poles, w.to_vec(), knots_u, knots_v, deg_u, deg_v).ok()
+        }
+        None => GeomBSplineSurface::new(poles, knots_u, knots_v, deg_u, deg_v).ok(),
+    }
+}
+
+/// The B-spline surface `GeomToStep_MakeBoundedSurface` writes, unperiodized.
+///
+/// `GeomToStep_MakeBoundedSurface.cxx:46-52`: a periodic B-spline is copied and
+/// `SetUNotPeriodic` / `SetVNotPeriodic` is applied before the poles and knots
+/// are read, so the written entity carries the open knot vector
+/// (`BSplSLib::Unperiodize`, [`occt_core::bspl::unperiodize_direction`], the
+/// same call the IGES writer makes for entity 128).
+///
+/// Sampling the surface on a 6x6 grid and re-fitting it (the previous body) has
+/// no counterpart in OCCT: it cannot reproduce the source poles, and OCCT's
+/// reader is given the surface's own control net.
+///
+/// UNPORTED: the trim of a `Geom_RectangularTrimmedSurface` is not wrapped in a
+/// `RECTANGULAR_TRIMMED_SURFACE` entity (`cxx:82-88`); only the basis surface is
+/// written, as `iges.rs` does for the same class. The trim itself is carried by
+/// the `ADVANCED_FACE` bounds.
+pub(super) fn bounded_bspline_surface(s: &dyn Surface) -> Option<GeomBSplineSurface> {
+    let mut bs = exact_bspline_of(s)?;
+    if bs.u_periodic {
+        let (knots, map) = occt_core::bspl::unperiodize_direction(
+            bs.deg_u as i32,
+            &bs.knots_u,
+            bs.nb_poles_u(),
+        );
+        let poles: Vec<Vec<GpPnt>> = map.iter().map(|k| bs.poles[*k].clone()).collect();
+        bs.knots_u = knots;
+        bs.poles = poles;
+        if let Some(w) = bs.weights.take() {
+            bs.weights = Some(map.iter().map(|k| w[*k].clone()).collect());
+        }
+        bs.u_periodic = false;
+    }
+    if bs.v_periodic {
+        let (knots, map) = occt_core::bspl::unperiodize_direction(
+            bs.deg_v as i32,
+            &bs.knots_v,
+            bs.nb_poles_v(),
+        );
+        bs.knots_v = knots;
+        for row in bs.poles.iter_mut() {
+            *row = map.iter().map(|k| row[*k].clone()).collect();
+        }
+        if let Some(w) = bs.weights.as_mut() {
+            for row in w.iter_mut() {
+                *row = map.iter().map(|k| row[*k]).collect();
+            }
+        }
+        bs.v_periodic = false;
+    }
+    let nu = bs.poles.len();
+    let nv = bs.poles.first().map_or(0, |r| r.len());
+    if bs.knots_u.len() != nu + bs.deg_u + 1 || bs.knots_v.len() != nv + bs.deg_v + 1 {
+        return None;
+    }
+    Some(bs)
 }
 
 /// `GeomConvert::CurveToBSplineCurve` (`GeomConvert.cxx:163-430`) through the
@@ -244,8 +307,13 @@ impl WriteCtx {
         // `B_SPLINE_CURVE_WITH_KNOTS` (+`_AND_RATIONAL_...` when rational), and a
         // Bezier is first converted with `GeomConvert::CurveToBSplineCurve` and
         // written the same way.
-        // UNPORTED: `Geom_BSplineCurve::SetNotPeriodic` (`cxx:46-51`) is not
-        // ported, so a periodic B-spline keeps its periodicity here.
+        // UNPORTED: the periodic arm of `GeomToStep_MakeBoundedCurve.cxx:46-51`
+        // (`BS = B->Copy(); BS->SetNotPeriodic()`) is not wired here, so a
+        // periodic B-spline keeps its periodicity. The primitive itself exists
+        // (`occt_geom::bspline_curve::GeomBSplineCurve::set_not_periodic`,
+        // `Geom_BSplineCurve.cxx:974-1019`) and `iges.rs:1277` already uses it
+        // for the same step (IGES entity 126); the surface arm above does the
+        // equivalent through `bounded_bspline_surface`.
         if let (Some(poles), Some(knots), Some(deg)) =
             (c.bspline_poles(), c.bspline_knots(), c.nurbs_degree())
         {
@@ -345,6 +413,21 @@ impl WriteCtx {
         let Some(surf) = GeometryRegistry::global().face_surface(&f.0) else {
             return self.emit_plane_fallback();
         };
+        // `GeomToStep_MakeSurface.cxx:44-48` transfers a `Geom_BoundedSurface`
+        // (`Geom_BSplineSurface` / `Geom_BezierSurface` /
+        // `Geom_RectangularTrimmedSurface`) by dynamic type **before** the
+        // elementary, swept and offset arms, and
+        // `GeomToStep_MakeBoundedSurface.cxx:39-95` writes the surface's own
+        // poles and knots. The geometric classifier below cannot identify those
+        // classes, so it must not see them first. Only the spline writer takes
+        // this arm: the plain writer keeps its previous entity choice.
+        if self.splines {
+            if let Some(bs) = bounded_bspline_surface(surf.as_ref()) {
+                if let Ok(id) = write_bspline_surface(&mut self.w, &bs) {
+                    return id;
+                }
+            }
+        }
         match surface_kind(surf.as_ref()) {
             SurfKind::Plane => {
                 let pln = face_plane(f).unwrap_or_else(|| GpPln::new(GpAx3::standard()));
@@ -396,15 +479,11 @@ impl WriteCtx {
                 }
             }
             SurfKind::Other => {
-                // B-spline or otherwise non-analytic surface: emit a fitted
-                // B-spline when spline output is requested, else a unit plane.
-                if self.splines {
-                    if let Ok(bs) = fit_bspline_surface(surf.as_ref()) {
-                        if let Ok(id) = write_bspline_surface(&mut self.w, &bs) {
-                            return id;
-                        }
-                    }
-                }
+                // `GeomToStep_MakeSurface.cxx:78-84`: an unrecognised surface
+                // leaves `done = false`; the caller then builds the
+                // `ADVANCED_FACE` with the surface attribute unset. The port
+                // writes its plane placeholder instead, and never resamples the
+                // surface (a fit is not in OCCT's writer).
                 self.emit_plane_fallback()
             }
         }

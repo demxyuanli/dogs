@@ -76,7 +76,7 @@ impl GpVec2d {
             TrsfForm::Identity | TrsfForm::Translation => {}
             TrsfForm::PntMirror => self.coord.reverse(),
             TrsfForm::Scale => self.coord.multiply_scalar(t.scale_factor()),
-            _ => self.coord.multiply_mat2d(t.vectorial_part()),
+            _ => self.coord.multiply_mat2d(&t.vectorial_part()),
         }
     }
     /// `gp_Vec2d::Transformed(const gp_Trsf2d&)` (`gp_Vec2d.cxx:186-191`).

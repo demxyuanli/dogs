@@ -29,6 +29,13 @@ impl Curve for GeomHyperbola {
     fn continuity(&self) -> u8 { 6 }
     fn gp_hyperbola(&self) -> Option<GpHypr> { Some(self.pos.clone()) }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
-    fn reverse(&mut self) {}
+    /// `Geom_Hyperbola::Reverse` -> `Geom_Conic::Reverse`
+    /// (`Geom_Conic.cxx:23-28`): reverse the frame's main direction.
+    fn reverse(&mut self) {
+        let z = self.pos.pos.direction().reversed();
+        self.pos.pos.set_direction(z);
+    }
+    /// `Geom_Hyperbola::ReversedParameter` (`Geom_Hyperbola.cxx:167`): `-U`.
+    fn reversed_parameter(&self, u: f64) -> f64 { -u }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
 }

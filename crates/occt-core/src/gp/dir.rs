@@ -164,6 +164,80 @@ impl GpDir {
         }
     }
 
+    /// `gp_Dir::Rotate(const gp_Ax1&, angle)` (`gp_Dir.hxx:496-501`): multiply
+    /// by the rotation's h-vectorial part (no renormalization).
+    pub fn rotate(&mut self, a1: &crate::gp::ax1::GpAx1, ang: f64) {
+        let mut t = crate::gp::trsf::GpTrsf::identity();
+        if t.set_rotation_ax1(a1, ang).is_err() {
+            return;
+        }
+        let mut xyz = self.coord;
+        xyz.multiply_mat(&t.h_vectorial_part());
+        self.coord = xyz;
+    }
+    /// `gp_Dir::Mirror(const gp_Dir&)` (`gp_Dir.cxx:86-102`): reflect the
+    /// direction across the line carried by `v`.
+    pub fn mirror_dir(&mut self, v: &Self) {
+        let (a, b, c) = (v.coord.x(), v.coord.y(), v.coord.z());
+        let (x, y, z) = (self.coord.x(), self.coord.y(), self.coord.z());
+        let m1 = 2.0 * a * b;
+        let m2 = 2.0 * a * c;
+        let m3 = 2.0 * b * c;
+        self.coord = GpXyz::new(
+            (2.0 * a * a - 1.0) * x + m1 * y + m2 * z,
+            m1 * x + (2.0 * b * b - 1.0) * y + m3 * z,
+            m2 * x + m3 * y + (2.0 * c * c - 1.0) * z,
+        );
+    }
+    /// `gp_Dir::Mirror(const gp_Ax1&)` (`gp_Dir.cxx:104-120`). Ported verbatim,
+    /// including OCCT's line 109 reading `C = XYZ.Y()` rather than `Z`.
+    pub fn mirror_ax1(&mut self, a1: &crate::gp::ax1::GpAx1) {
+        let d = a1.direction();
+        let (a, b) = (d.x(), d.y());
+        let c = d.y();
+        let (x, y, z) = (self.coord.x(), self.coord.y(), self.coord.z());
+        let m1 = 2.0 * a * b;
+        let m2 = 2.0 * a * c;
+        let m3 = 2.0 * b * c;
+        self.coord = GpXyz::new(
+            (2.0 * a * a - 1.0) * x + m1 * y + m2 * z,
+            m1 * x + (2.0 * b * b - 1.0) * y + m3 * z,
+            m2 * x + m3 * y + (2.0 * c * c - 1.0) * z,
+        );
+    }
+    /// `gp_Dir::Mirror(const gp_Ax2&)` (`gp_Dir.cxx:122-127`): mirror across
+    /// the axis placement's main direction, then reverse.
+    pub fn mirror_ax2(&mut self, a2: &crate::gp::ax2::GpAx2) {
+        let vz = a2.direction();
+        self.mirror_dir(&vz);
+        self.reverse();
+    }
+    /// `gp_Dir::Transform(const gp_Trsf&)` (`gp_Dir.cxx:129-155`).
+    pub fn transform(&mut self, t: &crate::gp::trsf::GpTrsf) {
+        use crate::gp::trsf_form::TrsfForm;
+        match t.form() {
+            TrsfForm::Identity | TrsfForm::Translation => {}
+            TrsfForm::PntMirror => self.reverse(),
+            TrsfForm::Scale => {
+                if t.scale_factor() < 0.0 {
+                    self.reverse();
+                }
+            }
+            _ => {
+                let mut xyz = self.coord;
+                xyz.multiply_mat(&t.h_vectorial_part());
+                let d = xyz.modulus();
+                if d > RESOLUTION {
+                    xyz = xyz.divided(d);
+                }
+                if t.scale_factor() < 0.0 {
+                    xyz.reverse();
+                }
+                self.coord = xyz;
+            }
+        }
+    }
+
     /// Angle between self and other (radians). Returns 0 if either is zero.
     pub fn angle(&self, other: &GpDir) -> f64 {
         let cos = self.dot(other).clamp(-1.0, 1.0);

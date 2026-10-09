@@ -236,6 +236,18 @@ impl crate::Surface for GeomSurfaceOfRevolution {
         Some(self.axis())
     }
 
+    /// `Geom_SurfaceOfRevolution::UReverse` (`Geom_SurfaceOfRevolution.cxx:95-99`):
+    /// the axis direction is reversed. `UReversedParameter` is `2*PI - U`
+    /// (`cxx:103-107`); the parameter domain itself stays `[0, 2*PI]`.
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        Some(Arc::new(Self {
+            generatrix: self.generatrix.clone(),
+            axis: self.axis.reversed(),
+            v_first: self.v_first,
+            v_last: self.v_last,
+        }))
+    }
+
     /// `GeomAdaptor_SurfaceOfRevolution::UResolution` / `VResolution`
     /// (`cxx:356-366`) and `GeomAdaptor_Surface::VResolution` Revolution arm
     /// (`cxx:1906-1908`). U is `Precision::Parametric`; V follows the basis.

@@ -85,6 +85,56 @@ pub trait NodeInsertionMeshAlgo {
     fn insert_internal_nodes(&mut self, uv_points: &[GpPnt2d]) -> Result<usize, String>;
 }
 
+/// TEMPORARY diagnostic (DELDIAG): dumps the result triangles of the face whose
+/// structure contains the node at (13.0176, -24.7899, 290).
+pub fn diag_dump_result(result: &TriangulationResult, face_index: usize) {
+    if std::env::var("DELDIAG").is_err() {
+        return;
+    }
+    let is_target = result.nodes.iter().any(|n| {
+        (n.p3d.x() - 13.017621944).abs() < 1e-3
+            && (n.p3d.y() + 24.789947988).abs() < 1e-3
+            && (n.p3d.z() - 290.0).abs() < 1e-3
+    });
+    if !is_target {
+        return;
+    }
+    eprintln!(
+        "DELDIAGRES face={face_index} nodes={} tris={}",
+        result.nodes.len(),
+        result.triangles.len()
+    );
+    for (i, n) in result.nodes.iter().enumerate() {
+        eprintln!(
+            "DELDIAGRES n i={} state={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
+            i + 1,
+            n.state.to_str(),
+            n.location.x(),
+            n.location.y(),
+            n.p3d.x(),
+            n.p3d.y(),
+            n.p3d.z()
+        );
+    }
+    for (i, t) in result.triangles.iter().enumerate() {
+        let v = t.vertex_indices;
+        let p = |k: i32| -> &DelaunVertex { &result.nodes[(k - 1) as usize] };
+        let (a, b, c) = (p(v[0]), p(v[1]), p(v[2]));
+        eprintln!(
+            "DELDIAGRES t i={i} v=({},{},{}) uv=[({:.6},{:.6}),({:.6},{:.6}),({:.6},{:.6})]",
+            v[0],
+            v[1],
+            v[2],
+            a.location.x(),
+            a.location.y(),
+            b.location.x(),
+            b.location.y(),
+            c.location.x(),
+            c.location.y()
+        );
+    }
+}
+
 /// Result of a node-insertion triangulation run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriangulationResult {
@@ -311,7 +361,20 @@ impl DelaunayNodeInsertionMeshAlgo {
             .filter(|&i| structure.get_node(i).state != VertexState::Deleted)
             .collect();
         let (cells_u, cells_v) = self.cells_count(indices.len() as i32);
-        let mut delaun = Delaun::new_with_data_cells(structure, &mut indices, cells_u, cells_v);
+        // TEMPORARY diagnostic (DELAUNDUMP): writes the exact pre-triangulation
+        // structure (nodes, links, insertion order) of the `DELSTAGE` face so
+        // `occt_probe --delaunstruct` can run OCCT's own `BRepMesh_Delaun` over
+        // the identical input.
+        if let Ok(dir) = std::env::var("DELAUNDUMP") {
+            let tagged = std::env::var("DELSTAGE")
+                .ok()
+                .and_then(|v| v.parse::<i32>().ok())
+                == Some(_face_index as i32);
+            if tagged {
+                Self::dump_delaun_structure(&structure, &dir, _face_index, cells_u, cells_v, &indices);
+            }
+        }
+        let mut delaun = Delaun::new_with_data_cells_diag(structure, &mut indices, cells_u, cells_v, _face_index as i32);
         // `BRepMesh_Delaun::addTriangle` overflowed a link's triangle pair:
         // OCCT's `Standard_OutOfRange` (`BRepMesh_PairOfIndex.hxx:41`) unwinds out
         // of `generateMesh`, `BRepMesh_BaseMeshAlgo::Perform` swallows it
@@ -573,6 +636,43 @@ impl DelaunayNodeInsertionMeshAlgo {
             }
         }
         self.init_data_structure(model, face_index)?;
+        self.diag_dump_structure(face_index);
+        if let Ok(spec) = std::env::var("DPROBE") {
+            if spec.trim().parse::<i32>().ok() == Some(face_index as i32) {
+                let nb = self.structure.nb_nodes() as i32;
+                let (mut nfree, mut nfront, mut nfixed) = (0usize, 0usize, 0usize);
+                for i in 1..=nb {
+                    match self.structure.get_node(i).state {
+                        VertexState::Free => nfree += 1,
+                        VertexState::Frontier => nfront += 1,
+                        VertexState::Fixed => nfixed += 1,
+                        _ => {}
+                    }
+                }
+                eprintln!(
+                    "DPROBE face={face_index} nb_nodes={nb} nb_links={} uv={} free={nfree} frontier={nfront} fixed={nfixed}",
+                    self.structure.nb_links(),
+                    uv.len()
+                );
+                for i in 1..=nb {
+                    let n = self.structure.get_node(i);
+                    let p3d = self
+                        .nodes_map
+                        .get(i as usize - 1)
+                        .copied()
+                        .unwrap_or_else(GpPnt::zero);
+                    eprintln!(
+                        "DPROBE n i={i} st={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
+                        n.state.to_str(),
+                        n.location.x(),
+                        n.location.y(),
+                        p3d.x(),
+                        p3d.y(),
+                        p3d.z()
+                    );
+                }
+            }
+        }
 
         // Internal (in-face) 3D points -> UV via the face surface, dropped when
         // outside the face (`insertInternalVertex` classifier check).
@@ -607,6 +707,30 @@ impl DelaunayNodeInsertionMeshAlgo {
         }
         let insert = self.list_surface_nodes(model, face_index, params)?;
         let result = self.finish_mesh(&insert, params, face_deflection, face_index);
+        if std::env::var("DPROBE").ok().and_then(|v| v.trim().parse::<i32>().ok())
+            == Some(face_index as i32)
+        {
+            if let Ok(res) = &result {
+                eprintln!(
+                    "DPROBE result face={face_index} nodes={} tris={} insert={}",
+                    res.nodes.len(),
+                    res.triangles.len(),
+                    insert.len()
+                );
+                for (i, n) in res.nodes.iter().enumerate() {
+                    eprintln!(
+                        "DPROBE r i={} st={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
+                        i + 1,
+                        n.state.to_str(),
+                        n.location.x(),
+                        n.location.y(),
+                        n.p3d.x(),
+                        n.p3d.y(),
+                        n.p3d.z()
+                    );
+                }
+            }
+        }
         if self.delaun_failed {
             // `BRepMesh_BaseMeshAlgo::Perform` (`BRepMesh_BaseMeshAlgo.cxx:40-62`):
             // the swallowed `Standard_OutOfRange` leaves the face with
@@ -772,6 +896,28 @@ impl DelaunayNodeInsertionMeshAlgo {
                 let Some((ori, pts, pts3d)) = job else {
                     continue;
                 };
+                // TEMPORARY diagnostic (DELREGSKEL): the registration skeleton in the
+                // `occt_probe --structdump` `OCCTSTRUCT E` line format, so the pcurve
+                // visit order and the effective link orientation can be diffed against
+                // `BRepMesh_BaseMeshAlgo::initDataStructure`.
+                if std::env::var("DELREGSKEL").is_ok() {
+                    let first = pts.first().copied().unwrap_or_else(GpPnt2d::zero);
+                    let last = pts.last().copied().unwrap_or_else(GpPnt2d::zero);
+                    eprintln!(
+                        "REG f={} w={} edge={} slot_ori={:?} rev={} ori={:?} n={} first=({:.9},{:.9}) last=({:.9},{:.9})",
+                        face_index,
+                        wire_it,
+                        edge_index,
+                        slot_ori,
+                        reverse_walk,
+                        ori,
+                        pts.len(),
+                        first.x(),
+                        first.y(),
+                        last.x(),
+                        last.y()
+                    );
+                }
                 let mut prev = -1i32;
                 for (i, &uv) in pts.iter().enumerate() {
                     let p3d = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
@@ -789,6 +935,132 @@ impl DelaunayNodeInsertionMeshAlgo {
             }
         }
         Ok(())
+    }
+
+    /// TEMPORARY diagnostic (DELAUNDUMP): structure dump in the text format
+    /// consumed by `occt_probe --delaunstruct <dir>` (`delaun_in_f<face>.txt`):
+    /// `TOL`, `CELLS`, `N i u v movability`, `L i first last movability`, `V ...`.
+    fn dump_delaun_structure(
+        structure: &DelaunDataStructure,
+        dir: &str,
+        face_index: usize,
+        cells_u: i32,
+        cells_v: i32,
+        indices: &[i32],
+    ) {
+        use std::fmt::Write as _;
+        let (tol_u, tol_v) = structure.get_tolerance();
+        let mut out = String::new();
+        let _ = writeln!(out, "TOL {tol_u:.17e} {tol_v:.17e}");
+        let _ = writeln!(out, "CELLS {cells_u} {cells_v}");
+        // 3D bbox of the registered nodes: pairs this dump with the probe's
+        // `--boundary` / `--facestats` face list (whose face order differs from
+        // the port's, so the index alone is not a pairing key).
+        {
+            let (mut lo, mut hi) = (GpPnt::zero(), GpPnt::zero());
+            let mut first = true;
+            for i in 1..=structure.nb_nodes() as i32 {
+                let p = structure.get_node(i).p3d;
+                if first {
+                    lo = p;
+                    hi = p;
+                    first = false;
+                } else {
+                    lo = GpPnt::new(lo.x().min(p.x()), lo.y().min(p.y()), lo.z().min(p.z()));
+                    hi = GpPnt::new(hi.x().max(p.x()), hi.y().max(p.y()), hi.z().max(p.z()));
+                }
+            }
+            if !first {
+                let _ = writeln!(
+                    out,
+                    "BOX {:.6} {:.6} {:.6} {:.6} {:.6} {:.6}",
+                    lo.x(),
+                    lo.y(),
+                    lo.z(),
+                    hi.x(),
+                    hi.y(),
+                    hi.z()
+                );
+            }
+        }
+        for i in 1..=structure.nb_nodes() as i32 {
+            let n = structure.get_node(i);
+            let _ = writeln!(
+                out,
+                "N {i} {:.17e} {:.17e} {}",
+                n.location.x(),
+                n.location.y(),
+                n.state.index()
+            );
+        }
+        for i in 1..=structure.nb_links() as i32 {
+            let l = structure.get_link(i);
+            let _ = writeln!(
+                out,
+                "L {i} {} {} {}",
+                l.first_node(),
+                l.last_node(),
+                structure.link_movability(i).index()
+            );
+        }
+        let mut vline = String::from("V");
+        for &idx in indices {
+            let _ = write!(vline, " {idx}");
+        }
+        let _ = writeln!(out, "{vline}");
+        let path = std::path::Path::new(dir).join(format!("delaun_in_f{face_index}.txt"));
+        if std::fs::write(&path, out).is_err() {
+            eprintln!("DELAUNDUMP: cannot write {}", path.display());
+        }
+    }
+
+    /// TEMPORARY diagnostic (DELDIAG): dumps the pre-triangulation structure of
+    /// the face whose boundary contains the node at (13.0176, -24.7899, 290).
+    fn diag_dump_structure(&self, face_index: usize) {
+        if std::env::var("DELDIAG").is_err() {
+            return;
+        }
+        let nb = self.structure.nb_nodes() as i32;
+        let is_target = (1..=nb).any(|i| {
+            let p = self.structure.get_node(i).p3d;
+            (p.x() - 13.017621944).abs() < 1e-3
+                && (p.y() + 24.789947988).abs() < 1e-3
+                && (p.z() - 290.0).abs() < 1e-3
+        });
+        if !is_target {
+            return;
+        }
+        let nb_links = self.structure.nb_links() as i32;
+        eprintln!("DELDIAG face={face_index} nodes={nb} links={nb_links}");
+        for i in 1..=nb {
+            let n = self.structure.get_node(i);
+            eprintln!(
+                "DELDIAG n i={i} st={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
+                n.state.to_str(),
+                n.location.x(),
+                n.location.y(),
+                n.p3d.x(),
+                n.p3d.y(),
+                n.p3d.z()
+            );
+        }
+        for i in 1..=nb_links {
+            let l = self.structure.get_link(i);
+            let a = self.structure.get_node(l.first_node());
+            let b = self.structure.get_node(l.last_node());
+            eprintln!(
+                "DELDIAG l i={i} st={} n=({},{}) p=[({:.6},{:.6},{:.6}),({:.6},{:.6},{:.6})]",
+                self.structure.link_movability(i).to_str(),
+                l.first_node(),
+                l.last_node(),
+                a.p3d.x(),
+                a.p3d.y(),
+                a.p3d.z(),
+                b.p3d.x(),
+                b.p3d.y(),
+                b.p3d.z()
+            );
+        }
     }
 
     /// Source: `BRepMesh_BaseMeshAlgo::addLinkToMesh`.

@@ -30,6 +30,17 @@
 #include <IMeshData_PCurve.hxx>
 #include <IMeshTools_Parameters.hxx>
 #include <Message_ProgressRange.hxx>
+// T-104: OCCT's own node-insertion algo, subclassed to dump the structure it
+// hands to `BRepMesh_Delaun` (`--structdump`). Kept after the `IMeshData_*`
+// includes because `BRepMesh_NodeInsertionMeshAlgo.hxx` needs those types.
+#include <BRepMesh_DelaunayNodeInsertionMeshAlgo.hxx>
+#include <BRepMesh_DelaunayBaseMeshAlgo.hxx>
+#include <IGESControl_Controller.hxx>
+#include <IGESControl_Writer.hxx>
+#include <BRepMesh_TorusRangeSplitter.hxx>
+#include <BRepMesh_SphereRangeSplitter.hxx>
+#include <BRepMesh_CylinderRangeSplitter.hxx>
+#include <BRepMesh_ConeRangeSplitter.hxx>
 #include <Precision.hxx>
 #include <Poly_Triangulation.hxx>
 #include <TopExp_Explorer.hxx>
@@ -49,6 +60,7 @@
 #include <Interface_Static.hxx>
 #include <ShapeProcess.hxx>
 #include <ShapeAnalysis_Surface.hxx>
+#include <ShapeConstruct_ProjectCurveOnSurface.hxx>
 #include <DE_ShapeFixParameters.hxx>
 #include <StepData_StepModel.hxx>
 #include <BRepGProp_Domain.hxx>
@@ -85,6 +97,7 @@
 #include <gp_Vec.hxx>
 
 #include <Geom2d_Curve.hxx>
+#include <Geom2d_Line.hxx>
 #include <Bnd_Box2d.hxx>
 #include <Geom2d_BSplineCurve.hxx>
 #include <Geom2dAdaptor_Curve.hxx>
@@ -239,7 +252,8 @@ static int runDelaunFeed(const std::string& theDir)
 static int runDelaunStruct(const std::string& theDir)
 {
   const int aFaces[] = {0,   208, 209, 169, 174, 189, 192, 193, 194,
-                        195, 196, 197, 198, 199, 204, 206, 210, 212};
+                        195, 196, 197, 198, 199, 204, 206, 210, 212, 433,
+                        51,  52,  53,  54,  321};
   for (int f : aFaces)
   {
     char aName[512];
@@ -405,7 +419,13 @@ static int runBoundary(const TopoDS_Shape& theShape, const std::string& theDir)
   aParams.Angle         = 20.0 * M_PI / 180.0;
   aParams.InParallel    = false;
   aParams.Relative      = false;
-  aParams.MinSize       = Precision::Confusion();
+  // Mirror `BRepMesh_IncrementalMesh::initParameters` (`hxx:91-96`): the real
+  // mesher runs with `MinSize = max(RelMinSize * min(defl, deflInterior), Confusion)`.
+  // The earlier `Precision::Confusion()` made `BRepMesh_CurveTessellator::init` hand
+  // `GCPnts_TangentialDeflection` a `MinimumLength` of 1e-7, so every arc got the full
+  // 10-degree (half-angle) step and the dump was NOT the structure the mesher builds.
+  aParams.MinSize       = (std::max)(IMeshTools_Parameters::RelMinSize() * aParams.Deflection,
+                                     Precision::Confusion());
   aParams.AdjustMinSize = false;
 
   occ::handle<BRepMesh_Context> aCtx = new BRepMesh_Context;
@@ -466,6 +486,27 @@ static int runBoundary(const TopoDS_Shape& theShape, const std::string& theDir)
       for (int e = 0; e < aDWire->EdgesNb(); ++e)
       {
         const IMeshData::IEdgeHandle& aDEdge = aDWire->GetEdge(e);
+        if (aDWire->EdgesNb() == 16)
+        {
+          // `BRepMesh_CurveTessellator::init` inputs (`cxx:60-120`): the edge's stored
+          // deflections and the curve type decide how many points
+          // `GCPnts_TangentialDeflection` emits, so dump them next to the points.
+          BRepAdaptor_Curve aBRepCurve(aDEdge->GetEdge());
+          anOut << "  EINFO w=" << w << " e=" << e << " ctype=" << (int)aBRepCurve.GetType()
+                << " defl=" << aDEdge->GetDeflection()
+                << " ang=" << aDEdge->GetAngularDeflection()
+                << " sameparam=" << (aDEdge->GetSameParam() ? 1 : 0)
+                << " samerange=" << (aDEdge->GetSameRange() ? 1 : 0)
+                << " degen=" << (aDEdge->GetDegenerated() ? 1 : 0)
+                << " free=" << (aDEdge->IsFree() ? 1 : 0)
+                << " first=" << aBRepCurve.FirstParameter()
+                << " last=" << aBRepCurve.LastParameter();
+          if (aBRepCurve.GetType() == GeomAbs_Circle)
+          {
+            anOut << " radius=" << aBRepCurve.Circle().Radius();
+          }
+          anOut << "\n";
+        }
         // Exactly `BRepMesh_BaseMeshAlgo.cxx:91-96`: the pcurves of this edge on
         // this face, in the structure's own order.
         const IMeshData::ListOfInteger& aListOfPCurves = aDEdge->GetPCurves(aDFace.get());
@@ -499,6 +540,304 @@ static int runBoundary(const TopoDS_Shape& theShape, const std::string& theDir)
   aFile << anOut.str();
   aFile.close();
   std::cout << "BOUNDARY wrote " << aPath << std::endl;
+  return 0;
+}
+
+// --- TEMP T-104 (`--structdump <faceIdx>`) -----------------------------------------
+// Prints the exact `BRepMesh_DataStructureOfDelaun` OCCT's own node-insertion algo
+// hands to `BRepMesh_Delaun` for one discrete face, in the port dump's `N`/`L` line
+// format (`crates/occt-topo/src/meshing/node_insertion.rs::dump_delaun_structure`),
+// so the two files diff line by line. The model is built exactly like `--boundary`
+// (same deflection/angle as the port's `prs3d_get_deflection(shape, 0.1)`), and the
+// face index is the `IMeshData_Model` order - pair it with the port's face by the
+// printed bbox, not by index.
+template <class Splitter>
+class ZZStructDumpAlgo
+    : public BRepMesh_DelaunayNodeInsertionMeshAlgo<Splitter, BRepMesh_DelaunayBaseMeshAlgo>
+{
+protected:
+  // TEMP T-105: dumps, in the port's own `N`/`L`/`TOL`/`CELLS`/`V` format, the exact
+  // structure the *real* algo passes to `BRepMesh_Delaun` (the moment `generateMesh`
+  // is entered). Diffing this against the port's `delaun_in_f*.txt` says whether the
+  // two sides really start from the same input.
+  void generateMesh(const Message_ProgressRange& theRange) override
+  {
+    typedef BRepMesh_DelaunayNodeInsertionMeshAlgo<Splitter, BRepMesh_DelaunayBaseMeshAlgo> Base;
+    const char* aPath = std::getenv("ZZDELAUNIN");
+    if (aPath != nullptr)
+    {
+      const occ::handle<BRepMesh_DataStructureOfDelaun>& aSt = this->getStructure();
+      const int aNb = this->getNodesMap()->Length();
+      double    aTolX = 0.0, aTolY = 0.0;
+      aSt->Data()->GetTolerance(aTolX, aTolY);
+      const std::pair<int, int> aCells = this->getCellsCount(aNb);
+      std::ofstream aFile(aPath);
+      aFile << "TOL " << std::setprecision(18) << aTolX << " " << aTolY << "\n";
+      aFile << "CELLS " << aCells.first << " " << aCells.second << "\n";
+      for (int i = 1; i <= aSt->NbNodes(); ++i)
+      {
+        const BRepMesh_Vertex& aV = aSt->GetNode(i);
+        aFile << "N " << i << " " << std::setprecision(18) << aV.Coord().X() << " "
+              << aV.Coord().Y() << " " << static_cast<int>(aV.Movability()) << "\n";
+      }
+      for (int i = 1; i <= aSt->NbLinks(); ++i)
+      {
+        const BRepMesh_Edge& aL = aSt->GetLink(i);
+        aFile << "L " << i << " " << aL.FirstNode() << " " << aL.LastNode() << " "
+              << static_cast<int>(aL.Movability()) << "\n";
+      }
+      aFile << "V";
+      for (int i = 1; i <= aNb; ++i)
+      {
+        aFile << " " << i;
+      }
+      aFile << "\n";
+      aFile.close();
+      std::printf("OCCTPOST DELAUNIN wrote %s nodes=%d links=%d vorder=%d tol=(%.17e,%.17e) "
+                  "cells=(%d,%d)\n",
+                  aPath,
+                  aSt->NbNodes(),
+                  aSt->NbLinks(),
+                  aNb,
+                  aTolX,
+                  aTolY,
+                  aCells.first,
+                  aCells.second);
+    }
+    Base::generateMesh(theRange);
+  }
+
+  // TEMP T-105: the real factory algo (`BRepMesh_MeshAlgoFactory`, torus ->
+  // `NodeInsertionMeshAlgo<TorusRangeSplitter>`) is a template, so the only way to
+  // observe the state it hands `BRepMesh_Delaun` and the state it leaves behind is to
+  // subclass it. `postProcessMesh` is the seam between the base Delaunay
+  // (`generateMesh`) and the surface-node insertion (`insertNodes` -> `AddVertices`),
+  // which is exactly where the port's torus faces lose every triangle.
+  void postProcessMesh(BRepMesh_Delaun& theMesher, const Message_ProgressRange& theRange) override
+  {
+    typedef BRepMesh_DelaunayNodeInsertionMeshAlgo<Splitter, BRepMesh_DelaunayBaseMeshAlgo> Base;
+    dumpAlgoState("POST_BASEMESH", theMesher);
+    {
+      double aTolX = 0.0, aTolY = 0.0;
+      const occ::handle<BRepMesh_DataStructureOfDelaun>& aSt = this->getStructure();
+      aSt->Data()->GetTolerance(aTolX, aTolY);
+      const std::pair<int, int>          aCells  = this->getCellsCount(aSt->NbNodes() - 3);
+      const std::pair<double, double>&   aDelta  = this->getRangeSplitter().GetDelta();
+      const std::pair<double, double>&   aTolUV  = this->getRangeSplitter().GetToleranceUV();
+      const std::pair<double, double>&   aRangeU = this->getRangeSplitter().GetRangeU();
+      const std::pair<double, double>&   aRangeV = this->getRangeSplitter().GetRangeV();
+      std::printf("OCCTPOST PARAMS defl=%.9f tol=(%.17e,%.17e) cells=(%d,%d) delta=(%.17e,%.17e) "
+                  "toluv=(%.17e,%.17e) rangeU=(%.9f,%.9f) rangeV=(%.9f,%.9f)\n",
+                  this->getDFace()->GetDeflection(),
+                  aTolX,
+                  aTolY,
+                  aCells.first,
+                  aCells.second,
+                  aDelta.first,
+                  aDelta.second,
+                  aTolUV.first,
+                  aTolUV.second,
+                  aRangeU.first,
+                  aRangeU.second,
+                  aRangeV.first,
+                  aRangeV.second);
+    }
+    {
+      const Handle(IMeshData::ListOfPnt2d) aSurfaceNodes =
+        this->getRangeSplitter().GenerateSurfaceNodes(this->getParameters());
+      int aIn = 0;
+      const int aTotal = aSurfaceNodes.IsNull() ? 0 : aSurfaceNodes->Size();
+      if (!aSurfaceNodes.IsNull())
+      {
+        IMeshData::ListOfPnt2d::Iterator aNodesIt(*aSurfaceNodes);
+        for (; aNodesIt.More(); aNodesIt.Next())
+        {
+          if (this->getClassifier()->Perform(aNodesIt.Value()) == TopAbs_IN)
+          {
+            ++aIn;
+          }
+        }
+      }
+      std::printf("OCCTPOST surface_nodes total=%d in=%d\n", aTotal, aIn);
+    }
+    Base::postProcessMesh(theMesher, theRange);
+    dumpAlgoState("POST_INSERT", theMesher);
+  }
+
+  void dumpAlgoState(const char* theTag, BRepMesh_Delaun& theMesher) const
+  {
+    const occ::handle<BRepMesh_DataStructureOfDelaun>& aSt = this->getStructure();
+    const occ::handle<BRepMesh_DataStructureOfDelaun>& aRes = theMesher.Result();
+    int aFrontier = 0, aFixed = 0, aFree = 0, aOther = 0;
+    for (int e = 1; e <= aRes->NbLinks(); ++e)
+    {
+      switch (aRes->GetLink(e).Movability())
+      {
+        case BRepMesh_Frontier: ++aFrontier; break;
+        case BRepMesh_Fixed:    ++aFixed;    break;
+        case BRepMesh_Free:     ++aFree;     break;
+        default:                ++aOther;    break;
+      }
+    }
+    std::printf("OCCTPOST %s struct_nodes=%d struct_links=%d nodes=%d links=%d domain=%d "
+                "frontier=%d fixed=%d free=%d other=%d\n",
+                theTag,
+                aSt.IsNull() ? -1 : aSt->NbNodes(),
+                aSt.IsNull() ? -1 : aSt->NbLinks(),
+                aRes->NbNodes(),
+                aRes->NbLinks(),
+                aRes->ElementsOfDomain().Extent(),
+                aFrontier,
+                aFixed,
+                aFree,
+                aOther);
+    IMeshData::IteratorOfMapOfInteger aTriIt(aRes->ElementsOfDomain());
+    for (; aTriIt.More(); aTriIt.Next())
+    {
+      int aNodes[3];
+      aRes->ElementNodes(aRes->GetElement(aTriIt.Key()), aNodes);
+      std::printf("OCCTPOST %s T %d %d %d %d\n",
+                  theTag,
+                  aTriIt.Key(),
+                  aNodes[0],
+                  aNodes[1],
+                  aNodes[2]);
+    }
+  }
+
+  bool initDataStructure() override
+  {
+    typedef BRepMesh_DelaunayNodeInsertionMeshAlgo<Splitter, BRepMesh_DelaunayBaseMeshAlgo> Base;
+    const bool isOk = Base::initDataStructure();
+
+    const occ::handle<BRepMesh_DataStructureOfDelaun>& aSt = this->getStructure();
+    if (!aSt.IsNull())
+    {
+      std::printf("OCCTSTRUCT nodes=%d links=%d\n", aSt->NbNodes(), aSt->NbLinks());
+      for (int i = 1; i <= aSt->NbNodes(); ++i)
+      {
+        const BRepMesh_Vertex& aV = aSt->GetNode(i);
+        std::printf("N %d %.17e %.17e %d\n",
+                    i,
+                    aV.Coord().X(),
+                    aV.Coord().Y(),
+                    static_cast<int>(aV.Movability()));
+      }
+      for (int i = 1; i <= aSt->NbLinks(); ++i)
+      {
+        const BRepMesh_Edge& aL = aSt->GetLink(i);
+        std::printf("L %d %d %d %d\n",
+                    i,
+                    aL.FirstNode(),
+                    aL.LastNode(),
+                    static_cast<int>(aL.Movability()));
+      }
+    }
+    return isOk;
+  }
+};
+
+static int runStructDump(const TopoDS_Shape& theShape, const int theFaceIdx)
+{
+  Bnd_Box aShapeBox;
+  BRepBndLib::Add(theShape, aShapeBox, false);
+  double aBox[6] = {0, 0, 0, 0, 0, 0};
+  if (!aShapeBox.IsVoid())
+  {
+    aShapeBox.Get(aBox[0], aBox[1], aBox[2], aBox[3], aBox[4], aBox[5]);
+  }
+  const double aMaxComp =
+    (std::max)((std::max)(aBox[3] - aBox[0], aBox[4] - aBox[1]), aBox[5] - aBox[2]);
+
+  IMeshTools_Parameters aParams;
+  aParams.Deflection    = aMaxComp * 0.001 * 4.0;
+  aParams.Angle         = 20.0 * M_PI / 180.0;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  aParams.MinSize       = (std::max)(IMeshTools_Parameters::RelMinSize() * aParams.Deflection,
+                                     Precision::Confusion());
+  aParams.AdjustMinSize = false;
+
+  occ::handle<BRepMesh_Context> aCtx = new BRepMesh_Context;
+  aCtx->SetShape(theShape);
+  aCtx->ChangeParameters()            = aParams;
+  aCtx->ChangeParameters().CleanModel = false;
+  const bool aBuilt   = aCtx->BuildModel();
+  const bool aDiscret = aBuilt && aCtx->DiscretizeEdges();
+  const bool aHealed  = aDiscret && aCtx->HealModel();
+  const bool aPreproc = aHealed && aCtx->PreProcessModel();
+  const occ::handle<IMeshData_Model>& aModel = aCtx->GetModel();
+  std::printf("OCCTSTRUCT defl=%.9f angle=%.9f built=%d discret=%d healed=%d preproc=%d faces=%d\n",
+              aParams.Deflection,
+              aParams.Angle,
+              aBuilt ? 1 : 0,
+              aDiscret ? 1 : 0,
+              aHealed ? 1 : 0,
+              aPreproc ? 1 : 0,
+              aModel.IsNull() ? -1 : aModel->FacesNb());
+  if (aModel.IsNull() || theFaceIdx < 0 || theFaceIdx >= aModel->FacesNb())
+  {
+    return 0;
+  }
+
+  const IMeshData::IFaceHandle& aDFace = aModel->GetFace(theFaceIdx);
+  Bnd_Box                       aFaceBox;
+  BRepBndLib::Add(aDFace->GetFace(), aFaceBox, false);
+  double v[6] = {0, 0, 0, 0, 0, 0};
+  if (!aFaceBox.IsVoid())
+  {
+    aFaceBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
+  }
+  std::printf("OCCTSTRUCT f=%d type=%d wires=%d bbox=(%.6f,%.6f,%.6f)-(%.6f,%.6f,%.6f)\n",
+              theFaceIdx,
+              static_cast<int>(aDFace->GetSurface()->GetType()),
+              aDFace->WiresNb(),
+              v[0],
+              v[1],
+              v[2],
+              v[3],
+              v[4],
+              v[5]);
+  for (int w = 0; w < aDFace->WiresNb(); ++w)
+  {
+    const IMeshData::IWireHandle& aDWire = aDFace->GetWire(w);
+    std::printf("OCCTSTRUCT W %d edges=%d\n", w, aDWire->EdgesNb());
+    for (int e = 0; e < aDWire->EdgesNb(); ++e)
+    {
+      const IMeshData::IEdgeHandle&   aDEdge  = aDWire->GetEdge(e);
+      const IMeshData::ListOfInteger& aList   = aDEdge->GetPCurves(aDFace.get());
+      for (IMeshData::ListOfInteger::Iterator it(aList); it.More(); it.Next())
+      {
+        const IMeshData::IPCurveHandle& aPCurve = aDEdge->GetPCurve(it.Value());
+        std::printf("OCCTSTRUCT E w=%d e=%d pcId=%d ori=%d fwd=%d n=%d first=(%.9f,%.9f) "
+                    "last=(%.9f,%.9f)\n",
+                    w,
+                    e,
+                    it.Value(),
+                    static_cast<int>(aPCurve->GetOrientation()),
+                    aPCurve->IsForward() ? 1 : 0,
+                    aPCurve->ParametersNb(),
+                    aPCurve->GetPoint(0).X(),
+                    aPCurve->GetPoint(0).Y(),
+                    aPCurve->GetPoint(aPCurve->ParametersNb() - 1).X(),
+                    aPCurve->GetPoint(aPCurve->ParametersNb() - 1).Y());
+      }
+    }
+  }
+
+  occ::handle<IMeshTools_MeshAlgo> aAlgo;
+  switch (aDFace->GetSurface()->GetType())
+  {
+    case GeomAbs_Plane: aAlgo = new ZZStructDumpAlgo<BRepMesh_DefaultRangeSplitter>(); break;
+    case GeomAbs_Sphere: aAlgo = new ZZStructDumpAlgo<BRepMesh_SphereRangeSplitter>(); break;
+    case GeomAbs_Cylinder:
+      aAlgo = new ZZStructDumpAlgo<BRepMesh_CylinderRangeSplitter>();
+      break;
+    case GeomAbs_Cone: aAlgo = new ZZStructDumpAlgo<BRepMesh_ConeRangeSplitter>(); break;
+    case GeomAbs_Torus: aAlgo = new ZZStructDumpAlgo<BRepMesh_TorusRangeSplitter>(); break;
+    default: aAlgo = new ZZStructDumpAlgo<BRepMesh_DefaultRangeSplitter>(); break;
+  }
+  aAlgo->Perform(aDFace, aParams, Message_ProgressRange());
   return 0;
 }
 
@@ -739,8 +1078,16 @@ static int runOrderDbg(const TopoDS_Shape& theShape, const double* theBBox)
       continue;
     }
     ++aFound;
+    // TEMP: print the occurrence face orientation, and repeat the whole dump for
+    // the oriented-FORWARD face the real `BRepMesh_ShapeVisitor::Visit` uses.
+    std::printf("ODBG faceori=%d\n", (int)aFace.Orientation());
+    const TopoDS_Face aFaceFwd = TopoDS::Face(aFace.Oriented(TopAbs_FORWARD));
+    for (int aPass = 0; aPass < 2; ++aPass)
+    {
+    const TopoDS_Face& aSrc = (aPass == 0) ? aFace : aFaceFwd;
+    std::printf("ODBG pass=%d\n", aPass);
     int aWireIt = 0;
-    for (TopExp_Explorer aW(aFace, TopAbs_WIRE); aW.More(); aW.Next(), ++aWireIt)
+    for (TopExp_Explorer aW(aSrc, TopAbs_WIRE); aW.More(); aW.Next(), ++aWireIt)
     {
       const TopoDS_Wire& aWire     = TopoDS::Wire(aW.Current());
       occ::handle<ShapeExtend_WireData> aWireData = new ShapeExtend_WireData(aWire, true, false);
@@ -809,6 +1156,7 @@ static int runOrderDbg(const TopoDS_Shape& theShape, const double* theBBox)
         std::printf("%s%d", i > 1 ? " " : "", aOrderTool.Ordered(i));
       }
       std::printf("]\n");
+    }
     }
     break;
   }
@@ -918,7 +1266,174 @@ static int runWireDbg(const TopoDS_Shape& theShape,
   return 0;
 }
 
-// --- end TEMP T-103 ----------------------------------------------------------------
+// --- T-118 IGES oracle -------------------------------------------------------------
+// --iges <out.iges> writes the transferred shape with OCCT's own
+// IGESControl_Writer in the settings the Rust writer ports: IGESControl_Controller
+// initialised, Faces mode (write.iges.brep.mode = 0, IGESData.cxx:90-94) and
+// millimetres. The result is the reference GeomToIGES_* / BRepToIGES_BRShell
+// output, so the port's entity set and every parameter block can be compared
+// against it instead of against a previous Rust run.
+static int runIges(const TopoDS_Shape& theShape, const char* thePath)
+{
+  IGESControl_Controller::Init();
+  IGESControl_Writer aWriter("MM", 0);
+  aWriter.AddShape(theShape);
+  aWriter.ComputeModel();
+  if (!aWriter.Write(thePath))
+  {
+    std::cerr << "IGES write failed: " << thePath << "\n";
+    return 5;
+  }
+  std::cout << "IGES written: " << thePath << "\n";
+  return 0;
+}
+
+// --- end T-118 ---------------------------------------------------------------------
+
+// --- T-111 oracle: raw face/edge pcurve dump ---------------------------------------
+// `--igespc <out.txt>` lists, in TopExp face order, the surface type and U/V bounds
+// of every face together with the *raw* edge pcurves (`BRep_Tool::CurveOnSurface`)
+// exactly as `BRepToIGES_BRShell::TransferFace` sees them. It answers whether a
+// reversed spherical face carries a Geom2d_Line or a projected BSpline pcurve in
+// the shape the IGES writer is handed, without guessing from the writer output.
+static int runIgesPc(const TopoDS_Shape& theShape, const char* thePath)
+{
+  std::ofstream aOut(thePath);
+  int aFaceIdx = 0;
+  for (TopExp_Explorer aFx(theShape, TopAbs_FACE); aFx.More(); aFx.Next(), ++aFaceIdx)
+  {
+    const TopoDS_Face aFace = TopoDS::Face(aFx.Current());
+    TopLoc_Location aLoc;
+    const Handle(Geom_Surface) aSurf = BRep_Tool::Surface(aFace, aLoc);
+    double aU1 = 0, aU2 = 0, aV1 = 0, aV2 = 0;
+    aSurf->Bounds(aU1, aU2, aV1, aV2);
+    aOut << "FACE[" << aFaceIdx << "] "
+         << (aFace.Orientation() == TopAbs_REVERSED ? "REV" : "FWD")
+         << " surf=" << aSurf->DynamicType()->Name()
+         << " u=[" << aU1 << "," << aU2 << "] v=[" << aV1 << "," << aV2 << "]"
+         << " uclosed=" << (aSurf->IsUClosed() ? 1 : 0)
+         << " vclosed=" << (aSurf->IsVClosed() ? 1 : 0) << "\n";
+    int aEdgeIdx = 0;
+    for (TopExp_Explorer aEx(aFace, TopAbs_EDGE); aEx.More(); aEx.Next(), ++aEdgeIdx)
+    {
+      const TopoDS_Edge aEdge = TopoDS::Edge(aEx.Current());
+      double aF = 0, aL = 0;
+      Handle(Geom2d_Curve) aPc = BRep_Tool::CurveOnSurface(aEdge, aFace, aF, aL);
+      TopLoc_Location aELoc;
+      const Handle(Geom_Curve) aC3 = BRep_Tool::Curve(aEdge, aELoc, aF, aL);
+      aOut << "  EDGE[" << aEdgeIdx << "] "
+           << (aEdge.Orientation() == TopAbs_REVERSED ? "REV" : "FWD")
+           << " c3=" << (aC3.IsNull() ? "null" : aC3->DynamicType()->Name())
+           << " pc=" << (aPc.IsNull() ? "null" : aPc->DynamicType()->Name())
+           << " pcrange=[" << aF << "," << aL << "]";
+      if (!aPc.IsNull())
+      {
+        gp_Pnt2d aP1, aP2;
+        aPc->D0(aF, aP1);
+        aPc->D0(aL, aP2);
+        aOut << " p1=(" << aP1.X() << "," << aP1.Y() << ")"
+             << " p2=(" << aP2.X() << "," << aP2.Y() << ")";
+        if (aPc->DynamicType() == STANDARD_TYPE(Geom2d_Line))
+        {
+          const gp_Dir2d aD = Handle(Geom2d_Line)::DownCast(aPc)->Lin2d().Direction();
+          aOut << " dir=(" << aD.X() << "," << aD.Y() << ")";
+        }
+        if (aPc->DynamicType() == STANDARD_TYPE(Geom2d_BSplineCurve))
+        {
+          const Handle(Geom2d_BSplineCurve) aBs = Handle(Geom2d_BSplineCurve)::DownCast(aPc);
+          aOut << " deg=" << aBs->Degree() << " npol=" << aBs->NbPoles()
+               << " nknot=" << aBs->NbKnots() << " rational=" << (aBs->IsRational() ? 1 : 0)
+               << " periodic=" << (aBs->IsPeriodic() ? 1 : 0) << " knots=[";
+          for (int k = 1; k <= aBs->NbKnots(); ++k)
+          {
+            aOut << (k > 1 ? "," : "") << aBs->Knot(k);
+          }
+          aOut << "]";
+        }
+        // T-111: 17-digit form of the same numbers, plus the pcurve's own
+        // parameter range, so the port's `getLine` inputs (the 3D curve range
+        // `theParams(1)` / `theParams(n)`, the two endpoint projections and the
+        // `|aLLength - dPar| <= PConfusion` decision) can be compared exactly.
+        {
+          aOut << "\n    PREC";
+          aOut << std::setprecision(17);
+          aOut << " c3f=" << aF << " c3l=" << aL;
+          double aPF = 0, aPL = 0;
+          Handle(Geom2d_Curve) aPC2 = BRep_Tool::CurveOnSurface(aEdge, aFace, aPF, aPL);
+          aOut << " pcr=[" << aPF << "," << aPL << "]";
+          gp_Pnt2d aQ1, aQ2;
+          aPc->D0(aF, aQ1);
+          aPc->D0(aL, aQ2);
+          aOut << " q1=(" << aQ1.X() << "," << aQ1.Y() << ")"
+               << " q2=(" << aQ2.X() << "," << aQ2.Y() << ")";
+          aOut << " dPar=" << (aL - aF)
+               << " aLLength=" << aQ1.Distance(aQ2);
+          aOut << std::setprecision(6);
+        }
+        // T-111: replay `ShapeFix_Edge::FixAddPCurve`'s projection call on this
+        // very edge/face, with a fresh projector (empty `myCache`), and report
+        // what `ShapeConstruct_ProjectCurveOnSurface::Perform` returns. This
+        // separates "the port's `getLine` verdict differs" from "the stored
+        // pcurve came from somewhere else in the healing chain".
+        if (!aC3.IsNull())
+        {
+          Handle(ShapeAnalysis_Surface) aSAS = new ShapeAnalysis_Surface(aSurf);
+          Handle(ShapeConstruct_ProjectCurveOnSurface) aProj =
+            new ShapeConstruct_ProjectCurveOnSurface();
+          const double aPrec = BRep_Tool::Tolerance(aEdge);
+          aProj->Init(aSAS, aPrec);
+          double aTolFirst = -1, aTolLast = -1;
+          TopoDS_Vertex aV1, aV2;
+          TopExp::Vertices(aEdge, aV1, aV2);
+          if (!aV1.IsNull())
+          {
+            aTolFirst = BRep_Tool::Tolerance(aV1);
+          }
+          if (!aV2.IsNull())
+          {
+            aTolLast = BRep_Tool::Tolerance(aV2);
+          }
+          Handle(Geom2d_Curve) aRep;
+          aProj->Perform(aC3, aF, aL, aRep, aTolFirst, aTolLast);
+          aOut << "\n    REPROJ prec=" << aPrec << " tf=" << aTolFirst << " tl=" << aTolLast
+               << " type=" << (aRep.IsNull() ? "null" : aRep->DynamicType()->Name());
+          if (!aRep.IsNull())
+          {
+            aOut << std::setprecision(17);
+            if (aRep->DynamicType() == STANDARD_TYPE(Geom2d_BSplineCurve))
+            {
+              const Handle(Geom2d_BSplineCurve) aRB = Handle(Geom2d_BSplineCurve)::DownCast(aRep);
+              aOut << " rdeg=" << aRB->Degree() << " rnpol=" << aRB->NbPoles()
+                   << " rnknot=" << aRB->NbKnots();
+              gp_Pnt2d aR1, aR2;
+              aRB->D0(aRB->FirstParameter(), aR1);
+              aRB->D0(aRB->LastParameter(), aR2);
+              aOut << " rrng=[" << aRB->FirstParameter() << "," << aRB->LastParameter() << "]"
+                   << " rq1=(" << aR1.X() << "," << aR1.Y() << ") rq2=(" << aR2.X() << "," << aR2.Y()
+                   << ")";
+            }
+            else
+            {
+              gp_Pnt2d aR1, aR2;
+              aRep->D0(aF, aR1);
+              aRep->D0(aL, aR2);
+              aOut << " rrng=[" << aRep->FirstParameter() << "," << aRep->LastParameter() << "]"
+                   << " rq1=(" << aR1.X() << "," << aR1.Y() << ") rq2=(" << aR2.X() << "," << aR2.Y()
+                   << ")";
+            }
+            aOut << std::setprecision(6);
+          }
+        }
+      }
+      aOut << "\n";
+    }
+  }
+  aOut.close();
+  std::cout << "igespc written: " << thePath << "\n";
+  return 0;
+}
+
+// --- end T-111 oracle --------------------------------------------------------------
 
 int main(int argc, char** argv)
 {
@@ -928,6 +1443,8 @@ int main(int argc, char** argv)
     return 2;
   }
   const bool frames = (argc > 2);
+  // TEMP T-104: face index for `--structdump` (dispatched once the shape is read).
+  int aStructDumpFace = -1;
   // TEMP T-99: `--delauncheck` proves BRepMesh_Delaun is reachable from this probe.
   for (int i = 2; i < argc; ++i)
   {
@@ -938,6 +1455,10 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--delaunfeed" && i + 1 < argc)
     {
       return runDelaunFeed(argv[i + 1]);
+    }
+    if (std::string(argv[i]) == "--structdump" && i + 1 < argc)
+    {
+      aStructDumpFace = std::atoi(argv[i + 1]);
     }
     if (std::string(argv[i]) == "--delaunstruct" && i + 1 < argc)
     {
@@ -1099,6 +1620,17 @@ int main(int argc, char** argv)
   // TEMP T-99: `--boundary <dir>` dumps the real pipeline's Delaunay boundary UV.
   for (int i = 2; i + 1 < argc; ++i)
   {
+    // T-118: `--iges <out.iges>` writes the shape with OCCT's own IGESControl_Writer.
+    if (std::string(argv[i]) == "--iges")
+    {
+      return runIges(aShape, argv[i + 1]);
+    }
+    // T-111: `--igespc <out.txt>` dumps the raw face/edge pcurve state seen by the
+    // IGES writer, for comparing against the port's `curve_on_surface` results.
+    if (std::string(argv[i]) == "--igespc")
+    {
+      return runIgesPc(aShape, argv[i + 1]);
+    }
     if (std::string(argv[i]) == "--boundary")
     {
       return runBoundary(aShape, argv[i + 1]);
@@ -1479,6 +2011,13 @@ int main(int argc, char** argv)
       std::cout << "ADV none\n";
       return 0;
     }
+  }
+
+  // TEMP T-104: `--structdump <faceIdx>` (dispatched here so the imported shape
+  // is available; the index is the `IMeshData_Model` face order).
+  if (aStructDumpFace >= 0)
+  {
+    return runStructDump(aShape, aStructDumpFace);
   }
 
   // T-69 oracle: the (u,v) point set that BRepMesh_NodeInsertionMeshAlgo::

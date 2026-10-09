@@ -28,17 +28,17 @@ impl GpLin {
         let n = v.subtracted(&proj);
         GpLin::from_pnt_dir(*p, GpDir::from_xyz(&n).unwrap_or(GpDir::default_dir()))
     }
-    pub fn mirror_pnt(&mut self, p: &GpPnt) { let mut t=GpTrsf::identity(); t.set_mirror_pnt(p); self.pos.loc.transform(&t); }
+    pub fn mirror_pnt(&mut self, p: &GpPnt) { self.pos.mirror_pnt(p); }
     pub fn mirrored_pnt(&self, p: &GpPnt) -> Self { let mut r=*self; r.mirror_pnt(p); r }
-    pub fn mirror_ax1(&mut self, a1: &GpAx1) { let mut t=GpTrsf::identity(); t.set_mirror_ax1(a1); self.pos.loc.transform(&t); }
+    pub fn mirror_ax1(&mut self, a1: &GpAx1) { self.pos.mirror_ax1(a1); }
     pub fn mirrored_ax1(&self, a1: &GpAx1) -> Self { let mut r=*self; r.mirror_ax1(a1); r }
-    pub fn mirror_ax2(&mut self, a2: &GpAx2) { let mut t=GpTrsf::identity(); t.set_mirror_ax2(a2); self.pos.loc.transform(&t); }
+    pub fn mirror_ax2(&mut self, a2: &GpAx2) { self.pos.mirror_ax2(a2); }
     pub fn mirrored_ax2(&self, a2: &GpAx2) -> Self { let mut r=*self; r.mirror_ax2(a2); r }
-    pub fn rotate(&mut self, a1: &GpAx1, angle: f64) { self.pos.loc.rotate(a1, angle); }
+    pub fn rotate(&mut self, a1: &GpAx1, angle: f64) { self.pos.rotate(a1, angle); }
     pub fn rotated(&self, a1: &GpAx1, angle: f64) -> Self { let mut r=*self; r.rotate(a1, angle); r }
-    pub fn scale(&mut self, p: &GpPnt, s: f64) { self.pos.loc.scale(p, s); }
+    pub fn scale(&mut self, p: &GpPnt, s: f64) { self.pos.scale(p, s); }
     pub fn scaled(&self, p: &GpPnt, s: f64) -> Self { let mut r=*self; r.scale(p, s); r }
-    pub fn transform(&mut self, t: &GpTrsf) { self.pos.loc.transform(t); }
+    pub fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     pub fn transformed(&self, t: &GpTrsf) -> Self { let mut r=*self; r.transform(t); r }
     pub fn translate_vec(&mut self, v: &GpVec) { self.pos.loc.translate_vec(v); }
     pub fn translated_vec(&self, v: &GpVec) -> Self { let mut r=*self; r.translate_vec(v); r }

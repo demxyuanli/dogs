@@ -37,6 +37,14 @@ impl Surface for GeomCone {
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
     fn gp_cone(&self) -> Option<GpCone> { Some(self.pos.clone()) }
 
+    /// `Geom_ConicalSurface::UReversed` (`Geom_ConicalSurface.cxx`): a copy with
+    /// `UReverse()` applied (`gp_Cone.hxx:115` -> `pos.YReverse()`).
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos.clone();
+        pos.u_reverse();
+        Some(Arc::new(GeomCone::new(pos)))
+    }
+
     /// `Geom_ConicalSurface::UIso` (`Geom_ConicalSurface.cxx:337-341`):
     /// `Geom_Line(ElSLib::ConeUIso(pos, radius, semiAngle, U))`.
     /// `ElSLib::ConeUIso` (`ElSLib.cxx:1727-1733`) is the generatrix through

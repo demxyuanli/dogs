@@ -337,30 +337,47 @@ impl ComposeShell {
                 if used[i] {
                     continue;
                 }
-                let s = self.grid.patch_pnt(&m_pnts[i]);
-                match (&surf, s) {
-                    (None, Some(s)) => surf = Some(s.clone()),
-                    (Some(cur), Some(s)) if Arc::ptr_eq(cur, s) => {}
-                    _ => continue,
+                let s = self.grid.patch_pnt(&m_pnts[i]).cloned(); // cxx:3549
+                // cxx:3550-3556. OCCT compares `Geom_Surface` handles, i.e.
+                // pointers, and the *first* unused wire of the packet sets
+                // `Surf` even when its `Patch` is null: once `Surf` is null
+                // every following unused wire is taken into the packet on its
+                // own surface. The packet is then dispatched on whatever `Surf`
+                // ended up being (cxx:3577-3580), never on a per-wire surface.
+                if surf.is_none() {
+                    surf = s; // cxx:3550-3552
+                } else if !same_surface(&surf, &s) {
+                    continue; // cxx:3553-3556
                 }
                 used[i] = true;
                 if wires[i].is_vertex() {
                     if let Some(v) = wires[i].get_vertex() {
                         if v.0.orientation() == Orientation::Internal {
-                            loops.push(v.0.clone());
+                            loops.push(v.0.clone()); // cxx:3561-3567
                         }
                     }
                 } else {
-                    let w = builder.make_wire(wires[i].edges());
+                    let w = builder.make_wire(wires[i].edges()); // cxx:3571-3574
                     loops.push(w.0);
                 }
             }
-            let surf = match surf {
-                Some(s) => s,
-                None => break,
+            let Some(surf) = surf else {
+                break; // cxx:3577-3580
             };
             self.make_faces_on_patch(faces, &surf, &mut loops); // cxx:3582
         }
         let _ = (ShapeType::Face, TOLINT);
+    }
+}
+
+/// `S != Surf` (`ShapeFix_ComposeShell.cxx:3553`) on two `Geom_Surface`
+/// handles: OCCT's `Handle` comparison is a pointer comparison, so two
+/// distinct `Geom_Surface` instances never match however equal they are; a
+/// null handle equals only another null handle.
+fn same_surface(a: &Option<Arc<dyn Surface>>, b: &Option<Arc<dyn Surface>>) -> bool {
+    match (a, b) {
+        (Some(x), Some(y)) => Arc::ptr_eq(x, y),
+        (None, None) => true,
+        _ => false,
     }
 }

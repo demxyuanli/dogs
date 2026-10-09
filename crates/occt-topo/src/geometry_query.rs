@@ -9,7 +9,6 @@
 use occt_core::gp::{GpPnt, GpVec};
 
 use crate::brep_tool::BRepTool;
-use crate::brep_surface::surface_closest_params;
 use crate::mesh::ShapeMesh;
 use crate::shape::{Face, TopoShape};
 use crate::topo_tools_full::faces_of;
@@ -200,15 +199,18 @@ fn point_segment_closest_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> (GpPnt, f64) {
 
 /// Refine a mesh hit against the analytic face surface: given the face and an
 /// approximate hit point, project onto the surface for the exact surface point.
+///
+/// OCCT's point-on-surface primitive is `Extrema_ExtPS` (`GeomAPI_ProjectPointOnSurf`);
+/// `IntCurvesFace_ShapeIntersector` returns the surface UV together with the hit
+/// and never re-projects, so there is no OCCT grid branch behind this helper.
 pub fn refine_hit_on_surface(face: &Face, approx: &GpPnt) -> GpPnt {
     match BRepTool::face_surface(face) {
-        Some(s) => {
-            // UNPORTED: `refine_hit_on_surface` is a port-only mesh/ray helper;
-            // OCCT's `IntCurvesFace_ShapeIntersector` returns the surface UV
-            // with the hit and never re-projects it. Grid stays.
-            let (u, v) = surface_closest_params(s.as_ref(), approx, 32, 32);
-            s.d0(u, v)
-        }
+        Some(s) => occt_geom::geom_api::project_point_on_surface(
+            s.as_ref(),
+            approx,
+            occt_core::precision::CONFUSION,
+        )
+        .map_or(*approx, |ps| ps.point),
         None => *approx,
     }
 }

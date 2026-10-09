@@ -28,6 +28,16 @@ impl Surface for GeomPlane {
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
     fn gp_pln(&self) -> Option<GpPln> { Some(self.pos.clone()) }
 
+    /// `Geom_Plane::UReversed` (`Geom_Plane.cxx`): a copy with `UReverse()`
+    /// applied (`gp_Pln.hxx:101` -> `myPosition.XReverse()`), which flips the
+    /// plane's coefficients (`gp_Pln::Coefficients` negates them on an indirect
+    /// placement).
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos.clone();
+        pos.u_reverse();
+        Some(Arc::new(GeomPlane::new(pos)))
+    }
+
     /// `Geom_Plane::UIso` (`Geom_Plane.cxx:261-265`):
     /// `Geom_Line(ElSLib::PlaneUIso(pos, U))`.
     /// `ElSLib::PlaneUIso` (`ElSLib.cxx:1705-1712`) is a line through the

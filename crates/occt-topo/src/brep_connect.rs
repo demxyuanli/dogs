@@ -80,12 +80,20 @@ pub fn coincident_faces(a: &TopoShape, b: &TopoShape, tol: f64) -> Vec<(Face, Fa
                         (0.0, 0.0)
                     };
                     let p1 = s1.d0(u1_, v1_);
-                    // UNPORTED: this face-matching sampler is a port-only
-                    // heuristic; OCCT's `BOPTools_AlgoTools::AreFacesSameDomain`
+                    // OCCT's `BOPTools_AlgoTools::AreFacesSameDomain`
                     // (`BOPTools_AlgoTools.cxx:1131`) compares surfaces and
-                    // `IsSameDomain` flags, with no point projection. Grid stays.
-                    let (cu, cv) = crate::brep_surface::surface_closest_params(s2.as_ref(), &p1, 8, 8);
-                    if p1.distance(&s2.d0(cu, cv)) > tol {
+                    // `IsSameDomain` flags, with no point projection. This
+                    // port-only sampler therefore measures the offset through
+                    // OCCT's point-on-surface projection (`Extrema_ExtPS`).
+                    let Some(ps) = occt_geom::geom_api::project_point_on_surface(
+                        s2.as_ref(),
+                        &p1,
+                        occt_core::precision::CONFUSION,
+                    ) else {
+                        match_ = false;
+                        break;
+                    };
+                    if ps.distance > tol {
                         match_ = false;
                         break;
                     }

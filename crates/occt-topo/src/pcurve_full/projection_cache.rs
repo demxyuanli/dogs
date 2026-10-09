@@ -71,8 +71,13 @@ impl ProjectorCache {
     }
 
     /// `myCache.Length()`.
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    /// `myCache.IsEmpty()`.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     fn get(&self, j: usize) -> CachePoint {
@@ -442,6 +447,27 @@ fn is_cn_1(s: &dyn Surface) -> bool {
 /// `theIsRecompute` / `theIsFromCache` and the endpoint projections.
 /// `None` means "not a straight pcurve" and the caller falls through to
 /// `isAnIsoparametric` / the approximation arms.
+///
+/// KNIFE-EDGE (reported, not fudged): on a sphere whose `V` is NOT periodic
+/// (`Geom_SphericalSurface::IsVPeriodic`, `Geom_SphericalSurface.cxx:130-133`)
+/// only the U half of `cxx:982-1013` runs, so the verdict of this function for
+/// an equator edge is decided entirely by `fix_periodicity_troubles` on U. For
+/// a probe whose projected `u` is exactly `0.` the `AdjustByPeriod`
+/// (`ShapeAnalysis.cxx:48-60`) shift is `0.` (`D <= 0.5 * P` holds because
+/// `0. - PI` is exactly `-UPeriod/2`), the point is pinned to `aMinParam`
+/// (`cxx:348-350`) and the following probe folded to `~UPeriod` makes
+/// `cxx:355-371` read `D > 0.5 * P` as a sign change -> `theIsRecompute` ->
+/// the `cxx:1015-1018` sphere guard -> `nullptr` -> `interpolatePCurve`. For
+/// the same probe projected as `-4.1e-13` instead of `0.` the shift is
+/// `+UPeriod`, the point pins to `aMaxParam` and no sign change is found, so
+/// `getLine` returns the straight pcurve and the entity stays a type 110
+/// instead of the type 126 OCCT writes. `Shape-1` has three such edges, and
+/// the projected `u` differs only because the edge's 3D range there is
+/// `3*PI/2 + 7.2e-13 .. 2*PI + 7.2e-13` rather than OCCT's exact
+/// `3*PI/2 .. 2*PI`; the `theParams` used by `generateCurvePoints`
+/// (`cxx:531-575`) come straight from the edge, so the sample point lands
+/// ~1e-11 off the sphere's principal plane and `atan2` (`ElSLib.cxx:1640-1643`)
+/// no longer returns the exact `0.`.
 pub(super) fn get_line(
     s: &dyn Surface,
     points: &[GpPnt],
@@ -566,12 +592,17 @@ pub(super) fn get_line(
                 a_tol2 = a_cur_dist;
             }
         }
+        // `cxx:996` / `cxx:1007`: both calls ASSIGN `theIsRecompute`, so on a
+        // doubly periodic surface (torus, closed B-spline) the U verdict is
+        // overwritten by the V one and only the V result survives; on a surface
+        // periodic in U only (cylinder, cone, sphere) the U verdict is the one
+        // that reaches the spherical-surface guard below.
         if is_periodic_u {
             is_recompute =
                 fix_periodicity_troubles(&mut a_p2d, 0, s.u_period(), saved_point_num, saved_point.x());
         }
         if is_periodic_v {
-            is_recompute |=
+            is_recompute =
                 fix_periodicity_troubles(&mut a_p2d, 1, s.v_period(), saved_point_num, saved_point.y());
         }
     }

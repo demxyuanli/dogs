@@ -164,4 +164,64 @@ impl GpAx2 {
     pub fn y_axis(&self) -> GpAx1 {
         GpAx1::new(self.location(), self.vydir)
     }
+
+    /// `gp_Ax2::Scale` (`gp_Ax2.hxx:320-330`): scale the location and reverse
+    /// both directions when the factor is negative (the main direction is
+    /// unchanged, so the frame stays right-handed).
+    pub fn scale(&mut self, p: &GpPnt, s: f64) {
+        let mut loc = self.location();
+        loc.scale(p, s);
+        self.set_location(loc);
+        if s < 0.0 {
+            self.vxdir.reverse();
+            self.vydir.reverse();
+        }
+    }
+    /// `gp_Ax2::Transform` (`gp_Ax2.hxx:346-354`): transform the location and
+    /// both directions, then recompute the main direction as `X ^ Y`.
+    pub fn transform(&mut self, t: &crate::gp::trsf::GpTrsf) {
+        let mut loc = self.location();
+        loc.transform(t);
+        self.set_location(loc);
+        self.vxdir.transform(t);
+        self.vydir.transform(t);
+        if let Ok(n) = self.vxdir.crossed(&self.vydir) {
+            self.axis.set_direction(n);
+        }
+    }
+    /// `gp_Ax2::Mirror(const gp_Pnt&)` (`gp_Ax2.cxx:83-90`): mirror the location
+    /// and reverse both directions.
+    pub fn mirror_pnt(&mut self, p: &GpPnt) {
+        let mut loc = self.location();
+        loc.mirror_pnt(p);
+        self.set_location(loc);
+        self.vxdir.reverse();
+        self.vydir.reverse();
+    }
+    /// `gp_Ax2::Mirror(const gp_Ax1&)` (`gp_Ax2.cxx:99-107`).
+    pub fn mirror_ax1(&mut self, a1: &GpAx1) {
+        self.vydir.mirror_ax1(a1);
+        self.vxdir.mirror_ax1(a1);
+        let mut loc = self.location();
+        loc.mirror_ax1(a1);
+        self.set_location(loc);
+        if let Ok(n) = self.vxdir.crossed(&self.vydir) {
+            self.axis.set_direction(n);
+        }
+    }
+    /// `gp_Ax2::Mirror(const gp_Ax2&)` (`gp_Ax2.cxx:116-124`).
+    pub fn mirror_ax2(&mut self, a2: &GpAx2) {
+        self.vydir.mirror_ax2(a2);
+        self.vxdir.mirror_ax2(a2);
+        let mut loc = self.location();
+        loc.mirror_ax2(a2);
+        self.set_location(loc);
+        if let Ok(n) = self.vxdir.crossed(&self.vydir) {
+            self.axis.set_direction(n);
+        }
+    }
+    /// `gp_Ax2::Translate(const gp_Vec&)` (`gp_Ax2.hxx:367`).
+    pub fn translate_vec(&mut self, v: &crate::gp::vec::GpVec) {
+        self.axis.translate_vec(v);
+    }
 }

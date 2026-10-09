@@ -485,7 +485,8 @@ pub(super) fn resolution_for(solid: &Solid, tool: &TopoShape, tol: f64) -> usize
 
 /// Distance from `p` to the nearest point of the face's surface. For planar
 /// faces the perpendicular plane distance is used (independent of the unbounded
-/// UV window); other surfaces use a grid closest-parameters search.
+/// UV window); other surfaces use OCCT's point-on-surface projection
+/// (`Extrema_ExtPS`), the same primitive `BRepExtrema_DistShapeShape` uses.
 pub(super) fn face_point_distance(face: &crate::shape::Face, p: &GpPnt) -> f64 {
     let Some(surf) = crate::brep_tool::BRepTool::face_surface(face) else {
         return f64::INFINITY;
@@ -496,11 +497,12 @@ pub(super) fn face_point_distance(face: &crate::shape::Face, p: &GpPnt) -> f64 {
             return GpVec::from_pnts(&pln.location(), p).dot(&n).abs();
         }
     }
-    // UNPORTED: `face_point_distance` is a port-only voxel helper; OCCT's
-    // point/face distance (`BRepExtrema_DistShapeShape`) uses `Extrema_ExtPS`,
-    // but this voxel classifier has no OCCT control flow to align to. Grid stays.
-    let (u, v) = crate::brep_surface::surface_closest_params(surf.as_ref(), p, 32, 32);
-    surf.d0(u, v).distance(p)
+    occt_geom::geom_api::project_point_on_surface(
+        surf.as_ref(),
+        p,
+        occt_core::precision::CONFUSION,
+    )
+    .map_or(f64::INFINITY, |ps| ps.distance)
 }
 
 /// Enclosed volume of a closed planar-faced solid by the divergence theorem:

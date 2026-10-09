@@ -204,6 +204,18 @@ impl Surface for GeomSurfaceOfLinearExtrusion {
         })
     }
 
+    /// `Geom_SurfaceOfLinearExtrusion::UReverse`
+    /// (`Geom_SurfaceOfLinearExtrusion.cxx:90-94`): the basis curve is reversed.
+    /// The extrusion direction is unchanged.
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut basis = self.basis_curve.clone_dyn();
+        basis.reverse();
+        Some(Arc::new(Self {
+            basis_curve: Arc::from(basis),
+            direction: self.direction,
+        }))
+    }
+
     /// `Geom_SurfaceOfLinearExtrusion::EvalDN` (`cxx:245-271`).
     fn eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> GpVec {
         let _ = v;

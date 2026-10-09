@@ -78,9 +78,7 @@ impl GpPln {
     }
 
     pub fn mirror_pnt(&mut self, p: &GpPnt) {
-        let mut t = GpTrsf::identity();
-        t.set_mirror_pnt(p);
-        self.transform(&t);
+        self.pos.mirror_pnt(p);
     }
 
     pub fn mirrored_pnt(&self, p: &GpPnt) -> GpPln {
@@ -90,9 +88,7 @@ impl GpPln {
     }
 
     pub fn mirror_ax1(&mut self, ax1: &GpAx1) {
-        let mut t = GpTrsf::identity();
-        t.set_mirror_ax1(ax1);
-        self.transform(&t);
+        self.pos.mirror_ax1(ax1);
     }
 
     pub fn mirrored_ax1(&self, ax1: &GpAx1) -> GpPln {
@@ -102,9 +98,7 @@ impl GpPln {
     }
 
     pub fn mirror_ax2(&mut self, ax2: &GpAx2) {
-        let mut t = GpTrsf::identity();
-        t.set_mirror_ax2(ax2);
-        self.transform(&t);
+        self.pos.mirror_ax2(ax2);
     }
 
     pub fn mirrored_ax2(&self, ax2: &GpAx2) -> GpPln {
@@ -114,9 +108,7 @@ impl GpPln {
     }
 
     pub fn rotate(&mut self, ax1: &GpAx1, angle: f64) {
-        let mut t = GpTrsf::identity();
-        let _ = t.set_rotation_ax1(ax1, angle);
-        self.transform(&t);
+        self.pos.rotate(ax1, angle);
     }
 
     pub fn rotated(&self, ax1: &GpAx1, angle: f64) -> GpPln {
@@ -126,9 +118,7 @@ impl GpPln {
     }
 
     pub fn scale(&mut self, p: &GpPnt, s: f64) {
-        let mut t = GpTrsf::identity();
-        let _ = t.set_scale(p, s);
-        self.transform(&t);
+        self.pos.scale(p, s);
     }
 
     pub fn scaled(&self, p: &GpPnt, s: f64) -> GpPln {
@@ -137,20 +127,9 @@ impl GpPln {
         result
     }
 
+    /// `gp_Pln::Transform` (`gp_Pln.hxx`): `pos.Transform(theT)`.
     pub fn transform(&mut self, t: &GpTrsf) {
-        let mut loc = self.pos.location().coord;
-        t.transforms_xyz(&mut loc);
-        self.pos.set_location(GpPnt::from_xyz(&loc));
-
-        let mut x_xyz = *self.pos.x_direction().xyz();
-        t.transforms_xyz_dir(&mut x_xyz);
-        let mut y_xyz = *self.pos.y_direction().xyz();
-        t.transforms_xyz_dir(&mut y_xyz);
-
-        if let (Ok(xd), Ok(yd)) = (GpDir::from_xyz(&x_xyz), GpDir::from_xyz(&y_xyz)) {
-            self.pos.set_x_direction(&xd);
-            self.pos.set_y_direction(&yd);
-        }
+        self.pos.transform(t);
     }
 
     pub fn transformed(&self, t: &GpTrsf) -> GpPln {
@@ -160,9 +139,7 @@ impl GpPln {
     }
 
     pub fn translate_vec(&mut self, v: &GpVec) {
-        let mut t = GpTrsf::identity();
-        t.set_translation_vec(v);
-        self.transform(&t);
+        self.pos.translate_vec(v);
     }
 
     pub fn translated_vec(&self, v: &GpVec) -> GpPln {

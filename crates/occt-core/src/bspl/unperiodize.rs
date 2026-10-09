@@ -18,6 +18,37 @@
 //! returns as a pole map (poles and weights follow the same map because OCCT
 //! unperiodizes homogeneous poles).
 
+/// Distinct knots of a periodic flat sequence, restricted to the fundamental
+/// window. An open sequence (`len == nb_poles + degree + 1`) is returned whole.
+fn periodic_window_knots(degree: i32, flat_knots: &[f64], nb_poles: usize) -> (Vec<f64>, Vec<i32>) {
+    let (knots, mults) = distinct_knots_and_mults(flat_knots);
+    if degree < 0 || nb_poles == 0 {
+        return (knots, mults);
+    }
+    let deg = degree as usize;
+    if flat_knots.len() <= deg.saturating_mul(2)
+        || flat_knots.len() == nb_poles + deg + 1
+    {
+        return (knots, mults);
+    }
+    let lo = flat_knots[deg];
+    let hi = flat_knots[flat_knots.len() - 1 - deg];
+    let mut wk = Vec::new();
+    let mut wm = Vec::new();
+    for (k, m) in knots.iter().zip(mults.iter()) {
+        if *k < lo || *k > hi {
+            continue;
+        }
+        wk.push(*k);
+        wm.push(*m);
+    }
+    if wk.len() < 2 {
+        (knots, mults)
+    } else {
+        (wk, wm)
+    }
+}
+
 /// Distinct knots and their multiplicities of a flat knot vector.
 pub fn distinct_knots_and_mults(flat_knots: &[f64]) -> (Vec<f64>, Vec<i32>) {
     let mut knots: Vec<f64> = Vec::new();
@@ -142,12 +173,33 @@ pub fn unperiodize_knots(degree: i32, knots: &[f64], mults: &[i32]) -> (Vec<f64>
 /// supplies the new pole `k`. The map is the cyclic wrap of
 /// `BSplCLib::Unperiodize`, valid for both `SetPoles` layouts as explained in
 /// the module header.
-pub fn unperiodize_direction(degree: i32, flat_knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
-    let (knots, mults) = distinct_knots_and_mults(flat_knots);
+///
+/// `nb_poles` is the pole count of the periodic representation along that
+/// direction - `Poles.Length()` in OCCT, i.e.
+/// `BSplCLib::NbPoles(degree, true, mults)` (`BSplCLib.cxx:392-453`), which is
+/// `sum(mults) - Mults(1)`, **not** `flat_knots.len() - degree - 1`: a periodic
+/// flat vector is `KnotSequenceLength` long
+/// (`BSplCLib.cxx:455-474`, `sum(mults) + 2 * (degree + 1 - Mults(1))`), so the
+/// open-layout identity does not hold there. `Geom_BSplineSurface::SetUPeriodic`
+/// (`Geom_BSplineSurface_1.cxx:940-981`) trims the poles to `NbPoles` while
+/// `updateUKnots` rebuilds the flat sequence, which is exactly this state.
+pub fn unperiodize_direction(
+    degree: i32,
+    flat_knots: &[f64],
+    nb_poles: usize,
+) -> (Vec<f64>, Vec<usize>) {
+    // `SetUNotPeriodic` reads `myUKnots` (`Geom_BSplineSurface_1.cxx:1238-1288`),
+    // the distinct knots of the periodic window. The flat sequence also carries
+    // the one-period extension (`BSplCLib::KnotSequence`, `BSplCLib.cxx:517-546`);
+    // treating those copies as knots unperiodizes a second time
+    // (`PrepareUnperiodize` then reports twice the poles). The window is the
+    // values from `flat[degree]` through `flat[len - degree - 1]`, which is
+    // where the first and last fundamental knots sit (`M1 = degree + 1 - Mults(1)`).
+    let (knots, mults) = periodic_window_knots(degree, flat_knots, nb_poles);
     let (new_knots, new_mults, _index) = unperiodize_knots(degree, &knots, &mults);
     let new_flat = flat_knots_from_mults(&new_knots, &new_mults);
 
-    let n_old = flat_knots.len() as i64 - degree as i64 - 1;
+    let n_old = nb_poles as i64;
     let n_new = new_flat.len() as i64 - degree as i64 - 1;
     if n_old <= 0 || n_new <= 0 {
         return (flat_knots.to_vec(), Vec::new());

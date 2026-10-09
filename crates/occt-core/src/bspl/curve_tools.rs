@@ -42,13 +42,27 @@ pub fn centripetal_params(poles: &[GpPnt]) -> Vec<f64> {
     params
 }
 
-/// Reverse the direction of a B-spline curve.
+/// `Geom_BSplineCurve::Reverse()` (`Geom_BSplineCurve.cxx:496-511`): poles in
+/// reverse order and the knot values mirrored by `BSplCLib::Reverse`
+/// (`BSplCLib.cxx:802-824`) through the curve's own ends,
+/// `K -> K_first + K_last - K`. `FirstParameter()`/`LastParameter()` of the
+/// result are therefore `-Last`/`-First` of the original, which is what
+/// `Geom_BSplineCurve::ReversedParameter` (`:520-523`, `First + Last - U`)
+/// assumes; mirroring through the last knot alone (`K -> K_last - K`) shifts
+/// every parameter by `First` and desynchronizes the two.
 pub fn reverse_curve(poles: &mut [GpPnt], knots: &mut [f64]) {
     poles.reverse();
-    // Reverse knots: u_i' = 1 - u_{n-i}
-    let n = knots.len(); let umax = knots[n-1];
-    for i in 0..n/2 { knots.swap(i, n-1-i); }
-    for k in knots.iter_mut() { *k = umax - *k; }
+    let n = knots.len();
+    if n < 2 {
+        return;
+    }
+    let mirror = knots[0] + knots[n - 1];
+    for i in 0..n / 2 {
+        knots.swap(i, n - 1 - i);
+    }
+    for k in knots.iter_mut() {
+        *k = mirror - *k;
+    }
 }
 
 #[cfg(test)]

@@ -98,18 +98,15 @@ pub fn find_edge_by_range(shape: &TopoShape, first: f64, last: f64, tol: f64) ->
 }
 
 /// Find the face whose surface passes through `p` within tol. The closest
-/// (u, v) on the surface is located by grid search before the distance check,
-/// so unbounded planes work correctly.
+/// (u, v) on the surface comes from OCCT's point-on-surface projection
+/// (`Extrema_ExtPS` via `GeomAPI_ProjectPointOnSurf`), which also resolves
+/// unbounded planes. OCCT itself tracks faces through the history
+/// (`BRepTools_History`), so this helper has no direct OCCT branch.
 pub fn find_face_through(shape: &TopoShape, p: &GpPnt, tol: f64) -> Option<Face> {
     faces_of(shape).into_iter().find(|f| {
         match GeometryRegistry::global().face_surface(&f.0) {
-            Some(s) => {
-                // UNPORTED: `find_face_through` is a port-only naming helper;
-                // OCCT tracks faces through the history (`BRepTools_History`),
-                // with no point/face projection. Grid stays.
-                let (u, v) = crate::brep_surface::surface_closest_params(s.as_ref(), p, 16, 16);
-                s.d0(u, v).distance(p) <= tol
-            }
+            Some(s) => occt_geom::geom_api::project_point_on_surface(s.as_ref(), p, tol)
+                .is_some_and(|ps| ps.distance <= tol),
             None => false,
         }
     })

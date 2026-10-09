@@ -121,7 +121,7 @@ impl Curve2d for PlaneKeepParam2d {
 /// `BRep_Tool::CurveOnPlane` (`BRep_Tool.cxx:379-449`):
 /// `GeomProjLib::ProjectOnPlane` (KeepParam=true) then `ProjLib_ProjectedCurve`
 /// on the plane. Unwraps a 2d TrimmedCurve to its basis (`cxx:443-447`).
-fn curve_on_plane(curve: &dyn Curve, surf: &dyn Surface) -> Option<Arc<dyn Curve2d>> {
+pub(crate) fn curve_on_plane(curve: &dyn Curve, surf: &dyn Surface) -> Option<Arc<dyn Curve2d>> {
     let pln = pln_from_surface(surf)?;
     project_curve_on_plane(curve, &pln)
 }

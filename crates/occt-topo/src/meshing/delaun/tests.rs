@@ -281,6 +281,7 @@ use super::*;
             sup_vert: Vec::new(),
             init_circles: false,
             failed: false,
+            diag_tag: -1,
             sup_trian: DelaunTriangle::default(),
         };
         // Free edges are links with at most one connected element. None of the

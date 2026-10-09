@@ -300,4 +300,8 @@ pub struct Delaun {
     /// `BRepMesh_BaseMeshAlgo.cxx:52-62`, which swallows it and leaves the face
     /// unmeshed; callers here read this flag and abort the polygon.
     pub(super) failed: bool,
+    /// TEMPORARY diagnostic (DELSTAGE): face tag set by the caller; when the
+    /// `DELSTAGE` env var parses to this value, `diag_stage` prints the
+    /// structure sizes after each pipeline stage.
+    pub(super) diag_tag: i32,
 }

@@ -42,7 +42,9 @@ impl BndBox2d {
     pub fn set_whole(&mut self) { self.flags = V2_WHOLE; }
     pub fn set_gap(&mut self, g: f64) { self.gap = g.abs(); }
     pub fn gap(&self) -> f64 { self.gap }
-    pub fn enlarge(&mut self, t: f64) { self.gap += t; }
+    /// `Bnd_Box2d::Enlarge(theTol)` (`Bnd_Box2d.hxx`):
+    /// `Gap = max(Gap, |theTol|)`.
+    pub fn enlarge(&mut self, t: f64) { self.gap = self.gap.max(t.abs()); }
 
     /// `Bnd_Box2d::Update(xmin, ymin, xmax, ymax)`.
     pub fn update(&mut self, xmin: f64, ymin: f64, xmax: f64, ymax: f64) {

@@ -90,6 +90,170 @@ impl GpQuaternion {
         self.w = half.cos();
     }
 
+    /// `gp_Quaternion::SetVectorAndAngle(const gp_Vec&, const double)`
+    /// (`gp_Quaternion.cxx:81-88`): normalize the axis, then half-angle.
+    pub fn set_vector_and_angle(&mut self, axis: &GpVec, angle: f64) {
+        let a = axis.normalized();
+        let half = 0.5 * angle;
+        let sin_a = half.sin();
+        self.x = a.x() * sin_a;
+        self.y = a.y() * sin_a;
+        self.z = a.z() * sin_a;
+        self.w = half.cos();
+    }
+
+    /// `gp_Quaternion::GetVectorAndAngle(gp_Vec&, double&)`
+    /// (`gp_Quaternion.cxx:91-112`). Returns `(axis, angle)` with the angle in
+    /// `[-PI, PI]`; a zero vector part yields axis `+Z` and angle `0`.
+    pub fn get_vector_and_angle(&self) -> (GpVec, f64) {
+        let vl = (self.x * self.x + self.y * self.y + self.z * self.z).sqrt();
+        if vl > RESOLUTION {
+            let ivl = 1.0 / vl;
+            let axis = GpVec::new(self.x * ivl, self.y * ivl, self.z * ivl);
+            let angle = if self.w < 0.0 {
+                2.0 * (-vl).atan2(-self.w)
+            } else {
+                2.0 * vl.atan2(self.w)
+            };
+            (axis, angle)
+        } else {
+            (GpVec::new(0.0, 0.0, 1.0), 0.0)
+        }
+    }
+
+    /// `gp_Quaternion::SetEulerAngles(...)` (`gp_Quaternion.cxx:302-357`).
+    pub fn set_euler_angles(
+        &mut self,
+        order: crate::gp::euler_sequence::GpEulerSequence,
+        alpha: f64,
+        beta: f64,
+        gamma: f64,
+    ) {
+        let o = crate::gp::euler_sequence::translate_euler_sequence(order);
+
+        let mut a = alpha;
+        let mut b = beta;
+        let mut c = gamma;
+        if !o.is_extrinsic {
+            a = gamma;
+            c = alpha;
+        }
+        if o.is_odd {
+            b = -b;
+        }
+
+        let ti = 0.5 * a;
+        let tj = 0.5 * b;
+        let th = 0.5 * c;
+        let ci = ti.cos();
+        let cj = tj.cos();
+        let ch = th.cos();
+        let si = ti.sin();
+        let sj = tj.sin();
+        let sh = th.sin();
+        let cc = ci * ch;
+        let cs = ci * sh;
+        let sc = si * ch;
+        let ss = si * sh;
+
+        // values[0] = w, values[1..3] = x, y, z (1-based axis indices).
+        let mut values = [0.0f64; 4];
+        if o.is_two_axes {
+            values[o.i] = cj * (cs + sc);
+            values[o.j] = sj * (cc + ss);
+            values[o.k] = sj * (cs - sc);
+            values[0] = cj * (cc - ss);
+        } else {
+            values[o.i] = cj * sc - sj * cs;
+            values[o.j] = cj * ss + sj * cc;
+            values[o.k] = cj * cs - sj * sc;
+            values[0] = cj * cc + sj * ss;
+        }
+        if o.is_odd {
+            values[o.j] = -values[o.j];
+        }
+
+        self.x = values[1];
+        self.y = values[2];
+        self.z = values[3];
+        self.w = values[0];
+    }
+
+    /// `gp_Quaternion::GetEulerAngles(...)` (`gp_Quaternion.cxx:362-412`).
+    pub fn get_euler_angles(
+        &self,
+        order: crate::gp::euler_sequence::GpEulerSequence,
+    ) -> (f64, f64, f64) {
+        let m = self.get_matrix();
+        let o = crate::gp::euler_sequence::translate_euler_sequence(order);
+
+        let (mut alpha, mut beta, mut gamma);
+        if o.is_two_axes {
+            let sy = (m.value(o.i, o.j) * m.value(o.i, o.j)
+                + m.value(o.i, o.k) * m.value(o.i, o.k))
+            .sqrt();
+            if sy > 16.0 * f64::EPSILON {
+                alpha = m.value(o.i, o.j).atan2(m.value(o.i, o.k));
+                gamma = m.value(o.j, o.i).atan2(-m.value(o.k, o.i));
+            } else {
+                alpha = (-m.value(o.j, o.k)).atan2(m.value(o.j, o.j));
+                gamma = 0.0;
+            }
+            beta = sy.atan2(m.value(o.i, o.i));
+        } else {
+            let cy = (m.value(o.i, o.i) * m.value(o.i, o.i)
+                + m.value(o.j, o.i) * m.value(o.j, o.i))
+            .sqrt();
+            if cy > 16.0 * f64::EPSILON {
+                alpha = m.value(o.k, o.j).atan2(m.value(o.k, o.k));
+                gamma = m.value(o.j, o.i).atan2(m.value(o.i, o.i));
+            } else {
+                alpha = (-m.value(o.j, o.k)).atan2(m.value(o.j, o.j));
+                gamma = 0.0;
+            }
+            beta = (-m.value(o.k, o.i)).atan2(cy);
+        }
+        if o.is_odd {
+            alpha = -alpha;
+            beta = -beta;
+            gamma = -gamma;
+        }
+        if !o.is_extrinsic {
+            let a_first = alpha;
+            alpha = gamma;
+            gamma = a_first;
+        }
+        (alpha, beta, gamma)
+    }
+
+    /// `gp_Quaternion::StabilizeLength()` (`gp_Quaternion.cxx:416-430`).
+    pub fn stabilize_length(&mut self) {
+        let cs = self.x.abs() + self.y.abs() + self.z.abs() + self.w.abs();
+        if cs > 0.0 {
+            self.x /= cs;
+            self.y /= cs;
+            self.z /= cs;
+            self.w /= cs;
+        } else {
+            self.set_identity();
+        }
+    }
+
+    /// `gp_Quaternion::Normalize()` (`gp_Quaternion.cxx:434-444`): divide by
+    /// `Norm()`, or stabilize the length when degenerate.
+    pub fn normalize_or_stabilize(&mut self) {
+        let magn = self.norm();
+        if magn < RESOLUTION {
+            self.stabilize_length();
+        } else {
+            let inv = 1.0 / magn;
+            self.x *= inv;
+            self.y *= inv;
+            self.z *= inv;
+            self.w *= inv;
+        }
+    }
+
     /// Set from a 3x3 rotation matrix stored in GpMat.
     pub fn set_matrix(&mut self, mat: &GpMat) {
         let trace = mat.value(1, 1) + mat.value(2, 2) + mat.value(3, 3);
@@ -124,30 +288,28 @@ impl GpQuaternion {
         }
     }
 
-    /// Convert quaternion to 3x3 rotation matrix.
+    /// `gp_Quaternion::GetMatrix()` (`gp_Quaternion.cxx:153-187`): the factor
+    /// `2/SquareNorm()` means a non-unit quaternion yields a scaled matrix.
     pub fn get_matrix(&self) -> GpMat {
-        let xx = self.x * self.x;
-        let yy = self.y * self.y;
-        let zz = self.z * self.z;
-        let xy = self.x * self.y;
-        let xz = self.x * self.z;
-        let yz = self.y * self.z;
-        let wx = self.w * self.x;
-        let wy = self.w * self.y;
-        let wz = self.w * self.z;
+        let s = 2.0 / self.square_norm();
+        let x2 = self.x * s;
+        let y2 = self.y * s;
+        let z2 = self.z * s;
+        let xx = self.x * x2;
+        let xy = self.x * y2;
+        let xz = self.x * z2;
+        let yy = self.y * y2;
+        let yz = self.y * z2;
+        let zz = self.z * z2;
+        let wx = self.w * x2;
+        let wy = self.w * y2;
+        let wz = self.w * z2;
 
-        let mut m = GpMat::zero();
-        // ponytail: build 3x3 rotation matrix directly
-        m.m[0][0] = 1.0 - 2.0 * (yy + zz);
-        m.m[0][1] = 2.0 * (xy - wz);
-        m.m[0][2] = 2.0 * (xz + wy);
-        m.m[1][0] = 2.0 * (xy + wz);
-        m.m[1][1] = 1.0 - 2.0 * (xx + zz);
-        m.m[1][2] = 2.0 * (yz - wx);
-        m.m[2][0] = 2.0 * (xz - wy);
-        m.m[2][1] = 2.0 * (yz + wx);
-        m.m[2][2] = 1.0 - 2.0 * (xx + yy);
-        m
+        GpMat::new(
+            1.0 - (yy + zz), xy - wz, xz + wy,
+            xy + wz, 1.0 - (xx + zz), yz - wx,
+            xz - wy, yz + wx, 1.0 - (xx + yy),
+        )
     }
 
     pub fn square_norm(&self) -> f64 {

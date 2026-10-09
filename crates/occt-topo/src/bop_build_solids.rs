@@ -70,7 +70,7 @@ use crate::algo_tools::AlgoTools;
 
 use crate::bop_build_common::{build_draft_solid, BopBuildOps};
 use crate::brep_extrema::{closest_point_on_face, is_inside};
-use crate::brep_surface::{surface_closest_params, surface_normal};
+use crate::brep_surface::surface_normal;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
@@ -369,15 +369,18 @@ fn open_edges_of_shell(shell: &TopoShape) -> Vec<EKey> {
 fn orient_face_outward(face: &TopoShape, shell: &TopoShape) -> TopoShape {
     let Some(p) = face_sample_point(&Face(face.clone())) else { return face.clone() };
     let Some(s) = BRepTool::face_surface(&Face(face.clone())) else { return face.clone() };
-    // UNPORTED: `orient_face_outward` is a port-only heuristic for open shells
-    // with no OCCT control flow that projects the sample point to UV; OCCT
-    // decides face orientation from the face's pcurves / `BRepGProp` frame
-    // (`BOPAlgo_BuilderSolid.cxx`). The grid stays.
-    let (u, v) = surface_closest_params(s.as_ref(), &p, 16, 16);
-    if !u.is_finite() || !v.is_finite() {
+    // OCCT decides face orientation from the face's pcurves / `BRepGProp` frame
+    // (`BOPAlgo_BuilderSolid.cxx`); this port-only heuristic for open shells
+    // instead samples the face and needs that sample's (u, v), which come from
+    // OCCT's point-on-surface projection (`Extrema_ExtPS`).
+    let Some(ps) = occt_geom::geom_api::project_point_on_surface(
+        s.as_ref(),
+        &p,
+        occt_core::precision::CONFUSION,
+    ) else {
         return face.clone();
-    }
-    let mut n = surface_normal(s.as_ref(), u, v);
+    };
+    let mut n = surface_normal(s.as_ref(), ps.u, ps.v);
     if n.square_magnitude() < 1e-30 {
         return face.clone();
     }

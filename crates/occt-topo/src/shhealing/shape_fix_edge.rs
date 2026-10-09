@@ -16,7 +16,7 @@ use crate::tgeometry::GeometryRegistry;
 /// `ShapeFix_Edge` (`ShapeFix_Edge.hxx`).
 pub struct ShapeFixEdge;
 
-/// `ShapeFix_Edge::TempSameRange(AnEdge, Tolerance)` (`ShapeFix_Edge.cxx:335-464`).
+/// File-static helper `TempSameRange(AnEdge, Tolerance)` in `ShapeFix_Edge.cxx:335` (not a `ShapeFix_Edge` member).
 ///
 /// A copy of `BRepLib::SameRange` modified to be able to fix seam edges: the
 /// reference range is the 3D curve range when the edge carries a 3D curve,

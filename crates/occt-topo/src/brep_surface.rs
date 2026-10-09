@@ -238,25 +238,27 @@ pub fn face_centroid(face: &Face, nu: usize, nv: usize) -> Option<GpPnt> {
     }
 }
 
-/// Closest (u, v) parameters of `p` on a surface (grid search + refinement).
+/// Closest `(u, v)` parameters of `p` on a surface: an `nu × nv` grid seed plus
+/// six rounds of axis-aligned bisection.
 ///
-/// **UNPORTED (audit A1 / T-37)**: this is the port's invented substitute.
-/// OCCT inverts a 3-D point to surface parameters with
-/// `GeomAPI_ProjectPointOnSurf` (`Extrema_ExtPS`), ported as
-/// [`occt_geom::geom_api::project_point_on_surface`] and used by every migrated
-/// call site. The consumers left here are the port-only heuristics with no OCCT
-/// projection branch (each call site is marked `// UNPORTED`): the mesh-QA /
-/// voxel helpers (`brepmesh.rs`, `brepfeat/features.rs`), the UV-box
-/// reconstruction helpers (`brep_faces.rs`, `brep_class3d.rs`), the port-only
-/// closest-point fallbacks (`fillet_curved/rolling_ball.rs`,
-/// `edge_face_kind.rs`, `geometry_query.rs`, `shape_naming.rs`,
-/// `brep_connect.rs`, `bop_build_solids.rs`), the `IntCurveSurface` parameter
-/// recovery (`intcurvesurface/solvers.rs`), `int_curves_face.rs`, the
-/// `wire_splitter_block.rs` finite-difference tolerance, and the last-resort
-/// fallback inside `brep_surface.rs::edge_pcurve_on_face`. The former
-/// `int_tools_full/context.rs::project_point_on_face` fallback is gone: that
-/// function is now the windowed `IntTools_Context::ProjPS`.
-pub fn surface_closest_params(s: &dyn Surface, p: &GpPnt, nu: usize, nv: usize) -> (f64, f64) {
+/// **UNPORTED**: this is the port's invented substitute. Two consumers remain,
+/// both without an OCCT projection branch:
+///
+/// * [`crate::intcurvesurface`]'s general (non-quadric) path, where OCCT reads
+///   the parameters off the surface **polyhedron**
+///   (`IntCurveSurface_InterUtils.pxx:740-781`, `SectionPointToParameters`);
+/// * [`crate::brepmesh::mesh_deflection_error`], a port-only mesh-QA metric
+///   (OCCT measures deflection inside `BRepMesh`, not post hoc).
+///
+/// Every other former call site now goes through a faithful OCCT primitive:
+/// `ElSLib::Parameters`, `Extrema_ExtPS` ([`occt_geom::geom_api::project_point_on_surface`]),
+/// or the `ShapeConstruct_ProjectCurveOnSurface` projector.
+pub(crate) fn surface_closest_params(
+    s: &dyn Surface,
+    p: &GpPnt,
+    nu: usize,
+    nv: usize,
+) -> (f64, f64) {
     let (u0, u1, v0, v1) = sample_bounds(s);
     let mut best = (u0, v0);
     let mut best_d = f64::INFINITY;
@@ -271,7 +273,7 @@ pub fn surface_closest_params(s: &dyn Surface, p: &GpPnt, nu: usize, nv: usize) 
             }
         }
     }
-    // Coarse-to-fine refinement (3 rounds of local bisection).
+    // Coarse-to-fine refinement (six halvings of the grid step).
     let (mut u, mut v) = best;
     let (mut hu, mut hv) = ((u1 - u0) / nu as f64, (v1 - v0) / nv as f64);
     for _ in 0..6 {
@@ -342,17 +344,18 @@ pub fn edge_pcurve_on_face(edge: &Edge, face: &Face, samples: usize) -> Vec<GpPn
     ) {
         return t_vals.iter().map(|&t| c2d.d0(t)).collect();
     }
+    // `ShapeFix_Edge::FixAddPCurve` has no second projection: its projector
+    // (`ShapeConstruct_ProjectCurveOnSurface`) is the only source of a missing
+    // pcurve (`ShapeFix_Edge.cxx:519-546`). If the whole-curve projector above
+    // found nothing, use the same per-sample primitive that projector calls
+    // internally, `ShapeAnalysis_Surface::ValueOfUV` -> `Extrema_ExtPS`
+    // (`GeomAPI_ProjectPointOnSurf`); OCCT has no grid search.
     t_vals
         .iter()
-        .map(|&u| {
+        .filter_map(|&u| {
             let p = curve.d0(u);
-            // UNPORTED: last resort when the faithful
-            // `project_curve_on_surface_perform` (ShapeConstruct) returns no
-            // pcurve; OCCT's `BRep_Tool::CurveOnSurface` returns the stored
-            // pcurve and `ShapeFix_Edge::FixAddPCurve` builds the missing one
-            // with the real projector (`ShapeFix_Edge.cxx:499-531`).
-            let (pu, pv) = surface_closest_params(surf.as_ref(), &p, 32, 32);
-            GpPnt2d::new(pu, pv)
+            occt_geom::geom_api::project_point_on_surface(surf.as_ref(), &p, preci)
+                .map(|ps| GpPnt2d::new(ps.u, ps.v))
         })
         .collect()
 }

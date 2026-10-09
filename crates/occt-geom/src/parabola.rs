@@ -28,6 +28,13 @@ impl Curve for GeomParabola {
     fn continuity(&self) -> u8 { 6 }
     fn gp_parabola(&self) -> Option<GpParab> { Some(self.pos.clone()) }
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
-    fn reverse(&mut self) { self.pos.focal = -self.pos.focal; }
+    /// `Geom_Parabola::Reverse` -> `Geom_Conic::Reverse`
+    /// (`Geom_Conic.cxx:23-28`): reverse the frame's main direction.
+    fn reverse(&mut self) {
+        let z = self.pos.pos.direction().reversed();
+        self.pos.pos.set_direction(z);
+    }
+    /// `Geom_Parabola::ReversedParameter` (`Geom_Parabola.cxx:84`): `-U`.
+    fn reversed_parameter(&self, u: f64) -> f64 { -u }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
 }

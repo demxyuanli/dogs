@@ -1,14 +1,20 @@
 //! IGES (ANSI Y14.26M) B-Rep writer — a port of `IGESControl_Writer`.
 //!
-//! Emits an 80-column fixed-width IGES file with the classic entity set for
-//! B-rep solids: 116 POINT, 110 LINE, 100 CIRCULAR ARC, 108 PLANE,
-//! 120 SURFACE OF REVOLUTION, 144 TRIMMED SURFACE, 510 FACE, 514 SHELL and
-//! 186 MANIFOLD SOLID BREP OBJECT. Curves and surfaces cannot be downcast from
-//! `Arc<dyn Curve>` / `Arc<dyn Surface>`, so geometry is classified by sampling
-//! invariants (constant zero second derivative ⇒ line, constant curvature ⇒
-//! circular arc, equidistant samples ⇒ sphere). Faces without boundary wires
-//! (e.g. an untrimmed sphere) get a synthesized revolution-surface and
-//! meridian-arc boundary.
+//! Emits an 80-column fixed-width IGES file with the entity set OCCT's default
+//! Faces mode (`write.iges.brep.mode = 0`, `IGESData.cxx:90-94`) produces for a
+//! B-rep: 116 POINT, 110 LINE, 100 CIRCULAR ARC, 108 PLANE, 120 SURFACE OF
+//! REVOLUTION, 122 TABULATED CYLINDER, 124 TRANSFORMATION MATRIX, 126 B-SPLINE
+//! CURVE, 128 B-SPLINE SURFACE, 142 CURVE ON SURFACE, 144 TRIMMED SURFACE and
+//! 402 GROUP. Elementary surfaces (cylinder, cone, sphere, torus) become 120,
+//! **not** the 192/194/196/198 solids — those are the BRep-mode arm
+//! (`myBRepMode && myAnalytic`) and are not selected here.
+//!
+//! Curves and surfaces cannot be downcast from `Arc<dyn Curve>` /
+//! `Arc<dyn Surface>`, so the `Surface` / `Curve` traits expose the exact
+//! analytic type (`gp_pln`, `gp_cylinder`, … / `gp_circ`, …) and every dispatch
+//! is a type query, mirroring `GeomToIGES_GeomSurface::TransferSurface`'s
+//! `IsKind` chain. A face whose basis surface has no branch in that chain is
+//! dropped (`BRepToIGES_BRShell.cxx:257-261`), never replaced by a plane.
 //!
 //! The physical layout is the standard sectioned format (S/G/D/P/T) with each
 //! line exactly 80 characters. Section lines carry their section letter and a
@@ -35,24 +41,25 @@ use std::sync::Arc;
 
 use occt_core::gp::{
     GpAx2, GpAx2d, GpAx22d, GpAx3, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr,
-    GpHypr2d, GpLin, GpLin2d, GpMat2d, GpParab, GpParab2d, GpPln, GpPnt, GpPnt2d, GpTrsf2d, GpVec,
-    GpVec2d, GpXY, GpXyz, TrsfForm,
+    GpHypr2d, GpLin, GpLin2d, GpMat2d, GpParab, GpParab2d, GpPln, GpPnt, GpPnt2d, GpTrsf,
+    GpTrsf2d, GpVec, GpVec2d, GpXY, GpXyz, TrsfForm,
 };
 use occt_geom::{
-    Curve, GeomBSplineCurve, GeomCircle, GeomEllipse, GeomHyperbola, GeomLine, GeomParabola,
-    Surface,
+    Curve, GeomBSplineCurve, GeomBezierCurve, GeomCircle, GeomEllipse, GeomHyperbola, GeomLine,
+    GeomParabola, Surface,
 };
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 use occt_geom2d::{
-    Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dHyperbola, Geom2dLine, Geom2dParabola,
+    Geom2dBSplineCurve, Geom2dBezierCurve, Geom2dCircle, Geom2dEllipse, Geom2dHyperbola,
+    Geom2dLine, Geom2dParabola,
 };
 
 use crate::abs::ShapeType;
-use crate::brep_surface::{classify_surface, face_is_planar, face_plane, sphere_center, SurfaceKind};
+use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::model::BRepModel;
-use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
+use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex};
 use crate::topo_tools_full::{edge_vertices, edges_of_wire, wires_of_face};
 
 // ---------------------------------------------------------------------------
@@ -104,23 +111,168 @@ fn param_line(content: &str, de_pointer: usize, seq: usize) -> String {
     s
 }
 
+/// The `Interface_LineBuffer` a section writer fills
+/// (`IGESData_IGESWriter.cxx:49-50`: `thecurr(MaxcarsG + 1)`, `:248`:
+/// `thecurr.SetMax(MaxcarsP)` at the start of the parameter section): text is
+/// appended while it fits on the current card, and a card that overflows is
+/// dumped **before** the text that does not fit is written
+/// (`Interface_LineBuffer.cxx:68-80` `CanGet`, `:150-157` `Keep`).
+///
+/// This is what decides where a Parameter card ends: not a fixed 64-column cut,
+/// but the first field boundary that does not fit. `Send(v)`
+/// (`IGESData_IGESWriter.cxx:560-565`, `:586-589`) writes the separator and the
+/// value as two separate additions, so a card can also end on a separator whose
+/// value went to the next card.
+struct CardBuffer {
+    /// Cards already dumped, i.e. `thepars` of `IGESData_IGESWriter`.
+    cards: Vec<String>,
+    /// The card being filled, i.e. `thecurr`.
+    line: String,
+    /// `thecurr`'s maximum length: `MaxcarsP` (64) in the parameter section,
+    /// `MaxcarsG` (72) in the global one (`IGESData_IGESWriter.cxx:39-40`).
+    max: usize,
+}
+
+impl CardBuffer {
+    fn new(max: usize) -> Self {
+        Self {
+            cards: Vec::new(),
+            line: String::new(),
+            max,
+        }
+    }
+
+    /// `Interface_LineBuffer::Moved` through `IGESData_IGESWriter`'s flush
+    /// (`IGESData_IGESWriter.cxx:508-512`, `:541-550`): the current card is
+    /// appended to the section **as is** — trailing blanks are added at printing
+    /// time (`cxx:913`), and a flush of a short card keeps it short.
+    fn flush(&mut self) {
+        self.cards.push(std::mem::take(&mut self.line));
+    }
+
+    /// `IGESData_IGESWriter::AddString` (`cxx:497-533`). The `+ 1` of the
+    /// `CanGet` call is OCCT's own reservation (comment at `cxx:504`): one
+    /// character must remain free, so that the *next* separator is never the
+    /// first character of a line.
+    fn add_string(&mut self, text: &str) {
+        let bytes = text.as_bytes();
+        if self.line.len() + bytes.len() + 1 > self.max {
+            self.flush();
+        }
+        // Text longer than a card fills whole cards (`cxx:516-531`); the buffer
+        // is empty here, so each iteration dumps exactly `max` characters.
+        let mut rest = bytes;
+        while rest.len() > self.max {
+            let n = self.max - self.line.len();
+            self.line
+                .push_str(&String::from_utf8_lossy(&rest[..n.min(rest.len())]));
+            self.flush();
+            rest = &rest[self.max..];
+        }
+        let n = (self.max - self.line.len()).min(rest.len());
+        self.line.push_str(&String::from_utf8_lossy(&rest[..n]));
+    }
+
+    /// `IGESData_IGESWriter::AddChar` (`cxx:535-553`), used for the parameter
+    /// separators and the record delimiter.
+    fn add_char(&mut self, c: u8) {
+        if self.line.len() + 1 > self.max {
+            self.flush();
+        }
+        self.line.push(c as char);
+    }
+}
+
 /// Right-justify a value in an 8-column IGES field.
 fn field8(v: &str) -> String {
     format!("{v:>8}")
 }
 
+/// Every real parameter of every entity goes through
+/// `IGESData_IGESWriter::Send(const double)` (`IGESData_IGESWriter.cxx:582-589`),
+/// which is `thefloatw.Write(val, lval)`, and the writer constructs `thefloatw`
+/// as `Interface_FloatWriter(9)` (`IGESData_IGESWriter.cxx:49-50`, copy `:67`).
+/// `Interface_FloatWriter(9)` runs `SetDefaults(9)`
+/// (`Interface_FloatWriter.cxx:23-27` -> `:50-70`), which fixes the two `Sprintf`
+/// formats and the range they are chosen by:
+///
+/// - `"%11.9f"` while `|val|` is in `[0.1, 1000)`, `"%11.9E"` outside it
+///   (`cxx:139-147`);
+/// - `thezerosup = true`, so `Convert` then strips trailing zeros from the
+///   mantissa and drops an `E+00` exponent (`cxx:148-174`).
+///
+/// `%11.9E`, unlike Rust's `{:.9E}`, always writes the exponent sign and at
+/// least two exponent digits (`1.5E+3` against `1.500000000E+03`), and the zero
+/// suppression then leaves the shortest form (`150.`, `-0.`, `2.842170943E-14`).
+const FLOAT_RANGE_MIN: f64 = 0.1;
+const FLOAT_RANGE_MAX: f64 = 1000.0;
+
+/// `Sprintf(text, "%11.9f", val)` (`cxx:143`). The field width is a minimum and
+/// `"0.000000000"` already fills 11 columns, so no padding can ever appear.
+fn float_fixed(x: f64) -> String {
+    format!("{x:.9}")
+}
+
+/// `Sprintf(text, "%11.9E", val)` (`cxx:145`), re-normalised to C's `%E`
+/// layout: sign always present, exponent padded to two digits.
+fn float_sci(x: f64) -> String {
+    let s = format!("{x:.9E}");
+    let (mantissa, exp) = match s.split_once('E') {
+        Some((m, e)) => (m, e),
+        None => (s.as_str(), "0"),
+    };
+    let (sign, digits) = match exp.strip_prefix('-') {
+        Some(d) => ('-', d),
+        None => ('+', exp),
+    };
+    let pad = if digits.len() < 2 { "0" } else { "" };
+    format!("{mantissa}E{sign}{pad}{digits}")
+}
+
+/// `Interface_FloatWriter::Convert`'s zero suppression (`cxx:148-174`): scan the
+/// first 16 characters for the exponent marker, remember the exponent, cut the
+/// mantissa there, drop its trailing zeros, and put the exponent back unless it
+/// was exactly `+00`. Without a marker the cut point is the terminator, so a
+/// fixed-format value only loses its trailing zeros (`150.000000000` -> `150.`).
+fn float_zero_suppress(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut cut = chars.len();
+    let mut exp = String::new();
+    let mut i = 0;
+    while i < 16 && i < chars.len() {
+        if chars[i] == 'e' || chars[i] == 'E' {
+            let mut e = String::from("E");
+            e.extend(chars[i + 1..(i + 5).min(chars.len())].iter());
+            // `cxx:159-162`: only the exponent 0 loses its marker
+            // (`lxp[1] == '+' && lxp[2] == '0' && lxp[3] == '0' && lxp[4] == '\0'`).
+            if e != "E+00" {
+                exp = e;
+            }
+            cut = i;
+            break;
+        }
+        i += 1;
+    }
+    let mut mantissa: String = chars[..cut].iter().collect();
+    while mantissa.ends_with('0') {
+        mantissa.pop();
+    }
+    mantissa + &exp
+}
+
 /// Render an f64 in IGES parameter syntax (always carries a decimal point or
 /// exponent marker).
 fn num(x: f64) -> String {
+    // `Sprintf` of a non-finite value yields `inf`/`nan`, which is not an IGES
+    // number; no OCCT transfer produces one, and the port keeps the file
+    // well-formed by writing the zero both formats would zero-suppress to.
     if !x.is_finite() {
-        return "0.0".into();
+        return "0.".into();
     }
-    let s = format!("{:?}", x);
-    if s.contains('.') || s.contains('e') || s.contains('E') {
-        s
-    } else {
-        format!("{s}.")
-    }
+    let in_range = (x >= FLOAT_RANGE_MIN && x < FLOAT_RANGE_MAX)
+        || (x <= -FLOAT_RANGE_MIN && x > -FLOAT_RANGE_MAX);
+    let text = if in_range { float_fixed(x) } else { float_sci(x) };
+    float_zero_suppress(&text)
 }
 
 /// Pointer placeholder for the `k`-th entry of an entity's reference list.
@@ -167,12 +319,16 @@ fn placeholder_indices(params: &str) -> impl Iterator<Item = usize> + '_ {
     found.into_iter()
 }
 
-/// Replace every `#k` with the final DE number of the `k`-th referenced entity.
-///
-/// `refs` holds the referenced entities in parameter order and `new_of` the
-/// reachability renumbering; a `#k` without a target keeps its literal text
-/// (only reachable when an emitter records fewer refs than it writes
-/// placeholders, which `emit_refs` already checks in debug builds).
+/// Replace every `#k` with the final **pointer** of the `k`-th referenced entity,
+/// i.e. `Interface_InterfaceModel::DNum` = `2 * Number(entity) - 1`
+/// (`Interface_InterfaceModel.cxx`), which is the sequence number of the
+/// entity's **first Directory card**. `IGESData_IGESWriter::Send(handle, …)`
+/// writes through `DNum` (`IGESData_IGESWriter.cxx:609-621`), so the D section
+/// lays out two cards per entity and every in-model reference names an odd
+/// D-section line. `refs` holds the referenced entities in parameter order and
+/// `new_of` the reachability renumbering; a `#k` without a target keeps its
+/// literal text (only reachable when an emitter records fewer refs than it
+/// writes placeholders, which `emit_refs` already checks in debug builds).
 fn resolve_placeholders(params: &str, refs: &[usize], new_of: &HashMap<usize, usize>) -> String {
     let bytes = params.as_bytes();
     let mut out = String::with_capacity(params.len());
@@ -187,7 +343,7 @@ fn resolve_placeholders(params: &str, refs: &[usize], new_of: &HashMap<usize, us
             if j > start {
                 if let Ok(k) = params[start..j].parse::<usize>() {
                     if let Some(n) = refs.get(k).and_then(|r| new_of.get(r)) {
-                        out.push_str(&n.to_string());
+                        out.push_str(&(2 * n - 1).to_string());
                         i = j;
                         continue;
                     }
@@ -214,6 +370,85 @@ fn surf_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
     let (u0, u1) = clamp(u0, u1);
     let (v0, v1) = clamp(v0, v1);
     (u0, u1, v0, v1)
+}
+
+/// `Precision::IsNegativeInfinite` / `IsPositiveInfinite` clamp of a parameter
+/// range before it is used as a curve parameter
+/// (`GeomToIGES_GeomSurface.cxx:806-813` cone, `:1058-1065` tabulated
+/// cylinder, `:1144-1150` revolution).
+fn clamp_infinite_range(v0: f64, v1: f64) -> (f64, f64) {
+    let a = if occt_core::precision::Precision::is_negative_infinite(v0) {
+        -occt_core::precision::INFINITE
+    } else {
+        v0
+    };
+    let b = if occt_core::precision::Precision::is_positive_infinite(v1) {
+        occt_core::precision::INFINITE
+    } else {
+        v1
+    };
+    (a, b)
+}
+
+/// The `gp_Ax3(gp_Ax2(...))` frames the elementary-surface transfers build their
+/// generatrix circles on:
+///
+/// - sphere: `gp_Ax2(gp::Origin(), -gp::DY(), gp::DX())`
+///   (`GeomToIGES_GeomSurface.cxx:893`);
+/// - torus: `gp_Ax2(gp_Pnt(MajorRadius, 0., 0.), -gp::DY(), gp::DX())`
+///   (`cxx:960`), i.e. the same frame shifted to the tube centre.
+///
+/// The circle is written in this frame (entity 100 + its own 124, see
+/// [`IgesWriter::emit_circular_arc`]) and referenced by the 120.
+fn revolution_generatrix_frame(location: GpPnt) -> GpAx3 {
+    // `-gp::DY()` is `gp::DY()` reversed (`gp_Dir::Reverse`), so its zero
+    // components carry a negative sign; building `(0, -1, 0)` from literals
+    // loses them and the 124's signed zeros no longer match OCCT. The 3-arg
+    // `gp_Ax2(N, Vx)` ctor (`gp_Ax2.hxx:73-80`) sets `vxdir = N ^ (Vx ^ N)`
+    // (`gp_Dir::CrossCross`) and `vydir = N ^ vxdir`; `GpAx3::new` computes the
+    // same `vydir` from the orthogonalised `vxdir`.
+    let n = GpDir::from_axis(occt_core::gp::dir::DirAxis::Y).reversed();
+    let vx = GpDir::from_axis(occt_core::gp::dir::DirAxis::X);
+    let inner = vx.xyz().crossed(n.xyz());
+    let xdir = GpDir::from_xyz(&n.xyz().crossed(&inner)).unwrap_or(vx);
+    GpAx3::new(location, n, &xdir).expect("axis2 placement (Origin, -DY, DX)")
+}
+
+/// `ElCLib::CircleValue` on `frame` (`clib::circle_value`).
+fn circle_point(frame: &GpAx3, radius: f64, u: f64) -> GpPnt {
+    let p = frame
+        .location()
+        .coord
+        .added(&frame.x_direction().xyz().multiplied(radius * u.cos()))
+        .added(&frame.y_direction().xyz().multiplied(radius * u.sin()));
+    GpPnt::from_xyz(&p)
+}
+
+/// Inverse of `IGESConvGeom_GeomBuilder::SetPosition(gp_Ax3)`
+/// (`GeomBuilder.cxx:137-143`, `gp_Trsf::SetTransformation` then
+/// `gp_Trsf::Invert` at `gp_Trsf.cxx:418-425`).
+fn builder_local_trsf(frame: &GpAx3) -> GpTrsf {
+    let mut ps = GpTrsf::identity();
+    ps.set_transformation_from_to(frame, &xoy_frame());
+    ps.scale = 1.0 / ps.scale;
+    ps.matrix = ps.matrix.transpose();
+    ps.loc = ps.matrix.multiplied(&ps.loc).multiply(-ps.scale);
+    ps
+}
+
+fn eval_xyz(local: &GpTrsf, p: &GpPnt) -> (f64, f64, f64) {
+    let q = p.transformed(local);
+    (q.x(), q.y(), q.z())
+}
+
+/// `gp::XOY()` — the standard `gp_Ax3` frame (origin, `+Z` main, `+X`).
+fn xoy_frame() -> GpAx3 {
+    GpAx3::new(
+        GpPnt::zero(),
+        GpDir::from_axis(occt_core::gp::dir::DirAxis::Z),
+        &GpDir::from_axis(occt_core::gp::dir::DirAxis::X),
+    )
+    .expect("gp::XOY()")
 }
 
 /// 3×3 determinant.
@@ -267,8 +502,11 @@ fn circle_center3(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
 /// `GeomToIGES_GeomCurve::TransferCurve` (`GeomToIGES_GeomCurve.cxx:75-116`)
 /// dispatches on the curve's **exact type** (`IsKind`), never on sampled
 /// geometry: `Geom_BoundedCurve` (Bezier / B-spline / trimmed) → the 126/100
-/// family, `Geom_Conic` → 104 (circle 100), `Geom_OffsetCurve`, `Geom_Line` →
-/// 110. The port has the equivalent type queries on [`Curve`], so the previous
+/// family, `Geom_Conic` → 104 (circle 100), `Geom_Line` → 110. A
+/// `Geom_OffsetCurve` is not classified here: with the default
+/// `write.iges.offset.mode = 0` it is approximated to a B-spline first
+/// ([`IgesWriter::emit_offset_curve_default`]). The port has the equivalent
+/// type queries on [`Curve`], so the previous
 /// "6 samples of |C''| with a 2% spread" classifier (audit A26) is replaced by
 /// this dispatch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -298,6 +536,42 @@ fn iges_curve_kind(c: &dyn Curve) -> IgCurveKind {
     } else {
         IgCurveKind::Other
     }
+}
+
+/// The curve `TransferCurve` approximates when `write.iges.offset.mode` is 0,
+/// plus the range that approximation is then segmented to.
+///
+/// A trimmed curve is forwarded to its basis (`GeomToIGES_GeomCurve.cxx:467-475`).
+/// `GeomTrimmedCurve` reports `FirstParameter() == 0` and `LastParameter() == 1`
+/// while `untrimmed_basis` carries the basis interval, so `(a, b)` in that
+/// unit interval is mapped back. `GeomTrimmedCurveBasis` already evaluates in
+/// basis parameters (`first_parameter` is the trim start), and a bare
+/// `Geom_OffsetCurve` is approximated as received.
+fn offset_curve_request(
+    curve: &dyn Curve,
+    a: f64,
+    b: f64,
+) -> Option<(Arc<dyn Curve>, f64, f64)> {
+    if curve.is_geom_trimmed() {
+        let (basis, t0, t1) = curve.untrimmed_basis()?;
+        if basis.offset_curve().is_none() {
+            return None;
+        }
+        let unit = curve.first_parameter().abs() <= f64::EPSILON
+            && (curve.last_parameter() - 1.0).abs() <= f64::EPSILON;
+        let basis_is_unit = t0.abs() <= 1e-12 && (t1 - 1.0).abs() <= 1e-12;
+        let (u0, u1) = if unit && !basis_is_unit {
+            let span = t1 - t0;
+            (t0 + a * span, t0 + b * span)
+        } else {
+            (a, b)
+        };
+        return Some((basis, u0, u1));
+    }
+    if curve.offset_curve().is_some() {
+        return Some((Arc::from(curve.clone_dyn()), a, b));
+    }
+    None
 }
 
 /// `mycurve->Copy()` for the `Geom_BSplineCurve` transfer
@@ -348,25 +622,113 @@ fn poles_planar_and_normal(poles: &[GpPnt]) -> (bool, GpVec) {
     (true, normal)
 }
 
-/// `GetAnyNormal` (`GeomToIGES_GeomCurve.cxx:120-140`): a unit vector normal to
-/// `v`, built from the axis least aligned with it.
+/// `IsPlanar` (`GeomToIGES_GeomCurve.cxx:236-272`): the planar flag and plane
+/// normal OCCT computes on the curve handed to `TransferCurve` (`cxx:414`,
+/// `IsPlanar(start, Norm)`), i.e. before it is unperiodized or `Segment`-ed into
+/// the copy whose poles are written out. The dispatch is OCCT's: `Geom_Line`
+/// takes `GetAnyNormal` of its direction, the four conics their `Axis()`
+/// direction, a `Geom_TrimmedCurve`/`Geom_OffsetCurve` recurses into the basis,
+/// and `Geom_BSplineCurve`/`Geom_BezierCurve` fall through to
+/// `ArePolesPlanar`. Anything else returns `false` with an untouched normal.
+fn curve_planar_and_normal(curve: &dyn Curve) -> (bool, GpVec) {
+    if let Some(l) = curve.gp_line() {
+        return (true, any_normal(&l.direction().xyz()));
+    }
+    let conic = curve
+        .gp_circ()
+        .map(|c| c.pos)
+        .or_else(|| curve.gp_ellipse().map(|e| e.pos))
+        .or_else(|| curve.gp_hyperbola().map(|h| h.pos))
+        .or_else(|| curve.gp_parabola().map(|p| p.pos));
+    if let Some(pos) = conic {
+        return (true, GpVec::from_xyz(&pos.direction().xyz()));
+    }
+    if let Some((base, _, _)) = curve.untrimmed_basis() {
+        return curve_planar_and_normal(base.as_ref());
+    }
+    if let Some((base, _)) = curve.offset_curve() {
+        return curve_planar_and_normal(base.as_ref());
+    }
+    if let Some(p) = curve.bspline_poles() {
+        return poles_planar_and_normal(p);
+    }
+    if let Some(p) = curve.bezier_poles() {
+        return poles_planar_and_normal(p);
+    }
+    (false, GpVec::new(0.0, 0.0, 0.0))
+}
+
+/// `GetAnyNormal` (`GeomToIGES_GeomCurve.cxx:168-189`): `(0,0,1)` when `|Z|` is
+/// below `Precision::Confusion()`, otherwise the unit vector `(Z, 0, -X)`.
 fn any_normal(v: &occt_core::gp::GpXyz) -> GpVec {
-    let ax = v.x().abs();
-    let ay = v.y().abs();
-    let az = v.z().abs();
-    let out = if ax <= ay && ax <= az {
-        GpVec::new(0.0, -v.z(), v.y())
-    } else if ay <= az {
-        GpVec::new(v.z(), 0.0, -v.x())
-    } else {
-        GpVec::new(-v.y(), v.x(), 0.0)
-    };
-    let m = out.xyz().modulus();
-    if m < 1e-30 {
+    if v.z().abs() < occt_core::precision::CONFUSION {
+        return GpVec::new(0.0, 0.0, 1.0);
+    }
+    let n = occt_core::gp::GpXyz::new(v.z(), 0.0, -v.x());
+    let m = n.modulus();
+    if m < occt_core::precision::CONFUSION {
         GpVec::new(0.0, 0.0, 1.0)
     } else {
-        GpVec::new(out.x() / m, out.y() / m, out.z() / m)
+        GpVec::from_xyz(&n.divided(m))
     }
+}
+
+/// `Rational` (`Geom_BSplineCurve.cxx:98-108`): true when two consecutive
+/// weights differ by more than `gp::Resolution()`.
+fn weights_are_rational(weights: &[f64]) -> bool {
+    weights.windows(2).any(|pair| {
+        (pair[0] - pair[1]).abs() > occt_core::precision::REAL_SMALL
+    })
+}
+
+/// `(U1 + U2) / 2` over a surface's bounds, the mid point
+/// `GeomToIGES_GeomSurface.cxx:1212-1213` evaluates the offset indicator at.
+///
+/// `Geom_Surface::Bounds` reports an unbounded direction as
+/// `Precision::Infinite()` = `RealLast()`, so OCCT's mid point of a
+/// doubly-infinite range is 0 and of a half-infinite range is `RealLast()/2`;
+/// the port stores `f64::INFINITY` for those, and `INFINITY + -INFINITY` would be
+/// NaN - a NaN parameter poisons the returned normal - so a non-finite range
+/// collapses to 0 here. Elementary surfaces have constant derivatives in the
+/// unbounded direction, so the indicator is unaffected either way.
+fn bounds_mid_point(a: f64, b: f64) -> f64 {
+    if a.is_finite() && b.is_finite() {
+        (a + b) / 2.0
+    } else {
+        0.0
+    }
+}
+
+/// `CSLib::Normal(D1U, D1V, theSinTol, theStatus, theNormal)`
+/// (`CSLib.cxx:45-80`), the overload reached from `GeomLProp_SLProps::Normal()`
+/// through `LProp_SurfaceUtils::ComputeSurfNormal`
+/// (`GeomLProp_SurfaceUtils.hxx:348-358`).
+///
+/// Returns the unit normal when the status is `CSLib_Done`. Every other status
+/// (`D1IsNull`, `D1uIsNull`, `D1vIsNull`, `D1uIsParallelD1v`) makes OCCT's
+/// `Normal()` throw `LProp_NotDefined`, and is reported here as `None`.
+fn surface_normal_from_d1(d1u: &GpVec, d1v: &GpVec, sin_tol: f64) -> Option<GpVec> {
+    // `gp::Resolution()` is `RealSmall()` (`gp.hxx:60`), not `Precision`.
+    const GP_RESOLUTION: f64 = occt_core::precision::REAL_SMALL;
+    let mag_u = d1u.square_magnitude();
+    let mag_v = d1v.square_magnitude();
+    if mag_u <= GP_RESOLUTION || mag_v <= GP_RESOLUTION {
+        return None;
+    }
+    let cross = d1u.crossed(d1v);
+    let sin2 = cross.square_magnitude() / (mag_u * mag_v);
+    if sin2 < sin_tol * sin_tol {
+        return None;
+    }
+    // `gp_Dir(theD1UxD1V)`: OCCT normalises unconditionally here (the magnitude
+    // is above `gp::Resolution()` because `sin2` is strictly positive), so this
+    // divides explicitly instead of going through `GpVec::normalized`, which
+    // keeps an unnormalised vector below `Precision::Resolution()`.
+    let m = cross.magnitude();
+    if m <= 0.0 {
+        return None;
+    }
+    Some(cross.divided(m))
 }
 
 /// The `Geom_SweptSurface` family of `GeomToIGES_GeomSurface::TransferSurface`
@@ -587,7 +949,7 @@ fn dir2d_transform(t: &GpTrsf2d, d: &GpDir2d) -> GpDir2d {
         }
         _ => {
             let mut xy = GpXY::new(d.x, d.y);
-            xy.multiply_mat2d(t.vectorial_part());
+            xy.multiply_mat2d(t.h_vectorial_part());
             let _ = xy.normalize();
             if t.scale_factor() < 0.0 {
                 xy.reverse();
@@ -817,42 +1179,64 @@ fn transform_pcurve(
         *last = occt_core::elib::clib2d::parameter_lin2d(&line, &pl);
         return Some(Arc::new(Geom2dLine::new(GpAx2d::new(pf, dir))));
     }
-    if result.bezier_nb_poles().is_some() {
-        // UNPORTED ('cxx:642-656'): the arm transforms the Bezier's poles, but
-        // the port's 'Curve2d' exposes only 'bezier_nb_poles', never the poles.
-        return None;
+    // 'cxx:642-656': a 2-D Bezier scales every pole on X and keeps its own
+    // range; the weights (rational Bezier) are carried over unchanged.
+    if result.is_bezier2d() {
+        let poles: Vec<GpPnt2d> = result
+            .poles2d()?
+            .iter()
+            .map(|p| GpPnt2d::new(p.x() * u_fact, p.y()))
+            .collect();
+        let bez = match result.bezier_weights2d() {
+            Some(w) => Geom2dBezierCurve::rational(poles, w.to_vec()),
+            None => Geom2dBezierCurve::new(poles),
+        }
+        .ok()?;
+        return Some(Arc::new(bez));
     }
     let is_conic = result.gp_circ2d().is_some()
         || result.gp_elips2d().is_some()
         || result.gp_hypr2d().is_some()
         || result.gp_parab2d().is_some();
-    if is_conic {
-        // UNPORTED ('cxx:660-678'): OCCT reruns the trimmed conic through
-        // 'Geom2dConvert_ApproxCurve' and falls back to
-        // 'Geom2dConvert::CurveToBSplineCurve(thecurve, Convert_QuasiAngular)'.
-        // Neither converter is ported.
-        return None;
-    }
-    let (xs, ys) = match result.bspline_poles2d() {
-        Some(p) => p,
-        None => {
-            // UNPORTED ('cxx:679-682'): any remaining 2-D type goes through
-            // 'Geom2dConvert::CurveToBSplineCurve(result, Convert_QuasiAngular)'.
-            return None;
-        }
+    // 'cxx:658-698': the conic arm trims the curve to 'aFirst'/'aLast' and
+    // re-runs it through 'Geom2dConvert_ApproxCurve' (falling back to
+    // 'Geom2dConvert::CurveToBSplineCurve(thecurve, Convert_QuasiAngular)');
+    // any remaining 2-D type goes through 'CurveToBSplineCurve(result,
+    // Convert_QuasiAngular)'; a B-spline is used as it is. All three then have
+    // their poles scaled on X.
+    let mut bs = if is_conic {
+        let tcurve: Arc<dyn Curve2d> =
+            Arc::new(Geom2dTrimmedCurve::new(result.clone(), *first, *last));
+        let approx = occt_geom2d::Geom2dConvertApproxCurve::new(
+            tcurve.as_ref(),
+            occt_core::precision::APPROXIMATION,
+            occt_core::kernel::geomabs::Shape::C1,
+            100,
+            6,
+        );
+        let bs = match approx.curve() {
+            Some(curve) => curve.clone(),
+            None => occt_geom2d::geom2d_convert::curve_to_bspline_curve_bspl(
+                tcurve.as_ref(),
+                occt_core::convert::ParameterisationType::QuasiAngular,
+            )?,
+        };
+        // 'cxx:673-674': 'aFirst'/'aLast' follow the approximation's range.
+        *first = bs.first_parameter();
+        *last = bs.last_parameter();
+        bs
+    } else if !result.is_bspline2d() {
+        occt_geom2d::geom2d_convert::curve_to_bspline_curve_bspl(
+            result.as_ref(),
+            occt_core::convert::ParameterisationType::QuasiAngular,
+        )?
+    } else {
+        result.bspline_copy2d()?
     };
-    let knots = result.bspline_knots2d()?.to_vec();
-    let degree = result.bspline_degree()?;
     // 'cxx:688-698': transform the poles. 'aFirst'/'aLast' are only rewritten in
     // the conic arm above, so a plain B-spline keeps its range.
-    Some(Arc::new(Geom2dBSplineCurve {
-        xs: xs.iter().map(|x| x * u_fact).collect(),
-        ys: ys.to_vec(),
-        weights: None,
-        knots,
-        degree,
-        periodic: result.is_periodic(),
-    }))
+    bs.xs = bs.xs.iter().map(|x| x * u_fact).collect();
+    Some(Arc::new(bs))
 }
 
 /// 'Adaptor3d_CurveOnSurface.cxx:72-78' (to3d of a 'gp_Ax22d' on
@@ -930,10 +1314,24 @@ fn promote_curve2d(curve: &dyn Curve2d) -> Option<Box<dyn Curve>> {
             periodic: basis.is_periodic(),
         }));
     }
-    // UNPORTED: a 2-D Bezier ('Adaptor3d_CurveOnSurface::Bezier()',
-    // 'cxx:1458-1485') has no pole accessor on the port's 'Curve2d'; any other
-    // type has no 'GeomAdaptor::MakeCurve' arm either ('GeomAdaptor.cxx:79-80'
-    // throws OtherCurve).
+    // `Adaptor3d_CurveOnSurface::Bezier()` (`cxx:1458-1485`) lifts the 2-D
+    // Bezier's poles to Z=0 and `GeomAdaptor::MakeCurve` (`GeomAdaptor.cxx:60-77`)
+    // builds the matching `Geom_BezierCurve`.
+    //
+    // UNPORTED (`cxx:1474-1481`): the rational sub-arm
+    // (`Bez2d->IsRational()` -> `Geom_BezierCurve(Poles, Weights)`) has no port
+    // equivalent - `occt_geom::GeomBezierCurve` is non-rational, the same gap
+    // noted in `occt_geom::convert_bspl::curve_to_bspline_curve` (`cxx:313-321`).
+    if basis.is_bezier2d() {
+        let poles: Vec<GpPnt> = basis
+            .poles2d()?
+            .iter()
+            .map(|p| GpPnt::new(p.x(), p.y(), 0.0))
+            .collect();
+        return Some(Box::new(GeomBezierCurve::new(poles).ok()?));
+    }
+    // UNPORTED: any other type has no 'GeomAdaptor::MakeCurve' arm either
+    // ('GeomAdaptor.cxx:79-80' throws OtherCurve).
     None
 }
 
@@ -956,36 +1354,64 @@ struct Ent {
     refs: Vec<usize>,
     /// Parameter data, always ending with the record delimiter `;`.
     params: String,
+    /// The entity's status number, DE card 1 columns 65-72: BlankStatus,
+    /// SubordinateStatus, UseFlag and HierarchyStatus, two columns each.
+    /// Filled by [`compute_status`] from the finished model;
+    /// `IGESData_IGESEntity` starts at `InitStatus(0, 0, 0, 0)`
+    /// (`IGESData_IGESEntity.cxx:53-63`).
+    status: [i32; 4],
 }
 
 impl Ent {
+    /// Number of Parameter cards this entity occupies, which card 2 of its
+    /// directory entry reports (`IGESData_IGESWriter.cxx:835`:
+    /// `v[15] = thepnum.Value(i + 1) - thepnum.Value(i)`).
     fn param_line_count(&self) -> usize {
-        self.params.len().div_ceil(64).max(1)
+        self.param_chunks().len()
     }
 
+    /// The entity's Parameter cards, as `IGESData_IGESWriter` builds them.
+    ///
+    /// `OwnParams` clears the card buffer and writes the type number, without a
+    /// separator (`IGESData_IGESWriter.cxx:418-434`); every own parameter is
+    /// then written by a `Send`, i.e. the separator followed by the value
+    /// (`cxx:560-565` for integers, `:586-589` for reals, `:610-620` for
+    /// pointers — a *void* parameter writes the separator alone, `:557-560`);
+    /// `EndEntity` closes the record with `theendm` and dumps the last card
+    /// (`:471-483`). Splitting the parameter text on the separator and feeding
+    /// the pieces to [`CardBuffer`] is that same sequence, so the cards break
+    /// where OCCT's break instead of every 64 columns.
     fn param_chunks(&self) -> Vec<String> {
-        if self.params.is_empty() {
-            return vec![String::new()];
+        let body = self.params.strip_suffix(';').unwrap_or(self.params.as_str());
+        let mut buf = CardBuffer::new(MAXCARS_P);
+        for (i, field) in body.split(',').enumerate() {
+            if i > 0 {
+                buf.add_char(b',');
+            }
+            buf.add_string(field);
         }
-        let mut out = Vec::new();
-        let mut start = 0;
-        while start < self.params.len() {
-            let end = (start + 64).min(self.params.len());
-            out.push(self.params[start..end].to_string());
-            start = end;
+        buf.add_char(b';');
+        if !buf.line.is_empty() {
+            buf.flush();
         }
-        out
+        buf.cards
     }
 
     /// The two Directory Entry cards of the entity
     /// (`IGESData_IGESWriter.cxx:276-365` filling `v[0..16]`, `:809-880` laying
     /// the cards out): eight 8-column fields plus four 2-column status fields on
     /// the first card and nine 8-column fields on the second - 72 data columns
-    /// each. Card 1 field 2 is the sequence number of the entity's **first
+    /// each. The four status fields are printed `%2.2d`
+    /// (`IGESData_IGESWriter.cxx:836-840`), i.e. zero filled, not blank filled:
+    /// a status of 0 is `00`, so card 1 of a default entity ends on `00000000`.
+    /// Card 1 field 2 is the sequence number of the entity's **first
     /// parameter card** (`v[1] = thepnum.Value(i)`, `cxx:834`), field 7 the
     /// transformation matrix pointer (`cxx:324-331`); card 2 field 4 is the number
     /// of parameter cards (`v[15]`, `cxx:835`), field 5 the form number
     /// (`v[16] = anent->FormNumber()`, `cxx:364`).
+    ///
+    /// The status number (`v[8..11]`) is [`Ent::status`], computed on the
+    /// finished model by [`compute_status`].
     ///
     /// The remaining fields carry `IGESData_IGESEntity`'s defaults: line weight
     /// `theLWeightNum = 0` and color `DefColor() == DefVoid` ⇒ 0
@@ -1000,16 +1426,16 @@ impl Ent {
         let form = field8(&self.form.to_string());
         let trsf = field8(&self.trsf.map_or("0".to_string(), |t| t.to_string()));
         let l1 = format!(
-            "{ty}{pstart}{}{}{}{}{trsf}{}{:>2}{:>2}{:>2}{:>2}",
+            "{ty}{pstart}{}{}{}{}{trsf}{}{:02}{:02}{:02}{:02}",
             field8("0"),
             field8("0"),
             field8("0"),
             field8("0"),
             field8("0"),
-            0,
-            0,
-            0,
-            0
+            self.status[0],
+            self.status[1],
+            self.status[2],
+            self.status[3]
         );
         let l2 = format!(
             "{ty}{}{}{pcount}{form}{}{}{}{}",
@@ -1024,7 +1450,86 @@ impl Ent {
     }
 }
 
-/// Incremental IGES writer holding the entity list and dedup maps.
+/// `IGESData_BasicEditor::ComputeStatus` (`IGESData_BasicEditor.cxx:216-328`)
+/// followed by `AutoCorrectModel` -> `AutoCorrect` (`:330-433`), which
+/// `IGESControl_Writer::ComputeModel` runs before printing
+/// (`IGESControl_Writer.cxx:256-262`). Both work on the numbered model, i.e.
+/// after [`IgesWriter::final_entities`], and fill DE card 1's status number.
+///
+/// ComputeStatus has two phases, documented as such at `cxx:231-255`:
+///
+/// * **Subordinate status** (`cxx:257-281`): every entity ORs `1` into the
+///   status of each entity its *own* parameters reference
+///   (`gmod->OwnSharedCase` = [`Ent::refs`]), and `2` instead of `1` when the
+///   referring entity is an associativity (type 402 or 404). DE-part
+///   references are not `OwnShared`, so the transformation matrix
+///   ([`Ent::trsf`], card 1 field 7) contributes nothing - the oracle confirms
+///   it: all 347 type-124 entries are `00000000`, while every entity
+///   referenced from a parameter record is `00010000` or `00020000`.
+/// * **UseFlag** (`cxx:283-309`): not ported. It propagates only for types
+///   200-299 (`G.GetFromEntity(ent, true, 1)`), 134, 116 and 132
+///   (`G.GetFromEntity(ent, true, 4)`); the port's transfer classes create
+///   none of those, and the phase reads an `Interface_Graph` status array
+///   whose shared sets include the DE-part pointers this writer does not
+///   model. `G.Status(i)` is therefore always 0, so the second phase
+///   (`cxx:315-327`) keeps each entity's own UseFlag when it is non-zero and
+///   takes 0 otherwise.
+///
+/// `AutoCorrect` then applies the general module's `DirChecker(CN, ent)`:
+/// `Correct` forces a status field whenever it differs from the
+/// `...Required(val)` the tool declared (`IGESData_DirChecker.cxx:422-451`),
+/// while a field left at its `-100` "do not test" default
+/// (`IGESData_DirChecker.cxx:33-36`) is untouched (`thegraphier == -100` also
+/// disables the DE graphics cleanup, `:400-420`). Of the types this writer
+/// emits (100/102/108/110/120/124/126/128/140/142/144/402) exactly two declare
+/// a status:
+///
+/// * 142 - `UseFlagRequired(5)` (`IGESGeom_ToolCurveOnSurface.cxx:200-211`),
+///   the source of the oracle's `00010500` on every type 142;
+/// * 144 - `UseFlagRequired(0)` (`IGESGeom_ToolTrimmedSurface.cxx:264-276`),
+///   which is a no-op for an entity whose UseFlag is already 0.
+///
+/// `AutoCorrect`'s specific-module call `smod->OwnCorrect(CN, ent)`
+/// (`cxx:413-418`) is deliberately *not* ported: in OCCT 8.0.0 the 142
+/// correction is registered under case 9 but casts to `IGESGeom_Boundary`
+/// (`IGESGeom_SpecificModule.cxx:337-345`), so `anent.IsNull()` and the
+/// CurveUV/Curve3D of a 142 keep UseFlag 0 - which is what the oracle shows.
+fn compute_status(entities: &mut [Ent]) {
+    let nb = entities.len();
+    // NCollection_Array1<int> subs(0, nb); subs.Init(0) (`cxx:226-228`).
+    let mut subs = vec![0i32; nb + 1];
+    for e in entities.iter() {
+        let bit = if e.ty == 402 || e.ty == 404 { 2 } else { 1 };
+        for r in &e.refs {
+            // themodel->Number(sh.Value()) is 0 for anything outside the model;
+            // index 0 of `subs` absorbs those (`cxx:269-280`).
+            if let Some(s) = subs.get_mut(*r) {
+                *s |= bit;
+            }
+        }
+    }
+
+    for (i, e) in entities.iter_mut().enumerate() {
+        // InitStatus(bl, subs.Value(i), uf, hy), `uf == 0` taking G.Status(i)
+        // (`cxx:315-327`). Blank and hierarchy status stay as the entity set
+        // them - the port never changes them from 0.
+        e.status = [e.status[0], subs[i + 1], e.status[2], e.status[3]];
+
+        // DirChecker::Correct (`IGESData_DirChecker.cxx:422-451`).
+        let required = match e.ty {
+            142 => Some(5), // IGESGeom_ToolCurveOnSurface.cxx:209
+            144 => Some(0), // IGESGeom_ToolTrimmedSurface.cxx:272
+            _ => None,
+        };
+        if let Some(val) = required {
+            if val != e.status[2] {
+                e.status[2] = val;
+            }
+        }
+    }
+}
+
+/// Incremental IGES writer holding the entity list.
 struct IgesWriter {
     entities: Vec<Ent>,
     /// Top-level entity of every shape handed to [`IgesWriter::emit_shape`], in
@@ -1033,7 +1538,6 @@ struct IgesWriter {
     /// so these are the DFS roots of the written model (T-85 step 2).
     roots: Vec<usize>,
     point_entities: HashMap<usize, usize>,
-    edge_curve_entities: HashMap<usize, usize>,
 }
 
 impl IgesWriter {
@@ -1042,7 +1546,6 @@ impl IgesWriter {
             entities: Vec::new(),
             roots: Vec::new(),
             point_entities: HashMap::new(),
-            edge_curve_entities: HashMap::new(),
         }
     }
 
@@ -1058,6 +1561,7 @@ impl IgesWriter {
             trsf: None,
             refs: Vec::new(),
             params,
+            status: [0; 4],
         });
         self.entities.len()
     }
@@ -1141,16 +1645,25 @@ impl IgesWriter {
                 Ent {
                     ty: e.ty,
                     form: e.form,
+                    // `v[6] = themodel->DNum(trsf)` (`IGESData_IGESWriter.cxx:324-331`):
+                    // the transformation matrix field is an entity pointer like
+                    // any other, so it carries the first Directory card number.
                     // A pointer that is not in `new_of` cannot happen (every
-                    // child was pushed onto the DFS stack); keep the old number
+                    // child was pushed onto the DFS stack); keep the old value
                     // rather than emitting a hole.
-                    trsf: e.trsf.map(|t| new_of.get(&t).copied().unwrap_or(t)),
+                    trsf: e.trsf.map(|t| {
+                        new_of
+                            .get(&t)
+                            .map(|n| 2 * n - 1)
+                            .unwrap_or(t)
+                    }),
                     refs: e
                         .refs
                         .iter()
                         .map(|r| new_of.get(r).copied().unwrap_or(*r))
                         .collect(),
                     params: resolve_placeholders(&e.params, &e.refs, &new_of),
+                    status: [0; 4],
                 }
             })
             .collect()
@@ -1188,54 +1701,145 @@ impl IgesWriter {
         )
     }
 
+    /// Entity 108 (`GeomToIGES_GeomSurface::TransferSurface(Geom_Plane)`,
+    /// `GeomToIGES_GeomSurface.cxx:609-688`, the `write.iges.plane.mode == 0`
+    /// arm - that static is initialised to 0, `IGESData.cxx:182-186`; written by
+    /// `IGESGeom_ToolPlane::WriteOwnParams`, `IGESGeom_ToolPlane.cxx:129-145`):
+    ///
+    /// `108, A, B, C, D, bounding_curve, attach_x, attach_y, attach_z, symbol_size;`
+    ///
+    /// - `A,B,C,D` are `start->Coefficients(...)` with `D` negated (`cxx:625-627`)
+    ///   - the plane as `A*x + B*y + C*z = D`, all divided by the file unit,
+    ///   which is what the port's `d = n . location` already is;
+    /// - the bounding curve is null and the symbol size is 0 (`cxx:630` passes
+    ///   `nullptr` and `0`), so both write `0`;
+    /// - the attachment point is the plane's location / unit (`cxx:629`);
+    /// - the form stays 0: `TransferPlaneSurface` never calls `SetFormNumber`,
+    ///   and `IGESGeom_Plane::Init` only re-applies the form already stored
+    ///   (`IGESGeom_Plane.cxx:44`), which is 0 on a fresh entity.
     fn emit_plane(&mut self, pln: &GpPln) -> usize {
-        let n = *pln.axis().direction().xyz();
+        // `GeomToIGES_GeomSurface.cxx:625-629`: `start->Coefficients(A,B,C,D)`
+        // then `D = -D` "because of difference in Geom_Plane class and Type 108".
+        // `gp_Pln::Coefficients` (`gp_Pln.hxx`) negates the stored main direction
+        // when the placement is indirect, which is exactly what
+        // `Geom_Plane::UReverse` (`gp_Pln.hxx:101`, `XReverse`) produces for a
+        // REVERSED face.
+        let (a, b, c, cte) = pln.coefficients();
+        let d = -cte;
         let loc = pln.location().coord;
-        let d = n.dot(&loc);
         self.emit(
             108,
-            1,
-            format!("108,{},{},{},{};", num(n.x), num(n.y), num(n.z), num(d)),
-        )
-    }
-
-    fn emit_circular_arc(&mut self, center: &GpPnt, start: &GpPnt, end: &GpPnt, plane_pt: &GpPnt) -> usize {
-        self.emit(
-            100,
             0,
             format!(
-                "100,0.,{},{},{},{},{},{},{},{},{},{},{},{};",
-                num(center.x()),
-                num(center.y()),
-                num(center.z()),
-                num(start.x()),
-                num(start.y()),
-                num(start.z()),
-                num(end.x()),
-                num(end.y()),
-                num(end.z()),
-                num(plane_pt.x()),
-                num(plane_pt.y()),
-                num(plane_pt.z())
+                "108,{},{},{},{},0,{},{},{},0.;",
+                num(a),
+                num(b),
+                num(c),
+                num(d),
+                num(loc.x),
+                num(loc.y),
+                num(loc.z)
             ),
         )
     }
 
-    /// Arc through three points: center from the circumcircle, start/end from
-    /// the first/last, and a fourth point on the arc plane.
-    fn emit_arc_3p(&mut self, p1: &GpPnt, p2: &GpPnt, p3: &GpPnt) -> usize {
-        let center = circle_center3(p1, p2, p3).unwrap_or_else(GpPnt::zero);
-        let n = GpVec::from_pnts(p1, p2).xyz().crossed(GpVec::from_pnts(p1, p3).xyz());
-        let plane_pt = if n.square_modulus() < 1e-30 {
-            GpPnt::new(center.x(), center.y(), center.z() + 1.0)
+    /// Entity 100 (`GeomToIGES_GeomCurve::TransferCurve(Geom_Circle)`,
+    /// `GeomToIGES_GeomCurve.cxx:533-603`, written by
+    /// `IGESGeom_ToolCircularArc::WriteOwnParams`,
+    /// `IGESGeom_ToolCircularArc.cxx:79-89`):
+    ///
+    /// `100, ZT, Xc, Yc, Xs, Ys, Xe, Ye;`
+    ///
+    /// Every coordinate is **2-D, in the arc's own plane**: `TransferCircle`
+    /// places the builder on `gp_Ax3(arc.Position())` (`cxx:560-563`) and writes
+    /// each point through `Build.EvalXYZ` (`cxx:580-583`). The placing frame
+    /// itself rides on the entity's transformation matrix (`cxx:591-597`).
+    fn emit_circular_arc(&mut self, frame: &GpAx3, radius: f64, u1: f64, u2: f64) -> usize {
+        // `TransferCurve` (`GeomToIGES_GeomCurve.cxx:569-586`) evaluates the
+        // centre and the two ends with `Geom_Circle::D0`, then
+        // `IGESConvGeom_GeomBuilder::EvalXYZ` (`GeomBuilder.cxx:212-216`):
+        // `thepos.Inverted().Transforms` after `SetPosition(gp_Ax3)`
+        // (`:137-143`). `gp_Trsf::Invert` transposes (`gp_Trsf.cxx:418-425`).
+        // Writing `R*(cos U, sin U)` skips that round trip; a frame whose axes
+        // carry a sub-resolution component cancels the libm residual to a real
+        // 0 only after the inverse is applied. `GetUnit()` is 1 for this writer
+        // (the 124 below is emitted with unit 1).
+        let local = builder_local_trsf(frame);
+        let (xc, yc, zc) = eval_xyz(&local, &frame.location());
+        let (xs, ys, _) = eval_xyz(&local, &circle_point(frame, radius, u1));
+        let (xe, ye, _) = eval_xyz(&local, &circle_point(frame, radius, u2));
+        let de = self.emit(
+            100,
+            0,
+            format!(
+                "100,{},{},{},{},{},{},{};",
+                num(zc),
+                num(xc),
+                num(yc),
+                num(xs),
+                num(ys),
+                num(xe),
+                num(ye)
+            ),
+        );
+        if !frame_is_identity(frame) {
+            let trsf = self.emit_transformation_matrix(frame, 1.0);
+            self.set_trsf(de, trsf);
+        }
+        de
+    }
+
+    /// `GeomToIGES_GeomCurve::TransferCurve(Geom_Circle, Udeb, Ufin)`
+    /// (`GeomToIGES_GeomCurve.cxx:533-603`): before the arc is built a `Udeb`
+    /// within `gp::Resolution()` snaps to 0 (`:549-552`), and a request spanning
+    /// a whole period writes the end point coincident with the start
+    /// (`:571-576`, `gka BUG 6542`).
+    fn emit_circle_transfer(&mut self, frame: &GpAx3, radius: f64, u1: f64, u2: f64) -> usize {
+        let first = if u1.abs() <= occt_core::precision::REAL_SMALL {
+            0.0
         } else {
-            GpPnt::from_xyz(&center.coord.added(&n.divided(n.modulus())))
+            u1
         };
-        self.emit_circular_arc(&center, p1, p3, &plane_pt)
+        let last = if (u2 - u1 - 2.0 * std::f64::consts::PI).abs()
+            <= occt_core::precision::PCONFUSION
+        {
+            first
+        } else {
+            u2
+        };
+        self.emit_circular_arc(frame, radius, first, last)
     }
 
     // ---- topology entities ----
 
+    /// `TransferCurve(Geom_OffsetCurve)` under the default
+    /// `write.iges.offset.mode = 0` (`IGESData.cxx:193`,
+    /// `GeomToIGES_GeomCurve.cxx:916-919`):
+    /// `TransferCurve(GeomConvert::CurveToBSplineCurve(start), U1, U2)`.
+    ///
+    /// `TransferCurve(Geom_TrimmedCurve)` forwards to the immediate basis with
+    /// the same range (`cxx:467-475`; the nested-trim assignment at `:472` is
+    /// overwritten, so only the basis that recursion reaches is written). The
+    /// port's `GeomTrimmedCurve` evaluates on `[0, 1]` while
+    /// `untrimmed_basis` reports the basis interval (`trimmed.rs`), so a
+    /// remapped trim's request is mapped back before the spline is segmented.
+    /// The mode `1` arm (entity 130) is not the default and is not taken.
+    /// A failed approximation is the `Standard_ConstructionError` OCCT throws
+    /// (`GeomConvert.cxx:350-352`); the caller then keeps its null-handle path.
+    fn emit_offset_curve_default(
+        &mut self,
+        curve: &dyn Curve,
+        a: f64,
+        b: f64,
+    ) -> Option<usize> {
+        let (target, u0, u1) = offset_curve_request(curve, a, b)?;
+        let bs = occt_geom::convert_bspl::curve_to_bspline_curve(
+            target.as_ref(),
+            occt_core::convert::ParameterisationType::TgtThetaOver2,
+        )
+        .ok()?;
+        self.emit_bspline_curve(&bs, u0, u1)
+    }
 
     /// `GeomToIGES_GeomCurve::TransferCurve(Geom_Curve, Udeb, Ufin)`
     /// (`GeomToIGES_GeomCurve.cxx:94-126` dispatching, `:133-161` on the bounded
@@ -1243,35 +1847,29 @@ impl IgesWriter {
     /// `Geom_Circle` entity 100, a B-spline/Bezier entity 126. Returns `None`
     /// where OCCT's transfer returns a null handle (conics: the 104 writer is not
     /// ported yet; any other curve type has no branch at all).
+    ///
+    /// A `Geom_OffsetCurve` (and a trimmed curve whose basis is one,
+    /// `cxx:467-475`) is taken first, matching the default
+    /// `write.iges.offset.mode = 0` arm (`cxx:916-919`).
     fn emit_curve_range(&mut self, curve: &dyn Curve, a: f64, b: f64) -> Option<usize> {
+        if let Some(idx) = self.emit_offset_curve_default(curve, a, b) {
+            return Some(idx);
+        }
         match iges_curve_kind(curve) {
             IgCurveKind::Line => {
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
                 Some(self.emit_line(&p1, &p2))
             }
+            // `GeomToIGES_GeomCurve::TransferCircle`
+            // (`GeomToIGES_GeomCurve.cxx:533-603`): the centre, the axis and the
+            // radius come from the `Geom_Circle`'s own `gp_Circ` - never from a
+            // three-point fit on sampled points - and the start/end parameters are
+            // used as they are, apart from the two special cases in
+            // `emit_circle_transfer`.
             IgCurveKind::Circle => {
-                let p1 = curve.d0(a);
-                let p2 = curve.d0(b);
-                // `GeomToIGES_GeomCurve::TransferCircle`
-                // (`GeomToIGES_GeomCurve.cxx:292-329`) takes the centre, the axis
-                // and the radius from the `Geom_Circle` itself - never from a
-                // three-point fit on sampled points. A closed edge (start == end)
-                // is written with the arc's start/end coincident (IGES closed
-                // circular arc form).
-                let (center, plane_pt) = match curve.gp_circ() {
-                    Some(c) => {
-                        let pos = c.position();
-                        let loc = pos.location();
-                        let n = pos.direction();
-                        (
-                            loc,
-                            GpPnt::new(loc.x() + n.x(), loc.y() + n.y(), loc.z() + n.z()),
-                        )
-                    }
-                    None => (GpPnt::zero(), GpPnt::new(0.0, 0.0, 1.0)),
-                };
-                Some(self.emit_circular_arc(&center, &p1, &p2, &plane_pt))
+                let c = curve.gp_circ()?;
+                Some(self.emit_circle_transfer(&c.pos.to_ax3(), c.radius, a, b))
             }
             // `TransferCurve(Geom_BSplineCurve)` (`cxx:279-423`): a periodic curve
             // is written through a `SetNotPeriodic` copy (`emit_bspline_curve`).
@@ -1289,23 +1887,47 @@ impl IgesWriter {
         }
     }
 
-    fn emit_edge_curve(&mut self, e: &Edge) -> usize {
+    /// `BRepToIGES_BRWire::TransferEdge(edge, originMap, false)`
+    /// (`BRepToIGES_BRWire.cxx:266-335`): the edge's 3-D curve entity.
+    ///
+    /// Returns `None` where OCCT leaves `ICurve` null and the caller skips the
+    /// edge (`TransferWire`, `cxx:715-723`): the edge has no 3-D curve at all
+    /// (a degenerated edge - `BRep_Builder::Degenerated` drops the curve,
+    /// `BRep_Builder.cxx:1073-1085`, so `BRep_Tool::Curve` at `cxx:282` returns
+    /// null; the port's `EdgeGeom::curve` is non-nullable and carries the
+    /// `degenerated` flag instead, see `builder.rs:326-331`).
+    fn emit_edge_curve(&mut self, e: &Edge) -> Option<usize> {
         let Some(curve) = BRepTool::edge_curve(e) else {
             let (v1, v2) = edge_vertices(e);
             let p1 = v1.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
             let p2 = v2.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
-            return self.emit_line(&p1, &p2);
+            return Some(self.emit_line(&p1, &p2));
         };
-        let (a, b) = BRepTool::edge_parameters(e);
+        if BRepTool::is_degenerated(e) {
+            return None;
+        }
+        let (first, last) = BRepTool::edge_parameters(e);
+        // `BRepToIGES_BRWire::TransferEdge` (`cxx:302-314`): every call from the
+        // face path passes `theIsBRepMode = false`, so a REVERSED edge is written
+        // through `Curve3d->Reverse()` with the range mapped by
+        // `ReversedParameter(Last)` / `ReversedParameter(First)`.
+        let (curve, a, b): (Arc<dyn Curve>, f64, f64) =
+            if e.0.orientation() == crate::abs::Orientation::Reversed {
+                let u1 = curve.reversed_parameter(last);
+                let u2 = curve.reversed_parameter(first);
+                (Arc::from(curve.reversed()), u1, u2)
+            } else {
+                (curve, first, last)
+            };
         match self.emit_curve_range(curve.as_ref(), a, b) {
-            Some(idx) => idx,
+            Some(idx) => Some(idx),
             None => {
                 // The transfer above returned a null handle: OCCT writes no curve
                 // at all for those types, the port keeps the chord-line stand-in
                 // (UNPORTED, audit A26 / task T-78, see `emit_curve_range`).
                 let p1 = curve.d0(a);
                 let p2 = curve.d0(b);
-                self.emit_line(&p1, &p2)
+                Some(self.emit_line(&p1, &p2))
             }
         }
     }
@@ -1320,24 +1942,27 @@ impl IgesWriter {
     ///   UMin, UMax, Normal;`
     ///
     /// with `index = nb_poles - 1` and the knot array the curve's flattened knot
-    /// sequence. The planar flag and the normal come from `ArePolesPlanar`
-    /// (`cxx:170-199`): `P(n) x P(1) + sum P(i) x P(i+1)`, normalised (or
-    /// `(0,0,1)` with `planar = false` when the sum is shorter than
-    /// `Precision::Confusion()`), then every pole must sit at the same distance
-    /// from the plane through `P(1)`. Returns `None` for the cases this port
-    /// cannot express.
-    fn emit_bspline_curve(&mut self, curve: &dyn Curve, u_deb: f64, u_fin: f64) -> Option<usize> {
+    /// sequence. The planar flag and the normal come from `IsPlanar(start, Norm)`
+    /// (`cxx:414` -> `:236-272`), which runs on the curve **as received**, not on
+    /// the unperiodized / `Segment`-ed copy whose poles are written out: for a
+    /// B-spline that is `ArePolesPlanar(Poles())` (`cxx:191-228`),
+    /// `P(n) x P(1) + sum P(i) x P(i+1)`, normalised (or `(0,0,1)` with
+    /// `planar = false` when the sum is shorter than `Precision::Confusion()`),
+    /// then every pole must sit at the same distance from the plane through
+    /// `P(1)`. Returns `None` for the cases this port cannot express.
+    fn emit_bspline_curve(&mut self, start: &dyn Curve, u_deb: f64, u_fin: f64) -> Option<usize> {
         // `cxx:294-307`: a periodic curve is written through a non-periodic copy
-        // (`SetNotPeriodic`); the 126 writer reports `periodic = 0`, which the
-        // port's parameter writer already does.
+        // (`SetNotPeriodic`). `IPerio` is captured from the curve as received
+        // (`cxx:297`) and passed to `Init` (`cxx:419`) unchanged, so the 126
+        // parameter stays 1 after the copy is opened.
         let unperiodized;
-        let curve: &dyn Curve = if curve.is_periodic() {
-            let poles = curve.bspline_poles()?.to_vec();
-            let knots = curve.bspline_knots()?.to_vec();
-            let degree = curve.nurbs_degree()?;
+        let curve: &dyn Curve = if start.is_periodic() {
+            let poles = start.bspline_poles()?.to_vec();
+            let knots = start.bspline_knots()?.to_vec();
+            let degree = start.nurbs_degree()?;
             let mut c = occt_geom::bspline_curve::GeomBSplineCurve {
                 poles,
-                weights: curve.bspline_weights().map(|w| w.to_vec()),
+                weights: start.bspline_weights().map(|w| w.to_vec()),
                 knots,
                 degree,
                 periodic: true,
@@ -1346,7 +1971,7 @@ impl IgesWriter {
             unperiodized = c;
             &unperiodized
         } else {
-            curve
+            start
         };
 
         // `cxx:309-318`: an infinite bound is replaced by `±Precision::Infinite()`.
@@ -1418,7 +2043,8 @@ impl IgesWriter {
         }
         let index = poles.len() - 1;
 
-        let (planar, normal) = poles_planar_and_normal(&poles);
+
+        let (planar, normal) = curve_planar_and_normal(start);
         // `cxx:415-418`: the normal is flipped when it points down.
         let normal = if normal.z() < 0.0 {
             GpVec::new(-normal.x(), -normal.y(), -normal.z())
@@ -1426,12 +2052,19 @@ impl IgesWriter {
             normal
         };
 
-        let weights: Vec<f64> = match curve.bspline_weights() {
-            Some(w) if w.len() == poles.len() => w.to_vec(),
-            _ => vec![1.0; poles.len()],
+        // `cxx:360`: `IPolyn = !mycurve->IsRational()`. `IsRational` is the
+        // `myRational` flag (`Geom_BSplineCurve_1.cxx:683-686`), set by
+        // `Rational(Weights)` (`Geom_BSplineCurve.cxx:98-108`, `:206-208`).
+        // A stored weight array whose values are all equal is not rational, and
+        // the entity then carries `BSplCLib::UnitWeights` (`:220-222`).
+        let stored = curve.bspline_weights().filter(|w| w.len() == poles.len());
+        let rational = stored.is_some_and(weights_are_rational);
+        let weights: Vec<f64> = if rational {
+            stored.unwrap().to_vec()
+        } else {
+            vec![1.0; poles.len()]
         };
-        // `cxx:360`: `IPolyn = !IsRational()`.
-        let polynomial = curve.bspline_weights().is_none();
+        let polynomial = !rational;
         let closed = poles
             .first()
             .zip(poles.last())
@@ -1439,10 +2072,11 @@ impl IgesWriter {
             .unwrap_or(false);
 
         let mut s = format!(
-            "126,{index},{degree},{},{},{},0",
+            "126,{index},{degree},{},{},{},{}",
             u8::from(planar),
             u8::from(closed),
-            u8::from(polynomial)
+            u8::from(polynomial),
+            u8::from(start.is_periodic())
         );
         for k in &knots {
             s.push(',');
@@ -1485,6 +2119,12 @@ impl IgesWriter {
     /// `IGESSolid_ToolSphericalSurface.cxx:70-80`):
     /// `196, centre_point, radius, axis_direction, reference_direction;` — the
     /// parametrised form, which is the one OCCT's transfer produces.
+    ///
+    /// **Not wired**: this is the BRep-mode arm (`myBRepMode && myAnalytic`,
+    /// `cxx:579-586`). OCCT's default `write.iges.brep.mode = 0`
+    /// (`IGESData.cxx:90-94`) keeps the writer in Faces mode, where a sphere
+    /// becomes a 120 revolution surface instead (see
+    /// [`IgesWriter::emit_local_revolution_surface`]).
     fn emit_spherical_surface(
         &mut self,
         center: &GpPnt,
@@ -1507,6 +2147,9 @@ impl IgesWriter {
     /// `GeomToIGES_GeomSurface.cxx:1280-1314`, written by
     /// `IGESSolid_ToolCylindricalSurface::WriteOwnParams`):
     /// `192, location_point, axis_direction, radius, reference_direction;`.
+    ///
+    /// **Not wired**: BRep-mode only (`myBRepMode && myAnalytic`, `cxx:555-562`);
+    /// in Faces mode a cylinder is a 120.
     fn emit_cylindrical_surface(
         &mut self,
         location: &GpPnt,
@@ -1531,6 +2174,9 @@ impl IgesWriter {
     /// reference_direction;`. A negative semi-angle is written by mirroring the
     /// reference point through the apex, negating the angle and reversing the
     /// reference direction (`cxx:1344-1350`).
+    ///
+    /// **Not wired**: BRep-mode only (`myBRepMode && myAnalytic`, `cxx:567-574`);
+    /// in Faces mode a cone is a 120.
     fn emit_conical_surface(
         &mut self,
         location: &GpPnt,
@@ -1573,6 +2219,9 @@ impl IgesWriter {
     /// `IGESSolid_ToolToroidalSurface::WriteOwnParams`):
     /// `198, centre_point, axis_direction, major_radius, minor_radius,
     /// reference_direction;`.
+    ///
+    /// **Not wired**: BRep-mode only (`myBRepMode && myAnalytic`, `cxx:591-598`);
+    /// in Faces mode a torus is a 120.
     fn emit_toroidal_surface(
         &mut self,
         center: &GpPnt,
@@ -1638,15 +2287,17 @@ impl IgesWriter {
                 surf.u_degree().max(1) as usize,
                 surf.v_degree().max(1) as usize,
             ),
-            _ => return None,
+            _ => {
+                if std::env::var("IGES_TRACE").is_ok() {
+                    eprintln!("TRACE bspline missing data: is_bspline={}", surf.is_bspline_surface());
+                }
+                return None;
+            }
         };
         if poles.is_empty() || poles[0].is_empty() {
             return None;
         }
         let (nu0, nv0) = (poles.len(), poles[0].len());
-        if knots_u.len() != nu0 + deg_u + 1 || knots_v.len() != nv0 + deg_v + 1 {
-            return None;
-        }
 
         // `TransferSurface(Geom_RectangularTrimmedSurface)` recurses on
         // `BasisSurface()` before this branch (`cxx:492-515`), so every quantity
@@ -1671,21 +2322,151 @@ impl IgesWriter {
         let period_u = bs.is_u_periodic();
         let period_v = bs.is_v_periodic();
 
+        // An **open** direction's flat knot vector and pole grid must describe
+        // the same representation: `nb_poles + degree + 1`. A periodic direction
+        // is *not* trimmed to the open length -
+        // `Geom_BSplineSurface::SetUPeriodic` (`Geom_BSplineSurface_1.cxx:940-981`)
+        // trims the poles to `BSplCLib::NbPoles(degree, true, mults)` while
+        // `updateUKnots` rebuilds the flat sequence with the periodic extension
+        // (`BSplCLib::KnotSequenceLength`, `BSplCLib.cxx:455-474`) - and the base
+        // multiplicities that would let the length be predicted are no longer
+        // recoverable from the extended sequence (the leading `degree + 1 -
+        // mults(1)` entries are the wrapped tail, shifted by one period). Such a
+        // direction is therefore checked after the unperiodization below, on the
+        // open representation OCCT's writer actually emits.
+        let open_flat_ok = |flat: &[f64], nb: usize, deg: usize, periodic: bool| -> bool {
+            periodic || flat.len() == nb + deg + 1
+        };
+        if !open_flat_ok(&knots_u, nu0, deg_u, period_u)
+            || !open_flat_ok(&knots_v, nv0, deg_v, period_v)
+        {
+            if std::env::var("IGES_TRACE").is_ok() {
+                eprintln!(
+                    "TRACE bspline layout mismatch: nu={nu0} nv={nv0} deg=({deg_u},{deg_v}) ku={} kv={} | nbuv=({},{}) uvdeg=({},{}) pu={period_u} pv={period_v} trim={} bs={}",
+                    knots_u.len(),
+                    knots_v.len(),
+                    surf.nb_u_poles(),
+                    surf.nb_v_poles(),
+                    surf.u_degree(),
+                    surf.v_degree(),
+                    surf.rectangular_trimmed_basis().is_some(),
+                    surf.is_bspline_surface(),
+                );
+            }
+            return None;
+        }
+
+        // `cxx:239-301`: the written range is clamped to the surface's own
+        // bounds; the periodic arm snaps an end that already sits on a bound and
+        // otherwise shifts the range into the period
+        // (`ShapeAnalysis::AdjustToPeriod`), truncating it to one period. This
+        // runs **before** the re-origin below, which needs `uShift`/`vShift`.
+        let (su0, su1) = bs.u_range();
+        let (sv0, sv1) = bs.v_range();
+        let (u1_arg, v1_arg) = (u1, v1);
+        let (mut u0, mut u1) = (u0, u1);
+        let mut u_shift = 0.0;
+        if period_u {
+            if (u0 - su0).abs() < occt_core::precision::PCONFUSION {
+                u0 = su0;
+            }
+            if (u1 - su1).abs() < occt_core::precision::PCONFUSION {
+                u1 = su1;
+            }
+            u_shift = crate::pcurve_full::adjust_to_period(u0, su0, su1);
+            u0 += u_shift;
+            u1 += u_shift;
+            if u1 - u0 > su1 - su0 {
+                u1 = u0 + (su1 - su0);
+            }
+        } else {
+            u0 = u0.max(su0);
+            u1 = u1.min(su1);
+        }
+        let (mut v0, mut v1) = (v0, v1);
+        let mut v_shift = 0.0;
+        if period_v {
+            if (v0 - sv0).abs() < occt_core::precision::PCONFUSION {
+                v0 = sv0;
+            }
+            if (v1 - sv1).abs() < occt_core::precision::PCONFUSION {
+                v1 = sv1;
+            }
+            v_shift = crate::pcurve_full::adjust_to_period(v0, sv0, sv1);
+            v0 += v_shift;
+            v1 += v_shift;
+            if v1 - v0 > sv1 - sv0 {
+                v1 = v0 + (sv1 - sv0);
+            }
+        } else {
+            v0 = v0.max(sv0);
+            v1 = v1.min(sv1);
+        }
+
+        // `cxx:303-343`: `SetUOrigin`/`SetVOrigin` re-origin a periodic
+        // B-spline direction when the written range's own period shift differs
+        // from the range's start one (issue 26138: synchronize the p-curve
+        // ranges with the surface bounds). `LocateU(Vmin)` gives the window
+        // index the new origin starts at; the re-origin only permutes the
+        // periodic representation, so the geometry is unchanged.
+        let u_reorigin = period_u
+            && (u_shift - crate::pcurve_full::adjust_to_period(u1_arg, su0, su1)).abs()
+                > occt_core::precision::PCONFUSION;
+        let v_reorigin = period_v
+            && (v_shift - crate::pcurve_full::adjust_to_period(v1_arg, sv0, sv1)).abs()
+                > occt_core::precision::PCONFUSION;
+        if u_reorigin || v_reorigin {
+            let mut ms = occt_geom::bspline_surface::GeomBSplineSurface {
+                poles: poles.clone(),
+                knots_u: knots_u.clone(),
+                knots_v: knots_v.clone(),
+                deg_u,
+                deg_v,
+                weights: if rational { Some(weights.clone()) } else { None },
+                u_periodic: period_u,
+                v_periodic: period_v,
+            };
+            let mut changed = false;
+            if u_reorigin {
+                let (left, _right) = ms.locate_u(u0, occt_core::precision::PCONFUSION);
+                if ms.set_u_origin(left).is_ok() {
+                    changed = true;
+                }
+            }
+            if v_reorigin {
+                let (left, _right) = ms.locate_v(v0, occt_core::precision::PCONFUSION);
+                if ms.set_v_origin(left).is_ok() {
+                    changed = true;
+                }
+            }
+            if changed {
+                poles = ms.poles;
+                if let Some(w) = ms.weights {
+                    weights = w;
+                }
+                knots_u = ms.knots_u;
+                knots_v = ms.knots_v;
+            }
+        }
+
         // `cxx:303-343`: a periodic B-spline surface is **unperiodized** before
         // its knots and poles are read (`SetUNotPeriodic` / `SetVNotPeriodic` →
         // `BSplSLib::Unperiodize`, `Geom_BSplineSurface_1.cxx:1238-1300`), so
         // the written 128 has the open knot vector IGES expects. The pole
         // extension is the cyclic wrap of `BSplCLib::Unperiodize`
-        // (`BSplCLib.cxx:3076-3079`); weights follow the same wrap because
-        // `BSplSLib::Unperiodize` works on homogeneous poles.
+        // (`BSplCLib.cxx:3076-3079`, modulus `Poles.Length()` =
+        // `BSplCLib::NbPoles(degree, true, mults)`); weights follow the same wrap
+        // because `BSplSLib::Unperiodize` works on homogeneous poles.
         if period_u {
-            let (nf, map) = occt_core::bspl::unperiodize_direction(deg_u as i32, &knots_u);
+            let (nf, map) =
+                occt_core::bspl::unperiodize_direction(deg_u as i32, &knots_u, nu0);
             knots_u = nf;
             poles = map.iter().map(|k| poles[*k].clone()).collect();
             weights = map.iter().map(|k| weights[*k].clone()).collect();
         }
         if period_v {
-            let (nf, map) = occt_core::bspl::unperiodize_direction(deg_v as i32, &knots_v);
+            let (nf, map) =
+                occt_core::bspl::unperiodize_direction(deg_v as i32, &knots_v, nv0);
             knots_v = nf;
             for row in poles.iter_mut() {
                 *row = map.iter().map(|k| row[*k].clone()).collect();
@@ -1697,6 +2478,13 @@ impl IgesWriter {
 
         let (nu, nv) = (poles.len(), poles[0].len());
         if knots_u.len() != nu + deg_u + 1 || knots_v.len() != nv + deg_v + 1 {
+            if std::env::var("IGES_TRACE").is_ok() {
+                eprintln!(
+                    "TRACE bspline post-unperiodize mismatch: nu={nu} nv={nv} deg=({deg_u},{deg_v}) ku={} kv={} pu={period_u} pv={period_v}",
+                    knots_u.len(),
+                    knots_v.len()
+                );
+            }
             return None;
         }
         let (ind_u, ind_v) = (nu - 1, nv - 1);
@@ -1718,49 +2506,6 @@ impl IgesWriter {
             iso_rows_equal(&poles[i][0..1], &poles[i][nv - 1..nv])
                 && (!rational || weight_equal(weights[i][0], weights[i][nv - 1]))
         });
-
-        // `cxx:244-284`: the written range is clamped to the surface's own
-        // bounds; the periodic arm snaps an end that already sits on a bound and
-        // otherwise shifts the range into the period
-        // (`ShapeAnalysis::AdjustToPeriod`), truncating it to one period.
-        let (su0, su1) = bs.u_range();
-        let (sv0, sv1) = bs.v_range();
-        let (mut u0, mut u1) = (u0, u1);
-        if period_u {
-            if (u0 - su0).abs() < occt_core::precision::PCONFUSION {
-                u0 = su0;
-            }
-            if (u1 - su1).abs() < occt_core::precision::PCONFUSION {
-                u1 = su1;
-            }
-            let u_shift = crate::pcurve_full::adjust_to_period(u0, su0, su1);
-            u0 += u_shift;
-            u1 += u_shift;
-            if u1 - u0 > su1 - su0 {
-                u1 = u0 + (su1 - su0);
-            }
-        } else {
-            u0 = u0.max(su0);
-            u1 = u1.min(su1);
-        }
-        let (mut v0, mut v1) = (v0, v1);
-        if period_v {
-            if (v0 - sv0).abs() < occt_core::precision::PCONFUSION {
-                v0 = sv0;
-            }
-            if (v1 - sv1).abs() < occt_core::precision::PCONFUSION {
-                v1 = sv1;
-            }
-            let v_shift = crate::pcurve_full::adjust_to_period(v0, sv0, sv1);
-            v0 += v_shift;
-            v1 += v_shift;
-            if v1 - v0 > sv1 - sv0 {
-                v1 = v0 + (sv1 - sv0);
-            }
-        } else {
-            v0 = v0.max(sv0);
-            v1 = v1.min(sv1);
-        }
 
         let mut s = format!(
             "128,{ind_u},{ind_v},{deg_u},{deg_v},{},{},{},{},{}",
@@ -1853,9 +2598,56 @@ impl IgesWriter {
         ))
     }
 
-    /// Entity 122 (`GeomToIGES_GeomSurface::TransferSurface(
-    /// Geom_SurfaceOfLinearExtrusion)`, `GeomToIGES_GeomSurface.cxx:1032-1104`,
-    /// written by `IGESGeom_ToolTabulatedCylinder::WriteOwnParams`, `:90-98`):
+    /// `GeomToIGES_GeomSurface::TransferSurface(Geom_CylindricalSurface /
+    /// Geom_ConicalSurface / Geom_SphericalSurface / Geom_ToroidalSurface)`
+    /// (`GeomToIGES_GeomSurface.cxx:696-768`, `:777-852`, `:859-925`,
+    /// `:933-993`).
+    ///
+    /// These four overloads are reached only from the `myBRepMode && myAnalytic`
+    /// arm of the `Geom_ElementarySurface` branch (`cxx:552-598`). Under OCCT's
+    /// default `write.iges.brep.mode = 0` (`IGESData.cxx:90-94`) the writer runs
+    /// in Faces mode, so they are **not** taken and the elementary surfaces are
+    /// written through the plain `TransferSurface(Geom_Surface)` overload as
+    /// `IGESGeom_SurfaceOfRevolution` (120). This helper is that Faces-mode 120:
+    /// the generatrix and the axis are built in the surface's **local** frame and
+    /// the frame itself rides on a 124.
+    ///
+    /// - the axis is always the local Z axis, written as an `IGESGeom_Line` from
+    ///   `(0,0,1)` to `(0,0,0)` (`cxx:744`, `:830`, `:902`, `:969`; the
+    ///   `#30 rln 19.10.98` "IGES axis = reversed CAS.CADE axis");
+    /// - `generatrix` is `GC.TransferCurve(<local generatrix>, V1, V2)` already
+    ///   written by the caller (`cxx:819`, `:820`, `:896`, `:964`);
+    /// - the angles are `Init(Axis, Generatrix, 2*PI - U2, 2*PI - U1)`
+    ///   (`cxx:831`, `:907`, `:971`);
+    /// - `IGESConvGeom_GeomBuilder::SetPosition(<surface>.Position())` plus
+    ///   `IsIdentity()` decide whether the 124 is written
+    ///   (`cxx:841-849`, `:915-921`, `:981-988`;
+    ///   `IGESConvGeom_GeomBuilder.cxx:137-198`).
+    fn emit_local_revolution_surface(
+        &mut self,
+        generatrix: usize,
+        frame: &GpAx3,
+        u0: f64,
+        u1: f64,
+    ) -> usize {
+        let axis = self.emit_line(&GpPnt::new(0.0, 0.0, 1.0), &GpPnt::new(0.0, 0.0, 0.0));
+        let tau = 2.0 * std::f64::consts::PI;
+        let de = self.emit_refs(
+            120,
+            0,
+            format!("120,#0,#1,{},{};", num(tau - u1), num(tau - u0)),
+            &[axis, generatrix],
+        );
+        if !frame_is_identity(frame) {
+            let trsf = self.emit_transformation_matrix(frame, 1.0);
+            self.set_trsf(de, trsf);
+        }
+        de
+    }
+
+    /// Entity 122 (`GeomToIGES_GeomSurface::TransferSurface(Geom_SurfaceOfLinearExtrusion)`,
+    /// `GeomToIGES_GeomSurface.cxx:1032-1104`, written by
+    /// `IGESGeom_ToolTabulatedCylinder::WriteOwnParams`, `:90-98`):
     ///
     /// `122, directrix, end_point.x, end_point.y, end_point.z;`
     ///
@@ -1916,29 +2708,25 @@ impl IgesWriter {
     /// divided by the file unit; form 1 when the frame is left-handed
     /// (`rs->SetFormNumber(1)` when `thepos.IsNegative()`).
     fn emit_transformation_matrix(&mut self, frame: &GpAx3, unit: f64) -> usize {
-        let x = *frame.x_direction().xyz();
-        let y = *frame.y_direction().xyz();
-        let z = *frame.direction().xyz();
-        let o = frame.location().coord;
-        let rows = [
-            [x.x(), y.x(), z.x()],
-            [x.y(), y.y(), z.y()],
-            [x.z(), y.z(), z.z()],
-        ];
-        let form = if det3(&rows) < 0.0 { 1 } else { 0 };
+        // `IGESConvGeom_GeomBuilder::SetPosition(const gp_Ax3&)`
+        // (`GeomBuilder.cxx:137-143`) runs `ps.SetTransformation(pos, gp::XOY())`,
+        // then `MakeTransformation` (`GeomBuilder.cxx:218-237`) reads
+        // `thepos.Value(i, j)` and divides column 4 by the file unit. Going
+        // through `gp_Trsf::SetTransformation` (`gp_Trsf.cxx:172-194`) matters:
+        // the trailing `matrix.Multiply(MA1)` (identity times the frame's basis
+        // columns) normalises the signed zeros of `Value(i, j)`, and `IsNegative`
+        // (`gp_Trsf::IsNegative`, `gp_Trsf.cxx`) is the form-number test.
+        let mut ps = GpTrsf::identity();
+        ps.set_transformation_from_to(frame, &xoy_frame());
+        let form = if ps.is_negative() { 1 } else { 0 };
         let mut s = String::from("124");
-        for (i, row) in rows.iter().enumerate() {
-            for v in row {
+        for i in 1..=3 {
+            for j in 1..=3 {
                 s.push(',');
-                s.push_str(&num(*v));
+                s.push_str(&num(ps.value(i, j)));
             }
             s.push(',');
-            let t = match i {
-                0 => o.x(),
-                1 => o.y(),
-                _ => o.z(),
-            };
-            s.push_str(&num(t / unit));
+            s.push_str(&num(ps.value(i, 4) / unit));
         }
         s.push(';');
         self.emit(124, form, s)
@@ -1950,13 +2738,10 @@ impl IgesWriter {
     /// to a B-spline, re-parameterised onto `[Udeb, Udeb + 2*PI]` (`:641-643`)
     /// and transferred as entity 126.
     ///
-    /// **UNPORTED**: OCCT first tries `GeomConvert_ApproxCurve(aCopy,
-    /// Precision::Approximation(), GeomAbs_C1, 100, 6)` (`:632-636`) and only
-    /// falls back to `GeomConvert::CurveToBSplineCurve(copystart,
-    /// Convert_QuasiAngular)` (`:637-640`) when the approximation has no result.
-    /// This port has no `GeomConvert_ApproxCurve`, so the **fallback** branch is
-    /// taken unconditionally; the resulting 126 entity differs from OCCT's
-    /// approximated one in its knot vector (same conic, exact rational form).
+    /// `GeomConvert_ApproxCurve(aCopy, Precision::Approximation(), GeomAbs_C1,
+    /// 100, 6)` is tried first (`:632-636`); `GeomConvert::CurveToBSplineCurve
+    /// (copystart, Convert_QuasiAngular)` (`:637-640`) is only the fallback when
+    /// that produces no curve.
     fn emit_whole_period_ellipse(&mut self, e: &occt_core::gp::GpElips, a: f64, b: f64) -> Option<usize> {
         use std::f64::consts::PI;
         let pos = *e.position();
@@ -1966,20 +2751,32 @@ impl IgesWriter {
         let mut copy = *e;
         copy.set_position(pos.rotated(&pos.axis().clone(), angle));
         let rotated = occt_geom::ellipse::GeomEllipse::new(copy);
-        // `GeomConvert::CurveToBSplineCurve(copystart, Convert_QuasiAngular)` (`cxx:639`).
-        let mut bs = occt_geom::convert_bspl::curve_to_bspline_curve(
+        // `if (approx.HasResult()) Bspline = approx.Curve(); if (Bspline.IsNull())
+        //  Bspline = GeomConvert::CurveToBSplineCurve(copystart, Convert_QuasiAngular);`
+        // (`cxx:632-640`).
+        let approx = occt_geom::GeomConvertApproxCurve::new(
             &rotated,
-            occt_core::convert::ParameterisationType::QuasiAngular,
-        )
-        .ok()?;
+            occt_core::precision::APPROXIMATION,
+            occt_core::kernel::geomabs::Shape::C1,
+            100,
+            6,
+        );
+        let mut bs = match approx.curve() {
+            Some(curve) => curve.clone(),
+            // `GeomConvert::CurveToBSplineCurve(copystart, Convert_QuasiAngular)` (`cxx:639`).
+            None => occt_geom::convert_bspl::curve_to_bspline_curve(
+                &rotated,
+                occt_core::convert::ParameterisationType::QuasiAngular,
+            )
+            .ok()?,
+        };
         // `Knots = Bspline->Knots(); BSplCLib::Reparametrize(Udeb, Udeb + 2*PI, Knots);
         //  Bspline->SetKnots(Knots);` (`cxx:641-643`).
         let (mut uknots, _) = bs.distinct_knots_and_mults();
         occt_core::bspl::knots::reparametrize(a, a + 2.0 * PI, &mut uknots);
         bs.set_knots(&uknots).ok()?;
-        // `TransferCurve(Bspline, Udeb, Ufin)` turns a periodic curve into a
-        // non-periodic copy first (`cxx:294-307`).
-        bs.set_not_periodic();
+        // `return TransferCurve(Bspline, Udeb, Ufin)` (`cxx:644`). The periodic
+        // flag is read inside that transfer, before `SetNotPeriodic`.
         self.emit_bspline_curve(&bs, a, b)
     }
 
@@ -2069,142 +2866,211 @@ impl IgesWriter {
         Some(de)
     }
 
-    /// Base surface entity for a face, plus any synthesized boundary curves
-    /// (used when the face carries no boundary wires, e.g. a sphere).
-    fn emit_face_surface(&mut self, f: &Face) -> (usize, Vec<usize>) {
-        let Some(surf) = BRepTool::face_surface(f) else {
-            return (self.emit_plane(&GpPln::default()), Vec::new());
+    /// Base surface entity for a face.
+    ///
+    /// `BRepToIGES_BRShell::TransferFace` (`BRepToIGES_BRShell.cxx:246-262`)
+    /// transfers the face's surface with
+    /// `GeomToIGES_GeomSurface::TransferSurface(Surf, U1, U2, V1, V2)` and, when
+    /// that returns a null handle, logs `"the basic surface is a null entity"`
+    /// and **drops the face** (`:257-261`). There is no plane stand-in.
+    ///
+    /// `reversal` is `TransferFace`'s REVERSED branch: OCCT already replaced the
+    /// face surface with the U-reversed, trim-stripped one (`:126-146`), mirrored
+    /// every p-curve about `U = aCenter` and recomputed the UV bounds on the new
+    /// face (`:253`). The port transfers the original face and mirrors the
+    /// p-curves on the fly (`transfer_edge_uv`), so the box it hands to
+    /// `TransferSurface` has to be the mirror of the original one -
+    /// `[2*aCenter - U1, 2*aCenter - U0]`, V untouched - exactly the box OCCT
+    /// reads off the mirrored copy. Handing the unmirrored box over instead turns
+    /// every elementary arm's `2*PI - U2, 2*PI - U1` into a whole-period shift of
+    /// the revolution range (a quarter cylinder at `[0, PI/2]` came out as
+    /// `[3*PI/2, 2*PI]`).
+    fn emit_face_surface(&mut self, f: &Face, reversal: Option<&FaceReversal>) -> Option<usize> {
+        let surf = match reversal {
+            Some(r) => r.surf.clone(),
+            None => BRepTool::face_surface(f)?,
         };
-        if face_is_planar(f) {
-            let pln = face_plane(f).unwrap_or_else(GpPln::default);
-            return (self.emit_plane(&pln), Vec::new());
-        }
-        // `GeomToIGES_GeomSurface::TransferSurface` (`cxx:520-600`) dispatches on
-        // the surface's exact type; the elementary surfaces become the IGES
-        // surface entities 192/194/196/198 with the location point, the axis and
-        // the reference direction taken from the `gp_*` surface itself.
-        match classify_surface(surf.as_ref()) {
-            SurfaceKind::Cylinder => {
-                if let Some(cy) = surf.gp_cylinder() {
-                    let pos = cy.position();
-                    return (
-                        self.emit_cylindrical_surface(
-                            &pos.location(),
-                            pos.axis().direction(),
-                            cy.radius(),
-                            pos.x_direction(),
-                        ),
-                        Vec::new(),
-                    );
-                }
-            }
-            SurfaceKind::Cone => {
-                if let Some(co) = surf.gp_cone() {
-                    let pos = co.position();
-                    return (
-                        self.emit_conical_surface(
-                            &pos.location(),
-                            &co.apex(),
-                            pos.axis().direction(),
-                            co.radius(),
-                            co.semi_angle(),
-                            pos.x_direction(),
-                        ),
-                        Vec::new(),
-                    );
-                }
-            }
-            SurfaceKind::Torus => {
-                if let Some(t) = surf.gp_torus() {
-                    let pos = t.position();
-                    return (
-                        self.emit_toroidal_surface(
-                            &pos.location(),
-                            pos.axis().direction(),
-                            t.major_radius(),
-                            t.minor_radius(),
-                            pos.x_direction(),
-                        ),
-                        Vec::new(),
-                    );
-                }
-            }
-            _ => {}
-        }
-        if classify_surface(surf.as_ref()) == SurfaceKind::Sphere {
-            if let Some(center) = sphere_center(surf.as_ref()) {
-                let (u0, _, v0, v1) = surf_bounds(surf.as_ref());
-                let vm = 0.5 * (v0 + v1);
-                let r = surf.d0(u0, vm).distance(&center);
-                if r > 1e-9 {
-                    // `GeomToIGES_GeomSurface::TransferSphericalSurface`
-                    // (`GeomToIGES_GeomSurface.cxx:1366-1400`): entity 196 is a
-                    // centre **point** entity (#116), the radius, the axis
-                    // direction (#123) and the reference direction (#123, the
-                    // sphere's X axis), written by
-                    // `IGESSolid_ToolSphericalSurface::WriteOwnParams` as
-                    // `196, centre, radius, axis, refdir;`.
-                    // `GeomToIGES_GeomSurface.cxx:1384-1393`: the axis and the
-                    // reference direction come from the `gp_Sphere`'s position
-                    // (its main axis and its X axis).
-                    let (axis, x_dir) = match surf.gp_sphere() {
-                        Some(sp) => {
-                            let axis = *sp.position().axis().direction();
-                            let x_dir = *sp.position().x_direction();
-                            (axis, x_dir)
-                        }
-                        None => (
-                            GpDir::new(0.0, 0.0, 1.0).expect("z"),
-                            GpDir::new(1.0, 0.0, 0.0).expect("x"),
-                        ),
-                    };
-                    let sph = self.emit_spherical_surface(&center, r, &axis, &x_dir);
-                    // The two meridian arcs still serve as the face's seam
-                    // boundary curves (#144 needs a boundary), matching the
-                    // sphere the port's primitives build.
-                    let south = GpPnt::new(center.x(), center.y(), center.z() - r);
-                    let north = GpPnt::new(center.x(), center.y(), center.z() + r);
-                    let gen = self.emit_arc_3p(
-                        &south,
-                        &GpPnt::new(center.x() + r, center.y(), center.z()),
-                        &north,
-                    );
-                    let mer2 = self.emit_arc_3p(
-                        &north,
-                        &GpPnt::new(center.x() - r, center.y(), center.z()),
-                        &south,
-                    );
-                    return (sph, vec![gen, mer2]);
-                }
-            }
-        }
-        // `GeomToIGES_GeomSurface::TransferSurface` (`cxx:520-600`) also has the
-        // B-spline branch (`TransferBSplineSurface`), which the port now writes
-        // as entity 128.
         let (u0, u1, v0, v1) = face_uv_bounds_finite(f);
-        if let Some(idx) = self.emit_bspline_surface(surf.as_ref(), u0, u1, v0, v1) {
-            return (idx, Vec::new());
+        let (u0, u1) = match reversal {
+            Some(r) => (r.two_center - u1, r.two_center - u0),
+            None => (u0, u1),
+        };
+        self.emit_surface_entity(surf.as_ref(), u0, u1, v0, v1)
+    }
+
+    /// `GeomToIGES_GeomSurface::TransferSurface(const Geom_Surface&, Udeb, Ufin,
+    /// Vdeb, Vfin)` (`GeomToIGES_GeomSurface.cxx:112-147`): the surface type
+    /// dispatcher.
+    ///
+    /// The dispatch order is OCCT's: the `Geom_RectangularTrimmedSurface` wrapper
+    /// is stripped first (`Geom_BoundedSurface` family, `:125-128` -> `:492-515`,
+    /// which recurses on `BasisSurface()`), then the exact `Geom_BoundedSurface` /
+    /// `Geom_ElementarySurface` / `Geom_SweptSurface` / `Geom_OffsetSurface` types
+    /// are tried in that order. No sampling is involved; a surface with no
+    /// matching arm has no branch in OCCT either and returns a null handle there
+    /// and `None` here.
+    fn emit_surface_entity(
+        &mut self,
+        s: &dyn Surface,
+        u0: f64,
+        u1: f64,
+        v0: f64,
+        v1: f64,
+    ) -> Option<usize> {
+        // `TransferSurface(Geom_BoundedSurface)` (`cxx:492-515`): a rectangular
+        // trim restarts the whole dispatch on its basis.
+        if let Some(b) = s.rectangular_trimmed_basis() {
+            return self.emit_surface_entity(b.as_ref(), u0, u1, v0, v1);
         }
-        // `GeomToIGES_GeomSurface::TransferSurface` (`cxx:1000-1025`) on the swept
-        // family - reached after the bounded family (B-spline / Bezier / trimmed,
-        // `cxx:125-139`), which is the order `cxx:112-147` dispatches in.
-        match swept_surface_kind(surf.as_ref()) {
+        if let Some(pln) = s.gp_pln() {
+            return Some(self.emit_plane(&pln));
+        }
+        if let Some(cy) = s.gp_cylinder() {
+            // `cxx:815-817`: the generatrix is `Geom_Line(gp_Pnt(R,0,0), +Z)`, so
+            // `Value(t) = (R, 0, t)`; `V1`/`V2` are the clamped `UVBounds` of the
+            // face (`cxx:806-813`).
+            let (v0, v1) = clamp_infinite_range(v0, v1);
+            let r = cy.radius();
+            let generatrix = self.emit_line(&GpPnt::new(r, 0.0, v0), &GpPnt::new(r, 0.0, v1));
+            return Some(self.emit_local_revolution_surface(
+                generatrix,
+                &cy.position(),
+                u0,
+                u1,
+            ));
+        }
+        if let Some(co) = s.gp_cone() {
+            // `cxx:816-818`: `Geom_Line(gp_Pnt(RefRadius,0,0),
+            // gp_Dir(sin a, 0, cos a))`, so `Value(t) = (RefRadius + t*sin a, 0,
+            // t*cos a)`. The semi-angle is used as it is stored, sign included.
+            let (v0, v1) = clamp_infinite_range(v0, v1);
+            let (semi_sin, semi_cos) = co.semi_angle().sin_cos();
+            let ref_radius = co.radius();
+            let generatrix = self.emit_line(
+                &GpPnt::new(ref_radius + v0 * semi_sin, 0.0, v0 * semi_cos),
+                &GpPnt::new(ref_radius + v1 * semi_sin, 0.0, v1 * semi_cos),
+            );
+            return Some(self.emit_local_revolution_surface(
+                generatrix,
+                &co.position(),
+                u0,
+                u1,
+            ));
+        }
+        if let Some(sp) = s.gp_sphere() {
+            // `cxx:893-894`: the generatrix is the half circle
+            // `Geom_Circle(gp_Ax2(gp::Origin(), -gp::DY(), gp::DX()), R)`
+            // travelled over the face's own V range (`Su(-PI/2) .. Sv(+PI/2)`).
+            let generatrix = self.emit_circle_transfer(
+                &revolution_generatrix_frame(GpPnt::zero()),
+                sp.radius(),
+                v0,
+                v1,
+            );
+            return Some(self.emit_local_revolution_surface(
+                generatrix,
+                &sp.position(),
+                u0,
+                u1,
+            ));
+        }
+        if let Some(t) = s.gp_torus() {
+            // `cxx:960-962`: `Geom_Circle(gp_Ax2(gp_Pnt(Major,0,0), -gp::DY(),
+            // gp::DX()), Minor)`.
+            let generatrix = self.emit_circle_transfer(
+                &revolution_generatrix_frame(GpPnt::new(t.major_radius(), 0.0, 0.0)),
+                t.minor_radius(),
+                v0,
+                v1,
+            );
+            return Some(self.emit_local_revolution_surface(
+                generatrix,
+                &t.position(),
+                u0,
+                u1,
+            ));
+        }
+        // `GeomToIGES_GeomSurface::TransferSurface` (`cxx:154-188`) on the
+        // Bounded family: the port writes entity 128.
+        if let Some(idx) = self.emit_bspline_surface(s, u0, u1, v0, v1) {
+            return Some(idx);
+        }
+        // `cxx:1000-1025` on the swept family - reached after the bounded family
+        // (B-spline / Bezier / trimmed), which is the order `cxx:112-147`
+        // dispatches in.
+        match swept_surface_kind(s) {
             Some(SweptKind::Extrusion) => {
-                if let Some(idx) = self.emit_tabulated_cylinder(surf.as_ref(), v0, v1) {
-                    return (idx, Vec::new());
+                if let Some(idx) = self.emit_tabulated_cylinder(s, v0, v1) {
+                    return Some(idx);
                 }
             }
             Some(SweptKind::Revolution) => {
-                if let Some(idx) = self.emit_surface_of_revolution(surf.as_ref(), u0, u1, v0, v1) {
-                    return (idx, Vec::new());
+                if let Some(idx) = self.emit_surface_of_revolution(s, u0, u1, v0, v1) {
+                    return Some(idx);
                 }
             }
             None => {}
         }
-        // Unclassified curved face: fall back to a plane.
-        // ponytail: covers the surfaces the IGES writer has no emitter for.
-        let pln = face_plane(f).unwrap_or_else(GpPln::default);
-        (self.emit_plane(&pln), Vec::new())
+        // `cxx:1195-1237` on the offset family (entity 140 `OffsetSurface`). The
+        // basis surface is put through this same dispatcher, so the 140 nests
+        // whatever entity the basis maps to.
+        if let (Some(basis), Some(distance)) = (s.offset_basis_surface(), s.offset_distance()) {
+            // `cxx:1208-1214`: the indicator is read at the mid point of the
+            // offset's own `Bounds`, which `Geom_OffsetSurface::Bounds` delegates
+            // to its basis.
+            let (bu0, bu1) = s.u_range();
+            let (bv0, bv1) = s.v_range();
+            let (um, vm) = (bounds_mid_point(bu0, bu1), bounds_mid_point(bv0, bv1));
+            let (_, d1u, d1v) = basis.d1(um, vm);
+            // `cxx:1217-1219`: `GeomLProp_SLProps(TheSurf, Um, Vm, 1,
+            // Precision::Confusion()).Normal()`. OCCT's `Normal()` throws
+            // `LProp_NotDefined` when `CSLib::Normal` does not report
+            // `CSLib_Done`; the port reports the same condition as an unhandled
+            // surface and lets the face be dropped.
+            let normal = surface_normal_from_d1(&d1u, &d1v, occt_core::precision::CONFUSION)?;
+            // `cxx:1215`: the basis is transferred with the *caller's* parameter
+            // range, not with its own bounds.
+            let surface = self.emit_surface_entity(basis.as_ref(), u0, u1, v0, v1);
+            return Some(self.emit_offset_surface(&normal, distance / IGES_UNIT, surface));
+        }
+        // Everything else has no branch in `TransferSurface` and returns a null
+        // handle: the face is dropped, never replaced by a plane.
+        None
+    }
+
+    /// Entity 140 (`GeomToIGES_GeomSurface::TransferSurface(Geom_OffsetSurface)`,
+    /// `GeomToIGES_GeomSurface.cxx:1195-1237`, written by
+    /// `IGESGeom_ToolOffsetSurface::WriteOwnParams`,
+    /// `IGESGeom_ToolOffsetSurface.cxx:105-113`):
+    ///
+    /// `140, indicator.x, indicator.y, indicator.z, distance, surface;`
+    ///
+    /// - the indicator is the basis surface's unit normal at the mid point of the
+    ///   offset's bounds, every component divided by the file unit
+    ///   (`cxx:1217-1226`);
+    /// - the distance is the signed `Offset()` divided by the file unit
+    ///   (`cxx:1216`);
+    /// - the surface is the recursively transferred basis (`cxx:1215`). When that
+    ///   transfer yields a null handle OCCT still builds the 140 and
+    ///   `IGESData_IGESWriter::Send` writes the reference as `0`, so the port
+    ///   writes `0` too instead of dropping the entity.
+    fn emit_offset_surface(
+        &mut self,
+        indicator: &GpVec,
+        distance: f64,
+        surface: Option<usize>,
+    ) -> usize {
+        let params = format!(
+            "140,{},{},{},{},",
+            num(indicator.x() / IGES_UNIT),
+            num(indicator.y() / IGES_UNIT),
+            num(indicator.z() / IGES_UNIT),
+            num(distance)
+        );
+        match surface {
+            Some(idx) => self.emit_refs(140, 0, format!("{params}#0;"), &[idx]),
+            None => self.emit_refs(140, 0, format!("{params}0;"), &[]),
+        }
     }
 
     /// 'Geom2dToIGES_Geom2dCurve::Transfer2dCurve' +
@@ -2212,7 +3078,19 @@ impl IgesWriter {
     /// Z=0 and reuse the 3-D emitter of 'emit_curve_range'.
     fn emit_curve2d_range(&mut self, curve: &dyn Curve2d, first: f64, last: f64) -> Option<usize> {
         let promoted = promote_curve2d(curve)?;
-        self.emit_curve_range(promoted.as_ref(), first, last)
+        let idx = self.emit_curve_range(promoted.as_ref(), first, last);
+        if std::env::var("IGES_TRACE").is_ok() {
+            eprintln!(
+                "TRACE c2d de={:?} lin2d={} circ2d={} elips2d={} bsp2d={} -> kind={:?} a={first} b={last}",
+                idx,
+                curve.gp_lin2d().is_some(),
+                curve.gp_circ2d().is_some(),
+                curve.gp_elips2d().is_some(),
+                curve.bspline_poles2d().is_some(),
+                iges_curve_kind(promoted.as_ref()),
+            );
+        }
+        idx
     }
 
     /// 'BRepToIGES_BRWire::TransferEdge(edge, face, originMap, length, false)'
@@ -2227,13 +3105,19 @@ impl IgesWriter {
         e: &Edge,
         f: &Face,
         uv_bounds: (f64, f64, f64, f64),
+        reversal: Option<&FaceReversal>,
     ) -> Option<usize> {
         // 'cxx:348-352': 'GetPCurveMode() == 0' cannot happen (the default is
         // On) and 'theIsBRepMode' is false, so only the degeneracy guard applies.
         if BRepTool::is_degenerated(e) {
             return None;
         }
-        let surf = BRepTool::face_surface(f)?;
+        // 'cxx:374-377' reads the surface of the face it is handed, which for a
+        // REVERSED face is `TransferFace`'s U-reversed copy (`cxx:135-146`).
+        let surf = match reversal {
+            Some(r) => r.surf.clone(),
+            None => BRepTool::face_surface(f)?,
+        };
         // 'cxx:374-377': only a bare 'Geom_Plane' returns here. A
         // 'Geom_RectangularTrimmedSurface' over a plane is *not* a plane for
         // OCCT's 'IsKind'; the port's trimmed surface delegates 'gp_pln', so the
@@ -2264,6 +3148,102 @@ impl IgesWriter {
         // 'cxx:359-360': the p-curve and the range of its CurveOnSurface
         // representation.
         let (curve2d, mut first, mut last) = crate::boptools_2d::curve_on_surface_range(e, f)?;
+        if let Ok(path) = std::env::var("IGES_TRACE3D") {
+            let (e3a, e3b) = BRepTool::edge_parameters(e);
+            let c3 = BRepTool::edge_curve(e);
+            let (sa, sb) = surf_base.u_range();
+            let (ta, tb) = surf_base.v_range();
+            if let Some(k) = c3.as_ref().and_then(|c| c.gp_circ()) {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                {
+                    let _ = writeln!(
+                        f,
+                        "e3=({e3a:.17e},{e3b:.17e}) c3kind={:?} rad={:.17e} | uv2=({first:.17e},{last:.17e}) | u_rng=({sa:.17e},{sb:.17e}) v_rng=({ta:.17e},{tb:.17e}) up={} sph={is_sphere} rev={is_rev} loc=({:.17e},{:.17e},{:.17e}) ax=({:.17e},{:.17e},{:.17e})",
+                        crate::iges::iges_curve_kind(c3.as_ref().unwrap().as_ref()),
+                        k.radius(),
+                        surf_base.is_u_periodic(),
+                        k.position().location().x(), k.position().location().y(), k.position().location().z(),
+                        k.position().direction().x(), k.position().direction().y(), k.position().direction().z(),
+                    );
+                }
+            }
+        }
+        if std::env::var("IGES_TRACE").is_ok() {
+            eprintln!(
+                "TRACE raw pcurve lin2d={} circ2d={} elips2d={} bsp2d={} trimmed={} nbpol={} deg={:?} rng=({first},{last}) rev={} | surf pln={} cyl={is_cyl} cone={is_cone} sph={is_sphere} tor={is_torus} rev={is_rev} extr={is_extr} bsp={is_bspline} rect={} off={} kind={:?}",
+                curve2d.gp_lin2d().is_some(),
+                curve2d.gp_circ2d().is_some(),
+                curve2d.gp_elips2d().is_some(),
+                curve2d.bspline_poles2d().is_some(),
+                curve2d.trimmed_basis().is_some(),
+                curve2d.bspline_poles2d().map_or(0, |(x, _)| x.len()),
+                curve2d.bspline_degree(),
+                e.0.orientation() == crate::abs::Orientation::Reversed,
+                surf.gp_pln().is_some(),
+                surf.rectangular_trimmed_basis().is_some(),
+                surf.is_offset_surface(),
+                crate::pcurve_full::classify_surface_kind(surf_base.as_ref()),
+            );
+            eprintln!(
+                "TRACE stored pcurve={}",
+                crate::boptools_2d::curve_on_surface(e, f).is_some()
+            );
+            if let Ok(pcs) = std::env::var("IGES_TRACE_PC") {
+                let fk = crate::tgeometry::GeometryRegistry::shape_key(&f.0);
+                let list = crate::tgeometry::GeometryRegistry::global().edge_pcurves(&e.0, fk);
+                let kinds: Vec<String> = list
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "lin{} circ{} elips{} bsp{} np{} trim{}",
+                            c.gp_lin2d().is_some() as u8,
+                            c.gp_circ2d().is_some() as u8,
+                            c.gp_elips2d().is_some() as u8,
+                            c.bspline_poles2d().is_some() as u8,
+                            c.bspline_poles2d().map_or(0, |(x, _)| x.len()),
+                            c.trimmed_basis().is_some() as u8
+                        )
+                    })
+                    .collect();
+                use std::io::Write;
+                if let Ok(mut fp) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&pcs)
+                {
+                    let _ = writeln!(
+                        fp,
+                        "PC face={:?} edge={:?} rev={} n={} [{}]",
+                        Arc::as_ptr(&f.0.tshape) as usize,
+                        Arc::as_ptr(&e.0.tshape) as usize,
+                        e.0.orientation() == crate::abs::Orientation::Reversed,
+                        list.len(),
+                        kinds.join(" ")
+                    );
+                }
+            }
+        }
+
+        // `BRepToIGES_BRShell.cxx:186-201`: on a REVERSED face every p-curve was
+        // mirrored in `TransferFace` (`aCurve1->Transformed(T)`, `:200`) before
+        // the edge was re-attached to the copied face, so the curve read here is
+        // the mirrored one. `Transformed` keeps the curve's own parameter range
+        // (`Geom2d_Transformed` forwards `FirstParameter`/`LastParameter`), so
+        // `first`/`last` stay as they are.
+        let curve2d: Arc<dyn Curve2d> = match reversal {
+            Some(r) => {
+                let axis = GpAx2d::new(
+                    GpPnt2d::new(0.5 * r.two_center, vfirst),
+                    GpDir2d::new(0.0, 1.0).expect("gp::DY2d is non-null"),
+                );
+                curve2d_transformed(&curve2d, &mirror_ax2d_trsf(&axis))
+            }
+            None => curve2d,
+        };
 
         // 'cxx:403-422': 'analyticMode' is false, so the '!analyticMode' guard
         // holds; a surface of revolution whose (trim-unwrapped) basis curve is a
@@ -2371,6 +3351,22 @@ impl IgesWriter {
         }
 
         // 'cxx:566-568': 'Geom2dToIGES_Geom2dCurve::Transfer2dCurve'.
+        if std::env::var("IGES_TRACE").is_ok() {
+            let a = curve2d.d0(first);
+            let b = curve2d.d0(last);
+            eprintln!(
+                "TRACE emit pcurve lin2d={} circ2d={} elips2d={} bsp2d={} np={} rng=({first},{last}) d0=({},{}) d1=({},{})",
+                curve2d.gp_lin2d().is_some(),
+                curve2d.gp_circ2d().is_some(),
+                curve2d.gp_elips2d().is_some(),
+                curve2d.bspline_poles2d().is_some(),
+                curve2d.bspline_poles2d().map_or(0, |(x, _)| x.len()),
+                a.x(),
+                a.y(),
+                b.x(),
+                b.y()
+            );
+        }
         self.emit_curve2d_range(curve2d.as_ref(), first, last)
     }
 
@@ -2392,9 +3388,89 @@ impl IgesWriter {
     /// layout instead of `IGESSolid_ToolFace::WriteOwnParams`
     /// (`510, surface, nb_loops, has_outer_loop, loop_ptrs...`) over `508` Loop
     /// entities, and `514`/`186` follow the same old shape.
-    fn emit_face(&mut self, f: &Face) -> usize {
-        let (surf_idx, mut synth) = self.emit_face_surface(f);
+    fn emit_face(&mut self, f: &Face) -> Option<usize> {
+        // `BRepToIGES_BRShell.cxx:257-261`: a face whose basis surface
+        // transferred to a null entity is dropped (`AddWarning(start, "the basic
+        // surface is a null entity"); return res;`).
+        //
+        // `cxx:126-237`: a REVERSED face first goes through the U-reversed
+        // surface / mirrored p-curve branch; `face_reversal` reports whether that
+        // branch applies (and is `None` for the orientations OCCT leaves alone).
+        let reversal = face_reversal(f);
+        let surf_idx = self.emit_face_surface(f, reversal.as_ref())?;
         let wires = wires_of_face(f);
+        if std::env::var("IGES_TRACE_WIRE").is_ok() {
+            for w in &wires {
+                let raw = w.0.tshape.read().expect("poisoned TShape lock").children.clone();
+                eprintln!("WIRE ori={:?} n={}", w.0.orientation(), raw.len());
+                for (i, c) in raw.iter().enumerate() {
+                    let e = Edge(c.clone());
+                    let (v1, v2) = edge_vertices(&e);
+                    let f = |v: &Option<Vertex>| -> String {
+                        match v {
+                            Some(v) => {
+                                let q = BRepTool::vertex_point(v);
+                                format!("({:.4},{:.4},{:.4})", q.x(), q.y(), q.z())
+                            }
+                            None => "(?)".into(),
+                        }
+                    };
+                    eprintln!("  child{} ori={:?} {} -> {}", i + 1, c.orientation(), f(&v1), f(&v2));
+                }
+                for (i, e) in reordered_wire_edges(w).iter().enumerate() {
+                    let (v1, v2) = edge_vertices(e);
+                    let f = |v: &Option<Vertex>| -> String {
+                        match v {
+                            Some(v) => {
+                                let q = BRepTool::vertex_point(v);
+                                format!("({:.4},{:.4},{:.4})", q.x(), q.y(), q.z())
+                            }
+                            None => "(?)".into(),
+                        }
+                    };
+                    eprintln!("  out{} ori={:?} {} -> {}", i + 1, e.0.orientation(), f(&v1), f(&v2));
+                }
+                {
+                    let stored = wire_data_edges(w);
+                    let mut order = crate::meshing::wire_order::WireOrder::new();
+                    for e in &stored {
+                        let (a, b) = (wire_edge_first_vertex(e), wire_edge_last_vertex(e));
+                        if let (Some(a), Some(b)) = (a, b) {
+                            let (pa, pb) = (BRepTool::vertex_point(&a), BRepTool::vertex_point(&b));
+                            eprintln!("    in begin=({:.3},{:.3},{:.3}) end=({:.3},{:.3},{:.3})", pa.x(), pa.y(), pa.z(), pb.x(), pb.y(), pb.z());
+                            order.add_edge_xyz(pa, pb);
+                        }
+                    }
+                    order.perform();
+                    let chain: Vec<i32> = (1..=stored.len()).map(|i| order.ordered(i)).collect();
+                    eprintln!("    ORDER status={:?} chain={:?}", order.status(), chain);
+                }
+            }
+        }
+        if std::env::var("IGES_TRACE_FACE").is_ok() {
+            let b = face_uv_bounds_finite(f);
+            let kind = match BRepTool::face_surface(f) {
+                Some(s) if s.gp_cylinder().is_some() => "cyl",
+                Some(s) if s.gp_cone().is_some() => "cone",
+                Some(s) if s.gp_sphere().is_some() => "sph",
+                Some(s) if s.gp_torus().is_some() => "tor",
+                Some(s) if s.gp_pln().is_some() => "pln",
+                Some(s) if s.is_bspline_surface() => "bspl",
+                Some(_) => "other",
+                None => "none",
+            };
+            eprintln!(
+                "TRACEFACE ptr={:?} de={:?} ori={:?} rev={} kind={kind} uv=({:.9},{:.9},{:.9},{:.9})",
+                Arc::as_ptr(&f.0.tshape) as usize,
+                surf_idx,
+                f.0.orientation(),
+                reversal.is_some(),
+                b.0,
+                b.1,
+                b.2,
+                b.3
+            );
+        }
         // `BRepTools::UVBounds(aFace, U1, U2, V1, V2)` (`BRepToIGES_BRShell.cxx:253`),
         // kept once for every `TransferEdge` call of this face (OCCT recomputes
         // them inside `TransferEdge`, `BRepToIGES_BRWire.cxx:379`).
@@ -2440,33 +3516,36 @@ impl IgesWriter {
             let mut edge_refs: Vec<usize> = Vec::new();
             let mut uv_refs: Vec<usize> = Vec::new();
             let mut last_uv: Option<usize> = None;
-            for e in edges_of_wire(w) {
-                let key = Arc::as_ptr(&e.0.tshape) as usize;
-                let idx = match self.edge_curve_entities.get(&key) {
-                    Some(&i) => i,
-                    None => {
-                        let i = self.emit_edge_curve(&e);
-                        self.edge_curve_entities.insert(key, i);
-                        i
-                    }
-                };
-                edge_refs.push(idx);
-                curve_refs.push(idx);
+            for e in reordered_wire_edges(w) {
+                // `BRepToIGES_BRWire::TransferEdge` (`BRepToIGES_BRWire.cxx:266-335`)
+                // transfers the edge's 3-D curve into a fresh entity on every call:
+                // `Curve3d->Copy()` (`:300`) and `GeomToIGES_GeomCurve::TransferCurve`
+                // (`:316`) create a new `IGESGeom_Line` / arc / 126 each time. OCCT
+                // shares nothing between the wires of a face, the wires of different
+                // faces, or the two occurrences of a seam edge, so the port must not
+                // deduplicate here either (Cube's 6 faces x 4 edges = 24 lines).
+                let idx = self.emit_edge_curve(&e);
+                if let Some(idx) = idx {
+                    edge_refs.push(idx);
+                    curve_refs.push(idx);
+                }
                 // `BRepToIGES_BRWire::TransferWire` (`cxx:715-724`): every edge's
                 // 2-D curve, collected in the same order as the 3-D ones.
-                let uv = self.transfer_edge_uv(&e, f, uv_bounds);
+                let uv = self.transfer_edge_uv(&e, f, uv_bounds, reversal.as_ref());
                 last_uv = uv;
                 if let Some(u) = uv {
                     uv_refs.push(u);
                 }
             }
-            if edge_refs.is_empty() {
+            if edge_refs.is_empty() && uv_refs.is_empty() {
                 continue;
             }
-            let curve3d = if edge_refs.len() == 1 {
-                edge_refs[0]
+            let curve3d = if edge_refs.is_empty() {
+                None
+            } else if edge_refs.len() == 1 {
+                Some(edge_refs[0])
             } else {
-                self.emit_refs(102, 0, format!("102,{},{};", edge_refs.len(), ph_list(edge_refs.len())), &edge_refs)
+                Some(self.emit_refs(102, 0, format!("102,{},{};", edge_refs.len(), ph_list(edge_refs.len())), &edge_refs))
             };
             // `cxx:755-774`: one 2-D entity is used directly, two or more become
             // a `CompositeCurve` (102). The single-entity arm mirrors
@@ -2481,20 +3560,31 @@ impl IgesWriter {
                 carried_uv
             };
             carried_uv = curve_uv;
-            // `BRepToIGES_BRShell.cxx:281-324`: the preference follows which of
-            // the two representations transferred.
-            iprefer = if curve_uv.is_some() { 3 } else { 2 };
+            // `BRepToIGES_BRShell.cxx:281-292`: the preference follows which of
+            // the two representations transferred; both null leaves it at its
+            // previous value.
+            if curve3d.is_some() {
+                iprefer = if curve_uv.is_some() { 3 } else { 2 };
+            } else if curve_uv.is_some() {
+                iprefer = 1;
+            }
             // `IGESGeom_CurveOnSurface::Init` (`IGESGeom_CurveOnSurface.cxx:26-40`)
             // with `Imode = 0` (`cxx:269`);
             // `IGESGeom_ToolCurveOnSurface::WriteOwnParams` (`:144-152`) writes
             // `142, creation_mode, surface, curve_uv, curve_3d, preference_mode;`
             // - field 3 is the UV curve, field 4 the 3-D one.
-            let cs = match curve_uv {
-                Some(uv) => {
-                    self.emit_refs(142, 0, format!("142,0,#0,#1,#2,{iprefer};"), &[surf_idx, uv, curve3d])
+            let cs = match (curve_uv, curve3d) {
+                (Some(uv), Some(c3)) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,#1,#2,{iprefer};"), &[surf_idx, uv, c3])
                 }
-                None => {
-                    self.emit_refs(142, 0, format!("142,0,#0,0,#1,{iprefer};"), &[surf_idx, curve3d])
+                (Some(uv), None) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,#1,0,{iprefer};"), &[surf_idx, uv])
+                }
+                (None, Some(c3)) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,0,#1,{iprefer};"), &[surf_idx, c3])
+                }
+                (None, None) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,0,0,{iprefer};"), &[surf_idx])
                 }
             };
             match &outer_wire {
@@ -2519,29 +3609,36 @@ impl IgesWriter {
                 continue;
             }
             let edge = Edge(e);
-            let idx = match self.edge_curve_entities.get(&key) {
-                Some(&i) => i,
-                None => {
-                    let i = self.emit_edge_curve(&edge);
-                    self.edge_curve_entities.insert(key, i);
-                    i
+            // Each free edge is its own `TransferEdge` result too
+            // (`BRepToIGES_BRShell.cxx:344-346`), with no sharing.
+            let idx = self.emit_edge_curve(&edge);
+            if let Some(idx) = idx {
+                curve_refs.push(idx);
+            }
+            let uv = self.transfer_edge_uv(&edge, f, uv_bounds, reversal.as_ref());
+            // `BRepToIGES_BRShell.cxx:347-358`: the preference follows which of
+            // the two representations transferred.
+            if idx.is_some() {
+                iprefer = if uv.is_some() { 3 } else { 2 };
+            } else if uv.is_some() {
+                iprefer = 1;
+            }
+            let cs = match (uv, idx) {
+                (Some(u), Some(c3)) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,#1,#2,{iprefer};"), &[surf_idx, u, c3])
                 }
-            };
-            curve_refs.push(idx);
-            let uv = self.transfer_edge_uv(&edge, f, uv_bounds);
-            // `BRepToIGES_BRShell.cxx:347-358`.
-            iprefer = if uv.is_some() { 3 } else { 2 };
-            let cs = match uv {
-                Some(u) => {
-                    self.emit_refs(142, 0, format!("142,0,#0,#1,#2,{iprefer};"), &[surf_idx, u, idx])
+                (Some(u), None) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,#1,0,{iprefer};"), &[surf_idx, u])
                 }
-                None => {
-                    self.emit_refs(142, 0, format!("142,0,#0,0,#1,{iprefer};"), &[surf_idx, idx])
+                (None, Some(c3)) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,0,#1,{iprefer};"), &[surf_idx, c3])
+                }
+                (None, None) => {
+                    self.emit_refs(142, 0, format!("142,0,#0,0,0,{iprefer};"), &[surf_idx])
                 }
             };
             inner_curves.push(cs);
         }
-        curve_refs.append(&mut synth);
 
         // `cxx:380-400`: `isWholeSurface` is `BRep_Tool::NaturalRestriction(face)`,
         // forced to false for a plane / cylinder / cone - the guard there tests the
@@ -2556,20 +3653,12 @@ impl IgesWriter {
                 is_whole = false;
             }
         }
-        // A face this port built without boundary wires (the sphere) carries
-        // synthesized seam curves (`emit_face_surface`); they are transferred as the
-        // face's contour `CurveOnSurface` entities, standing in for the seam wires
-        // OCCT's own primitives would have here.
-        if outer_curve.is_none() && !synth.is_empty() {
-            let mut it = synth.iter();
-            outer_curve = it.next().map(|c| self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, *c]));
-            for c in it {
-                inner_curves.push(self.emit_refs(142, 0, format!("142,0,#0,0,#1,2;"), &[surf_idx, *c]));
-            }
-        }
+        // A face this port built without boundary wires carries no contour on
+        // this side either; OCCT's `TransferWire` leaves the caller's handle
+        // untouched when no edge transfers (`BRepToIGES_BRWire.cxx:715-774`).
 
         if curve_refs.is_empty() {
-            return surf_idx;
+            return Some(surf_idx);
         }
         let outer_flag = u8::from(!is_whole);
         let n_inner = inner_curves.len();
@@ -2589,12 +3678,12 @@ impl IgesWriter {
         for k in if has_outer { 2 } else { 1 }..ref_list.len() {
             contour_refs.push_str(&format!(",{}", ph(k)));
         }
-        self.emit_refs(
+        Some(self.emit_refs(
             144,
             0,
             format!("144,#0,{outer_flag},{n_inner},{contour_refs};"),
             &ref_list,
-        )
+        ))
     }
 
     /// `Group` (402) when there is more than one item, the item itself otherwise -
@@ -2616,10 +3705,19 @@ impl IgesWriter {
     /// `BRepToIGES_BRShell::TransferShell` (`BRepToIGES_BRShell.cxx:411-476`): the
     /// shell's faces are transferred as trimmed surfaces (144) and grouped.
     fn emit_shell(&mut self, sh: &Shell) -> Option<usize> {
-        let faces = children_of_type(&sh.0, ShapeType::Face);
+        if std::env::var("IGES_TRACE_FACE").is_ok() {
+            eprintln!("TRACESHELL ori={:?}", sh.0.orientation());
+        }
+        // `TopExp_Explorer(shell, FACE)` composes the shell orientation
+        // (`BRepToIGES_BRShell.cxx:433`). A shell `SolidFromShell` reversed
+        // (`ShapeFix_Solid.cxx:686`) therefore flips every face.
+        let faces: Vec<TopoShape> = crate::iterator::cumulated_children(&sh.0)
+            .into_iter()
+            .filter(|h| h.shape_type() == ShapeType::Face)
+            .collect();
         let refs: Vec<usize> = faces
             .iter()
-            .map(|f| self.emit_face(&Face(f.clone())))
+            .filter_map(|f| self.emit_face(&Face(f.clone())))
             .collect();
         self.group_or_single(refs)
     }
@@ -2627,7 +3725,11 @@ impl IgesWriter {
     /// `BRepToIGES_BRSolid::TransferSolid` (`BRepToIGES_BRSolid.cxx:100-168`): the
     /// solid's shells are transferred and grouped the same way.
     fn emit_solid(&mut self, s: &Solid) -> Option<usize> {
-        let shells = children_of_type(&s.0, ShapeType::Shell);
+        // `TopExp_Explorer(solid, SHELL)` (`BRepToIGES_BRSolid.cxx:124`).
+        let shells: Vec<TopoShape> = crate::iterator::cumulated_children(&s.0)
+            .into_iter()
+            .filter(|h| h.shape_type() == ShapeType::Shell)
+            .collect();
         let refs: Vec<usize> = shells
             .iter()
             .filter_map(|sh| self.emit_shell(&Shell(sh.clone())))
@@ -2659,8 +3761,11 @@ impl IgesWriter {
                 }
             }
             ShapeType::Face => {
-                let r = self.emit_face(&Face(shape.clone()));
-                self.roots.push(r);
+                // `BRepToIGES_BRShell.cxx:257-261`: a face with a null basis
+                // surface entity contributes nothing to the model.
+                if let Some(r) = self.emit_face(&Face(shape.clone())) {
+                    self.roots.push(r);
+                }
             }
             _ => {}
         }
@@ -2688,7 +3793,9 @@ impl IgesWriter {
         // shapes handed to `AddEntity` (`AddWithRefs`), numbered in the order it
         // adds them; the placeholders in the parameter text become the final
         // numbers here.
-        let entities = self.final_entities();
+        let mut entities = self.final_entities();
+        // `IGESControl_Writer::ComputeModel` (`IGESControl_Writer.cxx:256-262`).
+        compute_status(&mut entities);
         let mut out = String::new();
         let mut s_seq = 1usize;
         let mut g_seq = 1usize;
@@ -2749,6 +3856,94 @@ impl IgesWriter {
     }
 }
 
+/// The `ShapeExtend_WireData` edge list of a wire (`ShapeExtend_WireData.cxx:72-148`
+/// with the default `chained = true`, `theManifold = true`): `TopoDS_Iterator`'s
+/// composed orientation, and — when the wire itself is REVERSED — every edge
+/// `Prepend`ed instead of appended (`cxx:114-121`), so the list comes out in the
+/// wire's own traversal order. `INTERNAL`/`EXTERNAL` edges go to
+/// `myNonmanifoldEdges` (`cxx:84-89`), which `TransferWire` never reads.
+fn wire_data_edges(wire: &crate::shape::Wire) -> Vec<Edge> {
+    let mut stored: Vec<Edge> = edges_of_wire(wire)
+        .into_iter()
+        .filter(|e| {
+            let o = e.0.orientation();
+            o == crate::abs::Orientation::Forward || o == crate::abs::Orientation::Reversed
+        })
+        .collect();
+    if wire.0.orientation() == crate::abs::Orientation::Reversed {
+        stored.reverse();
+    }
+    stored
+}
+
+/// `ShapeAnalysis_Edge::FirstVertex(edge, CumOri = true)`
+/// (`ShapeAnalysis_Edge.cxx:230-238`): the FORWARD vertex of the edge *as
+/// traversed*, i.e. the stored REVERSED one on a REVERSED edge.
+fn wire_edge_first_vertex(e: &Edge) -> Option<Vertex> {
+    let (f, l) = edge_vertices(e);
+    if e.0.orientation() == crate::abs::Orientation::Reversed {
+        l
+    } else {
+        f
+    }
+}
+
+/// `ShapeAnalysis_Edge::LastVertex(edge, CumOri = true)`.
+fn wire_edge_last_vertex(e: &Edge) -> Option<Vertex> {
+    let (f, l) = edge_vertices(e);
+    if e.0.orientation() == crate::abs::Orientation::Reversed {
+        f
+    } else {
+        l
+    }
+}
+
+/// `BRepToIGES_BRWire::TransferWire` (`BRepToIGES_BRWire.cxx:704-726`) orders the
+/// edges of a wire through `ShapeFix_Wire::FixReorder()` before transferring them
+/// (`cxx:706`). That is the 3D `ShapeAnalysis_Wire::CheckOrder(sawo, myClosedMode,
+/// true, false)` of `ShapeFix_Wire::FixReorder()` (`ShapeFix_Wire.cxx:487-534`)
+/// followed by `FixReorder(sawo)` (`cxx:1351-1400`). `Perform` ignores its
+/// `closed` argument (`ShapeAnalysis_WireOrder.cxx:205`), so only the edge
+/// connectivity matters.
+///
+/// Returns the same list as `wire_data_edges` when the order is unchanged
+/// (`status == 0`, `cxx:1360-1363`), when an edge has no vertex (FAIL2,
+/// `ShapeAnalysis_Wire.cxx:617-621`) or when the order could not be applied
+/// (`cxx:1372-1385`). `Ordered(i) < 0` is `ShapeExtend_WireData::Edge(signed)`
+/// = the edge reversed (`ShapeExtend_WireData.cxx:583-591`).
+fn reordered_wire_edges(wire: &crate::shape::Wire) -> Vec<Edge> {
+    let stored = wire_data_edges(wire);
+    if stored.len() < 2 {
+        return stored;
+    }
+    let mut order = crate::meshing::wire_order::WireOrder::new();
+    for e in &stored {
+        let (Some(v1), Some(v2)) = (wire_edge_first_vertex(e), wire_edge_last_vertex(e)) else {
+            return stored;
+        };
+        order.add_edge_xyz(BRepTool::vertex_point(&v1), BRepTool::vertex_point(&v2));
+    }
+    order.perform();
+    if order.status() == crate::meshing::wire_order::WireOrderStatus::Same
+        || order.nb_edges() != stored.len()
+    {
+        return stored;
+    }
+    let mut out = Vec::with_capacity(stored.len());
+    for i in 1..=stored.len() {
+        let signed = order.ordered(i);
+        if signed == 0 {
+            return stored;
+        }
+        let mut e = stored[signed.unsigned_abs() as usize - 1].clone();
+        if signed < 0 {
+            e.0.reverse();
+        }
+        out.push(e);
+    }
+    out
+}
+
 /// Direct children of `s` whose type is `t`.
 fn children_of_type(s: &TopoShape, t: ShapeType) -> Vec<TopoShape> {
     s.tshape
@@ -2761,13 +3956,101 @@ fn children_of_type(s: &TopoShape, t: ShapeType) -> Vec<TopoShape> {
         .collect()
 }
 
-/// Finite UV bounds of a face (derived from the boundary curves for planes).
+/// The UV box handed to `GeomToIGES_GeomSurface::TransferSurface`.
+///
+/// OCCT takes it straight from the face (`BRep_Tool::UVBounds`, i.e.
+/// `BRepTools::AddUVBounds` -> the edge p-curve boxes, see
+/// [`crate::brep_tools::add_uv_bounds`]). Measured on the 14-model parity set
+/// this is strictly better than the sampled boundary box
+/// (`wireframe::face_uv_bounds`, which unwraps a periodic span into
+/// `[first, first + period]`): GRAND TOTAL 1396 -> 1308, `Cone` to `SAME`,
+/// `screw` 144 -> 130, `Shape-1` 654 -> 634, `Shape-2` 157 -> 105, no model
+/// worse. The sampled box stays as the fallback for a void or non-finite
+/// result, which `BRepTools::UVBounds` reports as `0,0,0,0`
+/// (`BRepTools.cxx:70-80`) and the revolution arms here cannot use.
 fn face_uv_bounds_finite(f: &Face) -> (f64, f64, f64, f64) {
     if let Some(s) = BRepTool::face_surface(f) {
+        let mut b = occt_core::bnd::BndBox2d::new();
+        crate::brep_tools::add_uv_bounds(f, &mut b);
+        if let Some((u0, v0, u1, v1)) = b.get() {
+            if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() {
+                return (u0, u1, v0, v1);
+            }
+        }
         crate::wireframe::face_uv_bounds(f, s.as_ref())
     } else {
         (0.0, 1.0, 0.0, 1.0)
     }
+}
+
+/// `Geom_ElementarySurface::Bounds` (`Geom_ElementarySurface.cxx:82-89`): every
+/// elementary surface reports the same "infinite" range, `U [0, 2*PI],
+/// V [0, 2*PI]`. `TransferFace` mirrors the p-curves of a REVERSED face about
+/// `U = 0.5*(U1+U2)` of the *reversed* surface's own bounds
+/// (`BRepToIGES_BRShell.cxx:176-183`), so this is `2*aCenter` for every surface
+/// class that has an `UReversed` branch.
+const ELEMENTARY_REVERSED_TWO_CENTER: f64 = 2.0 * std::f64::consts::PI;
+
+/// `BRepToIGES_BRShell::TransferFace` (`BRepToIGES_BRShell.cxx:126-237`): a face
+/// whose orientation is `TopAbs_REVERSED` is not transferred as it is. OCCT
+/// copies the face, replaces its surface with `aSurf->UReversed()` after peeling
+/// every `Geom_RectangularTrimmedSurface` (`:135-141`) and mirrors each p-curve
+/// about `gp_Ax2d(gp_Pnt2d(0.5*(U1+U2), V1), gp_Dir2d(0,1))` (`:176-201`), then
+/// transfers the copy.
+///
+/// The port transfers the original face (the copied wires only get re-oriented
+/// to the originals, `:150-174`) and mirrors the p-curves it reads on the fly
+/// (`transfer_edge_uv`), so this carries what both call sites need: the
+/// U-reversed surface and the mirror's `2*aCenter`.
+///
+/// `None` means the REVERSED branch is not taken: either the face is not
+/// REVERSED, or its surface class has no `Geom_Surface::UReversed` branch yet
+/// (elementary surfaces, a non-periodic-U B-spline, a surface of revolution or
+/// linear extrusion, and an offset whose basis can be U-reversed — see
+/// `Surface::u_reversed`), in which case the face is transferred as if it were
+/// FORWARD, exactly as an unimplemented OCCT branch would leave it.
+struct FaceReversal {
+    /// `aSurf->UReversed()` (`cxx:135-142`), already trim-stripped.
+    surf: Arc<dyn Surface>,
+    /// `2*aCenter` of `gp_Ax2d(gp_Pnt2d(aCenter, V1), gp_Dir2d(0,1))`: the mirror
+    /// maps `U` to `2*aCenter - U` (`cxx:178-183`).
+    two_center: f64,
+}
+
+fn face_reversal(f: &Face) -> Option<FaceReversal> {
+    if f.0.orientation() != crate::abs::Orientation::Reversed {
+        return None;
+    }
+    let surf = BRepTool::face_surface(f)?;
+    // `cxx:135-141`: peel the rectangular trims first, "because pcurves will be
+    // transformed, so trim will be shifted, accorded to new face bounds".
+    let mut base: Arc<dyn Surface> = surf.clone();
+    while let Some(b) = base.rectangular_trimmed_basis() {
+        base = b;
+    }
+    let rev = base.u_reversed()?;
+    // `cxx:176-182`: `aSurf->Bounds(U1, U2, V1, V2); aCenter = 0.5*(U1+U2)` on the
+    // REVERSED surface, so the mirror is `U -> 2*aCenter - U`. Finite bounds
+    // (B-spline, revolution, offset of those) use that sum; an unbounded
+    // elementary plane keeps the `[0, 2*PI]` constant the other elementary
+    // surfaces report (`Geom_ElementarySurface::Bounds`).
+    let (ru0, ru1) = rev.u_range();
+    let two_center = if ru0.is_finite() && ru1.is_finite() {
+        ru0 + ru1
+    } else {
+        ELEMENTARY_REVERSED_TWO_CENTER
+    };
+    if std::env::var("IGES_TRACE_FACE").is_ok() {
+        eprintln!(
+            "TRACEREV ptr={:?} surf={:?} two_center={two_center}",
+            Arc::as_ptr(&f.0.tshape) as usize,
+            crate::pcurve_full::classify_surface_kind(rev.as_ref()),
+        );
+    }
+    Some(FaceReversal {
+        surf: rev,
+        two_center,
+    })
 }
 
 /// 'GeomToIGES_GeomSurface::Length()' ('GeomToIGES_GeomSurface.cxx:1441-1443'):
@@ -2798,6 +4081,15 @@ fn surface_transfer_length(surf: &dyn Surface, v0: f64, v1: f64) -> f64 {
         }
     };
     let (vv0, vv1) = (bound(v0, false), bound(v1, true));
+    // 'cxx:737-741' (GeomToIGES_GeomSurface::TransferSurface(Geom_Cylinder)):
+    // the generatrix is 'Geom_Line(gp_Pnt(R,0,0), gp::DZ())', so
+    // 'TheLength = gen1.Distance(gen2) = |V2 - V1|'.
+    if surf.gp_cylinder().is_some() {
+        return (vv1 - vv0).abs();
+    }
+    // 'cxx:817-825' (GeomToIGES_GeomSurface::TransferSurface(Geom_ConicalSurface)):
+    // the generatrix is 'Geom_Line(gp_Pnt(RefRadius,0,0), gp_Dir(sin a,0,cos a))',
+    // a unit direction, so the same expression holds.
     if surf.gp_cone().is_some() {
         return (vv1 - vv0).abs();
     }

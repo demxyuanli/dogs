@@ -342,10 +342,10 @@ pub fn mesh_deflection_error(mesh: &ShapeMesh, face: &Face, samples: usize) -> f
             continue;
         }
         let n = n.divided(n.modulus());
-        // UNPORTED: `mesh_deflection_error` is a port-only mesh-QA helper.
-        // OCCT computes BRepMesh deflection during triangulation
-        // (`BRepMesh_ShapeTool`), not by projecting finished mesh vertices back
-        // to UV, so there is no projection branch. Grid stays.
+        // UNPORTED: `mesh_deflection_error` is a port-only mesh-QA metric with no
+        // OCCT counterpart (OCCT measures deflection inside `BRepMesh`, not by
+        // projecting finished mesh vertices back to UV). Its unit-test threshold
+        // encodes this grid's result, so the grid stays here.
         let (ua, va) = surface_closest_params(surface.as_ref(), a, 24, 24);
         let (mut ub, vb) = surface_closest_params(surface.as_ref(), b, 24, 24);
         let (mut uc, vc) = surface_closest_params(surface.as_ref(), c, 24, 24);

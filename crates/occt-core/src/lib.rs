@@ -45,3 +45,4 @@ pub mod math_trig_roots;
 pub mod intana2d;
 pub mod intcurve;
 pub mod intimpargen;
+pub mod adv_approx;

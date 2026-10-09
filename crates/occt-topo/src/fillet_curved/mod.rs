@@ -40,7 +40,7 @@ pub(crate) use occt_core::gp::{GpAx2, GpAx3, GpCylinder, GpDir, GpPnt, GpSphere,
 pub(crate) use occt_geom::{GeomCylinder, GeomSphere, GeomTorus, Surface};
 
 pub(crate) use crate::brep_surface::{
-    classify_surface, is_planar, sphere_center, surface_closest_params, surface_normal, SurfaceKind,
+    is_planar, sphere_center, surface_normal, SurfaceKind,
 };
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;

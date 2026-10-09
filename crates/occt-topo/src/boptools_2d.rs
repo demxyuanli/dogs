@@ -70,15 +70,23 @@ pub fn curve_on_surface(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
     let reg = GeometryRegistry::global();
     let face_key = GeometryRegistry::shape_key(&face.0);
     let pcs = reg.edge_pcurves(&edge.0, face_key);
-    // `BRep_Tool::CurveOnSurface` (`BRep_Tool.cxx:347-357`): for a
-    // representation on a *closed* surface (a seam's two pcurves) a REVERSED
-    // edge reads `PCurve2`, otherwise `PCurve1`.
-    if edge.0.orientation() == crate::abs::Orientation::Reversed {
+    // `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`) reverses a
+    // copy of the edge when the face is REVERSED, then the closed-surface arm
+    // (`cxx:354-357`) returns `PCurve2` for that copy and `PCurve` otherwise.
+    if seam_reads_pcurve2(edge, face) {
         if let Some(second) = pcs.get(1) {
             return Some(second.clone());
         }
     }
     pcs.into_iter().next()
+}
+
+/// `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`, `:354-357`):
+/// PCurve2 is selected when exactly one of the edge and the face is REVERSED.
+fn seam_reads_pcurve2(edge: &Edge, face: &Face) -> bool {
+    let edge_rev = edge.0.orientation() == crate::abs::Orientation::Reversed;
+    let face_rev = face.0.orientation() == crate::abs::Orientation::Reversed;
+    edge_rev != face_rev
 }
 
 /// `BRep_Tool::CurveOnSurface(edge, face, first, last)`: stored p-curve plus
@@ -133,8 +141,18 @@ pub fn curve_on_surface_oriented(
     let reversed = edge.0.orientation().is_reversed();
     let pc = if pcs.len() >= 2 && reversed {
         pcs[1].clone()
+    } else if let Some(stored) = pcs.first() {
+        stored.clone()
     } else {
-        pcs.first()?.clone()
+        // `BRep_Tool::CurveOnSurface` (`BRep_Tool.cxx:367-372`): no stored
+        // representation -> `CurveOnPlane` projection, planar surfaces only.
+        let reg0 = GeometryRegistry::global();
+        let surf = reg0.face_surface(&face.0)?;
+        if classify_surface_kind(surf.as_ref()) != SurfaceKind::Plane {
+            return None;
+        }
+        let curve = reg0.edge_curve(&edge.0)?;
+        crate::pcurve::curve_on_plane(curve.as_ref(), surf.as_ref())?
     };
     let reg = GeometryRegistry::global();
     let (mut t1, mut t2) = reg

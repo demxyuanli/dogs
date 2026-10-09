@@ -10,6 +10,14 @@ impl GpMat2d {
     #[inline] pub const fn identity() -> Self { Self { data: [[1.0,0.0],[0.0,1.0]] } }
     #[inline] pub const fn new(a11:f64,a12:f64,a21:f64,a22:f64) -> Self { Self { data: [[a11,a12],[a21,a22]] } }
     pub fn from_cols(c1:&GpXY, c2:&GpXY) -> Self { Self { data: [[c1.x,c2.x],[c1.y,c2.y]] } }
+    /// `gp_Mat2d::SetCols`.
+    pub fn set_cols(&mut self, c1:&GpXY, c2:&GpXY) { self.data=[[c1.x,c2.x],[c1.y,c2.y]]; }
+    /// `gp_Mat2d::SetCol` — 1-based column index.
+    pub fn set_col(&mut self, col:usize, v:&GpXY) { let c=col-1; self.data[0][c]=v.x; self.data[1][c]=v.y; }
+    /// `gp_Mat2d::SetRows`.
+    pub fn set_rows(&mut self, r1:&GpXY, r2:&GpXY) { self.data=[[r1.x,r1.y],[r2.x,r2.y]]; }
+    /// `gp_Mat2d::SetRow` — 1-based row index.
+    pub fn set_row(&mut self, row:usize, v:&GpXY) { let r=row-1; self.data[r][0]=v.x; self.data[r][1]=v.y; }
     #[inline] pub const fn value(&self, r:usize, c:usize) -> f64 { self.data[r][c] }
     #[inline] pub fn row(&self, r:usize) -> GpXY { GpXY::new(self.data[r][0], self.data[r][1]) }
     #[inline] pub fn column(&self, c:usize) -> GpXY { GpXY::new(self.data[0][c], self.data[1][c]) }
@@ -27,12 +35,38 @@ impl GpMat2d {
     #[inline] pub fn multiplied_scalar(&self, s:f64) -> Self { let mut m=*self; m.multiply_scalar(s); m }
     pub fn multiply(&mut self, o:&Self) { let a=self.data; let b=o.data; let t00=a[0][0]*b[0][0]+a[0][1]*b[1][0]; let t10=a[1][0]*b[0][0]+a[1][1]*b[1][0]; self.data[0][1]=a[0][0]*b[0][1]+a[0][1]*b[1][1]; self.data[1][1]=a[1][0]*b[0][1]+a[1][1]*b[1][1]; self.data[0][0]=t00; self.data[1][0]=t10; }
     #[inline] pub fn multiplied(&self, o:&Self) -> Self { let mut m=*self; m.multiply(o); m }
-    pub fn divide(&mut self, s:f64) -> Result<(),&'static str> { if s.abs()<=RESOLUTION { Err("singular") } else { self.multiply_scalar(1.0/s); Ok(()) } }
-    pub fn divided(&self, s:f64) -> Result<Self,&'static str> { let mut m=*self; m.divide(s)?; Ok(m) }
+    /// `gp_Mat2d::Divide(const double)` (`gp_Mat2d.hxx:304-310`): plain
+    /// division with no raise (unlike `gp_Mat::Divide`).
+    pub fn divide(&mut self, s:f64) { self.multiply_scalar(1.0/s); }
+    /// `gp_Mat2d::Divided(const double)` (`gp_Mat2d.hxx:314-320`).
+    pub fn divided(&self, s:f64) -> Self { let mut m=*self; m.divide(s); m }
     pub fn invert(&mut self) -> Result<(),&'static str> { let det=self.determinant(); if det.abs()<=RESOLUTION { Err("singular") } else { let inv=1.0/det; let a=self.data; self.data=[[a[1][1]*inv,-a[0][1]*inv],[-a[1][0]*inv,a[0][0]*inv]]; Ok(()) } }
     pub fn inverted(&self) -> Result<Self,&'static str> { let mut m=*self; m.invert()?; Ok(m) }
+    /// `gp_Mat2d::PreMultiply` — `self = other * self`.
+    #[inline] pub fn pre_multiply(&mut self, o:&Self) { *self = o.multiplied(self); }
     #[inline] pub fn transpose(&mut self) { let t=self.data[0][1]; self.data[0][1]=self.data[1][0]; self.data[1][0]=t; }
     #[inline] pub fn transposed(&self) -> Self { let mut m=*self; m.transpose(); m }
+
+    /// `gp_Mat2d::Power(const int)` (`gp_Mat2d.cxx:144-179`): binary
+    /// exponentiation, inverting first for negative exponents.
+    pub fn power(&mut self, n: i32) -> Result<(),&'static str> {
+        if n == 1 { return Ok(()); }
+        if n == 0 { self.set_identity(); return Ok(()); }
+        if n == -1 { self.invert()?; return Ok(()); }
+        if n < 0 { self.invert()?; }
+        let mut npower = n.abs() - 1;
+        let mut temp = *self;
+        loop {
+            if npower % 2 == 1 { self.multiply(&temp); }
+            if npower == 1 { break; }
+            temp = temp.multiplied(&temp);
+            npower /= 2;
+        }
+        Ok(())
+    }
+
+    /// `gp_Mat2d::Powered(const int)`.
+    pub fn powered(&self, n: i32) -> Result<Self,&'static str> { let mut m=*self; m.power(n)?; Ok(m) }
 }
 
 impl Default for GpMat2d { #[inline] fn default() -> Self { Self::identity() } }

@@ -82,6 +82,13 @@ pub trait Curve2d: Send + Sync {
         false
     }
 
+    /// `STANDARD_TYPE(Geom2d_Circle)` — true only for an exact `Geom2d_Circle`,
+    /// not for a Trimmed/Reparam wrapper that forwards `gp_circ2d`
+    /// (`GeomLib.cxx:871`).
+    fn is_geom2d_circle(&self) -> bool {
+        false
+    }
+
     /// `STANDARD_TYPE(Geom2d_BezierCurve)`.
     fn is_bezier2d(&self) -> bool {
         false

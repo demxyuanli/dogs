@@ -16,6 +16,15 @@
 //! `occt-geom/src/convert_bspl.rs`) carries extra `WithRatio`/`MinM` arguments
 //! and an endpoint-based G0 check; the 2D `.cxx` has neither, so this port
 //! follows the 2D control flow verbatim.
+//!
+//! `add_with_ratio` exposes those two 3D-sibling arguments to callers that
+//! port 3D code operating on planar curves, where the 2D and 3D control flows
+//! differ by exactly them. `ShapeFix_Wire::RemoveLoop` is such a caller: it
+//! concatenates `Geom_TrimmedCurve(crv, ..)` segments with the 3D class at
+//! `WithRatio = false` (`ShapeFix_Wire.cxx:2373`), and on the plane case
+//! (`cxx:2386-2392`) the 3D curve is the edge curve whose 2D image is `c2d`
+//! (`cxx:2393-2399`), so concatenating the 2D images with `WithRatio = false`
+//! yields the exact 2D image of the 3D result.
 
 use crate::bspline_curve::Geom2dBSplineCurve;
 use crate::curve::Curve2d;
@@ -112,6 +121,20 @@ impl CompCurveToBSplineCurve {
         tolerance: f64,
         after: bool,
     ) -> Result<bool, &'static str> {
+        self.add_with_ratio(new_curve, tolerance, after, true, 0)
+    }
+
+    /// `Add(NewCurve, Tolerance, After, WithRatio, MinM)` with the two extra
+    /// arguments of the 3D sibling (`GeomConvert_CompCurveToBSplineCurve.hxx:56-60`).
+    /// `add` is `add_with_ratio(.., true, 0)`.
+    pub fn add_with_ratio(
+        &mut self,
+        new_curve: &dyn Curve2d,
+        tolerance: f64,
+        after: bool,
+        with_ratio: bool,
+        min_m: i32,
+    ) -> Result<bool, &'static str> {
         // Conversion (`cxx:60-70`).
         let mut bs = if new_curve.is_bspline2d() {
             new_curve.bspline_copy2d().ok_or("CompCurveToBSplineCurve::add")?
@@ -158,7 +181,7 @@ impl CompCurveToBSplineCurve {
                 bs.reverse();
             }
             let mut first = self.my_curve.take().unwrap();
-            self.add_pair(&mut first, &mut bs, true)?;
+            self.add_pair(&mut first, &mut bs, true, with_ratio, min_m)?;
             Ok(true)
         } else if is_before {
             // Prepend before (`cxx:115-122`).
@@ -167,22 +190,25 @@ impl CompCurveToBSplineCurve {
             }
             let mut first = bs;
             let mut second = self.my_curve.take().unwrap();
-            self.add_pair(&mut first, &mut second, false)?;
+            self.add_pair(&mut first, &mut second, false, with_ratio, min_m)?;
             Ok(true)
         } else {
             Ok(false)
         }
     }
 
-    /// The private `Add(FirstCurve, SecondCurve, After)` (`cxx:129-230`):
-    /// harmonise the degrees, reparameterize onto the common knot, concatenate
-    /// the poles/weights and lower the common knot's multiplicity down to 0.
+    /// The private `Add(FirstCurve, SecondCurve, After, WithRatio, MinM)`
+    /// (`cxx:129-230`, 3D `cxx:129-260`): harmonise the degrees,
+    /// reparameterize onto the common knot, concatenate the poles/weights and
+    /// lower the common knot's multiplicity down to `min_m`.
     /// Sets `myCurve`.
     fn add_pair(
         &mut self,
         first: &mut Geom2dBSplineCurve,
         second: &mut Geom2dBSplineCurve,
         after: bool,
+        with_ratio: bool,
+        min_m: i32,
     ) -> Result<(), &'static str> {
         // Harmonize the degrees (`cxx:133-141`).
         let deg = first.degree().max(second.degree());
@@ -193,17 +219,20 @@ impl CompCurveToBSplineCurve {
             second.increase_degree(deg)?;
         }
 
-        // Reparameterization ratio (C1 if possible) (`cxx:156-165`).
+        // Reparameterization ratio (C1 if possible) (`cxx:156-165`), skipped
+        // when `WithRatio` is off (`GeomConvert_CompCurveToBSplineCurve.cxx:163-177`).
         let mut ratio = 1.0f64;
-        let l1 = first.d1(first.last_parameter()).1.magnitude();
-        let l2 = second.d1(second.first_parameter()).1.magnitude();
-        if l1 > occt_core::precision::CONFUSION && l2 > occt_core::precision::CONFUSION {
-            ratio = l1 / l2;
-        }
-        if ratio < occt_core::precision::CONFUSION
-            || ratio > 1.0 / occt_core::precision::CONFUSION
-        {
-            ratio = 1.0;
+        if with_ratio {
+            let l1 = first.d1(first.last_parameter()).1.magnitude();
+            let l2 = second.d1(second.first_parameter()).1.magnitude();
+            if l1 > occt_core::precision::CONFUSION && l2 > occt_core::precision::CONFUSION {
+                ratio = l1 / l2;
+            }
+            if ratio < occt_core::precision::CONFUSION
+                || ratio > 1.0 / occt_core::precision::CONFUSION
+            {
+                ratio = 1.0;
+            }
         }
 
         let (uknots_f, umults_f) = first.distinct_knots_and_mults();
@@ -275,10 +304,11 @@ impl CompCurveToBSplineCurve {
                 .map_err(|_| "CompCurveToBSplineCurve::add_pair")?
         };
 
-        // Optionally reduce multiplicity down to 0 (`cxx:222-229`).
+        // Optionally reduce multiplicity down to `MinM` (`cxx:222-229`,
+        // `GeomConvert_CompCurveToBSplineCurve.cxx:252-259`).
         let mut ok = true;
         let mut m = mults_out[nb_k1 - 1];
-        while m > 0 && ok {
+        while m > min_m && ok {
             m -= 1;
             ok = curve
                 .remove_knot(nb_k1 as i32, m, self.my_tol)

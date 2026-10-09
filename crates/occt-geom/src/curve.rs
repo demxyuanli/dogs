@@ -89,6 +89,23 @@ pub trait Curve: Send + Sync {
     }
     fn transform(&mut self, t: &GpTrsf);
     fn reverse(&mut self);
+
+    /// `Geom_Curve::ReversedParameter` — the parameter on the *reversed* curve
+    /// of the point at parameter `U`. OCCT implements it per class:
+    /// `Geom_Line`/`Geom_Hyperbola`/`Geom_Parabola` -> `-U`
+    /// (`Geom_Line.cxx:72`, `Geom_Hyperbola.cxx:167`, `Geom_Parabola.cxx:84`),
+    /// `Geom_Circle`/`Geom_Ellipse` -> `2*pi - U` (`Geom_Circle.cxx:87`,
+    /// `Geom_Ellipse.cxx:164`), which equals the affine form on their
+    /// `[0, 2*pi]` range, `Geom_BSplineCurve` -> `first + last - U`
+    /// (`Geom_BSplineCurve.cxx:520`), `Geom_BezierCurve` -> `1 - U`
+    /// (`Geom_BezierCurve.cxx:381`, on the always-`[0, 1]` range), and
+    /// `Geom_TrimmedCurve` / `Geom_OffsetCurve` -> the basis curve's
+    /// (`Geom_TrimmedCurve.cxx:88`, `Geom_OffsetCurve.cxx:104`). The default
+    /// here is that shared affine form.
+    fn reversed_parameter(&self, u: f64) -> f64 {
+        self.first_parameter() + self.last_parameter() - u
+    }
+
     fn clone_dyn(&self) -> Box<dyn Curve>;
     fn transformed(&self, t: &GpTrsf) -> Box<dyn Curve> { let mut c = self.clone_dyn(); c.transform(t); c }
     fn reversed(&self) -> Box<dyn Curve> { let mut c = self.clone_dyn(); c.reverse(); c }

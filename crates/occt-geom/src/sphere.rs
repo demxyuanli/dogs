@@ -33,6 +33,14 @@ impl Surface for GeomSphere {
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
 
+    /// `Geom_SphericalSurface::UReversed` (`Geom_SphericalSurface.cxx`):
+    /// a copy with `UReverse()` applied (`gp_Sphere.hxx:104` -> `pos.YReverse()`).
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos;
+        pos.u_reverse();
+        Some(Arc::new(GeomSphere::new(pos)))
+    }
+
     /// `Geom_SphericalSurface::UIso` (`Geom_SphericalSurface.cxx:292-297`):
     /// the meridian `Geom_Circle(ElSLib::SphereUIso(pos, radius, U))` trimmed
     /// to `[-PI/2, PI/2]` (OCCT wraps it in a `Geom_TrimmedCurve`).

@@ -33,6 +33,14 @@ impl Surface for GeomTorus {
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
 
+    /// `Geom_ToroidalSurface::UReversed` (`Geom_ToroidalSurface.cxx`):
+    /// a copy with `UReverse()` applied (`gp_Torus.hxx:123` -> `pos.YReverse()`).
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos;
+        pos.u_reverse();
+        Some(Arc::new(GeomTorus::new(pos)))
+    }
+
     /// `Geom_ToroidalSurface::UIso` (`Geom_ToroidalSurface.cxx:305-310`):
     /// `Geom_Circle(ElSLib::TorusUIso(pos, majorRadius, minorRadius, U))`,
     /// the minor circle whose plane contains the axis direction and the

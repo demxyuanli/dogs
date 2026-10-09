@@ -231,9 +231,17 @@ ENDSEC;\nEND-ISO-10303-21;";
         assert!(line.contains("B_SPLINE_SURFACE_WITH_KNOTS"), "{line}");
         // u_degree, v_degree both 2; 3×3 pole grid; polynomial.
         assert!(line.contains("('',2,2,((#1,#2,#3),(#4,#5,#6),(#7,#8,#9))"), "{line}");
-        assert!(line.contains("SELF"), "{line}");
-        assert!(line.contains("(0.0,1.0)"), "{line}");
-        assert!(line.contains("(3,3)"), "{line}");
+        // `GeomToStep_MakeBSplineSurfaceWithKnots.cxx:150-163`: the attribute
+        // order is surface form, U/V closed, self-intersect, U/V multiplicities,
+        // U/V knots, knot spec; the multiplicities precede the knot values, and
+        // a polynomial surface has no weights attribute (the grid appears only
+        // in the rational complex form, `...AndRational....cxx:170-176`). Same
+        // record layout as OCCT's own output, `data/occ/T0M.stp:901`.
+        assert!(
+            line.contains(",.UNSPECIFIED.,.F.,.F.,.F.,(3,3),(3,3),(0.0,1.0),(0.0,1.0),.UNSPECIFIED."),
+            "{line}"
+        );
+        assert!(!line.contains("SELF"), "{line}");
     }
 
     #[test]
@@ -297,6 +305,7 @@ ENDSEC;\nEND-ISO-10303-21;";
     #[test]
     fn step_bspline_roundtrip() {
         let surf = bspline_test_surface();
+        let seen = surf.poles.len();
         let face = crate::brep_builder_full::BRepBuilderFace::from_surface(Arc::new(surf));
         let step = write_step_with_splines(&face).unwrap();
         let m = read_step(&step).expect("read bspline step");
@@ -304,6 +313,53 @@ ENDSEC;\nEND-ISO-10303-21;";
         assert!(m.shapes[0].shape.is_face(), "shape type preserved");
         let fs = faces_of(&m.shapes[0].shape);
         assert!(!fs.is_empty(), "reconstructed shape has faces");
+        let back = GeometryRegistry::global()
+            .face_surface(&fs[0].0)
+            .and_then(|s| s.osculating_bspline())
+            .expect("surface reads back as a B-spline");
+        assert_eq!(back.poles.len(), seen, "pole grid preserved");
+        assert!(!back.is_rational(), "polynomial surface carries no weights");
+        // Rational arm: the merged complex entity must read back with weights.
+        let r = bspline_test_surface();
+        let w: Vec<Vec<f64>> = r
+            .poles
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                row.iter()
+                    .enumerate()
+                    .map(|(j, _)| 1.0 + 0.1 * (i + j) as f64)
+                    .collect()
+            })
+            .collect();
+        let rr = occt_geom::bspline_surface::GeomBSplineSurface::rational(
+            r.poles.clone(),
+            w,
+            r.knots_u.clone(),
+            r.knots_v.clone(),
+            r.deg_u,
+            r.deg_v,
+        )
+        .unwrap();
+        let rface = crate::brep_builder_full::BRepBuilderFace::from_surface(Arc::new(rr));
+        let rstep = write_step_with_splines(&rface).unwrap();
+        assert!(
+            rstep.contains("RATIONAL_B_SPLINE_SURFACE"),
+            "rational surface uses the complex form"
+        );
+        let rm = read_step(&rstep).expect("read rational bspline step");
+        let rfs = faces_of(&rm.shapes[0].shape);
+        assert!(!rfs.is_empty(), "rational shape has faces");
+        let rback = GeometryRegistry::global()
+            .face_surface(&rfs[0].0)
+            .and_then(|s| s.osculating_bspline())
+            .expect("rational surface reads back as a B-spline");
+        assert!(rback.is_rational(), "weights preserved through the complex form");
+        assert_eq!(
+            rback.weights.as_ref().map_or(0, |w| w.len()),
+            rback.poles.len(),
+            "weight grid matches the pole grid"
+        );
     }
 
     #[test]

@@ -250,5 +250,9 @@ impl Curve for GeomTrimmedCurveBasis {
     fn resolution(&self, r3d: f64) -> f64 { self.basis.resolution(r3d) }
     fn transform(&mut self, _t: &GpTrsf) {}
     fn reverse(&mut self) { std::mem::swap(&mut self.first, &mut self.last); }
+    /// `Geom_TrimmedCurve::ReversedParameter` (`Geom_TrimmedCurve.cxx:88-91`):
+    /// the basis curve's. This view evaluates in the basis parameters, so the
+    /// mapping is the basis curve's own.
+    fn reversed_parameter(&self, u: f64) -> f64 { self.basis.reversed_parameter(u) }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
 }

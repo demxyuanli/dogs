@@ -28,9 +28,10 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::shape_analysis::is_outer_bound;
 use crate::shape_fix_compose_shell::{
-    adjust_to_period, CompositeSurface, ComposeShell, Parametrisation, ReShape,
+    adjust_to_period, reverse_wire_data_on_face, CompositeSurface, ComposeShell, Parametrisation,
+    ReShape,
 };
-use crate::shhealing::{adjust_by_period, fix_reorder_wire};
+use crate::shhealing::{adjust_by_period, first_vertex, fix_reorder_wire, last_vertex};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
@@ -83,6 +84,37 @@ pub fn check_wire(
     } else {
         None
     }
+}
+
+/// `IsSurfaceUVPeriodic(theSurf)` (`ShapeFix_Face.cxx:103-108`).
+pub(in crate::shhealing) fn is_surface_uv_periodic(surf: &dyn Surface) -> bool {
+    (surf.is_u_periodic() && surf.is_v_periodic()) || surf.gp_sphere().is_some()
+}
+
+/// `ShapeExtend_WireData::Wire()` (`ShapeExtend_WireData.cxx:651-684`): a fresh
+/// FORWARD wire over `data`, then the non-manifold edges appended unchanged
+/// (`cxx:678-683`), with the closed flag set when the first and last vertex
+/// coincide (`cxx:668-677`).
+pub(in crate::shhealing) fn wire_from_wire_data(data: &[Edge], non_manifold: &[Edge]) -> Wire {
+    let builder = TopoBuilder::new();
+    let mut wire = builder.make_wire(data);
+    let is_manifold = data.iter().all(|e| {
+        let o = e.0.orientation();
+        o == Orientation::Forward || o == Orientation::Reversed
+    });
+    if is_manifold {
+        let vf = data.first().and_then(first_vertex);
+        let vl = data.last().and_then(last_vertex);
+        if let (Some(vf), Some(vl)) = (vf, vl) {
+            if crate::topo_tools_full::is_same(&vf.0, &vl.0) {
+                wire.0.set_closed(true); // cxx:670-676 `W.Closed(true)`
+            }
+        }
+    }
+    for e in non_manifold {
+        builder.add_edge(&mut wire, e); // cxx:678-683
+    }
+    wire
 }
 
 /// `IsPeriodicConicalLoop` out-parameters (`ShapeFix_Face.cxx:3018-3098`).
@@ -195,6 +227,34 @@ pub struct ShapeFixFace {
     /// `FixMissingSeamMode` (`ShapeProcess_OperLibrary.cxx:830`) — so the
     /// conic degenerate-apex fix always runs on the reader path.
     pub fix_periodic_degenerated_mode: bool,
+    /// `myFixOrientationMode` (`ShapeFix_Face.cxx:141`, default `-1` = auto).
+    /// `FromSTEP.FixShape` sets it from `FixOrientationMode`
+    /// (`ShapeProcess_OperLibrary.cxx:828`), whose default is also `-1`, so
+    /// `NeedFix` is true on the reader path.
+    pub fix_orientation_mode: bool,
+    /// `myFixIntersectingWiresMode` (`ShapeFix_Face.cxx:140`, default `-1` =
+    /// auto). `ShapeProcess_OperLibrary.cxx:833` sets it from
+    /// `FixIntersectingWiresMode`, whose default is also `-1`, so `NeedFix` is
+    /// true on the reader path.
+    pub fix_intersecting_wires_mode: bool,
+    /// `myFixAddNaturalBoundMode` (`ShapeFix_Face.cxx:143`, default `-1`);
+    /// `NeedFix` is true, so `isNeedAddNaturalBound` runs.
+    pub fix_add_natural_bound_mode: bool,
+    /// `myFixSplitFaceMode` (`ShapeFix_Face.cxx:142`, default `-1` = auto).
+    /// `Perform` gates `FixSplitFace` on `NeedFix(myFixSplitFaceMode)`
+    /// (`cxx:711`), so the face-splitting tail of the second-part loop runs.
+    pub fix_split_face_mode: bool,
+    /// `Perform`'s local `MapWires` (`ShapeFix_Face.cxx:689-691`): the outer
+    /// wire -> inner wires nesting that `FixOrientation` computes and
+    /// `FixSplitFace` consumes (`cxx:711-716`).
+    ///
+    /// Outer wire to the wires it contains. Written by `orient_several_wires`
+    /// (`ShapeFix_Face.cxx:1537`, `:1542`, `:1579`, `:1583`).
+    pub map_wires: Vec<(Wire, Vec<Wire>)>,
+    /// `ShapeFix_Root::myFwd` (`ShapeFix_Face.cxx:218`):
+    /// `theFace.Orientation() != TopAbs_REVERSED`. `FixOrientation` re-applies
+    /// it to the rebuilt face (`cxx:1634-1636`).
+    pub my_fwd: bool,
 }
 
 impl Default for ShapeFixFace {
@@ -208,6 +268,12 @@ impl Default for ShapeFixFace {
             result: None,
             fix_missing_seam_mode: true,
             fix_periodic_degenerated_mode: true,
+            fix_orientation_mode: true,
+            fix_intersecting_wires_mode: true,
+            fix_add_natural_bound_mode: true,
+            fix_split_face_mode: true,
+            map_wires: Vec::new(),
+            my_fwd: true,
         }
     }
 }
@@ -238,6 +304,14 @@ impl ShapeFixFace {
             result: None,
             fix_missing_seam_mode: true,
             fix_periodic_degenerated_mode: true,
+            fix_orientation_mode: true,
+            fix_intersecting_wires_mode: true,
+            fix_add_natural_bound_mode: true,
+            fix_split_face_mode: true,
+            map_wires: Vec::new(),
+            // `myFwd = (theFace.Orientation() != TopAbs_REVERSED)`
+            // (`ShapeFix_Face.cxx:218`): INTERNAL/EXTERNAL count as forward.
+            my_fwd: face.0.orientation() != Orientation::Reversed,
         }
     }
 
@@ -262,6 +336,258 @@ impl ShapeFixFace {
             }
         }
         self.result.clone()
+    }
+
+    /// `ShapeFix_Face::FixIntersectingWires` (`ShapeFix_Face.cxx:2821-2825`):
+    /// builds `ShapeFix_IntersectionTool(Context(), Precision(), MaxTolerance())`
+    /// and runs `ITool.FixIntersectingWires(myFace)`.
+    ///
+    /// The tool rebuilds the face and records `Context()->Replace(myFace, newface)`
+    /// (`intersection_tool::fix_intersecting_wires`, `cxx:2526`), so `myFace` here
+    /// follows the out-parameter update. `ShapeFix_Face::Perform` (`cxx:680`)
+    /// consumes this; wiring that driver still needs the unported wire-fixing
+    /// first part (`cxx:365-480`).
+    pub fn fix_intersecting_wires(&mut self) -> bool {
+        let mut face = match self.face.clone() {
+            Some(f) => f,
+            None => return false,
+        };
+        let done = crate::shhealing::fix_intersecting_wires(&mut face, &mut self.context);
+        if done {
+            self.face = Some(face);
+        }
+        done
+    }
+
+    /// `ShapeFix_Face::isNeedAddNaturalBound` (`ShapeFix_Face.cxx:1120-1160`).
+    pub(in crate::shhealing) fn is_need_add_natural_bound(&self, oriented_wires: &[Wire]) -> bool {
+        // cxx:1124-1127.
+        if !self.fix_add_natural_bound_mode {
+            return false;
+        }
+        // cxx:1130-1133: only a surface closed in both U and V (or a sphere)
+        // can be missing its natural bounds.
+        if let Some(surf) = &self.surf {
+            if !is_surface_uv_periodic(surf.as_ref()) {
+                return false;
+            }
+        }
+        let face = match &self.face {
+            Some(f) => f.clone(),
+            None => return false,
+        };
+        // cxx:1135-1138.
+        if is_outer_bound(&face) {
+            return false;
+        }
+        // cxx:1140-1157: a seam or degenerated edge means this wire is the
+        // outer one already, and only its orientation gets corrected.
+        for w in oriented_wires {
+            for e in edges_of_wire(w) {
+                if BRepTool::is_degenerated(&e) {
+                    return false;
+                }
+                if BRepTool::is_closed_edge_face(&e, &face) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// `ShapeFix_Face::FixOrientation` (`ShapeFix_Face.cxx:1165-1646`).
+    /// One wire is `cxx:1255-1274`; several wires are `cxx:1276-1606`.
+    ///
+    /// The single reversed wire that `StepToTopoDS_TranslateFace` stores for a
+    /// `FACE_BOUND(..., .F.)` makes `ShapeAnalysis::IsOuterBound` negative, so
+    /// the wire is reversed (`ShapeExtend_WireData::Reverse(myFace)`,
+    /// `cxx:1266-1268`) and the face is rebuilt over it with orientation
+    /// FORWARD (`cxx:1611-1637`). Without it the mesher's
+    /// `ShapeExtend_WireData(wire, chained=true, manifold=false)` list is the
+    /// reverse of the wire's stored order and the Delaunay frontier starves
+    /// (`Shap*Fix*.top` torus faces).
+    ///
+    /// Several wires take `orient_several_wires` (`cxx:1276-1606`).
+    pub fn fix_orientation(&mut self) -> bool {
+        // cxx:1114-1116: `FixOrientation()` clears `MapWires` and delegates to
+        // the overload Perform calls (`cxx:689-694`).
+        self.map_wires.clear();
+        let mut done = false; // cxx:1169.
+
+        // cxx:1170-1176: `myFace = TopoDS::Face(Context()->Apply(myFace))`.
+        let mut face = match self.face.clone() {
+            Some(f) => f,
+            None => return false,
+        };
+        {
+            let applied = self.context.apply(&face.0);
+            if applied.is_face() {
+                face = Face(applied);
+                self.face = Some(face.clone());
+            }
+        }
+
+        // cxx:1180-1235: `TopoDS_Iterator(myFace, false)` splits the direct
+        // children into `ws` (wires to rebuild with), `allSubShapes` (vertices
+        // and unoriented children, re-added unchanged) and `VerySmallWires`.
+        let mut ws: Vec<Wire> = Vec::new();
+        let mut all_sub: Vec<TopoShape> = Vec::new();
+        let mut very_small = 0usize;
+        let children: Vec<TopoShape> = {
+            let ts = face.0.tshape.read().unwrap();
+            ts.children.clone()
+        };
+        for child in children {
+            let ori = child.orientation();
+            // cxx:1182-1188.
+            if child.shape_type() == ShapeType::Vertex
+                || (ori != Orientation::Forward && ori != Orientation::Reversed)
+            {
+                all_sub.push(child);
+                continue;
+            }
+            // cxx:1191-1226: a wire holding a single edge is measured by a
+            // 10-point polyline of `ShapeAnalysis_Edge::Curve3d`; a multi-edge
+            // wire keeps `RealLast()` and is always "long".
+            let wire_children: Vec<TopoShape> = {
+                let ts = child.tshape.read().unwrap();
+                ts.children.clone()
+            };
+            let length = if wire_children.is_empty() {
+                0.0 // cxx:1222-1225.
+            } else if wire_children.len() == 1 {
+                let edge = Edge(wire_children[0].clone());
+                let mut len = 0.0;
+                if !BRepTool::is_degenerated(&edge) {
+                    if let Some(c3d) = BRepTool::edge_curve(&edge) {
+                        let (mut first, mut last) = BRepTool::edge_parameters(&edge);
+                        // `ShapeAnalysis_Edge::Curve3d(..., orient=true)`.
+                        if wire_children[0].orientation().is_reversed() {
+                            std::mem::swap(&mut first, &mut last);
+                        }
+                        const NB_CONTROL: usize = 10;
+                        let mut prev = c3d.d0(first);
+                        for j in 1..NB_CONTROL {
+                            let prm = ((NB_CONTROL - 1 - j) as f64 * first
+                                + j as f64 * last)
+                                / (NB_CONTROL - 1) as f64;
+                            let curr = c3d.d0(prm);
+                            len += curr.distance(&prev);
+                            prev = curr;
+                        }
+                    }
+                }
+                len
+            } else {
+                f64::MAX // cxx:1192 `RealLast()`.
+            };
+            // cxx:1227-1234.
+            if length > CONFUSION {
+                ws.push(Wire(child.clone()));
+                all_sub.push(child);
+            } else {
+                very_small += 1;
+            }
+        }
+        // cxx:1236-1238.
+        if very_small > 0 {
+            done = true;
+        }
+
+        let nb = ws.len();
+        let nb_all = all_sub.len();
+        // cxx:1243-1250: no usable wire, nothing to rebuild.
+        if nb == 0 {
+            return false;
+        }
+
+        let is_add_natural_bounds = self.is_need_add_natural_bound(&ws); // cxx:1252
+        let mut nb_reversed = 0usize; // `aSeqReversed`
+
+        // cxx:1255-1274.
+        if nb == 1 {
+            let builder = TopoBuilder::new();
+            let mut af = match BRepTool::face_surface(&face) {
+                Some(surf) => builder.make_face(surf, &[ws[0].clone()]), // cxx:1258-1261
+                None => Face::new(),
+            };
+            af.0.set_orientation(Orientation::Forward); // cxx:1260
+            if !is_add_natural_bounds && !is_outer_bound(&af) {
+                // cxx:1266: `ShapeExtend_WireData(ws.Value(1))` -> the oriented
+                // edge list (`chained=true` keeps `TopoDS_Iterator` order, a
+                // REVERSED wire prepends), non-manifold edges kept aside.
+                let (mut data, non_manifold): (Vec<Edge>, Vec<Edge>) =
+                    edges_of_wire(&ws[0]).into_iter().partition(|e| {
+                        let o = e.0.orientation();
+                        o == Orientation::Forward || o == Orientation::Reversed
+                    });
+                if ws[0].0.orientation().is_reversed() {
+                    data.reverse(); // `ShapeExtend_WireData.cxx:115-122`
+                }
+                // cxx:1267: `sbdw->Reverse(myFace)`.
+                reverse_wire_data_on_face(&mut data, &face);
+                // cxx:1268: `ws.SetValue(1, sbdw->Wire())`.
+                ws[0] = wire_from_wire_data(&data, &non_manifold);
+                nb_reversed += 1;
+                done = true;
+            }
+        }
+        // cxx:1276-1606: several wires, classify each against the others.
+        if nb != 1 {
+            if let Some(surf) = self.surf.clone() {
+                let nrev = super::shape_fix_face_wires::orient_several_wires(
+                    &face,
+                    surf.as_ref(),
+                    &mut ws,
+                    &all_sub,
+                    &mut self.map_wires,
+                );
+                if nrev > 0 {
+                    nb_reversed += nrev;
+                    done = true;
+                }
+            }
+        }
+
+        // cxx:1607-1609.
+        if is_add_natural_bounds && nb == nb_reversed {
+            done = false;
+        }
+
+        // cxx:1610-1646: rebuild the face from `ws` plus the untouched children.
+        if done {
+            let builder = TopoBuilder::new();
+            let mut new_face = match BRepTool::face_surface(&face) {
+                Some(surf) => builder.make_face(surf, &ws),
+                None => Face::new(),
+            };
+            new_face.0.set_orientation(Orientation::Forward); // cxx:1613
+            // `myFace.EmptyCopied()` (`cxx:1612`) carries the location and the
+            // whole `BRep_TFace` (surface, tolerance, natural restriction).
+            new_face.0.set_location(face.0.location());
+            if let Some(geom) = GeometryRegistry::global().face_geom(&face.0) {
+                GeometryRegistry::global().set_face(&new_face.0, geom);
+            }
+            // cxx:1620-1633.
+            if nb < nb_all {
+                for a_s2 in &all_sub {
+                    let ori = a_s2.orientation();
+                    if a_s2.shape_type() != ShapeType::Wire
+                        || (ori != Orientation::Forward && ori != Orientation::Reversed)
+                    {
+                        builder.add(&mut new_face.0, a_s2);
+                    }
+                }
+            }
+            // cxx:1634-1636.
+            if !self.my_fwd {
+                new_face.0.set_orientation(Orientation::Reversed);
+            }
+            // cxx:1639-1641: `Context()->Replace(myFace, S)`.
+            self.context.replace(&face.0, &new_face.0);
+            self.face = Some(new_face);
+        }
+        done
     }
 
     /// `ShapeFix_Face::FixPeriodicDegenerated` (`ShapeFix_Face.cxx:3101-3259`):

@@ -40,9 +40,11 @@
 
 use occt_core::elib::clib;
 use occt_core::gp::GpPnt;
-use occt_core::precision::{Precision, CONFUSION, REAL_SMALL};
+use occt_core::precision::{Precision, COMPUTATIONAL, CONFUSION, PCONFUSION, REAL_SMALL};
 use occt_geom::extrema_pc::extrema_ext_pc_min_in_range;
 use occt_geom::Curve;
+
+use std::sync::Arc;
 
 use super::adjust_by_period;
 
@@ -360,4 +362,176 @@ pub fn next_project(curve: &dyn Curve, prev: f64, point: &GpPnt, preci: f64) -> 
     }
     // `cxx:578`: `Project(C3D, P3D, preci, proj, param, false)`.
     project_adaptor(curve, point, preci, false)
+}
+
+/// `Geom_Curve::IsClosed()` for the `Geom_BoundedCurve` members
+/// `ShapeAnalysis_Curve::ValidateRange` branches on.
+///
+/// * `Geom_TrimmedCurve::IsClosed` (`Geom_TrimmedCurve.cxx:155-168`): a trim
+///   covering an exact multiple of the basis period is closed, otherwise the
+///   two range ends decide (`StartPoint`/`EndPoint` are the *basis* values at
+///   `uTrim1`/`uTrim2`, `Geom_TrimmedCurve.cxx:271-287`).
+/// * `Geom_BSplineCurve::IsClosed` (`Geom_BSplineCurve_1.cxx:146-149`) and
+///   `Geom_BezierCurve::IsClosed` (`Geom_BezierCurve.cxx`): the two range ends
+///   coincide within `Precision::Computational()`.
+///
+/// `Geom_Circle` / `Geom_Ellipse` report closed unconditionally, but
+/// `ValidateRange`'s first branch only tests `IsClosed` inside
+/// `IsKind(Geom_BoundedCurve)`, which excludes the conics.
+fn geom_curve_is_closed(c: &dyn Curve) -> bool {
+    if c.is_geom_trimmed() {
+        if let Some((basis, _, _)) = c.untrimmed_basis() {
+            let period = basis.period();
+            let length = c.last_parameter() - c.first_parameter();
+            if basis.is_periodic()
+                && period > 0.0
+                && length > PCONFUSION
+                && (length - period * (length / period).round()).abs() <= PCONFUSION
+            {
+                return true;
+            }
+        }
+    }
+    let (f, l) = (c.first_parameter(), c.last_parameter());
+    if !f.is_finite() || !l.is_finite() {
+        return false;
+    }
+    c.d0(f).square_distance(&c.d0(l)) <= occt_core::precision::COMPUTATIONAL
+}
+
+/// `ShapeAnalysis_Curve::IsPeriodic(const Handle(Geom_Curve)&)`
+/// (`ShapeAnalysis_Curve.cxx:1450-1469`): unwrap `Geom_OffsetCurve` and
+/// `Geom_TrimmedCurve` down to the basis, then ask `IsPeriodic`.
+fn is_periodic_curve(c: &Arc<dyn Curve>) -> bool {
+    let mut cur = c.clone();
+    // The `while` in cxx:1456-1466 unwraps one level per iteration; the bound
+    // only guards against a self-referential offset/trim cycle.
+    for _ in 0..32 {
+        if let Some((basis, _)) = cur.offset_curve() {
+            cur = basis;
+            continue;
+        }
+        if cur.is_geom_trimmed() {
+            if let Some((basis, _, _)) = cur.untrimmed_basis() {
+                cur = basis;
+                continue;
+            }
+        }
+        break;
+    }
+    cur.is_periodic()
+}
+
+/// `ShapeAnalysis_Curve::ValidateRange(const Handle(Geom_Curve)&, First, Last,
+/// preci)` (`ShapeAnalysis_Curve.cxx:586-732`).
+///
+/// `First` / `Last` are the `double&` out-parameters; returns the `bool` result.
+/// The two `theCurve->Reverse()` calls (`cxx:704`, `cxx:721`) mutate the curve
+/// object in place through the OCCT handle. The port's `Curve` is an immutable
+/// `Arc`, and both arms require `First > Last`, which [`validate_range`]'s only
+/// caller (`ShapeFix_SplitTool::CutEdge`, `ShapeFix_SplitTool.cxx:283`) cannot
+/// produce: it passes `na = min(pend, cut)` / `nb = max(pend, cut)` after
+/// rejecting `|cut - pend| < 10 * PConfusion`, so `na < nb` strictly. The
+/// numeric adjustment of `First` / `Last` is reproduced; the in-place curve
+/// reversal is marked UNPORTED for those two unreachable arms.
+pub fn validate_range(curve: &dyn Curve, first: &mut f64, last: &mut f64, preci: f64) -> bool {
+    let cf = curve.first_parameter(); // `cxx:593-594`
+    let cl = curve.last_parameter();
+
+    if is_bounded_curve(curve) && !geom_curve_is_closed(curve) {
+        // `cxx:599-615`: clamp `First` / `Last` onto `[cf, cl]`.
+        if *first < cf {
+            *first = cf;
+        } else if *first > cl {
+            *first = cl;
+        }
+        if *last < cf {
+            *last = cf;
+        } else if *last > cl {
+            *last = cl;
+        }
+    }
+
+    // `cxx:618-621`: `IsPeriodic` on the unwrapped basis, `PConfusion` as the
+    // precision (the `preci` parameter is deliberately not used here).
+    if is_periodic_curve(&Arc::<dyn Curve>::from(curve.clone_dyn())) {
+        // `ElCLib::AdjustPeriodic` (`ElCLib.cxx:115-148`); the port keeps this
+        // shared `ElCLib` routine in `clib2d`.
+        occt_core::elib::clib2d::adjust_periodic(cf, cl, PCONFUSION, first, last);
+        return true;
+    }
+
+    if *first < *last {
+        // `cxx:623-626`: nothing to fix.
+        return true;
+    }
+
+    if geom_curve_is_closed(curve) {
+        // `cxx:628-666`: one of the projected points sits on the 3D curve's
+        // parameterisation origin, so the algorithm returned `cl +- preci`
+        // instead of `cf` or vice versa.
+        if (*last - cf).abs() < PCONFUSION {
+            *last = cl;
+        } else if (*first - cl).abs() < PCONFUSION {
+            *first = cf;
+        } else {
+            // `cxx:650-659`: S4136 - check in 3D.
+            if curve.d0(*first).distance(&curve.d0(cf)) < preci {
+                *first = cf;
+            }
+            if curve.d0(*last).distance(&curve.d0(cl)) < preci {
+                *last = cl;
+            }
+        }
+        if *first > *last {
+            std::mem::swap(first, last);
+        }
+        return true;
+    }
+
+    // `cxx:668-711`: the curve is closed within the 3D tolerance.
+    if curve.nurbs_degree().is_some() {
+        // `cxx:670-672`: `aBSpline->StartPoint().Distance(aBSpline->EndPoint()) <= preci`.
+        let closed = curve
+            .d0(cf)
+            .distance(&curve.d0(cl))
+            <= preci;
+        if closed {
+            let (f, l) = (*first, *last);
+            if (*last - cf).abs() < PCONFUSION {
+                *last = cl;
+            } else if (*first - cl).abs() < PCONFUSION {
+                *first = cf;
+            } else {
+                *first = l;
+                *last = f;
+            }
+        } else {
+            // `cxx:704-708`: `First = theCurve->ReversedParameter(First); ...;
+            // theCurve->Reverse();`. UNPORTED - `Curve` has no
+            // `ReversedParameter` and the in-place `Reverse()` cannot be
+            // expressed on an `Arc`. Unreachable from `CutEdge` (see the doc
+            // comment), so `First` / `Last` are left as they are.
+        }
+        // `cxx:709-713`: PRO7656 - a degenerate range is reset to the full range.
+        if *first == *last {
+            *first = cf;
+            *last = cl;
+            return false;
+        }
+        return true;
+    }
+
+    // `cxx:715-731`: `else` arm - not a B-spline and not closed in 3D.
+    if *first > *last {
+        // `cxx:719-723`: `First = theCurve->ReversedParameter(First); ...;
+        // theCurve->Reverse();`. UNPORTED for the same reason as `cxx:704-708`
+        // above; unreachable from `CutEdge`.
+    }
+    // `cxx:723-728`: PTV OCC966 - widen a degenerate range by `PConfusion`.
+    if *first == *last {
+        *first -= PCONFUSION;
+        *last += PCONFUSION;
+    }
+    false
 }

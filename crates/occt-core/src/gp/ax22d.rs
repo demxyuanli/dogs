@@ -1,6 +1,6 @@
 //! 2D coordinate system. Source: `gp_Ax22d.hxx`
 use crate::precision::ANGULAR;
-use crate::gp::{ax2d::GpAx2d, pnt2d::GpPnt2d, dir2d::GpDir2d};
+use crate::gp::{ax2d::GpAx2d, pnt2d::GpPnt2d, dir2d::GpDir2d, trsf2d::GpTrsf2d};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpAx22d { pub point: GpPnt2d, pub vxdir: GpDir2d, pub vydir: GpDir2d }
@@ -21,5 +21,42 @@ impl GpAx22d {
     pub fn set_y_direction(&mut self,vy:GpDir2d) { self.vydir=vy; self.vxdir=GpDir2d{x:vy.y,y:-vy.x}; }
     pub fn x_reverse(&mut self) { self.vxdir.reverse(); }
     pub fn y_reverse(&mut self) { self.vydir.reverse(); }
+    /// `gp_Ax22d::Transform` (`gp_Ax22d.hxx:360-367`): transform the location
+    /// and both (unit) directions by the trsf.
+    pub fn transform(&mut self, t: &GpTrsf2d) {
+        self.point.transform(t);
+        self.vxdir.transform(t);
+        self.vydir.transform(t);
+    }
+    /// `gp_Ax22d::Rotate` (`gp_Ax22d.hxx:335-341`): rotate the location and
+    /// both directions.
+    pub fn rotate(&mut self, p: &GpPnt2d, ang: f64) {
+        self.point.rotate(p, ang);
+        self.vxdir.rotate(ang);
+        self.vydir.rotate(ang);
+    }
+    /// `gp_Ax22d::Scale` (`gp_Ax22d.hxx:346-354`): scale the location and, for
+    /// a negative factor, reverse both directions.
+    pub fn scale(&mut self, p: &GpPnt2d, s: f64) {
+        self.point.scale(p, s);
+        if s < 0.0 {
+            self.vxdir.reverse();
+            self.vydir.reverse();
+        }
+    }
+    /// `gp_Ax22d::Mirror(const gp_Pnt2d&)` (`gp_Ax22d.cxx:29-36`): mirror the
+    /// location and reverse both directions.
+    pub fn mirror_pnt(&mut self, p: &GpPnt2d) {
+        self.point.mirror_pnt(p);
+        self.vxdir.reverse();
+        self.vydir.reverse();
+    }
+    /// `gp_Ax22d::Mirror(const gp_Ax2d&)` (`gp_Ax22d.cxx:43-52`): mirror the
+    /// location and both directions across the axis.
+    pub fn mirror_ax2d(&mut self, a: &GpAx2d) {
+        self.vydir.mirror_ax2d(a);
+        self.vxdir.mirror_ax2d(a);
+        self.point.mirror_ax2d(a);
+    }
 }
 impl Default for GpAx22d { fn default() -> Self { Self::standard() } }

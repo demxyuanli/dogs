@@ -141,7 +141,7 @@ pub fn parabola_value(p: &GpParab, u: f64) -> GpPnt {
 /// `P = Loc`, `V1 = YDir`, `V2 = 0`.
 pub fn parabola_d2(p: &GpParab, u: f64) -> (GpPnt, GpVec, GpVec) {
     let f = p.focal;
-    if f.abs() <= RESOLUTION {
+    if f.abs() <= REAL_SMALL {
         return (
             p.location(),
             GpVec::from_xyz(&p.pos.y_direction().xyz()),
@@ -253,6 +253,18 @@ pub fn parabola_dn(p: &GpParab, u: f64, n: i32) -> GpVec {
         return GpVec::zero();
     }
     GpVec::from_xyz(&xdir.divided(2.0 * p.focal))
+}
+
+/// `ElCLib::LineParameter(gp_Ax1, gp_Pnt)` (`ElCLib.cxx:1192-1195`):
+/// `(P - L.Location()) . L.Direction()`.
+pub fn line_parameter_ax1(pos: &GpAx1, p: &GpPnt) -> f64 {
+    p.xyz().subtracted(&pos.loc.coord).dot(&pos.vdir.xyz())
+}
+
+/// `ElCLib::Parameter(const gp_Lin&, const gp_Pnt&)` (`ElCLib.lxx:323-327`),
+/// which forwards to `LineParameter(L.Position(), P)`.
+pub fn line_parameter(l: &GpLin, p: &GpPnt) -> f64 {
+    line_parameter_ax1(&l.pos, p)
 }
 
 // 2D
@@ -412,7 +424,7 @@ pub(super) fn normalize_angle(the_angle: &mut f64) {
     while *the_angle < NEGATIVE_RESOLUTION {
         *the_angle += PIPI;
     }
-    while *the_angle > PIPI * (1.0 + RESOLUTION) {
+    while *the_angle > PIPI * (1.0 + REAL_SMALL) {
         *the_angle -= PIPI;
     }
     if *the_angle < 0.0 {
@@ -423,12 +435,12 @@ pub(super) fn normalize_angle(the_angle: &mut f64) {
 /// `ElCLib::CircleParameter(gp_Ax2, gp_Pnt)` (`ElCLib.cxx:1199-1222`).
 pub fn circle_parameter(pos: &GpAx2, p: &GpPnt) -> f64 {
     let a_vec = GpVec::from_pnts(&pos.location(), p);
-    if a_vec.square_magnitude() < RESOLUTION {
+    if a_vec.square_magnitude() < REAL_SMALL {
         return 0.0;
     }
     let dir = pos.direction();
     let a_v_proj = dir.xyz().cross_crossed(a_vec.xyz(), dir.xyz());
-    if a_v_proj.square_modulus() < RESOLUTION {
+    if a_v_proj.square_modulus() < REAL_SMALL {
         return 0.0;
     }
     let Ok(proj_dir) = GpDir::from_xyz(&a_v_proj) else {
@@ -452,7 +464,7 @@ pub fn ellipse_parameter(pos: &GpAx2, major_radius: f64, minor_radius: f64, p: &
     let ny = op.dot(&yaxis);
     let nx = op.dot(&xaxis);
 
-    if nx.abs() <= RESOLUTION && ny.abs() <= RESOLUTION {
+    if nx.abs() <= REAL_SMALL && ny.abs() <= REAL_SMALL {
         // The point P is on the axis of the ellipse.
         return 0.0;
     }

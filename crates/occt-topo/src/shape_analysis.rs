@@ -59,6 +59,14 @@ pub fn tot_cross_2d(edges: &[Edge], face: &Face) -> f64 {
 
 /// ShapeAnalysis::IsOuterBound (ShapeAnalysis.cxx:203-230).
 pub fn is_outer_bound(face: &Face) -> bool {
+    // cxx:205-207: `TopoDS_Face F = face; F.Orientation(TopAbs_FORWARD);` then the
+    // explorer walks `F`. The cumulative orientation makes every wire (and thus
+    // every pcurve) traverse against the face's own orientation when the face is
+    // REVERSED, which flips the sign of `TotCross2D` and reports a genuine outer
+    // bound as an inner one.
+    let mut forward = face.clone();
+    forward.0.set_orientation(crate::abs::Orientation::Forward);
+    let face = &forward;
     let wires = crate::topo_tools_full::wires_of_face(face);
     if wires.len() == 1 {
         let edges = crate::topo_tools_full::edges_of_wire(&wires[0]);

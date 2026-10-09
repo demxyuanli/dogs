@@ -283,6 +283,55 @@ impl GeometryRegistry {
         c.last = last;
     }
 
+    /// `BRep_Builder::Range(E, First, Last, Only3d=false)`
+    /// (`BRep_Builder.cxx:1091-1117`): the range is written to *every*
+    /// `BRep_GCurve` representation, i.e. the 3D curve and all pcurves. The
+    /// `Only3d = true` variant is [`GeometryRegistry::set_edge_range`].
+    pub fn set_ranges_all(&self, s: &TopoShape, first: f64, last: f64) {
+        {
+            let mut ts = s.tshape.write().unwrap();
+            let c = ts.edge_core_mut();
+            c.first = first;
+            c.last = last;
+        }
+        if let Some(pc) = s.tshape.write().unwrap().edge_pcurves.as_mut() {
+            for r in pc.ranges.values_mut() {
+                *r = (first, last);
+            }
+        }
+    }
+
+    /// `BRep_Builder::UpdateEdge(E, C, Tol)` for the 3D curve
+    /// (`BRep_Builder.cxx:1180-1191`): `TE->ChangeCurves()` replaces the
+    /// `BRep_Curve3D` and `TE->UpdateTolerance(Tol)` raises the edge tolerance
+    /// without lowering it (`BRep_TEdge.lxx:33-37`). The range and the pcurves
+    /// are left alone.
+    pub fn set_edge_curve3d(&self, s: &TopoShape, curve: Arc<dyn Curve>, tol: f64) {
+        let mut ts = s.tshape.write().unwrap();
+        let c = ts.edge_core_mut();
+        c.curve = Some(curve);
+        if tol > c.tolerance {
+            c.tolerance = tol;
+        }
+    }
+
+    /// `BRep_TEdge::UpdateTolerance(Tol)` (`BRep_TEdge.lxx:33-37`): raise only.
+    pub fn raise_edge_tolerance(&self, s: &TopoShape, tol: f64) {
+        let mut ts = s.tshape.write().unwrap();
+        let c = ts.edge_core_mut();
+        if tol > c.tolerance {
+            c.tolerance = tol;
+        }
+    }
+
+    /// Number of `BRep_CurveRepresentation` entries that are a
+    /// `BRep_CurveOnSurface` (`howMuchPCurves`, `ShapeFix_Wire.cxx:2262-2281`).
+    /// A seam edge's `BRep_CurveOnClosedSurface` is one entry.
+    pub fn pcurve_rep_count(&self, s: &TopoShape) -> usize {
+        let ts = s.tshape.read().unwrap();
+        ts.edge_pcurves().map(|g| g.curves.len()).unwrap_or(0)
+    }
+
     pub fn edge_geom(&self, s: &TopoShape) -> Option<EdgeGeom> {
         // T-25 end phase: everything comes off the edge's own `TShape`; the
         // side table no longer stores edge geometry.

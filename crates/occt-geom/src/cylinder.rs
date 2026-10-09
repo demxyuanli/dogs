@@ -33,6 +33,15 @@ impl Surface for GeomCylinder {
     fn transform(&mut self, t: &GpTrsf) { self.pos.transform(t); }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
 
+    /// `Geom_CylindricalSurface::UReversed` (`Geom_CylindricalSurface.cxx`):
+    /// a copy of the same class with `UReverse()` applied
+    /// (`gp_Cylinder.hxx:86` -> `pos.YReverse()`).
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos.clone();
+        pos.u_reverse();
+        Some(Arc::new(GeomCylinder::new(pos)))
+    }
+
     /// `Geom_CylindricalSurface::UIso` (`Geom_CylindricalSurface.cxx:294-298`):
     /// `Geom_Line(ElSLib::CylinderUIso(pos, radius, U))`.
     /// `ElSLib::CylinderUIso` (`ElSLib.cxx:1716-1723`) is the generatrix

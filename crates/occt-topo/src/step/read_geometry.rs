@@ -175,6 +175,15 @@ impl<'a> Resolver<'a> {
                         GeomBSplineSurface::rational(poles, wgrid, u_knots, v_knots, deg_u, deg_v)
                     }
                 };
+                if std::env::var("IGES_TRACE").is_ok() {
+                    eprintln!(
+                        "TRACE surf#{id}: nu={} nv={} ku={} kv={} deg=({deg_u},{deg_v})",
+                        surface.as_ref().map_or(0, |s| s.nb_poles_u()),
+                        surface.as_ref().map_or(0, |s| s.nb_poles_v()),
+                        surface.as_ref().map_or(0, |s| s.bspline_surface_uknots().map_or(0, |k| k.len())),
+                        surface.as_ref().map_or(0, |s| s.bspline_surface_vknots().map_or(0, |k| k.len())),
+                    );
+                }
                 Arc::new(surface.map_err(|e| format!("B_SPLINE_SURFACE: {e}"))?)
             }
             "OFFSET_SURFACE" => {

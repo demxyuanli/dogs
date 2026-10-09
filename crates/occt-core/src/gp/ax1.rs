@@ -1,5 +1,7 @@
 use crate::gp::dir::{DirAxis, GpDir};
 use crate::gp::pnt::GpPnt;
+use crate::gp::trsf::GpTrsf;
+use crate::gp::vec::GpVec;
 
 /// Axis = point + direction. Default is Z axis at origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -91,5 +93,44 @@ impl GpAx1 {
             loc: self.loc,
             vdir: self.vdir.reversed(),
         }
+    }
+
+    /// `gp_Ax1::Rotate` (`gp_Ax1.hxx:163-167`): rotate the location and the
+    /// direction about `a1`.
+    pub fn rotate(&mut self, a1: &GpAx1, ang: f64) {
+        self.loc.rotate(a1, ang);
+        self.vdir.rotate(a1, ang);
+    }
+    /// `gp_Ax1::Scale` (`gp_Ax1.hxx:181-188`): scale the location and, for a
+    /// negative factor, reverse the direction.
+    pub fn scale(&mut self, p: &GpPnt, s: f64) {
+        self.loc.scale(p, s);
+        if s < 0.0 {
+            self.vdir.reverse();
+        }
+    }
+    /// `gp_Ax1::Mirror(const gp_Pnt&)` (`gp_Ax1.cxx:46-50`).
+    pub fn mirror_pnt(&mut self, p: &GpPnt) {
+        self.loc.mirror_pnt(p);
+        self.vdir.reverse();
+    }
+    /// `gp_Ax1::Mirror(const gp_Ax1&)` (`gp_Ax1.cxx:59-63`).
+    pub fn mirror_ax1(&mut self, a1: &GpAx1) {
+        self.loc.mirror_ax1(a1);
+        self.vdir.mirror_ax1(a1);
+    }
+    /// `gp_Ax1::Mirror(const gp_Ax2&)` (`gp_Ax1.cxx:72-76`).
+    pub fn mirror_ax2(&mut self, a2: &crate::gp::ax2::GpAx2) {
+        self.loc.mirror_ax2(a2);
+        self.vdir.mirror_ax2(a2);
+    }
+    /// `gp_Ax1::Transform` (`gp_Ax1.hxx:201-205`).
+    pub fn transform(&mut self, t: &GpTrsf) {
+        self.loc.transform(t);
+        self.vdir.transform(t);
+    }
+    /// `gp_Ax1::Translate(const gp_Vec&)` (`gp_Ax1.hxx:219`).
+    pub fn translate_vec(&mut self, v: &GpVec) {
+        self.loc.translate_vec(v);
     }
 }

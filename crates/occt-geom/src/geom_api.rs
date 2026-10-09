@@ -20,8 +20,22 @@
 //! (= `IntTools_EdgeEdge`, `IntTools_EdgeEdge.cxx:185-243`). `occt-geom` cannot
 //! host those (it is the lower crate), so nothing replaces them here.
 
-use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
+use std::sync::Arc;
+
+use occt_core::gp::{
+    GpAx2d, GpAx22d, GpDir2d, GpPln, GpPnt, GpPnt2d, GpVec, GpVec2d,
+};
+use occt_geom2d::bezier_curve::Geom2dBezierCurve;
+use occt_geom2d::bspline_curve::Geom2dBSplineCurve;
+use occt_geom2d::circle::Geom2dCircle;
+use occt_geom2d::curve::Curve2d;
+use occt_geom2d::ellipse::Geom2dEllipse;
+use occt_geom2d::hyperbola::Geom2dHyperbola;
+use occt_geom2d::line::Geom2dLine;
+use occt_geom2d::parabola::Geom2dParabola;
+
 use crate::curve::Curve;
+use crate::projlib;
 use crate::surface::Surface;
 
 /// Orthogonal projection of a point onto a curve (nearest solution).
@@ -149,6 +163,117 @@ pub fn pcurve_of_curve_on_surface(c: &dyn Curve, s: &dyn Surface, samples: usize
 }
 
 // --- internals -------------------------------------------------------------
+
+/// `ProjLib_Plane::Project` overloads (`ProjLib_Plane.cxx:99-169`): the exact
+/// projection of an elementary curve onto a plane. `None` is the arm the
+/// OCCT dispatch skips (`Project(ProjLib_Projector&, C)` breaking for
+/// `GeomAbs_BSplineCurve` / `GeomAbs_BezierCurve` / `GeomAbs_OtherCurve`,
+/// `ProjLib_ProjectedCurve.cxx:262-268`).
+///
+/// `ProjLib_Plane::EvalPnt2d` / `EvalDir2d` are
+/// [`projlib::eval_pln_pnt2d`] / [`projlib::eval_pln_dir2d`].
+fn proj_lib_plane_project(c: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2d>> {
+    // `void ProjLib_Plane::Project(const gp_Lin& L)` (`cxx:101-106`).
+    if let Some(l) = c.gp_line() {
+        let p = projlib::eval_pln_pnt2d(pln, &l.location());
+        let (dx, dy) = projlib::eval_pln_dir2d(pln, &l.direction());
+        let d = GpDir2d::new(dx, dy).ok()?;
+        return Some(Arc::new(Geom2dLine::new(GpAx2d::new(p, d))));
+    }
+    // `Project(const gp_Circ& C)` (`cxx:110-123`).
+    if let Some(cc) = c.gp_circ() {
+        let p = projlib::eval_pln_pnt2d(pln, &cc.location());
+        let ax = ax22d_on_plane(pln, &cc.position())?;
+        return Some(Arc::new(Geom2dCircle::new(
+            occt_core::gp::GpCirc2d::new(ax, cc.radius()),
+        )));
+    }
+    // `Project(const gp_Elips& E)` (`cxx:127-139`).
+    if let Some(e) = c.gp_ellipse() {
+        let ax = ax22d_on_plane(pln, e.position())?;
+        return Some(Arc::new(Geom2dEllipse::new(
+            occt_core::gp::GpElips2d::new(ax, e.major_radius, e.minor_radius),
+        )));
+    }
+    // `Project(const gp_Parab& P)` (`cxx:143-153`).
+    if let Some(p) = c.gp_parabola() {
+        let ax = ax22d_on_plane(pln, p.position())?;
+        return Some(Arc::new(Geom2dParabola::new(occt_core::gp::GpParab2d::new(
+            ax, p.focal,
+        ))));
+    }
+    // `Project(const gp_Hypr& H)` (`cxx:157-168`).
+    if let Some(h) = c.gp_hyperbola() {
+        let ax = ax22d_on_plane(pln, h.position())?;
+        return Some(Arc::new(Geom2dHyperbola::new(
+            occt_core::gp::GpHypr2d::new(ax, h.major_radius, h.minor_radius),
+        )));
+    }
+    None
+}
+
+/// `gp_Ax22d Ax(EvalPnt2d(C.Location(), myPlane),
+/// EvalDir2d(C.Position().XDirection(), myPlane),
+/// EvalDir2d(C.Position().YDirection(), myPlane))` (`ProjLib_Plane.cxx:116-119`).
+fn ax22d_on_plane(pln: &GpPln, pos: &occt_core::gp::GpAx2) -> Option<GpAx22d> {
+    let p = projlib::eval_pln_pnt2d(pln, &pos.location());
+    let (xx, xy) = projlib::eval_pln_dir2d(pln, pos.x_direction());
+    let (yx, yy) = projlib::eval_pln_dir2d(pln, pos.y_direction());
+    let x2d = GpDir2d::new(xx, xy).ok()?;
+    let y2d = GpDir2d::new(yx, yy).ok()?;
+    GpAx22d::new(p, x2d, y2d).ok()
+}
+
+/// `GeomAPI::To2d(const Handle(Geom_Curve)& C, const gp_Pln& P)`
+/// (`GeomAPI.cxx:37-52`).
+///
+/// The projection runs through `ProjLib_ProjectedCurve(S = Geom_Plane(P), C)`:
+/// `Perform` dispatches `GeomAbs_Plane` to `ProjLib_Plane` + `Project`
+/// (`ProjLib_ProjectedCurve.cxx:391-396`); when that leaves the result not done
+/// for a B-spline / Bezier curve, the analytic arm
+/// `ProjLib_ComputeApprox::Perform` projects the poles exactly
+/// (`ProjLib_ComputeApprox.cxx:1197-1253`). GeomAPI keeps the result only for
+/// `GetType() != GeomAbs_OffsetCurve && != GeomAbs_OtherCurve` (`cxx:46-49`).
+///
+/// UNPORTED arm: the general approximation
+/// (`ProjLib_ComputeApprox::Perform`'s `ProjLib_Function` branch,
+/// `ProjLib_ComputeApprox.cxx:1254+`) for a non-elementary curve on a plane.
+/// Not reachable from `ShapeFix_Wire::RemoveLoop`, whose `To2d` input is always
+/// the B-spline that `GeomConvert_CompCurveToBSplineCurve` produced.
+pub fn to_2d(c: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2d>> {
+    if let Some(c2d) = proj_lib_plane_project(c, pln) {
+        return Some(c2d);
+    }
+    // `if (CType == GeomAbs_BSplineCurve && SType == GeomAbs_Plane)`
+    // (`ProjLib_ComputeApprox.cxx:1197-1227`): project every pole, keep the
+    // knots, multiplicities, degree, weights and the periodicity flag.
+    if let (Some(poles), Some(degree), Some(knots)) =
+        (c.bspline_poles(), c.nurbs_degree(), c.bspline_knots())
+    {
+        let xs: Vec<f64> = poles.iter().map(|p| projlib::eval_pln_pnt2d(pln, p).x()).collect();
+        let ys: Vec<f64> = poles.iter().map(|p| projlib::eval_pln_pnt2d(pln, p).y()).collect();
+        let weights = c.bspline_weights().map(|w| w.to_vec());
+        let bs = Geom2dBSplineCurve::from_flat(
+            xs,
+            ys,
+            weights,
+            knots.to_vec(),
+            degree,
+            // `myResult.SetPeriodic()` (`ProjLib_ProjectedCurve.cxx:781-784`).
+            c.is_periodic(),
+        )
+        .ok()?;
+        return Some(Arc::new(bs));
+    }
+    // `else if (CType == GeomAbs_BezierCurve && SType == GeomAbs_Plane)`
+    // (`ProjLib_ComputeApprox.cxx:1229-1253`).
+    if let Some(poles) = c.bezier_poles() {
+        let poles2d: Vec<GpPnt2d> = poles.iter().map(|p| projlib::eval_pln_pnt2d(pln, p)).collect();
+        let bez = Geom2dBezierCurve::new(poles2d).ok()?;
+        return Some(Arc::new(bez));
+    }
+    None
+}
 
 /// Finite, sane sampling bounds; unbounded ranges clamp to `[-1, 1]`.
 fn finite_range(a: f64, b: f64) -> (f64, f64) {

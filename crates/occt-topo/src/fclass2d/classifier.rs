@@ -289,6 +289,73 @@ impl FClass2d {
         self.perform_recadre(p, false)
     }
 
+    /// `BRepTopAdaptor_FClass2d::Perform` with `RecadreOnPeriodic = false`
+    /// (`BRepTopAdaptor_FClass2d.cxx:595-620`), the path `PerformInfinitePoint`
+    /// and `ShapeFix_Face::FixOrientation` use.
+    ///
+    /// A point is IN only when it is inside every positive wire (`TabOrien == 1`,
+    /// signed area above 0, the same case as OCCT `square < 0` at `cxx:445`)
+    /// and outside every negative wire (`TabOrien == 0`). A clockwise
+    /// loop therefore classifies its exterior as IN. `classify_tab` does not:
+    /// it treats the geometric interior as IN regardless of winding, which
+    /// would reverse the wrong wires in `FixOrientation`.
+    ///
+    /// `TabOrien(1) == -1` falls through to `BRepClass_FaceClassifier`
+    /// (`cxx:640-642`). That classifier is not this type; an uncertain sample
+    /// is reported `On`, which `FixOrientation` ignores (`cxx:1436`).
+    pub fn perform_tab_orien(&self, puv: GpPnt2d) -> FaceState {
+        if self.tab_class.is_empty() {
+            return FaceState::In;
+        }
+        if self.tab_orien.first().copied().unwrap_or(-1) < 0 {
+            return FaceState::On;
+        }
+        let mut dedans = 1i32;
+        for (n, clas) in self.tab_class.iter().enumerate() {
+            let orien = self.tab_orien.get(n).copied().unwrap_or(0);
+            match clas.si_dans(&puv) {
+                Class2dResult::Inside => {
+                    if orien == 0 {
+                        dedans = -1;
+                        break;
+                    }
+                }
+                Class2dResult::Outside => {
+                    if orien == 1 {
+                        dedans = -1;
+                        break;
+                    }
+                }
+                Class2dResult::Uncertain => {
+                    dedans = 0;
+                    break;
+                }
+            }
+        }
+        match dedans {
+            1 => FaceState::In,
+            0 => FaceState::On,
+            _ => FaceState::Out,
+        }
+    }
+
+    /// `PerformInfinitePoint` (`BRepTopAdaptor_FClass2d.cxx:515-522`) using
+    /// [`Self::perform_tab_orien`] rather than the winding-independent classifier.
+    pub fn perform_infinite_point_tab_orien(&self) -> FaceState {
+        if !self.umin.is_finite()
+            || !self.umax.is_finite()
+            || !self.vmin.is_finite()
+            || !self.vmax.is_finite()
+        {
+            return FaceState::In;
+        }
+        let p = GpPnt2d::new(
+            self.umin - (self.umax - self.umin),
+            self.vmin - (self.vmax - self.vmin),
+        );
+        self.perform_tab_orien(p)
+    }
+
     /// Test whether `puv` lies on the face boundary restriction within `tol`
     /// (`IntTools_FClass2d::TestOnRestriction`). `On` when within `tol` of a
     /// boundary ring, `In`/`Out` otherwise.

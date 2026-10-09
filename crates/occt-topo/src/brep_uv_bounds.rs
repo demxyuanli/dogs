@@ -228,15 +228,29 @@ pub fn add_uv_bounds_edge(a_f: &Face, a_e: &Edge, a_b: &mut BndBox2d) {
             a_ymax = yy;
         }
     }
-    let Some(a_s) = BRepTool::face_surface(a_f) else {
+    // `BRepTools.cxx:191-199`: the ranges come from the **stored** surface
+    // (`Geom_RectangularTrimmedSurface::Bounds` returns the trim), but the
+    // periodicity / closedness tests and every `Value` call are made on the
+    // BASIS surface the trim wrapper is peeled down to. Testing the wrapper
+    // itself answers `IsUPeriodic() == false` for a periodic basis trimmed to
+    // less than a whole period (`Geom_RectangularTrimmedSurface.cxx:509-523`)
+    // and fails the `BSplineSurface` type check, so the clamp below would fire
+    // where OCCT skips it.
+    let stored = BRepTool::face_surface(a_f);
+    let Some(stored) = stored else {
         return;
     };
-    let (a_umin, a_umax) = a_s.u_range();
-    let (a_vmin, a_vmax) = a_s.v_range();
+    let (a_umin, a_umax) = stored.u_range();
+    let (a_vmin, a_vmax) = stored.v_range();
+    let basis = stored.rectangular_trimmed_basis();
+    let a_s: &dyn Surface = match basis.as_deref() {
+        Some(b) => b,
+        None => stored.as_ref(),
+    };
 
     if !a_s.is_u_periodic() {
         let is_u_periodic = verify_u_periodic_bspline(
-            a_s.as_ref(),
+            a_s,
             a_xmin,
             a_xmax,
             a_umin,
@@ -256,7 +270,7 @@ pub fn add_uv_bounds_edge(a_f: &Face, a_e: &Edge, a_b: &mut BndBox2d) {
 
     if !a_s.is_v_periodic() {
         let is_v_periodic = verify_v_periodic_bspline(
-            a_s.as_ref(),
+            a_s,
             a_ymin,
             a_ymax,
             a_umin,

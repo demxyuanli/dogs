@@ -480,11 +480,27 @@ pub fn write_bspline_curve(step: &mut StepWriter, curve: &GeomBSplineCurve) -> R
 
 /// Emit a `B_SPLINE_SURFACE_WITH_KNOTS` entity and return its record id.
 ///
-/// The pole grid is written row-major in `u` (each row is a fixed-`u` strip of
-/// `v`-varying control points). Weights (when the surface is rational) mirror
-/// the grid layout; polynomial surfaces use `SELF`. Each knot direction is
-/// split into distinct values plus multiplicities, and the surface form /
-/// closedness / self-intersection flags are written as unsensed defaults.
+/// The attribute order is `GeomToStep_MakeBSplineSurfaceWithKnots.cxx:150-163`:
+/// name, U/V degree, control points grid, surface form, U/V closed,
+/// self-intersect, U/V multiplicities, U/V knots, knot spec — the same record
+/// OCCT writes, e.g. `data/occ/T0M.stp:901`. The pole grid and the multiplicity
+/// / knot lists are the surface's own data (no resampling), the closed flags
+/// come from `IsUClosed` / `IsVClosed` (`cxx:76-93`), and the surface form /
+/// self-intersect flags are OCCT's fixed `bssfUnspecified` / `LFalse` values
+/// (`cxx:72`, `:92`).
+///
+/// A rational surface becomes the merged
+/// `B_SPLINE_SURFACE_WITH_KNOTS_AND_RATIONAL_B_SPLINE_SURFACE`
+/// (`GeomToStep_MakeBSplineSurfaceWithKnotsAndRationalBSplineSurface.cxx:170-176`),
+/// which a STEP file carries as a complex instance: every member lists only the
+/// attributes it introduces (the name comes from the final
+/// `REPRESENTATION_ITEM`) and the weight grid closes the list — the layout of
+/// `data/occ/ATU01038.step:22278`.
+///
+/// UNPORTED: `KnotSpec` (`MakeBSplineSurfaceWithKnots.cxx:127-150`, derived from
+/// `UKnotDistribution` / `VKnotDistribution`) is written as `.UNSPECIFIED.`,
+/// the value OCCT derives for the `NonUniform` pair and for mixed
+/// distributions.
 pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> Result<usize, String> {
     let mut rows = Vec::with_capacity(s.poles.len());
     for row in &s.poles {
@@ -492,36 +508,45 @@ pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> R
         rows.push(format!("({})", join_refs(&refs)));
     }
     let poles_grid = format!("({})", rows.join(","));
-    let weights = match &s.weights {
-        Some(w) => format!(
-            "({})",
-            w.iter()
-                .map(|row| format!(
-                    "({})",
-                    row.iter().map(|wi| step_real(*wi)).collect::<Vec<_>>().join(",")
-                ))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
-        None => "SELF".to_string(),
-    };
-    let u_knots = unique_knots(&s.knots_u);
-    let v_knots = unique_knots(&s.knots_v);
-    let u_mult = knot_multiplicities(&s.knots_u);
-    let v_mult = knot_multiplicities(&s.knots_v);
+    // `Geom_BSplineSurface::UKnots()` / `UMultiplicities()`: the distinct knots
+    // with their multiplicities, restricted to the surface's parameter window.
+    let (u_knots, u_mult) = s.distinct_knots_and_mults_u();
+    let (v_knots, v_mult) = s.distinct_knots_and_mults_v();
     let real_list = |v: &[f64]| v.iter().map(|k| step_real(*k)).collect::<Vec<_>>().join(",");
-    let int_list = |v: &[usize]| v.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(",");
-    Ok(step.emit(format!(
-        "B_SPLINE_SURFACE_WITH_KNOTS('',{},{},{},{},UNSPECIFIED,.F.,.F.,.F.,({}),({}),({}),({}),UNSPECIFIED)",
-        s.deg_u,
-        s.deg_v,
-        poles_grid,
-        weights,
-        real_list(&u_knots),
-        int_list(&u_mult),
-        real_list(&v_knots),
-        int_list(&v_mult),
-    )))
+    let int_list = |v: &[i32]| v.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(",");
+    let flag = |on: bool| if on { ".T." } else { ".F." };
+    let (closed_u, closed_v) = (flag(s.is_u_closed()), flag(s.is_v_closed()));
+    let u_mults = format!("({})", int_list(&u_mult));
+    let v_mults = format!("({})", int_list(&v_mult));
+    let u_knots = format!("({})", real_list(&u_knots));
+    let v_knots = format!("({})", real_list(&v_knots));
+    let body = match &s.weights {
+        None => format!(
+            "B_SPLINE_SURFACE_WITH_KNOTS('',{},{},{},.UNSPECIFIED.,{closed_u},{closed_v},.F.,{u_mults},{v_mults},{u_knots},{v_knots},.UNSPECIFIED.)",
+            s.deg_u, s.deg_v, poles_grid
+        ),
+        Some(w) => {
+            let weights = format!(
+                "({})",
+                w.iter()
+                    .map(|row| format!(
+                        "({})",
+                        row.iter().map(|wi| step_real(*wi)).collect::<Vec<_>>().join(",")
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            format!(
+                "(BOUNDED_SURFACE() \
+                 B_SPLINE_SURFACE({},{},{},.UNSPECIFIED.,{closed_u},{closed_v},.F.) \
+                 B_SPLINE_SURFACE_WITH_KNOTS({u_mults},{v_mults},{u_knots},{v_knots},.UNSPECIFIED.) \
+                 GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE({weights}) \
+                 REPRESENTATION_ITEM('') SURFACE())",
+                s.deg_u, s.deg_v, poles_grid
+            )
+        }
+    };
+    Ok(step.emit(body))
 }
 
 /// Emit a `TRIMMED_CURVE` entity restricting a basis curve to `[a, b]`.

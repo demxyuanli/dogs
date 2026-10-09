@@ -42,15 +42,48 @@ impl GpDir2d {
     pub fn is_opposite(&self,o:&Self,tol:f64) -> bool { std::f64::consts::PI-self.angle(o).abs()<=tol }
     pub fn reverse(&mut self) { self.x=-self.x; self.y=-self.y; }
     pub fn reversed(&self) -> Self { Self{x:-self.x,y:-self.y} }
-    /// `gp_Dir2d::Transform(gp_Trsf2d)` — vectorial part only (no translation).
+    /// `gp_Dir2d::Rotate(double)` (`gp_Dir2d.hxx:434-440`): the vectorial part
+    /// of a rotation about the origin.
+    pub fn rotate(&mut self, angle: f64) {
+        let mut t = crate::gp::trsf2d::GpTrsf2d::identity();
+        t.set_rotation(&crate::gp::pnt2d::GpPnt2d::zero(), angle);
+        self.transform(&t);
+    }
+    /// `gp_Dir2d::Mirror(const gp_Dir2d&)` (`gp_Dir2d.cxx:108-118`): reflect the
+    /// direction across the line carried by `v` (`[2A^2-1, 2AB; 2AB, 2B^2-1]`).
+    pub fn mirror_dir2d(&mut self, v: &Self) {
+        let (aa, bb) = (v.x, v.y);
+        let (x, y) = (self.x, self.y);
+        let m1 = 2.0 * aa * bb;
+        self.x = (2.0 * aa * aa - 1.0) * x + m1 * y;
+        self.y = m1 * x + (2.0 * bb * bb - 1.0) * y;
+    }
+    /// `gp_Dir2d::Mirror(const gp_Ax2d&)` (`gp_Dir2d.cxx:67-77`): reflect the
+    /// direction across the axis line.
+    pub fn mirror_ax2d(&mut self, a: &crate::gp::ax2d::GpAx2d) {
+        self.mirror_dir2d(a.direction());
+    }
+    /// `gp_Dir2d::Transform(const gp_Trsf2d&)` (`gp_Dir2d.cxx:80-105`).
     pub fn transform(&mut self, t: &crate::gp::trsf2d::GpTrsf2d) {
-        let mut xy = GpXY::new(self.x, self.y);
-        xy.multiply_mat2d(t.vectorial_part());
-        if t.scale_factor() != 1.0 {
-            xy.multiply_scalar(t.scale_factor());
-        }
-        if let Ok(d) = Self::from_xy(&xy) {
-            *self = d;
+        use crate::gp::trsf_form::TrsfForm;
+        match t.form() {
+            TrsfForm::Identity | TrsfForm::Translation => {}
+            TrsfForm::PntMirror => self.reverse(),
+            TrsfForm::Scale => {
+                if t.scale_factor() < 0.0 {
+                    self.reverse();
+                }
+            }
+            _ => {
+                let mut xy = GpXY::new(self.x, self.y);
+                xy.multiply_mat2d(t.h_vectorial_part());
+                if let Ok(d) = Self::from_xy(&xy) {
+                    *self = d;
+                }
+                if t.scale_factor() < 0.0 {
+                    self.reverse();
+                }
+            }
         }
     }
     pub fn transformed(&self, t: &crate::gp::trsf2d::GpTrsf2d) -> Self {

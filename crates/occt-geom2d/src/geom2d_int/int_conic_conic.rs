@@ -61,7 +61,7 @@ fn segment_to_point(
 /// `IntRes2d_Intersection` result of the last `Perform`.
 #[derive(Clone, Debug)]
 pub struct IntCurveIntConicConic {
-    result: IntRes2dIntersection,
+    pub(crate) result: IntRes2dIntersection,
 }
 
 impl Default for IntCurveIntConicConic {

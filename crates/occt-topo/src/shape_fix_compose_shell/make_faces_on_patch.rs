@@ -14,6 +14,7 @@ use crate::fclass2d::{FaceState, FClass2d};
 use crate::pcurve_full::surface_value_of_uv;
 use crate::shape::{Edge, TopoShape, Vertex, Wire};
 use crate::shhealing::transfer_params::copy_nm_vertex_face;
+use crate::shhealing::ShapeFixFace;
 use crate::topo_tools_full::edges_of_wire;
 
 use super::reshape::ReShape;
@@ -21,11 +22,6 @@ use super::shell::ComposeShell;
 
 fn is_fwd_or_rev(o: Orientation) -> bool {
     matches!(o, Orientation::Forward | Orientation::Reversed)
-}
-
-/// The first edge of `wire` whose orientation is FORWARD or REVERSED.
-fn first_oriented_edge(wire: &Wire) -> Option<Edge> {
-    edges_of_wire(wire).into_iter().find(|e| is_fwd_or_rev(e.0.orientation()))
 }
 
 impl ComposeShell {
@@ -48,14 +44,27 @@ impl ComposeShell {
                 return;
             }
             let wire = Wire(loops[0].clone());
-            let new_face = builder.make_face(surf.clone(), &[wire]);
+            let mut new_face = builder.make_face(surf.clone(), &[wire]); // cxx:2987-2994
+            // cxx:2997-3006.
             if self.invert_edge_status() {
-                // UNPORTED (cxx:2997-3006): `ShapeFix_Face::FixOrientation`.
-                // `ShapeFix_ComposeShell::Perform` clears `myInvertEdgeStatus`
-                // (`cxx:209`) before `MakeFacesOnPatch`, so the branch is not
-                // taken on the `FixMissingSeam` path.
+                // `occ::handle<ShapeFix_Face> sff = new ShapeFix_Face(newFace);`
+                // (`cxx:2999`): a freshly constructed tool, so its
+                // `ShapeFix_Root` context is NULL (`ShapeFix_Root.cxx:26-30`
+                // sets no `myContext`; `ShapeFix_Face.cxx:120-128` does not
+                // either). Both `Context()->Apply` (`ShapeFix_Face.cxx:1172`)
+                // and `Context()->Replace` (`:1639-1641`) inside
+                // `FixOrientation` are therefore skipped, and the rebuilt face
+                // is taken straight back through `sff->Face()`
+                // (`ShapeFix_Face.lxx:95-98`, `myFace`). The local
+                // `SharedReShape::new()` below is that null context.
+                let mut sff = ShapeFixFace::with_face(&new_face);
+                sff.fix_add_natural_bound_mode = false; // cxx:3000
+                sff.fix_orientation(); // cxx:3003 (MapWires is a local, unused map)
+                if let Some(f) = sff.face {
+                    new_face = f;
+                }
             }
-            faces.push(new_face.0);
+            faces.push(new_face.0); // cxx:3008
             return;
         }
 
@@ -84,6 +93,10 @@ impl ComposeShell {
                 None => continue,
             };
             let unp = cw.d0(0.5 * (cf + cl));
+            // `TopoDS_Iterator ew(wr)` (`cxx:3034`): the iterator over wire `i`
+            // is shared by every `j` iteration and is advanced by the
+            // tangential walk at `cxx:3112-3128`, so its position persists.
+            let mut eidx = k;
 
             let mut j = 0usize;
             while j < loops.len() {
@@ -121,20 +134,33 @@ impl ComposeShell {
                 // (`cxx:3132/3181`) goes through the periodic search.
                 let mut st_point = clas.perform_recadre(unp, false);
                 if st_point == FaceState::On || st_point == FaceState::Unknown {
-                    // cxx:3104-3130.
-                    let mut eidx = k;
-                    let mut a_cw = cw.clone();
-                    loop {
-                        st_point = clas.perform_recadre(a_cw.d0(cl), false); // cxx:3110
-                        eidx += 1;
-                        if eidx >= ew.len() {
-                            break;
-                        }
-                        if !is_fwd_or_rev(ew[eidx].0.orientation()) {
-                            continue;
-                        }
-                        if let Some((c2d, _a, _b)) = boptools_2d::curve_on_surface_range(&ew[eidx], &pf) {
-                            a_cw = c2d;
+                    // cxx:3104-3130: walk along wire `i` while the classified
+                    // point stays ON/UNKNOWN. The handle starts from the
+                    // current `ew` child (`cxx:3106-3107`), and `aCL` travels
+                    // with `aCW` (`cxx:3124-3128`).
+                    if eidx < ew.len() {
+                        if let Some((mut a_cw, _acf, mut a_cl)) =
+                            boptools_2d::curve_on_surface_range(&ew[eidx], &pf)
+                        {
+                            while st_point == FaceState::On || st_point == FaceState::Unknown {
+                                st_point = clas.perform_recadre(a_cw.d0(a_cl), false); // cxx:3110
+                                if eidx >= ew.len() {
+                                    break; // cxx:3112 `if (!ew.More()) break;`
+                                }
+                                eidx += 1; // cxx:3113 `ew.Next();`
+                                if eidx >= ew.len() {
+                                    break; // cxx:3115 `if (!ew.More()) break;`
+                                }
+                                if !is_fwd_or_rev(ew[eidx].0.orientation()) {
+                                    continue; // cxx:3120-3123
+                                }
+                                if let Some((c2d, _a, b)) =
+                                    boptools_2d::curve_on_surface_range(&ew[eidx], &pf)
+                                {
+                                    a_cw = c2d; // cxx:3127
+                                    a_cl = b; // cxx:3126 `aCL` out-param
+                                }
+                            }
                         }
                     }
                 }
@@ -171,7 +197,6 @@ impl ComposeShell {
         }
 
         // cxx:3173-3270: iterate on loops.
-        let n_roots_start = roots.len();
         let mut ri = 0usize;
         while ri < roots.len() {
             let reverse;
@@ -192,9 +217,13 @@ impl ComposeShell {
             while j < loops.len() {
                 let unp: Option<GpPnt2d> = match loops[j].shape_type() {
                     ShapeType::Wire => {
+                        // cxx:3197-3209: the FIRST child of the wire, with no
+                        // orientation filter (`TopoDS_Iterator ew(bw);
+                        // if (!ew.More()) continue; TopoDS_Edge ed =
+                        // TopoDS::Edge(ew.Value());`).
                         let bw = Wire(loops[j].clone());
-                        match first_oriented_edge(&bw) {
-                            Some(ed) => match boptools_2d::curve_on_surface_range(&ed, &pf) {
+                        match edges_of_wire(&bw).first() {
+                            Some(ed) => match boptools_2d::curve_on_surface_range(ed, &pf) {
                                 Some((cw, cf, cl)) => Some(cw.d0(0.5 * (cf + cl))),
                                 None => None,
                             },
@@ -249,7 +278,6 @@ impl ComposeShell {
                 }
                 roots.extend(extra);
                 loops.clear();
-                let _ = n_roots_start;
             }
             ri += 1;
         }

@@ -78,6 +78,22 @@ pub trait Surface: Send + Sync {
     fn offset_distance(&self) -> Option<f64> { None }
     /// `STANDARD_TYPE(Geom_RectangularTrimmedSurface)` then `BasisSurface()`.
     fn rectangular_trimmed_basis(&self) -> Option<Arc<dyn Surface>> { None }
+    /// `Geom_Surface::UReversed` — a copy of the same dynamic type whose U
+    /// parametrisation is reversed.
+    ///
+    /// **UNPORTED** for the surface classes without a branch here: OCCT defines
+    /// it on every `Geom_Surface` (the five elementary surfaces return a copy
+    /// with `UReverse()` applied — `gp_Pln.hxx:101` uses `XReverse`, every other
+    /// elementary surface `YReverse`, `gp_Cylinder.hxx:86`;
+    /// `Geom_BSplineSurface::UReverse` reverses the poles and knots in U
+    /// (`Geom_BSplineSurface_1.cxx:1572-1592`), ported for a non-periodic U only;
+    /// `Geom_SurfaceOfRevolution::UReverse` reverses the axis direction;
+    /// `Geom_SurfaceOfLinearExtrusion::UReverse` reverses the basis curve;
+    /// `Geom_OffsetSurface::UReverse` U-reverses the basis and negates the
+    /// offset. `None` means the
+    /// caller cannot take `BRepToIGES_BRShell::TransferFace`'s REVERSED branch
+    /// (`BRepToIGES_BRShell.cxx:135-141`) for this surface.
+    fn u_reversed(&self) -> Option<Arc<dyn Surface>> { None }
     /// `STANDARD_TYPE(Geom_SurfaceOfLinearExtrusion)`.
     fn is_surface_of_linear_extrusion(&self) -> bool { false }
     /// `Geom_Surface::UIso`: for an analytic surface the partner is

@@ -2,19 +2,23 @@
 //! `Copy` (`ShapeBuild_Edge.cxx:417-426`), `RemovePCurve` (`:430-443`),
 //! `SetRange3d` (`:338-356`), `ReassignPCurve` (`:530-592`) and the
 //!
-//! `TransformPCurve` (`:596-698`): the `uFact == 1` return and the `Line` arm of
-//! the `uFact != 1` affinity branch (`:624-641`) are ported; the
-//! Bezier/BSpline/Conic pole rewriting (`:642-698`, needs
-//! `Geom2dConvert_ApproxCurve` / `CurveToBSplineCurve` / pole setters) is UNPORTED.
+//! `TransformPCurve` (`:596-698`): the `uFact == 1` return, the `Line` arm
+//! (`:624-641`), the `Geom2d_BezierCurve` arm (`:643-655`, returns the Bezier
+//! with its poles rewritten), the `Geom2d_BSplineCurve` arm (`:687-697`) and
+//! the `Geom2d_Conic` arm through `Geom2dConvert_ApproxCurve` (`:659-678`) are
+//! ported.
 
 use std::sync::Arc;
 
+use occt_core::convert::ParameterisationType;
 use occt_core::gp::{GpAx2, GpAx2d, GpDir2d, GpGTrsf2d, GpLin2d, GpPnt2d, GpTrsf2d, GpVec2d, TrsfForm};
 use occt_core::kernel::geomabs::Shape;
-use occt_core::precision::CONFUSION;
+use occt_core::precision::{APPROXIMATION, CONFUSION};
 use occt_geom::geom_lib;
 use occt_geom::{Curve, Surface};
+use occt_geom2d::convert_approx_curve::Geom2dConvertApproxCurve;
 use occt_geom2d::curve::Curve2d;
+use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 
 use crate::abs::Orientation;
 use crate::boptools_2d;
@@ -271,9 +275,8 @@ impl ShapeBuildEdge {
 
 
     /// `TransformPCurve(pcurve, trans, uFact, aFirst, aLast)`
-    /// (`ShapeBuild_Edge.cxx:596-698`), through the `uFact == 1` return.
-    ///
-    /// UNPORTED: the `uFact != 1` affine branch (`:614-698`).
+    /// (`ShapeBuild_Edge.cxx:596-698`): the `uFact == 1` return and the
+    /// `uFact != 1` affinity branch (Line / Bezier / BSpline / Conic).
     pub fn transform_pcurve(
         &self,
         pcurve: &Arc<dyn Curve2d>,
@@ -313,26 +316,73 @@ impl ShapeBuildEdge {
                 return Arc::new(occt_geom2d::line::Geom2dLine::new(*new_line.position()));
             }
         }
-        // cxx:642-698: a Bezier is converted to a BSpline through
-        // `Geom2dConvert::CurveToBSplineCurve` (the exact poles/knots), then
-        // the affinity is applied to the BSpline's poles.
-        if reference.is_bezier2d() || reference.is_bspline2d() {
-            let mut bs = if reference.is_bspline2d() {
-                result.clone_dyn()
-            } else {
-                match occt_geom2d::geom2d_convert::curve_to_bspline_curve(reference) {
+        // cxx:643-655: a Bezier keeps its own type; `down_cast` returns the
+        // same `result` (the unwrapped basis), whose poles the affinity is
+        // applied to in place, and the Bezier itself is returned.
+        if reference.is_bezier2d() {
+            let mut bez = reference.clone_dyn();
+            if let Some(poles) = bez.poles2d() {
+                let scaled: Vec<GpPnt2d> = poles.iter().map(|p| t_matu.transforms(p)).collect();
+                bez.set_poles2d(&scaled);
+            }
+            return Arc::from(bez);
+        }
+        // cxx:657-678: a conic is trimmed to `[aFirst, aLast]` and approximated
+        // by `Geom2dConvert_ApproxCurve`; when that has no result,
+        // `CurveToBSplineCurve(Convert_QuasiAngular)` is the fallback. The
+        // resulting range is copied back into `aFirst`/`aLast`.
+        let is_conic = reference.gp_circ2d().is_some()
+            || reference.gp_elips2d().is_some()
+            || reference.gp_hypr2d().is_some()
+            || reference.gp_parab2d().is_some();
+        if is_conic {
+            let tcurve = Geom2dTrimmedCurve::new_sense(
+                Arc::from(reference.clone_dyn()),
+                *a_first,
+                *a_last,
+                true,
+                false,
+            );
+            let approx = Geom2dConvertApproxCurve::new(&tcurve, APPROXIMATION, Shape::C1, 100, 6);
+            let mut bs = match approx.curve() {
+                Some(c) => c.clone(),
+                None => match occt_geom2d::geom2d_convert::curve_to_bspline_curve_bspl(
+                    &tcurve,
+                    ParameterisationType::QuasiAngular,
+                ) {
                     Some(b) => b,
                     None => return Arc::from(result),
-                }
+                },
             };
+            *a_first = bs.first_parameter();
+            *a_last = bs.last_parameter();
             if let Some(poles) = bs.poles2d() {
                 let scaled: Vec<GpPnt2d> = poles.iter().map(|p| t_matu.transforms(p)).collect();
                 bs.set_poles2d(&scaled);
             }
-            return Arc::from(bs);
+            return Arc::new(bs);
         }
-        // UNPORTED (cxx:657-686): the `Geom2d_Conic` path converts through
-        // `Geom2dConvert_ApproxCurve` / `CurveToBSplineCurve(Convert_QuasiAngular)`.
-        Arc::from(result)
+        // cxx:679-687: any other non-B-spline curve goes through
+        // `CurveToBSplineCurve(Convert_QuasiAngular)`.
+        if !reference.is_bspline2d() {
+            if let Some(mut bs) = occt_geom2d::geom2d_convert::curve_to_bspline_curve_bspl(
+                reference,
+                ParameterisationType::QuasiAngular,
+            ) {
+                if let Some(poles) = bs.poles2d() {
+                    let scaled: Vec<GpPnt2d> = poles.iter().map(|p| t_matu.transforms(p)).collect();
+                    bs.set_poles2d(&scaled);
+                }
+                return Arc::new(bs);
+            }
+        }
+        // cxx:687-697: a B-spline (`down_cast<Geom2d_BSplineCurve>(result)`)
+        // transforms its own poles.
+        let mut bs = reference.clone_dyn();
+        if let Some(poles) = bs.poles2d() {
+            let scaled: Vec<GpPnt2d> = poles.iter().map(|p| t_matu.transforms(p)).collect();
+            bs.set_poles2d(&scaled);
+        }
+        Arc::from(bs)
     }
 }

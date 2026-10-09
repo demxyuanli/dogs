@@ -109,6 +109,30 @@ impl Geom2dBSplineCurve {
         }
     }
 
+    /// `Geom2d_BSplineCurve::SetKnots(K)` (`Geom2d_BSplineCurve.cxx:...`):
+    /// `CheckCurveData(myPoles, K, myMults, myDeg, myPeriodic)` followed by
+    /// `updateKnots()`. `distinct_knots` holds the distinct knots, exactly like
+    /// the 3D `GeomBSplineCurve::set_knots`.
+    pub fn set_knots(&mut self, distinct_knots: &[f64]) -> Result<(), &'static str> {
+        let (_, umults) = self.distinct_knots_and_mults();
+        if umults.len() != distinct_knots.len() {
+            return Err("Geom2dBSplineCurve::set_knots: knot count mismatch");
+        }
+        if knots::nb_poles(self.degree as i32, self.periodic, &umults) as usize != self.xs.len() {
+            return Err("Geom2dBSplineCurve::set_knots: pole/degree mismatch");
+        }
+        self.knots = if self.periodic {
+            knots::knot_sequence_periodic(distinct_knots, &umults, self.degree as i32)
+        } else {
+            occt_core::bspl::banded_interp::knot_sequence(
+                distinct_knots,
+                &umults,
+                self.degree as i32,
+            )
+        };
+        Ok(())
+    }
+
     /// `Geom2d_BSplineCurve::SetPeriodic()` (`Geom2d_BSplineCurve.cxx:948-…`):
     /// same construction as `Geom_BSplineCurve::SetPeriodic`
     /// (`Geom_BSplineCurve.cxx:777-815`).

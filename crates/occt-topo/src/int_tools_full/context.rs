@@ -190,8 +190,8 @@ impl IntToolsContext {
     /// `SetExtremaFlag(Extrema_ExtFlag_MIN)` (`cxx:260`). Because the
     /// extrema are restricted to that window, a point outside it makes
     /// `Perform` legally not-done (`GeomAPI_ProjectPointOnSurf.cxx:83-86`) and
-    /// this returns `Err`. The former grid fallback
-    /// (`surface_closest_params`) is gone: `ProjPS` has no such fallback.
+    /// this returns `Err`. The former grid fallback is gone: `ProjPS` has no
+    /// such fallback.
     pub fn project_point_on_face(&self, face: &Face, p: &GpPnt) -> Result<(f64, f64), String> {
         let Some(surf) = BRepTool::face_surface(face) else {
             return Err("IntToolsContext::project_point_on_face: face has no surface".into());

@@ -19,18 +19,24 @@
 //! `SI_UNIT`, `DIMENSIONAL_EXPONENTS`).
 //!
 //! Curves and surfaces cannot be downcast from `Arc<dyn Curve>` /
-//! `Arc<dyn Surface>`, so geometry is classified by sampling invariants
-//! (constant zero second derivative ⇒ line, constant curvature + periodic ⇒
-//! circle, planar + unbounded ⇒ plane, equidistant samples ⇒ sphere, ...).
-//! This mirrors `GeomAdaptor`'s type tag at a slightly higher cost.
+//! `Arc<dyn Surface>`, so each family is identified through the geometry's own
+//! type queries (`gp_line` / `gp_circ` / `gp_ellipse` / ... /
+//! `osculating_bspline`), mirroring `GeomAdaptor`'s `GetType()` tag at a
+//! slightly higher cost. No branch classifies by sampling: the old
+//! `classify_curve` family (`|d²|` samples plus a `0.02` threshold, audit A3)
+//! is gone.
 //!
 //! Non-analytic geometry is written as B-splines: a genuine
-//! `GeomBSplineCurve` / `GeomBSplineSurface` is emitted exactly through
-//! [`write_bspline_curve`] / [`write_bspline_surface`], and anything else that
-//! escapes the analytic classifiers is sampled and re-fitted (see
-//! [`fit_bspline_curve`] / [`fit_bspline_surface`]) so the shape-level writers
+//! `GeomBSplineCurve` / `GeomBSplineSurface` (or a `Geom_BezierSurface` over
+//! the same chain, `GeomToStep_MakeBoundedSurface.cxx:41-80`) is emitted
+//! exactly through [`write_bspline_curve`] / [`write_bspline_surface`] with its
+//! own poles and knots, so the shape-level writers
 //! ([`write_step_with_splines`], [`write_step_with_options`]) round-trip
-//! arbitrary geometry.
+//! arbitrary geometry. There is no sampling fallback on either side: the
+//! surface side writes the surface's own B-spline data (or the plane
+//! placeholder), and a curve that escapes every arm leaves its `EDGE_CURVE`
+//! geometry unset (`$`), exactly as `GeomToStep_MakeCurve.cxx:100-103` leaves
+//! `done = false`.
 //!
 //! The top-level writers mirror `STEPControl_Writer`'s API surface:
 //! [`write_step`] / [`write_shape_step`] for plain output,
