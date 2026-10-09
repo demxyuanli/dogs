@@ -67,6 +67,15 @@ impl CurveTransition {
         self.init = true;
     }
 
+    /// `Reset(Tgt)` (`TopTrans_CurveTransition.cxx:54-61`): sets the tangent,
+    /// clears the curvature and marks the transition initialised. The normal
+    /// is left unchanged, as in OCCT.
+    pub(crate) fn reset_tgt(&mut self, tgt: &GpDir) {
+        self.my_tgt = *tgt;
+        self.my_curv = 0.0;
+        self.init = true;
+    }
+
     /// `Compare(Tole, T, N, C, S, O)` (`TopTrans_CurveTransition.cxx:69-273`).
     /// `T` is a `gp_Dir` in OCCT, i.e. the normalised `gp_Vec`.
     pub(crate) fn compare(

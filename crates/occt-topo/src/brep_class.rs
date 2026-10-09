@@ -10,6 +10,17 @@ use occt_core::gp::GpPnt2d;
 use crate::fclass2d::{FaceState, FClass2d};
 use crate::shape::Face;
 
+mod edge;
+mod face_passive_classifier;
+mod intersector;
+mod intersector_checks;
+mod top_class_classifier2d;
+
+pub use edge::BRepClassEdge;
+pub use face_passive_classifier::BRepClassFacePassiveClassifier;
+pub use intersector::BRepClassIntersector;
+pub use top_class_classifier2d::TopClassClassifier2d;
+
 /// `BRepClass_FaceClassifier`.
 pub struct FaceClassifier {
     inner: Option<FClass2d>,

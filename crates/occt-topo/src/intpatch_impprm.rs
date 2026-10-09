@@ -22,7 +22,7 @@ mod search_inside;
 #[path = "intpatch_iwalking.rs"]
 mod iwalking;
 #[path = "intpatch_curve_transition.rs"]
-mod curve_transition;
+pub(crate) mod curve_transition;
 
 use curve_transition::CurveTransition;
 use iwalking::{iwalking_perform, lines_to_wlines, WalkStart};

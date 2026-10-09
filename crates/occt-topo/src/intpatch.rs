@@ -87,6 +87,7 @@ pub use impimp::{ImpImpIntersection, IntStatus as ImpImpStatus};
 
 #[path = "intpatch_impprm.rs"]
 mod impprm;
+pub(crate) use impprm::curve_transition::CurveTransition;
 #[path = "intpatch_prmprm.rs"]
 mod prmprm;
 #[path = "intpatch_special_points.rs"]

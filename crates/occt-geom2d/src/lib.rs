@@ -45,6 +45,7 @@ pub use comp_curve_to_bspline::CompCurveToBSplineCurve;
 pub use convert_approx_curve::Geom2dConvertApproxCurve;
 pub use curve_ops::*;
 pub mod extrema2d;
+pub mod cl_props2d;
 pub mod curve_tools2d;
 
 /// Type alias for OCCT's Handle(Geom2d_Curve) — Arc is the Rust equivalent.
