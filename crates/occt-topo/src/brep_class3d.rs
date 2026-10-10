@@ -127,8 +127,17 @@ impl SolidExplorer {
         self.faces.is_empty()
     }
 
-    pub fn reset_segment(&mut self) {
+    /// `Segment(P, L, Par)` (`BRepClass3d_SolidExplorer.cxx:1095-1101`):
+    /// restart the face index, then `OtherSegment`.
+    fn segment(&mut self, p: &GpPnt) -> Option<Segment> {
         self.first_face = 0;
+        self.other_segment(p)
+    }
+
+    /// `GetFaceSegmentIndex()` (`cxx:795-797`): the face index of the last
+    /// `Segment` / `OtherSegment` call.
+    pub fn face_segment_index(&self) -> i32 {
+        self.first_face
     }
 }
 
@@ -189,16 +198,30 @@ impl SClassifier {
             self.state = FaceState::On;
             return;
         }
-        expl.reset_segment();
         self.state = FaceState::Out;
+        // `isFaultyLine` and `anIndFace` (`cxx:254-255`).
         let mut faulty = true;
-        let mut tries = 0;
-        while faulty && tries < expl.faces.len() + 2 {
-            tries += 1;
-            let Some(seg) = expl.other_segment(p) else {
+        let mut ind_face: i32 = 0;
+        while faulty {
+            // `Segment` on the first pass, `OtherSegment` afterwards (`cxx:259-266`).
+            let Some(seg) = (if ind_face == 0 {
+                expl.segment(p)
+            } else {
+                expl.other_segment(p)
+            }) else {
                 self.state = FaceState::Out;
                 return;
             };
+            // The face index must advance, otherwise the line is faulty
+            // (`cxx:268-278`): `myState = 1`, which `State()` reports as OUT
+            // (`cxx:540`).
+            let cur_ind = expl.face_segment_index();
+            if cur_ind > ind_face {
+                ind_face = cur_ind;
+            } else {
+                self.state = FaceState::Out;
+                return;
+            }
             if seg.flag == 1 {
                 self.state = FaceState::On;
                 return;
