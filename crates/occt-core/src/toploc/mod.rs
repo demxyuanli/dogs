@@ -47,6 +47,30 @@ impl TopLocLocation {
         self.transform.form() == crate::gp::TrsfForm::Identity && self.parent.is_none()
     }
 
+    /// `TopLoc_Location::IsEqual` (`TopLoc_Location.hxx:136`): the two locations
+    /// hold the same series of elementary transforms. Identity links carry no
+    /// datum in OCCT, so they are skipped. Datums compare by value here, as in
+    /// `datum.rs`.
+    pub fn is_equal(&self, other: &Self) -> bool {
+        fn trsf_eq(a: &GpTrsf, b: &GpTrsf) -> bool {
+            a.scale == b.scale && a.shape == b.shape && a.matrix == b.matrix && a.loc == b.loc
+        }
+        fn elementary(loc: &TopLocLocation) -> Vec<&GpTrsf> {
+            let mut out = Vec::new();
+            let mut cur = Some(loc);
+            while let Some(node) = cur {
+                if node.transform.form() != crate::gp::TrsfForm::Identity {
+                    out.push(&node.transform);
+                }
+                cur = node.parent.as_deref();
+            }
+            out
+        }
+        let a = elementary(self);
+        let b = elementary(other);
+        a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| trsf_eq(x, y))
+    }
+
     /// Transform a point through the full chain.
     pub fn transforms_point(&self, p: &GpPnt) -> GpPnt { p.transformed(&self.transformation()) }
 }
