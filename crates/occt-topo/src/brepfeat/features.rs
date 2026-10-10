@@ -96,18 +96,7 @@ pub fn boss_thru_all(solid: &Solid, center: &GpPnt, radius: f64, tol: f64) -> Re
     let margin = (z1 - z0).max(radius).max(1.0);
     let height = (z1 - z0) + 2.0 * margin;
     let tool = translated_mesh_cylinder(center, radius, height, z0 - margin)?;
-    let mut result = boolean_feature(solid, &tool, BoolOp::Fuse, tol)?;
-    // The exact planar boolean cannot close the shell of a box pierced by a
-    // through-cylinder (a toroidal boundary), so the assembled shell's
-    // divergence volume is unreliable. The union volume is known analytically:
-    // the solid plus the protruding boss (the cylinder minus its overlap with
-    // the solid's z-slab).
-    // ponytail: analytic volume for the through-boss; exact boolean shell kept
-    // as the shape. Replace when the boolean closes through-hole topology.
-    let v0 = solid_volume(&solid.0, 40, 40);
-    let overlap = std::f64::consts::PI * radius * radius * (z1 - z0);
-    result.volume = (v0 + std::f64::consts::PI * radius * radius * height - overlap).max(0.0);
-    Ok(result)
+    boolean_feature(solid, &tool, BoolOp::Fuse, tol)
 }
 
 /// Boss: fuse a cylindrical boss of `radius` and `height` onto `solid`. The
