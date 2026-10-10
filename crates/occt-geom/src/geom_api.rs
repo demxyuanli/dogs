@@ -81,9 +81,10 @@ pub fn project_point_on_curve(c: &dyn Curve, p: &GpPnt, _tol: f64) -> Option<Poi
 /// requiring `IsDone() && NbExt() > 0` (`cxx:83`) and the answer being the
 /// smallest `SquareDistance` (`cxx:88-100`). The engine is
 /// [`crate::extrema_surf::ExtPs`] (audit A1/T-67 step 2): elementary surfaces go
-/// to the exact `Extrema_ExtPElS` arms, everything else to the general arm,
-/// which is still the port's substitute for the unported `Extrema_GenExtPS`
-/// (marked UNPORTED there).
+/// to the exact `Extrema_ExtPElS` arms, extrusion/revolution surfaces to
+/// `Extrema_ExtPExtS` / `Extrema_ExtPRevS`, everything else to the ported
+/// `Extrema_GenExtPS` (`extrema_surf/gen_ext_ps.rs`, `Extrema_ExtPS.cxx:346`).
+/// The grid+Newton `point_surface_newton_all*` helpers are not on this path.
 ///
 /// The previous body was an invented 16×16 grid + hill-climb + golden-section
 /// over an expanding window (audit A16).
