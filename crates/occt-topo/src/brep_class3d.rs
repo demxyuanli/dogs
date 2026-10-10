@@ -8,11 +8,11 @@
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
+use occt_core::math_bullard::BullardGenerator;
 use occt_core::precision::{CONFUSION, PCONFUSION};
 
 use crate::abs::Orientation;
 use crate::brep_extrema::closest_point_on_edge;
-use crate::brep_surface::surface_normal;
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::FaceState;
 use crate::int_curves_face::{FaceIntersector, Transition};
@@ -24,6 +24,9 @@ mod other_segment;
 
 /// `myParamOnEdge` after `InitShape` (`BRepClass3d_SolidExplorer.cxx:905`).
 const PARAM_ON_EDGE_INIT: f64 = 0.512345;
+
+/// `NB_MAX_POINTS_PER_FACE` (`BRepClass3d_SClassifier.cxx:124`).
+const NB_MAX_POINTS_PER_FACE: usize = 10;
 
 /// Probe line produced by `SolidExplorer::OtherSegment`.
 struct Segment {
@@ -254,96 +257,103 @@ impl SClassifier {
         }
     }
 
-    /// `PerformInfinitePoint`.
-    pub fn perform_infinite_point(&mut self, expl: &mut SolidExplorer, tol: f64) {
-        self.face = None;
+    /// `BRepClass3d_SClassifier::PerformInfinitePoint` (`cxx:82-199`).
+    /// Probe lines leave random points of each face along the inverted face
+    /// normal. The nearest hit (minimum parameter over all faces) decides the
+    /// state by its transition. `Tol` is unused in OCCT (`cxx:83`).
+    pub fn perform_infinite_point(&mut self, expl: &mut SolidExplorer, _tol: f64) {
         if expl.reject(&GpPnt::zero()) {
+            // `myState = 3` (`cxx:98`).
             self.state = FaceState::In;
             return;
         }
-        self.state = FaceState::Out;
-        for f in &expl.faces {
-            let mut ap = GpPnt::new(0.0, 0.0, 0.0);
-            let mut u = 0.0_f64;
-            let mut v = 0.0_f64;
-            let mut d1u = GpVec::new(0.0, 0.0, 0.0);
-            let mut d1v = GpVec::new(0.0, 0.0, 0.0);
-            // `FindAPointInTheFace` (`cxx:74-190`) with one probe parameter.
-            // OCCT draws `aParam` from [0.1, 0.9] and retries up to 10 times
-            // per face (`BRepClass3d_SClassifier.cxx:125-135`); that loop is
-            // not ported yet.
-            if !other_segment::find_a_point_in_the_face(
-                f,
-                PARAM_ON_EDGE_INIT,
-                &mut ap,
-                &mut u,
-                &mut v,
-                &mut d1u,
-                &mut d1v,
-            ) {
-                continue;
-            }
-            let Some(surf) = BRepTool::face_surface(f) else {
-                continue;
-            };
-            let n = surface_normal(surf.as_ref(), u, v);
-            let Ok(dn) = GpDir::from_vec(&n) else {
-                continue;
-            };
-            let mut dn = dn;
-            if f.0.orientation() == Orientation::Reversed {
-                dn = dn.reversed();
-            }
-            let lin = GpLin::from_pnt_dir(ap, dn.reversed());
-            let mut parmin = f64::MAX;
-            let mut found = false;
-            let mut tran_keep = Transition::Tangent;
-            for g in &expl.faces {
-                let mut inter = FaceIntersector::new(g.clone(), tol, true, true);
-                inter.perform(&lin, f64::NEG_INFINITY, parmin);
-                if !inter.is_done() {
+        // `myState = 2` (`cxx:111`): stays ON when no probe decides.
+        self.state = FaceState::On;
+        let mut rng = BullardGenerator::new();
+        for _itry in 0..NB_MAX_POINTS_PER_FACE {
+            for iface in 0..expl.faces.len() {
+                // `aParam = 0.1 + 0.8 * NextReal()` (`cxx:134`).
+                let a_param = 0.1 + 0.8 * rng.next_real();
+                let Some(lin) = probe_line(&expl.faces[iface], a_param) else {
                     continue;
-                }
-                for i in 1..=inter.nb_pnt() {
-                    let w = inter.w_parameter(i);
-                    if w >= parmin {
-                        continue;
-                    }
-                    if inter.state(i) != FaceState::In {
-                        continue;
-                    }
-                    let t = inter.transition(i);
-                    if t == Transition::Tangent {
-                        continue;
-                    }
-                    parmin = w;
-                    tran_keep = t;
-                    found = true;
-                    self.face = Some(g.clone());
-                }
-            }
-            // The probe is `gp_Lin(aPoint, -aDN)` (`BRepClass3d_SClassifier.cxx:141`),
-            // so W = 0 is an intersection with the probe face. `ComputeTransitions`
-            // (`IntCurveSurface_InterUtils.pxx:856-894`) of that inward direction is
-            // `In`, and the reversed-face flip in `IntCurvesFace_Intersector.cxx:303-314`
-            // keeps it `In`. Non-quadric surfaces (offset) miss this root; a closer
-            // negative hit, when one exists, stays the minimum.
-            if parmin > tol {
-                tran_keep = Transition::In;
-                found = true;
-                self.face = Some(f.clone());
-            }
-            if found {
-                // `_cxx:182-195`: Out => infinite point is IN, In => OUT.
-                self.state = if tran_keep == Transition::Out {
-                    FaceState::In
-                } else {
-                    FaceState::Out
                 };
-                return;
+                let mut state = FaceState::Out;
+                let mut transition = Transition::Tangent;
+                let mut parmin = f64::MAX;
+                // `aSE.Intersector(CurFace)` (`cxx:153`) is the per-face
+                // intersector kept by the explorer (`myMapOfInter`).
+                for k in 0..expl.faces.len() {
+                    let inter = &mut expl.inters[k];
+                    inter.perform(&lin, -f64::MAX, parmin);
+                    if !inter.is_done() || inter.nb_pnt() <= 0 {
+                        continue;
+                    }
+                    let mut imin = 1;
+                    for i in 2..=inter.nb_pnt() {
+                        if inter.w_parameter(i) < inter.w_parameter(imin) {
+                            imin = i;
+                        }
+                    }
+                    parmin = inter.w_parameter(imin);
+                    state = inter.state(imin);
+                    transition = inter.transition(imin);
+                }
+                if state == FaceState::In {
+                    // `_cxx:182-195`: Out => infinite point is IN, In => OUT.
+                    match transition {
+                        Transition::Out => {
+                            self.state = FaceState::In;
+                            return;
+                        }
+                        Transition::In => {
+                            self.state = FaceState::Out;
+                            return;
+                        }
+                        Transition::Tangent => {}
+                    }
+                }
             }
         }
     }
+}
+
+/// `BRepClass3d_SClassifier::PerformInfinitePoint` probe (`cxx:134-141`):
+/// `FindAPointInTheFace` with parameter `a_param`, then `gp_Lin(aPoint, -aDN)`
+/// where `aDN` is `FaceNormal` (`cxx:606-627`). Returns `None` where OCCT
+/// `continue`s.
+fn probe_line(face: &Face, a_param: f64) -> Option<GpLin> {
+    let mut ap = GpPnt::new(0.0, 0.0, 0.0);
+    let mut u = 0.0_f64;
+    let mut v = 0.0_f64;
+    let mut d1u = GpVec::new(0.0, 0.0, 0.0);
+    let mut d1v = GpVec::new(0.0, 0.0, 0.0);
+    if !other_segment::find_a_point_in_the_face(
+        face,
+        a_param,
+        &mut ap,
+        &mut u,
+        &mut v,
+        &mut d1u,
+        &mut d1v,
+    ) {
+        return None;
+    }
+    // `FaceNormal` (`cxx:606-627`): `D1U x D1V`, rejected when its magnitude
+    // is not above `gp::Resolution()`, normalised, reversed for REVERSED faces.
+    let surf = BRepTool::face_surface(face)?;
+    let (_, du, dv) = surf.d1(u, v);
+    let n = du.xyz().crossed(dv.xyz());
+    let m = n.modulus();
+    if m <= f64::MIN_POSITIVE {
+        return None;
+    }
+    let mut dn = [n.x / m, n.y / m, n.z / m];
+    if face.0.orientation() == Orientation::Reversed {
+        dn = [-dn[0], -dn[1], -dn[2]];
+    }
+    // `-aDN` (`cxx:141`).
+    let dir = GpDir::from_vec(&GpVec::new(-dn[0], -dn[1], -dn[2])).ok()?;
+    Some(GpLin::from_pnt_dir(ap, dir))
 }
 
 impl Default for SClassifier {

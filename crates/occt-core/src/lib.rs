@@ -34,6 +34,7 @@ pub use kernel::*;
 pub use bnd::*;
 pub use precision::{Precision, ANGULAR, CONFUSION, RESOLUTION, INTERSECTION, APPROXIMATION, INFINITE};
 pub mod gcpnts;
+pub mod math_bullard;
 pub mod math_fn;
 pub mod math_bracketed_root;
 pub mod math_function_sample;

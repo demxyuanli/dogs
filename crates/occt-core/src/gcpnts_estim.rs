@@ -4,6 +4,7 @@
 //! and, when `!IsDone`, `math_PSO` (`math_PSO.cxx:58-268`) then Brent again.
 
 use crate::gp::GpPnt;
+use crate::math_bullard::BullardGenerator;
 use crate::precision::RESOLUTION;
 
 /// Squared distance from `p` to the infinite line `p1..p2`
@@ -180,32 +181,6 @@ fn copysign_occt(mag: f64, sgn: f64) -> f64 {
     mag.copysign(sgn)
 }
 
-/// `math_BullardGenerator` (`math_BullardGenerator.hxx:27-51`). Seed 1.
-struct Bullard {
-    hi: u32,
-    lo: u32,
-}
-
-impl Bullard {
-    fn new() -> Self {
-        let mut g = Self { hi: 1, lo: 0 };
-        g.hi = 1;
-        g.lo = 1 ^ 0x49616E42;
-        g
-    }
-
-    fn next_int(&mut self) -> u32 {
-        self.hi = self.hi.wrapping_shr(2).wrapping_add(self.hi.wrapping_shl(2));
-        self.hi = self.hi.wrapping_add(self.lo);
-        self.lo = self.lo.wrapping_add(self.hi);
-        self.hi
-    }
-
-    fn next_real(&mut self) -> f64 {
-        self.next_int() as f64 / u32::MAX as f64
-    }
-}
-
 #[derive(Clone)]
 struct Particle {
     position: f64,
@@ -261,7 +236,7 @@ fn pso_1d<F: Fn(f64) -> Option<f64>>(
         }
     }
 
-    let mut rng = Bullard::new();
+    let mut rng = BullardGenerator::new();
     for p in &mut pool {
         p.velocity = step * (rng.next_real() - 0.5) * 2.0;
     }
