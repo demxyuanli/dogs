@@ -3,11 +3,10 @@
 //! `ClassifyUVPoint` (`cxx:221-237`), `PointInTheFace` (`cxx:241-425`) and
 //! `FindAPointInTheFace` (`cxx:74-190`).
 //!
-//! Control flow and statement order follow the OCCT functions. Known gaps are
-//! marked at their sites: the edge branch of the `myMapEV` ON test uses
-//! `closest_point_on_edge` (sampling) instead of `Extrema_ExtPC` over the edge
-//! range, and the `BRepClass3d_BndBoxTree` pruning is replaced by a linear scan
-//! of the same `Accept` predicate.
+//! Control flow and statement order follow the OCCT functions. The edge branch
+//! of the `myMapEV` ON test is the shared `Extrema_ExtPC` predicate
+//! (`edge_accepts_point`, `brep_class3d.rs`). The `BRepClass3d_BndBoxTree`
+//! pruning is replaced by a linear scan of the same `Accept` predicate.
 
 use occt_core::gp::{GpDir, GpDir2d, GpLin, GpLin2d, GpPnt, GpPnt2d, GpVec, GpVec2d};
 use occt_core::precision::{Precision, CONFUSION, INFINITE, PCONFUSION};
