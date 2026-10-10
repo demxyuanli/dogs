@@ -496,11 +496,13 @@ pub(super) fn face_point_distance(face: &crate::shape::Face, p: &GpPnt) -> f64 {
 
 /// Enclosed volume of a closed planar-faced solid by the divergence theorem:
 /// each face contributes the signed volume of its boundary polygon(s), fanned
-/// from the first vertex (`Σ p0·(pi×pi+1)/6`), with inner (hole) wires
-/// subtracted, then oriented so the face's winding agrees with its surface
-/// normal. This is exact for polyhedra and, unlike `shape_mesh::shape_volume`,
-/// does not overcount non-rectangular planar faces (it uses the face's actual
-/// wire vertices, not a UV bounding box).
+/// from the first vertex (`Σ p0·(pi×pi+1)/6`). Every wire, inner (hole) wires
+/// included, contributes with its stored B-rep winding: a hole is wound
+/// opposite to the outer wire, so its fan already subtracts. The face is then
+/// oriented so its winding agrees with its surface normal. This is exact for
+/// polyhedra and, unlike `shape_mesh::shape_volume`, does not overcount
+/// non-rectangular planar faces (it uses the face's actual wire vertices, not
+/// a UV bounding box).
 pub(super) fn solid_volume(shape: &TopoShape, _nu: usize, _nv: usize) -> f64 {
     let mut vol = 0.0;
     for f in faces_of(shape) {
@@ -520,8 +522,7 @@ pub(super) fn solid_volume(shape: &TopoShape, _nu: usize, _nv: usize) -> f64 {
             if wi == 0 {
                 outer_n = Some(polygon_normal(&pts));
             }
-            let sign = if wi == 0 { 1.0 } else { -1.0 };
-            face_vol += sign * polygon_fan_volume(&pts);
+            face_vol += polygon_fan_volume(&pts);
         }
         if let (Some(n), Some(on)) = (surf_n, outer_n) {
             // Outward normal = the surface/plane normal oriented by the face's
