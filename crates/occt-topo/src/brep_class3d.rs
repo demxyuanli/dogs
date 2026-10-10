@@ -17,7 +17,9 @@ use crate::fclass2d::FaceState;
 use crate::int_curves_face::{FaceIntersector, Transition};
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, TopoShape};
+use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::faces_of;
+use std::collections::HashMap;
 
 mod other_segment;
 
@@ -45,8 +47,9 @@ pub struct SolidExplorer {
     map_ev: Vec<TopoShape>,
     first_face: i32,
     /// `myMapOfInter` (`InitShape`, `cxx:921-926`): one intersector per face,
-    /// indexed like `faces`. Rebound by `OtherSegment` (`cxx:537-542`).
-    inters: Vec<FaceIntersector>,
+    /// keyed by the face TShape (`GeometryRegistry::shape_key`). Rebound by
+    /// `OtherSegment` (`cxx:537-542`).
+    inters: HashMap<usize, FaceIntersector>,
     /// `myParamOnEdge` (`InitShape`, `cxx:905`); updated by the `OtherSegment`
     /// retry ladder (`cxx:700-784`).
     param_on_edge: f64,
@@ -56,10 +59,15 @@ impl SolidExplorer {
     pub fn load(shape: TopoShape) -> Self {
         let faces = faces_of(&shape);
         let map_ev = Self::edge_vertex_map(&shape);
-        let inters = faces
-            .iter()
-            .map(|f| FaceIntersector::new(f.clone(), CONFUSION, true, false))
-            .collect();
+        // `myMapOfInter.Bind(Face, ptr)` (`cxx:924-925`): a repeated key is
+        // overwritten, as `NCollection_DataMap::Bind` does.
+        let mut inters = HashMap::new();
+        for f in &faces {
+            inters.insert(
+                GeometryRegistry::shape_key(&f.0),
+                FaceIntersector::new(f.clone(), CONFUSION, true, false),
+            );
+        }
         Self {
             shape,
             faces,
@@ -312,7 +320,10 @@ impl SClassifier {
                 // `aSE.Intersector(CurFace)` (`cxx:153`) is the per-face
                 // intersector kept by the explorer (`myMapOfInter`).
                 for k in 0..expl.faces.len() {
-                    let inter = &mut expl.inters[k];
+                    let key = GeometryRegistry::shape_key(&expl.faces[k].0);
+                    let Some(inter) = expl.inters.get_mut(&key) else {
+                        continue;
+                    };
                     inter.perform(&lin, -f64::MAX, parmin);
                     if !inter.is_done() || inter.nb_pnt() <= 0 {
                         continue;

@@ -57,6 +57,8 @@ pub struct FaceIntersector {
     done: bool,
     parallel: bool,
     box_: BndBox,
+    /// Parameter window of the intersected surface (see [`adaptor_domain`]).
+    domain: (f64, f64, f64, f64),
     polyhedron: Option<ThePolyhedron>,
     pub(crate) pnts: Vec<FaceHit>,
 }
@@ -64,9 +66,9 @@ pub struct FaceIntersector {
 impl FaceIntersector {
     /// `IntCurvesFace_Intersector(Face, Tol, aRestr, UseBToler)`.
     pub fn new(face: Face, tol: f64, restr: bool, use_bound_tol: bool) -> Self {
-        let _ = restr;
         let box_ = shape_bbox(&face.0);
-        let polyhedron = build_polyhedron(&face);
+        let domain = adaptor_domain(&face, restr);
+        let polyhedron = build_polyhedron(&face, domain);
         Self {
             face,
             tol: if tol > 0.0 { tol } else { CONFUSION },
@@ -74,6 +76,7 @@ impl FaceIntersector {
             done: false,
             parallel: false,
             box_,
+            domain,
             polyhedron,
             pnts: Vec::new(),
         }
@@ -161,7 +164,7 @@ impl FaceIntersector {
             return;
         };
         let curve = GeomLine::new(*lin);
-        let (u0, u1, v0, v1) = finite_uv(&self.face);
+        let (u0, u1, v0, v1) = self.domain;
         let Ok(res) =
             intcurvesurface::perform_curve_surface(&curve, surf.as_ref(), (lo, hi), (u0, u1, v0, v1))
         else {
@@ -304,6 +307,28 @@ fn lin_box_clip(lin: &GpLin, bbox: &BndBox, tmin: f64, tmax: f64) -> Option<(f64
 /// window is widened by 1).
 pub(crate) fn finite_uv(face: &Face) -> (f64, f64, f64, f64) {
     let (u0, u1, v0, v1) = face_uv_bounds(face);
+    finite_window(u0, u1, v0, v1)
+}
+
+/// Parameter window of the `BRepAdaptor_Surface` that
+/// `IntCurvesFace_Intersector` builds with `Initialize(Face, aRestr)`
+/// (`IntCurvesFace_Intersector.cxx:137`): the face UV box when `restr` is set,
+/// otherwise the native range of the underlying surface.
+fn adaptor_domain(face: &Face, restr: bool) -> (f64, f64, f64, f64) {
+    if restr {
+        return finite_uv(face);
+    }
+    match BRepTool::face_surface(face) {
+        Some(surf) => {
+            let (u0, u1) = surf.u_range();
+            let (v0, v1) = surf.v_range();
+            finite_window(u0, u1, v0, v1)
+        }
+        None => finite_uv(face),
+    }
+}
+
+fn finite_window(u0: f64, u1: f64, v0: f64, v1: f64) -> (f64, f64, f64, f64) {
     let clamp = |a: f64, b: f64| {
         let mut x = a;
         let mut y = b;
@@ -326,7 +351,7 @@ pub(crate) fn finite_uv(face: &Face) -> (f64, f64, f64, f64) {
     (u0, u1, v0, v1)
 }
 
-fn build_polyhedron(face: &Face) -> Option<ThePolyhedron> {
+fn build_polyhedron(face: &Face, domain: (f64, f64, f64, f64)) -> Option<ThePolyhedron> {
     let surf = BRepTool::face_surface(face)?;
     if matches!(
         classify_surface(surf.as_ref()),
@@ -338,7 +363,7 @@ fn build_polyhedron(face: &Face) -> Option<ThePolyhedron> {
     ) {
         return None;
     }
-    let (u0, u1, v0, v1) = finite_uv(face);
+    let (u0, u1, v0, v1) = domain;
     Some(ThePolyhedron::new(
         surf.as_ref(),
         20,

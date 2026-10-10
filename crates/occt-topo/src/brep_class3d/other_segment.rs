@@ -22,6 +22,7 @@ use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FaceState, FClass2d};
 use crate::int_curves_face::FaceIntersector;
 use crate::shape::{Edge, Face};
+use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
 use super::{Segment, SolidExplorer};
@@ -297,7 +298,6 @@ impl SolidExplorer {
     #[allow(clippy::too_many_arguments)]
     fn point_in_the_face(
         &self,
-        face_idx: usize,
         face: &Face,
         apoint: &mut GpPnt,
         u_: &mut f64,
@@ -312,7 +312,11 @@ impl SolidExplorer {
         let (u1, u2, v1, v2) = bounds;
         let du = clamp_step((u2 - u1) / 6.0);
         let dv = clamp_step((v2 - v1) / 6.0);
-        let inter = &self.inters[face_idx];
+        // `aSE.Intersector(face)` (`myMapOfInter.Find`); every face of the
+        // solid is bound in `load`, so the lookup always succeeds.
+        let Some(inter) = self.inters.get(&GeometryRegistry::shape_key(&face.0)) else {
+            return false;
+        };
 
         // `IsInside` and the sample at the current (u_, v_) (`cxx:270-291`).
         let mut is_inside = true;
@@ -398,8 +402,10 @@ impl SolidExplorer {
                     if inf_in {
                         a_restr = false;
                         // `myMapOfInter` rebind (`cxx:537-542`).
-                        self.inters[k] =
-                            FaceIntersector::new(face.clone(), CONFUSION, false, false);
+                        self.inters.insert(
+                            GeometryRegistry::shape_key(&face.0),
+                            FaceIntersector::new(face.clone(), CONFUSION, false, false),
+                        );
                     } else {
                         a_restr = true;
                     }
@@ -492,7 +498,6 @@ impl SolidExplorer {
                 loop {
                     index_point += 1;
                     let found = self.point_in_the_face(
-                        k,
                         &face,
                         &mut apoint,
                         &mut u_,
