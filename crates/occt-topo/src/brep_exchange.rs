@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn write_obj_file_roundtrip() {
         let shape = unit_box();
-        let path = std::env::temp_dir().join(format!("occt_brep_obj_{}.obj", std::process::id()));
+        let path = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d }.join(format!("occt_brep_obj_{}.obj", std::process::id()));
         let p = path.to_str().unwrap().to_string();
         brep_write_obj(&p, &shape, 0.1).unwrap();
         let m = occt_core::io::obj::read_obj_file(&p).unwrap();

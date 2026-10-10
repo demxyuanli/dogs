@@ -150,7 +150,7 @@ mod tests {
     fn vrml_file_roundtrip() {
         let mesh = crate::mesh::mesh_box((GpPnt::zero(), GpPnt::new(1.0, 1.0, 1.0)));
         let s = write_vrml(&mesh, "box");
-        let path = std::env::temp_dir().join("occt_topo_test_vrml.wrl");
+        let path = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d }.join("occt_topo_test_vrml.wrl");
         let p = path.to_str().unwrap();
         write_vrml_file(p, &s).unwrap();
         let read = std::fs::read_to_string(p).unwrap();

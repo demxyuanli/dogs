@@ -11,7 +11,7 @@ use super::*;
 
     fn write_temp_step(content: &str) -> String {
         let n = TMP_SEQ.fetch_add(1, Ordering::SeqCst);
-        let path = std::env::temp_dir().join(format!(
+        let path = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d }.join(format!(
             "occt_xcaf_doc_{}_{n}.step",
             std::process::id()
         ));

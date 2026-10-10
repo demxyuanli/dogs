@@ -4314,7 +4314,7 @@ mod tests {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
         let mut model = BRepModel::new();
         model.add("Box", b.solid.0.clone());
-        let path = std::env::temp_dir().join("occt_iges_test.igs");
+        let path = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d }.join("occt_iges_test.igs");
         let p = path.to_str().unwrap();
         write_iges_file(p, &model).expect("write iges file");
         let content = std::fs::read_to_string(p).expect("read iges file");

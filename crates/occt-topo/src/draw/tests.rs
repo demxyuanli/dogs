@@ -105,7 +105,7 @@ use super::*;
     fn step_obj_iges_write() {
         let mut s = DrawSession::default();
         run_script(&mut s, "box b 1 1 1").expect("box");
-        let dir = std::env::temp_dir();
+        let dir = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d };
         let id = std::process::id();
         let files = [
             dir.join(format!("draw_step_{id}.step")),
@@ -327,7 +327,7 @@ info f
     fn view_writes_ppm() {
         let mut s = DrawSession::default();
         run_script(&mut s, "box b 2 2 2").expect("box");
-        let dir = std::env::temp_dir();
+        let dir = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d };
         let path = dir.join(format!("draw_view_{}.ppm", std::process::id()));
         let path_s = path.to_str().unwrap().to_string();
         execute_line(&mut s, &format!("view b 64 48 {path_s}")).expect("view");
@@ -356,7 +356,7 @@ info f
         );
         execute_line(&mut s, "zoom 1.5").expect("zoom");
         execute_line(&mut s, "pan 5 -3").expect("pan");
-        let dir = std::env::temp_dir();
+        let dir = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d };
         let path = dir.join(format!("draw_view_orbit_{}.ppm", std::process::id()));
         let path_s = path.to_str().unwrap().to_string();
         execute_line(&mut s, &format!("view b 32 24 {path_s}")).expect("view");

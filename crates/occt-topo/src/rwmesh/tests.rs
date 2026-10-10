@@ -8,7 +8,7 @@ mod tests {
     use crate::primitives::{BRepPrimBox, BRepPrimSphere};
 
     fn temp_subdir(name: &str) -> std::path::PathBuf {
-        let mut d = std::env::temp_dir();
+        let mut d = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d };
         d.push(format!("rwmesh_{}_{}", std::process::id(), name));
         std::fs::create_dir_all(&d).unwrap();
         d

@@ -169,7 +169,9 @@ use super::*;
                 children: vec![],
             },
         };
-        let path = std::env::temp_dir().join("occt_bincaf_test.xbf");
+        let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out");
+        std::fs::create_dir_all(&out_dir).expect("test output dir");
+        let path = out_dir.join("occt_bincaf_test.xbf");
         let p = path.to_str().unwrap();
         write_bincaf_file(&doc, p).expect("write file");
         let got = read_bincaf_file(p).expect("read file");

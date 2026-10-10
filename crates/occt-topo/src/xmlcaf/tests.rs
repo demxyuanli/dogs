@@ -190,7 +190,7 @@ use super::*;
                 children: vec![],
             },
         };
-        let path = std::env::temp_dir().join("occt_xmlcaf_test.xml");
+        let path = { let d = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("test-out"); let _ = std::fs::create_dir_all(&d); d }.join("occt_xmlcaf_test.xml");
         let p = path.to_str().unwrap();
         write_xml_file(&doc, p).unwrap();
         let got = read_xml_file(p).unwrap();
