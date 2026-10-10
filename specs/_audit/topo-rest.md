@@ -15,6 +15,7 @@ result.volume = (v0 + PI * radius * radius * height - overlap).max(0.0);
 ```
 - OCCT：`TKFeat/BRepFeat/BRepFeat_MakePrism.cxx`（`BRepAlgoAPI_Fuse`，体积事后由 `BRepGProp` 积分）；`BRepFeat_MakeRevol.cxx:310-315` 无此步。
 - 影响/建议：返回体积与 `result.shape` 实际体积不一致 → `volume_delta`/`ratio`/`kind`（同文件 `:161-179`）全失真，`tests.rs:172` 因覆盖恒真。删覆盖，改用 `brep_gprop_full`；否则标未移植。
+- **订正（2026-10-10，已修）**：解析覆盖已删（`1ab71402`）。体积改由 `brepfeat/features.rs` 的 `solid_volume` 按 wire 的存储朝向累加（`c3b3abf9`，OCCT `BRepGProp` 语义），`boss_thru_all_pierces` 实测体积 2.5590491，与 box + tool − overlap 的解析值一致。`tests.rs:172` 仍只断言 `volume > before`，未断言精确体积。
 
 ### 2. 网格夹具 `mesh_cylinder`（24 切片）冒充解析圆柱
 - 判定：自创 ｜ live：**是**（`translated_mesh_cylinder` ← `boss_thru_all:98`、`boss:123`；`feature.rs:155 z_cylinder_mesh` 为副本）

@@ -26471,9 +26471,9 @@ lib 的 6 个失败：
 
 #### E. 旁支（登记，未动）
 
-1. `689b641a` 中的 `brep_class3d.rs` 改动使 4 个 bop/builder_solid lib 用例失败。是回退还是修复需要用户决定，本次未动。
-2. 周期折叠回归（2 个 lib 用例）未修。需要复核这两个用例的期望是否与 OCCT 行为一致；复核结论出来之前，不恢复 `chain_ring` 折叠逻辑。
-3. `occt-topo` lib 在并行运行时偶发 `PermissionDenied` 写临时文件失败（同类现象见 §9.633），单独运行通过，判断为临时文件竞争。
+1. `689b641a` 中的 `brep_class3d.rs` 改动使 4 个 bop/builder_solid lib 用例失败。是回退还是修复需要用户决定，本次未动。**订正（2026-10-10）**：已解决。移植链 `82dcfad3`、`9605ca7d`、`5fe793b7` 等落地后，lib 4 个用例全部通过；`inner_cavity_is_absorbed_as_a_hole` 的归因为 `9605ca7d`（OtherSegment 移植）：移植前 `3c08a974` 失败（`left 2 / right 1`），移植后通过。
+2. 周期折叠回归（2 个 lib 用例）未修。需要复核这两个用例的期望是否与 OCCT 行为一致；复核结论出来之前，不恢复 `chain_ring` 折叠逻辑。**订正（2026-10-10）**：已解决。`fclass2d` 用例的根因是夹具 UV 环未闭合（修于 `4244ab19`）；`boss_thru_all_pierces` 的根因是 fuzzy 夹具 0.15 大于 24 边形弦高（修于 `4244ab19`），体积公式修于 `c3b3abf9`。lib 现为 1281/1281。
+3. `occt-topo` lib 在并行运行时偶发 `PermissionDenied` 写临时文件失败（同类现象见 §9.633），单独运行通过，判断为临时文件竞争。**订正（2026-10-10）**：根因并非竞争，而是从工作区 `target` 运行的 exe 写 `%TEMP%` 被拒（os error 5）。测试输出已改写到 `target/test-out`（`d459ff4e`），该失败不再出现。
 4. `occt-math` 的 `lsq_nonlinear::scale_invariance_sanity` 在 debug、release、多次重复及全量运行中均未复现，用户报告的失败未能确认。
 5. 本次未重新抽取逐模型面积比，README 中的逐模型比值沿用 §9.633。
 6. `689b641a` 的提交说明为 "port(iges)"，但其 diff 还包含几何内核、classifier、`brep_class3d` 等非 IGES 改动，提交说明与内容不一致，记录备查。
