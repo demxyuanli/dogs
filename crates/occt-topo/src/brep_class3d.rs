@@ -6,10 +6,9 @@
 //! face is intersected with every face by [`crate::int_curves_face`]. The
 //! nearest IN hit's CS transition decides IN/OUT (`Trans`); |W| <= Tol is ON.
 
-use occt_core::bnd::BndBox;
 use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
 use occt_core::math_bullard::BullardGenerator;
-use occt_core::precision::{CONFUSION, PCONFUSION};
+use occt_core::precision::CONFUSION;
 
 use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
@@ -22,6 +21,9 @@ use crate::topo_tools_full::faces_of;
 use std::collections::HashMap;
 
 mod other_segment;
+mod sclassifier_segments;
+
+use sclassifier_segments::face_normal_cxx;
 
 /// `myParamOnEdge` after `InitShape` (`BRepClass3d_SolidExplorer.cxx:905`).
 const PARAM_ON_EDGE_INIT: f64 = 0.512345;
@@ -213,85 +215,8 @@ impl SClassifier {
             return;
         }
         self.state = FaceState::Out;
-        // `isFaultyLine` and `anIndFace` (`cxx:254-255`).
-        let mut faulty = true;
-        let mut ind_face: i32 = 0;
-        while faulty {
-            // `Segment` on the first pass, `OtherSegment` afterwards (`cxx:259-266`).
-            let Some(seg) = (if ind_face == 0 {
-                expl.segment(p)
-            } else {
-                expl.other_segment(p)
-            }) else {
-                self.state = FaceState::Out;
-                return;
-            };
-            // The face index must advance, otherwise the line is faulty
-            // (`cxx:268-278`): `myState = 1`, which `State()` reports as OUT
-            // (`cxx:540`).
-            let cur_ind = expl.face_segment_index();
-            if cur_ind > ind_face {
-                ind_face = cur_ind;
-            } else {
-                self.state = FaceState::Out;
-                return;
-            }
-            if seg.flag == 1 {
-                self.state = FaceState::On;
-                return;
-            }
-            if seg.flag == 2 {
-                self.state = FaceState::Out;
-                return;
-            }
-            if seg.flag == 3 {
-                continue;
-            }
-            faulty = false;
-            let mut parmin = f64::MAX;
-            let add_w = (10.0 * tol).max(0.01 * seg.par);
-            for f in &expl.faces {
-                let mut inter = FaceIntersector::new(f.clone(), tol, true, true);
-                let box_add = add_to_param(&seg.lin, seg.par, &inter.bounding());
-                let add = add_w.max(box_add);
-                let min_w = -add_w;
-                let max_w = (seg.par * 10.0).min(seg.par + add);
-                inter.perform(&seg.lin, min_w, max_w);
-                if !inter.is_done() {
-                    continue;
-                }
-                for i in 1..=inter.nb_pnt() {
-                    let w = inter.w_parameter(i);
-                    if w.abs() >= parmin.abs() - PCONFUSION {
-                        continue;
-                    }
-                    parmin = w;
-                    let st = inter.state(i);
-                    if parmin.abs() <= tol && inter.pnt(i).distance(p) <= tol {
-                        self.state = FaceState::On;
-                        self.face = Some(f.clone());
-                        return;
-                    }
-                    if st == FaceState::In {
-                        let mut tran = inter.transition(i);
-                        if tran == Transition::Tangent {
-                            continue;
-                        }
-                        apply_trans(parmin, &mut tran, &mut self.state);
-                        self.face = Some(f.clone());
-                    } else if st == FaceState::On {
-                        faulty = true;
-                        break;
-                    }
-                }
-                if self.state == FaceState::On {
-                    return;
-                }
-                if faulty {
-                    break;
-                }
-            }
-        }
+        // Segment loop (`cxx:254-516`), see `sclassifier_segments.rs`.
+        self.classify_segments(expl, p, tol);
     }
 
     /// `BRepClass3d_SClassifier::PerformInfinitePoint` (`cxx:82-199`).
@@ -378,21 +303,10 @@ fn probe_line(face: &Face, a_param: f64) -> Option<GpLin> {
     ) {
         return None;
     }
-    // `FaceNormal` (`cxx:606-627`): `D1U x D1V`, rejected when its magnitude
-    // is not above `gp::Resolution()`, normalised, reversed for REVERSED faces.
-    let surf = BRepTool::face_surface(face)?;
-    let (_, du, dv) = surf.d1(u, v);
-    let n = du.xyz().crossed(dv.xyz());
-    let m = n.modulus();
-    if m <= f64::MIN_POSITIVE {
-        return None;
-    }
-    let mut dn = [n.x / m, n.y / m, n.z / m];
-    if face.0.orientation() == Orientation::Reversed {
-        dn = [-dn[0], -dn[1], -dn[2]];
-    }
-    // `-aDN` (`cxx:141`).
-    let dir = GpDir::from_vec(&GpVec::new(-dn[0], -dn[1], -dn[2])).ok()?;
+    // `-aDN` (`cxx:141`), with `aDN` from `FaceNormal` (`cxx:606-627`).
+    let dn = face_normal_cxx(face, u, v)?;
+    let x = dn.xyz();
+    let dir = GpDir::from_vec(&GpVec::new(-x.x, -x.y, -x.z)).ok()?;
     Some(GpLin::from_pnt_dir(ap, dir))
 }
 
@@ -415,36 +329,6 @@ fn apply_trans(parmin: f64, tran: &mut Transition, state: &mut FaceState) {
     } else {
         FaceState::Out
     };
-}
-
-fn add_to_param(lin: &GpLin, par: f64, box_: &BndBox) -> f64 {
-    let Some((xmin, xmax, ymin, ymax, zmin, zmax)) = box_.get() else {
-        return 0.0;
-    };
-    if !xmin.is_finite() || !xmax.is_finite() {
-        return 0.0;
-    }
-    let loc = lin.location();
-    let d = lin.direction();
-    let corners = [
-        GpPnt::new(xmin, ymin, zmin),
-        GpPnt::new(xmax, ymin, zmin),
-        GpPnt::new(xmin, ymax, zmin),
-        GpPnt::new(xmax, ymax, zmin),
-        GpPnt::new(xmin, ymin, zmax),
-        GpPnt::new(xmax, ymin, zmax),
-        GpPnt::new(xmin, ymax, zmax),
-        GpPnt::new(xmax, ymax, zmax),
-    ];
-    let mut tmax = 0.0;
-    for c in &corners {
-        let v = GpVec::from_pnts(&loc, c);
-        let t = v.dot(&GpVec::from_xyz(d.xyz())) - par;
-        if t > tmax {
-            tmax = t;
-        }
-    }
-    tmax.max(0.0)
 }
 
 /// `BRepClass3d_SolidClassifier`.
