@@ -12,7 +12,6 @@ use occt_core::math_bullard::BullardGenerator;
 use occt_core::precision::{CONFUSION, PCONFUSION};
 
 use crate::abs::Orientation;
-use crate::brep_extrema::closest_point_on_edge;
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::FaceState;
 use crate::int_curves_face::{FaceIntersector, Transition};
@@ -145,24 +144,31 @@ impl SolidExplorer {
 /// tolerance of a vertex or edge of `map_ev` — the explorer's `myMapEV` — is ON.
 /// The list is built by [`SolidExplorer::edge_vertex_map`], which skips internal
 /// children exactly as `BRepClass3d_SolidExplorer::Init` does.
-fn on_vertex_or_edge(map_ev: &[TopoShape], p: &GpPnt, tol: f64) -> bool {
-    for s in map_ev {
+fn map_ev_accepts_point(map_ev: &[TopoShape], p: &GpPnt) -> bool {
+    map_ev.iter().any(|s| {
         if s.is_vertex() {
-            if BRepTool::vertex_point(&crate::shape::Vertex(s.clone()))
-                .distance(p)
-                <= tol
-            {
-                return true;
-            }
+            let v = crate::shape::Vertex(s.clone());
+            let t = BRepTool::vertex_tolerance(&v);
+            BRepTool::vertex_point(&v).square_distance(p) < t * t
         } else if s.is_edge() {
-            let e = Edge(s.clone());
-            let (_, q) = closest_point_on_edge(&e, p, 32);
-            if q.distance(p) <= tol {
-                return true;
-            }
+            edge_accepts_point(&Edge(s.clone()), p)
+        } else {
+            false
         }
-    }
-    false
+    })
+}
+
+/// Edge branch of `BRepClass3d_BndBoxTreeSelectorPoint::Accept`: any
+/// `Extrema_ExtPC` solution over the edge range closer than the edge tolerance.
+fn edge_accepts_point(e: &Edge, p: &GpPnt) -> bool {
+    let Some(curve) = BRepTool::edge_curve(e) else {
+        return false;
+    };
+    let t = BRepTool::edge_tolerance(e);
+    let (f, l) = BRepTool::edge_parameters(e);
+    occt_geom::extrema_pc::extrema_ext_pc_range(&*curve, p, f, l)
+        .iter()
+        .any(|sol| sol.sq_dist < t * t)
 }
 
 /// `BRepClass3d_SClassifier`.
@@ -194,7 +200,7 @@ impl SClassifier {
             self.state = FaceState::In;
             return;
         }
-        if on_vertex_or_edge(expl.map_ev(), p, tol) {
+        if map_ev_accepts_point(expl.map_ev(), p) {
             self.state = FaceState::On;
             return;
         }

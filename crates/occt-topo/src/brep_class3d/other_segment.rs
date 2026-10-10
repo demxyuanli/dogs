@@ -17,12 +17,11 @@ use occt_geom::Surface;
 use crate::abs::Orientation;
 use crate::boptools_2d::curve_on_surface_range;
 use crate::brep_class::{BRepClassEdge, BRepClassFacePassiveClassifier, FaceClassifier};
-use crate::brep_extrema::closest_point_on_edge;
 use crate::brep_surface::face_uv_bounds;
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FaceState, FClass2d};
 use crate::int_curves_face::FaceIntersector;
-use crate::shape::{Edge, Face, Vertex};
+use crate::shape::{Edge, Face};
 use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
 use super::{Segment, SolidExplorer};
@@ -285,26 +284,11 @@ impl SolidExplorer {
         inter.classify_uv_point(uv)
     }
 
-    /// `myTree.Select(BRepClass3d_BndBoxTreeSelectorPoint)` (`cxx:228-231`) with
-    /// `BRepClass3d_BndBoxTreeSelectorPoint::Accept`
-    /// (`BRepClass3d_BndBoxTree.cxx:25-71`): a vertex accepts when its distance is
-    /// below its tolerance, an edge when its closest distance is below the edge
-    /// tolerance. Approximation: the edge distance comes from
-    /// `closest_point_on_edge` instead of `Extrema_ExtPC` over the edge range, and
-    /// the tree pruning is replaced by a linear scan of the same predicate.
+    /// `myTree.Select(BRepClass3d_BndBoxTreeSelectorPoint)` (`cxx:228-231`):
+    /// the `Accept` predicate of `BRepClass3d_BndBoxTree.cxx:25-71`, see
+    /// `map_ev_accepts_point`.
     fn map_ev_selects(&self, p: &GpPnt) -> bool {
-        self.map_ev.iter().any(|s| {
-            if s.is_vertex() {
-                let v = Vertex(s.clone());
-                BRepTool::vertex_point(&v).distance(p) < BRepTool::vertex_tolerance(&v)
-            } else if s.is_edge() {
-                let e = Edge(s.clone());
-                let (u, q) = closest_point_on_edge(&e, p, 32);
-                !u.is_nan() && q.distance(p) < BRepTool::edge_tolerance(&e)
-            } else {
-                false
-            }
-        })
+        super::map_ev_accepts_point(&self.map_ev, p)
     }
 
     /// `BRepClass3d_SolidExplorer::PointInTheFace` (`cxx:241-425`): grid search
