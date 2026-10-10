@@ -168,7 +168,7 @@ use super::*;
         let before = crate::shape_mesh::shape_volume(&box_s.solid.0, 0.05);
         let before_faces = faces_of(&box_s.solid.0).len();
         let center = GpPnt::new(1.0, 1.0, 0.25);
-        let after = boss_thru_all(&box_s.solid, &center, 0.3, 0.15).unwrap();
+        let after = boss_thru_all(&box_s.solid, &center, 0.3, 1e-7).unwrap();
         assert!(after.volume > before, "boss must add material: {} > {}", after.volume, before);
         // The boss pierces the box: the result's bounding box is taller than the
         // box, and it carries a cylinder-like wall — a face whose vertices all

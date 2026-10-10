@@ -69,7 +69,7 @@ use super::*;
     }
 
     /// A clean cylinder lateral face: two cap circles plus two *distinct* seam
-    /// edges whose stored pcurves sit at u = 0 (up) and u = 2π (down). The
+    /// edges whose stored pcurves sit at u = 2π (up) and u = 0 (down). The
     /// port's flat wire model cannot store the reversed seam orientation, so
     /// the pcurves are attached explicitly to make the UV ring a clean
     /// `[0, 2π] × [0, h]` rectangle.
@@ -95,16 +95,23 @@ use super::*;
         let lateral = b.make_face(surface, &[]);
         let face_key = GeometryRegistry::shape_key(&lateral.0);
         let pc_up: Arc<dyn Curve2d> = Arc::new(occt_geom2d::Geom2dLine::from_pnt_dir(
-            p2(0.0, 0.0),
+            p2(2.0 * PI, 0.0),
             occt_core::gp::GpDir2d::new(0.0, 1.0).unwrap(),
         ));
         let pc_down: Arc<dyn Curve2d> = Arc::new(occt_geom2d::Geom2dLine::from_pnt_dir(
-            p2(2.0 * PI, height),
-            occt_core::gp::GpDir2d::new(0.0, -1.0).unwrap(),
+            p2(0.0, 0.0),
+            occt_core::gp::GpDir2d::new(0.0, 1.0).unwrap(),
         ));
         GeometryRegistry::global().set_edge_pcurve(&seam_up.0, face_key, pc_up);
         GeometryRegistry::global().set_edge_pcurve(&seam_down.0, face_key, pc_down);
 
+        // Reverse the top circle and seam-down so the UV wire closes:
+        // bottom (0,0)->(2pi,0), seam-up (2pi,0)->(2pi,h), top (2pi,h)->(0,h),
+        // seam-down (0,h)->(0,0).
+        let mut top_circle = top_circle;
+        top_circle.0.reverse();
+        let mut seam_down = seam_down;
+        seam_down.0.reverse();
         let wire = b.make_wire(&[bottom_circle, seam_up, top_circle, seam_down]);
         let mut lateral = lateral;
         b.add_wire(&mut lateral, &wire);
