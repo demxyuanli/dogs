@@ -1,7 +1,7 @@
 //! 3×3 matrix. Source: `gp_Mat.hxx`
 
 use std::ops::{Add, Div, Mul, Sub};
-use crate::precision::RESOLUTION;
+use crate::precision::REAL_SMALL;
 use crate::gp::xyz::GpXyz;
 
 /// 3×3 matrix stored row-major.
@@ -172,15 +172,26 @@ impl GpMat {
         let c = angle.cos();
         let t = 1.0 - c;
 
-        self.m[0][0] = t * x * x + c;
-        self.m[0][1] = t * x * y - s * z;
-        self.m[0][2] = t * x * z + s * y;
-        self.m[1][0] = t * x * y + s * z;
-        self.m[1][1] = t * y * y + c;
-        self.m[1][2] = t * y * z - s * x;
-        self.m[2][0] = t * x * z - s * y;
-        self.m[2][1] = t * y * z + s * x;
-        self.m[2][2] = t * z * z + c;
+        // All products are precomputed and the diagonals use
+        // `1 + (1-cos)*(-(other_two_squared))` exactly as `gp_Mat.cxx:138-158`
+        // writes them; the algebraically equal `t*x*x + c` and `(t*x)*y` round
+        // differently (the reference does not assume `x*x+y*y+z*z == 1` after
+        // `Normalized()`).
+        let x2 = x * x;
+        let y2 = y * y;
+        let z2 = z * z;
+        let xy = x * y;
+        let xz = x * z;
+        let yz = y * z;
+        self.m[0][0] = 1.0 + t * (-(y2 + z2));
+        self.m[0][1] = t * xy - s * z;
+        self.m[0][2] = t * xz + s * y;
+        self.m[1][0] = t * xy + s * z;
+        self.m[1][1] = 1.0 + t * (-(x2 + z2));
+        self.m[1][2] = t * yz - s * x;
+        self.m[2][0] = t * xz - s * y;
+        self.m[2][1] = t * yz + s * x;
+        self.m[2][2] = 1.0 + t * (-(x2 + y2));
         Ok(())
     }
 
@@ -231,7 +242,7 @@ impl GpMat {
     /// `1/theScalar`, raising `Standard_ConstructionError` when
     /// `|theScalar| <= gp::Resolution()`; the Rust analogue is `Err`.
     pub fn divide(&self, s: f64) -> Result<Self, &'static str> {
-        if s.abs() <= RESOLUTION {
+        if s.abs() <= REAL_SMALL {
             return Err("gp_Mat : Divide by 0");
         }
         Ok(self.multiply_scalar(1.0 / s))
@@ -267,7 +278,7 @@ impl GpMat {
         let adj22 = a[0][0] * a[1][1] - a[0][1] * a[1][0];
 
         let det = a[0][0] * adj00 + a[0][1] * adj10 + a[0][2] * adj20;
-        if det.abs() <= RESOLUTION {
+        if det.abs() <= REAL_SMALL {
             return Err("gp_Mat::Invert() - matrix has zero determinant");
         }
         let inv_det = 1.0 / det;
@@ -286,7 +297,8 @@ impl GpMat {
         Ok(r)
     }
 
-    pub fn is_singular(&self) -> bool { self.determinant().abs() <= RESOLUTION }
+    /// `gp_Mat::IsSingular()` (`gp_Mat.hxx:184-189`): `|det| <= gp::Resolution()`.
+    pub fn is_singular(&self) -> bool { self.determinant().abs() <= REAL_SMALL }
 
     // UNPORTED: `gp_Mat::DumpJson` (`gp_Mat.cxx:338-...`, declared at
     // `gp_Mat.hxx:301`) needs the OCCT `Standard_Dump` serialization framework,

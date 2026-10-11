@@ -1,11 +1,22 @@
 //! 2D unit direction. Source: `gp_Dir2d.hxx`
-use crate::precision::RESOLUTION;
+use crate::precision::REAL_SMALL;
 use crate::gp::{xy::GpXY, vec2d::GpVec2d};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpDir2d { pub x: f64, pub y: f64 }
 impl GpDir2d {
-    pub fn new(x:f64,y:f64) -> Result<Self,&'static str> { let sq=x*x+y*y; if sq>=(1.0-RESOLUTION)&&sq<=(1.0+RESOLUTION) { Ok(Self{x,y}) } else if sq<=RESOLUTION*RESOLUTION { Err("zero") } else { let d=sq.sqrt(); Ok(Self{x:x/d,y:y/d}) } }
+    /// `gp_Dir2d::gp_Dir2d(double, double)` (`gp_Dir2d.hxx:304-320`).
+    ///
+    /// OCCT's fast path tests `aSqMod` against `1.0 +- gp::Resolution()`, and
+    /// `gp::Resolution()` is `RealSmall()` == `DBL_MIN` (`gp.hxx:60`,
+    /// `Standard_Real.hxx:132-135`), so both bounds round to `1.0` and the
+    /// branch only keeps an already-unit square modulus. The zero guard is
+    /// `aSqMod <= gp::Resolution() * gp::Resolution()`, and `DBL_MIN * DBL_MIN`
+    /// underflows to `0.0`. Using `Precision::Resolution()` (1e-12) here kept
+    /// every vector within 1e-12 of unit length unnormalized, which leaks a
+    /// `1 - 2^-52` direction component (see `gp_Dir2d.hxx` vs the `gp` unit
+    /// sphere). `REAL_SMALL` is that `DBL_MIN`.
+    pub fn new(x:f64,y:f64) -> Result<Self,&'static str> { let sq=x*x+y*y; if sq>=(1.0-REAL_SMALL)&&sq<=(1.0+REAL_SMALL) { Ok(Self{x,y}) } else if sq<=REAL_SMALL*REAL_SMALL { Err("zero") } else { let d=sq.sqrt(); Ok(Self{x:x/d,y:y/d}) } }
     pub fn from_xy(c:&GpXY) -> Result<Self,&'static str> { Self::new(c.x,c.y) }
     pub fn from_vec2d(v:&GpVec2d) -> Result<Self,&'static str> { Self::new(v.x(),v.y()) }
     #[inline] pub const fn x(&self) -> f64 { self.x } #[inline] pub const fn y(&self) -> f64 { self.y }

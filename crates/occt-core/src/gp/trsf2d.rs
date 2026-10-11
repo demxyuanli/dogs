@@ -1,5 +1,5 @@
 //! 2D affine transform. Source: `gp_Trsf2d.hxx`
-use crate::precision::RESOLUTION;
+use crate::precision::REAL_SMALL;
 use crate::gp::{mat2d::GpMat2d, xy::GpXY, trsf_form::TrsfForm, pnt2d::GpPnt2d, vec2d::GpVec2d, ax2d::GpAx2d};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -45,7 +45,10 @@ impl GpTrsf2d {
         self.loc.add(&ma1loc);
         self.matrix.multiply(&ma1);
     }
-    pub fn set_scale(&mut self,p:&GpPnt2d,s:f64) -> Result<(),&'static str> { if s.abs()<=RESOLUTION { Err("too small") } else { self.shape=TrsfForm::Scale; self.scale=s; self.matrix.set_identity(); self.loc=p.xy().multiplied_scalar(1.0-s); Ok(()) } }
+    /// Port note: `gp_Trsf2d::SetScale` (`gp_Trsf2d.hxx:270-277`) has **no**
+    /// guard on `theS`; OCCT stores the factor unconditionally. The Rust
+    /// `Result` is a defensive extra, so its threshold is `gp::Resolution()`.
+    pub fn set_scale(&mut self,p:&GpPnt2d,s:f64) -> Result<(),&'static str> { if s.abs()<=REAL_SMALL { Err("too small") } else { self.shape=TrsfForm::Scale; self.scale=s; self.matrix.set_identity(); self.loc=p.xy().multiplied_scalar(1.0-s); Ok(()) } }
     /// `gp_Trsf2d::SetTransformation(const gp_Ax2d&)` (`gp_Trsf2d.cxx:72-83`):
     /// world to the local frame of `a`.
     pub fn set_transformation_ax2d(&mut self, a: &GpAx2d) {
@@ -64,7 +67,9 @@ impl GpTrsf2d {
     /// `gp_Trsf2d::SetTranslationPart(const gp_Vec2d&)` (`gp_Trsf2d.cxx:86-117`).
     pub fn set_translation_part(&mut self, v: &GpVec2d) {
         self.loc = v.xy();
-        let loc_null = self.loc.x().abs() <= RESOLUTION && self.loc.y().abs() <= RESOLUTION;
+        // `gp_Trsf2d::SetTranslationPart` (`gp_Trsf2d.cxx:89`):
+        // `abs(loc.X()) <= gp::Resolution() && abs(loc.Y()) <= gp::Resolution()`.
+        let loc_null = self.loc.x().abs() <= REAL_SMALL && self.loc.y().abs() <= REAL_SMALL;
         if loc_null {
             match self.shape {
                 TrsfForm::Identity
@@ -89,7 +94,8 @@ impl GpTrsf2d {
         if s == 1.0 {
             let x = self.loc.x().abs();
             let y = self.loc.y().abs();
-            if x <= RESOLUTION && y <= RESOLUTION {
+            // `gp_Trsf2d::SetScaleFactor` (`gp_Trsf2d.cxx:134`).
+            if x <= REAL_SMALL && y <= REAL_SMALL {
                 match self.shape {
                     TrsfForm::Identity | TrsfForm::Rotation => {}
                     TrsfForm::Scale => self.shape = TrsfForm::Identity,
@@ -342,7 +348,8 @@ impl GpTrsf2d {
         let col3 = GpXY::new(a13, a23);
         let mut m = GpMat2d::from_cols(&col1, &col2);
         let det = m.determinant();
-        if det.abs() < RESOLUTION {
+        // `gp_Trsf2d::SetValues` (`gp_Trsf2d.cxx:689`): `abs(s) < gp::Resolution()`.
+        if det.abs() < REAL_SMALL {
             return Err("gp_Trsf2d::SetValues, null determinant");
         }
         let s = if det > 0.0 { det.sqrt() } else { (-det).sqrt() };

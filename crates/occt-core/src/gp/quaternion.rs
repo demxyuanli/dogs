@@ -1,6 +1,9 @@
 use crate::gp::mat::GpMat;
 use crate::gp::vec::GpVec;
-use crate::precision::RESOLUTION;
+// `RESOLUTION` is kept for `is_identity`, a port-only helper: `gp_Quaternion`
+// declares no `IsIdentity` (`gp_Quaternion.hxx`), so it has no
+// `gp::Resolution()` counterpart to match.
+use crate::precision::{REAL_SMALL, RESOLUTION};
 
 /// Rotation quaternion (x, y, z, w).
 #[derive(Debug, Clone, Copy)]
@@ -49,34 +52,35 @@ impl GpQuaternion {
     }
 
     /// Set rotation that rotates `from` into `to`.
+    /// `gp_Quaternion::SetRotation(const gp_Vec& theVecFrom,
+    /// const gp_Vec& theVecTo)` (`gp_Quaternion.cxx:39-58`): build
+    /// `(cross, dot)`, normalize, reduce to the half-angle via `w += 1.0`, and
+    /// pick the perpendicular axis with OCCT's `Z*Z > X*X` test when the
+    /// rotation is close to PI.
     pub fn set_rotation_vecs(&mut self, from: &GpVec, to: &GpVec) {
-        let f = from.normalized();
-        let t = to.normalized();
-        let dot = f.dot(&t);
-        if dot <= -1.0 + RESOLUTION {
-            // 180-degree rotation: pick perpendicular axis
-            let axis = if f.x().abs() <= RESOLUTION && f.y().abs() <= RESOLUTION {
-                GpVec::new(1.0, 0.0, 0.0).crossed(&f)
+        let cross = from.crossed(to);
+        self.x = cross.x();
+        self.y = cross.y();
+        self.z = cross.z();
+        self.w = from.dot(to);
+        self.normalize_or_stabilize();
+        // reducing angle to halfangle
+        self.w += 1.0;
+        if self.w <= REAL_SMALL {
+            // angle close to PI
+            if from.z() * from.z() > from.x() * from.x() {
+                // theVecFrom * gp_Vec(1,0,0)
+                self.x = 0.0;
+                self.y = from.z();
+                self.z = -from.y();
             } else {
-                GpVec::new(0.0, 0.0, 1.0).crossed(&f)
-            };
-            let half = std::f64::consts::FRAC_PI_2;
-            let s = half.sin();
-            let axis_n = axis.normalized();
-            let axis = GpVec::new(axis_n.x(), axis_n.y(), axis_n.z());
-            self.x = axis.x() * s;
-            self.y = axis.y() * s;
-            self.z = axis.z() * s;
-            self.w = half.cos();
-        } else {
-            let v = f.crossed(&t);
-            let s = ((1.0 + dot) * 2.0).sqrt();
-            let inv = 1.0 / s;
-            self.x = v.x() * inv;
-            self.y = v.y() * inv;
-            self.z = v.z() * inv;
-            self.w = s * 0.5;
+                // theVecFrom * gp_Vec(0,0,1)
+                self.x = from.y();
+                self.y = -from.x();
+                self.z = 0.0;
+            }
         }
+        self.normalize_or_stabilize();
     }
 
     /// Set from axis-angle rotation (axis normalized internally).
@@ -107,7 +111,9 @@ impl GpQuaternion {
     /// `[-PI, PI]`; a zero vector part yields axis `+Z` and angle `0`.
     pub fn get_vector_and_angle(&self) -> (GpVec, f64) {
         let vl = (self.x * self.x + self.y * self.y + self.z * self.z).sqrt();
-        if vl > RESOLUTION {
+        // `gp_Quaternion::GetVectorAndAngle` (`gp_Quaternion.cxx:94`):
+        // `vl > gp::Resolution()`.
+        if vl > REAL_SMALL {
             let ivl = 1.0 / vl;
             let axis = GpVec::new(self.x * ivl, self.y * ivl, self.z * ivl);
             let angle = if self.w < 0.0 {
@@ -239,19 +245,20 @@ impl GpQuaternion {
         }
     }
 
-    /// `gp_Quaternion::Normalize()` (`gp_Quaternion.cxx:434-444`): divide by
-    /// `Norm()`, or stabilize the length when degenerate.
+    /// `gp_Quaternion::Normalize()` (`gp_Quaternion.cxx:434-444`): stabilize
+    /// when `aMagn < gp::Resolution()`, **re-read** `aMagn`, then
+    /// `Scale(1.0 / aMagn)` in both cases.
     pub fn normalize_or_stabilize(&mut self) {
-        let magn = self.norm();
-        if magn < RESOLUTION {
+        let mut magn = self.norm();
+        if magn < REAL_SMALL {
             self.stabilize_length();
-        } else {
-            let inv = 1.0 / magn;
-            self.x *= inv;
-            self.y *= inv;
-            self.z *= inv;
-            self.w *= inv;
+            magn = self.norm();
         }
+        let inv = 1.0 / magn;
+        self.x *= inv;
+        self.y *= inv;
+        self.z *= inv;
+        self.w *= inv;
     }
 
     /// Set from a 3x3 rotation matrix stored in GpMat.
@@ -320,10 +327,13 @@ impl GpQuaternion {
         self.square_norm().sqrt()
     }
 
-    /// Normalize in-place. Returns Err on zero norm.
+    /// Normalize in-place. Returns Err on zero norm; `gp_Quaternion` has no
+    /// `gp::Resolution()`-scaled guard here (`Normalize` is
+    /// `gp_Quaternion.cxx:434-444`), so the defensive threshold is
+    /// `gp::Resolution()` itself.
     pub fn normalize(&mut self) -> Result<(), &'static str> {
         let n = self.norm();
-        if n <= RESOLUTION {
+        if n <= REAL_SMALL {
             return Err("GpQuaternion::normalize: zero norm");
         }
         let inv = 1.0 / n;
@@ -336,7 +346,7 @@ impl GpQuaternion {
 
     pub fn normalized(&self) -> Result<Self, &'static str> {
         let n = self.norm();
-        if n <= RESOLUTION {
+        if n <= REAL_SMALL {
             return Err("GpQuaternion::normalized: zero norm");
         }
         let inv = 1.0 / n;
@@ -370,9 +380,12 @@ impl GpQuaternion {
         self.inverted()
     }
 
+    /// `gp_Quaternion::Invert()` (`gp_Quaternion.hxx:168-172`): a bare
+    /// `1.0 / SquareNorm()` with **no** guard, so the defensive "non-zero"
+    /// test collapses to `gp::Resolution() * gp::Resolution()` (= 0.0).
     pub fn invert(&mut self) {
         let n = self.square_norm();
-        if n > RESOLUTION * RESOLUTION {
+        if n > REAL_SMALL * REAL_SMALL {
             let inv = 1.0 / n;
             self.x = -self.x * inv;
             self.y = -self.y * inv;
@@ -381,9 +394,10 @@ impl GpQuaternion {
         }
     }
 
+    /// `gp_Quaternion::Inverted()` (`gp_Quaternion.hxx:175-179`).
     pub fn inverted(&self) -> Self {
         let n = self.square_norm();
-        if n > RESOLUTION * RESOLUTION {
+        if n > REAL_SMALL * REAL_SMALL {
             let inv = 1.0 / n;
             Self {
                 x: -self.x * inv,
@@ -485,9 +499,13 @@ impl GpQuaternion {
         }
     }
 
+    /// `gp_Quaternion::IsEqual` (`gp_Quaternion.cxx:27-37`): component-wise
+    /// `|dq| <= gp::Resolution()`.
     pub fn is_equal(&self, other: &GpQuaternion) -> bool {
-        let d = self.subtracted(other);
-        d.square_norm() <= RESOLUTION * RESOLUTION
+        (self.x - other.x).abs() <= REAL_SMALL
+            && (self.y - other.y).abs() <= REAL_SMALL
+            && (self.z - other.z).abs() <= REAL_SMALL
+            && (self.w - other.w).abs() <= REAL_SMALL
     }
 }
 

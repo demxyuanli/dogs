@@ -1,5 +1,5 @@
 //! 2D vector. Source: `gp_Vec2d.hxx`
-use crate::precision::RESOLUTION;
+use crate::precision::REAL_SMALL;
 use crate::gp::{xy::GpXY, mat2d::GpMat2d, dir2d::GpDir2d, trsf2d::GpTrsf2d, trsf_form::TrsfForm};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -30,11 +30,13 @@ impl GpVec2d {
     pub fn reverse(&mut self) { self.coord.reverse(); }
     pub fn reversed(&self) -> Self { Self{coord:self.coord.reversed()} }
     /// Signed angle from this vector to `o`, in `(-PI, PI]`.
-    /// Source: `gp_Vec2d::Angle`.
+    /// Source: `gp_Vec2d::Angle` (`gp_Vec2d.cxx:47-95`); the zero-magnitude
+    /// guard `aNorm <= gp::Resolution() || anOtherNorm <= gp::Resolution()`
+    /// (`cxx:57`) becomes a `0.0` return instead of the OCCT throw.
     pub fn angle(&self, o: &Self) -> f64 {
         let m1 = self.coord.modulus();
         let m2 = o.coord.modulus();
-        if m1 <= RESOLUTION || m2 <= RESOLUTION {
+        if m1 <= REAL_SMALL || m2 <= REAL_SMALL {
             return 0.0;
         }
         let d = m1 * m2;

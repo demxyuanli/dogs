@@ -81,3 +81,33 @@ pub fn bohm(u: f64, degree: i32, n: i32, knots: &[f64], dimension: i32, poles: &
         coef *= dmi as f64;
     }
 }
+
+/// `BSplCLib::Eval` (`BSplCLib.cxx:865-1006`): in-place value of a local
+/// homogeneous pole buffer (no derivatives). Used by `BSplSLib::D3` on the
+/// third first-parameter row when `d1 > 2` (`BSplSLib.cxx:1321-1324`).
+pub fn eval(u: f64, degree: i32, knots: &[f64], dimension: i32, poles: &mut [f64]) {
+    if degree <= 0 || dimension <= 0 {
+        return;
+    }
+    let degree = degree as usize;
+    let dimension = dimension as usize;
+    let mut dms = degree + 1;
+    let dm1 = degree - 1;
+    // `step` runs from -1 to Dm1-1 (`cxx:982`).
+    for step in 0..degree {
+        dms -= 1;
+        let mut dpi = dm1;
+        let mut sti = step as isize - 1;
+        let mut base = 0usize;
+        for _i in 0..dms {
+            dpi += 1;
+            sti += 1;
+            let x = (knots[dpi] - u) / (knots[dpi] - knots[sti as usize]);
+            let y = 1.0 - x;
+            for k in 0..dimension {
+                poles[base + k] = x * poles[base + k] + y * poles[base + k + dimension];
+            }
+            base += dimension;
+        }
+    }
+}

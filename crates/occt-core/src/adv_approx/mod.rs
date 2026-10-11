@@ -7,5 +7,7 @@ mod cutting;
 mod simple;
 mod approx;
 
-pub use approx::{ApproxAFunction1dPair, ApproxAFunction2d, ApproxAFunction3d};
+pub use approx::{
+    ApproxAFunction1d3d, ApproxAFunction1dPair, ApproxAFunction2d, ApproxAFunction3d,
+};
 pub use cutting::{Cutting, DichoCutting, PrefAndRec, PrefCutting};

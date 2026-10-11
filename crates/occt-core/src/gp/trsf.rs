@@ -9,7 +9,7 @@ use crate::gp::quaternion::GpQuaternion;
 use crate::gp::trsf_form::TrsfForm;
 use crate::gp::vec::GpVec;
 use crate::gp::xyz::GpXyz;
-use crate::precision::RESOLUTION;
+use crate::precision::REAL_SMALL;
 
 #[derive(Debug, Clone)]
 pub struct GpTrsf {
@@ -356,7 +356,9 @@ impl GpTrsf {
     /// `gp_Trsf::SetTranslationPart(const gp_Vec&)` (`gp_Trsf.cxx:243-280`).
     pub fn set_translation_part(&mut self, v: &GpVec) {
         self.loc = v.xyz().clone();
-        let loc_null = self.loc.square_modulus() < RESOLUTION;
+        // `gp_Trsf::SetTranslationPart` (`gp_Trsf.cxx:248`):
+        // `loc.SquareModulus() < gp::Resolution()`.
+        let loc_null = self.loc.square_modulus() < REAL_SMALL;
 
         match self.shape {
             TrsfForm::Identity => {
@@ -385,12 +387,14 @@ impl GpTrsf {
 
     /// `gp_Trsf::SetScaleFactor(const double)` (`gp_Trsf.cxx:284-337`).
     pub fn set_scale_factor(&mut self, s: f64) -> Result<(), &'static str> {
-        if s.abs() <= RESOLUTION {
+        if s.abs() <= REAL_SMALL {
             return Err("gp_Trsf::SetScaleFactor: scale factor is too small");
         }
         self.scale = s;
-        let unit = (self.scale - 1.0).abs() <= RESOLUTION;
-        let munit = (self.scale + 1.0).abs() <= RESOLUTION;
+        // `gp_Trsf.cxx:288-289`: both bounds are `gp::Resolution()`, so these
+        // are effectively `scale == 1` / `scale == -1`.
+        let unit = (self.scale - 1.0).abs() <= REAL_SMALL;
+        let munit = (self.scale + 1.0).abs() <= REAL_SMALL;
 
         match self.shape {
             TrsfForm::Identity | TrsfForm::Translation => {
@@ -439,7 +443,8 @@ impl GpTrsf {
     ) -> Result<(), &'static str> {
         let matrix = GpMat::new(a11, a12, a13, a21, a22, a23, a31, a32, a33);
         let det = matrix.determinant();
-        if det.abs() < RESOLUTION {
+        // `gp_Trsf::SetValues` (`gp_Trsf.cxx:366`): `abs(s) < gp::Resolution()`.
+        if det.abs() < REAL_SMALL {
             return Err("gp_Trsf::SetValues, null determinant");
         }
         let s = if det > 0.0 {
@@ -494,7 +499,8 @@ impl GpTrsf {
     /// The matrix stays identity and the factor is carried by `scale`, so the
     /// stored form is always `Scale` (there is no identity shortcut in OCCT).
     pub fn set_scale(&mut self, p: &GpPnt, s: f64) -> Result<(), &'static str> {
-        if s.abs() <= RESOLUTION {
+        // `gp_Trsf::SetScale` (`gp_Trsf.cxx:164`): `abs(scale) <= gp::Resolution()`.
+        if s.abs() <= REAL_SMALL {
             return Err("gp_Trsf::SetScaleFactor: scale factor is too small");
         }
 
@@ -758,7 +764,8 @@ impl GpTrsf {
     }
 
     pub fn invert(&mut self) -> Result<(), &'static str> {
-        if self.scale.abs() < RESOLUTION {
+        // `gp_Trsf::Invert` (`gp_Trsf.cxx:412,419`): `abs(scale) <= gp::Resolution()`.
+        if self.scale.abs() < REAL_SMALL {
             return Err("transform is singular (zero scale)");
         }
 

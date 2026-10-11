@@ -1,7 +1,9 @@
 //! 3D Cartesian coordinate. Source: `gp_XYZ.hxx`
 
 use std::ops::{Add, BitXor, Div, Mul, Neg, Sub};
-use crate::precision::RESOLUTION;
+// `RESOLUTION` is kept for the port-only no-tolerance helpers (`is_equal`),
+// which have no `gp_XYZ` counterpart that calls `gp::Resolution()`.
+use crate::precision::{REAL_SMALL, RESOLUTION};
 use crate::gp::mat::GpMat;
 
 /// Three-dimensional Cartesian coordinate (x, y, z).
@@ -106,16 +108,19 @@ impl GpXyz {
     /// Triple product: self · (a x b)
     pub fn dot_cross(&self, a: &Self, b: &Self) -> f64 { self.dot(&a.crossed(b)) }
 
-    /// Normalize in-place. Returns true on success, false if zero-length.
+    /// `gp_XYZ::Normalize()` (`gp_XYZ.hxx:598-604`): raise iff
+    /// `Modulus() <= gp::Resolution()`. The port folds the OCCT
+    /// `Standard_ConstructionError` into a `false` return.
     pub fn normalize(&mut self) -> bool {
         let m = self.modulus();
-        if m <= RESOLUTION { return false; }
+        if m <= REAL_SMALL { return false; }
         self.x /= m;
         self.y /= m;
         self.z /= m;
         true
     }
 
+    /// `gp_XYZ::Normalized()` (`gp_XYZ.hxx:368-373`).
     pub fn normalized(&self) -> Self {
         let mut r = *self;
         r.normalize();

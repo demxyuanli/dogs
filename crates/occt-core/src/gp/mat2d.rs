@@ -1,5 +1,5 @@
 //! 2×2 matrix. Source: `gp_Mat2d.hxx`
-use crate::precision::RESOLUTION;
+use crate::precision::REAL_SMALL;
 use crate::gp::xy::GpXY;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -40,7 +40,10 @@ impl GpMat2d {
     pub fn divide(&mut self, s:f64) { self.multiply_scalar(1.0/s); }
     /// `gp_Mat2d::Divided(const double)` (`gp_Mat2d.hxx:314-320`).
     pub fn divided(&self, s:f64) -> Self { let mut m=*self; m.divide(s); m }
-    pub fn invert(&mut self) -> Result<(),&'static str> { let det=self.determinant(); if det.abs()<=RESOLUTION { Err("singular") } else { let inv=1.0/det; let a=self.data; self.data=[[a[1][1]*inv,-a[0][1]*inv],[-a[1][0]*inv,a[0][0]*inv]]; Ok(()) } }
+    /// `gp_Mat2d::Invert()` (`gp_Mat2d.cxx:126-142`): adjugate over
+    /// determinant, raising when `|aDet| <= gp::Resolution()`
+    /// (`gp_Mat2d.cxx:133`); the Rust analogue of that raise is `Err`.
+    pub fn invert(&mut self) -> Result<(),&'static str> { let det=self.determinant(); if det.abs()<=REAL_SMALL { Err("singular") } else { let inv=1.0/det; let a=self.data; self.data=[[a[1][1]*inv,-a[0][1]*inv],[-a[1][0]*inv,a[0][0]*inv]]; Ok(()) } }
     pub fn inverted(&self) -> Result<Self,&'static str> { let mut m=*self; m.invert()?; Ok(m) }
     /// `gp_Mat2d::PreMultiply` — `self = other * self`.
     #[inline] pub fn pre_multiply(&mut self, o:&Self) { *self = o.multiplied(self); }

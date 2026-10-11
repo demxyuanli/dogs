@@ -83,6 +83,18 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
         &mut du,
         &mut not_done,
     );
+    // TEMP GDBG: inputs of one full-turn edge, to line up with OCCT's
+    // `OCCTDCPASS` / tessellation step on the Cone top circle.
+    let gdbg = std::env::var("GDBG").is_ok() && (last - first) > 6.28 && (last - first) < 6.29;
+    if gdbg {
+        let (pt0, t0, n0) = curve.d2(first);
+        let ln = n0.cross_magnitude(&t0) / t0.magnitude();
+        eprintln!(
+            "GDBG first={:.17e} last={:.17e} ang={:.17e} curv={:.17e} min_nb={} utol={:.17e} minlen={:.17e} dusave0={:.17e} du_init={:.17e} notdone={} ltsq={:.17e} lnsq={:.17e} p0=({:.17e},{:.17e},{:.17e})",
+            first, last, angular_deflection, curvature_deflection, min_nb, u_tol, min_len, (last - first) * US3, du, not_done,
+            t0.magnitude() * t0.magnitude(), ln * ln, pt0.x(), pt0.y(), pt0.z()
+        );
+    }
     params.push(first);
     points.push(current_point);
 
@@ -266,6 +278,12 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
                     more_points = false;
                     correction = false;
                 } else if coef >= 0.55 || too_large {
+                    if gdbg {
+                        eprintln!(
+                            "GDBG accept idx={} u2={:.17e} du={:.17e} coef={:.17e} f={:.17e} a={:.17e}",
+                            points.len(), u2, du, coef, f_coef, a_coef
+                        );
+                    }
                     params.push(u2);
                     points.push(current_point);
                     prev_point = current_point;

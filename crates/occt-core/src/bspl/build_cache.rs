@@ -22,6 +22,7 @@ pub fn build_cache(
     v_flat: &[f64],
     poles: &[Vec<GpPnt>],
     weights: Option<&[Vec<f64>]>,
+    weight_cache: Option<&mut Vec<Vec<f64>>>,
 ) -> Vec<Vec<GpPnt>> {
     let u_rat = weights.is_some();
     let v_rat = weights.is_some();
@@ -58,6 +59,9 @@ pub fn build_cache(
         (v_span, u_span)
     };
     let mut cache = vec![vec![GpPnt::new(0.0, 0.0, 0.0); d1p1 as usize]; d2p1 as usize];
+    let mut wlocal = weight_cache
+        .is_some()
+        .then(|| vec![vec![0.0; d1p1 as usize]; d2p1 as usize]);
     let mut factor0 = 1.0e0;
     for ii in 0..=prep.d2 {
         let iii = ii + 1;
@@ -77,9 +81,31 @@ pub fn build_cache(
                 f * prep.poles[ix + 1],
                 f * prep.poles[ix + 2],
             );
+            if prep.rational {
+                if let Some(wcache) = wlocal.as_mut() {
+                    wcache[(iii - 1) as usize][(jjj - 1) as usize] = f * prep.poles[ix + 3];
+                }
+            }
             factor1 *= min_dom / (jjj as f64);
         }
         factor0 *= max_dom / (iii as f64);
+    }
+    if let Some(wcache) = wlocal.as_mut() {
+        if !prep.rational {
+            for row in wcache.iter_mut() {
+                for value in row.iter_mut() {
+                    *value = 0.0;
+                }
+            }
+            if let Some(first) = wcache.first_mut().and_then(|row| row.first_mut()) {
+                *first = 1.0;
+            }
+        }
+    }
+    if let Some(dest) = weight_cache {
+        if let Some(src) = wlocal {
+            *dest = src;
+        }
     }
     cache
 }

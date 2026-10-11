@@ -1,5 +1,5 @@
 //! 2D coordinate {x,y}. Source: `gp_XY.hxx`
-use crate::precision::RESOLUTION;
+use crate::precision::REAL_SMALL;
 use crate::gp::mat2d::GpMat2d;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,8 +33,11 @@ impl GpXY {
     #[inline] pub const fn crossed(&self, o: &Self) -> f64 { self.x*o.y - self.y*o.x }
     #[inline] pub fn multiply_mat2d(&mut self, m: &GpMat2d) { let ox=self.x; let oy=self.y; self.x=m.data[0][0]*ox+m.data[0][1]*oy; self.y=m.data[1][0]*ox+m.data[1][1]*oy; }
     #[inline] pub fn multiplied_mat2d(&self, m: &GpMat2d) -> Self { Self { x: m.data[0][0]*self.x+m.data[0][1]*self.y, y: m.data[1][0]*self.x+m.data[1][1]*self.y } }
-    pub fn normalize(&mut self) -> Result<(), &'static str> { let d=self.modulus(); if d<=RESOLUTION { Err("zero") } else { self.divide(d); Ok(()) } }
-    pub fn normalized(&self) -> Result<Self, &'static str> { let d=self.modulus(); if d<=RESOLUTION { Err("zero") } else { Ok(self.divided(d)) } }
+    /// `gp_XY::Normalize()` (`gp_XY.hxx:411-417`): raise iff
+    /// `Modulus() <= gp::Resolution()`.
+    pub fn normalize(&mut self) -> Result<(), &'static str> { let d=self.modulus(); if d<=REAL_SMALL { Err("zero") } else { self.divide(d); Ok(()) } }
+    /// `gp_XY::Normalized()` (`gp_XY.hxx:289-295`).
+    pub fn normalized(&self) -> Result<Self, &'static str> { let d=self.modulus(); if d<=REAL_SMALL { Err("zero") } else { Ok(self.divided(d)) } }
     #[inline] pub fn reverse(&mut self) { self.x=-self.x; self.y=-self.y; }
     #[inline] pub const fn reversed(&self) -> Self { Self { x:-self.x, y:-self.y } }
     #[inline] pub fn set_linear_form_2(&mut self, a1:f64, xy1:&Self, a2:f64, xy2:&Self) { self.x=a1*xy1.x+a2*xy2.x; self.y=a1*xy1.y+a2*xy2.y; }

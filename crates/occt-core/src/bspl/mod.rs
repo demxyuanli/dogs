@@ -6,6 +6,10 @@ pub mod bohm;
 pub mod locate;
 pub mod build_knots;
 pub mod prepare_eval;
+pub mod surface_d0;
+pub mod surface_d1;
+pub mod surface_d2;
+pub mod surface_d3;
 pub mod rational_derivative;
 pub mod build_cache;
 pub mod surface_interpolate;
@@ -33,6 +37,7 @@ pub mod unperiodize;
 pub mod insert_knots;
 pub mod increase_degree;
 pub mod remove_knot;
+pub mod function_ops;
 
 pub use surface_resolution::bspline_surface_resolution;
 pub use curve_resolution::bspline_curve_resolution;

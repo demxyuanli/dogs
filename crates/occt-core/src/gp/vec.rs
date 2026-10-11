@@ -1,7 +1,10 @@
 use crate::gp::mat::GpMat;
 use crate::gp::pnt::GpPnt;
 use crate::gp::xyz::GpXyz;
-use crate::precision::RESOLUTION;
+// `RESOLUTION` is kept for the port-only no-tolerance helpers (`is_equal`,
+// `is_normal`, `is_parallel`, `is_opposite`); the `gp_Vec` counterparts of all
+// four take an explicit tolerance, so they have no `gp::Resolution()` branch.
+use crate::precision::{REAL_SMALL, RESOLUTION};
 
 /// 3D vector newtype over GpXyz.
 #[derive(Debug, Clone, Copy)]
@@ -167,18 +170,21 @@ impl GpVec {
         self.dot(&c)
     }
 
-    /// Normalize in-place. Returns magnitude, or 0 if zero vector.
+    /// `gp_Vec::Normalize()` (`gp_Vec.hxx:314-321`): raise iff
+    /// `coord.Modulus() <= gp::Resolution()`. The port reports the magnitude
+    /// (0 on the raise path) instead of throwing.
     pub fn normalize(&mut self) -> f64 {
         let m = self.magnitude();
-        if m > RESOLUTION {
+        if m > REAL_SMALL {
             self.coord = self.coord.divided(m);
         }
         m
     }
 
+    /// `gp_Vec::Normalized()` (`gp_Vec.hxx:507-515`).
     pub fn normalized(&self) -> Self {
         let m = self.magnitude();
-        if m > RESOLUTION {
+        if m > REAL_SMALL {
             Self {
                 coord: self.coord.divided(m),
             }
@@ -198,11 +204,14 @@ impl GpVec {
         }
     }
 
-    /// Angle between self and other (radians). Returns 0 if either is zero.
+    /// `gp_Vec::Angle()` (`gp_Vec.hxx:488-495`): raise iff either
+    /// `coord.Modulus() <= gp::Resolution()`, then delegate to
+    /// `gp_Dir::Angle`. The port's zero-magnitude path returns `0.0` instead of
+    /// the OCCT `gp_VectorWithNullMagnitude` throw.
     pub fn angle(&self, other: &GpVec) -> f64 {
         let m1 = self.magnitude();
         let m2 = other.magnitude();
-        if m1 <= RESOLUTION || m2 <= RESOLUTION {
+        if m1 <= REAL_SMALL || m2 <= REAL_SMALL {
             return 0.0;
         }
         let cos = self.dot(other) / (m1 * m2);

@@ -5,8 +5,9 @@ use crate::bspl::plib_eval::{eval_poly0, hermite_interpolate};
 use crate::bspl::plib_jacobi::JacobiPolynomial;
 use crate::kernel::geomabs::Shape;
 
-/// Evaluator: `param`, derivative request, writes `dimension` values, returns error code.
-pub type EvalFn<'a> = &'a dyn Fn(f64, i32, &mut [f64]) -> i32;
+/// `AdvApprox_EvaluatorFunction::Evaluate` (`AdvApprox_EvaluatorFunction.hxx:53-58`):
+/// `(StartEnd[0], StartEnd[1], Parameter, DerivativeRequest, Result) -> ErrorCode`.
+pub type EvalFn<'a> = &'a dyn Fn(f64, f64, f64, i32, &mut [f64]) -> i32;
 
 pub struct SimpleApprox {
     total_num_ss: i32,
@@ -83,8 +84,9 @@ impl SimpleApprox {
         let degree_q = self.work_degree - 2 * (self.niv_constr + 1);
         let fact = (last - first) / 2.0;
         let mut result = vec![0.0; dim];
+        // `FirstLast[0/1] = First/Last` (`AdvApprox_SimpleApprox.cxx:104-106`).
         for derive in (0..=self.niv_constr).rev() {
-            if eval(first, derive, &mut result) != 0 {
+            if eval(first, last, first, derive, &mut result) != 0 {
                 return;
             }
             if derive >= 1 {
@@ -102,7 +104,7 @@ impl SimpleApprox {
             }
         }
         for derive in (0..=self.niv_constr).rev() {
-            if eval(last, derive, &mut result) != 0 {
+            if eval(first, last, last, derive, &mut result) != 0 {
                 return;
             }
             if derive >= 1 {
@@ -141,7 +143,7 @@ impl SimpleApprox {
         for i in 1..=half {
             let ti = self.tab_points[i];
             let tip = alin * ti + blin;
-            if eval(tip, 0, &mut fti) != 0 {
+            if eval(first, last, tip, 0, &mut fti) != 0 {
                 return;
             }
             for idim in 0..dim {
@@ -154,7 +156,7 @@ impl SimpleApprox {
         for i in 1..=half {
             let ti = self.tab_points[i];
             let tin = -alin * ti + blin;
-            if eval(tin, 0, &mut fti) != 0 {
+            if eval(first, last, tin, 0, &mut fti) != 0 {
                 return;
             }
             eval_poly0(&self.coeff, degree_r, dim, ti, &mut rpti);
@@ -167,7 +169,7 @@ impl SimpleApprox {
         }
         if self.nb_gauss % 2 == 1 {
             let tip = blin;
-            if eval(tip, 0, &mut fti) != 0 {
+            if eval(first, last, tip, 0, &mut fti) != 0 {
                 return;
             }
             eval_poly0(&self.coeff, degree_r, dim, self.tab_points[0], &mut rpti);

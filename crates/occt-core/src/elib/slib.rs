@@ -19,7 +19,15 @@ fn pt_add3(
     c: &crate::gp::GpXyz,
     sc: f64,
 ) -> GpPnt {
-    GpPnt::from_xyz(&o.added(&a.multiplied(sa)).added(&b.multiplied(sb)).added(&c.multiplied(sc)))
+    // `ElSLib::SphereD0` (`ElSLib.cxx:623-625`) sums the three basis products
+    // first and adds the location last: `A1*X + A2*Y + A3*Z + PLoc`. Adding the
+    // origin first is algebraically equal but rounds differently.
+    GpPnt::from_xyz(
+        &a.multiplied(sa)
+            .added(&b.multiplied(sb))
+            .added(&c.multiplied(sc))
+            .added(o),
+    )
 }
 
 /// `ElSLib.cxx:37-57` `normalizeAngle`.

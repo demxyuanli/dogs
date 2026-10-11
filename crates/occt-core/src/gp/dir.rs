@@ -1,6 +1,6 @@
 use crate::gp::vec::GpVec;
 use crate::gp::xyz::GpXyz;
-use crate::precision::RESOLUTION;
+use crate::precision::{REAL_SMALL, RESOLUTION};
 
 /// Axis direction constants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,19 +57,29 @@ impl GpDir {
         }
     }
 
-    /// Create from components. Normalizes iff needed. Returns Err on zero.
+    /// `gp_Dir::gp_Dir(double, double, double)` (`gp_Dir.hxx:352-369`).
+    ///
+    /// The predicate is on the **square modulus**: OCCT's fast path compares
+    /// `aSqMod` with `1.0 +- gp::Resolution()`, and `gp::Resolution()` is
+    /// `RealSmall()` == `DBL_MIN` (`gp.hxx:60`), so both bounds round to `1.0`
+    /// and only an already-unit square modulus skips the division. The zero
+    /// guard is `aSqMod <= gp::Resolution() * gp::Resolution()`, and
+    /// `DBL_MIN * DBL_MIN` underflows to `0.0`, so only an exactly zero vector
+    /// raises. The previous body compared `sqrt(aSqMod)` against
+    /// `Precision::Resolution()` (1e-12) and kept any vector within 1e-12 of
+    /// unit length unnormalized.
     pub fn new(x: f64, y: f64, z: f64) -> Result<Self, &'static str> {
-        let m = (x * x + y * y + z * z).sqrt();
-        if m <= RESOLUTION {
-            return Err("GpDir: zero vector");
-        }
-        // fast-path: already unit within tolerance
-        if (m - 1.0).abs() <= RESOLUTION {
+        let a_sq_mod = x * x + y * y + z * z;
+        // Fast path: already normalized (`gp_Dir.hxx:357-361`).
+        if a_sq_mod >= 1.0 - REAL_SMALL && a_sq_mod <= 1.0 + REAL_SMALL {
             return Ok(Self {
                 coord: GpXyz::new(x, y, z),
             });
         }
-        let inv = 1.0 / m;
+        if a_sq_mod <= REAL_SMALL * REAL_SMALL {
+            return Err("GpDir: zero vector");
+        }
+        let inv = 1.0 / a_sq_mod.sqrt();
         Ok(Self {
             coord: GpXyz::new(x * inv, y * inv, z * inv),
         })
@@ -114,10 +124,15 @@ impl GpDir {
     }
 
     /// self = self ^ other (re-normalizes result). Err on zero cross.
+    ///
+    /// OCCT counterpart: `gp_Dir::Crossed(const gp_Dir&)`
+    /// (`gp_Dir.cxx:299-302`) delegates to the `gp_Dir(gp_XYZ)` constructor,
+    /// whose guard is `aSqMod <= gp::Resolution() * gp::Resolution()`
+    /// (`gp_Dir.hxx:364`).
     pub fn cross(mut self, other: &GpDir) -> Result<Self, &'static str> {
         let crossed = self.coord.crossed(&other.coord);
         let m = crossed.modulus();
-        if m <= RESOLUTION {
+        if m <= REAL_SMALL {
             return Err("GpDir::cross: zero cross product");
         }
         self.coord = crossed.divided(m);
@@ -128,7 +143,7 @@ impl GpDir {
     pub fn crossed(&self, other: &GpDir) -> Result<Self, &'static str> {
         let crossed = self.coord.crossed(&other.coord);
         let m = crossed.modulus();
-        if m <= RESOLUTION {
+        if m <= REAL_SMALL {
             return Err("GpDir::crossed: zero cross product");
         }
         Ok(Self {
@@ -141,7 +156,7 @@ impl GpDir {
         let co = self.crossed(other)?;
         let cc = self.coord.crossed(&co.coord);
         let m = cc.modulus();
-        if m <= RESOLUTION {
+        if m <= REAL_SMALL {
             return Err("GpDir::cross_cross: zero result");
         }
         Ok(Self {
@@ -227,7 +242,9 @@ impl GpDir {
                 let mut xyz = self.coord;
                 xyz.multiply_mat(&t.h_vectorial_part());
                 let d = xyz.modulus();
-                if d > RESOLUTION {
+                // `gp_Dir::Transform` (`gp_Dir.cxx:54-70`): normalizes only
+                // when `aMagnitude > gp::Resolution()`.
+                if d > REAL_SMALL {
                     xyz = xyz.divided(d);
                 }
                 if t.scale_factor() < 0.0 {

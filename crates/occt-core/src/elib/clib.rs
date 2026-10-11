@@ -11,8 +11,18 @@ fn vec_add(a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpVe
     GpVec::from_xyz(&r)
 }
 
+/// Evaluates `a * sa + b * sb + org` with the OCCT association order
+/// `((a * sa) + (b * sb)) + org`.
+///
+/// Source: `ElCLib::CircleValue` (`ElCLib.cxx:169-171`), `EllipseValue`
+/// (`:186-188`), `HyperbolaValue` (`:203-205`), `ParabolaValue` (`:222-224`)
+/// all write `A1 * XDir.X() + A2 * YDir.X() + PLoc.X()`, i.e. the location is
+/// added last. `ElCLib::To3d(gp_Ax2, gp_Pnt2d)` (`:1339-1344`) goes through
+/// `gp_XYZ::SetLinearForm` (`gp_XYZ.cxx`), which is `s1 * V1 + s2 * V2 + V3`
+/// with the same left-to-right grouping. Adding `org` first rounds differently
+/// by ~1 ulp, which moved `computeLengthU/V` and therefore `myDelta`.
 fn pt_add(org: &crate::gp::GpXyz, a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpPnt {
-    let r = org.added(&a.multiplied(sa)).added(&b.multiplied(sb));
+    let r = a.multiplied(sa).added(&b.multiplied(sb)).added(org);
     GpPnt::from_xyz(&r)
 }
 
