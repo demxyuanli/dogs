@@ -1278,17 +1278,20 @@ impl<'a> Resolver<'a> {
             let s = self.resolve_shape(it)?;
             if s.is_face() {
                 fs.push(Face(s));
-            } else if s.is_shell() {
+            } else if s.is_shell() || s.is_compound() {
                 // `ShapeBuild_ReShape::applyImpl` (`cxx:282-299`): when the
                 // replacement has a different type than the original, its own
                 // children of the original's type are added instead. A
-                // `FixMissingSeam` shell therefore contributes its faces here,
-                // which is how OCCT's `Context()->Apply(S)`
+                // `FixMissingSeam` shell and a `FixSplitFace` compound
+                // (`ShapeFix_Face.cxx:2988-2999`) therefore contribute their
+                // faces here, which is how OCCT's `Context()->Apply(S)`
                 // (`ShapeFix_Shape.cxx:257`) turns 1772 imported faces into
                 // 1778 (`FromSTEP.exec.op = FixShape`).
-                for f in crate::topo_tools_full::faces_of(&s) {
-                    fs.push(f);
+                let faces = crate::topo_tools_full::faces_of(&s);
+                if faces.is_empty() {
+                    return Err(format!("#{it}: expected FACE in CLOSED_SHELL"));
                 }
+                fs.extend(faces);
             } else {
                 return Err(format!("#{it}: expected FACE in CLOSED_SHELL"));
             }

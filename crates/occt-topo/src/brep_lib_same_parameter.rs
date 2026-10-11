@@ -4,10 +4,14 @@
 
 use std::collections::HashSet;
 
-use occt_core::precision::{CONFUSION, INFINITE, Precision};
+use occt_core::precision::{CONFUSION, INFINITE, PCONFUSION, Precision};
+use occt_core::kernel::geomabs::Shape;
 use occt_geom::approx_same_parameter::{u_resolution, v_resolution};
-use occt_geom::{ApproxSameParameter, Curve, Surface};
+use occt_geom::geom_lib::knots_reparametrize;
+use occt_geom::{ApproxSameParameter, Curve, CurvilinearParameter, Surface};
 use occt_geom2d::curve::Curve2d;
+use occt_geom2d::c0_bspline_to_c1_bspline_curve;
+use std::sync::Arc;
 
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape};
@@ -15,6 +19,110 @@ use crate::tgeometry::{GeometryRegistry, VertexGeom};
 use crate::topo_tools_full::{edge_vertices, edges_of, faces_of};
 
 const NCONTROL: i32 = 22;
+
+/// `EvalTol` (`BRepLib.cxx:1034-1066`): probe five parameters on the pcurve,
+/// project the surface points onto the 3d curve with `Extrema_LocateExtPC`,
+/// and widen `tolbail` to the reached distance. Returns `true` when more than
+/// two projections succeed.
+fn eval_tol(
+    pc: &dyn Curve2d,
+    surf: &dyn Surface,
+    c3d: &dyn Curve,
+    first: f64,
+    last: f64,
+    tol: f64,
+) -> Option<f64> {
+    let mut tolbail = tol;
+    let mut ok = 0i32;
+    for i in 1..=5 {
+        let t_frac = i as f64 / 6.0;
+        let t = (1.0 - t_frac) * first + t_frac * last;
+        let puv = pc.d0(t);
+        let p = surf.d0(puv.x(), puv.y());
+        if let Some((_tp, q)) =
+            crate::int_tools_vertex_line::extrema_locate_ext_pc(c3d, &p, t, first, last)
+        {
+            let dist2 = p.square_distance(&q);
+            if dist2 > tolbail * tolbail {
+                tolbail = dist2.sqrt();
+            }
+            ok += 1;
+        }
+    }
+    if ok > 2 {
+        Some(tolbail)
+    } else {
+        None
+    }
+}
+
+/// Periodic `SetOrigin` realignment after `C0BSplineToC1BSplineCurve`
+/// (`BRepLib.cxx:1419-1441`, `:1471-1493`).
+fn realign_periodic_origin(bs2d: &mut occt_geom2d::Geom2dBSplineCurve, origin_point: &occt_core::gp::GpPnt2d) {
+    if !bs2d.is_periodic() {
+        return;
+    }
+    let new_origin = bs2d.d0(bs2d.first_parameter());
+    if (origin_point.x() - new_origin.x()).abs() <= PCONFUSION
+        && (origin_point.y() - new_origin.y()).abs() <= PCONFUSION
+    {
+        return;
+    }
+    let (knots, _) = bs2d.distinct_knots_and_mults();
+    for (idx, &k) in knots.iter().enumerate() {
+        let p = bs2d.d0(k);
+        if (origin_point.x() - p.x()).abs() > PCONFUSION
+            || (origin_point.y() - p.y()).abs() > PCONFUSION
+        {
+            continue;
+        }
+        let _ = bs2d.set_origin((idx + 1) as i32);
+        break;
+    }
+}
+
+/// Knot-span ratio "bad BSpline" test (`BRepLib.cxx:1537-1581`).
+fn is_bad_bspline_knots(bs2d: &occt_geom2d::Geom2dBSplineCurve, error: f64, the_tol: f64) -> bool {
+    let cont = bs2d.continuity();
+    if cont <= 0 || error <= (1.0e-3_f64).max(the_tol) {
+        return false;
+    }
+    let (knots, _) = bs2d.distinct_knots_and_mults();
+    let nb_knots = knots.len();
+    if nb_knots < 3 {
+        return false;
+    }
+    const CRIT_RATIO: f64 = 10.0;
+    let mut dtprev = knots[1] - knots[0];
+    let mut dtmin = dtprev;
+    let mut is_bad = false;
+    for j in 1..nb_knots - 1 {
+        let dtcur = knots[j + 1] - knots[j];
+        dtmin = dtmin.min(dtcur);
+        if !is_bad {
+            let dtratio = if dtcur > dtprev {
+                dtcur / dtprev
+            } else if dtcur > 0.0 {
+                dtprev / dtcur
+            } else {
+                f64::INFINITY
+            };
+            if dtratio > CRIT_RATIO {
+                is_bad = true;
+            }
+        }
+        dtprev = dtcur;
+    }
+    if is_bad {
+        // `cxx:1575-1579`: clear IsBad when the smallest span is still above
+        // the curve resolution at `max(1e-3, theTolerance)`.
+        let dtcur = bs2d.resolution((1.0e-3_f64).max(the_tol));
+        if dtmin < dtcur {
+            is_bad = false;
+        }
+    }
+    is_bad
+}
 
 /// `BRepLib.cxx:1070-1188`.
 fn compute_tol(
@@ -109,7 +217,9 @@ fn compute_tol(
     d2.max(1.0e-7)
 }
 
-fn same_parameter_edge(edge: &Edge, face: &Face, the_tol: f64) -> f64 {
+/// `BRepLib::SameParameter` four-argument core (`BRepLib.cxx:1251-1739`):
+/// walk every `CurveOnSurface` representation (`cxx:1263-1291`, `:1352-1718`).
+fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
     let reg = GeometryRegistry::global();
     let Some(mut g) = reg.edge_geom(&edge.0) else {
         return -1.0;
@@ -133,12 +243,9 @@ fn same_parameter_edge(edge: &Edge, face: &Face, the_tol: f64) -> f64 {
             l3d = ufin;
         }
     }
-    let Some(surf) = BRepTool::face_surface(face) else {
-        return -1.0;
-    };
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    let pcs = reg.edge_pcurves(&edge.0, face_key);
-    if pcs.is_empty() {
+    // `GetCurve3d` Cos list (`cxx:1263-1291`): every stored representation.
+    let reps = reg.edge_pcurve_reps(&edge.0);
+    if reps.is_empty() {
         g.first = f3d;
         g.last = l3d;
         g.same_range = true;
@@ -152,95 +259,254 @@ fn same_parameter_edge(edge: &Edge, face: &Face, the_tol: f64) -> f64 {
     let mut ya_pcu = false;
     const BIG_ERROR: f64 = 1.0e10;
     // `cxx:1378`: TolSameRange = max(GAC.Resolution(theTolerance), PConfusion).
-    //
-    // UNPORTED: `cxx:1389` and `cxx:1678` pass this value as the first argument
-    // of `GeomLib::SameRange` (`GeomLib.cxx:842-969`), where it decides the
-    // `LastOnCurve`/`FirstOnCurve` early-out and the equal-span test. The Rust
-    // helper `shhealing::geom_lib_same_range` (`shhealing/wire_fix.rs:579-625`) takes
-    // no tolerance and compares with `Precision::PConfusion` instead, so the
-    // value is computed here and deliberately left unused.
+    // Passed to `GeomLib::SameRange` (`cxx:1389`, `:1678`) and used by the
+    // Curvilinear reparam range check (`cxx:1610-1611`).
     let tol_same_range = crate::int_tools_vertex_line::adaptor_resolution(c3d.as_ref(), the_tol)
         .max(occt_core::precision::PCONFUSION);
-    let _ = tol_same_range;
-    let (first_on, last_on) = reg
-        .pcurve_range(&edge.0, face_key)
-        .unwrap_or((f3d, l3d));
-    let mut out_pcs: Vec<std::sync::Arc<dyn Curve2d>> = Vec::with_capacity(pcs.len());
-    let mut pcs_changed = false;
-    for pc in &pcs {
-        ya_pcu = true;
-        // `cxx:1387-1391`: `GeomLib::SameRange` when `!SameRange`.
-        let mut cur_pc = if !same_range {
-            let remapped = crate::shhealing::geom_lib_same_range(
-                pc.clone(),
-                first_on,
-                last_on,
-                f3d,
-                l3d,
-            );
-            if !std::sync::Arc::ptr_eq(&remapped, pc) {
-                pcs_changed = true;
-            }
-            remapped
-        } else {
-            pc.clone()
-        };
-        let error =
-            compute_tol(c3d.as_ref(), cur_pc.as_ref(), surf.as_ref(), f3d, l3d, NCONTROL);
-        if error > BIG_ERROR {
-            maxdist = error;
-            out_pcs.push(cur_pc);
-            break;
-        }
-        let same_p = ApproxSameParameter::new(
-            c3d.as_ref(),
-            cur_pc.as_ref(),
-            surf.as_ref(),
-            f3d,
-            l3d,
-            the_tol,
-        );
-        if same_p.same_parameter {
-            maxdist = maxdist.max(same_p.tol_reached);
-        } else if same_p.done {
-            maxdist = maxdist.max(same_p.tol_reached.min(error));
-            // `cxx:1648-1671`: replace pcurve when Approx rebuilt it.
-            if let Some(ref new_pc) = same_p.curve2d {
-                if same_p.tol_reached <= error {
-                    cur_pc = new_pc.clone();
+    // Group Cos by representation key so seam pairs stay together when rewritten.
+    let mut by_key: std::collections::BTreeMap<
+        usize,
+        (std::sync::Arc<dyn Surface>, f64, f64, Vec<std::sync::Arc<dyn Curve2d>>),
+    > = std::collections::BTreeMap::new();
+    for (surf, pc, first_on, last_on) in reps {
+        let fk = std::sync::Arc::as_ptr(&surf) as *const () as usize;
+        by_key
+            .entry(fk)
+            .and_modify(|e| e.3.push(pc.clone()))
+            .or_insert_with(|| (surf, first_on, last_on, vec![pc]));
+    }
+    for (fk, (surf, first_on, last_on, pcs)) in by_key {
+        let mut out_pcs: Vec<std::sync::Arc<dyn Curve2d>> = Vec::with_capacity(pcs.len());
+        let mut pcs_changed = false;
+        for pc in &pcs {
+            ya_pcu = true;
+            // `cxx:1387-1391`: `GeomLib::SameRange` when `!SameRange`.
+            let mut cur_pc = if !same_range {
+                let remapped = crate::shhealing::geom_lib_same_range(
+                    tol_same_range,
+                    pc.clone(),
+                    first_on,
+                    last_on,
+                    f3d,
+                    l3d,
+                );
+                if !std::sync::Arc::ptr_eq(&remapped, pc) {
                     pcs_changed = true;
                 }
+                remapped
+            } else {
+                pc.clone()
+            };
+            let mut error =
+                compute_tol(c3d.as_ref(), cur_pc.as_ref(), surf.as_ref(), f3d, l3d, NCONTROL);
+            if error > BIG_ERROR {
+                maxdist = error;
+                out_pcs.push(cur_pc);
+                break;
             }
-        } else {
-            // `cxx:1678-1684`: Approx failed - still SameRange onto 3d domain.
-            let remapped = crate::shhealing::geom_lib_same_range(
-                pc.clone(),
-                first_on,
-                last_on,
+            // `cxx:1404-1622`: C0 BSpline pcurve -> C1 via
+            // `Geom2dConvert::C0BSplineToC1BSplineCurve`.
+            let mut goodpc = true;
+            let mut is_bsp = false;
+            let mut is_ana = false;
+            if cur_pc.is_bspline2d() && cur_pc.continuity() == 0 {
+                if let Some(mut bs2d) = cur_pc.bspline_copy2d() {
+                    let u_resol = u_resolution(surf.as_ref(), the_tol);
+                    let v_resol = v_resolution(surf.as_ref(), the_tol);
+                    let tol_conf2d = u_resol.min(v_resol).max(PCONFUSION);
+                    let bs2dsov = bs2d.clone();
+                    let f_c0 = bs2d.first_parameter();
+                    let l_c0 = bs2d.last_parameter();
+                    let mut repar = true;
+                    let origin_point = bs2d.d0(f_c0);
+                    if c0_bspline_to_c1_bspline_curve(&mut bs2d, tol_conf2d).is_ok() {
+                        is_bsp = true;
+                        realign_periodic_origin(&mut bs2d, &origin_point);
+                        if bs2d.continuity() == 0 {
+                            // `cxx:1444-1506`: EvalTol then Tol2dbail retry.
+                            if let Some(tolbail) = eval_tol(
+                                cur_pc.as_ref(),
+                                surf.as_ref(),
+                                c3d.as_ref(),
+                                f3d,
+                                l3d,
+                                the_tol,
+                            ) {
+                                bs2d = bs2dsov.clone();
+                                let u_resbail = u_resolution(surf.as_ref(), tolbail);
+                                let v_resbail = v_resolution(surf.as_ref(), tolbail);
+                                let mut tol2dbail = u_resbail.min(v_resbail);
+                                let origin_point = bs2d.d0(bs2d.first_parameter());
+                                let nbp = bs2d.nb_poles();
+                                let mut d = INFINITE;
+                                if nbp >= 2 {
+                                    if let Some(poles) = bs2d.poles2d() {
+                                        let mut p = poles[0];
+                                        for ip in 1..nbp {
+                                            let p1 = poles[ip];
+                                            d = d.min(p.square_distance(&p1));
+                                            p = p1;
+                                        }
+                                        d = d.sqrt() * 0.1;
+                                    }
+                                }
+                                tol2dbail = tol2dbail.min(d).max(tol_conf2d);
+                                let _ = c0_bspline_to_c1_bspline_curve(&mut bs2d, tol2dbail);
+                                realign_periodic_origin(&mut bs2d, &origin_point);
+                                if bs2d.continuity() == 0 {
+                                    goodpc = true;
+                                    bs2d = bs2dsov.clone();
+                                    repar = false;
+                                }
+                            } else {
+                                goodpc = false;
+                            }
+                        }
+                        if goodpc {
+                            if repar {
+                                let (mut knots, _) = bs2d.distinct_knots_and_mults();
+                                knots_reparametrize(f_c0, l_c0, &mut knots);
+                                let _ = bs2d.set_knots(&knots);
+                                let new_pc: Arc<dyn Curve2d> = Arc::new(bs2d.clone());
+                                let error1 = compute_tol(
+                                    c3d.as_ref(),
+                                    new_pc.as_ref(),
+                                    surf.as_ref(),
+                                    f3d,
+                                    l3d,
+                                    NCONTROL,
+                                );
+                                if error1 > error {
+                                    // Keep `cur_pc` as the pre-convert curve
+                                    // (`cxx:1525-1529`).
+                                    bs2d = bs2dsov.clone();
+                                    is_ana = true;
+                                } else {
+                                    error = error1;
+                                    cur_pc = new_pc;
+                                    pcs_changed = true;
+                                }
+                            }
+                            // `cxx:1537-1621`: knot-span ratio + Curvilinear.
+                            if is_bad_bspline_knots(&bs2d, error, the_tol) {
+                                let mut cont = match bs2d.continuity() {
+                                    0 => Shape::C0,
+                                    1 => Shape::G1,
+                                    2 => Shape::C1,
+                                    3 => Shape::G2,
+                                    4 => Shape::C2,
+                                    5 => Shape::C3,
+                                    _ => Shape::CN,
+                                };
+                                if cont > Shape::C2 {
+                                    cont = Shape::C2;
+                                }
+                                let mut maxdeg = bs2d.degree() as i32;
+                                if maxdeg == 1 {
+                                    maxdeg = 14;
+                                }
+                                let pc_arc: Arc<dyn Curve2d> = Arc::new(bs2d.clone());
+                                let surf_arc = surf.clone();
+                                let cos: Arc<dyn Curve> = Arc::new(
+                                    crate::meshing::edge_discret::CurveOnSurface::new(
+                                        pc_arc.clone(),
+                                        surf_arc.clone(),
+                                        f3d,
+                                        l3d,
+                                    ),
+                                );
+                                let app = CurvilinearParameter::from_curve_on_surface(
+                                    pc_arc,
+                                    surf_arc.clone(),
+                                    cos,
+                                    (1.0e-3_f64).max(the_tol),
+                                    cont,
+                                    maxdeg,
+                                    10,
+                                    |c2d, s| {
+                                        Arc::new(
+                                            crate::meshing::edge_discret::CurveOnSurface::new(
+                                                c2d, s, f3d, l3d,
+                                            ),
+                                        )
+                                    },
+                                );
+                                if (app.done || app.has_result) && app.curve2d1.is_some() {
+                                    let mut new_bs = app.curve2d1.unwrap();
+                                    if (new_bs.first_parameter() - f_c0).abs() > tol_same_range
+                                        || (new_bs.last_parameter() - l_c0).abs() > tol_same_range
+                                    {
+                                        let (mut knots, _) = new_bs.distinct_knots_and_mults();
+                                        knots_reparametrize(f_c0, l_c0, &mut knots);
+                                        let _ = new_bs.set_knots(&knots);
+                                    }
+                                    bs2d = new_bs;
+                                    cur_pc = Arc::new(bs2d.clone());
+                                    pcs_changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if !goodpc {
+                out_pcs.push(cur_pc);
+                continue;
+            }
+            let a_tol = if is_ana && is_bsp { 1.0e-7 } else { the_tol };
+            let same_p = ApproxSameParameter::new(
+                c3d.as_ref(),
+                cur_pc.as_ref(),
+                surf.as_ref(),
                 f3d,
                 l3d,
+                a_tol,
             );
-            if !std::sync::Arc::ptr_eq(&remapped, &cur_pc) {
-                pcs_changed = true;
+            if same_p.same_parameter {
+                maxdist = maxdist.max(same_p.tol_reached);
+            } else if same_p.done {
+                maxdist = maxdist.max(same_p.tol_reached.min(error));
+                // `cxx:1648-1671`: replace pcurve when Approx rebuilt it.
+                if let Some(ref new_pc) = same_p.curve2d {
+                    if same_p.tol_reached <= error {
+                        cur_pc = new_pc.clone();
+                        pcs_changed = true;
+                    }
+                }
+            } else {
+                // `cxx:1678-1684`: Approx failed - still SameRange onto 3d domain.
+                let remapped = crate::shhealing::geom_lib_same_range(
+                    tol_same_range,
+                    pc.clone(),
+                    first_on,
+                    last_on,
+                    f3d,
+                    l3d,
+                );
+                if !std::sync::Arc::ptr_eq(&remapped, &cur_pc) {
+                    pcs_changed = true;
+                }
+                cur_pc = remapped;
+                is_same_p = false;
             }
-            cur_pc = remapped;
-            is_same_p = false;
-        }
-        if !is_same_p {
-            // `BRepCheck::PrecCurve` / `PrecSurface` (`BRepCheck.cxx:70-129`):
-            // ellipse/cone epsilon specials are not ported; default is `RealEpsilon`.
-            let prec = f64::EPSILON;
-            let cur_tol = an_edge_tol + prec;
-            if cur_tol >= error {
-                maxdist = maxdist.max(an_edge_tol);
-                is_same_p = true;
+            if !is_same_p {
+                // `BRepCheck::PrecCurve` / `PrecSurface` (`BRepCheck.cxx:70-129`):
+                // ellipse/cone epsilon specials are not ported; default is `RealEpsilon`.
+                let prec = f64::EPSILON;
+                let cur_tol = an_edge_tol + prec;
+                if cur_tol >= error {
+                    maxdist = maxdist.max(an_edge_tol);
+                    is_same_p = true;
+                }
             }
+            out_pcs.push(cur_pc);
         }
-        out_pcs.push(cur_pc);
-    }
-    if pcs_changed && !out_pcs.is_empty() {
-        reg.set_edge_pcurves(&edge.0, face_key, out_pcs);
-        reg.set_pcurve_range(&edge.0, face_key, f3d, l3d);
+        if pcs_changed && !out_pcs.is_empty() {
+            // `fk` is the surface-pointer Cos key; `repr_key` leaves it unchanged
+            // when it is not a face shape key (`tgeometry.rs:587-593`).
+            reg.set_edge_pcurves(&edge.0, fk, out_pcs);
+            reg.set_pcurve_range(&edge.0, fk, f3d, l3d);
+        }
     }
     g.first = f3d;
     g.last = l3d;
@@ -278,15 +544,17 @@ fn update_v_tol(edge: &Edge, new_tol: f64) {
 
 /// `BRepLib::SameParameter(theEdge, theTolerance)` (`BRepLib.cxx:1237-1246`):
 /// the four argument overload with `IsUseOldEdge = true` (the edge is modified
-/// in place) followed by `UpdateVTol` (`cxx:1242-1245`).
-///
-/// UNPORTED: the four argument overload (`cxx:1251-1739`) walks *every*
-/// `CurveOnSurface` representation of the edge (`cxx:1263-1291`); this entry
-/// point covers only `face`. The `GetCurve3d` period clamp (`cxx:1312-1332`)
-/// is done by [`same_parameter_edge`] (`cxx:156-161`).
-pub fn same_parameter_edge_inplace(edge: &Edge, face: &Face, tolerance: f64) {
-    let new_tol = same_parameter_edge(edge, face, tolerance);
+/// in place) followed by `UpdateVTol` (`cxx:1242-1245`). Walks every Cos
+/// representation (`cxx:1263-1291`).
+pub fn same_parameter_edge_inplace(edge: &Edge, tolerance: f64) {
+    let new_tol = same_parameter_edge(edge, tolerance);
     update_v_tol(edge, new_tol);
+}
+
+/// Face-scoped entry used by callers that already hold a face; Cos walk is
+/// still every representation on the edge (`BRepLib.cxx:1251-1739`).
+pub fn same_parameter_edge_inplace_on_face(edge: &Edge, _face: &Face, tolerance: f64) {
+    same_parameter_edge_inplace(edge, tolerance);
 }
 
 fn update_tolerances(shape: &TopoShape) {
@@ -334,16 +602,8 @@ pub fn same_parameter_shape(shape: &TopoShape, tolerance: f64, forced: bool) {
                 reg.set_edge(&e.0, g);
             }
         }
-        let faces = faces_of(shape);
-        let face = faces.into_iter().find(|f| {
-            edges_of(&f.0)
-                .iter()
-                .any(|fe| GeometryRegistry::shape_key(&fe.0) == key)
-        });
-        let Some(face) = face else {
-            continue;
-        };
-        let new_tol = same_parameter_edge(&e, &face, tolerance);
+        // `cxx:1251-1739`: every Cos on the edge, not one call-site face.
+        let new_tol = same_parameter_edge(&e, tolerance);
         update_v_tol(&e, new_tol);
     }
     // Unported: planar `GetEdgeTol` (`cxx:973-1002`). Offset faces skip it.

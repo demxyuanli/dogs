@@ -222,8 +222,30 @@ impl TopoBuilder {
     /// Set the free flag.
     pub fn make_free(&self, shape: &TopoShape) { shape.set_free(true); }
 
-    /// Delete a sub-shape (OCCT BRep_Builder::Remove). Stub: no-op in flat model.
-    pub fn remove(&self, _shape: &mut TopoShape, _sub: &TopoShape) {}
+    /// `TopoDS_Builder::Remove` (`TopoDS_Builder.cxx:107-133`). A frozen parent
+    /// is left unchanged; OCCT throws `TopoDS_FrozenShape` in that case.
+    pub fn remove(&self, shape: &mut TopoShape, sub: &TopoShape) {
+        if !shape.free() {
+            return;
+        }
+        let mut key = sub.clone();
+        if shape.orientation() == crate::abs::Orientation::Reversed {
+            key.reverse();
+        }
+        if !shape.location().is_identity() {
+            key.move_location(&shape.location().inverted());
+        }
+        if let Ok(mut t) = shape.tshape.write() {
+            if let Some(i) = t.children.iter().position(|c| {
+                std::sync::Arc::ptr_eq(&c.tshape, &key.tshape)
+                    && c.orientation() == key.orientation()
+                    && c.location().is_equal(key.location())
+            }) {
+                t.children.remove(i);
+                t.set_modified(true);
+            }
+        }
+    }
 }
 
 impl Vertex {

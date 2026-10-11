@@ -192,12 +192,31 @@ pub struct VertexGeomCore {
 #[derive(Default, Clone)]
 pub struct EdgeGeomCore {
     pub curve: Option<Arc<dyn Curve>>,
+    /// `true` when the edge's `BRep_Curve3D` representation exists but holds a
+    /// *null* curve (`BRep_Builder::UpdateCurves`, `BRep_Builder.cxx:58-95`:
+    /// `new BRep_Curve3D(nullCurve, L)`), as installed by
+    /// `BRep_Builder::Degenerated(E, true)` (`BRep_Builder.cxx:1073-1085`) or by
+    /// `ShapeBuild_Edge::MakeEdge(edge, C2d, S, L, p1, p2)`
+    /// (`ShapeBuild_Edge.cxx:851-870`) for an edge that has a pcurve only.
+    ///
+    /// `BRep_Tool::Curve` then answers a null handle (`BRep_Tool.cxx:172-196`),
+    /// so `ShapeAnalysis_Edge::HasCurve3d` is false and
+    /// `ShapeFix_Edge::FixAddCurve3d` /`ShapeBuild_Edge::BuildCurve3d`
+    /// (`BRepLib.cxx:320-325`) rebuild the 3D curve from the pcurve. `curve`
+    /// still carries what `BRepAdaptor_Curve(E, F)` builds from that pcurve
+    /// (`Adaptor3d_CurveOnSurface`), because `BRepMesh` tessellates through
+    /// `BRepAdaptor_Curve(E, F)` rather than `BRep_Tool::Curve`.
+    pub curve3d_null: bool,
     pub first: f64,
     pub last: f64,
     pub tolerance: f64,
     pub same_parameter: bool,
     pub same_range: bool,
     pub degenerated: bool,
+    /// `BRep_PointOnCurve` parameters written by `BRep_Builder::UpdateVertex`
+    /// (`BRepSweep_Rotation::SetDirectingParameter` / `SetGeneratingParameter`).
+    /// Keyed by `GeometryRegistry::shape_key` of the vertex.
+    pub vertex_params: Vec<(usize, f64)>,
 }
 
 impl fmt::Debug for EdgeGeomCore {

@@ -41,6 +41,7 @@ pub fn transform_shape(shape: &mut TopoShape, t: &GpTrsf) -> Result<(), String> 
                     let curve = Arc::from(g.curve.transformed(t));
                     reg.set_edge(&s, EdgeGeom {
                         curve,
+                        curve3d_null: g.curve3d_null,
                         first: g.first,
                         last: g.last,
                         tolerance: g.tolerance,
@@ -121,6 +122,7 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
                 if let Some(g) = reg.edge_geom(&s) {
                     reg.set_edge(&copy, EdgeGeom {
                         curve: Arc::from(g.curve.transformed(t)),
+                        curve3d_null: g.curve3d_null,
                         first: g.first,
                         last: g.last,
                         tolerance: g.tolerance,

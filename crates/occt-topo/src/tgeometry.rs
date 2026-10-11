@@ -72,6 +72,12 @@ const EDGE_NEW_IS_SAME_PARAMETER: bool = true;
 /// Edge geometry — an underlying curve and a parameter range. (BRep_TEdge)
 pub struct EdgeGeom {
     pub curve: Arc<dyn Curve>,
+    /// `true` when the edge's `BRep_Curve3D` representation holds a null curve
+    /// (see [`crate::tshape::EdgeGeomCore::curve3d_null`]); `curve` then carries
+    /// what `BRepAdaptor_Curve(E, F)` builds from the pcurve, and
+    /// [`GeometryRegistry::edge_curve`] answers `None`, as `BRep_Tool::Curve`
+    /// does.
+    pub curve3d_null: bool,
     pub first: f64,
     pub last: f64,
     pub tolerance: f64,
@@ -95,6 +101,7 @@ impl EdgeGeom {
     pub fn new(curve: Arc<dyn Curve>, first: f64, last: f64) -> Self {
         Self {
             curve,
+            curve3d_null: false,
             first,
             last,
             tolerance: 0.0,
@@ -262,6 +269,7 @@ impl GeometryRegistry {
             let mut ts = s.tshape.write().unwrap();
             let c = ts.edge_core_mut();
             c.curve = Some(geom.curve.clone());
+            c.curve3d_null = geom.curve3d_null;
             c.first = geom.first;
             c.last = geom.last;
             c.tolerance = geom.tolerance;
@@ -310,14 +318,40 @@ impl GeometryRegistry {
         let mut ts = s.tshape.write().unwrap();
         let c = ts.edge_core_mut();
         c.curve = Some(curve);
+        // `BRep_Builder::UpdateCurves(curves, C, L)` stores the curve in the
+        // existing `BRep_Curve3D` representation (`BRep_Builder.cxx:80-86`), so
+        // the representation is no longer the null one.
+        c.curve3d_null = false;
         if tol > c.tolerance {
             c.tolerance = tol;
         }
     }
 
-    /// `BRep_TEdge::UpdateTolerance(Tol)` (`BRep_TEdge.lxx:33-37`): raise only.
-    pub fn raise_edge_tolerance(&self, s: &TopoShape, tol: f64) {
+    /// `BRep_Builder::UpdateCurves(curves, C, L)` with a *null* curve: the
+    /// `BRep_Curve3D` representation stays in the list holding a null curve
+    /// (`BRep_Builder.cxx:86-92`), which is what
+    /// `BRep_Builder::Degenerated(E, true)` installs (`cxx:1073-1085`) and what
+    /// `ShapeBuild_Edge::MakeEdge(edge, C2d, S, L, p1, p2)`
+    /// (`ShapeBuild_Edge.cxx:851-870`) leaves behind for a pcurve-only edge.
+    /// `BRep_Tool::Curve` then answers null (`BRep_Tool.cxx:182-190`).
+    pub fn set_curve3d_null(&self, s: &TopoShape, v: bool) {
         let mut ts = s.tshape.write().unwrap();
+        ts.edge_core_mut().curve3d_null = v;
+    }
+
+    /// `ShapeBuild_Edge::RemoveCurve3d` (`ShapeBuild_Edge.cxx:704-710`):
+    /// `B.UpdateEdge(edge, nullCurve, 0.)` clears the curve of the existing
+    /// `BRep_Curve3D` representation and leaves its range in place
+    /// (`BRep_Builder::UpdateCurves`, `BRep_Builder.cxx:58-102`).
+    pub fn remove_edge_curve3d(&self, s: &TopoShape) {
+        let mut ts = s.tshape.write().unwrap();
+        let c = ts.edge_core_mut();
+        c.curve = None;
+        c.curve3d_null = true;
+    }
+
+    /// `BRep_TEdge::UpdateTolerance(Tol)` (`BRep_TEdge.lxx:33-37`): raise only.
+    pub fn raise_edge_tolerance(&self, s: &TopoShape, tol: f64) {        let mut ts = s.tshape.write().unwrap();
         let c = ts.edge_core_mut();
         if tol > c.tolerance {
             c.tolerance = tol;
@@ -340,7 +374,11 @@ impl GeometryRegistry {
         Some(EdgeGeom {
             // An `EdgeGeom` always carries a 3D curve; an edge registered
             // without one is not representable and is reported as absent.
+            // On a pcurve-only edge the curve is the `Adaptor3d_CurveOnSurface`
+            // `BRepAdaptor_Curve(E, F)` builds, and `curve3d_null` carries the
+            // `BRep_Tool::Curve` answer (`tshape.rs` `EdgeGeomCore`).
             curve: c.curve.clone()?,
+            curve3d_null: c.curve3d_null,
             first: c.first,
             last: c.last,
             tolerance: c.tolerance,
@@ -353,8 +391,15 @@ impl GeometryRegistry {
     }
 
     /// The underlying curve handle (clone of the Arc).
+    ///
+    /// `BRep_Tool::Curve(E, L, First, Last)` (`BRep_Tool.cxx:172-196`): the
+    /// curve stored in the edge's `BRep_Curve3D` representation, which is a null
+    /// handle on a pcurve-only edge (`EdgeGeomCore::curve3d_null`). Callers that
+    /// want what `BRepAdaptor_Curve(E, F)` evaluates read
+    /// [`GeometryRegistry::edge_geom`] instead.
     pub fn edge_curve(&self, s: &TopoShape) -> Option<Arc<dyn Curve>> {
-        self.edge_geom(s).map(|g| g.curve)
+        self.edge_geom(s)
+            .and_then(|g| if g.curve3d_null { None } else { Some(g.curve) })
     }
 
     pub fn edge_parameters(&self, s: &TopoShape) -> (f64, f64) {

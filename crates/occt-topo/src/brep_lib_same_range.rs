@@ -99,11 +99,7 @@ pub fn check_same_range(s: &TopoShape, tolerance: f64) -> bool {
 }
 
 /// `BRepLib::SameRange(E, Tolerance)` (`BRepLib.cxx:187-263`).
-///
-/// UNPORTED: `Tolerance` is the first argument of `GeomLib::SameRange`
-/// (`cxx:237-254`); the port's `shhealing::geom_lib_same_range` does not carry
-/// it (pre-existing simplification of that function).
-pub fn same_range(s: &TopoShape, _tolerance: f64) {
+pub fn same_range(s: &TopoShape, tolerance: f64) {
     let reg = GeometryRegistry::global();
     let reps = rep_ranges(s);
     let Some(head) = reps.first() else {
@@ -128,7 +124,7 @@ pub fn same_range(s: &TopoShape, _tolerance: f64) {
         }
         let new_pcs: Vec<Arc<dyn Curve2d>> = pcs
             .into_iter()
-            .map(|pc| geom_lib_same_range(pc, r.first, r.last, cf, cl))
+            .map(|pc| geom_lib_same_range(tolerance, pc, r.first, r.last, cf, cl))
             .collect();
         if new_pcs.len() == 1 {
             reg.set_edge_pcurve(s, key, new_pcs.into_iter().next().unwrap());
