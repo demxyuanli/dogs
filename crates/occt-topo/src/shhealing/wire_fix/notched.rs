@@ -461,6 +461,18 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
     if reorder_ok {
         let _ = fix_shifted_wire(wire, face);
     }
+    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`).
+    // KNOWN DEVIATION, not yet migrated (same one as
+    // `perform_wire_first_round`): the arm's mode is the separate key
+    // `FixEdgeSameParameterMode` (`ShapeProcess_OperLibrary.cxx:857`), which is
+    // `0` for STEP as well (`DE_ShapeFixParameters.hxx:75` `FixMode::NotFix`,
+    // `DESTEP_Parameters.cxx:92-95`, `XSAlgo_ShapeProcessor.cxx:681`, legacy
+    // `STEPControl_Controller.cxx:247`), so `NeedFix(0)` is false and OCCT runs
+    // neither the `CheckPCurveRange` re-projection below nor
+    // `FixSameParameter(Edge, Face())`. OCCT's shape-level equivalent
+    // `ShapeFix_Shape.cxx:259` -> `ShapeFix::SameParameter(Result, false, 0.0)`
+    // (`ShapeFix.cxx:70-258`) is what the port covers with
+    // `same_parameter_shape` (`BRepLib::SameParameter`).
     let reg = GeometryRegistry::global();
     for (i, e) in edges.iter().enumerate() {
         if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(e, face, false) {
