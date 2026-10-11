@@ -183,7 +183,8 @@
 
 - `wireframe.rs` 的 UV 栅格（A13 / 网格发现 3）与 9 点 `face_uv_bounds`（A23 / 网格发现 8）：仍被 A13/A18/T-69 阻塞。
 - `bop_curved` 的曲面网格布尔（T-79，被 T-80 阻塞）；`bop_builder_splitapi.rs` 的 `heal_tolerance` 自创修形链。
-- `occt-geom/src/gcpnts.rs` 自适应 Simpson；`Geom_RectangularTrimmedSurface::SetTrim` 族；`occt-geom2d/curve_ops.rs` 采样族（R2-18）。
+- `occt-geom/src/gcpnts.rs` 自适应 Simpson；`Geom_RectangularTrimmedSurface::SetTrim` 族。
+- ✅ **本条订正（2026-10-11 复核）**：`occt-geom2d/curve_ops.rs` 的 256×256 采样族（R2-18）**已不存在**——`curve2d_closest_point` 走 `Extrema_ExtPC2d`、`curve2d_intersections` 走 `IntAna2d_AnaIntersection` / `Extrema_ExtCC2d`（`Extrema_GGenExtCC`），删除提交 `ok267451e8`（2026-09-26），`R2-18a/R2-18b` 结项。原文"仍为未修"是过期断言。
 - `BRepCheck_Edge` 的 SameParameter/SameRange 检查（与已落地的 `BRepLib::CheckSameRange` **不是同一函数**）。
 
 ### 9.4 本轮实证（motoc）
