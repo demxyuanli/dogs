@@ -6,7 +6,10 @@
 
 use std::sync::Arc;
 
+use occt_core::bspl::banded_interp;
+use occt_core::bspl::curve_tools;
 use occt_core::bspl::eval;
+use occt_core::bspl::knots;
 use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 
 use crate::bspline_curve::GeomBSplineCurve;
@@ -207,6 +210,305 @@ impl GeomBSplineSurface {
     /// periodic sequence carries one period of extension knots outside it).
     fn distinct_km_pub(flat: &[f64], periodic: bool, range: (f64, f64)) -> (Vec<f64>, Vec<i32>) {
         distinct_km(flat, periodic, range)
+    }
+
+    /// Shared knot/mult args for `BSplSLib::{D2,D3,DN}` on this surface.
+    fn bspl_lib_args(
+        &self,
+    ) -> (
+        Option<(Vec<f64>, Vec<i32>)>,
+        Option<(Vec<f64>, Vec<i32>)>,
+        bool,
+    ) {
+        let rat = self.weights.is_some();
+        if self.has_periodic_direction() {
+            let uk = distinct_km(&self.knots_u, self.u_periodic, self.u_range());
+            let vk = distinct_km(&self.knots_v, self.v_periodic, self.v_range());
+            (Some(uk), Some(vk), rat)
+        } else {
+            (None, None, rat)
+        }
+    }
+
+    /// `Geom_BSplineSurface::UReverse` (`Geom_BSplineSurface_1.cxx:1572-1592`).
+    pub fn u_reverse(&mut self) {
+        if self.knots_u.len() < 2 || self.poles.is_empty() {
+            return;
+        }
+        let (mut uknots, mut umults) = self.distinct_knots_and_mults_u();
+        curve_tools::reverse_distinct_knots(&mut uknots);
+        umults.reverse();
+        if self.u_periodic {
+            // `BSplSLib::Reverse` with `Last = Flat.Upper() - Deg - 1` (`cxx:1578-1586`).
+            curve_tools::reverse_periodic_span(&mut self.poles, self.knots_u.len(), self.deg_u);
+            if let Some(w) = self.weights.as_mut() {
+                curve_tools::reverse_periodic_span(w, self.knots_u.len(), self.deg_u);
+            }
+            self.knots_u = knots::knot_sequence_periodic(&uknots, &umults, self.deg_u as i32);
+        } else {
+            self.poles.reverse();
+            if let Some(w) = self.weights.as_mut() {
+                w.reverse();
+            }
+            self.knots_u = banded_interp::knot_sequence(&uknots, &umults, self.deg_u as i32);
+        }
+    }
+
+    /// `Geom_BSplineSurface::VReverse` (`Geom_BSplineSurface_1.cxx:1603-1623`).
+    pub fn v_reverse(&mut self) {
+        if self.knots_v.len() < 2 || self.poles.is_empty() {
+            return;
+        }
+        let (mut vknots, mut vmults) = self.distinct_knots_and_mults_v();
+        curve_tools::reverse_distinct_knots(&mut vknots);
+        vmults.reverse();
+        if self.v_periodic {
+            // `BSplSLib::Reverse` with `Last = Flat.Upper() - Deg - 1` (`cxx:1609-1616`).
+            let flat_len = self.knots_v.len();
+            let deg = self.deg_v;
+            for row in self.poles.iter_mut() {
+                curve_tools::reverse_periodic_span(row, flat_len, deg);
+            }
+            if let Some(w) = self.weights.as_mut() {
+                for row in w.iter_mut() {
+                    curve_tools::reverse_periodic_span(row, flat_len, deg);
+                }
+            }
+            self.knots_v = knots::knot_sequence_periodic(&vknots, &vmults, self.deg_v as i32);
+        } else {
+            for row in self.poles.iter_mut() {
+                row.reverse();
+            }
+            if let Some(w) = self.weights.as_mut() {
+                for row in w.iter_mut() {
+                    row.reverse();
+                }
+            }
+            self.knots_v = banded_interp::knot_sequence(&vknots, &vmults, self.deg_v as i32);
+        }
+    }
+
+    /// `BSplSLib::HomogeneousD1` on this surface (`BSplSLib.cxx:974-1059`).
+    pub fn homogeneous_d1_bspl(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> occt_core::bspl::surface_d1::HomogSurfD1 {
+        let (uk, vk, rat) = self.bspl_lib_args();
+        match (uk, vk) {
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d1::homogeneous_d1(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &uk.0,
+                &vk.0,
+                Some(&uk.1),
+                Some(&vk.1),
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+            _ => occt_core::bspl::surface_d1::homogeneous_d1(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &self.knots_u,
+                &self.knots_v,
+                None,
+                None,
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+        }
+    }
+
+    /// `Geom_BSplineSurface::EvalD0` (`Geom_BSplineSurface_1.cxx:131-159`) via
+    /// `BSplSLib::D0` (`surface_d0::d0`).
+    pub fn eval_d0_bspl(&self, u: f64, v: f64) -> GpPnt {
+        let (uk, vk, rat) = self.bspl_lib_args();
+        match (uk, vk) {
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d0::d0(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &uk.0,
+                &vk.0,
+                Some(&uk.1),
+                Some(&vk.1),
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+            _ => occt_core::bspl::surface_d0::d0(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &self.knots_u,
+                &self.knots_v,
+                None,
+                None,
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+        }
+    }
+
+    /// `Geom_BSplineSurface::EvalD1` (`Geom_BSplineSurface_1.cxx:163-195`) via
+    /// `BSplSLib::D1` (`surface_d1::d1`).
+    pub fn eval_d1_bspl(&self, u: f64, v: f64) -> occt_core::bspl::surface_d1::SurfD1 {
+        let (uk, vk, rat) = self.bspl_lib_args();
+        match (uk, vk) {
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d1::d1(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &uk.0,
+                &vk.0,
+                Some(&uk.1),
+                Some(&vk.1),
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+            _ => occt_core::bspl::surface_d1::d1(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &self.knots_u,
+                &self.knots_v,
+                None,
+                None,
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+        }
+    }
+
+    /// `Geom_BSplineSurface::EvalD2` (`Geom_BSplineSurface_1.cxx:199-235`) via
+    /// `BSplSLib::D2` (`surface_d2::d2`).
+    pub fn eval_d2_bspl(&self, u: f64, v: f64) -> occt_core::bspl::surface_d2::SurfD2 {
+        let (uk, vk, rat) = self.bspl_lib_args();
+        match (uk, vk) {
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d2::d2(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &uk.0,
+                &vk.0,
+                Some(&uk.1),
+                Some(&vk.1),
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+            _ => occt_core::bspl::surface_d2::d2(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &self.knots_u,
+                &self.knots_v,
+                None,
+                None,
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+        }
+    }
+
+    /// `Geom_BSplineSurface::EvalD3` (`Geom_BSplineSurface_1.cxx:239-274`) via
+    /// `BSplSLib::D3` (`surface_d3::d3`).
+    pub fn eval_d3_bspl(&self, u: f64, v: f64) -> occt_core::elib::surface_eval_d3::SurfD3 {
+        let (uk, vk, rat) = self.bspl_lib_args();
+        match (uk, vk) {
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d3::d3(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &uk.0,
+                &vk.0,
+                Some(&uk.1),
+                Some(&vk.1),
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+            _ => occt_core::bspl::surface_d3::d3(
+                u,
+                v,
+                0,
+                0,
+                &self.poles,
+                self.weights.as_deref(),
+                &self.knots_u,
+                &self.knots_v,
+                None,
+                None,
+                self.deg_u as i32,
+                self.deg_v as i32,
+                rat,
+                rat,
+                self.u_periodic,
+                self.v_periodic,
+            ),
+        }
     }
 
     /// Periodic-surface value / derivative through the ported `BSplSLib::DN`
@@ -1129,126 +1431,22 @@ pub fn fit_surface_grid(
 }
 
 impl Surface for GeomBSplineSurface {
+    /// `Geom_BSplineSurface::EvalD0` / `D0` (`Geom_BSplineSurface_1.cxx:131-159`)
+    /// via `BSplSLib::D0`.
     fn d0(&self, u: f64, v: f64) -> GpPnt {
-        if self.has_periodic_direction() {
-            let r = self.dn_orders(u, v, 0, 0);
-            return GpPnt::new(r.x(), r.y(), r.z());
-        }
-        eval_bspline_surface(self, u, v)
+        self.eval_d0_bspl(u, v)
     }
 
+    /// `Geom_BSplineSurface::EvalD1` / `D1` (`Geom_BSplineSurface_1.cxx:163-195`)
+    /// via `BSplSLib::D1`.
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
-        if self.has_periodic_direction() {
-            let p = self.dn_orders(u, v, 0, 0);
-            return (
-                GpPnt::new(p.x(), p.y(), p.z()),
-                self.dn_orders(u, v, 1, 0),
-                self.dn_orders(u, v, 0, 1),
-            );
-        }
-        // `Geom_BSplineSurface::D1` / `BSplSLib::D1`. Non-rational uses
-        // `eval_surface_d1`. Rational uses homogeneous `A = w P` then
-        // `BSplSLib::RationalDerivative` first-order quotient.
-        let nu = self.poles.len();
-        if nu == 0 || self.poles[0].is_empty() {
-            return (GpPnt::zero(), GpVec::zero(), GpVec::zero());
-        }
-        let nv = self.poles[0].len();
-        let mut flat = Vec::with_capacity(nu * nv);
-        for row in &self.poles {
-            flat.extend_from_slice(row);
-        }
-        if let Some(w) = &self.weights {
-            let mut wflat = Vec::with_capacity(nu * nv);
-            for row in w {
-                wflat.extend_from_slice(row);
-            }
-            return occt_core::bspl::surface_rational::eval_surface_rational_d1(
-                &flat,
-                &wflat,
-                nu,
-                nv,
-                &self.knots_u,
-                &self.knots_v,
-                self.deg_u,
-                self.deg_v,
-                u,
-                v,
-            );
-        }
-        eval::eval_surface_d1(
-            &flat,
-            nu,
-            nv,
-            &self.knots_u,
-            &self.knots_v,
-            self.deg_u,
-            self.deg_v,
-            u,
-            v,
-        )
+        self.eval_d1_bspl(u, v)
     }
 
+    /// `Geom_BSplineSurface::EvalD2` / `D2` (`Geom_BSplineSurface_1.cxx:199-235`)
+    /// via `BSplSLib::D2`.
     fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
-        if self.has_periodic_direction() {
-            let p = self.dn_orders(u, v, 0, 0);
-            return (
-                GpPnt::new(p.x(), p.y(), p.z()),
-                self.dn_orders(u, v, 1, 0),
-                self.dn_orders(u, v, 0, 1),
-                self.dn_orders(u, v, 2, 0),
-                self.dn_orders(u, v, 0, 2),
-                self.dn_orders(u, v, 1, 1),
-            );
-        }
-        // `Geom_BSplineSurface::D2` / `BSplSLib::D2`. Non-rational uses
-        // `eval_surface_d2`. Rational uses homogeneous `A = w P` then
-        // `BSplSLib::RationalDerivative` second-order quotient.
-        let nu = self.poles.len();
-        if nu == 0 || self.poles[0].is_empty() {
-            return (
-                GpPnt::zero(),
-                GpVec::zero(),
-                GpVec::zero(),
-                GpVec::zero(),
-                GpVec::zero(),
-                GpVec::zero(),
-            );
-        }
-        let nv = self.poles[0].len();
-        let mut flat = Vec::with_capacity(nu * nv);
-        for row in &self.poles {
-            flat.extend_from_slice(row);
-        }
-        if let Some(w) = &self.weights {
-            let mut wflat = Vec::with_capacity(nu * nv);
-            for row in w {
-                wflat.extend_from_slice(row);
-            }
-            return occt_core::bspl::surface_rational::eval_surface_rational_d2(
-                &flat,
-                &wflat,
-                nu,
-                nv,
-                &self.knots_u,
-                &self.knots_v,
-                self.deg_u,
-                self.deg_v,
-                u,
-                v,
-            );
-        }
-        eval::eval_surface_d2(
-            &flat,
-            nu,
-            nv,
-            &self.knots_u,
-            &self.knots_v,
-            self.deg_u,
-            self.deg_v,
-            u,
-            v,
-        )
+        self.eval_d2_bspl(u, v)
     }
 
     fn u_range(&self) -> (f64, f64) {
@@ -1271,6 +1469,30 @@ impl Surface for GeomBSplineSurface {
 
     fn continuity(&self) -> u8 {
         self.deg_u.min(self.deg_v).min(u8::MAX as usize) as u8
+    }
+
+    /// `Geom_BSplineSurface::IsCNu` (`Geom_BSplineSurface_1.cxx:50-76`).
+    fn is_cnu(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_BSplineSurface::IsCNu: Geom_BSplineSurface_1.cxx:52".into());
+        }
+        let (a, b) = self.u_range();
+        let shape = occt_core::bspl::local_continuity(
+            &self.knots_u, self.deg_u, self.u_periodic, a, b,
+        );
+        Ok(crate::surface::smooth_is_cn(shape, n))
+    }
+
+    /// `Geom_BSplineSurface::IsCNv` (`Geom_BSplineSurface_1.cxx:80-106`).
+    fn is_cnv(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_BSplineSurface::IsCNv: Geom_BSplineSurface_1.cxx:82".into());
+        }
+        let (a, b) = self.v_range();
+        let shape = occt_core::bspl::local_continuity(
+            &self.knots_v, self.deg_v, self.v_periodic, a, b,
+        );
+        Ok(crate::surface::smooth_is_cn(shape, n))
     }
 
     fn transform(&mut self, t: &GpTrsf) {
@@ -1297,41 +1519,35 @@ impl Surface for GeomBSplineSurface {
         self.eval_dn_bspl(u, v, nu, nv)
     }
 
+    fn try_eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        Ok(self.eval_dn(u, v, nu, nv))
+    }
+
+    /// `Geom_BSplineSurface::EvalD3` (`Geom_BSplineSurface_1.cxx:239-274`):
+    /// `D3UUV` is `(2,1)`, `D3UVV` is `(1,2)`.
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        let d3 = self.eval_d3_bspl(u, v);
+        Ok(match (nu, nv) {
+            (2, 1) => d3.d3_uuv,
+            (1, 2) => d3.d3_uvv,
+            (3, 0) => d3.d3u,
+            (0, 3) => d3.d3v,
+            _ => GpVec::zero(),
+        })
+    }
+
     fn is_u_periodic(&self) -> bool {
         self.u_periodic
     }
 
     /// `Geom_Surface::UReversed` (`Geom_Surface.cxx:33-38`) = `Copy()` +
-    /// `Geom_BSplineSurface::UReverse` (`Geom_BSplineSurface_1.cxx:1572-1592`):
-    /// `BSplCLib::Reverse(UMults)` / `Reverse(UKnots)` mirror the distinct knots
-    /// `K(i) -> K(1) + K(n) - K(n+1-i)` and reverse the multiplicities, then
-    /// `BSplSLib::Reverse(Poles, last, true)` reverses the U rows with
-    /// `last = myPoles.UpperRow()` for a non-periodic U, and `updateUKnots()`
-    /// rebuilds the flat sequence. On the flat sequence the two steps collapse to
-    /// one mirror about its own ends plus a reverse, since the flat sequence is
-    /// the distinct knots repeated by multiplicity in increasing order; the
-    /// endpoints are preserved, so `Bounds`/`UKnot(1)+UKnot(n)` - the mirror axis
-    /// `BRepToIGES_BRShell::TransferFace` uses (`BRepToIGES_BRShell.cxx:176-182`)
-    /// - are unchanged too.
-    ///
-    /// The periodic-U arm takes `last = myUFlatKnots.Upper() - myUDeg - 1` instead,
-    /// whose pole order is not the flat sequence reversed; it is UNPORTED here and
-    /// returns `None`, like the surface classes with no branch at all.
+    /// [`Self::u_reverse`].
     fn u_reversed(&self) -> Option<Arc<dyn Surface>> {
-        if self.u_periodic || self.knots_u.len() < 2 || self.poles.is_empty() {
+        if self.knots_u.len() < 2 || self.poles.is_empty() {
             return None;
         }
         let mut out = self.clone();
-        let n = out.knots_u.len();
-        let mirror = out.knots_u[0] + out.knots_u[n - 1];
-        out.knots_u.reverse();
-        for k in out.knots_u.iter_mut() {
-            *k = mirror - *k;
-        }
-        out.poles.reverse();
-        if let Some(w) = out.weights.as_mut() {
-            w.reverse();
-        }
+        out.u_reverse();
         Some(Arc::new(out) as Arc<dyn Surface>)
     }
 

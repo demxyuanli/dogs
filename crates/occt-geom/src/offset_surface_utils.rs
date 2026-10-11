@@ -9,13 +9,13 @@ use crate::osculating_surface::OsculatingSurface;
 use crate::surface::Surface;
 
 /// `THE_D1_MAGNITUDE_TOL` (`pxx:45`).
-const D1_TOL: f64 = 1.0e-9;
+pub(crate) const D1_TOL: f64 = 1.0e-9;
 
-fn is_infinite_coord(v: &GpVec) -> bool {
+pub(crate) fn is_infinite_coord(v: &GpVec) -> bool {
     Precision::is_infinite(v.x()) || Precision::is_infinite(v.y()) || Precision::is_infinite(v.z())
 }
 
-fn grid_get(g: &[Vec<GpVec>], i: i32, j: i32) -> GpVec {
+pub(crate) fn grid_get(g: &[Vec<GpVec>], i: i32, j: i32) -> GpVec {
     if i < 0 || j < 0 {
         return GpVec::new(0.0, 0.0, 0.0);
     }
@@ -25,7 +25,7 @@ fn grid_get(g: &[Vec<GpVec>], i: i32, j: i32) -> GpVec {
         .unwrap_or(GpVec::new(0.0, 0.0, 0.0))
 }
 
-fn grid_set(g: &mut [Vec<GpVec>], i: i32, j: i32, v: GpVec) {
+pub(crate) fn grid_set(g: &mut [Vec<GpVec>], i: i32, j: i32, v: GpVec) {
     if i < 0 || j < 0 {
         return;
     }
@@ -34,7 +34,7 @@ fn grid_set(g: &mut [Vec<GpVec>], i: i32, j: i32, v: GpVec) {
     }
 }
 
-fn alloc_grid(u_upper: i32, v_upper: i32) -> Vec<Vec<GpVec>> {
+pub(crate) fn alloc_grid(u_upper: i32, v_upper: i32) -> Vec<Vec<GpVec>> {
     let rows = (u_upper + 1).max(0) as usize;
     let cols = (v_upper + 1).max(0) as usize;
     vec![vec![GpVec::new(0.0, 0.0, 0.0); cols]; rows]

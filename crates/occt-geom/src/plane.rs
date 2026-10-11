@@ -3,7 +3,7 @@ use occt_core::gp::{GpLin, GpPln, GpPnt, GpVec, GpTrsf};
 use crate::curve::Curve;
 use crate::line::GeomLine;
 use crate::surface::Surface;
-use occt_core::elib::{slib, surface_eval};
+use occt_core::elib::{slib, surface_eval, surface_eval_d3};
 
 #[derive(Debug, Clone)]
 pub struct GeomPlane { pos: GpPln }
@@ -20,6 +20,24 @@ impl Surface for GeomPlane {
     /// Replaces the trait's central-difference default (audit A15).
     fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
         surface_eval::plane_d2(&self.pos, u, v)
+    }
+    /// `Geom_Plane::EvalDN` (`Geom_Plane.cxx:242-257`).
+    fn try_eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        if nu + nv < 1 || nu < 0 || nv < 0 {
+            return Err("Geom_UndefinedDerivative".into());
+        }
+        let pos = self.pos.position();
+        Ok(surface_eval::plane_dn(u, v, &pos, nu, nv))
+    }
+    /// `Geom_Plane::EvalD3` (`Geom_Plane.cxx:226-238`).
+    /// ApproxSurface order 3 stores `D3UUV` / `D3UVV` (`GeomConvert_ApproxSurface.cxx:193-205`).
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        let d3 = surface_eval_d3::plane_d3(&self.pos, u, v);
+        match (nu, nv) {
+            (2, 1) => Ok(d3.d3_uuv),
+            (1, 2) => Ok(d3.d3_uvv),
+            _ => Ok(GpVec::zero()),
+        }
     }
     fn u_range(&self) -> (f64, f64) { (f64::NEG_INFINITY, f64::INFINITY) }
     fn v_range(&self) -> (f64, f64) { (f64::NEG_INFINITY, f64::INFINITY) }

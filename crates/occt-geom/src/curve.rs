@@ -29,6 +29,13 @@ pub trait Curve: Send + Sync {
     fn is_periodic(&self) -> bool { false }
     fn period(&self) -> f64 { 0.0 }
     fn continuity(&self) -> u8;
+    /// `Geom_Curve::IsCN`. `N < 0` is the range error.
+    fn is_cn(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_Curve::IsCN: negative order".into());
+        }
+        Ok(curve_smooth_is_cn(self.continuity(), n))
+    }
     /// Radius when this is a `Geom_Circle`; `None` for every other type.
     /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_Circle`.
     fn circle_radius(&self) -> Option<f64> { None }
@@ -57,6 +64,13 @@ pub trait Curve: Send + Sync {
     /// `GeomAdaptor_Curve::load` (`cxx:252-254`) unwraps the trim and keeps the
     /// basis curve, so `GeomBndLib_Curve` sees the basis with the basis range.
     fn untrimmed_basis(&self) -> Option<(std::sync::Arc<dyn Curve>, f64, f64)> { None }
+    /// Basis of a trimmed curve for `IsKind(Geom_TrimmedCurve)` walks
+    /// (`ShapeFix_Wire.cxx:1686-1697`). Default is the curve from
+    /// [`Curve::untrimmed_basis`]. A trim that keeps basis parameters and must
+    /// not advertise the `[0, 1]` remap overrides this alone.
+    fn trim_basis(&self) -> Option<std::sync::Arc<dyn Curve>> {
+        self.untrimmed_basis().map(|(c, _, _)| c)
+    }
     /// `Adaptor3d_Curve::GetType() == GeomAbs_Line`.
     fn is_line(&self) -> bool { false }
     /// `Adaptor3d_Curve::Degree` for Bezier / BSpline.
@@ -80,8 +94,42 @@ pub trait Curve: Send + Sync {
     /// Poles when this is a `Geom_BezierCurve`; `None` otherwise.
     /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_BezierCurve`.
     fn bezier_poles(&self) -> Option<&[GpPnt]> { None }
+    /// `Geom_BezierCurve::Weights()` / `IsRational()`; `None` when polynomial.
+    fn bezier_weights(&self) -> Option<&[f64]> { None }
     /// `Adaptor3d_Curve::NbIntervals`. Default one span.
     fn nb_intervals(&self, _continuity: u8) -> i32 { 1 }
+    /// `AdvApprox_EvaluatorFunction::Evaluate` body for a 3D curve: ignore
+    /// `StartEnd` and call `D0`/`D1`/`D2`. `CurveOnSurface` overrides this to
+    /// re-trim when `StartEnd` changes (`GeomLib.cxx:1009-1016`).
+    fn approx_eval(&self, _first: f64, _last: f64, u: f64, order: i32, out: &mut [f64]) -> i32 {
+        match order {
+            0 => {
+                let p = self.d0(u);
+                out[0] = p.x();
+                out[1] = p.y();
+                out[2] = p.z();
+            }
+            1 => {
+                let (_, v) = self.d1(u);
+                out[0] = v.x();
+                out[1] = v.y();
+                out[2] = v.z();
+            }
+            2 => {
+                let (_, _, v) = self.d2(u);
+                out[0] = v.x();
+                out[1] = v.y();
+                out[2] = v.z();
+            }
+            _ => {
+                out[0] = 0.0;
+                out[1] = 0.0;
+                out[2] = 0.0;
+                return 3;
+            }
+        }
+        0
+    }
     /// `GeomAdaptor_Curve::Resolution` (`cxx:1116-1148`).
     /// Default `Precision::Parametric(r3d) = r3d * PConfusion / Confusion`.
     fn resolution(&self, r3d: f64) -> f64 {
@@ -106,6 +154,12 @@ pub trait Curve: Send + Sync {
         self.first_parameter() + self.last_parameter() - u
     }
 
+    /// `Geom_Curve::TransformedParameter` (`Geom_Curve.cxx:49-52`): default
+    /// identity. `Geom_Line` scales by `|ScaleFactor|` (`Geom_Line.cxx:225-232`).
+    fn transformed_parameter(&self, u: f64, _t: &GpTrsf) -> f64 {
+        u
+    }
+
     fn clone_dyn(&self) -> Box<dyn Curve>;
     fn transformed(&self, t: &GpTrsf) -> Box<dyn Curve> { let mut c = self.clone_dyn(); c.transform(t); c }
     fn reversed(&self) -> Box<dyn Curve> { let mut c = self.clone_dyn(); c.reverse(); c }
@@ -114,5 +168,16 @@ pub trait Curve: Send + Sync {
         let mut t = GpTrsf::identity();
         t.set_translation_vec(v);
         self.transformed(&t)
+    }
+}
+
+fn curve_smooth_is_cn(shape: u8, n: i32) -> bool {
+    match shape {
+        6 => true,
+        0 | 1 => n <= 0,
+        2 | 3 => n <= 1,
+        4 => n <= 2,
+        5 => n <= 3,
+        _ => false,
     }
 }

@@ -396,6 +396,8 @@ impl Curve for GeomOffsetCurve {
 
     fn first_parameter(&self) -> f64 { self.basis.first_parameter() }
     fn last_parameter(&self) -> f64 { self.basis.last_parameter() }
+    /// `Geom_OffsetCurve::IsPeriodic` (`Geom_OffsetCurve.cxx:134-136`).
+    fn is_periodic(&self) -> bool { self.basis.is_periodic() }
 
     /// `GeomAdaptor_Curve::Intervals` (`cxx:466-556`) on the offset branch:
     /// `GeomAbs_C0 -> C1`, `C1 -> C2`, `C2 -> C3`, `C3`/`CN -> CN` on a basis

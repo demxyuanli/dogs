@@ -593,8 +593,9 @@ fn approx_evaluator_eval<'a>(
     flat: &'a [f64],
     poles: &'a [f64],
     c2d: &'a dyn Curve2d,
-) -> impl Fn(f64, i32, &mut [f64]) -> i32 + 'a {
-    move |param: f64, der: i32, out: &mut [f64]| -> i32 {
+) -> impl Fn(f64, f64, f64, i32, &mut [f64]) -> i32 + 'a {
+    // `StartEnd` unused: same-parameter evaluator has no CurveOnSurface re-trim.
+    move |_a: f64, _b: f64, param: f64, der: i32, out: &mut [f64]| -> i32 {
         if der == 0 {
             let tcons = eval_1d_d0(flat, poles, param);
             let uv = c2d.d0(tcons);

@@ -73,34 +73,8 @@ impl GeomConvertApproxCurve {
         // `GeomConvert_ApproxCurve_Eval::Evaluate` (`cxx:55-106`): order 0 is
         // the point, 1 the first derivative, 2 the second; any other order has
         // error code 3 with a zero result (`cxx:101-104`).
-        let eval = |u: f64, order: i32, out: &mut [f64]| -> i32 {
-            match order {
-                0 => {
-                    let p = the_curve.d0(u);
-                    out[0] = p.x();
-                    out[1] = p.y();
-                    out[2] = p.z();
-                }
-                1 => {
-                    let (_, v) = the_curve.d1(u);
-                    out[0] = v.x();
-                    out[1] = v.y();
-                    out[2] = v.z();
-                }
-                2 => {
-                    let (_, _, v) = the_curve.d2(u);
-                    out[0] = v.x();
-                    out[1] = v.y();
-                    out[2] = v.z();
-                }
-                _ => {
-                    out[0] = 0.0;
-                    out[1] = 0.0;
-                    out[2] = 0.0;
-                    return 3;
-                }
-            }
-            0
+        let eval = |_a: f64, _b: f64, u: f64, order: i32, out: &mut [f64]| -> i32 {
+            the_curve.approx_eval(_a, _b, u, order, out)
         };
 
         // `cxx:155-167`: `AdvApprox_ApproxAFunction(Num1DSS, Num2DSS, Num3DSS,

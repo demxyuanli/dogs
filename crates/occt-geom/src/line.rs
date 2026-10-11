@@ -30,6 +30,13 @@ impl Curve for GeomLine {
     fn reverse(&mut self) { self.pos.pos.vdir.reverse(); }
     /// `Geom_Line::ReversedParameter` (`Geom_Line.cxx:72`): `-U`.
     fn reversed_parameter(&self, u: f64) -> f64 { -u }
+    /// `Geom_Line::TransformedParameter` (`Geom_Line.cxx:225-232`).
+    fn transformed_parameter(&self, u: f64, t: &GpTrsf) -> f64 {
+        if !u.is_finite() {
+            return u;
+        }
+        u * t.scale_factor().abs()
+    }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
     fn is_line(&self) -> bool { true }
     fn gp_line(&self) -> Option<GpLin> { Some(self.pos.clone()) }

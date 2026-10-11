@@ -558,6 +558,42 @@ pub fn abscissa_point(c: &dyn Curve, abscissa: f64, from: f64) -> Result<f64, St
         .ok_or_else(|| "abscissa_point: math_FunctionRoot did not converge".to_string())
 }
 
+/// `GCPnts_AbscissaPoint(C, Abscissa, U0, Ui, Tol)`
+/// (`GCPnts_AbscissaPoint.cxx:533-541` → `AdvCompute`). Used by
+/// `Approx_CurvlinFunc::GetUParameter` (`Approx_CurvlinFunc.cxx:560`).
+pub fn abscissa_point_from_guess(
+    c: &dyn Curve,
+    abscissa: f64,
+    u0: f64,
+    ui: f64,
+    tol: f64,
+) -> Option<f64> {
+    let (a, b) = (c.first_parameter(), c.last_parameter());
+    if !(a.is_finite() && b.is_finite()) {
+        return None;
+    }
+    let resolution = c.resolution(CONFUSION);
+    if abscissa.abs() <= CONFUSION {
+        return Some(u0);
+    }
+    let (ty, ratio) = compute_type(c);
+    match ty {
+        AbscissaType::LengthParametrized => return Some(u0 + abscissa / ratio),
+        AbscissaType::AbsComposite => {
+            return compute_abs_composite(c, abscissa, u0, ui, resolution);
+        }
+        AbscissaType::Parametrized => {}
+    }
+    let mut computer = CpntsAbscissaPoint::new(c);
+    computer.init_range_tol(c, a, b, tol);
+    computer.adv_perform(abscissa, u0, ui, resolution);
+    if computer.is_done() {
+        Some(computer.parameter())
+    } else {
+        None
+    }
+}
+
 /// Same as [`abscissa_point`] but with the caller's tolerance -- the
 /// `GCPnts_AbscissaPoint(theC, theAbscissa, theU0, theTol)` entry, which
 /// reaches `advCompute` (`GCPnts_AbscissaPoint.cxx:464-...`) and therefore

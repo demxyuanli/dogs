@@ -127,6 +127,7 @@ impl Curve for GeomTrimmedCurve {
     fn bspline_poles(&self) -> Option<&[GpPnt]> { self.basis.bspline_poles() }
     fn bspline_weights(&self) -> Option<&[f64]> { self.basis.bspline_weights() }
     fn bezier_poles(&self) -> Option<&[GpPnt]> { self.basis.bezier_poles() }
+    fn bezier_weights(&self) -> Option<&[f64]> { self.basis.bezier_weights() }
     fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
         let den = self.last - self.first;
         if den.abs() <= 0.0 {
@@ -151,9 +152,84 @@ impl Curve for GeomTrimmedCurve {
         }
         self.basis.resolution(r3d) / den
     }
-    fn transform(&mut self, _t: &GpTrsf) {}
+    /// `Geom_TrimmedCurve::Transform` (`Geom_TrimmedCurve.cxx:288-294`):
+    /// transform the basis, then `SetTrim(TransformedParameter(...), true, false)`.
+    fn transform(&mut self, t: &GpTrsf) {
+        let mut basis = self.basis.clone_dyn();
+        basis.transform(t);
+        let u1 = basis.transformed_parameter(self.first, t);
+        let u2 = basis.transformed_parameter(self.last, t);
+        self.basis = Arc::from(basis);
+        let need_reverse = apply_set_trim_sense_true_no_adjust(
+            self.basis.as_ref(),
+            &mut self.first,
+            &mut self.last,
+            u1,
+            u2,
+        );
+        if need_reverse {
+            // `cxx:147-149` → `Reverse` (`cxx:78-83`): reverse basis, remap trim.
+            let mut b = self.basis.clone_dyn();
+            let ru1 = b.reversed_parameter(self.last);
+            let ru2 = b.reversed_parameter(self.first);
+            b.reverse();
+            self.basis = Arc::from(b);
+            let _ = apply_set_trim_sense_true_no_adjust(
+                self.basis.as_ref(),
+                &mut self.first,
+                &mut self.last,
+                ru1,
+                ru2,
+            );
+        }
+        let den = self.last - self.first;
+        self.remapped_knots = self.basis.bspline_knots().map(|knots| {
+            if den.abs() <= 0.0 {
+                knots.to_vec()
+            } else {
+                knots.iter().map(|&u| (u - self.first) / den).collect()
+            }
+        });
+        self.nurbs_deg = self.basis.nurbs_degree();
+    }
+    /// `Geom_TrimmedCurve::TransformedParameter` (`cxx:298-301`) on the
+    /// `[0, 1]` remap: map into basis parameters, transform, map back.
+    fn transformed_parameter(&self, u: f64, t: &GpTrsf) -> f64 {
+        let den = self.last - self.first;
+        let basis_u = self.first + u * den;
+        let basis_tp = self.basis.transformed_parameter(basis_u, t);
+        if den.abs() <= 0.0 {
+            return basis_tp;
+        }
+        (basis_tp - self.first) / den
+    }
     fn reverse(&mut self) { std::mem::swap(&mut self.first, &mut self.last); }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
+}
+
+/// `Geom_TrimmedCurve::SetTrim(U1, U2, Sense=true, theAdjustPeriodic=false)`
+/// (`cxx:95-146`). Returns `true` when `sameSense` is false and the caller must
+/// `Reverse()` (`cxx:147-149`).
+fn apply_set_trim_sense_true_no_adjust(
+    basis: &dyn Curve,
+    first: &mut f64,
+    last: &mut f64,
+    u1: f64,
+    u2: f64,
+) -> bool {
+    if basis.is_periodic() {
+        *first = u1;
+        *last = u2;
+        false
+    } else if u1 < u2 {
+        *first = u1;
+        *last = u2;
+        false
+    } else {
+        *first = u2;
+        *last = u1;
+        true
+    }
 }
 
 /// `Geom_TrimmedCurve` evaluated in the BASIS curve's parameters, i.e. the
@@ -215,6 +291,8 @@ impl Curve for GeomTrimmedCurveBasis {
     fn circle_radius(&self) -> Option<f64> { self.basis.circle_radius() }
     fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { self.basis.gp_circ() }
     fn gp_ellipse(&self) -> Option<occt_core::gp::GpElips> { self.basis.gp_ellipse() }
+    fn gp_hyperbola(&self) -> Option<occt_core::gp::GpHypr> { self.basis.gp_hyperbola() }
+    fn gp_parabola(&self) -> Option<occt_core::gp::GpParab> { self.basis.gp_parabola() }
     fn offset_curve(&self) -> Option<(std::sync::Arc<dyn Curve>, f64)> { self.basis.offset_curve() }
     fn is_geom_trimmed(&self) -> bool { true }
     fn trimmed_basis_range(&self) -> Option<(f64, f64)> {
@@ -238,6 +316,7 @@ impl Curve for GeomTrimmedCurveBasis {
     fn bspline_poles(&self) -> Option<&[GpPnt]> { self.basis.bspline_poles() }
     fn bspline_weights(&self) -> Option<&[f64]> { self.basis.bspline_weights() }
     fn bezier_poles(&self) -> Option<&[GpPnt]> { self.basis.bezier_poles() }
+    fn bezier_weights(&self) -> Option<&[f64]> { self.basis.bezier_weights() }
     fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
         self.basis.parameter_intervals(continuity)
     }
@@ -248,7 +327,39 @@ impl Curve for GeomTrimmedCurveBasis {
             .max(1) as i32
     }
     fn resolution(&self, r3d: f64) -> f64 { self.basis.resolution(r3d) }
-    fn transform(&mut self, _t: &GpTrsf) {}
+    /// `Geom_TrimmedCurve::Transform` (`Geom_TrimmedCurve.cxx:288-294`).
+    fn transform(&mut self, t: &GpTrsf) {
+        let mut basis = self.basis.clone_dyn();
+        basis.transform(t);
+        let u1 = basis.transformed_parameter(self.first, t);
+        let u2 = basis.transformed_parameter(self.last, t);
+        self.basis = Arc::from(basis);
+        let need_reverse = apply_set_trim_sense_true_no_adjust(
+            self.basis.as_ref(),
+            &mut self.first,
+            &mut self.last,
+            u1,
+            u2,
+        );
+        if need_reverse {
+            let mut b = self.basis.clone_dyn();
+            let ru1 = b.reversed_parameter(self.last);
+            let ru2 = b.reversed_parameter(self.first);
+            b.reverse();
+            self.basis = Arc::from(b);
+            let _ = apply_set_trim_sense_true_no_adjust(
+                self.basis.as_ref(),
+                &mut self.first,
+                &mut self.last,
+                ru1,
+                ru2,
+            );
+        }
+    }
+    /// `Geom_TrimmedCurve::TransformedParameter` (`cxx:298-301`).
+    fn transformed_parameter(&self, u: f64, t: &GpTrsf) -> f64 {
+        self.basis.transformed_parameter(u, t)
+    }
     fn reverse(&mut self) { std::mem::swap(&mut self.first, &mut self.last); }
     /// `Geom_TrimmedCurve::ReversedParameter` (`Geom_TrimmedCurve.cxx:88-91`):
     /// the basis curve's. This view evaluates in the basis parameters, so the

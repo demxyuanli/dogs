@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use occt_core::elib::{slib, surface_eval};
+use occt_core::elib::{slib, surface_eval, surface_eval_d3};
 use occt_core::gp::{GpTorus, GpPnt, GpVec, GpTrsf};
 use crate::circle::GeomCircle;
 use crate::curve::Curve;
@@ -23,6 +23,30 @@ impl Surface for GeomTorus {
     /// Replaces the trait's central-difference default (audit A15).
     fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
         surface_eval::torus_d2(&self.pos, u, v)
+    }
+    /// `Geom_ToroidalSurface::EvalDN` (`Geom_ToroidalSurface.cxx:283-293`).
+    fn try_eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        if nu + nv < 1 || nu < 0 || nv < 0 {
+            return Err("Geom_UndefinedDerivative".into());
+        }
+        Ok(surface_eval::torus_dn(
+            u,
+            v,
+            self.pos.position(),
+            self.pos.major_radius(),
+            self.pos.minor_radius(),
+            nu,
+            nv,
+        ))
+    }
+    /// `Geom_ToroidalSurface::EvalD3` (`Geom_ToroidalSurface.cxx:260-281`).
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        let d3 = surface_eval_d3::torus_d3(&self.pos, u, v);
+        match (nu, nv) {
+            (2, 1) => Ok(d3.d3_uuv),
+            (1, 2) => Ok(d3.d3_uvv),
+            _ => Ok(GpVec::zero()),
+        }
     }
     fn u_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }
     fn v_range(&self) -> (f64, f64) { (0.0, 2.0*std::f64::consts::PI) }

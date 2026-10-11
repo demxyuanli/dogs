@@ -538,19 +538,27 @@ pub fn curve_to_bspline_curve(
         // `Geom_BezierCurve::Segment` (`PLib::Trimming` + `PLib::CoefficientsPoles`)
         // — ported (`bezier_curve.rs::segment`, OCCT `Geom_BezierCurve.cxx:388-425`).
         // `cxx:300-321`: the copy is trimmed and re-wrapped as a B-spline over
-        // `[0, 1]` with multiplicities `{Degree+1, Degree+1}`. UNPORTED: the
-        // rational branch (`CBez->IsRational()` → `WeightsArray`,
-        // `GeomConvert.cxx:313-321`) — the port's `GeomBezierCurve` carries no
-        // weights.
+        // `[0, 1]` with multiplicities `{Degree+1, Degree+1}`. Rational uses
+        // `WeightsArray` (`GeomConvert.cxx:313-321`).
         if let Some(poles) = basis.bezier_poles() {
-            let mut bez = GeomBezierCurve::new(poles.to_vec())
-                .map_err(|_| ConvertError::ConstructionError)?;
+            let mut bez = if let Some(w) = basis.bezier_weights() {
+                GeomBezierCurve::with_weights(poles.to_vec(), w.to_vec())
+                    .map_err(|_| ConvertError::ConstructionError)?
+            } else {
+                GeomBezierCurve::new(poles.to_vec())
+                    .map_err(|_| ConvertError::ConstructionError)?
+            };
             bez.segment(u1, u2);
             let degree = bez.degree();
             let m = (degree + 1) as i32;
             let flat = knot_sequence(&[0.0, 1.0], &[m, m], degree as i32);
-            return GeomBSplineCurve::new(bez.poles.clone(), flat, degree)
-                .map_err(|_| ConvertError::ConstructionError);
+            return if let Some(w) = bez.weights.as_ref() {
+                GeomBSplineCurve::rational(bez.poles.clone(), w.clone(), flat, degree)
+                    .map_err(|_| ConvertError::ConstructionError)
+            } else {
+                GeomBSplineCurve::new(bez.poles.clone(), flat, degree)
+                    .map_err(|_| ConvertError::ConstructionError)
+            };
         }
         // `cxx:322-339` (`Geom_BSplineCurve`): the basis is copied, its range is
         // folded into the period (`ElCLib::AdjustPeriodic`), a full-period trim
@@ -621,19 +629,22 @@ pub fn curve_to_bspline_curve(
     }
 
     if let Some(poles) = c.bezier_poles() {
-        // `cxx:410-429`: a Bezier is exactly the clamped B-spline with the same
-        // poles, knots `{0, 1}` of multiplicity `degree + 1`; a rational Bezier
-        // passes `WeightsArray()` (`cxx:421-424`). This port's `GeomBezierCurve`
-        // is non-rational (`bezier_curve.rs`), which matches
-        // `Geom_BezierCurve::IsRational() == false` for that representation.
+        // `cxx:410-429`: a Bezier is the clamped B-spline with the same poles,
+        // knots `{0, 1}` of multiplicity `degree + 1`; a rational Bezier passes
+        // `WeightsArray()` (`cxx:421-424`).
         let degree = poles
             .len()
             .checked_sub(1)
             .ok_or(ConvertError::ConstructionError)?;
         let mut knots = vec![0.0f64; degree + 1];
         knots.extend(std::iter::repeat(1.0).take(degree + 1));
-        return GeomBSplineCurve::new(poles.to_vec(), knots, degree)
-            .map_err(|_| ConvertError::ConstructionError);
+        return if let Some(w) = c.bezier_weights() {
+            GeomBSplineCurve::rational(poles.to_vec(), w.to_vec(), knots, degree)
+                .map_err(|_| ConvertError::ConstructionError)
+        } else {
+            GeomBSplineCurve::new(poles.to_vec(), knots, degree)
+                .map_err(|_| ConvertError::ConstructionError)
+        };
     }
 
     if is_bspline(c) {

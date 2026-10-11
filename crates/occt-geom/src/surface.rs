@@ -38,6 +38,20 @@ pub trait Surface: Send + Sync {
     fn is_u_periodic(&self) -> bool { false }
     fn is_v_periodic(&self) -> bool { false }
     fn continuity(&self) -> u8;
+    /// `Geom_Surface::IsCNu`. `N < 0` is the range error.
+    fn is_cnu(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_Surface::IsCNu: negative order".into());
+        }
+        Ok(smooth_is_cn(self.continuity(), n))
+    }
+    /// `Geom_Surface::IsCNv`.
+    fn is_cnv(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_Surface::IsCNv: negative order".into());
+        }
+        Ok(smooth_is_cn(self.continuity(), n))
+    }
     fn transform(&mut self, t: &GpTrsf);
     fn clone_dyn(&self) -> Box<dyn Surface>;
     fn transformed(&self, t: &GpTrsf) -> Box<dyn Surface> { let mut s = self.clone_dyn(); s.transform(t); s }
@@ -46,6 +60,11 @@ pub trait Surface: Send + Sync {
     /// `Adaptor3d_Surface::GetType() == GeomAbs_BezierSurface`
     /// (`Geom_BezierSurface`; `GeomAdaptor_Surface.cxx:480-487`).
     fn is_bezier_surface(&self) -> bool { false }
+    /// `Geom_BezierSurface` poles, row-major `poles[i * n_v + j]`.
+    fn bezier_control_grid(&self) -> Option<(Vec<GpPnt>, usize, usize)> { None }
+    /// Flat `myWeights` plus `myURational` and `myVRational`
+    /// (`Geom_BezierSurface.cxx:444-469`). `None` is a polynomial Bezier.
+    fn bezier_weights(&self) -> Option<(Vec<f64>, bool, bool)> { None }
     /// Clone as `Geom_BSplineSurface` when this is one (or a Bezier converted
     /// the way `Geom_OsculatingSurface::Init` does).
     fn osculating_bspline(&self) -> Option<crate::bspline_surface::GeomBSplineSurface> {
@@ -168,5 +187,27 @@ pub trait Surface: Send + Sync {
     /// Default is the unported arm (zero). `GeomBSplineSurface` overrides.
     fn eval_dn(&self, _u: f64, _v: f64, _nu: i32, _nv: i32) -> GpVec {
         GpVec::new(0.0, 0.0, 0.0)
+    }
+    /// `EvalDN` for `GeomConvert_ApproxSurface_Eval` case 4.
+    /// The zero `eval_dn` default is not a derivative.
+    fn try_eval_dn(&self, _u: f64, _v: f64, _nu: i32, _nv: i32) -> Result<GpVec, String> {
+        Err("UNPORTED Geom_Surface::EvalDN".into())
+    }
+    /// Case 3 stores `DN(2,1)` (`D3UUV`) or `DN(1,2)` (`D3UVV`).
+    /// Offset overrides this with `EvaluateD3`.
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        self.try_eval_dn(u, v, nu, nv)
+    }
+}
+
+/// `IsCN` from a `GeomAbs_Shape` smoothness (`Geom_BSplineSurface_1.cxx:55-75`).
+pub(crate) fn smooth_is_cn(shape: u8, n: i32) -> bool {
+    match shape {
+        6 => true,
+        0 | 1 => n <= 0,
+        2 | 3 => n <= 1,
+        4 => n <= 2,
+        5 => n <= 3,
+        _ => false,
     }
 }

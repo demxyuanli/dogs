@@ -369,6 +369,7 @@ impl OsculatingSurface {
             &bs.knots_v,
             &bs.poles,
             None,
+            None,
         );
         let mut osc = vec![vec![GpPnt::new(0.0, 0.0, 0.0); osc_v.max(0) as usize]; osc_u.max(0) as usize];
         if self.is_along_u() {

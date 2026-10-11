@@ -63,6 +63,41 @@ impl GeomSurfaceOfLinearExtrusion {
     fn calculate_d0(&self, curve_pt: &GpPnt, v: f64) -> GpPnt {
         GpPnt::from_xyz(&curve_pt.coord.added(&self.direction.xyz().multiplied(v)))
     }
+
+    /// `Geom_ExtrusionUtils::CalculateD3` (`Geom_ExtrusionUtils.pxx:119-145`):
+    /// `D3U = C'''(U)`, `D3V = D3UUV = D3UVV = 0`.
+    fn calculate_d3(
+        &self,
+        curve_pt: &GpPnt,
+        curve_d1: &GpVec,
+        curve_d2: &GpVec,
+        curve_d3: &GpVec,
+        v: f64,
+    ) -> (
+        GpPnt,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+    ) {
+        (
+            self.calculate_d0(curve_pt, v),
+            *curve_d1,
+            GpVec::from_xyz(self.direction.xyz()),
+            *curve_d2,
+            GpVec::zero(),
+            GpVec::zero(),
+            *curve_d3,
+            GpVec::zero(),
+            GpVec::zero(),
+            GpVec::zero(),
+        )
+    }
 }
 
 impl Surface for GeomSurfaceOfLinearExtrusion {
@@ -97,6 +132,19 @@ impl Surface for GeomSurfaceOfLinearExtrusion {
             GpVec::zero(),
             GpVec::zero(),
         )
+    }
+
+    /// `Geom_SurfaceOfLinearExtrusion::EvalD3` (`cxx:214-241`).
+    /// ApproxSurface order 3 stores `D3UUV` / `D3UVV` (`GeomConvert_ApproxSurface.cxx:193-205`).
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        let (p, d1, d2, d3) = self.basis_curve.d3(u);
+        let (_, _, _, _, _, _, _, _, d3_uuv, d3_uvv) =
+            self.calculate_d3(&p, &d1, &d2, &d3, v);
+        match (nu, nv) {
+            (2, 1) => Ok(d3_uuv),
+            (1, 2) => Ok(d3_uvv),
+            _ => Ok(GpVec::zero()),
+        }
     }
 
     /// `Geom_SurfaceOfLinearExtrusion::Bounds` (`cxx:139-144`): U is the basis
@@ -186,6 +234,19 @@ impl Surface for GeomSurfaceOfLinearExtrusion {
         self.basis_curve.continuity()
     }
 
+    /// `Geom_SurfaceOfLinearExtrusion::IsCNu` (`cxx:297-302`).
+    fn is_cnu(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_SurfaceOfLinearExtrusion::IsCNu: Geom_SurfaceOfLinearExtrusion.cxx:300".into());
+        }
+        self.basis_curve.is_cn(n)
+    }
+
+    /// `Geom_SurfaceOfLinearExtrusion::IsCNv` (`cxx:306-309`).
+    fn is_cnv(&self, _n: i32) -> Result<bool, String> {
+        Ok(true)
+    }
+
     /// `Geom_SurfaceOfLinearExtrusion::Transform` (`cxx:315-319`): transform
     /// the direction and the basis curve.
     fn transform(&mut self, t: &GpTrsf) {
@@ -228,5 +289,9 @@ impl Surface for GeomSurfaceOfLinearExtrusion {
             return GpVec::from_xyz(self.direction.xyz());
         }
         GpVec::zero()
+    }
+
+    fn try_eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        Ok(self.eval_dn(u, v, nu, nv))
     }
 }

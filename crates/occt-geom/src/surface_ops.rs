@@ -36,6 +36,7 @@ impl Curve for IsoparametricCurve {
     fn bspline_poles(&self) -> Option<&[occt_core::gp::GpPnt]> { self.curve.bspline_poles() }
     fn bspline_weights(&self) -> Option<&[f64]> { self.curve.bspline_weights() }
     fn bezier_poles(&self) -> Option<&[occt_core::gp::GpPnt]> { self.curve.bezier_poles() }
+    fn bezier_weights(&self) -> Option<&[f64]> { self.curve.bezier_weights() }
     fn nb_intervals(&self, continuity: u8) -> i32 { self.curve.nb_intervals(continuity) }
     // ponytail: adapter over an immutable Arc; transforms are no-ops like
     // GeomTrimmedCurve. Apply transforms to the underlying surface instead.

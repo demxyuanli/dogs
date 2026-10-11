@@ -9,7 +9,7 @@ use crate::curve::Curve;
 use crate::geom_adaptor_local::{try_local_d1, try_local_d2};
 use crate::offset_surface::GeomOffsetSurface;
 use crate::surface::Surface;
-use crate::trimmed::GeomTrimmedCurve;
+use crate::trimmed::GeomTrimmedCurveBasis;
 
 /// Portion of a surface limited by U and/or V parameter bounds.
 /// Source: `Geom_RectangularTrimmedSurface.cxx`.
@@ -221,6 +221,38 @@ impl Surface for GeomRectangularTrimmedSurface {
         self.basis.continuity()
     }
 
+    /// `Geom_RectangularTrimmedSurface::IsCNu` (`cxx:482-486`).
+    fn is_cnu(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_RectangularTrimmedSurface::IsCNu: Geom_RectangularTrimmedSurface.cxx:485".into());
+        }
+        self.basis.is_cnu(n)
+    }
+
+    /// `Geom_RectangularTrimmedSurface::IsCNv` (`cxx:490-496`).
+    fn is_cnv(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_RectangularTrimmedSurface::IsCNv: Geom_RectangularTrimmedSurface.cxx:494".into());
+        }
+        self.basis.is_cnv(n)
+    }
+
+    /// `Geom_RectangularTrimmedSurface::EvalDN` (`cxx:419-428`).
+    fn try_eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        if nu + nv < 1 || nu < 0 || nv < 0 {
+            return Err(
+                "Geom_RectangularTrimmedSurface::EvalDN: Geom_RectangularTrimmedSurface.cxx:425"
+                    .into(),
+            );
+        }
+        self.basis.try_eval_dn(u, v, nu, nv)
+    }
+
+    /// `Geom_RectangularTrimmedSurface::EvalD3` (`cxx:412-414`) forwards.
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        self.basis.try_eval_d3_uv(u, v, nu, nv)
+    }
+
     fn transform(&mut self, t: &GpTrsf) {
         let mut b = self.basis.clone_dyn();
         b.transform(t);
@@ -256,10 +288,11 @@ impl Surface for GeomRectangularTrimmedSurface {
     }
 
     fn u_iso_curve(&self, u: f64) -> Option<Arc<dyn Curve>> {
-        // `Geom_RectangularTrimmedSurface.cxx:444-458`.
+        // `Geom_RectangularTrimmedSurface.cxx:444-458`. `Geom_TrimmedCurve`
+        // keeps the basis parameter (`Geom_TrimmedCurve.cxx:212-215`).
         let c = self.basis.u_iso_curve(u)?;
         if self.v_trimmed {
-            Some(Arc::new(GeomTrimmedCurve::new(c, self.v1, self.v2)))
+            Some(Arc::new(GeomTrimmedCurveBasis::new(c, self.v1, self.v2)))
         } else {
             Some(c)
         }
@@ -269,7 +302,7 @@ impl Surface for GeomRectangularTrimmedSurface {
         // `Geom_RectangularTrimmedSurface.cxx:463-477`.
         let c = self.basis.v_iso_curve(v)?;
         if self.u_trimmed {
-            Some(Arc::new(GeomTrimmedCurve::new(c, self.u1, self.u2)))
+            Some(Arc::new(GeomTrimmedCurveBasis::new(c, self.u1, self.u2)))
         } else {
             Some(c)
         }

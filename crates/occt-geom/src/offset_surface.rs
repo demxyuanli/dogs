@@ -3,6 +3,27 @@
 //! The offset surface at `(u, v)` is the basis surface point displaced along
 //! its unit normal by the signed offset: `d0 = basis.d0 + offset * n`.
 //! First partials follow `Geom_OffsetSurfaceUtils::EvaluateD1`.
+//! `EvalD3` and `EvalDN` follow `EvaluateD3` (`pxx:1427`) and `EvaluateDN`
+//! (`pxx:1637`). `mmapptt_` orders -1, 0, 1, and 2 are ported.
+//! `mmfmtb1_` transposes the IsoU tables (`AdvApp2Var_ApproxF2var.cxx:5634`).
+//! `MakeApprox` stays on one 3D subspace (`AdvApp2Var_Iso.cxx:122`).
+//! The rational Bezier `Segment` arm runs when weights are stored
+//! (`Geom_BezierSurface.cxx:961`). `EvalD0`, `EvalD1`, `EvalD2`, and `EvalDN` use the rational B-spline
+//! evaluator (`Geom_BezierSurface.cxx:1425`). `UIso` and `VIso` call
+//! `BSplSLib::Iso` (`Geom_BezierSurface.cxx:1776`). A trimmed rational
+//! Bezier becomes a rational B-spline (`GeomConvert_1.cxx:714`).
+//! Curve `Segment` trims weights with the poles (`Geom_BezierCurve.cxx:395`).
+//! `SetWeight` turns a curve or surface rational (`Geom_BezierCurve.cxx:455`,
+//! `Geom_BezierSurface.cxx:1179`). `SetWeightCol` and `SetWeightRow`
+//! rewrite one column or a row span (`Geom_BezierSurface.cxx:1219`,
+//! `:1262`). `UReverse` and `VReverse` swap poles and weights
+//! (`:1305`, `:1352`). `ExchangeUV` transposes poles and weights
+//! (`Geom_BezierSurface.cxx:490`). `Increase` elevates degree through
+//! `BSplSLib::IncreaseDegree` (`:532`). Insert and remove pole columns
+//! and rows (`Geom_BezierSurface.cxx:652-937`). `SetPole` and column/row
+//! setters (`:1047-1175`). Weighted construction (`:416`). Curve
+//! `Increase`, insert/remove poles, and `Reverse`
+//! (`Geom_BezierCurve.cxx:141`, `:210`, `:298`, `:352`).
 use std::sync::Arc;
 
 use occt_core::gp::{GpPnt, GpTrsf, GpVec};
@@ -11,6 +32,7 @@ use occt_core::precision::{APPROXIMATION, RESOLUTION};
 use crate::adv_approx::ApproxAFunction3d;
 use crate::bspline_curve::GeomBSplineCurve;
 use crate::curve::Curve;
+use crate::offset_surface_eval_dn::{evaluate_d3, evaluate_dn};
 use crate::offset_surface_utils::{evaluate_d0, evaluate_d1};
 use crate::osculating_surface::{OsculatingSurface, OSCULATING_TOL};
 use crate::surface::Surface;
@@ -104,7 +126,7 @@ impl GeomOffsetSurface {
             return None;
         }
         let surf = self.clone();
-        let eval = |t: f64, deriv: i32, out: &mut [f64]| -> i32 {
+        let eval = |_a: f64, _b: f64, t: f64, deriv: i32, out: &mut [f64]| -> i32 {
             if deriv == 0 {
                 let p = if u_iso {
                     surf.d0(iso_par, t)
@@ -206,6 +228,26 @@ impl Surface for GeomOffsetSurface {
         self.basis.continuity()
     }
 
+    /// `Geom_OffsetSurface::IsCNu` (`cxx:692-696`): the basis at order `N + 1`.
+    fn is_cnu(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_OffsetSurface::IsCNu: Geom_OffsetSurface.cxx:694".into());
+        }
+        self.basis.is_cnu(n.checked_add(1).ok_or_else(|| {
+            "Geom_OffsetSurface::IsCNu: Geom_OffsetSurface.cxx:695".to_string()
+        })?)
+    }
+
+    /// `Geom_OffsetSurface::IsCNv` (`cxx:700-704`).
+    fn is_cnv(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_OffsetSurface::IsCNv: Geom_OffsetSurface.cxx:702".into());
+        }
+        self.basis.is_cnv(n.checked_add(1).ok_or_else(|| {
+            "Geom_OffsetSurface::IsCNv: Geom_OffsetSurface.cxx:703".to_string()
+        })?)
+    }
+
     fn transform(&mut self, _t: &GpTrsf) {
         // Transform is not carried into the basis (matches the simplified
         // derivative handling above).
@@ -270,5 +312,32 @@ impl Surface for GeomOffsetSurface {
     fn uv_resolution(&self, r3d: f64) -> Option<(f64, f64)> {
         // `GeomAdaptor_Surface::UResolution` Offset arm (`cxx:1882-1884`).
         self.basis.uv_resolution(r3d)
+    }
+
+    /// `Geom_OffsetSurface::EvalDN` (`cxx:466-496`).
+    fn try_eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        if nu + nv < 1 || nu < 0 || nv < 0 {
+            return Err("Geom_OffsetSurface::EvalDN: Geom_OffsetSurface.cxx:470".into());
+        }
+        evaluate_dn(u, v, nu, nv, self.basis.as_ref(), self.offset, Some(&self.osc)).ok_or_else(
+            || "Geom_OffsetSurface::EvalDN: Geom_OffsetSurface.cxx:494".to_string(),
+        )
+    }
+
+    /// `Geom_OffsetSurface::EvalD3` (`cxx:428-461`): `D3UUV` is `(2,1)`, `D3UVV` is `(1,2)`.
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        let third = evaluate_d3(u, v, self.basis.as_ref(), self.offset, Some(&self.osc))
+            .ok_or_else(|| "Geom_OffsetSurface::EvalD3: Geom_OffsetSurface.cxx:459".to_string())?;
+        Ok(match (nu, nv) {
+            (2, 1) => third.d3uuv,
+            (1, 2) => third.d3uvv,
+            (3, 0) => third.d3u,
+            (0, 3) => third.d3v,
+            _ => {
+                return Err(
+                    "Geom_OffsetSurface::EvalD3: Geom_OffsetSurface.cxx:459".into(),
+                );
+            }
+        })
     }
 }

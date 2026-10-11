@@ -53,13 +53,6 @@ fn dy2d() -> GpDir2d {
 /// `None` stands for the `Standard_NotImplemented` thrown at `cxx:674-676`
 /// for an unrecognised curve type.
 ///
-/// UNPORTED arms, both unreachable through the port's 2D types:
-/// the rational `Geom_BezierCurve(Poles, Weights)` (`cxx:592-596`) because
-/// `crate::bezier_curve::GeomBezierCurve` carries no weights, and the periodic
-/// `Geom_BSplineCurve(Poles, Knots, Mults, Degree, IsPeriodic)` (`cxx:619-629`)
-/// because `Geom_BSplineCurve::from_poles_knots_mults` builds the
-/// non-periodic flat sequence only. Both report `None` rather than a curve
-/// that is not the OCCT one.
 pub fn to_3d(position: &GpAx2, curve2d: &dyn Curve2d) -> Option<Arc<dyn Curve>> {
     // `Geom2d_TrimmedCurve` (`cxx:565-573`).
     if let Some(basis) = curve2d.trimmed_basis() {
@@ -87,9 +80,11 @@ pub fn to_3d(position: &GpAx2, curve2d: &dyn Curve2d) -> Option<Arc<dyn Curve>> 
         let poles2d = curve2d.poles2d()?;
         let poles3d = poles2d.iter().map(|p| clib::to_3d_pnt(position, p)).collect();
         if curve2d.is_rational() {
-            // `new Geom_BezierCurve(Poles3d, CBSpl2d->WeightsArray())`.
-            // UNPORTED: no rational 3D Bezier in the port.
-            return None;
+            // `new Geom_BezierCurve(Poles3d, WeightsArray)` (`cxx:592-596`).
+            let weights = curve2d.bezier_weights2d()?.to_vec();
+            return GeomBezierCurve::with_weights(poles3d, weights)
+                .ok()
+                .map(|c| Arc::new(c) as Arc<dyn Curve>);
         }
         // `new Geom_BezierCurve(Poles3d)` (`cxx:598`).
         return GeomBezierCurve::new(poles3d)
@@ -103,29 +98,21 @@ pub fn to_3d(position: &GpAx2, curve2d: &dyn Curve2d) -> Option<Arc<dyn Curve>> 
         let poles3d = poles2d.iter().map(|p| clib::to_3d_pnt(position, p)).collect();
         let degree = curve2d.bspline_degree()?;
         let (knots, mults) = curve2d.bspline_distinct_knots_mults()?;
-        // `IsPeriodic = CBSpl2d->IsPeriodic()` (`cxx:607`).
-        // UNPORTED: `Geom_BSplineCurve(Poles, Knots, Mults, Degree, IsPeriodic)`
-        // for `IsPeriodic == true` (`cxx:619-629`).
-        if curve2d.is_periodic() {
-            return None;
-        }
-        if let Some(weights) = curve2d.bspline_weights2d() {
-            return GeomBSplineCurve::from_poles_knots_mults(poles3d, knots, mults, degree)
-                .ok()
-                .and_then(|c| {
-                    GeomBSplineCurve::rational(
-                        c.poles.clone(),
-                        weights.to_vec(),
-                        c.knots.clone(),
-                        degree,
-                    )
-                    .ok()
-                })
-                .map(|c| Arc::new(c) as Arc<dyn Curve>);
-        }
-        return GeomBSplineCurve::from_poles_knots_mults(poles3d, knots, mults, degree)
-            .ok()
-            .map(|c| Arc::new(c) as Arc<dyn Curve>);
+        let periodic = curve2d.is_periodic();
+        // `Geom_BSplineCurve(..., IsPeriodic)` (`cxx:619-629`): flat sequence is
+        // periodic when `IsPeriodic`, otherwise the non-periodic KnotSequence.
+        let flat = if periodic {
+            occt_core::bspl::knots::knot_sequence_periodic(&knots, &mults, degree as i32)
+        } else {
+            occt_core::bspl::banded_interp::knot_sequence(&knots, &mults, degree as i32)
+        };
+        let mut curve = if let Some(weights) = curve2d.bspline_weights2d() {
+            GeomBSplineCurve::rational(poles3d, weights.to_vec(), flat, degree).ok()?
+        } else {
+            GeomBSplineCurve::new(poles3d, flat, degree).ok()?
+        };
+        curve.periodic = periodic;
+        return Some(Arc::new(curve) as Arc<dyn Curve>);
     }
 
     // `Geom2d_Line` (`cxx:633-640`).
@@ -418,18 +405,10 @@ pub struct BuildCurve3d {
 /// [`to_3d`] and [`build_c3d_on_iso_line`]; the general arm (`cxx:1116-1164`)
 /// runs `AdvApprox_ApproxAFunction` over the composed `D0`/`D1`/`D2`.
 ///
-/// UNPORTED (general arm): `GeomLib_CurveOnSurfaceEvaluator` re-trims the
-/// `CurveOnSurface` to each interval handed to `Evaluate`
-/// (`GeomLib.cxx:1009-1016`). The port evaluates `curve` directly, which gives
-/// the same point/tangent/curvature for interior parameters; only the
-/// `EvalFirstLastSurf` end patch of a sub-interval differs.
-///
-/// UNPORTED (cut points): OCCT reads them from
-/// `Adaptor3d_CurveOnSurface::NbIntervals` (`Adaptor3d_CurveOnSurface.cxx:1045-1114`),
-/// which merges the 2D curve's spans with the surface U/V discontinuity
-/// parameters crossed by the curve. The port's `CurveOnSurface` keeps the
-/// `Curve` trait default (one span `[first, last]`); `AdvApprox` then cuts
-/// purely adaptively.
+/// The general arm uses `GeomLib_CurveOnSurfaceEvaluator` (`GeomLib.cxx:1001-1047`):
+/// `StartEnd` re-trims the `CurveOnSurface` (`:1009-1016`) through
+/// [`Curve::approx_eval`]. Cut points come from
+/// `Adaptor3d_CurveOnSurface::NbIntervals` (`Adaptor3d_CurveOnSurface.cxx:1045-1114`).
 #[allow(clippy::too_many_arguments)]
 pub fn build_curve3d(
     tolerance: f64,
@@ -505,37 +484,11 @@ pub fn build_curve3d(
         }
     };
 
-    // `GeomLib_CurveOnSurfaceEvaluator::Evaluate` (`cxx:1001-1047`): order 0 is
-    // the point, 1 the first derivative, 2 the second; any other order returns
-    // error code 3 with a zero result.
-    let eval = |u: f64, order: i32, out: &mut [f64]| -> i32 {
-        match order {
-            0 => {
-                let p = curve.d0(u);
-                out[0] = p.x();
-                out[1] = p.y();
-                out[2] = p.z();
-            }
-            1 => {
-                let (_, v) = curve.d1(u);
-                out[0] = v.x();
-                out[1] = v.y();
-                out[2] = v.z();
-            }
-            2 => {
-                let (_, _, v) = curve.d2(u);
-                out[0] = v.x();
-                out[1] = v.y();
-                out[2] = v.z();
-            }
-            _ => {
-                out[0] = 0.0;
-                out[1] = 0.0;
-                out[2] = 0.0;
-                return 3;
-            }
-        }
-        0
+    // `GeomLib_CurveOnSurfaceEvaluator::Evaluate` (`cxx:1001-1047`).
+    // `cxx:1136` seeds `FirstParam/LastParam` outside the true range so the
+    // first call always re-trims.
+    let eval = |a: f64, b: f64, u: f64, order: i32, out: &mut [f64]| -> i32 {
+        curve.approx_eval(a, b, u, order, out)
     };
 
     // `AdvApprox_ApproxAFunction` (`cxx:1139-1152`): Num1DSS = Num2DSS = 0,

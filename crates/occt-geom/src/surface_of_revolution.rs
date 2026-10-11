@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use occt_core::gp::{GpAx1, GpAx2, GpCirc, GpDir, GpLin, GpPnt, GpTrsf, GpVec};
-use occt_core::precision::{RESOLUTION, SQUARE_CONFUSION};
+use occt_core::precision::{COMPUTATIONAL, PCONFUSION, REAL_SMALL, SQUARE_CONFUSION};
 
 use crate::curve::Curve;
 use crate::GeomCircle;
@@ -37,24 +37,15 @@ impl GeomSurfaceOfRevolution {
         }
     }
 
-    /// Rotate the point `p` about the axis by angle `u` (radians).
-    fn rotate_about_axis(&self, p: &GpPnt, u: f64) -> GpPnt {
-        let loc = self.axis.location();
-        let dir = GpVec::from_xyz(&self.axis.direction().xyz());
-        let rel = GpVec::from_pnts(&loc, p);
-        // Decompose into along-axis and perpendicular components.
-        let along = dir.multiplied_scalar(rel.dot(&dir));
-        let perp = rel.subtracted(&along);
-        let (su, cu) = u.sin_cos();
-        // Rotate the perpendicular component in the plane normal to the axis.
-        let d = dir.xyz();
-        let rot_perp = GpVec::new(
-            perp.x() * cu + (d.y() * perp.z() - d.z() * perp.y()) * su,
-            perp.y() * cu + (d.z() * perp.x() - d.x() * perp.z()) * su,
-            perp.z() * cu + (d.x() * perp.y() - d.y() * perp.x()) * su,
-        );
-        let rotated = loc.coord.added(&along.coord).added(&rot_perp.coord);
-        GpPnt::from_xyz(&rotated)
+    /// Point of the surface from the pre-computed generatrix point.
+    /// Source: `Geom_RevolutionUtils::CalculateD0` (`Geom_RevolutionUtils.pxx:43-55`):
+    /// `theP = C(V)`, then `SetRotation(axis, U)` and `Transform` on that point. The
+    /// rotation must go through `gp_Trsf` (not an inlined Rodrigues form) so the
+    /// rounding matches OCCT's matrix product bit for bit.
+    fn calculate_d0(curve_pt: &GpPnt, u: f64, axis: &GpAx1) -> GpPnt {
+        let mut rotation = GpTrsf::identity();
+        let _ = rotation.set_rotation_ax1(axis, u);
+        curve_pt.transformed(&rotation)
     }
 
     /// The generatrix curve (read-only).
@@ -167,14 +158,63 @@ impl GeomSurfaceOfRevolution {
         (p, d1u, d1v, d2u, d2v, d2uv)
     }
 
+    /// `Geom_RevolutionUtils::CalculateD3` (`Geom_RevolutionUtils.pxx:160-210`).
+    fn calculate_d3(
+        curve_pt: &GpPnt,
+        curve_d1: &GpVec,
+        curve_d2: &GpVec,
+        curve_d3: &GpVec,
+        u: f64,
+        axis: &GpAx1,
+    ) -> (
+        GpPnt,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+        GpVec,
+    ) {
+        let cq = curve_pt.coord.subtracted(&axis.location().coord);
+        let dir = axis.direction().xyz();
+        let mut d1u = GpVec::from_xyz(&dir.crossed(&cq));
+        if d1u.square_magnitude() < SQUARE_CONFUSION {
+            d1u = GpVec::zero();
+        }
+        let d2u = GpVec::from_xyz(&dir.multiplied(dir.dot(&cq)).subtracted(&cq));
+        let d2uv = GpVec::from_xyz(&dir.crossed(curve_d1.xyz()));
+        let d3u = d1u.reversed();
+        let d3_uuv = GpVec::from_xyz(&dir.multiplied(dir.dot(curve_d1.xyz())).subtracted(curve_d1.xyz()));
+        let d3_uvv = GpVec::from_xyz(&dir.crossed(curve_d2.xyz()));
+        let mut rotation = GpTrsf::identity();
+        let _ = rotation.set_rotation_ax1(axis, u);
+        let p = curve_pt.transformed(&rotation);
+        d1u = Self::transform_vec(&rotation, &d1u);
+        let d1v = Self::transform_vec(&rotation, curve_d1);
+        let d2u = Self::transform_vec(&rotation, &d2u);
+        let d2v = Self::transform_vec(&rotation, curve_d2);
+        let d2uv = Self::transform_vec(&rotation, &d2uv);
+        let d3u = Self::transform_vec(&rotation, &d3u);
+        let d3v = Self::transform_vec(&rotation, curve_d3);
+        let d3_uuv = Self::transform_vec(&rotation, &d3_uuv);
+        let d3_uvv = Self::transform_vec(&rotation, &d3_uvv);
+        (p, d1u, d1v, d2u, d2v, d2uv, d3u, d3v, d3_uuv, d3_uvv)
+    }
+
     /// `Geom_SurfaceOfRevolution::VIso` (`Geom_SurfaceOfRevolution.cxx:383-415`).
+    ///
+    /// The `rad` / radial guards use `gp::Resolution()` = `RealSmall()` =
+    /// `DBL_MIN` (`gp.hxx:60`), not `Precision::Angular()` / `RESOLUTION`.
     pub fn v_iso(&self, v: f64) -> Arc<dyn Curve> {
         let loc = self.axis.location();
         let direction = *self.axis.direction();
         let pc = self.generatrix.d0(v);
         let l1 = GpLin::from_pnt_dir(*loc, direction);
         let rad = l1.distance(&pc);
-        let rep = if rad > RESOLUTION {
+        let rep = if rad > REAL_SMALL {
             let p = pc.coord;
             let c_xyz = loc.coord.added(
                 &direction
@@ -183,7 +223,7 @@ impl GeomSurfaceOfRevolution {
             );
             let radial = p.subtracted(&c_xyz);
             let c = GpPnt::from_xyz(&c_xyz);
-            if radial.modulus() > RESOLUTION {
+            if radial.modulus() > REAL_SMALL {
                 let d = GpDir::from_xyz(&radial).unwrap_or(direction);
                 GpAx2::new(c, direction, d).unwrap_or_else(|_| GpAx2::from_axis(c, direction))
             } else {
@@ -196,10 +236,33 @@ impl GeomSurfaceOfRevolution {
     }
 }
 
+/// `Geom_TrimmedCurve::IsClosed` (`Geom_TrimmedCurve.cxx:155-168`) and
+/// `Geom_BoundedCurve::IsClosed`: a full period, else coincident ends.
+fn basis_curve_is_closed(c: &dyn Curve) -> bool {
+    let first = c.first_parameter();
+    let last = c.last_parameter();
+    if !first.is_finite() || !last.is_finite() {
+        return false;
+    }
+    if c.is_periodic() {
+        let period = c.period();
+        let length = last - first;
+        if period > 0.0
+            && length > PCONFUSION
+            && (length - period * (length / period).round()).abs() <= PCONFUSION
+        {
+            return true;
+        }
+    }
+    let a = c.d0(first);
+    let b = c.d0(last);
+    a.square_distance(&b) <= COMPUTATIONAL
+}
+
 impl crate::Surface for GeomSurfaceOfRevolution {
     fn d0(&self, u: f64, v: f64) -> GpPnt {
         let c = self.generatrix.d0(v);
-        self.rotate_about_axis(&c, u)
+        Self::calculate_d0(&c, u, &self.axis)
     }
 
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
@@ -257,13 +320,46 @@ impl crate::Surface for GeomSurfaceOfRevolution {
         Some((ru, rv))
     }
 
+    /// `Geom_SurfaceOfRevolution::IsVPeriodic` (`cxx:183-187`): the basis curve.
     fn is_v_periodic(&self) -> bool {
-        false
+        self.generatrix.is_periodic()
     }
 
+    /// `GeomAdaptor_SurfaceOfRevolution::VPeriod` (`cxx:348-351`).
+    fn v_period(&self) -> f64 {
+        if self.generatrix.is_periodic() {
+            let p = self.generatrix.period();
+            if p > 0.0 {
+                return p;
+            }
+        }
+        let (a, b) = self.v_range();
+        (b - a).abs()
+    }
+
+    /// `Geom_SurfaceOfRevolution::IsVClosed` (`cxx:176-179`): `basisCurve->IsClosed()`.
+    fn is_v_closed(&self) -> bool {
+        basis_curve_is_closed(self.generatrix.as_ref())
+    }
+
+    /// `Geom_SurfaceOfRevolution::IsCNu` is true for every N (`cxx:143-147`).
+    /// `IsCNv` is the basis (`cxx:159-164`), so the surface continuity is the
+    /// generatrix continuity (`Geom_SweptSurface::Continuity`).
     fn continuity(&self) -> u8 {
-        // The surface is C1 unless the generatrix has cusps.
-        1
+        self.generatrix.continuity()
+    }
+
+    /// `Geom_SurfaceOfRevolution::IsCNu` (`cxx:143-147`).
+    fn is_cnu(&self, _n: i32) -> Result<bool, String> {
+        Ok(true)
+    }
+
+    /// `Geom_SurfaceOfRevolution::IsCNv` (`cxx:159-164`).
+    fn is_cnv(&self, n: i32) -> Result<bool, String> {
+        if n < 0 {
+            return Err("Geom_SurfaceOfRevolution::IsCNv: Geom_SurfaceOfRevolution.cxx:162".into());
+        }
+        self.generatrix.is_cn(n)
     }
 
     fn transform(&mut self, t: &GpTrsf) {
@@ -300,6 +396,23 @@ impl crate::Surface for GeomSurfaceOfRevolution {
 
     fn eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> GpVec {
         self.eval_dn_rev(u, v, nu, nv)
+    }
+
+    fn try_eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        Ok(self.eval_dn(u, v, nu, nv))
+    }
+
+    /// `Geom_SurfaceOfRevolution::EvalD3` (`Geom_SurfaceOfRevolution.cxx:300-327`).
+    /// ApproxSurface order 3 stores `D3UUV` / `D3UVV` (`GeomConvert_ApproxSurface.cxx:193-205`).
+    fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
+        let (p, d1, d2, d3) = self.generatrix.d3(v);
+        let (_, _, _, _, _, _, _, _, d3_uuv, d3_uvv) =
+            Self::calculate_d3(&p, &d1, &d2, &d3, u, &self.axis);
+        match (nu, nv) {
+            (2, 1) => Ok(d3_uuv),
+            (1, 2) => Ok(d3_uvv),
+            _ => Ok(GpVec::zero()),
+        }
     }
 }
 
