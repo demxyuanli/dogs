@@ -24,3 +24,9 @@ data/output2/
 
 # 本地工具配置
 .claude/settings.local.json
+
+# Session scratch: ad-hoc probe dumps and temp OBJ at repo root / in crates
+/_*.txt
+/_*.obj
+/_*/
+crates/occt-topo/_*.txt

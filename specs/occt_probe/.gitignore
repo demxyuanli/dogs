@@ -17,3 +17,7 @@ ZZ_*.obj
 ZZ_*.lib
 ZZ_*.exp
 ZZ_*.map
+
+# local probe dumps (Session scratch)
+_fs.txt
+_bd/
