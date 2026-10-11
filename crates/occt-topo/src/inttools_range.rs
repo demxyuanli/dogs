@@ -599,6 +599,7 @@ mod tests {
             &e.0,
             EdgeGeom {
                 curve: BRepTool::edge_curve(&e).expect("curve"),
+                curve3d_null: false,
                 first: 0.0,
                 last: 1.0,
                 tolerance: 0.0,
