@@ -285,8 +285,27 @@ pub fn project_adaptor(
     preci: f64,
     adjust_to_ends: bool,
 ) -> Projection {
-    let u_min = curve.first_parameter();
-    let u_max = curve.last_parameter();
+    project_adaptor_bounds(
+        curve,
+        point,
+        preci,
+        curve.first_parameter(),
+        curve.last_parameter(),
+        adjust_to_ends,
+    )
+}
+
+/// `ShapeAnalysis_Curve::Project` on `GeomAdaptor_Curve(C, u_min, u_max)`
+/// (`ShapeAnalysis_Curve.cxx:205-261`). The singularity split builds that
+/// adaptor from the edge range (`ShapeFix_Wire.cxx:685`).
+pub fn project_adaptor_bounds(
+    curve: &dyn Curve,
+    point: &GpPnt,
+    preci: f64,
+    u_min: f64,
+    u_max: f64,
+    adjust_to_ends: bool,
+) -> Projection {
     if Precision::is_infinite(u_min) && Precision::is_infinite(u_max) {
         return project_act(curve, point, preci, u_min, u_max); // `cxx:216-220`
     }

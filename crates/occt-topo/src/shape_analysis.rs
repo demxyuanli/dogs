@@ -69,7 +69,11 @@ pub fn is_outer_bound(face: &Face) -> bool {
     let face = &forward;
     let wires = crate::topo_tools_full::wires_of_face(face);
     if wires.len() == 1 {
-        let edges = crate::topo_tools_full::edges_of_wire(&wires[0]);
+        // `ShapeAnalysis::IsOuterBound` builds `ShapeExtend_WireData(W)`
+        // (`ShapeAnalysis.cxx:217-218`). `Init` prepends every edge of a
+        // REVERSED wire (`ShapeExtend_WireData.cxx:115-118`); `TotCross2D`
+        // walks that sequence, not raw `TopoDS_Iterator` storage order.
+        let edges = crate::shhealing::stored_manifold_edges(&wires[0]);
         return tot_cross_2d(&edges, face) >= 0.0;
     }
     let tol = BRepTool::face_tolerance(face);

@@ -423,6 +423,15 @@ pub fn fix_self_intersecting_edge(wire: &mut Wire, face: &Face, num: usize, prec
     done
 }
 
+/// `ShapeFix_Wire::FixSelfIntersection` result. `removed_segment` is
+/// `myStatusRemovedSegment` (`ShapeFix_Wire.cxx:1211-1213`), set when
+/// `FixSelfIntersectWire` reports `NbRemoved > 0`. `ShapeFix_Face` reads it
+/// to decide `NeedCheckSplitWire` (`ShapeFix_Face.cxx:576-578`).
+pub struct FixSelfIntersectionResult {
+    pub done: bool,
+    pub removed_segment: bool,
+}
+
 /// `ShapeFix_Wire::FixSelfIntersection()` (`ShapeFix_Wire.cxx:1083-1280`).
 ///
 /// The two head halves and the non-adjacent tail are wired:
@@ -437,12 +446,15 @@ pub fn fix_self_intersecting_edge(wire: &mut Wire, face: &Face, num: usize, prec
 ///
 /// The tail's `cxx:1217` `myAnalyzer->Load(sbwd)` needs no code here -- the
 /// port re-derives the analyzer state from the wire on every check
-/// ([`check_self_intersecting_edge`]). `cxx:1222` `myShape.Nullify()` and
-/// `cxx:1213` `myStatusRemovedSegment` have no counterpart either: the former
-/// belongs to the OCCT class-level shape cache that this pass never reads, and
-/// the latter is written but never read anywhere in `ShapeFix_Wire.cxx`
-/// (`:125`, `:138`, `:1213` are the only occurrences).
-pub fn fix_self_intersection(wire: &mut Wire, face: &Face, preci: f64) -> bool {
+/// ([`check_self_intersecting_edge`]). `cxx:1222` `myShape.Nullify()` belongs
+/// to the class-level shape cache this pass never reads.
+/// `myStatusRemovedSegment` is the returned `removed_segment` flag.
+pub fn fix_self_intersection(
+    wire: &mut Wire,
+    face: &Face,
+    preci: f64,
+    intersecting_edges: bool,
+) -> FixSelfIntersectionResult {
     // `cxx:1090-1091`.
     let mut nb = edges_of_wire(wire).len();
     let mut done_any = false;
@@ -457,7 +469,9 @@ pub fn fix_self_intersection(wire: &mut Wire, face: &Face, preci: f64) -> bool {
     }
 
     // `cxx:1121-1197`: adjacent-edge self-intersections.
+    // `Perform` forces this mode off when `ReorderOK` is false (`cxx:430-434`).
     let closed_mode = true; // `ShapeFix_Wire.cxx:171`
+    if intersecting_edges {
     let mut num = if closed_mode { 1usize } else { 2 };
     while nb > 1 && num <= nb {
         let st = fix_intersecting_edges(wire, face, num, preci);
@@ -489,6 +503,7 @@ pub fn fix_self_intersection(wire: &mut Wire, face: &Face, preci: f64) -> bool {
             num += 1;
         }
     }
+    }
 
     // `cxx:1199-1223`: the non-adjacent tail. The gate
     // `NeedFix(myFixNonAdjacentIntersectingEdgesMode = -1)` takes the default
@@ -505,11 +520,12 @@ pub fn fix_self_intersection(wire: &mut Wire, face: &Face, preci: f64) -> bool {
     if st.done {
         done_any = true; // `cxx:1207`: `myStatusSelfIntersection |= DONE5`
     }
-    // `cxx:1209-1223` (`if (NbSplit > 0 || NbRemoved > 0)`) reloads the
-    // analyzer from the reworked wire and, with a context, refreshes the
-    // class-level wire/shape caches. The port's analyzer is derived from the
-    // wire on each check and this pass keeps no shape cache, so the block
-    // reduces to the two status no-ops documented above.
+    // `cxx:1209-1213`: `NbRemoved > 0` raises `myStatusRemovedSegment`.
+    // The analyzer reload and `myShape.Nullify()` do not change the wire.
+    let removed_segment = st.nb_removed > 0;
 
-    done_any
+    FixSelfIntersectionResult {
+        done: done_any,
+        removed_segment,
+    }
 }

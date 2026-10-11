@@ -32,6 +32,8 @@ mod small;
 mod degenerated;
 mod lacking;
 mod notched;
+mod singularity;
+mod add_curve3d;
 
 pub use shifted_wire::*;
 pub use pcurve_range::*;
@@ -41,6 +43,7 @@ pub use small::*;
 pub use degenerated::*;
 pub use lacking::*;
 pub use notched::*;
+pub use add_curve3d::*;
 
 
 /// `ShapeFix_Wire::MaxTolerance()` at read time. `ShapeFix_Shape::SetMaxTolerance`
@@ -161,6 +164,52 @@ pub(super) fn degenerated_values(
             GpPnt2d::new(su1, sv1),
             GpPnt2d::new(su2, sv1),
         ));
+    } else if surf.is_surface_of_revolution() {
+        // `ShapeAnalysis_Surface::ComputeSingularities` revolution arm
+        // (`ShapeAnalysis_Surface.cxx:247-291`). Bounded and offset surfaces
+        // share this block; this call site only needs the revolution poles.
+        let um = 0.5 * (su1 + su2);
+        let vm = 0.5 * (sv1 + sv2);
+        let p_u0 = surf.d0(su1, vm);
+        let p_u1 = surf.d0(su2, vm);
+        let p_v0 = surf.d0(um, sv1);
+        let p_v1 = surf.d0(um, sv2);
+        let c00 = surf.d0(su1, sv1);
+        let c01 = surf.d0(su1, sv2);
+        let c10 = surf.d0(su2, sv1);
+        let c11 = surf.d0(su2, sv2);
+        hits.push((
+            c00.distance(&c01)
+                .max(p_u0.distance(&c00))
+                .max(p_u0.distance(&c01)),
+            p_u0,
+            GpPnt2d::new(su1, sv2),
+            GpPnt2d::new(su1, sv1),
+        ));
+        hits.push((
+            c10.distance(&c11)
+                .max(p_u1.distance(&c10))
+                .max(p_u1.distance(&c11)),
+            p_u1,
+            GpPnt2d::new(su2, sv1),
+            GpPnt2d::new(su2, sv2),
+        ));
+        hits.push((
+            c00.distance(&c10)
+                .max(p_v0.distance(&c00))
+                .max(p_v0.distance(&c10)),
+            p_v0,
+            GpPnt2d::new(su1, sv1),
+            GpPnt2d::new(su2, sv1),
+        ));
+        hits.push((
+            c01.distance(&c11)
+                .max(p_v1.distance(&c01))
+                .max(p_v1.distance(&c11)),
+            p_v1,
+            GpPnt2d::new(su2, sv2),
+            GpPnt2d::new(su1, sv2),
+        ));
     }
     let mut best: Option<(f64, GpPnt2d, GpPnt2d)> = None;
     for (pre, q, a, b) in hits {
@@ -197,4 +246,37 @@ fn is_degenerated_2d(surf: &dyn Surface, p1: GpPnt2d, p2: GpPnt2d, tol: f64, rat
     let dv = (p1.y() - p2.y()).abs() / rv;
     max3d *= ratio;
     du * du + dv * dv > max3d * max3d
+}
+
+/// `ShapeExtend_WireData::Remove(num)` (`ShapeExtend_WireData.cxx:446-452`).
+pub fn remove_wire_edge(wire: &mut Wire, at: usize) {
+    degenerated::wire_remove_edge(wire, at);
+}
+
+/// One junction of `FixConnected(num, prec)` (`ShapeFix_Wire.cxx:1476-1485`).
+pub fn fix_connected_at(wire: &mut Wire, my_precision: f64, prec: f64, num: usize) -> bool {
+    reorder_connected::fix_connected_one(wire, my_precision, prec, num)
+}
+
+/// `ShapeFix_Wire::FixConnected` (`ShapeFix_Wire.cxx:557-569`). `closed` false
+/// stops at junction 1 (`aStop = 1`), which is the free-wire arm when
+/// `ClosedWireMode` was cleared (`ShapeFix_Shape.cxx:221-223`).
+pub fn fix_connected_closed(
+    wire: &mut Wire,
+    my_precision: f64,
+    max_tolerance: f64,
+    closed: bool,
+) -> bool {
+    let nb = degenerated::wire_edges_nb(wire);
+    if nb == 0 {
+        return false;
+    }
+    let stop = if closed { 0 } else { 1 };
+    let mut done = false;
+    let mut index = nb;
+    while index > stop {
+        done |= reorder_connected::fix_connected_one(wire, my_precision, max_tolerance, index);
+        index -= 1;
+    }
+    done
 }

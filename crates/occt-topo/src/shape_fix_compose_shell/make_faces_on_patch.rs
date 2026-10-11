@@ -127,12 +127,16 @@ impl ComposeShell {
                         continue;
                     }
                 };
-                // `clas.Perform(unp, false)` (`cxx:3100`): `RecadreOnPeriodic` is
-                // false at every `BRepTopAdaptor_FClass2d::Perform` call in
-                // `MakeFacesOnPatch` (`cxx:3100`, `cxx:3110`, `cxx:3223`), so the
-                // UV point is classified as-is; only `PerformInfinitePoint`
-                // (`cxx:3132/3181`) goes through the periodic search.
-                let mut st_point = clas.perform_recadre(unp, false);
+                // `clas.Perform(unp, false)` (`cxx:3100`).
+                // `BRepTopAdaptor_FClass2d::Perform` (`BRepTopAdaptor_FClass2d.cxx:595-637`)
+                // combines `SiDans` by `TabOrien`. `RecadreOnPeriodic` is false
+                // at every such call in `MakeFacesOnPatch` (`cxx:3100`,
+                // `cxx:3110`, `cxx:3223`), so the UV point is classified as-is.
+                // The winding-independent `perform_recadre` reports the
+                // geometric exterior as Out; a clockwise outer then absorbs an
+                // On sample as a hole (`cxx:3228`) instead of leaving it for
+                // the lost-wire promotion (`cxx:3252-3269`).
+                let mut st_point = clas.perform_tab_orien(unp);
                 if st_point == FaceState::On || st_point == FaceState::Unknown {
                     // cxx:3104-3130: walk along wire `i` while the classified
                     // point stays ON/UNKNOWN. The handle starts from the
@@ -143,7 +147,7 @@ impl ComposeShell {
                             boptools_2d::curve_on_surface_range(&ew[eidx], &pf)
                         {
                             while st_point == FaceState::On || st_point == FaceState::Unknown {
-                                st_point = clas.perform_recadre(a_cw.d0(a_cl), false); // cxx:3110
+                                st_point = clas.perform_tab_orien(a_cw.d0(a_cl)); // cxx:3110
                                 if eidx >= ew.len() {
                                     break; // cxx:3112 `if (!ew.More()) break;`
                                 }
@@ -164,7 +168,9 @@ impl ComposeShell {
                         }
                     }
                 }
-                let st_infin = clas.perform_infinite_point();
+                // `PerformInfinitePoint` (`cxx:3132`) is `Perform(P, false)`
+                // (`BRepTopAdaptor_FClass2d.cxx:515-522`), same TabOrien path.
+                let st_infin = clas.perform_infinite_point_tab_orien();
                 if st_point != st_infin {
                     break;
                 }
@@ -209,7 +215,7 @@ impl ComposeShell {
                     continue;
                 }
             };
-            reverse = clas.perform_infinite_point() == FaceState::In; // cxx:3181-3188
+            reverse = clas.perform_infinite_point_tab_orien() == FaceState::In; // cxx:3181-3188
 
             // cxx:3190-3229: find holes.
             let mut holes: Vec<TopoShape> = Vec::new();
@@ -244,7 +250,7 @@ impl ComposeShell {
                         continue;
                     }
                 };
-                let state = clas.perform_recadre(unp, false); // cxx:3223
+                let state = clas.perform_tab_orien(unp); // cxx:3223
                 if (state == FaceState::Out) == reverse {
                     holes.push(loops[j].clone());
                     loops.remove(j);

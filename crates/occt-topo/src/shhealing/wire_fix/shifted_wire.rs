@@ -19,20 +19,19 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
     if surf.is_surface_of_revolution() {
         // `ShapeFix_Wire.cxx:1682-1707`: for a `Geom_SurfaceOfRevolution` the
         // basis curve decides `vclosed` when it is periodic (CTS18546-2: a 2d
-        // contour shifted by 2*PI against a V range of length 2*PI). The
-        // `Geom_TrimmedCurve` unwrap is `cxx:1692-1696`; the
-        // `Geom_OffsetCurve` unwrap (`cxx:1688-1691`) is UNPORTED, this port
-        // has no 3d offset curve type.
+        // contour shifted by 2*PI against a V range of length 2*PI). Unwrap
+        // nested `Geom_OffsetCurve` (`cxx:1688-1691`) and `Geom_TrimmedCurve`
+        // (`cxx:1692-1696`) the same way OCCT's while-loop does.
         let mut basis = surf.revolution_basis_curve();
         loop {
             let Some(cur) = basis.as_ref() else {
                 break;
             };
-            if !cur.is_geom_trimmed() {
-                break;
+            if let Some((base, _)) = cur.offset_curve() {
+                basis = Some(base);
+                continue;
             }
-            let cur = cur.clone();
-            let Some((base, _, _)) = cur.untrimmed_basis() else {
+            let Some(base) = cur.trim_basis() else {
                 break;
             };
             basis = Some(base);
@@ -69,7 +68,9 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
     }
     let u_tol = 0.2 * u_range;
     let v_tol = 0.2 * v_range;
-    let edges: Vec<Edge> = edges_of_wire(wire)
+    // `cxx:1741-1753` walks `WireData()`, i.e. `ShapeExtend_WireData` order.
+    // A REVERSED wire prepends every edge (`ShapeExtend_WireData.cxx:115-118`).
+    let edges: Vec<Edge> = stored_manifold_edges(wire)
         .into_iter()
         .filter(|e| !(BRepTool::is_degenerated(e) && pcurve_at(e, face).is_none()))
         .collect();

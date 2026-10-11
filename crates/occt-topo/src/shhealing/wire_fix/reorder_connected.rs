@@ -15,15 +15,22 @@ pub fn fix_reorder_wire(wire: &Wire, _face: &Face) -> bool {
     ok
 }
 
-/// The stored FORWARD/REVERSED edges of `wire` (`ShapeExtend_WireData::Init`).
-pub(in crate::shhealing) fn stored_manifold_edges(wire: &Wire) -> Vec<Edge> {
-    edges_of_wire(wire)
+/// The FORWARD/REVERSED edge sequence built by `ShapeExtend_WireData::Init`
+/// (`ShapeExtend_WireData.cxx:80-122`). `TopoDS_Iterator` composes each edge
+/// orientation with the wire orientation; a REVERSED wire then prepends every
+/// edge, reversing the resulting sequence.
+pub(crate) fn stored_manifold_edges(wire: &Wire) -> Vec<Edge> {
+    let mut edges: Vec<Edge> = edges_of_wire(wire)
         .into_iter()
         .filter(|e| {
             let o = e.0.orientation();
             o == Orientation::Forward || o == Orientation::Reversed
         })
-        .collect()
+        .collect();
+    if wire.0.orientation() == Orientation::Reversed {
+        edges.reverse();
+    }
+    edges
 }
 
 /// `ShapeAnalysis_Wire::CheckOrder(..., isClosed, mode3d=true)` -> WireOrder
@@ -112,13 +119,19 @@ pub(in crate::shhealing) fn apply_wire_order(wire: &Wire, stored: &[Edge], order
     // composed (`ShapeExtend_WireData::Init`, `ShapeExtend_WireData.cxx:80-120`)
     // and `ShapeExtend_WireData::Wire()` rebuilds a fresh FORWARD wire from that
     // list (`ShapeExtend_WireData.cxx:651-685`). Our children stay under the
-    // original wire, so undo the wire's own orientation before storing, keeping
-    // the composed view identical to OCCT's WireData.
+    // original wire, so undo both the prepend and the composed orientation
+    // before storing. The next `stored_manifold_edges` then reproduces this
+    // WireData sequence.
     let wire_reversed = wire.0.orientation() == Orientation::Reversed;
     {
         let mut ts = wire.0.tshape.write().expect("poisoned TShape lock");
         ts.children.clear();
-        for e in &new_edges {
+        let stored_edges: Vec<Edge> = if wire_reversed {
+            new_edges.iter().rev().cloned().collect()
+        } else {
+            new_edges.clone()
+        };
+        for e in &stored_edges {
             let mut child = e.0.clone();
             if wire_reversed {
                 child.reverse();
@@ -149,6 +162,17 @@ pub(in crate::shhealing) enum ConnectedCheck {
 /// (`ShapeAnalysis_Wire.cxx:693-762`). `my_precision` is the analyzer's
 /// `myPrecision` (`ShapeAnalysis_Wire.cxx:203`), the value
 /// `ShapeFix_Wire::Perform` was driven with.
+/// `ShapeExtend_WireData` index (1-based, the index `FixConnected` computes)
+/// to the child slot `wire_set_edge` addresses. A REVERSED wire's WireData
+/// list is the reverse of storage (`ShapeExtend_WireData.cxx:115-118`).
+fn wiredata_storage_index(wire: &Wire, wiredata_index: usize, nb: usize) -> usize {
+    if wire.0.orientation() == Orientation::Reversed {
+        nb - wiredata_index + 1
+    } else {
+        wiredata_index
+    }
+}
+
 pub(in crate::shhealing) fn check_connected(wire: &Wire, my_precision: f64, prec: f64, num: usize) -> ConnectedCheck {
     let nb = wire_edges_nb(wire);
     if nb < 1 {
@@ -156,7 +180,13 @@ pub(in crate::shhealing) fn check_connected(wire: &Wire, my_precision: f64, prec
     }
     let n2 = if num > 0 { num } else { nb };
     let n1 = if n2 > 1 { n2 - 1 } else { nb };
-    let edges = edges_of_wire(wire);
+    // `ShapeAnalysis_Wire::CheckConnected` reads `WireData()->Edge`
+    // (`ShapeAnalysis_Wire.cxx:705-706`), the prepended sequence of a
+    // REVERSED wire, not raw storage order.
+    let edges = stored_manifold_edges(wire);
+    if n1 == 0 || n2 == 0 || n1 > edges.len() || n2 > edges.len() {
+        return ConnectedCheck::None;
+    }
     let (Some(v1), Some(v2)) = (last_vertex(&edges[n1 - 1]), first_vertex(&edges[n2 - 1])) else {
         return ConnectedCheck::None;
     };
@@ -208,7 +238,11 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, my_precision: f64
     }
     let n2 = if num > 0 { num } else { nb };
     let n1 = if n2 > 1 { n2 - 1 } else { nb };
-    let edges = edges_of_wire(wire);
+    // Same WireData sequence as `CheckConnected` (`ShapeFix_Wire.cxx:1496-1500`).
+    let edges = stored_manifold_edges(wire);
+    if n1 == 0 || n2 == 0 || n1 > edges.len() || n2 > edges.len() {
+        return false;
+    }
     let e1 = edges[n1 - 1].clone();
     let e2 = edges[n2 - 1].clone();
     let v1 = last_vertex(&e1);
@@ -233,22 +267,24 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, my_precision: f64
     // `cxx:1544-1601`: this port's edges are frozen by `TopoBuilder::add`, so
     // the `E1.Free() && E2.Free() && myTopoMode` arm never runs; the
     // `CopyReplaceVertices` arm does.
+    let s1 = wiredata_storage_index(wire, n1, nb);
+    let s2 = wiredata_storage_index(wire, n2, nb);
     if nb < 2 {
         // `cxx:1559-1565`: `sbe.CopyReplaceVertices(E2, V, V)` + `Set(tmpE, n2)`.
         let tmp_e = copy_replace_vertices_with(&e2, Some(&combined), Some(&combined));
-        wire_set_edge_composed(wire, n2, &tmp_e);
+        wire_set_edge_composed(wire, s2, &tmp_e);
     } else {
         // `cxx:1584-1599`: `CopyReplaceVertices(E2, V, null)` + `Set(tmpE2, n2)`,
         // then the same on E1 unless DONE1 with a non-closed E2.
         let tmp_e2 = copy_replace_vertices_with(&e2, Some(&combined), None);
-        wire_set_edge_composed(wire, n2, &tmp_e2);
+        wire_set_edge_composed(wire, s2, &tmp_e2);
         let first_is_last = first_vertex(&e2)
             .zip(last_vertex(&e2))
             .map(|(f, l)| is_same(&f.0, &l.0))
             .unwrap_or(false);
         if check != ConnectedCheck::Done1 || first_is_last {
             let tmp_e1 = copy_replace_vertices_with(&e1, None, Some(&combined));
-            wire_set_edge_composed(wire, n1, &tmp_e1);
+            wire_set_edge_composed(wire, s1, &tmp_e1);
         }
     }
     true
@@ -267,7 +303,7 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, my_precision: f64
 /// `ShapeFix_Face.cxx:173-177`), so this is `FromSTEP.FixShape.MaxTolerance3d`
 /// (`STEPControl_Controller.cxx:204-206`, set from
 /// `STEPControl_ActorRead::myMaxTol` at `cxx:1146`).
-pub(in crate::shhealing) fn fix_connected_all(wire: &mut Wire, my_precision: f64, max_tolerance: f64) -> bool {
+pub fn fix_connected_all(wire: &mut Wire, my_precision: f64, max_tolerance: f64) -> bool {
     let nb = wire_edges_nb(wire);
     if nb == 0 {
         return false;

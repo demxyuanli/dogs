@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::builder::TopoBuilder;
-use crate::shape::{Edge, TopoShape};
+use crate::brep_tool::BRepTool;
+use crate::shape::{Edge, TopoShape, Vertex};
 
 use super::wire_segment::WireSegment;
 
@@ -356,6 +357,35 @@ pub struct SharedReShape(std::rc::Rc<std::cell::RefCell<MapReShape>>);
 impl SharedReShape {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `BRepTools_ReShape::CopyVertex(V, tol)` (`BRepTools_ReShape.cxx:613-637`).
+    /// A vertex that is not yet recorded is empty-copied and `Replace`d. A
+    /// recorded vertex is `Apply`'d and `UpdateVertex`'d in place.
+    pub fn copy_vertex(&mut self, vertex: &TopoShape, tol: f64) {
+        if !vertex.is_vertex() {
+            return;
+        }
+        let point = BRepTool::vertex_point(&Vertex(vertex.clone()));
+        let new_tol = if tol > 0.0 {
+            tol
+        } else {
+            BRepTool::vertex_tolerance(&Vertex(vertex.clone()))
+        };
+        if self.is_recorded(vertex) {
+            let applied = self.apply(vertex);
+            if !applied.is_vertex() {
+                return;
+            }
+            let copy = Vertex(applied);
+            copy.set_point(point);
+            copy.set_tolerance(new_tol);
+            return;
+        }
+        let mut copy = TopoBuilder::new().make_vertex(point, new_tol);
+        copy.0.set_orientation(vertex.orientation());
+        copy.0.set_location(vertex.location());
+        self.replace(vertex, &copy.0);
     }
 }
 

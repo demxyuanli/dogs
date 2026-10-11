@@ -133,21 +133,25 @@ pub(in crate::shhealing) fn same_range_unequal_other(
 
 /// `GeomLib::SameRange` (`GeomLib.cxx:842-969`) for equal-span Line/reparam
 /// and unequal-span Line Trimmed+Convert.
+///
+/// `tolerance` is the first `GeomLib::SameRange` argument (`cxx:842`): early-out
+/// and equal-span tests use it; interior `PConfusion` guards stay as in the cxx.
 pub(crate) fn geom_lib_same_range(
+    tolerance: f64,
     c2d: Arc<dyn Curve2d>,
     first_on: f64,
     last_on: f64,
     req_first: f64,
     req_last: f64,
 ) -> Arc<dyn Curve2d> {
-    if (last_on - req_last).abs() <= PCONFUSION && (first_on - req_first).abs() <= PCONFUSION {
+    if (last_on - req_last).abs() <= tolerance && (first_on - req_first).abs() <= tolerance {
         return c2d;
     }
     if !first_on.is_finite() || !last_on.is_finite() {
         return c2d;
     }
     let equal_span =
-        ((last_on - first_on) - (req_last - req_first)).abs() <= PCONFUSION;
+        ((last_on - first_on) - (req_last - req_first)).abs() <= tolerance;
     if equal_span {
         // `GeomLib.cxx:864-870` `IsKind(Geom2d_Line)` — exact infinite Line only
         // (not Trimmed/Reparam wrappers that forward `is_line`).
@@ -178,8 +182,14 @@ pub(crate) fn geom_lib_same_range(
         // re-trims to RequestedFirst/Last (period-shifted Init2d windows).
         if c2d.trimmed_basis().is_some() {
             let basis = Arc::from(c2d.trimmed_basis().unwrap().clone_dyn());
-            let new_basis =
-                geom_lib_same_range(basis, first_on, last_on, req_first, req_last);
+            let new_basis = geom_lib_same_range(
+                tolerance,
+                basis,
+                first_on,
+                last_on,
+                req_first,
+                req_last,
+            );
             return Arc::new(Geom2dTrimmedCurve::new(new_basis, req_first, req_last));
         }
         // `GeomLib.cxx:908-921` equal-span generic arm: TrimmedCurve over

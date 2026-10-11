@@ -155,7 +155,7 @@ impl ComposeShell {
         // cxx:3378-3382.
         let mut rs = MapReShape::new();
         let sbe = ShapeBuildEdge;
-        let sfe = ShapeFixEdge;
+        let mut sfe = ShapeFixEdge::new();
         let reg = GeometryRegistry::global();
         let (u1, u2, v1, v2) = self.grid.bounds();
 
@@ -283,14 +283,28 @@ impl ComposeShell {
                         let mut newf = f;
                         let mut newl = l;
                         let c2dnew = sbe.transform_pcurve(&c2d, &trsf, u_fact, &mut newf, &mut newl);
-                        // cxx:3471-3493: the closed (seam) branch keeps both
-                        // pcurves; UNPORTED here — see specs/_a3n00_gap_analysis.md
-                        // §9.117: the port's ReassignPCurve state makes
-                        // IsClosed(newEdge, face) differ from OCCT's, so the
-                        // faithful branch changed a3n00's total away from the
-                        // 11052/12324 target. Kept single-pcurve until the patch
-                        // pcurve representation matches.
-                        reg.set_edge_pcurve(&new_edge.0, face_key, c2dnew);
+                        // cxx:3471-3493: a closed edge keeps both pcurves.
+                        // `PCurve(newEdge)` is transformed; `PCurve(newEdge.Reversed())`
+                        // stays. FORWARD stores (transformed, other); REVERSED
+                        // stores (other, transformed).
+                        if BRepTool::is_closed_edge_face(&new_edge, &face) {
+                            let mut rev = new_edge.clone();
+                            rev.0.reverse();
+                            if let Some((c2d2, _, _)) =
+                                crate::boptools_2d::curve_on_surface_oriented(&rev, &face, false)
+                            {
+                                let pcs = if new_edge.0.orientation() == Orientation::Forward {
+                                    vec![c2dnew, c2d2]
+                                } else {
+                                    vec![c2d2, c2dnew]
+                                };
+                                reg.set_edge_pcurves(&new_edge.0, face_key, pcs);
+                            } else {
+                                reg.set_edge_pcurve(&new_edge.0, face_key, c2dnew);
+                            }
+                        } else {
+                            reg.set_edge_pcurve(&new_edge.0, face_key, c2dnew);
+                        }
                         reg.set_pcurve_range(&new_edge.0, face_key, newf, newl);
                         if (newf != f || newl != l) && !BRepTool::is_degenerated(&new_edge) {
                             reg.set_same_range(&new_edge.0, false); // cxx:3499-3502

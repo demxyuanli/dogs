@@ -3,7 +3,7 @@
 //!
 //! `ShapeFix_Shell.cxx:1425-1653` and `ShapeFix_Solid.cxx:520-565`, `:655-702`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_class3d::SolidClassifier;
@@ -242,6 +242,37 @@ pub fn fix_shell_face_orientation(mut shell: TopoShape) -> TopoShape {
     shell
 }
 
+/// `ShapeFix_Shell::FixFaceOrientation` closed-flag update
+/// (`ShapeFix_Shell.cxx:1474-1479`): `Closed` becomes the opposite of
+/// "a non-degenerate edge meets exactly one face".
+pub fn align_shell_closed_to_free_bounds(shell: &TopoShape) {
+    if shell.shape_type() != ShapeType::Shell {
+        return;
+    }
+    let closed = !shell_has_free_edge(shell);
+    if shell.closed() != closed {
+        shell.set_closed(closed);
+    }
+}
+
+/// `ShapeFix_Shell::Perform` after orientation (`ShapeFix_Shell.cxx:145-163`).
+/// A shell whose `Closed` flag is set and `ShapeAnalysis_Shell::HasFreeEdges`
+/// (`alsofree = true`, `checkinternaledges = false`) drops the flag.
+pub fn clear_shell_closed_if_analysis_free(shell: &TopoShape) {
+    if shell.shape_type() != ShapeType::Shell {
+        return;
+    }
+    if shell.closed() && shell_analysis_has_free_edges(shell) {
+        shell.set_closed(false);
+    }
+}
+
+/// True when `ShapeAnalysis_FreeBounds` would report an open shell for the
+/// single-shell arm (`ShapeFix_Solid.cxx:528-541`).
+pub fn shell_open_by_free_edge(shell: &TopoShape) -> bool {
+    shell_has_free_edge(shell)
+}
+
 /// A non-degenerate edge that meets exactly one face is a free boundary
 /// (`ShapeFix_Shell.cxx:1460-1466`). `ShapeAnalysis_FreeBounds` reports the
 /// same condition as "open" for the single-shell arm (`ShapeFix_Solid.cxx:528-541`).
@@ -268,6 +299,39 @@ fn shell_has_free_edge(shell: &TopoShape) -> bool {
         }
     }
     face_count.values().any(|&n| n == 1)
+}
+
+/// `ShapeAnalysis_Shell::CheckOrientedShells` free-edge set
+/// (`ShapeAnalysis_Shell.cxx:72-130`, `:170-206`). Degenerate edges are
+/// skipped. An edge seen twice in one orientation is bad and is not free.
+fn shell_analysis_has_free_edges(shell: &TopoShape) -> bool {
+    let mut dirs: HashSet<usize> = HashSet::new();
+    let mut revs: HashSet<usize> = HashSet::new();
+    let mut bads: HashSet<usize> = HashSet::new();
+    for edge in cumulated_children(shell) {
+        if edge.shape_type() != ShapeType::Edge {
+            continue;
+        }
+        if BRepTool::is_degenerated(&Edge(edge.clone())) {
+            continue;
+        }
+        let key = edge_key(&edge);
+        match edge.orientation() {
+            Orientation::Forward => {
+                if !dirs.insert(key) {
+                    bads.insert(key);
+                }
+            }
+            Orientation::Reversed => {
+                if !revs.insert(key) {
+                    bads.insert(key);
+                }
+            }
+            _ => {}
+        }
+    }
+    dirs.iter().any(|k| !revs.contains(k) && !bads.contains(k))
+        || revs.iter().any(|k| !dirs.contains(k) && !bads.contains(k))
 }
 
 /// Single-shell arm of `ShapeFix_Solid::Perform` (`ShapeFix_Solid.cxx:520-565`)

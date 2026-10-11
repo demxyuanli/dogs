@@ -71,6 +71,7 @@ pub use shape_fix_face::*;
 pub use shape_fix_shell::*;
 /// The file-local `SplitWire` helper (`ShapeFix_Face.cxx:242-341`).
 pub(in crate::shhealing) use face_split::split_wire;
+pub use face_split::split_face_after_removed_segment;
 pub use loop_wire::*;
 pub use small_area::*;
 pub use xsalgo_check_pcurve::*;

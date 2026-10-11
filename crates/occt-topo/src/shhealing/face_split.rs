@@ -5,7 +5,7 @@
 
 use occt_core::precision::PCONFUSION;
 
-use crate::abs::Orientation;
+use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::{FClass2d, FaceState};
@@ -129,6 +129,51 @@ pub(in crate::shhealing) fn split_wire(face: &Face, wire: &Wire) -> Vec<Wire> {
         }
     }
     res
+}
+
+/// `NeedCheckSplitWire` (`ShapeFix_Face.cxx:629-674`). Called only when some
+/// wire's `FixSelfIntersection` removed a segment. Replaces the face when
+/// `SplitWire` produces more wires than the face had.
+pub fn split_face_after_removed_segment(face: &Face, ctx: &mut dyn ReShape) -> bool {
+    let applied = ctx.apply(&face.0);
+    let source = if applied.is_face() {
+        Face(applied)
+    } else {
+        face.clone()
+    };
+    let builder = TopoBuilder::new();
+    let mut tmp = empty_copied_face(&source);
+    tmp.0.set_orientation(Orientation::Forward);
+    let children = source
+        .0
+        .tshape
+        .read()
+        .expect("poisoned TShape lock")
+        .children
+        .clone();
+    let mut nbw = 0usize;
+    let mut split_wires: Vec<Wire> = Vec::new();
+    for child in &children {
+        if child.shape_type() != ShapeType::Wire {
+            builder.add(&mut tmp.0, child);
+            continue;
+        }
+        let ori = child.orientation();
+        if ori != Orientation::Forward && ori != Orientation::Reversed {
+            builder.add(&mut tmp.0, child);
+            continue;
+        }
+        nbw += 1;
+        split_wires.extend(split_wire(&tmp, &Wire(child.clone())));
+    }
+    if nbw >= split_wires.len() {
+        return false;
+    }
+    for wire in &split_wires {
+        builder.add(&mut tmp.0, &wire.0);
+    }
+    ctx.replace(&source.0, &tmp.0);
+    true
 }
 
 impl ShapeFixFace {

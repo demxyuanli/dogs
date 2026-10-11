@@ -5,26 +5,24 @@
 //! the free interval left by the others. `ShapeFix_Face::Perform` runs it
 //! (`cxx:704-708`) after the wire fixes and before `FixSplitFace` (`cxx:711`),
 //! and its return value is what turns `NeedSplit` off.
-//!
-//! UNPORTED (`cxx:1030-1078`): the sphere arm that merges a hole whose
-//! degenerated edge coincides with a degenerated edge of the natural bound. It
-//! needs `ShapeExtend_WireData::SetLast` / `Add(sewd, at)` and
-//! `ShapeFix_Wire::Load` / `FixConnected` / `FixDegenerated` on a wire data,
-//! none of which exist as such in the port. The arm only fires when
-//! `GetType() == GeomAbs_Sphere && ws.Length() == nb + 1`, so it is registered
-//! rather than approximated.
 
 use occt_core::gp::{GpPnt2d, GpVec2d};
 use occt_core::precision::CONFUSION;
 
 use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
+use crate::brep_tools::compare_vertices;
 use crate::builder::TopoBuilder;
 use crate::shape::Face;
+use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::edges_of_wire;
 
 use super::face_geom_helpers::{
     cut_interval, empty_copied_face, find_best_interval, is_surface_uv_infinite, shift_2d_wire,
     shift_is_negligible, split_face_children,
+};
+use super::wire_fix::{
+    first_vertex, fix_connected_all, fix_degenerated_all, wire_add_wire_at, wire_set_last,
 };
 use super::ShapeFixFace;
 use crate::shape_fix_compose_shell::ReShape;
@@ -163,9 +161,62 @@ impl ShapeFixFace {
             );
         }
 
-        // UNPORTED (`cxx:1028-1078`): the `GeomAbs_Sphere && ws.Length() == nb
-        // + 1` merge of a hole that shares a degenerated edge with the natural
-        // bound. See the module header.
+        // `cxx:1028-1078`: sphere hole that shares a degenerated edge with the
+        // natural bound is merged into that bound.
+        let mut nb_holes = nb;
+        if surf.gp_sphere().is_some() && ws.len() == nb_holes + 1 {
+            let mut bnd = ws[ws.len() - 1].clone();
+            let mut i = 1usize;
+            while i <= nb_holes {
+                let mut sbwd = ws[i - 1].clone();
+                let sbwd_edges = edges_of_wire(&sbwd);
+                let mut merged = false;
+                for (j0, e_j) in sbwd_edges.iter().enumerate() {
+                    let j = j0 + 1;
+                    if !BRepTool::is_degenerated(e_j) {
+                        continue;
+                    }
+                    let Some(v) = first_vertex(e_j) else {
+                        continue;
+                    };
+                    let bnd_edges = edges_of_wire(&bnd);
+                    let mut k_found: Option<usize> = None;
+                    for (k0, e_k) in bnd_edges.iter().enumerate() {
+                        let k = k0 + 1;
+                        if !BRepTool::is_degenerated(e_k) {
+                            continue;
+                        }
+                        let Some(vk) = first_vertex(e_k) else {
+                            continue;
+                        };
+                        if compare_vertices(&v, &vk) {
+                            k_found = Some(k);
+                            break;
+                        }
+                    }
+                    let Some(k) = k_found else {
+                        continue;
+                    };
+                    // `cxx:1063-1065`: clear Degenerated on both edges.
+                    GeometryRegistry::global().set_degenerated(&e_j.0, false);
+                    GeometryRegistry::global().set_degenerated(&bnd_edges[k - 1].0, false);
+                    wire_set_last(&mut sbwd, j);
+                    wire_add_wire_at(&mut bnd, &sbwd, k + 1);
+                    ws.remove(i - 1);
+                    nb_holes -= 1;
+                    // `cxx:1070-1074`: FixConnected + FixDegenerated on the bound.
+                    let _ = fix_connected_all(&mut bnd, CONFUSION, self.max_tol);
+                    let _ = fix_degenerated_all(&mut bnd, &face, CONFUSION);
+                    let last = ws.len() - 1;
+                    ws[last] = bnd.clone();
+                    merged = true;
+                    break;
+                }
+                if !merged {
+                    i += 1;
+                }
+            }
+        }
 
         // cxx:1080-1102: rebuild the face over `ws` then `vs`.
         let mut s = empty_copied_face(&face);

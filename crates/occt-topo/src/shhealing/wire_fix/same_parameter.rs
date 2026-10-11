@@ -62,7 +62,19 @@ pub(in crate::shhealing) fn cos_d1(pc: &dyn Curve2d, surf: &dyn Surface, t: f64)
 /// `BRepLib_ValidateEdge::processApprox` (`cxx:103-229`) plus
 /// `UpdateTolerance` (`cxx:57-63`).
 /// `ShapeAnalysis_Edge::CheckSameParameter` (`cxx:704-838`).
+///
+/// `face = Some` keeps Cos reps on that face (`cxx:770-777`). `face = None` is
+/// the empty-face overload (`cxx:694-699`, `:874-882`): every Cos representation.
 pub(in crate::shhealing) fn check_same_parameter(edge: &Edge, face: &Face) -> f64 {
+    check_same_parameter_opt(edge, Some(face))
+}
+
+/// Empty-face `CheckSameParameter` (`ShapeAnalysis_Edge.cxx:694-699`).
+pub(in crate::shhealing) fn check_same_parameter_all(edge: &Edge) -> f64 {
+    check_same_parameter_opt(edge, None)
+}
+
+fn check_same_parameter_opt(edge: &Edge, face: Option<&Face>) -> f64 {
     if BRepTool::is_degenerated(edge) {
         return 0.0;
     }
@@ -73,54 +85,63 @@ pub(in crate::shhealing) fn check_same_parameter(edge: &Edge, face: &Face) -> f6
     if !first.is_finite() || !last.is_finite() {
         return 0.0;
     }
-    let Some(surf) = BRepTool::face_surface(face) else {
-        return 0.0;
-    };
     let same_p = BRepTool::same_parameter(edge);
-    let face_key = GeometryRegistry::shape_key(&face.0);
     let reg = GeometryRegistry::global();
-    let is_plane = classify_surface_kind(surf.as_ref()) == SurfaceKind::Plane;
-    // After CheckPCurves RemovePCurves (`cxx:110-114`) a plane has no stored
-    // pcurve. Do not same-t leftover STEP pcs (Shape-2 1.322 inflation).
-    let mut pcs = if is_plane {
-        Vec::new()
-    } else {
-        reg.edge_pcurves(&edge.0, face_key)
-    };
-    let (mut cf, mut cl) = reg
-        .pcurve_range(&edge.0, face_key)
-        .unwrap_or((first, last));
-    // `ShapeAnalysis_Edge.cxx:801-826`: `CurveOnPlane` then
-    // `Geom2dAdaptor_Curve(aPC, aFirst, aLast)` + `CurveOnSurface` +
-    // `BRepLib_ValidateEdge` (`aFirst/aLast` = 3D edge range, cxx:418-419).
-    if pcs.is_empty() && is_plane {
-        if let Ok(pc) = crate::pcurve::make_pcurve_on_face(edge, face) {
-            pcs.push(pc);
-            cf = first;
-            cl = last;
+    // `(surf, pc, cf, cl)` for each Cos considered (`cxx:752-799`).
+    let mut reps: Vec<(Arc<dyn Surface>, Arc<dyn Curve2d>, f64, f64)> = Vec::new();
+    if let Some(face) = face {
+        let Some(surf) = BRepTool::face_surface(face) else {
+            return 0.0;
+        };
+        let face_key = GeometryRegistry::shape_key(&face.0);
+        let is_plane = classify_surface_kind(surf.as_ref()) == SurfaceKind::Plane;
+        // After CheckPCurves RemovePCurves (`cxx:110-114`) a plane has no stored
+        // pcurve. Do not same-t leftover STEP pcs (Shape-2 1.322 inflation).
+        let mut pcs = if is_plane {
+            Vec::new()
+        } else {
+            reg.edge_pcurves(&edge.0, face_key)
+        };
+        let (mut cf, mut cl) = reg
+            .pcurve_range(&edge.0, face_key)
+            .unwrap_or((first, last));
+        // `ShapeAnalysis_Edge.cxx:801-826`: `CurveOnPlane` then
+        // `Geom2dAdaptor_Curve(aPC, aFirst, aLast)` + `CurveOnSurface` +
+        // `BRepLib_ValidateEdge` (`aFirst/aLast` = 3D edge range, cxx:418-419).
+        if pcs.is_empty() && is_plane {
+            if let Ok(pc) = crate::pcurve::make_pcurve_on_face(edge, face) {
+                pcs.push(pc);
+                cf = first;
+                cl = last;
+            }
         }
+        for pc in pcs {
+            reps.push((surf.clone(), pc, cf, cl));
+        }
+    } else {
+        reps = reg.edge_pcurve_reps(&edge.0);
     }
     let mut max_sq: f64 = 0.0;
     // `SetControlPointsNumber(NbControl - 1)` with default NbControl=23.
     const NB: i32 = 22;
-    for pc in &pcs {
+    for (surf, pc, cf, cl) in &reps {
         let projection = !same_p
-            || (cf - first).abs() > PCONFUSION
-            || (cl - last).abs() > PCONFUSION;
+            || (*cf - first).abs() > PCONFUSION
+            || (*cl - last).abs() > PCONFUSION;
 
         if projection {
             // `BRepLib_ValidateEdge.cxx:141-227`.
             let saved = max_sq;
             let p_ref0 = c3d.d0(first);
-            let p_oth0 = cos_d0(pc.as_ref(), surf.as_ref(), cf);
+            let p_oth0 = cos_d0(pc.as_ref(), surf.as_ref(), *cf);
             max_sq = max_sq.max(p_ref0.square_distance(&p_oth0));
             let p_ref1 = c3d.d0(last);
-            let p_oth1 = cos_d0(pc.as_ref(), surf.as_ref(), cl);
+            let p_oth1 = cos_d0(pc.as_ref(), surf.as_ref(), *cl);
             max_sq = max_sq.max(p_ref1.square_distance(&p_oth1));
             let mut aborted = false;
             for i in 1..NB {
                 let t_ref = ((NB - i) as f64 * first + i as f64 * last) / NB as f64;
-                let t_oth = ((NB - i) as f64 * cf + i as f64 * cl) / NB as f64;
+                let t_oth = ((NB - i) as f64 * *cf + i as f64 * *cl) / NB as f64;
                 let p_ref = c3d.d0(t_ref);
                 let p_oth = cos_d0(pc.as_ref(), surf.as_ref(), t_oth);
                 let Some(sq_ref) = locate_ext_pc_sq(
@@ -140,8 +161,8 @@ pub(in crate::shhealing) fn check_same_parameter(edge: &Edge, face: &Face) -> f6
                     |t| cos_d1(pc.as_ref(), surf.as_ref(), t),
                     &p_ref,
                     t_oth,
-                    cf,
-                    cl,
+                    *cf,
+                    *cl,
                 ) else {
                     aborted = true;
                     break;
@@ -162,13 +183,12 @@ pub(in crate::shhealing) fn check_same_parameter(edge: &Edge, face: &Face) -> f6
             max_sq = max_sq.max(sq);
         }
     }
-    let maxdev = max_sq.sqrt() * 1.00001;
-    maxdev
+    max_sq.sqrt() * 1.00001
 }
 
 /// `ShapeAnalysis_Edge::CheckVertexTolerance` with `checkAll=true`
 /// (`cxx:568-667`) then `B.UpdateVertex`.
-pub(in crate::shhealing) fn fix_vertex_tolerance_edge(edge: &Edge) {
+pub fn fix_vertex_tolerance_edge(edge: &Edge) {
     let (Some(v1), Some(v2)) = (first_vertex(edge), last_vertex(edge)) else {
         return;
     };
@@ -202,6 +222,69 @@ pub(in crate::shhealing) fn fix_vertex_tolerance_edge(edge: &Edge) {
     let tole = BRepTool::edge_tolerance(edge);
     v1.set_tolerance((1.0000001 * t1.sqrt()).max(tole));
     v2.set_tolerance((1.0000001 * t2.sqrt()).max(tole));
+}
+
+/// Vertices and the tolerances `CheckVertexTolerance` would write when either
+/// one grows (`ShapeAnalysis_Edge.cxx:657-667`). `None` is `Status` without
+/// `ShapeExtend_DONE`, so the caller does not update.
+pub struct GrownVertexTol {
+    pub v1: Vertex,
+    pub v2: Vertex,
+    pub toler1: f64,
+    pub toler2: f64,
+}
+
+/// `CheckVertexTolerance` with `checkAll=false` (`ShapeAnalysis_Edge.cxx:633-667`).
+pub fn grown_vertex_tolerances_on_face(edge: &Edge, face: &Face) -> Option<GrownVertexTol> {
+    let (Some(v1), Some(v2)) = (first_vertex(edge), last_vertex(edge)) else {
+        return None;
+    };
+    let p1 = BRepTool::vertex_point(&v1);
+    let p2 = BRepTool::vertex_point(&v2);
+    let old1 = BRepTool::vertex_tolerance(&v1);
+    let old2 = BRepTool::vertex_tolerance(&v2);
+    let mut t1 = 0.0;
+    let mut t2 = 0.0;
+    if let Some(c3d) = BRepTool::edge_curve(edge) {
+        let (mut a, mut b) = BRepTool::edge_parameters(edge);
+        if a.is_finite() && b.is_finite() {
+            if edge.0.orientation().is_reversed() {
+                std::mem::swap(&mut a, &mut b);
+            }
+            t1 = p1.square_distance(&c3d.d0(a));
+            t2 = p2.square_distance(&c3d.d0(b));
+        }
+    }
+    if let Some(surf) = BRepTool::face_surface(face) {
+        if let Some((pc, a, b)) = curve_on_surface_oriented(edge, face, true) {
+            let uv1 = pc.d0(a);
+            let uv2 = pc.d0(b);
+            t1 = t1.max(p1.square_distance(&surf.d0(uv1.x(), uv1.y())));
+            t2 = t2.max(p2.square_distance(&surf.d0(uv2.x(), uv2.y())));
+        }
+    }
+    let tole = BRepTool::edge_tolerance(edge);
+    let toler1 = (1.0000001 * t1.sqrt()).max(tole);
+    let toler2 = (1.0000001 * t2.sqrt()).max(tole);
+    if toler1 > old1 || toler2 > old2 {
+        Some(GrownVertexTol { v1, v2, toler1, toler2 })
+    } else {
+        None
+    }
+}
+
+/// `ShapeFix_Edge::FixVertexTolerance(edge, face)`
+/// (`ShapeFix_Edge.cxx:642-684`): `CheckVertexTolerance` with `checkAll=false`
+/// (`ShapeAnalysis_Edge.cxx:633-651`) then `B.UpdateVertex` only when a vertex
+/// tolerance grows (`Status(ShapeExtend_DONE)`, `cxx:657-667`).
+/// The null-context arm. The shape-level loop has a context and uses
+/// `CopyVertex` instead (`cxx:674-677`).
+pub(in crate::shhealing) fn fix_vertex_tolerance_edge_on_face(edge: &Edge, face: &Face) {
+    let Some(grown) = grown_vertex_tolerances_on_face(edge, face) else {
+        return;
+    };
+    grown.v1.set_tolerance(grown.toler1);
+    grown.v2.set_tolerance(grown.toler2);
 }
 
 /// `ShapeBuild_Edge::CopyReplaceVertices` (`ShapeBuild_Edge.cxx:59-140`): a new
@@ -315,17 +398,15 @@ pub fn copy_pcurves(to: &Edge, from: &Edge) {
 /// `Approx_SameParameter` re-projection at `BRepLib.cxx:1631`, then the
 /// pick-best block `cxx:889-912` with `ShapeBuild_Edge::CopyPCurves`).
 ///
-/// UNPORTED, inside the `!wasSP` arm: the cxx widens the deviation check to
-/// *all* pcurves by passing an empty face (`cxx:877-881`) and
-/// `BRepLib::SameParameter(edge, tol)` walks every `CurveOnSurface`
-/// representation (`BRepLib.cxx:1263-1291`); our `check_same_parameter` and
-/// `same_parameter_edge` are face based, so they cover the call-site face only.
+/// When `!wasSP`, deviation uses the empty-face overload so every Cos is
+/// checked (`cxx:874-882`); the copy check is also face-less (`cxx:892`).
+/// `BRepLib::SameParameter(copy, tol)` walks every Cos (`BRepLib.cxx:1263-1291`).
 ///
 /// Also unmodelled in both arms: the `ShapeExtend` status writes of the method
 /// (`cxx:853-855` FAIL2, `cxx:883-886` FAIL1, `cxx:894` DONE3, `cxx:902-905`,
 /// `cxx:910` DONE5, `cxx:931-934` DONE2); this port has no `myStatus`
 /// accumulator.
-pub(in crate::shhealing) fn fix_same_parameter(edge: &Edge, face: &Face) {
+pub fn fix_same_parameter(edge: &Edge, face: &Face) {
     let reg = GeometryRegistry::global();
     let same_range = reg.edge_geom(&edge.0).map(|g| g.same_range).unwrap_or(true);
     if reg.is_degenerated_edge(&edge.0) {
@@ -365,20 +446,27 @@ pub(in crate::shhealing) fn fix_same_parameter(edge: &Edge, face: &Face) {
             geom.last = last_3d;
             reg.set_edge(&copy.0, geom);
         }
-        // `cxx:850`: the two argument overload passes the default
-        // `tolerance = 0` (`ShapeFix_Edge.hxx:193`), so `tol` is selected.
-        crate::brep_lib_same_parameter::same_parameter_edge_inplace(&copy, face, tol);
+        // `cxx:850`: the two-argument overload walks every Cos
+        // (`BRepLib.cxx:1237-1246` / `:1263-1291`). Default `tolerance = 0`
+        // (`ShapeFix_Edge.hxx:193`) selects `tol`.
+        crate::brep_lib_same_parameter::same_parameter_edge_inplace(&copy, tol);
         sp = BRepTool::same_parameter(&copy); // cxx:851
         copy_edge = Some(copy);
     }
     reg.set_same_parameter(&edge.0, true); // cxx:872
+    // `cxx:874-882`: empty face when `!wasSP` so every Cos is checked.
     // `cxx:883`: deviation on the original pcurves.
-    let mut maxdev = check_same_parameter(edge, face);
+    let mut maxdev = if was_sp {
+        check_same_parameter(edge, face)
+    } else {
+        check_same_parameter_all(edge)
+    };
     if sp {
         if let Some(copy) = copy_edge.as_ref() {
             // `cxx:889-912`: compare and select the best variant.
+            // `cxx:892`: two-arg `CheckSameParameter` (empty face).
             let mut brl_tol = BRepTool::edge_tolerance(copy); // cxx:891
-            let brl_dev = check_same_parameter(copy, face); // cxx:892
+            let brl_dev = check_same_parameter_all(copy);
             if brl_tol < brl_dev {
                 brl_tol = brl_dev; // cxx:895-898
             }

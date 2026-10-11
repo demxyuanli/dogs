@@ -625,7 +625,7 @@ pub fn fix_intersecting_edges(
             if loc_may_edit {
                 // `cxx:3129`.
                 newtol = 1.0001 * (pnt.distance(&pint) + rad);
-                if std::env::var("PROJDIAG").is_ok() { if let (Some((c1, _, _)), Some((c2, _, _))) = (curve_on_surface_oriented(&e1, face, false), curve_on_surface_oriented(&e2, face, false)) { let v1p = if is_forward1 { b1 } else { a1 }; let v2p = if is_forward2 { a2 } else { b2 }; let q1 = c1.d0(param1); let q1v = c1.d0(v1p); let q2 = c2.d0(param2); let q2v = c2.d0(v2p); eprintln!("PC1 param1={:.6} vtxparam1={:.6} uv1=({:.6},{:.6}) uvV1=({:.6},{:.6}) PC2 param2={:.6} vtxparam2={:.6} uv2=({:.6},{:.6}) uvV2=({:.6},{:.6}) |uv1-uv2|={:.6e} |V1-V2|uv={:.6e} pint=({:.3},{:.3},{:.3}) rad={:.3e} newtol={:.3e} pnt=({:.3},{:.3},{:.3})", param1, v1p, q1.x(), q1.y(), q1v.x(), q1v.y(), param2, v2p, q2.x(), q2.y(), q2v.x(), q2v.y(), ((q1.x()-q2.x()).powi(2)+(q1.y()-q2.y()).powi(2)).sqrt(), ((q1v.x()-q2v.x()).powi(2)+(q1v.y()-q2v.y()).powi(2)).sqrt(), pint.x(), pint.y(), pint.z(), rad, newtol, pnt.x(), pnt.y(), pnt.z()); } }                // `cxx:3132-3146`: `ShapeFix_SplitTool aTool; aTool.CutEdge(...)`.
+                // `cxx:3132-3146`: `ShapeFix_SplitTool aTool; aTool.CutEdge(...)`.
                 if !cut_edge(&e1, if is_forward1 { a1 } else { b1 }, param1, face, &mut is_cut_line)
                 {
                     if is_same(&v1.0, &vp.0) {

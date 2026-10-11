@@ -17,35 +17,10 @@ use crate::shape::{Edge, Face, TopoShape};
 use super::composite_surface::CompositeSurface;
 use super::helpers::*;
 use super::reshape::{MapReShape, SharedReShape};
-
-/// ShapeExtend_Status bits: ShapeExtend::EncodeStatus (ShapeExtend.cxx:54-98).
-pub const SHAPEEXTEND_OK: i32 = 0x0000;
-pub const SHAPEEXTEND_DONE1: i32 = 0x0001;
-pub const SHAPEEXTEND_DONE2: i32 = 0x0002;
-pub const SHAPEEXTEND_DONE3: i32 = 0x0004;
-pub const SHAPEEXTEND_DONE4: i32 = 0x0008;
-pub const SHAPEEXTEND_DONE5: i32 = 0x0010;
-pub const SHAPEEXTEND_DONE6: i32 = 0x0020;
-pub const SHAPEEXTEND_DONE7: i32 = 0x0040;
-pub const SHAPEEXTEND_DONE8: i32 = 0x0080;
-pub const SHAPEEXTEND_DONE: i32 = 0x00ff;
-pub const SHAPEEXTEND_FAIL1: i32 = 0x0100;
-pub const SHAPEEXTEND_FAIL2: i32 = 0x0200;
-pub const SHAPEEXTEND_FAIL3: i32 = 0x0400;
-pub const SHAPEEXTEND_FAIL4: i32 = 0x0800;
-pub const SHAPEEXTEND_FAIL5: i32 = 0x1000;
-pub const SHAPEEXTEND_FAIL6: i32 = 0x2000;
-pub const SHAPEEXTEND_FAIL7: i32 = 0x4000;
-pub const SHAPEEXTEND_FAIL8: i32 = 0x8000;
-pub const SHAPEEXTEND_FAIL: i32 = 0xff00;
-
-/// ShapeExtend::DecodeStatus (ShapeExtend.cxx:102-109).
-pub fn decode_status(flag: i32, status: i32) -> bool {
-    if status == SHAPEEXTEND_OK {
-        return flag == 0;
-    }
-    (flag & status) != 0
-}
+pub use crate::shape_extend::{
+    decode_status, SHAPEEXTEND_DONE1, SHAPEEXTEND_FAIL2, SHAPEEXTEND_FAIL3, SHAPEEXTEND_FAIL4,
+    SHAPEEXTEND_FAIL5, SHAPEEXTEND_FAIL6, SHAPEEXTEND_OK,
+};
 
 /// ShapeFix_ComposeShell (ShapeFix_ComposeShell.hxx).
 pub struct ComposeShell {

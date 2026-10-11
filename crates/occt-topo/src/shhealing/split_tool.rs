@@ -39,7 +39,7 @@ fn is_trimmed_line(crv: &dyn Curve2d) -> bool {
 /// line, `[pend, cut]` is the sub-range otherwise. The edge is modified in
 /// place (`BRep_Builder::Range` writes the `BRep_TEdge` of `edge`), and
 /// `is_cut_line` reports the trimmed-line branch (`cxx:248`, `:258`).
-pub fn cut_edge(edge: &Edge, pend: f64, cut: f64, face: &Face, is_cut_line: &mut bool) -> bool { if std::env::var("PROJDIAG").is_ok() && (pend - 2.078215).abs() < 1e-5 { eprintln!("BTCUT pend={:.6} cut={:.6}\n{}", pend, cut, std::backtrace::Backtrace::force_capture()); }
+pub fn cut_edge(edge: &Edge, pend: f64, cut: f64, face: &Face, is_cut_line: &mut bool) -> bool {
     // `cxx:214-217`.
     if (cut - pend).abs() < ten_pconfusion() {
         return false;

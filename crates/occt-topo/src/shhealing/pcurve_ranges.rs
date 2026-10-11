@@ -632,10 +632,13 @@ fn pcurve_on_reversed(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
 }
 
 /// `XSAlgo_ShapeProcessor::CheckPCurve` (`XSAlgo_ShapeProcessor.cxx:344-505`).
-/// See `CHECK_PCURVE_REPROJECT` for the parked tail of that range.
+/// The `:403-505` temporary-edge FixSameParameter / FixAddPCurve write-back is
+/// on (`CHECK_PCURVE_REPROJECT`); Approx_BSplineApprox quality remains a
+/// separate gap inside `fix_add_pcurve`.
 const CHECK_PCURVE_REPROJECT: bool = true;
 
-fn check_pcurve(edge: &Edge, face: &Face, preci: f64, is_seam: bool) -> bool {
+/// `XSAlgo_ShapeProcessor::CheckPCurve` (`XSAlgo_ShapeProcessor.cxx:344-505`).
+pub(crate) fn check_pcurve(edge: &Edge, face: &Face, preci: f64, is_seam: bool) -> bool {
     let Some((c2d, p1, p2)) = curve_on_surface_oriented(edge, face, false) else {
         return false;
     };
@@ -674,26 +677,10 @@ fn check_pcurve(edge: &Edge, face: &Face, preci: f64, is_seam: bool) -> bool {
         GeometryRegistry::global().remove_pcurves_on_surface(&edge.0, &face.0);
         return false;
     }
-    // PARKED (t336): `XSAlgo_ShapeProcessor.cxx:403-505` -- the temporary-edge
-    // `ShapeFix_Edge::FixSameParameter`, the `FixAddPCurve` re-projection and
-    // the copy back to the original edge (pcurve, vertices and the `aTolerance`
-    // write at `cxx:491`). Reason for parking is the re-projection quality, not
-    // this control flow: the only port of the re-projection, `fix_add_pcurve` ->
-    // `pcurve_full::project_curve_on_surface_perform`
-    // (`pcurve_full/common.rs:417-460`), builds a degree-1 B-spline with one pole
-    // per sample instead of the tolerance-driven `Approx_BSplineApprox`
-    // reduction of `ShapeConstruct_ProjectCurveOnSurface::ApproxPCurve` (no
-    // port of `Approx_BSplineApprox` exists), and `cxx:435-439` forces
-    // SameRange(false) so `cxx:457` always prefers that re-projection.
-    //
-    // Measured (t336) with this gate ON and the whole tail unconditional
-    // (`export_data_obj`, T312 also on): all 16 model vertex/face counts are
-    // byte-identical to this gate OFF, at +35 s for the run, so the tail is
-    // currently inert for counts. It therefore stays OFF, but no longer on the
-    // earlier `Offset` 708/876 -> 30264/57316 evidence: that blow-up was
-    // `pcurve_on_reversed` (see its doc comment), and `Offset` now measures
-    // 712/892 with the T312 gate on either way. The `cxx:392-401` gate above is
-    // the part that explains linkrods FACE 35.
+    // `XSAlgo_ShapeProcessor.cxx:403-505`: temporary-edge FixSameParameter,
+    // optional FixAddPCurve re-projection, write-back. Gate stays on for CF
+    // parity; re-projection quality still depends on `fix_add_pcurve` (no
+    // Approx_BSplineApprox port). Measured inert for STEP vertex/face counts.
     if !CHECK_PCURVE_REPROJECT {
         return true;
     }

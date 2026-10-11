@@ -262,6 +262,45 @@ pub(in crate::shhealing) fn wire_remove_edge(wire: &mut Wire, at: usize) {
     }
 }
 
+/// `ShapeExtend_WireData::SetLast(num)` (`ShapeExtend_WireData.cxx:226-240`):
+/// rotate so edge `num` (1-based) becomes last. `num == 0` is a no-op.
+pub(in crate::shhealing) fn wire_set_last(wire: &mut Wire, num: usize) {
+    if num == 0 {
+        return;
+    }
+    let nb = wire_edges_nb(wire);
+    if num > nb {
+        return;
+    }
+    // `for (i = nb; i > num; i--) { edge = Value(nb); Remove(nb); InsertBefore(1, edge); }`
+    let mut i = nb;
+    while i > num {
+        let edges = edges_of_wire(wire);
+        let Some(edge) = edges.last().cloned() else {
+            break;
+        };
+        wire_remove_edge(wire, nb);
+        wire_insert_edge_before(wire, 1, &edge);
+        i -= 1;
+    }
+}
+
+/// `ShapeExtend_WireData::Add(sewd, atnum)` (`ShapeExtend_WireData.cxx:328-384`)
+/// for manifold edges only: insert each edge of `src` before `at` (1-based;
+/// `0` appends), advancing the insert index.
+pub(in crate::shhealing) fn wire_add_wire_at(dst: &mut Wire, src: &Wire, at: usize) {
+    let src_edges = edges_of_wire(src);
+    let mut n = at;
+    for edge in src_edges {
+        if n == 0 {
+            wire_insert_edge_before(dst, 0, &edge);
+        } else {
+            wire_insert_edge_before(dst, n, &edge);
+            n += 1;
+        }
+    }
+}
+
 /// Number of edges `ShapeExtend_WireData` holds (`ShapeExtend_WireData.cxx:576-579`).
 pub(in crate::shhealing) fn wire_edges_nb(wire: &Wire) -> usize {
     edges_of_wire(wire).len()
