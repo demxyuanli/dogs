@@ -409,7 +409,11 @@ impl MeshEdge {
     /// parameter range and `BRep_TEdge` flags from the geometry registry.
     pub fn new(edge: Edge) -> Self {
         let geom = GeometryRegistry::global().edge_geom(&edge.0);
-        let curve = BRepTool::edge_curve(&edge);
+        // `BRepAdaptor_Curve(E, F)` (`BRepAdaptor_Curve.cxx:...`): its 3D curve is
+        // `BRep_Tool::Curve` when the edge has one, otherwise the
+        // `Adaptor3d_CurveOnSurface` built from the pcurve. `EdgeGeom::curve` is
+        // that adaptor, and `curve3d_null` is the `BRep_Tool::Curve` answer.
+        let curve = geom.as_ref().map(|g| g.curve.clone());
         let (first, last) = BRepTool::edge_parameters(&edge);
         Self {
             edge,

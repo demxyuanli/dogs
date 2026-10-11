@@ -943,11 +943,14 @@ fn vertex_parameter_on_edge(vertex: &Vertex, edge: &Edge) -> Option<f64> {
 }
 
 /// `BRepMesh_CurveTessellator.cxx:100-114` min-point threshold from `GetType`.
-/// Circle uses `circle_radius`. Ellipse is periodic and not a NURBS. Periodic
-/// BSpline/Bezier stay at 2 (`GeomAbs_BSplineCurve`). Parabola/hyperbola
-/// GetType is unported without a downcast (comment: cxx:103-106).
+/// Circle / Ellipse / Parabola / Hyperbola use 4. Periodic non-NURBS (e.g.
+/// trimmed conics) also use 4. BSpline / Bezier stay at 2.
 pub fn tessellator_min_points(curve: &dyn Curve) -> usize {
-    if curve.circle_radius().is_some() {
+    if curve.circle_radius().is_some()
+        || curve.gp_ellipse().is_some()
+        || curve.gp_parabola().is_some()
+        || curve.gp_hyperbola().is_some()
+    {
         return 4;
     }
     if curve.is_periodic() && curve.bspline_poles().is_none() && curve.bezier_poles().is_none() {
@@ -1133,6 +1136,9 @@ pub struct CurveOnSurface {
     first_surf: Option<Arc<dyn Surface>>,
     /// `myLastSurf` from `EvalFirstLastSurf` (`cxx:1822-1827`).
     last_surf: Option<Arc<dyn Surface>>,
+    /// `GeomLib_CurveOnSurfaceEvaluator` trim cache (`GeomLib.cxx:1009-1016`):
+    /// `(FirstParam, LastParam, TrimCurve)`. `Mutex` keeps `Curve: Sync`.
+    trim_cache: std::sync::Mutex<Option<(f64, f64, Arc<CurveOnSurface>)>>,
 }
 
 impl CurveOnSurface {
@@ -1162,7 +1168,32 @@ impl CurveOnSurface {
             kpart_lin,
             first_surf,
             last_surf,
+            // `cxx:1136`: seed outside the true range so the first Evaluate re-trims.
+            trim_cache: std::sync::Mutex::new(None),
         }
+    }
+
+    /// `Adaptor3d_CurveOnSurface::Trim` (`cxx:1133-1140`) for the evaluator.
+    fn trim_for_eval(&self, first: f64, last: f64) -> Arc<CurveOnSurface> {
+        let mut cache = self.trim_cache.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((f, l, trimmed)) = cache.as_ref() {
+            if *f == first && *l == last {
+                return trimmed.clone();
+            }
+        }
+        let trimmed_pc: Arc<dyn Curve2d> = Arc::new(occt_geom2d::trimmed::Geom2dTrimmedCurve::new(
+            Arc::from(self.pcurve.clone_dyn()),
+            first,
+            last,
+        ));
+        let trimmed = Arc::new(Self::new(
+            trimmed_pc,
+            self.surface.clone(),
+            first,
+            last,
+        ));
+        *cache = Some((first, last, trimmed.clone()));
+        trimmed
     }
 
     fn end_surf(&self, u: f64) -> Option<&Arc<dyn Surface>> {
@@ -1258,11 +1289,64 @@ impl Curve for CurveOnSurface {
     fn continuity(&self) -> u8 {
         self.pcurve.continuity().min(self.surface.continuity())
     }
+
+    /// `Adaptor3d_CurveOnSurface::Intervals` (`cxx:1119-1128` via `NbIntervals`
+    /// `:1045-1114`): pcurve breaks plus roots on interior surface U/V knots.
+    fn parameter_intervals(&self, continuity: u8) -> Vec<f64> {
+        super::cos_intervals::curve_on_surface_intervals(
+            self.pcurve.as_ref(),
+            self.surface.as_ref(),
+            continuity,
+        )
+    }
+
+    fn nb_intervals(&self, continuity: u8) -> i32 {
+        self.parameter_intervals(continuity)
+            .len()
+            .saturating_sub(1)
+            .max(1) as i32
+    }
+
+    /// `GeomLib_CurveOnSurfaceEvaluator::Evaluate` (`GeomLib.cxx:1001-1047`).
+    fn approx_eval(&self, first: f64, last: f64, u: f64, order: i32, out: &mut [f64]) -> i32 {
+        let trimmed = self.trim_for_eval(first, last);
+        match order {
+            0 => {
+                let p = trimmed.d0(u);
+                out[0] = p.x();
+                out[1] = p.y();
+                out[2] = p.z();
+            }
+            1 => {
+                let (_, v) = trimmed.d1(u);
+                out[0] = v.x();
+                out[1] = v.y();
+                out[2] = v.z();
+            }
+            2 => {
+                let (_, _, v) = trimmed.d2(u);
+                out[0] = v.x();
+                out[1] = v.y();
+                out[2] = v.z();
+            }
+            _ => {
+                out[0] = 0.0;
+                out[1] = 0.0;
+                out[2] = 0.0;
+                return 3;
+            }
+        }
+        0
+    }
+
     fn transform(&mut self, _t: &occt_core::gp::GpTrsf) {}
     fn reverse(&mut self) {
         let tmp = self.first;
         self.first = self.last;
         self.last = tmp;
+        if let Ok(mut cache) = self.trim_cache.lock() {
+            *cache = None;
+        }
     }
     fn clone_dyn(&self) -> Box<dyn Curve> {
         Box::new(Self {
@@ -1274,6 +1358,7 @@ impl Curve for CurveOnSurface {
             kpart_lin: self.kpart_lin,
             first_surf: self.first_surf.clone(),
             last_surf: self.last_surf.clone(),
+            trim_cache: std::sync::Mutex::new(None),
         })
     }
 }

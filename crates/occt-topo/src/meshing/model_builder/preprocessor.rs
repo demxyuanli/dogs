@@ -206,11 +206,90 @@ fn amplify_cone_face(model: &mut MeshModel, face_index: usize, params: &MeshPara
             .edge(edge_index)
             .map(|e| e.discretization().parameters_nb())
             .unwrap_or(0);
+        // OCCT only splits when `ParametersNb() == 2` (`cxx:134-147`). When a
+        // prior `Tessellate2d(false)` / deflection pass has already inserted an
+        // interior sample on the *opposite* period of a snapped end pair, that
+        // gate skips and the frontier keeps a zero-area diagonal. Strip those
+        // interiors back to the two snapped ends, then run the same `splitEdge`.
+        let jump = n3d > 2 && seam_has_period_jump(model, edge_index, face_index);
+        if jump {
+            strip_seam_interiors(model, edge_index, face_index);
+        }
+        let n3d = model
+            .edge(edge_index)
+            .map(|e| e.discretization().parameters_nb())
+            .unwrap_or(0);
         if n3d == 2 {
             let du = cone_seam_step(model, face_index, params).abs();
             split_cone_seam(model, edge_index, face_index, du);
         }
         return;
+    }
+}
+
+/// True when a cone-seam pcurve has ends on one iso-U and an interior sample on
+/// the opposite period (the cross-wired mid that zeros the UV frontier area).
+fn seam_has_period_jump(model: &MeshModel, edge_index: usize, face_index: usize) -> bool {
+    let Ok(edge) = model.edge(edge_index) else {
+        return false;
+    };
+    for ori in [Orientation::Forward, Orientation::Reversed] {
+        let Some(pc_index) = pcurve_index_for(edge, face_index, ori) else {
+            continue;
+        };
+        let Ok(pc) = edge.pcurve(pc_index) else {
+            continue;
+        };
+        let n = pc.parameters_nb();
+        if n < 3 {
+            continue;
+        }
+        let Ok(p0) = pc.get_point(0) else {
+            continue;
+        };
+        let Ok(p1) = pc.get_point(n - 1) else {
+            continue;
+        };
+        // Generator: ends share U.
+        if (p0.x() - p1.x()).abs() > CONFUSION {
+            continue;
+        }
+        for k in 1..n - 1 {
+            if let Ok(pk) = pc.get_point(k) {
+                if (pk.x() - p0.x()).abs() > CONFUSION {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Drop interior 3d / pcurve samples on a cone seam, keeping the healer-snapped
+/// endpoints so `split_cone_seam` can re-insert period-correct mids.
+fn strip_seam_interiors(model: &mut MeshModel, edge_index: usize, face_index: usize) {
+    let pc_indices: Vec<usize> = {
+        let Ok(edge) = model.edge(edge_index) else {
+            return;
+        };
+        let mut ids = Vec::new();
+        if let Some(i) = pcurve_index_for(edge, face_index, Orientation::Forward) {
+            ids.push(i);
+        }
+        if let Some(i) = pcurve_index_for(edge, face_index, Orientation::Reversed) {
+            if !ids.contains(&i) {
+                ids.push(i);
+            }
+        }
+        ids
+    };
+    if let Ok(em) = model.edge_mut(edge_index) {
+        em.discretization_mut().clear(true);
+        for i in pc_indices {
+            if let Ok(pc) = em.pcurve_mut(i) {
+                pc.clear(true);
+            }
+        }
     }
 }
 
@@ -329,28 +408,17 @@ fn split_cone_seam(model: &mut MeshModel, edge_index: usize, face_index: usize, 
         Ok(c) => c,
         Err(_) => return false,
     };
-    let geom_first = {
-        // `BRepMesh_ModelPreProcessor.cxx:228`:
-        //   aPC1 = BRep_Tool::CurveOnSurface(aE forward, aF, af, al);
-        //   aFPntOfPC1 = aPC1->Value(aPC1->FirstParameter());
-        // and the swap at `cxx:229-231`.
-        // `Geom2d_Line::FirstParameter()` is `-Precision::Infinite()`
-        // (`Geom2d_Line.cxx:142-145`), the FINITE sentinel `-2e100`
-        // (`Precision.hxx:371`) -- not an IEEE infinity. That matters: for an
-        // axis-aligned 2D line (`dir.x == 0`) `Value(-2e100)` keeps the finite
-        // `x` of the location (`0.0 * -2e100 == -0.0`), so the test below can
-        // tell the two period copies of the seam apart and swap them. Feeding
-        // IEEE `-inf` instead makes `0.0 * -inf` a NaN, the comparison false,
-        // and the two copies stay cross-wired (seam pcurve gets points from the
-        // other period side).
-        let fp = pc1.first_parameter();
-        if fp.is_finite() {
-            pc1.d0(fp)
-        } else {
-            pc1.d0(-occt_core::precision::INFINITE)
-        }
-    };
-    if (last_u - geom_first.x()).abs() > CONFUSION {
+    // `BRepMesh_ModelPreProcessor.cxx:227-231`:
+    //   aFPntOfPC1 = aPC1->Value(aPC1->FirstParameter());
+    //   if (abs(aLPntOfIPC1.X() - aFPntOfPC1.X()) > Confusion()) swap;
+    // For an iso-U `Geom2d_Line`, `Value(FirstParameter)` with
+    // `FirstParameter = -Precision::Infinite()` (= `-2e100`) is stable only when
+    // `dir.x` is bit-exact 0. A ~1e-15 residual in `dir.x` blows U up to ~1e85
+    // and forces a spurious swap that cross-wires the two period copies. Sample
+    // at the finite edge mid-parameter instead (same U for a true iso-U line).
+    let t_sample = 0.5 * (first + last);
+    let geom_u = pc1.d0(t_sample).x();
+    if (last_u - geom_u).abs() > CONFUSION {
         std::mem::swap(&mut pc1, &mut pc2);
     }
     if n_pc < 2 {

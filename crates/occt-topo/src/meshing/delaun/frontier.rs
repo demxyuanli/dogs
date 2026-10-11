@@ -9,7 +9,7 @@ impl Delaun {
         // structure stores it in a `BTreeSet`, so the ids are already ascending.
         let frontier_ids: Vec<i32> = self.frontier().into_iter().collect();
         let mut failed_frontiers: Vec<i32> = Vec::new();
-        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
         let mut int_frontier_edges: BTreeSet<i32> = BTreeSet::new();
 
         for _pass in 1..=2 {
@@ -45,7 +45,7 @@ impl Delaun {
 
             self.diag_stage(&format!("pass{_pass}_after_delete"));
 
-            let loop_keys: Vec<i32> = loop_edges.keys().copied().collect();
+            let loop_keys: Vec<i32> = loop_edges.keys();
             for &e in &loop_keys {
                 if self.mesh_data.elements_connected_to(e).is_empty() {
                     self.mesh_data.remove_link(e, false);
@@ -344,7 +344,7 @@ impl Delaun {
         if poly_len < 3 {
             return;
         }
-        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
         let mut ignored_edges: BTreeSet<i32> = BTreeSet::new();
         let mut poly_vertices_find_map: BTreeSet<i32> = BTreeSet::new();
         let mut poly_vertices: Vec<i32> = Vec::new();
@@ -426,7 +426,7 @@ impl Delaun {
             }
         }
 
-        let loop_keys: Vec<i32> = loop_edges.keys().copied().collect();
+        let loop_keys: Vec<i32> = loop_edges.keys();
         for &e in &loop_keys {
             if ignored_edges.contains(&e) {
                 continue;
@@ -446,7 +446,7 @@ impl Delaun {
         the_polygon: &[i32],
         the_poly_boxes: &[BndB2],
         survived_links: &mut BTreeSet<i32>,
-        loop_edges: &mut BTreeMap<i32, bool>,
+        loop_edges: &mut IntBoolDataMap,
         victim_nodes: &mut Vec<i32>,
     ) {
         let neighbors: Vec<i32> = self.mesh_data.links_connected_to(zombie_node_id).to_vec();
@@ -521,7 +521,7 @@ impl Delaun {
         the_polygon: &[i32],
         the_poly_boxes: &[BndB2],
         survived_links: &mut BTreeSet<i32>,
-        loop_edges: &mut BTreeMap<i32, bool>,
+        loop_edges: &mut IntBoolDataMap,
     ) {
         if survived_links.contains(&link_to_check_id) {
             return;
@@ -545,7 +545,7 @@ impl Delaun {
         }
     }
 
-    pub(super) fn kill_link_triangles(&mut self, link_id: i32, loop_edges: &mut BTreeMap<i32, bool>) {
+    pub(super) fn kill_link_triangles(&mut self, link_id: i32, loop_edges: &mut IntBoolDataMap) {
         let elem_nb = self.mesh_data.elements_connected_to(link_id).extent();
         for _ in 0..elem_nb {
             let elem_id = self.mesh_data.elements_connected_to(link_id).first_index();

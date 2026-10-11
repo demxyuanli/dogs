@@ -299,6 +299,17 @@ impl SurfaceSingularities {
     pub(crate) fn is_degenerated(&self, p3d: &GpPnt, preci: f64) -> bool {
         is_degenerated(&self.entries, p3d, preci)
     }
+
+    /// `NbSingularities(preci)` then `Singularity(j)` for `j` in `1..=Nb`
+    /// (`ShapeAnalysis_Surface.cxx:305-349`). The array is sorted by ascending
+    /// `preci`, so the first `Nb` entries are exactly those with `preci <= tol`.
+    pub(crate) fn points_within(&self, preci: f64) -> Vec<(f64, GpPnt)> {
+        self.entries
+            .iter()
+            .take_while(|s| s.preci <= preci)
+            .map(|s| (s.preci, s.p3d))
+            .collect()
+    }
 }
 
 /// `ShapeAnalysis_Surface::ProjectDegenerated(nbrPnt, points, pnt2d, preci,
@@ -656,8 +667,10 @@ fn correct_extremity(
 /// `mySurf->IsDegenerated(gp_Pnt(0,0,0), myPreci)` (`cxx:1752`, `cxx:1822`) is
 /// called for its singularity-computation side effect only; its result is
 /// discarded in the C++ and the singularities are already available here.
-/// `myStatus |= ShapeExtend_DONE4` (`cxx:1815`, `cxx:1884`) is a status flag
-/// only - it changes no geometry and is not carried by this port. `preci` is
+/// `myStatus |= ShapeExtend_DONE4` (`cxx:1815`, `cxx:1884`) is returned:
+/// `ShapeFix_Edge::FixAddPCurve` copies it to `ShapeExtend_DONE2`
+/// (`ShapeFix_Edge.cxx:536-538`), which is the gate of the singularity split
+/// (`ShapeFix_Wire.cxx:673`). `preci` is
 /// `myPreci`, the projection tolerance (`cxx:689`), used by
 /// `NbSingularities(myPreci)` (`cxx:1753`, `cxx:1823`) and
 /// `IsDegenerated(..., Precision::Confusion())` (`cxx:1763`, `cxx:1833`).
@@ -673,30 +686,29 @@ pub(super) fn adjust_over_degenerated(
     preci: f64,
     points: &[GpPnt],
     pnt2d: &mut [GpPnt2d],
-) {
+    adjust_off: bool,
+) -> bool {
     let (uf, ul) = s.u_range();
     let (vf, vl) = s.v_range();
     let up = ul - uf;
     let vp = vl - vf;
     if points.len() != pnt2d.len() {
-        return;
+        return false;
     }
     let n = pnt2d.len();
-    // `cxx:1747`: the block is guarded by `myAdjustOverDegen != -1`; the
-    // constructor sets `myAdjustOverDegen(1)` (`cxx:644`), there is no setter
-    // and `approxPCurve` never writes it, so the guard always holds here.
-    // `cxx:1749-1819` (U) / `cxx:1820-1889` (V). `pin` is the window border the
-    // sample is pinned to: `myAdjustOverDegen ? uf : ul` (`cxx:1778`,
-    // `cxx:1847`), i.e. `uf` / `vf` for the default mode 1.
+    // `cxx:1747`: the block is guarded by `myAdjustOverDegen != -1`. The
+    // constructor sets 1 (`cxx:644`). The singularity arm assigns 0
+    // (`ShapeFix_Wire.cxx:852`), which still enters the block and pins `ul`.
+    // `cxx:1749-1819` (U) / `cxx:1820-1889` (V).
     let (is_u, period, pin, win_lo, win_hi) = if sa_is_u_closed(s, preci) {
         (true, up, uf, uf, ul)
     } else if sa_is_v_closed(s, preci) {
         (false, vp, vf, vf, vl)
     } else {
-        return;
+        return false;
     };
     if nb_singularities(sing, preci) == 0 {
-        return;
+        return false;
     }
     let coord = |p: &GpPnt2d| if is_u { p.x() } else { p.y() };
     let set_coord = |p: &mut GpPnt2d, v: f64| {
@@ -731,9 +743,16 @@ pub(super) fn adjust_over_degenerated(
         prev_on_bound = on_bound;
     }
     if ind >= n {
-        return;
+        return false;
     }
-    // `cxx:1777-1816` / `cxx:1848-1886`.
+    // `cxx:1777-1816` / `cxx:1848-1886`. `pin` is `uf`/`vf` when
+    // `myAdjustOverDegen` is 1, and `ul`/`vl` when the singularity arm sets
+    // the mode to 0 (`ShapeFix_Wire.cxx:852`).
+    let pin = if adjust_off {
+        if is_u { ul } else { vl }
+    } else {
+        pin
+    };
     let window = 0.5 * period + PCONFUSION;
     if prev_on_bound {
         set_coord(&mut pnt2d[ind - 1], pin);
@@ -762,4 +781,5 @@ pub(super) fn adjust_over_degenerated(
             }
         }
     }
+    true
 }

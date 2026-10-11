@@ -237,6 +237,13 @@ impl Delaun {
         &self.circles
     }
 
+    /// TEMPORARY diagnostic (ADDDUM): advances the element id counter by `count`
+    /// dead slots, so a caller can line up the ids of the elements it is about
+    /// to create with OCCT's for the same geometry.
+    pub fn debug_bump_elements(&mut self, count: usize) {
+        self.mesh_data.push_dead_element_slots(count);
+    }
+
     /// Gives the list of frontier edges. Source: `Frontier()`.
     pub fn frontier(&self) -> BTreeSet<i32> {
         self.get_edges_by_type(VertexState::Frontier)
@@ -271,7 +278,7 @@ impl Delaun {
     pub fn remove_vertex(&mut self, vertex: &DelaunVertex) {
         let mut selector = DelaunSelector::new(&self.mesh_data);
         selector.neighbours_of(vertex);
-        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
         let elements: Vec<i32> = selector.elements().iter().copied().collect();
         for id in elements {
             self.delete_triangle(id, &mut loop_edges);
@@ -281,11 +288,24 @@ impl Delaun {
 
     /// Adds some vertices into the triangulation. Source: `AddVertices`.
     pub fn add_vertices(&mut self, vertices: &mut Vec<i32>) {
-        vertices.sort_by(|&a, &b| {
-            let va = self.mesh_data.get_node(a).location;
-            let vb = self.mesh_data.get_node(b).location;
-            (va.x() + va.y()).total_cmp(&(vb.x() + vb.y()))
+        // `BRepMesh_Delaun::AddVertices` (`cxx:2415-2417`): `make_heap` +
+        // `sort_heap` with `ComparatorOfIndexedVertexOfDelaun`
+        // (`cxx:49-75`, key `Coord().X() + Coord().Y()`).
+        let mesh_data = &self.mesh_data;
+        heap_sort_by_xy_sum(vertices, |i| {
+            let p = mesh_data.get_node(*i).location;
+            (p.x(), p.y())
         });
+        // TEMPORARY diagnostic (SORTDUMP): the index order `AddVertices` hands to
+        // `createTrianglesOnNewVertices`, so it can be diffed index by index
+        // against the probe's `OCCTSORT` dump.
+        if std::env::var("SORTDUMP").is_ok() {
+            eprint!("SORTDUMP");
+            for v in vertices.iter() {
+                eprint!(" {v}");
+            }
+            eprintln!();
+        }
         self.create_triangles_on_new_vertices(vertices);
     }
 
@@ -365,10 +385,12 @@ impl Delaun {
         box2.enlarge(PREC);
         self.init_circles_tool(&box2, cells_u, cells_v);
         self.super_mesh(&box2);
-        vertex_indices.sort_by(|&a, &b| {
-            let va = self.mesh_data.get_node(a).location;
-            let vb = self.mesh_data.get_node(b).location;
-            (va.x() + va.y()).total_cmp(&(vb.x() + vb.y()))
+        // `perform` (`cxx:332-334`): same comparator as `AddVertices`
+        // (`cxx:49-75`, key `Coord().X() + Coord().Y()`).
+        let mesh_data = &self.mesh_data;
+        heap_sort_by_xy_sum(vertex_indices, |i| {
+            let p = mesh_data.get_node(*i).location;
+            (p.x(), p.y())
         });
         self.compute(vertex_indices);
     }
@@ -429,7 +451,7 @@ impl Delaun {
     }
 
     pub(super) fn compute(&mut self, vertex_indexes: &mut Vec<i32>) {
-        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
         for i in 0..3 {
             loop_edges.insert(self.sup_trian.link_at(i).abs(), true);
         }
@@ -443,7 +465,7 @@ impl Delaun {
         self.diag_stage("after_remove_aux");
     }
 
-    pub(super) fn delete_triangle(&mut self, index: i32, loop_edges: &mut BTreeMap<i32, bool>) {
+    pub(super) fn delete_triangle(&mut self, index: i32, loop_edges: &mut IntBoolDataMap) {
         if self.init_circles {
             self.circles.delete(index);
         }
@@ -460,7 +482,7 @@ impl Delaun {
     }
 
     pub(super) fn remove_aux_elements(&mut self) {
-        let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+        let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
         let mut elements: BTreeSet<i32> = BTreeSet::new();
         {
             let mut selector = DelaunSelector::new(&self.mesh_data);
@@ -478,7 +500,7 @@ impl Delaun {
         for id in element_ids {
             self.delete_triangle(id, &mut loop_edges);
         }
-        let mut loop_keys: Vec<i32> = loop_edges.keys().copied().collect();
+        let mut loop_keys: Vec<i32> = loop_edges.keys();
         loop_keys.sort_unstable();
         for &e in &loop_keys {
             if self.mesh_data.elements_connected_to(e).is_empty() {
@@ -491,14 +513,14 @@ impl Delaun {
         }
     }
 
-    pub(super) fn create_triangles(&mut self, vertex_index: i32, poly: &mut BTreeMap<i32, bool>) {
+    pub(super) fn create_triangles(&mut self, vertex_index: i32, poly: &mut IntBoolDataMap) {
         let mut loop_edges: Vec<i32> = Vec::new();
         let mut external_edges: Vec<i32> = Vec::new();
         let vertex_coord = self.mesh_data.get_node(vertex_index).location.coord;
 
-        let keys: Vec<i32> = poly.keys().copied().collect();
+        let keys: Vec<i32> = poly.keys();
         for edge_id in keys {
-            let is_positive = poly[&edge_id];
+            let is_positive = poly.value(edge_id);
             let edge = self.mesh_data.get_link(edge_id);
             let mut nodes = [0i32; 3];
             if is_positive {
@@ -564,7 +586,7 @@ impl Delaun {
             }
         }
 
-        let poly_keys: Vec<i32> = poly.keys().copied().collect();
+        let poly_keys: Vec<i32> = poly.keys();
         for &e in &poly_keys {
             if self.mesh_data.elements_connected_to(e).is_empty() {
                 self.mesh_data.remove_link(e, false);
@@ -588,7 +610,7 @@ impl Delaun {
         while i < upper {
             let vertex_idx = vertex_indexes[i];
             let vertex = *self.mesh_data.get_node(vertex_idx);
-            let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+            let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
             let mut circles_list = self.circles.select(vertex.location.coord);
 
             let _on_edge_id = 0;
@@ -787,7 +809,7 @@ impl Delaun {
 
     pub(super) fn cleanup_mesh(&mut self) {
         loop {
-            let mut loop_edges: BTreeMap<i32, bool> = BTreeMap::new();
+            let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
             let mut del_triangles: BTreeSet<i32> = BTreeSet::new();
 
             // `FreeEdges()` is `TColStd_PackedMapOfInteger` — sorted keys.
@@ -874,7 +896,7 @@ impl Delaun {
                 deleted_nb += 1;
             }
 
-            let mut loop_keys: Vec<i32> = loop_edges.keys().copied().collect();
+            let mut loop_keys: Vec<i32> = loop_edges.keys();
             loop_keys.sort_unstable();
             for &e in &loop_keys {
                 if self.mesh_data.elements_connected_to(e).is_empty() {

@@ -1313,6 +1313,26 @@ impl IncrementalMesh {
                     _ => (a, b),
                 }
             };
+            // TEMP PC2D: the port's own pcurve definition for this edge, in the
+            // same shape as the OCCT probe's `OCCTPC2D` line.
+            if std::env::var("PC2D").is_ok() {
+                let mid = 0.5 * (pf + pl);
+                let a0 = pc.d0(pf);
+                let am = pc.d0(mid);
+                let a1 = pc.d0(pl);
+                eprintln!(
+                    "PC2D e={edge_index} pc={pcurve_index} type={} f={:.17e} l={:.17e} pf=({:.17e},{:.17e}) pm=({:.17e},{:.17e}) pl=({:.17e},{:.17e})",
+                    std::any::type_name_of_val(pc.as_ref()),
+                    pf,
+                    pl,
+                    a0.x(),
+                    a0.y(),
+                    am.x(),
+                    am.y(),
+                    a1.x(),
+                    a1.y()
+                );
+            }
             let mut provider = if same_param {
                 EdgeParameterProvider::new(pf, pl)
             } else {
@@ -1326,6 +1346,20 @@ impl IncrementalMesh {
                 // + `Tessellate2d` (`BRepMesh_EdgeDiscret.cxx:312-317`).
                 let u = provider.parameter_of(t, p3d, &cos);
                 pcurve.add_point(pc.d0(u), t);
+            }
+            // TEMP PCW: full precision pcurve point dump, to be lined up with
+            // the OCCT probe's `OCCTEPC w= e= pcId= k= u= v= t=` entries.
+            if std::env::var("PCW").is_ok() {
+                let n_pc = pcurve.parameters_nb();
+                for k in 0..n_pc {
+                    let p = pcurve.get_point(k)?;
+                    let t = pcurve.get_parameter(k)?;
+                    eprintln!(
+                        "PCW e={edge_index} pc={pcurve_index} k={k} u={:.17e} v={:.17e} t={:.17e}",
+                        p.x(),                        p.y(),
+                        t
+                    );
+                }
             }
         }
         if let Ok(spec) = std::env::var("EPROBE") {
@@ -1360,6 +1394,22 @@ impl IncrementalMesh {
                                 pc.parameters_nb(),
                                 pc.is_internal()
                             );
+                            eprint!("EPROBE   uv=");
+                            for (i, uv) in pc.points().iter().enumerate() {
+                                if i > 0 {
+                                    eprint!(";");
+                                }
+                                eprint!("{:.17e},{:.17e}", uv.x(), uv.y());
+                            }
+                            eprintln!();
+                            eprint!("EPROBE   tt=");
+                            for (i, t) in pc.parameters().iter().enumerate() {
+                                if i > 0 {
+                                    eprint!(";");
+                                }
+                                eprint!("{:.17e}", t);
+                            }
+                            eprintln!();
                         }
                         eprintln!("EPROBE   pts={:?}", &pts[..pts.len().min(40)]);
                     }

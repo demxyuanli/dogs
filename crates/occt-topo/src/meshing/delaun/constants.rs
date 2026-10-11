@@ -273,16 +273,6 @@ impl StackOfFrames {
     }
 }
 
-pub(super) fn map_bind(map: &mut BTreeMap<i32, bool>, key: i32, value: bool) -> bool {
-    match map.entry(key) {
-        std::collections::btree_map::Entry::Occupied(_) => false,
-        std::collections::btree_map::Entry::Vacant(v) => {
-            v.insert(value);
-            true
-        }
-    }
-}
-
 /// Delaunay triangulator over a [`DelaunDataStructure`].
 ///
 /// Mirrors `BRepMesh_Delaun`. The full Watson pipeline is ported: super

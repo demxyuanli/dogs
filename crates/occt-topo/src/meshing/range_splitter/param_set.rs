@@ -485,6 +485,21 @@ pub(super) fn filter_parameters(params: &ParamSet, min_dist: f64, filter_dist: f
     result
 }
 
+/// `IMeshTools_Parameters` MinSize after `BRepMesh_IncrementalMesh::initParameters`
+/// (`discret_root.rs` / `IMeshTools` RelMinSize from deflection).
+fn resolved_min_size(params: &MeshParameters) -> f64 {
+    if params.min_size >= CONFUSION {
+        params.min_size
+    } else {
+        let defl_int = if params.deflection_interior >= CONFUSION {
+            params.deflection_interior
+        } else {
+            params.deflection
+        };
+        (MeshParameters::rel_min_size() * params.deflection.min(defl_int)).max(CONFUSION)
+    }
+}
+
 /// Computes the grain (filter distance) and applies it to the source parameters.
 /// Source: `BRepMesh_NURBSRangeSplitter::computeGrainAndFilterParameters`.
 pub(super) fn compute_grain_and_filter(
@@ -503,8 +518,10 @@ pub(super) fn compute_grain_and_filter(
     if delta < 1.0 {
         min_diff /= delta;
     }
-    let min_size_2d = param_resolution(surface, params.min_size, true)
-        .max(param_resolution(surface, params.min_size, false));
+    // `cxx:556-557`: `U/VResolution(theParameters.MinSize)` after initParameters.
+    let min_size = resolved_min_size(params);
+    let min_size_2d = param_resolution(surface, min_size, true)
+        .max(param_resolution(surface, min_size, false));
     min_diff = min_diff.max(min_size_2d);
     let diff_max_lim = 0.1 * range_diff;
     let diff_min_lim = (0.005 * range_diff).max(2.0 * tol2d);
@@ -560,12 +577,91 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
 
     let tol_u = param_resolution(surface.as_ref(), deflection, true);
     let tol_v = param_resolution(surface.as_ref(), deflection, false);
+    if std::env::var("NURBSGRID").is_ok() {
+        eprintln!(
+            "NURBSGRID pre type={:?} u_params={} v_params={} ru=[{:.17e},{:.17e}] rv=[{:.17e},{:.17e}] tol_u={tol_u:.6e} tol_v={tol_v:.6e} defl={deflection:.6} delta=({:.17e},{:.17e})",
+            classify_surface(surface.as_ref()),
+            u_params.len(),
+            v_params.len(),
+            range_u.0,
+            range_u.1,
+            range_v.0,
+            range_v.1,
+            delta.0,
+            delta.1
+        );
+        let mut us: Vec<f64> = u_params.iter().copied().collect();
+        us.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        eprint!("NURBSGRID u_params_sorted=");
+        for (i, &u) in us.iter().enumerate() {
+            if i > 0 {
+                eprint!(",");
+            }
+            eprint!("{u:?}");
+        }
+        eprintln!();
+        let mut vs: Vec<f64> = v_params.iter().copied().collect();
+        vs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        eprint!("NURBSGRID v_params_sorted=");
+        for (i, &v) in vs.iter().enumerate() {
+            if i > 0 {
+                eprint!(",");
+            }
+            eprint!("{v:.17e}");
+        }
+        eprintln!();
+    }
     let mut u_seq =
         compute_grain_and_filter(s, &u_params, tol_u, range_u.1 - range_u.0, delta.0, params);
     let mut v_seq =
         compute_grain_and_filter(s, &v_params, tol_v, range_v.1 - range_v.0, delta.1, params);
+    if std::env::var("NURBSGRID").is_ok() {
+        eprintln!(
+            "NURBSGRID grain u_seq={} v_seq={}",
+            u_seq.len(),
+            v_seq.len()
+        );
+        eprint!("NURBSGRID u_grain=");
+        for (i, &u) in u_seq.iter().enumerate() {
+            if i > 0 {
+                eprint!(",");
+            }
+            eprint!("{u:.6}");
+        }
+        eprintln!();
+        eprint!("NURBSGRID v_grain=");
+        for (i, &v) in v_seq.iter().enumerate() {
+            if i > 0 {
+                eprint!(",");
+            }
+            eprint!("{v:.17e}");
+        }
+        eprintln!();
+        if let Some(axis) = surface.as_ref().revolution_axis() {
+            let loc = axis.location();
+            let dir = axis.direction();
+            eprint!("NURBSGRID v_rad=");
+            for (i, &v) in v_seq.iter().enumerate() {
+                let p = surface.as_ref().d0(0.0, v);
+                let rel = occt_core::gp::GpVec::from_pnts(&loc, &p);
+                let along = dir.xyz().multiplied(rel.xyz().dot(dir.xyz()));
+                let rad = rel.xyz().subtracted(&along).modulus();
+                if i > 0 {
+                    eprint!(",");
+                }
+                eprint!("{rad:.6}");
+            }
+            eprintln!();
+        }
+    }
 
-    let angle_interior = if params.angle_interior >= 0.0 { params.angle_interior } else { 2.0 * params.angle };
+    // `AngleInterior` after `initParameters` (`2*Angle` when below Angular).
+    let angle_interior = if params.angle_interior >= ANGULAR {
+        params.angle_interior
+    } else {
+        2.0 * params.angle
+    };
+    let min_size = resolved_min_size(params);
     let mut u_remove: std::collections::HashSet<u64> = std::collections::HashSet::new();
     let mut v_remove: std::collections::HashSet<u64> = std::collections::HashSet::new();
     let mut u_fixed: std::collections::HashSet<u64> = std::collections::HashSet::new();
@@ -577,7 +673,7 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
         &mut u_seq,
         deflection,
         angle_interior,
-        params.min_size,
+        min_size,
         &mut u_remove,
         &mut v_fixed,
         &mut u_fixed,
@@ -589,7 +685,7 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
         &mut v_seq,
         deflection,
         angle_interior,
-        params.min_size,
+        min_size,
         &mut v_remove,
         &mut u_fixed,
         &mut v_fixed,
@@ -599,6 +695,10 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
     }
     for k in &v_fixed {
         v_remove.remove(k);
+    }
+    if std::env::var("NOAFRM").is_ok() {
+        u_remove.clear();
+        v_remove.clear();
     }
 
     let mut nodes = Vec::with_capacity(u_seq.len() * v_seq.len());
@@ -612,6 +712,49 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
             }
             nodes.push(GpPnt2d::new(u, v));
         }
+    }
+    if std::env::var("NURBSGRID").is_ok() {
+        let nu = u_seq.iter().filter(|u| !u_remove.contains(&u.to_bits())).count();
+        let nv = v_seq.iter().filter(|v| !v_remove.contains(&v.to_bits())).count();
+        eprintln!(
+            "NURBSGRID post u_kept={nu}/{} v_kept={nv}/{} nodes={} u_rm={} v_rm={} ang_int={angle_interior:.6}",
+            u_seq.len(),
+            v_seq.len(),
+            nodes.len(),
+            u_remove.len(),
+            v_remove.len()
+        );
+        eprint!("NURBSGRID u_after_insert=");
+        for (i, &u) in u_seq.iter().enumerate() {
+            if i > 0 {
+                eprint!(",");
+            }
+            eprint!("{u:.6}");
+        }
+        eprintln!();
+        eprint!("NURBSGRID u_removed=");
+        let mut rms: Vec<f64> = u_remove.iter().map(|b| f64::from_bits(*b)).collect();
+        rms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        for (i, &u) in rms.iter().enumerate() {
+            if i > 0 {
+                eprint!(",");
+            }
+            eprint!("{u:.6}");
+        }
+        eprintln!();
+        eprint!("NURBSGRID u_kept_vals=");
+        let mut first = true;
+        for &u in &u_seq {
+            if u_remove.contains(&u.to_bits()) {
+                continue;
+            }
+            if !first {
+                eprint!(",");
+            }
+            first = false;
+            eprint!("{u:.6}");
+        }
+        eprintln!();
     }
     Some(nodes)
 }
@@ -834,6 +977,27 @@ pub trait RangeSplitter {
         if valid {
             self.compute_tolerance(len_u, len_v);
             self.compute_delta(len_u, len_v);
+        }
+        // TEMPORARY diagnostic (SPLITDBG): raw splitter inputs/outputs so they can
+        // be diffed against `occt_probe --uvsum` with `OCCT_TOPO_TRACE_SPLITTER=1`.
+        if std::env::var("SPLITDBG").is_ok() {
+            let (tu, tv) = self.base().tolerance_uv();
+            let (da, db) = self.base().delta();
+            eprintln!(
+                "SPLITDBG ru=[{:.17e},{:.17e}] rv=[{:.17e},{:.17e}] len_u={:.17e} len_v={:.17e} tol=[{:.17e},{:.17e}] delta=[{:.17e},{:.17e}] defl={:.17e} valid={}",
+                self.base().range_u().0,
+                self.base().range_u().1,
+                self.base().range_v().0,
+                self.base().range_v().1,
+                len_u,
+                len_v,
+                tu,
+                tv,
+                da,
+                db,
+                self.base().deflection(),
+                valid as i32
+            );
         }
     }
 

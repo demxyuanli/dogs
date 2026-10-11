@@ -20,6 +20,7 @@ pub mod geomlib_norm;    // GeomLib::NormEstim
 pub mod deflection;      // BRepMesh_Deflection
 pub mod shape_tool;      // BRepMesh_ShapeTool + ShapeVisitor
 pub mod cos_locate;      // Adaptor3d_CurveOnSurface EvalFirstLastSurf / LocatePart
+pub mod cos_intervals;   // Adaptor3d_CurveOnSurface::NbIntervals / InterFunc
 pub mod edge_discret;    // BRepMesh_EdgeDiscret + EdgeParameterProvider + CurveTessellator
 pub mod face_discret;    // BRepMesh_FaceDiscret + FaceChecker + Classifier
 pub mod incremental_mesh;// BRepMesh_IncrementalMesh + DiscretRoot

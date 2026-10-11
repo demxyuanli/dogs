@@ -2056,10 +2056,11 @@ fn resolve_closed_surface_period_jump(
     need_resolve_v_jump: bool,
     is_from_cache: bool,
     saved_point: GpPnt2d,
+    adjust_off: bool,
     params: &mut Vec<f64>,
     pts3d: &mut Vec<GpPnt>,
     pts2d: &mut Vec<GpPnt2d>,
-) {
+) -> bool {
     let (uf, ul) = surf.u_range();
     let (vf, vl) = surf.v_range();
     let up = ul - uf;
@@ -2286,7 +2287,14 @@ fn resolve_closed_surface_period_jump(
     }
 
     // `cxx:1746-1890`: "Handle AdjustOverDegen".
-    super::singularities::adjust_over_degenerated(surf, singularities, preci, pts3d, pts2d);
+    super::singularities::adjust_over_degenerated(
+        surf,
+        singularities,
+        preci,
+        pts3d,
+        pts2d,
+        adjust_off,
+    )
 }
 
 /// `ShapeConstruct_ProjectCurveOnSurface::Perform` (`cxx:707-774`):
@@ -2359,6 +2367,7 @@ pub fn project_curve_on_surface_perform(
     tol_last: f64,
     cache: &mut super::projection_cache::ProjectorCache,
 ) -> Option<Arc<dyn Curve2d>> {
+    cache.done4 = false;
     if !first.is_finite() || !last.is_finite() || last - first < 1e-15 {
         return None;
     }
@@ -2731,7 +2740,7 @@ pub fn project_curve_on_surface_perform(
     // `approxPCurve` (`cxx:1499-1890`): before any curve is built, remove the
     // full-period jumps that the point-wise projection left in the sampled UV
     // sequence of a closed surface, then run "Handle AdjustOverDegen".
-    resolve_closed_surface_period_jump(
+    cache.done4 = resolve_closed_surface_period_jump(
         surf,
         curve,
         &singularities,
@@ -2740,6 +2749,7 @@ pub fn project_curve_on_surface_perform(
         need_resolve_v_jump,
         is_from_cache,
         a_saved_point,
+        cache.adjust_over_degen_off,
         &mut t_vals,
         &mut pts3d,
         &mut pts,

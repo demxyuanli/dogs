@@ -401,11 +401,11 @@ impl Delaun {
     /// Re-triangulates the cavity left after deleting the triangles of a vertex
     /// (used by `RemoveVertex`). Collects the loop of free edges around the
     /// cavity and meshes it as a polygon.
-    pub(super) fn mesh_polygon_of_cavity(&mut self, loop_edges: &mut BTreeMap<i32, bool>) {
+    pub(super) fn mesh_polygon_of_cavity(&mut self, loop_edges: &mut IntBoolDataMap) {
         let mut boxes: Vec<BndB2> = Vec::new();
         let mut polygon: Vec<i32> = Vec::new();
         let mut loop_edges_count = loop_edges.len();
-        let keys: Vec<i32> = loop_edges.keys().copied().collect();
+        let keys: Vec<i32> = loop_edges.keys();
         if keys.is_empty() {
             return;
         }
@@ -415,7 +415,7 @@ impl Delaun {
         let mut pivot_node = edge.last_node();
         let mut edge_id = an_edge_id;
 
-        let is_positive = loop_edges[&edge_id];
+        let is_positive = loop_edges.value(edge_id);
         if !is_positive {
             let tmp = first_node;
             first_node = pivot_node;

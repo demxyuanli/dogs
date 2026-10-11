@@ -61,12 +61,19 @@ pub struct CachePoint {
 pub struct ProjectorCache {
     /// `myCache(0)` first, `myCache(1)` second; empty before the first pcurve.
     entries: Vec<CachePoint>,
+    /// `ShapeExtend_DONE4` from the last `approxPCurve` (`cxx:1815`, `cxx:1886`).
+    pub done4: bool,
+    /// `AdjustOverDegenMode() = false` (`ShapeFix_Wire.cxx:852`): pin `ul`/`vl`
+    /// instead of `uf`/`vf`. Default false keeps the constructor mode 1.
+    pub adjust_over_degen_off: bool,
 }
 
 impl ProjectorCache {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            done4: false,
+            adjust_over_degen_off: false,
         }
     }
 

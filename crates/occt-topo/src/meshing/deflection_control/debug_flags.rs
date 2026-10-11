@@ -15,6 +15,16 @@ pub(super) static DBG_BAD3D: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 pub(super) static DBG_MIN_SQ: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(f64::INFINITY.to_bits());
+pub(super) static DBG_REJ_SPLIT_MIN: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_CTRL_TOTAL: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_PASSES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_NORM_FAIL: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+pub(super) static DBG_ANG_NEED: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 /// Read access to a triangulated mesh required by the deflection control.
 ///
@@ -151,7 +161,9 @@ pub struct DelaunayDeflectionControlMeshAlgo {
     /// Face deflection used as the linear threshold.
     pub(super) face_deflection: f64,
     /// Largest squared deflection observed in the current optimization run.
-    pub(super) max_sq_deflection: f64,
+    /// `pub(crate)` so `optimizeMesh` can write `SetDeflection(sqrt(...))`
+    /// (`hxx:117-120`) when the cache is non-negative.
+    pub(crate) max_sq_deflection: f64,
     /// Becomes `false` as soon as a non-degenerate triangle is processed.
     pub(super) is_all_degenerated: bool,
     /// Control points (2D) accumulated during the current pass.
@@ -164,8 +176,9 @@ impl DelaunayDeflectionControlMeshAlgo {
     /// Constructs the refinement algorithm from the meshing parameters.
     ///
     /// The effective `MinSize`/`AngleInterior`/`DeflectionInterior` are resolved
-    /// exactly like `BRepMesh_IncrementalMesh::initParameters` (negative sentinels
-    /// inherit from the base deflection/angle values).
+    /// exactly like `BRepMesh_IncrementalMesh::initParameters` (negative
+    /// `MinSize`/`DeflectionInterior` inherit from deflection; negative
+    /// `AngleInterior` inherits `2 * Angle`).
     pub fn new(parameters: &MeshParameters) -> Self {
         let min_size = effective_min_size(parameters);
         Self {
@@ -215,9 +228,15 @@ impl DelaunayDeflectionControlMeshAlgo {
         DBG_MID.store(0, std::sync::atomic::Ordering::Relaxed);
         DBG_BAD3D.store(0, std::sync::atomic::Ordering::Relaxed);
         DBG_MIN_SQ.store(f64::INFINITY.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        DBG_REJ_SPLIT_MIN.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_CTRL_TOTAL.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_PASSES.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_NORM_FAIL.store(0, std::sync::atomic::Ordering::Relaxed);
+        DBG_ANG_NEED.store(0, std::sync::atomic::Ordering::Relaxed);
 
+        let dc_dbg = std::env::var("DCDBG").is_ok();
         let mut is_inserted = true;
-        for _pass in 0..MAX_PASSES {
+        for pass in 0..MAX_PASSES {
             if !is_inserted || self.is_all_degenerated {
                 break;
             }
@@ -238,9 +257,103 @@ impl DelaunayDeflectionControlMeshAlgo {
             }
 
             if self.control_nodes.is_empty() {
+                if dc_dbg {
+                    let mut max_lin = 0.0f64;
+                    let mut max_pair = (0i32, 0i32);
+                    let mut n_over = 0usize;
+                    let sq_face = self.face_deflection * self.face_deflection;
+                    for id in &ids {
+                        let triangle = mesh.triangle(*id);
+                        let node_indices = element_nodes_from_links(mesh, &triangle);
+                        let mut nodes_info = [TriangleNodeInfo::default(); 3];
+                        self.get_triangle_info(mesh, &triangle, node_indices, &mut nodes_info);
+                        for i in 0..3 {
+                            if nodes_info[i].is_frontier_link {
+                                continue;
+                            }
+                            let j = (i + 1) % 3;
+                            let mid_2d = GpPnt2d::from_xy(
+                                nodes_info[i]
+                                    .point_2d
+                                    .added(&nodes_info[j].point_2d)
+                                    .multiplied_scalar(0.5),
+                            );
+                            let mid_3d = self.get_point_3d(surface, mid_2d);
+                            let sq = LineDeviation::new(
+                                &nodes_info[i].point_3d,
+                                &nodes_info[j].point_3d,
+                            )
+                            .square_deviation(&mid_3d);
+                            if sq > sq_face {
+                                n_over += 1;
+                            }
+                            if sq > max_lin {
+                                max_lin = sq;
+                                max_pair = (node_indices[i], node_indices[j]);
+                            }
+                        }
+                    }
+                    eprintln!(
+                        "DCDBG stall pass={} tris={} max_lin_sq={:.6e} max_lin={:.6} over={} pair={:?} face_defl={:.6}",
+                        pass + 1,
+                        ids.len(),
+                        max_lin,
+                        max_lin.sqrt(),
+                        n_over,
+                        max_pair,
+                        self.face_deflection,
+                    );
+                }
                 break;
             }
+            DBG_PASSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            DBG_CTRL_TOTAL.fetch_add(self.control_nodes.len(), std::sync::atomic::Ordering::Relaxed);
+            // TEMP DCDBGCTRL: the control node list this pass hands to `insert`,
+            // to be lined up with the OCCT probe's `OCCTCTRL P<pass> <idx> <x> <y>`.
+            if dc_dbg && std::env::var("DCDBGCTRL").is_ok() {
+                for (i, p) in self.control_nodes.iter().enumerate() {
+                    eprintln!(
+                        "DCDBGCTRL P{} {} {:.17e} {:.17e}",
+                        pass + 1,
+                        i + 1,
+                        p.x(),
+                        p.y()
+                    );
+                }
+            }
+            if dc_dbg {
+                eprintln!(
+                    "DCDBG pass={} tris={} ctrl={} maxsq={:.17} alldeg={} center={} mid={} link={} tested={} rejmin={} rejsplitmin={} ang_need={} norm_fail={} shot0={}",
+                    pass + 1,
+                    ids.len(),
+                    self.control_nodes.len(),
+                    self.max_sq_deflection,
+                    self.is_all_degenerated,
+                    DBG_CENTER.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_MID.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_LINK.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_TESTED.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_REJMIN.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_REJ_SPLIT_MIN.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_ANG_NEED.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_NORM_FAIL.load(std::sync::atomic::Ordering::Relaxed),
+                    DBG_SHOT0.load(std::sync::atomic::Ordering::Relaxed),
+                );
+            }
             is_inserted = insert(mesh, &self.control_nodes);
+        }
+
+        if dc_dbg {
+            let min_sq = f64::from_bits(DBG_MIN_SQ.load(std::sync::atomic::Ordering::Relaxed));
+            eprintln!(
+                "DCDBG done passes={} ctrl_total={} face_defl={:.6} sq_min={:.6e} min_sq_seen={:.6e} max_sq_defl={:.6e}",
+                DBG_PASSES.load(std::sync::atomic::Ordering::Relaxed),
+                DBG_CTRL_TOTAL.load(std::sync::atomic::Ordering::Relaxed),
+                self.face_deflection,
+                self.sq_min_size,
+                min_sq,
+                self.max_sq_deflection,
+            );
         }
 
         if self.max_sq_deflection >= 0.0 {
@@ -401,6 +514,9 @@ impl DelaunayDeflectionControlMeshAlgo {
             } else {
                 let reject_min_size =
                     self.reject_split_links_for_min_size(surface, &nodes_info[i], &nodes_info[j], mid_2d);
+                if reject_min_size {
+                    DBG_REJ_SPLIT_MIN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
                 let reject_angular = self.check_link_ends_for_angular_deviation(
                     surface,
                     &nodes_info[i],
@@ -455,9 +571,29 @@ impl DelaunayDeflectionControlMeshAlgo {
             occt_core::precision::CONFUSION,
         );
         match (s1, s2, n1, n2) {
-            (0, 0, Some(normal1), Some(normal2)) => normal1.angle(&normal2) <= angle_interior,
+            (0, 0, Some(normal1), Some(normal2)) => {
+                let ok = normal1.angle(&normal2) <= angle_interior;
+                if !ok {
+                    DBG_ANG_NEED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                ok
+            }
             // Non-zero `GeomLib::NormEstim` status: accept the link (cxx:358-368).
-            _ => true,
+            _ => {
+                DBG_NORM_FAIL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if std::env::var("DCDBG").is_ok()
+                    && DBG_NORM_FAIL.load(std::sync::atomic::Ordering::Relaxed) <= 8
+                {
+                    eprintln!(
+                        "DCDBG norm_fail s1={s1} s2={s2} uv1=({:.6},{:.6}) uv2=({:.6},{:.6})",
+                        node1.point_2d.x(),
+                        node1.point_2d.y(),
+                        node2.point_2d.x(),
+                        node2.point_2d.y(),
+                    );
+                }
+                true
+            }
         }
     }
 
@@ -591,11 +727,12 @@ pub(super) fn effective_deflection_interior(parameters: &MeshParameters) -> f64 
     }
 }
 
-/// Resolves `AngleInterior`: a value below `Angular` inherits the base `Angle`.
+/// Resolves `AngleInterior` like `BRepMesh_IncrementalMesh::initParameters`
+/// (`hxx:104-107`): a value below `Angular` inherits `2 * Angle`.
 pub(super) fn effective_angle_interior(parameters: &MeshParameters) -> f64 {
     if parameters.angle_interior >= ANGULAR {
         parameters.angle_interior
     } else {
-        parameters.angle
+        2.0 * parameters.angle
     }
 }

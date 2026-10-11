@@ -38,6 +38,7 @@ use super::face_discret::Classifier;
 // `NodeInsertionMeshAlgo` + `DelaunayNodeInsertionMeshAlgo` until it lands.
 #[allow(unused_imports)]
 use super::mesh_algo::*;
+use super::face_discret::PointState;
 use super::deflection_control::{
     DelaunayDeflectionControlMeshAlgo, DeflectionMesh,
 };
@@ -167,6 +168,9 @@ pub struct DelaunayNodeInsertionMeshAlgo {
     /// Face range splitter: `Scale` to face basis, `AddPoint`, interior grid.
     /// Source: `BRepMesh_NodeInsertionMeshAlgo::myRangeSplitter`.
     splitter: Option<Box<dyn RangeSplitter>>,
+    /// Face deflection written back after `optimizeMesh`
+    /// (`BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:117-120`).
+    optimized_face_deflection: Option<f64>,
 }
 
 impl DelaunayNodeInsertionMeshAlgo {
@@ -190,6 +194,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             last_result: None,
             delaun_failed: false,
             splitter: None,
+            optimized_face_deflection: None,
         }
     }
 
@@ -326,10 +331,33 @@ impl DelaunayNodeInsertionMeshAlgo {
             return Ok(Vec::new());
         };
         let mut out = Vec::new();
+        let cls_dbg = std::env::var("CLSNODE").is_ok();
+        let (mut n_in, mut n_out, mut n_on) = (0usize, 0usize, 0usize);
         for n in nodes {
-            if self.classifier.is_inside(&n) {
+            let st = self.classifier.perform(&n);
+            match st {
+                PointState::In => n_in += 1,
+                PointState::Out => n_out += 1,
+                PointState::On => n_on += 1,
+            }
+            if cls_dbg && st != PointState::In {
+                eprintln!(
+                    "CLSNODE st={:?} uv=({:.12e},{:.12e})",
+                    st,
+                    n.x(),
+                    n.y()
+                );
+            }
+            if st == PointState::In {
                 out.push((n, surface.d0(n.x(), n.y())));
             }
+        }
+        if cls_dbg {
+            eprintln!(
+                "CLSNODE wires={} total={} in={n_in} out={n_out} on={n_on}",
+                self.classifier.wires_nb(),
+                n_in + n_out + n_on
+            );
         }
         Ok(out)
     }
@@ -371,7 +399,14 @@ impl DelaunayNodeInsertionMeshAlgo {
                 .and_then(|v| v.parse::<i32>().ok())
                 == Some(_face_index as i32);
             if tagged {
-                Self::dump_delaun_structure(&structure, &dir, _face_index, cells_u, cells_v, &indices);
+                let free_xy: Vec<(f64, f64)> = insert
+                    .iter()
+                    .map(|(uv, _p3d)| {
+                        let c = self.scale_to_face(*uv);
+                        (c.x(), c.y())
+                    })
+                    .collect();
+                Self::dump_delaun_structure(&structure, &dir, _face_index, cells_u, cells_v, &indices, &free_xy);
             }
         }
         let mut delaun = Delaun::new_with_data_cells_diag(structure, &mut indices, cells_u, cells_v, _face_index as i32);
@@ -413,7 +448,72 @@ impl DelaunayNodeInsertionMeshAlgo {
                 }
                 idxs.push(idx);
             }
-            delaun.add_vertices(&mut idxs);
+            // TEMPORARY diagnostic (DELAUNDUMP_GRID): two-phase replay dump of
+            // the state right before `AddVertices` (base mesh + registered
+            // surface nodes), so `occt_probe --delaunstruct` can replay OCCT's
+            // own `BRepMesh_Delaun` over the identical structure and order.
+            let grid_dump_dir = std::env::var("DELAUNDUMP_GRID").ok().filter(|_| {
+                std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
+                    == Some(_face_index as i32)
+            });
+            if let Some(dir) = grid_dump_dir.as_deref() {
+                Self::dump_delaun_grid(
+                    delaun.result(),
+                    dir,
+                    _face_index,
+                    cells_u,
+                    cells_v,
+                    &indices,
+                    &idxs,
+                );
+            }
+            if let Some(dir) = grid_dump_dir.as_deref() {
+                Self::dump_domain_triangles(delaun.result(), dir, _face_index, "base");
+            }
+            // TEMPORARY diagnostic (ADDDUM): shifts the element ids of the
+            // insertions below by `ADDDUM` dead slots, to test whether OCCT's
+            // extra base-mesh element creation is what aligns the two meshes.
+            if let Ok(n) = std::env::var("ADDDUM") {
+                if let Ok(n) = n.parse::<usize>() {
+                    delaun.debug_bump_elements(n);
+                }
+            }
+            // TEMPORARY diagnostic (DELONESTEP): instead of one batched
+            // `AddVertices`, feed the surface nodes one at a time (the OCCT
+            // `AddVertices(single)` call) and dump the domain triangle set after
+            // every step, so `occt_probe --delaunsteps` can be diffed step by
+            // step and the first divergent insertion identified.
+            //
+            // The batched path heap sorts first (`AddVertices`, `cxx:2415-2417`),
+            // so the step dump applies the same sort: otherwise the steps walk an
+            // order neither OCCT run uses. `DELONESTEP_RAW` keeps the raw
+            // registration order.
+            if let Ok(dir) = std::env::var("DELONESTEP") {
+                let mut order: Vec<i32> = idxs.clone();
+                if std::env::var("DELONESTEP_RAW").is_err() {
+                    let ds = delaun.result();
+                    crate::meshing::delaun::heap_sort_by_xy_sum(&mut order, |i| {
+                        let p = ds.get_node(*i).location;
+                        (p.x(), p.y())
+                    });
+                }
+                let mut out = String::new();
+                for (k, &idx) in order.iter().enumerate() {
+                    let mut one = vec![idx];
+                    delaun.add_vertices(&mut one);
+                    Self::append_step_triangles(&mut out, k, delaun.result());
+                }
+                let path = std::path::Path::new(&dir)
+                    .join(format!("delaun_steps_port_f{_face_index}.txt"));
+                if std::fs::write(&path, out).is_err() {
+                    eprintln!("DELONESTEP: cannot write {}", path.display());
+                }
+            } else {
+                delaun.add_vertices(&mut idxs);
+            }
+            if let Some(dir) = grid_dump_dir.as_deref() {
+                Self::dump_domain_triangles(delaun.result(), dir, _face_index, "grid");
+            }
         }
 
         // `DelaunayDeflectionControlMeshAlgo::postProcessMesh` (`hxx:50-68`):
@@ -424,7 +524,72 @@ impl DelaunayNodeInsertionMeshAlgo {
                 if factory_uses_deflection_control(surf.as_ref(), params)
                     && !delaun.result().elements_of_domain().is_empty()
                 {
-                    self.optimize_mesh(&mut delaun, surf.as_ref(), params, face_deflection);
+                    if std::env::var("DCDBG").is_ok() {
+                        let ds = delaun.result();
+                        let mut edge_fp: u64 = 0;
+                        for &tid in ds.elements_of_domain() {
+                            let e = ds.get_element(tid);
+                            let n = ds.element_nodes(&e);
+                            for k in 0..3 {
+                                let a = n[k].min(n[(k + 1) % 3]) as u64;
+                                let b = n[k].max(n[(k + 1) % 3]) as u64;
+                                edge_fp = edge_fp
+                                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                    .wrapping_add(a.wrapping_mul(0x10003) ^ b);
+                            }
+                        }
+                        eprintln!(
+                            "DCDBG pre_dc nodes={} tris={} face_defl={:.6} cells=({},{}) delta=({:.6},{:.6}) insert={} edge_fp={edge_fp:016x}",
+                            ds.nb_nodes(),
+                            ds.elements_of_domain().len(),
+                            face_deflection,
+                            cells_u,
+                            cells_v,
+                            self.splitter.as_ref().map(|s| s.delta().0).unwrap_or(0.0),
+                            self.splitter.as_ref().map(|s| s.delta().1).unwrap_or(0.0),
+                            insert.len(),
+                        );
+                    }
+                    // TEMP STRUCTDUMP: full pre-DC node/element dump, so it can
+                    // be diffed entry by entry against the OCCT probe's
+                    // `OCCTDC PRE` / `OCCTDCN PRE` / `OCCTEL PRE` lines.
+                    if std::env::var("PORTDUMP").is_ok() {
+                        let ds = delaun.result();
+                        eprintln!(
+                            "PORTDC PRE struct_nodes={} nodes={} domain={}",
+                            ds.nb_nodes(),
+                            ds.nb_nodes(),
+                            ds.elements_of_domain().len()
+                        );
+                        for tid in ds.elements_of_domain() {
+                            let e = ds.get_element(*tid);
+                            let n = ds.element_nodes(&e);
+                            eprintln!("PORTT PRE T {} {} {} {}", tid, n[0], n[1], n[2]);
+                        }
+                        for i in 1..=ds.nb_nodes() as i32 {
+                            let v = ds.get_node(i);
+                            eprintln!(
+                                "PORTN PRE {} {:.17e} {:.17e} {}",
+                                i,
+                                v.location.x(),
+                                v.location.y(),
+                                v.state.index()
+                            );
+                        }
+                        for i in 1..=ds.nb_elements() as i32 {
+                            let e = ds.get_element(i);
+                            let n = ds.element_nodes(&e);
+                            eprintln!("PORTEL PRE E {} {} {} {} {}", i, n[0], n[1], n[2], 0 as i32);
+                        }
+                    }
+                    self.optimize_mesh(&mut delaun, surf.as_ref(), params, face_deflection, _face_index);
+                    if std::env::var("DCDBG").is_ok() {
+                        eprintln!(
+                            "DCDBG post_dc nodes={} tris={}",
+                            delaun.result().nb_nodes(),
+                            delaun.result().elements_of_domain().len()
+                        );
+                    }
                 }
             }
         }
@@ -439,6 +604,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         surface: &dyn Surface,
         params: &MeshParameters,
         face_deflection: f64,
+        face_index: usize,
     ) {
         let (ru, rv, delta) = match self.splitter.as_ref() {
             Some(sp) => (sp.range_u(), sp.range_v(), sp.delta()),
@@ -446,9 +612,52 @@ impl DelaunayNodeInsertionMeshAlgo {
         };
         let mut ctrl = DelaunayDeflectionControlMeshAlgo::new(params);
         let mut view = ParametricDelaun { delaun, ru, rv, delta };
-        ctrl.post_process(&mut view, surface, face_deflection, &mut |mesh, nodes| {
-            mesh.insert_parametric(self, surface, nodes)
+        // TEMPORARY diagnostic (DELAUNDUMP_GRID): per-pass domain triangles, to
+        // line up each `optimizeMesh` pass against the probe's `OCCTDCPASS`.
+        let dump_dir = std::env::var("DELAUNDUMP_GRID").ok().filter(|_| {
+            std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
+                == Some(face_index as i32)
         });
+        let mut pass_no = 0usize;
+        let ctrl_dump = std::env::var("CTRLDUMP").ok().filter(|_| {
+            std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
+                == Some(face_index as i32)
+        });
+        let max_defl = ctrl.post_process(&mut view, surface, face_deflection, &mut |mesh, nodes| {
+            pass_no += 1;
+            // TEMPORARY diagnostic (CTRLDUMP): the control node list this pass
+            // hands to `insertNodes`, in face-basis coordinates.
+            if let Some(dir) = ctrl_dump.as_deref() {
+                use std::fmt::Write as _;
+                let mut out = String::new();
+                for n in nodes {
+                    let _ = writeln!(out, "{:.17e} {:.17e}", n.x(), n.y());
+                }
+                let path = std::path::Path::new(dir)
+                    .join(format!("ctrl_pass{pass_no}_f{face_index}.txt"));
+                if std::fs::write(&path, out).is_err() {
+                    eprintln!("CTRLDUMP: cannot write {}", path.display());
+                }
+            }
+            let inserted = mesh.insert_parametric(self, surface, nodes);
+            if let Some(dir) = dump_dir.as_deref() {
+                Self::dump_domain_state(
+                    mesh.delaun.result(),
+                    dir,
+                    face_index,
+                    &format!("pass{pass_no}"),
+                );
+            }
+            inserted
+        });
+        // `hxx:117-120`: `if (!(myMaxSqDeflection < 0.)) SetDeflection(sqrt(...))`.
+        // `post_process` returns 0 when the cache stayed at -1, so use the
+        // returned value only when a sample actually updated it (`> 0` or a
+        // zero-deflection flat pass that still ran geometry — both yield a
+        // non-negative cache; flat geometry returns 0 from sqrt(0)).
+        if ctrl.max_sq_deflection >= 0.0 {
+            self.optimized_face_deflection = Some(max_defl);
+        }
     }
 
     /// `BRepMesh_DelaunayNodeInsertionMeshAlgo::getCellsCount` /
@@ -691,6 +900,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         self.insert_internal_nodes(&internal_uv)?;
 
         let face_deflection = model.face(face_index)?.deflection();
+        self.optimized_face_deflection = None;
         if self.pre_process_surface_nodes {
             self.generate_surface_nodes(model, face_index, params)?;
             let result = self.finish_mesh(&[], params, face_deflection, face_index);
@@ -702,6 +912,12 @@ impl DelaunayNodeInsertionMeshAlgo {
                 return Err(format!(
                     "DelaunayNodeInsertionMeshAlgo::perform: face {face_index}: BRepMesh_Delaun::addTriangle failed, no triangulation committed"
                 ));
+            }
+            if let Some(d) = self.optimized_face_deflection.take() {
+                model
+                    .face_mut(face_index)
+                    .map_err(|e| format!("DelaunayNodeInsertionMeshAlgo::perform: {e}"))?
+                    .set_deflection(d);
             }
             return result;
         }
@@ -730,6 +946,12 @@ impl DelaunayNodeInsertionMeshAlgo {
                     );
                 }
             }
+        }
+        if let Some(d) = self.optimized_face_deflection.take() {
+            model
+                .face_mut(face_index)
+                .map_err(|e| format!("DelaunayNodeInsertionMeshAlgo::perform: {e}"))?
+                .set_deflection(d);
         }
         if self.delaun_failed {
             // `BRepMesh_BaseMeshAlgo::Perform` (`BRepMesh_BaseMeshAlgo.cxx:40-62`):
@@ -947,6 +1169,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         cells_u: i32,
         cells_v: i32,
         indices: &[i32],
+        free_xy: &[(f64, f64)],
     ) {
         use std::fmt::Write as _;
         let (tol_u, tol_v) = structure.get_tolerance();
@@ -1008,9 +1231,156 @@ impl DelaunayNodeInsertionMeshAlgo {
             let _ = write!(vline, " {idx}");
         }
         let _ = writeln!(out, "{vline}");
+        // TEMPORARY diagnostic (DELAUNDUMP): the surface nodes that
+        // `AddVertices` will insert are not registered in the structure yet, so
+        // they are appended as `N` lines with ids continuing after the
+        // registered ones, together with the phase-1/phase-2 index lists.
+        let base = structure.nb_nodes() as i32;
+        for (k, (x, y)) in free_xy.iter().enumerate() {
+            let _ = writeln!(out, "N {} {x:.17e} {y:.17e} {}", base + k as i32 + 1, VertexState::Free.index());
+        }
+        let mut v1 = String::from("V1");
+        for &idx in indices {
+            let _ = write!(v1, " {idx}");
+        }
+        let _ = writeln!(out, "{v1}");
+        let mut v2 = String::from("V2");
+        for k in 0..free_xy.len() {
+            let _ = write!(v2, " {}", base + k as i32 + 1);
+        }
+        let _ = writeln!(out, "{v2}");
         let path = std::path::Path::new(dir).join(format!("delaun_in_f{face_index}.txt"));
         if std::fs::write(&path, out).is_err() {
             eprintln!("DELAUNDUMP: cannot write {}", path.display());
+        }
+    }
+
+    /// TEMPORARY diagnostic (DELAUNDUMP_GRID): dumps the pre-`AddVertices`
+    /// structure (nodes and links of the base mesh plus the registered surface
+    /// nodes) together with the two insertion phases as `V1` / `V2`, so the
+    /// probe can replay `BRepMesh_Delaun(structure, V1, cellsU, cellsV)` followed
+    /// by `AddVertices(V2)` -- the exact control flow of
+    /// `BRepMesh_DelaunayNodeInsertionMeshAlgo::postProcessMesh`.
+    fn dump_delaun_grid(
+        structure: &DelaunDataStructure,
+        dir: &str,
+        face_index: usize,
+        cells_u: i32,
+        cells_v: i32,
+        phase1: &[i32],
+        phase2: &[i32],
+    ) {
+        use std::fmt::Write as _;
+        let (tol_u, tol_v) = structure.get_tolerance();
+        let mut out = String::new();
+        let _ = writeln!(out, "TOL {tol_u:.17e} {tol_v:.17e}");
+        let _ = writeln!(out, "CELLS {cells_u} {cells_v}");
+        for i in 1..=structure.nb_nodes() as i32 {
+            let n = structure.get_node(i);
+            let _ = writeln!(
+                out,
+                "N {i} {:.17e} {:.17e} {}",
+                n.location.x(),
+                n.location.y(),
+                n.state.index()
+            );
+        }
+        for i in 1..=structure.nb_links() as i32 {
+            let l = structure.get_link(i);
+            let _ = writeln!(
+                out,
+                "L {i} {} {} {}",
+                l.first_node(),
+                l.last_node(),
+                structure.link_movability(i).index()
+            );
+        }
+        for (tag, ids) in [("V1", phase1), ("V2", phase2)] {
+            let mut line = String::from(tag);
+            for &idx in ids {
+                let _ = write!(line, " {idx}");
+            }
+            let _ = writeln!(out, "{line}");
+        }
+        let path = std::path::Path::new(dir).join(format!("delaun_in_f{face_index}.txt"));
+        if std::fs::write(&path, out).is_err() {
+            eprintln!("DELAUNDUMP_GRID: cannot write {}", path.display());
+        }
+    }
+
+    /// TEMPORARY diagnostic (DELAUNDUMP_GRID): per-pass state of the deflection
+    /// control, node table (`ND <id> <x> <y>`) plus domain triangles
+    /// (`T <tid> <a> <b> <c>`), for coordinate-level comparison with the probe's
+    /// `OCCTDC P<n>` dump.
+    fn dump_domain_state(structure: &DelaunDataStructure, dir: &str, face_index: usize, tag: &str) {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        for i in 1..=structure.nb_nodes() as i32 {
+            let n = structure.get_node(i);
+            if n.state == VertexState::Deleted {
+                continue;
+            }
+            let _ = writeln!(out, "ND {i} {:.17e} {:.17e}", n.location.x(), n.location.y());
+        }
+        let mut tris: Vec<(i32, [i32; 3])> = Vec::new();
+        for &tid in structure.elements_of_domain() {
+            let e = structure.get_element(tid);
+            let mut n = structure.element_nodes(&e);
+            n.sort_unstable();
+            tris.push((tid, n));
+        }
+        tris.sort_unstable();
+        let _ = writeln!(out, "TRIS {}", tris.len());
+        for (tid, n) in &tris {
+            let _ = writeln!(out, "T {} {} {} {}", tid, n[0], n[1], n[2]);
+        }
+        let path = std::path::Path::new(dir).join(format!("delaun_{tag}_f{face_index}.txt"));
+        if std::fs::write(&path, out).is_err() {
+            eprintln!("DELAUNDUMP_GRID: cannot write {}", path.display());
+        }
+    }
+
+    /// TEMPORARY diagnostic (DELONESTEP): appends one insertion step's domain
+    /// triangle set (`STEP <k>` header, then `T <a> <b> <c>` with sorted node
+    /// ids) to the step file, for step-by-step diffing against the probe's
+    /// per-vertex `BRepMesh_Delaun::AddVertices` replay.
+    fn append_step_triangles(out: &mut String, step: usize, structure: &DelaunDataStructure) {
+        use std::fmt::Write as _;
+        let _ = writeln!(out, "STEP {step}");
+        let mut tris: Vec<[i32; 3]> = Vec::new();
+        for &tid in structure.elements_of_domain() {
+            let e = structure.get_element(tid);
+            let mut n = structure.element_nodes(&e);
+            n.sort_unstable();
+            tris.push(n);
+        }
+        tris.sort_unstable();
+        for n in &tris {
+            let _ = writeln!(out, "T {} {} {}", n[0], n[1], n[2]);
+        }
+    }
+
+    /// TEMPORARY diagnostic (DELAUNDUMP_GRID): dumps the domain triangles of the
+    /// structure as `T <a> <b> <c>` with sorted node ids, to be diffed against
+    /// the probe's replay of the same structure.
+    fn dump_domain_triangles(structure: &DelaunDataStructure, dir: &str, face_index: usize, tag: &str) {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        let mut tris: Vec<(i32, [i32; 3])> = Vec::new();
+        for &tid in structure.elements_of_domain() {
+            let e = structure.get_element(tid);
+            let mut n = structure.element_nodes(&e);
+            n.sort_unstable();
+            tris.push((tid, n));
+        }
+        tris.sort_unstable();
+        let _ = writeln!(out, "TRIS {}", tris.len());
+        for (tid, n) in &tris {
+            let _ = writeln!(out, "T {} {} {} {}", tid, n[0], n[1], n[2]);
+        }
+        let path = std::path::Path::new(dir).join(format!("delaun_{tag}_f{face_index}.txt"));
+        if std::fs::write(&path, out).is_err() {
+            eprintln!("DELAUNDUMP_GRID: cannot write {}", path.display());
         }
     }
 
@@ -1157,8 +1527,10 @@ impl ParametricDelaun<'_> {
             return false;
         }
         let mut idxs = Vec::new();
+        let mut out_cls = 0usize;
         for &uv in nodes {
             if !algo.classifier.is_inside(&uv) {
+                out_cls += 1;
                 continue;
             }
             let p3d = surface.d0(uv.x(), uv.y());
@@ -1168,6 +1540,14 @@ impl ParametricDelaun<'_> {
                 algo.nodes_map.push(p3d);
             }
             idxs.push(idx);
+        }
+        if std::env::var("DCDBG").is_ok() {
+            eprintln!(
+                "DCDBG insert in={} out_cls={} added={}",
+                nodes.len(),
+                out_cls,
+                idxs.len()
+            );
         }
         // `hxx:125`: `AddVertices` is called even when every node was
         // classified out, so `ProcessConstraints()` still runs.

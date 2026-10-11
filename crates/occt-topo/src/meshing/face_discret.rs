@@ -180,6 +180,23 @@ impl Classifier {
             range_v.1,
         ));
         self.tab_orient.push(!(angle < 0.0));
+        if std::env::var("CLSWIRE").is_ok() {
+            let (mut u0, mut u1, mut v0, mut v1) = (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+            for p in wire {
+                u0 = u0.min(p.x());
+                u1 = u1.max(p.x());
+                v0 = v0.min(p.y());
+                v1 = v1.max(p.y());
+            }
+            eprintln!(
+                "CLSWIRE i={} n={} angle={angle:.9e} orient={} u=[{u0:.12e},{u1:.12e}] v=[{v0:.12e},{v1:.12e}] tol=({:.3e},{:.3e})",
+                self.tab_class.len() - 1,
+                n,
+                !(angle < 0.0),
+                tol_uv.0,
+                tol_uv.1,
+            );
+        }
     }
 
     /// Number of registered wires.
@@ -196,7 +213,12 @@ impl Classifier {
         }
         for (class2d, &orient) in self.tab_class.iter().zip(self.tab_orient.iter()) {
             match class2d.si_dans(p) {
-                Class2dResult::Uncertain => return PointState::On,
+                Class2dResult::Uncertain => {
+                    if std::env::var("CLSONIN").is_ok() {
+                        continue;
+                    }
+                    return PointState::On;
+                }
                 Class2dResult::Outside => {
                     if orient {
                         return PointState::Out;

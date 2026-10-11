@@ -25,10 +25,14 @@ pub(crate) use super::super::geom_tool::{GeomTool, IntFlag};
 
 
 mod constants;
+mod int_bool_map;
+mod stl_heap_sort;
 mod triangulation;
 mod frontier;
 mod polygon_meshing;
 pub use constants::*;
+pub(crate) use int_bool_map::{map_bind, IntBoolDataMap};
+pub(crate) use stl_heap_sort::heap_sort_by_xy_sum;
 
 
 
