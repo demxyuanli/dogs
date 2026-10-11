@@ -23,7 +23,7 @@ import {
 // 量测口径（2026-10-11 实测）
 //   OCCT 侧: D:\source\OCCT-src\src  .hxx/.cxx/.lxx/.gxx
 //   Rust 侧: crates/{occt-core,occt-math,occt-geom,occt-geom2d,occt-topo}/src  .rs
-//   基线  : specs/board.canvas.tsx (r40, asOf 2026-10-07) · specs/_audit/_index.md (§9 -> 2026-10-06)
+//   基线  : specs/board.canvas.tsx (r41, asOf 2026-10-11) · specs/_audit/_index.md (§9 -> 2026-10-11)
 // ---------------------------------------------------------------------------
 const MEASURE = {
   asOf: "2026-10-11",
@@ -64,22 +64,23 @@ const SEMANTIC = [
   { item: "Analyzer::is_valid 恒 true", id: "A14", where: "topo/validate.rs:150", state: "已声明非校验、不得作门禁" },
 ];
 
-// 状态/文档偏移：文档落后于代码与 HEAD
+// 状态/文档偏移：2026-10-11 复核定案 —— 前三条为已订正的历史偏移，后两条仍开
 const DOCDRIFT = [
-  { what: "看板基准日", detail: "board asOf = 2026-10-07 · r40", gap: "HEAD 已到 2026-10-10 c8060dd1（约 +39 提交）；tasks 段 31 完成 / 3 取消 / 0 在办" },
-  { what: "10-10 未上板批次", detail: "brep_class3d：SClassifier::Perform 段循环 / OtherSegment / FindAPointInTheFace", gap: "活动流最新仅到 a89（2026-10-08）" },
-  { what: "_audit §9.3 过期断言", detail: "把 geom2d/curve_ops.rs 采样族列为未修", gap: "该采样已于 2026-09-26（ok267451e8）删除，改走 Extrema_ExtCC2d / IntAna2d" },
-  { what: "未提交工作树", detail: "93 个已跟踪文件修改", gap: "+6,082 / −27,470；删量主要来自 _a3n00_gap_analysis.md 精简（约 2.6 万行 → 摘要）" },
+  { what: "看板基准日", detail: "board asOf = 2026-10-07 · r40", gap: "已订正：r41 · asOf 2026-10-11（c8d58992）", tone: "info" as const },
+  { what: "G-boss 基线过期", detail: "board G-boss = 1 / 2（red，已接受）", gap: "已订正：2026-10-11 实测 2 / 2；4244ab19 修好夹具后红消解", tone: "info" as const },
+  { what: "_audit §9.3 过期断言", detail: "把 geom2d/curve_ops.rs 采样族列为未修", gap: "已订正：该采样 2026-09-26（ok267451e8）已删除，改走 Extrema_ExtCC2d / IntAna2d", tone: "info" as const },
+  { what: "10-10 未上板批次", detail: "brep_class3d：SClassifier::Perform 段循环 / OtherSegment / FindAPointInTheFace", gap: "a90 现覆盖基线重建；该批次的实现内容仍未上板", tone: "warning" as const },
+  { what: "未提交工作树", detail: "106 个已跟踪文件修改", gap: "+6,567 / −27,578（topo 50 · geom 27 · core 22 · geom2d 5 · specs 2）；删量主要来自 _a3n00_gap_analysis.md 精简", tone: "danger" as const },
 ];
 
-// 看板门禁（读数日期 2026-10-06 … 10-08，未覆盖当前未提交工作树）
+// 看板门禁（读数日期 2026-10-11，已覆盖当前未提交工作树；G-boss 基线由 1 / 2 订正为 2 / 2）
 const GATES = [
   { id: "G-check", name: "五 crate 编译", base: "exit 0", now: "exit 0", tone: "success" as const },
   { id: "G-lib", name: "topo 单测 --lib", base: "1281 / 0", now: "1281 / 0", tone: "success" as const },
   { id: "G-gates", name: "STEP->OBJ 门禁", base: "4 / 4", now: "4 / 4", tone: "success" as const },
   { id: "G-fuse", name: "fuse 闭环实体", base: "1 / 1", now: "1 / 1", tone: "success" as const },
   { id: "G-phase", name: "phase3-10 / 19 / 20", base: "全绿 61", now: "全绿 61", tone: "success" as const },
-  { id: "G-boss", name: "boss 合并", base: "1 / 2", now: "1 / 2", tone: "danger" as const },
+  { id: "G-boss", name: "boss 合并", base: "2 / 2", now: "2 / 2", tone: "success" as const },
   { id: "G-export", name: "导出总检", base: "15 / 15", now: "15 / 15", tone: "success" as const },
   { id: "G-iges", name: "IGES 结构自洽", base: "23 / 23", now: "23 / 23", tone: "success" as const },
   { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "290·215·143·72", tone: "success" as const },
@@ -94,7 +95,7 @@ export default function OcctScopeDrift() {
         <H1>OCCT→Rust 移植范围与偏移审查</H1>
         <Text tone="secondary">
           对照 OCC 8.0.0 源码树 <Text weight="semibold">D:\source\OCCT-src\src</Text> 与工作树 5 个 crate 实测。
-          所有读数取 <Text weight="semibold">{MEASURE.asOf}</Text>；门禁基线引用 <Text weight="semibold">specs/board.canvas.tsx</Text>（r40）与 <Text weight="semibold">specs/_audit/_index.md</Text>（§9 → 2026-10-06）。
+          所有读数取 <Text weight="semibold">{MEASURE.asOf}</Text>；门禁基线引用 <Text weight="semibold">specs/board.canvas.tsx</Text>（r41）与 <Text weight="semibold">specs/_audit/_index.md</Text>（§9 → 2026-10-11）。
         </Text>
       </Stack>
 
@@ -168,17 +169,17 @@ export default function OcctScopeDrift() {
         striped
       />
 
-      <H3>2.2 状态 / 文档偏移（文档落后于代码与 HEAD）</H3>
+      <H3>2.2 状态 / 文档偏移（2026-10-11 复核：3 条已订正，2 条仍开）</H3>
       <Table
         headers={["偏差", "文档现状", "实际"]}
         rows={DOCDRIFT.map((d) => [d.what, d.detail, d.gap])}
         columnAlign={["left", "left", "left"]}
-        rowTone={["warning", "warning", "danger", "info"]}
+        rowTone={DOCDRIFT.map((d) => d.tone)}
         striped
       />
-      <Callout tone="warning" title="本轮最紧的隐患">
-        看板与审查文档落后于 HEAD（2026-10-10）与当前未提交工作树：`_audit/_index.md` §9.3 仍把
-        `geom2d/curve_ops.rs` 采样族列为未修，而该采样早在 2026-09-26 已删除并改走忠实 `Extrema_ExtCC2d` / `IntAna2d`。
+      <Callout tone="info" title="文档偏移已订正 3 条（2026-10-11）">
+        `board.canvas.tsx` 与 `_audit/_index.md §9.3` 的过期断言已按实测改定（r40 → r41；curve_ops 采样族订正；
+        G-boss 由过期读数 1 / 2 订正为 2 / 2，看板唯一 red 清零）。剩余偏移只在未提交工作树与 10-10 未上板批次。
       </Callout>
 
       <H3>2.3 门禁现状</H3>
@@ -195,7 +196,7 @@ export default function OcctScopeDrift() {
         rowTone={GATES.map((g) => g.tone)}
       />
       <Text size="small" tone="tertiary">
-        唯一 red（G-boss 1/2）已在板上定案为「夹具不合法，非引擎缺口」的已接受红。所有读数测量于 2026-10-06…10-08，未覆盖当前未提交工作树。
+        原唯一 red（G-boss 1/2）已消解：`4244ab19` 修好夹具后 2026-10-11 实测 2/2，板上基线同步订正。所有读数测量于 2026-10-11，已覆盖当前未提交工作树。
       </Text>
 
       <Divider />
@@ -205,19 +206,19 @@ export default function OcctScopeDrift() {
         <Stat value="13.9%" label="全库行数覆盖" />
         <Stat value="24.2%" label="CAD 内核行数覆盖" tone="info" />
         <Stat value="2 处" label="阻塞型语义残余" tone="warning" />
-        <Stat value="4 项" label="文档/状态偏移" tone="danger" />
+        <Stat value="5 项（3 已订正）" label="文档/状态偏移" tone="warning" />
       </Row>
       <Stack gap={6}>
         <Text>
           <Text weight="semibold">范围</Text>：全库 13.9%、CAD 内核约 24% 的行数覆盖；有效范围是 STEP→OBJ 共享管线，在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.9 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">偏移</Text>：语义自创已大幅收敛，残余集中在网格（A13/A18 UV 栅格）与曲面布尔（T-79/T-80）两处，且二者互相阻塞；文档 / 看板偏移是当前更紧的隐患。
+          <Text weight="semibold">偏移</Text>：语义自创已大幅收敛，残余集中在网格（A13/A18 UV 栅格）与曲面布尔（T-79/T-80）两处，且二者互相阻塞；文档 / 看板偏移本轮已订正 3 条（看板基准日、G-boss 基线、§9.3 断言），仅剩未提交工作树与 10-10 未上板批次。
         </Text>
       </Stack>
-      <Callout tone="info" title="下一步（建议入口）">
-        先对当前未提交工作树重建基线 —— `cargo check --all-targets` + `occt-topo --lib` + `--test step_obj_gates`，
-        再据实同步 `specs/board.canvas.tsx` 与 `specs/_audit/_index.md` §9.3（含 `curve_ops` 过期断言订正）。
+      <Callout tone="success" title="本轮已闭环（2026-10-11）">
+        基线重建完成：`cargo check --all-targets`（修 1 处 E0063 后五 crate 0 error）+ `occt-topo --lib` 1281 / 0
+        + 九道门禁全绿，并据实同步 `specs/board.canvas.tsx`（r41）与 `specs/_audit/_index.md` §9.3（`curve_ops` 过期断言订正）。
       </Callout>
     </Stack>
   );
