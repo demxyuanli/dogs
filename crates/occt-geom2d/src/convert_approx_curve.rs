@@ -106,7 +106,7 @@ impl Geom2dConvertApproxCurve {
         // `Geom2dConvert_ApproxCurve_Eval::Evaluate` (`cxx:55-107`): order 0 is
         // the point, 1 the first derivative, 2 the second; any other order has
         // error code 3 with a zero result (`cxx:101-104`).
-        let eval = |u: f64, order: i32, out: &mut [f64]| -> i32 {
+        let eval = |_a: f64, _b: f64, u: f64, order: i32, out: &mut [f64]| -> i32 {
             match order {
                 0 => {
                     let p = the_curve.d0(u);

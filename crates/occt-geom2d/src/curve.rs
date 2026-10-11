@@ -82,6 +82,12 @@ pub trait Curve2d: Send + Sync {
         false
     }
 
+    /// `STANDARD_TYPE(Geom2d_Line)` — true only for an exact `Geom2d_Line`,
+    /// not for a trimmed wrapper (`IGESToBRep_TopoSurface.cxx:1870`).
+    fn is_geom2d_line(&self) -> bool {
+        false
+    }
+
     /// `STANDARD_TYPE(Geom2d_Circle)` — true only for an exact `Geom2d_Circle`,
     /// not for a Trimmed/Reparam wrapper that forwards `gp_circ2d`
     /// (`GeomLib.cxx:871`).

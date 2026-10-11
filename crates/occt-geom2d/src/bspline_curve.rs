@@ -678,6 +678,130 @@ impl Geom2dBSplineCurve {
     pub fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     pub fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
 
+    /// `Geom2d_BSplineCurve::FirstUKnotIndex()` (`Geom2d_BSplineCurve_1.cxx:335-347`).
+    pub fn first_u_knot_index(&self) -> i32 {
+        let (_, umults) = self.distinct_knots_and_mults();
+        self.u_knot_index_range(&umults).0
+    }
+
+    /// `Geom2d_BSplineCurve::LastUKnotIndex()` (`Geom2d_BSplineCurve_1.cxx:405-417`).
+    pub fn last_u_knot_index(&self) -> i32 {
+        let (_, umults) = self.distinct_knots_and_mults();
+        self.u_knot_index_range(&umults).1
+    }
+
+    /// `Geom2d_BSplineCurve::NbKnots()` (`Geom2d_BSplineCurve_1.cxx:598-601`).
+    pub fn nb_knots(&self) -> usize {
+        self.distinct_knots_and_mults().0.len()
+    }
+
+    /// `Geom2d_BSplineCurve::Weight(Index)` 1-based (`Geom2d_BSplineCurve.cxx:194-206`).
+    pub fn weight(&self, index: usize) -> f64 {
+        self.weights
+            .as_ref()
+            .map(|w| w[index - 1])
+            .unwrap_or(1.0)
+    }
+
+    /// `Geom2d_BSplineCurve::SetWeight(Index, Weight)` 1-based
+    /// (`Geom2d_BSplineCurve.cxx:534-...`).
+    pub fn set_weight(&mut self, index: usize, weight: f64) {
+        if index == 0 || index > self.xs.len() {
+            return;
+        }
+        if self.weights.is_none() {
+            self.weights = Some(vec![1.0; self.xs.len()]);
+        }
+        if let Some(w) = self.weights.as_mut() {
+            w[index - 1] = weight;
+        }
+    }
+
+    /// `Geom2d_BSplineCurve::Resolution(ToleranceUV, UTolerance)`
+    /// (`Geom2d_BSplineCurve_1.cxx:764-806`): parametric tolerance for a
+    /// given UV tolerance. Poles are lifted to `z = 0` so the shared
+    /// `BSplCLib::Resolution` (dim-3) matches the 2D L1 bound.
+    pub fn resolution(&self, tolerance_uv: f64) -> f64 {
+        let poles = self.poles_3d();
+        if self.periodic {
+            // `PrepareUnperiodize` pole wrap (`cxx:768-791`).
+            let (_, umults) = self.distinct_knots_and_mults();
+            let (_nk, np) = occt_core::bspl::unperiodize::prepare_unperiodize(
+                self.degree as i32,
+                &umults,
+            );
+            let n_old = poles.len();
+            if n_old == 0 || np == 0 {
+                return tolerance_uv / occt_core::precision::REAL_SMALL;
+            }
+            let new_poles: Vec<GpPnt> = (0..np).map(|i| poles[i % n_old]).collect();
+            let new_weights = self
+                .weights
+                .as_ref()
+                .map(|w| (0..np).map(|i| w[i % n_old]).collect::<Vec<_>>());
+            occt_core::bspl::bspline_curve_resolution(
+                &new_poles,
+                new_weights.as_deref(),
+                &self.knots,
+                self.degree as i32,
+                tolerance_uv,
+            )
+        } else {
+            occt_core::bspl::bspline_curve_resolution(
+                &poles,
+                self.weights.as_deref(),
+                &self.knots,
+                self.degree as i32,
+                tolerance_uv,
+            )
+        }
+    }
+
+    /// `Geom2d_BSplineCurve::LocateU` without knot repetition
+    /// (`Geom2d_BSplineCurve_1.cxx:710-760`, `WithKnotRepetition = false`).
+    /// Returns `(I1, I2)` in 1-based distinct-knot indices.
+    pub fn locate_u(&self, u: f64, parametric_tolerance: f64) -> (i32, i32) {
+        let (uknots, _) = self.distinct_knots_and_mults();
+        if uknots.is_empty() {
+            return (0, 0);
+        }
+        let mut new_u = u;
+        if self.periodic {
+            let first = self.first_parameter();
+            let last = self.last_parameter();
+            new_u = occt_core::bspl::locate::in_period(new_u, first, last);
+        }
+        let u_first = uknots[0];
+        let u_last = uknots[uknots.len() - 1];
+        let tol = parametric_tolerance.abs();
+        if (new_u - u_first).abs() <= tol {
+            return (1, 1);
+        }
+        if (new_u - u_last).abs() <= tol {
+            let n = uknots.len() as i32;
+            return (n, n);
+        }
+        if new_u < u_first {
+            return (0, 1);
+        }
+        if new_u > u_last {
+            let n = uknots.len() as i32;
+            return (n, n + 1);
+        }
+        let mut i1 = occt_core::bspl::locate::hunt_occt(&uknots, new_u);
+        i1 = i1.max(1).min(uknots.len() as i32);
+        while (i1 as usize) < uknots.len()
+            && (uknots[i1 as usize] - new_u).abs() <= tol
+        {
+            i1 += 1;
+        }
+        if (uknots[(i1 - 1) as usize] - new_u).abs() <= tol {
+            (i1, i1)
+        } else {
+            (i1, i1 + 1)
+        }
+    }
+
     /// Lift `(x, y)` poles to `z = 0` for `BSplCLib` evaluators.
     fn poles_3d(&self) -> Vec<GpPnt> {
         self.xs

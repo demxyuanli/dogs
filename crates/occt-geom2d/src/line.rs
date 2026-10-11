@@ -34,8 +34,12 @@ impl Curve2d for Geom2dLine {
         if n < 1 { return GpVec2d::zero(); }
         clib2d::line_dn_ax2d(_u, &self.pos.pos, n)
     }
-    fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
-    fn last_parameter(&self) -> f64 { f64::INFINITY }
+    fn first_parameter(&self) -> f64 {
+        f64::NEG_INFINITY
+    }
+    fn last_parameter(&self) -> f64 {
+        f64::INFINITY
+    }
     fn continuity(&self) -> u8 { 6 }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
     /// `Geom2d_Line::ReversedParameter` (`Geom2d_Line.cxx:135`): `-U`.
@@ -51,5 +55,6 @@ impl Curve2d for Geom2dLine {
         u * t.scale_factor().abs()
     }
     fn is_line(&self) -> bool { true }
+    fn is_geom2d_line(&self) -> bool { true }
     fn gp_lin2d(&self) -> Option<GpLin2d> { Some(self.pos) }
 }
