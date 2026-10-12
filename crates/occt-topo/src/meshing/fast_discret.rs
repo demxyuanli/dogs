@@ -2,25 +2,26 @@
 //!
 //! `FastDiscret` is the legacy fast-discretization algorithm: an edge becomes a
 //! deflection-adaptive polyline ([`CurveTessellator`], reusing
-//! `edge_discret::CurveTessellator`), a face becomes a UV grid + Delaunay
-//! triangle soup ([`FaceDiscret`] + [`Delaun`]), followed by a 3D
-//! vertex-welding pass.
+//! `edge_discret::CurveTessellator`), a face becomes a boundary UV polygon +
+//! Delaunay triangle soup ([`Delaun`], over `Frontier` wire nodes/links),
+//! followed by a 3D vertex-welding pass.
 //!
-//! Source: `BRepMesh_FastDiscret.hxx` (deprecated in modern OCCT in favour of
-//! `IMeshTools`; the algorithm contract is reconstructed from the modern
-//! `BRepMesh_EdgeDiscret` / `BRepMesh_FaceDiscret` split).
+//! Source: `BRepMesh_FastDiscret.hxx` (a deprecated `IMeshTools_Parameters`
+//! typedef in OCCT 8.0, no algorithm; the algorithm contract here is
+//! reconstructed from the modern `BRepMesh_EdgeDiscret` /
+//! `BRepMesh_FaceDiscret` split).
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use occt_core::gp::GpPnt;
+use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::poly::triangulation::Triangle;
 use occt_geom::{Curve, Surface};
 
 use super::delaun::Delaun;
+use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunVertex, VertexState};
 use super::edge_discret::{CurveTessellator, MeshFace};
-use super::face_discret::FaceDiscret;
 use super::parameters::MeshParameters;
 
 /// Legacy fast discretizer — edge → deflection-adaptive polyline, face → UV
@@ -60,25 +61,67 @@ impl FastDiscret {
 
     /// Discretizes a UV-polygon face into 3D vertices + triangles.
     ///
-    /// The boundary UV points (kept verbatim) are combined with a
-    /// deflection-bounded interior UV grid ([`FaceDiscret::discretize_face`]),
-    /// triangulated by [`Delaun`], and lifted onto `surface`; coincident 3D
-    /// vertices are welded.
+    /// The boundary UV points (kept verbatim)
+    /// are registered as `BRepMesh_Frontier` nodes with their consecutive pairs
+    /// as `Frontier` constraint links, then triangulated by [`Delaun`] and
+    /// lifted onto `surface`; coincident 3D vertices are welded.
+    ///
+    /// The Frontier marking is required, not optional: `BRepMesh_Delaun`'s
+    /// `CleanupMesh` (`BRepMesh_Delaun.cxx:815-936`, reached from `:1028`)
+    /// keeps a triangle only when one of its edges is bound to a non-`Free`
+    /// link (`isBoundToFrontier`, `:589-621`), so an all-`Free` structure is
+    /// deleted entirely. This mirrors `BRepMesh_NodeInsertionMeshAlgo::
+    /// initDataStructure` + `collectWirePoints`
+    /// (`BRepMesh_NodeInsertionMeshAlgo.hxx:60-111,142-183`).
     pub fn discretize_face(
         &self,
         face: &MeshFace,
         surface: &dyn Surface,
     ) -> (Vec<GpPnt>, Vec<Triangle>) {
-        let uv_pts = FaceDiscret::new(self.params.clone()).discretize_face(face);
-        if uv_pts.len() < 3 {
+        let mut wires: Vec<&[GpPnt2d]> = Vec::with_capacity(1 + face.inner_wires.len());
+        wires.push(&face.outer_wire);
+        wires.extend(face.inner_wires.iter().map(|w| w.as_slice()));
+        let total: usize = wires.iter().map(|w| w.len()).sum();
+        if total < 3 {
             return (Vec::new(), Vec::new());
         }
 
-        let vertices: Vec<DelaunVertex> = uv_pts
-            .iter()
-            .map(|p| DelaunVertex::new(*p, GpPnt::zero(), 0, VertexState::Free))
-            .collect();
-        let delaun = Delaun::new_vertices(&vertices);
+        let mut structure = DelaunDataStructure::new(total);
+        let mut indices: Vec<i32> = Vec::with_capacity(total);
+        for wire in &wires {
+            let mut first: Option<i32> = None;
+            let mut prev: Option<i32> = None;
+            for p in wire.iter() {
+                if let Some(pi) = prev {
+                    if structure.get_node(pi).location.distance(p) <= 1e-9 {
+                        continue;
+                    }
+                }
+                let idx = structure.add_node(DelaunVertex::new(
+                    *p,
+                    GpPnt::zero(),
+                    0,
+                    VertexState::Frontier,
+                ));
+                if let Some(pi) = prev {
+                    structure.add_link(pi, idx, VertexState::Frontier);
+                }
+                first.get_or_insert(idx);
+                prev = Some(idx);
+                indices.push(idx);
+            }
+            // Close the wire cycle.
+            if let (Some(f), Some(p)) = (first, prev) {
+                if f != p {
+                    structure.add_link(p, f, VertexState::Frontier);
+                }
+            }
+        }
+        if indices.len() < 3 {
+            return (Vec::new(), Vec::new());
+        }
+
+        let delaun = Delaun::new_with_data(structure, &mut indices);
         // `BRepMesh_Delaun::addTriangle` link-pair overflow: OCCT's
         // `Standard_OutOfRange` unwinds out of the triangulation and
         // `BRepMesh_BaseMeshAlgo::Perform` swallows it (`cxx:59-62`), so the face

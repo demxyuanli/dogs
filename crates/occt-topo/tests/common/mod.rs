@@ -87,14 +87,24 @@ pub const MODELS: &[Model] = &[
     // vs 67366 triangles - the tolerance is now slack, kept as-is. 9.626 wired
     // `ShapeFix_IntersectionTool::FixSelfIntersectWire`: 67526 vs 67366
     // (v 60641 vs 60548).
+    // Re-measured 2026-10-12 after A13/A18/A19/A23 (fallback meshers deleted,
+    // `face_discret` interior grid dropped, `A_ITERATIONS_NB = 11`): 73150 vs
+    // 67366 (v 63522 vs 60548), area 192668.27 vs 192658.64 (ratio 1.0001).
+    // The +8.6% triangle delta is **not** from the refinement cap: an A/B with
+    // `A_ITERATIONS_NB = 4` gives 73162 vs 73150 (0.02%). It comes from faces
+    // that used to fall back to the UV-grid mesher now going through Delaunay.
     Model { step: "occ/T0M.stp", occ: "occ/occ-T0M.obj", bbox_tol: Some(0.9), area_tol: Some(0.025) },
     // acs10: widened 0.05 -> 0.12 by the same T-93 (a) change (ratio 0.9846 ->
     // 0.9025, ours 244773.63 / occ 271219.68). Re-measured at 9.625: 1.00004
     // (271230.61 / 271219.68), 46548 vs 46558 triangles. 9.626: 46544 vs 46558
     // (v 37287 vs 37296).
+    // 2026-10-12 (A13/A18/A19/A23): 47196 vs 46558 (v 37606 vs 37296), area
+    // 271232.13 vs 271219.68.
     Model { step: "occ/acs10.stp", occ: "occ/occ-acs10.obj", bbox_tol: Some(1e-3), area_tol: Some(0.12) },
     // TDB: 9.626 (FixSelfIntersectWire): 79912 vs 79977 faces
     // (v 73702 vs 73544).
+    // 2026-10-12 (A13/A18/A19/A23): 81721 vs 79977 (v 74792 vs 73544), area
+    // 235866.32 vs 234884.51 (ratio 1.0042).
     Model { step: "occ/TDB.stp", occ: "occ/occ-TDB.obj", bbox_tol: Some(1e-3), area_tol: Some(0.02) },
     // a3n00: the tracked T-59/T-69 face classes (density 0.72); the wide area
     // tolerance encodes the missing coverage, not a meshing approximation.

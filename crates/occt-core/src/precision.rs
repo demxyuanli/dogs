@@ -18,6 +18,15 @@ pub const PAPPROXIMATION: f64 = APPROXIMATION * 0.01;
 /// (`Precision.hxx:124`), which is `ANGULAR`. A site whose OCCT counterpart calls
 /// `gp::Resolution()` must use `REAL_SMALL`, never this value.
 pub const RESOLUTION: f64 = 1e-12;
+/// `RealEpsilon()` (`Standard_Real.hxx:120-123`, `DBL_EPSILON`) — the value
+/// every `BRep_TVertex` / `BRep_TEdge` / `BRep_TFace` constructor stores as its
+/// initial tolerance (`BRep_TVertex.cxx:27`, `BRep_TEdge.cxx:33`,
+/// `BRep_TFace.cxx:29`). It is numerically identical to
+/// [`COMPUTATIONAL`] (`Precision::Computational()`), but the name marks the
+/// `Standard_Real` source: a freshly built sub-shape is never at tolerance 0,
+/// so `BRepAdaptor_Surface::Tolerance()` (`BRepAdaptor_Surface.cxx:92-95` ->
+/// `BRep_Tool::Tolerance(face)`) answers `RealEpsilon()` for an untouched face.
+pub const REAL_EPSILON: f64 = f64::EPSILON;
 /// `RealSmall()` (`Standard_Real.hxx:132-135`) = `DBL_MIN`.
 pub const REAL_SMALL: f64 = f64::MIN_POSITIVE;
 

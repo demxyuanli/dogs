@@ -30,13 +30,25 @@
 //! wire whose edges are **not chained** (board round 8: "edges all Forward,
 //! source/sink vertices"). Building such wires through this class reproduces
 //! OCCT: an edge **occurrence** is reversed when needed, leaving the shared
-//! `TShape` untouched so neighbouring faces are unaffected.
+//! `TShape` untouched so neighbouring faces are unaffected. Since the vertices
+//! of adjacent edges are unified by proximity here as well, the result is the
+//! connected wire that `BRepTools_WireExplorer` requires.
 //!
-//! **Boundary of the port**: OCCT's `TopoDS_Shape::EmptyCopied` +
-//! `BRep_Builder::Transfert` in the copy-edge branch are reproduced by rebuilding
-//! an edge from the same curve and parameter range (`TopoBuilder::make_edge`) and
-//! adding the resolved vertices with `TopoBuilder::add_edge_vertices` — exactly
-//! the `BRepLib_MakeEdge` convention (first vertex FORWARD, last REVERSED) that
+//! Call sites that model `BRepBuilderAPI_MakeWire` use this class directly
+//! (`builder_area::make_wire_from_edges`, `mesh_to_brep`); replacing
+//! `TopoBuilder::make_wire` wholesale is not yet possible, because the copy-edge
+//! branch mints a new edge `TShape` whenever the added edge does not already
+//! share its vertices with the wire — which is every edge produced by the port's
+//! construction helpers, whose endpoints are per-edge rather than shared as
+//! `BRepPrim_Builder::AddEdgeVertex` / `BRepPrim_GWedge` make them.
+//!
+//! **Boundary of the port**: OCCT's `TopoDS_Shape::EmptyCopied` lives in the
+//! copy-edge branch as `BRep_TEdge::EmptyCopy` (`BRep_TEdge.cxx:105-128`) — the
+//! tolerance, the degenerated/SameParameter/SameRange flags and all curve
+//! representations (pcurves included) are carried over, the children are not.
+//! `EdgeGeom` holds no children, so its clone is exactly that empty copy; the
+//! resolved vertices are re-added with `TopoBuilder::add_edge_vertices`, the
+//! `BRepLib_MakeEdge` convention (first vertex FORWARD, last REVERSED) that
 //! `B.Add(myEdge, myVertex)` reproduces for an edge whose children are in
 //! storage order.
 
@@ -358,13 +370,21 @@ impl MakeWire {
     /// matching wire vertex `VW` — updated to the weighted point with
     /// `maxtol = 0.5 * (tolW + tolE + l)` (`B.UpdateVertex`) — or `VE` itself is
     /// added to the copy with `VE`'s orientation (`B.Add` + `B.Transfert`).
+    /// A `VE` that found no match is also inserted into `myVertices`
+    /// (`myVertices.Add(VE)`, `cxx:363`), so it can anchor the next edge.
     ///
     /// Returns the copy and the connection vertex `myVertex` (`cxx:353-356`).
-    fn copy_edge_with_merged_vertices(&self, ee: &Edge) -> (Edge, Option<Vertex>) {
+    fn copy_edge_with_merged_vertices(&mut self, ee: &Edge) -> (Edge, Option<Vertex>) {
+        // `TopoDS_Shape Dummy = EE.EmptyCopied(); myEdge = TopoDS::Edge(Dummy);`
+        // (`cxx:304-307`). `BRep_TEdge::EmptyCopy` (`BRep_TEdge.cxx:105-128`) keeps
+        // the tolerance, the degenerated/SameParameter/SameRange flags and every
+        // curve representation — pcurves included — and drops only the children.
+        let geom = GeometryRegistry::global()
+            .edge_geom(&ee.0)
+            .expect("copy_edge: edge has no BRep_TEdge representation");
         let builder = TopoBuilder::new();
-        let curve = BRepTool::edge_curve(ee).expect("copy_edge: edge has no curve");
-        let (first, last) = BRepTool::edge_parameters(ee);
-        let mut copy = builder.make_edge(curve, first, last);
+        let mut copy = Edge::new();
+        GeometryRegistry::global().set_edge(&copy.0, geom);
 
         let mut resolved: Vec<Vertex> = Vec::new();
         let mut merged_vertex: Option<Vertex> = None;
@@ -409,9 +429,14 @@ impl MakeWire {
                     resolved.push(v);
                 }
                 // `myVertices.Add(VE); B.Add(myEdge, VE); B.Transfert(EE, myEdge, VE, VE);`
-                // (`cxx:361-366`) — the port's geometry side table already holds
-                // `VE`'s data, so the vertex is used as is.
-                None => resolved.push(ve),
+                // (`cxx:361-366`). The port's geometry side table already holds
+                // `VE`'s data, so the vertex itself is reused; it still has to enter
+                // `myVertices` — immediately, as OCCT does, so that the *next*
+                // child of this same edge can match it.
+                None => {
+                    self.push_vertex(ve.clone());
+                    resolved.push(ve);
+                }
             }
         }
 

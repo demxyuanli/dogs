@@ -101,22 +101,37 @@ impl BndBox {
 
     // ---- add point ----
 
-    /// Add a point to the box. Source: `Bnd_Box.cxx` (Add)
+    /// Add a point to the box. Source: `Bnd_Box::Add(const gp_Pnt&)`
+    /// (`Bnd_Box.cxx:610-615`) which delegates to `Bnd_Box::Update`
+    /// (`Bnd_Box.cxx:182-203`):
+    ///
+    /// ```text
+    ///   if (IsVoid()) { Xmin = X; Ymin = Y; Zmin = Z; Xmax = X; Ymax = Y; Zmax = Z;
+    ///                   Flags &= ~VoidMask; }
+    ///   else          { Xmin = std::min(Xmin, X); ... Xmax = std::max(Xmax, X); ... }
+    /// ```
+    ///
+    /// Two details matter and were previously wrong here. (1) The void branch
+    /// clears ONLY `VoidMask`; it must keep any open-direction flags that were
+    /// set before the first point arrived. That is exactly the sequence
+    /// `GeomBndLib_Line::Box` performs for an unbounded line -
+    /// `OpenMinMax(dir, aBox)` then `aBox.Add(ElCLib::Value(0., theLin))`
+    /// (`GeomBndLib_Line.hxx:69-80`) - so clearing them turned an open box into
+    /// a degenerate point box. (2) The non-void branch is a plain `min`/`max`
+    /// and never touches the flags either; an open axis stays open because
+    /// `IsOpenXmin()` and friends are what `Get`/`IsOut`/`IsThin` consult.
     pub fn add_point(&mut self, p: &GpPnt) {
         if self.is_whole() { return; }
         if self.is_void() {
             self.xmin = p.x(); self.xmax = p.x();
             self.ymin = p.y(); self.ymax = p.y();
             self.zmin = p.z(); self.zmax = p.z();
-            self.flags = 0;
+            self.flags &= !VOID_MASK;
             return;
         }
-        if self.is_open_xmin() || p.x() < self.xmin { self.xmin = p.x(); self.flags &= !XMIN_OPEN; }
-        if self.is_open_xmax() || p.x() > self.xmax { self.xmax = p.x(); self.flags &= !XMAX_OPEN; }
-        if self.is_open_ymin() || p.y() < self.ymin { self.ymin = p.y(); self.flags &= !YMIN_OPEN; }
-        if self.is_open_ymax() || p.y() > self.ymax { self.ymax = p.y(); self.flags &= !YMAX_OPEN; }
-        if self.is_open_zmin() || p.z() < self.zmin { self.zmin = p.z(); self.flags &= !ZMIN_OPEN; }
-        if self.is_open_zmax() || p.z() > self.zmax { self.zmax = p.z(); self.flags &= !ZMAX_OPEN; }
+        self.xmin = self.xmin.min(p.x()); self.xmax = self.xmax.max(p.x());
+        self.ymin = self.ymin.min(p.y()); self.ymax = self.ymax.max(p.y());
+        self.zmin = self.zmin.min(p.z()); self.zmax = self.zmax.max(p.z());
     }
 
     /// Add another box. Source: `Bnd_Box.cxx` (Add)

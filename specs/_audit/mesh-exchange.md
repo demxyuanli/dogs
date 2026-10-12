@@ -10,9 +10,19 @@
 - **最高危**：`step/format.rs:114` `classify_curve` —— OCCT 的 `StepToTopoDS_TranslateEdge` **没有任何曲线族判定**，族由 STEP 实体类型经 `StepToGeom::MakeCurve` 固定；本端口用 6 点二阶差分猜族，读+写两侧共用。
 - **次危（live 未登记）**：`meshing/model_healer.rs:279-290` `adjustSamePoints` 退化支路左右端接反。
 
-> **2026-10-06 补记（§9.588、§9.590–§9.604、§9.614–§9.623）**：本报告是 2026-09-20 基线，此后多条已落地忠实件，逐条处置见各发现末尾的"处置"行。要点：① 本报告"最高危"的 `step/format.rs:114` `classify_curve` **已整体删除**（T-39），写侧改按 `GeomToStep_MakeCurve.cxx:50-104` 的 `IsKind` 顺序、读侧按实体类型分派；② `meshing/range_splitter/param_set.rs` 的 `classify_surface`（发现 9）已改为 `GeomAdaptor_Surface::Load` 精确类判定（T-60）；③ `face_to_triangles` 的 UV 栅格（发现 3）与 `face_uv_bounds` 的 9 点采样（发现 8）**仍未修**（被 A13/A18/T-69 阻塞）；④ **新增** `meshing/model_builder/wire_builder.rs::add_wire` 的 OCCT 无桩"整链面积反转"已删除并新增 `pcurve_and_range`（发现 5c）；⑤ **2026-10-07 三轮**：发现 15 的 **STEP 写侧已修** —— 曲面 6×6 采样重拟换成面自身的真极点/结点/权重导出，属性顺序对齐 `GeomToStep_MakeBSplineSurfaceWithKnots.cxx:150-163`（见发现 15 的处置行）。
+> **2026-10-06 补记（§9.588、§9.590–§9.604、§9.614–§9.623）**：本报告是 2026-09-20 基线，此后多条已落地忠实件，逐条处置见各发现末尾的"处置"行。要点：① 本报告"最高危"的 `step/format.rs:114` `classify_curve` **已整体删除**（T-39），写侧改按 `GeomToStep_MakeCurve.cxx:50-104` 的 `IsKind` 顺序、读侧按实体类型分派；② `meshing/range_splitter/param_set.rs` 的 `classify_surface`（发现 9）已改为 `GeomAdaptor_Surface::Load` 精确类判定（T-60）；③ `face_to_triangles` 的 UV 栅格（发现 3）、`face_uv_bounds` 的 9 点采样（发现 8）与 `brepmesh` 的 legacy 四叉树（发现 10，含发现 4 的耳切/桥洞）**已全部删除**（A13/A23/A18/A19，2026-10-12；见各发现末尾的新处置行）；④ **新增** `meshing/model_builder/wire_builder.rs::add_wire` 的 OCCT 无桩"整链面积反转"已删除并新增 `pcurve_and_range`（发现 5c）；⑤ **2026-10-07 三轮**：发现 15 的 **STEP 写侧已修** —— 曲面 6×6 采样重拟换成面自身的真极点/结点/权重导出，属性顺序对齐 `GeomToStep_MakeBSplineSurfaceWithKnots.cxx:150-163`（见发现 15 的处置行）。
 
 > **2026-10-07 补记（发现 19）**：OBJ/STL/PLY 写出**漏移植 `RWMesh_FaceIterator::TriangleOriented`** 的 REVERSED 面翻转（`RWMesh_FaceIterator.hxx` 的 `(1,2,3)->(1,3,2)`），1778 面的 T0M 里 616 个 REVERSED 面**全部反绕**（同向内部边 9376 vs 基线 0、签名体积低 26.6%），背面剔除下即表现为「网格缺面」——已修（见发现 19），T0M 恢复到同向内部边 0、体积差 0.04%。余项 19b（相邻面共享边的 T 型接点）同轮定位到 STEP 读入侧：`ShapeFix_Shape` 的共享 `ShapeBuild_ReShape` 被端口开关 `OCCT_SHARED_HEAL` 关掉，邻面留下几何重合的第二条 `TopoDS_Edge` ⇒ 两侧独立离散 —— 已修（删开关，见发现 19b），T0M 开放边 3643→250（基线 4）。
+
+> **2026-10-12 补记（A13/A18/A19/A23 结项后复测）**：回退网格器整族删除（`brepmesh` legacy 四叉树、`wireframe` UV 栅格与耳切/桥洞、`face_discret` `interior_grid`、`WIREFRAME_FALLBACK_RATIO_MAX`），并把细化上限改回 OCCT 值 `A_ITERATIONS_NB = 11`、`uv_bounds` void 兜底改 `(0,0,0,0)`（`BRepTools.cxx:76-79`）后复测：`step_obj_gates` **4/4**、`occt-topo --lib` **1276/0**、`--tests` **1343/0（含 lib，13 套件）**、全目标 `cargo test` **1345/0（14 目标，含 doctest 2）**、`export_data_obj` 16/16、`-- data/occ` 8/8、逐面 UV 栅格回退计数 **0**。三个大模型的三角数相对本报告 §9.626 读数**上移**（面积比仍 1.0000~1.0042，容差未改）：
+
+| 模型 | 三角数 ours/occ（旧 → 新） | 顶点 ours/occ | 面积 ours/occ（比） |
+|---|---|---|---|
+| T0M | 67526 → **73150** / 67366 | 63522 / 60548 | 192668.27 / 192658.64（1.0001） |
+| acs10 | 46544 → **47196** / 46558 | 37606 / 37296 | 271232.13 / 271219.68（1.0000） |
+| TDB | 79912 → **81721** / 79977 | 74792 / 73544 | 235866.32 / 234884.51（1.0042） |
+
+**归因实测（A/B 对跑，非推断）**：把 `A_ITERATIONS_NB` 临时改回旧值 `4` 重跑 `step_obj_gates`，acs10/TDB 与 `11` 时逐字节相同、T0M 仅 73162 vs 73150（+0.02%）⇒ **细化上限不是增量来源**；增量来自原先走 UV 栅格兜底、现在按 OCCT 走 Delaunay 的那批面（它们本来就该被网格化）。**新余项（未修，本轮到此为止）**：同等偏转下端口的 Delaunay 插点仍比 OCCT 密 4~9%，即 `BRepMesh_DelaunayDeflectionControlMeshAlgo` 的 `checkAndAdd` → `addInternalNodes`/`BRepMesh_Delaun::AddVertices` 的最小边长与 `isFirstChange` 判据，以及 `BRepMesh_NodeInsertionMeshAlgo` 的参数化密度分支尚缺；`tests/common/mod.rs` 的 T0M/acs10/TDB 注释已同步本轮实测值。
 
 ## 发现
 
@@ -31,12 +41,18 @@
 
 **处置（⏳ 仍未修；行号已漂移）**：2026-10-06 复核，`wireframe.rs` 的 UV 栅格分支仍在，物理行号为 `:423`（`face_uv_bounds(f, surface.as_ref())`）/`:431-432`（`nu`/`nv` 的 `clamp(3, 64)`），不是本报告写的 `:407-408`。§9.598/§9.604 的 motoc 环带修复**未触及**此分支（那是 `wire_builder.rs` 的 pcurve 参数域问题，见发现 5c），本项仍被 A13/A18/T-69 阻塞。
 
+**处置（✅ 已修：A13，2026-10-12）**：该 UV 栅格分支（`nu`/`nv` 的 `clamp(3, 64)` 取整栅格）**已随 `wireframe::face_to_triangles` 的改写整体删除**——`face_to_triangles` 现只调 `IncrementalMesh::discretize_face`（`BRepMesh_FaceDiscret` → `BRepMesh_Delaun`），失败面保持空网格 / `IMeshData_Failure`（`BRepMesh_BaseMeshAlgo.cxx:40-62`），不再有第二个三角化器。本项与 A13/A18/A19 同批结项。
+
 **4｜`wireframe.rs:257-380` 平面面片用「质心角度排序 + 耳切 + 最近点对桥洞」｜自创**
-`:297-304` `let order = |l: &mut Vec<GpPnt>| { l.sort_by(|p,q| { /* atan2 around centroid */ }); };`；另 `:317` `ear_clip`、`:352` `bridge_holes`。live **是**（平面面片主路径）。OCCT **未找到**：「按质心角度排序」只在凸边界等价，凹边界会跨面自交；OCCT 用**约束 Delaunay**（`BRepMesh_DelaunayBaseMeshAlgo.cxx` + `BRepMesh_Delaun.cxx`）。影响**是**（`step_obj_area`、HoledPlate/OffsetPlaneHoleEdge）。建议：把边界链作为约束边交给 `meshing::delaun::Delaun`。同类（已登记，非 live）：`face_discret.rs:573-609` `interior_grid`（`nu=(du/def).ceil()+1` + `4096` 预算 + `:588` `scale=(budget/(nu*nv)).sqrt()`）、`triangulator.rs:65` `MAX_REFINE_PASSES = 4`（OCCT `BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:85` `aIterationsNb = 11`）、`fast_discret.rs:107` `weld_tol = deflection*0.01`（OCCT 8.0 `BRepMesh_FastDiscret.hxx:19-27` 只剩 deprecated typedef）。
+`:297-304` `let order = |l: &mut Vec<GpPnt>| { l.sort_by(|p,q| { /* atan2 around centroid */ }); };`；另 `:317` `ear_clip`、`:352` `bridge_holes`。live **是**（平面面片主路径）。OCCT **未找到**：「按质心角度排序」只在凸边界等价，凹边界会跨面自交；OCCT 用**约束 Delaunay**（`BRepMesh_DelaunayBaseMeshAlgo.cxx` + `BRepMesh_Delaun.cxx`）。影响**是**（`step_obj_area`、HoledPlate/OffsetPlaneHoleEdge）。建议：把边界链作为约束边交给 `meshing::delaun::Delaun`。同类（✅ 已清：A19 余项，2026-10-12）：`face_discret.rs` `interior_grid`（`nu=(du/def).ceil()+1` + `4096` 预算 + `scale=(budget/(nu*nv)).sqrt()`）整体删除、`triangulator.rs` `MAX_REFINE_PASSES = 4 → A_ITERATIONS_NB = 11`（OCCT `BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:85` `aIterationsNb = 11`）、`brep_tools::uv_bounds` void 兜底改 `0,0,0,0`（`BRepTools.cxx:76-79`）；`fast_discret.rs` `weld_tol = deflection*0.01` 尚存（OCCT 8.0 `BRepMesh_FastDiscret.hxx:19-27` 只剩 deprecated typedef，该模块无 OCCT 类对应）。
+
+**处置（✅ 已删除：A18，2026-10-12）**：质心角度排序 + `ear_clip` + `bridge_holes`（`wireframe::planar_polygon_triangulate`）**整体删除**（含 `orient3`/`is_convex`/`point_in_triangle_2d`，−288 行），平面面片现与曲面同走约束 Delaunay（`IncrementalMesh` → `BRepMesh_FaceDiscret` + `BRepMesh_Delaun`）；其唯一调用方 `brepmesh::planar_face_mesh` 随 `brepmesh.rs` 一并删除（发现 10）。同类 ✅ 已清（A19 余项，2026-10-12）：`face_discret.rs` 的 `interior_grid`（`FaceDiscret::discretize_face` 现只回边界）、`triangulator.rs` 的 `MAX_REFINE_PASSES → A_ITERATIONS_NB = 11`、`brep_tools::uv_bounds` void 兜底 `(0,1,0,1) → (0,0,0,0)`。
 
 **5｜`incremental_mesh/discret_root.rs:369,460-467` `WIREFRAME_FALLBACK_RATIO_MAX = 0.10` 整形状换算法｜自创**
 `:369` `const WIREFRAME_FALLBACK_RATIO_MAX: f64 = 0.10;` → `:462-466` 超限 `return Err`，`perform:210` 整体转 UV 栅格（发现 3）。live **是**。OCCT **未找到**：`BRepMesh_IncrementalMesh::Perform` 无失败率阈值；单面失败只置 `IMeshData_Failure`，其余面照常（`BRepMesh_BaseMeshAlgo.cxx:52-59`）。影响**是**。建议：删阈值，逐面标记失败。
 **处置**：阈值已删（T-55，2026-09-20）。**逐面 UV 栅格回退（`wireframe_face_triangulation`，`incremental_mesh/discret_root.rs:539`）仍在**：T-69 第 1 轮（第 41 轮）实测 T0M 有 166 面走它；其中"单闭合边 loop 的管面"在 OCCT 参考 `data/occ-ref/T0M.obj` 里也没有网格（参考逐面写顶点不去重：20958/51160 条重复 `v`；失败管顶圆按半径 9.75±0.01 数只出现一次且只被一个圆盘盖面使用），但同日删该回退的实测被 `step_obj_parity` **13/14** 挡下（T0M `min[2]` 短 0.33，参考另覆盖 `(−0,−11.823,−424.742)`）⇒ 还有一类失败面 OCCT 会网格化；先补该类控制流，再删回退。
+
+**处置续（✅ 已修：A13，2026-10-12）**：上面那类"失败面 OCCT 会网格化"的控制流已由 shhealing 移植（T-68/T-69：`fix_lacking_all` 重复闭合边、`wire_fix/*`、`ShapeFix_Face`、`shape_natural_bound`、`mesh_to_brep` 退化三角守卫）补齐，**逐面 UV 栅格回退 `wireframe_face_triangulation` 已整体删除**；本轮 `export_data_obj`（`MBDIAG=1`）15/15 + `-- data/occ` 8/8、回退计数 **0**，`step_obj_parity` 14/14 未被挡下。（本行 9.626 的旧读数已过时；A13/A18/A19/A23 整批结项后的复测三角数见文首 **2026-10-12 补记**。）
 
 **5b｜`delaun/polygon_meshing.rs:346-375` `decomposeSimplePolygon` 自造「先删三角形再 AddElement」｜自创（未登记）**
 `:348` `if self.mesh_data.elements_connected_to(id).extent() < 2 { continue; }`；`:362-365` `if element.link_at(k).abs() == id && (element.link_at(k) > 0) == is_forward { ... self.delete_triangle(elem_id, &mut loop_edges);`。live **是**（`Delaun` 内部，所有面）。OCCT `BRepMesh_Delaun.cxx:2259-2274` 直接 `AddLink(...)`+`addTriangle(...)`，**无任何删除**；OCCT 在此退化为第三条连接时 `BRepMesh_PairOfIndex.hxx:41` 抛 `Standard_OutOfRange`，被 `BRepMesh_BaseMeshAlgo.cxx:62` 空 catch 吞掉 ⇒ OCCT 该面**没有三角形**。影响**是**，OCCT 不生成三角网的面本端口删邻三角形后继续建网（为避免 `delaun_types.rs:470` 的 append panic 打的补丁）。建议：让该面失败置 `IMeshData_Failure`（不要改网格）。
@@ -65,6 +81,8 @@
 
 **处置（⏳ 仍未修；行号已漂移）**：2026-10-06 复核，`face_uv_bounds` 现在物理行 `wireframe.rs:486`（本报告写的 `462-599` 区间已不适用），其 9 点 pcurve 采样实现仍在；忠实件 `brep_uv_bounds::uv_box_of_face`（`BRepTools::AddUVBounds`）已在仓内，但按 A23/T-59 两次尝试均回退（`step_obj_parity` 14/14→13/14，T0M bbox min[2] Δ=0.237），仍被 A13/A18/T-69 阻塞。
 
+**处置（✅ 已修：A23，2026-10-12）**：144 行 9 点采样（含 `period_shift` 全周期回绕、`invert_uv` Newton 反演、`[0,1]²`/自然界兜底）整体删除，`wireframe::face_uv_bounds` 改为委托 `brep_tools::uv_bounds`（= `BRepTools::UVBounds(F)`，`BRepTools.cxx:64-80` → `brep_uv_bounds::add_uv_bounds_face` = `AddUVBounds`，`BRepTools.cxx:126-157`），形参 `surface` 删除、6 处调用点同步。A13 阻塞解除后 T-59 的回退**未复现**（`step_obj_parity` 14/14，T0M min[2] −425.5879 vs occ −425.5875，容差未改）。
+
 **9｜`meshing/range_splitter/param_set.rs:86-133` 面类型由「周期标志 + 半径采样」猜｜自创**
 `:112` `(true, false) if v_fin => SurfaceType::Sphere,`；`:132` `(r0 - r1).abs() <= 1e-7 * r0.abs().max(r1.abs()).max(1e-7)`。live **是**（`node_insertion.rs:889`、`range_splitter/nodes.rs:178,203`、`model_builder/preprocessor.rs:170`、`edge_discret.rs:912`）。OCCT `BRepMesh_FaceDiscret.cxx:112` `myAlgoFactory->GetAlgo(aDFace->GetSurface()->GetType(), myParameters)`；`BRepMesh_MeshAlgoFactory.cxx:64` `switch (theSurfaceType)`（11 个 case）；`GeomAdaptor_Surface.cxx:422-529` 亦为 `DynamicType()` 精确比较。影响**是（静默）**，选错 splitter 即换掉整张内部节点网格（Sphere 的 0.7 交错格 vs Cylinder 的 du 列），并决定 `factory_uses_deflection_control`；**任何 V 有限的柱/锥会被判成 Sphere**。建议：`classify_surface` 直接映射真实类型标签，删采样臂。
 
@@ -74,6 +92,8 @@
 `:38` `const MAX_FACE_DEPTH: usize = 9;` ／ `:174-175` `Some(du.max((u1 - u0) / 96.0))` ／ `:259` `(cv1 - cv0) <= (v1 - v0) / 4.0`。live **是（二级兜底）**（`brep_exchange.rs:96`、`brep_tools.rs:74`）。OCCT **未找到**：`BRepMesh_TorusRangeSplitter.cxx:34-69`、`BRepMesh_SphereRangeSplitter.cxx:25-36`、`GCPnts_TangentialDeflection::ArcAngularStep`；子分深度是 Delaunay 自适应，无 `9`、无 `/96`、无 `/4`。影响**是**。建议：标「未移植（legacy 四叉树）」并删两个 `.or_else` 兜底。
 
 **处置（⏳ 仍未修）**：2026-10-06 复核，`brepmesh.rs:38` `MAX_FACE_DEPTH = 9`、`:174-175/185-186/194` 的 `/ 96.0`、`:259` 的 `/ 4.0`、`:277` 的 `depth < MAX_FACE_DEPTH` 均仍在。T-55 只删掉了 `incremental_mesh/discret_root.rs` 的失败率阈值（发现 5），未删该 legacy 四叉树及其调用点。
+
+**处置（✅ 已删除：A18/A19，2026-10-12）**：`crates/occt-topo/src/brepmesh.rs` **整文件删除**（−602 行），`pub mod brepmesh` 摘除；两个 `.or_else` 兜底同步移除——`brep_tools.rs:74` 的三级链改为单一 `incremental_mesh_to_shape_mesh`（失败即空三角化），`brep_exchange.rs:96` 的两级回退早先已随 A17/T-53 删除。两个测试调用点（`step_obj_gates::cylinder_step_mesh_covers_full_u_period`、`phase5_integration::real_brepmesh_and_iges`）改用 `shape_mesh::mesh_shape`（忠实 `BRepMesh` 管线）。`wireframe.rs` 的平面机器（`orient3`/`is_convex`/`point_in_triangle_2d`/`ear_clip`/`bridge_holes`/`planar_polygon_triangulate`，发现 4）随之一并删除；`brep_surface::surface_closest_params` 由此失去最后一个调用方（已就地标注 `allow(dead_code)` + 待接线说明）。
 
 **11｜`step/read_geometry.rs:348-370` `ProjectAct` 缺 Ellipse/Parabola/Hyperbola 精确臂｜未登记**
 `:349-366` `if curve.is_line() { ... } else if let Some(c) = curve.gp_circ() { ... } else { project_on_segments(..., 25, ...) }`。live **是**。OCCT `ShapeAnalysis_Curve.cxx:382` `case GeomAbs_Parabola:` / `:383` `theProjParam = ElCLib::Parameter(theCurve.Parabola(), thePoint);` / `:394` `case GeomAbs_Ellipse:`。影响**是**。建议：补 `ElCLib` 精确臂（`ShapeAnalysis_Curve.cxx:376-400`）。

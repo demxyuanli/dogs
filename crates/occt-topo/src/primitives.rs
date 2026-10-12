@@ -87,7 +87,14 @@ fn box_corners(dx: f64, dy: f64, dz: f64) -> [GpPnt; 8] {
 /// Build a real-geometry box solid. Faces are planar, edges are lines, the
 /// 8 corners are shared by all incident edges (OCCT's shared-TShape model).
 fn build_box(b: &TopoBuilder, corners: &[GpPnt; 8]) -> Solid {
-    let verts: [Vertex; 8] = core::array::from_fn(|i| b.make_vertex(corners[i], 0.0));
+    // `BRepPrim_Builder::MakeVertex` (`BRepPrim_Builder.cxx:129-132`) is
+    // `BRep_Builder::MakeVertex(V, P, Precision::Confusion())`, so a primitive
+    // vertex carries the 1e-7 tolerance. It is load-bearing:
+    // `BRepTools_WireExplorer::Init` (`BRepTools_WireExplorer.cxx:139-165`)
+    // returns an empty walk when every vertex *and* edge tolerance of the wire
+    // is below `Precision::Confusion()`.
+    let verts: [Vertex; 8] =
+        core::array::from_fn(|i| b.make_vertex(corners[i], occt_core::precision::CONFUSION));
 
     // 12 edges, each carrying a line curve and the two shared corner vertices.
     let mut edges: Vec<Edge> = Vec::with_capacity(12);
@@ -452,8 +459,8 @@ impl BRepPrimSphere {
         let r = radius;
         let north = GpPnt::new(0.0, 0.0, r);
         let south = GpPnt::new(0.0, 0.0, -r);
-        let v_north = b.make_vertex(north, 0.0);
-        let v_south = b.make_vertex(south, 0.0);
+        let v_north = b.make_vertex(north, occt_core::precision::CONFUSION);
+        let v_south = b.make_vertex(south, occt_core::precision::CONFUSION);
 
         let mer_ax = GpAx3::new(GpPnt::zero(), dir(0.0, -1.0, 0.0), &dir(1.0, 0.0, 0.0))
             .expect("meridian axis");
@@ -550,8 +557,8 @@ impl BRepPrimCone {
 
         let apex = GpPnt::new(0.0, 0.0, height);
         let base_p = GpPnt::new(radius, 0.0, 0.0);
-        let v_apex = b.make_vertex(apex, 0.0);
-        let v_base = b.make_vertex(base_p, 0.0);
+        let v_apex = b.make_vertex(apex, occt_core::precision::CONFUSION);
+        let v_base = b.make_vertex(base_p, occt_core::precision::CONFUSION);
 
         // Base circle at z = 0.
         let mut base_circle = b.make_edge(circle_curve(&ax, radius), 0.0, 2.0 * PI);
@@ -636,7 +643,7 @@ impl BRepPrimTorus {
         .expect("torus meridian axis");
         let eq_ax = GpAx3::new(GpPnt::zero(), dir(0.0, 0.0, 1.0), &dir(1.0, 0.0, 0.0))
             .expect("torus axis");
-        let v_seam = b.make_vertex(GpPnt::new(major + minor, 0.0, 0.0), 0.0);
+        let v_seam = b.make_vertex(GpPnt::new(major + minor, 0.0, 0.0), occt_core::precision::CONFUSION);
 
         let mut seam = b.make_edge(circle_curve(&mer_ax, minor), 0.0, 2.0 * PI);
         b.add_edge_vertices(&mut seam, &v_seam, &v_seam);

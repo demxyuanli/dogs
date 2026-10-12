@@ -350,8 +350,16 @@ pub fn build_c3d_on_iso_line(
 
     // Rebuild parameterization for the 3d curve to have the same
     // parameterization with a two-dimensional curve (`cxx:3184-3188`).
+    //
+    // OCCT applies this to `theC2D`, i.e. the adaptor returned by
+    // `geom_adaptor_curve_ptr->Trim(FirstParameter, LastParameter, PConfusion())`
+    // (`cxx:1097-1098`). `Geom2dAdaptor_Curve::Trim` only rewrites the kept
+    // range (`Geom2dAdaptor_Curve.cxx:577-583`), so `theC2D->FirstParameter()`
+    // and `theC2D->LastParameter()` are exactly `theFirst` / `theLast`. The
+    // pcurve handed to this function is *not* trimmed, so its own range may be
+    // infinite (a 2D line) and must not leak into the reparameterization.
     let (mut knots, _mults) = curve3d.distinct_knots_and_mults();
-    knots_reparametrize(c2d.first_parameter(), c2d.last_parameter(), &mut knots);
+    knots_reparametrize(the_first, the_last, &mut knots);
     curve3d.set_knots(&knots).ok()?;
 
     // Evaluate error (`cxx:3190-3213`).

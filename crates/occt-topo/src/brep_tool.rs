@@ -42,9 +42,24 @@ impl BRepTool {
         GeometryRegistry::global().vertex_point(&v.0)
     }
 
-    /// Vertex tolerance.
+    /// Version of Tolerance with a minimal value -- a port of
+    /// `BRep_Tool::Tolerance(Vertex)` (`BRep_Tool.cxx:1314-1332`):
+    ///
+    /// ```text
+    /// double p = aTVert->Tolerance();      // BRep_TVertex::Tolerance()
+    /// constexpr double pMin = Precision::Confusion();
+    /// if (p > pMin) return p; else return pMin;
+    /// ```
+    ///
+    /// The clamp is load bearing: a `BRep_TVertex` starts at `RealEpsilon()`
+    /// (`BRep_TVertex.cxx:27`), so the raw value is below `Confusion` and the
+    /// clamp is what makes `BRep_Tool::Tolerance` answer `Confusion` for an
+    /// untouched vertex. `BRepTools_WireExplorer::Init`
+    /// (`BRepTools_WireExplorer.cxx:148-164`) treats a wire whose vertex *and*
+    /// edge tolerances are all below `Confusion` as empty, which can only
+    /// happen through the raw `BRep_TVertex` accessor, never through this one.
     pub fn vertex_tolerance(v: &Vertex) -> f64 {
-        GeometryRegistry::global().vertex_tolerance(&v.0)
+        clamp_to_confusion(GeometryRegistry::global().vertex_tolerance(&v.0))
     }
 
     /// The curve underlying an edge (`Handle(Geom_Curve)`), if registered.
@@ -58,9 +73,11 @@ impl BRepTool {
         GeometryRegistry::global().edge_parameters(&e.0)
     }
 
-    /// Edge tolerance.
+    /// Edge tolerance -- `BRep_Tool::Tolerance(Edge)` (`BRep_Tool.cxx:881-894`),
+    /// which returns `BRep_TEdge::Tolerance()` raised to `Precision::Confusion()`
+    /// when the stored value is below it.
     pub fn edge_tolerance(e: &Edge) -> f64 {
-        GeometryRegistry::global().edge_tolerance(&e.0)
+        clamp_to_confusion(GeometryRegistry::global().edge_tolerance(&e.0))
     }
 
     /// The surface underlying a face (`Handle(Geom_Surface)`), if registered.
@@ -68,9 +85,10 @@ impl BRepTool {
         GeometryRegistry::global().face_surface(&f.0)
     }
 
-    /// Face tolerance.
+    /// Face tolerance -- `BRep_Tool::Tolerance(Face)` (`BRep_Tool.cxx:137-150`),
+    /// `BRep_TFace::Tolerance()` raised to `Precision::Confusion()`.
     pub fn face_tolerance(f: &Face) -> f64 {
-        GeometryRegistry::global().face_tolerance(&f.0)
+        clamp_to_confusion(GeometryRegistry::global().face_tolerance(&f.0))
     }
 
     /// Endpoint points of the edge: the curve evaluated at the first and last
@@ -169,6 +187,27 @@ impl BRepTool {
     /// Human-readable type name.
     pub fn shape_type_str(t: ShapeType) -> &'static str {
         t.to_str()
+    }
+}
+
+/// The four lines every `BRep_Tool::Tolerance` overload runs on the value it
+/// reads off the `TShape` (`BRep_Tool.cxx:140-149`, `:884-893`, `:1323-1332`):
+///
+/// ```text
+/// constexpr double pMin = Precision::Confusion();
+/// if (p > pMin) return p; else return pMin;
+/// ```
+///
+/// Note this is `BRep_Tool` behaviour only: the underlying accessors
+/// (`BRep_TVertex::Tolerance`, `BRep_TEdge::Tolerance`, `BRep_TFace::Tolerance`)
+/// keep answering the stored `RealEpsilon()`, which is what the persistence
+/// layer (`BinTools_ShapeSet`, `XmlMDF`) writes out.
+fn clamp_to_confusion(p: f64) -> f64 {
+    let p_min = occt_core::precision::CONFUSION;
+    if p > p_min {
+        p
+    } else {
+        p_min
     }
 }
 
@@ -287,7 +326,7 @@ mod tests {
     fn unregistered_shapes_fall_back() {
         let v = Vertex::new();
         assert!(BRepTool::vertex_point(&v).is_equal(&GpPnt::zero()));
-        assert_eq!(BRepTool::vertex_tolerance(&v), 0.0);
+        assert_eq!(BRepTool::vertex_tolerance(&v), occt_core::precision::CONFUSION);
         assert!(BRepTool::edge_curve(&edge()).is_none());
         assert!(BRepTool::edge_vertices(&edge()).is_none());
         assert!(BRepTool::face_surface(&Face::new()).is_none());

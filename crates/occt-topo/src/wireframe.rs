@@ -11,18 +11,14 @@
 //! `BRepMesh_CurveTessellator` uses `GCPnts_TangentialDeflection`.
 //! `GCPnts_UniformDeflection` is **UNPORTED** (see `occt-core/src/gcpnts.rs`).
 
-use occt_core::gp::{GpPnt, GpPnt2d, GpXyz};
+use occt_core::gp::GpPnt;
 use occt_core::gcpnts::{CurveSample, UniformPoints};
 use occt_core::poly::triangulation::Triangle;
-use occt_geom::{Curve, Surface};
+use occt_geom::Curve;
 
-use crate::abs::ShapeType;
-use crate::brep_surface::{face_is_planar, face_plane};
-use crate::iterator::cumulated_children;
 use crate::meshing::edge_discret::{tessellator_min_points, CurveTessellator};
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
 fn reg() -> &'static GeometryRegistry {
     GeometryRegistry::global()
@@ -101,374 +97,19 @@ pub fn edge_chord_error(e: &Edge, polyline: &[GpPnt]) -> f64 {
     max_dev
 }
 
-/// Wind a triangle so its normal agrees with `n`.
-pub(crate) fn orient3(pts: &[GpPnt], i0: usize, i1: usize, i2: usize, n: &GpXyz) -> Triangle {
-    let pa = pts[i0].coord;
-    let pb = pts[i1].coord;
-    let pc = pts[i2].coord;
-    let nn = pb.subtracted(&pa).crossed(&pc.subtracted(&pa));
-    if n.dot(&nn) < 0.0 {
-        Triangle::new(i0, i2, i1)
-    } else {
-        Triangle::new(i0, i1, i2)
-    }
-}
-
-/// Whether a (planar, non-self-intersecting) polygon is convex when seen along
-/// `n` (all consecutive-triple signed areas share a sign).
-pub(crate) fn is_convex(pts: &[GpPnt], n: &GpXyz) -> bool {
-    let mut sign: Option<f64> = None;
-    let m = pts.len();
-    for i in 0..m {
-        let a = pts[i].coord;
-        let b = pts[(i + 1) % m].coord;
-        let c = pts[(i + 2) % m].coord;
-        let d = b.subtracted(&a).crossed(&c.subtracted(&a)).dot(n);
-        if d.abs() > 1e-12 {
-            match sign {
-                None => sign = Some(d.signum()),
-                Some(s) if s != d.signum() => return false,
-                _ => {}
-            }
-        }
-    }
-    true
-}
-
-/// Whether `p` is STRICTLY inside the 2D triangle `(a, b, c)` (boundary and
-/// collinear points excluded — ear clipping must not let an edge point block an
-/// ear).
-fn point_in_triangle_2d(a: &GpPnt2d, b: &GpPnt2d, c: &GpPnt2d, p: &GpPnt2d) -> bool {
-    let s = |u: &GpPnt2d, v: &GpPnt2d, w: &GpPnt2d| {
-        (v.x() - u.x()) * (w.y() - u.y()) - (v.y() - u.y()) * (w.x() - u.x())
-    };
-    let d1 = s(p, a, b);
-    let d2 = s(p, b, c);
-    let d3 = s(p, c, a);
-    if d1 == 0.0 || d2 == 0.0 || d3 == 0.0 {
-        return false;
-    }
-    (d1 > 0.0 && d2 > 0.0 && d3 > 0.0) || (d1 < 0.0 && d2 < 0.0 && d3 < 0.0)
-}
-
-/// Ear-clipping triangulation of a simple (possibly non-convex) 2D polygon.
-/// Returns `(i0, i1, i2)` vertex-index triples. `None` when degenerate.
-fn ear_clip(poly: &[GpPnt2d]) -> Option<Vec<(usize, usize, usize)>> {
-    if poly.len() < 3 {
-        return None;
-    }
-    // Overall orientation sign (cross-product of the first convex vertex).
-    let area = {
-        let mut a = 0.0;
-        for i in 0..poly.len() {
-            let p = poly[i];
-            let q = poly[(i + 1) % poly.len()];
-            a += p.x() * q.y() - q.x() * p.y();
-        }
-        a
-    };
-    if area.abs() < 1e-12 {
-        return None;
-    }
-    let sign = area.signum();
-    let mut idx: Vec<usize> = (0..poly.len()).collect();
-    let mut tris: Vec<(usize, usize, usize)> = Vec::new();
-    let mut guard = 0;
-    while idx.len() > 3 && guard < poly.len() * poly.len() {
-        guard += 1;
-        let m = idx.len();
-        let mut clipped = false;
-        for k in 0..m {
-            let (a, b, c) = (idx[k], idx[(k + 1) % m], idx[(k + 2) % m]);
-            let cross = (poly[b].x() - poly[a].x()) * (poly[c].y() - poly[b].y())
-                - (poly[b].y() - poly[a].y()) * (poly[c].x() - poly[b].x());
-            if cross * sign <= 0.0 {
-                continue; // reflex or degenerate vertex
-            }
-            let mut has_inside = false;
-            for &i in &idx {
-                if i != a && i != b && i != c
-                    && point_in_triangle_2d(&poly[a], &poly[b], &poly[c], &poly[i])
-                {
-                    has_inside = true;
-                    break;
-                }
-            }
-            if has_inside {
-                continue;
-            }
-            tris.push((a, b, c));
-            idx.remove((k + 1) % m);
-            clipped = true;
-            break;
-        }
-        if !clipped {
-            return None;
-        }
-    }
-    if idx.len() == 3 {
-        tris.push((idx[0], idx[1], idx[2]));
-        Some(tris)
-    } else {
-        None
-    }
-}
-
-/// Bridge every hole to the outer boundary by its closest vertex pair, yielding
-/// a single simple polygon (the face's material) suitable for ear clipping.
-fn bridge_holes(outer: &[GpPnt2d], holes: &[&[GpPnt2d]]) -> Vec<GpPnt2d> {
-    let signed_area = |pts: &[GpPnt2d]| -> f64 {
-        let mut a = 0.0;
-        for i in 0..pts.len() {
-            let p = pts[i];
-            let q = pts[(i + 1) % pts.len()];
-            a += p.x() * q.y() - q.x() * p.y();
-        }
-        a
-    };
-    let outer_sign = signed_area(outer).signum();
-    let mut poly = outer.to_vec();
-    for hole in holes {
-        // Traverse the hole OPPOSITE to the outer so the bridged polygon is a
-        // simple ring cut open along the bridge (not a self-crossing loop).
-        let reverse = signed_area(hole).signum() == outer_sign;
-        let (mut oi, mut hi) = (0usize, 0usize);
-        let mut best = f64::INFINITY;
-        for (i, op) in poly.iter().enumerate() {
-            for (j, hp) in hole.iter().enumerate() {
-                let d = op.distance(hp);
-                if d < best {
-                    best = d;
-                    oi = i;
-                    hi = j;
-                }
-            }
-        }
-        let hlen = hole.len();
-        let mut new_poly = Vec::with_capacity(poly.len() + hlen + 2);
-        new_poly.extend_from_slice(&poly[..=oi]);
-        for k in 0..=hlen {
-            let idx = if reverse { (hi + hlen - k) % hlen } else { (hi + k) % hlen };
-            new_poly.push(hole[idx]);
-        }
-        new_poly.extend_from_slice(&poly[oi..]);
-        poly = new_poly;
-    }
-    poly
-}
-
-/// Triangulate a convex planar face from its boundary polygon.
+/// Tessellate a face into a triangle soup (vertices + triangles).
 ///
-/// Boundary points are collected from each wire edge with the given deflection,
-/// deduplicated, and ordered radially around the face centroid (recovering the
-/// boundary order of a convex polygon), then fan-triangulated with outward
-/// winding along the plane axis. A face with holes (outer + hole wires, e.g. a
-/// box top ring cut by a boss cylinder's base) is triangulated by ear-clipping
-/// the hole-bridged polygon. Returns `None` when the boundary is degenerate or
-/// non-convex — the caller then falls back to a UV grid.
-pub(crate) fn planar_polygon_triangulate(
-    face: &Face,
-    bound_def: f64,
-) -> Option<(Vec<GpPnt>, Vec<Triangle>)> {
-    // Per-wire boundary point loops.
-    let mut loops: Vec<Vec<GpPnt>> = Vec::new();
-    for wire in wires_of_face(face) {
-        let mut loop_pts: Vec<GpPnt> = Vec::new();
-        for e in edges_of_wire(&wire) {
-            for p in edge_to_polyline(&e, bound_def) {
-                if !loop_pts.iter().any(|q| q.distance(&p) < 1e-9) {
-                    loop_pts.push(p);
-                }
-            }
-        }
-        if loop_pts.len() >= 3 {
-            loops.push(loop_pts);
-        }
-    }
-    if loops.is_empty() {
-        return None;
-    }
-
-    let pln = face_plane(face).unwrap_or_else(occt_core::gp::GpPln::default);
-    let n = *pln.axis().direction().xyz();
-    let xdir = *pln.x_axis().direction().xyz();
-    let ydir = xdir.crossed(&n);
-
-    // Order each loop radially around the face centroid (convex recovery).
-    let mut all_pts: Vec<GpPnt> = Vec::new();
-    for l in &loops {
-        all_pts.extend(l.iter().cloned());
-    }
-    let centroid = all_pts
-        .iter()
-        .fold(GpPnt::new(0.0, 0.0, 0.0), |acc, p| {
-            GpPnt::new(acc.x() + p.x(), acc.y() + p.y(), acc.z() + p.z())
-        });
-    let inv = 1.0 / all_pts.len() as f64;
-    let c = GpPnt::new(centroid.x() * inv, centroid.y() * inv, centroid.z() * inv);
-    let order = |l: &mut Vec<GpPnt>| {
-        l.sort_by(|p, q| {
-            let ap = p.coord.subtracted(&c.coord);
-            let aq = q.coord.subtracted(&c.coord);
-            let ang_p = ap.dot(&ydir).atan2(ap.dot(&xdir));
-            let ang_q = aq.dot(&ydir).atan2(aq.dot(&xdir));
-            ang_p.partial_cmp(&ang_q).unwrap_or(std::cmp::Ordering::Equal)
-        });
-    };
-    let mut pts = loops[0].clone();
-    order(&mut pts);
-    let to2d = |p: &GpPnt| -> GpPnt2d {
-        let v = p.coord.subtracted(&pln.location().coord);
-        GpPnt2d::new(v.dot(&xdir), v.dot(&ydir))
-    };
-
-    if loops.len() == 1 {
-        // Single boundary: convex fan, else ear-clip.
-        if !is_convex(&pts, &n) {
-            let poly2d: Vec<GpPnt2d> = pts.iter().map(to2d).collect();
-            let tris2 = ear_clip(&poly2d)?;
-            let tris: Vec<Triangle> = tris2
-                .iter()
-                .map(|&(a, b, c2)| orient3(&pts, a, b, c2, &n))
-                .collect();
-            let pts3 = pts;
-            return Some((pts3, tris));
-        }
-    } else {
-        // Outer + holes: identify the outer (largest area), bridge holes, ear-clip.
-        let mut area_of: Vec<f64> = Vec::new();
-        for l in &loops {
-            let poly2d: Vec<GpPnt2d> = l.iter().map(to2d).collect();
-            let mut a = 0.0;
-            for i in 0..poly2d.len() {
-                let p = poly2d[i];
-                let q = poly2d[(i + 1) % poly2d.len()];
-                a += p.x() * q.y() - q.x() * p.y();
-            }
-            area_of.push(a.abs());
-        }
-        let outer_i = area_of
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .map(|(i, _)| i)?;
-        let outer_pts = loops[outer_i].clone();
-        let outer2d: Vec<GpPnt2d> = outer_pts.iter().map(to2d).collect();
-        let holes2d: Vec<Vec<GpPnt2d>> = loops
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| *i != outer_i)
-            .map(|(_, l)| l.iter().map(to2d).collect())
-            .collect();
-        let holes_refs: Vec<&[GpPnt2d]> = holes2d.iter().map(|v| v.as_slice()).collect();
-        let bridged = bridge_holes(&outer2d, &holes_refs);
-        let tris2 = ear_clip(&bridged)?;
-        // Map triangulated 2D points back to 3D.
-        let pts3: Vec<GpPnt> = bridged.iter().map(|p| {
-            let o = pln.location().coord;
-            let v = xdir.multiplied(p.x()).added(&ydir.multiplied(p.y()));
-            GpPnt::new(o.x() + v.x(), o.y() + v.y(), o.z() + v.z())
-        }).collect();
-        let tris: Vec<Triangle> = tris2
-            .iter()
-            .map(|&(a, b, c2)| orient3(&pts3, a, b, c2, &n))
-            .collect();
-        return Some((pts3, tris));
-    }
-
-    let mut tris = Vec::with_capacity(pts.len() - 2);
-    for i in 1..pts.len() - 1 {
-        tris.push(orient3(&pts, 0, i, i + 1, &n));
-    }
-    // A REVERSED face bounds the volume with inward-pointing parametric normals
-    // (face_plane's axis is not orientation-aware); flip so the mesh points
-    // outward, matching `face_to_triangles`' UV-grid convention.
-    if face.0.orientation() == crate::abs::Orientation::Reversed {
-        for t in tris.iter_mut() {
-            std::mem::swap(&mut t.n1, &mut t.n2);
-        }
-    }
-    Some((pts, tris))
-}
-
-/// Tessellate a face into a UV-grid triangle soup (vertices + triangles).
-///
-/// Planar faces triangulate exactly from their boundary polygon (see
-/// [`planar_polygon_triangulate`]) — a UV grid of the bounding box would
-/// over-cover a disk cap as its circumscribing square. Curved faces fall back
-/// to the grid below. Triangle winding follows the surface normal from `d1` so
-/// the resulting mesh points outward. Degenerate cells are skipped. Missing
-/// surface or unbounded domain yields an empty soup.
-///
-/// **UNPORTED (audit A19 / task T-55, T-68)**: OCCT has no per-face UV-grid
-/// tessellator at all — the live path is `BRepMesh` (`BRepMesh_FaceDiscret` for
-/// the boundary, then `BRepMesh_Delaun`), whose only grid-like resolution is
-/// `BRepMesh_GeomTool::CellsCount` (`BRepMesh_GeomTool.cxx:465-512`, ported in
-/// `meshing::node_insertion::geom_tool_cells_count`) and which has no upper
-/// bound. The stand-in's `nu`/`nv` below are therefore port-invented, including
-/// the `3` floor and the `64` ceiling: the floor keeps a degenerate domain from
-/// producing no cells at all, the ceiling bounds the vertex count
-/// (`nu * nv`) of a grid that a tiny deflection on a large UV domain would
-/// otherwise blow up (OCCT's bounded counts never feed a full UV grid). This
-/// function is reached only when the ported pipeline fails for a face; delete it
-/// together with the fallback once those faces mesh through the faithful path
-/// (see the note in `meshing::incremental_mesh::triangulate_model_faces`).
+/// Delegates to the ported `BRepMesh` pipeline (`IncrementalMesh`, the same
+/// control flow as `BRepMesh_IncrementalMesh`: `BRepMesh_FaceDiscret` builds the
+/// boundary from the face pcurves, then `BRepMesh_Delaun` triangulates the
+/// interior — see `meshing::incremental_mesh`). OCCT has no alternative
+/// tessellator, so a face whose Delaunay fails keeps `IMeshData_Failure`
+/// (`BRepMesh_BaseMeshAlgo.cxx:40-62`) and yields an empty soup. Winding follows
+/// the face occurrence orientation (`RWMesh_FaceIterator::TriangleOriented`,
+/// applied by `build_shape_mesh`).
 pub fn face_to_triangles(f: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
-    if face_is_planar(f) {
-        if let Some(m) = planar_polygon_triangulate(f, deflection.max(0.01)) {
-            return m;
-        }
-    }
-    let Some(surface) = reg().face_surface(f) else { return (Vec::new(), Vec::new()) };
-    let (u0, u1, v0, v1) = face_uv_bounds(f, surface.as_ref());
-    if !(u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite()) {
-        return (Vec::new(), Vec::new());
-    }
-    let (du, dv) = (u1 - u0, v1 - v0);
-    if du <= 0.0 || dv <= 0.0 { return (Vec::new(), Vec::new()); }
-
-    let def = deflection.max(1e-9);
-    let nu = ((du / def).ceil() as usize + 1).clamp(3, 64);
-    let nv = ((dv / def).ceil() as usize + 1).clamp(3, 64);
-
-    let mut pts = Vec::with_capacity(nu * nv);
-    for j in 0..nv {
-        for i in 0..nu {
-            let u = u0 + du * i as f64 / (nu - 1) as f64;
-            let v = v0 + dv * j as f64 / (nv - 1) as f64;
-            pts.push(surface.d0(u, v));
-        }
-    }
-
-    let idx = |i: usize, j: usize| j * nu + i;
-    let mut tris = Vec::new();
-    for j in 0..nv - 1 {
-        for i in 0..nu - 1 {
-            let a = idx(i, j);
-            let b = idx(i + 1, j);
-            let c = idx(i, j + 1);
-            let d = idx(i + 1, j + 1);
-            let uc = u0 + du * (i as f64 + 0.5) / (nu - 1) as f64;
-            let vc = v0 + dv * (j as f64 + 0.5) / (nv - 1) as f64;
-            let (_, su, sv) = surface.d1(uc, vc);
-            let ns = su.coord.crossed(&sv.coord);
-            let t1 = orient(&pts, a, b, c, &ns);
-            let t2 = orient(&pts, b, d, c, &ns);
-            if triangle_area(&pts, &t1) > 1e-14 && triangle_area(&pts, &t2) > 1e-14 {
-                tris.push(t1);
-                tris.push(t2);
-            }
-        }
-    }
-    // A REVERSED face bounds the volume with inward-pointing surface normals;
-    // the triangle winding must be flipped so the signed volume is computed
-    // with the correct orientation.
-    if f.0.orientation() == crate::abs::Orientation::Reversed {
-        for t in tris.iter_mut() {
-            std::mem::swap(&mut t.n1, &mut t.n2);
-        }
-    }
-    (pts, tris)
+    let mut inc = crate::meshing::incremental_mesh::IncrementalMesh::new();
+    inc.discretize_face(f, deflection)
 }
 
 /// Sum of triangle areas of a face's tessellation.
@@ -477,191 +118,17 @@ pub fn face_area(f: &Face) -> f64 {
     tris.iter().map(|t| triangle_area(&pts, t)).sum()
 }
 
-/// UV domain of a face.
+/// UV domain of a face -- `BRepTools::UVBounds(F, UMin, UMax, VMin, VMax)`.
 ///
-/// Prefers the surface's own finite natural range; otherwise derives a box by
-/// inverting the face's boundary edge curves (wire children) onto the surface
-/// with a Newton iterate on `d1`. Falls back to `[0,1]²` when nothing can be
-/// determined.
-pub(crate) fn face_uv_bounds(f: &Face, surface: &dyn Surface) -> (f64, f64, f64, f64) {
-    let mut umin = f64::INFINITY;
-    let mut umax = f64::NEG_INFINITY;
-    let mut vmin = f64::INFINITY;
-    let mut vmax = f64::NEG_INFINITY;
-    // The face's UV domain is bounded by the UV image of its boundary edges
-    // (`BRepAdaptor_Surface::UVBounds` / `BRep_Tool` semantics). Each edge has
-    // a pcurve on this face; its endpoints' `(u, v)` delimit the edge's UV
-    // span. Inverting 3D boundary points numerically (`invert_uv`) is fragile
-    // on revolution surfaces (a cylinder's v-range is infinite on the surface),
-    // so we take the pcurve's UV directly.
-    //
-    // Periodic u (seam): a full circle edge spans one period; its pcurve u
-    // runs 0→−2π. The u domain must therefore cover a full period, not
-    // collapse to ~0, so we unwrap each edge's u span to the surface's
-    // [u0, u0+period] window.
-    let (su0, su1) = surface.u_range();
-    let u_period = if su0.is_finite() && su1.is_finite() && su1 > su0 { su1 - su0 } else { 0.0 };
-    let (sv0, sv1) = surface.v_range();
-    let v_period = if sv0.is_finite() && sv1.is_finite() && sv1 > sv0 { sv1 - sv0 } else { 0.0 };
-    let mut full_period = false;
-    let mut full_v_period = false;
-    for w in cumulated_children(&f.0) {
-        if w.shape_type() != ShapeType::Wire { continue; }
-        for e in cumulated_children(&w) {
-            if e.shape_type() != ShapeType::Edge { continue; }
-            let edge = Edge(e.clone());
-            let Ok(pc) = crate::pcurve_full::make_pcurve_full(&edge, f) else { continue };
-            let (a0, a1) = reg().edge_parameters(&e);
-            if !(a0.is_finite() && a1.is_finite() && a1 > a0) { continue; }
-            // Sample the pcurve along the edge. The pcurve of a full-circle
-            // edge is unwrapped monotonically (u runs 0 → −2π), so its UV
-            // endpoints differ by the period rather than coinciding; the span
-            // must be measured in continuously-unwrapped coordinates.
-            let mut cu_min = f64::INFINITY;
-            let mut cu_max = f64::NEG_INFINITY;
-            let mut cv_min = f64::INFINITY;
-            let mut cv_max = f64::NEG_INFINITY;
-            let mut prev_u: Option<f64> = None;
-            let mut prev_v: Option<f64> = None;
-            for k in 0..=8 {
-                let t = a0 + (a1 - a0) * k as f64 / 8.0;
-                let uv = pc.d0(t);
-                let mut u = uv.x();
-                let mut v = uv.y();
-                if u_period > 0.0 {
-                    // Continuously unwrap relative to the previous sample so a
-                    // seam-wrapping edge keeps its true span instead of
-                    // collapsing modulo the period.
-                    if let Some(p) = prev_u {
-                        while u - p > u_period * 0.5 { u -= u_period; }
-                        while u - p < -u_period * 0.5 { u += u_period; }
-                    }
-                    prev_u = Some(u);
-                }
-                if v_period > 0.0 {
-                    // Same for a periodic v (torus tube direction): the tube is
-                    // a full 0..2π circle, so a seam edge crosses the period and
-                    // must be unwrapped too.
-                    if let Some(p) = prev_v {
-                        while v - p > v_period * 0.5 { v -= v_period; }
-                        while v - p < -v_period * 0.5 { v += v_period; }
-                    }
-                    prev_v = Some(v);
-                }
-                cu_min = cu_min.min(u);
-                cu_max = cu_max.max(u);
-                cv_min = cv_min.min(v);
-                cv_max = cv_max.max(v);
-                // Accumulate v with seam reconciliation: a seam-crossing face's
-                // boundary edges land on opposite sides of the period seam and
-                // their unwrapped `v` sits a whole period apart, which would
-                // inflate the union AABB to the full period and draw geometry
-                // that is not part of the face (a partial torus knuckle turning
-                // into a full tube). Shift each sample by whole periods so it
-                // stays within ±period/2 of the running window.
-                let v_shift = if v_period > 0.0 && vmin.is_finite() && vmax.is_finite() {
-                    period_shift(v, 0.5 * (vmin + vmax), v_period)
-                } else {
-                    0.0
-                };
-                vmin = vmin.min(v + v_shift);
-                vmax = vmax.max(v + v_shift);
-            }
-            // A boundary edge may be a v-direction line (u constant) or a
-            // degenerate point; such edges do not bound the u-window — taking
-            // their constant u would pull umin/umax to a value from another
-            // seam position (mod 2π) and over-expand the face's u-domain to a
-            // full period. Only u-varying edges contribute to the u-extent.
-            // The u interval is reconciled across the seam the same way as v.
-            let cu_span = cu_max - cu_min;
-            if cu_span > 1e-9 {
-                let u_shift = if u_period > 0.0 && umin.is_finite() && umax.is_finite() {
-                    period_shift(0.5 * (cu_min + cu_max), 0.5 * (umin + umax), u_period)
-                } else {
-                    0.0
-                };
-                umin = umin.min(cu_min + u_shift);
-                umax = umax.max(cu_max + u_shift);
-            }
-            // A boundary edge spanning a full u-period (a full-circle / seam
-            // loop) forces the face's u-domain to the whole period — otherwise
-            // a full cylinder's u-extent collapses to [0, 7π/4] (the sampled
-            // max never reaches the period boundary) and the mesh loses the
-            // final π/4 wedge (~12.5% of the lateral area).
-            if u_period > 0.0 && cu_max - cu_min >= u_period - 1e-6 {
-                full_period = true;
-            }
-            if v_period > 0.0 && cv_max - cv_min >= v_period - 1e-6 {
-                full_v_period = true;
-            }
-        }
-    }
-    if full_period {
-        let vres = if full_v_period { (sv0, sv0 + v_period) } else { (vmin, vmax) };
-        (su0, su0 + u_period, vres.0, vres.1)
-    } else if umin.is_finite() && umax > umin && vmin.is_finite() && vmax > vmin {
-        if full_v_period {
-            // A face that wraps the full tube in v but only a partial u arc:
-            // the v-window spans the whole period (reconciliation would have
-            // collapsed it to a seam sliver).
-            (umin, umax, sv0, sv0 + v_period)
-        } else {
-            (umin, umax, vmin, vmax)
-        }
-    } else {
-        // No boundary edge with a usable pcurve (face without edges/pcurves):
-        // fall back to the surface's natural bounds — OCCT
-        // `BRepTools::AddUVBounds` does the same when the edge box is void.
-        let (u0, u1) = surface.u_range();
-        let (v0, v1) = surface.v_range();
-        if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() && u1 > u0 && v1 > v0 {
-            (u0, u1, v0, v1)
-        } else {
-            (0.0, 1.0, 0.0, 1.0)
-        }
-    }
-}
-
-/// Whole-period offset to add to an unwrapped periodic coordinate so it lies
-/// within ±period/2 of `ref` — reconciling edges that sit on opposite sides of
-/// a period seam without collapsing a genuine span. Returns 0 when `ref` is
-/// not finite or `period` is not a positive finite value.
-fn period_shift(x: f64, ref_: f64, period: f64) -> f64 {
-    if period <= 0.0 || !period.is_finite() || !ref_.is_finite() {
-        0.0
-    } else {
-        -((x - ref_) / period).round() * period
-    }
-}
-
-/// Invert a 3D point lying on a surface to its `(u, v)` parameters via Newton
-/// iteration on the surface `d1` Gram matrix. Returns `None` if it fails to
-/// converge (point off-surface, singular Jacobian).
-fn invert_uv(surface: &dyn Surface, p: &GpPnt) -> Option<(f64, f64)> {
-    let (u0, u1) = surface.u_range();
-    let (v0, v1) = surface.v_range();
-    let (mut u, mut v) = (0.5 * (u0 + u1), 0.5 * (v0 + v1));
-    if !(u.is_finite() && v.is_finite()) {
-        (u, v) = (0.0, 0.0);
-    }
-    for _ in 0..12 {
-        let (sp, su, sv) = surface.d1(u, v);
-        let r = p.coord.subtracted(&sp.coord);
-        if r.modulus() < 1e-9 { return Some((u, v)); }
-        let (gx, gy) = (su.coord, sv.coord);
-        let g11 = gx.dot(&gx);
-        let g12 = gx.dot(&gy);
-        let g22 = gy.dot(&gy);
-        let det = g11 * g22 - g12 * g12;
-        if det.abs() < 1e-24 { return None; }
-        let du = (g22 * gx.dot(&r) - g12 * gy.dot(&r)) / det;
-        let dv = (-g12 * gx.dot(&r) + g11 * gy.dot(&r)) / det;
-        if !du.is_finite() || !dv.is_finite() { return None; }
-        u += du;
-        v += dv;
-        if du.abs() < 1e-12 && dv.abs() < 1e-12 { break; }
-    }
-    if p.distance(&surface.d0(u, v)) < 1e-6 { Some((u, v)) } else { None }
+/// Delegates to the ported `BRepTools::AddUVBounds` chain
+/// (`crate::brep_uv_bounds`): the 2-D box of the face's pcurve boundaries, with
+/// the stored surface's natural range as OCCT's own fallback for a face whose
+/// edge box is void (`BRepTools.cxx:126-157`). OCCT builds the box from the
+/// `BndLib_Add2dCurve` range of each pcurve and clamps it to the surface bounds
+/// unless a B-spline periodicity probe succeeds; there is no UV sampling and no
+/// `[0,1]^2` window, so neither is reproduced here.
+pub(crate) fn face_uv_bounds(f: &Face) -> (f64, f64, f64, f64) {
+    crate::brep_tools::uv_bounds(f)
 }
 
 /// Triangle area by cross-product magnitude.
@@ -669,19 +136,6 @@ fn triangle_area(pts: &[GpPnt], t: &Triangle) -> f64 {
     let ab = pts[t.n1].coord.subtracted(&pts[t.n0].coord);
     let ac = pts[t.n2].coord.subtracted(&pts[t.n0].coord);
     0.5 * ab.crossed(&ac).modulus()
-}
-
-/// Wind the triangle so its normal agrees with the surface normal `ns`.
-fn orient(pts: &[GpPnt], i0: usize, i1: usize, i2: usize, ns: &occt_core::gp::GpXyz) -> Triangle {
-    let pa = pts[i0].coord;
-    let pb = pts[i1].coord;
-    let pc = pts[i2].coord;
-    let n = pb.subtracted(&pa).crossed(&pc.subtracted(&pa));
-    if ns.dot(&n) < 0.0 {
-        Triangle::new(i0, i2, i1)
-    } else {
-        Triangle::new(i0, i1, i2)
-    }
 }
 
 /// Distance from `p` to the segment `a..b`.
@@ -746,23 +200,63 @@ pub(crate) mod tests {
         let mut face = Face::new();
         let pln = GpPln::new(GpAx3::new(GpPnt::new(0.0, 0.0, 1.0), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap());
         reg().set_face(&face.0, FaceGeom::new(Arc::new(GeomPlane::new(pln.clone()))));
-        // Outer 2×2 square.
+        // Outer 2×2 square. Consecutive edges must share a vertex: a wire with
+        // no common vertex between neighbours is marked `IMeshData_OpenWire` by
+        // `BRepMesh_ModelHealer::fixFaceBoundaries` (`BRepMesh_ModelHealer.cxx:
+        // 346-356` + `getCommonVertex`), and an inner open wire is skipped in
+        // `BRepMesh_NodeInsertionMeshAlgo::initDataStructure` (`hxx:70-74`), so
+        // its hole would not be subtracted.
         let mut outer = Wire::new();
-        for (x0, y0, x1, y1) in [(0.0, 0.0, 2.0, 0.0), (2.0, 0.0, 2.0, 2.0), (2.0, 2.0, 0.0, 2.0), (0.0, 2.0, 0.0, 0.0)] {
-            let e = b.make_edge_segment(&GpPnt::new(x0, y0, 1.0), &GpPnt::new(x1, y1, 1.0));
+        let outer_pts = [
+            GpPnt::new(0.0, 0.0, 1.0),
+            GpPnt::new(2.0, 0.0, 1.0),
+            GpPnt::new(2.0, 2.0, 1.0),
+            GpPnt::new(0.0, 2.0, 1.0),
+        ];
+        let outer_verts: Vec<_> = outer_pts.iter().map(|p| b.make_vertex(*p, 0.0)).collect();
+        for i in 0..outer_pts.len() {
+            let j = (i + 1) % outer_pts.len();
+            let e = b.make_edge_segment_with_vertices(
+                &outer_pts[i],
+                &outer_pts[j],
+                &outer_verts[i],
+                &outer_verts[j],
+            );
             b.add_edge(&mut outer, &e);
         }
         b.add_wire(&mut face, &outer);
-        // Hole: 24-gon at (1,1), r=0.25.
+        // Hole: 24-gon at (1,1), r=0.25, also with shared vertices.
+        //
+        // An inner wire is stored wound the other way round from the outer one
+        // (TopoDS face convention, what the readers and `ShapeFix_Face`
+        // produce), so the 24-gon is traversed clockwise here. The mesher
+        // itself does not fix wire winding: `BRepMesh_ShapeVisitor::Visit`
+        // (`BRepMesh_ShapeVisitor.cxx:58-87`) only does
+        // `ShapeAnalysis::OuterWire` + `TopExp_Explorer` + `addWire`
+        // (`cxx:93-134`), and `BRepMesh_Classifier::RegisterWire`
+        // (`BRepMesh_Classifier.cxx:65-127`) orients each wire by the turning
+        // angle of its UV polygon, `Perform` (`cxx:35-59`) returns OUT as soon
+        // as one wire's oriented test says out. A same-wound inner wire would
+        // therefore be read as a second outer bound (the hole area would be the
+        // only IN region), not as a hole. `ShapeFix_Face::FixOrientation`
+        // (`ShapeFix_Face.cxx:1274-1602`) belongs to the reader path, not here.
         let r = 0.25;
         let n = 24usize;
         let mut hole = Wire::new();
+        let hole_pts: Vec<GpPnt> = (0..n)
+            .map(|i| {
+                let t = -2.0 * std::f64::consts::PI * i as f64 / n as f64;
+                GpPnt::new(1.0 + r * t.cos(), 1.0 + r * t.sin(), 1.0)
+            })
+            .collect();
+        let hole_verts: Vec<_> = hole_pts.iter().map(|p| b.make_vertex(*p, 0.0)).collect();
         for i in 0..n {
-            let t0 = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
-            let t1 = 2.0 * std::f64::consts::PI * (i + 1) as f64 / n as f64;
-            let e = b.make_edge_segment(
-                &GpPnt::new(1.0 + r * t0.cos(), 1.0 + r * t0.sin(), 1.0),
-                &GpPnt::new(1.0 + r * t1.cos(), 1.0 + r * t1.sin(), 1.0),
+            let j = (i + 1) % n;
+            let e = b.make_edge_segment_with_vertices(
+                &hole_pts[i],
+                &hole_pts[j],
+                &hole_verts[i],
+                &hole_verts[j],
             );
             b.add_edge(&mut hole, &e);
         }

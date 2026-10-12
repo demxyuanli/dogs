@@ -44,8 +44,8 @@ fn shape_mesh_to_ply(mesh: &ShapeMesh) -> PlyMesh {
 /// Mesh a shape for export using the OCCT `BRepMesh_IncrementalMesh` pipeline:
 /// the Delaunay path (`meshing::incremental_mesh_to_shape_mesh`) shares each
 /// edge's 3D polyline between its adjacent faces, so the output is watertight on
-/// shared edges and periodic seams. Falls back to the quadtree subdivision path
-/// (`brepmesh`) when the Delaunay pipeline errors.
+/// shared edges and periodic seams. A failed tessellation yields no triangles:
+/// OCCT has no second mesher (audit A17/A18/A19).
 ///
 /// ponytail: B-spline faces whose STEP `SURFACE_CURVE` pcurves are dropped
 /// (`step.rs`) get a wrong boundary, so the Delaunay bbox drifts past `EXACT_TOL`
@@ -91,7 +91,7 @@ fn export_mesh(shape: &TopoShape, maximal_chordial_deviation: f64) -> ShapeMesh 
     // it never switches to another mesher. The two silent fallbacks that used to
     // sit here (legacy quadtree `brepmesh::incremental_mesh`, UV-grid
     // `shape_mesh::mesh_shape`) were non-OCCT algorithms and are removed
-    // (audit A17).
+    // (audit A17); `brepmesh` itself is deleted as of A18/A19.
     const PRS3D_DEV_ANGLE: f64 = 20.0 * std::f64::consts::PI / 180.0;
     let lin = prs3d_get_deflection(shape, maximal_chordial_deviation);
     crate::meshing::incremental_mesh::IncrementalMesh::from_deflection(

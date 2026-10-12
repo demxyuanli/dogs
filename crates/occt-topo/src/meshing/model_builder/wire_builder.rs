@@ -290,264 +290,410 @@ fn edge_oriented_ends(e: &Edge) -> (Option<Vertex>, Option<Vertex>) {
     }
 }
 
-/// `BRepTools_WireExplorer` order: follow `LastVertex` → next `FirstVertex`
-/// (`CumOri=true`). When vertices are distinct TShapes at the same UV
-/// point, `Next` with a face compares pcurve ends (`cxx:428-475`).
+/// `BRepTools_WireExplorer` — the wire's edges in connection order on `face`.
+///
+/// Port of `BRepTools_WireExplorer::Init` (`BRepTools_WireExplorer.cxx:124-382`)
+/// and `Next` (`cxx:394-705`). Init keys every edge by its cumulated first
+/// vertex (`TopExp::Vertices(E, V1, V2, true)`, `cxx:244`) and starts from the
+/// wire's first vertex (`cxx:303-373`). Next advances through
+/// `TopExp::LastVertex(myEdge, true)` and takes the next edge from that vertex's
+/// list. Storage order only decides the *first* edge: when several edges start
+/// at the current vertex (`cxx:410-705`) OCCT runs the list through the
+/// closed-edge-only pass, then the open-edge pass, and inside a pass picks the
+/// edge whose pcurve start lies within `(myTolU, myTolV)` of the current 2D
+/// point and whose direction turns least from the current edge's backward
+/// tangent (`cxx:536-695`). Walking by vertex identity alone picks the wrong
+/// occurrence of a seam edge on a closed surface (the cylinder lateral wire
+/// would visit `seam(u = 2*pi)` instead of the bottom circle), which is what
+/// makes the sampled UV ring self-intersect.
 pub(crate) fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
-    let mut unused = wire_edges_sewd(wire);
-    if unused.len() <= 1 {
-        return unused;
+    // `BRepTools_WireExplorer::Init` leaves `myEdge` null in every path that
+    // bails out here (`BRepTools_WireExplorer.cxx:160-164`, `:368-372`), so the
+    // caller sees no edge at all.
+    macro_rules! bail {
+        ($why:expr) => {{
+            let _ = $why;
+            return Vec::new();
+        }};
     }
-    let mut out = vec![unused.remove(0)];
-    while !unused.is_empty() {
-        let last = out.last().unwrap();
-        let Some(lv) = edge_oriented_ends(last).1 else {
-            out.extend(unused);
-            break;
-        };
-        let by_vertex = unused.iter().position(|e| {
-            edge_oriented_ends(e)
-                .0
-                .as_ref()
-                .is_some_and(|v| Arc::ptr_eq(&v.0.tshape, &lv.0.tshape))
-        });
-        if let Some(i) = by_vertex {
-            out.push(unused.remove(i));
-            continue;
+    let edges: Vec<Edge> = edges_of_wire(wire)
+        .into_iter()
+        .filter(|e| {
+            let o = e.0.orientation();
+            o != Orientation::Internal && o != Orientation::External
+        })
+        .collect();
+    if edges.is_empty() {
+        bail!("no edges");
+    }
+
+    // `Init` (`cxx:139-217`): UV tolerances from the largest vertex tolerance of
+    // the wire (falling back to the edge tolerances below Confusion).
+    let mut df_vert_toler = 0.0f64;
+    for e in &edges {
+        let (a, b) = edge_oriented_ends(e);
+        for v in [a, b].into_iter().flatten() {
+            df_vert_toler = df_vert_toler.max(BRepTool::vertex_tolerance(&v));
         }
-        let Some((_, last_uv)) = edge_uv_ends(last, face) else {
-            out.extend(unused);
+    }
+    if df_vert_toler < CONFUSION {
+        for e in &edges {
+            df_vert_toler = df_vert_toler.max(BRepTool::edge_tolerance(e));
+        }
+        if df_vert_toler < CONFUSION {
+            // empty wire (`cxx:160-164`)
+            bail!("vert toler under confusion");
+        }
+    }
+    let Some(surf) = GeometryRegistry::global().face_surface(&face.0) else {
+        bail!("no face surface");
+    };
+    let mut tol_u =
+        2.0 * occt_geom::approx_same_parameter::u_resolution(surf.as_ref(), df_vert_toler);
+    let mut tol_v =
+        2.0 * occt_geom::approx_same_parameter::v_resolution(surf.as_ref(), df_vert_toler);
+    {
+        // The two-argument `BRepTools_WireExplorer(W, F)` entry point
+        // (`cxx:100-116`) fills the UV bounds only for Cone / BSpline / Bezier
+        // faces, from `BRepTools::UVBounds`; every other surface type keeps them
+        // at 0.
+        let (umin, umax, vmin, vmax) = match classify_surface(surf.as_ref()) {
+            SurfaceType::Cone
+            | SurfaceType::BSplineSurface
+            | SurfaceType::BezierSurface => crate::brep_tools::uv_bounds(face),
+            _ => (0.0, 0.0, 0.0, 0.0),
+        };
+        match classify_surface(surf.as_ref()) {
+            SurfaceType::Cone => {
+                // `cxx:170-200`.
+                let maxtol = 0.0005 * (umax - umin);
+                let a1 = surf.d1(umin, vmin).1.magnitude();
+                let tol1 = if a1 <= CONFUSION {
+                    maxtol
+                } else {
+                    maxtol.min(df_vert_toler / a1)
+                };
+                let a2 = surf.d1(umin, vmax).1.magnitude();
+                let tol2 = if a2 <= CONFUSION {
+                    maxtol
+                } else {
+                    maxtol.min(df_vert_toler / a2)
+                };
+                tol_u = 2.0 * tol1.max(tol2);
+            }
+            SurfaceType::BSplineSurface | SurfaceType::BezierSurface => {
+                // `cxx:202-217`.
+                let mut max_tol = tol_u.max(tol_v);
+                let (_, du, dv) = surf.d1((umax - umin) / 2.0, (vmax - vmin) / 2.0);
+                let modulus = (du.dot(&du) + dv.dot(&dv)).sqrt();
+                if modulus > REAL_SMALL {
+                    if modulus * max_tol / df_vert_toler < 1.5 {
+                        max_tol = 1.5 * df_vert_toler / modulus;
+                    }
+                    tol_u = max_tol;
+                    tol_v = max_tol;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // `myMap` / `vmap` (`cxx:226-302`): `myMap(V)` is the list of edges whose
+    // cumulated first vertex is `V`, appended in wire order; `vmap` keeps the
+    // vertices met an odd number of times (the open ends of the wire).
+    let mut map: Vec<(usize, Vec<Edge>)> = Vec::new();
+    let mut vmap: Vec<(usize, Orientation)> = Vec::new();
+    for e in &edges {
+        let (v1, v2) = edge_oriented_ends(e);
+        if let Some(v1) = v1 {
+            let key = vertex_key(&v1);
+            match map.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, l)) => l.push(e.clone()),
+                None => map.push((key, vec![e.clone()])),
+            }
+            vmap_toggle(&mut vmap, key, Orientation::Forward);
+        }
+        if let Some(v2) = v2 {
+            vmap_toggle(&mut vmap, vertex_key(&v2), Orientation::Reversed);
+        }
+    }
+
+    // First vertex (`cxx:303-373`): the wire's open end when it has one, else the
+    // first vertex of the first edge.
+    let first_key = if !vmap.is_empty() {
+        vmap.iter()
+            .find(|(_, o)| *o == Orientation::Forward)
+            .map(|(k, _)| *k)
+    } else {
+        if let Some(e) = edges.iter().find(|e| {
+            let (v1, v2) = edge_oriented_ends(e);
+            v1.is_none() || v2.is_none()
+        }) {
+            // Infinite edge (`cxx:326-348`): the walk is that single edge.
+            {
+                let (f, l) = BRepTool::edge_parameters(e);
+                let rev = e.0.orientation().is_reversed();
+                let infinite = if rev {
+                    l == f64::NEG_INFINITY || l == f64::INFINITY
+                } else {
+                    f == f64::NEG_INFINITY || f == f64::INFINITY
+                };
+                if infinite {
+                    return vec![e.clone()];
+                }
+            }
+        }
+        edge_oriented_ends(&edges[0]).0.map(|v| vertex_key(&v))
+    };
+    let Some(first_key) = first_key else {
+        bail!("no first vertex");
+    };
+    let Some(entry) = map.iter_mut().find(|(k, _)| *k == first_key) else {
+        bail!("first vertex not in map");
+    };
+    let mut out = vec![entry.1.remove(0)];
+
+    while let Some(lv) = edge_oriented_ends(out.last().unwrap()).1 {
+        let Some(entry) = map.iter_mut().find(|(k, _)| *k == vertex_key(&lv)) else {
             break;
         };
-        match unused.iter().position(|e| {
-            edge_uv_ends(e, face).is_some_and(|(u0, _)| uv_close(&u0, &last_uv))
-        }) {
-            Some(i) => out.push(unused.remove(i)),
-            None => {
-                out.extend(unused);
+        let list = &mut entry.1;
+        if list.is_empty() {
+            break;
+        }
+        if list.len() == 1 {
+            // `cxx:414-482`: a single candidate, with the pcurve-end check for a
+            // closed candidate edge.
+            let candidate = list[0].clone();
+            let (v1, v2) = edge_oriented_ends(&candidate);
+            let Some(v1) = v1 else { break };
+            if !same_vertex(&v1, &lv) {
                 break;
             }
+            // `cxx:429-475`: a closed candidate (`aV1.IsSame(aV2)`) is only
+            // accepted when both pcurves exist and the current edge's 2D
+            // endpoint is nearer the candidate's 2D start than its 2D end.
+            if let Some(v2) = v2 {
+                if same_vertex(&v1, &v2) {
+                    let (Some((prev_pc, p11, p12)), Some((next_pc, p21, p22))) = (
+                        pcurve_and_range(out.last().unwrap(), face),
+                        pcurve_and_range(&candidate, face),
+                    ) else {
+                        break;
+                    };
+                    let prev_par = if out.last().unwrap().0.orientation().is_reversed() {
+                        p11
+                    } else {
+                        p12
+                    };
+                    let (next_fpar, next_lpar) = if candidate.0.orientation().is_reversed() {
+                        (p22, p21)
+                    } else {
+                        (p21, p22)
+                    };
+                    let p_prev = prev_pc.d0(prev_par);
+                    let p_next_f = next_pc.d0(next_fpar);
+                    let p_next_l = next_pc.d0(next_lpar);
+                    if p_prev.square_distance(&p_next_f) > p_prev.square_distance(&p_next_l) {
+                        break;
+                    }
+                }
+            }
+            list.clear();
+            out.push(candidate);
+        } else {
+            // `cxx:521-705`: several candidates start at the current vertex.
+            let current = out.last().unwrap().clone();
+            let Some(idx) = wire_next_by_uv(&current, face, list, tol_u, tol_v) else {
+                break;
+            };
+            out.push(list.remove(idx));
         }
     }
     out
 }
 
-fn edge_uv_ends(e: &Edge, face: &Face) -> Option<(GpPnt2d, GpPnt2d)> {
-    let (pc, a, b) = pcurve_and_range(e, face)?;
-    let (pa, pb) = (pc.d0(a), pc.d0(b));
-    if e.0.orientation().is_reversed() {
-        Some((pb, pa))
+/// `TopTools_ShapeMapHasher::IsSame` key for a vertex (`TopoDS_Shape`
+/// identity = `TShape` + location).
+fn vertex_key(v: &Vertex) -> usize {
+    GeometryRegistry::shape_key(&v.0)
+}
+fn same_vertex(a: &Vertex, b: &Vertex) -> bool {
+    vertex_key(a) == vertex_key(b)
+}
+
+/// `vmap.Add` / `RemoveKey` (`BRepTools_WireExplorer.cxx:252-268`): the map
+/// compares shapes by `IsSame`, so a key added twice is removed again and only
+/// the last orientation written survives.
+fn vmap_toggle(vmap: &mut Vec<(usize, Orientation)>, key: usize, ori: Orientation) {
+    if let Some(pos) = vmap.iter().position(|(k, _)| *k == key) {
+        vmap.remove(pos);
     } else {
-        Some((pa, pb))
+        vmap.push((key, ori));
     }
 }
 
-fn uv_close(a: &GpPnt2d, b: &GpPnt2d) -> bool {
-    let dx = a.x() - b.x();
-    let dy = a.y() - b.y();
-    dx * dx + dy * dy <= PCONFUSION * PCONFUSION
-}
-
-/// Pcurve samples in `WireExplorer` order (`BRepTopAdaptor_FClass2d`).
-fn wire_uv_points(wire: &Wire, face: &Face) -> Vec<GpPnt2d> {
-    let mut pts = Vec::new();
-    for e in wire_edges_explorer(wire, face) {
-        let Some((pc, a, b)) = pcurve_and_range(&e, face) else {
-            continue;
-        };
-        let mut s = sample_pcurve(pc.as_ref(), a, b);
-        if e.0.orientation().is_reversed() {
-            s.reverse();
-        }
-        if !pts.is_empty() && !s.is_empty() {
-            s.remove(0);
-        }
-        pts.extend(s);
-    }
-    pts
-}
-
-/// One-wire `BRepTopAdaptor_FClass2d` stand-in: `CSLib_Class2d` plus
-/// `TabOrien` from the sampled `square` (`cxx:338`, `445`), not the
-/// turning-angle `BRepMesh_Classifier` uses (coarse circles flip that sign).
-fn wire_classifier(wire: &Wire, face: &Face) -> Option<(Class2d, bool, BndBox2d)> {
-    let pts = wire_uv_points(wire, face);
-    if pts.len() < 2 {
+/// `BRepTools_WireExplorer::Next` multi-candidate selection
+/// (`BRepTools_WireExplorer.cxx:521-705`): returns the index into `list` of the
+/// next edge, or `None` when the walk stops (`myEdge = TopoDS_Edge()`).
+fn wire_next_by_uv(
+    my_edge: &Edge,
+    face: &Face,
+    list: &[Edge],
+    tol_u: f64,
+    tol_v: f64,
+) -> Option<usize> {
+    let (a_pcurve, df_f_par, df_l_par) = pcurve_and_range(my_edge, face)?;
+    // The 2D point of the current vertex on the current edge (`cxx:548-547`):
+    // MAX pcurve parameter for a FORWARD edge, MIN for a REVERSED one.
+    let my_rev = my_edge.0.orientation().is_reversed();
+    let p_ref = if my_rev {
+        a_pcurve.d0(df_f_par)
+    } else {
+        a_pcurve.d0(df_l_par)
+    };
+    // The direction from the current vertex back into the current edge
+    // (`cxx:551-556`), used as the angle reference.
+    let df_m_par =
+        get_next_param_on_pc(a_pcurve.as_ref(), &p_ref, df_f_par, df_l_par, tol_u, tol_v, my_rev);
+    let p_refm = a_pcurve.d0(df_m_par);
+    let an_e_ref_dir = GpVec2d::new(p_refm.x() - p_ref.x(), p_refm.y() - p_ref.y());
+    if an_e_ref_dir.square_magnitude() < REAL_SMALL {
         return None;
     }
-    let mut box2d = BndBox2d::new();
-    for p in &pts {
-        box2d.update_point(p.x(), p.y());
-    }
-    let (u0, v0, u1, v1) = box2d.get()?;
-    let clas = Class2d::new(&pts, PCONFUSION, PCONFUSION, u0, v0, u1, v1);
-    let mut area = 0.0;
-    for i in 0..pts.len() {
-        let p = pts[i];
-        let q = pts[(i + 1) % pts.len()];
-        area += (p.x() - q.x()) * (p.y() + q.y()) / 2.0;
-    }
-    let orient_ccw = area >= 0.0;
-    Some((clas, orient_ccw, box2d))
-}
 
-fn classify_on_wire(clas: &Class2d, orient_ccw: bool, p: &GpPnt2d) -> PointState {
-    match clas.si_dans(p) {
-        Class2dResult::Uncertain => PointState::On,
-        Class2dResult::Outside if orient_ccw => PointState::Out,
-        Class2dResult::Inside if !orient_ccw => PointState::Out,
-        _ => PointState::In,
-    }
-}
-
-/// `ShapeExtend_WireData::Reverse(face)` (`cxx:483-572`): reverse the edge
-/// list, reverse each edge, then `SwapSeam`. The rebuilt wire is FORWARD.
-fn reverse_wire_on_face(wire: &mut Wire, face: &Face) {
-    let mut edges = wire_edges_sewd(wire);
-    for e in &mut edges {
-        e.0.reverse();
-    }
-    edges.reverse();
-    let b = TopoBuilder::new();
-    let mut nw = b.make_wire(&edges);
-    nw.0.set_closed(wire.0.closed());
-    nw.0.set_orientation(Orientation::Forward);
-    *wire = nw;
-    swap_wire_seams(wire, face);
-}
-
-/// `ShapeFix_Face::FixOrientation` multi-wire branch (`cxx:1274-1602`):
-/// classify each wire against the others; reverse when it is OUT and the
-/// infinite point is IN, or IN (contained) and the infinite point is OUT.
-fn fix_multiwire_orientation(face: &Face, wires: &mut [Wire]) {
-    let n = wires.len();
-    if n < 2 {
-        return;
-    }
-    let mut boxes = Vec::with_capacity(n);
-    let mut classifiers = Vec::with_capacity(n);
-    for w in wires.iter() {
-        match wire_classifier(w, face) {
-            Some((c, orient, b)) => {
-                classifiers.push(Some((c, orient)));
-                boxes.push(b);
-            }
-            None => {
-                classifiers.push(None);
-                boxes.push(BndBox2d::new());
-            }
-        }
-    }
-    // SI: 0 unknown / 1 keep / 2 contained+inf OUT / 3 contained+inf IN
-    let mut si = vec![0i32; n];
-    let mut map_int: Vec<bool> = vec![false; n];
-    for i in 0..n {
-        let Some((clas, orient_ccw)) = classifiers[i].as_ref() else {
-            continue;
-        };
-        // Infinite point: In on a clockwise wire (`TotCross2D < 0`).
-        let staout_in = !*orient_ccw;
-        let mut sta_in = false;
-        let mut unknown = false;
-        for j in 0..n {
-            if i == j {
+    let mut k_min = 0usize;
+    let mut is_degenerated = true;
+    let mut dmin = f64::MAX;
+    let mut df_min_angle = 3.0 * PI;
+    let mut df_cur_angle = 3.0 * PI;
+    for _pass in 0..2 {
+        let mut k = 1usize;
+        for e in list {
+            if Arc::ptr_eq(&e.0.tshape, &my_edge.0.tshape) {
+                k += 1;
                 continue;
             }
-            if boxes[j].is_out_box(&boxes[i]) {
+            let (a_v1, a_v2) = edge_oriented_ends(e);
+            let (Some(a_v1), Some(a_v2)) = (a_v1, a_v2) else {
+                k += 1;
                 continue;
-            }
-            let mut stb: Option<bool> = None;
-            for e in wire_edges_sewd(&wires[j]) {
-                let Some((pc, a, b)) = pcurve_and_range(&e, face) else {
-                    continue;
+            };
+            let Some((a_pc, a_f, a_l)) = pcurve_and_range(e, face) else {
+                k += 1;
+                continue;
+            };
+            // `cxx:602`: pass 1 keeps closed edges (`V1.IsSame(V2)`), pass 2 the
+            // rest.
+            if same_vertex(&a_v1, &a_v2) == is_degenerated {
+                let a_peb = if e.0.orientation().is_reversed() {
+                    a_pc.d0(a_l)
+                } else {
+                    a_pc.d0(a_f)
                 };
-                let unp = pc.d0((a + b) * 0.5);
-                match classify_on_wire(clas, *orient_ccw, &unp) {
-                    PointState::On => {}
-                    st @ (PointState::In | PointState::Out) => {
-                        let is_in = st == PointState::In;
-                        match stb {
-                            None => stb = Some(is_in),
-                            Some(prev) if prev != is_in => {
-                                unknown = true;
-                                break;
-                            }
-                            _ => {}
+                if (a_l - a_f).abs() > PCONFUSION {
+                    let reverse = !e.0.orientation().is_reversed();
+                    let a_epm =
+                        get_next_param_on_pc(a_pc.as_ref(), &a_peb, a_f, a_l, tol_u, tol_v, reverse);
+                    let mut a_pee = a_pc.d0(a_epm);
+                    if a_peb.square_distance(&a_pee) <= REAL_SMALL {
+                        // Very short curve: take its tangent (`cxx:626-643`).
+                        let (_, d) = a_pc.d1(a_epm);
+                        a_pee = if e.0.orientation().is_reversed() {
+                            GpPnt2d::new(a_peb.x() - d.x(), a_peb.y() - d.y())
+                        } else {
+                            GpPnt2d::new(a_peb.x() + d.x(), a_peb.y() + d.y())
+                        };
+                        if a_peb.square_distance(&a_pee) <= REAL_SMALL {
+                            k += 1;
+                            continue;
                         }
+                    }
+                    let an_e_dir = GpVec2d::new(a_pee.x() - a_peb.x(), a_pee.y() - a_peb.y());
+                    df_cur_angle = an_e_dir.angle(&an_e_ref_dir).abs();
+                }
+                if df_cur_angle <= df_min_angle {
+                    let mut d = p_ref.square_distance(&a_peb);
+                    if d <= PCONFUSION {
+                        d = 0.0;
+                    }
+                    if (a_peb.x() - p_ref.x()).abs() < tol_u
+                        && (a_peb.y() - p_ref.y()).abs() < tol_v
+                        && d <= dmin
+                    {
+                        df_min_angle = df_cur_angle;
+                        k_min = k;
+                        dmin = d;
                     }
                 }
             }
-            if unknown {
-                break;
-            }
-            let Some(is_in) = stb else {
-                continue;
-            };
-            if is_in == staout_in {
-                sta_in = true;
-            } else {
-                map_int[j] = true;
-            }
+            k += 1;
         }
-        if unknown {
-            continue;
-        }
-        if !sta_in {
-            if staout_in {
-                reverse_wire_on_face(&mut wires[i], face);
-                si[i] = 1;
-            } else {
-                si[i] = 1;
-            }
-        } else if !staout_in {
-            si[i] = 2;
+        if k_min == 0 {
+            is_degenerated = false;
+            dmin = f64::MAX;
         } else {
-            si[i] = 3;
+            break;
         }
     }
-    for i in 0..n {
-        if si[i] <= 1 {
-            continue;
-        }
-        if !map_int[i] {
-            if si[i] == 3 {
-                reverse_wire_on_face(&mut wires[i], face);
+    if k_min == 0 { None } else { Some(k_min - 1) }
+}
+
+/// `GetNextParamOnPC` (`BRepTools_WireExplorer.cxx:798-873`): the parameter of
+/// the first sample of `pc` more than `(tol_u, tol_v)` away from `p_ref`,
+/// stepping from the `reverse` end of `[f, l]` in `|l - f| / 1000` increments.
+fn get_next_param_on_pc(
+    pc: &dyn Curve2d,
+    p_ref: &GpPnt2d,
+    f: f64,
+    l: f64,
+    tol_u: f64,
+    tol_v: f64,
+    reverse: bool,
+) -> f64 {
+    let d_p = (l - f).abs() / 1000.0;
+    let on_ref = |p: &GpPnt2d| {
+        (p_ref.x() - p.x()).abs() < tol_u && (p_ref.y() - p.y()).abs() < tol_v
+    };
+    if reverse {
+        let mut result = f;
+        let mut start_par = f;
+        let mut found = false;
+        while !found && start_par < l {
+            start_par += d_p;
+            if on_ref(&pc.d0(start_par)) {
+                continue;
             }
-        } else if si[i] == 2 {
-            reverse_wire_on_face(&mut wires[i], face);
+            result = start_par;
+            found = true;
         }
-    }
-}
-
-/// `ShapeExtend_WireData::Reverse(face)` seam pass (`cxx:545-571`):
-/// `ComputeSeams` then `SwapSeam` once per closed-surface edge. `SwapSeam`
-/// returns immediately on a REVERSED occurrence (`cxx:518-520`).
-fn swap_wire_seams(wire: &Wire, face: &Face) {
-    let mut seen = HashMap::new();
-    for e in edges_of_wire(wire) {
-        if e.0.orientation().is_reversed() {
-            continue;
+        if !found {
+            result = l;
         }
-        let k = GeometryRegistry::shape_key(&e.0);
-        if seen.insert(k, ()).is_none() {
-            swap_seam_pcurves(&e, face);
+        if result > l {
+            result = l;
         }
+        result
+    } else {
+        let mut result = l;
+        let mut start_par = l;
+        let mut found = false;
+        while !found && start_par > f {
+            start_par -= d_p;
+            if on_ref(&pc.d0(start_par)) {
+                continue;
+            }
+            result = start_par;
+            found = true;
+        }
+        if !found {
+            result = f;
+        }
+        if result < f {
+            result = f;
+        }
+        result
     }
-}
-
-/// `SwapSeam` (`ShapeExtend_WireData.cxx:511-543`): exchange PCurve/PCurve2
-/// once, on the FORWARD occurrence only (`cxx:518-520`).
-pub(crate) fn swap_seam_pcurves(edge: &Edge, face: &Face) {
-    if edge.0.orientation().is_reversed() {
-        return;
-    }
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    let mut pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
-    if pcs.len() < 2 {
-        return;
-    }
-    pcs.swap(0, 1);
-    GeometryRegistry::global().set_edge_pcurves(&edge.0, face_key, pcs);
 }
 
 /// `ShapeAnalysis::TotCross2D` — signed 2D area of a wire's pcurves (trapezoid
@@ -658,10 +804,17 @@ impl ModelBuilder {
             let f = Face(f.0.oriented(Orientation::Forward));
             let face_index = model.add_face(f.clone());
 
-            let mut wires = wires_of_face(&f);
-            if wires.len() > 1 {
-                fix_multiwire_orientation(&f, &mut wires);
-            }
+            // `BRepMesh_ShapeVisitor::Visit` (`BRepMesh_ShapeVisitor.cxx:58-87`)
+            // applies NO orientation fixup: it is `ShapeAnalysis::OuterWire` +
+            // `TopExp_Explorer(face, TopAbs_WIRE)`, and `addWire` only runs
+            // `ShapeAnalysis_Wire::CheckOrder`. `ShapeFix_Face::FixOrientation`
+            // belongs to the Shape Healing pass the reader already ran
+            // (`IGESControl_IGESBoundary` -> `ShapeFix_Face::Perform`,
+            // port: `iges_read/iges_process_shape.rs`); repeating it inside the
+            // mesher reversed the torus' `V in [-pi, pi]` wire and made the
+            // FaceChecker report a self-intersection (`FaceChecker.cxx:150-158`)
+            // so the face came out with zero triangles.
+            let wires = wires_of_face(&f);
             let outer = outer_of_wires(&wires, &f);
             if let Some(outer_wire) = &outer {
                 if !add_wire(&mut model, face_index, outer_wire, &mut edge_index) {

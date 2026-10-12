@@ -320,6 +320,46 @@ pub fn fill_bnd_box(
     }
 }
 
+/// ShapeAnalysis::GetFaceUVBounds (ShapeAnalysis.cxx:268-299).
+///
+/// `FF = F` with `TopAbs_FORWARD` orientation; a face with no edge falls back
+/// to the surface bounds (`cxx:277-281`); otherwise every edge's pcurve
+/// (`ShapeAnalysis_Edge::PCurve(edge, F, c2d, f, l, false)`) is accumulated
+/// through `ShapeAnalysis_Curve::FillBndBox(c2d, f, l, 20, true, B)`
+/// (`cxx:296`) and the box is read back with `Bnd_Box2d::Get`
+/// (`cxx:298`), which is `(UMin, VMin, UMax, VMax)` -- returned here as
+/// `(UMin, UMax, VMin, VMax)`.
+pub fn get_face_uv_bounds(face: &Face) -> (f64, f64, f64, f64) {
+    let mut ff = face.0.clone();
+    ff.set_orientation(crate::abs::Orientation::Forward);
+    let edges = crate::topo_tools_full::edges_of(&ff);
+    if edges.is_empty() {
+        // cxx:279-281: `BRep_Tool::Surface(F, L)->Bounds(...)`.
+        if let Some(surf) = BRepTool::face_surface(face) {
+            let (u0, u1) = surf.u_range();
+            let (v0, v1) = surf.v_range();
+            return (u0, u1, v0, v1);
+        }
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+
+    // cxx:284-297.
+    let mut b = occt_core::bnd::BndBox2d::new();
+    for e in &edges {
+        // cxx:292-295: `sae.PCurve(edge, F, c2d, f, l, false)`.
+        let Some((c2d, f, l)) = crate::boptools_2d::curve_on_surface_oriented(e, face, false) else {
+            continue;
+        };
+        fill_bnd_box(c2d.as_ref(), f, l, 20, true, &mut b);
+    }
+    // cxx:298: `B.Get(UMin, VMin, UMax, VMax)`; a void box yields
+    // `RealLast / -RealLast` (`Bnd_Box2d::Get`).
+    match b.get() {
+        Some((umin, vmin, umax, vmax)) => (umin, umax, vmin, vmax),
+        None => (f64::MAX, -f64::MAX, f64::MAX, -f64::MAX),
+    }
+}
+
 /// GetMiddlePoint (cxx:2940-2974).
 pub fn get_middle_point(seg: &WireSegment, face: &crate::shape::Face) -> GpPnt2d {
     if seg.is_vertex() {

@@ -51,7 +51,7 @@ pub(in crate::iges_read) fn transfer_topo_curve(
             // `TransferTopoBasicCurve` sets `ModeTransfer(false)` (`cxx:967-968`),
             // so a directory 124 is applied inside `TransferBasicCurve`.
             let span = basic_curve_3d(session.model, index)?;
-            edge_from_span(&span)
+            edge_from_span(&span)?
         }
         102 => transfer_composite(session, index)?,
         142 => super::curve_on_surface::transfer_curve_on_surface(session, index)?,
@@ -532,15 +532,37 @@ fn pcurve_edge(face: &TopoShape, pc: Arc<dyn Curve2d>, first: f64, last: f64) ->
     let surf = GeometryRegistry::global()
         .face_surface(face)
         .expect("IGES face has no surface");
+    // `ShapeBuild_Edge().MakeEdge(newedge, curve->Reversed(), face, ...)`
+    // (`IGESToBRep_IGESBoundary.cxx:408-421`) -> `BRepBuilderAPI_MakeEdge(C2d,
+    // S, p1, p2)` -> `BRepLib_MakeEdge::Init(C2d, S, null, null, p1, p2)`
+    // (`BRepLib_MakeEdge.cxx:905-1094`). `ShapeBuild_Edge::MakeEdge` only
+    // prints in `OCCT_DEBUG` and leaves `newedge` null when `!ME.IsDone()`
+    // (`ShapeBuild_Edge.cxx:859-865`), and `ReverseCurves2d` then stores that
+    // null edge; the caller here keeps the un-reversed pcurve range instead.
+    let Some(build) = crate::brep_lib_make_edge::init_2d(&pc, &surf, first, last) else {
+        let mut plain = TopoBuilder::new().make_edge(
+            Arc::new(CurveOnSurface::new(pc.clone(), surf, first, last)),
+            first,
+            last,
+        );
+        GeometryRegistry::global().set_curve3d_null(&plain.0, true);
+        attach_pcurve(&plain, face, pc, first, last);
+        return plain;
+    };
     let curve3d: Arc<dyn occt_geom::Curve> =
-        Arc::new(CurveOnSurface::new(pc.clone(), surf, first, last));
-    let mut edge = TopoBuilder::new().make_edge(curve3d, first, last);
+        Arc::new(CurveOnSurface::new(pc.clone(), surf, build.first, build.last));
+    let b = TopoBuilder::new();
+    let mut edge = b.make_edge(curve3d, build.first, build.last);
     // `BRep_Tool::Curve` answers null on this edge: `ShapeBuild_Edge::MakeEdge`
     // leaves a `BRep_Curve3D` holding a null curve (`BRep_Builder::UpdateCurves`,
     // `BRep_Builder.cxx:86-92`). `curve` above is only what
     // `BRepAdaptor_Curve(E, F)` builds from the pcurve.
     GeometryRegistry::global().set_curve3d_null(&edge.0, true);
-    attach_pcurve(&edge, face, pc, first, last);
+    crate::brep_lib_make_edge::add_endpoint_vertices(&b, &mut edge, &build);
+    if build.reverse {
+        edge.0.set_orientation(crate::abs::Orientation::Reversed);
+    }
+    attach_pcurve(&edge, face, pc, build.first, build.last);
     edge
 }
 
@@ -1127,21 +1149,31 @@ pub(in crate::iges_read) fn edge_from_2d(
     let surf = GeometryRegistry::global()
         .face_surface(face)
         .ok_or_else(|| "IGES face has no surface".to_string())?;
+    // `ShapeBuild_Edge().MakeEdge(myedge, mycurve2d, face, a, b)`
+    // (`IGESToBRep_TopoCurve.cxx:1263`) -> `BRepBuilderAPI_MakeEdge(C2d, S,
+    // p1, p2)` -> `BRepLib_MakeEdge::Init(C2d, S, null, null, p1, p2)`
+    // (`BRepLib_MakeEdge.cxx:905-1094`). `Err` is the `Transfer2dTopoBasicCurve`
+    // failure arm for a null edge (`cxx:1265-1271`).
+    let Some(build) = crate::brep_lib_make_edge::init_2d(&pc, &surf, first, last) else {
+        return Err(
+            "IGES_1005 edge construction error: IGESToBRep_TopoCurve.cxx:1265-1271".into(),
+        );
+    };
     let curve3d: Arc<dyn occt_geom::Curve> =
-        Arc::new(CurveOnSurface::new(pc.clone(), surf, first, last));
+        Arc::new(CurveOnSurface::new(pc.clone(), surf, build.first, build.last));
     let b = TopoBuilder::new();
-    let p1 = curve3d.d0(first);
-    let p2 = curve3d.d0(last);
-    let mut edge = b.make_edge(curve3d, first, last);
+    let mut edge = b.make_edge(curve3d, build.first, build.last);
     // `ShapeBuild_Edge::MakeEdge(edge, C2d, S, L, p1, p2)`
     // (`ShapeBuild_Edge.cxx:851-870`): the edge carries the pcurve only, so
     // `BRep_Tool::Curve` is null. `ShapeFix_Edge::FixAddCurve3d`
     // (`ShapeFix_Edge.cxx:618-638`) rebuilds it from the pcurve.
     GeometryRegistry::global().set_curve3d_null(&edge.0, true);
-    let v1 = b.make_vertex(p1, 0.0);
-    let v2 = b.make_vertex(p2, 0.0);
-    b.add_edge_vertices(&mut edge, &v1, &v2);
-    attach_pcurve(&edge, face, pc, first, last);
+    crate::brep_lib_make_edge::add_endpoint_vertices(&b, &mut edge, &build);
+    // `cxx:1089-1092`: a swapped non-periodic range stores the edge REVERSED.
+    if build.reverse {
+        edge.0.set_orientation(crate::abs::Orientation::Reversed);
+    }
+    attach_pcurve(&edge, face, pc, build.first, build.last);
     Ok(edge)
 }
 

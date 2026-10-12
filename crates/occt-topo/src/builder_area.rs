@@ -29,6 +29,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt, GpVec};
 use occt_geom::GeomPlane;
 
+use crate::brep_lib_make_wire::MakeWire;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, TopoShape, Wire};
@@ -410,9 +411,26 @@ pub fn edges_form_closed_loop(edges: &[Edge]) -> bool {
 }
 
 /// Build a wire from the ordered edges, flagged closed.
+///
+/// This is the port's stand-in for `BRepBuilderAPI_MakeWire`, i.e.
+/// `BRepLib_MakeWire::Add` (`BRepLib_MakeWire.cxx:123-453`), not the raw
+/// `BRep_Builder` append of [`TopoBuilder::make_wire`]: an edge is reversed when
+/// the accumulated wire demands it, and its endpoints are unified with the
+/// wire's vertices by geometric proximity (`IsCheckGeometryProximity`,
+/// `cxx:223-285`, `:304-368`). Without that unification adjacent edges keep
+/// unrelated vertex `TShape`s, and no `TopoDS`-identity consumer — most notably
+/// `BRepTools_WireExplorer`, which keys candidates by `TopExp::Vertices` — can
+/// walk the wire.
 pub fn make_wire_from_edges(edges: &[Edge]) -> Wire {
-    let b = TopoBuilder::new();
-    let wire = b.make_wire(edges);
+    let mut mw = MakeWire::new();
+    for e in edges {
+        // `BRepBuilderAPI_MakeWire` records `IsDone() == false` rather than
+        // raising; `Shape()` stays reachable and exposes the partial wire.
+        if mw.add(e).is_err() {
+            break;
+        }
+    }
+    let mut wire = mw.wire();
     wire.set_closed(true);
     wire
 }

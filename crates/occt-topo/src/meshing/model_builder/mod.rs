@@ -18,8 +18,11 @@ pub(crate) use std::sync::Arc;
 
 pub(crate) use occt_core::bnd::{BndBox, BndBox2d};
 pub(crate) use occt_core::cslib::{Class2d, Class2dResult};
-pub(crate) use occt_core::gp::GpPnt2d;
+pub(crate) use occt_core::gp::{GpPnt2d, GpVec2d};
 pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL};
+
+/// `M_PI` (`Standard_Real.hxx` uses the platform `M_PI`).
+pub(crate) const PI: f64 = std::f64::consts::PI;
 pub(crate) use occt_geom::Curve;
 pub(crate) use occt_geom2d::curve::Curve2d;
 

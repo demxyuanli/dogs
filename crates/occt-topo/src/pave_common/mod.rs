@@ -259,13 +259,19 @@ mod tests {
         let e0 = pf.ds().index(&b.edges[0].0).unwrap();
         set_non_destructive(&mut pf, true);
 
-        update_edge_tolerance(&mut pf, e0, 0.01).unwrap();
-        // The original edge is not modified in safe-input mode.
+        // The original edge is not modified in safe-input mode. An untouched
+        // edge keeps whatever its construction site gave it, so the assertion
+        // is the *pair* before/after, not a literal: `BRep_Tool::Tolerance`
+        // (`BRep_Tool.cxx:881-894`) reports the stored `BRep_TEdge` tolerance
+        // raised to `Precision::Confusion()`, so an edge that really was built
+        // with `BRepPrim_Builder::MakeEdge` reads `Confusion` here.
         let edge = Edge(pf.ds().shape(e0).unwrap().clone());
+        let tol_before = BRepTool::edge_tolerance(&edge);
+        update_edge_tolerance(&mut pf, e0, 0.01).unwrap();
+        let tol_after = BRepTool::edge_tolerance(&edge);
         assert!(
-            (BRepTool::edge_tolerance(&edge) - 0.0).abs() < 1e-12,
-            "original edge tolerance must stay 0.0 in non-destructive mode, got {}",
-            BRepTool::edge_tolerance(&edge)
+            (tol_after - tol_before).abs() < 1e-12,
+            "original edge tolerance must not change in non-destructive mode, got {tol_after} (was {tol_before})"
         );
         clear_tree(&b.solid.0);
     }

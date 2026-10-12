@@ -15,14 +15,37 @@ pub fn eval_curve(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64) -> GpPn
     // Extract local knot span
     let mut pts = vec![GpPnt::zero(); degree + 1];
     for k in 0..=degree {
-        let pi = idx - degree + k;
-        pts[k] = if pi < poles.len() { poles[pi] } else { poles[poles.len()-1] };
+        // `BSplCLib_BuildEval` (`BSplCLib_2.cxx:63-71`) walks the local window
+        // from `Index` and wraps past the last pole (`if (ip > PUpper) ip =
+        // PLower;`), which is how OCCT keeps a curve with fewer poles than
+        // `Degree + 1` evaluable. Such a curve is legal: `CheckCurveData`
+        // (`Geom_BSplineCurve.cxx:63-93`) accepts any `CPoles.Length() ==
+        // BSplCLib::NbPoles(Degree, Periodic, Mults)` and `NbPoles`
+        // (`BSplCLib.cxx:392-451`) caps only the END multiplicities at
+        // `Degree + 1`, so degree 3 with mults (3, 3) has 2 poles. The wrap is
+        // the identity whenever `poles.len() >= degree + 1`, i.e. for every
+        // curve the IGES and STEP read paths produce, so it cannot move an
+        // aligned model.
+        let pi = (idx as isize - degree as isize + k as isize).rem_euclid(n as isize) as usize;
+        pts[k] = poles[pi];
     }
     // de Boor triangle
     for r in 1..=degree {
         for i in (r..=degree).rev() {
-            let k0 = idx + i - degree;
-            let k1 = k0 + degree + 1 - r;
+            // OCCT's `BuildKnots` reads the flat knot array without wrapping;
+            // its `LocateParameter` clamp (`BSplCLib.cxx:344-347`,
+            // `Index >= Lower + Degree`) keeps every read in range. This
+            // primitive instead clamps the span to `[degree, n - 1]`
+            // (`idx` above), so `k0` stays >= 1 whenever
+            // `poles.len() >= degree + 1`. UNPORTED: the `poles.len() <
+            // degree + 1` configuration, where OCCT reaches the window through
+            // the distinct-knot `PoleIndex` (`BSplCLib.cxx:1758-1779`) that a
+            // flat-knot index cannot represent; the signed clamp below only
+            // keeps that case from panicking and is not an OCCT rule.
+            let k0 = (idx as isize + i as isize - degree as isize)
+                .clamp(0, knots.len().saturating_sub(1) as isize) as usize;
+            let k1 = (k0 as isize + degree as isize + 1 - r as isize)
+                .clamp(0, knots.len().saturating_sub(1) as isize) as usize;
             let alpha = (u - knots[k0]) / (knots[k1] - knots[k0]);
             if alpha.is_finite() {
                 let x = (1.0 - alpha) * pts[i-1].coord.x + alpha * pts[i].coord.x;
@@ -42,15 +65,19 @@ pub fn eval_curve_rational(poles: &[GpPnt], weights: &[f64], knots: &[f64], degr
     let idx = super::knots::hunt(knots, u).max(degree).min(n - 1);
     let mut pts = vec![(GpXyz::zero(), 0.0f64); degree + 1];
     for k in 0..=degree {
-        let pi = (idx - degree + k).min(poles.len()-1);
+        // Same `BSplCLib_BuildEval` cyclic pole window as the non-rational arm
+        // (`BSplCLib_2.cxx:74-86`).
+        let pi = (idx as isize - degree as isize + k as isize).rem_euclid(n as isize) as usize;
         // Homogeneous representation: (w_i·P_i, w_i). Blending these 4D points
         // and dividing by the final weight gives the rational de Boor result.
         pts[k] = (poles[pi].coord.multiplied(weights[pi]), weights[pi]);
     }
     for r in 1..=degree {
         for i in (r..=degree).rev() {
-            let k0 = idx + i - degree;
-            let k1 = k0 + degree + 1 - r;
+            let k0 = (idx as isize + i as isize - degree as isize)
+                .clamp(0, knots.len().saturating_sub(1) as isize) as usize;
+            let k1 = (k0 as isize + degree as isize + 1 - r as isize)
+                .clamp(0, knots.len().saturating_sub(1) as isize) as usize;
             let alpha = (u - knots[k0]) / (knots[k1] - knots[k0]);
             if alpha.is_finite() {
                 pts[i].0 = crate::gp::GpXyz::new(

@@ -82,8 +82,8 @@ impl FaceFace {
         let a1 = GpPnt2d::new(proj_a1.0, proj_a1.1);
         let b0 = GpPnt2d::new(proj_b0.0, proj_b0.1);
         let b1 = GpPnt2d::new(proj_b1.0, proj_b1.1);
-        let ba = crate::wireframe::face_uv_bounds(fa, sa);
-        let bb = crate::wireframe::face_uv_bounds(fb, sb);
+        let ba = crate::wireframe::face_uv_bounds(fa);
+        let bb = crate::wireframe::face_uv_bounds(fb);
 
         // For each face, clip the projected line against the face UV rectangle.
         // The 3D line is p(t) = origin + t·dir (unit dir); the projected 2D

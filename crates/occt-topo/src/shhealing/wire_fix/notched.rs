@@ -1,5 +1,34 @@
 use super::*;
 
+/// `ShapeFix_Wire::FixEdgeCurves` arm at `ShapeFix_Wire.cxx:953-1005`,
+/// including the `CheckPCurveRange` re-projection it owns (`cxx:958-993`).
+///
+/// Its mode is the *separate* key `FixEdgeSameParameterMode`
+/// (`ShapeProcess_OperLibrary.cxx:857` `sfw->FixSameParameterMode() =
+/// ctx->IntegerVal("FixEdgeSameParameterMode", -1)`), which is `0` on both
+/// read paths: `DE_ShapeFixParameters.hxx:75` `FixEdgeSameParameterMode =
+/// FixMode::NotFix` (`:27` `NotFix = 0`), `DEIGES_Parameters.cxx:64-72` and
+/// `DESTEP_Parameters.cxx:92-95` return that struct unchanged for this field,
+/// `XSAlgo_ShapeProcessor.cxx:681` writes it as `FixShape.FixEdgeSameParameterMode`,
+/// and `ShapeProcess_Context::IntegerVal` resolves the scope `FixShape`
+/// (`ShapeProcess.cxx:214`, `ShapeProcess_Context.cxx:192-208`) to that key.
+/// The legacy map agrees: `IGESData.cxx:152` and `STEPControl_Controller.cxx:247`
+/// both leave it at `0`. `NeedFix(0)` is `0 < 0 ? need : 0 > 0`, i.e. false
+/// (`ShapeFix_Root.lxx:101-104`).
+///
+/// So OCCT-IGES/DESTEP does not run this arm, and the pass that covers the same
+/// `ShapeFix_Edge::FixSameParameter` work is the whole-shape
+/// `ShapeFix_Shape.cxx:259` -> `ShapeFix::SameParameter(Result, false, 0.0)`
+/// (`ShapeFix.cxx:70-258`), which is gated by the distinct key
+/// `FixSameParameterMode` (`ShapeProcess_OperLibrary.cxx:813`, DE default
+/// `FixOrNot = -1`) and therefore does run.
+///
+/// ENABLED = the port keeps running the arm (its pre-existing behaviour);
+/// DISABLED = the arm follows the `cxx` gate and is skipped. The A/B over the
+/// 14 oracle models is recorded in `docs/goals/iges-read-full/state.yaml`
+/// (T015).
+pub(in crate::shhealing) const FIXEDGE_SAMEPARAM_ARM: bool = false;
+
 // ---------------------------------------------------------------------------
 // ShapeFix_Wire::FixNotchedEdges / ShapeAnalysis_Wire::CheckNotchedEdges
 // ---------------------------------------------------------------------------
@@ -461,11 +490,10 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
     if reorder_ok {
         let _ = fix_shifted_wire(wire, face);
     }
-    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`).
-    // KNOWN DEVIATION, not yet migrated (same one as
-    // `perform_wire_first_round`): the arm's mode is the separate key
-    // `FixEdgeSameParameterMode` (`ShapeProcess_OperLibrary.cxx:857`), which is
-    // `0` for STEP as well (`DE_ShapeFixParameters.hxx:75` `FixMode::NotFix`,
+    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`), the same
+    // arm and the same off gate as `perform_wire_first_round` (see
+    // `FIXEDGE_SAMEPARAM_ARM` there): `FixEdgeSameParameterMode` is `0` for
+    // STEP too (`DE_ShapeFixParameters.hxx:75` `FixMode::NotFix`,
     // `DESTEP_Parameters.cxx:92-95`, `XSAlgo_ShapeProcessor.cxx:681`, legacy
     // `STEPControl_Controller.cxx:247`), so `NeedFix(0)` is false and OCCT runs
     // neither the `CheckPCurveRange` re-projection below nor
@@ -475,13 +503,14 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
     // `same_parameter_shape` (`BRepLib::SameParameter`).
     let reg = GeometryRegistry::global();
     for (i, e) in edges.iter().enumerate() {
-        if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(e, face, false) {
-            let (first, last) = BRepTool::edge_parameters(e);
-            if first.is_finite() && last.is_finite() {
-                let (cfp, clp) = (c2d.first_parameter(), c2d.last_parameter());
-                if (first - fp2d).abs() > PCONFUSION || (last - lp2d).abs() > PCONFUSION {
-                    reg.set_same_range(&e.0, false);
-                } else if !check_pcurve_range(first, last, c2d.as_ref()) {
+        if FIXEDGE_SAMEPARAM_ARM {
+            if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(e, face, false) {
+                let (first, last) = BRepTool::edge_parameters(e);
+                if first.is_finite() && last.is_finite() {
+                    let (cfp, clp) = (c2d.first_parameter(), c2d.last_parameter());
+                    if (first - fp2d).abs() > PCONFUSION || (last - lp2d).abs() > PCONFUSION {
+                        reg.set_same_range(&e.0, false);
+                    } else if !check_pcurve_range(first, last, c2d.as_ref()) {
                     // `ShapeFix_Wire.cxx:970-985`: when the pcurve cannot cover the
                     // edge's 3D range OCCT does exactly two things —
                     // `ShapeBuild_Edge().RemovePCurve(E, S, L)` followed by
@@ -496,10 +525,11 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
                     let is_seam = is_seam_use(&edges, i);
                     reg.remove_pcurves_on_surface(&e.0, &face.0);
                     let _ = fix_add_pcurve(e, face, is_seam, preci, &mut cache);
+                    }
                 }
             }
+            fix_same_parameter(e, face);
         }
-        fix_same_parameter(e, face);
     }
     // `ShapeFix_Wire::Perform` (`cxx:386-392`): FixDegenerated runs right after
     // FixEdgeCurves (the loop above) and before FixNotchedEdges / FixTails /
@@ -656,19 +686,21 @@ pub fn perform_wire_first_round(
     let edges = edges_of_wire(wire);
     let reg = GeometryRegistry::global();
     for (i, edge) in edges.iter().enumerate() {
-        if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(edge, face, false) {
-            let (first, last) = BRepTool::edge_parameters(edge);
-            if first.is_finite() && last.is_finite() {
-                if (first - fp2d).abs() > PCONFUSION || (last - lp2d).abs() > PCONFUSION {
-                    reg.set_same_range(&edge.0, false);
-                } else if !check_pcurve_range(first, last, c2d.as_ref()) {
-                    let is_seam = is_seam_use(&edges, i);
-                    reg.remove_pcurves_on_surface(&edge.0, &face.0);
-                    let _ = fix_add_pcurve(edge, face, is_seam, preci, &mut cache);
+        if FIXEDGE_SAMEPARAM_ARM {
+            if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(edge, face, false) {
+                let (first, last) = BRepTool::edge_parameters(edge);
+                if first.is_finite() && last.is_finite() {
+                    if (first - fp2d).abs() > PCONFUSION || (last - lp2d).abs() > PCONFUSION {
+                        reg.set_same_range(&edge.0, false);
+                    } else if !check_pcurve_range(first, last, c2d.as_ref()) {
+                        let is_seam = is_seam_use(&edges, i);
+                        reg.remove_pcurves_on_surface(&edge.0, &face.0);
+                        let _ = fix_add_pcurve(edge, face, is_seam, preci, &mut cache);
+                    }
                 }
             }
+            fix_same_parameter(edge, face);
         }
-        fix_same_parameter(edge, face);
     }
     // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:1009-1022`).
     // `FixVertexToleranceMode` is -1, so `NeedFix` is true.
@@ -756,6 +788,15 @@ pub fn perform_wire_constructor_defaults(wire: &mut Wire, face: &Face, precision
                 }
             }
         }
+        // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`). This
+        // arm IS enabled here, unlike the two face-wire drivers that set
+        // `FIXEDGE_SAMEPARAM_ARM` to false: this is the naked `ShapeFix_Wire`
+        // of `IGESControl_IGESBoundary::Transfer`, built through the
+        // `ClearModes` constructor (`ShapeFix_Wire.cxx:167-202`), which leaves
+        // `myFixSameParameterMode = -1` (`cxx:185`), so `NeedFix(-1)` is true
+        // (`ShapeFix_Root.lxx:100-104`). The face path instead inherits the
+        // operator's `FixShape.FixEdgeSameParameterMode = 0`
+        // (`ShapeProcess_OperLibrary.cxx:857`).
         fix_same_parameter(edge, face);
     }
     for edge in edges_of_wire(wire) {

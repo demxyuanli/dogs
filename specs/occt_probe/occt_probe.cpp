@@ -22,6 +22,7 @@
 #include <ShapeAnalysis_Wire.hxx>
 #include <ShapeAnalysis_WireOrder.hxx>
 #include <ShapeExtend_WireData.hxx>
+#include <ShapeFix_Wire.hxx>
 #include <ShapeExtend.hxx>
 #include <IMeshData_Model.hxx>
 #include <IMeshData_Face.hxx>
@@ -72,6 +73,8 @@
 #include <Interface_InterfaceModel.hxx>
 #include <Interface_Static.hxx>
 #include <ShapeProcess.hxx>
+#include <ShapeAnalysis.hxx>
+#include <ShapeAnalysis_Edge.hxx>
 #include <ShapeAnalysis_Surface.hxx>
 #include <ShapeConstruct_ProjectCurveOnSurface.hxx>
 #include <DE_ShapeFixParameters.hxx>
@@ -112,6 +115,10 @@
 #include <Geom2d_Curve.hxx>
 #include <Geom2d_Line.hxx>
 #include <Bnd_Box2d.hxx>
+// TEMP FCLS2D: `BRepTopAdaptor_FClass2d` boundary ring / state ground truth.
+#include <BRepTopAdaptor_FClass2d.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <BRepTools_WireExplorer.hxx>
 #include <Geom2d_BSplineCurve.hxx>
 #include <Geom2dAdaptor_Curve.hxx>
 #include <gp_Pnt2d.hxx>
@@ -2437,10 +2444,38 @@ int main(int argc, char** argv)
   {
     IGESControl_Controller::Init();
     IGESControl_Reader aIgesReader;
+    if (faces0)
+    {
+      aFixParams.FixFaceOrientationMode =
+        static_cast<DE_ShapeFixParameters::FixMode>(0); // NeedFix(0) => do not fix
+      anyFixParam = true;
+      std::cout << "SHP-FIX face-orientation disabled\n";
+    }
     if (aIgesReader.ReadFile(argv[1]) != IFSelect_RetDone)
     {
       std::cerr << "read failed: " << argv[1] << "\n";
       return 3;
+    }
+    // Same delegation caveat as the STEP branch below: the reader's transfer
+    // actor only exists after `ReadFile`.
+    for (int i = 2; i + 2 < argc; ++i)
+    {
+      if (std::string(argv[i]) == "--set")
+      {
+        Interface_Static::SetIVal(argv[i + 1], std::atoi(argv[i + 2]));
+        std::cout << "SET " << argv[i + 1] << " = " << Interface_Static::IVal(argv[i + 1]) << "\n";
+      }
+    }
+    if (anyFixParam)
+    {
+      aIgesReader.SetShapeFixParameters(aFixParams);
+    }
+    if (nofix)
+    {
+      ShapeProcess::OperationsFlags aFlags;
+      aFlags.reset();
+      aIgesReader.SetShapeProcessFlags(aFlags);
+      std::cout << "SHAPE-PROCESS disabled\n";
     }
     aIgesReader.TransferRoots();
     aShape = aIgesReader.OneShape();
@@ -3797,6 +3832,247 @@ int main(int argc, char** argv)
     }
     return 0;
   }
+  // TEMP T-121: `--nbdump` prints, per face, the values `ShapeFix_Face::
+  // isNeedAddNaturalBound` (`ShapeFix_Face.cxx:1120-1160`) reads: the surface
+  // U/V bounds and periodicity, the wire count, `ShapeAnalysis::IsOuterBound`
+  // (`ShapeAnalysis.cxx:203-230`) and, per wire, `ShapeAnalysis::TotCross2D`
+  // (`ShapeAnalysis.cxx:115-150`) with every edge orientation and p-curve
+  // range, so the port's decision can be compared step by step.
+  if (argc > 2 && std::string(argv[2]) == "--nbdump")
+  {
+    int k = 0;
+    for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++k)
+    {
+      const TopoDS_Face aF = TopoDS::Face(fx.Current());
+      BRepAdaptor_Surface aS(aF);
+      int aNW = 0;
+      for (TopExp_Explorer wx(aF, TopAbs_WIRE); wx.More(); wx.Next())
+      {
+        ++aNW;
+      }
+      std::cout << "NB face " << k << " type=" << (int)aS.GetType()
+                << " uper=" << (aS.IsUPeriodic() ? 1 : 0) << " vper=" << (aS.IsVPeriodic() ? 1 : 0)
+                << " u=[" << aS.FirstUParameter() << "," << aS.LastUParameter() << "]"
+                << " v=[" << aS.FirstVParameter() << "," << aS.LastVParameter() << "]"
+                << " wires=" << aNW << " outer=" << (ShapeAnalysis::IsOuterBound(aF) ? 1 : 0) << "\n";
+      int aWI = 0;
+      for (TopExp_Explorer wx(aF, TopAbs_WIRE); wx.More(); wx.Next(), ++aWI)
+      {
+        TopoDS_Wire                       aW = TopoDS::Wire(wx.Current());
+        occ::handle<ShapeExtend_WireData> aWD = new ShapeExtend_WireData(aW);
+        std::cout << "NB  w" << aWI << " ori=" << (int)aW.Orientation()
+                  << " n=" << aWD->NbEdges() << " cross=" << ShapeAnalysis::TotCross2D(aWD, aF)
+                  << "\n";
+        for (int i = 1; i <= aWD->NbEdges(); ++i)
+        {
+          const TopoDS_Edge&        e = aWD->Edge(i);
+          double                    f = 0., l = 0.;
+          occ::handle<Geom2d_Curve> c2 = BRep_Tool::CurveOnSurface(e, aF, f, l);
+          gp_Pnt2d                  b(0., 0.), en(0., 0.);
+          if (!c2.IsNull())
+          {
+            b  = c2->Value(f);
+            en = c2->Value(l);
+          }
+          std::cout << "NB   e" << i << " ori=" << (int)e.Orientation()
+                    << " closed=" << (BRep_Tool::IsClosed(e, aF) ? 1 : 0)
+                    << " deg=" << (BRep_Tool::Degenerated(e) ? 1 : 0) << " uv=(" << b.X() << ","
+                    << b.Y() << ")->(" << en.X() << "," << en.Y() << ")\n";
+        }
+      }
+    }
+    return 0;
+  }
+  // TEMP T-121: `--vmap` walks every wire of every face and prints, per edge,
+  // the identity and point of `ShapeAnalysis_Edge::FirstVertex` / `LastVertex`
+  // (`ShapeAnalysis_Edge.cxx:228-257`), so edge closure (`v1.IsSame(v2)`) and
+  // vertex sharing between adjacent edges can be read off. The identity is the
+  // raw `TShape` address, stable inside one process.
+  if (argc > 2 && std::string(argv[2]) == "--vmap")
+  {
+    int k = 0;
+    for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++k)
+    {
+      std::cout << "VMAP face " << k << "\n";
+      int aWI = 0;
+      for (TopExp_Explorer wx(fx.Current(), TopAbs_WIRE); wx.More(); wx.Next(), ++aWI)
+      {
+        ShapeAnalysis_Edge                aEA;
+        ShapeExtend_WireData              aWD(TopoDS::Wire(wx.Current()));
+        std::cout << "VMAP  w" << aWI << " n=" << aWD.NbEdges() << "\n";
+        for (int i = 1; i <= aWD.NbEdges(); ++i)
+        {
+          const TopoDS_Edge   e  = aWD.Edge(i);
+          const TopoDS_Vertex v1 = aEA.FirstVertex(e);
+          const TopoDS_Vertex v2 = aEA.LastVertex(e);
+          std::cout << "VMAP   e" << i << " ori=" << (int)e.Orientation()
+                    << " v1=" << (v1.IsNull() ? 0L : (long)v1.TShape().get())
+                    << " v2=" << (v2.IsNull() ? 0L : (long)v2.TShape().get())
+                    << " same=" << ((!v1.IsNull() && !v2.IsNull() && v1.IsSame(v2)) ? 1 : 0);
+          if (!v1.IsNull())
+          {
+            const gp_Pnt p = BRep_Tool::Pnt(v1);
+            std::cout << " p1=(" << p.X() << "," << p.Y() << "," << p.Z() << ")";
+          }
+          if (!v2.IsNull())
+          {
+            const gp_Pnt p = BRep_Tool::Pnt(v2);
+            std::cout << " p2=(" << p.X() << "," << p.Y() << "," << p.Z() << ")";
+          }
+          std::cout << "\n";
+        }
+      }
+    }
+    return 0;
+  }
+  // TEMP T-121: `--wirefix <faceIdx>` replays `ShapeFix_Face::Perform`'s wire
+  // pass (`ShapeFix_Face.cxx:400-455`) on one face of the loaded (usually
+  // `--nofix`) shape: for the full pass and then for every pass with one
+  // `ShapeFix_Wire` mode disabled, it prints `ShapeAnalysis::TotCross2D`
+  // (`ShapeAnalysis.cxx:115-150`) and the resulting edge orientations, so the
+  // port's `perform_wire_first_round` can be compared stage by stage.
+  if (argc > 3 && std::string(argv[2]) == "--wirefix")
+  {
+    const int aFaceIdx = std::atoi(argv[3]);
+    TopoDS_Face aFace;
+    int         k = 0;
+    for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++k)
+    {
+      if (k == aFaceIdx)
+      {
+        aFace = TopoDS::Face(fx.Current());
+        break;
+      }
+    }
+    if (aFace.IsNull())
+    {
+      std::cout << "WF no-face\n";
+      return 0;
+    }
+    occ::handle<Geom_Surface>          aSurf = BRep_Tool::Surface(aFace);
+    occ::handle<ShapeAnalysis_Surface> aSAS  = new ShapeAnalysis_Surface(aSurf);
+    const TopoDS_Wire aW = TopoDS::Wire(TopExp_Explorer(aFace, TopAbs_WIRE).Current());
+
+    auto report = [&](const char* tag, const TopoDS_Wire& w) {
+      occ::handle<ShapeExtend_WireData> aWD = new ShapeExtend_WireData(w);
+      std::cout << "WF " << tag << " n=" << aWD->NbEdges()
+                << " cross=" << ShapeAnalysis::TotCross2D(aWD, aFace) << "\n";
+      for (int i = 1; i <= aWD->NbEdges(); ++i)
+      {
+        const TopoDS_Edge&        e = aWD->Edge(i);
+        double                    f = 0., l = 0.;
+        occ::handle<Geom2d_Curve> c2 = BRep_Tool::CurveOnSurface(e, aFace, f, l);
+        gp_Pnt2d                  b(0., 0.), en(0., 0.);
+        if (!c2.IsNull())
+        {
+          b  = c2->Value(f);
+          en = c2->Value(l);
+        }
+        std::cout << "WF   e" << i << " ori=" << (int)e.Orientation() << " uv=(" << b.X() << ","
+                  << b.Y() << ")->(" << en.X() << "," << en.Y() << ")\n";
+      }
+    };
+
+    report("raw", aW);
+
+    {
+      ShapeAnalysis_Edge aEA;
+      occ::handle<ShapeExtend_WireData> aWD = new ShapeExtend_WireData(aW);
+      for (int i = 1; i <= aWD->NbEdges(); ++i)
+      {
+        const TopoDS_Edge   e = aWD->Edge(i);
+        const TopoDS_Vertex v1 = aEA.FirstVertex(e);
+        const TopoDS_Vertex v2 = aEA.LastVertex(e);
+        int                 aNbV = 0;
+        for (TopoDS_Iterator aVi(e, false); aVi.More(); aVi.Next())
+        {
+          ++aNbV;
+        }
+        std::cout << "WF v" << i << " children=" << aNbV
+                  << " same=" << ((!v1.IsNull() && !v2.IsNull() && v1.IsSame(v2)) ? 1 : 0)
+                  << " null=" << (v1.IsNull() || v2.IsNull() ? 1 : 0);
+        if (!v1.IsNull() && !v2.IsNull())
+        {
+          const gp_Pnt p1 = BRep_Tool::Pnt(v1);
+          const gp_Pnt p2 = BRep_Tool::Pnt(v2);
+          std::cout << " p1=(" << p1.X() << "," << p1.Y() << "," << p1.Z() << ") p2=(" << p2.X()
+                    << "," << p2.Y() << "," << p2.Z() << ")";
+        }
+        std::cout << "\n";
+      }
+    }
+
+    {
+      ShapeAnalysis_Wire      aWT(new ShapeExtend_WireData(aW), aFace, Precision::Confusion());
+      ShapeAnalysis_WireOrder aO3;
+      aWT.CheckOrder(aO3, true, true);
+      std::cout << "WF order3d nb=" << aO3.NbEdges() << " status=" << aO3.Status() << " ordered=[";
+      for (int i = 1; i <= aO3.NbEdges(); ++i)
+      {
+        std::cout << (i > 1 ? " " : "") << aO3.Ordered(i);
+      }
+      std::cout << "]\n";
+      ShapeAnalysis_WireOrder aO2;
+      aWT.CheckOrder(aO2, true, false);
+      std::cout << "WF order2d nb=" << aO2.NbEdges() << " status=" << aO2.Status() << " ordered=[";
+      for (int i = 1; i <= aO2.NbEdges(); ++i)
+      {
+        std::cout << (i > 1 ? " " : "") << aO2.Ordered(i);
+      }
+      std::cout << "]\n";
+    }
+
+    const char* aModes[] = {"ALL",          "FixReorder",  "FixSmall",     "FixConnected",
+                            "FixEdgeCurves", "FixDegenerated", "FixTails",
+                            "FixShifted",   "FixAddPCurve", "FixAddCurve3d", "FixReversed2d",
+                            "FixSeam",      "ROff+COn",     "ROff+SmallOn"};
+    const int   aNbModes = (int)(sizeof(aModes) / sizeof(aModes[0]));
+    for (int m = 0; m < aNbModes; ++m)
+    {
+      ShapeFix_Wire aSFW;
+      aSFW.SetFace(aFace, aSAS);
+      aSFW.Load(aW);
+      aSFW.FixLackingMode()          = false;
+      aSFW.FixSelfIntersectionMode() = false;
+      const std::string mn = aModes[m];
+      if (mn == "FixReorder")
+        aSFW.FixReorderMode() = 0;
+      else if (mn == "FixSmall")
+        aSFW.FixSmallMode() = 0;
+      else if (mn == "FixConnected")
+        aSFW.FixConnectedMode() = 0;
+      else if (mn == "FixEdgeCurves")
+        aSFW.FixEdgeCurvesMode() = 0;
+      else if (mn == "FixDegenerated")
+        aSFW.FixDegeneratedMode() = 0;
+      else if (mn == "FixTails")
+        aSFW.FixTailMode() = 0;
+      else if (mn == "FixShifted")
+        aSFW.FixShiftedMode() = 0;
+      else if (mn == "FixAddPCurve")
+        aSFW.FixAddPCurveMode() = 0;
+      else if (mn == "FixAddCurve3d")
+        aSFW.FixAddCurve3dMode() = 0;
+      else if (mn == "FixReversed2d")
+        aSFW.FixReversed2dMode() = 0;
+      else if (mn == "FixSeam")
+        aSFW.FixSeamMode() = 0;
+      else if (mn == "ROff+COn")
+      {
+        aSFW.FixReorderMode()   = 0;
+        aSFW.FixConnectedMode() = 1;
+      }
+      else if (mn == "ROff+SmallOn")
+      {
+        aSFW.FixReorderMode() = 0;
+        aSFW.FixSmallMode()   = 1;
+      }
+      const bool aRes = aSFW.Perform(Message_ProgressRange());
+      report(mn.c_str(), aSFW.Wire());
+      std::cout << "WF   res=" << (aRes ? 1 : 0) << "\n";
+    }
+    return 0;
+  }
   if (argc > 2 && std::string(argv[2]) == "--period")
   {
     int k = 0;
@@ -3823,6 +4099,28 @@ int main(int argc, char** argv)
                                           aBox.CornerMax().Y() - aBox.CornerMin().Y(),
                                           aBox.CornerMax().Z() - aBox.CornerMin().Z()});
     std::cout << "BBOX maxcomp=" << aMaxComp << " lin=" << aMaxComp * 0.001 * 4.0 << "\n";
+    std::printf("BBOX17 maxcomp=%.17e lin=%.17e gap=%.17e\n",
+                aMaxComp,
+                aMaxComp * 0.001 * 4.0,
+                aBox.GetGap());
+    double gb[6] = {0, 0, 0, 0, 0, 0};
+    aBox.Get(gb[0], gb[1], gb[2], gb[3], gb[4], gb[5]);
+    std::printf("BBOX17 get=%.17e %.17e %.17e %.17e %.17e %.17e\n",
+                gb[0], gb[1], gb[2], gb[3], gb[4], gb[5]);
+    int fi = 0;
+    for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++fi)
+    {
+      const TopoDS_Face F = TopoDS::Face(fx.Current());
+      std::printf("BBOXTOL face=%d ftol=%.17e type=%d\n",
+                  fi,
+                  BRep_Tool::Tolerance(F),
+                  (int)BRepAdaptor_Surface(F).GetType());
+      int ei = 0;
+      for (TopExp_Explorer ex(F, TopAbs_EDGE); ex.More(); ex.Next(), ++ei)
+        std::printf("BBOXTOL   e%d etol=%.17e\n",
+                    ei,
+                    BRep_Tool::Tolerance(TopoDS::Edge(ex.Current())));
+    }
     return 0;
   }
 
@@ -4297,6 +4595,71 @@ int main(int argc, char** argv)
         std::cout << "OFF from f" << k << "(type=" << (int)b1.GetType() << ") -> null done="
                   << (done ? 1 : 0) << "\n";
       }
+    }
+    return 0;
+  }
+  if (argc > 2 && std::string(argv[2]) == "--fcls2d")
+  {
+    // Ground truth for `BRepTopAdaptor_FClass2d` on the cylinder lateral face of
+    // `BRepPrimAPI_MakeCylinder(0.4, 2.0)`: the `BRepTools_WireExplorer` order
+    // (which pcurve each seam occurrence walks), the classifier state over a u
+    // grid at v=1, and the `IntTools_Context::IsPointInOnFace` path for the
+    // pave point (0,-0.4,1).
+    TopoDS_Shape aPrim = BRepPrimAPI_MakeCylinder(0.4, 2.0).Shape();
+    for (TopExp_Explorer ex(aPrim, TopAbs_FACE); ex.More(); ex.Next())
+    {
+      TopoDS_Face aF = TopoDS::Face(ex.Current());
+      BRepAdaptor_Surface aBAS(aF, false);
+      if (aBAS.GetType() != GeomAbs_Cylinder) continue;
+      aF.Orientation(TopAbs_FORWARD);
+      std::cout << "FCLS2D cylinder face\n";
+      for (TopExp_Explorer exw(aF, TopAbs_WIRE); exw.More(); exw.Next())
+      {
+        const TopoDS_Wire       aW = TopoDS::Wire(exw.Current());
+        BRepTools_WireExplorer  aWE;
+        int                     k = 0;
+        for (aWE.Init(aW, aF); aWE.More(); aWE.Next(), ++k)
+        {
+          const TopoDS_Edge         aE = aWE.Current();
+          double                    f = 0., l = 0.;
+          occ::handle<Geom2d_Curve> aC = BRep_Tool::CurveOnSurface(aE, aF, f, l);
+          gp_Pnt2d                  p1(99., 99.), p2(99., 99.), pv(99., 99.);
+          if (!aC.IsNull())
+          {
+            aC->D0(f, p1);
+            aC->D0(l, p2);
+          }
+          const TopoDS_Vertex aV = aWE.CurrentVertex();
+          if (!aV.IsNull() && !aC.IsNull())
+          {
+            aC->D0(BRep_Tool::Parameter(aV, aE, aF), pv);
+          }
+          std::cout << "  WE" << k << " ori=" << (int)aWE.Orientation()
+                    << " closed=" << (BRep_Tool::IsClosed(aE, aF) ? 1 : 0) << " range=[" << f << ","
+                    << l << "] pc_f=(" << p1.X() << "," << p1.Y() << ") pc_l=(" << p2.X() << ","
+                    << p2.Y() << ") curV=(" << pv.X() << "," << pv.Y() << ")\n";
+        }
+      }
+      BRepTopAdaptor_FClass2d aFc(aF, Precision::Confusion());
+      BRepClass_FaceClassifier aCls;
+      for (int i = 0; i <= 16; ++i)
+      {
+        const gp_Pnt2d aP(2.0 * M_PI * i / 16.0, 1.0);
+        aCls.Perform(aF, aP, Precision::Confusion());
+        std::cout << "  P u=" << aP.X() << " fclass=" << (int)aFc.Perform(aP)
+                  << " faceclass=" << (int)aCls.State() << "\n";
+      }
+      GeomAPI_ProjectPointOnSurf aProj(gp_Pnt(0.0, -0.4, 1.0), BRep_Tool::Surface(aF));
+      if (aProj.IsDone())
+      {
+        double u = 0., v = 0.;
+        aProj.LowerDistanceParameters(u, v);
+        const gp_Pnt2d aP2d(u, v);
+        aCls.Perform(aF, aP2d, Precision::Confusion());
+        std::cout << "  ISPOINT uv=(" << u << "," << v << ") fclass=" << (int)aFc.Perform(aP2d)
+                  << " faceclass=" << (int)aCls.State() << "\n";
+      }
+      std::cout << "  InfPoint fclass=" << (int)aFc.PerformInfinitePoint() << "\n";
     }
     return 0;
   }

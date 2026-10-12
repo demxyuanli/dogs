@@ -169,7 +169,14 @@ impl FaceGeom {
     /// (`BRepPrim_FaceBuilder.cxx:168`, `BOPAlgo_BuilderFace.cxx:407-409`), and
     /// `BRepToIGES_BRShell.cxx:381` reads it as `isWholeSurface`.
     pub fn new(surface: Arc<dyn Surface>) -> Self {
-        Self { surface, tolerance: 0.0, natural_restriction: false }
+        // `BRep_TFace` default tolerance is `RealEpsilon()` (`BRep_TFace.cxx:29`),
+        // not 0: `BRepAdaptor_Surface::Tolerance()` (`BRepAdaptor_Surface.cxx:92`)
+        // and `BOPAlgo_PaveFiller::ToleranceFF` read it straight off the face.
+        Self {
+            surface,
+            tolerance: occt_core::precision::REAL_EPSILON,
+            natural_restriction: false,
+        }
     }
     pub fn surface(&self) -> Arc<dyn Surface> { self.surface.clone() }
 }
@@ -248,7 +255,11 @@ impl GeometryRegistry {
     }
 
     pub fn vertex_tolerance(&self, s: &TopoShape) -> f64 {
-        self.vertex_geom(s).map(|g| g.tolerance).unwrap_or(0.0)
+        // A shape always carries a `BRep_TVertex`, whose tolerance starts at
+        // `RealEpsilon()` (`BRep_TVertex.cxx:27`).
+        self.vertex_geom(s)
+            .map(|g| g.tolerance)
+            .unwrap_or(occt_core::precision::REAL_EPSILON)
     }
 
     // ---- edges ----
@@ -419,7 +430,11 @@ impl GeometryRegistry {
     }
 
     pub fn edge_tolerance(&self, s: &TopoShape) -> f64 {
-        self.edge_geom(s).map(|g| g.tolerance).unwrap_or(0.0)
+        // `BRep_Tool::Tolerance(edge)` -> `BRep_TEdge::Tolerance()`, initial
+        // value `RealEpsilon()` (`BRep_TEdge.cxx:33`).
+        self.edge_geom(s)
+            .map(|g| g.tolerance)
+            .unwrap_or(occt_core::precision::REAL_EPSILON)
     }
 
     pub fn same_parameter(&self, s: &TopoShape) -> bool {
@@ -689,7 +704,11 @@ impl GeometryRegistry {
     }
 
     pub fn face_tolerance(&self, s: &TopoShape) -> f64 {
-        self.face_geom(s).map(|g| g.tolerance).unwrap_or(0.0)
+        // `BRep_Tool::Tolerance(face)` -> `BRep_TFace::Tolerance()`, whose
+        // initial value is `RealEpsilon()` (`BRep_TFace.cxx:29`).
+        self.face_geom(s)
+            .map(|g| g.tolerance)
+            .unwrap_or(occt_core::precision::REAL_EPSILON)
     }
 
     pub fn natural_restriction(&self, s: &TopoShape) -> bool {

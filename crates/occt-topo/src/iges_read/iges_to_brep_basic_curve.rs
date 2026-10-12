@@ -177,15 +177,26 @@ pub(in crate::iges_read) fn scale_curve(curve: Arc<dyn Curve>, unit: f64) -> Res
     Ok(Arc::from(curve.transformed(&t)))
 }
 
-pub(in crate::iges_read) fn edge_from_span(span: &CurveSpan) -> TopoShape {
+/// `BRepBuilderAPI_MakeEdge ME(mycurve, a, b)`
+/// (`IGESToBRep_TopoCurve.cxx:1046`), i.e. `BRepLib_MakeEdge::Init(C, null,
+/// null, a, b)` (`BRepLib_MakeEdge.cxx:606-796`). `Err` is the
+/// `TransferTopoBasicCurve` failure arm for `!ME.IsDone()` (`cxx:1047-1051`).
+pub(in crate::iges_read) fn edge_from_span(span: &CurveSpan) -> Result<TopoShape, String> {
     let b = TopoBuilder::new();
-    let p1 = span.curve.d0(span.first);
-    let p2 = span.curve.d0(span.last);
-    let mut edge = b.make_edge(span.curve.clone(), span.first, span.last);
-    let v1 = b.make_vertex(p1, 0.0);
-    let v2 = b.make_vertex(p2, 0.0);
-    b.add_edge_vertices(&mut edge, &v1, &v2);
-    edge.0
+    let Some(build) = crate::brep_lib_make_edge::init_3d(&span.curve, span.first, span.last)
+    else {
+        return Err(
+            "IGES_1005 edge construction error: IGESToBRep_TopoCurve.cxx:1047-1051".into(),
+        );
+    };
+    // `B.MakeEdge(E, C, preci)` + `B.Range(E, p1, p2)` + `E.Closed(closed)`
+    // (`cxx:782`, `:790`, `:792`).
+    let mut edge = b.make_edge(span.curve.clone(), build.first, build.last);
+    crate::brep_lib_make_edge::add_endpoint_vertices(&b, &mut edge, &build);
+    if build.closed {
+        edge.0.set_closed(true);
+    }
+    Ok(edge.0)
 }
 
 /// `IGESGeom_Line::TransformedStartPoint` / `TransformedEndPoint`

@@ -65,6 +65,79 @@ pub fn all_subshapes(shape: &TopoShape) -> Vec<TopoShape> {
     out
 }
 
+/// `isMoreComplex` (`TopExp_Explorer.cxx:32-35`): the `TopAbs_ShapeEnum` order
+/// puts a more complex type *below* the target, so the explorer descends.
+fn is_more_complex(ty: ShapeType, to_find: ShapeType) -> bool {
+    (to_find as u8) > (ty as u8)
+}
+
+/// `shouldAvoid` (`TopExp_Explorer.cxx:26-29`): `TopAbs_SHAPE` disables the
+/// filter.
+fn should_avoid(ty: ShapeType, to_avoid: ShapeType) -> bool {
+    to_avoid != ShapeType::Shape && to_avoid == ty
+}
+
+fn explorer_walk(s: &TopoShape, to_find: ShapeType, to_avoid: ShapeType, out: &mut Vec<TopoShape>) {
+    let ty = s.shape_type();
+    if ty == to_find {
+        out.push(s.clone());
+        return;
+    }
+    if !is_more_complex(ty, to_find) || should_avoid(ty, to_avoid) {
+        return;
+    }
+    for child in cumulated_children(s) {
+        explorer_walk(&child, to_find, to_avoid, out);
+    }
+}
+
+/// `TopExp_Explorer(shape, ToFind, ToAvoid)` (`TopExp_Explorer.cxx:110-172`):
+/// a depth-first walk that yields *every occurrence* of a node whose type is
+/// `ToFind`, descending only into nodes of a more complex type. There is no
+/// visited set - a shape reachable through two parents is yielded once per
+/// parent, unlike [`map_shapes`] / [`all_subshapes`], which deduplicate.
+/// Callers that must match OCCT's per-occurrence loop (`ShapeFix::SameParameter`,
+/// `ShapeFix.cxx:112`) need this walk.
+pub fn explorer_shapes_avoiding(
+    shape: &TopoShape,
+    to_find: ShapeType,
+    to_avoid: ShapeType,
+) -> Vec<TopoShape> {
+    let mut out = Vec::new();
+    explorer_walk(shape, to_find, to_avoid, &mut out);
+    out
+}
+
+/// `TopExp_Explorer(shape, ToFind)` (`toAvoid = TopAbs_SHAPE`).
+pub fn explorer_shapes(shape: &TopoShape, to_find: ShapeType) -> Vec<TopoShape> {
+    explorer_shapes_avoiding(shape, to_find, ShapeType::Shape)
+}
+
+/// `TopExp::MapShapesAndAncestors` (`TopExp.cxx:80-120`): every `TS` sub-shape
+/// of `shape` mapped to the ordered list of its `TA` ancestors. Keyed by
+/// `TopoShape` identity (`GeometryRegistry::shape_key`, i.e. `IsSame`). The
+/// list keeps duplicates: an edge met twice under one ancestor is appended
+/// twice (`cxx:103` appends inside the inner walk, not once per ancestor).
+/// Shapes not under any ancestor are inserted with an empty list (`cxx:110-119`).
+pub fn map_shapes_and_ancestors(
+    shape: &TopoShape,
+    ts: ShapeType,
+    ta: ShapeType,
+) -> HashMap<usize, Vec<TopoShape>> {
+    let mut map: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    for anc in explorer_shapes(shape, ta) {
+        for sub in explorer_shapes(&anc, ts) {
+            map.entry(GeometryRegistry::shape_key(&sub))
+                .or_default()
+                .push(anc.clone());
+        }
+    }
+    for sub in explorer_shapes_avoiding(shape, ts, ta) {
+        map.entry(GeometryRegistry::shape_key(&sub)).or_default();
+    }
+    map
+}
+
 /// Per-type occurrence counts (distinct shapes), root included.
 pub fn shape_counts(shape: &TopoShape) -> HashMap<ShapeType, usize> {
     let mut out = HashMap::new();

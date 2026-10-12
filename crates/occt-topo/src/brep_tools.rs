@@ -28,12 +28,15 @@ pub fn add_uv_bounds_on_edge(face: &Face, edge: &Edge, box2d: &mut BndBox2d) {
 }
 
 /// `BRepTools::UVBounds(Face)` → `(u_min, u_max, v_min, v_max)`.
+///
+/// When the accumulated box is void OCCT sets all four bounds to zero
+/// (`BRepTools.cxx:76-79`), not to the unit range.
 pub fn uv_bounds(face: &Face) -> (f64, f64, f64, f64) {
     let mut b = BndBox2d::new();
     add_uv_bounds_face(face, &mut b);
     match b.get() {
         Some((u0, v0, u1, v1)) => (u0, u1, v0, v1),
-        None => (0.0, 1.0, 0.0, 1.0),
+        None => (0.0, 0.0, 0.0, 0.0),
     }
 }
 
@@ -70,9 +73,15 @@ pub fn map_3d_edges(shape: &TopoShape) -> Vec<Edge> {
 /// (`BRepTools` triangulation write). Each triangle is `v0 v1 v2` after a
 /// vertex list. `deflection` is the mesher linear deflection.
 pub fn write_triangulation(shape: &TopoShape, deflection: f64) -> String {
+    // One mesher only (`BRepMesh_IncrementalMesh`, via `meshing::incremental_mesh`).
+    // A shape whose triangulation fails contributes no triangles; OCCT has no
+    // second mesher to fall back to (audit A17/A18/A19).
     let mesh = crate::meshing::incremental_mesh::incremental_mesh_to_shape_mesh(shape, deflection)
-        .or_else(|_| crate::brepmesh::incremental_mesh(shape, deflection).map(|im| im.mesh))
-        .unwrap_or_else(|_| crate::shape_mesh::mesh_shape(shape, deflection));
+        .unwrap_or_else(|_| crate::mesh::ShapeMesh {
+            vertices: Vec::new(),
+            triangles: Vec::new(),
+            source_shape: crate::abs::ShapeType::Shape,
+        });
     let mut out = String::new();
     out.push_str(&format!("Triangulation {}\n", mesh.vertices.len()));
     for p in &mesh.vertices {

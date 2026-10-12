@@ -161,9 +161,13 @@ pub struct FaceGeomCore {
 
 impl Default for FaceGeomCore {
     fn default() -> Self {
-        // `BRep_TFace` defaults: no surface, tolerance 0, natural
-        // restriction false (`BRep_TFace.cxx:30`).
-        Self { surface: None, tolerance: 0.0, natural_restriction: false }
+        // `BRep_TFace::BRep_TFace()` (`BRep_TFace.cxx:29-30`): tolerance
+        // `RealEpsilon()`, no surface, `myNaturalRestriction` false.
+        Self {
+            surface: None,
+            tolerance: occt_core::precision::REAL_EPSILON,
+            natural_restriction: false,
+        }
     }
 }
 
@@ -179,17 +183,25 @@ impl fmt::Debug for FaceGeomCore {
 
 /// The geometry of a vertex (T-25 batch 3: lifted from `VertexGeom`,
 /// `tgeometry.rs:27-30`).
-#[derive(Default, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct VertexGeomCore {
     pub point: occt_core::gp::GpPnt,
     pub tolerance: f64,
+}
+
+impl Default for VertexGeomCore {
+    fn default() -> Self {
+        // `BRep_TVertex::BRep_TVertex()` (`BRep_TVertex.cxx:27`): tolerance
+        // `RealEpsilon()`.
+        Self { point: occt_core::gp::GpPnt::zero(), tolerance: occt_core::precision::REAL_EPSILON }
+    }
 }
 
 /// The 3D geometry of an edge (T-25 batch 2: lifted from `EdgeGeom`,
 /// `tgeometry.rs:64-83` — `curve` plus the six `BRep_TEdge` scalars).
 ///
 /// `curve` is optional because a `BRep_TEdge` may carry no 3D curve.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct EdgeGeomCore {
     pub curve: Option<Arc<dyn Curve>>,
     /// `true` when the edge's `BRep_Curve3D` representation exists but holds a
@@ -226,7 +238,25 @@ impl fmt::Debug for EdgeGeomCore {
             .field("first", &self.first)
             .field("last", &self.last)
             .field("tolerance", &self.tolerance)
-            .finish()
+            .finish()    }
+}
+
+impl Default for EdgeGeomCore {
+    fn default() -> Self {
+        // `BRep_TEdge::BRep_TEdge()` (`BRep_TEdge.cxx:33`): tolerance
+        // `RealEpsilon()`; `SameParameter`/`SameRange` start `true`
+        // (`cxx:31-38`), the rest false / unbounded range.
+        Self {
+            curve: None,
+            curve3d_null: false,
+            first: f64::NEG_INFINITY,
+            last: f64::INFINITY,
+            tolerance: occt_core::precision::REAL_EPSILON,
+            same_parameter: false,
+            same_range: false,
+            degenerated: false,
+            vertex_params: Vec::new(),
+        }
     }
 }
 
@@ -335,11 +365,11 @@ pub struct SolidShape { pub base: TShape }
 #[derive(Debug)]
 pub struct CompoundShape { pub base: TShape }
 
-impl VertexShape { pub fn new(p: occt_core::gp::GpPnt) -> Self { Self { base: TShape::new(ShapeType::Vertex), point: p, tolerance: 0.0 } } }
+impl VertexShape { pub fn new(p: occt_core::gp::GpPnt) -> Self { Self { base: TShape::new(ShapeType::Vertex), point: p, tolerance: occt_core::precision::REAL_EPSILON } } }
 impl EdgeShape {
-    pub fn new() -> Self { Self { base: TShape::new(ShapeType::Edge), first: f64::NEG_INFINITY, last: f64::INFINITY, tolerance: 0.0, same_parameter: false, same_range: false, degenerated: false } } }
+    pub fn new() -> Self { Self { base: TShape::new(ShapeType::Edge), first: f64::NEG_INFINITY, last: f64::INFINITY, tolerance: occt_core::precision::REAL_EPSILON, same_parameter: false, same_range: false, degenerated: false } } }
 impl WireShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Wire) } } }
-impl FaceShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Face), tolerance: 0.0, natural_restriction: false } } }
+impl FaceShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Face), tolerance: occt_core::precision::REAL_EPSILON, natural_restriction: false } } }
 impl ShellShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Shell) } } }
 impl SolidShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Solid) } } }
 impl CompoundShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Compound) } } }

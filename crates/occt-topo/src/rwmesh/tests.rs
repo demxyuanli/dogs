@@ -208,8 +208,24 @@ mod tests {
         assert!(n_before > 100, "sphere mesh too coarse: {n_before}");
 
         let s = scene_to_shape(&scene, 0, 1e-7).expect("sphere shape");
-        // Each input triangle becomes one face.
-        assert_eq!(crate::shape_mesh::count_faces(&s), mesh_triangle_count(&scene));
+        // Each non-degenerate input triangle becomes one face. The sphere's pole
+        // rows hold nodes that are UV-distinct but share one 3-D point
+        // (`BRepMesh_EdgeDiscret::Tessellate3d` adds only the first and last
+        // vertex for a degenerated edge, `BRepMesh_EdgeDiscret.cxx:250-270`),
+        // and `BRepBuilderAPI_MakeEdge` is `NotDone` for a zero-length edge, so
+        // those null triangles yield no face.
+        let node = &scene.nodes[0];
+        let coincident = |p: &GpPnt, q: &GpPnt| p.distance(q) < 1e-9;
+        let n_solid = node
+            .triangles
+            .iter()
+            .filter(|(a, b, c)| {
+                !coincident(&node.vertices[*a], &node.vertices[*b])
+                    && !coincident(&node.vertices[*b], &node.vertices[*c])
+                    && !coincident(&node.vertices[*c], &node.vertices[*a])
+            })
+            .count();
+        assert_eq!(crate::shape_mesh::count_faces(&s), n_solid);
 
         // Vertex count preserved by the conversion (mesh is a single closed grid).
         let tri = Triangulation::new(

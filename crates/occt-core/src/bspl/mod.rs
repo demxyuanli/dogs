@@ -33,6 +33,7 @@ pub mod curve_resolution;
 pub mod intervals;
 pub mod plib_rational;
 pub mod curve_dn;
+pub mod curve_eval;
 pub mod unperiodize;
 pub mod insert_knots;
 pub mod increase_degree;

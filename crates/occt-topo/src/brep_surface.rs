@@ -241,18 +241,23 @@ pub fn face_centroid(face: &Face, nu: usize, nv: usize) -> Option<GpPnt> {
 /// Closest `(u, v)` parameters of `p` on a surface: an `nu × nv` grid seed plus
 /// six rounds of axis-aligned bisection.
 ///
-/// **UNPORTED**: this is the port's invented substitute. Two consumers remain,
-/// both without an OCCT projection branch:
+/// **UNPORTED** -- the port's invented substitute, kept for the one OCCT branch
+/// that still has no projection implementation:
 ///
 /// * [`crate::intcurvesurface`]'s general (non-quadric) path, where OCCT reads
 ///   the parameters off the surface **polyhedron**
-///   (`IntCurveSurface_InterUtils.pxx:740-781`, `SectionPointToParameters`);
-/// * [`crate::brepmesh::mesh_deflection_error`], a port-only mesh-QA metric
-///   (OCCT measures deflection inside `BRepMesh`, not post hoc).
+///   (`IntCurveSurface_InterUtils.pxx:740-781`, `SectionPointToParameters`).
+///
+/// That branch is not wired to this helper yet, so the function currently has no
+/// caller; the `dead_code` allowance is deliberate (pending wiring, not dead
+/// code). Its other former consumer, the port-only
+/// `brepmesh::mesh_deflection_error` QA metric, went away with the legacy
+/// quadtree mesher (audit A18/A19).
 ///
 /// Every other former call site now goes through a faithful OCCT primitive:
 /// `ElSLib::Parameters`, `Extrema_ExtPS` ([`occt_geom::geom_api::project_point_on_surface`]),
 /// or the `ShapeConstruct_ProjectCurveOnSurface` projector.
+#[allow(dead_code)]
 pub(crate) fn surface_closest_params(
     s: &dyn Surface,
     p: &GpPnt,

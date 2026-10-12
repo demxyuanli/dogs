@@ -82,6 +82,7 @@ TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
 1. **端口的网格管线在相同参数下与 OCCT 逐位一致（14/15）** ⇒ round 129/135 说的「系统性不符」是**我用错参数**（拿 0.1/0.5rad 的 GT 去比 0.004·bbox/20° 的端口输出）造成的假象；**T-90 不成立**（应关闭）。
 2. `Shape-2` 的 0.2% 差**已由源码自注给出方向**：`brep_exchange.rs:50-52` 写明「B-spline 面的 STEP `SURFACE_CURVE` pcurve 被丢 ⇒ 边界错 ⇒ Delaunay bbox 漂移」，即 **STEP 导入侧缺口**，不是 BRepMesh 侧。
 3. **T-54 也必须重新评估**：导出路径**不再**用 `brepmesh.rs` 的四叉树、也不用 `wireframe.rs` 的平面耳切（`brep_exchange.rs:88-94`：这两个非 OCCT 回退已按 audit A17 删除）——它们只在**失败回退**里存在。因此「移植约束 Delaunay 以提高保真度」这个前提**不成立**；`brepmesh.rs`/`wireframe.rs` 的处置应改为「确认回退是否可达 + 可达则接线/不可达则摘除」，而不是大规模替换。
+   **后续（2026-10-12）**：该处置已执行完毕 —— 回退整族（`brepmesh` 四叉树、`wireframe` UV 栅格与耳切/桥洞）已删除，`step_obj_gates` 23 模型全绿；同等偏转下 T0M/acs10/TDB 三角数 73150/47196/81721（occ 67366/46558/79977），剩余插点密度差登记为 `BRepMesh_DelaunayDeflectionControlMeshAlgo` 未移植分支（见 `specs/_audit/_index.md` 条目 4/7 与 `mesh-exchange.md` 的 2026-10-12 补记）。
 
 ## 附：旧表（参数 0.1 / 0.5rad，**已作废，仅留档对照**）
 

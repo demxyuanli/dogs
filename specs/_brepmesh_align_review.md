@@ -3,6 +3,11 @@
 > ⚠️ **仅历史（T-29 登记）**：本文件记录的是提交 `66615d7` 当时的审查结论；此后网格/BOP 管线已有多次变更，
 > 现行基线与门禁以 `specs/board.canvas.tsx`（任务表 / 门禁表）为准，本文件不参与任何门禁。
 >
+> ⚠️ **2026-10-12 补充**：本文件所讨论的 `brepmesh.rs`（legacy 四叉树网格器）**已整体删除**，
+> 连同 `wireframe.rs` 的平面耳切/桥洞机器（audit A18/A19，见 `specs/_audit/_index.md` 与
+> `specs/_audit/mesh-exchange.md` 的 2026-10-12 补记）；§6 残留差距第 1 条已由该删除处置，
+> 不再是待办。文中其余实测数字保留为历史记录。
+>
 > 本次提交 `66615d7` 的详细审查。目标：把 STEP→OBJ 网格管线的三处 bbox 漂移
 > （Shape-2 / Cone / Torus）逐条追到 OCCT 源码对应，修复并验证。
 > 参考源：`D:\source\occt-src\src\`（TKDESTEP / TKShHealing / TKMesh）。

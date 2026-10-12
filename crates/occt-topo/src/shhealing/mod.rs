@@ -51,6 +51,7 @@ mod shape_fix_edge;
 mod shape_fix_face;
 mod shape_fix_face_wires;
 mod shape_fix_shell;
+mod shape_fix_same_parameter;
 mod face_geom_helpers;
 mod face_natural_bound;
 mod face_split;
@@ -69,6 +70,7 @@ pub use shape_build_edge::*;
 pub use shape_fix_edge::*;
 pub use shape_fix_face::*;
 pub use shape_fix_shell::*;
+pub use shape_fix_same_parameter::*;
 /// The file-local `SplitWire` helper (`ShapeFix_Face.cxx:242-341`).
 pub(in crate::shhealing) use face_split::split_wire;
 pub use face_split::split_face_after_removed_segment;

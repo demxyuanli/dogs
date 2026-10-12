@@ -113,13 +113,20 @@ impl TopoBuilder {
 
     /// Make a straight segment from `p1` to `p2`, adding registered endpoint
     /// vertices as children (`BRepBuilderAPI_MakeEdge(P1, P2)`).
+    ///
+    /// The endpoint vertices carry `BRepLib::Precision()` — `Init(C, S, P1, P2)`
+    /// builds them with `Tol = BRepLib::Precision()`, i.e. `Precision::Confusion()`
+    /// (`BRepLib_MakeEdge.cxx:826-830`). That tolerance is load-bearing: every
+    /// consumer that derives a working precision from vertex tolerances
+    /// (`BRepTools_WireExplorer`'s `dfVertToler`, `BRepLib::UpdateTolerances`)
+    /// degenerates when a constructed vertex carries no tolerance at all.
     pub fn make_edge_segment(&self, p1: &GpPnt, p2: &GpPnt) -> Edge {
         let dir = GpDir::from_vec(&GpVec::from_pnts(p1, p2))
             .expect("make_edge_segment: p1 and p2 must be distinct");
         let lin = GpLin::from_pnt_dir(*p1, dir);
         let mut e = self.make_edge(Arc::new(GeomLine::new(lin)), 0.0, p1.distance(p2));
-        let v1 = self.make_vertex(*p1, 0.0);
-        let v2 = self.make_vertex(*p2, 0.0);
+        let v1 = self.make_vertex(*p1, occt_core::precision::CONFUSION);
+        let v2 = self.make_vertex(*p2, occt_core::precision::CONFUSION);
         self.add_edge_vertices(&mut e, &v1, &v2);
         e
     }
@@ -159,7 +166,17 @@ impl TopoBuilder {
         self.make_edge(Arc::new(GeomCircle::new(GpCirc::new(*axis, radius))), first, last)
     }
 
-    /// Make a wire containing `edges` (`BRepBuilderAPI_MakeWire`).
+    /// Make a wire containing `edges` (`BRep_Builder` level append:
+    /// `BRep_Builder::MakeWire` + `BRep_Builder::Add`).
+    ///
+    /// **Not** `BRepBuilderAPI_MakeWire`: this only stores the edges in the given
+    /// order with the orientation each occurrence already carries. OCCT's
+    /// `BRepLib_MakeWire::Add` additionally reverses an edge when the accumulated
+    /// wire requires it and unifies its endpoints with the wire's existing
+    /// vertices by geometric proximity (`BRepLib_MakeWire.cxx:223-285`,
+    /// `:304-368`); [`crate::brep_lib_make_wire::MakeWire`] is that class, and
+    /// call sites that model `BRepBuilderAPI_MakeWire` must go through it
+    /// (`builder_area::make_wire_from_edges`).
     pub fn make_wire(&self, edges: &[Edge]) -> Wire {
         let mut wire = Wire::new();
         for e in edges {
@@ -176,6 +193,24 @@ impl TopoBuilder {
         for w in wires {
             self.add_wire(&mut face, w);
         }
+        face
+    }
+
+    /// `BRep_Builder::UpdateFace(F, S, L, Tol)` (`BRep_Builder.cxx:508-536`):
+    /// `make_face` followed by the explicit tolerance the construction site
+    /// passes, instead of the `BRep_TFace` default `RealEpsilon()`.
+    ///
+    /// The tolerance is load bearing for the mesh pipeline: `BRepBndLib::Add`
+    /// hands it to `BndLib_AddSurface::Add` (`BRepBndLib.cxx:109`), which lands
+    /// in `Bnd_Box::Gap`.
+    pub fn make_face_with_tolerance(
+        &self,
+        surface: Arc<dyn Surface>,
+        wires: &[Wire],
+        tolerance: f64,
+    ) -> Face {
+        let face = self.make_face(surface, wires);
+        GeometryRegistry::global().set_face_tolerance(&face.0, tolerance);
         face
     }
 

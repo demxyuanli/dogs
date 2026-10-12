@@ -5,7 +5,6 @@ use occt_core::gp::{GpPnt, GpVec};
 use occt_core::geom::curve_ops3d::{curve_length3d, curvature3d};
 use occt_topo::bop_builder::{boolean, BoolOp};
 use occt_topo::brep_exchange::brep_to_obj;
-use occt_topo::brepmesh::incremental_mesh;
 use occt_topo::iges::write_shape_iges;
 use occt_topo::primitives::BRepPrimBox;
 use occt_topo::render_svg::{render_svg, SvgRenderOptions};
@@ -49,10 +48,11 @@ fn exact_boolean_fuse_cut_common() {
 
 #[test]
 fn real_brepmesh_and_iges() {
-    // Adaptive mesh of a sphere → area near 4πr².
+    // Mesh of a sphere -> area near 4*pi*r^2, through the ported
+    // `BRepMesh_IncrementalMesh` pipeline.
     let sphere = occt_topo::primitives::BRepPrimSphere::make_sphere(2.0);
-    let inc = incremental_mesh(&sphere.solid.0, 0.05).expect("incremental mesh");
-    let area = occt_topo::mesh::mesh_surface_area(&inc.mesh);
+    let mesh = occt_topo::shape_mesh::mesh_shape(&sphere.solid.0, 0.05);
+    let area = occt_topo::mesh::mesh_surface_area(&mesh);
     assert!(approx(area, 4.0 * std::f64::consts::PI * 4.0), "sphere area {area}");
 
     // IGES export of a box.

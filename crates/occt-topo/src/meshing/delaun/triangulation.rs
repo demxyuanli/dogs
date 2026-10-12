@@ -367,7 +367,8 @@ impl Delaun {
         } else {
             *edge_on = edge_id_on;
         }
-        distance[0] >= 0.0 && distance[1] >= 0.0 && distance[2] >= 0.0
+        let result = distance[0] >= 0.0 && distance[1] >= 0.0 && distance[2] >= 0.0;
+        result
     }
 
     // ------------------------------------------------------------------

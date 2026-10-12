@@ -789,6 +789,34 @@ impl GeomBSplineCurve {
         }
     }
 
+    /// `Geom_BSplineCurve::EvalD0/D1/D2/D3` preamble
+    /// (`Geom_BSplineCurve_1.cxx:182-190`).
+    ///
+    /// OCCT hands `BSplCLib::D0/D1/D2/D3` the *distinct* knots plus `&myMults`
+    /// (not `myFlatKnots` / `NoMults`), together with a span index located in
+    /// that distinct-knot array and post-corrected by `aSpanIndex--` when
+    /// `aNewU` sits below `myKnots(aSpanIndex)`. The flat-knot arm is only used
+    /// by `LocalD0..LocalD3` and `EvalDN`.
+    fn eval_span(&self, u: f64) -> (f64, i32, Vec<f64>, Vec<i32>) {
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        let (mut span, new_u) = occt_core::bspl::locate::locate_parameter(
+            self.degree as i32,
+            &uknots,
+            Some(&umults),
+            u,
+            self.periodic,
+            0,
+        );
+        if span >= 1 {
+            if let Some(&k) = uknots.get(span as usize - 1) {
+                if new_u < k {
+                    span -= 1;
+                }
+            }
+        }
+        (new_u, span, uknots, umults)
+    }
+
     /// Finite-difference first derivative: (f(u+h) - f(u-h)) / (2h).
     fn fd_d1(&self, u: f64) -> GpVec {
         let h = 1e-6;
@@ -846,38 +874,22 @@ impl GeomBSplineCurve {
 
 impl Curve for GeomBSplineCurve {
     fn d0(&self, u: f64) -> GpPnt {
-        if self.periodic {
-            // Periodic flat knot sequence: `BSplCLib::D0` goes through
-            // `PrepareEval` (`LocateParameter` maps the parameter into the
-            // period, `BuildEval` wraps the pole window) and `Bohm(…, 0, …)`.
-            // `curve_dn::dn` is exactly that machinery with an explicit
-            // derivative order; order 0 returns the point.
-            let v = occt_core::bspl::curve_dn::dn(
-                u, 0, 0, self.degree as i32, true, &self.poles,
-                self.weights.as_deref(), &self.knots, None,
-            );
-            return GpPnt::new(v.x(), v.y(), v.z());
-        }
-        match &self.weights {
-            Some(w) => eval::eval_curve_rational(&self.poles, w, &self.knots, self.degree, u),
-            None => eval::eval_curve(&self.poles, &self.knots, self.degree, u),
-        }
+        // `Geom_BSplineCurve::EvalD0` (`Geom_BSplineCurve_1.cxx:174-194`) ->
+        // `BSplCLib::D0` over `myKnots` + `&myMults` (distinct knots).
+        let (new_u, span, uknots, umults) = self.eval_span(u);
+        occt_core::bspl::curve_eval::d0(
+            new_u, span, self.degree as i32, self.periodic, &self.poles,
+            self.weights.as_deref(), &uknots, Some(&umults),
+        )
     }
 
     fn d1(&self, u: f64) -> (GpPnt, GpVec) {
-        if self.periodic {
-            return (self.d0(u), self.eval_dn(u, 1));
-        }
-        // `Geom_BSplineCurve::D1` / `BSplCLib::D1`. Rational uses the
-        // homogeneous quotient already computed by `eval_curve_rational_d2`.
-        match &self.weights {
-            Some(w) => {
-                let (p, d1, _) =
-                    eval::eval_curve_rational_d2(&self.poles, w, &self.knots, self.degree, u);
-                (p, d1)
-            }
-            None => eval::eval_curve_d1(&self.poles, &self.knots, self.degree, u),
-        }
+        // `Geom_BSplineCurve::EvalD1` (`:198-227`) -> `BSplCLib::D1`.
+        let (new_u, span, uknots, umults) = self.eval_span(u);
+        occt_core::bspl::curve_eval::d1(
+            new_u, span, self.degree as i32, self.periodic, &self.poles,
+            self.weights.as_deref(), &uknots, Some(&umults),
+        )
     }
 
     fn eval_dn(&self, u: f64, n: i32) -> GpVec {
@@ -900,22 +912,25 @@ impl Curve for GeomBSplineCurve {
     }
 
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
-        if self.periodic {
-            return (self.d0(u), self.eval_dn(u, 1), self.eval_dn(u, 2));
-        }
-        match &self.weights {
-            Some(w) => eval::eval_curve_rational_d2(&self.poles, w, &self.knots, self.degree, u),
-            None => eval::eval_curve_d2(&self.poles, &self.knots, self.degree, u),
-        }
+        // `Geom_BSplineCurve::EvalD2` (`:231-261`) -> `BSplCLib::D2`.
+        let (new_u, span, uknots, umults) = self.eval_span(u);
+        let r = occt_core::bspl::curve_eval::d2(
+            new_u, span, self.degree as i32, self.periodic, &self.poles,
+            self.weights.as_deref(), &uknots, Some(&umults),
+        );
+        r
     }
 
-    /// `Geom_BSplineCurve::D3` (`BSplCLib::DN(..., 3)`), which `Geom_OffsetCurve`
-    /// calls through `basisCurve->D3(U, …)` in `CalculateD2`. Without this
-    /// override the trait default returned a **zero** third derivative for every
-    /// B-spline basis.
+    /// `Geom_BSplineCurve::EvalD3` (`:265-296`) -> `BSplCLib::D3`, which
+    /// `Geom_OffsetCurve` calls through `basisCurve->D3(U, …)` in
+    /// `CalculateD2`. Without this override the trait default returned a
+    /// **zero** third derivative for every B-spline basis.
     fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
-        let (p, d1, d2) = self.d2(u);
-        (p, d1, d2, self.eval_dn(u, 3))
+        let (new_u, span, uknots, umults) = self.eval_span(u);
+        occt_core::bspl::curve_eval::d3(
+            new_u, span, self.degree as i32, self.periodic, &self.poles,
+            self.weights.as_deref(), &uknots, Some(&umults),
+        )
     }
 
     fn first_parameter(&self) -> f64 { self.knots[self.degree] }

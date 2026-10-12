@@ -62,7 +62,11 @@ pub struct FaceTriangulation {
 }
 
 /// Maximum number of deflection-refinement passes.
-const MAX_REFINE_PASSES: usize = 4;
+///
+/// `BRepMesh_DelaunayDeflectionControlMeshAlgo::optimizeMesh` iterates
+/// `aIterationsNb = 11` times, stopping early when a pass inserts nothing
+/// (`BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:85-112`).
+const A_ITERATIONS_NB: usize = 11;
 
 /// High-level triangulation orchestrator (port of `BRepMesh_Triangulator`).
 ///
@@ -106,7 +110,7 @@ impl Triangulator {
         let deflection = self.face_deflection();
         let mut interior: Vec<GpPnt2d> = Vec::new();
         let mut delaun = self.run_delaun(data, &interior)?;
-        for _ in 0..MAX_REFINE_PASSES {
+        for _ in 0..A_ITERATIONS_NB {
             let deviating = self.deviating_centers(&delaun, surface, deflection);
             if deviating.is_empty() {
                 break;

@@ -89,11 +89,10 @@ pub fn reverse_wire_data_on_face(edges: &mut [Edge], face: &Face) {
 /// ShapeExtend_WireData::Reverse(face) additionally runs ComputeSeams(true)
 /// and then SwapSeam on mySeamF / mySeamR / mySeams (cxx:508-572).
 ///
-/// SwapSeam itself is already ported in this port as
-/// crate::meshing::model_builder::swap_seam_pcurves (wire_builder.rs:448-459,
-/// now pub(crate)), which does the FWD/REV pcurve exchange with the same
-/// len() < 2 guard; a Reverse(face) wrapper still needs ComputeSeams,
-/// which is UNPORTED (cxx:557).
+/// SwapSeam itself is ported as `swap_seam` above (cxx:511-543): it exchanges
+/// PCurve/PCurve2 on the FORWARD occurrence only and restores the forward
+/// pcurve range (cxx:542). `reverse_wire_data_on_face` runs ComputeSeams and
+/// calls it for mySeamF / mySeamR / mySeams.
 pub fn reverse_wire_data(edges: &mut [Edge]) {
     let nb = edges.len();
     if nb == 0 {

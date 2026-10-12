@@ -114,9 +114,13 @@ fn step_to_obj_exports_valid_obj() {
 }
 
 /// Regression: a full-cylinder face's UV u-domain must span the whole period.
-/// face_uv_bounds samples each boundary-edge pcurve; the full circle's pcurve is
-/// unwrapped monotonically (u 0 -> -2pi) so the samples only reached 7pi/4,
-/// dropping a pi/4 wedge and ~12.5% of the lateral area (133.9 vs 150.8).
+/// The u-window comes from `BRepTools::UVBounds` (via
+/// [`crate::brep_tools::uv_bounds`]); the full circle's p-curve is unwrapped
+/// monotonically (u 0 -> -2pi) so `BndLib_Add2dCurve` reports the whole period
+/// rather than collapsing it, and the faithful `BRepMesh_FaceDiscret` +
+/// `BRepMesh_Delaun` pipeline covers the last wedge. A sampled window used to
+/// reach only 7pi/4, dropping a pi/4 wedge and ~12.5% of the lateral area
+/// (133.9 vs 150.8).
 #[test]
 fn cylinder_step_mesh_covers_full_u_period() {
     let model = occt_topo::step::read_step_file(
@@ -124,8 +128,8 @@ fn cylinder_step_mesh_covers_full_u_period() {
     )
     .unwrap_or_else(|e| panic!("read Cylinder.step: {e}"));
     let shape = &model.shapes[0].shape;
-    let im = occt_topo::brepmesh::incremental_mesh(shape, 0.1).expect("mesh cylinder");
-    let area = occt_topo::mesh::mesh_surface_area(&im.mesh);
+    let mesh = occt_topo::shape_mesh::mesh_shape(shape, 0.1);
+    let area = occt_topo::mesh::mesh_surface_area(&mesh);
     // Analytic: 2*pi*r^2 + 2*pi*r*h with r=2, h=10 -> 48pi ~ 150.80. The mesh is a
     // chord approximation of the curved lateral, so allow 2% under.
     let expect = 48.0 * std::f64::consts::PI;

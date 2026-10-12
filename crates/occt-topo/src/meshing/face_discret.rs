@@ -1,7 +1,7 @@
 //! Port of OCCT face_discret — Wave 1 BRepMesh.
 //!
-//! `FaceDiscret` turns a face's boundary (already discretized edges) plus an
-//! interior deflection grid into a UV vertex set (`BRepMesh_FaceDiscret`),
+//! `FaceDiscret` turns a face's boundary (already discretized edges) into a UV
+//! vertex set (`BRepMesh_FaceDiscret`),
 //! `FaceChecker` decides whether a face is degenerate / self-intersecting and
 //! therefore meshable (`BRepMesh_FaceChecker`), and `Classifier` answers
 //! "is this UV point inside the face?" with a winding-number test
@@ -554,10 +554,12 @@ impl<'a> FaceChecker<'a> {
 
 /// Discretizes a face into a set of UV vertices.
 ///
-/// Port of `BRepMesh_FaceDiscret`: the boundary UV points (from the already
-/// discretized edges) are kept verbatim; the interior is covered by a uniform
-/// UV grid whose resolution follows the deflection, filtered by the
-/// [`Classifier`] so only points strictly inside the face survive.
+/// Port of `BRepMesh_FaceDiscret`: `process` only forwards the face to the
+/// mesh algorithm (`BRepMesh_FaceDiscret.cxx:98-131`); it adds no interior
+/// grid of its own. The interior nodes of a face come from the mesh
+/// algorithm's range splitter plus any explicit internal vertices
+/// (`BRepMesh_NodeInsertionMeshAlgo.hxx:107-110,186-221`), so the discrete UV
+/// vertex set here is exactly the face boundary.
 #[derive(Debug, Clone)]
 pub struct FaceDiscret {
     params: MeshParameters,
@@ -573,11 +575,9 @@ impl FaceDiscret {
         &self.params
     }
 
-    /// Discretize a face into UV vertices: boundary plus interior grid.
+    /// Discretize a face into UV vertices: the boundary wires only.
     pub fn discretize_face(&self, face: &MeshFace) -> Vec<GpPnt2d> {
-        let mut pts = Self::boundary_points(face);
-        pts.extend(Self::interior_grid(face, self.params.deflection, 4096));
-        dedup_points(pts)
+        dedup_points(Self::boundary_points(face))
     }
 
     /// UV points of every boundary wire, in order (outer then holes).
@@ -587,66 +587,6 @@ impl FaceDiscret {
             out.extend_from_slice(hole);
         }
         out
-    }
-
-    /// Interior UV grid across the outer wire's bounding box. Grid resolution
-    /// is `deflection` per cell; the total point budget is capped by
-    /// `max_points`. Points outside the face (or inside a hole) are dropped.
-    pub fn interior_grid(
-        face: &MeshFace,
-        deflection: f64,
-        max_points: usize,
-    ) -> Vec<GpPnt2d> {
-        let (umin, umax, vmin, vmax) = Self::uv_bounds(&face.outer_wire);
-        let (du, dv) = (umax - umin, vmax - vmin);
-        if du <= 0.0 || dv <= 0.0 {
-            return Vec::new();
-        }
-        let def = deflection.max(1e-9);
-        let mut nu = (du / def).ceil() as usize + 1;
-        let mut nv = (dv / def).ceil() as usize + 1;
-        // Enforce the point budget: scale the finer axis down if needed.
-        let budget = max_points.max(4) as f64;
-        let scale = (budget / (nu as f64 * nv as f64)).sqrt().min(1.0);
-        nu = (nu as f64 * scale).ceil().max(2.0) as usize;
-        nv = (nv as f64 * scale).ceil().max(2.0) as usize;
-
-        let mut classifier = Classifier::new();
-        classifier.register_wire(&face.outer_wire, (1e-9, 1e-9), (umin, umax), (vmin, vmax));
-        for hole in &face.inner_wires {
-            classifier.register_wire(hole, (1e-9, 1e-9), (umin, umax), (vmin, vmax));
-        }
-
-        let mut out = Vec::with_capacity(nu * nv);
-        for j in 0..nv {
-            for i in 0..nu {
-                let u = umin + du * i as f64 / (nu - 1) as f64;
-                let v = vmin + dv * j as f64 / (nv - 1) as f64;
-                let p = GpPnt2d::new(u, v);
-                if classifier.is_inside(&p) {
-                    out.push(p);
-                }
-            }
-        }
-        out
-    }
-
-    /// Axis-aligned UV bounds of a closed boundary polygon.
-    pub fn uv_bounds(wire: &[GpPnt2d]) -> (f64, f64, f64, f64) {
-        let mut umin = f64::INFINITY;
-        let mut umax = f64::NEG_INFINITY;
-        let mut vmin = f64::INFINITY;
-        let mut vmax = f64::NEG_INFINITY;
-        for p in wire {
-            umin = umin.min(p.x());
-            umax = umax.max(p.x());
-            vmin = vmin.min(p.y());
-            vmax = vmax.max(p.y());
-        }
-        if !(umin.is_finite() && umax.is_finite() && vmin.is_finite() && vmax.is_finite()) {
-            return (0.0, 1.0, 0.0, 1.0);
-        }
-        (umin, umax, vmin, vmax)
     }
 }
 
@@ -814,7 +754,10 @@ mod tests {
     }
 
     #[test]
-    fn face_discret_produces_boundary_and_interior() {
+    fn face_discret_returns_boundary_only() {
+        // `BRepMesh_FaceDiscret::process` only forwards the face to the mesh
+        // algorithm; it contributes no interior grid
+        // (`BRepMesh_FaceDiscret.cxx:98-131`).
         let face = MeshFace::new(square());
         let params = MeshParameters {
             deflection: 0.25,
@@ -830,12 +773,11 @@ mod tests {
                 "missing corner {c:?}"
             );
         }
-        // Interior points exist and are inside the unit square.
-        let interior = pts
-            .iter()
-            .filter(|p| p.x() > 0.05 && p.x() < 0.95 && p.y() > 0.05 && p.y() < 0.95)
-            .count();
-        assert!(interior > 0, "no interior points generated");
+        // No interior points: every returned point lies on the wire.
+        assert!(pts.iter().all(|p| p.x() <= 1e-9
+            || p.x() >= 1.0 - 1e-9
+            || p.y() <= 1e-9
+            || p.y() >= 1.0 - 1e-9));
         // No point outside the square bounds.
         assert!(pts.iter().all(|p| p.x() >= -1e-9 && p.x() <= 1.0 + 1e-9 && p.y() >= -1e-9 && p.y() <= 1.0 + 1e-9));
     }

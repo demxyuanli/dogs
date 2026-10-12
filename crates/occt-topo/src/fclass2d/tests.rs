@@ -87,10 +87,23 @@ use super::*;
             .expect("bottom circle axis");
         let ax2_top = GpAx2::new(GpPnt::new(0.0, 0.0, height), GpDir::new(0.0, 0.0, 1.0).unwrap(), GpDir::new(1.0, 0.0, 0.0).unwrap())
             .expect("top circle axis");
-        let bottom_circle = b.make_edge_circle(&ax2_bot, radius, 0.0, 2.0 * PI);
-        let top_circle = b.make_edge_circle(&ax2_top, radius, 0.0, 2.0 * PI);
-        let seam_up = b.make_edge_segment(&bottom, &top);
-        let seam_down = b.make_edge_segment(&bottom, &top);
+        // The four edges of a lateral face share the patch's two corner
+        // vertices: `BRepLib_MakeEdge(gp_Circ, 0, 2*pi)` detects the closed
+        // curve (`P1.Distance(P2) <= BRepLib::Precision()`,
+        // `BRepLib_MakeEdge.cxx:686-697`) and gives the circle the single vertex
+        // `V1 == V2`, and the seam edges of `BRepPrim_OneAxis` are built on the
+        // same pair. The vertices are load bearing for the wire walk:
+        // `BRepTools_WireExplorer::Init` (`BRepTools_WireExplorer.cxx:241-257`)
+        // keys every edge by `TopExp::Vertices(E, V1, V2, true)` and cannot walk
+        // an edge that has none.
+        let v_bot = b.make_vertex(bottom, occt_core::precision::CONFUSION);
+        let v_top = b.make_vertex(top, occt_core::precision::CONFUSION);
+        let mut bottom_circle = b.make_edge_circle(&ax2_bot, radius, 0.0, 2.0 * PI);
+        b.add_edge_vertices(&mut bottom_circle, &v_bot, &v_bot);
+        let mut top_circle = b.make_edge_circle(&ax2_top, radius, 0.0, 2.0 * PI);
+        b.add_edge_vertices(&mut top_circle, &v_top, &v_top);
+        let seam_up = b.make_edge_segment_with_vertices(&bottom, &top, &v_bot, &v_top);
+        let mut seam_down = b.make_edge_segment_with_vertices(&bottom, &top, &v_bot, &v_top);
 
         let lateral = b.make_face(surface, &[]);
         let face_key = GeometryRegistry::shape_key(&lateral.0);
@@ -108,9 +121,7 @@ use super::*;
         // Reverse the top circle and seam-down so the UV wire closes:
         // bottom (0,0)->(2pi,0), seam-up (2pi,0)->(2pi,h), top (2pi,h)->(0,h),
         // seam-down (0,h)->(0,0).
-        let mut top_circle = top_circle;
         top_circle.0.reverse();
-        let mut seam_down = seam_down;
         seam_down.0.reverse();
         let wire = b.make_wire(&[bottom_circle, seam_up, top_circle, seam_down]);
         let mut lateral = lateral;

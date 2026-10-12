@@ -4069,26 +4069,20 @@ fn children_of_type(s: &TopoShape, t: ShapeType) -> Vec<TopoShape> {
 ///
 /// OCCT takes it straight from the face (`BRep_Tool::UVBounds`, i.e.
 /// `BRepTools::AddUVBounds` -> the edge p-curve boxes, see
-/// [`crate::brep_tools::add_uv_bounds`]). Measured on the 14-model parity set
-/// this is strictly better than the sampled boundary box
-/// (`wireframe::face_uv_bounds`, which unwraps a periodic span into
-/// `[first, first + period]`): GRAND TOTAL 1396 -> 1308, `Cone` to `SAME`,
-/// `screw` 144 -> 130, `Shape-1` 654 -> 634, `Shape-2` 157 -> 105, no model
-/// worse. The sampled box stays as the fallback for a void or non-finite
-/// result, which `BRepTools::UVBounds` reports as `0,0,0,0`
-/// (`BRepTools.cxx:70-80`) and the revolution arms here cannot use.
+/// [`crate::brep_tools::add_uv_bounds`]). A void box is reported by
+/// `BRepTools::UVBounds` as `0,0,0,0` (`BRepTools.cxx:64-80`) and a surface
+/// whose natural range is infinite yields no box either; the revolution arms
+/// here cannot use either, so both map to `[0,1]^2`.
 fn face_uv_bounds_finite(f: &Face) -> (f64, f64, f64, f64) {
-    if let Some(s) = BRepTool::face_surface(f) {
-        let mut b = occt_core::bnd::BndBox2d::new();
-        crate::brep_tools::add_uv_bounds(f, &mut b);
-        if let Some((u0, v0, u1, v1)) = b.get() {
-            if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() {
-                return (u0, u1, v0, v1);
-            }
+    let mut b = occt_core::bnd::BndBox2d::new();
+    crate::brep_tools::add_uv_bounds(f, &mut b);
+    match b.get() {
+        Some((u0, v0, u1, v1))
+            if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite() =>
+        {
+            (u0, u1, v0, v1)
         }
-        crate::wireframe::face_uv_bounds(f, s.as_ref())
-    } else {
-        (0.0, 1.0, 0.0, 1.0)
+        _ => (0.0, 1.0, 0.0, 1.0),
     }
 }
 

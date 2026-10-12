@@ -182,10 +182,22 @@ pub(in crate::iges_read) fn reverse_curves_3d(edges: &[Edge], precision: f64, ma
                     .min(curve.reversed_parameter(p1)),
             )
         };
-        let mut neu = b.make_edge(rev.clone(), first, last);
-        let v1 = b.make_vertex(rev.d0(first), 0.0);
-        let v2 = b.make_vertex(rev.d0(last), 0.0);
-        b.add_edge_vertices(&mut neu, &v1, &v2);
+        // `ShapeBuild_Edge().MakeEdge(newedge, curve->Reversed(), L, p1, p2)`
+        // (`cxx:361-374`) -> `BRepBuilderAPI_MakeEdge(curve, p1, p2)` ->
+        // `BRepLib_MakeEdge::Init(C, null, null, p1, p2)`
+        // (`BRepLib_MakeEdge.cxx:606-796`); `ShapeBuild_Edge::MakeEdge` leaves
+        // `newedge` null and only prints in `OCCT_DEBUG` when `!ME.IsDone()`
+        // (`ShapeBuild_Edge.cxx:794-800`), so the failure arm keeps the
+        // un-reversed edge.
+        let Some(build) = crate::brep_lib_make_edge::init_3d(&rev, first, last) else {
+            built.push(edge.clone());
+            continue;
+        };
+        let mut neu = b.make_edge(rev.clone(), build.first, build.last);
+        crate::brep_lib_make_edge::add_endpoint_vertices(&b, &mut neu, &build);
+        if build.closed {
+            neu.0.set_closed(true);
+        }
         neu.0.set_orientation(edge.0.orientation());
         if !edge.0.location().is_identity() {
             neu.0.move_location(&edge.0.location());

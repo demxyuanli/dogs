@@ -132,6 +132,13 @@ pub fn triangulation_to_brep(tri: &Triangulation) -> BrepFromMesh {
         let a = node_to_vidx[t.n0];
         let b = node_to_vidx[t.n1];
         let c = node_to_vidx[t.n2];
+        // A pole triangle has UV-distinct corners that dedupe to one 3-D point,
+        // so two of its `node_to_vidx` entries coincide. `BRepBuilderAPI_MakeEdge`
+        // returns `NotDone` for a zero-length edge, so such a triangle cannot
+        // become a face — skip it (`BRepBuilderAPI_MakeEdge.cxx`).
+        if a == b || b == c || c == a {
+            continue;
+        }
         let e_ab = ensure_edge(&builder, &mut edge_of_pair, &mut edges, &vertices, a, b);
         let e_bc = ensure_edge(&builder, &mut edge_of_pair, &mut edges, &vertices, b, c);
         let e_ca = ensure_edge(&builder, &mut edge_of_pair, &mut edges, &vertices, c, a);

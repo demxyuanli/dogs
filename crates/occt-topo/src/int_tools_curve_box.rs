@@ -26,7 +26,7 @@
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::GpPnt;
-use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION};
+use occt_core::precision::{ANGULAR, CONFUSION};
 use occt_geom::Curve;
 
 use crate::inttools_data::IntRange;
@@ -47,27 +47,25 @@ pub fn box_is_thin(box_: &BndBox, tol: f64) -> bool {
 /// tolerance as the box gap) is [`crate::geom_bnd_lib_curve3d::box_curve`]. The
 /// previous body sampled 48 points, a stand-in with no OCCT counterpart
 /// (audit A19/T-55 family).
+///
+/// The window is forwarded unchanged, including non-finite bounds, because
+/// `GeomBndLib` has explicit arms for them: `GeomBndLib_Line::Box`
+/// (`GeomBndLib_Line.hxx:66-121`) routes `Precision::IsNegativeInfinite` /
+/// `IsPositiveInfinite` bounds to
+/// `GeomBndLib_InfiniteHelpers::OpenMin` / `OpenMax` / `OpenMinMax` and marks the
+/// box open; `GeomBndLib_Hyperbola` / `GeomBndLib_Parabola` do the same. Those
+/// arms are ported in
+/// `geom_bnd_lib_curve3d::{box_lin, box_hyperbola_range, box_parabola_range}`.
+///
+/// An earlier body ran the window through a `finite_or_unit` helper that
+/// rewrote a non-finite bound to the curve's own `FirstParameter()` /
+/// `LastParameter()` and collapsed a degenerate window to `(-1.0, 1.0)`.
+/// Neither rule exists in `GeomBndLib`, and the `(-1.0, 1.0)` substitution
+/// replaced an open box with a unit segment box, which flips
+/// `Bnd_Box::IsThin` (`Bnd_Box.cxx:398-421`).
 pub fn add_curve_to_box(curve: &dyn Curve, first: f64, last: f64, tol: f64, box_: &mut BndBox) {
-    let (a, b) = finite_or_unit(curve, first, last);
-    let b_curve = crate::geom_bnd_lib_curve3d::box_curve(curve, a, b, tol);
+    let b_curve = crate::geom_bnd_lib_curve3d::box_curve(curve, first, last, tol);
     box_.add_box(&b_curve);
-}
-
-fn finite_or_unit(curve: &dyn Curve, first: f64, last: f64) -> (f64, f64) {
-    let a = if first.is_finite() {
-        first
-    } else {
-        curve.first_parameter()
-    };
-    let b = if last.is_finite() {
-        last
-    } else {
-        curve.last_parameter()
-    };
-    if a.is_finite() && b.is_finite() && (b - a).abs() > PCONFUSION {
-        return (a.min(b), a.max(b));
-    }
-    (-1.0, 1.0)
 }
 
 /// `IntTools_Tools::CheckCurve(theCurve, theBox)`.

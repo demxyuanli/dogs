@@ -407,6 +407,20 @@ pub fn copy_pcurves(to: &Edge, from: &Edge) {
 /// `cxx:910` DONE5, `cxx:931-934` DONE2); this port has no `myStatus`
 /// accumulator.
 pub fn fix_same_parameter(edge: &Edge, face: &Face) {
+    fix_same_parameter_opt(edge, Some(face))
+}
+
+/// `ShapeFix_Edge::FixSameParameter(edge)` (`ShapeFix_Edge.cxx:790-794`): the
+/// empty-face overload, which OCCT reaches from `ShapeFix::SameParameter` when
+/// `MapShapesAndAncestors` finds no ancestor face for the edge
+/// (`ShapeFix.cxx:144-148`). `aFace` stays null there (`cxx:874-882`), so the
+/// deviation check walks every `CurveOnSurface` representation
+/// (`ShapeAnalysis_Edge.cxx:704-826` with `aFaceSurf` null).
+pub fn fix_same_parameter_no_face(edge: &Edge) {
+    fix_same_parameter_opt(edge, None)
+}
+
+fn fix_same_parameter_opt(edge: &Edge, face: Option<&Face>) {
     let reg = GeometryRegistry::global();
     let same_range = reg.edge_geom(&edge.0).map(|g| g.same_range).unwrap_or(true);
     if reg.is_degenerated_edge(&edge.0) {
@@ -457,7 +471,10 @@ pub fn fix_same_parameter(edge: &Edge, face: &Face) {
     // `cxx:874-882`: empty face when `!wasSP` so every Cos is checked.
     // `cxx:883`: deviation on the original pcurves.
     let mut maxdev = if was_sp {
-        check_same_parameter(edge, face)
+        match face {
+            Some(face) => check_same_parameter(edge, face),
+            None => check_same_parameter_all(edge),
+        }
     } else {
         check_same_parameter_all(edge)
     };

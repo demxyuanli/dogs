@@ -213,12 +213,10 @@ impl IncrementalMesh {
 
         // 2. Discretize edges, heal, pre-process, and triangulate faces through
         //    the OCCT pipeline (EdgeDiscret → ModelHealer → ModelPreProcessor →
-        //    FaceDiscret). Any pipeline failure falls back to the wireframe
-        //    UV-grid tessellator (the pre-pipeline behavior).
-        let mesh = match self.build_shape_mesh(&mut model) {
-            Ok(m) => m,
-            Err(_) => self.build_shape_mesh_wireframe(&mut model)?,
-        };
+        //    FaceDiscret). A pipeline failure is reported, never rescued by an
+        //    alternative tessellator: OCCT has none (`BRepMesh_BaseMeshAlgo.cxx`
+        //    marks the face `IMeshData_Failure` and returns).
+        let mesh = self.build_shape_mesh(&mut model)?;
 
         // 4. Accumulate status flags from faces and their wires
         //    (`BRepMesh_IncrementalMesh::Perform`).
@@ -340,60 +338,6 @@ impl IncrementalMesh {
             .collect()
     }
 
-    /// Wireframe UV-grid fallback — the pre-pipeline behavior. Faces are
-    /// tessellated with `wireframe::face_to_triangles` (deflection-bounded UV
-    /// grid) when the OCCT-style pipeline errors.
-    pub(super) fn build_shape_mesh_wireframe(&mut self, model: &mut MeshModel) -> Result<ShapeMesh, String> {
-        let source_shape = model.shape().map(|s| s.shape_type()).unwrap_or(ShapeType::Shape);
-        let reversed_faces = model.shape().map(Self::face_occurrence_reversed).unwrap_or_default();
-        let mut vertices: Vec<GpPnt> = Vec::new();
-        let mut triangles: Vec<Triangle> = Vec::new();
-        self.face_stats.clear();
-
-        for i in 0..model.faces_nb() {
-            let (face, deflection) = {
-                let f = model.face(i).expect("face index in range");
-                (f.face().clone(), f.deflection().max(self.parameters.deflection))
-            };
-            let (vs, ts) = wireframe::face_to_triangles(&face, deflection);
-            if ts.is_empty() {
-                model.face_mut(i).expect("face index in range").set_status(MeshStatus::FAILURE);
-                continue;
-            }
-            // Successfully (re)meshed — drop the outdated marker.
-            model.face_mut(i).expect("face index in range").unset_status(MeshStatus::OUTDATED);
-
-            let ty = model
-                .face(i)
-                .ok()
-                .and_then(|f| f.surface())
-                .map(|s| classify_surface(s.as_ref()))
-                .unwrap_or(SurfaceType::OtherSurface);
-            self.face_stats.push(FaceMeshStat {
-                index: i,
-                shape_key: crate::tgeometry::GeometryRegistry::shape_key(&face.0),
-                surface: ty,
-                vertices: vs.len(),
-                triangles: ts.len(),
-            });
-            let offset = vertices.len();
-            vertices.extend(vs);
-            for t in ts {
-                let t = Self::oriented_triangle(
-                    &t,
-                    reversed_faces.get(i).copied().unwrap_or(false),
-                );
-                triangles.push(Triangle::new(offset + t.n0, offset + t.n1, offset + t.n2));
-            }
-        }
-
-        if triangles.is_empty() {
-            self.status_flags |= MeshStatus::FAILURE.bits() as i32;
-            return Err("IncrementalMesh::perform: no triangles generated".to_string());
-        }
-        Ok(ShapeMesh { vertices, triangles, source_shape })
-    }
-
     /// Run the per-face pipeline over the model.
     ///
     /// For each face the boundary UV polygon is built from its discretized 3D
@@ -450,10 +394,7 @@ impl IncrementalMesh {
 
         struct PendingFace {
             index: usize,
-            topo_face: Face,
-            deflection: f64,
             tri: Option<FaceTriangulation>,
-            needs_fallback: bool,
         }
 
         let nfaces = model.faces_nb();
@@ -464,19 +405,18 @@ impl IncrementalMesh {
                     .face(i)
                     .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?;
                 if f.is_status(MeshStatus::FAILURE) || f.is_status(MeshStatus::REUSED) {
+                    if std::env::var("MBDIAG").is_ok() {
+                        eprintln!(
+                            "MBDIAG skip face={i} bits={} selftint={} failure={} reused={}",
+                            f.status().bits(),
+                            f.is_status(MeshStatus::SELF_INTERSECTING_WIRE),
+                            f.is_status(MeshStatus::FAILURE),
+                            f.is_status(MeshStatus::REUSED)
+                        );
+                    }
                     continue;
                 }
             }
-            let deflection = model
-                .face(i)
-                .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?
-                .deflection()
-                .max(self.parameters.deflection);
-            let topo_face = model
-                .face(i)
-                .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?
-                .face()
-                .clone();
             let surface = model
                 .face(i)
                 .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?
@@ -495,13 +435,17 @@ impl IncrementalMesh {
             }));
             std::panic::set_hook(hook);
 
-            let (tri, needs_fallback) = match outcome {
+            let tri = match outcome {
                 Ok(Ok(result)) => {
+                    if std::env::var("MBDIAG").is_ok() {
+                        eprintln!(
+                            "MBDIAG ok face={i} nodes={} tris={}",
+                            result.nodes.len(),
+                            result.triangles.len()
+                        );
+                    }
                     crate::meshing::node_insertion::diag_dump_result(&result, i);
-                    let mapped = Self::map_triangulation(&result, surface.as_ref(), i);
-                    let tri = mapped.ok();
-                    let needs_fallback = tri.is_none();
-                    (tri, needs_fallback)
+                    Self::map_triangulation(&result, surface.as_ref(), i).ok()
                 }
                 Ok(Err(e)) => {
                     // `BRepMesh_BaseMeshAlgo::process` (`BRepMesh_BaseMeshAlgo.cxx:52-59`):
@@ -518,8 +462,11 @@ impl IncrementalMesh {
                         if std::env::var("MBDIAG").is_ok() {
                             eprintln!("MBDIAG err face={i} FAILURE=1 msg={e}");
                         }
-                        (None, false)
+                        None
                     } else {
+                        if std::env::var("MBDIAG").is_ok() {
+                            eprintln!("MBDIAG fatal face={i} msg={e}");
+                        }
                         return Err(format!(
                             "IncrementalMesh::triangulate_model_faces: face {i}: {e}"
                         ));
@@ -529,48 +476,21 @@ impl IncrementalMesh {
                     if std::env::var("MBDIAG").is_ok() {
                         eprintln!("MBDIAG panic face={i}");
                     }
-                    (None, true)
+                    None
                 }
             };
 
-            pending.push(PendingFace {
-                index: i,
-                topo_face,
-                deflection,
-                tri,
-                needs_fallback,
-            });
+            pending.push(PendingFace { index: i, tri });
         }
 
         let processed = pending.len();
 
         let mut out: Vec<FaceTriangulation> = Vec::with_capacity(processed);
         for p in pending {
-            let tri = p.tri.or_else(|| {
-                if p.needs_fallback {
-                    // UNPORTED (audit A19 / task T-68): OCCT has no per-face
-                    // alternative tessellator — a failed face simply keeps
-                    // `IMeshData_Failure` (`BRepMesh_BaseMeshAlgo.cxx:52-62`).
-                    // This UV-grid rescue is kept only because the ported
-                    // pipeline still fails 169 of 1772 faces of
-                    // `data/occ/T0M.stp` (measured 2026-09-20); delete it once
-                    // those faces mesh through the faithful path.
-                    Self::wireframe_face_triangulation(&p.topo_face, p.deflection, p.index)
-                        .map(|t| {
-                            if std::env::var("MBDIAG").is_ok() {
-                                eprintln!(
-                                    "MBDIAG fallback face={} verts={} tris={}",
-                                    p.index,
-                                    t.vertices.len(),
-                                    t.triangles.len()
-                                );
-                            }
-                            t
-                        })
-                } else {
-                    None
-                }
-            });
+            // OCCT has no per-face alternative tessellator — a face whose
+            // Delaunay fails simply keeps `IMeshData_Failure`
+            // (`BRepMesh_BaseMeshAlgo.cxx:40-62`) and stays unmeshed.
+            let tri = p.tri;
 
             if let Some(tri) = tri {
                 model
@@ -635,30 +555,17 @@ impl IncrementalMesh {
         Ok(FaceTriangulation { face_index, vertices, triangles, uv })
     }
 
-    /// Per-face wireframe fallback when Delaunay fails for one face.
-    fn wireframe_face_triangulation(
-        face: &Face,
-        deflection: f64,
-        face_index: usize,
-    ) -> Option<FaceTriangulation> {
-        let (vertices, triangles) = wireframe::face_to_triangles(face, deflection);
-        if triangles.is_empty() {
-            return None;
-        }
-        Some(FaceTriangulation {
-            face_index,
-            vertices,
-            triangles,
-            uv: Vec::new(),
-        })
-    }
-
     /// `BRepMesh_ModelHealer::process` FaceChecker + `amplifyEdges`
     /// (`BRepMesh_ModelHealer.cxx:234-211`).
     fn heal_self_intersecting_wires(&self, model: &mut MeshModel) -> Result<(), String> {
         let mut intersecting: HashMap<usize, std::collections::HashSet<usize>> = HashMap::new();
         for i in 0..model.faces_nb() {
             if let Some(edges) = self.face_intersecting_edges(model, i)? {
+                if std::env::var("MBDIAG").is_ok() {
+                    let mut v: Vec<usize> = edges.iter().copied().collect();
+                    v.sort_unstable();
+                    eprintln!("MBDIAG selfint face={i} edges={v:?}");
+                }
                 intersecting.insert(i, edges);
             }
         }
@@ -1549,15 +1456,16 @@ impl IncrementalMesh {
     pub fn discretize_face(&mut self, face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
         let mut params = self.parameters.clone();
         params.deflection = deflection;
-        let mut model = match ModelBuilder::build_model(&face.0, &params) {
-            Ok(m) => m,
-            Err(_) => return wireframe::face_to_triangles(face, deflection),
+        // OCCT has no fallback tessellator: a face whose model cannot be built
+        // or whose Delaunay fails simply keeps `IMeshData_Failure`
+        // (`BRepMesh_BaseMeshAlgo.cxx:40-62`) and yields no triangles.
+        let Ok(mut model) = ModelBuilder::build_model(&face.0, &params) else {
+            return (Vec::new(), Vec::new());
         };
         ModelPreProcessor::perform(&mut model, &params);
         match self.build_shape_mesh(&mut model) {
             Ok(m) => (m.vertices, m.triangles),
-            // ponytail: fall back to the wireframe UV-grid tessellator.
-            Err(_) => wireframe::face_to_triangles(face, deflection),
+            Err(_) => (Vec::new(), Vec::new()),
         }
     }
 }

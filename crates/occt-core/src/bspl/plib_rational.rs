@@ -6,8 +6,25 @@
 /// `ders` layout (`cxx:307-316`): order `k` occupies `ders[k*4 .. k*4+4]` as
 /// `(ux, uy, uz, w)`. Returns the `DerivativeRequest`-th cartesian vector.
 pub fn rational_derivative(degree: i32, derivative_request: i32, ders: &[f64]) -> [f64; 3] {
+    let storage = rational_derivatives(degree, derivative_request, ders);
+    let mut dim = (derivative_request << 1) + derivative_request;
+    if dim < 0 {
+        dim = 0;
+    }
+    let i = dim as usize;
+    if i + 2 < storage.len() {
+        [storage[i], storage[i + 1], storage[i + 2]]
+    } else {
+        [0.0, 0.0, 0.0]
+    }
+}
+
+/// `PLib::RationalDerivative` output array: orders `0..=derivative_request`,
+/// each occupying `storage[k*3 .. k*3+3]` (this is the `Result` array of
+/// `BSplCLib_D1/D2/D3`, which the D1/D2/D3 wrappers read as `result + k*3`).
+pub fn rational_derivatives(degree: i32, derivative_request: i32, ders: &[f64]) -> Vec<f64> {
     if ders.len() < 4 {
-        return [0.0, 0.0, 0.0];
+        return vec![0.0; ((derivative_request.max(0) + 1) * 3) as usize];
     }
     let de_request1 = (derivative_request + 1).max(1) as usize;
     let min_deg = derivative_request.min(degree).max(0) as usize;
@@ -85,14 +102,5 @@ pub fn rational_derivative(degree: i32, derivative_request: i32, ders: &[f64]) -
         index += 1;
     }
 
-    let mut dim = (derivative_request << 1) + derivative_request;
-    if dim < 0 {
-        dim = 0;
-    }
-    let i = dim as usize;
-    if i + 2 < storage.len() {
-        [storage[i], storage[i + 1], storage[i + 2]]
-    } else {
-        [0.0, 0.0, 0.0]
-    }
+    storage
 }

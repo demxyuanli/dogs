@@ -54,7 +54,7 @@ fn add_to_bbox(s: &TopoShape, b: &mut BndBox) {
         ShapeType::Face => {
             if let Some(surf) = reg().face_surface(s) {
                 let f = Face(s.clone());
-                let (u0, u1, v0, v1) = face_uv_bounds(&f, surf.as_ref());
+                let (u0, u1, v0, v1) = face_uv_bounds(&f);
                 if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite()
                     && u1 > u0 && v1 > v0
                 {

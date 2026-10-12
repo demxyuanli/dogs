@@ -12,7 +12,6 @@
 
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_class3d::SolidClassifier;
-use crate::brep_lib_same_parameter::same_parameter_shape;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Edge, Face, Shell, TopoShape, Wire};
@@ -22,7 +21,7 @@ use crate::shhealing::{
     fix_connected_at, fix_connected_closed, fix_reorder_wire_3d, fix_shell_face_orientation,
     fix_small_all, fix_add_curve3d_or_drop,
     fix_vertex_tolerance_edge, grown_vertex_tolerances_on_face, perform_wire_first_round,
-    perform_wire_second_round, shell_open_by_free_edge,
+    perform_wire_second_round, shape_fix_same_parameter, shell_open_by_free_edge,
     split_face_after_removed_segment, split_loop_wires, ShapeFixEdge, ShapeFixFace,
 };
 use crate::tgeometry::GeometryRegistry;
@@ -49,9 +48,11 @@ pub(in crate::iges_read) fn process_iges_shape(shape: &TopoShape, model: &IgesMo
     process_node(shape, &mut ctx, theeps, max_tol);
     // `ShapeFix_Shape.cxx:257`.
     let mut result = ctx.apply(shape);
-    // `cxx:259-266`. `NeedFix(myFixSameParameterMode)` is true for the IGES
-    // default `-1` (`IGESData.cxx:116`). `forced` is false.
-    same_parameter_shape(&result, theeps, false);
+    // `ShapeFix_Shape.cxx:259-261`. `NeedFix(myFixSameParameterMode)` is true for
+    // the IGES default `-1` (`IGESData.cxx:116`). `ShapeFix_Shape::SameParameter`
+    // (`ShapeFix_Shape.cxx:307-311`) is `ShapeFix::SameParameter(sh, enforce,
+    // 0.0)` - `enforce` is false and `preci` is 0.
+    shape_fix_same_parameter(&result, false, 0.0);
     // `cxx:267-291`. `NeedFix(myFixVertexTolMode)` is true (`IGESData.cxx:164`).
     fix_vertex_tolerances_after_same_parameter(&result, &mut ctx);
     // `cxx:294`.

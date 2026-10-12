@@ -41,7 +41,7 @@ Geom2dBezierCurve · curve_ops(长度/交点/最近点) · bspline2d_to_bezier
 ### occt-topo (TKBRep, 381 tests)
 - **几何内核**: tgeometry(GeometryRegistry 侧表) · 真实 children 树 ·
   builder(全部 make_*) · brep_tool(BRep_Tool) · primitives(真几何 box/cyl/sphere/cone/torus)
-- **网格化**: wireframe · shape_mesh(任意 BRep 网格化+法线+焊接) · brepmesh(Deflection 自适应)
+- **网格化**: wireframe · shape_mesh(任意 BRep 网格化+法线+焊接) · incremental_mesh(逐行移植 BRepMesh_FaceDiscret+Delaun)
 - **拓扑分析**: face_face · edge_split · shell_check · solid_union ·
   boolean_ops · brep_extrema · shape_analysis · brep_gprop
 - **精确建模 (P5+P6)**: inttools + bop_builder (平面精确布尔) ·

@@ -115,7 +115,7 @@
 | BRepOffsetAPI（14） | loft + pipe | 36% | |
 | BRepSweep（9） | sweep + sweep_revolve + pipe | 33% | |
 | BRepFilletAPI（4） | fillet | 25% | |
-| BRepMesh（59） | brepmesh + wireframe + shape_mesh | 25% | Deflection 自适应（平面精确/曲面细分） |
+| BRepMesh（59） | meshing/（incremental_mesh·face_discret·delaun·node_insertion）+ shape_mesh | 25% | Delaunay 忠实件（`brepmesh` 四叉树已于 2026-10-12 删除） |
 | GeomAPI（11） | geom_api | ~80%（常用） | |
 | Geom2dAPI（5） | geom2d_api | ~80% | |
 | GCPnts（11） | gcpnts | ~45% | |
