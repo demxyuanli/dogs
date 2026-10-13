@@ -1149,7 +1149,7 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
     ) -> Result<(), String> {
         let wire_indices: Vec<usize> = model.face(face_index)?.wires().to_vec();
         for (wire_it, &wire_index) in wire_indices.iter().enumerate() {
-            let (skip, slots) = {
+            let (skip, slot_edges) = {
                 let wire = model.wire(wire_index)?;
                 // `NodeInsertionMeshAlgo::initDataStructure` (`hxx:70-74`):
                 // skip a self-intersecting wire, and skip an OpenWire unless
@@ -1159,80 +1159,71 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                 {
                     (true, Vec::new())
                 } else {
-                    let mut slots = Vec::new();
+                    let mut edges = Vec::new();
                     for j in 0..wire.edges_nb() {
-                        slots.push((
-                            wire.edge(j)?,
-                            wire.edge_orientation(j)?,
-                            wire.edge_reverse_walk(j),
-                        ));
+                        edges.push(wire.edge(j)?);
                     }
-                    (false, slots)
+                    (false, edges)
                 }
             };
             if skip {
                 continue;
             }
-            // One CheckOrder slot → one pcurve. Walk points in the same order
-            // as `collectWirePoints` so `addLinkToMesh` left-of-frontier is
-            // the classified interior (`meshLeftPolygonOf`).
-            for (edge_index, slot_ori, reverse_walk) in slots {
-                let job = {
+            // `BRepMesh_BaseMeshAlgo::initDataStructure` (`cxx:87-125`): for every
+            // wire slot, *every* pcurve of that edge on this face is registered,
+            // in `aDEdge->GetPCurves(myDFace)` order (the faces' pcurve index
+            // list). A seam edge the wire walks twice therefore contributes both
+            // of its period copies, and the walk order is the pcurve's own point
+            // order - OCCT never consults the CheckOrder slot orientation here.
+            // The link orientation is `fixSeamEdgeOrientation` (`cxx:197-225`).
+            for edge_index in slot_edges {
+                let jobs: Vec<(usize, Orientation, Vec<GpPnt2d>, Vec<GpPnt>)> = {
                     let edge = model.edge(edge_index)?;
                     let pts3d = edge.discretization().points().to_vec();
-                    let mut found: Option<(Orientation, Vec<GpPnt2d>, Vec<GpPnt>)> = None;
+                    let mut jobs = Vec::new();
                     for pc_index in edge.pcurves_for(face_index) {
                         let pc = edge.pcurve(pc_index)?;
-                        if pc.orientation() != slot_ori {
-                            continue;
-                        }
-                        let mut ori = Self::fix_seam_edge_orientation(&edge, pc_index, face_index)?;
-                        if reverse_walk && ori != Orientation::Internal {
-                            ori = ori.reversed();
-                        }
-                        found = Some((ori, pc.points().to_vec(), pts3d.clone()));
-                        break;
+                        let ori = Self::fix_seam_edge_orientation(&edge, pc_index, face_index)?;
+                        jobs.push((pc_index, ori, pc.points().to_vec(), pts3d.clone()));
                     }
-                    found
+                    jobs
                 };
-                let Some((ori, pts, pts3d)) = job else {
-                    continue;
-                };
-                // TEMPORARY diagnostic (DELREGSKEL): the registration skeleton in the
-                // `occt_probe --structdump` `OCCTSTRUCT E` line format, so the pcurve
-                // visit order and the effective link orientation can be diffed against
-                // `BRepMesh_BaseMeshAlgo::initDataStructure`.
-                if std::env::var("DELREGSKEL").is_ok() {
-                    let first = pts.first().copied().unwrap_or_else(GpPnt2d::zero);
-                    let last = pts.last().copied().unwrap_or_else(GpPnt2d::zero);
-                    eprintln!(
-                        "REG f={} w={} edge={} slot_ori={:?} rev={} ori={:?} n={} first=({:.9},{:.9}) last=({:.9},{:.9})",
-                        face_index,
-                        wire_it,
-                        edge_index,
-                        slot_ori,
-                        reverse_walk,
-                        ori,
-                        pts.len(),
-                        first.x(),
-                        first.y(),
-                        last.x(),
-                        last.y()
-                    );
-                }
-                let mut prev = -1i32;
-                for (i, &uv) in pts.iter().enumerate() {
-                    let p3d = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
-                    let node = self.register_node(p3d, uv, VertexState::Frontier, false);
-                    if prev != -1 && prev != node {
-                        let links_nb = self.structure.nb_links() as i32;
-                        let link_index = self.add_link_to_mesh(prev, node, ori);
-                        if wire_it != 0 && link_index <= links_nb {
-                            self.structure
-                                .set_link_movability(link_index, VertexState::Fixed);
-                        }
+                for (pc_index, ori, pts, pts3d) in jobs {
+                    // TEMPORARY diagnostic (DELREGSKEL): the registration skeleton in the
+                    // `occt_probe --structdump` `OCCTSTRUCT E` line format, so the pcurve
+                    // visit order and the effective link orientation can be diffed against
+                    // `BRepMesh_BaseMeshAlgo::initDataStructure`.
+                    if std::env::var("DELREGSKEL").is_ok() {
+                        let first = pts.first().copied().unwrap_or_else(GpPnt2d::zero);
+                        let last = pts.last().copied().unwrap_or_else(GpPnt2d::zero);
+                        eprintln!(
+                            "REG f={} w={} edge={} pc={} ori={:?} n={} first=({:.9},{:.9}) last=({:.9},{:.9})",
+                            face_index,
+                            wire_it,
+                            edge_index,
+                            pc_index,
+                            ori,
+                            pts.len(),
+                            first.x(),
+                            first.y(),
+                            last.x(),
+                            last.y()
+                        );
                     }
-                    prev = node;
+                    let mut prev = -1i32;
+                    for (i, &uv) in pts.iter().enumerate() {
+                        let p3d = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
+                        let node = self.register_node(p3d, uv, VertexState::Frontier, false);
+                        if prev != -1 && prev != node {
+                            let links_nb = self.structure.nb_links() as i32;
+                            let link_index = self.add_link_to_mesh(prev, node, ori);
+                            if wire_it != 0 && link_index <= links_nb {
+                                self.structure
+                                    .set_link_movability(link_index, VertexState::Fixed);
+                            }
+                        }
+                        prev = node;
+                    }
                 }
             }
         }

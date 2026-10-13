@@ -106,6 +106,8 @@ pub const MODELS: &[Model] = &[
     // uniform V parameters where OCCT's adaptive `PerformCurve` yields 11
     // (face 4: nvp 28->11, nv 17->11, nodes 525->315, mesh 629/1152 -> 407/720,
     // matching the OCCT probe row bit for bit).
+    // 2026-10-13 (seam registration, see occ/TDB.stp): 67424 vs 67366
+    // (v 60575 vs 60548).
     Model { step: "occ/T0M.stp", occ: "occ/occ-T0M.obj", bbox_tol: Some(0.9), area_tol: Some(0.025) },
     // acs10: widened 0.05 -> 0.12 by the same T-93 (a) change (ratio 0.9846 ->
     // 0.9025, ours 244773.63 / occ 271219.68). Re-measured at 9.625: 1.00004
@@ -113,14 +115,27 @@ pub const MODELS: &[Model] = &[
     // (v 37287 vs 37296).
     // 2026-10-12 (A13/A18/A19/A23): 47196 vs 46558 (v 37606 vs 37296), area
     // 271232.13 vs 271219.68.
+    // 2026-10-13 (seam registration, see occ/TDB.stp): 46538 vs 46558
+    // (v 37280 vs 37296).
     Model { step: "occ/acs10.stp", occ: "occ/occ-acs10.obj", bbox_tol: Some(1e-3), area_tol: Some(0.12) },
     // TDB: 9.626 (FixSelfIntersectWire): 79912 vs 79977 faces
     // (v 73702 vs 73544).
     // 2026-10-12 (A13/A18/A19/A23): 81721 vs 79977 (v 74792 vs 73544), area
     // 235866.32 vs 234884.51 (ratio 1.0042).
+    // 2026-10-13: the +1744 triangles were two seam-edge registration gaps.
+    // `BRepMesh_ModelPreProcessor::splitEdge` evaluates the pcurve branch test
+    // at `aPC1->FirstParameter()` (`BRepMesh_ModelPreProcessor.cxx:226-231`), so
+    // a `Geom2d_Line` seam seed is evaluated at `-Precision::Infinite()` and the
+    // two pcurves get cross-wired; the port used a finite midpoint and left the
+    // seam edges ordered. `BRepMesh_BaseMeshAlgo::initDataStructure`
+    // (`cxx:87-125`) then registers *every* pcurve of each wire edge instead of
+    // the CheckOrder slot. Delta collapsed to 79926 vs 79977 (v 73516 vs
+    // 73544), f-ratio 0.9994.
     Model { step: "occ/TDB.stp", occ: "occ/occ-TDB.obj", bbox_tol: Some(1e-3), area_tol: Some(0.02) },
     // a3n00: the tracked T-59/T-69 face classes (density 0.72); the wide area
     // tolerance encodes the missing coverage, not a meshing approximation.
+    // 2026-10-13 (seam registration, see occ/TDB.stp): 12442 vs 12466
+    // (v 11138 vs 11145).
     Model { step: "occ/a3n00.stp", occ: "occ/occ-a3n00.obj", bbox_tol: Some(0.01), area_tol: Some(0.15) },
 ];
 
