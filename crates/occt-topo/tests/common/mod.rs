@@ -93,6 +93,19 @@ pub const MODELS: &[Model] = &[
     // The +8.6% triangle delta is **not** from the refinement cap: an A/B with
     // `A_ITERATIONS_NB = 4` gives 73162 vs 73150 (0.02%). It comes from faces
     // that used to fall back to the UV-grid mesher now going through Delaunay.
+    // 2026-10-13: the missing `ShapeFix_Shape::Perform` tail of the STEP
+    // `FixShape` pass (`ShapeFix_Shape.cxx:259-261` `SameParameter` +
+    // `:267-291` `FixVertexTolerance`, wired in
+    // `step/read_topology.rs::close_heal_context`) collapsed the delta: 67426 vs
+    // 67366 (v 60576 vs 60548), area 192657.72 vs 192658.64 (ratio 1.0000). The
+    // old +5784 triangles were one class: the port left `SameParameter=false`
+    // on the torus face's u-iso BSpline edges, so `BRepMesh_EdgeDiscret::
+    // CreateEdgeTessellator` (`cxx:57-59`) picked the `Adaptor3d_CurveOnSurface`
+    // overload (`myType==GeomAbs_Circle` from `EvalKPart`) instead of the 3D
+    // curve, and `GCPnts_TangentialDeflection::PerformCircular` sampled 17
+    // uniform V parameters where OCCT's adaptive `PerformCurve` yields 11
+    // (face 4: nvp 28->11, nv 17->11, nodes 525->315, mesh 629/1152 -> 407/720,
+    // matching the OCCT probe row bit for bit).
     Model { step: "occ/T0M.stp", occ: "occ/occ-T0M.obj", bbox_tol: Some(0.9), area_tol: Some(0.025) },
     // acs10: widened 0.05 -> 0.12 by the same T-93 (a) change (ratio 0.9846 ->
     // 0.9025, ours 244773.63 / occ 271219.68). Re-measured at 9.625: 1.00004

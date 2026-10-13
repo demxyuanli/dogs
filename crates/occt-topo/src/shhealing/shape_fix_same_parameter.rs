@@ -22,9 +22,45 @@ use occt_geom2d::curve::Curve2d;
 use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
 use crate::iterator::cumulated_children;
-use crate::topo_tools_full::{explorer_shapes, map_shapes_and_ancestors};
+use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
+use crate::topo_tools_full::{
+    edges_of_wire, explorer_shapes, faces_of, map_shapes_and_ancestors, wires_of_face,
+};
 
-use super::{fix_same_parameter, fix_same_parameter_no_face};
+use super::{fix_same_parameter, fix_same_parameter_no_face, grown_vertex_tolerances_on_face};
+
+/// `ShapeFix_Shape::Perform`'s FixVertexTolerance stage
+/// (`ShapeFix_Shape.cxx:267-291`). Runs only when the result has more than one
+/// face. `FixEdgeTool()` already carries the pass context, because each face
+/// `Perform` forwarded it (`ShapeFix_Face.cxx:348`, `ShapeFix_Wire.cxx:307`),
+/// so the update is `CopyVertex` (`ShapeFix_Edge.cxx:674-677`).
+pub fn fix_vertex_tolerances_after_same_parameter(shape: &TopoShape, ctx: &mut SharedReShape) {
+    let faces = faces_of(shape);
+    if faces.len() <= 1 {
+        return;
+    }
+    for face in &faces {
+        for wire in wires_of_face(face) {
+            for edge in edges_of_wire(&wire) {
+                fix_vertex_tolerance_with_context(&edge, face, ctx);
+            }
+        }
+    }
+}
+
+/// `ShapeFix_Edge::FixVertexTolerance(edge, face)` with a live context
+/// (`ShapeFix_Edge.cxx:642-684`).
+fn fix_vertex_tolerance_with_context(edge: &Edge, face: &Face, ctx: &mut SharedReShape) {
+    let applied = ctx.apply(&edge.0);
+    if !applied.is_edge() {
+        return;
+    }
+    let Some(grown) = grown_vertex_tolerances_on_face(&Edge(applied), face) else {
+        return;
+    };
+    ctx.copy_vertex(&grown.v1.0, grown.toler1);
+    ctx.copy_vertex(&grown.v2.0, grown.toler2);
+}
 
 /// `ShapeFix::SameParameter(shape, enforce, preci, theProgress, theMsgReg)`
 /// (`ShapeFix.cxx:70-275`).

@@ -399,14 +399,32 @@ impl<'a> Resolver<'a> {
     }
 
     /// Closes the pass opened by `open_heal_context`: pops the handle and
-    /// materialises the substitutions on the shape (`ShapeFix_Shape.cxx:257`).
+    /// materialises the substitutions on the shape (`ShapeFix_Shape.cxx:257`),
+    /// then runs the rest of `ShapeFix_Shape::Perform`'s tail on the root -
+    /// `SameParameter` (`cxx:259-261`) and `FixVertexTolerance` (`cxx:267-291`)
+    /// - and the closing `Context()->Apply` (`cxx:294`). Both stage gates are
+    /// the tool defaults `-1`: STEP registers `FixSameParameterMode`
+    /// (`STEPControl_Controller.cxx:211`) and leaves `FixVertexTolMode` at
+    /// `ShapeFix_Shape`'s ctor value, so `NeedFix(-1)` is true for both
+    /// (`ShapeFix_Root.lxx:101-104`).
     fn close_heal_context(
         &self,
         owned: &Option<crate::shape_fix_compose_shell::SharedReShape>,
         shape: TopoShape,
     ) -> TopoShape {
         match self.pop_heal_context(owned) {
-            Some(mut ctx) => ctx.apply(&shape), // cxx:257: myResult = Context()->Apply(S)
+            // cxx:257: myResult = Context()->Apply(S)
+            Some(mut ctx) => {
+                let mut result = ctx.apply(&shape);
+                // `ShapeFix_Shape::SameParameter` (`cxx:307-311`) is
+                // `ShapeFix::SameParameter(sh, enforce, 0.0)`; `enforce` is
+                // false (`cxx:261`).
+                crate::shhealing::shape_fix_same_parameter(&result, false, 0.0);
+                crate::shhealing::fix_vertex_tolerances_after_same_parameter(&result, &mut ctx);
+                // cxx:294.
+                result = ctx.apply(&result);
+                result
+            }
             None => shape,
         }
     }
