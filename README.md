@@ -112,6 +112,7 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 - 参考（GT）：`data/occ/occ-*.obj` —— 逐模型面积比与 f-ratio 的对照基准
 - 产物：`data/output/<stem>.obj`（已 gitignore）—— STEP→OBJ 唯一导出目录（`export_data_obj` 与 `step_obj_gates` 共用）
 - IGES 对拍：`_igesdump/oracle/` 是 OCCT 写出的 14 个样例。端口导出用 `iges_check`，`IGES_DUMP` 只作人工对照，不入库
+  - **降级 oracle：`_igesdump/oracle/Torus.iges` 只作写侧参数对照，不作"读回正确输出"基准。** 它复现的是 **OCCT 8.0.0 Faces 模式往返缺陷**（2026-10-12 定位，详见 `docs/goals/iges-read-full/state.yaml` T027）：Faces 模式（`IGESControl_Writer("MM", 0)`，`GeomToIGES_GeomSurface.cxx:576-598` 的 `myBRepMode && myAnalytic` 为假）把解析环面写成 `144 + 120` 回转面 + 相位不自洽的 `142`；OCCT 8.0.0 自己读回得到 **1 面 / 2 wires / v 跨 4π ≈ 302 节点 146 三角**（面积 67.24，真值 789.57），而 OCCT **7.8.1**（FreeCAD 1.1 内置）读同一文件是 **1 面 / 1 wire / v 跨 2π / 完整环面**（1639 点 3122 面，面积 786.66）。同一 IGES 若按 **BRep 模式**写出则是 `198,9,11,10.,2.,13`（解析环面），OCCT 8.0.0 读回 **1 面 / 1 wire / 1369 节点 2592 三角 / bbox ±12**（完整环面）。端口在此条上与规格 8.0.0 **逐点一致**（302/146 到 1e-7），故 Torus 的读侧 sweep 仍可作 parity 检查，但 **302/146 不得判为端口缺陷或"正确输出"**。
 - 临时：`.target-gate/`（已 gitignore）存放门禁输出、对拍脚本与探针 dump
 
 ---
@@ -134,7 +135,7 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
   其中 a3n00 0.8996、T0M 0.9987、acs10 0.9846。
 - **已知最大缺口**：**没有 `ShapeProcess`/`FixShape` 驱动器**（端口在 reader 里按面直调子步）。
   实测关掉该算子时 OCCT 有 **131/226 面无法网格化**，说明它是承重环节；端口仅缺分派器与参数下发。
-- **IGES 写侧**（读侧未做）：`write_iges` 一条路径服务全部模型。全局段按 `IGESData.cxx` 写 IGES 5.3（版本 `11`，精度 `308,15,308,15`，单位 `MM`），序号 `%7.7d` 补零，壳组 402 的 form 为 `1`。初等面在 Faces 模式下是 120 回转面 + 124，不是 192/194/196/198。`iges_check` 已通过：`linkrods`，以及 `data/occ` 的 4 个 `.step` 和 4 个 `.stp`。与 oracle 参数段一致的有 Cube、Sphere、Cone、Extrusion、HoledPlate、rev、Offset；Cone 的目录 form 与全局段对齐后，查看器里是完整圆锥。仍有几何差的是 Cylinder、Torus、screw、Shape、Shape-1、Shape-2，以及 OffsetPlaneHoleEdge 的颜色/名字尾。
+- **IGES 写侧**（读侧未做）：`write_iges` 一条路径服务全部模型。全局段按 `IGESData.cxx` 写 IGES 5.3（版本 `11`，精度 `308,15,308,15`，单位 `MM`），序号 `%7.7d` 补零，壳组 402 的 form 为 `1`。初等面在 Faces 模式下是 120 回转面 + 124，不是 192/194/196/198（OCCT 8.0.0 在 Faces 模式下同样如此：`GeomToIGES_GeomSurface.cxx:576-598` 只在 BRep 模式 `myBRepMode && myAnalytic` 成立时才走 198/194/192/196，Faces 模式的对照文件 `_igesdump/oracle/*.iges` 也是 120 回转面）。`iges_check` 已通过：`linkrods`，以及 `data/occ` 的 4 个 `.step` 和 4 个 `.stp`。与 oracle 参数段一致的有 Cube、Sphere、Cone、Extrusion、HoledPlate、rev、Offset；Cone 的目录 form 与全局段对齐后，查看器里是完整圆锥。仍有几何差的是 Cylinder、Torus、screw、Shape、Shape-1、Shape-2，以及 OffsetPlaneHoleEdge 的颜色/名字尾。
 - **未结个案**：a3n00 的“螺母斜切面”（端口 F113）仍为 **4 wires / 空面**。
   已定位到：`fix_missing_seam` 在该面上把 28 条边分成了 **6 条 wire / 5 张面**（其中 1 张 2-wire 面 = 6e+7e，
   另 4 张单 wire 面 = 5/4/3/3），而 OCCT 是 **2 条 wire（22+6）/ 1 张面**——**总边数相同（28），这一步不丢边**；
