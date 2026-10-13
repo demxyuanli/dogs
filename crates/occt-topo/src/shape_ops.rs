@@ -202,16 +202,8 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
         let Some(g) = reg.edge_geom(src) else {
             continue;
         };
-        let pcurves: std::collections::HashMap<usize, Vec<Arc<dyn occt_geom2d::Curve2d>>> = g
-            .pcurves
-            .iter()
-            .map(|(k, v)| (surface_map.get(k).copied().unwrap_or(*k), v.clone()))
-            .collect();
-        let ranges: std::collections::HashMap<usize, (f64, f64)> = g
-            .pcurve_ranges
-            .iter()
-            .map(|(k, v)| (surface_map.get(k).copied().unwrap_or(*k), *v))
-            .collect();
+        let pcurves = g.pcurves.map_keys(|k| surface_map.get(&k).copied().unwrap_or(k));
+        let ranges = g.pcurve_ranges.map_keys(|k| surface_map.get(&k).copied().unwrap_or(k));
         if pcurves.is_empty() {
             continue;
         }

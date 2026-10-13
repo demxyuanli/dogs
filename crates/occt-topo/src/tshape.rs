@@ -1,6 +1,7 @@
 //! TShape — underlying shape data (geometric + topological content).
 //! Source: `TopoDS_TShape`
 use std::collections::HashMap;
+use std::ops::Index;
 use std::sync::{Arc, RwLock};
 use std::fmt;
 use occt_geom::{Curve, Surface};
@@ -260,6 +261,141 @@ impl Default for EdgeGeomCore {
     }
 }
 
+/// Keyed slots with the traversal order of an OCCT list.
+///
+/// `BRep_TEdge::myCurves` is an `NCollection_List` (`BRep_TEdge.hxx:81`) and
+/// `BRep_Builder::UpdateCurves` (`BRep_Builder.cxx:104-167`) *removes* the
+/// representation it is about to replace and *appends* the new one at the end,
+/// so `BRep_Tool::CurveOnSurface(E, ..., Index)` walks the representations in
+/// append order. The port needs the same order for the same decisions, which a
+/// `HashMap` cannot give (its iteration order is seeded per process): every
+/// caller that reads "the first representation" would otherwise see a different
+/// one on every run.
+///
+/// Lookup stays hash-based; only iteration follows `order`.
+#[derive(Clone)]
+pub struct OrderedSlots<V> {
+    order: Vec<usize>,
+    map: HashMap<usize, V>,
+}
+
+impl<V> Default for OrderedSlots<V> {
+    fn default() -> Self {
+        Self { order: Vec::new(), map: HashMap::new() }
+    }
+}
+
+impl<V> OrderedSlots<V> {
+    /// `BRep_Builder::UpdateCurves` (`BRep_Builder.cxx:104-167`): the
+    /// representation on this key is removed and the new one is **appended**,
+    /// so writing a pcurve that is already there moves it to the end of the
+    /// list.
+    pub fn set(&mut self, key: usize, value: V) -> Option<V> {
+        self.order.retain(|k| *k != key);
+        self.order.push(key);
+        self.map.insert(key, value)
+    }
+
+    /// `ShapeBuild_Edge::CopyPCurves` (`ShapeBuild_Edge.cxx:395-399`): a key
+    /// that is already present keeps its position in the list.
+    pub fn insert(&mut self, key: usize, value: V) -> Option<V> {
+        if !self.map.contains_key(&key) {
+            self.order.push(key);
+        }
+        self.map.insert(key, value)
+    }
+
+    pub fn get(&self, key: &usize) -> Option<&V> { self.map.get(key) }
+
+    pub fn get_mut(&mut self, key: &usize) -> Option<&mut V> { self.map.get_mut(key) }
+
+    pub fn contains_key(&self, key: &usize) -> bool { self.map.contains_key(key) }
+
+    pub fn remove(&mut self, key: &usize) -> Option<V> {
+        let out = self.map.remove(key);
+        if out.is_some() {
+            self.order.retain(|k| k != key);
+        }
+        out
+    }
+
+    /// Re-key in place (the representation keeps its position in the list).
+    pub fn rename_key(&mut self, from: usize, to: usize) {
+        if from == to {
+            return;
+        }
+        let Some(value) = self.map.remove(&from) else {
+            return;
+        };
+        match self.order.iter().position(|k| *k == from) {
+            Some(pos) => self.order[pos] = to,
+            None => self.order.push(to),
+        }
+        self.map.insert(to, value);
+        let Self { order, map } = self;
+        let mut seen = std::collections::HashSet::new();
+        order.retain(|k| map.contains_key(k) && seen.insert(*k));
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&usize, &V)> {
+        self.order.iter().filter_map(move |k| self.map.get(k).map(|v| (k, v)))
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &usize> {
+        self.order.iter().filter(|k| self.map.contains_key(k))
+    }
+
+    /// Same key order as `self`, with each key remapped (`BRepBuilderAPI_Copy`
+    /// re-keying the representations onto the copied surfaces).
+    pub fn map_keys(&self, f: impl Fn(usize) -> usize) -> Self
+    where
+        V: Clone,
+    {
+        let mut out = Self::default();
+        for (k, v) in self.iter() {
+            out.insert(f(*k), v.clone());
+        }
+        out
+    }
+
+    /// Run `f` on every value in list order. The `&mut` form of
+    /// [`OrderedSlots::iter`]: an iterator of `&mut` cannot borrow the map
+    /// repeatedly, so the traversal is driven by the order list instead.
+    pub fn for_each_mut(&mut self, mut f: impl FnMut(&usize, &mut V)) {
+        let Self { order, map } = self;
+        for k in order.iter() {
+            if let Some(v) = map.get_mut(k) {
+                f(k, v);
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize { self.map.len() }
+
+    pub fn is_empty(&self) -> bool { self.map.is_empty() }
+}
+
+impl<V> Index<&usize> for OrderedSlots<V> {
+    type Output = V;
+    fn index(&self, key: &usize) -> &V {
+        self.map.get(key).expect("ordered slot key")
+    }
+}
+
+impl<'a, V> IntoIterator for &'a OrderedSlots<V> {
+    type Item = (&'a usize, &'a V);
+    type IntoIter = Box<dyn Iterator<Item = (&'a usize, &'a V)> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.iter())
+    }
+}
+
+impl<V: fmt::Debug> fmt::Debug for OrderedSlots<V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
+    }
+}
+
 /// Per-face 2D pcurves of an edge, and their `BRep_GCurve` ranges.
 ///
 /// Lifted from `GeometryRegistry`'s `EdgeGeom` payload (`tgeometry.rs:64-83`)
@@ -275,16 +411,16 @@ impl Default for EdgeGeomCore {
 #[derive(Default, Clone)]
 pub struct EdgePcurves {
     /// Forward-then-reversed for a seam edge, one entry for a normal edge.
-    pub curves: HashMap<usize, Vec<Arc<dyn Curve2d>>>,
+    pub curves: OrderedSlots<Vec<Arc<dyn Curve2d>>>,
     /// `BRep_GCurve` First/Last of the CurveOnSurface representation.
-    pub ranges: HashMap<usize, (f64, f64)>,
+    pub ranges: OrderedSlots<(f64, f64)>,
 }
 
 impl EdgePcurves {
     /// Attach the (single) pcurve on `face_key`, replacing any previous ones
     /// (`EdgeGeom::set_pcurve`, `tgeometry.rs:104-107`).
     pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>, first: f64, last: f64) {
-        self.curves.insert(face_key, vec![c.clone()]);
+        self.curves.set(face_key, vec![c.clone()]);
         self.init_range(face_key, Some(c.as_ref()), first, last);
     }
 
@@ -292,7 +428,7 @@ impl EdgePcurves {
     /// forward-then-reversed order for a seam edge).
     pub fn set_pcurves(&mut self, face_key: usize, cs: Vec<Arc<dyn Curve2d>>, first: f64, last: f64) {
         let head = cs.first().cloned();
-        self.curves.insert(face_key, cs);
+        self.curves.set(face_key, cs);
         self.init_range(face_key, head.as_deref(), first, last);
     }
 

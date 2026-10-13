@@ -21,7 +21,7 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
 use crate::shape::TopoShape;
-use crate::tshape::{EdgePcurves, VertexGeomCore};
+use crate::tshape::{EdgePcurves, OrderedSlots, VertexGeomCore};
 
 /// Monotonic sequence number used by the in-tree pcurve/ReShape diagnostics to
 /// order an attach/remove against a recorded `Replace`.
@@ -90,11 +90,14 @@ pub struct EdgeGeom {
     /// a surface share one representation, as in OCCT. A seam edge of a
     /// periodic surface carries *two* pcurves on the same representation (one
     /// per side of the seam), stored in forward-then-reversed order.
-    pub pcurves: HashMap<usize, Vec<Arc<dyn Curve2d>>>,
+    ///
+    /// Traversal follows `BRep_TEdge::myCurves`' `NCollection_List` order
+    /// (`OrderedSlots`), not the hash order.
+    pub pcurves: OrderedSlots<Vec<Arc<dyn Curve2d>>>,
     /// `BRep_GCurve::First/Last` of each CurveOnSurface representation.
     /// `UpdateEdge` copies the 3D range; `BRep_Builder::Range(edge, face)`
     /// can then clamp it (`StepToTopoDS_TranslateEdgeLoop::CheckPCurves`).
-    pub pcurve_ranges: HashMap<usize, (f64, f64)>,
+    pub pcurve_ranges: OrderedSlots<(f64, f64)>,
 }
 
 impl EdgeGeom {
@@ -108,8 +111,8 @@ impl EdgeGeom {
             same_parameter: EDGE_NEW_IS_SAME_PARAMETER,
             same_range: true,
             degenerated: false,
-            pcurves: HashMap::new(),
-            pcurve_ranges: HashMap::new(),
+            pcurves: OrderedSlots::default(),
+            pcurve_ranges: OrderedSlots::default(),
         }
     }
     pub fn curve(&self) -> Arc<dyn Curve> { self.curve.clone() }
@@ -118,7 +121,7 @@ impl EdgeGeom {
     /// Attach the (single) pcurve of this edge on the face identified by
     /// `face_key`, replacing any previously attached pcurves.
     pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>) {
-        self.pcurves.insert(face_key, vec![c.clone()]);
+        self.pcurves.set(face_key, vec![c.clone()]);
         self.init_pcurve_range(face_key, Some(c.as_ref()));
     }
 
@@ -126,7 +129,7 @@ impl EdgeGeom {
     /// in forward-then-reversed order for a seam edge).
     pub fn set_pcurves(&mut self, face_key: usize, cs: Vec<Arc<dyn Curve2d>>) {
         let first = cs.first().cloned();
-        self.pcurves.insert(face_key, cs);
+        self.pcurves.set(face_key, cs);
         self.init_pcurve_range(face_key, first.as_deref());
     }
 
@@ -262,6 +265,32 @@ impl GeometryRegistry {
             .unwrap_or(occt_core::precision::REAL_EPSILON)
     }
 
+    /// TEMP RANGEW: log edge-range writes whose span is about `4*PI`, the T0M
+    /// determinism seed, with a short backtrace so the writer site is identified.
+    pub(crate) fn probe_range_write(&self, s: &TopoShape, first: f64, last: f64, site: &str) {
+        if std::env::var("RANGEW").is_err() {
+            return;
+        }
+        let span = last - first;
+        if !(12.5..=12.7).contains(&span) {
+            return;
+        }
+        let bt = std::backtrace::Backtrace::force_capture().to_string();
+        let mut frames: Vec<String> = Vec::new();
+        for l in bt.lines() {
+            if l.contains("occt_topo") {
+                frames.push(l.trim().to_string());
+            }
+            if frames.len() >= 6 {
+                break;
+            }
+        }
+        eprintln!(
+            "RANGEW site={site} eptr={:?} f={first:.16e} l={last:.16e} from={frames:?}",
+            Arc::as_ptr(&s.tshape)
+        );
+    }
+
     // ---- edges ----
 
     pub fn set_edge(&self, s: &TopoShape, geom: EdgeGeom) {
@@ -288,6 +317,7 @@ impl GeometryRegistry {
             c.same_range = geom.same_range;
             c.degenerated = geom.degenerated;
         }
+        self.probe_range_write(s, geom.first, geom.last, "set_edge");
     }
 
     /// `BRep_Builder::Range(E, First, Last)`: set the edge's parameter range.
@@ -300,8 +330,9 @@ impl GeometryRegistry {
         let c = ts.edge_core_mut();
         c.first = first;
         c.last = last;
+        drop(ts);
+        self.probe_range_write(s, first, last, "set_edge_range");
     }
-
     /// `BRep_Builder::Range(E, First, Last, Only3d=false)`
     /// (`BRep_Builder.cxx:1091-1117`): the range is written to *every*
     /// `BRep_GCurve` representation, i.e. the 3D curve and all pcurves. The
@@ -314,10 +345,9 @@ impl GeometryRegistry {
             c.last = last;
         }
         if let Some(pc) = s.tshape.write().unwrap().edge_pcurves.as_mut() {
-            for r in pc.ranges.values_mut() {
-                *r = (first, last);
-            }
+            pc.ranges.for_each_mut(|_, r| *r = (first, last));
         }
+        self.probe_range_write(s, first, last, "set_ranges_all");
     }
 
     /// `BRep_Builder::UpdateEdge(E, C, Tol)` for the 3D curve
@@ -486,9 +516,61 @@ impl GeometryRegistry {
             .unwrap_or_default()
     }
 
+    /// TEMP PCSET: record every pcurve attach so the determinism hunt can tell
+    /// which call site stored a different curve on identical input.
+    fn probe_pcset(&self, s: &TopoShape, face_key: usize, curves: &[Arc<dyn Curve2d>]) {
+        if std::env::var("PCSET").is_err() {
+            return;
+        }
+        let key = self.repr_key(face_key);
+        let kinds: Vec<String> = curves
+            .iter()
+            .map(|c| {
+                if c.is_geom2d_line() {
+                    format!("line2d")
+                } else if c.is_bspline2d() {
+                    format!("bspline2d deg={:?}", c.bspline_degree())
+                } else {
+                    format!("other2d {:?}", c.bspline_degree())
+                }
+            })
+            .collect();
+        let c3 = self
+            .edge_curve(s)
+            .map(|c| {
+                let kind = if c.is_line() {
+                    "line"
+                } else if c.gp_circ().is_some() {
+                    "circle"
+                } else if c.nurbs_degree().is_some() {
+                    "bspline"
+                } else {
+                    "other"
+                };
+                format!("{kind}[{:e},{:e}]", c.first_parameter(), c.last_parameter())
+            })
+            .unwrap_or_else(|| "none".to_string());
+        let bt = std::backtrace::Backtrace::force_capture().to_string();
+        let mut frames: Vec<String> = Vec::new();
+        for l in bt.lines() {
+            if l.contains("occt_topo") {
+                frames.push(l.trim().to_string());
+            }
+            if frames.len() >= 4 {
+                break;
+            }
+        }
+        eprintln!(
+            "PCSET eptr={:?} rkey={key} n={} kinds={kinds:?} c3={c3} from={frames:?}",
+            Arc::as_ptr(&s.tshape),
+            curves.len()
+        );
+    }
+
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
     /// Mirrors `BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`.
     pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
+        self.probe_pcset(s, face_key, std::slice::from_ref(&curve));
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurve(key, curve, first, last);
@@ -497,6 +579,7 @@ impl GeometryRegistry {
     /// Replace the pcurves of edge `s` on the face identified by `face_key`.
     /// Mirrors the seam overload `BRep_Builder::UpdateEdge(edge, c1, c2, face)`.
     pub fn set_edge_pcurves(&self, s: &TopoShape, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
+        self.probe_pcset(s, face_key, &curves);
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurves(key, curves, first, last);
@@ -526,11 +609,14 @@ impl GeometryRegistry {
         };
         let mut tts = to.tshape.write().expect("poisoned TShape lock");
         let slot = tts.edge_pcurves_mut();
-        for (k, v) in curves {
-            slot.curves.insert(k, v);
+        // `ShapeBuild_Edge::CopyPCurves` (`cxx:364-412`) walks the source
+        // representation list and appends each one the target does not carry
+        // yet, so the target's list order follows the source's.
+        for (k, v) in curves.iter() {
+            slot.curves.insert(*k, v.clone());
         }
-        for (k, v) in ranges {
-            slot.ranges.insert(k, v);
+        for (k, v) in ranges.iter() {
+            slot.ranges.insert(*k, *v);
         }
     }
 
@@ -587,7 +673,7 @@ impl GeometryRegistry {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for (&fk, pcs) in &g.curves {
+        for (&fk, pcs) in g.curves.iter() {
             let Some(surf) = by_ptr.get(&fk) else {
                 continue;
             };

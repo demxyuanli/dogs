@@ -69,17 +69,17 @@ pub fn rep_ranges(s: &TopoShape) -> Vec<RepRange> {
 
 /// `BRep_Builder::Range(E, First, Last)` (`BRep_Builder.cxx:1091-1118`) with
 /// `Only3d = false`: every representation gets the range.
-pub(crate) fn set_rep_ranges(s: &TopoShape, first: f64, last: f64) {
-    let mut ts = s.tshape.write().expect("poisoned TShape lock");
-    let c = ts.edge_core_mut();
-    c.first = first;
-    c.last = last;
-    if ts.edge_pcurves().is_some() {
-        for r in ts.edge_pcurves_mut().ranges.values_mut() {
-            *r = (first, last);
+    pub(crate) fn set_rep_ranges(s: &TopoShape, first: f64, last: f64) {
+        let mut ts = s.tshape.write().expect("poisoned TShape lock");
+        let c = ts.edge_core_mut();
+        c.first = first;
+        c.last = last;
+        if ts.edge_pcurves().is_some() {
+            ts.edge_pcurves_mut().ranges.for_each_mut(|_, r| *r = (first, last));
         }
+        drop(ts);
+        GeometryRegistry::global().probe_range_write(s, first, last, "same_range");
     }
-}
 
 /// `BRepLib::CheckSameRange(E, Tolerance)` (`BRepLib.cxx:149-183`): are the
 /// `[First, Last]` of every representation within `tolerance` of each other?

@@ -606,8 +606,8 @@ mod tests {
                 same_parameter: true,
                 same_range: true,
                 degenerated: true,
-                pcurves: std::collections::HashMap::new(),
-                pcurve_ranges: std::collections::HashMap::new(),
+                pcurves: Default::default(),
+                pcurve_ranges: Default::default(),
             },
         );
         let mut sr = ShrunkRange::new();
