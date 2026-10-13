@@ -46,8 +46,8 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 // —— 体量增长只应来自，也只需来自散文，而长段分析要写成 §编号引用（specs/_a3n00_gap_analysis.md），不要粘贴。
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V…",
-  asOf: "2026-10-11",
-  revision: "r41",
+  asOf: "2026-10-13",
+  revision: "r42",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -949,8 +949,8 @@ export const DATA = {
       acked: false, owner: "",
       note: "2026-10-11 复跑：先修 1 处 E0063（`inttools_range.rs` 测试构造点缺 `curve3d_null`）后五 crate 全 0 error；五 crate 逐 crate 跑（无根 workspace…",
     },
-        { id: "G-lib", name: "topo 单测", cmd: "--lib", baseline: "1281 / 0", last: "1281 / 0", status: "green", acked: false, owner: "",
-      note: "2026-10-11 复跑 **1281 passed / 0 failed**；2026-10-07 三轮实测：`--lib` **1281 passed / 0 failed**…",
+        { id: "G-lib", name: "topo 单测", cmd: "--lib", baseline: "1276 / 0", last: "1276 / 0", status: "green", acked: false, owner: "",
+      note: "2026-10-13 复跑 **1276 passed / 0 failed**（并把基线由 1281 / 0 订正为 1276 / 0：`93b076b4` 的 A18 批次删除 5 条 `brepmesh` 自创单测后基线未同步）；2026-10-11 复跑 **1281 passed / 0 failed**；2026-10-07 三轮实测：`--lib` **1281 passed / 0 failed**…",
     },
         { id: "G-gates", name: "STEP→OBJ 门禁", cmd: "--test step_obj_gates", baseline: "4 / 4", last: "4 / 4", status: "green", acked: false,
       owner: "",
@@ -968,9 +968,9 @@ export const DATA = {
       owner: "",
       note: "2026-10-11 实测 2 passed / 0 failed。基线由 1 / 2 转 2 / 2：`4244ab19` 修好 `boss_single_disc_base_merges_one_solid` 的夹具后，原「夹具不合法（定案 b）」的已接受红已消解 ⇒ 看板唯一 red 清零（原基线 1 / 2 为过期读数）",
     },
-        { id: "G-export", name: "导出总检", cmd: "--example export_data_obj", baseline: "15 / 15", last: "15 / 15", status: "green",
+        { id: "G-export", name: "导出总检", cmd: "--example export_data_obj -- data/occ data", baseline: "23 / 23", last: "23 ok / 0 err", status: "green",
       acked: false, owner: "",
-      note: "2026-10-11 复跑 15 ok / 0 err；2026-10-08 §9.626 复跑 15 ok / 0 err；2026-10-06 收尾轮仍 15/15（§9.617-§9.623 每轮复跑）；2026-10-07 §9.625 复跑 `-- data/occ data` = 23 ok / 0 err…",
+      note: "2026-10-13 复跑 **23 ok / 0 err**（`-- data/occ data` = 15 `data/*.step` + 8 `data/occ/*`）；基线由 15 / 15 订正为 23 / 23（`-- data/occ data` 口径自 2026-10-07 §9.625 起已是 23）。无参跑只覆盖 15 个 `data/*.step`：2026-10-13 复跑 15 ok / 0 err；2026-10-11 复跑 15 ok / 0 err；2026-10-08 §9.626 复跑 15 ok / 0 err；2026-10-06 收尾轮仍 15/15（§9.617-§9.623 每轮复跑）；2026-10-07 §9.625 复跑 `-- data/occ data` = 23 ok / 0 err…",
     },
         { id: "G-iges", name: "IGES 结构自洽", cmd: "--example iges_check -- <23 模型>", baseline: "23 / 23", last: "23 / 23", status: "green",
       acked: false, owner: "",
@@ -984,12 +984,28 @@ export const DATA = {
   // 新条目插到数组**开头**（brief 取前 3 条当最近活动；早于 a29 的看提交历史）
   activity: [
     {
+      id: "a91",
+      at: "2026-10-13",
+      title: "缝边 pcurve 注册按 OCCT 全量重写（TDB 81721 → 79926 vs OCCT 79977）并把 1281/15 两条过期门禁基线订正为 1276/23 —— 看板快照推进到 2026-10-13",
+      tone: "success",
+      detail: "① 缝边（seam）网格：`init_data_structure` 原先只按 `CheckOrder` 槽位取一条 pcurve，OCCT `BRepMesh_DataStructureOfDelaun` 建链时用边的**全部** pcurve 表示（`BRep_Tool::CurveOnSurface` 的各 slot），锥面缝另需按 `FirstParameter()` 交换（`BRepMesh_ModelHealer` 的 `splitConeSeam` 语义）。按此接线后 TDB 三角 81,721 → **79,926**（OCCT 79,977，Δ −51，面积比由 1.0042 → **1.0000**），逐面配对 2,050 面与 OCCT 逐位相同、OCCT 未成网格的 12 面在端口同样为 0（提交 `bc7249fa`）。② 撤除未提交的临时 `IGES_UVDBG` 插桩（`iges_read/iges_to_brep_topo_curve.rs` 2 处 + `iges_to_brep_topo_surface.rs` 1 处，提交 `4a20e078`）。③ 2026-10-13 门禁复读：G-check exit 0；**G-lib 1276 / 0**（基线 1281 / 0 属 `93b076b4` 删 5 条 `brepmesh` 自创单测后未同步，本轮回写）；G-gates **4 / 4**；G-export **23 ok / 0 err**（`-- data/occ data` 口径，基线 15 / 15 同属过期读数，本轮回写）；G-iges **23 / 23**（15 `data/*.step` + 8 `data/occ/*`）；G-fuse 1 / 1、G-phase 61 / 0、G-boss 2 / 2、G-core 290·215·143·72 未复跑（本轮改动不触及其路径）。④ 与 2.4 状态偏移一并收口：看板 `asOf` 2026-10-11 → 2026-10-13、`revision` r41 → r42。",
+      ref: "bc7249fa · 4a20e078 · specs/occt-scope-drift.canvas.tsx 2.3/2.4 · crates/occt-topo/src/meshing/node_insertion.rs · crates/occt-topo/src/meshing/model_builder/preprocessor.rs · crates/occt-topo/tests/common/mod.rs"
+    },
+    {
       id: "a90",
       at: "2026-10-11",
       title: "基线重建（未提交工作树）：修 1 处 E0063 后五 crate `--all-targets` 0 error，九道门禁全绿 —— `G-boss` 由过期读数 1 / 2 修正为 2 / 2，看板唯一 red 清零",
       tone: "success",
       detail: "按门禁 1「改完先编译」对当前工作树重建基线：`occt-topo` 报 E0063 —— `inttools_range.rs:600` 的测试构造点未同步 `EdgeGeom` 新字段 `curve3d_null`（该字段由本批未提交改动引入 `tgeometry.rs`，`tshape.rs::EdgeGeomCore` 同源），补 `curve3d_null: false`（1 行，提交 `2e5363bf`）后五 crate 逐 crate `--all-targets` 全 0 error（warn：core 13 / math 30 / geom 101 / geom2d 81 / topo 388）。九道门禁实测：G-check exit 0；G-lib **1281 / 0**；G-gates **4 / 4**（234.60s）；G-fuse **1 / 1**；G-phase **61 / 0**（4·9·7·5·5·5·8·8·5·5）；G-boss **2 / 2**（原基线 1 / 2 为过期读数 —— `4244ab19` 修好 `boss_single_disc_base_merges_one_solid` 夹具后，原「夹具不合法（定案 b）」的已接受红消解）；G-export **15 ok / 0 err**；G-iges **23 ok / 0 err**（15 `data/*.step` + 8 `data/occ/*`）；G-core **290·215·143·72**。结论：工作树的移植面语义与文档面基线一致，唯一失配是文档 `G-boss` 与 §9.3 `curve_ops` 两处过期断言，本轮一并订正。",
       ref: "specs/board.canvas.tsx gates · specs/_audit/_index.md §9.3 · crates/occt-topo/src/inttools_range.rs:600 · crates/occt-topo/src/tgeometry.rs:73-81 · bop_builder2_boss::boss_single_disc_base_merges_one_solid"
+    },
+    {
+      id: "a90b",
+      at: "2026-10-10",
+      title: "补记：`brep_class3d` / `brep_class` 整族忠实化（`SClassifier::Perform` 段循环、`PerformInfinitePoint`、`OtherSegment`、`FindAPointInTheFace`）—— 结构 1,825 行，并清掉 §9.634 E.1/E.2 登记的 6 条 lib 失败",
+      tone: "success",
+      detail: "**（本条目为 2026-10-13 补记，此前该批次的实现内容未上板。）** 十次提交（`e0e09327`、`3c08a974`、`f7f06797`、`82dcfad3`、`eb8c6f25`、`9605ca7d`、`5fe793b7`，另含 `a3ad4e0c` 的 HEAD 编译修复；区间 `a3ad4e0c^..5fe793b7` 共 25 文件 **+2,556 / −381**）把 3D 分类器从「采样 + 点距启发式」整段换成 OCCT 控制流。① **`BRepClass3d_SClassifier::Perform` 段循环**（`SClassifier.cxx:203-516`）：`anIndFace` 单调性检查（`cxx:268-278`，不前进即 `myState=1` Faulty）、`Segment`/`OtherSegment` 分派（`cxx:259-266`）、`iFlag` 1/2/3 三臂（`cxx:280-297`）、`aSelectorLine` 的线-边/线-顶点干涉段（`cxx:301-...`），并**删掉非 OCCT 的重试上限**。② **`PerformInfinitePoint`**（`cxx:82-199`）：Bullard 随机参数、每面 `NB_MAX_POINTS_PER_FACE = 10`（`cxx:124`）、`myMapOfInter` 最小参交点状态；`Bullard` 提升为 `occt-core::math_bullard`（`occt-core/src/math_bullard.rs`）供两处共用。③ **`SolidExplorer::OtherSegment` 整段**（`BRepClass3d_SolidExplorer.cxx:493-787`）+ `ClassifyUVPoint`（`cxx:221-237`）/`PointInTheFace`（`cxx:241-425`）/`FindAPointInTheFace`（`cxx:74-190`）：do-while 驱动、`myMapOfInter` 按面 TShape 绑定并重绑（`cxx:537-542`）、`myParamOnEdge` 初值 `0.512345`（`cxx:905`）与重试阶梯（`cxx:700-784`）；`BRepClass3d_BndBoxTree` 剪枝换成同一 `Accept` 谓词的线性扫描（无 OCCT 对应物，就地登记）。④ **点-边/顶点 ON 判定改 `BndBoxTreeSelectorPoint::Accept` 语义**：边 `Extrema_ExtPC` 区间极值 < 边容差、顶点 < 顶点容差（`SClassifier` 与 `ClassifyUVPoint` 共用），替掉原来的点距启发式。⑤ **新增底层族**：`brep_class/{top_class_classifier2d.rs, edge.rs, intersector.rs, intersector_checks.rs, face_passive_classifier.rs}`（+848 行）与 `occt-geom2d/src/cl_props2d.rs`（+240 行，`GeomLProp_CLProps2d`），供 `FindAPointInTheFace` 接线。**门禁**：`a90` 的 2026-10-11 基线重建已覆盖本批代码；2026-10-13 逐项复跑 —— `--lib` **1276 / 0**、`step_obj_gates` **4 / 4**、`phase3`–`phase20` **61 / 0**（4·9·7·5·5·5·8·8·5·5）、`bop_builder2_boss` **2 / 2**、`export_data_obj -- data/occ data` **23 ok / 0 err**、`iges_check` **23 / 23**；**§9.634 E.1/E.2 登记的 6 条失败已全部转绿**（`bop_builder::tests::cube_minus_internal_box`、`bop_builder::tests_api::boolean_compound_cut`、`bop_builder::tests_api::boolean_cut_many_works`、`builder_solid::tests::inner_cavity_is_absorbed_as_a_hole`、`fclass2d::tests::cylinder_lateral_periodic_folding`、`brepfeat::tests::boss_thru_all_pierces` 逐个 1 passed）。",
+      ref: "specs/_a3n00_gap_analysis.md §9.634 · e0e09327 · 3c08a974 · f7f06797 · 82dcfad3 · eb8c6f25 · 9605ca7d · 5fe793b7 · BRepClass3d_SClassifier.cxx:82-199 :203-516 · BRepClass3d_SolidExplorer.cxx:74-190 :221-237 :241-425 :493-787 :905 · crates/occt-topo/src/brep_class3d.rs · crates/occt-topo/src/brep_class3d/{other_segment,sclassifier_segments}.rs · crates/occt-topo/src/brep_class/ · crates/occt-geom2d/src/cl_props2d.rs · crates/occt-core/src/math_bullard.rs"
     },
     {
       id: "a89",

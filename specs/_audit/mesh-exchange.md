@@ -22,7 +22,24 @@
 | acs10 | 46544 → **47196** / 46558 | 37606 / 37296 | 271232.13 / 271219.68（1.0000） |
 | TDB | 79912 → **81721** / 79977 | 74792 / 73544 | 235866.32 / 234884.51（1.0042） |
 
+> 上表三行已被 **2026-10-13 补记**取代（T0M 67424 / 67366、acs10 46538 / 46558、TDB 79926 / 79977，面积比全 1.0000）；保留原读数以记录改判过程。
+
 **归因实测（A/B 对跑，非推断）**：把 `A_ITERATIONS_NB` 临时改回旧值 `4` 重跑 `step_obj_gates`，acs10/TDB 与 `11` 时逐字节相同、T0M 仅 73162 vs 73150（+0.02%）⇒ **细化上限不是增量来源**；增量来自原先走 UV 栅格兜底、现在按 OCCT 走 Delaunay 的那批面（它们本来就该被网格化）。**新余项（未修，本轮到此为止）**：同等偏转下端口的 Delaunay 插点仍比 OCCT 密 4~9%，即 `BRepMesh_DelaunayDeflectionControlMeshAlgo` 的 `checkAndAdd` → `addInternalNodes`/`BRepMesh_Delaun::AddVertices` 的最小边长与 `isFirstChange` 判据，以及 `BRepMesh_NodeInsertionMeshAlgo` 的参数化密度分支尚缺；`tests/common/mod.rs` 的 T0M/acs10/TDB 注释已同步本轮实测值。
+
+> **2026-10-13 补记（缝边 pcurve 注册修正后复测）**：上一条把 TDB 的 `79912 → 81721` 归给「原先走 UV 栅格兜底的面改走 Delaunay」，并把余项归给 Delaunay 插点密度。本日按 OCCT 控制流复核后**改判**：`meshing/node_insertion.rs::init_data_structure` 建链时只按 `CheckOrder` 槽位取**一条** pcurve，而 OCCT 用边的**全部** pcurve 表示（`BRep_Tool::CurveOnSurface` 的各 slot）；锥面缝另需按 `FirstParameter()` 交换（`BRepMesh_ModelHealer` 的 `splitConeSeam`，`FirstParameter` 在 `-Precision::INFINITE` 处求值）。接线后（提交 `bc7249fa`）TDB 三角 `81721 → 79926`（OCCT 79977，Δ −51）、面积比 `1.0042 → 1.0000`，逐面配对 2050 面与 OCCT 逐位相同，OCCT 未成网格的 12 面在端口同样为 0。**故「插点密 4~9%」这一余项判定作废**：它量到的主要是缝边重复注册。复测（2026-10-13）八模型面积比全 1.0000（motoc 逐位一致），缺口是双向小量：
+
+| 模型 | occ 三角 | ours 三角 | Δf | 面积比 |
+|---|---|---|---|---|
+| motoc | 13944 | 13944 | 0 | 1.0000 |
+| a3n00 | 12466 | 12442 | −24 | 1.0000 |
+| acs10 | 46558 | 46538 | −20 | 1.0000 |
+| ATU01038 | 22586 | 22554 | −32 | 1.0000 |
+| bottom | 23557 | 23552 | −5 | 1.0000 |
+| top | 22800 | 22770 | −30 | 1.0000 |
+| T0M | 67366 | 67424 | +58 | 1.0000 |
+| TDB | 79977 | 79926 | −51 | 1.0000 |
+
+**同轮口径提示（不要拿探针总量当日面级基线）**：同一条 `occt_probe --facestats 2.45132 0.349066` 在 TDB 上给出 `72683 / 78464`，而冻结参考 `data/occ/occ-TDB.obj` 是 `73544 / 79977`、端口是 `73516 / 79926`。三种读数的差异来自**测量配置**而非网格器不确定性：探针用 `STEPControl_Reader` 直读（`TransferRoots` + `OneShape`），冻结参考的产出者未在本仓库留痕（`data/_occ_ref_export.tcl` 的 addendum 已记），同一命令在同一二进制上三次复跑输出逐字节相同（SHA256 相同），同一偏转下连跑两次 `incmesh` 亦逐位相同 —— 即 OCCT 侧是确定性的。要用探针做面级预言机，必须先钉住与参考同源的读取+参数组合；否则只能以冻结 OBJ 的聚合口径为规格。
 
 ## 发现
 

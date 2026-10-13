@@ -29,7 +29,7 @@ import {
 const MEASURE = {
   asOf: "2026-10-13",
   occt: { files: 13803, lines: 2439487 },
-  rust: { files: 1060, lines: 335882 },
+  rust: { files: 1060, lines: 335743 },
   cadKernel: 1397840, // Foundation 252505 + ModelingData 347970 + ModelingAlgorithms 797365
   unported: 166,
 };
@@ -46,7 +46,7 @@ const GROUPS = [
 ];
 
 const CRATES = [
-  { crate: "occt-topo", files: 606, lines: 216506 },
+  { crate: "occt-topo", files: 606, lines: 216367 },
   { crate: "occt-core", files: 220, lines: 45065 },
   { crate: "occt-geom", files: 121, lines: 41413 },
   { crate: "occt-geom2d", files: 58, lines: 18604 },
@@ -55,6 +55,13 @@ const CRATES = [
 
 // 本轮已收敛的偏移（均已跑现基线核实；行号为当前工作树实测）
 const CLOSED = [
+  {
+    item: "缝边（seam）只注册单条 pcurve，且锥面缝未按 `FirstParameter` 交换",
+    id: "T-124",
+    where: "topo/meshing/node_insertion.rs:init_data_structure · topo/meshing/model_builder/preprocessor.rs:split_cone_seam",
+    evidence:
+      "OCCT 建链用边的**全部** pcurve 表示（`BRep_Tool::CurveOnSurface` 的各 slot），端口原先只按 `CheckOrder` 槽位取一条；锥面缝另需按 `FirstParameter()` 交换（`BRepMesh_ModelHealer` 的 `splitConeSeam` 语义，`FirstParameter` 在 `-Precision::INFINITE` 处求值）。接线后 TDB 三角 81,721 → **79,926**（OCCT 79,977，Δ −51），面积比 **1.0042 → 1.0000**；逐面配对 2,050 面与 OCCT 逐位相同，OCCT 未成网格的 12 面在端口同样为 0（提交 `bc7249fa`）。",
+  },
   {
     item: "STEP 读入缺 `ShapeFix_Shape::Perform` 尾段（`SameParameter` + `FixVertexTolerance`）",
     id: "T-93",
@@ -91,7 +98,7 @@ const SEMANTIC = [
     item: "Delaunay 插点密度：缺 `BRepMesh_DelaunayDeflectionControlMeshAlgo::checkAndAdd`/`addInternalNodes`",
     id: "A19 余项",
     where: "topo/meshing/triangulator.rs · topo/meshing/node_insertion.rs",
-    state: "未移植：同等偏转下插点密 4~9%（TDB +1,744 面 / 面积比 1.0042）",
+    state: "未移植；**原证据已作废**：TDB 的 +1,744 面经逐面配对复核不是本项（属缝边 pcurve 注册，见 2.1 T-124），收口后 TDB −51。现残余为双向小量：T0M +58、TDB −51、ATU01038 −32、top −30、a3n00 −24、acs10 −20、bottom −5、motoc 0，面积比全 1.0000 —— 已无 4~9% 的系统性偏密",
   },
   {
     item: "bop_curved 网格级布尔（曲面 operand）",
@@ -146,40 +153,40 @@ const PARITY = [
   { model: "bottom", occV: 17587, occF: 23557, ourV: 17582, ourF: 23552, area: "1.0000" },
   { model: "top", occV: 16905, occF: 22800, ourV: 16888, ourF: 22770, area: "1.0000" },
   { model: "T0M", occV: 60548, occF: 67366, ourV: 60575, ourF: 67424, area: "1.0000" },
-  { model: "TDB", occV: 73544, occF: 79977, ourV: 74792, ourF: 81721, area: "1.0042" },
+  { model: "TDB", occV: 73544, occF: 79977, ourV: 73516, ourF: 79926, area: "1.0000" },
 ];
 
 // 状态/文档偏移：2026-10-13 复核定案
 const DOCDRIFT = [
   {
     what: "看板基准日",
-    detail: "board asOf = 2026-10-11 · r41",
-    gap: "本表读数 2026-10-13；看板未收录 10-12 网格批次与 10-13 `ShapeFix_Shape` 尾段修复",
-    tone: "warning" as const,
+    detail: "board asOf 2026-10-11 · r41 → 2026-10-13 · r42",
+    gap: "✅ 已同步：`a91` 已收录 10-12 网格批次与 10-13 缝边注册修复",
+    tone: "success" as const,
   },
   {
     what: "G-lib 门禁基线过期",
-    detail: "board baseline = 1281 / 0",
-    gap: "实测 1276 / 0（`A18` 删除 5 条 `brepmesh` 自创单测后未同步）",
-    tone: "warning" as const,
+    detail: "board baseline 1281 / 0 → 1276 / 0",
+    gap: "✅ 已同步：`A18` 删除 5 条 `brepmesh` 自创单测后基线未同步；2026-10-13 实测 1276 / 0",
+    tone: "success" as const,
   },
   {
     what: "G-export 门禁基线过期",
-    detail: "board baseline = 15 / 15",
-    gap: "实测 23 ok / 0 err（15 `data/*.step` + 8 `data/occ/*`）",
-    tone: "warning" as const,
+    detail: "board baseline 15 / 15 → 23 / 23",
+    gap: "✅ 已同步：`-- data/occ data` 口径实测 23 ok / 0 err（15 `data/*.step` + 8 `data/occ/*`）；无参跑仍是 15",
+    tone: "success" as const,
   },
   {
     what: "未提交工作树",
-    detail: "36 个已跟踪文件修改（`git diff HEAD`）",
-    gap: "+2,347 / −255；主题为 STEP `ShapeFix_Shape::Perform` 尾段接线、IGES 读入（实体 402 perforate、回转面 trim 语义）、网格诊断探针；含一处未撤除的临时 `IGES_UVDBG` 插桩（`iges_read/iges_to_brep_topo_surface.rs`）",
-    tone: "danger" as const,
+    detail: "`git diff HEAD` 空（0 个已跟踪文件修改）",
+    gap: "✅ 已提交：`bc7249fa`（缝边按 OCCT 全 pcurve 注册 + 锥面缝 `FirstParameter` 交换）、`4a20e078`（撤除 3 处 `IGES_UVDBG` 临时插桩，−59 行；并入 goalbuddy 板产物忽略与 IGES 目标文档）",
+    tone: "success" as const,
   },
   {
     what: "10-10 未上板批次",
     detail: "brep_class3d：SClassifier::Perform 段循环 / OtherSegment / FindAPointInTheFace",
-    gap: "a90 现覆盖基线重建；该批次的实现内容仍未上板",
-    tone: "warning" as const,
+    gap: "✅ 已上板：`a90b`（2026-10-10，2026-10-13 补记）收录该批次（10 次提交、25 文件 +2,556 / −381、结构 1,825 行），并记明它清掉了 §9.634 E.1/E.2 的 6 条 lib 失败",
+    tone: "success" as const,
   },
   {
     what: "_audit §9.3 过期断言",
@@ -211,7 +218,7 @@ export default function OcctScopeDrift() {
         <H1>OCCT→Rust 移植范围与偏移审查</H1>
         <Text tone="secondary">
           对照 OCC 8.0.0 源码树 <Text weight="semibold">D:\source\OCCT-src\src</Text> 与工作树 5 个 crate 实测。
-          所有读数取 <Text weight="semibold">{MEASURE.asOf}</Text>；门禁基线引用 <Text weight="semibold">specs/board.canvas.tsx</Text>（r41）与{" "}
+          所有读数取 <Text weight="semibold">{MEASURE.asOf}</Text>；门禁基线引用 <Text weight="semibold">specs/board.canvas.tsx</Text>（r42）与{" "}
           <Text weight="semibold">specs/_audit/_index.md</Text>（§9 → 2026-10-11）。
         </Text>
       </Stack>
@@ -261,8 +268,9 @@ export default function OcctScopeDrift() {
         columnAlign={["left", "right", "right"]}
       />
       <Text size="small" tone="tertiary">
-        较 2026-10-11（1,080 文件 / 337,891 行）：<Text weight="semibold">−20 文件 / −2,009 行</Text>，主要来自
-        `brepmesh.rs`（−602 行，A18/A19）、`wireframe.rs` 平面机器（−288 行，A18）与 5 条自创单测的删除。
+        较 2026-10-11（1,080 文件 / 337,891 行）：<Text weight="semibold">−20 文件 / −2,148 行</Text>，主要来自
+        `brepmesh.rs`（−602 行，A18/A19）、`wireframe.rs` 平面机器（−288 行，A18）、5 条自创单测的删除，
+        以及本轮撤除的 3 处 `IGES_UVDBG` 临时插桩（−59 行，`4a20e078`）。
       </Text>
 
       <Callout tone="info" title="范围口径的要点">
@@ -320,10 +328,10 @@ export default function OcctScopeDrift() {
         striped
       />
       <Text size="small" tone="tertiary">
-        `data/*.step`（15 个）中 12 个逐位一致；`Shape-1` 差 −8 面、`Shape-2` 差 −34 面、`screw` 差 +2 面。TDB 是唯一面积比越 1.00 的模型（1.0042），缺口即 2.2 首行的 Delaunay 插点密度。
+        `data/*.step`（15 个）中 12 个逐位一致；`Shape-1` 差 −8 面、`Shape-2` 差 −34 面、`screw` 差 +2 面。八个 `data/occ/*` 模型面积比全为 1.0000，缺口是双向小量（T0M +58、TDB −51、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −5、motoc 0）；剩下面级差集中在 2.2 首行登记的 Delaunay 插点密度分支。
       </Text>
 
-      <H3>2.4 状态 / 文档偏移（2026-10-13 复核：1 条已订正，5 条仍开）</H3>
+      <H3>2.4 状态 / 文档偏移（2026-10-13 复核：全部收口）</H3>
       <Table
         headers={["偏差", "文档现状", "实际"]}
         rows={DOCDRIFT.map((d) => [d.what, d.detail, d.gap])}
@@ -346,7 +354,7 @@ export default function OcctScopeDrift() {
         rowTone={GATES.map((g) => g.tone)}
       />
       <Text size="small" tone="tertiary">
-        九道门禁全绿，读数测量于 2026-10-13，覆盖当前未提交工作树。`G-lib` / `G-export` 的看板基线仍是 `1281 / 0` 与 `15 / 15`，属过期读数（见 2.4）。
+        九道门禁全绿，读数测量于 2026-10-13，覆盖当前工作树（`git diff HEAD` 为空，提交 `4a20e078`）。`G-lib` / `G-export` 的看板基线已在 r42 同步为 `1276 / 0` 与 `23 / 23`（见 2.4）；`G-fuse` / `G-phase` / `G-boss` / `G-core` 本轮未复跑（改动不触及其路径）。
       </Text>
 
       <Divider />
@@ -356,24 +364,27 @@ export default function OcctScopeDrift() {
         <Stat value="13.8%" label="全库行数覆盖" />
         <Stat value="24.0%" label="CAD 内核行数覆盖" tone="info" />
         <Stat value="2 处" label="阻塞型语义残余" tone="warning" />
-        <Stat value="6 项（1 已订正）" label="文档/状态偏移" tone="warning" />
+        <Stat value="0 项" label="文档/状态偏移待办" tone="success" />
       </Row>
       <Stack gap={6}>
         <Text>
           <Text weight="semibold">范围</Text>：全库 13.8%、CAD 内核约 24.0% 的行数覆盖；有效范围是 STEP→OBJ 共享管线，
-          在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.7 万行）。
+          在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.6 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">偏移</Text>：本轮把 STEP 读入缺的 `ShapeFix_Shape::Perform` 尾段（`SameParameter` + `FixVertexTolerance`）
-          接回，T0M 三角缺口从 <Text weight="semibold">+5,784 收敛到 +58</Text>、面积比 1.0000，`data/occ` 八模型全部 f-ratio 1.00（motoc 逐位一致）。
-          剩余语义残余集中在两处且互相独立：Delaunay 插点密度（缺 `BRepMesh_DelaunayDeflectionControlMeshAlgo` 的
-          `checkAndAdd`/`addInternalNodes`，表现即 TDB +1,744 面）与曲面布尔（T-79，被 T-80 阻塞）。
+          <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
+          TDB 三角 81,721 → <Text weight="semibold">79,926</Text>（OCCT 79,977）、面积比 1.0042 → <Text weight="semibold">1.0000</Text>，
+          逐面配对 2,050 面逐位相同；`data/occ` 八模型面积比全为 1.0000（motoc 逐位一致），缺口收为双向小量
+          （T0M +58、TDB −51、top −30、ATU01038 −32）。2.4 的五条状态/文档偏移（看板基准日、`G-lib`、`G-export`、未提交工作树、
+          10-10 未上板批次）本轮全部收口。
         </Text>
       </Stack>
-      <Callout tone="warning" title="下一步（按门禁「完成即停」交接）">
-        ① 补 `BRepMesh_DelaunayDeflectionControlMeshAlgo::checkAndAdd`/`addInternalNodes`（`BRepMesh_Delaun::AddVertices` 的最小边长 +
-        `isFirstChange`）与 `BRepMesh_NodeInsertionMeshAlgo` 的参数化密度分支，重跑 `step_obj_gates` 看 TDB 的面数是否收敛；
-        ② 撤除未提交的临时 `IGES_UVDBG` 插桩；③ 同步看板基线（`G-lib` 1281 → 1276、`G-export` 15 → 23）。
+      <Callout tone="success" title="下一步（按门禁「完成即停」交接）">
+        面级残余的定位受「可信的 OCCT 面级预言机」未钉住所限：实测同一条 `--facestats 2.45132 0.349066`
+        在探针上是 `72683 / 78464`，而冻结参考是 `73544 / 79977`、端口是 `73516 / 79926` —— 探针用的是
+        `STEPControl_Reader` 直读，与冻结参考的产出者（未记录）以及端口的不同源，故探针总量不可直接当日面级基线；
+        要么先钉住与参考同源的读取+参数组合，要么只以冻结 OBJ 的聚合口径为规格。
+        在此之前可推进的独立项是 2.2 里 `heal_tolerance` 自创修形链与 `RectangularTrimmedSurface::SetTrim` 族的移植。
       </Callout>
     </Stack>
   );

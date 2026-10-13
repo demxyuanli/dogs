@@ -83,12 +83,15 @@ TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
 2. `Shape-2` 的 0.2% 差**已由源码自注给出方向**：`brep_exchange.rs:50-52` 写明「B-spline 面的 STEP `SURFACE_CURVE` pcurve 被丢 ⇒ 边界错 ⇒ Delaunay bbox 漂移」，即 **STEP 导入侧缺口**，不是 BRepMesh 侧。
 3. **T-54 也必须重新评估**：导出路径**不再**用 `brepmesh.rs` 的四叉树、也不用 `wireframe.rs` 的平面耳切（`brep_exchange.rs:88-94`：这两个非 OCCT 回退已按 audit A17 删除）——它们只在**失败回退**里存在。因此「移植约束 Delaunay 以提高保真度」这个前提**不成立**；`brepmesh.rs`/`wireframe.rs` 的处置应改为「确认回退是否可达 + 可达则接线/不可达则摘除」，而不是大规模替换。
    **后续（2026-10-12）**：该处置已执行完毕 —— 回退整族（`brepmesh` 四叉树、`wireframe` UV 栅格与耳切/桥洞）已删除，`step_obj_gates` 23 模型全绿；同等偏转下 T0M/acs10/TDB 三角数 73150/47196/81721（occ 67366/46558/79977），剩余插点密度差登记为 `BRepMesh_DelaunayDeflectionControlMeshAlgo` 未移植分支（见 `specs/_audit/_index.md` 条目 4/7 与 `mesh-exchange.md` 的 2026-10-12 补记）。
+   **订正（2026-10-13）**：① 上述「剩余插点密度差」作废 —— TDB 的增量实为**缝边 pcurve 重复注册**，修好后 TDB 79926 / 79977（Δ −51）、面积比 1.0000；八模型面积比全 1.0000，缺口是双向小量（T0M +58、TDB −51、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −5、motoc 0）。详见 `mesh-exchange.md` 的 **2026-10-13 补记**。② 更要紧的口径问题：本文件下表（以及 round 177 那张表）里的「OCCT GT」全部由 `occt_probe --mesh` 取得，而该探针走 `STEPControl_Reader` 直读；**冻结参考 `data/occ/*.obj` 是另一条管线**（`data/_occ_ref_export.tcl` 的 addendum 记载其产出者未在本仓库留痕）。同一 `lin` 下 TDB 三者互不相同：探针 `72687 / 78470`（= 本表读数）、冻结参考 `73544 / 79977`、端口 `73516 / 79926`。因此**下表只能用于「端口 vs 探针」同源对照，不能当作冻结参考的面级/总量基线**；对冻结参考的规格是聚合口径的 `step_obj_gates`。三条读数各自的复跑均逐字节稳定（同命令三次 SHA256 相同；同偏转连跑两次 `incmesh` 逐位相同），差异来自读取管线而非不确定性。
 
 ## 附：旧表（参数 0.1 / 0.5rad，**已作废，仅留档对照**）
 
 ## `data/occ/*.stp` 的 OCCT GT（端口真实参数，round 177 补）
 
 参数口径同前：`lin = maxComp(bbox) × 0.004`（`--bbox` 取）＋角偏 **20° = 0.349066 rad**。这些文件**全都没有任何存档 pcurve**（`SURFACE_CURVE=0`、`PCURVE=0`，见 round 166 普查）⇒ 每条边的 pcurve 都要算，正是 T-69 症状所在。
+
+> ⚠️ **2026-10-13 口径标注**：本表是 `occt_probe --mesh`（`STEPControl_Reader` 直读）的读数，**不是** `data/occ/*.obj` 冻结参考的同源基线（同 `lin` 下 TDB：探针 78470 vs 冻结参考 79977 vs 端口 79926）。仅用于端口↔探针同源逐面配对；对冻结参考的规格是聚合口径的门禁。
 
 | 文件 | `maxComp` | `lin` | OCCT nodes | OCCT triangles | OCCT faces |
 |---|---|---|---|---|---|
