@@ -71,7 +71,10 @@ impl BndBox {
     /// Set to void (empty). Source: `Bnd_Box.hxx` (SetVoid)
     pub fn set_void(&mut self) { self.flags = VOID_MASK; self.gap = 0.0; }
 
-    pub fn set_gap(&mut self, tol: f64) { self.gap = tol; }
+    /// `Bnd_Box::SetGap` (`Bnd_Box.hxx:146`): `Gap = std::abs(Tol)`. The port
+    /// skipped the `abs`, unlike its 2D counterpart (`box2d.rs` mirrored
+    /// `Bnd_Box2d.hxx:120`).
+    pub fn set_gap(&mut self, tol: f64) { self.gap = tol.abs(); }
     pub fn gap(&self) -> f64 { self.gap }
 
     /// `Bnd_Box::Update(xmin, ymin, zmin, xmax, ymax, zmax)`.
@@ -134,18 +137,25 @@ impl BndBox {
         self.zmin = self.zmin.min(p.z()); self.zmax = self.zmax.max(p.z());
     }
 
-    /// Add another box. Source: `Bnd_Box.cxx` (Add)
+    /// Add another box. Source: `Bnd_Box::Add(const Bnd_Box&)`
+    /// (`Bnd_Box.cxx:516-605`). Order matters: OCCT merges the gap
+    /// (`Bnd_Box.cxx:527`, `Gap = std::max(Gap, Other.Gap);`) after the void
+    /// copy and *before* the whole-space early returns, so a whole receiver
+    /// still absorbs the incoming gap; only then does it branch to `SetWhole`
+    /// (`:534-538`) or to the per-axis open-flag OR / min-max walk
+    /// (`:540-604`).
     pub fn add_box(&mut self, other: &Self) {
-        if other.is_void() || self.is_whole() { return; }
-        if other.is_whole() { self.set_whole(); return; }
+        if other.is_void() { return; }
         if self.is_void() { *self = *other; return; }
+        self.gap = self.gap.max(other.gap);
+        if self.is_whole() { return; }
+        if other.is_whole() { self.set_whole(); return; }
         if self.is_open_xmin() || other.is_open_xmin() { self.flags |= XMIN_OPEN; } else { self.xmin = self.xmin.min(other.xmin); }
         if self.is_open_xmax() || other.is_open_xmax() { self.flags |= XMAX_OPEN; } else { self.xmax = self.xmax.max(other.xmax); }
         if self.is_open_ymin() || other.is_open_ymin() { self.flags |= YMIN_OPEN; } else { self.ymin = self.ymin.min(other.ymin); }
         if self.is_open_ymax() || other.is_open_ymax() { self.flags |= YMAX_OPEN; } else { self.ymax = self.ymax.max(other.ymax); }
         if self.is_open_zmin() || other.is_open_zmin() { self.flags |= ZMIN_OPEN; } else { self.zmin = self.zmin.min(other.zmin); }
         if self.is_open_zmax() || other.is_open_zmax() { self.flags |= ZMAX_OPEN; } else { self.zmax = self.zmax.max(other.zmax); }
-        self.gap = self.gap.max(other.gap);
     }
 
     // ---- query bounds ----
@@ -253,31 +263,19 @@ impl BndBox {
     /// Transformed copy.
     pub fn transformed(&self, t: &GpTrsf) -> Self { let mut r = *self; r.transform(t); r }
 
-    /// Squared diagonal of the gap-enlarged box (`Bnd_Box::SquareExtent`).
+    /// Squared diagonal of the gap-enlarged box. Source: `Bnd_Box::SquareExtent`
+    /// (`Bnd_Box.hxx:344-356`): `IsVoid()` is the only special case and returns
+    /// 0; every other box - whole-space included - is the raw
+    /// `Xmax - Xmin + Gap + Gap` squared and summed. OCCT has no whole-space or
+    /// open-direction arm here and does not clamp the extent at zero.
     pub fn square_extent(&self) -> f64 {
         if self.is_void() {
             return 0.0;
         }
-        if self.is_whole() {
-            return f64::INFINITY;
-        }
-        let g = self.gap;
-        let dx = if self.is_open_xmin() || self.is_open_xmax() {
-            f64::INFINITY
-        } else {
-            (self.xmax - self.xmin + 2.0 * g).max(0.0)
-        };
-        let dy = if self.is_open_ymin() || self.is_open_ymax() {
-            f64::INFINITY
-        } else {
-            (self.ymax - self.ymin + 2.0 * g).max(0.0)
-        };
-        let dz = if self.is_open_zmin() || self.is_open_zmax() {
-            f64::INFINITY
-        } else {
-            (self.zmax - self.zmin + 2.0 * g).max(0.0)
-        };
-        dx * dx + dy * dy + dz * dz
+        let a_dx = self.xmax - self.xmin + self.gap + self.gap;
+        let a_dy = self.ymax - self.ymin + self.gap + self.gap;
+        let a_dz = self.zmax - self.zmin + self.gap + self.gap;
+        a_dx * a_dx + a_dy * a_dy + a_dz * a_dz
     }
 
     /// True when the x extent is shorter than `tol`.

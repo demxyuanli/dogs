@@ -38,6 +38,10 @@ impl Curve for GeomLine {
         u * t.scale_factor().abs()
     }
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }
+    /// `GeomAdaptor_Curve::Resolution`'s `GeomAbs_Line` arm
+    /// (`GeomAdaptor_Curve.cxx:1116-1121`): a line's parameter is arc length, so
+    /// the parametric tolerance equals the 3D one.
+    fn resolution(&self, r3d: f64) -> f64 { r3d }
     fn is_line(&self) -> bool { true }
     fn gp_line(&self) -> Option<GpLin> { Some(self.pos.clone()) }
 }
