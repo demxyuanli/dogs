@@ -39,7 +39,7 @@ pub(in crate::iges_read) fn transfer_bounded_surface(
     if representation == 0 {
         // `IGES_1275` (`cxx:1395-1399`): the basis is still transferred.
     }
-    if !is_topo_surface(session.model.entity(surface)?.type_number) {
+    if !is_topo_surface(session.model, surface) {
         return Err("XSTEP_166: IGESToBRep_TopoSurface.cxx:1405-1411".into());
     }
     let myshape = match transfer_topo_surface(session, surface) {
@@ -309,7 +309,7 @@ pub(in crate::iges_read) fn transfer_boundary(
     let Some(surface) = surface else {
         return Err("XSTEP_124: IGESToBRep_TopoCurve.cxx:1337-1342".into());
     };
-    if !is_topo_surface(session.model.entity(surface)?.type_number) {
+    if !is_topo_surface(session.model, surface) {
         return Err("XSTEP_124: IGESToBRep_TopoCurve.cxx:1337-1342".into());
     }
     let myshape = transfer_topo_surface(session, surface)?;

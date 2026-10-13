@@ -13,6 +13,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpPnt, GpPnt2d, GpTrsf2d, TrsfForm};
 use occt_core::toploc::TopLocLocation;
 use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL};
+use occt_geom::curve::Curve;
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 
@@ -32,7 +33,7 @@ use crate::topo_tools_full::is_same;
 use super::iges_data_iges_model::EntityData;
 use super::iges_to_brep_basic_curve::{
     basic_curve_2d, basic_curve_3d, convert_location, edge_from_span, entity_location, eps_geom,
-    Curve2dSpan,
+    Curve2dSpan, CurveSpan,
 };
 use super::iges_to_brep_curve_and_surface::{is_basic_curve, Session};
 
@@ -51,7 +52,7 @@ pub(in crate::iges_read) fn transfer_topo_curve(
             // `TransferTopoBasicCurve` sets `ModeTransfer(false)` (`cxx:967-968`),
             // so a directory 124 is applied inside `TransferBasicCurve`.
             let span = basic_curve_3d(session.model, index)?;
-            edge_from_span(&span)?
+            transfer_topo_basic_curve(&span)?
         }
         102 => transfer_composite(session, index)?,
         142 => super::curve_on_surface::transfer_curve_on_surface(session, index)?,
@@ -71,6 +72,74 @@ pub(in crate::iges_read) fn transfer_topo_curve(
     };
     session.cache.insert(index, shape.clone());
     Ok(shape)
+}
+
+/// `read.iges.bspline.continuity` (`IGESData.cxx:66`) -- the
+/// `IGESToBRep_CurveAndSurface::myContinuity` that `GetContinuity()` returns
+/// (`IGESToBRep_CurveAndSurface.cxx:58-64`).
+const CONTINUITY: i32 = 1;
+
+/// `TransferTopoBasicCurve` (`IGESToBRep_TopoCurve.cxx:950-1123`). One edge,
+/// except that a C0 B-spline is replaced by its C1 pieces (`cxx:1013-1038`);
+/// the result is then that single edge (`cxx:1108-1110`) or the wire of the
+/// pieces (`cxx:1099-1104`).
+///
+/// `TheCurves` holds exactly the one `TransferBasicCurve` result: the
+/// `GetModeApprox()` arm (`cxx:979-991`) is off because `myModeApprox` is set
+/// false by the constructor and reset false by `Init`
+/// (`IGESToBRep_CurveAndSurface.cxx:64`, `:110`), so `ApproxBSplineCurve` is
+/// unreachable and unported.
+fn transfer_topo_basic_curve(span: &CurveSpan) -> Result<TopoShape, String> {
+    // `cxx:1015-1018`: `IsKind(STANDARD_TYPE(Geom_BSplineCurve))` &&
+    // `Continuity() < GeomAbs_C1` && `GetContinuity() >= 1`.
+    let mut pieces = None;
+    if CONTINUITY >= 1
+        && occt_geom::convert_bspl::is_bspline(span.curve.as_ref())
+        && span.curve.continuity() < crate::shape_upgrade::GEOMABS_C1
+    {
+        // `cxx:1021-1022`:
+        // `ShapeAlgo::AlgoContainer()->C0BSplineToSequenceOfC1BSplineCurve`.
+        pieces = crate::shape_upgrade::c0_bspline_to_sequence_of_c1_bspline_curve(
+            span.curve.as_ref(),
+        );
+    }
+    let Some(pieces) = pieces else {
+        // `cxx:1039-1053`: `BRepBuilderAPI_MakeEdge ME(mycurve, a, b)`.
+        return edge_from_span(span);
+    };
+
+    // `cxx:1023-1037`: `BRepBuilderAPI_MakeEdge ME(seqBS->Value(i))` ->
+    // `BRepLib_MakeEdge::Init(C)` -> `Init(C, FirstParameter, LastParameter)`
+    // (`BRepLib_MakeEdge.cxx:505-508`).
+    let mut edges = Vec::with_capacity(pieces.len());
+    for piece in pieces {
+        let pspan = CurveSpan {
+            first: piece.first_parameter(),
+            last: piece.last_parameter(),
+            curve: piece,
+        };
+        edges.push(Edge(edge_from_span(&pspan)?));
+    }
+    if edges.is_empty() {
+        return Err(
+            "IGES_1156 TopoBasicCurve produced no curve: IGESToBRep_TopoCurve.cxx:1000-1008".into(),
+        );
+    }
+    if edges.len() == 1 {
+        // `cxx:1108-1110`: `myedge = TopoDS::Edge(TopoDS_Iterator(myshape).Value())`.
+        return Ok(edges.pop().expect("one edge").0);
+    }
+    // `cxx:1059-1064`: `ShapeFix_Wire sfw; sfw.Load(sewd); sfw.FixConnected();
+    // myshape = sewd->Wire()`. `myClosedMode` is true
+    // (`ShapeFix_Wire.cxx:117-126`, `:167-172`), so every junction including
+    // the last-to-first one is visited, and the default `prec = -1.` resolves
+    // to `MaxTolerance() = Precision::Confusion()` (`ShapeFix_Wire.cxx:1485`,
+    // `ShapeFix_Root.cxx:24-28`).
+    let mut wire = TopoBuilder::new().make_wire(&edges);
+    let _ = crate::shhealing::fix_connected_closed(&mut wire, CONFUSION, CONFUSION, true);
+    // `cxx:1099-1104`: more than one edge -> the wire (plus the `IGES_1120`
+    // warning).
+    Ok(wire.0)
 }
 
 fn transfer_point(session: &Session<'_>, index: usize) -> Result<TopoShape, String> {
@@ -570,9 +639,19 @@ fn pcurve_edge(face: &TopoShape, pc: Arc<dyn Curve2d>, first: f64, last: f64) ->
 ///
 /// `ShapeExtend_WireData::Reverse(face)` (`ShapeExtend_WireData.cxx:545-572`)
 /// reverses the edge order and every edge orientation before the pcurves are
-/// reversed (`Reverse`, `cxx:483-506`). The seam swap that `Reverse(face)`
-/// performs on a face with a seam (`SwapSeam`, `cxx:511-543`) is UNPORTED: a
-/// wire built from translated 2D curves has no seam bookkeeping.
+/// reversed (`Reverse`, `ShapeExtend_WireData.cxx:483-506`), then runs
+/// `ComputeSeams(true)` (`:163-222`) and `SwapSeam` on the seam occurrences
+/// (`:511-543`). That seam half is not carried here. `SwapSeam` exchanges the
+/// two PCurve representations an edge holds for the face (`:530-542`), while
+/// every edge of this list is rebuilt by `pcurve_edge`, which gives it its own
+/// TShape and a single pcurve registration for the face, so `ComputeSeams` (it
+/// pairs a FORWARD and a REVERSED occurrence of the SAME TShape,
+/// `ShapeExtend_WireData.cxx:190-215`) has nothing to bind. The port's seam
+/// bookkeeping lives in `shape_fix_compose_shell::wire_data::swap_seam`.
+///
+/// Reachability: the `toreverse2d` arm is only fed by the 508 Loop path
+/// (`IGESToBRep_BRepEntity.cxx:394-427`), and none of the fourteen
+/// `_igesdump/oracle` models carries an entity 502, 504, 508, 510, 514 or 186.
 fn reverse_curves_2d(edges: &[Edge], face: &TopoShape) -> Vec<Edge> {
     let reg = GeometryRegistry::global();
     let key = GeometryRegistry::shape_key(face);
@@ -1072,7 +1151,46 @@ fn mapped_pcurve(
 ) -> Result<(Arc<dyn Curve2d>, f64, f64), String> {
     // `Transfer2dTopoBasicCurve` (`cxx:1217-1230`).
     let span = basic_curve_2d(session.model, index)?;
+    if std::env::var("IGES_UVDBG").is_ok() {
+        let s1 = span.curve.d0(span.first);
+        let s2 = span.curve.d0(span.last);
+        let m = trans.h_vectorial_part();
+        let l = trans.translation_part();
+        eprintln!(
+            "UVDBG c2d ent={} type={} src_rng=[{:.17e},{:.17e}] src1=({:.17e},{:.17e}) src2=({:.17e},{:.17e}) line={} circ={} form={:?} M=[{:.17e},{:.17e};{:.17e},{:.17e}] loc=({:.17e},{:.17e})",
+            index,
+            session.model.entity(index).map(|e| e.type_number).unwrap_or(0),
+            span.first,
+            span.last,
+            s1.x(),
+            s1.y(),
+            s2.x(),
+            s2.y(),
+            span.curve.gp_lin2d().is_some(),
+            span.curve.gp_circ2d().is_some(),
+            trans.form(),
+            m.value(0, 0),
+            m.value(0, 1),
+            m.value(1, 0),
+            m.value(1, 1),
+            l.x(),
+            l.y(),
+        );
+    }
     let (curve, mut first, mut last) = apply_uv_trsf(span, trans);
+    if std::env::var("IGES_UVDBG").is_ok() {
+        let s1 = curve.d0(first);
+        let s2 = curve.d0(last);
+        eprintln!(
+            "UVDBG  mapped rng=[{:.17e},{:.17e}] m1=({:.17e},{:.17e}) m2=({:.17e},{:.17e})",
+            first,
+            last,
+            s1.x(),
+            s1.y(),
+            s2.x(),
+            s2.y(),
+        );
+    }
     let surf = GeometryRegistry::global()
         .face_surface(face)
         .ok_or_else(|| "IGES face has no surface".to_string())?;
@@ -1127,25 +1245,61 @@ pub(in crate::iges_read) fn edges_from_2d(
     trans: &GpTrsf2d,
     u_fact: f64,
 ) -> Result<Vec<Edge>, String> {
-    // `Transfer2dTopoCurve` (`cxx:910-946`). A basic curve is one edge. Entity
-    // 130 is `Transfer2dOffsetCurve` (`cxx:941-943`), which may be a wire.
+    // `Transfer2dTopoCurve` (`cxx:910-946`). Entity 130 is
+    // `Transfer2dOffsetCurve` (`cxx:941-943`), which may be a wire.
     if session.model.entity(index)?.type_number == 130 {
         let shape = super::offset_curve::transfer_2d_offset_curve(
             session, index, face, trans, u_fact,
         )?;
         return edges_of(&shape);
     }
-    Ok(vec![edge_from_2d(session, index, face, trans, u_fact)?])
+    edges_from_2d_basic(session, index, face, trans, u_fact)
 }
 
-pub(in crate::iges_read) fn edge_from_2d(
+/// `Transfer2dTopoBasicCurve` (`IGESToBRep_TopoCurve.cxx:1127-1309`): the
+/// single pcurve edge, except that a C0 B-spline pcurve becomes one edge per
+/// C1 piece (`cxx:1232-1256`).
+pub(in crate::iges_read) fn edges_from_2d_basic(
     session: &Session<'_>,
     index: usize,
     face: &TopoShape,
     trans: &GpTrsf2d,
     u_fact: f64,
-) -> Result<Edge, String> {
+) -> Result<Vec<Edge>, String> {
     let (pc, first, last) = mapped_pcurve(session, index, face, trans, u_fact)?;
+    // `cxx:1232-1237`: `IsKind(STANDARD_TYPE(Geom2d_BSplineCurve))` &&
+    // `Continuity() < GeomAbs_C1` && `GetContinuity() >= 1`.
+    let mut pieces = None;
+    if CONTINUITY >= 1
+        && pc.is_bspline2d()
+        && pc.continuity() < crate::shape_upgrade::GEOMABS_C1
+    {
+        // `cxx:1238`: `ShapeAlgo::AlgoContainer()->C0BSplineToSequenceOfC1BSplineCurve`.
+        pieces = crate::shape_upgrade::c0_bspline2d_to_sequence_of_c1_bspline_curve(pc.as_ref());
+    }
+    let Some(pieces) = pieces else {
+        // `cxx:1257-1274`: `ShapeBuild_Edge().MakeEdge(myedge, mycurve2d, face, a, b)`.
+        return Ok(vec![edge_from_pcurve(pc, first, last, face)?]);
+    };
+    // `cxx:1239-1253`: `ShapeBuild_Edge().MakeEdge(myedge, seqBS->Value(i), face)`
+    // -> `BRepLib_MakeEdge(C2d, S)` -> `Init(C2d, S, FirstParameter, LastParameter)`.
+    let mut edges = Vec::with_capacity(pieces.len());
+    for piece in pieces {
+        let f = piece.first_parameter();
+        let l = piece.last_parameter();
+        edges.push(edge_from_pcurve(piece, f, l, face)?);
+    }
+    Ok(edges)
+}
+
+/// The edge tail of `Transfer2dTopoBasicCurve` (`cxx:1259-1274`) for one
+/// pcurve span, shared by the split and unsplit arms.
+fn edge_from_pcurve(
+    pc: Arc<dyn Curve2d>,
+    first: f64,
+    last: f64,
+    face: &TopoShape,
+) -> Result<Edge, String> {
     let surf = GeometryRegistry::global()
         .face_surface(face)
         .ok_or_else(|| "IGES face has no surface".to_string())?;

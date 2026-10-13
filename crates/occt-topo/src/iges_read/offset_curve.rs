@@ -33,7 +33,7 @@ use super::iges_to_brep_basic_curve::{
 };
 use super::iges_to_brep_curve_and_surface::{is_basic_curve, is_topo_curve, Session};
 use super::iges_to_brep_topo_curve::{
-    boundary_max_tol, edge_from_2d, edges_of, transfer_topo_curve,
+    boundary_max_tol, edges_from_2d_basic, edges_of, transfer_topo_curve,
 };
 
 struct OffsetRec {
@@ -362,9 +362,19 @@ fn transfer_2d_shape(
     // `SetModeTransfer(false)` (`cxx:786`) selects `TransformedValue` for a point.
     let ty = session.model.entity(index)?.type_number;
     if is_basic_curve(ty) {
-        return Ok(edge_from_2d(session, index, face, trans, u_fact)
-            .ok()
-            .map(|edge| edge.0));
+        let Ok(mut edges) = edges_from_2d_basic(session, index, face, trans, u_fact) else {
+            return Ok(None);
+        };
+        if edges.is_empty() {
+            return Ok(None);
+        }
+        // `cxx:1294-1308`: a single edge is that edge, otherwise the wire.
+        if edges.len() == 1 {
+            return Ok(Some(edges.pop().expect("one edge").0));
+        }
+        let mut wire = TopoBuilder::new().make_wire(&edges);
+        let _ = crate::shhealing::fix_connected_closed(&mut wire, CONFUSION, CONFUSION, true);
+        return Ok(Some(wire.0));
     }
     match ty {
         130 => Ok(Some(transfer_2d_offset_curve(

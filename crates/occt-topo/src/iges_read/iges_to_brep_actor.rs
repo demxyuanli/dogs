@@ -9,9 +9,15 @@ use super::iges_data_iges_model::{IgesEntity, IgesModel};
 use super::iges_process_shape::process_iges_shape;
 use super::iges_to_brep_curve_and_surface::{is_curve_and_surface, transfer_geometry, Session};
 
-pub(in crate::iges_read) fn actor_recognize(ent: &IgesEntity) -> bool {
-    // `IGESToBRep_Actor.cxx:125-130`.
-    if is_curve_and_surface(ent.type_number) {
+/// `IGESToBRep_Actor::Recognize` (`IGESToBRep_Actor.cxx:116-131`). Needs the
+/// model: `IsCurveAndSurface` inspects the entity (402 form 9's members).
+pub(in crate::iges_read) fn actor_recognize(model: &IgesModel, index: usize) -> bool {
+    // `cxx:120-123`: a null entity is not recognized.
+    let Ok(ent) = model.entity(index) else {
+        return false;
+    };
+    // `cxx:128-130`.
+    if is_curve_and_surface(model, index) {
         return true;
     }
     if ent.type_number == 402 && matches!(ent.form_number, 1 | 7 | 14 | 15) {
@@ -25,7 +31,7 @@ pub(in crate::iges_read) fn actor_transfer(
     index: usize,
 ) -> Result<Option<TopoShape>, String> {
     let ent = model.entity(index)?;
-    if !actor_recognize(ent) {
+    if !actor_recognize(model, index) {
         return Ok(None);
     }
     // `read.precision.mode` default 0 uses `GlobalSection::Resolution`

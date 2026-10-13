@@ -394,7 +394,10 @@ fn bspline_curve_builder(
 /// the discriminator; a `Geom_TrimmedCurve` delegates that query to its basis
 /// (`trimmed.rs:127`) and is excluded here exactly as the OCCT down_cast
 /// excludes it.
-fn is_bspline(c: &dyn Curve) -> bool {
+///
+/// Shared with `ShapeUpgrade::C0BSplineToSequenceOfC1BSplineCurve`, which the
+/// IGES read path reaches at `IGESToBRep_TopoCurve.cxx:1016`.
+pub fn is_bspline(c: &dyn Curve) -> bool {
     !c.is_geom_trimmed() && c.bspline_poles().is_some()
 }
 
@@ -402,7 +405,10 @@ fn is_bspline(c: &dyn Curve) -> bool {
 /// copy of the `Geom_BSplineCurve` fields, recovered from the `Curve`
 /// queries (`bspline_poles`/`bspline_weights`/`bspline_knots`/
 /// `nurbs_degree`/`is_periodic`). Equal data, not a re-approximation.
-fn bspline_copy(c: &dyn Curve) -> Result<GeomBSplineCurve, ConvertError> {
+///
+/// Callers must have taken the `is_bspline` test first; the result carries no
+/// guard of its own because OCCT's counterpart is an unchecked down_cast.
+pub fn bspline_copy(c: &dyn Curve) -> Result<GeomBSplineCurve, ConvertError> {
     let poles = c.bspline_poles().ok_or(ConvertError::DomainError)?;
     let knots = c.bspline_knots().ok_or(ConvertError::DomainError)?;
     let degree = c.nurbs_degree().ok_or(ConvertError::DomainError)?;

@@ -409,12 +409,14 @@ fn transfer_face(
 
     // `if (surf.IsNull() || !IsTopoSurface(surf) || IsKind(Plane) ||
     // IsKind(BoundedSurface) || IsKind(TrimmedSurface) || IsKind(SingleParent))`
-    // (`cxx:480-485`). The port has no `IGESBasic_SingleParent` model, and
-    // `is_topo_surface` rejects entity 402, so that arm is unreachable here.
+    // (`cxx:480-485`).
     let surf_ok = match surface {
         Some(s) => {
-            let t = session.model.entity(s)?.type_number;
-            is_topo_surface(t) && !matches!(t, 108 | 143 | 144)
+            let ent = session.model.entity(s)?;
+            // `IsKind(SingleParent)` is the 402 form 9 class.
+            is_topo_surface(session.model, s)
+                && !matches!(ent.type_number, 108 | 143 | 144)
+                && !matches!(&ent.data, EntityData::SingleParent { .. })
         }
         None => false,
     };

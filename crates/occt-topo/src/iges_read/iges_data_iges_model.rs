@@ -41,6 +41,16 @@ pub(in crate::iges_read) fn de_pointer_to_entity(de: i32) -> Result<Option<usize
 pub(in crate::iges_read) enum EntityData {
     /// 402 form 1. `IGESBasic_ToolGroup::ReadOwnParams` (`cxx:41-74`).
     Group { entities: Vec<usize> },
+    /// 402 form 9. `IGESBasic_ToolSingleParent::ReadOwnParams` (`cxx:42-105`),
+    /// selected for `CaseIGES(402, 9) = 14`
+    /// (`IGESBasic_ReadWriteModule.cxx:60-72`, `:263-270`). `NbParentEntities`
+    /// is consumed but not stored: `OwnCheck`/`OwnCorrect`
+    /// (`IGESBasic_ToolSingleParent.cxx:148-162`, `:177-191`) only report and
+    /// rewrite it and the port has no check/correct stage.
+    SingleParent {
+        parent: Option<usize>,
+        children: Vec<Option<usize>>,
+    },
     /// 308. `IGESBasic_ToolSubfigureDef::ReadOwnParams` (`cxx:42-79`).
     /// Depth and the name are stored by `Init` and are not used by transfer.
     SubfigureDef {
@@ -444,6 +454,28 @@ fn parse_bounded(pr: &mut ParamReader<'_>) -> Result<EntityData, String> {
     })
 }
 
+/// `IGESBasic_ToolSingleParent::ReadOwnParams` (`cxx:42-105`), the 402 form 9
+/// layout: parent count, child count, the single parent, then the children.
+/// `ReadEnts` only runs for `nbval > 0` (`cxx:98-100`), so a non-positive child
+/// count leaves the child array null and `NbChildren()` at 0. A null pointer is
+/// kept as `None` (`ReadEntity` / `ReadEnts` report it and continue,
+/// `cxx:75-96`).
+fn parse_single_parent(pr: &mut ParamReader<'_>) -> Result<EntityData, String> {
+    let _nb_parents = pr.read_integer()?;
+    // `OwnCheck` (`cxx:186-190`) only reports `XSTEP_204` when the parent count
+    // is not 1 and transfers anyway; the port has no check stage.
+    let nb = pr.read_integer()?;
+    let parent = pr.read_entity(true)?;
+    let mut children = Vec::new();
+    if nb > 0 {
+        children.reserve(nb as usize);
+        for _ in 0..nb {
+            children.push(pr.read_entity(true)?);
+        }
+    }
+    Ok(EntityData::SingleParent { parent, children })
+}
+
 fn parse_own(type_number: i32, form_number: i32, tokens: &[IgesParam]) -> Result<EntityData, String> {
     if tokens.is_empty() {
         return Err(format!("IGES entity {type_number} has no parameters"));
@@ -460,6 +492,12 @@ fn parse_own(type_number: i32, form_number: i32, tokens: &[IgesParam]) -> Result
     let mut pr = ParamReader::new(tokens);
     match type_number {
         402 => {
+            // `IGESBasic_ReadWriteModule::CaseIGES` (`cxx:60-72`): form 9 is
+            // `IGESBasic_SingleParent`, forms 1/7/14/15 are the `IGESBasic_Group`
+            // family (one entity list each).
+            if form_number == 9 {
+                return parse_single_parent(&mut pr);
+            }
             let nb = pr.read_integer()?;
             if nb < 0 {
                 return Err("IGES 402 entity count is negative".into());
@@ -781,6 +819,14 @@ fn pointer_targets(data: &EntityData) -> Vec<usize> {
     let mut v = Vec::new();
     match data {
         EntityData::Group { entities } => v.extend(entities.iter().copied()),
+        EntityData::SingleParent { parent, children } => {
+            if let Some(p) = parent {
+                v.push(*p);
+            }
+            for c in children.iter().flatten() {
+                v.push(*c);
+            }
+        }
         EntityData::SubfigureDef { entities, .. } => {
             for entity in entities {
                 if let Some(index) = entity {

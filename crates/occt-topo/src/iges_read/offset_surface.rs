@@ -61,7 +61,7 @@ pub(in crate::iges_read) fn transfer_offset_surface(
         } => (*surface, *distance),
         _ => return Err("IGES 140 has no offset-surface parameters".into()),
     };
-    if !is_topo_surface(session.model.entity(surface_index)?.type_number) {
+    if !is_topo_surface(session.model, surface_index) {
         return Err("XSTEP_164: IGESToBRep_TopoSurface.cxx:1060-1066".into());
     }
     let iges_shape = match transfer_topo_surface(session, surface_index) {

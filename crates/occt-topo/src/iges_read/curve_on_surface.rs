@@ -32,7 +32,7 @@ pub(in crate::iges_read) fn transfer_curve_on_surface(
     let Some(surface) = surface else {
         return Err("XSTEP_131: IGESToBRep_TopoCurve.cxx:420-425".into());
     };
-    if !is_topo_surface(session.model.entity(surface)?.type_number) {
+    if !is_topo_surface(session.model, surface) {
         return Err("XSTEP_131: IGESToBRep_TopoCurve.cxx:420-425".into());
     }
     let myshape = transfer_topo_surface(session, surface)?;

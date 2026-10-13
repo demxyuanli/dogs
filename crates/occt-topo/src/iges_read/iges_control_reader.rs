@@ -45,7 +45,7 @@ impl IgesControlReader {
             .as_ref()
             .ok_or_else(|| "IGES model is null".to_string())?;
         for ent in model.entities.iter().skip(1) {
-            if ent.shared || !actor_recognize(ent) {
+            if ent.shared || !actor_recognize(model, ent.index) {
                 continue;
             }
             // Visible-only filter. Default `theReadOnlyVisible` is false, so

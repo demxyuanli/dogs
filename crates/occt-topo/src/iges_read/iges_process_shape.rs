@@ -14,18 +14,19 @@ use crate::abs::{Orientation, ShapeType};
 use crate::brep_class3d::SolidClassifier;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
-use crate::shape::{Edge, Face, Shell, TopoShape, Wire};
+use crate::shape::{Face, Shell, TopoShape, Wire};
 use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
 use crate::shhealing::{
     align_shell_closed_to_free_bounds, clear_shell_closed_if_analysis_free,
     fix_connected_at, fix_connected_closed, fix_reorder_wire_3d, fix_shell_face_orientation,
     fix_small_all, fix_add_curve3d_or_drop,
-    fix_vertex_tolerance_edge, grown_vertex_tolerances_on_face, perform_wire_first_round,
-    perform_wire_second_round, shape_fix_same_parameter, shell_open_by_free_edge,
-    split_face_after_removed_segment, split_loop_wires, ShapeFixEdge, ShapeFixFace,
+    fix_vertex_tolerance_edge, fix_vertex_tolerances_after_same_parameter,
+    grown_vertex_tolerances_on_face, perform_wire_first_round, perform_wire_second_round,
+    shape_fix_same_parameter, shell_open_by_free_edge, split_face_after_removed_segment,
+    split_loop_wires, ShapeFixEdge, ShapeFixFace,
 };
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
+use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of};
 
 use super::iges_data_iges_model::IgesModel;
 
@@ -63,38 +64,6 @@ pub(in crate::iges_read) fn process_iges_shape(shape: &TopoShape, model: &IgesMo
         trim_tolerances(&result, theeps);
     }
     result
-}
-
-/// `ShapeFix_Shape.cxx:267-291`. Runs only when the result has more than one
-/// face. `FixEdgeTool()` already carries the pass context, because each face
-/// `Perform` forwarded it (`ShapeFix_Face.cxx:348`, `ShapeFix_Wire.cxx:307`),
-/// so the update is `CopyVertex` (`ShapeFix_Edge.cxx:674-677`).
-fn fix_vertex_tolerances_after_same_parameter(shape: &TopoShape, ctx: &mut SharedReShape) {
-    let faces = faces_of(shape);
-    if faces.len() <= 1 {
-        return;
-    }
-    for face in &faces {
-        for wire in wires_of_face(face) {
-            for edge in edges_of_wire(&wire) {
-                fix_vertex_tolerance_with_context(&edge, face, ctx);
-            }
-        }
-    }
-}
-
-/// `ShapeFix_Edge::FixVertexTolerance(edge, face)` with a live context
-/// (`ShapeFix_Edge.cxx:642-684`).
-fn fix_vertex_tolerance_with_context(edge: &Edge, face: &Face, ctx: &mut SharedReShape) {
-    let applied = ctx.apply(&edge.0);
-    if !applied.is_edge() {
-        return;
-    }
-    let Some(grown) = grown_vertex_tolerances_on_face(&Edge(applied), face) else {
-        return;
-    };
-    ctx.copy_vertex(&grown.v1.0, grown.toler1);
-    ctx.copy_vertex(&grown.v2.0, grown.toler2);
 }
 
 /// `IGESToBRep_Actor.cxx:186-190` over the ctor default `theeps = 0.0001`

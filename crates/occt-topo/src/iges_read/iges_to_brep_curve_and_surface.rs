@@ -122,27 +122,49 @@ pub(in crate::iges_read) fn is_topo_curve(type_number: i32) -> bool {
     is_basic_curve(type_number) || matches!(type_number, 102 | 142 | 141 | 116 | 130)
 }
 
-/// `IGESToBRep::IsTopoSurface` (`IGESToBRep.cxx:251-310`), without the 402 form 9
-/// single-parent special case.
+/// `IGESToBRep::IsTopoSurface` (`IGESToBRep.cxx:251-310`).
 ///
-/// UNPORTED: `IGESToBRep.cxx:291-309` also returns true for an
+/// The 402 form 9 arm (`cxx:291-309`) needs the entity itself: an
 /// `IGESBasic_SingleParent` whose single parent and every child is an
-/// `IGESGeom_Plane` (IGES type 402 form 9, a perforated face). The port does not
-/// model `IGESBasic_SingleParent` (only `IGESBasic_Group`, 402 forms 1/7/14/15,
-/// is read: `iges_data_iges_model.rs`), so a 402 always fails this predicate and
-/// `IGESToBRep_TopoSurface::TransferTopoSurface`'s 402 arm is unreachable. None
-/// of the 14 `_igesdump/oracle` models contains a 402 form 9: their directory
-/// sections hold 6 type-402 entities, all form 1 (Group).
-pub(in crate::iges_read) fn is_topo_surface(type_number: i32) -> bool {
-    is_basic_surface(type_number)
-        || matches!(type_number, 144 | 120 | 122 | 118 | 108 | 143 | 140)
+/// `IGESGeom_Plane` (IGES type 402 form 9, a perforated face) is a topo surface.
+pub(in crate::iges_read) fn is_topo_surface(model: &IgesModel, index: usize) -> bool {
+    // `cxx:254-257`: a null handle is false.
+    let Ok(ent) = model.entity(index) else {
+        return false;
+    };
+    if is_basic_surface(ent.type_number) {
+        return true;
+    }
+    if matches!(ent.type_number, 144 | 120 | 122 | 118 | 108 | 143 | 140) {
+        return true;
+    }
+    // `cxx:291-309`, SingleParent special case (Perforated Face: contains only
+    // PLANEs).
+    let EntityData::SingleParent { parent, children } = &ent.data else {
+        return false;
+    };
+    let is_plane = |i: usize| matches!(model.entity(i), Ok(e) if e.type_number == 108);
+    // `cxx:297` dereferences `SingleParent()` without testing it; a null parent
+    // handle is a null `IGESGeom_Plane`, which no consumer accepts
+    // (`IGESToBRep_TopoSurface.cxx:1543-1551`), so the class test is false here.
+    let Some(parent) = *parent else {
+        return false;
+    };
+    if !is_plane(parent) {
+        return false;
+    }
+    children.iter().all(|c| matches!(c, Some(i) if is_plane(*i)))
 }
 
 /// `IGESToBRep::IsCurveAndSurface` (`IGESToBRep.cxx:101-120`).
-pub(in crate::iges_read) fn is_curve_and_surface(type_number: i32) -> bool {
-    is_topo_curve(type_number)
-        || is_topo_surface(type_number)
-        || super::igessolid::is_brep_entity(type_number)
+pub(in crate::iges_read) fn is_curve_and_surface(model: &IgesModel, index: usize) -> bool {
+    // `cxx:105-108`: a null handle is false.
+    let Ok(ent) = model.entity(index) else {
+        return false;
+    };
+    is_topo_curve(ent.type_number)
+        || is_topo_surface(model, index)
+        || super::igessolid::is_brep_entity(ent.type_number)
 }
 
 pub(in crate::iges_read) fn transfer_geometry(
@@ -157,7 +179,7 @@ pub(in crate::iges_read) fn transfer_geometry(
     let form_number = ent.form_number;
     // `read.iges.onlyvisible` is 0, so the blank-status returns at
     // `IGESToBRep_CurveAndSurface.cxx:246-248` and `:371-373` are not taken.
-    if is_curve_and_surface(type_number) {
+    if is_curve_and_surface(session.model, index) {
         let shape = transfer_curve_and_surface(session, index)?;
         return match shape {
             Some(s) => {
@@ -188,7 +210,7 @@ fn transfer_curve_and_surface(
     if is_topo_curve(type_number) {
         return Ok(Some(transfer_topo_curve(session, index)?));
     }
-    if is_topo_surface(type_number) {
+    if is_topo_surface(session.model, index) {
         return Ok(Some(transfer_topo_surface(session, index)?));
     }
     if super::igessolid::is_brep_entity(type_number) {
