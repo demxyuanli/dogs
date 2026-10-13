@@ -79,6 +79,17 @@ impl Delaun {
         delaun
     }
 
+    /// TEMPORARY diagnostic (DCWHY): on when `DCWHY` names this face, so
+    /// `create_triangles_on_new_vertices` prints the candidate list, the
+    /// `Contains` verdict per candidate and the triangle the caller's skip rule
+    /// selects (`BRepMesh_Delaun.cxx:645-670`), to be diffed against
+    /// `occt_probe --delaunwhy`.
+    pub(super) fn diag_why_on(&self) -> bool {
+        self.diag_tag >= 0
+            && std::env::var("DCWHY").ok().and_then(|v| v.parse::<i32>().ok())
+                == Some(self.diag_tag)
+    }
+
     /// TEMPORARY diagnostic (DELSTAGE).
     pub(super) fn diag_on(&self) -> bool {
         self.diag_tag >= 0
@@ -613,6 +624,53 @@ impl Delaun {
             let vertex = *self.mesh_data.get_node(vertex_idx);
             let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
             let mut circles_list = self.circles.select(vertex.location.coord);
+
+            // TEMPORARY diagnostic (DCWHY): the inputs of this iteration -
+            // candidate list from `myCircles.Select` (`cxx:642`), the `Contains`
+            // verdict (`cxx:645-670`) for every candidate, and the triangle the
+            // caller's skip rule would pick. The order of these lines is the only
+            // thing that can differ from OCCT: both sides run the same sorted
+            // insertion order, so a diff here names the missing `.cxx` arm.
+            if self.diag_why_on() {
+                eprintln!(
+                    "DCWHY v={vertex_idx} uv={:.17e} {:.17e} mov={} sqtol={:.17e} ntri={} ncand={}",
+                    vertex.location.x(),
+                    vertex.location.y(),
+                    vertex.state.index(),
+                    sq_tol,
+                    self.mesh_data.elements_of_domain().len(),
+                    circles_list.len(),
+                );
+                for &t in circles_list.iter() {
+                    eprintln!("DCWHY CAND t={t}");
+                }
+                let mut chosen = 0;
+                for &t in circles_list.iter() {
+                    let mut edge_on = 0;
+                    let contains = self.contains(t, &vertex, sq_tol, &mut edge_on);
+                    let edge_mov = if edge_on != 0 {
+                        self.mesh_data.link_movability(edge_on).index() as i32
+                    } else {
+                        -1
+                    };
+                    eprintln!(
+                        "DCWHY CTEST t={t} contains={} edge={edge_on} edgemov={edge_mov}",
+                        if contains { 1 } else { 0 }
+                    );
+                    if chosen != 0 || !contains {
+                        continue;
+                    }
+                    if edge_on != 0
+                        && self.mesh_data.link_movability(edge_on) != VertexState::Free
+                    {
+                        if vertex.state == VertexState::Free {
+                            continue;
+                        }
+                    }
+                    chosen = t;
+                }
+                eprintln!("DCWHY CHOSEN t={chosen}");
+            }
 
             let _on_edge_id = 0;
             let mut triangle_id = 0;

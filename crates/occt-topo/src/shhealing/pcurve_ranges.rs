@@ -707,6 +707,19 @@ pub(crate) fn check_pcurve(edge: &Edge, face: &Face, preci: f64, is_seam: bool) 
     let mut a_tol = BRepTool::edge_tolerance(&tmp);
     let mut same_range = reg.edge_geom(&tmp.0).map(|g| g.same_range).unwrap_or(true);
     let mut same_param = BRepTool::same_parameter(&tmp);
+    if std::env::var("XPC").is_ok() {
+        let k = match BRepTool::edge_curve(edge) {
+            None => "none",
+            Some(c) if c.is_line() => "line",
+            Some(c) if c.gp_circ().is_some() => "circle",
+            Some(c) if c.nurbs_degree().is_some() => "bspline",
+            Some(_) => "other",
+        };
+        eprintln!(
+            "XPC c3={k}[{a:.16e},{b:.16e}] preci={preci:.16e} a_tol={a_tol:.16e} same_range={same_range} geom={} is_seam={is_seam} prange=[{p1:.16e},{p2:.16e}]",
+            reg.edge_geom(&tmp.0).map(|g| g.same_range.to_string()).unwrap_or_else(|| "none".into())
+        );
+    }
     if a_tol > 1.0_f64.min(2.0 * preci) || !same_range {
         if let Some(pr) = make_edge_on_curve(edge) {
             // `XSAlgo` drives its own `ShapeFix_Edge`, so this cache is fresh.

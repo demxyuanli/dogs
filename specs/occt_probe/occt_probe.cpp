@@ -140,6 +140,7 @@
 // `BRepMesh_Delaun` the port's own registered points. This block only proves that the
 // class is reachable/linkable from this probe's link set; it constructs a Delaun over
 // a tiny synthetic vertex array and reports the resulting structure size.
+#include <BRepMesh_CircleTool.hxx>
 #include <BRepMesh_Delaun.hxx>
 #include <BRepMesh_Vertex.hxx>
 #include <BRepMesh_DataStructureOfDelaun.hxx>
@@ -272,9 +273,11 @@ static int runDelaunFeed(const std::string& theDir)
 // avoided entirely).
 static int runDelaunStruct(const std::string& theDir)
 {
+  // TEMP T-121: 17 added (Shape-2 model face index in the port's own order) so the
+  // batched `AddVertices` replay can be compared with `--dcstruct 15` on that model.
   const int aFaces[] = {0,   208, 209, 169, 174, 189, 192, 193, 194,
                         195, 196, 197, 198, 199, 204, 206, 210, 212, 433,
-                        51,  52,  53,  54,  321};
+                        51,  52,  53,  54,  321, 28,  2,   17};
   for (int f : aFaces)
   {
     char aName[512];
@@ -748,6 +751,214 @@ static int runDelaunSteps(const std::string& theDir, const int theFace)
   return 0;
 }
 
+// --- TEMP T-121 (`--delaunwhy <dir> <face> [step]`) -------------------------------
+// Per-insertion verdict dump: for the requested step (all steps when <step> < 0) it
+// prints the exact inputs of ONE `createTrianglesOnNewVertices` iteration
+// (`BRepMesh_Delaun.cxx:629-700`):
+//   * the vertex that is being inserted (structure id + the port's own node id),
+//   * `myCircles.Select(coord)` - the candidate triangle list, in list order,
+//   * `Contains()` per candidate (`BRepMesh_Delaun.cxx:2578-2637`) together with the
+//     `theEdgeOn` link id and that link's movability,
+//   * the triangle the caller's own skip rule (`cxx:653-660`) would select.
+// The port prints the same lines under `DCWHY`, so the first field that differs
+// names the missing `.cxx` arm instead of only showing the divergent triangle set.
+static int runDelaunWhy(const std::string& theDir, const int theFace, const int theStep)
+{
+  char aName[512];
+  std::snprintf(aName, sizeof(aName), "%s/delaun_in_f%d.txt", theDir.c_str(), theFace);
+  std::ifstream aIn(aName);
+  if (!aIn)
+  {
+    std::cout << "DELAUNWHY f=" << theFace << " (missing " << aName << ")" << std::endl;
+    return 1;
+  }
+
+  std::vector<std::array<double, 3>> aNodes; // x, y, movability
+  std::vector<std::array<int, 3>>    aLinks; // first, last, movability
+  std::vector<int>                   aOrder1;
+  std::vector<int>                   aOrder2;
+  double                             aTolU = 0.0, aTolV = 0.0;
+  int                                aCellsU = -1, aCellsV = -1;
+  std::string                        aLine;
+  while (std::getline(aIn, aLine))
+  {
+    if (aLine.empty() || aLine[0] == '#')
+    {
+      continue;
+    }
+    std::istringstream aSS(aLine);
+    std::string        aTag;
+    aSS >> aTag;
+    if (aTag == "TOL")
+    {
+      aSS >> aTolU >> aTolV;
+    }
+    else if (aTag == "CELLS")
+    {
+      aSS >> aCellsU >> aCellsV;
+    }
+    else if (aTag == "N")
+    {
+      int i, m;
+      double x, y;
+      aSS >> i >> x >> y >> m;
+      aNodes.push_back({x, y, static_cast<double>(m)});
+    }
+    else if (aTag == "L")
+    {
+      int i, a, b, m;
+      aSS >> i >> a >> b >> m;
+      aLinks.push_back({a, b, m});
+    }
+    else if (aTag == "V1")
+    {
+      int v;
+      while (aSS >> v)
+      {
+        aOrder1.push_back(v);
+      }
+    }
+    else if (aTag == "V2")
+    {
+      int v;
+      while (aSS >> v)
+      {
+        aOrder2.push_back(v);
+      }
+    }
+  }
+
+  if (aNodes.empty() || aOrder2.empty())
+  {
+    std::cout << "DELAUNWHY f=" << theFace << " (no nodes / no phase2)" << std::endl;
+    return 1;
+  }
+
+  occ::handle<NCollection_IncAllocator> anAlloc =
+    new NCollection_IncAllocator(IMeshData::MEMORY_BLOCK_SIZE_HUGE);
+  occ::handle<BRepMesh_DataStructureOfDelaun> aStruct =
+    new BRepMesh_DataStructureOfDelaun(anAlloc, static_cast<int>(aNodes.size()));
+  aStruct->Data()->SetTolerance(aTolU, aTolV);
+  aStruct->Data()->SetCellSize(14.0 * aTolU, 14.0 * aTolV);
+
+  std::vector<int> aMap(aNodes.size() + 1, 0);
+  for (int v : aOrder1)
+  {
+    const BRepMesh_Vertex aVertex(gp_XY(aNodes[v - 1][0], aNodes[v - 1][1]),
+                                  v - 1,
+                                  static_cast<BRepMesh_DegreeOfFreedom>(
+                                    static_cast<int>(aNodes[v - 1][2])));
+    aMap[v] = aStruct->AddNode(aVertex);
+  }
+  for (const std::array<int, 3>& aL : aLinks)
+  {
+    if (aL[2] == static_cast<int>(BRepMesh_Deleted) || aMap[aL[0]] == 0 || aMap[aL[1]] == 0)
+    {
+      continue;
+    }
+    aStruct->AddLink(BRepMesh_Edge(aMap[aL[0]],
+                                   aMap[aL[1]],
+                                   static_cast<BRepMesh_DegreeOfFreedom>(aL[2])));
+  }
+
+  IMeshData::VectorOfInteger aIndices1;
+  for (int v : aOrder1)
+  {
+    aIndices1.Append(aMap[v]);
+  }
+  BRepMesh_Delaun aDelaun(aStruct, aIndices1, aCellsU, aCellsV);
+  std::cout << "DELAUNWHY f=" << theFace << " base nodes=" << aStruct->NbNodes()
+            << " links=" << aStruct->NbLinks()
+            << " domain=" << aStruct->ElementsOfDomain().Extent()
+            << " phase2=" << aOrder2.size() << " step=" << theStep << std::endl;
+
+  for (int v : aOrder2)
+  {
+    const BRepMesh_Vertex aVertex(gp_XY(aNodes[v - 1][0], aNodes[v - 1][1]),
+                                  v - 1,
+                                  static_cast<BRepMesh_DegreeOfFreedom>(
+                                    static_cast<int>(aNodes[v - 1][2])));
+    aMap[v] = aStruct->AddNode(aVertex);
+  }
+
+  // The batched path heap sorts first (`AddVertices`, `cxx:2415-2417`).
+  std::vector<int> aOrder(aOrder2);
+  auto             aLess = [&aNodes](int theLeft, int theRight) {
+    return aNodes[theLeft - 1][0] + aNodes[theLeft - 1][1] < aNodes[theRight - 1][0] + aNodes[theRight - 1][1];
+  };
+  std::make_heap(aOrder.begin(), aOrder.end(), aLess);
+  std::sort_heap(aOrder.begin(), aOrder.end(), aLess);
+
+  const double aSqTol = aTolU * aTolU + aTolV * aTolV;
+
+  for (size_t k = 0; k < aOrder.size(); ++k)
+  {
+    const int              aPortV = aOrder[k];
+    const int              aIdx   = aMap[aPortV];
+    const BRepMesh_Vertex& aV     = aDelaun.GetVertex(aIdx);
+    if (theStep < 0 || static_cast<int>(k) == theStep)
+    {
+      std::printf("WHY step=%d port_v=%d struct=%d uv=%.17e %.17e mov=%d sqtol=%.17e ntri=%d",
+                  static_cast<int>(k),
+                  aPortV,
+                  aIdx,
+                  aV.Coord().X(),
+                  aV.Coord().Y(),
+                  static_cast<int>(aV.Movability()),
+                  aSqTol,
+                  aStruct->ElementsOfDomain().Extent());
+      // `Circles()` is const (the mesh exposes the tool read-only) while `Select`
+      // is not: it only appends to the inspector's own candidate list, so casting
+      // the (non-const) `aDelaun`'s tool is the same call OCCT itself makes at
+      // `BRepMesh_Delaun.cxx:642`.
+      BRepMesh_CircleTool&      aTool  = const_cast<BRepMesh_CircleTool&>(aDelaun.Circles());
+      IMeshData::ListOfInteger& aCands = aTool.Select(aV.Coord());
+      std::printf(" ncand=%d\n", aCands.Extent());
+      for (IMeshData::ListOfInteger::Iterator aCIt(aCands); aCIt.More(); aCIt.Next())
+      {
+        std::printf("  CAND t=%d\n", aCIt.Value());
+      }
+      int aChosen = 0;
+      for (IMeshData::ListOfInteger::Iterator aCIt(aCands); aCIt.More(); aCIt.Next())
+      {
+        int  anEdgeOn = 0;
+        bool aCont    = aDelaun.Contains(aCIt.Value(), aV, aSqTol, anEdgeOn);
+        int  anEdgeMov = anEdgeOn != 0 ? static_cast<int>(aDelaun.GetEdge(anEdgeOn).Movability()) : -1;
+        std::printf("  CTEST t=%d contains=%d edge=%d edgemov=%d\n",
+                    aCIt.Value(),
+                    aCont ? 1 : 0,
+                    anEdgeOn,
+                    anEdgeMov);
+        if (aChosen != 0 || !aCont)
+        {
+          continue;
+        }
+        if (anEdgeOn != 0 && aDelaun.GetEdge(anEdgeOn).Movability() != BRepMesh_Free)
+        {
+          if (aV.Movability() == BRepMesh_Free)
+          {
+            continue;
+          }
+        }
+        aChosen = aCIt.Value();
+      }
+      std::printf("  CHOSEN t=%d\n", aChosen);
+    }
+
+    IMeshData::VectorOfInteger aOne;
+    aOne.Append(aIdx);
+    aDelaun.AddVertices(aOne);
+    if (theStep < 0 || static_cast<int>(k) == theStep)
+    {
+      std::printf("  AFTER tris=%d\n", aStruct->ElementsOfDomain().Extent());
+    }
+  }
+
+  std::cout << "DELAUNWHY f=" << theFace << " done tris=" << aStruct->ElementsOfDomain().Extent()
+            << std::endl;
+  return 0;
+}
+
 // --- TEMP T-99 (`--boundary <dir>`) ----------------------------------------------
 // Dumps, for the faces of interest, the pcurve points OCCT's real pipeline feeds
 // into `BRepMesh_BaseMeshAlgo::initDataStructure` (wire -> edge -> pcurve ->
@@ -843,7 +1054,7 @@ static int runBoundary(const TopoDS_Shape& theShape, const std::string& theDir)
       for (int e = 0; e < aDWire->EdgesNb(); ++e)
       {
         const IMeshData::IEdgeHandle& aDEdge = aDWire->GetEdge(e);
-        if (aDWire->EdgesNb() == 16)
+        if (true)
         {
           // `BRepMesh_CurveTessellator::init` inputs (`cxx:60-120`): the edge's stored
           // deflections and the curve type decide how many points
@@ -1336,8 +1547,159 @@ protected:
   }
 };
 
+// --- TEMP T-133 (`--lens <faceIdx> <u0> <u1> <v0> <v1>`) ---------------------------
+// Replays `BRepMesh_DefaultRangeSplitter::computeLengthU` / `computeLengthV`
+// (`BRepMesh_DefaultRangeSplitter.cxx:144-198`) on one discrete face with an
+// explicitly given range and prints every `BRepAdaptor_Surface::D0` sample at full
+// precision plus the two lengths. The range is passed in because it is already the
+// same on both sides (`--srparams` beats the port's NURBSGRID print), so any sample
+// difference can only come from the surface evaluator, and the length difference
+// from there into `computeDelta` (`cxx:129-137`).
+static int runLenSamples(const TopoDS_Shape& theShape, const int theFaceIdx,
+                         const double u0, const double u1, const double v0, const double v1)
+{
+  occ::handle<BRepMesh_Context> aCtx = new BRepMesh_Context;
+  aCtx->SetShape(theShape);
+  IMeshTools_Parameters aParams;
+  aParams.InParallel           = false;
+  aParams.Relative             = false;
+  aCtx->ChangeParameters()     = aParams;
+  aCtx->ChangeParameters().CleanModel = false;
+  if (!aCtx->BuildModel())
+  {
+    std::printf("LENS built=0\n");
+    return 0;
+  }
+  const occ::handle<IMeshData_Model>& aModel = aCtx->GetModel();
+  if (aModel.IsNull() || theFaceIdx < 0 || theFaceIdx >= aModel->FacesNb())
+  {
+    std::printf("LENS bad face\n");
+    return 0;
+  }
+  const occ::handle<BRepAdaptor_Surface>& aSurf = aModel->GetFace(theFaceIdx)->GetSurface();
+  std::printf("LENS f=%d type=%d ru=(%.17g,%.17g) rv=(%.17g,%.17g)\n",
+              theFaceIdx,
+              static_cast<int>(aSurf->GetType()),
+              u0,
+              u1,
+              v0,
+              v1);
+  {
+    double longv = 0.0;
+    gp_Pnt P11, P12, P21, P22, P31, P32;
+    double dv     = 0.05 * (v1 - v0);
+    double dfuave = 0.5 * (u1 + u0);
+    double dfvcur;
+    aSurf->D0(u0, v0, P11);
+    aSurf->D0(dfuave, v0, P21);
+    aSurf->D0(u1, v0, P31);
+    std::printf("LENS V k=0 (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+    double aV = v0 + dv;
+    for (int i1 = 1; i1 <= 20; i1++, aV += dv)
+    {
+      aSurf->D0(u0, aV, P12);
+      aSurf->D0(dfuave, aV, P22);
+      aSurf->D0(u1, aV, P32);
+      longv += (P11.Distance(P12) + P21.Distance(P22) + P31.Distance(P32));
+      P11 = P12;
+      P21 = P22;
+      P31 = P32;
+      std::printf("LENS V k=%d (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                  i1, P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+    }
+    std::printf("LENS V longv=%.17g\n", longv / 3.);
+  }
+  {
+    double longu = 0.0;
+    gp_Pnt P11, P12, P21, P22, P31, P32;
+    double du     = 0.05 * (u1 - u0);
+    double dfvave = 0.5 * (v1 + v0);
+    aSurf->D0(u0, v0, P11);
+    aSurf->D0(u0, dfvave, P21);
+    aSurf->D0(u0, v1, P31);
+    std::printf("LENS U k=0 (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+    double aU = u0 + du;
+    for (int i1 = 1; i1 <= 20; i1++, aU += du)
+    {
+      aSurf->D0(aU, v0, P12);
+      aSurf->D0(aU, dfvave, P22);
+      aSurf->D0(aU, v1, P32);
+      longu += (P11.Distance(P12) + P21.Distance(P22) + P31.Distance(P32));
+      P11 = P12;
+      P21 = P22;
+      P31 = P32;
+      std::printf("LENS U k=%d (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                  i1, P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+    }
+    std::printf("LENS U longu=%.17g\n", longu / 3.);
+  }
+  // TEMP T-133: the same two replays through the raw `Geom_Surface` (the port's
+  // `Surface::d0`, i.e. `Geom_BSplineSurface::EvalD0` / `BSplSLib::D0`), so the
+  // cache arm of `GeomAdaptor_Surface::EvalD0` (`GeomAdaptor_Surface.cxx:1063-1073`
+  // -> `BSplSLib_Cache::D0`) can be told apart from the raw evaluator.
+  {
+    TopLoc_Location                 aLoc;
+    const occ::handle<Geom_Surface> aRaw =
+      BRep_Tool::Surface(aModel->GetFace(theFaceIdx)->GetFace(), aLoc);
+    const bool     isIdentity = aLoc.IsIdentity();
+    const gp_Trsf& aTrsf      = aLoc.Transformation();
+    auto           aD0        = [&](double u, double v) {
+      gp_Pnt aP = aRaw->EvalD0(u, v);
+      if (!isIdentity)
+      {
+        aP.Transform(aTrsf);
+      }
+      return aP;
+    };
+    {
+      double       longv = 0.0;
+      const double dv    = 0.05 * (v1 - v0);
+      const double uave  = 0.5 * (u1 + u0);
+      gp_Pnt       P11 = aD0(u0, v0), P21 = aD0(uave, v0), P31 = aD0(u1, v0);
+      std::printf("LENRAW V k=0 (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                  P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+      double aV = v0 + dv;
+      for (int i1 = 1; i1 <= 20; i1++, aV += dv)
+      {
+        gp_Pnt P12 = aD0(u0, aV), P22 = aD0(uave, aV), P32 = aD0(u1, aV);
+        longv += (P11.Distance(P12) + P21.Distance(P22) + P31.Distance(P32));
+        P11 = P12;
+        P21 = P22;
+        P31 = P32;
+        std::printf("LENRAW V k=%d (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                    i1, P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+      }
+      std::printf("LENRAW V longv=%.17g\n", longv / 3.);
+    }
+    {
+      double       longu = 0.0;
+      const double du    = 0.05 * (u1 - u0);
+      const double vave  = 0.5 * (v1 + v0);
+      gp_Pnt       P11 = aD0(u0, v0), P21 = aD0(u0, vave), P31 = aD0(u0, v1);
+      std::printf("LENRAW U k=0 (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                  P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+      double aU = u0 + du;
+      for (int i1 = 1; i1 <= 20; i1++, aU += du)
+      {
+        gp_Pnt P12 = aD0(aU, v0), P22 = aD0(aU, vave), P32 = aD0(aU, v1);
+        longu += (P11.Distance(P12) + P21.Distance(P22) + P31.Distance(P32));
+        P11 = P12;
+        P21 = P22;
+        P31 = P32;
+        std::printf("LENRAW U k=%d (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g) (%.17g,%.17g,%.17g)\n",
+                    i1, P11.X(), P11.Y(), P11.Z(), P21.X(), P21.Y(), P21.Z(), P31.X(), P31.Y(), P31.Z());
+      }
+      std::printf("LENRAW U longu=%.17g\n", longu / 3.);
+    }
+  }
+  return 0;
+}
+
 static int runStructDump(const TopoDS_Shape& theShape, const int theFaceIdx,
-                         const bool theFactoryAlgo = false, const bool theSrfNodes = false)
+                         const bool theFactoryAlgo = false, const bool theSrfNodes = false,
+                         const double theDefl = 0.0, const double theAngle = 0.0)
 {
   Bnd_Box aShapeBox;
   BRepBndLib::Add(theShape, aShapeBox, false);
@@ -1350,8 +1712,13 @@ static int runStructDump(const TopoDS_Shape& theShape, const int theFaceIdx,
     (std::max)((std::max)(aBox[3] - aBox[0], aBox[4] - aBox[1]), aBox[5] - aBox[2]);
 
   IMeshTools_Parameters aParams;
-  aParams.Deflection    = aMaxComp * 0.001 * 4.0;
-  aParams.Angle         = 20.0 * M_PI / 180.0;
+  // TEMP T-121: the port derives its deflection from the *reader's* own bbox, so
+  // the derived value here (`aMaxComp * 0.004`) differs from the port's in the
+  // 8th digit, which is enough to change the NURBS/SoR grain filter and therefore
+  // the whole surface-node grid. When the caller passes the port's exact numbers,
+  // use them so the two DC-pass structures are comparable at all.
+  aParams.Deflection    = (theDefl > 0.0) ? theDefl : aMaxComp * 0.001 * 4.0;
+  aParams.Angle         = (theAngle > 0.0) ? theAngle : 20.0 * M_PI / 180.0;
   aParams.InParallel    = false;
   aParams.Relative      = false;
   aParams.MinSize       = (std::max)(IMeshTools_Parameters::RelMinSize() * aParams.Deflection,
@@ -1589,6 +1956,169 @@ static int runStructDump(const TopoDS_Shape& theShape, const int theFaceIdx,
 // `--uvsum` cannot be used for this: that branch meshes with a hard-coded 0.5 rad
 // angle (its per-face `triangles=` sums to 8054 on a3n00 while the 20-degree mesh has
 // 12324), so its counts are not comparable with the port's.
+// TEMP T-132 (`--srparams <faceIdx> <defl> <angle>`): prints the raw U/V parameter
+// sets a factory-selected UV range splitter hands to its grain filter, together with
+// the grid those parameters produce (`BRepMesh_NURBSRangeSplitter::
+// GenerateSurfaceNodes`, BRepMesh_NURBSRangeSplitter.cxx:314-400), so the port's
+// `NURBSGRID` dump can be compared entry by entry instead of by node totals.
+static void dumpRawParams(const char* theLabel, const IMeshData::IMapOfReal& theParams)
+{
+  std::vector<double> aVals;
+  aVals.reserve(theParams.Extent());
+  for (int i = 1; i <= theParams.Extent(); ++i)
+  {
+    aVals.push_back(theParams(i));
+  }
+  std::sort(aVals.begin(), aVals.end());
+  std::printf("OCCTSRP param %s n=%d vals=", theLabel, static_cast<int>(aVals.size()));
+  for (size_t i = 0; i < aVals.size(); ++i)
+  {
+    std::printf("%s%.17g", (i == 0) ? "" : ",", aVals[i]);
+  }
+  std::printf("\n");
+}
+
+// TEMP T-132: same splitter/algo pairing as `ZZSrfNodeCountAlgo`, but the dump is the
+// splitter's own parameter state (`GetParametersU/V`, `BRepMesh_UVParamRangeSplitter.
+// hxx:46-58`) plus the generated grid. The parameters are filled during
+// `initDataStructure` -> `collectWirePoints` -> `AddPoint`
+// (`BRepMesh_NodeInsertionMeshAlgo.hxx:143-183`, `BRepMesh_BoundaryParamsRangeSplitter.
+// hxx:33-38`) and never change afterwards, so reading them in `postProcessMesh` is the
+// same state `insertNodes` filters.
+template <class Splitter>
+class ZZSrfParamsAlgo
+    : public BRepMesh_DelaunayNodeInsertionMeshAlgo<Splitter, BRepMesh_DelaunayBaseMeshAlgo>
+{
+  typedef BRepMesh_DelaunayNodeInsertionMeshAlgo<Splitter, BRepMesh_DelaunayBaseMeshAlgo> Base;
+
+protected:
+  void postProcessMesh(BRepMesh_Delaun& theMesher, const Message_ProgressRange& theRange) override
+  {
+    const Splitter&                 aSplitter = this->getRangeSplitter();
+    const IMeshData::IFaceHandle&   aDFace    = this->getDFace();
+    const std::pair<double, double>& aRangeU   = aSplitter.GetRangeU();
+    const std::pair<double, double>& aRangeV   = aSplitter.GetRangeV();
+    const std::pair<double, double>& aDelta    = aSplitter.GetDelta();
+    const std::pair<double, double>& aTol      = aSplitter.GetToleranceUV();
+    const IMeshTools_Parameters&    aParams   = this->getParameters();
+    const double                    aDefl     = aDFace->GetDeflection();
+    std::printf("OCCTSRP face type=%d ru=(%.17g,%.17g) rv=(%.17g,%.17g) delta=(%.17g,%.17g) "
+                "tol=(%.17g,%.17g) ures=%.17g vres=%.17g facedefl=%.17g minsize=%.17g "
+                "angint=%.17g angle=%.17g defl=%.17g\n",
+                static_cast<int>(aDFace->GetSurface()->GetType()),
+                aRangeU.first,
+                aRangeU.second,
+                aRangeV.first,
+                aRangeV.second,
+                aDelta.first,
+                aDelta.second,
+                aTol.first,
+                aTol.second,
+                aSplitter.GetSurface()->UResolution(aDefl),
+                aSplitter.GetSurface()->VResolution(aDefl),
+                aDefl,
+                aParams.MinSize,
+                aParams.AngleInterior,
+                aParams.Angle,
+                aParams.Deflection);
+    dumpRawParams("u", aSplitter.GetParametersU());
+    dumpRawParams("v", aSplitter.GetParametersV());
+
+    // `GenerateSurfaceNodes` fills the parameter maps on its first call for the
+    // splitters that derive them lazily (`BRepMesh_NURBSRangeSplitter::
+    // initParameters`, cxx:452-488, writes through the const_casts at :469/:476),
+    // so the grid is built first and both maps are dumped a second time after it.
+    const Handle(IMeshData::ListOfPnt2d) aNodes = aSplitter.GenerateSurfaceNodes(aParams);
+    dumpRawParams("u_after", aSplitter.GetParametersU());
+    dumpRawParams("v_after", aSplitter.GetParametersV());
+    std::printf("OCCTSRP nodes=%d\n", aNodes.IsNull() ? 0 : static_cast<int>(aNodes->Size()));
+    if (!aNodes.IsNull())
+    {
+      for (IMeshData::ListOfPnt2d::Iterator anIt(*aNodes); anIt.More(); anIt.Next())
+      {
+        std::printf("OCCTSRPN u=%.17g v=%.17g\n", anIt.Value().X(), anIt.Value().Y());
+      }
+    }
+    Base::postProcessMesh(theMesher, theRange);
+  }
+};
+
+static int runSrfParams(const TopoDS_Shape& theShape, const int theFaceIdx,
+                        const double theDeflection, const double theAngle)
+{
+  IMeshTools_Parameters aParams;
+  aParams.Deflection    = theDeflection;
+  aParams.Angle         = theAngle;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  aParams.MinSize       = 0.0;
+  aParams.AdjustMinSize = false;
+  // `BRepMesh_IncrementalMesh::initParameters` (BRepMesh_IncrementalMesh.hxx:79-108),
+  // i.e. the parameter state the real mesher runs with.
+  if (aParams.DeflectionInterior < Precision::Confusion())
+  {
+    aParams.DeflectionInterior = aParams.Deflection;
+  }
+  if (aParams.MinSize < Precision::Confusion())
+  {
+    aParams.MinSize =
+      (std::max)(IMeshTools_Parameters::RelMinSize()
+                   * (std::min)(aParams.Deflection, aParams.DeflectionInterior),
+                 Precision::Confusion());
+  }
+  if (aParams.AngleInterior < Precision::Angular())
+  {
+    aParams.AngleInterior = 2.0 * aParams.Angle;
+  }
+  occ::handle<BRepMesh_Context> aCtx = new BRepMesh_Context;
+  aCtx->SetShape(theShape);
+  aCtx->ChangeParameters()            = aParams;
+  aCtx->ChangeParameters().CleanModel = false;
+  const bool aBuilt   = aCtx->BuildModel();
+  const bool aDiscret = aBuilt && aCtx->DiscretizeEdges();
+  const bool aHealed  = aDiscret && aCtx->HealModel();
+  const bool aPreproc = aHealed && aCtx->PreProcessModel();
+  const occ::handle<IMeshData_Model>& aModel = aCtx->GetModel();
+  if (aModel.IsNull() || theFaceIdx < 0 || theFaceIdx >= aModel->FacesNb())
+  {
+    std::cout << "SRPARAM model-null-or-range\n";
+    return 0;
+  }
+  const IMeshData::IFaceHandle& aDFace = aModel->GetFace(theFaceIdx);
+  std::printf("OCCTSRP shape defl=%.17g angle=%.17g angint=%.17g minsize=%.17g built=%d discret=%d "
+              "healed=%d preproc=%d faces=%d f=%d\n",
+              aParams.Deflection,
+              aParams.Angle,
+              aParams.AngleInterior,
+              aParams.MinSize,
+              aBuilt ? 1 : 0,
+              aDiscret ? 1 : 0,
+              aHealed ? 1 : 0,
+              aPreproc ? 1 : 0,
+              aModel->FacesNb(),
+              theFaceIdx);
+  occ::handle<IMeshTools_MeshAlgo> aAlgo;
+  switch (aDFace->GetSurface()->GetType())
+  {
+    case GeomAbs_SurfaceOfRevolution:
+      aAlgo = new ZZSrfParamsAlgo<BRepMesh_BoundaryParamsRangeSplitter>();
+      break;
+    case GeomAbs_SurfaceOfExtrusion:
+      aAlgo = new ZZSrfParamsAlgo<BRepMesh_ExtrusionRangeSplitter>();
+      break;
+    case GeomAbs_BezierSurface:
+    case GeomAbs_BSplineSurface:
+      aAlgo = new ZZSrfParamsAlgo<BRepMesh_NURBSRangeSplitter>();
+      break;
+    default:
+      std::printf("OCCTSRP unsupported stype=%d\n",
+                  static_cast<int>(aDFace->GetSurface()->GetType()));
+      return 0;
+  }
+  aAlgo->Perform(aDFace, aParams, Message_ProgressRange());
+  return 0;
+}
+
 static int runFaceStats(const TopoDS_Shape& theShape, const double theDeflection,
                         const double theAngle)
 {
@@ -1635,7 +2165,58 @@ static int runFaceStats(const TopoDS_Shape& theShape, const double theDeflection
 }
 
 // --- TEMP T-121 (`--edgedu <faceIdx> <defl> <angle>`) -------------------------------
-// Prints, for every edge occurrence of one face, the `BRepAdaptor_Curve` type and the
+// TEMP T-101b (`--facedump <faceIdx> <defl> <angle>`): the node and triangle arrays of
+// one *model* face (`IMeshData_Model::GetFace`, same indexing as `--facestats`), so a
+// per-face count divergence can be read as geometry instead of a total.
+static int runFaceDump(const TopoDS_Shape& theShape, const int theFaceIdx,
+                       const double theDeflection, const double theAngle)
+{
+  {
+    BRepMesh_IncrementalMesh aMesher(theShape, theDeflection, false, theAngle);
+  }
+  IMeshTools_Parameters aParams;
+  aParams.Deflection    = theDeflection;
+  aParams.Angle         = theAngle;
+  aParams.InParallel    = false;
+  aParams.Relative      = false;
+  aParams.MinSize       = Precision::Confusion();
+  aParams.AdjustMinSize = false;
+  occ::handle<BRepMesh_ModelBuilder> aBuilder = new BRepMesh_ModelBuilder;
+  const occ::handle<IMeshData_Model> aModel   = aBuilder->Perform(theShape, aParams);
+  if (aModel.IsNull() || theFaceIdx < 0 || theFaceIdx >= aModel->FacesNb())
+  {
+    std::cout << "FDUMP model-null-or-range\n";
+    return 0;
+  }
+  const TopoDS_Face& aFace = aModel->GetFace(theFaceIdx)->GetFace();
+  TopLoc_Location    aLoc;
+  const occ::handle<Poly_Triangulation>& aTri = BRep_Tool::Triangulation(aFace, aLoc);
+  std::cout << std::fixed << std::setprecision(9) << "FDUMP face=" << theFaceIdx
+            << " nodes=" << (aTri.IsNull() ? 0 : aTri->NbNodes())
+            << " tris=" << (aTri.IsNull() ? 0 : aTri->NbTriangles()) << std::endl;
+  if (aTri.IsNull())
+    return 0;
+  for (int i = 1; i <= aTri->NbNodes(); ++i)
+  {
+    const gp_Pnt aP = aTri->Node(i).Transformed(aLoc.Transformation());
+    std::cout << "FDUMP n i=" << i;
+    if (aTri->HasUVNodes())
+    {
+      const gp_Pnt2d aUV = aTri->UVNode(i);
+      std::cout << " uv=(" << aUV.X() << "," << aUV.Y() << ")";
+    }
+    std::cout << " p=(" << aP.X() << "," << aP.Y() << "," << aP.Z() << ")" << std::endl;
+  }
+  for (int i = 1; i <= aTri->NbTriangles(); ++i)
+  {
+    int a1, a2, a3;
+    aTri->Triangle(i).Get(a1, a2, a3);
+    std::cout << "FDUMP t i=" << i << " (" << a1 << "," << a2 << "," << a3 << ")" << std::endl;
+  }
+  return 0;
+}
+
+// --- TEMP T-121 (`--edgedu <faceIdx> <defl> <angle>`) -------------------------------// Prints, for every edge occurrence of one face, the `BRepAdaptor_Curve` type and the
 // exact inputs of `GCPnts_TangentialDeflection::EvaluateDu` (`cxx:302-322`) at the
 // edge's first parameter: `|T|`, `|N|`, `|N x T|` and `Ln = |N x T| / |T|`. The
 // resulting `du_init = sqrt(8 * max(curvatureDeflection, minLen) / Ln)` is printed for
@@ -1993,7 +2574,8 @@ static int runOrderDbg(const TopoDS_Shape& theShape, const double* theBBox)
 static int runWireDbg(const TopoDS_Shape& theShape,
                       const double        theDeflection,
                       const double        theAngle,
-                      const double*       theBBox)
+                      const double*       theBBox,
+                      const int           theFaceIdx = -1)
 {
   IMeshTools_Parameters aParams;
   aParams.Deflection    = theDeflection;
@@ -2030,12 +2612,24 @@ static int runWireDbg(const TopoDS_Shape& theShape,
     }
     double v[6] = {0, 0, 0, 0, 0, 0};
     aBox.Get(v[0], v[1], v[2], v[3], v[4], v[5]);
-    if (!(std::abs(v[0] - theBBox[0]) < 1e-3 && std::abs(v[1] - theBBox[1]) < 1e-3
-          && std::abs(v[2] - theBBox[2]) < 1e-3 && std::abs(v[3] - theBBox[3]) < 1e-3
-          && std::abs(v[4] - theBBox[4]) < 1e-3 && std::abs(v[5] - theBBox[5]) < 1e-3))
+    // Selection: by `IMeshData_Model::GetFace` index when the caller gave one
+    // (the port's own bbox is tolerance-inflated, so the six-coordinate form
+    // cannot pair the two sides), otherwise by the exact geometry box.
+    if (theFaceIdx >= 0)
+    {
+      if (f != theFaceIdx)
+      {
+        continue;
+      }
+    }
+    else if (!(std::abs(v[0] - theBBox[0]) < 1e-3 && std::abs(v[1] - theBBox[1]) < 1e-3
+               && std::abs(v[2] - theBBox[2]) < 1e-3 && std::abs(v[3] - theBBox[3]) < 1e-3
+               && std::abs(v[4] - theBBox[4]) < 1e-3 && std::abs(v[5] - theBBox[5]) < 1e-3))
     {
       continue;
     }
+    std::printf("WDBG face=%d bbox=(%.9f,%.9f,%.9f)-(%.9f,%.9f,%.9f)\n", f, v[0], v[1], v[2], v[3],
+                v[4], v[5]);
     std::printf("WDBG face=%d surfType=%d wires=%d\n", f, (int)aDFace->GetSurface()->GetType(),
                 aDFace->WiresNb());
     for (int w = 0; w < aDFace->WiresNb(); ++w)
@@ -2068,7 +2662,7 @@ static int runWireDbg(const TopoDS_Shape& theShape,
         std::printf("WDBG   p2d=[");
         for (int k = 0; k < aPCurve->ParametersNb(); ++k)
         {
-          std::printf("%s(%.9f,%.9f)", k ? " " : "", aPCurve->GetPoint(k).X(),
+          std::printf("%s(%.17g,%.17g)", k ? " " : "", aPCurve->GetPoint(k).X(),
                       aPCurve->GetPoint(k).Y());
         }
         std::printf("]\n");
@@ -2288,6 +2882,10 @@ int main(int argc, char** argv)
   const bool frames = (argc > 2);
   // TEMP T-104: face index for `--structdump` (dispatched once the shape is read).
   int aStructDumpFace = -1;
+  // TEMP T-121: optional exact `<defl> <angle>` override for `--structdump` /
+  // `--dcstruct`, so both sides can be driven with the port's own numbers.
+  double aStructDumpDefl = 0.0;
+  double aStructDumpAngle = 0.0;
   // TEMP T-119: face index for `--dcstruct` (factory-faithful splitter + DC pass).
   int aDCStructFace = -1;
   // TEMP T-120: face index for `--srfnodes` (factory-faithful splitter + classifier).
@@ -2306,6 +2904,11 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--structdump" && i + 1 < argc)
     {
       aStructDumpFace = std::atoi(argv[i + 1]);
+      if (i + 3 < argc)
+      {
+        aStructDumpDefl  = std::atof(argv[i + 2]);
+        aStructDumpAngle = std::atof(argv[i + 3]) * M_PI / 180.0;
+      }
     }
     // TEMP T-119: same dump, but through the splitter/algo pair the real
     // `BRepMesh_MeshAlgoFactory` picks (so a `GeomAbs_SurfaceOfRevolution` face is
@@ -2313,6 +2916,11 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--dcstruct" && i + 1 < argc)
     {
       aDCStructFace = std::atoi(argv[i + 1]);
+      if (i + 3 < argc)
+      {
+        aStructDumpDefl  = std::atof(argv[i + 2]);
+        aStructDumpAngle = std::atof(argv[i + 3]) * M_PI / 180.0;
+      }
     }
     // TEMP T-120: `--srfnodes <faceIdx>` prints OCCT's surface-node classifier
     // verdicts for the factory-selected splitter (see `ZZSrfNodeCountAlgo`).
@@ -2328,6 +2936,13 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--delaunsteps" && i + 2 < argc)
     {
       return runDelaunSteps(argv[i + 1], std::atoi(argv[i + 2]));
+    }
+    // TEMP T-121: per-insertion verdict dump
+    // (`--delaunwhy <dir> <face> [step]`, `<step>` < 0 = every step).
+    if (std::string(argv[i]) == "--delaunwhy" && i + 2 < argc)
+    {
+      const int aStep = (i + 3 < argc) ? std::atoi(argv[i + 3]) : -1;
+      return runDelaunWhy(argv[i + 1], std::atoi(argv[i + 2]), aStep);
     }
   }
   bool       nofix  = false;
@@ -2555,10 +3170,38 @@ int main(int argc, char** argv)
     {
       return runBoundary(aShape, argv[i + 1]);
     }
+    // TEMP T-133: `--lens <faceIdx> <u0> <u1> <v0> <v1>` replays the range
+    // splitter's length sampling (see `runLenSamples`).
+    if (std::string(argv[i]) == "--lens" && i + 5 < argc)
+    {
+      return runLenSamples(aShape,
+                           std::atoi(argv[i + 1]),
+                           std::atof(argv[i + 2]),
+                           std::atof(argv[i + 3]),
+                           std::atof(argv[i + 4]),
+                           std::atof(argv[i + 5]));
+    }
     // TEMP T-101: `--facestats <defl> <angle>` — per-model-face nodes/triangles/bbox.
     if (std::string(argv[i]) == "--facestats" && i + 2 < argc)
     {
       return runFaceStats(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]));
+    }
+    // TEMP T-101b: `--facedump <faceIdx> <defl> <angle>` — one model face's mesh arrays.
+    if (std::string(argv[i]) == "--facedump" && i + 3 < argc)
+    {
+      return runFaceDump(aShape,
+                         std::atoi(argv[i + 1]),
+                         std::atof(argv[i + 2]),
+                         std::atof(argv[i + 3]));
+    }
+    // TEMP T-132: `--srparams <faceIdx> <defl> <angle>` — the raw splitter parameters
+    // behind one model face's generated grid.
+    if (std::string(argv[i]) == "--srparams" && i + 3 < argc)
+    {
+      return runSrfParams(aShape,
+                          std::atoi(argv[i + 1]),
+                          std::atof(argv[i + 2]),
+                          std::atof(argv[i + 3]));
     }
     // TEMP T-121: `--edgedu <faceIdx> <defl> <angle>` — `EvaluateDu` inputs per edge.
     if (std::string(argv[i]) == "--edgedu" && i + 3 < argc)
@@ -2607,6 +3250,15 @@ int main(int argc, char** argv)
         aBB[k] = std::atof(argv[i + 3 + k]);
       }
       return runWireDbg(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]), aBB);
+    }
+    // TEMP: `--wiredbgi <faceIdx> <defl> <angle>` — same dump as `--wiredbg` but
+    // selects the face by `IMeshData_Model::GetFace` index, because the port's own
+    // bbox is tolerance-inflated and cannot be matched against the geometry box.
+    if (std::string(argv[i]) == "--wiredbgi" && i + 3 < argc)
+    {
+      const double aNoBox[6] = {0, 0, 0, 0, 0, 0};
+      return runWireDbg(aShape, std::atof(argv[i + 2]), std::atof(argv[i + 3]), aNoBox,
+                        std::atoi(argv[i + 1]));
     }
   }
 
@@ -2674,6 +3326,66 @@ int main(int argc, char** argv)
     std::cout << "TOTAL faces=" << anIdx << " nodes=" << aNodes << " triangles=" << aTris
               << " meshvol=" << aMeshVol << " neg_triangles=" << aNegTris
               << " deflection=" << aDeflection << " angle=" << anAngle << "\n";
+    return 0;
+  }
+
+  // Decisive mesh dump (`--dumpmesh <out.obj> [defl] [angle]`): write OCCT's own
+  // `Poly_Triangulation` after `BRepMesh_IncrementalMesh` with the port's
+  // parameters, so a port-side OBJ can be compared node by node instead of by
+  // counts and scalars alone. `--mesh` prints the same numbers but no geometry:
+  // a box that includes the triangulation (`useTriangulation = true`, the
+  // default) can disagree with one that does not (`BRepBndLib::Add(face, box,
+  // false)`), and that disagreement has to be attributed to the nodes rather
+  // than guessed at.
+  if (argc > 3 && std::string(argv[2]) == "--dumpmesh")
+  {
+    const double aDeflection = (argc > 4 && argv[4][0] != '-') ? std::atof(argv[4]) : 0.1;
+    const double anAngle      = (argc > 5 && argv[5][0] != '-') ? std::atof(argv[5]) : 0.5;
+    BRepMesh_IncrementalMesh aMesher(aShape, aDeflection, false, anAngle);
+    std::ofstream aOut(argv[3]);
+    int           aBase = 0, aFaces = 0, aAllNodes = 0, aAllTris = 0;
+    double        aMin[3] = {1e300, 1e300, 1e300};
+    double        aMax[3] = {-1e300, -1e300, -1e300};
+    int           aIdx = 0;
+    for (TopExp_Explorer anEx(aShape, TopAbs_FACE); anEx.More(); anEx.Next(), ++aIdx)
+    {
+      TopLoc_Location aLoc;
+      const occ::handle<Poly_Triangulation>& aTri =
+        BRep_Tool::Triangulation(TopoDS::Face(anEx.Current()), aLoc);
+      ++aFaces;
+      if (aTri.IsNull())
+      {
+        std::cout << "DUMPFACE i=" << aIdx << " nodes=0 triangles=0 null\n";
+        continue;
+      }
+      const gp_Trsf& aT = aLoc.Transformation();
+      for (int i = 1; i <= aTri->NbNodes(); ++i)
+      {
+        const gp_Pnt p = aTri->Node(i).Transformed(aT);
+        aOut << "v " << std::setprecision(9) << p.X() << " " << p.Y() << " " << p.Z() << "\n";
+        aMin[0]       = std::min(aMin[0], p.X());
+        aMin[1]       = std::min(aMin[1], p.Y());
+        aMin[2]       = std::min(aMin[2], p.Z());
+        aMax[0]       = std::max(aMax[0], p.X());
+        aMax[1]       = std::max(aMax[1], p.Y());
+        aMax[2]       = std::max(aMax[2], p.Z());
+      }
+      for (int t = 1; t <= aTri->NbTriangles(); ++t)
+      {
+        int n1, n2, n3;
+        aTri->Triangle(t).Get(n1, n2, n3);
+        aOut << "f " << aBase + n1 << " " << aBase + n2 << " " << aBase + n3 << "\n";
+      }
+      std::cout << "DUMPFACE i=" << aIdx << " nodes=" << aTri->NbNodes()
+                << " triangles=" << aTri->NbTriangles() << " base=" << aBase << "\n";
+      aBase += aTri->NbNodes();
+      aAllNodes += aTri->NbNodes();
+      aAllTris += aTri->NbTriangles();
+    }
+    std::cout << std::fixed << std::setprecision(6) << "DUMPMESH faces=" << aFaces
+              << " nodes=" << aAllNodes << " triangles=" << aAllTris << " bbox=(" << aMin[0] << ","
+              << aMin[1] << "," << aMin[2] << ")-(" << aMax[0] << "," << aMax[1] << "," << aMax[2]
+              << ") file=" << argv[3] << "\n";
     return 0;
   }
 
@@ -2945,12 +3657,12 @@ int main(int argc, char** argv)
   // is available; the index is the `IMeshData_Model` face order).
   if (aStructDumpFace >= 0)
   {
-    return runStructDump(aShape, aStructDumpFace);
+    return runStructDump(aShape, aStructDumpFace, false, false, aStructDumpDefl, aStructDumpAngle);
   }
   // TEMP T-119: factory-faithful splitter + DC pass dump.
   if (aDCStructFace >= 0)
   {
-    return runStructDump(aShape, aDCStructFace, true);
+    return runStructDump(aShape, aDCStructFace, true, false, aStructDumpDefl, aStructDumpAngle);
   }
   // TEMP T-120: factory-faithful splitter + surface-node classifier verdicts.
   if (aSrfNodeFace >= 0)

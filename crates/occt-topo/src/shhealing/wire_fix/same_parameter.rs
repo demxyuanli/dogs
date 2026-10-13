@@ -121,6 +121,75 @@ fn check_same_parameter_opt(edge: &Edge, face: Option<&Face>) -> f64 {
     } else {
         reps = reg.edge_pcurve_reps(&edge.0);
     }
+    if std::env::var("XCHK").is_ok() {
+        let k3 = match Some(c3d.clone()) {
+            Some(c) if c.is_line() => "line",
+            Some(c) if c.gp_circ().is_some() => "circle",
+            Some(c) if c.nurbs_degree().is_some() => "bspline",
+            _ => "other",
+        };
+        let q = |p: GpPnt| format!("({:.17e},{:.17e},{:.17e})", p.x(), p.y(), p.z());
+        let d = c3d.d0(first);
+        let m = c3d.d0(0.5 * (first + last));
+        let e = c3d.d0(last);
+        let mut desc = String::new();
+        for (s, pc, cf, cl) in &reps {
+            let (u0, u1) = s.u_range();
+            let (v0, v1) = s.v_range();
+            let pk = if pc.is_geom2d_line() {
+                "line2d"
+            } else if pc.is_bspline2d() {
+                "bspline2d"
+            } else {
+                "other2d"
+            };
+            let a = pc.d0(*cf);
+            let b = pc.d0(0.5 * (*cf + *cl));
+            let c = pc.d0(*cl);
+            let sa = s.d0(u0, v0);
+            desc.push_str(&format!(
+                " pc={pk}[{cf:.17e},{cl:.17e}]2d=({:.17e},{:.17e})({:.17e},{:.17e})({:.17e},{:.17e}) s=[{u0:.17e},{u1:.17e},{v0:.17e},{v1:.17e}]{}",
+                a.x(), a.y(), b.x(), b.y(), c.x(), c.y(), q(sa)
+            ));
+        }
+        let (ckp, ckk) = {
+            let mut hp: u64 = 0xcbf29ce484222325;
+            let mut hk: u64 = 0xcbf29ce484222325;
+            let mut mix = |h: &mut u64, v: f64| {
+                for b in v.to_bits().to_le_bytes() {
+                    *h ^= b as u64;
+                    *h = h.wrapping_mul(0x100000001b3);
+                }
+            };
+            if let Some(p) = c3d.bspline_poles() {
+                mix(&mut hp, p.len() as f64);
+                for q in p {
+                    mix(&mut hp, q.x());
+                    mix(&mut hp, q.y());
+                    mix(&mut hp, q.z());
+                }
+            }
+            if let Some(k) = c3d.bspline_knots() {
+                mix(&mut hk, k.len() as f64);
+                for v in k {
+                    mix(&mut hk, *v);
+                }
+            }
+            if let Some(w) = c3d.bspline_weights() {
+                mix(&mut hk, w.len() as f64);
+                for v in w {
+                    mix(&mut hk, *v);
+                }
+            }
+            (hp, hk)
+        };
+        let ck = ckp ^ (ckk.rotate_left(17));
+        eprintln!(
+            "XCHK c3={k3}[{first:.17e},{last:.17e}]3d={}{}{}{} same_p={same_p} nreps={} face={} ckp={ckp:016x} ckk={ckk:016x}",
+            q(d), q(m), q(e), desc, reps.len(), face.is_some()
+        );
+        let _ = ck;
+    }
     let mut max_sq: f64 = 0.0;
     // `SetControlPointsNumber(NbControl - 1)` with default NbControl=23.
     const NB: i32 = 22;
@@ -487,6 +556,12 @@ fn fix_same_parameter_opt(edge: &Edge, face: Option<&Face>) {
             if brl_tol < brl_dev {
                 brl_tol = brl_dev; // cxx:895-898
             }
+            if std::env::var("XSP").is_ok() {
+                eprintln!(
+                    "XSPcmp c3=[{first_3d:.16e},{last_3d:.16e}] was_sp={was_sp} brl_tol={brl_tol:.16e} brl_dev={brl_dev:.16e} maxdev={maxdev:.16e} take={}",
+                    brl_tol < maxdev
+                );
+            }
             if brl_tol < maxdev {
                 copy_pcurves(edge, copy); // cxx:906
                 maxdev = brl_tol; // cxx:907
@@ -510,5 +585,11 @@ fn fix_same_parameter_opt(edge: &Edge, face: Option<&Face>) {
     if maxdev > tol {
         reg.set_edge_tolerance(&edge.0, maxdev);
         fix_vertex_tolerance_edge(edge);
+    }
+    if std::env::var("XSP").is_ok() {
+        eprintln!(
+            "XSP c3=[{first_3d:.16e},{last_3d:.16e}] was_sp={was_sp} sp={sp} maxdev={maxdev:.16e} tol={tol:.16e} out_tol={:.16e}",
+            BRepTool::edge_tolerance(edge)
+        );
     }
 }

@@ -578,8 +578,16 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
     let tol_u = param_resolution(surface.as_ref(), deflection, true);
     let tol_v = param_resolution(surface.as_ref(), deflection, false);
     if std::env::var("NURBSGRID").is_ok() {
+        // TEMP: tag each dump with the discrete face's shape key so a dump can be
+        // paired with `FSTAT face=<i> key=<k>` (and with the probe's per-face rows).
+        let fkey = s
+            .base()
+            .dface
+            .as_ref()
+            .map(|df| crate::tgeometry::GeometryRegistry::shape_key(&df.face().0))
+            .unwrap_or(0);
         eprintln!(
-            "NURBSGRID pre type={:?} u_params={} v_params={} ru=[{:.17e},{:.17e}] rv=[{:.17e},{:.17e}] tol_u={tol_u:.6e} tol_v={tol_v:.6e} defl={deflection:.6} delta=({:.17e},{:.17e})",
+            "NURBSGRID pre key={fkey} type={:?} u_params={} v_params={} ru=[{:.17e},{:.17e}] rv=[{:.17e},{:.17e}] tol_u={tol_u:.6e} tol_v={tol_v:.6e} defl={deflection:.6} delta=({:.17e},{:.17e})",
             classify_surface(surface.as_ref()),
             u_params.len(),
             v_params.len(),

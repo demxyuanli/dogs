@@ -342,7 +342,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             }
             if cls_dbg && st != PointState::In {
                 eprintln!(
-                    "CLSNODE st={:?} uv=({:.12e},{:.12e})",
+                    "CLSNODE face={face_index} st={:?} uv=({:.12e},{:.12e})",
                     st,
                     n.x(),
                     n.y()
@@ -354,7 +354,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         }
         if cls_dbg {
             eprintln!(
-                "CLSNODE wires={} total={} in={n_in} out={n_out} on={n_on}",
+                "CLSNODE face={face_index} wires={} total={} in={n_in} out={n_out} on={n_on}",
                 self.classifier.wires_nb(),
                 n_in + n_out + n_on
             );
@@ -539,7 +539,8 @@ impl DelaunayNodeInsertionMeshAlgo {
                             }
                         }
                         eprintln!(
-                            "DCDBG pre_dc nodes={} tris={} face_defl={:.6} cells=({},{}) delta=({:.6},{:.6}) insert={} edge_fp={edge_fp:016x}",
+                            "DCDBG pre_dc f={} nodes={} tris={} face_defl={:.6} cells=({},{}) delta=({:.6},{:.6}) insert={} edge_fp={edge_fp:016x}",
+                            _face_index,
                             ds.nb_nodes(),
                             ds.elements_of_domain().len(),
                             face_deflection,
@@ -553,10 +554,14 @@ impl DelaunayNodeInsertionMeshAlgo {
                     // TEMP STRUCTDUMP: full pre-DC node/element dump, so it can
                     // be diffed entry by entry against the OCCT probe's
                     // `OCCTDC PRE` / `OCCTDCN PRE` / `OCCTEL PRE` lines.
-                    if std::env::var("PORTDUMP").is_ok() {
+                    if std::env::var("PORTDUMP").ok().filter(|_| {
+                        std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
+                            == Some(_face_index as i32)
+                    }).is_some() {
                         let ds = delaun.result();
                         eprintln!(
-                            "PORTDC PRE struct_nodes={} nodes={} domain={}",
+                            "PORTDC PRE f={} struct_nodes={} nodes={} domain={}",
+                            _face_index,
                             ds.nb_nodes(),
                             ds.nb_nodes(),
                             ds.elements_of_domain().len()
@@ -625,6 +630,20 @@ impl DelaunayNodeInsertionMeshAlgo {
         });
         let max_defl = ctrl.post_process(&mut view, surface, face_deflection, &mut |mesh, nodes| {
             pass_no += 1;
+            let pre_nodes = mesh.delaun.result().nb_nodes();
+            let pre_dom = mesh.delaun.result().elements_of_domain().len();
+            let inserted = mesh.insert_parametric(self, surface, nodes);
+            if std::env::var("DCDBG").is_ok() {
+                eprintln!(
+                    "DCDBG insert f={face_index} pass={pass_no} ctrl={} pre_nodes={} pre_dom={} post_nodes={} post_dom={} inserted={}",
+                    nodes.len(),
+                    pre_nodes,
+                    pre_dom,
+                    mesh.delaun.result().nb_nodes(),
+                    mesh.delaun.result().elements_of_domain().len(),
+                    inserted
+                );
+            }
             // TEMPORARY diagnostic (CTRLDUMP): the control node list this pass
             // hands to `insertNodes`, in face-basis coordinates.
             if let Some(dir) = ctrl_dump.as_deref() {
@@ -639,7 +658,6 @@ impl DelaunayNodeInsertionMeshAlgo {
                     eprintln!("CTRLDUMP: cannot write {}", path.display());
                 }
             }
-            let inserted = mesh.insert_parametric(self, surface, nodes);
             if let Some(dir) = dump_dir.as_deref() {
                 Self::dump_domain_state(
                     mesh.delaun.result(),
@@ -761,6 +779,68 @@ impl DelaunayNodeInsertionMeshAlgo {
             ));
         }
         self.boundary_uv = uv.clone();
+
+        // TEMP diagnostic (TORSBD=<x1>,<y1>,<z1>,<x2>,<y2>,<z2>): per-wire-edge
+        // pcurve point arrays of the matching face, so they can be diffed against
+        // `occt_probe --healerdbg` (the same six bbox coordinates).
+        if let Ok(spec) = std::env::var("TORSBD") {
+            let t: Vec<f64> = spec
+                .split(',')
+                .filter_map(|s| s.trim().parse::<f64>().ok())
+                .collect();
+            if t.len() == 6 {
+                let bb = crate::brep_bnd_lib::shape_bnd_box(&model.face(face_index)?.face().0);
+                let (mn, mx) = (bb.corner_min(), bb.corner_max());
+                {
+                    let hit = (mn.x() - t[0]).abs() < 1e-6
+                        && (mn.y() - t[1]).abs() < 1e-6
+                        && (mn.z() - t[2]).abs() < 1e-6
+                        && (mx.x() - t[3]).abs() < 1e-6
+                        && (mx.y() - t[4]).abs() < 1e-6
+                        && (mx.z() - t[5]).abs() < 1e-6;
+                    if hit {                        let face = model.face(face_index)?;
+                        for (wi, &wire_index) in face.wires().iter().enumerate() {
+                            let wire = model.wire(wire_index)?;
+                            for j in 0..wire.edges_nb() {
+                                let edge_index = wire.edge(j)?;
+                                let orientation = wire.edge_orientation(j)?;
+                                let rev = wire.edge_reverse_walk(j);
+                                let edge = model.edge(edge_index)?;
+                                let Some(pc) = edge.pcurve_for(face_index, orientation) else {
+                                    eprintln!("TORSBD face={face_index} w={wi} e={j} pc=none");
+                                    continue;
+                                };
+                                let pts = pc.points();
+                                let n = pts.len();
+                                let f = pts.first().copied().unwrap_or(GpPnt2d::new(0.0, 0.0));
+                                let l = pts.last().copied().unwrap_or(GpPnt2d::new(0.0, 0.0));
+                                eprintln!(
+                                    "TORSBD face={face_index} w={wi} e={j} nb={n} fwd={} rev={rev} \
+same_param={} same_range={} free={} degen={} defl={:.15} ang={:.15} \
+first=({:.15},{:.15}) last=({:.15},{:.15})",
+                                    pc.is_forward() as u8,
+                                    edge.same_param() as u8,
+                                    edge.same_range() as u8,
+                                    edge.is_free() as u8,
+                                    edge.degenerated() as u8,
+                                    edge.deflection(),
+                                    edge.angular_deflection(),
+                                    f.x(),
+                                    f.y(),
+                                    l.x(),
+                                    l.y()
+                                );
+                                let mut s = format!("TORSBDV face={face_index} w={wi} e={j} v=");
+                                for p in pts {
+                                    s += &format!("{:.15},", p.y());
+                                }
+                                eprintln!("{s}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // `BRepMesh_NodeInsertionMeshAlgo::initDataStructure`: Reset splitter,
         // AddPoint from collectWirePoints, AdjustRange, SetCellSize/SetTolerance,

@@ -156,6 +156,73 @@ fn main() {
         println!("WIREHIST {}", s.join(" "));
         return;
     }
+    if std::env::args().any(|a| a == "--pcensus") {
+        // TEMP determinism probe: per (face, wire, edge, pcurve) the stored
+        // pcurve kind, stored window and endpoint samples, so two runs can be
+        // diffed to the exact edge whose pcurve differs.
+        let reg = GeometryRegistry::global();
+        let surfs: Vec<String> = faces_of(&shape)
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                let fk = GeometryRegistry::shape_key(&f.0);
+                format!(
+                    "SURF f={i} {}",
+                    reg.debug_surface_desc(reg.debug_repr_key(fk))
+                )
+            })
+            .collect();
+        for s in surfs {
+            println!("{s}");
+        }
+        for (i, f) in faces_of(&shape).iter().enumerate() {
+            let fk = GeometryRegistry::shape_key(&f.0);
+            for (wi, w) in wires_of_face(f).iter().enumerate() {
+                for (ei, e) in edges_of_wire(w).iter().enumerate() {
+                    let (f3, l3) = occt_topo::brep_tool::BRepTool::edge_parameters(e);
+                    let c3 = occt_topo::brep_tool::BRepTool::edge_curve(e);
+                    let c3k = match c3.as_ref() {
+                        None => "none",
+                        Some(c) if c.is_line() => "line",
+                        Some(c) if c.gp_circ().is_some() => "circle",
+                        Some(c) if c.nurbs_degree().is_some() => "bspline",
+                        Some(_) => "other",
+                    };
+                    let pcs = reg.edge_pcurves(&e.0, fk);
+                    let (rf, rl) = reg.pcurve_range(&e.0, fk).unwrap_or((f64::NAN, f64::NAN));
+                    let mut desc = String::new();
+                    for (k, pc) in pcs.iter().enumerate() {
+                        let kind = if pc.is_geom2d_line() {
+                            "line"
+                        } else if pc.is_bspline2d() {
+                            "bspline"
+                        } else {
+                            "other"
+                        };
+                        let (a, b) = (pc.first_parameter(), pc.last_parameter());
+                        let (p1, p2) = if a.is_finite() && b.is_finite() {
+                            let q1 = pc.d0(a);
+                            let q2 = pc.d0(b);
+                            (
+                                format!("({:.15e},{:.15e})", q1.x(), q1.y()),
+                                format!("({:.15e},{:.15e})", q2.x(), q2.y()),
+                            )
+                        } else {
+                            ("inf".to_string(), "inf".to_string())
+                        };
+                        desc.push_str(&format!(
+                            " pc{k}={kind}[{a:.15e},{b:.15e}]{p1}->{p2}"
+                        ));
+                    }
+                    println!(
+                        "PC f={i} w={wi} e={ei} c3={c3k} r3=[{f3:.15e},{l3:.15e}] rw=[{rf:.15e},{rl:.15e}] n={}{desc}",
+                        pcs.len()
+                    );
+                }
+            }
+        }
+        return;
+    }
     if std::env::args().any(|a| a == "--ecensus") {
         // T-102 read-only census: one line per face with `wires=` and the
         // per-wire edge counts, plus the geometric bbox and the face's

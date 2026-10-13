@@ -102,6 +102,15 @@ pub struct IncrementalMesh {
     pub(super) status_flags: i32,
     pub(super) mesh: Option<ShapeMesh>,
     pub(super) face_stats: Vec<FaceMeshStat>,
+    /// Per-face triangulation from the last successful `perform`, in
+    /// `MeshModel::face` order.
+    ///
+    /// OCCT stores the `Poly_Triangulation` on the face itself
+    /// (`BRepMesh_ShapeVisitor::Visit` -> `IMeshData_Face::SetTriangulation`,
+    /// `BRep_Tool::Triangulation` reads it back), so keeping the per-face nodes,
+    /// UV nodes and index triples here is the same store, not an extra one. The
+    /// flat [`ShapeMesh`] soup is the concatenation of these.
+    pub(super) face_triangulations: Vec<FaceTriangulation>,
 }
 
 impl IncrementalMesh {
@@ -115,6 +124,7 @@ impl IncrementalMesh {
             status_flags: 0,
             mesh: None,
             face_stats: Vec::new(),
+            face_triangulations: Vec::new(),
         }
     }
 
@@ -149,6 +159,7 @@ impl IncrementalMesh {
             status_flags: 0,
             mesh: None,
             face_stats: Vec::new(),
+            face_triangulations: Vec::new(),
         };
         m.root.set_shape(shape);
         let _ = m.perform();
@@ -183,6 +194,15 @@ impl IncrementalMesh {
     /// Per-face vertex/triangle counts from the last successful `perform`.
     pub fn face_stats(&self) -> &[FaceMeshStat] {
         &self.face_stats
+    }
+
+    /// Per-face triangulation from the last successful `perform`, in
+    /// `MeshModel::face` order.
+    ///
+    /// Same store as OCCT's `Poly_Triangulation` on the face: 3D nodes, the
+    /// aligned UV nodes and 0-based index triples, per face.
+    pub fn face_triangulations(&self) -> &[FaceTriangulation] {
+        &self.face_triangulations
     }
 
     /// Performs meshing of the shape.
@@ -246,8 +266,10 @@ impl IncrementalMesh {
         let mut vertices: Vec<GpPnt> = Vec::new();
         let mut triangles: Vec<Triangle> = Vec::new();
         self.face_stats.clear();
+        self.face_triangulations.clear();
 
         for ft in self.triangulate_model_faces(model)? {
+            self.face_triangulations.push(ft.clone());
             let ty = model
                 .face(ft.face_index)
                 .ok()
@@ -358,7 +380,13 @@ impl IncrementalMesh {
     /// (`BRepMesh_DelaunayNodeInsertionMeshAlgo.hxx:65-69` when
     /// `IsPreProcessSurfaceNodes()` is true, `:94-100` otherwise). Only the base
     /// splitter yields no nodes (`range_splitter/stitching.rs:60-62`, OCCT's null list).
-    pub(super) fn triangulate_model_faces(&self, model: &mut MeshModel) -> Result<Vec<FaceTriangulation>, String> {
+    /// Runs every stage `IMeshTools_Context` executes **before**
+    /// `DiscretizeFaces`: `BuildModel` is the caller's `ModelBuilder` step,
+    /// then `DiscretizeEdges` (`IMeshTools_Context.hxx:53`), `HealModel`
+    /// (`:69`) and `PreProcessModel` (`:85`). Kept separate so the boundary /
+    /// grain state can be inspected exactly as OCCT leaves it before faces are
+    /// triangulated.
+    pub(super) fn prepare_model_boundaries(&self, model: &mut MeshModel) -> Result<(), String> {
         // EdgeDiscret step (OCCT BRepMesh_EdgeDiscret): populate every edge
         // pcurve from the analytic MakePCurveOnFace (`make_pcurve_full`).
         self.discretize_pcurves(model, self.parameters.min_size)?;
@@ -383,6 +411,31 @@ impl IncrementalMesh {
         // seam-edge amplification + triangulation-consistency (no-ops on a fresh
         // model) before the faces are triangulated.
         ModelPreProcessor::perform(model, &self.parameters);
+        Ok(())
+    }
+
+    /// Diagnostic entry point mirroring the public stage API of
+    /// `IMeshTools_Context` (`IMeshTools_Context.hxx:44` `BuildModel`, `:53`
+    /// `DiscretizeEdges`, `:69` `HealModel`, `:85` `PreProcessModel`): returns
+    /// the discrete model exactly as it stands before `DiscretizeFaces`
+    /// (`:99`), so a caller can dump boundary / grain state without meshing.
+    pub fn build_boundary_model(
+        shape: &TopoShape,
+        parameters: &MeshParameters,
+    ) -> Result<MeshModel, String> {
+        let mut params = parameters.clone();
+        init_parameters(&mut params)?;
+        let mut model = ModelBuilder::build_model(shape, &params)?;
+        let driver = IncrementalMesh {
+            parameters: params,
+            ..IncrementalMesh::new()
+        };
+        driver.prepare_model_boundaries(&mut model)?;
+        Ok(model)
+    }
+
+    pub(super) fn triangulate_model_faces(&self, model: &mut MeshModel) -> Result<Vec<FaceTriangulation>, String> {
+        self.prepare_model_boundaries(model)?;
 
         // `BRepMesh_FaceDiscret::process` / `BRepMesh_BaseMeshAlgo::Perform`
         // catch `Standard_Failure` per face. OCCT has **no** failure-ratio rule:
@@ -945,7 +998,7 @@ impl IncrementalMesh {
     ) -> Result<(), String> {
         // Collect the pcurve jobs first (an immutable pass), then populate
         // (a mutable pass) so `model` is never borrowed twice at once.
-        let mut jobs: Vec<(usize, usize, Edge, Face, f64, f64)> = Vec::new();
+        let mut jobs: Vec<(usize, usize, Edge, Face, usize, f64, f64)> = Vec::new();
         for i in 0..model.edges_nb() {
             let edge = model.edge(i)?;
             // The pcurve is a property of the (edge, face) pair in the edge's
@@ -965,14 +1018,14 @@ impl IncrementalMesh {
                 let orientation = edge.pcurve(p)?.orientation();
                 let topo_face = model.face(face_index)?.face().clone();
                 let oriented_edge = Edge(edge.edge().0.oriented(orientation));
-                jobs.push((i, p, oriented_edge, topo_face, a, b));
+                jobs.push((i, p, oriented_edge, topo_face, face_index, a, b));
             }
         }
 
         // Tessellate each edge's 3D curve once (cached), then reuse its parameter
         // sequence for every pcurve of that edge.
         let mut edge_params: HashMap<usize, Vec<f64>> = HashMap::new();
-        for (edge_index, pcurve_index, topo_edge, topo_face, a, b) in jobs {
+        for (edge_index, pcurve_index, topo_edge, topo_face, pc_face, a, b) in jobs {
             let params = match edge_params.get(&edge_index) {
                 Some(p) => p.clone(),
                 None => {
@@ -1240,6 +1293,57 @@ impl IncrementalMesh {
                     a1.y()
                 );
             }
+            // TEMP EINFO: edge/pcurve provenance for the determinism hunt.
+            if let Ok(spec) = std::env::var("EINFO") {
+                let wanted: Vec<usize> = spec
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<usize>().ok())
+                    .collect();
+                let all = spec.trim().eq_ignore_ascii_case("ALL")
+                    || spec
+                        .split(',')
+                        .any(|s| s.trim().eq_ignore_ascii_case("ALL"));
+                if all || wanted.contains(&edge_index) {
+                    let reg = crate::tgeometry::GeometryRegistry::global();
+                    let face_key = crate::tgeometry::GeometryRegistry::shape_key(&topo_face.0);
+                    let (ea, eb) = reg.edge_parameters(&topo_edge.0);
+                    let c3 = reg.edge_curve(&topo_edge.0);
+                    let c3kind = match c3.as_ref() {
+                        None => "none",
+                        Some(c) if c.is_line() => "line",
+                        Some(c) if c.gp_circ().is_some() => "circle",
+                        Some(c) if c.nurbs_degree().is_some() => "bspline",
+                        Some(_) => "other",
+                    };
+                    let (c3f, c3l) = c3
+                        .as_ref()
+                        .map(|c| (c.first_parameter(), c.last_parameter()))
+                        .unwrap_or((f64::NAN, f64::NAN));
+                    let nstored = reg.edge_pcurves(&topo_edge.0, face_key).len();
+                    let crange = reg.pcurve_range(&topo_edge.0, face_key);
+                    let pckind = if pc.is_geom2d_line() {
+                        "line2d"
+                    } else if pc.is_bspline2d() {
+                        "bspline2d"
+                    } else {
+                        "other2d"
+                    };
+                    eprintln!(
+                        "EINFO f={pc_face} e={edge_index} pc={pcurve_index} ea={ea:.17e} eb={eb:.17e} c3f={c3f:.17e} c3l={c3l:.17e} pf={pf:.17e} pl={pl:.17e} pcf={:.17e} pcl={:.17e} nstored={nstored} crange={crange:?} c3={c3kind} pc2={pckind} deg={:?} skind={:?} uper={} vper={} urange={:?} vrange={:?} nparam={} t0={:.17e} t1={:.17e}",
+                        pc.first_parameter(),
+                        pc.last_parameter(),
+                        pc.bspline_degree(),
+                        crate::pcurve_full::classify_surface_kind(surface.as_ref()),
+                        surface.is_u_periodic(),
+                        surface.is_v_periodic(),
+                        surface.u_range(),
+                        surface.v_range(),
+                        params.len(),
+                        params.first().copied().unwrap_or(f64::NAN),
+                        params.last().copied().unwrap_or(f64::NAN),
+                    );
+                }
+            }
             let mut provider = if same_param {
                 EdgeParameterProvider::new(pf, pl)
             } else {
@@ -1262,7 +1366,7 @@ impl IncrementalMesh {
                     let p = pcurve.get_point(k)?;
                     let t = pcurve.get_parameter(k)?;
                     eprintln!(
-                        "PCW e={edge_index} pc={pcurve_index} k={k} u={:.17e} v={:.17e} t={:.17e}",
+                        "PCW f={pc_face} e={edge_index} pc={pcurve_index} k={k} u={:.17e} v={:.17e} t={:.17e}",
                         p.x(),                        p.y(),
                         t
                     );

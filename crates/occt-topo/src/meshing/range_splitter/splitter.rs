@@ -110,8 +110,17 @@ impl DefaultRangeSplitter {
         let mut p11 = s.d0(u0, v0);
         let mut p21 = s.d0(u0, v_ave);
         let mut p31 = s.d0(u0, v1);
+        // TEMP T-133 (LENSDBG): sample dump for `occt_probe --lens`, so the two
+        // `computeLengthU/V` replays can be diffed point by point.
+        let lens_dbg = std::env::var("LENSDBG").is_ok();
+        if lens_dbg {
+            eprintln!(
+                "LENS U k=0 ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e})",
+                p11.x(), p11.y(), p11.z(), p21.x(), p21.y(), p21.z(), p31.x(), p31.y(), p31.z()
+            );
+        }
         let mut u = u0 + du;
-        for _ in 1..=20 {
+        for k in 1..=20 {
             let p12 = s.d0(u, v0);
             let p22 = s.d0(u, v_ave);
             let p32 = s.d0(u, v1);
@@ -119,7 +128,16 @@ impl DefaultRangeSplitter {
             p11 = p12;
             p21 = p22;
             p31 = p32;
+            if lens_dbg {
+                eprintln!(
+                    "LENS U k={k} ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e})",
+                    p11.x(), p11.y(), p11.z(), p21.x(), p21.y(), p21.z(), p31.x(), p31.y(), p31.z()
+                );
+            }
             u += du;
+        }
+        if lens_dbg {
+            eprintln!("LENS U longu={:.17e}", long / 3.0);
         }
         long / 3.0
     }
@@ -135,8 +153,15 @@ impl DefaultRangeSplitter {
         let mut p11 = s.d0(u0, v0);
         let mut p21 = s.d0(u_ave, v0);
         let mut p31 = s.d0(u1, v0);
+        let lens_dbg = std::env::var("LENSDBG").is_ok();
+        if lens_dbg {
+            eprintln!(
+                "LENS V k=0 ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e})",
+                p11.x(), p11.y(), p11.z(), p21.x(), p21.y(), p21.z(), p31.x(), p31.y(), p31.z()
+            );
+        }
         let mut v = v0 + dv;
-        for _ in 1..=20 {
+        for k in 1..=20 {
             let p12 = s.d0(u0, v);
             let p22 = s.d0(u_ave, v);
             let p32 = s.d0(u1, v);
@@ -144,7 +169,16 @@ impl DefaultRangeSplitter {
             p11 = p12;
             p21 = p22;
             p31 = p32;
+            if lens_dbg {
+                eprintln!(
+                    "LENS V k={k} ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e})",
+                    p11.x(), p11.y(), p11.z(), p21.x(), p21.y(), p21.z(), p31.x(), p31.y(), p31.z()
+                );
+            }
             v += dv;
+        }
+        if lens_dbg {
+            eprintln!("LENS V longv={:.17e}", long / 3.0);
         }
         long / 3.0
     }
@@ -621,6 +655,57 @@ impl RangeSplitter for TorusRangeSplitter {
                     }
                 }
             }
+        }
+        // TEMP diagnostic (TORSDBG): the same fields as the probe's `ZZTORDBG`
+        // line (`specs/occt_probe/_dbg/ZZ_TorusRangeSplitter.cxx`), plus the
+        // face's 3D bbox so the two runs can be paired without relying on the
+        // face index (the port and `IMeshTools_ShapeExplorer` order faces
+        // differently).
+        if std::env::var("TORSDBG").is_ok() {
+            let bbox = self
+                .dface()
+                .map(|f| crate::brep_bnd_lib::shape_bnd_box(&f.face().0))
+                .map(|b| {
+                    let (mn, mx) = (b.corner_min(), b.corner_max());
+                    format!(
+                        "({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
+                        mn.x(),
+                        mn.y(),
+                        mn.z(),
+                        mx.x(),
+                        mx.y(),
+                        mx.z()
+                    )
+                })
+                .unwrap_or_else(|| "none".to_string());
+            let mut up: Vec<f64> = self.inner.u_params.iter().copied().collect();
+            let mut vp: Vec<f64> = self.inner.v_params.iter().copied().collect();
+            up.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            vp.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            eprintln!(
+                "TORSDBG bbox={bbox} R={R:.15} r={r:.15} defl={:.15} ang={:.15e} ru=[{:.6},{:.6}] \
+rv=[{:.6},{:.6}] diff_u={diff_u:.15} diff_v={diff_v:.15} nb_u={nb_u} nb_v={nb_v} du={du:.15} \
+dv={dv:.15} old_dv={old_dv:.15} nup={} nvp={} nu={} nv={} nodes={}",
+                deflection,
+                params.angle,
+                range_u.0,
+                range_u.1,
+                range_v.0,
+                range_v.1,
+                self.inner.u_params.len(),
+                self.inner.v_params.len(),
+                param_u.len(),
+                param_v.len(),
+                nodes.len(),
+            );
+            let list = |v: &[f64]| {
+                v.iter()
+                    .map(|x| format!("{x:.15}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            eprintln!("TORSDBGU bbox={bbox} n={} u={}", up.len(), list(&up));
+            eprintln!("TORSDBGV bbox={bbox} n={} v={}", vp.len(), list(&vp));
         }
         Some(nodes)
     }

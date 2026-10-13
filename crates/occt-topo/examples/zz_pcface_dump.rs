@@ -138,8 +138,10 @@ fn main() {
             surf.is_v_closed() as u8,
         ));
         let mut ei = 0usize;
-        for w in wires_of_face(&face) {
-            for e in edges_of_wire(&w) {
+        for (wi, w) in wires_of_face(&face).iter().enumerate() {
+            let we = edges_of_wire(w);
+            out.push_str(&format!("  WIRE[{wi}] edges={}\n", we.len()));
+            for e in we {
                 let edge = Edge(e.0.clone());
                 let (e3a, e3b) = BRepTool::edge_parameters(&edge);
                 let c3 = BRepTool::edge_curve(&edge);
@@ -156,13 +158,16 @@ fn main() {
                     Some((pc, f0, f1)) => {
                         let p1 = pc.d0(f0);
                         let p2 = pc.d0(f1);
+                        let pm = pc.d0(0.5 * (f0 + f1));
                         line.push_str(&format!(
-                            " pc={} pcr=[{f0:.6},{f1:.6}] p1=({:.6},{:.6}) p2=({:.6},{:.6})",
+                            " pc={} pcr=[{f0:.6},{f1:.6}] p1=({:.17e},{:.17e}) p2=({:.17e},{:.17e}) pm=({:.17e},{:.17e})",
                             c2_kind(pc.as_ref()),
                             p1.x(),
                             p1.y(),
                             p2.x(),
-                            p2.y()
+                            p2.y(),
+                            pm.x(),
+                            pm.y()
                         ));
                         if let Some((poles, _)) = pc.bspline_poles2d() {
                             line.push_str(&format!(
