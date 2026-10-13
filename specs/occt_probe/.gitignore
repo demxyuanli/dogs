@@ -12,6 +12,11 @@ wires_probe.lib
 # local OCCT-side debug build (patched ComposeShell copy)
 _dbg/
 zz_wires_probe.*
+zz_iges_obj.exe
+zz_iges_obj.obj
+zz_iges_obj.exp
+zz_iges_obj.lib
+tmp_probe_build.log
 
 ZZ_*.obj
 ZZ_*.lib
