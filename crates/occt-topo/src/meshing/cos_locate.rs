@@ -615,15 +615,17 @@ fn locate_for_surface(
     true
 }
 
-fn trim_uv(surf: &Arc<dyn Surface>, left_bot: GpPnt2d, right_top: GpPnt2d) -> Arc<dyn Surface> {
+fn trim_uv(surf: &Arc<dyn Surface>, left_bot: GpPnt2d, right_top: GpPnt2d) -> Option<Arc<dyn Surface>> {
     // `mySurface->UTrim` then `VTrim` cxx:1778-1779 / 1822-1823.
-    Arc::new(GeomRectangularTrimmedSurface::uv(
+    GeomRectangularTrimmedSurface::window(
         surf.clone(),
         left_bot.x(),
         right_top.x(),
         left_bot.y(),
         right_top.y(),
-    ))
+    )
+    .ok()
+    .map(|s| Arc::new(s) as Arc<dyn Surface>)
 }
 
 /// `Adaptor3d_CurveOnSurface::EvalFirstLastSurf` (`cxx:1736-1828`).
@@ -649,7 +651,7 @@ pub fn eval_first_last_surf(
         ok = locate_for_surface(surface.as_ref(), uv, duv, &mut left_bot, &mut right_top);
         if ok {
             compare_bounds(&mut left_bot, &mut right_top);
-            first_surf = Some(trim_uv(surface, left_bot, right_top));
+            first_surf = trim_uv(surface, left_bot, right_top).or_else(|| Some(surface.clone()));
         } else {
             first_surf = Some(surface.clone());
         }
@@ -667,7 +669,7 @@ pub fn eval_first_last_surf(
         ok = locate_for_surface(surface.as_ref(), uv, duv, &mut left_bot, &mut right_top);
         if ok {
             compare_bounds(&mut left_bot, &mut right_top);
-            last_surf = Some(trim_uv(surface, left_bot, right_top));
+            last_surf = trim_uv(surface, left_bot, right_top).or_else(|| Some(surface.clone()));
         } else {
             last_surf = Some(surface.clone());
         }

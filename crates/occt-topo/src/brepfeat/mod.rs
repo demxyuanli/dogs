@@ -25,20 +25,22 @@
 //!
 //! # Geometry strategy
 //!
-//! The analytic `GeomCylinder`/`GeomCone` surfaces report zero `d1` partials,
-//! so `wireframe::face_to_triangles` (and therefore `shape_mesh::shape_volume`
-//! and the voxel boolean's point classification) cannot mesh them. Revolved
-//! tools and the through-boss are therefore rebuilt as planar-faced (lathe)
-//! meshes so every face is a planar polygon that meshes and booleans exactly.
+//! UNPORTED workaround: `BRepFeat_*` takes the tool `TopoDS_Shape` as given,
+//! but the port's `bop_builder::boolean` (`BOPAlgo_BOP`) cannot yet combine
+//! the analytic tools the revolved/through-boss families build, so those tools
+//! are rebuilt as planar-faced (lathe) meshes where every face is a planar
+//! polygon that the boolean handles. The measured failures and their numbers
+//! are listed on [`revolve_profile_about`] and [`mesh_cylinder`]; the gap
+//! belongs to the `BOPAlgo_BOP` port (audit A5 / T-79), not to the mesher
+//! (`GeomCylinder::d1` does return the analytic partials).
 //!
 //! # Booleans
 //!
 //! Planar inputs run [`crate::bop_builder::boolean`] (`BOPAlgo_BOP`).
 //! Curved inputs (any remaining non-planar face) run the voxel boolean. Volumes
-//! are computed with [`solid_volume`], a divergence-theorem sum over each
-//! face's actual boundary wire — unlike `shape_mesh::shape_volume`, which
-//! meshes a face's UV bounding rectangle and overcounts any non-rectangular
-//! planar face.
+//! are computed with [`solid_volume`] (`BRepGProp::VolumeProperties` /
+//! `BRepGProp_Vinert`), the divergence-theorem surface integral over each face
+//! of the result.
 //!
 //! # Example
 //! ```ignore

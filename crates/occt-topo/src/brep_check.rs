@@ -6,6 +6,11 @@
 //! rather than a parallel heuristic.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+
+use occt_core::precision::PCONFUSION;
+use occt_geom::curve::Curve;
+use occt_geom2d::curve::Curve2d;
 
 use crate::abs::ShapeType;
 use crate::bop_occt_util::{explore, iter_children, shape_key};
@@ -13,24 +18,48 @@ use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::shell_check::shell_is_closed;
 use crate::shape_checks;
-use crate::topo_tools_full::{edges_of, faces_of, wires_of_face};
+use crate::tgeometry::{EdgeGeom, GeometryRegistry};
+use crate::topo_tools_full::{faces_of, wires_of_face};
 
-/// `BRepCheck_Status`.
+/// `BRepCheck_Status` (`BRepCheck_Status.hxx:20-59`), declaration order kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     NoError,
+    InvalidPointOnCurve,
+    InvalidPointOnCurveOnSurface,
+    InvalidPointOnSurface,
     No3DCurve,
+    Multiple3DCurve,
     Invalid3DCurve,
     NoCurveOnSurface,
+    InvalidCurveOnSurface,
+    InvalidCurveOnClosedSurface,
+    InvalidSameRangeFlag,
+    InvalidSameParameterFlag,
+    InvalidDegeneratedFlag,
+    FreeEdge,
+    InvalidMultiConnexity,
     InvalidRange,
     EmptyWire,
     RedundantEdge,
+    SelfIntersectingWire,
     NoSurface,
     InvalidWire,
+    RedundantWire,
+    IntersectingWires,
+    InvalidImbricationOfWires,
     EmptyShell,
+    RedundantFace,
+    InvalidImbricationOfShells,
+    UnorientableShape,
     NotClosed,
     NotConnected,
-    UnorientableShape,
+    SubshapeNotInShape,
+    BadOrientation,
+    BadOrientationOfSubshape,
+    InvalidPolygonOnTriangulation,
+    InvalidToleranceValue,
+    EnclosedRegion,
     CheckFail,
 }
 
@@ -53,22 +82,139 @@ fn vertex_check(v: &Vertex) -> Vec<Status> {
     vec![Status::NoError]
 }
 
-fn edge_check(e: &Edge) -> Vec<Status> {
-    if BRepTool::is_degenerated(e) {
-        return vec![Status::NoError];
+/// The `BRep_CurveRepresentation` `BRepCheck_Edge::Minimum` keeps in `myCref`
+/// (`BRepCheck_Edge.hxx:68`): the first representation whose curve is non-null.
+enum Cref {
+    Curve3D(Arc<dyn Curve>),
+    CurveOnSurface(Arc<dyn Curve2d>),
+}
+
+/// `Geom_Curve::IsPeriodic/Period/FirstParameter/LastParameter` with the
+/// `Geom_TrimmedCurve` unwrap of `BRepCheck_Edge::Minimum`
+/// (`BRepCheck_Edge.cxx:175-189`): on a trimmed curve the *basis* supplies the
+/// range and the period.
+///
+/// Deviation: OCCT unwraps one `Geom_TrimmedCurve` level (`BasisCurve()`, same
+/// `cxx:179-188` as the `DynamicType` test above it), while `Curve::untrimmed_basis`
+/// unwraps nested trims the way `GeomAdaptor_Curve::load` (`cxx:252-254`) does,
+/// so a doubly-trimmed curve answers the periodicity query from its innermost
+/// basis.
+fn basis_window_3d(c: &dyn Curve) -> (bool, f64, f64, f64) {
+    match c.untrimmed_basis() {
+        Some((basis, _, _)) => (
+            basis.is_periodic(),
+            basis.period(),
+            basis.first_parameter(),
+            basis.last_parameter(),
+        ),
+        None => (c.is_periodic(), c.period(), c.first_parameter(), c.last_parameter()),
     }
-    match BRepTool::edge_curve(e) {
-        None => vec![Status::No3DCurve],
-        Some(c) => {
-            let (a, b) = BRepTool::edge_parameters(e);
-            if !a.is_finite() || !b.is_finite() || b < a {
-                vec![Status::InvalidRange]
-            } else {
-                let _ = c.d0(0.5 * (a + b));
-                vec![Status::NoError]
+}
+
+/// 2D counterpart of [`basis_window_3d`] (`BRepCheck_Edge.cxx:219-232`):
+/// `Geom2d_TrimmedCurve::BasisCurve()` supplies the range and the period.
+fn basis_window_2d(c: &dyn Curve2d) -> (bool, f64, f64, f64) {
+    match c.trimmed_basis() {
+        Some(basis) => (
+            basis.is_periodic(),
+            basis.period(),
+            basis.first_parameter(),
+            basis.last_parameter(),
+        ),
+        None => (c.is_periodic(), c.period(), c.first_parameter(), c.last_parameter()),
+    }
+}
+
+/// The first `BRep_CurveOnSurface` representation of an edge and its
+/// `BRep_GCurve::First/Last` (`BRepCheck_Edge.cxx:132-141`): a seam edge's
+/// forward pcurve, taken in `BRep_TEdge::myCurves` order.
+fn first_curve_on_surface(g: &EdgeGeom) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
+    let (key, curves) = g.pcurves.iter().next()?;
+    let pc = curves.first()?.clone();
+    let (f, l) = g
+        .pcurve_ranges
+        .get(key)
+        .copied()
+        .unwrap_or((pc.first_parameter(), pc.last_parameter()));
+    Some((pc, f, l))
+}
+
+/// `BRepCheck_Edge::Minimum` (`BRepCheck_Edge.cxx:74-258`).
+///
+/// `myCref` is `BRep_Curve3D` when the edge has a 3D curve, otherwise the first
+/// `BRep_CurveOnSurface` (the pcurve-only state that
+/// `BRep_Builder::Degenerated(E, true)` installs, `BRep_Builder.cxx:1081-1085`,
+/// and that this port models as `EdgeGeomCore::curve3d_null`).
+///
+/// UNPORTED, part of `Minimum`:
+/// * the per-representation `TopLoc_Location` (`cxx:163-171`): this port's edge
+///   representations carry no location, so `TransformedParameter` is not
+///   applied to the range before the basis comparison; and
+/// * `myHCurve` (the `GeomAdaptor_Curve` / `Adaptor3d_CurveOnSurface` kept for
+///   `InContext`): `InContext` itself is not ported here.
+fn edge_check(e: &Edge) -> Vec<Status> {
+    let reg = GeometryRegistry::global();
+    let geom = reg.edge_geom(e);
+    let mut lst: Vec<Status> = Vec::new();
+
+    // `TE->Degenerated/SameParameter/SameRange` (`cxx:91-93`).
+    let degenerated = reg.is_degenerated_edge(e);
+    let same_parameter = reg.same_parameter(e);
+    let same_range = reg.same_range(e);
+    if !same_range && same_parameter {
+        // `cxx:94-97`.
+        lst.push(Status::InvalidSameParameterFlag);
+    }
+
+    // Existence and uniqueness of a 3D representation (`cxx:100-128`).
+    // `EdgeGeomCore::curve` is the single `BRep_Curve3D` this model can hold, so
+    // `exist` is "the representation is present" (a present-but-null curve
+    // counts, as `UpdateCurves` keeps the representation, `BRep_Builder.cxx:85-92`)
+    // and `unique` is always true: `Multiple3DCurve` (`cxx:126-128`) is
+    // unreachable, not skipped.
+    let exists = geom.is_some();
+    if !exists {
+        lst.push(Status::No3DCurve);
+    }
+
+    // `myCref` (`cxx:100-141`); `GeometryRegistry::edge_curve` answers what
+    // `BRep_Tool::Curve` answers, i.e. null on a null-curve representation.
+    let mut cref = reg.edge_curve(e).map(Cref::Curve3D);
+    let mut range = reg.edge_parameters(e);
+    if cref.is_none() && !degenerated {
+        if let Some((pc, f, l)) = geom.as_ref().and_then(first_curve_on_surface) {
+            cref = Some(Cref::CurveOnSurface(pc));
+            range = (f, l);
+        }
+    } else if cref.is_some() && degenerated {
+        // `cxx:144-147`.
+        lst.push(Status::InvalidDegeneratedFlag);
+    }
+
+    if let Some(c) = cref {
+        let (first, last) = range;
+        if last <= first {
+            // `cxx:157-160`.
+            lst.push(Status::InvalidRange);
+        } else {
+            let (is_periodic, period, f, l) = match &c {
+                Cref::Curve3D(c3d) => basis_window_3d(c3d.as_ref()),
+                Cref::CurveOnSurface(pc) => basis_window_2d(pc.as_ref()),
+            };
+            if is_periodic && (last - first > period + PCONFUSION) {
+                // `cxx:190-194` / `cxx:233-237`.
+                lst.push(Status::InvalidRange);
+            } else if !is_periodic && (first < f - PCONFUSION || last > l + PCONFUSION) {
+                // `cxx:195-199` / `cxx:238-242`.
+                lst.push(Status::InvalidRange);
             }
         }
     }
+
+    if lst.is_empty() {
+        lst.push(Status::NoError);
+    }
+    lst
 }
 
 fn wire_check(w: &Wire) -> Vec<Status> {
@@ -233,19 +379,5 @@ pub fn check_edge(e: &Edge) -> CheckResult {
     CheckResult {
         shape: e.0.clone(),
         statuses: edge_check(e),
-    }
-}
-
-/// Unused: keep a status that maps to redundant edges when a wire repeats an edge.
-#[allow(dead_code)]
-fn wire_redundant(w: &Wire) -> Option<Status> {
-    let mut seen = HashMap::new();
-    for e in edges_of(&w.0) {
-        *seen.entry(shape_key(&e.0)).or_insert(0) += 1;
-    }
-    if seen.values().any(|&n| n > 2) {
-        Some(Status::RedundantEdge)
-    } else {
-        None
     }
 }

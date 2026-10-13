@@ -528,6 +528,38 @@ pub fn in_period(the_u: f64, the_u_first: f64, the_u_last: f64) -> f64 {
     the_u_first.max(the_u + a_period * ((the_u_first - the_u) / a_period).ceil())
 }
 
+/// `ElCLib::AdjustPeriodic(UFirst, ULast, Preci, U1, U2)` (`ElCLib.cxx:115-148`).
+///
+/// Moves `[U1, U2]` into the period `[UFirst, ULast]`: `U1` is folded into
+/// `[UFirst, UFirst + period)`, and if that leaves fewer than `Preci` units
+/// before `ULast` it drops one more period; `U2` is then folded relative to the
+/// adjusted `U1`, and if the resulting span is shorter than `Preci` it is
+/// extended by one period. Dimension-independent, so the 2D entry points reuse
+/// it (see `clib2d::adjust_periodic`).
+pub fn adjust_periodic(u_first: f64, u_last: f64, preci: f64, u1: &mut f64, u2: &mut f64) {
+    if crate::precision::Precision::is_infinite(u_first)
+        || crate::precision::Precision::is_infinite(u_last)
+    {
+        *u1 = u_first;
+        *u2 = u_last;
+        return;
+    }
+    let a_period = u_last - u_first;
+    if a_period < crate::precision::epsilon(u_last) {
+        *u1 = u_first;
+        *u2 = u_last;
+        return;
+    }
+    *u1 -= ((*u1 - u_first) / a_period).floor() * a_period;
+    if u_last - *u1 < preci {
+        *u1 -= a_period;
+    }
+    *u2 -= ((*u2 - *u1) / a_period).floor() * a_period;
+    if *u2 - *u1 < preci {
+        *u2 += a_period;
+    }
+}
+
 /// `ElCLib::Parameter(gp_Elips, gp_Pnt)` (`ElCLib.lxx:335-339`).
 pub fn parameter_elips(e: &GpElips, p: &GpPnt) -> f64 {
     ellipse_parameter(&e.pos, e.major_radius, e.minor_radius, p)

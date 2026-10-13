@@ -61,13 +61,10 @@ pub(in crate::iges_read) fn transfer_tabulated_cylinder(
     let dir = GpDir::from_vec(&extrusion)
         .map_err(|_| "IGES 122 extrusion direction is null".to_string())?;
     let swept = Arc::new(GeomSurfaceOfLinearExtrusion::new(basis, dir));
-    let surf: Arc<dyn Surface> = Arc::new(GeomRectangularTrimmedSurface::uv(
-        swept,
-        span.first,
-        span.last,
-        0.0,
-        extrusion.magnitude(),
-    ));
+    let surf: Arc<dyn Surface> = Arc::new(
+        GeomRectangularTrimmedSurface::uv(swept, span.first, span.last, 0.0, extrusion.magnitude())
+            .map_err(|e| format!("IGES 122: {e}"))?,
+    );
     let mut face = TopoBuilder::new().make_face(surf, &[]);
     crate::tgeometry::GeometryRegistry::global().set_face_tolerance(&face.0, CONFUSION);
     let (_u0, _u1, v0, v1) = BRepTool::uv_bounds(&face);

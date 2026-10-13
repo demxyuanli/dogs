@@ -6,7 +6,7 @@
 //! UNPORTED.
 
 use crate::curve::Curve;
-use crate::gcpnts::{abscissa_point_from_guess, curve_length_range};
+use crate::gcpnts::{abscissa_point_from_guess, length};
 use crate::surface::Surface;
 use occt_core::kernel::geomabs::Shape;
 use occt_core::precision::CONFUSION;
@@ -106,7 +106,7 @@ impl CurvlinFunc {
             prev_u: first_u1,
         };
         s.init_tables();
-        s.length = curve_length_range(s.cos1.as_ref(), s.first_u1, s.last_u1, s.tol_len);
+        s.length = length(s.cos1.as_ref(), s.first_u1, s.last_u1, Some(s.tol_len));
         s
     }
 
@@ -132,7 +132,7 @@ impl CurvlinFunc {
                 let prev_u = *ui.last().unwrap();
                 let next_u = prev_u + step;
                 let prev_s = *si.last().unwrap();
-                let seg = curve_length_range(self.cos1.as_ref(), prev_u, next_u, self.tol_len);
+                let seg = length(self.cos1.as_ref(), prev_u, next_u, Some(self.tol_len));
                 ui.push(next_u);
                 si.push(prev_s + seg);
             }
@@ -176,7 +176,7 @@ impl CurvlinFunc {
         let origin = self.cos1.first_parameter();
         raw.iter()
             .map(|&u| {
-                let arc = curve_length_range(self.cos1.as_ref(), origin, u, self.tol_len);
+                let arc = length(self.cos1.as_ref(), origin, u, Some(self.tol_len));
                 self.first_s + arc / self.length
             })
             .collect()
@@ -211,7 +211,7 @@ impl CurvlinFunc {
         self.first_s = first;
         self.last_s = last;
         self.init_tables();
-        self.length = curve_length_range(self.cos1.as_ref(), self.first_u1, self.last_u1, self.tol_len);
+        self.length = length(self.cos1.as_ref(), self.first_u1, self.last_u1, Some(self.tol_len));
     }
 
     /// `GetUParameter` case 2 (`cxx:491-572`).

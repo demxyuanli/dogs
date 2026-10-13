@@ -1201,13 +1201,16 @@ impl ShapeFixFace {
         }
 
         // cxx:2236-2261: fictive grid + ComposeShell inserts the seam.
-        let rts: Arc<dyn Surface> = Arc::new(GeomRectangularTrimmedSurface::uv(
-            surf.clone(),
-            uf2,
-            uf2 + u_range,
-            vf2,
-            vf2 + v_range,
-        ));
+        let rts: Arc<dyn Surface> = Arc::new(
+            GeomRectangularTrimmedSurface::uv(
+                surf.clone(),
+                uf2,
+                uf2 + u_range,
+                vf2,
+                vf2 + v_range,
+            )
+            .unwrap_or_else(|e| panic!("{e}")),
+        );
         let grid = CompositeSurface::with_grid(vec![vec![rts.clone()]], Parametrisation::Natural);
         // cxx:2246-2250: re-add the non-manifold children.
         for s in &non_manifold {

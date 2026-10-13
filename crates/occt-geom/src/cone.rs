@@ -73,6 +73,22 @@ impl Surface for GeomCone {
         Some(Arc::new(GeomCone::new(pos)))
     }
 
+    /// `Geom_ConicalSurface::VReversed` (`Geom_Surface.cxx:42-48`) = `Copy()` +
+    /// `VReverse` (`gp_Cone.hxx:119` -> `ZReverse`).
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos.clone();
+        pos.v_reverse();
+        Some(Arc::new(GeomCone::new(pos)))
+    }
+
+    /// `Geom_ConicalSurface::UReversedParameter`
+    /// (`Geom_ConicalSurface.cxx:90-93`): `2*pi - U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { 2.0 * std::f64::consts::PI - u }
+
+    /// `Geom_ConicalSurface::VReversedParameter`
+    /// (`Geom_ConicalSurface.cxx:97-100`): `-V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 { -v }
+
     /// `Geom_ConicalSurface::UIso` (`Geom_ConicalSurface.cxx:337-341`):
     /// `Geom_Line(ElSLib::ConeUIso(pos, radius, semiAngle, U))`.
     /// `ElSLib::ConeUIso` (`ElSLib.cxx:1727-1733`) is the generatrix through

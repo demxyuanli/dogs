@@ -27,6 +27,14 @@
 //! non-rational Bezier/BSpline), `GCPnts_Parametrized` (`:91-95`, the iterative
 //! root search) and `GCPnts_AbsComposite` (`:96-158`, [`compute_abs_composite`]).
 //!
+//! **`GCPnts_AbscissaPoint::AdvCompute` (`:166-295`) is ported too**: the same
+//! three arms with the tolerance-aware integration
+//! (`CPnts_AbscissaPoint::Length(..., Tol)`), the `GCPnts_AbsComposite` arm
+//! including its `anIndex == 0` preamble (`:202-229`) and the `aSign`-shifted,
+//! first/last-parameter-clamped tail (`:273-293`) in
+//! [`compute_abs_composite_adv`]. `theEPSILON` there is the caller's `theTol`
+//! (`:486`, `:540`), not `Resolution(Precision::Confusion())`.
+//!
 //! T-96 (2026-09-30) checked the earlier claim that these arms "cannot be
 //! expressed faithfully" because this port's `GeomTrimmedCurve` remaps a trim
 //! onto `[0, 1]` while OCCT's `GeomAdaptor_Curve` unwraps to the basis. **The
@@ -82,10 +90,28 @@ fn compute_type(c: &dyn Curve) -> (AbscissaType, f64) {
         return (AbscissaType::AbsComposite, 1.0);
     }
     if c.is_line() {
-        return (AbscissaType::LengthParametrized, 1.0);
+        // `cxx:36`: `aRatio = 1.0` on a `Geom_Line`, whose parameter *is* the
+        // arc length. Translation boundary: the port's trimmed views
+        // (`GeomTrimmedCurve`) reparametrise onto `[0, 1]` with the chain rule
+        // already baked into `d1`, whereas OCCT's `GeomAdaptor_Curve` keeps
+        // the basis parameter (`GeomAdaptor_Curve.cxx:252-254`) so its `|d1|`
+        // is exactly `1.0`. Taking the view's constant speed `|d1|` reproduces
+        // `1.0` on the adaptor view and stays correct under the `[0, 1]`
+        // reparametrisation.
+        return (
+            AbscissaType::LengthParametrized,
+            c.d1(c.first_parameter()).1.magnitude(),
+        );
     }
-    if let Some(r) = c.circle_radius() {
-        return (AbscissaType::LengthParametrized, r);
+    if c.circle_radius().is_some() {
+        // `cxx:40`: `aRatio = R` on the adaptor view (angle parameter) — the
+        // same view-vs-adaptor equivalence as the line arm above: the circle's
+        // speed is constant, so `|d1(FirstParameter)|` is `R` there and
+        // `R * span` on a `[0, 1]`-reparametrised view.
+        return (
+            AbscissaType::LengthParametrized,
+            c.d1(c.first_parameter()).1.magnitude(),
+        );
     }
     // `GeomAbs_BezierCurve` (`cxx:43-51`): a two-pole non-rational Bezier is
     // a straight segment. This port's `GeomBezierCurve` carries no weights
@@ -241,11 +267,64 @@ pub fn curve_length_range(c: &dyn Curve, a: f64, b: f64, tol: f64) -> f64 {
     gauss_single_tol(&speed_fn, a, b, order, tol).abs()
 }
 
-/// Total arc length of `c` over its parameter range.
+/// `GCPnts_AbscissaPoint::length` (`GCPnts_AbscissaPoint.cxx:371-423`), the
+/// type dispatch all six public `Length` overloads (`:305-366`) forward to.
+///
+/// * `GCPnts_LengthParametrized` (`:381-383`): the parameter already *is* an
+///   arc length up to the constant `aRatio` `computeType` returned (line,
+///   circle, two-pole Bezier/BSpline), so the answer is `|U2 - U1| * aRatio`.
+/// * `GCPnts_Parametrized` (`:384-387`): `theTol != nullptr` picks the
+///   tolerance-aware `CPnts_AbscissaPoint::Length(C, U1, U2, Tol)`, otherwise
+///   the fixed-order `CPnts_AbscissaPoint::Length(C, U1, U2)`.
+/// * `GCPnts_AbsComposite` (`:388-420`): sum `CPnts_AbscissaPoint::Length`
+///   over the `GeomAbs_CN` intervals, using only the part of each interval
+///   that overlaps `[min(U1, U2), max(U1, U2)]`.
+///
+/// `tol == None` is OCCT's `nullptr` (`:337`, `:345`), i.e. the three-argument
+/// `Length` overloads; `Some(t)` is the four-argument form.
+pub fn length(c: &dyn Curve, u1: f64, u2: f64, tol: Option<f64>) -> f64 {
+    match compute_type(c) {
+        (AbscissaType::LengthParametrized, ratio) => (u2 - u1).abs() * ratio,
+        (AbscissaType::Parametrized, _) => match tol {
+            Some(t) => curve_length_range(c, u1, u2, t),
+            None => cpnts_length(c, u1, u2),
+        },
+        (AbscissaType::AbsComposite, _) => {
+            let nb = c.nb_intervals(GEOM_ABS_CN);
+            let ti = c.parameter_intervals(GEOM_ABS_CN);
+            if nb < 1 || ti.len() < nb as usize + 1 {
+                return 0.0;
+            }
+            let uu1 = u1.min(u2);
+            let uu2 = u1.max(u2);
+            let mut total = 0.0;
+            for index in 0..nb as usize {
+                // `aTI(anIndex) > aUU2` / `aTI(anIndex + 1) < aUU1`
+                // (`cxx:398`, `:402`), 1-based there, 0-based here.
+                if ti[index] > uu2 {
+                    break;
+                }
+                if ti[index + 1] < uu1 {
+                    continue;
+                }
+                let lo = ti[index].max(uu1);
+                let hi = ti[index + 1].min(uu2);
+                total += match tol {
+                    Some(t) => curve_length_range(c, lo, hi, t),
+                    None => cpnts_length(c, lo, hi),
+                };
+            }
+            total
+        }
+    }
+}
+
+/// `GCPnts_AbscissaPoint::Length(C)` (`GCPnts_AbscissaPoint.cxx:305-308`):
+/// the dispatch over the curve's own first/last parameter, no tolerance.
 pub fn curve_length(c: &dyn Curve) -> f64 {
     let (a, b) = (c.first_parameter(), c.last_parameter());
     if a.is_finite() && b.is_finite() {
-        curve_length_range(c, a, b, CONFUSION * 0.1)
+        length(c, a, b, None)
     } else {
         f64::INFINITY
     }
@@ -258,6 +337,116 @@ pub fn curve_length(c: &dyn Curve) -> f64 {
 fn cpnts_length(c: &dyn Curve, u1: f64, u2: f64) -> f64 {
     let f = |u: f64| speed(c, u);
     gauss_single(&f, u1, u2, gauss_order(c)).abs()
+}
+
+/// `CPnts_AbscissaPoint::Length(C, U1, U2, Tol)` (`CPnts_AbscissaPoint.cxx:168-184`):
+/// the same integral with the adaptive
+/// `math_GaussSingleIntegration(..., Tol)` rule. `AdvCompute` uses this
+/// overload for every step of the `GCPnts_AbsComposite` walk
+/// (`GCPnts_AbscissaPoint.cxx:206`, `:232`).
+fn cpnts_length_tol(c: &dyn Curve, u1: f64, u2: f64, tol: f64) -> f64 {
+    let f = |u: f64| speed(c, u);
+    gauss_single_tol(&f, u1, u2, gauss_order(c), tol).abs()
+}
+
+/// `GCPnts_AbsComposite` on the `AdvCompute` path
+/// (`GCPnts_AbscissaPoint.cxx:187-295`), the tolerance-aware twin of
+/// [`compute_abs_composite`]. Differences from the plain `Compute` arm
+/// (`:96-158`), all per the `.cxx`:
+///
+/// * every `CPnts_AbscissaPoint::Length` step takes `theEPSILON` (`:206`, `:232`);
+/// * the `anIndex == 0 && aDirection > 0` preamble (`:202-229`) exists only here;
+/// * the root search uses `Init(theC, U1, U2, theEPSILON)` + `AdvPerform`
+///   (`:219-220`, `:254-255`, `:291-292`);
+/// * the zero-length test inside the loop is `Precision::PConfusion()`
+///   (`:232`) while the preamble's is `theEPSILON` (`:206`);
+/// * the "push a little bit outside the limits" tail (`:273-293`) offsets both
+///   the guess and the bracket by `aSign` and clamps them to the first/last
+///   parameter for a non-periodic curve.
+fn compute_abs_composite_adv(
+    c: &dyn Curve,
+    abscissa: f64,
+    u0: f64,
+    ui: f64,
+    tol: f64,
+) -> Option<f64> {
+    let nb = c.nb_intervals(GEOM_ABS_CN);
+    let ti = c.parameter_intervals(GEOM_ABS_CN);
+    if nb < 1 || ti.len() < 2 {
+        return None;
+    }
+    // `NCollection_Array1<double> aTI(1, aNbIntervals + 1)` is 1-based.
+    let at = |i: i32| ti[(i - 1) as usize];
+    let mut abscis = abscissa;
+    let mut u_start = u0;
+    let mut ui = ui;
+    let mut sign = 1.0;
+    let mut index = occt_core::bspl::knots::hunt(&ti, u0) as i32 + 1;
+    let mut direction = 1i32;
+    if abscis < 0.0 {
+        direction = 0;
+        abscis = -abscis;
+        sign = -1.0;
+    }
+
+    // `cxx:202-229`: `Hunt` returned 0 (the parameter is below the first
+    // knot), so the first step is bracketed by `aTI(1)`.
+    if index == 0 && direction > 0 {
+        let l = cpnts_length_tol(c, u_start, at(index + direction), tol);
+        if (l - abscis).abs() <= tol {
+            return Some(at(index + direction));
+        }
+        if l > abscis {
+            if ui > at(index + 1) {
+                ui = u_start + (abscis / l) * (at(index + 1) - u_start);
+            }
+            let mut computer = CpntsAbscissaPoint::new(c);
+            computer.init_range_tol(c, u_start, at(index + 1), tol);
+            computer.adv_perform(sign * abscis, u_start, ui, tol);
+            return if computer.is_done() { Some(computer.parameter()) } else { None };
+        }
+        u_start = at(index + direction);
+        abscis -= l;
+        index += 1;
+    }
+
+    while index >= 1 && index <= nb {
+        let l = cpnts_length_tol(c, u_start, at(index + direction), tol);
+        if (l - abscis).abs() <= PCONFUSION {
+            return Some(at(index + direction));
+        }
+        if l > abscis {
+            if ui < at(index) || ui > at(index + 1) {
+                let du = (abscis / l) * (at(index + 1) - u_start);
+                ui = if direction != 0 { u_start + du } else { u_start - du };
+            }
+            let mut computer = CpntsAbscissaPoint::new(c);
+            computer.init_range_tol(c, at(index), at(index + 1), tol);
+            computer.adv_perform(sign * abscis, u_start, ui, tol);
+            return if computer.is_done() { Some(computer.parameter()) } else { None };
+        }
+        u_start = at(index + direction);
+        abscis -= l;
+        index += if direction != 0 { 1 } else { -1 };
+    }
+
+    // `cxx:273-293`: "Push a little bit outside the limits (hairy !!!)".
+    let mut ui = u_start + sign * 0.1;
+    let mut u1 = u_start + sign * 0.2;
+    if !c.is_periodic() {
+        let (first, last) = (c.first_parameter(), c.last_parameter());
+        if sign > 0.0 {
+            ui = ui.min(last);
+            u1 = u1.min(last);
+        } else {
+            ui = ui.max(first);
+            u1 = u1.max(first);
+        }
+    }
+    let mut computer = CpntsAbscissaPoint::new(c);
+    computer.init_range_tol(c, u_start, u1, tol);
+    computer.adv_perform(sign * abscis, u_start, ui, tol);
+    if computer.is_done() { Some(computer.parameter()) } else { None }
 }
 
 /// `CPnts_MyRootFunction` (`CPnts_MyRootFunction.hxx:32-64`,
@@ -572,21 +761,25 @@ pub fn abscissa_point_from_guess(
     if !(a.is_finite() && b.is_finite()) {
         return None;
     }
-    let resolution = c.resolution(CONFUSION);
     if abscissa.abs() <= CONFUSION {
         return Some(u0);
     }
     let (ty, ratio) = compute_type(c);
     match ty {
         AbscissaType::LengthParametrized => return Some(u0 + abscissa / ratio),
+        // `AdvCompute` `:187-295`: the tolerance-aware composite walk.
         AbscissaType::AbsComposite => {
-            return compute_abs_composite(c, abscissa, u0, ui, resolution);
+            return compute_abs_composite_adv(c, abscissa, u0, ui, tol);
         }
         AbscissaType::Parametrized => {}
     }
     let mut computer = CpntsAbscissaPoint::new(c);
     computer.init_range_tol(c, a, b, tol);
-    computer.adv_perform(abscissa, u0, ui, resolution);
+    // `AdvCompute` passes `theTol` as the `theEPSILON` argument
+    // (`GCPnts_AbscissaPoint.cxx:533-541`), so the root search and the
+    // `myF.Init(U0, Abscissa, Resolution / 10)` tolerance are `tol`, not the
+    // curve's `Resolution(Precision::Confusion())`.
+    computer.adv_perform(abscissa, u0, ui, tol);
     if computer.is_done() {
         Some(computer.parameter())
     } else {
@@ -595,17 +788,14 @@ pub fn abscissa_point_from_guess(
 }
 
 /// Same as [`abscissa_point`] but with the caller's tolerance -- the
-/// `GCPnts_AbscissaPoint(theC, theAbscissa, theU0, theTol)` entry, which
-/// reaches `advCompute` (`GCPnts_AbscissaPoint.cxx:464-...`) and therefore
-/// `CPnts_AbscissaPoint::Init(C, Tol)` (`:287-290`) +
-/// `AdvPerform` (`CPnts_AbscissaPoint.cxx:436-...`). The tol-aware
+/// `GCPnts_AbscissaPoint(theTol, theC, theAbscissa, theU0)` entry, which
+/// reaches `advCompute` (`GCPnts_AbscissaPoint.cxx:465-487`, `:495-497`) and
+/// therefore `CPnts_AbscissaPoint::Init(C, Tol)` (`:287-290`) +
+/// `AdvPerform` (`CPnts_AbscissaPoint.cxx:436-474`). The tol-aware
 /// integration replaces the fixed-order Gauss rule in the root function
-/// (`CPnts_MyRootFunction.cxx:43-50`).
-///
-/// UNPORTED: the `GCPnts_AbsComposite` arm of `AdvCompute`
-/// (`GCPnts_AbscissaPoint.cxx:187-295`, which carries an `anIndex == 0`
-/// special case) -- multi-span curves fall back to the non-adv arm, so only
-/// the integration tolerance differs there.
+/// (`CPnts_MyRootFunction.cxx:43-50`), and every branch of
+/// `AdvCompute` (`GCPnts_AbscissaPoint.cxx:166-295`) is ported, including the
+/// `GCPnts_AbsComposite` arm with its `anIndex == 0` preamble.
 pub fn abscissa_point_with_tolerance(
     c: &dyn Curve,
     abscissa: f64,
@@ -616,7 +806,6 @@ pub fn abscissa_point_with_tolerance(
     if !(a.is_finite() && b.is_finite()) {
         return Err("abscissa_point_with_tolerance: unbounded curve".to_string());
     }
-    let resolution = c.resolution(CONFUSION);
     // `advCompute` (`:470-481`): `aL = Length(theC, theTol)` (the
     // `Standard_ConstructionError` throw is commented out there).
     let al = curve_length_range(c, a, b, tol);
@@ -632,11 +821,9 @@ pub fn abscissa_point_with_tolerance(
     match ty {
         // `AdvCompute` `:177-180`.
         AbscissaType::LengthParametrized => return Ok(from + abscissa / ratio),
-        // The non-adv composite walk (`:96-158`). The adv variant
-        // (`:187-295`) is the UNPORTED item described on
-        // `abscissa_point_with_tolerance` above.
+        // `AdvCompute` `:187-295`.
         AbscissaType::AbsComposite => {
-            return compute_abs_composite(c, abscissa, from, ui, resolution)
+            return compute_abs_composite_adv(c, abscissa, from, ui, tol)
                 .ok_or_else(|| {
                     "abscissa_point_with_tolerance: math_FunctionRoot did not converge"
                         .to_string()
@@ -647,7 +834,9 @@ pub fn abscissa_point_with_tolerance(
     }
     let mut computer = CpntsAbscissaPoint::new(c);
     computer.init_range_tol(c, a, b, tol);
-    computer.adv_perform(abscissa, from, ui, resolution);
+    // `AdvCompute` passes `theTol` as the `theEPSILON` argument
+    // (`GCPnts_AbscissaPoint.cxx:486`), so the root search tolerance is `tol`.
+    computer.adv_perform(abscissa, from, ui, tol);
     if computer.is_done() {
         Ok(computer.parameter())
     } else {

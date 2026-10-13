@@ -5,4 +5,3 @@ pub mod intersect;
 pub mod slib;
 pub mod surface_eval;
 pub mod surface_eval_d3;
-pub mod measure;

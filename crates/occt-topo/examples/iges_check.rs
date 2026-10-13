@@ -201,7 +201,7 @@ fn main() {
                 // `196` (sphere) is `"196,#0,{radius},#1,#2;"` — the radius comes
                 // *between* the location and the two directions
                 // (`IGESGeom_ToolSphere::WriteOwnParams`, mirrored by
-                // `occt-topo/src/iges.rs::emit_refs(196, …)`), so the axis
+                // `occt-topo/src/iges/writer.rs::emit_refs(196, …)`), so the axis
                 // direction is at field 3, not 2. Reading it as `[1, 2, last]`
                 // left the axis looking unreferenced (T-85 remainder: Sphere
                 // reported `{123: 1, 144: 1}` when only the root is an orphan).

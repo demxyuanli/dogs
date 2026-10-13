@@ -76,7 +76,6 @@ pub use matrix_ext::{
 };
 pub mod interp;
 pub mod roots;
-pub mod integrate_adaptive;
 pub mod optimize;
 pub mod fft2d;
 pub mod statistics_full;

@@ -490,32 +490,21 @@ pub(crate) fn validate_boolean_result(r: &BooleanResult, tol: f64) -> Vec<String
     issues
 }
 
-/// Run a boolean and validate the result, re-computing at a larger tolerance
-/// when validation finds issues.
+/// Run a boolean at one tolerance and report the structural validation issues.
 ///
-/// The exact boolean is tolerance-sensitive near coincident faces; when the
-/// first attempt fails validation (an open shell, a self-intersection), the
-/// operation is re-run at `tol × 10` and `tol × 100`. The best (fewest issues)
-/// result is returned, with the validation issues attached as warnings.
+/// OCCT performs a single boolean at a single fuzzy value: `myFuzzyValue` is
+/// set once by `BOPAlgo_Options::SetFuzzyValue` (`BOPAlgo_Options.cxx`) and
+/// consumed by `BOPAlgo_Builder::Perform` (`BOPAlgo_Builder.cxx`); `BOPAlgo_BOP`
+/// has no branch that re-runs the operation at a larger tolerance. An earlier
+/// port revision here escalated to `tol * 10` and `tol * 100` and kept
+/// whichever run produced the fewest validation issues - control flow with no
+/// OCCT counterpart - which silently handed back geometry computed at a
+/// tolerance the caller never requested. It is removed: the single attempt runs
+/// at `tol` and any validation issues are attached as warnings.
 pub fn boolean_with_check(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
     let tol = tol.max(1e-9);
     let mut result = boolean_dispatch(a, b, op, tol)?;
-    let mut issues = validate_boolean_result(&result, tol);
-    if !issues.is_empty() {
-        for &scale in &[10.0f64, 100.0] {
-            let nt = tol * scale;
-            let candidate = boolean_dispatch(a, b, op, nt)?;
-            let cand_issues = validate_boolean_result(&candidate, nt);
-            if cand_issues.len() < issues.len() {
-                result = candidate;
-                issues = cand_issues;
-                result.warnings.push(format!("recomputed at tol {nt:.1e} after validation (original {tol:.1e})"));
-            }
-            if issues.is_empty() {
-                break;
-            }
-        }
-    }
+    let issues = validate_boolean_result(&result, tol);
     result.warnings.extend(issues);
     Ok(result)
 }

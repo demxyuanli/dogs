@@ -108,7 +108,7 @@ pub fn edge_chord_error(e: &Edge, polyline: &[GpPnt]) -> f64 {
 /// the face occurrence orientation (`RWMesh_FaceIterator::TriangleOriented`,
 /// applied by `build_shape_mesh`).
 pub fn face_to_triangles(f: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
-    let mut inc = crate::meshing::incremental_mesh::IncrementalMesh::new();
+    let inc = crate::meshing::incremental_mesh::IncrementalMesh::new();
     inc.discretize_face(f, deflection)
 }
 

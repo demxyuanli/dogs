@@ -4,6 +4,13 @@
 //! to a 3D displacement of `tolerance_3d`, from the max first-derivative
 //! bound on the pole grid. `flat_u` / `flat_v` are already-expanded knot
 //! sequences (`BSplCLib::KnotSequence`).
+//!
+//! [`bspline_surface_max_derivative`] is the `tolerance_3d`-independent first
+//! half of that computation (the `sqrt(2)`-scaled derivative bound, cxx:3519-3845).
+//! `Geom_BSplineSurface::Resolution` latches that pair behind `myMaxDerivInvOk`
+//! (`Geom_BSplineSurface_1.cxx:2197-2221`), so the sweep runs once per surface
+//! and every later query is the `tolerance_3d / max_deriv` division
+//! (`BSplSLib.cxx:3846-3853`) alone.
 
 use crate::gp::GpPnt;
 
@@ -23,6 +30,9 @@ fn wrap_index(i: i32, len: i32) -> i32 {
 }
 
 /// `BSplSLib::Resolution`. Returns `(UTolerance, VTolerance)`.
+///
+/// The bound comes from [`bspline_surface_max_derivative`]; a zero component
+/// makes the whole pair `(0., 0.)` (`BSplSLib.cxx:3846-3853`).
 pub fn bspline_surface_resolution(
     poles: &[Vec<GpPnt>],
     weights: Option<&[Vec<f64>]>,
@@ -33,6 +43,33 @@ pub fn bspline_surface_resolution(
     u_rational: bool,
     v_rational: bool,
     tolerance_3d: f64,
+) -> (f64, f64) {
+    let (max_deriv_u, max_deriv_v) = bspline_surface_max_derivative(
+        poles, weights, flat_u, flat_v, deg_u, deg_v, u_rational, v_rational,
+    );
+    if max_deriv_u != 0.0 && max_deriv_v != 0.0 {
+        (tolerance_3d / max_deriv_u, tolerance_3d / max_deriv_v)
+    } else {
+        (0.0, 0.0)
+    }
+}
+
+/// `BSplSLib::Resolution` derivative bound half (`BSplSLib.cxx:3519-3845`): the
+/// `sqrt(2)`-scaled maximum of the first-derivative bound over the pole grid,
+/// as `(max_deriv_u, max_deriv_v)`.
+///
+/// This is what `Geom_BSplineSurface::Resolution` caches with `Tolerance3D = 1.`
+/// under `myMaxDerivInvOk` (`Geom_BSplineSurface_1.cxx:2201-2218`). A zero
+/// component means `BSplSLib::Resolution` reports `(0., 0.)` for any tolerance.
+pub fn bspline_surface_max_derivative(
+    poles: &[Vec<GpPnt>],
+    weights: Option<&[Vec<f64>]>,
+    flat_u: &[f64],
+    flat_v: &[f64],
+    deg_u: i32,
+    deg_v: i32,
+    u_rational: bool,
+    v_rational: bool,
 ) -> (f64, f64) {
     if poles.is_empty() || poles[0].is_empty() || flat_u.is_empty() || flat_v.is_empty() {
         return (0.0, 0.0);
@@ -255,12 +292,5 @@ pub fn bspline_surface_resolution(
     max_derivative[1] *= deg_v as f64;
     max_derivative[0] *= std::f64::consts::SQRT_2;
     max_derivative[1] *= std::f64::consts::SQRT_2;
-    if max_derivative[0] != 0.0 && max_derivative[1] != 0.0 {
-        (
-            tolerance_3d / max_derivative[0],
-            tolerance_3d / max_derivative[1],
-        )
-    } else {
-        (0.0, 0.0)
-    }
+    (max_derivative[0], max_derivative[1])
 }

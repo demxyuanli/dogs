@@ -98,13 +98,10 @@ fn segment_bspline(bs: &GeomBSplineSurface, u1: f64, u2: f64, v1: f64, v2: f64) 
         return Arc::new(copy);
     }
     // `cxx:593-602`: a failed `Segment` becomes a rectangular trim.
-    Arc::new(GeomRectangularTrimmedSurface::uv(
-        Arc::new(bs.clone()),
-        u1,
-        u2,
-        v1,
-        v2,
-    ))
+    Arc::new(
+        GeomRectangularTrimmedSurface::uv(Arc::new(bs.clone()), u1, u2, v1, v2)
+            .unwrap_or_else(|e| panic!("{e}")),
+    )
 }
 
 /// `ShapeUpgrade_SplitCurve3d::Build` B-spline span loop (`cxx:273-315`).

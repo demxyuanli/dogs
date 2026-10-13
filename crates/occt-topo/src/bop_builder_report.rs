@@ -358,10 +358,10 @@ pub fn multi_result_sorted_by_volume(m: &MultiResult) -> Vec<TopoShape> {
 // Composite pipelines (check + repair, fuse-all, area)
 // ---------------------------------------------------------------------------
 
-/// Run a boolean with validation/tolerance-escalation, then repair the result.
+/// Run a boolean with validation, then repair the result.
 ///
-/// Combines [`boolean_with_check`] (which re-runs the boolean at larger
-/// tolerances when structural validation fails) with
+/// Combines [`boolean_with_check`] (a single boolean at the requested tolerance
+/// whose structural validation issues are reported as warnings) with
 /// [`repair_self_intersections`]. A repaired result carries a warning naming
 /// the number of faces fixed/removed.
 pub fn boolean_repaired_with_check(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {

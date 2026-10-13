@@ -289,35 +289,6 @@ impl IncrementalMesh {
             });
             let reversed = reversed_faces.get(ft.face_index).copied().unwrap_or(false);
             let offset = vertices.len();
-            if let Ok(spec) = std::env::var("VPROBE") {
-                let parts: Vec<f64> =
-                    spec.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-                if parts.len() == 4 {
-                    let near: Vec<GpPnt> = ft
-                        .vertices
-                        .iter()
-                        .copied()
-                        .filter(|p| {
-                            (p.x() - parts[0]).abs() <= parts[3]
-                                && (p.y() - parts[1]).abs() <= parts[3]
-                                && (p.z() - parts[2]).abs() <= parts[3]
-                        })
-                        .collect();
-                    if !near.is_empty() {
-                        eprintln!(
-                            "VPROBE face={} surf={:?} nv={} nt={} near={}",
-                            ft.face_index,
-                            ty,
-                            ft.vertices.len(),
-                            ft.triangles.len(),
-                            near.len()
-                        );
-                        for p in near.iter().take(80) {
-                            eprintln!("VPROBE p ({:.6},{:.6},{:.6})", p.x(), p.y(), p.z());
-                        }
-                    }
-                }
-            }
             vertices.extend(ft.vertices);
             for t in ft.triangles {
                 let t = Self::oriented_triangle(&t, reversed);
@@ -1556,18 +1527,41 @@ impl IncrementalMesh {
     /// Discretize a single face into a 3D triangle soup through the OCCT-style
     /// pipeline (a temporary single-face model is triangulated).
     ///
-    /// Falls back to the wireframe UV-grid tessellator on any pipeline error.
-    pub fn discretize_face(&mut self, face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
+    /// The OCCT equivalent is `BRepMesh_IncrementalMesh(aFace, theDeflection,
+    /// false, theAngle)`: that constructor stores the deflection in
+    /// `myParameters` and calls `Perform`
+    /// (`BRepMesh_IncrementalMesh.cxx:42-57`), which runs `initParameters()`
+    /// once (`:86`) and then hands the same `myParameters` to the whole
+    /// `IMeshTools_Context` chain (`:90-91`). So one initialised parameter set
+    /// drives *every* stage below — `ModelBuilder`, the boundary/heal/pre-process
+    /// stages inside `build_shape_mesh`, and the face triangulation. Reading the
+    /// driver's own `self.parameters` (the caller's, still carrying the
+    /// `-1` sentinels that `initParameters` is meant to resolve) for part of the
+    /// chain is not something OCCT does.
+    ///
+    /// Returns an empty soup for invalid parameters or an untriangulatable face:
+    /// OCCT has no fallback tessellator, a face whose model cannot be built or
+    /// whose Delaunay fails keeps `IMeshData_Failure`
+    /// (`BRepMesh_BaseMeshAlgo.cxx:40-62`) and yields no triangles.
+    pub fn discretize_face(&self, face: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle>) {
         let mut params = self.parameters.clone();
         params.deflection = deflection;
-        // OCCT has no fallback tessellator: a face whose model cannot be built
-        // or whose Delaunay fails simply keeps `IMeshData_Failure`
-        // (`BRepMesh_BaseMeshAlgo.cxx:40-62`) and yields no triangles.
+        // `BRepMesh_IncrementalMesh::initParameters` (`BRepMesh_IncrementalMesh.hxx:79-108`).
+        if init_parameters(&mut params).is_err() {
+            return (Vec::new(), Vec::new());
+        }
         let Ok(mut model) = ModelBuilder::build_model(&face.0, &params) else {
             return (Vec::new(), Vec::new());
         };
-        ModelPreProcessor::perform(&mut model, &params);
-        match self.build_shape_mesh(&mut model) {
+        // `IMeshTools_Context::PreProcessModel` (`hxx:85`) runs inside `build_shape_mesh`
+        // through `prepare_model_boundaries`, which is the only place
+        // `IncrementalMesh::perform` runs it too. Running it here as well would
+        // execute the seam-edge amplifier twice on the same model.
+        // Same driver shape as [`Self::build_boundary_model`]: the whole chain
+        // must see the initialised set, so run it on a driver carrying that set
+        // instead of on `self`.
+        let mut driver = IncrementalMesh { parameters: params, ..IncrementalMesh::new() };
+        match driver.build_shape_mesh(&mut model) {
             Ok(m) => (m.vertices, m.triangles),
             Err(_) => (Vec::new(), Vec::new()),
         }

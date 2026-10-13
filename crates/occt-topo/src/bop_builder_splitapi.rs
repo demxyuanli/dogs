@@ -12,17 +12,13 @@ use crate::brep_extrema::is_inside;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 
-use crate::shape::{Face, Shell, TopoShape};
+use crate::shape::{Face, Shell, TopoShape, Wire};
 use crate::shell_check::{shell_is_closed};
 
-use crate::topo_tools_full::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
-    wires_of_face,
-};
+use crate::topo_tools_full::{edges_of, faces_of, shapes_of, wires_of_face};
 
 use crate::bop_builder_core::{BoolOp};
 use crate::bop_builder_dispatch::expand_compound;
-use crate::bop_builder_repair::face_is_degenerate;
 use crate::bop_builder_planar::*;
 
 // ---------------------------------------------------------------------------
@@ -282,35 +278,55 @@ fn point_on_surface(faces: &[Face], p: &GpPnt, tol: f64) -> bool {
 pub struct HealToleranceReport {
     /// The healed shape.
     pub healed: TopoShape,
-    /// Number of vertex pairs merged (weld coincident vertices within `tol`).
+    /// Number of vertex pairs merged (weld coincident vertices within `weld_tol`).
     pub welded_vertices: usize,
-    /// Number of edges removed (shorter than the heal tolerance).
+    /// Number of edges removed by `ShapeAnalysis_Wire::CheckSmall` /
+    /// `ShapeFix_Wire::FixSmall` at `precsmall`.
     pub removed_edges: usize,
-    /// Number of degenerate faces removed.
+    /// Number of faces removed because every wire had a null area
+    /// (`ShapeFix_Face::FixSmallAreaWire`).
     pub removed_faces: usize,
     /// Non-fatal diagnostics (open shells, dropped faces, …).
     pub warnings: Vec<String>,
 }
 
 /// Heal a shape at a tolerance: weld near-coincident vertices, remove small
-/// edges and degenerate faces (`ShapeFix_Shape`-style).
+/// edges and drop null-area faces.
 ///
-/// This is the tolerance-welding wrapper used to tidy a boolean result before
-/// downstream processing. See [`heal_tolerance_report`] for the detailed
-/// statistics; this entry point returns just the healed shape.
-pub fn heal_tolerance(shape: &TopoShape, tol: f64) -> Result<TopoShape, String> {
-    Ok(heal_tolerance_report(shape, tol)?.healed)
+/// This is the port's own tolerance-driven wrapper, not an OCCT entry point:
+/// OCCT has no `heal at a tolerance` primitive, and `ShapeFix_Shape::Perform`
+/// (`ShapeFix_Shape.cxx:83-302`) derives every threshold from
+/// `ShapeFix_Root::MinTolerance()` / `Precision()`. Each step it runs is the
+/// corresponding ported OCCT branch: `ShapeFix_Wire::FixSmall`
+/// (`ShapeFix_Wire.cxx:538-553`) via [`crate::shhealing::remove_small_edges`],
+/// and `ShapeFix_Face::FixSmallAreaWire` (`ShapeFix_Face.cxx:2331-2394`) via
+/// [`ShapeAnalysis_Wire::CheckSmallArea`]
+/// (`crate::shhealing::check_small_area`). The leading vertex weld has no OCCT
+/// counterpart at shape scope (see [`crate::shhealing::weld_coincident_vertices`]).
+///
+/// See [`heal_tolerance_report`] for the detailed statistics; this entry point
+/// returns just the healed shape.
+pub fn heal_tolerance(shape: &TopoShape, weld_tol: f64, precsmall: f64) -> Result<TopoShape, String> {
+    Ok(heal_tolerance_report(shape, weld_tol, precsmall)?.healed)
 }
 
 /// Heal a shape at a tolerance and report what was fixed.
 ///
-/// Welds vertices closer than `tol` to one canonical instance, removes edges
-/// shorter than `8·tol` (the small-edge threshold), and drops degenerate faces
-/// (fewer than 3 boundary edges, or a planar face of near-zero area). A
-/// `Compound` is healed component-wise. The healed shape is rebuilt through the
-/// existing healing machinery, so shared edges/vertices are preserved.
-pub fn heal_tolerance_report(shape: &TopoShape, tol: f64) -> Result<HealToleranceReport, String> {
-    let tol = tol.max(1e-9);
+/// Welds vertices closer than `weld_tol` to one canonical instance, runs
+/// `ShapeFix_Wire::FixSmall(lockvtx, precsmall)` over every wire, and drops the
+/// faces whose every wire has a null area. The two precisions are separate
+/// because OCCT keeps them separate: `ShapeFix_Wire::FixConnected` is driven
+/// with `MaxTolerance()` and `FixSmall` with `MinTolerance()`
+/// (`ShapeFix_Wire.cxx:336` / `cxx:355`). A `Compound` is healed
+/// component-wise. The healed shape is rebuilt through the existing healing
+/// machinery, so shared edges/vertices are preserved.
+pub fn heal_tolerance_report(
+    shape: &TopoShape,
+    weld_tol: f64,
+    precsmall: f64,
+) -> Result<HealToleranceReport, String> {
+    let tol = weld_tol.max(1e-9);
+    let precsmall = precsmall.max(1e-9);
     if shape.is_compound() {
         let children = expand_compound(shape);
         let mut healed_children: Vec<TopoShape> = Vec::with_capacity(children.len());
@@ -319,7 +335,7 @@ pub fn heal_tolerance_report(shape: &TopoShape, tol: f64) -> Result<HealToleranc
         let mut removed_faces = 0usize;
         let mut warnings: Vec<String> = Vec::new();
         for c in &children {
-            let r = heal_tolerance_report(c, tol)?;
+            let r = heal_tolerance_report(c, tol, precsmall)?;
             welded += r.welded_vertices;
             removed_edges += r.removed_edges;
             removed_faces += r.removed_faces;
@@ -337,8 +353,8 @@ pub fn heal_tolerance_report(shape: &TopoShape, tol: f64) -> Result<HealToleranc
     }
 
     let (s1, welded) = crate::shhealing::weld_coincident_vertices(shape, tol);
-    let (s2, removed_edges) = crate::shhealing::remove_small_edges(&s1, tol * 8.0);
-    let (s3, removed_faces) = remove_degenerate_faces(&s2, tol);
+    let (s2, removed_edges) = crate::shhealing::remove_small_edges(&s1, precsmall);
+    let (s3, removed_faces) = remove_small_area_faces(&s2);
     let mut warnings: Vec<String> = Vec::new();
     for sh in shapes_of(&s3, ShapeType::Shell) {
         if !shell_is_closed(&Shell(sh)) {
@@ -348,19 +364,8 @@ pub fn heal_tolerance_report(shape: &TopoShape, tol: f64) -> Result<HealToleranc
     Ok(HealToleranceReport { healed: s3, welded_vertices: welded, removed_edges, removed_faces, warnings })
 }
 
-/// Is a face degenerate — fewer than 3 boundary edges, or a (planar) face with
-/// near-zero area?
-fn face_is_degenerate_tol(face: &Face, tol: f64) -> bool {
-    let mut ecount = 0usize;
-    for w in wires_of_face(face) {
-        ecount += edges_of_wire(&w).len();
-    }
-    ecount < 3 || face_is_degenerate(face, tol)
-}
-
-/// Rebuild a shape without its degenerate faces. Shapes without shell structure
-/// (bare wires/faces) are returned unchanged.
-fn remove_degenerate_faces(shape: &TopoShape, tol: f64) -> (TopoShape, usize) {
+/// Drop the faces that lost every wire.
+fn remove_small_area_faces(shape: &TopoShape) -> (TopoShape, usize) {
     let shells: Vec<Shell> = shapes_of(shape, ShapeType::Shell).into_iter().map(Shell).collect();
     if shells.is_empty() {
         return (shape.clone(), 0);
@@ -370,8 +375,31 @@ fn remove_degenerate_faces(shape: &TopoShape, tol: f64) -> (TopoShape, usize) {
     let mut out: Vec<Shell> = Vec::new();
     for sh in &shells {
         let faces = faces_of(&sh.0);
-        let keep: Vec<Face> = faces.iter().filter(|f| !face_is_degenerate_tol(f, tol)).cloned().collect();
-        removed += faces.len() - keep.len();
+        let mut keep: Vec<Face> = Vec::new();
+        for f in &faces {
+            // `ShapeFix_Face::FixSmallAreaWire` (`ShapeFix_Face.cxx:2331-2394`):
+            // every wire for which `ShapeAnalysis_Wire::CheckSmallArea`
+            // (`ShapeAnalysis_Wire.cxx:2004-2098`) reports a null area is
+            // discarded, and a face whose wires all disappear is removed
+            // (`cxx:2303-2321` / `2377-2385`).
+            let wires: Vec<Wire> = wires_of_face(f);
+            let kept: Vec<Wire> = wires
+                .iter()
+                .filter(|w| !crate::shhealing::check_small_area(w, f))
+                .cloned()
+                .collect();
+            if kept.len() == wires.len() {
+                keep.push(f.clone());
+            } else if kept.is_empty() {
+                removed += 1;
+            } else if let Some(surf) = BRepTool::face_surface(f) {
+                let mut nf = bld.make_face(surf, &kept);
+                nf.0.set_orientation(f.0.orientation());
+                keep.push(nf);
+            } else {
+                keep.push(f.clone());
+            }
+        }
         if !keep.is_empty() {
             out.push(bld.make_shell(&keep));
         }

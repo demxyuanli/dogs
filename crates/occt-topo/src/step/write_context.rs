@@ -50,7 +50,7 @@ fn exact_bspline_of(s: &dyn Surface) -> Option<GeomBSplineSurface> {
 ///
 /// UNPORTED: the trim of a `Geom_RectangularTrimmedSurface` is not wrapped in a
 /// `RECTANGULAR_TRIMMED_SURFACE` entity (`cxx:82-88`); only the basis surface is
-/// written, as `iges.rs` does for the same class. The trim itself is carried by
+/// written, as `iges/emit_curve.rs` does for the same class. The trim itself is carried by
 /// the `ADVANCED_FACE` bounds.
 pub(super) fn bounded_bspline_surface(s: &dyn Surface) -> Option<GeomBSplineSurface> {
     let mut bs = exact_bspline_of(s)?;
@@ -90,6 +90,10 @@ pub(super) fn bounded_bspline_surface(s: &dyn Surface) -> Option<GeomBSplineSurf
     if bs.knots_u.len() != nu + bs.deg_u + 1 || bs.knots_v.len() != nv + bs.deg_v + 1 {
         return None;
     }
+    // `poles` and the flat knot sequences were reassigned above, so the
+    // `Resolution` bound latched on `bs` no longer describes it
+    // (`Geom_BSplineSurface_1.cxx:2197-2221`).
+    bs.res_latch.invalidate();
     Some(bs)
 }
 
@@ -311,7 +315,7 @@ impl WriteCtx {
         // (`BS = B->Copy(); BS->SetNotPeriodic()`) is not wired here, so a
         // periodic B-spline keeps its periodicity. The primitive itself exists
         // (`occt_geom::bspline_curve::GeomBSplineCurve::set_not_periodic`,
-        // `Geom_BSplineCurve.cxx:974-1019`) and `iges.rs:1277` already uses it
+        // `Geom_BSplineCurve.cxx:974-1019`) and `iges/emit_curve.rs:302` already uses it
         // for the same step (IGES entity 126); the surface arm above does the
         // equivalent through `bounded_bspline_surface`.
         if let (Some(poles), Some(knots), Some(deg)) =

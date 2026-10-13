@@ -277,6 +277,27 @@ impl Surface for GeomSurfaceOfLinearExtrusion {
         }))
     }
 
+    /// `Geom_SurfaceOfLinearExtrusion::VReverse`
+    /// (`Geom_SurfaceOfLinearExtrusion.cxx`): the extrusion direction is
+    /// reversed.
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        Some(Arc::new(Self {
+            basis_curve: self.basis_curve.clone(),
+            direction: self.direction.reversed(),
+        }))
+    }
+
+    /// `Geom_SurfaceOfLinearExtrusion::UReversedParameter`
+    /// (`Geom_SurfaceOfLinearExtrusion.cxx:98-101`):
+    /// `basisCurve->ReversedParameter(U)`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 {
+        self.basis_curve.reversed_parameter(u)
+    }
+
+    /// `Geom_SurfaceOfLinearExtrusion::VReversedParameter`
+    /// (`Geom_SurfaceOfLinearExtrusion.cxx:114-117`): `-V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 { -v }
+
     /// `Geom_SurfaceOfLinearExtrusion::EvalDN` (`cxx:245-271`).
     fn eval_dn(&self, u: f64, v: f64, nu: i32, nv: i32) -> GpVec {
         let _ = v;

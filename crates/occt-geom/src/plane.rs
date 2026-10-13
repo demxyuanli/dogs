@@ -56,6 +56,20 @@ impl Surface for GeomPlane {
         Some(Arc::new(GeomPlane::new(pos)))
     }
 
+    /// `Geom_Plane::VReversed` (`Geom_Surface.cxx:42-48`) = `Copy()` +
+    /// `Geom_Plane::VReverse` (`gp_Pln.hxx:105` -> `YReverse`).
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos.clone();
+        pos.v_reverse();
+        Some(Arc::new(GeomPlane::new(pos)))
+    }
+
+    /// `Geom_Plane::UReversedParameter` (`Geom_Plane.cxx:115-119`): `-U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { -u }
+
+    /// `Geom_Plane::VReversedParameter` (`Geom_Plane.cxx:131-135`): `-V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 { -v }
+
     /// `Geom_Plane::UIso` (`Geom_Plane.cxx:261-265`):
     /// `Geom_Line(ElSLib::PlaneUIso(pos, U))`.
     /// `ElSLib::PlaneUIso` (`ElSLib.cxx:1705-1712`) is a line through the

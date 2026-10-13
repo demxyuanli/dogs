@@ -37,28 +37,10 @@ pub fn in_period(the_u: f64, the_u_first: f64, the_u_last: f64) -> f64 {
     the_u_first.max(the_u + a_period * ((the_u_first - the_u) / a_period).ceil())
 }
 
-/// `ElCLib::AdjustPeriodic` (`cxx:115-148`).
-pub fn adjust_periodic(u_first: f64, u_last: f64, preci: f64, u1: &mut f64, u2: &mut f64) {
-    if is_infinite(u_first) || is_infinite(u_last) {
-        *u1 = u_first;
-        *u2 = u_last;
-        return;
-    }
-    let a_period = u_last - u_first;
-    if a_period < epsilon(u_last) {
-        *u1 = u_first;
-        *u2 = u_last;
-        return;
-    }
-    *u1 -= ((*u1 - u_first) / a_period).floor() * a_period;
-    if u_last - *u1 < preci {
-        *u1 -= a_period;
-    }
-    *u2 -= ((*u2 - *u1) / a_period).floor() * a_period;
-    if *u2 - *u1 < preci {
-        *u2 += a_period;
-    }
-}
+/// `ElCLib::AdjustPeriodic` (`cxx:115-148`). The single implementation lives in
+/// the 3D module ([`super::clib::adjust_periodic`]) because the `ElCLib` member
+/// is dimension-independent; this re-export keeps the 2D call sites working.
+pub use super::clib::adjust_periodic;
 
 // ---------------------------------------------------------------------------
 // Value

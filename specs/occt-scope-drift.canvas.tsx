@@ -90,6 +90,27 @@ const CLOSED = [
     evidence:
       "均已改为忠实件并跑现基线（`step_obj_gates` 4/4、`export_data_obj` 23 ok / 0 err、逐面回退计数 0）。",
   },
+  {
+    item: "IGES 写侧最后两格：周期面反周期化（`SetUOrigin`/`SetVOrigin` 重定原点 + `SetUNotPeriodic`）与全周椭圆支（104→126）",
+    id: "A26 收口",
+    where: "topo/iges（`u_reorigin`/`v_reorigin` 块、`emit_whole_period_ellipse`、`emit_circle_transfer`）· geom/bspline_surface.rs::set_u_origin/set_v_origin · core/bspl/unperiodize.rs",
+    evidence:
+      "对拍现有基线：`iges_check` 14/14 `ok`；参数段记录多重集 vs `_igesdump/oracle/*.iges` 10/14 逐字节一致（Shape-2 的 28 条 128 记录逐字节一致），余 3 个模型为浮点噪声/读侧极点密度，`OffsetPlaneHoleEdge` 仅缺 314/406（颜色/名字）。`iges/emit_surface.rs` 内「`SetUOrigin` 未移植」旧注释已清除（2026-10-13）。",
+  },
+  {
+    item: "`Geom_RectangularTrimmedSurface::SetTrim` 族（周期折叠 / Sense 反转 / 越界抛错 / `UReverse`·`VReverse`）",
+    id: "A15 姊妹项",
+    where: "geom/rectangular_trimmed.rs · surface.rs:rectangular_trimmed_spec · plane/cylinder/cone/sphere/torus/bezier/bspline/offset/revolution/extrusion 的 `UReversedParameter`·`VReversedParameter`",
+    evidence:
+      "按 `Geom_RectangularTrimmedSurface.cxx:210-378` 全量移植：`SetTrim` 8 参版（`U1==U2`/`V1==V2` 抛错、周期向 `ElCLib::AdjustPeriodic(udeb,ufin,min(|u2-u1|/2,PConfusion),u1,u2)`、非周期向 `U1<U2` 取/反 Sense 与 `PConfusion` 越界检查）、6 参版转发、4 参单方向版转发、`UReverse`/`VReverse`（基面 `UReversedParameter(utrim2)`/`(utrim1)` 映射后重走 `SetTrim`）与 `Geom_Surface::UReversed`/`VReversed`（`Copy()` + `U/VReverse`）。各具体面按 `Geom_*.cxx` 补 `U/VReversedParameter`（Plane `-u`；Cylinder/Cone/Sphere `2π-u`；Torus `2π-u`、`2π-v`；Bezier `1-u`；BSpline `Flat(1)+Flat(Upper)-u`；Revolution `2π-u`、基曲线 `ReversedParameter`；Extrusion 基曲线 `ReversedParameter`、`-v`；Offset 转发基面）。STEP 读侧 `RECTANGULAR_TRIMMED_SURFACE` 取 `Usense`/`Vsense` 走 `uv_sense`；`Adaptor3d_CurveOnSurface::EvalFirstLastSurf` 的 `UTrim`/`VTrim` 是 adaptor 窗口（`GeomAdaptor_Surface.cxx:411-427` 原样存窗口、不折叠），故另设 `window()` 供 `cos_locate` 使用。`step_obj_gates` 4/4、`data/occ` 八模型面积比 1.0000（2026-10-13 复核）。",
+  },
+  {
+    item: "`GCPnts_AbscissaPoint::AdvCompute` 缺 `GCPnts_AbsComposite` 臂；两处 adv 入口的 `theEPSILON` 误传 `Resolution(Confusion)`",
+    id: "A15",
+    where: "geom/gcpnts.rs:compute_abs_composite_adv · abscissa_point_from_guess · abscissa_point_with_tolerance",
+    evidence:
+      "按 `GCPnts_AbscissaPoint.cxx:187-295` 补 `compute_abs_composite_adv`：逐步 `CPnts_AbscissaPoint::Length(..., theEPSILON)`、`anIndex == 0 && aDirection > 0` 前置块（`:202-229`，仅 adv 有）、`Init(C, U1, U2, theEPSILON)` + `AdvPerform`、循环内零长判据用 `Precision::PConfusion()`（`:232`）而前置块用 `theEPSILON`（`:206`）、尾段按 `aSign` 偏移并按 `FirstParameter`/`LastParameter` 钳制（`:273-293`）。同时订正 `.cxx:486`/`:540` 的 `theEPSILON` 语义：原先传 `c.resolution(Confusion)`，现传调用方 `tol`（`Approx_CurvlinFunc::GetUParameter` 传 `myTolLen`，`Approx_CurvlinFunc.cxx:560`）。`occt-geom` 143 测试通过、`step_obj_gates` 4/4。",
+  },
 ];
 
 // 语义偏移残余（对照 specs/_audit/_index.md A 编号；位置/行号为 2026-10-13 工作树实测）
@@ -107,34 +128,34 @@ const SEMANTIC = [
     state: "UNPORTED，被 T-80 阻塞",
   },
   {
-    item: "`heal_tolerance` 自创修形链",
-    id: "A11",
-    where: "topo/bop_builder_splitapi.rs:301（+ `shhealing::weld_coincident_vertices`/`remove_small_edges`）",
-    state: "未动",
+    item: "`brepfeat` 自创件：网格夹具冒充解析件 + `solid_volume` 线框扇形和（OCCT 无此规则）",
+    id: "A12 余项 / T-125",
+    where: "topo/brepfeat/features.rs:389 translated_mesh_cylinder · :415 mesh_cylinder(..,24) · :337 revolve_profile_about 车削网格 · :481 resolution_for `clamp(16,64)`（死代码） · :521 solid_volume 已改 `brep_gprop_full::volume_properties`",
+    state: "**2026-10-13 收口一半**：(1) 体积积分已换忠实件 —— `solid_volume` 调 `BRepGProp::VolumeProperties`（`BRepGProp.cxx:555-586`），自创扇形和/Newell 法向与 `polygon_fan_volume`/`polygon_normal`/`wire_polygon_3d` 已删；`brepfeat --lib` 17/17、`occt-topo --lib` 1276/1276 绿，且对拍更准（rib 4.090000 精确 vs 4.150000、neck 4.489835 = 16 边形精确 vs 4.816391、boss 4.155291 = 24 边形精确 vs 4.284701）。(2) 解析件替换未做，逐项隔离实测确认被 `BOPAlgo_BOP` 阻塞：box ∪ 解析 neck 工具丢失（4.000000 应 4.489835）、box ∪ 解析贯通 boss `res_solid=false` 且整柱未裁剪（2.706858 应 2.565487）、圆柱 − 解析 groove 环 `Cut` 反而增体（9.337869 > 9.317486）；换车削网格夹具三例全回基线 ⇒ 归属 A5 / T-79，夹具保留并就地标 UNPORTED（原注释那句“解析面 `d1` 为零”是错的，已换实测数字）",
   },
   {
-    item: "自创自适应 Simpson（`curve_length` 已改走 Gauss 忠实件）",
+    item: "`heal_tolerance` 自创修形链 + `boolean_with_check` 容差重算",
+    id: "A11 / 发现 16",
+    where: "topo/bop_builder_splitapi.rs:301 · topo/bop_builder_dispatch.rs:504",
+    state: "已修：`remove_small_edges` 改走 `ShapeFix_Wire::FixSmall`+`ShapeAnalysis_Wire::CheckSmall`（无弧长阈值），`remove_degenerate_faces` 换 `ShapeFix_Face::FixSmallAreaWire`（`CheckSmallArea`），`weld_coincident_vertices` 端点替换改 `ShapeBuild_Edge::CopyReplaceVertices`，`boolean_with_check` 的 tol×10/×100 重算删除（OCCT 单一 `myFuzzyValue`）",
+  },
+  {
+    item: "自创自适应 Simpson 余项：`occt-math/integrate_adaptive.rs`（无 live 调用者）· `occt-core/elib/measure.rs::simpson`（唯一 live 消费者 `topo/inttools_range.rs:174`）",
     id: "A15 余项",
     where: "core/elib/measure.rs:58 · math/integrate_adaptive.rs:5",
-    state: "未动",
-  },
-  {
-    item: "`RectangularTrimmedSurface::SetTrim` 族",
-    id: "—",
-    where: "geom/rectangular_trimmed.rs",
-    state: "未移植",
+    state: "已闭环（2026-10-13）：`GCPnts_AbscissaPoint::Length` 类型分派已补（`geom/gcpnts.rs:length`，`GCPnts_AbscissaPoint.cxx:371-423` 的 `GCPnts_LengthParametrized`/`GCPnts_Parametrized`/`GCPnts_AbsComposite` 三臂），`inttools_range.rs:174` 改调 `gcpnts::length(curve, s1, s2, Some(a_ptol_e))`（`IntTools_ShrunkRange.cxx:170`）；两个自造积分件已删（`occt-math/integrate_adaptive.rs`、`occt-core/elib/measure.rs`，零残余消费者）",
   },
   {
     item: "`BRepCheck_Edge` 的 SameParameter/SameRange 检查",
     id: "—",
     where: "topo/brep_check.rs",
-    state: "未移植",
+    state: "已移植 `Minimum`（2026-10-13，`BRepCheck_Edge.cxx:74-258`）：`!SameRange && SameParameter` → `InvalidSameParameterFlag`、无 3D 表示 → `No3DCurve`、空曲线表示 + `Degenerated` → `InvalidDegeneratedFlag`、`Last <= First` 与基曲线周期/范围比对 → `InvalidRange`（`Geom_TrimmedCurve`/`Geom2d_TrimmedCurve` 按 BasisCurve 取 f/l/IsPeriodic/Period）；`Status` 已按 `BRepCheck_Status.hxx:20-59` 重排补齐。UNPORTED：`InContext`（依赖未移植的 `BRepLib_ValidateEdge`，`BRepCheck_Edge.cxx:263-556`）、`Tolerance`（`:598-707`）、`CheckPolygonOnTriangulation`（`:711-839`）、表示的 `TopLoc_Location`（`:163-171`）",
   },
   {
     item: "`surface_closest_params` 采样替代件",
     id: "A1",
     where: "topo/brep_surface.rs:261",
-    state: "活调用点 0（`brepmesh` QA 消费者已删，仅存 `pub(crate)` 定义）",
+    state: "已删（2026-10-13）：256 采样 + 6 次对分的网格搜索整段移除，活调用点 0",
   },
   {
     item: "`Analyzer::is_valid` 恒 true",
@@ -384,7 +405,7 @@ export default function OcctScopeDrift() {
         在探针上是 `72683 / 78464`，而冻结参考是 `73544 / 79977`、端口是 `73516 / 79926` —— 探针用的是
         `STEPControl_Reader` 直读，与冻结参考的产出者（未记录）以及端口的不同源，故探针总量不可直接当日面级基线；
         要么先钉住与参考同源的读取+参数组合，要么只以冻结 OBJ 的聚合口径为规格。
-        在此之前可推进的独立项是 2.2 里 `heal_tolerance` 自创修形链与 `RectangularTrimmedSurface::SetTrim` 族的移植。
+        在此之前可推进的独立项是 2.2 里的自创残余：`heal_tolerance` 自创修形链（本轮已收口：`FixSmall`/`CheckSmall`/`FixSmallAreaWire`/`CopyReplaceVertices` 落地，`boolean_with_check` 容差重算删除）、`Geom_RectangularTrimmedSurface::SetTrim` 族与 `gcpnts` 的 `GCPnts_AbsComposite` adv 臂（两轮均本轮收口，见 2.1）均已闭环；现存自创项是 `bop_curved` 网格级布尔（A5/T-79，被 T-80 阻塞）与 `brepfeat` 的网格夹具（A12 余项 / T-125：体积积分本轮已换 `BRepGProp::VolumeProperties` 并删自创扇形和；夹具替换经逐项实测确认被 `BOPAlgo_BOP` 曲面分支阻塞，待 T-79 闭合后再做，见 2.2 与 `_audit/_index.md` A12 订正）。
       </Callout>
     </Stack>
   );

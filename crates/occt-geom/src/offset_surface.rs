@@ -278,6 +278,27 @@ impl Surface for GeomOffsetSurface {
         Some(Arc::new(Self::new(basis, -self.offset)))
     }
 
+    /// `Geom_Surface::VReversed` (`Geom_Surface.cxx:43-48`) =
+    /// `Geom_OffsetSurface::VReverse` (`Geom_OffsetSurface.cxx:297-302`):
+    /// the basis is V-reversed and the signed offset is negated. `None` when
+    /// the basis itself has no `VReversed` branch.
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let basis = self.basis.v_reversed()?;
+        Some(Arc::new(Self::new(basis, -self.offset)))
+    }
+
+    /// `Geom_OffsetSurface::UReversedParameter`
+    /// (`Geom_OffsetSurface.cxx:290-294`): the basis surface's.
+    fn u_reversed_parameter(&self, u: f64) -> f64 {
+        self.basis.u_reversed_parameter(u)
+    }
+
+    /// `Geom_OffsetSurface::VReversedParameter`
+    /// (`Geom_OffsetSurface.cxx:306-310`): the basis surface's.
+    fn v_reversed_parameter(&self, v: f64) -> f64 {
+        self.basis.v_reversed_parameter(v)
+    }
+
     fn u_iso_curve(&self, u: f64) -> Option<Arc<dyn Curve>> {
         self.u_iso(u)
     }

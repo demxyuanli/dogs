@@ -129,7 +129,8 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - OCCT 对应：`CPnts_AbscissaPoint.cxx:178`（`math_GaussSingleIntegration(FG, U1, U2, order(C), Tol)`）、`GCPnts_AbscissaPoint.cxx:441`（容差 `theC.Resolution(Precision::Confusion())`）；`GCPnts_QuasiUniformAbscissa.cxx:117-128`（非 Bezier/BSpline 委托 `GCPnts_UniformAbscissa`）、`GCPnts_AbscissaPoint.cxx:77-90`（Line/Circle 闭式）
 - 影响：改几何结果（所有弧长/等弧长采样值）
 - 建议：按 `CPnts_AbscissaPoint.cxx` 直译 Gauss 积分，补类型分派与闭式臂
-- **处置（2026-10-06 复核：仍未修）**：`occt-geom/src/gcpnts.rs` 的自适应 Simpson 与 `CONFUSION*0.1` 容差仍在（`gcpnts.rs:16,25-70,100`），忠实件 `CPnts_AbscissaPoint`/`GCPnts_AbscissaPoint`（`CPnts_AbscissaPoint.cxx:178` 的 `math_GaussSingleIntegration` + Line/Circle 闭式 + 类型分派）**尚未移植**；该项与 A15 的「`gcpnts.rs` 积分」同条，仍为 live 缺口。
+- **处置（2026-10-13 ✅ 已闭环）**：`occt-geom/src/gcpnts.rs` 的自适应 Simpson 与 `CONFUSION*0.1` 容差早已不在（原证据 `gcpnts.rs:16,25-70,100` 已失效）——现为忠实件 `CPnts_AbscissaPoint`/`GCPnts_AbscissaPoint`：`curve_length_range`/`curve_length` 走 `math_GaussSingleIntegration`（`CPnts_AbscissaPoint.cxx:148-184`）并按曲线类型定阶（`cxx:57-77`），`curve_length_range` 另走 `math_GaussSingleIntegration.cxx:64-98` 的 13 次区间加倍自适应；**本轮补齐最后一块**：`GCPnts_AbscissaPoint::AdvCompute` 的 `GCPnts_AbsComposite` 臂（`GCPnts_AbscissaPoint.cxx:187-295`，含 `anIndex == 0` 前置块 `:202-229`、`theEPSILON` 版 `Length`/`Init`、以及 `aSign` 偏移并按 `FirstParameter`/`LastParameter` 钳制的尾段 `:273-293`）移植为 `compute_abs_composite_adv`；同时按 `.cxx:486`/`:540` 订正两处 `AdvCompute` 入口的 `theEPSILON` —— `abscissa_point_from_guess`/`abscissa_point_with_tolerance` 原先误传 `c.resolution(Confusion)`，现传调用方的 `tol`（`Init(theC, theEPSILON)` + `AdvPerform(..., theEPSILON)`）。至此 `Compute`（`compute_abs_composite`）与 `AdvCompute`（`compute_abs_composite_adv`）两条路径的全部三个臂都可达。验证：`occt-geom` 143 测试通过、`step_obj_gates` 4/4。
+- **余项（另项，未动）**：`occt-math/src/integrate_adaptive.rs::adaptive_simpson`（无 live 调用者）与 `occt-core/src/elib/measure.rs::simpson` 仍在；`measure.rs::curve_arc_length` 有一个 live 消费者 `occt-topo/src/inttools_range.rs:174`（`ShrunkRange` 的弧长，OCCT 是 `GCPnts_AbscissaPoint::Length(aBAC, myTS1, myTS2, aPTolE)`，`IntTools_ShrunkRange.cxx:170`），要忠实替换需先补 `GCPnts_AbscissaPoint::Length` 的类型分派（`GCPnts_AbscissaPoint.cxx:372-418`）。
 
 ### 14. `curve_reparam.rs` 用 1e-15/1e-14/0.0 判据做 de Boor
 - 判定：自创
@@ -139,13 +140,21 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - 建议：按 `BSplCLib` 直译，删阈值
 - **处置（✅ 已完成：第 51 轮）**：`curve_reparam.rs` 的 `1e-15`/`1e-14`/`0.0` 判据已删除，改走忠实 `BSplCLib::EvalBsplineBasis`（`BSplCLib_2.cxx:429-563`），判据为 `gp::Resolution()`；**订正**：OCCT 8.0.0 全树**无** `BSplCLib::BasisFuns`，老名字已移除。
 
-### 15. `Geom2dBSplineCurve` 权重/周期**已补齐**（◐ 订正）；`Geom_RectangularTrimmedSurface` 仍缺 `SetTrim` 控制流
-- 判定：自创（缺失控制流）；**前半已于 T-104/T-106 订正**
-- 证据（**订正后**）：~~`crates/occt-geom2d/src/bspline_curve.rs:9-14,42-64`（仅 `xs/ys/knots/degree`）~~ —— 现该结构已带 `weights: Option<Vec<f64>>`（`bspline_curve.rs:16`）、`periodic: bool`（`:32`）、`set_periodic`（`:139`）与 `weights` 变更传播（`:165,172`），`Geom2d_BSplineCurve.cxx:136-178` 的 `myWeights`/`myPeriodic` 已可表达。**仍缺**：`crates/occt-geom/src/rectangular_trimmed.rs:54-61`（`uv`）/`:63-73`（`uv_raw`）直接存参，无 `ElCLib::AdjustPeriodic`、无 U1>U2/Sense 反转、无越界检查；`rectangular_trimmed.rs` 内无 `set_trim`/`SetUTrim`/`SetVTrim` 符号。
+### 15. `Geom2dBSplineCurve` 权重/周期**已补齐**（◐ 订正）；`Geom_RectangularTrimmedSurface::SetTrim` **已闭环**（✅ 订正）
+- 判定：自创（缺失控制流）；**前半已于 T-104/T-106 订正，后半已于 2026-10-13 收口**
+- 证据（**订正后**）：~~`crates/occt-geom2d/src/bspline_curve.rs:9-14,42-64`（仅 `xs/ys/knots/degree`）~~ —— 现该结构已带 `weights: Option<Vec<f64>>`（`bspline_curve.rs:16`）、`periodic: bool`（`:32`）、`set_periodic`（`:139`）与 `weights` 变更传播（`:165,172`），`Geom2d_BSplineCurve.cxx:136-178` 的 `myWeights`/`myPeriodic` 已可表达。~~**仍缺**：`rectangular_trimmed.rs:54-61`（`uv`）/`:63-73`（`uv_raw`）直接存参~~ —— 现 `rectangular_trimmed.rs` 有 `set_trim`（`:267-358`）、`set_trim_uv`（`:187-197`）、`set_trim_one_param`（`:201-256`）、`u_reverse`（`:364-382`）、`v_reverse`（`:385-402`）与 `window`（`:113-132`），`Geom_RectangularTrimmedSurface.cxx:210-378` 的全部分支可表达。
 - OCCT 对应：`Geom2d_BSplineCurve.cxx:136-178`（`myWeights`/`myPeriodic` + `CheckCurveData`，**已对齐**）；`Geom_RectangularTrimmedSurface.cxx:210-336`（`:237` U1==U2 抛异常、`:248` `ElCLib::AdjustPeriodic`、`:269-273` 越界 `Standard_ConstructionError`、`:328-335` `UReverse/VReverse`）
-- 影响：U1>U2 或 Sense=false 时 OCCT 反转基面参数方向（法向/du 符号翻转），Rust 原样存参
-- 建议：按 `cxx:210-336` 补 `SetTrim`/`SetUTrim`/`SetVTrim` 全部分支与 `AdjustPeriodic`/越界检查；`rectangular_trimmed.rs:119-160` 的 D0/D1/D2 转发已与 `cxx:391-407` 一致，不用动
-- **处置（2026-10-06 订正）**：前半（2D 样条权重/周期）**不再是缺口**；后半（`SetTrim` 族）**仍为 UNPORTED**，需按 `Geom_RectangularTrimmedSurface.cxx:210-336` 移植。
+- 影响：~~U1>U2 或 Sense=false 时 OCCT 反转基面参数方向（法向/du 符号翻转），Rust 原样存参~~ —— 现按 OCCT 反转基面参数方向
+- 建议：~~按 `cxx:210-336` 补 `SetTrim`/`SetUTrim`/`SetVTrim` 全部分支与 `AdjustPeriodic`/越界检查~~；`rectangular_trimmed.rs` 的 D0/D1/D2 转发已与 `cxx:391-407` 一致，未动
+- **处置（2026-10-13 ✅ 已闭环）**：前半（2D 样条权重/周期）已于 T-104/T-106 订正；后半按 `Geom_RectangularTrimmedSurface.cxx:71-386` 全量移植：
+  - `SetTrim` 8 参版（`cxx:210-336`）：`U1==U2`/`V1==V2` 抛错；周期向 `UsameSense=USense` + `ElCLib::AdjustPeriodic(udeb, ufin, min(|u2-u1|/2, PConfusion), u1, u2)`；非周期向 `U1<U2` 取 `USense`、否则取 `!USense` 并交换，随后 `(udeb-u1 > PConfusion) || (u2-ufin > PConfusion)` 抛错；末段按 `!UsameSense`/`!VsameSense` 调 `UReverse`/`VReverse`
+  - `SetTrim` 6 参版（`cxx:159-169`）与 4 参单方向版（`cxx:174-208`）按原样转发（`dummy_a`/`dummy_b`/`dummy_Sense`）
+  - `UReverse`/`VReverse`（`cxx:342-365`）：窗口两端经基面 `UReversedParameter(utrim2)`/`(utrim1)` 映射，`basisSurf->UReverse()`，再回 `SetTrim(..., true, true)`
+  - `Geom_Surface::UReversed`/`VReversed`（`Geom_Surface.cxx:33-48`）= `Copy()` + `U/VReverse()`
+  - 各具体面按 `Geom_*.cxx` 补 `UReversedParameter`/`VReversedParameter`：Plane `-u`/`-v`（`Geom_Plane.cxx:115,131`）、Cylinder/Cone/Sphere `2π-u`/`-v`（`Geom_CylindricalSurface.cxx:87,94`、`Geom_ConicalSurface.cxx:90,97`、`Geom_SphericalSurface.cxx:81,88`）、Torus `2π-u`/`2π-v`（`Geom_ToroidalSurface.cxx:108,116`）、Bezier `1-u`/`1-v`（`Geom_BezierSurface.cxx:1345,1392`）、BSpline `Flat(1)+Flat(Upper)-u/v`（`Geom_BSplineSurface_1.cxx:1594,1625`）、SurfaceOfRevolution `2π-u` / 基曲线 `ReversedParameter`（`Geom_SurfaceOfRevolution.cxx:103,119`）、SurfaceOfLinearExtrusion 基曲线 `ReversedParameter` / `-v`（`Geom_SurfaceOfLinearExtrusion.cxx:98,114`）、Offset 转发基面
+  - 新增 `Surface::rectangular_trimmed_spec`（`surface.rs`）承载 `T.IsNull() ? S->Copy() : T->BasisSurface()->Copy()` 与 `T->vtrim1/vtrim2/isutrimmed/isvtrimmed` 分支（`cxx:122-155`）
+  - `window()`：`Adaptor3d_CurveOnSurface::EvalFirstLastSurf` 的 `mySurface->UTrim(U1,U2,Tol)->VTrim(V1,V2,Tol)`（`Adaptor3d_CurveOnSurface.cxx:1778-1779`）是 `GeomAdaptor_Surface` 窗口（`GeomAdaptor_Surface.cxx:411-427` 原样存窗口、仅 `hxx:172-175` 判反向），不做 `SetTrim` 折叠，故单列 `window` 供 `cos_locate.rs::trim_uv` 使用；`geom_lib.rs::build_c3d_on_iso_line`、`split_surface.rs`、`shape_fix_face.rs::fix_missing_seam`（`ShapeFix_Face.cxx:2236`）、`tabulated_cylinder.rs`（`IGESToBRep_TopoSurface.cxx:960`）、`brep_lib_make_face.rs` 处的 OCCT 都是真 `Geom_RectangularTrimmedSurface` 构造，继续走 `uv`/`one_param`
+  - 验证：`step_obj_gates` 4/4、`data/occ` 八模型面积比 1.0000（`occt-geom`/`occt-topo` 均 `cargo check` 0 error）
 ## 已核对为忠实移植（反证，供"未发现"依据）
 
 - `extrema_pc/general_extrema_pc.rs` 整体：BSpline 结点臂 `:476-611` ↔ `Extrema_GGExtPC.hxx:190-388`；default 臂 `:699-774` ↔ `:390-470`；`AddSol :347` ↔ `:617-632`；`SearchOfTolerance`/`MaxOrder`/奇异 DN/三点 DF ↔ `Extrema_GFuncExtPC.hxx`；`FunctionRoots :366-375` ↔ `Extrema_GGenExtPC.hxx:166`；`defl_curv_intervals :632-695` ↔ `Extrema_CurveTool.cxx:41-91`

@@ -216,4 +216,19 @@ impl Surface for GeomBezierSurface {
         copy.u_reverse();
         Some(Arc::new(copy))
     }
+
+    /// `Geom_Surface::VReversed` = `Copy()` + `VReverse` (`Geom_Surface.cxx:43-48`).
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut copy = self.clone();
+        copy.v_reverse();
+        Some(Arc::new(copy))
+    }
+
+    /// `Geom_BezierSurface::UReversedParameter` (`Geom_BezierSurface.cxx:1345-1349`):
+    /// `1 - U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { 1.0 - u }
+
+    /// `Geom_BezierSurface::VReversedParameter` (`Geom_BezierSurface.cxx:1392-1396`):
+    /// `1 - V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 { 1.0 - v }
 }

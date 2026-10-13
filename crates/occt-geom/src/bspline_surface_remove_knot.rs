@@ -85,6 +85,9 @@ impl GeomBSplineSurface {
             return Ok(false);
         }
         let (poles, weights) = unpack_poles(&new_flat, u_direction, rational, along_new as usize, across);
+        // `myMaxDerivInvOk = false` before `updateUKnots()` / `updateVKnots()`
+        // (`Geom_BSplineSurface_1.cxx:2105-2106`, `:2190-2191`).
+        self.res_latch.invalidate();
         self.poles = poles;
         self.weights = weights;
         if u_direction {

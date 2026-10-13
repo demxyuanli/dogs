@@ -1,6 +1,6 @@
 # _tasks — OCCT → Rust migration map (current)
 
-> Last updated: 2026-08-29. Implementation `.rs` files are split to <=800 lines.
+> Last updated: 2026-10-14. Implementation `.rs` files are split to <=800 lines.
 > Phase 3 detail: [specs/_phase3_plan.md](_phase3_plan.md)
 
 ## 已完整 (✅)
@@ -38,7 +38,7 @@ Sphere/Torus + B样条/Bezier/Trimmed/Offset/Revolved + **B1-B5 转换** +
 Curve2d trait + Line/Circle/Ellipse/Hyperbola/Parabola/Trimmed/Offset/BSpline +
 Geom2dBezierCurve · curve_ops(长度/交点/最近点) · bspline2d_to_bezier
 
-### occt-topo (TKBRep, 381 tests)
+### occt-topo (TKBRep, `--lib` 1276 tests)
 - **几何内核**: tgeometry(GeometryRegistry 侧表) · 真实 children 树 ·
   builder(全部 make_*) · brep_tool(BRep_Tool) · primitives(真几何 box/cyl/sphere/cone/torus)
 - **网格化**: wireframe · shape_mesh(任意 BRep 网格化+法线+焊接) · incremental_mesh(逐行移植 BRepMesh_FaceDiscret+Delaun)
@@ -84,3 +84,32 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 - Draw 完整 TCL（表达式解析/过程/命令表）
 - BRepGProp 更全（体积惯性、张量高级）
 - XCAF 完整 schema（视图/标注/实例树）/ STEP 全实体写
+
+## 已知自创残余（须按 OCCT 控制流收口，勿用启发式替代）
+
+| Id | 残余 | 现状 |
+|---|---|---|
+| T-125 | `brepfeat::solid_volume` 用线框端点扇形和 + Newell 法向（`brepfeat/features.rs`，本轮前 `:506/553/567/583`），OCCT 无此规则；同族自创件为网格夹具冒充解析件（`features.rs:377 translated_mesh_cylinder`、`:399 mesh_cylinder(..,24)`、`:325 revolve_profile_about` 车削网格、`:465 resolution_for` 的 `clamp(16,64)`） | **2026-10-13 分开实测，结论一分为二**：<br>(1) **体积积分已换忠实件**：`solid_volume` 删除自创扇形和/Newell 法向，改调 `brep_gprop_full::volume_properties`（`BRepGProp::VolumeProperties` → `BRepGProp_Vinert`/`BRepGProp_Gauss::Vinert`，`BRepGProp.cxx:555-586`、`BRepGProp_Vinert.cxx:197-204`），签名去掉已死的 `_nu/_nv` UV 网格参数，删掉随之无调用者的 `polygon_fan_volume`/`polygon_normal`/`wire_polygon_3d`。`brepfeat --lib` **17/17 绿**，`occt-topo --lib` **1276/1276 绿**；同一 shape 上对拍，gprop 比自创扇形和更准：rib 4.090000（精确）vs 4.150000、neck 4.489835（= 16 边形精确）vs 4.816391、boss 4.155291（= 24 边形精确）vs 4.284701。**旧记载的"gprop 对结果面积分有缺口"不成立**——`volume_properties` 在 `brepfeat` 结果面上是正确的。<br>(2) **解析件替换仍被 BOP 阻塞（未做）**：3 项失配全部来自 `bop_builder::boolean`（`BOPAlgo_BOP`）对解析旋转体/贯通圆柱工具的处理，与体积无关。逐项隔离实测（`brepfeat` 探针，2026-10-13）：box ∪ 解析 neck（z=1 贴合）→`res_solid=true` 但工具丢失、体积 = box 4.000000（应 4.489835）；box ∪ 解析贯通 boss → `res_solid=false`、整根圆柱未裁剪地加上去 2.706858（应 2.565487）；96 面圆柱 − 解析 groove 环（`Cut`）→ `res_solid=false` 且刃口**增加**体积 9.337869 > 9.317486。换成车削网格夹具三者全部回到基线 ⇒ 缺口属 **A5/T-79（`bop_curved`/`BOPAlgo_BOP` 曲面分支）**，不属网格器（`GeomCylinder::d1` 返回真实偏导，`occt-geom/src/cylinder.rs:20-22`）。网格夹具因此保留并就地标为 UNPORTED（`features.rs` `revolve_profile_about`/`mesh_cylinder`/`brepfeat/mod.rs` 模块头），工作理由由原来那句错的"解析面 `d1` 为零"改为上述实测数字 |
+| T-79 | `bop_curved` 网格级布尔（曲面 operand，`bop_curved/region_trim.rs:51`、`face_meshing.rs:418`） | UNPORTED，被 T-80 阻塞（见 `_audit/bop-boolean.md` 发现 11、`_audit/_index.md` A5） |
+
+## A26 IGES 写侧余项（2026-10-13 收口）
+
+| Id | 余项 | 状态 |
+|---|---|---|
+| T-78a | 周期面反周期化：`GeomToIGES_GeomSurface.cxx:303-343` 的 `SetUOrigin`/`SetVOrigin` 重定原点（issue 26138）+ `SetUNotPeriodic` | ✅ 已落地（`iges/emit_surface.rs` 的 `u_reorigin`/`v_reorigin` 块（`:316-355`）→ `GeomBSplineSurface::set_u_origin`/`set_v_origin` → `bspl::unperiodize_direction`）；旧"未移植"注释已清除 |
+| T-78b | 全周椭圆支：`GeomToIGES_GeomCurve.cxx:620-645`（104→126）；圈整周支 `cxx:565-570` | ✅ 已落地（`iges/emit_conic.rs::emit_whole_period_ellipse`（`:17`）、`iges/emit_curve.rs::emit_circle_transfer`（`:126`）的 `plast = pfirst`） |
+| T-78c | 对拍基线 | `iges_check` 14/14 `ok`；参数段记录多重集 vs `_igesdump/oracle/*.iges`：10/14 逐字节一致（Shape-2 的 28 条 128 记录逐字节一致），3 个模型浮点噪声/读侧极点密度差异，`OffsetPlaneHoleEdge` 仅缺 314/406（颜色/名字） |
+| T-78d | 仍 UNPORTED（有 OCCT 出处，非自创） | Bezier 窄区间 `Geom_BezierCurve::Segment`；`cxx:476-502` 的 BRep-mode `analyticMode` 臂（默认 Faces 模式不可达） |
+
+## 文件拆分记录（>800 行按 OCCT 职责切分，控制流不变）
+
+命名规则见 `CLAUDE.md`「文件与模块命名」：`<module>/mod.rs` + `mod <主题>;` + `pub use <主题>::*;`，文件名取该文件承载的 OCCT 类/职责。拆分为纯搬迁：`pub use` 重导出保持原调用路径，**未改任何分支**。
+
+| 日期 | 原文件 | 行数 | 新布局（各行数） |
+|---|---|---|---|
+| 2026-10-13 | `occt-topo/src/iges.rs` | 4361 | `iges/{mod 90, entry 48, writer 356, card 312, entity 188, curve_kind 403, frame_geometry 130, wire_helpers 239, pcurve_transfer 412, emit_conic 345, emit_curve 424, emit_surface 618, emit_face 604, tests 77}.rs`；`iges::write_iges` 调用路径不变 |
+| 2026-10-13 | `occt-topo/src/pcurve_full/surface_projector.rs` | 3223 | `pcurve_full/surface_projector/{mod 42, classify 194, projector 170, analytic 78, newton_uv 485, closed_state 403, iso_param 643, period_jump 276, curve_projection 633, reparam 271}.rs`；`super::surface_projector::*` 重导出不变 |
+
+**引用规则**：规格/报告/注释里旧写的 `iges.rs:NNNN`、`surface_projector.rs:NNNN` 已按新文件名就近订正（如 `iges_curve_kind` → `iges/curve_kind.rs:36`、`ReparamCurve2d` → `surface_projector/reparam.rs:10`）。`_igesdump/` 与 `docs/goals/**` 里的历史记录保持原样，不改写已完成目标的留档。
+
+**仍待拆（>1000 行，按体量降序）**：`step/read_topology.rs` 2341、`meshing/node_insertion.rs` 1887、`occt-geom/bspline_surface.rs` 1842、`occt-math/function_set_root.rs` 1686、`meshing/incremental_mesh/discret_root.rs` 1533、`occt-geom2d/geom2d_int/int_poly_poly_gen.rs` 1496、`meshing/edge_discret.rs` 1398、`iges_read/iges_to_brep_topo_curve.rs` 1263、`occt-geom/adv_app2var/gauss_gss_xj.rs` 1257、`shhealing/shape_fix_face.rs` 1230。

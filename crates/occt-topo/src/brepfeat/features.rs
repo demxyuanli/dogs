@@ -127,10 +127,10 @@ pub fn rib_volume(profile: &[GpPnt2d], thickness: f64, height: f64) -> Result<f6
 }
 
 /// `|after.volume − volume(before)|`, the material added or removed by the
-/// feature. Both volumes use [`solid_volume`] (a wire-respecting divergence
-/// mesh), which is exact for the planar/faceted solids these features produce.
+/// feature. Both volumes use [`solid_volume`] (`BRepGProp::VolumeProperties`),
+/// the divergence-theorem integral over the shape's actual faces.
 pub fn feature_before_after_delta(before: &Solid, after: &FeatResult) -> f64 {
-    let v0 = solid_volume(&before.0, 40, 40);
+    let v0 = solid_volume(&before.0);
     (after.volume - v0).abs()
 }
 
@@ -148,19 +148,19 @@ impl FeatResult {
     /// The volume this feature added (`> 0`) or removed (`< 0`), relative to
     /// the solid it was applied to. Negative means a cut (groove).
     pub fn volume_delta(&self, before: &Solid) -> f64 {
-        self.volume - solid_volume(&before.0, 40, 40)
+        self.volume - solid_volume(&before.0)
     }
 
     /// `after / before` volume ratio: `> 1` for an additive feature,
     /// `< 1` for a subtractive one.
     pub fn volume_ratio(&self, before: &Solid) -> f64 {
-        let v0 = solid_volume(&before.0, 40, 40);
+        let v0 = solid_volume(&before.0);
         if v0.abs() < 1e-12 { f64::NAN } else { self.volume / v0 }
     }
 
     /// Human-readable classification of the feature's effect.
     pub fn kind(&self, before: &Solid) -> FeatKind {
-        if self.volume > solid_volume(&before.0, 40, 40) {
+        if self.volume > solid_volume(&before.0) {
             FeatKind::Additive
         } else {
             FeatKind::Subtractive
@@ -305,10 +305,8 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
     let r = crate::bop_builder::boolean(&solid.0, tool, op, tol.max(1e-9))
         .map_err(|e| format!("feature boolean: {e}"))?;
     let shape = r.solid.map(|s| s.0).unwrap_or(r.shape);
-    // `shape_mesh::shape_volume` meshes each face over its UV bounding box,
-    // ignoring the wire boundary, so it overcounts every non-rectangular
-    // planar face. Use a wire-respecting volume instead.
-    let volume = solid_volume(&shape, 48, 48);
+    // `BRepGProp::VolumeProperties` over the boolean's own faces.
+    let volume = solid_volume(&shape);
     Ok(FeatResult { shape, volume })
 }
 
@@ -316,12 +314,26 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
 /// given `axis` (a rotation mapping Z onto the axis direction, then a
 /// translation to the axis location).
 ///
-/// The revolved solid is rebuilt as a planar-faced (lathe) mesh from the
-/// revolution's ring vertices, because the analytic `GeomCylinder`/`GeomCone`
-/// faces report zero `d1` partials and therefore cannot be meshed by
-/// `wireframe::face_to_triangles` (which breaks both the exact and the voxel
-/// booleans). Consecutive rings form quad strips; a ring on the axis collapses
-/// to a fan, so closed profiles produce closed solids.
+/// UNPORTED workaround (`BRepFeat_MakeRevol` has no such step: OCCT takes the
+/// tool `TopoDS_Shape` as given and hands it to `BOPAlgo_BOP`): the analytic
+/// revolve solid `sweep_revolve::revolve_polyline_around_z` returns cannot yet
+/// be combined by `crate::bop_builder::boolean`, so the tool is rebuilt as a
+/// planar-faced (lathe) mesh from the revolution's ring vertices. Measured
+/// 2026-10-13 on the `brepfeat` baselines:
+///
+/// * box ∪ analytic neck (touching at z = 1) -> one solid, but the tool is
+///   dropped: volume stays the box's 4.000000 (expected 4.489835);
+/// * box ∪ analytic through-boss -> `res_solid = false` and the whole
+///   cylinder is added untrimmed: 2.706858 (expected 2.565487);
+/// * faceted cylinder − analytic groove ring (`Cut`) -> `res_solid = false`,
+///   and the cut *adds* material: 9.337869 > 9.317486.
+///
+/// With a faceted tool all three agree with the baseline. The gap is in the
+/// port's `BOPAlgo_BOP` path (audit A5 / T-79, `bop_curved`), not in the
+/// mesher: `GeomCylinder::d1` does return the analytic partials
+/// (`occt-geom/src/cylinder.rs:20-22` -> `elib::surface_eval::cylinder_d1`).
+/// Consecutive rings form quad strips; a ring on the axis collapses to a fan,
+/// so closed profiles produce closed solids.
 pub(super) fn revolve_profile_about(profile: &[GpPnt2d], steps: usize, axis: &GpAx1) -> Result<TopoShape, String> {
     let rev = crate::sweep_revolve::revolve_polyline_around_z(profile, steps)?;
     let mut verts: Vec<GpPnt> = Vec::new();
@@ -395,7 +407,11 @@ pub(super) fn mesh_volume_signed(mesh: &crate::mesh::ShapeMesh) -> f64 {
 }
 
 /// Faceted cylinder solid (axis +Z) from an exact triangle mesh, so all faces
-/// are planar and mesh reliably. Mirrors `feature`'s mesh-cylinder tool.
+/// are planar and mesh reliably. UNPORTED workaround for the same
+/// `bop_builder::boolean` gap as [`revolve_profile_about`]: OCCT's
+/// `BRepPrimAPI_MakeCylinder` tool is analytic, and its fuse with a box is not
+/// handled by the port yet (`BRepPrimCylinder::make_cylinder` + `Fuse` here
+/// yields the untrimmed union, 2.706858 instead of 2.565487).
 pub(super) fn mesh_cylinder(radius: f64, height: f64, slices: usize) -> TopoShape {
     let mut vertices = Vec::new();
     let mut triangles = Vec::new();
@@ -494,129 +510,20 @@ pub(super) fn face_point_distance(face: &crate::shape::Face, p: &GpPnt) -> f64 {
     .map_or(f64::INFINITY, |ps| ps.distance)
 }
 
-/// Enclosed volume of a closed planar-faced solid by the divergence theorem:
-/// each face contributes the signed volume of its boundary polygon(s), fanned
-/// from the first vertex (`Σ p0·(pi×pi+1)/6`). Every wire, inner (hole) wires
-/// included, contributes with its stored B-rep winding: a hole is wound
-/// opposite to the outer wire, so its fan already subtracts. The face is then
-/// oriented so its winding agrees with its surface normal. This is exact for
-/// polyhedra and, unlike `shape_mesh::shape_volume`, does not overcount
-/// non-rectangular planar faces (it uses the face's actual wire vertices, not
-/// a UV bounding box).
-pub(super) fn solid_volume(shape: &TopoShape, _nu: usize, _nv: usize) -> f64 {
-    let mut vol = 0.0;
-    for f in faces_of(shape) {
-        let wires = crate::topo_tools_full::wires_of_face(&f);
-        if wires.is_empty() {
-            continue;
-        }
-        let surf_n = crate::brep_surface::face_plane(&f)
-            .map(|p| GpVec::from_xyz(p.axis().direction().xyz()));
-        let mut face_vol = 0.0;
-        let mut outer_n: Option<GpVec> = None;
-        for (wi, w) in wires.iter().enumerate() {
-            let pts = wire_polygon_3d(w);
-            if pts.len() < 3 {
-                continue;
-            }
-            if wi == 0 {
-                outer_n = Some(polygon_normal(&pts));
-            }
-            face_vol += polygon_fan_volume(&pts);
-        }
-        if let (Some(n), Some(on)) = (surf_n, outer_n) {
-            // Outward normal = the surface/plane normal oriented by the face's
-            // (effective, `faces_of` composes ancestors) orientation: a REVERSED
-            // face turns its plane normal inwards, e.g. after
-            // `BRepTools::OrientClosedSolid` flipped the solid.
-            let n_out = if f.0.orientation() == crate::abs::Orientation::Reversed {
-                GpVec::new(-n.x(), -n.y(), -n.z())
-            } else {
-                n
-            };
-            if on.dot(&n_out) < 0.0 {
-                face_vol = -face_vol;
-            }
-        }
-        vol += face_vol;
-    }
-    vol.abs()
-}
-
-/// Signed volume of the cone from the origin through the polygon, fanned from
-/// the first vertex: `Σ p0·(pi×pi+1)/6`.
-///
-/// This is one term of the divergence theorem: the signed volume enclosed by
-/// the polygon, positive when the polygon's winding is right-handed about its
-/// outward normal. Summing the fans of every face of a closed, consistently
-/// oriented polyhedron yields the polyhedron's volume.
-pub(super) fn polygon_fan_volume(pts: &[GpPnt]) -> f64 {
-    if pts.len() < 3 {
-        return 0.0;
-    }
-    let p0 = pts[0].coord;
-    let mut v = 0.0;
-    for i in 1..pts.len() - 1 {
-        v += p0.dot_cross(&pts[i].coord, &pts[i + 1].coord);
-    }
-    v / 6.0
-}
-
-/// Polygon normal by Newell's method (magnitude = 2 × area, direction follows
-/// the winding).
-pub(super) fn polygon_normal(pts: &[GpPnt]) -> GpVec {
-    let mut n = GpVec::zero();
-    for i in 0..pts.len() {
-        let j = (i + 1) % pts.len();
-        n = n.added(&GpVec::new(
-            (pts[i].y() - pts[j].y()) * (pts[i].z() + pts[j].z()),
-            (pts[i].z() - pts[j].z()) * (pts[i].x() + pts[j].x()),
-            (pts[i].x() - pts[j].x()) * (pts[i].y() + pts[j].y()),
-        ));
-    }
-    n
-}
-
-/// Boundary polygon of a wire as its edge-curve endpoint points, chained by
-/// endpoint matching so the traversal order is correct even when a shared
-/// edge's stored vertex order opposes the wire direction.
-pub(super) fn wire_polygon_3d(w: &crate::shape::Wire) -> Vec<GpPnt> {
-    let segs: Vec<(GpPnt, GpPnt)> = crate::topo_tools_full::edges_of_wire(w)
-        .iter()
-        .filter_map(|e| crate::brep_tool::BRepTool::edge_vertices(e))
-        .collect();
-    if segs.is_empty() {
-        return Vec::new();
-    }
-    let mut pts = vec![segs[0].0, segs[0].1];
-    let mut used = vec![false; segs.len()];
-    used[0] = true;
-    for _ in 1..segs.len() {
-        let last = *pts.last().unwrap();
-        let mut found = None;
-        for (i, (a, b)) in segs.iter().enumerate() {
-            if used[i] {
-                continue;
-            }
-            if a.distance(&last) < 1e-9 {
-                found = Some((i, *b));
-                break;
-            }
-            if b.distance(&last) < 1e-9 {
-                found = Some((i, *a));
-                break;
-            }
-        }
-        match found {
-            Some((i, next)) => {
-                used[i] = true;
-                pts.push(next);
-            }
-            None => break,
-        }
-    }
-    if pts.len() > 1 && pts[0].distance(pts.last().unwrap()) < 1e-9 {
-        pts.pop();
-    }
-    pts
+/// Enclosed volume of a solid — `BRepGProp::VolumeProperties(S, Props)`
+/// (`BRepGProp.cxx:555-586`), i.e. the divergence-theorem surface integral of
+/// `BRepGProp_Vinert` over `BRepGProp_Gauss::Vinert` (`BRepGProp_Vinert.cxx:
+/// 197-204`). That is the same routine OCCT's feature code uses, and it is
+/// exact for the planar faces a feature boolean produces: the previous
+/// hand-rolled per-face boundary-polygon fan was only valid for polyhedra and
+/// under-counted every curved face (a 24-slice cylinder boss fused onto a box
+/// measured 4.000000 instead of 4.155291).
+pub(super) fn solid_volume(shape: &TopoShape) -> f64 {
+    // `GProp_GProps` starts empty and accumulates whatever faces the Gauss
+    // integrator could build; a face the port cannot represent is the
+    // `BRepGProp_Gauss::Compute` failure OCCT swallows (`BRepGProp_Vinert.cxx:
+    // 192`, the returned error is discarded).
+    crate::brep_gprop_full::volume_properties(shape)
+        .map(|p| p.mass().abs())
+        .unwrap_or(0.0)
 }

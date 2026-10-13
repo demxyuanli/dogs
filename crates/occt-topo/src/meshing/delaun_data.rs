@@ -171,6 +171,18 @@ pub struct DelaunDataStructure {
     // here leaked a per-process random iteration order into the mesh result.
     links_of_domain: BTreeSet<i32>,
 
+    /// Node-pair -> link ids holding that pair, the port's realisation of
+    /// `IndexOf` (`BRepMesh_DataStructureOfDelaun.cxx:74`): OCCT answers it with
+    /// `myLinks.FindIndex(theLink)` on `IMeshData::IDMapOfLink` (`hxx:225`), an
+    /// indexed map that hashes `BRepMesh_Edge::operator==` / `IsEqual`
+    /// (`BRepMesh_Edge.hxx:59-66`) - equal when the node pair matches in either
+    /// orientation - so the lookup is O(1) instead of a scan over `links`.
+    ///
+    /// `IsEqual` is false whenever either edge is `BRepMesh_Deleted`
+    /// (`hxx:61-62`), i.e. OCCT's map never answers a deleted link; the scan
+    /// below applies the same filter through `link_states`.
+    link_index: HashMap<(i32, i32), Vec<i32>>,
+
     elements: Vec<DelaunTriangle>,
     element_states: Vec<VertexState>,
     // `BTreeSet` (ascending id) mirrors the traversal of OCCT's
@@ -210,6 +222,7 @@ impl DelaunDataStructure {
             link_elements: Vec::with_capacity(cap * 3),
             del_links: VecDeque::new(),
             links_of_domain: BTreeSet::new(),
+            link_index: HashMap::new(),
             elements: Vec::with_capacity(cap * 2),
             element_states: Vec::with_capacity(cap * 2),
             elements_of_domain: BTreeSet::new(),
@@ -355,12 +368,17 @@ impl DelaunDataStructure {
         let id;
         if let Some(del) = self.del_links.pop_front() {
             id = del;
-            self.links[(id - 1) as usize] = DelaunLink::new_unparameterized(first, last, id);
+            let old = self.links[(id - 1) as usize];
+            let nl = DelaunLink::new_unparameterized(first, last, id);
+            self.idx_set(id, Some(old), &nl);
+            self.links[(id - 1) as usize] = nl;
             self.link_states[(id - 1) as usize] = state;
             self.link_elements[(id - 1) as usize] = DelaunPairOfIndex::default();
         } else {
             id = (self.links.len() + 1) as i32;
-            self.links.push(DelaunLink::new_unparameterized(first, last, id));
+            let nl = DelaunLink::new_unparameterized(first, last, id);
+            self.idx_set(id, None, &nl);
+            self.links.push(nl);
             self.link_states.push(state);
             self.link_elements.push(DelaunPairOfIndex::default());
         }
@@ -372,15 +390,28 @@ impl DelaunDataStructure {
 
     /// Finds the index of an equivalent link (either orientation), `0` if none.
     pub fn index_of_link(&self, link: &DelaunLink) -> i32 {
-        for (i, l) in self.links.iter().enumerate() {
-            if self.link_states[i] == VertexState::Deleted {
-                continue;
-            }
-            if l.is_equal(link) {
-                return (i + 1) as i32;
+        let k = Self::lkey(link);
+        let mut best = 0;
+        if let Some(ids) = self.link_index.get(&k) {
+            for &id in ids {
+                let i = (id - 1) as usize;
+                if self.link_states[i] == VertexState::Deleted || !self.links[i].is_equal(link) { continue; }
+                if best == 0 || id < best { best = id; }
             }
         }
-        0
+        best
+    }
+
+    fn lkey(l: &DelaunLink) -> (i32, i32) {
+        let (a, b) = (l.first_node(), l.last_node());
+        if a <= b { (a, b) } else { (b, a) }
+    }
+
+    fn idx_set(&mut self, id: i32, old: Option<DelaunLink>, new: &DelaunLink) {
+        if let Some(o) = old {
+            if let Some(v) = self.link_index.get_mut(&Self::lkey(&o)) { v.retain(|&x| x != id); }
+        }
+        self.link_index.entry(Self::lkey(new)).or_default().push(id);
     }
 
     /// Link by 1-based index.
@@ -403,6 +434,8 @@ impl DelaunDataStructure {
     pub fn substitute_link(&mut self, index: i32, new_link: DelaunLink, state: VertexState) -> bool {
         let idx = (index - 1) as usize;
         if self.link_states[idx] == VertexState::Deleted {
+            let old = self.links[idx];
+            self.idx_set(index, Some(old), &new_link);
             self.links[idx] = new_link;
             self.link_states[idx] = state;
             self.link_elements[idx] = DelaunPairOfIndex::default();
@@ -416,6 +449,7 @@ impl DelaunDataStructure {
         self.clean_link(index, &old);
         self.links_connected_to_mut(new_link.first_node()).push(index);
         self.links_connected_to_mut(new_link.last_node()).push(index);
+        self.idx_set(index, Some(old), &new_link);
         self.links[idx] = new_link;
         self.link_states[idx] = state;
         self.link_elements[idx] = DelaunPairOfIndex::default();
@@ -656,6 +690,8 @@ impl DelaunDataStructure {
         }
         self.links_of_domain = (1..=self.links.len() as i32).collect();
         self.del_links.clear();
+        self.link_index.clear();
+        for i in 0..self.links.len() { let l = self.links[i]; self.link_index.entry(Self::lkey(&l)).or_default().push((i + 1) as i32); }
     }
 
     fn clear_deleted_nodes(&mut self) {
@@ -677,6 +713,8 @@ impl DelaunDataStructure {
             l.v1 = remap[l.v1 as usize];
             l.v2 = remap[l.v2 as usize];
         }
+        self.link_index.clear();
+        for i in 0..self.links.len() { let l = self.links[i]; self.link_index.entry(Self::lkey(&l)).or_default().push((i + 1) as i32); }
         self.vertices = new_verts;
         self.node_links = new_node_links;
         self.vertex_cells = VertexCellFilter {

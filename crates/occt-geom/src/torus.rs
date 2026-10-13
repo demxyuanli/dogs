@@ -65,6 +65,22 @@ impl Surface for GeomTorus {
         Some(Arc::new(GeomTorus::new(pos)))
     }
 
+    /// `Geom_ToroidalSurface::VReversed` (`Geom_Surface.cxx:42-48`) = `Copy()`
+    /// + `VReverse` (`gp_Torus.hxx:97` -> `pos.ZReverse()`).
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos;
+        pos.v_reverse();
+        Some(Arc::new(GeomTorus::new(pos)))
+    }
+
+    /// `Geom_ToroidalSurface::UReversedParameter`
+    /// (`Geom_ToroidalSurface.cxx:108-111`): `2*pi - U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { 2.0 * std::f64::consts::PI - u }
+
+    /// `Geom_ToroidalSurface::VReversedParameter`
+    /// (`Geom_ToroidalSurface.cxx:116-119`): `2*pi - V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 { 2.0 * std::f64::consts::PI - v }
+
     /// `Geom_ToroidalSurface::UIso` (`Geom_ToroidalSurface.cxx:305-310`):
     /// `Geom_Circle(ElSLib::TorusUIso(pos, majorRadius, minorRadius, U))`,
     /// the minor circle whose plane contains the axis direction and the

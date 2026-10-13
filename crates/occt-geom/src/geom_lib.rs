@@ -286,7 +286,11 @@ pub fn build_c3d_on_iso_line(
             a_surf = Arc::new(
                 crate::rectangular_trimmed::GeomRectangularTrimmedSurface::uv(
                     a_surf, u1, u2, a_v1, a_v2,
-                ),
+                )
+                // OCCT lets `Geom_RectangularTrimmedSurface` throw here; the
+                // deviation guards above make it unreachable, so a failure is
+                // reported as the "no iso curve" `None`.
+                .ok()?,
             );
             is_to_trim = false;
         } else {
@@ -312,7 +316,9 @@ pub fn build_c3d_on_iso_line(
             a_surf = Arc::new(
                 crate::rectangular_trimmed::GeomRectangularTrimmedSurface::uv(
                     a_surf, a_u1, a_u2, v1, v2,
-                ),
+                )
+                // See the U arm above.
+                .ok()?,
             );
             is_to_trim = false;
         } else {

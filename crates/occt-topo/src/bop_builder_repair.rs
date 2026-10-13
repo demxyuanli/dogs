@@ -419,9 +419,11 @@ pub fn result_is_multiple(r: &BooleanResult) -> bool {
 /// Remove topological garbage from a shape.
 ///
 /// Weld near-coincident vertices (merging duplicate vertex instances and
-/// dropping edges whose two endpoints collapse to one point), then remove edges
-/// shorter than `tol`. This is the `ShapeFix_Shape`-style hygiene pass that
-/// keeps rebuilt boundaries minimal. The input shape is left untouched.
+/// dropping edges whose two endpoints collapse to one point), then run
+/// `ShapeFix_Wire::FixSmall(lockvtx, tol)` over every wire. This mirrors OCCT's
+/// two separate branches - `ShapeFix_Wire::FixConnected`
+/// (`ShapeFix_Wire.cxx:557-596`) and `FixSmall` (`cxx:538-553`) - collapsed into
+/// one entry point, which OCCT does not have. The input shape is left untouched.
 pub fn topologically_clean(shape: &TopoShape, tol: f64) -> TopoShape {
     let tol = tol.max(1e-9);
     let (weld, _) = crate::shhealing::weld_coincident_vertices(shape, tol);

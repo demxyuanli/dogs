@@ -8,9 +8,10 @@
 //!   edge's 3D curve — the part of the curve that is not covered by the
 //!   tolerance spheres of its endpoint vertices. This is the OCCT
 //!   `BRepLib::FindValidRange` walk (step along the curve until the point
-//!   leaves the vertex sphere, then bisect to the exact exit), followed by an
-//!   arc-length computation of the shrunk span (`GCPnts_AbscissaPoint::Length`
-//!   here approximated with `occt_core::elib::measure::curve_arc_length`).
+//!   leaves the vertex sphere, then bisect to the exact exit), followed by the
+//!   arc-length computation of the shrunk span
+//!   (`GCPnts_AbscissaPoint::Length`, `IntTools_ShrunkRange.cxx:170`, served by
+//!   `occt_geom::gcpnts::length`).
 //!   Degenerated edges, edges without a registered 3D curve and unbounded
 //!   parameter ranges return `Err` rather than panicking.
 //! - [`IntToolsTools`] is a namespace of small static helpers used by the
@@ -21,13 +22,13 @@
 //!   BRepClass3d_SolidClassifier) arrive in wave B; this wave leaves them as
 //!   `None` shells.
 //!
-//! Note: `occt_core::gcpnts` was checked for a `GCPnts_AbscissaPoint` port but
-//! only carries the point-distribution samplers; the arc-length *measurement*
-//! is taken from `occt_core::elib::measure::curve_arc_length` instead.
+//! Note: the arc-length measurement is the faithful
+//! `GCPnts_AbscissaPoint::Length` dispatch in `occt_geom::gcpnts::length`
+//! (`GCPnts_AbscissaPoint.cxx:371-423`).
 
-use occt_core::elib::measure::curve_arc_length;
 use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::precision::{CONFUSION, PCONFUSION};
+use occt_geom::gcpnts;
 use occt_geom::Curve;
 
 use crate::abs::ShapeType;
@@ -169,9 +170,9 @@ impl ShrunkRange {
         if a_ptol_e > a_ptol_e_min {
             a_ptol_e = a_ptol_e_min;
         }
-        let span = s2 - s1;
-        let n = ((span.abs() / a_ptol_e.max(PCONFUSION)).ceil() as usize).clamp(8, 4096);
-        let length = curve_arc_length(&|u| curve.d0(u), s1, s2, n);
+        // `GCPnts_AbscissaPoint::Length(aBAC, myTS1, myTS2, aPTolE)`
+        // (`IntTools_ShrunkRange.cxx:170`).
+        let length = gcpnts::length(curve.as_ref(), s1, s2, Some(a_ptol_e));
         if length < CONFUSION {
             return self.fail("shrunk length is too short (micro edge)");
         }

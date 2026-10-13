@@ -36,7 +36,7 @@ use occt_core::gp::{
 };
 
 use crate::bspline_curve::GeomBSplineCurve;
-use crate::bspline_surface::GeomBSplineSurface;
+use crate::bspline_surface::{GeomBSplineSurface, ResolutionLatch};
 use crate::convert_approx_curve::GeomConvertApproxCurve;
 use crate::curve::Curve;
 use occt_core::kernel::geomabs::Shape;
@@ -174,6 +174,7 @@ fn insert_surface_u(s: &GeomBSplineSurface, u: f64, mult: usize) -> GeomBSplineS
         weights: new_weights,
         u_periodic: s.u_periodic,
         v_periodic: s.v_periodic,
+        res_latch: ResolutionLatch::new(),
     }
 }
 
@@ -211,6 +212,7 @@ fn insert_surface_v(s: &GeomBSplineSurface, v: f64, mult: usize) -> GeomBSplineS
         weights: new_weights,
         u_periodic: s.u_periodic,
         v_periodic: s.v_periodic,
+        res_latch: ResolutionLatch::new(),
     }
 }
 

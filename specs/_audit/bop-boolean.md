@@ -18,7 +18,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
    `solid−face` **原样返回 solid**）**均已删除** —— `bop_builder_core::voxel_fallback` 删于 T-41、
    `boolean_degenerate` 整套（含 `degenerate_empty`/`degenerate_non_solid`/`shape_centroid`）删于 T-47；
    空/非实体输入改走 `bop_builder2::builder_bop_with_fuzzy`（= `BOPAlgo_BOP::Perform`+`BuildShape`），
-   合法性只由已移植的 `bop_bop::check_data`（`BOPAlgo_BOP::CheckData`，`cxx:140-210`）判定。仅余 `boolean_with_check` 的 tol×10/×100 重算（见发现 16）。
+   合法性只由已移植的 `bop_bop::check_data`（`BOPAlgo_BOP::CheckData`，`cxx:140-210`）判定。`boolean_with_check` 的 tol×10/×100 重算**已删除**（2026-10-13，见发现 16）。
 2. **`curved_boolean_full` 曲面分派**（`bop_curved/region_trim.rs:409` ← `boolean_dispatch:215`、`curved_boolean_ext`
    ← `draw/interpreter.rs:422`、`brepfeat/features.rs:320`）：非平面非球面一律走 `general_boolean_trimmed`（样点**多数表决**
    分区 + UV 网格重建 + 空间哈希焊接，`region_trim.rs:42-70,325-401`），球面走解析球冠网格组装（`face_meshing.rs:487`）。
@@ -30,10 +30,10 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 （就地标 **UNPORTED**，`is_inside_mesh:290`）；② 点投影 —— 32×32 网格 + 坐标下降**已删除**
 （`int_tools_full/context.rs:194-195`，T-52）；③ draft shell 丢弃「顶点<3」的面 —— `bop_draft_solid_occt.rs::face_is_degenerate`
 **已删除**（T-47；`face_is_degenerate` 现仅存在于 `bop_builder_repair.rs`，语义不同）。**仍未修**：`bop_curved` 的网格曲面布尔
-与 `bop_curved/region_mesh.rs::classify_face` 的 5×5/8×8 采样分类（发现 3/4/7），以及 `boolean_with_check` 的容差重算（发现 16）。
+与 `bop_curved/region_mesh.rs::classify_face` 的 5×5/8×8 采样分类（发现 3/4/7）。（`boolean_with_check` 的容差重算属发现 16，**已于 2026-10-13 删除**。）
 
 统计：**自创 13 条 + 等价替换未登记 3 条 + 已登记 2 条 = 18 条**（其中 3 条仅在测试/死代码路径）。
-> **2026-10-06 复核**：发现 **1/2/5/6/8/9/10** 已修（见各行「处置」行）；发现 **3/4/7/12/16** 仍为自创。
+> **2026-10-06 复核**：发现 **1/2/5/6/8/9/10** 已修（见各行「处置」行）；发现 **3/4/7/12** 仍为自创，发现 **16** 于 **2026-10-13 已修**。
 
 ## 发现
 
@@ -181,15 +181,16 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 影响：seam pcurve 的 2D 参数偏移（AABB 近似）→ seam 边分裂参数偏；曲面本身不变，拓扑点参数变。
 - 建议：登记；后续接 `occt_geom2d` 投影 API。
 
-### 16. `boolean_with_check` 的 tol×10/×100 重算 + `heal_tolerance` 的 8·tol 滤边
+### 16. `boolean_with_check` 的 tol×10/×100 重算 + `heal_tolerance` 的 8·tol 滤边（✅ 2026-10-13 已修）
 - 判定：**自创**
 - 证据：`bop_builder_dispatch.rs:444-446` `for &scale in &[10.0f64, 100.0] { let nt = tol * scale; let candidate = boolean_dispatch(a, b, op, nt)?; ... }`；`bop_builder_splitapi.rs:340` `crate::shhealing::remove_small_edges(&s1, tol * 8.0)`
 - 是否在 live 路径：**否（公开 API，不在门禁/导出路径）**。`boolean_with_check` 仅被 `bop_builder_report.rs:369` 与测试调用。
-- OCCT 对应：**未找到**。"跑三遍取问题最少者"不是 OCCT 控制流（OCCT 只有单一 `myFuzzyValue`）；`8·tol` 不是 `ShapeFix` 参数。
+- OCCT 对应：**未找到**。"跑三遍取问题最少者"不是 OCCT 控制流（OCCT 只有单一 `myFuzzyValue`，由 `BOPAlgo_Options::SetFuzzyValue` 设一次、`BOPAlgo_Builder::Perform` 消费）；`8·tol` 不是 `ShapeFix` 参数。
 - 影响：若被外部调用会**静默给出与请求容差不一致的几何**（以 100×tol 算出的结果）。
-- 建议：标为未移植，或限定为容差修复工具并禁止默认使用。
-
-- **处置（2026-10-06 复核：仍未修）**：`bop_builder_dispatch.rs:505` 的 `for &scale in &[10.0f64, 100.0]` 重算仍在；`bop_builder_splitapi.rs` 的 `heal_tolerance` 自创修形链仍在（`weld_coincident_vertices`/`remove_small_edges`/`remove_degenerate_faces`）。该函数不在门禁/导出路径（只被 `bop_builder_report.rs:369` 与测试调用）。
+- **处置：✅ 已修（2026-10-13）**。
+  - `boolean_with_check`（`bop_builder_dispatch.rs:504`）删除 tol×10/×100 重算，改为按请求容差**单次**布尔，验证问题只作 warning 附回；`bop_builder_report.rs::boolean_repaired_with_check` 文档同步。
+  - `heal_tolerance`（`bop_builder_splitapi.rs:323`）：`remove_small_edges` 从 `edge_length(e, 8) < min_len` + UnionFind + 直线段重建，改为忠实 `ShapeFix_Wire::FixSmall`（`ShapeFix_Wire.cxx:538-553`）+ `ShapeAnalysis_Wire::CheckSmall`（`ShapeAnalysis_Wire.cxx:765-835`：端点 + 曲线/抬升 pcurve 中点双判，**无弧长阈值**）+ `FixConnected`（`cxx:1459-1468`）；`weld_coincident_vertices` 的端点替换改 `ShapeBuild_Edge::CopyReplaceVertices`（`ShapeBuild_Edge.cxx:59-140`，保留原曲线，不再改成直线）；`remove_degenerate_faces`（"边界边 < 3"）换成 `ShapeFix_Face::FixSmallAreaWire`（`ShapeFix_Face.cxx:2331-2394`）+ `ShapeAnalysis_Wire::CheckSmallArea`（`ShapeAnalysis_Wire.cxx:2004-2098`）。`weld_coincident_vertices` 本身是端口 `TShape` 共享工具（非 OCCT 原语，已就地 UNPORTED 标注）。
+  - 门禁：`occt-topo` 全量 **1345 passed / 1 ignored / 0 failed**（14 suites）；`step_obj_gates` **4/4**。
 
 ### 17. `bop_build_solids_leftover`：包围盒量化去重 + 已删的 `merge_sharing_faces`
 - 判定：**自创**（模块自述 UNPORTED）

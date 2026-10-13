@@ -4,6 +4,7 @@
 //! pole grid element-wise. Evaluation uses Cox-de Boor basis functions in each
 //! parametric direction with a rational division when weights are present.
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use occt_core::bspl::banded_interp;
@@ -15,6 +16,77 @@ use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 use crate::bspline_curve::GeomBSplineCurve;
 use crate::curve::Curve;
 use crate::surface::Surface;
+
+/// Cache of `Geom_BSplineSurface::Resolution`'s derivative bound, i.e. OCCT's
+/// `myMaxDerivInvOk` / `myUMaxDerivInv` / `myVMaxDerivInv`
+/// (`Geom_BSplineSurface.hxx:1318-1323`, `Geom_BSplineSurface_1.cxx:2197-2221`).
+///
+/// The bound is a pure function of the geometry, so `Resolution` computes it
+/// once and reuses it until a mutator clears the flag. The port caches the
+/// bound itself rather than its reciprocal, so [`GeomBSplineSurface::uv_resolution`]
+/// keeps dividing by it, exactly as it did before the latch existed.
+///
+/// Mutators of the owning surface must call [`Self::invalidate`]; the state is
+/// copied by `Clone` (a clone has the same geometry, hence the same bound).
+#[derive(Debug)]
+pub struct ResolutionLatch {
+    ok: AtomicBool,
+    max_deriv_u: AtomicU64,
+    max_deriv_v: AtomicU64,
+}
+
+impl ResolutionLatch {
+    pub fn new() -> Self {
+        Self {
+            ok: AtomicBool::new(false),
+            max_deriv_u: AtomicU64::new(0.0f64.to_bits()),
+            max_deriv_v: AtomicU64::new(0.0f64.to_bits()),
+        }
+    }
+
+    /// `myMaxDerivInvOk = false` (`Geom_BSplineSurface_1.cxx:2197-2221` and the
+    /// `updateUKnots` / `updateVKnots` / pole-and-weight setters that call it):
+    /// the cached bound no longer describes the surface.
+    pub fn invalidate(&mut self) {
+        self.ok.store(false, Ordering::Relaxed);
+    }
+
+    /// `Geom_BSplineSurface::Resolution`: run the `BSplSLib::Resolution` sweep
+    /// only while the flag is clear, then reuse the bound.
+    fn get_or_compute(&self, compute: impl FnOnce() -> (f64, f64)) -> (f64, f64) {
+        if self.ok.load(Ordering::Acquire) {
+            return (
+                f64::from_bits(self.max_deriv_u.load(Ordering::Relaxed)),
+                f64::from_bits(self.max_deriv_v.load(Ordering::Relaxed)),
+            );
+        }
+        let (max_deriv_u, max_deriv_v) = compute();
+        self.max_deriv_u.store(max_deriv_u.to_bits(), Ordering::Relaxed);
+        self.max_deriv_v.store(max_deriv_v.to_bits(), Ordering::Relaxed);
+        self.ok.store(true, Ordering::Release);
+        (max_deriv_u, max_deriv_v)
+    }
+}
+
+impl Default for ResolutionLatch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for ResolutionLatch {
+    fn clone(&self) -> Self {
+        let out = Self::new();
+        if self.ok.load(Ordering::Acquire) {
+            out.max_deriv_u
+                .store(self.max_deriv_u.load(Ordering::Relaxed), Ordering::Relaxed);
+            out.max_deriv_v
+                .store(self.max_deriv_v.load(Ordering::Relaxed), Ordering::Relaxed);
+            out.ok.store(true, Ordering::Release);
+        }
+        out
+    }
+}
 
 /// Non-rational or rational tensor-product B-spline surface.
 #[derive(Clone)]
@@ -29,6 +101,8 @@ pub struct GeomBSplineSurface {
     pub u_periodic: bool,
     /// `Geom_BSplineSurface` VPeriodic (`StepToGeom::MakeBSplineSurface` cxx:1120-1129).
     pub v_periodic: bool,
+    /// `Geom_BSplineSurface::myMaxDerivInvOk` / `myUMaxDerivInv` / `myVMaxDerivInv`.
+    pub res_latch: ResolutionLatch,
 }
 
 impl GeomBSplineSurface {
@@ -86,6 +160,7 @@ impl GeomBSplineSurface {
             weights: None,
             u_periodic,
             v_periodic,
+            res_latch: ResolutionLatch::new(),
         })
     }
 
@@ -235,6 +310,7 @@ impl GeomBSplineSurface {
         if self.knots_u.len() < 2 || self.poles.is_empty() {
             return;
         }
+        self.res_latch.invalidate();
         let (mut uknots, mut umults) = self.distinct_knots_and_mults_u();
         curve_tools::reverse_distinct_knots(&mut uknots);
         umults.reverse();
@@ -259,6 +335,7 @@ impl GeomBSplineSurface {
         if self.knots_v.len() < 2 || self.poles.is_empty() {
             return;
         }
+        self.res_latch.invalidate();
         let (mut vknots, mut vmults) = self.distinct_knots_and_mults_v();
         curve_tools::reverse_distinct_knots(&mut vknots);
         vmults.reverse();
@@ -590,6 +667,7 @@ impl GeomBSplineSurface {
         if knots_in.is_empty() || mults_in.is_empty() {
             return;
         }
+        self.res_latch.invalidate();
         let (degree, already) = if is_u {
             (self.deg_u, self.u_periodic)
         } else {
@@ -717,6 +795,9 @@ impl GeomBSplineSurface {
         if knots.is_empty() || index < 1 || index > knots.len() as i32 {
             return Err("Geom_BSplineSurface::SetUOrigin: Index out of range".to_string());
         }
+        // Rotating the window rebuilds the pole grid and ends in `updateUKnots()`,
+        // which clears `myMaxDerivInvOk` (`Geom_BSplineSurface.cxx:1148-1152`).
+        self.res_latch.invalidate();
         let (newknots, newmults, offset) = Self::rotate_origin(&knots, &mults, index);
         let nb_u = self.poles.len();
         if offset > nb_u + 1 {
@@ -760,6 +841,8 @@ impl GeomBSplineSurface {
         if knots.is_empty() || index < 1 || index > knots.len() as i32 {
             return Err("Geom_BSplineSurface::SetVOrigin: Index out of range".to_string());
         }
+        // See [`Self::set_u_origin`]: the rotation ends in `updateVKnots()`.
+        self.res_latch.invalidate();
         let (newknots, newmults, offset) = Self::rotate_origin(&knots, &mults, index);
         let nb_v = self.nb_poles_v();
         if offset > nb_v + 1 {
@@ -1373,6 +1456,7 @@ pub fn fit_surface_grid(
             weights: None,
             u_periodic: false,
             v_periodic: false,
+            res_latch: ResolutionLatch::new(),
         });
     }
 
@@ -1427,6 +1511,7 @@ pub fn fit_surface_grid(
         weights: None,
         u_periodic: false,
         v_periodic: false,
+        res_latch: ResolutionLatch::new(),
     })
 }
 
@@ -1496,6 +1581,9 @@ impl Surface for GeomBSplineSurface {
     }
 
     fn transform(&mut self, t: &GpTrsf) {
+        // `Geom_BSplineSurface::Transform` clears `myMaxDerivInvOk`
+        // (`Geom_BSplineSurface_1.cxx:935`).
+        self.res_latch.invalidate();
         for row in self.poles.iter_mut() {
             for p in row.iter_mut() {
                 *p = p.transformed(t);
@@ -1549,6 +1637,37 @@ impl Surface for GeomBSplineSurface {
         let mut out = self.clone();
         out.u_reverse();
         Some(Arc::new(out) as Arc<dyn Surface>)
+    }
+
+    /// `Geom_Surface::VReversed` (`Geom_Surface.cxx:43-48`) = `Copy()` +
+    /// [`Self::v_reverse`].
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        if self.knots_v.len() < 2 || self.poles.is_empty() {
+            return None;
+        }
+        let mut out = self.clone();
+        out.v_reverse();
+        Some(Arc::new(out) as Arc<dyn Surface>)
+    }
+
+    /// `Geom_BSplineSurface::UReversedParameter`
+    /// (`Geom_BSplineSurface_1.cxx:1594-1598`):
+    /// `FlatU(1) + FlatU(Upper) - U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 {
+        match (self.knots_u.first(), self.knots_u.last()) {
+            (Some(a), Some(b)) => a + b - u,
+            _ => u,
+        }
+    }
+
+    /// `Geom_BSplineSurface::VReversedParameter`
+    /// (`Geom_BSplineSurface_1.cxx:1625-1629`):
+    /// `FlatV(1) + FlatV(Upper) - V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 {
+        match (self.knots_v.first(), self.knots_v.last()) {
+            (Some(a), Some(b)) => a + b - v,
+            _ => v,
+        }
     }
 
     fn is_v_periodic(&self) -> bool {
@@ -1621,19 +1740,28 @@ impl Surface for GeomBSplineSurface {
         Self::unique_knots(&self.knots_v)
     }
 
+    /// `Geom_BSplineSurface::Resolution` (`Geom_BSplineSurface_1.cxx:2197-2221`):
+    /// the `BSplSLib::Resolution` bound is latched behind `myMaxDerivInvOk` and
+    /// each query divides it by `Tolerance3D`.
     fn uv_resolution(&self, r3d: f64) -> Option<(f64, f64)> {
         let (u_rational, v_rational) = self.occt_rational_flags();
-        Some(occt_core::bspl::bspline_surface_resolution(
-            &self.poles,
-            self.weights.as_deref(),
-            &self.knots_u,
-            &self.knots_v,
-            self.deg_u as i32,
-            self.deg_v as i32,
-            u_rational,
-            v_rational,
-            r3d,
-        ))
+        let (max_deriv_u, max_deriv_v) = self.res_latch.get_or_compute(|| {
+            occt_core::bspl::bspline_surface_max_derivative(
+                &self.poles,
+                self.weights.as_deref(),
+                &self.knots_u,
+                &self.knots_v,
+                self.deg_u as i32,
+                self.deg_v as i32,
+                u_rational,
+                v_rational,
+            )
+        });
+        if max_deriv_u != 0.0 && max_deriv_v != 0.0 {
+            Some((r3d / max_deriv_u, r3d / max_deriv_v))
+        } else {
+            Some((0.0, 0.0))
+        }
     }
 }
 

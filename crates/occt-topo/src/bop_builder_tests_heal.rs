@@ -325,19 +325,21 @@ use occt_core::gp::GpPnt;
             GpPnt::new(1e-6, 1e-6, 0.0),
         ])
         .expect("wire");
-        let rep = heal_tolerance_report(&w.0, 1e-3).expect("heal ok");
+        let rep = heal_tolerance_report(&w.0, 1e-3, 1e-3).expect("heal ok");
         assert!(rep.welded_vertices >= 1, "near-coincident vertices weld, got {}", rep.welded_vertices);
-        // A tiny edge is removed by the small-edge pass.
+        // A tiny edge is removed by the small-edge pass. Its endpoints (5e-4
+        // apart) are outside the weld radius (1e-4) but inside `precsmall`
+        // (1e-3), which is the window `ShapeAnalysis_Wire::CheckSmall` tests.
         let w2 = crate::brep_builder_api::make_wire_from_points(&[
             GpPnt::new(0.0, 0.0, 0.0),
             GpPnt::new(5e-4, 0.0, 0.0),
             GpPnt::new(1.0, 0.0, 0.0),
         ])
         .expect("wire2");
-        let rep2 = heal_tolerance_report(&w2.0, 1e-4).expect("heal2 ok");
+        let rep2 = heal_tolerance_report(&w2.0, 1e-4, 1e-3).expect("heal2 ok");
         assert!(rep2.removed_edges >= 1, "tiny edge removed, got {}", rep2.removed_edges);
         // The TopoShape entry point returns just the healed shape.
-        let healed = heal_tolerance(&w.0, 1e-3).expect("heal shape ok");
+        let healed = heal_tolerance(&w.0, 1e-3, 1e-3).expect("heal shape ok");
         assert!(healed.is_wire() || healed.is_compound(), "healed shape is a boundary");
         clear_tree(&rep.healed);
         clear_tree(&rep2.healed);
@@ -364,7 +366,7 @@ use occt_core::gp::GpPnt;
         assert!(closed_of(&split), "split result stays closed");
         let rep = repair_edge_overlaps(&split, 1e-6).expect("repair ok");
         assert!(closed_of(&rep.repaired), "repaired result stays closed");
-        let healed = heal_tolerance(&rep.repaired, 1e-6).expect("heal ok");
+        let healed = heal_tolerance(&rep.repaired, 1e-6, 1e-6).expect("heal ok");
         assert!(closed_of(&healed), "healed result stays closed");
 
         // Volume is preserved through the whole pipeline.

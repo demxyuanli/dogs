@@ -401,7 +401,7 @@ pub(super) fn project_degenerated_points(
 /// (`direct = true` then `false`) followed by the singularity loop that calls
 /// `correctExtremity` for the ends of the 3D curve that land on a singularity.
 ///
-/// With `isAnIsoparametric` PARKed (`surface_projector.rs`), the `if (!isoPar2d3d)` guard at
+/// With `isAnIsoparametric` PARKed (`surface_projector/iso_param.rs`), the `if (!isoPar2d3d)` guard at
 /// `cxx:1467` always holds: `isAnIsoparametric` sets `theIsoPar2d3d = false` on
 /// entry (`cxx:2482`) and the port never sets it.
 #[allow(clippy::too_many_arguments)]
@@ -509,7 +509,7 @@ fn adjust_second_to_first_point(surf: &dyn Surface, first: &GpPnt2d, second: &mu
 ///
 /// `ShapeAnalysis_Surface::NextValueOfUV(FirstPointOfLine, aP3d, myPreci,
 /// Precision::Confusion())` (`cxx:2012-2013`) is replaced by
-/// [`super::surface_projector::value_of_uv`] (see `surface_projector.rs` on the seeding).
+/// [`super::surface_projector::value_of_uv`] (see `surface_projector/newton_uv.rs` on the seeding).
 #[allow(clippy::too_many_arguments)]
 fn correct_extremity(
     curve: &dyn Curve,

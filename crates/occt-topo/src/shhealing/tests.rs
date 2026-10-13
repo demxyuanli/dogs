@@ -35,8 +35,14 @@ use super::*;
 
     #[test]
     fn remove_small_edge_collapses() {
-        // A tiny first edge followed by a long one: the corner collapses so the
-        // wire becomes a single edge from (0,0) to (1,0).
+        // A tiny first edge followed by a long one. `ShapeAnalysis_Wire::
+        // CheckSmall` flags the tiny edge (its endpoints and its curve midpoint
+        // are all within `precsmall`), so `ShapeFix_Wire::FixSmall` drops it.
+        // The `FixConnected(n, precsmall)` follow-up only merges the
+        // neighbouring vertices when *they* are within `precsmall` - here they
+        // are the ends of the one surviving edge, ~1.0 apart, so nothing is
+        // merged and the survivor keeps its own endpoints
+        // (`ShapeFix_Wire.cxx:1459-1468`, `ShapeAnalysis_Wire.cxx:693-762`).
         let w = make_wire_from_points(&[
             GpPnt::new(0.0, 0.0, 0.0),
             GpPnt::new(0.0001, 0.0, 0.0),
@@ -49,11 +55,11 @@ use super::*;
         assert_eq!(n, 1);
         let healed_wire = Wire(healed);
         let he = edges_of_wire(&healed_wire);
-        assert_eq!(he.len(), 1, "the tiny edge is collapsed away");
+        assert_eq!(he.len(), 1, "the tiny edge is removed from the wire");
         let (a, z) = edge_vertices(&he[0]);
         assert!(
-            vertex_position(&a.unwrap()).distance(&GpPnt::new(0.0, 0.0, 0.0)) < 1e-9,
-            "collapsed start stays at the origin"
+            vertex_position(&a.unwrap()).distance(&GpPnt::new(0.0001, 0.0, 0.0)) < 1e-9,
+            "the survivor keeps the vertex it already had"
         );
         assert!(vertex_position(&z.unwrap()).distance(&GpPnt::new(1.0, 0.0, 0.0)) < 1e-9);
     }
@@ -203,7 +209,12 @@ use super::*;
 
     #[test]
     fn remove_small_isolated_loop() {
-        // A tiny standalone triangle loop is removed entirely.
+        // A tiny standalone triangle loop. Every edge is small, but
+        // `ShapeAnalysis_Wire::CheckSmall` bails out once the wire holds a
+        // single edge (`ShapeAnalysis_Wire.cxx:768-771`), so `FixSmall` removes
+        // two of the three and the loop survives with one edge. A face whose
+        // wires all vanish is what `ShapeFix_Face::FixSmallAreaWire`
+        // (`ShapeFix_Face.cxx:2331-2394`) drops, not this pass.
         let face = make_face_from_polygon(&[
             GpPnt::new(0.0, 0.0, 0.0),
             GpPnt::new(1e-4, 0.0, 0.0),
@@ -211,9 +222,9 @@ use super::*;
         ])
         .unwrap();
         let (healed, n) = remove_small_edges(&face.0, 0.01);
-        assert_eq!(n, 3, "all three tiny edges are removed");
-        assert!(edges_of(&healed).is_empty(), "the loop is gone");
-        assert!(wires_of(&healed).is_empty(), "the empty wire is dropped");
+        assert_eq!(n, 2, "CheckSmall stops at one remaining edge");
+        assert_eq!(edges_of(&healed).len(), 1);
+        assert_eq!(wires_of(&healed).len(), 1, "the wire is not dropped");
     }
 
     #[test]

@@ -224,12 +224,17 @@ impl<'a> Resolver<'a> {
                 let u2 = parse_f64(&rec.args[3])? * u_fact;
                 let v1 = parse_f64(&rec.args[4])? * v_fact;
                 let v2 = parse_f64(&rec.args[5])? * v_fact;
-                // UNPORTED: the `Usense`/`Vsense` flags (`rec.args[6]`/`[7]`) are the
-                // reversal arguments of `Geom_RectangularTrimmedSurface`; the port's
-                // `rectangular_trimmed::uv` carries no sense state and performs no
-                // `SetTrim` normalisation (`Geom_RectangularTrimmedSurface.cxx`
-                // `SetTrim`, including `ElCLib::AdjustPeriodic` for a periodic basis).
-                Arc::new(GeomRectangularTrimmedSurface::uv(basis, u1, u2, v1, v2))
+                // `SS->Usense()` / `SS->Vsense()` (`cxx:1882`): the reversal
+                // arguments of the patch, used only when the basis is periodic
+                // in that direction (see `SetTrim`).
+                let u_sense = parse_logical(rec.args.get(6).map(String::as_str), true);
+                let v_sense = parse_logical(rec.args.get(7).map(String::as_str), true);
+                Arc::new(
+                    GeomRectangularTrimmedSurface::uv_sense(
+                        basis, u1, u2, v1, v2, u_sense, v_sense,
+                    )
+                    .map_err(|e| format!("RECTANGULAR_TRIMMED_SURFACE: {e}"))?,
+                )
             }
             "BEZIER_SURFACE" | "UNIFORM_SURFACE" | "QUASI_UNIFORM_SURFACE" => {
                 // `StepToGeom::MakeSurface` (`StepToGeom.cxx:522-743`): STEP Bezier,

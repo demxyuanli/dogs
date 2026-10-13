@@ -311,6 +311,30 @@ impl crate::Surface for GeomSurfaceOfRevolution {
         }))
     }
 
+    /// `Geom_SurfaceOfRevolution::VReverse` (`Geom_SurfaceOfRevolution.cxx:111-115`):
+    /// the generatrix curve is reversed.
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut basis = self.generatrix.clone_dyn();
+        basis.reverse();
+        Some(Arc::new(Self {
+            generatrix: Arc::from(basis),
+            axis: self.axis,
+            v_first: self.v_first,
+            v_last: self.v_last,
+        }))
+    }
+
+    /// `Geom_SurfaceOfRevolution::UReversedParameter`
+    /// (`Geom_SurfaceOfRevolution.cxx:103-107`): `2*pi - U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { 2.0 * std::f64::consts::PI - u }
+
+    /// `Geom_SurfaceOfRevolution::VReversedParameter`
+    /// (`Geom_SurfaceOfRevolution.cxx:119-123`):
+    /// `basisCurve->ReversedParameter(V)`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 {
+        self.generatrix.reversed_parameter(v)
+    }
+
     /// `GeomAdaptor_SurfaceOfRevolution::UResolution` / `VResolution`
     /// (`cxx:356-366`) and `GeomAdaptor_Surface::VResolution` Revolution arm
     /// (`cxx:1906-1908`). U is `Precision::Parametric`; V follows the basis.

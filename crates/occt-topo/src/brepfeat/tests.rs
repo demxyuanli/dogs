@@ -83,7 +83,7 @@ use super::*;
     #[test]
     fn groove_cuts_cylinder() {
         let cyl = faceted_cyl(1.0, 3.0);
-        let before = solid_volume(&cyl.0, 40, 40);
+        let before = solid_volume(&cyl.0);
         // Annular groove ring: cut a 0.4-deep band out of the wall (r 0.6..1)
         // between z 1.0 and 1.8.
         let profile = [

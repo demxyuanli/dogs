@@ -64,6 +64,22 @@ impl Surface for GeomSphere {
         Some(Arc::new(GeomSphere::new(pos)))
     }
 
+    /// `Geom_SphericalSurface::VReversed` (`Geom_Surface.cxx:42-48`) =
+    /// `Copy()` + `VReverse` (`gp_Sphere.hxx:95` -> `pos.ZReverse()`).
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos;
+        pos.v_reverse();
+        Some(Arc::new(GeomSphere::new(pos)))
+    }
+
+    /// `Geom_SphericalSurface::UReversedParameter`
+    /// (`Geom_SphericalSurface.cxx:81-84`): `2*pi - U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { 2.0 * std::f64::consts::PI - u }
+
+    /// `Geom_SphericalSurface::VReversedParameter`
+    /// (`Geom_SphericalSurface.cxx:88-91`): `-V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 { -v }
+
     /// `Geom_SphericalSurface::UIso` (`Geom_SphericalSurface.cxx:292-297`):
     /// the meridian `Geom_Circle(ElSLib::SphereUIso(pos, radius, U))` trimmed
     /// to `[-PI/2, PI/2]` (OCCT wraps it in a `Geom_TrimmedCurve`).

@@ -62,6 +62,22 @@ impl Surface for GeomCylinder {
         Some(Arc::new(GeomCylinder::new(pos)))
     }
 
+    /// `Geom_CylindricalSurface::VReversed` (`Geom_Surface.cxx:42-48`) =
+    /// `Copy()` + `VReverse` (`gp_Cylinder.hxx:90` -> `ZReverse`).
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> {
+        let mut pos = self.pos.clone();
+        pos.v_reverse();
+        Some(Arc::new(GeomCylinder::new(pos)))
+    }
+
+    /// `Geom_CylindricalSurface::UReversedParameter`
+    /// (`Geom_CylindricalSurface.cxx:87-90`): `2*pi - U`.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { 2.0 * std::f64::consts::PI - u }
+
+    /// `Geom_CylindricalSurface::VReversedParameter`
+    /// (`Geom_CylindricalSurface.cxx:94-97`): `-V`.
+    fn v_reversed_parameter(&self, v: f64) -> f64 { -v }
+
     /// `Geom_CylindricalSurface::UIso` (`Geom_CylindricalSurface.cxx:294-298`):
     /// `Geom_Line(ElSLib::CylinderUIso(pos, radius, U))`.
     /// `ElSLib::CylinderUIso` (`ElSLib.cxx:1716-1723`) is the generatrix

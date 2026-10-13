@@ -102,13 +102,31 @@ mod tests {
         let box_s = centered_box(1.5);
         let r = curved_boolean(&sphere.0, &box_s.0, BoolOp::Common, 1e-6).expect("common ok");
         assert!(r.solid.is_some(), "common produces a solid");
-        // The result keeps the whole (curved) sphere face, so shape_volume is
-        // reliable for this curved solid. The adaptive mesh's deflection
-        // calibration is looser than OCCT's (def 0.05 → ~3.5% sphere error), so
-        // a finer deflection is needed for the <0.05 (1.2%) volume gate.
-        let v = shape_volume(&r.shape, 0.01);
+        // The result keeps the whole (curved) sphere face, so Common and the
+        // source sphere must produce the *same* triangulation -- a boolean that
+        // dropped or duplicated a face shows up here directly, without any
+        // threshold.
         let expected = 4.0 / 3.0 * PI;
-        assert!((v - expected).abs() < 0.05, "common volume {v} (expected {expected})");
+        let v = shape_volume(&r.shape, 0.01);
+        let v_sphere = shape_volume(&sphere.0, 0.01);
+        assert!(
+            (v - v_sphere).abs() <= 1e-9 * expected,
+            "common volume {v} != source sphere mesh volume {v_sphere}"
+        );
+        // The remaining gap to the analytic volume is the mesher's, not the
+        // boolean's: an inscribed facet set bounded by `deflection` misses
+        // `4/3 pi R^3` by `k * deflection / R`, with `k` measured on OCCT's own
+        // mesher rather than fitted here --
+        // `occt_probe data/Sphere.step --mesh 0.01 0.5` gives meshvol 522.0933
+        // for that R=5 sphere (exact 523.5988), i.e. k = 1.44. Any facet set
+        // that lost the curvature would miss by ~100%, so the check still
+        // discriminates. (The earlier `< 0.05` = 1.2% bound is below what OCCT
+        // itself reaches at deflection 0.01 on a unit sphere: k = 1.44 > 1.2.)
+        let bound = 1.5 * 0.01 * expected;
+        assert!(
+            (v - expected).abs() < bound,
+            "common volume {v} (expected {expected}, bound {bound})"
+        );
         clear_tree(&r.shape);
         clear_tree(&sphere.0);
         clear_tree(&box_s.0);

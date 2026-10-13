@@ -516,61 +516,9 @@ impl GeometryRegistry {
             .unwrap_or_default()
     }
 
-    /// TEMP PCSET: record every pcurve attach so the determinism hunt can tell
-    /// which call site stored a different curve on identical input.
-    fn probe_pcset(&self, s: &TopoShape, face_key: usize, curves: &[Arc<dyn Curve2d>]) {
-        if std::env::var("PCSET").is_err() {
-            return;
-        }
-        let key = self.repr_key(face_key);
-        let kinds: Vec<String> = curves
-            .iter()
-            .map(|c| {
-                if c.is_geom2d_line() {
-                    format!("line2d")
-                } else if c.is_bspline2d() {
-                    format!("bspline2d deg={:?}", c.bspline_degree())
-                } else {
-                    format!("other2d {:?}", c.bspline_degree())
-                }
-            })
-            .collect();
-        let c3 = self
-            .edge_curve(s)
-            .map(|c| {
-                let kind = if c.is_line() {
-                    "line"
-                } else if c.gp_circ().is_some() {
-                    "circle"
-                } else if c.nurbs_degree().is_some() {
-                    "bspline"
-                } else {
-                    "other"
-                };
-                format!("{kind}[{:e},{:e}]", c.first_parameter(), c.last_parameter())
-            })
-            .unwrap_or_else(|| "none".to_string());
-        let bt = std::backtrace::Backtrace::force_capture().to_string();
-        let mut frames: Vec<String> = Vec::new();
-        for l in bt.lines() {
-            if l.contains("occt_topo") {
-                frames.push(l.trim().to_string());
-            }
-            if frames.len() >= 4 {
-                break;
-            }
-        }
-        eprintln!(
-            "PCSET eptr={:?} rkey={key} n={} kinds={kinds:?} c3={c3} from={frames:?}",
-            Arc::as_ptr(&s.tshape),
-            curves.len()
-        );
-    }
-
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
     /// Mirrors `BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`.
     pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
-        self.probe_pcset(s, face_key, std::slice::from_ref(&curve));
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurve(key, curve, first, last);
@@ -579,7 +527,6 @@ impl GeometryRegistry {
     /// Replace the pcurves of edge `s` on the face identified by `face_key`.
     /// Mirrors the seam overload `BRep_Builder::UpdateEdge(edge, c1, c2, face)`.
     pub fn set_edge_pcurves(&self, s: &TopoShape, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
-        self.probe_pcset(s, face_key, &curves);
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurves(key, curves, first, last);

@@ -97,6 +97,13 @@ pub trait Surface: Send + Sync {
     fn offset_distance(&self) -> Option<f64> { None }
     /// `STANDARD_TYPE(Geom_RectangularTrimmedSurface)` then `BasisSurface()`.
     fn rectangular_trimmed_basis(&self) -> Option<Arc<dyn Surface>> { None }
+    /// The `Geom_RectangularTrimmedSurface` trim state
+    /// `(U1, U2, V1, V2, IsUTrimmed, IsVTrimmed)`, the equivalent of the
+    /// `occ::down_cast<Geom_RectangularTrimmedSurface>` reads the one-parameter
+    /// constructor makes before merging (`Geom_RectangularTrimmedSurface.cxx`
+    /// `Geom_RectangularTrimmedSurface(S, Param1, Param2, UTrim, Sense)`).
+    /// `None` for every other surface.
+    fn rectangular_trimmed_spec(&self) -> Option<(f64, f64, f64, f64, bool, bool)> { None }
     /// `Geom_Surface::UReversed` — a copy of the same dynamic type whose U
     /// parametrisation is reversed.
     ///
@@ -113,6 +120,26 @@ pub trait Surface: Send + Sync {
     /// caller cannot take `BRepToIGES_BRShell::TransferFace`'s REVERSED branch
     /// (`BRepToIGES_BRShell.cxx:135-141`) for this surface.
     fn u_reversed(&self) -> Option<Arc<dyn Surface>> { None }
+
+    /// `Geom_Surface::VReversed` — the V mirror of [`Surface::u_reversed`]
+    /// (`Geom_Surface.cxx:42-48` = `Copy()` + `VReverse()`), i.e. a copy of the
+    /// same dynamic type whose V parametrisation is reversed.
+    /// `None` means the concrete type has no ported V-reverse branch.
+    fn v_reversed(&self) -> Option<Arc<dyn Surface>> { None }
+
+    /// `Geom_Surface::UReversedParameter` — the U on the *U-reversed* surface
+    /// that corresponds to `u`, i.e. `UReversed()->Value(u, v) ==
+    /// Value(UReversedParameter(u), v)` (`Geom_Surface.hxx:94-105`).
+    ///
+    /// The default is the identity, which is only correct for the surface types
+    /// that have not been given a branch here. Every class that returns
+    /// `Some` from [`Surface::u_reversed`] overrides it, and it is only read on
+    /// that path, so the default is unreachable in practice.
+    fn u_reversed_parameter(&self, u: f64) -> f64 { u }
+
+    /// `Geom_Surface::VReversedParameter` (`Geom_Surface.hxx:114-125`), the V
+    /// mirror of [`Surface::u_reversed_parameter`].
+    fn v_reversed_parameter(&self, v: f64) -> f64 { v }
     /// `STANDARD_TYPE(Geom_SurfaceOfLinearExtrusion)`.
     fn is_surface_of_linear_extrusion(&self) -> bool { false }
     /// `Geom_Surface::UIso`: for an analytic surface the partner is

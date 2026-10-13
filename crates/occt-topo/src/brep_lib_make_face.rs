@@ -151,29 +151,28 @@ pub fn make_face_uv(
         if let Some(base) = bs.offset_basis_surface() {
             if base.is_surface_of_linear_extrusion() {
                 if Precision::is_infinite(nat_umin) || Precision::is_infinite(nat_umax) {
-                    surface = Arc::new(GeomRectangularTrimmedSurface::uv(
-                        bs.clone(),
-                        u_min,
-                        u_max,
-                        v_min,
-                        v_max,
-                    ));
+                    surface = Arc::new(
+                        GeomRectangularTrimmedSurface::uv(
+                            bs.clone(),
+                            u_min,
+                            u_max,
+                            v_min,
+                            v_max,
+                        )
+                        .unwrap_or_else(|e| panic!("{e}")),
+                    );
                 } else {
-                    surface = Arc::new(GeomRectangularTrimmedSurface::one_param(
-                        bs.clone(),
-                        v_min,
-                        v_max,
-                        false,
-                    ));
+                    surface = Arc::new(
+                        GeomRectangularTrimmedSurface::one_param(bs.clone(), v_min, v_max, false)
+                            .unwrap_or_else(|e| panic!("{e}")),
+                    );
                 }
             } else if base.is_surface_of_revolution() {
                 if Precision::is_infinite(nat_vmin) || Precision::is_infinite(nat_vmax) {
-                    surface = Arc::new(GeomRectangularTrimmedSurface::one_param(
-                        bs.clone(),
-                        v_min,
-                        v_max,
-                        false,
-                    ));
+                    surface = Arc::new(
+                        GeomRectangularTrimmedSurface::one_param(bs.clone(), v_min, v_max, false)
+                            .unwrap_or_else(|e| panic!("{e}")),
+                    );
                 }
             }
         }
