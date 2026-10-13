@@ -382,26 +382,6 @@ pub(in crate::iges_read) fn uv_map(
     tmp.set_scale(&GpPnt2d::new(0.0, 0.0), cscale)
         .map_err(|e| e.to_string())?;
     trans.pre_multiply(&tmp);
-    if std::env::var("IGES_UVDBG").is_ok() {
-        let m = trans.h_vectorial_part();
-        let l = trans.translation_part();
-        eprintln!(
-            "UVDBG map basis={} isrf_type={} cscale={:.17e} paramu={:.17e} paramv={:.17e} uscale={:.17e} form={:?} M=[{:.17e},{:.17e};{:.17e},{:.17e}] loc=({:.17e},{:.17e})",
-            basis,
-            isrf_type,
-            cscale,
-            paramu,
-            paramv,
-            uscale,
-            trans.form(),
-            m.value(0, 0),
-            m.value(0, 1),
-            m.value(1, 0),
-            m.value(1, 1),
-            l.x(),
-            l.y(),
-        );
-    }
     Ok((trans, uscale))
 }
 

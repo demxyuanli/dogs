@@ -1887,6 +1887,57 @@ static int runStructDump(const TopoDS_Shape& theShape, const int theFaceIdx,
           std::printf("OCCTPC2D w=%d e=%d type=NULL\n", w, e);
         }
       }
+      // TEMP PC2DORI: the pcurve of THIS edge on the face taken through both
+      // edge orientations, i.e. exactly the two objects
+      // `BRepMesh_ModelPreProcessor::splitEdge` (`cxx:213-219`) picks between:
+      // `aE.Orientation(FORWARD); aPC1 = BRep_Tool::CurveOnSurface(aE, aF, af, al)`
+      // and the same with REVERSED. Printing the type, the own range and the
+      // value at first/mid/last shows which of the two carries the +-2*pi
+      // (seam) branch, i.e. how `splitEdge` can insert a point on the opposite
+      // branch of the same physical seam line.
+      {
+        const TopoDS_Edge aERaw = aDEdge->GetEdge();
+        for (int aOriIt = 0; aOriIt < 2; ++aOriIt)
+        {
+          TopoDS_Edge aEOri = aERaw;
+          aEOri.Orientation(aOriIt == 0 ? TopAbs_FORWARD : TopAbs_REVERSED);
+          double aOF = 0., aOL = 0.;
+          const occ::handle<Geom2d_Curve>& aOC =
+            BRep_Tool::CurveOnSurface(aEOri, aDFace->GetFace(), aOF, aOL);
+          if (aOC.IsNull())
+          {
+            std::printf("OCCTPC2DORI w=%d e=%d ori=%d type=NULL\n", w, e, aOriIt);
+            continue;
+          }
+          const double   aOFirst = aOC->FirstParameter();
+          const double   aOLast  = aOC->LastParameter();
+          const gp_Pnt2d aOA     = aOC->Value(aOFirst);
+          const gp_Pnt2d aOB     = aOC->Value(0.5 * (aOFirst + aOLast));
+          const gp_Pnt2d aOCc    = aOC->Value(aOLast);
+          std::printf("OCCTPC2DORI w=%d e=%d ori=%d type=%s range=%.17g %.17g evf=%.17g evl=%.17g "
+                      "pf=(%.17g,%.17g) pm=(%.17g,%.17g) pl=(%.17g,%.17g)\n",
+                      w,
+                      e,
+                      aOriIt,
+                      aOC->DynamicType()->Name(),
+                      aOFirst,
+                      aOLast,
+                      aOF,
+                      aOL,
+                      aOA.X(),
+                      aOA.Y(),
+                      aOB.X(),
+                      aOB.Y(),
+                      aOCc.X(),
+                      aOCc.Y());
+        }
+        std::printf("OCCTPC2DFLAGS w=%d e=%d sameparam=%d samerange=%d pcnb=%d\n",
+                    w,
+                    e,
+                    BRep_Tool::SameParameter(aERaw) ? 1 : 0,
+                    BRep_Tool::SameRange(aERaw) ? 1 : 0,
+                    aDEdge->PCurvesNb());
+      }
     }
   }
 

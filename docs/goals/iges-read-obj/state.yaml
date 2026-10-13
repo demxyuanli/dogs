@@ -1,0 +1,594 @@
+# GoalBuddy v2 state.yaml
+# Board truth lives here. goal.md is the editable charter; notes/ holds long receipts only.
+
+version: 2
+
+goal:
+  title: "IGES read side to OBJ"
+  slug: "iges-read-obj"
+  kind: specific # specific | open_ended | existing_plan | recovery | audit
+  tranche: "Port the OCCT IGES reader far enough to load the seven oracle IGES files whose writer already matches, mesh them at deflection 0.1, and match existing STEP bbox and area baselines."
+  status: done # active | blocked | done
+  oracle:
+    signal: "cargo check is clean; reading _igesdump/oracle IGES for Cube, Sphere, Cone, Extrusion, HoledPlate, rev, and Offset produces OBJ; bbox and area match the existing STEP mesh baseline within tolerances already in tests/common/mod.rs."
+    cadence: "after each Worker package and at final audit"
+    final_proof: "T999 Judge receipt mapping the three oracle items to receipts and command output, with full_outcome_complete: true."
+  intake:
+    original_request: "Implement the IGES read side, read IGES, and write OBJ. First show a task board, then start the long run."
+    interpreted_outcome: "A Rust IGES reader following OCCT IGESToBRep control flow loads oracle IGES and writes OBJ that matches existing STEP mesh bbox and area."
+    input_shape: specific # vague | specific | existing_plan | recovery | audit
+    audience: "project owner (OCCT to Rust geometry port)"
+    authority: requested # requested | approved | inferred | needs_approval | blocked
+    proof_type: artifact # test | demo | artifact | metric | review | source_backed_answer | decision
+    completion_proof: "Seven oracle IGES files read to OBJ; bbox and area inside existing step_obj_parity tolerances; cargo check 0 errors. No new tests."
+    likely_misfire: "Treat port-written IGES as the spec; add per-model heuristics to hit vertex counts; stop after cargo check or a header parse; write new unit tests; pull unfinished writer diffs into this tranche."
+    blind_spots_considered:
+      - "Revolution surfaces rebuilt from entity 120 may mesh to different vertex counts than a direct STEP read. Judge bbox and area with existing tolerances. Report vertex counts; do not snap them."
+      - "The spec is OCCT IGESControl_Reader / IGESToBRep on _igesdump/oracle files, not the Rust writer."
+      - "The worktree has unrelated meshing and healing edits plus dump files. Workers must not revert or stage them."
+      - "iges.rs is already over 1000 lines. Reader code goes in new files named for the OCCT class."
+      - "Full cargo test is pre-commit only. This tranche does not commit."
+    existing_plan_facts:
+      - "Writer is pushed. Faces mode is entity 120 plus 124. Group 402 form is 1. Global section is IGES 5.3, version 11, precision 308/15."
+      - "Parameter-string match versus oracle: Cube, Sphere, Cone, Extrusion, HoledPlate, rev, Offset."
+      - "Existing STEP mesh counts from step_obj_parity: Cube 24/12, Cone 195/301, Sphere 642/1244, HoledPlate 180/128, rev 104/92, Offset 712/892. Extrusion counts come from a live export_data_obj run, not a remembered number."
+
+rules:
+  pm_owns_state: true
+  one_active_task: true
+  max_write_workers: 1
+  no_implementation_without_worker_or_pm_task: true
+  no_completion_without_judge_or_pm_audit: true
+  planning_is_not_completion: true
+  queued_required_worker_blocks_completion: true
+  continuous_until_full_outcome: true
+  missing_input_or_credentials_do_not_stop_goal: true
+  preserve_and_validate_existing_plan: true
+  intake_misfire_must_be_audited: true
+  goal_pressure_requires_oracle: true
+  no_completion_on_weak_proof: true
+  slice_policy:
+    max_consecutive_tiny_tasks: 2
+    prefer_vertical_slices: true
+    judge_picks_largest_safe_slice: true
+    worker_completes_whole_slice: true
+
+agents:
+  # installed | bundled_not_installed | missing | unknown
+  # Bundled goal_*.toml lives in the GoalBuddy skill. This Cursor session can spawn goal-scout, goal-judge, and goal-worker.
+  scout: installed
+  worker: installed
+  judge: installed
+
+visual_board:
+  # none | local | unknown
+  selected: local
+  local:
+    status: live # not_requested | starting | live | generated | blocked
+    url: "http://goalbuddy.localhost:41737/iges-read-obj/"
+    command: "npx goalbuddy board docs/goals/iges-read-obj"
+
+active_task: null
+
+tasks:
+  - id: T001
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: default # default | low | medium | high | xhigh
+    objective: "Map the OCCT IGES read entry, the entity types actually used by the seven matching oracle IGES files, any existing Rust reader, and the OBJ export function to reuse."
+    inputs:
+      - "D:/source/OCCT-src/src IGESControl_Reader and IGESToBRep transfer entry"
+      - "_igesdump/oracle/{Cube,Sphere,Cone,Extrusion,HoledPlate,rev,Offset}.iges"
+      - "crates/occt-topo/src/iges.rs (writer only; do not extend it)"
+      - "crates/occt-topo/examples/iges_check.rs"
+      - "crates/occt-topo/examples/export_data_obj"
+      - "crates/occt-topo/tests/common/mod.rs tolerances"
+      - "README.md IGES write-side status"
+    constraints:
+      - "Read-only. Do not edit any file."
+      - "Do not write tests, scripts, or markdown."
+      - "Do not run a full cargo test."
+      - "Use grep physical line numbers."
+      - "Oracle IGES is the spec source. Do not treat port-written IGES as the spec."
+      - "Name OCCT file and line ranges for the reader entry and the first transfer dispatch."
+    expected_output:
+      - "Reader entry: OCCT class, file, line range, and the call order from file bytes to shape."
+      - "Entity-type histogram for the seven oracle files."
+      - "Existing Rust symbols that already parse or transfer IGES, or an explicit none."
+      - "OBJ export function and deflection already used by export_data_obj."
+      - "Largest safe first Worker slice, with candidate files. Do not implement it."
+    receipt:
+      result: done
+      summary: "No Rust IGES reader exists. Read path is IGESControl_Reader to IGESFile_Read to IGESToBRep_Actor::Transfer. Cube, Extrusion, and HoledPlate use only 402 form 1, 144, 108, 142, 102, and 110. Reuse brep_to_obj; argument 0.1 is the void-box fallback, real deflection is max bbox edge times 0.001 times 4."
+      evidence:
+        - "IGESControl_Reader.cxx:52-58 ctor, :82-121 NbRootsForTransfer. XSControl_Reader.cxx:106-110 ReadFile, :273-297 TransferRoots, :330-349 OneShape."
+        - "IGESSelect_WorkLibrary.cxx:73-82 calls IGESFile_Read.cxx:76-94."
+        - "IGESToBRep_Actor.cxx:135-196 Transfer calls TransferGeometry at :196. ProcessShape at :204-218 is a separate branch."
+        - "IGESToBRep_CurveAndSurface::TransferGeometry :214-445, 402 form 1 at :369-445. TopoSurface trimmed plane :209-212 and :229-232."
+        - "Entity counts: Cube and Extrusion 402/144/108/142/102/110 only. HoledPlate same types, 32 faces. Sphere, Cone, rev, Offset also need 100, 120, 124; Offset also needs 126."
+        - "crates/occt-topo/src/iges.rs is write-only (write_shape_iges :4239). examples/export_data_obj.rs:96 calls brep_to_obj(&shape, 0.1). prs3d_get_deflection uses DEVIATION_COEFFICIENT 0.001."
+        - "tests/common/mod.rs:38-45: BBOX_EXACT 1e-6, AREA_EXACT 1e-3, AREA_CURVED 0.04, AREA_COMPLEX 0.05. Cube and Extrusion use the exact pair."
+      ambiguity:
+        - "Actor::Transfer always runs XSAlgo_ShapeProcessor::ProcessShape at IGESToBRep_Actor.cxx:204-218. First geometry slice can mark that pass unported."
+  - id: T002
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: high
+    objective: "Choose the largest safe reader slice that moves an oracle IGES file toward an OBJ, and set the Worker contract."
+    inputs:
+      - "T001 receipt"
+      - "docs/goals/iges-read-obj/goal.md"
+    constraints:
+      - "Do not implement."
+      - "The slice must follow an OCCT branch that exists. Do not approve a Cube-only heuristic."
+      - "Keep the writer file iges.rs out of allowed_files unless the receipt shows a shared parser that already lives there."
+      - "verify must be cargo check plus one real oracle IGES read. No new unit test."
+    expected_output:
+      - "Decision"
+      - "Exact Worker objective"
+      - "allowed_files"
+      - "verify"
+      - "stop_if"
+    receipt:
+      result: done
+      decision: approved
+      full_outcome_complete: false
+      summary: "Approved one planar package for 402 form 1, 144, 108, 142, 102, and 110, covering Cube, Extrusion, and HoledPlate. ProcessShape and entities 100, 120, 124, and 126 stay unported. Instrument is examples/iges_read_obj.rs through brep_to_obj."
+      rationale: "Those three oracle files share that entity family. A Cube-only path is rejected. ProcessShape at IGESToBRep_Actor.cxx:204-218 runs after TransferGeometry and is cited unported."
+      deferred: "Next package transfers 100, 120, 124, and 126 for Sphere, Cone, rev, and Offset. ProcessShape only if a planar OBJ is empty."
+  - id: T003
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Port the shared planar IGES read family (402 form 1, 144, 108, 142, 102, 110) from IGESControl_Reader through IGESFile_Read and IGESToBRep transfer so the Cube, Extrusion, and HoledPlate oracle files rebuild a shape and mesh through brep_to_obj, with ProcessShape and entities 100, 120, 124, and 126 cited unported."
+    allowed_files:
+      - crates/occt-topo/src/lib.rs
+      - crates/occt-topo/Cargo.toml
+      - crates/occt-topo/src/iges_read/mod.rs
+      - crates/occt-topo/src/iges_read/iges_control_reader.rs
+      - crates/occt-topo/src/iges_read/xscontrol_reader.rs
+      - crates/occt-topo/src/iges_read/iges_select_work_library.rs
+      - crates/occt-topo/src/iges_read/iges_file_read.rs
+      - crates/occt-topo/src/iges_read/iges_data_iges_model.rs
+      - crates/occt-topo/src/iges_read/iges_data_param_reader.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_actor.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_curve_and_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/examples/iges_read_obj.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Extrusion.iges data/output/iges-read/Extrusion.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/HoledPlate.iges data/output/iges-read/HoledPlate.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files. crates/occt-topo/src/iges.rs is forbidden."
+      - "Cargo.toml would need any edit other than the single iges_read_obj example entry."
+      - "lib.rs would need any edit other than pub mod iges_read;."
+      - "Entity 100, 120, 124, or 126 is required to transfer Cube, Extrusion, or HoledPlate."
+      - "XSAlgo_ShapeProcessor::ProcessShape (IGESToBRep_Actor.cxx:204-218) is required before one of those three files produces a non-empty mesh. Cite it unported and stop."
+      - "A dispatch arm has no OCCT branch. Cite the OCCT file and line as unported and stop. Do not add a heuristic."
+      - "A source file would pass 1000 lines, or would pass 800 lines without a split into an already listed OCCT class file."
+      - "The OBJ path would overwrite data/output/Cube.obj, data/output/Extrusion.obj, or data/output/HoledPlate.obj."
+      - "Verification fails twice."
+      - "The only way to proceed is a new unit test, a new markdown doc, a commit, or a revert of unrelated dirty files."
+    receipt:
+      result: done
+      summary: "Planar read meshes all three oracles. Cube v=24 f=12 bbox [0,0,0] to [10,10,10]. Extrusion v=24 f=12 bbox [0,0,0] to [20,5,15]. HoledPlate v=128 f=64 bbox [0,0,0] to [100,80,5]. ProcessShape and entities 100, 120, 124, 126 stay unported. Cargo.toml was not edited."
+      commands:
+        - "cargo check --example iges_read_obj: pass"
+        - "iges_read_obj Cube, Extrusion, HoledPlate: pass"
+        - "cargo check: pass"
+        - "graphify update: pass"
+      side: "HoledPlate vertex and face counts differ from the STEP mesh baseline 180/128. This package does not compare counts. Do not snap them."
+  - id: T004
+    type: worker
+    assignee: Worker
+    status: blocked
+    reasoning_hint: default
+    objective: "Port entities 100, 120, 124, and 126 on the existing IGES reader so Sphere, Cone, rev, and Offset oracle files rebuild a shape and mesh through brep_to_obj. Keep ProcessShape unported."
+    allowed_files:
+      - crates/occt-topo/src/iges_read/mod.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_actor.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_curve_and_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_basic_curve.rs
+      - crates/occt-topo/src/iges_read/iges_data_param_reader.rs
+      - crates/occt-topo/examples/iges_read_obj.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files. crates/occt-topo/src/iges.rs is forbidden."
+      - "XSAlgo_ShapeProcessor::ProcessShape (IGESToBRep_Actor.cxx:204-218) is required before a non-empty mesh. Cite it unported and stop."
+      - "A dispatch arm has no OCCT branch. Cite the OCCT file and line as unported and stop."
+      - "A source file would pass 1000 lines. Split into an already listed OCCT class file before that."
+      - "Verification fails twice on the same model."
+      - "The only way to proceed is a per-model heuristic, area ratio, length filter, volume gate, epsilon snap, new unit test, new markdown, a commit, or a revert of unrelated dirty files."
+    receipt:
+      result: blocked
+      summary: "No edits. parse_own in iges_data_iges_model.rs drops entities 100, 120, 124, and 126 to EntityData::Raw and discards their parameter text. That file was not in allowed_files."
+      evidence:
+        - "crates/occt-topo/src/iges_read/iges_data_iges_model.rs:137 parse_own, :241 Raw fallback."
+  - id: T005
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Same as T004, plus parse entity 100, 120, 124, and 126 parameters in iges_data_iges_model.rs, then transfer Sphere, Cone, rev, and Offset to OBJ."
+    allowed_files:
+      - crates/occt-topo/src/iges_read/mod.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_actor.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_curve_and_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_basic_curve.rs
+      - crates/occt-topo/src/iges_read/iges_data_param_reader.rs
+      - crates/occt-topo/src/iges_read/iges_data_iges_model.rs
+      - crates/occt-topo/examples/iges_read_obj.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files. crates/occt-topo/src/iges.rs is forbidden."
+      - "XSAlgo_ShapeProcessor::ProcessShape (IGESToBRep_Actor.cxx:204-218) is required before a non-empty mesh. Cite it unported and stop."
+      - "A dispatch arm has no OCCT branch. Cite the OCCT file and line as unported and stop."
+      - "A source file would pass 1000 lines. Split into an already listed OCCT class file before that."
+      - "Verification fails twice on the same model."
+      - "The only way to proceed is a per-model heuristic, area ratio, length filter, volume gate, epsilon snap, new unit test, new markdown, a commit, or a revert of unrelated dirty files."
+    receipt:
+      result: done
+      summary: "Entities 100, 120, 124, and 126 transfer. cargo check passed. Sphere v=3047 f=6050 bbox [-5,-5,-5] to [5,5,5]. Cone v=478 f=877 bbox [-4,-4,0] to [4,4,10]. rev v=661 f=1196 bbox about [0,0,0] to [10,10,10], with a reported vertex at y=-9.9598. Offset v=9727 f=18740. Cube still v=24 f=12 bbox [0,0,0] to [10,10,10]. ProcessShape, EncodeRegul, TrimTolerances, non-uniform GTransform, and MakeRevol fallback stay unported. Bbox and area were not compared to the STEP baselines in this package."
+      commands:
+        - "cargo check: pass"
+        - "iges_read_obj Sphere, Cone, rev, Offset, Cube: pass"
+        - "graphify update: pass"
+  - id: T999
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: high
+    objective: "Audit whether the seven oracle IGES files read to OBJ inside existing STEP bbox and area tolerances."
+    inputs:
+      - "All done task receipts"
+      - "Last verification"
+      - "Current dirty diff"
+    constraints:
+      - "Do not implement."
+      - "Reject completion if any of the seven models has not been read to OBJ."
+      - "Reject completion if the only evidence is cargo check or a parse of the global section."
+      - "Reject completion while a required Worker is queued or active."
+    expected_output:
+      - "complete | not_complete"
+      - "full_outcome_complete: true | false"
+      - "missing evidence"
+      - "next task if not complete"
+    receipt:
+      result: done
+      decision: not_complete
+      full_outcome_complete: false
+      summary: "Cube, Extrusion, and Cone pass bbox and area. HoledPlate area abs(ratio-1)=0.0578 exceeds 0.05. Sphere area gap 0.610. rev ymin delta 9.960 and area gap 0.433. Offset bbox delta 7.175 and area ratio 3.504."
+      evidence:
+        - "Cube and Extrusion bbox deltas 0 and area ratio 1."
+        - "Cone bbox deltas 0, area ratio 1.000992."
+        - "HoledPlate bbox deltas 0, area 18529.72/17517.29."
+        - "Sphere area 502.635/312.217. rev ymin -9.959799 vs 0. Offset iges bbox about [-9.18,-9.17,-9.17] to [17.81,17.81,17.82] vs reference [-2,-2,-2] to [12,12,12]."
+      next: "Worker on TransferSurfaceOfRevolution and ParamSurface for Sphere, rev, and Offset. HoledPlate stays out of that package."
+  - id: T006
+    type: worker
+    assignee: Worker
+    status: blocked
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_basic_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_curve_and_surface.rs
+      - crates/occt-topo/src/iges_read/iges_data_iges_model.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files. Do not edit iges.rs, the actor, or HoledPlate-only code."
+      - "The only remaining miss is HoledPlate."
+      - "The cxx branch is absent. Cite it unported and stop."
+      - "The only way to pass is a heuristic, area ratio, length filter, volume gate, or epsilon snap."
+      - "Verification of the same model fails twice."
+      - "A source file would pass 1000 lines."
+    receipt:
+      result: blocked
+      summary: "Location fix made Offset bbox match. Sphere area stayed at abs(ratio-1)=0.610. rev analytic box is [0,0,0] to [10,10,10] but mesh ymin is -9.960 and area gap is 0.433. Offset area gap is 1.329. Cone and Cube still pass. Same Sphere and rev failures repeated, so this package stops."
+      commands:
+        - "cargo check: pass"
+        - "iges_read_obj Sphere, rev, Offset, Cone, Cube: pass as files, fail the area and rev bbox gates"
+        - "graphify update: pass"
+      unported:
+        - "MakeRevol IGESToBRep_TopoSurface.cxx:837-848 because the native surface is non-null"
+        - "ProcessShape IGESToBRep_Actor.cxx:204-218"
+  - id: T007
+    type: worker
+    assignee: Worker
+    status: blocked
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files."
+      - "The fix would change circular-arc trim angles or the revolution axis."
+      - "The cxx branch is absent. Cite it and stop."
+      - "The only lever is a period slide, heuristic, area ratio, or epsilon snap."
+      - "rev mesh ymin is still about -9.96 after one correction of the boundary branch."
+      - "Cone or Cube stops passing."
+    receipt:
+      result: blocked
+      summary: "Boundary transfer now builds the edge from the 2D curve when the pair is inconsistent or same-parameter deviation exceeds max tolerance. Cone and Cube still pass. rev ymin is still -9.959799. The vertex (0.895768, -9.959799, 10) is surface UV U=-1.481099, V=10, outside face U [0, pi/2]. The paired IGES pcurve sample is (1, 4.802086). Sphere area gap 0.610. Offset area gap 0.198."
+      stopped_because: "rev ymin still about -9.96 after one boundary-branch correction"
+  - id: T008
+    type: worker
+    assignee: Worker
+    status: blocked
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files."
+      - "The five ParamSurface steps already produce this negative U. Report the five intermediate points and stop. Do not wrap U."
+      - "The only lever is a sign flip, period slide, or epsilon snap that the cxx does not contain."
+      - "Cone or Cube stops passing."
+      - "rev ymin is still about -9.96 after the pcurve transform matches the five cxx steps."
+    receipt:
+      result: blocked
+      summary: "No edits. Five ParamSurface points for (1, 4.802086) with cscale 10 and paramu about 0 are (1, -1.481099), (1, 1.481099), (1.481099, 1), (1.481099, 1), (14.810993, 10). Step-5 U is outside [0, pi/2]. uv_map already matches those steps."
+      stopped_because: "The five ParamSurface steps produce U=14.810993, outside [0, pi/2]."
+  - id: T009
+    type: worker
+    assignee: Worker
+    status: blocked
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files."
+      - "The five PreMultiply steps would be changed."
+      - "uFact affinity of (14.810993, 10) by 0.1 is not U=1.481099. Report the actual affinity result and stop."
+      - "rev ymin is still about -9.96 after the edge that produces it uses the affinity result."
+      - "Cone or Cube stops passing."
+    receipt:
+      result: blocked
+      summary: "No edits. Affinity of (14.810993, 10) by 0.1 is (1.481099, 10). Edge UV 19 / 3D 24 already has that uFact. Pcurve ends are (1.570796, 10) and (0, 10). 3D ends are (10, 0, 10) and (0, -10, 10). Deviation 4e-9 is inside max tol, so the 3D edge stays. rev ymin delta remains 9.960."
+      stopped_because: "rev ymin is still about -9.96 after the bad edge uses the affinity result"
+  - id: T010
+    type: worker
+    assignee: Worker
+    status: blocked
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_basic_curve.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files."
+      - "Using the IGES start and end already yields axis (0,0,1) and U=0 at (10,0,z), and the surface is still at (0,-10,z). Report the axis and both points and stop."
+      - "The only lever is an extra quarter turn that the cxx does not contain."
+      - "Cone or Cube stops passing."
+    receipt:
+      result: blocked
+      summary: "Axis is (0,0,1). D0(0,10)=(10,0,10). D0(pi/2,10)=(0,10,10). That matches the cxx. rev.obj ymin is still -9.959799. Lowest vertex (0.895768, -9.959799, 10) is not that surface corner. Cone and Cube bbox deltas are 0."
+      stopped_because: "Surface matches the cxx and the mesh still reaches y=-9.96."
+  - id: T011
+    type: worker
+    assignee: Worker
+    status: done
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files. Do not edit the revolution surface."
+      - "The edge that contains (0.896, -9.960, 10) is already built from the pcurve, and the pcurve itself evaluates there. Report that and stop."
+      - "The only lever is an extra quarter turn or a sign flip."
+      - "Cone or Cube stops passing."
+    receipt:
+      result: done
+      summary: "At 3D parameter 4.712389 the pcurve maps to (-10, 0, 10) and the 3D curve is (0, 10, 10), distance 14.142, above GetMaxTol 1. The edge now comes from the 2D curve on the face. rev ymin delta versus data/occ-rev.obj is 0. Cone and Cube bbox deltas are 0."
+      commands:
+        - "cargo check: pass"
+        - "iges_read_obj rev, Cone, Cube: pass"
+        - "graphify update: pass"
+  - id: T012
+    type: worker
+    assignee: Worker
+    status: done
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_basic_curve.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/HoledPlate.iges data/output/iges-read/HoledPlate.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files."
+      - "A model already passes both gates. Do not edit for it."
+      - "The only lever is a heuristic, area ratio, length filter, or epsilon snap."
+      - "Cone, Cube, or rev ymin regresses."
+    receipt:
+      result: done
+      summary: "No edits. Sphere bbox 0.0185 area 0.00436 pass. rev bbox 0 area 1.72e-5 pass, ymin delta 0. Offset bbox 0 area 0.000273 pass. Cone bbox 0 area 0.00103 pass. Cube and Extrusion bbox 0 area 0 pass. HoledPlate bbox 0, area abs(ratio-1) 0.0578 fails (18529.72/17517.29, tol 0.05)."
+      remaining: "Only HoledPlate. Inner contours are already transferred in transfer_trimmed_surface. The unported call after TransferGeometry is XSAlgo_ShapeProcessor::ProcessShape (IGESToBRep_Actor.cxx:217), which calls ShapeProcess::Perform."
+  - id: T013
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: default
+    objective: "List the ShapeProcess operations IGESToBRep_Actor::Transfer runs inside ProcessShape, and which of those already have a Rust function."
+    inputs:
+      - "D:/source/OCCT-src/src/DataExchange/TKDEIGES/IGESToBRep/IGESToBRep_Actor.cxx:204-218"
+      - "D:/source/OCCT-src/src/DataExchange/TKXSBase/XSAlgo/XSAlgo_ShapeProcessor.cxx:63-75"
+      - "GetProcessingFlags and ShapeProcess::Perform"
+    constraints:
+      - "Read-only. Do not edit files."
+      - "Do not implement ProcessShape."
+      - "Name the default operation flags for an IGES read and the cxx line of each."
+    expected_output:
+      - "Operation list in call order."
+      - "For each operation: existing Rust function and file, or none."
+      - "Whether any single existing function is the one that would add or reorient HoledPlate hole wires."
+    receipt:
+      result: done
+      summary: "IGES ProcessShape runs only FixShape. The other 17 ShapeProcess ops are unset. Inside FixShape, ShapeFix_Face::Perform FixWire (cxx:365) and FixOrientation (cxx:692) are the hole-wire steps. Rust has ShapeFixFace::fix_orientation; ShapeFix_Wire::Perform is still unported and the IGES actor does not call either."
+  - id: T014
+    type: worker
+    assignee: Worker
+    status: blocked
+    reasoning_hint: default
+    objective: "After TransferGeometry, run the already-ported ShapeFix_Face::FixOrientation on each face, matching the FACE arm of ShapeFix_Shape::Perform. Remeasure the seven oracle models."
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_actor.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/HoledPlate.iges data/output/iges-read/HoledPlate.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Extrusion.iges data/output/iges-read/Extrusion.obj"
+      - "rtk graphify update ."
+    stop_if:
+      - "A write is needed outside allowed_files."
+      - "The only way forward is porting ShapeFix_Wire::Perform or a new healer."
+      - "Cube, Cone, Sphere, rev, Offset, or Extrusion misses a gate it already passed."
+      - "HoledPlate area abs(ratio-1) is still above 0.05 after this one call. Report the number and stop."
+    receipt:
+      result: blocked
+      summary: "FixOrientation is called on each face. Six models still pass. HoledPlate area stays 0.057795547. Top and bottom are each 2 triangles of area 8000; the reference top and bottom are 34 triangles of area 7493.789. Wall triangles match exactly, 60 faces and area 2529.716. The extra area is the two uncut hole regions, 506.211 each."
+      remaining: "ShapeFix_Wire::Perform did not move this number. The two 144 entities with three inner contours (P0000004 and P0000052) are the untrimmed top and bottom."
+  - id: T015
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Make the two HoledPlate 144 faces that carry three inner contours mesh with the holes cut, matching TransferTrimmedSurface and TransferCurveOnFace. Do not edit the mesher."
+    allowed_files:
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
+      - crates/occt-topo/src/iges_read/iges_to_brep_basic_curve.rs
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/HoledPlate.iges data/output/iges-read/HoledPlate.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cone.iges data/output/iges-read/Cone.obj"
+    stop_if:
+      - "A write is needed outside allowed_files. The mesher is shared and already correct for the STEP plate."
+      - "The only lever is a heuristic, area ratio, length filter, or epsilon snap."
+      - "Cube or Cone bbox or area regresses."
+      - "One reader fix does not change the HoledPlate top area. Report wire counts and stop."
+    receipt:
+      result: done
+      summary: "Composite curves call ShapeFix_Wire::FixConnected (IGESToBRep_TopoCurve.cxx:339-343). HoledPlate top 7493.789 (34 tris), bottom 7493.789 (34), walls 2529.716 (60). abs(area/17517.294024-1)=9.1e-11. Cube bbox 0 area 0. Cone bbox 0 area 0.001025. Changed only iges_to_brep_topo_curve.rs."
+      remaining: "Sphere, rev, Offset, and Extrusion were last measured before FixConnected."
+  - id: T016
+    type: worker
+    assignee: Worker
+    status: done
+    allowed_files: []
+    verify:
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/rev.iges data/output/iges-read/rev.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Offset.iges data/output/iges-read/Offset.obj"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Extrusion.iges data/output/iges-read/Extrusion.obj"
+    stop_if:
+      - "Any source edit."
+      - "A model misses its existing bbox or area gate. Report the number and stop."
+    receipt:
+      result: done
+      summary: "No edits. Sphere bbox 0.018500891 area 0.00436149. rev bbox 0 area 1.719e-5, ymin delta 0. Offset bbox 0 area 0.000272595. Extrusion bbox 0 area 0. All four pass."
+  - id: T017
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: high
+    objective: "Final audit of the three Goal Oracle items. The earlier T999 receipt is the mid-run rejection and is stale."
+    inputs:
+      - "docs/goals/iges-read-obj/goal.md Goal Oracle"
+      - "T015 and T016 receipts"
+      - "crates/occt-topo/tests/common/mod.rs tolerances and reference OBJ paths"
+    constraints:
+      - "Read-only. Do not edit source, docs, or state.yaml."
+      - "Do not treat the earlier T999 receipt as current evidence."
+      - "Vertex counts are a report, not a gate."
+    expected_output:
+      - "complete | not_complete"
+      - "full_outcome_complete: true | false"
+      - "One line per oracle item, mapped to a command or a measured number"
+    receipt:
+      result: done
+      decision: complete
+      full_outcome_complete: true
+      summary: "cargo check exit 0, 0 errors, 327 warnings. Seven OBJs are in data/output/iges-read. Against data/occ-*.obj: Cube bbox 0 area 0. Cone bbox 0 area 0.001025. Sphere bbox 0.018501 area 0.004361. HoledPlate bbox 0 area 9.54e-11. rev bbox 0 area 1.719e-5. Offset bbox 0 area 0.000273. Extrusion bbox 0 area 0. All inside tests/common/mod.rs tolerances."
+      evidence:
+        - "examples/iges_read_obj.rs and export_data_obj.rs both call brep_to_obj with deflection 0.1."
+        - "Reference paths are MODELS.occ in tests/common/mod.rs, the same files step_obj_parity uses."
+
+checks:
+  dirty_fingerprint: unknown
+  last_verification:
+    result: pass
+    task: T017
+    commands:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"

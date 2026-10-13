@@ -1151,46 +1151,7 @@ fn mapped_pcurve(
 ) -> Result<(Arc<dyn Curve2d>, f64, f64), String> {
     // `Transfer2dTopoBasicCurve` (`cxx:1217-1230`).
     let span = basic_curve_2d(session.model, index)?;
-    if std::env::var("IGES_UVDBG").is_ok() {
-        let s1 = span.curve.d0(span.first);
-        let s2 = span.curve.d0(span.last);
-        let m = trans.h_vectorial_part();
-        let l = trans.translation_part();
-        eprintln!(
-            "UVDBG c2d ent={} type={} src_rng=[{:.17e},{:.17e}] src1=({:.17e},{:.17e}) src2=({:.17e},{:.17e}) line={} circ={} form={:?} M=[{:.17e},{:.17e};{:.17e},{:.17e}] loc=({:.17e},{:.17e})",
-            index,
-            session.model.entity(index).map(|e| e.type_number).unwrap_or(0),
-            span.first,
-            span.last,
-            s1.x(),
-            s1.y(),
-            s2.x(),
-            s2.y(),
-            span.curve.gp_lin2d().is_some(),
-            span.curve.gp_circ2d().is_some(),
-            trans.form(),
-            m.value(0, 0),
-            m.value(0, 1),
-            m.value(1, 0),
-            m.value(1, 1),
-            l.x(),
-            l.y(),
-        );
-    }
     let (curve, mut first, mut last) = apply_uv_trsf(span, trans);
-    if std::env::var("IGES_UVDBG").is_ok() {
-        let s1 = curve.d0(first);
-        let s2 = curve.d0(last);
-        eprintln!(
-            "UVDBG  mapped rng=[{:.17e},{:.17e}] m1=({:.17e},{:.17e}) m2=({:.17e},{:.17e})",
-            first,
-            last,
-            s1.x(),
-            s1.y(),
-            s2.x(),
-            s2.y(),
-        );
-    }
     let surf = GeometryRegistry::global()
         .face_surface(face)
         .ok_or_else(|| "IGES face has no surface".to_string())?;

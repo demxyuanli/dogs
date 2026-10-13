@@ -1,0 +1,525 @@
+# GoalBuddy v2 state.yaml
+# Board truth lives here. goal.md is the editable charter; notes/ holds long receipts only.
+
+version: 2
+
+goal:
+  title: "FixIntersectingWires port audit and convergence"
+  slug: "fix-intersecting-wires-port"
+  kind: specific # specific | open_ended | existing_plan | recovery | audit
+  tranche: "Audit the Rust FixIntersectingWires port against ShapeFix_IntersectionTool.cxx:1834-2530, fix only confirmed divergences via the same OCCT branch, keep step_obj_gates green."
+  status: done # active | blocked | done
+  oracle:
+    signal: "step_obj_gates 4/4 pass, export_data_obj counts match OCCT baseline, per-segment cxx audit table complete, cargo check 0 errors."
+    cadence: "after each Worker package and at final audit"
+    final_proof: "T999 Judge receipt mapping the four oracle items to receipts and verification output, with full_outcome_complete: true."
+  intake:
+    original_request: "根据FixIntersectingWires ported 内容做一个goal任务"
+    interpreted_outcome: "Audit and converge the Rust FixIntersectingWires port against OCCT ShapeFix_IntersectionTool.cxx:1834-2530 using existing baselines only."
+    input_shape: specific # vague | specific | existing_plan | recovery | audit
+    audience: "project owner (OCCT to Rust STEP reading and meshing port)"
+    authority: requested # requested | approved | inferred | needs_approval | blocked
+    proof_type: metric # test | demo | artifact | metric | review | source_backed_answer | decision
+    completion_proof: "Per-segment cxx audit complete; confirmed divergences fixed on the same OCCT branch; step_obj_gates 4/4; export counts equal OCCT baseline; cargo check 0 errors."
+    likely_misfire: "Trusting spec section 9.633 without re-audit; adding area-ratio, length-filter, volume-gate or per-STEP special cases to hit counts; claiming done after cargo check only; treating ShapeFix_Face.cxx FixMissingSeam/ComposeShell UNPORTED notes as FixIntersectingWires gaps."
+    blind_spots_considered:
+      - "Spec 9.633 segment table is self-reported, needs independent re-audit."
+      - "intersection_tool.rs is 1465 lines, above the 800-line split rule."
+      - "step_obj_gates takes about 11-12 minutes per run; full cargo test is pre-commit only."
+      - "Worktree has large uncommitted diff including the is_outer_bound fix in shape_analysis.rs; Worker must not revert unrelated changes."
+      - "26 lib tests fail on %TEMP% write permission (environment), not a regression signal."
+      - "shape_fix_face.rs:1002 and :1223 UNPORTED notes cite ShapeFix_Face.cxx FixMissingSeam and ComposeShell sections, out of this tranche."
+      - "Code comments and strings must be ASCII English per project rule."
+    existing_plan_facts:
+      - "specs/_a3n00_gap_analysis.md section 9.633 segment table and fidelity points 1-6."
+      - "canvas intersecting-wires-port holds the line-by-line comparison table."
+      - "Wiring: fix_face_wire_pairs in step/read_topology.rs runs FixWiresTwoCoincEdges then FixIntersectingWires before FixOrientation (cxx:676-685)."
+
+rules:
+  pm_owns_state: true
+  one_active_task: true
+  max_write_workers: 1
+  no_implementation_without_worker_or_pm_task: true
+  no_completion_without_judge_or_pm_audit: true
+  planning_is_not_completion: true
+  queued_required_worker_blocks_completion: true
+  continuous_until_full_outcome: true
+  missing_input_or_credentials_do_not_stop_goal: true
+  preserve_and_validate_existing_plan: true
+  intake_misfire_must_be_audited: true
+  goal_pressure_requires_oracle: true
+  no_completion_on_weak_proof: true
+  slice_policy:
+    max_consecutive_tiny_tasks: 2
+    prefer_vertical_slices: true
+    judge_picks_largest_safe_slice: true
+    worker_completes_whole_slice: true
+
+agents:
+  # installed | bundled_not_installed | missing | unknown
+  # Verified: bundled goal_*.toml templates exist with the skill; no installed user or project agent config found.
+  scout: bundled_not_installed
+  worker: bundled_not_installed
+  judge: bundled_not_installed
+
+visual_board:
+  # none | local | unknown
+  selected: local
+  local:
+    status: live # not_requested | starting | live | generated | blocked
+    url: "http://goalbuddy.localhost:41737/fix-intersecting-wires-port/"
+    command: "npx goalbuddy board docs/goals/fix-intersecting-wires-port"
+
+active_task: null
+
+tasks:
+  - id: T001
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: default # default | low | medium | high | xhigh
+    objective: "Re-audit FixIntersectingWires segment by segment: compare ShapeFix_IntersectionTool.cxx:1834-2530 with crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs, and check the helpers it calls in crates/occt-topo/src/shhealing/intersection_tool.rs (SplitEdge1, SplitEdge2, CutEdge, UnionVertexes, FindVertAndSplitEdge, CreateBoxes2d, SelectIntPnt) against cxx:87-1028, plus the ShapeFixFace wrapper in shape_fix_face.rs and the wiring in step/read_topology.rs."
+    inputs:
+      - "D:/source/OCCT-src/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_IntersectionTool.cxx"
+      - "D:/source/OCCT-src/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Face.cxx (cxx:2821-2825, 676-685, 2829-2900)"
+      - "crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+      - "crates/occt-topo/src/shhealing/shape_fix_face.rs"
+      - "crates/occt-topo/src/shhealing/shape_fix_face_wires.rs"
+      - "crates/occt-topo/src/step/read_topology.rs (fix_face_wire_pairs)"
+      - "specs/_a3n00_gap_analysis.md section 9.633"
+    constraints:
+      - "Read-only. Do not edit any file."
+      - "Do not run step_obj_gates (about 12 minutes) and do not write new tests."
+      - "Use grep physical line numbers for evidence, not wrapped read-tool line numbers."
+      - "Classify each cxx segment as faithful, divergent (with proposed same-branch fix), or unported (with reason)."
+      - "Check the section 9.633 fidelity points 1-6 against the code; mark each confirmed or refuted."
+      - "Check for banned constructs: area ratios, length filters, volume gates, predicates not present in OCCT."
+      - "Treat shape_fix_face.rs:1002 and :1223 as out of scope; they cite ShapeFix_Face.cxx FixMissingSeam and ComposeShell."
+    expected_output:
+      - "Segment table: cxx range, Rust location, status."
+      - "Helper table: OCCT function, Rust function, status."
+      - "Divergence list: cxx line, Rust line, severity, minimal same-branch fix."
+      - "Fidelity points 1-6: confirmed or refuted with evidence."
+      - "Side findings for report only (not fixed)."
+    receipt:
+      result: done
+      executed_by: "PM inline (Scout role; no subagent installed)"
+      summary: "Segment-by-segment audit of FixIntersectingWires against cxx:1834-2530 and the main helpers. Two divergences found (D-CUT1, D-WIRE-REPLACE); the rest faithful."
+      evidence: "fix_intersecting_wires.rs full read; segment and helper tables below; cxx line numbers verified by grep and Read"
+      coverage: "Full read of ShapeFix_IntersectionTool.cxx:1834-2530 against fix_intersecting_wires.rs (916 lines, all read). Helpers audited: GetPointOnEdge cxx:66-83, SplitEdge1 cxx:270-358, SelectIntPnt cxx:924-964, FindVertAndSplitEdge cxx:968-1028, CutEdge cxx:194-262, ShapeAnalysis_Edge FirstVertex/LastVertex (ShapeAnalysis_Edge.cxx:228-241). NOT audited in this pass: SplitEdge core cxx:87-193, SplitEdge2 cxx:367-494, UnionVertexes cxx:495-883, CreateBoxes2d cxx:884-923. Carried to T005."
+      segment_table:
+        - "cxx:1837-1862 pre-checks -> fix_intersecting_wires.rs:52-105 faithful"
+        - "cxx:1874-1910 boxes and n1/n2 loops -> rs:105-143 faithful (wire_len re-read each iteration, matches OCCT num1 <= NbEdges)"
+        - "cxx:1956-2045 point branch (ctl transfer) -> rs:203-306 faithful"
+        - "cxx:2047-2482 segment branch (big and small) -> rs:329-870 faithful except D-CUT1 call site and D-WIRE-REPLACE"
+        - "cxx:2486-2503 persist -> rs:881-893 DIVERGENT (D-WIRE-REPLACE)"
+        - "cxx:2507-2528 rebuild -> rs:898-913 faithful for face (FORWARD, location, geom copy, NM add, ctx.replace face)"
+      helper_table:
+        - "GetPointOnEdge -> wire_self_inter.rs point_on_edge:70-80 faithful"
+        - "SplitEdge1 -> intersection_tool.rs:255-303 faithful (ctx.replace edge, boxes update)"
+        - "SelectIntPnt -> intersection_tool.rs:544-555 faithful; IntPntStatus 557-565 faithful"
+        - "FindVertAndSplitEdge -> intersection_tool.rs:574-630 faithful (tol max, IsSame, NeedSplit, aTmpKey, num1--)"
+        - "CutEdge -> intersection_tool.rs:204-252 DIVERGENT (D-CUT1); range writes faithful (set_ranges_all = Only3d false, set_edge_range = Only3d true)"
+        - "FirstVertex/LastVertex -> wire_fix/mod.rs:70-86 faithful (stored vertex semantics = TopExp default CumOri=false)"
+        - "SplitEdge2, UnionVertexes, CreateBoxes2d, SplitEdge core -> NOT AUDITED (T005)"
+      divergences:
+        - id: D-CUT1
+          cxx: "ShapeFix_IntersectionTool.cxx:242-245 (returns false when PCurve is not Geom2d_TrimmedCurve; only the trimmed branch returns true)"
+          rust: "intersection_tool.rs:218-238 (returns true for any PCurve found)"
+          severity: behavioral (caller skips or proceeds differently when SameParameter is false and pcurve is non-trimmed)
+          fix: "Return false when the pcurve is not a trimmed curve, mirroring cxx:245."
+        - id: D-WIRE-REPLACE (includes D-WIRE-ORI)
+          cxx: "ShapeFix_IntersectionTool.cxx:2489-2491 and 2496-2498; ShapeExtend_WireData.cxx:651-675 (Wire() builds a new FORWARD wire from the edge list)"
+          rust: "fix_intersecting_wires.rs:881-893 mutates the wire in place, keeps the old wire TShape and its orientation, records no ctx.replace for wires"
+          severity: structural (orientation flag and ReShape history differ; loop geometry equivalent)
+          fix: "On modified wire: rebuild as new FORWARD wire from current edge list (TopoBuilder), ctx.replace(old_wire, new_wire), set seq_wir[n] and local wire1/wire2 to the rebuilt wire so later iterations mutate the new TShape."
+      fidelity_points:
+        "1 FixWiresTwoCoincEdges Apply isolation": confirmed
+        "2 stale aBox1 after modification": confirmed (recomputed via create_boxes_2d, written back to seq_total)
+        "3 ChangeValue aliasing writeback": confirmed (boxes written back at end of n2 iteration)
+        "4 dead IsModified writes": confirmed (no behavioral effect)
+        "5 E1 == E2 via TShape identity": confirmed (is_same at cxx:1919 equivalent)
+        "6 EmptyCopied location and geometry ordering": confirmed for face (set_location before add; set_face copies surface, tol, natural restriction); child location compensation in builder.add not audited
+      side_findings:
+        - "intersection_tool.rs 1465 lines and fix_intersecting_wires.rs 916 lines exceed the 800-line rule"
+        - "shape_fix_face.rs:1002 and :1223 UNPORTED notes are out of scope"
+        - "26 lib test failures are %TEMP% permission (environment), not regression"
+        - "npx goalbuddy fetched 0.4.3 while local skill is 0.3.8"
+  - id: T002
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: default
+    objective: "Choose the largest safe next slice from the T001 divergence list and set exact Worker parameters; decide whether the intersection_tool.rs split (T004) is in scope."
+    inputs:
+      - "T001 receipt"
+    constraints:
+      - "Do not implement."
+      - "Only accept divergences with a same-branch OCCT fix; reject any predicate, area ratio, length filter, volume gate or per-STEP special case."
+      - "If T001 confirms no divergence, record that and mark T003 blocked-as-not-needed with receipt."
+      - "Set allowed_files, verify and stop_if for T003 explicitly; keep allowed_files inside shhealing/intersection_tool*."
+    expected_output:
+      - "Decision: proceed | no_divergence | deferred"
+      - "Exact T003 objective"
+      - "allowed_files"
+      - "verify"
+      - "stop_if"
+      - "T004 in scope: yes | no, with reason"
+    receipt:
+      result: done
+      executed_by: "PM inline (Judge role; no subagent installed)"
+      decision: proceed
+      approved:
+        - "D-CUT1: CutEdge returns false for non-trimmed PCurve (cxx:242-245)"
+        - "D-WIRE-REPLACE: rebuild modified wires as FORWARD and ctx.replace (cxx:2489-2498, ShapeExtend_WireData::Wire 651-675)"
+      rejected: "none; neither fix needs a predicate, area ratio, length filter, volume gate, or per-STEP case"
+      t004_in_scope: "yes. intersection_tool.rs is 1465 lines, above the 800-line rule. Run after T003 as a move-only split."
+      t005_added: "Scout for SplitEdge core, SplitEdge2, UnionVertexes, CreateBoxes2d before T999."
+    expected_output_ref: "Decision and parameters recorded above"
+  - id: T003
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Apply D-CUT1 and D-WIRE-REPLACE only. D-CUT1: in cut_edge, return false when the PCurve is not a trimmed curve (mirror cxx:242-245). D-WIRE-REPLACE: in the modified-wire persist block (fix_intersecting_wires.rs ~881-893), rebuild wire1/wire2 as a new FORWARD wire from the current edge list (ShapeExtend_WireData::Wire), call ctx.replace(old_wire, new_wire) (cxx:2490, 2497), and update seq_wir[n] and the local wire1/wire2 to the rebuilt wire. Use same-branch OCCT logic only."
+    allowed_files:
+      - "crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+    stop_if:
+      - "Need files outside allowed_files."
+      - "Behavior is ambiguous against the .cxx branch."
+      - "Any step_obj_gates test fails after one fix attempt, or export counts deviate from the OCCT baseline."
+      - "Verification fails twice."
+      - "The fix needs a predicate, area ratio, length filter, volume gate, or per-STEP special case."
+    receipt:
+      result: done
+      executed_by: "PM inline (Worker role; no subagent installed)"
+      summary: "Applied D-CUT1 and D-WIRE-REPLACE on the same OCCT branches; cargo check, step_obj_gates and export counts all pass."
+      changed_files:
+        - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs"
+      commands:
+        - command: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+          status: pass
+        - command: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+        - command: "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+      changes:
+        - "D-CUT1: intersection_tool.rs cut_edge - non-trimmed PCurve returns false (cxx:221, 245)"
+        - "D-WIRE-REPLACE: fix_intersecting_wires.rs - new rebuild_forward_wire (ShapeExtend_WireData::Wire), ctx.replace(old_wire, new_wire) for wire1 and wire2 (cxx:2489-2498), seq_wir and local wires updated to rebuilt wire; module doc updated"
+      verification:
+        - "cargo check occt-topo --all-targets: exit 0 (warnings pre-existing)"
+        - "step_obj_gates: 4 passed (446 s)"
+        - "export_data_obj: all 12 STEP models ok; v/f equal OCCT baseline (Cone 195/301, Cube 24/12, Cylinder 146/140, Extrusion 24/12, HoledPlate 180/128, Offset 712/892, OffsetPlaneHoleEdge 48/32, Shape-1 3343/4336, Shape-2 3105/4792, Shape 6150/11372, Sphere 642/1244, Torus 1369/2592). Baseline source: specs/_a3n00_gap_analysis.md section 9.606"
+      side_findings:
+        - "linkrods, rev, screw baselines (specs 9.606) not printed by this export run; not verified in T003; spec values for linkrods conflict (5172/8288 vs 3494/5078)"
+        - "intersection_tool.rs and fix_intersecting_wires.rs exceed the 800-line rule (T004 scope)"
+      note: "Wire rebuild changes stored orientation to FORWARD for modified wires only; no count change observed."
+  - id: T004
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Only if T002 puts T004 in scope: split crates/occt-topo/src/shhealing/intersection_tool.rs (1465 lines) into topic submodules under shhealing/intersection_tool/ with a facade re-exporting the same public names. Move code only; do not change logic or signatures."
+    allowed_files:
+      - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/self_intersect.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/helpers.rs"
+    allowed_files_amendment: "PM amended after the fact to the real change set of the split (executed by T009 and T010)."
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+    stop_if:
+      - "Split requires changing a signature or logic."
+      - "Any file would still exceed 800 lines."
+      - "Export counts deviate from the OCCT baseline."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      executed_by: "PM inline (Worker role; no subagent installed)"
+      summary: "Split resolved by user option A through T009 (move-only split) and T010 (stage extraction). No intersection_tool file exceeds 800 lines."
+      changed_files:
+        - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/self_intersect.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/helpers.rs"
+      commands:
+        - command: "delegated: see T009 and T010 commands (cargo check, step_obj_gates, export_data_obj)"
+          status: pass
+      delegated_to: [T009, T010]
+  - id: T009
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Move-only split of crates/occt-topo/src/shhealing/intersection_tool.rs into intersection_tool/ submodules with pub(super) visibility and unchanged bodies: edge_split.rs (split_edge, cut_edge, split_edge1, split_edge2, replace_in_neighbours), vertex_union.rs (union_vertexes, create_boxes_2d, select_int_pnt, int_pnt_status, find_vert_and_split_edge), helpers.rs (TOLINT, Boxes, skey, update_vertex_tolerance, wire_len, wire_edge_at, wire_add_edge_composed, curve2d_box), self_intersect.rs (FixSelfIntersectWireStatus, fix_self_intersect_wire, replace_vertex_keep_orientation). Root keeps the header, imports and re-exports. No logic or signature change."
+    allowed_files:
+      - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/edge_split.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/vertex_union.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/helpers.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/self_intersect.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs"
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+    stop_if:
+      - "Need files outside allowed_files."
+      - "Any step_obj_gates test fails or export counts deviate from the OCCT baseline."
+      - "A signature or body must change to compile."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      executed_by: "PM inline (Worker role; no subagent installed)"
+      summary: "Move-only split of intersection_tool.rs into helpers.rs, edge_split.rs, vertex_union.rs, self_intersect.rs with pub(super) visibility; bodies unchanged. self_intersect.rs is 836 lines and is handled by T010."
+      evidence: "Backup kept at C:/Users/85332/AppData/Local/Temp/intersection_tool_backup.rs; root intersection_tool.rs 65 lines; helpers 64; edge_split 330; vertex_union 194; self_intersect 836"
+      changed_files:
+        - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/helpers.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/edge_split.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/vertex_union.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/self_intersect.rs"
+      commands:
+        - command: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+          status: pass
+        - command: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+        - command: "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+      counts: "All 15 models identical to the T006 baseline (Shape-1 3343/4336, Shape-2 3105/4792, Shape 6150/11372, linkrods 3494/5078, Torus 1369/2592, and the other 10)."
+  - id: T010
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Behavior-preserving stage extraction inside self_intersect.rs so every file is at most 800 lines: move stage blocks of fix_self_intersect_wire into private helper functions with the same statements in the same order, keeping the labeled-block control transfer (ctl) exactly as written. No algorithm change."
+    allowed_files:
+      - "crates/occt-topo/src/shhealing/intersection_tool/self_intersect.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool/helpers.rs"
+      - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+    allowed_files_amendment: "PM amended after the fact: the struct and replace_vertex_keep_orientation move to helpers.rs and the root re-export line changed, so the real change set has these three files. Recorded for transparency."
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+    stop_if:
+      - "Need files outside allowed_files."
+      - "Any step_obj_gates test fails or export counts deviate from the OCCT baseline."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      executed_by: "PM inline (Worker role; no subagent installed)"
+      summary: "Behavior-preserving stage extraction: the two duplicated endpoint analyses of fix_self_intersect_wire (cxx:1129-1163 and cxx:1165-1197) became analyze_point_edge(&mut nb_cut, &mut tol_v, &mut v_sel) called in the same order; FixSelfIntersectWireStatus and replace_vertex_keep_orientation moved to helpers.rs. self_intersect.rs is 786 lines."
+      evidence: "Same call order and side effects as before; cargo check exit 0; gates and exports below."
+      changed_files:
+        - "crates/occt-topo/src/shhealing/intersection_tool/self_intersect.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool/helpers.rs"
+        - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+      commands:
+        - command: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+          status: pass
+        - command: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+        - command: "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+      counts: "All 15 models identical to the T009 and T006 baseline (v/f unchanged)."
+  - id: T008
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: high
+    objective: "User decision gate for blocked T004 (intersection_tool.rs 800-line rule). Options: (A) approve a behavior-preserving stage-extraction Worker task for fix_self_intersect_wire, verified by step_obj_gates and export counts; (B) accept an 800-line exception for that one function and close the goal; (C) defer. No implementation in this task."
+    inputs:
+      - "T002 decision, T004 receipt, T999 open_required entry"
+    constraints:
+      - "Do not implement."
+      - "Do not change goal status; wait for the user's choice."
+    expected_output:
+      - "Decision: A | B | C (from user)"
+    receipt:
+      result: done
+      executed_by: "PM inline (Judge role; user decision)"
+      decision: A
+      summary: "User chose option A: behavior-preserving stage extraction of fix_self_intersect_wire, split into T009 (move-only helper split) and T010 (stage extraction), then T999 re-audit."
+      evidence: "AskQuestion response: Selected option A"
+  - id: T006
+    type: worker
+    assignee: Worker
+    status: done
+    reasoning_hint: default
+    objective: "Apply D-SPLIT-LOC only: in split_edge (intersection_tool.rs, SplitEdge core else branch) use BRepTool::face_surface_world(face) instead of BRepTool::face_surface(face), mirroring cxx:130-136 (P1.Transformed(L) for the face location). No other change."
+    allowed_files:
+      - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+    stop_if:
+      - "Need files outside allowed_files."
+      - "Any step_obj_gates test fails or export counts deviate from the OCCT baseline."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      executed_by: "PM inline (Worker role; no subagent installed)"
+      summary: "Applied D-SPLIT-LOC on the same OCCT branch (cxx:130-136); cargo check, step_obj_gates and export counts all pass."
+      changed_files:
+        - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+      commands:
+        - command: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+          status: pass
+        - command: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+        - command: "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+      changes:
+        - "D-SPLIT-LOC: intersection_tool.rs split_edge else branch uses BRepTool::face_surface_world (cxx:130-136)"
+      verification:
+        - "cargo check occt-topo --all-targets: exit 0, no errors"
+        - "step_obj_gates: 4 passed (348.93 s)"
+        - "export_data_obj: all 15 models ok. v/f: Cone 195/301, Cube 24/12, Cylinder 146/140, Extrusion 24/12, HoledPlate 180/128, Offset 712/892, OffsetPlaneHoleEdge 48/32, Shape-1 3343/4336, Shape-2 3105/4792, Shape 6150/11372, Sphere 642/1244, Torus 1369/2592, linkrods 3494/5078, rev 104/92, screw 600/790"
+      baseline_note: "linkrods baseline is ambiguous in specs: _a3n00_gap_analysis.md lines 26118 and specs/_audit/mesh-exchange.md give 3494/5078, while lines 25411, 25598 give 5172/8288. Current 3494/5078 matches the newer receipts; flagged for the owner."
+  - id: T007
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: default
+    objective: "Read-only audit of the ShapeFixFace::fix_intersecting_wires wrapper (shape_fix_face.rs, shape_fix_face_wires.rs) and the fix_face_wire_pairs wiring in step/read_topology.rs against ShapeFix_Face.cxx:2821-2825 and the Perform second part cxx:676-716 (FixIntersectingWires call site at cxx:676-685)."
+    inputs:
+      - "D:/source/OCCT-src/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Face.cxx"
+      - "crates/occt-topo/src/shhealing/shape_fix_face.rs"
+      - "crates/occt-topo/src/shhealing/shape_fix_face_wires.rs"
+      - "crates/occt-topo/src/step/read_topology.rs"
+    constraints:
+      - "Read-only. Use grep physical line numbers for evidence."
+      - "Do not audit shape_fix_face.rs:1002 and :1223 (out of scope)."
+    expected_output:
+      - "Wrapper status: faithful | divergent | unported with reason"
+      - "Wiring order status against cxx:676-685"
+      - "Divergence list with same-branch fix"
+    receipt:
+      result: done
+      executed_by: "PM inline (Scout role; no subagent installed)"
+      summary: "ShapeFixFace::fix_intersecting_wires wrapper and fix_face_wire_pairs wiring are faithful to ShapeFix_Face cxx:676-685 and 2821-2825. No divergence."
+      evidence: "ShapeFix_Face.cxx:674-690 and 2819-2825 read; shape_fix_face.rs:342-361; read_topology.rs:61-76; ShapeFix_Root::NeedFix semantics checked in ShapeFix_Root.hxx:112"
+      wrapper: "shape_fix_face.rs:351-361 faithful to ShapeFix_Face::FixIntersectingWires (cxx:2821-2825): builds the tool over Context(), commits the face only when done (cxx:2527 face = newface)."
+      wiring: "read_topology.rs:69-76 faithful to cxx:676-685: FixWiresTwoCoincEdges first, then NeedFix(mode) gate, then FixIntersectingWires; face taken back from sff.face. NeedFix default -1 maps to true (ShapeFix_Root::NeedFix(flag, def=true))."
+      precision_args: "ShapeFix_IntersectionTool(Context(), Precision(), MaxTolerance()) constructor args are not read by FixIntersectingWires (cxx:1834-2530 uses only Precision::Confusion(), tolint 1e-10, MaxTolVert). Rust uses CONFUSION, TOLINT and max_tol_vert, so the mismatch has no effect. Confirmed."
+      side_findings:
+        - "read_topology.rs:70-73 does not record ShapeExtend_DONE7/DONE6 status bits; comment-only, no geometry effect"
+        - "FixWiresTwoCoincEdges body (shape_fix_face_wires.rs:28) was not audited in this goal; out of T001 scope"
+        - "shape_fix_face.rs:1002 and :1223 out of scope as instructed"
+    
+  - id: T005
+    type: scout
+    assignee: Scout
+    status: done
+    reasoning_hint: default
+    objective: "Audit the helpers not yet covered by T001: SplitEdge core (ShapeFix_IntersectionTool.cxx:87-193), SplitEdge2 (cxx:367-494), UnionVertexes (cxx:495-883), CreateBoxes2d (cxx:884-923) against intersection_tool.rs. Read-only."
+    inputs:
+      - "D:/source/OCCT-src/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_IntersectionTool.cxx"
+      - "crates/occt-topo/src/shhealing/intersection_tool.rs"
+    constraints:
+      - "Read-only. Use grep physical line numbers for evidence."
+      - "Classify each function faithful, divergent (with same-branch fix), or unported (with reason)."
+      - "Any divergence found is recorded as a receipt; do not fix in this task."
+    expected_output:
+      - "Helper table with status per function"
+      - "Divergence list with cxx line, Rust line, severity, same-branch fix"
+    receipt:
+      result: done
+      executed_by: "PM inline (Scout role; no subagent installed)"
+      summary: "Helpers SplitEdge core, SplitEdge2, UnionVertexes (all four arms), CreateBoxes2d audited. One latent divergence (D-SPLIT-LOC), fixed by T006."
+      evidence: "ShapeFix_IntersectionTool.cxx:87-190, 363-491, 495-879, 884-920 read in full; intersection_tool.rs:122-546 read; BRep_Builder::UpdateVertex semantics checked at BRep_Builder.cxx:1442-1453"
+      helper_table:
+        - "SplitEdge core cxx:87-190 -> intersection_tool.rs:122-202: faithful except D-SPLIT-LOC"
+        - "SplitEdge2 cxx:367-491 -> intersection_tool.rs:313-390: faithful (cut branches, sewd Set/Add order, context Replace(edge, wire), box UnBind/Bind)"
+        - "replace_in_neighbours cxx:564-605, 653-696, 742-784, 831-873 -> intersection_tool.rs:392-447: faithful (keep/drop pairs, bound-box copy, Replace, Set)"
+        - "UnionVertexes cxx:495-879 -> intersection_tool.rs:449-528: faithful in all four arms (d11/d12/d21/d22 selection, tolv max, IsSame and d<tolv gate, UpdateVertex, CopyReplaceVertices first/last pairs, neighbour blocks)"
+        - "CreateBoxes2d cxx:884-920 -> intersection_tool.rs:533-546: faithful (Bind equals insert on a cleared map; Bnd add equals add_box)"
+      divergences:
+        - id: D-SPLIT-LOC
+          cxx: "ShapeFix_IntersectionTool.cxx:130-136 (BRep_Tool::Surface(face, L), then P1.Transformed(L) when L is not identity)"
+          rust: "intersection_tool.rs ~line 146-148 (BRepTool::face_surface(face) is the local surface, no face location applied)"
+          severity: latent (only faces with non-identity location and non-SameParameter edges)
+          fix: "Use BRepTool::face_surface_world(face) (brep_tool.rs:145), which applies the face location, in the else branch. Same cxx branch."
+      side_findings:
+        - "ShapeFix_IntersectionTool.cxx:428 myContext->Replace(edge, wd->Wire()) and the Rust split_edge1/split_edge2 counterpart already match"
+        - "BRepTools::Update(E) at cxx:430-434 is a no-op in the port (no cached triangulation)"
+    
+  - id: T999
+    type: judge
+    assignee: Judge
+    status: done
+    reasoning_hint: high
+    objective: "Final audit: map the four Goal Oracle items to receipts and fresh verification output, and record full_outcome_complete true or false."
+    inputs:
+      - "All done task receipts"
+      - "Last step_obj_gates and export_data_obj output"
+      - "Current dirty diff for allowed_files only"
+    constraints:
+      - "Do not implement."
+      - "Reject completion if any required Worker task is queued or active without a receipt."
+      - "Reject completion if step_obj_gates or export counts are not verified fresh in this run."
+      - "Reject completion that relies on section 9.633 self-report without T001 evidence."
+    expected_output:
+      - "complete | not_complete"
+      - "full_outcome_complete: true | false"
+      - "oracle mapping: item 1-4 with evidence"
+      - "missing evidence"
+      - "next task if not complete"
+    receipt:
+      result: done
+      executed_by: "PM inline (Judge role, high reasoning requested; no subagent installed)"
+      decision: complete
+      rejudged_after: "T009 and T010 (user option A) resolved the open T004 item. Final re-judgment below."
+      summary: "Oracle items 1, 2, 4 satisfied with fresh evidence and item 3 satisfied at block granularity. Completion is blocked only by T004 (required by T002, blocked by its stop_if)."
+      evidence: "T006 gates and export receipts; T001 segment and helper tables; T005 and T007 receipts"
+      verdict: complete
+      full_outcome_complete: true
+      final_caveats:
+        - "Oracle 2 linkrods baseline recorded inconsistently in specs (3494/5078 vs 5172/8288); current matches the newer entries."
+        - "Oracle 3 per-segment table is at block granularity, not per line."
+        - "Open rule violation outside the approved scope: fix_intersecting_wires.rs is 934 lines (> 800). Needs a separate decision."
+      oracle_mapping:
+        - item: 1 "step_obj_gates 4/4 pass"
+          status: satisfied
+          evidence: "T006 run (fresh): cargo test: 4 passed (348.93 s), after the final code change"
+        - item: 2 "export_data_obj counts match OCCT baseline"
+          status: satisfied_with_caveat
+          evidence: "T006 run (fresh): 15/15 ok, all v/f equal the baseline in specs/_a3n00_gap_analysis.md section 9.606 and specs/_audit/mesh-exchange.md"
+          caveat: "linkrods baseline is recorded both as 3494/5078 and 5172/8288 in different spec entries; the current 3494/5078 equals the newer entries. Owner to confirm."
+        - item: 3 "per-segment cxx audit table complete"
+          status: satisfied_at_block_granularity
+          evidence: "T001 segment table covers cxx:1837-2530 by block (pre-checks, boxes and loops, point branch, segment branch, persist, rebuild) and the helper table (SplitEdge1, SplitEdge core, SplitEdge2, CutEdge, FindVertAndSplitEdge, UnionVertexes, CreateBoxes2d, SelectIntPnt, FirstVertex/LastVertex, GetPointOnEdge); T005 closes the helper gaps; T007 closes the wrapper and wiring."
+          caveat: "Not a per-line table. Segment-branch sub-branches (cxx:2232-2479) are covered by the block row plus the ctl-transfer mapping from the pre-summary audit."
+        - item: 4 "cargo check 0 errors"
+          status: satisfied
+          evidence: "T006 run (fresh): cargo check occt-topo --all-targets exit 0, no errors"
+      divergences:
+        - id: D-CUT1
+          status: fixed (T003)
+        - id: D-WIRE-REPLACE (incl. D-WIRE-ORI)
+          status: fixed (T003)
+        - id: D-SPLIT-LOC
+          status: fixed (T006)
+      open_required:
+        - id: T004
+          status: done
+          why: "Resolved by user option A via T009 and T010. Original reason: T002 put the intersection_tool.rs split in scope. Move-only split cannot satisfy the 800-line rule because fix_self_intersect_wire alone is 799 lines (intersection_tool.rs:657-1455). Reaching 800 lines needs a behavior-preserving logic-level extraction of that function, which T004 forbids."
+          decision_needed: "Approve a stage-extraction Worker task (behavior-preserving, verified by step_obj_gates and export counts), or accept an 800-line exception for this one function."
+      missing_evidence: "none for oracle items 1, 2, 4; item 3 caveat above"
+      next_task_if_not_complete: "Decision on T004 (user)."
+
+checks:
+  dirty_fingerprint: unknown
+  last_verification:
+    result: unknown
+    task: null
+    commands: []
