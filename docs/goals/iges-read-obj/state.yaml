@@ -293,6 +293,7 @@ tasks:
     type: worker
     assignee: Worker
     status: blocked
+    objective: "Close the Sphere, rev, and Offset gates after T005 by finishing the surface transfer in the iges_read modules. HoledPlate is out of this package."
     allowed_files:
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
@@ -328,6 +329,7 @@ tasks:
     type: worker
     assignee: Worker
     status: blocked
+    objective: "Build the IGES boundary edge from the 2D curve when the pcurve/3D pair is inconsistent or its same-parameter deviation exceeds the max tolerance, holding Cone and Cube."
     allowed_files:
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
@@ -354,6 +356,7 @@ tasks:
     type: worker
     assignee: Worker
     status: blocked
+    objective: "Trace the five ParamSurface steps for the rev pcurve sample (1, 4.802086), report the intermediate points, and do not wrap U."
     allowed_files:
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
@@ -379,6 +382,7 @@ tasks:
     type: worker
     assignee: Worker
     status: blocked
+    objective: "Apply the PreMultiply uFact affinity to the rev edge that produces the y=-9.96 vertex and remeasure the rev mesh ymin."
     allowed_files:
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
@@ -402,6 +406,7 @@ tasks:
     type: worker
     assignee: Worker
     status: blocked
+    objective: "Check the rev revolution surface axis and the two IGES trim points against the cxx, and report whether the surface or the mesh produces the y=-9.96 vertex."
     allowed_files:
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
       - crates/occt-topo/src/iges_read/iges_to_brep_basic_curve.rs
@@ -424,6 +429,7 @@ tasks:
     type: worker
     assignee: Worker
     status: done
+    objective: "Make the rev edge that contains (0.896, -9.960, 10) come from the face's 2D curve and confirm the rev ymin delta against data/occ-rev.obj."
     allowed_files:
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
     verify:
@@ -448,6 +454,7 @@ tasks:
     type: worker
     assignee: Worker
     status: done
+    objective: "Remeasure all seven oracle models against the STEP bbox and area gates after T011, and do not edit a model that already passes both."
     allowed_files:
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs
       - crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs
@@ -491,6 +498,11 @@ tasks:
     receipt:
       result: done
       summary: "IGES ProcessShape runs only FixShape. The other 17 ShapeProcess ops are unset. Inside FixShape, ShapeFix_Face::Perform FixWire (cxx:365) and FixOrientation (cxx:692) are the hole-wire steps. Rust has ShapeFixFace::fix_orientation; ShapeFix_Wire::Perform is still unported and the IGES actor does not call either."
+      evidence:
+        - "D:/source/OCCT-src/src/DataExchange/TKDEIGES/IGESToBRep/IGESToBRep_Actor.cxx:204-218 (the ProcessShape call site)"
+        - "D:/source/OCCT-src/src/DataExchange/TKXSBase/XSAlgo/XSAlgo_ShapeProcessor.cxx:63-75 (GetProcessingFlags)"
+        - "ShapeFix_Shape::Perform FACE arm: ShapeFix_Face::Perform FixWire (ShapeFix_Face.cxx:365) and FixOrientation (ShapeFix_Face.cxx:692)"
+        - "crates/occt-topo/src/shhealing/shape_fix_face.rs fix_orientation (:411) - the only one of the two that exists in Rust"
   - id: T014
     type: worker
     assignee: Worker
@@ -546,6 +558,7 @@ tasks:
     type: worker
     assignee: Worker
     status: done
+    objective: "Remeasure Sphere, rev, Offset, and Extrusion against the STEP gates after the FixConnected change, with no source edit."
     allowed_files: []
     verify:
       - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Sphere.iges data/output/iges-read/Sphere.obj"
