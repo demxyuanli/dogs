@@ -36,7 +36,7 @@
 
 - `crates/occt-geom/src/bspline_surface.rs`：新增 `set_u_periodic` / `set_v_periodic`（`Geom_BSplineSurface_1.cxx:940-1022`），`d0/d1/d2` 在周期时走 `prepare_eval::dn`。
 - 新增 `crates/occt-topo/src/shape_custom_surface.rs::convert_to_periodic`（`ShapeCustom_Surface.cxx:475-616`）。
-- `step/read_topology.rs::resolve_face` 对 `B_SPLINE_SURFACE[_WITH_KNOTS]` 调用。
+- `step/read_topology/translate_face.rs::resolve_face` 对 `B_SPLINE_SURFACE[_WITH_KNOTS]` 调用。
 
 | 量 | 修前 | 修后 | OCCT |
 |---|---|---|---|

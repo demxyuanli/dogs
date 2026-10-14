@@ -6,7 +6,7 @@
 
 本 tranche 的边界：
 
-- 包含：`FixIntersectingWires` 本体（cxx:1834-2530）、它直接调用的 `intersection_tool.rs` 辅助函数、`ShapeFix_Face::FixIntersectingWires` 包装（`ShapeFix_Face.cxx:2821-2825`）、`read_topology.rs` 的 `fix_face_wire_pairs` 接线（`cxx:676-685`）。
+- 包含：`FixIntersectingWires` 本体（cxx:1834-2530）、它直接调用的 `intersection_tool.rs` 辅助函数、`ShapeFix_Face::FixIntersectingWires` 包装（`ShapeFix_Face.cxx:2821-2825`）、`step/read_topology/shape_fix_face_perform.rs` 的 `fix_face_wire_pairs` 接线（`cxx:676-685`）。
 - 不包含：`FixSelfIntersectWire`（cxx:1029-1833）、`ShapeFix_Face` 中 FixMissingSeam / ComposeShell 相关的未移植段、网格管线。
 
 ## Original Request

@@ -277,7 +277,7 @@ fn collect_shells(shape: &TopoShape, out: &mut Vec<TopoShape>) {
 }
 
 /// Ported tail of `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:482-716`),
-/// the same order `read_topology.rs` uses after the face is built.
+/// the same order `step/read_topology/translate_face.rs` uses after the face is built.
 fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
     let applied = ctx.apply(&face.0);
     let face = if applied.is_face() {

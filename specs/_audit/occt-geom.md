@@ -6,7 +6,7 @@
 共列 15 条：**自创 14 条**、**等价替换未登记 1 条**、**已登记 0 条**（仓库内不存在等价替换登记表，`specs/` 下只有 `_board.md`/`_tasks.md` 等）。
 
 最高危：**`Geom_OffsetCurve` 的 D0/D1 公式写错**（`offset.rs:16`）——OCCT 是 `P = p + Offset·(p′×Dir)/‖p′×Dir‖`（沿法向偏移），
-Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读入路径直接使用（`occt-topo/src/step/read_topology.rs:1049`），
+Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读入路径直接使用（`occt-topo/src/step/read_topology/step_to_geom_curve.rs:336`），
 且 2D 版本法向还反号（`occt-geom2d/src/offset.rs:24` vs `Geom2d_OffsetCurveUtils.pxx:50`），偏移落在另一侧。
 
 次高危：**求根/分类整体被采样网格 + 阈值 + 牛顿/黄金分割替代**。讽刺的是同一分支**已有忠实移植**（`extrema_pc/general_extrema_pc.rs` 逐行对上
@@ -26,7 +26,7 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - 判定：自创
 - 证据：`crates/occt-geom/src/offset.rs:16,18-19` — `p.coord.added(&self.direction.xyz().multiplied(self.offset))` / `fn d1(..) { let (p,d) = self.basis.d1(u); (self.d0(u), d) }`（D2 同）
 - OCCT 对应：`Geom_OffsetCurveUtils.pxx:53,60-61`（`Ndir = D1.XYZ().Crossed(theDirXYZ)`，`P = p + Offset·Ndir/R`）、`:86-114`（D1 必须追加 `DNdir` 法向旋转项）
-- 影响：改几何结果。`occt-topo/src/step/read_topology.rs:1049` 直接构造该类型，STEP 读入的 OFFSET_CURVE 几何全错；D1/D2 恒等于基曲线导数，切线方向错
+- 影响：改几何结果。`occt-topo/src/step/read_topology/step_to_geom_curve.rs:336` 直接构造该类型，STEP 读入的 OFFSET_CURVE 几何全错；D1/D2 恒等于基曲线导数，切线方向错
 - 建议：按 `Geom_OffsetCurveUtils.pxx:47-201` 重写 D0/D1/D2，或标未移植
 - **处置（✅ 已完成：T-35 重写 D0/D1/D2；T-63 步 1 补基曲线 `EvalD3`；T-63 步 2 / 2026-09-20 第 41 轮批 19 移植 `AdjustDerivative` `pxx:322-390` 并接进 `EvalD2` 奇异支路，`isDirectionChange` 不再恒 `false`）**。余项 **T-75**：offset 类自身的 `EvalD3`（`EvaluateD3` `pxx:494-529` / `CalculateD3` `pxx:203-307`）与 `EvalDN`（`cxx:386-410`）未移植，`d3` 仍走 trait 默认零值；仓内无消费者，已在 `offset.rs` 文件头登记。
 

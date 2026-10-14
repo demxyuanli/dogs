@@ -76,7 +76,7 @@ cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export
 5. **TEMP 插桩必须可撤除**：一律用 `edit` 反向替换（**禁止 `git checkout`** 甩掉工作树），
    提交前用 `git status --porcelain` / `git diff --stat` 证明库代码已还原。
 6. **命名**：禁止 `pNN.rs` 这类无语义文件名；拆模块用 `<module>/mod.rs` + `mod <主题>;`；
-   引用源码用真实文件名与行号（如 `step/read_topology.rs:476`）。
+   引用源码用真实文件名与行号（如 `step/read_topology/translate_tool.rs:38`）。
 
 ---
 

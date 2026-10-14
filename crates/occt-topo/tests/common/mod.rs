@@ -96,7 +96,7 @@ pub const MODELS: &[Model] = &[
     // 2026-10-13: the missing `ShapeFix_Shape::Perform` tail of the STEP
     // `FixShape` pass (`ShapeFix_Shape.cxx:259-261` `SameParameter` +
     // `:267-291` `FixVertexTolerance`, wired in
-    // `step/read_topology.rs::close_heal_context`) collapsed the delta: 67426 vs
+    // `step/read_topology/resolver_context.rs::close_heal_context`) collapsed the delta: 67426 vs
     // 67366 (v 60576 vs 60548), area 192657.72 vs 192658.64 (ratio 1.0000). The
     // old +5784 triangles were one class: the port left `SameParameter=false`
     // on the torus face's u-iso BSpline edges, so `BRepMesh_EdgeDiscret::

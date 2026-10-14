@@ -33,7 +33,7 @@ goal:
     existing_plan_facts:
       - "specs/_a3n00_gap_analysis.md section 9.633 segment table and fidelity points 1-6."
       - "canvas intersecting-wires-port holds the line-by-line comparison table."
-      - "Wiring: fix_face_wire_pairs in step/read_topology.rs runs FixWiresTwoCoincEdges then FixIntersectingWires before FixOrientation (cxx:676-685)."
+      - "Wiring: fix_face_wire_pairs in step/read_topology/shape_fix_face_perform.rs runs FixWiresTwoCoincEdges then FixIntersectingWires before FixOrientation (cxx:676-685)."
 
 rules:
   pm_owns_state: true
@@ -78,7 +78,7 @@ tasks:
     assignee: Scout
     status: done
     reasoning_hint: default # default | low | medium | high | xhigh
-    objective: "Re-audit FixIntersectingWires segment by segment: compare ShapeFix_IntersectionTool.cxx:1834-2530 with crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs, and check the helpers it calls in crates/occt-topo/src/shhealing/intersection_tool.rs (SplitEdge1, SplitEdge2, CutEdge, UnionVertexes, FindVertAndSplitEdge, CreateBoxes2d, SelectIntPnt) against cxx:87-1028, plus the ShapeFixFace wrapper in shape_fix_face.rs and the wiring in step/read_topology.rs."
+    objective: "Re-audit FixIntersectingWires segment by segment: compare ShapeFix_IntersectionTool.cxx:1834-2530 with crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs, and check the helpers it calls in crates/occt-topo/src/shhealing/intersection_tool.rs (SplitEdge1, SplitEdge2, CutEdge, UnionVertexes, FindVertAndSplitEdge, CreateBoxes2d, SelectIntPnt) against cxx:87-1028, plus the ShapeFixFace wrapper in shape_fix_face.rs and the wiring in step/read_topology/shape_fix_face_perform.rs."
     inputs:
       - "D:/source/OCCT-src/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_IntersectionTool.cxx"
       - "D:/source/OCCT-src/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Face.cxx (cxx:2821-2825, 676-685, 2829-2900)"
@@ -86,7 +86,7 @@ tasks:
       - "crates/occt-topo/src/shhealing/intersection_tool.rs"
       - "crates/occt-topo/src/shhealing/shape_fix_face.rs"
       - "crates/occt-topo/src/shhealing/shape_fix_face_wires.rs"
-      - "crates/occt-topo/src/step/read_topology.rs (fix_face_wire_pairs)"
+      - "crates/occt-topo/src/step/read_topology/shape_fix_face_perform.rs (fix_face_wire_pairs)"
       - "specs/_a3n00_gap_analysis.md section 9.633"
     constraints:
       - "Read-only. Do not edit any file."
@@ -390,12 +390,12 @@ tasks:
     assignee: Scout
     status: done
     reasoning_hint: default
-    objective: "Read-only audit of the ShapeFixFace::fix_intersecting_wires wrapper (shape_fix_face.rs, shape_fix_face_wires.rs) and the fix_face_wire_pairs wiring in step/read_topology.rs against ShapeFix_Face.cxx:2821-2825 and the Perform second part cxx:676-716 (FixIntersectingWires call site at cxx:676-685)."
+    objective: "Read-only audit of the ShapeFixFace::fix_intersecting_wires wrapper (shape_fix_face.rs, shape_fix_face_wires.rs) and the fix_face_wire_pairs wiring in step/read_topology/shape_fix_face_perform.rs against ShapeFix_Face.cxx:2821-2825 and the Perform second part cxx:676-716 (FixIntersectingWires call site at cxx:676-685)."
     inputs:
       - "D:/source/OCCT-src/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Face.cxx"
       - "crates/occt-topo/src/shhealing/shape_fix_face.rs"
       - "crates/occt-topo/src/shhealing/shape_fix_face_wires.rs"
-      - "crates/occt-topo/src/step/read_topology.rs"
+      - "crates/occt-topo/src/step/read_topology/shape_fix_face_perform.rs"
     constraints:
       - "Read-only. Use grep physical line numbers for evidence."
       - "Do not audit shape_fix_face.rs:1002 and :1223 (out of scope)."
@@ -407,12 +407,12 @@ tasks:
       result: done
       executed_by: "PM inline (Scout role; no subagent installed)"
       summary: "ShapeFixFace::fix_intersecting_wires wrapper and fix_face_wire_pairs wiring are faithful to ShapeFix_Face cxx:676-685 and 2821-2825. No divergence."
-      evidence: "ShapeFix_Face.cxx:674-690 and 2819-2825 read; shape_fix_face.rs:342-361; read_topology.rs:61-76; ShapeFix_Root::NeedFix semantics checked in ShapeFix_Root.hxx:112"
+      evidence: "ShapeFix_Face.cxx:674-690 and 2819-2825 read; shape_fix_face.rs:342-361; shape_fix_face_perform.rs:59-74; ShapeFix_Root::NeedFix semantics checked in ShapeFix_Root.hxx:112"
       wrapper: "shape_fix_face.rs:351-361 faithful to ShapeFix_Face::FixIntersectingWires (cxx:2821-2825): builds the tool over Context(), commits the face only when done (cxx:2527 face = newface)."
-      wiring: "read_topology.rs:69-76 faithful to cxx:676-685: FixWiresTwoCoincEdges first, then NeedFix(mode) gate, then FixIntersectingWires; face taken back from sff.face. NeedFix default -1 maps to true (ShapeFix_Root::NeedFix(flag, def=true))."
+      wiring: "shape_fix_face_perform.rs:67-74 faithful to cxx:676-685: FixWiresTwoCoincEdges first, then NeedFix(mode) gate, then FixIntersectingWires; face taken back from sff.face. NeedFix default -1 maps to true (ShapeFix_Root::NeedFix(flag, def=true))."
       precision_args: "ShapeFix_IntersectionTool(Context(), Precision(), MaxTolerance()) constructor args are not read by FixIntersectingWires (cxx:1834-2530 uses only Precision::Confusion(), tolint 1e-10, MaxTolVert). Rust uses CONFUSION, TOLINT and max_tol_vert, so the mismatch has no effect. Confirmed."
       side_findings:
-        - "read_topology.rs:70-73 does not record ShapeExtend_DONE7/DONE6 status bits; comment-only, no geometry effect"
+        - "shape_fix_face_perform.rs:68-71 does not record ShapeExtend_DONE7/DONE6 status bits; comment-only, no geometry effect"
         - "FixWiresTwoCoincEdges body (shape_fix_face_wires.rs:28) was not audited in this goal; out of T001 scope"
         - "shape_fix_face.rs:1002 and :1223 out of scope as instructed"
     

@@ -202,7 +202,7 @@ export const DATA = {
       
       rejected: ["按「找 reader 里按中点断边建点的路径并删除/标 UNPORTED」去修 combine_vertex / fix_dummy_seam", "沿用「中点顶点是忠实行为、不存在缺陷」这个半对的结论"],
       
-      why: "第一轮 BACKTRACE 定位到唯一调用链 resolve_face(read_topology.rs:714) → …",
+      why: "第一轮 BACKTRACE 定位到唯一调用链 resolve_face(step/read_topology/translate_face.rs:5) → …",
       
       ref: "ShapeBuild_Vertex.cxx:38-72 · ShapeFix_Wire.cxx:4019 · :4213-4289 · ShapeFix_Face.cxx:365-520 · crates/occt-topo/src/shhealing/wire_fix.rs:3084",
     },
@@ -247,7 +247,7 @@ export const DATA = {
       
       why: "未网格面的成因既然在边界环，§9.287.4 那行改动（7→3）就不再是这条缺口的主线：它改的是 notch 边对…",
       
-      ref: "specs/_a3n00_gap_analysis.md §9.288 · crates/occt-topo/src/meshing/model_builder/wire_builder.rs · crates/occt-topo/src/step/read_topology.rs",
+      ref: "specs/_a3n00_gap_analysis.md §9.288 · crates/occt-topo/src/meshing/model_builder/wire_builder.rs · crates/occt-topo/src/step/read_topology/",
     },
         { id: "D24", at: "2026-09-30",
       chose: "把本轮探针固化成可复跑仪器（OCCT `--uv` / `--uvsum`、端口 `zz_uv_fe…",
@@ -273,7 +273,7 @@ export const DATA = {
       
       why: "逐级核过，每一级都是 `file → 逐条进 → 无过滤`：① STEP `#29920=ADVANCED_FACE('…",
       
-      ref: "crates/occt-topo/src/step/read_topology.rs:307 :369 :413 :564 :578 :628-644 · data/occ/T0M.stp #6320 · D25 · §9.289.7",
+      ref: "crates/occt-topo/src/step/read_topology/step_to_geom_bspline.rs:194 · crates/occt-topo/src/step/read_topology/resolver_context.rs:55,99 · crates/occt-topo/src/step/read_topology/translate_edge.rs:73,87 · crates/occt-topo/src/step/read_topology/translate_edge_loop.rs:31-47 · data/occ/T0M.stp #6320 · D25 · §9.289.7",
     },
         { id: "D27", at: "2026-09-30",
       chose: "T-93 落地：把导入期 seam 修复**接进 reader**（`resolve_face` 末…",
@@ -282,7 +282,7 @@ export const DATA = {
       
       why: "① 先证同构：`zz_seam_fix` 对 T0M f=1691 单独调用…",
       
-      ref: "specs/_a3n00_gap_analysis.md §9.290 · ShapeFix_Face.cxx:492-498 :1899-2264 · ShapeProcess_OperLibrary.cxx:785-899 · crates/occt-topo/src/step/read_topology.rs",
+      ref: "specs/_a3n00_gap_analysis.md §9.290 · ShapeFix_Face.cxx:492-498 :1899-2264 · ShapeProcess_OperLibrary.cxx:785-899 · crates/occt-topo/src/step/read_topology/",
     },
     {
       id: "D28",
@@ -300,7 +300,7 @@ export const DATA = {
       rejected: [ "继续把 seam 合并留在 reader 之外（靠 rescue 补三角形）",
         "用 repr_key 摘注册一类旁路去换同一个面积比（§9.315/§9.320）" ],
       why: "① 移除理由是「OCCT 在这条路径上不跑 `ShapeFix_Face::Perform`」（link map 实验…",
-      ref: "specs/_a3n00_gap_analysis.md §9.369 · crates/occt-topo/src/step/read_topology.rs · ShapeFix_Face.cxx:482-498 :1722-2330 · D27 · D28",
+      ref: "specs/_a3n00_gap_analysis.md §9.369 · crates/occt-topo/src/step/read_topology/ · ShapeFix_Face.cxx:482-498 :1722-2330 · D27 · D28",
     },
     {
       id: "D30",
@@ -318,7 +318,7 @@ export const DATA = {
       rejected: [ "按 §9.580-F 去改 `CollectWires` 的 wire 合并（该假设已证伪：OCCT face 116 是 healing 新建面，不是端口同 bbox 的那张原始面）",
         "为了凑 1778 去加任何 OCCT 里没有的谓词/启发式（例如『若面是周期面就拆两张』）" ],
       why: "① 先量清方向：T0M.stp 自身 1772 个 `ADVANCED_FACE`…",
-      ref: "specs/_a3n00_gap_analysis.md §9.582 · crates/occt-topo/src/step/read_topology.rs · ShapeFix_Face.cxx:2266-2268 · ShapeFix_Shape.cxx:200 :257 :294 · ShapeBuild_ReShape.cxx:282-299 · STEPControl_Controller.cxx:201 · D30",
+      ref: "specs/_a3n00_gap_analysis.md §9.582 · crates/occt-topo/src/step/read_topology/ · ShapeFix_Face.cxx:2266-2268 · ShapeFix_Shape.cxx:200 :257 :294 · ShapeBuild_ReShape.cxx:282-299 · STEPControl_Controller.cxx:201 · D30",
     },
     {
       id: "D32",
@@ -432,8 +432,8 @@ export const DATA = {
       next: "本卡结项（D27）。留下的有界旁支，按优先级：① **f=1758（圆锥）** —— `FixMissingSeam` 只为球/BSpline/退化环面构造 s…",
        acceptance: "端口 F1691 一类的环边数与 GT 孪生面一致；T0M 未网格面下降；--lib 与 step_obj_gates 不劣化…",
       
-      evidence: "**本轮（2026-09-30）落地实测，只切一个 hunk**（`read_topology.rs` 的 `resolve_face` 末…",
-       write: "crates/occt-topo/src/step/read_topology.rs",
+      evidence: "**本轮（2026-09-30）落地实测，只切一个 hunk**（`step/read_topology/translate_face.rs` 的 `resolve_face` 末…",
+       write: "crates/occt-topo/src/step/read_topology/translate_face.rs",
       
       ref: "specs/_a3n00_gap_analysis.md §9.287 · §9.288 · §9.289 · §9.290 · ShapeFix_Face.cxx:492-498 :1652-1718 :1899-2264 · ShapeProcess_OperLibrary.cxx:785-899 · STEPControl_Controller.cxx:201 :221",
       
@@ -740,7 +740,7 @@ export const DATA = {
       goal: "把 T0M 的面/wire 结构对齐到 OCCT：`--wires` 真值 `TOTAL faces=1778 wire…",
       next: "**已收口（§9.587，D33）** ⇒ 网格侧残差另立 T-103（T0M 逐面密度 +6.0%、薄面簇 1 张不出网格、4 张多 wire 面的 `MUL…",
       acceptance: "**已满足（§9.587）**：T0M `--wirehist` = `TOTAL faces=1778 wires=1921` + `1:…",
-      write: "crates/occt-topo/src/shape_fix_compose_shell/load_wires.rs（`wire_data_edges`，§9.587 收口点）· crates/occt-topo/src/shhealing/shape_fix_face.rs（`FixLoopWire` + 调用点 + wire 首段）· crates/occt-topo/src/shhealing/wire_fix.rs（`ShapeFix_Wire::Analyzer`/`FixReorder` 支撑）· crates/occt-topo/src/step/read_topology.rs（resolve_face / resolve_shell）",
+      write: "crates/occt-topo/src/shape_fix_compose_shell/load_wires.rs（`wire_data_edges`，§9.587 收口点）· crates/occt-topo/src/shhealing/shape_fix_face.rs（`FixLoopWire` + 调用点 + wire 首段）· crates/occt-topo/src/shhealing/wire_fix.rs（`ShapeFix_Wire::Analyzer`/`FixReorder` 支撑）· crates/occt-topo/src/step/read_topology/translate_face.rs（resolve_face）· crates/occt-topo/src/step/read_topology/translate_shell_solid.rs（resolve_shell）",
       ref: "specs/_a3n00_gap_analysis.md §9.587 · §9.586 · §9.585 · §9.583 · ShapeAnalysis.cxx:268-273 :48-62 · ShapeFix_ComposeShell.cxx:206-270 :586-607 :629-640 · TopoDS_Iterator.cxx:26-83 · ShapeAnalysis_Wire.cxx:2228-2340 · ShapeFix_Face.cxx:583-598 :1996-2127 :2077-2078 :2107 :2396-2404 :2398 :2478 :365-480 :1722-2330 :2236-2325 :2266-2268 · ShapeFix_Shape.cxx:196-210 :705-717 :200 :257 :294 · ShapeBuild_ReShape.cxx:282-299 · XSControl_Reader.cxx:480-534 · XSAlgo_ShapeProcessor.cxx:609-620 · D33 · D32 · D31",
       dependsOn: ["T-101"],
       evidence: "**2026-10-04，§9.587 实测（收口：`load_wires.rs::wire_data_edges` 去掉二次反转…",
@@ -805,7 +805,7 @@ export const DATA = {
       goal: "按 `ShapeFix_Face.cxx:3018-3259` 补齐 `Perform` 在 `FixMissingSe…",
       next: "**已收口（§9.591）**。旁支（未动，见 §9.591-E）：(1) face 1764 端口 `edges=[5]` vs OCCT `edges_pe…",
       acceptance: "**已满足**：`cargo check --manifest-path crates/occt-topo/Cargo.toml --off…",
-      write: "crates/occt-topo/src/shhealing/shape_fix_face.rs · crates/occt-topo/src/step/read_topology.rs · crates/occt-topo/examples/zz_probe_a3n00.rs",
+      write: "crates/occt-topo/src/shhealing/shape_fix_face.rs · crates/occt-topo/src/step/read_topology/ · crates/occt-topo/examples/zz_probe_a3n00.rs",
       ref: "specs/_a3n00_gap_analysis.md §9.591 · §9.590 · ShapeFix_Face.cxx:482-498 :144 :1737-1741 :3018-3098 :3101-3259 :3226-3232 :3239-3257 · ShapeFix_Root.lxx:101 :34 · ShapeProcess_OperLibrary.cxx:830 · D35",
       dependsOn: ["T-104"],
       evidence: "**2026-10-04，§9.591 实测（本机）**：① 缺口：`ShapeFix_Face::Perform`（`cxx:482-49…",
@@ -849,7 +849,7 @@ export const DATA = {
       goal: "`ShapeFix_Face::Perform` 第二部分循环（`ShapeFix_Face.cxx:687-697`）对 `myResult` 每个面在 `NeedFix(myFixOrientationMode)` 时跑 `FixOrientation(MapWires)`，重建面经 `Context()->Replace`（`cxx:1639-1641`）由 `ShapeFix_Shape` 的 `Apply`（`ShapeFix_Shape.cxx:257`）落地。端口整段 UNPORTED，STEP `.F.` bound 的单环面 wire 朝向保持与自然外环相反，网格侧边界环定向为负、Delaunay 前沿饿死。",
       next: "旁支（未动，见 §9.625-D）：(1) top.step 端口面 321 ↔ OCCT 面 177 的 bbox 各差 0.382684（端口更小）⇒ 两块不是同一面片，`407/720` 与 `370/648` 不同口径，该 bbox 差开关两侧逐位相同、属既有裁边范围差；(2) 其余 41/324 面按 `--fstats` 差 ±1..4 节点/三角（累计 +1.2%），属边界采样差；(3) `-51.85…`/`-103.04…` 两处「同 bbox 面密度差一倍」类别未变。",
       acceptance: "**已满足**：`cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets` = 0 error；`--test step_obj_gates` = 4 passed；`export_data_obj -- data/occ data` = 23 ok / 0 err；开关对拍（只翻 `fix_orientation_mode`）top `15390/20042 → 16902/22794`、bottom `17190/22744 → 17586/23424`、T0M `60644/67532 → 60640/67524`，其余 5 模型与 `data/` 15 个 `*.step` 逐字节不变。",
-      write: "crates/occt-topo/src/shhealing/shape_fix_face.rs · crates/occt-topo/src/step/read_topology.rs",
+      write: "crates/occt-topo/src/shhealing/shape_fix_face.rs · crates/occt-topo/src/step/read_topology/",
       ref: "specs/_a3n00_gap_analysis.md §9.625 · ShapeFix_Face.cxx:141 :143 :218 :687-697 :1120-1160 :1165-1275 :1610-1646 · ShapeFix_Root.lxx:101 · ShapeProcess_OperLibrary.cxx:828 · ShapeFix_Shape.cxx:257 · ShapeFix_Shell.cxx:108 :202",
       dependsOn: ["T-105"],
       evidence: "**2026-10-07，§9.625 实测（本机）**：① 逐面（`zz_probe_a3n00 data/occ/top.step --fstats` ↔ OCCT `--facestats 0.451774 0.349066`）改动面恰好 5 个：`face=51/52/53/54` `75/112 → 370/648`（与 OCCT 同 bbox 面的 370/648 逐位相同）、`face=321` `75/112 → 407/720`；合计增量 `4×536+608=2752` 与总数 `22794−20042` 相符；按 (bbox, nodes/triangles) 全同的面 278 → 282 / 324。② 表面积（`obj_area` 口径）：top 1.00000（52132.94 / 52132.85）、motoc 1.00000、a3n00 0.99999、ATU01038 0.99999、acs10 1.00004、T0M 0.99998、TDB 0.99978、bottom 0.97412（仍缺 2.6%）。",

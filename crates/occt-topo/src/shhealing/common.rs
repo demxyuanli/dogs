@@ -612,7 +612,7 @@ pub fn close_open_wires(shape: &TopoShape, tol: f64) -> (TopoShape, usize) {
 /// derives every threshold from `ShapeFix_Root::MinTolerance()` /
 /// `Precision()` - the wire-level small-edge precision is `MinTolerance()`
 /// (`ShapeFix_Wire.cxx:336`), never a length. That per-sub-shape driver is
-/// ported for the readers (`step/read_topology.rs::close_heal_context`,
+/// ported for the readers (`step/read_topology/resolver_context.rs::close_heal_context`,
 /// `iges_read/iges_process_shape.rs`); this function remains a convenience only
 /// the crate's own tests call.
 ///
