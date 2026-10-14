@@ -653,9 +653,9 @@ impl FaceFace {
             for j in 0..2 {
                 let a_c2d = if j == 0 { &c.pcurve1 } else { &c.pcurve2 };
                 if let Some(pc) = a_c2d {
-                    let a_s = if j == 0 { a_s1.as_ref() } else { a_s2.as_ref() };
+                    let a_s = if j == 0 { &a_s1 } else { &a_s2 };
                     if let Some((a_d, _a_t)) =
-                        compute_tolerance(c.curve.as_ref(), pc.as_ref(), a_s, a_first, a_last)
+                        compute_tolerance(&c.curve, pc, a_s, a_first, a_last)
                     {
                         if a_d > a_tol_c {
                             a_tol_c = a_d;

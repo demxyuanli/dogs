@@ -86,6 +86,8 @@ pub mod approx_curvilinear_parameter;
 pub use approx_curvilinear_parameter::CurvilinearParameter;
 pub mod geom_lib;
 pub mod geom_fill;
+pub mod check_curve_on_surface;
+pub use check_curve_on_surface::CheckCurveOnSurface;
 
 pub type HandleCurve = Arc<dyn Curve>;
 pub type HandleSurface = Arc<dyn Surface>;

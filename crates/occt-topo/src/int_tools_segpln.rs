@@ -6,9 +6,10 @@
 //! ends inside the summed tolerance), one-sided miss, out of range, or a
 //! crossing with the intersection parameter and a tolerance interval.
 //!
-//! `ComputeTolerance` in OCCT uses `GeomLib_CheckCurveOnSurface`. The port
-//! samples the 3D curve against the surface image of the pcurve and returns
-//! the max distance inflated by `1 + 1e-5`, matching the OCCT `anEps` margin.
+//! `ComputeTolerance` in OCCT uses `GeomLib_CheckCurveOnSurface`, which
+//! maximises the distance between the 3D curve and the surface image of the
+//! pcurve with `math_PSO` plus `math_NewtonMinimum` and inflates the result by
+//! the `anEps` margin (`IntTools_Tools.cxx:767-775`).
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
@@ -16,9 +17,14 @@
 //! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
 #![allow(dead_code)]
 
+use std::sync::Arc;
+
 use occt_core::gp::{GpLin, GpPln, GpPnt};
-use occt_geom::{Curve, Surface};
+use occt_core::precision::PCONFUSION;
+use occt_geom::{CheckCurveOnSurface, Curve, Surface};
 use occt_geom2d::curve::Curve2d;
+
+use crate::meshing::edge_discret::CurveOnSurface;
 
 /// Result of [`seg_pln`].
 #[derive(Debug, Clone, Copy)]
@@ -133,36 +139,55 @@ pub fn seg_pln(
     }
 }
 
-/// Sampled `IntTools_Tools::ComputeTolerance` (`IntTools_Tools.cxx:737`).
+/// `IntTools_Tools::ComputeTolerance` (`IntTools_Tools.cxx:737-779`).
 ///
-/// Returns `(max_dist * (1 + 1e-5), parameter_of_max)` when both curves and
-/// the surface evaluate; `None` when the range is empty.
+/// Returns `(theMaxDist, theMaxPar)`; `None` is OCCT's `false` return, i.e. the
+/// per-curve search failed. `theCurve3D` / `theCurve2D` / `theSurf` are the
+/// `Handle`s of `cxx:737-739` (the port passes them by `Arc` so that no
+/// geometry is copied), and `theFirst` / `theLast` are the
+/// `GeomAdaptor_Curve(theCurve3D, theFirst, theLast)` /
+/// `Geom2dAdaptor_Curve(theCurve2D, theFirst, theLast)` load range
+/// (`cxx:749-753`) — every OCCT caller passes the curve's own
+/// `FirstParameter()` / `LastParameter()` (`IntTools_FaceFace.cxx:636-637`).
+///
+/// UNPORTED: `theToRunParallel` (`cxx:745`, `cxx:760`). Both OCCT callers keep
+/// the `false` default, and the port always runs the per-interval search
+/// serially.
 pub fn compute_tolerance(
-    curve3d: &dyn Curve,
-    curve2d: &dyn Curve2d,
-    surf: &dyn Surface,
+    curve3d: &Arc<dyn Curve>,
+    curve2d: &Arc<dyn Curve2d>,
+    surf: &Arc<dyn Surface>,
     first: f64,
     last: f64,
 ) -> Option<(f64, f64)> {
-    if last - first < occt_core::precision::PCONFUSION {
+    // A degenerate range makes `math_PSO` bail out (`cxx:654-657`) and OCCT
+    // would then report `sqrt(RealLast())` as the max distance, which the
+    // callers compare against `aTolC` as a real value. The port keeps its
+    // pre-existing guard and reports "not computed" instead.
+    if last - first < PCONFUSION {
         return None;
     }
-    const N: usize = 64;
-    let mut max_dist = 0.0f64;
-    let mut max_par = first;
-    for i in 0..=N {
-        let t = first + (last - first) * (i as f64 / N as f64);
-        let p3 = curve3d.d0(t);
-        let p2 = curve2d.d0(t);
-        let ps = surf.d0(p2.x(), p2.y());
-        let d = p3.distance(&ps);
-        if d > max_dist {
-            max_dist = d;
-            max_par = t;
-        }
+
+    // `Adaptor3d_CurveOnSurface(aGeom2dAdaptorCurve, aGeomAdaptorSurface)`
+    // (`cxx:756-757`).
+    let an_adaptor3d_curve_on_surface =
+        CurveOnSurface::new(curve2d.clone(), surf.clone(), first, last);
+
+    // `aCS.Init(aGeomAdaptorCurve, theTolRange)` (`cxx:759`).
+    let mut a_cs = CheckCurveOnSurface::with_curve(curve3d.as_ref(), PCONFUSION);
+    // `aCS.SetParallel(theToRunParallel)` (`cxx:760`) is left at its default
+    // `false` (`cxx:293`).
+    a_cs.perform(&an_adaptor3d_curve_on_surface, curve2d.as_ref());
+
+    if !a_cs.is_done() {
+        return None;
     }
+
+    // Obtaining a precise result is impossible with numeric methods, so a
+    // margin is applied; otherwise a later, more precise minimum point would
+    // invalidate the tolerance computed here (`cxx:767-775`).
     let an_eps = 1.0 + 1.0e-5;
-    Some((an_eps * max_dist, max_par))
+    Some((an_eps * a_cs.max_distance(), a_cs.max_parameter()))
 }
 
 /// Correct `IsOnPave1` (`IntTools_Tools.cxx:627`): inside the range, or

@@ -48,8 +48,21 @@ pub use matrix::MathMatrix;
 pub use svd::SVD;
 pub use crout::Crout;
 pub use jacobi::Jacobi;
+pub mod multiple_var_function;
+pub use multiple_var_function::{
+    MathMultipleVarFunction, MathMultipleVarFunctionWithGradient,
+    MathMultipleVarFunctionWithHessian,
+};
+pub mod pso;
+pub use pso::{Pso, PsoParticle, PsoParticlesPool};
+pub mod newton_minimum;
+pub use newton_minimum::{Gauss, NewtonMinimum};
 pub use householder::Householder;
-pub use newton::{NewtonSolver, NewtonMinimum};
+// The faithful `math_NewtonMinimum` port owns the root name (above). The
+// pre-existing `newton::NewtonMinimum` is a BFGS-update descent that its own
+// module header documents as *not* `math_NewtonMinimum`; it stays reachable as
+// `newton::NewtonMinimum` and is not re-exported here.
+pub use newton::NewtonSolver;
 pub use gauss::{gauss_legendre, integrate};
 pub use bfgs::BFGS;
 pub use powell::Powell;

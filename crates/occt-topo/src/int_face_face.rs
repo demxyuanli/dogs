@@ -281,16 +281,8 @@ impl FaceFace {
         let tol = self.tol.max(tol_fa + tol_fb);
 
         self.tangent_faces = false;
-        let mut curves =
+        let curves =
             self.intersect_surfaces(ka, kb, sa.as_ref(), sb.as_ref(), &fa, &fb, tol)?;
-
-        // `IntTools_FaceFace.cxx:420-436` / `:550-563`: undo the sort for the
-        // pcurves, so they come out bound to the caller's Face1/Face2.
-        if reverse {
-            for c in &mut curves {
-                std::mem::swap(&mut c.pcurve1, &mut c.pcurve2);
-            }
-        }
 
         if !self.list_of_pnts.is_empty() {
             for &(u1, v1, u2, v2) in &self.list_of_pnts {
@@ -303,14 +295,30 @@ impl FaceFace {
             }
         }
 
-        // Output sorted by curve parameter, then deduplicated.
-        curves.sort_by(|x, y| x.range.first.partial_cmp(&y.range.first).unwrap_or(Ordering::Equal));
-        curves.dedup_by(|a, b| same_curve(a, b));
-
+        // `IntTools_FaceFace.cxx:542-548`: `MakeCurve` binds both pcurves in the
+        // *sorted* face order, and `ComputeTolReached3d` consumes them in that
+        // same order, i.e. before the `bReverse` swap at `:550-563` undoes the
+        // sort for the output. Running it after the swap pairs each pcurve with
+        // the opposite surface.
         self.result = FaceFaceResult { curves };
         if !self.tangent_faces {
             self.compute_tol_reached_3d(&fa, &fb);
         }
+
+        // `IntTools_FaceFace.cxx:550-563`: undo the sort for the pcurves, so
+        // they come out bound to the caller's Face1/Face2.
+        if reverse {
+            for c in &mut self.result.curves {
+                std::mem::swap(&mut c.pcurve1, &mut c.pcurve2);
+            }
+        }
+
+        // Output sorted by curve parameter, then deduplicated.
+        self.result
+            .curves
+            .sort_by(|x, y| x.range.first.partial_cmp(&y.range.first).unwrap_or(Ordering::Equal));
+        self.result.curves.dedup_by(|a, b| same_curve(a, b));
+
         self.done = true;
         Ok(())
     }
