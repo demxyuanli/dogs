@@ -331,8 +331,7 @@ pub fn boolean_multi(shapes: &[TopoShape], op: BoolOp, tol: f64) -> Result<Boole
 /// * `Cut` — every component of `b` is cut out of every component of `a`;
 /// * `Common` — the pairwise intersections `ai ∩ bj` are merged.
 ///
-/// Solid operands are delegated to the exact boolean
-/// (`boolean`/`curved_boolean_full`).
+/// Solid operands are delegated to the exact boolean (`boolean_dispatch`).
 pub fn boolean_compound(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<BooleanResult, String> {
     let subs_a = expand_compound(a);
     let subs_b = expand_compound(b);

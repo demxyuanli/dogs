@@ -2,7 +2,7 @@
 
 ## Objective
 
-对照 OCCT `ShapeFix_IntersectionTool::FixIntersectingWires`（`D:\source\OCCT-src\src\ModelingAlgorithms\TKShHealing\ShapeFix\ShapeFix_IntersectionTool.cxx:1834-2530`，共 697 行）审计 Rust 端口 `crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs`（现 901 行；intake 时为 916 行）。逐段核实控制流，仅修复被证实的偏差（且修复必须走 OCCT 同一 `.cxx` 分支），并保持 STEP→OBJ 门禁通过。
+对照 OCCT `ShapeFix_IntersectionTool::FixIntersectingWires`（`D:\source\OCCT-src\src\ModelingAlgorithms\TKShHealing\ShapeFix\ShapeFix_IntersectionTool.cxx:1834-2530`，共 697 行）审计 Rust 端口 `crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs`（934 行／非空 901 行；自 2026-10-09 建档 `da0d0253` 起未变）。逐段核实控制流，仅修复被证实的偏差（且修复必须走 OCCT 同一 `.cxx` 分支），并保持 STEP→OBJ 门禁通过。
 
 本 tranche 的边界：
 
@@ -28,7 +28,7 @@
   4. 把 `shape_fix_face.rs:1002`、`:1223` 的 UNPORTED 注释（引用的是 `ShapeFix_Face.cxx` 的 FixMissingSeam / ComposeShell 段）误算为本 tranche 缺口。
 - Blind spots considered:
   - §9.633 的逐段对照是文档自述，不是独立证据，需要 Scout 重新逐段核对。
-  - `intersection_tool.rs` intake 时为 1465 行，超过项目"单文件超过 800 行需分拆"规则，属本 tranche 相邻的结构债；现已拆为 `intersection_tool/`（`helpers.rs` 80、`edge_split.rs` 302、`vertex_union.rs` 184、`self_intersect.rs` 759、`fix_intersecting_wires.rs` 901 行）。余下 `fix_intersecting_wires.rs` 仍超 800 行，属未决项。
+  - `intersection_tool.rs` intake 时为 1465 行（该数为 intake 快照现测；仓库无该单体版本的提交，无法从 git 复核），超过项目"单文件超过 800 行需分拆"规则，属本 tranche 相邻的结构债；现已拆为 `intersection_tool/`（括号内均为**非空行数**，总行数见括注：`helpers.rs` 80／92、`edge_split.rs` 302／330、`vertex_union.rs` 184／194、`self_intersect.rs` 759／786、`fix_intersecting_wires.rs` 901／934），模块根 `intersection_tool.rs` 66 行。余下 `fix_intersecting_wires.rs` 仍超 800 行，属未决项。
   - `step_obj_gates` 单次约 11-12 分钟；全量 `cargo test` 不属于本 tranche 的常规门禁（项目规则：仅提交前跑一次）。
   - 工作区存在大量未提交改动（含上一轮 `is_outer_bound` 修复，见 `crates/occt-topo/src/shape_analysis.rs`）。Worker 只能改 `allowed_files`，不得回滚或格式化无关文件。
   - `cargo test --lib` 中 26 项因写入 `%TEMP%` 被拒（`os error 5`）失败，属环境问题，不作为本 tranche 的回归判据。

@@ -55,17 +55,16 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 影响：**静默产生错误几何**：阶梯状、分辨率相关的实体替换真解（测试自承 "voxel staircase inflates"，`bop_builder_tests.rs:170-177`）。
 - 建议：删该分支，标为未移植（空输入返回 OCCT alert/空 compound）。
 
-- **处置（✅ 已修：T-41，2026-09-20 第 59 轮）**：`bop_builder_core::voxel_fallback` 已删除（`bop_builder.rs:3-8` 文件头登记）；`bop_builder::boolean` 与 `bop_builder_planar` 的空/非平面输入改走忠实 `bop_builder2::builder_bop_with_fuzzy`（`bop_builder_planar.rs:47-58`），门禁逐项不变。**余项**：`boolean_ops.rs:173` 的 `voxel_boolean` 仍在，但只作为 port-internal mesh 布尔工具（`bop_builder_planar.rs:46-48` 已写明"OCCT 无对应物"），且不在 `boolean_dispatch` 上；`brepfeat::boolean_feature` 的曲面体素路径仍在（见发现 11）。
+- **处置（✅ 已修：T-41，2026-09-20 第 59 轮）**：`bop_builder_core::voxel_fallback` 已删除（`bop_builder.rs:3-8` 文件头登记）；`bop_builder::boolean` 与 `bop_builder_planar` 的空/非平面输入改走忠实 `bop_builder2::builder_bop_with_fuzzy`（`bop_builder_planar.rs:47-58`），门禁逐项不变。**余项（2026-10-14 订正）**：`boolean_ops.rs:173` 的 `voxel_boolean` 仍在，但已无任何生产调用点（`crates/` 内除自身单测外，唯一出现处是 `bop_builder_planar.rs:46-48` 的说明注释）；`brepfeat::boolean_feature` 的体素曲面路径**已废**——该函数现调 `crate::bop_builder::boolean`（`brepfeat/features.rs:304-311`）。
 
 ### 3. `curved_boolean`/`boolean_mesh`：自创网格曲面布尔（球冠 + 网格分类 + 焊接）
 - 判定：**自创**
 - 证据：`bop_curved/face_meshing.rs:549` `let mesh = boolean_mesh(a, b, op, tol)?;`；`face_meshing.rs:456` `parts.push(mesh_crossing_face(f, a, keep_in, rim_shared, tol));`；`face_meshing.rs:115` `let inside = point_in_solid(centroid, other, tol);`
-- 是否在 live 路径：**是**。`curved_boolean_full`（`region_trim.rs:418`）← `boolean_dispatch:215`/`boolean_degenerate:487`；`curved_boolean_ext`（`general_mesh.rs:298`）← `draw/interpreter.rs:422`（draw `bool`）；`brepfeat/features.rs:320`；`curved_boolean_volume`。
+- 是否在 live 路径：**否（2026-10-14 订正）**。`boolean_dispatch` 的曲面分支已改调 `bop_builder::boolean_via_bopalgo`（`bop_builder_dispatch.rs:227-232`），`boolean_repaired` 亦经 `boolean_dispatch`（`bop_builder_repair.rs:240`）；`curved_boolean_full`（`region_trim.rs:418`）、`curved_boolean_ext`（`general_mesh.rs:298`）、`curved_boolean_volume` 在 `crates/` 内只剩测试调用（`tests/phase9_integration.rs:39-43`）与 `bop_curved/mod.rs` 单测，无生产调用点。
 - OCCT 对应：**未找到**。OCCT 曲面布尔 = `IntTools_FaceFace` 求交曲线 → `BOPAlgo_Builder` 分片 → `BOPAlgo_SplitSolid`，全程解析曲面、无球-球特例。
 - 影响：**静默产生错误几何**（结果被 faceted 化、丢解析面；面数随 24×24/32×32 网格而变）。门禁：`tests/phase9_integration.rs:39-43`、draw `bool`。
-- 建议：标为未移植；曲面分派改走 `bop_builder2::builder_bop_with_fuzzy`，删网格装配。
-
-- **处置（2026-10-06 复核：仍未修）**：曲面网格布尔仍在 `boolean_dispatch` 的曲面分支上（T-79，被 T-80 阻塞——第 60 轮把曲面分支指向 `bop_builder::boolean` 后门禁全绿但探针显示曲面结果错误：`FUSE box∪cyl` 只剩 box/vol 8.0、`CUT` box 不变、`COMMON` 空，故已回退）。**行号已漂移**：现文件为 `crates/occt-topo/src/bop_curved/{face_meshing,general_mesh,region_mesh,region_trim}.rs`。
+- 建议：标为未移植；曲面分派改走 `bop_builder2::builder_bop_with_fuzzy`，删网格装配。**（分派改造已于 2026-10-14 收口，网格引擎已无生产调用点；余下失配见下条）**
+- **处置（2026-10-14 复核：仍未修，根因已换）**：分派层已按上条建议收口到忠实路径（`boolean_via_bopalgo`），T-80 亦已闭环，旧阻塞解除。以既有探针复核（`cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_bop_curved_probe`）：`FUSE` 得 `Compound faces=11 solids=4 closed=[false,false,false,false] vol=10.72000`（OCCT ground truth `volume=8.50265 faces=8`）；`CUT` 盒不变 `vol=8.00000` 且顶面仍为 4.0；`COMMON` `vol=0.11415`（不再为空，但仍非 OCCT 值）。故失配不再是"曲面分支走 mesh"，而是忠实路径自身的求交/分片缺陷。新根因：盒面 × 柱面确实求出了 `Circle`（`box face 0 x cyl face 2: n=1 kinds=["Circle"]`），但附带容差为 `3.734e0`（r=0.4 的圆应在 1e-7 量级），于是盒顶面未被切开、柱侧面塌成 `area=0.04821` 的碎面。**行号已漂移**：现文件为 `crates/occt-topo/src/bop_curved/{face_meshing,general_mesh,region_mesh,region_trim}.rs`。
 
 ### 4. `general_boolean_trimmed` + `region_inside_other` 多数表决
 - 判定：**自创**
@@ -145,7 +144,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 影响：**静默产生错误几何**：曲面特征的体积/拓扑由体素分辨率与自定 `resolution_for` 决定。
 - 建议：标为未移植；接 `bop_builder2::builder_bop_with_fuzzy`。
 
-- **处置（2026-10-06 复核：仍未修）**：`brepfeat/features.rs` 的 `resolution_for` 与 `crate::boolean_ops::voxel_boolean` 曲面路径仍在（见 `topo-rest.md` 发现 4/7，行号已漂移：`r.clamp(16, 64)` 现为 `features.rs:483`）。
+- **处置（2026-10-14 订正：主体已修）**：`boolean_feature` 已改走忠实路径——`crate::bop_builder::boolean`（`BOPAlgo_BOP`，`brepfeat/features.rs:304-311`），`voxel_boolean` 曲面路径已从该函数删除。**余项**：`resolution_for`（`features.rs:481`）已无调用点（体素分辨率残留）；同族自创件见 T-125（`revolve_profile_about` 车削网格夹具等）仍未做，受 T-79 失配阻塞（见发现 3 处置）。
 
 ### 12. `bop_builder::boolean` 包围盒不相交短路
 - 判定：**等价替换未登记**

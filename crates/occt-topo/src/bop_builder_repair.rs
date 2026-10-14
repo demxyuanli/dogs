@@ -229,7 +229,7 @@ pub fn repair_self_intersections(shape: &TopoShape, tol: f64) -> Result<RepairRe
 
 /// Run a boolean and repair a self-intersecting result.
 ///
-/// Runs [`crate::bop_curved::curved_boolean_full`], then
+/// Runs [`crate::bop_builder_dispatch::boolean_dispatch`], then
 /// [`repair_self_intersections`] on the result. When the repair changed the
 /// shape, the returned [`BooleanResult`] carries the repaired shape and a
 /// warning mentioning the number of faces fixed/removed; a clean result is
