@@ -26,7 +26,7 @@
   - 回转面经 IGES 120 重建后，网格顶点数可能与 STEP 直读不同；判据用既有包围盒和面积容差，顶点数只报告、不用特例掰齐。
   - oracle 是 OCCT 写出的 IGES，读侧规格是 `IGESControl_Reader` / `IGESToBRep`，不是端口写侧。
   - 工作区有未提交的网格/愈合改动和大量 `_igesdump` 临时文件。Worker 不得回滚或收进这些文件。
-  - `iges.rs` 已超过 1000 行。读侧不要再堆进该文件，新代码按 OCCT 类拆文件。
+  - `crates/occt-topo/src/iges/`（原单文件 `iges.rs`）已超过 1000 行。读侧不要再堆进该模块，新代码按 OCCT 类拆文件。
   - 全量 `cargo test` 只在提交前跑。本 tranche 不提交。
 - Existing plan facts:
   - 写侧已推送。Faces 模式是 120+124，402 form 为 1，全局段版本 11、精度 308/15。
@@ -69,7 +69,7 @@
 
 ## Stop Rule
 
-只有 T999 的最终审计 receipt 同时满足 Goal Oracle 三条并记录 `full_outcome_complete: true`，才可结束。
+只有最终审计 receipt 同时满足 Goal Oracle 三条并记录 `full_outcome_complete: true`，才可结束。本 goal 的最终审计落在 T017：T999 是运行中期的驳回（其 receipt 记 `decision: not_complete`、`full_outcome_complete: false`，已被 T017 的 objective 标注为过期），T017 记 `decision: complete`、`full_outcome_complete: true`。
 
 以下情况不得停止整个 goal：
 

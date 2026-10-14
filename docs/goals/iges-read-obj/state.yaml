@@ -26,7 +26,7 @@ goal:
       - "Revolution surfaces rebuilt from entity 120 may mesh to different vertex counts than a direct STEP read. Judge bbox and area with existing tolerances. Report vertex counts; do not snap them."
       - "The spec is OCCT IGESControl_Reader / IGESToBRep on _igesdump/oracle files, not the Rust writer."
       - "The worktree has unrelated meshing and healing edits plus dump files. Workers must not revert or stage them."
-      - "iges.rs is already over 1000 lines. Reader code goes in new files named for the OCCT class."
+      - "The IGES writer module (crates/occt-topo/src/iges/, the former single file iges.rs) was already over 1000 lines. Reader code goes in new files named for the OCCT class."
       - "Full cargo test is pre-commit only. This tranche does not commit."
     existing_plan_facts:
       - "Writer is pushed. Faces mode is entity 120 plus 124. Group 402 form is 1. Global section is IGES 5.3, version 11, precision 308/15."
@@ -80,7 +80,7 @@ tasks:
     inputs:
       - "D:/source/OCCT-src/src IGESControl_Reader and IGESToBRep transfer entry"
       - "_igesdump/oracle/{Cube,Sphere,Cone,Extrusion,HoledPlate,rev,Offset}.iges"
-      - "crates/occt-topo/src/iges.rs (writer only; do not extend it)"
+      - "crates/occt-topo/src/iges/ (writer only, the former iges.rs; do not extend it)"
       - "crates/occt-topo/examples/iges_check.rs"
       - "crates/occt-topo/examples/export_data_obj"
       - "crates/occt-topo/tests/common/mod.rs tolerances"
@@ -107,7 +107,7 @@ tasks:
         - "IGESToBRep_Actor.cxx:135-196 Transfer calls TransferGeometry at :196. ProcessShape at :204-218 is a separate branch."
         - "IGESToBRep_CurveAndSurface::TransferGeometry :214-445, 402 form 1 at :369-445. TopoSurface trimmed plane :209-212 and :229-232."
         - "Entity counts: Cube and Extrusion 402/144/108/142/102/110 only. HoledPlate same types, 32 faces. Sphere, Cone, rev, Offset also need 100, 120, 124; Offset also needs 126."
-        - "crates/occt-topo/src/iges.rs is write-only (write_shape_iges :4239). examples/export_data_obj.rs:96 calls brep_to_obj(&shape, 0.1). prs3d_get_deflection uses DEVIATION_COEFFICIENT 0.001."
+        - "crates/occt-topo/src/iges/ is write-only (write_shape_iges, iges/entry.rs:23; was iges.rs:4239 before the split). examples/export_data_obj.rs:96 calls brep_to_obj(&shape, 0.1). prs3d_get_deflection uses DEVIATION_COEFFICIENT 0.001."
         - "tests/common/mod.rs:38-45: BBOX_EXACT 1e-6, AREA_EXACT 1e-3, AREA_CURVED 0.04, AREA_COMPLEX 0.05. Cube and Extrusion use the exact pair."
       ambiguity:
         - "Actor::Transfer always runs XSAlgo_ShapeProcessor::ProcessShape at IGESToBRep_Actor.cxx:204-218. First geometry slice can mark that pass unported."
@@ -123,7 +123,7 @@ tasks:
     constraints:
       - "Do not implement."
       - "The slice must follow an OCCT branch that exists. Do not approve a Cube-only heuristic."
-      - "Keep the writer file iges.rs out of allowed_files unless the receipt shows a shared parser that already lives there."
+      - "Keep the writer module iges/ out of allowed_files unless the receipt shows a shared parser that already lives there."
       - "verify must be cargo check plus one real oracle IGES read. No new unit test."
     expected_output:
       - "Decision"
@@ -166,7 +166,7 @@ tasks:
       - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/HoledPlate.iges data/output/iges-read/HoledPlate.obj"
       - "rtk graphify update ."
     stop_if:
-      - "A write is needed outside allowed_files. crates/occt-topo/src/iges.rs is forbidden."
+      - "A write is needed outside allowed_files. crates/occt-topo/src/iges/ is forbidden."
       - "Cargo.toml would need any edit other than the single iges_read_obj example entry."
       - "lib.rs would need any edit other than pub mod iges_read;."
       - "Entity 100, 120, 124, or 126 is required to transfer Cube, Extrusion, or HoledPlate."
@@ -209,7 +209,7 @@ tasks:
       - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
       - "rtk graphify update ."
     stop_if:
-      - "A write is needed outside allowed_files. crates/occt-topo/src/iges.rs is forbidden."
+      - "A write is needed outside allowed_files. crates/occt-topo/src/iges/ is forbidden."
       - "XSAlgo_ShapeProcessor::ProcessShape (IGESToBRep_Actor.cxx:204-218) is required before a non-empty mesh. Cite it unported and stop."
       - "A dispatch arm has no OCCT branch. Cite the OCCT file and line as unported and stop."
       - "A source file would pass 1000 lines. Split into an already listed OCCT class file before that."
@@ -245,7 +245,7 @@ tasks:
       - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
       - "rtk graphify update ."
     stop_if:
-      - "A write is needed outside allowed_files. crates/occt-topo/src/iges.rs is forbidden."
+      - "A write is needed outside allowed_files. crates/occt-topo/src/iges/ is forbidden."
       - "XSAlgo_ShapeProcessor::ProcessShape (IGESToBRep_Actor.cxx:204-218) is required before a non-empty mesh. Cite it unported and stop."
       - "A dispatch arm has no OCCT branch. Cite the OCCT file and line as unported and stop."
       - "A source file would pass 1000 lines. Split into an already listed OCCT class file before that."
@@ -308,7 +308,7 @@ tasks:
       - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj -- _igesdump/oracle/Cube.iges data/output/iges-read/Cube.obj"
       - "rtk graphify update ."
     stop_if:
-      - "A write is needed outside allowed_files. Do not edit iges.rs, the actor, or HoledPlate-only code."
+      - "A write is needed outside allowed_files. Do not edit iges/, the actor, or HoledPlate-only code."
       - "The only remaining miss is HoledPlate."
       - "The cxx branch is absent. Cite it unported and stop."
       - "The only way to pass is a heuristic, area ratio, length filter, volume gate, or epsilon snap."

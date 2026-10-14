@@ -80,7 +80,7 @@ visual_board:
     url: "http://goalbuddy.localhost:41737/iges-read-full/"
     command: "npx goalbuddy board D:\\source\\repos\\dogs\\docs\\goals\\iges-read-full"
 
-active_task: T033
+active_task: null
 
 tasks:
   - id: T001
@@ -193,7 +193,7 @@ tasks:
         - crates/occt-topo/src/shhealing/wire_fix/notched.rs
         - crates/occt-topo/src/iges_read/iges_process_shape.rs
         - crates/occt-topo/src/pcurve_full/singularities.rs
-        - crates/occt-topo/src/pcurve_full/surface_projector.rs
+        - crates/occt-topo/src/pcurve_full/surface_projector/
         - crates/occt-topo/src/pcurve_full/projection_cache.rs
       commands:
         - cmd: rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline
@@ -814,7 +814,7 @@ tasks:
       - "Do not set full_outcome_complete and do not run graphify label."
     allowed_files:
       - "docs/goals/iges-read-full/state.yaml"
-      - "canvases/iges-read-geometry.canvas.tsx"
+      - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
     verify:
       - "Triangle-level multiset comparison of iges_read_obj OBJ vs data/output/iges-occ OBJ, matched by centroid bucket and 6-permutation vertex-set distance at tolerance 1e-5"
       - "Per-face node/triangle counts, iges_read_obj --fstats vs occt_probe --facestats at the port's own lin"
@@ -826,7 +826,7 @@ tasks:
       result: done
       changed:
         - "docs/goals/iges-read-full/state.yaml (this receipt)"
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       verify:
         - command: "iges_read_obj <model>.iges <out>.obj + triangle-set match against data/output/iges-occ/<model>.obj"
           status: pass
@@ -850,12 +850,12 @@ tasks:
       - "Follow the cxx branch; no predicate, no area ratio, no per-model tuning."
       - "Leave every branch that stays unported marked with its OCCT file and line."
       - "Do not overwrite data/output/iges-occ, iges-read, or iges-read-fixshape."
-      - "Do not edit crates/occt-topo/src/iges.rs. Do not set full_outcome_complete and do not run graphify label."
+      - "Do not edit crates/occt-topo/src/iges/. Do not set full_outcome_complete and do not run graphify label."
     allowed_files:
       - "crates/occt-topo/src/meshing/model_builder/wire_builder.rs"
       - "crates/occt-topo/src/shape_fix_compose_shell/wire_data.rs"
       - "docs/goals/iges-read-full/state.yaml"
-      - "canvases/iges-read-geometry.canvas.tsx"
+      - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
     verify:
       - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
       - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline"
@@ -905,7 +905,7 @@ tasks:
       - "Do not set full_outcome_complete and do not run graphify label."
     allowed_files:
       - "docs/goals/iges-read-full/state.yaml"
-      - "canvases/iges-read-geometry.canvas.tsx"
+      - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
     verify:
       - "occt_probe <model>.iges --facestats <port lin> 0.3490658503988659 vs iges_read_obj <model>.iges <tmp>.obj --fstats"
       - "occt_probe Cone.iges --wireinv vs the port's FACE i= structure"
@@ -916,7 +916,7 @@ tasks:
     receipt:
       result: done
       changed:
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
         - "docs/goals/iges-read-full/state.yaml (this receipt)"
       commands:
         - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
@@ -1026,7 +1026,7 @@ tasks:
     objective: "Close T021 side finding 2: audit every call site that reads a 2D or 3D curve adaptor's own FirstParameter/LastParameter where the cxx reads a TRIMMED adaptor, and fix the ones that diverge."
     inputs:
       - "crates/occt-geom/src/geom_lib.rs (the T021 fix, current reference for the correct pattern)"
-      - "crates/occt-geom/src/geom2d_adaptor_curve.rs if present, else the Geom2dAdaptor_Curve port"
+      - "crates/occt-geom2d/src/curve.rs (the Curve2d trait carries the Geom2dAdaptor_Curve queries)"
       - "src/FoundationClasses/TKMath/Geom2dAdaptor/Geom2dAdaptor_Curve.cxx:577-583 (Trim only rewrites the kept range)"
       - "src/FoundationClasses/TKMath/GeomAdaptor/GeomAdaptor_Curve.cxx (Trim)"
     constraints:
@@ -1232,7 +1232,7 @@ tasks:
       - "crates/occt-topo/src/iges_read/offset_surface.rs"
       - "crates/occt-topo/src/iges_read/iges_control_reader.rs"
       - "docs/goals/iges-read-full/state.yaml"
-      - "canvases/iges-read-geometry.canvas.tsx"
+      - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
     verify:
       - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
       - "rtk cargo build --manifest-path crates/occt-topo/Cargo.toml --offline --example iges_read_obj (private CARGO_TARGET_DIR)"
@@ -1250,7 +1250,7 @@ tasks:
         - "crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs (transfer_plane_parts split out, plane_bounding_wire, transfer_perforate, 402 dispatch)"
         - "crates/occt-topo/src/iges_read/iges_to_brep_actor.rs, brep_entity.rs, bounded_surface.rs, curve_on_surface.rs, offset_surface.rs, iges_control_reader.rs (call sites)"
         - "docs/goals/iges-read-full/state.yaml (this task and the T020 / T021 corrections)"
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       commands:
         - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
           status: pass
@@ -1272,7 +1272,7 @@ tasks:
         - "crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs"
         - "crates/occt-topo/src/iges_read/iges_to_brep_actor.rs"
         - "docs/goals/iges-read-full/state.yaml"
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       checks:
         - name: cargo_check
           status: pass
@@ -1295,7 +1295,7 @@ tasks:
     reasoning_hint: medium
     objective: "Adjudicate why _igesdump/oracle/Torus.iges (this implementation's own STEP -> IGES output) reads back as a broken 302/146 fragment while FreeCAD shows a complete torus, without any heuristic: decide whether the defect is in the writer, the reader, or the port."
     inputs:
-      - "crates/occt-topo/src/iges.rs (write_iges, a port of IGESControl_Writer)"
+      - "crates/occt-topo/src/iges/ (write_iges, a port of IGESControl_Writer; was the single file iges.rs)"
       - "src/DataExchange/TKDEIGES/IGESToBRep/IGESToBRep_TopoSurface.cxx:1219-1376 (TransferTrimmedSurface), :699-880 (TransferSurfaceOfRevolution)"
       - "src/DataExchange/TKDEIGES/IGESToBRep/IGESToBRep_TopoCurve.cxx (TransferCurveOnFace) and IGESToBRep_IGESBoundary.cxx (Transfer), both V7_8_1 and V8_0_0"
     constraints:
@@ -1309,7 +1309,7 @@ tasks:
     expected_output:
       - "A written root cause naming writer vs reader and the OCCT versions involved."
     receipt:
-      summary: "ROOT CAUSE IS UPSTREAM, IN THE OCCT 8.0.0 IGES ROUND-TRIP, NOT IN THE PORT. (1) THE WRITER IS FAITHFUL AND BYTE-IDENTICAL. Writing data/Torus.step with OCCT 8.0.0's own IGESControl_Writer (specs/occt_probe/run_probe_iges.bat data/Torus.step --iges _tmp/t024mesh/occt_torus.iges) produces 144 + 120 (SurfaceOfRevolution, startAngle 0) + 142(0,3,15,25,3) + 102, i.e. NOT an analytic 198 ToroidalSurface; the file is 5427 bytes and diffs against _igesdump/oracle/Torus.iges in exactly two lines, the G-section date stamp. So the port's iges.rs reproduces IGESControl_Writer, including its torus -> revolution-surface choice. (2) OCCT 8.0.0 CANNOT READ ITS OWN OUTPUT. Reading with OCCT 8.0.0 (run_zz_iges_obj.bat) gives faces=1 wires=2 edges=8: 144 #1 declares outer=1 nInner=0 (ONE boundary loop, read from the IGES model itself), 142 #7 has crv3d=set uv=set, and the face comes out Geom_SurfaceOfRevolution uperiodic=2pi vperiodic=2pi with UV window [0,2pi]x[-3.1415927,9.4247780] (4pi, TWO v periods) carrying TWO wires on the face: wire0 = 4 Bspline edges with pcurve v in [-pi,pi], wire1 = 4 Circle edges with pcurve v in [pi,3pi] - the same loop duplicated one period apart. Meshing that gives 302 nodes / 146 triangles, bbox (-8,-8,-2)-(12,8,2), area 67.2434 against the true torus area 789.5684. (3) OCCT 7.8.1 READS THE SAME FILE CORRECTLY. FreeCAD 1.1 bundles OCCT 7.8.1 (C:/Program Files/FreeCAD 1.1/bin/TKDEIGES.dll FileVersion=7.8.1, against 8.0.0 for the probe); Import.open gives 1 face, 1 wire, 4 edges, surface Geom_SurfaceOfRevolution v-window [0,2pi]x[pi,3pi] (ONE period), area 789.568352, and MeshPart.meshFromShape(0.096, 0.3490658503988659) gives 1639 points / 3122 facets, bbox (-11.98,-11.99,-2)-(12,11.96,2) - the complete torus. Feeding that 1-wire face to OCCT 8.0.0's BRepMesh reproduces it (1642/3122), so the mesher is not the variable. (4) IT IS THE READER, NOT THE WRITER, THAT DIFFERS: exporting the torus to IGES with FreeCAD's 7.8.1 writer (Part.export) gives a 5427-byte file with the same structure (144 + 120 + 142(0,3,15,25,3) + 102, no 198), differing from the port's file only in the G-section version strings/time stamp/author and three 124 entries where the port writes '-0.' and 7.8.1 writes '0.'; OCCT 8.0.0 reads THAT file to the same 2-wire / 4pi-window / 302-146 fragment. Identical inputs, so 8.0.0's IGES read path is the differentiator. (5) THE FILE VARIANT EXPERIMENT PINS THE TRIGGER: editing only the 142 record of the oracle (still 80 columns) gives, dropping Curve3D (crv3d=null uv=set) window [0,2pi]x[pi,3pi] and 1642/3122; dropping CurveUV (crv3d=set uv=null) window [0,2pi]x[pi,3pi] and 739/1332; PreferenceMode=2 the same 2pi window with an empty mesh; the unmodified record with both representations and PreferenceMode=3 is the only one that widens to two periods, i.e. 8.0.0 only produces the 4pi window when the phase-inconsistent 3D and 2D representations are both present. (6) THE SUSPECT CODE IS UNCHANGED BETWEEN THE VERSIONS: IGESToBRep_TopoSurface::TransferTrimmedSurface, IGESToBRep_TopoCurve::TransferCurveOnFace (both call IGESToBRep_IGESBoundary::Transfer with start->Curve3D() and Curves2d={start->CurveUV()}) and IGESToBRep_IGESBoundary::Transfer itself (the 3D+2D arm builds ONE edge per segment by copying the pcurve onto the 3D edge and adds one wire per segment) are logically identical in V7_8_1 (D:/source/OCCT-src, fetched) and V8_0_0 - only formatting and Handle -> occ::handle differ. The split therefore lives in a shared helper below these functions and was NOT localized further; that needs an OCCT 7.8.1 build to bisect. Net: the port matches its 8.0.0 spec to 1e-7 on both the write and the read side, so this is an OCCT 8.0.0 regression and the oracle file is a faithful reproduction of a broken round-trip, not a usable correct-output baseline. No port code was changed. (7) ACTIONABLE CAUSE IS THE WRITE MODE AND IT REPRODUCES A CLEAN ROUND-TRIP WHEN CHANGED: GeomToIGES_GeomSurface.cxx:576-598 sends an analytic surface to its analytic transfer only under 'if (myBRepMode && myAnalytic)' - Geom_ToroidalSurface -> TransferToroidalSurface (:1402-1417, IGESSolid_ToroidalSurface) gives a 198, otherwise TransferSurface gives the generic 120 revolution surface; the same guard covers Geom_CylindricalSurface (:546-562), Geom_ConicalSurface (:564-573) and Geom_SphericalSurface (:575-587). The port and the --iges oracle use Faces mode (IGESControl_Writer('MM', 0), occt_probe.cpp:2096-2099, the mode iges.rs ports), so myBRepMode is false and every elementary surface takes the generic arm. Writing data/Torus.step in BRep mode (zz_iges_obj --iges data/Torus.step out.iges 1) emits '198,9,11,10.,2.,13;' instead of '144 + 120', and OCCT 8.0.0 reads it back as 'read faces=1 wires=1 edges=4', 'face surface=Geom_ToroidalSurface uperiodic=1 vperiodic=1 uv=[0,2pi]x[3.1415927,9.4247780]', 'plain faces=1 wires=1 nodes=1369 triangles=2592 bbox=(-12,-12,-2)-(12,12,2)' - the complete torus, exactly the STEPControl_Reader result. So the fragment is a property of the Faces-mode generic encoding, not of the torus, the reader alone, or the port."
+      summary: "ROOT CAUSE IS UPSTREAM, IN THE OCCT 8.0.0 IGES ROUND-TRIP, NOT IN THE PORT. (1) THE WRITER IS FAITHFUL AND BYTE-IDENTICAL. Writing data/Torus.step with OCCT 8.0.0's own IGESControl_Writer (specs/occt_probe/run_probe_iges.bat data/Torus.step --iges _tmp/t024mesh/occt_torus.iges) produces 144 + 120 (SurfaceOfRevolution, startAngle 0) + 142(0,3,15,25,3) + 102, i.e. NOT an analytic 198 ToroidalSurface; the file is 5427 bytes and diffs against _igesdump/oracle/Torus.iges in exactly two lines, the G-section date stamp. So the port's IGES writer (iges/) reproduces IGESControl_Writer, including its torus -> revolution-surface choice. (2) OCCT 8.0.0 CANNOT READ ITS OWN OUTPUT. Reading with OCCT 8.0.0 (run_zz_iges_obj.bat) gives faces=1 wires=2 edges=8: 144 #1 declares outer=1 nInner=0 (ONE boundary loop, read from the IGES model itself), 142 #7 has crv3d=set uv=set, and the face comes out Geom_SurfaceOfRevolution uperiodic=2pi vperiodic=2pi with UV window [0,2pi]x[-3.1415927,9.4247780] (4pi, TWO v periods) carrying TWO wires on the face: wire0 = 4 Bspline edges with pcurve v in [-pi,pi], wire1 = 4 Circle edges with pcurve v in [pi,3pi] - the same loop duplicated one period apart. Meshing that gives 302 nodes / 146 triangles, bbox (-8,-8,-2)-(12,8,2), area 67.2434 against the true torus area 789.5684. (3) OCCT 7.8.1 READS THE SAME FILE CORRECTLY. FreeCAD 1.1 bundles OCCT 7.8.1 (C:/Program Files/FreeCAD 1.1/bin/TKDEIGES.dll FileVersion=7.8.1, against 8.0.0 for the probe); Import.open gives 1 face, 1 wire, 4 edges, surface Geom_SurfaceOfRevolution v-window [0,2pi]x[pi,3pi] (ONE period), area 789.568352, and MeshPart.meshFromShape(0.096, 0.3490658503988659) gives 1639 points / 3122 facets, bbox (-11.98,-11.99,-2)-(12,11.96,2) - the complete torus. Feeding that 1-wire face to OCCT 8.0.0's BRepMesh reproduces it (1642/3122), so the mesher is not the variable. (4) IT IS THE READER, NOT THE WRITER, THAT DIFFERS: exporting the torus to IGES with FreeCAD's 7.8.1 writer (Part.export) gives a 5427-byte file with the same structure (144 + 120 + 142(0,3,15,25,3) + 102, no 198), differing from the port's file only in the G-section version strings/time stamp/author and three 124 entries where the port writes '-0.' and 7.8.1 writes '0.'; OCCT 8.0.0 reads THAT file to the same 2-wire / 4pi-window / 302-146 fragment. Identical inputs, so 8.0.0's IGES read path is the differentiator. (5) THE FILE VARIANT EXPERIMENT PINS THE TRIGGER: editing only the 142 record of the oracle (still 80 columns) gives, dropping Curve3D (crv3d=null uv=set) window [0,2pi]x[pi,3pi] and 1642/3122; dropping CurveUV (crv3d=set uv=null) window [0,2pi]x[pi,3pi] and 739/1332; PreferenceMode=2 the same 2pi window with an empty mesh; the unmodified record with both representations and PreferenceMode=3 is the only one that widens to two periods, i.e. 8.0.0 only produces the 4pi window when the phase-inconsistent 3D and 2D representations are both present. (6) THE SUSPECT CODE IS UNCHANGED BETWEEN THE VERSIONS: IGESToBRep_TopoSurface::TransferTrimmedSurface, IGESToBRep_TopoCurve::TransferCurveOnFace (both call IGESToBRep_IGESBoundary::Transfer with start->Curve3D() and Curves2d={start->CurveUV()}) and IGESToBRep_IGESBoundary::Transfer itself (the 3D+2D arm builds ONE edge per segment by copying the pcurve onto the 3D edge and adds one wire per segment) are logically identical in V7_8_1 (D:/source/OCCT-src, fetched) and V8_0_0 - only formatting and Handle -> occ::handle differ. The split therefore lives in a shared helper below these functions and was NOT localized further; that needs an OCCT 7.8.1 build to bisect. Net: the port matches its 8.0.0 spec to 1e-7 on both the write and the read side, so this is an OCCT 8.0.0 regression and the oracle file is a faithful reproduction of a broken round-trip, not a usable correct-output baseline. No port code was changed. (7) ACTIONABLE CAUSE IS THE WRITE MODE AND IT REPRODUCES A CLEAN ROUND-TRIP WHEN CHANGED: GeomToIGES_GeomSurface.cxx:576-598 sends an analytic surface to its analytic transfer only under 'if (myBRepMode && myAnalytic)' - Geom_ToroidalSurface -> TransferToroidalSurface (:1402-1417, IGESSolid_ToroidalSurface) gives a 198, otherwise TransferSurface gives the generic 120 revolution surface; the same guard covers Geom_CylindricalSurface (:546-562), Geom_ConicalSurface (:564-573) and Geom_SphericalSurface (:575-587). The port and the --iges oracle use Faces mode (IGESControl_Writer('MM', 0), occt_probe.cpp:2096-2099, the mode the port's IGES writer (iges/) implements), so myBRepMode is false and every elementary surface takes the generic arm. Writing data/Torus.step in BRep mode (zz_iges_obj --iges data/Torus.step out.iges 1) emits '198,9,11,10.,2.,13;' instead of '144 + 120', and OCCT 8.0.0 reads it back as 'read faces=1 wires=1 edges=4', 'face surface=Geom_ToroidalSurface uperiodic=1 vperiodic=1 uv=[0,2pi]x[3.1415927,9.4247780]', 'plain faces=1 wires=1 nodes=1369 triangles=2592 bbox=(-12,-12,-2)-(12,12,2)' - the complete torus, exactly the STEPControl_Reader result. So the fragment is a property of the Faces-mode generic encoding, not of the torus, the reader alone, or the port."
       evidence: "Writer parity: 'Torus.iges 5427' / 'occt_torus.iges 5427' and 'git diff --no-index' reporting '1 file changed, 2 insertions(+), 2 deletions(-)' with the only changed lines being G0000003/G0000004 (date stamp). Read of the port's file under 8.0.0: 'read faces=1 wires=2 edges=8 null=0 nofix=0', 'IGES 144 #1 outer=1 nInner=0 outerType=IGESGeom_CurveOnSurface', 'IGES 142 #7 pref=3 crv3d=set uv=set', 'face surface=Geom_SurfaceOfRevolution uperiodic=1(u=6.28319) vperiodic=1(v=6.28319) uv=[-0.0000000,6.2831853]x[-3.1415927,9.4247780]', 'wire 0 edges=4 total_range=25.1327 ... 3dtype=6 haspcurve=1 pcurve_uv=(6.2832,-3.1416)-(-0.0000,-3.1416)', 'wire 1 edges=4 ... 3dtype=1 closed ... pcurve_uv=(0.0000,3.1416)-(0.0000,9.4248)', 'plain faces=1 wires=2 nodes=302 triangles=146 bbox=(-8.0000,-8.0000,-2.0000)-(12.0000,8.0000,2.0000)'. FreeCAD 1.1 (OCCT 7.8.1): 'TKDEIGES.dll FileVersion=7.8.1'; 'obj Part__Feature faces=1 wires_total=1 edges_total=4', 'face 0 type=Part::GeomSurfaceOfRevolution area=789.568352 nwires=1', 'wire 0 edges=4 area=0.000000 closed=True'; 'freecad:Part__Feature faces=1 points=1639 facets=3122 bbox=(-11.980518,-11.993017,-1.999296)-(11.997182,11.959696,1.999296)'; port OBJ vs FreeCAD OBJ areas 'freecad=786.6611' / 'port=67.2434' against 'true torus area 789.5684'. Reverse direction: FreeCAD-exported IGES read by 8.0.0 = 'IGES 142 #7 pref=3 crv3d=set uv=set', 'face ... uv=[-0.0000000,6.2831853]x[-3.1415927,9.4247780]', 'wire 0 edges=4 ... wire 1 edges=4', 'plain ... nodes=302 triangles=146 bbox=(-8.0000,-8.0000,-2.0000)-(12.0000,8.0000,2.0000)'; its diff against the port's file is '14 +++++++-------' (G0000001..G0000004 plus 124 entries '124,1.,0.,-0.,...' vs '124,1.,0.,0.,...'). Variant experiment (one record changed, '142,0,3,15,25,3;'): 'nomdl 142,0,3,15,0,3;' -> uv=[0,2pi]x[3.1415927,9.4247780], 1642/3122; 'nouv 142,0,3,0,25,3;' -> uv=[0,2pi]x[3.1415927,9.4247780], 739/1332; 'pref2 142,0,3,15,25,2;' -> uv=[0,2pi]x[3.1415927,9.4247780], nodes=0 triangles=0; baseline -> uv=[0,2pi]x[-3.1415927,9.4247780], 302/146. Mode experiment: 'iges-write in=data/Torus.step out=_tmp/t024mesh/t_face.iges mode=0 ok=1' with entity types '144,3,1,0,13;' / '120,7,9,0.,6.283185307;' / '142,0,3,15,25,3;', against 'iges-write ... t_brep.iges mode=1 ok=1' with '198,9,11,10.,2.,13;'; reading t_brep.iges gives 'read faces=1 wires=1 edges=4', 'face surface=Geom_ToroidalSurface uperiodic=1(u=6.28319) vperiodic=1(v=6.28319) uv=[-0.0000000,6.2831853]x[3.1415927,9.4247780]', 'plain faces=1 wires=1 nodes=1369 triangles=2592 bbox=(-12.0000,-12.0000,-2.0000)-(12.0000,12.0000,2.0000)'. Source extraction: 'D:/source/OCCT-src' at V8_0_0 with V7_8_1 fetched, 7.8.1 path src/IGESToBRep/, 8.0.0 path src/DataExchange/TKDEIGES/IGESToBRep/; TopoCurve.v7 IGESToBRep_TopoCurve::TransferCurveOnFace:491-546 equals TopoCurve.v8:512-579; IGB.v7 IGESToBRep_IGESBoundary::Transfer:132-269 equals IGB.v8:127-339 (the 3D+2D arm at v7:207-255 / v8:242-323). GeomToIGES_GeomSurface.cxx:576-598 (the 'myBRepMode && myAnalytic' guards), :1402-1417 (TransferToroidalSurface -> IGESSolid_ToroidalSurface)."
       artifacts:
         - "docs/goals/iges-read-full/state.yaml"
@@ -1435,7 +1435,7 @@ tasks:
     inputs:
       - "crates/occt-topo/src/meshing/node_insertion.rs (two env-gated BWDBG eprintln blocks: the per-wire UV dump in perform and the per-edge dump in collect_boundary_uv)"
       - "docs/goals/iges-read-full/state.yaml"
-      - "canvases/iges-read-geometry.canvas.tsx"
+      - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       - "specs/occt_probe/run_probe_iges.bat _igesdump/oracle/<model>.iges --facestats <lin> 0.3490658503988659"
       - "specs/occt_probe/occt_probe.cpp"
     constraints:
@@ -1456,7 +1456,7 @@ tasks:
       artifacts:
         - "crates/occt-topo/src/meshing/node_insertion.rs"
         - "docs/goals/iges-read-full/state.yaml"
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       checks:
         - name: bwdbg_instrumentation_removed
           status: pass
@@ -1489,7 +1489,7 @@ tasks:
         - "crates/occt-topo/examples/iges_read_obj.rs"
         - "crates/occt-topo/src/tgeometry.rs"
         - "docs/goals/iges-read-full/state.yaml"
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       checks:
         - name: cargo_check_zero_errors
           status: pass
@@ -1528,7 +1528,7 @@ tasks:
       - "crates/occt-topo/src/iges_read/offset_curve.rs"
       - "crates/occt-topo/examples/iges_read_obj.rs"
       - "docs/goals/iges-read-full/state.yaml"
-      - "canvases/iges-read-geometry.canvas.tsx"
+      - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
     verify:
       - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets"
       - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib"
@@ -1568,7 +1568,7 @@ tasks:
         - "crates/occt-topo/src/shape_upgrade/c0_bspline_sequence.rs"
         - "crates/occt-topo/src/iges_read/iges_to_brep_topo_curve.rs"
         - "docs/goals/iges-read-full/state.yaml"
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       checks:
         - name: c0_split_ported_with_cxx_cites
           status: pass
@@ -1640,7 +1640,7 @@ tasks:
       - "crates/occt-topo/src/meshing/range_splitter/param_set.rs (the NURBSGRID env gate)"
       - "specs/occt_probe/occt_probe.cpp (new --srparams mode, ZZSrfParamsAlgo)"
       - "docs/goals/iges-read-full/state.yaml"
-      - "canvases/iges-read-geometry.canvas.tsx"
+      - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
     constraints:
       - "No port or algorithm change; the only source edit is the new probe mode."
       - "No OBJ into data/output/iges-occ, iges-read or iges-read-fixshape; scratch OBJ goes to _tmp/."
@@ -1663,7 +1663,7 @@ tasks:
       artifacts:
         - "specs/occt_probe/occt_probe.cpp"
         - "docs/goals/iges-read-full/state.yaml"
-        - "canvases/iges-read-geometry.canvas.tsx"
+        - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       checks:
         - name: probe_rebuilt_clean
           status: pass

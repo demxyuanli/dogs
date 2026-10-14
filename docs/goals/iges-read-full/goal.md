@@ -27,7 +27,7 @@ Finish the IGES read path so the seven oracle files mesh like OCCT 8.0.0 `ReadIg
   - Sphere, Cone, rev, and Offset can change triangle count when a real cxx branch runs. A planar model that already matches must not move.
   - Entity types absent from these seven files stay marked unported.
 - Existing plan facts:
-  - Canvas `iges-read-geometry.canvas.tsx` is the gap list.
+  - Canvas `canvases/iges-read-geometry.canvas.tsx` was the gap list; it is no longer in the tree (it was an untracked scratch canvas), so the per-face gap list now lives in the `state.yaml` receipts.
   - Both wire rounds, `ContinuityOfFaces`, the singularity split, and shell/solid `Perform` are in. The seven meshes stayed byte-identical to `iges-read-r2`. Cube, Extrusion, HoledPlate match. Sphere is 1772/3500 vs 1725/3410. Cone is 864/1646 vs 862/1642.
   - The shape-level `FixVertexTolerance` loop is in. The seven meshes stayed byte-identical to `iges-read-r2`. Cube, Extrusion, HoledPlate match. Sphere is 1772/3500 vs 1725/3410. Cone is 864/1646 vs 862/1642.
   - `CreateSolids` (`ShapeFix_Solid.cxx:577-640`) stays unported. These files have no shell.
@@ -66,7 +66,7 @@ Port the remaining FixShape control flow these seven files actually reach, large
 - Do not write new unit tests. Do not add markdown outside this goal directory.
 - Comments and string literals stay ASCII.
 - Windows commands use the `rtk` prefix. PowerShell strips `$`; use `cmd /c` for environment variables.
-- Do not edit `crates/occt-topo/src/iges.rs`. Do not revert unrelated dirty files. Do not commit.
+- Do not edit `crates/occt-topo/src/iges/` (the former single file `iges.rs`). Do not revert unrelated dirty files. Do not commit.
 - New files are named for the OCCT class. No `pNN.rs`.
 - After code changes, run `graphify update .`. Do not run `graphify label`.
 
