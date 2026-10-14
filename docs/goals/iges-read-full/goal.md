@@ -14,7 +14,7 @@ Finish the IGES read path so the seven oracle files mesh like OCCT 8.0.0 `ReadIg
 - Audience: project owner (OCCT to Rust geometry port)
 - Authority: `requested` (start the long run and finish the read side; do not commit)
 - Proof type: `artifact` (OBJ) plus `metric` (mesh bbox and area against OCCT ReadIges OBJ)
-- Completion proof: Cube, Sphere, Cone, Extrusion, HoledPlate, rev, and Offset read from `_igesdump/oracle` and meshed by `examples/iges_read_obj` match `data/output/iges-occ` on bbox and area. Triangle counts are reported. `cargo check` of `occt-topo` has 0 errors. Remaining cxx gaps are marked unported, not patched with a heuristic.
+- Completion proof: Cube, Sphere, Cone, Extrusion, HoledPlate, rev, and Offset read from `_igesdump/oracle` and meshed by `crates/occt-topo/examples/iges_read_obj.rs` match `data/output/iges-occ` on bbox and area. Triangle counts are reported. `cargo check` of `occt-topo` has 0 errors. Remaining cxx gaps are marked unported, not patched with a heuristic.
 - Goal oracle: see Goal Oracle.
 - Likely misfire:
   1. Reopen the closed `iges-read-obj` goal and treat its STEP-baseline receipt as this oracle.
@@ -49,7 +49,7 @@ Finish the IGES read path so the seven oracle files mesh like OCCT 8.0.0 `ReadIg
 ## Goal Oracle
 
 1. `rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline` reports 0 errors.
-2. Re-read the seven oracle IGES files with `examples/iges_read_obj` and compare mesh bbox and fan area to `data/output/iges-occ`. Do not overwrite `iges-occ`, `iges-read`, or `iges-read-fixshape`.
+2. Re-read the seven oracle IGES files with `crates/occt-topo/examples/iges_read_obj.rs` and compare mesh bbox and fan area to `data/output/iges-occ`. Do not overwrite `iges-occ`, `iges-read`, or `iges-read-fixshape`.
 3. A model that already matched OCCT triangle-for-triangle stays matched. A mismatch stops that slice and is reported. No new predicate is added to hide it.
 
 ## Goal Kind

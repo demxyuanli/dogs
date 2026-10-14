@@ -107,7 +107,7 @@ tasks:
         - "IGESToBRep_Actor.cxx:135-196 Transfer calls TransferGeometry at :196. ProcessShape at :204-218 is a separate branch."
         - "IGESToBRep_CurveAndSurface::TransferGeometry :214-445, 402 form 1 at :369-445. TopoSurface trimmed plane :209-212 and :229-232."
         - "Entity counts: Cube and Extrusion 402/144/108/142/102/110 only. HoledPlate same types, 32 faces. Sphere, Cone, rev, Offset also need 100, 120, 124; Offset also needs 126."
-        - "crates/occt-topo/src/iges/ is write-only (write_shape_iges, iges/entry.rs:23; was iges.rs:4239 before the split). examples/export_data_obj.rs:96 calls brep_to_obj(&shape, 0.1). prs3d_get_deflection uses DEVIATION_COEFFICIENT 0.001."
+        - "crates/occt-topo/src/iges/ is write-only (write_shape_iges, iges/entry.rs:23; was iges.rs:4239 before the split). crates/occt-topo/examples/export_data_obj.rs:96 calls brep_to_obj(&shape, 0.1). prs3d_get_deflection uses DEVIATION_COEFFICIENT 0.001."
         - "tests/common/mod.rs:38-45: BBOX_EXACT 1e-6, AREA_EXACT 1e-3, AREA_CURVED 0.04, AREA_COMPLEX 0.05. Cube and Extrusion use the exact pair."
       ambiguity:
         - "Actor::Transfer always runs XSAlgo_ShapeProcessor::ProcessShape at IGESToBRep_Actor.cxx:204-218. First geometry slice can mark that pass unported."
@@ -135,7 +135,7 @@ tasks:
       result: done
       decision: approved
       full_outcome_complete: false
-      summary: "Approved one planar package for 402 form 1, 144, 108, 142, 102, and 110, covering Cube, Extrusion, and HoledPlate. ProcessShape and entities 100, 120, 124, and 126 stay unported. Instrument is examples/iges_read_obj.rs through brep_to_obj."
+      summary: "Approved one planar package for 402 form 1, 144, 108, 142, 102, and 110, covering Cube, Extrusion, and HoledPlate. ProcessShape and entities 100, 120, 124, and 126 stay unported. Instrument is crates/occt-topo/examples/iges_read_obj.rs through brep_to_obj."
       rationale: "Those three oracle files share that entity family. A Cube-only path is rejected. ProcessShape at IGESToBRep_Actor.cxx:204-218 runs after TransferGeometry and is cited unported."
       deferred: "Next package transfers 100, 120, 124, and 126 for Sphere, Cone, rev, and Offset. ProcessShape only if a planar OBJ is empty."
   - id: T003
@@ -595,7 +595,7 @@ tasks:
       full_outcome_complete: true
       summary: "cargo check exit 0, 0 errors, 327 warnings. Seven OBJs are in data/output/iges-read. Against data/occ-*.obj: Cube bbox 0 area 0. Cone bbox 0 area 0.001025. Sphere bbox 0.018501 area 0.004361. HoledPlate bbox 0 area 9.54e-11. rev bbox 0 area 1.719e-5. Offset bbox 0 area 0.000273. Extrusion bbox 0 area 0. All inside tests/common/mod.rs tolerances."
       evidence:
-        - "examples/iges_read_obj.rs and export_data_obj.rs both call brep_to_obj with deflection 0.1."
+        - "crates/occt-topo/examples/iges_read_obj.rs and crates/occt-topo/examples/export_data_obj.rs both call brep_to_obj with deflection 0.1."
         - "Reference paths are MODELS.occ in tests/common/mod.rs, the same files step_obj_parity uses."
 
 checks:

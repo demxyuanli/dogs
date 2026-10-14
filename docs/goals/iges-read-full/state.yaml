@@ -807,7 +807,7 @@ tasks:
     objective: "Re-establish what the port's mesh comparison against OCCT actually proves, at triangle level where a baseline exists and per face where it does not, and record the corrected numbers."
     inputs:
       - "_igesdump/oracle/*.iges (14 models), data/output/iges-occ/*.obj (7 models, OCCT's own OBJ)"
-      - "examples/iges_read_obj --fstats, occt_probe --facestats <defl> <angle>"
+      - "crates/occt-topo/examples/iges_read_obj --fstats, occt_probe --facestats <defl> <angle>"
     constraints:
       - "No new test and no new heuristic; measurement only."
       - "Do not overwrite data/output/iges-occ, iges-read or iges-read-fixshape."
@@ -825,7 +825,7 @@ tasks:
     receipt:
       result: done
       changed_files:
-        - "docs/goals/iges-read-full/state.yaml (this receipt)"
+        - "docs/goals/iges-read-full/state.yaml" # this receipt
         - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       verify:
         - command: "iges_read_obj <model>.iges <out>.obj + triangle-set match against data/output/iges-occ/<model>.obj"
@@ -898,7 +898,7 @@ tasks:
     inputs:
       - "_igesdump/oracle/{Cube,Sphere,Cone,Extrusion,HoledPlate,rev,Offset}.iges (unchanged since 2026-10-08)"
       - "data/output/iges-occ/*.obj (LOST: the directory does not exist anywhere on disk)"
-      - "specs/occt_probe run_probe_iges.bat (--facestats, --wireinv, --mesh, TCIRC probe), examples/iges_read_obj --fstats"
+      - "specs/occt_probe run_probe_iges.bat (--facestats, --wireinv, --mesh, TCIRC probe), crates/occt-topo/examples/iges_read_obj --fstats"
     constraints:
       - "Measurement only: no source edit, no new test, no heuristic, no threshold."
       - "Do not write into data/output/iges-occ, iges-read or iges-read-fixshape."
@@ -917,7 +917,7 @@ tasks:
       result: done
       changed_files:
         - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
-        - "docs/goals/iges-read-full/state.yaml (this receipt)"
+        - "docs/goals/iges-read-full/state.yaml" # this receipt
       commands:
         - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
           status: pass
@@ -964,7 +964,7 @@ tasks:
     receipt:
       result: done
       changed_files:
-        - "crates/occt-geom/src/geom_lib.rs (1 line changed inside build_c3d_on_iso_line, plus a comment citing the cxx lines)"
+        - "crates/occt-geom/src/geom_lib.rs" # 1 line changed inside build_c3d_on_iso_line, plus a comment citing the cxx lines
         - "docs/goals/iges-read-full/state.yaml (this task and the T020 closure append)"
       commands:
         - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
@@ -1249,11 +1249,16 @@ tasks:
     receipt:
       result: done
       changed_files:
-        - "crates/occt-topo/src/iges_read/iges_data_iges_model.rs (EntityData::SingleParent, parse_single_parent, pointer_targets)"
-        - "crates/occt-topo/src/iges_read/iges_to_brep_curve_and_surface.rs (is_topo_surface takes the model, SingleParent arm, is_curve_and_surface)"
-        - "crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs (transfer_plane_parts split out, plane_bounding_wire, transfer_perforate, 402 dispatch)"
-        - "crates/occt-topo/src/iges_read/iges_to_brep_actor.rs, brep_entity.rs, bounded_surface.rs, curve_on_surface.rs, offset_surface.rs, iges_control_reader.rs (call sites)"
-        - "docs/goals/iges-read-full/state.yaml (this task and the T020 / T021 corrections)"
+        - "crates/occt-topo/src/iges_read/iges_data_iges_model.rs" # EntityData::SingleParent, parse_single_parent, pointer_targets
+        - "crates/occt-topo/src/iges_read/iges_to_brep_curve_and_surface.rs" # is_topo_surface takes the model, SingleParent arm, is_curve_and_surface
+        - "crates/occt-topo/src/iges_read/iges_to_brep_topo_surface.rs" # transfer_plane_parts split out, plane_bounding_wire, transfer_perforate, 402 dispatch
+        - "crates/occt-topo/src/iges_read/iges_to_brep_actor.rs" # call sites
+        - "crates/occt-topo/src/iges_read/brep_entity.rs" # call sites
+        - "crates/occt-topo/src/iges_read/bounded_surface.rs" # call sites
+        - "crates/occt-topo/src/iges_read/curve_on_surface.rs" # call sites
+        - "crates/occt-topo/src/iges_read/offset_surface.rs" # call sites
+        - "crates/occt-topo/src/iges_read/iges_control_reader.rs" # call sites
+        - "docs/goals/iges-read-full/state.yaml" # this task and the T020 / T021 corrections
         - "canvases/iges-read-geometry.canvas.tsx (no longer in the tree; never tracked in git)"
       commands:
         - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline"
@@ -1611,7 +1616,7 @@ tasks:
       result: done
       decision: complete
       full_outcome_complete: true
-      summary: "COMPLETE. cargo check --manifest-path crates/occt-topo/Cargo.toml --offline = 0 errors. The seven oracle IGES files were re-read live with examples/iges_read_obj (binary built 2026-10-12 19:39 under CARGO_TARGET_DIR=_tmp/tgt_t023) and compared against OCCT 8.0.0 ReadIges itself, not against a stored file: specs/occt_probe/run_probe_iges.bat _igesdump/oracle/<model>.iges --facestats <the port's own printed lin> 0.3490658503988659. Per-model node/triangle totals, face counts, mesh bbox and fan area all match, so the goal oracle (bbox and fan area, counts reported) holds on all seven. Totals, port = probe: Cube 24/12 = 24/12 at lin 0.04, faces 6/6; Sphere 1725/3410 = 1725/3410 at 0.04, faces 1/1; Cone 863/1644 = 827/1610 + 36/34 at 0.04, faces 2/2; Extrusion 24/12 = 24/12 at 0.08, faces 6/6; HoledPlate 180/128 = 180/128 at 0.408574, faces 32/32; rev 104/92 = 104/92 at 0.04, faces 6/6; Offset 672/812 = 12x20/18 + 8x51/73 + 6x4/2 at 0.062627, faces 26/26. data/output/iges-occ no longer exists (it lives under the git-ignored data/output/ scratch tree and has been cleaned), so the OCCT side was regenerated live with --dumpmesh at the same lin and angle; the T014/T015 recorded baseline is reproduced and the live reference is tighter. bbox is identical to the last digit on all seven (Cone, rev and Offset differ only in the sign of a zero coordinate). Fan area, port vs live OCCT: Cube 600.000000000/600.000000000, Sphere 313.452268741/313.452268704, Cone 185.096184091/185.096184095, Extrusion 950.000000000/950.000000000, HoledPlate 17517.294022407/17517.294022727, rev 453.051106127/453.051106121, Offset 1025.822806208/1025.822805232, worst relative gap 9.51e-10 (Offset), inside the 3.0e-7 recorded in T015 and against a stricter live reference. Stricter than the goal oracle: a triangle-set match with vertices canonicalised at 1e-4 and signed zero normalised is exact on six of the seven (Cube, Sphere, Cone, Extrusion, HoledPlate, rev) and exact on 784 of Offset's 812, where the port and OCCT hold the SAME 408 unique node coordinates, the same 812 triangles as a multiset of positions and the same area, so the 28 unmatched Offset triangles are a triangulation-connectivity (diagonal) difference on an identical node set, the cocircular-ambiguity case the earlier mesher session recorded and deliberately did not patch. Sphere improved from the T018 18-unmatched state to exact. Remaining cxx gaps are marked unported and were not patched: ShapeFix_Wire::FixSeam (ShapeFix_Wire.cxx:920-933 :1615-1670) at shhealing/wire_fix/notched.rs:646-659, SplitWire / NeedCheckSplitWire (ShapeFix_Face.cxx:629-674) at step/read_topology.rs:88, CreateSolids (ShapeFix_Solid.cxx:115-456 :577-640) at iges_read/create_solids.rs, GeomConvert_ApproxSurface at iges_read/gtransform.rs:202 and iges_read/offset_surface.rs:17, and the UNPORTED return sites igesread.h:67-75, IGESToBRep_CurveAndSurface.cxx:185-189, IGESToBRep_BasicCurve.cxx:164 :238, IGESToBRep_BasicSurface.cxx:231-234, IGESToBRep_TopoCurve.cxx:859 :871-873, IGESToBRep_TopoSurface.cxx:184 with the cxx:1734-1738 note. Models outside the seven keep their reported deltas (screw 499/596 vs 500/597, Shape-1 3039/3726 vs 3053/3754, Shape-2 3037/4691 vs 3033/4683, Shape 7191/13433 vs 7192/13435); T029 showed the Shape-1 residual is last-bit parity of the pcurve-derived boundary V parameters with no missing arm, which is the goal stop rule's second branch. No source file was edited by this audit, no OBJ was written into data/output/iges-occ, iges-read or iges-read-fixshape, and graphify label was not run."
+      summary: "COMPLETE. cargo check --manifest-path crates/occt-topo/Cargo.toml --offline = 0 errors. The seven oracle IGES files were re-read live with crates/occt-topo/examples/iges_read_obj.rs (binary built 2026-10-12 19:39 under CARGO_TARGET_DIR=_tmp/tgt_t023) and compared against OCCT 8.0.0 ReadIges itself, not against a stored file: specs/occt_probe/run_probe_iges.bat _igesdump/oracle/<model>.iges --facestats <the port's own printed lin> 0.3490658503988659. Per-model node/triangle totals, face counts, mesh bbox and fan area all match, so the goal oracle (bbox and fan area, counts reported) holds on all seven. Totals, port = probe: Cube 24/12 = 24/12 at lin 0.04, faces 6/6; Sphere 1725/3410 = 1725/3410 at 0.04, faces 1/1; Cone 863/1644 = 827/1610 + 36/34 at 0.04, faces 2/2; Extrusion 24/12 = 24/12 at 0.08, faces 6/6; HoledPlate 180/128 = 180/128 at 0.408574, faces 32/32; rev 104/92 = 104/92 at 0.04, faces 6/6; Offset 672/812 = 12x20/18 + 8x51/73 + 6x4/2 at 0.062627, faces 26/26. data/output/iges-occ no longer exists (it lives under the git-ignored data/output/ scratch tree and has been cleaned), so the OCCT side was regenerated live with --dumpmesh at the same lin and angle; the T014/T015 recorded baseline is reproduced and the live reference is tighter. bbox is identical to the last digit on all seven (Cone, rev and Offset differ only in the sign of a zero coordinate). Fan area, port vs live OCCT: Cube 600.000000000/600.000000000, Sphere 313.452268741/313.452268704, Cone 185.096184091/185.096184095, Extrusion 950.000000000/950.000000000, HoledPlate 17517.294022407/17517.294022727, rev 453.051106127/453.051106121, Offset 1025.822806208/1025.822805232, worst relative gap 9.51e-10 (Offset), inside the 3.0e-7 recorded in T015 and against a stricter live reference. Stricter than the goal oracle: a triangle-set match with vertices canonicalised at 1e-4 and signed zero normalised is exact on six of the seven (Cube, Sphere, Cone, Extrusion, HoledPlate, rev) and exact on 784 of Offset's 812, where the port and OCCT hold the SAME 408 unique node coordinates, the same 812 triangles as a multiset of positions and the same area, so the 28 unmatched Offset triangles are a triangulation-connectivity (diagonal) difference on an identical node set, the cocircular-ambiguity case the earlier mesher session recorded and deliberately did not patch. Sphere improved from the T018 18-unmatched state to exact. Remaining cxx gaps are marked unported and were not patched: ShapeFix_Wire::FixSeam (ShapeFix_Wire.cxx:920-933 :1615-1670) at shhealing/wire_fix/notched.rs:646-659, SplitWire / NeedCheckSplitWire (ShapeFix_Face.cxx:629-674) at step/read_topology.rs:88, CreateSolids (ShapeFix_Solid.cxx:115-456 :577-640) at iges_read/create_solids.rs, GeomConvert_ApproxSurface at iges_read/gtransform.rs:202 and iges_read/offset_surface.rs:17, and the UNPORTED return sites igesread.h:67-75, IGESToBRep_CurveAndSurface.cxx:185-189, IGESToBRep_BasicCurve.cxx:164 :238, IGESToBRep_BasicSurface.cxx:231-234, IGESToBRep_TopoCurve.cxx:859 :871-873, IGESToBRep_TopoSurface.cxx:184 with the cxx:1734-1738 note. Models outside the seven keep their reported deltas (screw 499/596 vs 500/597, Shape-1 3039/3726 vs 3053/3754, Shape-2 3037/4691 vs 3033/4683, Shape 7191/13433 vs 7192/13435); T029 showed the Shape-1 residual is last-bit parity of the pcurve-derived boundary V parameters with no missing arm, which is the goal stop rule's second branch. No source file was edited by this audit, no OBJ was written into data/output/iges-occ, iges-read or iges-read-fixshape, and graphify label was not run."
       evidence:
         - "cargo check --manifest-path crates/occt-topo/Cargo.toml --offline = 'cargo build: 0 errors, 359 warnings'; --all-targets = 0 errors (T030)."
         - "Port run, CARGO_TARGET_DIR=_tmp/tgt_t023: iges_read_obj _igesdump/oracle/<m>.iges _tmp/t999/port_<m>.obj --fstats. Cube 'FACES n=6 lin=0.040000 ang=0.349066' + six 'FSTAT face=k mv=4 mt=2' + 'v=24 f=12'; Sphere 'n=1 lin=0.040000' + 'mv=1725 mt=3410' + 'v=1725 f=3410'; Cone 'n=2 lin=0.040000' + 'mv=827 mt=1610' + 'mv=36 mt=34' + 'v=863 f=1644'; Extrusion 'n=6 lin=0.080000' + six 4/2 + 'v=24 f=12'; HoledPlate 'n=32 lin=0.408574' + 30/34 + 4/2 + 30/34 + twenty-nine 4/2 + 'v=180 f=128'; rev 'n=6 lin=0.040000' + 24/22 + 28/26 + 24/22 + 20/18 + 4/2 + 4/2 + 'v=104 f=92'; Offset 'n=26 lin=0.062627' + twelve 20/18 + eight 51/73 + six 4/2 + 'v=672 f=812'."
