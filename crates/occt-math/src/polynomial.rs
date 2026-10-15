@@ -1,6 +1,9 @@
-//! Polynomial arithmetic, closed-form quadratic/cubic roots, and
-//! Durand-Kerner root finding for general polynomials.
-//! Source: `math_DirectPolynomialRoots`.
+//! Polynomial arithmetic helpers (Horner evaluation and derivative).
+//!
+//! Root finding for degrees 1 to 4 is not implemented here: it lives in the
+//! ported `math_DirectPolynomialRoots`
+//! (`occt_core::math_direct_poly_roots`), which `quadratic_roots` and
+//! `cubic_roots` below delegate to.
 
 /// Horner evaluation of a polynomial with highest-first coefficients.
 pub fn poly_eval(coeffs: &[f64], x: f64) -> f64 {
@@ -17,162 +20,31 @@ pub fn poly_derivative(coeffs: &[f64]) -> Vec<f64> {
     out
 }
 
-/// Real roots of `a·x² + b·x + c = 0`, `None` if no real roots or not quadratic.
+/// Real roots of `a*x^2 + b*x + c = 0` as `(Value(1), Value(2))`.
+/// `None` when there is no real root. Delegates to the ported
+/// `math_DirectPolynomialRoots` (`occt_core::math_direct_poly_roots`); the
+/// closed form with its `1e-14` discriminant comparisons used to live here.
 pub fn quadratic_roots(a: f64, b: f64, c: f64) -> Option<(f64, f64)> {
-    if a.abs() < 1e-300 {
-        return None;
-    }
-    let disc = b * b - 4.0 * a * c;
-    if disc < 0.0 {
-        return None;
-    }
-    let sq = disc.sqrt();
-    // Numerically stable form.
-    let q = -0.5 * (b + b.signum() * sq);
-    let r1 = q / a;
-    let r2 = if q.abs() > 1e-300 { c / q } else { (-b - sq) / (2.0 * a) };
-    Some((r1, r2))
-}
-
-/// Real roots of `a·x³ + b·x² + c·x + d = 0` (closed form), 1 to 3 roots.
-pub fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
-    if a.abs() < 1e-300 {
-        return quadratic_roots(b, c, d).map(|(r1, r2)| vec![r1, r2]).unwrap_or_default();
-    }
-    let b = b / a;
-    let c = c / a;
-    let d = d / a;
-    // Depressed cubic: t³ + p·t + q with x = t - b/3.
-    let p = c - b * b / 3.0;
-    let q = 2.0 * b * b * b / 27.0 - b * c / 3.0 + d;
-    let disc = q * q / 4.0 + p * p * p / 27.0;
-    let shift = b / 3.0;
-    let mut roots = Vec::new();
-    if disc > 1e-14 {
-        // One real root.
-        let sq = disc.sqrt();
-        let u = (-q / 2.0 + sq).cbrt();
-        let v = (-q / 2.0 - sq).cbrt();
-        roots.push(u + v - shift);
-    } else if disc >= -1e-14 {
-        // Coincident real roots.
-        if q.abs() < 1e-14 {
-            roots.push(-shift); // triple root
-        } else {
-            let u = (-q / 2.0).cbrt();
-            roots.push(2.0 * u - shift);
-            roots.push(-u - shift);
-        }
+    let r = occt_core::math_direct_poly_roots::quadratic_roots(a, b, c);
+    if r.len() == 2 {
+        Some((r[0], r[1]))
     } else {
-        // Three distinct real roots (trigonometric form).
-        let r = 2.0 * (-p / 3.0).sqrt();
-        let theta = ((3.0 * q / (2.0 * p)) * (-3.0 / p).sqrt()).acos() / 3.0;
-        let two_pi = 2.0 * std::f64::consts::PI;
-        roots.push(r * theta.cos() - shift);
-        roots.push(r * (theta - two_pi / 3.0).cos() - shift);
-        roots.push(r * (theta + two_pi / 3.0).cos() - shift);
-    }
-    // De-duplicate near-equal roots and sort ascending.
-    roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let mut out: Vec<f64> = Vec::new();
-    for x in roots {
-        if out.last().map_or(true, |&last| (x - last).abs() > 1e-9 * (1.0 + x.abs())) {
-            out.push(x);
-        }
-    }
-    out
-}
-
-/// Roots of a real polynomial with highest-first coefficients.
-///
-/// Degrees 1-3 use the closed forms; higher degrees use Durand-Kerner iteration.
-/// Returns the real parts of all roots (complex-conjugate pairs included twice).
-pub fn polynomial_roots(coeffs: &[f64]) -> Vec<f64> {
-    match coeffs.len() {
-        0 | 1 => Vec::new(),
-        2 => {
-            if coeffs[0].abs() < 1e-300 {
-                Vec::new()
-            } else {
-                vec![-coeffs[1] / coeffs[0]]
-            }
-        }
-        3 => quadratic_roots(coeffs[0], coeffs[1], coeffs[2])
-            .map(|(r1, r2)| vec![r1, r2])
-            .unwrap_or_default(),
-        4 => cubic_roots(coeffs[0], coeffs[1], coeffs[2], coeffs[3]),
-        _ => durand_kerner(coeffs),
+        None
     }
 }
 
-/// Durand-Kerner iteration for a real polynomial of degree >= 4.
-fn durand_kerner(coeffs: &[f64]) -> Vec<f64> {
-    let n = coeffs.len() - 1;
-    let lead = coeffs[0];
-    let monic: Vec<f64> = coeffs.iter().map(|&c| c / lead).collect();
-
-    // Initial guesses (0.4 + 0.9j)^k, k = 0..n-1.
-    let seed = C { re: 0.4, im: 0.9 };
-    let mut roots: Vec<C> = Vec::with_capacity(n);
-    let mut z = C { re: 1.0, im: 0.0 };
-    for _ in 0..n {
-        roots.push(z);
-        z = z.mul(seed);
-    }
-
-    for _ in 0..1000 {
-        let mut max_delta = 0.0_f64;
-        for i in 0..n {
-            let num = poly_eval_c(&monic, roots[i]);
-            let mut den = C { re: 1.0, im: 0.0 };
-            for j in 0..n {
-                if i != j {
-                    den = den.mul(roots[i].sub(roots[j]));
-                }
-            }
-            let delta = num.div(den);
-            roots[i] = roots[i].sub(delta);
-            max_delta = max_delta.max(delta.norm());
-        }
-        if max_delta < 1e-12 {
-            break;
-        }
-    }
-    roots.into_iter().map(|r| r.re).collect()
+/// Real roots of `a*x^3 + b*x^2 + c*x + d = 0` in `Value` order, 1 to 3
+/// roots. Delegates to the ported `math_DirectPolynomialRoots`.
+pub fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
+    occt_core::math_direct_poly_roots::cubic_roots(a, b, c, d)
 }
 
-/// Minimal complex arithmetic used by [`durand_kerner`].
-#[derive(Debug, Clone, Copy)]
-struct C {
-    re: f64,
-    im: f64,
-}
-
-impl C {
-    fn norm(self) -> f64 {
-        (self.re * self.re + self.im * self.im).sqrt()
-    }
-    fn add(self, o: C) -> C {
-        C { re: self.re + o.re, im: self.im + o.im }
-    }
-    fn sub(self, o: C) -> C {
-        C { re: self.re - o.re, im: self.im - o.im }
-    }
-    fn mul(self, o: C) -> C {
-        C { re: self.re * o.re - self.im * o.im, im: self.re * o.im + self.im * o.re }
-    }
-    fn div(self, o: C) -> C {
-        let den = o.re * o.re + o.im * o.im;
-        C { re: (self.re * o.re + self.im * o.im) / den, im: (self.im * o.re - self.re * o.im) / den }
-    }
-}
-
-/// Horner evaluation at a complex point.
-fn poly_eval_c(coeffs: &[f64], x: C) -> C {
-    coeffs
-        .iter()
-        .fold(C { re: 0.0, im: 0.0 }, |acc, &c| acc.mul(x).add(C { re: c, im: 0.0 }))
-}
+// ---------------------------------------------------------------------------
+// The `polynomial_roots` / `durand_kerner` pair that used to live here was an
+// invented general-degree solver: `math_DirectPolynomialRoots` stops at degree
+// 4 and OCCT has no counterpart for it, so it is gone rather than kept as a
+// second root-finding path.
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -213,16 +85,5 @@ mod tests {
         let r = cubic_roots(1.0, 0.0, 0.0, -8.0);
         assert_eq!(r.len(), 1);
         assert!((r[0] - 2.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn durand_kerner_quartic() {
-        // (x²-1)(x²-4) = x⁴ - 5x² + 4 -> ±1, ±2
-        let mut r = polynomial_roots(&[1.0, 0.0, -5.0, 0.0, 4.0]);
-        r.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        assert_eq!(r.len(), 4);
-        for (got, want) in r.iter().zip([-2.0, -1.0, 1.0, 2.0]) {
-            assert!((got - want).abs() < 1e-6, "root {got} vs {want}");
-        }
     }
 }

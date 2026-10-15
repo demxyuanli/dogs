@@ -3,158 +3,16 @@ use super::*;
 
 
 // ---------------------------------------------------------------------------
-// Polynomial root helpers (self-contained; `occt-geom` does not depend on
-// `occt-math`). Ports `math_DirectPolynomialRoots`.
+// Polynomial root helpers.
+//
+// These are the ported `math_DirectPolynomialRoots`
+// (`occt-core/src/math_direct_poly_roots.rs`) consumed as the OCCT
+// `Value(1 .. NbSolutions)` list. The closed-form quadratic/cubic and the
+// Ferrari quartic that used to live here were a second, invented solver and
+// are gone.
 // ---------------------------------------------------------------------------
 
-pub(crate) fn quadratic_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
-    if a.abs() < 1e-300 {
-        if b.abs() < 1e-300 {
-            return Vec::new();
-        }
-        return vec![-c / b];
-    }
-    let disc = b * b - 4.0 * a * c;
-    if disc < 0.0 {
-        return Vec::new();
-    }
-    let sq = disc.sqrt();
-    let q = -0.5 * (b + b.signum() * sq);
-    let r1 = q / a;
-    let r2 = if q.abs() > 1e-300 { c / q } else { (-b - sq) / (2.0 * a) };
-    let mut v = vec![r1, r2];
-    v.sort_by(|x, y| x.partial_cmp(y).unwrap_or(Ordering::Equal));
-    v
-}
-
-pub(super) fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
-    if a.abs() < 1e-300 {
-        return quadratic_roots(b, c, d);
-    }
-    let b = b / a;
-    let c = c / a;
-    let d = d / a;
-    let p = c - b * b / 3.0;
-    let q = 2.0 * b * b * b / 27.0 - b * c / 3.0 + d;
-    let disc = q * q / 4.0 + p * p * p / 27.0;
-    let shift = b / 3.0;
-    let mut roots = Vec::new();
-    if disc > 1e-14 {
-        let sq = disc.sqrt();
-        let u = (-q / 2.0 + sq).cbrt();
-        let v = (-q / 2.0 - sq).cbrt();
-        roots.push(u + v - shift);
-    } else if disc >= -1e-14 {
-        if q.abs() < 1e-14 {
-            roots.push(-shift);
-        } else {
-            let u = (-q / 2.0).cbrt();
-            roots.push(2.0 * u - shift);
-            roots.push(-u - shift);
-        }
-    } else {
-        let r = 2.0 * (-p / 3.0).sqrt();
-        let theta = ((3.0 * q / (2.0 * p)) * (-3.0 / p).sqrt()).acos() / 3.0;
-        let two_pi = 2.0 * std::f64::consts::PI;
-        roots.push(r * theta.cos() - shift);
-        roots.push(r * (theta - two_pi / 3.0).cos() - shift);
-        roots.push(r * (theta + two_pi / 3.0).cos() - shift);
-    }
-    roots.sort_by(|x, y| x.partial_cmp(y).unwrap_or(Ordering::Equal));
-    let mut out: Vec<f64> = Vec::new();
-    for x in roots {
-        if out.last().map_or(true, |&l| (x - l).abs() > 1e-9 * (1.0 + x.abs())) {
-            out.push(x);
-        }
-    }
-    out
-}
-
-pub(super) fn poly4(a: f64, b: f64, c: f64, d: f64, e: f64, x: f64) -> f64 {
-    ((a * x + b) * x + c) * x * x + d * x + e
-}
-
-pub(super) fn polish4(a: f64, b: f64, c: f64, d: f64, e: f64, mut x: f64) -> f64 {
-    for _ in 0..10 {
-        let fp = (4.0 * a * x + 3.0 * b) * x * x + 2.0 * c * x + d;
-        if fp.abs() < 1e-300 {
-            break;
-        }
-        let xn = x - poly4(a, b, c, d, e, x) / fp;
-        if !xn.is_finite() || (xn - x).abs() > 1.0 + x.abs() {
-            break;
-        }
-        if (xn - x).abs() < 1e-13 * (1.0 + x.abs()) {
-            return xn;
-        }
-        x = xn;
-    }
-    x
-}
-
-/// Real roots of a·x⁴ + b·x³ + c·x² + d·x + e = 0 (Ferrari).
-pub(crate) fn quartic_roots(a4: f64, a3: f64, a2: f64, a1: f64, a0: f64) -> Vec<f64> {
-    if a4.abs() < 1e-300 {
-        return cubic_roots(a3, a2, a1, a0);
-    }
-    let a = a3 / a4;
-    let b = a2 / a4;
-    let c = a1 / a4;
-    let d = a0 / a4;
-    let p = b - 3.0 * a * a / 8.0;
-    let q = c - a * b / 2.0 + a * a * a / 8.0;
-    let r = d - a * c / 4.0 + a * a * b / 16.0 - 3.0 * a * a * a * a / 256.0;
-    let ms = cubic_roots(8.0, -4.0 * p, -8.0 * r, 4.0 * p * r - q * q);
-    let mut m: Option<f64> = None;
-    for mm in ms {
-        if 2.0 * mm - p >= 0.0 && m.map_or(true, |best| mm > best) {
-            m = Some(mm);
-        }
-    }
-    let m = match m {
-        Some(m) => m,
-        None => return Vec::new(),
-    };
-    let two_m_p = 2.0 * m - p;
-    let mut yroots: Vec<f64> = Vec::new();
-    if two_m_p < 1e-12 {
-        let rad = m * m - r;
-        if rad < 0.0 {
-            return Vec::new();
-        }
-        let sr = rad.sqrt();
-        for ym in [sr, -sr] {
-            let val = -m + ym;
-            if val >= 0.0 {
-                let y = val.sqrt();
-                yroots.push(y);
-                if y > 1e-12 {
-                    yroots.push(-y);
-                }
-            }
-        }
-    } else {
-        let s = two_m_p.sqrt();
-        let t = q / (2.0 * s);
-        yroots.extend(quadratic_roots(1.0, -s, m + t));
-        yroots.extend(quadratic_roots(1.0, s, m - t));
-    }
-    let mut out: Vec<f64> = Vec::new();
-    for y in yroots {
-        let x = y - a / 4.0;
-        if poly4(1.0, a, b, c, d, x).abs() < 1e-6 {
-            out.push(polish4(1.0, a, b, c, d, x));
-        }
-    }
-    out.sort_by(|x, y| x.partial_cmp(y).unwrap_or(Ordering::Equal));
-    let mut dedup: Vec<f64> = Vec::new();
-    for x in out {
-        if dedup.last().map_or(true, |&l| (x - l).abs() > 1e-8 * (1.0 + x.abs())) {
-            dedup.push(x);
-        }
-    }
-    dedup
-}
+pub(crate) use occt_core::math_direct_poly_roots::{cubic_roots, quadratic_roots, quartic_roots};
 
 // ---------------------------------------------------------------------------
 // Plane helpers.

@@ -687,3 +687,40 @@ impl DirectPolynomialRoots {
         self.roots[0] = -b / a;
     }
 }
+
+// ---------------------------------------------------------------------------
+// `Value(1 .. NbSolutions)` adapters.
+//
+// `math_DirectPolynomialRoots` exposes no `Vec`-returning entry point: every
+// OCCT call site writes the same `for (i = 1; i <= NbSolutions; ++i)
+// ... Value(i)` loop. These three helpers are that loop, so the call sites
+// that used to carry their own closed-form solver instead consume the ported
+// class above. No numeric decision is made here.
+// ---------------------------------------------------------------------------
+
+/// The `Value(1 .. NbSolutions)` list of a completed solver; empty when the
+/// solver is not `IsDone()` or reports an infinity of roots.
+fn solution_values(pol: DirectPolynomialRoots) -> Vec<f64> {
+    if !pol.is_done() || pol.infinite_roots() {
+        return Vec::new();
+    }
+    (1..=pol.nb_solutions())
+        .map(|i| pol.value(i))
+        .collect()
+}
+
+/// Real roots of `a*x^2 + b*x + c = 0` (`cxx:537-545`, `712-764`).
+pub fn quadratic_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
+    solution_values(DirectPolynomialRoots::new3(a, b, c))
+}
+
+/// Real roots of `a*x^3 + b*x^2 + c*x + d = 0` (`cxx:525-533`, `627-708`).
+pub fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
+    solution_values(DirectPolynomialRoots::new4(a, b, c, d))
+}
+
+/// Real roots of `a*x^4 + b*x^3 + c*x^2 + d*x + e = 0`
+/// (`cxx:511-521`, `558-625`).
+pub fn quartic_roots(a: f64, b: f64, c: f64, d: f64, e: f64) -> Vec<f64> {
+    solution_values(DirectPolynomialRoots::new5(a, b, c, d, e))
+}
