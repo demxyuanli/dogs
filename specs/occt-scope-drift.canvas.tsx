@@ -308,7 +308,8 @@ const DOCDRIFT = [
   },
 ];
 
-// 看板门禁（读数日期 2026-10-15，覆盖 T-130 / T-131 / T-132 / T-133 已提交工作树）
+// 看板门禁（读数日期 2026-10-15；G-check / G-lib / G-gates / G-export 覆盖到 T-145 已提交工作树 `055e54aa`，
+// G-fuse / G-phase / G-boss / G-iges 为 T-130..T-133 轮读数，其后改动不触及其路径）
 const GATES = [
   { id: "G-check", name: "五 crate 编译", base: "exit 0", now: "exit 0", tone: "success" as const },
   { id: "G-lib", name: "topo 单测 --lib", base: "1276 / 0", now: "1251 / 0", tone: "success" as const },
@@ -318,7 +319,46 @@ const GATES = [
   { id: "G-boss", name: "boss 合并", base: "2 / 2", now: "2 / 2", tone: "success" as const },
   { id: "G-export", name: "导出总检", base: "23 / 23", now: "15 ok / 0 err", tone: "success" as const },
   { id: "G-iges", name: "IGES 结构自洽", base: "23 / 23", now: "23 / 23", tone: "success" as const },
-  { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "285·210·143·72", tone: "success" as const },
+  { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "283·210·143·72", tone: "success" as const },
+];
+
+// 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`，active_task 恒为 T005；每个包 = 一个已核实并提交的切片）
+const CYCLES = [
+  {
+    pkg: "P012",
+    task: "T-142",
+    commit: "642a0c88",
+    scope: "`intana` / `occt-math` 的第二份自创多项式解算器",
+    state: "✅ 闭合：`intana/analytic_intersections.rs` 与 `occt-math/polynomial.rs` 的本地二次/三次/Ferrari 四次 + `poly4`/`polish4` + 自创 Durand-Kerner 删除，改经 `occt-core/src/math_direct_poly_roots.rs` 新增的 `Value(1..NbSolutions)` 适配器委托 `DirectPolynomialRoots`",
+  },
+  {
+    pkg: "P013",
+    task: "T-143",
+    commit: "8db13d5c",
+    scope: "同族解算器的最后四份拷贝（`extrema_pc` / `extrema_cc` / `extrema2d` / `occt-core/numeric.rs`）",
+    state: "✅ 闭合：三处改 `pub(super) use occt_core::math_direct_poly_roots::{cubic_roots, quadratic_roots, quartic_roots}`，`numeric.rs` 第四份自创件与其两条测试删除（`occt-core --lib` 285→283）；全仓只剩一条根求解路径",
+  },
+  {
+    pkg: "P014",
+    task: "T-144",
+    commit: "dd31babc",
+    scope: "锥/锥角度容差由调用方常数决定",
+    state: "✅ 闭合：`quadric_quadric_cone_cone` 的 `tol_ang` 形参删除，改按 `IntAna_QuadQuadGeo.cxx:1458-1476` 内部推导 `aTolAng`（起点 `Precision::Angular()`，必要时放宽为 `Tol / EstimDist` 并钳制）；`EstimDist`（`cxx:260-326`）全量移植 + 新忠实件 `projlib::project_pln_lin2d`；`cxx:1555` 容差订正",
+  },
+  {
+    pkg: "P015",
+    task: "T-145",
+    commit: "2da4eaee",
+    scope: "锥/锥平行臂的嵌套结果重映射 + 圆柱/圆柱阈值出处",
+    state: "✅ 闭合：分支 2 按 `cxx:1557-1603` 重映射嵌套 `plane_cone` 结果（`IntAna_Line` → 同一条线两次，`Parabola`/`Point` → `NoGeometricSolution`）；`(r1+r2-dist)` 改 `RealSmall()`（`cxx:1104`）；同轮订正 audit「圆柱/锥、圆柱/圆柱分类臂未移植」的陈旧登记（逐臂复核实为已移植）",
+  },
+  {
+    pkg: "下一步",
+    task: "T005 → 待建 Worker",
+    commit: "—",
+    scope: "锥/锥分支 4「两锥共母线」（`IntAna_QuadQuadGeo.cxx:1759-1886`）",
+    state: "⬜ 待做：`ElSLib::Parameters`/`Value` 顶点共面校验 + `myCommonGen`/`myPChar` + 最大平面内再 reduce 并按 `cxx:1836-1881` 重映射（该 switch 无 `IntAna_Line` 臂）；需把 `myCommonGen`/`myPChar` 接进本仓 `QuadricIntersection` 与消费方 `int_face_face_analytic::cone_cone`（现于 `None` 时回落数值追踪，对应 `IntPatch_ImpImpIntersection.cxx:8694-8830` 的 `NbSol` 分派）。其后依次 B7-writer-4（`geom2d_convert.rs:77`）/ B6e / B6f / B6g / B6d / `surface_fit`（`GeomLib_IsPlanarSurface`）",
+  },
 ];
 
 const pct = (a: number, b: number) => `${(100 * (a / b)).toFixed(1)}%`;
@@ -425,7 +465,7 @@ export default function OcctScopeDrift() {
         striped
       />
 
-      <H3>2.3 逐模型对拍（`data/occ/*`，2026-10-13 实测）</H3>
+      <H3>2.3 逐模型对拍（`data/occ/*`，2026-10-15 `step_obj_gates --nocapture` 实测）</H3>
       <Table
         headers={["模型", "OCCT v / f", "端口 v / f", "Δf", "面积比"]}
         rows={PARITY.map((p) => [
@@ -443,7 +483,7 @@ export default function OcctScopeDrift() {
         `data/*.step`（15 个）中 12 个逐位一致；`Shape-1` 差 −8 面、`Shape-2` 差 −34 面、`screw` 差 +2 面。八个 `data/occ/*` 模型面积比全为 1.0000，缺口是双向小量（T0M +58、TDB −51、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −5、motoc 0）；剩下面级差集中在 2.2 首行登记的 Delaunay 插点密度分支。
       </Text>
 
-      <H3>2.4 状态 / 文档偏移（2026-10-13 复核：全部收口）</H3>
+      <H3>2.4 状态 / 文档偏移（2026-10-15 复核：全部收口）</H3>
       <Table
         headers={["偏差", "文档现状", "实际"]}
         rows={DOCDRIFT.map((d) => [d.what, d.detail, d.gap])}
@@ -466,8 +506,20 @@ export default function OcctScopeDrift() {
         rowTone={GATES.map((g) => g.tone)}
       />
       <Text size="small" tone="tertiary">
-        九道门禁全绿，读数测量于 2026-10-13，覆盖当前工作树（`git diff HEAD` 为空，提交 `4a20e078`）。`G-lib` / `G-export` 的看板基线已在 r42 同步为 `1276 / 0` 与 `23 / 23`（见 2.4）；`G-fuse` / `G-phase` / `G-boss` / `G-core` 本轮未复跑（改动不触及其路径）。
+        `G-check` / `G-lib` / `G-gates` / `G-export` 读数测量于 2026-10-15，覆盖到 T-145 已提交工作树 `055e54aa`（`git diff HEAD` 为空）：五 crate `--all-targets` 0 error、`occt-topo --lib` 1251 / 0、`step_obj_gates` 4 / 4（159.4s，23 个面积比与基线逐位一致）、`export_data_obj` 15 / 15 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。`G-fuse` / `G-phase` / `G-boss` / `G-iges` 为 T-130..T-133 轮读数，其后的包未触及这些路径。`G-core` 的 `occt-core` 读数由 285 变 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251，`notes/T002-gate-baseline.md` 已留档）；`occt-math` 210、`occt-geom` 143、`occt-geom2d` 72 未变。
       </Text>
+
+      <H3>2.6 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`）</H3>
+      <Text size="small" tone="tertiary">
+        active_task 恒为 T005（PM 滚动推进）；每个包 = 一个已跑现基线核实并单独提交的切片，提交信息点名 `.cxx` 文件与行号范围。
+      </Text>
+      <Table
+        headers={["包", "任务", "提交", "切片范围", "状态"]}
+        rows={CYCLES.map((c) => [c.pkg, c.task, c.commit, c.scope, c.state])}
+        columnAlign={["left", "left", "left", "left", "left"]}
+        rowTone={CYCLES.map((c) => (c.pkg === "下一步" ? ("warning" as const) : ("success" as const)))}
+        striped
+      />
 
       <Divider />
 
@@ -475,13 +527,18 @@ export default function OcctScopeDrift() {
       <Row gap={16} wrap>
         <Stat value="13.8%" label="全库行数覆盖" />
         <Stat value="24.0%" label="CAD 内核行数覆盖" tone="info" />
-        <Stat value="2 处" label="阻塞型语义残余" tone="warning" />
+        <Stat value="10 处" label="登记未收代码项（含下一片 1 处）" tone="warning" />
         <Stat value="0 项" label="文档/状态偏移待办" tone="success" />
       </Row>
       <Stack gap={6}>
         <Text>
           <Text weight="semibold">范围</Text>：全库 13.8%、CAD 内核约 24.0% 的行数覆盖；有效范围是 STEP→OBJ 共享管线，
           在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.6 万行）。
+        </Text>
+        <Text>
+          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近四个包（P012 多项式解算器去重、P013 同族余下四份拷贝、
+          P014 锥/锥角度容差自推、P015 锥/锥平行臂重映射）各自落到任务号与提交号；下一片已定档为锥/锥分支 4
+          「两锥共母线」（`IntAna_QuadQuadGeo.cxx:1759-1886`），其后依次 B7-writer-4、B6e / B6f / B6g / B6d、`surface_fit`。
         </Text>
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
@@ -492,6 +549,13 @@ export default function OcctScopeDrift() {
         </Text>
       </Stack>
       <Callout tone="success" title="下一步（按门禁「完成即停」交接）">
+        <Text>
+          <Text weight="semibold">立即推进</Text>：锥/锥分支 4「两锥共母线」（`IntAna_QuadQuadGeo.cxx:1759-1886`）——
+          `ElSLib` 顶点共面校验 + `myCommonGen` / `myPChar` 边与线对 + 最大平面内再 reduce，并按 `cxx:1836-1881`（无 `IntAna_Line` 臂）
+          重映射为 `IntAna_Curve`/`IntAna_NoGeometricSolution`；本仓现走 `None`，消费方 `int_face_face_analytic::cone_cone`
+          回落数值追踪（`IntPatch_ImpImpIntersection.cxx:8694-8830` 的 `Nsol/NbSol` 分派），须把 `myCommonGen`/`myPChar`
+          补进 `QuadricIntersection` 并接线该分派。
+        </Text>
         面级残余的定位受「可信的 OCCT 面级预言机」未钉住所限：实测同一条 `--facestats 2.45132 0.349066`
         在探针上是 `72683 / 78464`，而冻结参考是 `73544 / 79977`、端口是 `73516 / 79926` —— 探针用的是
         `STEPControl_Reader` 直读，与冻结参考的产出者（未记录）以及端口的不同源，故探针总量不可直接当日面级基线；
