@@ -287,12 +287,19 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   non-periodic form. The trimmed-B-spline arm of the same writer (`MakeCurve.cxx:71-76`) now also
   restores `B->IsPeriodic()` on the basis copy (`cxx:73`) so `Geom_BSplineCurve::Segment` reaches
   its periodic branch (`Geom_BSplineCurve.cxx:606-618`). The UNPORTED note is deleted.
-- `step/format.rs:472,526` still open: `write_bspline_curve` writes `closed = .F.` where
-  `GeomToStep_MakeBSplineCurveWithKnots_gen.pxx:42-50` writes `BS->IsClosed()`, and both the curve
-  (`:71-87`) and surface (`MakeBSplineSurfaceWithKnots.cxx:127-150`) writers write
-  `KnotSpec = .UNSPECIFIED.` where OCCT derives it from `KnotDistribution()`. The dependencies
-  (`Geom_BSplineCurve::IsClosed`, `BSplCLib::KnotDistribution`; the enum `BSplKnotDistribution`
-  exists at `occt-core/src/kernel/geomabs.rs:37`) have no port yet — registered as B7-writer-3.
+- `step/format.rs:472,526` ✅ **CLOSED 2026-10-15 (P011)**: both STEP B-spline writers now
+  derive their flags from the geometry. `write_bspline_curve` writes `closed` =
+  `Geom_BSplineCurve::IsClosed()` and `knot_spec` =
+  `knot_spec_token(KnotDistribution())` (`GeomToStep_MakeBSplineCurveWithKnots_gen.pxx:42-87`);
+  `write_bspline_surface` names the spec only when `UKnotDistribution` and `VKnotDistribution`
+  agree, otherwise `.UNSPECIFIED.` (`MakeBSplineSurfaceWithKnots.cxx:127-150`). New dependencies:
+  `occt-core/src/bspl/knot_analysis.rs` = `BSplCLib::KnotForm`/`MultForm`/`KnotAnalysis`
+  (`BSplCLib.cxx:602-753`), `GeomBSplineCurve::{is_closed,knot_distribution}`
+  (`Geom_BSplineCurve_1.cxx:146-149,363-366`), `GeomBSplineSurface::{u,v}_knot_distribution`
+  (`Geom_BSplineSurface_1.cxx:1851-1862`). Both UNPORTED notes deleted. The divergence was real
+  against the OCCT-written oracle files: `data/occ/ATU01038.step` carries 245
+  `PIECEWISE_BEZIER_KNOTS` + 106 `QUASI_UNIFORM_KNOTS`, `bottom.step` 934, `data/*.step`
+  8-70 each, where the port wrote `.UNSPECIFIED.` for every entity.
 - `geom2d_convert.rs:77`: parameterisation-less `CurveToBSplineCurve` entry has no conic arms
   (`Geom2dConvert::CurveToBSplineCurve(C)`); the conic converters already exist.
 
@@ -333,9 +340,9 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
 
 Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable subset:
 
-- **C-A (leaf, deps present, reachable)** — the B1 items above, plus `geom2d_convert.rs:77`,
-  `step/format.rs:472,526` from B7 (the sibling `step/write_context.rs:314` line is CLOSED in P010);
-  and `extrema_cc/mod.rs:9`, `globoptmin.rs:590` from B8.
+- **C-A (leaf, deps present, reachable)** — the B1 items above, plus `geom2d_convert.rs:77` from
+  B7 (the sibling `step/write_context.rs:314` and `step/format.rs:472,526` lines are CLOSED in P010
+  and P011); and `extrema_cc/mod.rs:9`, `globoptmin.rs:590` from B8.
 - **C-B (needs an unported layer)** — `shhealing/shape_fix_face.rs` (5 markers, need
   `ShapeFix_Wire::Perform`), `step/read_topology/step_to_geom_curve{2d}.rs` (closed/reversal flags,
   2D rational weights), `brep_check.rs:149` (`BRepCheck_Edge::InContext` ->
@@ -406,13 +413,12 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    **DONE 2026-10-15 (T-133).**
 6. **B8 osculating_surface early returns.** **DONE 2026-10-15 as T-139 / package P009** (four
    `clear_flags(); return;` -> OCCT's `clearOsculFlags()` + continue, plus the per-arm `build_chain`
-   local). Next picks, in order: **B7-writer-3** (`step/format.rs:472,526` `closed` flag +
-   `KnotSpec`, needs `Geom_BSplineCurve::IsClosed` and `BSplCLib::KnotDistribution`), **B8-intana**
-   (`intana` quartic/direct-polynomial thresholds, live via `intcurvesurface/solvers.rs:456`),
-   **B7-writer-4** (`geom2d_convert.rs:77` conic arms), **B7-mesh_to_brep**
-   (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftovers (**B6e**/**B6f**/**B6g**/**B6d**) and the
-   `B8 surface_fit` item. The first B7-writer line (`step/write_context.rs:314` `SetNotPeriodic`) is
-   already **DONE 2026-10-15 as package P010**.
+   local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
+   `intcurvesurface/solvers.rs:456`), **B7-writer-4** (`geom2d_convert.rs:77` conic arms),
+   **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftovers
+   (**B6e**/**B6f**/**B6g**/**B6d**) and the `B8 surface_fit` item. The B7 STEP-writer lines are both
+   **DONE 2026-10-15**: `step/write_context.rs:314` `SetNotPeriodic` as package P010, and
+   `step/format.rs:472,526` `closed` + `knot_spec` as package P011.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
