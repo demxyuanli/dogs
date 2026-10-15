@@ -78,6 +78,31 @@ active_task: T005
 
 packages:
   # One entry per closed, verified, committed package. Written by T005 (PM).
+  - id: P003
+    task: T005
+    commit: ed22f471
+    title: "findNearestValidPoint 补 BRepLib_1.cxx aD1Mag 局部奇点加速臂（T001 的 B5 / T-133）"
+    files:
+      - "crates/occt-topo/src/inttools_range.rs"
+      - "crates/occt-topo/src/edge_edge/mod.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/topo-rest.md"
+      - "specs/_audit/_index.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "B5 inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag threshold"
+      - "B5-c1 BRepLib_1.cxx:108-141 D1-accelerated doubling loop (local singularity escape)"
+    gates:
+      check: "0 errors, 373 warnings (occt-topo --all-targets)"
+      lib: "1251 / 0 (= baseline)"
+      step_obj_gates: "4 / 4"
+      export_data_obj: "15 / 15, v/f and bbox bit-identical to baseline"
+    side_findings:
+      - "Disclosed scope deviation: edge_edge/mod.rs was outside the registered allowed_files; the edit is a pub(crate) re-export only (0 new symbols, 0 behavior change), made to avoid a second GetType() implementation."
+      - "find_valid_range's step loop itself is unchanged; the new arm only changes the walk inside a tolerance sphere for Bezier/B-spline edges."
+
   - id: P002
     task: T005
     commit: 92d8f149
@@ -339,23 +364,18 @@ tasks:
     receipt:
       result: done
       executed_by: "PM inline"
-      summary: "P002 closed and committed as 92d8f149. Inventory updated: B2 (the pc_curve_kind classifier and all four of its call sites) is now closed; B3-B8 and the C-A leaf list remain. Second cycle complete: scout (inline re-verify against Geom2dAdaptor_Curve.cxx / GeomBndLib_Curve2d.cxx / GeomBndLib_OffsetCurve2d.cxx / GeomBndLib_BezierCurve2d.cxx / IntTools_FaceFace.cxx) -> worker -> four gates green -> commit."
+      summary: "P003 closed and committed (B5 / T-133) as ed22f471; this board advance is the paired control-file commit. findNearestValidPoint now carries the BRepLib_1.cxx:69-83 aD1Mag threshold (Offset unwrapped to its basis, Bezier/B-spline only, = (1./Resolution(1.)*0.01)^2) and the cxx:108-141 D1-accelerated doubling loop that escapes local derivative singularities, with the ponytail: omission note deleted. The GetType() test reuses the single faithful edge_edge::curve_kind port (GeomAdaptor_Curve.cxx:252-311), re-exported pub(crate). Third cycle complete: scout (inline re-verify against BRepLib_1.cxx:31-169) -> worker -> four gates green -> commit."
       commits:
-        - "92d8f149 fix(occt): pc_curve_kind 换 Geom2dAdaptor_Curve::GetType 同等件（T001 的 B2 / T-132）"
+        - "ed22f471 fix(occt): findNearestValidPoint 补 BRepLib_1.cxx:66-141 的 aD1Mag 局部奇点加速臂（T001 的 B5 / T-133）"
+        - "board advance for P003 (this commit; state.yaml only)"
       next:
-        slice: "B5 - inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch"
-        rationale: "Smallest remaining slice with a fully specified same-branch cxx fix and an already-ported dependency set: GetType() for the Bezier/BSpline gate and Offset basis unwrap, plus Curve::resolution(1.0) for aD1Mag, both live in the port. B3 (bbox_from_geometry), B4 (face_sample_point), B6 (Extrema failure fabrication) and B7/B8 each still need one more Scout pass on their dependency (BRepBndLib / PointInFace wiring / Extrema Done=false propagation)."
-        allowed_files:
-          - "crates/occt-topo/src/inttools_range.rs"
-        verify:
-          - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets"
-          - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib"
-        stop_if:
-          - "Need files outside allowed_files."
-          - "The trait lacks a query the BRepLib_1.cxx:69-83 branch needs and forwarding it would change geometry."
-          - "Verification fails twice."
-      note: "Third cycle (T133) is the next activation; the board stays at active_task T005 so it can be picked up directly."
-    
+        slice: "B6 - occt-geom Extrema failure fabrication (extrema_ss.rs:449,506 and extrema_surf/numeric_extrema.rs:153,374,433,514 fabricate fallback_* pairs where OCCT returns myDone = false)"
+        rationale: "Scout pass required before activation: the fix is a Done=false propagation (Extrema_ExtElSS.cxx:62-83, Extrema_GGExtPC.hxx:531), which is a same-branch cxx fix but changes what the live consumer bean_face_exact.rs:259 receives, so the Scout must map every fabricating site and every caller before the Judge sizes it. B3 (bbox_from_geometry) still needs the BRepBndLib/Bnd_Box dependency check; B4 needs the PointInFace wiring check; B7 is a set of independent small STEP-writer divergences (step/write_context.rs:314 SetNotPeriodic, step/format.rs:500 KnotSpec)."
+        allowed_files: []
+        verify: []
+        stop_if: []
+      note: "Fourth cycle (T134) is the next activation; the board stays at active_task T005 so it can be picked up directly. Gates (3)(4) were re-run on this package because find_nearest_valid_point sits on the BOP pave-filler path."
+
   - id: T999
     type: judge
     assignee: Judge
