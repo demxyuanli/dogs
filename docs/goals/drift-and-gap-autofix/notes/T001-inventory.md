@@ -269,10 +269,18 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   (`Extrema_ExtCC2d`, used by `curve_ops::curve2d_intersections`) or
   `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` (ported in `occt-geom2d/geom2d_int`).
   Consumer: `extrema2d/tests.rs:47` only.
-- **B6g OPEN (duplication found while closing B6c, 2026-10-15).** `extrema2d/curve_curve.rs`'s
-  `line_line_extrema2d`, `line_circle_extrema2d` and `circle_circle_extrema2d` are a second,
-  module-level copy of the `Extrema_ExtElC2d` arms that `extrema2d/ext_el_c2d.rs` already carries
-  (and that the engine now uses); nothing outside `extrema2d/tests.rs` calls them.
+- **B6g CLOSED (2026-10-15, package P018 / T-148, commit `8cad6a01`).** `extrema2d/curve_curve.rs`'s
+  `line_line_extrema2d`, `line_circle_extrema2d` and `circle_circle_extrema2d` (plus the helpers
+  `line2d_value`, `circle_param2d`, `dedupe_sort_cc2d`, which served nothing else) are deleted. They
+  were a second, module-level copy of the `Extrema_ExtElC2d` arms that `extrema2d/ext_el_c2d.rs`
+  already carries, and they had diverged: parallel lines returned a point pair where
+  `Extrema_ExtElC2d.cxx:63-70` only sets `IsParallel()` and `SquareDistance(1)`, line/circle appended
+  intersection points the analytic arm never produces (`cxx:105-167`), and circle/circle added an
+  invented intersection pass plus a `dedupe_sort` that `cxx:274-368` does not perform. The five
+  `extrema2d/tests.rs` assertions now drive `ExtremaExtElC2d::new_line_line` / `new_line_circle` /
+  `new_circle_circle` and were rewritten to the cxx counts and ordering; no test was added.
+  Gates: `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0,
+  `step_obj_gates` 4/4 (150.7s), `export_data_obj` 15/15 bit-identical.
 - **B6d OPEN (found 2026-10-15, T-137).** `extrema_ss::surface_surface_extrema_all`'s analytic
   sphere/sphere and sphere/plane arms have no counterpart in `Extrema_ExtSS::Perform`, whose only
   analytic arm is `Plane` x `Plane` -> `Extrema_ExtElSS::Perform(S1.Plane(), myS2->Plane())`
@@ -388,7 +396,10 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   2026-10-15 as P017 / T-147** (the 2D chain `Extrema_LocateExtCC2d` -> `Extrema_GenLocateExtCC`
   -> `Extrema_GFuncExtCC` 2D is landed in `extrema2d/gfunc_ext_cc2d.rs` +
   `extrema2d/gen_locate_ext_cc2d.rs`; the invented Newton and its Jacobian are deleted); the 3D
-  twin `extrema_cc/curve_curve.rs::locate_extcc` is still invented and stays open.
+  twin `extrema_cc/curve_curve.rs::locate_extcc` is still invented and stays open, and is the next
+  slice. **B6g CLOSED 2026-10-15 as P018 / T-148** (the three module-level `Extrema_ExtElC2d` arm
+  copies in `extrema2d/curve_curve.rs` are deleted and the five `extrema2d/tests.rs` assertions now
+  drive `extrema2d/ext_el_c2d.rs` directly).
   **B6d** (still open, found in T-137): the analytic sphere/sphere and sphere/plane arms of
   `surface_surface_extrema_all` have no counterpart in `Extrema_ExtSS::Perform` (only
   `Plane` x `Plane` is analytic there).
