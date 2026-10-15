@@ -212,56 +212,84 @@ use super::*;
     }
 
     // --- Curve-curve extrema (Phase 13 Wave 2) ---
+    //
+    // These drive `ExtremaExtElC2d` directly: it is the faithful port of
+    // `Extrema_ExtElC2d` (`ext_el_c2d.rs`) and the only curve-curve engine left
+    // in the crate after the duplicated 2D arms were removed from
+    // `curve_curve.rs`.
 
     #[test]
-    fn line_line_extrema2d_parallel_constant_distance() {
+    fn ext_el_c2d_line_line_parallel_constant_distance() {
+        // `Extrema_ExtElC2d(lin, lin)` (`cxx:46-101`): parallel lines report
+        // IsParallel() with NbExt() == 1; only SquareDistance(1) is filled.
         let l1 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, 0.0), GpDir2d::new(1.0, 0.0).unwrap());
         let l2 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, 3.0), GpDir2d::new(1.0, 0.0).unwrap());
-        let all = line_line_extrema2d(&l1, &l2);
-        assert_eq!(all.len(), 1);
-        assert!((all[0].distance - 3.0).abs() < 1e-9, "dist {}", all[0].distance);
+        let ext = ExtremaExtElC2d::new_line_line(&l1, &l2);
+        assert!(ext.is_done(), "{ext:?}");
+        assert!(ext.is_parallel(), "{ext:?}");
+        assert_eq!(ext.nb_ext(), 1);
+        assert!((ext.square_distance(1) - 9.0).abs() < 1e-9, "sqdist {}", ext.square_distance(1));
     }
 
     #[test]
-    fn line_line_extrema2d_intersecting_zero() {
-        // x-axis and y-axis cross at the origin.
+    fn ext_el_c2d_line_line_intersecting_zero() {
+        // x-axis and y-axis cross at the origin (Cramer branch, `cxx:77-97`).
         let l1 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, 0.0), GpDir2d::new(1.0, 0.0).unwrap());
         let l2 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, 0.0), GpDir2d::new(0.0, 1.0).unwrap());
-        let all = line_line_extrema2d(&l1, &l2);
-        assert_eq!(all.len(), 1);
-        assert!(all[0].distance < 1e-9, "dist {}", all[0].distance);
-        assert!((all[0].p1.x()).abs() < 1e-9 && (all[0].p1.y()).abs() < 1e-9, "{:?}", all[0]);
+        let ext = ExtremaExtElC2d::new_line_line(&l1, &l2);
+        assert!(ext.is_done(), "{ext:?}");
+        assert!(!ext.is_parallel(), "{ext:?}");
+        assert_eq!(ext.nb_ext(), 1);
+        assert_eq!(ext.square_distance(1), 0.0);
+        let (p1, p2) = ext.points(1);
+        assert!(p1.point.x().abs() < 1e-9 && p1.point.y().abs() < 1e-9, "{p1:?}");
+        assert!(p2.point.x().abs() < 1e-9 && p2.point.y().abs() < 1e-9, "{p2:?}");
     }
 
     #[test]
-    fn line_circle_extrema2d_min_max() {
-        // Line y=3 and unit circle at origin: min 2, max 4.
+    fn ext_el_c2d_line_circle_min_max() {
+        // `Extrema_ExtElC2d(lin, circ)` (`cxx:105-167`): line y=3, unit circle at
+        // the origin -> two pairs on the circle along +-Y with sqdist 16 and 4.
         let l = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, 3.0), GpDir2d::new(1.0, 0.0).unwrap());
         let c = GpCirc2d::new(GpAx22d::standard(), 1.0);
-        let all = line_circle_extrema2d(&l, &c);
-        let min = all.iter().min_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap()).unwrap();
-        let max = all.iter().max_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap()).unwrap();
-        assert!((min.distance - 2.0).abs() < 1e-9, "min {}", min.distance);
-        assert!((max.distance - 4.0).abs() < 1e-9, "max {}", max.distance);
+        let ext = ExtremaExtElC2d::new_line_circle(&l, &c);
+        assert!(ext.is_done(), "{ext:?}");
+        assert_eq!(ext.nb_ext(), 2);
+        let mut sq = [ext.square_distance(1), ext.square_distance(2)];
+        sq.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert!((sq[0] - 4.0).abs() < 1e-9, "{sq:?}");
+        assert!((sq[1] - 16.0).abs() < 1e-9, "{sq:?}");
     }
 
     #[test]
-    fn line_circle_extrema2d_intersecting_zero() {
-        // Line y=0 through the unit circle: two zero-distance intersection pairs.
+    fn ext_el_c2d_line_circle_through_center_two_extrema() {
+        // Line y=0 through the unit circle: the analytic branch never reports the
+        // line/circle intersections; it reports the +-Y pair at sqdist 1.
         let l = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, 0.0), GpDir2d::new(1.0, 0.0).unwrap());
         let c = GpCirc2d::new(GpAx22d::standard(), 1.0);
-        let all = line_circle_extrema2d(&l, &c);
-        assert!(all.iter().any(|e| e.distance < 1e-9), "no intersection {all:?}");
+        let ext = ExtremaExtElC2d::new_line_circle(&l, &c);
+        assert!(ext.is_done(), "{ext:?}");
+        assert_eq!(ext.nb_ext(), 2);
+        for n in 1..=2 {
+            assert!((ext.square_distance(n) - 1.0).abs() < 1e-9, "n={n} {ext:?}");
+        }
     }
 
     #[test]
-    fn circle_circle_extrema2d_min_and_max() {
-        // Unit circles at (0,0) and (3,0): min 1, max 5.
+    fn ext_el_c2d_circle_circle_min_and_max() {
+        // `Extrema_ExtElC2d(circ, circ)` (`cxx:274-368`): unit circles at (0,0)
+        // and (3,0) give the four collinear pairs, unsorted, in this order:
+        // sqdist 9, 1, 25, 9.
         let c1 = GpCirc2d::new(GpAx22d::standard(), 1.0);
         let c2 = GpCirc2d::new(GpAx22d::standard(), 1.0).translated_vec(&GpVec2d::new(3.0, 0.0));
-        let all = circle_circle_extrema2d(&c1, &c2);
-        assert!(all.iter().any(|e| (e.distance - 1.0).abs() < 1e-7), "min missing {all:?}");
-        assert!(all.iter().any(|e| (e.distance - 5.0).abs() < 1e-7), "max missing {all:?}");
+        let ext = ExtremaExtElC2d::new_circle_circle(&c1, &c2);
+        assert!(ext.is_done(), "{ext:?}");
+        assert!(!ext.is_parallel(), "{ext:?}");
+        assert_eq!(ext.nb_ext(), 4);
+        let sq: Vec<f64> = (1..=4).map(|n| ext.square_distance(n)).collect();
+        for (got, want) in sq.iter().zip([9.0, 1.0, 25.0, 9.0]) {
+            assert!((got - want).abs() < 1e-7, "sqdist {sq:?}");
+        }
     }
 
     #[test]

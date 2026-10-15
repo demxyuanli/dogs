@@ -56,166 +56,26 @@ pub fn curve_curve_extrema2d(c1: &dyn Curve2d, c2: &dyn Curve2d, _samples: usize
 }
 
 // ---------------------------------------------------------------------------
-// Curve–curve extrema (port of `Extrema_ExtCC2d`, `Extrema_ExtElC2d`).
+// Curve–curve extrema (port of `Extrema_ExtCC2d`; its analytic
+// `Extrema_ExtElC2d` dispatch lives in `ext_el_c2d.rs`).
 // ---------------------------------------------------------------------------
 
 pub(super) fn pair2d_cc(p1: GpPnt2d, u1: f64, p2: GpPnt2d, u2: f64) -> Extrema2d {
     Extrema2d { p1, p2, distance: p1.distance(&p2), u1, u2 }
 }
 
-pub(super) fn line2d_value(l: &GpLin2d, u: f64) -> GpPnt2d {
-    GpPnt2d::new(l.pos.loc.x() + u * l.pos.vdir.x, l.pos.loc.y() + u * l.pos.vdir.y)
-}
-
-pub(super) fn circle_param2d(c: &GpCirc2d, p: &GpPnt2d) -> f64 {
-    let v = GpVec2d::new(p.x() - c.location().x(), p.y() - c.location().y());
-    let xd = c.pos.vxdir;
-    let yd = c.pos.vydir;
-    // C(u) = O + r·cos·xd + r·sin·yd → u = atan2(v·yd, v·xd).
-    v.dot(&GpVec2d::new(yd.x, yd.y)).atan2(v.dot(&GpVec2d::new(xd.x, xd.y)))
-}
-
-/// Exact extrema between two 2D lines (port of `Extrema_ExtElC2d`).
-/// Parallel lines have constant distance; otherwise they intersect (distance 0).
-pub fn line_line_extrema2d(l1: &GpLin2d, l2: &GpLin2d) -> Vec<Extrema2d> {
-    let d1 = GpVec2d::from_dir2d(&l1.pos.vdir);
-    let d2 = GpVec2d::from_dir2d(&l2.pos.vdir);
-    if d1.is_parallel(&d2, ANGULAR) {
-        let p1 = l1.pos.loc;
-        let u2 = (p1.x() - l2.pos.loc.x()) * d2.x() + (p1.y() - l2.pos.loc.y()) * d2.y();
-        let p2 = line2d_value(l2, u2);
-        return vec![pair2d_cc(p1, 0.0, p2, u2)];
-    }
-    // Cramer's rule for the intersection.
-    let a_p1p2 = GpVec2d::new(l2.pos.loc.x() - l1.pos.loc.x(), l2.pos.loc.y() - l1.pos.loc.y());
-    let delim = 1.0 / d1.crossed(&d2);
-    let param1 = a_p1p2.crossed(&d2) * delim;
-    let param2 = -(d1.crossed(&a_p1p2)) * delim;
-    let p1 = line2d_value(l1, param1);
-    let p2 = line2d_value(l2, param2);
-    vec![pair2d_cc(p1, param1, p2, param2)]
-}
-
-/// Exact extrema between a 2D line and a 2D circle (port of
-/// `Extrema_ExtElC2d(const gp_Lin2d&, const gp_Circ2d&)`), plus the
-/// zero-distance intersections.
-pub fn line_circle_extrema2d(l: &GpLin2d, c: &GpCirc2d) -> Vec<Extrema2d> {
-    let d = l.pos.vdir;
-    let x2 = c.pos.vxdir;
-    let y2 = c.pos.vydir;
-    let dx = d.dot(&x2);
-    let dy = d.dot(&y2);
-    let o1 = l.pos.loc;
-
-    // Radius perpendicular to the line direction.
-    let mut tetas: Vec<f64> = Vec::new();
-    if dy.abs() <= 1e-15 {
-        tetas.push(PI / 2.0);
-    } else {
-        tetas.push((-dx / dy).atan());
-    }
-    tetas.push(tetas[0] + PI);
-    if tetas[0] < 0.0 {
-        tetas[0] += 2.0 * PI;
-    }
-
-    let mut out = Vec::new();
-    for teta in tetas {
-        let p2 = circle2d_val(c, teta);
-        let u1 = (p2.x() - o1.x()) * d.x + (p2.y() - o1.y()) * d.y;
-        let p1 = line2d_value(l, u1);
-        out.push(pair2d_cc(p1, u1, p2, teta));
-    }
-
-    // Intersections: |O1 + t·D − O2|² = r².
-    let o2 = c.location();
-    let r = c.radius();
-    let v12 = GpVec2d::new(o1.x() - o2.x(), o1.y() - o2.y());
-    let a = d.x * d.x + d.y * d.y;
-    let b = 2.0 * (v12.x() * d.x + v12.y() * d.y);
-    let c0 = v12.square_magnitude() - r * r;
-    let disc = b * b - 4.0 * a * c0;
-    if disc >= 0.0 && a > 1e-300 {
-        let sq = disc.sqrt();
-        for t in [(-b - sq) / (2.0 * a), (-b + sq) / (2.0 * a)] {
-            let p1 = line2d_value(l, t);
-            let u2 = circle_param2d(c, &p1);
-            out.push(pair2d_cc(p1, t, p1, u2));
-        }
-    }
-    dedupe_sort_cc2d(out)
-}
-
-/// Exact extrema between two 2D circles (port of
-/// `Extrema_ExtElC2d(const gp_Circ2d&, const gp_Circ2d&)`), plus the
-/// zero-distance intersections for crossing circles.
-pub fn circle_circle_extrema2d(c1: &GpCirc2d, c2: &GpCirc2d) -> Vec<Extrema2d> {
-    let o1 = c1.location();
-    let o2 = c2.location();
-    let r1 = c1.radius();
-    let r2 = c2.radius();
-
-    // Concentric: constant distance |r1 − r2|.
-    let d12 = o1.distance(&o2);
-    if d12 < CONFUSION {
-        let u = GpVec2d::new(c1.pos.vxdir.x, c1.pos.vxdir.y);
-        let p1 = o1.translated_vec(&u.multiplied_scalar(r1));
-        let p2 = o2.translated_vec(&u.multiplied_scalar(r2));
-        return vec![pair2d_cc(p1, circle_param2d(c1, &p1), p2, circle_param2d(c2, &p2))];
-    }
-
-    let dir = GpVec2d::new(o2.x() - o1.x(), o2.y() - o1.y()).multiplied_scalar(1.0 / d12);
-    let mut out = Vec::with_capacity(6);
-
-    // Four collinear critical pairs.
-    let p11 = o1.translated_vec(&dir.multiplied_scalar(-r1));
-    let p12 = o1.translated_vec(&dir.multiplied_scalar(r1));
-    let p21 = o2.translated_vec(&dir.multiplied_scalar(-r2));
-    let p22 = o2.translated_vec(&dir.multiplied_scalar(r2));
-    for (pa, pb) in [(p11, p21), (p11, p22), (p12, p21), (p12, p22)] {
-        out.push(pair2d_cc(pa, circle_param2d(c1, &pa), pb, circle_param2d(c2, &pb)));
-    }
-
-    // Intersections (zero distance).
-    let b_out = d12 > (r1 + r2 + CONFUSION);
-    let b_in = d12 < (r1 - r2).abs() - CONFUSION;
-    if !b_out && !b_in {
-        let alpha = 0.5 * (r1 * r1 - r2 * r2 + d12 * d12) / d12;
-        let val = r1 * r1 - alpha * alpha;
-        let beta = val.abs().sqrt();
-        let pt = o1.translated_vec(&dir.multiplied_scalar(alpha));
-        // Perpendicular direction in the plane.
-        let dlt = GpVec2d::new(-dir.y(), dir.x());
-        let pl1 = pt.translated_vec(&dlt.multiplied_scalar(beta));
-        let pl2 = pt.translated_vec(&dlt.multiplied_scalar(-beta));
-        if pl1.square_distance(&pl2) > CONFUSION * CONFUSION {
-            out.push(pair2d_cc(pl1, circle_param2d(c1, &pl1), pl1, circle_param2d(c2, &pl1)));
-            out.push(pair2d_cc(pl2, circle_param2d(c1, &pl2), pl2, circle_param2d(c2, &pl2)));
-        } else {
-            out.push(pair2d_cc(pl1, circle_param2d(c1, &pl1), pl1, circle_param2d(c2, &pl1)));
-        }
-    }
-    dedupe_sort_cc2d(out)
-}
-
-/// Deduplicate curve–curve extrema by parameter proximity, sorted by distance.
-pub(super) fn dedupe_sort_cc2d(v: Vec<Extrema2d>) -> Vec<Extrema2d> {
-    let mut out: Vec<Extrema2d> = Vec::new();
-    for e in v {
-        if let Some(o) = out
-            .iter_mut()
-            .find(|o| (o.u1 - e.u1).abs() < 1e-5 && (o.u2 - e.u2).abs() < 1e-5)
-        {
-            if e.distance < o.distance {
-                *o = e;
-            }
-        } else {
-            out.push(e);
-        }
-    }
-    out.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(Ordering::Equal));
-    out
-}
+// The analytic `Extrema_ExtElC2d` arms (line/line, line/circle, circle/circle and
+// the conic pairs) live in `extrema2d/ext_el_c2d.rs` as `ExtremaExtElC2d`, which
+// `Extrema_ExtCC2d` dispatches to (`Extrema_ExtCC2d.cxx:104-145`). The
+// module-level `line_line_extrema2d` / `line_circle_extrema2d` /
+// `circle_circle_extrema2d` copies that used to live here were a second,
+// divergent engine: the line/line copy fabricated a `myPoint` for the parallel
+// arm (`Extrema_ExtElC2d.cxx:70-76` only sets `mySqDist`), and both circle arms
+// appended zero-distance intersection pairs that `Extrema_ExtElC2d` never
+// produces (`cxx:150-165` returns exactly the two extremal pairs; `cxx:354-367`
+// returns exactly the four collinear pairs), on top of a local dedupe/sort.
+// They had no caller other than `extrema2d/tests.rs`, so they are deleted rather
+// than kept as a second engine.
 
 /// Map `u` into `[lo, lo+period)` for a periodic curve (OCCT `ElCLib::InPeriod`).
 pub(super) fn in_period2d(u: f64, lo: f64, period: f64) -> f64 {
