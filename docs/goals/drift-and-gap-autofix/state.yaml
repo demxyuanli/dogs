@@ -82,6 +82,34 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas CYCLES array -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P019
+    task: T005
+    commit: "616ea0c1 occt-geom/extrema_cc: port Extrema_LocateExtCC 3D, drop invented Newton (B6e 3D twin)"
+    title: "`extrema_cc::locate_extcc` 的自创 Newton 换 `Extrema_LocateExtCC` / `Extrema_LocECC` / `Extrema_GFuncExtCC` 3D（T001 的 B6e 3D 孪生项 / T-149）"
+    files:
+      - "crates/occt-geom/src/extrema_cc/curve_curve.rs"
+      - "crates/occt-geom/src/extrema_cc/mod.rs"
+      - "crates/occt-geom/src/extrema_cc/poly_roots.rs"
+      - "crates/occt-geom/src/extrema_cc/p_on_curv.rs"
+      - "crates/occt-geom/src/extrema_cc/gfunc_ext_cc.rs"
+      - "crates/occt-geom/src/extrema_cc/gen_locate_ext_cc.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/occt-geom.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "B6e 3D twin: `crates/occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc` called a self-invented clamped 32-iteration Newton (`refine_curve_curve` + `f_and_jac` in `poly_roots.rs`) whose Jacobian had all four sign-bearing terms flipped relative to `Extrema_GFuncExtCC::Values`. It now builds `ExtremaLocateExtCC::new(c1, c2, u0, v0)` and reads `is_done()` / `point()`; both invented functions are deleted. The cxx chain is landed: `Extrema_LocateExtCC.cxx:24-74` -> `Extrema_LocECC` (`Extrema_LocECC.hxx:27-30`) = `Extrema_GenLocateExtCC` (`Extrema_GenLocateExtCC.hxx:49-110`: both parameter windows normalised onto each curve's `[FirstParameter, LastParameter]`, `TolU`/`TolV` taken from `Curve::resolution(Confusion)`, `MathFunctionSetRoot::perform_with_bounds`, then the `F.NbExt() > 0` gate and the `F.Value < 1e-10` re-check) -> `Extrema_CCLocFOfLocECC` (`Extrema_CCLocFOfLocECC.hxx:29-36`) = `Extrema_GFuncExtCC` 3D instantiation."
+      - "B6e 3D twin new engines: `crates/occt-geom/src/extrema_cc/gfunc_ext_cc.rs` is `GFuncExtCC`, the two-equations-in-two-variables `MathFunctionSetWithDerivatives` (`SearchOfTolerance` `hxx:150-197`, the `GetType` switches `hxx:263-291`, `Value` `hxx:359-550` with the singular-`D1` three-point / `DN` reconstruction, `Values` `hxx:568-827` with the perturbed three-point finite-difference Jacobian at singular derivatives, `GetStateNumber` `hxx:832-870` storing `(POnCurv, POnCurv)`, `Points` `hxx:885-895`, `SubIntervalInitialize` `hxx:899-925`); `crates/occt-geom/src/extrema_cc/p_on_curv.rs` is `POnCurv` = `Extrema_POnCurv` (`Extrema_POnCurv.hxx:25-60`); `crates/occt-geom/src/extrema_cc/gen_locate_ext_cc.rs` holds `GenLocateExtCC` and `ExtremaLocateExtCC`. `math_FunctionSetRoot` is the pre-existing port in `occt-math/src/function_set_root.rs`. The `Curve` trait already carries `resolution`, and the general path's `GGenExtCC` was untouched."
+      - "registration: `_audit/occt-geom.md` B6 section, `notes/T001-inventory.md` section B6e (3D twin), the drift canvas SEMANTIC B6 row and the CYCLES row all updated in the paired board commit."
+    gates:
+      check: "0 errors, occt-geom (occt-geom2d and occt-topo built as dependencies)"
+      lib: "occt-geom2d 72 / 0; occt-geom 143 / 0; occt-topo 1251 / 0 (= baseline, monotonic)"
+      step_obj_gates: "4 / 4 (= baseline, 181.8s)"
+      export_data_obj: "15 / 15 ok, v/f and bbox bit-identical to the T002 baseline table"
+    side_findings:
+      - "B6f (`curve_curve_intersections2d`'s 33x33 grid, whose only caller is `extrema2d/tests.rs`) remains open and is named as the next slice; B6d (the extra analytic sphere/sphere and sphere/plane arms of `surface_surface_extrema_all` vs `Extrema_ExtSS::Perform`, analytic only for `Plane` x `Plane`) is still open."
+      - "Verification boundary: `locate_extcc`'s live consumer is `extrema_cc/tests.rs` (`locate_extcc_refines_seed`), and the whole B6e line is test-only on both the 2D and 3D sides, so this slice is evidenced by the cxx control-flow alignment plus all four baselines holding, not by a changed reading on a gate model."
   - id: P018
     task: T005
     commit: "8cad6a01 occt-geom2d/extrema2d: delete the duplicate Extrema_ExtElC2d arms (B6g), point the tests at ext_el_c2d"
@@ -710,7 +738,18 @@ tasks:
         - "8cad6a01 occt-geom2d/extrema2d: delete the duplicate Extrema_ExtElC2d arms (B6g), point the tests at ext_el_c2d (Extrema_ExtElC2d.cxx:63-70, :105-167, :274-368; B6g / T-148)"
         - "board advance for P018 (this commit; state.yaml + specs/ audit docs + canvas + notes only)"
       next:
-        slice: "B6e's 3D twin: `crates/occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc` (`:149`) still calls the self-invented `refine_curve_curve`, exactly the defect P017 just closed on the 2D side (a clamped iteration cap plus a convergence threshold that exist nowhere in the cxx, and a Jacobian whose sign-bearing terms are flipped relative to `Extrema_GFuncExtCC::Values`). The faithful chain is the 3D instance of the same three classes: `Extrema_LocateExtCC.cxx` -> `Extrema_LocECC` = `Extrema_GenLocateExtCC` (`Extrema_GenLocateExtCC.hxx:47-110`, the per-axis range normalisation onto `[FirstParameter, LastParameter]`, `TolU`/`TolV` from `Adaptor::Resolution(Confusion)`, `MathFunctionSetRoot::Perform`, then the `F.NbExt() > 0` / `F.Value < 1e-10` re-check) -> `Extrema_CCLocFOfLocECC` = `Extrema_GFuncExtCC` (`Extrema_GFuncExtCC.hxx`, the 3D monomorphisation) with the already-ported `math_FunctionSetRoot`; the living consumer is the `extrema_cc` engine path. Then B6f (the 33x33 `curve_curve_intersections2d` grid, whose only caller is its own unit test -- the honest fix there is `Geom2dAPI_ExtremaCurveCurve`/`Extrema_ExtCC2d` or `Geom2dInt_GInter`/`IntCurve_IntConicConic`), B6d (the extra analytic sphere/sphere and sphere/plane arms of `surface_surface_extrema_all` vs `Extrema_ExtSS::Perform`, analytic only for `Plane` x `Plane`), B7-writer-4 (`geom2d_convert.rs:77` conic arms against `GeomToStep_MakeConic`), B7-mesh_to_brep, the `surface_fit` / `GeomLib_IsPlanarSurface` port, and the missing data-driven STEP-write harness against `data/occ/*.st*`."
+        slice: "B6f: `crates/occt-geom2d/src/extrema2d/curve_curve.rs::curve_curve_intersections2d` is a 33x33 uniform parameter grid whose only caller is `extrema2d/tests.rs`; the honest fix is the cxx counterpart (`Extrema_ExtCC2d`'s zero-distance extrema, or `Geom2dAPI_ExtremaCurveCurve` / `Geom2dInt_GInter` / `IntCurve_IntConicConic`), routed through the ports already landed in the same family (`extrema2d/ext_cc2d.rs`, `extrema2d/analytic_solvers.rs`), not a self-built grid. Then B6d (the extra analytic sphere/sphere and sphere/plane arms of `surface_surface_extrema_all` vs `Extrema_ExtSS::Perform`, analytic only for `Plane` x `Plane`), B7-writer-4 (`geom2d_convert.rs:77` conic arms against `GeomToStep_MakeConic`), B7-mesh_to_brep, the `surface_fit` / `GeomLib_IsPlanarSurface` port, and the missing data-driven STEP-write harness against `data/occ/*.st*`. The B6e line (2D `locate_extcc2d` + 3D `locate_extcc`) is fully closed (P017 / P019) and B6g (P018) as well."
+        rationale: "B6f is the next registered B6 item with its cxx counterpart identified and no new dependency: the `Extrema_ExtCC2d` engine and the `Extrema_ExtPElC2d` arithmetic already exist in `occt-geom2d`, so the grid's consumers can be repointed at those ports under the same `.cxx` control flow."
+        allowed_files:
+          - "crates/occt-geom2d/src/extrema2d/curve_curve.rs"
+          - "crates/occt-geom2d/src/extrema2d/mod.rs"
+        verify:
+          - "occt-geom2d --lib"
+          - "occt-geom --lib"
+          - "occt-topo --lib"
+          - "step_obj_gates"
+          - "export_data_obj"
+        stop_if: "The grid's only caller is a unit test and the cxx counterpart cannot be reached without a new dependency or a fabricated predicate; then block with a receipt and activate B6d."
         rationale: "P018 closed B6g, the pure de-duplication slice on `extrema2d/curve_curve.rs` that needed no new algorithm, no new dependency and no new test -- and the copies turned out to have real behavioural drift (the parallel-line pair, the line/circle intersections, the circle/circle sort). The largest remaining safe slice is B6e's 3D twin: it is the same defect P017 already proved out end to end (the 3D `Extrema_GFuncExtCC` monomorphisation plus the same `Extrema_GenLocateExtCC` template plus the `Extrema_LocateExtCC` wrapper, with `math_FunctionSetRoot` already ported), it has a live consumer on the `extrema_cc` engine path, and unlike B6f it is not test-only. B6f's only caller is a unit test; B6d needs a Scout decision between wiring `GenExtSS` and keeping the extra arms; the `surface_fit` / `GeomLib_IsPlanarSurface` slice still has no consumer in the port (`BRepOffset_MakeOffset::IsPlanar()` and its `myIsLinearizationAllowed` machinery are not ported), so it is not a same-branch fix today."
         allowed_files: []
         verify: []

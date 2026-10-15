@@ -261,8 +261,26 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `extrema2d/gen_locate_ext_cc2d.rs` (`GenLocateExtCC2d` + `ExtremaLocateExtCC2d`). Gates:
   `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates`
   4/4 (248.5s), `export_data_obj` 15/15 bit-identical; no test added. Still open in the same family:
-  the 3D twin `occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc` (still `refine_curve_curve`),
-  plus B6f/B6g below.
+  B6f/B6d below.
+- **B6e 3D twin CLOSED 2026-10-15 (P019 / T-149, commit `616ea0c1`).** `occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc` (`:152`) now builds
+  `ExtremaLocateExtCC::new(c1, c2, u0, v0)`, and the self-invented clamped 32-iteration Newton
+  (`refine_curve_curve` + `f_and_jac` in `poly_roots.rs`, whose Jacobian had all four sign-bearing
+  terms flipped relative to `Extrema_GFuncExtCC::Values`) is deleted. The cxx chain is landed:
+  `Extrema_LocateExtCC.cxx:24-74` -> `Extrema_LocECC` (`Extrema_LocECC.hxx:27-30`) =
+  `Extrema_GenLocateExtCC` (`Extrema_GenLocateExtCC.hxx:49-110`: per-axis range normalisation to
+  `[FirstParameter, LastParameter]`, `TolU`/`TolV` from `Curve::resolution(Confusion)`,
+  `MathFunctionSetRoot::perform_with_bounds`, then the `F.NbExt() > 0` gate and the
+  `F.Value < 1e-10` re-check) -> `Extrema_CCLocFOfLocECC` (`Extrema_CCLocFOfLocECC.hxx:29-36`) =
+  `Extrema_GFuncExtCC` 3D. New `extrema_cc/p_on_curv.rs` (`POnCurv` = `Extrema_POnCurv`,
+  `Extrema_POnCurv.hxx:25-60`), `extrema_cc/gfunc_ext_cc.rs` (`GFuncExtCC`, the
+  `MathFunctionSetWithDerivatives` with two equations in two variables: `SearchOfTolerance`
+  `hxx:150-197`, the `GetType` switches `hxx:263-291`, `Value` `hxx:359-550` with the singular
+  `D1` three-point / `DN` reconstruction, `Values` `hxx:568-827` with the perturbed three-point
+  Jacobian, `GetStateNumber` `hxx:832-870`, `Points`, `SubIntervalInitialize`) and
+  `extrema_cc/gen_locate_ext_cc.rs` (`GenLocateExtCC` + `ExtremaLocateExtCC`). Gates:
+  `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates`
+  4/4 (181.8s), `export_data_obj` 15/15 bit-identical; no test added. The B6e line (2D + 3D twin)
+  is fully closed.
 - **B6f OPEN (found while closing B6c, 2026-10-15).**
   `extrema2d/curve_curve.rs::curve_curve_intersections2d` is a 33x33 parameter grid plus a `tol`
   argument. OCCT has no such sampler: the zero-distance case is the engine already wired
@@ -395,11 +413,14 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `line_line`/`line_circle`/`circle_circle_extrema2d` copies of `Extrema_ExtElC2d`). **B6e CLOSED
   2026-10-15 as P017 / T-147** (the 2D chain `Extrema_LocateExtCC2d` -> `Extrema_GenLocateExtCC`
   -> `Extrema_GFuncExtCC` 2D is landed in `extrema2d/gfunc_ext_cc2d.rs` +
-  `extrema2d/gen_locate_ext_cc2d.rs`; the invented Newton and its Jacobian are deleted); the 3D
-  twin `extrema_cc/curve_curve.rs::locate_extcc` is still invented and stays open, and is the next
-  slice. **B6g CLOSED 2026-10-15 as P018 / T-148** (the three module-level `Extrema_ExtElC2d` arm
-  copies in `extrema2d/curve_curve.rs` are deleted and the five `extrema2d/tests.rs` assertions now
-  drive `extrema2d/ext_el_c2d.rs` directly).
+  `extrema2d/gen_locate_ext_cc2d.rs`; the invented Newton and its Jacobian are deleted); **B6g
+  CLOSED 2026-10-15 as P018 / T-148** (the three module-level `Extrema_ExtElC2d` arm copies in
+  `extrema2d/curve_curve.rs` are deleted and the five `extrema2d/tests.rs` assertions now
+  drive `extrema2d/ext_el_c2d.rs` directly); and the **B6e 3D twin CLOSED 2026-10-15 as P019 /
+  T-149** (the 3D chain `Extrema_LocateExtCC` -> `Extrema_LocECC` = `Extrema_GenLocateExtCC` ->
+  `Extrema_CCLocFOfLocECC` = `Extrema_GFuncExtCC` 3D is landed in `extrema_cc/p_on_curv.rs`,
+  `extrema_cc/gfunc_ext_cc.rs` and `extrema_cc/gen_locate_ext_cc.rs`; the invented
+  `refine_curve_curve` + `f_and_jac` are deleted).
   **B6d** (still open, found in T-137): the analytic sphere/sphere and sphere/plane arms of
   `surface_surface_extrema_all` have no counterpart in `Extrema_ExtSS::Perform` (only
   `Plane` x `Plane` is analytic there).
@@ -430,7 +451,9 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    grid; the duplicated `Extrema_ExtElC2d` arm copies). **B6e is CLOSED 2026-10-15 as T-147 /
    package P017** (`extrema2d::locate_extcc2d` now runs the faithful `Extrema_LocateExtCC2d` /
    `Extrema_GenLocateExtCC` -> `Extrema_GFuncExtCC` 2D chain), and its 3D
-   twin `extrema_cc/curve_curve.rs::locate_extcc` is the remaining piece of that defect. **The next
+   twin `extrema_cc/curve_curve.rs::locate_extcc` is **CLOSED 2026-10-15 as T-149 / package P019**
+   (the faithful `Extrema_LocateExtCC` / `Extrema_GenLocateExtCC` -> `Extrema_GFuncExtCC` 3D chain,
+   with `refine_curve_curve` + `f_and_jac` deleted); the B6e line is fully closed. **The next
    slice is #1 below (B1)**: it outranks the B6 leftovers on centrality, confidence and blast radius.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
@@ -439,11 +462,12 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
    `intcurvesurface/solvers.rs:456`), **B7-writer-4** (`geom2d_convert.rs:77` conic arms),
    **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftovers
-   (**B6g**/**B6f**/**B6d** plus the 3D `locate_extcc` twin) and the `B8 surface_fit` item. The B7
+   (**B6f**/**B6d**) and the `B8 surface_fit` item. The B7
    STEP-writer lines are both
    **DONE 2026-10-15**: `step/write_context.rs:314` `SetNotPeriodic` as package P010, and
    `step/format.rs:472,526` `closed` + `knot_spec` as package P011, with B8-intana closed as
-   P012-P016 and **B6e closed as P017 / T-147**.
+   P012-P016, **B6e closed as P017 / T-147** (2D) and its 3D twin
+   `extrema_cc/curve_curve.rs::locate_extcc` closed as P019 / T-149.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
