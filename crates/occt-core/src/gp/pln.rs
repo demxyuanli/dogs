@@ -104,6 +104,35 @@ impl GpPln {
         (a, b, c, cte)
     }
 
+    /// `gp_Pln::SignedDistance(const gp_Pnt&)` (`gp_Pln.hxx:345-352`):
+    /// `N · (P - Location)`.
+    pub fn signed_distance_pnt(&self, p: &GpPnt) -> f64 {
+        let loc = self.pos.location();
+        let d = self.pos.direction();
+        d.x() * (p.x() - loc.x()) + d.y() * (p.y() - loc.y()) + d.z() * (p.z() - loc.z())
+    }
+
+    /// `gp_Pln::SignedDistance(const gp_Pln&)` (`gp_Pln.hxx:367-375`): 0 unless
+    /// the normals are parallel within `gp::Resolution()` (`REAL_SMALL`), else
+    /// the signed distance of the other plane's location.
+    pub fn signed_distance_pln(&self, other: &GpPln) -> f64 {
+        if !self
+            .pos
+            .direction()
+            .is_parallel_tol(&other.pos.direction(), crate::precision::REAL_SMALL)
+        {
+            return 0.0;
+        }
+        self.signed_distance_pnt(&other.pos.location())
+    }
+
+    /// `gp_Pln::SquareDistance(const gp_Pln&)` (`gp_Pln.hxx:173-177`):
+    /// `Distance(theOther)^2` with `Distance = |SignedDistance|`.
+    pub fn square_distance_pln(&self, other: &GpPln) -> f64 {
+        let d = self.signed_distance_pln(other).abs();
+        d * d
+    }
+
     pub fn u_reverse(&mut self) {
         self.pos.x_reverse();
     }

@@ -8,19 +8,13 @@
 use occt_core::geom::polygon_boolean::{polygon_difference, polygon_intersect, polygon_union};
 use occt_core::gp::{GpAx1, GpAx3, GpCirc, GpDir, GpLin, GpPnt, GpTrsf, GpVec};
 use occt_geom::extrema::{curve_surface_extrema, point_curve_extrema, surface_surface_extrema};
-use occt_geom::{GeomCircle, GeomLine, GeomPlane, GeomSphere};
+use occt_geom::{GeomCircle, GeomLine, GeomSphere};
 use occt_topo::brep_offset::{offset_polygon, offset_shell};
 use occt_topo::gltf::{build_gltf_bin, GltfOptions};
 use occt_topo::primitives::BRepPrimBox;
 
 fn make_line(p: GpPnt, d: GpDir) -> GeomLine {
     GeomLine::new(GpLin::new(GpAx1::new(p, d)))
-}
-
-fn plane_at(z: f64) -> GeomPlane {
-    let mut ax = GpAx3::standard();
-    ax.set_location(GpPnt::new(0.0, 0.0, z));
-    GeomPlane::new(occt_core::gp::GpPln::new(ax))
 }
 
 #[test]
@@ -57,10 +51,17 @@ fn geom_extrema_distances() {
     let cs = curve_surface_extrema(&l2, &sphere, 16).expect("Extrema_ExtCS done");
     assert!((cs.distance - 2.0).abs() < 1e-4, "curve-surface {}", cs.distance);
 
-    // Surface–surface: sphere vs plane z=5 → 4.
-    let plane = plane_at(5.0);
-    let ss = surface_surface_extrema(&sphere, &plane, 4).expect("Extrema_ExtSS done");
-    assert!((ss.distance - 4.0).abs() < 1e-4, "surface-surface {}", ss.distance);
+    // Surface–surface: two unit spheres with centres 4 apart → 2.
+    // (Sphere vs an *unbounded* plane is not an analytic arm in OCCT:
+    // `Extrema_ExtElSS::Perform(gp_Pln, gp_Sphere)` throws
+    // `Standard_NotImplemented` and `Extrema_GenExtSS` answers with its 2e100
+    // grid maximum -- `specs\occt_probe\run_here.bat dummy --ssx`; the parity
+    // reading is pinned in `occt_geom::extrema_ss::tests`.)
+    let mut ax2 = GpAx3::standard();
+    ax2.set_location(GpPnt::new(4.0, 0.0, 0.0));
+    let sphere2 = GeomSphere::new(occt_core::gp::GpSphere::new(ax2, 1.0).unwrap());
+    let ss = surface_surface_extrema(&sphere, &sphere2, 4).expect("Extrema_ExtSS done");
+    assert!((ss.distance - 2.0).abs() < 1e-4, "surface-surface {}", ss.distance);
 }
 
 #[test]

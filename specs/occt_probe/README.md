@@ -28,6 +28,7 @@ specs\occt_probe\build_run.bat <step-file> [mode]
 | `--faceoff` | `BOPAlgo_Builder` fuse of `box[-1,1]^3` and the same cylinder; for the section circle it prints every adjacent face and the face `BOPTools_AlgoTools::GetFaceOff` picks from each |
 | `--dir` | the same GF: per adjacent face, `BOPTools_AlgoTools3D::GetNormalToFaceOnEdge` (`aDN`), `BOPTools_AlgoTools2D::EdgeTangent` (`aDTgt`) and their cross product (`aDB`) |
 | `--dir2` | faithful re-implementation of the file-local `FindPointInFace` (`BOPTools_AlgoTools.cxx:2160-2231`) and `GetFaceDir` (`:2110-2152`, including the `GetApproxNormalToFaceOnEdge` fallback at `:2139-2149`) and `MinStep3D` (`:2235-2346`), so the *final* `aDB`/angle of every candidate can be read |
+| `--ssx` | `Extrema_ExtSS` / `Extrema_GenExtSS` / `GeomAPI_ExtremaSurfaceSurface` on `sphere(r=1)@origin` x `sphere(r=1)@(4,0,0)`, `sphere` x `plane z=5`, and `plane z=5` x `sphere` (no input file is read; pass any placeholder as argv[1]). Prints the adaptor windows, then `IsDone`/`IsParallel`/`NbExt` and every `SquareDistance`/`PointOnS1`/`PointOnS2` parameter and point, the 12-argument windowed `Extrema_ExtSS`, the `GeomAPI` `LowerDistance`/`NearestPoints`, and the raw `Extrema_GenExtSS(..., 20, 20, ...)` list. This is the ground truth for B6d (`occt_geom::extrema_ss`) |
 
 The `--faceoff` / `--dir` / `--dir2` outputs are the acceptance assertions for
 task T-82 (see `specs/board.canvas.tsx`).

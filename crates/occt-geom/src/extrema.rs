@@ -97,7 +97,9 @@ pub fn curve_surface_extrema(c: &dyn Curve, s: &dyn Surface, _samples: usize) ->
 
 /// Minimum distance between two surfaces.
 /// `samples` is kept for signature compatibility.
-/// `None` = `Extrema_ExtSS::IsDone() == false` or `NbExt() == 0`.
+/// `None` = `Extrema_ExtSS::IsDone() == false` or `NbExt() == 0`, or the
+/// `Extrema_ExtElSS` parallel-plane arm, which records the square distance but
+/// no points (`Extrema_ExtSS.cxx:228-235`).
 pub fn surface_surface_extrema(
     s1: &dyn Surface,
     s2: &dyn Surface,
@@ -184,10 +186,28 @@ mod tests {
         let ax = GpAx3::standard();
         let p1 = GeomPlane::new(GpPln::new(ax.clone()));
         let p2 = GeomPlane::new(GpPln::new(ax));
-        let e = surface_surface_extrema(&p1, &p2, 3).expect("Extrema_ExtSS done");
-        assert!(e.distance.abs() < 1e-6, "coincident planes {}", e.distance);
+        // Coincident planes are the parallel `Extrema_ExtElSS` arm: it stores
+        // the square distance and no points (`Extrema_ExtElSS.cxx:46-53`), so
+        // `surface_surface_extrema` has no pair to report
+        // (`Extrema_ExtSS.cxx:229-233`) and the faithful class is read instead.
+        assert!(surface_surface_extrema(&p1, &p2, 3).is_none());
+        let ext = crate::extrema_ss::ExtremaExtSS::new(&p1, &p2, 0.0, 0.0);
+        assert!(ext.is_done(), "Extrema_ExtSS done");
+        assert!(ext.is_parallel(), "coincident planes are parallel");
+        assert!(ext.square_distance(1).abs() < 1e-6, "coincident planes");
     }
 
+    /// Sphere x an *unbounded* plane is not an analytic arm in OCCT: the pair
+    /// falls into `Extrema_GenExtSS` with the plane window taken from
+    /// `GeomAdaptor_Surface` (`GeomAdaptor_Surface.hxx:150-160` ->
+    /// `Geom_Plane::Bounds` = `±Precision::Infinite()`), so OCCT 8.0.0 answers
+    /// `sqDist = 7.992002e+200` for `sphere(r=1)` vs `plane z=5`
+    /// (`specs\occt_probe\run_here.bat dummy --ssx`, `SSX sph-pln` and
+    /// `SSX api-sph-pln dist=2.827012911183817e+100`). The 4.0 the deleted
+    /// `plane_sphere_extrema` arm used to invent is not what
+    /// `Extrema_ExtElSS::Perform(gp_Pln, gp_Sphere)` does -- it throws
+    /// `Standard_NotImplemented` (`Extrema_ExtElSS.cxx:62-69`). The GenExtSS
+    /// detail is pinned in `crate::extrema_ss::tests`.
     #[test]
     fn surface_surface_sphere_plane() {
         let sphere = sphere(1.0);
@@ -196,7 +216,12 @@ mod tests {
         pl.set_location(&GpPnt::new(0.0, 0.0, 5.0));
         let plane = GeomPlane::new(pl);
         let e = surface_surface_extrema(&sphere, &plane, 4).expect("Extrema_ExtSS done");
-        assert!((e.distance - 4.0).abs() < 1e-4, "min {}", e.distance);
+        let expected = 7.992002e200f64.sqrt();
+        assert!(
+            (e.distance - expected).abs() <= 1e-12 * expected,
+            "sphere vs unbounded plane {}",
+            e.distance
+        );
     }
 
     #[test]
