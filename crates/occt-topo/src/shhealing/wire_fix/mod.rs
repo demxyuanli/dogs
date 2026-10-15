@@ -2,7 +2,6 @@ use super::prelude::*;
 use super::*;
 
 use occt_core::bnd::BndBox2d;
-use occt_core::bspl::curve_tools::reparameterize;
 use occt_core::gp::{
     GpAx3, GpDir2d, GpLin, GpPln, GpPnt, GpPnt2d, GpTrsf2d, GpVec, GpVec2d,
 };

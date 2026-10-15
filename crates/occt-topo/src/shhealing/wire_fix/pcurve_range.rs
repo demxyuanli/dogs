@@ -1,141 +1,27 @@
 use super::*;
+use crate::pcurve_full::trimmed_reparam_bspline;
 
-/// `GeomLib::SameRange` (`GeomLib.cxx:842-922`): remap a 2d curve from
-/// `[first_on, last_on]` onto `[req_first, req_last]`. Linear reparam matches
-/// the BSpline knot `BSplCLib::Reparametrize` evaluation.
+/// `IsKind(STANDARD_TYPE(Geom2d_Line))` (`GeomLib.cxx:864`) as the port can
+/// still test it: an exact `Geom2d_Line` is unbounded on both sides with a
+/// vanishing second derivative, and the narrower test deliberately excludes the
+/// wrappers that forward `is_line` (`Geom2d_TrimmedCurve`, `ReparamCurve2d`),
+/// which OCCT would resolve through its own `Geom2d_TrimmedCurve` arm
+/// (`cxx:890-901`) rather than the line translate.
 pub(in crate::shhealing) fn is_geom2d_line_curve(c: &dyn Curve2d) -> bool {
     !c.first_parameter().is_finite()
         && !c.last_parameter().is_finite()
         && c.d2(0.0).2.square_magnitude() < 1e-30
 }
 
-pub(in crate::shhealing) fn same_range_is_line(c: &dyn Curve2d) -> bool {
-    is_geom2d_line_curve(c) || c.is_line()
-}
-
-/// `Geom2dConvert::CurveToBSplineCurve` Line arm (`Geom2dConvert.cxx:211-225`)
-/// then `BSplCLib::Reparametrize` (`GeomLib.cxx:962-968`).
-pub(in crate::shhealing) fn line_trim_to_reparam_bspline(
-    c2d: Arc<dyn Curve2d>,
-    udeb: f64,
-    ufin: f64,
-    req_first: f64,
-    req_last: f64,
-) -> Option<Arc<dyn Curve2d>> {
-    if (ufin - udeb).abs() <= PCONFUSION {
-        return None;
-    }
-    // Intermediate TrimmedCurve so Start/End and First/Last match Convert.
-    let tc = Geom2dTrimmedCurve::new(c2d, udeb, ufin);
-    let k0 = tc.first_parameter();
-    let k1 = tc.last_parameter();
-    if (k1 - k0).abs() <= PCONFUSION {
-        return None;
-    }
-    let p0 = tc.d0(k0);
-    let p1 = tc.d0(k1);
-    // Flat knots for Mults=[2,2], Degree=1 unique Knots=[k0,k1].
-    let mut knots = vec![k0, k0, k1, k1];
-    // `BSplCLib::Reparametrize(RequestedFirst, RequestedLast, Knots)`.
-    let u_first = req_first.min(req_last);
-    let u_last = req_first.max(req_last);
-    reparameterize(&mut knots, k0, k1, u_first, u_last);
-    let bs = Geom2dBSplineCurve::new(vec![p0.x(), p1.x()], vec![p0.y(), p1.y()], knots, 1).ok()?;
-    Some(Arc::new(bs))
-}
-
-/// `GeomLib.cxx:908-921` / `:960-968`: build `Geom2dTrimmedCurve(CurvePtr, u1,
-/// u2)`, convert with `Geom2dConvert::CurveToBSplineCurve` (default
-/// parameterisation), then `BSplCLib::Reparametrize(req_first, req_last)` over
-/// the distinct knots followed by `SetKnots`. Covers the non-Line/Circle/
-/// Trimmed kinds (BSpline, Bezier, Ellipse, Hyperbola, Parabola, Offset).
-pub(in crate::shhealing) fn trim_to_reparam_bspline(
-    c2d: Arc<dyn Curve2d>,
-    u1: f64,
-    u2: f64,
-    req_first: f64,
-    req_last: f64,
-) -> Option<Arc<dyn Curve2d>> {
-    if !u1.is_finite() || !u2.is_finite() {
-        return None;
-    }
-    let tc = Geom2dTrimmedCurve::new(c2d, u1, u2);
-    let mut bs = occt_geom2d::geom2d_convert::curve_to_bspline_curve_bspl(
-        &tc,
-        occt_geom2d::geom2d_convert::DEFAULT_PARAMETERISATION,
-    )?;
-    let (mut distinct, _) = bs.distinct_knots_and_mults();
-    occt_core::bspl::knots::reparametrize(req_first, req_last, &mut distinct);
-    bs.set_knots(&distinct).ok()?;
-    Some(Arc::new(bs))
-}
-
-/// `GeomLib.cxx:929-958`: resolve the `[Udeb, Ufin]` window used for the
-/// intermediate `Geom2d_TrimmedCurve` of the unequal-span branch.
-pub(in crate::shhealing) fn unequal_trim_window(c2d: &dyn Curve2d, first_on: f64, last_on: f64) -> (f64, f64) {
-    let mut a_check: &dyn Curve2d = c2d;
-    if let Some(basis) = c2d.trimmed_basis() {
-        a_check = basis;
-    }
-    if a_check.is_periodic() {
-        // `cxx:934-944`: periodic basis — trim to [FirstOn, LastOn] when span
-        // is non-degenerate, else the curve's own parameter window.
-        if (last_on - first_on).abs() > PCONFUSION {
-            (first_on, last_on)
-        } else {
-            (c2d.first_parameter(), c2d.last_parameter())
-        }
-    } else {
-        // `cxx:946-958`.
-        let cf = c2d.first_parameter();
-        let cl = c2d.last_parameter();
-        let udeb = if cf.is_finite() { cf.max(first_on) } else { first_on };
-        let ufin = if cl.is_finite() { cl.min(last_on) } else { last_on };
-        if (ufin - udeb).abs() > PCONFUSION {
-            (udeb, ufin)
-        } else {
-            (cf, cl)
-        }
-    }
-}
-
-/// `GeomLib.cxx:924-969` unequal-span segment for a Line: TrimmedCurve bounds
-/// then CurveToBSplineCurve + knot Reparametrize (not a ReparamCurve2d wrapper).
-pub(in crate::shhealing) fn same_range_unequal_line(
-    c2d: Arc<dyn Curve2d>,
-    first_on: f64,
-    last_on: f64,
-    req_first: f64,
-    req_last: f64,
-) -> Option<Arc<dyn Curve2d>> {
-    let (udeb, ufin) = unequal_trim_window(c2d.as_ref(), first_on, last_on);
-    if !udeb.is_finite() || !ufin.is_finite() {
-        return None;
-    }
-    line_trim_to_reparam_bspline(c2d, udeb, ufin, req_first, req_last)
-}
-
-/// `GeomLib.cxx:924-969` unequal-span segment for a non-Line kind (same
-/// TrimmedCurve + CurveToBSplineCurve + Reparametrize path as `:908-921`).
-pub(in crate::shhealing) fn same_range_unequal_other(
-    c2d: Arc<dyn Curve2d>,
-    first_on: f64,
-    last_on: f64,
-    req_first: f64,
-    req_last: f64,
-) -> Option<Arc<dyn Curve2d>> {
-    let (udeb, ufin) = unequal_trim_window(c2d.as_ref(), first_on, last_on);
-    if !udeb.is_finite() || !ufin.is_finite() {
-        return None;
-    }
-    trim_to_reparam_bspline(c2d, udeb, ufin, req_first, req_last)
-}
-
-/// `GeomLib::SameRange` (`GeomLib.cxx:842-969`) for equal-span Line/reparam
-/// and unequal-span Line Trimmed+Convert.
+/// `GeomLib::SameRange` (`GeomLib.cxx:842-970`).
 ///
-/// `tolerance` is the first `GeomLib::SameRange` argument (`cxx:842`): early-out
-/// and equal-span tests use it; interior `PConfusion` guards stay as in the cxx.
+/// `tolerance` is the first `GeomLib::SameRange` argument (`cxx:842`): the
+/// early-out (`cxx:854-859`) and the span-preserving test (`cxx:862`) use
+/// it; the interior `Precision::PConfusion()` guards stay as in the cxx. The
+/// conversion itself is the single faithful port in
+/// [`crate::pcurve_full::trimmed_reparam_bspline`] (the `cxx:912-921` and
+/// `cxx:962-968` tails); the unequal-span arm has no kind dispatch in the cxx,
+/// so a line, a conic and a B-spline all leave through the same call.
 pub(crate) fn geom_lib_same_range(
     tolerance: f64,
     c2d: Arc<dyn Curve2d>,
@@ -144,17 +30,21 @@ pub(crate) fn geom_lib_same_range(
     req_first: f64,
     req_last: f64,
 ) -> Arc<dyn Curve2d> {
+    // `cxx:854-859`: the ranges already agree; OCCT hands back the same curve.
     if (last_on - req_last).abs() <= tolerance && (first_on - req_first).abs() <= tolerance {
         return c2d;
     }
+    // Port-local guard: `BRepLib::SameRange` feeds finite `BRep_GCurve` ranges
+    // (`BRepLib.cxx:236-254`) and an unset range would only reach OCCT's
+    // `Geom2d_TrimmedCurve` as an infinite bound.
     if !first_on.is_finite() || !last_on.is_finite() {
         return c2d;
     }
     let equal_span =
         ((last_on - first_on) - (req_last - req_first)).abs() <= tolerance;
     if equal_span {
-        // `GeomLib.cxx:864-870` `IsKind(Geom2d_Line)` — exact infinite Line only
-        // (not Trimmed/Reparam wrappers that forward `is_line`).
+        // `cxx:864-871` `IsKind(Geom2d_Line)`: translate a copy of the line by
+        // `dU * Direction` with `dU = FirstOnCurve - RequestedFirst`.
         if is_geom2d_line_curve(c2d.as_ref()) {
             let du = first_on - req_first;
             let (_, dir) = c2d.d1(0.0);
@@ -162,9 +52,9 @@ pub(crate) fn geom_lib_same_range(
             trsf.set_translation_vec(&GpVec2d::new(dir.x() * du, dir.y() * du));
             return Arc::from(c2d.transformed(&trsf));
         }
-        // `GeomLib.cxx:871-888` `IsKind(Geom2d_Circle)` — exact Geom2d_Circle
-        // only. Rotate a copy about its location so `FirstOnCurve` maps onto
-        // `RequestedFirst`; the rotation sense follows `Circ2d().IsDirect()`.
+        // `cxx:872-889` `IsKind(Geom2d_Circle)`: rotate a copy about its
+        // location so `FirstOnCurve` maps onto `RequestedFirst`; the rotation
+        // sense follows `Circ2d().IsDirect()`.
         if c2d.is_geom2d_circle() {
             if let Some(circ) = c2d.gp_circ2d() {
                 let p = circ.location();
@@ -178,13 +68,12 @@ pub(crate) fn geom_lib_same_range(
                 return Arc::from(c2d.transformed(&trsf));
             }
         }
-        // `GeomLib.cxx:890-900`: TrimmedCurve recurses on the basis then
-        // re-trims to RequestedFirst/Last (period-shifted Init2d windows).
-        if c2d.trimmed_basis().is_some() {
-            let basis = Arc::from(c2d.trimmed_basis().unwrap().clone_dyn());
+        // `cxx:890-901`: recurse on `BasisCurve()` with the same arguments, then
+        // re-trim the result to `[RequestedFirst, RequestedLast]`.
+        if let Some(basis) = c2d.trimmed_basis() {
             let new_basis = geom_lib_same_range(
                 tolerance,
-                basis,
+                Arc::from(basis.clone_dyn()),
                 first_on,
                 last_on,
                 req_first,
@@ -192,36 +81,28 @@ pub(crate) fn geom_lib_same_range(
             );
             return Arc::new(Geom2dTrimmedCurve::new(new_basis, req_first, req_last));
         }
-        // `GeomLib.cxx:908-921` equal-span generic arm: TrimmedCurve over
-        // [FirstOn, LastOn] -> CurveToBSplineCurve -> knot Reparametrize (the
-        // condition is OCCT's verbatim `|LastOn-FirstOn| > PConfusion ||
-        // |RequestedLast+RequestedFirst| > PConfusion`). Kinds: BSpline, Bezier,
-        // Ellipse, Hyperbola, Parabola, Offset.
+        // `cxx:908-922`: the span-preserving generic arm. The guard is OCCT's
+        // verbatim `|LastOnCurve - FirstOnCurve| > PConfusion ||
+        // |RequestedLast + RequestedFirst| > PConfusion`; the conversion runs on
+        // the unclamped `[FirstOnCurve, LastOnCurve]` window.
         if (last_on - first_on).abs() > PCONFUSION
             || (req_last + req_first).abs() > PCONFUSION
         {
             if let Some(bs) =
-                trim_to_reparam_bspline(c2d.clone(), first_on, last_on, req_first, req_last)
+                trimmed_reparam_bspline(c2d.clone(), first_on, last_on, req_first, req_last)
             {
-                return bs;
+                return Arc::new(bs);
             }
         }
+        // `cxx:908-909` is false (so the arm above is skipped) when both spans
+        // and the request sit inside `PConfusion`, and OCCT then assigns nothing,
+        // leaving the out-parameter null; `BRepLib::SameRange`
+        // stores that null handle as the pcurve (`BRepLib.cxx:236-254`), which the
+        // port cannot represent, so the linear stand-in stays instead.
         return reparam_curve2d(c2d, req_first, req_last, first_on, last_on);
     }
-    // `GeomLib.cxx:924-969`: unequal span — Line uses Trimmed+CurveToBSpline
-    // + Reparametrize; every other kind takes the same path via
-    // `same_range_unequal_other` (`:960-968`).
-    if same_range_is_line(c2d.as_ref()) {
-        if let Some(bs) =
-            same_range_unequal_line(c2d.clone(), first_on, last_on, req_first, req_last)
-        {
-            return bs;
-        }
-    } else if let Some(bs) =
-        same_range_unequal_other(c2d.clone(), first_on, last_on, req_first, req_last)
-    {
-        return bs;
-    }
+    // `cxx:924-969`: unequal span. One path for every kind -- the window
+    // resolution (`:934-959`) plus the conversion tail (`:962-968`).
     reparam_curve2d(c2d, req_first, req_last, first_on, last_on)
 }
 

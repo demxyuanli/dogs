@@ -161,16 +161,16 @@ pub(in crate::shhealing) fn try_bending_pcurve(
     // `Geom2dTrimmedCurve` + `Geom2dConvert::CurveToBSplineCurve`
     // (`cxx:3556-3559`). This port does not expose a knot vector, so the
     // `SetPole` edit cannot be reproduced on an imported B-spline pcurve; only
-    // the Line arm (`Geom2dConvert.cxx:211-225`, mirrored by
-    // `line_trim_to_reparam_bspline` above) is ported. Any other kind reports
-    // "no bend candidate" - the same outcome OCCT gives when its own
+    // the Line arm (`Geom2dConvert.cxx:211-225`) is ported. Any other kind
+    // reports "no bend candidate" - the same outcome OCCT gives when its own
     // `CurveToBSplineCurve` throws (`cxx:3605-3612`).
     if !is_geom2d_line_curve(c2d.as_ref()) {
         return false;
     }
-    // `cxx:3555-3559`: the trimmed-line B-spline. `line_trim_to_reparam_bspline`
-    // builds the same curve for `GeomLib::SameRange`; here the knots stay the
-    // trimmed curve's own, because `Segment` is never reached (below).
+    // `cxx:3555-3559`: the trimmed-line B-spline. `GeomLib::SameRange` builds
+    // the same curve through `pcurve_full::trimmed_reparam_bspline`; here the
+    // knots stay the trimmed curve's own, because `Segment` is never reached
+    // (below).
     let tc = Geom2dTrimmedCurve::new(c2d.clone(), first, last);
     let (k0, k1) = (tc.first_parameter(), tc.last_parameter());
     let (u0, u1) = (k0, k1);

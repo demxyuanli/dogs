@@ -1,11 +1,24 @@
-//! [`ReparamCurve2d`]: the linear 2D reparameterization that aligns a STEP pcurve natural range with the edge 3D range, and its helpers.
+//! [`ReparamCurve2d`] and the two conversion tails `GeomLib::SameRange`
+//! (`GeomLib.cxx:842-970`) is built from.
 
 use super::*;
+use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 
 /// A 2D curve linearly reparameterized from `[p0, p1]` onto `[a, b]`: a parameter
 /// `t ∈ [a, b]` maps to `inner.d0(p0 + (t − a)·(p1 − p0)/(b − a))`. Aligns a
 /// STEP-imported pcurve (parameterized over its natural range) with the edge's
 /// 3D range.
+///
+/// This is a stand-in, not an OCCT class. `GeomLib::SameRange` only ever stores
+/// the input curve unchanged, a translated `Geom2d_Line` (`cxx:864-871`), a
+/// rotated `Geom2d_Circle` (`:872-889`), a re-trimmed `Geom2d_TrimmedCurve`
+/// (`:890-901`) or a concrete `Geom2d_BSplineCurve` (`:912-921`, `:962-968`),
+/// and throws `Standard_DomainError` for a kind
+/// `Geom2dConvert::CurveToBSplineCurve` cannot convert
+/// (`Geom2dConvert.cxx:442-444`). [`reparam_curve2d`] builds one only where the
+/// faithful conversion declined, so the callers that consume `GeomLib::SameRange`
+/// (`shhealing::wire_fix::pcurve_range::geom_lib_same_range`) hand back OCCT's
+/// concrete curve and this type stays off the shared pipeline.
 #[derive(Clone)]
 pub struct ReparamCurve2d {
     pub(crate) inner: Arc<dyn Curve2d>,
@@ -73,10 +86,10 @@ impl Curve2d for ReparamCurve2d {
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(self.clone())
     }
-    // Preserve Geom2d_Line kind through the wrapper so
-    // `Adaptor3d_CurveOnSurface::EvalKPart` (`cxx:1552-1732`) and
-    // `GeomLib::SameRange` Line translate (`cxx:862-870`) keep iso/line
-    // detection. A bare default `is_line=false` densifies Offset seams.
+    // Preserve the inner `GeomAbs_Line` classification through the wrapper so
+    // `Adaptor3d_CurveOnSurface::EvalKPart` (`cxx:1552-1732`) and the
+    // `GeomBndLib_Curve2d` kind dispatch keep iso/line detection. A bare
+    // default `is_line=false` densifies Offset seams.
     fn is_line(&self) -> bool {
         self.inner.is_line()
     }
@@ -103,28 +116,26 @@ impl Curve2d for ReparamCurve2d {
     fn bspline_degree(&self) -> Option<usize> {
         self.inner.bspline_degree()
     }
-    // The concrete `Geom2d_BSplineCurve` `GeomLib::SameRange` would have
-    // stored; see [`same_range_bspline2d`]. `GeomBndLib_Curve2d.cxx:137-143`
-    // builds the `GeomBndLib_BSplineCurve2d` evaluator from exactly that curve,
-    // so without this the wrapper falls through to the `OtherCurve2d` sampler
-    // (`GeomBndLib_BSplineCurve2d.cxx:31-59` never runs).
-    fn bspline_copy2d(&self) -> Option<Geom2dBSplineCurve> {
-        same_range_bspline2d(self.inner.as_ref(), self.a, self.b, self.p0, self.p1)
-    }
+    // No `bspline_copy2d` override: `GeomBndLib_Curve2d.cxx:137-143` builds the
+    // `GeomBndLib_BSplineCurve2d` evaluator from a concrete
+    // `Geom2d_BSplineCurve`, and a wrapper only exists where the faithful
+    // `Geom2dConvert::CurveToBSplineCurve` declined, so the trait default
+    // (`None`, which selects a different evaluator) is the correct answer.
     fn offset_basis(&self) -> Option<&dyn Curve2d> {
         self.inner.offset_basis()
     }
     /// `Geom2dAdaptor_Curve::Resolution` in this wrapper's parameter space.
     ///
-    /// `GeomLib::SameRange` keeps the parameterization for a line (it only
-    /// translates the line, `GeomLib.cxx:866-870`) and for a circle (it only
-    /// rotates it, `:871-889`), so for those `scale = ±1` and the inner answer
-    /// carries over unchanged. Every other kind is converted to a
-    /// `Geom2d_BSplineCurve` and `BSplCLib::Reparametrize`d onto `[a, b]`
-    /// (`:908-921`, `:924-969`), which divides a parameter increment by the
-    /// `scale` factor of this map. Without this override the wrapper would fall
-    /// back to the `Precision::Parametric` default and under-step by orders of
-    /// magnitude on a reparameterized conic or Bezier pcurve.
+    /// For the kinds `GeomLib::SameRange` stores unconverted the parameterization
+    /// is kept -- a line is only translated (`GeomLib.cxx:864-871`) and a circle
+    /// only rotated (`:872-889`), so `scale = ±1` and the inner answer carries
+    /// over unchanged. Every other kind is converted to a `Geom2d_BSplineCurve`
+    /// and `BSplCLib::Reparametrize`d onto `[a, b]` (`:912-921`, `:962-968`),
+    /// which divides a parameter increment by the `scale` factor of this map.
+    /// A wrapper exists only where that conversion declined, so this override is
+    /// what keeps its `Resolution` -- the `Precision::Parametric` default would
+    /// under-step by orders of magnitude on a reparameterized conic or Bezier
+    /// pcurve.
     fn resolution(&self, ruv: f64) -> f64 {
         let s = self.scale();
         let res = self.inner.resolution(ruv);
@@ -136,112 +147,116 @@ impl Curve2d for ReparamCurve2d {
     }
 }
 
-/// The `Geom2d_BSplineCurve` `GeomLib::SameRange` returns for a B-spline input
-/// whose `[p0, p1]` range is remapped onto `[a, b]`.
+/// The `[Udeb, Ufin]` window the unequal-span arm trims to
+/// (`GeomLib.cxx:934-959`).
 ///
-/// OCCT's `SameRange` stores a concrete curve, never a wrapper. Both the
-/// equal-span arm (`GeomLib.cxx:908-921`) and the unequal-span arm
-/// (`GeomLib.cxx:924-969`) end the same way:
+/// The periodicity test reads `BasisCurve()` when the input is a
+/// `Geom2d_TrimmedCurve` (`cxx:929-932`, `aCCheck`): a periodic basis keeps the
+/// requested `[FirstOnCurve, LastOnCurve]` window (`cxx:936-938`) and falls back
+/// to the curve's own range when it collapses (`cxx:940-943`), every other kind
+/// takes `[max(FirstParameter, FirstOnCurve), min(LastParameter, LastOnCurve)]`
+/// (`cxx:948-949`) and falls back the same way (`cxx:950-957`, both under
+/// `Precision::PConfusion()`).
+fn same_range_window(inner: &dyn Curve2d, first_on: f64, last_on: f64) -> (f64, f64) {
+    let pconfusion = occt_core::precision::PCONFUSION;
+    let a_check: &dyn Curve2d = inner.trimmed_basis().unwrap_or(inner);
+    if a_check.is_periodic() {
+        if (last_on - first_on).abs() > pconfusion {
+            (first_on, last_on)
+        } else {
+            (inner.first_parameter(), inner.last_parameter())
+        }
+    } else {
+        let (cf, cl) = (inner.first_parameter(), inner.last_parameter());
+        // `std::max`/`std::min` with `+-inf` yield the finite operand, so the
+        // bounded-curve guard only keeps the port off `inf - inf`.
+        let udeb = if cf.is_finite() { cf.max(first_on) } else { first_on };
+        let ufin = if cl.is_finite() { cl.min(last_on) } else { last_on };
+        if (ufin - udeb).abs() > pconfusion {
+            (udeb, ufin)
+        } else {
+            (cf, cl)
+        }
+    }
+}
+
+/// The conversion tail both `SameRange` arms share: `Geom2d_TrimmedCurve(CurvePtr,
+/// U1, U2)` (`cxx:912-913`, `:952`), `Geom2dConvert::CurveToBSplineCurve`
+/// (`cxx:915`, `:962`), then `BSplCLib::Reparametrize(RequestedFirst,
+/// RequestedLast, Knots)` over `BS->Knots()` and `BS->SetKnots(Knots)`
+/// (`cxx:918-920`, `:965-967`).
 ///
-/// * clamp the kept window to the curve's own range — `:947-949`
-///   `Udeb = max(FirstParameter(), FirstOnCurve)`,
-///   `Ufin = min(LastParameter(), LastOnCurve)`, and keep the whole curve when
-///   `|Ufin - Udeb| <= PConfusion` (`:951-957`); the same clamp sits in
-///   `Geom2dConvert.cxx:199-209`;
-/// * `Geom2dConvert::CurveToBSplineCurve` (`Geom2dConvert.cxx:347-351` for a
-///   trimmed input, `:420-423` for a plain one): copy the basis and `Segment`
-///   the copy to `[U1, U2]`;
-/// * `BSplCLib::Reparametrize(a, b, Knots)` + `SetKnots` (`:961-969`).
+/// `Knots()` is the **distinct** knot array: `Geom2d_BSplineCurve::Knots()`
+/// returns `myKnots`, which holds one entry per `Multiplicities()` slot
+/// (`Geom2d_BSplineCurve_1.cxx`), and `BSplCLib::Reparametrize` maps
+/// `Knots(Knots.Lower())`/`Knots(Knots.Upper())` onto
+/// `[RequestedFirst, RequestedLast]` (`BSplCLib.cxx:756-798`) -- the ported
+/// `reparametrize` is that same function on that same array.
 ///
-/// `None` when the port has no equivalent branch. The conic inputs are handled
-/// through [`occt_geom2d::geom2d_convert::trimmed_curve_to_bspline_curve`]
-/// (`Convert_CircleToBSplineCurve` / `Convert_EllipseToBSplineCurve` /
-/// `Convert_HyperbolaToBSplineCurve` / `Convert_ParabolaToBSplineCurve`,
-/// `Geom2dConvert.cxx:228-321`); an offset curve needs
-/// `Geom2dConvert_ApproxCurve` (`:353-368`, `:425-440`) and a `RationalC1`
-/// circle/ellipse longer than 6 rad needs
-/// `Geom2dConvert_CompCurveToBSplineCurve` (`:237-263`, `:276-302`) — those
-/// stay on the linear [`ReparamCurve2d`] stand-in.
-pub(crate) fn same_range_bspline2d(
+/// `None` where the port has no equivalent branch: OCCT's
+/// `CurveToBSplineCurve` throws `Standard_DomainError` there
+/// (`Geom2dConvert.cxx:442-444`), and an infinite bound is only reachable
+/// through the degenerate `SetTrim` fallback above (`cxx:954-958`), where
+/// OCCT builds a trimmed curve with infinite bounds.
+pub(crate) fn trimmed_reparam_bspline(
+    curve: Arc<dyn Curve2d>,
+    u1: f64,
+    u2: f64,
+    req_first: f64,
+    req_last: f64,
+) -> Option<Geom2dBSplineCurve> {
+    if !u1.is_finite() || !u2.is_finite() {
+        return None;
+    }
+    let tc = Geom2dTrimmedCurve::new(curve, u1, u2);
+    let mut bs = occt_geom2d::geom2d_convert::curve_to_bspline_curve_bspl(
+        &tc,
+        occt_geom2d::geom2d_convert::DEFAULT_PARAMETERISATION,
+    )?;
+    let (mut distinct, _) = bs.distinct_knots_and_mults();
+    occt_core::bspl::knots::reparametrize(req_first, req_last, &mut distinct);
+    bs.set_knots(&distinct).ok()?;
+    Some(bs)
+}
+
+/// The concrete `Geom2d_BSplineCurve` of the unequal-span arm
+/// (`GeomLib.cxx:924-969`): resolve the window ([`same_range_window`]) then run
+/// the shared tail ([`trimmed_reparam_bspline`]). OCCT dispatches on no curve
+/// kind here -- a line takes the same path as a conic or a B-spline.
+fn same_range_bspline2d(
     inner: &dyn Curve2d,
     a: f64,
     b: f64,
     p0: f64,
     p1: f64,
 ) -> Option<Geom2dBSplineCurve> {
-    let pconfusion = occt_core::precision::PCONFUSION;
-    // A conic basis (`Geom2d_Circle` / `Geom2d_Ellipse` / hyperbola / parabola)
-    // exhausts the conic arm of `Geom2dConvert::CurveToBSplineCurve`
-    // (`Geom2dConvert.cxx:228-321`): `GeomLib::SameRange` wraps the curve in a
-    // `Geom2d_TrimmedCurve` (`GeomLib.cxx:912-915`, `:926-962`), converts it
-    // (default `Convert_TgtThetaOver2`) and reparameterizes the knots
-    // (`:961-969`).
-    if inner.gp_circ2d().is_some()
-        || inner.gp_elips2d().is_some()
-        || inner.gp_hypr2d().is_some()
-        || inner.gp_parab2d().is_some()
-    {
-        // `Geom2dConvert.cxx:199-209`: clamp to the basis range only when the
-        // basis is not periodic (`GeomLib.cxx:934-958`).
-        let (mut u_deb, mut u_fin) = if inner.is_periodic() {
-            (p0, p1)
-        } else {
-            (
-                if inner.first_parameter().is_finite() {
-                    inner.first_parameter().max(p0)
-                } else {
-                    p0
-                },
-                if inner.last_parameter().is_finite() {
-                    inner.last_parameter().min(p1)
-                } else {
-                    p1
-                },
-            )
-        };
-        if (u_fin - u_deb).abs() <= pconfusion {
-            u_deb = inner.first_parameter();
-            u_fin = inner.last_parameter();
-        }
-        let mut bs = occt_geom2d::geom2d_convert::trimmed_curve_to_bspline_curve(
-            inner,
-            u_deb,
-            u_fin,
-            occt_geom2d::geom2d_convert::DEFAULT_PARAMETERISATION,
-        )?;
-        occt_core::bspl::knots::reparametrize(a, b, &mut bs.knots);
-        return Some(bs);
-    }
-    let mut a_curve = inner.bspline_copy2d()?;
-    let (a_u1, a_u2) = (a_curve.first_parameter(), a_curve.last_parameter());
-    let (mut u_deb, mut u_fin) = (a_u1.max(p0), a_u2.min(p1));
-    if (u_fin - u_deb).abs() <= pconfusion {
-        u_deb = a_u1;
-        u_fin = a_u2;
-    }
-    if (u_deb - a_u1).abs() > pconfusion || (u_fin - a_u2).abs() > pconfusion {
-        a_curve.segment(u_deb, u_fin, pconfusion).ok()?;
-    }
-    occt_core::bspl::knots::reparametrize(a, b, &mut a_curve.knots);
-    Some(a_curve)
+    let (u_deb, u_fin) = same_range_window(inner, p0, p1);
+    trimmed_reparam_bspline(Arc::from(inner.clone_dyn()), u_deb, u_fin, a, b)
 }
 
-/// The curve `GeomLib::SameRange` (`GeomLib.cxx:842-969`) hands back for a
-/// `[p0, p1]`-parameterized curve requested on `[a, b]`.
+/// The curve `GeomLib::SameRange` (`GeomLib.cxx:842-970`) hands back for a
+/// `[p0, p1]`-parameterized curve requested on `[a, b]`, for its unequal-span
+/// arm (`:924-969`).
 ///
-/// A B-spline input yields the concrete segmented/reparameterized
-/// `Geom2d_BSplineCurve` OCCT stores (`:961-969`), so the port's dispatched
-/// callers see the same class OCCT tests for with
-/// `STANDARD_TYPE(Geom2d_BSplineCurve)`:
-/// `Geom2dConvert::CurveToBSplineCurve` (`Geom2dConvert.cxx:420-423`),
-/// `GeomLib::To3d` (`GeomLib.cxx:603-632`),
-/// `GeomLib::isIsoLine` (`GeomLib.cxx:3010-3029`, on the
-/// `GeomAbs_BSplineCurve` `GetType()`) and
-/// `ShapeBuild_Edge::TransformPCurve` (`ShapeBuild_Edge.cxx:679-698`).
+/// Every kind `Geom2dConvert::CurveToBSplineCurve` can convert -- line,
+/// trimmed line, circle, ellipse, hyperbola, parabola, Bezier, B-spline and
+/// `Geom2d_OffsetCurve` (`Geom2dConvert.cxx:181-449`, including the `RationalC1`
+/// circle/ellipse split through `CompCurveToBSplineCurve` at `:237-263`/`:276-302`
+/// and the offset approximation at `:353-368`/`:425-440`) -- yields the concrete
+/// reparameterized `Geom2d_BSplineCurve` OCCT stores (`cxx:962-968`), so the
+/// dispatched callers see the class OCCT tests for with
+/// `STANDARD_TYPE(Geom2d_BSplineCurve)`: `Geom2dConvert::CurveToBSplineCurve`
+/// (`Geom2dConvert.cxx:420-423`), `GeomLib::To3d` (`GeomLib.cxx:603-632`),
+/// `GeomLib::isIsoLine` (`GeomLib.cxx:3010-3029`, on the `GeomAbs_BSplineCurve`
+/// `GetType()`) and `ShapeBuild_Edge::TransformPCurve`
+/// (`ShapeBuild_Edge.cxx:679-698`).
 ///
-/// Every other kind keeps the linear [`ReparamCurve2d`] stand-in, which
-/// reproduces the OCCT parameterization for sampling but not the concrete
-/// class.
+/// Only a kind the conversion declines keeps the linear [`ReparamCurve2d`]
+/// stand-in, which reproduces the OCCT parameterization for sampling but not the
+/// concrete class. OCCT cannot reach that state from `GeomLib::SameRange`: its
+/// conversion throws and leaves the out-parameter null, which
+/// `BRepLib::SameRange` then stores as the pcurve (`BRepLib.cxx:236-254`); the
+/// port has no null pcurve, so that throw maps to this wrapper.
 pub fn reparam_curve2d(
     inner: Arc<dyn Curve2d>,
     a: f64,

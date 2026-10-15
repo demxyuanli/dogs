@@ -17,8 +17,9 @@
 //!   (`needResolveUJump` / `needResolveVJump`, `AdjustOverDegen`).
 //! - [`curve_projection`] - `ShapeConstruct_ProjectCurveOnSurface::Perform` and
 //!   the iso / analytic p-curve builders it dispatches to.
-//! - [`reparam`] - [`ReparamCurve2d`] and the helpers that align a pcurve range
-//!   with the edge 3D range.
+//! - [`reparam`] - [`ReparamCurve2d`] and the two `GeomLib::SameRange`
+//!   conversion tails (`trimmed_reparam_bspline`, `reparam_curve2d`) every
+//!   caller of that routine shares.
 //!
 //! Source: `ShapeAnalysis_Surface` and `ShapeConstruct_ProjectCurveOnSurface`.
 
