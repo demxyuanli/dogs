@@ -34,3 +34,6 @@ crates/occt-topo/_*.txt
 # zz_* scratch traces/tests dumped at the repo root
 /zz_*.txt
 /zz_*.obj
+
+# gate-run evidence logs (docs/goals/drift-and-gap-autofix)
+/.target-gate/

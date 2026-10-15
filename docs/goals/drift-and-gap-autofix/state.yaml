@@ -74,7 +74,7 @@ visual_board:
     url: "http://goalbuddy.localhost:41737/drift-and-gap-autofix/"
     command: "npx goalbuddy board docs/goals/drift-and-gap-autofix"
 
-active_task: T001
+active_task: T005
 
 tasks:
   - id: T001
@@ -106,7 +106,25 @@ tasks:
       - "Ranked top 3 candidate Worker slices with allowed_files, verify, stop_if (advisory for T003)."
       - "Banned-construct list with locations."
       - "Side findings for report only."
-    receipt: null
+    receipt:
+      result: done
+      executed_by: "PM inline (four parallel read-only Scout passes; no dedicated agent installed)"
+      summary: "Inventory rebuilt in notes/T001-inventory.md. 24 registered findings are already CLOSED (docs stale: topo-rest 1/4/6/11 and the classifier half of 18, bop 1-4/7/8-10/16/17, mesh 1-14/19/19b, geom/core mains). 8 LIVE drift clusters ranked (B1-B8) and ~115 UNPORTED markers bucketed A-D with 9 reachable leaf items. Banned constructs: no area-ratio/length-filter/volume-gate anywhere; the sampled-substitute family is concentrated in wire_splitter_block (B1), bbox_from_geometry (B3, unregistered), extrema_* (B6), deflection/param_set, hlr, solid_union, brepfeat revolve."
+      note: notes/T001-inventory.md
+      coverage: "4 Scout passes: (1) topo-rest findings 1,3,4,5,6,8,9,10,11,15,17,18; (2) occt-geom + occt-core in full + pc_curve_kind; (3) bop-boolean + mesh-exchange in full; (4) every UNPORTED marker across the five crates' src trees."
+      evidence:
+        - "specs/occt-scope-drift.canvas.tsx (SEMANTIC/CLOSED/DOCDRIFT/GATES arrays)"
+        - "specs/_audit/_index.md sections 9.1-9.4 and the five per-area audit docs"
+        - "D:/source/OCCT-src/src greps for every cited cxx line"
+        - "working-tree greps for every cited rust line and for the absence of the closed symbols"
+      spawned_tasks:
+        - T003
+      side_findings:
+        - "The drift canvas SEMANTIC array over-reports: 24 registered lines are already closed."
+        - "bbox_from_geometry.rs sampled bbox is a live construct no audit doc registers."
+        - "Two parallel GeomAdaptor_Surface::U/VResolution implementations; only wire_splitter_block is hand-rolled."
+        - "validate.rs stub coexists with the real brep_check.rs port and must not be used as a gate."
+        - "occt-math newton_minimum.rs already faithfully ports math_NewtonMinimum, so the globoptmin.rs:590 and newton.rs:81,91 markers are stale."
 
   - id: T002
     type: scout
@@ -125,12 +143,28 @@ tasks:
     expected_output:
       - "notes/T002-gate-baseline.md with command, status, and per-model v/f table."
       - "Any baseline in the docs that disagrees with the measured value, with the correction."
-    receipt: null
+    receipt:
+      result: done
+      executed_by: "PM inline (Scout role)"
+      summary: "Baseline frozen at HEAD e77be18e on a clean tree. Five crates: 0 errors. occt-topo --lib: 1251 passed / 0 failed (4.50s). step_obj_gates: 4 passed (182.12s). export_data_obj: 15/15 ok with the v/f table in notes/T002-gate-baseline.md. No environment failure appeared in this run; the %TEMP% note in the charter did not reproduce."
+      note: notes/T002-gate-baseline.md
+      evidence:
+        - ".target-gate/t000/lib.txt (tail: 'cargo test: 1251 passed (1 suite, 4.50s)')"
+        - ".target-gate/t000/gates.txt (tail: 'cargo test: 4 passed (1 suite, 182.12s)')"
+        - ".target-gate/t000/export-obj.txt and the baseline cargo check log"
+      measured:
+        cargo_check: "occt-math 0 errors / 27 warnings; occt-geom2d 0 / 81; occt-geom 0 / 100; occt-core 0 / 8; occt-topo --all-targets 0 / 375"
+        lib: "1251 passed / 0 failed"
+        step_obj_gates: "4 passed / 0 failed"
+        export_data_obj: "15 ok / 0 err"
+      corrections:
+        - "The charter's blind spot about %TEMP% write-permission lib failures did not reproduce in this baseline; a future lib failure must be treated as a real regression until proven otherwise."
+        - "export_data_obj prints 15 models for the bare run (the 23/23 figure applies to the '-- data/occ data' argument form)."
 
   - id: T003
     type: judge
     assignee: Judge
-    status: queued
+    status: done
     reasoning_hint: high
     objective: "Choose the largest safe first Worker slice from the T001 inventory and set exact Worker parameters."
     inputs:
@@ -147,27 +181,81 @@ tasks:
       - "allowed_files"
       - "verify"
       - "stop_if"
-    receipt: null
+    receipt:
+      result: done
+      executed_by: "PM inline (Judge role; no subagent installed)"
+      decision: proceed
+      rationale: "B1 is the largest safe useful slice in the inventory: three distinct OCCT arms of one class (BOPAlgo_WireSplitter_1.cxx:768-840 Angle2D, :859-901 Tolerance2D/UTolerance2D/VTolerance2D, :1060 RefineAngle2D) all land in one Rust file already on the live BOP path (wire_splitter.rs -> WireSplitter). Every arm has a same-branch cxx fix with the dependency already ported (approx_same_parameter::{u,v}_resolution for B1a, cl_props2d::GeomLPropCLProps2d for B1b, vertex_parameter_on_face for B1c), so no new predicate, threshold or lookup table is needed. B2/B3/B6 are larger but need a further Scout pass (B3 needs a BRepBndLib dependency check), and B5 is smaller. The slice is a genuine geometry behavior change (2D tolerance and 2D wedge angles fed to the wire splitter), not a rename."
+      rejected:
+        - "B4 face_sample_point: same-branch fix exists but touches four duplicated sites across BOP solids; not the largest safe first slice."
+        - "Any item whose only change would be doc text, or that would delete a live construct without landing the cxx arm."
+      approved:
+        - "B1a uv_tolerance_2d -> occt_geom::approx_same_parameter::{u_resolution,v_resolution}; delete fd_uv_tolerance (GeomAdaptor_Surface.cxx:1818-1958)."
+        - "B1b curve2d_radius -> GeomLPropCLProps2d is_tangent_defined/curvature (BOPAlgo_WireSplitter_1.cxx:797-807)."
+        - "B1c refine_angle_2d aTV -> vertex_parameter_on_face, i.e. BRep_Tool::Parameter(aV,aE,face) (BOPAlgo_WireSplitter_1.cxx:1060)."
+      t004_allowed_files:
+        - "crates/occt-topo/src/wire_splitter_block.rs"
+      t004_verify:
+        - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets"
+        - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib"
+        - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+        - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+      t004_stop_if:
+        - "Need files outside allowed_files."
+        - "The cxx branch the fix needs does not exist or depends on an unported layer."
+        - "Verification fails twice."
+        - "The fix would require a predicate, area ratio, length filter, volume gate, or per-model special case."
+      note: "B2 (pc_curve_kind), B3 (bbox_from_geometry) and B6 (Extrema failure fabrication) are queued behind one more Scout pass each; B5 is a small self-contained follow-up."
 
   - id: T004
     type: worker
     assignee: Worker
-    status: queued
+    status: done
     reasoning_hint: medium
-    objective: "Execute the first safe Worker slice selected by T003."
-    allowed_files: []
-    verify: []
+    objective: "Execute the T003-approved slice: port the three BOPAlgo_WireSplitter Angle2D / Tolerance2D / RefineAngle2D arms into crates/occt-topo/src/wire_splitter_block.rs (uv_tolerance_2d delegation, GeomLPropCLProps2d curvature, pcurve vertex parameter)."
+    allowed_files:
+      - "crates/occt-topo/src/wire_splitter_block.rs"
+    verify:
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
     stop_if:
       - "Need files outside allowed_files."
       - "The cxx branch the fix needs does not exist or depends on an unported layer."
       - "Verification fails twice."
       - "The fix would require a predicate, area ratio, length filter, volume gate, or per-model special case."
-    receipt: null
+    receipt:
+      result: done
+      executed_by: "PM inline (Worker role; no subagent installed)"
+      changed_files:
+        - "crates/occt-topo/src/wire_splitter_block.rs"
+      summary: "THREE OCCT ARMS LANDED, NO NEW PREDICATE. (B1a) uv_tolerance_2d now forwards to occt_geom::approx_same_parameter::{u_resolution,v_resolution} -- the single faithful port of GeomAdaptor_Surface::U/VResolution (GeomAdaptor_Surface.cxx:1818-1958) that four other call sites already use -- and the hand-rolled per-class switch plus its fd_uv_tolerance finite-difference fallback are deleted. That also picks up the Geom_RectangularTrimmedSurface unwrap (cxx:423-430), the GeomAbs_OffsetSurface arms (cxx:1882-1885, :1944-1947), the cone unbounded guard (cxx:1855-1858) and the analytic cone radius S->VIso(V)->Radius() (cxx:1861-1866), and puts the revolution/extrusion arms on their basis curve's Resolution instead of t3/|dS/du|. (B1b) angle_2d now uses GeomLProp_CLProps2d::new(c, tv, 2, PConfusion()) + is_tangent_defined() + curvature() (BOPAlgo_WireSplitter_1.cxx:797-807) instead of the inlined |D1 x D2|/|D1|^3 helper curve2d_radius, whose guard compared |D1|^2 against PConfusion. (B1c) refine_angle_2d now takes aTV from vertex_parameter_on_face, i.e. the 3-arg BRep_Tool::Parameter(aV, aE, aFace) pcurve parameter (cxx:1060), instead of the 3D edge parameter; the function's UNPORTED note is removed. Dead leftovers from the same class (curve_resolution, the unused CurveKind and Curve2d imports) are deleted."
+      commands:
+        - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets"
+          status: pass
+          note: "0 errors, 373 warnings (baseline 375; the 2 removed are the dead CurveKind import and curve_resolution). occt-math 0/27, occt-geom2d 0/81, occt-geom 0/100, occt-core 0/8 also unchanged."
+        - cmd: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib"
+          status: pass
+          note: "1251 passed / 0 failed, equal to the T002 baseline."
+        - cmd: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+          note: "4 passed / 0 failed, equal to the T002 baseline."
+        - cmd: "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+          note: "15 ok / 0 err with the vertex/face counts and bboxes bit-identical to the T002 baseline for all 15 models."
+      evidence:
+        - ".target-gate/t001/check.txt, lib.txt, gates.txt, gates-raw.txt, export-obj.txt"
+        - ".target-gate/t000/* (the frozen T002 baseline these were compared against)"
+        - "D:/source/OCCT-src/src/ModelingAlgorithms/TKBO/BOPAlgo/BOPAlgo_WireSplitter_1.cxx:768-840, :859-901, :1060"
+        - "D:/source/OCCT-src/src/ModelingData/TKG3d/GeomAdaptor/GeomAdaptor_Surface.cxx:1818-1958"
+        - "D:/source/OCCT-src/src/ModelingData/TKBRep/BRep/BRep_Tool.cxx:1519-1652"
+      note: "Package committed; see the PM receipt T005."
 
   - id: T005
     type: pm
     assignee: PM
-    status: queued
+    status: active
     reasoning_hint: medium
     objective: "Rolling advance: after each verified Worker package, write the receipt and commit, then update the inventory and activate the next largest safe Worker package until the inventory is exhausted."
     inputs:

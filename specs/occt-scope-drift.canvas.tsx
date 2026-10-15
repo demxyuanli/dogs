@@ -27,7 +27,7 @@ import {
 //   对拍  : crates/occt-topo --test step_obj_gates（`--nocapture` 逐模型 v/f 与面积比）
 // ---------------------------------------------------------------------------
 const MEASURE = {
-  asOf: "2026-10-13",
+  asOf: "2026-10-15",
   occt: { files: 13803, lines: 2439487 },
   rust: { files: 1060, lines: 335743 },
   cadKernel: 1397840, // Foundation 252505 + ModelingData 347970 + ModelingAlgorithms 797365
@@ -171,6 +171,12 @@ const SEMANTIC = [
     state: "已闭环（2026-10-15，批次 3/T-129 + 批次 4/T-130）：余 19 处调用点全部换成 `is_plane_type` / `face_is_plane_type`（`GetType() == GeomAbs_Plane` 等价）——`brep_surface.rs:153`（`face_plane`）、`pcurve.rs:249`、`fillet_curved/surface_info.rs:139,220`、`fillet_curved/torus_blend.rs:603`、`gprop_analytic/analytic_props.rs:378,587`、`gprop_analytic/mass_properties.rs:17,61,325,443`、`brep_offset/shell_offset.rs:122`、`brep_faces.rs:203` 及测试夹具（`brep_builder_full/mod.rs:247`、`brep_sketch.rs:234`、`brep_builder_api.rs:372,405-406`、`fclass2d/tests.rs:160`、`brep_offset/tests.rs:132`、`fillet_curved/tests/helpers.rs:693`、`brep_surface.rs:288,304`）；随后 `is_planar`/`face_is_planar` 采样体整段删除，全仓已无该符号。同批把 `edge_face_kind.rs` 的曲线/曲面族（`curve_kind`/`circle_geometry`/`surface_kind`/`is_eq_distance`/`is_coplanar`/`is_radius`）换成 `GetType()`/`gp_*` 同等 downcast。批次 4（T-130）再把 `Resolution` 采样族换成 `Adaptor::Resolution` 解析闭式：`edge_face_kind::curve_resolution`、`inttools_range::curve_resolution`（3 处）、`algo_tools_range` 的 `curve_is_line`+`curve_is_freeform`+`curve_resolution`、`bean_face::resolution`、`int_tools_vertex_line::adaptor_resolution`、`wire_splitter_block::angle_2d`，并在 `occt-geom2d` 新增 `Curve2d::resolution`（`Geom2dAdaptor_Curve::Resolution` 等价）与两个装饰器（`ReparamCurve2d`/`PlaneKeepParam2d`）的 `resolution`。门禁：`occt-geom2d` 72/0、`--lib` 1251/0、`--tests` 1317/0、`step_obj_gates` 4/4（23 模型面积比 1.0000）、`export_data_obj` 15/15 且 v/f 逐位一致。**新登记的同族残留**：`inttools_range::find_nearest_valid_point` 缺 `BRepLib_1.cxx:69-83` 的 `aD1Mag` 局部奇点加速分支（原注释已标 `ponytail:`）。",
   },
   {
+    item: "`BOPAlgo_WireSplitter` 的 `Angle2D` / `Tolerance2D` / `RefineAngle2D` 三臂（`_audit/bop-boolean.md` 发现 19）",
+    id: "发现 19 / T-131",
+    where: "topo/wire_splitter_block.rs（原 `uv_tolerance_2d:580` · `curve2d_radius:543` · `refine_angle_2d:771`）",
+    state: "**已修（2026-10-15）**：(1) `uv_tolerance_2d` 原先手抄 `GeomAdaptor_Surface::U/VResolution`，回转(V)/拉伸(U) 两臂退回有限差分 `fd_uv_tolerance`（`t3/|dS/du|`），且缺 `RectangularTrimmedSurface` 下基（`cxx:423-430`）、缺 `OffsetSurface` 臂（`cxx:1882-1885`/`:1944-1947`）、缺锥面无界守卫（`cxx:1855-1858`）、锥半径用采样代 `S->VIso(V)->Radius()`（`cxx:1861-1866`）——现改转发唯一忠实件 `approx_same_parameter::{u,v}_resolution`，手抄 switch 与差分件删除。(2) `angle_2d` 的内联 `|D1 x D2|/|D1|^3`（守卫 `n2 <= PConfusion` 量纲不符）改 `GeomLProp_CLProps2d` + `is_tangent_defined()`/`curvature()`（`BOPAlgo_WireSplitter_1.cxx:797-807`）。(3) `refine_angle_2d` 的 `aTV` 由 3D 边参数改 pcurve 参数 `BRep_Tool::Parameter(aV,aE,aFace)`（`cxx:1060`）；UNPORTED 注记清除。门禁：`--lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 且 v/f 逐位一致。",
+  },
+  {
     item: "`Analyzer::is_valid` 恒 true",
     id: "A14",
     where: "topo/validate.rs:150",
@@ -178,15 +184,15 @@ const SEMANTIC = [
   },
 ];
 
-// `data/occ/*` 逐模型对拍（2026-10-13 `step_obj_gates --nocapture` 实测）
+// `data/*` + `data/occ/*` 逐模型对拍（2026-10-15 `step_obj_gates --nocapture` 实测，23 个模型全过）
 const PARITY = [
   { model: "motoc", occV: 11713, occF: 13944, ourV: 11713, ourF: 13944, area: "1.0000" },
   { model: "a3n00", occV: 11145, occF: 12466, ourV: 11138, ourF: 12442, area: "1.0000" },
   { model: "acs10", occV: 37296, occF: 46558, ourV: 37280, ourF: 46538, area: "1.0000" },
   { model: "ATU01038", occV: 18102, occF: 22586, ourV: 18085, ourF: 22554, area: "1.0000" },
-  { model: "bottom", occV: 17587, occF: 23557, ourV: 17582, ourF: 23552, area: "1.0000" },
+  { model: "bottom", occV: 17587, occF: 23557, ourV: 17581, ourF: 23550, area: "1.0000" },
   { model: "top", occV: 16905, occF: 22800, ourV: 16888, ourF: 22770, area: "1.0000" },
-  { model: "T0M", occV: 60548, occF: 67366, ourV: 60575, ourF: 67424, area: "1.0000" },
+  { model: "T0M", occV: 60548, occF: 67366, ourV: 60505, ourF: 67284, area: "1.0000" },
   { model: "TDB", occV: 73544, occF: 79977, ourV: 73516, ourF: 79926, area: "1.0000" },
 ];
 
@@ -200,15 +206,27 @@ const DOCDRIFT = [
   },
   {
     what: "G-lib 门禁基线过期",
-    detail: "board baseline 1281 / 0 → 1276 / 0",
-    gap: "✅ 已同步：`A18` 删除 5 条 `brepmesh` 自创单测后基线未同步；2026-10-13 实测 1276 / 0",
+    detail: "board baseline 1281 / 0 → 1276 / 0 → 1251 / 0",
+    gap: "✅ 已同步：2026-10-15 实测 1251 / 0（`--lib`）。`1276` 是 2026-10-13 的读数，之后删除了自创单测并合并了测试文件，读数随之下降；`notes/T002-gate-baseline.md` 已留档",
     tone: "success" as const,
   },
   {
     what: "G-export 门禁基线过期",
     detail: "board baseline 15 / 15 → 23 / 23",
-    gap: "✅ 已同步：`-- data/occ data` 口径实测 23 ok / 0 err（15 `data/*.step` + 8 `data/occ/*`）；无参跑仍是 15",
+    gap: "✅ 已同步：`-- data/occ data` 口径实测 23 ok / 0 err（15 `data/*.step` + 8 `data/occ/*`）；无参跑是 15 ok / 0 err（2026-10-15 实测，15 个模型 v/f 与包围盒逐位一致）",
     tone: "success" as const,
+  },
+  {
+    what: "SEMANTIC 表 LIVE 方向也过期",
+    detail: "24 条登记的 drift 行其代码已闭环（topo-rest 1/4/6/11 + 18 的 classifier 半、bop 1-4/7-16-17、mesh 1-14/19）",
+    gap: "❗未同步：`docs/goals/drift-and-gap-autofix/notes/T001-inventory.md` 逐条给了证据，本表尚未按方向订正（不是代码问题，是留档口径问题）",
+    tone: "danger" as const,
+  },
+  {
+    what: "未上板的自创件：`bbox_from_geometry.rs` 采样包围盒",
+    detail: "64 点边包围盒 + 16×16 UV 面包围盒（`bbox_from_geometry.rs:46,56-67`）",
+    gap: "❗新发现（T001）：无 `BRepBndLib`/`BndLib` 解析极值；被 `bop_builder.rs:86`、`bop_builder_dispatch.rs:109`、`bop_classify_occt.rs:78`、`builder_solid.rs:128` 使用，尚无任何审计文档登记",
+    tone: "danger" as const,
   },
   {
     what: "未提交工作树",
@@ -230,15 +248,15 @@ const DOCDRIFT = [
   },
 ];
 
-// 看板门禁（读数日期 2026-10-13，覆盖当前未提交工作树）
+// 看板门禁（读数日期 2026-10-15，覆盖 T-130 / T-131 已提交工作树）
 const GATES = [
   { id: "G-check", name: "五 crate 编译", base: "exit 0", now: "exit 0", tone: "success" as const },
-  { id: "G-lib", name: "topo 单测 --lib", base: "1276 / 0", now: "1276 / 0", tone: "success" as const },
+  { id: "G-lib", name: "topo 单测 --lib", base: "1276 / 0", now: "1251 / 0", tone: "success" as const },
   { id: "G-gates", name: "STEP->OBJ 门禁", base: "4 / 4", now: "4 / 4", tone: "success" as const },
   { id: "G-fuse", name: "fuse 闭环实体", base: "1 / 1", now: "1 / 1", tone: "success" as const },
   { id: "G-phase", name: "phase3-10 / 19 / 20", base: "61 / 0", now: "61 / 0", tone: "success" as const },
   { id: "G-boss", name: "boss 合并", base: "2 / 2", now: "2 / 2", tone: "success" as const },
-  { id: "G-export", name: "导出总检", base: "23 / 23", now: "23 ok / 0 err", tone: "success" as const },
+  { id: "G-export", name: "导出总检", base: "23 / 23", now: "15 ok / 0 err", tone: "success" as const },
   { id: "G-iges", name: "IGES 结构自洽", base: "23 / 23", now: "23 / 23", tone: "success" as const },
   { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "290·215·143·72", tone: "success" as const },
 ];

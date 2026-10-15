@@ -212,6 +212,38 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 影响：无（live 已用忠实实现）；风险是这套"故意不用 FClass2d"的实现被接线回主路径，会把 growth/hole 判成"嵌套即孔"，对分离片/相切环出错。
 - 建议：删除该实现，或让测试改调 `builder_face_occt`。
 
+### 19. `bop_split_seam` 同类的 `BOPAlgo_WireSplitter` 三臂（2026-10-15 发现并修复）
+
+- 判定：**自创替代（已修）**
+- 证据（修复前）：
+  - `crates/occt-topo/src/wire_splitter_block.rs:580-655` 的 `uv_tolerance_2d` 手抄了一遍
+    `GeomAdaptor_Surface::U/VResolution`，并在 `SurfaceOfRevolution`(V) / `SurfaceOfExtrusion`(U)
+    两臂退回有限差分 `fd_uv_tolerance`（`t3/|dS/du|`）；同时缺
+    `Geom_RectangularTrimmedSurface` 下基（`GeomAdaptor_Surface.cxx:423-430`）、缺
+    `GeomAbs_OffsetSurface` 臂（`cxx:1882-1885`、`:1944-1947`）、缺锥面无界守卫
+    （`cxx:1855-1858`），锥面半径用 `d0(0,v)`/`d0(PI,v)` 采样而非
+    `S->VIso(V)->Radius()`（`cxx:1861-1866`）。
+  - `:543-554` 的 `curve2d_radius` 内联 `|D1 x D2| / |D1|^3`，其守卫用 `n2 <= PConfusion`
+    （`|D1|^2` 对 `1e-9`）量纲不符，取代 `GeomLProp_CLProps2d`
+    （`BOPAlgo_WireSplitter_1.cxx:797-807` 的 `IsTangentDefined()`/`Curvature()`）。
+  - `:771` 的 `refine_angle_2d` 用 3D 边参数当顶点参数；OCCT 取 **pcurve** 参数
+    （`aTV = BRep_Tool::Parameter(aV, aE, myFace)`，`cxx:1060`）。
+- 是否在 live 路径：**是**。`wire_splitter_block::split_block` ← `wire_splitter.rs:329/349/365/486`
+  （`WireSplitter` ← BOP）。
+- OCCT 对应：`BOPAlgo_WireSplitter_1.cxx:768-840`（`Angle2D`）、`:859-901`
+  （`Tolerance2D`/`UTolerance2D`/`VTolerance2D`）、`:1060`（`RefineAngle2D`）。
+- 修法（同分支）：`uv_tolerance_2d` 改为转发唯一忠实件
+  `occt_geom::approx_same_parameter::{u_resolution,v_resolution}`（另 4 处调用点已在用），删除
+  手抄 switch 与 `fd_uv_tolerance`；`angle_2d` 改
+  `GeomLPropCLProps2d::new(c, tv, 2, PConfusion())` + `is_tangent_defined()` + `curvature()`；
+  `refine_angle_2d` 的 `aTV` 改 `vertex_parameter_on_face`（即 3 参数版
+  `BRep_Tool::Parameter(V,E,F)`，`BRep_Tool.cxx:1519-1652`）；同批删掉同类的死件
+  `curve_resolution`、未用的 `CurveKind`/`Curve2d` import。
+- 影响：2D 容差与 2D 楔角被 wire splitter 用来决定块的拆分方向；旧实现在回转/拉伸面上给出
+  与 OCCT 差一个量级的 `dt`。
+- 门禁（2026-10-15）：`--lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 且 15 个模型
+  顶点/面数与包围盒逐位一致；`cargo check` 五 crate 0 error（`occt-topo` 警告 375 → 373）。
+
 ## 抽样核实为忠实的区域（无自创判据）
 
 - `bop_tools_set.rs:107-123`（退化边跳过、INTERNAL 存两次）与 `bop_same_domain_faces.rs:279-304`

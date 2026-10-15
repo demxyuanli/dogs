@@ -11,14 +11,13 @@ use std::f64::consts::PI;
 
 use occt_core::gp::{GpDir2d, GpPnt2d, GpVec2d};
 use occt_core::precision::{Precision, ANGULAR, PCONFUSION};
-use occt_geom2d::curve::Curve2d;
+use occt_geom2d::cl_props2d::GeomLPropCLProps2d;
 use occt_geom2d::line::Geom2dLine;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::boptools_2d::make_2d;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
-use crate::pcurve::CurveKind;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
 
@@ -500,10 +499,14 @@ fn angle_2d(v: &TopoShape, e: &Edge, face: &Face, is_in: bool) -> f64 {
     // (`:795`) driving the non-line curvature correction (`:796-807`).
     let mut dt = c.resolution(tol2d).max(PCONFUSION);
     if !c.is_line() {
-        let r = curve2d_radius(c.as_ref(), tv);
-        if r > PCONFUSION {
-            let cosphi = r / (r + tol2d);
-            if cosphi.abs() <= 1.0 {
+        // `GeomLProp_CLProps2d LProp(aC2D, aTV, 2, Precision::PConfusion())`
+        // then `IsTangentDefined()` / `Curvature()` (`_1.cxx:797-807`).
+        let mut lprop = GeomLPropCLProps2d::new(c.as_ref(), tv, 2, PCONFUSION);
+        if lprop.is_tangent_defined() {
+            let mut r = lprop.curvature();
+            if r > PCONFUSION {
+                r = 1.0 / r;
+                let cosphi = r / (r + tol2d);
                 dt = dt.max(cosphi.acos());
             }
         }
@@ -533,27 +536,6 @@ fn angle_2d(v: &TopoShape, e: &Edge, face: &Face, is_in: bool) -> f64 {
     }
 }
 
-/// `Geom2dAdaptor_Curve::Resolution` (`Geom2dAdaptor_Curve.cxx:1186-1219`) via
-/// [`Curve2d::resolution`]; `Angle2D` reads it as
-/// `aGAC2D.Resolution(tol2d)` (`BOPAlgo_WireSplitter_1.cxx:792`).
-fn curve_resolution(c: &dyn Curve2d, tol2d: f64) -> f64 {
-    c.resolution(tol2d)
-}
-
-fn curve2d_radius(c: &dyn Curve2d, t: f64) -> f64 {
-    let (_, d1, d2) = c.d2(t);
-    let n2 = d1.square_magnitude();
-    if n2 <= PCONFUSION {
-        return 0.0;
-    }
-    let k = d1.crossed(&d2).abs() / n2.powf(1.5);
-    if k > PCONFUSION {
-        1.0 / k
-    } else {
-        0.0
-    }
-}
-
 /// `BOPAlgo_WireSplitter::Tolerance2D` (`BOPAlgo_WireSplitter_1.cxx:859-881`):
 /// `max(UResolution, VResolution, tolerance)` with the 1.1 factor of
 /// `GeomAbs_BSplineSurface`.
@@ -573,113 +555,25 @@ fn tolerance_2d(v: &Vertex, face: &Face) -> f64 {
 }
 
 /// `BOPAlgo_WireSplitter::UTolerance2D` / `VTolerance2D` (`_1.cxx:885-901`):
-/// `BRepAdaptor_Surface::U/VResolution` (`GeomAdaptor_Surface.cxx:1818-1945`).
+/// `BRepAdaptor_Surface::U/VResolution` (`GeomAdaptor_Surface.cxx:1818-1958`).
 ///
-/// UNPORTED: the revolution (V) and extrusion (U) arms need the *basis curve's*
-/// `Resolution`; those two keep the former finite-difference estimate.
+/// OCCT has one implementation of that switch and the port keeps one too, in
+/// [`occt_geom::approx_same_parameter`]; this forwards to it rather than
+/// re-deriving the per-class arms (the former hand-rolled version left the
+/// revolution / extrusion arms on a finite-difference estimate, missed the
+/// `Geom_RectangularTrimmedSurface` unwrap of `cxx:423-430` and the
+/// `GeomAbs_OffsetSurface` arms of `cxx:1882-1885` / `:1944-1947`, and had no
+/// unbounded-cone guard for `cxx:1855-1858`).
 fn uv_tolerance_2d(v: &Vertex, face: &Face) -> (f64, f64) {
     let t3 = BRepTool::vertex_tolerance(v);
     let Some(surf) = BRepTool::face_surface(face) else {
         return (t3, t3);
     };
     let s = surf.as_ref();
-    use crate::geom_bnd_lib_surface3d::{surface_kind, SurfaceKind};
-    // `if (Res <= 1.) return 2*asin(Res); return 2*pi;` (`cxx:1913-1916`, `:1943-1945`).
-    let angular = |res: f64| {
-        if res <= 1.0 {
-            2.0 * res.asin()
-        } else {
-            2.0 * PI
-        }
-    };
-    let exact_uv = || s.uv_resolution(t3);
-    match surface_kind(s) {
-        // `case GeomAbs_Torus: Res = R3d / (2*(Major+Minor))` (U), `Minor` (V).
-        SurfaceKind::Torus => {
-            let (major, minor) = s
-                .gp_torus()
-                .map(|t| (t.major_radius(), t.minor_radius()))
-                .unwrap_or((0.0, 0.0));
-            let ru = if major + minor > occt_core::precision::CONFUSION {
-                t3 / (2.0 * (major + minor))
-            } else {
-                0.0
-            };
-            let rv = if minor > occt_core::precision::CONFUSION { t3 / (2.0 * minor) } else { 0.0 };
-            (angular(ru), angular(rv))
-        }
-        // Sphere: both directions `R3d / (2*R)`.
-        SurfaceKind::Sphere => {
-            let r = s.gp_sphere().map(|x| x.radius()).unwrap_or(0.0);
-            let res = if r > occt_core::precision::CONFUSION { t3 / (2.0 * r) } else { 0.0 };
-            (angular(res), angular(res))
-        }
-        // Cylinder: U `R3d/(2*R)`, V `R3d`.
-        SurfaceKind::Cylinder => {
-            let r = s.gp_cylinder().map(|x| x.radius()).unwrap_or(0.0);
-            let res = if r > occt_core::precision::CONFUSION { t3 / (2.0 * r) } else { 0.0 };
-            (angular(res), t3)
-        }
-        // Cone: U uses the largest `VIso` radius over the V range, V is `R3d`.
-        SurfaceKind::Cone => {
-            let (v0, v1) = s.v_range();
-            let radius_at = |vv: f64| s.d0(0.0, vv).distance(&s.d0(PI, vv)) * 0.5;
-            let r = if v0.is_finite() && v1.is_finite() {
-                radius_at(v0).max(radius_at(v1))
-            } else {
-                0.0
-            };
-            let ru = if r > occt_core::precision::CONFUSION { t3 / r } else { 0.0 };
-            (ru, t3)
-        }
-        // Plane / extrusion (V): both `R3d`.
-        SurfaceKind::Plane => (t3, t3),
-        // Bezier / BSpline / offset: the surface's own `Resolution`.
-        SurfaceKind::BezierSurface | SurfaceKind::BSplineSurface | SurfaceKind::OffsetSurface => {
-            match exact_uv() {
-                Some((ur, vr)) => (ur, vr),
-                None => fd_uv_tolerance(v, s, t3),
-            }
-        }
-        // Revolution (V) and extrusion (U) need the basis curve's `Resolution`
-        // (UNPORTED — see the doc comment); default arm is
-        // `Precision::Parametric(R3d)` = `R3d * 0.01` (`Precision.hxx:328`).
-        SurfaceKind::SurfaceOfRevolution | SurfaceKind::SurfaceOfExtrusion => {
-            fd_uv_tolerance(v, s, t3)
-        }
-        _ => (t3 * 0.01, t3 * 0.01),
-    }
-}
-
-/// Former finite-difference estimate `t3 / |dS/du|` — kept only for the
-/// UNPORTED revolution/extrusion arms (and as a fallback when a surface
-/// reports no `Resolution`).
-fn fd_uv_tolerance(v: &Vertex, s: &dyn occt_geom::surface::Surface, t3: f64) -> (f64, f64) {
-    let t3 = t3.max(PCONFUSION);
-    let p = BRepTool::vertex_point(v);
-    // `fd_uv_tolerance` stands in for the unported revolution/extrusion
-    // `Resolution` arms (see the caller's doc comment); the (u, v) at which the
-    // finite-difference derivative is evaluated come from OCCT's
-    // point-on-surface projection (`Extrema_ExtPS`).
-    let Some(ps) = occt_geom::geom_api::project_point_on_surface(
-        s,
-        &p,
-        occt_core::precision::CONFUSION,
-    ) else {
-        return (t3, t3);
-    };
-    let (_, du, dv) = s.d1(ps.u, ps.v);
-    let ur = if du.magnitude() > PCONFUSION {
-        t3 / du.magnitude()
-    } else {
-        t3
-    };
-    let vr = if dv.magnitude() > PCONFUSION {
-        t3 / dv.magnitude()
-    } else {
-        t3
-    };
-    (ur, vr)
+    (
+        occt_geom::approx_same_parameter::u_resolution(s, t3),
+        occt_geom::approx_same_parameter::v_resolution(s, t3),
+    )
 }
 
 /// `BOPAlgo_WireSplitter::RefineAngles` (`BOPAlgo_WireSplitter_1.cxx:905-918`,
@@ -765,14 +659,6 @@ fn refine_angles_at_vertex(face: &Face, v: &TopoShape, infos: &mut [EdgeInfo]) {
 ///   [`occt_geom2d::geom2d_api::intersect_curves`] and applies the
 ///   `[a_t1, a_t2]` restriction itself (`:1084-1100`). The two agree when the
 ///   intersector returns every intersection point of that domain.
-/// * **UNPORTED**: OCCT takes the vertex parameter from the *pcurve*
-///   (`aTV = BRep_Tool::Parameter(aV, aE, myFace)`, `cxx:1060`); this port uses
-///   the **3D edge parameter** ([`vertex_parameter`]). That is only valid when
-///   the pcurve and the 3D curve share a parameterization (SameParameter): the
-///   degenerate "pcurve parameterization ≠ 3D edge parameterization" case is
-///   handled silently as if it were SameParameter. `IntTools_Curve` and
-///   `MakeSplitEdge` keep that property for the BOP inputs, but this is not
-///   line-by-line equivalent.
 fn refine_angle_2d(
     face: &Face,
     v: &TopoShape,
@@ -785,7 +671,9 @@ fn refine_angle_2d(
     let a_tol_int = 1.0e-10;
     let c = make_2d(e, face).ok()?;
     let (a_t1, a_t2) = BRepTool::edge_parameters(e);
-    let a_tv = vertex_parameter(v, e);
+    // `aTV = BRep_Tool::Parameter(aV, aE, myFace)` (`cxx:1060`) — the vertex
+    // parameter on the *pcurve*, not on the 3D edge.
+    let a_tv = vertex_parameter_on_face(v, e);
     let a_pv = c.d0(a_tv);
     let a_t_op = if (a_tv - a_t1).abs() < (a_tv - a_t2).abs() {
         a_t2
