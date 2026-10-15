@@ -78,6 +78,40 @@ active_task: T005
 
 packages:
   # One entry per closed, verified, committed package. Written by T005 (PM).
+  - id: P006
+    task: T005
+    commit: b1c3c6c1
+    title: "occt-geom 曲面族 Extrema 失败伪造（三个 fallback_*）移除（Extrema_ExtPS.cxx:307-371 / Extrema_ExtCS.cxx:122,532 / Extrema_ExtSS.cxx:226-260 / Extrema_ExtElSS.cxx:62-83，T001 的 B6a / T-136）"
+    files:
+      - "crates/occt-geom/src/extrema_surf/numeric_extrema.rs"
+      - "crates/occt-geom/src/extrema_ss.rs"
+      - "crates/occt-geom/src/extrema.rs"
+      - "crates/occt-geom/src/extrema_surf/tests.rs"
+      - "crates/occt-topo/src/bean_face_exact.rs"
+      - "crates/occt-topo/src/brep_extrema.rs"
+      - "crates/occt-topo/src/gprop_analytic/edge_length.rs"
+      - "crates/occt-topo/tests/phase6_integration.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/_index.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "B6a-1 extrema_surf/numeric_extrema.rs fallback_point_surface (40x40 grid + coordinate descent) at :153/:433"
+      - "B6a-2 extrema_surf/numeric_extrema.rs fallback_curve_surface (20x16x16 grid) at :374/:514"
+      - "B6a-3 extrema_ss.rs fallback_ss (12^4 grid) at :449/:506"
+      - "B6a-4 the three minimum-distance entries now return Option<ExtremaPair> (None = !IsDone() or NbExt() == 0); occt_geom::extrema thin wrappers follow"
+      - "B6a-5 bean_face_exact::ComputeUsingExtremum's candidates.is_empty() fallback branch -> IntTools_BeanFaceIntersector.cxx:956 guard (not done => whole block skipped, no range flag)"
+      - "registration: _audit/_index.md A15 'surface-family fallbacks kept because a live consumer needs them; removal gated on T-67' corrected -- the consumer takes the not-done branch, so the gate never existed"
+    gates:
+      check: "0 errors, occt-geom --all-targets and occt-topo --all-targets"
+      lib: "occt-geom 143 / 0; occt-topo 1251 / 0 (= baseline, monotonic)"
+      step_obj_gates: "4 / 4 (= baseline, 117s)"
+      export_data_obj: "15 / 15 ok, v/f and bbox bit-identical to baseline"
+    side_findings:
+      - "B6b remains open (same inventory line, other half): the sampling classifiers in crate occt-geom extrema_surf/analytic_solvers.rs:456,523,555,578 and crate occt-geom2d extrema2d/analytic_solvers.rs:464,489,502,605,628 (8x8 plane test, circumcentre sphere, 6-point tangent, span/0.1 grid) still stand in for GetType()/gp_* downcasts (Extrema_ExtCC.cxx:188-189, Extrema_GGExtPC.hxx:123,160-181)."
+      - "Pre-existing unused-import warnings in bop_build_solids.rs:72, builder_solid.rs:54 and bop_build_common/mod.rs:52 (closest_point_on_face/is_inside no longer used since P005) were NOT cleaned; they predate this package and are not part of the B6 line."
+      - "curve_surface_extrema_all is the unwindowed global run; bean_face_exact filters it by [anarg1, anarg2] and the face UV window as a stand-in for Extrema_ExtCS::Perform(GACurve, anarg1, anarg2) with Initialize(surface, umin..vmax). That substitution (and extcs_is_parallel's analytic line/plane-only IsParallel) is unchanged and still needs its own Scout."
   - id: P005
     task: T005
     commit: b6dc0cf0
@@ -427,17 +461,17 @@ tasks:
     receipt:
       result: done
       executed_by: "PM inline"
-      summary: "P005 closed and committed (B4 / T-135) as b6dc0cf0; this board advance is the paired control-file commit. The BOP face-representative-point family is now served by one faithful port: `algo_tools_face::{compute_state_face_point, compute_state_face}` = `BOPTools_AlgoTools::ComputeState(face, solid, tol, bounds, ctx)` (`BOPTools_AlgoTools.cxx:666-715`, edge overload `:734-788`, `PointInFace` `:692`, `PointNearEdge` retry `:694-707`). The four duplicated `face_sample_point` sites (`builder_solid.rs`, `bop_build_solids.rs`, `build_ops.rs`, `bopalgo_tools_class.rs`) and `draft_solid::point_solid_state` are gone; `builder_solid` collapsed to `shape_inside_solid` = the static `IsInside` (`BOPAlgo_BuilderSolid.cxx:835-861`, fixed `Precision::Confusion()`, first face, infinite-point arm for faceless shapes — the previous `self.fuzzy.max(1e-7)` did not match the cxx); `bop_build_solids::classify_solid_state` moved to `AlgoTools::compute_state` (`cxx:790-822`). The same slice removed the local `IsSplitToReverse` copies (single midpoint + 32-point `closest_point_on_edge` + `1e-6` finite-difference normal) in favour of the single `algo_tools_face::is_split_to_reverse` (`cxx:1255-1291` / `:1316-1427` / `:1432-1500`), and corrected that port's same-surface fast path from `shape_key` equality (which never fires for a split piece) to `Arc::ptr_eq`, i.e. the `aSFSp == aSFOr` Geom_Surface handle test of `cxx:1330-1333`. Net: the six production files lost far more than they gained (build_ops.rs 119 changed lines, draft_solid.rs 89, bop_build_solids.rs 87, builder_solid.rs 77, algo_tools_face.rs 85), no new predicate, no new test, no relaxed gate. Fifth cycle complete: scout (cxx control flow re-read for ComputeState/IsSplitToReverse/IsInside, including the `PointInFace` -> `PointNearEdge` retry and the edge overload's infinite-parameter arms) -> worker -> four gates green -> commit. Scope note: `bop_build_solids::face_sample_point` survives with exactly one user, the file's self-declared port-only `orient_face_outward` heuristic (no OCCT branch), now documented as such."
+      summary: "P006 closed and committed (B6a / T-136, commit hash recorded in the paired board-advance commit). The three fabricated Extrema fallbacks are gone: `extrema_surf/numeric_extrema.rs::fallback_point_surface` (40x40 grid + coordinate descent), `fallback_curve_surface` (20x16x16 grid) and `extrema_ss.rs::fallback_ss` (12^4 grid) are deleted, and `point_surface_extrema` / `curve_surface_extrema` / `surface_surface_extrema` now return `Option<ExtremaPair>` where `None` is `!IsDone()` or `NbExt() == 0` (`Extrema_ExtPS.cxx:307-371`, `Extrema_ExtCS.cxx:122,532`, `Extrema_ExtSS.cxx:226-260`, `Extrema_ExtElSS.cxx:62-83`), matching the encoding the same family already used after batch 17 for `extrema_pc` / `extrema_cc`. The `occt_geom::extrema` wrappers follow. The decisive part is the consumer: `bean_face_exact::ComputeUsingExtremum`'s `candidates.is_empty()` arm, which used to call `curve_surface_extrema(..., 16)` to invent a pair, is replaced by the real `IntTools_BeanFaceIntersector.cxx:956` guard -- when `Extrema_ExtCS` is not done or has no extremum the whole block is skipped, so neither a range nor the range flag is touched and `i` advances by one; `SetFlag(i, 1)` is only reached when the run is done and no solution was found (`cxx:1070`). The other two consumers follow the same cxx semantics: `closest_point_on_face` skips its in-face projection step on `None`, and `gprop_analytic::extrema_point_surface_exact`'s non-elementary arm returns `Err` through the function's existing error channel. A prior registration in `_audit/_index.md` A15 claimed these fallbacks had to stay because a live consumer relied on them and that removal was gated on T-67 (`Extrema_GenExtPS`); that premise is false -- the consumer's own branch is the not-done case -- and the correction is recorded in A15, T-136 and the drift canvas. Scope: no new predicate, no new test, no relaxed gate; 10 existing call sites got an `.expect(\"... done\")` and nothing else changed. Seventh cycle complete: scout (cxx re-read of Extrema_ExtPS/ExtCS/ExtSS/ExtElSS and of `ComputeUsingExtremum`), worker, four gates green, commit."
       commits:
-        - "b6dc0cf0 fix(occt): BOP 面代表点与 IsSplitToReverse 采样替身换 BOPTools_AlgoTools 忠实件（BOPTools_AlgoTools.cxx:666-715 / :1255-1291，T001 的 B4 / T-135）"
-        - "board advance for P005 (this commit; state.yaml only)"
+        - "b1c3c6c1 fix(occt-geom): occt-geom 曲面族 Extrema 失败伪造（三个 fallback_*）移除（Extrema_ExtPS.cxx:307-371 / Extrema_ExtCS.cxx:122,532 / Extrema_ExtSS.cxx:226-260，T001 的 B6a / T-136）"
+        - "board advance for P006 (this commit; state.yaml + notes only)"
       next:
-        slice: "B6 - occt-geom Extrema failure fabrication (extrema_ss.rs:449,506 and extrema_surf/numeric_extrema.rs:153,374,433,514 fabricate fallback_* pairs where OCCT returns myDone = false)"
-        rationale: "Largest remaining inventory line. Scout pass required before activation: the fix is a Done=false propagation (Extrema_ExtElSS.cxx:62-83, Extrema_GGExtPC.hxx:531), a same-branch cxx fix, but it changes what the live consumer bean_face_exact.rs:259 receives, so the Scout must map every fabricating site and every caller before the Judge sizes it. B8's `extrema_cc/mod.rs:9` (uniform-grid seed instead of `math_GlobOptMin`, dependency already ported) is the same family and should be re-checked in the same Scout; B7 is a set of independent small STEP-writer divergences (step/write_context.rs:314 SetNotPeriodic, step/format.rs:500 KnotSpec) suitable as a fallback slice."
+        slice: "B6b - the same inventory line's other half: the sampling classifiers in `occt-geom` `extrema_surf/analytic_solvers.rs:456,523,555,578` and `occt-geom2d` `extrema2d/analytic_solvers.rs:464,489,502,605,628` (8x8 plane test, circumcentre sphere, 6-point tangent, `span/0.1` grid) must take the `GetType()`/`gp_*` downcast path (`Extrema_ExtCC.cxx:188-189`, `Extrema_GGExtPC.hxx:123,160-181`) instead of sampling."
+        rationale: "Largest remaining inventory line and the direct continuation of the slice just closed; the cxx counterpart is a plain type dispatch, so no new predicate is needed. Scout must first map the six cited sites and their callers (the helpers `is_planar`, `circumcenter`, `surface_normal`, and the tangent/`span` classifiers) and confirm which of them are still reachable, because part of this family was already converted during T-129/T-130 in `occt-topo` (`brep_surface::is_planar` and the `edge_face_kind` family are gone). Fallback slices if B6b turns out to be blocked: B7 (independent small STEP-writer divergences: `step/write_context.rs:314` SetNotPeriodic, `step/format.rs:500` KnotSpec, `step/format.rs:500`, `geom2d_convert.rs:77` conic arms) or B8 (`occt-geom`/`occt-core` singletons: `osculating_surface.rs:141,202,238,299`, `surface_fit.rs:13-40` `gz < Tol` gate, `intana` quartic-root thresholds)."
         allowed_files: []
         verify: []
         stop_if: []
-      note: "Sixth cycle (T136) is the next activation; the board stays at active_task T005 so it can be picked up directly. Gates (3)(4) were re-run on this package because the change sits on the live BOP hole-ownership and split-orientation path."
+      note: "Seventh cycle (T136) is the next activation; the board stays at active_task T005 so it can be picked up directly. Gates (3)(4) were re-run on this package because `bean_face_exact::ComputeUsingExtremum` sits on the live pave-filler / face-classification path, and all four came back at baseline."
 
   - id: T999
     type: judge
