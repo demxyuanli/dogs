@@ -166,15 +166,36 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   into the line arm (OCCT reports `GeomAbs_BSplineCurve` and takes the general arm). Gates:
   `--all-targets` 0 err, `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib`
   1251/0, `step_obj_gates` 4/4 (117s), `export_data_obj` 15/15 v/f and bbox bit-identical.
-- **B6c OPEN (split out of B6b 2026-10-15).** The `span/0.1` grid half of the old B6b line is
-  not a classifier: `extrema2d/analytic_solvers.rs::build_samples2d` (`span/0.1`, clamp 24..256)
-  plus `newton_point_curve_all2d` (`:569`) and `curve_curve::newton_curve_curve_all2d` (`:361`)
-  are the self-invented seed grids standing in for `Extrema_GGExtPC::IntervalPerform`
-  (`mysample = 17`, `Extrema_GGExtPC.hxx:128`; `IntervalPerform` -> `Extrema_GFuncExtPC` +
-  `math_GlobOptMin`) and for `Extrema_GGenExtCC` -> `math_GlobOptMin`. Live consumers:
-  `topo/brep_class/intersector_checks.rs:157` (`BRepClass_Intersector`) and
-  `extrema2d/general_extrema.rs:550`. The faithful engine (`occt_math::globoptmin`) is already
-  ported and already used by `general_extrema` for the curve-curve route.
+- **B6c OPEN (split out of B6b 2026-10-15; Scout done 2026-10-15).** The `span/0.1` grid half of
+  the old B6b line is not a classifier. The substituted-for engine is `Extrema_ExtPC2d`
+  (`Extrema_ExtPC2d.hxx:31-38` = `Extrema_GGExtPC<Adaptor2d_Curve2d, Extrema_Curve2dTool,
+  gp_Pnt2d, ...>`), whose body is `Extrema_GGExtPC.hxx`:
+  - `initialise`: `mytolu = TheCurveTool::Resolution(*myC, Precision::Confusion())`, `type =
+    TheCurveTool::GetType(theC)`, `mysample = 17` (`hxx:119-128`);
+  - `Perform` (`hxx:133-...)`: the two endpoint distances (`myuinf`/`myusup`, skipped when
+    infinite, `hxx:142-157`), then `switch (type)`: Circle/Ellipse/Parabola/Hyperbola/Line ->
+    `myExtPElC.Perform(p, <curve>, t3d, myuinf, myusup)` (`hxx:160-182`; the port has
+    `point_circle/ellipse/hyperbola/parabola/line_extrema2d`), Bezier -> `mysample =
+    NbPoles()*2` + `IntervalPerform` (`hxx:183-189`), BSpline -> the knot/degree arms
+    (`hxx:190-388`), `default:` -> `NbIntervals(GeomAbs_C2)` else `DeflCurvIntervals`,
+    `mysample = max(17 * (u_sup-u_inf)/maxint, 3)` per interval, then `IntervalPerform`
+    (`hxx:390-464`);
+  - `IntervalPerform` (`hxx:590-620`) = `myExtPC.Initialize(mysample, myintuinf, myintusup,
+    mytolu, mytolf); myExtPC.Perform(theP)` with `TheEPC` = `Extrema_EPCOfExtPC` ->
+    `Extrema_GGenExtPC` (`Extrema_GGenExtPC.hxx`, `math_GlobOptMin` + `BoundedNewton`) and
+    `AddSol` merging min/max by `Precision::PConfusion()` (`hxx:602-616`).
+  What the port has instead: `extrema2d/analytic_solvers.rs::build_samples2d` (`span/0.1`,
+  clamp 24..256) as the seed grid plus `newton_point_curve_all2d` (`:569`) and
+  `curve_curve::newton_curve_curve_all2d` (`:361`) as the grid -> bracket -> Newton solvers.
+  Live consumers of the substitute: `topo/brep_class/intersector_checks.rs:157`
+  (`BRepClass_Intersector` = `Extrema_ExtPC2d`), `curve_ops::curve2d_closest_point` (=
+  `Extrema_ExtPC2d`, A16 projection half / R2-18 remainder) and
+  `extrema2d/general_extrema.rs:550` (`Extrema_GGenExtCC_ProjPOnC`, explicitly marked
+  **UNPORTED (audit A16)** because the port's point/curve extrema has no range-restricted form).
+  Scout conclusion: the slice is the faithful `Extrema_GGExtPC` + `Extrema_GGenExtPC` port
+  (`math_GlobOptMin` is already ported in `occt-math` and already used by `general_extrema`), which
+  also removes the A16 UNPORTED marker; it has to be split into at least the elementary arms,
+  `IntervalPerform`/`GGenExtPC`, and the Bezier/BSpline knot arms.
 - **B6d OPEN (found 2026-10-15, T-137).** `extrema_ss::surface_surface_extrema_all`'s analytic
   sphere/sphere and sphere/plane arms have no counterpart in `Extrema_ExtSS::Perform`, whose only
   analytic arm is `Plane` x `Plane` -> `Extrema_ExtElSS::Perform(S1.Plane(), myS2->Plane())`
