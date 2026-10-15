@@ -80,7 +80,7 @@ packages:
   # One entry per closed, verified, committed package. Written by T005 (PM).
   - id: P002
     task: T005
-    commit: PENDING
+    commit: 92d8f149
     title: "pc_curve_kind 启发式分类器换 Geom2dAdaptor_Curve::GetType 同等件（T001 的 B2 / T-132）"
     files:
       - "crates/occt-geom2d/src/adaptor_curve.rs"
@@ -339,9 +339,9 @@ tasks:
     receipt:
       result: done
       executed_by: "PM inline"
-      summary: "P002 closed and committed as PENDING. Inventory updated: B2 (the pc_curve_kind classifier and all four of its call sites) is now closed; B3-B8 and the C-A leaf list remain. Second cycle complete: scout (inline re-verify against Geom2dAdaptor_Curve.cxx / GeomBndLib_Curve2d.cxx / GeomBndLib_OffsetCurve2d.cxx / GeomBndLib_BezierCurve2d.cxx / IntTools_FaceFace.cxx) -> worker -> four gates green -> commit."
+      summary: "P002 closed and committed as 92d8f149. Inventory updated: B2 (the pc_curve_kind classifier and all four of its call sites) is now closed; B3-B8 and the C-A leaf list remain. Second cycle complete: scout (inline re-verify against Geom2dAdaptor_Curve.cxx / GeomBndLib_Curve2d.cxx / GeomBndLib_OffsetCurve2d.cxx / GeomBndLib_BezierCurve2d.cxx / IntTools_FaceFace.cxx) -> worker -> four gates green -> commit."
       commits:
-        - "PENDING"
+        - "92d8f149 fix(occt): pc_curve_kind 换 Geom2dAdaptor_Curve::GetType 同等件（T001 的 B2 / T-132）"
       next:
         slice: "B5 - inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch"
         rationale: "Smallest remaining slice with a fully specified same-branch cxx fix and an already-ported dependency set: GetType() for the Bezier/BSpline gate and Offset basis unwrap, plus Curve::resolution(1.0) for aD1Mag, both live in the port. B3 (bbox_from_geometry), B4 (face_sample_point), B6 (Extrema failure fabrication) and B7/B8 each still need one more Scout pass on their dependency (BRepBndLib / PointInFace wiring / Extrema Done=false propagation)."
