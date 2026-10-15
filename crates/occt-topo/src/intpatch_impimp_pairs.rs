@@ -4,17 +4,17 @@
 use occt_core::gp::{GpAx1, GpPln};
 use occt_core::precision::ANGULAR as PREC_ANG;
 use occt_geom::intana::{
-    quadric_quadric_cone_cone, quadric_quadric_cone_torus, quadric_quadric_cylinder_cone,
-    quadric_quadric_cylinder_cylinder, quadric_quadric_cylinder_sphere,
-    quadric_quadric_cylinder_torus, quadric_quadric_plane_cone, quadric_quadric_plane_cylinder,
-    quadric_quadric_plane_sphere, quadric_quadric_plane_torus, quadric_quadric_planes,
-    quadric_quadric_sphere_cone, quadric_quadric_sphere_sphere, quadric_quadric_sphere_torus,
-    quadric_quadric_torus_torus, TorusIntersection,
+    cone_cone_analytic, quadric_quadric_cone_cone, quadric_quadric_cone_torus,
+    quadric_quadric_cylinder_cone, quadric_quadric_cylinder_cylinder,
+    quadric_quadric_cylinder_sphere, quadric_quadric_cylinder_torus, quadric_quadric_plane_cone,
+    quadric_quadric_plane_cylinder, quadric_quadric_plane_sphere, quadric_quadric_plane_torus,
+    quadric_quadric_planes, quadric_quadric_sphere_cone, quadric_quadric_sphere_sphere,
+    quadric_quadric_sphere_torus, quadric_quadric_torus_torus, TorusIntersection,
 };
 
 use super::bounds;
 use super::cycy::{cy_cy_no_geometric, CylUv};
-use super::glines::{from_circles, from_quadric_intersection, PairOutcome};
+use super::glines::{from_circles, from_quadric_intersection, with_cone_common_gen, PairOutcome};
 use super::quad::{axis_distance, dist_point_axis, ImplicitQuad};
 
 const TOL_ANG: f64 = 1.0e-8;
@@ -201,8 +201,13 @@ fn int_cy_sp(q1: &ImplicitQuad, q2: &ImplicitQuad, _reversed: bool, tol_tang: f6
 fn int_co_co(q1: &ImplicitQuad, q2: &ImplicitQuad, tol_tang: f64) -> PairOutcome {
     let c1 = q1.as_cone().expect("cone");
     let c2 = q2.as_cone().expect("cone");
-    let qi = quadric_quadric_cone_cone(c1, c2, tol_tang);
-    let out = from_quadric_intersection(qi, Some(q1));
+    let res = cone_cone_analytic(c1, c2, tol_tang);
+    let mut out = from_quadric_intersection(res.inter, Some(q1));
+    // `IntCoCo` appends the shared generatrix through the two apexes whenever
+    // branch 4 set `myCommonGen` (`IntPatch_ImpImpIntersection.cxx:9149-9171`).
+    if let Some((gen, p_char)) = res.common_gen {
+        out = with_cone_common_gen(out, gen, p_char, q1, q2, tol_tang);
+    }
     if matches!(out, PairOutcome::Empty) {
         let coaxial = axes_coaxial(&c1.axis(), &c2.axis());
         let parallel = c1.axis().direction().is_parallel(c2.axis().direction());
@@ -211,6 +216,10 @@ fn int_co_co(q1: &ImplicitQuad, q2: &ImplicitQuad, tol_tang: f64) -> PairOutcome
         {
             out
         } else {
+            // UNPORTED: the `IntAna_NoGeometricSolution` arm of `IntCoCo`
+            // (`IntPatch_ImpImpIntersection.cxx:9022-9140`, the `IntAna_IntQuadQuad`
+            // based ALine walk plus the `myCommonGen` append) is not ported; the
+            // port falls back to the bounds search here.
             bounds::from_cone_quad(q1, q2, c1, q2, false, false, tol_tang)
         }
     } else {

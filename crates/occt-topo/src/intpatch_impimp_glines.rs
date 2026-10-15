@@ -1,7 +1,8 @@
 //! Convert `IntAna_QuadQuadGeo` results into `IntPatch_GLine`s.
 //! Source: IntPP / IntPCy / IntPSp / IntPCo GLine construction.
 
-use occt_core::gp::{GpCirc, GpPnt};
+use occt_core::elib::clib;
+use occt_core::gp::{GpCirc, GpLin, GpPnt};
 use occt_geom::intana::QuadricIntersection;
 
 use crate::geom_int::{GLine, GLineKind, GeomIntLine};
@@ -142,5 +143,43 @@ pub(crate) fn from_circles(circs: Vec<GpCirc>, seam: Option<&ImplicitQuad>) -> P
     PairOutcome::Result {
         lines,
         points: Vec::new(),
+    }
+}
+
+/// `IntCoCo`, `IntPatch_ImpImpIntersection.cxx:8869-8941` / `:8945-8981` /
+/// `:8986-9017` / `:9149-9171`: when the two cones share the generatrix through
+/// their apexes, that generatrix is part of the solution and the characteristic
+/// point becomes a vertex on every conic of the arm
+/// (`aPtsol.SetParameter(0.)`), while the generatrix line carries it at
+/// `ElCLib::Parameter(linsol, aPChar)`.
+pub(crate) fn with_cone_common_gen(
+    out: PairOutcome,
+    gen: GpLin,
+    p_char: GpPnt,
+    q1: &ImplicitQuad,
+    q2: &ImplicitQuad,
+    tol: f64,
+) -> PairOutcome {
+    match out {
+        PairOutcome::Result { mut lines, points } => {
+            let (u1, v1) = q1.parameters(&p_char);
+            let (u2, v2) = q2.parameters(&p_char);
+            // `SetValue(aPChar, Tol, false)` - tolerance set, not a mult-point.
+            let vertex = |param: f64| {
+                let mut vtx = PatchPoint::new(p_char, param, u1, v1, u2, v2);
+                vtx.tolerance = tol;
+                vtx
+            };
+            for line in &mut lines {
+                if let GeomIntLine::Geometric(g) = line {
+                    g.add_vertex(vertex(0.0));
+                }
+            }
+            let mut glig = GLine::new(GLineKind::Lin(gen));
+            glig.add_vertex(vertex(clib::line_parameter(&gen, &p_char)));
+            lines.push(GeomIntLine::Geometric(glig));
+            PairOutcome::Result { lines, points }
+        }
+        other => other,
     }
 }

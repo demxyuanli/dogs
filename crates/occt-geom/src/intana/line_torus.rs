@@ -386,9 +386,10 @@ fn estim_dist(c1: &GpCone, c2: &GpCone) -> f64 {
 /// Cone ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Cone, gp_Cone)` for the
 /// tractable branches: coincident axes (two circles / a point / `Same`),
 /// parallel axes with equal semi-angle (a conic in the plane through the two
-/// apexes, from the plane∩cone closed form), and coincident apexes (one or two
-/// generatrix lines). The common-generatrix case and everything else return
-/// `None` for the numeric walker.
+/// apexes, from the plane∩cone closed form), coincident apexes (one or two
+/// generatrix lines), and intersecting axes (the shared generatrix plus the
+/// nested plane∩cone conic). Everything else, and the branch-4 guards that
+/// raise `Standard_ConstructionError` in OCCT, return `None`.
 ///
 /// The angular tolerance is not an input: `IntAna_QuadQuadGeo::Perform`
 /// (`IntAna_QuadQuadGeo.cxx:1433-1476`) starts from `myEPSILON_ANGLE_CONE`
@@ -399,6 +400,24 @@ fn estim_dist(c1: &GpCone, c2: &GpCone) -> f64 {
 /// which keeps a far-away apex pair from dropping to the coincident-apex
 /// branch.
 pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricIntersection {
+    cone_cone_analytic(c1, c2, tol).inter
+}
+
+/// The full `IntAna_QuadQuadGeo::Perform(gp_Cone, gp_Cone)` outcome. Only
+/// branch 4 sets `myCommonGen` / `myPChar` (`IntAna_QuadQuadGeo.hxx:250-291`);
+/// `IntPatch_ImpImpIntersection::IntCoCo` reads them to add the shared
+/// generatrix to the solution (`IntPatch_ImpImpIntersection.cxx:8893-8905`,
+/// `:9149-9171`).
+pub struct ConeConeAnalytic {
+    /// `typeres` plus the conic, reduced to this port's line list.
+    pub inter: QuadricIntersection,
+    /// Branch 4 only: the generatrix through both apexes and the
+    /// characteristic point (`cxx:1782-1794`).
+    pub common_gen: Option<(GpLin, GpPnt)>,
+}
+
+/// `Perform(gp_Cone, gp_Cone)` (`IntAna_QuadQuadGeo.cxx:1433-1890`).
+pub fn cone_cone_analytic(c1: &GpCone, c2: &GpCone, tol: f64) -> ConeConeAnalytic {
     let tg1 = c1.semi_angle().tan();
     let mut tg2 = c2.semi_angle().tan();
     if tg1 * tg2 < 0.0 {
@@ -408,7 +427,7 @@ pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricI
     let ap1 = c1.apex();
     let ap2 = c2.apex();
     let d_a1a2 = ap1.square_distance(&ap2);
-    let (parallel, dist_axes, _coplanar, _pt_inter) =
+    let (parallel, dist_axes, coplanar, pt_inter) =
         axe_operator(&c1.axis(), &c2.axis(), 1e-14, ANGULAR);
 
     // `cxx:1458-1476`: relax the angular tolerance for parallel axes.
@@ -432,9 +451,9 @@ pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricI
         let d = c1.position().direction();
         let w = GpVec::from_xyz(d.xyz());
         let offset = w.dot(&GpVec::from_pnts(&p, &ap2));
-        if (tg1 - tg2).abs() > ANGULAR {
+        let inter = if (tg1 - tg2).abs() > ANGULAR {
             if offset.abs() < 1e-10 {
-                return QuadricIntersection::Point(p);
+                return ConeConeAnalytic { inter: QuadricIntersection::Point(p), common_gen: None };
             }
             let x1 = offset * tg2 / (tg1 + tg2);
             let x2 = offset * tg2 / (tg2 - tg1);
@@ -453,7 +472,8 @@ pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricI
                 d,
                 (x * tg1).abs(),
             ))
-        }
+        };
+        ConeConeAnalytic { inter, common_gen: None }
     }
     // 2 — parallel axes with (nearly) equal semi-angles: the intersection lies
     // in the plane through the two apexes; reduce to the plane∩cone conic.
@@ -463,7 +483,8 @@ pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricI
         let o1o2n = o1o2.normalized();
         let o1o2_da1 = GpVec::from_xyz(da1.xyz()).dot(&o1o2n);
         let o1_proj = o1o2n.subtracted(&GpVec::from_xyz(da1.xyz()).multiplied_scalar(o1o2_da1));
-        let Ok(db1) = GpDir::from_vec(&o1_proj) else { return QuadricIntersection::None };
+        let none = ConeConeAnalytic { inter: QuadricIntersection::None, common_gen: None };
+        let Ok(db1) = GpDir::from_vec(&o1_proj) else { return none };
         let y_o1o2 = o1o2.dot(&GpVec::from_xyz(da1.xyz()));
         let abstg1 = tg1.abs();
         let x2 = (dist_axes / abstg1 - y_o1o2) * 0.5;
@@ -474,8 +495,8 @@ pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricI
         let p1_m = GpVec::from_pnts(&p1, &mid_pnt(&ap1, &ap2));
         let da1_x_db1 = GpVec::from_xyz(da1.xyz()).crossed(&GpVec::from_xyz(db1.xyz()));
         let ortho = da1_x_db1.crossed(&p1_m);
-        let Ok(n) = GpDir::from_vec(&ortho) else { return QuadricIntersection::None };
-        let Some(pln) = plane_normal_at(p1, n) else { return QuadricIntersection::None };
+        let Ok(n) = GpDir::from_vec(&ortho) else { return none };
+        let Some(pln) = plane_normal_at(p1, n) else { return none };
         // `cxx:1555`: the nested plane∩cone reduce passes `Tol` for *both*
         // the angular and the linear tolerance. `cxx:1557-1603` then re-maps
         // its result: the conics are kept as they are, an `IntAna_Line`
@@ -483,23 +504,158 @@ pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricI
         // twice (`pt1 = pt2 = H.Location()`, `dir1 = dir2 = H.Direction()`,
         // `nbint = 2`), and every other nested type (parabola, point,
         // empty) becomes `IntAna_NoGeometricSolution`.
-        match quadric_quadric_plane_cone(&pln, c1, tol, tol) {
-            QuadricIntersection::Ellipse(e) => QuadricIntersection::Ellipse(e),
-            QuadricIntersection::Circle(c) => QuadricIntersection::Circle(c),
-            QuadricIntersection::Hyperbola(h) => QuadricIntersection::Hyperbola(h),
-            QuadricIntersection::Line(l) | QuadricIntersection::TwoLines(l, _) => {
-                QuadricIntersection::TwoLines(l, l)
-            }
-            _ => QuadricIntersection::None,
+        ConeConeAnalytic {
+            inter: map_plane_cone_common_axis(quadric_quadric_plane_cone(&pln, c1, tol, tol)),
+            common_gen: None,
         }
     }
     // 3 — coincident apexes: one or two generatrix lines (or `None`).
     else if d_a1a2 < tol2 {
-        cone_cone_common_apex(c1, c2, tg1, tg2, tol)
-    } else {
-        // 4/5 — common generatrix / general: no analytic closed form.
-        QuadricIntersection::None
+        ConeConeAnalytic { inter: cone_cone_common_apex(c1, c2, tg1, tg2, tol), common_gen: None }
     }
+    // 4 — the axes intersect, so the cones share the generatrix through their
+    // apexes (`cxx:1759-1886`).
+    else if coplanar && !parallel {
+        // `A1A2.Intersect()` (`cxx:85-88`) is `coplanar && !parallel` and is the
+        // only path on which `PtIntersect()` is set (`cxx:179-207`).
+        let Some(pt_axe_int) = pt_inter else {
+            return ConeConeAnalytic { inter: QuadricIntersection::None, common_gen: None };
+        };
+        match cone_cone_common_generatrix(c1, c2, tol, &pt_axe_int) {
+            Some((inter, gen)) => ConeConeAnalytic { inter, common_gen: Some(gen) },
+            None => ConeConeAnalytic { inter: QuadricIntersection::None, common_gen: None },
+        }
+    }
+    // 5 — no geometric solution.
+    else {
+        ConeConeAnalytic { inter: QuadricIntersection::None, common_gen: None }
+    }
+}
+
+/// `cxx:1557-1603` / `cxx:1836-1881`: the nested plane∩cone reduce of the
+/// parallel-axes branches is re-mapped by hand. Branch 2 keeps the four conics
+/// and reports a nested `IntAna_Line` as that line twice; branch 4 (see
+/// [`cone_cone_common_generatrix`]) keeps the four conics and drops the line.
+fn map_plane_cone_common_axis(nested: QuadricIntersection) -> QuadricIntersection {
+    match nested {
+        QuadricIntersection::Ellipse(e) => QuadricIntersection::Ellipse(e),
+        QuadricIntersection::Circle(c) => QuadricIntersection::Circle(c),
+        QuadricIntersection::Hyperbola(h) => QuadricIntersection::Hyperbola(h),
+        QuadricIntersection::Line(l) | QuadricIntersection::TwoLines(l, _) => {
+            QuadricIntersection::TwoLines(l, l)
+        }
+        _ => QuadricIntersection::None,
+    }
+}
+
+/// Branch 4 of `Perform(gp_Cone, gp_Cone)` (`cxx:1759-1886`): the axes
+/// intersect, so the two cones share the generatrix through their apexes.
+///
+/// Returns the analytic section reduced to the nested plane∩cone conic and the
+/// `(myCommonGen, myPChar)` pair, or `None` for `IntAna_NoGeometricSolution`.
+/// `None` covers the two apex-membership guards (`cxx:1768`, `cxx:1776`, where
+/// `myCommonGen` is still false) and the "Something wrong ???" return
+/// (`cxx:1809`, where `myCommonGen` is already true but the consumer arm that
+/// precedes the generatrix append is unported). `None` also covers the two
+/// `gp_Dir`/`gp_Lin` degeneracies on which OCCT raises
+/// `Standard_ConstructionError` (a zero-length direction): parallel
+/// `aD1`/generatrix (`cxx:1801`) or a characteristic point coinciding with the
+/// generatrices' intersection (`cxx:1825`).
+fn cone_cone_common_generatrix(
+    c1: &GpCone,
+    c2: &GpCone,
+    tol: f64,
+    pt_axe_int: &GpPnt,
+) -> Option<(QuadricIntersection, (GpLin, GpPnt))> {
+    let tol2 = tol * tol;
+    // `cxx:1762-1778`: each apex must belong to the other cone (`ElSLib` round
+    // trip), otherwise `IntAna_NoGeometricSolution`.
+    let (u, v) = slib::cone_parameters(&c2.position(), c2.radius(), c2.semi_angle(), &c1.apex());
+    let p = slib::cone_value(c2, u, v);
+    if c1.apex().square_distance(&p) > tol2 {
+        return None;
+    }
+    let (u, v) = slib::cone_parameters(&c1.position(), c1.radius(), c1.semi_angle(), &c2.apex());
+    let p = slib::cone_value(c1, u, v);
+    if c2.apex().square_distance(&p) > tol2 {
+        return None;
+    }
+    // `cxx:1782-1794`: the common generatrix and the characteristic point (the
+    // axes intersection projected onto that generatrix).
+    let ap1 = c1.apex();
+    let ap2 = c2.apex();
+    let a_gen = GpLin::from_pnt_dir(ap1, GpDir::from_vec(&GpVec::from_pnts(&ap1, &ap2)).ok()?);
+    let u = clib::line_parameter(&a_gen, pt_axe_int);
+    let my_pchar = clib::line_value(&a_gen, u);
+    // `cxx:1795-1830`: the other generatrices of the two cones laying in the
+    // maximal plane determine that plane's normal.
+    let gen1 = a_gen.rotated(&c1.axis(), PI);
+    let gen2 = a_gen.rotated(&c2.axis(), PI);
+    let a_d1 = gen1.direction();
+    let a_d2 = GpDir::from_vec(
+        &GpVec::from_xyz(a_d1.xyz()).crossed(&GpVec::from_xyz(a_gen.direction().xyz())),
+    )
+    .ok()?;
+    let a_n = if a_d1.is_parallel_tol(&gen2.direction(), ANGULAR) {
+        a_d1.crossed(&a_d2).ok()?
+    } else if lin_lin_square_distance(&gen1, &gen2) > tol2 {
+        // `cxx:1805-1811`: "Something wrong ???" -> `typeres =
+        // IntAna_NoGeometricSolution`. Note this `return` happens *after*
+        // `cxx:1781` set `myCommonGen = true`, so OCCT's `HasCommonGen()`
+        // stays true: `IntCoCo` would first run its nested
+        // `IntAna_NoGeometricSolution` arm (`IntPatch_ImpImpIntersection.cxx
+        // :9022-9140`, unported) and then still append the generatrix
+        // (`cxx:9149-9171`). That arm is not ported and the port cannot honour
+        // the ordering, so this path reports no solution and no generatrix.
+        return None;
+    } else {
+        let d1 = gen1.position().direction();
+        let d2 = gen2.position().direction();
+        let o1 = gen1.location();
+        let o2 = gen2.location();
+        let d1_dot_d2 = d1.dot(&d2);
+        let a_sin = 1.0 - d1_dot_d2 * d1_dot_d2;
+        let o1o2 = GpVec::from_pnts(&o1, &o2);
+        let mut u2 = GpVec::from_xyz(d1.xyz())
+            .multiplied_scalar(o1o2.dot(&GpVec::from_xyz(d1.xyz())))
+            .subtracted(&o1o2)
+            .dot(&GpVec::from_xyz(d2.xyz()));
+        u2 /= a_sin;
+        let p_gint = clib::line_value(&gen2, u2);
+        let d1 = GpDir::from_vec(&GpVec::from_pnts(&p_gint, &my_pchar)).ok()?;
+        d1.crossed(&a_d2).ok()?
+    };
+    let pln = plane_normal_at(my_pchar, a_n)?;
+    // `cxx:1833-1881`: the section lies in `anIntPln`; its nested plane∩cone
+    // reduce keeps only the four conics — this switch has no `IntAna_Line` arm,
+    // so a nested line (or point/empty) is `IntAna_NoGeometricSolution`.
+    let inter = match quadric_quadric_plane_cone(&pln, c1, tol, tol) {
+        QuadricIntersection::Ellipse(e) => QuadricIntersection::Ellipse(e),
+        QuadricIntersection::Circle(c) => QuadricIntersection::Circle(c),
+        QuadricIntersection::Parabola(p) => QuadricIntersection::Parabola(p),
+        QuadricIntersection::Hyperbola(h) => QuadricIntersection::Hyperbola(h),
+        _ => QuadricIntersection::None,
+    };
+    Some((inter, (a_gen, my_pchar)))
+}
+
+/// `gp_Lin::SquareDistance(const gp_Lin&)` (`gp_Lin.cxx:28-39` +
+/// `gp_Lin.hxx:120-124`): `Distance` squared, where `Distance` is the point-line
+/// distance for exactly parallel lines and the perpendicular offset otherwise.
+fn lin_lin_square_distance(a: &GpLin, b: &GpLin) -> f64 {
+    let d = if a.position().direction().is_parallel_tol(&b.direction(), REAL_SMALL) {
+        b.distance(&a.location())
+    } else {
+        match GpDir::from_vec(
+            &GpVec::from_xyz(a.direction().xyz()).crossed(&GpVec::from_xyz(b.direction().xyz())),
+        ) {
+            Ok(dir) => GpVec::from_pnts(&a.location(), &b.location())
+                .dot(&GpVec::from_xyz(dir.xyz()))
+                .abs(),
+            Err(_) => b.distance(&a.location()),
+        }
+    };
+    d * d
 }
 
 /// Coincident-apex cones: `IntAna_QuadQuadGeo::Perform` branch 3 — a 2D
