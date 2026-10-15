@@ -244,19 +244,25 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
     `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4 with the 23 area
     ratios identical to the T000 baseline (22 x 1.0000, Shape-2 0.9999), `export_data_obj` 15/15
     with v/f and bbox bit-identical.
-- **B6e OPEN (found while closing B6c, 2026-10-15).** `extrema2d/curve_curve.rs::locate_extcc2d`
-  (and its 3D twin `occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc`) use a self-invented
-  clamped 32-iteration Newton (`refine_curve_curve2d_newton` + `f_and_jac2d`) with a 1e-12
-  convergence test. The cxx is `Extrema_LocateExtCC2d` (`Extrema_LocateExtCC2d.cxx:28-46`) ->
-  `Extrema_LocECC2d` = `Extrema_GenLocateExtCC` (`Extrema_GenLocateExtCC.hxx:44-105`): build
-  `Extrema_CCLocFOfLocECC2d` = `Extrema_GFuncExtCC` (`Extrema_CCLocFOfLocECC2d.hxx:27-34`), run
-  `math_FunctionSetRoot` with `Tol = (TolU, TolV)` = each curve's
-  `Extrema_Curve2dTool::Resolution(Confusion)` (`Extrema_LocateExtCC2d.cxx:32-36`) inside
-  `[First,Last]^2`, then require `S.IsDone() && F.NbExt() > 0` and `Ff(i) < 1e-10` on both
-  components. None of 32 / 1e-12 / clamping exist in the cxx; `math_FunctionSetRoot` and the
-  `Extrema_GFuncExtCC` shape are already available (`occt-math`, and the same pattern is landed in
-  `extrema_surf/extrusion_point_extrema.rs`). Consumers: `extrema2d/tests.rs`,
-  `extrema_cc/tests.rs` only.
+- **B6e CLOSED 2026-10-15 (P017 / T-147, commit `e3a4335e`).** `extrema2d/curve_curve.rs::locate_extcc2d`
+  (`:255-262`) now builds `ExtremaLocateExtCC2d::new(c1, c2, u0, v0)` and the self-invented clamped
+  32-iteration Newton (`refine_curve_curve2d_newton` + `f_and_jac2d`, whose Jacobian had all four
+  sign-bearing terms flipped relative to `Extrema_GFuncExtCC::Values`) is deleted. The cxx chain is
+  landed: `Extrema_LocateExtCC2d.cxx:26-82` -> `Extrema_LocECC2d` = `Extrema_GenLocateExtCC`
+  (`Extrema_GenLocateExtCC.hxx:47-110`: per-axis range normalisation to `[FirstParameter,
+  LastParameter]` / `[FirstParameter, LastParameter]`, `TolU`/`TolV` from each curve's
+  `Adaptor::Resolution(Confusion)`, `MathFunctionSetRoot::perform_with_bounds`, then the
+  `F.NbExt() > 0` gate and the `F.Value < 1e-10` re-check) -> `Extrema_CCLocFOfLocECC2d` =
+  `Extrema_GFuncExtCC` 2D. New `extrema2d/gfunc_ext_cc2d.rs` (`GFuncExtCC2d`, the
+  `MathFunctionSetWithDerivatives` with two equations in two variables: `SearchOfTolerance`
+  `hxx:150-197`, the `GetType` switches `hxx:263-291`, `Value` `hxx:359-550` with the singular
+  `D1` three-point / `DN` reconstruction, `Values` `hxx:568-827` with the perturbed three-point
+  Jacobian, `GetStateNumber` `hxx:832-870`, `Points`, `SubIntervalInitialize`) and
+  `extrema2d/gen_locate_ext_cc2d.rs` (`GenLocateExtCC2d` + `ExtremaLocateExtCC2d`). Gates:
+  `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates`
+  4/4 (248.5s), `export_data_obj` 15/15 bit-identical; no test added. Still open in the same family:
+  the 3D twin `occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc` (still `refine_curve_curve`),
+  plus B6f/B6g below.
 - **B6f OPEN (found while closing B6c, 2026-10-15).**
   `extrema2d/curve_curve.rs::curve_curve_intersections2d` is a 33x33 parameter grid plus a `tol`
   argument. OCCT has no such sampler: the zero-distance case is the engine already wired
@@ -378,7 +384,11 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `general_extrema::proj_p_on_c` came off with them). B6e/B6f/B6g registered in the same package
   (`locate_extcc2d`'s self-invented Newton vs `Extrema_GenLocateExtCC` +
   `math_FunctionSetRoot`; the 33x33 `curve_curve_intersections2d` grid; the duplicated
-  `line_line`/`line_circle`/`circle_circle_extrema2d` copies of `Extrema_ExtElC2d`).
+  `line_line`/`line_circle`/`circle_circle_extrema2d` copies of `Extrema_ExtElC2d`). **B6e CLOSED
+  2026-10-15 as P017 / T-147** (the 2D chain `Extrema_LocateExtCC2d` -> `Extrema_GenLocateExtCC`
+  -> `Extrema_GFuncExtCC` 2D is landed in `extrema2d/gfunc_ext_cc2d.rs` +
+  `extrema2d/gen_locate_ext_cc2d.rs`; the invented Newton and its Jacobian are deleted); the 3D
+  twin `extrema_cc/curve_curve.rs::locate_extcc` is still invented and stays open.
   **B6d** (still open, found in T-137): the analytic sphere/sphere and sphere/plane arms of
   `surface_surface_extrema_all` have no counterpart in `Extrema_ExtSS::Perform` (only
   `Plane` x `Plane` is analytic there).
@@ -404,11 +414,13 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `extrema2d/general_extrema.rs:550`), which is **DONE 2026-10-15 as T-138 / package P008** --
    the grid and its solvers are deleted; the engine is `Extrema_ExtPC2d` = `Extrema_GGExtPC`
    (`extrema2d/ext_pc2d.rs`) + `Extrema_GFuncExtPC` (`extrema2d/gfunc_ext_pc2d.rs`) feeding
-   `math_FunctionRoots`. Remaining B6 items, in no fixed order: **B6e** (`locate_extcc2d` Newton
-   vs `Extrema_GenLocateExtCC` + `math_FunctionSetRoot`; test-only consumers), **B6d** (the extra
+   `math_FunctionRoots`. Remaining B6 items, in no fixed order: **B6d** (the extra
    analytic sphere arms in `surface_surface_extrema_all`), **B6f**/**B6g** (the 33x33 intersection
-   grid; the duplicated `Extrema_ExtElC2d` arm copies). **The next slice is #1 below (B1)**: it
-   outranks the B6 leftovers on centrality, confidence and blast radius.
+   grid; the duplicated `Extrema_ExtElC2d` arm copies). **B6e is CLOSED 2026-10-15 as T-147 /
+   package P017** (`extrema2d::locate_extcc2d` now runs the faithful `Extrema_LocateExtCC2d` /
+   `Extrema_GenLocateExtCC` -> `Extrema_GFuncExtCC` 2D chain), and its 3D
+   twin `extrema_cc/curve_curve.rs::locate_extcc` is the remaining piece of that defect. **The next
+   slice is #1 below (B1)**: it outranks the B6 leftovers on centrality, confidence and blast radius.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
 6. **B8 osculating_surface early returns.** **DONE 2026-10-15 as T-139 / package P009** (four
@@ -416,9 +428,11 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
    `intcurvesurface/solvers.rs:456`), **B7-writer-4** (`geom2d_convert.rs:77` conic arms),
    **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftovers
-   (**B6e**/**B6f**/**B6g**/**B6d**) and the `B8 surface_fit` item. The B7 STEP-writer lines are both
+   (**B6g**/**B6f**/**B6d** plus the 3D `locate_extcc` twin) and the `B8 surface_fit` item. The B7
+   STEP-writer lines are both
    **DONE 2026-10-15**: `step/write_context.rs:314` `SetNotPeriodic` as package P010, and
-   `step/format.rs:472,526` `closed` + `knot_spec` as package P011.
+   `step/format.rs:472,526` `closed` + `knot_spec` as package P011, with B8-intana closed as
+   P012-P016 and **B6e closed as P017 / T-147**.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
