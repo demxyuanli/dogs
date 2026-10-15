@@ -168,9 +168,16 @@ impl ComposeShell {
                                             let a_p2d = crate::pcurve_full::surface_value_of_uv(
                                                 surf.as_ref(), &ap_v, CONFUSION,
                                             );
-                                            occt_geom2d::extrema2d::point_curve_extrema2d(
+                                            // cxx:1060-1087: `apar` defaults to `firstPar`
+                                            // and is only replaced when the extrema engine
+                                            // is done and has at least one solution.
+                                            let mut apar = first_par;
+                                            if let Some(e) = occt_geom2d::extrema2d::point_curve_extrema2d(
                                                 c2d.as_ref(), &a_p2d,
-                                            ).u1
+                                            ) {
+                                                apar = e.u1;
+                                            }
+                                            apar
                                         };
                                         a_nm_params.push(apar);
                                     }

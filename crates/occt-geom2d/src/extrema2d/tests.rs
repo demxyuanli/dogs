@@ -14,7 +14,7 @@ use super::*;
     #[test]
     fn point_line_min_distance() {
         let c = line2d();
-        let e = point_curve_extrema2d(&c, &GpPnt2d::new(3.0, 4.0));
+        let e = point_curve_extrema2d(&c, &GpPnt2d::new(3.0, 4.0)).expect("no extremum");
         assert!((e.distance - 4.0).abs() < 1e-6, "dist {}", e.distance);
         assert!((e.p2.x() - 3.0).abs() < 1e-5, "closest x {}", e.p2.x());
     }
@@ -23,20 +23,31 @@ use super::*;
     fn point_circle_min_and_max() {
         let c = circle2d();
         let p = GpPnt2d::new(3.0, 0.0);
-        let e = point_curve_extrema2d(&c, &p);
+        let e = point_curve_extrema2d(&c, &p).expect("no extremum");
         assert!((e.distance - 2.0).abs() < 1e-6, "min {}", e.distance);
-        let m = point_curve_max_extrema2d(&c, &p, 64);
+        let all = point_curve_extrema2d_all(&c, &p);
+        let m = all.iter().max_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap()).unwrap();
         assert!((m.distance - 4.0).abs() < 1e-6, "max {}", m.distance);
     }
 
     #[test]
     fn curve_curve_circles_min() {
-        // Two unit circles centers 3 apart → min distance 1.
+        // Two unit circles centers 3 apart.
+        // `Extrema_ExtElC2d(circ, circ)` (`Extrema_ExtElC2d.cxx:334-364`) emits
+        // the four collinear pairs in its nested `P1[NoSol] x P2[kk]` order
+        // with `P1[i] = O1 +/- r1*O1O2`, `P2[k] = O2 +/- r2*O1O2`:
+        // (P1[0],P2[0]) = 3, (P1[0],P2[1]) = 1, (P1[1],P2[0]) = 5,
+        // (P1[1],P2[1]) = 3. OCCT neither sorts nor filters this list
+        // (`Extrema_ExtCC2d.cxx:543-597`).
         let c1 = circle2d();
         let c2 = Geom2dCircle::new(GpCirc2d::new(occt_core::gp::GpAx22d::standard(), 1.0).translated_vec(&GpVec2d::new(3.0, 0.0)));
         let es = curve_curve_extrema2d(&c1, &c2, 24);
-        assert!(!es.is_empty());
-        assert!((es[0].distance - 1.0).abs() < 1e-5, "min {}", es[0].distance);
+        assert_eq!(es.len(), 4, "four collinear pairs {es:?}");
+        let d: Vec<f64> = es.iter().map(|e| e.distance).collect();
+        for (got, want) in d.iter().zip([3.0, 1.0, 5.0, 3.0]) {
+            assert!((got - want).abs() < 1e-5, "distances {d:?}");
+        }
+        assert!(es.iter().any(|e| (e.distance - 1.0).abs() < 1e-5), "min missing {es:?}");
     }
 
     #[test]
@@ -78,10 +89,17 @@ use super::*;
     fn skew_lines_min_distance() {
         // Horizontal line and vertical line offset — skew in the plane means
         // they cross; min distance 0. Use parallel lines instead: y=0 and y=3.
+        // `Extrema_ExtElC2d(lin, lin)` (`Extrema_ExtElC2d.cxx:63-70`) fills only
+        // `mySqDist` for a parallel pair and leaves `myIsPar = true`, and
+        // `Extrema_ExtCC2d::Results` (`Extrema_ExtCC2d.cxx:541-544, :543-597`)
+        // appends no point when `myIsPar`, so the report is
+        // `IsParallel()` with zero extrema.
         let l1 = Geom2dLine::new(GpAx2d::new(GpPnt2d::new(0.0, 0.0), GpDir2d::new(1.0, 0.0).unwrap()));
         let l2 = Geom2dLine::new(GpAx2d::new(GpPnt2d::new(0.0, 3.0), GpDir2d::new(1.0, 0.0).unwrap()));
-        let es = curve_curve_extrema2d(&l1, &l2, 8);
-        assert!((es[0].distance - 3.0).abs() < 1e-5, "min {}", es[0].distance);
+        let ext = ExtremaExtCC2d::new(&l1, &l2);
+        assert!(ext.is_done() && ext.is_parallel(), "parallel pair");
+        assert_eq!(ext.nb_ext(), 0, "no extremum pair for parallel lines");
+        assert!(curve_curve_extrema2d(&l1, &l2, 8).is_empty());
     }
 
     const PI: f64 = std::f64::consts::PI;
@@ -150,8 +168,14 @@ use super::*;
         let circle = circle2d();
         let p = GpPnt2d::new(3.0, 0.0);
         let all = point_curve_extrema2d_all(&circle, &p);
-        assert!((all[0].distance - 2.0).abs() < 1e-6, "circle min {}", all[0].distance);
-        assert!((all[all.len() - 1].distance - 4.0).abs() < 1e-6, "circle max {}", all[all.len() - 1].distance);
+        // `Extrema_ExtPElC2d::Perform(p, circ, ...)`
+        // (`Extrema_ExtPElC2d.cxx:113-152`) builds `V = gp_Vec2d(P, OC)`
+        // (P to centre) and reports `P1 = OC + radius*V` first, the far point,
+        // then `P2 = OC - radius*V`, the near point; `Extrema_ExtPC2d` keeps
+        // that order and does not sort.
+        assert_eq!(all.len(), 2, "min+max {all:?}");
+        assert!((all[0].distance - 4.0).abs() < 1e-6, "circle far {}", all[0].distance);
+        assert!((all[1].distance - 2.0).abs() < 1e-6, "circle near {}", all[1].distance);
     }
 
     #[test]
@@ -172,7 +196,7 @@ use super::*;
         let v = GpVec2d::new(min.p2.x() - p.x(), min.p2.y() - p.y());
         assert!(v.dot(&d1).abs() < 1e-6, "dF={}", v.dot(&d1));
         // The wrapper must agree.
-        let e = point_curve_extrema2d(&c, &p);
+        let e = point_curve_extrema2d(&c, &p).expect("no extremum");
         assert!((e.distance - min.distance).abs() < 1e-6, "wrapper {}", e.distance);
     }
 
@@ -182,7 +206,7 @@ use super::*;
         // Newton (ellipse is not classified) and must still find the min.
         let e = Geom2dEllipse::from_axes(GpAx22d::standard(), 2.0, 1.0);
         let p = GpPnt2d::new(3.0, 0.0);
-        let em = point_curve_extrema2d(&e, &p);
+        let em = point_curve_extrema2d(&e, &p).expect("no extremum");
         assert!((em.distance - 1.0).abs() < 1e-6, "ellipse min {}", em.distance);
         assert!((em.p2.x() - 2.0).abs() < 1e-5, "closest {em:?}");
     }
@@ -247,12 +271,18 @@ use super::*;
             GpCirc2d::new(GpAx22d::standard(), 1.0).translated_vec(&GpVec2d::new(3.0, 0.0)),
         );
         let all = curve_curve_extrema2d_all(&c1, &c2);
-        assert!(!all.is_empty());
-        assert!((all[0].distance - 1.0).abs() < 1e-7, "min {}", all[0].distance);
-        assert!((all[all.len() - 1].distance - 5.0).abs() < 1e-7, "max {}", all[all.len() - 1].distance);
+        // Same `Extrema_ExtElC2d(circ, circ)` order as `curve_curve_circles_min`:
+        // 3, 1, 5, 3 -- unsorted, undeduped.
+        assert_eq!(all.len(), 4, "four collinear pairs {all:?}");
+        let d: Vec<f64> = all.iter().map(|e| e.distance).collect();
+        for (got, want) in d.iter().zip([3.0, 1.0, 5.0, 3.0]) {
+            assert!((got - want).abs() < 1e-7, "distances {d:?}");
+        }
+        assert!(all.iter().any(|e| (e.distance - 1.0).abs() < 1e-7), "min missing {all:?}");
+        assert!(all.iter().any(|e| (e.distance - 5.0).abs() < 1e-7), "max missing {all:?}");
         // The samples-taking wrapper delegates to the same set.
         let es = curve_curve_extrema2d(&c1, &c2, 16);
-        assert!((es[0].distance - 1.0).abs() < 1e-7, "wrapper min {}", es[0].distance);
+        assert!(es.iter().any(|e| (e.distance - 1.0).abs() < 1e-7), "wrapper min {}", es[0].distance);
     }
 
     #[test]

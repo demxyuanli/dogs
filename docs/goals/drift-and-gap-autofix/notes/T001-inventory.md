@@ -166,7 +166,8 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   into the line arm (OCCT reports `GeomAbs_BSplineCurve` and takes the general arm). Gates:
   `--all-targets` 0 err, `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib`
   1251/0, `step_obj_gates` 4/4 (117s), `export_data_obj` 15/15 v/f and bbox bit-identical.
-- **B6c OPEN (split out of B6b 2026-10-15; Scout done 2026-10-15).** The `span/0.1` grid half of
+- **B6c CLOSED (split out of B6b 2026-10-15; Scout done 2026-10-15; fixed 2026-10-15 as T-138 /
+  package P008).** The `span/0.1` grid half of
   the old B6b line is not a classifier. The substituted-for engine is `Extrema_ExtPC2d`
   (`Extrema_ExtPC2d.hxx:31-38` = `Extrema_GGExtPC<Adaptor2d_Curve2d, Extrema_Curve2dTool,
   gp_Pnt2d, ...>`), whose body is `Extrema_GGExtPC.hxx`:
@@ -196,6 +197,69 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   (`math_GlobOptMin` is already ported in `occt-math` and already used by `general_extrema`), which
   also removes the A16 UNPORTED marker; it has to be split into at least the elementary arms,
   `IntervalPerform`/`GGenExtPC`, and the Bezier/BSpline knot arms.
+  **FIXED (T-138 / package P008).** The substituted-for engine is now ported, not emulated:
+  - new `extrema2d/ext_pc2d.rs` = `Extrema_GGExtPC<Adaptor2d_Curve2d, Extrema_Curve2dTool, ...>`
+    (`Extrema_ExtPC2d.hxx:31-39`): `Initialize` (`hxx:114-127`), the endpoint distances
+    (`hxx:142-157`), the elementary switch to `Extrema_ExtPElC2d::Perform` (`hxx:160-181`), the
+    Bezier `mysample = NbPoles()*2` arm (`hxx:182-188`), the BSpline knot/degree arms
+    (`hxx:190-388`), the `default:` `NbIntervals(GeomAbs_C2)` / `DeflCurvIntervals` arm with
+    `mysample = max(17*(usup-uin)/maxint, 3)` (`hxx:390-469`), `IntervalPerform`
+    (`hxx:590-614`), the end-point postprocessing (`hxx:473-502`), `AddSol`
+    (`hxx:617-632`).
+  - new `extrema2d/gfunc_ext_pc2d.rs` = `Extrema_GFuncExtPC` (`Extrema_GFuncExtPC.hxx`) with its
+    singular `D1` arm (3-point differences) and `DF` handling (`hxx:133-...`), feeding
+    `Extrema_GGenExtPC::Perform` = `math_FunctionRoots(myF, umin, usup, nbsample, tolu, tolf,
+    tolf)` (`Extrema_GGenExtPC.hxx:160-173`) -- note the cxx here is `math_FunctionRoots`, not
+    `math_GlobOptMin`, so the engine reuses the ported `occt-math` root finder.
+  - `point_curve_extrema2d_all` = `ExtremaExtPC2d::new` (`Extrema_ExtPC2d::Perform`), list order
+    preserved (OCCT neither sorts nor dedups); `point_curve_extrema2d` now returns `Option` and
+    reproduces `Geom2dAPI_ProjectPointOnCurve::Perform` (`cxx:59-86`: done only when
+    `IsDone() && NbExt() > 0`, then the smallest `SquareDistance`, first index wins ties).
+  - `curve_curve_extrema2d_all` = `ExtremaExtCC2d::new` (`Extrema_ExtCC2d`) instead of the local
+    pair dispatch + grid-Newton.
+  - deleted whole: `build_samples2d`, `newton_point_curve_all2d`, `fval2d`, `fprime2d`,
+    `dist22d`, `solve_f_zero2d`, `refine_seed2d`, `pair2d_c`, `dedupe_sort2d`,
+    `newton_curve_curve_all2d`, `param_in2d`.
+  - the **A16 UNPORTED marker is gone**: `general_extrema::proj_p_on_c` is now
+    `ExtremaExtPC2d::new_range` + the min `SquareDistance` scan of
+    `Extrema_GGenExtCC_ProjPOnC` (`Extrema_GGenExtCC.hxx:249-263`, caller `:771-773`), i.e. the
+    range-restricted form the old note said did not exist.
+  - `topo/shape_fix_compose_shell/split_wire.rs` now mirrors
+    `ShapeFix_ComposeShell.cxx:1046-1087` literally: `apar` starts at `firstPar` and is overridden
+    only when the 2D extrema run is done with at least one solution -- the `Option` return is what
+    makes that cxx guard expressible.
+  - four existing lib assertions were corrected to the cxx order semantics (no new test): the
+    `Extrema_ExtPElC2d` circle order (far point first, `Extrema_ExtPElC2d.cxx:113-150`), the
+    `Extrema_ExtElC2d(circ, circ)` nested `P1[NoSol] x P2[kk]` order (`Extrema_ExtElC2d.cxx:334-364`),
+    and parallel lines reporting `IsParallel()` with zero extrema (`Extrema_ExtElC2d.cxx:63-70` +
+    `Extrema_ExtCC2d.cxx:541-544`).
+  - gates: `--all-targets` 0 err (occt-geom2d, occt-geom, occt-topo), `occt-geom2d --lib` 72/0,
+    `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4 with the 23 area
+    ratios identical to the T000 baseline (22 x 1.0000, Shape-2 0.9999), `export_data_obj` 15/15
+    with v/f and bbox bit-identical.
+- **B6e OPEN (found while closing B6c, 2026-10-15).** `extrema2d/curve_curve.rs::locate_extcc2d`
+  (and its 3D twin `occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc`) use a self-invented
+  clamped 32-iteration Newton (`refine_curve_curve2d_newton` + `f_and_jac2d`) with a 1e-12
+  convergence test. The cxx is `Extrema_LocateExtCC2d` (`Extrema_LocateExtCC2d.cxx:28-46`) ->
+  `Extrema_LocECC2d` = `Extrema_GenLocateExtCC` (`Extrema_GenLocateExtCC.hxx:44-105`): build
+  `Extrema_CCLocFOfLocECC2d` = `Extrema_GFuncExtCC` (`Extrema_CCLocFOfLocECC2d.hxx:27-34`), run
+  `math_FunctionSetRoot` with `Tol = (TolU, TolV)` = each curve's
+  `Extrema_Curve2dTool::Resolution(Confusion)` (`Extrema_LocateExtCC2d.cxx:32-36`) inside
+  `[First,Last]^2`, then require `S.IsDone() && F.NbExt() > 0` and `Ff(i) < 1e-10` on both
+  components. None of 32 / 1e-12 / clamping exist in the cxx; `math_FunctionSetRoot` and the
+  `Extrema_GFuncExtCC` shape are already available (`occt-math`, and the same pattern is landed in
+  `extrema_surf/extrusion_point_extrema.rs`). Consumers: `extrema2d/tests.rs`,
+  `extrema_cc/tests.rs` only.
+- **B6f OPEN (found while closing B6c, 2026-10-15).**
+  `extrema2d/curve_curve.rs::curve_curve_intersections2d` is a 33x33 parameter grid plus a `tol`
+  argument. OCCT has no such sampler: the zero-distance case is the engine already wired
+  (`Extrema_ExtCC2d`, used by `curve_ops::curve2d_intersections`) or
+  `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` (ported in `occt-geom2d/geom2d_int`).
+  Consumer: `extrema2d/tests.rs:47` only.
+- **B6g OPEN (duplication found while closing B6c, 2026-10-15).** `extrema2d/curve_curve.rs`'s
+  `line_line_extrema2d`, `line_circle_extrema2d` and `circle_circle_extrema2d` are a second,
+  module-level copy of the `Extrema_ExtElC2d` arms that `extrema2d/ext_el_c2d.rs` already carries
+  (and that the engine now uses); nothing outside `extrema2d/tests.rs` calls them.
 - **B6d OPEN (found 2026-10-15, T-137).** `extrema_ss::surface_surface_extrema_all`'s analytic
   sphere/sphere and sphere/plane arms have no counterpart in `Extrema_ExtSS::Perform`, whose only
   analytic arm is `Plane` x `Plane` -> `Extrema_ExtElSS::Perform(S1.Plane(), myS2->Plane())`
@@ -269,9 +333,14 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   as `None`, and `bean_face_exact::ComputeUsingExtremum` takes the `IntTools_BeanFaceIntersector.cxx:956`
   guard instead of a fabricated pair). B6b closed in T-137 (both `analytic_solvers` families now
   take `gp_pln()`/`gp_sphere()`/`gp_line()`/`gp_lin2d()`/`gp_circ2d()`; the sampled classifiers and
-  their helpers are deleted). Split out of B6b as **B6c** (still open): the `span/0.1` seed grid
-  `build_samples2d` + `newton_point_curve_all2d` / `newton_curve_curve_all2d`, which stand in for
-  `Extrema_GGExtPC::IntervalPerform` (`mysample = 17`) and `Extrema_GGenExtCC` -> `math_GlobOptMin`.
+  their helpers are deleted). Split out of B6b as **B6c**, closed in T-138 (the `span/0.1` seed grid
+  `build_samples2d` + `newton_point_curve_all2d` / `newton_curve_curve_all2d` are deleted and
+  replaced by the faithful `Extrema_ExtPC2d` = `Extrema_GGExtPC` + `Extrema_GFuncExtPC` --
+  `extrema2d/ext_pc2d.rs`, `extrema2d/gfunc_ext_pc2d.rs`; the A16 UNPORTED marker on
+  `general_extrema::proj_p_on_c` came off with them). B6e/B6f/B6g registered in the same package
+  (`locate_extcc2d`'s self-invented Newton vs `Extrema_GenLocateExtCC` +
+  `math_FunctionSetRoot`; the 33x33 `curve_curve_intersections2d` grid; the duplicated
+  `line_line`/`line_circle`/`circle_circle_extrema2d` copies of `Extrema_ExtElC2d`).
   **B6d** (still open, found in T-137): the analytic sphere/sphere and sphere/plane arms of
   `surface_surface_extrema_all` have no counterpart in `Extrema_ExtSS::Perform` (only
   `Plane` x `Plane` is analytic there).
@@ -289,13 +358,21 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 3. ~~**B6b** Extrema analytic-solver sampling classifiers (the B6a half, the fabricated `fallback_*`
    pairs, closed 2026-10-15 as T-136 / P006). Still open: the sampling classifiers in the two
    `analytic_solvers.rs` files; touches `bean_face_exact`'s neighbours, Scout first.~~
-   **DONE 2026-10-15 (T-137, package P007).** Continuation is **B6c** (the `span/0.1` seed grid +
+   **DONE 2026-10-15 (T-137, package P007).** Continuation was **B6c** (the `span/0.1` seed grid +
    grid-Newton general arms: `build_samples2d`, `newton_point_curve_all2d`,
    `newton_curve_curve_all2d`, live via `brep_class/intersector_checks.rs:157` and
-   `extrema2d/general_extrema.rs:550`), then **B6d** (the extra analytic sphere arms in
-   `surface_surface_extrema_all`).
+   `extrema2d/general_extrema.rs:550`), which is **DONE 2026-10-15 as T-138 / package P008** --
+   the grid and its solvers are deleted; the engine is `Extrema_ExtPC2d` = `Extrema_GGExtPC`
+   (`extrema2d/ext_pc2d.rs`) + `Extrema_GFuncExtPC` (`extrema2d/gfunc_ext_pc2d.rs`) feeding
+   `math_FunctionRoots`. Remaining B6 items, in no fixed order: **B6e** (`locate_extcc2d` Newton
+   vs `Extrema_GenLocateExtCC` + `math_FunctionSetRoot`; test-only consumers), **B6d** (the extra
+   analytic sphere arms in `surface_surface_extrema_all`), **B6f**/**B6g** (the 33x33 intersection
+   grid; the duplicated `Extrema_ExtElC2d` arm copies). **The next slice is #1 below (B1)**: it
+   outranks the B6 leftovers on centrality, confidence and blast radius.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
+6. **B1** `wire_splitter_block.rs` family. **Scouted 2026-10-15; picked as the next Worker
+   package (P009 / T-139).**
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 

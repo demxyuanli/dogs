@@ -1,149 +1,55 @@
 use super::prelude::*;
 use super::*;
 
-pub(super) fn param_for_point2d(c: &dyn Curve2d, q: &GpPnt2d, seed: f64, a: f64, b: f64) -> f64 {
-    let mut u = seed.clamp(a, b);
-    for _ in 0..16 {
-        let (cq, d1, d2) = c.d2(u);
-        let v = GpVec2d::new(cq.x() - q.x(), cq.y() - q.y());
-        let fp = d1.square_magnitude() + v.dot(&d2);
-        if fp.abs() < 1e-300 {
-            break;
-        }
-        let un = u - v.dot(&d1) / fp;
-        if !un.is_finite() {
-            break;
-        }
-        if (un - u).abs() < 1e-12 * (1.0 + u.abs()) {
-            u = un;
-            break;
-        }
-        u = un.clamp(a, b);
-    }
-    u
+/// `Extrema_ExtPC2d` solution turned into the port's `Extrema2d` pair carrier:
+/// `u1`/`u2` both hold the curve parameter, `p1` the query point.
+fn point_solution2d(p: &GpPnt2d, s: &ExtPc2dSolution) -> Extrema2d {
+    Extrema2d { p1: *p, p2: s.point, distance: p.distance(&s.point), u1: s.u, u2: s.u }
 }
 
-/// All local extrema (minima and maxima) of the point–curve distance in the
-/// plane, deduplicated and sorted by distance. Lines and circles are
-/// classified and solved analytically; everything else uses grid + Newton.
+/// All extremal distances between a point and a 2D curve, in the order
+/// `Extrema_ExtPC2d` reports them.
+///
+/// Faithful route: [`ExtremaExtPC2d`] = `Extrema_GGExtPC<Adaptor2d_Curve2d, ...>`
+/// (`Extrema_ExtPC2d.hxx:31-38`, body `Extrema_GGExtPC.hxx`). The previous body
+/// was a self-invented `span/0.1` seed grid (`analytic_solvers::build_samples2d`)
+/// with bracket sign changes plus Newton (`newton_point_curve_all2d`); both are
+/// deleted. OCCT neither sorts nor dedups this list, and it only adds a range
+/// endpoint when the query point already coincides with it
+/// (`Extrema_GGExtPC.hxx:473-502`), hence the empty list on `!IsDone()`.
 pub fn point_curve_extrema2d_all(c: &dyn Curve2d, p: &GpPnt2d) -> Vec<Extrema2d> {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    let mut pairs: Vec<Extrema2d> = Vec::new();
-
-    // Extrema_ExtPElC2d.cxx:63-80 (the `GeomAbs_Line` arm reached from
-    // Extrema_GGExtPC.hxx:178-181): `Mydist` is the parameter on the line
-    // measured from `L.Location()` along `L.Direction()`.
-    if let Some(l) = c.gp_lin2d() {
-        let d = GpVec2d::from_dir2d(&l.pos.vdir);
-        let mydist = d.x() * (p.x() - l.pos.loc.x()) + d.y() * (p.y() - l.pos.loc.y());
-        if mydist.is_finite() && mydist >= a - CONFUSION && mydist <= b + CONFUSION {
-            pairs.push(pair2d_c(c, p, mydist));
-        }
-        if a.is_finite() {
-            pairs.push(pair2d_c(c, p, a));
-        }
-        if b.is_finite() {
-            pairs.push(pair2d_c(c, p, b));
-        }
-        return dedupe_sort2d(pairs);
+    let ext = ExtremaExtPC2d::new(c, p);
+    if !ext.is_done() {
+        return Vec::new();
     }
-
-    if let Some(gc) = c.gp_circ2d() {
-        let period = 2.0 * std::f64::consts::PI;
-        for s in circle_all2d(&gc, p, a, b) {
-            let mut best = s.u1;
-            let mut best_err = f64::INFINITY;
-            for seed in [s.u1, 2.0 * a - s.u1] {
-                let ws = a + (seed - a).rem_euclid(period);
-                if ws < a - CONFUSION || ws > b + CONFUSION {
-                    continue;
-                }
-                let u = param_for_point2d(c, &s.p2, ws, a, b);
-                let err = c.d0(u).distance(&s.p2);
-                if err < best_err {
-                    best_err = err;
-                    best = u;
-                }
-            }
-            pairs.push(pair2d_c(c, p, best));
-        }
-        if a.is_finite() {
-            pairs.push(pair2d_c(c, p, a));
-        }
-        if b.is_finite() {
-            pairs.push(pair2d_c(c, p, b));
-        }
-        return dedupe_sort2d(pairs);
-    }
-
-    dedupe_sort2d(newton_point_curve_all2d(c, p))
+    ext.solutions().iter().map(|s| point_solution2d(p, s)).collect()
 }
 
-/// Minimum distance from point `p` to curve `c` (with closest point).
-/// Exact analytic dispatch for lines/circles; Newton refinement otherwise
-/// (see `point_curve_extrema2d_all`).
-pub fn point_curve_extrema2d(c: &dyn Curve2d, p: &GpPnt2d) -> Extrema2d {
-    match point_curve_extrema2d_all(c, p).into_iter().next() {
-        Some(e) => e,
-        None => {
-            // Degenerate curve: golden-section fallback.
-            let f = |u: f64| {
-                let q = c.d0(u);
-                (q.x() - p.x()).powi(2) + (q.y() - p.y()).powi(2)
-            };
-            let (a0, b0) = (c.first_parameter(), c.last_parameter());
-            let (a, b) = if a0.is_finite() && b0.is_finite() && b0 > a0 {
-                (a0, b0)
-            } else {
-                let mut w = 1.0;
-                let mut fm = f(0.0);
-                for _ in 0..10 {
-                    if f(-w) >= fm && f(w) >= fm {
-                        break;
-                    }
-                    w *= 8.0;
-                    fm = f(0.0);
-                }
-                (-w, w)
-            };
-            let phi = (5.0f64.sqrt() - 1.0) * 0.5;
-            let (mut lo, mut hi) = (a, b);
-            for _ in 0..80 {
-                let x1 = hi - phi * (hi - lo);
-                let x2 = lo + phi * (hi - lo);
-                if f(x1) < f(x2) {
-                    hi = x2;
-                } else {
-                    lo = x1;
-                }
-            }
-            let u = 0.5 * (lo + hi);
-            let q = c.d0(u);
-            Extrema2d { p1: *p, p2: q, distance: p.distance(&q), u1: u, u2: u }
+/// Closest point of `p` on `c` as `Geom2dAPI_ProjectPointOnCurve::Perform`
+/// reports it (`Geom2dAPI_ProjectPointOnCurve.cxx:59-86`): `Extrema_ExtPC2d`,
+/// done only when `IsDone() && NbExt() > 0`, then the smallest
+/// `SquareDistance(i)` with the first index winning ties. `None` is the
+/// not-done/no-extremum case.
+pub fn point_curve_extrema2d(c: &dyn Curve2d, p: &GpPnt2d) -> Option<Extrema2d> {
+    let ext = ExtremaExtPC2d::new(c, p);
+    if !ext.is_done() || ext.nb_ext() == 0 {
+        return None;
+    }
+    let mut dist2_min = ext.square_distance(1);
+    let mut index = 1;
+    for i in 2..=ext.nb_ext() {
+        let dist2 = ext.square_distance(i);
+        if dist2 < dist2_min {
+            dist2_min = dist2;
+            index = i;
         }
     }
-}
-
-/// Maximum distance from point `p` to curve `c` (sampling-based).
-pub fn point_curve_max_extrema2d(c: &dyn Curve2d, p: &GpPnt2d, samples: usize) -> Extrema2d {
-    let (a, b) = bound(c);
-    let n = samples.max(2);
-    let mut best: Option<Extrema2d> = None;
-    for i in 0..=n {
-        let u = a + (b - a) * i as f64 / n as f64;
-        let q = c.d0(u);
-        let d = p.distance(&q);
-        if best.as_ref().map_or(true, |e: &Extrema2d| d > e.distance) {
-            best = Some(Extrema2d { p1: *p, p2: q, distance: d, u1: u, u2: u });
-        }
-    }
-    best.unwrap()
+    Some(point_solution2d(p, &ext.solutions()[index - 1]))
 }
 
 /// Minimum distance between two curves (all extrema, first = closest).
 ///
-/// Delegates to `curve_curve_extrema2d_all` (exact analytic for classified
-/// lines/circles, grid + Newton otherwise). `samples` is kept for signature
+/// Delegates to `curve_curve_extrema2d_all`. `samples` is kept for signature
 /// compatibility but no longer drives the computation.
 pub fn curve_curve_extrema2d(c1: &dyn Curve2d, c2: &dyn Curve2d, _samples: usize) -> Vec<Extrema2d> {
     curve_curve_extrema2d_all(c1, c2)
@@ -357,111 +263,6 @@ pub(super) fn refine_curve_curve2d_newton(
     (u, v)
 }
 
-/// All local extrema of |C1−C2| in the plane via grid → Newton (2D).
-pub(super) fn newton_curve_curve_all2d(c1: &dyn Curve2d, c2: &dyn Curve2d) -> Vec<Extrema2d> {
-    let (a1, b1) = (c1.first_parameter(), c1.last_parameter());
-    let (a2, b2) = (c2.first_parameter(), c2.last_parameter());
-    let us = build_samples2d(c1, a1, b1);
-    let vs = build_samples2d(c2, a2, b2);
-    let n1 = us.len();
-    let n2 = vs.len();
-
-    let mut f1g = vec![vec![f64::NAN; n2]; n1];
-    let mut f2g = vec![vec![f64::NAN; n2]; n1];
-    let mut dg = vec![vec![f64::NAN; n2]; n1];
-    for i in 0..n1 {
-        for j in 0..n2 {
-            let u = us[i];
-            let v = vs[j];
-            let p1 = c1.d0(u);
-            let p2 = c2.d0(v);
-            let (_, du) = c1.d1(u);
-            let (_, dv) = c2.d1(v);
-            if !p1.x().is_finite() || !p2.x().is_finite() {
-                continue;
-            }
-            let d = GpVec2d::new(p1.x() - p2.x(), p1.y() - p2.y());
-            let ndu = du.magnitude();
-            let ndv = dv.magnitude();
-            if ndu > 1e-12 {
-                f1g[i][j] = d.dot(&du) / ndu;
-            }
-            if ndv > 1e-12 {
-                f2g[i][j] = d.dot(&dv) / ndv;
-            }
-            dg[i][j] = p1.square_distance(&p2);
-        }
-    }
-
-    let mut seeds: Vec<(f64, f64)> = Vec::new();
-    for i in 0..n1.saturating_sub(1) {
-        for j in 0..n2.saturating_sub(1) {
-            let a = f1g[i][j];
-            let b = f1g[i + 1][j];
-            let c = f2g[i][j];
-            let d = f2g[i][j + 1];
-            if !(a.is_finite() && b.is_finite() && c.is_finite() && d.is_finite()) {
-                continue;
-            }
-            let s1 = (a < 0.0 && b > 0.0) || (a > 0.0 && b < 0.0) || a.abs() < 1e-14 || b.abs() < 1e-14;
-            let s2 = (c < 0.0 && d > 0.0) || (c > 0.0 && d < 0.0) || c.abs() < 1e-14 || d.abs() < 1e-14;
-            if s1 && s2 {
-                seeds.push((0.5 * (us[i] + us[i + 1]), 0.5 * (vs[j] + vs[j + 1])));
-            }
-        }
-    }
-    for i in 1..n1.saturating_sub(1) {
-        for j in 1..n2.saturating_sub(1) {
-            let d = dg[i][j];
-            if !d.is_finite() {
-                continue;
-            }
-            let neighbors = [dg[i - 1][j], dg[i + 1][j], dg[i][j - 1], dg[i][j + 1]];
-            if !neighbors.iter().all(|x| x.is_finite()) {
-                continue;
-            }
-            let is_min = d <= neighbors[0] && d <= neighbors[1] && d <= neighbors[2] && d <= neighbors[3];
-            let is_max = d >= neighbors[0] && d >= neighbors[1] && d >= neighbors[2] && d >= neighbors[3];
-            if is_min || is_max {
-                seeds.push((us[i], vs[j]));
-            }
-        }
-    }
-    if n1 >= 2 && n2 >= 2 {
-        let mut edges: [Option<(f64, f64)>; 4] = [None, None, None, None];
-        for i in 0..n1 {
-            if dg[i][0].is_finite() && edges[0].map_or(true, |(_, d)| dg[i][0] < d) {
-                edges[0] = Some((us[i], vs[0]));
-            }
-            if dg[i][n2 - 1].is_finite() && edges[1].map_or(true, |(_, d)| dg[i][n2 - 1] < d) {
-                edges[1] = Some((us[i], vs[n2 - 1]));
-            }
-        }
-        for j in 0..n2 {
-            if dg[0][j].is_finite() && edges[2].map_or(true, |(_, d)| dg[0][j] < d) {
-                edges[2] = Some((us[0], vs[j]));
-            }
-            if dg[n1 - 1][j].is_finite() && edges[3].map_or(true, |(_, d)| dg[n1 - 1][j] < d) {
-                edges[3] = Some((us[n1 - 1], vs[j]));
-            }
-        }
-        for e in edges.into_iter().flatten() {
-            seeds.push(e);
-        }
-    }
-
-    let mut out: Vec<Extrema2d> = Vec::new();
-    for (u0, v0) in seeds {
-        let (u, v) = refine_curve_curve2d_newton(c1, c2, u0, v0, a1, b1, a2, b2);
-        let p1 = c1.d0(u);
-        let p2 = c2.d0(v);
-        if p1.x().is_finite() && p2.x().is_finite() {
-            out.push(pair2d_cc(p1, u, p2, v));
-        }
-    }
-    dedupe_sort_cc2d(out)
-}
-
 /// Deduplicate curve–curve extrema by parameter proximity, sorted by distance.
 pub(super) fn dedupe_sort_cc2d(v: Vec<Extrema2d>) -> Vec<Extrema2d> {
     let mut out: Vec<Extrema2d> = Vec::new();
@@ -481,12 +282,6 @@ pub(super) fn dedupe_sort_cc2d(v: Vec<Extrema2d>) -> Vec<Extrema2d> {
     out
 }
 
-pub(super) fn param_in2d(u: f64, lo: f64, hi: f64) -> bool {
-    let lo_ok = !lo.is_finite() || u >= lo - CONFUSION;
-    let hi_ok = !hi.is_finite() || u <= hi + CONFUSION;
-    lo_ok && hi_ok
-}
-
 /// Map `u` into `[lo, lo+period)` for a periodic curve (OCCT `ElCLib::InPeriod`).
 pub(super) fn in_period2d(u: f64, lo: f64, period: f64) -> f64 {
     if period <= 0.0 || !lo.is_finite() {
@@ -496,54 +291,23 @@ pub(super) fn in_period2d(u: f64, lo: f64, period: f64) -> f64 {
     }
 }
 
-/// All local extrema (minima and maxima) of the distance between two planar
-/// curves, deduplicated and sorted by distance. Lines and circles are solved
-/// analytically; everything else uses grid + Newton.
+/// All extremal distances between two planar curves, in the order
+/// `Extrema_ExtCC2d` reports them.
+///
+/// Faithful route: [`ExtremaExtCC2d`] = `Extrema_ExtCC2d` (`Extrema_ExtCC2d.hxx`,
+/// `Extrema_ExtCC2d.cxx:104-145` for the `Extrema_ExtElC2d` dispatch and
+/// `:435-451` for the general arm) with its engine `Extrema_ECC2d` =
+/// `Extrema_GGenExtCC`. The previous body re-implemented that dispatch locally
+/// and fell back to the self-invented seed grid plus Newton
+/// (`newton_curve_curve_all2d`), which is deleted.
 pub fn curve_curve_extrema2d_all(c1: &dyn Curve2d, c2: &dyn Curve2d) -> Vec<Extrema2d> {
-    let (a1, b1) = (c1.first_parameter(), c1.last_parameter());
-    let (a2, b2) = (c2.first_parameter(), c2.last_parameter());
-
-    let l1 = c1.gp_lin2d();
-    let l2 = c2.gp_lin2d();
-    let g1 = c1.gp_circ2d();
-    let g2 = c2.gp_circ2d();
-
-    let analytic: Vec<Extrema2d> = match (l1, l2, g1, g2) {
-        (Some(l1), Some(l2), _, _) => line_line_extrema2d(&l1, &l2),
-        (Some(l), None, _, Some(c)) => line_circle_extrema2d(&l, &c),
-        (None, Some(l), Some(c), _) => {
-            let mut out = line_circle_extrema2d(&l, &c);
-            for e in out.iter_mut() {
-                std::mem::swap(&mut e.p1, &mut e.p2);
-                std::mem::swap(&mut e.u1, &mut e.u2);
-            }
-            out
-        }
-        (None, None, Some(g1), Some(g2)) => circle_circle_extrema2d(&g1, &g2),
-        _ => Vec::new(),
-    };
-
-    if !analytic.is_empty() {
-        // Map periodic parameters into the curve range before the range check.
-        let p1 = if c1.is_periodic() { c1.period() } else { 0.0 };
-        let p2 = if c2.is_periodic() { c2.period() } else { 0.0 };
-        let analytic: Vec<Extrema2d> = analytic
-            .into_iter()
-            .map(|mut e| {
-                e.u1 = in_period2d(e.u1, a1, p1);
-                e.u2 = in_period2d(e.u2, a2, p2);
-                e
-            })
-            .collect();
-        let filtered: Vec<Extrema2d> = analytic
-            .into_iter()
-            .filter(|e| param_in2d(e.u1, a1, b1) && param_in2d(e.u2, a2, b2))
-            .collect();
-        if !filtered.is_empty() {
-            return dedupe_sort_cc2d(filtered);
-        }
-    }
-    dedupe_sort_cc2d(newton_curve_curve_all2d(c1, c2))
+    let ext = ExtremaExtCC2d::new(c1, c2);
+    (1..=ext.nb_ext())
+        .map(|n| {
+            let (u1, p1, u2, p2) = ext.points(n);
+            pair2d_cc(p1, u1, p2, u2)
+        })
+        .collect()
 }
 
 /// Local extremum of the distance between two planar curves from seed

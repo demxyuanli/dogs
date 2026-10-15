@@ -264,7 +264,7 @@ pub fn curve2d_point(c: &dyn Curve2d, u: f64) -> GpPnt2d {
 /// 64-sample scan plus golden section with an expanding-window hack for
 /// unbounded curves (audit A16, task R2-18a).
 pub fn curve2d_closest_point(c: &dyn Curve2d, p: &GpPnt2d, _tol: f64) -> Option<(f64, GpPnt2d)> {
-    let e = crate::extrema2d::point_curve_extrema2d(c, p);
+    let e = crate::extrema2d::point_curve_extrema2d(c, p)?;
     if e.u1.is_finite() && e.p2.x().is_finite() && e.p2.y().is_finite() {
         Some((e.u1, e.p2))
     } else {

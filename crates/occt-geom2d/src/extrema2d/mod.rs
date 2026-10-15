@@ -27,6 +27,8 @@ pub(crate) use crate::curve::Curve2d;
 mod analytic_solvers;
 mod curve_curve;
 mod curve2d_tool;
+mod ext_pc2d;
+mod gfunc_ext_pc2d;
 mod general_extrema;
 mod glob_opt_func;
 mod ext_cc2d;
@@ -35,6 +37,7 @@ pub use analytic_solvers::*;
 pub use curve_curve::*;
 pub use ext_cc2d::*;
 pub use ext_el_c2d::*;
+pub use ext_pc2d::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

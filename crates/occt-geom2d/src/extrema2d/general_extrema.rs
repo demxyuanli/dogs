@@ -30,7 +30,7 @@
 use super::prelude::*;
 
 use super::curve2d_tool::{adaptor_intervals2d, adaptor_is_closed2d, adaptor_resolution2d};
-use super::curve_curve::point_curve_extrema2d_all;
+use super::ext_pc2d::ExtremaExtPC2d;
 use super::glob_opt_func::GlobOptFuncCCC2;
 
 use occt_math::globoptmin::GlobOptMin;
@@ -535,21 +535,19 @@ fn change_intervals(the_ints: &mut Vec<f64>, the_nb_ints: i32) {
     the_ints.extend_from_slice(&out[..a_nb_last as usize]);
 }
 
-/// `Extrema_GGenExtCC_ProjPOnC` (`Extrema_GGenExtCC.hxx:248-263`): the smallest
-/// **squared** distance of `the_p` to any range-restricted `Extrema_ExtPC2d`
-/// solution, or `RealLast()` when there is none.
-///
-/// **UNPORTED (audit A16)**: OCCT calls `Extrema_ExtPC2d`
-/// (`Extrema_ExtPC2d.hxx:31-38` = `Extrema_GGExtPC<...>`) initialized on the
-/// restricted range (`Extrema_GGenExtCC.hxx:771-773`); the port's point/curve
-/// extrema (`point_curve_extrema2d_all`, itself the A7 substitute for
-/// `Extrema_ExtPC2d`) has no range-restricted form, so its candidates inside
-/// `[u1, u2]` are used and an empty set stays `RealLast()`.
+/// `Extrema_GGenExtCC_ProjPOnC` (`Extrema_GGenExtCC.hxx:249-263`): builds the
+/// range-restricted `Extrema_ExtPC2d` over `[u1, u2]` and returns the smallest
+/// **squared** distance over its solutions, or `RealLast()` when it is not done
+/// or has none.
 fn proj_p_on_c(c: &dyn Curve2d, p: &GpPnt2d, u1: f64, u2: f64) -> f64 {
+    let ext = ExtremaExtPC2d::new_range(c, p, u1, u2);
     let mut a_dist = f64::MAX;
-    for e in point_curve_extrema2d_all(c, p) {
-        if e.u1 >= u1 - PCONFUSION && e.u1 <= u2 + PCONFUSION {
-            a_dist = a_dist.min(e.p2.square_distance(p));
+    if ext.is_done() && ext.nb_ext() > 0 {
+        for i in 1..=ext.nb_ext() {
+            let a_d = ext.square_distance(i);
+            if a_d < a_dist {
+                a_dist = a_d;
+            }
         }
     }
     a_dist

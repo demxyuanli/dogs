@@ -170,7 +170,8 @@ pub(super) fn check_on(
     }
     let ext = &extrema[idx];
     // `Point(i).Value()` is the curve point; `Parameter()` its curve
-    // parameter (`pair2d_c` stores it in `u2`).
+    // parameter (`point_solution2d` carries the `Extrema_ExtPC2d` parameter in
+    // both `u1` and `u2`).
     let pnt_exact = ext.p2;
     let par = ext.u2;
     refine_tolerance(face, cur, par, tol_z);
