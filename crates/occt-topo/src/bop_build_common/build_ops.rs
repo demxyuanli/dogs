@@ -74,119 +74,14 @@ pub(super) fn reverse_orientation(s: &mut TopoShape) {
 
 /// Whether `split` must be reversed to match the direction of `original`.
 ///
-/// Mirrors `BOPTools_AlgoTools::IsSplitToReverse`: when both shapes share the
-/// same underlying curve/surface the orientations are compared directly;
-/// otherwise the tangent/normal directions of the two geometries are compared
-/// at a common point. `false` is returned for shapes without registered
-/// geometry or of a non face/edge type.
+/// Thin wrapper over the single faithful
+/// [`crate::algo_tools_face::is_split_to_reverse`]
+/// (`BOPTools_AlgoTools::IsSplitToReverse(Sp, Sr, ctx, err)`,
+/// `BOPTools_AlgoTools.cxx:1255-1291`): edges go through
+/// `BOPTools_AlgoTools.cxx:1432-1500`, faces through `:1316-1427`.
 pub(crate) fn is_split_to_reverse(split: &TopoShape, original: &TopoShape) -> bool {
-    if split.shape_type() != original.shape_type() {
-        return false;
-    }
-    match split.shape_type() {
-        ShapeType::Face => face_split_to_reverse(&Face(split.clone()), &Face(original.clone())),
-        ShapeType::Edge => edge_split_to_reverse(&Edge(split.clone()), &Edge(original.clone())),
-        _ => false,
-    }
-}
-
-/// A 3-D point on `face`: the surface centre when its UV range is bounded, else
-/// the midpoint of the first boundary edge.
-pub(super) fn face_sample_point(face: &Face) -> Option<GpPnt> {
-    let (u1, u2, v1, v2) = BRepTool::uv_bounds(face);
-    if u1.is_finite() && v1.is_finite() {
-        let s = BRepTool::face_surface(face)?;
-        return Some(s.d0(0.5 * (u1 + u2), 0.5 * (v1 + v2)));
-    }
-    let e = edges_of(&face.0).into_iter().next()?;
-    let (a, b) = BRepTool::edge_parameters(&e);
-    if a.is_finite() && b.is_finite() {
-        let c = BRepTool::edge_curve(&e)?;
-        Some(c.d0(0.5 * (a + b)))
-    } else {
-        None
-    }
-}
-
-/// Face variant: compare the surface normals at a point of the split face.
-pub(super) fn face_split_to_reverse(split: &Face, orig: &Face) -> bool {
-    let (Some(s), Some(o)) = (BRepTool::face_surface(split), BRepTool::face_surface(orig)) else {
-        return false;
-    };
-    if Arc::ptr_eq(&s, &o) {
-        return split.orientation() != orig.orientation();
-    }
-    let Some(p) = face_sample_point(split) else { return false };
-    // Faithful `BOPTools_AlgoTools::IsSplitToReverse(Face, Face, ...)`
-    // (`BOPTools_AlgoTools.cxx:1316-1427`): the point is projected onto the
-    // original and the split supporting surfaces with `ProjPS` =
-    // `GeomAPI_ProjectPointOnSurf` (`cxx:1393-1406`, `cxx:1376`); a projection
-    // that is not done is the `NbPoints() == 0` error return, `false` here.
-    let (Some(po), Some(ps)) = (
-        occt_geom::geom_api::project_point_on_surface(o.as_ref(), &p, occt_core::precision::CONFUSION),
-        occt_geom::geom_api::project_point_on_surface(s.as_ref(), &p, occt_core::precision::CONFUSION),
-    ) else {
-        return false;
-    };
-    let (uo, vo) = (po.u, po.v);
-    // Normal of the split face at `p`.
-    let (u, v) = (ps.u, ps.v);
-    let mut ns = surface_normal_checked(s.as_ref(), u, v);
-    let mut no = surface_normal_checked(o.as_ref(), uo, vo);
-    if ns.square_magnitude() < 1e-30 || no.square_magnitude() < 1e-30 {
-        return false;
-    }
-    if split.orientation() == Orientation::Reversed {
-        ns = ns.reversed();
-    }
-    if orig.orientation() == Orientation::Reversed {
-        no = no.reversed();
-    }
-    ns.dot(&no) < 0.0
-}
-
-/// Edge variant: compare the tangent vectors at a point of the split edge.
-pub(super) fn edge_split_to_reverse(split: &Edge, orig: &Edge) -> bool {
-    let (Some(cs), Some(co)) = (BRepTool::edge_curve(split), BRepTool::edge_curve(orig)) else {
-        return false;
-    };
-    if Arc::ptr_eq(&cs, &co) {
-        return split.orientation() != orig.orientation();
-    }
-    let (a, b) = BRepTool::edge_parameters(split);
-    if !a.is_finite() || !b.is_finite() {
-        return false;
-    }
-    let t = 0.5 * (a + b);
-    let p = cs.d0(t);
-    let (to, _) = closest_point_on_edge(orig, &p, 32);
-    let ts = cs.d1(t).1;
-    let to = co.d1(to).1;
-    if ts.square_magnitude() < 1e-30 || to.square_magnitude() < 1e-30 {
-        return false;
-    }
-    ts.dot(&to) < 0.0
-}
-
-/// Surface normal, falling back to the zero vector on error.
-pub(super) fn surface_normal_checked(s: &dyn occt_geom::Surface, u: f64, v: f64) -> occt_core::gp::GpVec {
-    let n = surface_closest_normal(s, u, v);
-    if n.square_magnitude() < 1e-30 {
-        occt_core::gp::GpVec::zero()
-    } else {
-        n
-    }
-}
-
-/// Normal of a surface at `(u, v)` via the finite-difference helper.
-pub(super) fn surface_closest_normal(s: &dyn occt_geom::Surface, u: f64, v: f64) -> occt_core::gp::GpVec {
-    let du = 1e-6;
-    let p0 = s.d0(u, v);
-    let pu = s.d0(u + du, v);
-    let pv = s.d0(u, v + du);
-    let a = occt_core::gp::GpVec::from_pnts(&p0, &pu);
-    let b = occt_core::gp::GpVec::from_pnts(&p0, &pv);
-    a.crossed(&b)
+    let mut ctx = IntToolsContext::new();
+    crate::algo_tools_face::is_split_to_reverse(split, original, &mut ctx).unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------

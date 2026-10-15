@@ -195,7 +195,13 @@ fn collect_solid_split_faces<B: BopBuildOps>(f: &B, solid: &TopoShape) -> Vec<To
             Some(imgs) => {
                 for im in imgs {
                     let mut s = im.clone();
-                    if is_split_to_reverse(&s, &fc.0) {
+                    if crate::algo_tools_face::is_split_to_reverse(
+                        &s,
+                        &fc.0,
+                        &mut crate::int_tools_full::IntToolsContext::new(),
+                    )
+                    .unwrap_or(false)
+                    {
                         s.set_orientation(or.reversed());
                     } else {
                         s.set_orientation(or);
@@ -446,54 +452,16 @@ fn edge_key(e: &Edge) -> EKey {
     if ka <= kb { (ka, kb) } else { (kb, ka) }
 }
 
-/// Whether `split` must be reversed to match the direction of `original`
-/// (both faces). Mirrors `BOPTools_AlgoTools::IsSplitToReverse` restricted to
-/// faces: when both share the same supporting surface the orientations are
-/// compared directly; otherwise the surface normals at a common point are
-/// compared.
-fn is_split_to_reverse(split: &TopoShape, original: &TopoShape) -> bool {
-    if split.shape_type() != ShapeType::Face || original.shape_type() != ShapeType::Face {
-        return false;
-    }
-    let (Some(s), Some(o)) = (
-        BRepTool::face_surface(&Face(split.clone())),
-        BRepTool::face_surface(&Face(original.clone())),
-    ) else {
-        return false;
-    };
-    if Arc::ptr_eq(&s, &o) {
-        return split.orientation() != original.orientation();
-    }
-    let Some(p) = face_sample_point(&Face(split.clone())) else { return false };
-    // Faithful `BOPTools_AlgoTools::IsSplitToReverse(Face, Face, ...)`
-    // (`BOPTools_AlgoTools.cxx:1316-1427`): the point is projected onto each
-    // supporting surface with `ProjPS` = `GeomAPI_ProjectPointOnSurf`
-    // (`cxx:1393-1406`); `NbPoints() == 0` is the error return
-    // (`cxx:1395-1403`), `false` here.
-    let (Some(ps), Some(po)) = (
-        occt_geom::geom_api::project_point_on_surface(s.as_ref(), &p, occt_core::precision::CONFUSION),
-        occt_geom::geom_api::project_point_on_surface(o.as_ref(), &p, occt_core::precision::CONFUSION),
-    ) else {
-        return false;
-    };
-    let (u, v) = (ps.u, ps.v);
-    let (uo, vo) = (po.u, po.v);
-    let mut ns = surface_normal(s.as_ref(), u, v);
-    let mut no = surface_normal(o.as_ref(), uo, vo);
-    if ns.square_magnitude() < 1e-30 || no.square_magnitude() < 1e-30 {
-        return false;
-    }
-    if split.orientation() == Orientation::Reversed {
-        ns = ns.reversed();
-    }
-    if original.orientation() == Orientation::Reversed {
-        no = no.reversed();
-    }
-    ns.dot(&no) < 0.0
-}
-
 /// A 3-D point on `face`: the surface centre when its UV range is bounded,
 /// else the midpoint of the first boundary edge.
+///
+/// Port-only: the sole remaining user is [`orient_face_outward`], the
+/// open-shell orientation heuristic that has no OCCT counterpart
+/// (`BOPAlgo_BuilderSolid` decides face orientation from the face's pcurves /
+/// `BRepGProp` frame). Every other caller in this crate goes through the
+/// faithful `BOPTools_AlgoTools` point selection
+/// ([`crate::algo_tools_face::compute_state_face_point`] /
+/// [`crate::algo_tools_face::is_split_to_reverse`]).
 fn face_sample_point(face: &Face) -> Option<GpPnt> {
     let (u1, u2, v1, v2) = BRepTool::uv_bounds(face);
     if u1.is_finite() && v1.is_finite() {
@@ -514,26 +482,13 @@ fn face_sample_point(face: &Face) -> Option<GpPnt> {
 // Solid-state classification and split-solids deepening
 // ---------------------------------------------------------------------------
 
-/// State of a 3-D point relative to a solid: `On` when the point lies within
-/// `tol` of a boundary face, otherwise `In`/`Out` by the parity test.
-///
-/// Mirrors `BOPTools_AlgoTools::ComputeState` (3-D) reduced to a single point:
-/// the point is `On` when its distance to the closest boundary face is within
-/// `tol`, else the [`crate::brep_extrema::is_inside`] even-odd test decides.
+/// State of a 3-D point relative to a solid —
+/// `BOPTools_AlgoTools::ComputeState(const gp_Pnt&, const TopoDS_Solid&,
+/// theTol, theContext)` (`BOPTools_AlgoTools.cxx:790-822`), which runs the
+/// solid's `BRepClass3d_SolidClassifier` on the point
+/// (`IntTools_Context::SolidClassifier`, `cxx:800-811`).
 pub fn classify_solid_state(solid: &TopoShape, point: &GpPnt, tol: f64) -> FaceState {
-    let mut d = f64::INFINITY;
-    for f in faces_of(solid) {
-        let (_, q) = closest_point_on_face(&f, point, 16, 16);
-        d = d.min(q.distance(point));
-    }
-    if d.is_finite() && d <= tol {
-        return FaceState::On;
-    }
-    if is_inside(solid, point) {
-        FaceState::In
-    } else {
-        FaceState::Out
-    }
+    AlgoTools::compute_state(solid, point, tol).unwrap_or(FaceState::Unknown)
 }
 
 

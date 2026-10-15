@@ -537,47 +537,69 @@ pub fn is_internal_face(
     compute_state_face_in_solid(the_face, the_solid, the_tol)
 }
 
-/// `BOPTools_AlgoTools::ComputeState` (face, solid, bounds, context).
+/// Representative point of a face for `BOPTools_AlgoTools::ComputeState`
+/// (face, solid, bounds, context) (`BOPTools_AlgoTools.cxx:666-715`).
 ///
-/// Prefer the midpoint of an edge that is not a bound of the solid; if every
-/// edge sits on the solid, classify a point in the face.
-fn compute_state_face_in_solid(the_face: &Face, the_solid: &TopoShape, the_tol: f64) -> bool {
-    let bounds: HashSet<usize> = edges_of(the_solid)
+/// First the midpoint of an edge of `face` that is not a bound of `solid`
+/// (`cxx:671-687`: degenerated edges skipped, `theBounds.Contains` test);
+/// otherwise `BOPTools_AlgoTools3D::PointInFace` (`cxx:692`), and when that
+/// reports an error the `PointNearEdge` retry over the non-degenerated edges
+/// (`cxx:694-707`). `None` is OCCT's `iErr != 0`, i.e. the caller keeps
+/// `TopAbs_UNKNOWN`.
+pub(crate) fn compute_state_face_point(face: &Face, solid: &TopoShape) -> Option<GpPnt> {
+    let bounds: HashSet<usize> = edges_of(solid)
         .into_iter()
         .map(|e| shape_key(&e.0))
         .collect();
-    for e in edges_of(&the_face.0) {
+    for e in edges_of(&face.0) {
         if BRepTool::is_degenerated(&e) {
             continue;
         }
         if bounds.contains(&shape_key(&e.0)) {
             continue;
         }
-        let p = edge_state_point(&e);
-        return match AlgoTools::compute_state(the_solid, &p, the_tol) {
-            Ok(st) => st == FaceState::In,
-            _ => false,
-        };
+        return edge_state_point(&e);
     }
-    let p = match point_in_face(the_face, &mut IntToolsContext::new()) {
-        Ok((p, _)) => p,
-        Err(_) => {
-            let Some(surf) = BRepTool::face_surface(the_face) else {
-                return false;
-            };
-            let (u0, u1) = surf.u_range();
-            let (v0, v1) = surf.v_range();
-            surf.d0(intermediate_point(u0, u1), intermediate_point(v0, v1))
+    let mut ctx = IntToolsContext::new();
+    if let Ok((p, _)) = point_in_face(face, &mut ctx) {
+        return Some(p);
+    }
+    for e in edges_of(&face.0) {
+        if BRepTool::is_degenerated(&e) {
+            continue;
         }
-    };
-    let st = match AlgoTools::compute_state(the_solid, &p, the_tol) {
-        Ok(s) => s,
-        _ => return false,
-    };
-    st == FaceState::In
+        let (t1, t2) = BRepTool::edge_parameters(&e);
+        let t = intermediate_point(t1, t2);
+        if let Ok((_, p)) = crate::algo_tools3d::point_near_edge(&e, face, t, &ctx) {
+            return Some(p);
+        }
+    }
+    None
 }
 
-fn edge_state_point(e: &Edge) -> GpPnt {
+/// `BOPTools_AlgoTools::ComputeState` (face, solid, bounds, context)
+/// (`BOPTools_AlgoTools.cxx:666-715`) at [`FaceState`] granularity.
+pub(crate) fn compute_state_face(face: &Face, solid: &TopoShape, tol: f64) -> FaceState {
+    match compute_state_face_point(face, solid) {
+        Some(p) => AlgoTools::compute_state(solid, &p, tol).unwrap_or(FaceState::Unknown),
+        None => FaceState::Unknown,
+    }
+}
+
+/// `BOPTools_AlgoTools::ComputeState` (face, solid, bounds, context).
+///
+/// Prefer the midpoint of an edge that is not a bound of the solid; if every
+/// edge sits on the solid, classify a point in the face.
+fn compute_state_face_in_solid(the_face: &Face, the_solid: &TopoShape, the_tol: f64) -> bool {
+    compute_state_face(the_face, the_solid, the_tol) == FaceState::In
+}
+
+/// `BOPTools_AlgoTools::ComputeState` (edge, solid, tol, context)
+/// (`BOPTools_AlgoTools.cxx:734-788`): the point of that edge fed to the
+/// point-level `ComputeState`. A null 3-D curve means a degenerated edge whose
+/// point is its first vertex; when that vertex is absent as well OCCT returns
+/// `TopAbs_UNKNOWN` without classifying anything, i.e. `None`.
+fn edge_state_point(e: &Edge) -> Option<GpPnt> {
     let (a, b) = BRepTool::edge_parameters(e);
     if let Some(c) = BRepTool::edge_curve(e) {
         let t = if !a.is_finite() && b.is_finite() {
@@ -589,12 +611,11 @@ fn edge_state_point(e: &Edge) -> GpPnt {
         } else {
             intermediate_point(a, b)
         };
-        return c.d0(t);
+        return Some(c.d0(t));
     }
     crate::topo_tools_full::vertices_of(&e.0)
         .first()
         .map(BRepTool::vertex_point)
-        .unwrap_or_else(GpPnt::zero)
 }
 
 /// `BOPTools_AlgoTools::AreFacesSameDomain`.
@@ -687,7 +708,11 @@ pub fn is_split_to_reverse_face(
     let Some(s_sr) = BRepTool::face_surface(f_sr) else {
         return Err(2);
     };
-    if GeometryRegistry::shape_key(&f_sp.0) == GeometryRegistry::shape_key(&f_sr.0) {
+    // `BOPTools_AlgoTools.cxx:1330-1333`: `aSFSp == aSFOr` is *Geom_Surface
+    // handle* equality, which also holds for a split piece and its source face
+    // (`MakeSplitFace` copies the parent's handle), so the decision there is the
+    // orientation comparison alone.
+    if std::sync::Arc::ptr_eq(&s_sp, &s_sr) {
         return Ok(f_sp.0.orientation() != f_sr.0.orientation());
     }
     let (p_sp, p2d) = match point_in_face(f_sp, ctx) {

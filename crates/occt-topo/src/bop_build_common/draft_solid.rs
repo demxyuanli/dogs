@@ -2,92 +2,19 @@ use super::prelude::*;
 use super::*;
 
 /// 3-D state of `shape` relative to `solid`, from a single representative point
-/// (`BOPTools_AlgoTools::ComputeStateByOnePoint`).
+/// (`BOPTools_AlgoTools::ComputeStateByOnePoint`, `BOPTools_AlgoTools.cxx:623-657`).
+///
+/// The per-shape-type control flow is shared with the public
+/// [`crate::bopalgo_tools_class::compute_state_by_one_point`]; this wrapper only
+/// adapts it to the `Result` shape the draft-solid builder uses.
 pub(super) fn compute_state_by_one_point(
     shape: &TopoShape,
     solid: &TopoShape,
     tol: f64,
 ) -> Result<FaceState, String> {
-    match shape.shape_type() {
-        ShapeType::Vertex => {
-            let p = BRepTool::vertex_point(&Vertex(shape.clone()));
-            Ok(point_solid_state(solid, &p, tol))
-        }
-        ShapeType::Edge => {
-            let e = Edge(shape.clone());
-            let (a, b) = BRepTool::edge_parameters(&e);
-            let Some(curve) = BRepTool::edge_curve(&e) else {
-                return Ok(FaceState::Unknown);
-            };
-            let p = if a.is_finite() && b.is_finite() {
-                curve.d0(0.5 * (a + b))
-            } else {
-                return Ok(FaceState::Unknown);
-            };
-            Ok(point_solid_state(solid, &p, tol))
-        }
-        ShapeType::Face => {
-            // Prefer a boundary edge not lying on the solid; fall back to the
-            // face surface centre when every edge is on the solid.
-            let f = Face(shape.clone());
-            let solid_edges = edges_of(solid);
-            let mut p: Option<GpPnt> = None;
-            for e in edges_of(&f.0) {
-                if BRepTool::is_degenerated(&e) {
-                    continue;
-                }
-                if solid_edges.iter().any(|se| se.same_tshape(&e.0)) {
-                    continue;
-                }
-                let (a, b) = BRepTool::edge_parameters(&e);
-                if a.is_finite() && b.is_finite() {
-                    if let Some(c) = BRepTool::edge_curve(&e) {
-                        p = Some(c.d0(0.5 * (a + b)));
-                        break;
-                    }
-                }
-            }
-            let p = match p {
-                Some(p) => p,
-                None => match face_sample_point(&f) {
-                    Some(p) => p,
-                    None => return Ok(FaceState::Unknown),
-                },
-            };
-            Ok(point_solid_state(solid, &p, tol))
-        }
-        _ => {
-            let kids = shape.tshape.read().unwrap().children.clone();
-            for sub in kids {
-                let st = compute_state_by_one_point(&sub, solid, tol)?;
-                if st != FaceState::Unknown {
-                    return Ok(st);
-                }
-            }
-            Ok(FaceState::Unknown)
-        }
-    }
-}
-
-/// State of a point relative to a solid: `On` within `tol` of a boundary face,
-/// otherwise `In`/`Out` by the parity test. Distances are measured against the
-/// solid's faces only, so internal vertices/edges already children of the solid
-/// do not make the point `On` (matching the OCCT `BRepClass3d` classifier used
-/// by `ComputeState`).
-pub(super) fn point_solid_state(solid: &TopoShape, p: &GpPnt, tol: f64) -> FaceState {
-    let mut d = f64::INFINITY;
-    for f in faces_of(solid) {
-        let (_, q) = closest_point_on_face(&f, p, 16, 16);
-        d = d.min(q.distance(p));
-    }
-    if d.is_finite() && d <= tol {
-        return FaceState::On;
-    }
-    if is_inside(solid, p) {
-        FaceState::In
-    } else {
-        FaceState::Out
-    }
+    Ok(crate::bopalgo_tools_class::compute_state_by_one_point(
+        shape, solid, tol,
+    ))
 }
 
 // ---------------------------------------------------------------------------

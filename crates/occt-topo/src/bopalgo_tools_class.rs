@@ -111,26 +111,6 @@ fn make_connexity_block(
     }
 }
 
-fn face_sample_point(face: &Face) -> Option<occt_core::gp::GpPnt> {
-    for e in edges_of(&face.0) {
-        if BRepTool::is_degenerated(&e) {
-            continue;
-        }
-        let (a, b) = BRepTool::edge_parameters(&e);
-        if a.is_finite() && b.is_finite() {
-            if let Some(c) = BRepTool::edge_curve(&e) {
-                return Some(c.d0(0.5 * (a + b)));
-            }
-        }
-    }
-    let surf = BRepTool::face_surface(face)?;
-    let (u1, u2, v1, v2) = crate::int_tools_full::IntToolsContext::new().uv_bounds(face);
-    if u1.is_finite() && u2.is_finite() && v1.is_finite() && v2.is_finite() {
-        return Some(surf.d0(0.5 * (u1 + u2), 0.5 * (v1 + v2)));
-    }
-    None
-}
-
 /// `BOPTools_AlgoTools::IsInternalFace` via a representative point.
 fn is_internal_face(
     the_face: &Face,
@@ -174,11 +154,10 @@ pub fn compute_state_by_one_point(
             AlgoTools::compute_state(solid, &p, tol).unwrap_or(FaceState::Unknown)
         }
         ShapeType::Face => {
+            // `BOPTools_AlgoTools::ComputeState` (face, solid, bounds, context)
+            // (`BOPTools_AlgoTools.cxx:666-715`).
             let f = Face(shape.clone());
-            let Some(p) = face_sample_point(&f) else {
-                return FaceState::Unknown;
-            };
-            AlgoTools::compute_state(solid, &p, tol).unwrap_or(FaceState::Unknown)
+            crate::algo_tools_face::compute_state_face(&f, solid, tol)
         }
         _ => {
             let kids = shape.tshape.read().unwrap().children.clone();

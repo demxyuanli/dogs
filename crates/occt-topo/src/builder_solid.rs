@@ -134,40 +134,22 @@ fn is_infinite_face(face: &TopoShape) -> bool {
         || b.is_open_zmax()
 }
 
-/// A 3-D point on `face`: the surface centre when its UV range is bounded,
-/// else the midpoint of the first boundary edge.
-fn face_sample_point(face: &Face) -> Option<GpPnt> {
-    let (u1, u2, v1, v2) = BRepTool::uv_bounds(face);
-    if u1.is_finite() && v1.is_finite() {
-        let s = BRepTool::face_surface(face)?;
-        return Some(s.d0(0.5 * (u1 + u2), 0.5 * (v1 + v2)));
-    }
-    let e = edges_of(&face.0).into_iter().next()?;
-    let (a, b) = BRepTool::edge_parameters(&e);
-    if a.is_finite() && b.is_finite() {
-        let c = BRepTool::edge_curve(&e)?;
-        Some(c.d0(0.5 * (a + b)))
-    } else {
-        None
-    }
-}
-
-/// State of a 3-D point relative to a solid: `On` within `tol` of a boundary
-/// face, else `In`/`Out` by the even-odd parity test. Mirrors
-/// `BOPTools_AlgoTools::ComputeState` reduced to a point.
-fn classify_point(solid: &TopoShape, p: &GpPnt, tol: f64) -> FaceState {
-    let mut d = f64::INFINITY;
-    for f in faces_of(solid) {
-        let (_, q) = closest_point_on_face(&f, p, 16, 16);
-        d = d.min(q.distance(p));
-    }
-    if d.is_finite() && d <= tol {
-        return FaceState::On;
-    }
-    if is_inside(solid, p) {
-        FaceState::In
-    } else {
-        FaceState::Out
+/// Whether the shape `s1` lies inside the solid `s2` — the static `IsInside` of
+/// `BOPAlgo_BuilderSolid.cxx:835-861`.
+///
+/// A shape that has a face is classified by its **first** face (`cxx:854`) with
+/// `BOPTools_AlgoTools::ComputeState(face, solid, Precision::Confusion(),
+/// bounds, context)` (`cxx:856-858`) — note the fixed `Precision::Confusion()`
+/// tolerance, not the caller's fuzzy value. A shape without faces is classified
+/// by the infinite point (`cxx:846-849`), i.e.
+/// `BOPTools_AlgoTools::IsInvertedSolid`.
+fn shape_inside_solid(s1: &TopoShape, s2: &TopoShape) -> bool {
+    match faces_of(s1).into_iter().next() {
+        Some(f) => {
+            crate::algo_tools_face::compute_state_face(&f, s2, occt_core::precision::CONFUSION)
+                == FaceState::In
+        }
+        None => AlgoTools::is_inverted_solid(s2),
     }
 }
 
@@ -177,19 +159,6 @@ fn make_solid_from_shell(shell: &TopoShape) -> TopoShape {
     let mut solid = Solid::new();
     bld.add(&mut solid.0, shell);
     solid.0
-}
-
-/// Whether solid `inner` lies inside solid `outer` (`IsInside` of two solids,
-/// `BOPAlgo_BuilderSolid.cxx:520`): a face point of `inner` classified IN
-/// `outer`. Used only to pick the innermost hole owner, not as `IsHole`.
-fn solid_inside_solid(inner: &TopoShape, outer: &TopoShape, tol: f64) -> bool {
-    let Some(f) = faces_of(inner).into_iter().next() else {
-        return false;
-    };
-    let Some(p) = face_sample_point(&f) else {
-        return false;
-    };
-    classify_point(outer, &p, tol) == FaceState::In
 }
 
 /// `IsGrowthShell` (`BuilderSolid.cxx:864`): a later shell is a growth when
@@ -207,15 +176,6 @@ fn is_growth_shell(shell: &TopoShape, hole_faces: &HashSet<usize>) -> bool {
 /// classifies `IN`.
 fn is_hole_shell(shell: &TopoShape) -> bool {
     AlgoTools::is_inverted_solid(&make_solid_from_shell(shell))
-}
-
-/// Whether the whole shell lies strictly inside the solid `solid`: a
-/// representative face of the shell is sampled and classified `In`
-/// (`IsInside`, OCCT `BOPTools_AlgoTools::ComputeState(Face, Solid)`).
-fn shell_inside_solid(shell: &TopoShape, solid: &TopoShape, tol: f64) -> bool {
-    let Some(f) = faces_of(shell).into_iter().next() else { return false };
-    let Some(p) = face_sample_point(&f) else { return false };
-    classify_point(solid, &p, tol) == FaceState::In
 }
 
 /// Join `faces` into shells through shared edges, each shell a connected group.
@@ -531,7 +491,6 @@ impl BuilderSolid {
         if n == 0 {
             return;
         }
-        let tol = self.fuzzy.max(1e-7);
         let solids: Vec<TopoShape> = self.loops.iter().map(make_solid_from_shell).collect();
         let mut hole_faces: HashSet<usize> = HashSet::new();
         let mut growth: Vec<usize> = Vec::new();
@@ -576,13 +535,13 @@ impl BuilderSolid {
                     continue;
                 }
                 let i = hole_idx[k];
-                if !shell_inside_solid(&self.loops[i], &solids[j], tol) {
+                if !shape_inside_solid(&self.loops[i], &solids[j]) {
                     continue;
                 }
                 hole_owner[i] = match hole_owner[i] {
                     None => Some(j),
                     Some(o) => {
-                        if solid_inside_solid(&solids[j], &solids[o], tol) {
+                        if shape_inside_solid(&solids[j], &solids[o]) {
                             Some(j)
                         } else {
                             Some(o)

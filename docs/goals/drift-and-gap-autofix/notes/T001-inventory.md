@@ -85,13 +85,31 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `specs/_audit/topo-rest.md` §19. Side finding: `solid_union::shape_bbox` keeps its own 9x9
   sampling fallback (topo-rest §18), a separate path.
 
-### B4. BOP classification / split residuals (live, registered)
+### B4. BOP classification / split residuals (live, registered) — ✅ CLOSED 2026-10-15 (T-135)
 - `builder_solid.rs:139-152` `face_sample_point` uses the surface centre; OCCT first tries an edge not
   belonging to the solid then `PointInFace`/`PointNearEdge`
   (`BOPTools_AlgoTools.cxx:660-717`). A faithful copy already exists at
   `bop_build_common/draft_solid.rs:31-56`; the already-ported
   `algo_tools_face::compute_state_face_in_solid` (`algo_tools_face.rs:544`) is unwired.
   Duplicated at `bop_build_solids.rs:497`, `bop_build_common/build_ops.rs:95`, `bopalgo_tools_class.rs:114`.
+  **Closed (T-135)**: the single faithful
+  `algo_tools_face::{compute_state_face_point,compute_state_face}` (`cxx:666-715`, edge overload
+  `cxx:734-788`, `PointInFace` `cxx:692`, `PointNearEdge` retry `cxx:694-707`) is now the only point
+  selection: `bopalgo_tools_class` Face arm, `draft_solid::compute_state_by_one_point` (now a forwarder,
+  `point_solid_state` deleted), `builder_solid::shape_inside_solid` = the static `IsInside`
+  (`BOPAlgo_BuilderSolid.cxx:835-861`, fixed `Precision::Confusion()`, first face, infinite-point arm for
+  faceless shapes), and `bop_build_solids::classify_solid_state` (`cxx:790-822`). `face_sample_point` and
+  `classify_point` are deleted from `builder_solid.rs`, `build_ops.rs`, `bopalgo_tools_class.rs` and
+  `draft_solid.rs`; `bop_build_solids::face_sample_point` survives only for the port-only
+  `orient_face_outward` heuristic. Same family: the local `is_split_to_reverse` copies
+  (`bop_build_solids.rs:454`, `build_ops.rs:82/112/149` with the `1e-6` finite-difference normal and the
+  32-point `closest_point_on_edge`) are replaced by the single faithful
+  `algo_tools_face::is_split_to_reverse` (`cxx:1255-1291` / `:1316-1427` / `:1432-1500`), whose face
+  fast path was corrected from `shape_key` equality to `Arc::ptr_eq` (`cxx:1330-1333` Geom_Surface handle
+  equality). Gates: `--lib` 1251/0, `step_obj_gates` 4/4, `export_data_obj` 15/15 bit-identical.
+  Side finding (not fixed): OCCT `ComputeStateByOnePoint`'s `default` arm recurses into the first child
+  and discards the result (`cxx:648-655`) so containers stay `TopAbs_UNKNOWN`; both Rust copies loop over
+  children and return the first non-UNKNOWN state.
 - `bop_builder.rs:88-89` bbox-disjoint short-circuit: OCCT `BOPAlgo_BOP` has none.
 - `bop_build_solids.rs:232/328` `close_open_shells` re-attachment + `geometrically_open` `continue`
   discard: OCCT attaches nothing after taking closed shells (`BOPAlgo_BuilderSolid.cxx:223`).
@@ -182,11 +200,14 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 ## D. Banned constructs found (must not be extended; listed for the report)
 
 - Area ratio / length filter / volume gate: **zero hits** in `occt-geom`, `occt-geom2d`, `occt-core`.
-- Sampled/heuristic substitute for a downcast or a closed form: B1a, B1b, B2, B4, B6, plus
+- Sampled/heuristic substitute for a downcast or a closed form: B1a, B1b, B2, B6, plus
   `meshing/deflection.rs:109,138`, `meshing/range_splitter/param_set.rs:203`, `hlr.rs:129-156`,
   `gprop_analytic/mass_properties.rs:405`, `shape_metrics.rs:146`, `solid_union.rs:99-111,144-182`,
   `brep_offset/curve_face_offset.rs:509`-adjacent, `brep_pipe.rs:24-53,78-95`,
   `brepfeat/features.rs:326-370`, `brep_class3d` probe half is closed. B3 closed in T-134.
+  B4 closed in T-135 (its `face_sample_point` family and the sampled point-vs-solid classifiers in
+  `builder_solid.rs` / `draft_solid.rs` / `bop_build_solids.rs` are gone; the only survivor is the
+  port-only `bop_build_solids::face_sample_point` feeding `orient_face_outward`).
 - Self-invented engines with no OCCT counterpart and no production caller: `boolean_ops.rs:173`
   (+`:206/:211/:216/:280`), `solid_union.rs` voxel union.
 
@@ -201,7 +222,8 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 3. **B6** Extrema failure fabrication + analytic-solver sampling. Larger, touches `bean_face_exact`.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
-5. **B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.
+5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
+   **DONE 2026-10-15 (T-135, package P005).**
 
 ## F. Side findings (report only, not fixed)
 

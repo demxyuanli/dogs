@@ -89,6 +89,12 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 建议：改用 `AlgoTools::compute_state`（`algo_tools/construct.rs:191`），并按 `algo_tools_face.rs:533-567` 移植 `ComputeState(Face,Solid)`。
 
 - **处置（✅ 主体已修：T-38，2026-09-20 第 44 轮）**：`builder_solid::classify_point` 现为 `crates/occt-topo/src/builder_solid.rs:158`，其 `:167` 改调 `brep_extrema::is_inside`（实体 ⇒ 忠实 `SolidClassifier::classify`，见发现 6），"单点 vs 整 face 边/角方法"的输入差异仅剩在 `face_sample_point` 的首面中心点选择上（`BOPAlgo_BuilderSolid.cxx:835-860` 的 `IsInside` 语义已由分类器对齐）；`algo_tools::compute_state` 已是 F 分支的忠实入口（T-40）。
+- **处置（✅ 收口：T-135，2026-10-15）**：残余的"首面中心点"点选择已按 `BOPTools_AlgoTools::ComputeState(Face,Solid,bounds,ctx)`（`BOPTools_AlgoTools.cxx:666-715`）替换，本项整条闭环：
+  - `solid_inside_solid`/`shell_inside_solid`/`classify_point`/`face_sample_point` 四个符号删除，合并为 `builder_solid::shape_inside_solid` = `BOPAlgo_BuilderSolid.cxx:835-861` 的静态 `IsInside`：取 S1 的**首个面**（`cxx:854`）交给 `algo_tools_face::compute_state_face(.., Precision::Confusion())`（`cxx:856-858`，固定 `Confusion()`，调用方 `self.fuzzy` 不再参与，此前 `tol = self.fuzzy.max(1e-7)` 与之不符）；S1 无面时按无限点分类（`cxx:846-849`）= `AlgoTools::is_inverted_solid`。
+  - 同一 `ComputeState` 忠实件（`algo_tools_face::{compute_state_face_point,compute_state_face}`：不属于 solid 的非退化边中点 → `PointInFace` → `PointNearEdge` 逐边重试，边重载含无界参数臂 `aT2-10`/`aT1+10`/`0` 与空曲线取首顶点）同时接到 `bopalgo_tools_class::compute_state_by_one_point`（Face 臂）与 `bop_build_common::draft_solid`（改为转发布者，采样件 `point_solid_state` 的 16×16 面采样 + `brep_extrema::is_inside` 奇偶判删除）。
+  - `bop_build_solids::classify_solid_state` 由 16×16 采样改 `AlgoTools::compute_state`（`BOPTools_AlgoTools.cxx:790-822` → `BRepClass3d_SolidClassifier`）。
+  - `bop_build_solids::face_sample_point` 只剩 `orient_face_outward`（该文件自述的 port-only 开壳定向启发式，无 OCCT 分支）一个用户，函数头已注明；`builder_solid`/`build_ops`/`bopalgo_tools_class`/`draft_solid` 中的副本全部删除。
+  - 门禁：`occt-topo --lib` **1251/0**、`step_obj_gates` **4/4**、`export_data_obj` **15/15**（15 个模型 v/f 与包围盒逐位不变）。
 
 ### 6. `brep_extrema::is_inside`：7×7 网格三角化射线奇偶（#1/#3/#5 的共同根）
 - 判定：**自创**
