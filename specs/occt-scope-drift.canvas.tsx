@@ -206,6 +206,12 @@ const SEMANTIC = [
     where: "topo/validate.rs:150",
     state: "已声明非校验、不得作门禁",
   },
+  {
+    item: "`Geom_OsculatingSurface` 失败臂提前 `return`（T001 的 B8 osculating 条）",
+    id: "B8 / T-139",
+    where: "geom/osculating_surface.rs（`init`，旧 `:141,202,238,299`）· 可达 `offset_surface.rs:56` → `brep_offset`",
+    state: "**已修（2026-10-15）**：`init` 原先在 `build_osculating` 失败时四处 `clear_flags(); return;`，把余下的 `for` 结点迭代连同后面整段 V 向扫描一起丢掉，并把五个臂的成功与否挤进一个外层 `oscul_ok`。OCCT `Geom_OsculatingSurface.cxx:179-378` 每臂各持局部 `OsculSurf`（下轮迭代重新赋值），失败只 `clearOsculFlags()`（`:206-213`、`:273-276`、`:308-312`、`:373-376`）后继续；只有 `if (myAlong[1] && OsculSurf)` 这类守卫因标志被清而跳过。现新增 `build_chain`＝`cxx:187-206` 的 `while (IsQPunc)` 链（返回 `Option<(GeomBSplineSurface, k)>`，`None` ＝ 空 `OsculSurf`，`k` 为成功次数），两个 `for` 循环改为 `if self.along[0] { A; if self.along[1] && ok { B } } else if let Some(..) { C } else { clear_flags() }` 的逐臂判定；四处 `return` 与共享 `oscul_ok` 删除。可观测修复：一次失败后余下的结点索引不再被整段跳过。门禁：`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致。**同批订正**：B1（`wire_splitter_block.rs` 三臂）实已在 T-131（`67d7f01f`）收口，清单原标 LIVE 属陈旧；`extrema_cc/mod.rs:9`、`occt-math/globoptmin.rs:590` 的 UNPORTED 注释亦为陈旧（代码已用 `math_GlobOptMin`／已用 `newton_minimum.rs`）。**旁支（未改）**：`surface_fit.rs::fit_plane` 是最小二乘拟合而非 `GeomLib_IsPlanarSurface` 移植，忠实修法是补 `Controle`/`GeomLib::Inertia` 并接线 `brep_offset/curve_face_offset.rs:489`。",
+  },
 ];
 
 // `data/*` + `data/occ/*` 逐模型对拍（2026-10-15 `step_obj_gates --nocapture` 实测，23 个模型全过）

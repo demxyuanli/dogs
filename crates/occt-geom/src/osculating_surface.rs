@@ -77,6 +77,41 @@ impl OsculatingSurface {
         }
     }
 
+    /// One arm of `buildOsculatingSurface`'s `while (IsQPunc)` chain
+    /// (`Geom_OsculatingSurface.cxx:187-206`): keep building on the previous
+    /// osculating surface while the result stays Q-punctual. `None` is OCCT's
+    /// null `OsculSurf`, i.e. the arm failed to build; `Some((L, k))` carries the
+    /// last built surface and the number of successful iterations.
+    fn build_chain(
+        &self,
+        param: f64,
+        iso_v: bool,
+        su_knot: i32,
+        sv_knot: i32,
+        init_surf: &GeomBSplineSurface,
+    ) -> Option<(GeomBSplineSurface, i32)> {
+        let mut s = init_surf.clone();
+        let mut is_qp = true;
+        let mut uk = su_knot;
+        let mut vk = sv_knot;
+        let mut k = 0i32;
+        let mut last = None;
+        while is_qp {
+            match self.build_osculating(param, uk, vk, &s) {
+                Some(l) => {
+                    k += 1;
+                    is_qp = Self::is_q_punctual(&l, param, iso_v, 0.0, self.tol);
+                    uk = 1;
+                    vk = 1;
+                    s = l.clone();
+                    last = Some(l);
+                }
+                None => return None,
+            }
+        }
+        last.map(|l| (l, k))
+    }
+
     fn init(&mut self) {
         self.clear_flags();
         self.oscul1.clear();
@@ -109,196 +144,58 @@ impl OsculatingSurface {
         let (v_knots, _) = GeomBSplineSurface::unique_knots_mults(&init_surf.knots_v);
         let nb_uk = u_knots.len() as i32;
         let nb_vk = v_knots.len() as i32;
-        let mut oscul_ok = true;
+        // `if (myAlong[0]) ... else ...` with the shared `for` over the U knots
+        // (`Geom_OsculatingSurface.cxx:179-278`). Each arm owns its own `OsculSurf`
+        // local, so a failed build clears the flags (`cxx:205-212`, `:273-276`) and
+        // the `for` keeps running -- OCCT never leaves `Init` from here.
         if self.along[0] || self.along[1] {
             for i in 1..nb_uk {
                 if self.along[0] {
-                    let mut s = init_surf.clone();
-                    let mut is_qp = true;
-                    let mut uk = i;
-                    let mut vk = 1i32;
-                    let mut last = None;
-                    while is_qp {
-                        match self.build_osculating(v1, uk, vk, &s) {
-                            Some(l) => {
-                                is_qp = Self::is_q_punctual(&l, v1, true, 0.0, self.tol);
-                                uk = 1;
-                                vk = 1;
-                                s = l.clone();
-                                last = Some(l);
-                            }
-                            None => {
-                                oscul_ok = false;
-                                break;
-                            }
-                        }
-                    }
-                    if oscul_ok {
-                        if let Some(l) = last {
-                            self.oscul1.push(l);
-                        }
+                    let first = self.build_chain(v1, true, i, 1, &init_surf);
+                    let ok = first.is_some();
+                    if let Some((l, _)) = first {
+                        self.oscul1.push(l);
                     } else {
                         self.clear_flags();
-                        return;
                     }
-                    if self.along[1] && oscul_ok {
-                        let mut s = init_surf.clone();
-                        let mut is_qp = true;
-                        let mut uk = i;
-                        let mut vk = nb_vk - 1;
-                        let mut k = 0i32;
-                        let mut last = None;
-                        while is_qp {
-                            match self.build_osculating(v2, uk, vk, &s) {
-                                Some(l) => {
-                                    k += 1;
-                                    is_qp = Self::is_q_punctual(&l, v2, true, 0.0, self.tol);
-                                    uk = 1;
-                                    vk = 1;
-                                    s = l.clone();
-                                    last = Some(l);
-                                }
-                                None => {
-                                    oscul_ok = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if oscul_ok {
-                            if let Some(l) = last {
-                                self.oscul2.push(l);
-                                self.kdeg.push(k);
-                            }
-                        }
-                    }
-                } else {
-                    let mut s = init_surf.clone();
-                    let mut is_qp = true;
-                    let mut uk = i;
-                    let mut vk = nb_vk - 1;
-                    let mut k = 0i32;
-                    let mut last = None;
-                    while is_qp {
-                        match self.build_osculating(v2, uk, vk, &s) {
-                            Some(l) => {
-                                k += 1;
-                                is_qp = Self::is_q_punctual(&l, v2, true, 0.0, self.tol);
-                                uk = 1;
-                                vk = 1;
-                                s = l.clone();
-                                last = Some(l);
-                            }
-                            None => {
-                                oscul_ok = false;
-                                break;
-                            }
-                        }
-                    }
-                    if oscul_ok {
-                        if let Some(l) = last {
+                    if self.along[1] && ok {
+                        if let Some((l, k)) = self.build_chain(v2, true, i, nb_vk - 1, &init_surf) {
                             self.oscul2.push(l);
                             self.kdeg.push(k);
                         }
-                    } else {
-                        self.clear_flags();
-                        return;
                     }
+                } else if let Some((l, k)) = self.build_chain(v2, true, i, nb_vk - 1, &init_surf) {
+                    self.oscul2.push(l);
+                    self.kdeg.push(k);
+                } else {
+                    self.clear_flags();
                 }
             }
         }
+        // `if (myAlong[2]) ... else ...` over the V knots
+        // (`Geom_OsculatingSurface.cxx:280-378`), same per-arm `OsculSurf` rule as
+        // the U loop above.
         if self.along[2] || self.along[3] {
             for i in 1..nb_vk {
                 if self.along[2] {
-                    let mut s = init_surf.clone();
-                    let mut is_qp = true;
-                    let mut uk = 1i32;
-                    let mut vk = i;
-                    let mut last = None;
-                    while is_qp {
-                        match self.build_osculating(u1, uk, vk, &s) {
-                            Some(l) => {
-                                is_qp = Self::is_q_punctual(&l, u1, false, 0.0, self.tol);
-                                uk = 1;
-                                vk = 1;
-                                s = l.clone();
-                                last = Some(l);
-                            }
-                            None => {
-                                oscul_ok = false;
-                                break;
-                            }
-                        }
-                    }
-                    if oscul_ok {
-                        if let Some(l) = last {
-                            self.oscul1.push(l);
-                        }
+                    let first = self.build_chain(u1, false, 1, i, &init_surf);
+                    let ok = first.is_some();
+                    if let Some((l, _)) = first {
+                        self.oscul1.push(l);
                     } else {
                         self.clear_flags();
-                        return;
                     }
-                    if self.along[3] && oscul_ok {
-                        let mut s = init_surf.clone();
-                        let mut is_qp = true;
-                        let mut uk = nb_uk - 1;
-                        let mut vk = i;
-                        let mut k = 0i32;
-                        let mut last = None;
-                        while is_qp {
-                            match self.build_osculating(u2, uk, vk, &s) {
-                                Some(l) => {
-                                    k += 1;
-                                    is_qp = Self::is_q_punctual(&l, u2, false, 0.0, self.tol);
-                                    uk = 1;
-                                    vk = 1;
-                                    s = l.clone();
-                                    last = Some(l);
-                                }
-                                None => {
-                                    oscul_ok = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if oscul_ok {
-                            if let Some(l) = last {
-                                self.oscul2.push(l);
-                                self.kdeg.push(k);
-                            }
-                        }
-                    }
-                } else {
-                    let mut s = init_surf.clone();
-                    let mut is_qp = true;
-                    let mut uk = nb_uk - 1;
-                    let mut vk = i;
-                    let mut k = 0i32;
-                    let mut last = None;
-                    while is_qp {
-                        match self.build_osculating(u2, uk, vk, &s) {
-                            Some(l) => {
-                                k += 1;
-                                is_qp = Self::is_q_punctual(&l, u2, false, 0.0, self.tol);
-                                uk = 1;
-                                vk = 1;
-                                s = l.clone();
-                                last = Some(l);
-                            }
-                            None => {
-                                oscul_ok = false;
-                                break;
-                            }
-                        }
-                    }
-                    if oscul_ok {
-                        if let Some(l) = last {
+                    if self.along[3] && ok {
+                        if let Some((l, k)) = self.build_chain(u2, false, nb_uk - 1, i, &init_surf) {
                             self.oscul2.push(l);
                             self.kdeg.push(k);
                         }
-                    } else {
-                        self.clear_flags();
-                        return;
                     }
+                } else if let Some((l, k)) = self.build_chain(u2, false, nb_uk - 1, i, &init_surf) {
+                    self.oscul2.push(l);
+                    self.kdeg.push(k);
+                } else {
+                    self.clear_flags();
                 }
             }
         }

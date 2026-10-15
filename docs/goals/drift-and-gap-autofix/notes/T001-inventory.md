@@ -27,7 +27,14 @@ No file was edited; no gate was run for this task.
 
 Ranked by (pipeline centrality x blast radius x fix confidence).
 
-### B1. `BOPAlgo_WireSplitter` family in `crates/occt-topo/src/wire_splitter_block.rs` (reachable from live BOP)
+### B1. `BOPAlgo_WireSplitter` family in `crates/occt-topo/src/wire_splitter_block.rs` — ✅ CLOSED 2026-10-15 (T-131), heading was stale
+> Re-verified 2026-10-15 against the current tree: all three arms are already faithful.
+> `uv_tolerance_2d` (`wire_splitter_block.rs:567-575`) forwards to
+> `occt_geom::approx_same_parameter::{u_resolution,v_resolution}` and `fd_uv_tolerance` is gone
+> (`_1.cxx:885-901`); `curve2d_radius` is gone and `angle_2d` (`:487-535`) uses
+> `GeomLPropCLProps2d` (`_1.cxx:797-807`); `refine_angle_2d` (`:660-676`) takes `aTV` from
+> `vertex_parameter_on_face` (`_1.cxx:1060`). Closed in commit `67d7f01f` (T-131 / 发现 19);
+> gates were green then. The description below is kept as the historical record only.
 - **B1a** `uv_tolerance_2d` (`:580-650`) re-implements `GeomAdaptor_Surface::U/VResolution`
   (`GeomAdaptor_Surface.cxx:1818-1958`) by hand and falls back to `fd_uv_tolerance` (`:657`,
   finite-difference `t3/|dS/du|`) for `SurfaceOfRevolution` (V) and `SurfaceOfExtrusion` (U).
@@ -279,20 +286,33 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   (`Geom2dConvert::CurveToBSplineCurve(C)`); the conic converters already exist.
 
 ### B8. `occt-geom` / `occt-core` singletons
-- `osculating_surface.rs:141,202,238,299` returns early where OCCT continues
-  (`Geom_OsculatingSurface.cxx:206-215`); reachable via `offset_surface.rs:56` -> `brep_offset`.
+- ✅ **osculating_surface.rs early returns — CLOSED 2026-10-15 (T-139, package P009)**: `osculating_surface.rs`'s four early returns (old lines `:141,202,238,299`). The
+  old `init` bodies did `clear_flags(); return;` on a failed `build_osculating`, where OCCT only
+  `clearOsculFlags()` (`Geom_OsculatingSurface.cxx:206-213`, `:273-276`, `:308-312`, `:373-376`) and
+  keeps the `for` running; each of the five arms also owns its own `OsculSurf` local (reassigned on
+  the next iteration), which the port collapsed into one shared `oscul_ok`. Fixed by adding
+  `build_chain` (`cxx:187-206`, returns `Option<(_, k)>` for the `while (IsQPunc)` chain) and
+  dispatching per arm: `if along[0] { A; if along[1] && ok { B } } else if let Some(..) { C } else
+  { clear_flags() }` in both knot loops. Reachable via `offset_surface.rs:56` -> `brep_offset`.
+  Gates: `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4, `export_data_obj`
+  15/15 bit-identical.
 - `surface_fit.rs:13-40` `fit_plane` lacks the `gz < Tol` gate (`GeomLib_IsPlanarSurface.cxx:44-45`);
-  reachable via `brep_offset/curve_face_offset.rs:489`.
+  reachable via `brep_offset/curve_face_offset.rs:489`. (Re-verified 2026-10-15: `fit_plane` is a
+  least-squares fit, not a port of `GeomLib_IsPlanarSurface`, so the faithful fix is to port
+  `Controle`/`GeomLib::Inertia` and wire the caller, not to bolt a gate onto the existing fit.)
 - `intana/analytic_intersections.rs:42,47,48,120,145,152` and `intana/line_torus.rs:336,340,488,489`
   invent quartic root thresholds and an absolute `1e-14` cone/cone tolerance where OCCT passes
   `done` out of `math_DirectPolynomialRoots` and uses `EstimDist`/`aTolAng`
   (`math_DirectPolynomialRoots.cxx:344-393,583-587`, `IntAna_QuadQuadGeo.cxx:1440,1458-1475,1524`);
   reachable via `intcurvesurface/solvers.rs:456`.
-- `extrema_cc/mod.rs:9`: `Extrema_GGenExtCC::Perform` seed set invented as a uniform grid instead of
-  `math_GlobOptMin` over the 2D box (dependency already ported at `occt-math/globoptmin.rs`).
-- `occt-math/globoptmin.rs:590`: `math_NewtonMinimum::Perform` local arm skipped; the faithful port
-  already exists at `occt-math/newton_minimum.rs` (re-exported `lib.rs:59`), so the `:590` and
-  `occt-math/newton.rs:81,91` markers are stale.
+- `extrema_cc/mod.rs:9` **STALE (re-verified 2026-10-15)**: the module header still claims the seed
+  set is an invented uniform grid, but `curve_curve_extrema_all_range` already routes the non-analytic
+  pairs to `GGenExtCC` = `Extrema_GGenExtCC` with `GlobOptFuncCCC2` + `math_GlobOptMin`
+  (`extrema_cc/general_extrema.rs:245-292`); the `is_line`/`classify_circle` sampler the header
+  describes is gone. Only the doc comment needs correcting (next doc pass).
+- `occt-math/globoptmin.rs:590` **STALE (re-verified 2026-10-15)**: `math_NewtonMinimum::Perform` local
+  arm marker; the faithful port exists at `occt-math/newton_minimum.rs` (re-exported `lib.rs:59`), so
+  the `:590` and `occt-math/newton.rs:81,91` markers are stale (doc-only).
 - `occt-core/src/quantity/mod.rs:33`: `Color::from_name` returns sRGB columns and only 23 names
   (`Quantity_ColorTable.pxx:185`, `Quantity_Color.hxx:49-51`); test-only reachability.
 - `occt-core/src/geom/polyline_simplify.rs:15` (RDP) is not in OCCT but is live via
@@ -349,7 +369,9 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 
 ## E. Ranked candidate Worker slices (advisory input to T003)
 
-1. **B1 (whole family, one file, live BOP path)** — `wire_splitter_block.rs` only:
+1. ~~**B1 (whole family, one file, live BOP path)** — `wire_splitter_block.rs` only.~~
+   **ALREADY CLOSED 2026-10-15 in T-131 (commit `67d7f01f`)**; re-verified this cycle, all three arms
+   are faithful (see B1). The list below is the historical advisory text.
    delegate `uv_tolerance_2d` to `approx_same_parameter::{u,v}_resolution` and delete
    `fd_uv_tolerance`; replace `curve2d_radius` with `GeomLPropCLProps2d`; take `refine_angle_2d`'s
    `aTV` from `vertex_parameter_on_face`. High confidence, 3 cxx arms, no new predicate.
@@ -371,8 +393,13 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    outranks the B6 leftovers on centrality, confidence and blast radius.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
-6. **B1** `wire_splitter_block.rs` family. **Scouted 2026-10-15; picked as the next Worker
-   package (P009 / T-139).**
+6. **B8 osculating_surface early returns.** **DONE 2026-10-15 as T-139 / package P009** (four
+   `clear_flags(); return;` -> OCCT's `clearOsculFlags()` + continue, plus the per-arm `build_chain`
+   local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
+   `intcurvesurface/solvers.rs:456`), **B7-writer** (`step/write_context.rs:314` `SetNotPeriodic`,
+   `step/format.rs:500` `KnotSpec`, `geom2d_convert.rs:77`), **B7-mesh_to_brep**
+   (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftovers (**B6e**/**B6f**/**B6g**/**B6d**) and the
+   `B8 surface_fit` / `B6e` Newton items.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
