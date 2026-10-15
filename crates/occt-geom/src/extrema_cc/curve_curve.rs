@@ -144,17 +144,16 @@ pub fn curve_curve_extrema(c1: &dyn Curve, c2: &dyn Curve) -> Option<ExtremaPair
     curve_curve_extrema_all(c1, c2).into_iter().next()
 }
 
-/// Local extremum of the distance between two curves from seed parameters
-/// (Newton refinement). Port of `Extrema_LocateExtCC` / `Extrema_LocECC`.
+/// Local extremum of the distance between two curves from seed parameters.
+/// Port of `Extrema_LocateExtCC` (`Extrema_LocateExtCC.cxx:26-74`), which runs
+/// `Extrema_LocECC` = `Extrema_GenLocateExtCC` -> `Extrema_CCLocFOfLocECC`
+/// (`Extrema_GFuncExtCC` 3D) under `math_FunctionSetRoot`. The previous body was
+/// a self-invented Newton loop (`refine_curve_curve` / `f_and_jac`), both deleted.
 pub fn locate_extcc(c1: &dyn Curve, c2: &dyn Curve, u0: f64, v0: f64) -> Option<ExtremaPair> {
-    let (a1, b1) = (c1.first_parameter(), c1.last_parameter());
-    let (a2, b2) = (c2.first_parameter(), c2.last_parameter());
-    let (u, v) = refine_curve_curve(c1, c2, u0, v0, a1, b1, a2, b2);
-    let p1 = c1.d0(u);
-    let p2 = c2.d0(v);
-    if p1.x().is_finite() && p2.x().is_finite() {
-        Some(pair_cc(p1, u, p2, v))
-    } else {
-        None
+    let loc = ExtremaLocateExtCC::new(c1, c2, u0, v0);
+    if !loc.is_done() {
+        return None;
     }
+    let (p1, p2) = loc.point();
+    Some(pair_cc(p1.value(), p1.parameter(), p2.value(), p2.parameter()))
 }

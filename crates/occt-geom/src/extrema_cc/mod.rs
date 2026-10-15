@@ -3,8 +3,10 @@
 //! Port of `Extrema_ExtCC`, `Extrema_ExtElC`, `Extrema_ECC` and
 //! `Extrema_LocateExtCC` (TKGeomBase). Analytic exact solvers for the cheap
 //! elementary pairs (skew-line distance, line–circle, coaxial/parallel
-//! circle–circle) plus a Newton refinement of F1(u,v) = (C1−C2)·C1′/|C1′| = 0,
-//! F2(u,v) = (C1−C2)·C2′/|C2′| = 0 (`poly_roots::f_and_jac` / `refine_curve_curve`).
+//! circle–circle); the general path is `Extrema_GGenExtCC` over
+//! `Extrema_GFuncExtCC` (the 3D twin of `occt_geom2d::extrema2d`), and the
+//! from-a-seed search is `Extrema_LocateExtCC` = `Extrema_LocECC` over the same
+//! function set under `math_FunctionSetRoot`.
 //!
 //! **UNPORTED (audit A7 / task T-66)** — the **seed set** for the general path
 //! is invented: `curve_curve` builds a uniform `n1 × n2` grid, keeps local min/max of
@@ -38,10 +40,14 @@ mod poly_roots;
 mod curve_curve;
 mod glob_opt_func;
 mod general_extrema;
+mod p_on_curv;
+mod gfunc_ext_cc;
+mod gen_locate_ext_cc;
 pub use poly_roots::*;
 pub use curve_curve::*;
 pub use glob_opt_func::*;
 pub use general_extrema::*;
+pub use gen_locate_ext_cc::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]
