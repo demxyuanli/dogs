@@ -198,71 +198,6 @@ pub fn circle_circle_extrema2d(c1: &GpCirc2d, c2: &GpCirc2d) -> Vec<Extrema2d> {
     dedupe_sort_cc2d(out)
 }
 
-/// F1 = (C1−C2)·C1′/|C1′| and F2 = (C1−C2)·C2′/|C2′| plus the Jacobian (2D).
-pub(super) fn f_and_jac2d(
-    c1: &dyn Curve2d,
-    c2: &dyn Curve2d,
-    u: f64,
-    v: f64,
-) -> Option<(f64, f64, f64, f64, f64, f64)> {
-    let p1 = c1.d0(u);
-    let p2 = c2.d0(v);
-    let (_, du, duu) = c1.d2(u);
-    let (_, dv, dvv) = c2.d2(v);
-    if !p1.x().is_finite() || !p2.x().is_finite() {
-        return None;
-    }
-    let ndu = du.magnitude();
-    let ndv = dv.magnitude();
-    if ndu < 1e-12 || ndv < 1e-12 {
-        return None;
-    }
-    let d = GpVec2d::new(p1.x() - p2.x(), p1.y() - p2.y());
-    let f1 = d.dot(&du) / ndu;
-    let f2 = d.dot(&dv) / ndv;
-    let j11 = ndu + d.dot(&duu) / ndu - f1 * du.dot(&duu) / (ndu * ndu);
-    let j12 = -dv.dot(&du) / ndu;
-    let j21 = du.dot(&dv) / ndv;
-    let j22 = -ndv + d.dot(&dvv) / ndv - f2 * dv.dot(&dvv) / (ndv * ndv);
-    Some((f1, f2, j11, j12, j21, j22))
-}
-
-/// Newton refine (clamped to bounds) from a seed (2D).
-pub(super) fn refine_curve_curve2d_newton(
-    c1: &dyn Curve2d,
-    c2: &dyn Curve2d,
-    mut u: f64,
-    mut v: f64,
-    lo1: f64,
-    hi1: f64,
-    lo2: f64,
-    hi2: f64,
-) -> (f64, f64) {
-    for _ in 0..32 {
-        match f_and_jac2d(c1, c2, u, v) {
-            Some((f1, f2, j11, j12, j21, j22)) => {
-                let det = j11 * j22 - j12 * j21;
-                if det.abs() < 1e-300 {
-                    break;
-                }
-                let du = (f2 * j12 - f1 * j22) / det;
-                let dv = (f1 * j21 - j11 * f2) / det;
-                let un = (u + du).clamp(lo1.min(hi1), lo1.max(hi1));
-                let vn = (v + dv).clamp(lo2.min(hi2), lo2.max(hi2));
-                let converged = (un - u).abs() < 1e-12 * (1.0 + u.abs())
-                    && (vn - v).abs() < 1e-12 * (1.0 + v.abs());
-                u = un;
-                v = vn;
-                if converged {
-                    break;
-                }
-            }
-            None => break,
-        }
-    }
-    (u, v)
-}
-
 /// Deduplicate curve–curve extrema by parameter proximity, sorted by distance.
 pub(super) fn dedupe_sort_cc2d(v: Vec<Extrema2d>) -> Vec<Extrema2d> {
     let mut out: Vec<Extrema2d> = Vec::new();
@@ -311,18 +246,19 @@ pub fn curve_curve_extrema2d_all(c1: &dyn Curve2d, c2: &dyn Curve2d) -> Vec<Extr
 }
 
 /// Local extremum of the distance between two planar curves from seed
-/// parameters (Newton refinement). Port of `Extrema_LocateExtCC2d`.
+/// parameters. Port of `Extrema_LocateExtCC2d`
+/// (`Extrema_LocateExtCC2d.cxx:26-82`), which runs
+/// `Extrema_LocECC2d` = `Extrema_GenLocateExtCC` -> `Extrema_CCLocFOfLocECC2d`
+/// (`Extrema_GFuncExtCC` 2D) under `math_FunctionSetRoot`. The previous body was
+/// a self-invented Newton loop (`refine_curve_curve2d_newton` /
+/// `f_and_jac2d`), both deleted.
 pub fn locate_extcc2d(c1: &dyn Curve2d, c2: &dyn Curve2d, u0: f64, v0: f64) -> Option<Extrema2d> {
-    let (a1, b1) = (c1.first_parameter(), c1.last_parameter());
-    let (a2, b2) = (c2.first_parameter(), c2.last_parameter());
-    let (u, v) = refine_curve_curve2d_newton(c1, c2, u0, v0, a1, b1, a2, b2);
-    let p1 = c1.d0(u);
-    let p2 = c2.d0(v);
-    if p1.x().is_finite() && p2.x().is_finite() {
-        Some(pair2d_cc(p1, u, p2, v))
-    } else {
-        None
+    let loc = ExtremaLocateExtCC2d::new(c1, c2, u0, v0);
+    if !loc.is_done() {
+        return None;
     }
+    let (p1, p2) = loc.point();
+    Some(pair2d_cc(p1.value(), p1.parameter(), p2.value(), p2.parameter()))
 }
 
 /// All curve–curve intersection points (zero-distance extrema).
