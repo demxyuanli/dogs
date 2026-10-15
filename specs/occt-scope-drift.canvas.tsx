@@ -177,6 +177,12 @@ const SEMANTIC = [
     state: "**已修（2026-10-15）**：(1) `uv_tolerance_2d` 原先手抄 `GeomAdaptor_Surface::U/VResolution`，回转(V)/拉伸(U) 两臂退回有限差分 `fd_uv_tolerance`（`t3/|dS/du|`），且缺 `RectangularTrimmedSurface` 下基（`cxx:423-430`）、缺 `OffsetSurface` 臂（`cxx:1882-1885`/`:1944-1947`）、缺锥面无界守卫（`cxx:1855-1858`）、锥半径用采样代 `S->VIso(V)->Radius()`（`cxx:1861-1866`）——现改转发唯一忠实件 `approx_same_parameter::{u,v}_resolution`，手抄 switch 与差分件删除。(2) `angle_2d` 的内联 `|D1 x D2|/|D1|^3`（守卫 `n2 <= PConfusion` 量纲不符）改 `GeomLProp_CLProps2d` + `is_tangent_defined()`/`curvature()`（`BOPAlgo_WireSplitter_1.cxx:797-807`）。(3) `refine_angle_2d` 的 `aTV` 由 3D 边参数改 pcurve 参数 `BRep_Tool::Parameter(aV,aE,aFace)`（`cxx:1060`）；UNPORTED 注记清除。门禁：`--lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 且 v/f 逐位一致。",
   },
   {
+    item: "`pcurve::pc_curve_kind` 几何不变量启发式分类器（`_index` 未登记，T001 的 B2）",
+    id: "B2 / T-132",
+    where: "topo/pcurve.rs（原 `CurveKind` / `pc_curve_kind`，已删）· topo/geom_bnd_lib_curve2d.rs · topo/geom_bnd_lib_offset2d.rs · topo/geom_bnd_lib_bezier2d.rs · topo/int_face_face_bounds.rs · geom2d/adaptor_curve.rs（新增）· geom2d/extrema2d/curve2d_tool.rs",
+    state: "**已修（2026-10-15）**：原先 4 类分类（`is_periodic() && |period-2*PI|<1e-9` ⇒ Circle、无界 ⇒ Line、否则 BSpline）被 `Geom2dAdaptor_Curve::GetType()` 同等件取代 —— 新增 `occt_geom2d::adaptor_curve::{basis2d,get_type2d}`（`Geom2dAdaptor_Curve.cxx:96-120` + `load` 类型表 `:279-346`，含 `Geom2d_TrimmedCurve` 下基 `:285-288`），`extrema2d/curve2d_tool` 的 `adaptor_basis2d`/`adaptor_type2d` 改为转发该唯一实现。(1) `geom_bnd_lib_curve2d::curve2d_abs_type` 改读 `get_type2d`，`box_curve2d` 按 `GeomBndLib_Curve2d.cxx:97-171` 的 downcast 链补全九臂：Line/Circle 优先取 `gp_lin2d`/`gp_circ2d`（采样重建件 `lin2d_from_curve`/`circ2d_from_curve` 保留为 `PlaneKeepParam2d` 这类未转发 `gp_*` 的 wrapper 替身）、Ellipse/Hyperbola/Parabola 取 `gp_elips2d`/`gp_hypr2d`/`gp_parab2d` 走解析盒（原先一律落采样）、Bezier 走 `GeomBndLib_BezierCurve2d::Box` 极点包络（`cxx:30-52`，子区间无 2D `Segment` 时退回采样）、BSpline 走 `bspline_copy2d`、Offset 走 `offset_basis`+`offset_value`。(2) `geom_bnd_lib_offset2d` 的 `try_offset_line2d`/`try_offset_circle2d` 由 `pc_curve_kind` 改用 `GeomBndLib_OffsetCurve2d.cxx:36,63` 的精确 `occ::down_cast<Geom2d_Line>/<Geom2d_Circle>` 等价（`gp_lin2d()`/`gp_circ2d()`），基圆圆心半径不再靠 `d0(0)`/`d0(pi)` 采样反推；`box_offset_as_curve` 由恒等 `box_other` 改为按 `cxx:123-143` 先试线/圆快路径。(3) `int_face_face_bounds.rs` 的 `Geom2d_Line` 判定改精确 `gp_lin2d()` 并直接用 `Position().Direction()`（`IntTools_FaceFace.cxx:2149,2161-2162`），原 `d1(0)` 切向改判方向。(4) `pcurve_full/tests.rs`、`pcurve.rs`、`boptools_2d.rs` 中引用 `pc_curve_kind` 的既有断言改断言 `curve2d_abs_type`。门禁：`occt-geom2d` `cargo check` 0 error；`--lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15（15 个模型 v/f 与包围盒与基线逐位一致）。**同批发现、未改**：`ReparamCurve2d`（`GeomLib::SameRange` 的线性替身）仍把内层 kind 转发给外层，OCCT 的 `SameRange` 对非直线/非圆输入返回 `Geom2d_BSplineCurve`，故包在 Offset 上的重参数化 wrapper 会报 `GeomAbs_Line` 而非 `GeomAbs_BSplineCurve`。",
+  },
+  {
     item: "`Analyzer::is_valid` 恒 true",
     id: "A14",
     where: "topo/validate.rs:150",
@@ -248,7 +254,7 @@ const DOCDRIFT = [
   },
 ];
 
-// 看板门禁（读数日期 2026-10-15，覆盖 T-130 / T-131 已提交工作树）
+// 看板门禁（读数日期 2026-10-15，覆盖 T-130 / T-131 / T-132 已提交工作树）
 const GATES = [
   { id: "G-check", name: "五 crate 编译", base: "exit 0", now: "exit 0", tone: "success" as const },
   { id: "G-lib", name: "topo 单测 --lib", base: "1276 / 0", now: "1251 / 0", tone: "success" as const },

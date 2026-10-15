@@ -331,7 +331,7 @@ mod tests {
     use crate::abs::Orientation;
     use crate::brep_extrema::test_box::unit_box;
     use crate::builder::TopoBuilder;
-    use crate::pcurve;
+    use crate::geom_bnd_lib_curve2d::{curve2d_abs_type, GeomAbsCurve2d};
     use occt_core::gp::{GpAx3, GpPln, GpPnt};
 
     #[test]
@@ -341,7 +341,7 @@ mod tests {
         let face = &b.faces[0]; // bottom (z = 0)
         let a = make_2d(edge, face).expect("make_2d");
         let full = crate::pcurve_full::make_pcurve_full(edge, face).expect("pcurve_full");
-        assert_eq!(pcurve::pc_curve_kind(a.as_ref()), pcurve::CurveKind::Line);
+        assert_eq!(curve2d_abs_type(a.as_ref()), GeomAbsCurve2d::Line);
         for i in 0..=8 {
             let t = i as f64 / 8.0;
             let pa = a.d0(t);

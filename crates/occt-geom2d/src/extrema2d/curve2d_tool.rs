@@ -15,20 +15,13 @@
 
 use super::prelude::*;
 
-use occt_core::kernel::geomabs::CurveType;
+use crate::adaptor_curve::basis2d;
 
 use super::analytic_solvers::PI;
 
-/// Unwrap `Geom2d_TrimmedCurve`s to their basis:
-/// `Geom2dAdaptor_Curve::load` (`Geom2dAdaptor_Curve.cxx:285-288`) replaces a
-/// trimmed curve with its basis and keeps `myFirst`/`myLast` at the trimmed
-/// range, so the *type* resolves on the basis while the range stays trimmed.
-pub(super) fn adaptor_basis2d(mut c: &dyn Curve2d) -> &dyn Curve2d {
-    while let Some(b) = c.trimmed_basis() {
-        c = b;
-    }
-    c
-}
+/// `Extrema_Curve2dTool::GetType` (`Extrema_Curve2dTool.hxx:43-156`) ->
+/// `Geom2dAdaptor_Curve::GetType` (`Geom2dAdaptor_Curve.cxx:96-120`).
+pub(super) use crate::adaptor_curve::get_type2d as adaptor_type2d;
 
 /// `Extrema_Curve2dTool::Resolution` (`Extrema_Curve2dTool.hxx:121-124`) ->
 /// `Geom2dAdaptor_Curve::Resolution` (`Geom2dAdaptor_Curve.cxx:1186-1219`).
@@ -41,7 +34,7 @@ pub(super) fn adaptor_basis2d(mut c: &dyn Curve2d) -> &dyn Curve2d {
 /// the `default:` arm `Precision::Parametric(Ruv)` (`:1216-1218`), i.e.
 /// `Ruv * Precision::PConfusion() / Precision::Confusion()`.
 pub(super) fn adaptor_resolution2d(c: &dyn Curve2d, ruv: f64) -> f64 {
-    let base = adaptor_basis2d(c);
+    let base = basis2d(c);
     if base.is_line() {
         return ruv; // `:1190-1191`
     }
@@ -71,42 +64,17 @@ pub(super) fn adaptor_is_closed2d(c: &dyn Curve2d) -> bool {
     c.d0(first).distance(&c.d0(last)) <= CONFUSION // `:592-594`
 }
 
-/// `Geom2dAdaptor_Curve::GetType` (`Geom2dAdaptor_Curve.cxx:96-120`, the
-/// `load` type table `:285-346`), resolved on the basis of a trimmed curve.
-pub(super) fn adaptor_type2d(c: &dyn Curve2d) -> CurveType {
-    let base = adaptor_basis2d(c);
-    if base.is_line() {
-        CurveType::Line
-    } else if base.gp_circ2d().is_some() {
-        CurveType::Circle
-    } else if base.gp_elips2d().is_some() {
-        CurveType::Ellipse
-    } else if base.gp_parab2d().is_some() {
-        CurveType::Parabola
-    } else if base.gp_hypr2d().is_some() {
-        CurveType::Hyperbola
-    } else if base.offset_basis().is_some() {
-        CurveType::OffsetCurve
-    } else if base.bezier_nb_poles().is_some() {
-        CurveType::BezierCurve
-    } else if base.bspline_nb_knots().is_some() || base.bspline_degree().is_some() {
-        CurveType::BSplineCurve
-    } else {
-        CurveType::OtherCurve
-    }
-}
-
-/// `Geom2dAdaptor_Curve::IsPeriodic` (`Geom2dAdaptor_Curve.cxx:604-607`) =
-/// `myCurve->IsPeriodic()` on the **basis** (a trimmed curve is unwrapped by
-/// `load`, `:285-288`).
+/// `Extrema_Curve2dTool::IsPeriodic` -> `Geom2dAdaptor_Curve::IsPeriodic`
+/// (`Geom2dAdaptor_Curve.cxx:604-607`) = `myCurve->IsPeriodic()` on the
+/// **basis** (a trimmed curve is unwrapped by `load`, `:285-288`).
 pub(super) fn adaptor_is_periodic2d(c: &dyn Curve2d) -> bool {
-    adaptor_basis2d(c).is_periodic()
+    basis2d(c).is_periodic()
 }
 
 /// `Geom2dAdaptor_Curve::Period` (`Geom2dAdaptor_Curve.cxx:611-614`):
 /// `myCurve->LastParameter() - myCurve->FirstParameter()` on the basis.
 pub(super) fn adaptor_period2d(c: &dyn Curve2d) -> f64 {
-    let base = adaptor_basis2d(c);
+    let base = basis2d(c);
     base.last_parameter() - base.first_parameter()
 }
 
@@ -120,7 +88,7 @@ pub(super) fn adaptor_period2d(c: &dyn Curve2d) -> f64 {
 /// below* (`C0->C1, C1->C2, C2->C3, else CN`) and then forces its own ends;
 /// every other type is the single span `[First, Last]` (`:482-485`, `:568-572`).
 pub(super) fn adaptor_intervals2d(c: &dyn Curve2d, s: u8) -> Vec<f64> {
-    let base = adaptor_basis2d(c);
+    let base = basis2d(c);
     if let Some(basis) = base.offset_basis() {
         let base_s = match s {
             0 => 2, // GeomAbs_C0 -> GeomAbs_C1 (`:463-465`)

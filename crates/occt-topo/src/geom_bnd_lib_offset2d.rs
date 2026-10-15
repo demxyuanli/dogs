@@ -23,7 +23,6 @@ use occt_geom2d::offset::Geom2dOffsetCurve;
 use crate::geom_bnd_lib_circle2d::box_circ_range;
 use crate::geom_bnd_lib_line2d::box_lin;
 use crate::geom_bnd_lib_other2d::box_other;
-use crate::pcurve::{pc_curve_kind, CurveKind};
 
 fn try_offset_line2d(
     basis: &dyn Curve2d,
@@ -32,12 +31,9 @@ fn try_offset_line2d(
     the_u2: f64,
     the_tol: f64,
 ) -> Option<BndBox2d> {
-    if pc_curve_kind(basis) != CurveKind::Line {
-        return None;
-    }
-    let loc = basis.d0(0.0);
-    let (_, tan) = basis.d1(0.0);
-    let dir = occt_core::gp::GpDir2d::from_vec2d(&tan).ok()?;
+    // `occ::down_cast<Geom2d_Line>(theBasis)` (`GeomBndLib_OffsetCurve2d.cxx:36`).
+    let a_basis_lin = basis.gp_lin2d()?;
+    let (loc, dir) = (a_basis_lin.location(), *a_basis_lin.direction());
     let mut a_normal = GpVec2d::new(dir.y(), -dir.x());
     if a_normal.square_magnitude() <= SQUARE_CONFUSION {
         return None;
@@ -58,9 +54,8 @@ fn try_offset_circle2d(
     the_u2: f64,
     the_tol: f64,
 ) -> Option<BndBox2d> {
-    if pc_curve_kind(basis) != CurveKind::Circle {
-        return None;
-    }
+    // `occ::down_cast<Geom2d_Circle>(theBasis)` (`GeomBndLib_OffsetCurve2d.cxx:63`).
+    let a_basis_circ = basis.gp_circ2d()?;
     let a_u_mid = 0.5 * (the_u1 + the_u2);
     let (a_p, a_v1) = basis.d1(a_u_mid);
     if a_v1.square_magnitude() <= SQUARE_CONFUSION {
@@ -71,13 +66,8 @@ fn try_offset_circle2d(
         return None;
     }
     let _ = a_normal.normalize();
-    // Recover centre as the unique point at equal distance from the circle
-    // samples: for a Geom2dCircle, d0(0) and d0(pi) are opposite, midpoint
-    // is the centre. That matches Circ2d::Location for the standard parametrisation.
-    let p0 = basis.d0(0.0);
-    let ppi = basis.d0(std::f64::consts::PI);
-    let centre = GpPnt2d::new(0.5 * (p0.x() + ppi.x()), 0.5 * (p0.y() + ppi.y()));
-    let a_radius = centre.distance(&p0);
+    let centre = a_basis_circ.location();
+    let a_radius = a_basis_circ.radius();
     let mut a_radial = GpVec2d::new(a_p.x() - centre.x(), a_p.y() - centre.y());
     if a_radial.square_magnitude() <= SQUARE_CONFUSION {
         return None;
@@ -120,7 +110,27 @@ pub fn box_offset(off: &Geom2dOffsetCurve, the_u1: f64, the_u2: f64, the_tol: f6
     box_other(off, the_u1, the_u2, the_tol)
 }
 
-/// Offset box from the `Curve2d` trait (no downcast): OtherCurve2d Box.
+/// Offset box from the `Curve2d` trait: `GeomBndLib_OffsetCurve2d::Box(theU1,
+/// theU2, theTol)` (`GeomBndLib_OffsetCurve2d.cxx:123-143`).
+///
+/// OCCT reads the basis with `myGeom->BasisCurve()` (`:126`) and tries the
+/// exact line (`:150`) then circle (`:153`) fast paths before the
+/// `GeomBndLib_OtherCurve2d` sampling fallback; the port gets the same two
+/// pieces from [`Curve2d::offset_basis`] / [`Curve2d::offset_value`]. A
+/// wrapper that hides them (`pcurve_full::ReparamCurve2d`, the stand-in for
+/// OCCT's `GeomLib::SameRange` B-spline conversion) keeps the sampling path.
 pub fn box_offset_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
+    if let (Some(basis), Some(offset)) = (curve.offset_basis(), curve.offset_value()) {
+        if let Some(b) = try_offset_line2d(basis, offset, the_u1, the_u2, the_tol) {
+            if !b.is_void() {
+                return b;
+            }
+        }
+        if let Some(b) = try_offset_circle2d(basis, offset, the_u1, the_u2, the_tol) {
+            if !b.is_void() {
+                return b;
+            }
+        }
+    }
     box_other(curve, the_u1, the_u2, the_tol)
 }

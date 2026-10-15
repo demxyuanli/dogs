@@ -18,8 +18,6 @@ use crate::brep_surface::{classify_surface, face_uv_bounds, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FClass2d, FaceState};
 use crate::iterator::ShapeIterator;
-use crate::pcurve::pc_curve_kind;
-use crate::pcurve::CurveKind as PcKind;
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 
@@ -178,15 +176,13 @@ pub fn correct_surface_boundaries(
                     correct = false;
                     break 'edges;
                 };
-                if pc_curve_kind(a_curve.as_ref()) != PcKind::Line {
-                    correct = false;
-                    break 'edges;
-                }
-                let (_, d1) = a_curve.d1(0.0);
-                let Ok(dir) = occt_core::gp::GpDir2d::from_vec2d(&d1) else {
+                // `occ::down_cast<Geom2d_Line>(aCurve)` (`IntTools_FaceFace.cxx:2149`).
+                let Some(a_line) = a_curve.gp_lin2d() else {
                     correct = false;
                     break 'edges;
                 };
+                // `aLine->Position().Direction()` (`:2161-2162`).
+                let dir = a_line.direction();
                 correct_u = correct_u || dir.is_parallel(&a_v_dir, an_angular_tolerance);
                 correct_v = correct_v || dir.is_parallel(&an_u_dir, an_angular_tolerance);
                 let (f, l) = GeometryRegistry::global().edge_parameters(&an_edge.0);

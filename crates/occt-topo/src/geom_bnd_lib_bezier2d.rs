@@ -48,8 +48,24 @@ pub fn box_bezier_pole_slice(poles: &[GpPnt2d], the_tol: f64) -> BndBox2d {
     a_box
 }
 
-/// Bezier box from the `Curve2d` trait: sample poles via `d0` at Greville-like
-/// nodes is not OCCT; without a downcast the OtherCurve2d `Box` path is used.
+/// Bezier box from the `Curve2d` trait.
+///
+/// `GeomBndLib_BezierCurve2d::Box(theU1, theU2, theTol)`
+/// (`GeomBndLib_BezierCurve2d.cxx:30-52`): when `[theU1, theU2]` is a proper
+/// sub-range of the curve's own range, OCCT copies the curve and `Segment`s it
+/// (`:38-43`); this port has no 2D Bezier `Segment`, so that arm falls back to
+/// `GeomBndLib_OtherCurve2d::Box` sampling, and otherwise the control-polygon
+/// hull is the box.
 pub fn box_bezier_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
-    box_other(curve, the_u1, the_u2, the_tol)
+    let a_u1 = curve.first_parameter();
+    let a_u2 = curve.last_parameter();
+    let a_trim1 = the_u1.max(a_u1);
+    let a_trim2 = the_u2.min(a_u2);
+    if (a_u1 - a_trim1).abs() > PCONFUSION || (a_u2 - a_trim2).abs() > PCONFUSION {
+        return box_other(curve, a_trim1, a_trim2, the_tol);
+    }
+    match curve.poles2d() {
+        Some(poles) => box_bezier_pole_slice(&poles, the_tol),
+        None => box_other(curve, a_trim1, a_trim2, the_tol),
+    }
 }

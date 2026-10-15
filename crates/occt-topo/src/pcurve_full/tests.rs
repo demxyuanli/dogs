@@ -2,6 +2,7 @@ use super::prelude::*;
 use super::*;
     use crate::brep_extrema::test_box::unit_box;
     use crate::builder::TopoBuilder;
+    use crate::geom_bnd_lib_curve2d::{curve2d_abs_type as abs2d, GeomAbsCurve2d};
     use occt_core::gp::{GpAx2, GpAx3, GpCone, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus};
     use occt_geom::{GeomBSplineCurve, GeomCone, GeomCylinder, GeomSphere, GeomTorus};
 
@@ -44,7 +45,7 @@ use super::*;
         let edge = &b.edges[4]; // (0,0,1) → (1,0,1)
         let face = &b.faces[1]; // top (z = 1)
         let pc = make_pcurve_full(edge, face).expect("pcurve");
-        assert_eq!(crate::pcurve::pc_curve_kind(pc.as_ref()), crate::pcurve::CurveKind::Line);
+        assert_eq!(abs2d(pc.as_ref()), GeomAbsCurve2d::Line);
         let p0 = pc.d0(0.0);
         let p1 = pc.d0(1.0);
         assert!((p0.x() - 0.0).abs() < 1e-6 && (p0.y() - 0.0).abs() < 1e-6, "start {:?}", p0);
@@ -57,7 +58,7 @@ use super::*;
         let b = TopoBuilder::new();
         let edge = b.make_edge_segment(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 1.0));
         let pc = make_pcurve_full(&edge, &face).expect("pcurve");
-        assert_eq!(crate::pcurve::pc_curve_kind(pc.as_ref()), crate::pcurve::CurveKind::Line);
+        assert_eq!(abs2d(pc.as_ref()), GeomAbsCurve2d::Line);
         let p0 = pc.d0(0.0);
         let p1 = pc.d0(1.0);
         // Generatrix at angle 0: u = atan2(0, 1) = 0, v = axial coordinate.
@@ -78,7 +79,7 @@ use super::*;
         let edge = b.make_edge_circle(&ax2, 1.0, 0.0, 2.0 * PI);
         let pc = make_pcurve_full(&edge, &face).expect("pcurve");
         // The cap circle is a v = 1 isoline in the U-periodic direction.
-        assert_eq!(crate::pcurve::pc_curve_kind(pc.as_ref()), crate::pcurve::CurveKind::Line);
+        assert_eq!(abs2d(pc.as_ref()), GeomAbsCurve2d::Line);
         let p0 = pc.d0(0.0);
         let pm = pc.d0(PI);
         let p2 = pc.d0(2.0 * PI);
@@ -99,7 +100,7 @@ use super::*;
         let curve = Arc::new(GeomBSplineCurve::new(poles, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], 2).unwrap());
         let edge = b.make_edge(curve, 0.0, 1.0);
         let pc = make_pcurve_full(&edge, &face).expect("pcurve");
-        assert_eq!(crate::pcurve::pc_curve_kind(pc.as_ref()), crate::pcurve::CurveKind::BSpline);
+        assert_eq!(abs2d(pc.as_ref()), GeomAbsCurve2d::BSpline);
         let p0 = pc.d0(0.0);
         let p1 = pc.d0(1.0);
         assert!((p0.x() - 0.0).abs() < 1e-6 && (p0.y() - 0.0).abs() < 1e-6, "start {:?}", p0);

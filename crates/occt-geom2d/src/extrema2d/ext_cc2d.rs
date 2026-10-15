@@ -29,7 +29,7 @@ use super::prelude::*;
 
 use super::analytic_solvers::PI;
 use super::curve2d_tool::{
-    adaptor_basis2d, adaptor_is_periodic2d, adaptor_period2d, adaptor_type2d,
+    adaptor_is_periodic2d, adaptor_period2d, adaptor_type2d,
 };
 use super::curve_curve::in_period2d;
 use super::ext_el_c2d::ExtremaExtElC2d;
@@ -356,8 +356,8 @@ fn elementary_ext_el_c2d(
     c1: &dyn Curve2d,
     c2: &dyn Curve2d,
 ) -> Option<(ExtremaExtElC2d, bool, f64, f64)> {
-    let b1 = adaptor_basis2d(c1);
-    let b2 = adaptor_basis2d(c2);
+    let b1 = crate::adaptor_curve::basis2d(c1);
+    let b2 = crate::adaptor_curve::basis2d(c2);
     match type1 {
         // The first curve is a circle (`:130-180`).
         CurveType::Circle => {

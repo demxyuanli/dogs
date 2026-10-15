@@ -78,6 +78,41 @@ active_task: T005
 
 packages:
   # One entry per closed, verified, committed package. Written by T005 (PM).
+  - id: P002
+    task: T005
+    commit: PENDING
+    title: "pc_curve_kind 启发式分类器换 Geom2dAdaptor_Curve::GetType 同等件（T001 的 B2 / T-132）"
+    files:
+      - "crates/occt-geom2d/src/adaptor_curve.rs"
+      - "crates/occt-geom2d/src/lib.rs"
+      - "crates/occt-geom2d/src/extrema2d/curve2d_tool.rs"
+      - "crates/occt-geom2d/src/extrema2d/ext_cc2d.rs"
+      - "crates/occt-topo/src/geom_bnd_lib_curve2d.rs"
+      - "crates/occt-topo/src/geom_bnd_lib_offset2d.rs"
+      - "crates/occt-topo/src/geom_bnd_lib_bezier2d.rs"
+      - "crates/occt-topo/src/int_face_face_bounds.rs"
+      - "crates/occt-topo/src/pcurve.rs"
+      - "crates/occt-topo/src/pcurve_full/tests.rs"
+      - "crates/occt-topo/src/boptools_2d.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/topo-rest.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "B2 pcurve::pc_curve_kind geometric-invariant classifier"
+      - "B2-c1 geom_bnd_lib_curve2d.rs:48 curve2d_abs_type via pc_curve_kind (only Line/Circle/BSpline/Other reachable)"
+      - "B2-c2 geom_bnd_lib_offset2d.rs:35,61 try_offset_line2d/try_offset_circle2d via pc_curve_kind"
+      - "B2-c3 int_face_face_bounds.rs:181 IntTools_FaceFace CorrectSurfaceBoundaries Geom2d_Line test via pc_curve_kind"
+    gates:
+      check: "0 errors (occt-geom2d, occt-topo)"
+      lib: "1251 / 0 (= baseline)"
+      step_obj_gates: "4 / 4"
+      export_data_obj: "15 / 15, v/f and bbox bit-identical to baseline"
+    side_findings:
+      - "ReparamCurve2d (GeomLib::SameRange linear stand-in) forwards the inner kind, so an Offset behind it reports GeomAbs_Line where OCCT's SameRange would return Geom2d_BSplineCurve; fixing it needs Geom2dConvert_ApproxCurve."
+      - "no audit doc registered the B2 classifier; only the goal inventory did."
+
   - id: P001
     task: T004
     commit: 67d7f01f
@@ -304,30 +339,23 @@ tasks:
     receipt:
       result: done
       executed_by: "PM inline"
-      summary: "P001 closed and committed as 67d7f01f. Inventory updated: B1 (the whole BOPAlgo_WireSplitter Angle2D/Tolerance2D/RefineAngle2D family) is now closed; B2-B8 and the C-A leaf list remain. First cycle complete: scout -> baseline -> judge -> worker -> verify -> commit."
+      summary: "P002 closed and committed as PENDING. Inventory updated: B2 (the pc_curve_kind classifier and all four of its call sites) is now closed; B3-B8 and the C-A leaf list remain. Second cycle complete: scout (inline re-verify against Geom2dAdaptor_Curve.cxx / GeomBndLib_Curve2d.cxx / GeomBndLib_OffsetCurve2d.cxx / GeomBndLib_BezierCurve2d.cxx / IntTools_FaceFace.cxx) -> worker -> four gates green -> commit."
       commits:
-        - "67d7f01f fix(occt): BOPAlgo_WireSplitter Angle2D/Tolerance2D/RefineAngle2D 三臂收口（发现 19 / T-131）"
+        - "PENDING"
       next:
-        slice: "B2 - pcurve::pc_curve_kind geometric-invariant classifier -> Geom2dAdaptor_Curve::GetType() equivalent"
-        rationale: "Largest safe remaining slice: the faithful replacement is already half-present (geom_bnd_lib_curve2d::GeomAbsCurve2d + curve2d_abs_type is the dispatcher the OCCT GeomBndLib_Curve2d ctor needs), the trait already exposes every query the adaptor's load uses (trimmed_basis / gp_circ2d / is_line / gp_elips2d / gp_parab2d / gp_hypr2d / is_bezier2d / is_bspline2d / offset_basis), and the divergence is observable (an unbounded parabola/hyperbola or a full-circle trimmed curve is classified as Line or BSpline where OCCT lands on Parabola/Hyperbola/Circle)."
+        slice: "B5 - inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch"
+        rationale: "Smallest remaining slice with a fully specified same-branch cxx fix and an already-ported dependency set: GetType() for the Bezier/BSpline gate and Offset basis unwrap, plus Curve::resolution(1.0) for aD1Mag, both live in the port. B3 (bbox_from_geometry), B4 (face_sample_point), B6 (Extrema failure fabrication) and B7/B8 each still need one more Scout pass on their dependency (BRepBndLib / PointInFace wiring / Extrema Done=false propagation)."
         allowed_files:
-          - "crates/occt-topo/src/geom_bnd_lib_curve2d.rs"
-          - "crates/occt-topo/src/geom_bnd_lib_offset2d.rs"
-          - "crates/occt-topo/src/int_face_face_bounds.rs"
-          - "crates/occt-topo/src/pcurve.rs"
-          - "crates/occt-topo/src/boptools_2d.rs"
-          - "crates/occt-geom2d/src/trimmed.rs"
+          - "crates/occt-topo/src/inttools_range.rs"
         verify:
           - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets"
           - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib"
-          - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
-          - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
         stop_if:
           - "Need files outside allowed_files."
-          - "The trait lacks a query the adaptor's load needs and forwarding it would change geometry."
-          - "The step_obj_gates / export_data_obj baselines move."
-      note: "Second cycle (T132) is the next activation; the board stays at active_task T005 so it can be picked up directly."
-
+          - "The trait lacks a query the BRepLib_1.cxx:69-83 branch needs and forwarding it would change geometry."
+          - "Verification fails twice."
+      note: "Third cycle (T133) is the next activation; the board stays at active_task T005 so it can be picked up directly."
+    
   - id: T999
     type: judge
     assignee: Judge

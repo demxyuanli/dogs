@@ -215,28 +215,6 @@ fn pln_from_surface(surf: &dyn Surface) -> Option<GpPln> {
     Some(GpPln::new(GpAx3::from_ax1(&GpAx1::new(o, z))))
 }
 
-/// Analytic kind of a pcurve, deduced from geometric invariants of the
-/// `Curve2d` trait (no downcasting available on `Arc<dyn Curve2d>`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CurveKind {
-    Line,
-    Circle,
-    BSpline,
-    Other,
-}
-
-/// Classify a 2D curve: periodic 2π ⇒ Circle, unbounded range ⇒ Line,
-/// otherwise a finite-range B-spline.
-pub fn pc_curve_kind(curve: &dyn Curve2d) -> CurveKind {
-    if curve.is_periodic() && (curve.period() - 2.0 * std::f64::consts::PI).abs() < 1e-9 {
-        CurveKind::Circle
-    } else if !curve.first_parameter().is_finite() || !curve.last_parameter().is_finite() {
-        CurveKind::Line
-    } else {
-        CurveKind::BSpline
-    }
-}
-
 /// Construct the pcurve of `edge` on `face`: the edge's 3D curve projected
 /// into the face surface's `(u, v)` parameter domain.
 ///
@@ -526,13 +504,15 @@ mod tests {
     use occt_core::gp::{GpAx2, GpAx3, GpCylinder, GpPln, GpPnt};
     use occt_geom::{GeomBSplineCurve, GeomCylinder};
 
+    use crate::geom_bnd_lib_curve2d::{curve2d_abs_type, GeomAbsCurve2d};
+
     #[test]
     fn box_bottom_line_edge_projects_to_line_pcurve() {
         let b = unit_box();
         let edge = &b.edges[0]; // (0,0,0) → (1,0,0)
         let face = &b.faces[0]; // bottom (z = 0)
         let pc = make_pcurve_on_face(edge, face).expect("pcurve");
-        assert_eq!(pc_curve_kind(pc.as_ref()), CurveKind::Line);
+        assert_eq!(curve2d_abs_type(pc.as_ref()), GeomAbsCurve2d::Line);
         let (a, z) = GeometryRegistry::global().edge_parameters(&edge.0);
         let samples = edge_pcurve_on_face(edge, face, 8);
         let p0 = pc.d0(a);
@@ -549,7 +529,7 @@ mod tests {
         let edge = &b.edges[4]; // (0,0,1) → (1,0,1)
         let face = &b.faces[1]; // top (z = 1)
         let pc = make_pcurve_on_face(edge, face).expect("pcurve");
-        assert_eq!(pc_curve_kind(pc.as_ref()), CurveKind::Line);
+        assert_eq!(curve2d_abs_type(pc.as_ref()), GeomAbsCurve2d::Line);
         // The top face's UV domain is [0,1]²; both projected corners sit on
         // the v = 0 boundary.
         let p0 = pc.d0(0.0);
@@ -565,7 +545,7 @@ mod tests {
         let ax2 = GpAx2::standard();
         let edge = b.make_edge_circle(&ax2, 1.0, 0.0, 2.0 * std::f64::consts::PI);
         let pc = make_pcurve_on_face(&edge, &face).expect("pcurve");
-        assert_eq!(pc_curve_kind(pc.as_ref()), CurveKind::Circle);
+        assert_eq!(curve2d_abs_type(pc.as_ref()), GeomAbsCurve2d::Circle);
         // Projection of (cos t, sin t, 0) on the XY plane is (cos t, sin t).
         let p0 = pc.d0(0.0);
         let pm = pc.d0(std::f64::consts::FRAC_PI_2);
@@ -580,7 +560,7 @@ mod tests {
         let face = b.make_face(Arc::new(GeomCylinder::new(cyl)), &[]);
         let edge = b.make_edge_segment(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 1.0));
         let pc = make_pcurve_on_face(&edge, &face).expect("pcurve");
-        assert_eq!(pc_curve_kind(pc.as_ref()), CurveKind::Line);
+        assert_eq!(curve2d_abs_type(pc.as_ref()), GeomAbsCurve2d::Line);
         // Generatrix at angle 0: u = atan2(0, 1) = 0, v = axial coordinate.
         let p0 = pc.d0(0.0);
         let p1 = pc.d0(1.0);
@@ -602,7 +582,7 @@ mod tests {
         );
         let edge = b.make_edge(curve, 0.0, 1.0);
         let pc = make_pcurve_on_face(&edge, &face).expect("pcurve");
-        assert_eq!(pc_curve_kind(pc.as_ref()), CurveKind::BSpline);
+        assert_eq!(curve2d_abs_type(pc.as_ref()), GeomAbsCurve2d::BSpline);
         // Clamped endpoints interpolate p0 / p2, which project onto the face
         // boundary UV (0,0) and (1,0).
         let p0 = pc.d0(0.0);

@@ -51,7 +51,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
 - Reachability: `split_block` -> `wire_splitter.rs:329/349/365/486` (`WireSplitter`, live BOP).
 - cxx: `BOPAlgo_WireSplitter_1.cxx:768-840` (Angle2D), `:859-901` (Tolerance2D/UTolerance2D/VTolerance2D), `:1060` (RefineAngle2D).
 
-### B2. `pc_curve_kind` geometric-invariant classifier (`crates/occt-topo/src/pcurve.rs:218-237`)
+### B2. `pc_curve_kind` geometric-invariant classifier (`crates/occt-topo/src/pcurve.rs:218-237`) — ✅ CLOSED 2026-10-15 (T-132)
 - Rust infers the kind from `is_periodic() && |period-2*PI| < 1e-9` and finite-range tests, with only
   4 kinds; OCCT downcasts in `Geom2dAdaptor_Curve::load` (`Geom2dAdaptor_Curve.cxx:279-345`) and reads
   `GetType()` (`:209`). Observable: an unbounded parabola/hyperbola pcurve falls into the `Line` arm
@@ -59,6 +59,14 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `geom_bnd_lib_curve2d.rs:48`, `int_face_face_bounds.rs:181`.
 - The trait already exposes every query needed (`is_geom2d_line`, `gp_circ2d`, `gp_elips2d`,
   `gp_parab2d`, `gp_hypr2d`, `is_bezier2d`, `is_bspline2d`, `offset_basis`).
+- **Closed (T-132)**: `CurveKind`/`pc_curve_kind` deleted. The single faithful `GetType()` port now
+  lives at `occt_geom2d::adaptor_curve::get_type2d` and is shared with `Extrema_Curve2dTool`
+  (`extrema2d/curve2d_tool.rs`). `geom_bnd_lib_curve2d::box_curve2d` dispatches all nine
+  `GeomBndLib_Curve2d.cxx:97-171` arms (Ellipse/Hyperbola/Parabola/Bezier/Offset were unreachable
+  before), `geom_bnd_lib_offset2d` uses the exact `occ::down_cast<Geom2d_Line>/<Geom2d_Circle>`
+  equivalent (`GeomBndLib_OffsetCurve2d.cxx:36,63`), and `int_face_face_bounds.rs:181` uses the exact
+  `Geom2d_Line` downcast of `IntTools_FaceFace.cxx:2149`. Gates: `--lib` 1251/0, `step_obj_gates`
+  4/4, `export_data_obj` 15/15 bit-identical. See `specs/_tasks.md` T-132.
 
 ### B3. `bbox_from_geometry.rs:46,56-67` — bbox by sampling (not in the audit)
 - 64-point edge bbox and 16x16 UV surface bbox instead of `BRepBndLib`/`BndLib` analytic extrema.
@@ -163,8 +171,8 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    delegate `uv_tolerance_2d` to `approx_same_parameter::{u,v}_resolution` and delete
    `fd_uv_tolerance`; replace `curve2d_radius` with `GeomLPropCLProps2d`; take `refine_angle_2d`'s
    `aTV` from `vertex_parameter_on_face`. High confidence, 3 cxx arms, no new predicate.
-2. **B2** `pc_curve_kind` -> `Geom2dAdaptor_Curve::GetType()` equivalent. 4 call sites, touches
-   bbox/pcurve bounds.
+2. ~~**B2** `pc_curve_kind` -> `Geom2dAdaptor_Curve::GetType()` equivalent. 4 call sites, touches
+   bbox/pcurve bounds.~~ **DONE 2026-10-15 (T-132, package P002).**
 3. **B6** Extrema failure fabrication + analytic-solver sampling. Larger, touches `bean_face_exact`.
 4. **B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.
 5. **B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.
