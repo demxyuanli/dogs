@@ -1,0 +1,204 @@
+# GoalBuddy v2 state.yaml
+# Board truth lives here. goal.md is the editable charter; notes/ holds long receipts only.
+
+version: 2
+
+goal:
+  title: "Drift and gap auto-convergence"
+  slug: "drift-and-gap-autofix"
+  kind: audit # specific | open_ended | existing_plan | recovery | audit
+  tranche: "Autonomously enumerate the live scope-drift items and unported gaps in occt-* crates, fix each only where the OCCT .cxx has an equivalent branch, verify against the four existing baselines, commit per package, and immediately pick the next one until the inventory is exhausted."
+  status: active # active | blocked | done
+  oracle:
+    signal: "cargo check 0 errors; occt-topo --lib >= 1251/0; step_obj_gates 4/4 with 23 area ratios 1.0000; export_data_obj 15/15 with per-model vertex/face counts bit-identical to data/occ/occ-*.obj."
+    cadence: "narrow gate per Worker package; step_obj_gates + export_data_obj every 3-5 packages or whenever BOP / meshing / STEP-read shared pipeline is touched; full four-gate run at final audit."
+    final_proof: "T999 Judge receipt mapping every inventory line to a receipt, plus the four gate outputs, with full_outcome_complete: true."
+  intake:
+    original_request: "提交，然后启动goal长程任务对偏移和缺口进行自动修正动作，不再逐步推进"
+    interpreted_outcome: "Long-run autonomous remediation of the registered scope-drift items and unported gaps across occt-core/math/geom/geom2d/topo, using existing baselines only, one bounded verified commit per package, no step-by-step confirmation."
+    input_shape: audit # vague | specific | existing_plan | recovery | audit
+    audience: "project owner (OCCT to Rust geometry kernel port)"
+    authority: approved # requested | approved | inferred | needs_approval | blocked
+    proof_type: metric # test | demo | artifact | metric | review | source_backed_answer | decision
+    completion_proof: "Every live inventory line has a conclusion (fixed on a same-branch OCCT path and gate-green, or permanently UNPORTED with the missing cxx branch named); audit docs and the drift canvas agree with the code; the four baselines did not regress."
+    likely_misfire: "Adding area ratios, length filters, volume gates or per-STEP special cases to hit counts; trusting audit self-reports without re-checking the cxx; declaring alignment after cargo check only; rewriting a live audit line as 'ported' without changing code; treating 'deleted a self-invented file' as 'aligned' without landing the cxx branch."
+    blind_spots_considered:
+      - "specs/occt-scope-drift.canvas.tsx SEMANTIC states are self-reported; two titles were already proven wrong (A19 remnant, GCPnts_AbsComposite)."
+      - "step_obj_gates takes about 11-12 minutes per run; do not run it per tiny package."
+      - "Full cargo test is pre-commit only, per project rule."
+      - "%TEMP% write-permission failures in --lib are environment, not regression; prove unrelated before dismissing."
+      - "Files above 800 lines must be split (project rule); split as move-only, never as a behavior change smokescreen."
+      - "Code comments and strings must be ASCII English; docs may be Chinese."
+      - "Working tree is clean at HEAD e77be18e; keep it clean by committing each package."
+      - "D:/source/occt-src/src is the OCCT source root used for cxx citations in this repo."
+    existing_plan_facts:
+      - "Drift board: specs/occt-scope-drift.canvas.tsx (CLOSED / SEMANTIC / DOCDRIFT / GATES arrays)."
+      - "Audit index: specs/_audit/_index.md sections 9.1-9.4; per-area docs topo-rest.md, occt-geom.md, occt-core.md, bop-boolean.md, mesh-exchange.md."
+      - "Task ledger: specs/_tasks.md (T-129 / T-130 landed 2026-10-15)."
+      - "Gap analysis: specs/_a3n00_gap_analysis.md."
+      - "Candidate first slices already identified by the 2026-10-15 pass, to be re-verified by Scout, not assumed: pcurve::pc_curve_kind heuristic vs Geom2dAdaptor_Curve::GetType(); inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch; wire_splitter_block::curve2d_radius finite-difference radius vs GeomLProp_CLProps2d curvature (BOPAlgo_WireSplitter_1.cxx:796-807); brepfeat::revolve_profile_about sweep_revolve wire/seam/pcurve gap vs BRepSweep_Revol / BRepPrim_OneAxis; BRepCheck_Edge::InContext / Tolerance / CheckPolygonOnTriangulation (needs BRepLib_ValidateEdge)."
+    goal_oracle: "Four existing baselines only: cargo check, occt-topo --lib, step_obj_gates, export_data_obj."
+
+rules:
+  pm_owns_state: true
+  one_active_task: true
+  max_write_workers: 1
+  no_implementation_without_worker_or_pm_task: true
+  no_completion_without_judge_or_pm_audit: true
+  planning_is_not_completion: true
+  queued_required_worker_blocks_completion: true
+  continuous_until_full_outcome: true
+  missing_input_or_credentials_do_not_stop_goal: true
+  preserve_and_validate_existing_plan: true
+  intake_misfire_must_be_audited: true
+  goal_pressure_requires_oracle: true
+  no_completion_on_weak_proof: true
+  slice_policy:
+    max_consecutive_tiny_tasks: 2
+    prefer_vertical_slices: true
+    judge_picks_largest_safe_slice: true
+    worker_completes_whole_slice: true
+
+agents:
+  # installed | bundled_not_installed | missing | unknown
+  # Bundled goal_*.toml templates exist with the goalbuddy skill; no installed user or project agent config verified.
+  scout: bundled_not_installed
+  worker: bundled_not_installed
+  judge: bundled_not_installed
+
+visual_board:
+  # none | local | unknown
+  selected: local
+  local:
+    status: live # not_requested | starting | live | generated | blocked
+    url: "http://goalbuddy.localhost:41737/drift-and-gap-autofix/"
+    command: "npx goalbuddy board docs/goals/drift-and-gap-autofix"
+
+active_task: T001
+
+tasks:
+  - id: T001
+    type: scout
+    assignee: Scout
+    status: active
+    reasoning_hint: default
+    objective: "Rebuild the live drift-and-gap inventory from the registered sources and re-verify every line against the cxx; produce a ranked list of items whose OCCT counterpart branch exists and is missing or divergent in Rust."
+    inputs:
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "specs/_audit/_index.md (sections 9.1-9.4)"
+      - "specs/_audit/topo-rest.md"
+      - "specs/_audit/occt-geom.md"
+      - "specs/_audit/occt-core.md"
+      - "specs/_audit/bop-boolean.md"
+      - "specs/_audit/mesh-exchange.md"
+      - "specs/_tasks.md"
+      - "specs/_a3n00_gap_analysis.md"
+      - "D:/source/occt-src/src"
+    constraints:
+      - "Read-only. Do not edit any file."
+      - "Do not run step_obj_gates or export_data_obj in this task; they are slow."
+      - "Do not write new tests."
+      - "Re-verify each candidate against the cxx by grep; use grep physical line numbers, not wrapped read-tool line numbers."
+      - "Classify each line as: live (cxx branch exists, Rust missing or divergent) | closed (already faithful, keep with evidence) | permanently-unported (cxx branch exists but its dependency is out of scope; name the dependency)."
+      - "Flag every banned construct found while scanning: area ratio, length filter, volume gate, per-model special case, or sampled substitute standing in for a downcast or a closed form."
+    expected_output:
+      - "Inventory table: id, area, cxx file:line, Rust file:line, class, severity, minimal same-branch fix."
+      - "Ranked top 3 candidate Worker slices with allowed_files, verify, stop_if (advisory for T003)."
+      - "Banned-construct list with locations."
+      - "Side findings for report only."
+    receipt: null
+
+  - id: T002
+    type: scout
+    assignee: Scout
+    status: queued
+    reasoning_hint: default
+    objective: "Freeze the gate baseline as measured numbers so later packages compare against measurement, not memory."
+    inputs:
+      - "crates/occt-topo/tests/step_obj_gates.rs"
+      - "crates/occt-topo/examples/export_data_obj.rs"
+      - "specs/occt-scope-drift.canvas.tsx (PARITY and GATES arrays)"
+    constraints:
+      - "Read-only for source files; may write only notes/T002-gate-baseline.md."
+      - "Record exact commands, exit/status, and full per-model vertex/face numbers."
+      - "Distinguish environment failures (%TEMP% write permission) from real failures."
+    expected_output:
+      - "notes/T002-gate-baseline.md with command, status, and per-model v/f table."
+      - "Any baseline in the docs that disagrees with the measured value, with the correction."
+    receipt: null
+
+  - id: T003
+    type: judge
+    assignee: Judge
+    status: queued
+    reasoning_hint: high
+    objective: "Choose the largest safe first Worker slice from the T001 inventory and set exact Worker parameters."
+    inputs:
+      - "T001 receipt"
+      - "T002 receipt"
+    constraints:
+      - "Do not implement."
+      - "Only approve items with a same-branch cxx fix; reject anything needing a new predicate, area ratio, length filter, volume gate, or per-model case."
+      - "Prefer a vertical slice that changes real geometry behavior over a cosmetic rename."
+      - "Set allowed_files, verify and stop_if explicitly."
+    expected_output:
+      - "Decision: proceed | no_live_items"
+      - "Exact T004 objective"
+      - "allowed_files"
+      - "verify"
+      - "stop_if"
+    receipt: null
+
+  - id: T004
+    type: worker
+    assignee: Worker
+    status: queued
+    reasoning_hint: medium
+    objective: "Execute the first safe Worker slice selected by T003."
+    allowed_files: []
+    verify: []
+    stop_if:
+      - "Need files outside allowed_files."
+      - "The cxx branch the fix needs does not exist or depends on an unported layer."
+      - "Verification fails twice."
+      - "The fix would require a predicate, area ratio, length filter, volume gate, or per-model special case."
+    receipt: null
+
+  - id: T005
+    type: pm
+    assignee: PM
+    status: queued
+    reasoning_hint: medium
+    objective: "Rolling advance: after each verified Worker package, write the receipt and commit, then update the inventory and activate the next largest safe Worker package until the inventory is exhausted."
+    inputs:
+      - "All done receipts"
+      - "T001 inventory"
+    constraints:
+      - "PM may edit only control files (goal.md, state.yaml, notes/) plus the audit docs needed to keep them truthful."
+      - "One write-capable Worker at a time."
+      - "Do not stop for missing operator input on one slice; block that slice with a receipt and activate the next safe one."
+      - "Every package ends with a commit whose message names the cxx file and line range."
+      - "Do not mark the goal done here; completion is T999."
+    expected_output:
+      - "Updated inventory status per line."
+      - "Next active Worker package with allowed_files, verify, stop_if."
+      - "Commit hash per closed package."
+    receipt: null
+
+  - id: T999
+    type: judge
+    assignee: Judge
+    status: queued
+    reasoning_hint: high
+    objective: "Audit whether the full original outcome is complete for this tranche."
+    inputs:
+      - "All done task receipts"
+      - "T001 final inventory"
+      - "Last four-gate verification output"
+      - "Current git log and clean-tree status"
+    expected_output:
+      - "complete | not_complete"
+      - "full_outcome_complete: true | false"
+      - "Missing evidence"
+      - "Next task if not complete"
+    receipt: null
