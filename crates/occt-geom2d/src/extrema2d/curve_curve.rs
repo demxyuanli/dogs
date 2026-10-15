@@ -30,16 +30,14 @@ pub fn point_curve_extrema2d_all(c: &dyn Curve2d, p: &GpPnt2d) -> Vec<Extrema2d>
     let (a, b) = (c.first_parameter(), c.last_parameter());
     let mut pairs: Vec<Extrema2d> = Vec::new();
 
-    if is_line2d(c) {
-        let u0 = if a.is_finite() { a } else { 0.0 };
-        let c0 = c.d0(u0);
-        let t0 = c.d1(u0).1;
-        let l2 = t0.square_magnitude();
-        if l2 > 0.0 {
-            let up = ((p.x() - c0.x()) * t0.x() + (p.y() - c0.y()) * t0.y()) / l2;
-            if up.is_finite() && up >= a - CONFUSION && up <= b + CONFUSION {
-                pairs.push(pair2d_c(c, p, up));
-            }
+    // Extrema_ExtPElC2d.cxx:63-80 (the `GeomAbs_Line` arm reached from
+    // Extrema_GGExtPC.hxx:178-181): `Mydist` is the parameter on the line
+    // measured from `L.Location()` along `L.Direction()`.
+    if let Some(l) = c.gp_lin2d() {
+        let d = GpVec2d::from_dir2d(&l.pos.vdir);
+        let mydist = d.x() * (p.x() - l.pos.loc.x()) + d.y() * (p.y() - l.pos.loc.y());
+        if mydist.is_finite() && mydist >= a - CONFUSION && mydist <= b + CONFUSION {
+            pairs.push(pair2d_c(c, p, mydist));
         }
         if a.is_finite() {
             pairs.push(pair2d_c(c, p, a));
@@ -50,7 +48,7 @@ pub fn point_curve_extrema2d_all(c: &dyn Curve2d, p: &GpPnt2d) -> Vec<Extrema2d>
         return dedupe_sort2d(pairs);
     }
 
-    if let Some(gc) = classify_circle2d(c) {
+    if let Some(gc) = c.gp_circ2d() {
         let period = 2.0 * std::f64::consts::PI;
         for s in circle_all2d(&gc, p, a, b) {
             let mut best = s.u1;
@@ -294,17 +292,6 @@ pub fn circle_circle_extrema2d(c1: &GpCirc2d, c2: &GpCirc2d) -> Vec<Extrema2d> {
     dedupe_sort_cc2d(out)
 }
 
-pub(super) fn line_of_curve2d(c: &dyn Curve2d) -> Option<GpLin2d> {
-    let u0 = if c.first_parameter().is_finite() { c.first_parameter() } else { 0.0 };
-    let p = c.d0(u0);
-    let d = c.d1(u0).1;
-    let m = d.magnitude();
-    if m < 1e-12 {
-        return None;
-    }
-    GpDir2d::from_vec2d(&d).ok().map(|dir| GpLin2d::from_pnt_dir(p, dir))
-}
-
 /// F1 = (C1−C2)·C1′/|C1′| and F2 = (C1−C2)·C2′/|C2′| plus the Jacobian (2D).
 pub(super) fn f_and_jac2d(
     c1: &dyn Curve2d,
@@ -516,10 +503,10 @@ pub fn curve_curve_extrema2d_all(c1: &dyn Curve2d, c2: &dyn Curve2d) -> Vec<Extr
     let (a1, b1) = (c1.first_parameter(), c1.last_parameter());
     let (a2, b2) = (c2.first_parameter(), c2.last_parameter());
 
-    let l1 = is_line2d(c1).then(|| line_of_curve2d(c1)).flatten();
-    let l2 = is_line2d(c2).then(|| line_of_curve2d(c2)).flatten();
-    let g1 = classify_circle2d(c1);
-    let g2 = classify_circle2d(c2);
+    let l1 = c1.gp_lin2d();
+    let l2 = c2.gp_lin2d();
+    let g1 = c1.gp_circ2d();
+    let g2 = c2.gp_circ2d();
 
     let analytic: Vec<Extrema2d> = match (l1, l2, g1, g2) {
         (Some(l1), Some(l2), _, _) => line_line_extrema2d(&l1, &l2),

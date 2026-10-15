@@ -461,65 +461,6 @@ pub fn point_parabola_extrema2d(pa: &GpParab2d, p: &GpPnt2d) -> Extrema2d {
 // Classification + general Newton path for a `dyn Curve2d`.
 // ---------------------------------------------------------------------------
 
-pub(super) fn is_line2d(c: &dyn Curve2d) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    let us: Vec<f64> = if a.is_finite() && b.is_finite() && b > a {
-        (0..=5).map(|i| a + (b - a) * i as f64 / 5.0).collect()
-    } else {
-        vec![-2.0, -1.0, 0.0, 1.0, 2.0]
-    };
-    let t0 = c.d1(us[0]).1;
-    let m0 = t0.magnitude();
-    if m0 < 1e-9 {
-        return false;
-    }
-    for u in &us[1..] {
-        let t = c.d1(*u).1;
-        let m = t.magnitude();
-        if m < 1e-9 {
-            return false;
-        }
-        if t0.crossed(&t).abs() > 1e-7 * m0 * m {
-            return false;
-        }
-    }
-    true
-}
-
-pub(super) fn circumcenter2d(a: &GpPnt2d, b: &GpPnt2d, c: &GpPnt2d) -> Option<GpPnt2d> {
-    let d = 2.0 * (a.x() * (b.y() - c.y()) + b.x() * (c.y() - a.y()) + c.x() * (a.y() - b.y()));
-    if d.abs() < 1e-20 {
-        return None;
-    }
-    let a1 = a.x() * a.x() + a.y() * a.y();
-    let b1 = b.x() * b.x() + b.y() * b.y();
-    let c1 = c.x() * c.x() + c.y() * c.y();
-    let ux = (a1 * (b.y() - c.y()) + b1 * (c.y() - a.y()) + c1 * (a.y() - b.y())) / d;
-    let uy = (a1 * (c.x() - b.x()) + b1 * (a.x() - c.x()) + c1 * (b.x() - a.x())) / d;
-    Some(GpPnt2d::new(ux, uy))
-}
-
-pub(super) fn classify_circle2d(c: &dyn Curve2d) -> Option<GpCirc2d> {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !(a.is_finite() && b.is_finite() && b > a) {
-        return None;
-    }
-    let n = 8;
-    let pts: Vec<GpPnt2d> = (0..n).map(|i| c.d0(a + (b - a) * i as f64 / (n - 1) as f64)).collect();
-    let o = circumcenter2d(&pts[0], &pts[1], &pts[2])?;
-    let r = pts[0].distance(&o);
-    if r < 1e-12 {
-        return None;
-    }
-    for p in &pts {
-        if (p.distance(&o) - r).abs() > 1e-4 * r {
-            return None;
-        }
-    }
-    let xd = GpDir2d::from_vec2d(&GpVec2d::new(pts[0].x() - o.x(), pts[0].y() - o.y())).ok()?;
-    Some(GpCirc2d { pos: GpAx22d::from_xdir(o, xd), radius: r })
-}
-
 pub(super) fn fval2d(c: &dyn Curve2d, p: &GpPnt2d, u: f64) -> Option<f64> {
     let (q, d1) = c.d1(u);
     let m = d1.magnitude();

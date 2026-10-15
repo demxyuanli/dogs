@@ -78,20 +78,6 @@ pub(super) fn curve_bound(c: &dyn Curve) -> (f64, f64) {
     }
 }
 
-/// Finite, sane sampling bounds for a surface (unbounded ranges clamp to ±1).
-pub(super) fn sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
-    let clamp = |a: f64, b: f64| {
-        if a.is_finite() && b.is_finite() && b > a {
-            (a, b)
-        } else {
-            (-1.0, 1.0)
-        }
-    };
-    let (u0, u1) = clamp(s.u_range().0, s.u_range().1);
-    let (v0, v1) = clamp(s.v_range().0, s.v_range().1);
-    (u0, u1, v0, v1)
-}
-
 // ---------------------------------------------------------------------------
 // Analytic point-to-analytic-surface solvers (port of `Extrema_ExtPElS`).
 // ---------------------------------------------------------------------------
@@ -421,60 +407,6 @@ pub fn line_plane_extrema(l: &GpLin, pl: &GpPln) -> Vec<ExtremaPair> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Surface classification by geometric invariants (brep_surface pattern,
-// inlined here — occt-geom does not depend on occt-topo).
-// ---------------------------------------------------------------------------
-
-/// Unit normal of a surface at (u, v), robust to surfaces whose `d1` returns
-/// zero vectors (some ported surfaces only implement `d0`).
-pub(super) fn surface_normal(s: &dyn Surface, u: f64, v: f64) -> GpVec {
-    let (_, du, dv) = s.d1(u, v);
-    let n = du.xyz().crossed(dv.xyz());
-    if n.square_modulus() > 1e-30 {
-        let m = n.modulus();
-        return GpVec::new(n.x / m, n.y / m, n.z / m);
-    }
-    let eps = 1e-6;
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let hu = if u1 > u0 { (u1 - u0) * 1e-4 } else { eps };
-    let hv = if v1 > v0 { (v1 - v0) * 1e-4 } else { eps };
-    let p0 = s.d0(u, v);
-    let duv = GpVec::from_pnts(&p0, &s.d0(u + hu, v));
-    let dvv = GpVec::from_pnts(&p0, &s.d0(u, v + hv));
-    let n = duv.xyz().crossed(dvv.xyz());
-    let m = n.modulus();
-    if m > 1e-30 {
-        GpVec::new(n.x / m, n.y / m, n.z / m)
-    } else {
-        GpVec::zero()
-    }
-}
-
-/// Whether all sampled surface normals are parallel (within `tol`).
-pub(super) fn is_planar(s: &dyn Surface, nu: usize, nv: usize, tol: f64) -> bool {
-    let (u0, u1, v0, v1) = sample_bounds(s);
-    let (mut first, mut first_ok) = (GpVec::zero(), false);
-    for i in 0..nu {
-        for j in 0..nv {
-            let u = u0 + (u1 - u0) * i as f64 / (nu.max(1) - 1) as f64;
-            let v = v0 + (v1 - v0) * j as f64 / (nv.max(1) - 1) as f64;
-            let n = surface_normal(s, u, v);
-            if n.xyz().square_modulus() < 1e-30 {
-                continue;
-            }
-            if !first_ok {
-                first = n;
-                first_ok = true;
-            } else if n.xyz().crossed(first.xyz()).modulus() > tol {
-                return false;
-            }
-        }
-    }
-    first_ok
-}
-
 /// 3×3 determinant.
 pub(super) fn det3(m: &[[f64; 3]; 3]) -> f64 {
     m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
@@ -499,121 +431,32 @@ pub(super) fn solve3(a: &[[f64; 3]; 3], rhs: &[f64; 3]) -> Option<[f64; 3]> {
     Some(x)
 }
 
-/// Circumcenter of three non-collinear 3D points, if it exists.
-pub(super) fn circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
-    let d1 = GpVec::from_pnts(a, b);
-    let d2 = GpVec::from_pnts(a, c);
-    let n = d1.xyz().crossed(d2.xyz());
-    if n.modulus() < 1e-20 {
-        return None;
-    }
-    let n2 = |p: &GpPnt| p.coord.dot(&p.coord);
-    let mat = [
-        [d1.xyz().x, d1.xyz().y, d1.xyz().z],
-        [d2.xyz().x, d2.xyz().y, d2.xyz().z],
-        [n.x, n.y, n.z],
-    ];
-    let rhs = [0.5 * (n2(b) - n2(a)), 0.5 * (n2(c) - n2(a)), a.coord.dot(&n)];
-    let o = solve3(&mat, &rhs)?;
-    Some(GpPnt::new(o[0], o[1], o[2]))
-}
-
-/// If the surface is spherical, return its center (mid-latitude samples, away
-/// from the poles where the longitude parameter collapses).
-pub(super) fn sphere_center(s: &dyn Surface) -> Option<GpPnt> {
-    let (u0, u1, v0, v1) = sample_bounds(s);
-    let u_mid = 0.5 * (u0 + u1);
-    let v_mid = 0.5 * (v0 + v1);
-    let span = (v1 - v0).abs().max(1e-6);
-    let a = s.d0(u0, v_mid);
-    let b = s.d0(u_mid, v_mid);
-    let c = s.d0(u0, v_mid + 0.25 * span);
-    circumcenter(&a, &b, &c)
-}
-
-/// Classify a planar surface into a `GpPln` (reconstructed normal + location;
-/// the in-plane axes are chosen arbitrarily, which does not affect distances).
+/// Classify a planar surface into a `GpPln`.
+///
+/// Equivalent branch: `Extrema_ExtSS.cxx:122-129` switches on
+/// `S1.GetType()` and takes `S1.Plane()`; the accessor is
+/// `Adaptor3d_Surface::Plane()` (`GeomAdaptor_Surface.cxx`), mirrored here by
+/// `Surface::gp_pln`.
 pub(crate) fn classify_plane(s: &dyn Surface) -> Option<GpPln> {
-    if !is_planar(s, 8, 8, 1e-6) {
-        return None;
-    }
-    let (u0, _, v0, _) = sample_bounds(s);
-    let o = s.d0(u0, v0);
-    let n = surface_normal(s, u0, v0);
-    let d = GpDir::from_vec(&n).ok()?;
-    let z_axis = GpDir::new(0.0, 0.0, 1.0).ok()?;
-    let x_dir = if d.is_normal(&z_axis) {
-        z_axis
-    } else {
-        GpDir::new(1.0, 0.0, 0.0).ok()?
-    };
-    GpAx3::new(o, d, &x_dir).ok().map(GpPln::new)
+    s.gp_pln()
 }
 
-/// Classify a spherical surface into a `GpSphere`. The reconstructed axes are
-/// standard at the solved center; distances are axis-independent.
+/// Classify a spherical surface into a `GpSphere`.
+///
+/// Equivalent branch: `Extrema_ExtSS.cxx:117-119` takes `S1.GetType()` and the
+/// accessor is `Adaptor3d_Surface::Sphere()` (`GeomAdaptor_Surface.cxx`),
+/// mirrored here by `Surface::gp_sphere`.
 pub(crate) fn classify_sphere(s: &dyn Surface) -> Option<GpSphere> {
-    let center = sphere_center(s)?;
-    let (u0, u1, v0, v1) = sample_bounds(s);
-    let r0 = s.d0(u0, v0).distance(&center);
-    if r0 < 1e-12 {
-        return None;
-    }
-    let (nu, nv) = (8, 8);
-    for i in 0..nu {
-        for j in 0..nv {
-            let u = u0 + (u1 - u0) * i as f64 / (nu - 1) as f64;
-            let v = v0 + (v1 - v0) * j as f64 / (nv - 1) as f64;
-            if (s.d0(u, v).distance(&center) - r0).abs() > 1e-4 * r0.abs().max(1.0) {
-                return None;
-            }
-        }
-    }
-    let mut pos = GpAx3::standard();
-    pos.set_location(center);
-    Some(GpSphere { pos, radius: r0 })
-}
-
-/// Constant-tangent-direction detection ⇒ line.
-pub(super) fn is_line(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    let us: Vec<f64> = if a.is_finite() && b.is_finite() && b > a {
-        (0..=5).map(|i| a + (b - a) * i as f64 / 5.0).collect()
-    } else {
-        vec![-2.0, -1.0, 0.0, 1.0, 2.0]
-    };
-    let t0 = c.d1(us[0]).1;
-    let m0 = t0.magnitude();
-    if m0 < 1e-9 {
-        return false;
-    }
-    for u in &us[1..] {
-        let t = c.d1(*u).1;
-        let m = t.magnitude();
-        if m < 1e-9 {
-            return false;
-        }
-        if t0.cross_magnitude(&t) > 1e-7 * m0 * m {
-            return false;
-        }
-    }
-    true
+    s.gp_sphere()
 }
 
 /// Reconstruct a `GpLin` from a line curve.
+///
+/// Equivalent branch: `GeomAdaptor_Curve::Line()` (`Extrema_GGExtPC.hxx:178-181`
+/// calls `TheCurveTool::Line(aCurve)` on the `GeomAbs_Line` arm), mirrored here
+/// by `Curve::gp_line`.
 pub(super) fn reconstruct_line(c: &dyn Curve) -> Option<GpLin> {
-    if !is_line(c) {
-        return None;
-    }
-    let u0 = if c.first_parameter().is_finite() {
-        c.first_parameter()
-    } else {
-        0.0
-    };
-    let p0 = c.d0(u0);
-    let t = c.d1(u0).1;
-    let d = GpDir::from_vec(&t).ok()?;
-    Some(GpLin::from_pnt_dir(p0, d))
+    c.gp_line()
 }
 
 // ---------------------------------------------------------------------------

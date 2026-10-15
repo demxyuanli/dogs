@@ -148,10 +148,39 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `Extrema_ExtPS.cxx:307-371`, `Extrema_ExtCS.cxx:122,532`, `Extrema_ExtSS.cxx:226-260`,
   `Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`. The prior registration claiming the
   fallbacks had to stay for their consumer and were gated on T-67 was false.
-- **B6b OPEN** — same family: `extrema_surf/analytic_solvers.rs:456,523,555,578` and
-  `occt-geom2d/extrema2d/analytic_solvers.rs:464,489,502,605,628` classify by sampling
-  (8x8 plane, circumcentre sphere, 6-point tangent, `span/0.1` grid) instead of
-  `GetType()`/`gp_*` downcast (`Extrema_ExtCC.cxx:188-189`, `Extrema_GGExtPC.hxx:123,160-181`).
+- **B6b ✅ CLOSED 2026-10-15 (T-137, package P007) — classifiers only.** The classifier half is
+  gone: `extrema_surf/analytic_solvers.rs::classify_plane` = `s.gp_pln()`,
+  `classify_sphere` = `s.gp_sphere()` (`Extrema_ExtSS.cxx:117-129` dispatch on `S1.GetType()`
+  then `S1.Plane()`/`S1.Sphere()`), `reconstruct_line` = `c.gp_line()`
+  (`Extrema_ExtCS.cxx:129-140`, `C.Line()`/`myS->Sphere()`/`myS->Plane()`), and the sampling
+  bodies `is_planar` (8x8), `sphere_center` (circumcentre), `circumcenter`, `surface_normal`,
+  `is_line` (6-point tangent), `sample_bounds` are deleted. In `geom2d`:
+  `point_curve_extrema2d_all` takes the line arm from `gp_lin2d()`
+  (`Extrema_GGExtPC.hxx:178-181`) and now computes `Mydist = L.Direction().Dot(L.Location()->P)`
+  per `Extrema_ExtPElC2d.cxx:63-79` (the old code used the parameter increment relative to
+  `d0(first_parameter)`, which is wrong on a trimmed line), the circle arm takes `gp_circ2d()`,
+  and `curve_curve_extrema2d_all` dispatches pairs with `gp_lin2d()`/`gp_circ2d()`
+  (`Extrema_ExtCC2d.cxx:104-145`, `GetType(C1)` x `GetType(C2)` +
+  `Extrema_Curve2dTool::Line/Circle`); `is_line2d`/`circumcenter2d`/`classify_circle2d`/
+  `line_of_curve2d` deleted. Observable: a straight-but-not-`Geom2d_Line` curve no longer falls
+  into the line arm (OCCT reports `GeomAbs_BSplineCurve` and takes the general arm). Gates:
+  `--all-targets` 0 err, `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib`
+  1251/0, `step_obj_gates` 4/4 (117s), `export_data_obj` 15/15 v/f and bbox bit-identical.
+- **B6c OPEN (split out of B6b 2026-10-15).** The `span/0.1` grid half of the old B6b line is
+  not a classifier: `extrema2d/analytic_solvers.rs::build_samples2d` (`span/0.1`, clamp 24..256)
+  plus `newton_point_curve_all2d` (`:569`) and `curve_curve::newton_curve_curve_all2d` (`:361`)
+  are the self-invented seed grids standing in for `Extrema_GGExtPC::IntervalPerform`
+  (`mysample = 17`, `Extrema_GGExtPC.hxx:128`; `IntervalPerform` -> `Extrema_GFuncExtPC` +
+  `math_GlobOptMin`) and for `Extrema_GGenExtCC` -> `math_GlobOptMin`. Live consumers:
+  `topo/brep_class/intersector_checks.rs:157` (`BRepClass_Intersector`) and
+  `extrema2d/general_extrema.rs:550`. The faithful engine (`occt_math::globoptmin`) is already
+  ported and already used by `general_extrema` for the curve-curve route.
+- **B6d OPEN (found 2026-10-15, T-137).** `extrema_ss::surface_surface_extrema_all`'s analytic
+  sphere/sphere and sphere/plane arms have no counterpart in `Extrema_ExtSS::Perform`, whose only
+  analytic arm is `Plane` x `Plane` -> `Extrema_ExtElSS::Perform(S1.Plane(), myS2->Plane())`
+  (`Extrema_ExtSS.cxx:122-129`); every other type pair goes to `Extrema_GenExtSS` (`cxx:131-180`).
+  This is an extra branch, not a sampled substitute; Scout must decide between wiring the
+  non-plane pairs to the `GenExtSS` equivalent (`surface_surface_newton_all`) and keeping them.
 
 ### B7. Step/IGES-adjacent live divergences
 - `mesh_to_brep.rs:39-41,118-119,157-158`: 1e-9 vertex dedup grid, vertex tolerance 0.0,
@@ -217,8 +246,14 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   T-136 (the three fabricated Extrema `fallback_*` pairs in `extrema_surf/numeric_extrema.rs` and
   `extrema_ss.rs` are deleted; the minimum-distance entries propagate `!IsDone()` / `NbExt() == 0`
   as `None`, and `bean_face_exact::ComputeUsingExtremum` takes the `IntTools_BeanFaceIntersector.cxx:956`
-  guard instead of a fabricated pair). B6b (the two `extrema2d`/`extrema_surf` `analytic_solvers`
-  sampling classifier families) is still open.
+  guard instead of a fabricated pair). B6b closed in T-137 (both `analytic_solvers` families now
+  take `gp_pln()`/`gp_sphere()`/`gp_line()`/`gp_lin2d()`/`gp_circ2d()`; the sampled classifiers and
+  their helpers are deleted). Split out of B6b as **B6c** (still open): the `span/0.1` seed grid
+  `build_samples2d` + `newton_point_curve_all2d` / `newton_curve_curve_all2d`, which stand in for
+  `Extrema_GGExtPC::IntervalPerform` (`mysample = 17`) and `Extrema_GGenExtCC` -> `math_GlobOptMin`.
+  **B6d** (still open, found in T-137): the analytic sphere/sphere and sphere/plane arms of
+  `surface_surface_extrema_all` have no counterpart in `Extrema_ExtSS::Perform` (only
+  `Plane` x `Plane` is analytic there).
 - Self-invented engines with no OCCT counterpart and no production caller: `boolean_ops.rs:173`
   (+`:206/:211/:216/:280`), `solid_union.rs` voxel union.
 
@@ -230,9 +265,14 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `aTV` from `vertex_parameter_on_face`. High confidence, 3 cxx arms, no new predicate.
 2. ~~**B2** `pc_curve_kind` -> `Geom2dAdaptor_Curve::GetType()` equivalent. 4 call sites, touches
    bbox/pcurve bounds.~~ **DONE 2026-10-15 (T-132, package P002).**
-3. **B6b** Extrema analytic-solver sampling classifiers (the B6a half, the fabricated `fallback_*`
+3. ~~**B6b** Extrema analytic-solver sampling classifiers (the B6a half, the fabricated `fallback_*`
    pairs, closed 2026-10-15 as T-136 / P006). Still open: the sampling classifiers in the two
-   `analytic_solvers.rs` files; touches `bean_face_exact`'s neighbours, Scout first.
+   `analytic_solvers.rs` files; touches `bean_face_exact`'s neighbours, Scout first.~~
+   **DONE 2026-10-15 (T-137, package P007).** Continuation is **B6c** (the `span/0.1` seed grid +
+   grid-Newton general arms: `build_samples2d`, `newton_point_curve_all2d`,
+   `newton_curve_curve_all2d`, live via `brep_class/intersector_checks.rs:157` and
+   `extrema2d/general_extrema.rs:550`), then **B6d** (the extra analytic sphere arms in
+   `surface_surface_extrema_all`).
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~

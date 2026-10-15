@@ -13,7 +13,7 @@ mod prelude {
 pub(crate) use std::cmp::Ordering;
 
 pub(crate) use occt_core::gp::{
-    GpAx22d, GpCirc2d, GpDir2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d,
+    GpCirc2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d,
 };
 pub(crate) use occt_core::precision::{
     Precision, ANGULAR, CONFUSION, INFINITE, PCONFUSION, RESOLUTION, SQUARE_CONFUSION,
