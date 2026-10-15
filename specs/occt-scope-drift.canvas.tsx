@@ -218,6 +218,12 @@ const SEMANTIC = [
     where: "topo/step/write_context.rs（`emit_curve_entity` 的 BoundedCurve 臂 + 裁剪 B-spline 臂）",
     state: "**已修（2026-10-15）**：`GeomToStep_MakeBoundedCurve.cxx:44-51` 写周期 B-spline 时先走非周期副本（`BS = B->Copy(); BS->SetNotPeriodic()`），本仓直接按曲线自身数据建实体，周期结点向量原样写出。现新增 `bounded_bspline_of_curve`（＝`cxx:42-62` 整臂：曲线自身 poles/knots/weights/degree 后接收周期步，键为 `C->IsPeriodic()`，`cxx:45`）与 `open_periodic_bspline`（＝`Copy()` + `SetNotPeriodic()` 对；副本必须显式恢复 `periodic`，因为移植的 `GeomBSplineCurve::new`/`rational` 构造器一律建非周期形，否则 `set_not_periodic()` 立即返回）。同文件裁剪 B-spline 臂（`MakeCurve.cxx:71-76`）在 `segment(...)` 前补 `bs.periodic = basis.is_periodic()`，使 `Geom_BSplineCurve::Segment` 进入周期分支（`Geom_BSplineCurve.cxx:606-618`：`SetOrigin` + `SetNotPeriodic`）。该处整段 UNPORTED 注释删除。门禁：`occt-topo` `--all-targets` 0 error、`--lib` 1251/0、`phase4_integration` 9/9、`step_obj_gates` 4/4、`export_data_obj` 15/15（v/f+bbox 与 T002 冻结表逐位一致；`screw` 601/792、`Shape-1` 3335/4328、`Shape-2` 3081/4744 即冻结值）。**验证边界**：四道门禁都不直接覆盖 STEP 写侧（写侧只由 `step/tests.rs` 与 `phase4_integration` 的回读用例覆盖），故本轮靠 cxx 控制流对齐 + 既有回读基线不变作证，未新增测试。**同族未修（登记 B7-writer-3）**：`step/format.rs:472` 的曲线 `closed` 恒 `.F.`（应 `BS->IsClosed()`，`GeomToStep_MakeBSplineCurveWithKnots_gen.pxx:42-50`）、`:526` 与曲线侧的 `KnotSpec` 恒 `.UNSPECIFIED.`（`gen.pxx:71-87` / `MakeBSplineSurfaceWithKnots.cxx:127-150`）；依赖 `Geom_BSplineCurve::IsClosed`、`BSplCLib::KnotDistribution`（枚举 `BSplKnotDistribution` 已在 `occt-core/src/kernel/geomabs.rs:37`）。**该同族余项已收口（2026-10-15，T-141 / 包 P011）**：新增 `occt-core/src/bspl/knot_analysis.rs`（`BSplCLib::KnotForm`/`MultForm`/`KnotAnalysis`，`BSplCLib.cxx:602-753`）与 `GeomBSplineCurve::{is_closed,knot_distribution}`（`Geom_BSplineCurve_1.cxx:146-149,363-366`）、`GeomBSplineSurface::{u,v}_knot_distribution`（`Geom_BSplineSurface_1.cxx:1851-1862`），`step/format.rs` 两个写器改由几何推导（曲面仅 U/V 分布相同时具名，`MakeBSplineSurfaceWithKnots.cxx:127-150`）；偏离有 OCCT 自身输出可对照（`data/occ/ATU01038.step` 245 `PIECEWISE_BEZIER_KNOTS` + 106 `QUASI_UNIFORM_KNOTS`、`bottom.step` 934）。门禁：`occt-core --lib` 285/0、`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`phase4_integration` 9/9、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致；`step/tests.rs` 两条既有记录布局断言按 cxx 推导值重定（未新增测试）。",
   },
+  {
+    item: "`intana` / `occt-math` 的第二份自创多项式解算器（T001 的 B8-intana 第 1 半）",
+    id: "B8-intana / T-142",
+    where: "geom/intana/analytic_intersections.rs（本地二次/三次/Ferrari 四次 + `poly4`/`polish4`）· occt-math/polynomial.rs（闭式 + 自创 Durand-Kerner）",
+    state: "**已修（2026-10-15，包 P012，commit `642a0c88`）**：`math_DirectPolynomialRoots` 其实早已移植为 `occt_core::math_direct_poly_roots::DirectPolynomialRoots`（`math_DirectPolynomialRoots.cxx:66-506`、`:558-625`、`:627-708`、`:712-764`、`:768-786`，已被 `intana_intconicquad`、`intana2d/outils`、`math_trig_roots` 使用），但 `intana/analytic_intersections.rs` 与 `occt-math/polynomial.rs` 各带一份第二自创解算器（阈值 `1e-14`/`1e-9`/`1e-12`/`1e-6`/`1e-8`/`1e-300` + 本地牛顿抛光），且头注声称 \"occt-geom 不依赖 occt-math\"（实际两者都依赖）。现已为 `occt-core/src/math_direct_poly_roots.rs` 增 `quadratic_roots`/`cubic_roots`/`quartic_roots` 三个 `Value(1..NbSolutions)` 适配器（即 OCCT 调用点内联写的循环，自身无数值判定），`intana` 侧整段本地解算器与 `poly4`/`polish4` 删除改为 re-export，`occt-math` 侧闭式改委托、自创 Durand-Kerner `polynomial_roots`（OCCT 无对应）与其复数辅助件、单测删除。**唯一边界**：本半只覆盖 `intana` 与 `occt-math` 两份拷贝；同一解算器仍在 `extrema_pc/poly_roots.rs`、`extrema_cc/poly_roots.rs`、`extrema2d/analytic_solvers.rs`、`occt-core/numeric.rs` 各有一份，`line_torus.rs` 的绝对 `1e-14` 与锥/锥 `EstimDist`/`aTolAng` 亦未动（已写入下一步）。门禁：四 crate `--all-targets` 0 error、`occt-core --lib` 285/0、`occt-math --lib` 210/0、`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致；未改任何断言。",
+  },
 ];
 
 // `data/*` + `data/occ/*` 逐模型对拍（2026-10-15 `step_obj_gates --nocapture` 实测，23 个模型全过）
@@ -250,6 +256,12 @@ const DOCDRIFT = [
     what: "G-export 门禁基线过期",
     detail: "board baseline 15 / 15 → 23 / 23",
     gap: "✅ 已同步：`-- data/occ data` 口径实测 23 ok / 0 err（15 `data/*.step` + 8 `data/occ/*`）；无参跑是 15 ok / 0 err（2026-10-15 实测，15 个模型 v/f 与包围盒逐位一致）",
+    tone: "success" as const,
+  },
+  {
+    what: "G-core 门禁读数过期",
+    detail: "canvas 290·215·143·72 → 实测 285·210·143·72",
+    gap: "✅ 已同步：2026-10-15 实测 `--lib`（occt-core 285/0、occt-math 210/0、occt-geom 143/0、occt-geom2d 72/0）。旧的 290/215 与 `G-lib` 的 1276 同源——自创单测删除后读数下降，`notes/T002-gate-baseline.md` 已留档",
     tone: "success" as const,
   },
   {
@@ -294,7 +306,7 @@ const GATES = [
   { id: "G-boss", name: "boss 合并", base: "2 / 2", now: "2 / 2", tone: "success" as const },
   { id: "G-export", name: "导出总检", base: "23 / 23", now: "15 ok / 0 err", tone: "success" as const },
   { id: "G-iges", name: "IGES 结构自洽", base: "23 / 23", now: "23 / 23", tone: "success" as const },
-  { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "290·215·143·72", tone: "success" as const },
+  { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "285·210·143·72", tone: "success" as const },
 ];
 
 const pct = (a: number, b: number) => `${(100 * (a / b)).toFixed(1)}%`;

@@ -88,6 +88,7 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - OCCT 对应：`math_DirectPolynomialRoots.cxx:344-393`（`ShouldReduceDegreeQuartic`）、`:583-587`（`if (!aSuccess) { myDone = false; return; }`）、`:678-705`、`:92-120`（`RefineRoot`）；`IntAna_QuadQuadGeo.cxx:1440,1458-1475,1524`（`TOL_APEX_CONF=1e-10`、`EstimDist` 求 `aTolAng`）；`:1324,1603`、`:1060-1200`（未移植的完整分类）
 - 影响：改几何结果（近轴近平行锥漏解；本应 not-done 被当成"无解曲线"）
 - 建议：按 `math_DirectPolynomialRoots.cxx` 重译并传 done；补 `EstimDist`/`aTolAng`
+- **处置（部分完成：P012 / 2026-10-15，commit `642a0c88`）**：`intana/analytic_intersections.rs` 的自创二次/三次/Ferrari 四次以及 `poly4`/`polish4` 已删除，改为经 `occt-core/src/math_direct_poly_roots.rs` 新增的 `Value(1..NbSolutions)` 适配器委托已移植的 `DirectPolynomialRoots`（该文件头声称"occt-geom 不依赖 occt-math"是过期注释，实际两者都依赖）；`occt-math/src/polynomial.rs` 的闭式同样委托，并删除自创 Durand-Kerner `polynomial_roots`（OCCT 无对应、无调用方）。随之消失的阈值：`1e-14` 判别式切分、`1e-9`/`1e-12`/`1e-6`/`1e-8` 去重、`1e-300` 首项切分、本地牛顿抛光。**未完成**：同一份自创解算器仍有三份拷贝（`extrema_pc/poly_roots.rs`、`extrema_cc/poly_roots.rs`、`extrema2d/analytic_solvers.rs`、`occt-core/numeric.rs`），以及本节 `line_torus.rs` 的 `1e-14` 与锥/锥 `EstimDist`/`aTolAng` 两项。
 
 ### 9. 直线–环面：物理残差 `1e-7` 取代参数回代，且无法表达 `done=false`
 - 判定：自创（静默失败）
