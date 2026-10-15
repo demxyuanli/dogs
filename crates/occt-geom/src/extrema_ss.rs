@@ -444,37 +444,6 @@ pub(crate) fn surface_surface_newton_all(s1: &dyn Surface, s2: &dyn Surface) -> 
     out
 }
 
-/// Fallback: coarse grid min + coordinate descent (degenerate pairs).
-// UNPORTED (audit A15): OCCT has no such fallback — `Extrema_ExtSS`/`Extrema_ExtPS` set `myDone = false` / throw when the search finds nothing (`Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`). This body fabricates a pair instead; it is kept because live consumers (`occt-topo/src/bean_face_exact.rs:278`) rely on it, and removal needs the T-67 (`Extrema_ExtPS`/`GenExtPS`) port first.
-fn fallback_ss(s1: &dyn Surface, s2: &dyn Surface) -> ExtremaPair {
-    let (u10, u11) = surf_bound_u(s1);
-    let (v10, v11) = surf_bound_v(s1);
-    let (u20, u21) = surf_bound_u(s2);
-    let (v20, v21) = surf_bound_v(s2);
-    let n = 12;
-    let mut best = (0.0, 0.0, 0.0, 0.0, f64::INFINITY);
-    for i in 0..=n {
-        for j in 0..=n {
-            let u1 = u10 + (u11 - u10) * i as f64 / n as f64;
-            let v1 = v10 + (v11 - v10) * j as f64 / n as f64;
-            let p = s1.d0(u1, v1);
-            for k in 0..=n {
-                for l in 0..=n {
-                    let u2 = u20 + (u21 - u20) * k as f64 / n as f64;
-                    let v2 = v20 + (v21 - v20) * l as f64 / n as f64;
-                    let d = p.square_distance(&s2.d0(u2, v2));
-                    if d < best.4 {
-                        best = (u1, v1, u2, v2, d);
-                    }
-                }
-            }
-        }
-    }
-    let p1 = s1.d0(best.0, best.1);
-    let p2 = s2.d0(best.2, best.3);
-    ss_pair(p1, best.0, best.1, p2, best.2, best.3, p1.distance(&p2))
-}
-
 // ---------------------------------------------------------------------------
 // Public dispatch.
 // ---------------------------------------------------------------------------
@@ -500,11 +469,13 @@ pub fn surface_surface_extrema_all(s1: &dyn Surface, s2: &dyn Surface) -> Vec<Ex
 }
 
 /// Minimum distance between surfaces `s1` and `s2`.
-pub fn surface_surface_extrema(s1: &dyn Surface, s2: &dyn Surface) -> ExtremaPair {
-    match surface_surface_extrema_all(s1, s2).into_iter().next() {
-        Some(e) => e,
-        None => fallback_ss(s1, s2),
-    }
+///
+/// `None` is `Extrema_ExtSS::IsDone() == false` or `NbExt() == 0`
+/// (`Extrema_ExtSS.cxx:226-260`, `Extrema_ExtElSS.cxx:62-83`,
+/// `Extrema_GGExtPC.hxx:531`), propagated instead of being filled in with a
+/// fabricated pair.
+pub fn surface_surface_extrema(s1: &dyn Surface, s2: &dyn Surface) -> Option<ExtremaPair> {
+    surface_surface_extrema_all(s1, s2).into_iter().next()
 }
 
 #[cfg(test)]
@@ -546,7 +517,7 @@ mod tests {
     fn surface_surface_sphere_plane_min() {
         let s1 = unit_sphere_at(GpPnt::new(0.0, 0.0, 0.0));
         let s2 = plane_z(5.0);
-        let e = surface_surface_extrema(&s1, &s2);
+        let e = surface_surface_extrema(&s1, &s2).expect("Extrema_ExtSS done");
         assert!((e.distance - 4.0).abs() < 1e-9, "min {}", e.distance);
         assert!((e.p1.z() - 1.0).abs() < 1e-9 && (e.p2.z() - 5.0).abs() < 1e-9, "closest {e:?}");
     }
@@ -555,7 +526,7 @@ mod tests {
     fn surface_surface_planes_parallel() {
         let p1 = GeomPlane::new(occt_core::gp::GpPln::new(GpAx3::standard()));
         let p2 = plane_z(3.0);
-        let e = surface_surface_extrema(&p1, &p2);
+        let e = surface_surface_extrema(&p1, &p2).expect("Extrema_ExtSS done");
         assert!((e.distance - 3.0).abs() < 1e-9, "parallel planes {}", e.distance);
     }
 
@@ -563,7 +534,7 @@ mod tests {
     fn surface_surface_planes_coincident() {
         let p1 = GeomPlane::new(occt_core::gp::GpPln::new(GpAx3::standard()));
         let p2 = GeomPlane::new(occt_core::gp::GpPln::new(GpAx3::standard()));
-        let e = surface_surface_extrema(&p1, &p2);
+        let e = surface_surface_extrema(&p1, &p2).expect("Extrema_ExtSS done");
         assert!(e.distance.abs() < 1e-9, "coincident planes {}", e.distance);
     }
 

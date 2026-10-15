@@ -148,58 +148,6 @@ pub(crate) fn point_surface_newton_all_box(
     out
 }
 
-/// Fallback: coarse grid min + coordinate descent (degenerate surfaces).
-// UNPORTED (audit A15): OCCT has no such fallback — `Extrema_ExtSS`/`Extrema_ExtPS` set `myDone = false` / throw when the search finds nothing (`Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`). This body fabricates a pair instead; it is kept because live consumers (`occt-topo/src/bean_face_exact.rs:278`) rely on it, and removal needs the T-67 (`Extrema_ExtPS`/`GenExtPS`) port first.
-pub(super) fn fallback_point_surface(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
-    let (u0, u1) = surf_bound_u(s);
-    let (v0, v1) = surf_bound_v(s);
-    let n = 40;
-    let mut best = (0.0, 0.0, f64::INFINITY);
-    for i in 0..=n {
-        for j in 0..=n {
-            let u = u0 + (u1 - u0) * i as f64 / n as f64;
-            let v = v0 + (v1 - v0) * j as f64 / n as f64;
-            let d = s.d0(u, v).square_distance(p);
-            if d < best.2 {
-                best = (u, v, d);
-            }
-        }
-    }
-    let (mut u, mut v) = (best.0, best.1);
-    let dist2 = |u: f64, v: f64| s.d0(u, v).square_distance(p);
-    let mut step = (v1 - v0).abs().max(1.0) / 4.0;
-    for _ in 0..256 {
-        let cur = dist2(u, v);
-        let cand = [(u + step, v), (u - step, v), (u, v + step), (u, v - step)];
-        let mut bi = usize::MAX;
-        let mut bb = cur;
-        for (k, (cu, cv)) in cand.iter().enumerate() {
-            let dd = dist2(*cu, *cv);
-            if dd < bb {
-                bi = k;
-                bb = dd;
-            }
-        }
-        if bi == usize::MAX {
-            step *= 0.5;
-            if step < 1e-12 {
-                break;
-            }
-        } else {
-            match bi {
-                0 => u += step,
-                1 => u -= step,
-                2 => v += step,
-                _ => v -= step,
-            }
-            u = u.clamp(u0.min(u1), u0.max(u1));
-            v = v.clamp(v0.min(v1), v0.max(v1));
-        }
-    }
-    let q = s.d0(u, v);
-    ps_pair(p, u, v, q)
-}
-
 // ---------------------------------------------------------------------------
 // General Newton path (curve-surface, port of `Extrema_GenExtCS` +
 // `Extrema_FuncExtCS`, numeric 3×3 Jacobian).
@@ -369,32 +317,6 @@ pub(crate) fn curve_surface_newton_all(c: &dyn Curve, s: &dyn Surface) -> Vec<Ex
     out
 }
 
-/// Fallback: grid min (degenerate curve-surface pairs).
-// UNPORTED (audit A15): OCCT has no such fallback — `Extrema_ExtSS`/`Extrema_ExtPS` set `myDone = false` / throw when the search finds nothing (`Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`). This body fabricates a pair instead; it is kept because live consumers (`occt-topo/src/bean_face_exact.rs:278`) rely on it, and removal needs the T-67 (`Extrema_ExtPS`/`GenExtPS`) port first.
-pub(super) fn fallback_curve_surface(c: &dyn Curve, s: &dyn Surface) -> ExtremaPair {
-    let (t0, t1) = curve_bound(c);
-    let (u0, u1) = surf_bound_u(s);
-    let (v0, v1) = surf_bound_v(s);
-    let (nt, nu, nv) = (20, 16, 16);
-    let mut best = (0.0, 0.0, 0.0, f64::INFINITY);
-    for i in 0..=nt {
-        for j in 0..=nu {
-            for k in 0..=nv {
-                let t = t0 + (t1 - t0) * i as f64 / nt as f64;
-                let u = u0 + (u1 - u0) * j as f64 / nu as f64;
-                let v = v0 + (v1 - v0) * k as f64 / nv as f64;
-                let d = c.d0(t).square_distance(&s.d0(u, v));
-                if d < best.3 {
-                    best = (t, u, v, d);
-                }
-            }
-        }
-    }
-    let pc = c.d0(best.0);
-    let ps = s.d0(best.1, best.2);
-    cs_pair(pc, best.0, ps, best.1, best.2, pc.distance(&ps))
-}
-
 // ---------------------------------------------------------------------------
 // Public dispatch.
 // ---------------------------------------------------------------------------
@@ -427,11 +349,13 @@ pub(super) fn ext_ps_solutions(ex: &ExtPs<'_>, p: &GpPnt) -> Vec<ExtremaPair> {
 }
 
 /// Minimum distance from `p` to `s` (with the closest point and parameters).
-pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
-    match point_surface_extrema_all(s, p).into_iter().next() {
-        Some(e) => e,
-        None => fallback_point_surface(s, p),
-    }
+///
+/// `None` is `Extrema_ExtPS::IsDone() == false` (`Extrema_ExtPS.cxx:307-371`:
+/// the sub-extrema did not converge) **and** `NbExt() == 0`. OCCT callers test
+/// exactly that (`IntTools_BeanFaceIntersector.cxx:956`), so the failure is
+/// propagated instead of being filled in with a fabricated pair.
+pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> Option<ExtremaPair> {
+    point_surface_extrema_all(s, p).into_iter().next()
 }
 
 /// Minimum distance from `p` to `s` (with the closest point and parameters)
@@ -459,7 +383,7 @@ pub fn point_surface_extrema_box(
 ) -> ExtremaPair {
     let ok = |a: f64, b: f64| a.is_finite() && b.is_finite() && b > a;
     if !ok(u0, u1) || !ok(v0, v1) {
-        return point_surface_extrema(s, p);
+        return point_surface_extrema(s, p).unwrap_or_else(|| no_solution_pair(p));
     }
     let ex = ExtPs::with_window(p, s, u0, u1, v0, v1, PCONFUSION, PCONFUSION);
     let mut best: Option<ExtremaPair> = None;
@@ -479,6 +403,14 @@ pub fn point_surface_extrema_box(
     // (`point_surface_newton_all_box`) plus a natural-bounds fallback here; both
     // are port additions with no OCCT counterpart, so the faithful answer is
     // "no solution" (`v2 == None`, which is what the caller filters on).
+    no_solution_pair(p)
+}
+
+/// The "no solution" marker pair: `Extrema_ExtPS`/`Extrema_ExtCS` reported no
+/// extremum (`!IsDone()` or `NbExt() == 0`). It carries a non-finite distance
+/// and `v2 == None`, which is what the windowed caller
+/// (`pcurve_full::surface_projector::value_of_uv`) filters on.
+pub(super) fn no_solution_pair(p: &GpPnt) -> ExtremaPair {
     ExtremaPair {
         p1: *p,
         p2: *p,
@@ -508,9 +440,11 @@ pub fn curve_surface_extrema_all(c: &dyn Curve, s: &dyn Surface) -> Vec<ExtremaP
 }
 
 /// Minimum distance between curve `c` and surface `s`.
-pub fn curve_surface_extrema(c: &dyn Curve, s: &dyn Surface) -> ExtremaPair {
-    match curve_surface_extrema_all(c, s).into_iter().next() {
-        Some(e) => e,
-        None => fallback_curve_surface(c, s),
-    }
+///
+/// `None` is `Extrema_ExtCS::IsDone() == false` or `NbExt() == 0`
+/// (`Extrema_ExtCS.cxx:122,532`). OCCT callers test exactly that
+/// (`IntTools_BeanFaceIntersector.cxx:956`), so the failure is propagated
+/// instead of being filled in with a fabricated pair.
+pub fn curve_surface_extrema(c: &dyn Curve, s: &dyn Surface) -> Option<ExtremaPair> {
+    curve_surface_extrema_all(c, s).into_iter().next()
 }

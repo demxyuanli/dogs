@@ -124,6 +124,12 @@ const CLOSED = [
     evidence:
       "按 `GCPnts_AbscissaPoint.cxx:187-295` 补 `compute_abs_composite_adv`：逐步 `CPnts_AbscissaPoint::Length(..., theEPSILON)`、`anIndex == 0 && aDirection > 0` 前置块（`:202-229`，仅 adv 有）、`Init(C, U1, U2, theEPSILON)` + `AdvPerform`、循环内零长判据用 `Precision::PConfusion()`（`:232`）而前置块用 `theEPSILON`（`:206`）、尾段按 `aSign` 偏移并按 `FirstParameter`/`LastParameter` 钳制（`:273-293`）。同时订正 `.cxx:486`/`:540` 的 `theEPSILON` 语义：原先传 `c.resolution(Confusion)`，现传调用方 `tol`（`Approx_CurvlinFunc::GetUParameter` 传 `myTolLen`，`Approx_CurvlinFunc.cxx:560`）。`occt-geom` 143 测试通过、`step_obj_gates` 4/4。",
   },
+  {
+    item: "`occt-geom` 曲面族 Extrema 失败伪造（`fallback_point_surface` / `fallback_curve_surface` / `fallback_ss`，T001 的 B6）",
+    id: "B6 / T-136",
+    where: "geom/extrema_surf/numeric_extrema.rs（40×40 栅格 + 坐标下降、20×16×16 栅格）· geom/extrema_ss.rs（12⁴ 栅格）· geom/extrema.rs 三个薄包装 · topo/bean_face_exact.rs `ComputeUsingExtremum` · topo/brep_extrema.rs:209 `closest_point_on_face` · topo/gprop_analytic/edge_length.rs:492 `extrema_point_surface_exact`",
+    state: "**B6a 已修（2026-10-15）**：三处兜底整体删除；`point_surface_extrema`/`curve_surface_extrema`/`surface_surface_extrema` 改返回 `Option<ExtremaPair>`（`None` = `Extrema_ExtPS.cxx:307-371` / `Extrema_ExtCS.cxx:122,532` / `Extrema_ExtSS.cxx:226-260` 的 `!IsDone()` 或 `NbExt() == 0`），`numeric_extrema::no_solution_pair` 收拢原有的「无解」标记对。消费方 `bean_face_exact::ComputeUsingExtremum` 回到 `IntTools_BeanFaceIntersector.cxx:956` 的守卫（`Extrema_ExtCS` 未 done 即整块跳过、不置 range flag），`closest_point_on_face` 无解时跳过面内投影，`extrema_point_surface_exact` 非初等面臂改 `Err`。旧登记「有生产消费方故暂留、前置 T-67」不成立。门禁：`--all-targets` 0 error、`occt-geom --lib` 143/0、`--lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 且 v/f 逐位一致。**B6b 未改**：`geom/extrema_surf/analytic_solvers.rs:456,523,555,578` 与 `geom2d/extrema2d/analytic_solvers.rs:464,489,502,605,628` 的采样式分类器（8×8 平面判、外心球、6 点切向、`span/0.1` 栅格）仍未换 `GetType()`/`gp_*` 下转（`Extrema_ExtCC.cxx:188-189`、`Extrema_GGExtPC.hxx:123,160-181`）。",
+  },
 ];
 
 // 语义偏移残余（对照 specs/_audit/_index.md A 编号；位置/行号为 2026-10-13 工作树实测）

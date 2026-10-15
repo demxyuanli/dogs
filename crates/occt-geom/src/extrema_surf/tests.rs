@@ -85,7 +85,7 @@ use super::*;
             GpDir::new(1.0, 0.0, 0.0).unwrap(),
         ));
         let sphere = GeomSphere::new(unit_sphere());
-        let e = curve_surface_extrema(&line, &sphere);
+        let e = curve_surface_extrema(&line, &sphere).expect("Extrema_ExtCS done");
         assert!((e.distance - 2.0).abs() < 1e-9, "min {}", e.distance);
         assert!((e.p1.y() - 3.0).abs() < 1e-9 && e.p1.x().abs() < 1e-9, "curve point {e:?}");
         assert!((e.p2.x() - 0.0).abs() < 1e-9 && (e.p2.y() - 1.0).abs() < 1e-9, "surf point {e:?}");
@@ -99,7 +99,7 @@ use super::*;
             GpDir::new(0.0, 0.0, -1.0).unwrap(),
         ));
         let pl = GpPln::new(GpAx3::standard());
-        let e = curve_surface_extrema(&line, &GeomPlane::new(pl));
+        let e = curve_surface_extrema(&line, &GeomPlane::new(pl)).expect("Extrema_ExtCS done");
         assert!(e.distance.abs() < 1e-9, "line meets plane: {}", e.distance);
     }
 
@@ -166,7 +166,7 @@ use super::*;
     #[test]
     fn point_surface_extrema_dispatch_sphere() {
         let sphere = GeomSphere::new(unit_sphere());
-        let e = point_surface_extrema(&sphere, &GpPnt::new(3.0, 0.0, 0.0));
+        let e = point_surface_extrema(&sphere, &GpPnt::new(3.0, 0.0, 0.0)).expect("Extrema_ExtPS done");
         assert!((e.distance - 2.0).abs() < 1e-9, "min {}", e.distance);
     }
 

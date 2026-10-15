@@ -255,8 +255,17 @@ impl BeanFaceIntersector {
                 continue;
             }
 
-            let mut solution_found = false;
+            // `Extrema_ExtCS::Perform(aGACurve, anarg1, anarg2)` guard
+            // (`IntTools_BeanFaceIntersector.cxx:956`): OCCT only computes a
+            // range when the extrema run is done *and* produced points. With no
+            // extremum at all the whole block is skipped, so neither a range nor
+            // the range flag is touched here and the loop advances by one.
             let exts = curve_surface_extrema_all(self.curve(), self.surface());
+            if exts.is_empty() {
+                i += 1;
+                continue;
+            }
+            let mut solution_found = false;
             let mut candidates: Vec<(f64, f64, f64)> = Vec::new();
             for e in &exts {
                 self.min_sq_distance = self.min_sq_distance.min(e.distance * e.distance);
@@ -274,34 +283,13 @@ impl BeanFaceIntersector {
                 candidates.push((e.u1, u, v));
             }
 
-            if candidates.is_empty() {
-                let e = occt_geom::extrema::curve_surface_extrema(self.curve(), self.surface(), 16);
-                self.min_sq_distance = self.min_sq_distance.min(e.distance * e.distance);
-                if e.distance * e.distance < self.criteria * self.criteria
-                    && e.u1 >= anarg1 - tol
-                    && e.u1 <= anarg2 + tol
-                {
-                    let u = e.u2;
-                    let v = e.v2.unwrap_or(0.0);
-                    if u >= self.umin && u <= self.umax && v >= self.vmin && v <= self.vmax {
-                        let n = self.range_manager.len();
-                        self.compute_range_from_start_point(false, e.u1, u, v);
-                        self.compute_range_from_start_point(true, e.u1, u, v);
-                        solution_found = true;
-                        if n == self.range_manager.len() {
-                            self.set_empty_result_range(e.u1);
-                        }
-                    }
-                }
-            } else {
-                for (t, u, v) in candidates {
-                    let n = self.range_manager.len();
-                    self.compute_range_from_start_point(false, t, u, v);
-                    self.compute_range_from_start_point(true, t, u, v);
-                    solution_found = true;
-                    if n == self.range_manager.len() {
-                        self.set_empty_result_range(t);
-                    }
+            for (t, u, v) in candidates {
+                let n = self.range_manager.len();
+                self.compute_range_from_start_point(false, t, u, v);
+                self.compute_range_from_start_point(true, t, u, v);
+                solution_found = true;
+                if n == self.range_manager.len() {
+                    self.set_empty_result_range(t);
                 }
             }
 

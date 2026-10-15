@@ -139,10 +139,16 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `ShrunkRange` <- `pave_shrunk.rs:87`, `pave_ff_se.rs:39`, `pave_common/mod.rs:51`.
 
 ### B6. `occt-geom` Extrema failure fabrication (live)
-- `extrema_ss.rs:449,506` and `extrema_surf/numeric_extrema.rs:153,374,433,514` fabricate a
-  `fallback_*` pair where OCCT returns `myDone = false` (`Extrema_ExtElSS.cxx:62-83`,
-  `Extrema_GGExtPC.hxx:531`). Live consumer `bean_face_exact.rs:259`.
-- Same family: `extrema_surf/analytic_solvers.rs:456,523,555,578` and
+- **B6a ✅ CLOSED 2026-10-15 (T-136, package P006).** `extrema_ss.rs:449,506` and
+  `extrema_surf/numeric_extrema.rs:153,374,433,514` fabricated a `fallback_*` pair where OCCT
+  returns `myDone = false`. All three fallbacks are deleted and the three minimum-distance
+  entries return `Option<ExtremaPair>` (`None` = `!IsDone()` / `NbExt() == 0`); the live consumer
+  `bean_face_exact.rs:259` now takes the real `IntTools_BeanFaceIntersector.cxx:956` guard
+  (not done => block skipped, no range flag) instead of the fabricated pair. cxx:
+  `Extrema_ExtPS.cxx:307-371`, `Extrema_ExtCS.cxx:122,532`, `Extrema_ExtSS.cxx:226-260`,
+  `Extrema_ExtElSS.cxx:62-83`, `Extrema_GGExtPC.hxx:531`. The prior registration claiming the
+  fallbacks had to stay for their consumer and were gated on T-67 was false.
+- **B6b OPEN** — same family: `extrema_surf/analytic_solvers.rs:456,523,555,578` and
   `occt-geom2d/extrema2d/analytic_solvers.rs:464,489,502,605,628` classify by sampling
   (8x8 plane, circumcentre sphere, 6-point tangent, `span/0.1` grid) instead of
   `GetType()`/`gp_*` downcast (`Extrema_ExtCC.cxx:188-189`, `Extrema_GGExtPC.hxx:123,160-181`).
@@ -207,7 +213,12 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `brepfeat/features.rs:326-370`, `brep_class3d` probe half is closed. B3 closed in T-134.
   B4 closed in T-135 (its `face_sample_point` family and the sampled point-vs-solid classifiers in
   `builder_solid.rs` / `draft_solid.rs` / `bop_build_solids.rs` are gone; the only survivor is the
-  port-only `bop_build_solids::face_sample_point` feeding `orient_face_outward`).
+  port-only `bop_build_solids::face_sample_point` feeding `orient_face_outward`). B6a closed in
+  T-136 (the three fabricated Extrema `fallback_*` pairs in `extrema_surf/numeric_extrema.rs` and
+  `extrema_ss.rs` are deleted; the minimum-distance entries propagate `!IsDone()` / `NbExt() == 0`
+  as `None`, and `bean_face_exact::ComputeUsingExtremum` takes the `IntTools_BeanFaceIntersector.cxx:956`
+  guard instead of a fabricated pair). B6b (the two `extrema2d`/`extrema_surf` `analytic_solvers`
+  sampling classifier families) is still open.
 - Self-invented engines with no OCCT counterpart and no production caller: `boolean_ops.rs:173`
   (+`:206/:211/:216/:280`), `solid_union.rs` voxel union.
 
@@ -219,7 +230,9 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `aTV` from `vertex_parameter_on_face`. High confidence, 3 cxx arms, no new predicate.
 2. ~~**B2** `pc_curve_kind` -> `Geom2dAdaptor_Curve::GetType()` equivalent. 4 call sites, touches
    bbox/pcurve bounds.~~ **DONE 2026-10-15 (T-132, package P002).**
-3. **B6** Extrema failure fabrication + analytic-solver sampling. Larger, touches `bean_face_exact`.
+3. **B6b** Extrema analytic-solver sampling classifiers (the B6a half, the fabricated `fallback_*`
+   pairs, closed 2026-10-15 as T-136 / P006). Still open: the sampling classifiers in the two
+   `analytic_solvers.rs` files; touches `bean_face_exact`'s neighbours, Scout first.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~

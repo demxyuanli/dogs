@@ -62,7 +62,7 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - 影响：改几何结果。曲线自交时返回正距离而非"未完成"，调用方无法区分
 - 建议：删全部 `fallback_*`/黄金分割/坐标下降，按 OCCT 传 done
 
-- **处置（◐ 主体已修）**：批 17 起 `extrema_pc::{point_curve_extrema,point_curve_max_extrema}` 与 `extrema_cc::curve_curve_extrema` 改为 `Option<ExtremaPair>`（`None` = OCCT 的 `IsDone()==false`），黄金分割兜底与 16×16 伪造对删除；**曲面族**（`extrema_surf`/`extrema_ss` 的 `fallback_*`）就地标 **UNPORTED**（OCCT 抛 `Standard_NotImplemented`/置 done=false），因有生产消费方而暂留。
+- **处置（✅ 已完成：批 17 + T-136）**：批 17 起 `extrema_pc::{point_curve_extrema,point_curve_max_extrema}` 与 `extrema_cc::curve_curve_extrema` 改为 `Option<ExtremaPair>`（`None` = OCCT 的 `IsDone()==false`），黄金分割兜底与 16×16 伪造对删除；**曲面族已于 T-136（2026-10-15，包 P006）收口** —— `extrema_surf/numeric_extrema.rs` 的 `fallback_point_surface`（40×40 栅格 + 坐标下降）、`fallback_curve_surface`（20×16×16 栅格）与 `extrema_ss.rs` 的 `fallback_ss`（12⁴ 栅格）整体删除，`point_surface_extrema`/`curve_surface_extrema`/`surface_surface_extrema` 改返回 `Option<ExtremaPair>`（`None` = `!IsDone()` 或 `NbExt() == 0`；`Extrema_ExtPS.cxx:307-371`、`Extrema_ExtCS.cxx:122,532`、`Extrema_ExtSS.cxx:226-260`），消费方 `bean_face_exact::ComputeUsingExtremum` 回到 `IntTools_BeanFaceIntersector.cxx:956` 的守卫（未 done 即整块跳过、不置 range flag，`SetFlag(i,1)` 只在 done 且无解时，`cxx:1070`）。此前"因有生产消费方而暂留、移除需先做 T-67"的登记不成立：该消费方本身走的就是未 done 分支。门禁：`--all-targets` 0 error、`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 且 v/f 逐位一致。
 
 ### 6. `convert_bspl.rs::comp_curve_to_bspline` 把真 B 样条拼接降级为 1 次折线插值
 - 判定：自创
@@ -103,7 +103,7 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 - 影响：改几何结果（近似圆/浅弧可能进错分支）
 - 建议：`Curve` trait 已有 `is_line()/gp_circ()/gp_ellipse()/circle_radius()`（`curve.rs:34-50`），直接用于分派并删采样分类器
 
-- **处置（✅ 已完成）**：`Curve` trait 的 `is_line()`/`gp_circ()`/`gp_ellipse()` 类型查询已作为唯一分派依据；`classify_curve`（STEP 曲线族采样器）随 T-39 整体删除，`brep_surface::classify_surface` 随 T-72 改为 `GeomAdaptor_Surface::Load` 的精确类判定（详见 `_index.md` A3 / A24 / A30）。
+- **处置（◐ 主体已完成，余项即 T001 的 B6b）**：`Curve` trait 的 `is_line()`/`gp_circ()`/`gp_ellipse()` 类型查询已作为唯一分派依据；`classify_curve`（STEP 曲线族采样器）随 T-39 整体删除，`brep_surface::classify_surface` 随 T-72 改为 `GeomAdaptor_Surface::Load` 的精确类判定（详见 `_index.md` A3 / A24 / A30）。**仍未改（occt-geom 内部、与上列 topo 侧同名但不同函数）**：`extrema_surf/analytic_solvers.rs` 的 `is_planar`(`:456`，8×8 采样法向并行判)、`sphere_center`(`:523`，中纬度三点外心)、`classify_plane`(`:537`)、`classify_sphere`(`:555`，8×8 残差判)、`is_line`(`:578`，6 点切向)，以及 `extrema2d/analytic_solvers.rs` 的对应族（`:464,489,502,605,628`；`span/0.1` 栅格）；它们服务 `extrema_ss::surface_surface_extrema_all` 的球/平面快路径与 `extrema_surf::curve_surface_extrema_all` 的线/球/平面臂，应改走 trait 的 `gp_sphere()`/`gp_pln()`/`is_line()`（`Extrema_ExtCC.cxx:188-189`、`Extrema_GGExtPC.hxx:123,160-181`）。见 `_tasks.md` T-136 第 (6) 条。
 
 ### 11. 解析圆锥曲线的 D2 未移植：双曲线/抛物线静默返回零向量
 - 判定：等价替换未登记（未移植臂静默给默认值）

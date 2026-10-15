@@ -215,6 +215,8 @@ pub fn closest_point_on_face(face: &Face, p: &GpPnt, _nu: usize, _nv: usize) -> 
         Some(w) => w,
         None => return ((0.0, 0.0), GpPnt::zero()),
     };
+    // `Extrema_ExtPS` on the surface; `None` is `!IsDone()` (no extremum at
+    // all), which leaves only the boundary-edge candidates below.
     let e = point_surface_extrema(&*surface, p);
     // The analytic solver reports its own parameter frame (a plane is
     // reconstructed with arbitrary X/Y axes), so take its frame-independent
@@ -224,16 +226,18 @@ pub fn closest_point_on_face(face: &Face, p: &GpPnt, _nu: usize, _nv: usize) -> 
     let mut best_v = v1;
     let mut best_p = surface.d0(best_u, best_v);
     let mut best_d = best_p.square_distance(p);
-    let (pu, pv) = project_to_surface(&surface, &e.p2);
-    let pu = pu.clamp(u1, u2);
-    let pv = pv.clamp(v1, v2);
-    let q = surface.d0(pu, pv);
-    let d = q.square_distance(p);
-    if d < best_d {
-        best_d = d;
-        best_u = pu;
-        best_v = pv;
-        best_p = q;
+    if let Some(e) = e {
+        let (pu, pv) = project_to_surface(&surface, &e.p2);
+        let pu = pu.clamp(u1, u2);
+        let pv = pv.clamp(v1, v2);
+        let q = surface.d0(pu, pv);
+        let d = q.square_distance(p);
+        if d < best_d {
+            best_d = d;
+            best_u = pu;
+            best_v = pv;
+            best_p = q;
+        }
     }
     for edge in face_boundary_edges(face) {
         let (_, q) = closest_point_on_edge(&edge, p, 0);

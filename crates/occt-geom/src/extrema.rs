@@ -90,18 +90,25 @@ pub fn curve_curve_extrema(c1: &dyn Curve, c2: &dyn Curve, _samples: usize) -> V
 
 /// Minimum distance between a curve and a surface.
 /// `samples` is kept for signature compatibility.
-pub fn curve_surface_extrema(c: &dyn Curve, s: &dyn Surface, _samples: usize) -> ExtremaPair {
+/// `None` = `Extrema_ExtCS::IsDone() == false` or `NbExt() == 0`.
+pub fn curve_surface_extrema(c: &dyn Curve, s: &dyn Surface, _samples: usize) -> Option<ExtremaPair> {
     crate::extrema_surf::curve_surface_extrema(c, s)
 }
 
 /// Minimum distance between two surfaces.
 /// `samples` is kept for signature compatibility.
-pub fn surface_surface_extrema(s1: &dyn Surface, s2: &dyn Surface, _samples: usize) -> ExtremaPair {
+/// `None` = `Extrema_ExtSS::IsDone() == false` or `NbExt() == 0`.
+pub fn surface_surface_extrema(
+    s1: &dyn Surface,
+    s2: &dyn Surface,
+    _samples: usize,
+) -> Option<ExtremaPair> {
     crate::extrema_ss::surface_surface_extrema(s1, s2)
 }
 
 /// Minimum distance from point `p` to surface `s` (with the closest point).
-pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> ExtremaPair {
+/// `None` = `Extrema_ExtPS::IsDone() == false` or `NbExt() == 0`.
+pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> Option<ExtremaPair> {
     crate::extrema_surf::point_surface_extrema(s, p)
 }
 
@@ -161,14 +168,14 @@ mod tests {
         // Line at y=3, sphere radius 1 at origin → min distance 2.
         let line = line(GpPnt::new(0.0, 3.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap());
         let sphere = sphere(1.0);
-        let e = curve_surface_extrema(&line, &sphere, 16);
+        let e = curve_surface_extrema(&line, &sphere, 16).expect("Extrema_ExtCS done");
         assert!((e.distance - 2.0).abs() < 1e-4, "min {}", e.distance);
     }
 
     #[test]
     fn point_surface_sphere() {
         let sphere = sphere(1.0);
-        let e = point_surface_extrema(&sphere, &GpPnt::new(3.0, 0.0, 0.0));
+        let e = point_surface_extrema(&sphere, &GpPnt::new(3.0, 0.0, 0.0)).expect("Extrema_ExtPS done");
         assert!((e.distance - 2.0).abs() < 1e-5, "min {}", e.distance);
     }
 
@@ -177,7 +184,7 @@ mod tests {
         let ax = GpAx3::standard();
         let p1 = GeomPlane::new(GpPln::new(ax.clone()));
         let p2 = GeomPlane::new(GpPln::new(ax));
-        let e = surface_surface_extrema(&p1, &p2, 3);
+        let e = surface_surface_extrema(&p1, &p2, 3).expect("Extrema_ExtSS done");
         assert!(e.distance.abs() < 1e-6, "coincident planes {}", e.distance);
     }
 
@@ -188,7 +195,7 @@ mod tests {
         let mut pl = GpPln::new(ax);
         pl.set_location(&GpPnt::new(0.0, 0.0, 5.0));
         let plane = GeomPlane::new(pl);
-        let e = surface_surface_extrema(&sphere, &plane, 4);
+        let e = surface_surface_extrema(&sphere, &plane, 4).expect("Extrema_ExtSS done");
         assert!((e.distance - 4.0).abs() < 1e-4, "min {}", e.distance);
     }
 

@@ -544,6 +544,7 @@ pub fn extrema_point_surface_exact(s: &dyn Surface, p: GpPnt) -> Result<ExtremaP
         SurfaceKind::Cylinder => extrema_point_cylinder(s, p),
         SurfaceKind::Cone => extrema_point_cone(s, p),
         SurfaceKind::Torus => extrema_point_torus(s, p),
-        SurfaceKind::Other => Ok(point_surface_extrema(s, &p)),
+        SurfaceKind::Other => point_surface_extrema(s, &p)
+            .ok_or_else(|| "extrema: point-surface search found no extremum".to_string()),
     }
 }

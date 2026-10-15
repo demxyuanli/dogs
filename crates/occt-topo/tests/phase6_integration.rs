@@ -54,12 +54,12 @@ fn geom_extrema_distances() {
     // Curve–surface: line y=3 vs unit sphere at origin → 2.
     let sphere = GeomSphere::new(occt_core::gp::GpSphere::new(GpAx3::standard(), 1.0).unwrap());
     let l2 = make_line(GpPnt::new(0.0, 3.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap());
-    let cs = curve_surface_extrema(&l2, &sphere, 16);
+    let cs = curve_surface_extrema(&l2, &sphere, 16).expect("Extrema_ExtCS done");
     assert!((cs.distance - 2.0).abs() < 1e-4, "curve-surface {}", cs.distance);
 
     // Surface–surface: sphere vs plane z=5 → 4.
     let plane = plane_at(5.0);
-    let ss = surface_surface_extrema(&sphere, &plane, 4);
+    let ss = surface_surface_extrema(&sphere, &plane, 4).expect("Extrema_ExtSS done");
     assert!((ss.distance - 4.0).abs() < 1e-4, "surface-surface {}", ss.distance);
 }
 
