@@ -31,3 +31,6 @@ data/output2/
 /_*.obj
 /_*/
 crates/occt-topo/_*.txt
+# zz_* scratch traces/tests dumped at the repo root
+/zz_*.txt
+/zz_*.obj

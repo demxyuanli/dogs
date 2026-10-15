@@ -114,6 +114,26 @@ impl Curve2d for ReparamCurve2d {
     fn offset_basis(&self) -> Option<&dyn Curve2d> {
         self.inner.offset_basis()
     }
+    /// `Geom2dAdaptor_Curve::Resolution` in this wrapper's parameter space.
+    ///
+    /// `GeomLib::SameRange` keeps the parameterization for a line (it only
+    /// translates the line, `GeomLib.cxx:866-870`) and for a circle (it only
+    /// rotates it, `:871-889`), so for those `scale = ±1` and the inner answer
+    /// carries over unchanged. Every other kind is converted to a
+    /// `Geom2d_BSplineCurve` and `BSplCLib::Reparametrize`d onto `[a, b]`
+    /// (`:908-921`, `:924-969`), which divides a parameter increment by the
+    /// `scale` factor of this map. Without this override the wrapper would fall
+    /// back to the `Precision::Parametric` default and under-step by orders of
+    /// magnitude on a reparameterized conic or Bezier pcurve.
+    fn resolution(&self, ruv: f64) -> f64 {
+        let s = self.scale();
+        let res = self.inner.resolution(ruv);
+        if s.abs() <= 1e-30 {
+            res
+        } else {
+            res / s.abs()
+        }
+    }
 }
 
 /// The `Geom2d_BSplineCurve` `GeomLib::SameRange` returns for a B-spline input

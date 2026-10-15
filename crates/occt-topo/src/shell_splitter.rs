@@ -12,7 +12,10 @@
 
 use std::collections::{HashMap, HashSet};
 
+use occt_core::gp::GpVec;
+
 use crate::abs::Orientation;
+use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::connexity_block::ConnexityBlock;
 use crate::shape::{Edge, Face, Shell, TopoShape, Vertex};
@@ -76,6 +79,38 @@ pub(crate) fn edge_traversal(e: &Edge) -> Option<(VKey, VKey)> {
         Orientation::Reversed => Some((kb, ka)),
         _ => None,
     }
+}
+
+/// Direction the curve is travelled at the edge's first parameter.
+///
+/// `BOPTools_AlgoTools2D::EdgeTangent` (`BOPTools_AlgoTools2D.cxx:74-103`): the
+/// curve tangent at `theT`, normalized and reversed for a REVERSED view.
+fn edge_start_tangent(e: &Edge) -> Option<GpVec> {
+    let (t1, _) = BRepTool::edge_parameters(e);
+    crate::algo_tools3d::edge_tangent_3d(e, t1)
+}
+
+/// Whether the two views traverse their shared geometric edge the same way.
+///
+/// OCCT compares the orientations of the one shared `TopoDS_Edge`
+/// (`BOPTools_AlgoTools::GetEdgeOff`, `BOPTools_AlgoTools.cxx:1115-1123`;
+/// `GetFaceOff`, `:1051`; `RefineShell`, `BOPAlgo_ShellSplitter.cxx:475-482`).
+/// This port identifies edges geometrically ([`edge_key`]) and two views of one
+/// segment may be different `TopoDS_Edge`s with opposite vertex order, so the
+/// traversal itself is compared ([`edge_traversal`]). A closed ring carries no
+/// traversal in its endpoints (both collapse to one [`VKey`]), so its views are
+/// compared by the direction the curve is travelled at that shared point —
+/// `edge_traversal` returns the same degenerate pair for every view of a ring
+/// and would report every pair of them as same-traversing.
+pub(crate) fn same_traversal(e1: &Edge, e2: &Edge) -> Option<bool> {
+    let (a, b) = edge_vertices(e1);
+    let (a, b) = (a?, b?);
+    if vertex_key(&a) != vertex_key(&b) {
+        return Some(edge_traversal(e1)? == edge_traversal(e2)?);
+    }
+    let d1 = edge_start_tangent(e1)?;
+    let d2 = edge_start_tangent(e2)?;
+    Some(d1.dot(&d2) > 0.0)
 }
 
 /// Set of edge keys of a face (every distinct boundary edge).

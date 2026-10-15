@@ -375,7 +375,7 @@ pub(super) fn shape_axial_extent(shape: &TopoShape, ax: &GpVec) -> f64 {
 /// planar base face's area and the vertex extent along the base normal.
 pub(super) fn cone_radius_height(shape: &TopoShape) -> Option<(f64, f64)> {
     let faces = faces_of(shape);
-    let base = faces.iter().find(|f| face_is_planar(f))?;
+    let base = faces.iter().find(|f| face_is_plane_type(f))?;
     let pln = face_plane(base)?;
     let base_area = planar_face_area(base, &pln);
     if base_area <= 0.0 {
@@ -584,7 +584,7 @@ pub fn analytic_volume(shape: &TopoShape) -> Result<f64, String> {
     if faces.is_empty() {
         return Err("analytic_volume: shape has no faces".into());
     }
-    if faces.iter().all(face_is_planar) {
+    if faces.iter().all(face_is_plane_type) {
         if let Some(v) = polyhedron_volume(shape) {
             return Ok(v);
         }

@@ -29,7 +29,7 @@ use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::{Curve, Surface};
 
 use crate::bean_face::BeanFaceIntersector;
-use crate::brep_surface::{is_planar, SurfaceKind};
+use crate::brep_surface::{is_plane_type, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::fclass2d::{FaceState, FClass2d};
 use crate::edge_face_kind::*;
@@ -396,9 +396,15 @@ impl EdgeFace {
     /// Project a point onto the face surface: `(u, v, distance)`. Planar faces
     /// are projected analytically (exact distance); others use the grid+refine
     /// projector.
+    ///
+    /// The plane arm is `Extrema_ExtPS::Perform`'s `case GeomAbs_Plane`
+    /// (`Extrema_ExtPS.cxx:279-281`, analytic `Extrema_ExtPElS::Perform` on the
+    /// plane); the remaining types fall through to the numeric search. The
+    /// switch is on `GetType()`, so a geometrically flat B-spline patch takes
+    /// the numeric arm.
     fn project_point(&self, p: &GpPnt) -> (f64, f64, f64) {
         let surface = self.surface.clone().expect("surface set");
-        if is_planar(surface.as_ref(), 6, 6, 1e-6) {
+        if is_plane_type(surface.as_ref()) {
             plane_projection(surface.as_ref(), p)
         } else {
             // Faithful `IntTools_EdgeFace::DistanceFunction`

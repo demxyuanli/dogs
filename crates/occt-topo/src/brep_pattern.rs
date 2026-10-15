@@ -114,7 +114,7 @@ pub fn pattern_bbox(instances: &[PatternInstance]) -> Option<(GpPnt, GpPnt)> {
 pub fn pattern_volume(instances: &[PatternInstance]) -> f64 {
     instances
         .iter()
-        .map(|i| crate::shape_mesh::shape_volume(&i.shape, 0.05))
+        .map(|i| crate::brep_gprop::volume(&i.shape, 0.05))
         .sum()
 }
 
@@ -167,7 +167,7 @@ mod tests {
         assert_eq!(crate::topo_tools_full::shape_counts(&comp)[&crate::abs::ShapeType::Vertex], 16);
 
         let fused = pattern_fuse(&pat, 1e-6).expect("fuse");
-        let vol = crate::shape_mesh::shape_volume(&fused, 0.05);
+        let vol = crate::brep_gprop::volume(&fused, 0.05);
         // Mesh volume of planar-faced solids is deflection-sensitive;
         // the boolean itself is validated in bop_builder's own tests.
         assert!(vol > 1.2 && vol < 1.9, "fused volume {vol} (expect ~1.5)");

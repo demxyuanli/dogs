@@ -1,25 +1,24 @@
 //! Mass properties of a topological shape.
 //!
-//! Approximate port of `BRepGProp` (TKBRep): computes surface area, volume,
-//! centroid and density-weighted mass from the shape's geometry. The shape is
-//! first tessellated (via the local face-mesh fallback in [`crate::brep_extrema`]
-//! until `shape_mesh::mesh_shape` lands), then:
+//! `BRepGProp` (TKTopAlgo) entry points: surface area, volume, centroid and
+//! density-weighted mass. The integration itself is the exact `BRepGProp_Gauss`
+//! port in [`crate::brep_gprop_full`] (`SurfaceProperties` -> `BRepGProp_Sinert`
+//! / `BRepGProp_Gauss::Sinert`; `VolumeProperties` -> `BRepGProp_Vinert`), so
+//! area/volume/centroid no longer depend on a deflection or a face grid.
 //!
-//! * area — sum of triangle areas ([`crate::mesh::mesh_surface_area`]);
-//! * volume — signed tetrahedron sum about the origin, `|Σ (1/6)·p0·(p1×p2)|`
-//!   (reusing [`occt_core::gprop::inertia::compute_inertia`]);
-//! * centroid — volume-weighted average of tetrahedron centroids.
-//!
-//! Results are exact for planar faces and approximate for curved ones (the
-//! error shrinks as `deflection` decreases).
+//! The one fallback is the `NoSurf` arm of
+//! `BRepGProp::VolumeProperties` (`BRepGProp.cxx:344-360`): a face whose
+//! analytic integration cannot be built is taken from its triangulation through
+//! `BRepGProp_MeshProps`, here over the `BRepMesh` tessellation of
+//! [`crate::shape_mesh::mesh_shape`]. OCCT orders the same three-way test
+//! (`NoSurf`/`NoTri`/surface) per face; the port applies it per shape, so an
+//! integrator failure falls back to the triangulation for the whole shape.
 
 use occt_core::gp::GpPnt;
 use occt_core::gprop::centroid_of_points;
-use occt_core::gprop::inertia::compute_inertia;
-use occt_core::poly::triangulation::Triangle;
+use occt_core::poly::triangulation::{Triangle, Triangulation};
 
-use crate::brep_extrema::mesh_faces;
-use crate::mesh::{mesh_surface_area, ShapeMesh};
+use crate::brep_gprop_full::{mesh_props, surface_properties, volume_properties};
 use crate::shape::TopoShape;
 
 /// Mass properties of a shape (or point set).
@@ -34,32 +33,49 @@ pub struct MassProperties {
 /// Full mass properties of a closed solid: surface area, volume and centroid.
 ///
 /// `centroid_ok` is `false` when the shape has no measurable volume (open
-/// surface, empty, or degenerate mesh).
+/// surface, empty, or degenerate geometry).
 pub fn shape_mass_properties(shape: &TopoShape, deflection: f64) -> MassProperties {
-    let mesh = mesh_shape(shape, deflection);
-    let area = mesh_surface_area(&mesh);
-    let tris: Vec<(usize, usize, usize)> = mesh
-        .triangles
-        .iter()
-        .map(|t| (t.n0, t.n1, t.n2))
-        .collect();
-    let props = compute_inertia(&mesh.vertices, &tris, 1.0);
-    let volume = props.mass.abs();
-    let centroid_ok = volume > 1e-7;
+    // `BRepGProp::SurfaceProperties` / `VolumeProperties` over the analytic
+    // boundary: exact, no deflection.
+    if let (Ok(v), Ok((s, _))) = (volume_properties(shape), surface_properties(shape)) {
+        let volume = v.mass().abs();
+        return MassProperties {
+            volume,
+            area: s.mass().abs(),
+            center: v.center(),
+            centroid_ok: volume > 1e-7,
+        };
+    }
+    mesh_mass_properties(shape, deflection)
+}
+
+/// `BRepGProp_MeshProps` arm (`BRepGProp.cxx:359`): the properties of a shape
+/// whose faces carry no integrable surface come from its triangulation.
+fn mesh_mass_properties(shape: &TopoShape, deflection: f64) -> MassProperties {
+    let m = crate::shape_mesh::mesh_shape(shape, deflection);
+    let tri = Triangulation::new(m.vertices.clone(), m.triangles.iter().copied().collect::<Vec<Triangle>>());
+    let origin = GpPnt::zero();
+    let v = mesh_props(&tri, &origin, false, true);
+    let s = mesh_props(&tri, &origin, false, false);
+    let volume = v.mass().abs();
     MassProperties {
         volume,
-        area,
-        center: props.center,
-        centroid_ok,
+        area: s.mass().abs(),
+        center: v.center(),
+        centroid_ok: volume > 1e-7,
     }
 }
 
-/// Surface area of a shape, from its tessellation.
+/// Surface area of a shape, from the exact boundary integration
+/// (`BRepGProp::SurfaceProperties`); `deflection` only reaches the
+/// triangulation fallback.
 pub fn surface_area(shape: &TopoShape, deflection: f64) -> f64 {
-    mesh_surface_area(&mesh_shape(shape, deflection))
+    shape_mass_properties(shape, deflection).area
 }
 
-/// Volume of a closed solid, from its tessellation.
+/// Volume of a closed solid, from the exact boundary integration
+/// (`BRepGProp::VolumeProperties`); `deflection` only reaches the
+/// triangulation fallback.
 pub fn volume(shape: &TopoShape, deflection: f64) -> f64 {
     shape_mass_properties(shape, deflection).volume
 }
@@ -86,29 +102,6 @@ pub fn point_mass_properties(points: &[GpPnt]) -> MassProperties {
         area: 0.0,
         center: centroid_of_points(points),
         centroid_ok: false,
-    }
-}
-
-/// Tessellate a shape into a triangle mesh.
-///
-/// Uses the local face-grid fallback from `brep_extrema`. When
-/// `shape_mesh::mesh_shape` is completed by the concurrent agent, this body
-/// can be swapped to delegate to it.
-fn mesh_shape(shape: &TopoShape, deflection: f64) -> ShapeMesh {
-    let n = ((1.0 / deflection.max(1e-4)).ceil() as usize).clamp(1, 32);
-    let mut vertices: Vec<GpPnt> = Vec::new();
-    let mut triangles: Vec<Triangle> = Vec::new();
-    for (fv, ft) in mesh_faces(shape, n, n) {
-        let base = vertices.len();
-        vertices.extend(fv);
-        for (a, b, c) in ft {
-            triangles.push(Triangle::new(base + a, base + b, base + c));
-        }
-    }
-    ShapeMesh {
-        vertices,
-        triangles,
-        source_shape: shape.shape_type(),
     }
 }
 

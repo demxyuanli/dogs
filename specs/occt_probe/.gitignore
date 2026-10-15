@@ -7,6 +7,10 @@ wires_probe.exe
 wires_probe.obj
 wires_probe.exp
 wires_probe.lib
+bop_split_probe.exe
+bop_split_probe.obj
+bop_split_probe.exp
+bop_split_probe.lib
 *.pdb
 
 # local OCCT-side debug build (patched ComposeShell copy)

@@ -1,7 +1,7 @@
 //! 2D Bezier curve (rational and non-rational). Source: `Geom2d_BezierCurve.hxx`
 
 use crate::curve::Curve2d;
-use occt_core::gp::{GpPnt2d, GpTrsf2d, GpVec2d};
+use occt_core::gp::{GpPnt, GpPnt2d, GpTrsf2d, GpVec2d};
 
 /// 2D Bezier curve. Non-rational when `weights` is `None`, rational otherwise.
 /// Parameter range is `[0, 1]`; degree = `poles.len() - 1`.
@@ -322,6 +322,35 @@ impl Curve2d for Geom2dBezierCurve {
     /// `Geom2d_BezierCurve::Weights()`.
     fn bezier_weights2d(&self) -> Option<&[f64]> {
         self.weights.as_deref()
+    }
+
+    /// `Geom2dAdaptor_Curve::Resolution`'s `GeomAbs_BezierCurve` arm
+    /// (`Geom2dAdaptor_Curve.cxx:1206-1210`) -> `Geom2d_BezierCurve::Resolution`
+    /// (`Geom2d_BezierCurve.cxx:743-760`), which is
+    /// `BSplCLib::Resolution(poles, weights, nbpoles, KnotSequence(), degree, 1., inv)`
+    /// scaled by the tolerance. Poles are lifted to `z = 0` (the shared
+    /// `BSplCLib::Resolution` is dim-3, as in `Geom2dBSplineCurve::resolution`),
+    /// and the Bezier knot sequence is `deg+1` zeros followed by `deg+1` ones.
+    fn resolution(&self, ruv: f64) -> f64 {
+        let n = self.poles.len();
+        let poles: Vec<GpPnt> = self
+            .poles
+            .iter()
+            .map(|p| GpPnt::new(p.x(), p.y(), 0.0))
+            .collect();
+        if n < 2 {
+            return occt_core::bspl::bspline_curve_resolution(&poles, None, &[], 0, ruv);
+        }
+        let degree = (n - 1) as i32;
+        let mut flat_knots = vec![0.0; n];
+        flat_knots.extend(std::iter::repeat(1.0).take(n));
+        occt_core::bspl::bspline_curve_resolution(
+            &poles,
+            self.weights.as_deref(),
+            &flat_knots,
+            degree,
+            ruv,
+        )
     }
 }
 

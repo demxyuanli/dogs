@@ -40,7 +40,7 @@ pub(crate) use occt_math::eigen_ext::jacobi_eigen_symmetric;
 pub(crate) use occt_math::{integrate, MathMatrix};
 
 pub(crate) use crate::brep_surface::{
-    classify_surface, face_is_planar, face_plane, sphere_center, surface_normal, SurfaceKind,
+    classify_surface, face_is_plane_type, face_plane, sphere_center, surface_normal, SurfaceKind,
 };
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::shape::{Edge, Face, TopoShape};

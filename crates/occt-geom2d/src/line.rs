@@ -57,4 +57,7 @@ impl Curve2d for Geom2dLine {
     fn is_line(&self) -> bool { true }
     fn is_geom2d_line(&self) -> bool { true }
     fn gp_lin2d(&self) -> Option<GpLin2d> { Some(self.pos) }
+    /// `Geom2dAdaptor_Curve::Resolution`'s `GeomAbs_Line` arm
+    /// (`Geom2dAdaptor_Curve.cxx:1190-1191`).
+    fn resolution(&self, ruv: f64) -> f64 { ruv }
 }

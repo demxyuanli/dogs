@@ -86,8 +86,9 @@ pub fn ellipse_length_ramanujan(a: f64, b: f64) -> f64 {
 /// * circle — `radius · |b − a|` (the `GeomCircle` parameter is in radians);
 /// * ellipse / other bounded planar curve — Gauss-Legendre quadrature of the
 ///   tangent speed (the elliptic integral of the second kind);
-/// * anything else (B-spline, helix, …) — chord-length sampling via
-///   [`crate::brep_measure::edge_length`].
+/// * anything else (B-spline, helix, …) — the `BRepGProp::LinearProperties`
+///   Gauss integral via [`crate::brep_measure::edge_length`] (order 10 from
+///   `BRepGProp_EdgeTool::IntegrationOrder`).
 pub(super) fn exact_edge_length(e: &Edge) -> f64 {
     let Some(curve) = BRepTool::edge_curve(e) else { return 0.0 };
     let (a, b) = BRepTool::edge_parameters(e);
@@ -98,19 +99,20 @@ pub(super) fn exact_edge_length(e: &Edge) -> f64 {
         CurveKind::Line => curve.d0(a).distance(&curve.d0(b)),
         CurveKind::Circle => match circle_radius(curve.as_ref(), a, b) {
             Some(r) => r * (b - a),
-            None => crate::brep_measure::edge_length(e, 32),
+            None => crate::brep_measure::edge_length(e),
         },
         CurveKind::Ellipse => {
             let speed = |t: f64| curve.d1(t).1.magnitude();
             integrate(&speed, a, b, 24)
         }
-        CurveKind::Other => crate::brep_measure::edge_length(e, 32),
+        CurveKind::Other => crate::brep_measure::edge_length(e),
     }
 }
 
 /// Exact arc length of a single edge: line/circle are computed in closed form,
-/// an ellipse by Gauss-Legendre quadrature, and anything else by chord-length
-/// sampling. See [`classify_curve`] for the classification rules.
+/// an ellipse by Gauss-Legendre quadrature, and anything else by the
+/// `BRepGProp::LinearProperties` Gauss integral. See [`classify_curve`] for the
+/// classification rules.
 pub fn edge_length_exact(e: &Edge) -> f64 {
     exact_edge_length(e)
 }

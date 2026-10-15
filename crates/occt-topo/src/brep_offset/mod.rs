@@ -6,13 +6,13 @@ mod prelude {
 pub(crate) use std::collections::HashMap;
 pub(crate) use std::sync::Arc;
 
-pub(crate) use occt_core::gp::{GpAx2, GpAx3, GpCirc, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpVec, GpXyz};
+pub(crate) use occt_core::gp::{GpAx2, GpAx3, GpCirc, GpCylinder, GpPln, GpPnt, GpSphere, GpVec, GpXyz};
 pub(crate) use occt_geom::surface_fit::fit_plane;
 pub(crate) use occt_geom::{Curve, GeomCircle, GeomCylinder, GeomPlane, GeomSphere, Surface};
 
 pub(crate) use crate::abs::ShapeType;
 pub(crate) use crate::brep_builder_api::make_edge_arc;
-pub(crate) use crate::brep_surface::{face_is_planar, face_plane, is_planar, sphere_center, surface_normal};
+pub(crate) use crate::brep_surface::{face_is_plane_type, face_plane};
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
@@ -22,8 +22,10 @@ pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, verti
 }
 
 
+mod brep_offset_surface;
 mod curve_face_offset;
 mod shell_offset;
+pub use brep_offset_surface::*;
 pub use curve_face_offset::*;
 pub use shell_offset::*;
 

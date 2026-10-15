@@ -16,7 +16,7 @@ use crate::algo_tools_range::{
 use crate::bopalgo_tools::{fill_map_pb_face, perform_common_blocks_faces, trsf_to_point, PbFaceListMap};
 use crate::bbox_from_geometry::shape_bbox;
 use crate::bopds::{BopdsDS, BopdsPaveBlock};
-use crate::brep_surface::face_is_planar;
+use crate::brep_surface::face_is_plane_type;
 use crate::brep_tool::BRepTool;
 use crate::edge_face::EdgeFace;
 use crate::int_tools_full::IntToolsContext;
@@ -226,7 +226,7 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
         let a_r1 = IntRange::new_unchecked(task.t1, a_ts1);
         let a_r2 = IntRange::new_unchecked(a_ts2, task.t2);
         let (a_mif_on, a_mif_in) = face_paves_on_in(f.ds(), task.n_f);
-        let b_line_plane = curve_is_line_edge(&a_e) && face_is_planar(&a_f);
+        let b_line_plane = curve_is_line_edge(&a_e) && face_is_plane_type(&a_f);
         let b_splittable = task.pb.is_splittable();
 
         for cp in cps.iter() {

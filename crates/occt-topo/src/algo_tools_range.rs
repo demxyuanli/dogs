@@ -142,36 +142,27 @@ pub fn make_vertex_from_list(a_lvsd: &[TopoShape]) -> Result<TopoShape, String> 
     AlgoTools::make_new_vertex(&p, tol + D_TOLERANCE)
 }
 
-/// True when the curve is a straight line (sampled collinearity).
-fn curve_is_line(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() || (b - a).abs() <= 1e-15 {
-        return false;
-    }
-    let p0 = c.d0(a);
-    let p1 = c.d0(0.5 * (a + b));
-    let p2 = c.d0(b);
-    let v1 = occt_core::gp::GpVec::from_pnts(&p0, &p1);
-    let v2 = occt_core::gp::GpVec::from_pnts(&p0, &p2);
-    let m = v1.crossed(&v2).magnitude();
-    let scale = v1.magnitude() * v2.magnitude();
-    m < 1e-6 * scale.max(1e-12)
-}
-
-/// True when the curve is a free-form type that uses D1 for range correction.
+/// `aCT == GeomAbs_BezierCurve || aCT == GeomAbs_BSplineCurve ||
+/// aCT == GeomAbs_OffsetCurve || aCT == GeomAbs_OtherCurve`
+/// (`BOPTools_AlgoTools_2.cxx:318-319`, `:392-393`).
+///
+/// This is `GeomAdaptor_Curve::load`'s type tag (`GeomAdaptor_Curve.cxx:250-311`):
+/// a `Geom_TrimmedCurve` recurses to its basis, Bezier/B-spline are reported by
+/// [`Curve::nurbs_degree`], a `Geom_OffsetCurve` by [`Curve::offset_curve`], and
+/// everything that is none of the seven concrete classes - the `else` arm
+/// `myTypeCurve = GeomAbs_OtherCurve` - is `OtherCurve`.
+///
+/// The previous body tested `!curve_is_line` (a 3-point sampled collinearity
+/// test), which also swept the circle, ellipse, parabola and hyperbola classes
+/// into the derivative path; OCCT sends those through `aBC.Resolution` instead.
 fn curve_is_freeform(c: &dyn Curve) -> bool {
-    !curve_is_line(c)
-}
-
-/// Approximate `BRepAdaptor_Curve::Resolution(res)` as `res / |D1|`.
-fn curve_resolution(c: &dyn Curve, t: f64, res: f64) -> f64 {
-    let (_, der) = c.d1(t);
-    let mgn = der.magnitude();
-    if mgn > 1.0e-12 {
-        res / mgn
-    } else {
-        res
-    }
+    c.nurbs_degree().is_some()
+        || c.offset_curve().is_some()
+        || !(c.is_line()
+            || c.gp_circ().is_some()
+            || c.gp_ellipse().is_some()
+            || c.gp_parabola().is_some()
+            || c.gp_hyperbola().is_some())
 }
 
 /// `BOPTools_AlgoTools::CorrectRange` (edge / edge).
@@ -180,7 +171,7 @@ pub fn correct_range_ee(a_e1: &Edge, a_e2: &Edge, a_sr: IntRange) -> IntRange {
     let Some(c) = BRepTool::edge_curve(a_e1) else {
         return a_new_sr;
     };
-    if curve_is_line(c.as_ref()) {
+    if c.is_line() {
         return a_new_sr;
     }
     let d_t = PCONFUSION;
@@ -198,11 +189,10 @@ pub fn correct_range_ee(a_e1: &Edge, a_e2: &Edge, a_sr: IntRange) -> IntRange {
             if a_mgn > 1.0e-12 {
                 a_res /= a_mgn;
             } else {
-                a_res = curve_resolution(c.as_ref(), t, a_res);
+                a_res = c.resolution(a_res);
             }
         } else {
-            let t = if i == 0 { a_tf } else { a_tl };
-            a_res = curve_resolution(c.as_ref(), t, a_res);
+            a_res = c.resolution(a_res);
         }
         if i == 0 {
             a_new_sr.first = a_tf + a_res;
@@ -226,7 +216,7 @@ pub fn correct_range_ef(a_e: &Edge, a_f: &Face, a_sr: IntRange) -> IntRange {
     let a_tf = a_sr.first;
     let a_tl = a_sr.last;
     let a_tol_f = BRepTool::face_tolerance(a_f);
-    let freeform = curve_is_freeform(c.as_ref()) && !curve_is_line(c.as_ref());
+    let freeform = curve_is_freeform(c.as_ref());
     for i in 0..2 {
         let mut a_res = a_tol_f;
         if freeform {
@@ -236,11 +226,10 @@ pub fn correct_range_ef(a_e: &Edge, a_f: &Face, a_sr: IntRange) -> IntRange {
             if a_mgn > 1.0e-12 {
                 a_res /= a_mgn;
             } else {
-                a_res = curve_resolution(c.as_ref(), t, a_res);
+                a_res = c.resolution(a_res);
             }
         } else {
-            let t = if i == 0 { a_tf } else { a_tl };
-            a_res = curve_resolution(c.as_ref(), t, a_res);
+            a_res = c.resolution(a_res);
         }
         if i == 0 {
             a_new_sr.first = a_tf + a_res;

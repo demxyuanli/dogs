@@ -116,6 +116,19 @@ pub trait Curve2d: Send + Sync {
             .max(1) as i32
     }
 
+    /// `Geom2dAdaptor_Curve::Resolution` (`Geom2dAdaptor_Curve.cxx:1186-1219`):
+    /// the parametric increment over which the curve moves at most `ruv`.
+    ///
+    /// Default `Precision::Parametric(Ruv) = Ruv * PConfusion / Confusion`, which
+    /// is OCCT's `default:` arm - the one `GeomAbs_OffsetCurve`,
+    /// `GeomAbs_Parabola`, `GeomAbs_Hyperbola` and `GeomAbs_OtherCurve` take.
+    /// The Circle / Ellipse / Bezier / B-spline arms are overridden per class;
+    /// a `Geom2d_TrimmedCurve` forwards to its basis, mirroring
+    /// `Geom2dAdaptor_Curve::load`'s recursion (`cxx:284-288`).
+    fn resolution(&self, ruv: f64) -> f64 {
+        ruv * occt_core::precision::PCONFUSION / occt_core::precision::CONFUSION
+    }
+
     /// `Geom2dAdaptor_Curve::GetType() == GeomAbs_Line`.
     fn is_line(&self) -> bool {
         false

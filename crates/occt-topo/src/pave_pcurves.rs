@@ -23,7 +23,7 @@ use occt_geom2d::curve::Curve2d;
 use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::D_TOLERANCE;
 use crate::boptools_2d::{attach_existing_pcurve, build_pcurve_for_edge_on_face, has_curve_on_surface};
-use crate::brep_surface::face_is_planar;
+use crate::brep_surface::face_is_plane_type;
 use crate::brep_tool::BRepTool;
 use crate::iterator::ShapeIterator;
 use crate::pave_blocks::PaveFillerLike;
@@ -193,9 +193,12 @@ fn pb_same(a: &crate::bopds::BopdsPaveBlock, b: &crate::bopds::BopdsPaveBlock) -
     crate::pave_ff_exist::pb_key(a) == crate::pave_ff_exist::pb_key(b)
 }
 
-/// `IsBasedOnPlane` (`BOPAlgo_PaveFiller_7.cxx:936`).
+/// `IsBasedOnPlane` (`BOPAlgo_PaveFiller_7.cxx:936`) — the face surface, or its
+/// basis when trimmed, is a `Geom_Plane`. Equivalent to
+/// [`face_is_plane_type`]: the C++ down-cast to `Geom_Plane` is exactly the
+/// `GeomAbs_Plane` adaptor type.
 pub fn is_based_on_plane(a_f: &Face) -> bool {
-    face_is_planar(a_f)
+    face_is_plane_type(a_f)
 }
 
 /// `BOPAlgo_PaveFiller::Prepare`.

@@ -191,7 +191,7 @@ pub fn sketch_area2d(sketch: &Sketch) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::brep_surface::face_is_planar;
+    use crate::brep_surface::face_is_plane_type;
     use crate::topo_tools_full::{edges_of_wire, vertex_position, vertices_of};
     use occt_core::gp::GpAx3;
 
@@ -231,7 +231,7 @@ mod tests {
         assert!((mx.x() - 1.0).abs() < 1e-12 && (mx.y() - 1.0).abs() < 1e-12);
 
         let face = sketch_to_face(&sketch, &plane).expect("face");
-        assert!(face_is_planar(&face));
+        assert!(face_is_plane_type(&face));
     }
 
     #[test]

@@ -128,8 +128,15 @@ pub enum CurvedPair {
 }
 
 /// Whether a surface is curved (non-planar).
+///
+/// `ChFi3d` keys this on the adaptor type: `ChFi3d_Builder_0.cxx:626-627`
+/// (`bIsPlane1 = (aST1 == GeomAbs_Plane)`) and `:638`
+/// (`aST2 != GeomAbs_Plane && aST2 != GeomAbs_Cylinder && aST2 != GeomAbs_Cone`).
+/// A geometrically flat B-spline patch is `GeomAbs_BSplineSurface` in OCCT, so
+/// it counts as *curved* here; the previous 8x8 normal sampling called it
+/// planar.
 pub(super) fn is_curved_surface(s: &dyn Surface) -> bool {
-    !is_planar(s, 8, 8, 1e-6)
+    !is_plane_type(s)
 }
 
 /// Classify a surface into the full analytic set (plane / sphere / cylinder /
@@ -203,9 +210,14 @@ pub(super) fn sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
     (u0, u1, v0, v1)
 }
 
-/// Extract plane geometry from a surface, or `None` if it is not planar.
+/// Extract plane geometry from a surface, or `None` if it is not a
+/// `GeomAbs_Plane`.
+///
+/// The guard formerly sampled 8x8 normals, which also accepted a flat B-spline
+/// patch; `ChFi3d` dispatches on `GeomAbs_Plane` (`ChFi3d_Builder_0.cxx:626`,
+/// `:652`, `:3745-3750`).
 pub fn plane_from_surface(s: &dyn Surface) -> Option<PlaneInfo> {
-    if !is_planar(s, 8, 8, 1e-6) {
+    if !is_plane_type(s) {
         return None;
     }
     let (u0, _u1, v0, _v1) = sample_bounds(s);

@@ -574,7 +574,7 @@ impl AlgoTools {
         if !a.is_finite() || !b.is_finite() || (a - b).abs() < 1e-15 {
             return true;
         }
-        edge_length(edge, 32) < tol
+        edge_length(edge) < tol
     }
 
     /// Whether `shell` is open: it has a non-degenerated boundary edge shared

@@ -272,17 +272,17 @@
 //!
 //! # Port notes
 //!
-//! * Boolean operations route through [`curved_boolean_ext`], which already
-//!   dispatches to `crate::bop_builder::boolean` (`BOPAlgo_BOP`) when both
-//!   operands are planar-faced and to the curved/voxel paths otherwise — one
-//!   entry point covers both, matching OCCT's `BRepAlgoAPI_BooleanOperation`.
+//! * Boolean operations route through [`boolean`](crate::bop_builder::boolean),
+//!   i.e. `crate::bop_builder::boolean_dispatch` → `BOPAlgo_BOP` — one entry
+//!   point for planar and curved operands, matching OCCT's
+//!   `BRepAlgoAPI_BooleanOperation`.
 //! * `fillet` uses the constant-radius [`fillet_edge`]. The variable-radius
 //!   `crate::fillet_var::fillet_edge_var` API is available but has no
 //!   single-command form here (it needs a radius law, the interpreter does not
 //!   expose).
-//! * `info`'s volume is a mesh estimate ([`shape_volume`]); it is reliable for
-//!   curved shapes and exact for planar boxes in practice, but it is not the
-//!   analytic primitive volume (see [`volume`]).
+//! * `info`'s volume is `BRepGProp::VolumeProperties` over the exact boundary
+//!   ([`volume`]), so it matches the analytic primitive volume of a cylinder or
+//!   sphere instead of an inscribed-facet estimate.
 //!
 //! # Examples
 //!
@@ -335,7 +335,8 @@ pub(crate) use crate::primitives::{
     BRepPrimBox, BRepPrimCone, BRepPrimCylinder, BRepPrimSphere, BRepPrimTorus,
 };
 pub(crate) use crate::shape::TopoShape;
-pub(crate) use crate::shape_mesh::{mesh_shape, shape_volume};
+pub(crate) use crate::brep_gprop::volume as shape_volume;
+pub(crate) use crate::shape_mesh::mesh_shape;
 pub(crate) use crate::shape_ops::{
     rotate_shape, scale_shape, transform_shape, translate_shape, transformed_copy, translated_copy,
 };

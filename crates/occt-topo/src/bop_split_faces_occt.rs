@@ -134,6 +134,16 @@ fn collect_split_edge_set<B: BopBuilderLike>(
                 let sp_key = GeometryRegistry::shape_key(&a_sp);
                 if a_m_fence.insert(sp_key) {
                     let sp_edge = Edge(a_sp.clone());
+                    // `BOPAlgo_PaveFiller::MakePCurves` (`_7.cxx:589-790`) runs
+                    // before `BOPAlgo_Builder::BuildSplitFaces` (`_2.cxx:233`)
+                    // and leaves the split with its p-curve on the face.
+                    // `BOPTools_AlgoTools3D::DoSplitSEAMOnFace`
+                    // (`AlgoTools3D.cxx:150`) reads that p-curve to build the
+                    // shifted second one, so without it the call returns false
+                    // and the seam split stays open on the face
+                    // (`BRep_Tool::IsClosed` false), which in turn drops the
+                    // seam-side filter of `Path` (`_1.cxx:574-581`).
+                    attach_pcurves(face, std::slice::from_ref(&sp_edge));
                     if !is_closed_on_face(&sp_edge, face)
                         && !ensure_closed_split_on_face(&be, &sp_edge, face)
                     {

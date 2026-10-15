@@ -18,7 +18,7 @@ use crate::abs::{Orientation, ShapeType};
 use crate::boptools_2d::make_2d;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
-use crate::pcurve::{pc_curve_kind, CurveKind};
+use crate::pcurve::CurveKind;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
 
@@ -495,8 +495,11 @@ fn angle_2d(v: &TopoShape, e: &Edge, face: &Face, is_in: bool) -> f64 {
     };
     let (first, last) = BRepTool::edge_parameters(e);
     let tol2d = 2.0 * tolerance_2d(&Vertex(v.clone()), face);
-    let mut dt = curve_resolution(c.as_ref(), tol2d).max(PCONFUSION);
-    if pc_curve_kind(c.as_ref()) != CurveKind::Line {
+    // `dt = std::max(aGAC2D.Resolution(tol2d), Precision::PConfusion())`
+    // (`BOPAlgo_WireSplitter_1.cxx:792`), with `aType = aGAC2D.GetType()`
+    // (`:795`) driving the non-line curvature correction (`:796-807`).
+    let mut dt = c.resolution(tol2d).max(PCONFUSION);
+    if !c.is_line() {
         let r = curve2d_radius(c.as_ref(), tv);
         if r > PCONFUSION {
             let cosphi = r / (r + tol2d);
@@ -530,20 +533,11 @@ fn angle_2d(v: &TopoShape, e: &Edge, face: &Face, is_in: bool) -> f64 {
     }
 }
 
+/// `Geom2dAdaptor_Curve::Resolution` (`Geom2dAdaptor_Curve.cxx:1186-1219`) via
+/// [`Curve2d::resolution`]; `Angle2D` reads it as
+/// `aGAC2D.Resolution(tol2d)` (`BOPAlgo_WireSplitter_1.cxx:792`).
 fn curve_resolution(c: &dyn Curve2d, tol2d: f64) -> f64 {
-    let mid = 0.5 * (c.first_parameter() + c.last_parameter());
-    let t = if mid.is_finite() {
-        mid
-    } else {
-        0.0
-    };
-    let (_, d1) = c.d1(t);
-    let mag = d1.magnitude();
-    if mag > PCONFUSION {
-        tol2d / mag
-    } else {
-        tol2d
-    }
+    c.resolution(tol2d)
 }
 
 fn curve2d_radius(c: &dyn Curve2d, t: f64) -> f64 {

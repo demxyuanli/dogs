@@ -374,16 +374,13 @@ pub fn draw_repl() -> Result<(), String> {
 // Queries
 // ---------------------------------------------------------------------------
 
-/// Estimated enclosed volume of a closed shape, in cubic units.
+/// Volume of a shape, in cubic units (`BRepGProp::VolumeProperties`).
 ///
-/// This wraps [`shape_volume`], which integrates the divergence theorem over
-/// the tessellated surface. For curved shapes (spheres, cylinders, toruses)
-/// the estimate is reliable and converges to the exact volume as the
-/// deflection shrinks — `info` uses it for that reason. For planar boxes the
-/// tessellation is an exact triangulation of the boundary, so the estimate is
-/// exact in practice too, but it is still a mesh estimate: prefer a primitive's
-/// analytic `volume()` method when one is available, and treat the number from
-/// an open or inconsistently oriented shell as meaningless.
+/// The integration is over the exact boundary geometry (Gauss quadrature per
+/// face, `BRepGProp_Vinert`), so a cylinder or sphere reports its analytic
+/// volume rather than the volume of an inscribed facet set; `VOLUME_DEFLECTION`
+/// only reaches the triangulation fallback of a shape whose faces carry no
+/// integrable surface (`BRepGProp.cxx:359`).
 pub fn volume(shape: &TopoShape) -> f64 {
     shape_volume(shape, VOLUME_DEFLECTION)
 }

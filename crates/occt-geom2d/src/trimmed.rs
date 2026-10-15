@@ -185,6 +185,15 @@ impl Curve2d for Geom2dTrimmedCurve {
         Some(self.basis.as_ref())
     }
 
+    /// `Geom2dAdaptor_Curve::Resolution`: a `Geom2d_TrimmedCurve` is unwrapped to
+    /// its basis by `Load` (`Geom2dAdaptor_Curve.cxx:284-288`) and `Resolution`
+    /// only switches on the type, never on the range - and this port's
+    /// `Geom2dTrimmedCurve` keeps the basis parameter space (`first_parameter` is
+    /// `UTrim1`), so the basis answer is the trimmed answer verbatim.
+    fn resolution(&self, ruv: f64) -> f64 {
+        self.basis.resolution(ruv)
+    }
+
     /// `GeomBndLib_Curve2d` (`GeomBndLib_Curve2d.cxx:150-157`) unwraps a
     /// `Geom2d_TrimmedCurve` to `BasisCurve()` before down-casting, so a
     /// trimmed B-spline exposes the **basis** to

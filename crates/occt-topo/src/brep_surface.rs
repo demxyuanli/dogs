@@ -2,10 +2,16 @@
 //! Source: `GeomAdaptor_Surface.hxx`, `BRep_Tool::Surface`,
 //! `GeomAPI_ProjectPointOnSurf.hxx`.
 //!
-//! Trait objects (`Arc<dyn Surface>`) cannot be downcast, so classification is
-//! done by geometric invariants (constant normal ⇒ plane, constant radius from
-//! a solved center ⇒ sphere). This mirrors what OCCT's `GeomAdaptor` type tag
-//! provides, at a slightly higher cost.
+//! OCCT classifies a surface with its `GeomAdaptor_Surface::Load` type tag
+//! (`GeomAdaptor_Surface.cxx:422-513`), i.e. the exact `DynamicType` of the
+//! surface object; the port's equivalent is the `Surface` type queries
+//! (`gp_pln` / `gp_sphere` / `gp_cylinder` / `gp_cone` / `gp_torus`, which also
+//! answer through a `Geom_RectangularTrimmedSurface` basis, the documented
+//! `GeomAdaptor_Surface.cxx:423-425` recursion). [`classify_surface`],
+//! [`is_plane_type`], [`face_is_plane_type`], [`face_plane`] and
+//! [`sphere_center`] all use those queries; the 8x8 normal-sampling
+//! `is_planar` / `face_is_planar` pair was removed with finding 14 in
+//! `specs/_audit/topo-rest.md`.
 
 use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
 use occt_geom::Surface;
@@ -52,29 +58,6 @@ pub fn surface_normal(s: &dyn Surface, u: f64, v: f64) -> GpVec {
     }
 }
 
-/// Whether all sampled surface normals are parallel (within `tol`).
-pub fn is_planar(s: &dyn Surface, nu: usize, nv: usize, tol: f64) -> bool {
-    let (u0, u1, v0, v1) = sample_bounds(s);
-    let (mut first, mut first_ok) = (GpVec::zero(), false);
-    for i in 0..nu {
-        for j in 0..nv {
-            let u = u0 + (u1 - u0) * i as f64 / (nu.max(1) - 1) as f64;
-            let v = v0 + (v1 - v0) * j as f64 / (nv.max(1) - 1) as f64;
-            let n = surface_normal(s, u, v);
-            if n.xyz().square_modulus() < 1e-30 {
-                continue;
-            }
-            if !first_ok {
-                first = n;
-                first_ok = true;
-            } else if n.xyz().crossed(first.xyz()).modulus() > tol {
-                return false;
-            }
-        }
-    }
-    first_ok
-}
-
 /// Classify a surface by its **exact analytic type**.
 ///
 /// Mirrors `GeomAdaptor_Surface::Load` (`GeomAdaptor_Surface.cxx:422-513`),
@@ -108,6 +91,31 @@ pub fn classify_surface(s: &dyn Surface) -> SurfaceKind {
     SurfaceKind::Other
 }
 
+/// `GeomAdaptor_Surface::GetType() == GeomAbs_Plane`, i.e. [`classify_surface`]
+/// says `Plane`.
+///
+/// This is the predicate OCCT uses wherever plane behaviour is selected:
+/// `BOPAlgo_PaveFiller_6.cxx:380` (`aBAS1.GetType() == GeomAbs_Plane` gating
+/// `CheckPlanes`), `_6.cxx:404`, `_5.cxx:393` and `_5.cxx:1038` (the
+/// `bLinePlane` / `bUseAddTol` tests), `IntTools_FaceFace.cxx:395` (before
+/// `PerformPlanes`) and `Extrema_ExtPS.cxx:279` (the analytic
+/// `Extrema_ExtPElS` projection). It is the exact `GeomAdaptor_Surface::Load`
+/// type (`GeomAdaptor_Surface.cxx:422-513`), so a trimmed `Geom_Plane` answers
+/// true and a geometrically flat B-spline patch (`GeomAbs_BSplineSurface`)
+/// answers false. The previous predicate, [`is_planar`], sampled 8x8 normals
+/// and could not tell those two apart (audit `topo-rest.md` finding 14).
+pub fn is_plane_type(s: &dyn Surface) -> bool {
+    classify_surface(s) == SurfaceKind::Plane
+}
+
+/// [`is_plane_type`] for a face, via the geometry registry.
+pub fn face_is_plane_type(face: &Face) -> bool {
+    match GeometryRegistry::global().face_surface(&face.0) {
+        Some(s) => is_plane_type(s.as_ref()),
+        None => false,
+    }
+}
+
 /// Finite, sane sampling bounds for a surface (unbounded ranges clamp to ±1).
 fn sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
     let (u0, u1) = s.u_range();
@@ -118,74 +126,31 @@ fn sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
     (u0, u1, v0, v1)
 }
 
-/// 3×3 determinant.
-fn det3(m: &[[f64; 3]; 3]) -> f64 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-}
-
-/// Solve a 3×3 linear system via Cramer's rule.
-fn solve3(a: &[[f64; 3]; 3], rhs: &[f64; 3]) -> Option<[f64; 3]> {
-    let d = det3(a);
-    if d.abs() < 1e-20 {
-        return None;
-    }
-    let mut x = [0.0; 3];
-    for k in 0..3 {
-        let mut m = *a;
-        for i in 0..3 {
-            m[i][k] = rhs[i];
-        }
-        x[k] = det3(&m) / d;
-    }
-    Some(x)
-}
-
-/// Circumcenter of three non-collinear 3D points, if it exists.
-///
-/// Solves the perpendicular-bisector system: the center O is equidistant from
-/// a, b, c (two bisector equations) and lies in their plane. Cramer's rule on
-/// the resulting 3×3 system is robust for near-equal points.
-fn circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
-    let d1 = GpVec::from_pnts(a, b);
-    let d2 = GpVec::from_pnts(a, c);
-    let n = d1.xyz().crossed(d2.xyz());
-    if n.modulus() < 1e-20 {
-        return None;
-    }
-    let n2 = |p: &GpPnt| p.coord.dot(&p.coord);
-    // O·d1 = (|b|² − |a|²)/2 ; O·d2 = (|c|² − |a|²)/2 ; O·n = a·n.
-    let mat = [
-        [d1.xyz().x, d1.xyz().y, d1.xyz().z],
-        [d2.xyz().x, d2.xyz().y, d2.xyz().z],
-        [n.x, n.y, n.z],
-    ];
-    let rhs = [0.5 * (n2(b) - n2(a)), 0.5 * (n2(c) - n2(a)), a.coord.dot(&n)];
-    let o = solve3(&mat, &rhs)?;
-    Some(GpPnt::new(o[0], o[1], o[2]))
-}
-
 /// If the surface is spherical, return its center.
 ///
-/// The three sample points are chosen at the mid-latitude band (away from the
-/// poles, where the longitude parameter is degenerate and points collapse),
-/// with distinct u values so they are non-collinear.
+/// `GeomAdaptor_Surface::Sphere()` (`GeomAdaptor_Surface.cxx:1997-2006`), i.e.
+/// the `Geom_SphericalSurface` downcast; `None` for every other type. The
+/// previous body solved the circumcenter of three sampled points, which is
+/// exact for a sphere but also answers for a cylinder, a cone or a B-spline
+/// patch, so callers saw a "sphere" where OCCT sees `GeomAbs_OtherSurface`
+/// (audit `topo-rest.md` finding 14).
 pub fn sphere_center(s: &dyn Surface) -> Option<GpPnt> {
-    let (u0, u1, v0, v1) = sample_bounds(s);
-    let u_mid = 0.5 * (u0 + u1);
-    let v_mid = 0.5 * (v0 + v1);
-    let span = (v1 - v0).abs().max(1e-6);
-    let a = s.d0(u0, v_mid);
-    let b = s.d0(u_mid, v_mid);
-    let c = s.d0(u0, v_mid + 0.25 * span);
-    circumcenter(&a, &b, &c)
+    s.gp_sphere().map(|sp| sp.pos.location())
 }
 
-/// The plane underlying a planar face, if it is planar.
+/// The plane underlying a planar face, if it is a `GeomAbs_Plane`.
+///
+/// The classification is [`is_plane_type`] - `GeomAdaptor_Surface::Plane()`
+/// (`GeomAdaptor_Surface.cxx:1863-1870`), the `Geom_Plane` downcast that
+/// `BRepGProp_Face.cxx:43-46` and `BRepOffset_*` gate on - which accepts a
+/// `Geom_Plane` and rejects a geometrically flat B-spline patch. The frame is
+/// read from the surface's own parameterization (`d0` / `d1` at the natural
+/// window origin) so it stays consistent with `d0`, the frame every other UV
+/// routine in the port uses; on a real `Geom_Plane` that is exactly its
+/// placement.
 pub fn face_plane(face: &Face) -> Option<GpPln> {
     let surf = GeometryRegistry::global().face_surface(&face.0)?;
-    if !is_planar(surf.as_ref(), 8, 8, 1e-6) {
+    if !is_plane_type(surf.as_ref()) {
         return None;
     }
     let (u0, _u1, v0, _v1) = sample_bounds(surf.as_ref());
@@ -201,14 +166,6 @@ pub fn face_plane(face: &Face) -> Option<GpPln> {
         occt_core::gp::GpDir::new(1.0, 0.0, 0.0).unwrap()
     };
     Some(GpPln::new(GpAx3::new(o, d, &x_dir).ok()?))
-}
-
-/// Whether a face is planar.
-pub fn face_is_planar(face: &Face) -> bool {
-    match GeometryRegistry::global().face_surface(&face.0) {
-        Some(s) => is_planar(s.as_ref(), 8, 8, 1e-6),
-        None => false,
-    }
 }
 
 /// Surface normal at a face's natural (u, v) parameter point.
@@ -328,7 +285,7 @@ mod tests {
     fn box_faces_are_planar() {
         let b = BRepPrimBox::make_box(2.0, 2.0, 2.0);
         for f in crate::topo_tools_full::faces_of(&b.solid.0) {
-            assert!(face_is_planar(&f));
+            assert!(face_is_plane_type(&f));
             let pln = face_plane(&f).expect("planar face has plane");
             let _ = pln;
             assert_eq!(classify_surface(
@@ -344,7 +301,7 @@ mod tests {
         )), &[]);
         let s = GeometryRegistry::global().face_surface(&face.0).unwrap();
         assert_eq!(classify_surface(s.as_ref()), SurfaceKind::Sphere);
-        assert!(!face_is_planar(&face));
+        assert!(!face_is_plane_type(&face));
     }
 
     #[test]

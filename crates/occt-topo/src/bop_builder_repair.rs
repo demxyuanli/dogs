@@ -635,7 +635,7 @@ pub fn analyze_boundary(shape: &TopoShape, tol: f64) -> BoundaryAnalysisReport {
         degenerate_faces: faces_of(shape).iter().filter(|f| face_is_degenerate(f, tol)).count(),
         small_edges: edges_of(shape)
             .iter()
-            .filter(|e| crate::brep_measure::edge_length(e, 8) < tol)
+            .filter(|e| crate::brep_measure::edge_length(e) < tol)
             .count(),
     }
 }

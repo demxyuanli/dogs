@@ -3,7 +3,7 @@
 范围：`crates/occt-topo/src/`。只读，未改源码。
 统计：自创 14 条、等价替换未登记 4 条（共 18 条，按严重度排序）。
 
-**结论摘要**：最高危三条 —— ①`brepfeat/features.rs:109` 用解析公式**覆盖布尔结果的体积**；②`wireframe.rs:423+431`（2026-10-06 复核；原 `:399+407` 已漂移）对曲面按**未裁剪自然 UV 域**建网格，`shape_volume`/`shape_surface_area`/`brep_gprop` 全链失真且被 `bop_builder_report` 当修复判据；③`brepfeat/features.rs:394`+`boolean_ops.rs:173`（`feature.rs` 已删，订正 2026-10-06） 体素布尔在精确 `bop_builder::boolean`（BOPAlgo_BOP）已存在时仍是 feature 默认路径，注释仍称"exact BRep boolean 不可用"（过期）。另：`hlr.rs`/`viz_scene/`/`draw/`/`xcaf/`/`render_svg.rs` 借用了 OCCT 包名，但不是移植。所有条目均未进入 `export_data_obj`/`step_obj_parity` 主门禁，除第 6、11、13 条（经 `bop_builder_report`/`shape_mesh` 间接进入）。
+**结论摘要**：最高危三条 —— ①`brepfeat/features.rs:109` 用解析公式**覆盖布尔结果的体积**；②`wireframe.rs:423+431`（2026-10-06 复核；原 `:399+407` 已漂移）对曲面按**未裁剪自然 UV 域**建网格，`shape_volume`/`shape_surface_area`/`brep_gprop` 全链失真且被 `bop_builder_report` 当修复判据（**✅ 已修 2026-10-14**：A13 换掉建网格的栅格采样，本轮再把 `shape_volume`/`shape_surface_area`/`brep_gprop` 的网格路径整段换成 `BRepGProp` 精确积分，见发现 6/11）；③`brepfeat/features.rs:394`+`boolean_ops.rs:173`（`feature.rs` 已删，订正 2026-10-06） 体素布尔在精确 `bop_builder::boolean`（BOPAlgo_BOP）已存在时仍是 feature 默认路径，注释仍称"exact BRep boolean 不可用"（过期）。另：`hlr.rs`/`viz_scene/`/`draw/`/`xcaf/`/`render_svg.rs` 借用了 OCCT 包名，但不是移植。所有条目均未进入 `export_data_obj`/`step_obj_parity` 主门禁，除第 11、13 条（经 `bop_builder_report`/`shape_mesh` 间接进入；第 6 条已随本轮修复退出该链；第 11、13 条已于 2026-10-14 修复，见各自处置）。
 
 ## 发现
 
@@ -62,6 +62,7 @@ let nu = ((du / def).ceil() as usize + 1).clamp(3, 64);
 ```
 - OCCT：`BRepMesh` 沿面裁剪边界离散；`BRepGProp_Gauss::Compute`（`BRepGProp.cxx:277`、`BRepGProp_Sinert.cxx:80-109`）为精确积分。
 - 影响/建议：90° 圆柱面片段会被当整圈 2π 曲面计面积/体积（`brep_measure.rs:37` 自承 "samples the full natural surface"）。按 `BRepGProp_Gauss` 落地（`brep_gprop_full` 已有基础）。
+- **处置（✅ 已修：2026-10-14）**：`face_to_triangles` 本身已由 A13（2026-10-12）改委托 `IncrementalMesh::discretize_face`（`BRepMesh` 忠实管线）；本轮把**测量链**从网格路径摘干净，不再让任何体积/面积经过网格：(1) `shape_mesh::shape_volume`（自创 `(1/6)|Σ a·(b×c)|` 散度和，`shape_mesh.rs:117`）与 `shape_mesh::shape_surface_area` 删除，调用方改 `brep_gprop::{volume,surface_area}`（`brepfeat`/`brep_pattern`/`shape_metrics`/`draw`/`bop_curved`/`phase3_integration`）；(2) `brep_gprop`（见发现 11）改为精确积分；(3) `shape_metrics` 的面积/体积改由 `brep_gprop` 提供。**对拍**（`zz_bop_curved_probe`，deflection 0.02，解析值 = `vol_gauss`）：`cyl r=0.4 h=1` 1.43993 → **0.50265**；`r=0.4 h=2` 2.87986 → **1.00531**；`r=0.4 h=4` 5.75972 → **2.01062**；`r=1 h=1` 1.99957 → **3.14159**；box 8.00000 不变。门禁：`step_obj_gates` 4/4、`export_data_obj` 15/15、`phase3..10/19/20_integration` 与 `bop_builder2_boss` 全绿。
 
 ### 7. ~~`feature.rs` 是 `brepfeat` 的重复体素实现 + 过期注释~~（订正 2026-10-06：文件已删）
 - 判定：自创 ｜ live：**是**（公有 `protrusion`/`pocket`/`boss`/`hole`；仓库内仅 `feature.rs:217` 自测）
@@ -108,17 +109,24 @@ let n = ((1.0 / deflection.max(1e-4)).ceil() as usize).clamp(1, 32);
 ```
 - OCCT：`BRepGProp::SurfaceProperties`/`VolumeProperties` → `BRepGProp_Gauss`。
 - 影响/建议：`1/deflection` 夹 `[1,32]` 是裸规则，面积/体积/质心随 deflection 漂移，而 OCCT 有 `myEpsilon` 误差估计。转发 `brep_gprop_full`。
+- **处置（✅ 已修：2026-10-14）**：本地网格 `mesh_shape`（`brep_extrema::mesh_faces(shape, n, n)` 的 `1/deflection` 夹 `[1,32]` 栅格）与 `compute_inertia` 散度和整段删除；`shape_mass_properties` 改走 `brep_gprop_full::{volume_properties, surface_properties}`（`BRepGProp_Vinert`/`Sinert` + `BRepGProp_Gauss`，精确，无 deflection）。唯一保留的网格分支是 OCCT `BRepGProp.cxx:344-360` 的 `NoSurf` 臂：解析积分无法建立的面（`FaceGauss::new` 失败/无面）改用 `brep_gprop_full::mesh_props`（`BRepGProp_MeshProps`）在 `shape_mesh::mesh_shape` 的 `BRepMesh` 三角化上积分，`deflection` 只在该回退里生效。公开签名（`volume`/`surface_area`/`centroid`/`solid_density_mass`/`shape_mass_properties`）未变，调用方零改动。
 
-### 12. `offset_by_sampling` 把一般曲面采成 16×16 双线性面
-- 判定：自创 ｜ live：**是**（`offset_face_surface:644` 的 cone/torus/其他分支 → `offset_face:650` → `offset_shell`，即 `draw` 的 offset 命令）
-- 证据：`crates/occt-topo/src/brep_offset/curve_face_offset.rs:588`
+### 12. `offset_by_sampling` 把一般曲面采成 16×16 双线性面（✅ 2026-10-14 已修）
+- 判定：自创 ｜ live：原为**是**（`offset_face_surface:644` 的 cone/torus/其他分支 → `offset_face` → `offset_shell`，即 `draw` 的 offset 命令）
+- 证据：`crates/occt-topo/src/brep_offset/curve_face_offset.rs`（原 `:588`）
 ```rust
 let (nu, nv) = (16usize, 16usize);
 ```
 - OCCT：`BRepOffset_Offset`/`BRepOffsetAPI_MakeOffsetShape` 构造精确 `Geom_OffsetSurface`。
-- 影响/建议：cone/torus 偏移面退化为 16×16 分段双线性面；`brep_offset/curve_face_offset.rs:648-649` 还自承非平面面"边不投影到偏移面"。改用 `Geom_OffsetSurface`，否则标未移植，不返回近似面。
+- 影响/建议：cone/torus 偏移面退化为 16×16 分段双线性面；原 `curve_face_offset.rs:648-649` 还自承非平面面"边不投影到偏移面"。改用 `Geom_OffsetSurface`，否则标未移植，不返回近似面。
+- **处置（✅ 已修：2026-10-14）**：
+  - 新增 `brep_offset/brep_offset_surface.rs::brep_offset_surface(s, offset, allow_c0) -> (Box<dyn Surface>, BRepOffsetStatus)`，逐分支移植 `BRepOffset::Surface`（`BRepOffset.cxx:44-200`）：`Geom_RectangularTrimmedSurface` 递归基面并保留 `(u1,u2,v1,v2)` 窗口（`:180-191`）；Plane 沿 `x_dir ^ y_dir * Offset` 平移（`:54-61`）；Cylinder 半径 `±Offset`（`r <= -Confusion` → 轴旋转 π、status `Reversed`；`|r| < Confusion` → `Degenerated`，`:62-90`）；Cone `Radius = RefRadius + Offset*cos(Alpha)` 且参考面沿轴移 `-Offset*sin(Alpha)`（`:92-111`）；Sphere（`:113-141`）；Torus 仅 spindle（`MinorRadius < MajorRadius`）有解析偏移（`:143-171`）。其余类型（`SurfaceOfRevolution`/`SurfaceOfLinearExtrusion`/`BSplineSurface`/`BezierSurface`/`OffsetSurface`）落到精确 `Geom_OffsetSurface`（`:193-197`）。`BRepOffset_Status` 按 `BRepOffset_Status.hxx:24-31` 定序。无任何采样拟合。
+  - `offset_face`（`curve_face_offset.rs:513`）删除 `offset_by_sampling`/`offset_plane_surface`/`extract_cylinder`/`is_cylindrical`/`is_spherical`，改直接调 `brep_offset_surface`（与 `BRepOffset_Offset::Init` 同一调用）。
+  - **未移植（已在函数头登记）**：OCCT 一般臂按源 pcurve 重建每条边（`BRepOffset_Offset.cxx:911-958`、写回 pcurve `:1076-1078`、`ComputeCurve3d` `:1080-1083`）尚未移植，故无解析偏移的面（planar B-spline、cone 等）仍保留源 wire。`allowC0` 仅 OCCT 传给 `Geom_OffsetSurface` 构造（`:196`），端口 `GeomOffsetSurface::new` 恒建 osculating 探针（等价 `allowC0 = false`），故只接受 `false`。
+  - **对拍**：OCCT 8.0.0 探针 `occt_probe --offsetsurf <dist>`（固定 `u∈{0.4,1.1,2.7}`、`v∈{-0.5,0.3,1.2}` 网格，先按 `BRepOffset_Offset::Init` 拆 trim）对照端口 `examples/zz_offset_surf.rs`：`Cone`/`Cylinder`/`Sphere`/`Torus`/`rev`/`Extrusion`/`Offset`/`Cube`/`Shape-1`/`Shape-2`/`screw`/`OffsetPlaneHoleEdge` × `{0.5,-0.3,2.0}` **36/36 逐位一致**（含类型、`BRepOffset_Status`、采样点）。`HoledPlate` 3/3 仅面枚举次序不同（按 `f` 去掉序号后结果集合完全相同）。一般面（`OffsetSurface` 基面如 `Shape` f=9；负半径 torus 如 `linkrods` -0.3）两侧同为 `Geom_OffsetSurface`、status 相同，取值差异属 `occt-geom` 的 `GeomOffsetSurface::Value` 子系统（已记 `specs/_audit/occt-geom.md:180`）。`linkrods` 0.5/2.0 探针在 f=13 求值越界参数（u=2.7 远超该面 UV 窗口）时 OCCT 侧崩（`0xC0000409`），无 f≥13 的 OCCT 真值。
+  - **门禁**：`cargo test -p occt-topo --lib brep_offset` **12 passed / 0 failed**；`step_obj_gates` **4/4**。
 
-### 13. `edge_length` 是等距折线采样
+### 13. `edge_length` 是等距折线采样（✅ 2026-10-14 已修）
 - 判定：自创 ｜ live：**是**（`bop_builder_report.rs:253`、`bop_builder_repair.rs:634`、`algo_tools/construct.rs:546`、`shhealing/common.rs:492` 作短边判据；`shape_metrics.rs:40`）
 - 证据：`crates/occt-topo/src/brep_measure.rs:12`
 ```rust
@@ -126,15 +134,63 @@ pub fn edge_length(e: &Edge, samples: usize) -> f64 {
 ```
 - OCCT：`BRepGProp::LinearProperties`（`BRepGProp.cxx:121`）→ `BRepGProp_EdgeTool` 积分，带误差估计。
 - 影响/建议：采样数由调用方给（8/32），圆弧短边在 8 段折线下系统性低估 → 短边判据结果被替换规则左右。改调 `BRepGProp` 线性积分（`brep_gprop_full`）。
+- **处置（✅ 已修：2026-10-14）**：
+  - 新增 `brep_gprop_full::edge_linear_properties(e)`（`brep_gprop_full/properties.rs:107`）：单边走 `BRepGProp_Cinert::Perform`（`cinert_perform`），积分阶数取 `curve_integration_order` = `BRepGProp_EdgeTool::IntegrationOrder`（直线 2、其余 10），朝反向边按 `TopoDS_Shape::Orientation` 反转曲线与参数区间——与 `linear_properties` 的逐边循环同一段代码。`GProps::dim` 即边长。
+  - `brep_measure::edge_length(e, samples)` → `edge_length(e)`（`brep_measure.rs:15`）：删除 `samples` 形参与折线循环，改为委托 `edge_linear_properties`；同类聚合 `wire_length`/`shape_perimeter`/`max_edge_length`/`min_edge_length` 一并去掉 `samples`。调用方同步为 `bop_builder_report.rs:253`、`bop_builder_repair.rs:638`、`algo_tools/construct.rs:577`（`is_degenerated_edge`）、`shape_metrics.rs:40,252,256`、`brep_faces.rs:207`（`face_wire_length`）、`gprop_analytic/edge_length.rs`（`CurveKind::Other`/`circle_radius=None` 的兜底由折线改为同一 Gauss 积分）与三处测试。
+  - **对拍**：`cargo test -p occt-topo` **1317 passed / 0 failed**（1 ignored）；`step_obj_gates` **4/4**；`export_data_obj` **15/15** 且 obj 顶点/面数与基线逐位一致（本次改动改变的是短边判据的数值，未改变任何门禁几何）。
 
-### 14. 用采样识别二次曲面代替 downcast
-- 判定：等价替换未登记（后果改变）｜ live：**是**（`offset_face_surface:613,619,632` 的分派依据，连同 `brep_surface::is_planar` 采样版）
-- 证据：`crates/occt-topo/src/brep_offset/curve_face_offset.rs:551`
+### 14. 用采样识别二次曲面代替 downcast（✅ 已全部收口：2026-10-15）
+- 判定：等价替换未登记（后果改变）｜ live：**否**（原 `offset_face_surface:613,619,632` 的 `is_cylindrical`/`is_spherical` 分派已随 §12 删除；`offset_face` 的 `is_planar(new_surf, 8, 8, 1e-6)` 与 `sphere_center` 估判已改为 `gp_pln()`/`gp_sphere()` 精确判据；`brep_surface::is_planar`/`face_is_planar` 采样版及全部调用点已删除；`edge_face_kind` 的曲线/曲面族与 `IntTools_EdgeFace` 的 `IsEqDistance`/`IsCoplanar`/`IsRadius` 亦已换成 `GetType()`/`gp_*` 同等 downcast）
+- 证据（原 `crates/occt-topo/src/brep_offset/curve_face_offset.rs:551`，已删除）
 ```rust
 pub(super) fn is_cylindrical(s: &dyn Surface, loc: &GpPnt, dir: &GpDir, r: f64) -> bool {
 ```
 - OCCT：`BRepOffset_Offset` 用 `Geom_Cylinder`/`IsKind(STANDARD_TYPE(...))` 类型判据，无采样。
-- 影响/建议：小曲率 B 样条等可被误判为圆柱 → 走错偏移分支。`tgeometry.rs` 已声明 `dyn Surface` 无法 downcast，但本模块未登记。在模块头登记该替换与误差条件，或给 `occt_geom::Surface` 加类型标签。
+- 影响/建议：小曲率 B 样条等可被误判为圆柱 → 走错偏移分支。`tgeometry.rs` 已声明 `dyn Surface` 无法 downcast，但本模块未登记。
+- **现状（2026-10-14）**：§12 删除了 `offset_face` 里采样判圆柱/球的分派与 `offset_by_sampling`；`brep_surface::classify_surface`（`brep_surface.rs:89`，`GeomAdaptor_Surface::Load` 等价）已存在并经审核 A30 落地。`offset_face`（`curve_face_offset.rs:520`）选分支仍用 `is_planar(new_surf, 8, 8, 1e-6)` 而非 `classify_surface(...) == Plane`，`sphere_center`（`brep_surface.rs:174`）亦非 `Geom_Sphere` downcast。残留待改，未登记为已对齐。
+- **处置（✅ 已修：2026-10-15）**：
+  - `brep_surface::sphere_center`（`brep_surface.rs:136`）改为精确 downcast：`s.gp_sphere().map(|sp| sp.pos.location())`，即 `GeomAdaptor_Surface::Sphere()`（`GeomAdaptor_Surface.cxx:1997-2006`）的 `Geom_SphericalSurface` 判据；`gp_sphere` 已按 `GeomAdaptor_Surface.cxx:423-425` 递归 `Geom_RectangularTrimmedSurface` 基面（`occt-geom/src/rectangular_trimmed.rs:609-611`），`Geom_OffsetSurface` 不作答（`GeomAdaptor_Surface.cxx:496-523` 给 `GeomAbs_OffsetSurface`，非 `GeomAbs_Sphere`）。原实现取三个采样点的外接圆圆心：对真球精确，但对柱/锥/环/**任意 B 样条片**同样返回 `Some`，调用方据 `sphere_center(s).is_some()` 把 B 样条判成球（`edge_face_kind.rs:207` 的 `surface_kind` 是最后兜底臂，`topo-rest.md` 各处球分支同理）。`det3`/`solve3`/`circumcenter`（原 `brep_surface.rs:121-167`）随之成为死代码，整段删除。
+  - `offset_face`（`curve_face_offset.rs:517`）两条分支改为精确面型判据：平面臂 `if let Some(p) = new_surf.gp_pln()`（`:524`），法向直接取 `gp_Pln::Position().Direction()`，与 `BRepOffset::Surface` 的平移向量 `XDirection ^ YDirection * Offset`（`BRepOffset.cxx:54-61`）同源；球臂改用 `(surf.gp_sphere(), new_surf.gp_sphere())`（`:539`），半径取 `gp_Sphere::Radius()` 而非 `d0(0,0).distance(center)`（原写法在裁剪球上会求值到 UV 窗口外）。原 `is_planar(new_surf, 8, 8, 1e-6)` 会把**几何上平的 B 样条面**判成平面臂（OCCT 给 `GeomAbs_BSplineSurface`，落一般臂），而 `sphere_center` 的 `Some` 兜底会把**锥/柱面**拖进球臂做一次以伪圆心为中心的 `SetScale`——面边界被错误缩放。修后只有真平面/真球进入这两臂，其余落 `keep source wires` 臂（该臂本身仍是 UNPORTED 的一般臂，见 `curve_face_offset.rs:508-516` 函数头）。
+  - `brep_offset/mod.rs:15` 的 prelude 去掉已无调用方的 `is_planar`/`surface_normal`，`sphere_center` 改为 testing-only 直接引入（`brep_offset/tests.rs:9`）。
+  - **批次 2（✅ 已修：2026-10-15）**：BOP 交叉与 EF 家族 9 处调用点按 `.cxx` 判据换成精确面型判据，新增 `brep_surface::is_plane_type`（`brep_surface.rs:107`，即 `GeomAdaptor_Surface::GetType() == GeomAbs_Plane`）与面级包装 `brep_surface::face_is_plane_type`（`brep_surface.rs:112`）：
+    - `pave_ff_perform.rs:401`（原 `:372`）与 `pave_intersect/face_face.rs:86`（原 `:83`）：`BOPAlgo_PaveFiller_6.cxx:380` 的 `aBAS1.GetType() == GeomAbs_Plane && aBAS2.GetType() == GeomAbs_Plane`，它门控 `CheckPlanes`。原采样版会把**几何上平的 B 样条面**当平面，从而在两张 B 样条平面片之间错误地走 `Append InterfFF + Init(0,0)`（跳过 FaceFace），OCCT 会真做相交。
+    - `pave_ff_perform.rs:471-472`（原 `:442-443`）与 `pave_intersect/face_face.rs:165`（原 `:159`）：切向容差的平面臂是 `IntTools_FaceFace::PerformPlanes`（`IntTools_FaceFace.cxx:2541-2555` 的 `sqrt(aDt^2 + TolF1^2)`），由 `Perform` 在 `aType1 == GeomAbs_Plane && aType2 == GeomAbs_Plane`（`cxx:395`）时进入。`int_tools_curve_box::curve_tangential_tolerance` 的文档注释原写 `ComputeTolReached3d`，实为 `PerformPlanes`，一并纠正（`int_tools_curve_box.rs:182-191`）。
+    - `pave_ef_perform.rs:229`：`bLinePlane`，`BOPAlgo_PaveFiller_5.cxx:392-393` 的 `aBAC.GetType() == GeomAbs_Line && myContext->SurfaceAdaptor(aF).GetType() == GeomAbs_Plane`。
+    - `pave_force_ef.rs:251`：`BOPAlgo_PaveFiller_5.cxx:1038` 的 `aSurfAdaptor.GetType() != GeomAbs_Plane || aBAC.GetType() != GeomAbs_Line`（`bUseAddTol` 前置）。
+    - `pave_pcurves.rs:201` `is_based_on_plane`：`BOPAlgo_PaveFiller_7.cxx:936` 的 `IsBasedOnPlane`——`down_cast<Geom_RectangularTrimmedSurface>` 后取基面再 `down_cast<Geom_Plane>`，与 `GetType() == GeomAbs_Plane` 同解（`classify_surface` 递归裁剪基面，`gp_pln` 亦递归）。
+    - `edge_face.rs:407`：`IntTools_EdgeFace::DistanceFunction` 走 `GeomAPI_ProjectPointOnSurf` → `Extrema_ExtPS::Perform` 的 `case GeomAbs_Plane`（`Extrema_ExtPS.cxx:279-281`，解析 `Extrema_ExtPElS`）；采样版把平的 B 样条面也送进解析投影。
+  - `pave_ff_perform::is_plane_ff`（`pave_ff_perform.rs:84`）原注释写「Geom_Plane, or plane under offset / trim」但实现只有 `classify_surface == Plane`（不含 offset）。本批按 `BOPAlgo_PaveFiller_6.cxx:84-102` 重写为真正的 `IsPlaneFF`（平面 / 裁剪基面为平面 / 偏移基面为平面），并让 `shift_closed_faces` 恢复 OCCT 的双判据：`:404` 的跳过用 `GetType()`，`:410,416` 传给 `IsClosedFF` 的 `anIsPlane1/2` 用 `IsPlaneFF`（`pave_ff_perform.rs:241-256`）。
+  - **批次 3（✅ 已修：2026-10-15，`is_planar`/`face_is_planar` 采样版整段删除）**：批次 2 末项列出的余 19 处调用点全部按各自 `.cxx` 判据换成 `is_plane_type`/`face_is_plane_type`，随后 `brep_surface::is_planar`（原 `:61`）与 `brep_surface::face_is_planar`（原 `:188`）及 8×8 法向采样体整段删除，仓内已无 `is_planar` 符号（仅注释保留迁移说明）：
+    - `brep_surface.rs:153`（`face_plane`）、`pcurve.rs:249`（`make_pcurve_on_face` 的 `ProjLib::IsAnaSurf` 平面臂，`ProjLib.cxx:217-232`、`BOPTools_AlgoTools2D.cxx:501-560`；`pcurve.rs:391` 的 `face_projector` 走 `classify_surface == Plane`）。
+    - `fillet_curved/surface_info.rs:139,220`（`is_curved_surface` / `plane_from_surface`：`ChFi3d` 用 `GeomAbs_Plane`）、`fillet_curved/torus_blend.rs:603`（`face_is_planar_face`）。
+    - `gprop_analytic/analytic_props.rs:378,587`、`gprop_analytic/mass_properties.rs:17,61,325,443`：质量属性积分路径本身不含采样语义，原先只借用采样版判「全体平面」，现直接用 `GetType()`。
+    - `brep_offset/shell_offset.rs:122`、`brep_faces.rs:203`（`face_is_planar_face` → `face_is_plane_type`）。
+    - 测试夹具同批改口径：`brep_builder_full/mod.rs:247`、`brep_sketch.rs:234`、`brep_builder_api.rs:372,405-406`、`fclass2d/tests.rs:160`、`brep_offset/tests.rs:132`、`fillet_curved/tests/helpers.rs:693`、`brep_surface.rs:288,304`。
+  - **批次 3 同族（✅ 已修：2026-10-15）：`edge_face_kind.rs` 从采样族改为 `GetType()` 同等 downcast**，全部按 `IntTools_EdgeFace` 的分支落位（模块头注明 `IntTools_EdgeFace.cxx:74,247,532,620,650,798,827`）：
+    - `curve_kind`（`:59`）＝ `Adaptor3d_Curve::GetType()` 的 Line/Circle/BSpline 三臂：`gp_line()`（`GeomAdaptor_Curve.cxx:252-311` 的 `GeomAbs_Line`）、`gp_circ()`（`GeomAbs_Circle`）、`nurbs_degree()`（`GeomAbs_BezierCurve`/`GeomAbs_BSplineCurve`），其余走 `default`（`IntTools_EdgeFace` 视为既非线、非圆、亦非 B 样条）。原先采 8 个点做共线/等距判定，会把**几何上是直线或圆的 B 样条**报成 `Line`/`Circle` 并送进解析臂。
+    - `circle_geometry`（`:34`）＝ `CurveTool::Circle`（`IntTools_EdgeFace.cxx:800,829`）的 `gp_circ()` downcast；原先用 8 个采样点拟合圆，B 样条圆同样作答。
+    - `surface_kind`（`:207`）直接委托 `classify_surface`（`Adaptor3d_Surface::GetType()`）；原先分两段采样（从 `d0` 反推二次曲面参数、再用 8×8 栅格与自造 `1e-4` 容差复核），会把形似柱/锥/环的 B 样条片报成解析型，也会因 UV 窗口漂移而否掉真二次曲面。
+    - `is_eq_distance`（`:217`）＝ `IntTools_EdgeFace::IsEqDistance`（`cxx:240-299`）：分支取 `GetType()`，frame 依次取 `gp_cylinder()`/`gp_cone()`/`gp_torus()`（`SurfaceTool::Cylinder/Cone/Torus`），容差用调用方传入的字面 `1e-7`；锥顶按 `gp_Cone::Apex()`（`Location - V * (RefRadius / tan(SemiAngle))`）解析求出，不再靠采样点列。
+    - `is_coplanar`（`:271`）/`is_radius`（`:284`）＝ `IsCoplanar`/`IsRadius`（`cxx:787-811`、`cxx:816-840`）：`aCType == GeomAbs_Circle && aSType == GeomAbs_Plane` 双门控，轴向比用 `gp_Pln::Axis().Direction()`（`SurfaceTool::Plane`），`aPln.Distance(aCenter)` 取自平面自身 placement 而非采样 `d0`。
+    - 随之删除的采样/拟合件：`is_line_like`、`is_circle_like`、`first_three_spanning`、`det3`、`solve3`、`circumcenter`、`cylinder_matches`、`cone_matches`、`torus_matches`、`quadric_u0`、`midpoint`（均在原 `edge_face_kind.rs` 内）。
+  - **同族残留（✅ 已修：2026-10-15，批次 4）**：`edge_face_kind::curve_resolution`（原 `:73`）当时仍是 64 段差分估计最大速率再取 `tol / max_speed`，而 OCCT 的调用点（`IntTools_EdgeFace.cxx:326,327,373`）走的是 `myC.Resolution(myCriteria)`，即 `BRepAdaptor_Curve::Resolution` → `GeomAdaptor_Curve::Resolution`（`GeomAdaptor_Curve.cxx:1116-1148`）的**解析闭式**：Line→`R3D`、Circle→`2*asin(R3D/(2R))`、Ellipse→`R3D/MajorRadius`、Bezier/BSpline→`Geom_BezierCurve::Resolution`/`Geom_BSplineCurve::Resolution`（→`BSplCLib::Resolution`）、default→`Precision::Parametric(R3D)`。该闭式在 `occt-geom` 已作为 `Curve::resolution(r3d)` 逐型落地（`curve.rs:135` 的 default、`line.rs`、`circle.rs:37`、`ellipse.rs`、`bezier_curve.rs:636`、`bspline_curve.rs:984`）。批次 4 把该族全部换成 `Curve::resolution` / `Curve2d::resolution`，明细见下方「批次 4」。
+
+  #### 批次 4（✅ 已修：2026-10-15）：`Resolution` 采样族全量换成 `Adaptor::Resolution`
+
+  - **`occt-geom2d` 新增 `Curve2d::resolution`**，即 `Geom2dAdaptor_Curve::Resolution`（`Geom2dAdaptor_Curve.cxx:1186-1219`）：trait default＝`Precision::Parametric(Ruv)`（该函数 `default:` 臂，落地 `OffsetCurve`/`Parabola`/`Hyperbola`/`OtherCurve`），逐型覆盖 `line.rs`（`Ruv`）、`circle.rs`（`R > Ruv/2` 时 `2*asin(Ruv/(2R))`，否则 `2*pi`）、`ellipse.rs`（`Ruv/MajorRadius`）、`bezier_curve.rs`（`Geom2d_BezierCurve::Resolution` `cxx:743-760`，poles 抬到 `z=0` 后调共享的 `BSplCLib::Resolution`，knot 序列为 `deg+1` 个 0 接 `deg+1` 个 1）、`bspline_curve.rs`（转调既有 inherent `Geom2dBSplineCurve::resolution`，`bspline_curve.rs:724`）、`trimmed.rs`（转发基曲线，对应 `Load` 对 `Geom2d_TrimmedCurve` 的递归 `cxx:284-288`；本移植的 2D 裁剪保留基参数空间，故无需再缩放）。原先全仓 `Curve2d` 无此查询，调用方各自用 `tol/|D1|` 或中点差分估计。
+  - **调用点替换**（每处都回各自 `.cxx` 确认过）：
+    - `edge_face_kind::curve_resolution`（`:73`）→ `c.resolution(tol)`，调用方 `edge_face_type.rs:26,59` 的 `myC.Resolution(myCriteria)`（`IntTools_EdgeFace.cxx:326-327` `MakeType`、`:373` `CheckTouch`）。
+    - `inttools_range`（原 `curve_resolution` 三处调用）→ `curve.resolution(..)`：`IntTools_ShrunkRange.cxx:162` 的 `aPTolE = aBAC.Resolution(aTolE)`（后面那条 `min(aPTolE, range/100)` 保留）、`BRepLib_1.cxx:202` 的 `anEps = max(theCurve.Resolution(theTolE)*0.1, ...)`、`BRepLib_1.cxx:61` 的 `aStep = theCurve.Resolution(theTol)*1.01`。原 8 点中心差分求最大速率的函数体整段删除（`find_valid_range` 里对 `[first,last]` 的依赖随之消失，`Resolution` 与范围无关）。
+    - `algo_tools_range::correct_range_ee` / `correct_range_ef` → `BOPTools_AlgoTools_2.cxx:299-341` / `:385-415`：早退改 `c.is_line()`（`aCT == GeomAbs_Line`），freeform 判据改 `aCT == GeomAbs_BezierCurve || BSplineCurve || OffsetCurve || OtherCurve`（`nurbs_degree()` / `offset_curve()` / 其余落 `OtherCurve`），`else` 臂（Circle/Ellipse/Parabola/Hyperbola）改 `c.resolution(a_res)`。原 `curve_is_line` 用 3 点共线采样、`curve_is_freeform = !curve_is_line` 把四类二次曲线也拖进 D1 臂——OCCT 对这些走 `aBC.Resolution`。
+    - `bean_face::resolution`（`:206`）→ `self.curve().resolution(tol)`，即 `myCurveResolution = myCurve.Resolution(myCriteria)`（`IntTools_BeanFaceIntersector.cxx:178,200,223,583` 写、`:998,1189,1198,1897` 读）。
+    - `wire_splitter_block::angle_2d`（`:489`）→ `dt = c.resolution(tol2d).max(PCONFUSION)`，非直线臂改 `!c.is_line()`（`aGAC2D.GetType() != GeomAbs_Line`，`BOPAlgo_WireSplitter_1.cxx:792,795`），替掉原先的 `pc_curve_kind(..) != CurveKind::Line` 周期/无界启发式；`curve_resolution` 保留为一行转调。
+    - `int_tools_vertex_line::adaptor_resolution`（`:415`）→ `curve.resolution(tol3d)`，即 `aPTol = aGAC.Resolution(max(aTolR3D, aTolV))`（`BOPAlgo_PaveFiller_6.cxx:3001-3002`）；原先对无界曲线短路返回 `tol3d`（OCCT 的 `Resolution` 只看 `GetType()`，无界直线照样返回 `Ruv`）。
+    - **装饰器补 `resolution` 以免退回 trait default**：`pcurve_full/surface_projector/reparam.rs` 的 `ReparamCurve2d`（`GeomLib::SameRange` 的线性重参数化替身；直线/圆臂只平移/旋转故 `scale=±1`，其余臂 OCCT 转 BSpline 并 `BSplCLib::Reparametrize`，参数增量按 `scale` 折算）；`pcurve.rs` 的 `PlaneKeepParam2d`（`GeomProjLib::ProjectOnPlane` KeepParam=true，参数空间与源曲线一致，按该 wrapper 既有 kind 委托惯例取源曲线答案）。加之前这两类 wrapper 会落到 `Precision::Parametric`，把步长缩小若干量级。
+  - **门禁（批次 4）**：`cargo check` 五个 crate 与 `engine/occt/runner` 无 error（`engine/occt/driver` 的 build script 因缺 C++ 工具链失败，与本次改动无关）；`cargo test -p occt-geom2d` **72 passed / 0 failed**；`cargo test -p occt-topo --lib` **1251 passed / 0 failed**；`--tests` **1317 passed / 0 failed**（`step_obj_gates` **4/4**）；`export_data_obj` **15/15**，obj 顶点/面数与包围盒与基线逐位一致（`Cone` v=195 f=301、`Cube` v=24 f=12、`Cylinder` v=146 f=140、`Extrusion` v=24 f=12、`HoledPlate` v=180 f=128、`Offset` v=712 f=892、`OffsetPlaneHoleEdge` v=48 f=32、`Shape-1` v=3335 f=4328、`Shape-2` v=3081 f=4744、`Shape` v=6150 f=11372、`Sphere` v=642 f=1244、`Torus` v=1369 f=2592、`linkrods` v=3494 f=5078、`rev` v=104 f=92、`screw` v=601 f=792）。
+  - **同批发现、未改**：`inttools_range::find_nearest_valid_point` 仍缺 `BRepLib_1.cxx:69-83` 的 `aD1Mag` 局部奇点加速分支（`GetType()` 判 Bezier/BSpline、Offset 则先下到基曲线，`aD1Mag = 1/Resolution(1.)*0.01` 再平方）；该缺口在原注释里已标为有意省略（`ponytail:`），本轮未动。
+
+  - **门禁（批次 2）**：`cargo test -p occt-topo --lib` **1251 passed / 0 failed**；`cargo test -p occt-topo --tests` **1317 passed / 0 failed**；`step_obj_gates` **4/4**，23 模型字号与面积比全 `1.0000`（`our/occ`）；隔离复算（`git stash` 掉本批改动）得到逐位相同的 `v/f` 与面积，证明本批对网格无位移。
+  - **门禁（批次 3）**：`cargo test -p occt-topo --lib` **1251 passed / 0 failed**；`cargo test -p occt-topo --tests` 全部 `ok`（`step_obj_gates` **4/4**、`phase3..10/19/20_integration` 8/5/5/4/9/7/5/5/5/8、`bop_builder2_boss` 2）；`export_data_obj` **15/15**，obj 顶点/面数与基线逐位一致（`Sphere.step` v=642 f=1244、`Torus.step` v=1369 f=2592、`Offset.step` v=712 f=892、`Shape.step` v=6150 f=11372、`Cylinder.step` v=146 f=140、`rev.step` v=104 f=92 等均未变）。
 
 ### 15. `hlr.rs` 是画家算法近似，不是 `HLRBRep`
 - 判定：自创 ｜ live：**是**（`render_svg.rs:57`、`draw` 的 view 命令）
@@ -185,7 +241,7 @@ for i in 0..=8 {
   - 发现 1/2/3/4/5（`brepfeat/features.rs`）：文件仍在，物理行号已漂移 —— `result.volume = ...` 现 `:109`（未变）；`revolve_profile_about` 现 `:336`（原文写 `:361`）；`mesh_cylinder(radius, height, 24)` 现 `:394`（原文写 `:419`）；`r.clamp(16, 64)` 现 `:483`（原文写 `:508`）；`GeometryRegistry::global().set_face` 现 `:37`（未变）。
   - 发现 6（`wireframe.rs:399` / `:407-408`）：现为 `:423`（`face_uv_bounds(f, surface.as_ref())`）与 `:431-432`（`clamp(3, 64)`）；`face_uv_bounds` 函数本体现 `:486`。**仍未修**（被 A13/A18/T-69 阻塞）。
   - 发现 7（`feature.rs` 顶层重复体素实现）：**该文件已不存在**（`crates/occt-topo/src/feature.rs` 已删除），仅 `brepfeat/features.rs` 保留 —— 本条据此订正为"重复体素实现已收敛到 `brepfeat`"。
-  - 发现 8/9/10/11/13 的行号经复核仍成立：`validate.rs:150` 的 `is_valid()` 恒真仍在（`:3` 已加 **UNPORTED**）；`brep_gprop.rs:98`、`brep_measure.rs:12`、`shape_metrics.rs:146`、`solid_union.rs:103` 均在。
+  - 发现 8/9/10/11 的行号经复核仍成立：`validate.rs:150` 的 `is_valid()` 恒真仍在（`:3` 已加 **UNPORTED**）；`brep_gprop.rs:98`、`shape_metrics.rs:146`、`solid_union.rs:103` 均在。**订正（2026-10-14）**：发现 11 与 13 均已修（发现 11 见本条处置，发现 13 的 `brep_measure.rs:12` 折线采样已换成 `BRepGProp::LinearProperties` 委托、形参 `samples` 删除），故第 13 条不再是未整改项。
   - `补充说明` 的 `brep_check.rs edge_check`：`BRepCheck_Edge::Minimum` **已移植**（2026-10-13，`cxx:74-258`）——`!SameRange && SameParameter` → `InvalidSameParameterFlag`、无 3D 表示 → `No3DCurve`、`Last <= First` 与基曲线周期/范围比对 → `InvalidRange`、空曲线表示 + `Degenerated` → `InvalidDegeneratedFlag`，`Status` 按 `BRepCheck_Status.hxx:20-59` 重排补齐；`InContext`（`:263-556`，依赖未移植的 `BRepLib_ValidateEdge`）、`Tolerance`（`:598-707`）、`CheckPolygonOnTriangulation`（`:711-839`）与表示的 `TopLoc_Location`（`:163-171`）仍 UNPORTED，已在函数头登记。`BRepLib::CheckSameRange` 已随 §9.588 落地（见上），两者不是同一函数，勿混同。
 
 ## 补充说明

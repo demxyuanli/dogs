@@ -28,12 +28,43 @@ use super::*;
         )
     }
 
-    /// A cylinder target built as a faceted mesh (planar faces), because the
-    /// analytic `BRepPrimCylinder` lateral surface cannot be meshed by the
-    /// wireframe mesher (`GeomCylinder::d1` returns zero partials).
+    /// Faceted cylinder target built as a triangle mesh (axis +Z, planar faces).
+    /// The analytic `BRepPrimCylinder` target is exact for the fuse/neck family
+    /// (`translated_cylinder`), but as a *Cut target* it mis-integrates the
+    /// faceted lathe tool: `groove` removes the whole r<=1 disc instead of the
+    /// r 0.6..1 ring (6.911504 vs 7.816283). The mesh target keeps the baseline.
     fn faceted_cyl(r: f64, h: f64) -> Solid {
-        let tool = mesh_cylinder(r, h, 24);
-        Solid::wrap(tool).expect("faceted cylinder solid")
+        let slices = 24usize;
+        let mut vertices = Vec::new();
+        let mut triangles = Vec::new();
+        for i in 0..=slices {
+            let theta = 2.0 * std::f64::consts::PI * i as f64 / slices as f64;
+            let (x, y) = (r * theta.cos(), r * theta.sin());
+            vertices.push(GpPnt::new(x, y, 0.0));
+            vertices.push(GpPnt::new(x, y, h));
+        }
+        for i in 0..slices {
+            let (a, b, c, d) = (2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3);
+            triangles.push(occt_core::poly::triangulation::Triangle::new(a, b, c));
+            triangles.push(occt_core::poly::triangulation::Triangle::new(b, d, c));
+        }
+        let (top_idx, bot_idx) = (vertices.len(), vertices.len() + 1);
+        vertices.push(GpPnt::new(0.0, 0.0, h));
+        vertices.push(GpPnt::new(0.0, 0.0, 0.0));
+        for i in 0..slices {
+            let (tb, tt) = (2 * i + 1, 2 * i + 3);
+            let (bb, bt) = (2 * i, 2 * i + 2);
+            triangles.push(occt_core::poly::triangulation::Triangle::new(top_idx, tt, tb));
+            triangles.push(occt_core::poly::triangulation::Triangle::new(bot_idx, bb, bt));
+        }
+        let mesh = crate::mesh::ShapeMesh {
+            vertices,
+            triangles,
+            source_shape: crate::abs::ShapeType::Solid,
+        };
+        let brep = crate::mesh_to_brep::shape_mesh_to_brep(&mesh);
+        Solid::wrap(brep.solid.expect("faceted cylinder mesh is closed").0)
+            .expect("faceted cylinder solid")
     }
 
     #[test]
@@ -112,7 +143,7 @@ use super::*;
     #[test]
     fn neck_adds_material() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
-        let before = crate::shape_mesh::shape_volume(&box_s.solid.0, 0.05);
+        let before = crate::brep_gprop::volume(&box_s.solid.0, 0.05);
         // Neck: cylinder r 0.4 standing from the box top (z 1) to z 2.0,
         // centered on the box.
         let profile = [
@@ -136,7 +167,7 @@ use super::*;
     #[test]
     fn rib_fuses_to_box() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
-        let before = crate::shape_mesh::shape_volume(&box_s.solid.0, 0.05);
+        let before = crate::brep_gprop::volume(&box_s.solid.0, 0.05);
         let before_faces = faces_of(&box_s.solid.0).len();
         let plane = xy_plane_at(1.0);
         let profile = [
@@ -165,7 +196,7 @@ use super::*;
     #[test]
     fn boss_thru_all_pierces() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 0.5);
-        let before = crate::shape_mesh::shape_volume(&box_s.solid.0, 0.05);
+        let before = crate::brep_gprop::volume(&box_s.solid.0, 0.05);
         let before_faces = faces_of(&box_s.solid.0).len();
         let center = GpPnt::new(1.0, 1.0, 0.25);
         let after = boss_thru_all(&box_s.solid, &center, 0.3, 1e-7).unwrap();
@@ -262,7 +293,7 @@ use super::*;
     #[test]
     fn rib_through_wire_ok() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
-        let before = crate::shape_mesh::shape_volume(&box_s.solid.0, 0.05);
+        let before = crate::brep_gprop::volume(&box_s.solid.0, 0.05);
         let plane = xy_plane_at(1.0);
         let profile = [
             GpPnt2d::new(0.5, 0.5),
@@ -277,7 +308,7 @@ use super::*;
     #[test]
     fn boss_adds_material() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
-        let before = crate::shape_mesh::shape_volume(&box_s.solid.0, 0.05);
+        let before = crate::brep_gprop::volume(&box_s.solid.0, 0.05);
         let after = boss(&box_s.solid, &GpPnt::new(1.0, 1.0, 0.0), 0.25, 0.8, 1e-4).unwrap();
         let added = std::f64::consts::PI * 0.25 * 0.25 * 0.8;
         assert!(after.volume > before, "boss must add material: {} > {}", after.volume, before);

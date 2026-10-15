@@ -182,7 +182,12 @@ pub fn compute_int_range(tol1: f64, tol2: f64, angle: f64) -> f64 {
 /// Face/face tangential tolerance of an intersection curve.
 ///
 /// Non-planar: `max(TolF1, TolF2)`. Plane/plane: `sqrt(Dt^2 + TolF1^2)`
-/// floored at `max(TolF1, TolF2)` (`IntTools_FaceFace::ComputeTolReached3d`).
+/// floored at `max(TolF1, TolF2)`. The plane branch is `PerformPlanes`
+/// (`IntTools_FaceFace.cxx:2541-2555`), reached from `Perform` under
+/// `aType1 == GeomAbs_Plane && aType2 == GeomAbs_Plane`
+/// (`IntTools_FaceFace.cxx:395`). `f1_planar` / `f2_planar` must therefore be
+/// the exact surface type (`BRepAdaptor_Surface::GetType() == GeomAbs_Plane`),
+/// not a sampled normal.
 pub fn curve_tangential_tolerance(
     f1_planar: bool,
     f2_planar: bool,

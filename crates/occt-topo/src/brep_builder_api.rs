@@ -345,7 +345,7 @@ pub fn polygon_area(points: &[GpPnt]) -> f64 {
 mod tests {
     use super::*;
     use crate::brep_tool::BRepTool;
-    use crate::brep_surface::face_is_planar;
+    use crate::brep_surface::face_is_plane_type;
     use crate::topo_tools_full::{vertex_position, wire_is_closed};
 
     fn approx(a: f64, b: f64) -> bool {
@@ -369,7 +369,7 @@ mod tests {
             assert!(vertex_position(v).is_equal(p), "vertex point matches input");
         }
         let face = make_face_from_polygon(&pts).expect("square face");
-        assert!(face_is_planar(&face), "polygon face is planar");
+        assert!(face_is_plane_type(&face), "polygon face is planar");
     }
 
     #[test]
@@ -402,8 +402,8 @@ mod tests {
         assert!(approx(c.radius, 2.0) && approx(c.height, 3.0));
         assert!(approx(PI * c.radius * c.radius * c.height, PI * 4.0 * 3.0));
         // Caps are planar; the lateral surface is not.
-        assert!(face_is_planar(&c.bottom) && face_is_planar(&c.top));
-        assert!(!face_is_planar(&c.lateral));
+        assert!(face_is_plane_type(&c.bottom) && face_is_plane_type(&c.top));
+        assert!(!face_is_plane_type(&c.lateral));
     }
 
     #[test]

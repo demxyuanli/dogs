@@ -92,6 +92,8 @@
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Common.hxx>
 #include <BOPAlgo_PaveFiller.hxx>
 #include <BOPDS_DS.hxx>
 #include <BOPAlgo_Builder.hxx>
@@ -103,6 +105,8 @@
 #include <BOPTools_AlgoTools2D.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <Geom_Plane.hxx>
+#include <BRepOffset.hxx>
+#include <Geom_RectangularTrimmedSurface.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepTools.hxx>
 #include <TopTools_ListOfShape.hxx>
@@ -3565,6 +3569,47 @@ static int runIgesPc(const TopoDS_Shape& theShape, const char* thePath)
 
 // --- end T-111 oracle --------------------------------------------------------------
 
+// T-126: `--offsetsurf <dist>` -- for every face, the `BRepOffset::Surface`
+// result that the port's `brep_offset::brep_offset_surface`
+// (`crates/occt-topo/src/brep_offset/brep_offset_surface.rs`) must reproduce:
+// the basis surface's dynamic type, the result's dynamic type, the
+// `BRepOffset_Status`, and the result evaluated on a fixed `(u, v)` grid. The
+// grid is deliberately independent of the face's UV window, so this compares
+// the *surface* and not the port's `BRepTools::UVBounds`. The face's trimmed
+// window is unwrapped first, the way `BRepOffset_Offset::Init` does
+// (`BRepOffset_Offset.cxx:483-488`).
+static int runOffsetSurf(const TopoDS_Shape& theShape, const double theOffset)
+{
+  std::cout << std::fixed << std::setprecision(9);
+  const double aUs[3] = {0.4, 1.1, 2.7};
+  const double aVs[3] = {-0.5, 0.3, 1.2};
+  int          fi     = -1;
+  for (TopExp_Explorer exp(theShape, TopAbs_FACE); exp.More(); exp.Next())
+  {
+    ++fi;
+    const TopoDS_Face&        aFace = TopoDS::Face(exp.Current());
+    TopLoc_Location           L;
+    occ::handle<Geom_Surface> S = BRep_Tool::Surface(aFace, L);
+    if (occ::handle<Geom_RectangularTrimmedSurface> RT =
+          occ::down_cast<Geom_RectangularTrimmedSurface>(S))
+    {
+      S = RT->BasisSurface();
+    }
+    BRepOffset_Status         aStatus;
+    occ::handle<Geom_Surface> anOff = BRepOffset::Surface(S, theOffset, aStatus);
+    std::cout << "OFFSURF f=" << fi << " src=" << S->DynamicType()->Name()
+              << " res=" << anOff->DynamicType()->Name()
+              << " status=" << static_cast<int>(aStatus);
+    for (int i = 0; i < 3; ++i)
+    {
+      const gp_Pnt aP = anOff->Value(aUs[i], aVs[i]);
+      std::cout << " p" << i << "=(" << aP.X() << "," << aP.Y() << "," << aP.Z() << ")";
+    }
+    std::cout << std::endl;
+  }
+  return 0;
+}
+
 int main(int argc, char** argv)
 {
   if (argc < 2)
@@ -3862,6 +3907,11 @@ int main(int argc, char** argv)
     if (std::string(argv[i]) == "--boundary")
     {
       return runBoundary(aShape, argv[i + 1]);
+    }
+    // T-126: `--offsetsurf <dist>` dumps `BRepOffset::Surface` per face.
+    if (std::string(argv[i]) == "--offsetsurf" && i + 1 < argc)
+    {
+      return runOffsetSurf(aShape, std::atof(argv[i + 1]));
     }
     // TEMP T-133: `--lens <faceIdx> <u0> <u1> <v0> <v1>` replays the range
     // splitter's length sampling (see `runLenSamples`).
@@ -5654,6 +5704,89 @@ int main(int argc, char** argv)
       BRepGProp_Vinert aV; aV.SetLocation(aOrig);
       BRepGProp_Face aBF; aBF.Load(aF); BRepGProp_Domain aBD; aBD.Init(aF); aV.Perform(aBF, aBD);
       std::cout << "FFACE " << i << " type=" << (int)aBAS.GetType() << " orient=" << (int)aF.Orientation()
+                << " area=" << aFA.Mass() << " contrib=" << aV.Mass() << "\n";
+    }
+    return 0;
+  }
+  if (argc > 2 && std::string(argv[2]) == "--gf")
+  {
+    // General Fuse of the same operands. The GF result carries the split
+    // images of both arguments, so the solid images (the BOPAlgo_SplitSolid
+    // areas of BuildSplitSolids) can be read off directly.
+    TopoDS_Shape aBox = BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., -1.), gp_Pnt(1., 1., 1.)).Shape();
+    TopoDS_Shape aCyl = BRepPrimAPI_MakeCylinder(0.4, 2.0).Shape();
+    NCollection_List<TopoDS_Shape> aLS;
+    aLS.Append(aBox);
+    aLS.Append(aCyl);
+    BOPAlgo_Builder aGF;
+    aGF.SetArguments(aLS);
+    aGF.Perform();
+    if (aGF.HasErrors()) { std::cout << "GF failed\n"; return 1; }
+    const TopoDS_Shape aRes = aGF.Shape();
+    int i = 0;
+    for (TopExp_Explorer ex(aRes, TopAbs_SOLID); ex.More(); ex.Next(), ++i)
+    {
+      const TopoDS_Solid aSol = TopoDS::Solid(ex.Current());
+      GProp_GProps aP; BRepGProp::VolumeProperties(aSol, aP);
+      int nf = 0; for (TopExp_Explorer exf(aSol, TopAbs_FACE); exf.More(); exf.Next()) ++nf;
+      int nc = 0;
+      for (TopoDS_Iterator it(aSol); it.More(); it.Next())
+      {
+        if (it.Value().ShapeType() == TopAbs_SHELL) ++nc;
+      }
+      std::cout << "GFSOL " << i << " orient=" << (int)aSol.Orientation()
+                << " volume=" << aP.Mass() << " faces=" << nf << " subshapes=" << nc << "\n";
+      int j = 0;
+      for (TopExp_Explorer exf(aSol, TopAbs_FACE); exf.More(); exf.Next(), ++j)
+      {
+        const TopoDS_Face aF = TopoDS::Face(exf.Current());
+        BRepAdaptor_Surface aBAS(aF);
+        GProp_GProps aFA; BRepGProp::SurfaceProperties(aF, aFA);
+        std::cout << "  GFSF " << j << " type=" << (int)aBAS.GetType()
+                  << " orient=" << (int)aF.Orientation() << " area=" << aFA.Mass() << "\n";
+      }
+    }
+    std::cout << "GF faces=" ;
+    int nall = 0; for (TopExp_Explorer ex(aRes, TopAbs_FACE); ex.More(); ex.Next()) ++nall;
+    std::cout << nall << "\n";
+    return 0;
+  }
+  if (argc > 2 && (std::string(argv[2]) == "--cut" || std::string(argv[2]) == "--common"))
+  {
+    // Same operands as --fuse: box[-1,1]^3 minus / intersected with
+    // BRepPrimAPI_MakeCylinder(0.4, 2.0).
+    const bool bCut = (std::string(argv[2]) == "--cut");
+    TopoDS_Shape aBox = BRepPrimAPI_MakeBox(gp_Pnt(-1., -1., -1.), gp_Pnt(1., 1., 1.)).Shape();
+    TopoDS_Shape aCyl = BRepPrimAPI_MakeCylinder(0.4, 2.0).Shape();
+    TopoDS_Shape aRes;
+    if (bCut)
+    {
+      BRepAlgoAPI_Cut anOp(aBox, aCyl);
+      anOp.Build();
+      if (!anOp.IsDone()) { std::cout << "CUT failed\n"; return 1; }
+      aRes = anOp.Shape();
+    }
+    else
+    {
+      BRepAlgoAPI_Common anOp(aBox, aCyl);
+      anOp.Build();
+      if (!anOp.IsDone()) { std::cout << "COMMON failed\n"; return 1; }
+      aRes = anOp.Shape();
+    }
+    GProp_GProps aP; BRepGProp::VolumeProperties(aRes, aP);
+    std::cout << (bCut ? "CUT" : "COMMON") << " volume=" << aP.Mass() << " faces=";
+    int nf = 0; for (TopExp_Explorer ex(aRes, TopAbs_FACE); ex.More(); ex.Next()) ++nf;
+    std::cout << nf << "\n";
+    const gp_Pnt aOrig(0., 0., 0.);
+    int i = 0;
+    for (TopExp_Explorer ex(aRes, TopAbs_FACE); ex.More(); ex.Next(), ++i)
+    {
+      const TopoDS_Face aF = TopoDS::Face(ex.Current());
+      BRepAdaptor_Surface aBAS(aF);
+      GProp_GProps aFA; BRepGProp::SurfaceProperties(aF, aFA);
+      BRepGProp_Vinert aV; aV.SetLocation(aOrig);
+      BRepGProp_Face aBF; aBF.Load(aF); BRepGProp_Domain aBD; aBD.Init(aF); aV.Perform(aBF, aBD);
+      std::cout << "AFFACE " << i << " type=" << (int)aBAS.GetType() << " orient=" << (int)aF.Orientation()
                 << " area=" << aFA.Mass() << " contrib=" << aV.Mass() << "\n";
     }
     return 0;

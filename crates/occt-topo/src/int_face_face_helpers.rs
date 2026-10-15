@@ -116,10 +116,18 @@ pub(crate) fn cone_from_surface(s: &dyn Surface) -> Option<GpCone> {
     GpCone::new(ax3, 0.0, alpha).ok()
 }
 
-/// Recover a `GpCylinder` from a cylinder surface via `cylinder_params`
-/// (axis frame X direction is arbitrary — it does not affect the section
-/// curve geometry, only its parametrization).
+/// Recover a `GpCylinder` from a cylinder surface. Port of
+/// `IntSurf_Quadric::SetValue(const gp_Cylinder&)` (`IntSurf_Quadric.cxx:123-131`):
+/// the quadric keeps the surface's own `Position()`, including its X direction.
+/// `IntAna_QuadQuadGeo` re-bases the section circle onto that same frame
+/// (`IntPatch_ImpImpIntersection.cxx:3300` -> `AdjustToSeam`, `:3895-3903`), so
+/// dropping the U origin here mis-parameterizes the section curve and shifts the
+/// pave vertices that split the face. The sampled reconstruction is only a
+/// fallback for surfaces that do not expose their cylinder.
 pub(crate) fn cylinder_from_surface(s: &dyn Surface) -> Option<GpCylinder> {
+    if let Some(c) = s.gp_cylinder() {
+        return Some(c);
+    }
     let (center, ax, r) = cylinder_params(s)?;
     let z = GpDir::from_vec(&ax).ok()?;
     let x = perp_x_dir(&z);

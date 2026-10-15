@@ -28,7 +28,7 @@ use occt_geom::Surface;
 use crate::abs::ShapeType;
 use crate::bopds_ff::BopdsInterfFf;
 use crate::bopds_ff::BopdsCurve;
-use crate::brep_surface::{classify_surface, face_is_planar, SurfaceKind};
+use crate::brep_surface::{classify_surface, face_is_plane_type, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::int_face_face::FaceFace;
 use crate::int_tools_curve_box;
@@ -73,9 +73,32 @@ pub fn tolerance_ff(face1: &Face, face2: &Face) -> f64 {
     a_tol_ff
 }
 
-/// `IsPlaneFF` at `_6.cxx:84` — Geom_Plane, or plane under offset / trim.
+/// `IsPlaneFF` at `_6.cxx:84` — a `Geom_Plane`, a
+/// `Geom_RectangularTrimmedSurface` whose basis is a `Geom_Plane`, or a
+/// `Geom_OffsetSurface` whose basis is a `Geom_Plane`.
+///
+/// This is **not** `GetType() == GeomAbs_Plane`: it accepts an offset-of-plane
+/// (whose `GetType()` is `GeomAbs_OffsetSurface`,
+/// `GeomAdaptor_Surface.cxx:496-523`) and, like the C++ `IsKind`, it looks at
+/// the immediate basis only, so an offset of a *trimmed* plane is rejected.
 pub fn is_plane_ff(surf: &dyn Surface) -> bool {
-    classify_surface(surf) == SurfaceKind::Plane
+    if let Some(basis) = surf.offset_basis_surface() {
+        return is_exact_plane(basis.as_ref());
+    }
+    if let Some(basis) = surf.rectangular_trimmed_basis() {
+        return is_exact_plane(basis.as_ref());
+    }
+    is_exact_plane(surf)
+}
+
+/// `theSurface->IsKind(STANDARD_TYPE(Geom_Plane))`: the surface object itself
+/// is a `Geom_Plane`. `IsKind` tests the C++ class, so a trimmed or offset
+/// plane is not one even when its basis is; only `GeomPlane` and
+/// `GeomRectangularTrimmedSurface` answer `gp_pln` in this port
+/// (`occt-geom/src/plane.rs:47`, `occt-geom/src/rectangular_trimmed.rs:606`),
+/// which makes the trimmed-basis test sufficient.
+fn is_exact_plane(surf: &dyn Surface) -> bool {
+    surf.gp_pln().is_some() && surf.rectangular_trimmed_basis().is_none()
 }
 
 /// `IsClosedFF` at `_6.cxx:106`.
@@ -213,15 +236,21 @@ fn shift_closed_faces(
     let mut shifted2 = face2.clone();
     let mut shift_value = 0.0;
 
-    let plane1 = BRepTool::face_surface(face1)
-        .map(|s| is_plane_ff(s.as_ref()))
-        .unwrap_or(false);
-    let plane2 = BRepTool::face_surface(face2)
-        .map(|s| is_plane_ff(s.as_ref()))
-        .unwrap_or(false);
+    // `_6.cxx:404`: the shift block only runs when the pair is *not*
+    // plane/plane, tested with `GetType() == GeomAbs_Plane`.
+    let plane1 = face_is_plane_type(face1);
+    let plane2 = face_is_plane_type(face2);
     if plane1 && plane2 {
         return (shifted1, shifted2, shift_value);
     }
+    // `_6.cxx:410,416`: inside the block `IsClosedFF` receives `IsPlaneFF`,
+    // which also accepts an offset-of-plane.
+    let is_plane_ff1 = BRepTool::face_surface(face1)
+        .map(|s| is_plane_ff(s.as_ref()))
+        .unwrap_or(false);
+    let is_plane_ff2 = BRepTool::face_surface(face2)
+        .map(|s| is_plane_ff(s.as_ref()))
+        .unwrap_or(false);
 
     let edges1 = face_edges(ds, n_f1);
     let edges2 = face_edges(ds, n_f2);
@@ -234,7 +263,7 @@ fn shift_closed_faces(
             continue;
         };
         let edge1 = Edge(e1s);
-        let closed1 = is_closed_ff(ds, n_f1, an_edge_index1, plane1);
+        let closed1 = is_closed_ff(ds, n_f1, an_edge_index1, is_plane_ff1);
         for &an_edge_index2 in &edges2 {
             if found {
                 break;
@@ -243,7 +272,7 @@ fn shift_closed_faces(
                 continue;
             };
             let edge2 = Edge(e2s);
-            let closed2 = is_closed_ff(ds, n_f2, an_edge_index2, plane2);
+            let closed2 = is_closed_ff(ds, n_f2, an_edge_index2, is_plane_ff2);
             if !closed1 && !closed2 {
                 continue;
             }
@@ -369,7 +398,7 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
         let face1 = Face(f1_shape);
         let face2 = Face(f2_shape);
 
-        if face_is_planar(&face1) && face_is_planar(&face2) && !check_planes(f.ds(), n_f1, n_f2) {
+        if face_is_plane_type(&face1) && face_is_plane_type(&face2) && !check_planes(f.ds(), n_f1, n_f2) {
             let mut rec = BopdsInterfFf::new(n_f1, n_f2);
             rec.init(0, 0);
             f.ds_mut().append_interf_ff(rec);
@@ -439,8 +468,8 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
         }
 
         let tang_default = int_tools_curve_box::curve_tangential_tolerance(
-            face_is_planar(&job.orig1),
-            face_is_planar(&job.orig2),
+            face_is_plane_type(&job.orig1),
+            face_is_plane_type(&job.orig2),
             BRepTool::face_tolerance(&job.orig1),
             BRepTool::face_tolerance(&job.orig2),
             plane_angle(&job.orig1, &job.orig2),

@@ -163,9 +163,11 @@ impl ShrunkRange {
             return self.fail("shrunk range is too short (micro edge)");
         }
 
-        // Parametric tolerance for the arc-length measurement, capped at 1% of
-        // the edge range so large-tolerance edges do not over-refine.
-        let mut a_ptol_e = curve_resolution(curve.as_ref(), first, last, a_tol_e);
+        // Parametric tolerance for the arc-length measurement:
+        // `aPTolE = aBAC.Resolution(aTolE)` (`IntTools_ShrunkRange.cxx:162`),
+        // capped at 1% of the edge range so large-tolerance edges do not
+        // over-refine (`cxx:165-169`).
+        let mut a_ptol_e = curve.resolution(a_tol_e);
         let a_ptol_e_min = (last - first) / 100.0;
         if a_ptol_e > a_ptol_e_min {
             a_ptol_e = a_ptol_e_min;
@@ -258,10 +260,10 @@ pub(crate) fn find_valid_range(
     if last - first < PCONFUSION {
         return None;
     }
-    // The bisection target: curve resolution scaled down, floored at the
-    // parametric confusion and the relative machine epsilon.
+    // `anEps = max(max(theCurve.Resolution(theTolE) * 0.1, Epsilon(aMaxPar)),
+    //             Precision::PConfusion())` (`BRepLib_1.cxx:202-203`).
     let max_par = first.abs().max(last.abs());
-    let an_eps = (curve_resolution(curve, first, last, tol1) * 0.1)
+    let an_eps = (curve.resolution(tol1) * 0.1)
         .max(f64::EPSILON * max_par.max(1.0))
         .max(PCONFUSION);
 
@@ -306,7 +308,8 @@ fn find_nearest_valid_point(
         return None;
     }
 
-    let mut step = curve_resolution(curve, first, last, tol) * 1.01;
+    // `aStep = theCurve.Resolution(theTol) * 1.01` (`BRepLib_1.cxx:61`).
+    let mut step = curve.resolution(tol) * 1.01;
     if step < eps {
         step = eps;
     }
@@ -345,33 +348,6 @@ fn find_nearest_valid_point(
         }
     }
     Some((a + b) * 0.5)
-}
-
-/// Approximate `BRepAdaptor_Curve::Resolution(tol)`: the parameter increment
-/// over which the curve deviates from a straight chord by roughly `tol`.
-///
-/// The maximum derivative magnitude `|dp/du|` is estimated by central
-/// differences over the curve's range; `Resolution = tol / max_speed`. For an
-/// arc-length parametrised line (`max_speed = 1`) this is exactly `tol`.
-pub(crate) fn curve_resolution(curve: &dyn Curve, first: f64, last: f64, tol: f64) -> f64 {
-    let span = last - first;
-    if span.abs() <= 1e-30 || tol <= 0.0 {
-        return PCONFUSION;
-    }
-    let n = 8;
-    let h = span / n as f64 * 0.5;
-    let mut max_speed = 0.0f64;
-    for i in 0..=n {
-        let u = first + span * i as f64 / n as f64;
-        let speed = curve.d0(u - h).distance(&curve.d0(u + h)) / (2.0 * h);
-        if speed > max_speed {
-            max_speed = speed;
-        }
-    }
-    if max_speed <= 1e-30 {
-        return tol.max(PCONFUSION);
-    }
-    (tol / max_speed).max(PCONFUSION)
 }
 
 // ---------------------------------------------------------------------------

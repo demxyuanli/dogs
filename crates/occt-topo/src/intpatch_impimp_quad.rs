@@ -157,6 +157,14 @@ fn dist_to_axis(p: &GpPnt, c: &GpPnt, ax: &GpVec) -> f64 {
 }
 
 fn cylinder_from_surface(s: &dyn Surface) -> Option<GpCylinder> {
+    // `IntSurf_Quadric::SetValue(const gp_Cylinder&)` (`IntSurf_Quadric.cxx:123-131`)
+    // keeps the surface's own `Position()`, X direction included; the analytic
+    // section curve is then re-based onto that frame (`AdjustToSeam`,
+    // `IntPatch_ImpImpIntersection.cxx:3300`). Rebuilding the frame from samples
+    // drops the U origin and mis-parameterizes the section curve.
+    if let Some(c) = s.gp_cylinder() {
+        return Some(c);
+    }
     let (center, ax, r) = cylinder_params(s)?;
     let z = GpDir::from_vec(&ax).ok()?;
     let x = perp_x_dir(&z);

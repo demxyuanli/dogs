@@ -25,7 +25,7 @@ pub fn draft(solid: &Solid, face_pts: &[GpPnt], angle_deg: f64, pivot: &GpPln, t
     let identity = GpTrsf::identity();
     let copy = crate::shape_ops::transformed_copy(&solid.0, &identity)?;
     if angle.abs() < 1e-12 {
-        let volume = crate::shape_mesh::shape_volume(&copy, tol.max(1e-4));
+        let volume = crate::brep_gprop::volume(&copy, tol.max(1e-4));
         return Ok(FeatResult { shape: copy, volume });
     }
     let p0 = face_pts[0];
@@ -38,7 +38,7 @@ pub fn draft(solid: &Solid, face_pts: &[GpPnt], angle_deg: f64, pivot: &GpPln, t
         &face.0,
         FaceGeom { surface: Arc::new(GeomPlane::new(rotated)), tolerance: 0.0, natural_restriction: true },
     );
-    let volume = crate::shape_mesh::shape_volume(&copy, tol.max(1e-4));
+    let volume = crate::brep_gprop::volume(&copy, tol.max(1e-4));
     Ok(FeatResult { shape: copy, volume })
 }
 
@@ -95,7 +95,7 @@ pub fn boss_thru_all(solid: &Solid, center: &GpPnt, radius: f64, tol: f64) -> Re
     let (z0, z1) = solid_z_span(&solid.0).map_err(|e| format!("boss_thru_all: {e}"))?;
     let margin = (z1 - z0).max(radius).max(1.0);
     let height = (z1 - z0) + 2.0 * margin;
-    let tool = translated_mesh_cylinder(center, radius, height, z0 - margin)?;
+    let tool = translated_cylinder(center, radius, height, z0 - margin)?;
     boolean_feature(solid, &tool, BoolOp::Fuse, tol)
 }
 
@@ -109,7 +109,7 @@ pub fn boss(solid: &Solid, center: &GpPnt, radius: f64, height: f64, tol: f64) -
     // `center`'s x/y, the base sits at the top z). Placing it at the bottom z
     // hid the cylinder inside the solid, so a fuse swallowed it entirely.
     let (_, z1) = solid_z_span(&solid.0).map_err(|e| format!("boss: {e}"))?;
-    let tool = translated_mesh_cylinder(center, radius, height, z1)?;
+    let tool = translated_cylinder(center, radius, height, z1)?;
     boolean_feature(solid, &tool, BoolOp::Fuse, tol)
 }
 
@@ -282,20 +282,6 @@ pub(super) fn profile_bounds(profile: &[GpPnt2d]) -> Option<(f64, f64, f64, f64)
     }
 }
 
-/// Whether every face of `shape` carries a planar surface (eligible for the
-/// exact planar boolean).
-pub(super) fn all_faces_planar(shape: &TopoShape) -> bool {
-    let fa = faces_of(shape);
-    if fa.is_empty() {
-        return false;
-    }
-    fa.iter().all(|f| match crate::brep_tool::BRepTool::face_surface(f) {
-        Some(s) => crate::brep_surface::classify_surface(s.as_ref())
-            == crate::brep_surface::SurfaceKind::Plane,
-        None => false,
-    })
-}
-
 /// Combine `solid` with the `tool` solid.
 ///
 /// T-41: OCCT's only boolean is `BRepAlgoAPI_*` / `BOPAlgo_BOP` (audit A5: the
@@ -316,22 +302,25 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
 ///
 /// UNPORTED workaround (`BRepFeat_MakeRevol` has no such step: OCCT takes the
 /// tool `TopoDS_Shape` as given and hands it to `BOPAlgo_BOP`): the analytic
-/// revolve solid `sweep_revolve::revolve_polyline_around_z` returns cannot yet
-/// be combined by `crate::bop_builder::boolean`, so the tool is rebuilt as a
+/// revolve solid `sweep_revolve::revolve_polyline_around_z` returns cannot be
+/// combined by `crate::bop_builder::boolean`, so the tool is rebuilt as a
 /// planar-faced (lathe) mesh from the revolution's ring vertices. Measured
-/// 2026-10-13 on the `brepfeat` baselines:
+/// 2026-10-15 on the `brepfeat` baselines: `box ∪ analytic neck` drops the tool
+/// (volume stays 4.000000, expected 4.489835) and `faceted cylinder − analytic
+/// groove ring` (`Cut`) *adds* material (9.764392 > 9.424778); reversing the
+/// faces to their outward sense (`BRepPrim_OneAxis::BottomFace`) moves the neck
+/// fuse to a zero-volume result and the groove to 6.911504 (expected 7.816283),
+/// so the gap is not orientation alone.
 ///
-/// * box ∪ analytic neck (touching at z = 1) -> one solid, but the tool is
-///   dropped: volume stays the box's 4.000000 (expected 4.489835);
-/// * box ∪ analytic through-boss -> `res_solid = false` and the whole
-///   cylinder is added untrimmed: 2.706858 (expected 2.565487);
-/// * faceted cylinder − analytic groove ring (`Cut`) -> `res_solid = false`,
-///   and the cut *adds* material: 9.337869 > 9.317486.
+/// The same measurement with the analytic `BRepPrimAPI_MakeCylinder` tool
+/// (`translated_cylinder`) is exact: `box ∪ boss` = 4.157080 (= 4 + pi*0.0625*0.8)
+/// and `box ∪ through-boss` = 2.565487 (the trimmed value, not the 2.706858
+/// untrimmed union) — so the `BOPAlgo_BOP` curved path is sound and the
+/// remaining gap is in `sweep_revolve`, which builds its faces with a naive arc
+/// chain + seam wire instead of the `BRepSweep_Revol` / `BRepPrim_OneAxis`
+/// wire, seam and pcurve conventions (the conventions `BRepPrimCylinder` had to
+/// match for `BOPAlgo_WireSplitter::Tolerance2D` to close the seam loops).
 ///
-/// With a faceted tool all three agree with the baseline. The gap is in the
-/// port's `BOPAlgo_BOP` path (audit A5 / T-79, `bop_curved`), not in the
-/// mesher: `GeomCylinder::d1` does return the analytic partials
-/// (`occt-geom/src/cylinder.rs:20-22` -> `elib::surface_eval::cylinder_d1`).
 /// Consecutive rings form quad strips; a ring on the axis collapses to a fan,
 /// so closed profiles produce closed solids.
 pub(super) fn revolve_profile_about(profile: &[GpPnt2d], steps: usize, axis: &GpAx1) -> Result<TopoShape, String> {
@@ -384,64 +373,17 @@ pub(super) fn revolve_profile_about(profile: &[GpPnt2d], steps: usize, axis: &Gp
     crate::shape_ops::transformed_copy(&tool, &t)
 }
 
-/// Build a faceted cylinder of `radius` × `height` (axis +Z) translated so its
-/// base sits at `z_base` and its axis passes through `center`.
-pub(super) fn translated_mesh_cylinder(
+/// Analytic cylinder of `radius` × `height` (axis +Z) translated so its base
+/// sits at `z_base` and its axis passes through `center`.
+/// Source: `BRepPrimAPI_MakeCylinder`.
+pub(super) fn translated_cylinder(
     center: &GpPnt,
     radius: f64,
     height: f64,
     z_base: f64,
 ) -> Result<TopoShape, String> {
-    let cyl = mesh_cylinder(radius, height, 24);
-    crate::shape_ops::translated_copy(&cyl, &GpVec::new(center.x(), center.y(), z_base))
-}
-
-/// Divergence-theorem volume of a triangle mesh (`|Σ a·(b×c)| / 6`).
-pub(super) fn mesh_volume_signed(mesh: &crate::mesh::ShapeMesh) -> f64 {
-    let mut vol = 0.0;
-    for t in &mesh.triangles {
-        let a = mesh.vertices[t.n0].coord;
-        vol += a.dot_cross(&mesh.vertices[t.n1].coord, &mesh.vertices[t.n2].coord);
-    }
-    (vol / 6.0).abs()
-}
-
-/// Faceted cylinder solid (axis +Z) from an exact triangle mesh, so all faces
-/// are planar and mesh reliably. UNPORTED workaround for the same
-/// `bop_builder::boolean` gap as [`revolve_profile_about`]: OCCT's
-/// `BRepPrimAPI_MakeCylinder` tool is analytic, and its fuse with a box is not
-/// handled by the port yet (`BRepPrimCylinder::make_cylinder` + `Fuse` here
-/// yields the untrimmed union, 2.706858 instead of 2.565487).
-pub(super) fn mesh_cylinder(radius: f64, height: f64, slices: usize) -> TopoShape {
-    let mut vertices = Vec::new();
-    let mut triangles = Vec::new();
-    for i in 0..=slices {
-        let theta = 2.0 * std::f64::consts::PI * i as f64 / slices as f64;
-        let (x, y) = (radius * theta.cos(), radius * theta.sin());
-        vertices.push(GpPnt::new(x, y, 0.0));
-        vertices.push(GpPnt::new(x, y, height));
-    }
-    for i in 0..slices {
-        let (a, b, c, d) = (2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3);
-        triangles.push(occt_core::poly::triangulation::Triangle::new(a, b, c));
-        triangles.push(occt_core::poly::triangulation::Triangle::new(b, d, c));
-    }
-    let (top_idx, bot_idx) = (vertices.len(), vertices.len() + 1);
-    vertices.push(GpPnt::new(0.0, 0.0, height));
-    vertices.push(GpPnt::new(0.0, 0.0, 0.0));
-    for i in 0..slices {
-        let (tb, tt) = (2 * i + 1, 2 * i + 3);
-        let (bb, bt) = (2 * i, 2 * i + 2);
-        triangles.push(occt_core::poly::triangulation::Triangle::new(top_idx, tt, tb));
-        triangles.push(occt_core::poly::triangulation::Triangle::new(bot_idx, bb, bt));
-    }
-    let mesh = crate::mesh::ShapeMesh {
-        vertices,
-        triangles,
-        source_shape: crate::abs::ShapeType::Solid,
-    };
-    let brep = crate::mesh_to_brep::shape_mesh_to_brep(&mesh);
-    brep.solid.expect("mesh_cylinder: mesh is closed").0
+    let cyl = crate::primitives::BRepPrimCylinder::make_cylinder(radius, height);
+    crate::shape_ops::translated_copy(&cyl.solid.0, &GpVec::new(center.x(), center.y(), z_base))
 }
 
 /// Transform mapping the +Z axis through the origin onto the line `axis`
@@ -470,22 +412,6 @@ pub(super) fn align_z_to_axis(axis: &GpAx1) -> Result<GpTrsf, String> {
     let mut tr = GpTrsf::identity();
     tr.set_translation_vec(&GpVec::from_xyz(&axis.location().coord));
     Ok(tr.multiplied(&rot))
-}
-
-/// Voxel resolution from the combined bounding-box span so a cell is about
-/// `tol` wide (clamped for speed and robustness).
-///
-/// The target cell width is `tol`, but the resolution is clamped to
-/// `[16, 64]` cells across the largest span: fine enough to resolve the tool
-/// features, coarse enough to keep the voxel classification tractable.
-pub(super) fn resolution_for(solid: &Solid, tool: &TopoShape, tol: f64) -> usize {
-    let mut bb = crate::bbox_from_geometry::shape_bbox(&solid.0);
-    bb.add_box(&crate::bbox_from_geometry::shape_bbox(tool));
-    let (x0, x1, y0, y1, z0, z1) = bb.get().unwrap_or((0.0, 1.0, 0.0, 1.0, 0.0, 1.0));
-    let span = (x1 - x0).max(y1 - y0).max(z1 - z0).max(1e-9);
-    let tol = if tol.is_finite() && tol > 0.0 { tol } else { span / 40.0 };
-    let r = (span / tol.max(span / 64.0)).ceil() as usize;
-    r.clamp(16, 64)
 }
 
 /// Distance from `p` to the nearest point of the face's surface. For planar

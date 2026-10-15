@@ -26,7 +26,6 @@ impl EdgeFace {
         let a_cr = curve_resolution(curve.as_ref(), self.criteria);
         let is_whole_range =
             (af1 - self.range.first).abs() < a_cr && (al1 - self.range.last).abs() < a_cr;
-
         if df1 > self.criteria * 2.0 && is_whole_range {
             cp.part_type = CommonPartType::Edge;
             return 0;

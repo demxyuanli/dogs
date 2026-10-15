@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::*;
     use crate::brep_extrema::test_box::unit_box;
-    use crate::brep_surface::face_is_planar;
+    use crate::brep_surface::face_is_plane_type;
     use crate::builder::TopoBuilder;
     use crate::builder_face::build_face_with_holes;
     use crate::primitives::BRepPrimCylinder;
@@ -157,7 +157,7 @@ use super::*;
     #[test]
     fn cylinder_primitive_lateral_periodic_equality() {
         let c = BRepPrimCylinder::make_cylinder(1.0, 2.0);
-        let lateral = faces_of(&c.solid.0).into_iter().find(|f| !face_is_planar(f)).expect("lateral");
+        let lateral = faces_of(&c.solid.0).into_iter().find(|f| !face_is_plane_type(f)).expect("lateral");
         let cl = FClass2d::new(&lateral, 1e-6).expect("classifier");
         let u = 0.5;
         let v = 0.5;

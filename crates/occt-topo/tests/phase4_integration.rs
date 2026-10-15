@@ -140,7 +140,7 @@ fn polygon_and_face_building() {
         GpPnt::new(0.,0.,0.), GpPnt::new(1.,0.,0.), GpPnt::new(1.,1.,0.), GpPnt::new(0.,1.,0.),
     ];
     let face = make_face_from_polygon(&sq).expect("square face");
-    assert!(occt_topo::brep_surface::face_is_planar(&face));
+    assert!(occt_topo::brep_surface::face_is_plane_type(&face));
     let poly = occt_core::geom::polygon_ops::polygon_area3d(&sq);
     assert!(approx(poly, 1.0));
 }

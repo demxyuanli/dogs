@@ -33,7 +33,6 @@ fn shape_key(s: &TopoShape) -> usize {
 /// traversal test it stands for in OCCT ([`crate::shell_splitter::edge_traversal`]).
 fn get_edge_off_geo(the_e1: &Edge, the_f2: &TopoShape) -> Option<Edge> {
     let k = edge_ek(the_e1);
-    let tr1 = crate::shell_splitter::edge_traversal(the_e1);
     for w in crate::bop_occt_util::iter_children(the_f2) {
         if w.shape_type() != ShapeType::Wire {
             continue;
@@ -46,9 +45,13 @@ fn get_edge_off_geo(the_e1: &Edge, the_f2: &TopoShape) -> Option<Edge> {
             if edge_ek(&e2) != k {
                 continue;
             }
-            let off = match (tr1, crate::shell_splitter::edge_traversal(&e2)) {
-                (Some((a1, b1)), Some((a2, b2))) => a2 == b1 && b2 == a1,
-                _ => e2.0.orientation() == the_e1.0.orientation().reversed(),
+            // `GetEdgeOff` (`BOPTools_AlgoTools.cxx:1115-1123`) requires the
+            // occurrence of `theE1` inside `theF2` to carry the opposite
+            // orientation; the geometric views used here are compared by
+            // traversal instead ([`crate::shell_splitter::same_traversal`]).
+            let off = match crate::shell_splitter::same_traversal(the_e1, &e2) {
+                Some(same) => !same,
+                None => e2.0.orientation() == the_e1.0.orientation().reversed(),
             };
             if off {
                 return Some(e2);
@@ -169,22 +172,13 @@ fn refine_shell(
             // `RefineShell` (`BOPAlgo_ShellSplitter.cxx:470-481`) stops on the
             // edges whose two faces traverse them the same way. It compares the
             // orientations of the one shared `TopoDS_Edge`; the geometric views
-            // used here are compared by traversal instead.
+            // used here are compared by traversal instead
+            // ([`crate::shell_splitter::same_traversal`], which also covers the
+            // closed ring whose endpoints carry no traversal).
             if let (Some(a), Some(b)) = (e1, e2) {
-                let same_dir = match (
-                    crate::shell_splitter::edge_traversal(&a),
-                    crate::shell_splitter::edge_traversal(&b),
-                ) {
-                    // A closed ring (both endpoints the same vertex) carries no
-                    // traversal direction, so its two views would always compare
-                    // equal and every such edge would become a stop edge — the
-                    // port's box∪cylinder shell was split on the section circle
-                    // for exactly that reason. OCCT's `RefineShell` compares only
-                    // the cumulated orientations of the two occurrence views
-                    // (`BOPAlgo_ShellSplitter.cxx:475-482`, `FindShape`), which is
-                    // the one signal a closed ring still carries.
-                    (Some(ta), Some(tb)) if ta.0 != ta.1 => ta == tb,
-                    _ => a.0.orientation() == b.0.orientation(),
+                let same_dir = match crate::shell_splitter::same_traversal(&a, &b) {
+                    Some(same) => same,
+                    None => a.0.orientation() == b.0.orientation(),
                 };
                 if same_dir {
                     stop.insert(*ek);

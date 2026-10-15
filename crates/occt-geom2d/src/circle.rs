@@ -57,6 +57,16 @@ impl Curve2d for Geom2dCircle {
         2.0 * std::f64::consts::PI - u
     }
     fn reverse(&mut self) { let mut a = *self.pos.position(); a.y_reverse(); self.pos.set_axis(a); }
+    /// `Geom2dAdaptor_Curve::Resolution`'s `GeomAbs_Circle` arm
+    /// (`Geom2dAdaptor_Curve.cxx:1192-1202`).
+    fn resolution(&self, ruv: f64) -> f64 {
+        let r = self.pos.radius.abs();
+        if r > ruv / 2.0 {
+            2.0 * (ruv / (2.0 * r)).asin()
+        } else {
+            2.0 * std::f64::consts::PI
+        }
+    }
     fn clone_dyn(&self) -> Box<dyn Curve2d> { Box::new(self.clone()) }
     fn gp_circ2d(&self) -> Option<occt_core::gp::GpCirc2d> { Some(self.pos) }
     fn is_geom2d_circle(&self) -> bool { true }

@@ -113,7 +113,13 @@ pub fn offset_shell(shape: &TopoShape, distance: f64) -> Result<TopoShape, Strin
     if faces.is_empty() {
         return Err("offset_shell: no faces".into());
     }
-    if faces.iter().all(face_is_planar) {
+    // `GeomAdaptor_Surface::GetType() == GeomAbs_Plane` (`BRepOffset_*` gate on
+    // the analytic plane type, e.g. `BRepOffset_MakeOffset.cxx` face loop);
+    // `offset_convex_polyhedron` below reconstructs the offset from the face
+    // plane placements, which only exists for a true `Geom_Plane`. The previous
+    // 8x8 normal sampling also admitted a flat B-spline patch, for which the
+    // plane-intersection reconstruction has no exact basis.
+    if faces.iter().all(face_is_plane_type) {
         if let Ok(s) = offset_convex_polyhedron(shape, &faces, distance) {
             return Ok(s);
         }

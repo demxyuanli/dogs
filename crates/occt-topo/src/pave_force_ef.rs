@@ -15,7 +15,7 @@ use crate::bopalgo_tools::{fill_map_pb_face, perform_common_blocks_faces, PbFace
 use crate::bbox_from_geometry::shape_bbox;
 use crate::bopds::BopdsPaveBlock;
 use crate::boptools_2d::intermediate_point;
-use crate::brep_surface::face_is_planar;
+use crate::brep_surface::face_is_plane_type;
 use crate::brep_tool::BRepTool;
 use crate::edge_face::EdgeFace;
 use crate::fclass2d::FaceState;
@@ -248,7 +248,7 @@ pub fn force_interf_ef_on(
                 continue;
             }
             let mut b_use_add_tol = true;
-            if !face_is_planar(&a_f) || !curve_is_line_edge(&a_e) {
+            if !face_is_plane_type(&a_f) || !curve_is_line_edge(&a_e) {
                 let vf_norm = occt_core::gp::GpVec::from_pnts(&p_on_s, &p_on_e);
                 if vf_norm.square_magnitude() > RESOLUTION {
                     let a_cos = vf_norm.normalized().dot(&ve_tgt.normalized());

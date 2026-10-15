@@ -2,8 +2,11 @@
 //!
 //! Collects every face via `TopExp_Explorer`, tessellates each with
 //! `wireframe::face_to_triangles`, and concatenates them into one indexed
-//! mesh. Also provides vertex welding for watertight output and analytic
-//! surface-area / rough-volume helpers.
+//! mesh. Also provides vertex welding for watertight output.
+//!
+//! Surface area and volume are NOT computed here: those are `BRepGProp` calls
+//! ([`crate::brep_gprop`] / [`crate::brep_gprop_full`]), which integrate the
+//! exact boundary instead of the tessellation.
 
 use std::collections::HashMap;
 
@@ -11,7 +14,7 @@ use occt_core::gp::GpPnt;
 use occt_core::poly::triangulation::Triangle;
 
 use crate::abs::ShapeType;
-use crate::mesh::{compute_vertex_normals, mesh_surface_area, ShapeMesh};
+use crate::mesh::{compute_vertex_normals, ShapeMesh};
 use crate::shape::{Edge, TopoShape};
 use crate::topexp::Explorer;
 use crate::wireframe::{edge_to_polyline, face_to_triangles};
@@ -105,27 +108,6 @@ pub fn weld_vertices(mesh: &mut ShapeMesh, tol: f64) {
     }
 }
 
-/// Total surface area of `shape`'s mesh.
-pub fn shape_surface_area(shape: &TopoShape, deflection: f64) -> f64 {
-    mesh_surface_area(&mesh_shape(shape, deflection))
-}
-
-/// Rough volume estimate for a closed shell via the divergence theorem:
-/// `V = (1/6) |Σ a·(b×c)|` over the triangle mesh. Open or inconsistently
-/// oriented meshes give unreliable results — treat this as an estimate, not a
-/// precise solid volume.
-pub fn shape_volume(shape: &TopoShape, deflection: f64) -> f64 {
-    let mesh = mesh_shape(shape, deflection);
-    let mut vol = 0.0;
-    for t in &mesh.triangles {
-        let a = mesh.vertices[t.n0].coord;
-        let b = mesh.vertices[t.n1].coord;
-        let c = mesh.vertices[t.n2].coord;
-        vol += a.dot_cross(&b, &c);
-    }
-    (vol / 6.0).abs()
-}
-
 /// Number of faces in `shape` (including itself if it is a face).
 pub fn count_faces(shape: &TopoShape) -> usize {
     let mut n = 0;
@@ -141,6 +123,7 @@ pub fn count_faces(shape: &TopoShape) -> usize {
 mod tests {
     use super::*;
     use crate::builder::TopoBuilder;
+    use crate::mesh::mesh_surface_area;
     use crate::shape::Compound;
     use crate::wireframe::tests::square_face;
 
@@ -197,19 +180,6 @@ mod tests {
     fn count_faces_in_compound() {
         let shape = square_face_compound();
         assert_eq!(count_faces(&shape), 1);
-    }
-
-    #[test]
-    fn shape_surface_area_of_square() {
-        let shape = square_face_compound();
-        assert!((shape_surface_area(&shape, 0.25) - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn shape_volume_flat_face_is_zero() {
-        // An open planar mesh encloses no volume.
-        let shape = square_face_compound();
-        assert!(shape_volume(&shape, 0.25) < 1e-12, "vol {}", shape_volume(&shape, 0.25));
     }
 
     #[test]

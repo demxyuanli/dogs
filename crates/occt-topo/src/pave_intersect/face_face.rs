@@ -80,7 +80,10 @@ pub(super) fn perform_ff_impl(
         // FaceFace when they already share more than one On/In vertex. A
         // covering pair (cylinder base on box top) is handled by EF IN edges
         // instead of a coplanar FaceFace curve.
-        if face_is_planar(&face1) && face_is_planar(&face2) && !check_planes(ds, n_f1, n_f2) {
+        // `BOPAlgo_PaveFiller_6.cxx:380`: `aBAS1.GetType() == GeomAbs_Plane &&
+        // aBAS2.GetType() == GeomAbs_Plane` gates `CheckPlanes`; the exact
+        // surface type, not a sampled normal.
+        if face_is_plane_type(&face1) && face_is_plane_type(&face2) && !check_planes(ds, n_f1, n_f2) {
             // OCCT: Append InterfFF with Init(0,0) and skip FaceFace.
             ds.append_interf_ff(BopdsInterfFf::new(n_f1, n_f2));
             ds.add_interf(n_f1, n_f2);
@@ -151,12 +154,15 @@ pub(super) fn compute_int_range(tol1: f64, tol2: f64, angle: f64) -> f64 {
 
 /// `IntTools_FaceFace` tangential tolerance of an intersection curve.
 /// Non-planar: `max(TolF1, TolF2)`. Plane/plane: `sqrt(Dt^2 + TolF1^2)`,
-/// then floored at `max(TolF1, TolF2)` (`ComputeTolReached3d`).
+/// then floored at `max(TolF1, TolF2)`. The plane branch is
+/// `PerformPlanes` (`IntTools_FaceFace.cxx:2541-2555`), reached from
+/// `Perform` under `aType1 == GeomAbs_Plane && aType2 == GeomAbs_Plane`
+/// (`IntTools_FaceFace.cxx:395`), i.e. the exact surface type.
 pub(super) fn curve_tangential_tolerance(f1: &Face, f2: &Face) -> f64 {
     let t1 = BRepTool::face_tolerance(f1);
     let t2 = BRepTool::face_tolerance(f2);
     let t_max = t1.max(t2);
-    if face_is_planar(f1) && face_is_planar(f2) {
+    if face_is_plane_type(f1) && face_is_plane_type(f2) {
         if let (Some(p1), Some(p2)) = (
             crate::brep_surface::face_plane(f1),
             crate::brep_surface::face_plane(f2),

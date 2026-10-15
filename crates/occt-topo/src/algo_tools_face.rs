@@ -328,12 +328,9 @@ pub fn get_face_off(
         // `TopoDS_Edge` and therefore traverse in the same direction. Here the
         // candidate edge is matched geometrically and may have been built with
         // the opposite vertex order, so the traversals themselves are compared.
-        let same_dir = match (
-            crate::shell_splitter::edge_traversal(e1),
-            crate::shell_splitter::edge_traversal(&e2),
-        ) {
-            (Some(t1), Some(t2)) => t1 == t2,
-            _ => e2.0.orientation() == or1,
+        let same_dir = match crate::shell_splitter::same_traversal(e1, &e2) {
+            Some(same) => same,
+            None => e2.0.orientation() == or1,
         };
         let dtgt2 = if same_dir { dtgt } else { dtgt.reversed() };
         let Some((_dn2, dbf2)) =

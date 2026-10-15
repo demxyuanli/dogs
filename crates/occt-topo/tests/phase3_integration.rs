@@ -9,12 +9,13 @@ use occt_core::gp::{GpPnt, GpVec};
 use occt_core::io::obj::ObjMesh;
 use occt_core::poly::Triangulation;
 use occt_topo::brep_exchange::{brep_to_obj, brep_to_ply, brep_to_stl_ascii, brep_to_stl_binary};
-use occt_topo::brep_surface::face_is_planar;
+use occt_topo::brep_surface::face_is_plane_type;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::bbox_from_geometry::shape_bbox;
 use occt_topo::brep_extrema::is_inside;
 use occt_topo::primitives::{BRepPrimBox, BRepPrimCylinder, BRepPrimSphere};
-use occt_topo::shape_mesh::{mesh_shape, shape_surface_area, shape_volume};
+use occt_topo::brep_gprop::{surface_area, volume};
+use occt_topo::shape_mesh::mesh_shape;
 use occt_topo::sweep::prism_from_polygon;
 use occt_topo::topo_tools_full::{faces_of, vertices_of, structure_is_valid};
 
@@ -31,7 +32,7 @@ fn real_box_full_pipeline() {
     assert!(structure_is_valid(&box_.solid.0));
 
     // 2. Query geometry back.
-    assert!(faces_of(&box_.solid.0).iter().all(|f| face_is_planar(f)));
+    assert!(faces_of(&box_.solid.0).iter().all(|f| face_is_plane_type(f)));
     let verts = vertices_of(&box_.solid.0);
     let mut has_origin = false;
     let mut has_max = false;
@@ -49,7 +50,7 @@ fn real_box_full_pipeline() {
     // 3. Measure (analytic volume + mesh area).
     assert!(approx(box_.volume(), 24.0));
     let mesh = mesh_shape(&box_.solid.0, 0.1);
-    assert!(approx(shape_surface_area(&box_.solid.0, 0.1), 52.0));
+    assert!(approx(surface_area(&box_.solid.0, 0.1), 52.0));
     assert!(!mesh.triangles.is_empty());
 
     // 4. Real bounding box from geometry.
@@ -74,7 +75,7 @@ fn primitives_measure_correctly() {
     let sphere = BRepPrimSphere::make_sphere(2.0);
     // Mesh-based volume of a closed sphere ~ (4/3)π·8 ≈ 33.5.
     assert!(approx(sphere.volume(), 33.510321638291124));
-    let v = shape_volume(&sphere.solid.0, 0.15);
+    let v = volume(&sphere.solid.0, 0.15);
     assert!(v > 30.0 && v < 37.0, "sphere mesh volume {v}");
     assert!(is_inside(&sphere.solid.0, &GpPnt::new(0.5, 0.5, 0.5)));
 

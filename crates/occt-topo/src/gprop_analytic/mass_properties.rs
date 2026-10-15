@@ -14,7 +14,7 @@ pub fn analytic_centroid(shape: &TopoShape) -> Result<GpPnt, String> {
         return Err("analytic_centroid: shape has no faces".into());
     }
     // All-planar solid (a box): center of the vertex bounding box.
-    if faces.iter().all(face_is_planar) {
+    if faces.iter().all(face_is_plane_type) {
         let verts = vertices_of(shape);
         if verts.len() >= 4 {
             let mut mn = [f64::INFINITY; 3];
@@ -58,7 +58,7 @@ pub fn analytic_centroid(shape: &TopoShape) -> Result<GpPnt, String> {
     }
     // Cone → ¾ height from the base toward the apex.
     if let Some((r, _h)) = cone_radius_height(shape) {
-        if let Some(pln) = faces.iter().find(|f| face_is_planar(f)).and_then(face_plane) {
+        if let Some(pln) = faces.iter().find(|f| face_is_plane_type(f)).and_then(face_plane) {
             let ax1 = pln.axis();
             let ax = GpVec::from_xyz(ax1.direction().xyz());
             let base_center = pln.location();
@@ -322,7 +322,7 @@ pub(super) fn cylinder_axis_radius_height(shape: &TopoShape) -> Option<(GpVec, f
 pub(super) fn cone_axis_radius_height(shape: &TopoShape) -> Option<(GpVec, f64, f64)> {
     let (r, h) = cone_radius_height(shape)?;
     let faces = faces_of(shape);
-    let base = faces.iter().find(|f| face_is_planar(f))?;
+    let base = faces.iter().find(|f| face_is_plane_type(f))?;
     let pln = face_plane(base)?;
     let ax = GpVec::from_xyz(pln.axis().direction().xyz());
     Some((ax, r, h))
@@ -440,7 +440,7 @@ pub fn shape_is_box(shape: &TopoShape) -> bool {
     faces.len() == 6
         && vertices_of(shape).len() == 8
         && edges_of(shape).len() == 12
-        && faces.iter().all(face_is_planar)
+        && faces.iter().all(face_is_plane_type)
 }
 
 /// Analytic kind of a closed solid, matching the inertia integration paths.

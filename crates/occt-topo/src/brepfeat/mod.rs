@@ -25,22 +25,19 @@
 //!
 //! # Geometry strategy
 //!
-//! UNPORTED workaround: `BRepFeat_*` takes the tool `TopoDS_Shape` as given,
-//! but the port's `bop_builder::boolean` (`BOPAlgo_BOP`) cannot yet combine
-//! the analytic tools the revolved/through-boss families build, so those tools
-//! are rebuilt as planar-faced (lathe) meshes where every face is a planar
-//! polygon that the boolean handles. The measured failures and their numbers
-//! are listed on [`revolve_profile_about`] and [`mesh_cylinder`]; the gap
-//! belongs to the `BOPAlgo_BOP` port (audit A5 / T-79), not to the mesher
-//! (`GeomCylinder::d1` does return the analytic partials).
+//! `BRepFeat_*` takes the tool `TopoDS_Shape` as given and hands it to
+//! `BOPAlgo_BOP`. The through-boss/neck cylinder tool is the analytic
+//! `BRepPrimAPI_MakeCylinder` (`translated_cylinder`); the revolved tool
+//! currently goes through the lathe-mesh fixture on [`revolve_profile_about`]
+//! (see its note: the analytic `sweep_revolve` solid is not yet accepted by the
+//! boolean). Audit A12 / T-125.
 //!
 //! # Booleans
 //!
-//! Planar inputs run [`crate::bop_builder::boolean`] (`BOPAlgo_BOP`).
-//! Curved inputs (any remaining non-planar face) run the voxel boolean. Volumes
-//! are computed with [`solid_volume`] (`BRepGProp::VolumeProperties` /
-//! `BRepGProp_Vinert`), the divergence-theorem surface integral over each face
-//! of the result.
+//! Every feature runs [`crate::bop_builder::boolean`] (`BOPAlgo_BOP`) on the
+//! target solid and the tool; volumes are computed with
+//! [`solid_volume`] (`BRepGProp::VolumeProperties` / `BRepGProp_Vinert`), the
+//! divergence-theorem surface integral over each face of the result.
 //!
 //! # Example
 //! ```ignore

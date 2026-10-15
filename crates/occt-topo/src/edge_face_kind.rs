@@ -1,11 +1,15 @@
-//! Curve/surface sampling classifiers used by EdgeFace.
+//! Curve/surface type dispatch used by EdgeFace.
+//!
+//! Every predicate here is the OCCT `GetType()` test that `IntTools_EdgeFace`
+//! branches on (`IntTools_EdgeFace.cxx:74,247,532,620,650,798,827`), answered
+//! from the curve/surface's own `gp_*` accessors - the same source as
+//! `GeomAdaptor_Curve::load` / `GeomAdaptor_Surface::load`. No geometric
+//! sampling is involved.
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::precision::PCONFUSION;
 use occt_geom::{Curve, Surface};
 
-use crate::brep_surface::{is_planar, sphere_center, SurfaceKind};
-
-const PI: f64 = std::f64::consts::PI;
+use crate::brep_surface::{classify_surface, SurfaceKind};
 
 // ---------------------------------------------------------------------------
 // Curve classification helpers
@@ -21,203 +25,56 @@ pub(crate) enum CurveKind {
     Other,
 }
 
-/// Whether the curve is geometrically a straight line (unbounded, or all
-/// samples collinear with the first–last chord).
-pub(crate) fn is_line_like(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return true;
-    }
-    if (b - a).abs() <= 1e-15 {
-        return false;
-    }
-    let p0 = c.d0(a);
-    let pl = c.d0(b);
-    let size = p0.distance(&pl);
-    if size <= 1e-30 {
-        return false;
-    }
-    let d0 = GpVec::from_pnts(&p0, &pl);
-    let tol = 1e-6 * size;
-    for i in 1..8 {
-        let p = c.d0(a + (b - a) * i as f64 / 8.0);
-        if GpVec::from_pnts(&p0, &p).crossed(&d0).magnitude() > tol * size {
-            return false;
-        }
-    }
-    true
-}
-
-/// First three non-collinear samples of a point set, if they exist.
-pub(crate) fn first_three_spanning(pts: &[GpPnt]) -> Option<(GpPnt, GpPnt, GpPnt)> {
-    let p0 = pts[0];
-    let mut i1 = None;
-    for (i, p) in pts.iter().enumerate().skip(1) {
-        if GpVec::from_pnts(&p0, p).magnitude() > 1e-9 {
-            i1 = Some(i);
-            break;
-        }
-    }
-    let i1 = i1?;
-    let p1 = pts[i1];
-    let d0 = GpVec::from_pnts(&p0, &p1);
-    for p in pts.iter().skip(i1 + 1) {
-        if GpVec::from_pnts(&p0, p).crossed(&d0).magnitude() > 1e-9 * d0.magnitude().max(1e-9) {
-            return Some((p0, p1, *p));
-        }
-    }
-    None
-}
-
-pub(crate) fn det3(m: &[[f64; 3]; 3]) -> f64 {
-    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
-}
-
-pub(crate) fn solve3(a: &[[f64; 3]; 3], rhs: &[f64; 3]) -> Option<[f64; 3]> {
-    let d = det3(a);
-    if d.abs() < 1e-20 {
-        return None;
-    }
-    let mut x = [0.0; 3];
-    for k in 0..3 {
-        let mut m = *a;
-        for i in 0..3 {
-            m[i][k] = rhs[i];
-        }
-        x[k] = det3(&m) / d;
-    }
-    Some(x)
-}
-
-/// Circumcenter of three non-collinear 3D points, if it exists.
-pub(crate) fn circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
-    let d1 = GpVec::from_pnts(a, b);
-    let d2 = GpVec::from_pnts(a, c);
-    let n = d1.crossed(&d2);
-    if n.magnitude() < 1e-30 {
-        return None;
-    }
-    let n2 = |p: &GpPnt| p.coord.dot(&p.coord);
-    let mat = [
-        [d1.xyz().x, d1.xyz().y, d1.xyz().z],
-        [d2.xyz().x, d2.xyz().y, d2.xyz().z],
-        [n.xyz().x, n.xyz().y, n.xyz().z],
-    ];
-    let rhs = [0.5 * (n2(b) - n2(a)), 0.5 * (n2(c) - n2(a)), a.coord.dot(&n.xyz())];
-    let o = solve3(&mat, &rhs)?;
-    Some(GpPnt::new(o[0], o[1], o[2]))
-}
-
-/// Whether the curve is geometrically a (planar) circle: every sample is
-/// coplanar and equidistant from a common center.
-pub(crate) fn is_circle_like(c: &dyn Curve) -> bool {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() || (b - a).abs() <= 1e-15 {
-        return false;
-    }
-    let n = 8;
-    let pts: Vec<GpPnt> = (0..=n).map(|i| c.d0(a + (b - a) * i as f64 / n as f64)).collect();
-    let (p0, p1, p2) = match first_three_spanning(&pts) {
-        Some(x) => x,
-        None => return false,
-    };
-    let center = match circumcenter(&p0, &p1, &p2) {
-        Some(c) => c,
-        None => return false,
-    };
-    let radius = p0.distance(&center);
-    if radius <= 1e-30 {
-        return false;
-    }
-    let nrm = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return false;
-    }
-    let nv = nrm.divided(m);
-    let scale = radius.max(1.0);
-    let tol = 1e-6 * scale;
-    for p in pts {
-        let v = GpVec::from_pnts(&center, &p);
-        if v.dot(&nv).abs() > tol {
-            return false;
-        }
-        if (v.magnitude() - radius).abs() > tol {
-            return false;
-        }
-    }
-    true
-}
-
-/// `(center, radius, unit plane normal)` of a circle-like curve.
+/// `(center, radius, unit axis direction)` of a `GeomAbs_Circle` curve.
+///
+/// `CurveTool::Circle` (`IntTools_EdgeFace.cxx:800,829`), i.e. the
+/// `Geom_Circle::Circ()` downcast; `None` for every other curve type. The
+/// previous body fitted a circle through 8 sampled points, so a B-spline whose
+/// image was a circle also answered `Some`.
 pub(crate) fn circle_geometry(c: &dyn Curve) -> Option<(GpPnt, f64, GpVec)> {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
+    let circ = c.gp_circ()?;
+    let nrm = GpVec::from_xyz(circ.pos.direction().xyz()).normalized();
+    if nrm.xyz().square_modulus() < 1e-30 {
         return None;
     }
-    let n = 8;
-    let pts: Vec<GpPnt> = (0..=n).map(|i| c.d0(a + (b - a) * i as f64 / n as f64)).collect();
-    let (p0, p1, p2) = first_three_spanning(&pts)?;
-    let center = circumcenter(&p0, &p1, &p2)?;
-    let radius = p0.distance(&center);
-    if radius <= 1e-30 {
-        return None;
-    }
-    let nrm = GpVec::from_pnts(&p0, &p1).crossed(&GpVec::from_pnts(&p0, &p2));
-    let m = nrm.magnitude();
-    if m <= 1e-30 {
-        return None;
-    }
-    Some((center, radius, nrm.divided(m)))
+    Some((circ.location(), circ.radius, nrm))
 }
 
-/// Classify a 3D curve by sampling geometric invariants.
+/// `Adaptor3d_Curve::GetType()` reduced to the arms `IntTools_EdgeFace`
+/// branches on.
+///
+/// `GeomAdaptor_Curve::load` (`GeomAdaptor_Curve.cxx:252-311`) unwraps a
+/// `Geom_TrimmedCurve` to its basis and then tests the concrete class -
+/// `gp_line()` for `GeomAbs_Line`, `gp_circ()` for `GeomAbs_Circle`, and the
+/// Bezier/BSpline classes for `GeomAbs_BezierCurve`/`GeomAbs_BSplineCurve`
+/// (both surfaced by [`Curve::nurbs_degree`]). Everything else - ellipse,
+/// parabola, hyperbola, offset curve, other - takes the `default` arm, which
+/// `IntTools_EdgeFace` treats as "neither Line nor Circle nor B-spline":
+/// `cxx:74,309,532,701` (Line), `cxx:650,798,827` (Circle) and
+/// `cxx:532` (BSpline/Bezier).
+///
+/// The previous body sampled 8 points of the curve and tested collinearity /
+/// equidistance, so a `Geom_BSplineCurve` whose image was a straight line or a
+/// circle was reported as `Line`/`Circle` and sent into the analytic arms.
 pub(crate) fn curve_kind(c: &dyn Curve) -> CurveKind {
-    if is_line_like(c) {
-        return CurveKind::Line;
-    }
-    if is_circle_like(c) {
-        return CurveKind::Circle;
-    }
-    if c.is_periodic() && (c.period() - 2.0 * PI).abs() < 1e-9 {
-        // Ellipse / other periodic conic: analytic (not B-spline).
-        CurveKind::Other
-    } else {
+    if c.gp_line().is_some() {
+        CurveKind::Line
+    } else if c.gp_circ().is_some() {
+        CurveKind::Circle
+    } else if c.nurbs_degree().is_some() {
         CurveKind::BSpline
+    } else {
+        CurveKind::Other
     }
 }
 
-/// Approximate `BRepAdaptor_Curve::Resolution(tol)`: the parameter increment
-/// over which the curve moves at most ~`tol`. Used for the "whole range" tests.
+/// `BRepAdaptor_Curve::Resolution` = `GeomAdaptor_Curve::Resolution`
+/// (`GeomAdaptor_Curve.cxx:1116-1148`): the [`Curve::resolution`] of the curve
+/// itself, which `IntTools_EdgeFace` calls as `myC.Resolution(myCriteria)`
+/// (`IntTools_EdgeFace.cxx:326-327` in `MakeType`, `:373` in `CheckTouch`) for
+/// its "whole range" tests. No sampling is involved.
 pub(crate) fn curve_resolution(c: &dyn Curve, tol: f64) -> f64 {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if !a.is_finite() || !b.is_finite() {
-        return tol.max(PCONFUSION);
-    }
-    let span = b - a;
-    if span.abs() <= 1e-15 {
-        return 1.0;
-    }
-    let n = 64;
-    let h = span / n as f64;
-    let mut max_speed = 0.0;
-    let mut prev = c.d0(a);
-    for i in 1..=n {
-        let u = a + h * i as f64;
-        let p = c.d0(u);
-        let d = p.distance(&prev);
-        let speed = d / h;
-        if speed > max_speed {
-            max_speed = speed;
-        }
-        prev = p;
-    }
-    if max_speed <= 1e-30 {
-        return tol.max(PCONFUSION);
-    }
-    (tol / max_speed).max(PCONFUSION)
+    c.resolution(tol)
 }
 
 // ---------------------------------------------------------------------------
@@ -231,19 +88,6 @@ pub(crate) fn surface_sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
     let (u0, u1) = clamp(u0, u1);
     let (v0, v1) = clamp(v0, v1);
     (u0, u1, v0, v1)
-}
-
-pub(crate) fn quadric_u0(s: &dyn Surface) -> f64 {
-    let (u0, _) = s.u_range();
-    if u0.is_finite() {
-        u0
-    } else {
-        0.0
-    }
-}
-
-pub(crate) fn midpoint(a: &GpPnt, b: &GpPnt) -> GpPnt {
-    GpPnt::new(0.5 * (a.x() + b.x()), 0.5 * (a.y() + b.y()), 0.5 * (a.z() + b.z()))
 }
 
 /// `(origin, unit-u, unit-v)` frame of a planar surface (natural parameterization).
@@ -317,187 +161,73 @@ pub(crate) fn plane_projection(s: &dyn Surface, p: &GpPnt) -> (f64, f64, f64) {
     (w.dot(&x), w.dot(&y), dist)
 }
 
-/// Plane normal of a planar surface.
+/// `gp_Pln::Axis().Direction()` of a `GeomAbs_Plane` surface - the plane normal
+/// `IsCoplanar` compares the circle axis against (`IntTools_EdgeFace.cxx:804-808`,
+/// `SurfaceTool::Plane`). `GpVec::zero()` for every other surface type.
 pub(crate) fn plane_normal(s: &dyn Surface) -> GpVec {
-    match plane_frame(s) {
-        Some((_, x, y)) => x.crossed(&y).normalized(),
+    match s.gp_pln() {
+        Some(pln) => GpVec::from_xyz(pln.pos.direction().xyz()).normalized(),
         None => GpVec::zero(),
     }
 }
 
-/// `(axis point, axis direction, radius)` of a cylindrical surface.
-pub(crate) fn cylinder_geometry(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
-    let u0 = quadric_u0(s);
-    let (_, _, v0, _) = surface_sample_bounds(s);
-    let c0 = midpoint(&s.d0(u0, v0), &s.d0(u0 + PI, v0));
-    let c1 = midpoint(&s.d0(u0, v0 + 1.0), &s.d0(u0 + PI, v0 + 1.0));
-    let zvec = GpVec::from_pnts(&c0, &c1);
-    let zm = zvec.magnitude();
-    if zm < 1e-12 {
-        return None;
-    }
-    let z = zvec.divided(zm);
-    let r = s.d0(u0, v0).distance(&c0);
-    if r < 1e-12 {
-        return None;
-    }
-    Some((c0, z, r))
-}
-
-pub(crate) fn cylinder_matches(s: &dyn Surface, a: &GpPnt, z: &GpVec, r: f64) -> bool {
-    let (u0, u1, v0, v1) = surface_sample_bounds(s);
-    let tol = 1e-4 * r.abs().max(1.0);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            let d = GpVec::from_pnts(a, &s.d0(u, v));
-            let rho = d.coord.subtracted(&z.xyz().multiplied(d.dot(z))).modulus();
-            if (rho - r).abs() > tol {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// `(apex, axis direction, tan(semi-angle))` of a conical surface.
-pub(crate) fn cone_geometry(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
-    let u0 = quadric_u0(s);
-    let (_, _, v0, _) = surface_sample_bounds(s);
-    let c0 = midpoint(&s.d0(u0, v0), &s.d0(u0 + PI, v0));
-    let c1 = midpoint(&s.d0(u0, v0 + 1.0), &s.d0(u0 + PI, v0 + 1.0));
-    let zvec = GpVec::from_pnts(&c0, &c1);
-    let zm = zvec.magnitude();
-    if zm < 1e-12 {
-        return None;
-    }
-    let z = zvec.divided(zm);
-    let r0 = s.d0(u0, v0).distance(&c0);
-    let r1 = s.d0(u0, v0 + 1.0).distance(&c1);
-    let tan_alpha = (r1 - r0) / zm;
-    if tan_alpha.abs() < 1e-12 {
-        return None;
-    }
-    let s0 = r0 / tan_alpha;
-    let apex = c0.translated_vec(&z.multiplied_scalar(-s0));
-    Some((apex, z, tan_alpha))
-}
-
-pub(crate) fn cone_matches(s: &dyn Surface, apex: &GpPnt, z: &GpVec, tan_alpha: f64) -> bool {
-    let cosa = 1.0 / (1.0 + tan_alpha * tan_alpha).sqrt();
-    let (u0, u1, v0, v1) = surface_sample_bounds(s);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            let d = GpVec::from_pnts(apex, &s.d0(u, v));
-            let err = (d.dot(z) * d.dot(z) - d.square_magnitude() * cosa * cosa).abs();
-            if err > 1e-4 * d.square_magnitude().max(1.0) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// `(center, axis direction, major radius, minor radius)` of a torus.
-pub(crate) fn torus_geometry(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> {
-    let u0 = quadric_u0(s);
-    let o = midpoint(&s.d0(u0, 0.0), &s.d0(u0 + PI, 0.0));
-    let r_outer = s.d0(u0, 0.0).distance(&o);
-    let o2 = midpoint(&s.d0(u0, PI), &s.d0(u0 + PI, PI));
-    let r_inner = s.d0(u0, PI).distance(&o2);
-    if o.distance(&o2) > 1e-6 * r_outer.max(1.0) {
-        return None;
-    }
-    let major = 0.5 * (r_outer + r_inner);
-    let minor = 0.5 * (r_outer - r_inner);
-    if major <= 1e-12 || minor <= 1e-12 {
-        return None;
-    }
-    let x = GpVec::from_pnts(&o, &s.d0(u0, 0.0)).divided(r_outer);
-    let y = GpVec::from_pnts(&o, &s.d0(u0 + PI / 2.0, 0.0)).divided(r_outer);
-    let z = x.crossed(&y).normalized();
-    Some((o, z, major, minor))
-}
-
-pub(crate) fn torus_matches(s: &dyn Surface, o: &GpPnt, z: &GpVec, major: f64, minor: f64) -> bool {
-    let (u0, u1, v0, v1) = surface_sample_bounds(s);
-    let tol = 1e-4 * major.max(minor).max(1.0);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            let d = GpVec::from_pnts(o, &s.d0(u, v));
-            let dz = d.dot(z);
-            let rho = d.coord.subtracted(&z.xyz().multiplied(dz)).modulus();
-            let err = ((rho - major).powi(2) + dz * dz).sqrt() - minor;
-            if err.abs() > tol {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// Full analytic surface classification (plane, sphere, cylinder, cone, torus).
+/// `Adaptor3d_Surface::GetType()` (`GeomAdaptor_Surface::load`,
+/// `GeomAdaptor_Surface.cxx:422-513`), i.e. [`classify_surface`]. This is the
+/// predicate `IntTools_EdgeFace` branches on - `cxx:74,620` (Cylinder),
+/// `cxx:650,798,827` (Plane), and `IsEqDistance`'s `cxx:249,263,282`
+/// (Cylinder / Cone / Torus).
+///
+/// The previous body was a two-stage sampler: recover a quadric's parameters
+/// from `d0` evaluations and then re-verify them on an 8x8 grid against
+/// home-made `1e-4` tolerances. That reported a B-spline patch that merely
+/// resembled a cylinder / cone / torus as the analytic type, and could equally
+/// reject a genuine quadric whose window shifted the sampled frame.
 pub(crate) fn surface_kind(s: &dyn Surface) -> SurfaceKind {
-    if is_planar(s, 6, 6, 1e-6) {
-        return SurfaceKind::Plane;
-    }
-    if let Some((a, z, r)) = cylinder_geometry(s) {
-        if cylinder_matches(s, &a, &z, r) {
-            return SurfaceKind::Cylinder;
-        }
-    }
-    if let Some((apex, z, ta)) = cone_geometry(s) {
-        if cone_matches(s, &apex, &z, ta) {
-            return SurfaceKind::Cone;
-        }
-    }
-    if let Some((o, z, maj, min)) = torus_geometry(s) {
-        if torus_matches(s, &o, &z, maj, min) {
-            return SurfaceKind::Torus;
-        }
-    }
-    if sphere_center(s).is_some() {
-        return SurfaceKind::Sphere;
-    }
-    SurfaceKind::Other
+    classify_surface(s)
 }
 
 /// Shortcut distance for a point lying on the axis of an analytic surface.
 ///
-/// Port of `IntTools_EdgeFace::IsEqDistance`: when the point is within `TOL` of
-/// the cylinder axis / cone axis / torus major circle, the surface distance is
-/// the analytic radius directly (projection is ill-defined there).
+/// Port of `IntTools_EdgeFace::IsEqDistance` (`cxx:240-299`): the branch is
+/// `aBAS.GetType()`, the frame comes from `aBAS.Cylinder()` / `Cone()` /
+/// `Torus()` - `SurfaceTool::Cylinder` etc. - and the tolerance is the literal
+/// `1.e-7` the caller passes.
 pub(crate) fn is_eq_distance(p: &GpPnt, s: &dyn Surface) -> Option<f64> {
     const TOL: f64 = 1e-7;
     match surface_kind(s) {
         SurfaceKind::Cylinder => {
-            let (a, z, r) = cylinder_geometry(s)?;
-            let dc = GpVec::from_pnts(&a, p).crossed(&z).magnitude();
+            let cyl = s.gp_cylinder()?;
+            let z = GpVec::from_xyz(cyl.pos.direction().xyz());
+            let dc = GpVec::from_pnts(&cyl.location(), p).crossed(&z).magnitude();
             if dc < TOL {
-                Some(r)
+                Some(cyl.radius)
             } else {
                 None
             }
         }
         SurfaceKind::Cone => {
-            let (apex, z, ta) = cone_geometry(s)?;
+            let cone = s.gp_cone()?;
+            // `gp_Cone::Apex()` (`Local.para` of `gp_Cone.hxx`): the apex is
+            // `Location - V * (RefRadius / tan(SemiAngle))`, since the radius is
+            // `v * tan(SemiAngle) + RefRadius` (`ElSLib::ConeValue`).
+            let apex = cone
+                .location()
+                .translated_vec(&GpVec::from_xyz(cone.pos.direction().xyz()).multiplied_scalar(
+                    -(cone.radius / cone.semi_angle.tan()),
+                ));
+            let z = GpVec::from_xyz(cone.pos.direction().xyz());
             let dc = GpVec::from_pnts(&apex, p).crossed(&z).magnitude();
             if dc < TOL {
-                Some(p.distance(&apex) * ta)
+                Some(p.distance(&apex) * cone.semi_angle.tan())
             } else {
                 None
             }
         }
         SurfaceKind::Torus => {
-            let (o, _, maj, min) = torus_geometry(s)?;
-            let dc = (o.distance(p) - maj).abs();
+            let tor = s.gp_torus()?;
+            let dc = (tor.location().distance(p) - tor.major_radius).abs();
             if dc < TOL {
-                Some(min)
+                Some(tor.minor_radius)
             } else {
                 None
             }
@@ -513,9 +243,11 @@ pub(crate) fn dirs_coinside(d1: &GpVec, d2: &GpVec) -> bool {
     d < 0.0002 || (2.0 - d).abs() < 0.0002
 }
 
-/// Whether a circle-like curve is coplanar with a planar surface.
+/// `IsCoplanar` (`IntTools_EdgeFace.cxx:787-811`): the curve axis direction
+/// coincides with the plane normal, `aCType == GeomAbs_Circle &&
+/// aSType == GeomAbs_Plane` being the gate.
 pub(crate) fn is_coplanar(curve: &dyn Curve, surface: &dyn Surface) -> bool {
-    if !is_circle_like(curve) || !is_planar(surface, 6, 6, 1e-6) {
+    if curve_kind(curve) != CurveKind::Circle || surface_kind(surface) != SurfaceKind::Plane {
         return false;
     }
     let (_, _, n) = match circle_geometry(curve) {
@@ -525,19 +257,23 @@ pub(crate) fn is_coplanar(curve: &dyn Curve, surface: &dyn Surface) -> bool {
     dirs_coinside(&n, &plane_normal(surface))
 }
 
-/// Whether a circle-like curve is tangent to a planar surface (its center is at
-/// distance ≈ radius from the plane).
+/// `IsRadius` (`IntTools_EdgeFace.cxx:816-840`): the circle centre lies at
+/// distance ~ radius from the plane, `aCType == GeomAbs_Circle &&
+/// aSType == GeomAbs_Plane` being the gate. `aPln.Distance(aCenter)` is measured
+/// from the plane's own `gp_Pln` placement (`SurfaceTool::Plane`), not from a
+/// sampled `d0`.
 pub(crate) fn is_radius(curve: &dyn Curve, surface: &dyn Surface, criteria: f64) -> bool {
-    if !is_circle_like(curve) || !is_planar(surface, 6, 6, 1e-6) {
+    if curve_kind(curve) != CurveKind::Circle || surface_kind(surface) != SurfaceKind::Plane {
         return false;
     }
     let (center, r, _) = match circle_geometry(curve) {
         Some(g) => g,
         None => return false,
     };
-    let pn = plane_normal(surface);
-    let po = surface.d0(0.0, 0.0);
-    let d = GpVec::from_pnts(&po, &center).dot(&pn).abs();
+    let Some(pln) = surface.gp_pln() else {
+        return false;
+    };
+    let d = GpVec::from_pnts(&pln.location(), &center).dot(&plane_normal(surface)).abs();
     (d - r).abs() < criteria
 }
 

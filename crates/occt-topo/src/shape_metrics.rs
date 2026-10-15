@@ -37,16 +37,16 @@ pub fn shape_metrics(shape: &TopoShape, deflection: f64) -> ShapeMetrics {
     let mut max_edge: f64 = 0.0;
     let mut min_edge: f64 = f64::INFINITY;
     for e in &edges {
-        let l = crate::brep_measure::edge_length(e, 32);
+        let l = crate::brep_measure::edge_length(e);
         edge_length_total += l;
         max_edge = max_edge.max(l);
         min_edge = min_edge.min(l);
     }
 
-    // Surface area + volume via the boundary mesh.
-    let mesh = crate::shape_mesh::mesh_shape(shape, deflection);
-    let surface_area = crate::mesh::mesh_surface_area(&mesh);
-    let volume = crate::shape_mesh::shape_volume(shape, deflection);
+    // Surface area + volume: `BRepGProp::SurfaceProperties` /
+    // `VolumeProperties` over the exact boundary.
+    let surface_area = crate::brep_gprop::surface_area(shape, deflection);
+    let volume = crate::brep_gprop::volume(shape, deflection);
 
     // BBox + diameter.
     let mut bbox: Option<(GpPnt, GpPnt)> = None;
@@ -249,11 +249,11 @@ pub fn small_feature_edges(shape: &TopoShape, tol: f64) -> usize {
     let edges = edges_of(shape);
     let max_len = edges
         .iter()
-        .map(|e| crate::brep_measure::edge_length(e, 32))
+        .map(|e| crate::brep_measure::edge_length(e))
         .fold(0.0, f64::max);
     edges
         .iter()
-        .filter(|e| crate::brep_measure::edge_length(e, 32) < tol * max_len)
+        .filter(|e| crate::brep_measure::edge_length(e) < tol * max_len)
         .count()
 }
 

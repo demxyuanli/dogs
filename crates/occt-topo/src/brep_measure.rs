@@ -8,28 +8,19 @@ use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};
 
-/// Length of a single edge: polyline length of its curve sampled uniformly.
-pub fn edge_length(e: &Edge, samples: usize) -> f64 {
-    let Some(curve) = BRepTool::edge_curve(e) else { return 0.0 };
-    let (a, b) = BRepTool::edge_parameters(e);
-    if !a.is_finite() || !b.is_finite() || b <= a {
-        return 0.0;
-    }
-    let n = samples.max(2);
-    let mut prev = curve.d0(a);
-    let mut len = 0.0;
-    for i in 1..=n {
-        let u = a + (b - a) * i as f64 / n as f64;
-        let p = curve.d0(u);
-        len += prev.distance(&p);
-        prev = p;
-    }
-    len
+/// Length of a single edge: the exact `BRepGProp::LinearProperties` integral
+/// along the edge's curve (Gauss order from `BRepGProp_EdgeTool`, so lines and
+/// circular arcs are exact). `0.0` for an edge without a finite parameter
+/// range.
+pub fn edge_length(e: &Edge) -> f64 {
+    crate::brep_gprop_full::edge_linear_properties(e)
+        .map(|p| p.dim)
+        .unwrap_or(0.0)
 }
 
 /// Total length of a wire's boundary edges.
-pub fn wire_length(wire: &Wire, samples: usize) -> f64 {
-    edges_of_wire(wire).iter().map(|e| edge_length(e, samples)).sum()
+pub fn wire_length(wire: &Wire) -> f64 {
+    edges_of_wire(wire).iter().map(edge_length).sum()
 }
 
 /// Surface area of a planar-ish face via a `nu × nv` grid triangulation.
@@ -65,8 +56,8 @@ pub fn face_area(f: &Face, nu: usize, nv: usize) -> f64 {
 }
 
 /// Perimeter of a shape: the sum of all its edges' lengths.
-pub fn shape_perimeter(shape: &TopoShape, samples: usize) -> f64 {
-    edges_of(shape).iter().map(|e| edge_length(e, samples)).sum()
+pub fn shape_perimeter(shape: &TopoShape) -> f64 {
+    edges_of(shape).iter().map(edge_length).sum()
 }
 
 /// Total surface area of a shape's faces (finite surfaces only; unbounded
@@ -86,18 +77,18 @@ pub fn boundary_edge_count(shape: &TopoShape) -> usize {
 }
 
 /// Length of the longest edge in a shape.
-pub fn max_edge_length(shape: &TopoShape, samples: usize) -> f64 {
+pub fn max_edge_length(shape: &TopoShape) -> f64 {
     edges_of(shape)
         .iter()
-        .map(|e| edge_length(e, samples))
+        .map(edge_length)
         .fold(0.0, f64::max)
 }
 
 /// Length of the shortest edge in a shape.
-pub fn min_edge_length(shape: &TopoShape, samples: usize) -> f64 {
+pub fn min_edge_length(shape: &TopoShape) -> f64 {
     edges_of(shape)
         .iter()
-        .map(|e| edge_length(e, samples))
+        .map(edge_length)
         .fold(f64::INFINITY, f64::min)
 }
 
@@ -136,12 +127,12 @@ mod tests {
     fn box_edges_and_perimeter() {
         let b = BRepPrimBox::make_box(2.0, 3.0, 4.0);
         // 4 edges of length 2, 4 of 3, 4 of 4.
-        let all: Vec<f64> = edges_of(&b.solid.0).iter().map(|e| edge_length(e, 16)).collect();
+        let all: Vec<f64> = edges_of(&b.solid.0).iter().map(edge_length).collect();
         assert_eq!(all.len(), 12);
         for &l in &all {
             assert!(approx(l, 2.0) || approx(l, 3.0) || approx(l, 4.0), "edge length {l}");
         }
-        let perim = shape_perimeter(&b.solid.0, 16);
+        let perim = shape_perimeter(&b.solid.0);
         assert!(approx(perim, 4.0 * (2.0 + 3.0 + 4.0)));
         assert_eq!(boundary_edge_count(&b.solid.0), 12);
     }
@@ -170,8 +161,8 @@ mod tests {
     #[test]
     fn min_max_edge() {
         let b = BRepPrimBox::make_box(1.0, 2.0, 5.0);
-        assert!(approx(min_edge_length(&b.solid.0, 16), 1.0));
-        assert!(approx(max_edge_length(&b.solid.0, 16), 5.0));
+        assert!(approx(min_edge_length(&b.solid.0), 1.0));
+        assert!(approx(max_edge_length(&b.solid.0), 5.0));
     }
 
     #[test]

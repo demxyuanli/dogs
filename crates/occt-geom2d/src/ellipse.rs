@@ -61,4 +61,9 @@ impl Curve2d for Geom2dEllipse {
     fn clone_dyn(&self) -> Box<dyn crate::curve::Curve2d> { Box::new(self.clone()) }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
     fn reverse(&mut self) { std::mem::swap(&mut self.pos.major_radius, &mut self.pos.minor_radius); }
+    /// `Geom2dAdaptor_Curve::Resolution`'s `GeomAbs_Ellipse` arm
+    /// (`Geom2dAdaptor_Curve.cxx:1203-1205`).
+    fn resolution(&self, ruv: f64) -> f64 {
+        ruv / self.pos.major_radius.abs()
+    }
 }

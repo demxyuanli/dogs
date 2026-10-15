@@ -95,7 +95,6 @@ pub mod bop_builder;
 pub mod inttools;
 pub mod intpatch;
 pub mod intwalk;
-pub mod bop_curved;
 pub mod fillet_edge;
 pub mod brep_offset;
 pub mod bincaf;

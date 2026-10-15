@@ -995,6 +995,13 @@ impl Curve2d for Geom2dBSplineCurve {
     fn is_bspline2d(&self) -> bool {
         true
     }
+    /// `Geom2dAdaptor_Curve::Resolution`'s `GeomAbs_BSplineCurve` arm
+    /// (`Geom2dAdaptor_Curve.cxx:1211-1215`) -> `Geom2d_BSplineCurve::Resolution`
+    /// (`Geom2d_BSplineCurve_1.cxx:764-806`), implemented as the inherent
+    /// [`Geom2dBSplineCurve::resolution`].
+    fn resolution(&self, ruv: f64) -> f64 {
+        Geom2dBSplineCurve::resolution(self, ruv)
+    }
     /// `Geom2d_BSplineCurve::IsRational()` (`Geom2dAdaptor_Curve.cxx:1296-1298`).
     fn is_rational(&self) -> bool {
         self.weights.is_some()

@@ -250,7 +250,7 @@ pub fn shape_small_edges(shape: &TopoShape, tol: f64) -> Vec<Edge> {
     let tol = tol.max(1e-9);
     edges_of(shape)
         .into_iter()
-        .filter(|e| crate::brep_measure::edge_length(e, 8) < tol)
+        .filter(|e| crate::brep_measure::edge_length(e) < tol)
         .collect()
 }
 

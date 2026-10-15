@@ -196,15 +196,17 @@ pub fn face_centroid_world(face: &Face) -> Option<GpPnt> {
     }
 }
 
-/// Whether the face's surface is planar.
+/// Whether the face's surface is a `GeomAbs_Plane`
+/// (`GeomAdaptor_Surface::GetType() == GeomAbs_Plane`), i.e. a `Geom_Plane`
+/// rather than a geometrically flat B-spline patch.
 pub fn face_is_planar_face(face: &Face) -> bool {
-    brep_surface::face_is_planar(face)
+    brep_surface::face_is_plane_type(face)
 }
 
 /// Total length of the face's outer-wire edges.
 pub fn face_wire_length(face: &Face) -> f64 {
     face_outer_wire(face)
-        .map(|w| brep_measure::wire_length(&w, 32))
+        .map(|w| brep_measure::wire_length(&w))
         .unwrap_or(0.0)
 }
 

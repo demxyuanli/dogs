@@ -690,8 +690,8 @@ use super::*;
         // Two planar box faces are NOT curved-compatible.
         let (boxy, _) = build_sphere_on_box(1.0);
         let all = faces_of(&boxy.0);
-        let planars: Vec<&Face> = all.iter().filter(|f| is_planar(
-            BRepTool::face_surface(f).unwrap().as_ref(), 8, 8, 1e-6,
+        let planars: Vec<&Face> = all.iter().filter(|f| is_plane_type(
+            BRepTool::face_surface(f).unwrap().as_ref(),
         )).collect();
         assert!(planars.len() >= 2, "box has at least two planar faces");
         assert!(!faces_are_curved_compatible(planars[0], planars[1]));

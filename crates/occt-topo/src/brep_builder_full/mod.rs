@@ -117,7 +117,7 @@ use prelude::*;
 mod tests {
     use super::*;
     use crate::brep_measure::edge_length;
-    use crate::brep_surface::{classify_surface, face_is_planar, SurfaceKind};
+    use crate::brep_surface::{classify_surface, face_is_plane_type, SurfaceKind};
     use crate::fillet_edge::classify_surface_full;
     use crate::primitives::BRepPrimBox;
     use crate::topo_tools_full::edges_of_wire;
@@ -129,7 +129,7 @@ mod tests {
     fn edge_from_points_and_curve() {
         // Straight segment of length 1.
         let e = BRepBuilderEdge::from_points(GpPnt::zero(), GpPnt::new(1.0, 0.0, 0.0)).expect("segment");
-        assert!((edge_length(&e, 16) - 1.0).abs() < 1e-9, "segment length");
+        assert!((edge_length(&e) - 1.0).abs() < 1e-9, "segment length");
         let (f, l) = BRepTool::edge_parameters(&e);
         assert!((f - 0.0).abs() < 1e-12 && (l - 1.0).abs() < 1e-12);
 
@@ -244,7 +244,7 @@ mod tests {
         let wire = BRepBuilderPolygon::from_points(&pts, true).expect("square wire");
         let plane = GpPln::new(GpAx3::standard());
         let face = BRepBuilderFace::from_wire(&wire, &plane).expect("planar face");
-        assert!(face_is_planar(&face));
+        assert!(face_is_plane_type(&face));
         let surf = BRepTool::face_surface(&face).expect("surface");
         assert_eq!(classify_surface(surf.as_ref()), SurfaceKind::Plane);
     }
@@ -319,7 +319,7 @@ mod tests {
         let v1 = b.make_vertex(GpPnt::new(0., 0., 0.), 0.0);
         let v2 = b.make_vertex(GpPnt::new(2., 0., 0.), 0.0);
         let e = edge_from_two_vertices(&v1, &v2).expect("segment");
-        assert!((edge_length(&e, 16) - 2.0).abs() < 1e-9, "length 2");
+        assert!((edge_length(&e) - 2.0).abs() < 1e-9, "length 2");
         let (a, z) = BRepTool::edge_vertices(&e).expect("endpoints");
         assert!(a.distance(&GpPnt::zero()) < 1e-9);
         assert!(z.distance(&GpPnt::new(2., 0., 0.)) < 1e-9);

@@ -2,6 +2,9 @@ use super::prelude::*;
 use super::*;
     use std::f64::consts::PI;
 
+    use occt_core::gp::GpDir;
+
+    use crate::brep_surface::sphere_center;
     use crate::primitives::{BRepPrimBox, BRepPrimCylinder, BRepPrimSphere};
     use crate::shape::Shell;
     use crate::shell_check::shell_is_closed;
@@ -126,11 +129,14 @@ use super::*;
         let c = BRepPrimCylinder::make_cylinder(1.0, 3.0);
         let lateral = faces_of(&c.solid.0)
             .into_iter()
-            .find(|f| !face_is_planar(f))
+            .find(|f| !face_is_plane_type(f))
             .expect("lateral face");
         let off = offset_face(&lateral, 0.2).expect("offset");
         let surf = BRepTool::face_surface(&off).expect("surface");
-        let (_, _, r) = extract_cylinder(surf.as_ref()).expect("cylinder params");
+        // `BRepOffset::Surface` keeps the analytic type of a cylinder
+        // (`BRepOffset.cxx:62-90`), so the result is a `Geom_CylindricalSurface`
+        // of radius `R + Offset`.
+        let r = surf.gp_cylinder().expect("Geom_CylindricalSurface").radius();
         assert!(approx(r, 1.2), "radius {}", r);
         clear_tree(&off.0);
     }

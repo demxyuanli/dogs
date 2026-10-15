@@ -595,10 +595,12 @@ pub(super) fn sweep_through(a0: f64, a1: f64, a_through: f64) -> f64 {
     a0 + t1
 }
 
-/// Whether a face is planar (used to identify the cap faces of the lens solid).
+/// Whether a face is a `GeomAbs_Plane` (used to identify the cap faces of the
+/// lens solid). The guard formerly sampled 8x8 normals, which also accepted a
+/// flat B-spline patch.
 pub(super) fn face_is_planar_face(f: &Face) -> bool {
     match BRepTool::face_surface(f) {
-        Some(s) => is_planar(s.as_ref(), 8, 8, 1e-6),
+        Some(s) => is_plane_type(s.as_ref()),
         None => false,
     }
 }

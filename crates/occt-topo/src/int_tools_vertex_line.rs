@@ -402,17 +402,16 @@ pub fn is_vertex_on_line_bool(vertex: &Vertex, curve: &dyn Curve, tol: f64) -> b
     is_vertex_on_line(vertex, curve, tol).is_some()
 }
 
-/// `GeomAdaptor_Curve::Resolution(tol3d)` used by `PutPaveOnCurve` as `aPTol`.
+/// `GeomAdaptor_Curve::Resolution(tol3d)` used by `PutPaveOnCurve` as `aPTol`
+/// (`BOPAlgo_PaveFiller_6.cxx:3001-3002`: `aPTol = aGAC.Resolution(max(aTolR3D,
+/// aTolV))`), delegating to the faithful [`Curve::resolution`]
+/// (`GeomAdaptor_Curve.cxx:1116-1148`).
 ///
-/// OCCT converts a 3D tolerance into a parametric one. The port uses the
-/// same speed estimate already present in `inttools_range::curve_resolution`.
+/// The former body estimated the maximum speed by central differences and
+/// short-circuited unbounded curves to `tol3d`; OCCT's `Resolution` switches on
+/// `GetType()` only and is well defined for an unbounded line (returns `Ruv`).
 pub fn adaptor_resolution(curve: &dyn Curve, tol3d: f64) -> f64 {
-    let a = curve.first_parameter();
-    let b = curve.last_parameter();
-    if Precision::is_infinite(a) || Precision::is_infinite(b) || !a.is_finite() || !b.is_finite() {
-        return tol3d.max(occt_core::precision::PCONFUSION);
-    }
-    crate::inttools_range::curve_resolution(curve, a, b, tol3d)
+    curve.resolution(tol3d)
 }
 
 /// Project `p` onto `curve` and return `(parameter, distance)`.

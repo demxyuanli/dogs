@@ -21,7 +21,9 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::{Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dLine};
 
-use crate::brep_surface::{edge_pcurve_on_face, is_planar};
+use crate::brep_surface::{
+    classify_surface, edge_pcurve_on_face, is_plane_type, SurfaceKind,
+};
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 
@@ -109,6 +111,20 @@ impl Curve2d for PlaneKeepParam2d {
     }
     fn bspline_degree(&self) -> Option<usize> {
         self.curve.nurbs_degree()
+    }
+    /// `Geom2dAdaptor_Curve::Resolution` over `ProjLib_ProjectedCurve`'s result.
+    ///
+    /// `GeomProjLib::ProjectOnPlane` is called with `KeepParam = true`
+    /// (`BRep_Tool.cxx:379-449`), so this wrapper shares the source curve's
+    /// parameter space (`first_parameter`/`last_parameter` are delegated) and
+    /// `ProjLib_ProjectedCurve` preserves the curve kind. Like the other kind
+    /// queries on this wrapper the answer therefore comes from the source curve.
+    /// The projection contracts lengths, so the faithful projected-curve
+    /// resolution is at least this value; returning the source's keeps the step
+    /// on the conservative side instead of falling back to the trait default
+    /// (`Precision::Parametric`), which would under-step by orders of magnitude.
+    fn resolution(&self, ruv: f64) -> f64 {
+        self.curve.resolution(ruv)
     }
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(Self {
@@ -238,7 +254,13 @@ pub fn make_pcurve_on_face(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>,
     let Some(surf) = GeometryRegistry::global().face_surface(&face.0) else {
         return Err("make_pcurve_on_face: face has no surface".into());
     };
-    let planar = is_planar(surf.as_ref(), 8, 8, 1e-6);
+    // `ProjLib::IsAnaSurf` / `MakePCurveOnFace` dispatch on the adaptor's
+    // `GetType()`; the plane arm is `GeomAbs_Plane` (`ProjLib.cxx:217-232`,
+    // `BOPTools_AlgoTools2D.cxx:501-560`). The previous `is_planar` 8x8 normal
+    // sampling also accepted a geometrically flat B-spline patch, whose OCCT
+    // type is `GeomAbs_BSplineSurface` and which therefore takes the general
+    // `ProjLib_ProjectedCurve` arm.
+    let planar = is_plane_type(surf.as_ref());
     if planar {
         if let Some(pc) = curve_on_plane(curve.as_ref(), surf.as_ref()) {
             return Ok(pc);
@@ -343,7 +365,12 @@ fn plane_axes(surf: &dyn Surface) -> Option<(GpPnt, GpVec, GpVec)> {
 }
 
 /// Recover a cylinder's axis point (at v = 0), unit axes and radius from its
-/// surface `d0`. A U-periodic surface is assumed to be a cylinder.
+/// surface `d0`, evaluated at the same parameterization `d0` exposes (`P(u,v) =
+/// O + r cos(u) X + r sin(u) Y + v Z`). Frame recovery, not classification: the
+/// caller has already established `GeomAbs_Cylinder` via
+/// [`classify_surface`], and going through `d0` keeps the frame consistent with
+/// a reversed / trimmed placement, where `gp_Cylinder::Position()` alone would
+/// disagree with the evaluated parameterization.
 fn cylinder_axes(surf: &dyn Surface) -> Option<(GpPnt, GpVec, GpVec, GpVec)> {
     let a = surf.d0(0.0, 0.0);
     let b = surf.d0(std::f64::consts::PI, 0.0);
@@ -363,18 +390,28 @@ fn cylinder_axes(surf: &dyn Surface) -> Option<(GpPnt, GpVec, GpVec, GpVec)> {
 }
 
 /// Build a UV projector for a face whose surface is a plane or a cylinder.
+///
+/// The dispatch is the adaptor surface type, as in `ProjLib::IsAnaSurf`
+/// (`ProjLib.cxx:217-232`) and `ProjLib::MakePCurveOfType`: a `Geom_Plane` and
+/// a `Geom_Cylinder` each get their exact 2D geometry, everything else falls to
+/// the general projection. The previous code tested the plane with 8x8 normal
+/// sampling and *guessed* "cylinder" from `IsUPeriodic()` - which also matches a
+/// `Geom_Torus` and a `Geom_SurfaceOfRevolution`, so a torus face was projected
+/// through a cylinder formula.
 fn face_projector(face: &Face) -> Result<Projector, String> {
     let Some(surf) = GeometryRegistry::global().face_surface(&face.0) else {
         return Err("face has no surface".into());
     };
-    if is_planar(surf.as_ref(), 8, 8, 1e-6) {
-        let (o, x, y) = plane_axes(surf.as_ref()).ok_or("plane axes not recoverable")?;
-        Ok(Projector::Plane { o, x, y })
-    } else if surf.is_u_periodic() {
-        let (o, x, y, z) = cylinder_axes(surf.as_ref()).ok_or("cylinder axes not recoverable")?;
-        Ok(Projector::Cylinder { o, x, y, z })
-    } else {
-        Err("face surface is neither plane nor cylinder".into())
+    match classify_surface(surf.as_ref()) {
+        SurfaceKind::Plane => {
+            let (o, x, y) = plane_axes(surf.as_ref()).ok_or("plane axes not recoverable")?;
+            Ok(Projector::Plane { o, x, y })
+        }
+        SurfaceKind::Cylinder => {
+            let (o, x, y, z) = cylinder_axes(surf.as_ref()).ok_or("cylinder axes not recoverable")?;
+            Ok(Projector::Cylinder { o, x, y, z })
+        }
+        _ => Err("face surface is neither plane nor cylinder".into()),
     }
 }
 

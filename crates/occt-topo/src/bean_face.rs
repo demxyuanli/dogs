@@ -199,32 +199,15 @@ impl BeanFaceIntersector {
         self.surface().d0(u, v)
     }
 
-    /// Approximate `BRepAdaptor_Curve::Resolution(tol)`: the parameter
-    /// increment over which the curve deviates from a straight chord by ~`tol`.
-    /// Uses the current bean window (unbounded curves must have it set via
-    /// [`set_bean_parameters`](Self::set_bean_parameters)).
+    /// `BRepAdaptor_Curve::Resolution(tol)` = `GeomAdaptor_Curve::Resolution`
+    /// (`GeomAdaptor_Curve.cxx:1116-1148`), delegating to [`Curve::resolution`].
+    ///
+    /// `IntTools_BeanFaceIntersector` stores the answer as `myCurveResolution`
+    /// (`IntTools_BeanFaceIntersector.cxx:178,200,223,583`) and reads it as a
+    /// parameter step (`:998,1189,1198,1897`). The previous body estimated the
+    /// maximum `|dp/du|` from 8 central differences over the bean window.
     pub(crate) fn resolution(&self, tol: f64) -> f64 {
-        let c = self.curve();
-        let a = self.first_parameter;
-        let b = self.last_parameter;
-        let span = if a.is_finite() && b.is_finite() && b > a { b - a } else { 0.0 };
-        if span.abs() <= 1e-30 || tol <= 0.0 {
-            return PCONFUSION;
-        }
-        let n = 8;
-        let h = span / n as f64 * 0.5;
-        let mut max_speed = 0.0f64;
-        for i in 0..=n {
-            let u = a + span * i as f64 / n as f64;
-            let speed = c.d0(u - h).distance(&c.d0(u + h)) / (2.0 * h);
-            if speed > max_speed {
-                max_speed = speed;
-            }
-        }
-        if max_speed <= 1e-30 {
-            return tol.max(PCONFUSION);
-        }
-        (tol / max_speed).max(PCONFUSION)
+        self.curve().resolution(tol)
     }
 
     // ---- Distance ----------------------------------------------------------

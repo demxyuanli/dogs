@@ -188,7 +188,8 @@ pub fn do_split_seam_on_face(a_split: &Edge, a_f: &Face) -> bool {
     } else {
         GpDir2d::from_vec2d(&a_vec2d).unwrap_or_default()
     };
-    let a_dox = GpDir2d::default();
+    // `AlgoTools3D.cxx:155`: `aDOX(gp_Dir2d::D::NX)` = (-1, 0), `aDOY(gp_Dir2d::D::Y)` = (0, 1).
+    let a_dox = GpDir2d::new(-1.0, 0.0).unwrap_or_else(|_| GpDir2d { x: -1.0, y: 0.0 });
     let a_doy = GpDir2d::new(0.0, 1.0).unwrap_or_else(|_| GpDir2d { x: 0.0, y: 1.0 });
     let an_u = a_p2d.x();
     let an_v = a_p2d.y();
@@ -217,10 +218,11 @@ pub fn do_split_seam_on_face(a_split: &Edge, a_f: &Face) -> bool {
     if (an_u1 - an_u).abs() <= PCONFUSION && (an_v1 - an_v).abs() <= PCONFUSION {
         return false;
     }
+    // `AlgoTools3D.cxx:199`: `aScPr = (anU1 == anU) ? aDir2D1 * aDOX : aDir2D1 * aDOY`.
     let a_sc_pr = if (an_u1 - an_u).abs() <= PCONFUSION {
-        a_dir2d1.dot(&a_doy)
-    } else {
         a_dir2d1.dot(&a_dox)
+    } else {
+        a_dir2d1.dot(&a_doy)
     };
     let a_c1 = clone_curve(c2d1.as_ref());
     let a_c2 = translate_curve(c2d1.as_ref(), a, b, an_u1 - an_u, an_v1 - an_v);

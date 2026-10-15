@@ -98,6 +98,30 @@ pub fn linear_properties(shape: &TopoShape) -> Result<GProps, String> {
     Ok(props)
 }
 
+/// Linear global properties of a single edge, relative to the edge's own
+/// location — the per-edge integral `BRepGProp::LinearProperties` accumulates
+/// (`BRepGProp_EdgeTool::Mass` -> `BRepGProp_Cinert::Perform`). The Gauss order
+/// comes from `BRepGProp_EdgeTool::IntegrationOrder` (2 for a line, 10
+/// otherwise), so a circular arc's length is exact rather than a chord-length
+/// underestimate.
+pub fn edge_linear_properties(e: &Edge) -> Result<GProps, String> {
+    let t = e.location().transformation();
+    let loc = GpPnt::zero().transformed(&t);
+    let Some(curve) = BRepTool::edge_curve_world(e) else {
+        return Err("edge_linear_properties: edge has no curve".into());
+    };
+    let (a, b) = BRepTool::edge_parameters(e);
+    if !(a.is_finite() && b.is_finite() && b > a) {
+        return Err("edge_linear_properties: edge has no finite parameter range".into());
+    }
+    let (curve, a, b) = if e.orientation().is_reversed() {
+        (Arc::from(curve.reversed()), -b, -a)
+    } else {
+        (curve, a, b)
+    };
+    Ok(cinert_perform(curve.as_ref(), a, b, &loc))
+}
+
 // ---------------------------------------------------------------------------
 // Entry: surface properties
 // ---------------------------------------------------------------------------

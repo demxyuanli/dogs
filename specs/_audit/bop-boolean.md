@@ -22,6 +22,8 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 2. **`curved_boolean_full` 曲面分派**（`bop_curved/region_trim.rs:409` ← `boolean_dispatch:215`、`curved_boolean_ext`
    ← `draw/interpreter.rs:422`、`brepfeat/features.rs:320`）：非平面非球面一律走 `general_boolean_trimmed`（样点**多数表决**
    分区 + UV 网格重建 + 空间哈希焊接，`region_trim.rs:42-70,325-401`），球面走解析球冠网格组装（`face_meshing.rs:487`）。
+   **✅ 已摘除（2026-10-14）**：`boolean_dispatch` 的曲面分支改调 `bop_builder::boolean_via_bopalgo`，网格装配已无生产调用点；
+   忠实路径的曲面布尔对齐（`FUSE`/`CUT`/`COMMON`）亦已闭环（T-79，见发现 3 处置）。
 3. **`brepfeat::boolean_feature`**（`brepfeat/features.rs:318`，公开特征 API）：任何曲面输入**直接体素布尔**
    （`features.rs:335`），产出阶梯状 faceted BRep。
 
@@ -29,11 +31,10 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 **Solid/CompSolid 已改调忠实 `brep_class3d::SolidClassifier`**（T-38），只有**非实体**形状仍走 7×7 网格射线奇偶
 （就地标 **UNPORTED**，`is_inside_mesh:290`）；② 点投影 —— 32×32 网格 + 坐标下降**已删除**
 （`int_tools_full/context.rs:194-195`，T-52）；③ draft shell 丢弃「顶点<3」的面 —— `bop_draft_solid_occt.rs::face_is_degenerate`
-**已删除**（T-47；`face_is_degenerate` 现仅存在于 `bop_builder_repair.rs`，语义不同）。**仍未修**：`bop_curved` 的网格曲面布尔
-与 `bop_curved/region_mesh.rs::classify_face` 的 5×5/8×8 采样分类（发现 3/4/7）。（`boolean_with_check` 的容差重算属发现 16，**已于 2026-10-13 删除**。）
+**已删除**（T-47；`face_is_degenerate` 现仅存在于 `bop_builder_repair.rs`，语义不同）。**仍未修**：`bop_curved/region_mesh.rs::classify_face` 的 5×5/8×8 采样分类（发现 7；发现 3 的网格曲面布尔已于 2026-10-14 从生产分派摘除，见该行处置）。（`boolean_with_check` 的容差重算属发现 16，**已于 2026-10-13 删除**。）
 
 统计：**自创 13 条 + 等价替换未登记 3 条 + 已登记 2 条 = 18 条**（其中 3 条仅在测试/死代码路径）。
-> **2026-10-06 复核**：发现 **1/2/5/6/8/9/10** 已修（见各行「处置」行）；发现 **3/4/7/12** 仍为自创，发现 **16** 于 **2026-10-13 已修**。
+> **2026-10-14 复核**：发现 **1/2/3/5/6/8/9/10** 已修（见各行「处置」行）；发现 **4/7/12** 仍为自创，发现 **16** 于 **2026-10-13 已修**。
 
 ## 发现
 
@@ -63,8 +64,8 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 是否在 live 路径：**否（2026-10-14 订正）**。`boolean_dispatch` 的曲面分支已改调 `bop_builder::boolean_via_bopalgo`（`bop_builder_dispatch.rs:227-232`），`boolean_repaired` 亦经 `boolean_dispatch`（`bop_builder_repair.rs:240`）；`curved_boolean_full`（`region_trim.rs:418`）、`curved_boolean_ext`（`general_mesh.rs:298`）、`curved_boolean_volume` 在 `crates/` 内只剩测试调用（`tests/phase9_integration.rs:39-43`）与 `bop_curved/mod.rs` 单测，无生产调用点。
 - OCCT 对应：**未找到**。OCCT 曲面布尔 = `IntTools_FaceFace` 求交曲线 → `BOPAlgo_Builder` 分片 → `BOPAlgo_SplitSolid`，全程解析曲面、无球-球特例。
 - 影响：**静默产生错误几何**（结果被 faceted 化、丢解析面；面数随 24×24/32×32 网格而变）。门禁：`tests/phase9_integration.rs:39-43`、draw `bool`。
-- 建议：标为未移植；曲面分派改走 `bop_builder2::builder_bop_with_fuzzy`，删网格装配。**（分派改造已于 2026-10-14 收口，网格引擎已无生产调用点；余下失配见下条）**
-- **处置（2026-10-14 复核：仍未修，根因已换）**：分派层已按上条建议收口到忠实路径（`boolean_via_bopalgo`），T-80 亦已闭环，旧阻塞解除。以既有探针复核（`cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_bop_curved_probe`）：`FUSE` 得 `Compound faces=11 solids=4 closed=[false,false,false,false] vol=10.72000`（OCCT ground truth `volume=8.50265 faces=8`）；`CUT` 盒不变 `vol=8.00000` 且顶面仍为 4.0；`COMMON` `vol=0.11415`（不再为空，但仍非 OCCT 值）。故失配不再是"曲面分支走 mesh"，而是忠实路径自身的求交/分片缺陷。新根因：盒面 × 柱面确实求出了 `Circle`（`box face 0 x cyl face 2: n=1 kinds=["Circle"]`），但附带容差为 `3.734e0`（r=0.4 的圆应在 1e-7 量级），于是盒顶面未被切开、柱侧面塌成 `area=0.04821` 的碎面。**行号已漂移**：现文件为 `crates/occt-topo/src/bop_curved/{face_meshing,general_mesh,region_mesh,region_trim}.rs`。
+- 建议：标为未移植；曲面分派改走 `bop_builder2::builder_bop_with_fuzzy`，删网格装配。**（✅ 2026-10-14 收口：分派已改走 `boolean_via_bopalgo`，网格引擎已无生产调用点；忠实路径的三项失配亦已修，见下条处置）**
+- **处置（✅ 已修：T-79，2026-10-14）**：分派层收口到忠实路径（`boolean_via_bopalgo`）后，忠实路径自身的求交/分片缺陷已修，`zz_bop_curved_probe`（box[-1,1]^3 ∪/∖/∩ cylinder(r=0.4,h=2)）三项全部对齐 OCCT ground truth（Gauss 体积 + 面数 + 单一闭合实体）：`FUSE` `faces=8 solids=1 closed=[true] vol_gauss=8.50265`（GT 8.50265/8 面）、`CUT` `faces=8 solids=1 closed=[true] vol_gauss=7.49735`（GT 7.49735/8 面）、`COMMON` `faces=3 solids=1 closed=[true] vol_gauss=0.50265`（GT 0.502655/3 面）。**根因与修法（均按 `.cxx` 同等分支，未加判据）**：(1) `ShellSplitter`/`BuilderSolid` 用**端点 key 对**判"同一走行方向"（`edge_traversal`），闭合环（seam 边、截面圆）两端点 key 相同 ⇒ 退化成 `(ka,ka)`，任意两个视图恒等 ⇒ `GetEdgeOff`/`RefineShell`（`BOPTools_AlgoTools.cxx:1115-1123`、`BOPAlgo_ShellSplitter.cxx:475-482`）把环上的反向视图误判成同向，盒体因此未被切成"盒−柱"与"柱帽"两片；改为 `shell_splitter::same_traversal`：开边仍比端点 key 对，闭合环改比**起始参数处的 3D 切向**（`BOPTools_AlgoTools2D::EdgeTangent`，`BOPTools_AlgoTools2D.cxx:74-103`）。(2) seam 分裂：`BOPAlgo_PaveFiller::MakePCurves` 的 p-curve 未挂到 split 上，`BOPTools_AlgoTools3D::DoSplitSEAMOnFace`（`AlgoTools3D.cxx:150`）读不到 p-curve 即返回 false（`bop_split_faces_occt.rs` 的 `attach_pcurves`）；同函数 `AlgoTools3D.cxx:155/199` 的 `aDOX = gp_Dir2d::D::NX = (-1,0)` 该处原先给成 `(0,0)`、`aScPr` 两支反了（`bop_split_seam.rs`）。(3) 盒顶面 × 柱面求交曲线的容差已回到 1e-7 量级（探针 `box face 0 x cyl face 2: n=1 kinds=["Circle"] tols=["0.000e0"]`），盒顶面被切开（含 `[0,6.2832]` 圆孔环）、柱侧面按 v=1 切成 `[1.0,2.0]`/`[0.0,6.2832]` 两段，不再是 `area=0.04821` 碎面。**门禁（全绿）**：`cargo test -p occt-topo --lib` = 1276 passed / 0 failed；`bop_builder2_boss` 2、`phase3..10/19/20_integration` 8/5/5/4/9/7/5/5/5/8、`step_obj_gates` 4、doctest 2（1 ignored）全绿（合计 1345 passed / 0 failed）。**保留的历史记录**（分派收口当轮）：`FUSE` 曾为 `Compound faces=11 solids=4 closed=[false,…] vol=10.72000`、`CUT` 盒不变 `vol=8.00000`、`COMMON` `vol=0.11415`。
 
 ### 4. `general_boolean_trimmed` + `region_inside_other` 多数表决
 - 判定：**自创**
@@ -75,6 +76,9 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 建议：标为未移植。
 
 - **处置（2026-10-06 复核：仍未修）**：`inside * 2 >= total` 计票仍在（现 `bop_curved/region_trim.rs:74`，`:388` 调用 `region_inside_other`），文件内 `:49` 自承 "port-invented"。
+- **处置（✅ 已删除：2026-10-14）**：整个 `bop_curved` 模块（含 `region_trim.rs`）随发现 3 一并删除，计票式 `region_inside_other` 不再存在于源码。
+- **补充证据（2026-10-14，网格体积链改精确积分后暴露）**：该引擎唯一还断言"体积"的单测 `bop_curved::tests::trimmed_face_box_cylinder_fuse`（`bop_curved/mod.rs:325-346`）本轮失败。实测 `curved_boolean_full(box[-1,1]^3 ∪ cylinder(r=0.4,h=2))` 的结果 **不是实体**：`faces=8 shells=1 closed=false euler=-49 solids=0`，其中 2 个面三角化为零面积、柱侧面只铺出 46% 面积（1.1654 vs 解析 2.5133），与 `volume_via_bopalgo` 的 `faces=8 solids=1 closed=[true] vol=8.50265` 对照可见缺陷在引擎自身。旧的 `brep_gprop::volume`（32×32 UV 栅格 + 顶点散度和，发现 11）对同一结果给 8.749648，恰好落进该单测 `|v - 8.5027| < 5.0` 的带内，因此该断言此前是**靠测量误差蒙过**：新精确积分给 3.167771（网格路径 5.297540），均值都无意义——开壳的"体积"本无定义。- **待定**：`bop_curved` 网格/区域引擎（`region_mesh`/`region_trim`/`face_meshing`/`general_mesh` 的 `curved_boolean*`，仅测试调用）与发现 7 的一并处置（删除 vs 标未移植 + `#[ignore]`）待确认，详见本轮报告。
+- **处置（✅ 已删除：2026-10-14）**：`crates/occt-topo/src/bop_curved/` 整个目录（`region_mesh.rs`/`region_trim.rs`/`face_meshing.rs`/`general_mesh.rs`/`mod.rs`）与 `lib.rs` 的 `pub mod bop_curved;` 已删除；唯一还引用它的测试 `tests/phase9_integration.rs::trimmed_boolean_preserves_curved_face` 一并删除。计票式 `region_inside_other`（发现 4）与 5×5/8×8 采样分类（发现 7）作为自创项随之从源码消失；`_audit` 保留本条作为历史记录。忠实替代 = `bop_builder::boolean_via_bopalgo`（`BOPAlgo_BOP`）+ `algo_tools_face::compute_state_face_in_solid`。
 
 ### 5. `builder_solid::classify_point`/`shell_inside_solid`/`solid_inside_solid`（live 空腔归属）
 - 判定：**等价替换未登记**（实为自创分类）
@@ -89,7 +93,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 ### 6. `brep_extrema::is_inside`：7×7 网格三角化射线奇偶（#1/#3/#5 的共同根）
 - 判定：**自创**
 - 证据：`brep_extrema.rs:267` `let meshes = mesh_faces(shape, 7, 7);`；`:283` `ray_plus_x_hits(&verts[*i], &verts[*j], &verts[*k], &jittered)`；`:269-273` 网格化失败时**用包围盒包含兜底**
-- 是否在 live 路径：**是**（经 #1/#3/#5：`bop_builder_dispatch.rs:572,590`、`builder_solid.rs:121`、`bop_curved/region_mesh.rs:90,110`、`bop_builder_splitapi.rs:255`）。
+- 是否在 live 路径：**是**（经 #1/#3/#5：`bop_builder_dispatch.rs:572,590`、`builder_solid.rs:121`、`bop_builder_splitapi.rs:255`；原列 `bop_curved/region_mesh.rs:90,110` 已随该模块删除，2026-10-14）。
 - OCCT 对应：`BRepClass3d_SolidClassifier`（`BOPTools_AlgoTools.cxx:797`）；OCCT 无"网格失败→包围盒"兜底。
 - 影响：**静默产生错误几何**：边界附近/薄壳/曲面体大量误判；兜底会把整 box 判为内部。
 - 建议：删掉该函数在 BOP 路径的用法，改调 `SolidClassifier`（`brep_class3d.rs`）。
@@ -105,6 +109,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 建议：标为未移植，改用 `algo_tools_face::is_internal_face`/`compute_state_face_in_solid`。
 
 - **处置（2026-10-06 复核：仍未修）**：`bop_curved/region_mesh.rs:246` 的 `(5usize, 5usize)` 与 `:254` `point_in_solid` 仍在（`classify_face:240` / `classify_face_general:274` 用 8×8）；忠实件 `algo_tools_face::compute_state_face_in_solid` 已存在但仍未接线。
+- **处置（✅ 已删除：2026-10-14）**：`bop_curved` 模块随发现 3 一并删除，5×5/8×8 采样分类与第二套 `point_in_solid` 不再存在；接线需求转向现存的 `algo_tools_face::compute_state_face_in_solid`（发现 7 原"忠实件未接线"的缺口仍在 `algo_tools_face.rs` 侧）。
 
 ### 8. `IntToolsContext::project_point_on_face`：32×32 网格 + 坐标下降代替 `GeomAPI_ProjectPointOnSurf`
 - 判定：**等价替换未登记**（注释只承认平面的问题）
@@ -144,7 +149,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 影响：**静默产生错误几何**：曲面特征的体积/拓扑由体素分辨率与自定 `resolution_for` 决定。
 - 建议：标为未移植；接 `bop_builder2::builder_bop_with_fuzzy`。
 
-- **处置（2026-10-14 订正：主体已修）**：`boolean_feature` 已改走忠实路径——`crate::bop_builder::boolean`（`BOPAlgo_BOP`，`brepfeat/features.rs:304-311`），`voxel_boolean` 曲面路径已从该函数删除。**余项**：`resolution_for`（`features.rs:481`）已无调用点（体素分辨率残留）；同族自创件见 T-125（`revolve_profile_about` 车削网格夹具等）仍未做，受 T-79 失配阻塞（见发现 3 处置）。
+- **处置（2026-10-14 订正：主体已修）**：`boolean_feature` 已改走忠实路径——`crate::bop_builder::boolean`（`BOPAlgo_BOP`，`brepfeat/features.rs:304-311`），`voxel_boolean` 曲面路径已从该函数删除。**余项（2026-10-15 订正）**：`resolution_for` 已随死代码一并删除；同族自创件的**圆柱夹具已解阻塞并落地**——`translated_mesh_cylinder`+`mesh_cylinder(..,24)` → `translated_cylinder`（`BRepPrimAPI_MakeCylinder`），`box ∪ boss` = 4.157080、`box ∪ 贯通 boss` = 2.565487（精确/裁剪值），证明 `BOPAlgo_BOP` 曲面分支可用。**剩余的是 `revolve_profile_about` 的解析旋转体工具**，但缺口不在 `BOPAlgo_BOP` 而在 `sweep_revolve`（未按 `BRepSweep_Revol`/`BRepPrim_OneAxis` 的 wire/seam/pcurve 约定建面），见 T-125 (2b)。
 
 ### 12. `bop_builder::boolean` 包围盒不相交短路
 - 判定：**等价替换未登记**

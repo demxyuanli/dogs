@@ -34,18 +34,6 @@ fn extrema_point_line_analytic() {
 }
 
 #[test]
-fn trimmed_boolean_preserves_curved_face() {
-    use occt_topo::bop_builder::BoolOp;
-    use occt_topo::bop_curved::curved_boolean_full;
-    let b = BRepPrimBox::make_box(2.0, 2.0, 2.0);
-    let s = BRepPrimSphere::make_sphere(0.5);
-    // Sphere fully inside the box → Fuse = box (sphere internal faces culled).
-    let r = curved_boolean_full(&b.solid.0, &s.solid.0, BoolOp::Fuse, 1e-6).expect("boolean");
-    let nf = occt_topo::topo_tools_full::faces_of(&r.shape).len();
-    assert!(nf >= 6, "fused box faces {nf}");
-}
-
-#[test]
 fn fillet_corner_patch_closes_chain() {
     use occt_topo::fillet_var::{fillet_edges_chain_with_corner, RadiusLaw, VarFilletSpec};
     let b = BRepPrimBox::make_box(2.0, 2.0, 2.0);

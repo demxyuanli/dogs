@@ -1,16 +1,5 @@
 use super::prelude::*;
-
-
-/// Finite, sane sampling bounds for a surface (unbounded ranges clamp to ±1).
-
-pub(super) fn bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
-    let (u0, u1) = s.u_range();
-    let (v0, v1) = s.v_range();
-    let clamp = |a: f64, b: f64| if a.is_finite() && b.is_finite() && b > a { (a, b) } else { (-1.0, 1.0) };
-    let (u0, u1) = clamp(u0, u1);
-    let (v0, v1) = clamp(v0, v1);
-    (u0, u1, v0, v1)
-}
+use super::brep_offset_surface::brep_offset_surface;
 
 /// 3×3 determinant (Cramer's-rule helper).
 pub(super) fn det3(m: &[[f64; 3]; 3]) -> f64 {
@@ -505,159 +494,39 @@ pub fn offset_wire_3d(wire: &Wire, distance: f64) -> Result<Wire, String> {
 // 2. Face offset (parallel surface)
 // ---------------------------------------------------------------------------
 
-/// Distance from a point to an axis line.
-pub(super) fn dist_point_axis(p: &GpPnt, loc: &GpPnt, dir: &GpDir) -> f64 {
-    let v = GpVec::from_pnts(loc, p);
-    let d = dir.xyz();
-    let proj = d.multiplied(v.xyz().dot(d));
-    GpVec::from_xyz(&v.xyz().subtracted(&proj)).xyz().modulus()
-}
-
-/// Extract cylinder parameters (a point on the axis, the axis direction, the
-/// radius) by fitting two circles to rings at different heights.
-pub(super) fn extract_cylinder(s: &dyn Surface) -> Option<(GpPnt, GpDir, f64)> {
-    let (u0, u1, v0, v1) = bounds(s);
-    let va = v0 + 0.25 * (v1 - v0);
-    let vb = v0 + 0.75 * (v1 - v0);
-    let us = [0.0, 0.25, 0.5];
-    let ring = |v: f64| -> Vec<GpPnt> {
-        us.iter().map(|&f| s.d0(u0 + (u1 - u0) * f, v)).collect()
-    };
-    let pa = ring(va);
-    let pb = ring(vb);
-    let ca = circumcenter3(&pa[0], &pa[1], &pa[2])?;
-    let cb = circumcenter3(&pb[0], &pb[1], &pb[2])?;
-    let dir = GpDir::from_vec(&GpVec::from_pnts(&ca, &cb)).ok()?;
-    let r = ca.distance(&pa[0]);
-    Some((ca, dir, r))
-}
-
-/// Whether every sampled point of `s` is `r` from `center` (spherical test).
-pub(super) fn is_spherical(s: &dyn Surface, center: &GpPnt, r: f64) -> bool {
-    let (u0, u1, v0, v1) = bounds(s);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            if (s.d0(u, v).distance(center) - r).abs() > 1e-4 * r.max(1.0) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// Whether every sampled point of `s` is `r` from the axis (cylindrical test).
-pub(super) fn is_cylindrical(s: &dyn Surface, loc: &GpPnt, dir: &GpDir, r: f64) -> bool {
-    let (u0, u1, v0, v1) = bounds(s);
-    for i in 0..8 {
-        for j in 0..8 {
-            let u = u0 + (u1 - u0) * i as f64 / 7.0;
-            let v = v0 + (v1 - v0) * j as f64 / 7.0;
-            let p = s.d0(u, v);
-            if (dist_point_axis(&p, loc, dir) - r).abs() > 1e-4 * r.max(1.0) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-/// Offset surface of a plane: translate by `distance` along its normal.
-pub(super) fn offset_plane_surface(s: &dyn Surface, distance: f64) -> Result<Box<dyn Surface>, String> {
-    let (u0, _, v0, _) = bounds(s);
-    let o = s.d0(u0, v0);
-    let n = surface_normal(s, u0, v0);
-    let nm = n.xyz().modulus();
-    if nm < 1e-30 {
-        return Err("offset_plane_surface: degenerate plane normal".into());
-    }
-    let n = GpVec::new(n.x() / nm, n.y() / nm, n.z() / nm);
-    let nd = GpDir::from_vec(&n).map_err(|e| e.to_string())?;
-    let z = GpDir::new(0.0, 0.0, 1.0).unwrap();
-    let x_dir = if nd.is_normal(&z) { z } else { GpDir::new(1.0, 0.0, 0.0).unwrap() };
-    let pln = GpPln::new(GpAx3::new(o, nd, &x_dir).map_err(|e| e.to_string())?);
-    Ok(Box::new(GeomPlane::new(pln.translated_vec(&n.multiplied_scalar(distance)))))
-}
-
-/// Offset surface of a general surface by sampling along its normal and
-/// rebuilding a degree-1 bilinear B-spline surface (best-effort for
-/// cone/torus/other surfaces).
-pub(super) fn offset_by_sampling(s: &dyn Surface, distance: f64) -> Result<Box<dyn Surface>, String> {
-    let (u0, u1, v0, v1) = bounds(s);
-    let (nu, nv) = (16usize, 16usize);
-    let mut poles = Vec::with_capacity(nu * nv);
-    for i in 0..nu {
-        for j in 0..nv {
-            let u = u0 + (u1 - u0) * i as f64 / (nu - 1) as f64;
-            let v = v0 + (v1 - v0) * j as f64 / (nv - 1) as f64;
-            let p = s.d0(u, v);
-            let n = surface_normal(s, u, v);
-            if n.xyz().square_modulus() < 1e-24 {
-                return Err("offset_by_sampling: degenerate surface normal".into());
-            }
-            poles.push(p.translated_vec(&n.multiplied_scalar(distance)));
-        }
-    }
-    let knots_u = occt_core::bspl::knots::build_uniform_knots(nu, 1);
-    let knots_v = occt_core::bspl::knots::build_uniform_knots(nv, 1);
-    let bs = crate::brep_faces::GeomBSplineSurface::new(poles, nu, nv, knots_u, knots_v, 1, 1)?;
-    Ok(Box::new(bs))
-}
-
-/// The offset surface of `s` by `distance` along its own normal. Planes are
-/// translated, spheres/cylinders change radius; cone/torus/other surfaces are
-/// sampled and rebuilt as a bilinear B-spline surface.
-pub fn offset_face_surface(s: &dyn Surface, distance: f64) -> Result<Box<dyn Surface>, String> {
-    // Plane.
-    if is_planar(s, 8, 8, 1e-6) {
-        return offset_plane_surface(s, distance);
-    }
-    // Sphere.
-    if let Some(center) = sphere_center(s) {
-        let r = s.d0(0.5, 0.5).distance(&center);
-        if r > 0.0 && is_spherical(s, &center, r) {
-            let new_r = r + distance;
-            if new_r <= 0.0 {
-                return Err("offset_face_surface: sphere radius would become non-positive".into());
-            }
-            let pos = GpAx3::new(center, GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap())
-                .map_err(|e| e.to_string())?;
-            let sph = GpSphere::new(pos, new_r).map_err(|e| e.to_string())?;
-            return Ok(Box::new(GeomSphere::new(sph)));
-        }
-    }
-    // Cylinder.
-    if let Some((loc, dir, r)) = extract_cylinder(s) {
-        if is_cylindrical(s, &loc, &dir, r) {
-            let new_r = r + distance;
-            if new_r <= 0.0 {
-                return Err("offset_face_surface: cylinder radius would become non-positive".into());
-            }
-            let z = GpDir::new(0.0, 0.0, 1.0).unwrap();
-            let x_dir = if dir.is_normal(&z) { z } else { GpDir::new(1.0, 0.0, 0.0).unwrap() };
-            let pos = GpAx3::new(loc, dir, &x_dir).map_err(|e| e.to_string())?;
-            let cyl = GpCylinder::new(pos, new_r).map_err(|e| e.to_string())?;
-            return Ok(Box::new(GeomCylinder::new(cyl)));
-        }
-    }
-    offset_by_sampling(s, distance)
-}
-
-/// Offset a face along its surface normal by `distance`. The boundary wires of
-/// a planar face are translated rigidly; other faces keep their wires as-is
-/// (the edges are not re-projected onto the offset surface).
+/// Offset a face along its surface normal by `distance`.
+///
+/// The surface goes through [`brep_offset_surface`] (`BRepOffset::Surface`,
+/// `BRepOffset.cxx:44-200`), the same call `BRepOffset_Offset::Init(Face, ...)`
+/// makes (`BRepOffset_Offset.cxx:523`). The boundary wires of a planar face are
+/// translated rigidly and a spherical face's are mapped by the concentric
+/// homothety; every other face keeps its wires as-is.
+///
+/// The two branches dispatch on the *exact* surface type
+/// (`GeomAdaptor_Surface::GetType()`: `gp_pln()` / `gp_sphere()`), never on a
+/// sampled normal or a solved center (audit `topo-rest.md` finding 14).
+///
+/// **UNPORTED**: OCCT's general arm rebuilds every wire edge on the offset
+/// surface - it maps each vertex through `TheSurf->D0(pcurve value)`
+/// (`BRepOffset_Offset.cxx:911-958`), writes the source pcurve onto the new face
+/// (`:1076-1078`) and rebuilds the 3D curve with `ComputeCurve3d`
+/// (`:1080-1083`, `:189-384`). That covers a face whose surface has no analytic
+/// offset (e.g. a planar B-spline face, or a cone whose wires must be
+/// re-projected); until it is ported those faces keep the *source* wires, so
+/// their boundary does not lie on the offset surface.
 pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
     let surf = BRepTool::face_surface(face).ok_or("offset_face: face has no surface")?;
-    let new_surf = offset_face_surface(surf.as_ref(), distance)?;
+    let (new_surf, _status) = brep_offset_surface(surf.as_ref(), distance, false)?;
     let b = TopoBuilder::new();
     let wires = wires_of_face(face);
     let mut new_wires = Vec::with_capacity(wires.len());
     let mut src_edges: Vec<(Edge, Edge)> = Vec::new();
-    if is_planar(new_surf.as_ref(), 8, 8, 1e-6) {
+    if let Some(p) = new_surf.gp_pln() {
         // Rigid translation keeps the offset boundary on the offset plane.
-        let n = surface_normal(new_surf.as_ref(), 0.0, 0.0);
-        let v = n.multiplied_scalar(distance);
+        // `BRepOffset::Surface` translates the plane by `XDirection ^ YDirection
+        // * Offset` (`BRepOffset.cxx:54-61`), so `gp_Pln::Position().Direction()`
+        // is the same translated normal and `distance` the same signed amount.
+        let v = GpVec::from_xyz(&p.position().direction().xyz().multiplied(distance));
         for w in &wires {
             let w_edges = edges_of_wire(w);
             let mut new_edges = Vec::with_capacity(w_edges.len());
@@ -667,10 +536,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
             }
             new_wires.push(b.make_wire(&new_edges));
         }
-    } else if let (Some(c_src), Some(c_new)) = (
-        sphere_center(surf.as_ref()),
-        sphere_center(new_surf.as_ref()),
-    ) {
+    } else if let (Some(sp_src), Some(sp_new)) = (surf.gp_sphere(), new_surf.gp_sphere()) {
         // `BRepOffset`'s analytic branch for `GeomAbs_Sphere`: a spherical face
         // offsets to a *concentric* sphere and every boundary curve maps with it
         // (`BRepOffset_MakeOffset` → `BRepOffset::MakeOffset`; the map is
@@ -678,8 +544,9 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
         // reused: it lies on the *source* surface and carries no
         // (edge, offset-face) pcurve, so the analytic passes (`BRepGProp`) see a
         // pcurve-less face and report a zero volume.
-        let r_src = surf.d0(0.0, 0.0).distance(&c_src);
-        let r_new = new_surf.d0(0.0, 0.0).distance(&c_new);
+        let c_src = sp_src.pos.location();
+        let r_src = sp_src.radius;
+        let r_new = sp_new.radius;
         let mut rebuilt = false;
         if r_src > 0.0 && r_new > 0.0 {
             let mut t = occt_core::gp::GpTrsf::identity();

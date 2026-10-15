@@ -107,7 +107,7 @@ use super::*;
         assert!(report.small_edges_removed > 0, "tiny edge removed by FixSmall");
         assert!(report.vertices_welded > 0, "near-closed wire's ends welded");
         assert!(
-            edges_of(&healed).iter().all(|e| edge_length(e, 8) >= 0.01 - 1e-9),
+            edges_of(&healed).iter().all(|e| edge_length(e) >= 0.01 - 1e-9),
             "no edge shorter than the minimum remains"
         );
         // The near-closed wire is now a closed loop inside the healed compound.
