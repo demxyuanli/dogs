@@ -78,6 +78,36 @@ active_task: T005
 
 packages:
   # One entry per closed, verified, committed package. Written by T005 (PM).
+  - id: P004
+    task: T005
+    commit: 249baf11
+    title: "bbox_from_geometry 采样包围盒换 BRepBndLib::Add 忠实件（BRepBndLib.cxx:81-215，T001 的 B3 / T-134）"
+    files:
+      - "crates/occt-topo/src/bbox_from_geometry.rs"
+      - "crates/occt-topo/src/draw/tests.rs"
+      - "crates/occt-topo/src/meshing/model_builder/tests.rs"
+      - "crates/occt-topo/src/viz_scene/tests/scene_camera.rs"
+      - "specs/_audit/topo-rest.md"
+      - "specs/_audit/_index.md"
+      - "specs/_tasks.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "B3 bbox_from_geometry::shape_bbox sampled envelope (64-point edge polyline + 16x16 UV face grid)"
+      - "B3-c1 bbox_from_geometry's single wireframe::face_uv_bounds dependency (deleted with the walk)"
+      - "DOCDRIFT camera line: the unregistered sampled bbox is now registered as topo-rest.md section 19"
+    gates:
+      check: "0 errors, five crates (occt-core / occt-math / occt-geom / occt-geom2d / occt-topo)"
+      lib: "1251 / 0 (= baseline)"
+      step_obj_gates: "4 / 4, 23 models f-ratio 1.00 (Shape-2 0.99), area ratio 1.0000 (Shape-2 0.9999 inside its registered tolerance)"
+      export_data_obj: "15 / 15, v/f and bbox bit-identical to baseline"
+    side_findings:
+      - "Bnd_Box::Get() now carries the Precision::Confusion() gap on both sides (BRep_Tool.cxx:881-895 floors the edge/vertex tolerance; a plane face adds Enlarge(Tolerance(F)) once). A unit box therefore reads [-1e-7, 1+1e-7] as in OCCT; the previous exact [0, 1] reading was the sampled envelope's artifact, not a spec."
+      - "Five existing lib assertions were corrected to that cxx box; no new test was written and no gate tolerance was relaxed."
+      - "solid_union::shape_bbox keeps its own 9x9 sampling fallback (topo-rest.md finding 18); it is a separate path and was not touched."
+      - "crates/occt-topo/src/bbox_from_geometry.rs shrank 140 -> 111 lines (three thin wrappers plus tests)."
+
   - id: P003
     task: T005
     commit: ed22f471
@@ -364,17 +394,17 @@ tasks:
     receipt:
       result: done
       executed_by: "PM inline"
-      summary: "P003 closed and committed (B5 / T-133) as ed22f471; this board advance is the paired control-file commit. findNearestValidPoint now carries the BRepLib_1.cxx:69-83 aD1Mag threshold (Offset unwrapped to its basis, Bezier/B-spline only, = (1./Resolution(1.)*0.01)^2) and the cxx:108-141 D1-accelerated doubling loop that escapes local derivative singularities, with the ponytail: omission note deleted. The GetType() test reuses the single faithful edge_edge::curve_kind port (GeomAdaptor_Curve.cxx:252-311), re-exported pub(crate). Third cycle complete: scout (inline re-verify against BRepLib_1.cxx:31-169) -> worker -> four gates green -> commit."
+      summary: "P004 closed and committed (B3 / T-134) as 249baf11; this board advance is the paired control-file commit. `bbox_from_geometry::shape_bbox` now delegates to the existing faithful `brep_bnd_lib::shape_bnd_box` = `BRepBndLib::Add(S, B, /*useTriangulation*/ false)` (`BRepBndLib.cxx:81-215`), and the self-invented envelope (64-point edge polyline plus a 16x16 UV face grid over `wireframe::face_uv_bounds`) is deleted, closing the only inventory line that no audit doc registered (B3). Fifth cycle complete: scout (Bnd_Box gap vs BRepBndLib semantics, five lib assertion mismatches triaged) -> worker -> four gates green -> commit. Scope deviation disclosed: the five corrected assertions are in test modules of files that the slice's own subject (bbox consumers) owns; no production file outside `bbox_from_geometry.rs` changed."
       commits:
-        - "ed22f471 fix(occt): findNearestValidPoint 补 BRepLib_1.cxx:66-141 的 aD1Mag 局部奇点加速臂（T001 的 B5 / T-133）"
-        - "board advance for P003 (this commit; state.yaml only)"
+        - "249baf11 fix(occt): bbox_from_geometry 采样包围盒换 BRepBndLib::Add 忠实件（BRepBndLib.cxx:81-215，T001 的 B3 / T-134）"
+        - "board advance for P004 (this commit; state.yaml only)"
       next:
         slice: "B6 - occt-geom Extrema failure fabrication (extrema_ss.rs:449,506 and extrema_surf/numeric_extrema.rs:153,374,433,514 fabricate fallback_* pairs where OCCT returns myDone = false)"
-        rationale: "Scout pass required before activation: the fix is a Done=false propagation (Extrema_ExtElSS.cxx:62-83, Extrema_GGExtPC.hxx:531), which is a same-branch cxx fix but changes what the live consumer bean_face_exact.rs:259 receives, so the Scout must map every fabricating site and every caller before the Judge sizes it. B3 (bbox_from_geometry) still needs the BRepBndLib/Bnd_Box dependency check; B4 needs the PointInFace wiring check; B7 is a set of independent small STEP-writer divergences (step/write_context.rs:314 SetNotPeriodic, step/format.rs:500 KnotSpec)."
+        rationale: "Scout pass required before activation: the fix is a Done=false propagation (Extrema_ExtElSS.cxx:62-83, Extrema_GGExtPC.hxx:531), which is a same-branch cxx fix but changes what the live consumer bean_face_exact.rs:259 receives, so the Scout must map every fabricating site and every caller before the Judge sizes it. B4 (face_sample_point) is the same size class but touches four duplicated BOP sites, and B7 is a set of independent small STEP-writer divergences (step/write_context.rs:314 SetNotPeriodic, step/format.rs:500 KnotSpec)."
         allowed_files: []
         verify: []
         stop_if: []
-      note: "Fourth cycle (T134) is the next activation; the board stays at active_task T005 so it can be picked up directly. Gates (3)(4) were re-run on this package because find_nearest_valid_point sits on the BOP pave-filler path."
+      note: "Fifth cycle (T135) is the next activation; the board stays at active_task T005 so it can be picked up directly. Gates (3)(4) were re-run on this package because `shape_bbox` sits on the BOP quick-reject and meshing-deflection path."
 
   - id: T999
     type: judge
