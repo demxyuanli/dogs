@@ -1,5 +1,6 @@
 use super::prelude::*;
 use super::*;
+use crate::geom2d_int::Geom2dIntGInter;
 
 /// `Extrema_ExtPC2d` solution turned into the port's `Extrema2d` pair carrier:
 /// `u1`/`u2` both hold the curve parameter, `p1` the query point.
@@ -121,26 +122,21 @@ pub fn locate_extcc2d(c1: &dyn Curve2d, c2: &dyn Curve2d, u0: f64, v0: f64) -> O
     Some(pair2d_cc(p1.value(), p1.parameter(), p2.value(), p2.parameter()))
 }
 
-/// All curve–curve intersection points (zero-distance extrema).
+/// All curve-curve intersection points, as `Geom2dAPI_InterCurveCurve` reports
+/// them (`Geom2dAPI_InterCurveCurve.cxx:54-106`): the curves go to
+/// `Geom2dInt_GInter(AC1, AC2, Tol, Tol)`, `NbPoints()` is 0 unless `IsDone()`,
+/// and each point is `Point(i).Value()`.
+///
+/// The previous body was a self-invented 33x33 parameter grid that sampled both
+/// curves and pushed every pair closer than `tol` with a local `1e-6` dedup; no
+/// OCCT control flow does that, so it is deleted.
 pub fn curve_curve_intersections2d(c1: &dyn Curve2d, c2: &dyn Curve2d, tol: f64) -> Vec<GpPnt2d> {
-    let (a1, b1) = bound(c1);
-    let (a2, b2) = bound(c2);
-    let n = 32;
-    let mut pts: Vec<GpPnt2d> = Vec::new();
-    for i in 0..=n {
-        let u = a1 + (b1 - a1) * i as f64 / n as f64;
-        for j in 0..=n {
-            let v = a2 + (b2 - a2) * j as f64 / n as f64;
-            let p = c1.d0(u);
-            let q = c2.d0(v);
-            if p.distance(&q) < tol {
-                if pts.iter().all(|x| x.distance(&p) > 1e-6) {
-                    pts.push(p);
-                }
-            }
-        }
+    let mut inter = Geom2dIntGInter::new();
+    inter.perform_curves(c1, c2, tol, tol);
+    if !inter.is_done() {
+        return Vec::new();
     }
-    pts
+    (1..=inter.nb_points()).map(|n| *inter.point(n).value()).collect()
 }
 
 /// Distance from a point to the closest point on a polyline.

@@ -12,15 +12,6 @@ pub struct Extrema2d {
     pub u2: f64,
 }
 
-pub(super) fn bound(c: &dyn Curve2d) -> (f64, f64) {
-    let (a, b) = (c.first_parameter(), c.last_parameter());
-    if a.is_finite() && b.is_finite() && b > a {
-        (a, b)
-    } else {
-        (-1.0, 1.0)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Polynomial root helpers.
 //
