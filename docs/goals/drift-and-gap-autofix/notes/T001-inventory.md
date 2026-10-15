@@ -145,7 +145,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
 - Reachable: `find_valid_range` <- `pave_ff_make.rs:409`, `pave_ff_pave_bound.rs:179`;
   `ShrunkRange` <- `pave_shrunk.rs:87`, `pave_ff_se.rs:39`, `pave_common/mod.rs:51`.
 
-### B6. `occt-geom` Extrema failure fabrication (live)
+### B6. `occt-geom` Extrema failure fabrication — ✅ ALL SUB-ITEMS CLOSED 2026-10-15 (B6a–B6g through P006/P007/P008/P017/P018/P019/P020/P021); only B6h stays open
 - **B6a ✅ CLOSED 2026-10-15 (T-136, package P006).** `extrema_ss.rs:449,506` and
   `extrema_surf/numeric_extrema.rs:153,374,433,514` fabricated a `fallback_*` pair where OCCT
   returns `myDone = false`. All three fallbacks are deleted and the three minimum-distance
@@ -304,12 +304,42 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `new_circle_circle` and were rewritten to the cxx counts and ordering; no test was added.
   Gates: `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0,
   `step_obj_gates` 4/4 (150.7s), `export_data_obj` 15/15 bit-identical.
-- **B6d OPEN (found 2026-10-15, T-137).** `extrema_ss::surface_surface_extrema_all`'s analytic
-  sphere/sphere and sphere/plane arms have no counterpart in `Extrema_ExtSS::Perform`, whose only
-  analytic arm is `Plane` x `Plane` -> `Extrema_ExtElSS::Perform(S1.Plane(), myS2->Plane())`
-  (`Extrema_ExtSS.cxx:122-129`); every other type pair goes to `Extrema_GenExtSS` (`cxx:131-180`).
-  This is an extra branch, not a sampled substitute; Scout must decide between wiring the
-  non-plane pairs to the `GenExtSS` equivalent (`surface_surface_newton_all`) and keeping them.
+- **B6d CLOSED (2026-10-15, package P021 / T-151, commit `11b12e0e`).** `occt-geom/src/extrema_ss.rs`
+  was a single-file solver of its own: analytic sphere/sphere and sphere/plane arms
+  (`sphere_sphere_extrema`, `plane_sphere_pairs`, `plane_sphere_extrema`, `sphere_plane_extrema`), the
+  helpers that served only them (`perpendicular`, `project_on_plane`), and an invented Newton for the
+  general arm (`ss_f`, `solve4`, `solve_surface_surface`). `Extrema_ExtSS::Perform` (`Extrema_ExtSS.cxx:100-255`)
+  has exactly one analytic arm: `S1.GetType() == GeomAbs_Plane && myStype == GeomAbs_Plane` ->
+  `myExtElSS.Perform(S1.Plane(), myS2->Plane())` (`cxx:122-129`); every other type pair, sphere/sphere
+  and sphere/plane included, falls through to `Extrema_GenExtSS(S1, *myS2, 20, 20, mytolS1, mytolS2)`
+  (`cxx:131-175` and `cxx:180-221`). All of that is what the port now carries:
+  `extrema_ss/mod.rs` (`ExtremaExtSS`), `extrema_ss/ext_el_ss.rs` (`ExtremaExtElSS`,
+  `Extrema_ExtElSS.cxx:40-54`; the `gp_Sphere` overloads only set flags and throw
+  `Standard_NotImplemented`, `cxx:62-69`/`cxx:77-83`, so they are not ported),
+  `extrema_ss/gen_ext_ss.rs` (`ExtremaGenExtSS`, `Extrema_GenExtSS.cxx:119-470`: the two 20x20 sample
+  axes, the full point-pair scan for the min/max seeds, `math_BFGS(4)` for the minimum and
+  `math_FunctionSetRoot` for the maximum), `extrema_ss/func_ext_ss.rs` (`ExtremaFuncDistSS`,
+  `ExtremaFuncExtSS` = `Extrema_FuncExtSS.cxx:52-241`) and `gp_Pln::{signed_distance_pnt,
+  signed_distance_pln, square_distance_pln}` (`gp_Pln.hxx:345-379`, `:173-177`). An unbounded plane is
+  no longer special-cased: `GeomAdaptor_Surface` hands `Geom_Plane::Bounds` (`+/-2e100`) straight to
+  `Extrema_GenExtSS`, so the port samples and converges in the `1e100` range exactly like OCCT. The
+  three baseline assertions that encoded the old analytic answer are rebased onto the OCCT 8.0.0
+  reading pinned by `occt_probe --ssx` (rebuilt and rerun with this package):
+  `SSX sph-pln done=1 isPar=0 nbExt=1 sqDist=7.992002e+200 uv1=(0.0015707963267948967,-1.5700109286314992)
+  uv2=(1.999e+100,1.999e+100)`, `SSX pln-sph` symmetric, `SSX sph-pln-win nbExt=0`,
+  `SSX api-sph-pln nbExt=1 dist=2.827012911183817e+100`,
+  `SSX gen-sph-pln nbExt=2 [1] 2.2138509695290867e+198 [2] 7.992002e+200` and
+  `SSX sph-sph nbExt=2 sqDist=4.0000000000003126 / 36`; the third assertion moved to the
+  sphere/sphere pair, which is well posed. Gates: `occt-core --lib` 283/0, `occt-geom2d --lib` 72/0,
+  `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4 (114.1s),
+  `export_data_obj` 15/15 bit-identical; no test was added. **B6h registered here, not fixed**:
+  `extrema_ss::surface_surface_extrema` returns the first `mySqDist` entry while its OCCT counterpart
+  `GeomAPI_ExtremaSurfaceSurface` stores the index of the smallest `SquareDistance` in `myIndex`
+  (`GeomAPI_ExtremaSurfaceSurface.cxx:71-91`, used by `NearestPoints` `cxx:203-209` and
+  `LowerDistance` `cxx:225-231`), so the two differ whenever `NbExt() > 1`; likewise
+  `point_on_s1`/`point_on_s2` expose what OCCT keeps private (`Extrema_ExtSS.hxx:99-102`, public
+  access only through `Points`). Both sit on APIs with no production caller (unit tests only). This
+  closes the B6 family (B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g).
 
 ### B7. Step/IGES-adjacent live divergences
 - `mesh_to_brep.rs:39-41,118-119,157-158`: 1e-9 vertex dedup grid, vertex tolerance 0.0,
@@ -463,7 +493,7 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    the tests drive `ExtremaExtElC2d` directly) and **B6f is CLOSED 2026-10-15 as T-150 / package
    P020** (`curve_curve_intersections2d`'s 33x33 grid replaced by the
    `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` chain, `bound()` deleted), so the B6 family
-   is down to **B6d**. **The next
+   is down to **B6d**, which is also **CLOSED 2026-10-15 as T-151 / package P021**: the extra analytic sphere/sphere and sphere/plane arms, the helpers serving only them, and the invented `solve_surface_surface` Newton are deleted, replaced by `Extrema_ExtSS` / `Extrema_ExtElSS` / `Extrema_GenExtSS` / `Extrema_FuncExtSS` (the only analytic arm is `Plane` x `Plane`), with the unbounded-plane reading pinned by a rebuilt `occt_probe --ssx`. The B6 family is now fully closed; **B6h** (below) is registered as its small leftover. **The next
    slice is #1 below (B1)**: it outranks the B6 leftovers on centrality, confidence and blast radius.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
@@ -472,7 +502,9 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
    `intcurvesurface/solvers.rs:456`), **B7-writer-4** (`geom2d_convert.rs:77` conic arms),
    **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftover
-   (**B6d**) and the `B8 surface_fit` item. The B7
+   (**B6h**: `surface_surface_extrema` returns the first `mySqDist` entry where
+   `GeomAPI_ExtremaSurfaceSurface` returns the `myIndex` minimum, plus the two exposed private
+   point sequences) and the `B8 surface_fit` item. The B7
    STEP-writer lines are both
    **DONE 2026-10-15**: `step/write_context.rs:314` `SetNotPeriodic` as package P010, and
    `step/format.rs:472,526` `closed` + `knot_spec` as package P011, with B8-intana closed as
