@@ -560,8 +560,19 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `B7-mesh_to_brep` pick closed as P025 / T-155**: `mesh_to_brep.rs` now ports
    `BRepBuilderAPI_MakeShapeOnMesh` (`BRepBuilderAPI_MakeShapeOnMesh.cxx:74-263`) whole, so the
    `1e-9` vertex dedup grid and the `0.0` vertex tolerance are gone from the conversion and only the
-   `LOCAL:`-marked welding / closed-manifold / orientation passes remain. Remaining picks:
-   the `ReparamCurve2d` `SameRange` kind forwarding and the missing data-driven STEP-write harness.
+   `LOCAL:`-marked welding / closed-manifold / orientation passes remain. **The `ReparamCurve2d`
+   `SameRange` pick closed as P026 / T-156, with the verdict the card ordered first**: the wrapper
+   already delegated the curve kind and `reparam_curve2d` already returned a concrete
+   `Geom2dBSplineCurve`, so the line was *not* stale-closed -- what was still open is that
+   `pcurve_full/surface_projector/reparam.rs` and `shhealing/wire_fix/pcurve_range.rs` each carried
+   their own copy of the `GeomLib::SameRange` conversion tail, and the `wire_fix` copy
+   (`line_trim_to_reparam_bspline`, `unequal_trim_window` -> `same_range_unequal_line` /
+   `same_range_unequal_other`) dispatched on the curve kind inside the unequal-span arm, where
+   `GeomLib.cxx:924-969` has one path for every kind. Both copies collapse into the single
+   `trimmed_reparam_bspline` (`GeomLib.cxx:912-921` + `:962-968`) plus `same_range_window`
+   (`cxx:934-959`), and `ReparamCurve2d::bspline_copy2d` is gone (the wrapper exists only where
+   `Geom2dConvert::CurveToBSplineCurve` declined, `Geom2dConvert.cxx:442-444`, so the trait default
+   `None` is the right answer). Remaining pick: the missing data-driven STEP-write harness.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
