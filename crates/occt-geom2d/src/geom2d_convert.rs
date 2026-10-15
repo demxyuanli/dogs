@@ -1,12 +1,11 @@
 //! `Geom2dConvert` subset used by `GeomLib::SameRange` and
 //! `ShapeBuild_Edge::TransformPCurve` (`Geom2dConvert.cxx`).
 //!
-//! [`curve_to_bspline_curve`] is the parameterisation-less entry the port
-//! already used for the Bezier branch of `TransformPCurve`.
-//!
-//! [`curve_to_bspline_curve_bspl`] is the full port of
+//! [`curve_to_bspline_curve_bspl`] is the port of the single entry point
 //! `Geom2dConvert::CurveToBSplineCurve(C, Parameterisation)`
-//! (`Geom2dConvert.cxx:181-449`):
+//! (`Geom2dConvert.cxx:181-449`); OCCT has no parameterisation-less overload of
+//! that entry point, so the port carries no second, partial copy of its
+//! Bezier/B-spline arms:
 //!
 //! * trimmed input (`:189-374`): take `BasisCurve()` and `[First, Last]`, clamp
 //!   the range for a non-periodic basis (`:199-209`), then dispatch on the basis
@@ -70,30 +69,6 @@ fn build_conic_bspline2d(convert: &ConicToBSplineCurve) -> Option<Geom2dBSplineC
         convert.is_periodic(),
     )
     .ok()
-}
-
-/// `Geom2dConvert::CurveToBSplineCurve(C)` (`Geom2dConvert.cxx`), the exact
-/// non-conic cases: Bezier -> BSpline with the identical poles, BSpline ->
-/// itself. Returns `None` for any other curve type (UNPORTED).
-pub fn curve_to_bspline_curve(c: &dyn Curve2d) -> Option<Box<dyn Curve2d>> {
-    if c.is_bspline2d() {
-        return Some(c.clone_dyn());
-    }
-    if c.is_bezier2d() {
-        let poles = c.poles2d()?;
-        let degree = poles.len().checked_sub(1)?;
-        let xs: Vec<f64> = poles.iter().map(|p| p.x()).collect();
-        let ys: Vec<f64> = poles.iter().map(|p| p.y()).collect();
-        let mut knots = vec![0.0f64; degree + 1];
-        knots.extend(std::iter::repeat(1.0f64).take(degree + 1));
-        // `CBez->IsRational()` passes `WeightsArray()` (`:411-414`).
-        let bs = match c.bezier_weights2d() {
-            Some(w) => Geom2dBSplineCurve::rational(xs, ys, w.to_vec(), knots, degree).ok()?,
-            None => Geom2dBSplineCurve::new(xs, ys, knots, degree).ok()?,
-        };
-        return Some(Box::new(bs));
-    }
-    None
 }
 
 /// `Geom2dConvert::CurveToBSplineCurve(C, Parameterisation)`
