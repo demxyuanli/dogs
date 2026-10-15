@@ -19,6 +19,8 @@ Rust 写成 `p + Offset·Dir`（沿参考方向平移）。该类型被 STEP 读
 `Extrema_ExtPC.cxx`/`Extrema_GExtPC.hxx` 在 V8_0_0 已不存在。
 
 > **2026-10-06 补记（T-104 / §9.588、T-106 / §9.601、§9.604–§9.613）**：本报告是 2026-09-20 基线；此后的批 91–93 与 T-104/T-106 又落地一批忠实件 —— 3D `GeomConvert::CurveToBSplineCurve` + `GeomConvert_CompCurveToBSplineCurve`（`occt-geom/src/convert_bspl.rs::curve_to_bspline_curve`，批 92），**2D 侧** `Geom2dConvert::CurveToBSplineCurve`（`occt-geom2d/src/geom2d_convert.rs`，`Geom2dConvert.cxx:181-449`）、`Geom2dConvert_CompCurveToBSplineCurve`（新文件 `occt-geom2d/src/comp_curve_to_bspline.rs`）、`Geom2dConvert_ApproxCurve`（新文件 `occt-geom2d/src/convert_approx_curve.rs`），`Geom2d_BSplineCurve` 的操作族（`bspline_curve.rs` 的 `insert_knots:247`/`insert_knot:306`/`set_origin:319`/`segment:489`/`set_knots:116`/`increase_degree:384`/`remove_knot:434`/`u_knot_index_range:210`/`update_flat_knots:230`/`bspline_copy2d:918`，`Geom2d_BSplineCurve.cxx:236-292/343/410-478/707/989`），`Geom2d_BezierCurve::segment`（`bezier_curve.rs:57`），以及 `AdvApprox` 机械件整体迁到 `crates/occt-core/src/adv_approx/`（新增 `ApproxAFunction2d`；`occt-geom/src/lib.rs:76` 改 `pub use occt_core::adv_approx;`）。发现 6 据此订正、发现 15 前半据此订正。
+>
+> **2026-10-15 补记（T-152 / 包 P022）**：`occt-geom2d/src/geom2d_convert.rs` 另有第二份残缺的 `curve_to_bspline_curve(&dyn Curve2d) -> Option<Box<dyn Curve2d>>`（只处理 Bezier 与 BSpline 臂，全部圆锥、裁剪输入与 `Geom2d_OffsetCurve` 返回 `None`，全仓无调用方），与 cxx 的单一入口 `Geom2dConvert::CurveToBSplineCurve(C, Parameterisation)`（`Geom2dConvert.cxx:181-449`）不符。该副本已删除，只留同一入口的忠实件 `curve_to_bspline_curve_bspl`（7 个生产调用点）。
 
 ## 发现
 

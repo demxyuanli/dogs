@@ -395,11 +395,18 @@ const CYCLES = [
     state: "✅ 闭合：`Extrema_ExtSS::Perform`（`Extrema_ExtSS.cxx:100-255`）只有 `Plane`×`Plane` 一条解析臂（`cxx:122-129` → `Extrema_ExtElSS`），其余类型对一律 `Extrema_GenExtSS(S1, *myS2, 20, 20, tol1, tol2)`（`cxx:131-175` / `cxx:180-221`）并按 `ElCLib::InPeriod` + 落窗判据过滤。删除三条解析臂、只服务它们的辅助件与一般臂的自创 Newton `solve_surface_surface`；新增 `extrema_ss/` 五文件（`ExtremaExtSS` / `ExtremaExtElSS` / `ExtremaGenExtSS` / `ExtremaFuncDistSS`·`ExtremaFuncExtSS` / `tests.rs`）与 `gp_Pln` 的 `signed_distance_*`·`square_distance_pln`（`gp_Pln.hxx:345-379`、`:173-177`）。球/面这对在 OCCT 无解析臂（`Extrema_ExtElSS::Perform(gp_Pln, gp_Sphere)` 抛 `Standard_NotImplemented`），无界平面量程 ±2e100 由 `GeomAdaptor_Surface` 原样透传，故旧断言的 4.0 是被删解析臂编出来的数；`occt_probe --ssx` 重编译实跑钉住真值（`SSX sph-pln nbExt=1 sqDist=7.992002e+200`、`SSX gen-sph-pln nbExt=2 [1] 2.2138509695290867e+198 [2] 7.992002e+200`、`SSX api-sph-pln dist=2.827012911183817e+100`、`SSX sph-sph nbExt=2 sqDist=4.0000000000003126/36`），三条既有断言随之订正（未新增测试）。门禁：`occt-core --lib` 283/0、`occt-geom2d --lib` 72/0、`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（114.1s）、`export_data_obj` 15/15 逐位一致。同批登记 **B6h**（`surface_surface_extrema` 取首解 vs `GeomAPI_ExtremaSurfaceSurface` 的最小下标 `myIndex`；`point_on_s1`/`point_on_s2` 多暴露私有序列）。B6 家族至此全部收口",
   },
   {
+    pkg: "P022",
+    task: "T-152",
+    commit: "3b5728b3",
+    scope: "B7-writer-4：`occt-geom2d/src/geom2d_convert.rs:78` 的第二份残缺 `curve_to_bspline_curve` 副本删除，只留 `Geom2dConvert.cxx:181-449` 单一入口的忠实件",
+    state: "✅ 闭合：副本只处理 Bezier（同极点 + `[0,1]` 夹持结点，等价 `cxx:399-419`）与 BSpline（`clone_dyn()`），对全部圆锥、全部裁剪输入与 Offset 一律 `None`，而 cxx 的单一入口 `CurveToBSplineCurve(C, Parameterisation)`（`Geom2dConvert.cxx:181-449`，`Parameterisation` 默认 `Convert_RationalC1`）覆盖裁剪基曲线的圆锥/Bezier/BSpline/Offset（`cxx:189-374`）、非裁剪周期椭圆/圆（`cxx:379-397`）、Bezier（`cxx:399-419`）、BSpline `Copy()`（`cxx:420-423`）、Offset 近似（`cxx:425-440`），其余抛 `Standard_DomainError`（`cxx:442-444`）；同文件 `curve_to_bspline_curve_bspl` 已是忠实件（7 个生产调用点）。副本两条臂与忠实件逐字同构、且缺 `trimmed_basis` 与全部圆锥臂，故删除不改任何可达行为；全仓 grep 该名字只出现在自身定义与 doc（无调用方）。模块头去掉「无参数化入口」的叙述。门禁：`--all-targets` 0 error / 82 warnings（与改前同数）、`occt-geom2d --lib` 72/0、`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（114.7s）、`export_data_obj` 15/15 逐位一致。旁支登记：2D 侧名 `..._bspl` 与 3D 侧 `convert_bspl::curve_to_bspline_curve`（带 `parameterisation`）不对称，改名需动 `occt-topo` 7 个调用点，超出本包 allowed_files",
+  },
+  {
     pkg: "下一步",
-    task: "T-152 → 待建 Worker",
+    task: "T-153 → 待建 Worker",
     commit: "—",
-    scope: "B7-writer-4：`crates/occt-geom2d/src/geom2d_convert.rs:78` 的 `curve_to_bspline_curve` 是 `Geom2dConvert::CurveToBSplineCurve` 的第二份残缺实现（只处理 Bezier/BSpline，圆锥与裁剪臂返回 `None`），而 cxx 只有单一入口 `Geom2dConvert.cxx:181`（`Parameterisation` 默认参）覆盖裁剪圆锥/圆锥/Bezier/BSpline/Offset，其余抛 `Standard_DomainError`",
-    state: "⬜ 待做：先做一轮 Scout 重读 `Geom2dConvert.cxx:181-449` 的 1 参默认值与 2 参正文，确认与同文件 `curve_to_bspline_curve_bspl` 的差集（前者缺 `trimmed_basis` 臂与全部圆锥臂，且无调用方），再决定删除该残缺副本还是按 cxx 补臂；随后依次 **B6h**、`surface_fit`（`GeomLib_IsPlanarSurface`）、`ReparamCurve2d` 的 `SameRange` kind 转发与缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness",
+    scope: "B6h：`occt-geom/src/extrema_ss/mod.rs::surface_surface_extrema` 取 `mySqDist` 首项，而其 OCCT 对应件 `GeomAPI_ExtremaSurfaceSurface` 取最小 `SquareDistance` 的下标 `myIndex`（`GeomAPI_ExtremaSurfaceSurface.cxx:71-91`；`NearestPoints` `cxx:203-209`、`LowerDistance` `cxx:225-231` 都用它），`NbExt() > 1` 时两者不同；同处 `point_on_s1`/`point_on_s2` 多暴露 OCCT 的私有序列（`Extrema_ExtSS.hxx:99-102`）",
+    state: "⬜ 待做：先确认 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 语义与两个消费方（`NearestPoints` 取 `myIndex`、`LowerDistance` 取 `mySqDist(myIndex)`）是否在仓内有调用方，再按 cxx 落 `myIndex` 与唯一对外口 `Points(N, P1, P2)`；随后依次 `surface_fit`（`GeomLib_IsPlanarSurface`：需补 `Controle`/`GeomLib::Inertia` 并接线 `brep_offset/curve_face_offset.rs`）、`ReparamCurve2d` 的 `SameRange` kind 转发（`GeomLib::SameRange` 对既非直线也非圆的输入返回 `GeomAbs_BSplineCurve`）与缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness",
   },
 ];
 
@@ -569,7 +576,7 @@ export default function OcctScopeDrift() {
       <Row gap={16} wrap>
         <Stat value="13.8%" label="全库行数覆盖" />
         <Stat value="24.0%" label="CAD 内核行数覆盖" tone="info" />
-        <Stat value="6 处" label="登记未收代码项（含下一片 1 处）" tone="warning" />
+        <Stat value="5 处" label="登记未收代码项（含下一片 1 处）" tone="warning" />
         <Stat value="0 项" label="文档/状态偏移待办" tone="success" />
       </Row>
       <Stack gap={6}>
@@ -578,8 +585,8 @@ export default function OcctScopeDrift() {
           在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.6 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P017 `extrema2d` 自创 Newton 换 `Extrema_LocateExtCC2d`、P018 `extrema2d` 的 `Extrema_ExtElC2d` 臂副本删除、P019 `extrema_cc` 的 3D `locate_extcc` 换 `Extrema_LocateExtCC` / `Extrema_GFuncExtCC` 3D、P020 `extrema2d` 的 33×33 采样栅格换 `Geom2dInt_GInter`、P021 `extrema_ss` 的球/球与球/面解析臂换 `Extrema_ExtSS` / `Extrema_ExtElSS` / `Extrema_GenExtSS` 忠实件）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g）已随 P008/P017/P018/P019/P020/P021 全部收口，下一片已定档为
-          B7-writer-4「`geom2d_convert.rs:78` 的 `curve_to_bspline_curve` 残缺副本」（对 cxx 单一入口 `Geom2dConvert.cxx:181`），其后依次 B6h、`surface_fit`（`GeomLib_IsPlanarSurface`）。
+          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P018 `extrema2d` 的 `Extrema_ExtElC2d` 臂副本删除、P019 `extrema_cc` 的 3D `locate_extcc` 换 `Extrema_LocateExtCC` / `Extrema_GFuncExtCC` 3D、P020 `extrema2d` 的 33×33 采样栅格换 `Geom2dInt_GInter`、P021 `extrema_ss` 的球/球与球/面解析臂换 `Extrema_ExtSS` / `Extrema_ExtElSS` / `Extrema_GenExtSS` 忠实件、P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g）已随 P008/P017/P018/P019/P020/P021 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，下一片已定档为
+          B6h「`extrema_ss::surface_surface_extrema` 取首解 vs `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解」，其后依次 `surface_fit`（`GeomLib_IsPlanarSurface`）、`ReparamCurve2d` 的 `SameRange` kind 转发与缺失的 STEP 写侧数据驱动 harness。
         </Text>
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
@@ -591,23 +598,23 @@ export default function OcctScopeDrift() {
       </Stack>
       <Callout tone="success" title="下一步（按门禁「完成即停」交接）">
         <Text>
-          <Text weight="semibold">立即推进</Text>：B7-writer-4 —— `crates/occt-geom2d/src/geom2d_convert.rs:78` 的
-          `curve_to_bspline_curve` 是 `Geom2dConvert::CurveToBSplineCurve` 的第二份残缺实现：只处理 Bezier（同极点）
-          与 BSpline（自身拷贝），圆锥（Circle/Ellipse/Hyperbola/Parabola）与 `trimmed_basis` 臂一律返回 `None`，
-          且全仓无调用方；OCCT 该函数只有一个入口 `Geom2dConvert.cxx:181`（`Parameterisation` 为默认参），正文覆盖
-          裁剪圆锥/圆锥/Bezier/BSpline/Offset，其余抛 `Standard_DomainError`。先 Scout 重读 `cxx:181-449` 与同文件
-          `curve_to_bspline_curve_bspl` 的差集，再决定删除残缺副本或按 cxx 补臂。
-          前一片（P021 / T-151，commit `11b12e0e`）已把 `crates/occt-geom/src/extrema_ss.rs` 的球/球、球/面、面/球
-          解析臂（连同只服务它们的 `perpendicular`/`project_on_plane`）与一般臂的自创 Newton `solve_surface_surface`
-          删除，换成忠实件 `extrema_ss/{mod,ext_el_ss,gen_ext_ss,func_ext_ss,tests}.rs`：`Extrema_ExtSS::Perform`
-          （`cxx:100-255`）只在 `Plane`×`Plane` 走 `Extrema_ExtElSS`（`cxx:122-129`），其余类型对一律
-          `Extrema_GenExtSS(S1, *myS2, 20, 20, tol1, tol2)`（`cxx:131-175` / `cxx:180-221`），结果先按 `ElCLib::InPeriod`
-          归约周期参数、再以八条落窗判据过滤；`gp_Pln` 补 `signed_distance_pnt`/`signed_distance_pln`/`square_distance_pln`
-          （`gp_Pln.hxx:345-379`、`:173-177`）。无界平面这对的真实行为由 `occt_probe --ssx`（本次重编译实跑）钉住：
-          `SSX sph-pln nbExt=1 sqDist=7.992002e+200`、`SSX gen-sph-pln nbExt=2 [1] 2.2138509695290867e+198
-          [2] 7.992002e+200`、`SSX sph-sph nbExt=2 sqDist=4.0000000000003126/36`；旧断言里的 4.0 是被删解析臂编出来的数，
-          三条既有断言随之订正（未新增测试）；门禁 `occt-core --lib` 283/0、`occt-geom2d --lib` 72/0、
-          `occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（114.1s）、`export_data_obj` 15/15 逐位一致。
+          <Text weight="semibold">立即推进</Text>：B6h —— `crates/occt-geom/src/extrema_ss/mod.rs::surface_surface_extrema`
+          取 `mySqDist` 的首项，而其 OCCT 对应件 `GeomAPI_ExtremaSurfaceSurface` 取最小 `SquareDistance` 的下标
+          `myIndex`（`GeomAPI_ExtremaSurfaceSurface.cxx:71-91`；`NearestPoints` `cxx:203-209`、`LowerDistance`
+          `cxx:225-231` 都用它），`NbExt() > 1` 时两者不同；同处 `point_on_s1`/`point_on_s2` 多暴露了 OCCT 的私有序列
+          （`Extrema_ExtSS.hxx:99-102`，对外只有 `Points(N, P1, P2)`，`hxx:92` / `Extrema_ExtSS.cxx:292-300`）。
+          两个 API 目前都只有单测调用方，先钉住调用方与 `myIndex` 语义再按 cxx 落。
+          前一片（P022 / T-152，commit `3b5728b3`）已把 `crates/occt-geom2d/src/geom2d_convert.rs:78` 的第二份
+          `curve_to_bspline_curve` 删除：它只处理 Bezier（同极点 + `[0,1]` 夹持结点，等价 `cxx:399-419`）与 BSpline
+          （`clone_dyn()`），对全部圆锥（Circle/Ellipse/Hyperbola/Parabola）、全部裁剪输入与 `Geom2d_OffsetCurve` 一律
+          返回 `None`，全仓无调用方；cxx 只有单一入口 `Geom2dConvert::CurveToBSplineCurve(C, Parameterisation)`
+          （`Geom2dConvert.cxx:181-449`，`Parameterisation` 默认 `Convert_RationalC1`），正文覆盖裁剪圆锥/Bezier/BSpline/Offset、
+          非裁剪周期圆锥、Offset 近似，其余抛 `Standard_DomainError`（`cxx:442-444`），而它已由同文件的
+          `curve_to_bspline_curve_bspl`（7 个生产调用点）忠实落地 —— 副本两条臂与忠实件逐字同构且只少不多，故删除不改
+          任何可达行为。门禁：`--all-targets` 0 error / 82 warnings（与改前同数）、`occt-geom2d --lib` 72/0、
+          `occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（114.7s）、`export_data_obj` 15/15 逐位一致；
+          未新增测试。旁支登记：2D 侧名 `..._bspl` 与 3D 侧 `convert_bspl::curve_to_bspline_curve`（带 `parameterisation`）
+          不对称，改名需同时动 `occt-topo` 的 7 个调用点，超出本包 allowed_files。
         </Text>
         面级残余的定位受「可信的 OCCT 面级预言机」未钉住所限：实测同一条 `--facestats 2.45132 0.349066`
         在探针上是 `72683 / 78464`，而冻结参考是 `73544 / 79977`、端口是 `73516 / 79926` —— 探针用的是

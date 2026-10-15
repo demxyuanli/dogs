@@ -456,9 +456,10 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `Extrema_CCLocFOfLocECC` = `Extrema_GFuncExtCC` 3D is landed in `extrema_cc/p_on_curv.rs`,
   `extrema_cc/gfunc_ext_cc.rs` and `extrema_cc/gen_locate_ext_cc.rs`; the invented
   `refine_curve_curve` + `f_and_jac` are deleted).
-  **B6d** (still open, found in T-137): the analytic sphere/sphere and sphere/plane arms of
-  `surface_surface_extrema_all` have no counterpart in `Extrema_ExtSS::Perform` (only
-  `Plane` x `Plane` is analytic there).
+  **B6d** (found in T-137, **CLOSED 2026-10-15 as P021 / T-151**): the analytic sphere/sphere and
+  sphere/plane arms of `surface_surface_extrema_all` had no counterpart in
+  `Extrema_ExtSS::Perform` (only `Plane` x `Plane` is analytic there); they are deleted, replaced
+  by `extrema_ss/{mod,ext_el_ss,gen_ext_ss,func_ext_ss}.rs`.
 - Self-invented engines with no OCCT counterpart and no production caller: `boolean_ops.rs:173`
   (+`:206/:211/:216/:280`), `solid_union.rs` voxel union.
 
@@ -500,8 +501,9 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 6. **B8 osculating_surface early returns.** **DONE 2026-10-15 as T-139 / package P009** (four
    `clear_flags(); return;` -> OCCT's `clearOsculFlags()` + continue, plus the per-arm `build_chain`
    local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
-   `intcurvesurface/solvers.rs:456`), **B7-writer-4** (`geom2d_convert.rs:77` conic arms),
-   **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftover
+   `intcurvesurface/solvers.rs:456`, closed as P012-P016), **B7-writer-4** (`geom2d_convert.rs:77`
+   conic arms, closed as P022 / T-152), **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`),
+   then the B6 leftover
    (**B6h**: `surface_surface_extrema` returns the first `mySqDist` entry where
    `GeomAPI_ExtremaSurfaceSurface` returns the `myIndex` minimum, plus the two exposed private
    point sequences) and the `B8 surface_fit` item. The B7
@@ -511,7 +513,14 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    P012-P016, **B6e closed as P017 / T-147** (2D) and its 3D twin
    `extrema_cc/curve_curve.rs::locate_extcc` closed as P019 / T-149, **B6g closed as
    P018 / T-148** and **B6f closed as P020 / T-150** (the `curve_curve_intersections2d` 33x33
-   grid replaced by the `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` chain).
+   grid replaced by the `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` chain), **B6d closed as
+   P021 / T-151** (the extra sphere/sphere and sphere/plane analytic arms replaced by the
+   `Extrema_ExtSS` / `Extrema_GenExtSS` chain) and **B7-writer-4 closed as P022 / T-152**: the
+   partial second `curve_to_bspline_curve` (Bezier and B-spline arms only, `None` for every conic
+   and for the trimmed case, no caller) is deleted, leaving the single faithful
+   `curve_to_bspline_curve_bspl` port of `Geom2dConvert.cxx:181-449`. Remaining picks: **B6h**, the
+   `surface_fit` (`GeomLib_IsPlanarSurface`) port, the `ReparamCurve2d` `SameRange` kind forwarding
+   and the missing data-driven STEP-write harness.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
@@ -531,3 +540,9 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `brep_check.rs` `BRepCheck_Edge` port; `validate.rs` must not be used as a gate.
 - `--lib` and `%TEMP%` write-permission failures are environment, to be distinguished from regressions
   in T002.
+- The 3D faithful conversion entry is `occt_geom::convert_bspl::curve_to_bspline_curve` (it takes the
+  `Parameterisation`) while the 2D one is `occt_geom2d::geom2d_convert::curve_to_bspline_curve_bspl`,
+  so the OCCT name `CurveToBSplineCurve` is split across the two crates. Renaming the 2D one would
+  touch 7 call sites in `occt-topo` (`comp_curve_to_bspline.rs:85,142`,
+  `shhealing/shape_build_edge.rs:349,368`, `shhealing/wire_fix/pcurve_range.rs:63`,
+  `iges/pcurve_transfer.rs:304,314`); registered by P022 / T-152, not changed.
