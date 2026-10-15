@@ -76,11 +76,41 @@ visual_board:
 
 active_task: T005
 
+packages:
+  # One entry per closed, verified, committed package. Written by T005 (PM).
+  - id: P001
+    task: T004
+    commit: 67d7f01f
+    title: "BOPAlgo_WireSplitter Angle2D / Tolerance2D / RefineAngle2D 三臂收口（发现 19 / T-131）"
+    files:
+      - "crates/occt-topo/src/wire_splitter_block.rs"
+      - "specs/_audit/bop-boolean.md"
+      - "specs/_tasks.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/notes/T002-gate-baseline.md"
+      - ".gitignore"
+    closed_inventory_lines:
+      - "B1a uv_tolerance_2d hand-rolled GeomAdaptor_Surface::U/VResolution + fd_uv_tolerance fallback"
+      - "B1b curve2d_radius inlined curvature with a dimensionally wrong guard"
+      - "B1c refine_angle_2d aTV from the 3D edge parameter"
+    gates:
+      check: "0 errors (occt-topo warnings 375 -> 373)"
+      lib: "1251 / 0 (= baseline)"
+      step_obj_gates: "4 / 4, 23 models f-ratio 1.00 (Shape-2 0.99), area ratio 1.0000"
+      export_data_obj: "15 / 15, v/f and bbox bit-identical to baseline"
+    side_findings:
+      - "The drift canvas SEMANTIC array over-reports 24 already-closed lines (recorded as DOCDRIFT)."
+      - "bbox_from_geometry.rs sampled bbox is live and unregistered (recorded as DOCDRIFT)."
+      - "GATES readings were stale: G-lib 1276 -> 1251, G-export 23/23 -> 15/15 for the bare run; PARITY rows bottom and T0M were stale."
+      - "occt-geom's extrema_* still fabricates fallback pairs where OCCT returns Done=false (B6, queued)."
+
 tasks:
   - id: T001
     type: scout
     assignee: Scout
-    status: active
+    status: done
     reasoning_hint: default
     objective: "Rebuild the live drift-and-gap inventory from the registered sources and re-verify every line against the cxx; produce a ranked list of items whose OCCT counterpart branch exists and is missing or divergent in Rust."
     inputs:
@@ -271,7 +301,32 @@ tasks:
       - "Updated inventory status per line."
       - "Next active Worker package with allowed_files, verify, stop_if."
       - "Commit hash per closed package."
-    receipt: null
+    receipt:
+      result: done
+      executed_by: "PM inline"
+      summary: "P001 closed and committed as 67d7f01f. Inventory updated: B1 (the whole BOPAlgo_WireSplitter Angle2D/Tolerance2D/RefineAngle2D family) is now closed; B2-B8 and the C-A leaf list remain. First cycle complete: scout -> baseline -> judge -> worker -> verify -> commit."
+      commits:
+        - "67d7f01f fix(occt): BOPAlgo_WireSplitter Angle2D/Tolerance2D/RefineAngle2D 三臂收口（发现 19 / T-131）"
+      next:
+        slice: "B2 - pcurve::pc_curve_kind geometric-invariant classifier -> Geom2dAdaptor_Curve::GetType() equivalent"
+        rationale: "Largest safe remaining slice: the faithful replacement is already half-present (geom_bnd_lib_curve2d::GeomAbsCurve2d + curve2d_abs_type is the dispatcher the OCCT GeomBndLib_Curve2d ctor needs), the trait already exposes every query the adaptor's load uses (trimmed_basis / gp_circ2d / is_line / gp_elips2d / gp_parab2d / gp_hypr2d / is_bezier2d / is_bspline2d / offset_basis), and the divergence is observable (an unbounded parabola/hyperbola or a full-circle trimmed curve is classified as Line or BSpline where OCCT lands on Parabola/Hyperbola/Circle)."
+        allowed_files:
+          - "crates/occt-topo/src/geom_bnd_lib_curve2d.rs"
+          - "crates/occt-topo/src/geom_bnd_lib_offset2d.rs"
+          - "crates/occt-topo/src/int_face_face_bounds.rs"
+          - "crates/occt-topo/src/pcurve.rs"
+          - "crates/occt-topo/src/boptools_2d.rs"
+          - "crates/occt-geom2d/src/trimmed.rs"
+        verify:
+          - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets"
+          - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib"
+          - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+        stop_if:
+          - "Need files outside allowed_files."
+          - "The trait lacks a query the adaptor's load needs and forwarding it would change geometry."
+          - "The step_obj_gates / export_data_obj baselines move."
+      note: "Second cycle (T132) is the next activation; the board stays at active_task T005 so it can be picked up directly."
 
   - id: T999
     type: judge
