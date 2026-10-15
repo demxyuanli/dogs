@@ -387,7 +387,7 @@ impl FaceFace {
     ) -> Result<Vec<FaceFaceCurve>, String> {
         let c1 = cone_from_surface(sa).ok_or("FaceFace: cone extraction (a)")?;
         let c2 = cone_from_surface(sb).ok_or("FaceFace: cone extraction (b)")?;
-        let qi = quadric_quadric_cone_cone(&c1, &c2, ANGULAR, tol);
+        let qi = quadric_quadric_cone_cone(&c1, &c2, tol);
         let out = self.conics_to_curves(qi, fa, fb);
         if out.is_empty() {
             self.general(sa, sb, fa, fb, tol)

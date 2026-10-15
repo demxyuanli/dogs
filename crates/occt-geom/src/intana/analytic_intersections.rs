@@ -1,5 +1,4 @@
 use super::prelude::*;
-use super::*;
 
 
 // ---------------------------------------------------------------------------
@@ -12,7 +11,7 @@ use super::*;
 // are gone.
 // ---------------------------------------------------------------------------
 
-pub(crate) use occt_core::math_direct_poly_roots::{cubic_roots, quadratic_roots, quartic_roots};
+pub(crate) use occt_core::math_direct_poly_roots::{quadratic_roots, quartic_roots};
 
 // ---------------------------------------------------------------------------
 // Plane helpers.

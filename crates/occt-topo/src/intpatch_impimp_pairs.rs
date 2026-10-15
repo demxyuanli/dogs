@@ -201,7 +201,7 @@ fn int_cy_sp(q1: &ImplicitQuad, q2: &ImplicitQuad, _reversed: bool, tol_tang: f6
 fn int_co_co(q1: &ImplicitQuad, q2: &ImplicitQuad, tol_tang: f64) -> PairOutcome {
     let c1 = q1.as_cone().expect("cone");
     let c2 = q2.as_cone().expect("cone");
-    let qi = quadric_quadric_cone_cone(c1, c2, TOL_ANG, tol_tang);
+    let qi = quadric_quadric_cone_cone(c1, c2, tol_tang);
     let out = from_quadric_intersection(qi, Some(q1));
     if matches!(out, PairOutcome::Empty) {
         let coaxial = axes_coaxial(&c1.axis(), &c2.axis());

@@ -32,7 +32,7 @@ pub(super) fn bound(c: &dyn Curve2d) -> (f64, f64) {
 // where the port lives, so nothing had to be kept local).
 // ---------------------------------------------------------------------------
 
-pub(super) use occt_core::math_direct_poly_roots::{cubic_roots, quadratic_roots, quartic_roots};
+pub(super) use occt_core::math_direct_poly_roots::{cubic_roots, quartic_roots};
 
 pub(super) fn push_periodic(roots: &mut Vec<f64>, u: f64, uinf: f64, usup: f64) {
     if !(uinf.is_finite() && usup.is_finite()) {

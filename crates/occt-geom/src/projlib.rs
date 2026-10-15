@@ -7,7 +7,7 @@
 
 use occt_core::elib::slib;
 use occt_core::gp::{
-    GpCirc, GpCone, GpCylinder, GpLin, GpPln, GpPnt, GpPnt2d, GpSphere, GpTorus,
+    GpCirc, GpCone, GpCylinder, GpDir2d, GpLin, GpLin2d, GpPln, GpPnt, GpPnt2d, GpSphere, GpTorus,
 };
 
 use crate::curve::Curve;
@@ -87,6 +87,18 @@ pub fn project_pln_lin(pl: &GpPln, lin: &GpLin) -> (GpPnt2d, GpPnt2d) {
 /// Project a circle's centre onto a plane (`ProjLib_Plane` circle case).
 pub fn project_pln_circ(pl: &GpPln, c: &GpCirc) -> GpPnt2d {
     project_pln_pnt(pl, &c.location())
+}
+
+/// `ProjLib_Plane::Project(const gp_Lin&)` (`ProjLib_Plane.cxx:102-107`, via
+/// `ProjLib::Project(const gp_Pln&, const gp_Lin&)`, `ProjLib.cxx:59-63`): the
+/// line's location and direction carried into the plane's local 2D frame.
+/// `None` where OCCT's `gp_Dir2d(X, Y)` raises `Standard_ConstructionError`,
+/// i.e. when the direction lies along the plane normal.
+pub fn project_pln_lin2d(pl: &GpPln, lin: &GpLin) -> Option<GpLin2d> {
+    let dir3 = lin.direction();
+    let (dx, dy) = eval_pln_dir2d(pl, &dir3);
+    let dir = GpDir2d::new(dx, dy).ok()?;
+    Some(GpLin2d::from_pnt_dir(eval_pln_pnt2d(pl, &lin.location()), dir))
 }
 
 /// Sample `curve` on `[first, last]`, project each point, unwrap periodic

@@ -351,7 +351,7 @@ use super::*;
         let z = GpDir::from_axis(DirAxis::Z);
         let c1 = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), z, PI / 6.0);
         let c2 = cone_apex_at(GpPnt::new(0.0, 0.0, 1.0), z, PI / 4.0);
-        match quadric_quadric_cone_cone(&c1, &c2, ANGULAR, 1e-7) {
+        match quadric_quadric_cone_cone(&c1, &c2, 1e-7) {
             QuadricIntersection::TwoCircles(a, b) => {
                 for c in [a, b] {
                     for k in 0..8 {
@@ -373,7 +373,7 @@ use super::*;
         let axis2 = GpDir::new((40.0f64).to_radians().sin(), 0.0, (40.0f64).to_radians().cos()).unwrap();
         let c1 = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), z, PI / 6.0);
         let c2 = cone_apex_at(GpPnt::new(0.0, 0.0, 0.0), axis2, PI / 6.0);
-        match quadric_quadric_cone_cone(&c1, &c2, ANGULAR, 1e-7) {
+        match quadric_quadric_cone_cone(&c1, &c2, 1e-7) {
             QuadricIntersection::TwoLines(l1, l2) => {
                 for l in [l1, l2] {
                     for t in [-2.0, -1.0, 1.0, 2.0] {

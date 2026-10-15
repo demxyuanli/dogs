@@ -18,7 +18,10 @@ pub(crate) use occt_core::gp::{
     GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpElips, GpHypr, GpLin,
     GpParab, GpPln, GpPnt, GpPnt2d, GpSphere, GpTorus, GpVec, GpVec2d,
 };
-pub(crate) use occt_core::precision::{ANGULAR, CONFUSION};
+pub(crate) use occt_core::intana2d::IntAna2dAnaIntersection;
+pub(crate) use occt_core::precision::{ANGULAR, CONFUSION, INFINITE, REAL_EPSILON, REAL_SMALL};
+
+pub(crate) use crate::projlib::project_pln_lin2d;
 
 }
 

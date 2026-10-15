@@ -311,18 +311,90 @@ pub fn quadric_quadric_sphere_cone(
     }
 }
 
+/// `gce_MakePln(P1, P2, P3)` (`gce_MakePln.cxx:76-92`): the plane through three
+/// points, X direction along `P1P2`. `None` for collinear points
+/// (`gce_ColinearPoints`).
+fn plane_through_three(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt) -> Option<GpPln> {
+    let v1 = GpVec::from_pnts(p1, p2);
+    let v2 = GpVec::from_pnts(p1, p3);
+    let normal = v1.crossed(&v2);
+    if normal.magnitude() < REAL_SMALL {
+        return None;
+    }
+    let n = GpDir::from_vec(&normal).ok()?;
+    let x = GpDir::from_vec(&v1).ok()?;
+    let ax3 = GpAx3::new(*p1, n, &x).ok()?;
+    Some(GpPln::new(ax3))
+}
+
+/// `EstimDist(Con1, Con2)` (`IntAna_QuadQuadGeo.cxx:260-326`): the minimal
+/// distance from an apex to any solution, from the four pairwise intersections
+/// of the two cones' generatrix lines projected into the plane through both
+/// apexes and the direction of the first cone. `Precision::Infinite()` when
+/// that plane cannot be built.
+fn estim_dist(c1: &GpCone, c2: &GpCone) -> f64 {
+    let ap1 = c1.apex();
+    let ap2 = c2.apex();
+    let d1 = c1.position().direction();
+    let ap3 = ap1.translated_vec(&GpVec::from_xyz(d1.xyz()));
+    let Some(pln) = plane_through_three(&ap1, &ap2, &ap3) else {
+        return INFINITE;
+    };
+    // `cxx:279-291`: the two axes projected, then each rotated by ±SemiAngle.
+    // OCCT's `gp_Dir2d` would raise `Standard_ConstructionError` where the
+    // projection vanishes; the axes are inside the plane here, so `None` is
+    // unreachable for the parallel-axes caller.
+    let lin1 = GpLin::from_pnt_dir(ap1, d1);
+    let lin2 = GpLin::from_pnt_dir(ap2, c2.position().direction());
+    let Some(ax1_2d) = project_pln_lin2d(&pln, &lin1) else {
+        return INFINITE;
+    };
+    let Some(ax2_2d) = project_pln_lin2d(&pln, &lin2) else {
+        return INFINITE;
+    };
+    let an_ang1 = c1.semi_angle();
+    let lines1 = [
+        ax1_2d.rotated(&ax1_2d.location(), an_ang1),
+        ax1_2d.rotated(&ax1_2d.location(), -an_ang1),
+    ];
+    let an_ang2 = c2.semi_angle();
+    let lines2 = [
+        ax2_2d.rotated(&ax2_2d.location(), an_ang2),
+        ax2_2d.rotated(&ax2_2d.location(), -an_ang2),
+    ];
+    let mut min_dist = [INFINITE, INFINITE];
+    for l1 in &lines1 {
+        for l2 in &lines2 {
+            let mut an_inter = IntAna2dAnaIntersection::new();
+            an_inter.perform_lin_lin(l1, l2);
+            if an_inter.is_done() {
+                for k in 1..=an_inter.nb_points() {
+                    let p = an_inter.point(k);
+                    min_dist[0] = min_dist[0].min(p.param_on_first().abs());
+                    min_dist[1] = min_dist[1].min(p.param_on_second().abs());
+                }
+            }
+        }
+    }
+    min_dist[0].max(min_dist[1])
+}
+
 /// Cone ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Cone, gp_Cone)` for the
 /// tractable branches: coincident axes (two circles / a point / `Same`),
 /// parallel axes with equal semi-angle (a conic in the plane through the two
 /// apexes, from the plane∩cone closed form), and coincident apexes (one or two
 /// generatrix lines). The common-generatrix case and everything else return
 /// `None` for the numeric walker.
-pub fn quadric_quadric_cone_cone(
-    c1: &GpCone,
-    c2: &GpCone,
-    tol_ang: f64,
-    tol: f64,
-) -> QuadricIntersection {
+///
+/// The angular tolerance is not an input: `IntAna_QuadQuadGeo::Perform`
+/// (`IntAna_QuadQuadGeo.cxx:1433-1476`) starts from `myEPSILON_ANGLE_CONE`
+/// (`= Precision::Angular()`, set by `InitTolerances`, `cxx:351-359`) and only
+/// relaxes it up to `Tol` when the axes are parallel, the semi-angles are
+/// within `Tol`, and the axis distance exceeds `100 * Tol` — the relaxation is
+/// `Tol / EstimDist(Con1, Con2)` (clamped to `[myEPSILON_ANGLE_CONE, Tol]`),
+/// which keeps a far-away apex pair from dropping to the coincident-apex
+/// branch.
+pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricIntersection {
     let tg1 = c1.semi_angle().tan();
     let mut tg2 = c2.semi_angle().tan();
     if tg1 * tg2 < 0.0 {
@@ -334,6 +406,20 @@ pub fn quadric_quadric_cone_cone(
     let d_a1a2 = ap1.square_distance(&ap2);
     let (parallel, dist_axes, _coplanar, _pt_inter) =
         axe_operator(&c1.axis(), &c2.axis(), 1e-14, ANGULAR);
+
+    // `cxx:1458-1476`: relax the angular tolerance for parallel axes.
+    let mut a_tol_ang = ANGULAR;
+    if (tg1 - tg2).abs() < tol && parallel {
+        if dist_axes > 100.0 * tol {
+            let a_min_sol_dist = estim_dist(c1, c2);
+            if a_min_sol_dist < REAL_EPSILON {
+                a_tol_ang = tol;
+            } else {
+                a_tol_ang = ANGULAR.max(tol / a_min_sol_dist);
+                a_tol_ang = a_tol_ang.min(tol);
+            }
+        }
+    }
 
     // 1 — coincident axes: two circles where the cone radii match (or the two
     // cones coincide / touch at the apex).
@@ -367,7 +453,7 @@ pub fn quadric_quadric_cone_cone(
     }
     // 2 — parallel axes with (nearly) equal semi-angles: the intersection lies
     // in the plane through the two apexes; reduce to the plane∩cone conic.
-    else if (tg1 - tg2).abs() < tol_ang && parallel {
+    else if (tg1 - tg2).abs() < a_tol_ang && parallel {
         let da1 = c1.position().direction();
         let o1o2 = GpVec::from_pnts(&ap1, &ap2);
         let o1o2n = o1o2.normalized();
@@ -386,7 +472,9 @@ pub fn quadric_quadric_cone_cone(
         let ortho = da1_x_db1.crossed(&p1_m);
         let Ok(n) = GpDir::from_vec(&ortho) else { return QuadricIntersection::None };
         let Some(pln) = plane_normal_at(p1, n) else { return QuadricIntersection::None };
-        quadric_quadric_plane_cone(&pln, c1, tol_ang, tol)
+        // `cxx:1555`: the nested plane∩cone reduce passes `Tol` for *both*
+        // the angular and the linear tolerance.
+        quadric_quadric_plane_cone(&pln, c1, tol, tol)
     }
     // 3 — coincident apexes: one or two generatrix lines (or `None`).
     else if d_a1a2 < tol2 {
@@ -514,7 +602,7 @@ pub fn quadric_quadric(q1: &Quadric, q2: &Quadric, tol_ang: f64, tol: f64) -> Qu
         (Cylinder(a), Cylinder(b)) => quadric_quadric_cylinder_cylinder(a, b, tol),
         (Cylinder(c), Sphere(s)) | (Sphere(s), Cylinder(c)) => quadric_quadric_cylinder_sphere(c, s, tol),
         (Sphere(s), Cone(c)) | (Cone(c), Sphere(s)) => quadric_quadric_sphere_cone(s, c, tol),
-        (Cone(a), Cone(b)) => quadric_quadric_cone_cone(a, b, tol_ang, tol),
+        (Cone(a), Cone(b)) => quadric_quadric_cone_cone(a, b, tol),
         (Cylinder(c), Cone(k)) | (Cone(k), Cylinder(c)) => quadric_quadric_cylinder_cone(c, k, tol),
     }
 }
