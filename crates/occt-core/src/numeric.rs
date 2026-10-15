@@ -69,48 +69,6 @@ pub fn hermite(p0: f64, p1: f64, m0: f64, m1: f64, t: f64) -> f64 {
     h00*p0 + h10*m0 + h01*p1 + h11*m1
 }
 
-/// Solve quadratic ax² + bx + c = 0. Returns up to 2 sorted roots.
-pub fn quadratic_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
-    if a.abs() < 1e-300 {
-        if b.abs() < 1e-300 { return vec![]; }
-        return vec![-c / b];
-    }
-    let disc = b*b - 4.0*a*c;
-    if disc < 0.0 { return vec![]; }
-    let sq = disc.sqrt();
-    let q = -0.5 * (b + b.signum() * sq);
-    let mut roots = vec![q / a, c / q];
-    roots.sort_by(|x, y| x.partial_cmp(y).unwrap());
-    roots
-}
-
-/// Solve cubic x³ + a x² + b x + c = 0 (depressed via Cardano). Returns real roots.
-pub fn cubic_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
-    let p = b - a*a/3.0;
-    let q = 2.0*a*a*a/27.0 - a*b/3.0 + c;
-    let disc = q*q/4.0 + p*p*p/27.0;
-    let mut roots = Vec::new();
-    if disc > 0.0 {
-        let sq = disc.sqrt();
-        let u = (-q/2.0 + sq).cbrt();
-        let v = (-q/2.0 - sq).cbrt();
-        roots.push(u + v - a/3.0);
-    } else if disc == 0.0 {
-        let u = (-q/2.0).cbrt();
-        roots.push(2.0*u - a/3.0);
-        roots.push(-u - a/3.0);
-    } else {
-        let r = (-p*p*p/27.0).sqrt();
-        let theta = (-q / (2.0*r)).clamp(-1.0, 1.0).acos();
-        for k in 0..3 {
-            let ang = (theta + 2.0*std::f64::consts::PI*k as f64) / 3.0;
-            roots.push(2.0*r.cbrt()*ang.cos() - a/3.0);
-        }
-    }
-    roots.sort_by(|x, y| x.partial_cmp(y).unwrap());
-    roots
-}
-
 /// Distance between two points.
 pub fn distance(a: &GpPnt, b: &GpPnt) -> f64 { a.coord.subtracted(&b.coord).modulus() }
 
@@ -144,25 +102,6 @@ mod tests {
         let f = |x: f64| x - 2.0;
         let r = bisection(&f, 0.0, 5.0, 1e-12, 100).unwrap();
         assert!((r - 2.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn quadratic() {
-        // x² - 3x + 2 = 0 → x=1,2
-        let roots = quadratic_roots(1.0, -3.0, 2.0);
-        assert_eq!(roots.len(), 2);
-        assert!((roots[0] - 1.0).abs() < 1e-12);
-        assert!((roots[1] - 2.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn cubic_real_root() {
-        // x³ - 6x² + 11x - 6 = 0 → x=1,2,3
-        let roots = cubic_roots(-6.0, 11.0, -6.0);
-        assert_eq!(roots.len(), 3);
-        assert!((roots[0] - 1.0).abs() < 1e-10);
-        assert!((roots[1] - 2.0).abs() < 1e-10);
-        assert!((roots[2] - 3.0).abs() < 1e-10);
     }
 
     #[test]

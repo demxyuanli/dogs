@@ -143,7 +143,11 @@ use super::*;
 
     #[test]
     fn polynomial_helpers_ground_truth() {
-        assert_eq!(quadratic_roots(1.0, -5.0, 6.0), vec![2.0, 3.0]);
+        // `Value(1 .. NbSolutions)` order is the solver's own, not sorted
+        // (`math_DirectPolynomialRoots.cxx:712-764`), so compare as a set.
+        let mut q2 = quadratic_roots(1.0, -5.0, 6.0);
+        q2.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(q2, vec![2.0, 3.0]);
         let mut c = cubic_roots(1.0, -6.0, 11.0, -6.0);
         c.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert_eq!(c.len(), 3);
