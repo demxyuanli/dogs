@@ -210,7 +210,7 @@ const SEMANTIC = [
     item: "`Geom_OsculatingSurface` 失败臂提前 `return`（T001 的 B8 osculating 条）",
     id: "B8 / T-139",
     where: "geom/osculating_surface.rs（`init`，旧 `:141,202,238,299`）· 可达 `offset_surface.rs:56` → `brep_offset`",
-    state: "**已修（2026-10-15）**：`init` 原先在 `build_osculating` 失败时四处 `clear_flags(); return;`，把余下的 `for` 结点迭代连同后面整段 V 向扫描一起丢掉，并把五个臂的成功与否挤进一个外层 `oscul_ok`。OCCT `Geom_OsculatingSurface.cxx:179-378` 每臂各持局部 `OsculSurf`（下轮迭代重新赋值），失败只 `clearOsculFlags()`（`:206-213`、`:273-276`、`:308-312`、`:373-376`）后继续；只有 `if (myAlong[1] && OsculSurf)` 这类守卫因标志被清而跳过。现新增 `build_chain`＝`cxx:187-206` 的 `while (IsQPunc)` 链（返回 `Option<(GeomBSplineSurface, k)>`，`None` ＝ 空 `OsculSurf`，`k` 为成功次数），两个 `for` 循环改为 `if self.along[0] { A; if self.along[1] && ok { B } } else if let Some(..) { C } else { clear_flags() }` 的逐臂判定；四处 `return` 与共享 `oscul_ok` 删除。可观测修复：一次失败后余下的结点索引不再被整段跳过。门禁：`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致。**同批订正**：B1（`wire_splitter_block.rs` 三臂）实已在 T-131（`67d7f01f`）收口，清单原标 LIVE 属陈旧；`extrema_cc/mod.rs:9`、`occt-math/globoptmin.rs:590` 的 UNPORTED 注释亦为陈旧（代码已用 `math_GlobOptMin`／已用 `newton_minimum.rs`）。**旁支（未改）**：`surface_fit.rs::fit_plane` 是最小二乘拟合而非 `GeomLib_IsPlanarSurface` 移植，忠实修法是补 `Controle`/`GeomLib::Inertia` 并接线 `brep_offset/curve_face_offset.rs:489`。",
+    state: "**已修（2026-10-15）**：`init` 原先在 `build_osculating` 失败时四处 `clear_flags(); return;`，把余下的 `for` 结点迭代连同后面整段 V 向扫描一起丢掉，并把五个臂的成功与否挤进一个外层 `oscul_ok`。OCCT `Geom_OsculatingSurface.cxx:179-378` 每臂各持局部 `OsculSurf`（下轮迭代重新赋值），失败只 `clearOsculFlags()`（`:206-213`、`:273-276`、`:308-312`、`:373-376`）后继续；只有 `if (myAlong[1] && OsculSurf)` 这类守卫因标志被清而跳过。现新增 `build_chain`＝`cxx:187-206` 的 `while (IsQPunc)` 链（返回 `Option<(GeomBSplineSurface, k)>`，`None` ＝ 空 `OsculSurf`，`k` 为成功次数），两个 `for` 循环改为 `if self.along[0] { A; if self.along[1] && ok { B } } else if let Some(..) { C } else { clear_flags() }` 的逐臂判定；四处 `return` 与共享 `oscul_ok` 删除。可观测修复：一次失败后余下的结点索引不再被整段跳过。门禁：`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致。**同批订正**：B1（`wire_splitter_block.rs` 三臂）实已在 T-131（`67d7f01f`）收口，清单原标 LIVE 属陈旧；`extrema_cc/mod.rs:9`、`occt-math/globoptmin.rs:590` 的 UNPORTED 注释亦为陈旧（代码已用 `math_GlobOptMin`／已用 `newton_minimum.rs`）。**旁支已收口**：本项点名的 `surface_fit.rs::fit_plane` 已在包 P024（T-154，2026-10-16）处理：真实对应件不是 `GeomLib_IsPlanarSurface` 而是 `BRepLib_FindSurface`（`BRepLib_FindSurface.cxx:52-628`）经 `BRepLib_MakeFace(W, OnlyPlane)`（`BRepLib_MakeFace.cxx:188-256`），两者已忠实移植（`crates/occt-topo/src/brep_lib_find_surface.rs`、`brep_lib_make_face.rs::make_face_from_wire`）并接线 `brep_offset/curve_face_offset.rs::offset_wire_3d`；`GeomLib::IsPlanarSurface`/`Controle`/`GeomLib::Inertia` 在仓内无对应件也无可达分支。`occt-geom/src/surface_fit.rs` 的 `fit_plane`/`fit_surface_kind`/`fit_surface` 为 port-only 且已无生产调用方，是否删除留待后续裁决。",
   },
   {
     item: "STEP 写侧周期 B-spline 未收周期（T001 的 B7-writer 第 1 条）",
@@ -409,11 +409,18 @@ const CYCLES = [
     state: "✅ 已修（2026-10-15，包 P023，commit `38a13eae`）：`crate::geom_api::ExtremaSurfaceSurface` 按 `cxx:57-231` 落地（`Init` 用 `PConfusion` 建 `Extrema_ExtSS`、`myIsDone = IsDone && NbExt() > 0`、`myIndex` 全表最小下标、`NbExtrema`/`Points`/`Parameters`/`Distance`/`IsParallel`/`NearestPoints`/`LowerDistanceParameters`/`LowerDistance`/`Extrema` 逐条对应；10 参 `Init` 与构造无调用方，标注未移植）。消费方 `extrema::surface_surface_extrema` 改由该类组对（即最小解），首解门面 `extrema_ss::surface_surface_extrema` 删除，`ExtremaExtSS::point_on_s1`/`point_on_s2` 删除（grep 确认无调用方）。可达性：`Extrema_GenExtSS::Perform` 先入 BFGS 最小解（`Extrema_GenExtSS.cxx:377-386`）、`SR2` 再追加最大解（`cxx:410-414`）、`Plane`×`Plane` 只有 1 条（`Extrema_ExtSS.cxx:229-233`），probe 读数亦以首项为最小，故四门禁数值按构造不变，闭合的是结构缺口。门禁：`--all-targets` 0 error / 105 warnings（同改前）、`occt-geom --lib` 143/0、`occt-geom2d --lib` 72/0、`occt-topo --lib` 1251/0、`phase6_integration` 5/0、`step_obj_gates` 4/4（115.6s）、`export_data_obj` 15/15 逐位一致。",
   },
   {
+    pkg: "P024",
+    task: "T-154",
+    commit: "549e5761",
+    scope: "`BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地：`brep_offset` 的 `offset_wire_3d` 原用「每边采 4 点」的自创最小二乘拟合求平面，而其 OCCT 对应件是 `BRepOffsetAPI_MakeOffset::BuildDomains`（`BRepOffsetAPI_MakeOffset.cxx:184-192`）→ `BRepBuilderAPI_MakeFace(WorkWires.First(), true)`（`BRepBuilderAPI_MakeFace.cxx:215-224`）→ `BRepLib_MakeFace(W, OnlyPlane)`（`BRepLib_MakeFace.cxx:188-256`）→ `BRepLib_FindSurface(W, -1, OnlyPlane, true)`（`BRepLib_FindSurface.cxx:52-628`）",
+    state: "✅ 已修（2026-10-16，包 P024）：(1) **Scout 复核订正两处误标** —— ① `GeomLib::IsPlanarSurface` / `GeomLib::Inertia` / `GeomLib::AxeOfInertia` / `Controle` 在仓内既无对应件也无可达分支（`grep -rn \"IsPlanarSurface\\|AxeOfInertia\" crates/**/*.rs` 零命中；命中的 `Inertia`/`Controle` 是 `BRepGProp_Gauss` 累加器、`fillet_var` 注释与 `math_NewtonMinimum.cxx:230`），故这一切片不是「补 `Controle`/`GeomLib::Inertia`」，而是「按消费方真实调用链移植 `BRepLib_FindSurface`」；② `occt-geom/src/surface_fit.rs` 的 `fit_plane` 在改写后已无生产调用方（只剩自带测试）。(2) **新增忠实件** `crates/occt-topo/src/brep_lib_find_surface.rs`（588 行）＝`BRepLib_FindSurface.cxx:52-628`：`Controle`（`cxx:52-68`，点到面最大距离）、`Is2DConnected`（`cxx:75`）、`Is2DClosed`（`cxx:107`）、`fillParams`（`cxx:178`）、`fillPoints`（`cxx:217`）、`Init`（`cxx:246`）与 `Found`/`Surface`/`Tolerance`/`ToleranceReached`/`Existed`/`Location`（`cxx:583-621`）；先按 `CurveOnSurface` 复用既有曲面（`OnlyClosed` 时过 `Is2DClosed`），否则按边曲线类型取点（Bezier/B-spline 结点、直线 2 点、圆锥 4 点、其余 `15 + NbIntervals(GeomAbs_C3)`），按 `W_i = |P_{i-1}P_i| + |P_iP_{i+1}|` 加权求重心与协方差，`math_Jacobi` 取最小特征值对应特征向量（奇异时取另两轴叉积）拟合 `gp_Pln`，`Controle` 判 `tol_reached`，再用临时面的 `FClass2d::perform_infinite_point() == In` 定向法向。(3) **新增 `brep_lib_make_face.rs::make_face_from_wire`**＝`BRepLib_MakeFace.cxx:188-256`：跑 `FindSurface(W, -1, OnlyPlane, true)`，`tol = max(1.2 * ToleranceReached, Tolerance)`（`cxx:200`），`OnlyPlane` 时按 `cxx:211-242` 剔除退化边（保持线框朝向与闭合），加线建面；未移植项（`UpdateTolerances`/`SameParameter` `cxx:250-252`、`CheckInside` `cxx:255`）在源码按行号标注。(4) **新增 `occt-core/src/gp/ax3.rs::GpAx3::from_point_dir`**＝`gp_Ax3.cxx:29-80`（按规范坐标分支选正交向量）。(5) **接线**：`brep_offset/curve_face_offset.rs::offset_wire_3d` 改调 `make_face_from_wire(wire, true)` + `face_plane(&face)`，自创拟合不再在 `brep_offset` 路径上。门禁：`cargo check --manifest-path crates/occt-topo/Cargo.toml` 0 error、`occt-core --lib` 283/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致。旁支登记：`occt-geom/src/surface_fit.rs` 的 `fit_plane`/`fit_surface_kind`/`fit_surface` 为 port-only 且已无生产调用方，是否删除留待后续裁决",
+  },
+  {
     pkg: "下一步",
-    task: "T-153 → 待建 Worker",
+    task: "T-154 → 待建 Worker",
     commit: "—",
-    scope: "`GeomLib::IsPlanarSurface` / `Controle` / `GeomLib::Inertia`：`brep_offset/curve_face_offset.rs` 一侧需按 cxx 落地该判定（Scout 先复核此前 `next.slice` 里「仓内无消费方」的结论，不要沿用笔记；错就标 closed-as-unreachable 并把 grep 与 cxx 行号写进收据）。其后两项：`ReparamCurve2d` 的 `SameRange` kind 转发（`pcurve_full/surface_projector/reparam.rs` 已委托 kind 并返回具体 `Geom2dBSplineCurve`，需复核是否已闭合）与缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness（无既有基线，本 tranche 不新写测试，只登记）",
-    state: "⬜ 待做：B6 家族已随 P021/P023 全部收口（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h），剩余登记项即上述三条；下一步按最大同分支工作量取 `GeomLib::IsPlanarSurface`/`Controle`/`GeomLib::Inertia`，`allowed_files` 覆盖 `brep_offset/curve_face_offset.rs` 与 `shhealing/*.rs`，`stop_if` 为「不可达 / cxx 无法定论则记 closed-as-unreachable 或 UNPORTED，不自造调用方」",
+    scope: "`ReparamCurve2d` 的 `SameRange` kind 转发：复核 `crates/occt-topo/src/pcurve_full/surface_projector/reparam.rs` 是否已对齐 `GeomLib::SameRange`（`GeomLib.cxx:842-969`：输入既非直线也非圆时返回具体 `Geom2d_BSplineCurve`）；该文件现已委托并返回具体 `Geom2dBSplineCurve`，故 Scout 应先给「已闭合 / 仍有缺口」的判词再决定是否改。其后为缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness（无既有基线，本 tranche 不新写测试，只登记）",
+    state: "⬜ 待做：B6 家族、B7-writer 系列与 `surface_fit`（P024）均已收口，剩余登记项即上述两条；下一步取 `ReparamCurve2d` 的 `SameRange` 线（最大同分支工作量，且需先判陈旧），`stop_if` 为「复核后已对齐则记 stale-closed，不改代码；cxx 无法定论则记 UNPORTED 并标明缺失分支」",
   },
 ];
 
@@ -592,8 +599,8 @@ export default function OcctScopeDrift() {
           在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.6 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P019 `extrema_cc` 的 3D `locate_extcc` 换 `Extrema_LocateExtCC` / `Extrema_GFuncExtCC` 3D、P020 `extrema2d` 的 33×33 采样栅格换 `Geom2dInt_GInter`、P021 `extrema_ss` 的球/球与球/面解析臂换 `Extrema_ExtSS` / `Extrema_ExtElSS` / `Extrema_GenExtSS` 忠实件、P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，下一片已定档为
-          `GeomLib::IsPlanarSurface` / `Controle` / `GeomLib::Inertia`（Scout 先复核旧笔记里「仓内无消费方」的结论），其后依次 `ReparamCurve2d` 的 `SameRange` kind 转发（需复核是否已闭合）与缺失的 STEP 写侧数据驱动 harness（只登记，不新写基线）。
+          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P020 `extrema2d` 的 33×33 采样栅格换 `Geom2dInt_GInter`、P021 `extrema_ss` 的球/球与球/面解析臂换 `Extrema_ExtSS` / `Extrema_ExtElSS` / `Extrema_GenExtSS` 忠实件、P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地、P024 `BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地并接线 `offset_wire_3d`）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，`surface_fit` 一项随 P024 收口（真实对应件为 `BRepLib_FindSurface`，非 `GeomLib::IsPlanarSurface`），下一片已定档为
+          `ReparamCurve2d` 的 `SameRange` kind 转发（Scout 先按 `GeomLib.cxx:842-969` 判陈旧），其后为缺失的 STEP 写侧数据驱动 harness（只登记，不新写基线）。
         </Text>
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
@@ -605,11 +612,22 @@ export default function OcctScopeDrift() {
       </Stack>
       <Callout tone="success" title="下一步（按门禁「完成即停」交接）">
         <Text>
-          <Text weight="semibold">立即推进</Text>：`GeomLib::IsPlanarSurface` / `Controle` / `GeomLib::Inertia` —— `brep_offset/curve_face_offset.rs`
-          一侧需按 cxx 落地该判定；此前 `next.slice` 里「仓内无消费方」的结论要由 Scout 重新核对（不沿用笔记），错就记 closed-as-unreachable
-          并把 grep 与 cxx 行号写进收据。其后两项：`ReparamCurve2d` 的 `SameRange` kind 转发（`pcurve_full/surface_projector/reparam.rs`
-          已委托 `is_line`/`gp_lin2d`/`gp_circ2d`/`bspline_*`/`bspline_copy2d`/`resolution` 并从 `reparam_curve2d` 返回具体 `Geom2dBSplineCurve`，
-          需按 `GeomLib.cxx:842-969` 复核是否已闭合）与缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness（无既有基线，本 tranche 不允许新写测试，只登记）。
+          <Text weight="semibold">立即推进</Text>：`ReparamCurve2d` 的 `SameRange` kind 转发（`pcurve_full/surface_projector/reparam.rs` 已委托
+          `is_line`/`gp_lin2d`/`gp_circ2d`/`bspline_*`/`bspline_copy2d`/`resolution` 并从 `reparam_curve2d` 返回具体 `Geom2dBSplineCurve`）
+          —— 需按 `GeomLib.cxx:842-969` 先判「已闭合 / 仍有缺口」再决定是否改；判为陈旧即记 stale-closed，不改代码。其后为缺失的
+          `data/occ/*.st*` 驱动式 STEP 写侧 harness（无既有基线，本 tranche 不允许新写测试，只登记）。
+          前一片（P024 / T-154）已把 `surface_fit` 一项收口，且订正了原先的两处误标：`GeomLib::IsPlanarSurface` / `GeomLib::Inertia` /
+          `GeomLib::AxeOfInertia` / `Controle` 在仓内既无对应件也无可达分支（`grep -rn "IsPlanarSurface\|AxeOfInertia" crates/**/*.rs` 零命中），
+          而消费方 `brep_offset/curve_face_offset.rs::offset_wire_3d` 的真实 OCCT 调用链是 `offset_wire_3d` 顶替的 `BRepOffsetAPI_MakeOffset::BuildDomains`
+          （`BRepOffsetAPI_MakeOffset.cxx:184-192`）→ `BRepBuilderAPI_MakeFace(WorkWires.First(), true)`（`BRepBuilderAPI_MakeFace.cxx:215-224`）→
+          `BRepLib_MakeFace(W, OnlyPlane)`（`BRepLib_MakeFace.cxx:188-256`）→ `BRepLib_FindSurface(W, -1, OnlyPlane, true)`（`BRepLib_FindSurface.cxx:52-628`）。
+          本轮新增 `crates/occt-topo/src/brep_lib_find_surface.rs`（`FindSurface` 的 `Controle` `cxx:52-68` / `Is2DConnected` `cxx:75` / `Is2DClosed` `cxx:107` /
+          `fillParams` `cxx:178` / `fillPoints` `cxx:217` / `Init` `cxx:246` / 访问器 `cxx:583-621`：先复用既有 `CurveOnSurface` 曲面，否则按边曲线类型取样
+          —— Bezier/B-spline 结点、直线 2 点、圆锥 4 点、其余 `15 + NbIntervals(GeomAbs_C3)` —— 按 `W_i = |P_{i-1}P_i| + |P_iP_{i+1}|` 加权求重心与协方差，
+          `math_Jacobi` 取最小特征值特征向量拟合 `gp_Pln`，`Controle` 判 `tol_reached`，再用 `FClass2d::perform_infinite_point() == In` 定向法向）、
+          `brep_lib_make_face.rs::make_face_from_wire`（`tol = max(1.2 * ToleranceReached, Tolerance)`，`OnlyPlane` 时按 `cxx:211-242` 剔除退化边）与
+          `occt-core/src/gp/ax3.rs::GpAx3::from_point_dir`（`gp_Ax3.cxx:29-80`），`offset_wire_3d` 已改接，原先「每边采 4 点」的最小二乘拟合不再在该路径上。
+          门禁：`occt-topo` `cargo check` 0 error、`occt-core --lib` 283/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致。
           前一片（P023 / T-153，commit `38a13eae`）已把 B6h 收口：`GeomAPI_ExtremaSurfaceSurface` 落成
           `crate::geom_api::ExtremaSurfaceSurface`（`GeomAPI_ExtremaSurfaceSurface.cxx:57-231`，`hxx:49-182`）—— `Init` 建
           `Extrema_ExtSS(S1, S2, PConfusion, PConfusion)`（`cxx:63-68`），`myIsDone = IsDone && NbExt() > 0`（`cxx:68`），

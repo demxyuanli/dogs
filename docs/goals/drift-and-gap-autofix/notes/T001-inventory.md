@@ -381,10 +381,24 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   { clear_flags() }` in both knot loops. Reachable via `offset_surface.rs:56` -> `brep_offset`.
   Gates: `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4, `export_data_obj`
   15/15 bit-identical.
-- `surface_fit.rs:13-40` `fit_plane` lacks the `gz < Tol` gate (`GeomLib_IsPlanarSurface.cxx:44-45`);
-  reachable via `brep_offset/curve_face_offset.rs:489`. (Re-verified 2026-10-15: `fit_plane` is a
-  least-squares fit, not a port of `GeomLib_IsPlanarSurface`, so the faithful fix is to port
-  `Controle`/`GeomLib::Inertia` and wire the caller, not to bolt a gate onto the existing fit.)
+- ~~`surface_fit.rs:13-40` `fit_plane` lacks the `gz < Tol` gate (`GeomLib_IsPlanarSurface.cxx:44-45`);
+  reachable via `brep_offset/curve_face_offset.rs:489`.~~ **CLOSED 2026-10-16 as T-154 / package P024**,
+  and the registration above turned out to name the wrong OCCT class twice over.
+  (a) `GeomLib::IsPlanarSurface`, `GeomLib::Inertia`, `GeomLib::AxeOfInertia` and `Controle` have no
+  counterpart and no reachable branch in the port (`grep -rn "IsPlanarSurface\|AxeOfInertia"
+  crates/**/*.rs` = zero hits; the `Inertia`/`Controle` hits are `BRepGProp_Gauss` accumulators,
+  `fillet_var` comments and `math_NewtonMinimum.cxx:230`). (b) The live consumer's real OCCT
+  counterpart is `BRepLib_FindSurface` via `BRepLib_MakeFace(W, OnlyPlane)`: `brep_offset`'s
+  `offset_wire_3d` stands in for `BRepOffsetAPI_MakeOffset::BuildDomains`
+  (`BRepOffsetAPI_MakeOffset.cxx:184-192`), which calls `BRepBuilderAPI_MakeFace(WorkWires.First(),
+  true)` (`BRepBuilderAPI_MakeFace.cxx:215-224`) -> `BRepLib_MakeFace(W, OnlyPlane)`
+  (`BRepLib_MakeFace.cxx:188-256`) -> `BRepLib_FindSurface(W, -1, OnlyPlane, true)`
+  (`BRepLib_FindSurface.cxx:52-628`). Both are now ported
+  (`crates/occt-topo/src/brep_lib_find_surface.rs`, `brep_lib_make_face.rs::make_face_from_wire`)
+  and `offset_wire_3d` is wired to them, so the 4-samples-per-edge least-squares fit is off the
+  `brep_offset` path. (c) Left registered, not fixed: `occt-geom/src/surface_fit.rs`'s
+  `fit_plane` / `fit_surface_kind` / `fit_surface` are port-only (no OCCT class, no production
+  caller left after the rewire) and now have only their own tests as consumers.
 - `intana/analytic_intersections.rs:42,47,48,120,145,152` and `intana/line_torus.rs:336,340,488,489`
   invent quartic root thresholds and an absolute `1e-14` cone/cone tolerance where OCCT passes
   `done` out of `math_DirectPolynomialRoots` and uses `EstimDist`/`aTolAng`
@@ -506,7 +520,8 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    then the B6 leftover
    (**B6h**: `surface_surface_extrema` returns the first `mySqDist` entry where
    `GeomAPI_ExtremaSurfaceSurface` returns the `myIndex` minimum, plus the two exposed private
-   point sequences) and the `B8 surface_fit` item. The B7
+   point sequences; closed as P023 / T-153) and the `B8 surface_fit` item (closed as P024 / T-154).
+   The B7
    STEP-writer lines are both
    **DONE 2026-10-15**: `step/write_context.rs:314` `SetNotPeriodic` as package P010, and
    `step/format.rs:472,526` `closed` + `knot_spec` as package P011, with B8-intana closed as
@@ -518,9 +533,12 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `Extrema_ExtSS` / `Extrema_GenExtSS` chain) and **B7-writer-4 closed as P022 / T-152**: the
    partial second `curve_to_bspline_curve` (Bezier and B-spline arms only, `None` for every conic
    and for the trimmed case, no caller) is deleted, leaving the single faithful
-   `curve_to_bspline_curve_bspl` port of `Geom2dConvert.cxx:181-449`. Remaining picks: **B6h**, the
-   `surface_fit` (`GeomLib_IsPlanarSurface`) port, the `ReparamCurve2d` `SameRange` kind forwarding
-   and the missing data-driven STEP-write harness.
+   `curve_to_bspline_curve_bspl` port of `Geom2dConvert.cxx:181-449`. **The `surface_fit` pick
+   closed as P024 / T-154**: the faithful counterpart of the live consumer turned out to be
+   `BRepLib_FindSurface` through `BRepLib_MakeFace(W, OnlyPlane)`, now ported, so `offset_wire_3d`
+   no longer runs the 4-samples-per-edge least-squares fit; the registered `GeomLib::IsPlanarSurface`
+   / `GeomLib::Inertia` / `Controle` classes have no counterpart in the port at all. Remaining picks:
+   the `ReparamCurve2d` `SameRange` kind forwarding and the missing data-driven STEP-write harness.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
