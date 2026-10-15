@@ -261,7 +261,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `extrema2d/gen_locate_ext_cc2d.rs` (`GenLocateExtCC2d` + `ExtremaLocateExtCC2d`). Gates:
   `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates`
   4/4 (248.5s), `export_data_obj` 15/15 bit-identical; no test added. Still open in the same family:
-  B6f/B6d below.
+  B6f (now closed below) and B6d.
 - **B6e 3D twin CLOSED 2026-10-15 (P019 / T-149, commit `616ea0c1`).** `occt-geom/src/extrema_cc/curve_curve.rs::locate_extcc` (`:152`) now builds
   `ExtremaLocateExtCC::new(c1, c2, u0, v0)`, and the self-invented clamped 32-iteration Newton
   (`refine_curve_curve` + `f_and_jac` in `poly_roots.rs`, whose Jacobian had all four sign-bearing
@@ -281,12 +281,17 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates`
   4/4 (181.8s), `export_data_obj` 15/15 bit-identical; no test added. The B6e line (2D + 3D twin)
   is fully closed.
-- **B6f OPEN (found while closing B6c, 2026-10-15).**
-  `extrema2d/curve_curve.rs::curve_curve_intersections2d` is a 33x33 parameter grid plus a `tol`
-  argument. OCCT has no such sampler: the zero-distance case is the engine already wired
-  (`Extrema_ExtCC2d`, used by `curve_ops::curve2d_intersections`) or
-  `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` (ported in `occt-geom2d/geom2d_int`).
-  Consumer: `extrema2d/tests.rs:47` only.
+- **B6f CLOSED (2026-10-15, package P020 / T-150, commit `2452a51c`).**
+  `extrema2d/curve_curve.rs::curve_curve_intersections2d` was a 33x33 uniform parameter grid over
+  `bound()` that pushed every pair closer than `tol` under a local `1e-6` dedup -- no OCCT control
+  flow does that, and an intersection off the lattice was silently dropped or replaced by a
+  neighbouring sample. It now runs the faithful chain of `Geom2dAPI_InterCurveCurve.cxx:54-106`:
+  `Geom2dInt_GInter(AC1, AC2, Tol, Tol)` through the already-ported
+  `Geom2dIntGInter::perform_curves`, `NbPoints() == 0` unless `IsDone()`, then `Point(i).Value()`
+  for `i` in `1..=NbPoints()`. The `bound()` helper in `extrema2d/analytic_solvers.rs`, which
+  served only that grid, is deleted. Gates: `occt-geom2d --lib` 72/0, `occt-geom --lib` 143/0,
+  `occt-topo --lib` 1251/0, `step_obj_gates` 4/4 (205.1s), `export_data_obj` 15/15 bit-identical;
+  no test was added or realigned (`curve_curve_intersections_found` still passes unchanged).
 - **B6g CLOSED (2026-10-15, package P018 / T-148, commit `8cad6a01`).** `extrema2d/curve_curve.rs`'s
   `line_line_extrema2d`, `line_circle_extrema2d` and `circle_circle_extrema2d` (plus the helpers
   `line2d_value`, `circle_param2d`, `dedupe_sort_cc2d`, which served nothing else) are deleted. They
@@ -453,7 +458,12 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `Extrema_GenLocateExtCC` -> `Extrema_GFuncExtCC` 2D chain), and its 3D
    twin `extrema_cc/curve_curve.rs::locate_extcc` is **CLOSED 2026-10-15 as T-149 / package P019**
    (the faithful `Extrema_LocateExtCC` / `Extrema_GenLocateExtCC` -> `Extrema_GFuncExtCC` 3D chain,
-   with `refine_curve_curve` + `f_and_jac` deleted); the B6e line is fully closed. **The next
+   with `refine_curve_curve` + `f_and_jac` deleted); **B6g is CLOSED 2026-10-15 as T-148 / package
+   P018** (the three duplicated `Extrema_ExtElC2d` arm copies and their three helpers deleted;
+   the tests drive `ExtremaExtElC2d` directly) and **B6f is CLOSED 2026-10-15 as T-150 / package
+   P020** (`curve_curve_intersections2d`'s 33x33 grid replaced by the
+   `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` chain, `bound()` deleted), so the B6 family
+   is down to **B6d**. **The next
    slice is #1 below (B1)**: it outranks the B6 leftovers on centrality, confidence and blast radius.
 4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
    **DONE 2026-10-15 (T-133).**
@@ -461,13 +471,15 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `clear_flags(); return;` -> OCCT's `clearOsculFlags()` + continue, plus the per-arm `build_chain`
    local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
    `intcurvesurface/solvers.rs:456`), **B7-writer-4** (`geom2d_convert.rs:77` conic arms),
-   **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftovers
-   (**B6f**/**B6d**) and the `B8 surface_fit` item. The B7
+   **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`), then the B6 leftover
+   (**B6d**) and the `B8 surface_fit` item. The B7
    STEP-writer lines are both
    **DONE 2026-10-15**: `step/write_context.rs:314` `SetNotPeriodic` as package P010, and
    `step/format.rs:472,526` `closed` + `knot_spec` as package P011, with B8-intana closed as
    P012-P016, **B6e closed as P017 / T-147** (2D) and its 3D twin
-   `extrema_cc/curve_curve.rs::locate_extcc` closed as P019 / T-149.
+   `extrema_cc/curve_curve.rs::locate_extcc` closed as P019 / T-149, **B6g closed as
+   P018 / T-148** and **B6f closed as P020 / T-150** (the `curve_curve_intersections2d` 33x33
+   grid replaced by the `Geom2dAPI_InterCurveCurve` -> `Geom2dInt_GInter` chain).
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
