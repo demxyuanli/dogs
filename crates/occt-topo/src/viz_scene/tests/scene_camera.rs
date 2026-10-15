@@ -159,8 +159,15 @@ use super::*;
     fn scene_bounds_box() {
         let scene = box_scene();
         let (lo, hi) = scene_bounds(&scene).unwrap();
-        assert!((lo.x()).abs() < 1e-9 && (lo.y()).abs() < 1e-9 && (lo.z()).abs() < 1e-9);
-        assert!((hi.x() - 1.0).abs() < 1e-9 && (hi.y() - 1.0).abs() < 1e-9 && (hi.z() - 1.0).abs() < 1e-9);
+        // Scene bounds come from `bbox_from_geometry::shape_bbox` =
+        // `BRepBndLib::Add`, whose box carries `Precision::Confusion()` on both
+        // sides of every direction (`BRepBndLib.cxx:127-131,146-149` +
+        // `BRep_Tool.cxx:881-895`).
+        let t = occt_core::precision::CONFUSION;
+        let l = -t;
+        let h = 1.0 + t;
+        assert!((lo.x() - l).abs() < 1e-12 && (lo.y() - l).abs() < 1e-12 && (lo.z() - l).abs() < 1e-12);
+        assert!((hi.x() - h).abs() < 1e-12 && (hi.y() - h).abs() < 1e-12 && (hi.z() - h).abs() < 1e-12);
     }
 
     #[test]

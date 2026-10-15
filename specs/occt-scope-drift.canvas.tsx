@@ -237,8 +237,8 @@ const DOCDRIFT = [
   {
     what: "未上板的自创件：`bbox_from_geometry.rs` 采样包围盒",
     detail: "64 点边包围盒 + 16×16 UV 面包围盒（`bbox_from_geometry.rs:46,56-67`）",
-    gap: "❗新发现（T001）：无 `BRepBndLib`/`BndLib` 解析极值；被 `bop_builder.rs:86`、`bop_builder_dispatch.rs:109`、`bop_classify_occt.rs:78`、`builder_solid.rs:128` 使用，尚无任何审计文档登记",
-    tone: "danger" as const,
+    gap: "✅ 已闭环（2026-10-15，T-134）：`shape_bbox` 改委托既有忠实件 `brep_bnd_lib::shape_bnd_box`（= `BRepBndLib::Add(S,B,false)`，`BRepBndLib.cxx:81-215`：面走 `BndLib_AddSurface::Add` 并在平面面补边界边 + `Enlarge(Tolerance(F))`，边/顶点走 `BndLib_Add3dCurve::Add`，容差按 `BRep_Tool.cxx:881-895` 抬到 `Precision::Confusion()`）；采样版 `add_to_bbox` 与 `face_uv_bounds` 依赖整体删除，5 处既有 lib 断言按 cxx 盒 `[-t, 1+t]` 订正；已登记 `_audit/topo-rest.md` §19。门禁 1251/0、4/4、15/15 逐位不变",
+    tone: "success" as const,
   },
   {
     what: "未提交工作树",

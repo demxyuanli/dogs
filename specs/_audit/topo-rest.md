@@ -230,6 +230,24 @@ for i in 0..=8 {
 - OCCT：`BRepBndLib::Add`/`BndLib` 解析极值；`BRepClass3d_SolidExplorer::FindAPointInTheFace`（`BRepClass3d_SolidExplorer.cxx:512-560`）逐面取参数点并带 `aTestInvert` 反转重试。
 - 影响/建议：9×9 格点会漏极值 → 体素网格范围偏小；探针方向固定，不等价于 OCCT 多方向重试。包围盒改 `geom_bnd_lib_*` 解析路径；`OtherSegment` 补 `aTestInvert` 分支并登记简化。
 
+### 19. `bbox_from_geometry::shape_bbox` 用 64 点边折线 + 16×16 UV 栅格代替解析极值（✅ 2026-10-15 已修，T-134）
+- 判定：自创（采样代替解析极值/闭式） ｜ live：**原为是**（`bop_builder.rs:86`、`bop_builder_dispatch.rs:109`、`bop_classify_occt.rs:78`、`builder_solid.rs:128` 的 BOP 预筛与网格自适应偏转）
+- 证据：`crates/occt-topo/src/bbox_from_geometry.rs:56-74`（已删除）
+```rust
+for i in 0..=64 {
+    let u = a0 + (a1 - a0) * i as f64 / 64.0;
+    b.add_point(&curve.d0(u));
+}
+```
+- OCCT：`BRepBndLib::Add(S, B, /*useTriangulation*/ false)`（`BRepBndLib.cxx:81-215`）：面走 `BndLib_AddSurface::Add(BS, Tolerance(F), B)`（`cxx:109,118`，仅平面面再加 `BndLib_Add3dCurve::Add` 于其边界边 `:128` 并 `B.Enlarge(Tolerance(F))` `:131`），面上/外的边与顶点分别走 `:146-149`、`:212`，全部取 `geom_bnd_lib_*` 的解析或控制网极值。
+- 影响/建议：64/16×16 栅格会漏极值 → BOP 预筛盒偏小（可能把真相交的形状判为不相交），且该盒同时是网格自适应偏转的尺度基准；且本项无任何审计文档登记（原由 T001 记为 DOCDRIFT）。
+- **处置（✅ 已修：2026-10-15）**：
+  - `bbox_from_geometry::shape_bbox` 整体委托既有忠实件 `brep_bnd_lib::shape_bnd_box`（= `BRepBndLib::Add(S, B, false)`），采样版 `add_to_bbox` 递归体（顶点/边/面三分支 + 子形状递归）与它唯一的 `face_uv_bounds` 依赖一并删除；三个入口 `shape_bbox` / `shape_bbox_with_margin` / `is_shape_outside` 签名不变，BOP/网格调用点零改动。
+  - **可观察差异（OCCT 语义，非回归）**：`Bnd_Box::Get()` 现在带 `Precision::Confusion()` 的两侧 gap —— 每条边/顶点按 `BRep_Tool::Tolerance` 取容差，而 `BRep_Tool.cxx:881-895` 把低于 `Precision::Confusion()` 的容差抬到该值；平面面再加一次 `B.Enlarge(Tolerance(F))`。故单位盒 `Get()` 为 `[-1e-7, 1+1e-7]`，此前采样版给 `[0, 1]`。这正是 `BRepBndLib::Add` 的行为（`Bnd_Box` 的 gap 是 OCCT 本身的设计），旧读数才是假的。
+  - 随之按 cxx 盒订正 5 处既有断言（未新增测试、未放宽门禁容差）：`bbox_from_geometry::tests::{edge_bbox_from_curve, face_bbox_from_surface_and_wires}` 改判 `[-t, 1+t]`（`t = Precision::Confusion()`），`draw::tests::bbox_and_verts_commands` 的打印串改 `-0.0000001 / 2.0000001`，`meshing::model_builder::tests::build_model_sets_max_size` 的相对档尺度改 `1 + 2t`，`viz_scene::tests::scene_camera::scene_bounds_box` 改判 `[-t, 1+t]`。
+  - **门禁**：`cargo check` 五 crate 0 error；`occt-topo --lib` **1251 passed / 0 failed**；`step_obj_gates` **4/4**（23 模型 f-ratio 1.00，`Shape-2` 0.99；面积比 1.0000，`Shape-2` 0.9999 在其登记容差内，与 `notes/T002-gate-baseline.md` 基线一致）；`export_data_obj` **15/15 ok**，15 个模型 v/f 与包围盒与基线逐位一致（`Cone` 195/301、`Cylinder` 146/140、`Sphere` 642/1244、`Torus` 1369/2592、`Shape` 6150/11372、`linkrods` 3494/5078、`screw` 601/792 全未变）。
+  - **旁支（未修）**：`solid_union::shape_bbox`（本文件 §18）仍有独立的 9×9 采样兜底，属另一条路径，未随本项收口。
+
 ## 补记（2026-10-06）：T-104 / T-105 / T-106 落地的忠实件
 
 本节补记 §9.588–§9.623 中落在本报告范围内的新移植件。这些都属于"原本缺失、现已按 OCCT 补齐"的控制流，故不改变上文 14 条自创的判定，但修正了若干"未移植"的隐含前提与多处行号漂移。

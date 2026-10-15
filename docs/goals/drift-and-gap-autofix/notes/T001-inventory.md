@@ -68,11 +68,22 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `Geom2d_Line` downcast of `IntTools_FaceFace.cxx:2149`. Gates: `--lib` 1251/0, `step_obj_gates`
   4/4, `export_data_obj` 15/15 bit-identical. See `specs/_tasks.md` T-132.
 
-### B3. `bbox_from_geometry.rs:46,56-67` — bbox by sampling (not in the audit)
+### B3. `bbox_from_geometry.rs:46,56-67` — bbox by sampling (not in the audit) — ✅ CLOSED 2026-10-15 (T-134)
 - 64-point edge bbox and 16x16 UV surface bbox instead of `BRepBndLib`/`BndLib` analytic extrema.
 - Broadly used: `bop_builder.rs:86`, `bop_builder_dispatch.rs:109`, `bop_classify_occt.rs:78`,
   `builder_solid.rs:128`.
-- Need a Scout check of what `BRepBndLib::Add`/`AddClose` needs before this is a Worker package.
+- **Closed (T-134)**: `shape_bbox` now delegates to `brep_bnd_lib::shape_bnd_box` =
+  `BRepBndLib::Add(S, B, /*useTriangulation*/ false)` (`BRepBndLib.cxx:81-215`; faces via
+  `BndLib_AddSurface::Add(BS, Tolerance(F), B)` `:109,118`, plane faces additionally add their
+  boundary edges `:128` plus `B.Enlarge(Tolerance(F))` `:131`; edges/vertices outside faces/edges
+  `:146-149`/`:212`). The sampled `add_to_bbox` walk and its single `face_uv_bounds` dependency are
+  deleted; the three entry points keep their signatures. `Bnd_Box::Get()` now carries the
+  `Precision::Confusion()` gap on both sides (`BRep_Tool::Tolerance` floor, `BRep_Tool.cxx:881-895`),
+  so a unit box reads `[-1e-7, 1+1e-7]` as in OCCT; five existing lib assertions were corrected to
+  that cxx box (no new tests, no gate tolerance relaxed). Gates: `--lib` 1251/0, `step_obj_gates`
+  4/4 (23 models, area 1.0000), `export_data_obj` 15/15 bit-identical. Registered in
+  `specs/_audit/topo-rest.md` §19. Side finding: `solid_union::shape_bbox` keeps its own 9x9
+  sampling fallback (topo-rest §18), a separate path.
 
 ### B4. BOP classification / split residuals (live, registered)
 - `builder_solid.rs:139-152` `face_sample_point` uses the surface centre; OCCT first tries an edge not
@@ -171,11 +182,11 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 ## D. Banned constructs found (must not be extended; listed for the report)
 
 - Area ratio / length filter / volume gate: **zero hits** in `occt-geom`, `occt-geom2d`, `occt-core`.
-- Sampled/heuristic substitute for a downcast or a closed form: B1a, B1b, B2, B3, B4, B6, plus
+- Sampled/heuristic substitute for a downcast or a closed form: B1a, B1b, B2, B4, B6, plus
   `meshing/deflection.rs:109,138`, `meshing/range_splitter/param_set.rs:203`, `hlr.rs:129-156`,
   `gprop_analytic/mass_properties.rs:405`, `shape_metrics.rs:146`, `solid_union.rs:99-111,144-182`,
   `brep_offset/curve_face_offset.rs:509`-adjacent, `brep_pipe.rs:24-53,78-95`,
-  `brepfeat/features.rs:326-370`, `brep_class3d` probe half is closed.
+  `brepfeat/features.rs:326-370`, `brep_class3d` probe half is closed. B3 closed in T-134.
 - Self-invented engines with no OCCT counterpart and no production caller: `boolean_ops.rs:173`
   (+`:206/:211/:216/:280`), `solid_union.rs` voxel union.
 
@@ -197,7 +208,9 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 - `specs/occt-scope-drift.canvas.tsx` SEMANTIC lines for topo-rest 1/4/6/11/18 and bop 1-4/7/8-10/16/17
   are stale in the "LIVE" direction: the code is already closed. The canvas needs a pass.
 - `specs/_audit/topo-rest.md` heading 17 (`pipe_along_polyline`), 9, 10, 15 likewise.
-- `bbox_from_geometry.rs` (B3) is a live sampled-bbox construct that no audit doc registers.
+- ~~`bbox_from_geometry.rs` (B3) is a live sampled-bbox construct that no audit doc registers.~~
+  **DONE 2026-10-15 (T-134)**: the sampling is gone; the item is now registered as
+  `specs/_audit/topo-rest.md` §19.
 - The port keeps two parallel implementations of `GeomAdaptor_Surface::U/VResolution`
   (`approx_same_parameter.rs` faithful, `wire_splitter_block.rs` hand-rolled); other call sites
   (`int_tools_wline.rs:400`, `brep_class/intersector_checks.rs:74`, `face_split.rs:97`) already

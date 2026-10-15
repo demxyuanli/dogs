@@ -434,8 +434,12 @@ info f
         run_script(&mut s, "box b 2 1 1").expect("box");
         execute_line(&mut s, "bbox b").expect("bbox");
         let joined = s.log.join("\n");
-        assert!(joined.contains("min (0, 0, 0)"), "bbox min: {joined}");
-        assert!(joined.contains("max (2, 1, 1)"), "bbox max: {joined}");
+        // `BRepBndLib::Add` raises every edge and face tolerance to
+        // `Precision::Confusion()` (`BRepBndLib.cxx:127-131,146-149` +
+        // `BRep_Tool.cxx:881-895`), so the 2x1x1 box prints as
+        // [-t, 2+t] x [-t, 1+t] x [-t, 1+t] with t = 1e-7.
+        assert!(joined.contains("min (-0.0000001, -0.0000001, -0.0000001)"), "bbox min: {joined}");
+        assert!(joined.contains("max (2.0000001, 1.0000001, 1.0000001)"), "bbox max: {joined}");
         execute_line(&mut s, "verts b").expect("verts");
         let joined = s.log.join("\n");
         assert!(joined.contains("8 vertices"), "verts count: {joined}");

@@ -42,10 +42,14 @@ fn build_model_sets_max_size() {
         model.max_size()
     );
 
-    // Relative mode: max_size is the bounding-box maximum dimension.
+    // Relative mode: max_size is the bounding-box maximum dimension. The box
+    // comes from `BRepBndLib::Add`, which carries `Precision::Confusion()` on
+    // both sides of every direction (`BRepBndLib.cxx:127-131,146-149` +
+    // `BRep_Tool.cxx:881-895`).
     let rel_params = MeshParameters { relative: true, ..MeshParameters::default() };
     let model = ModelBuilder::build_model(&shape, &rel_params).expect("model built");
-    assert!((model.max_size() - 1.0).abs() < 1e-9, "rel max_size {}", model.max_size());
+    let expected = 1.0 + 2.0 * occt_core::precision::CONFUSION;
+    assert!((model.max_size() - expected).abs() < 1e-9, "rel max_size {}", model.max_size());
 }
 
 #[test]

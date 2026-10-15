@@ -1,28 +1,37 @@
-//! Real bounding box computed from geometry (not from a pre-built mesh).
+//! Bounding box of a shape computed from its geometry.
 //!
-//! Dispatch on shape type: vertices contribute their point, edges sample their
-//! curve, faces sample their surface on a UV grid (and recurse their wires),
-//! and containers recurse. Missing geometry is skipped gracefully (void box).
+//! The box is `BRepBndLib::Add(S, B, /*useTriangulation*/ false)`
+//! (`BRepBndLib.cxx:81-215`): the exact port lives in [`crate::brep_bnd_lib`],
+//! which walks the faces (`BndLib_AddSurface::Add` restricted to the face's
+//! `BRepTools::UVBounds`, and `BndLib_Add3dCurve::Add` on the boundary edges of
+//! a plane face), the edges outside faces and the vertices outside edges, using
+//! the analytic / control-net extrema of `geom_bnd_lib_curve3d` and
+//! `geom_bnd_lib_surface3d`.
+//!
+//! The three entry points below keep their signatures so the boolean, pave and
+//! mesh call sites are unchanged; the previous body sampled 64 points per edge
+//! and a 16x16 UV grid per face, a self-invented envelope with no OCCT
+//! counterpart (registered as finding B3 in the drift inventory).
 
 use occt_core::bnd::BndBox;
 
-use crate::abs::ShapeType;
-use crate::shape::{Face, TopoShape};
-use crate::tgeometry::GeometryRegistry;
-use crate::wireframe::face_uv_bounds;
+use crate::shape::TopoShape;
 
-fn reg() -> &'static GeometryRegistry {
-    GeometryRegistry::global()
+/// Test fixture access to the global geometry registry (the tests below set
+/// vertex / edge / face geometry directly).
+#[cfg(test)]
+fn reg() -> &'static crate::tgeometry::GeometryRegistry {
+    crate::tgeometry::GeometryRegistry::global()
 }
 
-/// Axis-aligned bounding box of `shape` derived from its registered geometry.
+/// Axis-aligned bounding box of `shape` derived from its geometry.
+///
+/// `BRepBndLib::Add(shape, box, false)`.
 pub fn shape_bbox(shape: &TopoShape) -> BndBox {
-    let mut b = BndBox::new();
-    add_to_bbox(shape, &mut b);
-    b
+    crate::brep_bnd_lib::shape_bnd_box(shape)
 }
 
-/// Bounding box enlarged by `margin` in every direction.
+/// Bounding box enlarged by `margin` in every direction (`Bnd_Box::Enlarge`).
 pub fn shape_bbox_with_margin(shape: &TopoShape, margin: f64) -> BndBox {
     let mut b = shape_bbox(shape);
     b.enlarge(margin);
@@ -32,53 +41,6 @@ pub fn shape_bbox_with_margin(shape: &TopoShape, margin: f64) -> BndBox {
 /// Quick reject: `true` if `shape`'s bounding box does not overlap `other`.
 pub fn is_shape_outside(shape: &TopoShape, other: &BndBox) -> bool {
     shape_bbox(shape).is_out_box(other)
-}
-
-fn add_to_bbox(s: &TopoShape, b: &mut BndBox) {
-    match s.shape_type() {
-        ShapeType::Vertex => {
-            b.add_point(&reg().vertex_point(s));
-        }
-        ShapeType::Edge => {
-            if let Some(curve) = reg().edge_curve(s) {
-                let (a0, a1) = reg().edge_parameters(s);
-                if a0.is_finite() && a1.is_finite() && a1 > a0 {
-                    for i in 0..=64 {
-                        let u = a0 + (a1 - a0) * i as f64 / 64.0;
-                        b.add_point(&curve.d0(u));
-                    }
-                }
-            }
-            add_children(s, b);
-        }
-        ShapeType::Face => {
-            if let Some(surf) = reg().face_surface(s) {
-                let f = Face(s.clone());
-                let (u0, u1, v0, v1) = face_uv_bounds(&f);
-                if u0.is_finite() && u1.is_finite() && v0.is_finite() && v1.is_finite()
-                    && u1 > u0 && v1 > v0
-                {
-                    for i in 0..=16 {
-                        for j in 0..=16 {
-                            let u = u0 + (u1 - u0) * i as f64 / 16.0;
-                            let v = v0 + (v1 - v0) * j as f64 / 16.0;
-                            b.add_point(&surf.d0(u, v));
-                        }
-                    }
-                }
-            }
-            add_children(s, b);
-        }
-        // Wire, Shell, Solid, Compound, CompSolid: recurse children.
-        _ => add_children(s, b),
-    }
-}
-
-fn add_children(s: &TopoShape, b: &mut BndBox) {
-    let kids = s.tshape.read().unwrap().children.clone();
-    for child in kids {
-        add_to_bbox(&child, b);
-    }
 }
 
 #[cfg(test)]
@@ -103,9 +65,14 @@ mod tests {
         let e = segment_edge(0.0, 0.0, 1.0, 0.0);
         let b = shape_bbox(&e.0);
         let (x0, x1, y0, y1, z0, z1) = b.get().unwrap();
-        assert!(x0.abs() < 1e-9 && (x1 - 1.0).abs() < 1e-9);
-        assert!(y0.abs() < 1e-9 && y1.abs() < 1e-9);
-        assert!(z0.abs() < 1e-9 && z1.abs() < 1e-9);
+        // `BRepBndLib::Add` -> `BndLib_Add3dCurve::Add(BC, BRep_Tool::Tolerance(E), B)`
+        // (`BRepBndLib.cxx:146-149`) and the tolerance is raised to
+        // `Precision::Confusion()` (`BRep_Tool.cxx:881-895`), so the box of the
+        // segment is `[-t, 1+t] x [-t, t] x [-t, t]`.
+        let t = occt_core::precision::CONFUSION;
+        assert!((x0 + t).abs() < 1e-12 && (x1 - (1.0 + t)).abs() < 1e-12);
+        assert!((y0 + t).abs() < 1e-12 && (y1 - t).abs() < 1e-12);
+        assert!((z0 + t).abs() < 1e-12 && (z1 - t).abs() < 1e-12);
     }
 
     #[test]
@@ -113,9 +80,13 @@ mod tests {
         let f = square_face();
         let b = shape_bbox(&f.0);
         let (x0, x1, y0, y1, z0, z1) = b.get().unwrap();
-        assert!(x0.abs() < 1e-9 && (x1 - 1.0).abs() < 1e-9);
-        assert!(y0.abs() < 1e-9 && (y1 - 1.0).abs() < 1e-9);
-        assert!(z0.abs() < 1e-9 && z1.abs() < 1e-9);
+        // A plane face contributes its boundary edge curves plus `Bnd_Box::
+        // Enlarge(BRep_Tool::Tolerance(F))` (`BRepBndLib.cxx:127-131`), both of
+        // which are `Precision::Confusion()` here.
+        let t = occt_core::precision::CONFUSION;
+        assert!((x0 + t).abs() < 1e-12 && (x1 - (1.0 + t)).abs() < 1e-12);
+        assert!((y0 + t).abs() < 1e-12 && (y1 - (1.0 + t)).abs() < 1e-12);
+        assert!((z0 + t).abs() < 1e-12 && (z1 - t).abs() < 1e-12);
     }
 
     #[test]
