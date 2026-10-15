@@ -342,9 +342,27 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   closes the B6 family (B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g).
 
 ### B7. Step/IGES-adjacent live divergences
-- `mesh_to_brep.rs:39-41,118-119,157-158`: 1e-9 vertex dedup grid, vertex tolerance 0.0,
-  per-triangle planar faces; OCCT `BRepBuilderAPI_MakeShapeOnMesh` is node 1:1, `BRepLib::Precision()`
-  = 1e-7, and returns a Compound. Live via `brepfeat/features.rs:367`.
+- `crates/occt-topo/src/mesh_to_brep.rs` ✅ **CLOSED 2026-10-16 (P025 / T-155, `8d77b13a`)**:
+  the three port-invented rules are gone. `BRepBuilderAPI_MakeShapeOnMesh`
+  (`BRepBuilderAPI_MakeShapeOnMesh.cxx:74-263`) is ported whole as `MakeShapeOnMesh`: nodes 1:1
+  through `BRepBuilderAPI_MakeVertex` at `BRepLib::Precision()` = `Precision::Confusion()` = 1e-7
+  (`cxx:96-111`, `BRepLib_MakeVertex.cxx:26-31`, `BRepLib.cxx:84`), shared edges keyed on the
+  canonical node-index pair with `NCollection_IndexedDataMap::Add` first-value semantics
+  (`cxx:31-55`, `cxx:150-179`), index- and `gp::Resolution()`-degenerate triangle skips
+  (`cxx:126-141`), one planar face per triangle with the edge re-orientation of `cxx:213-228`, the
+  `BRepAdaptor_Curve::Line()` `d1 x d2` normal under `Precision::SquareConfusion()` (`cxx:238-247`),
+  the plane through `Node(anIdx[0])` (`cxx:255`) and the closing `Done()` + `TopoDS_Compound`
+  (`cxx:182-184`, `cxx:257-263`). `triangulation_to_brep` keeps only `LOCAL:`-marked extensions
+  (`weld_nodes`, the closed 2-manifold test, `OrientClosedSolid`, the winding pass), and the vertex
+  tolerance is the faithful 1e-7, which is load-bearing because `pave_ff.rs:158`,
+  `pave_split_blocks.rs:74` and `brep_fill.rs:213` fold it into a working precision with `max(...)`.
+  Live consumers left registered: `brepfeat/features.rs:367` (`shape_mesh_to_brep`) and
+  `rwmesh/mod.rs:24` / `rwmesh/scene.rs:307` (`triangulation_to_brep`) -- those entry points and
+  their `LOCAL:` passes have no OCCT class. Correction: the `32^3` `voxel_boolean` fallback that
+  `_audit/bop-boolean.md` item 2 places at `bop_builder_core.rs:85-87` is **no longer in the tree**
+  (that site is now a warning-only mesh-volume post-check; `voxel_boolean` survives only inside
+  `boolean_ops.rs` and the comment at `bop_builder_planar.rs:47`), so that audit item needs a
+  re-check rather than a fix.
 - `step/write_context.rs:314` ✅ **CLOSED 2026-10-15 (P010)**: the periodic arm of
   `GeomToStep_MakeBoundedCurve` (`cxx:44-51`, `BS = B->Copy(); BS->SetNotPeriodic()`) is wired.
   `write_context.rs::bounded_bspline_of_curve` reproduces `cxx:42-62` (the curve's own poles /
@@ -516,7 +534,8 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `clear_flags(); return;` -> OCCT's `clearOsculFlags()` + continue, plus the per-arm `build_chain`
    local). Next picks, in order: **B8-intana** (`intana` quartic/direct-polynomial thresholds, live via
    `intcurvesurface/solvers.rs:456`, closed as P012-P016), **B7-writer-4** (`geom2d_convert.rs:77`
-   conic arms, closed as P022 / T-152), **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`),
+   conic arms, closed as P022 / T-152), **B7-mesh_to_brep** (`BRepBuilderAPI_MakeShapeOnMesh`,
+   closed as P025 / T-155),
    then the B6 leftover
    (**B6h**: `surface_surface_extrema` returns the first `mySqDist` entry where
    `GeomAPI_ExtremaSurfaceSurface` returns the `myIndex` minimum, plus the two exposed private
@@ -537,7 +556,11 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    closed as P024 / T-154**: the faithful counterpart of the live consumer turned out to be
    `BRepLib_FindSurface` through `BRepLib_MakeFace(W, OnlyPlane)`, now ported, so `offset_wire_3d`
    no longer runs the 4-samples-per-edge least-squares fit; the registered `GeomLib::IsPlanarSurface`
-   / `GeomLib::Inertia` / `Controle` classes have no counterpart in the port at all. Remaining picks:
+   / `GeomLib::Inertia` / `Controle` classes have no counterpart in the port at all. **The
+   `B7-mesh_to_brep` pick closed as P025 / T-155**: `mesh_to_brep.rs` now ports
+   `BRepBuilderAPI_MakeShapeOnMesh` (`BRepBuilderAPI_MakeShapeOnMesh.cxx:74-263`) whole, so the
+   `1e-9` vertex dedup grid and the `0.0` vertex tolerance are gone from the conversion and only the
+   `LOCAL:`-marked welding / closed-manifold / orientation passes remain. Remaining picks:
    the `ReparamCurve2d` `SameRange` kind forwarding and the missing data-driven STEP-write harness.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
