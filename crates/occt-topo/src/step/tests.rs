@@ -178,10 +178,17 @@ ENDSEC;\nEND-ISO-10303-21;";
         // Degree 2, four control-point refs, polynomial (SELF weights).
         assert!(line.contains("('',2,(#1,#2,#3,#4)"), "{line}");
         assert!(line.contains("SELF"), "{line}");
-        // Knots 0/0.5/1 with multiplicities 3/1/3, and the UNSPECIFIED defaults.
+        // Knots 0/0.5/1 with multiplicities 3/1/3.
         assert!(line.contains("(0.0,0.5,1.0)"), "{line}");
         assert!(line.contains("(3,1,3)"), "{line}");
-        assert!(line.contains("UNSPECIFIED"), "{line}");
+        // `curve_form` is always `bscfUnspecified` (`gen.pxx:40`), and the knot
+        // spec for this curve is `.QUASI_UNIFORM_KNOTS.`: the distinct knots are
+        // equally spaced with a quasi-constant multiplicity pattern
+        // (`{3, 1, 3}`), and `mults(2) == 1` with `degree + 1 == 3` is
+        // `GeomAbs_QuasiUniform` in `BSplCLib::KnotAnalysis`
+        // (`BSplCLib.cxx:723-734`), which `gen.pxx:79-82` maps to that token.
+        assert!(line.contains(",UNSPECIFIED,.F.,.F.,"), "{line}");
+        assert!(line.contains("),.QUASI_UNIFORM_KNOTS.)"), "{line}");
     }
 
     #[test]
@@ -237,8 +244,16 @@ ENDSEC;\nEND-ISO-10303-21;";
         // a polynomial surface has no weights attribute (the grid appears only
         // in the rational complex form, `...AndRational....cxx:170-176`). Same
         // record layout as OCCT's own output, `data/occ/T0M.stp:901`.
+        //
+        // The knot spec is `.PIECEWISE_BEZIER_KNOTS.`: this surface is a single
+        // Bezier patch (distinct knots `{0, 1}`, multiplicities `{3, 3}`), which
+        // is `GeomAbs_PiecewiseBezier` in `BSplCLib::KnotAnalysis`
+        // (`BSplCLib.cxx:711-714`: two distinct knots with a constant
+        // multiplicity pattern) and therefore `.PIECEWISE_BEZIER_KNOTS.` at
+        // `MakeBSplineSurfaceWithKnots.cxx:139-142` -- the token OCCT writes for
+        // the same surfaces in `data/occ/ATU01038.step` (245 occurrences).
         assert!(
-            line.contains(",.UNSPECIFIED.,.F.,.F.,.F.,(3,3),(3,3),(0.0,1.0),(0.0,1.0),.UNSPECIFIED."),
+            line.contains(",.UNSPECIFIED.,.F.,.F.,.F.,(3,3),(3,3),(0.0,1.0),(0.0,1.0),.PIECEWISE_BEZIER_KNOTS."),
             "{line}"
         );
         assert!(!line.contains("SELF"), "{line}");

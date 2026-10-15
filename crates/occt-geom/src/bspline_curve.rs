@@ -54,6 +54,28 @@ impl GeomBSplineCurve {
     pub fn degree(&self) -> usize { self.degree }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
 
+    /// `Geom_BSplineCurve::IsClosed()` (`Geom_BSplineCurve_1.cxx:146-149`):
+    /// `StartPoint().SquareDistance(EndPoint()) <= Precision::Computational()`.
+    pub fn is_closed(&self) -> bool {
+        let d = self.d0(self.first_parameter()).square_distance(&self.d0(self.last_parameter()));
+        d <= occt_core::precision::COMPUTATIONAL
+    }
+
+    /// `Geom_BSplineCurve::KnotDistribution()` (`Geom_BSplineCurve_1.cxx:363-366`),
+    /// i.e. `myKnotSet` as `updateKnots()` sets it
+    /// (`Geom_BSplineCurve.cxx:1176`: `BSplCLib::KnotAnalysis(myDeg, myPeriodic,
+    /// myKnots, myMults, myKnotSet, MaxKnotMult)`).
+    pub fn knot_distribution(&self) -> occt_core::kernel::geomabs::BSplKnotDistribution {
+        let (uknots, umults) = self.distinct_knots_and_mults();
+        occt_core::bspl::knot_analysis::knot_analysis(
+            self.degree as i32,
+            self.periodic,
+            &uknots,
+            &umults,
+        )
+        .0
+    }
+
     /// `Geom_BSplineCurve::Knots()` / `Multiplicities()`
     /// (`Geom_BSplineCurve_1.cxx:380-383`, `:148-151`): the stored distinct
     /// knots and their multiplicities.

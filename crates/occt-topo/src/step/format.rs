@@ -448,11 +448,15 @@ pub(super) fn quasi_uniform_knots(n_poles: usize, degree: usize) -> Vec<f64> {
 
 /// Emit a `B_SPLINE_CURVE_WITH_KNOTS` entity and return its record id.
 ///
-/// Rational curves carry a weights list in argument 3; polynomial curves use
-/// the `SELF` keyword (weights default to 1.0 on read). The curve form,
-/// closedness and self-intersection flags are written as unsensed defaults so
-/// the record stays minimal while remaining schema-valid. The knot vector is
-/// written as its distinct values plus multiplicities.
+/// Attribute order and values from
+/// `GeomToStep_MakeBSplineCurveWithKnots_gen.pxx:29-93`: degree, control points,
+/// `curve_form` (`bscfUnspecified`, `cxx:40`), `closed` = `BS->IsClosed()`
+/// (`cxx:42-50`), `self_intersect` = `LFalse` (`cxx:52`), multiplicities, knots,
+/// and `knot_spec` from `BS->KnotDistribution()` (`cxx:71-87`: `NonUniform` ->
+/// `UNSPECIFIED`, `Uniform` -> `UNIFORM_KNOTS`, `QuasiUniform` ->
+/// `QUASI_UNIFORM_KNOTS`, `PiecewiseBezier` -> `PIECEWISE_BEZIER_KNOTS`).
+/// OCCT writes the same records, e.g. `data/occ/ATU01038.step` (245
+/// `PIECEWISE_BEZIER_KNOTS` / 106 `QUASI_UNIFORM_KNOTS`).
 pub fn write_bspline_curve(step: &mut StepWriter, curve: &GeomBSplineCurve) -> Result<usize, String> {
     let pole_refs: Vec<usize> = curve
         .poles
@@ -468,14 +472,30 @@ pub fn write_bspline_curve(step: &mut StepWriter, curve: &GeomBSplineCurve) -> R
         ),
         None => "SELF".to_string(),
     };
+    let closed = if curve.is_closed() { ".T." } else { ".F." };
     Ok(step.emit(format!(
-        "B_SPLINE_CURVE_WITH_KNOTS('',{},({}),{},UNSPECIFIED,.F.,.F.,({}),({}),UNSPECIFIED)",
+        "B_SPLINE_CURVE_WITH_KNOTS('',{},({}),{},UNSPECIFIED,{},.F.,({}),({}),{})",
         curve.degree,
         join_refs(&pole_refs),
         weights,
+        closed,
         knots.iter().map(|k| step_real(*k)).collect::<Vec<_>>().join(","),
         mults.iter().map(|m| m.to_string()).collect::<Vec<_>>().join(","),
+        knot_spec_token(curve.knot_distribution()),
     )))
+}
+
+/// The STEP `knot_spec` token for a `GeomAbs_BSplKnotDistribution`
+/// (`GeomToStep_MakeBSplineCurveWithKnots_gen.pxx:71-87`; surfaces use the same
+/// mapping at `GeomToStep_MakeBSplineSurfaceWithKnots.cxx:127-150`).
+fn knot_spec_token(d: occt_core::kernel::geomabs::BSplKnotDistribution) -> &'static str {
+    use occt_core::kernel::geomabs::BSplKnotDistribution as D;
+    match d {
+        D::NonUniform => ".UNSPECIFIED.",
+        D::Uniform => ".UNIFORM_KNOTS.",
+        D::QuasiUniform => ".QUASI_UNIFORM_KNOTS.",
+        D::PiecewiseBezier => ".PIECEWISE_BEZIER_KNOTS.",
+    }
 }
 
 /// Emit a `B_SPLINE_SURFACE_WITH_KNOTS` entity and return its record id.
@@ -497,10 +517,11 @@ pub fn write_bspline_curve(step: &mut StepWriter, curve: &GeomBSplineCurve) -> R
 /// `REPRESENTATION_ITEM`) and the weight grid closes the list — the layout of
 /// `data/occ/ATU01038.step:22278`.
 ///
-/// UNPORTED: `KnotSpec` (`MakeBSplineSurfaceWithKnots.cxx:127-150`, derived from
-/// `UKnotDistribution` / `VKnotDistribution`) is written as `.UNSPECIFIED.`,
-/// the value OCCT derives for the `NonUniform` pair and for mixed
-/// distributions.
+/// `UKnotDistribution` / `VKnotDistribution`) comes from
+/// `MakeBSplineSurfaceWithKnots.cxx:127-150`: only a pair that agrees
+/// (`NonUniform`/`NonUniform`, `Uniform`/`Uniform`, `QuasiUniform`/
+/// `QuasiUniform`, `PiecewiseBezier`/`PiecewiseBezier`) names that spec, any
+/// mixed pair is `.UNSPECIFIED.`.
 pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> Result<usize, String> {
     let mut rows = Vec::with_capacity(s.poles.len());
     for row in &s.poles {
@@ -520,9 +541,20 @@ pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> R
     let v_mults = format!("({})", int_list(&v_mult));
     let u_knots = format!("({})", real_list(&u_knots));
     let v_knots = format!("({})", real_list(&v_knots));
+    // `cxx:127-150`: `NonUniform`/`NonUniform` -> `UNSPECIFIED`, and the three
+    // other pairs only name the spec when the two directions agree; every mixed
+    // pair falls into the final `else` and is `UNSPECIFIED` as well.
+    let knot_spec = {
+        let (du, dv) = (s.u_knot_distribution(), s.v_knot_distribution());
+        if du == dv {
+            knot_spec_token(du)
+        } else {
+            ".UNSPECIFIED."
+        }
+    };
     let body = match &s.weights {
         None => format!(
-            "B_SPLINE_SURFACE_WITH_KNOTS('',{},{},{},.UNSPECIFIED.,{closed_u},{closed_v},.F.,{u_mults},{v_mults},{u_knots},{v_knots},.UNSPECIFIED.)",
+            "B_SPLINE_SURFACE_WITH_KNOTS('',{},{},{},.UNSPECIFIED.,{closed_u},{closed_v},.F.,{u_mults},{v_mults},{u_knots},{v_knots},{knot_spec})",
             s.deg_u, s.deg_v, poles_grid
         ),
         Some(w) => {
@@ -539,7 +571,7 @@ pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> R
             format!(
                 "(BOUNDED_SURFACE() \
                  B_SPLINE_SURFACE({},{},{},.UNSPECIFIED.,{closed_u},{closed_v},.F.) \
-                 B_SPLINE_SURFACE_WITH_KNOTS({u_mults},{v_mults},{u_knots},{v_knots},.UNSPECIFIED.) \
+                 B_SPLINE_SURFACE_WITH_KNOTS({u_mults},{v_mults},{u_knots},{v_knots},{knot_spec}) \
                  GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE({weights}) \
                  REPRESENTATION_ITEM('') SURFACE())",
                 s.deg_u, s.deg_v, poles_grid

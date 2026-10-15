@@ -39,6 +39,7 @@ pub mod insert_knots;
 pub mod increase_degree;
 pub mod remove_knot;
 pub mod function_ops;
+pub mod knot_analysis;
 
 pub use surface_resolution::{bspline_surface_max_derivative, bspline_surface_resolution};
 pub use curve_resolution::bspline_curve_resolution;

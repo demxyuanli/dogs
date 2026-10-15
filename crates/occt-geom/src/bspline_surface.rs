@@ -218,6 +218,36 @@ impl GeomBSplineSurface {
         distinct_km(&self.knots_v, self.v_periodic, self.v_range())
     }
 
+    /// `Geom_BSplineSurface::UKnotDistribution()`
+    /// (`Geom_BSplineSurface_1.cxx:1851-1855`), i.e. `myUKnotSet` as
+    /// `UpdateUKnots` sets it (`Geom_BSplineSurface.cxx:1153`:
+    /// `BSplCLib::KnotAnalysis(myUDeg, myUPeriodic, myUKnots, myUMults,
+    /// myUKnotSet, MaxKnotMult)`).
+    pub fn u_knot_distribution(&self) -> occt_core::kernel::geomabs::BSplKnotDistribution {
+        let (knots, mults) = self.distinct_knots_and_mults_u();
+        occt_core::bspl::knot_analysis::knot_analysis(
+            self.deg_u as i32,
+            self.u_periodic,
+            &knots,
+            &mults,
+        )
+        .0
+    }
+
+    /// `Geom_BSplineSurface::VKnotDistribution()`
+    /// (`Geom_BSplineSurface_1.cxx:1858-1862`); see
+    /// [`Self::u_knot_distribution`] (`Geom_BSplineSurface.cxx:1201`).
+    pub fn v_knot_distribution(&self) -> occt_core::kernel::geomabs::BSplKnotDistribution {
+        let (knots, mults) = self.distinct_knots_and_mults_v();
+        occt_core::bspl::knot_analysis::knot_analysis(
+            self.deg_v as i32,
+            self.v_periodic,
+            &knots,
+            &mults,
+        )
+        .0
+    }
+
     /// `StepToGeom::MakeBSplineSurface` periodic test (`cxx:1101-1129`).
     pub fn should_be_periodic(n_poles: usize, degree: usize, mults: &[i32]) -> bool {
         let sum_mult: i32 = mults.iter().sum();
