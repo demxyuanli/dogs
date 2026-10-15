@@ -7,7 +7,6 @@ pub(crate) use std::collections::HashMap;
 pub(crate) use std::sync::Arc;
 
 pub(crate) use occt_core::gp::{GpAx2, GpAx3, GpCirc, GpCylinder, GpPln, GpPnt, GpSphere, GpVec, GpXyz};
-pub(crate) use occt_geom::surface_fit::fit_plane;
 pub(crate) use occt_geom::{Curve, GeomCircle, GeomCylinder, GeomPlane, GeomSphere, Surface};
 
 pub(crate) use crate::abs::ShapeType;

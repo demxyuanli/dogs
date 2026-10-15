@@ -16,7 +16,7 @@ use occt_geom2d::Geom2dLine;
 use crate::abs::Orientation;
 use crate::builder::TopoBuilder;
 use crate::geom_bnd_lib_elclib2d::adjust_periodic;
-use crate::shape::{Edge, Face, Vertex};
+use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
 
 /// `BRepLib_MakeFace::IsDegenerated` (`cxx:392-458`).
@@ -463,4 +463,78 @@ pub fn make_face_uv(
     }
 
     face
+}
+
+/// `BRepLib_MakeFace(const TopoDS_Wire& W, bool OnlyPlane)`
+/// (`BRepLib_MakeFace.cxx:188-256`).
+///
+/// `BRepLib_FindSurface FS(W, -1, OnlyPlane, true)` supplies the surface; the
+/// face is then built with `tol = max(1.2 * FS.ToleranceReached(),
+/// FS.Tolerance())` and the input wire is added. `None` is the
+/// `BRepLib_NotPlanar` error of `cxx:195-198`.
+///
+/// **UNPORTED**:
+/// * `BRepLib::UpdateTolerances(myShape)` and `BRepLib::SameParameter(myShape,
+///   tol, true)` (`cxx:250-252`), which the STEP/offset callers of this port
+///   run through their own same-parameter pass.
+/// * `CheckInside()` (`cxx:255`, `cxx:907-924`), which rebuilds the face with
+///   `it.Value().Reversed()` children. The port stores a shape's orientation on
+///   the shared `TShape` (`TopoShape::reverse` mutates in place,
+///   `shape.rs:61`), so there is no non-mutating `TopoDS_Shape::Reversed` to
+///   build that copy with. The only port caller reads the found *surface*, not
+///   the returned face's wire orientations.
+pub fn make_face_from_wire(wire: &Wire, only_plane: bool) -> Option<Face> {
+    let fs = crate::brep_lib_find_surface::FindSurface::new(&wire.0, -1.0, only_plane, true);
+    if !fs.found() {
+        return None;
+    }
+    let surface = fs.surface()?;
+    let tol = (1.2 * fs.tolerance_reached()).max(fs.tolerance());
+
+    // get rid of degenerative edges in the input wire (cxx:209-242)
+    let a_w = if only_plane {
+        strip_degenerated(wire)
+    } else {
+        wire.clone()
+    };
+
+    let b = TopoBuilder::new();
+    Some(b.make_face_with_tolerance(surface, &[a_w], tol))
+}
+
+/// `BRepLib_MakeFace`'s `OnlyPlane` wire filtering (`cxx:211-242`).
+///
+/// The iterator runs over the wire's own children with the wire orientation
+/// forced FORWARD (`aWForw`, `cxx:215-218`), so a REVERSED parent does not
+/// compose into the kept edges. The rebuilt wire gets the input wire's
+/// orientation and closed flag back (`cxx:233-238`); a wire without
+/// degenerate edges is passed through unchanged (`cxx:240`).
+fn strip_degenerated(wire: &Wire) -> Wire {
+    let children: Vec<TopoShape> = wire
+        .0
+        .tshape
+        .read()
+        .expect("poisoned TShape lock")
+        .children
+        .clone();
+    let mut kept: Vec<Edge> = Vec::new();
+    let mut has_degenerated = false;
+    for c in children {
+        if c.shape_type() != crate::abs::ShapeType::Edge {
+            continue;
+        }
+        let e = Edge(c);
+        if crate::brep_tool::BRepTool::is_degenerated(&e) {
+            has_degenerated = true;
+        } else {
+            kept.push(e);
+        }
+    }
+    if !has_degenerated {
+        return wire.clone();
+    }
+    let mut out = TopoBuilder::new().make_wire(&kept);
+    out.0.set_orientation(wire.0.orientation());
+    out.0.set_closed(wire.closed());
+    out
 }

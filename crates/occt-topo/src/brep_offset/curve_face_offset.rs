@@ -469,24 +469,20 @@ pub fn offset_wire_2d(wire: &Wire, plane: &GpPln, distance: f64) -> Result<Wire,
     Ok(w)
 }
 
-/// Offset a planar 3D wire by sampling its points, fitting the plane via
-/// least squares, then delegating to [`offset_wire_2d`].
+/// Offset a planar 3D wire.
+///
+/// `BRepOffsetAPI_MakeOffset::BuildDomains` builds the spine face with
+/// `BRepBuilderAPI_MakeFace(WorkWires.First(), true)` and throws "the wire is
+/// not planar" when the construction fails
+/// (`BRepOffsetAPI_MakeOffset.cxx:184-192`). `OnlyPlane = true` routes through
+/// `BRepLib_MakeFace(W, OnlyPlane)` (`BRepBuilderAPI_MakeFace.cxx:215-224`),
+/// i.e. `BRepLib_FindSurface(W, -1, true, true)`
+/// (`BRepLib_MakeFace.cxx:188-206`), so the plane is that weighted fit - not a
+/// least-squares fit of four samples per edge.
 pub fn offset_wire_3d(wire: &Wire, distance: f64) -> Result<Wire, String> {
-    let mut pts = Vec::new();
-    for e in edges_of_wire(wire) {
-        if let Some(c) = BRepTool::edge_curve(&e) {
-            let (a, b) = BRepTool::edge_parameters(&e);
-            if a.is_finite() && b.is_finite() && b > a {
-                for i in 0..4 {
-                    pts.push(c.d0(a + (b - a) * i as f64 / 3.0));
-                }
-            }
-        }
-    }
-    if pts.len() < 3 {
-        return Err("offset_wire_3d: wire has too few sample points".into());
-    }
-    let pln = fit_plane(&pts).ok_or("offset_wire_3d: wire is not planar")?;
+    let face = crate::brep_lib_make_face::make_face_from_wire(wire, true)
+        .ok_or("offset_wire_3d: wire is not planar")?;
+    let pln = face_plane(&face).ok_or("offset_wire_3d: wire is not planar")?;
     offset_wire_2d(wire, &pln, distance)
 }
 

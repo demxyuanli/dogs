@@ -48,6 +48,34 @@ impl GpAx3 {
         })
     }
 
+    /// `gp_Ax3(const gp_Pnt& P, const gp_Dir& V)` (`gp_Ax3.cxx:29-80`): the
+    /// coordinate system whose origin is `P` and whose main direction is `V`,
+    /// with the X direction taken from the branch table OCCT uses to pick a
+    /// vector orthogonal to `V` (no dependency on `from_ax1`'s basis choice).
+    pub fn from_point_dir(p: GpPnt, v: GpDir) -> Result<Self, &'static str> {
+        let (a, b, c) = (v.x(), v.y(), v.z());
+        let (aabs, babs, cabs) = (a.abs(), b.abs(), c.abs());
+        let (dx, dy, dz) = if babs <= aabs && babs <= cabs {
+            if aabs > cabs {
+                (-c, 0.0, a)
+            } else {
+                (c, 0.0, -a)
+            }
+        } else if aabs <= babs && aabs <= cabs {
+            if babs > cabs {
+                (0.0, -c, b)
+            } else {
+                (0.0, c, -b)
+            }
+        } else if aabs > babs {
+            (-b, a, 0.0)
+        } else {
+            (b, -a, 0.0)
+        };
+        let x_dir = GpDir::new(dx, dy, dz)?;
+        Self::new(p, v, &x_dir)
+    }
+
     /// Create from an axis, auto-computing X as perpendicular to Z.
     pub fn from_ax1(ax1: &GpAx1) -> Self {
         let z_dir = *ax1.direction();

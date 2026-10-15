@@ -107,6 +107,7 @@ pub mod shape_extend;
 pub mod xmlcaf;
 pub mod rwmesh;
 pub mod brep_builder_full;
+pub mod brep_lib_find_surface;
 pub mod brep_lib_make_face;
 pub mod brep_lib_make_wire;
 pub mod brep_lib_make_edge;
