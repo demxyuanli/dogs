@@ -1,6 +1,7 @@
 //! OCCT port: GeomAPI projection, intersection and extremum helpers.
 //! Source: `GeomAPI_ProjectPointOnCurve.hxx`, `GeomAPI_ProjectPointOnSurf.hxx`,
-//! `GeomAPI_IntCS.hxx`, `GeomAPI_ExtremaCurveCurve.hxx`.
+//! `GeomAPI_IntCS.hxx`, `GeomAPI_ExtremaCurveCurve.hxx`,
+//! `GeomAPI_ExtremaSurfaceSurface.hxx` (see [`ExtremaSurfaceSurface`]).
 //!
 //! **Ported (faithful)**: [`project_point_on_curve`] = `Extrema_ExtPC` via
 //! [`crate::extrema_pc`] with `GeomAPI_ProjectPointOnCurve`'s own
@@ -35,6 +36,7 @@ use occt_geom2d::line::Geom2dLine;
 use occt_geom2d::parabola::Geom2dParabola;
 
 use crate::curve::Curve;
+use crate::extrema_ss::ExtremaExtSS;
 use crate::projlib;
 use crate::surface::Surface;
 
@@ -106,6 +108,145 @@ pub fn project_point_on_surface(s: &dyn Surface, p: &GpPnt, tol: f64) -> Option<
     }
     let (u, v, point) = ex.point(best);
     Some(PointOnSurface { u, v, point, distance: point.distance(p) })
+}
+
+/// `GeomAPI_ExtremaSurfaceSurface`
+/// (`GeomAPI_ExtremaSurfaceSurface.hxx:49-182`,
+/// `GeomAPI_ExtremaSurfaceSurface.cxx:26-243`).
+///
+/// `Init` runs `Extrema_ExtSS(TheSurface1, TheSurface2, Tol, Tol)` with
+/// `Tol = Precision::PConfusion()` (`cxx:60-69`) and then keeps the index of
+/// the smallest `SquareDistance` in `myIndex` (`cxx:75-89`). `NearestPoints`
+/// (`cxx:202-208`), `LowerDistanceParameters` (`cxx:210-221`) and
+/// `LowerDistance` (`cxx:223-231`) all read that index; `Points`, `Parameters`
+/// and `Distance` answer for the index their caller passes (`cxx:162-200`).
+///
+/// UNPORTED overloads: the 10-argument `Init` (`cxx:93-145`) and its
+/// constructor (`cxx:43-56`), which take explicit parameter windows instead of
+/// the adaptor's own; no consumer in this port uses them.
+pub struct ExtremaSurfaceSurface {
+    /// `myExtSS`.
+    ext_ss: ExtremaExtSS,
+    /// `myIsDone`: `myExtSS.IsDone() && (myExtSS.NbExt() > 0)` (`cxx:68`).
+    is_done: bool,
+    /// `myIndex`: the index of the smallest `SquareDistance` (`cxx:79-88`);
+    /// `0` while `!myIsDone`, as in the cxx default constructor (`cxx:29-30`).
+    my_index: i32,
+}
+
+impl ExtremaSurfaceSurface {
+    /// `GeomAPI_ExtremaSurfaceSurface(S1, S2)` (`cxx:37-40`) -> `Init`.
+    pub fn new(s1: &dyn Surface, s2: &dyn Surface) -> Self {
+        let ext_ss = ExtremaExtSS::new(
+            s1,
+            s2,
+            occt_core::precision::PCONFUSION,
+            occt_core::precision::PCONFUSION,
+        );
+        let is_done = ext_ss.is_done() && (ext_ss.nb_ext() > 0);
+        let mut my_index = 0;
+        if is_done {
+            // evaluate the lower distance and its index (cxx:75-89)
+            let mut dist2_min = ext_ss.square_distance(1);
+            my_index = 1;
+            for i in 2..=ext_ss.nb_ext() as i32 {
+                let dist2 = ext_ss.square_distance(i);
+                if dist2 < dist2_min {
+                    dist2_min = dist2;
+                    my_index = i;
+                }
+            }
+        }
+        ExtremaSurfaceSurface {
+            ext_ss,
+            is_done,
+            my_index,
+        }
+    }
+
+    /// `NbExtrema()` (`cxx:147-157`): `myExtSS.NbExt()` while done, else `0`.
+    pub fn nb_extrema(&self) -> i32 {
+        if self.is_done {
+            self.ext_ss.nb_ext() as i32
+        } else {
+            0
+        }
+    }
+
+    /// `IsParallel()` (`hxx:150`).
+    pub fn is_parallel(&self) -> bool {
+        self.ext_ss.is_parallel()
+    }
+
+    /// `Points(Index, P1, P2)` (`cxx:162-172`).
+    pub fn points(&self, index: i32) -> (GpPnt, GpPnt) {
+        assert!(
+            index >= 1 && index <= self.nb_extrema(),
+            "GeomAPI_ExtremaSurfaceSurface::Points: Standard_OutOfRange"
+        );
+        let (ps1, ps2) = self.ext_ss.points(index);
+        (ps1.value(), ps2.value())
+    }
+
+    /// `Parameters(Index, U1, V1, U2, V2)` (`cxx:174-190`).
+    pub fn parameters(&self, index: i32) -> (f64, f64, f64, f64) {
+        assert!(
+            index >= 1 && index <= self.nb_extrema(),
+            "GeomAPI_ExtremaSurfaceSurface::Parameters: Standard_OutOfRange"
+        );
+        let (ps1, ps2) = self.ext_ss.points(index);
+        let (u1, v1) = ps1.parameter();
+        let (u2, v2) = ps2.parameter();
+        (u1, v1, u2, v2)
+    }
+
+    /// `Distance(Index)` (`cxx:192-200`):
+    /// `sqrt(myExtSS.SquareDistance(Index))`.
+    pub fn distance(&self, index: i32) -> f64 {
+        assert!(
+            index >= 1 && index <= self.nb_extrema(),
+            "GeomAPI_ExtremaSurfaceSurface::Distance: Standard_OutOfRange"
+        );
+        self.ext_ss.square_distance(index).sqrt()
+    }
+
+    /// `NearestPoints(P1, P2)` (`cxx:202-208`): `Points(myIndex, P1, P2)`.
+    ///
+    /// `StdFail_NotDone` when `!myIsDone` (`cxx:206`); on the parallel-plane
+    /// arm the recorded index has no points and `Extrema_ExtSS::Points`
+    /// (`Extrema_ExtSS.cxx:292-300`) raises `Standard_OutOfRange`.
+    pub fn nearest_points(&self) -> (GpPnt, GpPnt) {
+        assert!(
+            self.is_done,
+            "GeomAPI_ExtremaSurfaceSurface::NearestPoints: StdFail_NotDone"
+        );
+        self.points(self.my_index)
+    }
+
+    /// `LowerDistanceParameters(U1, V1, U2, V2)` (`cxx:210-221`):
+    /// `Parameters(myIndex, ...)`.
+    pub fn lower_distance_parameters(&self) -> (f64, f64, f64, f64) {
+        assert!(
+            self.is_done,
+            "GeomAPI_ExtremaSurfaceSurface::LowerDistanceParameters: StdFail_NotDone"
+        );
+        self.parameters(self.my_index)
+    }
+
+    /// `LowerDistance()` (`cxx:223-231`):
+    /// `sqrt(myExtSS.SquareDistance(myIndex))`.
+    pub fn lower_distance(&self) -> f64 {
+        assert!(
+            self.is_done,
+            "GeomAPI_ExtremaSurfaceSurface::LowerDistance: StdFail_NotDone"
+        );
+        self.ext_ss.square_distance(self.my_index).sqrt()
+    }
+
+    /// `Extrema()` (`hxx:176`): the algorithmic object from `Extrema`.
+    pub fn extrema(&self) -> &ExtremaExtSS {
+        &self.ext_ss
+    }
 }
 
 /// Distance from point `p` to the nearest point on curve `c`.

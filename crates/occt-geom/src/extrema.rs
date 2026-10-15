@@ -95,17 +95,43 @@ pub fn curve_surface_extrema(c: &dyn Curve, s: &dyn Surface, _samples: usize) ->
     crate::extrema_surf::curve_surface_extrema(c, s)
 }
 
-/// Minimum distance between two surfaces.
+/// Minimum distance between two surfaces — the nearest-pair answer of
+/// `GeomAPI_ExtremaSurfaceSurface`.
+///
+/// Port of `GeomAPI_ExtremaSurfaceSurface::Init(S1, S2)`
+/// (`GeomAPI_ExtremaSurfaceSurface.cxx:57-91`) plus `NearestPoints`
+/// (`cxx:202-208`), `LowerDistanceParameters` (`cxx:210-221`) and
+/// `LowerDistance` (`cxx:223-231`), which all read the `myIndex` minimum that
+/// `Init` keeps (`cxx:75-89`) — not the first reported extremum. The engine is
+/// `Extrema_ExtSS` over each surface's own range with
+/// `Tol = Precision::PConfusion()` (`cxx:63-68`).
 /// `samples` is kept for signature compatibility.
-/// `None` = `Extrema_ExtSS::IsDone() == false` or `NbExt() == 0`, or the
-/// `Extrema_ExtElSS` parallel-plane arm, which records the square distance but
-/// no points (`Extrema_ExtSS.cxx:228-235`).
+///
+/// `None` mirrors the two OCCT exits that leave no pair to report: `!myIsDone`
+/// (`cxx:68`), and the `Extrema_ExtElSS` parallel-plane arm, which records the
+/// square distance but allocates no `myPOnS1` / `myPOnS2`
+/// (`Extrema_ExtSS.cxx:228-235`), so `Points(myIndex, P1, P2)`
+/// (`Extrema_ExtSS.cxx:292-300`) walks an empty sequence.
 pub fn surface_surface_extrema(
     s1: &dyn Surface,
     s2: &dyn Surface,
     _samples: usize,
 ) -> Option<ExtremaPair> {
-    crate::extrema_ss::surface_surface_extrema(s1, s2)
+    let ex = crate::geom_api::ExtremaSurfaceSurface::new(s1, s2);
+    if ex.nb_extrema() == 0 || ex.is_parallel() {
+        return None;
+    }
+    let (p1, p2) = ex.nearest_points();
+    let (u1, v1, u2, v2) = ex.lower_distance_parameters();
+    Some(ExtremaPair {
+        p1,
+        p2,
+        distance: ex.lower_distance(),
+        u1,
+        v1: Some(v1),
+        u2,
+        v2: Some(v2),
+    })
 }
 
 /// Minimum distance from point `p` to surface `s` (with the closest point).

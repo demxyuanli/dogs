@@ -22,6 +22,15 @@
 //! (`cxx:77-83`) set the flags and then `throw Standard_NotImplemented()`. An
 //! earlier revision of this port carried closed-form arms for those pairs; they
 //! had no `.cxx` counterpart and are gone.
+//!
+//! The consumer-facing entry point of a `Geom_Surface` pair is
+//! `GeomAPI_ExtremaSurfaceSurface`, ported as
+//! [`crate::geom_api::ExtremaSurfaceSurface`] (`GeomAPI_ExtremaSurfaceSurface.cxx:57-231`),
+//! which keeps the index of the smallest `SquareDistance` in `myIndex`
+//! (`cxx:75-89`) and reads it from `NearestPoints` / `LowerDistanceParameters`
+//! / `LowerDistance`. `ExtremaExtSS` itself exposes only `Points(N, P1, P2)`
+//! (`Extrema_ExtSS.hxx:92`, `Extrema_ExtSS.cxx:292-300`); `myPOnS1` /
+//! `myPOnS2` remain private (`hxx:99-102`).
 
 mod ext_el_ss;
 mod func_ext_ss;
@@ -261,11 +270,14 @@ impl ExtremaExtSS {
         self.sq_dist[(n - 1) as usize]
     }
 
-    /// `Points(N, P1, P2)` (`Extrema_ExtSS.cxx:292-300`).
+    /// `Points(N, P1, P2)` (`Extrema_ExtSS.cxx:292-300`) — the only public
+    /// accessor of `myPOnS1` / `myPOnS2` (`Extrema_ExtSS.hxx:92`; the two
+    /// sequences themselves are private, `hxx:99-102`).
     ///
     /// The parallel-plane arm never allocates `myPOnS1` / `myPOnS2`
     /// (`Extrema_ExtElSS.cxx:50-52`), exactly as `NbExt()` there counts only
-    /// `mySqDist`; indexing past the sequences reports the same condition.
+    /// `mySqDist`; indexing past the sequences reports the same condition
+    /// OCCT raises `Standard_OutOfRange` for.
     pub fn points(&self, n: i32) -> (ExtremaPOnSurf, ExtremaPOnSurf) {
         assert!(
             n >= 1 && n as usize <= self.nb_ext(),
@@ -275,16 +287,6 @@ impl ExtremaExtSS {
             self.p_on_s1[(n - 1) as usize],
             self.p_on_s2[(n - 1) as usize],
         )
-    }
-
-    /// `myPOnS1` as it stands — empty on the parallel-plane arm.
-    pub fn point_on_s1(&self, n: i32) -> ExtremaPOnSurf {
-        self.p_on_s1[(n - 1) as usize]
-    }
-
-    /// `myPOnS2` as it stands — empty on the parallel-plane arm.
-    pub fn point_on_s2(&self, n: i32) -> ExtremaPOnSurf {
-        self.p_on_s2[(n - 1) as usize]
     }
 }
 
@@ -302,12 +304,18 @@ fn ss_pair(p1: GpPnt, u1: f64, v1: f64, p2: GpPnt, u2: f64, v2: f64, d: f64) -> 
     }
 }
 
-/// The surface-surface extrema that carry both points, as
-/// `Extrema_ExtSS::IsDone() && NbExt() > 0`.
+/// Every surface-surface extremum that carries both points.
+///
+/// The `GeomAPI_ExtremaSurfaceSurface` counterpart of this enumeration is the
+/// `Points(i, P1, P2)` loop over `i = 1..=NbExtrema()`
+/// (`GeomAPI_ExtremaSurfaceSurface.cxx:162-172`, `cxx:147-157`); the
+/// `myIndex`-based answers (`NearestPoints`, `LowerDistance`, ...) live in
+/// [`crate::geom_api::ExtremaSurfaceSurface`].
 ///
 /// The parallel-plane arm reports `NbExt() == 1` with no allocated points
-/// (`Extrema_ExtSS.cxx:228-235`); call [`ExtremaExtSS`] directly to observe
-/// `is_parallel()` / `square_distance(1)` for that case.
+/// (`Extrema_ExtSS.cxx:228-235`), so it contributes no entry here; call
+/// [`ExtremaExtSS`] directly to observe `is_parallel()` /
+/// `square_distance(1)` for that case.
 pub fn surface_surface_extrema_all(s1: &dyn Surface, s2: &dyn Surface) -> Vec<ExtremaPair> {
     // The OCCT entry point for a `Geom_Surface` pair is
     // `GeomAPI_ExtremaSurfaceSurface::Init`, which runs
@@ -336,12 +344,6 @@ pub fn surface_surface_extrema_all(s1: &dyn Surface, s2: &dyn Surface) -> Vec<Ex
             ))
         })
         .collect()
-}
-
-/// The closest surface-surface pair, or `None` when `Extrema_ExtSS` reports
-/// `!IsDone()` or `NbExt() == 0` (`Extrema_ExtSS.cxx:226-260`).
-pub fn surface_surface_extrema(s1: &dyn Surface, s2: &dyn Surface) -> Option<ExtremaPair> {
-    surface_surface_extrema_all(s1, s2).into_iter().next()
 }
 
 #[cfg(test)]
