@@ -157,6 +157,10 @@ mod edge_edge;
 mod find_solutions;
 mod solvers;
 pub use edge_edge::*;
+/// `GeomAdaptor_Curve::GetType()` and the `GeomAbs_CurveType` arms it feeds
+/// (`IntTools_EdgeEdge.cxx:1456-1482`); shared with `inttools_range`'s
+/// `BRepLib::FindValidRange` walk (`BRepLib_1.cxx:71-78`).
+pub(crate) use find_solutions::{curve_kind, GeomCurveKind};
 
 
 #[cfg(test)]

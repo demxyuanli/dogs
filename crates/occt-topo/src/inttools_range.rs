@@ -33,6 +33,7 @@ use occt_geom::Curve;
 
 use crate::abs::ShapeType;
 use crate::brep_tool::BRepTool;
+use crate::edge_edge::{curve_kind, GeomCurveKind};
 use crate::shape::{Edge, Face, Vertex};
 use crate::topo_tools_full::edge_vertices;
 
@@ -282,16 +283,13 @@ pub(crate) fn find_valid_range(
     Some((s1, s2))
 }
 
-/// Port of the static `findNearestValidPoint` helper in `BRepLib_1.cxx`.
+/// Port of the static `findNearestValidPoint` helper in `BRepLib_1.cxx:31-169`.
 ///
 /// Starting from the appointed end of the curve, find the nearest parameter
 /// whose curve point is *outside* the tolerance sphere of radius `tol` centred
-/// at `vert_pnt`. The walk steps along the curve by a resolution-sized step and
-/// then refines the exit by bisection.
-///
-/// ponytail: the OCCT `aD1Mag` fast-exit for Bézier/B-spline local
-/// singularities is omitted — the sphere has the same scale as the step, so the
-/// walk exits within a constant number of steps and the bisection dominates.
+/// at `vert_pnt`. The walk steps along the curve by a resolution-sized step,
+/// doubles that step to escape local derivative singularities of Bézier /
+/// B-spline curves (`BRepLib_1.cxx:69-135`), and refines the exit by bisection.
 fn find_nearest_valid_point(
     curve: &dyn Curve,
     first: f64,
@@ -313,6 +311,21 @@ fn find_nearest_valid_point(
     if step < eps {
         step = eps;
     }
+    // `aD1Mag` is the threshold below which the local derivative magnitude is
+    // considered too small, so that reaching out of the sphere is accelerated
+    // (`BRepLib_1.cxx:66-81`). `Geom_OffsetCurve` reports the type of its basis
+    // curve there, and only Bézier / B-spline take the branch.
+    let mut d1_mag = 0.0;
+    let mut curve_type = curve_kind(curve);
+    if curve_type == GeomCurveKind::OffsetCurve {
+        if let Some((basis, _)) = curve.offset_curve() {
+            curve_type = curve_kind(&*basis);
+        }
+    }
+    if matches!(curve_type, GeomCurveKind::BezierCurve | GeomCurveKind::BSplineCurve) {
+        d1_mag = 1.0 / curve.resolution(1.0) * 0.01;
+        d1_mag *= d1_mag;
+    }
     if !is_first {
         step = -step;
     }
@@ -333,7 +346,32 @@ fn find_nearest_valid_point(
             u_out = end_u;
             break;
         }
-        is_out = curve.d0(u_out).square_distance(vert_pnt) > sq_tol;
+        if d1_mag > 0.0 {
+            let mut step_local = step;
+            loop {
+                // Cycle to escape a local singularity (`BRepLib_1.cxx:111-135`).
+                let (a_p, a_d1) = curve.d1(u_out);
+                is_out = a_p.square_distance(vert_pnt) > sq_tol;
+                if !is_out && a_d1.square_magnitude() < d1_mag {
+                    step_local *= 2.0;
+                    u_out += step_local;
+                    if (is_first && u_out < end_u) || (!is_first && u_out > end_u) {
+                        // Still in range: keep walking with the doubled step.
+                        continue;
+                    }
+                    // Went out of range, so the end point decides.
+                    u_out = end_u;
+                    is_out = curve.d0(u_out).square_distance(vert_pnt) > sq_tol;
+                    if !is_out {
+                        // All range is inside the sphere.
+                        return None;
+                    }
+                }
+                break;
+            }
+        } else {
+            is_out = curve.d0(u_out).square_distance(vert_pnt) > sq_tol;
+        }
     }
 
     // Precise solution with binary search on the exit interval.

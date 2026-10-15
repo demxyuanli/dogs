@@ -89,9 +89,23 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
 - `bop_split_seam.rs:7-8` AABB/sampling stand-in for `Geom2dAPI_ProjectPointOnCurve`
   (`BOPTools_AlgoTools3D.cxx:275`).
 
-### B5. `inttools_range.rs:295-351` `find_nearest_valid_point` missing the local-singularity arm
+### B5. `inttools_range.rs:295-351` `find_nearest_valid_point` missing the local-singularity arm — ✅ CLOSED 2026-10-15 (T-133)
 - Missing `BRepLib_1.cxx:66-78` (`aD1Mag = (1/Resolution(1.)*0.01)^2` for Bezier/BSpline after
   unwrapping `OffsetCurve`) and `:108-141` (the `D1`-accelerated doubling loop).
+- **Closed (T-133)**: `aD1Mag` is now computed per `BRepLib_1.cxx:69-81` — `GeomAbs_OffsetCurve`
+  first unwraps `OffsetCurve()->BasisCurve()` and re-reads the type, then only Bezier / B-spline
+  take `(1./curve.resolution(1.0)*0.01)^2`; every other type keeps `0.` and skips the arm. The
+  type test reuses the single faithful `Adaptor3d_Curve::GetType()` port at
+  `edge_edge::curve_kind` (`GeomAdaptor_Curve.cxx:252-311`), re-exported `pub(crate)` from
+  `edge_edge/mod.rs` (visibility only, no second implementation). The `cxx:108-141` loop is
+  ported verbatim: with `aD1Mag > 0.` the walk takes `D1` at `u`, and while the point is inside
+  the sphere and `|D1|^2 < aD1Mag` it doubles `aStepLocal`, continuing while still in range and
+  falling back to `anEndU` (returning `None` when that end is inside too) otherwise. The
+  `ponytail:` note that recorded the omission is deleted.
+- Gates: `--all-targets` 0 errors (373 warnings), `--lib` 1251 / 0, `step_obj_gates` 4 / 4,
+  `export_data_obj` 15 / 15 with v/f and bbox bit-identical to the T002 baseline.
+- Disclosed scope deviation: `edge_edge/mod.rs` was outside the registered `allowed_files`;
+  the change is a visibility-only re-export (0 new symbols, 0 behavior change).
 - Reachable: `find_valid_range` <- `pave_ff_make.rs:409`, `pave_ff_pave_bound.rs:179`;
   `ShrunkRange` <- `pave_shrunk.rs:87`, `pave_ff_se.rs:39`, `pave_common/mod.rs:51`.
 
@@ -174,7 +188,8 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 2. ~~**B2** `pc_curve_kind` -> `Geom2dAdaptor_Curve::GetType()` equivalent. 4 call sites, touches
    bbox/pcurve bounds.~~ **DONE 2026-10-15 (T-132, package P002).**
 3. **B6** Extrema failure fabrication + analytic-solver sampling. Larger, touches `bean_face_exact`.
-4. **B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.
+4. ~~**B5** `find_nearest_valid_point` `aD1Mag` arm. Small, self-contained, live pave filler.~~
+   **DONE 2026-10-15 (T-133).**
 5. **B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.
 
 ## F. Side findings (report only, not fixed)
