@@ -129,7 +129,7 @@ pub fn quadric_quadric_cylinder_cylinder(
         let r1p2 = r1 + r2;
         if dist > r1p2 + tol {
             QuadricIntersection::None
-        } else if (r1p2 - dist) <= f64::EPSILON {
+        } else if (r1p2 - dist) <= REAL_SMALL {
             // External tangency: one generatrix line.
             let pt1 = p1.translated_vec(&GpVec::from_pnts(&p1, &p2).multiplied_scalar(r1 / r1p2));
             QuadricIntersection::Line(GpLin::from_pnt_dir(pt1, dir_cyl))
@@ -176,6 +176,10 @@ pub fn quadric_quadric_cylinder_cylinder(
             QuadricIntersection::None
         }
     } else if rmr_relative <= 1e-13 && coplanar {
+        // `cxx:1224` guards this arm with `RmR_Relative <=
+        // myEPSILON_CYLINDER_DELTA_RADIUS` (`InitTolerances`, `cxx:356`) and
+        // `A1A2.Intersect()`; in the non-parallel branch that is exactly
+        // `coplanar`.
         // Equal-radius cylinders with intersecting axes → two ellipses in the
         // bisector planes. Frame: `dir1`/`dir2` are the bisectors (perpendicular),
         // each used as the plane normal of one ellipse.
@@ -473,8 +477,21 @@ pub fn quadric_quadric_cone_cone(c1: &GpCone, c2: &GpCone, tol: f64) -> QuadricI
         let Ok(n) = GpDir::from_vec(&ortho) else { return QuadricIntersection::None };
         let Some(pln) = plane_normal_at(p1, n) else { return QuadricIntersection::None };
         // `cxx:1555`: the nested plane∩cone reduce passes `Tol` for *both*
-        // the angular and the linear tolerance.
-        quadric_quadric_plane_cone(&pln, c1, tol, tol)
+        // the angular and the linear tolerance. `cxx:1557-1603` then re-maps
+        // its result: the conics are kept as they are, an `IntAna_Line`
+        // (one or two nested generatrices) is reported as its first line
+        // twice (`pt1 = pt2 = H.Location()`, `dir1 = dir2 = H.Direction()`,
+        // `nbint = 2`), and every other nested type (parabola, point,
+        // empty) becomes `IntAna_NoGeometricSolution`.
+        match quadric_quadric_plane_cone(&pln, c1, tol, tol) {
+            QuadricIntersection::Ellipse(e) => QuadricIntersection::Ellipse(e),
+            QuadricIntersection::Circle(c) => QuadricIntersection::Circle(c),
+            QuadricIntersection::Hyperbola(h) => QuadricIntersection::Hyperbola(h),
+            QuadricIntersection::Line(l) | QuadricIntersection::TwoLines(l, _) => {
+                QuadricIntersection::TwoLines(l, l)
+            }
+            _ => QuadricIntersection::None,
+        }
     }
     // 3 — coincident apexes: one or two generatrix lines (or `None`).
     else if d_a1a2 < tol2 {
