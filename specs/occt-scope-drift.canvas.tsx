@@ -234,7 +234,7 @@ const SEMANTIC = [
     item: "锥/锥平行臂的嵌套结果原样返回（T001 的 B8-intana 尾项）",
     id: "B8-intana / T-145",
     where: "geom/intana/line_torus.rs（`quadric_quadric_cone_cone` 分支 2）· 消费方 topo/int_face_face_analytic.rs::cone_cone",
-    state: "**已修（2026-10-15，包 P015，commit 见 `_tasks.md` T-145）**：分支 2 把嵌套 `quadric_quadric_plane_cone` 的结果原样返回，而 `IntAna_QuadQuadGeo.cxx:1557-1603` 对它做 `switch` 重映射 —— `Ellipse`/`Circle`/`Hyperbola` 保留，`IntAna_Line`（cxx 自身 nbint 1 或 2 皆然）报成同一条线两次（`pt1 = pt2 = H.Location()`、`dir1 = dir2 = H.Position().Direction()`、`nbint = 2`）⇒ 本仓 `TwoLines(l, l)`，其余（`Parabola`/`Point`/`Empty`）⇒ `IntAna_NoGeometricSolution` ⇒ `None`。原先 `Parabola`/`Point` 会被当成精确交集曲线用掉，线数也与 cxx 不符。同轮把圆柱/圆柱的 `(r1+r2-dist) <= f64::EPSILON` 订正为 `cxx:1104` 的 `RealSmall()`（`RealEpsilon()` 只用于 `cxx:1394`），并给 `rmr_relative <= 1e-13` 补上 `myEPSILON_CYLINDER_DELTA_RADIUS`（`cxx:356`）与 `A1A2.Intersect()`（`cxx:1224`）的出处注释。门禁：`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（159.4s）、`export_data_obj` 15/15 逐位一致。**仍未移植（下一片）**：锥/锥分支 4「两锥共母线」（`cxx:1759-1886`，`myCommonGen`/`myPChar` + 最大平面内再 reduce 并按 `cxx:1836-1881` 重映射），现走 `None` → 消费方回落一般数值追踪。",
+    state: "**已修（2026-10-15，包 P015，commit 见 `_tasks.md` T-145）**：分支 2 把嵌套 `quadric_quadric_plane_cone` 的结果原样返回，而 `IntAna_QuadQuadGeo.cxx:1557-1603` 对它做 `switch` 重映射 —— `Ellipse`/`Circle`/`Hyperbola` 保留，`IntAna_Line`（cxx 自身 nbint 1 或 2 皆然）报成同一条线两次（`pt1 = pt2 = H.Location()`、`dir1 = dir2 = H.Position().Direction()`、`nbint = 2`）⇒ 本仓 `TwoLines(l, l)`，其余（`Parabola`/`Point`/`Empty`）⇒ `IntAna_NoGeometricSolution` ⇒ `None`。原先 `Parabola`/`Point` 会被当成精确交集曲线用掉，线数也与 cxx 不符。同轮把圆柱/圆柱的 `(r1+r2-dist) <= f64::EPSILON` 订正为 `cxx:1104` 的 `RealSmall()`（`RealEpsilon()` 只用于 `cxx:1394`），并给 `rmr_relative <= 1e-13` 补上 `myEPSILON_CYLINDER_DELTA_RADIUS`（`cxx:356`）与 `A1A2.Intersect()`（`cxx:1224`）的出处注释。门禁：`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（159.4s）、`export_data_obj` 15/15 逐位一致。**仍未移植（下一片）**：锥/锥分支 4「两锥共母线」（`cxx:1759-1886`，`myCommonGen`/`myPChar` + 最大平面内再 reduce 并按 `cxx:1836-1881` 重映射），现走 `None` → 消费方回落一般数值追踪。**该尾项已收口（2026-10-15，T-146 / 包 P016，commit `a01b0bd1`）**：分支 4 整臂落地（顶点互含校验 `cxx:1762-1778`、`aGen`/`myPChar` `cxx:1782-1794`、最大平面法向三支 `cxx:1795-1830`、嵌套 `plane∩cone` 重映射 `cxx:1833-1881`），`common_gen` 由 `cone_cone_analytic` 返回；消费方 `intpatch_impimp_glines::with_cone_common_gen` 按 `IntPatch_ImpImpIntersection.cxx:9149-9171` 追加两锥顶母线，并按 `cxx:8869-9017` 给每条 `IntPatch_GLine` 在参数 `0.` 处挂 `aPChar` 顶点。门禁：`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（143.4s）、`export_data_obj` 15/15 逐位一致。",
   },
 ];
 
@@ -353,11 +353,18 @@ const CYCLES = [
     state: "✅ 闭合：分支 2 按 `cxx:1557-1603` 重映射嵌套 `plane_cone` 结果（`IntAna_Line` → 同一条线两次，`Parabola`/`Point` → `NoGeometricSolution`）；`(r1+r2-dist)` 改 `RealSmall()`（`cxx:1104`）；同轮订正 audit「圆柱/锥、圆柱/圆柱分类臂未移植」的陈旧登记（逐臂复核实为已移植）",
   },
   {
+    pkg: "P016",
+    task: "T-146",
+    commit: "a01b0bd1",
+    scope: "锥/锥分支 4「两锥共母线」（`IntAna_QuadQuadGeo.cxx:1759-1886`）+ 消费方 `IntCoCo` 的 `HasCommonGen` 接线",
+    state: "✅ 闭合：`cone_cone_analytic` 新增返回 `common_gen`（`cxx:1782-1794` 的 `aGen` + `myPChar`），分支 4 按 `cxx:1762-1778` 的 `ElSLib::Parameters`/`Value` 顶点互含校验、`cxx:1795-1830` 的最大平面法向三条支路、`cxx:1833-1881` 的嵌套 `plane∩cone` 重映射（无 `IntAna_Line` 臂 ⇒ `None`）落地；消费方 `intpatch_impimp_glines::with_cone_common_gen` 按 `IntPatch_ImpImpIntersection.cxx:9149-9171` 把 `aMkLin(aPApex1, aPApex2)` 生成的母线加入解，并按 `cxx:8869-9017` 给每条二次曲线在参数 `0.` 处挂 `aPChar` 顶点（容差 `Tol`、非多点）。`cxx:1805-1811` 的 `Something wrong ???` 出口 `myCommonGen` 已为真、但其前置的 `IntAna_NoGeometricSolution` 臂（`cxx:9022-9140`）未移植，已在源码注明",
+  },
+  {
     pkg: "下一步",
     task: "T005 → 待建 Worker",
     commit: "—",
-    scope: "锥/锥分支 4「两锥共母线」（`IntAna_QuadQuadGeo.cxx:1759-1886`）",
-    state: "⬜ 待做：`ElSLib::Parameters`/`Value` 顶点共面校验 + `myCommonGen`/`myPChar` + 最大平面内再 reduce 并按 `cxx:1836-1881` 重映射（该 switch 无 `IntAna_Line` 臂）；需把 `myCommonGen`/`myPChar` 接进本仓 `QuadricIntersection` 与消费方 `int_face_face_analytic::cone_cone`（现于 `None` 时回落数值追踪，对应 `IntPatch_ImpImpIntersection.cxx:8694-8830` 的 `NbSol` 分派）。其后依次 B7-writer-4（`geom2d_convert.rs:77`）/ B6e / B6f / B6g / B6d / `surface_fit`（`GeomLib_IsPlanarSurface`）",
+    scope: "B6e：`extrema2d::locate_extcc2d` 的自创 Newton 换 `Extrema_LocateExtCC2d`/`Extrema_LocECC2d`（`Extrema_GenLocateExtCC` + `Extrema_GFuncExtCC` 2D 实例 + `math_FunctionSetRoot`）",
+    state: "⬜ 待做：`locate_extcc2d`（`crates/occt-geom2d/src/extrema2d/curve_curve.rs:314-326`）现调 `refine_curve_curve2d_newton`，OCCT 对应链为 `Extrema_LocateExtCC2d.cxx:29-49`（取 `Curve2dTool::Resolution` 两参容差）→ `Extrema_GenLocateExtCC`（`Extrema_GenLocateExtCC.hxx:49-110`：逐轴量程规范化 + `Tol(1)`/`Tol(2)` + `math_FunctionSetRoot` + `F.NbExt() > 0` 与 `F.Value` 的 `Tolf = 1e-10` 复核）→ `Extrema_LocECC2d`（`Extrema_LocECC2d.hxx:27-31`）→ `Extrema_CCLocFOfLocECC2d` = `Extrema_GFuncExtCC` 2D 实例（`Extrema_GFuncExtCC.hxx`，924 行）；`math_FunctionSetRoot` 已有移植件 `occt-math/src/function_set_root.rs`。其后依次 B6g / B6f / B6d / B7-writer-4 / `surface_fit`（`GeomLib_IsPlanarSurface`）",
   },
 ];
 
@@ -506,7 +513,7 @@ export default function OcctScopeDrift() {
         rowTone={GATES.map((g) => g.tone)}
       />
       <Text size="small" tone="tertiary">
-        `G-check` / `G-lib` / `G-gates` / `G-export` 读数测量于 2026-10-15，覆盖到 T-145 已提交工作树 `055e54aa`（`git diff HEAD` 为空）：五 crate `--all-targets` 0 error、`occt-topo --lib` 1251 / 0、`step_obj_gates` 4 / 4（159.4s，23 个面积比与基线逐位一致）、`export_data_obj` 15 / 15 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。`G-fuse` / `G-phase` / `G-boss` / `G-iges` 为 T-130..T-133 轮读数，其后的包未触及这些路径。`G-core` 的 `occt-core` 读数由 285 变 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251，`notes/T002-gate-baseline.md` 已留档）；`occt-math` 210、`occt-geom` 143、`occt-geom2d` 72 未变。
+        `G-check` / `G-lib` / `G-gates` / `G-export` 读数测量于 2026-10-15，覆盖到 T-146 已提交工作树 `a01b0bd1`（`git diff HEAD` 为空）：五 crate `--all-targets` 0 error、`occt-geom --lib` 143 / 0、`occt-topo --lib` 1251 / 0、`step_obj_gates` 4 / 4（143.4s，23 个面积比与基线逐位一致）、`export_data_obj` 15 / 15 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。`G-fuse` / `G-phase` / `G-boss` / `G-iges` 为 T-130..T-133 轮读数，其后的包未触及这些路径。`G-core` 的 `occt-core` 读数由 285 变 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251，`notes/T002-gate-baseline.md` 已留档）；`occt-math` 210、`occt-geom` 143、`occt-geom2d` 72 未变。
       </Text>
 
       <H3>2.6 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`）</H3>
@@ -527,7 +534,7 @@ export default function OcctScopeDrift() {
       <Row gap={16} wrap>
         <Stat value="13.8%" label="全库行数覆盖" />
         <Stat value="24.0%" label="CAD 内核行数覆盖" tone="info" />
-        <Stat value="10 处" label="登记未收代码项（含下一片 1 处）" tone="warning" />
+        <Stat value="9 处" label="登记未收代码项（含下一片 1 处）" tone="warning" />
         <Stat value="0 项" label="文档/状态偏移待办" tone="success" />
       </Row>
       <Stack gap={6}>
@@ -536,9 +543,10 @@ export default function OcctScopeDrift() {
           在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.6 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近四个包（P012 多项式解算器去重、P013 同族余下四份拷贝、
-          P014 锥/锥角度容差自推、P015 锥/锥平行臂重映射）各自落到任务号与提交号；下一片已定档为锥/锥分支 4
-          「两锥共母线」（`IntAna_QuadQuadGeo.cxx:1759-1886`），其后依次 B7-writer-4、B6e / B6f / B6g / B6d、`surface_fit`。
+          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近四个包（P013 同族余下四份拷贝、
+          P014 锥/锥角度容差自推、P015 锥/锥平行臂重映射、P016 锥/锥共母线分支）各自落到任务号与提交号；下一片已定档为
+          B6e「`locate_extcc2d` 的自创 Newton 换 `Extrema_LocateExtCC2d`/`Extrema_GFuncExtCC` + `math_FunctionSetRoot`」，
+          其后依次 B6g / B6f / B6d、B7-writer-4（`geom2d_convert.rs:77`）、`surface_fit`（`GeomLib_IsPlanarSurface`）。
         </Text>
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
@@ -550,11 +558,12 @@ export default function OcctScopeDrift() {
       </Stack>
       <Callout tone="success" title="下一步（按门禁「完成即停」交接）">
         <Text>
-          <Text weight="semibold">立即推进</Text>：锥/锥分支 4「两锥共母线」（`IntAna_QuadQuadGeo.cxx:1759-1886`）——
-          `ElSLib` 顶点共面校验 + `myCommonGen` / `myPChar` 边与线对 + 最大平面内再 reduce，并按 `cxx:1836-1881`（无 `IntAna_Line` 臂）
-          重映射为 `IntAna_Curve`/`IntAna_NoGeometricSolution`；本仓现走 `None`，消费方 `int_face_face_analytic::cone_cone`
-          回落数值追踪（`IntPatch_ImpImpIntersection.cxx:8694-8830` 的 `Nsol/NbSol` 分派），须把 `myCommonGen`/`myPChar`
-          补进 `QuadricIntersection` 并接线该分派。
+          <Text weight="semibold">立即推进</Text>：B6e —— `extrema2d::locate_extcc2d` 的自创 Newton 换 OCCT 链
+          `Extrema_LocateExtCC2d.cxx:29-49` → `Extrema_GenLocateExtCC`（`Extrema_GenLocateExtCC.hxx:49-110`，逐轴量程规范化 +
+          `math_FunctionSetRoot` + `F.NbExt() > 0` 与 `F.Value` 的 `Tolf = 1e-10` 复核）→ `Extrema_LocECC2d`（`Extrema_LocECC2d.hxx:27-31`）
+          → `Extrema_CCLocFOfLocECC2d` = `Extrema_GFuncExtCC` 2D 实例（`Extrema_GFuncExtCC.hxx`）；`math_FunctionSetRoot` 已有移植件
+          `occt-math/src/function_set_root.rs`。前一片（P016 / T-146，commit `a01b0bd1`）已把锥/锥分支 4「两锥共母线」
+          （`IntAna_QuadQuadGeo.cxx:1759-1886`）连同消费方 `IntCoCo` 的 `HasCommonGen` 接线（`IntPatch_ImpImpIntersection.cxx:9149-9171`）落地。
         </Text>
         面级残余的定位受「可信的 OCCT 面级预言机」未钉住所限：实测同一条 `--facestats 2.45132 0.349066`
         在探针上是 `72683 / 78464`，而冻结参考是 `73544 / 79977`、端口是 `73516 / 79926` —— 探针用的是
