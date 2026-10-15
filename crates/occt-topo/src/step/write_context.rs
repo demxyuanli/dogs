@@ -108,6 +108,42 @@ fn curve_to_bspline(c: &dyn Curve) -> Option<GeomBSplineCurve> {
     .ok()
 }
 
+/// `BS = B->Copy(); BS->SetNotPeriodic()` (`GeomToStep_MakeBoundedCurve.cxx:44-51`).
+///
+/// `Geom_BSplineCurve::Copy` keeps the source periodicity, and the port's
+/// constructors (`GeomBSplineCurve::new` / `rational`) never set the flag, so a
+/// copy rebuilt from the curve's poles and knots has to have it restored before
+/// `set_not_periodic()` (`Geom_BSplineCurve.cxx:974-1019`) can open the knot
+/// vector. `periodic` is `C->IsPeriodic()` of the curve as received (`cxx:45`).
+fn open_periodic_bspline(bs: &mut GeomBSplineCurve, periodic: bool) {
+    if periodic {
+        bs.periodic = true;
+        bs.set_not_periodic();
+    }
+}
+
+/// The B-spline `GeomToStep_MakeBoundedCurve` writes for a bounded curve.
+///
+/// `GeomToStep_MakeBoundedCurve.cxx:42-62`: the `Geom_BSplineCurve` arm reads
+/// the curve itself (through the non-periodic copy when `C->IsPeriodic()`), and
+/// the `Geom_BezierCurve` arm is converted first by
+/// `GeomConvert::CurveToBSplineCurve` (that conversion is `curve_to_bspline`
+/// above, used by the Bezier caller).
+fn bounded_bspline_of_curve(c: &dyn Curve) -> Option<GeomBSplineCurve> {
+    let poles = c.bspline_poles()?.to_vec();
+    let knots = c.bspline_knots()?.to_vec();
+    let degree = c.nurbs_degree()?;
+    let weights = c.bspline_weights().map(|w| w.to_vec());
+    let mut bs = match weights {
+        Some(w) if w.len() == poles.len() => {
+            GeomBSplineCurve::rational(poles, w, knots, degree).ok()?
+        }
+        _ => GeomBSplineCurve::new(poles, knots, degree).ok()?,
+    };
+    open_periodic_bspline(&mut bs, c.is_periodic());
+    Some(bs)
+}
+
 /// Internal writer state: the entity writer plus identity maps so shared
 /// vertices/edges/curves are emitted exactly once.
 pub(super) struct WriteCtx {
@@ -282,6 +318,13 @@ impl WriteCtx {
                         _ => GeomBSplineCurve::new(poles.to_vec(), knots.to_vec(), deg),
                     };
                     if let Ok(mut bs) = bs {
+                        // `MakeCurve.cxx:73`: the basis is copied before it is
+                        // cut, so the copy keeps `B->IsPeriodic()` and
+                        // `Geom_BSplineCurve::Segment` runs its periodic branch
+                        // (`Geom_BSplineCurve.cxx:769-779`: `SetOrigin` +
+                        // `SetNotPeriodic`). The port's constructors do not
+                        // carry the flag, so it is restored on the copy.
+                        bs.periodic = basis.is_periodic();
                         // `theTolerance` defaults to `Precision::PConfusion()`
                         // (`Geom_BSplineCurve.hxx:322-324`). OCCT lets a
                         // failure escape; the port keeps the previous
@@ -308,26 +351,12 @@ impl WriteCtx {
         }
         // `MakeCurve.cxx:94-99`: `Geom_BoundedCurve` → `GeomToStep_MakeBoundedCurve`
         // (`GeomToStep_MakeBoundedCurve.cxx:37-80`): a B-spline goes to
-        // `B_SPLINE_CURVE_WITH_KNOTS` (+`_AND_RATIONAL_...` when rational), and a
-        // Bezier is first converted with `GeomConvert::CurveToBSplineCurve` and
-        // written the same way.
-        // UNPORTED: the periodic arm of `GeomToStep_MakeBoundedCurve.cxx:46-51`
-        // (`BS = B->Copy(); BS->SetNotPeriodic()`) is not wired here, so a
-        // periodic B-spline keeps its periodicity. The primitive itself exists
-        // (`occt_geom::bspline_curve::GeomBSplineCurve::set_not_periodic`,
-        // `Geom_BSplineCurve.cxx:974-1019`) and `iges/emit_curve.rs:302` already uses it
-        // for the same step (IGES entity 126); the surface arm above does the
-        // equivalent through `bounded_bspline_surface`.
-        if let (Some(poles), Some(knots), Some(deg)) =
-            (c.bspline_poles(), c.bspline_knots(), c.nurbs_degree())
-        {
-            let bs = match c.bspline_weights() {
-                Some(w) if w.len() == poles.len() => {
-                    GeomBSplineCurve::rational(poles.to_vec(), w.to_vec(), knots.to_vec(), deg)
-                }
-                _ => GeomBSplineCurve::new(poles.to_vec(), knots.to_vec(), deg),
-            };
-            if let Ok(bs) = bs {
+        // `B_SPLINE_CURVE_WITH_KNOTS` (+`_AND_RATIONAL_...` when rational) after
+        // the periodic arm (`cxx:44-51`) has opened it, and a Bezier is first
+        // converted with `GeomConvert::CurveToBSplineCurve` and written the same
+        // way.
+        if c.bspline_poles().is_some() {
+            if let Some(bs) = bounded_bspline_of_curve(c) {
                 if let Ok(id) = write_bspline_curve(&mut self.w, &bs) {
                     return Some(id);
                 }
