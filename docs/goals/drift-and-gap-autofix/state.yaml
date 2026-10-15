@@ -78,6 +78,39 @@ active_task: T005
 
 packages:
   # One entry per closed, verified, committed package. Written by T005 (PM).
+  - id: P005
+    task: T005
+    commit: b6dc0cf0
+    title: "BOP 面代表点与 IsSplitToReverse 采样替身换 BOPTools_AlgoTools 忠实件（BOPTools_AlgoTools.cxx:666-715 与 :1255-1291，T001 的 B4 / T-135）"
+    files:
+      - "crates/occt-topo/src/algo_tools_face.rs"
+      - "crates/occt-topo/src/builder_solid.rs"
+      - "crates/occt-topo/src/bop_build_solids.rs"
+      - "crates/occt-topo/src/bopalgo_tools_class.rs"
+      - "crates/occt-topo/src/bop_build_common/build_ops.rs"
+      - "crates/occt-topo/src/bop_build_common/draft_solid.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/bop-boolean.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "B4 face_sample_point family: builder_solid.rs:139, bop_build_solids.rs:497, bop_build_common/build_ops.rs:95, bopalgo_tools_class.rs:114, bop_build_common/draft_solid.rs:31-56"
+      - "B4-c1 builder_solid::classify_point + solid_inside_solid/shell_inside_solid -> single shape_inside_solid (BOPAlgo_BuilderSolid.cxx:835-861, fixed Precision::Confusion(), first face, infinite-point arm)"
+      - "B4-c2 draft_solid::point_solid_state (16x16 face sampling + brep_extrema::is_inside parity)"
+      - "B4-c3 bop_build_solids::classify_solid_state 16x16 sampling -> AlgoTools::compute_state (cxx:790-822)"
+      - "B4-c4 local is_split_to_reverse copies (bop_build_solids.rs:454, build_ops.rs:82/112/149: single midpoint + 32-point closest_point_on_edge + 1e-6 finite-difference normal) -> algo_tools_face::is_split_to_reverse (cxx:1255-1291)"
+      - "B4-c5 algo_tools_face::is_split_to_reverse_face same-surface fast path: shape_key equality -> Geom_Surface handle equality (cxx:1330-1333)"
+      - "audit registration: _audit/bop-boolean.md finding 5 closed (its remaining 'first-face centre point' gap)"
+    gates:
+      check: "0 errors, occt-topo --all-targets (occt-core/math/geom/geom2d built as dependencies, 0 errors)"
+      lib: "1251 / 0 (= baseline)"
+      step_obj_gates: "4 / 4 (= baseline)"
+      export_data_obj: "15 / 15 ok, v/f and bbox bit-identical to baseline"
+    side_findings:
+      - "OCCT BOPTools_AlgoTools::ComputeStateByOnePoint's default arm recurses into the first child and DISCARDS the result (cxx:648-655), so containers stay TopAbs_UNKNOWN; both Rust copies loop over all children and return the first non-UNKNOWN state. Registered as an open divergence (would touch the FillInternalShapes container branch); not changed in this package."
+      - "bop_build_solids::face_sample_point survives with exactly one user: orient_face_outward, the file's self-declared port-only open-shell orientation heuristic that has no OCCT branch. Its doc comment now says so."
+      - "Retained 16x16 / 7x7 sampling still lives in brep_extrema.rs (is_inside_mesh, non-solid shapes) and bop_fill_internals_occt.rs's thin forwarder; neither is in the B4 line."
   - id: P004
     task: T005
     commit: 249baf11
@@ -394,17 +427,17 @@ tasks:
     receipt:
       result: done
       executed_by: "PM inline"
-      summary: "P004 closed and committed (B3 / T-134) as 249baf11; this board advance is the paired control-file commit. `bbox_from_geometry::shape_bbox` now delegates to the existing faithful `brep_bnd_lib::shape_bnd_box` = `BRepBndLib::Add(S, B, /*useTriangulation*/ false)` (`BRepBndLib.cxx:81-215`), and the self-invented envelope (64-point edge polyline plus a 16x16 UV face grid over `wireframe::face_uv_bounds`) is deleted, closing the only inventory line that no audit doc registered (B3). Fifth cycle complete: scout (Bnd_Box gap vs BRepBndLib semantics, five lib assertion mismatches triaged) -> worker -> four gates green -> commit. Scope deviation disclosed: the five corrected assertions are in test modules of files that the slice's own subject (bbox consumers) owns; no production file outside `bbox_from_geometry.rs` changed."
+      summary: "P005 closed and committed (B4 / T-135) as b6dc0cf0; this board advance is the paired control-file commit. The BOP face-representative-point family is now served by one faithful port: `algo_tools_face::{compute_state_face_point, compute_state_face}` = `BOPTools_AlgoTools::ComputeState(face, solid, tol, bounds, ctx)` (`BOPTools_AlgoTools.cxx:666-715`, edge overload `:734-788`, `PointInFace` `:692`, `PointNearEdge` retry `:694-707`). The four duplicated `face_sample_point` sites (`builder_solid.rs`, `bop_build_solids.rs`, `build_ops.rs`, `bopalgo_tools_class.rs`) and `draft_solid::point_solid_state` are gone; `builder_solid` collapsed to `shape_inside_solid` = the static `IsInside` (`BOPAlgo_BuilderSolid.cxx:835-861`, fixed `Precision::Confusion()`, first face, infinite-point arm for faceless shapes — the previous `self.fuzzy.max(1e-7)` did not match the cxx); `bop_build_solids::classify_solid_state` moved to `AlgoTools::compute_state` (`cxx:790-822`). The same slice removed the local `IsSplitToReverse` copies (single midpoint + 32-point `closest_point_on_edge` + `1e-6` finite-difference normal) in favour of the single `algo_tools_face::is_split_to_reverse` (`cxx:1255-1291` / `:1316-1427` / `:1432-1500`), and corrected that port's same-surface fast path from `shape_key` equality (which never fires for a split piece) to `Arc::ptr_eq`, i.e. the `aSFSp == aSFOr` Geom_Surface handle test of `cxx:1330-1333`. Net: the six production files lost far more than they gained (build_ops.rs 119 changed lines, draft_solid.rs 89, bop_build_solids.rs 87, builder_solid.rs 77, algo_tools_face.rs 85), no new predicate, no new test, no relaxed gate. Fifth cycle complete: scout (cxx control flow re-read for ComputeState/IsSplitToReverse/IsInside, including the `PointInFace` -> `PointNearEdge` retry and the edge overload's infinite-parameter arms) -> worker -> four gates green -> commit. Scope note: `bop_build_solids::face_sample_point` survives with exactly one user, the file's self-declared port-only `orient_face_outward` heuristic (no OCCT branch), now documented as such."
       commits:
-        - "249baf11 fix(occt): bbox_from_geometry 采样包围盒换 BRepBndLib::Add 忠实件（BRepBndLib.cxx:81-215，T001 的 B3 / T-134）"
-        - "board advance for P004 (this commit; state.yaml only)"
+        - "b6dc0cf0 fix(occt): BOP 面代表点与 IsSplitToReverse 采样替身换 BOPTools_AlgoTools 忠实件（BOPTools_AlgoTools.cxx:666-715 / :1255-1291，T001 的 B4 / T-135）"
+        - "board advance for P005 (this commit; state.yaml only)"
       next:
         slice: "B6 - occt-geom Extrema failure fabrication (extrema_ss.rs:449,506 and extrema_surf/numeric_extrema.rs:153,374,433,514 fabricate fallback_* pairs where OCCT returns myDone = false)"
-        rationale: "Scout pass required before activation: the fix is a Done=false propagation (Extrema_ExtElSS.cxx:62-83, Extrema_GGExtPC.hxx:531), which is a same-branch cxx fix but changes what the live consumer bean_face_exact.rs:259 receives, so the Scout must map every fabricating site and every caller before the Judge sizes it. B4 (face_sample_point) is the same size class but touches four duplicated BOP sites, and B7 is a set of independent small STEP-writer divergences (step/write_context.rs:314 SetNotPeriodic, step/format.rs:500 KnotSpec)."
+        rationale: "Largest remaining inventory line. Scout pass required before activation: the fix is a Done=false propagation (Extrema_ExtElSS.cxx:62-83, Extrema_GGExtPC.hxx:531), a same-branch cxx fix, but it changes what the live consumer bean_face_exact.rs:259 receives, so the Scout must map every fabricating site and every caller before the Judge sizes it. B8's `extrema_cc/mod.rs:9` (uniform-grid seed instead of `math_GlobOptMin`, dependency already ported) is the same family and should be re-checked in the same Scout; B7 is a set of independent small STEP-writer divergences (step/write_context.rs:314 SetNotPeriodic, step/format.rs:500 KnotSpec) suitable as a fallback slice."
         allowed_files: []
         verify: []
         stop_if: []
-      note: "Fifth cycle (T135) is the next activation; the board stays at active_task T005 so it can be picked up directly. Gates (3)(4) were re-run on this package because `shape_bbox` sits on the BOP quick-reject and meshing-deflection path."
+      note: "Sixth cycle (T136) is the next activation; the board stays at active_task T005 so it can be picked up directly. Gates (3)(4) were re-run on this package because the change sits on the live BOP hole-ownership and split-orientation path."
 
   - id: T999
     type: judge
