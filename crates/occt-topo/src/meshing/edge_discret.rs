@@ -1286,6 +1286,16 @@ impl Curve for CurveOnSurface {
     fn is_line(&self) -> bool {
         self.kpart_lin.is_some()
     }
+    /// `Adaptor3d_CurveOnSurface::Resolution` (`Adaptor3d_CurveOnSurface.cxx:1364-1370`):
+    /// `myCurve->Resolution(min(mySurface->UResolution(R3d), mySurface->VResolution(R3d)))`.
+    /// The trait default is `GeomAdaptor_Curve::Resolution` (`curve.rs:133-137`), which the
+    /// cxx overrides here; both surface side values come from the single faithful port of
+    /// `GeomAdaptor_Surface::U/VResolution` (`approx_same_parameter.rs:386`, `:453`).
+    fn resolution(&self, r3d: f64) -> f64 {
+        let ru = occt_geom::approx_same_parameter::u_resolution(self.surface.as_ref(), r3d);
+        let rv = occt_geom::approx_same_parameter::v_resolution(self.surface.as_ref(), r3d);
+        self.pcurve.resolution(ru.min(rv))
+    }
     // UNPORTED: `Adaptor3d_CurveOnSurface` presents its linear `EvalKPart` as a
     // real `gp_Lin` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`, `:1701`), so
     // `GeomAdaptor_Curve::GetType` lands on `GeomAbs_Line` for it. Here only
