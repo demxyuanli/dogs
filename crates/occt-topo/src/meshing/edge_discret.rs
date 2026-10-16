@@ -15,7 +15,10 @@ use std::sync::Arc;
 
 use occt_core::elib::{clib, slib};
 use occt_core::gcpnts::{perform_linear, perform_tangential_curve, CurveSecondDeriv};
-use occt_core::gp::{GpAx1, GpAx2, GpCirc, GpDir, GpDir2d, GpLin, GpPnt, GpPnt2d, GpVec};
+use occt_core::gp::{
+    GpAx1, GpAx2, GpCirc, GpDir, GpDir2d, GpElips, GpHypr, GpLin, GpParab, GpPln, GpPnt, GpPnt2d,
+    GpVec,
+};
 use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION};
 use occt_geom::{geom_api, Curve, Surface};
 use occt_geom2d::curve::Curve2d;
@@ -1004,32 +1007,84 @@ fn rotate_iso_v(circ: &mut GpCirc, axis: &occt_core::gp::GpAx3, u: f64) {
     circ.rotate(&axe, u);
 }
 
+/// Kparts of `Adaptor3d_CurveOnSurface` (`cxx:1552-1732`): `myCirc` / `myLin`
+/// are cached by `EvalKPart`, the three conics are the on-demand queries
+/// `Ellipse` / `Hyperbola` / `Parabola` (`cxx:1399-1416`).
+#[derive(Default)]
+struct KPart {
+    circ: Option<GpCirc>,
+    lin: Option<GpLin>,
+    elips: Option<GpElips>,
+    parab: Option<GpParab>,
+    hypr: Option<GpHypr>,
+}
+
+/// `EvalKPart` plane arm (`cxx:1558-1577`): `myType = CTy` (`cxx:1560`), so the
+/// pcurve class alone decides, and each elementary class answers its 3D query
+/// through `to3d(mySurface->Plane(), myCurve->...)` (`cxx:1381-1416`).
+///
+/// `GeomAbs_OffsetCurve` / `GeomAbs_BezierCurve` / `GeomAbs_BSplineCurve` /
+/// `GeomAbs_OtherCurve` pcurves leave every field empty, which is the cxx
+/// behaviour for the first and last (`Offset()` is not overridden on this
+/// adaptor, `Bezier()`/`BSpline()` are the UNPORTED pole-based plane queries
+/// recorded on `eval_k_part`).
+fn plane_k_part(pc: &dyn Curve2d, surf: &dyn Surface, pl: &GpPln) -> KPart {
+    let mut k = KPart::default();
+    if let Some(c2) = pc.gp_circ2d() {
+        k.circ = circ2d_to3d_on_plane(pl, &c2);
+    } else if pc.is_line() {
+        let (uv, duv) = pc.d1(0.0);
+        let (p, d1u, d1v) = surf.d1(uv.x(), uv.y());
+        let v = d1u
+            .multiplied_scalar(duv.x())
+            .added(&d1v.multiplied_scalar(duv.y()));
+        if let Ok(dir) = GpDir::from_vec(&v) {
+            k.lin = Some(GpLin::from_pnt_dir(p, dir));
+        }
+    } else if let Some(e2) = pc.gp_elips2d() {
+        // `Ellipse()` (`cxx:1399-1403`).
+        k.elips = clib::to_3d_elips(&pl.pos.ax2(), &e2).ok();
+    } else if let Some(p2) = pc.gp_parab2d() {
+        // `Parabola()` (`cxx:1413-1416`).
+        k.parab = clib::to_3d_parab(&pl.pos.ax2(), &p2).ok();
+    } else if let Some(h2) = pc.gp_hypr2d() {
+        // `Hyperbola()` (`cxx:1406-1410`).
+        k.hypr = clib::to_3d_hypr(&pl.pos.ax2(), &h2).ok();
+    }
+    k
+}
+
 /// `Adaptor3d_CurveOnSurface::EvalKPart` (`cxx:1552-1732`).
+///
+/// UNPORTED: the pole-based plane classes. `Bezier()` (`cxx:1458-1485`) and
+/// `BSpline()` (`cxx:1489-1521`) build a 3D `Geom_BezierCurve` /
+/// `Geom_BSplineCurve` out of the pcurve poles for a plane surface, so `myType`
+/// can also be `GeomAbs_BezierCurve` / `GeomAbs_BSplineCurve` there (and
+/// `GeomAbs_OffsetCurve`, whose `Offset()` this adaptor does not override).
+/// This port keeps `Curve::bezier_poles` / `bspline_poles` / `bspline_knots` /
+/// `bspline_weights` / `nurbs_degree` at their `None` defaults for a
+/// `CurveOnSurface`, so such a cos classifies as `GeomAbs_OtherCurve`
+/// (`extrema_pc/curve_tool.rs:36-56`) instead of `GeomAbs_BSplineCurve`, which
+/// is its own `Extrema_GGExtPC` case (`Extrema_GGExtPC.hxx:190-243`).
+/// `GeomAbs_OffsetCurve` is the `default:` arm in all three consumers
+/// (`Extrema_GGExtPC.hxx:390-502`, `Extrema_GFuncExtPC.hxx:115-128`,
+/// `Extrema_GLocateExtPC.hxx:110-140`), so dropping that one is unobservable.
+/// Exposing the poles would flip every `nurbs_degree` / `bspline_poles` /
+/// `bezier_poles` class test in the port for such a cos and needs its own audit.
+///
 /// `GeomAdaptor_Surface` of a rectangular trim reports the basis GetType.
-fn eval_k_part(pc: &dyn Curve2d, surf: &dyn Surface) -> (Option<GpCirc>, Option<GpLin>) {
+fn eval_k_part(pc: &dyn Curve2d, surf: &dyn Surface) -> KPart {
     if let Some(basis) = surf.rectangular_trimmed_basis() {
         return eval_k_part(pc, basis.as_ref());
     }
-    let mut circ = None;
-    let mut lin = None;
     if let Some(pl) = surf.gp_pln() {
-        if let Some(c2) = pc.gp_circ2d() {
-            circ = circ2d_to3d_on_plane(&pl, &c2);
-        } else if pc.is_line() {
-            let (uv, duv) = pc.d1(0.0);
-            let (p, d1u, d1v) = surf.d1(uv.x(), uv.y());
-            let v = d1u
-                .multiplied_scalar(duv.x())
-                .added(&d1v.multiplied_scalar(duv.y()));
-            if let Ok(dir) = GpDir::from_vec(&v) {
-                lin = Some(GpLin::from_pnt_dir(p, dir));
-            }
-        }
-        return (circ, lin);
+        return plane_k_part(pc, surf, &pl);
     }
     let Some(l2) = pc.gp_lin2d() else {
-        return (None, None);
+        return KPart::default();
     };
+    let mut circ = None;
+    let mut lin = None;
     let d = *l2.direction();
     let loc = l2.location();
     const DX2D: GpDir2d = GpDir2d { x: 1.0, y: 0.0 };
@@ -1121,7 +1176,11 @@ fn eval_k_part(pc: &dyn Curve2d, surf: &dyn Surface) -> (Option<GpCirc>, Option<
             circ = Some(c);
         }
     }
-    (circ, lin)
+    KPart {
+        circ,
+        lin,
+        ..KPart::default()
+    }
 }
 
 /// `Adaptor3d_CurveOnSurface` used by `BRepAdaptor_Curve(edge, face)`.
@@ -1130,8 +1189,16 @@ pub struct CurveOnSurface {
     surface: Arc<dyn Surface>,
     first: f64,
     last: f64,
+    /// `myCirc` (`cxx:1575-1578`, `cxx:1580-1732`).
     kpart_circ: Option<GpCirc>,
+    /// `myLin` (`cxx:1565-1574`).
     kpart_lin: Option<GpLin>,
+    /// `Ellipse()` (`cxx:1396-1401`), reachable only on a plane surface.
+    kpart_elips: Option<GpElips>,
+    /// `Parabola()` (`cxx:1410-1414`), reachable only on a plane surface.
+    kpart_parab: Option<GpParab>,
+    /// `Hyperbola()` (`cxx:1403-1408`), reachable only on a plane surface.
+    kpart_hypr: Option<GpHypr>,
     /// `myFirstSurf` from `EvalFirstLastSurf` (`cxx:1778-1783`).
     first_surf: Option<Arc<dyn Surface>>,
     /// `myLastSurf` from `EvalFirstLastSurf` (`cxx:1822-1827`).
@@ -1156,7 +1223,7 @@ impl CurveOnSurface {
         first: f64,
         last: f64,
     ) -> Self {
-        let (kpart_circ, kpart_lin) = eval_k_part(pcurve.as_ref(), surface.as_ref());
+        let kpart = eval_k_part(pcurve.as_ref(), surface.as_ref());
         let (first_surf, last_surf) =
             super::cos_locate::eval_first_last_surf(pcurve.as_ref(), &surface, first, last);
         Self {
@@ -1164,8 +1231,11 @@ impl CurveOnSurface {
             surface,
             first,
             last,
-            kpart_circ,
-            kpart_lin,
+            kpart_circ: kpart.circ,
+            kpart_lin: kpart.lin,
+            kpart_elips: kpart.elips,
+            kpart_parab: kpart.parab,
+            kpart_hypr: kpart.hypr,
             first_surf,
             last_surf,
             // `cxx:1136`: seed outside the true range so the first Evaluate re-trims.
@@ -1283,6 +1353,25 @@ impl Curve for CurveOnSurface {
     fn gp_circ(&self) -> Option<GpCirc> {
         self.kpart_circ.clone()
     }
+    /// `Adaptor3d_CurveOnSurface::Line` (`cxx:1381-1386`): `myLin` as a real
+    /// `gp_Lin`, so `EvalKPart`'s `GeomAbs_Line` cos keeps that type in
+    /// `GeomAdaptor_Curve::GetType` (`extrema_pc/curve_tool.rs:36-56`).
+    fn gp_line(&self) -> Option<GpLin> {
+        self.kpart_lin
+    }
+    /// `Adaptor3d_CurveOnSurface::Ellipse` (`cxx:1396-1401`):
+    /// `to3d(mySurface->Plane(), myCurve->Ellipse())`.
+    fn gp_ellipse(&self) -> Option<GpElips> {
+        self.kpart_elips.clone()
+    }
+    /// `Adaptor3d_CurveOnSurface::Parabola` (`cxx:1410-1414`).
+    fn gp_parabola(&self) -> Option<GpParab> {
+        self.kpart_parab.clone()
+    }
+    /// `Adaptor3d_CurveOnSurface::Hyperbola` (`cxx:1403-1408`).
+    fn gp_hyperbola(&self) -> Option<GpHypr> {
+        self.kpart_hypr.clone()
+    }
     fn is_line(&self) -> bool {
         self.kpart_lin.is_some()
     }
@@ -1296,14 +1385,6 @@ impl Curve for CurveOnSurface {
         let rv = occt_geom::approx_same_parameter::v_resolution(self.surface.as_ref(), r3d);
         self.pcurve.resolution(ru.min(rv))
     }
-    // UNPORTED: `Adaptor3d_CurveOnSurface` presents its linear `EvalKPart` as a
-    // real `gp_Lin` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`, `:1701`), so
-    // `GeomAdaptor_Curve::GetType` lands on `GeomAbs_Line` for it. Here only
-    // `is_line` is exposed, and `Curve::gp_line` (`occt-geom/src/curve.rs:43`)
-    // defaults to `None`, so such a cos classifies as `GeomAbs_OtherCurve`
-    // (`extrema_pc/curve_tool.rs:36-56`). Both land in the same
-    // `Extrema_GLocateExtPC` free-form arm, so there is no observable
-    // difference today; the type split itself is still not the cxx one.
     fn continuity(&self) -> u8 {
         self.pcurve.continuity().min(self.surface.continuity())
     }
@@ -1374,6 +1455,9 @@ impl Curve for CurveOnSurface {
             last: self.last,
             kpart_circ: self.kpart_circ.clone(),
             kpart_lin: self.kpart_lin,
+            kpart_elips: self.kpart_elips.clone(),
+            kpart_parab: self.kpart_parab.clone(),
+            kpart_hypr: self.kpart_hypr.clone(),
             first_surf: self.first_surf.clone(),
             last_surf: self.last_surf.clone(),
             trim_cache: std::sync::Mutex::new(None),
