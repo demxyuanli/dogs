@@ -1,4 +1,7 @@
 use super::prelude::*;
+use super::IntAnaIntConicQuad;
+
+use occt_math::{Gauss, MathMatrix, MathVector};
 
 
 // ---------------------------------------------------------------------------
@@ -47,79 +50,118 @@ pub(super) fn ax2_from_dirs(origin: GpPnt, z: GpDir, x: GpDir) -> GpAx2 {
 // IntAna_Int3Pln
 // ---------------------------------------------------------------------------
 
-/// Result of intersecting three planes.
+/// Result of intersecting three planes. `IntAna_Int3Pln` answers a single
+/// point or nothing at all (`IntAna_Int3Pln.hxx:29-70`): `NoResult` is
+/// `IsEmpty()`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Intersect3Pln {
     /// The three planes meet at a single point.
     Point(GpPnt),
-    /// Two independent planes coincide and the third cuts them: common line.
-    Line(GpLin),
-    /// No common point/line (parallel or coincident degeneracy).
+    /// `empt = true` (`IntAna_Int3Pln.cxx:53-56`): parallel/coincident planes.
     NoResult,
 }
 
-pub(super) fn solve3(m: [[f64; 3]; 3], rhs: [f64; 3]) -> Option<[f64; 3]> {
-    let mut a = m;
-    let mut b = rhs;
-    for col in 0..3 {
-        let mut piv = col;
-        for r in (col + 1)..3 {
-            if a[r][col].abs() > a[piv][col].abs() {
-                piv = r;
-            }
-        }
-        if a[piv][col].abs() < 1e-14 {
-            return None;
-        }
-        a.swap(piv, col);
-        b.swap(piv, col);
-        let d = a[col][col];
-        for r in (col + 1)..3 {
-            let f = a[r][col] / d;
-            for c in col..3 {
-                a[r][c] -= f * a[col][c];
-            }
-            b[r] -= f * b[col];
+/// `IntAna_Int3Pln::Perform(P1, P2, P3)` (`IntAna_Int3Pln.cxx:40-64`).
+///
+/// `m` is `M(1..3, 1..3)` built from `P.Coefficients` and `d` is `V(1..3)`,
+/// the `D` part of the same call (`cxx:44-46`). The system is solved by
+/// `math_Gauss Resol(M, gp::Resolution())` (`cxx:51`): `IsDone()` false means
+/// `empt = true`, which is the `None` returned here. Otherwise `V = -V` and
+/// `Resol.Solve(V)` give the coordinates (`cxx:58-61`).
+pub(super) fn solve3(m: [[f64; 3]; 3], d: [f64; 3]) -> Option<[f64; 3]> {
+    let mut matrix = MathMatrix::new(1, 3, 1, 3);
+    for r in 0..3 {
+        for c in 0..3 {
+            matrix.set_value(r + 1, c + 1, m[r][c]);
         }
     }
-    let mut x = [0.0; 3];
-    for i in (0..3).rev() {
-        let mut s = b[i];
-        for j in (i + 1)..3 {
-            s -= a[i][j] * x[j];
-        }
-        x[i] = s / a[i][i];
+    let resol = Gauss::new(&matrix, REAL_SMALL);
+    if !resol.is_done() {
+        return None;
     }
-    Some(x)
+    let mut v = MathVector::new(1, 3);
+    for i in 0..3 {
+        v.set_value(i + 1, -d[i]);
+    }
+    let x = resol.solve(&v)?;
+    Some([x.value(1), x.value(2), x.value(3)])
 }
 
-/// The intersection line of two non-parallel planes (port of the
-/// least-norm solution `p = (d1·(n2×v) + d2·(v×n1))/|v|²`, `v = n1×n2`,
-/// for `n·p = d`).
-pub(super) fn plane_plane_line(p1: &GpPln, p2: &GpPln) -> Option<GpLin> {
+/// `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln, TolAng, Tol)`
+/// (`IntAna_QuadQuadGeo.cxx:389-511`), the line arm.
+///
+/// `None` covers `IntAna_Empty` (collinear normals, `cxx:415-418`) and every
+/// early exit that leaves `done = false` (`cxx:463-509`); `Some` is the
+/// `typeres = IntAna_Line` / `nbint = 1` result of `cxx:444-445` (`pt1` the
+/// midpoint of the two normal-projected origins, `dir1 = gp_Dir(vd)`).
+pub(super) fn plane_plane_line(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) -> Option<GpLin> {
     let (a1, b1, c1, d1) = plane_coeffs(p1);
     let (a2, b2, c2, d2) = plane_coeffs(p2);
     let n1 = GpVec::new(a1, b1, c1);
     let n2 = GpVec::new(a2, b2, c2);
-    // Work with the offset form n·p = d.
-    let (d1, d2) = (-d1, -d2);
-    let v = n1.crossed(&n2);
-    let v2 = v.square_magnitude();
-    if v2 < 1e-20 {
+    let vd = n1.crossed(&n2);
+    let loc1 = p1.location();
+    let loc2 = p2.location();
+    let dist1 = a2 * loc1.x() + b2 * loc1.y() + c2 * loc1.z() + d2;
+    let dist2 = a1 * loc2.x() + b1 * loc2.y() + c1 * loc2.z() + d1;
+    let a_mvd = vd.magnitude();
+    if a_mvd <= tol_ang {
+        // `cxx:415-418`: normals are collinear, the planes are same or parallel.
         return None;
     }
-    let p0 = n2
-        .crossed(&v)
-        .multiplied_scalar(d1)
-        .added(&v.crossed(&n1).multiplied_scalar(d2))
-        .divided(v2);
-    let dir = GpDir::from_xyz(&v.xyz()).ok()?;
-    Some(GpLin::from_pnt_dir(GpPnt::from_xyz(&p0.coord), dir))
+    // `cxx:423-431`: the `aEps = 1.e-16` clamp and the two parameters along
+    // the normals.
+    let denom = a1 * a2 + b1 * b2 + c1 * c2;
+    let ddenom = 1.0 - denom * denom;
+    let denom = if ddenom.abs() <= A_EPS { A_EPS } else { ddenom };
+    let par1 = dist1 / denom;
+    let par2 = -dist2 / denom;
+    let inter1 = n1.crossed(&vd);
+    let inter2 = n2.crossed(&vd);
+    let x1 = loc1.x() + par1 * inter1.x();
+    let y1 = loc1.y() + par1 * inter1.y();
+    let z1 = loc1.z() + par1 * inter1.z();
+    let x2 = loc2.x() + par2 * inter2.x();
+    let y2 = loc2.y() + par2 * inter2.y();
+    let z2 = loc2.z() + par2 * inter2.z();
+    let mut pt1 = GpPnt::new((x1 + x2) * 0.5, (y1 + y2) * 0.5, (z1 + z2) * 0.5);
+    let dir1 = GpDir::from_xyz(&vd.xyz()).ok()?;
+    if a_mvd < A_TRESH_ANG {
+        // `cxx:449-508`: with a near-zero angle between the planes the origin
+        // above carries ~1e-4 of error, so OCCT re-derives it from two
+        // line/plane solves (`IntAna_IntConicQuad`).
+        let a_dist1 = a1 * pt1.x() + b1 * pt1.y() + c1 * pt1.z() + d1;
+        let a_dist2 = a2 * pt1.x() + b2 * pt1.y() + c2 * pt1.z() + d2;
+        if a_dist1.abs() > A_TRESH_DIST || a_dist2.abs() > A_TRESH_DIST {
+            let a_dn1 = GpDir::from_xyz(&n1.xyz()).ok()?;
+            let a_l1 = GpLin::from_pnt_dir(pt1, a_dn1);
+            let icq = IntAnaIntConicQuad::line_plane(&a_l1, p1, tol_ang, tol, 0.0);
+            if !icq.is_done() {
+                return None;
+            }
+            let a_pnt1 = *icq.point(1);
+            let a_dl2 = dir1.crossed(&a_dn1).ok()?;
+            let a_l2 = GpLin::from_pnt_dir(a_pnt1, a_dl2);
+            let icq = IntAnaIntConicQuad::line_plane(&a_l2, p2, tol_ang, tol, 0.0);
+            if !icq.is_done() || icq.is_parallel() {
+                return None;
+            }
+            pt1 = *icq.point(1);
+        }
+    }
+    Some(GpLin::from_pnt_dir(pt1, dir1))
 }
 
-/// Intersection of three planes. Mirrors `IntAna_Int3Pln` (3×3 linear solve;
-/// `NoResult` when the system is singular) and extends it with the common-line
-/// case the OCCT class leaves as empty.
+/// `aEps = 1.e-16` (`IntAna_QuadQuadGeo.cxx:423`).
+const A_EPS: f64 = 1.0e-16;
+/// `aTreshAng = 2.e-6` (1.e-4 deg) (`IntAna_QuadQuadGeo.cxx:460`).
+const A_TRESH_ANG: f64 = 2.0e-6;
+/// `aTreshDist = 1.e-12` (`IntAna_QuadQuadGeo.cxx:461`).
+const A_TRESH_DIST: f64 = 1.0e-12;
+
+/// Intersection of three planes. Port of `IntAna_Int3Pln::Perform`
+/// (`IntAna_Int3Pln.cxx:40-64`): a single point, or `NoResult` when the
+/// `math_Gauss` decomposition is singular (`empt = true`).
 pub fn three_planes_intersect(p1: &GpPln, p2: &GpPln, p3: &GpPln) -> Result<Intersect3Pln, String> {
     let (a1, b1, c1, d1) = plane_coeffs(p1);
     let (a2, b2, c2, d2) = plane_coeffs(p2);
@@ -129,24 +171,11 @@ pub fn three_planes_intersect(p1: &GpPln, p2: &GpPln, p3: &GpPln) -> Result<Inte
         [a2, b2, c2],
         [a3, b3, c3],
     ];
-    // n·p + D = 0  ⇒  M·p = -D
-    let rhs = [-d1, -d2, -d3];
-    if let Some(x) = solve3(m, rhs) {
-        return Ok(Intersect3Pln::Point(GpPnt::new(x[0], x[1], x[2])));
+    let d = [d1, d2, d3];
+    match solve3(m, d) {
+        Some(x) => Ok(Intersect3Pln::Point(GpPnt::new(x[0], x[1], x[2]))),
+        None => Ok(Intersect3Pln::NoResult),
     }
-    // Singular: try the pair with two independent normals.
-    let pairs = [(p1, p2, p3), (p1, p3, p2), (p2, p3, p1)];
-    for (pa, pb, pc) in pairs {
-        if let Some(line) = plane_plane_line(pa, pb) {
-            // Third plane must contain a representative point of the line.
-            let q = clib::line_value(&line, 0.0);
-            let (a, b, c, d) = plane_coeffs(pc);
-            if (a * q.x() + b * q.y() + c * q.z() + d).abs() < 1e-9 {
-                return Ok(Intersect3Pln::Line(line));
-            }
-        }
-    }
-    Ok(Intersect3Pln::NoResult)
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +234,10 @@ pub enum Quadric {
     Cone(GpCone),
 }
 
-/// Plane ∩ plane. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln)`.
+/// Plane ∩ plane. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln)`
+/// (`IntAna_QuadQuadGeo.cxx:389-511`): collinear normals give `IntAna_Same`
+/// or `IntAna_Empty` (`cxx:414-418`), otherwise the single `IntAna_Line`
+/// built by [`plane_plane_line`].
 pub fn quadric_quadric_planes(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) -> QuadricIntersection {
     let (a1, b1, c1, d1) = plane_coeffs(p1);
     let (a2, b2, c2, d2) = plane_coeffs(p2);
@@ -225,7 +257,7 @@ pub fn quadric_quadric_planes(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) ->
             QuadricIntersection::None
         }
     } else {
-        match plane_plane_line(p1, p2) {
+        match plane_plane_line(p1, p2, tol_ang, tol) {
             Some(l) => QuadricIntersection::Line(l),
             None => QuadricIntersection::None,
         }

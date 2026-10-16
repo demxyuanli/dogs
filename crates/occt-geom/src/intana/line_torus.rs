@@ -707,7 +707,13 @@ pub(super) fn cone_cone_common_apex(c1: &GpCone, c2: &GpCone, tg1: f64, tg2: f64
     let qa2 = q_apex1.translated_vec(&w2.multiplied_scalar(d2));
     let Some(pln1) = plane_normal_at(qa1, d3_ax1) else { return QuadricIntersection::None };
     let Some(pln2) = plane_normal_at(qa2, d3_ax2) else { return QuadricIntersection::None };
-    let Some(lin) = plane_plane_line(&pln1, &pln2) else { return QuadricIntersection::None };
+    // `IntAna_QuadQuadGeo.cxx:1706-1713`: the nested `IntAna_QuadQuadGeo`
+    // solve of the two planes is constructed with `(Tol, Tol)` (`cxx:1709`) and
+    // a failure (`!IsDone() || 0 == NbSolutions()`, `cxx:1710`) is
+    // `IntAna_NoGeometricSolution` (`cxx:1712`).
+    let Some(lin) = plane_plane_line(&pln1, &pln2, tol, tol) else {
+        return QuadricIntersection::None;
+    };
     let wl = GpVec::from_xyz(lin.direction().xyz());
     let orig = lin.location();
     let vr = GpVec::from_pnts(&qa1, &orig);
