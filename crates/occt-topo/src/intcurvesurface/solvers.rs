@@ -453,9 +453,23 @@ pub(super) fn perform_conic_surf(
                 Ok(t) => t,
                 Err(_) => return Some(empty),
             };
-            let pts = line_torus_intersect(&lin, &torus);
+            let inter = line_torus_intersect(&lin, &torus);
+            if !inter.is_done() {
+                // `IntCurveSurface_InterUtils.pxx:1290-1294`: `ProcessLinTorus`
+                // returns `false` when `IntAna_IntLinTorus` is not done, and
+                // `IntCurveSurface_Inter.pxx:578-581` then clears
+                // `isAnaProcessed`, sending the pair to the polygon/polyhedron
+                // interference instead of the analytic arm.
+                return None;
+            }
             let v2 = v.square_magnitude();
-            SolveResult::Roots(pts.into_iter().map(|p| GpVec::from_pnts(&loc, &p).dot(&v) / v2).collect())
+            SolveResult::Roots(
+                inter
+                    .points()
+                    .iter()
+                    .map(|p| GpVec::from_pnts(&loc, p).dot(&v) / v2)
+                    .collect(),
+            )
         }
         (CurveKind::Circle, SurfaceGeom::Plane { o, n, .. }) => {
             let Some(ConicGeom::Circle { o: co, r, x, y }) = conic_geometry(curve, kind) else {

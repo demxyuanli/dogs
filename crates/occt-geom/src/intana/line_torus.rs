@@ -1,6 +1,7 @@
 use super::prelude::*;
 use super::*;
 
+use occt_core::math_direct_poly_roots::DirectPolynomialRoots;
 
 /// Relation between two axes — port of `AxeOperator`
 /// (IntAna_QuadQuadGeo.cxx). Returns `(parallel, distance, coplanar,
@@ -817,10 +818,37 @@ pub fn quadric_quadric(q1: &Quadric, q2: &Quadric, tol_ang: f64, tol: f64) -> Qu
 // IntAna_IntLinTorus
 // ---------------------------------------------------------------------------
 
-/// Intersection of a line with a torus. Port of `IntAna_IntLinTorus::Perform`:
-/// a quartic in the line parameter in the torus reference frame, with each
-/// root verified by re-evaluation on the torus.
-pub fn line_torus_intersect(l: &GpLin, t: &GpTorus) -> Vec<GpPnt> {
+/// Result of [`line_torus_intersect`] — port of `IntAna_IntLinTorus`
+/// (`IntAna_IntLinTorus.hxx:29-66`), which carries a `done` flag beside the
+/// points and throws `StdFail_NotDone` from every accessor when it is false
+/// (`IntAna_IntLinTorus.lxx:23-44`).
+#[derive(Debug, Clone)]
+pub struct LineTorusIntersection {
+    done: bool,
+    points: Vec<GpPnt>,
+}
+
+impl LineTorusIntersection {
+    /// `IsDone` (`IntAna_IntLinTorus.lxx:18-21`).
+    pub fn is_done(&self) -> bool {
+        self.done
+    }
+
+    /// The `NbPoints` / `Value(i)` payload (`IntAna_IntLinTorus.lxx:23-44`),
+    /// in the order the quartic roots were accepted (`cxx:109-115`); empty when
+    /// `!is_done()`.
+    pub fn points(&self) -> &[GpPnt] {
+        &self.points
+    }
+}
+
+/// Intersection of a line with a torus. Port of `IntAna_IntLinTorus::Perform`
+/// (`IntAna_IntLinTorus.cxx:43-133`): a quartic in the line parameter in the
+/// torus reference frame, with each root verified by re-evaluation on the
+/// torus. `done` is the OCCT flag: `false` when the quartic solver declined
+/// (`cxx:126-131`) or when it returned roots that were all rejected on
+/// back-substitution (`cxx:116-120`).
+pub fn line_torus_intersect(l: &GpLin, t: &GpTorus) -> LineTorusIntersection {
     let pl = l.location();
     let dl = l.direction();
     let tor_loc = t.location();
@@ -856,8 +884,20 @@ pub fn line_torus_intersect(l: &GpLin, t: &GpTorus) -> Vec<GpPnt> {
     let a0 = c * c + 4.0 * r2 * (z0 * z0 - rr2);
 
     let mut out = Vec::new();
-    for mut tt in quartic_roots(a4, a3, a2, a1, a0) {
-        tt += param_of_new_pl;
+    // `IntAna_IntLinTorus.cxx:88-133`. The `Value(1 .. NbSolutions)` list is
+    // walked through the ported solver itself, not through the
+    // `quartic_roots` adapter, because that adapter folds `!IsDone()` into an
+    // empty root list while OCCT distinguishes the two: a declined solver
+    // (`cxx:126-131`) still sets `done = false` where a completed solver with
+    // zero roots (`cxx:121-125`) sets `done = true`.
+    let mdpr = DirectPolynomialRoots::new5(a4, a3, a2, a1, a0);
+    if !mdpr.is_done() {
+        return LineTorusIntersection { done: false, points: Vec::new() };
+    }
+    let n = mdpr.nb_solutions();
+    let mut nb_bad_sol = 0;
+    for i in 1..=n {
+        let tt = mdpr.value(i) + param_of_new_pl;
         let p = clib::line_value(l, tt);
         // `IntAna_IntLinTorus.cxx:98-106`: re-parameterise the candidate on the
         // torus (`ElSLib::Parameters`) and re-evaluate it (`ElSLib::Value`); a
@@ -869,10 +909,16 @@ pub fn line_torus_intersect(l: &GpLin, t: &GpTorus) -> Vec<GpPnt> {
         let (u, v) = slib::torus_parameters(&t.position(), r, rr, &p);
         let p_sol_t = slib::torus_value(t, u, v);
         if p_sol_t.square_distance(&p) > 1.0e-10 {
+            nb_bad_sol += 1;
             continue;
         }
         out.push(p);
     }
+    if n > 0 && out.is_empty() && nb_bad_sol == n {
+        // `cxx:116-120`: every root failed the back-substitution check, so the
+        // intersection is reported as not done rather than as an empty set.
+        return LineTorusIntersection { done: false, points: Vec::new() };
+    }
     out.sort_by(|a, b| a.x().partial_cmp(&b.x()).unwrap_or(Ordering::Equal));
-    out
+    LineTorusIntersection { done: true, points: out }
 }

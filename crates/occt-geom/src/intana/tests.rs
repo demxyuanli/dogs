@@ -224,7 +224,9 @@ use super::*;
         // Torus at origin R=3 r=1; line along X through origin cuts at x=±2, ±4.
         let torus = GpTorus::new(GpAx3::standard(), 3.0, 1.0).unwrap();
         let line = GpLin::from_pnt_dir(GpPnt::new(0., 0., 0.), GpDir::from_axis(DirAxis::X));
-        let pts = line_torus_intersect(&line, &torus);
+        let inter = line_torus_intersect(&line, &torus);
+        assert!(inter.is_done(), "IntAna_IntLinTorus::IsDone");
+        let pts = inter.points();
         assert_eq!(pts.len(), 4, "got {pts:?}");
         let expected = [-4.0, -2.0, 2.0, 4.0];
         let mut got: Vec<f64> = pts.iter().map(|p| p.x()).collect();
@@ -239,7 +241,9 @@ use super::*;
         // Line along Z through the center misses (the minor circle is off-axis).
         let torus = GpTorus::new(GpAx3::standard(), 3.0, 1.0).unwrap();
         let line = GpLin::from_pnt_dir(GpPnt::new(0., 0., 0.), GpDir::from_axis(DirAxis::Z));
-        assert!(line_torus_intersect(&line, &torus).is_empty());
+        let inter = line_torus_intersect(&line, &torus);
+        assert!(inter.is_done());
+        assert!(inter.points().is_empty());
     }
 
     #[test]
