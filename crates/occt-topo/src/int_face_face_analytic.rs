@@ -206,7 +206,9 @@ impl FaceFace {
         // T-28 step 4: `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder)`; the
         // angular/linear tolerances follow the migrated `plane_cone` arm below.
         out.extend(self.conics_to_curves(
-            occt_geom::intana::quadric_quadric_plane_cylinder(&pln, &cylinder, 1e-12, 1e-7),
+            // `H` is the cxx default 0 here (`IntAna_QuadQuadGeo.hxx:94`): this
+            // fast path has no `IntPCy` caller holding the face height.
+            occt_geom::intana::quadric_quadric_plane_cylinder(&pln, &cylinder, 1e-12, 1e-7, 0.0),
             fa,
             fb,
         ));

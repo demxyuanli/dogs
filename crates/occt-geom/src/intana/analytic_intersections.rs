@@ -361,13 +361,22 @@ pub(super) fn line_plane(l: &GpLin, p: &GpPln, tol_ang: f64) -> LinePlaneHit {
     }
 }
 
-/// Plane ∩ cylinder. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder)`
-/// (H = 0, so the near-parallel direction-refinement branch is skipped).
+/// Plane ∩ cylinder. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder,
+/// Tolang, Tol, H)` (`IntAna_QuadQuadGeo.cxx:543-723`).
+///
+/// `h` is the `H` argument (`cxx:546`, default `0` in `hxx:94`): the height of
+/// the cylinder face along its axis. `IntPCy`
+/// (`IntPatch_ImpImpIntersection.cxx:2579-2588`) passes `VMax - VMin`, and `0`
+/// when either V bound is infinite. It feeds only the near-parallel
+/// refinement (`cxx:568-598`), which is what turns a strongly eccentric
+/// ellipse into a line pair when the axis deviates from the plane by less than
+/// `2*Tol` over the whole face height.
 pub fn quadric_quadric_plane_cylinder(
     p: &GpPln,
     cyl: &GpCylinder,
     tol_ang: f64,
     tol: f64,
+    h: f64,
 ) -> QuadricIntersection {
     let (a, b, c, d) = plane_coeffs(p);
     let radius = cyl.radius();
@@ -375,40 +384,119 @@ pub fn quadric_quadric_plane_cylinder(
     let axis_origin = *axec.location();
     let axis_dir = *axec.direction();
     let (x, y, z) = (axis_origin.x(), axis_origin.y(), axis_origin.z());
-    // Signed distance from the axis origin to the plane.
+    // Signed distance from the axis origin to the plane (`cxx:567`).
     let dist = a * x + b * y + c * z + d;
     let normp = p.pos.direction();
 
-    // Parallel detection: |axis · plane normal| below the angular tolerance.
-    let direc = (a * axis_dir.x() + b * axis_dir.y() + c * axis_dir.z()).abs();
-    if direc < tol_ang {
-        // Axis parallel to the plane → the section is one or two lines.
+    // `cxx:568-598`: with the axis nearly perpendicular to the plane normal,
+    // decide from the deviation over the face height whether the section has
+    // to be reported as lines; `tolang`/`toltang` are relaxed when it is.
+    let mut tolang = tol_ang;
+    let mut toltang = tol;
+    let mut newparams = false;
+    let ldv = GpVec::from_xyz(axis_dir.xyz());
+    let npv = GpVec::from_xyz(normp.xyz());
+    let d_a = ldv.angle(&npv).abs();
+    if d_a > PI / 4.0 {
+        let dangle = (d_a - PI / 2.0).abs();
+        if dangle > tol_ang {
+            let sinda = dangle.sin().abs();
+            let dif = (sinda - tol).abs();
+            if dif < tol || (h > 0.0 && sinda * h < 2.0 * tol) {
+                tolang = sinda * 2.0;
+                // Keep the endpoint-distance check of IntAna_IntConicQuad from
+                // rejecting the parallel status for a small deviation over H.
+                toltang = tol.max(sinda * h * 1.01);
+                newparams = true;
+            }
+        }
+    }
+
+    // `cxx:559` `gp_Lin axec(Cl.Axis())`. `cxx:601`: the parallel test is
+    // `IntAna_IntConicQuad::IsParallel()` with those tolerances and the face
+    // height as the bounding length.
+    let axec_lin = GpLin::from_pnt_dir(axis_origin, axis_dir);
+    let inter = IntAnaIntConicQuad::line_plane(&axec_lin, p, tolang, toltang, h);
+
+    if inter.is_parallel() {
+        // `cxx:604-684`: line type, one or two generatrices.
         let omega = GpPnt::new(x - dist * a, y - dist * b, z - dist * c);
         if (dist.abs() - radius).abs() < tol {
-            // Tangent: a single line.
-            QuadricIntersection::Line(GpLin::from_pnt_dir(omega, axis_dir))
+            // `cxx:610-634`: tangent plane → a single line.
+            let dir1 = if newparams {
+                // `cxx:617-631`: rebuild the direction from the point 100 units
+                // along the axis, re-projected onto the plane.
+                let t = GpPnt::new(
+                    x + 100.0 * axis_dir.x(),
+                    y + 100.0 * axis_dir.y(),
+                    z + 100.0 * axis_dir.z(),
+                );
+                let distt = a * t.x() + b * t.y() + c * t.z() + d;
+                let p1 = GpPnt::new(
+                    t.x() - distt * a,
+                    t.y() - distt * b,
+                    t.z() - distt * c,
+                );
+                // `gp_Dir dd1(vv1)` (`cxx:629`) raises on a null vector.
+                let Ok(dd1) = GpDir::from_vec(&GpVec::from_pnts(&omega, &p1)) else {
+                    return QuadricIntersection::None;
+                };
+                dd1
+            } else {
+                axis_dir
+            };
+            QuadricIntersection::Line(GpLin::from_pnt_dir(omega, dir1))
         } else if dist.abs() < radius {
-            let h = (radius * radius - dist * dist).sqrt();
+            // `cxx:636-675`: two lines.
+            let hh = (radius * radius - dist * dist).sqrt();
             let axey = axis_dir.xyz().crossed(&normp.xyz());
-            let p1 = omega.translated_vec(&GpVec::from_xyz(&axey.multiplied(-h)));
-            let p2 = omega.translated_vec(&GpVec::from_xyz(&axey.multiplied(h)));
-            QuadricIntersection::TwoLines(
-                GpLin::from_pnt_dir(p1, axis_dir),
-                GpLin::from_pnt_dir(p2, axis_dir),
-            )
+            let p1 = omega.translated_vec(&GpVec::from_xyz(&axey.multiplied(-hh)));
+            let p2 = omega.translated_vec(&GpVec::from_xyz(&axey.multiplied(hh)));
+            if newparams {
+                // `cxx:647-668`: same re-projection, with the offset recomputed
+                // at the far point (`ht`, clamped to 0 when the argument is
+                // negative — `cxx:654-655`).
+                let t = GpPnt::new(
+                    x + 100.0 * axis_dir.x(),
+                    y + 100.0 * axis_dir.y(),
+                    z + 100.0 * axis_dir.z(),
+                );
+                let distt = a * t.x() + b * t.y() + c * t.z() + d;
+                let arg = radius * radius - distt * distt;
+                let ht = if arg > 0.0 { arg.sqrt() } else { 0.0 };
+                let omega1 = GpPnt::new(
+                    t.x() - distt * a,
+                    t.y() - distt * b,
+                    t.z() - distt * c,
+                );
+                let ppt1 = omega1.translated_vec(&GpVec::from_xyz(&axey.multiplied(-ht)));
+                let ppt2 = omega1.translated_vec(&GpVec::from_xyz(&axey.multiplied(ht)));
+                let Ok(dd1) = GpDir::from_vec(&GpVec::from_pnts(&p1, &ppt1)) else {
+                    return QuadricIntersection::None;
+                };
+                let Ok(dd2) = GpDir::from_vec(&GpVec::from_pnts(&p2, &ppt2)) else {
+                    return QuadricIntersection::None;
+                };
+                QuadricIntersection::TwoLines(
+                    GpLin::from_pnt_dir(p1, dd1),
+                    GpLin::from_pnt_dir(p2, dd2),
+                )
+            } else {
+                QuadricIntersection::TwoLines(
+                    GpLin::from_pnt_dir(p1, axis_dir),
+                    GpLin::from_pnt_dir(p2, axis_dir),
+                )
+            }
         } else {
+            // `cxx:680-683`: IntAna_Empty.
             QuadricIntersection::None
         }
     } else {
-        // The axis crosses the plane; the section is a circle (axis ⊥ plane)
-        // or an ellipse.
-        let lin = GpLin::from_pnt_dir(axis_origin, axis_dir);
-        let center = match line_plane(&lin, p, tol_ang) {
-            LinePlaneHit::Cross { point, .. } => point,
-            LinePlaneHit::Parallel => return QuadricIntersection::None,
-        };
+        // `cxx:685-718`: the axis crosses the plane in one point; the section
+        // is a circle (axis ⊥ plane) or an ellipse.
         let axey = normp.xyz().crossed(&axis_dir.xyz());
         let sint = axey.modulus();
+        let center = *inter.point(1);
         if sint < tol / radius {
             // Perpendicular axis → circle (axes of the cylinder).
             let cdir = cyl.position().direction();
@@ -425,7 +513,23 @@ pub fn quadric_quadric_plane_cylinder(
     }
 }
 
-/// Plane ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cone)`.
+/// Plane ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cone,
+/// Tolang, Tol)` (`IntAna_QuadQuadGeo.cxx:752-972`).
+///
+/// UNPORTED `cxx:922-951` (the tail of that overload): after the four conic
+/// cases the cxx rejects results it calls "too extreme" — `IntAna_Ellipse`
+/// with `|param1|` or `|param1bis|` above `EllipseLimit = 1.0E+9`
+/// (`cxx:926-934`, any `nbint`) and `IntAna_Hyperbola` with either parameter
+/// above `HyperbolaLimit = 2.0E+6` (`cxx:935-950`, `nbint >= 1` and
+/// `nbint >= 2`) — by setting `done = false` and returning, so the caller
+/// treats that pair with the bi-parametric method instead. Every consumer maps
+/// it to `return false` (`IntPatch_ImpImpIntersection.cxx:3480-3483` for
+/// `Pln`/`Cone`), leaving the whole `Perform` not done — this port's
+/// `PairOutcome::Fail`; `cone_cone_analytic` branch 2 tests the nested call
+/// with `INTER_QUAD_PLN.IsDone()` (`cxx:1556`). The `QuadricIntersection` enum
+/// has no "not done" state, so the block is left untranslated rather than
+/// mapped onto `None`, which is `IntAna_Empty` and means the opposite (no
+/// intersection at all).
 pub fn quadric_quadric_plane_cone(
     p: &GpPln,
     cone: &GpCone,

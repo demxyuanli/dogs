@@ -791,7 +791,10 @@ pub fn quadric_quadric(q1: &Quadric, q2: &Quadric, tol_ang: f64, tol: f64) -> Qu
         (Plane(p), Sphere(s)) | (Sphere(s), Plane(p)) => quadric_quadric_plane_sphere(p, s),
         (Sphere(a), Sphere(b)) => quadric_quadric_sphere_sphere(a, b, tol),
         (Plane(p), Cylinder(c)) | (Cylinder(c), Plane(p)) => {
-            quadric_quadric_plane_cylinder(p, c, tol_ang, tol)
+            // `H` defaults to 0 (`IntAna_QuadQuadGeo.hxx:94`): only `IntPCy`
+            // knows the face height (`IntPatch_ImpImpIntersection.cxx:2584-2588`),
+            // and it calls the arm directly.
+            quadric_quadric_plane_cylinder(p, c, tol_ang, tol, 0.0)
         }
         (Plane(p), Cone(c)) | (Cone(c), Plane(p)) => quadric_quadric_plane_cone(p, c, tol_ang, tol),
         (Cylinder(a), Cylinder(b)) => quadric_quadric_cylinder_cylinder(a, b, tol),

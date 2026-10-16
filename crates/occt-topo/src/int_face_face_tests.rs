@@ -240,7 +240,8 @@ fn plane_cylinder_parallel_generatrices() {
         1.0,
     )
     .unwrap();
-    let (l1, l2) = match occt_geom::intana::quadric_quadric_plane_cylinder(&pln, &cyl, 1e-12, 1e-7) {
+    let (l1, l2) = match occt_geom::intana::quadric_quadric_plane_cylinder(&pln, &cyl, 1e-12, 1e-7, 0.0)
+    {
         occt_geom::intana::QuadricIntersection::TwoLines(a, b) => (a, b),
         other => panic!("IntAna(gp_Pln, gp_Cylinder) should give TwoLines, got {other:?}"),
     };

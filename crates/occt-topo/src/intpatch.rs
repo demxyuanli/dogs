@@ -278,7 +278,7 @@ mod tests {
         b: &dyn Surface,
     ) -> Vec<IntersectionCurve> {
         analytic::ic_list_from_quadric(
-            occt_geom::intana::quadric_quadric_plane_cylinder(pln, cyl, 1e-12, 1e-7),
+            occt_geom::intana::quadric_quadric_plane_cylinder(pln, cyl, 1e-12, 1e-7, 0.0),
             a,
             b,
         )

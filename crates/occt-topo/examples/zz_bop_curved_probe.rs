@@ -540,7 +540,7 @@ fn main() {
                 cp.x_direction().x(), cp.x_direction().y(), cp.x_direction().z(),
                 cp.y_direction().x(), cp.y_direction().y(), cp.y_direction().z()
             );
-            let qi = occt_geom::intana::quadric_quadric_plane_cylinder(&pl, &cy, 1e-12, 1e-7);
+            let qi = occt_geom::intana::quadric_quadric_plane_cylinder(&pl, &cy, 1e-12, 1e-7, 0.0);
             match qi {
                 occt_geom::intana::QuadricIntersection::Circle(c) => {
                     let p = c.position();

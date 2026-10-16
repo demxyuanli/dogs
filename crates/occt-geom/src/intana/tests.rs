@@ -138,7 +138,7 @@ use super::*;
         // Cylinder along Z at origin r=1, plane z=0 → circle radius 1 at origin.
         let pl = plane(GpPnt::new(0.0, 0.0, 0.0), GpDir::from_axis(DirAxis::Z));
         let cyl = GpCylinder::new(GpAx3::standard(), 1.0).unwrap();
-        match quadric_quadric_plane_cylinder(&pl, &cyl, ANGULAR, CONFUSION) {
+        match quadric_quadric_plane_cylinder(&pl, &cyl, ANGULAR, CONFUSION, 0.0) {
             QuadricIntersection::Circle(c) => {
                 assert!(c.location().distance(&GpPnt::new(0., 0., 0.)) < 1e-9);
                 assert!((c.radius() - 1.0).abs() < 1e-9);
@@ -160,7 +160,7 @@ use super::*;
         let ax3 = GpAx3::new(GpPnt::new(0.0, 1.0, 0.5), xdir, &zdir).unwrap();
         let cyl = GpCylinder::new(ax3, 1.0).unwrap();
         let pl = plane(GpPnt::new(0.0, 0.0, 0.0), zdir);
-        match quadric_quadric_plane_cylinder(&pl, &cyl, ANGULAR, CONFUSION) {
+        match quadric_quadric_plane_cylinder(&pl, &cyl, ANGULAR, CONFUSION, 0.0) {
             QuadricIntersection::TwoLines(l1, l2) => {
                 let h = (0.75f64).sqrt();
                 let p1 = clib::line_value(&l1, 0.0);

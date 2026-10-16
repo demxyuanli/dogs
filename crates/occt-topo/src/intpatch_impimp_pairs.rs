@@ -2,6 +2,7 @@
 //! Source: `IntPatch_ImpImpIntersection::Perform` switch and IntPP..IntSpSp.
 
 use occt_core::gp::{GpAx1, GpPln};
+use occt_core::precision::Precision;
 use occt_core::precision::ANGULAR as PREC_ANG;
 use occt_geom::intana::{
     axes_meet_at_point, cone_cone_analytic, quadric_quadric_cone_cone, quadric_quadric_cone_torus,
@@ -30,7 +31,7 @@ pub(crate) fn intersect_pair(
     let reversed = q1.code() > q2.code();
     match i_tt {
         11 => int_pp(q1, q2, tol_tang),
-        12 | 21 => int_p_cy(q1, q2, reversed, tol_tang),
+        12 | 21 => int_p_cy(q1, q2, reversed, tol_tang, uv1, uv2),
         13 | 31 => int_p_co(q1, q2, reversed, tol_tang),
         14 | 41 => int_p_sp(q1, q2, reversed),
         15 | 51 => int_p_to(q1, q2, reversed, tol_tang),
@@ -83,12 +84,31 @@ fn int_pp(q1: &ImplicitQuad, q2: &ImplicitQuad, tol_tang: f64) -> PairOutcome {
     from_quadric_intersection(quadric_quadric_planes(p1, p2, TOL_ANG, tol_tang), None)
 }
 
-fn int_p_cy(q1: &ImplicitQuad, q2: &ImplicitQuad, reversed: bool, tol_tang: f64) -> PairOutcome {
+fn int_p_cy(
+    q1: &ImplicitQuad,
+    q2: &ImplicitQuad,
+    reversed: bool,
+    tol_tang: f64,
+    uv1: CylUv,
+    uv2: CylUv,
+) -> PairOutcome {
     let pl = plane_of(q1, q2, reversed);
     let cy_q = other_of(q1, q2, reversed);
     let cy = cy_q.as_cylinder().expect("cylinder");
+    // `IntPatch_ImpImpIntersection.cxx:2579-2587`: `H` is the height of the
+    // cylinder face along its axis, and 0 when either V bound is infinite.
+    let (v_min, v_max) = if reversed {
+        (uv1.v0, uv1.v1)
+    } else {
+        (uv2.v0, uv2.v1)
+    };
+    let h = if Precision::is_negative_infinite(v_min) || Precision::is_positive_infinite(v_max) {
+        0.0
+    } else {
+        v_max - v_min
+    };
     from_quadric_intersection(
-        quadric_quadric_plane_cylinder(pl, cy, TOL_ANG, tol_tang),
+        quadric_quadric_plane_cylinder(pl, cy, TOL_ANG, tol_tang, h),
         Some(cy_q),
     )
 }
