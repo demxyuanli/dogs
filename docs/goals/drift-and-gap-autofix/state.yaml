@@ -82,6 +82,32 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas `PACKAGES` section -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P037
+    task: T005
+    commit: "fd04dc8b fix(topo): port Adaptor3d_CurveOnSurface::Bezier/BSpline pole classes into CurveOnSurface (Adaptor3d_CurveOnSurface.cxx:1458-1485, 1489-1520; T-167)"
+    title: "`CurveOnSurface` 补齐 `EvalKPart` 平面臂的极点类（P036 登记的唯一剩余项）：`plane_k_part` 追加 `pc.is_bezier2d() || pc.is_bspline2d()` 臂，用既有唯一忠实件 `occt_geom::geom_lib::to_3d`（`GeomLib.cxx:582-632`，即 `Bezier()`/`BSpline()` 两段 body）把 pcurve 极点抬到 3D 并缓存进 `KPart::poles` / `CurveOnSurface::kpart_poles`，`impl Curve for CurveOnSurface` 新增 `bezier_poles`/`bezier_weights`/`bspline_poles`/`bspline_weights`/`bspline_knots`/`nurbs_degree` 六个转发；`Geom2dTrimmedCurve` 同步补 11 个极点类转发（`Geom2dAdaptor_Curve::load` 的解包语义，`Geom2dAdaptor_Curve.cxx:283-287`、`:315-330`）（T-167）"
+    files:
+      - "crates/occt-topo/src/meshing/edge_discret.rs"
+      - "crates/occt-geom2d/src/trimmed.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/topo-rest.md"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+      - "~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx"
+    closed_inventory_lines:
+      - "**`CurveOnSurface` 的极点类 `Bezier()`/`BSpline()`（P034 登记、P036 转出为独立片）**：`Adaptor3d_CurveOnSurface::Bezier()`（`cxx:1458-1485`）与 `BSpline()`（`cxx:1489-1520`）在 `mySurf->GetType() == GeomAbs_Plane` 时，把 pcurve 的 2D 极点经 `to3d(mySurface->Plane(), Pole2d)` 抬成 3D `Geom_BezierCurve` / `Geom_BSplineCurve`（保留 degree、weights、knots、mults、周期性）。因平面臂是 `myType = CTy`（`cxx:1560`），一个极点类 pcurve 在平面上会让 `GetType()`（`cxx:1374-1378`）答 `GeomAbs_BezierCurve`/`GeomAbs_BSplineCurve`，而 `Extrema_GGExtPC.hxx:190-243` 是这两个类各自的独立分支（不是 `default:`）。本仓此前对 cos 把 `Curve::bezier_poles`/`bspline_poles`/`bspline_knots`/`bspline_weights`/`nurbs_degree` 全留在 trait 默认 `None`，于是这类 cos 型别退化为 `GeomAbs_OtherCurve`（`extrema_pc/curve_tool.rs:36-56`）。现按 cxx 落地：`KPart` 增收 `poles: Option<Arc<dyn Curve>>`，`plane_k_part` 在圆锥链之后追加 `is_bezier2d() || is_bspline2d()` 臂并调用既有 `occt_geom::geom_lib::to_3d(&pl.pos.ax2(), pc)`（`GeomLib.cxx:582-632`，两段 cxx body 的同一实现，非新写），`CurveOnSurface` 存为 `kpart_poles` 并由上述六个访问器转发。"
+      - "**`Geom2dTrimmedCurve` 的极点类转发缺失**：`Geom2dAdaptor_Curve::load`（`Geom2dAdaptor_Curve.cxx:283-287`）先把 `Geom2d_TrimmedCurve` 解包成 basis 再走 `DynamicType` 链，故 `GeomAbs_BezierCurve`（`cxx:315-320`）与 `GeomAbs_BSplineCurve`（`cxx:322-330`）的极点/knots/degree/rational 查询都落到 basis 上。本仓 `crates/occt-geom2d/src/trimmed.rs` 的 `impl Curve2d for Geom2dTrimmedCurve` 此前只转发 `trimmed_basis`，同一个 pcurve 一旦被 trim 包装就会在这个新臂上答 `false`，与 cxx 不符；本包补齐 `is_bezier2d`/`is_bspline2d`/`poles2d`/`bezier_nb_poles`/`bezier_weights2d`/`bspline_degree`/`bspline_distinct_knots_mults`/`bspline_weights2d`/`bspline_poles2d`/`bspline_knots2d`/`bspline_nb_knots`/`is_rational` 共 12 项到 basis。"
+    gates:
+      check: "五 crate `--all-targets` **0 error**（occt-core 12 / occt-math 30 / occt-geom 105 / occt-geom2d 82 / occt-topo 413 warnings，与 T002 同数，无新增告警）"
+      lib: "`occt-core --lib` **283 / 0**（1 ignored）、`occt-geom --lib` **143 / 0**、`occt-geom2d --lib` **72 / 0**、`occt-topo --lib` **1251 / 0**（= T002 基线，单调不降；未新增测试、未改既有断言）"
+      step_obj_gates: "**4 / 4**（`.target-gate/t167/gates-raw.txt`；23 条面积比与 23 条 `ours v=/f=` 行与 P036 的 `.target-gate/t166/gates-raw.txt` **逐字一致**）"
+      export_data_obj: "**15 / 15 ok**，15 条 `ok <model> ... v= f=` 行与包围盒读数与 `t166` 逐字一致（`Compare-Object` 计数 0 差异；`.target-gate/t167/export-obj.txt`）"
+      canvas: "看板 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 随本包同步更新（PACKAGES 追加 P037、OPEN 段清掉极点类登记项）"
+    side_findings:
+      - "**诚实边界**：四道门禁与 P036 逐字一致只证明本包在 15 个导出模型与 23 个对拍模型上**无回归**，不证明这批语料里真的有平面 + 极点类 pcurve 的 cos 被分流到新臂（面积比与顶点/面数一字未变，说明这些模型上两个臂给出相同读数）。对齐依据是 cxx 有同等分支，不是读数差异。"
+      - "**blast radius 已核（P036 卡里列为前置条件）**：`Curve` 的 `nurbs_degree`/`bspline_poles`/`bezier_poles` 在本仓被当类判据用的 60 余处消费点，全部经 `CurveOnSurface` 时只在 `kpart_poles.is_some()` 时才改变答案 —— 即只有「平面面 + 极点类 pcurve」才翻转，且翻转方向与 cxx 一致（这些点在 cxx 侧同样看 `Extrema_CurveTool` 的转发值）。`edge_discret.rs:502-507` 的 `two_poles` 与 `:959` 的周期性判据是最近的两个消费点，已随本包一并复核。`GeomAbs_OffsetCurve` 无需处理：三个 extrema 消费方都把它归入 `default:` 臂（`Extrema_GGExtPC.hxx:390-502`、`Extrema_GFuncExtPC.hxx:115-128`、`Extrema_GLocateExtPC.hxx:110-140`），`eval_k_part` 的就地注记已改为只登记 Offset。"
+      - "**测量口径（P034 记录，沿用）**：`MEASURE.rust` = `src/**/*.rs` 仅计（1,111 文件 / 338,784 行），`MEASURE.unported` = `crates/**/*.rs` 的大小写敏感 `UNPORTED` 计数。本包删掉两处 UNPORTED 注记、未删该计数以外的标记，未重跑测量。"
+    next_task_if_not_complete: "下一片候选：P038 Scout + Judge —— `Adaptor3d_CurveOnSurface` 至此无代码侧登记项（`Resolution` P035、初等面 P036、极点面 P037 均已落地；只剩 Offset 一项属本仓不可观察）。须从 `specs/_audit/occt-geom.md` / `specs/_audit/topo-rest.md` / `specs/_audit/mesh-exchange.md` / canvas 的 OPEN / DOCDRIFT 段另找一条未复核的登记项，或按 goal 的 T999 Judge audit 走一遍全量清点。"
   - id: P036
     task: T005
     commit: "8d22a639 fix(topo): complete the CurveOnSurface elementary EvalKPart surface (Adaptor3d_CurveOnSurface.cxx:1381-1386, 1399-1416; T-166)"
@@ -102,8 +128,8 @@ packages:
       canvas: "看板 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 随本包同步更新（PACKAGES 追加 P036、OPEN 段清掉该登记项、把极点类另立一条）"
     side_findings:
       - "**诚实边界**：四道门禁与 P035 逐字一致只证明本包在 15 个导出模型与 23 个对拍模型上**无回归**，不证明改后的分流在这批语料上被真正区分（面积比与顶点/面数一字未变，说明这些模型上「解析臂 vs 自由臂」给出相同读数）。对齐依据是 cxx 有同等分支，不是读数差异。"
-      - "**同一平面臂的极点类仍登记（P037）**：`Bezier()`（`cxx:1458-1485`）与 `BSpline()`（`cxx:1489-1520`）在平面面上把 pcurve 极点抬成 3D `Geom_BezierCurve`/`Geom_BSplineCurve`，故 `myType` 还可达 `GeomAbs_BezierCurve`/`GeomAbs_BSplineCurve`（后者是 `Extrema_GGExtPC.hxx:190-243` 的独立分支，不是 `default`）。转发它等于让 `Curve::bezier_poles`/`bspline_poles`/`bspline_knots`/`bspline_weights`/`nurbs_degree` 对 cos 开始作答，而这三个访问器在本仓被当类判据用了 60 余处（`algo_tools_range.rs:159`、`edge_face_kind.rs:64`、`shape_analysis_curve.rs:119`、`gcpnts.rs:972`、`step/write_context.rs:135` …），每处都要先核其 cxx 对应判据。已在 `eval_k_part` 上就地标 UNPORTED。`GeomAbs_OffsetCurve` 无需处理：三个 extrema 消费方都把它归入 `default:` 臂（`Extrema_GGExtPC.hxx:390-502`、`Extrema_GFuncExtPC.hxx:115-128`、`Extrema_GLocateExtPC.hxx:110-140`）。"
-    next_task_if_not_complete: "下一片候选：P037 Scout + Judge —— `CurveOnSurface` 的极点类转发（`Bezier()` `cxx:1458-1485` / `BSpline()` `cxx:1489-1520`）是本包登记项里唯一剩下的一条，须先核其 blast radius（`Curve` 的 `bezier_poles`/`bspline_poles`/`bspline_knots`/`bspline_weights`/`nurbs_degree` 在本仓被当类判据用了 60 余处），或从 `specs/_audit/occt-geom.md` / `specs/_audit/topo-rest.md` / canvas 的 OPEN / DOCDRIFT 段里另找一条未复核的登记项。"
+      - "**同一平面臂的极点类已由 P037 收口（当时登记为 P037）**：`Bezier()`（`cxx:1458-1485`）与 `BSpline()`（`cxx:1489-1520`）在平面面上把 pcurve 极点抬成 3D `Geom_BezierCurve`/`Geom_BSplineCurve`，故 `myType` 还可达 `GeomAbs_BezierCurve`/`GeomAbs_BSplineCurve`（后者是 `Extrema_GGExtPC.hxx:190-243` 的独立分支，不是 `default`）。转发它等于让 `Curve::bezier_poles`/`bspline_poles`/`bspline_knots`/`bspline_weights`/`nurbs_degree` 对 cos 开始作答，而这三个访问器在本仓被当类判据用了 60 余处（`algo_tools_range.rs:159`、`edge_face_kind.rs:64`、`shape_analysis_curve.rs:119`、`gcpnts.rs:972`、`step/write_context.rs:135` …），每处都要先核其 cxx 对应判据。**✅ 2026-10-16 包 P037（commit `fd04dc8b`）已落地**：`plane_k_part` 追加极点臂（复用既有 `geom_lib::to_3d`），`CurveOnSurface` 的六个极点类访问器转为转发 `kpart_poles`；`eval_k_part` 上的就地 UNPORTED 注记改为只登记 `GeomAbs_OffsetCurve`（该类三个 extrema 消费方都归入 `default:` 臂：`Extrema_GGExtPC.hxx:390-502`、`Extrema_GFuncExtPC.hxx:115-128`、`Extrema_GLocateExtPC.hxx:110-140`）。"
+    next_task_if_not_complete: "已闭环：该唯一剩余项由 P037（T-167 / commit `fd04dc8b`）落地 —— `plane_k_part` 追加 `is_bezier2d() || is_bspline2d()` 臂并经 `geom_lib::to_3d` 抬极点，`CurveOnSurface` 的 `bezier_poles`/`bezier_weights`/`bspline_poles`/`bspline_weights`/`bspline_knots`/`nurbs_degree` 六个访问器随之开始作答（`Adaptor3d_CurveOnSurface.cxx:1458-1485`、`:1489-1520`）。"
   - id: P035
     task: T005
     commit: "501fbdf7 fix(topo): port Adaptor3d_CurveOnSurface::Resolution into CurveOnSurface (Adaptor3d_CurveOnSurface.cxx:1364-1370; T-165)"

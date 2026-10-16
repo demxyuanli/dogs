@@ -756,6 +756,17 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   pole-based plane classes instead of `gp_line` (P034's second registration is closed, and `gp_line`
   plus the baseline-less STEP writer harness are what remain), and the "跟踪" paragraph plus the T999
   callout extended to P027..P036.
+  P037 / T-167 (`fd04dc8b`) did the pass an eighth time the same day, still with no measurement change
+  (no files added, no `UNPORTED` count change -- the two in-source UNPORTED notes it removed were
+  prose, not the token the count keys on): its card, the gate-source comment repointed to
+  `.target-gate/t167`, the `Stat` moved from 1 registered code item to 0 (`Adaptor3d_CurveOnSurface`
+  now has no code-side registration left: `Resolution` P035, elementary KPart P036, pole KPart P037;
+  what remains is the baseline-less STEP writer harness, which is not a code item), and the "跟踪"
+  paragraph plus the T999 callout extended to P027..P037. This pass also verified rather than re-pinned
+  the `PARITY` readings: t167's `gates-raw.txt` differs from t166's only by the PowerShell
+  `NativeCommandError` wrapper PowerShell put around the `Cube.step` line and the `finished in`
+  duration, and its `export-obj.txt` is byte-identical (`Compare-Object` count 0), so the canvas
+  `T0M` row stays at the t166 value.
   P034 / T-164 (`c272c08a`) did this measurement pass a fifth time (P034 card, `MEASURE.rust`
   1,111 files / 338,784 lines, `CRATES` geom 133/45,074 and topo 638/213,964, the gate-source
   comment repointed to `.target-gate/t164`, the `Stat` moved to 2 registered code items -- the two
@@ -838,10 +849,23 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `occt-core/src/elib/clib.rs:633/651/642`), and `impl Curve for CurveOnSurface` forwards `gp_line`,
   `gp_ellipse`, `gp_parabola`, `gp_hyperbola`. `EvalD0`/`EvalD1`/`EvalD2` are untouched because the cxx
   evaluators special-case only Line and Circle.
-  **Still registered (carried as P037):** the pole-based plane classes `Bezier()`
-  (`cxx:1458-1485`) and `BSpline()` (`cxx:1489-1520`), which would make `myType` reachable as
+  **Closed by P037 / T-167 (`fd04dc8b`):** the pole-based plane classes `Bezier()`
+  (`cxx:1458-1485`) and `BSpline()` (`cxx:1489-1520`) would make `myType` reachable as
   `GeomAbs_BezierCurve`/`GeomAbs_BSplineCurve` (`Extrema_GGExtPC.hxx:190-243` is a real branch, not a
-  `default:`); forwarding them would make `bezier_poles`/`bspline_poles`/`bspline_knots`/
+  `default:`); forwarding them makes `bezier_poles`/`bspline_poles`/`bspline_knots`/
   `bspline_weights`/`nurbs_degree` answer for a cos, and about 60 sites in the port use those
-  accessors as class tests, so each needs its cxx criterion re-read first. `GeomAbs_OffsetCurve` needs
-  no work: all three consumers put it in their `default:` arm.
+  accessors as class tests, so each needs its cxx criterion re-read first. The re-read is done:
+  through `CurveOnSurface` those sites only change answer when `kpart_poles.is_some()`, i.e. only for
+  a pole-classified pcurve on a **plane** surface, and the new answer matches what
+  `Extrema_CurveTool` forwards in cxx. `plane_k_part` gained the `is_bezier2d() || is_bspline2d()` arm
+  and reuses the one faithful implementation of both cxx bodies, `geom_lib::to_3d`
+  (`GeomLib.cxx:582-632`); `KPart` carries the lifted curve (`edge_discret.rs:1025`) and the six
+  accessors forward it (`:1390`/`:1394`/`:1398`/`:1402`/`:1406`/`:1411`). The second half of the gap
+  was outside `occt-topo`: `Geom2dTrimmedCurve` forwarded only `trimmed_basis`, while
+  `Geom2dAdaptor_Curve::load` (`Geom2dAdaptor_Curve.cxx:283-287`) unwraps a trimmed curve to its basis
+  *before* the `DynamicType` chain, so `GeomAbs_BezierCurve` (`cxx:315-320`) and
+  `GeomAbs_BSplineCurve` (`cxx:322-330`) resolve to the basis; 12 pole-class queries are now
+  forwarded (`crates/occt-geom2d/src/trimmed.rs:188-224`). Gates word-identical to P036
+  (`.target-gate/t167/`). `GeomAbs_OffsetCurve` needs no work: all three consumers put it in their
+  `default:` arm. **`Adaptor3d_CurveOnSurface` now has no code-side registration left** (`Resolution`
+  P035, elementary KPart P036, pole KPart P037).
