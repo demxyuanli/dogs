@@ -82,6 +82,35 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas CYCLES array -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P033
+    task: T005
+    commit: "a4eeac65 fix(intana): drop the invented x re-sort in line_torus_intersect (IntAna_IntLinTorus.cxx:104-108; T-163)"
+    title: "删掉 `line_torus_intersect` 里 cxx 不存在的点重排（audit `occt-geom.md` §9 的 (b) 项）：`line_torus.rs:922` 的 `out.sort_by` 在 `IntAna_IntLinTorus.cxx:104-108` 无对应，并撤掉随之失去使用点的 `Ordering` 再导出（T-163）"
+    files:
+      - "crates/occt-geom/src/intana/line_torus.rs"
+      - "crates/occt-geom/src/intana/mod.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/occt-geom.md"
+      - "specs/_audit/_index.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "**audit `occt-geom.md` §9 的 (b) 项**：`crates/occt-geom/src/intana/line_torus.rs:922` 的 `out.sort_by(|a, b| a.x().partial_cmp(&b.x()).unwrap_or(Ordering::Equal))` 在 `IntAna_IntLinTorus.cxx:104-108` 无对应 —— cxx 把每个通过回代判据的根按序号写进 `thePoint[nbsolvalid]`（`theFi`/`theTheta`/`theParam` 同步），函数体内没有任何排序。该排序随 `09e227c2` 引入，属门禁第 2 条禁止的「OCCT 里不存在的规则」，已删除；原处改为注记 cxx 的写入口径。"
+      - "**消费方无依赖（复核后确认 audit §9 的事前判断）**：`crates/occt-topo/src/intcurvesurface/solvers.rs:210` 的 `perform_curve_surface` 统一按曲线参数重排（`points.sort_by(|a, b| a.param...)` 后再做近重复合并），`crates/occt-geom/src/intana/tests.rs:232` 与 `crates/occt-topo/src/intcurvesurface/tests.rs:232` 在断言前各自 `sort_by`，故删除不改任何既有断言。"
+      - "**顺带撤掉无用再导出**：删除该排序后 `crates/occt-geom/src/intana/mod.rs:12` 的 `pub(crate) use std::cmp::Ordering;` 在 `occt-geom` 全 crate 内再无使用点（`intana` 其余模块与 `intana_torus.rs` 都用全限定 `std::cmp::Ordering`），一并删除以免留下 `unused_imports`；五 crate 告警数 12/30/105/82/413 与 T002 同数。"
+      - "**看板构建缺陷（本轮一并修，非代码）**：`specs/occt-scope-drift.canvas.tsx` 的 JSX 文本里有 4 处裸 `<`（`a_dist <= f64::EPSILON` ×2、`|axis . normal| < Tolang`、`v2 < 1e-20`）与 1 处 `{ done, points }`，前者让 `tsc`/`esbuild` 直接语法失败（`esbuild` 报 `Expected identifier but found \"=\"`，即画布根本构建不出来）、后者会被当成表达式求值（`TS18007: JSX expressions may not use the comma operator`）；已改为 `&lt;` 转义与文字表述。"
+    gates:
+      check: "`cargo check --offline --all-targets` 五 crate **0 error**（occt-core 12 / occt-math 30 / occt-geom 105 / occt-geom2d 82 / occt-topo 413 warnings，与 T002 同数，无新增告警）"
+      lib: "`occt-geom --lib` **143 / 0**、`occt-topo --lib` **1251 / 0**（= T002 基线，单调不降；未新增测试、未改既有断言）"
+      step_obj_gates: "**4 / 4**（直跑 `cargo test` 编出的测试二进制 124.16s，`.target-gate/t163/gates-raw.txt`；23 条面积比与 23 条 `ours v=/f=` 行与 P032 的 `.target-gate/t162/gates-raw.txt` 逐字一致，仅并发 println 交错顺序与测试耗时不同）"
+      export_data_obj: "**15 / 15 ok**，15 行模型读数与 `t162` 逐字一致（`.target-gate/t163/export-obj.txt`；与 `.target-gate/t162/export-obj.txt` 的整档 diff 只有 `Finished \\`dev\\` profile ... in` 耗时行一处）"
+      canvas: "`npx esbuild specs/occt-scope-drift.canvas.tsx --loader:.tsx=tsx` 转译通过（201.6kb）；`npx tsc --noEmit --jsx react-jsx --noResolve` 只剩 `dsh/canvas` 与 `react/jsx-runtime` 两条缺模块噪声"
+    side_findings:
+      - "**诚实边界**：四道门禁一致只证明该重排在当前语料上无消费方依赖（与 audit §9 的事前判断一致），不构成「排序会算错」的证据 —— 删除的依据是 cxx 无对应，不是结果差异。"
+      - "**看板构建缺陷（本轮已修，记录在案）**：`specs/occt-scope-drift.canvas.tsx` 的 JSX 文本此前含 4 处裸 `<` 与 1 处 `{ done, points }`，`esbuild` 与 `tsc` 均直接语法失败 —— 即该画布在 P033 之前无法构建。这属于看板本身的正误（用户要求的产物），已随本包修掉；后续每包改完画布都应用 `npx esbuild ... --loader:.tsx=tsx` 过一遍。"
+      - "**代码侧登记项状态**：audit `occt-geom.md` §9 的 (a)/(b) 两项全部闭环；全域代码侧登记只剩那条无基线的 STEP 写侧 harness（T999 裁定本 tranche 范围外），T999 复跑的前置条件回到 clean。"
+    next_task_if_not_complete: "下一片候选：`docs/goals/drift-and-gap-autofix/state.yaml` 的 T999 复跑（前置条件已清空）—— 或另找新的 SEMANTIC 登记项。"
   - id: P032
     task: T005
     commit: "55b0a6d6 fix(intana): port the IntAna_IntLinTorus done semantics (IntAna_IntLinTorus.cxx:88-133; T-162)"

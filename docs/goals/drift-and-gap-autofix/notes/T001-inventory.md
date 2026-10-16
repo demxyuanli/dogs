@@ -729,7 +729,18 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   1,107 files / 338,101 lines, `CRATES` geom 44,191 / topo 214,153, the gate-source comment repointed
   to `.target-gate/t162`, the `Stat` moved to 2 registered code items -- section 9 item (b) and the
   baseline-less STEP writer harness -- and the "跟踪" paragraph plus the T999 callout extended to
-  P027..P032); the SEMANTIC LIVE-staleness is still open.
+  P027..P032); the SEMANTIC LIVE-staleness is still open. P033 / T-163 (`a4eeac65`) then did this
+  pass a fourth time (P033 card, `MEASURE.rust` 1,107 files / 338,104 lines, `CRATES` geom 44,194,
+  the gate-source comment repointed to `.target-gate/t163`, the `Stat` down to 1 registered code
+  item -- the baseline-less STEP writer harness only -- and the "跟踪" paragraph plus the T999
+  callout extended to P027..P033); the SEMANTIC LIVE-staleness is still open. The same pass removed
+  the last `.rs`-side item in `occt-geom.md` section 9: the `out.sort_by(|a, b| a.x()...)` in
+  `line_torus_intersect` (`line_torus.rs:922`) has no counterpart in `IntAna_IntLinTorus.cxx:104-108`
+  (OCCT writes `thePoint[nbsolvalid]` in root-index order and never reorders), and the now-unused
+  `Ordering` re-export in `intana/mod.rs` went with it. It also fixed four raw `<` characters and one
+  `{ done, points }` JSX expression in `specs/occt-scope-drift.canvas.tsx`, which had been breaking
+  the canvas build (`esbuild` reported "Expected identifier but found ="); the canvas now transpiles
+  clean and `tsc --noEmit` only reports the missing `dsh/canvas` / `react/jsx-runtime` modules.
 - `specs/_audit/topo-rest.md` heading 17 (`pipe_along_polyline`), 9, 10, 15 likewise.
 - ~~`bbox_from_geometry.rs` (B3) is a live sampled-bbox construct that no audit doc registers.~~
   **DONE 2026-10-15 (T-134)**: the sampling is gone; the item is now registered as
