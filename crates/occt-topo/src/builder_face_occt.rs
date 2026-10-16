@@ -36,14 +36,36 @@ fn sk(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
 }
 
+/// `TopExp::MapShapesAndAncestors(theShape, TopAbs_VERTEX, TopAbs_EDGE, theMap)`
+/// (`TopExp.cxx:80-120`): the ancestor edge is appended once per *vertex
+/// occurrence*, not once per distinct vertex. `TopExp_Explorer` walks with
+/// `TopoDS_Iterator` and never uniquifies (`TopExp_Explorer.cxx:110-170`), so an
+/// edge whose two children are the same vertex -- a closed edge -- is appended
+/// twice. `BOPAlgo_BuilderFace::PerformShapesToAvoid` counts on that
+/// (`BOPAlgo_BuilderFace.cxx:211-225`: `aNbE == 2` with `aE1.IsSame(aE2)` and
+/// `aV1x.IsSame(aV2x)` -> `continue`, the closed edge is *not* avoided).
 fn map_vertex_edges(edges: &[TopoShape]) -> HashMap<usize, Vec<TopoShape>> {
     let mut mve: HashMap<usize, Vec<TopoShape>> = HashMap::new();
     for e in edges {
-        for v in vertices_of(e) {
-            mve.entry(sk(&v.0)).or_default().push(e.clone());
+        for v in stored_vertex_children(e) {
+            mve.entry(sk(&v)).or_default().push(e.clone());
         }
     }
     mve
+}
+
+/// The stored child vertices of a shape, in stored order, without uniquifying
+/// (`TopoDS_Iterator`).
+fn stored_vertex_children(shape: &TopoShape) -> Vec<TopoShape> {
+    shape
+        .tshape
+        .read()
+        .expect("poisoned TShape lock")
+        .children
+        .iter()
+        .filter(|s| s.shape_type() == ShapeType::Vertex)
+        .cloned()
+        .collect()
 }
 
 /// `BOPAlgo_BuilderFace::PerformShapesToAvoid`.

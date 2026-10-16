@@ -325,9 +325,27 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
 /// aligned to those conventions (`BRepPrim_OneAxis::LateralWire`,
 /// `BRepPrim_OneAxis.cxx:666-679`; `LateralFace` pcurves, `cxx:388-439`;
 /// `MakeVertex` tolerance, `BRepPrim_Builder.cxx:129-132`): the analytic tool is
-/// still dropped by `box ∪ neck` and still *adds* material in
-/// `faceted cylinder − groove`, so the OneAxis wire/seam/pcurve conventions are
+/// still dropped by `box + neck` and still *adds* material in
+/// `faceted cylinder - groove`, so the OneAxis wire/seam/pcurve conventions are
 /// necessary but not sufficient. The workaround stays.
+///
+/// Re-measured 2026-10-16 (package P041/T-170) *after* `map_vertex_edges` was
+/// aligned to `TopExp::MapShapesAndAncestors` occurrence counting
+/// (`TopExp.cxx:80-120`; `TopExp_Explorer.cxx:110-170` walks with
+/// `TopoDS_Iterator` and never uniquifies; `BOPAlgo_BuilderFace.cxx:211-225`):
+/// a lone closed circular edge is no longer pushed into `myShapesToAvoid`
+/// (`aNbE == 1` on a deduplicated vertex), so the tool's annular cap faces split
+/// into the four distinct loops (`r=0.6`, `r=1.3` and the two coincident `r=1`
+/// copies) instead of two `r=1` loops plus two `INTERNAL` wires. With the
+/// analytic tool forced, 16 of the 17 `brepfeat` baselines pass
+/// (`groove_cuts_cylinder`, `groove_negative_volume_delta`, `neck_adds_material`,
+/// `neck_positive_volume_delta`, the `rib_*` family); the remaining one,
+/// `feature_kind_classifies_add_subtract`, is a neck whose bottom disk is
+/// coplanar with the box top face -- its draft solid still comes out inverted
+/// (`vol = -2.848377`, classified `Subtractive`), so the open gap is the
+/// same-domain/coplanar branch of `BOPAlgo_Builder::FillImagesSolids` /
+/// `BOPAlgo_BuilderSolid::PerformAreas`, not the revolve tool itself. The
+/// workaround stays until that branch is ported.
 ///
 /// Consecutive rings form quad strips; a ring on the axis collapses to a fan,
 /// so closed profiles produce closed solids.
