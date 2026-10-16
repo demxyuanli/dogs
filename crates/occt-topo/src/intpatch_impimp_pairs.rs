@@ -4,7 +4,7 @@
 use occt_core::gp::{GpAx1, GpPln};
 use occt_core::precision::ANGULAR as PREC_ANG;
 use occt_geom::intana::{
-    cone_cone_analytic, quadric_quadric_cone_cone, quadric_quadric_cone_torus,
+    axes_meet_at_point, cone_cone_analytic, quadric_quadric_cone_cone, quadric_quadric_cone_torus,
     quadric_quadric_cylinder_cone, quadric_quadric_cylinder_cylinder,
     quadric_quadric_cylinder_sphere, quadric_quadric_cylinder_torus, quadric_quadric_plane_cone,
     quadric_quadric_plane_cylinder, quadric_quadric_plane_sphere, quadric_quadric_plane_torus,
@@ -15,7 +15,7 @@ use occt_geom::intana::{
 use super::bounds;
 use super::cycy::{cy_cy_no_geometric, CylUv};
 use super::glines::{from_circles, from_quadric_intersection, with_cone_common_gen, PairOutcome};
-use super::quad::{axis_distance, dist_point_axis, ImplicitQuad};
+use super::quad::{axis_distance, ImplicitQuad};
 
 const TOL_ANG: f64 = 1.0e-8;
 
@@ -192,7 +192,12 @@ fn int_cy_sp(q1: &ImplicitQuad, q2: &ImplicitQuad, _reversed: bool, tol_tang: f6
     };
     let cy = cy_q.as_cylinder().expect("cylinder");
     let sp = sp_q.as_sphere().expect("sphere");
-    if dist_point_axis(&sp.location(), &cy.axis()) > 1e-9 {
+    // `IntPatch_ImpImpIntersection.cxx:8137` calls `IntAna_QuadQuadGeo(Cy, Sp, Tol)`
+    // unconditionally; the `IntAna_NoGeometricSolution` arm (`cxx:8263-8363`) --
+    // what OCCT reports when the sphere center is off the cylinder axis -- walks
+    // `IntAna_IntQuadQuad(Cy, Sp, Tol)` instead. Gate the closed form on the exact
+    // axis predicate of `IntAna_QuadQuadGeo.cxx:1378-1379`, not on a tolerance.
+    if !axes_meet_at_point(&cy.axis(), sp.position().axis(), &sp.location()) {
         return bounds::from_cyl_quad(q1, q2, cy, sp_q, None, true, tol_tang);
     }
     from_quadric_intersection(quadric_quadric_cylinder_sphere(cy, sp, tol_tang), Some(cy_q))
@@ -234,7 +239,11 @@ fn int_co_sp(q1: &ImplicitQuad, q2: &ImplicitQuad, _reversed: bool, tol_tang: f6
     };
     let sp = sp_q.as_sphere().expect("sphere");
     let co = co_q.as_cone().expect("cone");
-    if dist_point_axis(&sp.location(), &co.axis()) > 1e-9 {
+    // `IntPatch_ImpImpIntersection.cxx:9208` calls `IntAna_QuadQuadGeo(Sp, Co, Tol)`
+    // unconditionally; `IntAna_NoGeometricSolution` (`cxx:8263-8363`) walks
+    // `IntAna_IntQuadQuad(Sp, Co, Tol)`. Exact axis predicate of
+    // `IntAna_QuadQuadGeo.cxx:1924-1925`, no tolerance.
+    if !axes_meet_at_point(&co.axis(), sp.position().axis(), &sp.location()) {
         return bounds::from_cone_quad(q1, q2, co, sp_q, false, false, tol_tang);
     }
     from_quadric_intersection(quadric_quadric_sphere_cone(sp, co, tol_tang), Some(co_q))

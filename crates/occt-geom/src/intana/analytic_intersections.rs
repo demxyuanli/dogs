@@ -270,8 +270,8 @@ pub fn quadric_quadric_plane_sphere(p: &GpPln, s: &GpSphere) -> QuadricIntersect
     let loc = s.location();
     let radius = s.radius();
     let dist = a * loc.x() + b * loc.y() + c * loc.z() + d;
-    if (dist.abs() - radius).abs() < radius.abs() * f64::EPSILON {
-        // Tangent: single point, the projection of the center onto the plane.
+    if (dist.abs() - radius).abs() < epsilon(radius) {
+        // `cxx:998-1003`: tangency, the sphere center projected onto the plane.
         let pt = GpPnt::new(loc.x() - dist * a, loc.y() - dist * b, loc.z() - dist * c);
         QuadricIntersection::Point(pt)
     } else if dist.abs() < radius {

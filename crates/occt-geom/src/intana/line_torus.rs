@@ -70,11 +70,25 @@ pub(super) fn axe_distance(a1: &GpAx1, a2: &GpAx1) -> (f64, f64, f64) {
     }
 }
 
-/// Distance from `p` to the axis line.
-pub(super) fn dist_point_axis(p: &GpPnt, ax: &GpAx1) -> f64 {
-    let dir = GpVec::from_xyz(ax.direction().xyz());
-    let rel = GpVec::from_pnts(ax.location(), p);
-    rel.subtracted(&dir.multiplied_scalar(rel.dot(&dir))).magnitude()
+/// `(A1A2.Intersect() && Pt.Distance(A1A2.PtIntersect()) == 0.0) || A1A2.Same()`
+/// (`IntAna_QuadQuadGeo.cxx:1378-1379` for cylinder/sphere, `cxx:1924-1925` for
+/// sphere/cone): the sphere center must lie exactly on the point where the two
+/// axes meet, or the axes must be parallel and coincident within
+/// `myEPSILON_DISTANCE`. `AxeOperator`'s defaults are `theEpsDistance = 1.e-14`
+/// and `theEpsAxesPara = Precision::Angular()` (`cxx:72-73`). OCCT adds no
+/// tolerance of its own, so neither does this predicate.
+pub fn axes_meet_at_point(a1: &GpAx1, a2: &GpAx1, pt: &GpPnt) -> bool {
+    let (parallel, distance, coplanar, pt_intersect) = axe_operator(a1, a2, 1.0e-14, ANGULAR);
+    // `A1A2.Intersect()` is `thecoplanar && !theparallel` (`cxx:86`).
+    if coplanar && !parallel {
+        if let Some(pi) = pt_intersect {
+            if pt.distance(&pi) == 0.0 {
+                return true;
+            }
+        }
+    }
+    // `A1A2.Same()` is `theparallel && (thedistance < myEPSILON_DISTANCE)` (`cxx:83`).
+    parallel && distance < 1.0e-14
 }
 
 pub(super) fn mid_pnt(a: &GpPnt, b: &GpPnt) -> GpPnt {
@@ -239,9 +253,10 @@ pub fn quadric_quadric_cylinder_sphere(
     _tol: f64,
 ) -> QuadricIntersection {
     let pt = sph.location();
-    // OCCT tests the axes to intersect at the sphere center exactly; a small
-    // tolerance keeps the closed form on near-axis configurations.
-    if dist_point_axis(&pt, &cyl.axis()) > 1e-9 {
+    // `cxx:1378-1379`: the axes must meet exactly at the sphere center, or be
+    // coincident parallel axes. The exact `AxeOperator` predicate is the OCCT
+    // control flow -- no extra tolerance is added here.
+    if !axes_meet_at_point(&cyl.axis(), sph.position().axis(), &pt) {
         return QuadricIntersection::None;
     }
     let r_cyl = cyl.radius();
@@ -273,7 +288,8 @@ pub fn quadric_quadric_sphere_cone(
     _tol: f64,
 ) -> QuadricIntersection {
     let pt = sph.location();
-    if dist_point_axis(&pt, &cone.axis()) > 1e-9 {
+    // `cxx:1924-1925`: same exact-axis predicate as the cylinder/sphere arm.
+    if !axes_meet_at_point(&cone.axis(), sph.position().axis(), &pt) {
         return QuadricIntersection::None;
     }
     let apex = cone.apex();

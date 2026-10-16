@@ -316,10 +316,6 @@ pub(crate) fn axis_distance(a: &occt_core::gp::GpAx1, b: &occt_core::gp::GpAx1) 
     }
 }
 
-pub(crate) fn dist_point_axis(p: &GpPnt, ax: &occt_core::gp::GpAx1) -> f64 {
-    GpLin::from_pnt_dir(*ax.location(), *ax.direction()).distance(p)
-}
-
 /// `IntSurf_Quadric::Distance(P)` — signed distance used by `IntPatch_ArcFunction`.
 pub(crate) fn distance(q: &ImplicitQuad, p: &GpPnt) -> f64 {
     match q {
