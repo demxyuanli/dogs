@@ -639,6 +639,38 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    in a comment. Still never line-diffed after this cycle: cxx:543-745 Pln/Cylinder, cxx:752-972
    Pln/Cone, cxx:1050-1293 Cylinder/Cylinder, cxx:1324-1342 Cylinder/Cone, cxx:1433-1886 Cone/Cone.
    Next pick: P030, those five arms.
+   **P030 / T-160 walked those five arms, so the class is now fully line-diffed** (2026-10-16,
+   commit `0a185eb5`). Two gaps, one fixed and one marked:
+   (a) `quadric_quadric_plane_cylinder` (`cxx:543-745`) had no `H` parameter at all -- its own
+   comment admitted `(H = 0, so the near-parallel direction-refinement branch is skipped)` -- so the
+   whole `cxx:568-598` refinement was declared away, and the parallel test was an inline
+   `|axis . normal| < Tolang` instead of `IntAna_IntConicQuad(axec, P, tolang, toltang, H).IsParallel()`
+   (`cxx:601`), which is not equivalent because the `IntAna_IntConicQuad` constructor also runs the
+   `Len` end-point distance check when `H != 0`. Both are now ported line for line: `h: f64` (= `H`,
+   `hxx:94` default 0), `cxx:568-598`, the faithful `IntAnaIntConicQuad::line_plane` delegate, the
+   `newparams` recompute arms `cxx:617-631` (tangent single line) and `cxx:647-668` (two lines, with
+   the `ht = max(arg, 0).sqrt()` clamp at `cxx:654-655`), and `inter.point(1)` at `cxx:687`. The
+   consumer went with it: `occt-topo/src/intpatch_impimp_pairs.rs::int_p_cy` never passed a face
+   height (so it always solved with `H = 0`); it now takes `VMax - VMin` of the cylinder from
+   `uv1`/`uv2` per `IntPatch_ImpImpIntersection.cxx:2579-2587` (0 when either bound is infinite).
+   (b) `quadric_quadric_plane_cone` (`cxx:752-972`) lacks the tail `cxx:922-951`: the
+   `EllipseLimit = 1.0E+9` (`cxx:926,929`) and `HyperbolaLimit = 2.0E+6` (`cxx:935-950`) rejection,
+   which sets `done = false` and returns. Every consumer turns that into `return false`
+   (`IntPatch_ImpImpIntersection.cxx:3480-3483` here, i.e. this tree's `PairOutcome::Fail`), and
+   branch 2 of `cone_cone_analytic` tests `INTER_QUAD_PLN.IsDone()` (`cxx:1556`). The port has no
+   "not done" state for `QuadricIntersection`, and expressing it as `None` would mean
+   `IntAna_Empty` -- the opposite -- so it is marked with the cxx line numbers only and the reason is
+   in the `quadric_quadric_plane_cone` doc comment. Closing it needs a declined variant plus every
+   exhaustive match updated (queued as P031).
+   (c) The other three arms were verified faithful, no edit: `cxx:1050-1293` Cylinder/Cylinder,
+   `cxx:1324-1342` Cylinder/Cone, `cxx:1433-1886` Cone/Cone -- P015's notes on cylinder/cylinder and
+   cylinder/cone were quote checks only, this cycle supplied the line-level diff.
+   Durable counts after this cycle: `IntAna_QuadQuadGeo` 15 `Perform` overloads, 15 present, 15
+   line-diffed. One code-side item left in the class (the declined state, P031) plus the
+   baseline-less STEP writer harness.
+   Honest bound: no gate in this tree covers the new `H` arm (it needs a cylinder whose axis is
+   slightly off the plane normal with a small face height), so the gates only prove no regression.
+   Two analytic fast paths in `int_face_face_analytic.rs` still call with `H = 0` (commented).
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
@@ -646,6 +678,10 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 
 - `specs/occt-scope-drift.canvas.tsx` SEMANTIC lines for topo-rest 1/4/6/11/18 and bop 1-4/7/8-10/16/17
   are stale in the "LIVE" direction: the code is already closed. The canvas needs a pass.
+  P030 / T-160 did the tracking half (added the P030 cycle card, refreshed the gate-source comment,
+  the `Stat` label and the "跟踪" paragraph, and replaced the stale `_index.md` "§9 -> 2026-10-11"
+  pointer with the A0-A27 disposition rows plus `specs/_audit/occt-geom.md` §8); the SEMANTIC
+  LIVE-staleness listed here is still open.
 - `specs/_audit/topo-rest.md` heading 17 (`pipe_along_polyline`), 9, 10, 15 likewise.
 - ~~`bbox_from_geometry.rs` (B3) is a live sampled-bbox construct that no audit doc registers.~~
   **DONE 2026-10-15 (T-134)**: the sampling is gone; the item is now registered as
