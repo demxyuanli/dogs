@@ -9,7 +9,6 @@
 //! of scope; this module is the geometric kernel only.
 mod prelude {
 
-pub(crate) use std::cmp::Ordering;
 pub(crate) use std::f64::consts::PI;
 
 pub(crate) use occt_core::elib::{clib, slib};

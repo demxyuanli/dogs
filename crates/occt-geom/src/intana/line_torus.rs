@@ -919,6 +919,10 @@ pub fn line_torus_intersect(l: &GpLin, t: &GpTorus) -> LineTorusIntersection {
         // intersection is reported as not done rather than as an empty set.
         return LineTorusIntersection { done: false, points: Vec::new() };
     }
-    out.sort_by(|a, b| a.x().partial_cmp(&b.x()).unwrap_or(Ordering::Equal));
+    // `cxx:104-108` stores each accepted root at `thePoint[nbsolvalid]`, i.e. in
+    // root-index order; OCCT never reorders the point list here. An earlier
+    // `out.sort_by(|a, b| a.x() ...)` had no counterpart in the `.cxx` (audit
+    // `occt-geom.md` section 9 item (b)); the consumers that need an order sort
+    // on their own (`intcurvesurface/solvers.rs:210` by curve parameter).
     LineTorusIntersection { done: true, points: out }
 }
