@@ -1286,6 +1286,14 @@ impl Curve for CurveOnSurface {
     fn is_line(&self) -> bool {
         self.kpart_lin.is_some()
     }
+    // UNPORTED: `Adaptor3d_CurveOnSurface` presents its linear `EvalKPart` as a
+    // real `gp_Lin` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`, `:1701`), so
+    // `GeomAdaptor_Curve::GetType` lands on `GeomAbs_Line` for it. Here only
+    // `is_line` is exposed, and `Curve::gp_line` (`occt-geom/src/curve.rs:43`)
+    // defaults to `None`, so such a cos classifies as `GeomAbs_OtherCurve`
+    // (`extrema_pc/curve_tool.rs:36-56`). Both land in the same
+    // `Extrema_GLocateExtPC` free-form arm, so there is no observable
+    // difference today; the type split itself is still not the cxx one.
     fn continuity(&self) -> u8 {
         self.pcurve.continuity().min(self.surface.continuity())
     }
