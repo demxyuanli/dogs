@@ -12,13 +12,42 @@
 //! faces share ring vertices, so a closed profile
 //! `[(0,0),(r,0),(r,h),(0,h)]` sweeps a solid cylinder (bottom disc + lateral
 //! cylinder + top disc) and `[(0,0),(r,h),(0,h)]` sweeps a cone.
+//!
+//! Ring and seam structure follows `BRepPrim_OneAxis`, which is the base of
+//! both `BRepPrim_Revolution` and `BRepSweep_Rotation`:
+//! * the lateral wire order and occurrence orientations are
+//!   `BRepPrim_OneAxis::LateralWire` (`BRepPrim_OneAxis.cxx:666-679` plus
+//!   `BRepPrim_Builder::AddWireEdge`, `BRepPrim_Builder.cxx:184-192`): bottom
+//!   ring FORWARD, seam at u = 0 REVERSED, top ring REVERSED, seam at
+//!   u = angle FORWARD;
+//! * a full revolution has `!HasSides()` (`cxx:331-334`), so `StartEdge()`
+//!   aliases `EndEdge()` (`cxx:976-979`, `:1028-1031`) and **one** seam TShape
+//!   is used twice;
+//! * the pcurves are `BRepPrim_OneAxis::LateralFace` (`cxx:388-439`) — ring
+//!   arcs as `gp_Lin2d((0, V), +X)` over their angular range, the seam as the
+//!   closed-form pair `gp_Lin2d((angle, 0), +Y)` / `gp_Lin2d((0, 0), +Y)` —
+//!   and `TopFace`/`BottomFace` (`cxx:465-468`, `:504-509`) — cap rings as
+//!   `gp_Circ2d(gp_Ax2d((0, 0), +X), R)`;
+//! * ring vertices carry `Precision::Confusion()` like
+//!   `BRepPrim_Builder::MakeVertex` (`BRepPrim_Builder.cxx:129-132`).
+//!
+//! Measured 2026-10-16 (package P039/T-169): handing this analytic solid to
+//! `crate::bop_builder::boolean` still fails — `box ∪ analytic neck` drops the
+//! tool and `faceted cylinder − analytic groove ring` adds material — so the
+//! remaining gap is not the OneAxis wire/seam/pcurve conventions alone.
+//! `crate::brepfeat` therefore keeps its lathe-mesh tool (UNPORTED workaround).
 
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx2, GpAx3, GpCone, GpCylinder, GpDir, GpLin, GpPln, GpPnt, GpPnt2d, GpVec};
+use occt_core::gp::{
+    GpAx2, GpAx22d, GpAx3, GpCirc2d, GpCone, GpCylinder, GpDir, GpDir2d, GpLin, GpPln, GpPnt,
+    GpPnt2d, GpVec,
+};
 use occt_geom::{GeomCone, GeomCylinder, GeomLine, GeomPlane, Surface};
+use occt_geom2d::{Geom2dCircle, Geom2dLine};
 
+use crate::abs::Orientation;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Solid, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
@@ -73,7 +102,15 @@ fn build_ring(b: &TopoBuilder, r: f64, z: f64, steps: usize, total: f64) -> (Vec
         if full && i == steps {
             verts.push(verts[0].clone());
         } else {
-            verts.push(b.make_vertex(GpPnt::new(r * theta.cos(), r * theta.sin(), z), 0.0));
+            // `BRepPrim_Builder::MakeVertex` (`BRepPrim_Builder.cxx:129-132`) is
+            // `BRep_Builder::MakeVertex(V, P, Precision::Confusion())`; the 1e-7
+            // tolerance is what `BOPAlgo_WireSplitter::Tolerance2D`
+            // (`_1.cxx:859-881`) turns into the UV closing tolerance, so a zero
+            // tolerance keeps the seam loops from closing (aD2 < 0).
+            verts.push(b.make_vertex(
+                GpPnt::new(r * theta.cos(), r * theta.sin(), z),
+                occt_core::precision::CONFUSION,
+            ));
         }
     }
     let ax2 = GpAx2::new(GpPnt::new(0.0, 0.0, z), z_dir(), x_dir()).expect("sweep_revolve: ring axis");
@@ -98,46 +135,195 @@ fn edge_through(b: &TopoBuilder, v1: &Vertex, v2: &Vertex) -> Edge {
     e
 }
 
-/// Boundary wire of a cylindrical/conical face between two rings: lower ring
-/// arcs, a seam up, upper ring arcs (conceptually traversed back), a seam
-/// down. Mirrors OCCT's seam-edge convention for a single-face boundary.
-fn lateral_wire(b: &TopoBuilder, ring1: &[Vertex], edges1: &[Edge], ring2: &[Vertex], edges2: &[Edge]) -> Wire {
-    let last1 = ring1.len() - 1;
-    let last2 = ring2.len() - 1;
-    let seam_up = edge_through(b, &ring1[last1], &ring2[last2]);
-    let seam_down = edge_through(b, &ring2[0], &ring1[0]);
-    let mut edges = Vec::with_capacity(edges1.len() + edges2.len() + 2);
-    edges.extend(edges1.iter().cloned());
-    edges.push(seam_up);
-    edges.extend(edges2.iter().rev().cloned());
-    edges.push(seam_down);
-    b.make_wire(&edges)
+/// Angular start/end of each of the `steps` arcs of a ring spanning `[0, total]`.
+fn ring_arcs(steps: usize, total: f64) -> Vec<(f64, f64)> {
+    (0..steps)
+        .map(|j| (total * j as f64 / steps as f64, total * (j + 1) as f64 / steps as f64))
+        .collect()
 }
 
-/// The analytic surface swept by a profile segment `(r1,z1)→(r2,z2)`.
-fn segment_surface(r1: f64, z1: f64, r2: f64, z2: f64) -> Result<Arc<dyn Surface>, String> {
+/// The face swept by one profile segment, plus the pieces whose pcurves have to
+/// be registered on it.
+struct LateralPanel {
+    wire: Wire,
+    /// Boundary arcs lying on the ring of the segment's first profile point.
+    ring1: Vec<Edge>,
+    /// Boundary arcs lying on the ring of the segment's second profile point.
+    ring2: Vec<Edge>,
+    /// Seam edges as *stored* (first ring point -> second ring point). One entry
+    /// for a full revolution — `BRepPrim_OneAxis` then aliases `StartEdge()` and
+    /// `EndEdge()` (`BRepPrim_OneAxis.cxx:976-979`, `:1028-1031`), so the same
+    /// edge TShape is used twice — two entries (u = 0, u = total) otherwise.
+    seams: Vec<Edge>,
+}
+
+impl LateralPanel {
+    fn full(&self) -> bool {
+        self.seams.len() == 1
+    }
+}
+
+/// Boundary wire of a cylindrical/conical face between two rings.
+///
+/// Wire order and occurrence orientations follow
+/// `BRepPrim_OneAxis::LateralWire` (`BRepPrim_OneAxis.cxx:666-679`):
+/// `AddWireEdge(TopEdge(), false)`, `AddWireEdge(EndEdge(), true)`,
+/// `AddWireEdge(BottomEdge(), true)`, `AddWireEdge(StartEdge(), false)`.
+/// `BRepPrim_Builder::AddWireEdge` (`BRepPrim_Builder.cxx:184-192`) applies
+/// `EE.Reverse()` when `direct == false`, and for a full revolution
+/// `StartEdge()` aliases `EndEdge()`. Rotating the loop so the bottom ring
+/// comes first (a wire is a cycle) gives
+/// **bottom ring FORWARD, seam at u = 0 REVERSED, top ring REVERSED,
+/// seam at u = total FORWARD**.
+fn lateral_wire(
+    b: &TopoBuilder,
+    ring1: &[Vertex],
+    edges1: &[Edge],
+    ring2: &[Vertex],
+    edges2: &[Edge],
+    total: f64,
+) -> LateralPanel {
+    let last1 = ring1.len() - 1;
+    let last2 = ring2.len() - 1;
+    let full = (total - 2.0 * PI).abs() < 1e-9;
+    let seam_start = edge_through(b, &ring1[0], &ring2[0]);
+    let seam_end = if full {
+        seam_start.clone()
+    } else {
+        edge_through(b, &ring1[last1], &ring2[last2])
+    };
+    let mut seam_start_back = seam_start.clone();
+    seam_start_back.0.reverse();
+    let mut edges: Vec<Edge> = Vec::with_capacity(edges1.len() + edges2.len() + 2);
+    edges.extend(edges1.iter().cloned());
+    edges.push(seam_start_back);
+    edges.extend(edges2.iter().rev().map(|e| Edge(e.0.oriented(Orientation::Reversed))));
+    edges.push(seam_end.clone());
+    let seams = if full { vec![seam_start] } else { vec![seam_start, seam_end] };
+    LateralPanel { wire: b.make_wire(&edges), ring1: edges1.to_vec(), ring2: edges2.to_vec(), seams }
+}
+
+/// The analytic surface swept by a profile segment `(r1,z1)→(r2,z2)`, together
+/// with the V parameter of the meridian at each end.
+///
+/// `BRepPrim_OneAxis` uses the *meridian parameter* V: the pcurves of the
+/// lateral face are `gp_Lin2d((0, V), +X)` for the ring edges
+/// (`BRepPrim_OneAxis::LateralFace`, `BRepPrim_OneAxis.cxx:388-439`). For a
+/// cylinder of revolution V is the axial abscissa from the surface origin; for
+/// a cone it is the distance from the apex along the axis
+/// (`ElSLib::ConeVIso`, `ElSLib.cxx:1793-1810`: radius `R + V*sin(A)`, center
+/// `V*cos(A)` along the axis).
+struct SegmentSurface {
+    surface: Arc<dyn Surface>,
+    v1: f64,
+    v2: f64,
+}
+
+fn segment_surface(r1: f64, z1: f64, r2: f64, z2: f64) -> Result<SegmentSurface, String> {
     let dr = r2 - r1;
     let dz = z2 - z1;
     if dz.abs() < EPS {
         // Horizontal segment → planar disc/annulus at height z1.
         let pln = GpPln::new(GpAx3::new(GpPnt::new(0.0, 0.0, z1), z_dir(), &x_dir())?);
-        Ok(Arc::new(GeomPlane::new(pln)))
+        Ok(SegmentSurface { surface: Arc::new(GeomPlane::new(pln)), v1: 0.0, v2: 0.0 })
     } else if dr.abs() < EPS {
         // Vertical segment → cylinder of radius r1 between z1 and z2.
         let ax3 = GpAx3::new(GpPnt::new(0.0, 0.0, z1), z_dir(), &x_dir())?;
-        Ok(Arc::new(GeomCylinder::new(GpCylinder::new(ax3, r1)?)))
+        Ok(SegmentSurface {
+            surface: Arc::new(GeomCylinder::new(GpCylinder::new(ax3, r1)?)),
+            v1: 0.0,
+            v2: dz.abs(),
+        })
     } else {
         // Diagonal segment → cone frustum (full cone when one radius is 0).
         // The radius is linear in z; the apex is where it vanishes.
         let semi_angle = (dr.abs() / dz.abs()).atan();
         let z_apex = z1 - r1 * dz / dr;
-        let dir = if z_apex <= z1.min(z2) + 1e-9 {
-            z_dir()
-        } else {
-            GpDir::new(0.0, 0.0, -1.0).expect("sweep_revolve: Z axis")
-        };
+        let upward = z_apex <= z1.min(z2) + 1e-9;
+        let dir = if upward { z_dir() } else { GpDir::new(0.0, 0.0, -1.0).expect("sweep_revolve: Z axis") };
         let ax3 = GpAx3::new(GpPnt::new(0.0, 0.0, z_apex), dir, &x_dir())?;
-        Ok(Arc::new(GeomCone::new(GpCone::new(ax3, 0.0, semi_angle)?)))
+        let sign = if upward { 1.0 } else { -1.0 };
+        Ok(SegmentSurface {
+            surface: Arc::new(GeomCone::new(GpCone::new(ax3, 0.0, semi_angle)?)),
+            v1: sign * (z1 - z_apex),
+            v2: sign * (z2 - z_apex),
+        })
+    }
+}
+
+/// Pcurves of a lateral face (`BRepPrim_OneAxis::LateralFace`,
+/// `BRepPrim_OneAxis.cxx:388-439`):
+///   * `ETOP` / `EBOTTOM` — the ring edges — carry `gp_Lin2d((0, VMax|VMin),
+///     +X)`; the UV abscissa is the angle around the axis, so each arc's
+///     pcurve is that line restricted to the arc's angular range;
+///   * `ESTART` (u = 0) / `EEND` (u = angle) — the seam — carry
+///     `gp_Lin2d((0, -offset), +Y)` and `gp_Lin2d((angle, -offset), +Y)`.
+///     For a full revolution `SetPCurve(E, F, c1, c2)` (`cxx:434-439`) stores
+///     *both* on the same edge, which is what makes
+///     `BRep_Tool::IsClosed(seam, lateral)` true (`BRep_Tool.cxx:820-840`).
+fn attach_lateral_pcurves(face: &Face, panel: &LateralPanel, srf: &SegmentSurface, steps: usize, total: f64) {
+    let reg = GeometryRegistry::global();
+    let fk = GeometryRegistry::shape_key(&face.0);
+    let dir_u = GpDir2d::new(1.0, 0.0).expect("u direction");
+    let dir_v = GpDir2d::new(0.0, 1.0).expect("v direction");
+    let arcs = ring_arcs(steps, total);
+    for (ring, v) in [(&panel.ring1, srf.v1), (&panel.ring2, srf.v2)] {
+        for (e, arc) in ring.iter().zip(arcs.iter()) {
+            reg.set_edge_pcurve(
+                &e.0,
+                fk,
+                Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, v), dir_u)),
+            );
+            reg.set_pcurve_range(&e.0, fk, arc.0, arc.1);
+        }
+    }
+    // The seam's 3-D curve is a plain line parameterized by arc length, so its
+    // pcurve range is the meridian span `[0, v2 - v1]` (identical to the arc
+    // length for a cylinder).
+    let span = srf.v2 - srf.v1;
+    if panel.full() {
+        reg.set_edge_pcurves(
+            &panel.seams[0].0,
+            fk,
+            vec![
+                Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(total, 0.0), dir_v)),
+                Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, 0.0), dir_v)),
+            ],
+        );
+        reg.set_pcurve_range(&panel.seams[0].0, fk, 0.0, span);
+    } else {
+        reg.set_edge_pcurve(
+            &panel.seams[0].0,
+            fk,
+            Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, 0.0), dir_v)),
+        );
+        reg.set_pcurve_range(&panel.seams[0].0, fk, 0.0, span);
+        reg.set_edge_pcurve(
+            &panel.seams[1].0,
+            fk,
+            Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(total, 0.0), dir_v)),
+        );
+        reg.set_pcurve_range(&panel.seams[1].0, fk, 0.0, span);
+    }
+}
+
+/// Pcurves of a planar cap (`BRepPrim_OneAxis::TopFace` / `BottomFace`,
+/// `BRepPrim_OneAxis.cxx:465-468`, `:504-509`): the ring edge carries a
+/// `gp_Circ2d(gp_Ax2d(gp_Pnt2d(0, 0), +X), R)` — the cap plane's own UV frame,
+/// whose abscissa is the angle around the axis.
+fn attach_cap_pcurves(face: &Face, rings: &[(&[Edge], f64)], steps: usize, total: f64) {
+    let reg = GeometryRegistry::global();
+    let fk = GeometryRegistry::shape_key(&face.0);
+    let dir_u = GpDir2d::new(1.0, 0.0).expect("u direction");
+    let dir_v = GpDir2d::new(0.0, 1.0).expect("v direction");
+    let ax22d = GpAx22d::new(GpPnt2d::new(0.0, 0.0), dir_u, dir_v).expect("cap frame");
+    let arcs = ring_arcs(steps, total);
+    for (ring, radius) in rings {
+        let circle = Arc::new(Geom2dCircle::new(GpCirc2d::new(ax22d, *radius)));
+        for (e, arc) in ring.iter().zip(arcs.iter()) {
+            reg.set_edge_pcurve(&e.0, fk, circle.clone());
+            reg.set_pcurve_range(&e.0, fk, arc.0, arc.1);
+        }
     }
 }
 
@@ -153,6 +339,7 @@ fn segment_wire(
     z1: f64,
     r2: f64,
     z2: f64,
+    total: f64,
 ) -> Wire {
     if (z2 - z1).abs() < EPS {
         if r1 >= r2 {
@@ -161,7 +348,7 @@ fn segment_wire(
             b.make_wire(edges2)
         }
     } else {
-        lateral_wire(b, ring1, edges1, ring2, edges2)
+        lateral_wire(b, ring1, edges1, ring2, edges2, total).wire
     }
 }
 
@@ -177,29 +364,41 @@ fn build_segment_face(
     z1: f64,
     r2: f64,
     z2: f64,
+    steps: usize,
+    total: f64,
 ) -> Result<Option<(Face, Wire)>, String> {
     let dr = r2 - r1;
     let dz = z2 - z1;
     if (r1.abs() < EPS && r2.abs() < EPS) || (dr.abs() < EPS && dz.abs() < EPS) {
         return Ok(None);
     }
-    let surface = segment_surface(r1, z1, r2, z2)?;
+    let srf = segment_surface(r1, z1, r2, z2)?;
     let profile_wire;
     let mut wires: Vec<Wire> = Vec::new();
     if dz.abs() < EPS {
         // Horizontal: outer circle wire; when both radii are positive the inner
         // ring is added as a hole wire (planar annulus).
-        let (outer_edges, inner_edges) = if r1 >= r2 { (edges1, edges2) } else { (edges2, edges1) };
+        let (outer_edges, outer_r, inner_edges, inner_r) = if r1 >= r2 {
+            (edges1, r1, edges2, r2)
+        } else {
+            (edges2, r2, edges1, r1)
+        };
         profile_wire = b.make_wire(outer_edges);
         wires.push(profile_wire.clone());
-        if r1.min(r2) > EPS {
+        let mut caps: Vec<(&[Edge], f64)> = vec![(outer_edges, outer_r)];
+        if inner_r > EPS {
             wires.push(b.make_wire(inner_edges));
+            caps.push((inner_edges, inner_r));
         }
-    } else {
-        profile_wire = lateral_wire(b, ring1, edges1, ring2, edges2);
-        wires.push(profile_wire.clone());
+        let face = b.make_face(srf.surface.clone(), &wires);
+        attach_cap_pcurves(&face, &caps, steps, total);
+        return Ok(Some((face, profile_wire)));
     }
-    let face = b.make_face(surface, &wires);
+    let panel = lateral_wire(b, ring1, edges1, ring2, edges2, total);
+    profile_wire = panel.wire.clone();
+    wires.push(profile_wire.clone());
+    let face = b.make_face(srf.surface.clone(), &wires);
+    attach_lateral_pcurves(&face, &panel, &srf, steps, total);
     Ok(Some((face, profile_wire)))
 }
 
@@ -236,6 +435,8 @@ pub fn revolve_angle(profile: &[GpPnt2d], steps: usize, angle: f64) -> Result<Re
             z1,
             r2,
             z2,
+            steps,
+            angle,
         )? {
             faces.push(face);
             profiles.push(wire);
@@ -295,6 +496,7 @@ pub fn revolve_open_wire(points: &[GpPnt2d], steps: usize) -> Result<Wire, Strin
         points[0].y(),
         points[1].x(),
         points[1].y(),
+        2.0 * PI,
     ))
 }
 

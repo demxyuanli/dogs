@@ -321,6 +321,14 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
 /// wire, seam and pcurve conventions (the conventions `BRepPrimCylinder` had to
 /// match for `BOPAlgo_WireSplitter::Tolerance2D` to close the seam loops).
 ///
+/// Re-measured 2026-10-16 (package P039/T-169) *after* `sweep_revolve` was
+/// aligned to those conventions (`BRepPrim_OneAxis::LateralWire`,
+/// `BRepPrim_OneAxis.cxx:666-679`; `LateralFace` pcurves, `cxx:388-439`;
+/// `MakeVertex` tolerance, `BRepPrim_Builder.cxx:129-132`): the analytic tool is
+/// still dropped by `box ∪ neck` and still *adds* material in
+/// `faceted cylinder − groove`, so the OneAxis wire/seam/pcurve conventions are
+/// necessary but not sufficient. The workaround stays.
+///
 /// Consecutive rings form quad strips; a ring on the axis collapses to a fan,
 /// so closed profiles produce closed solids.
 pub(super) fn revolve_profile_about(profile: &[GpPnt2d], steps: usize, axis: &GpAx1) -> Result<TopoShape, String> {
