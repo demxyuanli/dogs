@@ -437,9 +437,20 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   pairs to `GGenExtCC` = `Extrema_GGenExtCC` with `GlobOptFuncCCC2` + `math_GlobOptMin`
   (`extrema_cc/general_extrema.rs:245-292`); the `is_line`/`classify_circle` sampler the header
   describes is gone. Only the doc comment needs correcting (next doc pass).
-- `occt-math/globoptmin.rs:590` **STALE (re-verified 2026-10-15)**: `math_NewtonMinimum::Perform` local
-  arm marker; the faithful port exists at `occt-math/newton_minimum.rs` (re-exported `lib.rs:59`), so
-  the `:590` and `occt-math/newton.rs:81,91` markers are stale (doc-only).
+- `occt-math/globoptmin.rs:590` **CLOSED (2026-10-16, T-173 / package P043) — the earlier
+  "STALE (doc-only), re-verified 2026-10-15" reading was wrong.** The 2026-10-15 pass reasoned that
+  because the faithful `math_NewtonMinimum` port exists at `occt-math/newton_minimum.rs`
+  (re-exported `lib.rs:59`) the marker was doc-only. A faithful port existing is not the same as the
+  arm being wired: at `196463f7^` the `computeLocalExtremum` Newton arm was `let _ = has_hessian;`
+  (skipped), the Powell arm was a whole UNPORTED block, and the BFGS arm was fed `numeric_gradient`
+  (a central difference, `h = 1e-6`) instead of the objective's analytic
+  `math_MultipleVarFunctionWithGradient::Gradient`. P043 wires all three arms
+  (`math_GlobOptMin.cxx:272-291` Newton, `cxx:293-312` BFGS, `cxx:314-336` Powell via the new full
+  `math_Powell.cxx:107-229` port), drops the `has_gradient`/`has_hessian` boolean stand-ins for the
+  `cxx:273`/`cxx:294` `dynamic_cast`s in favour of
+  `MathMultipleVarFunction::as_gradient`/`as_hessian`, and deletes `numeric_gradient`. The `:590`
+  marker and the `occt-math/newton.rs:81,91` family are gone (`rg UNPORTED` is empty across
+  `globoptmin.rs`, `powell.rs` and `bracket_minimum.rs`).
 - `occt-core/src/quantity/mod.rs:33`: `Color::from_name` returns sRGB columns and only 23 names
   (`Quantity_ColorTable.pxx:185`, `Quantity_Color.hxx:49-51`); test-only reachability.
 - `occt-core/src/geom/polyline_simplify.rs:15` (RDP) is not in OCCT but is live via
@@ -451,7 +462,8 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 
 - **C-A (leaf, deps present, reachable)** — the B1 items above, plus `geom2d_convert.rs:77` from
   B7 (the sibling `step/write_context.rs:314` and `step/format.rs:472,526` lines are CLOSED in P010
-  and P011); and `extrema_cc/mod.rs:9`, `globoptmin.rs:590` from B8.
+  and P011); and `extrema_cc/mod.rs:9` from B8 (`globoptmin.rs:590` from B8 is now CLOSED, see the B
+  section above).
 - **C-B (needs an unported layer)** — `shhealing/shape_fix_face.rs` (5 markers, need
   `ShapeFix_Wire::Perform`), `step/read_topology/step_to_geom_curve{2d}.rs` (closed/reversal flags,
   2D rational weights), `brep_check.rs:149` (`BRepCheck_Edge::InContext` ->
