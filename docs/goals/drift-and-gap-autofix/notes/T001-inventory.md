@@ -118,6 +118,13 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   and discards the result (`cxx:648-655`) so containers stay `TopAbs_UNKNOWN`; both Rust copies loop over
   children and return the first non-UNKNOWN state.
 - `bop_builder.rs:88-89` bbox-disjoint short-circuit: OCCT `BOPAlgo_BOP` has none.
+  **✅ CLOSED 2026-10-16 (P038 / T-168, `ff235d37`)**: the early return
+  (`bbox_a.is_out_box(&bbox_b)` -> `disjoint_result(a, b, op)`) is deleted, with it the
+  `disjoint_result` re-export; `boolean` now always runs `boolean_via_bopalgo`.
+  `BOPAlgo_BOP::CheckData` (`BOPAlgo_BOP.cxx:106-160`) only demands two arguments and
+  `Perform` / `PerformInternal1` (`cxx:364`, `:422`) run the pave filler unconditionally.
+  Finding 4/7 are moot: they lived only in `crates/occt-topo/src/bop_curved/`, deleted
+  2026-10-14.
 - `bop_build_solids.rs:232/328` `close_open_shells` re-attachment + `geometrically_open` `continue`
   discard: OCCT attaches nothing after taking closed shells (`BOPAlgo_BuilderSolid.cxx:223`).
 - `bop_geomlib_closed.rs:168,185` 23-sample iso test substituting for
@@ -869,3 +876,16 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   (`.target-gate/t167/`). `GeomAbs_OffsetCurve` needs no work: all three consumers put it in their
   `default:` arm. **`Adaptor3d_CurveOnSurface` now has no code-side registration left** (`Resolution`
   P035, elementary KPart P036, pole KPart P037).
+  P038 / T-168 (`ff235d37`) did the measurement pass a ninth time the same day, still with no
+  measurement change (no files added, no `UNPORTED` line removed): its card, the gate-source comment
+  repointed to `.target-gate/t168`, the `Stat` still at 0 registered code items (P038 closed an item
+  that lived only in the `bop-boolean.md` findings list, not on the canvas `OPEN` list), and the
+  "跟踪" paragraph plus the T999 callout extended to P027..P038. P038 left the `CurveOnSurface` line
+  for a different production line (BOP): it deleted the `bop_builder::boolean` disjoint-bbox
+  short-circuit, the last live invented item in the BOP family, and recorded findings 4/7 as moot
+  because `crates/occt-topo/src/bop_curved/` was deleted 2026-10-14. This pass verified rather than
+  re-pinned the `PARITY` readings again: t168's `gates-raw.txt` differs from t167's by exactly two
+  lines (the `finished in` durations), and the 15 `ok` lines of its `export-obj.txt` are
+  word-identical to t167's, so the canvas `T0M` row stays at the t166 value. Side finding left
+  unfixed: `tests/phase3_integration.rs::bbox_and_mesh_agree` fails on a `1.0000001` vs `1.0`
+  bbox comparison; stashing confirms it predates P038.

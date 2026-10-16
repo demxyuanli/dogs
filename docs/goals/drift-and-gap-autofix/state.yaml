@@ -82,6 +82,32 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas `PACKAGES` section -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P038
+    task: T005
+    commit: "ff235d37 fix(bop): drop the invented disjoint-bbox short-circuit from boolean (BOPAlgo_Builder.cxx:129-140, BOPAlgo_BOP.cxx:106-160; T-168)"
+    title: "删除 `bop_builder::boolean` 里的包围盒不相交短路（audit A5 发现 12）：原实现在跑 `BOPAlgo_BOP` 之前先算两个 operand 的 bbox，二者互不相交即直接返回手工拼的 `disjoint_result(a, b, op)`，绕过 pave filler。OCCT 没有这条早退 —— `BOPAlgo_BOP::CheckData`（`BOPAlgo_BOP.cxx:106-160`）只要求两个参数，`Perform`（`cxx:364`）/`PerformInternal1`（`cxx:422`）无条件跑 pave filler，不相交的对自然给出空/分离的 images。本包删除该分支（及只被它使用的 `disjoint_result` 再导出），文件头改写为记录 cxx 证据（T-168）"
+    files:
+      - "crates/occt-topo/src/bop_builder.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/bop-boolean.md"
+      - "specs/_audit/_index.md"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+      - "~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx"
+    closed_inventory_lines:
+      - "**`bop_builder::boolean` 包围盒不相交短路（`bop-boolean.md` 发现 12）**：`bop_builder.rs` 原在 `boolean_via_bopalgo` 之前插了一段 `bbox_a.is_out_box(&bbox_b)` 早退，命中即 `return Ok(disjoint_result(a, b, op))`。OCCT 无此分支：`BOPAlgo_BOP::CheckData`（`BOPAlgo_BOP.cxx:106-160`，委派 `BOPAlgo_Builder::CheckData` `BOPAlgo_Builder.cxx:129-140`）只校验「两个参数」，`BOPAlgo_BOP::Perform`（`cxx:364`）/`PerformInternal1`（`cxx:422`）无条件 `Prepare` + `PerformInternal1` 跑 pave filler，不相交的实参由 BOPAlgo 自身给出空/分离 images，没有一个「手工拼结果」的出口。本包删除该早退与只服务于它的 `disjoint_result` 再导出；`bop_builder_planar::boolean_planar_legacy` 是死代码遗留模块，其内部同名副本不在 live 路径、未动。"
+      - "**同族失效登记（发现 4/7）**：`bop-boolean.md` 的发现 4（`region_inside_other` 计票）与发现 7（`classify_face` 的 5×5/8×8 采样分类）此前记为「仍未修」，但二者只落在 `crates/occt-topo/src/bop_curved/`，该目录已于 2026-10-14 整体删除（见发现 3 处置），故不再指向任何 live 代码。本包在 `bop-boolean.md` 里为两条补「已失效」处置行，使该家族的三条「仍为自创」（4/7/12）至此全部有结论。"
+    gates:
+      check: "五 crate `--all-targets` **0 error**（occt-core 12 / occt-math 30 / occt-geom 105 / occt-geom2d 82 / occt-topo 413 warnings，与 T002 同数，无新增告警）"
+      lib: "`occt-core --lib` **283 / 0**、`occt-geom --lib` **143 / 0**、`occt-geom2d --lib` **72 / 0**、`occt-topo --lib` **1251 / 0**（= T002 基线，单调不降；未新增测试、未改既有断言）"
+      step_obj_gates: "**4 / 4**（`.target-gate/t168/gates-raw.txt`；`Compare-Object` 对 `t167` 的整档差异为 **2**，仅 `test result: ... finished in` 的耗时行，23 条面积比与 23 条 `ours v=/f=` 行逐字一致）"
+      export_data_obj: "**15 / 15 ok**；15 条 `ok <model> ... v= f=` 行与 `t167` 逐字一致（`.target-gate/t168/export-obj.txt`）"
+      canvas: "看板 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 随本包同步更新（PACKAGES 追加 P038、codeHead/boardHead/gate-source 推进、第六节 Callout 改 P039）"
+    side_findings:
+      - "**诚实边界**：四道门禁与 P037 逐字一致只证明本包在 15 个导出模型与 23 个对拍模型上**无回归**；这些语料里没有「布尔两 operand 包围盒互不相交」的用例（面积比与顶点/面数一字未变），故删除该早退在当前基线里无可观察差异。对齐依据是 cxx 无同等分支，不是读数差异。"
+      - "**blast radius**：`bop_builder::boolean` 是 `boolean_dispatch` / `brep_pattern` / `boolean_multi` 等家族的统一入口，原早退一旦命中即整段绕过 BOPAlgo；删除后这些入口全部无条件走 `boolean_via_bopalgo`，与 OCCT 一致。`disjoint_result` 在 `bop_builder_core` 定义的副本仍保留（`boolean_planar_legacy` 等非 live 模块仍在用），本包只撤掉 `bop_builder` 一侧的再导出。"
+      - "**旁支（未修，已在 `bop-boolean.md` 之外登记）**：`tests/phase3_integration.rs::bbox_and_mesh_agree` 在 `assert!(b1 == y1 && c1 == z1)` 上失败（几何 bbox `1.0000001` vs 网格 bbox `1.0`）。stash 验证为**预存在**失败，与本包无关，工作树保持零回归；另一族的采样/阈值自创项（发现 18 等）不属本包。"
+    next_task_if_not_complete: "下一片候选：P039 Scout + Judge —— BOP 家族在 live 入口上不再有非忠实件（发现 12 已删、4/7 随 `bop_curved` 删除失效；余项为「等价替换已登记」与死代码 `boolean_planar_legacy`）。须从 `specs/_audit/occt-geom.md` / `specs/_audit/topo-rest.md` / `specs/_audit/mesh-exchange.md` / `specs/_audit/bop-boolean.md` / canvas 第四节里另取一条未复核的登记项，或按 goal 的 T999 Judge audit 走一遍全量清点。"
   - id: P037
     task: T005
     commit: "fd04dc8b fix(topo): port Adaptor3d_CurveOnSurface::Bezier/BSpline pole classes into CurveOnSurface (Adaptor3d_CurveOnSurface.cxx:1458-1485, 1489-1520; T-167)"
@@ -107,7 +133,7 @@ packages:
       - "**诚实边界**：四道门禁与 P036 逐字一致只证明本包在 15 个导出模型与 23 个对拍模型上**无回归**，不证明这批语料里真的有平面 + 极点类 pcurve 的 cos 被分流到新臂（面积比与顶点/面数一字未变，说明这些模型上两个臂给出相同读数）。对齐依据是 cxx 有同等分支，不是读数差异。"
       - "**blast radius 已核（P036 卡里列为前置条件）**：`Curve` 的 `nurbs_degree`/`bspline_poles`/`bezier_poles` 在本仓被当类判据用的 60 余处消费点，全部经 `CurveOnSurface` 时只在 `kpart_poles.is_some()` 时才改变答案 —— 即只有「平面面 + 极点类 pcurve」才翻转，且翻转方向与 cxx 一致（这些点在 cxx 侧同样看 `Extrema_CurveTool` 的转发值）。`edge_discret.rs:502-507` 的 `two_poles` 与 `:959` 的周期性判据是最近的两个消费点，已随本包一并复核。`GeomAbs_OffsetCurve` 无需处理：三个 extrema 消费方都把它归入 `default:` 臂（`Extrema_GGExtPC.hxx:390-502`、`Extrema_GFuncExtPC.hxx:115-128`、`Extrema_GLocateExtPC.hxx:110-140`），`eval_k_part` 的就地注记已改为只登记 Offset。"
       - "**测量口径（P034 记录，沿用）**：`MEASURE.rust` = `src/**/*.rs` 仅计（1,111 文件 / 338,784 行），`MEASURE.unported` = `crates/**/*.rs` 的大小写敏感 `UNPORTED` 计数。本包删掉两处 UNPORTED 注记、未删该计数以外的标记，未重跑测量。"
-    next_task_if_not_complete: "下一片候选：P038 Scout + Judge —— `Adaptor3d_CurveOnSurface` 至此无代码侧登记项（`Resolution` P035、初等面 P036、极点面 P037 均已落地；只剩 Offset 一项属本仓不可观察）。须从 `specs/_audit/occt-geom.md` / `specs/_audit/topo-rest.md` / `specs/_audit/mesh-exchange.md` / canvas 的 OPEN / DOCDRIFT 段另找一条未复核的登记项，或按 goal 的 T999 Judge audit 走一遍全量清点。"
+    next_task_if_not_complete: "已闭环：`Adaptor3d_CurveOnSurface` 至此无代码侧登记项（`Resolution` P035、初等面 P036、极点面 P037 均已落地；只剩 `GeomAbs_OffsetCurve`，三个 extrema 消费方都归入 `default:` 臂，本仓不可观察）。下一片 P038 未在此产线续找，改到 BOP 产线收口 `bop_builder::boolean` 的包围盒不相交早退（见 P038 卡）；再下一片 P039 须从 `specs/_audit/*.md` / canvas 第四节另取一条未复核的登记项，或按 goal 的 T999 Judge audit 走一遍全量清点。"
   - id: P036
     task: T005
     commit: "8d22a639 fix(topo): complete the CurveOnSurface elementary EvalKPart surface (Adaptor3d_CurveOnSurface.cxx:1381-1386, 1399-1416; T-166)"

@@ -10,10 +10,10 @@
 `FillImages(V/E/W/F/Sh/Sol) → BuildSplitSolids → FillInternalShapes → BuildShape`
 （`bop_builder2/arguments.rs:373-475`、`bop_bop.rs:548`、`bop_split_solids_occt.rs:79`）；点分类用
 `brep_class3d::SolidClassifier`（`algo_tools/construct.rs:191`）；同域用 `BopToolsSet`（`bop_tools_set.rs:107`）；
-growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三条 live 入口仍是非忠实的**：
+growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史上点名的三条 live 入口至此两条已收口、一条仍登记**（第 1 条 `bop_builder::boolean` 家族与第 2 条 `curved_boolean_full` 曲面分派均已收口，第 3 条 `brepfeat::boolean_feature` 仍登记）：
 
 1. **`bop_builder::boolean`/`boolean_dispatch` 家族**（`bop_builder.rs:45`；被 `brep_pattern.rs:81`、
-   `boolean_multi/with_check/compound/...` 使用）：BOPAlgo 之前加了**包围盒不相交短路**（现 `bop_builder.rs:88-89`，**仍在**）。
+   `boolean_multi/with_check/compound/...` 使用）：BOPAlgo 之前加了**包围盒不相交短路**（原 `bop_builder.rs:88-89`，**✅ 2026-10-16 已删除，包 P038 / T-168 `ff235d37`** —— `BOPAlgo_BOP::CheckData`（`BOPAlgo_BOP.cxx:106-160`）只要求参数 ≥ 2，`Perform`（`cxx:364`）无条件跑 pave filler，全树无该早退；见发现 12）。
    **✅ 已修**：空面输入的**体素布尔**与**非实体输入的 `boolean_degenerate` 尽力而为**（face∩solid 用**质心**判内外、
    `solid−face` **原样返回 solid**）**均已删除** —— `bop_builder_core::voxel_fallback` 删于 T-41、
    `boolean_degenerate` 整套（含 `degenerate_empty`/`degenerate_non_solid`/`shape_centroid`）删于 T-47；
@@ -31,10 +31,11 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 **Solid/CompSolid 已改调忠实 `brep_class3d::SolidClassifier`**（T-38），只有**非实体**形状仍走 7×7 网格射线奇偶
 （就地标 **UNPORTED**，`is_inside_mesh:290`）；② 点投影 —— 32×32 网格 + 坐标下降**已删除**
 （`int_tools_full/context.rs:194-195`，T-52）；③ draft shell 丢弃「顶点<3」的面 —— `bop_draft_solid_occt.rs::face_is_degenerate`
-**已删除**（T-47；`face_is_degenerate` 现仅存在于 `bop_builder_repair.rs`，语义不同）。**仍未修**：`bop_curved/region_mesh.rs::classify_face` 的 5×5/8×8 采样分类（发现 7；发现 3 的网格曲面布尔已于 2026-10-14 从生产分派摘除，见该行处置）。（`boolean_with_check` 的容差重算属发现 16，**已于 2026-10-13 删除**。）
+**已删除**（T-47；`face_is_degenerate` 现仅存在于 `bop_builder_repair.rs`，语义不同）。**仍未修**：~~`bop_curved/region_mesh.rs::classify_face` 的 5×5/8×8 采样分类（发现 7；发现 3 的网格曲面布尔已于 2026-10-14 从生产分派摘除，见该行处置）~~ —— **该文件已于 2026-10-14 随 `crates/occt-topo/src/bop_curved/` 整体删除，发现 7（以及同样只落在 `bop_curved/*` 的发现 4）不再指向任何 live 代码**。（`boolean_with_check` 的容差重算属发现 16，**已于 2026-10-13 删除**。）
 
 统计：**自创 13 条 + 等价替换未登记 3 条 + 已登记 2 条 = 18 条**（其中 3 条仅在测试/死代码路径）。
 > **2026-10-14 复核**：发现 **1/2/3/5/6/8/9/10** 已修（见各行「处置」行）；发现 **4/7/12** 仍为自创，发现 **16** 于 **2026-10-13 已修**。
+> **2026-10-16 复核（包 P038 / T-168，`ff235d37`）**：发现 **12** 已删除；发现 **4/7** 随 `crates/occt-topo/src/bop_curved/` 于 **2026-10-14** 整体删除而**失效**（不再是 live 代码，也不再有测试断言依赖），本报告到该日为止的三条「仍为自创」至此全部收敛。BOP 家族在 live 入口上不再有非忠实件；剩下的登记项都是「等价替换已登记」（发现 13/14/15/17）或死代码（`boolean_planar_legacy`）。
 
 ## 发现
 
@@ -165,7 +166,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**但三�
 - 影响：几何通常等价（Fuse=compound、Cut=原对象、Common=空），但 `faces` 为空 → 调用方按 face 继续处理会静默丢面；`shape_bbox` 本身是几何采样实现的包围盒，短路条件比 OCCT 乐观。
 - 建议：登记为等价替换或删除，让 PaveFiller 自判无干涉。
 
-- **处置（2026-10-06 复核：仍未修；行号已漂移）**：短路仍在 `crates/occt-topo/src/bop_builder.rs:88-89`（`bbox_a.is_out_box(&bbox_b)` → `disjoint_result`），`:3-8` 文件头已登记"Disjoint bounding boxes short-circuit"与 `boolean_planar_legacy` 的 leftover 性质。
+- **处置（✅ 2026-10-16 已删除：包 P038 / T-168，commit `ff235d37`）**：短路整段从 live 入口 `crates/occt-topo/src/bop_builder.rs::boolean` 删除，两操作数一律交给 `boolean_via_bopalgo`（= `bop_builder2::builder_bop_with_fuzzy` → `BOPAlgo_BOP`）。cxx 依据：`BOPAlgo_BOP::CheckData`（`BOPAlgo_BOP.cxx:106-160`，转发 `BOPAlgo_Builder::CheckData` `BOPAlgo_Builder.cxx:129-140`）只要求参数 ≥ 2，`BOPAlgo_BOP::Perform`（`cxx:364`）与 `PerformInternal1`（`cxx:422`）无条件跑 pave filler；全树无包围盒早退。文件头原句「Disjoint bounding boxes short-circuit」改为记录该 cxx 证据与 finding 12 编号。`bop_builder_planar::boolean_planar_legacy`（非 live leftover）内的同一短路保留未动，`bop_builder_core::disjoint_result` 因此仍有使用点。门禁：`occt-topo --all-targets` 0 error / 413 warnings、`occt-topo --lib` **1251/0**、`step_obj_gates` **4/4**（23 条面积比与 23 条 `ours v=/f=` 行与 P037 的 `.target-gate/t167/gates-raw.txt` 逐字一致）、`export_data_obj` **15/15** 逐字一致；`phase4..10/19/20` 与 `bop_builder2_boss` 全绿。**诚实边界**：这 15 个导出模型与 23 个对拍模型上没有不相交的布尔操作数，故四道门禁只证明无回归；删短路的依据是 cxx 无该分支，不是读数差异。
 
 ### 13. `close_open_shells` + `geometrically_open`：OCCT 没有的 section 面重挂/几何开口丢壳
 - 判定：**等价替换已登记**（`builder_solid.rs:36-40` 已写明 translation boundary）
