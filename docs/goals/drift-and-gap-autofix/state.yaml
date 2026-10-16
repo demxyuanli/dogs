@@ -82,6 +82,34 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas CYCLES array -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P032
+    task: T005
+    commit: "55b0a6d6 fix(intana): port the IntAna_IntLinTorus done semantics (IntAna_IntLinTorus.cxx:88-133; T-162)"
+    title: "`IntAna_IntLinTorus` 的 `done` 语义（`IntAna_IntLinTorus.cxx:88-133`）落地：`line_torus_intersect` 改返回携带 done 的 `LineTorusIntersection` 并直接持有 `DirectPolynomialRoots::new5(..)`，消费方按 `!IsDone -> return false` 回落（T-162）"
+    files:
+      - "crates/occt-geom/src/intana/line_torus.rs"
+      - "crates/occt-geom/src/intana/tests.rs"
+      - "crates/occt-topo/src/intcurvesurface/solvers.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/occt-geom.md"
+      - "specs/_audit/_index.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "**`done` 载荷（audit `occt-geom.md` §9 的 (a) 项）**：新增 `pub struct LineTorusIntersection { done, points }`（`crates/occt-geom/src/intana/line_torus.rs:826-843`）—— `is_done()` = `IntAna_IntLinTorus::IsDone()`（`IntAna_IntLinTorus.lxx:18-21`）、`points()` = `NbPoints()`/`Value(i)` 的载荷（`lxx:23-44`，`!done` 时为空表）；`line_torus_intersect`（`line_torus.rs:851-924`）改返回该结构。原签名 `-> Vec<GpPnt>` 把 OCCT 的「求解器未完成」「有根但全为坏解」「真无根」三种情形混为同一个空表。"
+      - "**改持求解器本体，不再经 `quartic_roots` 适配器**：`occt_core::math_direct_poly_roots::quartic_roots`（`math_direct_poly_roots.rs:724-726`）经 `solution_values`（`:703-711`）把 `!IsDone()`、`InfiniteRoots` 与零根都折成空 `Vec<f64>`，而 cxx 对「求解器未完成」（`cxx:126-131` 的 `done = false`）与「完成但零根」（`cxx:121-125` 的 `done = true`）给出相反的 `done`。故函数体直接持有 `DirectPolynomialRoots::new5(a4, a3, a2, a1, a0)`（`line_torus.rs:893`），先按 `cxx:89` 的 `if (mdpr.IsDone())` 分流，再按 `cxx:90-91` 走 `NbSolutions()`/`Value(i)` 循环（`line_torus.rs:897-899`）。"
+      - "**两处 `done = false` 都落地**：`cxx:116-120` 的 `if (n > 0 && nbsolvalid == 0 && aNbBadSol == n) { nbpt = 0; done = false; }` 现按 `n > 0 && out.is_empty() && nb_bad_sol == n` 实现（`line_torus.rs:917-921`），坏解计数 `nb_bad_sol` 在回代判据 `p_sol_t.square_distance(&p) > 1.0e-10` 处分增（`cxx:99-106`，`line_torus.rs:911-914`）；`cxx:126-131` 的求解器未完成即 `done = false` 早退（`line_torus.rs:894-896`）。`cxx:121-125` 的完成态（含 `n == 0`）仍回 `done = true`（`line_torus.rs:923`）。"
+      - "**消费方回落**：`crates/occt-topo/src/intcurvesurface/solvers.rs:456-465` 在 `!inter.is_done()` 时 `return None`，即 `IntCurveSurface_InterUtils.pxx:1290-1294` 的 `if (!intlintorus.IsDone()) { return false; }`；`ProcessLinTorus` 返回 false 后 `IntCurveSurface_Inter.pxx:578-581` 清 `isAnaProcessed`，该对曲面改走多面体干涉（本仓 `perform_curve_surface` 的 `polyhedron_path` 臂，`solvers.rs:179`、`:188-191`）。"
+    gates:
+      check: "`cargo check --manifest-path crates/occt-geom/Cargo.toml --offline --all-targets` 0 errors / 105 warnings；`crates/occt-topo` 0 errors / 413 warnings；`crates/occt-core` 0 / 12、`crates/occt-math` 0 / 30、`crates/occt-geom2d` 0 / 82（五 crate 均与 T002 同数，无新增告警）"
+      lib: "occt-geom 143 / 0; occt-topo 1251 / 0（= T002 基线，单调不降；仅更新 `intana/tests.rs` 两条既有断言以适配新返回类型，未新增测试）"
+      step_obj_gates: "4 / 4（`.target-gate/t162/gates-raw.txt`，直接跑 `cargo test` 编出的 `step_obj_gates` 二进制；该日志与 P031 的 `.target-gate/t161/gates-raw.txt` **逐字节相同**，diff 判词为「Files are identical」）"
+      export_data_obj: "15 / 15 ok，逐模型 v/f 与 bbox 与 T002 冻结表逐位一致（`.target-gate/t162/export-obj.txt` 与 `.target-gate/t156/export-obj.txt` 逐字节相同）"
+    side_findings:
+      - "**诚实边界**：两处 `done = false` 在 15 个导出模型与 23 个对拍模型上都没有触发，四道门禁逐位一致只证明无回归，不证明这两支本身。"
+      - "**同一函数的下一条（P032 之外）**：audit `occt-geom.md` §9 的 (b) 项保持登记 —— `out.sort_by(|a, b| a.x().partial_cmp(&b.x()).unwrap_or(Ordering::Equal))`（`line_torus.rs:922`）在 OCCT 中无对应（`cxx:104-108` 按根序号写入 `thePoint[nbsolvalid]`，不重排），随 `09e227c2` 引入；消费方 `perform_curve_surface`（`solvers.rs:210`）与 `intana/tests.rs` 都各自再排序，故删除该排序无消费方依赖语义。属门禁第 2 条禁止的「OCCT 里不存在的规则」，列为下一片候选。"
+    next_task_if_not_complete: "下一片候选：audit `occt-geom.md` §9 的 (b) 项 —— 删除 `line_torus.rs:922` 的 `out.sort_by`（cxx 无对应）。改完先编译，再跑四道门禁。"
   - id: P031
     task: T005
     commit: "9bef99ad fix(intana): port the IntAna_QuadQuadGeo plane/cone tail as a declined state"

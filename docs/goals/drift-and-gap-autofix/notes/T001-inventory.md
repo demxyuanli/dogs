@@ -688,6 +688,28 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    `IntAna_IntLinTorus` done semantics (`IntAna_IntLinTorus.cxx:88-129`; `occt-geom.md` section 9),
    which needs a done-carrying return type for `line_torus_intersect` because the `quartic_roots`
    convenience wrapper drops `DirectPolynomialRoots::is_done()`.
+   **P032 / T-162 closed that item** (2026-10-16, commit `55b0a6d6`): `line_torus_intersect`
+   (`line_torus.rs:851-924`) now returns `LineTorusIntersection { done, points }` (`:826-843`), the
+   `IsDone()` / `NbPoints()` / `Value(i)` shape of `IntAna_IntLinTorus.hxx:29-66` /
+   `IntAna_IntLinTorus.lxx:18-44`. The body no longer goes through the `quartic_roots` adapter --
+   `solution_values` (`math_direct_poly_roots.rs:703-711`) folds `!IsDone()`, `InfiniteRoots` and
+   zero roots into the same empty `Vec<f64>`, while cxx gives opposite `done` for "solver declined"
+   (`cxx:126-131`) and "solver finished with zero roots" (`cxx:121-125`). It holds
+   `DirectPolynomialRoots::new5(a4, a3, a2, a1, a0)` instead, branches on `mdpr.IsDone()` (`cxx:89`)
+   first, and walks the `NbSolutions()` / `Value(i)` list (`cxx:90-91`). Both `done = false` exits
+   land: the declined solver (`cxx:126-131`) and the all-roots-rejected case
+   `n > 0 && nbsolvalid == 0 && aNbBadSol == n` (`cxx:116-120`), the latter implemented as
+   `n > 0 && out.is_empty() && nb_bad_sol == n` with the bad-root counter incremented at the
+   `SquareDistance > 1e-10` back-substitution test (`cxx:99-106`). The consumer
+   `crates/occt-topo/src/intcurvesurface/solvers.rs:456-465` returns `None` when `!is_done()`, i.e.
+   `IntCurveSurface_InterUtils.pxx:1290-1294`'s `if (!intlintorus.IsDone()) { return false; }`, whose
+   effect is `IntCurveSurface_Inter.pxx:578-581` clearing `isAnaProcessed` and sending the pair to the
+   polyhedron interference. Honest bound: neither exit fires on the 15 exported or 23 parity models,
+   and both gate logs are byte-identical to P031 (`.target-gate/t162/gates-raw.txt` vs
+   `.target-gate/t161/gates-raw.txt`, and `export-obj.txt` vs `t156`), so this proves no regression
+   only. Still registered: `occt-geom.md` section 9 item (b), the `out.sort_by(|a, b| a.x()...)` at
+   `line_torus.rs:922`, which has no cxx counterpart (`cxx:104-108` writes `thePoint[nbsolvalid]` in
+   root order, no reordering), plus the baseline-less STEP writer harness.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
@@ -703,7 +725,11 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   topo 214,139, the gate-source comment repointed to `.target-gate/t161`, `Stat` down to 1
   registered code item, and the "跟踪" paragraph plus the T999 callout extended to P027..P031);
   the SEMANTIC LIVE-staleness is still open, and P030's stale `40 文件/+2,071 行` delta figures were
-  corrected to the measured `+47 文件/+2,297 行` against 10-13 in the same pass.
+  corrected to the measured `+47 文件/+2,297 行` against 10-13 in the same pass. P032 / T-162 did this pass a third time (P032 card, `MEASURE.rust`
+  1,107 files / 338,101 lines, `CRATES` geom 44,191 / topo 214,153, the gate-source comment repointed
+  to `.target-gate/t162`, the `Stat` moved to 2 registered code items -- section 9 item (b) and the
+  baseline-less STEP writer harness -- and the "跟踪" paragraph plus the T999 callout extended to
+  P027..P032); the SEMANTIC LIVE-staleness is still open.
 - `specs/_audit/topo-rest.md` heading 17 (`pipe_along_polyline`), 9, 10, 15 likewise.
 - ~~`bbox_from_geometry.rs` (B3) is a live sampled-bbox construct that no audit doc registers.~~
   **DONE 2026-10-15 (T-134)**: the sampling is gone; the item is now registered as
