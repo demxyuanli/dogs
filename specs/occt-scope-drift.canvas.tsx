@@ -23,7 +23,7 @@ import {
 // 量测口径（2026-10-16 实测；OCCT 侧与 10-13 / 10-11 逐位相同）
 //   OCCT 侧: D:\source\OCCT-src\src  .hxx/.cxx/.lxx/.gxx
 //   Rust 侧: crates/{occt-core,occt-math,occt-geom,occt-geom2d,occt-topo}/src  .rs
-//   基线  : specs/board.canvas.tsx (r42, asOf 2026-10-13) · specs/_audit/_index.md (§9 -> 2026-10-11)
+//   基线  : specs/board.canvas.tsx (r43, asOf 2026-10-16) · specs/_audit/_index.md (§9 -> 2026-10-11)
 //   对拍  : crates/occt-topo --test step_obj_gates（`--nocapture` 逐模型 v/f 与面积比）
 // ---------------------------------------------------------------------------
 const MEASURE = {
@@ -255,8 +255,8 @@ const PARITY = [
 const DOCDRIFT = [
   {
     what: "看板基准日",
-    detail: "board asOf 2026-10-11 · r41 → 2026-10-13 · r42",
-    gap: "✅ 已同步：`a91` 已收录 10-12 网格批次与 10-13 缝边注册修复。**本卡（偏移审查）已推进到 2026-10-16**；`specs/board.canvas.tsx` 自身仍停在 r42 / asOf 2026-10-13，尚未收录 P024..P026 与 T999 收口（登记，不在本卡范围）",
+    detail: "board asOf 2026-10-11 · r41 → 2026-10-13 · r42 → 2026-10-16 · r43",
+    gap: "✅ 已同步：`a91` 已收录 10-12 网格批次与 10-13 缝边注册修复。**本卡（偏移审查）推进到 2026-10-16**，`specs/board.canvas.tsx` 亦已随本轮推进到 `asOf 2026-10-16` / `revision r43`：新增活动记录 `a92`（T-139..T-156 / P009..P026 收口 + T999 `full_outcome_complete: true` + 本轮的 T0M/TDB 面积比订正），门禁数组订正 `G-lib` 1276/0 → **1251/0**、`G-core` 290·215·143·72 → **283·210·143·72**（2026-10-16 实测）、`G-gates` / `G-export` / `G-check` 补本窗口读数，未复跑的 `G-fuse` / `G-phase` / `G-boss` / `G-iges` 逐条标注「本窗口未复跑」；T-121..T-156 的逐包证据按画布 0.2.0 窗口口径不内联，指向 `specs/_tasks.md`（已在「已归档」区说明）",
     tone: "success" as const,
   },
   {
@@ -455,7 +455,7 @@ export default function OcctScopeDrift() {
         <H1>OCCT→Rust 移植范围与偏移审查</H1>
         <Text tone="secondary">
           对照 OCC 8.0.0 源码树 <Text weight="semibold">D:\source\OCCT-src\src</Text> 与工作树 5 个 crate 实测。
-          所有读数取 <Text weight="semibold">{MEASURE.asOf}</Text>；门禁基线引用 <Text weight="semibold">specs/board.canvas.tsx</Text>（r42）与{" "}
+          所有读数取 <Text weight="semibold">{MEASURE.asOf}</Text>；门禁基线引用 <Text weight="semibold">specs/board.canvas.tsx</Text>（r43 / 2026-10-16）与{" "}
           <Text weight="semibold">specs/_audit/_index.md</Text>（§9 → 2026-10-11）。
         </Text>
       </Stack>

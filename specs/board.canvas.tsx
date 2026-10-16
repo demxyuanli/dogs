@@ -46,8 +46,8 @@ type Tone = "neutral" | "info" | "success" | "warning" | "danger";
 // —— 体量增长只应来自，也只需来自散文，而长段分析要写成 §编号引用（specs/_a3n00_gap_analysis.md），不要粘贴。
 export const DATA = {
   goal: "把 STEP→OBJ 几何/网格管线对齐 OCCT 8.0.0（源码树 D:\\source\\OCCT-src @ V…",
-  asOf: "2026-10-13",
-  revision: "r42",
+  asOf: "2026-10-16",
+  revision: "r43",
   wipLimit: 2,
   staleDays: 7,
   lanes: ["bop", "mesh", "port-gap", "arch", "hygiene"],
@@ -947,42 +947,50 @@ export const DATA = {
   gates: [
         { id: "G-check", name: "五 crate 编译", cmd: "cargo check --all-targets", baseline: "exit 0", last: "exit 0", status: "green",
       acked: false, owner: "",
-      note: "2026-10-11 复跑：先修 1 处 E0063（`inttools_range.rs` 测试构造点缺 `curve3d_null`）后五 crate 全 0 error；五 crate 逐 crate 跑（无根 workspace…",
+      note: "2026-10-16 复跑（tranche 冻结 HEAD `fbd59532`，`.target-gate/t156/check.txt`）：五 crate `--all-targets` 全 0 error（warn core 12 / math 30 / geom 105 / geom2d 82 / topo 413）；同日 `occt-topo --all-targets` 复查 0 error / 413 warnings（`.target-gate/t157/`）。2026-10-11 复跑：先修 1 处 E0063（`inttools_range.rs` 测试构造点缺 `curve3d_null`）后五 crate 全 0 error；五 crate 逐 crate 跑（无根 workspace…",
     },
-        { id: "G-lib", name: "topo 单测", cmd: "--lib", baseline: "1276 / 0", last: "1276 / 0", status: "green", acked: false, owner: "",
-      note: "2026-10-13 复跑 **1276 passed / 0 failed**（并把基线由 1281 / 0 订正为 1276 / 0：`93b076b4` 的 A18 批次删除 5 条 `brepmesh` 自创单测后基线未同步）；2026-10-11 复跑 **1281 passed / 0 failed**；2026-10-07 三轮实测：`--lib` **1281 passed / 0 failed**…",
+        { id: "G-lib", name: "topo 单测", cmd: "--lib", baseline: "1251 / 0", last: "1251 / 0", status: "green", acked: false, owner: "",
+      note: "2026-10-15 基线由 1276 / 0 订正为 **1251 / 0**（T-143 删除两条自创单测、测试文件合并后读数下降；`notes/T002-gate-baseline.md` 已留档为冻结基线）；tranche 内 P018..P026 每包复跑恒为 **1251 passed / 0 failed**（单调不降），2026-10-16 独立复跑同为 1251 / 0（4.19s）。更早：2026-10-13 复跑 **1276 passed / 0 failed**（并把基线由 1281 / 0 订正为 1276 / 0：`93b076b4` 的 A18 批次删除 5 条 `brepmesh` 自创单测后基线未同步）；2026-10-11 复跑 **1281 passed / 0 failed**…",
     },
         { id: "G-gates", name: "STEP→OBJ 门禁", cmd: "--test step_obj_gates", baseline: "4 / 4", last: "4 / 4", status: "green", acked: false,
       owner: "",
-      note: "2026-10-11 复跑 4 passed / 0 failed（234.60s）；2026-10-08 §9.626 复跑 4 passed（375.81s 冷跑）；2026-10-07 三轮实测 4 passed（336.72s 热跑…",
+      note: "2026-10-16 复跑 **4 passed / 0 failed**（cargo 177.06s / 直跑测试二进制 163.58s，`.target-gate/t157/gates-raw.txt`）；23 个面积比读数同轮订正为 20 个 1.0000 + `Shape-2` 0.9999 + `T0M` 1.0017 + `TDB` 1.0015（旧文档记的「T0M/TDB 均 1.0000、缺口 +58/−51」是 2026-10-13 的读数，见 a92 与 `specs/occt-scope-drift.canvas.tsx` 2.3）；各模型 `area_tol` 为登记值、未放宽。tranche 内 P018..P026 各自的提交上均复跑 4/4（118s–248s）。2026-10-11 复跑 4 passed / 0 failed（234.60s）…",
     },
         { id: "G-fuse", name: "fuse 闭环实体", cmd: "fuse_box_cylinder_is_closed_solid", baseline: "1 / 1", last: "1 / 1", status: "green",
       acked: false, owner: "",
-      note: "2026-10-11 复跑 1 passed（1280 filtered out）；2026-10-06 实测 1 passed（1280 filtered out）…",
+      note: "2026-10-16：本窗口未复跑（T-139..T-156 的改动未触及 fuse 路径），读数沿用 2026-10-11。2026-10-11 复跑 1 passed（1280 filtered out）；2026-10-06 实测 1 passed（1280 filtered out）…",
     },
         { id: "G-phase", name: "phase3-10 / 19 / 20", cmd: "--test phaseN_integration", baseline: "全绿", last: "全绿", status: "green",
       acked: false, owner: "",
-      note: "2026-10-11 复跑 61 passed / 0 failed；4·9·7·5·5·5·8·8·5·5 = 61 passed（2026-10-07 二轮重跑…",
+      note: "2026-10-16：本窗口未复跑（未触及 phase 路径），读数沿用 2026-10-11。2026-10-11 复跑 61 passed / 0 failed；4·9·7·5·5·5·8·8·5·5 = 61 passed（2026-10-07 二轮重跑…",
     },
         { id: "G-boss", name: "boss 合并", cmd: "--test bop_builder2_boss", baseline: "2 / 2", last: "2 / 2", status: "green", acked: false,
       owner: "",
-      note: "2026-10-11 实测 2 passed / 0 failed。基线由 1 / 2 转 2 / 2：`4244ab19` 修好 `boss_single_disc_base_merges_one_solid` 的夹具后，原「夹具不合法（定案 b）」的已接受红已消解 ⇒ 看板唯一 red 清零（原基线 1 / 2 为过期读数）",
+      note: "2026-10-16：本窗口未复跑（未触及 boss 路径），读数沿用 2026-10-11。2026-10-11 实测 2 passed / 0 failed。基线由 1 / 2 转 2 / 2：`4244ab19` 修好 `boss_single_disc_base_merges_one_solid` 的夹具后，原「夹具不合法（定案 b）」的已接受红已消解 ⇒ 看板唯一 red 清零（原基线 1 / 2 为过期读数）",
     },
         { id: "G-export", name: "导出总检", cmd: "--example export_data_obj -- data/occ data", baseline: "23 / 23", last: "23 ok / 0 err", status: "green",
       acked: false, owner: "",
-      note: "2026-10-13 复跑 **23 ok / 0 err**（`-- data/occ data` = 15 `data/*.step` + 8 `data/occ/*`）；基线由 15 / 15 订正为 23 / 23（`-- data/occ data` 口径自 2026-10-07 §9.625 起已是 23）。无参跑只覆盖 15 个 `data/*.step`：2026-10-13 复跑 15 ok / 0 err；2026-10-11 复跑 15 ok / 0 err；2026-10-08 §9.626 复跑 15 ok / 0 err；2026-10-06 收尾轮仍 15/15（§9.617-§9.623 每轮复跑）；2026-10-07 §9.625 复跑 `-- data/occ data` = 23 ok / 0 err…",
+      note: "2026-10-16 复跑 **23 ok / 0 err**（`-- data/occ data` 口径，`.target-gate/t157/`），15 个 `data/*.step` 逐模型 v/f 与包围盒与 T002 冻结表逐位一致；无参跑 15 / 15 同轮亦一致。2026-10-13 复跑 **23 ok / 0 err**；基线由 15 / 15 订正为 23 / 23（`-- data/occ data` 口径自 2026-10-07 §9.625 起已是 23）…",
     },
         { id: "G-iges", name: "IGES 结构自洽", cmd: "--example iges_check -- <23 模型>", baseline: "23 / 23", last: "23 / 23", status: "green",
       acked: false, owner: "",
-      note: "2026-10-11 复跑 23 ok / 0 err（23 个模型：15 data/*.step + 8 data/occ/*）；2026-10-08 复跑 23 / 23（三处写侧忠实化：P 卡按 `Interface_LineBuffer` 字段边界换卡、DE card 1 状态字段按 `%2.2d` 零填充、`ComputeStatus`+`AutoCorrectModel` 填状态 8 列；P 卡总数随之变化，如 Shape-2 7762 → 8521、T0M 302322、TDB 305438；DE 状态 8 列分布现与 oracle 逐位相同 361/2090/218/203；2026-10-07 二轮把集合扩到全部 23 个模型（15 个 data/*.step + 8 个 data/occ/*）；2026-10-08 T-111 把 124 改走 `GpTrsf::set_transformation_from_to`（符号零归一）后复跑 23/23，TDB DE 105753 → 105732）…",
+      note: "2026-10-16：本窗口未复跑（未触及 IGES 路径），读数沿用 2026-10-11。2026-10-11 复跑 23 ok / 0 err（23 个模型：15 data/*.step + 8 data/occ/*）；2026-10-08 复跑 23 / 23（三处写侧忠实化：P 卡按 `Interface_LineBuffer` 字段边界换卡、DE card 1 状态字段按 `%2.2d` 零填充、`ComputeStatus`+`AutoCorrectModel` 填状态 8 列；P 卡总数随之变化，如 Shape-2 7762 → 8521、T0M 302322、TDB 305438；DE 状态 8 列分布现与 oracle 逐位相同 361/2090/218/203；2026-10-07 二轮把集合扩到全部 23 个模型（15 个 data/*.step + 8 个 data/occ/*）；2026-10-08 T-111 把 124 改走 `GpTrsf::set_transformation_from_to`（符号零归一）后复跑 23/23，TDB DE 105753 → 105732）…",
     },
-        { id: "G-core", name: "core / math / geom / geom2d", cmd: "--lib", baseline: "290·215·143·72", last: "290·215·143·72", status: "green",
+        { id: "G-core", name: "core / math / geom / geom2d", cmd: "--lib", baseline: "283·210·143·72", last: "283·210·143·72", status: "green",
       acked: false, owner: "",
-      note: "2026-10-11 复跑 290·215·143·72，逐项相同；逐项与基线相同（2026-10-06 §9.619/§9.622 复跑 occt-core / oc…",
+      note: "2026-10-16 复测 **283·210·143·72**（`.target-gate/t157/`；`occt-core` 283 passed / 1 ignored、`occt-math` 210 / 1 ignored、`occt-geom` 143、`occt-geom2d` 72），基线由 290·215·143·72 订正 —— `occt-core` 290 → 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251），`occt-math` 215 → 210 是同轮测试文件合并后的读数。2026-10-11 复跑 290·215·143·72，逐项相同…",
     },
   ],
   // 新条目插到数组**开头**（brief 取前 3 条当最近活动；早于 a29 的看提交历史）
   activity: [
+    {
+      id: "a92",
+      at: "2026-10-16",
+      title: "缺口收口 tranche（T-139..T-156 / 包 P009..P026）：B6 家族、B7-writer-4、B8-intana、`surface_fit`、B7-mesh_to_brep、`ReparamCurve2d` 全部有包可指；T999 Judge 收据判 `full_outcome_complete: true` —— 看板快照推进到 2026-10-16",
+      tone: "success",
+      detail: "① **本轮口径**：每包都先 `cargo check`、再按 `.cxx` 审控制流、再对拍既有基线，本地提交（不 push），提交信息点名 cxx 文件与行号区间。任务清单与逐包收据在 `specs/_tasks.md`（T-139..T-156）与 `docs/goals/drift-and-gap-autofix/state.yaml`（`active_task: T999`）。② **已收口家族**：B6a..B6h（极值/求交兜底与自创求解器族，P008/P017–P021/P023）、B7-writer（STEP 写侧曲线臂 P010/P011、`geom2d_convert` 第二份残缺 `curve_to_bspline_curve` P022）、B8-intana（`IntAna_QuadQuadGeo` 锥/锥分支 2 重映射与分支 4 共母线 P014–P016、`IntAna` 单根求解路径 P012/P013）、`surface_fit` 一项（真实对应件是 `BRepLib_FindSurface` + `BRepLib_MakeFace(W, OnlyPlane)`，非 `GeomLib::IsPlanarSurface`；`offset_wire_3d` 已接线，P024 `549e5761`）、B7-mesh_to_brep（`BRepBuilderAPI_MakeShapeOnMesh` 忠实件，P025 `8d77b13a`）、`ReparamCurve2d` 的 `SameRange` 一项（判词「非 stale-closed」，真实缺口是转换尾两份副本，合并为唯一 `trimmed_reparam_bspline`，P026 `fbd59532`）。③ **唯一仍登记**：缺失的 `data/occ/*.st*` 驱动式 STEP **写侧** harness —— 无既有基线可对拍，本 tranche 不允许新写测试，故只登记不动手（`specs/_tasks.md` T-156 尾）。④ **门禁（冻结 HEAD `fbd59532`）**：五 crate `--all-targets` 0 error（warn core 12 / math 30 / geom 105 / geom2d 82 / topo 413，`.target-gate/t156/check.txt`）；`occt-topo --lib` **1251 / 0**；`step_obj_gates` **4 / 4**；`export_data_obj` **15 / 15** 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。⑤ **2026-10-16 独立复测与一处文档订正**（提交 `b402a58b`）：`step_obj_gates` 4/4（cargo 177.06s / 直跑测试二进制 163.58s）、`export_data_obj -- data/occ data` 23 ok，逐模型 v/f 与 `.target-gate/t156/gates-raw.txt` 逐位相同；但 23 个**面积比**读数此前在多个文档里仍是 2026-10-13 的值（T0M 1.0000 / TDB 1.0000、缺口 T0M +58 / TDB −51），实测为 **20 个 1.0000 + `Shape-2` 0.9999 + `T0M` 1.0017 + `TDB` 1.0015**，`T0M` 三角 67424 → 66897（OCCT 67366）、`TDB` 79926 → 79994（OCCT 79977），`acs10`/`a3n00` 等六模型未变。各模型 `area_tol` 是登记值、**未改** ⇒ 无门禁放宽；位移来自 10-15～10-16 各包在共享求交/极值/根求解路径上的忠实化，`T0M` 是朝离 OCCT 更远的方向（与「仍缺面类、密度 < 1」的登记缺口一致），已登记为旁支、不调参对齐。订正落在 `specs/occt-scope-drift.canvas.tsx` 2.3 PARITY 表、`specs/_audit/mesh-exchange.md` 与 `_index.md`（2026-10-16 补记，2026-10-13 行保留为历史）、`docs/goals/drift-and-gap-autofix/notes/T001-inventory.md`、`crates/occt-topo/tests/common/mod.rs` 注释。⑥ **本窗口的内联口径**：T-121..T-156 各包的完整证据在 `specs/_tasks.md`，按画布 0.2.0 口径不逐条内联（软阈值 1500 行）；`state.yaml` 的 `goal.status` 已为 `done`。",
+      ref: "specs/_tasks.md T-139..T-156 · docs/goals/drift-and-gap-autofix/state.yaml · .target-gate/t156/ · .target-gate/t157/gates-raw.txt · b402a58b · fbd59532 · 8d77b13a · 549e5761",
+    },
     {
       id: "a91",
       at: "2026-10-13",
@@ -1425,6 +1433,9 @@ export default function ProjectBoard() {
             trailing={<Text size="caption" tone="tertiary">完整证据在 git 与 specs/</Text>}
           >
             <Stack gap={6}>
+              <Text size="small" tone="secondary">
+                2026-10-15..10-16 的缺口收口 tranche（T-139..T-156 / 包 P009..P026）按 0.2.0 窗口口径不逐条内联：任务卡、逐包门禁读数与旁支登记在 [specs/_tasks.md](_tasks.md)（T-125..T-156）与 docs/goals/drift-and-gap-autofix/state.yaml，本板只留一条活动记录（a92）与门禁读数。
+              </Text>
               <Text size="small" tone="secondary">
                 同批完成的还有 T-80（BOP 根因三处，commit da61a30）、T-05（Offset 解析体积对齐 GT，2610.501436 vs 2610.501440，commit 59fefad）、T-04（phase19 断言按 OCCT 口径订正，GT 不相交 68 / 相交 80）、T-01（groove_cuts_cylinder 转绿，commit 113b4d1）。
               </Text>
