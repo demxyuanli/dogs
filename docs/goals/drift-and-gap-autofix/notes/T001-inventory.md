@@ -671,6 +671,23 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    Honest bound: no gate in this tree covers the new `H` arm (it needs a cylinder whose axis is
    slightly off the plane normal with a small face height), so the gates only prove no regression.
    Two analytic fast paths in `int_face_face_analytic.rs` still call with `H = 0` (commented).
+   **P031 / T-161 closed that last code-side item** (2026-10-16, commit `9bef99ad`): the declined
+   state is now `QuadricIntersection::NotDone` (= cxx `done = false`), and `quadric_quadric_plane_cone`
+   translates `cxx:922-951` with `ELLIPSE_LIMIT = 1.0e9` (`cxx:927`) and `HYPERBOLA_LIMIT = 2.0e6`
+   (`cxx:928`). The two cxx hyperbola blocks (`cxx:935-942` on param2/param2bis, `cxx:943-951` on
+   param1/param1bis) collapse into one major/minor test here because both arms store
+   `GpHypr::new(pos, param1 = param2, param1bis = param2bis)` with `nbint = 2` (`cxx:850-851`,
+   `cxx:901-902`). Consumers: `from_quadric_intersection` maps it to `PairOutcome::Fail`
+   (`IntPatch_ImpImpIntersection.cxx:3480-3483`), the two nested plane/cone reduces in `line_torus.rs`
+   keep `None`, which is what cxx leaves `typeres` at when the nested call is not done
+   (`cxx:1556`, `cxx:1835`), and the two self-made analytic fast paths return no curve so
+   `int_face_face_analytic::plane_cone` falls back to `self.general`. Honest bound: no corpus model
+   drives the tail (it needs a plane almost parallel to a generator with section parameters above
+   1e9/2e6), so the four gates prove no regression only. Durable counts: `IntAna_QuadQuadGeo` 15
+   overloads, 15 present, 15 line-diffed, zero code-side registrations. Next pick: P032, the
+   `IntAna_IntLinTorus` done semantics (`IntAna_IntLinTorus.cxx:88-129`; `occt-geom.md` section 9),
+   which needs a done-carrying return type for `line_torus_intersect` because the `quartic_roots`
+   convenience wrapper drops `DirectPolynomialRoots::is_done()`.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
@@ -681,7 +698,12 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   P030 / T-160 did the tracking half (added the P030 cycle card, refreshed the gate-source comment,
   the `Stat` label and the "跟踪" paragraph, and replaced the stale `_index.md` "§9 -> 2026-10-11"
   pointer with the A0-A27 disposition rows plus `specs/_audit/occt-geom.md` §8); the SEMANTIC
-  LIVE-staleness listed here is still open.
+  LIVE-staleness listed here is still open. P031 / T-161 then refreshed the same surface again for
+  its own cycle (P031 card, `MEASURE.rust` 1,107 files / 338,040 lines, `CRATES` geom 44,144 /
+  topo 214,139, the gate-source comment repointed to `.target-gate/t161`, `Stat` down to 1
+  registered code item, and the "跟踪" paragraph plus the T999 callout extended to P027..P031);
+  the SEMANTIC LIVE-staleness is still open, and P030's stale `40 文件/+2,071 行` delta figures were
+  corrected to the measured `+47 文件/+2,297 行` against 10-13 in the same pass.
 - `specs/_audit/topo-rest.md` heading 17 (`pipe_along_polyline`), 9, 10, 15 likewise.
 - ~~`bbox_from_geometry.rs` (B3) is a live sampled-bbox construct that no audit doc registers.~~
   **DONE 2026-10-15 (T-134)**: the sampling is gone; the item is now registered as
