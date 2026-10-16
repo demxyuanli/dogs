@@ -560,6 +560,11 @@ fn map_plane_cone_common_axis(nested: QuadricIntersection) -> QuadricIntersectio
         QuadricIntersection::Line(l) | QuadricIntersection::TwoLines(l, _) => {
             QuadricIntersection::TwoLines(l, l)
         }
+        // `cxx:1556` guards the re-mapping switch with
+        // `if (INTER_QUAD_PLN.IsDone())`; a declined nested result leaves
+        // `typeres` at its initial `IntAna_Empty` (`cxx:960`), i.e. this port's
+        // `None`.
+        QuadricIntersection::NotDone => QuadricIntersection::None,
         _ => QuadricIntersection::None,
     }
 }
@@ -644,7 +649,10 @@ fn cone_cone_common_generatrix(
     let pln = plane_normal_at(my_pchar, a_n)?;
     // `cxx:1833-1881`: the section lies in `anIntPln`; its nested plane∩cone
     // reduce keeps only the four conics — this switch has no `IntAna_Line` arm,
-    // so a nested line (or point/empty) is `IntAna_NoGeometricSolution`.
+    // so a nested line (or point/empty/declined) is `IntAna_NoGeometricSolution`.
+    // `cxx:1835` guards the switch with `if (INTER_QUAD_PLN.IsDone())`, so a
+    // declined nested result leaves `typeres` at its initial `IntAna_Empty` —
+    // also `None` here.
     let inter = match quadric_quadric_plane_cone(&pln, c1, tol, tol) {
         QuadricIntersection::Ellipse(e) => QuadricIntersection::Ellipse(e),
         QuadricIntersection::Circle(c) => QuadricIntersection::Circle(c),

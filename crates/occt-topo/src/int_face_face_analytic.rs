@@ -433,7 +433,7 @@ impl FaceFace {
             ],
             Parabola(p) => vec![self.conic_curve(Arc::new(GeomParabola::new(p)), CurveKind::Parabola, fa, fb)],
             Hyperbola(h) => vec![self.conic_curve(Arc::new(GeomHyperbola::new(h)), CurveKind::Hyperbola, fa, fb)],
-            Point(_) | Same | None => Vec::new(),
+            Point(_) | Same | None | NotDone => Vec::new(),
         }
     }
 }

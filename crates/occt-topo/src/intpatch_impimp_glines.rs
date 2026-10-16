@@ -53,6 +53,10 @@ pub(crate) fn from_quadric_intersection(
     match qi {
         QuadricIntersection::Same => PairOutcome::Same,
         QuadricIntersection::None => PairOutcome::Empty,
+        // `IntPCo` returns false when the closed form is not done
+        // (`IntPatch_ImpImpIntersection.cxx:3480-3483`); the caller then leaves
+        // the pair to the bi-parametric method.
+        QuadricIntersection::NotDone => PairOutcome::Fail,
         QuadricIntersection::Point(p) => PairOutcome::Result {
             lines: Vec::new(),
             points: vec![isolated_point(p)],

@@ -81,7 +81,7 @@ pub fn ic_list_from_quadric(
         TwoCircles(c1, c2) => vec![circ(c1), circ(c2)],
         Ellipse(e) => vec![elps(e)],
         TwoEllipses(e1, e2) => vec![elps(e1), elps(e2)],
-        Parabola(_) | Hyperbola(_) | Point(_) | Same | None => Vec::new(),
+        Parabola(_) | Hyperbola(_) | Point(_) | Same | None | NotDone => Vec::new(),
     }
 }
 

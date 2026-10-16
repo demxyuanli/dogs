@@ -201,6 +201,12 @@ pub enum QuadricIntersection {
     Same,
     /// No intersection.
     None,
+    /// `done = false`: the overload declined the result it had built and the
+    /// caller must fall back to the bi-parametric method instead of reading a
+    /// curve. `IntAna_QuadQuadGeo.cxx:929-950` (plane/cone) is the only
+    /// producer so far, and every consumer tests `IsDone()` before using the
+    /// result (`IntPatch_ImpImpIntersection.cxx:3480-3483`).
+    NotDone,
 }
 
 impl PartialEq for QuadricIntersection {
@@ -208,6 +214,7 @@ impl PartialEq for QuadricIntersection {
         use QuadricIntersection::*;
         match (self, other) {
             (None, None) | (Same, Same) => true,
+            (NotDone, NotDone) => true,
             (Point(a), Point(b)) => a == b,
             (Line(a), Line(b)) => a == b,
             (TwoLines(a1, a2), TwoLines(b1, b2)) => a1 == b1 && a2 == b2,
@@ -513,23 +520,27 @@ pub fn quadric_quadric_plane_cylinder(
     }
 }
 
+/// `EllipseLimit = 1.0E+9` (function-static in `IntAna_QuadQuadGeo.cxx:927`).
+const ELLIPSE_LIMIT: f64 = 1.0e9;
+/// `HyperbolaLimit = 2.0E+6` (function-static in `IntAna_QuadQuadGeo.cxx:928`).
+const HYPERBOLA_LIMIT: f64 = 2.0e6;
+
 /// Plane ∩ cone. Port of `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cone,
 /// Tolang, Tol)` (`IntAna_QuadQuadGeo.cxx:752-972`).
 ///
-/// UNPORTED `cxx:922-951` (the tail of that overload): after the four conic
-/// cases the cxx rejects results it calls "too extreme" — `IntAna_Ellipse`
-/// with `|param1|` or `|param1bis|` above `EllipseLimit = 1.0E+9`
-/// (`cxx:926-934`, any `nbint`) and `IntAna_Hyperbola` with either parameter
-/// above `HyperbolaLimit = 2.0E+6` (`cxx:935-950`, `nbint >= 1` and
-/// `nbint >= 2`) — by setting `done = false` and returning, so the caller
-/// treats that pair with the bi-parametric method instead. Every consumer maps
-/// it to `return false` (`IntPatch_ImpImpIntersection.cxx:3480-3483` for
-/// `Pln`/`Cone`), leaving the whole `Perform` not done — this port's
-/// `PairOutcome::Fail`; `cone_cone_analytic` branch 2 tests the nested call
-/// with `INTER_QUAD_PLN.IsDone()` (`cxx:1556`). The `QuadricIntersection` enum
-/// has no "not done" state, so the block is left untranslated rather than
-/// mapped onto `None`, which is `IntAna_Empty` and means the opposite (no
-/// intersection at all).
+/// The tail `cxx:922-951` rejects results the cxx calls "too extreme" — an
+/// `IntAna_Ellipse` whose `param1` or `param1bis` exceeds
+/// `EllipseLimit = 1.0E+9` (`cxx:926-934`, any `nbint`) and an
+/// `IntAna_Hyperbola` whose parameters exceed `HyperbolaLimit = 2.0E+6`
+/// (`cxx:935-942` on `param2`/`param2bis` for `nbint >= 2`, `cxx:943-951` on
+/// `param1`/`param1bis` for `nbint >= 1`) — by setting `done = false` and
+/// returning, so the caller treats that pair with the bi-parametric method
+/// instead. In this port the two parameter pairs are exactly the
+/// `major_radius`/`minor_radius` carried by the returned `GpElips`/`GpHypr`
+/// (`param1 = MajorRadius()`, `param1bis = MinorRadius()`, and for both
+/// hyperbola arms `param2 = param1`, `param2bis = param1bis`, `nbint = 2`),
+/// so the check runs on the built curve and yields
+/// [`QuadricIntersection::NotDone`].
 pub fn quadric_quadric_plane_cone(
     p: &GpPln,
     cone: &GpCone,
@@ -555,7 +566,7 @@ pub fn quadric_quadric_plane_cone(
     // sin((π/2 − t) − angl) = cos(t + angl); zero ⇒ plane contains a generatrix.
     let costa = cost * cosa - sint * sina;
 
-    if dist.abs() < tol {
+    let res = if dist.abs() < tol {
         // Plane contains the apex: point, one or two lines.
         if costa.abs() < tol_ang {
             // Parallel to a generatrix → one line through the apex.
@@ -639,7 +650,30 @@ pub fn quadric_quadric_plane_cone(
             let pos = ax2_from_dirs(GpPnt::from_xyz(&pt1), normp, axex_n);
             QuadricIntersection::Ellipse(GpElips::new(pos, radius, minor))
         }
+    };
+
+    // `cxx:922-951`: the tail rejects ellipses and hyperbolas it calls "too
+    // extreme" by setting `done = false` and returning, which tells the caller
+    // to treat the pair with the bi-parametric method instead. `param1` /
+    // `param1bis` are the major / minor radii stored above, and both hyperbola
+    // arms also carry them in `param2` / `param2bis` with `nbint = 2`, so the
+    // two cxx blocks (`cxx:935-942`, `cxx:943-951`) reduce to one test here.
+    match &res {
+        QuadricIntersection::Ellipse(e) => {
+            if e.major_radius().abs() > ELLIPSE_LIMIT || e.minor_radius().abs() > ELLIPSE_LIMIT {
+                return QuadricIntersection::NotDone;
+            }
+        }
+        QuadricIntersection::Hyperbola(h) => {
+            if h.major_radius.abs() > HYPERBOLA_LIMIT
+                || h.minor_radius.abs() > HYPERBOLA_LIMIT
+            {
+                return QuadricIntersection::NotDone;
+            }
+        }
+        _ => {}
     }
+    res
 }
 // ---------------------------------------------------------------------------
 // IntAna_QuadQuadGeo: cylinder×cylinder, cylinder×sphere, sphere×cone,
