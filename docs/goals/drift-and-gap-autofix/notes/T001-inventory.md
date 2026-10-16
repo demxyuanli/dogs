@@ -614,6 +614,31 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    line-diffed, and the 5 Torus arms must be decided from the consumer side -- reachable gap vs a
    marked-unported non-gap -- never with a substitute. Next pick: P029, the per-arm census of the
    five remaining ported arms plus the Torus verdict.
+   **P029 / T-159 falsified that census, and the method lesson is the durable part**: the "5 absent,
+   all Torus" claim above was produced by listing `crates/occt-geom/src/intana/` as a directory.
+   That directory is not the whole class: `crates/occt-geom/src/intana/mod.rs:30-35` declares
+   `#[path = "../intana_torus.rs"] mod torus;` followed by `pub use torus::*;`, so
+   `crates/occt-geom/src/intana_torus.rs` -- one level up, outside the directory -- is part of the
+   same namespace, and all five Torus arms live there: `quadric_quadric_plane_torus` (cxx:2163-2276,
+   called from `occt-topo/src/intpatch_impimp_pairs.rs:117`), `quadric_quadric_cylinder_torus`
+   (cxx:2278-2355, `:155`), `quadric_quadric_cone_torus` (cxx:2357-2494, `:162`),
+   `quadric_quadric_sphere_torus` (cxx:2496-2586, `:169`, plus `occt-topo/src/intpatch.rs:576`) and
+   `quadric_quadric_torus_torus` (cxx:2588-2666, `:175`). Corrected census: **15 of 15 `Perform`
+   overloads present**, none absent. Rule for the T999 walk: enumerate by **`mod` declaration**,
+   which may carry `#[path]` and therefore point outside the directory, not by directory listing.
+   What the line-by-line walk of those five arms did find is one real invented construct, twice:
+   `quadric_quadric_sphere_torus` (cxx:2496-2562) and `quadric_quadric_torus_torus` (cxx:2588-2666)
+   each carried `if a_dist <= f64::EPSILON { if |r1-r2| > tol { Empty } else { Circles(one circle) } }`.
+   The cxx has no such arm: after the `IntAna_Empty` early-out (cxx:2529 / cxx:2636) it computes
+   `anAlpha = 0.5*(r1*r1 - r2*r2 + aDist*aDist)/aDist` (cxx:2534 / cxx:2640) and then constructs
+   `gp_Dir aDir12(aVec12)` **unconditionally** (cxx:2542 / cxx:2647), which throws
+   `Standard_ConstructionError` on a null vector. `f64::EPSILON` is `RealEpsilon()`, which those arms
+   do not use (`myEPSILON_DISTANCE` cxx:353 and `myEPSILON_CYLINDER_DELTA_RADIUS` cxx:356 are the two
+   they do). Both branches and the invented concentric-circle answer are deleted; the existing
+   `GpDir::from_vec(..)` `Err` path stays as the stand-in for the OCCT exception with the cxx lines
+   in a comment. Still never line-diffed after this cycle: cxx:543-745 Pln/Cylinder, cxx:752-972
+   Pln/Cone, cxx:1050-1293 Cylinder/Cylinder, cxx:1324-1342 Cylinder/Cone, cxx:1433-1886 Cone/Cone.
+   Next pick: P030, those five arms.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
