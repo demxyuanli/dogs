@@ -45,6 +45,7 @@
 - 建议：按 `Quantity_ColorTable.pxx` 建全表并取 `RGB` 列，entry 对 `Quantity_Color.hxx:49`。
 
 - **处置（2026-10-06 复核：仍未修）**：`brown` 仍为 `r:0.65,g:0.16,b:0.16`（`quantity/mod.rs:33`）；OCCT 命名构造函数取的是 `Quantity_ColorTable.pxx:185` 的 **RGB 线性列** `0.376262/0.023153/0.023153`，名字表仍只有 23 个。当前无生产调用者，属潜在缺陷。
+- **处置（✅ 数值侧已修：2026-10-16，包 P045）**：`Color::from_name` 的 19 条数值全部改为 `Quantity_ColorTable.pxx` 的 **RGB（线性）列**，逐条带行号：`Black :14`、`Blue :171`、`Brown :185`、`Cyan :435`、`Gold :1009`、`Gray :1063`、`Green :1162`、`Magenta :1866`、`Orange :2287`、`Pink :2610`、`Red :2671`、`Yellow :3415`、`White :3456`、`DarkGreen :489`、`DarkOrange :559`、`LightBlue :1425`、`LightGray :1585`、`LightYellow :1815`；`Quantity_Color.hxx:49-51` 的 `valuesOf(theName, Quantity_TOC_RGB)` 语义即此列。原值（sRGB 列截两位，BROWN 差 ~1.7 倍）已删除。同时发现旧枚举里有 **4 个 OCCT 根本不存在的名字** —— `SILVER`/`NEUTRAL`/`DARKBLUE`/`LIGHTGREEN` 在 `Quantity_NameOfColor.hxx` 与 `Quantity_ColorTable.pxx` 中零命中（已按 `rg -F` 逐一核对），这四个自造变体一并删除，余下 19 个变体拼写与 OCCT 一致。**仍 UNPORTED（覆盖面）**：`Quantity_NameOfColor`（`Quantity_NameOfColor.hxx:25-530`，约 500 个 X11 名）与 `Quantity_ColorTable.pxx`（3456 行）的**全表**未移植，现枚举只是其中 19 个；`from_name` 仍无生产调用者，故不做无消费者的全表搬运。门禁：`occt-core --lib` 8 个 `quantity` 用例通过、五 crate `cargo check --offline` 0 error。
 
 ### 4. `circle_plane_intersection` 的"共面"分支凭空造点
 - 判定：**自创**
