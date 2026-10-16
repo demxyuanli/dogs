@@ -108,6 +108,12 @@ pub const MODELS: &[Model] = &[
     // matching the OCCT probe row bit for bit).
     // 2026-10-13 (seam registration, see occ/TDB.stp): 67424 vs 67366
     // (v 60575 vs 60548).
+    // 2026-10-16 (re-read on the frozen tranche, `.target-gate/t157/gates-raw.txt`):
+    // 66897 vs 67366 (v 60199 vs 60548), area ratio 1.0017. The 2026-10-13 reading is kept as
+    // history: T0M moved under the 10-15..10-16 packages that made the shared intersection /
+    // extrema / root paths faithful. The tolerance below is the registered one and was not
+    // widened; the move is away from OCCT, which matches the "port still misses some face
+    // classes (density < 1)" gap this model tracks.
     Model { step: "occ/T0M.stp", occ: "occ/occ-T0M.obj", bbox_tol: Some(0.9), area_tol: Some(0.025) },
     // acs10: widened 0.05 -> 0.12 by the same T-93 (a) change (ratio 0.9846 ->
     // 0.9025, ours 244773.63 / occ 271219.68). Re-measured at 9.625: 1.00004
@@ -131,6 +137,9 @@ pub const MODELS: &[Model] = &[
     // (`cxx:87-125`) then registers *every* pcurve of each wire edge instead of
     // the CheckOrder slot. Delta collapsed to 79926 vs 79977 (v 73516 vs
     // 73544), f-ratio 0.9994.
+    // 2026-10-16 (re-read on the frozen tranche, `.target-gate/t157/gates-raw.txt`):
+    // 79994 vs 79977 (v 73586 vs 73544), area ratio 1.0015. Same drift as T0M above (the
+    // 2026-10-13 reading is kept as history); the registered tolerance was not widened.
     Model { step: "occ/TDB.stp", occ: "occ/occ-TDB.obj", bbox_tol: Some(1e-3), area_tol: Some(0.02) },
     // a3n00: the tracked T-59/T-69 face classes (density 0.72); the wide area
     // tolerance encodes the missing coverage, not a meshing approximation.

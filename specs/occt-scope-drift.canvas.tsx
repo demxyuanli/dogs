@@ -138,7 +138,7 @@ const SEMANTIC = [
     item: "Delaunay 插点密度：`BRepMesh_DelaunayDeflectionControlMeshAlgo` 的插点与最小边判据",
     id: "A19 余项",
     where: "topo/meshing/deflection_control/ · topo/meshing/node_insertion.rs",
-    state: "**已移植（2026-10-15 行内复核，原「未移植」条目标题本身有误）**：OCCT 8.0 的该类没有 `checkAndAdd`/`addInternalNodes` 这两个符号（全树 grep 无命中），行内把 `optimizeMesh`/`splitTriangleGeometry`/`splitLinks`/`usePoint`/`checkDeflectionOfPointAndUpdateCache`/`rejectByMinSize`/`rejectSplitLinksForMinSize`/`checkLinkEndsForAngularDeviation`（`BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:75-454`）与 `insertNodes`/`registerSurfaceNodes`/`getCellsCount`（`BRepMesh_DelaunayNodeInsertionMeshAlgo.hxx:74-155`）全部落地，并接线（`node_insertion.rs:519-679` 的 `post_process` + `insert_parametric`）；`A_ITERATIONS_NB = 11` 与 `BRepMesh_GeomTool::CellsCount` 亦已对齐。原 TDB +1,744 面证据经逐面配对复核归属缝边 pcurve 注册（2.1 T-124）而非本项；现残余为双向小量：T0M +58、TDB −51、ATU01038 −32、top −30、a3n00 −24、acs10 −20、bottom −5、motoc 0，面积比全 1.0000 —— 无 4~9% 的系统性偏密",
+    state: "**已移植（2026-10-15 行内复核，原「未移植」条目标题本身有误）**：OCCT 8.0 的该类没有 `checkAndAdd`/`addInternalNodes` 这两个符号（全树 grep 无命中），行内把 `optimizeMesh`/`splitTriangleGeometry`/`splitLinks`/`usePoint`/`checkDeflectionOfPointAndUpdateCache`/`rejectByMinSize`/`rejectSplitLinksForMinSize`/`checkLinkEndsForAngularDeviation`（`BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx:75-454`）与 `insertNodes`/`registerSurfaceNodes`/`getCellsCount`（`BRepMesh_DelaunayNodeInsertionMeshAlgo.hxx:74-155`）全部落地，并接线（`node_insertion.rs:519-679` 的 `post_process` + `insert_parametric`）；`A_ITERATIONS_NB = 11` 与 `BRepMesh_GeomTool::CellsCount` 亦已对齐。原 TDB +1,744 面证据经逐面配对复核归属缝边 pcurve 注册（2.1 T-124）而非本项；2026-10-16 复测残余为双向小量：T0M −469、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −7、motoc 0、TDB +17（面数；读数见 `.target-gate/t157/gates-raw.txt`），面积比 20 个 1.0000 + `Shape-2` 0.9999 + `T0M` 1.0017 + `TDB` 1.0015 —— 无 4~9% 的系统性偏密（2026-10-13 记的 T0M +58 / TDB −51 与「面积比全 1.0000」是当轮读数，已被 10-15～10-16 各包的共享路径忠实化改写）",
   },
   {
     item: "bop_curved 网格级布尔（曲面 operand）",
@@ -238,7 +238,8 @@ const SEMANTIC = [
   },
 ];
 
-// `data/*` + `data/occ/*` 逐模型对拍（2026-10-15 `step_obj_gates --nocapture` 实测，23 个模型全过）
+// `data/*` + `data/occ/*` 逐模型对拍（2026-10-16 `step_obj_gates --nocapture` 实测，23 个模型全过；
+// 读数存 `.target-gate/t157/gates-raw.txt`，与 `.target-gate/t156/gates-raw.txt` 逐位相同）
 const PARITY = [
   { model: "motoc", occV: 11713, occF: 13944, ourV: 11713, ourF: 13944, area: "1.0000" },
   { model: "a3n00", occV: 11145, occF: 12466, ourV: 11138, ourF: 12442, area: "1.0000" },
@@ -246,8 +247,8 @@ const PARITY = [
   { model: "ATU01038", occV: 18102, occF: 22586, ourV: 18085, ourF: 22554, area: "1.0000" },
   { model: "bottom", occV: 17587, occF: 23557, ourV: 17581, ourF: 23550, area: "1.0000" },
   { model: "top", occV: 16905, occF: 22800, ourV: 16888, ourF: 22770, area: "1.0000" },
-  { model: "T0M", occV: 60548, occF: 67366, ourV: 60505, ourF: 67284, area: "1.0000" },
-  { model: "TDB", occV: 73544, occF: 79977, ourV: 73516, ourF: 79926, area: "1.0000" },
+  { model: "T0M", occV: 60548, occF: 67366, ourV: 60199, ourF: 66897, area: "1.0017" },
+  { model: "TDB", occV: 73544, occF: 79977, ourV: 73586, ourF: 79994, area: "1.0015" },
 ];
 
 // 状态/文档偏移：2026-10-16 复核定案（第十至第二十七包逐条复核）
@@ -567,7 +568,7 @@ export default function OcctScopeDrift() {
         striped
       />
       <Text size="small" tone="tertiary">
-        `data/*.step`（15 个）中 12 个逐位一致；`Shape-1` 差 −8 面、`Shape-2` 差 −34 面、`screw` 差 +2 面。八个 `data/occ/*` 模型面积比全为 1.0000，缺口是双向小量（T0M +58、TDB −51、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −5、motoc 0）；剩下面级差集中在 2.2 首行登记的 Delaunay 插点密度分支。
+        `data/*.step`（15 个）中 12 个逐位一致；`Shape-1` 差 −8 面、`Shape-2` 差 −34 面、`screw` 差 +2 面。八个 `data/occ/*` 模型里 `motoc` 逐位一致，其余为双向小量：T0M −349 v / −469 f、top −17 v / −30 f、ATU01038 −17 v / −32 f、a3n00 −7 v / −24 f、acs10 −16 v / −20 f、bottom −6 v / −7 f、TDB +42 v / +17 f。**2026-10-16 复测订正（`.target-gate/t157/gates-raw.txt`）**：23 个面积比中 20 个为 `1.0000`，`Shape-2` `0.9999`、`T0M` `1.0017`、`TDB` `1.0015`；各模型的 `area_tol` 是登记值、本卡未改过，故无门禁放宽。T0M/TDB 的网格数相对 2026-10-13 读数（T0M f 67,424 / 面积比 1.0000；TDB f 79,926 / 面积比 1.0000）发生了位移，属 10-15～10-16 各包在共享求交/极值路径上的忠实化后果，已登记为旁支（不调参对齐）；剩下面级差集中在 2.2 首行登记的 Delaunay 插点密度分支。
       </Text>
 
       <H3>2.4 状态 / 文档偏移（2026-10-16 复核：canvas 侧全部收口；`topo-rest.md` 四条 lite 标注留档）</H3>
@@ -593,7 +594,7 @@ export default function OcctScopeDrift() {
         rowTone={GATES.map((g) => g.tone)}
       />
       <Text size="small" tone="tertiary">
-        `G-check` / `G-lib` / `G-gates` / `G-export` 读数首次测量于 2026-10-15（覆盖到 T-147 已提交工作树 `e3a4335e`），末次为其在 2026-10-16 收口审计所对的冻结 HEAD `fbd59532`：五 crate `--all-targets` 0 error、`occt-geom2d --lib` 72 / 0、`occt-geom --lib` 143 / 0、`occt-topo --lib` 1251 / 0、`step_obj_gates` 4 / 4（118.02s；23 个面积比与基线逐位一致）、`export_data_obj` 15 / 15 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。中间每个包都在自己的提交上重跑同样四条门禁，读数一直不变：P018 `8cad6a01`（gates 4/4，150.7s）、P019 `616ea0c1`（181.8s）、P020 `2452a51c`（205.1s）、P021 `11b12e0e`（114.1s）、P022 `3b5728b3`（114.7s）、P023 `38a13eae`（115.6s）、P024 `549e5761`、P025 `8d77b13a`（115.7s）、P026 `fbd59532`（118.1s）；`--lib` 恒为 `occt-topo` 1251 / 0、`export_data_obj` 恒为 15 / 15 逐位一致。`G-fuse` / `G-phase` / `G-boss` / `G-iges` 为 T-130..T-133 轮读数，其后的包未触及这些路径。`G-core` 的 `occt-core` 读数由 285 变 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251，`notes/T002-gate-baseline.md` 已留档）；`occt-math` 210、`occt-geom` 143、`occt-geom2d` 72 未变。
+        `G-check` / `G-lib` / `G-gates` / `G-export` 读数首次测量于 2026-10-15（覆盖到 T-147 已提交工作树 `e3a4335e`），末次为其在 2026-10-16 收口审计所对的冻结 HEAD `fbd59532`：五 crate `--all-targets` 0 error、`occt-geom2d --lib` 72 / 0、`occt-geom --lib` 143 / 0、`occt-topo --lib` 1251 / 0、`step_obj_gates` 4 / 4（118.02s；23 个面积比全部落在登记的 `area_tol` 内：20 个 `1.0000`、`Shape-2` `0.9999`、`T0M` `1.0017`、`TDB` `1.0015`）、`export_data_obj` 15 / 15 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。中间每个包都在自己的提交上重跑同样四条门禁，四项**判词**一直不变：P018 `8cad6a01`（gates 4/4，150.7s）、P019 `616ea0c1`（181.8s）、P020 `2452a51c`（205.1s）、P021 `11b12e0e`（114.1s）、P022 `3b5728b3`（114.7s）、P023 `38a13eae`（115.6s）、P024 `549e5761`、P025 `8d77b13a`（115.7s）、P026 `fbd59532`（118.1s）；`--lib` 恒为 `occt-topo` 1251 / 0、`export_data_obj` 恒为 15 / 15 逐位一致。**2026-10-16 独立复测**（`.target-gate/t157/`，货真基于 `fbd59532` 之后的工作树）：`step_obj_gates` 4 / 4（cargo 177.06s / 直跑测试二进制 163.58s）、`export_data_obj -- data/occ data` 23 ok 且 15 个 `data/*.step` 逐位一致、`--lib` 1251 / 0；逐模型 v/f 与 `.target-gate/t156/gates-raw.txt` 逐位相同，仅面积比读数按上表订正。`G-fuse` / `G-phase` / `G-boss` / `G-iges` 为 T-130..T-133 轮读数，其后的包未触及这些路径。`G-core` 的 `occt-core` 读数由 285 变 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251，`notes/T002-gate-baseline.md` 已留档）；`occt-math` 210、`occt-geom` 143、`occt-geom2d` 72 未变。
       </Text>
 
       <H3>2.6 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`）</H3>
@@ -628,8 +629,9 @@ export default function OcctScopeDrift() {
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
           TDB 三角 81,721 → <Text weight="semibold">79,926</Text>（OCCT 79,977）、面积比 1.0042 → <Text weight="semibold">1.0000</Text>，
-          逐面配对 2,050 面逐位相同；`data/occ` 八模型面积比全为 1.0000（motoc 逐位一致），缺口收为双向小量
-          （T0M +58、TDB −51、top −30、ATU01038 −32）。2.4 的七条状态/文档偏移（看板基准日、`G-lib`、`G-export`、`G-core`、
+          逐面配对 2,050 面逐位相同（此行为 2026-10-13 当轮读数）；`data/occ` 八模型 2026-10-16 复测为 `motoc` 逐位一致 + 双向小量
+          （T0M −469、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −7、TDB +17），面积比 20×1.0000 / `Shape-2` 0.9999 / `T0M` 1.0017 / `TDB` 1.0015
+          （10-13 记的「全 1.0000、T0M +58、TDB −51」已被后续共享路径忠实化改写，`.target-gate/t157/gates-raw.txt` 为准）。2.4 的七条状态/文档偏移（看板基准日、`G-lib`、`G-export`、`G-core`、
           未上板自创件、未提交工作树、10-10 未上板批次）已全部收口；**本卡于 2026-10-16 按新口径复测刷新**（Rust 侧 1,107 文件 /
           337,814 行、`UNPORTED` 173 条，见 2.1 与 2.4）。
         </Text>
@@ -644,7 +646,7 @@ export default function OcctScopeDrift() {
           现两份合并为唯一 `trimmed_reparam_bspline` 与 `same_range_window`（`cxx:934-959`），`ReparamCurve2d::bspline_copy2d` 删除
           （wrapper 只在 `Geom2dConvert::CurveToBSplineCurve` 拒绝时存在，`Geom2dConvert.cxx:442-444`），`pcurve_range.rs` 只留 cxx 的分支选择
           （早退 `cxx:854-859`、等跨判据 `:862`、直线 `:864-871`、圆 `:872-889`、裁剪递归 `:890-901`、一般臂 `:908-922`、不等跨 `:924-969`）。
-          门禁：`--all-targets` 0 error / 413 warnings（lib 375 与基线同数）、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（118.1s，23 面积比 1.0000）、
+          门禁：`--all-targets` 0 error / 413 warnings（lib 375 与基线同数）、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（118.1s，23 面积比在登记容差内：20×1.0000、`Shape-2` 0.9999、`T0M` 1.0017、`TDB` 1.0015）、
           `export_data_obj` 15/15 逐位一致；未新增测试。**T999 Judge 审计已在冻结 HEAD `fbd59532` 上跑完**（四条门禁读数：`--all-targets` 0 error、
           `occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致），逐条对照 T001 清单后判定
           `full_outcome_complete: true`：B1..B8、B6a-h、B7-writer、B8-intana、`surface_fit`、`ReparamCurve2d` 全部有包可指。唯一仍登记的是缺失的

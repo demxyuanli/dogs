@@ -242,7 +242,10 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
     `Extrema_ExtCC2d.cxx:541-544`).
   - gates: `--all-targets` 0 err (occt-geom2d, occt-geom, occt-topo), `occt-geom2d --lib` 72/0,
     `occt-geom --lib` 143/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4 with the 23 area
-    ratios identical to the T000 baseline (22 x 1.0000, Shape-2 0.9999), `export_data_obj` 15/15
+    ratios identical to the T000 baseline (as read at P016: 22 x 1.0000, Shape-2 0.9999; the
+    2026-10-16 re-read on the frozen tranche gives 20 x 1.0000 plus Shape-2 0.9999 / T0M 1.0017 /
+    TDB 1.0015 -- T0M and TDB moved under the later shared-path packages, tolerances unchanged),
+    `export_data_obj` 15/15
     with v/f and bbox bit-identical.
 - **B6e CLOSED 2026-10-15 (P017 / T-147, commit `e3a4335e`).** `extrema2d/curve_curve.rs::locate_extcc2d`
   (`:255-262`) now builds `ExtremaLocateExtCC2d::new(c1, c2, u0, v0)` and the self-invented clamped
