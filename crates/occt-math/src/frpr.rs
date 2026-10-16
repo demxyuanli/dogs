@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn frpr_matches_bfgs() {
         let frpr = Frpr::new();
-        let bfgs = BFGS::new();
+        let mut bfgs = BFGS::new();
         let start = MathVector::from_slice(&[-1.0, 1.0]);
         let fr = frpr.perform(rosenbrock, rosenbrock_grad, &start).unwrap();
         let bf = bfgs.minimize(rosenbrock, rosenbrock_grad, &start).unwrap();

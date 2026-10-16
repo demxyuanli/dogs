@@ -258,7 +258,7 @@ impl<'a> GGenExtCC<'a> {
             for _i1 in 1..=n1 {
                 let mut t2 = c2.first_parameter();
                 for _i2 in 1..=n2 {
-                    if let Some((_f, (g1, g2))) = func.values(t1, t2) {
+                    if let Some((_f, (g1, g2))) = func.values_uv(t1, t2) {
                         let a_mod = g1 * g1 + g2 * g2;
                         a_max_g = a_max_g.max(a_mod); // `hxx:597-598`
                     }
@@ -298,8 +298,7 @@ impl<'a> GGenExtCC<'a> {
         let up = [border(self.upp_border.0), border(self.upp_border.1)];
         let lower = MathVector::from_slice(&lo);
         let upper = MathVector::from_slice(&up);
-        let obj = |x: &MathVector| func.value(x.value(1), x.value(2)).unwrap_or(f64::MAX);
-        finder.set_global_params(&obj, &lower, &upper, a_lc)?;
+        finder.set_global_params(&func, &lower, &upper, a_lc)?;
 
         // `aCellSize` (`hxx:626-629`).
         let span = (iv1[iv1.len() - 1] - iv1[0]).max(iv2[iv2.len() - 1] - iv2[0]);
@@ -317,7 +316,7 @@ impl<'a> GGenExtCC<'a> {
                 let lb = MathVector::from_slice(&[iv1[i + 1], iv2[j + 1]]);
                 finder.set_local_params(&la, &lb); // `hxx:648`
                 finder
-                    .perform_local(&obj) // `hxx:649`
+                    .perform_local(&func) // `hxx:649`
                     .map_err(|e| format!("Extrema_GGenExtCC: {e}"))?;
 
                 let a_curr_f = finder.minimal_value(); // `hxx:651`
@@ -382,7 +381,7 @@ impl<'a> GGenExtCC<'a> {
             let a_current = a_pnts[an_idx];
             let a_next = a_pnts[an_idx + 1];
             let mid = ((a_current.0 + a_next.0) * 0.5, (a_current.1 + a_next.1) * 0.5);
-            let a_val = func.value(mid.0, mid.1).unwrap_or(f64::MAX); // `hxx:727`
+            let a_val = func.value_uv(mid.0, mid.1).unwrap_or(f64::MAX); // `hxx:727`
             if (a_val - a_f).abs() < CONFUSION {
                 if b_save_solution {
                     a_solutions.push(an_idx); // `hxx:728-735`

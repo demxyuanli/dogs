@@ -27,6 +27,21 @@ pub trait MathMultipleVarFunction {
     fn get_state_number(&self) -> i32 {
         0
     }
+
+    /// Rust stand-in for OCCT's
+    /// `dynamic_cast<math_MultipleVarFunctionWithGradient*>(myFunc)`
+    /// (`math_GlobOptMin.cxx:294`): the ported hierarchy is static, so the
+    /// object answers for itself and the default `None` is the failing cast.
+    fn as_gradient(&self) -> Option<&dyn MathMultipleVarFunctionWithGradient> {
+        None
+    }
+
+    /// Rust stand-in for OCCT's
+    /// `dynamic_cast<math_MultipleVarFunctionWithHessian*>(myFunc)`
+    /// (`math_GlobOptMin.cxx:273`).
+    fn as_hessian(&self) -> Option<&dyn MathMultipleVarFunctionWithHessian> {
+        None
+    }
 }
 
 /// `math_MultipleVarFunctionWithGradient`.

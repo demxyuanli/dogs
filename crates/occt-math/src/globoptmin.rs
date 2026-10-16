@@ -6,10 +6,36 @@
 //! descent. Finds all local minima inside the box by default; a single-solution
 //! mode is available via `find_single_solution`.
 
-use crate::{BFGS, MathVector};
+use crate::{MathMatrix, MathMultipleVarFunction, MathVector, NewtonMinimum, Powell, BFGS};
 
 /// `Precision::Infinite()` in OCCT.
 const INF: f64 = 2.0e100;
+
+/// `F.Value(X, out)` with OCCT's semantics: `math_MultipleVarFunction::Value`
+/// returns false and does **not** write `F`. `math_GlobOptMin` discards that
+/// result at `cxx:358`, `:367`, `:373`, `:420` and `:617`, so a failed
+/// evaluation leaves the target as it was.
+fn eval_into(f: &dyn MathMultipleVarFunction, x: &MathVector, out: &mut f64) {
+    let mut v = 0.0;
+    if f.value(x, &mut v) {
+        *out = v;
+    }
+}
+
+/// The objective of [`GlobOptMin::perform2`]: the 2-D convenience entry point
+/// where OCCT would have received a real `math_MultipleVarFunction`.
+struct Fn2<F>(F);
+
+impl<F: Fn(f64, f64) -> f64> MathMultipleVarFunction for Fn2<F> {
+    fn nb_variables(&self) -> usize {
+        2
+    }
+
+    fn value(&self, x: &MathVector, f: &mut f64) -> bool {
+        *f = (self.0)(x.value(1), x.value(2));
+        true
+    }
+}
 
 /// Evtushenko global optimizer over a hyper-rectangle.
 ///
@@ -31,20 +57,6 @@ pub struct GlobOptMin {
     pub functional_minimal_value: f64,
     /// `myCont` (`math_GlobOptMin.hxx:264`), default 2 (`cxx:69`).
     pub cont: i32,
-    /// Stand-in for OCCT's
-    /// `dynamic_cast<math_MultipleVarFunctionWithGradient*>(myFunc)`
-    /// (`math_GlobOptMin.cxx:294`); see [`GlobOptMin::compute_local_extremum`].
-    /// The port's objective is a plain value closure, but any such closure can be
-    /// numerically differentiated, so this defaults to `true` — matching the
-    /// runtime type OCCT actually sees, since `Extrema_GlobOptFuncCCC2` is a
-    /// `math_MultipleVarFunctionWithGradient` (`Extrema_GlobOptFuncCC.hxx`).
-    pub has_gradient: bool,
-    /// Stand-in for OCCT's
-    /// `dynamic_cast<math_MultipleVarFunctionWithHessian*>(myFunc)`
-    /// (`math_GlobOptMin.cxx:273`). Defaults to `false`: the port has no
-    /// Hessian-input local engine, so the Newton arm is UNPORTED (see
-    /// [`GlobOptMin::compute_local_extremum`]).
-    pub has_hessian: bool,
     /// Pending `SetLocalParams` sub-box (`myLocalA`/`myLocalB` are not stored in
     /// OCCT — `SetLocalParams` writes `myA`/`myB` directly; the port keeps the
     /// request until `perform` reaches the same point of the sequence).
@@ -94,8 +106,6 @@ impl GlobOptMin {
             lip_const_locked: false,
             functional_minimal_value: -INF,
             cont: 2,
-            has_gradient: true,
-            has_hessian: false,
             local_params: None,
             done: false,
             n: 0,
@@ -148,10 +158,10 @@ impl GlobOptMin {
     /// OCCT uses it to choose the local-refinement engine inside
     /// `computeLocalExtremum` (`cxx:266-339`: `myCont >= 2` → `math_NewtonMinimum`
     /// on a `math_MultipleVarFunctionWithHessian`, `myCont >= 1` → `math_BFGS`
-    /// on a `WithGradient`, else `math_Powell`). The port has no function-class
-    /// hierarchy, so the two `dynamic_cast` tests are the explicit
-    /// [`GlobOptMin::has_gradient`] / [`GlobOptMin::has_hessian`] flags and the
-    /// engine selection lives in [`GlobOptMin::compute_local_extremum`].
+    /// on a `WithGradient`, else `math_Powell`). The two `dynamic_cast` tests are
+    /// [`MathMultipleVarFunction::as_hessian`] /
+    /// [`MathMultipleVarFunction::as_gradient`], and the engine selection lives
+    /// in [`GlobOptMin::compute_local_extremum`].
     pub fn set_continuity(&mut self, the_cont: i32) {
         self.cont = the_cont;
     }
@@ -202,8 +212,8 @@ impl GlobOptMin {
     {
         let lower = MathVector::from_slice(&[xmin, ymin]);
         let upper = MathVector::from_slice(&[xmax, ymax]);
-        let wrap = |x: &MathVector| f(x.value(1), x.value(2));
-        self.perform(&wrap, &lower, &upper)?;
+        let obj = Fn2(f);
+        self.perform(&obj, &lower, &upper)?;
         if self.sol_count == 0 {
             return Err("no extrema found".into());
         }
@@ -220,29 +230,28 @@ impl GlobOptMin {
     /// across the calls, as `Extrema_GGenExtCC::Perform` does
     /// (`Extrema_GGenExtCC.hxx:639-649`) — use [`GlobOptMin::set_global_params`]
     /// followed by [`GlobOptMin::perform_local`].
-    pub fn perform<F>(&mut self, f: F, lower: &MathVector, upper: &MathVector) -> Result<(), String>
-    where
-        F: Fn(&MathVector) -> f64,
-    {
+    pub fn perform(
+        &mut self,
+        f: &dyn MathMultipleVarFunction,
+        lower: &MathVector,
+        upper: &MathVector,
+    ) -> Result<(), String> {
         let c = self.lip_const;
-        self.set_global_params(&f, lower, upper, c)?;
-        self.perform_local(&f)
+        self.set_global_params(f, lower, upper, c)?;
+        self.perform_local(f)
     }
 
     /// `math_GlobOptMin::SetGlobalParams` (`cxx:112-148`): install the objective,
     /// the Lipschitz estimate `the_c`, the global box and the working box,
     /// `myMaxV = (b-a)/3`, then `initCellSize()` + `ComputeInitSol()` and
     /// `myDone = false`.
-    pub fn set_global_params<F>(
+    pub fn set_global_params(
         &mut self,
-        f: &F,
+        f: &dyn MathMultipleVarFunction,
         lower: &MathVector,
         upper: &MathVector,
         the_c: f64,
-    ) -> Result<(), String>
-    where
-        F: Fn(&MathVector) -> f64,
-    {
+    ) -> Result<(), String> {
         if lower.len() == 0 || lower.len() != upper.len() {
             return Err("dimension mismatch".into());
         }
@@ -286,10 +295,7 @@ impl GlobOptMin {
     /// [`GlobOptMin::set_local_params`]. **Does not reset** the best value or the
     /// solution list, so successive calls accumulate — which is exactly how
     /// `Extrema_GGenExtCC` uses it.
-    pub fn perform_local<F>(&mut self, f: &F) -> Result<(), String>
-    where
-        F: Fn(&MathVector) -> f64,
-    {
+    pub fn perform_local(&mut self, f: &dyn MathMultipleVarFunction) -> Result<(), String> {
         let n = self.n;
 
         // `math_GlobOptMin::SetLocalParams` (`cxx:154-171`): override the
@@ -410,7 +416,7 @@ impl GlobOptMin {
             && (self.f - self.functional_minimal_value).abs() < self.same_tol * 0.01
     }
 
-    fn compute_initial_values<F: Fn(&MathVector) -> f64>(&mut self, f: &F) {
+    fn compute_initial_values(&mut self, f: &dyn MathMultipleVarFunction) {
         const A_MIN_LC: f64 = 0.01;
         const A_MAX_LC: f64 = 1000.0;
         const A_MIN_EPS: f64 = 0.1;
@@ -419,19 +425,24 @@ impl GlobOptMin {
 
         let mut curr_pnt = MathVector::new(1, self.n);
         let mut param_step = MathVector::new(1, self.n);
-        let mut prev_val_diag = f(&self.a);
+        // cxx:357-359: `aPrevValDiag` is whatever `Value` wrote; OCCT discards
+        // the result, so the read below starts from the `-INF`-wide default.
+        let mut prev_val_diag = INF;
+        eval_into(f, &self.a, &mut prev_val_diag);
         let mut prev_val_proj = prev_val_diag;
         let mut lip_const: f64 = 0.0;
         let a_step = self.b.subtracted(&self.a).norm() / A_PNT_NB as f64;
         param_step = self.b.subtracted(&self.a).divided_scalar(A_PNT_NB as f64);
         for i in 1..=A_PNT_NB {
             curr_pnt = self.a.added(&param_step.multiplied_scalar(i as f64));
-            let val = f(&curr_pnt);
+            let mut val = 0.0;
+            eval_into(f, &curr_pnt, &mut val);
             lip_const = lip_const.max((val - prev_val_diag).abs());
             prev_val_diag = val;
 
             curr_pnt.set_value(1, self.a.value(1));
-            let val = f(&curr_pnt);
+            let mut val = 0.0;
+            eval_into(f, &curr_pnt, &mut val);
             lip_const = lip_const.max((val - prev_val_proj).abs());
             prev_val_proj = val;
         }
@@ -444,29 +455,26 @@ impl GlobOptMin {
         }
     }
 
-    fn compute_init_sol<F: Fn(&MathVector) -> f64>(&mut self, f: &F) -> Result<(), String> {
+    fn compute_init_sol(&mut self, f: &dyn MathMultipleVarFunction) -> Result<(), String> {
         // Midpoint; protects against local optimizers failing on all inputs.
         let pnt = self.glob_a.added(&self.glob_b).multiplied_scalar(0.5);
-        let val = f(&pnt);
-        if !val.is_finite() {
-            return Err("function returned non-finite value".into());
-        }
+        // cxx:610/617: `aVal` starts at 0 and `Value` leaves it there on failure.
+        let mut val = 0.0;
+        eval_into(f, &pnt, &mut val);
         self.check_add_candidate(&pnt, val);
 
         // Local optimization from lower corner, midpoint and upper corner.
         for i in 1..=3 {
             let t = (i as f64 - 1.0) / 2.0;
             let start = self.a.added(&self.b.subtracted(&self.a).multiplied_scalar(t));
-            if let Some((out_pnt, out_val)) =
-                self.compute_local_extremum(f, &start, self.has_gradient, self.has_hessian)
-            {
+            if let Some((out_pnt, out_val)) = self.compute_local_extremum(f, &start) {
                 self.check_add_candidate(&out_pnt, out_val);
             }
         }
         Ok(())
     }
 
-    fn compute_global_extremum<F: Fn(&MathVector) -> f64>(&mut self, f: &F, j: usize) {
+    fn compute_global_extremum(&mut self, f: &dyn MathMultipleVarFunction, j: usize) {
         let mut d = f64::MAX;
         let mut a_prev_val = f64::MAX;
         let mut val = f64::MAX;
@@ -487,7 +495,8 @@ impl GlobOptMin {
             if j == 1 {
                 is_inside = false;
                 a_prev_val = d;
-                d = f(&self.x);
+                // cxx:419-420: `aPrevVal = d; myFunc->Value(myX, d);`
+                eval_into(f, &self.x, &mut d);
                 // Evtushenko estimate.
                 let r1 = (d + self.z * self.lip_const * self.last_step - self.f) * self.z;
                 // Shubert / Piyavsky estimate.
@@ -502,15 +511,15 @@ impl GlobOptMin {
                         a_param = self.x.value(1) - self.v.value(1) * 0.5;
                     }
                     self.x.set_value(1, a_param);
-                    let a_val = f(&self.x);
+                    // cxx:438-439: `double aVal = 0; myFunc->Value(myX, aVal);`
+                    let mut a_val = 0.0;
+                    eval_into(f, &self.x, &mut a_val);
                     self.x.set_value(1, save_param);
 
                     if (a_val < d && a_val < a_prev_val)
                         || distance_to_border(&self.x, &self.a, &self.b) < self.e1
                     {
-                        if let Some((out_pnt, out_val)) =
-                            self.compute_local_extremum(f, &self.x, self.has_gradient, self.has_hessian)
-                        {
+                        if let Some((out_pnt, out_val)) = self.compute_local_extremum(f, &self.x) {
                             is_inside = true;
                             val = out_val;
                             self.tmp = out_pnt;
@@ -555,70 +564,95 @@ impl GlobOptMin {
         }
     }
 
-    /// `math_GlobOptMin::computeLocalExtremum` (`math_GlobOptMin.cxx:266-339`):
-    /// run a local descent from `pnt` and return the minimizing point and its
-    /// value, or `None` when every available engine failed or left the global
-    /// box.
+    /// `math_GlobOptMin::computeLocalExtremum(thePnt, theVal, theOutPnt)`
+    /// (`math_GlobOptMin.cxx:266-339`): run a local descent from `pnt` and return
+    /// the minimizing point and its value, or `None` when every available engine
+    /// failed or left the global box.
     ///
-    /// OCCT picks the engine from `myCont` and the runtime type of `myFunc`
-    /// (the `dynamic_cast`s at `cxx:273` and `cxx:294`). The port has no
-    /// function-class hierarchy, so the two casts are the explicit
-    /// `has_hessian` / `has_gradient` arguments:
+    /// OCCT picks the engine from `myCont` and the runtime class of `myFunc`
+    /// (`cxx:273`, `cxx:294`; the third `dynamic_cast` at `cxx:316` always
+    /// succeeds because every `math_MultipleVarFunction` qualifies, so Powell is
+    /// the unconditional fallback). The port's stand-in for the two real casts is
+    /// [`MathMultipleVarFunction::as_hessian`] /
+    /// [`MathMultipleVarFunction::as_gradient`].
     ///
     /// * Newton (`cxx:272-291`): `myCont >= 2` + `WithHessian` →
-    ///   `math_NewtonMinimum` with `SetBoundary(myGlobA, myGlobB)` — **UNPORTED**,
-    ///   see below.
+    ///   `math_NewtonMinimum` with `SetBoundary(myGlobA, myGlobB)`.
     /// * BFGS (`cxx:293-312`): `myCont >= 1` + `WithGradient` → `math_BFGS` with
-    ///   `SetBoundary(myGlobA, myGlobB)` (`cxx:299`). Landed here; the gradient
-    ///   is a central difference of the value closure.
-    /// * Powell (`cxx:314-336`): the base-class cast always succeeds in OCCT, so
-    ///   this is the unconditional fallback — **UNPORTED**, see below.
+    ///   `SetBoundary(myGlobA, myGlobB)` (`cxx:299`), driven by the object's
+    ///   analytic `Values(X, F, G)`.
+    /// * Powell (`cxx:314-336`): unconditional fallback, run from the identity
+    ///   direction matrix.
     ///
-    /// Unlike OCCT, a BFGS run that is not `IsDone` does **not** fall through to
-    /// the Newton/Powell arms (`cxx:281-291` / `cxx:326-335`): those arms do not
-    /// exist in the port, so the function returns `None` exactly as if their
-    /// `dynamic_cast` had failed.
-    fn compute_local_extremum<F: Fn(&MathVector) -> f64>(
+    /// Each arm returns as soon as its engine `IsDone()` **and** the location is
+    /// inside the global box; otherwise the next arm is tried, exactly as the
+    /// `.cxx` falls through.
+    fn compute_local_extremum(
         &self,
-        f: &F,
+        f: &dyn MathMultipleVarFunction,
         pnt: &MathVector,
-        has_gradient: bool,
-        has_hessian: bool,
     ) -> Option<(MathVector, f64)> {
         // Newton method — cxx:272-291.
-        //
-        // UNPORTED: `math_NewtonMinimum::Perform` (`math_NewtonMinimum.cxx:77-263`)
-        // needs `math_MultipleVarFunctionWithHessian::Values(pnt, val, grad, hess)`
-        // (`cxx:100`), a Jacobi eigen-decomposition for the convexity treatment
-        // (`cxx:115-142`) and a Gauss solve of the Hessian (`cxx:146-153`), plus
-        // `SetBoundary` projection (`math_NewtonMinimum.cxx:155-205`). The port's
-        // `newton::NewtonMinimum` (`newton.rs:94-169`) is a BFGS-update descent
-        // without a Hessian input, so grafting that boundary control flow onto it
-        // would invent an algorithm. The arm is skipped, as a failed cast would be.
-        let _ = has_hessian;
+        if self.cont >= 2 {
+            if let Some(a_tmp) = f.as_hessian() {
+                let mut newton = NewtonMinimum::with_defaults(a_tmp.nb_variables());
+                newton.set_boundary(self.glob_a.clone(), self.glob_b.clone());
+                newton.perform(a_tmp, pnt);
+
+                if newton.is_done() {
+                    let out_pnt = newton.location().clone();
+                    let val = newton.minimum();
+                    if self.is_inside(&out_pnt) {
+                        return Some((out_pnt, val));
+                    }
+                }
+            }
+        }
 
         // BFGS method used — cxx:293-312.
-        if self.cont >= 1 && has_gradient {
-            let mut bfgs = BFGS::new();
-            bfgs.set_boundary(&self.glob_a, &self.glob_b); // cxx:299
-            let grad = |x: &MathVector| numeric_gradient(f, x);
-            if let Ok(x) = bfgs.minimize(f, grad, pnt) {
-                if self.is_inside(&x) {
-                    let val = f(&x);
-                    if val.is_finite() {
-                        return Some((x, val));
+        if self.cont >= 1 {
+            if let Some(a_tmp) = f.as_gradient() {
+                let mut bfgs = BFGS::new();
+                bfgs.set_boundary(&self.glob_a, &self.glob_b); // cxx:299
+                let n = a_tmp.nb_variables();
+                let value = |x: &MathVector| {
+                    let mut v = 0.0;
+                    a_tmp.value(x, &mut v);
+                    v
+                };
+                let grad = |x: &MathVector| {
+                    let mut g = MathVector::new(1, n);
+                    a_tmp.gradient(x, &mut g);
+                    g
+                };
+                if let Ok(x) = bfgs.minimize(value, grad, pnt) {
+                    if self.is_inside(&x) {
+                        // `theVal = bfgs.Minimum()` (`cxx:305`).
+                        return Some((x, bfgs.minimum()));
                     }
                 }
             }
         }
 
         // Powell method used — cxx:314-336.
-        //
-        // UNPORTED: OCCT builds an identity direction matrix and runs
-        // `math_Powell(*myFunc, 1e-10); powell.Perform(*myFunc, thePnt, m)`
-        // (`cxx:317-324`). The port's `Powell` (`powell.rs:8-39`) neither accepts a
-        // direction matrix nor follows `math_Powell::Perform`, and OCCT's Powell
-        // has no `SetBoundary`, so it cannot stand in for the missing arm.
+        {
+            let n = self.n;
+            let mut m = MathMatrix::new(1, n, 1, n);
+            for i in 1..=n {
+                m.set_value(i, i, 1.0);
+            }
+
+            let mut powell = Powell::with_tolerance(f.nb_variables(), 1.0e-10);
+            powell.perform(f, pnt, &m);
+
+            if powell.is_done() {
+                let out_pnt = powell.location();
+                if self.is_inside(&out_pnt) {
+                    return Some((out_pnt, powell.minimum()));
+                }
+            }
+        }
+
         None
     }
 
@@ -680,21 +714,6 @@ fn distance_to_border(x: &MathVector, min: &MathVector, max: &MathVector) -> f64
     dist
 }
 
-/// Central-difference numeric gradient of `f` at `x`.
-fn numeric_gradient<F: Fn(&MathVector) -> f64>(f: &F, x: &MathVector) -> MathVector {
-    let n = x.len();
-    let h = 1e-6;
-    let mut g = MathVector::new(1, n);
-    for i in 1..=n {
-        let mut xp = x.clone();
-        let mut xm = x.clone();
-        xp.set_value(i, x.value(i) + h);
-        xm.set_value(i, x.value(i) - h);
-        g.set_value(i, (f(&xp) - f(&xm)) / (2.0 * h));
-    }
-    g
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -726,9 +745,8 @@ mod tests {
     #[test]
     fn globoptmin_points_and_queries() {
         let mut gom = GlobOptMin::new();
-        let f = |x: &MathVector| (x.value(1) - 1.0).powi(2) + (x.value(2) - 2.0).powi(2);
-        gom.perform(&f, &MathVector::from_slice(&[0.0, 0.0]), &MathVector::from_slice(&[2.0, 3.0]))
-            .unwrap();
+        let f = |x: f64, y: f64| (x - 1.0).powi(2) + (y - 2.0).powi(2);
+        gom.perform2(f, 0.0, 2.0, 0.0, 3.0).unwrap();
         assert_eq!(gom.minimal_value(), gom.minimal_value()); // f is finite
         assert!(gom.minimal_value() < 1e-6);
         assert!(gom.nb_extrema() >= 1);
@@ -748,10 +766,10 @@ mod tests {
     #[test]
     fn globoptmin_dimension_mismatch() {
         let mut gom = GlobOptMin::new();
-        let f = |x: &MathVector| x.value(1) * x.value(1);
+        let f = |x: f64, _y: f64| x * x;
         let lo = MathVector::from_slice(&[0.0, 0.0]);
         let hi = MathVector::from_slice(&[1.0]);
-        assert!(gom.perform(&f, &lo, &hi).is_err());
+        assert!(gom.perform(&Fn2(f), &lo, &hi).is_err());
     }
 
     #[test]

@@ -47,6 +47,9 @@ pub struct BFGS {
     left: MathVector,
     /// `myRight` (`math_BFGS.hxx:124`).
     right: MathVector,
+    /// `TheMinimum` (`math_BFGS.hxx:118`): the objective at `TheLocation`,
+    /// reported by `Minimum()` (`math_BFGS.lxx:38-42`).
+    minimum: f64,
 }
 
 impl BFGS {
@@ -61,7 +64,13 @@ impl BFGS {
             bounds_defined: false,
             left: MathVector::new(1, 1),
             right: MathVector::new(1, 1),
+            minimum: f64::MAX, // RealLast() (`math_BFGS.hxx:113`)
         }
+    }
+
+    /// `Minimum()` (`math_BFGS.lxx:38-42`): the objective at the last location.
+    pub fn minimum(&self) -> f64 {
+        self.minimum
     }
 
     /// `math_BFGS::SetBoundary(theLeftBorder, theRightBorder)`
@@ -86,7 +95,7 @@ impl BFGS {
     /// `math_DirectionSearchError` (`cxx:381`) and `math_TooManyIterations`
     /// (`cxx:442`) become `Err`; `math_FunctionError` cannot occur because the
     /// port's closures are infallible.
-    pub fn minimize<F, G>(&self, f: F, grad: G, x0: &MathVector) -> Result<MathVector, MathStatus>
+    pub fn minimize<F, G>(&mut self, f: F, grad: G, x0: &MathVector) -> Result<MathVector, MathStatus>
     where
         F: Fn(&MathVector) -> f64,
         G: Fn(&MathVector) -> MathVector,
@@ -118,6 +127,9 @@ impl BFGS {
                 &mut minimum,
                 &f,
             );
+            // `TheMinimum = TheMinimum` (`math_BFGS.cxx:362`) — reported by
+            // `Minimum()` on every exit, including the failing ones.
+            self.minimum = minimum;
 
             // if (IsSolutionReached(F)) { Done = true; return; } — cxx:371-376
             if 2.0 * (minimum - previous_minimum).abs()

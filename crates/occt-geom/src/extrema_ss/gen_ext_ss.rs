@@ -290,7 +290,7 @@ impl<'a> ExtremaGenExtSS<'a> {
         // Extrema_FuncDistSS aGFSS(S1, *myS2); math_BFGS aBFGSSolver(4);
         // aBFGSSolver.Perform(aGFSS, UV); — cxx:377-379.
         let fdist = ExtremaFuncDistSS::new(s1, s2);
-        let bfgs = BFGS::new();
+        let mut bfgs = BFGS::new();
         let bfgs_result = bfgs.minimize(|x| fdist.value(x), |x| fdist.gradient(x), &uv);
         match bfgs_result {
             Ok(location) => {

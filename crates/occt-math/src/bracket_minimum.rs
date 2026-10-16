@@ -130,12 +130,25 @@ impl BracketMinimum {
 
     /// `math_BracketMinimum::Perform(F)` (`math_BracketMinimum.cxx:62-211`).
     ///
-    /// The objective is infallible here (the port's closures return a value),
-    /// so the `F.Value == false` early returns of the `.cxx` collapse to the
-    /// single `LimitAndMayBeSwap` failure (`cxx:42-45`). The triplet is carried
-    /// in locals and committed only when `Done` is set, so the early returns
-    /// leave `done == false` exactly as the `.cxx` does.
+    /// The port's total-objective form of
+    /// [`BracketMinimum::perform_fallible`] (`math_Powell`'s line search needs
+    /// the fallible one).
     pub fn perform<F: Fn(f64) -> f64>(&mut self, f: &F) {
+        // The total objective is the fallible one wrapped in `Some`, so the two
+        // entry points cannot drift apart.
+        self.perform_fallible(&mut |x: f64| Some(f(x)));
+    }
+
+    /// `math_BracketMinimum::Perform(F)` (`math_BracketMinimum.cxx:62-211`) with
+    /// the objective's `false` result carried: `None` means `F.Value` failed,
+    /// which makes every arm of the `.cxx` `return` with `Done == false`
+    /// (`cxx:72-76`, `:80-84`, `:98-102`, `:158-162`, `:169-172`, `:180-183`,
+    /// `:200-203`) and `LimitAndMayBeSwap` fail at `cxx:46-50`.
+    ///
+    /// Same body as [`BracketMinimum::perform`]; the two exist because OCCT's
+    /// `math_Function::Value` is fallible and only some callers can supply a
+    /// total objective (`math_Powell::MinimizeDirection` needs the failure).
+    pub fn perform_fallible<F: FnMut(f64) -> Option<f64>>(&mut self, f: &mut F) {
         self.done = false;
         let lambda = GOLD;
 
@@ -146,10 +159,16 @@ impl BracketMinimum {
 
         // cxx:70-85
         if !self.my_fa {
-            fax = f(ax);
+            match f(ax) {
+                Some(v) => fax = v,
+                None => return,
+            }
         }
         if !self.my_fb {
-            fbx = f(bx);
+            match f(bx) {
+                Some(v) => fbx = v,
+                None => return,
+            }
         }
         if fbx > fax {
             std::mem::swap(&mut ax, &mut bx);
@@ -159,7 +178,7 @@ impl BracketMinimum {
         // get next prob after (A, B) — cxx:92-109
         cx = bx + lambda * (bx - ax);
         if self.is_limited {
-            match limit_and_may_be_swap(f, ax, bx, fbx, cx, self.left, self.right) {
+            match limit_and_may_be_swap_fallible(f, ax, bx, fbx, cx, self.left, self.right) {
                 Some((b_new, c_new, fb_new, fc_new)) => {
                     bx = b_new;
                     cx = c_new;
@@ -169,10 +188,13 @@ impl BracketMinimum {
                 None => return,
             }
         } else {
-            fcx = f(cx);
+            match f(cx) {
+                Some(v) => fcx = v,
+                None => return,
+            }
         }
 
-        // cxx:111-209
+        // cxx:111-208
         while fbx > fcx {
             let r = (bx - ax) * (fbx - fcx);
             let q = (bx - cx) * (fbx - fax);
@@ -187,7 +209,10 @@ impl BracketMinimum {
             let mut fu;
             if (bx - u) * (u - cx) > 0.0 {
                 // u is between B and C
-                fu = f(u);
+                match f(u) {
+                    Some(v) => fu = v,
+                    None => return,
+                }
                 if fu < fcx {
                     // solution is found (B, u, c)
                     ax = bx;
@@ -208,7 +233,7 @@ impl BracketMinimum {
                 // get next prob after (B, C)
                 u = cx + lambda * (cx - bx);
                 if self.is_limited {
-                    match limit_and_may_be_swap(f, bx, cx, fcx, u, self.left, self.right) {
+                    match limit_and_may_be_swap_fallible(f, bx, cx, fcx, u, self.left, self.right) {
                         Some((b_new, c_new, fb_new, fc_new)) => {
                             // SHFT(Ax, Bx, Cx, u); SHFT(FAx, FBx, FCx, fu);
                             // (the call may have swapped the old Cx and u).
@@ -223,21 +248,30 @@ impl BracketMinimum {
                         None => return,
                     }
                 } else {
-                    fu = f(u);
+                    match f(u) {
+                        Some(v) => fu = v,
+                        None => return,
+                    }
                 }
             } else if (cx - u) * (u - ulim) > 0.0 {
                 // u is beyond C but between C and limit
-                fu = f(u);
+                match f(u) {
+                    Some(v) => fu = v,
+                    None => return,
+                }
             } else if (u - ulim) * (ulim - cx) >= 0.0 {
                 // u is beyond limit
                 u = ulim;
-                fu = f(u);
+                match f(u) {
+                    Some(v) => fu = v,
+                    None => return,
+                }
             } else {
                 // u tends to approach to the side of A, reset it to the next
                 // prob after (B, C)
                 u = cx + GOLD * (cx - bx);
                 if self.is_limited {
-                    match limit_and_may_be_swap(f, bx, cx, fcx, u, self.left, self.right) {
+                    match limit_and_may_be_swap_fallible(f, bx, cx, fcx, u, self.left, self.right) {
                         Some((b_new, c_new, fb_new, fc_new)) => {
                             ax = bx;
                             bx = b_new;
@@ -250,10 +284,13 @@ impl BracketMinimum {
                         None => return,
                     }
                 } else {
-                    fu = f(u);
+                    match f(u) {
+                        Some(v) => fu = v,
+                        None => return,
+                    }
                 }
             }
-            // SHFT(Ax, Bx, Cx, u); SHFT(FAx, FBx, FCx, fu); — cxx:207-208
+            // SHFT(Ax, Bx, Cx, u); SHFT(FAx, FBx, FCx, fu); — cxx:206-207
             ax = bx;
             bx = cx;
             cx = u;
@@ -266,13 +303,10 @@ impl BracketMinimum {
     }
 }
 
-/// `math_BracketMinimum::LimitAndMayBeSwap` (`math_BracketMinimum.cxx:34-60`).
-///
-/// Returns the (possibly swapped) `(B, C, FB, FC)`; `None` when `C` collapsed
-/// onto `B` within `Precision::PConfusion()` (`cxx:42-45`) or when the function
-/// evaluation failed (the port's objective is infallible, so only the former).
-fn limit_and_may_be_swap<F: Fn(f64) -> f64>(
-    f: &F,
+/// `math_BracketMinimum::LimitAndMayBeSwap` (`math_BracketMinimum.cxx:34-60`)
+/// over a fallible objective: `None` also covers `cxx:47-51`'s `F.Value` failure.
+fn limit_and_may_be_swap_fallible<F: FnMut(f64) -> Option<f64>>(
+    f: &mut F,
     the_a: f64,
     the_b: f64,
     the_fb: f64,
@@ -290,7 +324,10 @@ fn limit_and_may_be_swap<F: Fn(f64) -> f64>(
     if (the_b - the_c).abs() < P_CONFUSION {
         return None;
     }
-    let the_fc = f(the_c);
+    let the_fc = match f(the_c) {
+        Some(v) => v,
+        None => return None,
+    };
     // check that B is between A and C
     if (the_a - the_b) * (the_b - the_c) < 0.0 {
         // swap B and C
