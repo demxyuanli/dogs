@@ -9,7 +9,7 @@ use crate::brep_lprop;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of;
+use crate::topo_tools_full::{edges_of, is_same};
 
 use super::grid::{shape_of, SweepOps};
 use super::num_shape::NumShape;
@@ -184,6 +184,15 @@ fn end_parameters(edge: &TopoShape, d: &TopoShape, f: &TopoShape) -> (f64, f64) 
     (ud, uf)
 }
 
+/// `BRep_Tool::Parameter(V, E)` (`BRep_Tool.cxx:1340-1397`).
+///
+/// The parameter is `First`/`Last` chosen by the orientation of the vertex
+/// **as stored in the edge** (`VF.Orientation()`, `cxx:1360-1383`: search the
+/// vertex among the edge's own children with `IsSame`), not by the orientation
+/// the caller's handle happens to carry. `rev` flips the choice when the edge
+/// itself is REVERSED (`cxx:1368`, `:1390`, `:1396`). The passed-in vertex's
+/// own orientation is only consulted for a degenerated edge that has no vertex
+/// children at all (`cxx:1354-1357`).
 fn vertex_parameter(vertex: &TopoShape, edge: &TopoShape) -> f64 {
     let key = GeometryRegistry::shape_key(vertex);
     if let Ok(ts) = edge.tshape.read() {
@@ -194,8 +203,54 @@ fn vertex_parameter(vertex: &TopoShape, edge: &TopoShape) -> f64 {
         }
     }
     let (first, last) = BRepTool::edge_parameters(&Edge(edge.clone()));
-    if vertex.orientation() == Orientation::Reversed {
-        last
+    // `TopExp_Iterator itv(theE.Oriented(FORWARD))` (`cxx:1349`).
+    let mut found: Option<Orientation> = None;
+    let mut rev = false;
+    let mut has_vertex_children = false;
+    if let Ok(ts) = edge.tshape.read() {
+        for child in &ts.children {
+            if child.shape_type() != ShapeType::Vertex {
+                continue;
+            }
+            has_vertex_children = true;
+            if !is_same(child, vertex) {
+                continue;
+            }
+            match found {
+                None => found = Some(child.orientation()),
+                Some(cur) => {
+                    rev = edge.orientation() == Orientation::Reversed;
+                    if child.orientation() == vertex.orientation() {
+                        found = Some(cur);
+                    }
+                }
+            }
+        }
+    }
+    let orient = if found.is_some() {
+        found.unwrap()
+    } else if !has_vertex_children && BRepTool::is_degenerated(&Edge(edge.clone())) {
+        vertex.orientation()
+    } else {
+        // UNPORTED: `cxx:1401-1492` walks the vertex's own point
+        // representations (`BRep_TVertex::Points()`) against the 3D curve and
+        // then against the p-curve, and returns `false` (`cxx:1494`) when none
+        // matches. That list is not stored on the port's `TopoDS_Vertex`, so the
+        // branch falls back to the edge's first parameter instead of failing.
+        return first;
+    };
+    if orient == Orientation::Forward {
+        if rev {
+            last
+        } else {
+            first
+        }
+    } else if orient == Orientation::Reversed {
+        if rev {
+            first
+        } else {
+            last
+        }
     } else {
         first
     }

@@ -688,11 +688,19 @@ fn directing_pcurve(rot: &Rotation, face: &TopoShape, gen_e: &TopoShape, gen_v: 
 }
 
 fn direct_solid(gen: &TopoShape, axe: &GpAx1) -> Orientation {
-    let Some(surf) = BRepTool::face_surface_world(&Face(gen.clone())) else {
+    let face = Face(gen.clone());
+    let Some(surf) = BRepTool::face_surface_world(&face) else {
         return Orientation::Forward;
     };
-    let (u1, u2) = surf.u_range();
-    let (v1, v2) = surf.v_range();
+    // `BRepSweep_Rotation::DirectSolid` samples `BRepAdaptor_Surface(TopoDS::Face(aGenS))`
+    // (`BRepSweep_Rotation.cxx:641`, `:649-657`), whose `FirstUParameter` /
+    // `LastUParameter` / `FirstVParameter` / `LastVParameter` are the **face's**
+    // UV box, not the surface's natural range: its constructor defaults to
+    // `Restriction = true` and runs `BRepTools::UVBounds(F, ...)`
+    // (`BRepAdaptor_Surface.cxx:57-81`). A plane's natural range is infinite,
+    // so sampling the surface range puts the midpoint at a non-point of the
+    // face and the sign of `aX` degenerates.
+    let (u1, u2, v1, v2) = crate::brep_surface::face_uv_bounds(&face);
     let mut tx = 0.5;
     let mut ux = tx * (u1 + u2);
     let mut vx = tx * (v1 + v2);
