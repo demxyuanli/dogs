@@ -309,8 +309,9 @@ const DOCDRIFT = [
   },
 ];
 
-// 看板门禁（读数日期 2026-10-16；G-check / G-lib / G-gates / G-export 覆盖到 P027 已提交工作树 `76893533`
-// —— G-check / G-lib 走 P027 门禁日志 `.target-gate/t027/`，G-gates / G-export 为 P026 冻结 HEAD 读数、P027 重跑其判词不变 ——
+// 看板门禁（读数日期 2026-10-16；G-check / G-lib / G-gates / G-export 覆盖到 P028 已提交工作树 `1d595f8d`
+// —— G-check / G-lib 走 P028 门禁日志（`.target-gate/t028/`；五 crate 0 error = 12/30/105/82/413 warnings，
+//    `occt-geom --lib` 143/0、`occt-topo --lib` 1251/0），G-gates / G-export 在 P028 工作树重跑，判词与 P026/P027 不变 ——
 // G-fuse / G-phase / G-boss / G-iges 为 T-130..T-133 轮读数，其后改动不触及其路径）
 const GATES = [
   { id: "G-check", name: "五 crate 编译", base: "exit 0", now: "exit 0", tone: "success" as const },
@@ -439,25 +440,32 @@ const CYCLES = [
     state: "✅ 已收口（2026-10-16，包 P027，commit `76893533`）。三处自创 + 一段未移植：<br>(1) `plane_plane_line`（`analytic_intersections.rs:97`）的交点原点用 cxx 中不存在的最小范数公式 `p = (d1·(n2×v) + d2·(v×n1))/|v|²`（`v = n1×n2`）配 `v2 < 1e-20` 叉积长度门 —— cxx 是 `aEps = 1.e-16` 的分母钳制 `denom = (|1 - (A1A2+B1B2+C1C2)²| <= aEps) ? aEps : ddenom` 加两次法向投影 `inter1 = aVN1×vd` / `inter2 = aVN2×vd` 的中点（`cxx:423-445`），落地为常量 `A_EPS`（`:156`）。<br>(2) `cxx:449-508` 的**小角原点重解整段未移植**：`aMVD < aTreshAng = 2.e-6` 且 `|aDist1| > aTreshDist = 1.e-12 || |aDist2| > aTreshDist`（常量 `A_TRESH_ANG` `:158` / `A_TRESH_DIST` `:160`）时用两次 `IntAna_IntConicQuad::Perform(gp_Lin, gp_Pln, TolAng, Tol)` 重算 `pt1`（`aL1 = gp_Lin(pt1, gp_Dir(aVN1))` 对 P1 `cxx:477-487`；`aDL2 = gp_Dir(dir1.Crossed(aDN1))`、`aL2 = gp_Lin(aPnt1, aDL2)` 对 P2 `cxx:489-506`）；`!IsDone()` 或 `IsParallel()` 时 cxx 直接 `return`（`done = false` ⇒ 本仓 `None`）。<br>(3) `solve3`（`:71`）是手写部分选主元消元加 `1e-14` 主元门，cxx 走 `math_Gauss Resol(M, gp::Resolution())`（`IntAna_Int3Pln.cxx:51`）—— 现调已移植的 `occt_math::Gauss::new(&M, REAL_SMALL)` 并按 `cxx:53-61` 判 done / `V = -V` / `Solve`。<br>(4) 自创的 `Intersect3Pln::Line` 三平面共线分支（`v2 < 1e-20` + `|a·q + d| < 1e-9`）删除 —— `IntAna_Int3Pln.hxx:29-70` 只有点/空两态，`three_planes_intersect` 只剩 `Point`/`NoResult`。<br>调用面：`plane_plane_line` 多收 `(tol_ang, tol)`，`cone_cone_common_apex` 内嵌套平面/平面求解按 `cxx:1709` 传 `(Tol, Tol)`。<br>门禁：五 crate `--all-targets` 0 error；`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0；`step_obj_gates` 4/4（251.49s，23 面积比与 P026 逐位一致）；`export_data_obj` 15/15 逐位一致；未新增测试。<br>旁支登记（未改）：`quadric_quadric_plane_sphere`（`:266`）的相切判据 `(dist.abs() - radius).abs() < radius.abs() * f64::EPSILON` 与 cxx 的 `std::abs(std::abs(dist) - radius) < Epsilon(radius)`（`IntAna_QuadQuadGeo.cxx:1000`）不符；球/球臂（`cxx:2034-2163`）的 `0.01 * CONFUSION` 圆判定待核。",
   },
   {
+    pkg: "P028",
+    task: "T-158",
+    commit: "1d595f8d",
+    scope: "`IntAna_QuadQuadGeo` 的两条 P027 旁支：`quadric_quadric_plane_sphere`（`IntAna_QuadQuadGeo.cxx:980-1042`）的相切判据，与 `quadric_quadric_cylinder_sphere`（`cxx:1373-1405`）/ `quadric_quadric_sphere_cone`（`cxx:1917-2005`）的球心-轴判定；后者在 `occt-topo/src/intpatch_impimp_pairs.rs::int_cy_sp` / `int_co_sp` 另有两份副本",
+    state: "✅ 已收口（2026-10-16，包 P028，commit `1d595f8d`）。<br>(1) **`Epsilon(radius)`**：`quadric_quadric_plane_sphere` 的相切判据由 `(dist.abs() - radius).abs() < radius.abs() * f64::EPSILON` 改为 `(dist.abs() - radius).abs() < epsilon(radius)`，即 cxx:997 的 `std::abs(std::abs(dist) - radius) < Epsilon(radius)`；`Epsilon(x) = nextafter(x, +inf) - x`（`Standard_Real.hxx:242-246`，本仓 `occt_core::precision::epsilon`，经 `intana::prelude` 重导出）与 `|x| * DBL_EPSILON` 只在 `|x| in [1,2)` 相等，球半径 5/10 上相差 4~8 倍。该臂其余控制流（`|dist| < radius` 圆交、`== radius` 切点、`|dist| > radius` 空，`cxx:984-1042`）逐行一致，未动。<br>(2) **新增 `axes_meet_at_point(a1, a2, pt)`**（`intana/line_torus.rs`，`pub`）：逐行实现 cxx:1378-1379 / :1924-1925 的 `(A1A2.Intersect() && Pt.Distance(A1A2.PtIntersect()) == 0.0) || A1A2.Same()` —— `Intersect() = thecoplanar && !theparallel`（`cxx:87`）、`Same() = theparallel && (thedistance < myEPSILON_DISTANCE)`（`cxx:83`）、默认 `theEpsDistance = 1.e-14` / `theEpsAxesPara = Precision::Angular()`（`cxx:72-73`、`:124-131`），复用已移植的 `axe_operator`；`Pt.Distance(...) == 0.0` 是 OCCT 的精确比较，本实现同样不加容差。两臂改调它，`dist_point_axis` 因无调用方而删除。<br>(3) **occt-topo 侧两份副本**：`intpatch_impimp_pairs.rs::int_cy_sp` / `int_co_sp` 的自创 `dist_point_axis(...) > 1e-9` 门改为 `!axes_meet_at_point(...)`（`IntPatch_ImpImpIntersection.cxx:8137` / `:9208` 是无条件调 `IntAna_QuadQuadGeo`，失败才落 `cxx:8263-8363` 的 `IntAna_NoGeometricSolution` 臂），回落臂保持原样；`intpatch_impimp_quad.rs` 的 `dist_point_axis` 同步删除。<br>(4) **核对结论（无改动）**：球/球臂的 `0.01 * CONFUSION` **不是**漂移 —— `myEPSILON_MINI_CIRCLE_RADIUS` 在 `InitTolerances()` 里即 `0.01 * Precision::Confusion()`（`cxx:355`），该臂逐行核对一致（含 `d <= Tol` 时 `done` 保持 true、`typeres` 保持 `IntAna_Empty` 的空返回语义）。<br>门禁：五 crate `--all-targets` **0 error**（occt-core 12 / occt-math 30 / occt-geom 105 / occt-geom2d 82 / occt-topo 413 warnings）；`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0；`step_obj_gates` 4/4（23 面积比与 P027 逐位一致）；`export_data_obj` 15/15 逐位一致；未新增测试、未改既有断言。<br>**逐臂普查（本节给出的事实）**：`IntAna_QuadQuadGeo` 共 15 个 `Perform` 重载，已移植 10 个（`cxx:389` Pln/Pln、`:543` Pln/Cylinder、`:752` Pln/Cone、`:980` Pln/Sphere、`:1050` Cylinder/Cylinder、`:1324` Cylinder/Cone、`:1373` Cylinder/Sphere、`:1433` Cone/Cone、`:1917` Sphere/Cone、`:2034` Sphere/Sphere），其中仅 5 个做过逐行 cxx 对拍；**未移植 5 个，全部是 Torus 家族**（`cxx:2163` Pln/Torus、`:2278` Cylinder/Torus、`:2357` Cone/Torus、`:2496` Sphere/Torus、`:2588` Torus/Torus 在 `occt-geom/src/intana` 里无对应函数），须由下一片从消费方判定是可达缺口还是无消费者的未移植标记，不得用替代件冒充。",
+  },
+  {
     pkg: "T999",
     task: "Judge",
     commit: "7b164e34",
     scope: "收口审计：T001 清单逐行对账（每个登记行要么有包可指、要么有记录在案的结论），四条门禁在冻结 HEAD 上重跑（五 crate `cargo check --all-targets`、`occt-topo --lib`、`step_obj_gates`、`export_data_obj`）",
-    state: "✅ 结论 `full_outcome_complete: true`（`docs/goals/drift-and-gap-autofix/state.yaml` T999 收据）：B1..B8、B6a-h、B7-writer 两族、B8-intana、`surface_fit`、`B7-mesh_to_brep`、`ReparamCurve2d` 全部有包可指；冻结 HEAD `fbd59532` 上 `--all-targets` 0 error、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（118.02s）、`export_data_obj` 15/15 逐位一致；工作树在收口提交后为 clean。收据同时记明两条诚实边界：本 tranche 无一条门禁读数来自新写测试（四道基线都是 T002 冻结读数逐包重跑），唯一改动过的三条基线断言是以 `occt_probe --ssx` 实测值重定（非新测试）。<br>**该收据随后被 P027 部分推翻（2026-10-16）**：其「B8-intana 全部有包可指」只覆盖锥/锥与柱族臂 —— `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln)` 与 `IntAna_Int3Pln::Perform` 两臂从未与 cxx 对拍，P027 在其中查出三处自创 + 一段未移植（最小范数原点解 + `1e-20` 叉积门、`cxx:449-508` 小角重解缺失、`solve3` 的 `1e-14` 手写消元）并收口。故本 tranche 以 `active_task: T005` / `goal.status: active` 重开；教训：`IntAna_QuadQuadGeo` 这类多臂类的清单行必须**逐臂**核对，不能按文件记账。",
+    state: "✅ 结论 `full_outcome_complete: true`（`docs/goals/drift-and-gap-autofix/state.yaml` T999 收据）：B1..B8、B6a-h、B7-writer 两族、B8-intana、`surface_fit`、`B7-mesh_to_brep`、`ReparamCurve2d` 全部有包可指；冻结 HEAD `fbd59532` 上 `--all-targets` 0 error、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（118.02s）、`export_data_obj` 15/15 逐位一致；工作树在收口提交后为 clean。收据同时记明两条诚实边界：本 tranche 无一条门禁读数来自新写测试（四道基线都是 T002 冻结读数逐包重跑），唯一改动过的三条基线断言是以 `occt_probe --ssx` 实测值重定（非新测试）。<br>**该收据随后被 P027 与 P028 两次推翻（2026-10-16）**：其「B8-intana 全部有包可指」只覆盖锥/锥与柱族臂 —— `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln)` 与 `IntAna_Int3Pln::Perform` 两臂从未与 cxx 对拍，P027 在其中查出三处自创 + 一段未移植（最小范数原点解 + `1e-20` 叉积门、`cxx:449-508` 小角重解缺失、`solve3` 的 `1e-14` 手写消元）并收口；P028 又在该类的球臂查出两处（`plane_sphere` 的 `|radius| * DBL_EPSILON` 冒充 `Epsilon(radius)`，`cylinder_sphere` / `sphere_cone` 的 `1e-9` 轴距启发式，含 `occt-topo` 两份副本）并收口。故本 tranche 以 `active_task: T005` / `goal.status: active` 重开；教训：`IntAna_QuadQuadGeo` 这类多臂类的清单行必须**逐臂**核对，不能按文件记账 —— P028 的普查因此把 15 个 `Perform` 重载逐条点名（10 已移植 / 5 Torus 未移植）。",
   },
   {
     pkg: "登记项",
     task: "—",
     commit: "—",
     scope: "缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness：`data/occ/` 只有读侧 `step_obj_gates` 口径，写侧（`StepToGeom_Make*` / `GeomToStep_Make*`）没有可对拍的既有基线",
-    state: "⬜ 保持登记（T999 裁定「本 tranche 范围外」）：无既有基线可对拍且本 tranche 不允许新写测试，故不改代码；它与 P010/P011/P012 的写侧缺陷不同 —— 那三条落在读侧共享管线上，能由既有门禁判定，本项不能。推进需先裁定「无基线不可对齐」还是另找既有写侧口径。代码侧登记项在 P026 收口时曾清零，**P027 复核后又登记两条**（见次行）。",
+    state: "⬜ 保持登记（T999 裁定「本 tranche 范围外」）：无既有基线可对拍且本 tranche 不允许新写测试，故不改代码；它与 P010/P011/P012 的写侧缺陷不同 —— 那三条落在读侧共享管线上，能由既有门禁判定，本项不能。推进需先裁定「无基线不可对齐」还是另找既有写侧口径。代码侧登记项在 P026 收口时曾清零，P027 复核后登记两条、**P028 已全部收口**；P028 同时给出本类的新登记（见次行）。",
   },
   {
     pkg: "登记项",
     task: "—",
     commit: "—",
-    scope: "P027 旁支（`IntAna_QuadQuadGeo` 剩余两臂，均已登记未改）：(a) `quadric_quadric_plane_sphere` 的相切判据用 `(dist.abs() - radius).abs() < radius.abs() * f64::EPSILON`，cxx 是 `std::abs(std::abs(dist) - radius) < Epsilon(radius)`（`IntAna_QuadQuadGeo.cxx:1000`；`Epsilon(x) = nextafter(x, +inf) - x`，`Standard_Real.hxx:242-246`，已移植为 `occt_core::precision::epsilon`）；(b) 球/球臂 `cxx:2034-2163` 的 `0.01 * CONFUSION` 圆判定待核",
-    state: "⬜ 保持登记（P027 旁支，未改）：两者都有同分支 cxx 可依，但属下一片；本 tranche 的下一步由 T005 滚动推进。",
+    scope: "P028 普查出的下一片（`IntAna_QuadQuadGeo` 的 Torus 五臂与剩余已移植臂）：**未移植 5 臂** `Perform(gp_Pln, gp_Torus)`（`IntAna_QuadQuadGeo.cxx:2163-2276`）、`(gp_Cylinder, gp_Torus)`（`cxx:2278-2355`）、`(gp_Cone, gp_Torus)`（`cxx:2357-2494`）、`(gp_Sphere, gp_Torus)`（`cxx:2496-2586`）、`(gp_Torus, gp_Torus)`（`cxx:2588-`）在 `crates/occt-geom/src/intana` 里没有函数；**已移植但从未逐行对拍 5 臂** `cxx:543` Pln/Cylinder、`:752` Pln/Cone、`:1050` Cylinder/Cylinder、`:1324` Cylinder/Cone、`:1433` Cone/Cone",
+    state: "⬜ 保持登记（P028 普查结论，未改）：Torus 五臂须从消费方判定 —— `occt-topo` 的 `intpatch_impimp_pairs.rs` / `intpatch_impimp_quad.rs` / BOP 配对表是否会把环面对送进 `IntAna_QuadQuadGeo`，以及 `occt-geom::intana::quadric_quadric` 分发器是否含 Torus 臂 —— 是可达缺口就按 cxx 忠实移植，是无消费者的未移植就逐臂写 `UNPORTED` 标记并注明 `cxx:2163`/`:2278`/`:2357`/`:2496`/`:2588` 与缺失的消费方，绝不用替代件冒充。剩余 5 个已移植臂按同样的逐行口径复核。「无消费者的未移植」不等于「已对齐」，两者都不能当门禁读数。",
   },
 ];
 
@@ -630,7 +638,7 @@ export default function OcctScopeDrift() {
       <Row gap={16} wrap>
         <Stat value="13.8%" label="全库行数覆盖" />
         <Stat value="24.2%" label="CAD 内核行数覆盖" tone="info" />
-        <Stat value="2 处" label="登记未收代码项（STEP 写侧 harness + P027 两臂旁支）" tone="warning" />
+        <Stat value="2 处" label="登记未收代码项（STEP 写侧 harness + P028 Torus 五臂普查）" tone="warning" />
         <Stat value="1 处" label="留档待办（`topo-rest.md` 9/10/15/17 的 live 标注）" tone="warning" />
       </Row>
       <Stack gap={6}>
@@ -639,7 +647,7 @@ export default function OcctScopeDrift() {
           在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.4 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地、P024 `BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地并接线 `offset_wire_3d`、P025 `mesh_to_brep` 的 `1e-9` 归并格 / `Vertex` 容差 0.0 / 自创三角形法向换 `BRepBuilderAPI_MakeShapeOnMesh` 忠实件、P026 `GeomLib::SameRange` 转换尾两份副本合并为唯一 `trimmed_reparam_bspline`）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，`surface_fit` 一项随 P024 收口（真实对应件为 `BRepLib_FindSurface`，非 `GeomLib::IsPlanarSurface`），B7-mesh_to_brep 一项随 P025 收口、`ReparamCurve2d` 的 `SameRange` 一项随 P026 收口；P026 的 T999 收据（`full_outcome_complete: true`）与那一条保持登记的 STEP 写侧 harness 曾收口本 tranche（`state.yaml` 的 `goal.status` 置 `done`），但同日 **P027 的复核推翻了对 `B8-intana` 的记账**：`IntAna_QuadQuadGeo` 的多臂性质导致平面/平面臂与 `IntAna_Int3Pln` 臂漏审，P027 在其间收口三处自创 + 一段未移植（最小范数原点解 + `1e-20` 叉积门、`cxx:449-508` 小角重解缺失、`solve3` 的 `1e-14` 手写消元、自创 `Intersect3Pln::Line`），board 随之重开为 `active_task: T005` / `goal.status: active`（登记项：STEP 写侧 harness + P027 登记的 `plane_sphere` `Epsilon(radius)` 与球/球 `0.01 * CONFUSION` 两臂）。
+          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地、P024 `BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地并接线 `offset_wire_3d`、P025 `mesh_to_brep` 的 `1e-9` 归并格 / `Vertex` 容差 0.0 / 自创三角形法向换 `BRepBuilderAPI_MakeShapeOnMesh` 忠实件、P026 `GeomLib::SameRange` 转换尾两份副本合并为唯一 `trimmed_reparam_bspline`）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，`surface_fit` 一项随 P024 收口（真实对应件为 `BRepLib_FindSurface`，非 `GeomLib::IsPlanarSurface`），B7-mesh_to_brep 一项随 P025 收口、`ReparamCurve2d` 的 `SameRange` 一项随 P026 收口；P026 的 T999 收据（`full_outcome_complete: true`）与那一条保持登记的 STEP 写侧 harness 曾收口本 tranche（`state.yaml` 的 `goal.status` 置 `done`），但同日 **P027 的复核推翻了对 `B8-intana` 的记账**：`IntAna_QuadQuadGeo` 的多臂性质导致平面/平面臂与 `IntAna_Int3Pln` 臂漏审，P027 在其间收口三处自创 + 一段未移植（最小范数原点解 + `1e-20` 叉积门、`cxx:449-508` 小角重解缺失、`solve3` 的 `1e-14` 手写消元、自创 `Intersect3Pln::Line`），board 随之重开为 `active_task: T005` / `goal.status: active`（登记项：STEP 写侧 harness + P027 登记的 `plane_sphere` `Epsilon(radius)` 与球/球 `0.01 * CONFUSION` 两臂）；P028 随后收口了 P027 登记的两臂（`plane_sphere` 改 `epsilon(radius)`、`cylinder_sphere` / `sphere_cone` 的自创 `1e-9` 轴距门换逐行 `axes_meet_at_point`，含 `occt-topo` 两份副本；球/球 `0.01 * CONFUSION` 经核对为忠实，无改动），并给出本类唯一剩下的结构未知：15 个 `Perform` 重载中 10 已移植 / 5 Torus 未移植，且已移植臂里仅 5 个做过逐行对拍 —— 下一片按逐臂口径把这两件事一次判定完。
         </Text>
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），

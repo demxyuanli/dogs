@@ -594,6 +594,26 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    (`IntAna_QuadQuadGeo.cxx:1000`) and the sphere/sphere `0.01 * CONFUSION` circle test
    (`cxx:2034-2163`). Lesson recorded for the T999 walk: an inventory line for `IntAna_QuadQuadGeo`
    must be checked **per arm**, not per file.
+   **P028 / T-158 closed both of those leftovers, and the per-arm lesson paid off**: the
+   `Epsilon(radius)` test is now `(dist.abs() - radius).abs() < epsilon(radius)` (cxx:997;
+   `nextafter(x, +inf) - x`, equal to `|x| * DBL_EPSILON` only on `|x| in [1,2)`, so a radius of 5
+   or 10 was off by 4-8x), and the self-invented `dist_point_axis(...) > 1e-9` axis test of the
+   cylinder/sphere and sphere/cone arms (cxx:1378-1379, cxx:1924-1925) plus its two copies in
+   `occt-topo/src/intpatch_impimp_pairs.rs` became the new `axes_meet_at_point`, a line-for-line
+   `AxeOperator` predicate (`Intersect() && Pt.Distance(PtIntersect()) == 0.0) || Same()`,
+   `cxx:83-87`, defaults `1e-14` / `Precision::Angular()` at `cxx:72-73`; the `== 0.0` is OCCT's
+   exact comparison and the port adds no tolerance either). The second leftover was closed by
+   **verification, not edit**: the sphere/sphere `0.01 * CONFUSION` is `myEPSILON_MINI_CIRCLE_RADIUS`
+   from `InitTolerances()` (`cxx:355`) and the arm matches the cxx line for line.
+   The arm census this cycle produced is the durable part: `IntAna_QuadQuadGeo` has 15 `Perform`
+   overloads, **10 ported** (`cxx:389` Pln/Pln, `:543` Pln/Cylinder, `:752` Pln/Cone, `:980`
+   Pln/Sphere, `:1050` Cylinder/Cylinder, `:1324` Cylinder/Cone, `:1373` Cylinder/Sphere, `:1433`
+   Cone/Cone, `:1917` Sphere/Cone, `:2034` Sphere/Sphere) and **5 absent, all Torus**
+   (`cxx:2163` Pln/Torus, `:2278` Cylinder/Torus, `:2357` Cone/Torus, `:2496` Sphere/Torus, `:2588`
+   Torus/Torus have no function in `occt-geom/src/intana`). Of the 10 ported only 5 have ever been
+   line-diffed, and the 5 Torus arms must be decided from the consumer side -- reachable gap vs a
+   marked-unported non-gap -- never with a substitute. Next pick: P029, the per-arm census of the
+   five remaining ported arms plus the Torus verdict.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 
