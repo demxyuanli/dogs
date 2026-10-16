@@ -943,3 +943,35 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   failure path produced no output), so the source-edge seam doubling is wired and the gap sits
   later, in the Loops/Areas construction of a periodic face cut by a closed section curve. Gates
   word-identical to P039 (`.target-gate/t040/`).
+  P041 / T-171 (`ce7fa145`) is the first pass in this chain that **moved the measurement** since
+  the line was opened: one source file changed (`crates/occt-topo/src/builder_face_occt.rs`, the
+  only code edit; `brepfeat/features.rs` changed comments only and its workaround path is
+  untouched), so the canvas `Stat` "registered code items" stays 0 and no `UNPORTED` line was
+  removed net -- the lathe-mesh tool is still the live path. The root cause pinned: the port's
+  `map_vertex_edges` built the vertex -> edge ancestor list from `vertices_of` (= `shapes_of`,
+  **uniquified**), while `BOPAlgo_BuilderFace::PerformShapesToAvoid` (`BOPAlgo_BuilderFace.cxx:174-183`)
+  uses `TopExp::MapShapesAndAncestors(aE, TopAbs_VERTEX, TopAbs_EDGE, aMVE)` and that helper
+  (`TopExp.cxx:80-120`) walks ancestors with `TopExp_Explorer`, which is a `TopoDS_Iterator` stack
+  walk that **never uniquifies** (`TopExp_Explorer.cxx:110-170`). A closed edge (`V1.IsSame(V2)`,
+  a whole-period circle) therefore appends its case twice, `aNbE == 2` with `aE2.IsSame(aE1)`, which
+  is exactly the branch `cxx:211-225` handles: `TopExp::Vertices(aE1, aV1x, aV2x)` with
+  `aV1x.IsSame(aV2x)` -> `continue`, the closed edge is *not* avoided. The port saw `aNbE == 1`
+  and ran `cxx:199-209`, pushing the whole-period circle into `myShapesToAvoid`. Measured with a
+  temporary `ZZ_P041_PROBE` print in `builder_face_occt.rs::perform` (probe deleted afterwards; the
+  same probe was added to `bop_split_faces_occt.rs`, `bop_fill_in3d.rs`, `builder_solid.rs`,
+  `shell_splitter_block.rs`, `brepfeat/features.rs` and all five files were reverted): the tool's
+  annular cap face at z=1.0 (outer circle r=1.3, inner circle r=0.6, and the two coincident copies
+  of the section circle r=1) read `avoid=[r1.300, r0.600] loops=[r1.000(Fwd) | r1.000(Rev)]
+  internal=2` before, and `avoid=[] loops=[r0.600 | r1.300 | r1.000(Fwd) | r1.000(Rev)] internal=0`
+  after -- the decomposition the cxx describes (Fwd r=1 as the inner annulus boundary, Rev r=1 as
+  the hole of the outer annulus, r=0.6 and r=1.3 as their own loops). With the analytic revolve
+  tool forced, `brepfeat` is now **16/17** (`groove_cuts_cylinder`, `groove_negative_volume_delta`,
+  `neck_adds_material`, `neck_positive_volume_delta` and the `rib_*` family all green; before this
+  pass `groove_cuts_cylinder` failed on that path). The one remaining failure,
+  `feature_kind_classifies_add_subtract`, is a neck whose bottom disk is coplanar with the box top
+  face at z=1.0: one draft solid comes out with volume `-2.848377`, so the kind is read as
+  `Subtractive`. That moves the open A12(2b) gap to the **same-domain / coplanar** branch of
+  `BOPAlgo_Builder::FillImagesSolids` / `BOPAlgo_BuilderSolid::PerformAreas` -- and the goal's
+  ban applies there: a bounding-box area ratio must not be used to fake same-domain. Gates
+  word-identical again: five crates `cargo check --offline` 0 error, `occt-topo --lib` 1251/0,
+  `step_obj_gates` 4/4 (114.18s), `export_data_obj` 15/15 with the frozen v/f table.
