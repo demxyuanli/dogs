@@ -889,3 +889,22 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   word-identical to t167's, so the canvas `T0M` row stays at the t166 value. Side finding left
   unfixed: `tests/phase3_integration.rs::bbox_and_mesh_agree` fails on a `1.0000001` vs `1.0`
   bbox comparison; stashing confirms it predates P038.
+  P039 / T-169 (`46ab36ec`) did the measurement pass a tenth time the same day, again with no
+  measurement change (no files added to `src/**`, no `UNPORTED` line removed net): its card, the
+  gate-source comments repointed to `.target-gate/t039`, the `Stat` still at 0 registered code
+  items, and the "跟踪" paragraph plus the T999 callout extended to P027..P039. P039 took the
+  third candidate line the P038 card had left on the table -- `sweep_revolve`'s lateral-face
+  structure vs `BRepPrim_OneAxis` -- and **closed its OneAxis half**: the wire order and occurrence
+  orientations now follow `BRepPrim_OneAxis::LateralWire` (`BRepPrim_OneAxis.cxx:666-679` plus
+  `BRepPrim_Builder::AddWireEdge`, `BRepPrim_Builder.cxx:184-192`), a full revolution reuses one
+  seam TShape twice (`StartEdge()` aliases `EndEdge()` when `!HasSides()`, `cxx:331-334`,
+  `cxx:976-979`, `:1028-1031`), the file finally registers pcurves (`LateralFace`, `cxx:388-439`;
+  `TopFace`/`BottomFace`, `cxx:465-468`, `:504-509`), and ring vertices carry
+  `Precision::Confusion()` like `BRepPrim_Builder::MakeVertex` (`BRepPrim_Builder.cxx:129-132`).
+  **The measurement falsified the attribution, not just the fix**: switching
+  `brepfeat::revolve_profile_about` to the analytic solid still breaks
+  `bop_builder::boolean`, so the line "the gap is in `sweep_revolve`'s wire/seam/pcurve
+  conventions" is now recorded as *insufficient*, and the lathe-mesh tool stays. The next slice
+  must look at the `BOPAlgo` side. This pass verified rather than re-pinned `PARITY` once more:
+  t039's `gates-raw.txt` is the same 4/4 with the same 23 ratios, and its 15 `ok` lines are
+  word-identical to t168's, so the canvas `T0M` row is unchanged.

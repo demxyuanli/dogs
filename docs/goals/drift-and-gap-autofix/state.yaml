@@ -36,7 +36,7 @@ goal:
       - "Audit index: specs/_audit/_index.md sections 9.1-9.4; per-area docs topo-rest.md, occt-geom.md, occt-core.md, bop-boolean.md, mesh-exchange.md."
       - "Task ledger: specs/_tasks.md (T-129 / T-130 landed 2026-10-15)."
       - "Gap analysis: specs/_a3n00_gap_analysis.md."
-      - "Candidate first slices already identified by the 2026-10-15 pass, to be re-verified by Scout, not assumed: pcurve::pc_curve_kind heuristic vs Geom2dAdaptor_Curve::GetType(); inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch; wire_splitter_block::curve2d_radius finite-difference radius vs GeomLProp_CLProps2d curvature (BOPAlgo_WireSplitter_1.cxx:796-807); brepfeat::revolve_profile_about sweep_revolve wire/seam/pcurve gap vs BRepSweep_Revol / BRepPrim_OneAxis; BRepCheck_Edge::InContext / Tolerance / CheckPolygonOnTriangulation (needs BRepLib_ValidateEdge)."
+      - "Candidate first slices already identified by the 2026-10-15 pass, to be re-verified by Scout, not assumed: pcurve::pc_curve_kind heuristic vs Geom2dAdaptor_Curve::GetType(); inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch; wire_splitter_block::curve2d_radius finite-difference radius vs GeomLProp_CLProps2d curvature (BOPAlgo_WireSplitter_1.cxx:796-807); brepfeat::revolve_profile_about sweep_revolve wire/seam/pcurve gap vs BRepSweep_Revol / BRepPrim_OneAxis（**2026-10-16 包 P039 `46ab36ec` 已落地 OneAxis 的一半**：wire 顺序/出现朝向、缝边 TShape 复用、`LateralFace`/`TopFace`/`BottomFace` pcurve、顶点容差；**余项**：解析旋转体仍不能被 `bop_builder::boolean` 合并，车削网格夹具保留，下一步走 BOPAlgo 侧）；BRepCheck_Edge::InContext / Tolerance / CheckPolygonOnTriangulation（needs BRepLib_ValidateEdge；`brep_check.rs` 仓内无消费者，优先级低）。"
     goal_oracle: "Four existing baselines only: cargo check, occt-topo --lib, step_obj_gates, export_data_obj."
 
 rules:
@@ -82,6 +82,32 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas `PACKAGES` section -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P039
+    task: T005
+    commit: "46ab36ec fix(topo): sweep_revolve adopts the BRepPrim_OneAxis lateral wire, seam and pcurve conventions (BRepPrim_OneAxis.cxx:388-439, 660-684; T-169)"
+    title: "`sweep_revolve` 的面结构对齐 `BRepPrim_OneAxis`（候选片 `brepfeat::revolve_profile_about sweep_revolve wire/seam/pcurve gap vs BRepPrim_OneAxis` 的 OneAxis 一半）：lathe 此前每条侧向面用「弧链 + 两条共线缝边」组线且**完全没有 pcurve**，与 `BRepPrim_Revolution`/`BRepSweep_Rotation` 共同基类 `BRepPrim_OneAxis` 的约定不符。本包按 cxx 落地四条：(1) 侧向线顺序与出现朝向改 `BRepPrim_OneAxis::LateralWire`（`BRepPrim_OneAxis.cxx:666-679` + `BRepPrim_Builder::AddWireEdge`，`BRepPrim_Builder.cxx:184-192`）—— 底环 FORWARD、u=0 缝边 REVERSED、顶环 REVERSED、u=angle 缝边 FORWARD（把环首移到最前，wire 是环序，等价）；(2) 整周 `!HasSides()`（`cxx:331-334`）故 `StartEdge()` 别名 `EndEdge()`（`cxx:976-979`、`:1028-1031`），缝边改为**同一条 TShape 用两次**，不再是两条共线不同边；(3) 补 `LateralFace` pcurve（`cxx:388-439`）—— 环弧 `gp_Lin2d((0,V),+X)` 取其角区间、缝边取闭式一对 `gp_Lin2d((angle,0),+Y)`/`gp_Lin2d((0,0),+Y)`、端盖 `gp_Circ2d(gp_Ax2d((0,0),+X),R)`（`TopFace`/`BottomFace`，`cxx:465-468`、`:504-509`），V 取子午线参数（柱面=轴向横坐标、锥面=apex 距离，`ElSLib::ConeVIso` `ElSLib.cxx:1793-1810`）；(4) 环顶点带 `Precision::Confusion()`，同 `BRepPrim_Builder::MakeVertex`（`BRepPrim_Builder.cxx:129-132`）（T-169）"
+    files:
+      - "crates/occt-topo/src/sweep_revolve.rs"
+      - "crates/occt-topo/src/brepfeat/features.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/_index.md"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+      - "~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx"
+    closed_inventory_lines:
+      - "**`sweep_revolve` 的侧向面 wire / 缝边 / pcurve 未按 `BRepPrim_OneAxis` 建（canvas 第四节 + `_index.md` A12(2b) 登记）**：原 `lateral_wire` 取 `[底环弧 FORWARD..., seam_up, 顶环弧（仅倒列表序、未翻出现朝向）..., seam_down]`，缝边是两条共线但不同 TShape 的边，且整个文件没有任何 `set_edge_pcurve`/`set_pcurve_range` 调用。按 `BRepPrim_OneAxis`（`BRepPrim_Revolution` 与 `BRepSweep_Rotation` 的共同基类）复核，这四条都是缺口，本包按同等分支逐条落地（见 title）。`revolve_open_wire` 的既有断言（8+1+8+1=18 条边）在旋转后的 wire 上仍成立，`occt-topo --lib` 未改任何断言。"
+      - "**测量结论（本包新增，先前只登记「疑似在 `sweep_revolve`」）**：把 `revolve_profile_about` 的工具换成解析 `sweep_revolve` 实体后 `crate::bop_builder::boolean` **仍然**失效 —— `brepfeat::tests::neck_adds_material`（`tests.rs:158`，`after.volume > before` 不成立，工具被丢弃）、`neck_positive_volume_delta`（`:268`）、`groove_cuts_cylinder`（`:135`，`after.volume < before` 不成立，Cut 反而增体）、`feature_kind_classifies_add_subtract`（`:388`）四处失败（13 passed / 4 failed）。故 A12(2b) 的缺口**不只是** OneAxis 的 wire/seam/pcurve 约定；`crate::brepfeat` 的车削网格工具（UNPORTED）本包不动，结论写进 `sweep_revolve.rs` 文件头与 `brepfeat/features.rs` 的 take 注记。"
+    gates:
+      check: "`occt-topo` `--all-targets` **0 error / 413 warnings**（与 T002 基线同数，无新增告警）"
+      lib: "`occt-topo --lib` **1251 / 0**（= T002 基线，单调不降；未新增测试、未改既有断言；`.target-gate/t039/lib2.txt`）"
+      step_obj_gates: "**4 / 4**（`.target-gate/t039/gates-raw.txt`，259.81s）"
+      export_data_obj: "**15 / 15 ok**，15 条 `ok <model> ... v= f=` 与包围盒读数与 `t168` 逐字一致（`.target-gate/t039/export-obj.txt`）"
+      canvas: "看板 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 随本包同步更新（PACKAGES 追加 P039、codeHead/boardHead 推进、第四节该登记项改写为「OneAxis 一半已落地，余布尔侧」）"
+    side_findings:
+      - "**诚实边界**：四道门禁与 P038 逐字一致只证明本包在 15 个导出模型与 23 个对拍模型上**无回归** —— `sweep_revolve` 不在 STEP 读入/网格/BOP 共享管线上（只有 `brepfeat` 用它），故这几道门禁对本包其实什么都证明不了。对齐依据是 cxx 有同等分支，不是读数差异。"
+      - "**本包是片不是闭环**：A12(2b) 的判据是「解析旋转体工具能被 `BOPAlgo_BOP` 合并 ⇒ 删掉 `revolve_profile_about` 的车削网格夹具」，本轮测量表明该判据**未达成**。已排除两个猜测：OneAxis 的 wire/seam/pcurve 约定（本包已落地，仍失败）、以及环顶点容差 0（本包已改 `Precision::Confusion()`，仍失败）。下一步应沿 `BOPAlgo` 侧定位（如 `BOPAlgo_WireSplitter`/`Tolerance2D` 对该壳的接受条件，或 `primitives.rs::BRepPrimCylinder` 与 lathe 在壳闭合性上的其余差异），而不是继续在 `sweep_revolve` 上试参数。"
+      - "**旁支（已排除，不再重试）**：`build_ring` 对 r≈0 生成的退化圆弧在本批 profile 里不进入任何面（水平的端盖段只用外环），故与 `HasBottom`/`HasTop` 在 VMin/VMax 落轴时为 false（`BRepPrim_OneAxis.cxx:293-327`）无关。"
+    next_task_if_not_complete: "下一片候选：P040 Judge —— 沿 BOPAlgo 侧定位「解析旋转体不能被合并」的真实缺口（A12(2b) 判据），或按 goal 的 T999 Judge audit 走一遍全量清点。已复核过的候选片另有 `BRepCheck_Edge::InContext`/`Tolerance`/`CheckPolygonOnTriangulation`（需先有 `BRepLib_ValidateEdge`），但 `crates/occt-topo/src/brep_check.rs` 在仓内**无消费者**（只被 `lib.rs` 声明），优先级低。"
   - id: P038
     task: T005
     commit: "ff235d37 fix(bop): drop the invented disjoint-bbox short-circuit from boolean (BOPAlgo_Builder.cxx:129-140, BOPAlgo_BOP.cxx:106-160; T-168)"
