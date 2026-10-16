@@ -975,3 +975,31 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   ban applies there: a bounding-box area ratio must not be used to fake same-domain. Gates
   word-identical again: five crates `cargo check --offline` 0 error, `occt-topo --lib` 1251/0,
   `step_obj_gates` 4/4 (114.18s), `export_data_obj` 15/15 with the frozen v/f table.
+
+P042 / T-172 (`91eec679`) closed A12(2b) and deleted the lathe-mesh fixture. The coplanar neck that
+P041 left open was *not* the `BOPAlgo_Builder::FillImagesSolids` / `PerformAreas` same-domain branch
+after all: the generating face was the problem. `BRepFeat_MakeRevol`'s `myPbase` is a real
+`TopoDS_Wire` in OCCT -- consecutive edges share their `TopoDS_Vertex` -- because
+`BRepSweep_Tool::Init` (`BRepSweep_Tool.cxx:22-30`) builds its sub-shape table with
+`TopExp::MapShapes(aShape, myMap)` (`cxx:25`), which deduplicates by `TShape`: two vertices that are
+merely coincident are two entries, each spawning its own `MakeEmptyDirectingEdge`, so the cap
+circles stop being shared with the lateral wall and the coplanar target face (neck bottom disk vs
+box top at z=1.0) gets paved twice, inverting the draft solid (`vol = -2.848377`). This port's
+`brep_sweep/grid.rs::GenTool::new` (`cumulated_children` plus a `seen: HashSet<TShape pointer>`)
+mirrors that mapping and `shape_of` builds one directing edge per generating vertex, so the fix had
+to be in the caller. `brepfeat/features.rs` gained `profile_face` (XZ half-plane, normal `-Y`,
+consecutive edges built with `make_edge_segment_with_vertices` so the vertices are shared; a
+contour that repeats its first point as its last is normalized before the wire is built) and
+`revolve_profile_about` is now `profile_face` + `brep_sweep::make_revol(+Z, 2*pi)` +
+`align_z_to_axis`; `neck`/`groove` lost their `steps` parameter (no such step in the cxx) and the 7
+existing call sites in `brepfeat/tests.rs` were updated. Measured after the change: the neck tool is
+`occurrences=6 unique=3` (bottom circle, top circle, seam -- caps and wall share the same `edge
+ptr`), `[p042fi] face=11 in=1 on=0 sc=0`, `BuildSplitFaces loops=3 internal=0 areas=2`, `signed
+tool=0.502654825 res=4.502654825` (= 4 + pi*0.4^2), `faces=8 warn=[]` closed -- the same topology
+`BRepPrimAPI_MakeCylinder` has. `brepfeat` is 17/17. Gates: five crates `cargo check --offline` 0
+error (no new warning in `brepfeat`), `occt-topo --lib` 1251/0 (`--lib brepfeat` 17/0),
+`step_obj_gates` 4/4 (235.60s), `export_data_obj` 15/15 with the frozen v/f table. Side finding not
+touched: the existing neck/groove profiles use the "repeat the first point as the last" form
+(`BRepBuilderAPI_MakePolygon` convention is not to repeat), and `profile_face` accepts both. Side
+finding not re-measured: P040's five *annular* periodic-face controls were not re-run at this HEAD,
+so nothing is claimed about them.
