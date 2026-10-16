@@ -48,6 +48,10 @@ pub use curve_curve::*;
 pub use glob_opt_func::*;
 pub use general_extrema::*;
 pub use gen_locate_ext_cc::*;
+// `Extrema_POnCurv` is a single shared class: both the curve-curve
+// (`Extrema_CCLocFOfLocECC`) and point-curve (`Extrema_LocPCOfLocPC`) templates
+// instantiate `ThePOnC = Extrema_POnCurv`, so re-export the one definition.
+pub use p_on_curv::POnCurv;
 
 #[cfg(test)]
 #[path = "tests.rs"]

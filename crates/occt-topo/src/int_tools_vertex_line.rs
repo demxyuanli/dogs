@@ -18,7 +18,10 @@
 //!    a bounded curve still accepts `StartPoint` / `EndPoint` within
 //!    `aTolSum`.
 //!
-//! `Extrema_LocateExtPC` is a Newton walk from a seed. `Extrema_ExtPC` is
+//! `Extrema_LocateExtPC` is `occt_geom::extrema_pc::LocateExtPC`
+//! (`Extrema_GLocateExtPC`, 3D monomorphisation: C2-interval walk + the
+//! `Extrema_GenLocateExtPC` root finder, so the previous invented 12-step
+//! clamped Newton loop is gone). `Extrema_ExtPC` is
 //! `occt_geom::extrema_pc::extrema_ext_pc_*` (`Extrema_GGExtPC` Perform /
 //! IntervalPerform). Decision predicates (midpoint, `aTolSum`, Confusion)
 //! stay identical to `IntTools_Context`.
@@ -31,6 +34,7 @@
 
 use occt_core::gp::GpPnt;
 use occt_core::precision::{CONFUSION, INFINITE, Precision};
+use occt_geom::extrema_pc::LocateExtPC;
 use occt_geom::Curve;
 
 use crate::brep_tool::BRepTool;
@@ -45,9 +49,6 @@ const OTHER_TOL_FLOOR: f64 = 1.0e-6;
 
 /// `Extrema_LocateExtPC` / `Extrema_ExtPC` precision argument in OCCT.
 const EXTREMA_EPS: f64 = 1.0e-10;
-
-/// Newton iterations for the local (`LocateExtPC`) search.
-const LOCATE_ITERS: usize = 12;
 
 /// Result of [`is_vertex_on_line`]: the vertex lies on the curve at `t`.
 #[derive(Debug, Clone, Copy)]
@@ -123,44 +124,12 @@ fn finite_range(curve: &dyn Curve) -> Option<(f64, f64)> {
     Some((a, b))
 }
 
-/// Clamp `t` into `[first, last]` when the range is finite.
-fn clamp_param(t: f64, first: f64, last: f64) -> f64 {
-    if Precision::is_infinite(first) || Precision::is_infinite(last) {
-        return t;
-    }
-    if first <= last {
-        t.clamp(first, last)
-    } else {
-        t.clamp(last, first)
-    }
-}
-
-/// One Newton step of `Extrema_LocateExtPC`: minimise `|C(t) - P|^2`.
+/// `Extrema_LocateExtPC(P, C, U0, Umin, Usup, TolF)` — local search from
+/// `t_seed` (`Extrema_GLocateExtPC.hxx:90-97`, `Extrema_LocateExtPC.hxx:29-36`).
 ///
-/// The derivative of the squared distance is `2 (C(t) - P) · C'(t)`, so the
-/// Newton update is `t -= ((C-P)·C') / |C'|^2`. A vanishing derivative or a
-/// non-finite update is reported as a failed step.
-fn newton_step(curve: &dyn Curve, p: &GpPnt, t: f64) -> Option<f64> {
-    let (q, d1) = curve.d1(t);
-    let dx = q.x() - p.x();
-    let dy = q.y() - p.y();
-    let dz = q.z() - p.z();
-    let speed2 = d1.square_magnitude();
-    if speed2 <= EXTREMA_EPS * EXTREMA_EPS {
-        return None;
-    }
-    let num = dx * d1.x() + dy * d1.y() + dz * d1.z();
-    let next = t - num / speed2;
-    if !next.is_finite() {
-        return None;
-    }
-    Some(next)
-}
-
-/// `Extrema_LocateExtPC(P, C, tSeed, 1.e-10)` — local search from `t_seed`.
-///
-/// Returns `(t, point_on_curve)` when the walk stays finite. OCCT treats
-/// `!IsDone` as a miss and falls through to `Extrema_ExtPC`.
+/// Returns `(t, point_on_curve)` when the ported `LocateExtPC::IsDone()` is
+/// true. OCCT treats `!IsDone` as a miss and falls through to `Extrema_ExtPC`
+/// (`IntTools_Context.cxx:842-871`, `ShapeAnalysis_Curve.cxx:423-437`).
 pub(crate) fn extrema_locate_ext_pc(
     curve: &dyn Curve,
     p: &GpPnt,
@@ -168,30 +137,12 @@ pub(crate) fn extrema_locate_ext_pc(
     first: f64,
     last: f64,
 ) -> Option<(f64, GpPnt)> {
-    locate_ext_pc(curve, p, t_seed, first, last)
-}
-
-fn locate_ext_pc(curve: &dyn Curve, p: &GpPnt, t_seed: f64, first: f64, last: f64) -> Option<(f64, GpPnt)> {
-    let mut t = t_seed;
-    let mut last_good = curve.d0(t);
-    for _ in 0..LOCATE_ITERS {
-        let Some(next) = newton_step(curve, p, t) else {
-            break;
-        };
-        let next = clamp_param(next, first, last);
-        let q = curve.d0(next);
-        if q.distance(&last_good) < EXTREMA_EPS {
-            t = next;
-            last_good = q;
-            break;
-        }
-        t = next;
-        last_good = q;
-    }
-    if !t.is_finite() {
+    let an_ext = LocateExtPC::new_range(p, curve, t_seed, first, last, EXTREMA_EPS);
+    if !an_ext.is_done() {
         return None;
     }
-    Some((t, last_good))
+    let a_p_on_curve = an_ext.point();
+    Some((a_p_on_curve.parameter(), a_p_on_curve.value()))
 }
 
 /// `Extrema_ExtPC` on `[first, last]` — pick min among `IsMin` solutions
@@ -236,7 +187,7 @@ fn refine_end(
     prefer_first: bool,
 ) -> f64 {
     let mid = 0.5 * (first + last);
-    if let Some((t, q)) = locate_ext_pc(curve, pv, t_end, first, last) {
+    if let Some((t, q)) = extrema_locate_ext_pc(curve, pv, t_end, first, last) {
         let past_mid = if prefer_first { t > mid } else { t < mid };
         if past_mid || pv.distance(&q) > tol_sum || p_end.distance(&q) < CONFUSION {
             return t_end;

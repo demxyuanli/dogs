@@ -27,9 +27,18 @@ pub(crate) use crate::extrema::ExtremaPair;
 mod poly_roots;
 mod point_curve;
 mod general_extrema_pc;
+mod curve_tool;
+mod gfunc_ext_pc;
+mod gen_locate_ext_pc;
+mod locate_ext_pc;
 pub use poly_roots::*;
 pub use point_curve::*;
-pub use general_extrema_pc::{extrema_ext_pc_min_in_range, extrema_ext_pc_range, ExtPcSolution};
+pub use general_extrema_pc::{
+    extrema_ext_pc_min_in_range, extrema_ext_pc_range, extrema_ext_pc_range_done, ExtPcSolution,
+};
+pub use curve_tool::GeomAbsCurveType;
+pub use gen_locate_ext_pc::GenLocateExtPC;
+pub use locate_ext_pc::LocateExtPC;
 
 #[cfg(test)]
 #[path = "tests.rs"]

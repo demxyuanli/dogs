@@ -814,6 +814,24 @@ pub fn extrema_ext_pc_range(
     u_inf: f64,
     u_sup: f64,
 ) -> Vec<ExtPcSolution> {
+    extrema_ext_pc_range_done(curve, point, u_inf, u_sup).0
+}
+
+/// `Extrema_ExtPC` (`Extrema_GGExtPC`) keeping its `IsDone` result.
+///
+/// The free-form `default:` arm sets `mydone = IntExtIsDone`
+/// (`Extrema_GGExtPC.hxx:468`), so a **non-empty** solution list can coexist
+/// with `IsDone() == false`: an interval boundary point is appended at
+/// `hxx:452` (when `s1 * s2 < 0`) before any `IntervalPerform` succeeded.
+/// `Extrema_GLocateExtPC`'s elementary arm tests `IsDone()` before scanning
+/// the solutions (`Extrema_GLocateExtPC.hxx:283-296`), so callers that mirror
+/// that arm need the flag.
+pub fn extrema_ext_pc_range_done(
+    curve: &dyn Curve,
+    point: &GpPnt,
+    u_inf: f64,
+    u_sup: f64,
+) -> (Vec<ExtPcSolution>, bool) {
     let (mut u_inf, mut u_sup) = (u_inf, u_sup);
     if u_inf > u_sup {
         std::mem::swap(&mut u_inf, &mut u_sup);
@@ -850,7 +868,8 @@ pub fn extrema_ext_pc_range(
         perform_general(&mut state, curve, point);
         postprocess_ends(&mut state);
     }
-    state.sols
+    let done = state.done;
+    (state.sols, done)
 }
 
 /// Closest minimum among `IsMin` solutions (`ShapeAnalysis_Curve.cxx:280-301`).

@@ -1,62 +1,33 @@
 use super::*;
 
+use occt_geom::extrema_pc::LocateExtPC;
+
+use crate::meshing::edge_discret::CurveOnSurface;
+
 /// True when `check_pcurve_rep_range` runs the `cxx:175`
 /// `XSAlgo_ShapeProcessor::CheckPCurve` call. ENABLED (t336); see the call site
 /// for the on/off measurements that replaced the earlier block on it.
 pub(in crate::shhealing) const T312_WIRE_XSALGO_CHECKPCURVE: bool = true;
 
-/// `Extrema_LocateExtPC` Newton walk (`int_tools_vertex_line` / ValidateEdge).
-/// Returns square distance at the local extremum, or `None` when `!IsDone`.
-pub(in crate::shhealing) fn locate_ext_pc_sq<D0, D1>(
-    d0: D0,
-    d1: D1,
+/// `Extrema_LocateExtPC::Perform` + `IsDone` + `SquareDistance`
+/// (`BRepLib_ValidateEdge.cxx:188-190`, `:204-206`, `:209-211`, `:219-221`):
+/// `None` is OCCT's `!IsDone`, which makes the caller set `myIsDone = false`
+/// and return without a distance.
+pub(in crate::shhealing) fn locate_ext_pc_sq(
+    ext: &mut LocateExtPC<'_>,
     p: &GpPnt,
-    t_seed: f64,
-    first: f64,
-    last: f64,
-) -> Option<f64>
-where
-    D0: Fn(f64) -> GpPnt,
-    D1: Fn(f64) -> (GpPnt, GpVec),
-{
-    let lo = first.min(last);
-    let hi = first.max(last);
-    let mut t = t_seed.clamp(lo, hi);
-    let mut last_good = d0(t);
-    for _ in 0..12 {
-        let (q, der) = d1(t);
-        let speed2 = der.square_magnitude();
-        if speed2 <= 1e-20 {
-            return None;
-        }
-        let num = (q.x() - p.x()) * der.x() + (q.y() - p.y()) * der.y() + (q.z() - p.z()) * der.z();
-        let next = t - num / speed2;
-        if !next.is_finite() {
-            return None;
-        }
-        let next = next.clamp(lo, hi);
-        let qn = d0(next);
-        if qn.distance(&last_good) < 1e-10 {
-            return Some(qn.square_distance(p));
-        }
-        t = next;
-        last_good = qn;
+    u0: f64,
+) -> Option<f64> {
+    ext.perform(p, u0);
+    if !ext.is_done() {
+        return None;
     }
-    Some(last_good.square_distance(p))
+    Some(ext.square_distance())
 }
 
 pub(in crate::shhealing) fn cos_d0(pc: &dyn Curve2d, surf: &dyn Surface, t: f64) -> GpPnt {
     let uv = pc.d0(t);
     surf.d0(uv.x(), uv.y())
-}
-
-pub(in crate::shhealing) fn cos_d1(pc: &dyn Curve2d, surf: &dyn Surface, t: f64) -> (GpPnt, GpVec) {
-    let (uv, duv) = pc.d1(t);
-    let (p, su, sv) = surf.d1(uv.x(), uv.y());
-    let tan = su
-        .multiplied_scalar(duv.x())
-        .added(&sv.multiplied_scalar(duv.y()));
-    (p, tan)
 }
 
 /// `BRepLib_ValidateEdge::processApprox` (`cxx:103-229`) plus
@@ -208,31 +179,37 @@ fn check_same_parameter_opt(edge: &Edge, face: Option<&Face>) -> f64 {
             let p_oth1 = cos_d0(pc.as_ref(), surf.as_ref(), *cl);
             max_sq = max_sq.max(p_ref1.square_distance(&p_oth1));
             let mut aborted = false;
+            // `BRepLib_ValidateEdge.cxx:168-177`: one persistent
+            // `Extrema_LocateExtPC` per curve, `Initialize`d once with the
+            // curve range and `TolU = curve.Resolution(Precision::Confusion())`,
+            // then `Perform`ed at every control point.
+            //
+            // UNPORTED: `CurveOnSurface` has no `Resolution` override, so the
+            // cos `TolU` is `Curve`'s default `Precision::Parametric(Confusion)`
+            // instead of `Adaptor3d_CurveOnSurface::Resolution`
+            // (`Adaptor3d_CurveOnSurface.cxx:1364-1370`:
+            // `myCurve->Resolution(min(mySurface->UResolution(R3d),
+            // mySurface->VResolution(R3d)))`). The ingredients exist
+            // (`occt_geom::approx_same_parameter::{u_resolution,v_resolution}` +
+            // `pcurve.resolution`), but the override lives on the shared
+            // meshing/discretisation adaptor, so it is registered rather than
+            // changed here.
+            let mut ref_ext = LocateExtPC::default();
+            ref_ext.initialize(c3d.as_ref(), first, last, c3d.resolution(CONFUSION));
+            let cos = CurveOnSurface::new(pc.clone(), surf.clone(), *cf, *cl);
+            let mut oth_ext = LocateExtPC::default();
+            oth_ext.initialize(&cos, *cf, *cl, cos.resolution(CONFUSION));
             for i in 1..NB {
                 let t_ref = ((NB - i) as f64 * first + i as f64 * last) / NB as f64;
                 let t_oth = ((NB - i) as f64 * *cf + i as f64 * *cl) / NB as f64;
                 let p_ref = c3d.d0(t_ref);
                 let p_oth = cos_d0(pc.as_ref(), surf.as_ref(), t_oth);
-                let Some(sq_ref) = locate_ext_pc_sq(
-                    |t| c3d.d0(t),
-                    |t| c3d.d1(t),
-                    &p_oth,
-                    t_ref,
-                    first,
-                    last,
-                ) else {
+                let Some(sq_ref) = locate_ext_pc_sq(&mut ref_ext, &p_oth, t_ref) else {
                     aborted = true;
                     break;
                 };
                 max_sq = max_sq.max(sq_ref);
-                let Some(sq_oth) = locate_ext_pc_sq(
-                    |t| cos_d0(pc.as_ref(), surf.as_ref(), t),
-                    |t| cos_d1(pc.as_ref(), surf.as_ref(), t),
-                    &p_ref,
-                    t_oth,
-                    *cf,
-                    *cl,
-                ) else {
+                let Some(sq_oth) = locate_ext_pc_sq(&mut oth_ext, &p_ref, t_oth) else {
                     aborted = true;
                     break;
                 };

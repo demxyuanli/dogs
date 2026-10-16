@@ -19,11 +19,13 @@ use occt_core::gp::{GpDir, GpPnt, GpPnt2d, GpTrsf, GpVec, GpVec2d};
 use occt_core::math_direct_poly_roots::DirectPolynomialRoots;
 use occt_core::precision::{CONFUSION, PCONFUSION, SQUARE_CONFUSION};
 use occt_geom::Surface;
+use occt_geom::extrema_pc::LocateExtPC;
 use occt_geom2d::Curve2d;
 
 use crate::abs::ShapeType;
 use crate::boptools_2d::curve_on_surface_oriented;
 use crate::brep_tool::BRepTool;
+use crate::meshing::edge_discret::CurveOnSurface;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
@@ -311,132 +313,6 @@ fn compute_surf_curvatures(
     Some((min_c, max_c, dir_min, dir_max))
 }
 
-/// World point and derivative of the curve-on-surface
-/// (`BRepAdaptor_Curve(edge, face)` in `BRepLib.cxx:2345`).
-fn cos_d1(
-    surf: &dyn Surface,
-    c2d: &dyn Curve2d,
-    t: f64,
-    trsf: &GpTrsf,
-) -> Option<(GpPnt, GpVec)> {
-    let (uv, duv) = c2d.d1(t);
-    let (p, d1u, d1v) = surf.d1(uv.x(), uv.y());
-    let der = d1u
-        .multiplied_scalar(duv.x())
-        .added(&d1v.multiplied_scalar(duv.y()));
-    Some((p.transformed(trsf), der.transformed(trsf)))
-}
-
-/// `C''(t)` of the curve-on-surface. `None` when `Surface::d2` is not analytic.
-fn cos_d2(surf: &dyn Surface, c2d: &dyn Curve2d, t: f64, trsf: &GpTrsf) -> Option<GpVec> {
-    if !has_analytic_d2(surf) {
-        return None;
-    }
-    let (uv, d1, d2) = c2d.d2(t);
-    let (_p, su, sv, suu, svv, suv) = surf.d2(uv.x(), uv.y());
-    let uu = d1.x();
-    let vv = d1.y();
-    let der = suu
-        .multiplied_scalar(uu * uu)
-        .added(&suv.multiplied_scalar(2.0 * uu * vv))
-        .added(&svv.multiplied_scalar(vv * vv))
-        .added(&su.multiplied_scalar(d2.x()))
-        .added(&sv.multiplied_scalar(d2.y()));
-    Some(der.transformed(trsf))
-}
-
-/// `F(u) = (C-P)·D1 / |D1|` (`Extrema_GFuncExtPC.hxx:36-39`).
-fn extrema_f(c: &GpPnt, d1: &GpVec, p: &GpPnt) -> Option<f64> {
-    let ndu = d1.magnitude();
-    if ndu <= 1.0e-20 {
-        return None;
-    }
-    let dx = c.x() - p.x();
-    let dy = c.y() - p.y();
-    let dz = c.z() - p.z();
-    Some((dx * d1.x() + dy * d1.y() + dz * d1.z()) / ndu)
-}
-
-/// `F'(u)` (`Extrema_GFuncExtPC.hxx:344-346`). `IsMin` is `F' > 0`
-/// (`hxx:371-376`).
-fn extrema_df(c: &GpPnt, d1: &GpVec, d2: &GpVec, p: &GpPnt, f: f64) -> Option<f64> {
-    let ndu = d1.magnitude();
-    if ndu <= 1.0e-20 {
-        return None;
-    }
-    let dx = c.x() - p.x();
-    let dy = c.y() - p.y();
-    let dz = c.z() - p.z();
-    let ppc_d2 = dx * d2.x() + dy * d2.y() + dz * d2.z();
-    let d1_d2 = d1.dot(d2);
-    Some(ndu + ppc_d2 / ndu - f * d1_d2 / (ndu * ndu))
-}
-
-/// `Extrema_LocateExtPC::Perform` + `IsDone` + `IsMin`
-/// (`BRepLib.cxx:2348-2351`, `Extrema_GenLocateExtPC.hxx:108-148`).
-/// `Ok(None)` keeps the unrefined sample. `Err` means second derivatives
-/// are not analytic, so the edge must stay unmarked.
-fn locate_on_cos(
-    surf: &dyn Surface,
-    c2d: &dyn Curve2d,
-    trsf: &GpTrsf,
-    point: &GpPnt,
-    t_seed: f64,
-    first: f64,
-    last: f64,
-) -> Result<Option<f64>, ()> {
-    if !has_analytic_d2(surf) {
-        return Err(());
-    }
-    let lo = first.min(last);
-    let hi = first.max(last);
-    let mut t = t_seed.clamp(lo, hi);
-    let mut last_pt = cos_d1(surf, c2d, t, trsf)
-        .map(|(p, _)| p)
-        .ok_or(())?;
-    for _ in 0..100 {
-        let (q, d1) = cos_d1(surf, c2d, t, trsf).ok_or(())?;
-        let speed2 = d1.square_magnitude();
-        if speed2 <= 1.0e-20 {
-            return Ok(None);
-        }
-        let num = (q.x() - point.x()) * d1.x()
-            + (q.y() - point.y()) * d1.y()
-            + (q.z() - point.z()) * d1.z();
-        let next = (t - num / speed2).clamp(lo, hi);
-        if !next.is_finite() {
-            return Ok(None);
-        }
-        let qn = cos_d1(surf, c2d, next, trsf).map(|(p, _)| p).ok_or(())?;
-        let moved = qn.distance(&last_pt);
-        t = next;
-        last_pt = qn;
-        if moved < PCONFUSION {
-            break;
-        }
-    }
-    if !t.is_finite() {
-        return Ok(None);
-    }
-    let (q, d1) = cos_d1(surf, c2d, t, trsf).ok_or(())?;
-    let Some(f) = extrema_f(&q, &d1, point) else {
-        return Ok(None);
-    };
-    // `Extrema_GenLocateExtPC.hxx:119-121`: `|F| >= 1.e-07` clears `IsDone`.
-    if f.abs() >= 1.0e-7 {
-        return Ok(None);
-    }
-    let d2 = cos_d2(surf, c2d, t, trsf).ok_or(())?;
-    let Some(df) = extrema_df(&q, &d1, &d2, point, f) else {
-        return Ok(None);
-    };
-    if df > 0.0 {
-        Ok(Some(t))
-    } else {
-        Ok(None)
-    }
-}
-
 fn same_tshape(a: &TopoShape, b: &TopoShape) -> bool {
     GeometryRegistry::shape_key(a) == GeometryRegistry::shape_key(b)
 }
@@ -527,6 +403,15 @@ fn continuity_of_faces(
     let eps = (l - f) / 100.0;
     f += eps;
     l -= eps;
+    // `aHC2 = new BRepAdaptor_Curve(anEdgeInFace2, theFace2)`
+    // (`cxx:2344-2346`), built lazily once and reused by every sample.
+    // `BRepAdaptor_Curve` values live in the face's world frame while
+    // `BRep_Tool::Surface` is unlocated (`FaceProps` applies `trsf2` the same
+    // way), so the basis surface is transformed here. The adaptor window is
+    // the shrunk `[f, l]` of `cxx:2287-2288`; `Initialize` is stateless, so
+    // re-initializing per sample replays `cxx:2347` exactly.
+    let s2_world: std::sync::Arc<dyn Surface> = std::sync::Arc::from(s2.transformed(&trsf2));
+    let cos2 = CurveOnSurface::new(c2.clone(), s2_world, f, l);
     let angle_tol2 = angle_tol * angle_tol;
     let mut cont = if elementary {
         AbsShape::Cn
@@ -559,22 +444,25 @@ fn continuity_of_faces(
             }
         }
         if !smooth {
-            match locate_on_cos(
-                s2.as_ref(),
-                c2.as_ref(),
-                &trsf2,
-                &sp1.value(),
-                u,
-                f,
-                l,
-            ) {
-                Err(()) => return None,
-                Ok(Some(tu)) => {
-                    sp2.calculate(tu);
-                    der2 = sp2.derivative();
-                    sq2 = der2.square_magnitude();
-                }
-                Ok(None) => {}
+            // `cxx:2348-2355`: `ext.Perform(aSP1.Value(), u)`; on
+            // `IsDone() && IsMin()` re-evaluate the second surface derivative
+            // at the projected parameter. `aHC2` is an
+            // `Adaptor3d_CurveOnSurface`, whose `GetType()` is the `myType`
+            // set by `EvalKPart` (`Adaptor3d_CurveOnSurface.cxx:1374-1377`
+            // and `:1552-1720`): `GeomAbs_OtherCurve` unless the pcurve is a
+            // plane conic or an iso-arc. The port's `CurveOnSurface` answers
+            // `gp_circ()` for the `GeomAbs_Circle` arms but exposes no
+            // `gp_line()`, so an `EvalKPart` `GeomAbs_Line` cos (`cxx:1565`,
+            // `:1687`, `:1701`) types as `OtherCurve` here; either way the
+            // non-iso case runs `Extrema_GLocateExtPC`'s free-form branch
+            // (`Extrema_GLocateExtPC.hxx:125-272` -> `Extrema_GenLocateExtPC`,
+            // `Extrema_GenLocateExtPC.hxx:108-126`), where `|F| >= 1.e-07`
+            // clears `IsDone`.
+            let ext = LocateExtPC::new_range(&sp1.value(), &cos2, u, f, l, PCONFUSION);
+            if ext.is_done() && ext.is_min() {
+                sp2.calculate(ext.point().parameter());
+                der2 = sp2.derivative();
+                sq2 = der2.square_magnitude();
             }
             smooth = der1.cross_square_magnitude(&der2) <= angle_tol2 * sq1 * sq2;
         }
