@@ -1,12 +1,16 @@
 //! Physical quantities and named colors. Source: `Quantity/`
 //! Maps OCCT's Quantity_Color, Quantity_Length, Quantity_Angle, etc.
 
-/// Named colors from OCCT's Quantity_NameOfColor.
+/// Named colors — the subset of `Quantity_NameOfColor`
+/// (`Quantity_NameOfColor.hxx:25-530`, ~500 X11 names) that this port uses, so
+/// the full enum is UNPORTED. Every variant below exists in OCCT under the same
+/// spelling; `Quantity_NOC_SILVER`, `_NEUTRAL`, `_DARKBLUE` and `_LIGHTGREEN`
+/// do **not** exist in OCCT 8.0, and the invented variants for them are gone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NameOfColor {
     Black, Blue, Brown, Cyan, Gold, Gray, Green, Magenta, Orange, Pink,
-    Red, Silver, Violet, White, Yellow, DarkBlue, DarkGreen, DarkOrange,
-    LightBlue, LightGray, LightGreen, LightYellow, Neutral,
+    Red, Violet, White, Yellow, DarkGreen, DarkOrange, LightBlue, LightGray,
+    LightYellow,
 }
 
 /// RGB color (0.0—1.0). Source: `Quantity_Color.hxx`
@@ -22,27 +26,33 @@ impl Color {
     pub const CYAN:    Self = Self{r:0.,g:1.,b:1.};
     pub const MAGENTA: Self = Self{r:1.,g:0.,b:1.};
     pub fn new(r:f32,g:f32,b:f32) -> Self { Self{r,g,b} }
+    /// `Quantity_Color(theName, Quantity_TOC_RGB)` -> `valuesOf(name,
+    /// Quantity_TOC_RGB)` (`Quantity_ColorTable.pxx`): the **RGB (linear)**
+    /// column of the table entry, not the `sRGB` column. The previous values
+    /// were the sRGB column truncated to two decimals, which is a different
+    /// color (BROWN is off by ~1.7x); the line references below are the
+    /// `RawColor(...)` rows of `Quantity_ColorTable.pxx`.
     pub fn from_name(n: NameOfColor) -> Self {
         match n {
-            NameOfColor::Black=>Self::BLACK, NameOfColor::White=>Self::WHITE,
-            NameOfColor::Red=>Self::RED, NameOfColor::Green=>Self::GREEN,
-            NameOfColor::Blue=>Self::BLUE, NameOfColor::Yellow=>Self::YELLOW,
-            NameOfColor::Cyan=>Self::CYAN, NameOfColor::Magenta=>Self::MAGENTA,
-            NameOfColor::Gray=>Self{r:0.5,g:0.5,b:0.5},
-            NameOfColor::Silver=>Self{r:0.75,g:0.75,b:0.75},
-            NameOfColor::Brown=>Self{r:0.65,g:0.16,b:0.16},
-            NameOfColor::Orange=>Self{r:1.,g:0.65,b:0.},
-            NameOfColor::Gold=>Self{r:1.,g:0.84,b:0.},
-            NameOfColor::Pink=>Self{r:1.,g:0.75,b:0.8},
-            NameOfColor::Violet=>Self{r:0.93,g:0.51,b:0.93},
-            NameOfColor::DarkBlue=>Self{r:0.,g:0.,b:0.55},
-            NameOfColor::DarkGreen=>Self{r:0.,g:0.39,b:0.},
-            NameOfColor::DarkOrange=>Self{r:1.,g:0.55,b:0.},
-            NameOfColor::LightBlue=>Self{r:0.68,g:0.85,b:0.9},
-            NameOfColor::LightGray=>Self{r:0.83,g:0.83,b:0.83},
-            NameOfColor::LightGreen=>Self{r:0.56,g:0.93,b:0.56},
-            NameOfColor::LightYellow=>Self{r:1.,g:1.,b:0.88},
-            NameOfColor::Neutral=>Self{r:0.7,g:0.7,b:0.7},
+            NameOfColor::Black      => Self{r:0.000000,g:0.000000,b:0.000000}, // `:14`
+            NameOfColor::Blue       => Self{r:0.000000,g:0.000000,b:1.000000}, // `:171`
+            NameOfColor::Brown      => Self{r:0.376262,g:0.023153,b:0.023153}, // `:185`
+            NameOfColor::Cyan       => Self{r:0.000000,g:1.000000,b:1.000000}, // `:435`
+            NameOfColor::Gold       => Self{r:1.000000,g:0.679542,b:0.000000}, // `:1009`
+            NameOfColor::Gray       => Self{r:0.527115,g:0.527115,b:0.527115}, // `:1063`
+            NameOfColor::Green      => Self{r:0.000000,g:1.000000,b:0.000000}, // `:1162`
+            NameOfColor::Magenta    => Self{r:1.000000,g:0.000000,b:1.000000}, // `:1866`
+            NameOfColor::Orange     => Self{r:1.000000,g:0.376262,b:0.000000}, // `:2287`
+            NameOfColor::Pink       => Self{r:1.000000,g:0.527115,b:0.597201}, // `:2610`
+            NameOfColor::Red        => Self{r:1.000000,g:0.000000,b:0.000000}, // `:2671`
+            NameOfColor::Violet     => Self{r:0.854992,g:0.223228,b:0.854992}, // `:3349`
+            NameOfColor::White      => Self{r:1.000000,g:1.000000,b:1.000000}, // `:3456`
+            NameOfColor::Yellow     => Self{r:1.000000,g:1.000000,b:0.000000}, // `:3415`
+            NameOfColor::DarkGreen  => Self{r:0.000000,g:0.127438,b:0.000000}, // `:489`
+            NameOfColor::DarkOrange => Self{r:1.000000,g:0.262251,b:0.000000}, // `:559`
+            NameOfColor::LightBlue  => Self{r:0.417885,g:0.686686,b:0.791299}, // `:1425`
+            NameOfColor::LightGray  => Self{r:0.651406,g:0.651406,b:0.651406}, // `:1585`
+            NameOfColor::LightYellow=> Self{r:1.000000,g:1.000000,b:0.745404}, // `:1815`
         }
     }
     pub fn to_rgb_u8(&self) -> (u8,u8,u8) { ((self.r*255.) as u8, (self.g*255.) as u8, (self.b*255.) as u8) }

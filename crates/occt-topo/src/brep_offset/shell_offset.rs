@@ -108,6 +108,18 @@ pub(super) fn offset_convex_polyhedron(shape: &TopoShape, faces: &[Face], distan
 /// rebuilt by intersecting the offset face planes; a single curved face (a
 /// sphere) offsets in place. Other shapes return an error rather than a
 /// broken result.
+///
+/// UNPORTED (registered by P045 / T999): the general offset lives in
+/// `BRepOffset_MakeOffset::MakeOffsetShape` (`BRepOffset_MakeOffset.cxx:837-1082`),
+/// driven by `BuildOffsetByInter` (`:1277-1824`, the iterative 3-D/2-D
+/// intersection of the offset images with `Intersection3D` `:2855-2940`,
+/// `Intersection2D` `:2941-2990`, `MakeLoops` `:2991-3058`) and
+/// `BuildOffsetByArc` (`:1893-2153`), then welded by `MakeMissingWalls`
+/// (`:3148-3690`) / `MakeShells` (`:3691-3793`) / `MakeSolid` (`:3794-3895`).
+/// None of that is ported here: `offset_convex_polyhedron` reconstructs the
+/// result by intersecting the offset planes of a convex planar-face solid, and
+/// a non-convex or curved input is rejected with `Err` instead of being run
+/// through the OCCT algorithm. No heuristic substitutes the missing branch.
 pub fn offset_shell(shape: &TopoShape, distance: f64) -> Result<TopoShape, String> {
     let faces = faces_of(shape);
     if faces.is_empty() {
