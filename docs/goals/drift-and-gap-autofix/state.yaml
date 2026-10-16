@@ -36,7 +36,7 @@ goal:
       - "Audit index: specs/_audit/_index.md sections 9.1-9.4; per-area docs topo-rest.md, occt-geom.md, occt-core.md, bop-boolean.md, mesh-exchange.md."
       - "Task ledger: specs/_tasks.md (T-129 / T-130 landed 2026-10-15)."
       - "Gap analysis: specs/_a3n00_gap_analysis.md."
-      - "Candidate first slices already identified by the 2026-10-15 pass, to be re-verified by Scout, not assumed: pcurve::pc_curve_kind heuristic vs Geom2dAdaptor_Curve::GetType(); inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch; wire_splitter_block::curve2d_radius finite-difference radius vs GeomLProp_CLProps2d curvature (BOPAlgo_WireSplitter_1.cxx:796-807); brepfeat::revolve_profile_about sweep_revolve wire/seam/pcurve gap vs BRepSweep_Revol / BRepPrim_OneAxis（**2026-10-16 包 P039 `46ab36ec` 已落地 OneAxis 的一半**：wire 顺序/出现朝向、缝边 TShape 复用、`LateralFace`/`TopFace`/`BottomFace` pcurve、顶点容差；**余项**：解析旋转体仍不能被 `bop_builder::boolean` 合并，车削网格夹具保留，下一步走 BOPAlgo 侧）；BRepCheck_Edge::InContext / Tolerance / CheckPolygonOnTriangulation（needs BRepLib_ValidateEdge；`brep_check.rs` 仓内无消费者，优先级低）。"
+      - "Candidate first slices already identified by the 2026-10-15 pass, to be re-verified by Scout, not assumed: pcurve::pc_curve_kind heuristic vs Geom2dAdaptor_Curve::GetType(); inttools_range::find_nearest_valid_point missing the BRepLib_1.cxx:69-83 aD1Mag local-singularity branch; wire_splitter_block::curve2d_radius finite-difference radius vs GeomLProp_CLProps2d curvature (BOPAlgo_WireSplitter_1.cxx:796-807); brepfeat::revolve_profile_about sweep_revolve wire/seam/pcurve gap vs BRepSweep_Revol / BRepPrim_OneAxis（**2026-10-16 包 P039 `46ab36ec` 已落地 OneAxis 的一半**：wire 顺序/出现朝向、缝边 TShape 复用、`LateralFace`/`TopFace`/`BottomFace` pcurve、顶点容差；**余项**：解析旋转体仍不能被 `bop_builder::boolean` 合并，车削网格夹具保留，下一步走 BOPAlgo 侧；**2026-10-16 包 P040 `229a667a` 把余项收窄为「周期（整周带缝）面被一条整体落在面内的闭合剖切曲线切开」这一步**：`brep_sweep::make_revol` 的工具已精确（环体积 π(1.3²−0.6²)·0.8、4 面 6 边，signed 正确），而 `boolean` 对解析圆柱/网格圆柱都给出错误结果（非闭合壳 / 只削 0.05 / 只削 0.37），控制组「解析圆柱 − 立方体」精确 ⇒ 缺口在 `BuildSplitFaces` 的 Loops/Areas 构造，不在端盖面或曲面类型；`BRep_Tool::Parameter(V,E)` 与 `DirectSolid` 的 UV 盒两处控制流已按 cxx 落地）；BRepCheck_Edge::InContext / Tolerance / CheckPolygonOnTriangulation（needs BRepLib_ValidateEdge；`brep_check.rs` 仓内无消费者，优先级低）。"
     goal_oracle: "Four existing baselines only: cargo check, occt-topo --lib, step_obj_gates, export_data_obj."
 
 rules:
@@ -82,6 +82,34 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas `PACKAGES` section -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P040
+    task: T005
+    commit: "229a667a BRep_Tool::Parameter(V,E) orientation + BRepSweep_Rotation::DirectSolid UV box (BRep_Tool.cxx:1340-1492, BRepSweep_Rotation.cxx:635-676, BRepAdaptor_Surface.cxx:57-81; T-170)"
+    title: "`brep_sweep` 两处解析旋转体的控制流缺口（A12(2b) 判据的 BOPAlgo 侧定位轮）：(1) `continuity.rs::vertex_parameter` 此前直接读调用方顶点句柄的朝向决定取 First/Last，OCCT 是 `BRep_Tool::Parameter(V, E)`（`BRep_Tool.cxx:1340-1397`）—— 先按 `TopExp_Iterator itv(theE.Oriented(FORWARD))` 在**边自己的子顶点**里用 `IsSame` 找（`cxx:1349-1377`），只对退化且无边顶点的边才用传入顶点的朝向（`cxx:1350-1357`），`rev` 由「找到两个同 `IsSame` 顶点」时边自身 `TopAbs_REVERSED` 决定（`cxx:1368`），末段按 `(rev) ? l : f` / `(rev) ? f : l` 选择（`cxx:1386-1397`）；`cxx:1401-1492` 的顶点点位表示回退（`BRepTVertex::Points()` 依次对 3D 曲线、pcurve 投影）本仓 `TopoDS_Vertex` 上无该表，**UNPORTED** 并已在注释里写明。(2) `rotation.rs::direct_solid` 用 `surf.u_range()/v_range()`（解析面自身区间，平面的区间是无穷）取采样中点，OCCT 的 `BRepSweep_Rotation::DirectSolid`（`BRepSweep_Rotation.cxx:635-676`）构造 `BRepAdaptor_Surface(TopoDS::Face(aGenS))`（`cxx:641`）后取 `FirstUParameter`/`LastUParameter`/`FirstVParameter`/`LastVParameter`（`cxx:649-652`），而该 adaptor 构造函数默认 `Restriction = true` 并跑 `BRepTools::UVBounds(F, ...)`（`BRepAdaptor_Surface.cxx:57-81`）—— 即**面的 UV 盒**；本包改取 `brep_surface::face_uv_bounds`（T-170）"
+    files:
+      - "crates/occt-topo/src/brep_sweep/continuity.rs"
+      - "crates/occt-topo/src/brep_sweep/rotation.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/_index.md"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+      - "~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx"
+    closed_inventory_lines:
+      - "**`BRep_Tool::Parameter(V, E)` 的朝向来源（`brep_sweep/continuity.rs`，P039 遗留的「侧向线顶点参数」族）**：原实现 `if vertex.orientation() == Reversed { last } else { first }`，把「调用方句柄的朝向」当判据。按 `BRep_Tool.cxx:1340-1397` 复核，判据是**边子顶点**的朝向（`IsSame` 命中后 `VF.Orientation()`），且 `rev` 只在边自身 `TopAbs_REVERSED` 时翻转。本包按同等分支落地；`cxx:1401-1492` 的顶点点位表示回退未移植，注释标注 UNPORTED 并给出区间（不再沿用先前那句错的 `cxx:1450-1453` 引文）。"
+      - "**`BRepSweep_Rotation::DirectSolid` 的 UV 采样区间（`brep_sweep/rotation.rs`）**：`direct_solid` 决定生成实体的朝向，判据是 `aX = aV.DotCross(du, dv)` 在中点的符号（`cxx:673-675`）。原实现取面**曲面自身**的自然区间，平面是无穷区间 ⇒ 中点不是面上的点、`du/dv` 退化、朝向被翻（实测解析旋转体 signed volume 为负）。本包改为面的 UV 盒，与 `BRepAdaptor_Surface(Restriction = true)` 一致。"
+      - "**测量结论（本包新增，P040 的核心产出）**：把 `brepfeat::revolve_profile_about` 的工具换成 `brep_sweep::make_revol`（即 cxx 的 `BRepSweep_Revol`，`BRepFeat_MakeRevol.cxx:200-239`）后，**工具本身已精确**（环：4 face / 6 edge / 4 vertex，volume `3.342654583419527` = π(1.3²−0.6²)·0.8，signed 同号即外法向正确），但 `crate::bop_builder::boolean` **仍不能合并**，A12(2b) 判据未达成 ⇒ 车削网格夹具保留、`features.rs` 回退到 HEAD（本包不含它的改动）。"
+    gates:
+      check: "五 crate `--offline --all-targets` **0 error**（occt-core 12 / occt-math 30 / occt-geom 105 / occt-geom2d 82 / occt-topo 413 warnings，与 T-169 同数，无新增告警）"
+      lib: "`occt-topo --lib` **1251 / 0**（= T002 基线，单调不降；未新增测试、未改既有断言）"
+      step_obj_gates: "**4 / 4**（170.27s）"
+      export_data_obj: "**15 / 15 ok**，15 条 `ok <model> ... v= f=` 与 `t039` 逐字一致（Cone v=195 f=301 / Cube v=24 f=12 / Cylinder v=146 f=140 / Extrusion v=24 f=12 / HoledPlate v=180 f=128 / Offset v=712 f=892 / OffsetPlaneHoleEdge v=48 f=32 / Shape-1 v=3335 f=4328 / Shape-2 v=3081 f=4744 / Shape v=6150 f=11372 / Sphere v=642 f=1244 / Torus v=1369 f=2592 / linkrods v=3494 f=5078 / rev v=104 f=92 / screw v=601 f=792）"
+      canvas: "看板 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 随本包同步更新（PACKAGES 追加 P040、codeHead/boardHead 推进、第四节 A12(2b) 登记项改写为「工具已精确，缺口在周期面切分」）"
+    side_findings:
+      - "**诚实边界**：`brep_sweep` 不在 STEP 读入 / 网格 / BOP 共享管线上（`make_revol` 的仓内消费者是 `iges_read/iges_to_brep_topo_surface.rs:232` 与 `brepfeat`），故四道门禁对本包只证明**无回归**，不证明对齐。对齐依据是 cxx 有同等分支。"
+      - "**A12(2b) 的真实缺口已收窄到「周期面被剖分」这类几何**（`bop_builder::boolean` 侧，P040 实测 5 组对照）：(a) 解析圆柱（r=1, h=3）`Cut` 解析环工具 ⇒ 结果 6 face、`result shell is not closed`、volume `6.936636579126224`（= 3π − π·0.792）；侧壁两片（2π、2π·1.2）、片 z=1 的圆环（π·0.64）都对，缺失的是工具内柱面 r=0.6，另一片圆环面积 `4.272566008882088`（≠ π·0.64）。(b) 同一 Cut 换成车削环工具 ⇒ 闭合、10 face，但只削掉 `3π − 9.372901405156208 = 0.0519`（应 π·0.64·0.8 = 1.6085）。(c) 控制组：解析圆柱 `Cut` 立方体（x,y ∈ ±1.3，z ∈ −1..1.8，避免 z=0 共面重叠）⇒ volume `3.7699111843077335` = π·1.2 精确、3 face、闭合 ⇒ Cut 通道本身正常，失败专属于「环工具」。(d) `faceted_cyl` 网格目标被解析环工具切 ⇒ 只削 0.3715（应 1.6085）。(e) 既有基线之所以绿，是因为两个 operand 都被预先离散：车削工具把每圈切成 `steps` 段弧（无整周面），`faceted_cyl` 本身就是网格。结论：**失配随「整周（带缝）面需要被剖分」出现**，与目标是不是解析圆柱、工具面是不是精确柱/面无关。"
+      - "**旁支：已排除的猜测**（不再重试）。(1) P039 的猜测「横向端盖面不按 `BRepPrim_OneAxis::BottomFace`/`TopFace` 建」不成立 —— 工具的 4 个面（2 柱面 + 2 圆环面）与体积都精确。(2) `bop_split_faces_occt.rs:145-153` 的缝边分支（`BOPTools_AlgoTools3D::DoSplitSEAMOnFace`，`_2.cxx:429-446`）**没有**报 `BOPAlgo_AlertUnableToMakeClosedEdgeOnFace`：在该失败路径上加临时探针后跑失败用例，零输出 ⇒ 源边缝加倍这条已接线，缺口在别处（周期面被闭合剖切曲线切开后的 Loops/Areas 构造）。"
+      - "**旁支：本包发现但未修**。`revolve_profile_about(profile, _steps, axis)` 的 `_steps` 形参在改用 `make_revol` 后完全无用（`make_revol` 不切分整周面），若将来切到解析工具需要同时处理该签名；本包已回退 `features.rs`，故该形参维持 P039 现状。"
+    next_task_if_not_complete: "下一片候选：P041 Scout + Judge —— 沿 `BOPAlgo_BuilderFace` / `BOPAlgo_Builder::BuildSplitFaces` 的 Loops/Areas 构造，定位「周期面被一条整体落在面内的闭合剖切曲线切开」这一步（`BOPAlgo_BuilderFace.cxx` 的 `PerformLoops`/`PerformAreas` + `BRepTools_WireExplorer`/`BOPTools_AlgoTools3D::DoSplitSEAMOnFace` 的调用点）在端口里缺了哪一段；判据仍是 A12(2b)：「解析旋转体工具能被 `BOPAlgo_BOP` 合并 ⇒ 删掉 `revolve_profile_about` 的车削网格夹具」。已复核过的候选片另有 `BRepCheck_Edge::InContext`/`Tolerance`/`CheckPolygonOnTriangulation`（需先有 `BRepLib_ValidateEdge`），但 `brep_check.rs` 在仓内无消费者，优先级低。"
   - id: P039
     task: T005
     commit: "46ab36ec fix(topo): sweep_revolve adopts the BRepPrim_OneAxis lateral wire, seam and pcurve conventions (BRepPrim_OneAxis.cxx:388-439, 660-684; T-169)"

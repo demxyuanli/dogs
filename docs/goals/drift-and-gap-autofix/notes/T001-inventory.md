@@ -908,3 +908,38 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   must look at the `BOPAlgo` side. This pass verified rather than re-pinned `PARITY` once more:
   t039's `gates-raw.txt` is the same 4/4 with the same 23 ratios, and its 15 `ok` lines are
   word-identical to t168's, so the canvas `T0M` row is unchanged.
+  P040 / T-170 (`229a667a`) did the measurement pass an eleventh time the same day, again with no
+  measurement change (no files added to `src/**`, no `UNPORTED` line removed net): its card, the
+  gate-source comments repointed to `.target-gate/t040`, the `Stat` still at 0 registered code
+  items, and the "跟踪" paragraph plus the T999 callout extended to P027..P040. P040 took the
+  line the P039 card handed over -- "locate on the `BOPAlgo` side why the analytic revolve tool
+  cannot be combined" -- and **narrowed it to the BOP split step** with a control group instead of
+  another attribution guess. Tool side first: `brep_sweep::make_revol` (= `BRepSweep_Revol`) for
+  the groove ring profile measures 4 face / 6 edge / 4 vertex, volume `3.342654583419527` =
+  pi(1.3^2-0.6^2)*0.8, signed volume positive, so the P039 guess "the horizontal cap faces do not
+  follow `BRepPrim_OneAxis::BottomFace`/`TopFace`" is falsified. Two `brep_sweep` control-flow gaps
+  were landed on the same pass: `BRep_Tool::Parameter(V, E)` (`BRep_Tool.cxx:1340-1397`; the
+  parameter is chosen by the orientation of the vertex **as stored in the edge**, found via
+  `TopExp_Iterator`/`IsSame`, with `rev` from the edge orientation, not by the caller's handle
+  orientation) and `BRepSweep_Rotation::DirectSolid`'s UV box (`BRepSweep_Rotation.cxx:635-676`
+  constructs `BRepAdaptor_Surface(TopoDS::Face(aGenS))` whose constructor defaults to
+  `Restriction = true` and runs `BRepTools::UVBounds`, `BRepAdaptor_Surface.cxx:57-81`; a plane's
+  natural range is infinite, so sampling it puts the midpoint off the face and flips the solid's
+  orientation). Then the measurement: `boolean` on the analytic cylinder (r=1, h=3) `Cut` the
+  analytic ring returns 6 faces with `result shell is not closed` and volume `6.936636579126224`
+  (= 3pi - pi*0.792) -- the two wall pieces (2pi, 2pi*1.2) and one annulus (pi*0.64) are right, the
+  tool's inner cylinder r=0.6 is missing and the other annulus measures `4.272566008882088`; the
+  same Cut through the lathe tool gives a closed 10-face shell that removes only `0.0519` (should
+  be 1.6085); the faceted mesh target cut by the analytic ring removes only `0.3715`. The control
+  group "analytic cylinder `Cut` box (x,y in +-1.3, z in -1..1.8, so no coplanar overlap at z=0)"
+  returns `3.7699111843077335` = pi*1.2 exactly, 3 faces, closed -- so the Cut path itself is fine.
+  Conclusion: the mismatch tracks **a whole-period (seamed) face that must be split**, not whether
+  the target is an analytic cylinder or the tool has exact cylindrical/planar faces; the existing
+  baseline is green only because both operands are pre-faceted (the lathe tool cuts each ring into
+  `steps` arcs, `faceted_cyl` is itself a mesh). One more guess was excluded: the seam branch at
+  `bop_split_faces_occt.rs:145-153` (`BOPTools_AlgoTools3D::DoSplitSEAMOnFace`,
+  `BOPAlgo_Builder_2.cxx:429-446`) does **not** raise
+  `BOPAlgo_AlertUnableToMakeClosedEdgeOnFace` for the failing pair (a temporary probe on that
+  failure path produced no output), so the source-edge seam doubling is wired and the gap sits
+  later, in the Loops/Areas construction of a periodic face cut by a closed section curve. Gates
+  word-identical to P039 (`.target-gate/t040/`).
