@@ -576,6 +576,24 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
    (`cxx:934-959`), and `ReparamCurve2d::bspline_copy2d` is gone (the wrapper exists only where
    `Geom2dConvert::CurveToBSplineCurve` declined, `Geom2dConvert.cxx:442-444`, so the trait default
    `None` is the right answer). Remaining pick: the missing data-driven STEP-write harness.
+   **The `B8-intana` plane arm closed as P027 / T-157, and the P026 T999 verdict on this file was
+   wrong**: the earlier "B8-intana fully consumed" note (item 6 above) only covered the cone/cone and
+   cylinder families -- the `Perform(gp_Pln, gp_Pln)` arm of `IntAna_QuadQuadGeo` and the whole
+   `IntAna_Int3Pln::Perform` were never diffed against the cxx. Three invented things came out:
+   `plane_plane_line`'s least-norm origin formula `p = (d1*(n2 x v) + d2*(v x n1))/|v|^2` with a
+   `v2 < 1e-20` cross-product gate (cxx has neither; `IntAna_QuadQuadGeo.cxx:423-445` is an
+   `aEps = 1.e-16` denominator clamp plus two normal projections averaged), the whole
+   `cxx:449-508` small-angle origin refinement (`aMVD < aTreshAng = 2.e-6` and
+   `|aDist1| > aTreshDist = 1.e-12 || |aDist2| > aTreshDist` -> two
+   `IntAna_IntConicQuad::Perform(gp_Lin, gp_Pln, TolAng, Tol)` solves), and `solve3`'s hand-rolled
+   partial-pivot elimination with a `1e-14` pivot gate where `IntAna_Int3Pln::Perform` uses
+   `math_Gauss Resol(M, gp::Resolution())` (`IntAna_Int3Pln.cxx:51`) -- plus a self-invented
+   `Intersect3Pln::Line` collinear-plane arm (`v2 < 1e-20` + `|a*q + d| < 1e-9`) that OCCT does not
+   have, since `IntAna_Int3Pln.hxx:29-70` is only point/empty. All four are now on the cxx path; the
+   registered leftovers are the `Epsilon(radius)` tangency test in `quadric_quadric_plane_sphere`
+   (`IntAna_QuadQuadGeo.cxx:1000`) and the sphere/sphere `0.01 * CONFUSION` circle test
+   (`cxx:2034-2163`). Lesson recorded for the T999 walk: an inventory line for `IntAna_QuadQuadGeo`
+   must be checked **per arm**, not per file.
 5. ~~**B4** `face_sample_point` -> edge-first + `PointInFace`. Touches BOP solids.~~
    **DONE 2026-10-15 (T-135, package P005).**
 

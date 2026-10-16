@@ -8,7 +8,7 @@ goal:
   slug: "drift-and-gap-autofix"
   kind: audit # specific | open_ended | existing_plan | recovery | audit
   tranche: "Autonomously enumerate the live scope-drift items and unported gaps in occt-* crates, fix each only where the OCCT .cxx has an equivalent branch, verify against the four existing baselines, commit per package, and immediately pick the next one until the inventory is exhausted."
-  status: done # active | blocked | done -- set by the T999 Judge receipt (full_outcome_complete: true)
+  status: active # active | blocked | done -- set by the T999 Judge receipt (full_outcome_complete: true). Reopened 2026-10-16: package P027 found a live invented-threshold line the T999 inventory walk had cleared (IntAna_QuadQuadGeo Pln/Pln + IntAna_Int3Pln), so the `full_outcome_complete: true` receipt at HEAD fbd59532 no longer holds; T999 must re-run at the new HEAD.
   oracle:
     signal: "cargo check 0 errors; occt-topo --lib >= 1251/0; step_obj_gates 4/4 with 23 area ratios 1.0000; export_data_obj 15/15 with per-model vertex/face counts bit-identical to data/occ/occ-*.obj."
     cadence: "narrow gate per Worker package; step_obj_gates + export_data_obj every 3-5 packages or whenever BOP / meshing / STEP-read shared pipeline is touched; full four-gate run at final audit."
@@ -74,7 +74,7 @@ visual_board:
     url: "http://goalbuddy.localhost:41737/drift-and-gap-autofix/"
     command: "npx goalbuddy board docs/goals/drift-and-gap-autofix"
 
-active_task: T999
+active_task: T005
 
 packages:
   # One entry per closed, verified, committed package. Written by T005 (PM).
@@ -82,6 +82,32 @@ packages:
   # P015 (T-145, 2da4eaee) are closed and committed but are recorded only in
   # specs/_tasks.md and the drift canvas CYCLES array -- their gate readings are the
   # same four baselines as P016/P017. Not back-filled here to avoid inventing receipts.
+  - id: P027
+    task: T005
+    commit: "76893533 occt-geom: port the plane/plane arm of IntAna_QuadQuadGeo and IntAna_Int3Pln::Perform (IntAna_QuadQuadGeo.cxx:389-511, IntAna_Int3Pln.cxx:40-64; T-157)"
+    title: "`IntAna_QuadQuadGeo` 平面/平面臂与 `IntAna_Int3Pln::Perform` 的忠实化：删除自创最小范数原点解 + `1e-20` 叉积门，补 `aEps=1e-16` 分母投影与 `aTreshAng=2e-6` 小角原点重解；三平面求解改走 `math_Gauss(M, gp::Resolution())`（`IntAna_QuadQuadGeo.cxx:389-511`、`IntAna_Int3Pln.cxx:40-64`；T-157）"
+    files:
+      - "crates/occt-geom/src/intana/analytic_intersections.rs"
+      - "crates/occt-geom/src/intana/line_torus.rs"
+      - "specs/_tasks.md"
+      - "specs/_audit/occt-geom.md"
+      - "specs/_audit/_index.md"
+      - "specs/occt-scope-drift.canvas.tsx"
+      - "docs/goals/drift-and-gap-autofix/notes/T001-inventory.md"
+      - "docs/goals/drift-and-gap-autofix/state.yaml"
+    closed_inventory_lines:
+      - "`IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln, TolAng, Tol)`（`IntAna_QuadQuadGeo.cxx:389-511`）的两处自创：其一，交点原点用 cxx 里不存在的最小范数公式 `p = (d1·(n2×v) + d2·(v×n1))/|v|²`（`v = n1×n2`）配合 `v2 < 1e-20` 的叉积长度门；其二，`cxx:449-508` 的小角原点重解整段未移植。现按 cxx 逐行落地：`denom = A1*A2 + B1*B2 + C1*C2`、`ddenom = 1 - denom²`、`denom = (|ddenom| <= 1e-16) ? 1e-16 : ddenom`（`aEps = 1.e-16`，`cxx:423-428`），`par1 = dist1/denom`、`par2 = -dist2/denom`（`cxx:430-431`），两法向投影 `inter1 = n1×vd`、`inter2 = n2×vd` 求和取半得 `pt1`（`cxx:433-444`），`dir1 = gp_Dir(vd)`（`cxx:445`）；`aMVD < aTreshAng = 2.e-6` 且 `|aDist1| > aTreshDist = 1.e-12 || |aDist2| > aTreshDist` 时（`cxx:460-470`），用两次 `IntAna_IntConicQuad` 直线/平面求解重算原点 —— `aL1 = gp_Lin(pt1, gp_Dir(aVN1))` 对 P1（`cxx:481-487`），`aDL2 = gp_Dir(dir1.Crossed(aDN1))`、`aL2 = gp_Lin(aPnt1, aDL2)` 对 P2（`cxx:489-506`），`!IsDone()` 或 `IsParallel()` 时 cxx 直接 `return`（`done` 保持 false），本仓对应 `None`。`plane_plane_line` 因此多收 `(tol_ang, tol)` 两个形参：`quadric_quadric_planes` 传自身实参；`cone_cone_common_apex` 内嵌套的平面/平面求解按 `cxx:1709` 传 `(Tol, Tol)`，失败即 `cxx:1710-1713` 的 `IntAna_NoGeometricSolution` ⇒ `None`。`IntAna_IntConicQuad::Perform(L, P, Tolang, Tol)` 即 `IntAna_IntConicQuad.hxx:104-108` 的五参重载取 `Len = 0`。"
+      - "`IntAna_Int3Pln::Perform(P1, P2, P3)`（`IntAna_Int3Pln.cxx:40-64`）的自创求解器：`solve3` 原先是手写部分选主元消元加 `1e-14` 主元门，cxx 是 `math_Gauss Resol(M, gp::Resolution())`（`cxx:51`）—— 选主元按行缩放 `vv(i)=1/big`（`LU_Decompose` 的 scaled partial pivoting），奇异性判据是行最大元 `<= TINY` 与 `|a(j,j)| <= TINY`，`TINY = gp::Resolution() = REAL_SMALL`。现 `solve3(m, d)` 组装 `M(1..3,1..3)` 与 `V(1..3)`（`cxx:44-46`）后调已移植的 `occt_math::Gauss::new(&M, REAL_SMALL)`，`!IsDone()` ⇒ `empt = true` ⇒ `None`（`cxx:53-56`），否则 `V = -V` 再 `Resol.Solve(V)`（`cxx:58-61`）；`1e-14` 门消失。"
+      - "自创的三平面共线分支：`three_planes_intersect` 原先在 3x3 系统奇异后逐对尝试 `plane_plane_line`，用 `v2 < 1e-20` 与 `|a·q + d| < 1e-9` 判「两平面交线与第三平面共面」并返回 `Intersect3Pln::Line`。OCCT 的 `IntAna_Int3Pln` 没有这条分支（`IsEmpty()` 只有点/空两态，`IntAna_Int3Pln.hxx:29-70`），故 `Line` 变体删除、`three_planes_intersect` 只剩 `Point`/`NoResult`，由 `solve3` 的 `math_Gauss` 结果直接决定。该函数无生产调用方（仅 `intana/tests.rs` 两条既有断言，测试点与平行两例）。"
+    gates:
+      check: "five crates `cargo check --offline --all-targets` 0 errors (occt-core 12 / occt-math 30 / occt-geom 105 / occt-geom2d 82 / occt-topo 413 warnings, the T002 counts), `.target-gate/t027/check.txt`"
+      lib: "occt-geom 143 / 0; occt-topo 1251 / 0 (= baseline, monotonic), `.target-gate/t027/lib.txt`"
+      step_obj_gates: "4 / 4 (251.49s via the test binary on the final code); the 23 area ratios in `.target-gate/t027/gates-raw.txt` are bit-identical to `.target-gate/t026/gates-raw.txt` (20x1.0000 + Shape-2 0.9999 + T0M 1.0017 + TDB 1.0015)"
+      export_data_obj: "15 / 15 ok, per-model v/f and bbox bit-identical to the T002 table (`.target-gate/t027/export-obj.txt`); `-- data/occ data` also 23 / 23 ok with the same v/f as t026"
+    side_findings:
+      - "Registered, not fixed (the next slice): `quadric_quadric_plane_sphere` (`IntAna_QuadQuadGeo.cxx:980-1050`) tests the tangency with `(dist.abs() - radius).abs() < radius.abs() * f64::EPSILON`, while the cxx tests `std::abs(std::abs(dist) - radius) < Epsilon(radius)` (`cxx:1000`). `Epsilon(x)` is `nextafter(x, +inf) - x` (`Standard_Real.hxx:242-246`), already ported as `occt_core::precision::epsilon`; `|x| * DBL_EPSILON` is a different number everywhere except `|x|` in `[1,2)`. The sphere/sphere arm (`cxx:2034-2163`) carries a `0.01 * CONFUSION` circle epsilon that also needs a cxx check."
+      - "The T999 receipt at HEAD `fbd59532` had cleared this file: its 'D. Banned constructs' walk recorded zero invented-threshold hits and 'E/F' recorded the B8-intana slice as fully consumed after P016. Both statements were about the cone/cone and cylinder arms only; the Pln/Pln and Int3Pln arms were never diffed against the cxx. Recorded so the next audit walk covers every arm of `IntAna_QuadQuadGeo`, not just the ones a prior package had touched."
+      - "The `cxx:463-508` refinement's `IsParallel()` exit is reachable, not dead: entering that arm means `aMVD < 2.e-6`, and the second line's direction `aDL2` is perpendicular to `n2` up to `~aMVD`, so a caller passing `TolAng >= aMVD` (e.g. the BOP pair table's `1e-8`) makes `IntAna_IntConicQuad` report parallel and OCCT leaves `done = false`. The port keeps that: `None`, not a silently unrefined line."
   - id: P026
     task: T005
     commit: "fbd59532 occt-topo: unify the GeomLib::SameRange conversion tails, drop the duplicate arms (GeomLib.cxx:842-970; ReparamCurve2d SameRange line / T-156)"
@@ -985,6 +1011,8 @@ tasks:
         - "No package in this tranche based a gate reading on a newly written test; all four baselines are the frozen T002 readings re-run per package, and the three baseline assertions that did change (P021's sphere/plane readings) were rebased onto an instrumentation reading (`occt_probe --ssx`), not onto a new test."
         - "Every package receipt records the warnings count alongside the error count so a new warning cannot hide behind '0 errors'."
       next_task_if_not_complete: "None. The one registered line (STEP-write harness) is out of tranche scope; picking it up would require a baseline that does not exist, or a new test, which the tranche forbids."
+      superseded_by:
+        - "P027 (T-157 / commit 76893533, 2026-10-16) partly falsified this receipt. The `inventory_walk` line 'B8-intana (`IntAna_QuadQuadGeo`) ... closed' only covered the cone/cone and cylinder families: `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln)` and `IntAna_Int3Pln::Perform` were never diffed against the cxx. P027 found three invented constructs there (the least-norm origin `p = (d1*(n2 x v) + d2*(v x n1))/|v|^2` with a `v2 < 1e-20` cross-product gate, the missing `IntAna_QuadQuadGeo.cxx:449-508` small-angle origin refinement, and `solve3`'s hand-rolled `1e-14` pivot elimination) plus a self-invented `Intersect3Pln::Line` collinear arm, and ported them. The board reopened as `active_task: T005` / `goal.status: active`. Registered leftovers: the `Epsilon(radius)` tangency test in `quadric_quadric_plane_sphere` (`IntAna_QuadQuadGeo.cxx:1000`) and the sphere/sphere `0.01 * CONFUSION` circle test (`cxx:2034-2163`). Lesson: an inventory line for a multi-arm class (`IntAna_QuadQuadGeo` has a dozen `Perform` overloads) must be verified per arm, not per file."
     objective: "Audit whether the full original outcome is complete for this tranche."
     inputs:
       - "All done task receipts"

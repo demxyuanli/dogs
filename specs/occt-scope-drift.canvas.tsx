@@ -309,8 +309,9 @@ const DOCDRIFT = [
   },
 ];
 
-// 看板门禁（读数日期 2026-10-16；G-check / G-lib / G-gates / G-export 覆盖到 P026 已提交工作树 `fbd59532`
-// —— 即 T999 收口审计所对的冻结 HEAD —— G-fuse / G-phase / G-boss / G-iges 为 T-130..T-133 轮读数，其后改动不触及其路径）
+// 看板门禁（读数日期 2026-10-16；G-check / G-lib / G-gates / G-export 覆盖到 P027 已提交工作树 `76893533`
+// —— G-check / G-lib 走 P027 门禁日志 `.target-gate/t027/`，G-gates / G-export 为 P026 冻结 HEAD 读数、P027 重跑其判词不变 ——
+// G-fuse / G-phase / G-boss / G-iges 为 T-130..T-133 轮读数，其后改动不触及其路径）
 const GATES = [
   { id: "G-check", name: "五 crate 编译", base: "exit 0", now: "exit 0", tone: "success" as const },
   { id: "G-lib", name: "topo 单测 --lib", base: "1276 / 0", now: "1251 / 0", tone: "success" as const },
@@ -323,7 +324,7 @@ const GATES = [
   { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "283·210·143·72", tone: "success" as const },
 ];
 
-// 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`；收口前 active_task 恒为 T005，2026-10-16 随 T999 收口后为 T999 / `goal.status: done`；每个包 = 一个已核实并提交的切片）
+// 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`；收口前 active_task 恒为 T005，2026-10-16 随 T999 收口后曾为 T999 / `goal.status: done`，同日后由 P027 复核发现漏审臂而重开为 T005 / `goal.status: active`；每个包 = 一个已核实并提交的切片）
 const CYCLES = [
   {
     pkg: "P012",
@@ -431,18 +432,32 @@ const CYCLES = [
     state: "✅ 已收口（2026-10-16，包 P026，commit `fbd59532`）。判词先行：该文件此前已委托曲线 kind 且 `reparam_curve2d` 已返回具体 `Geom2dBSplineCurve`，故**不是** stale-closed —— 真实缺口是两份转换尾副本的重复与漂移。<br>(1) 两份合并为唯一忠实件 `trimmed_reparam_bspline`（`GeomLib.cxx:912-921` + `:962-968`：`Geom2dTrimmedCurve(CurvePtr, U1, U2)` → `Geom2dConvert::CurveToBSplineCurve` → 对 `BS->Knots()` 做 `BSplCLib::Reparametrize(RequestedFirst, RequestedLast, Knots)` → `BS->SetKnots(Knots)`）与 `same_range_window`（`cxx:934-959`：`aCCheck` 周期判据 `:929-932`、周期窗 `:936-938` / 回落 `:940-943`、`Udeb/Ufin` 夹取 `:948-949`、退化回落 `:950-957`）。<br>(2) 删除的重复件：`same_range_unequal_line` / `same_range_unequal_other` / `trim_to_reparam_bspline` / `line_trim_to_reparam_bspline` / `unequal_trim_window`（cxx 的不等跨臂对直线、圆锥、B 样条走同一条路，没有判型分支），以及 `ReparamCurve2d::bspline_copy2d`（wrapper 只在 `Geom2dConvert::CurveToBSplineCurve` 拒绝时存在，`Geom2dConvert.cxx:442-444`，故 trait 默认 `None` 才是正确答案）。`pcurve_range.rs` 只保留 cxx 的分支选择（早退 `cxx:854-859`、等跨判据 `:862`、直线 `:864-871`、圆 `:872-889`、裁剪递归 `:890-901`、一般臂 `:908-922`、不等跨 `:924-969`），`wire_fix/mod.rs` 的未用 `reparameterize` 导入与 `lacking.rs` 指向已删件的注释同步清理，全部引用行号按 grep 物理行号订正。<br>(3) 门禁：`cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets` **0 error / 413 warnings**、lib **0 error / 375 warnings**（与基线同数）；`occt-topo --lib` **1251/0**（等于基线，单调不降）；`step_obj_gates` **4/4**（118.1s，23 个模型面积比 1.0000，Shape-2 0.9999 / T0M 1.0017 / TDB 1.0015 均在既有容差内）；`export_data_obj` **15/15 ok** 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。未新增测试、未改既有断言。",
   },
   {
+    pkg: "P027",
+    task: "T-157",
+    commit: "76893533",
+    scope: "B8-intana 的**平面/平面臂**（P026 的 T999 只核了锥/锥与柱族臂，平面臂与 `IntAna_Int3Pln` 臂从未与 cxx 对拍）：`IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln, TolAng, Tol)`（`IntAna_QuadQuadGeo.cxx:389-511`）与 `IntAna_Int3Pln::Perform`（`IntAna_Int3Pln.cxx:40-64`）",
+    state: "✅ 已收口（2026-10-16，包 P027，commit `76893533`）。三处自创 + 一段未移植：<br>(1) `plane_plane_line`（`analytic_intersections.rs:97`）的交点原点用 cxx 中不存在的最小范数公式 `p = (d1·(n2×v) + d2·(v×n1))/|v|²`（`v = n1×n2`）配 `v2 < 1e-20` 叉积长度门 —— cxx 是 `aEps = 1.e-16` 的分母钳制 `denom = (|1 - (A1A2+B1B2+C1C2)²| <= aEps) ? aEps : ddenom` 加两次法向投影 `inter1 = aVN1×vd` / `inter2 = aVN2×vd` 的中点（`cxx:423-445`），落地为常量 `A_EPS`（`:156`）。<br>(2) `cxx:449-508` 的**小角原点重解整段未移植**：`aMVD < aTreshAng = 2.e-6` 且 `|aDist1| > aTreshDist = 1.e-12 || |aDist2| > aTreshDist`（常量 `A_TRESH_ANG` `:158` / `A_TRESH_DIST` `:160`）时用两次 `IntAna_IntConicQuad::Perform(gp_Lin, gp_Pln, TolAng, Tol)` 重算 `pt1`（`aL1 = gp_Lin(pt1, gp_Dir(aVN1))` 对 P1 `cxx:477-487`；`aDL2 = gp_Dir(dir1.Crossed(aDN1))`、`aL2 = gp_Lin(aPnt1, aDL2)` 对 P2 `cxx:489-506`）；`!IsDone()` 或 `IsParallel()` 时 cxx 直接 `return`（`done = false` ⇒ 本仓 `None`）。<br>(3) `solve3`（`:71`）是手写部分选主元消元加 `1e-14` 主元门，cxx 走 `math_Gauss Resol(M, gp::Resolution())`（`IntAna_Int3Pln.cxx:51`）—— 现调已移植的 `occt_math::Gauss::new(&M, REAL_SMALL)` 并按 `cxx:53-61` 判 done / `V = -V` / `Solve`。<br>(4) 自创的 `Intersect3Pln::Line` 三平面共线分支（`v2 < 1e-20` + `|a·q + d| < 1e-9`）删除 —— `IntAna_Int3Pln.hxx:29-70` 只有点/空两态，`three_planes_intersect` 只剩 `Point`/`NoResult`。<br>调用面：`plane_plane_line` 多收 `(tol_ang, tol)`，`cone_cone_common_apex` 内嵌套平面/平面求解按 `cxx:1709` 传 `(Tol, Tol)`。<br>门禁：五 crate `--all-targets` 0 error；`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0；`step_obj_gates` 4/4（251.49s，23 面积比与 P026 逐位一致）；`export_data_obj` 15/15 逐位一致；未新增测试。<br>旁支登记（未改）：`quadric_quadric_plane_sphere`（`:266`）的相切判据 `(dist.abs() - radius).abs() < radius.abs() * f64::EPSILON` 与 cxx 的 `std::abs(std::abs(dist) - radius) < Epsilon(radius)`（`IntAna_QuadQuadGeo.cxx:1000`）不符；球/球臂（`cxx:2034-2163`）的 `0.01 * CONFUSION` 圆判定待核。",
+  },
+  {
     pkg: "T999",
     task: "Judge",
     commit: "7b164e34",
     scope: "收口审计：T001 清单逐行对账（每个登记行要么有包可指、要么有记录在案的结论），四条门禁在冻结 HEAD 上重跑（五 crate `cargo check --all-targets`、`occt-topo --lib`、`step_obj_gates`、`export_data_obj`）",
-    state: "✅ 结论 `full_outcome_complete: true`（`docs/goals/drift-and-gap-autofix/state.yaml` T999 收据）：B1..B8、B6a-h、B7-writer 两族、B8-intana、`surface_fit`、`B7-mesh_to_brep`、`ReparamCurve2d` 全部有包可指；冻结 HEAD `fbd59532` 上 `--all-targets` 0 error、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（118.02s）、`export_data_obj` 15/15 逐位一致；工作树在收口提交后为 clean。收据同时记明两条诚实边界：本 tranche 无一条门禁读数来自新写测试（四道基线都是 T002 冻结读数逐包重跑），唯一改动过的三条基线断言是以 `occt_probe --ssx` 实测值重定（非新测试）",
+    state: "✅ 结论 `full_outcome_complete: true`（`docs/goals/drift-and-gap-autofix/state.yaml` T999 收据）：B1..B8、B6a-h、B7-writer 两族、B8-intana、`surface_fit`、`B7-mesh_to_brep`、`ReparamCurve2d` 全部有包可指；冻结 HEAD `fbd59532` 上 `--all-targets` 0 error、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（118.02s）、`export_data_obj` 15/15 逐位一致；工作树在收口提交后为 clean。收据同时记明两条诚实边界：本 tranche 无一条门禁读数来自新写测试（四道基线都是 T002 冻结读数逐包重跑），唯一改动过的三条基线断言是以 `occt_probe --ssx` 实测值重定（非新测试）。<br>**该收据随后被 P027 部分推翻（2026-10-16）**：其「B8-intana 全部有包可指」只覆盖锥/锥与柱族臂 —— `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln)` 与 `IntAna_Int3Pln::Perform` 两臂从未与 cxx 对拍，P027 在其中查出三处自创 + 一段未移植（最小范数原点解 + `1e-20` 叉积门、`cxx:449-508` 小角重解缺失、`solve3` 的 `1e-14` 手写消元）并收口。故本 tranche 以 `active_task: T005` / `goal.status: active` 重开；教训：`IntAna_QuadQuadGeo` 这类多臂类的清单行必须**逐臂**核对，不能按文件记账。",
   },
   {
     pkg: "登记项",
     task: "—",
     commit: "—",
     scope: "缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness：`data/occ/` 只有读侧 `step_obj_gates` 口径，写侧（`StepToGeom_Make*` / `GeomToStep_Make*`）没有可对拍的既有基线",
-    state: "⬜ 保持登记（T999 裁定「本 tranche 范围外」）：无既有基线可对拍且本 tranche 不允许新写测试，故不改代码；它与 P010/P011/P012 的写侧缺陷不同 —— 那三条落在读侧共享管线上，能由既有门禁判定，本项不能。推进需先裁定「无基线不可对齐」还是另找既有写侧口径。代码侧登记项至此清零",
+    state: "⬜ 保持登记（T999 裁定「本 tranche 范围外」）：无既有基线可对拍且本 tranche 不允许新写测试，故不改代码；它与 P010/P011/P012 的写侧缺陷不同 —— 那三条落在读侧共享管线上，能由既有门禁判定，本项不能。推进需先裁定「无基线不可对齐」还是另找既有写侧口径。代码侧登记项在 P026 收口时曾清零，**P027 复核后又登记两条**（见次行）。",
+  },
+  {
+    pkg: "登记项",
+    task: "—",
+    commit: "—",
+    scope: "P027 旁支（`IntAna_QuadQuadGeo` 剩余两臂，均已登记未改）：(a) `quadric_quadric_plane_sphere` 的相切判据用 `(dist.abs() - radius).abs() < radius.abs() * f64::EPSILON`，cxx 是 `std::abs(std::abs(dist) - radius) < Epsilon(radius)`（`IntAna_QuadQuadGeo.cxx:1000`；`Epsilon(x) = nextafter(x, +inf) - x`，`Standard_Real.hxx:242-246`，已移植为 `occt_core::precision::epsilon`）；(b) 球/球臂 `cxx:2034-2163` 的 `0.01 * CONFUSION` 圆判定待核",
+    state: "⬜ 保持登记（P027 旁支，未改）：两者都有同分支 cxx 可依，但属下一片；本 tranche 的下一步由 T005 滚动推进。",
   },
 ];
 
@@ -599,7 +614,7 @@ export default function OcctScopeDrift() {
 
       <H3>2.6 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`）</H3>
       <Text size="small" tone="tertiary">
-        `docs/goals/drift-and-gap-autofix/state.yaml` 于 2026-10-16 随 T999 收口：`goal.status: done`、`active_task: T999`、T999 收据 `full_outcome_complete: true`（唯一登记项为缺失的 STEP 写侧 harness，裁定为本 tranche 范围外）。收口前 `active_task` 恒为 T005（PM 滚动推进）；每个包 = 一个已跑现基线核实并单独提交的切片，提交信息点名 `.cxx` 文件与行号范围。
+        `docs/goals/drift-and-gap-autofix/state.yaml` 于 2026-10-16 随 T999 收口：`goal.status: done`、`active_task: T999`、T999 收据 `full_outcome_complete: true`（唯一登记项为缺失的 STEP 写侧 harness，裁定为本 tranche 范围外）。**同日的 P027 复核推翻了该收据对 `B8-intana` 的记账**：`IntAna_QuadQuadGeo` 的平面/平面臂与 `IntAna_Int3Pln` 臂从未与 cxx 对拍，P027 在其间查出三处自创 + 一段未移植并收口，故 board 以 `active_task: T005` / `goal.status: active` 重开（T005 为 PM 滚动推进；每个包 = 一个已跑现基线核实并单独提交的切片，提交信息点名 `.cxx` 文件与行号范围）。
       </Text>
       <Table
         headers={["包", "任务", "提交", "切片范围", "状态"]}
@@ -615,7 +630,7 @@ export default function OcctScopeDrift() {
       <Row gap={16} wrap>
         <Stat value="13.8%" label="全库行数覆盖" />
         <Stat value="24.2%" label="CAD 内核行数覆盖" tone="info" />
-        <Stat value="1 处" label="登记未收代码项（STEP 写侧 harness）" tone="warning" />
+        <Stat value="2 处" label="登记未收代码项（STEP 写侧 harness + P027 两臂旁支）" tone="warning" />
         <Stat value="1 处" label="留档待办（`topo-rest.md` 9/10/15/17 的 live 标注）" tone="warning" />
       </Row>
       <Stack gap={6}>
@@ -624,7 +639,7 @@ export default function OcctScopeDrift() {
           在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.4 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地、P024 `BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地并接线 `offset_wire_3d`、P025 `mesh_to_brep` 的 `1e-9` 归并格 / `Vertex` 容差 0.0 / 自创三角形法向换 `BRepBuilderAPI_MakeShapeOnMesh` 忠实件、P026 `GeomLib::SameRange` 转换尾两份副本合并为唯一 `trimmed_reparam_bspline`）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，`surface_fit` 一项随 P024 收口（真实对应件为 `BRepLib_FindSurface`，非 `GeomLib::IsPlanarSurface`），B7-mesh_to_brep 一项随 P025 收口、`ReparamCurve2d` 的 `SameRange` 一项随 P026 收口；2.6 末两行以 T999 收据（`full_outcome_complete: true`）与那一条保持登记的 STEP 写侧 harness 收口本 tranche，`state.yaml` 的 `goal.status` 已置 `done`（登记项只剩该写侧 harness：无既有基线，只登记，不新写基线）。
+          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地、P024 `BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地并接线 `offset_wire_3d`、P025 `mesh_to_brep` 的 `1e-9` 归并格 / `Vertex` 容差 0.0 / 自创三角形法向换 `BRepBuilderAPI_MakeShapeOnMesh` 忠实件、P026 `GeomLib::SameRange` 转换尾两份副本合并为唯一 `trimmed_reparam_bspline`）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，`surface_fit` 一项随 P024 收口（真实对应件为 `BRepLib_FindSurface`，非 `GeomLib::IsPlanarSurface`），B7-mesh_to_brep 一项随 P025 收口、`ReparamCurve2d` 的 `SameRange` 一项随 P026 收口；P026 的 T999 收据（`full_outcome_complete: true`）与那一条保持登记的 STEP 写侧 harness 曾收口本 tranche（`state.yaml` 的 `goal.status` 置 `done`），但同日 **P027 的复核推翻了对 `B8-intana` 的记账**：`IntAna_QuadQuadGeo` 的多臂性质导致平面/平面臂与 `IntAna_Int3Pln` 臂漏审，P027 在其间收口三处自创 + 一段未移植（最小范数原点解 + `1e-20` 叉积门、`cxx:449-508` 小角重解缺失、`solve3` 的 `1e-14` 手写消元、自创 `Intersect3Pln::Line`），board 随之重开为 `active_task: T005` / `goal.status: active`（登记项：STEP 写侧 harness + P027 登记的 `plane_sphere` `Epsilon(radius)` 与球/球 `0.01 * CONFUSION` 两臂）。
         </Text>
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
@@ -651,6 +666,13 @@ export default function OcctScopeDrift() {
           `occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15 逐位一致），逐条对照 T001 清单后判定
           `full_outcome_complete: true`：B1..B8、B6a-h、B7-writer、B8-intana、`surface_fit`、`ReparamCurve2d` 全部有包可指。唯一仍登记的是缺失的
           `data/occ/*.st*` 驱动式 STEP 写侧 harness —— 写侧没有既有基线、本 tranche 不允许新写测试，故其结论是「本 tranche 范围外」（已登记，未静默丢弃）。
+          **该结论随后被 P027 部分推翻（2026-10-16，commit `76893533`）**：T999 对 `B8-intana` 的「有包可指」只覆盖锥/锥与柱族臂，
+          `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Pln)` 与 `IntAna_Int3Pln::Perform` 两臂从未与 cxx 对拍 —— P027 在其中查出三处自创 + 一段未移植
+          （最小范数原点解 `p = (d1·(n2×v) + d2·(v×n1))/|v|²` 配 `v2 < 1e-20` 门、`cxx:449-508` 小角原点重解缺失、`solve3` 的 `1e-14` 手写消元、
+          自创 `Intersect3Pln::Line` 共线分支）并按 cxx 全部收口（门禁：五 crate 0 error、`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、
+          `step_obj_gates` 4/4（251.49s，23 面积比与 P026 逐位一致）、`export_data_obj` 15/15 逐位一致）。board 随之重开为
+          `active_task: T005` / `goal.status: active`；新登记两条旁支（`plane_sphere` 的 `Epsilon(radius)` 相切判据、球/球臂的 `0.01 * CONFUSION` 圆判定），
+          并由 T005 滚动推进。教训已记入 2.6：`IntAna_QuadQuadGeo` 这类多臂类必须**逐臂**核对，不能按文件记账。
         </Text>
         面级残余的定位受「可信的 OCCT 面级预言机」未钉住所限：实测同一条 `--facestats 2.45132 0.349066`
         在探针上是 `72683 / 78464`，而冻结参考是 `73544 / 79977`、端口是 `73516 / 79926` —— 探针用的是
