@@ -2,7 +2,7 @@
 
 ## Objective
 
-对全仓残留的「范围/语义偏移」（`specs/occt-scope-drift.canvas.tsx`、`specs/_audit/*.md` 的 SEMANTIC
+对全仓残留的「范围/语义偏移」（`~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx`、`specs/_audit/*.md` 的 SEMANTIC
 族条目）与「未移植缺口」（代码里的 UNPORTED 标注、`specs/_audit/_index.md` §9.3、
 `specs/_a3n00_gap_analysis.md`）做长程自动修正：逐条回 OCCT `.cxx` 核实，只在 `.cxx` 有同等分支时
 改稿，改完跑既有基线复核，通过即提交，然后立即挑下一条，不停在「等指令」。
@@ -36,7 +36,7 @@
   4. 为了让看板"变干净"而把 live 条目直接改写成「已移植」而不改代码。
   5. 把"删掉自创件"当成"已对齐"——只有 `.cxx` 同等分支落地才算闭环。
 - Blind spots considered:
-  - `specs/occt-scope-drift.canvas.tsx` 的 `SEMANTIC` 条目 state 多为自述，须逐条重新核实真伪
+  - `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 的 `OPEN` / `DOCDRIFT` 条目 state 多为自述，须逐条重新核实真伪
     （本轮已发现两处标题本身有误的先例：`A19 余项`、`GCPnts_AbsComposite`）。
   - `step_obj_gates` 单次约 11-12 分钟，`export_data_obj` 约 15 个模型；两者是本 tranche 的慢门禁，
     不要每个小包都全跑，按包的影响面选跑。

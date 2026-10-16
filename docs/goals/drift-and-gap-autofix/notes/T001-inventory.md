@@ -1,7 +1,7 @@
 # T001 receipt — live drift/gap inventory (2026-10-15)
 
 Board: `docs/goals/drift-and-gap-autofix`.
-Method: four read-only Scout passes over `specs/occt-scope-drift.canvas.tsx` (SEMANTIC array),
+Method: four read-only Scout passes over `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` (SEMANTIC array),
 `specs/_audit/{_index,topo-rest,occt-geom,occt-core,bop-boolean,mesh-exchange}.md`,
 `specs/_tasks.md`, `specs/_a3n00_gap_analysis.md`, plus a full sweep of every `UNPORTED` /
 `not ported` marker in the five crates. Each line re-verified against `D:/source/OCCT-src/src`.
@@ -715,7 +715,7 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
 
 ## F. Side findings (report only, not fixed)
 
-- `specs/occt-scope-drift.canvas.tsx` SEMANTIC lines for topo-rest 1/4/6/11/18 and bop 1-4/7/8-10/16/17
+- `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` SEMANTIC lines for topo-rest 1/4/6/11/18 and bop 1-4/7/8-10/16/17
   are stale in the "LIVE" direction: the code is already closed. The canvas needs a pass.
   P030 / T-160 did the tracking half (added the P030 cycle card, refreshed the gate-source comment,
   the `Stat` label and the "跟踪" paragraph, and replaced the stale `_index.md` "§9 -> 2026-10-11"
@@ -738,8 +738,10 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `line_torus_intersect` (`line_torus.rs:922`) has no counterpart in `IntAna_IntLinTorus.cxx:104-108`
   (OCCT writes `thePoint[nbsolvalid]` in root-index order and never reorders), and the now-unused
   `Ordering` re-export in `intana/mod.rs` went with it. It also fixed four raw `<` characters and one
-  `{ done, points }` JSX expression in `specs/occt-scope-drift.canvas.tsx`, which had been breaking
-  the canvas build (`esbuild` reported "Expected identifier but found ="); the canvas now transpiles
+  `{ done, points }` JSX expression in the then in-repo board `specs/occt-scope-drift.canvas.tsx`
+  (retired and deleted 2026-10-16; the board is now the Cursor canvas
+  `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx`), which had been breaking
+  that board's build (`esbuild` reported "Expected identifier but found ="); the then-board transpiled
   clean and `tsc --noEmit` only reports the missing `dsh/canvas` / `react/jsx-runtime` modules.
   P035 / T-165 (`501fbdf7`) did the pass a sixth time the same day, with no measurement change (no
   files added, no `UNPORTED` line removed): its card, the gate-source comment repointed to

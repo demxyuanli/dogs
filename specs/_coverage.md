@@ -1,5 +1,5 @@
 > ⚠️ **仅历史（T-29 登记）**：本文件是 2026-09-09 的覆盖量测快照，行数/百分比与"未移植件"清单均已过期。
-> 现行有效基线与任务状态以 `docs/goals/drift-and-gap-autofix/state.yaml`（板真相）与 `specs/occt-scope-drift.canvas.tsx`（任务表 / 门禁表）为准；本文件不参与任何门禁。
+> 现行有效基线与任务状态以 `docs/goals/drift-and-gap-autofix/state.yaml`（板真相）与 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx`（任务表 / 门禁表）为准；本文件不参与任何门禁。
 >
 > 审查日期：**2026-09-09**（对照 `D:\source\OCCT-src` OCC 8.0.0；刷新量测）。
 > 前一版：2026-08-22。

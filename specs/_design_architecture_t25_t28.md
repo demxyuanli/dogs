@@ -114,7 +114,7 @@
    （`classify_faces_in_solid`、`connexity_blocks`、`face_state_in_solid`、`collect_all_candidate_faces`、`piece_bbox*`、`BopOp`）。
 4. 同批登记 `build_split_solids`（`bop_build_solids.rs:155`）与 `close_open_shells`（`:240`）的去留（调用者同为测试：`:666`/`:698`、`builder_solid.rs:452`）；
    保留则标 `UNPORTED` + 理由。
-5. 文档化：在 `algo_tools_face.rs`/`builder_solid.rs` 注释写清上述两条活链的 OCCT 行号；更新 `specs/_coverage.md:33` 与板表（`specs/occt-scope-drift.canvas.tsx` / `docs/goals/drift-and-gap-autofix/state.yaml`）对应行。
+5. 文档化：在 `algo_tools_face.rs`/`builder_solid.rs` 注释写清上述两条活链的 OCCT 行号；更新 `specs/_coverage.md:33` 与板表（`~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` / `docs/goals/drift-and-gap-autofix/state.yaml`）对应行。
 6. 验证：`cargo check` → 复跑步 1 的全部门禁（逐位一致）→ `graphify update .`；任一计数变动即回退并报告。
 
 ### 风险

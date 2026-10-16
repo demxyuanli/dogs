@@ -182,7 +182,7 @@
 - `bop-boolean.md`：为发现 1/2/5/6/8/9/10 补「处置：已修」行；发现 3/4/7/12 明确「仍未修」（发现 16 于 2026-10-13 已修）；订正发现 10 —— `face_is_degenerate` 现仅存在于 `bop_builder_repair.rs`。
 - `occt-geom.md`：订正 `bezier_curve.rs` 非空白（`Geom2d_BezierCurve::segment` 已移植）；`revolved.rs` 已整文件删除（A31）；`geom_api.rs` 采样器已整体摘除（A16 求交 half，批 81 / R2-2）。
 - `occt-core.md`：`gp/` 文件数订正为 **40**（2026-10-06 实测）；`AdvApprox` 路径迁移；`ApproxAFunction2d` 新增。
-- 文件拆分路径订正（2026-10-13）：`occt-topo/src/iges.rs`（4361 行）拆为 `iges/{mod,entry,writer,card,entity,curve_kind,frame_geometry,wire_helpers,pcurve_transfer,emit_conic,emit_curve,emit_surface,emit_face,tests}.rs`；`occt-topo/src/pcurve_full/surface_projector.rs`（3223 行）拆为 `pcurve_full/surface_projector/{mod,classify,projector,analytic,newton_uv,closed_state,iso_param,period_jump,curve_projection,reparam}.rs`。本索引、`topo-rest.md`、`mesh-exchange.md` 与 `occt-scope-drift.canvas.tsx` 里的旧 `iges.rs:NNNN` / `surface_projector.rs:NNNN` 已按新文件名就近订正；拆分记录见 `_tasks.md`「文件拆分记录」。
+- 文件拆分路径订正（2026-10-13）：`occt-topo/src/iges.rs`（4361 行）拆为 `iges/{mod,entry,writer,card,entity,curve_kind,frame_geometry,wire_helpers,pcurve_transfer,emit_conic,emit_curve,emit_surface,emit_face,tests}.rs`；`occt-topo/src/pcurve_full/surface_projector.rs`（3223 行）拆为 `pcurve_full/surface_projector/{mod,classify,projector,analytic,newton_uv,closed_state,iso_param,period_jump,curve_projection,reparam}.rs`。本索引、`topo-rest.md`、`mesh-exchange.md` 与 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 里的旧 `iges.rs:NNNN` / `surface_projector.rs:NNNN` 已按新文件名就近订正；拆分记录见 `_tasks.md`「文件拆分记录」。
 
 ### 9.3 仍为 UNPORTED / 未修（本轮未动，勿误读为已修）
 

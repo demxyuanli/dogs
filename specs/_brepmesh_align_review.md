@@ -1,7 +1,7 @@
 # BRepMesh 对齐审查文档 — seam pcurve 双面 + B 样条边参数域
 
 > ⚠️ **仅历史（T-29 登记）**：本文件记录的是提交 `66615d7` 当时的审查结论；此后网格/BOP 管线已有多次变更，
-> 现行基线与门禁以 `docs/goals/drift-and-gap-autofix/state.yaml`（板真相）与 `specs/occt-scope-drift.canvas.tsx`（任务表 / 门禁表）为准，本文件不参与任何门禁。
+> 现行基线与门禁以 `docs/goals/drift-and-gap-autofix/state.yaml`（板真相）与 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx`（任务表 / 门禁表）为准，本文件不参与任何门禁。
 >
 > ⚠️ **2026-10-12 补充**：本文件所讨论的 `brepmesh.rs`（legacy 四叉树网格器）**已整体删除**，
 > 连同 `wireframe.rs` 的平面耳切/桥洞机器（audit A18/A19，见 `specs/_audit/_index.md` 与

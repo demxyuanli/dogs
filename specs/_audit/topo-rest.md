@@ -90,7 +90,7 @@ let v = v0 + (v1 - v0) * (i * 7 % samples) as f64 / samples.max(1) as f64;
 ```
 - OCCT：未找到。`BRepGProp`/`BRepLProp` 无此接口。
 - 影响/建议：`7` 为裸常量；min/max/avg 只反映对角线 8 点，对整面无代表性（`:148` 又自承有限差分符号有噪声故取绝对值）。标未移植，或改 Gauss 面积 + 真实曲率工具。
-- **范围裁定（2026-10-16）**：本项在 T001 清单里登记为自创件残余（D 段），且无对应 OCCT 类可移植（`BRepGProp`/`BRepLProp` 无该接口），故不立包；保持登记、不改代码。同条记录见 `specs/occt-scope-drift.canvas.tsx` 2.4。
+- **范围裁定（2026-10-16）**：本项在 T001 清单里登记为自创件残余（D 段），且无对应 OCCT 类可移植（`BRepGProp`/`BRepLProp` 无该接口），故不立包；保持登记、不改代码。同条记录见 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 2.4。
 
 ### 10. `validate.rs` 不是 `BRepCheck_Analyzer` 的移植
 - 判定：自创 ｜ live：**是**（`pub mod validate`，`phase3/5` 集成测试使用；`brep_check.rs` 才是 `BRepCheck` 的移植）
@@ -101,7 +101,7 @@ pub fn is_valid(&self) -> bool { true }   // validate.rs:131
 ```
 - OCCT：`BRepCheck_Shell::CheckClosed` 由边沿面使用次数判定闭壳，无"面数≥4"规则；`IsValid` 非常量 true。
 - 影响/建议：`Analyzer::is_valid()` 恒真使相关门禁失效；4 面阈值把合法小面片壳判 `Undefined`。删除启发式，转调 `brep_check.rs`；保留 API 标未移植。
-- **范围裁定（2026-10-16）**：本项缺的是 `BRepCheck_Analyzer` 这一整层（T001 清单 C-B：需先移植未移植层），`brep_check.rs` 是另一条 `BRepCheck_Edge` 移植线；本 tranche 未立包，保持登记、不改代码。使用约束照旧：`validate.rs` 不得作门禁（清单 F）。同条记录见 `specs/occt-scope-drift.canvas.tsx` 2.4。
+- **范围裁定（2026-10-16）**：本项缺的是 `BRepCheck_Analyzer` 这一整层（T001 清单 C-B：需先移植未移植层），`brep_check.rs` 是另一条 `BRepCheck_Edge` 移植线；本 tranche 未立包，保持登记、不改代码。使用约束照旧：`validate.rs` 不得作门禁（清单 F）。同条记录见 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 2.4。
 
 ### 11. `brep_gprop.rs` 是网格采样，不是 `BRepGProp`
 - 判定：自创（模块头自承 "Approximate port"）｜ live：**是**（`bop_builder_report.rs:405,410` 修复前后面积判据、`brep_pipe.rs:77`、`loft.rs:386`、`gprop_analytic/analytic_props.rs:418+`）
@@ -202,7 +202,7 @@ pub(super) fn is_cylindrical(s: &dyn Surface, loc: &GpPnt, dir: &GpDir, r: f64) 
 ```
 - OCCT：`TKHLR/HLRBRep/**`（`HLRBRep_Algo`/`Hider`/`EdgeBuilder`）基于精确边面求交与轮廓线。
 - 影响/建议：凹形、自遮挡、轮廓线的可见边集合与 OCCT 不同。标未移植（模块名与 OCCT 包同名，易误认为已移植，应在 `lib.rs:59` 注明）。
-- **范围裁定（2026-10-16）**：本项归 T001 清单 C-C（lite 替代，`hlr`），与 `viz_scene`/`draw`/`xcaf`/`render_svg` 同类；本 tranche 不立包，保持登记、不改代码。同条记录见 `specs/occt-scope-drift.canvas.tsx` 2.4。
+- **范围裁定（2026-10-16）**：本项归 T001 清单 C-C（lite 替代，`hlr`），与 `viz_scene`/`draw`/`xcaf`/`render_svg` 同类；本 tranche 不立包，保持登记、不改代码。同条记录见 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 2.4。
 
 ### 16. `viz_scene/`、`draw/`、`xcaf/`、`render_svg.rs` 借用 OCCT 包名但实现自写
 - 判定：自创 ｜ live：**是**（均 `pub mod`；`draw::run_script` 有 doctest）
@@ -223,7 +223,7 @@ let sections: Vec<Wire> = path
 ```
 - OCCT：`BRepOffsetAPI_MakePipe` → `BRepFill_Pipe::Perform`（`TKBool/BRepFill/BRepFill_Pipe.cxx:193`）用 `GeomFill_LocationLaw`（Frenet/CorrectedFrenet/DiscreteTrihedron）旋转剖面。
 - 影响/建议：非直线路径上剖面朝向错误，而 `brep_pipe.rs:1-5` 写 "Port of `BRepOffsetAPI_MakePipe`"。按 `BRepFill_Pipe.cxx:193-260` 建标架，否则标未移植。
-- **范围裁定（2026-10-16）**：本项确定对应件是 `BRepFill_Pipe::Perform`（未移植层），且 `live：**否**`（仅自测，`draw` 未暴露 pipe 命令），故本 tranche 不立包，保持登记、不改代码。同条记录见 `specs/occt-scope-drift.canvas.tsx` 2.4。
+- **范围裁定（2026-10-16）**：本项确定对应件是 `BRepFill_Pipe::Perform`（未移植层），且 `live：**否**`（仅自测，`draw` 未暴露 pipe 命令），故本 tranche 不立包，保持登记、不改代码。同条记录见 `~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx` 2.4。
 
 ### 18. `solid_union::shape_bbox` 9×9 采样兜底 + `brep_class3d` 确定性探针
 - 判定：等价替换未登记 ｜ live：**部分**（`solid_union` 本体仅 `bop_builder_tests.rs:174` 对拍；`bbox_union` 被 `boolean_ops.rs:184` 用；`brep_class3d.rs:96 find_a_point_in_the_face` 供分类器使用）
