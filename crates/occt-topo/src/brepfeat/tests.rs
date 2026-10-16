@@ -29,10 +29,19 @@ use super::*;
     }
 
     /// Faceted cylinder target built as a triangle mesh (axis +Z, planar faces).
-    /// The analytic `BRepPrimCylinder` target is exact for the fuse/neck family
-    /// (`translated_cylinder`), but as a *Cut target* it mis-integrates the
-    /// faceted lathe tool: `groove` removes the whole r<=1 disc instead of the
-    /// r 0.6..1 ring (6.911504 vs 7.816283). The mesh target keeps the baseline.
+    /// It is kept as the frozen baseline operand for the groove family. The
+    /// note that used to sit here claimed the analytic `BRepPrimCylinder` was
+    /// unusable as a *Cut target* because it mis-integrated the faceted lathe
+    /// tool (`groove` removed the whole r<=1 disc: 6.911504 vs 7.816283); that
+    /// tool no longer exists (P042 deleted the lathe-mesh fixture and routed
+    /// `revolve_profile_about` through `brep_sweep::make_revol`), and the
+    /// analytic target was re-measured at HEAD on 2026-10-16 (P044):
+    /// `BRepPrimCylinder(1, 3)` (3 faces, vol 9.424777960769333 = 3*pi) Cut the
+    /// analytic annular ring (4 faces, vol 3.342654583419527 = pi(1.3^2-0.6^2)*0.8)
+    /// gives 7 faces, 1 shell, closed, vol 7.816282522131361 versus the exact
+    /// 7.816282522131359 (delta 2e-15) with no warnings. The mesh target is
+    /// therefore kept only as the pre-existing baseline, not because the
+    /// analytic one fails.
     fn faceted_cyl(r: f64, h: f64) -> Solid {
         let slices = 24usize;
         let mut vertices = Vec::new();
