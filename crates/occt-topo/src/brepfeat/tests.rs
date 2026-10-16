@@ -124,7 +124,7 @@ use super::*;
             GpPnt2d::new(0.6, 1.8),
             GpPnt2d::new(0.6, 1.0),
         ];
-        let after = groove(&cyl, &profile, &z_axis(), 16, 1e-4).unwrap();
+        let after = groove(&cyl, &profile, &z_axis(), 1e-4).unwrap();
         let groove_vol = std::f64::consts::PI * (1.0 - 0.36) * 0.8;
         assert!(
             after.volume < before,
@@ -153,7 +153,7 @@ use super::*;
             GpPnt2d::new(0.0, 2.0),
         ];
         let axis = GpAx1::new(GpPnt::new(1.0, 1.0, 0.0), GpDir::new(0.0, 0.0, 1.0).unwrap());
-        let after = neck(&box_s.solid, &profile, &axis, 16, 1e-4).unwrap();
+        let after = neck(&box_s.solid, &profile, &axis, 1e-4).unwrap();
         let added = std::f64::consts::PI * 0.16 * (2.0 - 1.0);
         assert!(after.volume > before, "neck must add material: {} > {}", after.volume, before);
         assert!(
@@ -248,7 +248,7 @@ use super::*;
             GpPnt2d::new(0.6, 1.8),
             GpPnt2d::new(0.6, 1.0),
         ];
-        let after = groove(&cyl, &profile, &z_axis(), 16, 1e-4).unwrap();
+        let after = groove(&cyl, &profile, &z_axis(), 1e-4).unwrap();
         let delta = feature_before_after_delta(&cyl, &after);
         assert!(delta > 1e-6, "groove changes the volume (delta {delta})");
     }
@@ -263,7 +263,7 @@ use super::*;
             GpPnt2d::new(0.0, 2.0),
         ];
         let axis = GpAx1::new(GpPnt::new(1.0, 1.0, 0.0), GpDir::new(0.0, 0.0, 1.0).unwrap());
-        let after = neck(&box_s.solid, &profile, &axis, 16, 1e-4).unwrap();
+        let after = neck(&box_s.solid, &profile, &axis, 1e-4).unwrap();
         let delta = feature_before_after_delta(&box_s.solid, &after);
         assert!(delta > 1e-6, "neck changes the volume (delta {delta})");
     }
@@ -285,8 +285,8 @@ use super::*;
         let cyl = BRepPrimCylinder::make_cylinder(1.0, 3.0);
         let axis = z_axis();
         let plane = xy_plane_at(1.0);
-        assert!(groove(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &axis, 16, 0.05).is_err());
-        assert!(neck(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &axis, 16, 0.05).is_err());
+        assert!(groove(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &axis, 0.05).is_err());
+        assert!(neck(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &axis, 0.05).is_err());
         assert!(rib(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &plane, 0.3, 1.0, 0.05).is_err());
     }
 
@@ -384,7 +384,7 @@ use super::*;
             GpPnt2d::new(0.0, 2.0),
         ];
         let axis = GpAx1::new(GpPnt::new(1.0, 1.0, 0.0), GpDir::new(0.0, 0.0, 1.0).unwrap());
-        let after = neck(&box_s.solid, &profile, &axis, 16, 1e-4).unwrap();
+        let after = neck(&box_s.solid, &profile, &axis, 1e-4).unwrap();
         assert_eq!(after.kind(&box_s.solid), FeatKind::Additive);
         assert!(after.volume_delta(&box_s.solid) > 0.0);
         assert!(after.volume_ratio(&box_s.solid) > 1.0);

@@ -44,18 +44,74 @@ pub fn draft(solid: &Solid, face_pts: &[GpPnt], angle_deg: f64, pivot: &GpPln, t
 
 /// Groove: revolve the 2D `profile` (x = radius ≥ 0, y = height along the
 /// axis) around `axis` into an annular tool and SUBTRACT it from `solid`.
-pub fn groove(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, steps: usize, tol: f64) -> Result<FeatResult, String> {
+pub fn groove(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, tol: f64) -> Result<FeatResult, String> {
     require_min_profile(profile, "groove")?;
-    let tool = revolve_profile_about(profile, steps, axis)?;
+    let tool = revolve_profile_about(profile, axis)?;
     boolean_feature(solid, &tool, BoolOp::Cut, tol)
 }
 
 /// Neck: revolve the 2D `profile` around `axis` into a solid tool and FUSE it
 /// onto `solid`.
-pub fn neck(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, steps: usize, tol: f64) -> Result<FeatResult, String> {
+pub fn neck(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, tol: f64) -> Result<FeatResult, String> {
     require_min_profile(profile, "neck")?;
-    let tool = revolve_profile_about(profile, steps, axis)?;
+    let tool = revolve_profile_about(profile, axis)?;
     boolean_feature(solid, &tool, BoolOp::Fuse, tol)
+}
+
+/// The planar profile face of a `groove`/`neck` cross-section `profile`
+/// (`x` = radius, `y` = height along the axis), built in the XZ half-plane so
+/// its normal is `-Y` and the revolution about `+Z` sweeps counter-clockwise.
+///
+/// This is `BRepFeat_MakeRevol`'s generating face `myPbase`: OCCT passes a
+/// `TopoDS_Face` (a proper `TopoDS_Wire` of `TopoDS_Edge`s sharing their
+/// `TopoDS_Vertex`es) to `BRepSweep_Revol::Perform` (`BRepFeat_MakeRevol.cxx:235`).
+/// The shared vertices are load-bearing, not cosmetic: `BRepSweep_Tool` maps the
+/// generating shape's sub-shapes with `TopExp::MapShapes`, so two vertices that
+/// are merely coincident (distinct `TShape`s) are two entries and each spawns its
+/// own directing edge -- the two caps then no longer share their circles with
+/// the lateral face, and `BOPAlgo_BOP` sees duplicated coincident boundaries.
+fn profile_face(profile: &[GpPnt2d]) -> Result<TopoShape, String> {
+    use occt_core::gp::GpAx3;
+    let b = crate::builder::TopoBuilder::new();
+    let pln = GpPln::new(
+        GpAx3::new(
+            GpPnt::zero(),
+            GpDir::new(0.0, -1.0, 0.0).map_err(|e| e.to_string())?,
+            &GpDir::new(1.0, 0.0, 0.0).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?,
+    );
+    let surf: std::sync::Arc<dyn occt_geom::surface::Surface> =
+        std::sync::Arc::new(occt_geom::GeomPlane::new(pln));
+    // A closed contour may repeat its first point as its last one (the
+    // "already closed" form the `brepfeat` baselines use): the wrap edge built
+    // below *is* that segment, so a repeated point would only make it degenerate.
+    let mut n = profile.len();
+    if n > 1 && profile[n - 1].distance(&profile[0]) <= occt_core::precision::CONFUSION {
+        n -= 1;
+    }
+    let profile = &profile[..n];
+    let verts: Vec<crate::shape::Vertex> = profile
+        .iter()
+        .map(|p| b.make_vertex(GpPnt::new(p.x(), 0.0, p.y()), occt_core::precision::CONFUSION))
+        .collect();
+    let mut edges: Vec<crate::shape::Edge> = Vec::new();
+    for i in 0..n {
+        let p = profile[i];
+        let q = profile[(i + 1) % n];
+        edges.push(b.make_edge_segment_with_vertices(
+            &GpPnt::new(p.x(), 0.0, p.y()),
+            &GpPnt::new(q.x(), 0.0, q.y()),
+            &verts[i],
+            &verts[(i + 1) % n],
+        ));
+    }
+    let wire = b.make_wire(&edges);
+    let face = b.make_face(surf, &[wire]);
+    for e in &edges {
+        let _ = crate::boptools_2d::make_2d(e, &face);
+    }
+    Ok(face.0)
 }
 
 /// Rib: a thin plate feature standing `height` above `plane`. The profile's
@@ -296,105 +352,35 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
     Ok(FeatResult { shape, volume })
 }
 
-/// Revolve `profile` around the Z axis and align the tool so its axis is the
-/// given `axis` (a rotation mapping Z onto the axis direction, then a
-/// translation to the axis location).
+/// Revolve `profile` about `axis` into the feature's tool solid.
 ///
-/// UNPORTED workaround (`BRepFeat_MakeRevol` has no such step: OCCT takes the
-/// tool `TopoDS_Shape` as given and hands it to `BOPAlgo_BOP`): the analytic
-/// revolve solid `sweep_revolve::revolve_polyline_around_z` returns cannot be
-/// combined by `crate::bop_builder::boolean`, so the tool is rebuilt as a
-/// planar-faced (lathe) mesh from the revolution's ring vertices. Measured
-/// 2026-10-15 on the `brepfeat` baselines: `box ∪ analytic neck` drops the tool
-/// (volume stays 4.000000, expected 4.489835) and `faceted cylinder − analytic
-/// groove ring` (`Cut`) *adds* material (9.764392 > 9.424778); reversing the
-/// faces to their outward sense (`BRepPrim_OneAxis::BottomFace`) moves the neck
-/// fuse to a zero-volume result and the groove to 6.911504 (expected 7.816283),
-/// so the gap is not orientation alone.
+/// `BRepFeat_MakeRevol` has no tessellation step: it builds the generating face
+/// `myPbase` once and hands it to `BRepSweep_Revol::Perform(myPbase, myAxis, Angle)`
+/// (`BRepFeat_MakeRevol.cxx:235` for the `Perform(Angle)` overload, `:537` and
+/// `:707` for the `2*M_PI` forms), then combines the tool by `BOPAlgo_BOP`
+/// (`BRepFeat_Form::GlobalPerform`). This mirrors that: the cross-section
+/// [`profile_face`] is swept a full turn about `+Z` (`make_revol`),
+/// and the resulting solid is moved so its axis is `axis` (`align_z_to_axis`).
 ///
-/// The same measurement with the analytic `BRepPrimAPI_MakeCylinder` tool
-/// (`translated_cylinder`) is exact: `box ∪ boss` = 4.157080 (= 4 + pi*0.0625*0.8)
-/// and `box ∪ through-boss` = 2.565487 (the trimmed value, not the 2.706858
-/// untrimmed union) — so the `BOPAlgo_BOP` curved path is sound and the
-/// remaining gap is in `sweep_revolve`, which builds its faces with a naive arc
-/// chain + seam wire instead of the `BRepSweep_Revol` / `BRepPrim_OneAxis`
-/// wire, seam and pcurve conventions (the conventions `BRepPrimCylinder` had to
-/// match for `BOPAlgo_WireSplitter::Tolerance2D` to close the seam loops).
-///
-/// Re-measured 2026-10-16 (package P039/T-169) *after* `sweep_revolve` was
-/// aligned to those conventions (`BRepPrim_OneAxis::LateralWire`,
-/// `BRepPrim_OneAxis.cxx:666-679`; `LateralFace` pcurves, `cxx:388-439`;
-/// `MakeVertex` tolerance, `BRepPrim_Builder.cxx:129-132`): the analytic tool is
-/// still dropped by `box + neck` and still *adds* material in
-/// `faceted cylinder - groove`, so the OneAxis wire/seam/pcurve conventions are
-/// necessary but not sufficient. The workaround stays.
-///
-/// Re-measured 2026-10-16 (package P041/T-170) *after* `map_vertex_edges` was
-/// aligned to `TopExp::MapShapesAndAncestors` occurrence counting
-/// (`TopExp.cxx:80-120`; `TopExp_Explorer.cxx:110-170` walks with
-/// `TopoDS_Iterator` and never uniquifies; `BOPAlgo_BuilderFace.cxx:211-225`):
-/// a lone closed circular edge is no longer pushed into `myShapesToAvoid`
-/// (`aNbE == 1` on a deduplicated vertex), so the tool's annular cap faces split
-/// into the four distinct loops (`r=0.6`, `r=1.3` and the two coincident `r=1`
-/// copies) instead of two `r=1` loops plus two `INTERNAL` wires. With the
-/// analytic tool forced, 16 of the 17 `brepfeat` baselines pass
-/// (`groove_cuts_cylinder`, `groove_negative_volume_delta`, `neck_adds_material`,
-/// `neck_positive_volume_delta`, the `rib_*` family); the remaining one,
-/// `feature_kind_classifies_add_subtract`, is a neck whose bottom disk is
-/// coplanar with the box top face -- its draft solid still comes out inverted
-/// (`vol = -2.848377`, classified `Subtractive`), so the open gap is the
-/// same-domain/coplanar branch of `BOPAlgo_Builder::FillImagesSolids` /
-/// `BOPAlgo_BuilderSolid::PerformAreas`, not the revolve tool itself. The
-/// workaround stays until that branch is ported.
-///
-/// Consecutive rings form quad strips; a ring on the axis collapses to a fan,
-/// so closed profiles produce closed solids.
-pub(super) fn revolve_profile_about(profile: &[GpPnt2d], steps: usize, axis: &GpAx1) -> Result<TopoShape, String> {
-    let rev = crate::sweep_revolve::revolve_polyline_around_z(profile, steps)?;
-    let mut verts: Vec<GpPnt> = Vec::new();
-    let mut tris: Vec<occt_core::poly::triangulation::Triangle> = Vec::new();
-    for w in rev.rings.windows(2) {
-        let (r0, r1) = (&w[0], &w[1]);
-        let n = r0.len().min(r1.len());
-        if n < 2 {
-            continue;
-        }
-        let base = verts.len();
-        for v in r0 {
-            verts.push(crate::brep_tool::BRepTool::vertex_point(v));
-        }
-        for v in r1 {
-            verts.push(crate::brep_tool::BRepTool::vertex_point(v));
-        }
-        for j in 0..n - 1 {
-            let (a, b) = (base + j, base + j + 1);
-            let (c, d) = (base + n + j, base + n + j + 1);
-            // Single shared diagonal (a, d) so adjacent strip quads share the
-            // vertical edges (r0[j+1], r1[j+1]) and (r0[j], r1[j]) with their
-            // neighbours — a closed quad strip.
-            tris.push(occt_core::poly::triangulation::Triangle::new(a, b, d));
-            tris.push(occt_core::poly::triangulation::Triangle::new(a, d, c));
-        }
-    }
-    // Drop degenerate triangles (axis rings collapse to fans).
-    tris.retain(|t| {
-        verts[t.n0].distance(&verts[t.n1]) > 1e-9
-            && verts[t.n1].distance(&verts[t.n2]) > 1e-9
-            && verts[t.n0].distance(&verts[t.n2]) > 1e-9
-    });
-    if tris.is_empty() {
-        return Err("revolve: profile produces no faces".into());
-    }
-    let mesh = crate::mesh::ShapeMesh {
-        vertices: verts,
-        triangles: tris,
-        source_shape: crate::abs::ShapeType::Solid,
-    };
-    let brep = crate::mesh_to_brep::shape_mesh_to_brep(&mesh);
-    let tool = brep
-        .solid
-        .ok_or("revolve: profile mesh is not a closed solid (profile must close)")?
-        .0;
+/// History (P042/T-171): the analytic solid used to be rejected here -- the
+/// `box + neck` fuse dropped the tool (4.000000, expected 4.489835) and the
+/// `cylinder - groove` cut *added* material. P039/T-169 aligned the sweep's
+/// wire/seam/pcurve conventions (`BRepPrim_OneAxis.cxx:388-439`, `:666-679`;
+/// `BRepPrim_Builder.cxx:129-132`) and P041/T-170 aligned `map_vertex_edges` to
+/// `TopExp::MapShapesAndAncestors` occurrence counting (`TopExp.cxx:80-120`;
+/// `BOPAlgo_BuilderFace.cxx:211-225`); both were necessary but not sufficient.
+/// The remaining difference was the generating face itself: a profile whose
+/// consecutive edges carry *coincident but distinct* vertices makes
+/// `BRepSweep_Tool`'s `TopExp::MapShapes` see duplicate vertices, so each spawns
+/// its own directing edge and the caps stop sharing their circles with the
+/// lateral face -- `BOPAlgo_PaveFiller` then paves the coplanar target face
+/// twice. With `profile_face` sharing the vertices, the tool of a `neck` is the
+/// 3-edge/2-face topology `BRepPrimCylinder` has (occurrences=6, unique=3) and
+/// every `brepfeat` baseline is exact (`box + neck` = 4.502654825 = 4 + pi*0.4^2).
+pub(super) fn revolve_profile_about(profile: &[GpPnt2d], axis: &GpAx1) -> Result<TopoShape, String> {
+    let face = profile_face(profile)?;
+    let z = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).map_err(|e| e.to_string())?);
+    let tool = crate::brep_sweep::make_revol(&face, &z, 2.0 * std::f64::consts::PI)?;
     let t = align_z_to_axis(axis)?;
     crate::shape_ops::transformed_copy(&tool, &t)
 }

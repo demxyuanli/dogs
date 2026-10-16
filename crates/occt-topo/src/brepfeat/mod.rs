@@ -27,10 +27,10 @@
 //!
 //! `BRepFeat_*` takes the tool `TopoDS_Shape` as given and hands it to
 //! `BOPAlgo_BOP`. The through-boss/neck cylinder tool is the analytic
-//! `BRepPrimAPI_MakeCylinder` (`translated_cylinder`); the revolved tool
-//! currently goes through the lathe-mesh fixture on [`revolve_profile_about`]
-//! (see its note: the analytic `sweep_revolve` solid is not yet accepted by the
-//! boolean). Audit A12 / T-125.
+//! `BRepPrimAPI_MakeCylinder` (`translated_cylinder`); the revolved tool is the
+//! analytic `BRepSweep_Revol` sweep of the cross-section face
+//! ([`revolve_profile_about`] / [`profile_face`]).
+//! Audit A12 / T-125.
 //!
 //! # Booleans
 //!
@@ -45,7 +45,7 @@
 //! let profile = [GpPnt2d::new(0.0, 1.0), GpPnt2d::new(0.4, 1.0),
 //!                GpPnt2d::new(0.4, 2.0), GpPnt2d::new(0.0, 2.0)];
 //! let axis = GpAx1::new(GpPnt::new(1.0, 1.0, 0.0), GpDir::new(0.0, 0.0, 1.0)?);
-//! let result = neck(&box_s.solid, &profile, &axis, 16, 1e-4)?;
+//! let result = neck(&box_s.solid, &profile, &axis, 1e-4)?;
 //! assert!(result.volume > 4.0);
 //! # Ok::<(), String>(())
 //! ```
