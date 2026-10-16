@@ -4,8 +4,11 @@
 //! operands go to the same engine, whose `CheckData` skips them with
 //! `BOPAlgo_AlertEmptyShape` (`BOPAlgo_BOP.cxx:162-167`, `:203-209`) — the
 //! previous voxel/mesh fallback has no OCCT counterpart (audit A5/T-41).
-//! Disjoint bounding boxes short-circuit. There is no planar 2-D arrangement on
-//! this path (`boolean_planar_legacy` remains only as a leftover module).
+//! There is no planar 2-D arrangement on this path (`boolean_planar_legacy`
+//! remains only as a leftover module), and no bounding-box disjoint
+//! short-circuit: `BOPAlgo_Builder::CheckData` (`BOPAlgo_Builder.cxx:128-140`)
+//! only demands two arguments, so a disjoint pair is still run through the
+//! pave filler and the result is `BOPAlgo_BOP`'s images (audit A5 finding 12).
 
 
 use std::sync::Arc;
@@ -29,9 +32,7 @@ use crate::topo_tools_full::{
 
 pub use crate::bop_builder_core::{BoolOp, BooleanResult};
 pub use crate::bop_builder_planar::boolean_planar_legacy;
-pub(crate) use crate::bop_builder_core::{
-    disjoint_result, empty_result, single_shape_result, validate,
-};
+pub(crate) use crate::bop_builder_core::{empty_result, single_shape_result, validate};
 pub(crate) use crate::bop_builder_planar::*;
 
 // ---------------------------------------------------------------------------
@@ -81,12 +82,6 @@ pub fn boolean(a: &TopoShape, b: &TopoShape, op: BoolOp, tol: f64) -> Result<Boo
             tol,
         )?;
         return Ok(single_shape_result(&shape));
-    }
-
-    let bbox_a = crate::bbox_from_geometry::shape_bbox(a);
-    let bbox_b = crate::bbox_from_geometry::shape_bbox(b);
-    if !bbox_a.is_void() && !bbox_b.is_void() && bbox_a.is_out_box(&bbox_b) {
-        return Ok(disjoint_result(a, b, op));
     }
 
     let mut r = boolean_via_bopalgo(a, b, op, tol)?;
