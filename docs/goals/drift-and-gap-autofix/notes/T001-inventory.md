@@ -741,6 +741,20 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `{ done, points }` JSX expression in `specs/occt-scope-drift.canvas.tsx`, which had been breaking
   the canvas build (`esbuild` reported "Expected identifier but found ="); the canvas now transpiles
   clean and `tsc --noEmit` only reports the missing `dsh/canvas` / `react/jsx-runtime` modules.
+  P034 / T-164 (`c272c08a`) did this measurement pass a fifth time (P034 card, `MEASURE.rust`
+  1,111 files / 338,784 lines, `CRATES` geom 133/45,074 and topo 638/213,964, the gate-source
+  comment repointed to `.target-gate/t164`, the `Stat` moved to 2 registered code items -- the two
+  `CurveOnSurface` overrides P034 registered -- plus the baseline-less STEP writer harness, and the
+  "跟踪" paragraph plus the T999 callout extended to P027..P034). That pass also pinned the two
+  measurement clauses the earlier cycles had left implicit, because the numbers could not be
+  reproduced from a naive count: `MEASURE.rust` is `src/**/*.rs` only (1111 files, matching
+  `git ls-files "crates/*/src/*.rs"`; a whole-tree count gives 1138), and `MEASURE.unported` is the
+  case-sensitive `UNPORTED` occurrence count over `crates/**/*.rs` (155, against 176
+  case-insensitive) -- the previously recorded 1,107 reconciles exactly (1111 - P034's four new
+  files), while the previously recorded 173 does **not** reconcile with either of the two counts
+  reproducible today (155 case-sensitive / 176 case-insensitive) and its scope could not be
+  recovered, so this pass records the two current readings with their scopes instead of carrying a
+  number forward unverified.
 - `specs/_audit/topo-rest.md` heading 17 (`pipe_along_polyline`), 9, 10, 15 likewise.
 - ~~`bbox_from_geometry.rs` (B3) is a live sampled-bbox construct that no audit doc registers.~~
   **DONE 2026-10-15 (T-134)**: the sampling is gone; the item is now registered as
@@ -759,3 +773,32 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   touch 7 call sites in `occt-topo` (`comp_curve_to_bspline.rs:85,142`,
   `shhealing/shape_build_edge.rs:349,368`, `shhealing/wire_fix/pcurve_range.rs:63`,
   `iges/pcurve_transfer.rs:304,314`); registered by P022 / T-152, not changed.
+- **NEW CLASS FOUND AND CLOSED BY P034 / T-164 (2026-10-16, `c272c08a`): the 3D point-to-curve
+  *local* extrema family.** This walk had never named it. `crates/occt-geom/src/extrema_pc/` held
+  only the global arm (`Extrema_GGExtPC`), so `Extrema_CurveTool`, `Extrema_GFuncExtPC`,
+  `Extrema_GenLocateExtPC` and `Extrema_GLocateExtPC` had no counterpart at all, and the three sites
+  that need "nearest point-curve extremum near a known parameter" each invented a clamped Newton:
+  `occt-topo/src/int_tools_vertex_line.rs` (`LOCATE_ITERS = 12`, `|C'|^2 <= EXTREMA_EPS^2` gate,
+  displacement stop) for `IntTools_Context.cxx:842-871`; `occt-topo/src/shhealing/wire_fix/
+  same_parameter.rs` (12 iterations, `1e-20` speed gate, `1e-10` displacement stop) for
+  `BRepLib_ValidateEdge.cxx:168-227`; `occt-topo/src/brep_lib_continuity.rs` (100 iterations plus a
+  `has_analytic_d2()` precondition that made the whole edge silently skip) for
+  `BRepLib.cxx:2341-2355`. All four classes are now ported and the three loops are deleted; the
+  cxx control flow is a `math_FunctionRoot` whose result is re-checked against `|F| >= 1.e-07`
+  (`Extrema_GenLocateExtPC.hxx:108-127`), run per `GeomAbs_C2` interval for free-form curves and
+  replaced by an `Extrema_ExtPC` + nearest-to-`U0` selection for elementary ones
+  (`Extrema_GLocateExtPC.hxx:125-307`). `extrema_ext_pc_range_done` was added because the elementary
+  arm must test `IsDone()` before scanning the solutions (`Extrema_GGExtPC.hxx:462-469`). Lesson for
+  the T999 re-walk: check the inventory **per class family** -- this one was missing while the walk
+  was only reading `IntAna_*`/`BRepLib_*` lines.
+- **Registered by P034, not changed (both annotated `UNPORTED` in the source):** (a) `CurveOnSurface`
+  has no `Adaptor3d_CurveOnSurface::Resolution` override (`Adaptor3d_CurveOnSurface.cxx:1364-1370`:
+  `myCurve->Resolution(min(mySurface->UResolution(R3d), mySurface->VResolution(R3d)))`), so the cos
+  `TolU` falls back to `Curve`'s `Precision::Parametric(Confusion)` (`occt-geom/src/curve.rs:135-137`);
+  the ingredients exist (`approx_same_parameter::{u_resolution,v_resolution}` +
+  `pcurve.resolution`) but the override lives on the shared meshing adaptor
+  (`occt-topo/src/meshing/edge_discret.rs`). (b) `CurveOnSurface` does not expose `gp_line()`, so a
+  cos that `EvalKPart` classifies as `GeomAbs_Line` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`,
+  `:1701`) is typed `GeomAbs_OtherCurve` here (`Curve::gp_line` defaults to `None`,
+  `occt-geom/src/curve.rs:43`; `CurveOnSurface` only has `is_line`). Both land in the same
+  `Extrema_GLocateExtPC` free-form arm, so there is no observable difference today.

@@ -252,6 +252,25 @@ for i in 0..=64 {
   - **门禁**：`cargo check` 五 crate 0 error；`occt-topo --lib` **1251 passed / 0 failed**；`step_obj_gates` **4/4**（23 模型 f-ratio 1.00，`Shape-2` 0.99；面积比 1.0000，`Shape-2` 0.9999 在其登记容差内，与 `notes/T002-gate-baseline.md` 基线一致）；`export_data_obj` **15/15 ok**，15 个模型 v/f 与包围盒与基线逐位一致（`Cone` 195/301、`Cylinder` 146/140、`Sphere` 642/1244、`Torus` 1369/2592、`Shape` 6150/11372、`linkrods` 3494/5078、`screw` 601/792 全未变）。
   - **旁支（未修）**：`solid_union::shape_bbox`（本文件 §18）仍有独立的 9×9 采样兜底，属另一条路径，未随本项收口。
 
+### 20. 三处自创夹取 Newton 冒充 `Extrema_LocateExtPC`（✅ 2026-10-16 已修，T-164）
+- 判定：自创 ｜ live：**原为是**（`int_tools_vertex_line.rs` ← `IntTools_Context::IsVertexOnLine`；`shhealing/wire_fix/same_parameter.rs` ← `BRepLib_ValidateEdge::processApprox`；`brep_lib_continuity.rs` ← `BRepLib::ContinuityOfFaces`）
+- 证据（原实现，均非 OCCT 控制流）：
+```rust
+// int_tools_vertex_line.rs
+const LOCATE_ITERS: usize = 12;          // fixed iteration count
+if g1.square_norm() <= EXTREMA_EPS * EXTREMA_EPS { break; }   // invented speed gate
+if (u1 - u0).abs() <= EXTREMA_EPS { break; }                  // displacement test
+// shhealing/wire_fix/same_parameter.rs
+for _ in 0..12 { /* Newton */ }          // 1e-20 speed gate + 1e-10 displacement test
+// brep_lib_continuity.rs
+for _ in 0..100 { /* Newton */ }         // plus a has_analytic_d2() precondition
+```
+- OCCT 对应：`Extrema_GLocateExtPC::Perform`（`Extrema_GLocateExtPC.hxx:125-307`）不是「固定次数迭代」，也没有位移收敛判据 —— 自由曲线臂在 `NbIntervals(GeomAbs_C2)` 里定位含 `U0` 的区间并 `Extrema_GenLocateExtPC::Initialize` + `Perform`（`hxx:167-176`），未命中则向两侧邻区间走，以区间端点切矢点积 `<= RealEpsilon()`（`hxx:206`/`:243`）判端点极值、否则对该区间再做一次 `Perform`（`hxx:217-219`/`:252-254`）；`Extrema_GenLocateExtPC::Perform`（`Extrema_GenLocateExtPC.hxx:108-127`）本体是 `math_FunctionRoot(myF, theU0, mytolU, myumin, myusup)`，done 后再用 `|ff| >= 1.e-07` 复核并清 `IsDone`（`hxx:116-126`）；初等类型臂跑整段 `Extrema_ExtPC` 并按 `|u - U0|` 取最近解（`hxx:282-303`）。三处消费点的 cxx 出处：`IntTools_Context.cxx:842-871`、`BRepLib_ValidateEdge.cxx:168-227`（每曲线一个持久实例、循环外 `Initialize`）、`BRepLib.cxx:2341-2355`（`aHC2 = new BRepAdaptor_Curve(anEdgeInFace2, theFace2)`，`cxx:2344-2346`）。
+- 影响：`brep_lib_continuity.rs` 的旧 `has_analytic_d2` 前置条件使曲面二阶导非解析的边整条静默放弃标记（不是「算错」而是「不算」）；另两处固定迭代次数/位移判据与 cxx 的区间行走语义不同。
+- **处置（✅ 已修：2026-10-16，包 P034，commit `c272c08a`）**：新增四个忠实件 `extrema_pc/{curve_tool,gfunc_ext_pc,gen_locate_ext_pc,locate_ext_pc}.rs`，三处调用点改接 `LocateExtPC`，旧 Newton 与其私有助手（`newton_step`/`clamp_param`/`cos_d1`/`cos_d2`/`extrema_f`/`extrema_df`/`locate_on_cos`/`has_analytic_d2`）全部删除；`general_extrema_pc.rs` 增 `extrema_ext_pc_range_done` 以导出初等臂所需的 `IsDone`（`Extrema_GGExtPC.hxx:462-469`：解表可非空而 `mydone == false`）。门禁：五 crate 0 error（12/30/105/82/413 warnings）、`occt-geom --lib` 143/0、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4、`export_data_obj` 15/15（后两者与 P033 逐字一致）。
+- **旁支（未修，已在源码就地标 UNPORTED）**：`CurveOnSurface` 缺 `Adaptor3d_CurveOnSurface::Resolution` 覆写（`Adaptor3d_CurveOnSurface.cxx:1364-1370`：`myCurve->Resolution(min(UResolution, VResolution))`，本仓退回 `Curve` 的 `Precision::Parametric(Confusion)`，`occt-geom/src/curve.rs:135-137`）；`CurveOnSurface` 不暴露 `gp_line`，故 `EvalKPart` 判为 `GeomAbs_Line` 的 cos（`cxx:1565`/`:1687`/`:1701`）在本仓型别为 `GeomAbs_OtherCurve`（两条路都进自由曲线臂，无可观察差异）。覆写落在共享离散适配器（`occt-topo/src/meshing/edge_discret.rs`）上，blast radius 覆盖网格管线，故只登记。
+- **诚实边界**：`BRepLib_ValidateEdge` 类本身仍未移植，`shhealing/wire_fix/same_parameter.rs` 只承载 `processApprox`（`cxx:103-229`）的控制流；`brep_check.rs` 的 `BRepCheck_Edge::InContext`（`BRepCheck_Edge.cxx:263-556`）仍 UNPORTED，其依赖是那个未移植的类，与本次 `LocateExtPC` 改动无关（见「补记」末条）。
+
 ## 补记（2026-10-06）：T-104 / T-105 / T-106 落地的忠实件
 
 本节补记 §9.588–§9.623 中落在本报告范围内的新移植件。这些都属于"原本缺失、现已按 OCCT 补齐"的控制流，故不改变上文 14 条自创的判定，但修正了若干"未移植"的隐含前提与多处行号漂移。
