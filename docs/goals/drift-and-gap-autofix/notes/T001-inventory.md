@@ -741,6 +741,12 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `{ done, points }` JSX expression in `specs/occt-scope-drift.canvas.tsx`, which had been breaking
   the canvas build (`esbuild` reported "Expected identifier but found ="); the canvas now transpiles
   clean and `tsc --noEmit` only reports the missing `dsh/canvas` / `react/jsx-runtime` modules.
+  P035 / T-165 (`501fbdf7`) did the pass a sixth time the same day, with no measurement change (no
+  files added, no `UNPORTED` line removed): its card, the gate-source comment repointed to
+  `.target-gate/t165`, the `Stat` moved from 2 registered code items back to 1 (P034's two
+  `CurveOnSurface` overrides minus the `Resolution` one P035 landed; the `gp_line` one plus the
+  baseline-less STEP writer harness remain), and the "跟踪" paragraph plus the T999 callout
+  extended to P027..P035.
   P034 / T-164 (`c272c08a`) did this measurement pass a fifth time (P034 card, `MEASURE.rust`
   1,111 files / 338,784 lines, `CRATES` geom 133/45,074 and topo 638/213,964, the gate-source
   comment repointed to `.target-gate/t164`, the `Stat` moved to 2 registered code items -- the two
@@ -791,14 +797,23 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   arm must test `IsDone()` before scanning the solutions (`Extrema_GGExtPC.hxx:462-469`). Lesson for
   the T999 re-walk: check the inventory **per class family** -- this one was missing while the walk
   was only reading `IntAna_*`/`BRepLib_*` lines.
-- **Registered by P034, not changed (both annotated `UNPORTED` in the source):** (a) `CurveOnSurface`
-  has no `Adaptor3d_CurveOnSurface::Resolution` override (`Adaptor3d_CurveOnSurface.cxx:1364-1370`:
+- **Registered by P034, one closed by P035 / T-165 (2026-10-16, `501fbdf7`), the other still open:**
+  (a) `CurveOnSurface` had no `Adaptor3d_CurveOnSurface::Resolution` override
+  (`Adaptor3d_CurveOnSurface.cxx:1364-1370`:
   `myCurve->Resolution(min(mySurface->UResolution(R3d), mySurface->VResolution(R3d)))`), so the cos
-  `TolU` falls back to `Curve`'s `Precision::Parametric(Confusion)` (`occt-geom/src/curve.rs:135-137`);
-  the ingredients exist (`approx_same_parameter::{u_resolution,v_resolution}` +
-  `pcurve.resolution`) but the override lives on the shared meshing adaptor
-  (`occt-topo/src/meshing/edge_discret.rs`). (b) `CurveOnSurface` does not expose `gp_line()`, so a
-  cos that `EvalKPart` classifies as `GeomAbs_Line` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`,
-  `:1701`) is typed `GeomAbs_OtherCurve` here (`Curve::gp_line` defaults to `None`,
-  `occt-geom/src/curve.rs:43`; `CurveOnSurface` only has `is_line`). Both land in the same
-  `Extrema_GLocateExtPC` free-form arm, so there is no observable difference today.
+  `TolU` fell back to `Curve`'s `Precision::Parametric(Confusion)` (`occt-geom/src/curve.rs:135-137`).
+  **Closed:** the override now lives on the shared meshing adaptor
+  (`occt-topo/src/meshing/edge_discret.rs`) and reuses the two existing faithful ports -- the surface
+  side `approx_same_parameter::{u_resolution,v_resolution}` (= `GeomAdaptor_Surface::U/VResolution`)
+  and the curve side `pcurve.resolution` (= `Geom2dAdaptor_Curve::Resolution`) -- taking the min, so
+  the consumer that changes is `extrema_pc::CurveTool::resolution` (i.e. the search-window criterion
+  of P034's three call sites). Gates are word-identical to P034 (five crates 0 error =
+  12/30/105/82/413 warnings, `occt-core --lib` 283/0, `occt-geom --lib` 143/0, `occt-geom2d --lib`
+  72/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4, `export_data_obj` 15/15; `.target-gate/t165/`),
+  which shows the override does not move any reading on those models -- it does not by itself prove
+  the new value is more correct elsewhere; the justification is that the cxx has the same override.
+  (b) Still registered: `CurveOnSurface` does not expose `gp_line()`, so a cos that `EvalKPart`
+  classifies as `GeomAbs_Line` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`, `:1701`) is typed
+  `GeomAbs_OtherCurve` here (`Curve::gp_line` defaults to `None`, `occt-geom/src/curve.rs:43`;
+  `CurveOnSurface` only has `is_line`). Both land in the same `Extrema_GLocateExtPC` free-form arm,
+  so there is no observable difference today.
