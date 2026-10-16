@@ -15,9 +15,8 @@ use occt_core::gp::{GpPnt, GpVec};
 use occt_core::poly::triangulation::Triangle;
 
 use crate::abs::ShapeType;
-use crate::brep_tool::BRepTool;
 use crate::mesh::ShapeMesh;
-use crate::shape::{Edge, TopoShape};
+use crate::shape::TopoShape;
 use crate::tgeometry::GeometryRegistry;
 
 use crate::face_face::{finite_window, is_plane_like, plane_geometry};
@@ -64,52 +63,13 @@ fn all_faces(shape: &TopoShape) -> Vec<TopoShape> {
     out
 }
 
-fn all_edges(shape: &TopoShape) -> Vec<TopoShape> {
-    fn walk(s: &TopoShape, out: &mut Vec<TopoShape>) {
-        for child in s.tshape.read().unwrap().children.iter() {
-            match child.shape_type() {
-                ShapeType::Edge => out.push(child.clone()),
-                ShapeType::Wire | ShapeType::Face | ShapeType::Shell | ShapeType::Solid
-                | ShapeType::Compound | ShapeType::CompSolid => walk(child, out),
-                _ => {}
-            }
-        }
-    }
-    let mut out = Vec::new();
-    walk(shape, &mut out);
-    out
-}
-
-/// Bounding box of a shape: exact when it has evaluable edges (their endpoint
-/// points), otherwise a fallback sampling of the faces' surfaces.
+/// Bounding box of a shape: `BRepBndLib::Add(S, B, /*useTriangulation*/ false)`
+/// -- the ported faithful `brep_bnd_lib::shape_bnd_box` (analytic extrema /
+/// control nets per edge, vertex and face, plus the `BRep_Tool::Tolerance` gap).
+/// The previous endpoint-only + 9x9 surface-sampling body had no OCCT
+/// counterpart and is gone.
 fn shape_bbox(shape: &TopoShape) -> BndBox {
-    let mut bbox = BndBox::new();
-    let mut any = false;
-    for e in all_edges(shape) {
-        let edge = Edge(e);
-        if let Some((p1, p2)) = BRepTool::edge_vertices(&edge) {
-            bbox.add_point(&p1);
-            bbox.add_point(&p2);
-            any = true;
-        }
-    }
-    if any {
-        return bbox;
-    }
-    for f in all_faces(shape) {
-        if let Some(s) = GeometryRegistry::global().face_surface(&f) {
-            let (u0, u1) = finite_window(s.u_range(), 1.0);
-            let (v0, v1) = finite_window(s.v_range(), 1.0);
-            for i in 0..=8 {
-                let u = u0 + (u1 - u0) * i as f64 / 8.0;
-                for j in 0..=8 {
-                    let v = v0 + (v1 - v0) * j as f64 / 8.0;
-                    bbox.add_point(&s.d0(u, v));
-                }
-            }
-        }
-    }
-    bbox
+    crate::brep_bnd_lib::shape_bnd_box(shape)
 }
 
 /// Ray–triangle intersection (Möller–Trumbore). Returns the hit distance `t`
@@ -258,7 +218,7 @@ mod tests {
     use std::sync::Arc;
     use crate::builder::TopoBuilder;
     use crate::mesh::{mesh_box, mesh_surface_area};
-    use crate::shape::{Solid, Vertex};
+    use crate::shape::{Edge, Solid, Vertex};
     use crate::tgeometry::GeometryRegistry;
     use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpPnt, GpVec};
     use occt_geom::{GeomLine, GeomPlane};

@@ -22,15 +22,17 @@
 //! Port deviations, all marked where they occur: the cell filter's *container*
 //! is a plain accepted-point list (OCCT uses `NCollection_CellFilter`, a spatial
 //! hash) while its acceptance semantics — no point within `aCellSize` — are
-//! reproduced; the curve length used by the ratio test comes from
-//! `gcpnts::curve_length` (the port's adaptive-Simpson stand-in for
-//! `GCPnts_AbscissaPoint`, audit A15/T-51).
+//! reproduced exactly: OCCT's query box is `[p - aCellSize, p + aCellSize]`
+//! (`hxx:675-680`) with `aCellSize` also the cell size, so every point within
+//! `aCellSize` of `p` lies in a queried cell and the dedup result is the same as
+//! the global scan; the curve length used by the ratio test is
+//! `gcpnts::curve_length` = `GCPnts_AbscissaPoint::Length(C)` (`A15/T-51`).
 
 use super::prelude::*;
 use super::GlobOptFuncCCC2;
 use crate::extrema_pc::{extrema_ext_pc_range, ExtPcSolution};
 
-use occt_core::precision::{INFINITE, PCONFUSION};
+use occt_core::precision::{Precision, INFINITE, PCONFUSION};
 use occt_math::globoptmin::GlobOptMin;
 use occt_math::vector::MathVector;
 
@@ -154,9 +156,10 @@ impl<'a> GGenExtCC<'a> {
             && c2.first_parameter().is_finite()
             && c2.last_parameter().is_finite()
         {
-            // UNPORTED (A15/T-51): `GCPnts_AbscissaPoint::Length` is the port's
-            // `gcpnts::curve_length` (adaptive Simpson) — only the *ratio* test
-            // below depends on it.
+            // `anL[0] = GCPnts_AbscissaPoint::Length(C1)` (`hxx:479-480`); the
+            // port's `gcpnts::curve_length` is that same dispatch
+            // (`GCPnts_AbscissaPoint.cxx:305-308`, A15/T-51): the type dispatch
+            // at `:371-423` and `math_GaussSingleIntegration` on the speed.
             an_l[0] = crate::gcpnts::curve_length(c1);
             an_l[1] = crate::gcpnts::curve_length(c2);
             if an_l[0] / f64::from(nb1) > mult * an_l[1] / f64::from(nb2) {
@@ -302,7 +305,9 @@ impl<'a> GGenExtCC<'a> {
 
         // The cell filter's container: OCCT uses `NCollection_CellFilter`, the
         // port an accepted-point list; the acceptance test (`Inspect`,
-        // `hxx:231-240`) is the same squared-distance comparison.
+        // `hxx:231-240`, strict `< aCellSize^2`) is reproduced exactly and the
+        // `hxx:675-680` query box `[p - aCellSize, p + aCellSize]` covers every
+        // point the predicate can accept, so the dedup outcome is identical.
         let mut a_pnts: Vec<(f64, f64)> = Vec::new();
         let mut a_f = f64::MAX;
 
@@ -532,21 +537,17 @@ fn proj_p_on_c(c: &dyn Curve, the_p: &GpPnt, u1: f64, u2: f64) -> f64 {
     a_dist
 }
 
-/// `Adaptor3d_Curve::IsClosed()` for the port's `dyn Curve`:
-/// `Geom_Circle::IsClosed()` is `true` (`Geom_Circle.cxx:26-29`), and
-/// `Geom_TrimmedCurve::IsClosed()` is `true` when its basis is periodic and the
-/// trim covers the whole period (`Geom_TrimmedCurve.cxx`), otherwise
-/// `basisCurve->IsClosed()` — the port has no closed-but-not-periodic curve
-/// class, so that last case is reported as `false`.
+/// `GeomAdaptor_Curve::IsClosed()` (`GeomAdaptor_Curve.cxx:576-585`): an
+/// infinite range is never closed; otherwise the two ends coincide within
+/// `Precision::Confusion()`. The curve here is the adaptor, not the underlying
+/// `Geom_Curve`, so the predicate is endpoint coincidence -- a closed but
+/// non-periodic B-spline is closed, while a periodic curve trimmed to an arc is
+/// not. The 2-D twin is `extrema2d::curve2d_tool::adaptor_is_closed2d`
+/// (`Geom2dAdaptor_Curve.cxx:588-600`).
 fn is_closed(c: &dyn Curve) -> bool {
-    if c.is_periodic() {
-        return true;
+    let (first, last) = (c.first_parameter(), c.last_parameter());
+    if Precision::is_positive_infinite(last) || Precision::is_negative_infinite(first) {
+        return false;
     }
-    if let Some((basis, u1, u2)) = c.untrimmed_basis() {
-        if basis.is_periodic() {
-            let period = basis.period();
-            return period > 0.0 && (u2 - u1).abs() >= period - CONFUSION;
-        }
-    }
-    false
+    c.d0(first).distance(&c.d0(last)) <= CONFUSION
 }
