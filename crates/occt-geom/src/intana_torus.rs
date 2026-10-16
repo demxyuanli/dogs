@@ -273,15 +273,12 @@ pub fn quadric_quadric_sphere_torus(
     if (a_dist - tol) > (r_min + r_sph) || (a_dist + tol) < (r_min - r_sph).abs() {
         return TorusIntersection::Empty;
     }
-    if a_dist <= f64::EPSILON {
-        if (r_min - r_sph).abs() > tol {
-            return TorusIntersection::Empty;
-        }
-        let dir = *tor_ax.direction();
-        return TorusIntersection::Circles(vec![circle_at(tor_loc_tube, &dir, r_min)]);
-    }
     let an_alpha = 0.5 * (r_min * r_min - r_sph * r_sph + a_dist * a_dist) / a_dist;
     let a_beta = (r_min * r_min - an_alpha * an_alpha).abs().sqrt();
+    // `IntAna_QuadQuadGeo.cxx:2542` constructs `gp_Dir aDir12(aVec12)`
+    // unconditionally; a zero `aVec12` makes that constructor throw
+    // `Standard_ConstructionError` (OCCT has no concentric special case in this
+    // arm). The port's `Err` arm below is that exception's stand-in.
     let Ok(dir12) = GpDir::from_vec(&vec12) else {
         return TorusIntersection::Empty;
     };
@@ -338,15 +335,12 @@ pub fn quadric_quadric_torus_torus(t1: &GpTorus, t2: &GpTorus, tol: f64) -> Toru
     if (a_dist - tol) > (r_min1 + r_min2) || (a_dist + tol) < (r_min1 - r_min2).abs() {
         return TorusIntersection::Empty;
     }
-    if a_dist <= f64::EPSILON {
-        if (r_min1 - r_min2).abs() > tol {
-            return TorusIntersection::Empty;
-        }
-        let dir = *ax1.direction();
-        return TorusIntersection::Circles(vec![circle_at(p1, &dir, r_min1)]);
-    }
     let an_alpha = 0.5 * (r_min1 * r_min1 - r_min2 * r_min2 + a_dist * a_dist) / a_dist;
     let a_beta = (r_min1 * r_min1 - an_alpha * an_alpha).abs().sqrt();
+    // `IntAna_QuadQuadGeo.cxx:2647` constructs `gp_Dir aDir12(aV12)`
+    // unconditionally; a zero `aV12` makes that constructor throw
+    // `Standard_ConstructionError` (OCCT has no concentric special case in this
+    // arm either). The port's `Err` arm below is that exception's stand-in.
     let Ok(dir12) = GpDir::from_vec(&v12) else {
         return TorusIntersection::Empty;
     };
