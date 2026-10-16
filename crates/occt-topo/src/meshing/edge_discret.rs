@@ -1007,7 +1007,7 @@ fn rotate_iso_v(circ: &mut GpCirc, axis: &occt_core::gp::GpAx3, u: f64) {
     circ.rotate(&axe, u);
 }
 
-/// Kparts of `Adaptor3d_CurveOnSurface` (`cxx:1552-1732`): `myCirc` / `myLin`
+/// Kparts of `Adaptor3d_CurveOnSurface` (`cxx:1552-1733`): `myCirc` / `myLin`
 /// are cached by `EvalKPart`, the three conics are the on-demand queries
 /// `Ellipse` / `Hyperbola` / `Parabola` (`cxx:1399-1416`).
 #[derive(Default)]
@@ -1042,22 +1042,22 @@ fn plane_k_part(pc: &dyn Curve2d, surf: &dyn Surface, pl: &GpPln) -> KPart {
             k.lin = Some(GpLin::from_pnt_dir(p, dir));
         }
     } else if let Some(e2) = pc.gp_elips2d() {
-        // `Ellipse()` (`cxx:1399-1403`).
+        // `Ellipse()` (`cxx:1399-1402`).
         k.elips = clib::to_3d_elips(&pl.pos.ax2(), &e2).ok();
     } else if let Some(p2) = pc.gp_parab2d() {
         // `Parabola()` (`cxx:1413-1416`).
         k.parab = clib::to_3d_parab(&pl.pos.ax2(), &p2).ok();
     } else if let Some(h2) = pc.gp_hypr2d() {
-        // `Hyperbola()` (`cxx:1406-1410`).
+        // `Hyperbola()` (`cxx:1406-1409`).
         k.hypr = clib::to_3d_hypr(&pl.pos.ax2(), &h2).ok();
     }
     k
 }
 
-/// `Adaptor3d_CurveOnSurface::EvalKPart` (`cxx:1552-1732`).
+/// `Adaptor3d_CurveOnSurface::EvalKPart` (`cxx:1552-1733`).
 ///
 /// UNPORTED: the pole-based plane classes. `Bezier()` (`cxx:1458-1485`) and
-/// `BSpline()` (`cxx:1489-1521`) build a 3D `Geom_BezierCurve` /
+/// `BSpline()` (`cxx:1489-1520`) build a 3D `Geom_BezierCurve` /
 /// `Geom_BSplineCurve` out of the pcurve poles for a plane surface, so `myType`
 /// can also be `GeomAbs_BezierCurve` / `GeomAbs_BSplineCurve` there (and
 /// `GeomAbs_OffsetCurve`, whose `Offset()` this adaptor does not override).
@@ -1189,15 +1189,15 @@ pub struct CurveOnSurface {
     surface: Arc<dyn Surface>,
     first: f64,
     last: f64,
-    /// `myCirc` (`cxx:1575-1578`, `cxx:1580-1732`).
+    /// `myCirc` (`cxx:1561-1564` plane arm; `cxx:1580-1733` iso arm).
     kpart_circ: Option<GpCirc>,
-    /// `myLin` (`cxx:1565-1574`).
+    /// `myLin` (`cxx:1565-1577`, the plane arm `D1(0)` projection).
     kpart_lin: Option<GpLin>,
-    /// `Ellipse()` (`cxx:1396-1401`), reachable only on a plane surface.
+    /// `Ellipse()` (`cxx:1399-1402`), reachable only on a plane surface.
     kpart_elips: Option<GpElips>,
-    /// `Parabola()` (`cxx:1410-1414`), reachable only on a plane surface.
+    /// `Parabola()` (`cxx:1413-1416`), reachable only on a plane surface.
     kpart_parab: Option<GpParab>,
-    /// `Hyperbola()` (`cxx:1403-1408`), reachable only on a plane surface.
+    /// `Hyperbola()` (`cxx:1406-1409`), reachable only on a plane surface.
     kpart_hypr: Option<GpHypr>,
     /// `myFirstSurf` from `EvalFirstLastSurf` (`cxx:1778-1783`).
     first_surf: Option<Arc<dyn Surface>>,
@@ -1359,16 +1359,16 @@ impl Curve for CurveOnSurface {
     fn gp_line(&self) -> Option<GpLin> {
         self.kpart_lin
     }
-    /// `Adaptor3d_CurveOnSurface::Ellipse` (`cxx:1396-1401`):
+    /// `Adaptor3d_CurveOnSurface::Ellipse` (`cxx:1399-1402`):
     /// `to3d(mySurface->Plane(), myCurve->Ellipse())`.
     fn gp_ellipse(&self) -> Option<GpElips> {
         self.kpart_elips.clone()
     }
-    /// `Adaptor3d_CurveOnSurface::Parabola` (`cxx:1410-1414`).
+    /// `Adaptor3d_CurveOnSurface::Parabola` (`cxx:1413-1416`).
     fn gp_parabola(&self) -> Option<GpParab> {
         self.kpart_parab.clone()
     }
-    /// `Adaptor3d_CurveOnSurface::Hyperbola` (`cxx:1403-1408`).
+    /// `Adaptor3d_CurveOnSurface::Hyperbola` (`cxx:1406-1409`).
     fn gp_hyperbola(&self) -> Option<GpHypr> {
         self.kpart_hypr.clone()
     }

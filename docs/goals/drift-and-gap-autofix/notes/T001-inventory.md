@@ -749,6 +749,13 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `CurveOnSurface` overrides minus the `Resolution` one P035 landed; the `gp_line` one plus the
   baseline-less STEP writer harness remain), and the "跟踪" paragraph plus the T999 callout
   extended to P027..P035.
+  P036 / T-166 (`8d22a639`) did the pass a seventh time the same day, again with no measurement change
+  (no files added, no `UNPORTED` line removed): its card, the gate-source comment repointed to
+  `.target-gate/t166`, the `T0M` parity row corrected to the t166 log's `60200 / 66899` (the canvas
+  had carried a stale `60199 / 66897`), the `Stat` still at 1 registered code item but now the
+  pole-based plane classes instead of `gp_line` (P034's second registration is closed, and `gp_line`
+  plus the baseline-less STEP writer harness are what remain), and the "跟踪" paragraph plus the T999
+  callout extended to P027..P036.
   P034 / T-164 (`c272c08a`) did this measurement pass a fifth time (P034 card, `MEASURE.rust`
   1,111 files / 338,784 lines, `CRATES` geom 133/45,074 and topo 638/213,964, the gate-source
   comment repointed to `.target-gate/t164`, the `Stat` moved to 2 registered code items -- the two
@@ -799,7 +806,7 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   arm must test `IsDone()` before scanning the solutions (`Extrema_GGExtPC.hxx:462-469`). Lesson for
   the T999 re-walk: check the inventory **per class family** -- this one was missing while the walk
   was only reading `IntAna_*`/`BRepLib_*` lines.
-- **Registered by P034, one closed by P035 / T-165 (2026-10-16, `501fbdf7`), the other still open:**
+- **Registered by P034, closed by P035 / T-165 (`501fbdf7`) and P036 / T-166 (`8d22a639`):**
   (a) `CurveOnSurface` had no `Adaptor3d_CurveOnSurface::Resolution` override
   (`Adaptor3d_CurveOnSurface.cxx:1364-1370`:
   `myCurve->Resolution(min(mySurface->UResolution(R3d), mySurface->VResolution(R3d)))`), so the cos
@@ -814,8 +821,27 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   72/0, `occt-topo --lib` 1251/0, `step_obj_gates` 4/4, `export_data_obj` 15/15; `.target-gate/t165/`),
   which shows the override does not move any reading on those models -- it does not by itself prove
   the new value is more correct elsewhere; the justification is that the cxx has the same override.
-  (b) Still registered: `CurveOnSurface` does not expose `gp_line()`, so a cos that `EvalKPart`
-  classifies as `GeomAbs_Line` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`, `:1701`) is typed
-  `GeomAbs_OtherCurve` here (`Curve::gp_line` defaults to `None`, `occt-geom/src/curve.rs:43`;
-  `CurveOnSurface` only has `is_line`). Both land in the same `Extrema_GLocateExtPC` free-form arm,
-  so there is no observable difference today.
+  (b) `CurveOnSurface` did not expose `gp_line()`, so a cos that `EvalKPart`
+  classified as `GeomAbs_Line` (`Adaptor3d_CurveOnSurface.cxx:1565`, `:1687`, `:1701`) was typed
+  `GeomAbs_OtherCurve` here (`Curve::gp_line` defaults to `None`, `occt-geom/src/curve.rs:43`).
+  **Closed by P036, and P036 had to falsify P035's own registration to do it:** the note here in the
+  P035 cycle said "both land in the same `Extrema_GLocateExtPC` free-form arm, so there is no
+  observable difference today", which is wrong -- `Extrema_GLocateExtPC::Initialize`
+  (`Extrema_GLocateExtPC.hxx:110-122`) branches on `GetType`, sending `GeomAbs_Line` to
+  `myExtremPC` (elementary) and everything else to `myLocExtPC`, and `Perform` (`hxx:131-140`) then
+  runs the free interval arm (`hxx:132-272`) or the elementary arm (`hxx:282-303`);
+  `Extrema_GFuncExtPC::Initialize` (`hxx:115-128`) picks `MaxOrder + SearchOfTolerance` or `0 + MinTol`
+  the same way. Since the adaptor's plane arm is `myType = CTy` (`cxx:1560`), five pcurve classes are
+  reachable for a cos and each must answer its 3D query (`cxx:1381-1386`, `:1399-1402`, `:1406-1409`,
+  `:1413-1416`); the port answered only `Circle()`. `eval_k_part` now returns a `KPart` and the plane
+  arm became `plane_k_part` (the cxx `if/else` chain, reusing the existing `ElCLib::To3d` conic ports
+  `occt-core/src/elib/clib.rs:633/651/642`), and `impl Curve for CurveOnSurface` forwards `gp_line`,
+  `gp_ellipse`, `gp_parabola`, `gp_hyperbola`. `EvalD0`/`EvalD1`/`EvalD2` are untouched because the cxx
+  evaluators special-case only Line and Circle.
+  **Still registered (carried as P037):** the pole-based plane classes `Bezier()`
+  (`cxx:1458-1485`) and `BSpline()` (`cxx:1489-1520`), which would make `myType` reachable as
+  `GeomAbs_BezierCurve`/`GeomAbs_BSplineCurve` (`Extrema_GGExtPC.hxx:190-243` is a real branch, not a
+  `default:`); forwarding them would make `bezier_poles`/`bspline_poles`/`bspline_knots`/
+  `bspline_weights`/`nurbs_degree` answer for a cos, and about 60 sites in the port use those
+  accessors as class tests, so each needs its cxx criterion re-read first. `GeomAbs_OffsetCurve` needs
+  no work: all three consumers put it in their `default:` arm.
