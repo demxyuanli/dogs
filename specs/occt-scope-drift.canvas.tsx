@@ -20,18 +20,18 @@ import {
 } from "cursor/canvas";
 
 // ---------------------------------------------------------------------------
-// 量测口径（2026-10-13 实测）
+// 量测口径（2026-10-16 实测；OCCT 侧与 10-13 / 10-11 逐位相同）
 //   OCCT 侧: D:\source\OCCT-src\src  .hxx/.cxx/.lxx/.gxx
 //   Rust 侧: crates/{occt-core,occt-math,occt-geom,occt-geom2d,occt-topo}/src  .rs
-//   基线  : specs/board.canvas.tsx (r41, asOf 2026-10-11) · specs/_audit/_index.md (§9 -> 2026-10-11)
+//   基线  : specs/board.canvas.tsx (r42, asOf 2026-10-13) · specs/_audit/_index.md (§9 -> 2026-10-11)
 //   对拍  : crates/occt-topo --test step_obj_gates（`--nocapture` 逐模型 v/f 与面积比）
 // ---------------------------------------------------------------------------
 const MEASURE = {
-  asOf: "2026-10-15",
+  asOf: "2026-10-16",
   occt: { files: 13803, lines: 2439487 },
-  rust: { files: 1060, lines: 335743 },
+  rust: { files: 1107, lines: 337814 },
   cadKernel: 1397840, // Foundation 252505 + ModelingData 347970 + ModelingAlgorithms 797365
-  unported: 166,
+  unported: 173,
 };
 
 const GROUPS = [
@@ -46,11 +46,11 @@ const GROUPS = [
 ];
 
 const CRATES = [
-  { crate: "occt-topo", files: 606, lines: 216367 },
-  { crate: "occt-core", files: 220, lines: 45065 },
-  { crate: "occt-geom", files: 121, lines: 41413 },
-  { crate: "occt-geom2d", files: 58, lines: 18604 },
-  { crate: "occt-math", files: 55, lines: 14294 },
+  { crate: "occt-topo", files: 638, lines: 214106 },
+  { crate: "occt-core", files: 220, lines: 45110 },
+  { crate: "occt-geom", files: 129, lines: 43951 },
+  { crate: "occt-geom2d", files: 63, lines: 19752 },
+  { crate: "occt-math", files: 57, lines: 14895 },
 ];
 
 // 本轮已收敛的偏移（均已跑现基线核实；行号为当前工作树实测）
@@ -250,12 +250,12 @@ const PARITY = [
   { model: "TDB", occV: 73544, occF: 79977, ourV: 73516, ourF: 79926, area: "1.0000" },
 ];
 
-// 状态/文档偏移：2026-10-13 复核定案
+// 状态/文档偏移：2026-10-16 复核定案（第十至第二十七包逐条复核）
 const DOCDRIFT = [
   {
     what: "看板基准日",
     detail: "board asOf 2026-10-11 · r41 → 2026-10-13 · r42",
-    gap: "✅ 已同步：`a91` 已收录 10-12 网格批次与 10-13 缝边注册修复",
+    gap: "✅ 已同步：`a91` 已收录 10-12 网格批次与 10-13 缝边注册修复。**本卡（偏移审查）已推进到 2026-10-16**；`specs/board.canvas.tsx` 自身仍停在 r42 / asOf 2026-10-13，尚未收录 P024..P026 与 T999 收口（登记，不在本卡范围）",
     tone: "success" as const,
   },
   {
@@ -277,10 +277,10 @@ const DOCDRIFT = [
     tone: "success" as const,
   },
   {
-    what: "SEMANTIC 表 LIVE 方向也过期",
-    detail: "24 条登记的 drift 行其代码已闭环（topo-rest 1/4/6/11 + 18 的 classifier 半、bop 1-4/7-16-17、mesh 1-14/19）",
-    gap: "❗未同步：`docs/goals/drift-and-gap-autofix/notes/T001-inventory.md` 逐条给了证据，本表尚未按方向订正（不是代码问题，是留档口径问题）",
-    tone: "danger" as const,
+    what: "SEMANTIC 表 LIVE 方向过期",
+    detail: "T001 清单登记的自创/采样行其代码已闭环（topo-rest 1/4/6/11 + 18 的 classifier 半、bop 1-4/7-16-17、mesh 1-14/19）",
+    gap: "✅ 已订正：2.2 的 SEMANTIC 各行随 P008..P026 逐条换成收口文案（2026-10-13 判词「本表尚未按方向订正」已不成立）。**仍未同步的只剩 `specs/_audit/topo-rest.md` 的 9 / 10 / 15 / 17 四条**：标题仍写 `live：**是**`，代码也确实在（`shape_metrics.rs:146` 曲率对角采样、`validate.rs:150` 恒真 `is_valid`、`hlr.rs` 画家算法、`pipe_along_polyline` 只平移剖面）—— 四者都是无 OCCT 类的 port-only / lite 替代件，不属本 tranche 的 drift 行，故只留档、不改代码",
+    tone: "warning" as const,
   },
   {
     what: "未上板的自创件：`bbox_from_geometry.rs` 采样包围盒",
@@ -308,8 +308,8 @@ const DOCDRIFT = [
   },
 ];
 
-// 看板门禁（读数日期 2026-10-15；G-check / G-lib / G-gates / G-export 覆盖到 T-145 已提交工作树 `055e54aa`，
-// G-fuse / G-phase / G-boss / G-iges 为 T-130..T-133 轮读数，其后改动不触及其路径）
+// 看板门禁（读数日期 2026-10-16；G-check / G-lib / G-gates / G-export 覆盖到 P026 已提交工作树 `fbd59532`
+// —— 即 T999 收口审计所对的冻结 HEAD —— G-fuse / G-phase / G-boss / G-iges 为 T-130..T-133 轮读数，其后改动不触及其路径）
 const GATES = [
   { id: "G-check", name: "五 crate 编译", base: "exit 0", now: "exit 0", tone: "success" as const },
   { id: "G-lib", name: "topo 单测 --lib", base: "1276 / 0", now: "1251 / 0", tone: "success" as const },
@@ -322,7 +322,7 @@ const GATES = [
   { id: "G-core", name: "core/math/geom/geom2d", base: "290·215·143·72", now: "283·210·143·72", tone: "success" as const },
 ];
 
-// 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`，active_task 恒为 T005；每个包 = 一个已核实并提交的切片）
+// 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`；收口前 active_task 恒为 T005，2026-10-16 随 T999 收口后为 T999 / `goal.status: done`；每个包 = 一个已核实并提交的切片）
 const CYCLES = [
   {
     pkg: "P012",
@@ -430,11 +430,18 @@ const CYCLES = [
     state: "✅ 已收口（2026-10-16，包 P026，commit `fbd59532`）。判词先行：该文件此前已委托曲线 kind 且 `reparam_curve2d` 已返回具体 `Geom2dBSplineCurve`，故**不是** stale-closed —— 真实缺口是两份转换尾副本的重复与漂移。<br>(1) 两份合并为唯一忠实件 `trimmed_reparam_bspline`（`GeomLib.cxx:912-921` + `:962-968`：`Geom2dTrimmedCurve(CurvePtr, U1, U2)` → `Geom2dConvert::CurveToBSplineCurve` → 对 `BS->Knots()` 做 `BSplCLib::Reparametrize(RequestedFirst, RequestedLast, Knots)` → `BS->SetKnots(Knots)`）与 `same_range_window`（`cxx:934-959`：`aCCheck` 周期判据 `:929-932`、周期窗 `:936-938` / 回落 `:940-943`、`Udeb/Ufin` 夹取 `:948-949`、退化回落 `:950-957`）。<br>(2) 删除的重复件：`same_range_unequal_line` / `same_range_unequal_other` / `trim_to_reparam_bspline` / `line_trim_to_reparam_bspline` / `unequal_trim_window`（cxx 的不等跨臂对直线、圆锥、B 样条走同一条路，没有判型分支），以及 `ReparamCurve2d::bspline_copy2d`（wrapper 只在 `Geom2dConvert::CurveToBSplineCurve` 拒绝时存在，`Geom2dConvert.cxx:442-444`，故 trait 默认 `None` 才是正确答案）。`pcurve_range.rs` 只保留 cxx 的分支选择（早退 `cxx:854-859`、等跨判据 `:862`、直线 `:864-871`、圆 `:872-889`、裁剪递归 `:890-901`、一般臂 `:908-922`、不等跨 `:924-969`），`wire_fix/mod.rs` 的未用 `reparameterize` 导入与 `lacking.rs` 指向已删件的注释同步清理，全部引用行号按 grep 物理行号订正。<br>(3) 门禁：`cargo check --manifest-path crates/occt-topo/Cargo.toml --offline --all-targets` **0 error / 413 warnings**、lib **0 error / 375 warnings**（与基线同数）；`occt-topo --lib` **1251/0**（等于基线，单调不降）；`step_obj_gates` **4/4**（118.1s，23 个模型面积比 1.0000，Shape-2 0.9999 / T0M 1.0017 / TDB 1.0015 均在既有容差内）；`export_data_obj` **15/15 ok** 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。未新增测试、未改既有断言。",
   },
   {
-    pkg: "下一步",
-    task: "待建 Worker",
+    pkg: "T999",
+    task: "Judge",
+    commit: "7b164e34",
+    scope: "收口审计：T001 清单逐行对账（每个登记行要么有包可指、要么有记录在案的结论），四条门禁在冻结 HEAD 上重跑（五 crate `cargo check --all-targets`、`occt-topo --lib`、`step_obj_gates`、`export_data_obj`）",
+    state: "✅ 结论 `full_outcome_complete: true`（`docs/goals/drift-and-gap-autofix/state.yaml` T999 收据）：B1..B8、B6a-h、B7-writer 两族、B8-intana、`surface_fit`、`B7-mesh_to_brep`、`ReparamCurve2d` 全部有包可指；冻结 HEAD `fbd59532` 上 `--all-targets` 0 error、`occt-topo --lib` 1251/0、`step_obj_gates` 4/4（118.02s）、`export_data_obj` 15/15 逐位一致；工作树在收口提交后为 clean。收据同时记明两条诚实边界：本 tranche 无一条门禁读数来自新写测试（四道基线都是 T002 冻结读数逐包重跑），唯一改动过的三条基线断言是以 `occt_probe --ssx` 实测值重定（非新测试）",
+  },
+  {
+    pkg: "登记项",
+    task: "—",
     commit: "—",
     scope: "缺失的 `data/occ/*.st*` 驱动式 STEP 写侧 harness：`data/occ/` 只有读侧 `step_obj_gates` 口径，写侧（`StepToGeom_Make*` / `GeomToStep_Make*`）没有可对拍的既有基线",
-    state: "⬜ 待做（唯一剩余登记项）：`ReparamCurve2d` 的 `SameRange` 线已作为 P026 / T-156 收口（见上），B6 家族、B7-writer 系列、`surface_fit`、B7-mesh_to_brep 均已闭环。本项因**无既有基线可对拍**且本 tranche 不允许新写测试，故保持登记、不改代码；若推进需先由 T999 裁定「无基线不可对齐」还是另找既有写侧口径。",
+    state: "⬜ 保持登记（T999 裁定「本 tranche 范围外」）：无既有基线可对拍且本 tranche 不允许新写测试，故不改代码；它与 P010/P011/P012 的写侧缺陷不同 —— 那三条落在读侧共享管线上，能由既有门禁判定，本项不能。推进需先裁定「无基线不可对齐」还是另找既有写侧口径。代码侧登记项至此清零",
   },
 ];
 
@@ -487,7 +494,7 @@ export default function OcctScopeDrift() {
         showValues
       />
       <Text size="small" tone="tertiary">
-        来源：D:\source\OCCT-src\src（8 个模块组，.hxx/.cxx/.lxx/.gxx）· 2026-10-13 复测（与 10-11 逐位相同）· 单位：源码行。
+        来源：D:\source\OCCT-src\src（8 个模块组，.hxx/.cxx/.lxx/.gxx）· 2026-10-16 复测（与 10-13 / 10-11 逐位相同）· 单位：源码行。
       </Text>
 
       <H3>Rust 侧分布</H3>
@@ -497,9 +504,12 @@ export default function OcctScopeDrift() {
         columnAlign={["left", "right", "right"]}
       />
       <Text size="small" tone="tertiary">
-        较 2026-10-11（1,080 文件 / 337,891 行）：<Text weight="semibold">−20 文件 / −2,148 行</Text>，主要来自
-        `brepmesh.rs`（−602 行，A18/A19）、`wireframe.rs` 平面机器（−288 行，A18）、5 条自创单测的删除，
-        以及本轮撤除的 3 处 `IGES_UVDBG` 临时插桩（−59 行，`4a20e078`）。
+        较 2026-10-13（1,060 文件 / 335,743 行）：<Text weight="semibold">+47 文件 / +2,071 行</Text>；较 2026-10-11
+        （1,080 文件 / 337,891 行）为 <Text weight="semibold">+27 文件 / −77 行</Text>。增量来自 P024..P026
+        等包的忠实件新增（`brep_lib_find_surface.rs`、`brep_lib_make_face.rs`、`extrema_ss/` 与 `extrema_cc/`
+        的 `*_func_*` / `gen_locate_*` / `p_on_curv`、`extrema2d/` 的 `gfunc_ext_*` / `gen_locate_*`、
+        `bspl/knot_analysis.rs`），减量来自删除面（`mesh_to_brep` 的 `1e-9` 归并格、`SameRange` 转换尾副本、
+        `surface_fit` 调用点、四份自创多项式解算器、`brepmesh.rs` −602 行与 `wireframe.rs` 平面机器 −288 行）。
       </Text>
 
       <Callout tone="info" title="范围口径的要点">
@@ -542,7 +552,7 @@ export default function OcctScopeDrift() {
         striped
       />
 
-      <H3>2.3 逐模型对拍（`data/occ/*`，2026-10-15 `step_obj_gates --nocapture` 实测）</H3>
+      <H3>2.3 逐模型对拍（`data/occ/*`，2026-10-16 `step_obj_gates --nocapture` 实测）</H3>
       <Table
         headers={["模型", "OCCT v / f", "端口 v / f", "Δf", "面积比"]}
         rows={PARITY.map((p) => [
@@ -560,7 +570,7 @@ export default function OcctScopeDrift() {
         `data/*.step`（15 个）中 12 个逐位一致；`Shape-1` 差 −8 面、`Shape-2` 差 −34 面、`screw` 差 +2 面。八个 `data/occ/*` 模型面积比全为 1.0000，缺口是双向小量（T0M +58、TDB −51、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −5、motoc 0）；剩下面级差集中在 2.2 首行登记的 Delaunay 插点密度分支。
       </Text>
 
-      <H3>2.4 状态 / 文档偏移（2026-10-15 复核：全部收口）</H3>
+      <H3>2.4 状态 / 文档偏移（2026-10-16 复核：canvas 侧全部收口；`topo-rest.md` 四条 lite 标注留档）</H3>
       <Table
         headers={["偏差", "文档现状", "实际"]}
         rows={DOCDRIFT.map((d) => [d.what, d.detail, d.gap])}
@@ -583,18 +593,18 @@ export default function OcctScopeDrift() {
         rowTone={GATES.map((g) => g.tone)}
       />
       <Text size="small" tone="tertiary">
-        `G-check` / `G-lib` / `G-gates` / `G-export` 读数首次测量于 2026-10-15（覆盖到 T-147 已提交工作树 `e3a4335e`）：五 crate `--all-targets` 0 error、`occt-geom2d --lib` 72 / 0、`occt-geom --lib` 143 / 0、`occt-topo --lib` 1251 / 0、`step_obj_gates` 4 / 4（248.5s，23 个面积比与基线逐位一致）、`export_data_obj` 15 / 15 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。此后每个包都在自己的提交上重跑同样四条门禁，读数一直不变：P018 `8cad6a01`（gates 4/4，150.7s）、P019 `616ea0c1`（181.8s）、P020 `2452a51c`（205.1s）、P021 `11b12e0e`（114.1s）、P022 `3b5728b3`（114.7s）、P023 `38a13eae`（115.6s）、P024 `549e5761`、P025 `8d77b13a`（115.7s）、P026 `fbd59532`（118.1s）；`--lib` 恒为 `occt-topo` 1251 / 0、`export_data_obj` 恒为 15 / 15 逐位一致。`G-fuse` / `G-phase` / `G-boss` / `G-iges` 为 T-130..T-133 轮读数，其后的包未触及这些路径。`G-core` 的 `occt-core` 读数由 285 变 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251，`notes/T002-gate-baseline.md` 已留档）；`occt-math` 210、`occt-geom` 143、`occt-geom2d` 72 未变。
+        `G-check` / `G-lib` / `G-gates` / `G-export` 读数首次测量于 2026-10-15（覆盖到 T-147 已提交工作树 `e3a4335e`），末次为其在 2026-10-16 收口审计所对的冻结 HEAD `fbd59532`：五 crate `--all-targets` 0 error、`occt-geom2d --lib` 72 / 0、`occt-geom --lib` 143 / 0、`occt-topo --lib` 1251 / 0、`step_obj_gates` 4 / 4（118.02s；23 个面积比与基线逐位一致）、`export_data_obj` 15 / 15 且逐模型 v/f 与包围盒与 T002 冻结表逐位一致。中间每个包都在自己的提交上重跑同样四条门禁，读数一直不变：P018 `8cad6a01`（gates 4/4，150.7s）、P019 `616ea0c1`（181.8s）、P020 `2452a51c`（205.1s）、P021 `11b12e0e`（114.1s）、P022 `3b5728b3`（114.7s）、P023 `38a13eae`（115.6s）、P024 `549e5761`、P025 `8d77b13a`（115.7s）、P026 `fbd59532`（118.1s）；`--lib` 恒为 `occt-topo` 1251 / 0、`export_data_obj` 恒为 15 / 15 逐位一致。`G-fuse` / `G-phase` / `G-boss` / `G-iges` 为 T-130..T-133 轮读数，其后的包未触及这些路径。`G-core` 的 `occt-core` 读数由 285 变 283 是 T-143 删除两条自创单测所致（同 `G-lib` 的 1276 → 1251，`notes/T002-gate-baseline.md` 已留档）；`occt-math` 210、`occt-geom` 143、`occt-geom2d` 72 未变。
       </Text>
 
       <H3>2.6 目标看板跟踪（`docs/goals/drift-and-gap-autofix/state.yaml`）</H3>
       <Text size="small" tone="tertiary">
-        active_task 恒为 T005（PM 滚动推进）；每个包 = 一个已跑现基线核实并单独提交的切片，提交信息点名 `.cxx` 文件与行号范围。
+        `docs/goals/drift-and-gap-autofix/state.yaml` 于 2026-10-16 随 T999 收口：`goal.status: done`、`active_task: T999`、T999 收据 `full_outcome_complete: true`（唯一登记项为缺失的 STEP 写侧 harness，裁定为本 tranche 范围外）。收口前 `active_task` 恒为 T005（PM 滚动推进）；每个包 = 一个已跑现基线核实并单独提交的切片，提交信息点名 `.cxx` 文件与行号范围。
       </Text>
       <Table
         headers={["包", "任务", "提交", "切片范围", "状态"]}
         rows={CYCLES.map((c) => [c.pkg, c.task, c.commit, c.scope, c.state])}
         columnAlign={["left", "left", "left", "left", "left"]}
-        rowTone={CYCLES.map((c) => (c.pkg === "下一步" ? ("warning" as const) : ("success" as const)))}
+        rowTone={CYCLES.map((c) => (c.pkg === "登记项" ? ("warning" as const) : ("success" as const)))}
         striped
       />
 
@@ -603,24 +613,25 @@ export default function OcctScopeDrift() {
       <H2>三、结论与下一步</H2>
       <Row gap={16} wrap>
         <Stat value="13.8%" label="全库行数覆盖" />
-        <Stat value="24.0%" label="CAD 内核行数覆盖" tone="info" />
-        <Stat value="4 处" label="登记未收代码项（含下一片 1 处）" tone="warning" />
-        <Stat value="0 项" label="文档/状态偏移待办" tone="success" />
+        <Stat value="24.2%" label="CAD 内核行数覆盖" tone="info" />
+        <Stat value="1 处" label="登记未收代码项（STEP 写侧 harness）" tone="warning" />
+        <Stat value="1 处" label="留档待办（`topo-rest.md` 9/10/15/17 的 live 标注）" tone="warning" />
       </Row>
       <Stack gap={6}>
         <Text>
-          <Text weight="semibold">范围</Text>：全库 13.8%、CAD 内核约 24.0% 的行数覆盖；有效范围是 STEP→OBJ 共享管线，
-          在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.6 万行）。
+          <Text weight="semibold">范围</Text>：全库 13.8%、CAD 内核约 24.2% 的行数覆盖；有效范围是 STEP→OBJ 共享管线，
+          在此链上已做逐行对 `.cxx` 的深度移植（occt-topo 占 21.4 万行）。
         </Text>
         <Text>
-          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地、P024 `BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地并接线 `offset_wire_3d`、P025 `mesh_to_brep` 的 `1e-9` 归并格 / `Vertex` 容差 0.0 / 自创三角形法向换 `BRepBuilderAPI_MakeShapeOnMesh` 忠实件、P026 `GeomLib::SameRange` 转换尾两份副本合并为唯一 `trimmed_reparam_bspline`）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，`surface_fit` 一项随 P024 收口（真实对应件为 `BRepLib_FindSurface`，非 `GeomLib::IsPlanarSurface`），B7-mesh_to_brep 一项随 P025 收口、`ReparamCurve2d` 的 `SameRange` 一项随 P026 收口，登记项只剩缺失的 STEP 写侧数据驱动 harness（无既有基线，只登记，不新写基线）。
+          <Text weight="semibold">跟踪</Text>：2.6 的滚动看板把最近五个包（P022 `geom2d_convert` 的第二份残缺 `curve_to_bspline_curve` 副本删除、P023 `GeomAPI_ExtremaSurfaceSurface` 的 `myIndex` 最小解落地、P024 `BRepLib_FindSurface` / `BRepLib_MakeFace(W, OnlyPlane)` 落地并接线 `offset_wire_3d`、P025 `mesh_to_brep` 的 `1e-9` 归并格 / `Vertex` 容差 0.0 / 自创三角形法向换 `BRepBuilderAPI_MakeShapeOnMesh` 忠实件、P026 `GeomLib::SameRange` 转换尾两份副本合并为唯一 `trimmed_reparam_bspline`）各自落到任务号与提交号；B6 家族（B6a/B6b/B6c/B6d/B6e 2D+3D/B6f/B6g/B6h）已随 P008/P017/P018/P019/P020/P021/P023 全部收口，B7 写侧两族亦随 P010/P011/P022 收口，`surface_fit` 一项随 P024 收口（真实对应件为 `BRepLib_FindSurface`，非 `GeomLib::IsPlanarSurface`），B7-mesh_to_brep 一项随 P025 收口、`ReparamCurve2d` 的 `SameRange` 一项随 P026 收口；2.6 末两行以 T999 收据（`full_outcome_complete: true`）与那一条保持登记的 STEP 写侧 harness 收口本 tranche，`state.yaml` 的 `goal.status` 已置 `done`（登记项只剩该写侧 harness：无既有基线，只登记，不新写基线）。
         </Text>
         <Text>
           <Text weight="semibold">偏移</Text>：本轮把缝边 pcurve 注册按 OCCT 全量重写（锥面缝再按 `FirstParameter()` 交换），
           TDB 三角 81,721 → <Text weight="semibold">79,926</Text>（OCCT 79,977）、面积比 1.0042 → <Text weight="semibold">1.0000</Text>，
           逐面配对 2,050 面逐位相同；`data/occ` 八模型面积比全为 1.0000（motoc 逐位一致），缺口收为双向小量
-          （T0M +58、TDB −51、top −30、ATU01038 −32）。2.4 的五条状态/文档偏移（看板基准日、`G-lib`、`G-export`、未提交工作树、
-          10-10 未上板批次）本轮全部收口。
+          （T0M +58、TDB −51、top −30、ATU01038 −32）。2.4 的七条状态/文档偏移（看板基准日、`G-lib`、`G-export`、`G-core`、
+          未上板自创件、未提交工作树、10-10 未上板批次）已全部收口；**本卡于 2026-10-16 按新口径复测刷新**（Rust 侧 1,107 文件 /
+          337,814 行、`UNPORTED` 173 条，见 2.1 与 2.4）。
         </Text>
       </Stack>
       <Callout tone="success" title="T999 Judge 审计（本 tranche 结论：full_outcome_complete）">
