@@ -24,7 +24,7 @@ use crate::gp::GpPnt;
 /// `PLib::CoefficientsPoles` — that is what `Geom_BezierCurve::Segment`
 /// (`Geom_BezierCurve.cxx:388-425`) and `GeomConvert::CurveToBSplineCurve` need.
 /// Port that instead of reviving the averaging below (see
-/// `specs/board.canvas.tsx`, task T-44).
+/// `specs/_tasks.md`, task T-44).
 pub fn poles_to_coefficients(poles: &[GpPnt], knots: &[f64], degree: usize) -> Vec<GpPnt> {
     let n = poles.len();
     if n == 0 { return vec![]; }

@@ -2,7 +2,7 @@
 
 > 完整逐轮记录（约 26000 行）已精简移除，原文保存在 git 提交 `c8060dd1`：
 > `rtk git show c8060dd1:specs/_a3n00_gap_analysis.md`。
-> 相关画板：`specs/board.canvas.tsx`，OCCT 参考数据：`specs/_occt_mesh_gt.md`。
+> 相关画板：`specs/occt-scope-drift.canvas.tsx`（旧 `specs/board.canvas.tsx` 已于 2026-10-16 退役删除），OCCT 参考数据：`specs/_occt_mesh_gt.md`。
 
 ---
 

@@ -21,7 +21,7 @@ data/                   模型与参考基线
   occ/*.stp             输入模型；occ-*.obj 为 **OCCT 参考网格（GT）**
   iges/                 IGES 样例
 specs/                  规格与对拍记录
-  board.canvas.tsx      任务看板（卡面/进度/nextAction，人机共编）
+  occt-scope-drift.canvas.tsx  移植范围与偏移审查画板（量测/偏移残余/门禁/CYCLES，唯一维护中的板）
   _a3n00_gap_analysis.md  a3n00 缺口分析（§9.x 逐轮记录，含每次实测数字与口径）
   occt_probe/           **OCCT 侧**只读探针（C++，需本机 OCCT 构建）
 tools/, engine/, docs/  辅助脚本 / 引擎侧代码 / 文档
@@ -120,7 +120,8 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 ## 文档索引
 
 - `CLAUDE.md` —— 工作纪律（**改代码前必读**）
-- `specs/board.canvas.tsx` —— 任务看板：卡面、状态、`nextAction`、活动流
+- `specs/occt-scope-drift.canvas.tsx` —— 移植范围与偏移审查画板：量测、偏移残余、门禁表（`GATES`）、滚动包记录（`CYCLES`）
+- `docs/goals/drift-and-gap-autofix/state.yaml` —— 长跑自主板的板真相（`active_task` / 包收据 / 门禁读数）
 - `specs/_a3n00_gap_analysis.md` —— a3n00 缺口分析：§9.x 逐轮记录**实测数字与其口径**、
   已排除项、以及每条结论对应的 `.cxx` 行号
 - `docs/` —— 阶段性审查文档
