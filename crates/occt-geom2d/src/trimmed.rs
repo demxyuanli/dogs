@@ -181,6 +181,46 @@ impl Curve2d for Geom2dTrimmedCurve {
     fn gp_hypr2d(&self) -> Option<occt_core::gp::GpHypr2d> {
         self.basis.gp_hypr2d()
     }
+    /// `Geom2dAdaptor_Curve::load` unwraps a `Geom2d_TrimmedCurve` to its basis
+    /// before the `DynamicType` chain (`cxx:283-287`), so the pole classes
+    /// resolve to the basis as well: `GeomAbs_BezierCurve` (`cxx:315-320`) and
+    /// `GeomAbs_BSplineCurve` (`cxx:322-330`).
+    fn is_bezier2d(&self) -> bool {
+        self.basis.is_bezier2d()
+    }
+    fn is_bspline2d(&self) -> bool {
+        self.basis.is_bspline2d()
+    }
+    fn poles2d(&self) -> Option<Vec<GpPnt2d>> {
+        self.basis.poles2d()
+    }
+    fn bezier_nb_poles(&self) -> Option<usize> {
+        self.basis.bezier_nb_poles()
+    }
+    fn bezier_weights2d(&self) -> Option<&[f64]> {
+        self.basis.bezier_weights2d()
+    }
+    fn bspline_degree(&self) -> Option<usize> {
+        self.basis.bspline_degree()
+    }
+    fn bspline_distinct_knots_mults(&self) -> Option<(Vec<f64>, Vec<i32>)> {
+        self.basis.bspline_distinct_knots_mults()
+    }
+    fn bspline_weights2d(&self) -> Option<&[f64]> {
+        self.basis.bspline_weights2d()
+    }
+    fn bspline_poles2d(&self) -> Option<(&[f64], &[f64])> {
+        self.basis.bspline_poles2d()
+    }
+    fn bspline_knots2d(&self) -> Option<&[f64]> {
+        self.basis.bspline_knots2d()
+    }
+    fn bspline_nb_knots(&self) -> Option<usize> {
+        self.basis.bspline_nb_knots()
+    }
+    fn is_rational(&self) -> bool {
+        self.basis.is_rational()
+    }
     fn trimmed_basis(&self) -> Option<&dyn Curve2d> {
         Some(self.basis.as_ref())
     }

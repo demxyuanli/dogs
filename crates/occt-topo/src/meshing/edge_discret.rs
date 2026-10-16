@@ -1017,17 +1017,21 @@ struct KPart {
     elips: Option<GpElips>,
     parab: Option<GpParab>,
     hypr: Option<GpHypr>,
+    /// `Bezier()` (`cxx:1458-1485`) and `BSpline()` (`cxx:1489-1520`): the
+    /// pole class lifted onto the plane with `to3d(mySurface->Plane(), Pole2d)`.
+    /// Both cxx bodies are `GeomLib::To3d`'s Bezier (`GeomLib.cxx:582-602`) and
+    /// B-spline (`GeomLib.cxx:603-632`) arms verbatim, so the port reuses that
+    /// single faithful implementation instead of writing a second one.
+    poles: Option<Arc<dyn Curve>>,
 }
 
 /// `EvalKPart` plane arm (`cxx:1558-1577`): `myType = CTy` (`cxx:1560`), so the
 /// pcurve class alone decides, and each elementary class answers its 3D query
 /// through `to3d(mySurface->Plane(), myCurve->...)` (`cxx:1381-1416`).
 ///
-/// `GeomAbs_OffsetCurve` / `GeomAbs_BezierCurve` / `GeomAbs_BSplineCurve` /
-/// `GeomAbs_OtherCurve` pcurves leave every field empty, which is the cxx
-/// behaviour for the first and last (`Offset()` is not overridden on this
-/// adaptor, `Bezier()`/`BSpline()` are the UNPORTED pole-based plane queries
-/// recorded on `eval_k_part`).
+/// `GeomAbs_OffsetCurve` / `GeomAbs_OtherCurve` pcurves leave every field empty,
+/// which is the cxx behaviour for both (`Offset()` is not overridden on this
+/// adaptor). A pole-classified pcurve fills `poles` instead.
 fn plane_k_part(pc: &dyn Curve2d, surf: &dyn Surface, pl: &GpPln) -> KPart {
     let mut k = KPart::default();
     if let Some(c2) = pc.gp_circ2d() {
@@ -1050,27 +1054,30 @@ fn plane_k_part(pc: &dyn Curve2d, surf: &dyn Surface, pl: &GpPln) -> KPart {
     } else if let Some(h2) = pc.gp_hypr2d() {
         // `Hyperbola()` (`cxx:1406-1409`).
         k.hypr = clib::to_3d_hypr(&pl.pos.ax2(), &h2).ok();
+    } else if pc.is_bezier2d() || pc.is_bspline2d() {
+        // `Bezier()` (`cxx:1458-1485`) / `BSpline()` (`cxx:1489-1520`): both lift
+        // the pcurve poles with `to3d(mySurface->Plane(), Pole2d)` and branch on
+        // `myCurve->IsRational()`, which is `GeomLib::To3d`'s Bezier
+        // (`GeomLib.cxx:582-602`) and B-spline (`GeomLib.cxx:603-632`) arms.
+        k.poles = occt_geom::geom_lib::to_3d(&pl.pos.ax2(), pc);
     }
     k
 }
 
 /// `Adaptor3d_CurveOnSurface::EvalKPart` (`cxx:1552-1733`).
 ///
-/// UNPORTED: the pole-based plane classes. `Bezier()` (`cxx:1458-1485`) and
-/// `BSpline()` (`cxx:1489-1520`) build a 3D `Geom_BezierCurve` /
-/// `Geom_BSplineCurve` out of the pcurve poles for a plane surface, so `myType`
-/// can also be `GeomAbs_BezierCurve` / `GeomAbs_BSplineCurve` there (and
-/// `GeomAbs_OffsetCurve`, whose `Offset()` this adaptor does not override).
-/// This port keeps `Curve::bezier_poles` / `bspline_poles` / `bspline_knots` /
-/// `bspline_weights` / `nurbs_degree` at their `None` defaults for a
-/// `CurveOnSurface`, so such a cos classifies as `GeomAbs_OtherCurve`
-/// (`extrema_pc/curve_tool.rs:36-56`) instead of `GeomAbs_BSplineCurve`, which
-/// is its own `Extrema_GGExtPC` case (`Extrema_GGExtPC.hxx:190-243`).
-/// `GeomAbs_OffsetCurve` is the `default:` arm in all three consumers
+/// The pole-based plane classes `Bezier()` (`cxx:1458-1485`) and `BSpline()`
+/// (`cxx:1489-1520`) are reached through `plane_k_part`: a plane surface with a
+/// pole-classified pcurve leaves `myType` at `GeomAbs_BezierCurve` /
+/// `GeomAbs_BSplineCurve` (`cxx:1560`), and the lifted 3D curve is cached in
+/// `kpart_poles` so `Curve::bezier_poles` / `bspline_poles` / `bspline_knots` /
+/// `bspline_weights` / `nurbs_degree` answer for that cos exactly as
+/// `Extrema_CurveTool` forwards them.
+///
+/// UNPORTED: `GeomAbs_OffsetCurve`. `Offset()` is not overridden on this
+/// adaptor, and the class is the `default:` arm in all three consumers
 /// (`Extrema_GGExtPC.hxx:390-502`, `Extrema_GFuncExtPC.hxx:115-128`,
-/// `Extrema_GLocateExtPC.hxx:110-140`), so dropping that one is unobservable.
-/// Exposing the poles would flip every `nurbs_degree` / `bspline_poles` /
-/// `bezier_poles` class test in the port for such a cos and needs its own audit.
+/// `Extrema_GLocateExtPC.hxx:110-140`), so dropping it is unobservable.
 ///
 /// `GeomAdaptor_Surface` of a rectangular trim reports the basis GetType.
 fn eval_k_part(pc: &dyn Curve2d, surf: &dyn Surface) -> KPart {
@@ -1199,6 +1206,10 @@ pub struct CurveOnSurface {
     kpart_parab: Option<GpParab>,
     /// `Hyperbola()` (`cxx:1406-1409`), reachable only on a plane surface.
     kpart_hypr: Option<GpHypr>,
+    /// `Bezier()` (`cxx:1458-1485`) / `BSpline()` (`cxx:1489-1520`), reachable
+    /// only on a plane surface; `EvalKPart`'s plane arm sets `myType = CTy`
+    /// (`cxx:1560`), so a pole-classified pcurve answers these.
+    kpart_poles: Option<Arc<dyn Curve>>,
     /// `myFirstSurf` from `EvalFirstLastSurf` (`cxx:1778-1783`).
     first_surf: Option<Arc<dyn Surface>>,
     /// `myLastSurf` from `EvalFirstLastSurf` (`cxx:1822-1827`).
@@ -1236,6 +1247,7 @@ impl CurveOnSurface {
             kpart_elips: kpart.elips,
             kpart_parab: kpart.parab,
             kpart_hypr: kpart.hypr,
+            kpart_poles: kpart.poles,
             first_surf,
             last_surf,
             // `cxx:1136`: seed outside the true range so the first Evaluate re-trims.
@@ -1372,6 +1384,33 @@ impl Curve for CurveOnSurface {
     fn gp_hyperbola(&self) -> Option<GpHypr> {
         self.kpart_hypr.clone()
     }
+    /// `Adaptor3d_CurveOnSurface::Bezier` (`cxx:1458-1485`): the plane-lifted
+    /// pcurve poles, so `EvalKPart`'s `GeomAbs_BezierCurve` cos keeps that type
+    /// in `GeomAdaptor_Curve::GetType` (`extrema_pc/curve_tool.rs:36-56`).
+    fn bezier_poles(&self) -> Option<&[GpPnt]> {
+        self.kpart_poles.as_ref()?.bezier_poles()
+    }
+    /// `Adaptor3d_CurveOnSurface::Bezier`'s `IsRational()` arm (`cxx:1475-1479`).
+    fn bezier_weights(&self) -> Option<&[f64]> {
+        self.kpart_poles.as_ref()?.bezier_weights()
+    }
+    /// `Adaptor3d_CurveOnSurface::BSpline` (`cxx:1489-1520`).
+    fn bspline_poles(&self) -> Option<&[GpPnt]> {
+        self.kpart_poles.as_ref()?.bspline_poles()
+    }
+    /// `Adaptor3d_CurveOnSurface::BSpline`'s `IsRational()` arm (`cxx:1509-1513`).
+    fn bspline_weights(&self) -> Option<&[f64]> {
+        self.kpart_poles.as_ref()?.bspline_weights()
+    }
+    /// `myCurve->Knots()` (`cxx:1506`).
+    fn bspline_knots(&self) -> Option<&[f64]> {
+        self.kpart_poles.as_ref()?.bspline_knots()
+    }
+    /// `myCurve->Degree()` (`cxx:1512`/`:1516`; `Adaptor3d_CurveOnSurface::Degree`
+    /// `cxx:1418-1434` is `myCurve->Degree()`).
+    fn nurbs_degree(&self) -> Option<usize> {
+        self.kpart_poles.as_ref()?.nurbs_degree()
+    }
     fn is_line(&self) -> bool {
         self.kpart_lin.is_some()
     }
@@ -1458,6 +1497,7 @@ impl Curve for CurveOnSurface {
             kpart_elips: self.kpart_elips.clone(),
             kpart_parab: self.kpart_parab.clone(),
             kpart_hypr: self.kpart_hypr.clone(),
+            kpart_poles: self.kpart_poles.clone(),
             first_surf: self.first_surf.clone(),
             last_surf: self.last_surf.clone(),
             trim_cache: std::sync::Mutex::new(None),
