@@ -109,7 +109,8 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 
 - 输入：`data/occ/*.stp` 与 `data/occ/*.step`（a3n00、acs10、ATU01038、bottom、motoc、T0M、top、TDB），以及 `data/*.step`（含 `linkrods.step`）
 - 参考（GT）：`data/occ/occ-*.obj` —— 逐模型面积比与 f-ratio 的对照基准
-- 产物：`data/output/<stem>.obj`（已 gitignore）—— STEP→OBJ 唯一导出目录（`export_data_obj` 与 `step_obj_gates` 共用）
+- 产物：`data/output/<stem>.obj` + `<stem>.mtl`（已 gitignore）—— STEP→OBJ 导出目录，由 `export_data_obj` 独占写入（带颜色时同时写 `.mtl` sidecar）
+- 门禁产物：`data/output/gates/<stem>.obj` + `<stem>.mtl` —— `step_obj_gates` 写入，**与导出目录分离**，避免跑门禁时覆盖上面的 CAF 产物；门禁走同一 `model_to_obj_caf` 管线，同一模型两边文件逐字节相同
 - IGES 对拍：`_igesdump/oracle/` 是 OCCT 写出的 14 个样例。端口导出用 `iges_check`，`IGES_DUMP` 只作人工对照，不入库
   - **降级 oracle：`_igesdump/oracle/Torus.iges` 只作写侧参数对照，不作"读回正确输出"基准。** 它复现的是 **OCCT 8.0.0 Faces 模式往返缺陷**（2026-10-12 定位，详见 `docs/goals/iges-read-full/state.yaml` T027）：Faces 模式（`IGESControl_Writer("MM", 0)`，`GeomToIGES_GeomSurface.cxx:576-598` 的 `myBRepMode && myAnalytic` 为假）把解析环面写成 `144 + 120` 回转面 + 相位不自洽的 `142`；OCCT 8.0.0 自己读回得到 **1 面 / 2 wires / v 跨 4π ≈ 302 节点 146 三角**（面积 67.24，真值 789.57），而 OCCT **7.8.1**（FreeCAD 1.1 内置）读同一文件是 **1 面 / 1 wire / v 跨 2π / 完整环面**（1639 点 3122 面，面积 786.66）。同一 IGES 若按 **BRep 模式**写出则是 `198,9,11,10.,2.,13`（解析环面），OCCT 8.0.0 读回 **1 面 / 1 wire / 1369 节点 2592 三角 / bbox ±12**（完整环面）。端口在此条上与规格 8.0.0 **逐点一致**（302/146 到 1e-7），故 Torus 的读侧 sweep 仍可作 parity 检查，但 **302/146 不得判为端口缺陷或"正确输出"**。
 - 临时：`.target-gate/`（已 gitignore）存放门禁输出、对拍脚本与探针 dump

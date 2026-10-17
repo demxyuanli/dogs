@@ -263,7 +263,8 @@ pub(super) fn product_definition_by_name(
     let mut by_name = HashMap::new();
     for (&id, rec) in records {
         if rec.type_name == "PRODUCT_DEFINITION" {
-            if let Some(f) = rec.args.get(3).and_then(|a| parse_ref(a)) {
+            // `formation` is the 3rd attribute (`RWStepBasic_RWProductDefinition.cxx:52-61`).
+            if let Some(f) = rec.args.get(2).and_then(|a| parse_ref(a)) {
                 if let Some(p) = formation_prod.get(&f) {
                     if let Some(name) = prod_names.get(p) {
                         by_name.insert(name.clone(), id);

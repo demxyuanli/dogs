@@ -5,7 +5,7 @@ use crate::cslib::poly_def::NormalPolyDef;
 use crate::gp::{GpDir, GpVec};
 use crate::math_fn::MathFunction;
 use crate::math_function_roots::FunctionRoots;
-use crate::precision::{COMPUTATIONAL, CONFUSION, PCONFUSION};
+use crate::precision::{COMPUTATIONAL, CONFUSION, PCONFUSION, REAL_EPSILON};
 
 /// Angular tolerance for MaxOrder lambda ratios (`CSLib.cxx:34`).
 const PARALLEL_ANGULAR_TOL: f64 = 1e-6;
@@ -26,6 +26,50 @@ pub enum CSLibNormalStatus {
     D1NuNvRatioIsNull,
     D1NvNuRatioIsNull,
     D1NuIsParallelD1Nv,
+}
+
+/// `CSLib_DerivativeStatus` (`CSLib_DerivativeStatus.hxx:20-31`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CSLibDerivativeStatus {
+    WrongNormal,
+    D1uIsNull,
+    D1vIsNull,
+    D1uIsParallelD1v,
+    Done,
+}
+
+/// `CSLib::Normal(D1U, D1V, SinTol, Status, Normal)` (`CSLib.cxx:45-80`).
+///
+/// This is the overload `LProp`/`GeomLProp_SurfaceUtils::ComputeSurfNormal`
+/// calls (`GeomLProp_SurfaceUtils.hxx:350-358`), hence the one behind
+/// `BRepLProp_SLProps::IsNormalDefined` / `Normal` and the OBJ writer's per-node
+/// `vn` (`RWMesh_FaceIterator.cxx:64-77`).
+pub fn normal_d1(
+    d1u: &GpVec,
+    d1v: &GpVec,
+    sin_tol: f64,
+) -> (CSLibDerivativeStatus, Option<GpDir>) {
+    let d1u_mag = d1u.square_magnitude();
+    let d1v_mag = d1v.square_magnitude();
+    let d1u_x_d1v = d1u.crossed(d1v);
+
+    if d1u_mag <= REAL_EPSILON && d1v_mag <= REAL_EPSILON {
+        return (CSLibDerivativeStatus::WrongNormal, None);
+    }
+    if d1u_mag <= REAL_EPSILON {
+        return (CSLibDerivativeStatus::D1uIsNull, None);
+    }
+    if d1v_mag <= REAL_EPSILON {
+        return (CSLibDerivativeStatus::D1vIsNull, None);
+    }
+    let sin2 = d1u_x_d1v.square_magnitude() / (d1u_mag * d1v_mag);
+    if sin2 < sin_tol * sin_tol {
+        return (CSLibDerivativeStatus::D1uIsParallelD1v, None);
+    }
+    match GpDir::from_vec(&d1u_x_d1v) {
+        Ok(n) => (CSLibDerivativeStatus::Done, Some(n)),
+        Err(_) => (CSLibDerivativeStatus::WrongNormal, None),
+    }
 }
 
 /// `CSLib::Normal(D1U, D1V, MagTol, Status, Normal)` (`CSLib.cxx:156-179`).

@@ -604,7 +604,7 @@ impl WriteCtx {
             .w
             .emit(format!("PRODUCT_DEFINITION_FORMATION('','',#{product})"));
         let def = self.w.emit(format!(
-            "PRODUCT_DEFINITION('','','',#{formation},#{})",
+            "PRODUCT_DEFINITION('','',#{formation},#{})",
             self.def_ctx
         ));
         let pds = self.w.emit(format!("PRODUCT_DEFINITION_SHAPE('','',#{def})"));

@@ -84,13 +84,19 @@ pub(crate) use crate::topo_tools_full::{edges_of_wire, edge_vertices, wires_of_f
 mod format;
 mod write_context;
 mod transfer;
+mod clean_text;
 mod read_topology;
 mod read_geometry;
+mod read_colors;
+mod construct_styles;
+mod rendering_properties;
 pub use format::*;
 pub use write_context::*;
 pub use transfer::*;
 pub use read_topology::*;
 pub use read_geometry::*;
+pub use construct_styles::*;
+pub use rendering_properties::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

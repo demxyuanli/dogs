@@ -109,9 +109,41 @@ impl<'a> Resolver<'a> {
                 crate::shhealing::fix_vertex_tolerances_after_same_parameter(&result, &mut ctx);
                 // cxx:294.
                 result = ctx.apply(&result);
+                // `ShapeProcess_OperLibrary`'s `fixshape` arm ends with
+                // `ctx->RecordModification(sfs->Context(), msg);
+                // ctx->SetResult(result);` (`ShapeProcess_OperLibrary.cxx:891-897`),
+                // and `STEPControl_ActorRead::TransferShape` follows the whole
+                // `ProcessShape` with `aShapeProcessor.MergeTransferInfo(TP,
+                // nbTPitems)` (`STEPControl_ActorRead.cxx:1941-1942`): the
+                // heal's substitutions are replayed onto the transfer binders,
+                // i.e. onto `shape_cache`.
+                let map = crate::shape_process::record_modification(&shape, &result, &mut ctx);
+                self.merge_transfer_info(&map);
                 result
             }
             None => shape,
+        }
+    }
+
+    /// `XSAlgo_ShapeProcessor::MergeTransferInfo` (`XSAlgo_ShapeProcessor.cxx:
+    /// 200-214` -> `MergeShapeTransferInfo` `cxx:133-197`) against the port's
+    /// binders: every entity `shape_cache` holds is rebound to the shape the
+    /// healing substituted for it, exactly as `aShapeBinder->SetResult(...)`
+    /// does in OCCT. `step::read_colors` then resolves a styled item's
+    /// `ADVANCED_FACE` to the face that is really inside the model.
+    fn merge_transfer_info(&self, map: &crate::shape_process::ShapeProcessMap) {
+        if map.is_empty() {
+            return; // `cxx:140-143`.
+        }
+        let ids: Vec<usize> = self.shape_cache.borrow().keys().copied().collect();
+        for id in ids {
+            let original = match self.shape_cache.borrow().get(&id) {
+                Some(s) => s.clone(),
+                None => continue,
+            };
+            if let Some(rebound) = map.transferred(&original) {
+                self.shape_cache.borrow_mut().insert(id, rebound);
+            }
         }
     }
 

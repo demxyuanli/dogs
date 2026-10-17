@@ -1,15 +1,19 @@
 //! Overall-test dump: every `data/*.step` (and `.stp`) to `data/output/<stem>.obj`.
 //!
-//! Pipeline: `read_step_file` → compound if multiple roots → `brep_to_obj(..., 0.1)`.
-//! The second argument is the drawer's `MaximalChordialDeviation` (the fallback
-//! used only for a void/unbounded bounding box); the linear deflection actually
-//! driving the mesh is `Prs3d::GetDeflection(shape, drawer)` =
-//! `maxComp(bbox) * 0.001 * 4` (`Prs3d.hxx:82-103`), so changing `0.1` does not
-//! change the export density. Re-run before visual / mesh overall checks. Do not
-//! add a second exporter.
+//! Pipeline: `read_step_file` → compound if multiple roots →
+//! `model_to_obj_caf(..., 0.1)` (`RWObj_CafWriter::Perform`: OBJ + the `.mtl`
+//! sidecar the STEP colours map to). The second argument is the drawer's
+//! `MaximalChordialDeviation` (the fallback used only for a void/unbounded
+//! bounding box); the linear deflection actually driving the mesh is
+//! `Prs3d::GetDeflection(shape, drawer)` = `maxComp(bbox) * 0.001 * 4`
+//! (`Prs3d.hxx:82-103`), so changing `0.1` does not change the export density.
+//! Re-run before visual / mesh overall checks. Do not add a second exporter.
 //!
-//! Writes into the single `data/output/` dump directory shared with the
-//! `step_obj_gates` test, so there is one artifact location to inspect.
+//! Writes into `data/output/`, the CAF export dump directory. The
+//! `step_obj_gates` test runs the same pipeline into `data/output/gates/`, so a
+//! gate run never overwrites these artifacts; both directories are gitignored.
+//! The `.mtl` file appears only when a face carries a colour (`toCreateMatFile`),
+//! i.e. when the OBJ has a `mtllib` record.
 //!
 //! Optional positional arguments name extra source directories (relative to the
 //! repository root) to scan instead of `data/`, so the OCCT test models under
@@ -18,8 +22,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use occt_topo::brep_exchange::brep_to_obj;
-use occt_topo::builder::TopoBuilder;
+use occt_topo::brep_exchange::{document_shape, model_to_obj_caf};
+use occt_topo::rwmesh::material_file_path;
 use occt_topo::step::read_step_file;
 
 fn main() {
@@ -55,12 +59,20 @@ fn main() {
     for step in &steps {
         let stem = step.file_stem().unwrap().to_string_lossy();
         let dest = out.join(format!("{stem}.obj"));
-        match export_one(step) {
-            Ok((obj, exact)) => {
+        match export_one(step, dest.to_str().unwrap()) {
+            Ok((obj, mtl, exact)) => {
                 let nv = obj.lines().filter(|l| l.starts_with("v ")).count();
                 let nf = obj.lines().filter(|l| l.starts_with("f ")).count();
+                let ng = obj.lines().filter(|l| l.starts_with("g ")).count();
+                let nm = mtl.lines().filter(|l| l.starts_with("newmtl ")).count();
                 fs::write(&dest, obj).unwrap_or_else(|e| panic!("write {}: {e}", dest.display()));
-                println!("ok  {stem}.step -> data/output/{stem}.obj  v={nv} f={nf}{exact}");
+                if !mtl.is_empty() {
+                    let mat = material_file_path(dest.to_str().unwrap());
+                    fs::write(&mat, mtl).unwrap_or_else(|e| panic!("write {mat}: {e}"));
+                }
+                println!(
+                    "ok  {stem}.step -> data/output/{stem}.obj  v={nv} f={nf} g={ng} mats={nm}{exact}"
+                );
             }
             Err(e) => {
                 failed += 1;
@@ -73,16 +85,12 @@ fn main() {
     }
 }
 
-fn export_one(step: &PathBuf) -> Result<(String, String), String> {
+/// Returns `(obj_text, mtl_text, exact_bbox_note)` for one STEP file.
+fn export_one(step: &PathBuf, obj_path: &str) -> Result<(String, String, String), String> {
     let model = read_step_file(&step.to_string_lossy())?;
-    if model.shapes.is_empty() {
-        return Err("parsed to no shapes".into());
-    }
-    let shape = if model.shapes.len() == 1 {
-        model.shapes[0].shape.clone()
-    } else {
-        let parts: Vec<_> = model.shapes.iter().map(|s| s.shape.clone()).collect();
-        TopoBuilder::new().make_compound_of(&parts).0
+    let shape = match document_shape(&model) {
+        Some(shape) => shape,
+        None => return Err("parsed to no shapes".into()),
     };
     // Exact box (`BRepBndLib::Add` port: analytic extrema / control net, not the
     // tessellation), printed next to the mesh counts so a bbox drift can be
@@ -93,5 +101,6 @@ fn export_one(step: &PathBuf) -> Result<(String, String), String> {
         ),
         None => String::new(),
     };
-    Ok((brep_to_obj(&shape, 0.1), exact))
+    let (obj, mtl) = model_to_obj_caf(&model, &shape, obj_path, 0.1);
+    Ok((obj, mtl, exact))
 }

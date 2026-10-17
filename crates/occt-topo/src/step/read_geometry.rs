@@ -1035,19 +1035,67 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
     rep_ids.sort_unstable();
 
     let mut model = BRepModel::new();
-    if !rep_ids.is_empty() {
-        // Faithful to `STEPControl_ActorRead::TransferEntity(ShapeRepresentation)`
-        // (`STEPControl_ActorRead.cxx:2048-2092`): the representation's own shape
-        // plus everything `TransferRelatedSRR` composes for the
-        // `SHAPE_REPRESENTATION_RELATIONSHIP` entries that share it.
-        // `read.step.shape.relationship` defaults to true
-        // (`DESTEP_Parameters.hxx:170`) and the port has no per-parameter switch,
-        // so the composition always runs.
-        let composer = SsrComposer::new(&resolver, &records);
+    // `readNameAttribute(RefLabel)` (`RWObj_CafWriter.cxx:197`): the label name
+    // `STEPCAFControl_Reader::SetName` wrote, i.e. the PRODUCT name. The
+    // representation's own name is the fallback for a file without a product
+    // layer.
+    let names = product_name_maps(&records);
+    // The port's `AddShape` label registry: the entity that produced each model
+    // shape, so `ReadColors` can resolve a styled item's target back to it
+    // (`STEPCAFControl_Reader.cxx:750` / `:831-861`).
+    let mut rep_index: HashMap<usize, usize> = HashMap::new();
+
+    // `STEPCAFControl_Reader::Transfer` turns the transferred roots into
+    // document shapes: `num = reader.NbRootsForTransfer()` and one
+    // `AddShape(reader.Shape(i))` per root (`cxx:540-557`, `:756-758`). A root is
+    // a PRODUCT_DEFINITION (`STEPControl_Reader::NbRootsForTransfer`,
+    // `cxx:327-458`) and `reader.Shape(i)` is that product's
+    // `TransferEntity(PD)` result (`STEPControl_ActorRead.cxx:617-854`). Iterating
+    // representations instead would make a *related* representation
+    // (`SHAPE_REPRESENTATION_RELATIONSHIP`, e.g. the `ADVANCED_BREP_...` behind a
+    // product's named `SHAPE_REPRESENTATION`) a second node of its own: it would
+    // claim the shared faces of the product's node and carry neither its name nor
+    // its styles.
+    let roots = root_product_definitions(&records);
+    let composer = SsrComposer::new(&resolver, &records);
+    if !roots.is_empty() {
+        for pd in roots {
+            // The product's own representation: `GetLabelFromPD`'s
+            // PDS -> SDR -> `used_representation` chain
+            // (`STEPCAFControl_Reader.cxx:1552-1770`).
+            let Some(rep) = product_representation(&records, pd) else {
+                // A product without a representation is an assembly whose shape
+                // comes from its `NEXT_ASSEMBLY_USAGE_OCCURRENCE` components
+                // (`STEPControl_ActorRead.cxx:713-758`); no sample in `data/`
+                // carries one, so this arm stays unported like
+                // `StepAssembly`'s shape composition.
+                continue;
+            };
+            // `TransferEntity(PD)` with one SDR and no NAUO binds the
+            // representation's own shape as it is (`cxx:842-848`).
+            let Some(shape) = composer.rep_shape(rep) else { continue };
+            let name = names
+                .rep_name
+                .get(&rep)
+                .filter(|n| !n.is_empty())
+                .cloned()
+                .unwrap_or_else(|| composer.name(rep));
+            let index = model.add(&name, shape);
+            rep_index.insert(rep, index);
+            rep_index.insert(pd, index);
+        }
+    } else if !rep_ids.is_empty() {
+        // Fallback for a file without a product layer: keep one node per
+        // representation.
         for id in &rep_ids {
             if let Some(shape) = composer.rep_shape(*id) {
-                let name = composer.name(*id);
-                model.add(&name, shape);
+                let name = names
+                    .rep_name
+                    .get(id)
+                    .filter(|n| !n.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| composer.name(*id));
+                rep_index.insert(*id, model.add(&name, shape));
             }
         }
     } else {
@@ -1062,22 +1110,79 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
         for id in roots {
             match resolver.resolve_shape(id) {
                 Ok(s) => {
-                    model.add("", s);
+                    rep_index.insert(id, model.add("", s));
                 }
                 Err(e) => resolver.warn(format!("shape #{id}: {e}")),
             }
         }
     }
 
+    // `STEPCAFControl_Reader::Transfer`'s colour pass (`cxx:754-760`):
+    // `ReadColors(WS, Doc, ...)` after the shapes have been transferred.
+    super::read_colors::read_colors(&mut model, &resolver, &rep_index);
+
     let warnings = resolver.warnings.into_inner();
     Ok((model, warnings))
+}
+
+/// `STEPControl_Reader::NbRootsForTransfer` (`cxx:327-458`): every
+/// `PRODUCT_DEFINITION` that no `NEXT_ASSEMBLY_USAGE_OCCURRENCE` uses as its
+/// `related_product_definition`, in entity order.
+///
+/// **UNPORTED**: the `ReadAllShapes` special case for unshared
+/// `MANIFOLD_SOLID_BREP` / `SHELL_BASED_SURFACE_MODEL` (`cxx:341-363`), gated by
+/// `InternalParameters.ReadAllShapes == 1`, and the
+/// `PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS` /
+/// `DOCUMENT_PRODUCT_EQUIVALENCE` exclusion (`cxx:365-404`).
+fn root_product_definitions(records: &HashMap<usize, Record>) -> Vec<usize> {
+    let mut related: HashSet<usize> = HashSet::new();
+    for (_, rec) in records {
+        if rec.type_name == "NEXT_ASSEMBLY_USAGE_OCCURRENCE" {
+            if let Some(red) = rec.args.get(4).and_then(|a| parse_ref(a)) {
+                related.insert(red);
+            }
+        }
+    }
+    let mut roots: Vec<usize> = records
+        .iter()
+        .filter(|(_, r)| r.type_name == "PRODUCT_DEFINITION")
+        .map(|(id, _)| *id)
+        .filter(|id| !related.contains(id))
+        .collect();
+    roots.sort_unstable();
+    roots
+}
+
+/// The representation a product definition owns:
+/// `PRODUCT_DEFINITION_SHAPE.definition` (attribute 3) -> `SHAPE_DEFINITION_
+/// REPRESENTATION.used_representation` (attribute 2), the chain
+/// `STEPCAFControl_Reader::GetLabelFromPD` walks (`cxx:1552-1770`).
+fn product_representation(records: &HashMap<usize, Record>, pd: usize) -> Option<usize> {
+    let mut pds: Option<usize> = None;
+    for (id, rec) in records {
+        if rec.type_name == "PRODUCT_DEFINITION_SHAPE"
+            && rec.args.get(2).and_then(|a| parse_ref(a)) == Some(pd)
+        {
+            pds = Some(*id);
+        }
+    }
+    let pds = pds?;
+    let mut rep: Option<usize> = None;
+    for (_, rec) in records {
+        if rec.type_name == "SHAPE_DEFINITION_REPRESENTATION"
+            && rec.args.first().and_then(|a| parse_ref(a)) == Some(pds)
+        {
+            // `NCollection_DataMap::Bind` keeps the last binding.
+            rep = rec.args.get(1).and_then(|a| parse_ref(a));
+        }
+    }
+    rep
 }
 
 /// Parse a STEP physical file into a `BRepModel`.
 pub fn read_step(content: &str) -> Result<BRepModel, String> {
     Ok(read_step_impl(content)?.0)
 }
-
 /// Parse a STEP physical file, also returning collected warnings for skipped
 /// or unsupported entities.
 pub fn read_step_with_warnings(content: &str) -> Result<(BRepModel, Vec<String>), String> {
@@ -1090,29 +1195,38 @@ pub fn read_step_file(path: &str) -> Result<BRepModel, String> {
     read_step(&content)
 }
 
-/// Read a STEP physical file back into a [`StepAssembly`].
+/// Product-name tables derived from the `PRODUCT` graph:
+/// `product_names` (PRODUCT id -> name), `def_name` (PRODUCT_DEFINITION id ->
+/// product name, the NAUO endpoint key) and `rep_name` (representation id ->
+/// product name, the label name `STEPCAFControl_Reader::SetName` writes,
+/// `cxx:1725-1760`).
 ///
-/// Reconstructs the product tree from `PRODUCT` / `PRODUCT_DEFINITION` /
-/// `NEXT_ASSEMBLY_USAGE_OCCURRENCE` records. The root name is the product that
-/// is never referenced as a child; part shapes are re-read from the part
-/// representations when present (parts without a representation keep an empty
-/// `TopoShape`).
-pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
-    let data = data_section(content)?;
-    let records = parse_records(data)?;
-    let resolver = Resolver::new(&records);
+/// Attribute positions follow `RWStepBasic_RWProductDefinition`
+/// (`ReadStep` `:36-77`): `product_definition(id, description, formation,
+/// frame_of_reference)`, so the formation is argument 3 (index 2). The name
+/// falls back to the product id when the name itself is empty
+/// (`STEPCAFControl_Reader.cxx:1745-1750`).
+struct ProductNameMaps {
+    product_names: HashMap<usize, String>,
+    def_name: HashMap<usize, String>,
+    rep_name: HashMap<usize, String>,
+}
 
-    // PRODUCT id -> product name.
+fn product_name_maps(records: &HashMap<usize, Record>) -> ProductNameMaps {
+    // PRODUCT id -> name shown on the label: `Prod->Name()` when it has content,
+    // else `Prod->Id()` (`STEPCAFControl_Reader.cxx:1741-1753`).
     let mut product_names: HashMap<usize, String> = HashMap::new();
-    for (id, rec) in &records {
+    for (id, rec) in records {
         if rec.type_name == "PRODUCT" {
-            product_names.insert(*id, parse_str(&rec.args[0]));
+            let name = parse_str(&rec.args[0]);
+            let label = if name.is_empty() { parse_str(&rec.args[1]) } else { name };
+            product_names.insert(*id, label);
         }
     }
 
     // PRODUCT_DEFINITION_FORMATION id -> owning PRODUCT id.
     let mut form_product: HashMap<usize, usize> = HashMap::new();
-    for (id, rec) in &records {
+    for (id, rec) in records {
         if rec.type_name == "PRODUCT_DEFINITION_FORMATION" {
             if let Some(p) = parse_ref(&rec.args[2]) {
                 form_product.insert(*id, p);
@@ -1122,9 +1236,9 @@ pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
 
     // PRODUCT_DEFINITION id -> product name (via its formation).
     let mut def_name: HashMap<usize, String> = HashMap::new();
-    for (id, rec) in &records {
+    for (id, rec) in records {
         if rec.type_name == "PRODUCT_DEFINITION" {
-            let name = parse_ref(&rec.args[3])
+            let name = parse_ref(&rec.args[2])
                 .and_then(|f| form_product.get(&f).copied())
                 .and_then(|p| product_names.get(&p).cloned())
                 .unwrap_or_default();
@@ -1137,7 +1251,7 @@ pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
     // (`SHAPE_DEFINITION_REPRESENTATION`, as OCCT writes) and was a PRODUCT id
     // in this port's earlier files; accept both.
     let mut pds_name: HashMap<usize, String> = HashMap::new();
-    for (id, rec) in &records {
+    for (id, rec) in records {
         if rec.type_name == "PRODUCT_DEFINITION_SHAPE" {
             if let Some(d) = parse_ref(&rec.args[2]) {
                 if let Some(n) = def_name.get(&d).or_else(|| product_names.get(&d)) {
@@ -1152,7 +1266,7 @@ pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
     //    the ISO 10303-42 entity OCCT's writer emits.
     //  * `PRODUCT_DEFINITION_SHAPE_REPRESENTATION` is this port's legacy record.
     let mut rep_name: HashMap<usize, String> = HashMap::new();
-    for (_, rec) in &records {
+    for (_, rec) in records {
         let (pds, rep) = match rec.type_name.as_str() {
             "SHAPE_DEFINITION_REPRESENTATION" => {
                 (parse_ref(&rec.args[0]), parse_ref(&rec.args[1]))
@@ -1168,6 +1282,26 @@ pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
             }
         }
     }
+    // The label name `SetName` writes is the product name, else the product id
+    // (`STEPCAFControl_Reader.cxx:1741-1753`), which `product_names` already
+    // holds.
+    ProductNameMaps { product_names, def_name, rep_name }
+}
+
+/// Read a STEP physical file back into a [`StepAssembly`].
+///
+/// Reconstructs the product tree from `PRODUCT` / `PRODUCT_DEFINITION` /
+/// `NEXT_ASSEMBLY_USAGE_OCCURRENCE` records. The root name is the product that
+/// is never referenced as a child; part shapes are re-read from the part
+/// representations when present (parts without a representation keep an empty
+/// `TopoShape`).
+pub fn read_step_assembly(content: &str) -> Result<StepAssembly, String> {
+    let data = data_section(content)?;
+    let records = parse_records(data)?;
+    let resolver = Resolver::new(&records);
+
+    // PRODUCT / PRODUCT_DEFINITION / representation -> product-name tables.
+    let ProductNameMaps { product_names, def_name, rep_name } = product_name_maps(&records);
 
     // Parts: resolve each representation owned by a product.
     let mut products: Vec<(String, TopoShape)> = Vec::new();

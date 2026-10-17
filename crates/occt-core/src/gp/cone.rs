@@ -24,12 +24,16 @@ impl Default for GpCone {
 }
 
 impl GpCone {
+    /// `gp_Cone(const gp_Ax3&, double theAng, double theRadius)`
+    /// (`gp_Cone.hxx:240-249`): the half-angle **can be negative** (the apex is
+    /// then on the positive side of the axis, `gp_Cone.hxx:32-34`); only its
+    /// absolute value is range-checked, `]gp::Resolution(), PI/2 - gp::Resolution()[`.
     pub fn new(pos: GpAx3, radius: f64, semi_angle: f64) -> Result<Self, &'static str> {
         if radius < 0.0 {
             return Err("radius must be non-negative");
         }
-        if semi_angle <= 0.0 || semi_angle >= std::f64::consts::FRAC_PI_2 {
-            return Err("semi_angle must be in (0, PI/2)");
+        if semi_angle.abs() <= 0.0 || semi_angle.abs() >= std::f64::consts::FRAC_PI_2 {
+            return Err("semi_angle absolute value must be in (0, PI/2)");
         }
         Ok(GpCone { pos, radius, semi_angle })
     }
@@ -67,8 +71,10 @@ impl GpCone {
     }
 
     pub fn set_semi_angle(&mut self, angle: f64) -> Result<(), &'static str> {
-        if angle <= 0.0 || angle >= std::f64::consts::FRAC_PI_2 {
-            return Err("semi_angle must be in (0, PI/2)");
+        // `gp_Cone::SetSemiAngle` (`gp_Cone.hxx:253-259`): range check on the
+        // absolute value, the sign selects which side carries the apex.
+        if angle.abs() <= 0.0 || angle.abs() >= std::f64::consts::FRAC_PI_2 {
+            return Err("semi_angle absolute value must be in (0, PI/2)");
         }
         self.semi_angle = angle;
         Ok(())

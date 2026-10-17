@@ -30,9 +30,11 @@ pub(crate) use crate::shape::{Compound, TopoShape};
 mod scene;
 mod vrml;
 mod gltf;
+mod obj_caf_writer;
 pub use scene::*;
 pub use vrml::*;
 pub use gltf::*;
+pub use obj_caf_writer::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

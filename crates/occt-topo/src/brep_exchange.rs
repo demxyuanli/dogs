@@ -1,11 +1,19 @@
 //! Module 2: brep_exchange — export BRep shapes to OBJ / STL / PLY.
 //! Source: `RWObj`, `RWStl`, `RWPLY` (simplified OCCT writers).
 
+use std::collections::{HashMap, VecDeque};
+
 use crate::mesh::ShapeMesh;
+use crate::model::BRepModel;
 use crate::shape::TopoShape;
+use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::faces_of;
+use crate::xcaf_prs::{dispatch_face_styles, XcafPrsStyle};
+use occt_core::gp::GpPnt;
 use occt_core::io::obj::{ObjFace, ObjMesh};
 use occt_core::io::ply::PlyMesh;
 use occt_core::io::stl::StlMesh;
+use occt_core::poly::triangulation::Triangle;
 
 /// Convert a `ShapeMesh` to an OBJ mesh (each triangle becomes an OBJ face).
 fn shape_mesh_to_obj(mesh: &ShapeMesh) -> ObjMesh {
@@ -148,6 +156,193 @@ pub fn brep_to_ply(shape: &TopoShape, maximal_chordial_deviation: f64) -> String
 pub fn brep_write_obj(path: &str, shape: &TopoShape, maximal_chordial_deviation: f64) -> std::io::Result<()> {
     let mesh = export_mesh(shape, maximal_chordial_deviation);
     occt_core::io::obj::write_obj_file(path, &shape_mesh_to_obj(&mesh))
+}
+
+// ---------------------------------------------------------------------------
+// RWObj_CafWriter: OBJ + MTL for a document (`BRepModel`)
+// ---------------------------------------------------------------------------
+
+/// Build the node list `RWObj_CafWriter::Perform` iterates for a document: one
+/// node per `XCAFPrs_DocumentExplorer` leaf node (`BRepModel` shape) carrying
+/// that node's `RWMesh_FaceIterator` faces with the style `RWMesh_ShapeIterator`
+/// bound to each of them.
+///
+/// `whole` is the shape the single meshing pass runs on — DRAW's
+/// `XGetOneShape s D` followed by `incmesh s <lin>` — so every node's faces are
+/// read back from one mesh, exactly as `RWMesh_FaceIterator` reads the
+/// `Poly_Triangulation` OCCT stored on the shared `TopoDS_Face`
+/// (`data/_occ_ref_export.tcl:11-19`).
+///
+/// `RWMesh_FaceIterator` walks `TopExp_Explorer(shape, TopAbs_FACE)`, which this
+/// crate's `faces_of` deduplicates by `TShape` identity (matching the mesh
+/// model): a face shared by two nodes is written once, in the node that owns it
+/// in mesh order.
+pub fn obj_caf_nodes(
+    model: &BRepModel,
+    whole: &TopoShape,
+    maximal_chordial_deviation: f64,
+) -> Vec<crate::rwmesh::ObjExportNode> {
+    const PRS3D_DEV_ANGLE: f64 = 20.0 * std::f64::consts::PI / 180.0;
+    let lin = prs3d_get_deflection(whole, maximal_chordial_deviation);
+    let inc = crate::meshing::incremental_mesh::IncrementalMesh::from_deflection(
+        whole,
+        lin,
+        false,
+        PRS3D_DEV_ANGLE,
+    );
+    let stats = inc.face_stats();
+    let tris = inc.face_triangulations();
+
+    // Face shape key -> the mesh entries produced for it, in `MeshModel::face`
+    // order. A face the mesher skipped (failure / reused) has no entry and is
+    // skipped by the writer, like `toSkipFaceMesh` on a null triangulation
+    // (`RWObj_CafWriter.cxx:74-77`).
+    let mut by_key: HashMap<usize, VecDeque<usize>> = HashMap::new();
+    for (i, st) in stats.iter().enumerate() {
+        by_key.entry(st.shape_key).or_default().push_back(i);
+    }
+
+    let mut nodes = Vec::with_capacity(model.shapes.len());
+    for ms in &model.shapes {
+        // `XCAFPrs_DocumentNode::Style` (`XCAFPrs_DocumentExplorer.cxx:28-81`):
+        // the node label's own colour, which `RWMesh_ShapeIterator` keeps as
+        // `myDefStyle`.
+        let node_style = XcafPrsStyle::from_color(ms.color);
+        let face_styles = dispatch_face_styles(&ms.style_settings, &node_style);
+
+        let mut faces = Vec::new();
+        for face in faces_of(&ms.shape) {
+            let key = GeometryRegistry::shape_key(&face.0);
+            let Some(entry) = by_key.get_mut(&key).and_then(|q| q.pop_front()) else {
+                continue;
+            };
+            let ft = &tris[entry];
+            // `RWMesh_FaceIterator::TriangleOriented` (`hxx:97-105`): a
+            // `TopAbs_REVERSED` face occurrence swaps the last two nodes. The
+            // `myIsMirrored` term needs a negative-determinant occurrence
+            // transform, which this crate's shapes do not carry.
+            let reversed = face.0.orientation().is_reversed();
+            let triangles: Vec<Triangle> = ft
+                .triangles
+                .iter()
+                .map(|t| {
+                    if reversed {
+                        Triangle::new(t.n0, t.n2, t.n1)
+                    } else {
+                        *t
+                    }
+                })
+                .collect();
+            // `RWMesh_ShapeIterator::initShape` (`cxx:145-148`): the face's own
+            // style, else the node style.
+            let styled = face_styles.get(&key).cloned();
+            let style = styled.clone().unwrap_or_else(|| node_style.clone());
+
+            // `RWMesh_FaceIterator::initFace` (`cxx:104-125`): `HasNormals()` is
+            // set when the triangulation carries normals, or when it has UV
+            // nodes and the face's surface (forward-oriented, unlocated, as in
+            // `cxx:115-121`) is non-null. `HasTexCoords()` is
+            // `Poly_Triangulation::HasUVNodes` (`hxx:112`).
+            let has_tex_coords = !ft.uv.is_empty() && ft.uv.len() == ft.vertices.len();
+            let surface = if has_tex_coords {
+                crate::brep_tool::BRepTool::face_surface(&face)
+            } else {
+                None
+            };
+            let has_normals = surface.is_some();
+
+            // `writeNormals` (`cxx:357-374`) reads
+            // `RWMesh_FaceIterator::NormalTransformed(i)` (`hxx:113-126`):
+            // the triangulation's stored normal, transformed by the face
+            // location (identity here) and reversed for a `TopAbs_REVERSED`
+            // face. Stored normals are what `StdPrs_ToolTriangulatedShape::
+            // ComputeNormals` leaves on the face when the visualization
+            // pipeline builds its triangle array (`StdPrs_ShadedShape.cxx:186`)
+            // -- `Poly_Triangulation::Normal` is what an OBJ/VRML write reads
+            // back (`RWMesh_FaceIterator.cxx:59-67`), and it is the value the
+            // OCCT WriteObj references carry at singular nodes (a cone apex or
+            // sphere pole gets the flat estimate instead of `gp::DZ()`).
+            let normals: Vec<GpPnt> = if has_normals {
+                let mut ns = crate::brep_lib_tool_triangulated_shape::compute_normals(
+                    surface.as_deref(),
+                    &ft.vertices,
+                    &ft.uv,
+                    &ft.triangles,
+                );
+                if reversed {
+                    for n in &mut ns {
+                        *n = GpPnt::new(-n.x(), -n.y(), -n.z());
+                    }
+                }
+                ns
+            } else {
+                Vec::new()
+            };
+
+            faces.push(crate::rwmesh::ObjFaceNode {
+                vertices: ft.vertices.clone(),
+                triangles,
+                has_normals,
+                has_tex_coords,
+                normals,
+                tex_coords: ft.uv.clone(),
+                style,
+            });
+        }
+        nodes.push(crate::rwmesh::ObjExportNode { name: ms.name.clone(), faces });
+    }
+    nodes
+}
+
+/// The single shape a document is meshed as, `XGetOneShape` in DRAW
+/// (`data/_occ_ref_export.tcl`): the root itself for a single-root document,
+/// a compound of the roots otherwise (`BRep_Builder::MakeCompound`), `None` for
+/// an empty document.
+///
+/// Every read -> mesh -> export driver uses this (`examples/export_data_obj.rs`,
+/// `examples/iges_check.rs`, the `step_obj_gates` model table), so a gate cannot
+/// export a different part of the document than the shipped exporter.
+pub fn document_shape(model: &BRepModel) -> Option<TopoShape> {
+    match model.shapes.as_slice() {
+        [] => None,
+        [one] => Some(one.shape.clone()),
+        many => {
+            let parts: Vec<TopoShape> = many.iter().map(|s| s.shape.clone()).collect();
+            Some(crate::builder::TopoBuilder::new().make_compound_of(&parts).0)
+        }
+    }
+}
+
+/// Export a document (`BRepModel`) through `RWObj_CafWriter::Perform`
+/// (`RWObj_CafWriter.cxx:82-230`), returning `(obj_text, mtl_text)`.
+///
+/// `obj_path` only supplies the `.mtl` sidecar name (`cxx:150-157`); nothing is
+/// written. `mtl_text` is empty when no node carries a colour
+/// (`toCreateMatFile == false`), i.e. no `mtllib` record is emitted.
+pub fn model_to_obj_caf(
+    model: &BRepModel,
+    whole: &TopoShape,
+    obj_path: &str,
+    maximal_chordial_deviation: f64,
+) -> (String, String) {
+    let nodes = obj_caf_nodes(model, whole, maximal_chordial_deviation);
+    crate::rwmesh::perform(obj_path, &nodes)
+}
+
+/// Write a document to an OBJ file plus its `.mtl` sidecar when any face carries
+/// a colour (`RWObj_CafWriter::Perform` + `RWObj_ObjMaterialMap`).
+pub fn model_write_obj_caf(
+    path: &str,
+    model: &BRepModel,
+    whole: &TopoShape,
+    maximal_chordial_deviation: f64,
+) -> std::io::Result<()> {
+    let (obj, mtl) = model_to_obj_caf(model, whole, path, maximal_chordial_deviation);
+    std::fs::write(path, obj)?;
+    if !mtl.is_empty() {
+        std::fs::write(crate::rwmesh::material_file_path(path), mtl)?;
+    }
+    Ok(())
 }
 
 /// Write a shape to a (binary) STL file.

@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
-use occt_topo::builder::TopoBuilder;
+use occt_topo::brep_exchange::document_shape;
 use occt_topo::iges::write_shape_iges;
 use occt_topo::step::read_step_file;
 
@@ -52,11 +52,13 @@ fn main() {
                 continue;
             }
         };
-        let shape = if model.shapes.len() == 1 {
-            model.shapes[0].shape.clone()
-        } else {
-            let parts: Vec<_> = model.shapes.iter().map(|s| s.shape.clone()).collect();
-            TopoBuilder::new().make_compound_of(&parts).0
+        let shape = match document_shape(&model) {
+            Some(shape) => shape,
+            None => {
+                println!("ERR {name}: parsed to no shapes");
+                bad += 1;
+                continue;
+            }
         };
         let iges = write_shape_iges(&shape);
         // Optional raw dump for manual inspection against OCCT's own output:

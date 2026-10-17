@@ -215,8 +215,7 @@ impl<'a> Resolver<'a> {
                 // materialises it through `Context()->Apply(S)`
                 // (`ShapeFix_Shape.cxx:257/294`), which re-adds a
                 // replacement's children of the original type
-                // (`ShapeBuild_ReShape.cxx:282-299`). The shell is expanded
-                // by the caller (`resolve_shell`).
+                // (`ShapeBuild_ReShape.cxx:282-299`).
                 let sub_faces = if res.shape_type() == crate::abs::ShapeType::Face {
                     vec![crate::shape::Face(res.clone())]
                 } else if res.shape_type() == crate::abs::ShapeType::Shell {
@@ -255,6 +254,32 @@ impl<'a> Resolver<'a> {
                     let split_happened = healed
                         .iter()
                         .any(|s| s.shape_type() != crate::abs::ShapeType::Face);
+                    // `ShapeFix_Shape` is the one that materialises the
+                    // substitution (`ShapeFix_Shape.cxx:257/294`), so the face
+                    // this call hands back is the one the *transfer* binder
+                    // keeps - the pre-fix face - whenever the pass'
+                    // `ShapeBuild_ReShape` is live. `ShapeFix_Shape` closes by
+                    // `ProcessShape`'s `RecordModification(sfs->Context(), msg)`
+                    // (`ShapeProcess_OperLibrary.cxx:891-897`), which walks that
+                    // pre-heal root and binds every recorded shape to
+                    // `Status(shape, new, /*last=*/true)` - the fully
+                    // substituted shape (`ShapeProcess_ShapeContext.cxx:
+                    // 288-294`, `BRepTools_ReShape.cxx:359-370`) - and
+                    // `MergeTransferInfo` replays the map onto the binders
+                    // (`XSAlgo_ShapeProcessor.cxx:155-158`).
+                    //
+                    // Returning the patch shell here instead puts the binder on
+                    // a shape that is neither a key of that map nor a node of
+                    // the pre-heal root, so no `MergeTransferInfo` branch finds
+                    // it and the styled `ADVANCED_FACE` keeps pointing at the
+                    // pre-heal composite: `SearchUsingMap` misses, its `else`
+                    // arm (`STEPCAFControl_Reader.cxx:1417-1437`) gets a shell
+                    // whose faces the model does not contain, and the patch
+                    // faces fall back to the node colour (T0M: `mat_9` red
+                    // painted as the solid's `mat_2` grey).
+                    if !split_happened && self.current_heal_context().is_some() {
+                        return Ok(face.0);
+                    }
                     let res = if split_happened {
                         // `FixSplitFace` replaced a face by a compound
                         // (`ShapeFix_Face.cxx:2988-2999`).

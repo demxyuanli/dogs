@@ -11,14 +11,14 @@ pub(super) fn write_assembly_inner(a: &StepAssembly, splines: bool) -> Result<St
     let top = esc_str(&a.name);
     let top_product = ctx.w.emit(format!("PRODUCT('{top}','{top}','',(#{}))", ctx.prod_ctx));
     let top_form = ctx.w.emit(format!("PRODUCT_DEFINITION_FORMATION('','',#{top_product})"));
-    let top_def = ctx.w.emit(format!("PRODUCT_DEFINITION('','','',#{top_form},#{})", ctx.def_ctx));
+    let top_def = ctx.w.emit(format!("PRODUCT_DEFINITION('','',#{top_form},#{})", ctx.def_ctx));
     defs.insert(a.name.clone(), top_def);
 
     for (name, shape) in &a.products {
         let n = esc_str(name);
         let product = ctx.w.emit(format!("PRODUCT('{n}','{n}','',(#{}))", ctx.prod_ctx));
         let formation = ctx.w.emit(format!("PRODUCT_DEFINITION_FORMATION('','',#{product})"));
-        let def = ctx.w.emit(format!("PRODUCT_DEFINITION('','','',#{formation},#{})", ctx.def_ctx));
+        let def = ctx.w.emit(format!("PRODUCT_DEFINITION('','',#{formation},#{})", ctx.def_ctx));
         let items = ctx.emit_top(shape);
         if !items.is_empty() {
             let rep = ctx.w.emit(format!(
@@ -974,7 +974,10 @@ pub(super) fn parse_xy(s: &str) -> Result<(f64, f64), String> {
 pub(super) fn parse_str(s: &str) -> String {
     let s = s.trim();
     if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
-        s[1..s.len() - 1].replace("''", "'")
+        // `StepData_StepReaderData::cleanText` (`StepData_StepReaderData.cxx:116-343`)
+        // runs on every quoted string parameter before a reader sees it, in
+        // place of the plain `''` collapse this function used to do.
+        super::clean_text::clean_text(s)
     } else {
         s.to_string()
     }
