@@ -83,24 +83,25 @@ impl FaceGauss {
         Ok(Self { surface, kind, is_reversed, natural, u1, u2, v1, v2, arcs, has_repeated_edges: has_repeated })
     }
 
-    /// The face's finite UV bounds `(u1, u2, v1, v2)`.
-    /// `BRepGProp_Face::Bounds` (`BRepGProp_Face.cxx:150-156`): the *surface
-    /// adaptor* parameters — `FirstUParameter()`/`LastUParameter()` of
-    /// `BRepAdaptor_Surface`, i.e. the natural parameter range for a
-    /// cylinder/cone/sphere/torus and the face UV bounds only for a plane.
+    /// `BRepGProp_Face::Bounds` (`BRepGProp_Face.cxx:154-160`): the
+    /// `BRepAdaptor_Surface` adaptor parameters. `BRepGProp_Face::Load(const
+    /// TopoDS_Face&)` initialises that adaptor as `Initialize(F)` with its
+    /// default `Restriction = true` (`BRepAdaptor_Surface.hxx:59`,
+    /// `BRepGProp_Face.cxx:189-197`), so `Initialize` calls `Load(surface,
+    /// umin, umax, vmin, vmax, ...)` with `BRepTools::UVBounds(F)`
+    /// (`BRepAdaptor_Surface.cxx:56-81`). `GeomAdaptor_Surface::Load` stores
+    /// those as `myUFirst`/`myULast`/`myVFirst`/`myVLast`
+    /// (`GeomAdaptor_Surface.hxx:163-181`, `GeomAdaptor_Surface.cxx:404-416`),
+    /// so `FirstUParameter()`/`LastUParameter()` report the **face** UV box for
+    /// every surface type - there is no plane/other split.
+    ///
+    /// This matters: `BRepGProp_Gauss::Compute` clamps the boundary U into
+    /// `[BU1, BU2]` (`BRepGProp_Gauss.cxx:752-759`). Using the natural periodic
+    /// range (0, 2*pi) instead of the face box clips any face whose p-curves
+    /// live in the negative branch of the periodic parameter (e.g. a cylinder
+    /// face at u in [-0.794, 0.794], T0M face 987) and halves its area.
     pub(super) fn surface_ranges(&self) -> (f64, f64, f64, f64) {
-        // `BRepAdaptor_Surface::FirstUParameter()`/`LastUParameter()`: a *plane*
-        // reports the face's UV bounds (it is otherwise unbounded), every other
-        // type its natural parameter range (`GeomAdaptor_Surface`).
-        if matches!(
-            crate::brep_surface::classify_surface(self.surface.as_ref()),
-            crate::brep_surface::SurfaceKind::Plane
-        ) {
-            return self.bounds();
-        }
-        let (u1, u2) = self.surface.u_range();
-        let (v1, v2) = self.surface.v_range();
-        (u1, u2, v1, v2)
+        self.bounds()
     }
 
     pub(super) fn bounds(&self) -> (f64, f64, f64, f64) {
@@ -334,22 +335,24 @@ pub(super) fn build_arc(e: &Edge, face: &Face, map: &UVMap) -> Option<BoundaryAr
             });
         }
     }
-    if std::env::var("PROBE70").is_ok() {
-        let fk = crate::tgeometry::GeometryRegistry::shape_key(&face.0);
-        let n = crate::tgeometry::GeometryRegistry::global().edge_pcurves(&e.0, fk).len();
-        let kind = crate::brep_surface::classify_surface(
-            crate::brep_tool::BRepTool::face_surface(face).unwrap().as_ref(),
-        );
-        let rng = crate::tgeometry::GeometryRegistry::global().pcurve_range(&e.0, fk);
-        eprintln!("PROBE70 FALLBACK surf={kind:?} npc={n} range={rng:?}");
-    }
     let curve = BRepTool::edge_curve_world(e)?;
     let (a0, b0) = BRepTool::edge_parameters(e);
     if !(a0.is_finite() && b0.is_finite() && b0 > a0) {
         return None;
     }
     let (curve, a, b) = if e.orientation().is_reversed() {
-        (Arc::from(curve.reversed()), -b0, -a0)
+        // `BRepGProp_Face::Load(const TopoDS_Edge&)` (`BRepGProp_Face.cxx:173-179`):
+        // `C = C->Reversed(); a = C_old->ReversedParameter(b); b =
+        // C_old->ReversedParameter(a);`. `ReversedParameter` is per-class
+        // (`-U` for `Geom_Line`, `2*pi - U` for `Geom_Circle`, curve
+        // `FirstParameter() + LastParameter() - U` for `Geom_BSplineCurve`), so
+        // the mirrored range must come from the curve itself. The former
+        // hardcoded `(-b0, -a0)` is only the line law: on a BSpline arc whose
+        // range does not straddle 0 (T0M face 416, edge `(-0.592492, 0)`) it
+        // evaluated the curve far outside the edge window and blew the face
+        // area up by three orders of magnitude.
+        let (na, nb) = (curve.reversed_parameter(b0), curve.reversed_parameter(a0));
+        (Arc::from(curve.reversed()), na, nb)
     } else {
         (curve, a0, b0)
     };
