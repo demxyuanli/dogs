@@ -130,10 +130,10 @@ fn wire_bounds(wire: &Wire) -> Option<(Vertex, Vertex)> {
     Some((first, last))
 }
 
+/// `TopTools_Map` toggle: `IsSame` covers `TShape` and location
+/// (`TopoDS_Shape.hxx:262-267`).
 fn toggle(open: &mut Vec<(Vertex, Orientation)>, vertex: Vertex, orientation: Orientation) {
-    if let Some(i) = open.iter().position(|(kept, _)| {
-        is_same(&kept.0, &vertex.0) && kept.0.location().is_equal(vertex.0.location())
-    }) {
+    if let Some(i) = open.iter().position(|(kept, _)| is_same(&kept.0, &vertex.0)) {
         open.remove(i);
     } else {
         open.push((vertex, orientation));

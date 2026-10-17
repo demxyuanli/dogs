@@ -159,8 +159,11 @@ fn shape_ptr(s: &TopoShape) -> usize {
     Arc::as_ptr(&s.tshape) as usize
 }
 
+/// `TopoDS_Shape::IsEqual` (`TopoDS_Shape.hxx:276-280`): same `TShape`, same
+/// location and same orientation (`ShapeFix_Face.cxx` compares edges/wires
+/// this way when matching the two sides of a face).
 fn same_oriented(a: &TopoShape, b: &TopoShape) -> bool {
-    is_same(a, b) && a.orientation() == b.orientation()
+    crate::topo_tools_full::is_equal(a, b)
 }
 
 fn reversed_wire(wire: &Wire, face: &Face) -> Wire {

@@ -12,6 +12,11 @@
 //! `IsEqual` requires equal `NbShapes` and `Contains` (IsSame) of every
 //! member. This port stores the explorer list of [`shape_key`] values plus
 //! the representative (`Shape()`).
+//!
+//! `myShapes` is a `NCollection_DynamicArray`, but `IsEqual` deduplicates it
+//! through `NCollection_Map<TopoDS_Shape, TopTools_ShapeMapHasher>`
+//! (`BOPTools_Set.cxx:98-119`), so the stored keys are
+//! [`ShapeMapKey`] (`IsSame`), not bare `TShape` addresses.
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
@@ -26,6 +31,7 @@ use crate::abs::{Orientation, ShapeType};
 use crate::bop_occt_util::{iter_children, shape_key};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, TopoShape};
+use crate::topo_tools_full::ShapeMapKey;
 
 /// A `BOPTools_Set`: explorer list of sub-shape TShape keys plus the
 /// representative (`myShape`).
@@ -35,7 +41,7 @@ pub struct BopToolsSet {
     shape: TopoShape,
     /// Explorer-order TShape keys (`myShapes`). Degenerated edges omitted;
     /// INTERNAL sub-shapes appear twice.
-    keys: Vec<usize>,
+    keys: Vec<ShapeMapKey>,
 }
 
 impl PartialEq for BopToolsSet {
@@ -43,7 +49,7 @@ impl PartialEq for BopToolsSet {
         if self.keys.len() != other.keys.len() {
             return false;
         }
-        let mine: HashSet<usize> = self.keys.iter().copied().collect();
+        let mine: HashSet<ShapeMapKey> = self.keys.iter().cloned().collect();
         other.keys.iter().all(|k| mine.contains(k))
     }
 }
@@ -53,8 +59,8 @@ impl Eq for BopToolsSet {}
 impl Hash for BopToolsSet {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.keys.len().hash(state);
-        let mut uniq: Vec<usize> = {
-            let s: HashSet<usize> = self.keys.iter().copied().collect();
+        let mut uniq: Vec<ShapeMapKey> = {
+            let s: HashSet<ShapeMapKey> = self.keys.iter().cloned().collect();
             s.into_iter().collect()
         };
         uniq.sort_unstable();
@@ -75,7 +81,7 @@ impl BopToolsSet {
     /// and remember `the_s` as the representative.
     pub fn add(&mut self, the_s: &TopoShape, the_type: ShapeType) {
         self.shape = the_s.clone();
-        let mut keys: Vec<usize> = Vec::new();
+        let mut keys: Vec<ShapeMapKey> = Vec::new();
         collect_set_items(the_s, the_type, &mut keys);
         self.keys = keys;
     }
@@ -93,7 +99,7 @@ impl BopToolsSet {
     }
 
     /// Explorer-order TShape keys (`myShapes`).
-    pub fn keys(&self) -> &[usize] {
+    pub fn keys(&self) -> &[ShapeMapKey] {
         &self.keys
     }
 
@@ -110,13 +116,13 @@ impl BopToolsSet {
 }
 
 /// `BOPTools_Set::Add` explorer body (`BOPTools_Set.cxx`).
-fn collect_set_items(s: &TopoShape, ty: ShapeType, out: &mut Vec<usize>) {
+fn collect_set_items(s: &TopoShape, ty: ShapeType, out: &mut Vec<ShapeMapKey>) {
     if s.shape_type() == ty {
         let skip_degen = ty == ShapeType::Edge && BRepTool::is_degenerated(&Edge(s.clone()));
         if !skip_degen {
             let k = shape_key(s);
             if s.orientation() == Orientation::Internal {
-                out.push(k);
+                out.push(k.clone());
                 out.push(k);
             } else {
                 out.push(k);

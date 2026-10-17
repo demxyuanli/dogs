@@ -413,7 +413,12 @@ impl MeshEdge {
         // `BRep_Tool::Curve` when the edge has one, otherwise the
         // `Adaptor3d_CurveOnSurface` built from the pcurve. `EdgeGeom::curve` is
         // that adaptor, and `curve3d_null` is the `BRep_Tool::Curve` answer.
-        let curve = geom.as_ref().map(|g| g.curve.clone());
+        // `BRepAdaptor_Curve::D0` transforms every evaluated point by `myTrsf`
+        // (the edge's accumulated location), so the discrete model stores the
+        // **world** curve: a located edge (a swept prism's top wire carries the
+        // sweep translation) would otherwise discretize at its generating
+        // position and collapse the face's 3D mesh onto the generating plane.
+        let curve = BRepTool::edge_curve_adaptor_world(&edge);
         let (first, last) = BRepTool::edge_parameters(&edge);
         Self {
             edge,

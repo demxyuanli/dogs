@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::abs::ShapeType;
 use crate::bop_build_faces::BopBuilderLike;
-use crate::bop_occt_util::{has_face_info, nb_source, origins_append, shape_key};
+use crate::bop_occt_util::{has_face_info, nb_source, origins_append, same_shape, shape_key};
 use crate::bop_pair_sd::{perform_pair_vector, PairOfShapeBoolean};
 use crate::bop_tools_set::BopToolsSet;
 use crate::bopalgo_tools_blocks::{fill_map_shapes, make_blocks_shapes, IndexedShapeAdj};
@@ -35,7 +35,7 @@ use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Face, TopoShape};
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools_full::{faces_of, ShapeMapKey};
 
 /// `AddEdgeSet` (`_2.cxx:562-576`): intern `theS` under its EDGE
 /// [`BopToolsSet`] and keep the connection from that set to the shape.
@@ -50,10 +50,10 @@ fn add_edge_set(the_s: &TopoShape, the_map: &mut HashMap<BopToolsSet, Vec<TopoSh
 /// `_2.cxx:595-649`: every source SOLID binds each of its faces that is not
 /// already bound; then each image of a bound parent is bound to the same
 /// solid when the image is not yet a key.
-fn face_to_parent_map<B: BopBuilderLike>(f: &B) -> HashMap<usize, TopoShape> {
+fn face_to_parent_map<B: BopBuilderLike>(f: &B) -> HashMap<ShapeMapKey, TopoShape> {
     let ds = f.ds();
     let n_src = nb_source(ds);
-    let mut a_face_to_parent: HashMap<usize, TopoShape> = HashMap::new();
+    let mut a_face_to_parent: HashMap<ShapeMapKey, TopoShape> = HashMap::new();
     for i_src in 0..n_src {
         let Some(a_si) = ds.shape_info(i_src) else { continue };
         if a_si.shape_type() != ShapeType::Solid {
@@ -67,7 +67,7 @@ fn face_to_parent_map<B: BopBuilderLike>(f: &B) -> HashMap<usize, TopoShape> {
         }
     }
     // `_2.cxx:619-648`: propagate the parent onto images that are not yet keys.
-    let mut a_propagation: HashMap<usize, TopoShape> = HashMap::new();
+    let mut a_propagation: HashMap<ShapeMapKey, TopoShape> = HashMap::new();
     for i_src in 0..n_src {
         let Some(a_si) = ds.shape_info(i_src) else { continue };
         if a_si.shape_type() != ShapeType::Face {
@@ -140,10 +140,10 @@ fn face_indices_from_ff<B: BopBuilderLike>(f: &B) -> Vec<usize> {
 fn collect_edge_set_faces<B: BopBuilderLike>(
     f: &B,
     a_fi_vec: &[usize],
-) -> (HashMap<BopToolsSet, Vec<TopoShape>>, HashSet<usize>) {
+) -> (HashMap<BopToolsSet, Vec<TopoShape>>, HashSet<ShapeMapKey>) {
     let ds = f.ds();
     let mut an_e_set_faces: HashMap<BopToolsSet, Vec<TopoShape>> = HashMap::new();
-    let mut a_mf_planar: HashSet<usize> = HashSet::new();
+    let mut a_mf_planar: HashSet<ShapeMapKey> = HashSet::new();
     for &n_f in a_fi_vec {
         let Some(a_si) = ds.shape_info(n_f) else { continue };
         let a_f = a_si.shape();
@@ -174,8 +174,8 @@ fn collect_edge_set_faces<B: BopBuilderLike>(
 /// immediately. Remaining pairs are queued for `AreFacesSameDomain`.
 fn collect_sd_pairs(
     an_e_set_faces: &HashMap<BopToolsSet, Vec<TopoShape>>,
-    a_mf_planar: &HashSet<usize>,
-    a_face_to_parent: &HashMap<usize, TopoShape>,
+    a_mf_planar: &HashSet<ShapeMapKey>,
+    a_face_to_parent: &HashMap<ShapeMapKey, TopoShape>,
     fuzzy: f64,
     a_dmsls: &mut IndexedShapeAdj,
 ) -> Vec<PairOfShapeBoolean> {
@@ -191,7 +191,9 @@ fn collect_sd_pairs(
             for a_f2 in a_lf.iter().skip(i1 + 1) {
                 let p_parent2 = a_face_to_parent.get(&shape_key(a_f2));
                 if let (Some(p1), Some(p2)) = (p_parent1, p_parent2) {
-                    if p1.same_tshape(p2) {
+                    // `pParent1->IsSame(*pParent2)`
+                    // (`BOPAlgo_Builder_2.cxx:776`).
+                    if same_shape(p1, p2) {
                         continue;
                     }
                 }

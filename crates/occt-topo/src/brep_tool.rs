@@ -158,6 +158,22 @@ impl BRepTool {
         Self::edge_curve(e).map(|c| Arc::from(c.transformed(&t)))
     }
 
+    /// World-coordinate edge curve as `BRepAdaptor_Curve(E)` evaluates it
+    /// (`BRepAdaptor_Curve.cxx`: `myCurve` materialized from
+    /// `BRep_Tool::Curve(E, L)` when the edge has a `BRep_Curve3D`, otherwise
+    /// the `Adaptor3d_CurveOnSurface` built from the pcurve, and `myTrsf = L`
+    /// applied to every returned point). `edge_curve_world` cannot serve here:
+    /// it answers `None` on a pcurve-only edge (`curve3d_null`), which the
+    /// adaptor still evaluates.
+    pub fn edge_curve_adaptor_world(e: &Edge) -> Option<Arc<dyn Curve>> {
+        let geom = GeometryRegistry::global().edge_geom(&e.0)?;
+        let loc = e.0.location();
+        if loc.is_identity() {
+            return Some(geom.curve);
+        }
+        Some(Arc::from(geom.curve.transformed(&loc.transformation())))
+    }
+
     /// World-coordinate face surface: the registered local surface transformed
     /// by the face's location.
     pub fn face_surface_world(f: &Face) -> Option<Arc<dyn Surface>> {

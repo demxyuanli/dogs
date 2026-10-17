@@ -34,6 +34,7 @@ pub(crate) use crate::algo_tools::AlgoTools;
 pub(crate) use crate::bop_build_common::{is_split_to_reverse, BopBuildOps};
 pub(crate) use crate::bop_build_faces::BopBuilderLike;
 pub(crate) use crate::bop_hist::{is_supported_type, BopHistory};
+pub(crate) use crate::bop_occt_util::shape_key;
 pub(crate) use crate::bop_occt_util::BopSolidHost;
 pub(crate) use crate::bopds::{BopdsDS, BopdsInterf, BopdsPaveBlock};
 pub(crate) use crate::builder::TopoBuilder;
@@ -42,6 +43,7 @@ pub(crate) use crate::pave_filler::PaveFiller;
 pub(crate) use crate::shape::TopoShape;
 pub(crate) use crate::tgeometry::GeometryRegistry;
 pub(crate) use crate::topo_tools_full::all_subshapes;
+pub(crate) use crate::topo_tools_full::ShapeMapKey;
 
 }
 

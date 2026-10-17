@@ -453,10 +453,10 @@ impl ModelHealer {
         if b1.0.same_tshape(&a2.0) || b1.0.same_tshape(&b2.0) {
             return true;
         }
-        let p1a = BRepTool::vertex_point(&a1);
-        let p1b = BRepTool::vertex_point(&b1);
-        let p2a = BRepTool::vertex_point(&a2);
-        let p2b = BRepTool::vertex_point(&b2);
+        let p1a = BRepTool::vertex_point_world(&a1);
+        let p1b = BRepTool::vertex_point_world(&b1);
+        let p2a = BRepTool::vertex_point_world(&a2);
+        let p2b = BRepTool::vertex_point_world(&b2);
         let t2max = BRepTool::vertex_tolerance(&a2).max(BRepTool::vertex_tolerance(&b2));
         let tol_a = BRepTool::vertex_tolerance(&a1) + t2max;
         let sq_a = tol_a * tol_a;

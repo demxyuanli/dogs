@@ -181,8 +181,10 @@ fn unshare_degenerated(shape: &mut TopoShape) {
     }
 }
 
+/// `TopoDS_Shape::IsEqual` (`TopoDS_Shape.hxx:276-280`) — the comparison
+/// `BRepPrimAPI_MakeRevol.cxx:198` (`anIt.Value().IsEqual(anE)`) uses.
 fn is_equal(a: &TopoShape, b: &TopoShape) -> bool {
-    is_same(a, b) && a.orientation() == b.orientation() && a.location().is_equal(b.location())
+    crate::topo_tools_full::is_equal(a, b)
 }
 
 fn empty_copy_edge(src: &TopoShape) -> TopoShape {

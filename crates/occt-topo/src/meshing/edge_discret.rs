@@ -440,7 +440,7 @@ impl CurveTessellator {
                 continue;
             }
             let vertex = Vertex(child);
-            let pnt = BRepTool::vertex_point(&vertex);
+            let pnt = BRepTool::vertex_point_world(&vertex);
             let Some(param) = vertex_parameter_on_edge(&vertex, edge) else {
                 continue;
             };
@@ -939,8 +939,8 @@ pub fn curve_tessellator_value_ok(
 /// `GeomAPI_ProjectPointOnCurve` on the 3D curve stands in for
 /// `BRep_Tool::Parameter(V,E)` (`BRep_Tool.cxx:1503-1510`).
 fn vertex_parameter_on_edge(vertex: &Vertex, edge: &Edge) -> Option<f64> {
-    let pnt = BRepTool::vertex_point(vertex);
-    let curve = BRepTool::edge_curve(edge)?;
+    let pnt = BRepTool::vertex_point_world(vertex);
+    let curve = BRepTool::edge_curve_adaptor_world(edge)?;
     let tol = BRepTool::vertex_tolerance(vertex);
     geom_api::project_point_on_curve(curve.as_ref(), &pnt, tol).map(|p| p.parameter)
 }

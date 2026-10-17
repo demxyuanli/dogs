@@ -22,9 +22,9 @@ use crate::builder_solid::BuilderSolid;
 use crate::fclass2d::FaceState;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools_full::{faces_of, ShapeMapKey};
 
-fn ori_key(s: &TopoShape) -> (usize, u8) {
+fn ori_key(s: &TopoShape) -> (ShapeMapKey, u8) {
     let o = match s.orientation() {
         Orientation::Forward => 0,
         Orientation::Reversed => 1,
@@ -44,10 +44,10 @@ fn collect_group_faces(
     b: &BopBuilder,
     group: &[TopoShape],
     ctx: &mut IntToolsContext,
-) -> (Vec<TopoShape>, HashSet<usize>, HashSet<usize>) {
+) -> (Vec<TopoShape>, HashSet<ShapeMapKey>, HashSet<ShapeMapKey>) {
     let mut faces_ori: Vec<TopoShape> = Vec::new();
-    let mut faces: HashSet<usize> = HashSet::new();
-    let mut in_keys: HashSet<usize> = HashSet::new();
+    let mut faces: HashSet<ShapeMapKey> = HashSet::new();
+    let mut in_keys: HashSet<ShapeMapKey> = HashSet::new();
     for shape in group {
         for solid in explore(shape, crate::abs::ShapeType::Solid) {
             for f in faces_of(&solid) {
@@ -101,10 +101,10 @@ pub fn build_bop(b: &mut BopBuilder) -> Result<(), String> {
     let same_ori_needed = obj_state == tools_state;
 
     let mut res_ori: Vec<TopoShape> = Vec::new();
-    let mut res_fence: HashSet<usize> = HashSet::new();
-    let mut avoid: HashSet<usize> = HashSet::new();
-    let mut fence: HashSet<usize> = HashSet::new();
-    let mut fence_ori: HashSet<(usize, u8)> = HashSet::new();
+    let mut res_fence: HashSet<ShapeMapKey> = HashSet::new();
+    let mut avoid: HashSet<ShapeMapKey> = HashSet::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
+    let mut fence_ori: HashSet<(ShapeMapKey, u8)> = HashSet::new();
 
     for (i, map) in [obj_ori.as_slice(), tool_ori.as_slice()].into_iter().enumerate() {
         let opposite = if i == 0 { &tool_faces } else { &obj_faces };
@@ -121,19 +121,19 @@ pub fn build_bop(b: &mut BopBuilder) -> Result<(), String> {
             if avoid_in_both && is_in && is_in_opp {
                 continue;
             }
-            if !fence.insert(k) {
+            if !fence.insert(k.clone()) {
                 if !opposite.contains(&k) {
                     if take_in != same_ori_needed {
-                        avoid.insert(k);
+                        avoid.insert(k.clone());
                     }
                 } else {
                     let same_ori = !fence_ori.insert(ori_key(fim));
                     if same_ori_needed == same_ori {
-                        if res_fence.insert(k) {
+                        if res_fence.insert(k.clone()) {
                             res_ori.push(fim.clone());
                         }
                     } else {
-                        avoid.insert(k);
+                        avoid.insert(k.clone());
                     }
                     continue;
                 }
@@ -150,7 +150,7 @@ pub fn build_bop(b: &mut BopBuilder) -> Result<(), String> {
                 } else {
                     res_ori.push(fim.clone());
                 }
-                res_fence.insert(k);
+                res_fence.insert(k.clone());
             }
         }
     }
@@ -166,7 +166,7 @@ pub fn build_bop(b: &mut BopBuilder) -> Result<(), String> {
     bs.set_shapes(res_faces.clone());
     bs.set_fuzzy(b.fuzzy_value());
     bs.perform()?;
-    let obj_ori_keys: HashSet<(usize, u8)> = {
+    let obj_ori_keys: HashSet<(ShapeMapKey, u8)> = {
         let mut s = HashSet::new();
         for f in &obj_ori {
             s.insert(ori_key(f));
@@ -192,7 +192,7 @@ pub fn build_bop(b: &mut BopBuilder) -> Result<(), String> {
 }
 
 /// Map of IN faces used by BuildBOP (`myInParts`).
-pub fn in_face_keys(in_parts: &HashMap<usize, Vec<TopoShape>>) -> HashSet<usize> {
+pub fn in_face_keys(in_parts: &HashMap<ShapeMapKey, Vec<TopoShape>>) -> HashSet<ShapeMapKey> {
     let mut s = HashSet::new();
     for faces in in_parts.values() {
         for f in faces {

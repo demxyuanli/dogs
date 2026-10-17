@@ -16,15 +16,15 @@ use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools_range::{dimension, dimensions};
 use crate::bop_builder2::{BoolOp2, BopBuilder};
 use crate::bop_occt_util::{
-    explore, images_of, iter_children, shape_key, source_solids, treat_compound,
+    explore, images_of, iter_children, same_shape, shape_key, source_solids, treat_compound,
 };
 use crate::bop_tools_set::{BopToolsSet, BopToolsSetMap};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::builder_solid::BuilderSolid;
 use crate::fclass2d::FaceState;
-use crate::shape::{Edge, TopoShape};
-use crate::topo_tools_full::{edges_of, faces_of};
+use crate::shape::{Edge, Face, TopoShape};
+use crate::topo_tools_full::{edges_of, faces_of, ShapeMapKey};
 
 /// Shape type of the building element for a given dimension
 /// (`TypeToExplore` in `BOPAlgo_BOP.cxx`).
@@ -47,14 +47,14 @@ pub fn type_to_explore(dim: i32) -> Option<ShapeType> {
 /// (the vertex rule is `:796-799`, the edge rule `:803-834`), and a face with no
 /// surface and no triangulation as **empty** (`:838-851`).
 pub fn is_empty_shape(s: &TopoShape) -> bool {
-    let mut visited: HashSet<usize> = HashSet::new();
+    let mut visited: HashSet<ShapeMapKey> = HashSet::new();
     !tree_has_geometry(s, &mut visited)
 }
 
 /// `Add` (`BOPTools_AlgoTools3D.cxx:745-786`): depth-first over
 /// `TopoDS_Iterator(aSx, false, false)` — the same sub-shape tree, with the
 /// visited map that keeps it linear.
-fn tree_has_geometry(s: &TopoShape, visited: &mut HashSet<usize>) -> bool {
+fn tree_has_geometry(s: &TopoShape, visited: &mut HashSet<ShapeMapKey>) -> bool {
     let key = shape_key(s);
     if !visited.insert(key) {
         return false;
@@ -215,7 +215,7 @@ fn splits_of(b: &BopBuilder, s: &TopoShape) -> Vec<TopoShape> {
 
 fn collect_building(group: &[TopoShape], _dim_filter: i32) -> Vec<TopoShape> {
     let mut out = Vec::new();
-    let mut fence: HashSet<usize> = HashSet::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     for s in group {
         let mut flat = Vec::new();
         treat_compound(s, &mut flat, &mut HashSet::new());
@@ -234,8 +234,8 @@ fn collect_building(group: &[TopoShape], _dim_filter: i32) -> Vec<TopoShape> {
     out
 }
 
-fn map_splits(b: &BopBuilder, sources: &[TopoShape]) -> (HashSet<usize>, HashMap<BopToolsSet, TopoShape>) {
-    let mut keys: HashSet<usize> = HashSet::new();
+fn map_splits(b: &BopBuilder, sources: &[TopoShape]) -> (HashSet<ShapeMapKey>, HashMap<BopToolsSet, TopoShape>) {
+    let mut keys: HashSet<ShapeMapKey> = HashSet::new();
     let mut sets: HashMap<BopToolsSet, TopoShape> = HashMap::new();
     for s in sources {
         if s.shape_type() == ShapeType::Edge {
@@ -255,8 +255,8 @@ fn map_splits(b: &BopBuilder, sources: &[TopoShape]) -> (HashSet<usize>, HashMap
     (keys, sets)
 }
 
-fn expand_lower(parts: &[TopoShape], dim_min: i32) -> HashSet<usize> {
-    let mut out: HashSet<usize> = HashSet::new();
+fn expand_lower(parts: &[TopoShape], dim_min: i32) -> HashSet<ShapeMapKey> {
+    let mut out: HashSet<ShapeMapKey> = HashSet::new();
     for s in parts {
         let d_max = dimension(s);
         if d_max < 0 {
@@ -283,7 +283,7 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
         let Some(ty) = type_to_explore(dim0) else {
             return bb.make_compound_of(&[]).0;
         };
-        let mut fence: HashSet<usize> = HashSet::new();
+        let mut fence: HashSet<ShapeMapKey> = HashSet::new();
         let mut kept: Vec<TopoShape> = Vec::new();
         for s in explore(b.result(), ty) {
             if fence.insert(shape_key(&s)) {
@@ -300,7 +300,7 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
 
     let dim_min = dim0.min(dim1);
     let common = op == BoolOp2::Common;
-    let it_keys: Vec<usize> = obj_im.iter().copied().collect();
+    let it_keys: Vec<ShapeMapKey> = obj_im.iter().cloned().collect();
     let it_shapes: Vec<TopoShape> = obj_src
         .iter()
         .flat_map(|s| splits_of(b, s))
@@ -316,7 +316,7 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
     };
 
     let mut kept: Vec<TopoShape> = Vec::new();
-    let mut fence: HashSet<usize> = HashSet::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     for s in &it_shapes {
         let k = shape_key(s);
         if common && !it_exp.contains(&k) {
@@ -336,7 +336,7 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
 }
 
 /// `TopExp::MapShapesAndAncestors(sol, FACE, SOLID)` for the aMTSols scan.
-fn map_faces_and_ancestors(sol: &TopoShape, mfs: &mut HashMap<usize, Vec<TopoShape>>) {
+fn map_faces_and_ancestors(sol: &TopoShape, mfs: &mut HashMap<ShapeMapKey, Vec<TopoShape>>) {
     for f in faces_of(sol) {
         mfs.entry(shape_key(&f.0)).or_default().push(sol.clone());
     }
@@ -351,7 +351,7 @@ struct FaceToSolids {
 
 /// `MapFacesToBuildSolids` (`BOPAlgo_BOP.cxx:1754`): skip INTERNAL; same-TShape
 /// with opposite orientation appends a second solid; same orientation does not.
-fn map_faces_to_build_solids(sol: &TopoShape, mfs: &mut HashMap<usize, FaceToSolids>) {
+fn map_faces_to_build_solids(sol: &TopoShape, mfs: &mut HashMap<ShapeMapKey, FaceToSolids>) {
     for f in faces_of(sol) {
         if f.0.orientation() == Orientation::Internal {
             continue;
@@ -385,8 +385,8 @@ fn map_faces_to_build_solids(sol: &TopoShape, mfs: &mut HashMap<usize, FaceToSol
 /// (`:1267-1377`). `BuilderSolid::SetContext` is unported.
 pub fn build_solid(b: &BopBuilder, rc: &TopoShape) -> Result<TopoShape, String> {
     let bb = TopoBuilder::new();
-    let mut arg_solids: HashSet<usize> = HashSet::new();
-    let mut ancestors: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut arg_solids: HashSet<ShapeMapKey> = HashSet::new();
+    let mut ancestors: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     let mut a_lsc: Vec<TopoShape> = Vec::new();
     for group in [b.objects(), b.tools()] {
         for s in group {
@@ -397,7 +397,7 @@ pub fn build_solid(b: &BopBuilder, rc: &TopoShape) -> Result<TopoShape, String> 
             }
         }
     }
-    let mut shared: HashSet<usize> = HashSet::new();
+    let mut shared: HashSet<ShapeMapKey> = HashSet::new();
     for sols in ancestors.values() {
         if sols.len() > 1 {
             for s in sols {
@@ -406,7 +406,7 @@ pub fn build_solid(b: &BopBuilder, rc: &TopoShape) -> Result<TopoShape, String> 
         }
     }
 
-    let mut mfs: HashMap<usize, FaceToSolids> = HashMap::new();
+    let mut mfs: HashMap<ShapeMapKey, FaceToSolids> = HashMap::new();
     let mut mu_sols: Vec<TopoShape> = Vec::new();
     for sx in iter_children(rc) {
         if arg_solids.contains(&shape_key(&sx)) && !shared.contains(&shape_key(&sx)) {
@@ -491,7 +491,7 @@ fn rebuild_compsolids(b: &BopBuilder, rc: &TopoShape, lsc: &[TopoShape]) -> Topo
         bb.add(&mut cs, &solids[0]);
         return bb.make_compound_of(&[cs]).0;
     }
-    let mut mfcs: HashSet<usize> = HashSet::new();
+    let mut mfcs: HashSet<ShapeMapKey> = HashSet::new();
     for cs in lsc {
         if cs.shape_type() != ShapeType::CompSolid {
             continue;
@@ -529,7 +529,7 @@ fn rebuild_compsolids(b: &BopBuilder, rc: &TopoShape, lsc: &[TopoShape]) -> Topo
 
 fn connexity_solids_by_face(solids: &[TopoShape]) -> Vec<Vec<TopoShape>> {
     let n = solids.len();
-    let face_sets: Vec<HashSet<usize>> = solids
+    let face_sets: Vec<HashSet<ShapeMapKey>> = solids
         .iter()
         .map(|s| faces_of(s).iter().map(|f| shape_key(&f.0)).collect())
         .collect();
@@ -561,18 +561,21 @@ fn connexity_solids_by_face(solids: &[TopoShape]) -> Vec<Vec<TopoShape>> {
     groups.into_values().collect()
 }
 
+/// `BRep_Tool::IsClosed(aE, aF)` (`BOPAlgo_BOP.cxx:1490`): the edge is the
+/// closing curve of a closed surface of the face (`BRep_Tool.cxx:795-841`).
 fn edge_closed_on_face(edge: &TopoShape, face: &TopoShape) -> bool {
-    edges_of(face)
-        .into_iter()
-        .filter(|e| e.0.same_tshape(edge))
-        .count()
-        > 1
+    BRepTool::is_closed_edge_face(&Edge(edge.clone()), &Face(face.clone()))
 }
 
+/// The edge is `INTERNAL` in the face: `TopExp_Explorer(aF, EDGE)` finds the
+/// first `IsSame` edge and the result is its orientation
+/// (`BOPAlgo_BOP.cxx:1495-1501`).
 fn edge_internal_on_face(edge: &TopoShape, face: &TopoShape) -> bool {
-    edges_of(face).into_iter().any(|e| {
-        e.0.same_tshape(edge) && e.0.orientation() == Orientation::Internal
-    })
+    edges_of(face)
+        .into_iter()
+        .find(|e| same_shape(&e.0, edge))
+        .map(|e| e.0.orientation() == Orientation::Internal)
+        .unwrap_or(false)
 }
 
 /// `BOPAlgo_BOP::CheckArgsForOpenSolid` (`BOPAlgo_BOP.cxx:1382`).
@@ -587,8 +590,8 @@ fn check_args_for_open_solid(b: &BopBuilder) -> bool {
             || (w.contains("BuilderSolid:") && w.contains("fit no region"))
     });
     for a_solid in source_solids(b.ds()) {
-        let mut mef: HashMap<usize, (TopoShape, Vec<TopoShape>)> = HashMap::new();
-        let mut mf_internal: HashSet<usize> = HashSet::new();
+        let mut mef: HashMap<ShapeMapKey, (TopoShape, Vec<TopoShape>)> = HashMap::new();
+        let mut mf_internal: HashSet<ShapeMapKey> = HashSet::new();
         for a_sh in iter_children(&a_solid) {
             if a_sh.shape_type() != ShapeType::Shell {
                 continue;
@@ -608,9 +611,11 @@ fn check_args_for_open_solid(b: &BopBuilder) -> bool {
                 }
                 for e in edges_of(&a_f) {
                     let ent = mef.entry(shape_key(&e.0)).or_insert_with(|| (e.0.clone(), Vec::new()));
-                    if !ent.1.iter().any(|f| f.same_tshape(&a_f)) {
-                        ent.1.push(a_f.clone());
-                    }
+                    // `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`
+                    // appends without a uniqueness check
+                    // (`BOPAlgo_BOP.cxx:1469`), so a seam edge listed twice on
+                    // the face yields `Extent() == 2`.
+                    ent.1.push(a_f.clone());
                 }
             }
         }

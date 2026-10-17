@@ -69,6 +69,7 @@ use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::AlgoTools;
 
 use crate::bop_build_common::{build_draft_solid, BopBuildOps};
+use crate::bop_occt_util::shape_key;
 use crate::brep_extrema::{closest_point_on_face, is_inside};
 use crate::brep_surface::surface_normal;
 use crate::brep_tool::BRepTool;
@@ -76,12 +77,7 @@ use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Edge, Face, Shell, TopoShape};
 use crate::shell_splitter::{EKey};
-use crate::topo_tools_full::{edges_of_wire, faces_of, vertices_of, wires_of_face};
-
-/// Stable identity key of a shape (the address of its shared `TShape`).
-fn shape_key(s: &TopoShape) -> usize {
-    Arc::as_ptr(&s.tshape) as usize
-}
+use crate::topo_tools_full::{edges_of_wire, faces_of, vertices_of, wires_of_face, ShapeMapKey};
 
 // ---------------------------------------------------------------------------
 // FillImagesSolids — draft pass
@@ -518,7 +514,7 @@ mod tests {
         history: BopHistory,
         fuzzy: f64,
         args: Vec<TopoShape>,
-        origins: HashMap<usize, Vec<TopoShape>>,
+        origins: HashMap<ShapeMapKey, Vec<TopoShape>>,
     }
 
     impl BopBuildOps for StubBuilder {
@@ -537,7 +533,7 @@ mod tests {
         fn arguments(&self) -> &[TopoShape] {
             &self.args
         }
-        fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>> {
+        fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
             &mut self.origins
         }
     }

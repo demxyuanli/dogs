@@ -10,8 +10,8 @@ mod common;
 use std::sync::OnceLock;
 
 use common::{
-    data_dir, export, obj_area, obj_bbox, obj_counts, occ_counts, occ_text, output_path,
-    write_output, MODELS,
+    data_dir, export, mtl_newmtl, obj_area, obj_bbox, obj_counts, obj_mtllib, obj_usemtl,
+    occ_counts, occ_text, output_path, stem, write_output, MODELS,
 };
 use occt_core::io::obj::{read_obj_file, ObjMesh};
 
@@ -21,6 +21,7 @@ struct Case {
     bbox_tol: Option<f64>,
     area_tol: Option<f64>,
     obj: String,
+    mtl: String,
     reference: String,
 }
 
@@ -30,12 +31,16 @@ fn cases() -> &'static [Case] {
     CASES.get_or_init(|| {
         MODELS
             .iter()
-            .map(|m| Case {
-                step: m.step,
-                bbox_tol: m.bbox_tol,
-                area_tol: m.area_tol,
-                obj: export(m.step),
-                reference: occ_text(m.occ),
+            .map(|m| {
+                let (obj, mtl) = export(m.step);
+                Case {
+                    step: m.step,
+                    bbox_tol: m.bbox_tol,
+                    area_tol: m.area_tol,
+                    obj,
+                    mtl,
+                    reference: occ_text(m.occ),
+                }
             })
             .collect()
     })
@@ -92,7 +97,10 @@ fn step_obj_area_matches_occt() {
 }
 
 /// step_to_obj: every export is a non-degenerate, finite OBJ; write it to
-/// `data/output/<stem>.obj` and read it back through the OBJ reader.
+/// `data/output/gates/<stem>.obj` (plus its `.mtl` sidecar) and read it back
+/// through the OBJ reader. The material records must be self-consistent: a
+/// `mtllib` names exactly the sidecar that was written, and every `usemtl` is
+/// declared by a `newmtl` (an undeclared material breaks any viewer).
 #[test]
 fn step_to_obj_exports_valid_obj() {
     for c in cases() {
@@ -104,12 +112,41 @@ fn step_to_obj_exports_valid_obj() {
             "{}: non-finite bbox {min:?} {max:?}",
             c.step
         );
-        write_output(c.step, &c.obj);
+        write_output(c.step, &c.obj, &c.mtl);
         let out = output_path(c.step);
         let mesh = read_obj_file(&out.to_string_lossy())
             .unwrap_or_else(|e| panic!("round-trip {}: {e}", out.display()));
         assert!(!mesh.vertices.is_empty(), "{}: round-trip lost vertices", c.step);
         assert!(!mesh.faces.is_empty(), "{}: round-trip lost faces", c.step);
+
+        match obj_mtllib(&c.obj) {
+            Some(lib) => {
+                assert_eq!(
+                    lib,
+                    format!("{}.mtl", stem(c.step)),
+                    "{}: mtllib does not name the sidecar",
+                    c.step
+                );
+                assert!(
+                    !c.mtl.is_empty(),
+                    "{}: mtllib {lib} emitted without a material library",
+                    c.step
+                );
+                let declared = mtl_newmtl(&c.mtl);
+                for used in obj_usemtl(&c.obj) {
+                    assert!(
+                        declared.contains(&used),
+                        "{}: usemtl {used} is not declared by any newmtl ({declared:?})",
+                        c.step
+                    );
+                }
+            }
+            None => assert!(
+                c.mtl.is_empty(),
+                "{}: material library written without a mtllib record",
+                c.step
+            ),
+        }
     }
 }
 

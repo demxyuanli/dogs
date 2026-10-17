@@ -26,13 +26,9 @@ use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
+use crate::bop_occt_util::shape_key;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, vertices_of};
-
-fn shape_key(s: &TopoShape) -> usize {
-    GeometryRegistry::shape_key(s)
-}
+use crate::topo_tools_full::{edges_of, map_shapes_and_ancestors, vertices_of, ShapeMapKey};
 
 /// `BOPAlgo_ShapeBox`.
 #[derive(Clone)]
@@ -47,7 +43,7 @@ impl ShapeBox {
     }
 }
 
-fn map_edges_and_faces(the_f: &TopoShape, the_ef_map: &mut HashMap<usize, (TopoShape, Vec<TopoShape>)>) {
+fn map_edges_and_faces(the_f: &TopoShape, the_ef_map: &mut HashMap<ShapeMapKey, (TopoShape, Vec<TopoShape>)>) {
     for w in ShapeIterator::of_shape(the_f) {
         if w.shape_type() != ShapeType::Wire {
             continue;
@@ -60,18 +56,20 @@ fn map_edges_and_faces(the_f: &TopoShape, the_ef_map: &mut HashMap<usize, (TopoS
             let entry = the_ef_map
                 .entry(k)
                 .or_insert_with(|| (e.clone(), Vec::new()));
-            if !entry.1.iter().any(|f| f.same_tshape(the_f)) {
-                entry.1.push(the_f.clone());
-            }
+            // `BOPAlgo_Tools.cxx:1544-1549`: `pLF->Append(theF)` with no
+            // deduplication. `IsInternalFace` reads `aLF.Extent() == 1` / `== 2`
+            // (`BOPTools_AlgoTools.cxx:849-869`), so a `same_tshape` fence here
+            // would collapse repeated ancestors and pick the wrong arm.
+            entry.1.push(the_f.clone());
         }
     }
 }
 
 fn make_connexity_block(
     the_f_start: &TopoShape,
-    the_me_avoid: &HashSet<usize>,
-    the_ef_map: &HashMap<usize, (TopoShape, Vec<TopoShape>)>,
-    the_mf_done: &mut HashSet<usize>,
+    the_me_avoid: &HashSet<ShapeMapKey>,
+    the_ef_map: &HashMap<ShapeMapKey, (TopoShape, Vec<TopoShape>)>,
+    the_mf_done: &mut HashSet<ShapeMapKey>,
     the_lcb: &mut Vec<TopoShape>,
     the_face_to_classify: &mut Option<TopoShape>,
 ) {
@@ -115,7 +113,7 @@ fn make_connexity_block(
 fn is_internal_face(
     the_face: &Face,
     the_solid: &TopoShape,
-    the_mefds: &HashMap<usize, (TopoShape, Vec<TopoShape>)>,
+    the_mefds: &HashMap<ShapeMapKey, Vec<TopoShape>>,
     the_tol: f64,
     the_ctx: &IntToolsContext,
 ) -> bool {
@@ -190,8 +188,8 @@ pub fn fill_in_3d_parts(
     if a_lifp.is_empty() {
         return my_in_faces;
     }
-    let mut a_mse: HashSet<usize> = HashSet::new();
-    let mut a_msf: HashSet<usize> = HashSet::new();
+    let mut a_mse: HashSet<ShapeMapKey> = HashSet::new();
+    let mut a_msf: HashSet<ShapeMapKey> = HashSet::new();
     for e in edges_of(the_solid) {
         a_mse.insert(shape_key(&e.0));
     }
@@ -218,14 +216,17 @@ pub fn fill_in_3d_parts(
         }
         return my_in_faces;
     }
-    let mut a_mefp: HashMap<usize, (TopoShape, Vec<TopoShape>)> = HashMap::new();
+    let mut a_mefp: HashMap<ShapeMapKey, (TopoShape, Vec<TopoShape>)> = HashMap::new();
     if a_ivec.len() > 1 {
         for &k in &a_ivec {
             map_edges_and_faces(&the_v_shape_box[k].shape, &mut a_mefp);
         }
     }
-    let mut a_mefds: HashMap<usize, (TopoShape, Vec<TopoShape>)> = HashMap::new();
-    let mut a_mf_done: HashSet<usize> = HashSet::new();
+    // `_cxx:1498-1501`: `aMEFDS` is filled by
+    // `TopExp::MapShapesAndAncestors(mySolid, EDGE, FACE)`, keyed by
+    // `TopTools_ShapeMapHasher` and built once.
+    let mut a_mefds: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    let mut a_mf_done: HashSet<ShapeMapKey> = HashSet::new();
     for &n_fp in &a_ivec {
         let a_fp = the_v_shape_box[n_fp].shape.clone();
         if !a_mf_done.insert(shape_key(&a_fp)) {
@@ -263,16 +264,7 @@ pub fn fill_in_3d_parts(
         }
         let a_face = a_face_to_classify.unwrap_or(a_fp);
         if a_mefds.is_empty() {
-            for e in edges_of(the_solid) {
-                let k = shape_key(&e.0);
-                let faces: Vec<TopoShape> = ShapeIterator::of_shape(the_solid)
-                    .filter(|f| {
-                        f.shape_type() == ShapeType::Face
-                            && edges_of(f).iter().any(|fe| fe.0.same_tshape(&e.0))
-                    })
-                    .collect();
-                a_mefds.insert(k, (e.0, faces));
-            }
+            a_mefds = map_shapes_and_ancestors(the_solid, ShapeType::Edge, ShapeType::Face);
         }
         if is_internal_face(&Face(a_face), the_solid, &a_mefds, CONFUSION, the_ctx) {
             my_in_faces.extend(a_lcbf);
@@ -286,9 +278,9 @@ pub fn classify_faces(
     the_faces: &[TopoShape],
     the_solids: &[TopoShape],
     the_ctx: &IntToolsContext,
-    the_shape_box_map: &HashMap<usize, BndBox>,
-    the_solids_if: &HashMap<usize, Vec<TopoShape>>,
-) -> HashMap<usize, Vec<TopoShape>> {
+    the_shape_box_map: &HashMap<ShapeMapKey, BndBox>,
+    the_solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
+) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
     let mut a_vsb: Vec<ShapeBox> = Vec::new();
     for a_f in the_faces {
         let a_box = the_shape_box_map
@@ -297,7 +289,7 @@ pub fn classify_faces(
             .unwrap_or_else(|| shape_bbox(a_f));
         a_vsb.push(ShapeBox::new(a_f.clone(), a_box));
     }
-    let mut the_in_parts: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut the_in_parts: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     for a_solid in the_solids {
         let a_box = the_shape_box_map
             .get(&shape_key(a_solid))
@@ -323,13 +315,13 @@ pub fn classify_faces(
 pub fn fill_internals(
     the_solids: &mut [TopoShape],
     the_parts: &[TopoShape],
-    the_images: &HashMap<usize, Vec<TopoShape>>,
+    the_images: &HashMap<ShapeMapKey, Vec<TopoShape>>,
     _the_ctx: &IntToolsContext,
 ) {
     if the_solids.is_empty() || the_parts.is_empty() {
         return;
     }
-    let mut a_ms_solids: HashSet<usize> = HashSet::new();
+    let mut a_ms_solids: HashSet<ShapeMapKey> = HashSet::new();
     for a_solid in the_solids.iter() {
         if a_solid.shape_type() != ShapeType::Solid {
             continue;
@@ -371,7 +363,7 @@ pub fn fill_internals(
             }
         }
     }
-    let mut an_in_faces: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut an_in_faces: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     let b = TopoBuilder::new();
     for a_sd in the_solids.iter_mut() {
         if a_sd.shape_type() != ShapeType::Solid {
@@ -417,7 +409,7 @@ pub fn fill_internals(
 }
 
 fn connexity_face_blocks(faces: &[TopoShape]) -> Vec<Vec<TopoShape>> {
-    let mut e2f: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut e2f: HashMap<ShapeMapKey, Vec<usize>> = HashMap::new();
     for (i, f) in faces.iter().enumerate() {
         for e in edges_of(f) {
             e2f.entry(shape_key(&e.0)).or_default().push(i);

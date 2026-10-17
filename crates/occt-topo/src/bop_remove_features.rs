@@ -11,7 +11,7 @@ use crate::bop_occt_util::{explore, shape_key};
 use crate::builder::TopoBuilder;
 use crate::builder_solid::BuilderSolid;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools_full::{faces_of, ShapeMapKey};
 
 /// `BOPAlgo_RemoveFeatures`.
 #[derive(Debug, Clone)]
@@ -62,7 +62,7 @@ impl RemoveFeatures {
             self.errors.push(e.clone());
             return Err(e);
         }
-        let remove: HashSet<usize> = self.faces.iter().map(shape_key).collect();
+        let remove: HashSet<ShapeMapKey> = self.faces.iter().map(shape_key).collect();
         if remove.is_empty() {
             self.result = Some(input);
             return Ok(());

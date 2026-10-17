@@ -3,12 +3,13 @@
 //! (`ShapeFix_ComposeShell.cxx:382-446`).
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::builder::TopoBuilder;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, TopoShape, Vertex};
+use crate::topo_tools_full::ShapeMapKey;
+use occt_core::toploc::TopLocLocation;
 
 use super::wire_segment::WireSegment;
 
@@ -64,7 +65,7 @@ pub struct MapReShape {
     /// one (a stale edge key matching a Face defeated the edge count of
     /// `ShapeFix_ComposeShell::ApplyContext`, `cxx:415-442`). Storing the pair
     /// keeps the same lifetime as OCCT.
-    map: HashMap<usize, (TopoShape, TopoShape)>,
+    map: HashMap<ShapeMapKey, (TopoShape, TopoShape)>,
 }
 
 impl MapReShape {
@@ -72,11 +73,57 @@ impl MapReShape {
         Self::default()
     }
 
+    /// `BRepTools_ReShape::myShapeToReplacement(shape).Result()`
+    /// (`BRepTools_ReShape.cxx:346`): the replacement stored for `shape`, with
+    /// no orientation adjustment — exactly what `Status` reads, as opposed to
+    /// [`ReShape::value`] which is `Value`.
+    pub fn recorded(&self, s: &TopoShape) -> Option<TopoShape> {
+        self.map.get(&key(s)).map(|(_, new)| new.clone())
+    }
+
+    /// `BRepTools_ReShape::Status(shape, newsh, /*last=*/true)`
+    /// (`BRepTools_ReShape.cxx:322-386`): `Some(last)` when the returned status
+    /// is `> 0`, i.e. when a substitution for `shape` is recorded and its final
+    /// representative differs from `shape`; `None` when the status is `0`
+    /// (`cxx:339-343`, `:355-358`, `:374-377`).
+    ///
+    /// The traversal of `cxx:369` is `Apply(shape, TopAbs_SHAPE)`, i.e.
+    /// [`ReShape::apply`]; `cxx:380-385` re-applies the query's location because
+    /// `ShapeFix_Shape::Init` leaves `ModeConsiderLocation()` set
+    /// (`ShapeFix_Shape.cxx:76-78`).
+    pub fn status_last(&mut self, s: &TopoShape) -> Option<TopoShape> {
+        let stored = self.recorded(s)?; // `cxx:339-348`.
+        if crate::topo_tools_full::is_equal(&stored, s) {
+            return None; // `cxx:355-358`: newsh.IsEqual(shape) -> res = 0.
+        }
+        let mut newsh = if stored.same_tshape(s) {
+            // `cxx:359-361`: newsh.IsPartner(shape) -> keep the location-only
+            // difference and skip the recursion.
+            stored
+        } else {
+            let applied = self.apply(s); // `cxx:369`.
+            if crate::topo_tools_full::is_equal(&applied, s) {
+                return None; // `cxx:374-377`: res = 0.
+            }
+            applied
+        };
+        // `cxx:380-385`: the result carries the query's location, composed with
+        // the location the map stored.
+        let query_loc = s.location().clone();
+        let res_loc = if newsh.location().is_identity() {
+            query_loc
+        } else {
+            TopLocLocation::composed(&query_loc.transformation(), newsh.location().clone())
+        };
+        newsh.set_location(&res_loc);
+        Some(newsh)
+    }
+
     /// `ShapeBuild_ReShape::applyImpl` (`ShapeBuild_ReShape.cxx:200-324`) with
     /// `until = TopAbs_SHAPE`. `in_flight` is OCCT's DFS cycle guard
     /// (`cxx:220-226`): a shape already being descended is returned through its
     /// direct replacement only.
-    fn apply_impl(&mut self, s: &TopoShape, in_flight: &mut Vec<usize>) -> TopoShape {
+    fn apply_impl(&mut self, s: &TopoShape, in_flight: &mut Vec<ShapeMapKey>) -> TopoShape {
         if s.is_null() {
             return s.clone(); // `cxx:205-208`.
         }
@@ -209,8 +256,12 @@ fn copy_edge_geom(dst: &TopoShape, src: &TopoShape) {
     }
 }
 
-fn key(s: &TopoShape) -> usize {
-    Arc::as_ptr(&s.tshape) as usize
+/// `NCollection_DataMap` key of `ShapeBuild_ReShape::myMap`
+/// (`BRepTools_ReShape.hxx:239-240`, `TopTools_ShapeMapHasher`) and of the
+/// `BRep_Tool::IsClosed` boundary map (`BRep_Tool.cxx:1710`): `TShape` +
+/// `Location`, i.e. `TopoDS_Shape::IsSame`.
+fn key(s: &TopoShape) -> ShapeMapKey {
+    crate::topo_tools_full::shape_map_key(s)
 }
 
 /// `BRep_TFace::EmptyCopy` (`BRep_TFace.cxx:37-43`) for a face: the surface and
@@ -252,7 +303,7 @@ fn copy_face_geom(dst: &TopoShape, src: &TopoShape) {
 /// a positional chain test.
 fn brep_tool_is_closed(s: &TopoShape) -> bool {
     let mut has_bound = false;
-    let mut odd: Vec<usize> = Vec::new();
+    let mut odd: Vec<ShapeMapKey> = Vec::new();
     match s.shape_type() {
         ShapeType::Wire => {
             for v in crate::topo_tools_full::vertices_of(s) {
@@ -281,8 +332,10 @@ fn brep_tool_is_closed(s: &TopoShape) -> bool {
 }
 
 /// `NCollection_Map::Add` + `Remove` pair (`BRep_Tool.cxx:1722-1724`): keep the
-/// members with an odd number of occurrences.
-fn toggle(set: &mut Vec<usize>, k: usize) {
+/// members with an odd number of occurrences. The map is a
+/// `NCollection_Map<TopoDS_Shape, TopTools_ShapeMapHasher>` (`BRep_Tool.cxx:1710`),
+/// so its key is [`ShapeMapKey`].
+fn toggle(set: &mut Vec<ShapeMapKey>, k: ShapeMapKey) {
     match set.iter().position(|x| *x == k) {
         Some(i) => {
             set.remove(i);
@@ -357,6 +410,12 @@ pub struct SharedReShape(std::rc::Rc<std::cell::RefCell<MapReShape>>);
 impl SharedReShape {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `BRepTools_ReShape::Status(shape, newsh, /*last=*/true)` through the
+    /// shared handle; see [`MapReShape::status_last`].
+    pub fn status_last(&self, s: &TopoShape) -> Option<TopoShape> {
+        self.0.borrow_mut().status_last(s)
     }
 
     /// `BRepTools_ReShape::CopyVertex(V, tol)` (`BRepTools_ReShape.cxx:613-637`).

@@ -99,15 +99,25 @@ impl TopoBuilder {
 
     /// `BRepPrim_Builder::MakeDegeneratedEdge` (`BRepPrim_OneAxis.cxx:934`,
     /// `:1212`, `:1264`): an edge whose 3D representation is the single point
-    /// `p` (a sphere/cone pole, a torus seam point). OCCT stores **no** 3D curve
-    /// for such an edge (`BRep_Builder::Degenerated`,
-    /// `BRep_Builder.cxx:1073-1085`) and the mesh pipeline then uses its pcurve
-    /// only (`meshing/edge_discret.rs:720-723`, `:744`). `EdgeGeom::curve` is
-    /// non-nullable here, so a constant-point curve carries `p`; every consumer
-    /// must key off the `degenerated` flag, never off this curve's shape.
+    /// `p` (a sphere/cone pole, a torus seam point). OCCT stores a `BRep_Curve3D`
+    /// representation holding a **null** curve — `BRep_Builder::Degenerated(E,
+    /// true)` calls `UpdateCurves(TE->ChangeCurves(), null, E.Location())`
+    /// (`BRep_Builder.cxx:1073-1087`), which appends the representation with a
+    /// null curve (`cxx:80-92`) — so `BRep_Tool::Curve` answers null while the
+    /// representation itself is present. That presence is load-bearing for
+    /// `BRepCheck_Edge::Minimum` (`BRepCheck_Edge.cxx:100-147`): a present
+    /// representation with a null curve raises neither `No3DCurve`
+    /// (`cxx:118-123`, `exist` is set by the representation) nor
+    /// `InvalidDegeneratedFlag` (`cxx:144-147`, `myCref` stays null), and the
+    /// range check (`cxx:149-252`) is skipped because `myCref` is null. The mesh
+    /// pipeline then uses the edge's pcurve only (`meshing/edge_discret.rs:720-
+    /// 723`, `:744`). `EdgeGeom::curve` is non-nullable here, so a constant-point
+    /// curve carries `p`; every consumer must key off the `degenerated` flag and
+    /// `curve3d_null`, never off this curve's shape.
     pub fn make_degenerated_edge(&self, p: &GpPnt) -> Edge {
         let e = self.make_edge(Arc::new(DegeneratePointCurve { p: *p }), 0.0, 0.0);
         GeometryRegistry::global().set_degenerated(&e.0, true);
+        GeometryRegistry::global().set_curve3d_null(&e.0, true);
         e
     }
 

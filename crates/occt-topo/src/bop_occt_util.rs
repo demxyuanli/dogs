@@ -8,9 +8,15 @@
 //! the `myShapesSD.IsBound` / `myImages.IsBound` lookups the solid and face
 //! stages both need.
 //!
-//! Identity is [`GeometryRegistry::shape_key`] (TShape pointer), matching
-//! `TopTools_ShapeMapHasher` on the TShape handle. Do not mix this key with
-//! `Arc::as_ptr` aliases used in a few older solid-stage helpers.
+//! Identity is [`shape_key`], the `TopTools_ShapeMapHasher` key of
+//! `TopTools_MapOfShape` / `TopTools_IndexedMapOfShape` /
+//! `TopTools_DataMapOfShape*` (`TopTools_ShapeMapHasher.hxx:30-38`): the
+//! `TShape` handle together with the `TopLoc_Location`, i.e. exactly
+//! `TopoDS_Shape::IsSame` (`TopoDS_Shape.hxx:262-267`). A moved occurrence of
+//! one `TShape` (the translated top of a prism reusing the bottom edge
+//! `TShape`) is a distinct entry, as in OCCT. Do not mix this key with
+//! `Arc::as_ptr` aliases or with `GeometryRegistry::shape_key` (a bare
+//! `TShape` address used for the geometry side tables, not for shape maps).
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
@@ -27,21 +33,25 @@ use crate::builder::TopoBuilder;
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools_full::{edges_of, faces_of, shape_map_key, vertices_of, ShapeMapKey};
 
-/// TShape identity used as a `TopTools_MapOfShape` key.
-pub fn shape_key(s: &TopoShape) -> usize {
-    GeometryRegistry::shape_key(s)
+/// `TopTools_ShapeMapHasher` key (`TopTools_ShapeMapHasher.hxx:30-38`; equal
+/// keys are `TopoDS_Shape::IsSame`, `TopoDS_Shape.hxx:262-267`).
+pub fn shape_key(s: &TopoShape) -> ShapeMapKey {
+    shape_map_key(s)
 }
 
-/// True when `a` and `b` share a TShape (`IsSame` without location).
+/// `TopTools_ShapeMapHasher::operator()(S1, S2)` = `TopoDS_Shape::IsSame`
+/// (`TopTools_ShapeMapHasher.hxx:35-38`): same `TShape`, same location; the
+/// orientation is not part of the comparison.
 pub fn same_shape(a: &TopoShape, b: &TopoShape) -> bool {
-    a.same_tshape(b)
+    crate::topo_tools_full::is_same_occurrence(a, b)
 }
 
-/// Ordered fence map: insert returns true when `s` was new.
+/// `NCollection_List`-backed fence (`aMFence.Add(shape)`, `aList.Append`):
+/// insert returns true when `s` was new under [`same_shape`].
 pub fn fence_add(fence: &mut Vec<TopoShape>, s: TopoShape) -> bool {
-    if fence.iter().any(|x| x.same_tshape(&s)) {
+    if fence.iter().any(|x| same_shape(x, &s)) {
         false
     } else {
         fence.push(s);
@@ -49,8 +59,9 @@ pub fn fence_add(fence: &mut Vec<TopoShape>, s: TopoShape) -> bool {
     }
 }
 
-/// Hash-set fence keyed by [`shape_key`].
-pub fn fence_insert(fence: &mut HashSet<usize>, s: &TopoShape) -> bool {
+/// `NCollection_Map<TopoDS_Shape, TopTools_ShapeMapHasher>` fence
+/// (`aMFence.Add(s)`): returns true when `s` was new.
+pub fn fence_insert(fence: &mut HashSet<ShapeMapKey>, s: &TopoShape) -> bool {
     fence.insert(shape_key(s))
 }
 
@@ -82,8 +93,8 @@ pub fn explore(s: &TopoShape, ty: ShapeType) -> Vec<TopoShape> {
 
 fn collect_type(s: &TopoShape, ty: ShapeType) -> Vec<TopoShape> {
     let mut out = Vec::new();
-    let mut seen: HashSet<usize> = HashSet::new();
-    fn walk(s: &TopoShape, ty: ShapeType, out: &mut Vec<TopoShape>, seen: &mut HashSet<usize>) {
+    let mut seen: HashSet<ShapeMapKey> = HashSet::new();
+    fn walk(s: &TopoShape, ty: ShapeType, out: &mut Vec<TopoShape>, seen: &mut HashSet<ShapeMapKey>) {
         if s.shape_type() == ty && seen.insert(shape_key(s)) {
             out.push(s.clone());
         }
@@ -95,27 +106,24 @@ fn collect_type(s: &TopoShape, ty: ShapeType) -> Vec<TopoShape> {
     out
 }
 
-/// `TopExp::MapShapes(s, type, map)` — unique TShape set of that type.
-pub fn map_shapes(s: &TopoShape, ty: ShapeType) -> HashSet<usize> {
+/// `TopExp::MapShapes(s, type, map)` — `TopTools_IndexedMapOfShape` content
+/// (per-occurrence walk, deduplicated by [`same_shape`]).
+pub fn map_shapes(s: &TopoShape, ty: ShapeType) -> HashSet<ShapeMapKey> {
     explore(s, ty).into_iter().map(|x| shape_key(&x)).collect()
 }
 
-/// `TopExp::MapShapesAndAncestors(s, sub, anc, map)`.
+/// `TopExp::MapShapesAndAncestors(s, sub, anc, map)` (`TopExp.cxx:80-120`).
+/// Delegates to the single port in [`crate::topo_tools_full`] so the whole
+/// crate walks one control flow and one hasher key (`TopTools_ShapeMapHasher`:
+/// `TShape` + `Location`). The list keeps per-occurrence duplicates; the
+/// previous local copy deduplicated the ancestors, which is
+/// `MapShapesAndUniqueAncestors` (`cxx:124-177`), not this function.
 pub fn map_shapes_and_ancestors(
     s: &TopoShape,
     sub: ShapeType,
     anc: ShapeType,
-) -> HashMap<usize, Vec<TopoShape>> {
-    let mut out: HashMap<usize, Vec<TopoShape>> = HashMap::new();
-    for a in explore(s, anc) {
-        for k in map_shapes(&a, sub) {
-            let list = out.entry(k).or_default();
-            if !list.iter().any(|x| x.same_tshape(&a)) {
-                list.push(a.clone());
-            }
-        }
-    }
-    out
+) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
+    crate::topo_tools_full::map_shapes_and_ancestors(s, sub, anc)
 }
 
 /// Whether the history table has an image list for `s` (`myImages.IsBound`).
@@ -347,9 +355,14 @@ pub fn source_faces(ds: &BopdsDS) -> Vec<(usize, TopoShape)> {
 }
 
 /// Candidate faces of FillIn3DParts: every source FACE replaced by its image
-/// splits, an un-split face kept as-is, fenced by TShape identity.
+/// splits, an un-split face kept as-is (`BOPAlgo_Builder_3.cxx:113-150`: the
+/// fence `aMFence` is a `TopTools_MapOfShape`, i.e. `IsSame`).
+/// Candidate faces of `FillIn3DParts` (`BOPAlgo_Builder_3.cxx:115-150`): every
+/// source face replaced by its images (deduplicated through `aMFence`); a face
+/// without an image is appended as is — the `else` arm of the `.cxx` has no
+/// fence (`:145-149`).
 pub fn collect_candidate_faces(h: &BopHistory, ds: &BopdsDS) -> Vec<TopoShape> {
-    let mut fence: HashSet<usize> = HashSet::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     let mut out = Vec::new();
     for (_, face) in source_faces(ds) {
         if images_bound(h, &face) {
@@ -358,7 +371,7 @@ pub fn collect_candidate_faces(h: &BopHistory, ds: &BopdsDS) -> Vec<TopoShape> {
                     out.push(im.clone());
                 }
             }
-        } else if fence.insert(shape_key(&face)) {
+        } else {
             out.push(face);
         }
     }
@@ -373,8 +386,9 @@ pub fn own_internal_shapes(solid: &TopoShape) -> Vec<TopoShape> {
         .collect()
 }
 
-/// Flatten compounds into a list (`BOPTools_AlgoTools::TreatCompound`).
-pub fn treat_compound(s: &TopoShape, out: &mut Vec<TopoShape>, fence: &mut HashSet<usize>) {
+/// Flatten compounds into a list (`BOPTools_AlgoTools::TreatCompound`,
+/// `BOPTools_AlgoTools_2.cxx:512-531`; `theMFence` is a `TopTools_MapOfShape`).
+pub fn treat_compound(s: &TopoShape, out: &mut Vec<TopoShape>, fence: &mut HashSet<ShapeMapKey>) {
     if s.shape_type() == ShapeType::Compound {
         for c in iter_children(s) {
             treat_compound(&c, out, fence);
@@ -401,36 +415,27 @@ pub fn wire_is_closed(wire: &Wire) -> bool {
     }
 }
 
-/// Merge two ancestor maps, appending unique ancestors per key.
-pub fn merge_ancestor_maps(
-    dst: &mut HashMap<usize, Vec<TopoShape>>,
-    src: HashMap<usize, Vec<TopoShape>>,
-) {
-    for (k, vals) in src {
-        let list = dst.entry(k).or_default();
-        for v in vals {
-            if !list.iter().any(|x| x.same_tshape(&v)) {
-                list.push(v);
-            }
-        }
-    }
-}
-
-/// Origins back-map insert (`myOrigins.Bound` / `ChangeSeek`).
+/// Origins back-map insert (`myOrigins.ChangeSeek` + `Bound` /
+/// `myOrigins.Bound`), e.g. `BOPAlgo_Builder_1.cxx:60-66`, `_2.cxx:914-918`,
+/// `_3.cxx:604-608`.
+///
+/// `BOPAlgo_Builder::myOrigins` is a
+/// `NCollection_DataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>,
+/// TopTools_ShapeMapHasher>` (`BOPAlgo_Builder.hxx:501`), so the key is
+/// [`shape_key`] (`TopTools_ShapeMapHasher.hxx:30-38`, equal keys are
+/// `TopoDS_Shape::IsSame`): two occurrences of one `TShape` at different
+/// locations are distinct entries, unlike `GeometryRegistry::shape_key`.
 pub fn origins_append(
-    origins: &mut HashMap<usize, Vec<TopoShape>>,
+    origins: &mut HashMap<ShapeMapKey, Vec<TopoShape>>,
     split: &TopoShape,
     source: TopoShape,
 ) {
-    origins
-        .entry(shape_key(split))
-        .or_default()
-        .push(source);
+    origins.entry(shape_key(split)).or_default().push(source);
 }
 
-/// Deduplicate a shape list by TShape identity, preserving order.
+/// Deduplicate a shape list by [`same_shape`], preserving order.
 pub fn unique_shapes(shapes: &[TopoShape]) -> Vec<TopoShape> {
-    let mut fence: HashSet<usize> = HashSet::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     let mut out = Vec::new();
     for s in shapes {
         if fence.insert(shape_key(s)) {
@@ -607,7 +612,7 @@ pub trait BopSolidHost {
     fn history_mut(&mut self) -> &mut BopHistory;
     fn fuzzy_value(&self) -> f64;
     fn arguments(&self) -> &[TopoShape];
-    fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>>;
+    fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>>;
     fn add_warning(&mut self, msg: String);
     fn seek_shapes_sd(&self, shape: &TopoShape) -> Option<TopoShape>;
     fn bind_shapes_sd(&mut self, shape: TopoShape, sd: TopoShape);

@@ -241,6 +241,16 @@ impl SweepOps for Translation {
         };
         let face = TopoBuilder::new().make_face(surface, &[]);
         GeometryRegistry::global().set_face_tolerance(&face.0, tol);
+        if std::env::var("SWEEP_DBG").is_ok() {
+            eprintln!(
+                "[mef] dir idx={} ty={:?} gen_loc={:?} face_loc={:?} surf={}",
+                dir.index,
+                dir.ty,
+                gen.location().transformation(),
+                face.0.location().transformation(),
+                face.0.tshape.read().unwrap().face_core().is_some(),
+            );
+        }
         face.0
     }
     fn set_parameters(

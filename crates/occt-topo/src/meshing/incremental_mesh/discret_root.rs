@@ -469,6 +469,20 @@ impl IncrementalMesh {
                         );
                     }
                     crate::meshing::node_insertion::diag_dump_result(&result, i);
+                    if std::env::var("SWEEP_FACE").is_ok() {
+                        let o = surface.d0(0.0, 0.0);
+                        eprintln!(
+                            "[facedbg] face={i} surf_orgin=({:.3},{:.3},{:.3}) nodes={} tris={}",
+                            o.x(), o.y(), o.z(), result.nodes.len(), result.triangles.len()
+                        );
+                        for (k, n) in result.nodes.iter().enumerate() {
+                            eprintln!(
+                                "[facedbg]   n{k} uv=({:.4},{:.4}) p=({:.4},{:.4},{:.4})",
+                                n.location.x(), n.location.y(),
+                                n.p3d.x(), n.p3d.y(), n.p3d.z()
+                            );
+                        }
+                    }
                     Self::map_triangulation(&result, surface.as_ref(), i).ok()
                 }
                 Ok(Err(e)) => {
@@ -844,7 +858,7 @@ impl IncrementalMesh {
             let oriented = Edge(model.edge(edge_index)?.edge().0.oriented(orientation));
             match (
                 crate::pcurve_full::make_pcurve_full(&oriented, &topo_face),
-                BRepTool::face_surface(&topo_face),
+                BRepTool::face_surface_world(&topo_face),
             ) {
                 (Ok(c2), Some(s)) => {
                     let (pf, pl) = crate::boptools_2d::curve_on_surface_range(&oriented, &topo_face)
@@ -887,7 +901,7 @@ impl IncrementalMesh {
                 let oriented = Edge(model.edge(edge_index)?.edge().0.oriented(orientation));
                 if let (Ok(c2), Some(s)) = (
                     crate::pcurve_full::make_pcurve_full(&oriented, &topo_face),
-                    BRepTool::face_surface(&topo_face),
+                    BRepTool::face_surface_world(&topo_face),
                 ) {
                     pcs.push((c2, s));
                 }
@@ -930,7 +944,7 @@ impl IncrementalMesh {
             let Ok(pc) = crate::pcurve_full::make_pcurve_full(&oriented, &topo_face) else {
                 continue;
             };
-            let Some(surface) = BRepTool::face_surface(&topo_face) else {
+            let Some(surface) = BRepTool::face_surface_world(&topo_face) else {
                 continue;
             };
             let (pf, pl) = crate::boptools_2d::curve_on_surface_range(&oriented, &topo_face)
@@ -1061,7 +1075,7 @@ impl IncrementalMesh {
                         );
                         match (
                             crate::pcurve_full::make_pcurve_full(&oriented, &topo_face),
-                            BRepTool::face_surface(&topo_face),
+                            BRepTool::face_surface_world(&topo_face),
                         ) {
                             (Ok(c2), Some(s)) => {
                                 // `BRepAdaptor_Curve(E,F)` loads the pcurve on
@@ -1114,7 +1128,7 @@ impl IncrementalMesh {
                             );
                             if let (Ok(c2), Some(s)) = (
                                 crate::pcurve_full::make_pcurve_full(&oriented, &topo_face),
-                                BRepTool::face_surface(&topo_face),
+                                BRepTool::face_surface_world(&topo_face),
                             ) {
                                 pcs.push((c2, s));
                             }
@@ -1136,8 +1150,8 @@ impl IncrementalMesh {
                     let natural = Edge(model.edge(edge_index)?.edge().0.oriented(Orientation::Forward));
                     let (first_vertex, last_vertex) =
                         crate::topo_tools_full::edge_vertices(&natural);
-                    let first_pnt = first_vertex.as_ref().map(|v| BRepTool::vertex_point(v));
-                    let last_pnt = last_vertex.as_ref().map(|v| BRepTool::vertex_point(v));
+                    let first_pnt = first_vertex.as_ref().map(|v| BRepTool::vertex_point_world(v));
+                    let last_pnt = last_vertex.as_ref().map(|v| BRepTool::vertex_point_world(v));
                     let edge_tol = BRepTool::edge_tolerance(&model.edge(edge_index)?.edge());
                     let em = model.edge_mut(edge_index)?;
                     em.discretization_mut().clear(false);
@@ -1191,7 +1205,7 @@ impl IncrementalMesh {
             // onto the surface and then onto the pcurve (a non-SameParameter STEP
             // edge's 3D curve may lie off the surface). The 3D polyline was stored
             // above, so read it back for the projection.
-            let surface = BRepTool::face_surface(&topo_face).ok_or_else(|| {
+            let surface = BRepTool::face_surface_world(&topo_face).ok_or_else(|| {
                 "IncrementalMesh::discretize_pcurves: face has no surface".to_string()
             })?;
             let pts3d: Vec<GpPnt> = model.edge(edge_index)?.discretization().points().to_vec();
@@ -1230,7 +1244,7 @@ impl IncrementalMesh {
                 (pc.first_parameter(), pc.last_parameter())
             } else {
                 let proj = |v: Option<crate::shape::Vertex>| -> Option<f64> {
-                    let p = BRepTool::vertex_point(&v?);
+                    let p = BRepTool::vertex_point_world(&v?);
                     let pr =
                         occt_geom::geom_api::project_point_on_surface(surface.as_ref(), &p, 1e-7)?;
                     Some(crate::pcurve_full::project_uv_on_curve2d(
@@ -1514,7 +1528,7 @@ impl IncrementalMesh {
     /// most `deflection`. Both endpoints are always included. Returns an empty
     /// polyline when the edge has no registered curve or an unbounded range.
     pub fn discretize_edge(&self, edge: &Edge, deflection: f64) -> Vec<GpPnt> {
-        let Some(curve) = BRepTool::edge_curve(edge) else {
+        let Some(curve) = BRepTool::edge_curve_adaptor_world(edge) else {
             return Vec::new();
         };
         let (first, last) = BRepTool::edge_parameters(edge);

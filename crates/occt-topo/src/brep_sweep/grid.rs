@@ -351,6 +351,10 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
             }
         }
         let mut kt = NumShapeIterator::new(dir);
+        eprintln!(
+            "[sweep-dbg] after gen-children: shell faces={}",
+            crate::topo_tools_full::faces_of(&new_shell).len()
+        );
         while kt.more() {
             let sub_dir = kt.value();
             if host.has_shape(gen, sub_dir) {
@@ -388,6 +392,16 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
                             );
                         } else if gen_ty == ShapeType::Face {
                             let or = kt.orientation();
+                            eprintln!(
+                                "[sweep-dbg] floor gen={:?} sub_dir idx={} ty={:?} ori={:?} faces={} tsh={:?} loc={:?}",
+                                gen.shape_type(),
+                                sub_dir.index,
+                                sub_dir.ty,
+                                or,
+                                crate::topo_tools_full::faces_of(&new_shape).len(),
+                                std::sync::Arc::as_ptr(&new_shape.tshape) as usize,
+                                new_shape.location().transformation(),
+                            );
                             add_oriented(&builder, &mut new_shell, &new_shape, or);
                             mark_used(tables, i_gen, i_new_dir);
                         }
@@ -416,6 +430,19 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
             let temp = host.split_shell(&new_shell);
             let shell_ori = host.direct_solid(gen, dir);
             let kids = cumulated_children(&temp);
+            eprintln!(
+                "[sweep-dbg] walls+floors shell faces={} split kids={} ori={:?}",
+                crate::topo_tools_full::faces_of(&new_shell).len(),
+                kids.len(),
+                shell_ori
+            );
+            for k in &kids {
+                eprintln!(
+                    "[sweep-dbg]   kid {:?} faces={}",
+                    k.shape_type(),
+                    crate::topo_tools_full::faces_of(k).len()
+                );
+            }
             if kids.len() > 1 {
                 for lt in &kids {
                     add_into_cell(&builder, tables, i_gen, i_dir, lt, shell_ori);

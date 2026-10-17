@@ -17,9 +17,8 @@ use crate::bop_occt_util::{explore, iter_children, shape_key};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::shell_check::shell_is_closed;
-use crate::shape_checks;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
-use crate::topo_tools_full::{faces_of, wires_of_face};
+use crate::topo_tools_full::{faces_of, wires_of_face, ShapeMapKey};
 
 /// `BRepCheck_Status` (`BRepCheck_Status.hxx:20-59`), declaration order kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -246,13 +245,12 @@ fn shell_check_one(sh: &Shell) -> Vec<Status> {
     if faces.is_empty() {
         return vec![Status::EmptyShell];
     }
+    // `BRepCheck_Shell::Closed` (`BRepCheck_Shell.cxx:404-438`) is the single
+    // control flow for shell closure; `shape_checks` delegates here too.
     if !shell_is_closed(sh) {
         return vec![Status::NotClosed];
     }
-    match shape_checks::shell_closed_check(sh) {
-        shape_checks::CheckLevel::Ok => vec![Status::NoError],
-        _ => vec![Status::NotClosed],
-    }
+    vec![Status::NoError]
 }
 
 fn solid_check(s: &Solid) -> Vec<Status> {
@@ -272,7 +270,7 @@ fn solid_check(s: &Solid) -> Vec<Status> {
 #[derive(Debug, Clone)]
 pub struct Analyzer {
     shape: TopoShape,
-    results: HashMap<usize, CheckResult>,
+    results: HashMap<ShapeMapKey, CheckResult>,
 }
 
 impl Analyzer {

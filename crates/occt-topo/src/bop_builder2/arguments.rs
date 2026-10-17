@@ -105,12 +105,15 @@ impl BopBuilder {
     }
 
     /// Returns the origins back-map (`split shape key → source shapes`).
-    pub fn origins(&self) -> &HashMap<usize, Vec<TopoShape>> {
+    ///
+    /// `myOrigins` is keyed by `TopTools_ShapeMapHasher`
+    /// (`BOPAlgo_Builder.hxx:501`), i.e. [`bop_occt_util::shape_key`].
+    pub fn origins(&self) -> &HashMap<ShapeMapKey, Vec<TopoShape>> {
         &self.origins
     }
 
     /// Returns the mutable origins back-map.
-    pub fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>> {
+    pub fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
         &mut self.origins
     }
 
@@ -205,7 +208,7 @@ impl BopBuilder {
     }
 
     /// `myInParts` filled by FillIn3DParts.
-    pub fn in_parts(&self) -> &HashMap<usize, Vec<TopoShape>> {
+    pub fn in_parts(&self) -> &HashMap<ShapeMapKey, Vec<TopoShape>> {
         &self.in_parts
     }
 

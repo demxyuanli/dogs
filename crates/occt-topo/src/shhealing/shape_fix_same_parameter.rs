@@ -94,8 +94,10 @@ pub fn shape_fix_same_parameter(shape: &TopoShape, enforce: bool, preci: f64) ->
             reg.set_same_range(&edge.0, false);
             reg.set_same_parameter(&edge.0, false);
         }
-        // `cxx:135-148`: `aMapEF.FindFromKey(E, aListOfFaces)`.
-        let key = GeometryRegistry::shape_key(&edge.0);
+        // `cxx:135-148`: `aMapEF.FindFromKey(E, aListOfFaces)`, keyed by
+        // `TopTools_ShapeMapHasher` (`IsSame`: `TShape` + `Location`), so a
+        // moved occurrence of the edge is looked up at its own location.
+        let key = crate::topo_tools_full::shape_map_key(&edge.0);
         match ancestors.get(&key) {
             Some(faces) if !faces.is_empty() => {
                 for face in faces {

@@ -32,8 +32,9 @@ pub trait BopBuilderLike {
     fn bind_shapes_sd(&mut self, shape: TopoShape, sd: TopoShape);
     /// The same-domain representative of `shape`, when bound (`myShapesSD.Seek`).
     fn seek_shapes_sd(&self, shape: &TopoShape) -> Option<TopoShape>;
-    /// Origins back-map (`myOrigins`) keyed by TShape identity.
-    fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>>;
+    /// Origins back-map (`myOrigins`) keyed by `TopTools_ShapeMapHasher`
+    /// (`BOPAlgo_Builder.hxx:501`): `TShape` + `Location`.
+    fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>>;
 }
 
 // ---------------------------------------------------------------------------

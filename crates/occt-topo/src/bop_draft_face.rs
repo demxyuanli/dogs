@@ -37,7 +37,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools_full::edge_vertices;
+use crate::topo_tools_full::{edge_vertices, ShapeMapKey};
 
 /// Vertex → incident edges map used by `HasMultiConnected`.
 ///
@@ -45,7 +45,7 @@ use crate::topo_tools_full::edge_vertices;
 /// keyed by the vertex. The list is expected to stay 1–2 elements long; a
 /// third distinct edge means the vertex can split a thin face, so the draft
 /// path is abandoned.
-pub type VertexEdgeMap = HashMap<usize, Vec<usize>>;
+pub type VertexEdgeMap = HashMap<ShapeMapKey, Vec<ShapeMapKey>>;
 
 /// `HasMultiConnected` (`_2.cxx:1014`).
 ///
@@ -59,7 +59,7 @@ pub fn has_multi_connected(the_edge: &Edge, the_map: &mut VertexEdgeMap) -> bool
         let vk = shape_key(&v.0);
         let list = the_map.entry(vk).or_default();
         if !list.contains(&e_key) {
-            list.push(e_key);
+            list.push(e_key.clone());
         }
         if list.len() > 2 {
             return true;
@@ -101,7 +101,7 @@ pub fn build_draft_face(
     a_draft_face.0.set_location(the_face.0.location());
 
     let mut a_vertices_counter: VertexEdgeMap = HashMap::new();
-    let mut a_m_edges: HashSet<usize> = HashSet::new();
+    let mut a_m_edges: HashSet<ShapeMapKey> = HashSet::new();
 
     let mut a_ff = the_face.clone();
     a_ff.0.set_orientation(Orientation::Forward);

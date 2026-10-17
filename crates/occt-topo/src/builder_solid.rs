@@ -40,7 +40,6 @@
 //!   adjacent pieces where OCCT gives each piece its own face.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::GpPnt;
@@ -50,7 +49,7 @@ use crate::algo_tools::AlgoTools;
 use crate::bbox_from_geometry::shape_bbox;
 use crate::bop_aabb_faces::AabbTree;
 use crate::bop_classify_occt::classify_faces_occt;
-use crate::bop_occt_util::{iter_children, shape_key as occt_shape_key};
+use crate::bop_occt_util::{iter_children, same_shape, shape_key as occt_shape_key};
 use crate::brep_extrema::{closest_point_on_face, is_inside};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
@@ -58,12 +57,7 @@ use crate::fclass2d::FaceState;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
 use crate::shell_splitter::{ShellSplitter, edge_key, EKey};
-use crate::topo_tools_full::{edges_of, faces_of};
-
-/// Stable identity key of a shape (the address of its shared `TShape`).
-fn shape_key(s: &TopoShape) -> usize {
-    Arc::as_ptr(&s.tshape) as usize
-}
+use crate::topo_tools_full::{edges_of, faces_of, ShapeMapKey};
 
 /// Undirected identity keys of the boundary edges of `face`, in boundary order
 /// with the first occurrence kept.
@@ -163,13 +157,13 @@ fn make_solid_from_shell(shell: &TopoShape) -> TopoShape {
 
 /// `IsGrowthShell` (`BuilderSolid.cxx:864`): a later shell is a growth when
 /// one of its direct children is a face of an already-identified hole.
-fn is_growth_shell(shell: &TopoShape, hole_faces: &HashSet<usize>) -> bool {
+fn is_growth_shell(shell: &TopoShape, hole_faces: &HashSet<ShapeMapKey>) -> bool {
     if hole_faces.is_empty() {
         return false;
     }
     iter_children(shell)
         .iter()
-        .any(|c| hole_faces.contains(&shape_key(c)))
+        .any(|c| hole_faces.contains(&occt_shape_key(c)))
 }
 
 /// `IsHole` (`BuilderSolid.cxx:823`): infinite point of the shell-as-solid
@@ -249,7 +243,7 @@ pub struct BuilderSolid {
     /// The region solids (`myAreas`).
     areas: Vec<TopoShape>,
     /// `myBoxes` — bounding box of each area / unbound hole solid.
-    boxes: HashMap<usize, BndBox>,
+    boxes: HashMap<ShapeMapKey, BndBox>,
     /// When true, internal parts are not merged back into the result
     /// (`myAvoidInternalShapes`).
     avoid_internal_shapes: bool,
@@ -326,9 +320,10 @@ impl BuilderSolid {
         Ok(())
     }
 
-    /// Whether `s` is currently marked to be avoided (same `TShape` identity).
+    /// Whether `s` is currently marked to be avoided (`myShapesToAvoid`, an
+    /// `NCollection_IndexedMap<TopoDS_Shape>`, i.e. `TopoDS_Shape::IsSame`).
     fn is_avoided(&self, s: &TopoShape) -> bool {
-        self.shapes_to_avoid.iter().any(|a| a.same_tshape(s))
+        self.shapes_to_avoid.iter().any(|a| same_shape(a, s))
     }
 
     /// Phase 1 — strip the faces that cannot belong to a closed boundary.
@@ -387,7 +382,7 @@ impl BuilderSolid {
                 } else if lf.len() == 2 {
                     let f1 = faces[lf[0]].clone();
                     let f2 = faces[lf[1]].clone();
-                    if f1.same_tshape(&f2) {
+                    if same_shape(&f1, &f2) {
                         if edge_closed_on_face(&f1, _key) {
                             continue;
                         }
@@ -462,7 +457,7 @@ impl BuilderSolid {
             if f.is_face()
                 && !is_infinite_face(f)
                 && !self.is_avoided(f)
-                && !in_loops.iter().any(|x| x.same_tshape(f))
+                && !in_loops.iter().any(|x| same_shape(x, f))
             {
                 self.shapes_to_avoid.push(f.clone());
             }
@@ -492,7 +487,7 @@ impl BuilderSolid {
             return;
         }
         let solids: Vec<TopoShape> = self.loops.iter().map(make_solid_from_shell).collect();
-        let mut hole_faces: HashSet<usize> = HashSet::new();
+        let mut hole_faces: HashSet<ShapeMapKey> = HashSet::new();
         let mut growth: Vec<usize> = Vec::new();
         let mut hole_idx: Vec<usize> = Vec::new();
         for i in 0..n {
@@ -505,7 +500,7 @@ impl BuilderSolid {
             } else {
                 hole_idx.push(i);
                 for c in iter_children(&self.loops[i]) {
-                    hole_faces.insert(shape_key(&c));
+                    hole_faces.insert(occt_shape_key(&c));
                 }
             }
         }
@@ -590,7 +585,7 @@ impl BuilderSolid {
         let mut faces: Vec<TopoShape> = Vec::new();
         for sh in &self.loops_internal {
             for child in iter_children(sh) {
-                if !faces.iter().any(|x| x.same_tshape(&child)) {
+                if !faces.iter().any(|x| same_shape(x, &child)) {
                     faces.push(child);
                 }
             }
@@ -616,10 +611,10 @@ impl BuilderSolid {
             box_map.insert(k, box_);
         }
         let ctx = IntToolsContext::new();
-        let empty_if: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+        let empty_if: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
         let in_parts = classify_faces_occt(&faces, &areas, &ctx, &box_map, &empty_if);
 
-        let mut done: HashSet<usize> = HashSet::new();
+        let mut done: HashSet<ShapeMapKey> = HashSet::new();
         for (k, area) in areas.iter().enumerate() {
             let Some(list) = in_parts.get(&occt_shape_key(area)) else {
                 continue;

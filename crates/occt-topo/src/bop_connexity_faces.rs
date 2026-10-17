@@ -26,17 +26,22 @@ use crate::bop_occt_util::{iter_children, shape_key};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, TopoShape};
-use crate::topo_tools_full::edges_of;
+use crate::topo_tools_full::{edges_of, shape_map_key, ShapeMapKey};
 
-/// Edge TShape key → (a representative edge, faces incident on that edge).
-/// Mirrors `NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>>`.
-pub type EdgeFaceMap = HashMap<usize, (TopoShape, Vec<TopoShape>)>;
+/// `TopTools_ShapeMapHasher` key → (a representative edge, faces incident on
+/// that edge), the port of
+/// `NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>>`.
+pub type EdgeFaceMap = HashMap<ShapeMapKey, (TopoShape, Vec<TopoShape>)>;
 
-/// `BOPAlgo_FillIn3DParts::MapEdgesAndFaces` (`_cxx:1523`).
+/// `BOPAlgo_FillIn3DParts::MapEdgesAndFaces` (`BOPAlgo_Tools.cxx:1523-1551`).
 ///
 /// Walks wires of `the_f` and, for each edge, appends `the_f` to the edge's
 /// face list. Degenerated edges are still mapped (MakeConnexityBlock later
-/// refuses to walk through them).
+/// refuses to walk through them). The key is `TopTools_ShapeMapHasher`
+/// (`IsSame`: `TShape` + `Location`) and the face is appended once per edge
+/// occurrence, with no de-duplication (`cxx:1548`): a face whose wire holds
+/// the same edge twice lists itself twice, which is what the later
+/// `aNbF == 1 / == 2` test at `BOPTools_AlgoTools.cxx:849-869` counts.
 pub fn map_edges_and_faces(the_f: &TopoShape, the_ef_map: &mut EdgeFaceMap) {
     for a_w in iter_children(the_f) {
         if a_w.shape_type() != ShapeType::Wire {
@@ -46,13 +51,10 @@ pub fn map_edges_and_faces(the_f: &TopoShape, the_ef_map: &mut EdgeFaceMap) {
             if a_e.shape_type() != ShapeType::Edge {
                 continue;
             }
-            let k = shape_key(&a_e);
             let entry = the_ef_map
-                .entry(k)
+                .entry(shape_map_key(&a_e))
                 .or_insert_with(|| (a_e.clone(), Vec::new()));
-            if !entry.1.iter().any(|f| f.same_tshape(the_f)) {
-                entry.1.push(the_f.clone());
-            }
+            entry.1.push(the_f.clone());
         }
     }
 }
@@ -86,9 +88,9 @@ pub struct ConnexityFaceBlock {
 /// such face wins).
 pub fn make_connexity_block(
     the_f_start: &TopoShape,
-    the_me_avoid: &HashSet<usize>,
+    the_me_avoid: &HashSet<ShapeMapKey>,
     the_ef_map: &EdgeFaceMap,
-    the_mf_done: &mut HashSet<usize>,
+    the_mf_done: &mut HashSet<ShapeMapKey>,
 ) -> ConnexityFaceBlock {
     let mut the_lcb: Vec<TopoShape> = vec![the_f_start.clone()];
     let mut face_to_classify: Option<TopoShape> = None;
@@ -118,7 +120,7 @@ pub fn make_connexity_block(
                     }
                     continue;
                 }
-                let Some((_, p_lf)) = the_ef_map.get(&shape_key(&a_e.0)) else {
+                let Some((_, p_lf)) = the_ef_map.get(&shape_map_key(&a_e.0)) else {
                     continue;
                 };
                 for a_f_to_add in p_lf {
@@ -175,7 +177,7 @@ pub fn connexity_blocks_by_edge(faces: &[TopoShape]) -> Vec<Vec<TopoShape>> {
     if n == 0 {
         return Vec::new();
     }
-    let mut e2f: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut e2f: HashMap<ShapeMapKey, Vec<usize>> = HashMap::new();
     for (i, f) in faces.iter().enumerate() {
         for e in edges_of(f) {
             if BRepTool::is_degenerated(&e) {
@@ -220,13 +222,13 @@ pub fn connexity_blocks_by_edge(faces: &[TopoShape]) -> Vec<Vec<TopoShape>> {
 
 /// Edge keys of a solid used as `theMEAvoid` (the solid's own edges, which
 /// connexity must not cross).
-pub fn solid_edge_avoid_set(solid: &TopoShape) -> HashSet<usize> {
+pub fn solid_edge_avoid_set(solid: &TopoShape) -> HashSet<ShapeMapKey> {
     edges_of(solid).into_iter().map(|e| shape_key(&e.0)).collect()
 }
 
 /// Face keys of a solid plus its own INTERNAL faces (`aMSF` in Perform).
-pub fn solid_face_avoid_set(solid: &TopoShape, own_if: &[TopoShape]) -> HashSet<usize> {
-    let mut s: HashSet<usize> = crate::topo_tools_full::faces_of(solid)
+pub fn solid_face_avoid_set(solid: &TopoShape, own_if: &[TopoShape]) -> HashSet<ShapeMapKey> {
+    let mut s: HashSet<ShapeMapKey> = crate::topo_tools_full::faces_of(solid)
         .into_iter()
         .map(|f| shape_key(&f.0))
         .collect();
@@ -238,7 +240,7 @@ pub fn solid_face_avoid_set(solid: &TopoShape, own_if: &[TopoShape]) -> HashSet<
 
 /// Filter candidate indices whose shapes are not already faces of the solid
 /// (`aIVec` construction, `_cxx:1380-1393`).
-pub fn faces_to_process(indices: &[usize], v_shapes: &[TopoShape], solid_faces: &HashSet<usize>) -> Vec<usize> {
+pub fn faces_to_process(indices: &[usize], v_shapes: &[TopoShape], solid_faces: &HashSet<ShapeMapKey>) -> Vec<usize> {
     let mut out = Vec::new();
     for &i in indices {
         if i >= v_shapes.len() {
@@ -256,10 +258,10 @@ pub fn faces_to_process(indices: &[usize], v_shapes: &[TopoShape], solid_faces: 
 /// skipping faces already in `done`.
 pub fn all_connexity_blocks(
     candidates: &[TopoShape],
-    me_avoid: &HashSet<usize>,
+    me_avoid: &HashSet<ShapeMapKey>,
     ef_map: &EdgeFaceMap,
 ) -> Vec<ConnexityFaceBlock> {
-    let mut done: HashSet<usize> = HashSet::new();
+    let mut done: HashSet<ShapeMapKey> = HashSet::new();
     let mut blocks = Vec::new();
     for start in candidates {
         if !done.insert(shape_key(start)) {

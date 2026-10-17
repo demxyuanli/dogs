@@ -30,6 +30,8 @@ use crate::bbox_from_geometry::shape_bbox;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::TopoShape;
 
+use crate::topo_tools_full::ShapeMapKey;
+
 /// A face plus its bounding box, the `BOPAlgo_ShapeBox` vector entry.
 pub type FaceBox = ShapeBox;
 
@@ -38,7 +40,7 @@ pub type FaceBox = ShapeBox;
 /// with `BRepBndLib::Add` (`_cxx:1660-1666`).
 pub fn make_shape_box_vector(
     the_faces: &[TopoShape],
-    the_shape_box_map: &HashMap<usize, BndBox>,
+    the_shape_box_map: &HashMap<ShapeMapKey, BndBox>,
 ) -> Vec<ShapeBox> {
     let mut a_vsb = Vec::with_capacity(the_faces.len());
     for a_f in the_faces {
@@ -68,7 +70,7 @@ pub fn aabb_select(the_box_s: &BndBox, the_v_sb: &[ShapeBox]) -> Vec<usize> {
 /// Invert-to-whole only when the box is computed here (`BRepBndLib::Add`).
 pub fn solid_box_for_classify(
     the_solid: &TopoShape,
-    the_shape_box_map: &HashMap<usize, BndBox>,
+    the_shape_box_map: &HashMap<ShapeMapKey, BndBox>,
 ) -> BndBox {
     if let Some(b) = the_shape_box_map.get(&shape_key(the_solid)).copied() {
         if !b.is_void() {
@@ -115,9 +117,9 @@ pub fn classify_faces_occt(
     the_faces: &[TopoShape],
     the_solids: &[TopoShape],
     the_ctx: &IntToolsContext,
-    the_shape_box_map: &HashMap<usize, BndBox>,
-    the_solids_if: &HashMap<usize, Vec<TopoShape>>,
-) -> HashMap<usize, Vec<TopoShape>> {
+    the_shape_box_map: &HashMap<ShapeMapKey, BndBox>,
+    the_solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
+) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
     classify_faces_aabb(
         the_faces,
         the_solids,
@@ -132,12 +134,12 @@ pub fn classify_faces_with_tasks(
     the_faces: &[TopoShape],
     the_solids: &[TopoShape],
     the_ctx: &IntToolsContext,
-    the_shape_box_map: &HashMap<usize, BndBox>,
-    the_solids_if: &HashMap<usize, Vec<TopoShape>>,
-) -> (HashMap<usize, Vec<TopoShape>>, Vec<FillIn3dTask>) {
+    the_shape_box_map: &HashMap<ShapeMapKey, BndBox>,
+    the_solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
+) -> (HashMap<ShapeMapKey, Vec<TopoShape>>, Vec<FillIn3dTask>) {
     let v_sb = make_shape_box_vector(the_faces, the_shape_box_map);
     let mut tasks = Vec::new();
-    let mut in_parts: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut in_parts: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     for a_solid in the_solids {
         let box_s = solid_box_for_classify(a_solid, the_shape_box_map);
         let own = the_solids_if
@@ -159,7 +161,7 @@ pub fn classify_one_solid(
     the_solid: &TopoShape,
     the_faces: &[TopoShape],
     the_own_if: &[TopoShape],
-    the_shape_box_map: &HashMap<usize, BndBox>,
+    the_shape_box_map: &HashMap<ShapeMapKey, BndBox>,
     the_ctx: &IntToolsContext,
 ) -> Vec<TopoShape> {
     let v_sb = make_shape_box_vector(the_faces, the_shape_box_map);
@@ -267,9 +269,12 @@ pub fn perform_fill_in_3d_parts_tree(
         }
     }
 
-    let mut a_mefds: std::collections::HashMap<usize, (TopoShape, Vec<TopoShape>)> =
-        HashMap::new();
-    let mut a_mf_done: HashSet<usize> = HashSet::new();
+    // `BOPTools_AlgoTools::IsInternalFace` reads `theMEF.Contains` /
+    // `ChangeFromKey` only, so the node lists suffice; the map is
+    // `TopExp::MapShapesAndAncestors(theSolid, EDGE, FACE)` built once
+    // (`BOPTools_AlgoTools.cxx:811`, keyed by `TopTools_ShapeMapHasher`).
+    let mut a_mefds: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    let mut a_mf_done: HashSet<ShapeMapKey> = HashSet::new();
     for &n_fp in &a_ivec {
         let a_fp = the_v_sb[n_fp].shape.clone();
         if !a_mf_done.insert(shape_key(&a_fp)) {
@@ -281,16 +286,7 @@ pub fn perform_fill_in_3d_parts_tree(
         }
         let a_face = classification_face(&block, &a_fp);
         if a_mefds.is_empty() {
-            a_mefds = map_shapes_and_ancestors(the_solid, crate::abs::ShapeType::Edge, crate::abs::ShapeType::Face)
-                .into_iter()
-                .map(|(k, faces)| {
-                    let e = crate::bop_occt_util::explore(the_solid, crate::abs::ShapeType::Edge)
-                        .into_iter()
-                        .find(|e| shape_key(e) == k)
-                        .unwrap_or_else(|| faces.first().cloned().unwrap_or_else(|| a_fp.clone()));
-                    (k, (e, faces))
-                })
-                .collect();
+            a_mefds = map_shapes_and_ancestors(the_solid, crate::abs::ShapeType::Edge, crate::abs::ShapeType::Face);
         }
         let is_in = is_internal_face(&Face(a_face.clone()), the_solid, &a_mefds, CONFUSION, the_ctx);
         if is_in {
@@ -306,11 +302,11 @@ pub fn classify_faces_aabb(
     the_faces: &[TopoShape],
     the_solids: &[TopoShape],
     the_ctx: &IntToolsContext,
-    the_shape_box_map: &HashMap<usize, BndBox>,
-    the_solids_if: &HashMap<usize, Vec<TopoShape>>,
-) -> HashMap<usize, Vec<TopoShape>> {
+    the_shape_box_map: &HashMap<ShapeMapKey, BndBox>,
+    the_solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
+) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
     let v_sb = make_shape_box_vector(the_faces, the_shape_box_map);
-    let mut the_in_parts: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut the_in_parts: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     for a_solid in the_solids {
         let box_s = solid_box_for_classify(a_solid, the_shape_box_map);
         let own = the_solids_if

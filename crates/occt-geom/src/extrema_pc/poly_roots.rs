@@ -138,8 +138,9 @@ pub(super) fn circle_all(c: &GpCirc, p: &GpPnt, uinf: f64, usup: f64) -> Vec<Ext
 }
 
 /// Point to ellipse. Port of `Extrema_ExtPElC::Perform(gp_Elips)`: solve
-/// (B²-A²)·cos·sin + A·X·sin + B·Y·cos = 0 for u. The sign of the Y·cos term
-/// matches this crate's ellipse parameterization C(u) = O + A·cos·X − B·sin·Y.
+/// (B²-A²)·cos·sin − B·Y·cos + A·X·sin = 0 for u (`Extrema_ExtPElC.cxx:253-260`
+/// with `ko3 = -B*Y`), i.e. `(C(u)-Pp)·C'(u) = 0` for
+/// `C(u) = O + A·cos·X + B·sin·Y` (`ElCLib::EllipseValue`, `cxx:176-189`).
 pub(super) fn ellipse_all(e: &GpElips, p: &GpPnt, uinf: f64, usup: f64) -> Vec<ExtremaPair> {
     let o = e.location();
     let axe = *e.axis().direction();
@@ -155,7 +156,7 @@ pub(super) fn ellipse_all(e: &GpElips, p: &GpPnt, uinf: f64, usup: f64) -> Vec<E
     let ydir = *e.y_axis().direction();
     let x = opp.dot(&GpVec::from_xyz(xdir.xyz()));
     let y = opp.dot(&GpVec::from_xyz(ydir.xyz()));
-    let us = trig_roots_sincos(b * b - a * a, b * y, a * x, uinf, usup);
+    let us = trig_roots_sincos(b * b - a * a, -b * y, a * x, uinf, usup);
     us.into_iter().map(|u| pair_from(p, u, clib::ellipse_value(e, u))).collect()
 }
 

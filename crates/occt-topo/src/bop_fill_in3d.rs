@@ -32,16 +32,17 @@ use crate::bop_occt_util::{
 };
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::TopoShape;
+use crate::topo_tools_full::ShapeMapKey;
 
 /// Output of Builder `FillIn3DParts`.
 #[derive(Debug, Clone, Default)]
 pub struct FillIn3dPartsResult {
     /// `theDraftSolids`: source solid TShape key → draft solid.
-    pub draft_solids: HashMap<usize, TopoShape>,
+    pub draft_solids: HashMap<ShapeMapKey, TopoShape>,
     /// `myInParts`: source solid TShape key → IN + INTERNAL faces.
-    pub in_parts: HashMap<usize, Vec<TopoShape>>,
+    pub in_parts: HashMap<ShapeMapKey, Vec<TopoShape>>,
     /// Draft solid TShape key → source solid (reverse of `aDraftSolid`).
-    pub draft_to_source: HashMap<usize, TopoShape>,
+    pub draft_to_source: HashMap<ShapeMapKey, TopoShape>,
 }
 
 /// `BOPAlgo_Builder::FillIn3DParts` (`_3.cxx:97`).
@@ -50,7 +51,7 @@ pub fn fill_in_3d_parts_builder<B: BopSolidHost>(
     ctx: &mut IntToolsContext,
 ) -> FillIn3dPartsResult {
     let mut result = FillIn3dPartsResult::default();
-    let mut a_shape_box_map: HashMap<usize, BndBox> = HashMap::new();
+    let mut a_shape_box_map: HashMap<ShapeMapKey, BndBox> = HashMap::new();
 
     // 1. All faces (images preferred).
     let a_l_faces = collect_candidate_faces(f.history(), f.ds());
@@ -62,7 +63,7 @@ pub fn fill_in_3d_parts_builder<B: BopSolidHost>(
 
     // 2. Draft solids + INTERNAL faces.
     let mut a_l_solids: Vec<TopoShape> = Vec::new();
-    let mut a_solids_if: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut a_solids_if: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     // source key → draft shape (OCCT `aDraftSolid` IndexedDataMap).
     let mut a_draft_solid: Vec<(TopoShape, TopoShape)> = Vec::new();
 
@@ -148,7 +149,7 @@ pub fn draft_of<'a>(result: &'a FillIn3dPartsResult, source: &TopoShape) -> Opti
 }
 
 /// Unique TShape keys of every IN face across all solids.
-pub fn all_in_face_keys(result: &FillIn3dPartsResult) -> HashSet<usize> {
+pub fn all_in_face_keys(result: &FillIn3dPartsResult) -> HashSet<ShapeMapKey> {
     let mut s = HashSet::new();
     for faces in result.in_parts.values() {
         for f in faces {

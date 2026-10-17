@@ -41,7 +41,7 @@ impl BopBuilderLike for BopBuilder {
     fn seek_shapes_sd(&self, shape: &TopoShape) -> Option<TopoShape> {
         self.seek_shapes_sd(shape)
     }
-    fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>> {
+    fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
         self.origins_mut()
     }
 }
@@ -67,7 +67,7 @@ impl BopBuildOps for BopBuilder {
     fn arguments(&self) -> &[TopoShape] {
         self.arguments()
     }
-    fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>> {
+    fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
         self.origins_mut()
     }
 }
@@ -88,7 +88,7 @@ impl BopSolidHost for BopBuilder {
     fn arguments(&self) -> &[TopoShape] {
         self.arguments()
     }
-    fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>> {
+    fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
         self.origins_mut()
     }
     fn add_warning(&mut self, msg: String) {
@@ -181,12 +181,6 @@ pub fn cut(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, Stri
 /// Intersection of the two groups. Source: `BOPAlgo_COMMON`.
 pub fn common(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, String> {
     builder_bop(objects, tools, BoolOp2::Common)
-}
-
-/// Stable identity key of a shape — the address of its shared `TShape`
-/// (the same identity `TopTools_ShapeMapHasher` uses).
-pub(super) fn shape_key(s: &TopoShape) -> usize {
-    Arc::as_ptr(&s.tshape) as usize
 }
 
 /// Bakes a shape's `TopoShape` location into its geometry, returning a copy at

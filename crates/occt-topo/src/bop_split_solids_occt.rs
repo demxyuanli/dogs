@@ -22,7 +22,7 @@ use crate::bop_occt_util::{
 use crate::bop_tools_set::{intern_solid_sd, BopToolsSet, BopToolsSetMap};
 use crate::builder_solid::BuilderSolid;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools_full::{faces_of, ShapeMapKey};
 
 /// `BOPAlgo_SplitSolid`: BuilderSolid plus the source solid it splits.
 struct SplitSolid {
@@ -81,7 +81,7 @@ pub fn build_split_solids_occt<B: BopSolidHost>(
     fill: &FillIn3dPartsResult,
 ) -> Result<(), String> {
     let mut a_mst = BopToolsSetMap::new();
-    let mut a_m_fence: HashSet<usize> = HashSet::new();
+    let mut a_m_fence: HashSet<ShapeMapKey> = HashSet::new();
 
     // 0. Same-domain seeds for non-interfered solids.
     let n = nb_source(f.ds());

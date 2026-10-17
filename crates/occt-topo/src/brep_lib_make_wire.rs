@@ -77,7 +77,7 @@ pub enum WireError {
 fn is_same(a: Option<&Vertex>, b: Option<&Vertex>) -> bool {
     match (a, b) {
         (None, None) => true,
-        (Some(x), Some(y)) => x.0.same_tshape(&y.0),
+        (Some(x), Some(y)) => crate::topo_tools_full::is_same(&x.0, &y.0),
         _ => false,
     }
 }

@@ -12,17 +12,18 @@ use crate::bop_builder2::BopBuilder;
 use crate::bop_occt_util::{explore, iter_children, shape_key, treat_compound};
 use crate::builder::TopoBuilder;
 use crate::shape::TopoShape;
+use crate::topo_tools_full::ShapeMapKey;
 
 /// `BOPAlgo_CellsBuilder`.
 #[derive(Debug, Clone)]
 pub struct CellsBuilder {
     inner: BopBuilder,
     /// `myIndex`: split part TShape key → original arguments that contain it.
-    index: HashMap<usize, Vec<TopoShape>>,
+    index: HashMap<ShapeMapKey, Vec<TopoShape>>,
     /// `myAllParts` compound.
     all_parts: TopoShape,
     /// `myShapeMaterial`: part key → material id.
-    shape_material: HashMap<usize, i32>,
+    shape_material: HashMap<ShapeMapKey, i32>,
 }
 
 impl CellsBuilder {
@@ -90,10 +91,10 @@ impl CellsBuilder {
         }
         let bb = TopoBuilder::new();
         let mut kept: Vec<TopoShape> = iter_children(self.inner.result());
-        let mut fence: HashSet<usize> = kept.iter().map(shape_key).collect();
+        let mut fence: HashSet<ShapeMapKey> = kept.iter().map(shape_key).collect();
         for p in &parts {
             let k = shape_key(p);
-            if fence.insert(k) && !self.shape_material.contains_key(&k) {
+            if fence.insert(k.clone()) && !self.shape_material.contains_key(&k) {
                 kept.push(p.clone());
             }
             if material != 0 {
@@ -105,7 +106,7 @@ impl CellsBuilder {
 
     /// `RemoveFromResult`.
     pub fn remove_from_result(&mut self, take: &[TopoShape], avoid: &[TopoShape]) {
-        let drop: HashSet<usize> = self.find_parts(take, avoid).iter().map(shape_key).collect();
+        let drop: HashSet<ShapeMapKey> = self.find_parts(take, avoid).iter().map(shape_key).collect();
         if drop.is_empty() {
             return;
         }
@@ -125,8 +126,8 @@ impl CellsBuilder {
         if take.is_empty() {
             return Vec::new();
         }
-        let avoid_k: HashSet<usize> = avoid.iter().map(shape_key).collect();
-        let take_k: HashSet<usize> = take.iter().map(shape_key).collect();
+        let avoid_k: HashSet<ShapeMapKey> = avoid.iter().map(shape_key).collect();
+        let take_k: HashSet<ShapeMapKey> = take.iter().map(shape_key).collect();
         let n_take = take_k.len();
         let mut dim_min = 10;
         let mut s_min: Option<&TopoShape> = None;
@@ -144,7 +145,7 @@ impl CellsBuilder {
             return Vec::new();
         };
         let mut parts: Vec<TopoShape> = Vec::new();
-        let mut fence: HashSet<usize> = HashSet::new();
+        let mut fence: HashSet<ShapeMapKey> = HashSet::new();
         for st in explore(s_min, ty) {
             let imgs = match self.inner.history().image(&st) {
                 Some(list) if !list.is_empty() => list.to_vec(),
@@ -174,7 +175,7 @@ impl CellsBuilder {
 
     fn index_parts(&mut self) {
         self.index.clear();
-        let mut fence: HashSet<usize> = HashSet::new();
+        let mut fence: HashSet<ShapeMapKey> = HashSet::new();
         let mut all: Vec<TopoShape> = Vec::new();
         let args = self.inner.arguments().to_vec();
         for a in &args {
@@ -192,10 +193,9 @@ impl CellsBuilder {
                     };
                     for part in imgs {
                         let k = shape_key(&part);
-                        let list = self.index.entry(k).or_default();
-                        if !list.iter().any(|x| x.same_tshape(a)) {
-                            list.push(a.clone());
-                        }
+                        // `myIndex(...)->Append(aS)` — no uniqueness check
+                        // (`BOPAlgo_CellsBuilder.cxx:143-171`).
+                        self.index.entry(k.clone()).or_default().push(a.clone());
                         if fence.insert(k) {
                             all.push(part);
                         }

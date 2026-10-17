@@ -32,9 +32,11 @@ pub struct BopBuilder {
     /// split/expanded into during the intersection (`myImages`).
     pub(super) history: BopHistory,
     /// Origins — the back map of the images table: split shape → the source
-    /// shapes that expand into it, keyed by the split shape's `TShape` address
-    /// (`myOrigins`).
-    pub(super) origins: HashMap<usize, Vec<TopoShape>>,
+    /// shapes that expand into it (`myOrigins`). Keyed by
+    /// `TopTools_ShapeMapHasher` like the OCCT
+    /// `NCollection_DataMap<TopoDS_Shape, List, TopTools_ShapeMapHasher>`
+    /// (`BOPAlgo_Builder.hxx:501`), so the key is `TShape` + `Location`.
+    pub(super) origins: HashMap<ShapeMapKey, Vec<TopoShape>>,
     /// Same-domain shapes: source index → the coincident shape it maps to
     /// (`myShapesSD`).
     pub(super) shapes_sd: HashMap<usize, usize>,
@@ -60,7 +62,7 @@ pub struct BopBuilder {
     pub(super) result_shape: TopoShape,
     /// `myInParts`: source solid TShape key → IN + INTERNAL faces from
     /// FillIn3DParts. Consumed by `BOPAlgo_Builder::BuildBOP`.
-    pub(super) in_parts: HashMap<usize, Vec<TopoShape>>,
+    pub(super) in_parts: HashMap<ShapeMapKey, Vec<TopoShape>>,
 }
 
 impl Default for BopBuilder {

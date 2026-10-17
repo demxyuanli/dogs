@@ -25,22 +25,21 @@ pub trait BopBuildOps {
     fn fuzzy_value(&self) -> f64;
     /// The arguments of the operation.
     fn arguments(&self) -> &[TopoShape];
-    /// The origins back-map (split shape → original shapes).
-    fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>>;
+    /// The origins back-map (split shape → original shapes). Keyed by
+    /// `TopTools_ShapeMapHasher` like `BOPAlgo_Builder::myOrigins`
+    /// (`BOPAlgo_Builder.hxx:501`).
+    fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>>;
 }
 
 // ---------------------------------------------------------------------------
 // Shape-set helpers
 // ---------------------------------------------------------------------------
 
-/// Stable identity key of a shape (the address of its shared `TShape`).
-pub(super) fn shape_key(s: &TopoShape) -> usize {
-    Arc::as_ptr(&s.tshape) as usize
-}
-
-/// Add `s` to the ordered set `set`; returns true when it was newly inserted.
+/// `NCollection_Map` / `NCollection_IndexedMap` insert, keyed by
+/// `TopTools_ShapeMapHasher` (`aMFence`, `aMSOr`, `aMSI`,
+/// `BOPAlgo_Builder_3.cxx:637-643`) — [`same_shape`] = `TopoDS_Shape::IsSame`.
 pub(super) fn set_add(set: &mut Vec<TopoShape>, s: TopoShape) -> bool {
-    if set.iter().any(|x| x.same_tshape(&s)) {
+    if set.iter().any(|x| same_shape(x, &s)) {
         false
     } else {
         set.push(s);
@@ -48,9 +47,10 @@ pub(super) fn set_add(set: &mut Vec<TopoShape>, s: TopoShape) -> bool {
     }
 }
 
-/// True when `set` already holds a shape identical to `s`.
+/// True when `set` already holds a shape identical to `s` under
+/// [`same_shape`] (`TopTools_ShapeMapHasher`).
 pub(super) fn set_contains(set: &[TopoShape], s: &TopoShape) -> bool {
-    set.iter().any(|x| x.same_tshape(s))
+    set.iter().any(|x| same_shape(x, s))
 }
 
 /// Direct structural children of `shape`.
@@ -409,7 +409,7 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
     // 2. — internal vertices/edges from the source solids + ancestor map.
     a_fence.clear();
     let mut a_lsd: Vec<TopoShape> = Vec::new();
-    let mut a_msx: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut a_msx: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     let mut a_msor: Vec<TopoShape> = Vec::new();
     let n = f.ds().nb_source_shapes();
     for i in 0..n {
@@ -517,8 +517,11 @@ pub(super) fn own_internal_shapes(solid: &TopoShape) -> Vec<TopoShape> {
 }
 
 /// Merges the vertex→edge, vertex→face and edge→face ancestor relations of
-/// `shape` into `out` (`TopExp::MapShapesAndAncestors`).
-pub(super) fn map_ancestors_into(shape: &TopoShape, out: &mut HashMap<usize, Vec<TopoShape>>) {
+/// `shape` into `out` (`TopExp::MapShapesAndAncestors`,
+/// `BOPAlgo_Builder_3.cxx:770-783`). `out` is the `aMSx`
+/// `NCollection_IndexedDataMap<TopoDS_Shape, List, TopTools_ShapeMapHasher>`
+/// (`BOPAlgo_Builder_3.cxx:635-636`), so its key is [`shape_key`].
+pub(super) fn map_ancestors_into(shape: &TopoShape, out: &mut HashMap<ShapeMapKey, Vec<TopoShape>>) {
     // vertex -> edges
     merge_ancestors(shape, ShapeType::Vertex, ShapeType::Edge, out);
     // vertex -> faces
@@ -533,7 +536,7 @@ pub(super) fn merge_ancestors(
     shape: &TopoShape,
     child_type: ShapeType,
     ancestor_type: ShapeType,
-    out: &mut HashMap<usize, Vec<TopoShape>>,
+    out: &mut HashMap<ShapeMapKey, Vec<TopoShape>>,
 ) {
     let ancestors = crate::topo_tools_full::shapes_of(shape, ancestor_type);
     for a in &ancestors {

@@ -1,8 +1,12 @@
 //! Shell topology checks — manifold-ness, closedness, Euler characteristic.
 //!
 //! Source: `BRepCheck_Shell` / `BRepCheck_Analyser` (TKTopAlgo). Edge identity
-//! is tracked by `TShape` pointer (`Arc::as_ptr`), so edges shared between
-//! faces (the same `Edge` built once and reused) count as one edge used twice.
+//! is tracked the way `TopTools_ShapeMapHasher` tracks it — `TShape` address
+//! *plus* `TopLoc_Location`, i.e. `TopoDS_Shape::IsSame` — because a sweep
+//! shares one edge `TShape` between its bottom and its translated top
+//! occurrence (the top edges of a prism are the bottom edges under a
+//! `TopLoc_Translation`). Keying on the `TShape` alone would count four face
+//! references for those edges instead of two.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -59,31 +63,105 @@ fn dedupe_count(shapes: &[TopoShape]) -> usize {
     seen.len()
 }
 
-/// Map of edge `TShape` pointer → number of faces referencing it, over the
-/// faces found anywhere under `shape`.
-pub fn edge_face_usage(shape: &TopoShape) -> HashMap<usize, usize> {
+/// `TopTools_ShapeMapHasher` key (`TopTools_ShapeMapHasher.hxx:44-52`): the
+/// `TShape` address plus the `TopLoc_Location` value form
+/// (`TopLocLocation::key`), which is `TopoDS_Shape::IsSame`. Two occurrences of
+/// one edge `TShape` under different locations stay distinct, as in OCCT.
+pub type EdgeKey = crate::topo_tools_full::ShapeMapKey;
+
+/// The [`EdgeKey`] of one shape occurrence.
+pub fn edge_key(s: &TopoShape) -> EdgeKey {
+    crate::topo_tools_full::shape_map_key(s)
+}
+
+/// One entry of the edge → faces map `BRepCheck_Shell::Closed` walks: a
+/// representative occurrence of the edge (same `TShape` and location) and the
+/// number of `(face, edge occurrence)` pairs that reference it.
+#[derive(Debug, Clone)]
+pub struct EdgeFaces {
+    pub edge: Edge,
+    pub count: usize,
+}
+
+/// `TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, map)`
+/// (`TopExp.cxx:80-120`): every ancestor face of every edge occurrence found
+/// under `shape`, keyed by [`EdgeKey`]. Occurrences are counted, not
+/// deduplicated, so a seam edge used twice by one face gives that face twice
+/// (`cxx:98-104`).
+pub fn edge_face_usage(shape: &TopoShape) -> HashMap<EdgeKey, EdgeFaces> {
     let mut faces = Vec::new();
     collect_faces(shape, &mut faces);
-    let mut usage: HashMap<usize, usize> = HashMap::new();
+    let mut usage: HashMap<EdgeKey, EdgeFaces> = HashMap::new();
     for f in faces {
         let mut edges = Vec::new();
         collect_edges(&f, &mut edges);
         for e in edges {
-            let k = Arc::as_ptr(&e.tshape) as usize;
-            *usage.entry(k).or_insert(0) += 1;
+            let entry = usage
+                .entry(edge_key(&e))
+                .or_insert_with(|| EdgeFaces { edge: Edge(e.clone()), count: 0 });
+            entry.count += 1;
         }
     }
     usage
 }
 
-/// Every edge of the shell must be referenced by exactly 2 faces (a closed
-/// manifold boundary). Returns `Err` listing the offending edges when not.
+/// `BRepCheck_Shell::Closed` (`BRepCheck_Shell.cxx:404-438`): every edge of the
+/// shell must be referenced by exactly two face occurrences, except an edge with
+/// a single reference, which closes the shell when it is *degenerated* — the
+/// pole edge of a sphere or the apex edge of a cone (`cxx:425-437`). Zero or
+/// three-or-more references lead into the multi-connexity branch
+/// (`cxx:409-423`), whose `NbConnectedSet` is not ported: the shell is reported
+/// not closed instead of counting connected face sets.
+pub fn shell_closed_check(shell: &Shell) -> Result<(), String> {
+    let usage = edge_face_usage(&shell.0);
+    let mut offending: Vec<(String, usize)> = usage
+        .iter()
+        .filter(|(_, u)| match u.count {
+            1 => !BRepTool::is_degenerated(&u.edge),
+            2 => false,
+            _ => true,
+        })
+        .map(|(k, u)| (format!("{:#x}@{:?}", k.0, k.1), u.count))
+        .collect();
+    offending.sort();
+    if std::env::var("SHELLDBG").is_ok() {
+        eprintln!(
+            "[shelldbg] total_edges={} offending={:?}",
+            usage.len(),
+            offending
+        );
+    }
+    if offending.is_empty() {
+        Ok(())
+    } else {
+        let msg = offending
+            .iter()
+            .map(|(k, c)| format!("edge {k} used by {c} face(s)"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        Err(msg)
+    }
+}
+
+/// A shell is closed when every boundary edge is shared by exactly 2 faces, a
+/// single-use edge being accepted only when it is degenerated
+/// (`BRepCheck_Shell::Closed`, `BRepCheck_Shell.cxx:404-438`).
+pub fn shell_is_closed(shell: &Shell) -> bool {
+    shell_closed_check(shell).is_ok()
+}
+
+/// Strict manifold rule: every boundary edge is referenced by exactly 2 faces.
+///
+/// This is *stricter* than `BRepCheck_Shell::Closed` (which accepts a
+/// degenerated single-use edge, `BRepCheck_Shell.cxx:425-437`), so it is used
+/// only as a port-local invariant/diagnostic; shape validity goes through
+/// [`shell_is_closed`].
 pub fn shell_manifold_check(shell: &Shell) -> Result<(), String> {
     let usage = edge_face_usage(&shell.0);
     let mut offending: Vec<(usize, usize)> = usage
         .iter()
-        .filter(|(_, &c)| c != 2)
-        .map(|(&k, &c)| (k, c))
+        .filter(|(_, u)| u.count != 2)
+        .map(|((k, _), u)| (*k, u.count))
         .collect();
     offending.sort_by_key(|&(k, _)| k);
     if offending.is_empty() {
@@ -96,11 +174,6 @@ pub fn shell_manifold_check(shell: &Shell) -> Result<(), String> {
             .join("; ");
         Err(msg)
     }
-}
-
-/// A shell is closed when every boundary edge is shared by exactly 2 faces.
-pub fn shell_is_closed(shell: &Shell) -> bool {
-    shell_manifold_check(shell).is_ok()
 }
 
 /// Euler characteristic V − E + F over the shell's real (deduplicated)
@@ -336,7 +409,7 @@ mod tests {
         let solid = build_box(&b, &GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 1.0), &[true; 6]);
         let usage = edge_face_usage(&solid.0);
         assert_eq!(usage.len(), 12);
-        assert!(usage.values().all(|&c| c == 2), "usage {:?}", usage);
+        assert!(usage.values().all(|u| u.count == 2), "usage {:?}", usage);
         clear_tree(&solid.0);
     }
 

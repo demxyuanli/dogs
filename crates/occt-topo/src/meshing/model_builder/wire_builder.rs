@@ -345,7 +345,7 @@ pub(crate) fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
             bail!("vert toler under confusion");
         }
     }
-    let Some(surf) = GeometryRegistry::global().face_surface(&face.0) else {
+    let Some(surf) = BRepTool::face_surface_world(&face) else {
         bail!("no face surface");
     };
     let mut tol_u =
@@ -801,6 +801,26 @@ impl ModelBuilder {
         // failure on an inner wire only marks it unoriented.
         let mut edge_index: HashMap<usize, usize> = HashMap::new();
         for f in faces_of(shape) {
+            if std::env::var("SWEEP_DBG").is_ok() {
+                let s = BRepTool::face_surface(&f);
+                let sd = match &s {
+                    Some(s) => {
+                        let o = s.d0(0.0, 0.0);
+                        let (_, du, dv) = s.d1(0.0, 0.0);
+                        format!(
+                            "o=({:.3},{:.3},{:.3}) du=({:.3},{:.3},{:.3}) dv=({:.3},{:.3},{:.3})",
+                            o.x(), o.y(), o.z(), du.x(), du.y(), du.z(), dv.x(), dv.y(), dv.z()
+                        )
+                    }
+                    None => "none".to_string(),
+                };
+                eprintln!(
+                    "[model-dbg] face tsh={:?} loc={:?} surf={}",
+                    Arc::as_ptr(&f.0.tshape) as usize,
+                    f.0.location().transformation(),
+                    sd
+                );
+            }
             let f = Face(f.0.oriented(Orientation::Forward));
             let face_index = model.add_face(f.clone());
 

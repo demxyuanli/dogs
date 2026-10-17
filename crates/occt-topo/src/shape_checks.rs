@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpPnt, GpVec};
 
-use crate::abs::{ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, TopoShape, Wire};
+use crate::shell_check::{edge_key, EdgeKey};
 use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};
 
 /// A focused check result: error/warning with a short message and the type
@@ -27,15 +27,17 @@ impl CheckLevel {
     }
 }
 
-/// Every edge in a closed shell must be used by exactly two faces (boundary
-/// multiplicity 2). Returns a map of edge → usage count for the offenders.
-/// Mirrors `BRepCheck_Shell::CheckClosed`.
-pub fn edge_usage_counts(shape: &TopoShape) -> HashMap<usize, usize> {
-    let mut counts: HashMap<usize, usize> = HashMap::new();
+/// Every edge in a closed shell must be used by exactly two face occurrences
+/// (boundary multiplicity 2). Returns a map of edge key → usage count for the
+/// offenders. Keyed by [`EdgeKey`] (`TShape` + location, `IsSame`) like the map
+/// `BRepCheck_Shell::Closed` walks (`TopExp::MapShapesAndAncestors`,
+/// `TopExp.cxx:80-120`).
+pub fn edge_usage_counts(shape: &TopoShape) -> HashMap<EdgeKey, usize> {
+    let mut counts: HashMap<EdgeKey, usize> = HashMap::new();
     for f in faces_of(shape) {
         for w in wires_of_face(&f) {
             for e in edges_of_wire(&w) {
-                *counts.entry(Arc::as_ptr(&e.0.tshape) as usize).or_insert(0) += 1;
+                *counts.entry(edge_key(&e.0)).or_insert(0) += 1;
             }
         }
     }
@@ -44,14 +46,19 @@ pub fn edge_usage_counts(shape: &TopoShape) -> HashMap<usize, usize> {
 
 /// Boundary multiplicity check: returns the edges whose usage count is not 2
 /// (for a closed manifold). `expected` defaults to 2.
+///
+/// A single-use edge is accepted when it is degenerated — `BRepCheck_Shell::
+/// Closed` (`BRepCheck_Shell.cxx:404-438`) treats a degenerate pole/apex edge
+/// referenced by one face as closing the shell (`cxx:425-437`).
 pub fn boundary_multiple_check(shape: &TopoShape) -> Vec<(Edge, usize, CheckLevel)> {
     let counts = edge_usage_counts(shape);
     let mut out = Vec::new();
     for e in edges_of(shape) {
-        let n = counts.get(&(Arc::as_ptr(&e.0.tshape) as usize)).copied().unwrap_or(0);
+        let n = counts.get(&edge_key(&e.0)).copied().unwrap_or(0);
         let level = match n {
             2 => CheckLevel::Ok,
             0 => CheckLevel::Error(format!("edge used by 0 faces")),
+            1 if BRepTool::is_degenerated(&e) => CheckLevel::Ok,
             1 => CheckLevel::Error(format!("edge used by 1 face (open boundary)")),
             _ => CheckLevel::Warning(format!("edge used by {n} faces")),
         };
@@ -60,21 +67,13 @@ pub fn boundary_multiple_check(shape: &TopoShape) -> Vec<(Edge, usize, CheckLeve
     out
 }
 
-/// Whether a shell is closed (every boundary edge used twice).
+/// Whether a shell is closed (`BRepCheck_Shell::Closed`,
+/// `BRepCheck_Shell.cxx:404-438`). Delegates to [`crate::shell_check::
+/// shell_closed_check`] so shape validity follows one control flow.
 pub fn shell_closed_check(shell: &Shell) -> CheckLevel {
-    let offenders: Vec<String> = boundary_multiple_check(&shell.0)
-        .into_iter()
-        .filter(|(_, _, lvl)| !lvl.is_ok())
-        .map(|(_, _, lvl)| match lvl {
-            CheckLevel::Error(m) => m,
-            _ => String::new(),
-        })
-        .filter(|m| !m.is_empty())
-        .collect();
-    if offenders.is_empty() {
-        CheckLevel::Ok
-    } else {
-        CheckLevel::Error(format!("{} boundary errors: {}", offenders.len(), offenders[0]))
+    match crate::shell_check::shell_closed_check(shell) {
+        Ok(()) => CheckLevel::Ok,
+        Err(m) => CheckLevel::Error(m),
     }
 }
 
@@ -296,6 +295,7 @@ pub fn analyse(shape: &TopoShape) -> (Vec<String>, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abs::ShapeType;
     use crate::primitives::BRepPrimBox;
 
     #[test]

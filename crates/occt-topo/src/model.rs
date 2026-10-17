@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use crate::shape::TopoShape;
 use crate::abs::ShapeType;
+use crate::xcaf_prs::XcafPrsStyle;
 use occt_core::bnd::BndBox;
 
 /// A named shape in the model.
@@ -10,8 +11,19 @@ use occt_core::bnd::BndBox;
 pub struct ModelShape {
     pub name: String,
     pub shape: TopoShape,
+    /// The surface colour the `XCAFDoc_ColorTool` holds for this shape's own
+    /// label (`XCAFDoc_ColorSurf`, `XCAFPrs_DocumentExplorer::mergedStyle`
+    /// `XCAFPrs_DocumentExplorer.cxx:28-81`). This is the document-node style
+    /// the OBJ writer receives as `aDocNode.Style`.
     pub color: Option<occt_core::quantity::Color>,
     pub layer: String,
+    /// `XCAFPrs::CollectStyleSettings` output for this node
+    /// (`XCAFPrs.cxx:118-260`): the `(subshape, style)` settings carried by the
+    /// node label and its `AddSubShape` sub-shape labels, in collection order.
+    /// The OBJ writer turns it into the per-face style map with
+    /// `RWMesh_ShapeIterator::dispatchStyles`
+    /// (`rwmesh::obj_caf_writer`). Empty when the STEP file carries no style.
+    pub style_settings: Vec<(TopoShape, XcafPrsStyle)>,
 }
 
 /// BRepModel: a set of named shapes with bounding box.
@@ -26,7 +38,13 @@ impl BRepModel {
 
     pub fn add(&mut self, name: &str, shape: TopoShape) -> usize {
         let idx = self.shapes.len();
-        self.shapes.push(ModelShape { name: name.into(), shape, color: None, layer: String::new() });
+        self.shapes.push(ModelShape {
+            name: name.into(),
+            shape,
+            color: None,
+            layer: String::new(),
+            style_settings: Vec::new(),
+        });
         self.by_name.insert(name.into(), idx);
         idx
     }

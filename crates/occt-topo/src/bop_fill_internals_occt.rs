@@ -22,13 +22,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::abs::{Orientation, ShapeType};
 use crate::bop_occt_util::{
-    images_bound, images_of, iter_children, map_shapes_and_ancestors, merge_ancestor_maps,
-    nb_source, origins_append, own_internal_shapes, shape_key, treat_compound, BopSolidHost,
+    images_bound, images_of, iter_children, nb_source, origins_append, own_internal_shapes,
+    shape_key, treat_compound, BopSolidHost,
 };
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Solid, TopoShape};
-use crate::topo_tools_full::edges_of;
+use crate::topo_tools_full::{edges_of, map_shapes_and_ancestors_into, shape_map_key, ShapeMapKey};
 
 /// `BOPTools_AlgoTools::ComputeStateByOnePoint` stand-in used by
 /// FillInternalShapes (`_3.cxx:836`, tolerance `1.e-11`).
@@ -40,7 +40,7 @@ fn compute_state_by_one_point(shape: &TopoShape, solid: &TopoShape, tol: f64) ->
 pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), String> {
     // 1. Shapes to process from the pure arguments.
     let mut a_lsc: Vec<TopoShape> = Vec::new();
-    let mut a_fence: HashSet<usize> = HashSet::new();
+    let mut a_fence: HashSet<ShapeMapKey> = HashSet::new();
     for a in f.arguments() {
         treat_compound(a, &mut a_lsc, &mut a_fence);
     }
@@ -81,8 +81,8 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
     // 2. Internal vertices/edges from source solids + ancestor map of splits.
     a_fence.clear();
     let mut a_lsd: Vec<TopoShape> = Vec::new();
-    let mut a_msx: HashMap<usize, Vec<TopoShape>> = HashMap::new();
-    let mut a_msor: HashSet<usize> = HashSet::new();
+    let mut a_msx: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    let mut a_msor: HashSet<ShapeMapKey> = HashSet::new();
     let n = nb_source(f.ds());
     for i in 0..n {
         let Some(si) = f.ds().shape_info(i) else { continue };
@@ -102,34 +102,16 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
         if images_bound(f.history(), &a_s) {
             for a_sp in images_of(f.history(), &a_s) {
                 if a_fence.insert(shape_key(a_sp)) {
-                    merge_ancestor_maps(
-                        &mut a_msx,
-                        map_shapes_and_ancestors(a_sp, ShapeType::Vertex, ShapeType::Edge),
-                    );
-                    merge_ancestor_maps(
-                        &mut a_msx,
-                        map_shapes_and_ancestors(a_sp, ShapeType::Vertex, ShapeType::Face),
-                    );
-                    merge_ancestor_maps(
-                        &mut a_msx,
-                        map_shapes_and_ancestors(a_sp, ShapeType::Edge, ShapeType::Face),
-                    );
+                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Edge, &mut a_msx);
+                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Face, &mut a_msx);
+                    map_shapes_and_ancestors_into(a_sp, ShapeType::Edge, ShapeType::Face, &mut a_msx);
                     a_lsd.push(a_sp.clone());
                 }
             }
         } else if a_fence.insert(shape_key(&a_s)) {
-            merge_ancestor_maps(
-                &mut a_msx,
-                map_shapes_and_ancestors(&a_s, ShapeType::Vertex, ShapeType::Edge),
-            );
-            merge_ancestor_maps(
-                &mut a_msx,
-                map_shapes_and_ancestors(&a_s, ShapeType::Vertex, ShapeType::Face),
-            );
-            merge_ancestor_maps(
-                &mut a_msx,
-                map_shapes_and_ancestors(&a_s, ShapeType::Edge, ShapeType::Face),
-            );
+            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Edge, &mut a_msx);
+            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Face, &mut a_msx);
+            map_shapes_and_ancestors_into(&a_s, ShapeType::Edge, ShapeType::Face, &mut a_msx);
             a_lsd.push(a_s.clone());
             a_msor.insert(shape_key(&a_s));
         }
@@ -138,7 +120,7 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
     // 3. Drop candidates already tied to a split-solid ancestor.
     let mut a_lsi: Vec<TopoShape> = Vec::new();
     for a_si in &a_msi {
-        match a_msx.get(&shape_key(a_si)) {
+        match a_msx.get(&shape_map_key(a_si)) {
             Some(a_lsx) if !a_lsx.is_empty() => {}
             _ => a_lsi.push(a_si.clone()),
         }
@@ -188,13 +170,13 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
 pub fn fill_internals_tools(
     the_solids: &mut [TopoShape],
     the_parts: &[TopoShape],
-    the_images: &HashMap<usize, Vec<TopoShape>>,
+    the_images: &HashMap<ShapeMapKey, Vec<TopoShape>>,
     _the_ctx: &crate::int_tools_full::IntToolsContext,
 ) {
     if the_solids.is_empty() || the_parts.is_empty() {
         return;
     }
-    let mut a_ms_solids: HashSet<usize> = HashSet::new();
+    let mut a_ms_solids: HashSet<ShapeMapKey> = HashSet::new();
     for a_solid in the_solids.iter() {
         if a_solid.shape_type() != ShapeType::Solid {
             continue;
@@ -236,7 +218,7 @@ pub fn fill_internals_tools(
         }
     }
 
-    let mut an_in_faces: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    let mut an_in_faces: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     let bld = TopoBuilder::new();
     for a_sd in the_solids.iter_mut() {
         if a_sd.shape_type() != ShapeType::Solid {
@@ -283,7 +265,7 @@ pub fn images_of_shape(
 pub fn images_map_from_shapes(
     h: &crate::bop_hist::BopHistory,
     sources: &[TopoShape],
-) -> HashMap<usize, Vec<TopoShape>> {
+) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
     let mut m = HashMap::new();
     for s in sources {
         if let Some(im) = h.image(s) {

@@ -7,10 +7,13 @@
 //! produced from that same STEP file.
 #![allow(dead_code)]
 
+pub mod modeling;
+
 use std::path::PathBuf;
 
 use occt_core::io::obj::ObjMesh;
-use occt_topo::brep_exchange::brep_to_obj;
+use occt_topo::brep_exchange::{document_shape, model_to_obj_caf};
+use occt_topo::rwmesh::material_file_path;
 use occt_topo::step::read_step_file;
 
 /// data/ directory (tests run with CWD = the occt-topo crate root).
@@ -114,6 +117,16 @@ pub const MODELS: &[Model] = &[
     // extrema / root paths faithful. The tolerance below is the registered one and was not
     // widened; the move is away from OCCT, which matches the "port still misses some face
     // classes (density < 1)" gap this model tracks.
+    // 2026-10-17 (`Extrema_ExtPElC.cxx:253-260`: the point-ellipse root equation
+    // used `+B*Y*cos` where OCCT has `ko3 = -B*Y`; `poly_roots::ellipse_all` now
+    // matches `ElCLib::EllipseValue`'s `+B*sin`): 67286 vs 67366 (v 60506 vs
+    // 60548), area 192657.74 vs 192658.64 (ratio 1.0000). The old +321.92 came
+    // from `ADVANCED_FACE #29213` (cylinder `#1514`, strip u in [-0.794,0.794]):
+    // its 3.2e-7-long ELLIPSE edge `#15786` had both vertices projecting to the
+    // mirrored root (+1.52e-4 instead of 2*pi-1.52e-4), so `UpdateParam3d`'s
+    // `AdjustPeriodic` (`GeometricTool.cxx:274-281`) turned a 1.5e-4 arc into a
+    // whole-period edge whose pcurve swept the full cylinder and widened
+    // `BRepTools::UVBounds` to 1.25 periods (meshed face 507.11 vs 183.00).
     Model { step: "occ/T0M.stp", occ: "occ/occ-T0M.obj", bbox_tol: Some(0.9), area_tol: Some(0.025) },
     // acs10: widened 0.05 -> 0.12 by the same T-93 (a) change (ratio 0.9846 ->
     // 0.9025, ours 244773.63 / occ 271219.68). Re-measured at 9.625: 1.00004
@@ -148,12 +161,38 @@ pub const MODELS: &[Model] = &[
     Model { step: "occ/a3n00.stp", occ: "occ/occ-a3n00.obj", bbox_tol: Some(0.01), area_tol: Some(0.15) },
 ];
 
-/// Read step, export its first shape to OBJ text (deflection 0.1).
-pub fn export(step: &str) -> String {
+/// Read step, export the whole document to `(OBJ text, MTL text)` at
+/// deflection 0.1.
+///
+/// This is the shipped exporter (`RWObj_CafWriter::Perform` via
+/// [`model_to_obj_caf`]), not the plain [`brep_to_obj`] shape writer, so the
+/// gates cover the same output `examples/export_data_obj.rs` produces: header,
+/// `g <node>`, `mtllib` / `usemtl` / `newmtl`. The plain writer emits none of
+/// those records, which is why the `.mtl` sidecar used to be untested.
+///
+/// Shape selection matches the exporter too: a single-root document exports its
+/// root, a multi-root document is meshed as one compound of the roots.
+pub fn export(step: &str) -> (String, String) {
     let model = read_step_file(&data_dir().join(step).to_string_lossy())
         .unwrap_or_else(|e| panic!("read {}: {e}", step));
-    assert!(!model.shapes.is_empty(), "{}: parsed to no shapes", step);
-    brep_to_obj(&model.shapes[0].shape, 0.1)
+    let whole = document_shape(&model)
+        .unwrap_or_else(|| panic!("{}: parsed to no shapes", step));
+    model_to_obj_caf(&model, &whole, &format!("{}.obj", stem(step)), 0.1)
+}
+
+/// `mtllib` record of an OBJ (the sidecar file name), if present.
+pub fn obj_mtllib(obj: &str) -> Option<&str> {
+    obj.lines().find_map(|l| l.strip_prefix("mtllib ")).map(str::trim)
+}
+
+/// `usemtl` names referenced by an OBJ, in file order (duplicates kept).
+pub fn obj_usemtl(obj: &str) -> Vec<&str> {
+    obj.lines().filter_map(|l| l.strip_prefix("usemtl ")).map(str::trim).collect()
+}
+
+/// `newmtl` names declared by an MTL library, in file order.
+pub fn mtl_newmtl(mtl: &str) -> Vec<&str> {
+    mtl.lines().filter_map(|l| l.strip_prefix("newmtl ")).map(str::trim).collect()
 }
 
 /// The OCCT reference OBJ text.
@@ -226,21 +265,38 @@ pub fn obj_area(m: &ObjMesh) -> f64 {
     area
 }
 
-/// data/output/<stem>.obj for a data/-relative STEP path.
+/// `data/output/gates/<stem>.obj` for a data/-relative STEP path.
+///
+/// The gates write to their own subdirectory: `examples/export_data_obj.rs`
+/// owns `data/output/<stem>.obj` + `<stem>.mtl`, and both producers must not
+/// overwrite each other's artifacts.
 pub fn output_path(step: &str) -> PathBuf {
-    let stem = std::path::Path::new(step)
+    data_dir().join("output").join("gates").join(format!("{}.obj", stem(step)))
+}
+
+/// data/-relative STEP path -> file stem.
+pub fn stem(step: &str) -> String {
+    std::path::Path::new(step)
         .file_stem()
         .expect("stem")
         .to_string_lossy()
-        .to_string();
-    data_dir().join("output").join(format!("{stem}.obj"))
+        .to_string()
 }
 
-/// Write the exported OBJ next to the OCCT reference (for visual comparison).
-pub fn write_output(step: &str, obj: &str) {
+/// Write the exported OBJ + its `.mtl` sidecar to `data/output/gates/`
+/// (deflection 0.1, for visual comparison against the OCCT reference). An empty
+/// `mtl` removes a sidecar left by an earlier run instead of writing a stale
+/// library.
+pub fn write_output(step: &str, obj: &str, mtl: &str) {
     let path = output_path(step);
-    std::fs::create_dir_all(path.parent().unwrap()).expect("create data/output");
+    std::fs::create_dir_all(path.parent().unwrap()).expect("create data/output/gates");
     std::fs::write(&path, obj).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    let mat = material_file_path(&path.to_string_lossy());
+    if mtl.is_empty() {
+        let _ = std::fs::remove_file(&mat);
+    } else {
+        std::fs::write(&mat, mtl).unwrap_or_else(|e| panic!("write {mat}: {e}"));
+    }
 }
     // acs10: widened 0.05 -> 0.12 by the same T-93 (a) change (ratio 0.9846 ->
     // 0.9025, ours 244773.63 / occ 271219.68).

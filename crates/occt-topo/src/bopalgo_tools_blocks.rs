@@ -11,9 +11,10 @@
 //! that is not yet in the fence starts a chain, and the chain grows by
 //! appending every neighbour that the fence has not seen.
 //!
-//! Identity is [`crate::bop_occt_util::shape_key`] (`TopTools_ShapeMapHasher`
-//! on the TShape handle). The stored `TopoShape` values keep orientation
-//! and location of the first insertion.
+//! Identity is [`crate::bop_occt_util::shape_key`], the
+//! `TopTools_ShapeMapHasher` key (`TShape` + `Location`, i.e. `IsSame`). The
+//! stored `TopoShape` values keep orientation and location of the first
+//! insertion.
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
@@ -25,6 +26,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::bop_occt_util::shape_key;
 use crate::shape::TopoShape;
+use crate::topo_tools_full::ShapeMapKey;
 
 /// Indexed shape-to-neighbours map used as `aDMSLS` in FillSameDomainFaces.
 ///
@@ -33,12 +35,12 @@ use crate::shape::TopoShape;
 /// `MakeBlocks` reproduces OCCT chain order (`FindKey(1..Extent)`).
 #[derive(Debug, Clone, Default)]
 pub struct IndexedShapeAdj {
-    /// Insertion-ordered TShape keys (`FindKey(i)`).
-    keys: Vec<usize>,
+    /// Insertion-ordered shape keys (`FindKey(i)`).
+    keys: Vec<ShapeMapKey>,
     /// Neighbour keys of each shape key (`FindFromKey`).
-    lists: HashMap<usize, Vec<usize>>,
+    lists: HashMap<ShapeMapKey, Vec<ShapeMapKey>>,
     /// First-seen `TopoShape` for each key (`theMILI.FindKey` value).
-    shapes: HashMap<usize, TopoShape>,
+    shapes: HashMap<ShapeMapKey, TopoShape>,
 }
 
 impl IndexedShapeAdj {
@@ -57,26 +59,26 @@ impl IndexedShapeAdj {
     }
 
     /// The stored shape for `key`, when present.
-    pub fn shape_of(&self, key: usize) -> Option<&TopoShape> {
+    pub fn shape_of(&self, key: ShapeMapKey) -> Option<&TopoShape> {
         self.shapes.get(&key)
     }
 
     /// Neighbour keys of `key`.
-    pub fn neighbours(&self, key: usize) -> &[usize] {
+    pub fn neighbours(&self, key: ShapeMapKey) -> &[ShapeMapKey] {
         self.lists.get(&key).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// Keys in insertion order (`FindKey(1..Extent)`).
-    pub fn keys(&self) -> &[usize] {
+    pub fn keys(&self) -> &[ShapeMapKey] {
         &self.keys
     }
 
-    fn ensure_key(&mut self, s: &TopoShape) -> usize {
+    fn ensure_key(&mut self, s: &TopoShape) -> ShapeMapKey {
         let k = shape_key(s);
         if !self.lists.contains_key(&k) {
-            self.keys.push(k);
-            self.lists.insert(k, Vec::new());
-            self.shapes.insert(k, s.clone());
+            self.keys.push(k.clone());
+            self.lists.insert(k.clone(), Vec::new());
+            self.shapes.insert(k.clone(), s.clone());
         }
         k
     }
@@ -90,7 +92,7 @@ impl IndexedShapeAdj {
     pub fn fill_map(&mut self, n1: &TopoShape, n2: &TopoShape) {
         let k1 = self.ensure_key(n1);
         let k2 = self.ensure_key(n2);
-        self.lists.get_mut(&k1).expect("k1").push(k2);
+        self.lists.get_mut(&k1).expect("k1").push(k2.clone());
         self.lists.get_mut(&k2).expect("k2").push(k1);
     }
 
@@ -102,20 +104,20 @@ impl IndexedShapeAdj {
     /// list). Isolated keys become singleton blocks; FillSameDomainFaces
     /// only ever inserts pairs, so those blocks have size >= 2.
     pub fn make_blocks(&self) -> Vec<Vec<TopoShape>> {
-        let mut fence: HashSet<usize> = HashSet::new();
+        let mut fence: HashSet<ShapeMapKey> = HashSet::new();
         let mut blocks: Vec<Vec<TopoShape>> = Vec::new();
-        for &n in &self.keys {
-            if !fence.insert(n) {
+        for n in &self.keys {
+            if !fence.insert(n.clone()) {
                 continue;
             }
-            let mut chain_keys: Vec<usize> = vec![n];
+            let mut chain_keys: Vec<ShapeMapKey> = vec![n.clone()];
             let mut i = 0;
             while i < chain_keys.len() {
-                let n1 = chain_keys[i];
+                let n1 = chain_keys[i].clone();
                 if let Some(li) = self.lists.get(&n1) {
-                    for &n2 in li {
-                        if fence.insert(n2) {
-                            chain_keys.push(n2);
+                    for n2 in li {
+                        if fence.insert(n2.clone()) {
+                            chain_keys.push(n2.clone());
                         }
                     }
                 }

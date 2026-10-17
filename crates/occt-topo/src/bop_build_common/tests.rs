@@ -21,7 +21,7 @@ use std::collections::HashMap;
         history: BopHistory,
         fuzzy: f64,
         args: Vec<TopoShape>,
-        origins: HashMap<usize, Vec<TopoShape>>,
+        origins: HashMap<ShapeMapKey, Vec<TopoShape>>,
     }
 
     impl BopBuildOps for StubBuilder {
@@ -40,7 +40,7 @@ use std::collections::HashMap;
         fn arguments(&self) -> &[TopoShape] {
             &self.args
         }
-        fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>> {
+        fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
             &mut self.origins
         }
     }

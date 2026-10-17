@@ -27,6 +27,7 @@ use crate::bop_occt_util::{
 use crate::bop_split_to_reverse::orient_split_with_warn;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Shell, Solid, TopoShape};
+use crate::topo_tools_full::ShapeMapKey;
 
 /// Whether `fx` is bound in the builder same-domain map (`myShapesSD.IsBound`).
 fn shapes_sd_bound<B: BopSolidHost>(f: &B, fx: &TopoShape) -> bool {
@@ -205,8 +206,8 @@ pub fn draft_solid_has_shell(draft: &TopoShape) -> bool {
     !shells_of_solid(draft).is_empty()
 }
 
-/// TShape keys of `theLIF`.
-pub fn internal_face_keys(lif: &[TopoShape]) -> Vec<usize> {
+/// Shape keys of `theLIF`.
+pub fn internal_face_keys(lif: &[TopoShape]) -> Vec<ShapeMapKey> {
     lif.iter().map(shape_key).collect()
 }
 

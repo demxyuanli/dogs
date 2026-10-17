@@ -58,7 +58,7 @@ pub(crate) use crate::fclass2d::{FClass2d, FaceState};
 pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position};
+pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position, ShapeMapKey};
 
 
 }
@@ -88,7 +88,7 @@ mod tests {
         errors: Vec<String>,
         warnings: Vec<String>,
         shapes_sd: Vec<(TopoShape, TopoShape)>,
-        origins: HashMap<usize, Vec<TopoShape>>,
+        origins: HashMap<ShapeMapKey, Vec<TopoShape>>,
         fuzzy: f64,
     }
 
@@ -147,7 +147,7 @@ mod tests {
                 .find(|(s, _)| s.same_tshape(shape))
                 .map(|(_, sd)| sd.clone())
         }
-        fn origins_mut(&mut self) -> &mut HashMap<usize, Vec<TopoShape>> {
+        fn origins_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
             &mut self.origins
         }
     }

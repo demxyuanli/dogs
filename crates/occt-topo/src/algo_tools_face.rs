@@ -31,7 +31,7 @@ use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of;
+use crate::topo_tools_full::{edges_of, shape_map_key};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
@@ -490,7 +490,7 @@ pub fn is_internal_face_by_list(
 pub fn is_internal_face(
     the_face: &Face,
     the_solid: &TopoShape,
-    the_mef: &std::collections::HashMap<usize, (TopoShape, Vec<TopoShape>)>,
+    the_mef: &std::collections::HashMap<crate::topo_tools_full::ShapeMapKey, Vec<TopoShape>>,
     the_tol: f64,
     the_ctx: &IntToolsContext,
 ) -> bool {
@@ -503,7 +503,7 @@ pub fn is_internal_face(
         if BRepTool::is_degenerated(&e) {
             continue;
         }
-        let Some((_ek, lf)) = the_mef.get(&shape_key(&e.0)) else {
+        let Some(lf) = the_mef.get(&shape_map_key(&e.0)) else {
             continue;
         };
         if lf.len() == 1 {

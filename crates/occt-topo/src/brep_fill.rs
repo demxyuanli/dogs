@@ -284,11 +284,10 @@ fn shell_is_closed(shell: &TopoShape) -> bool {
     has_bound && odd.is_empty()
 }
 
+/// `TopTools_Map` toggle of `BRepLib_Fill`'s edge pairing: `IsSame` already
+/// covers `TShape` and location (`TopoDS_Shape.hxx:262-267`).
 fn toggle_same(odd: &mut Vec<TopoShape>, shape: &TopoShape) {
-    if let Some(i) = odd
-        .iter()
-        .position(|kept| is_same(kept, shape) && kept.location().is_equal(shape.location()))
-    {
+    if let Some(i) = odd.iter().position(|kept| is_same(kept, shape)) {
         odd.remove(i);
     } else {
         odd.push(shape.clone());

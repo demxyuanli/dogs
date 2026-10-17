@@ -2,14 +2,16 @@
 //! `TopExp.hxx` / `TopTools.hxx` than the lightweight `topexp.rs` module.
 //!
 //! These helpers walk the real children tree of a `TShape`, uniquifying by
-//! `TShape` identity (shared edges/vertices appear once), and mirror the
-//! OCCT `TopExp::MapShapes`, `TopExp::FirstVertex/LastVertex`,
-//! `TopTools::MapOfShape` idioms.
+//! `TopoDS_Shape::IsSame` — `TShape` identity plus `Location`, like
+//! `TopTools_ShapeMapHasher` — so shared edges/vertices appear once while moved
+//! copies of one `TShape` stay apart — and mirror the OCCT `TopExp::MapShapes`,
+//! `TopExp::FirstVertex/LastVertex`, `TopTools::MapOfShape` idioms.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use occt_core::gp::GpPnt;
+use occt_core::toploc::LocationKey;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::iterator::cumulated_children;
@@ -26,13 +28,17 @@ pub fn map_shapes(shape: &TopoShape, types: &[ShapeType]) -> HashMap<ShapeType, 
     let mut seen = HashSet::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
-        // Key on TShape identity only — OCCT's TopTools_ShapeMapHasher (used by
-        // TopTools_IndexedMapOfShape / TopExp::MapShapes) keys with IsSame, so a
-        // shared edge used Forward in one face and Reversed in another (e.g. the
-        // box's 12 edges) counts once. The orientation is carried on the returned
-        // shape view; a seam's two opposite-oriented occurrences stay reachable
-        // through `edges_of_wire` (direct children), which does not deduplicate.
-        let key = Arc::as_ptr(&s.tshape) as usize;
+        // Key like `TopTools_ShapeMapHasher` (used by `TopTools_IndexedMapOfShape`
+        // / `TopExp::MapShapes`): it hashes `TShape` and `Location` together, and
+        // its `IsSame` test is `TShape` plus `Location` (`TopoDS_Shape.hxx:262-267`),
+        // so a shared edge used Forward in one face and Reversed in another (e.g.
+        // the box's 12 edges) counts once, while two occurrences of one `TShape`
+        // under *different* locations (the two floors of a prism sweep, each a
+        // moved copy of the generator face) stay two entries. The orientation is
+        // carried on the returned shape view; a seam's two opposite-oriented
+        // occurrences stay reachable through `edges_of_wire` (direct children),
+        // which does not deduplicate.
+        let key = (Arc::as_ptr(&s.tshape) as usize, s.location().key());
         if !seen.insert(key) {
             continue;
         }
@@ -53,7 +59,8 @@ pub fn all_subshapes(shape: &TopoShape) -> Vec<TopoShape> {
     let mut seen = HashSet::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
-        let key = Arc::as_ptr(&s.tshape) as usize;
+        // `TopoDS_Shape::IsSame`: `TShape` plus `Location` (see `map_shapes`).
+        let key = (Arc::as_ptr(&s.tshape) as usize, s.location().key());
         if !seen.insert(key) {
             continue;
         }
@@ -113,29 +120,108 @@ pub fn explorer_shapes(shape: &TopoShape, to_find: ShapeType) -> Vec<TopoShape> 
     explorer_shapes_avoiding(shape, to_find, ShapeType::Shape)
 }
 
-/// `TopExp::MapShapesAndAncestors` (`TopExp.cxx:80-120`): every `TS` sub-shape
-/// of `shape` mapped to the ordered list of its `TA` ancestors. Keyed by
-/// `TopoShape` identity (`GeometryRegistry::shape_key`, i.e. `IsSame`). The
-/// list keeps duplicates: an edge met twice under one ancestor is appended
-/// twice (`cxx:103` appends inside the inner walk, not once per ancestor).
-/// Shapes not under any ancestor are inserted with an empty list (`cxx:110-119`).
+/// `TopTools_ShapeMapHasher` key (`TopTools_ShapeMapHasher.hxx:44-52`): the
+/// `TShape` address together with the `TopLoc_Location` value, which is the
+/// equality `TopoDS_Shape::IsSame` tests (`TopoDS_Shape.hxx:262-267`). Two
+/// occurrences of one `TShape` under different locations are distinct keys, as
+/// in OCCT; the orientation is *not* part of the key.
+pub type ShapeMapKey = (usize, LocationKey);
+
+/// [`ShapeMapKey`] of one shape occurrence.
+pub fn shape_map_key(s: &TopoShape) -> ShapeMapKey {
+    (GeometryRegistry::shape_key(s), s.location().key())
+}
+
+/// `TopoDS_Shape::IsSame` (`TopoDS_Shape.hxx:262-267`): same `TShape`, same
+/// location; the orientation is ignored. OCCT's `MyShape` comparison inside
+/// `NCollection_*Map<TopoDS_Shape, TopTools_ShapeMapHasher>` reducers.
+pub fn is_same_occurrence(a: &TopoShape, b: &TopoShape) -> bool {
+    a.same_tshape(b) && a.location().is_equal(b.location())
+}
+
+/// `TopExp::MapShapesAndAncestors` (`TopExp.cxx:80-120`): every `TS` occurrence
+/// under the `TA` ancestors of `shape` mapped to the list of those ancestors.
+///
+/// The list is appended once per `(ancestor, sub-shape)` occurrence pair
+/// (`cxx:96-105`), so an edge met twice under one face appears twice — this is
+/// the non-unique variant; use [`map_shapes_and_unique_ancestors`] for
+/// `TopExp::MapShapesAndUniqueAncestors` (`cxx:124-177`). Keys are
+/// [`ShapeMapKey`] (`TopTools_ShapeMapHasher`). Sub-shapes that sit under no
+/// ancestor are inserted with an empty list by the trailing
+/// `TopExp_Explorer(shape, TS, TA)` pass (`cxx:110-119`).
 pub fn map_shapes_and_ancestors(
     shape: &TopoShape,
     ts: ShapeType,
     ta: ShapeType,
-) -> HashMap<usize, Vec<TopoShape>> {
-    let mut map: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
+    let mut map: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    map_shapes_and_ancestors_into(shape, ts, ta, &mut map);
+    map
+}
+
+/// `TopExp::MapShapesAndAncestors` with the in/out map of the OCCT signature
+/// (`TopExp.cxx:80-120`, `M` appended to, never reset). Callers that run the
+/// three `(VERTEX, EDGE)` / `(VERTEX, FACE)` / `(EDGE, FACE)` passes over one
+/// solid share a single map exactly as `BOPAlgo_Builder_3.cxx:770-772` does.
+pub fn map_shapes_and_ancestors_into(
+    shape: &TopoShape,
+    ts: ShapeType,
+    ta: ShapeType,
+    map: &mut HashMap<ShapeMapKey, Vec<TopoShape>>,
+) {
     for anc in explorer_shapes(shape, ta) {
         for sub in explorer_shapes(&anc, ts) {
-            map.entry(GeometryRegistry::shape_key(&sub))
-                .or_default()
-                .push(anc.clone());
+            map.entry(shape_map_key(&sub)).or_default().push(anc.clone());
         }
     }
     for sub in explorer_shapes_avoiding(shape, ts, ta) {
-        map.entry(GeometryRegistry::shape_key(&sub)).or_default();
+        map.entry(shape_map_key(&sub)).or_default();
     }
+}
+
+/// `TopExp::MapShapesAndUniqueAncestors` (`TopExp.cxx:124-177`): the same walk,
+/// but an ancestor already present in a sub-shape's list is not appended again
+/// (`cxx:149-161`). `use_orientation` selects the comparison: `false` tests
+/// `IsSame` (`cxx:156`), `true` tests `IsEqual`, i.e. orientation included
+/// (`cxx:156`).
+pub fn map_shapes_and_unique_ancestors(
+    shape: &TopoShape,
+    ts: ShapeType,
+    ta: ShapeType,
+    use_orientation: bool,
+) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
+    let mut map: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    map_shapes_and_unique_ancestors_into(shape, ts, ta, use_orientation, &mut map);
     map
+}
+
+/// [`map_shapes_and_unique_ancestors`] with the in/out map of the OCCT
+/// signature (`TopExp.cxx:124-177`).
+pub fn map_shapes_and_unique_ancestors_into(
+    shape: &TopoShape,
+    ts: ShapeType,
+    ta: ShapeType,
+    use_orientation: bool,
+    map: &mut HashMap<ShapeMapKey, Vec<TopoShape>>,
+) {
+    for anc in explorer_shapes(shape, ta) {
+        for sub in explorer_shapes(&anc, ts) {
+            let list = map.entry(shape_map_key(&sub)).or_default();
+            let already = list.iter().any(|x| {
+                if use_orientation {
+                    is_equal(x, &anc)
+                } else {
+                    is_same_occurrence(x, &anc)
+                }
+            });
+            if !already {
+                list.push(anc.clone());
+            }
+        }
+    }
+    for sub in explorer_shapes_avoiding(shape, ts, ta) {
+        map.entry(shape_map_key(&sub)).or_default();
+    }
 }
 
 /// Per-type occurrence counts (distinct shapes), root included.
@@ -225,9 +311,25 @@ pub fn edge_vertices(edge: &Edge) -> (Option<Vertex>, Option<Vertex>) {
     (first, last)
 }
 
-/// Whether two shapes reference the same `TShape` data (identical, not equal).
+/// `TopoDS_Shape::IsSame` (`TopoDS_Shape.hxx:262-267`): same `TShape` and same
+/// `TopLoc_Location`; the orientation is not compared.
+///
+/// This is the comparison behind `TopTools_ShapeMapHasher`
+/// (`TopTools_ShapeMapHasher.hxx:30-38`) and therefore behind every
+/// `TopTools_MapOfShape` / `TopTools_IndexedMapOfShape` /
+/// `TopTools_DataMapOfShape*`, as well as the explicit `a.IsSame(b)` calls of
+/// the ported algorithms. Two occurrences of one `TShape` at different
+/// locations (the translated top of a prism reusing the bottom edge `TShape`)
+/// are *not* the same. Use [`is_equal`] when the orientation participates and
+/// [`TopoShape::same_tshape`] for the bare `TShape` handle.
 pub fn is_same(a: &TopoShape, b: &TopoShape) -> bool {
-    Arc::ptr_eq(&a.tshape, &b.tshape)
+    is_same_occurrence(a, b)
+}
+
+/// `TopoDS_Shape::IsEqual` (`TopoDS_Shape.hxx:276-280`): same TShape, same
+/// location and same orientation.
+pub fn is_equal(a: &TopoShape, b: &TopoShape) -> bool {
+    a.same_tshape(b) && a.orientation() == b.orientation() && a.location().is_equal(b.location())
 }
 
 /// Location of a vertex from the geometry side-table (`BRep_Tool::Pnt`).

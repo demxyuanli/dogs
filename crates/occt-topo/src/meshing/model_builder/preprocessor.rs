@@ -35,10 +35,10 @@ fn edge_vertex_adjust(e: &MeshEdge) -> (f64, f64) {
     let (v1, v2) = edge_vertices(e.edge());
     let (f, l) = (e.first_parameter(), e.last_parameter());
     let df = v1
-        .map(|v| BRepTool::vertex_point(&v).distance(&curve.d0(f)))
+        .map(|v| BRepTool::vertex_point_world(&v).distance(&curve.d0(f)))
         .unwrap_or(-1.0);
     let dl = v2
-        .map(|v| BRepTool::vertex_point(&v).distance(&curve.d0(l)))
+        .map(|v| BRepTool::vertex_point_world(&v).distance(&curve.d0(l)))
         .unwrap_or(-1.0);
     (df, dl)
 }

@@ -16,7 +16,7 @@ impl MeshFace {
     /// Builds a discrete face from the topological face, reading the surface
     /// geometry from the registry.
     pub fn new(face: Face) -> Self {
-        let surface = BRepTool::face_surface(&face);
+        let surface = BRepTool::face_surface_world(&face);
         Self {
             face,
             surface,
