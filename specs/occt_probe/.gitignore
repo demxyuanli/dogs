@@ -20,6 +20,10 @@ zz_iges_obj.exe
 zz_iges_obj.obj
 zz_iges_obj.exp
 zz_iges_obj.lib
+zz_face_area_probe.exe
+zz_face_area_probe.obj
+zz_face_area_probe.exp
+zz_face_area_probe.lib
 tmp_probe_build.log
 
 ZZ_*.obj
