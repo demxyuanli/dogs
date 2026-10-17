@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use occt_core::gp::{GpAx2, GpCirc, GpDir, GpLin, GpPln, GpPnt, GpTrsf, GpVec};
+use occt_core::poly::Triangulation;
 use occt_geom::{Curve, GeomCircle, GeomLine, GeomPlane, Surface};
 
 use crate::abs::{Orientation, ShapeType};
@@ -94,6 +95,21 @@ impl TopoBuilder {
     pub fn make_edge(&self, curve: Arc<dyn Curve>, first: f64, last: f64) -> Edge {
         let e = Edge::new();
         GeometryRegistry::global().set_edge(&e.0, EdgeGeom::new(curve, first, last));
+        e
+    }
+
+    /// `BRep_Builder::MakeEdge(E, thePolygon)` (`BRep_Builder.lxx:43-47`):
+    /// `MakeEdge(E)` then `UpdateEdge(E, P)`, which appends a `BRep_Polygon3D`
+    /// representation holding `polygon` and the identity location
+    /// (`BRep_Builder.cxx:749-785`). The edge has no `Geom_Curve`.
+    pub fn make_edge_polygon(&self, polygon: Arc<occt_core::poly::Polygon3D>) -> Edge {
+        let e = Edge::new();
+        {
+            let mut ts = e.0.tshape.write().unwrap();
+            ts.edge_core_mut().polygon3d = Some(polygon);
+            // `cxx:783`: `TE->Modified(true)`.
+            ts.set_modified(true);
+        }
         e
     }
 
@@ -235,6 +251,39 @@ impl TopoBuilder {
         let face = self.make_face(Arc::new(GeomPlane::new(pln.clone())), &[]);
         GeometryRegistry::global().set_natural_restriction(&face.0, true);
         face
+    }
+
+    /// `BRep_Builder::MakeFace(F, theTriangulation)` (`BRep_Builder.cxx:516-527`):
+    /// a face whose only content is a triangulation — no surface, no wires.
+    ///
+    /// This is the glTF "proxy" face (`RWGltf_GltfJsonParser.cxx:2002-2006`);
+    /// `BRep_TFace::Triangulation(tri)` defaults `theToReset` to TRUE
+    /// (`BRep_TFace.hxx:99-100`), so the list holds exactly this triangulation
+    /// and it is active.
+    pub fn make_face_from_triangulation(&self, tri: Arc<Triangulation>) -> Face {
+        let mut face = Face::new();
+        {
+            let mut ts = face.0.tshape.write().unwrap();
+            ts.set_face_triangulation(Some(tri), true);
+        }
+        face
+    }
+
+    /// `BRep_Builder::UpdateFace(theFace, theTriangulation, theToReset)`
+    /// (`BRep_Builder.cxx:582-594`): replace (or re-activate) the face's
+    /// triangulation and flag the TShape as modified.
+    pub fn update_face_triangulation(
+        &self,
+        face: &Face,
+        tri: Option<Arc<Triangulation>>,
+        to_reset: bool,
+    ) {
+        {
+            let mut ts = face.0.tshape.write().unwrap();
+            ts.set_face_triangulation(tri, to_reset);
+            // `cxx:593`: `theFace.TShape()->Modified(true)`.
+            ts.set_modified(true);
+        }
     }
 
     /// Make a shell containing `faces` (`BRepBuilderAPI_MakeShell`).

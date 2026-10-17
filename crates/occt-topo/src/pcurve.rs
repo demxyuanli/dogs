@@ -19,7 +19,7 @@ use occt_core::gp::{
 use occt_geom::projlib;
 use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
-use occt_geom2d::{Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dLine};
+use occt_geom2d::{Geom2dBezierCurve, Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dLine};
 
 use crate::brep_surface::{
     classify_surface, edge_pcurve_on_face, is_plane_type, SurfaceKind,
@@ -142,6 +142,58 @@ pub(crate) fn curve_on_plane(curve: &dyn Curve, surf: &dyn Surface) -> Option<Ar
     project_curve_on_plane(curve, &pln)
 }
 
+/// `ProjLib_ComputeApprox.cxx:1197-1252`: project the poles of a B-spline /
+/// Bezier onto the plane, keeping the knot vector, multiplicities and weights.
+///
+/// The plane's `(u, v)` map is affine, so the pole-wise image is the same curve
+/// as the projected curve expressed in `(u, v)` -- no approximation is needed,
+/// which is exactly why OCCT short-circuits `ProjLib_ComputeApprox` for
+/// `GeomAbs_Plane`.
+fn projected_pole_curve(curve: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2d>> {
+    if let (Some(poles), Some(knots), Some(degree)) = (
+        curve.bspline_poles(),
+        curve.bspline_knots(),
+        curve.nurbs_degree(),
+    ) {
+        let uv: Vec<GpPnt2d> = poles
+            .iter()
+            .map(|p| projlib::eval_pln_pnt2d(pln, p))
+            .collect();
+        let xs: Vec<f64> = uv.iter().map(|p| p.x()).collect();
+        let ys: Vec<f64> = uv.iter().map(|p| p.y()).collect();
+        let mut bs = match curve.bspline_weights() {
+            Some(w) if w.len() == poles.len() => Geom2dBSplineCurve::rational(
+                xs,
+                ys,
+                w.to_vec(),
+                knots.to_vec(),
+                degree,
+            )
+            .ok()?,
+            _ => Geom2dBSplineCurve::new(xs, ys, knots.to_vec(), degree).ok()?,
+        };
+        // `Geom2d_BSplineCurve(Poles, ..., BS->IsPeriodic())` (`cxx:1219-1225`).
+        if curve.is_periodic() {
+            bs.set_periodic();
+        }
+        return Some(Arc::new(bs));
+    }
+    if let Some(poles) = curve.bezier_poles() {
+        let uv: Vec<GpPnt2d> = poles
+            .iter()
+            .map(|p| projlib::eval_pln_pnt2d(pln, p))
+            .collect();
+        let bez = match curve.bezier_weights() {
+            Some(w) if w.len() == poles.len() => {
+                Geom2dBezierCurve::rational(uv, w.to_vec()).ok()?
+            }
+            _ => Geom2dBezierCurve::new(uv).ok()?,
+        };
+        return Some(Arc::new(bez));
+    }
+    None
+}
+
 /// `GeomProjLib::ProjectOnPlane` (KeepParam=true) then `ProjLib_ProjectedCurve`
 /// on the plane given by its own `gp_Pln`: the normal projection of `curve`
 /// expressed in that plane's `(u, v)`. Split out of [`curve_on_plane`] so the
@@ -150,6 +202,19 @@ pub(crate) fn curve_on_plane(curve: &dyn Curve, surf: &dyn Surface) -> Option<Ar
 /// *basis* plane behind a trimmed / offset surface wrapper
 /// (`ShapeConstruct_ProjectCurveOnSurface.cxx:848-897`).
 pub(crate) fn project_curve_on_plane(curve: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2d>> {
+    // `ProjLib_ComputeApprox.cxx:1197-1252`: for a B-spline or Bezier 3D curve
+    // on a plane the projection is not approximated -- every pole is projected
+    // onto the plane's `(u, v)` and the knots / multiplicities / weights are
+    // kept, so the stored pcurve is a concrete `Geom2d_BSplineCurve` /
+    // `Geom2d_BezierCurve` in the source curve's own parameter space. Keeping
+    // the concrete class matters for the consumers that branch on it, e.g.
+    // `GeomBndLib_Curve2d` picks `GeomBndLib_BSplineCurve2d::Box` (pole hull,
+    // `GeomBndLib_BSplineCurve2d.cxx:52-57`) instead of the sampling box.
+    if !curve.is_geom_trimmed() {
+        if let Some(pc) = projected_pole_curve(curve, pln) {
+            return Some(pc);
+        }
+    }
     // `GeomProjLib.cxx:339-343`: a trimmed 3D curve stays KeepParam on its
     // own `[First, Last]` (our STEP trim is remapped to `[0, 1]`).
     if curve.is_geom_trimmed()

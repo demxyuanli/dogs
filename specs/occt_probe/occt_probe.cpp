@@ -82,6 +82,7 @@
 #include <ShapeProcess.hxx>
 #include <ShapeAnalysis.hxx>
 #include <ShapeAnalysis_Edge.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <ShapeAnalysis_Surface.hxx>
 #include <ShapeConstruct_ProjectCurveOnSurface.hxx>
 #include <DE_ShapeFixParameters.hxx>
@@ -4567,6 +4568,7 @@ int main(int argc, char** argv)
   {
     int  aWant = -1;
     bool doSum = false;
+    double aDefl = 0.1, anAngle = 0.349066;
     for (int i = 2; i < argc; ++i)
     {
       const std::string a = argv[i];
@@ -4574,14 +4576,20 @@ int main(int argc, char** argv)
       {
         aWant = std::atoi(argv[i + 1]);
       }
+      else if (a == "--uvdef" && i + 2 < argc)
+      {
+        aDefl   = std::atof(argv[i + 1]);
+        anAngle = std::atof(argv[i + 2]);
+        i += 2;
+      }
       else if (a == "--uvsum")
       {
         doSum = true;
       }
     }
     IMeshTools_Parameters aParams;
-    aParams.Deflection    = 0.1;
-    aParams.Angle         = 0.349066;
+    aParams.Deflection    = aDefl;
+    aParams.Angle         = anAngle;
     aParams.InParallel    = false;
     aParams.Relative      = false;
     aParams.MinSize       = Precision::Confusion();
@@ -5133,6 +5141,127 @@ int main(int argc, char** argv)
     return 0;
   }
 
+  if (argc > 3 && std::string(argv[2]) == "--edev")
+  {
+    // TEMP: per-edge `ShapeAnalysis_Edge::CheckSameParameter` deviation on every
+    // ancestor face of the edges of one face (`ShapeFix_Edge.cxx:869-928`).
+    const int want = std::atoi(argv[3]);
+    TopTools_IndexedDataMapOfShapeListOfShape aEF;
+    TopExp::MapShapesAndAncestors(aShape, TopAbs_EDGE, TopAbs_FACE, aEF);
+    std::vector<TopoDS_Face> aFaces;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next())
+    {
+      aFaces.push_back(TopoDS::Face(ex.Current()));
+    }
+    int k = 0;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next(), ++k)
+    {
+      if (k != want)
+      {
+        continue;
+      }
+      int ei = 0;
+      for (TopExp_Explorer ee(ex.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+      {
+        const TopoDS_Edge& anE = TopoDS::Edge(ee.Current());
+        std::cout << std::fixed << std::setprecision(9) << "EDEV face=" << k << " e[" << ei
+                  << "] etol=" << BRep_Tool::Tolerance(anE) << "\n";
+        if (!aEF.Contains(anE))
+        {
+          std::cout << "  (no ancestor face)\n";
+          continue;
+        }
+        for (TopTools_ListIteratorOfListOfShape it(aEF.FindFromKey(anE)); it.More(); it.Next())
+        {
+          const TopoDS_Face& aF = TopoDS::Face(it.Value());
+          double             aDev = 0.0;
+          ShapeAnalysis_Edge sae;
+          const bool         st = sae.CheckSameParameter(anE, aF, aDev);
+          int                fi = -1;
+          for (int j = 0; j < (int)aFaces.size(); ++j)
+          {
+            if (aFaces[j].IsSame(aF))
+            {
+              fi = j;
+              break;
+            }
+          }
+          BRepAdaptor_Surface aAS(aF);
+          double                cf = 0.0, cl = 0.0, f3 = 0.0, l3 = 0.0;
+          BRep_Tool::Curve(anE, f3, l3);
+          occ::handle<Geom2d_Curve> aPC = BRep_Tool::CurveOnSurface(anE, aF, cf, cl);
+          std::cout << "  -> face=" << fi << " type=" << (int)aAS.GetType()
+                    << " dev=" << std::setprecision(9) << aDev
+                    << " ok=" << st << " r3=[" << f3 << "," << l3 << "]"
+                    << " pc=" << (aPC.IsNull() ? "null" : aPC->DynamicType()->Name())
+                    << " rp=[" << cf << "," << cl << "]"
+                    << " etol=" << BRep_Tool::Tolerance(anE) << "\n";
+        }
+      }
+      return 0;
+    }
+    std::cout << "EDEV none\n";
+    return 0;
+  }
+
+  if (argc > 3 && std::string(argv[2]) == "--etol")
+  {
+    // TEMP: per-edge tolerance and the `ShapeFix::SameParameter` planar
+    // deviation (`ShapeFix.cxx:224-243`) for one face.
+    const int want = std::atoi(argv[3]);
+    int       k    = 0;
+    for (TopExp_Explorer ex(aShape, TopAbs_FACE); ex.More(); ex.Next(), ++k)
+    {
+      if (k != want)
+      {
+        continue;
+      }
+      const TopoDS_Face&          aF = TopoDS::Face(ex.Current());
+      BRepAdaptor_Surface         aAS(aF);
+      const occ::handle<Geom_Surface>& aSurf = BRep_Tool::Surface(aF);
+      std::cout << std::fixed << std::setprecision(9) << "ETOL face=" << k
+                << " ftol=" << BRep_Tool::Tolerance(aF)
+                << " surf=" << (aSurf.IsNull() ? "null" : aSurf->DynamicType()->Name()) << "\n";
+      int ei = 0;
+      for (TopExp_Explorer ee(aF, TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+      {
+        TopoDS_Edge              E = TopoDS::Edge(ee.Current());
+        double                   f3, l3;
+        occ::handle<Geom_Curve>  c3d = BRep_Tool::Curve(E, f3, l3);
+        double                   f = f3, l = l3;
+        occ::handle<Geom2d_Curve> c2d = BRep_Tool::CurveOnSurface(E, aF, f, l);
+        std::cout << std::setprecision(9) << "  e[" << ei << "] ori=" << (int)E.Orientation()
+                  << " etol=" << BRep_Tool::Tolerance(E)
+                  << " c3d=" << (c3d.IsNull() ? "null" : c3d->DynamicType()->Name())
+                  << " r3=" << f3 << "," << l3;
+        if (c2d.IsNull())
+        {
+          std::cout << " pc=null\n";
+          continue;
+        }
+        std::cout << " pc=" << c2d->DynamicType()->Name() << " rp=" << f << "," << l;
+        double maxd = 0.0;
+        for (int i = 0; i < 23; i++)
+        {
+          double par = (f * (22 - i) + l * i) / 22.0;
+          gp_Pnt p3  = c3d->Value(par);
+          gp_Pnt2d p2 = c2d->Value(par);
+          gp_Pnt pq  = aAS.Value(p2.X(), p2.Y());
+          double d   = p3.Distance(pq);
+          if (d > maxd)
+          {
+            maxd = d;
+          }
+        }
+        std::cout << " sp_maxd=" << std::setprecision(9) << maxd
+                  << " tol_formula=" << 1.00005 * maxd << "\n";
+      }
+      return 0;
+    }
+    std::cout << "ETOL none\n";
+    return 0;
+  }
+
   if (argc > 8 && std::string(argv[2]) == "--fbox")
   {
     const double q[6] = {atof(argv[3]), atof(argv[4]), atof(argv[5]),
@@ -5156,6 +5285,8 @@ int main(int argc, char** argv)
       occ::handle<ShapeAnalysis_Surface> aSAS = new ShapeAnalysis_Surface(aRaw);
       std::cout << std::fixed << std::setprecision(5) << "FBOX face=" << k << " bbox (" << v[0] << "," << v[1]
                 << "," << v[2] << ")-(" << v[3] << "," << v[4] << "," << v[5] << ")"
+                << " ftol=" << std::setprecision(9) << BRep_Tool::Tolerance(aF)
+                << std::setprecision(5)
                 << " surf=" << (int)anAS.GetType()
                 << " raw=" << (aRaw.IsNull() ? "null" : aRaw->DynamicType()->Name())
                 << " astype=" << (int)aSAS->Adaptor3d()->GetType()
@@ -5178,7 +5309,10 @@ int main(int argc, char** argv)
           std::cout << std::fixed << std::setprecision(6) << "FBOX   e[" << ei
                     << "] ori=" << (int)E.Orientation() << " first=(" << pf.X() << "," << pf.Y() << ","
                     << pf.Z() << ") last=(" << pl.X() << "," << pl.Y() << "," << pl.Z()
-                    << ") deg=" << BRep_Tool::Degenerated(E) << "\n";
+                    << ") deg=" << BRep_Tool::Degenerated(E)
+                    << " etol=" << std::setprecision(9) << BRep_Tool::Tolerance(E)
+                    << " v1tol=" << BRep_Tool::Tolerance(vf)
+                    << " v2tol=" << BRep_Tool::Tolerance(vl) << std::setprecision(6) << "\n";
         }
       }
       return 0;

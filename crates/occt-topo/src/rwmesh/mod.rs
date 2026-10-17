@@ -27,14 +27,41 @@ pub(crate) use crate::shape::{Compound, TopoShape};
 }
 
 
+mod coordinate_system;
+mod mesh_name;
 mod scene;
 mod vrml;
 mod gltf;
+mod gltf_caf_writer;
+mod gltf_document;
+mod gltf_extras;
+mod gltf_file;
+mod gltf_late_data;
+mod gltf_material;
+mod gltf_prim_array;
+mod gltf_shape_reader;
+mod gltf_triangulation_reader;
+mod gltf_types;
 mod obj_caf_writer;
+mod ply_caf_writer;
+pub use coordinate_system::*;
+pub use mesh_name::*;
 pub use scene::*;
 pub use vrml::*;
 pub use gltf::*;
+pub use gltf_caf_writer::{
+    bin_file_path, perform as perform_gltf, GltfCafNode, GltfCafWriterOptions,
+    GltfCafWriterOutput, GltfWriterTrsfFormat,
+};
+pub use gltf_extras::*;
+pub use gltf_file::*;
+pub use gltf_material::*;
+pub use gltf_prim_array::*;
+pub use gltf_shape_reader::*;
 pub use obj_caf_writer::*;
+pub use ply_caf_writer::{
+    cxx_g, cxx_g6, perform as perform_ply, PlyCafWriterOptions, PlyWriterContext,
+};
 
 #[cfg(test)]
 #[path = "tests.rs"]

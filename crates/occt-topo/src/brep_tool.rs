@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use occt_core::gp::GpPnt;
+use occt_core::poly::Triangulation;
 use occt_geom::{Curve, Surface};
 
 use crate::abs::ShapeType;
@@ -40,6 +41,36 @@ impl BRepTool {
     /// the vertex has no registered geometry.
     pub fn vertex_point(v: &Vertex) -> GpPnt {
         GeometryRegistry::global().vertex_point(&v.0)
+    }
+
+    /// `BRep_Tool::Triangulation(theFace, theLocation, NONE)`
+    /// (`BRep_Tool.cxx:111-119`): the face's active triangulation, if any.
+    ///
+    /// OCCT also returns the face location through the out parameter
+    /// (`cxx:116`); the port's face location lives on the `TopoShape`, and no
+    /// caller of this accessor needs it, so only the triangulation is returned.
+    ///
+    /// UNPORTED: the `Poly_MeshPurpose` argument (`cxx:115`) — see
+    /// [`crate::tshape::TShape::face_triangulation`].
+    pub fn face_triangulation(face: &Face) -> Option<Arc<Triangulation>> {
+        let ts = face.0.tshape.read().unwrap();
+        ts.face_triangulation().cloned()
+    }
+
+    /// `BRep_Tool::Triangulations(theFace, theLocation)`
+    /// (`BRep_Tool.cxx:123-130`): every triangulation attached to the face.
+    pub fn face_triangulations(face: &Face) -> Vec<Arc<Triangulation>> {
+        let ts = face.0.tshape.read().unwrap();
+        ts.face_triangulations().to_vec()
+    }
+
+    /// `BRep_Tool::Polygon3D(theEdge, theLocation)`
+    /// (`BRep_Tool.cxx:723-741`): the polygon of a polygon-backed edge, i.e. the
+    /// `BRep_Polygon3D` representation `BRep_Builder::UpdateEdge(E, P, L)`
+    /// installs. `None` for an edge that carries only a curve.
+    pub fn edge_polygon3d(edge: &Edge) -> Option<Arc<occt_core::poly::Polygon3D>> {
+        let ts = edge.0.tshape.read().unwrap();
+        ts.edge_core().and_then(|c| c.polygon3d.clone())
     }
 
     /// Version of Tolerance with a minimal value -- a port of

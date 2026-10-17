@@ -28,7 +28,9 @@ impl<'a> Resolver<'a> {
             "FACE_BOUND" => self.resolve_outer_bound(rec),
             "ADVANCED_FACE" => self.resolve_face(rec),
             "CLOSED_SHELL" => self.resolve_shell(rec),
+            "OPEN_SHELL" => self.resolve_shell(rec),
             "MANIFOLD_SOLID_BREP" => self.resolve_solid(rec),
+            "SHELL_BASED_SURFACE_MODEL" => self.resolve_shell_based_surface_model(rec),
             "BREP_WITH_VOIDS" => self.resolve_brep_with_voids(rec),
             "MAPPED_ITEM" => self.resolve_mapped_item(rec),
             other => {

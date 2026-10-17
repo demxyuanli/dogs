@@ -137,7 +137,22 @@ pub(crate) fn extrema_locate_ext_pc(
     first: f64,
     last: f64,
 ) -> Option<(f64, GpPnt)> {
-    let an_ext = LocateExtPC::new_range(p, curve, t_seed, first, last, EXTREMA_EPS);
+    extrema_locate_ext_pc_with_tol(curve, p, t_seed, first, last, EXTREMA_EPS)
+}
+
+/// Same search with the caller's `TolF`. `Extrema_GLocateExtPC.hxx:71-72`:
+/// `TolF` is the iteration stop criterion `abs(Un - Un-1) < TolF`, and the
+/// free-form arm hands it to `myLocExtPC.Initialize` (`hxx:167,218,255`), so
+/// callers that pass their own tolerance must use this entry point.
+pub(crate) fn extrema_locate_ext_pc_with_tol(
+    curve: &dyn Curve,
+    p: &GpPnt,
+    t_seed: f64,
+    first: f64,
+    last: f64,
+    tol_f: f64,
+) -> Option<(f64, GpPnt)> {
+    let an_ext = LocateExtPC::new_range(p, curve, t_seed, first, last, tol_f);
     if !an_ext.is_done() {
         return None;
     }

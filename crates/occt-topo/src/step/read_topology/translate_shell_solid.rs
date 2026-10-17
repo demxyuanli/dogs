@@ -1,4 +1,4 @@
-//! `StepToTopoDS_TranslateShell` / `TranslateSolid` with `StepToTopoDS_Builder`: `CLOSED_SHELL`, `MANIFOLD_SOLID_BREP`, `BREP_WITH_VOIDS` and the oriented closed shell.
+//! `StepToTopoDS_TranslateShell` / `TranslateSolid` with `StepToTopoDS_Builder`: `CLOSED_SHELL`, `OPEN_SHELL`, `SHELL_BASED_SURFACE_MODEL`, `MANIFOLD_SOLID_BREP`, `BREP_WITH_VOIDS` and the oriented closed shell.
 use super::*;
 
 impl<'a> Resolver<'a> {
@@ -117,6 +117,57 @@ impl<'a> Resolver<'a> {
             }
         }
         Ok(self.b.make_solid(&shells).0)
+    }
+
+    /// `StepToTopoDS_Builder::Init(ShellBasedSurfaceModel)`
+    /// (`StepToTopoDS_Builder.cxx:384-459`), reached from
+    /// `STEPControl_ActorRead::TransferEntity` (`cxx:1837-1843`). Every entry of
+    /// `sbsm_boundary` (a `shell` select) goes through
+    /// `StepToTopoDS_TranslateShell::Init` (`StepToTopoDS_TranslateShell.cxx:
+    /// 53-118`) and is added to a compound; an open shell is flagged
+    /// `Closed(false)` (`StepToTopoDS_Builder.cxx:425`) and a closed one
+    /// `Closed(true)` (`cxx:442`). The result is that compound when the boundary
+    /// set holds more than one entry, else the last shell (`cxx:452-458`). A
+    /// shell that does not map is a warning, not a failure (`cxx:431-433`,
+    /// `:447-449`).
+    pub(in crate::step) fn resolve_shell_based_surface_model(
+        &self,
+        rec: &'a Record,
+    ) -> Result<TopoShape, String> {
+        let boundaries = parse_ref_list(&rec.args[1]);
+        let mut shells: Vec<TopoShape> = Vec::with_capacity(boundaries.len());
+        let mut last: Option<TopoShape> = None;
+        for &b in &boundaries {
+            // `aShell.OpenShell()` / `aShell.ClosedShell()`: a `shell` select
+            // that is neither (`VERTEX_SHELL` / `WIRE_SHELL`) takes no branch.
+            let kind = match self.records.get(&b) {
+                Some(r) => r.type_name.clone(),
+                None => continue,
+            };
+            let closed = match kind.as_str() {
+                "OPEN_SHELL" => false,
+                "CLOSED_SHELL" => true,
+                _ => continue,
+            };
+            match self.resolve_shape(b) {
+                Ok(shell) if shell.is_shell() => {
+                    shell.set_closed(closed);
+                    last = Some(shell.clone());
+                    shells.push(shell);
+                }
+                Ok(_) => self.warn(format!(
+                    "#{b}: shell from SHELL_BASED_SURFACE_MODEL is not a shell"
+                )),
+                Err(e) => self.warn(format!(
+                    "#{b}: shell from SHELL_BASED_SURFACE_MODEL not mapped to TopoDS: {e}"
+                )),
+            }
+        }
+        if boundaries.len() > 1 {
+            // `cxx:452-456`: the compound, even when no boundary mapped.
+            return Ok(self.b.make_compound_of(&shells).0);
+        }
+        last.ok_or_else(|| "SHELL_BASED_SURFACE_MODEL: no shell mapped".into())
     }
 
     /// One void of a `BREP_WITH_VOIDS`: `ORIENTED_CLOSED_SHELL(name, *,

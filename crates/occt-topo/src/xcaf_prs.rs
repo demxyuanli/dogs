@@ -1,11 +1,11 @@
 //! `XCAFPrs_Style` and the `XCAFPrs` style helpers. Source: `XCAFPrs_Style.hxx`,
 //! `XCAFPrs.cxx`.
 //!
-//! `XCAFPrs_Style` is the carrier between the STEP colour reader
-//! (`STEPCAFControl_Reader::ReadColors`) and the mesh writers
-//! (`RWMesh_ShapeIterator`, `RWMesh_FaceIterator`, `RWObj_ObjMaterialMap`). The
-//! port carries the shape / surface colour / curve colour / visibility subset
-//! those callers read back:
+//! `XCAFPrs_Style` is the carrier between the colour / material readers
+//! (`STEPCAFControl_Reader::ReadColors`, the document-level format readers) and
+//! the mesh writers (`RWMesh_ShapeIterator`, `RWMesh_FaceIterator`,
+//! `RWObj_ObjMaterialMap`). The port carries the surface colour / curve colour /
+//! material / visibility subset those callers read back:
 //!
 //! * [`XcafPrsStyle`] — `XCAFPrs_Style` (`XCAFPrs_Style.hxx:27-120`).
 //! * [`dispatch_face_styles`] — `RWMesh_ShapeIterator::dispatchStyles`
@@ -13,16 +13,31 @@
 //!   TopAbs_FACE`, i.e. the function that turns the label-keyed style map of
 //!   `XCAFPrs::CollectStyleSettings` into the per-face style the OBJ writer
 //!   reads.
+//! * [`collect_style_settings`] — `XCAFPrs::CollectStyleSettings`
+//!   (`XCAFPrs.cxx:116-330`) over a [`BRepModel`] label tree.
 //!
-//! **UNPORTED**: `Material()` is always unset — `XCAFDoc_VisMaterial` (common /
-//! PBR material attributes, base colour texture) has no counterpart in this
-//! crate, and the STEP read path never sets it either
-//! (`STEPCAFControl_Reader::ReadColors` only calls `SetColor` / `SetVisibility`;
-//! `ReadMaterials` is not ported). Every `Material()`-guarded branch of the OBJ
-//! writer is therefore unreachable, as documented in
-//! `rwmesh/obj_caf_writer.rs`. Also UNPORTED: `XCAFPrs::CollectStyleSettings`'s
-//! layer (`XCAFDoc_LayerTool`) and SHUO arms (`XCAFPrs.cxx:114-330`) — this
-//! crate's `BRepModel` has no document tree; the reader-side analogue lives in
+//! `myMaterial` is the [`XcafDocVisMaterial`] the document attaches to the
+//! label (`XCAFPrs_Style.hxx:40-48`); `BaseColorTexture()` (`hxx:86-103`) reads
+//! its PBR base-colour or common diffuse texture. In OCCT the material is
+//! written into the document by a document-level reader (`RWGltf_CafReader`,
+//! `RWObj_CafReader`, XBF) and read back by `XCAFPrs::CollectStyleSettings`
+//! through `aMatTool->GetShapeMaterial(aLabel)` (`XCAFPrs.cxx:174`, `cxx:251`).
+//! `STEPCAFControl_Reader` never writes one — `rg VisMaterial` over it is empty,
+//! while `STEPCAFControl_Writer.cxx:209,1542,2242` only *reads* it back for
+//! export — so on the STEP -> OBJ path `Material()` stays null in OCCT too and
+//! `RWObj_ObjMaterialMap`'s `cxx:85-92` arm is equally dead there.
+//!
+//! The XCAF-document glTF read that is the production producer of materials is
+//! ported (`rwmesh::gltf_document`): the reader builds the bare-triangulation
+//! proxy faces of `BRep_Builder::MakeFace(aFace, aMeshData)`
+//! (`RWGltf_GltfJsonParser.cxx:2002-2006`) through the `triangulations` slot of
+//! `FaceGeomCore`, fills them in `readLateData`
+//! (`RWGltf_CafReader.cxx:410-430`) and replays the attributes into the
+//! `BRepModel` labels.
+//!
+//! Also UNPORTED: [`collect_style_settings`]'s layer (`XCAFDoc_LayerTool`) and
+//! SHUO arms (`XCAFPrs.cxx:114-330`) — this crate's `BRepModel` has no layer
+//! tree and no NAUO/SHUO graph; the reader-side flat analogue lives in
 //! `step::read_colors`.
 
 use std::collections::HashMap;
@@ -30,9 +45,12 @@ use std::collections::HashMap;
 use occt_core::quantity::{Color, ColorRGBA};
 
 use crate::abs::ShapeType;
+use crate::image_texture::ImageTexture;
+use crate::model::BRepModel;
 use crate::shape::TopoShape;
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools_full::faces_of;
+use crate::xcaf_doc_vis_material::XcafDocVisMaterial;
 
 /// `XCAFPrs_Style` (`XCAFPrs_Style.hxx:27-120`): a set of styling settings
 /// applicable to a (sub)shape.
@@ -42,6 +60,9 @@ pub struct XcafPrsStyle {
     color_surf: Option<ColorRGBA>,
     /// `myHasColorCurv` / `myColorCurv`.
     color_curv: Option<Color>,
+    /// `myMaterial` (`XCAFPrs_Style.hxx:134`): the visualization material the
+    /// document attaches to the label. `None` stands for a null handle.
+    material: Option<XcafDocVisMaterial>,
     /// `myIsVisible`.
     is_visible: bool,
 }
@@ -53,6 +74,7 @@ impl Default for XcafPrsStyle {
         Self {
             color_surf: None,
             color_curv: None,
+            material: None,
             is_visible: true,
         }
     }
@@ -71,7 +93,38 @@ impl XcafPrsStyle {
 
     /// `XCAFPrs_Style::IsEmpty` (`hxx:35-38`): does not override any property.
     pub fn is_empty(&self) -> bool {
-        self.color_surf.is_none() && self.color_curv.is_none() && self.is_visible
+        self.color_surf.is_none()
+            && self.color_curv.is_none()
+            && self.material.is_none()
+            && self.is_visible
+    }
+
+    /// `XCAFPrs_Style::Material()` (`hxx:40`).
+    pub fn material(&self) -> Option<&XcafDocVisMaterial> {
+        self.material.as_ref()
+    }
+
+    /// `XCAFPrs_Style::SetMaterial()` (`hxx:43-46`).
+    pub fn set_material(&mut self, material: Option<XcafDocVisMaterial>) {
+        self.material = material;
+    }
+
+    /// `XCAFPrs_Style::BaseColorTexture` (`hxx:86-103`): the PBR base-colour
+    /// texture when the material defines PBR and carries one, else the common
+    /// diffuse texture, else null.
+    pub fn base_color_texture(&self) -> Option<&ImageTexture> {
+        let material = self.material.as_ref()?;
+        if material.has_pbr_material() {
+            if let Some(tex) = material.pbr_material().base_color_texture.as_ref() {
+                return Some(tex);
+            }
+        }
+        if material.has_common_material() {
+            if let Some(tex) = material.common_material().diffuse_texture.as_ref() {
+                return Some(tex);
+            }
+        }
+        None
     }
 
     /// `XCAFPrs_Style::IsSetColorSurf` (`hxx:50`).
@@ -131,33 +184,42 @@ impl XcafPrsStyle {
     /// `XCAFPrs_Style::IsEqual` (`XCAFPrs_Style.hxx:107-122`) / `operator==`
     /// (`hxx:125`). Note the visibility short-circuit: an invisible style equals
     /// every other invisible style regardless of its unset colour slots
-    /// (`hxx:112-115`). `myMaterial` is always null here (module header), so
-    /// that term drops out.
+    /// (`hxx:112-115`). `myMaterial == theOther.myMaterial` (`hxx:119`) compares
+    /// handles by pointer, which [`XcafDocVisMaterial::id`] reproduces: two
+    /// separately created materials stay distinct even when their values match.
     pub fn is_equal(&self, other: &XcafPrsStyle) -> bool {
         if self.is_visible != other.is_visible {
             return false;
         } else if !self.is_visible {
             return true;
         }
+        let mat_equal = match (&self.material, &other.material) {
+            (None, None) => true,
+            (Some(a), Some(b)) => a.id() == b.id(),
+            _ => false,
+        };
         self.color_surf.is_some() == other.color_surf.is_some()
             && self.color_curv.is_some() == other.color_curv.is_some()
+            && mat_equal
             && (self.color_surf.is_none() || self.color_surf == other.color_surf)
             && (self.color_curv.is_none() || self.color_curv == other.color_curv)
     }
 
     /// `RWMesh_ShapeIterator::initShape`'s `myHasColor` flag
-    /// (`RWMesh_ShapeIterator.cxx:145-162`): set by a material or by either
-    /// colour slot. `Material()` is always null here (module header), so a
-    /// surface or curve colour is what flags a face as coloured.
+    /// (`RWMesh_ShapeIterator.cxx:140-163`): set by any material handle or by
+    /// either colour slot.
     pub fn has_color(&self) -> bool {
-        self.is_set_color_surf() || self.is_set_color_curv()
+        self.material.is_some() || self.is_set_color_surf() || self.is_set_color_curv()
     }
 
     /// `RWMesh_ShapeIterator::initShape`'s `myColor`
     /// (`RWMesh_ShapeIterator.cxx:149-162`): the material's base colour, else
-    /// the surface colour, else the curve colour.
+    /// the surface colour, else the curve colour. The material arm returns
+    /// `Quantity_ColorRGBA`'s externally-visible sRGB triple.
     pub fn color(&self) -> ColorRGBA {
-        if self.is_set_color_surf() {
+        if let Some(material) = self.material.as_ref() {
+            material.base_color().to_srgb()
+        } else if self.is_set_color_surf() {
             self.get_color_surf_rgba()
         } else if self.is_set_color_curv() {
             let c = self.get_color_curv();
@@ -169,13 +231,18 @@ impl XcafPrsStyle {
 
     /// The colour slots `RWMesh_ShapeIterator::dispatchStyles` fills from the
     /// parent style when the shape's own style leaves them unset
-    /// (`RWMesh_ShapeIterator.cxx:103-112`).
+    /// (`RWMesh_ShapeIterator.cxx:103-112`), plus the material slot
+    /// (`cxx:113-116`: `if (aCafStyle.Material().IsNull() && !theStyle.Material()
+    /// .IsNull()) aCafStyle.SetMaterial(theStyle.Material())`).
     pub fn merge_missing_from(&mut self, other: &XcafPrsStyle) {
         if self.color_curv.is_none() && other.is_set_color_curv() {
             self.color_curv = Some(other.get_color_curv());
         }
         if self.color_surf.is_none() && other.is_set_color_surf() {
             self.color_surf = Some(other.get_color_surf_rgba());
+        }
+        if self.material.is_none() && other.material.is_some() {
+            self.material = other.material.clone();
         }
     }
 }
@@ -232,6 +299,93 @@ pub fn dispatch_face_styles(
         }
     }
     out
+}
+
+/// `XCAFPrs::CollectStyleSettings` (`XCAFPrs.cxx:116-330`) for one label of a
+/// [`BRepModel`] document: the shape-keyed style map
+/// `RWMesh_ShapeIterator::dispatchStyles` reads (`theSettings`).
+///
+/// The label walk is faithful (`cxx:120-330`): the referred shape first, then
+/// the components of an assembly, then the sub-shape labels and the label
+/// itself, each binding `XCAFPrs_Style` under the label's shape with last write
+/// winning.
+///
+/// UNPORTED, with the `cxx` lines they come from: the `XCAFDoc_LayerTool` arms
+/// (`cxx:125-142`, `:178-216`: hidden layers, colour-by-layer and the
+/// `theLayerColor` fallback — `BRepModel` has no layer tree), the SHUO arm
+/// (`cxx:222-303`, no NAUO/SHUO graph) and `XCAFDoc_ColorTool::IsColorByLayer`.
+/// `IsVisible(aLabel)` is always true here: labels carry no visibility
+/// attribute, so the style keeps the constructor's visible default
+/// (`XCAFPrs_Style.hxx:30-33`).
+pub fn collect_style_settings(model: &BRepModel, label: usize) -> Vec<(TopoShape, XcafPrsStyle)> {
+    let mut out = Vec::new();
+    collect_style_settings_into(model, label, &mut out);
+    out
+}
+
+fn collect_style_settings_into(
+    model: &BRepModel,
+    label: usize,
+    out: &mut Vec<(TopoShape, XcafPrsStyle)>,
+) {
+    if label >= model.labels.len() {
+        return;
+    }
+    // "for references, first collect colors of referred shape" (`cxx:120-145`).
+    if let Some(ref_label) = model.referred_label(label) {
+        collect_style_settings_into(model, ref_label, out);
+    }
+    // "for assemblies, first collect colors defined in components"
+    // (`cxx:147-158`).
+    if model.is_assembly(label) {
+        for &component in &model.labels[label].children {
+            collect_style_settings_into(model, component, out);
+        }
+    }
+    // "collect settings on subshapes" plus the label itself (`cxx:160-169`).
+    let mut candidates: Vec<usize> = model.labels[label]
+        .children
+        .iter()
+        .copied()
+        .filter(|&child| matches!(model.labels.get(child).map(|l| l.role), Some(crate::model::LabelRole::SubShape)))
+        .collect();
+    candidates.push(label);
+    for candidate in candidates {
+        let mut style = XcafPrsStyle::default();
+        // `aStyle.SetMaterial(aMatTool->GetShapeMaterial(aLabel))` (`cxx:176`).
+        if let Some(material) = model.labels[candidate].material.and_then(|i| model.get_material(i)) {
+            style.set_material(Some(material.clone()));
+        }
+        // `fillStyleColors` (`XCAFPrs.cxx:34-53`).
+        if let Some(c) = model.labels[candidate].color {
+            style.set_color_surf(ColorRGBA { r: c.r, g: c.g, b: c.b, a: 1.0 });
+        }
+        if let Some(c) = model.labels[candidate].color_curv {
+            style.set_color_curv(c);
+        }
+        // `if (aStyle.IsEmpty()) continue;` (`cxx:305-309`).
+        if style.is_empty() {
+            continue;
+        }
+        let Some(shape) = model.labels[candidate].shape.clone() else { continue };
+        // `if (aSubshape.ShapeType() == TopAbs_COMPOUND && aSubshape.NbChildren()
+        // == 0) continue;` (`cxx:311-318`).
+        if shape.shape_type() == ShapeType::Compound && shape.tshape.read().unwrap().nb_children() == 0 {
+            continue;
+        }
+        bind_style(out, shape, style);
+    }
+}
+
+/// `theSettings.ChangeSeek` / `Add` (`XCAFPrs.cxx:321-329`): replace the style
+/// bound to the same shape (`TopTools_ShapeMapHasher` is `IsSame`).
+fn bind_style(out: &mut Vec<(TopoShape, XcafPrsStyle)>, shape: TopoShape, style: XcafPrsStyle) {
+    let key = GeometryRegistry::shape_key(&shape);
+    if let Some(slot) = out.iter_mut().find(|(s, _)| GeometryRegistry::shape_key(s) == key) {
+        slot.1 = style;
+    } else {
+        out.push((shape, style));
+    }
 }
 
 #[cfg(test)]

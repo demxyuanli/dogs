@@ -37,3 +37,6 @@ crates/occt-topo/_*.txt
 
 # gate-run evidence logs (docs/goals/drift-and-gap-autofix)
 /.target-gate/
+
+# Large local STEP inputs (flex assembly sweep) - not tracked
+/data/occ/flex/

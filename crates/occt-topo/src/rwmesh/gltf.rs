@@ -1,152 +1,374 @@
 use super::prelude::*;
+use super::gltf_types::{GlMesh, GlNode, GltfCtx};
+use super::gltf_triangulation_reader::GltfTriangulationReader;
 use super::*;
 
+use crate::tdata_std_named_data::TDataStdNamedData;
+use crate::xcaf_doc_vis_material::XcafDocVisMaterial;
 
-/// Column-major glTF 4x4 matrix → `GpTrsf` (linear part + translation).
-pub(super) fn trsf_from_matrix(m: &[f64]) -> GpTrsf {
-    let mut mat = occt_core::gp::GpMat::zero();
-    mat.m[0][0] = m[0];
-    mat.m[0][1] = m[4];
-    mat.m[0][2] = m[8];
-    mat.m[1][0] = m[1];
-    mat.m[1][1] = m[5];
-    mat.m[1][2] = m[9];
-    mat.m[2][0] = m[2];
-    mat.m[2][1] = m[6];
-    mat.m[2][2] = m[10];
-    GpTrsf {
-        scale: 1.0,
-        shape: TrsfForm::CompoundTrsf,
-        matrix: mat,
-        loc: GpXyz::new(m[12], m[13], m[14]),
+/// `RWGltf_GltfPrimitiveMode` (`RWGltf_GltfPrimitiveMode.hxx:20-30`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i32)]
+pub enum RwGltfPrimitiveMode {
+    /// `RWGltf_GltfPrimitiveMode_UNKNOWN` — unknown or invalid type.
+    Unknown = -1,
+    /// `GL_POINTS`.
+    Points = 0,
+    /// `GL_LINES`.
+    Lines = 1,
+    /// `GL_LINE_LOOP`.
+    LineLoop = 2,
+    /// `GL_LINE_STRIP`.
+    LineStrip = 3,
+    /// `GL_TRIANGLES` (the default when `mode` is absent).
+    #[default]
+    Triangles = 4,
+    /// `GL_TRIANGLE_STRIP`.
+    TriangleStrip = 5,
+    /// `GL_TRIANGLE_FAN`.
+    TriangleFan = 6,
+}
+
+impl RwGltfPrimitiveMode {
+    /// `RWGltf_GltfJsonParser.cxx:1810-1814`: the accepted integer range.
+    pub fn from_int(v: i64) -> Self {
+        match v {
+            0 => Self::Points,
+            1 => Self::Lines,
+            2 => Self::LineLoop,
+            3 => Self::LineStrip,
+            4 => Self::Triangles,
+            5 => Self::TriangleStrip,
+            6 => Self::TriangleFan,
+            _ => Self::Unknown,
+        }
+    }
+
+    /// `RWGltf_GltfJsonParser.cxx:1816-1822`: only points, lines and triangles
+    /// are converted into shapes; the strip/loop/fan modes are skipped with a
+    /// warning.
+    pub fn is_supported(self) -> bool {
+        matches!(self, Self::Points | Self::Lines | Self::Triangles)
+    }
+
+    /// `RWGltf_GltfJsonParser.cxx:1951-1958`: only triangles carry a
+    /// triangulation.
+    pub fn is_triangles(self) -> bool {
+        self == Self::Triangles
     }
 }
 
-/// Depth-first walk of the node graph; emits one `MeshNode` per mesh node with
-/// the accumulated world transform applied to its vertices and the primitive's
-/// material (and base-color texture path, if any) attached.
+
+/// Column-major glTF 4x4 matrix → `GpTrsf`, following
+/// `RWGltf_GltfJsonParser::parseTransformationMatrix`
+/// (`RWGltf_GltfJsonParser.cxx:478-497`): an identity matrix leaves the
+/// transform untouched, anything else goes through `gp_Trsf::SetValues`, which
+/// recomputes the scale from the determinant and orthogonalizes the linear part
+/// (so a matrix that is not a similarity loses its anisotropy, exactly as
+/// `gp_Trsf` does).
+pub(super) fn trsf_from_matrix(m: &[f64]) -> Result<GpTrsf, &'static str> {
+    const IDENTITY: [f64; 16] = [
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ];
+    if m == IDENTITY {
+        return Ok(GpTrsf::identity());
+    }
+    let mut trsf = GpTrsf::identity();
+    trsf.set_values(
+        m[0], m[4], m[8], m[12],
+        m[1], m[5], m[9], m[13],
+        m[2], m[6], m[10], m[14],
+    )?;
+    Ok(trsf)
+}
+
+/// One placed primitive array: what `bindNamedShape` binds to a node's shape —
+/// the mesh shape (here the deferred primitive array) plus the node location —
+/// together with the attributes `RWMesh_NodeAttributes` carries
+/// (`RWGltf_GltfJsonParser.cxx:2410-2505`).
+pub(super) struct GltfNodeInst {
+    pub(super) late: std::sync::Arc<GltfLatePrimitiveArray>,
+    /// The accumulated world transform of the node. OCCT stores it in the
+    /// shape's `TopLoc_Location`; this reader bakes it into the nodes when the
+    /// scene is materialized.
+    pub(super) world: GpTrsf,
+    /// The glTF node and mesh this placement came from (`RWGltf_GltfJsonParser`
+    /// builds one shape per (node, mesh, primitive array)); the document fill
+    /// needs them to rebuild the node/mesh compound tree.
+    pub(super) node: usize,
+    pub(super) mesh: usize,
+    pub(super) name: String,
+    pub(super) material: Option<Material>,
+    pub(super) vis_material: Option<XcafDocVisMaterial>,
+    pub(super) texture_path: Option<String>,
+    pub(super) named_data: Option<TDataStdNamedData>,
+}
+
+/// Depth-first walk of the node graph; records one [`GltfNodeInst`] per
+/// (node, mesh, primitive array) with the accumulated world transform, the
+/// node's attributes and the shared deferred array.
+///
+/// When `ctx.converter` is not empty, `TransformTransformation` is applied to
+/// the accumulated location (`RWGltf_GltfJsonParser.cxx:493`, `:637`). The
+/// positions themselves are converted by the triangulation reader
+/// (`RWGltf_TriangulationReader.cxx:325`), not here.
 pub(super) fn collect_gltf_nodes(
     nodes: &[GlNode],
     idx: usize,
     world: &GpTrsf,
     ctx: &GltfCtx,
-    out: &mut Vec<MeshNode>,
+    visited: &mut Vec<bool>,
+    out: &mut Vec<GltfNodeInst>,
 ) -> Result<(), String> {
+    // `findNodeShape` (`RWGltf_GltfJsonParser.cxx:1573-1576`): a node that was
+    // already turned into a shape (another scene root, or a second parent in
+    // the graph) reuses that shape; it is not placed twice.
+    if visited[idx] {
+        return Ok(());
+    }
+    visited[idx] = true;
     let n = &nodes[idx];
-    let world = world.multiplied(&n.trsf);
+    // `RWGltf_GltfJsonParser.cxx:493`, `:637`: each node's *local* location is
+    // conjugated by the converter, so a chain of converted locals still composes
+    // to `C * W1 * W2 * ... * C^-1`.
+    let mut local = n.trsf.clone();
+    if !ctx.converter.is_empty() {
+        ctx.converter.transform_transformation(&mut local);
+    }
+    let world = world.multiplied(&local);
+    // glTF 2.0 carries one `mesh`; glTF 1.0 carries a `meshes` array and OCCT
+    // walks both (`RWGltf_GltfJsonParser.cxx:1644-1707`), adding one mesh shape
+    // per entry to the node compound.
+    let mut mesh_ids: Vec<usize> = Vec::with_capacity(n.meshes.len() + 1);
     if let Some(m) = n.mesh {
+        mesh_ids.push(m);
+    }
+    mesh_ids.extend(n.meshes.iter().copied());
+    for m in mesh_ids {
         let mesh = ctx.meshes.get(m).ok_or_else(|| format!("gltf: node {idx}: mesh {m} out of range"))?;
-        for prim in &mesh.prims {
-            let (verts, tris) = read_primitive(prim, ctx.buffers, ctx.views)?;
-            let verts: Vec<GpPnt> = verts.iter().map(|p| p.transformed(&world)).collect();
-            let name = if n.name.is_empty() { format!("mesh_{idx}") } else { n.name.clone() };
+        // `gltfParseMesh` (`cxx:1726-1776`): the mesh's primitive arrays are
+        // parsed once and shared through `myShapeMap[ShapeMapGroup_PrimArray]`.
+        let arrays = ctx.cache.prim_arrays(m, mesh, ctx)?;
+        for (prim, late) in mesh.prims.iter().zip(arrays.iter()) {
+            // `bindNamedShape` (`RWGltf_GltfJsonParser.cxx:2410-2447`):
+            //  * the node's `name` wins; glTF 1.0 falls back to the node id;
+            //  * an unnamed node takes the mesh name when
+            //    `myUseMeshNameAsFallback` is set.
+            // `mesh_{idx}` is this port's container-level uniqueness fallback for
+            // a shape that would otherwise carry no name at all.
+            let name = if !n.name.is_empty() {
+                n.name.clone()
+            } else if ctx.is_gltf1 && !n.id.is_empty() {
+                n.id.clone()
+            } else if ctx.use_mesh_name_as_fallback && !mesh.name.is_empty() {
+                mesh.name.clone()
+            } else {
+                format!("mesh_{idx}")
+            };
 
-            let (material, texture_path) = prim.mat_idx
+            let (material, vis_material, texture_path) = prim.mat_idx
                 .and_then(|mi| ctx.materials.get(mi))
                 .map(|m| {
-                    let mat = Material {
-                        name: m.name.clone(),
-                        diffuse: m.diffuse,
-                        specular: (1.0, 1.0, 1.0),
-                        opacity: m.opacity,
-                    };
-                    let tex = m.base_color_texture
-                        .and_then(|ti| ctx.textures.get(ti).and_then(|o| *o))
-                        .and_then(|ii| ctx.images.get(ii))
-                        .map(|uri| resolve_uri(uri, ctx.base_dir));
-                    (mat, tex)
+                    // `RWGltf_CafReader` binds the `XCAFDoc_VisMaterial` to the
+                    // node style; the `RWMesh_MaterialMap`-side view reads the
+                    // same attribute back (`material_view`).
+                    let vis = m.vis.clone();
+                    let mat = material_view(&vis);
+                    let tex = mat.diffuse_texture.clone();
+                    (Some(mat), Some(vis), tex)
                 })
-                .map(|(mat, tex)| (Some(mat), tex))
-                .unwrap_or((None, None));
+                .unwrap_or((None, None, None));
+            // `RWGltf_GltfJsonParser.cxx:2019-2027`: a line shape carries a
+            // colour (`Style.SetColorCurv`), not an `XCAFDoc_VisMaterial`.
+            let (material, vis_material, texture_path) = if prim.mode == RwGltfPrimitiveMode::Lines
+            {
+                let color = material.as_ref().map(|m| {
+                    let mut m = m.clone();
+                    m.diffuse_texture = None;
+                    m
+                });
+                (color, None, None)
+            } else {
+                (material, vis_material, texture_path)
+            };
 
-            out.push(MeshNode {
+            out.push(GltfNodeInst {
+                late: late.clone(),
+                world: world.clone(),
+                node: idx,
+                mesh: m,
                 name,
-                vertices: verts,
-                triangles: tris,
-                transform: Some(world.clone()),
                 material,
-                uv: None,
+                vis_material,
                 texture_path,
+                // `bindNamedShape` stores `theExtras` on the shape attributes
+                // (`cxx:2422-2424`); the node's own `extras` wins over the
+                // mesh's, which the C++ binds to the Product label instead
+                // (`cxx:1772-1774`).
+                named_data: n.extras.clone().or_else(|| mesh.extras.clone()),
             });
         }
     }
     for &c in &n.children {
-        collect_gltf_nodes(nodes, c, &world, ctx, out)?;
+        collect_gltf_nodes(nodes, c, &world, ctx, visited, out)?;
     }
     Ok(())
 }
 
-/// Resolve a glTF image URI against the scene directory (data: URIs pass through).
-pub(super) fn resolve_uri(uri: &str, base_dir: &Path) -> String {
-    if uri.starts_with("data:") {
-        uri.to_string()
-    } else {
-        base_dir.join(uri).to_string_lossy().to_string()
-    }
+/// Materialize one placed primitive array into a [`MeshNode`].
+///
+/// `RWGltf_CafReader::addShapeIntoDoc` (`cxx:470-688`) puts the shape in the
+/// document with its location; the flat [`MeshScene`] has no location, so the
+/// node's world transform is applied to the resolved triangulation's nodes —
+/// the same point set (`RWGltf_CafReader.cxx:489-519` also scales nodes there).
+/// An unresolved array (`myToSkipLateDataLoading`) yields the proxy shape: the
+/// face exists (`cxx:2000-2007`) but holds no nodes yet.
+pub(super) fn inst_to_node(inst: &GltfNodeInst) -> MeshNode {
+    inst_to_node_at(inst, &inst.world)
 }
 
-/// Read a mesh primitive's positions and indices from the buffer views.
-pub(super) fn read_primitive(prim: &Prim, buffers: &[Vec<u8>], views: &[BufView]) -> Result<(Vec<GpPnt>, Vec<(usize, usize, usize)>), String> {
-    let vbytes = view_bytes(prim.pos_view, buffers, views)?;
-    if prim.pos_comp != 5126 {
-        return Err(format!("gltf: POSITION componentType {} not supported", prim.pos_comp));
-    }
-    let mut verts = Vec::with_capacity(prim.pos_count);
-    for i in 0..prim.pos_count {
-        let off = prim.pos_offset + i * 12;
-        if off + 12 > vbytes.len() {
-            return Err(format!("gltf: POSITION accessor out of range (vertex {i})"));
+/// The primitive array's own geometry, without the placement — the shape
+/// `gltfParsePrimArray` builds and `myShapeMap[ShapeMapGroup_PrimArray]` shares
+/// (`RWGltf_GltfJsonParser.cxx:1969-2013`). OCCT keeps it at the identity
+/// location and places it through the node's `TopLoc_Location`; this crate bakes
+/// the placement into the geometry, so the unplaced shape is what the document
+/// fill keeps on the Product label (`XCAFDoc_ShapeTool::AddComponent(theAssembly,
+/// theShape, ...)` strips the location, `cxx:999-1003`).
+pub(super) fn inst_to_local_node(inst: &GltfNodeInst) -> MeshNode {
+    inst_to_node_at(inst, &GpTrsf::identity())
+}
+
+fn inst_to_node_at(inst: &GltfNodeInst, world: &GpTrsf) -> MeshNode {
+    let resolved = inst.late.resolved();
+    let (vertices, triangles, uv, normals, polyline) = match &resolved {
+        Some(r) => {
+            let vertices = r
+                .triangulation
+                .nodes
+                .iter()
+                .map(|p| p.transformed(world))
+                .collect();
+            let triangles = r
+                .triangulation
+                .triangles
+                .iter()
+                .map(|t| (t.n0, t.n1, t.n2))
+                .collect();
+            let uv = r
+                .triangulation
+                .uv_nodes
+                .as_ref()
+                .map(|u| u.iter().map(|&(x, y)| GpPnt2d::new(x, y)).collect());
+            // The placement is baked into the vertices, so the stored normals
+            // take the same rotation (`gp_Trsf::Transforms` on a direction).
+            let normals = r.triangulation.normals.as_ref().map(|ns| {
+                ns.iter()
+                    .map(|n| {
+                        let mut v = n.coord;
+                        world.transforms_xyz_dir(&mut v);
+                        GpPnt::new(v.x(), v.y(), v.z())
+                    })
+                    .collect()
+            });
+            (vertices, triangles, uv, normals, r.edges.clone())
         }
-        let x = f32::from_le_bytes([vbytes[off], vbytes[off + 1], vbytes[off + 2], vbytes[off + 3]]) as f64;
-        let y = f32::from_le_bytes([vbytes[off + 4], vbytes[off + 5], vbytes[off + 6], vbytes[off + 7]]) as f64;
-        let z = f32::from_le_bytes([vbytes[off + 8], vbytes[off + 9], vbytes[off + 10], vbytes[off + 11]]) as f64;
-        verts.push(GpPnt::new(x, y, z));
+        None => (Vec::new(), Vec::new(), None, None, Vec::new()),
+    };
+    MeshNode {
+        name: inst.name.clone(),
+        vertices,
+        triangles,
+        mode: inst.late.prim_mode(),
+        polyline,
+        transform: Some(inst.world.clone()),
+        material: inst.material.clone(),
+        vis_material: inst.vis_material.clone(),
+        uv,
+        normals,
+        texture_path: inst.texture_path.clone(),
+        named_data: inst.named_data.clone(),
+        late: Some(inst.late.clone()),
     }
+}
 
-    let mut tris = Vec::new();
-    if let Some(vw) = prim.idx_view {
-        let ibytes = view_bytes(Some(vw), buffers, views)?;
-        let sz = match prim.idx_comp {
-            5121 => 1,
-            5123 => 2,
-            _ => 4,
-        };
-        for i in 0..prim.idx_count / 3 {
-            let o = prim.idx_offset + i * 3 * sz;
-            if o + 3 * sz > ibytes.len() {
-                return Err(format!("gltf: indices accessor out of range (tri {i})"));
-            }
-            let a = read_uint(prim.idx_comp, ibytes, o);
-            let b = read_uint(prim.idx_comp, ibytes, o + sz);
-            let c = read_uint(prim.idx_comp, ibytes, o + 2 * sz);
-            tris.push((a, b, c));
+/// Shape-level reuse caches of `RWGltf_GltfJsonParser`: `findMeshShape`
+/// (`RWGltf_GltfJsonParser.cxx:1733`) and `myShapeMap[ShapeMapGroup_PrimArray]`
+/// (`cxx:1847-1877`). OCCT builds a mesh/primitive-array shape once and lets
+/// every node that references it share the same `TopoDS_Shape`; here the shape
+/// is the deferred primitive array, shared by `Arc`.
+///
+/// The primitive-array key is `aPrimArrayId` (`cxx:1847-1856`): the mode, the
+/// indices accessor and every attribute accessor. OCCT additionally binds
+/// `aPrimArrayIdWithMat` and copies the shape when only the material differs
+/// (`cxx:1858-1877`); the deferred array does not depend on the material, and
+/// every emitted node already binds its own material, so the two keys collapse
+/// into one here.
+#[derive(Default)]
+pub(super) struct PrimCache {
+    meshes: std::cell::RefCell<HashMap<usize, Vec<std::sync::Arc<GltfLatePrimitiveArray>>>>,
+    prims: std::cell::RefCell<HashMap<String, std::sync::Arc<GltfLatePrimitiveArray>>>,
+    /// `RWGltf_CafReader::myFaceList` (`RWGltf_CafReader.cxx:2000-2006`): the
+    /// triangle primitive arrays, in creation order, handed to
+    /// [`super::gltf_late_data::read_late_data`].
+    faces: std::cell::RefCell<Vec<std::sync::Arc<GltfLatePrimitiveArray>>>,
+}
+
+impl PrimCache {
+    /// `findMeshShape` (`cxx:1733-1736`): a mesh's primitive arrays are built
+    /// once per mesh id.
+    pub(super) fn prim_arrays(
+        &self,
+        mesh_idx: usize,
+        mesh: &GlMesh,
+        ctx: &GltfCtx,
+    ) -> Result<Vec<std::sync::Arc<GltfLatePrimitiveArray>>, String> {
+        if let Some(data) = self.meshes.borrow().get(&mesh_idx) {
+            return Ok(data.clone());
         }
-    } else {
-        // No index accessor: vertices are a triangle list.
-        for i in 0..prim.pos_count / 3 {
-            tris.push((3 * i, 3 * i + 1, 3 * i + 2));
+        let mut out = Vec::with_capacity(mesh.prims.len());
+        for (prim_idx, prim) in mesh.prims.iter().enumerate() {
+            let id = prim.array_id();
+            let cached = self.prims.borrow().get(&id).cloned();
+            let late = match cached {
+                Some(late) => late,
+                None => {
+                    // `gltfParsePrimArray` (`cxx:1879-1885`).
+                    let late = std::sync::Arc::new(gltf_types::build_late_array(
+                        ctx, mesh_idx, prim_idx, &mesh.name, prim,
+                    )?);
+                    // `cxx:1960-1967`: deferred loading only works for
+                    // triangulations; points and lines are filled right away
+                    // because their shape needs the actual nodes.
+                    if prim.mode != RwGltfPrimitiveMode::Triangles
+                        && !late.data().is_empty()
+                    {
+                        let reader =
+                            GltfTriangulationReader::new(ctx.converter);
+                        let resolved = reader.load_all_data(&late)?;
+                        late.set_resolved(resolved);
+                    } else if prim.mode == RwGltfPrimitiveMode::Triangles {
+                        self.faces.borrow_mut().push(late.clone());
+                    }
+                    self.prims.borrow_mut().insert(id, late.clone());
+                    late
+                }
+            };
+            out.push(late);
         }
+        self.meshes.borrow_mut().insert(mesh_idx, out.clone());
+        Ok(out)
     }
-    Ok((verts, tris))
+
+    /// `aDoc.FaceList()` (`RWGltf_CafReader.cxx:347`): the proxy faces whose
+    /// triangulation the late-data pass fills.
+    pub(super) fn faces(&self) -> Vec<std::sync::Arc<GltfLatePrimitiveArray>> {
+        self.faces.borrow().clone()
+    }
 }
 
-pub(super) fn view_bytes<'a>(view: Option<usize>, buffers: &'a [Vec<u8>], views: &[BufView]) -> Result<&'a [u8], String> {
-    let v = views.get(view.ok_or("gltf: missing bufferView")?)
-        .ok_or("gltf: bufferView index out of range")?;
-    let buf = buffers.get(v.buffer).ok_or("gltf: buffer index out of range")?;
-    if v.offset + v.len > buf.len() {
-        return Err("gltf: bufferView extends past buffer end".into());
-    }
-    Ok(&buf[v.offset..v.offset + v.len])
-}
-
-pub(super) fn read_uint(comp: u32, b: &[u8], off: usize) -> usize {
-    match comp {
-        5121 => b[off] as usize,
-        5123 => u16::from_le_bytes([b[off], b[off + 1]]) as usize,
-        _ => u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]]) as usize,
-    }
-}
 
 /// Decode a standard base64 string (RFC 4648) with or without padding.
 pub(super) fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
@@ -182,6 +404,11 @@ pub(super) fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
 pub(super) enum JVal {
     Null,
     Bool(bool),
+    /// JSON integer literal. `RapidJSON`'s `IsInt()` and `IsDouble()` decide
+    /// between `TDataStd_NamedData::SetInteger` and `SetReal`
+    /// (`RWGltf_GltfJsonParser.cxx:213-233`) and between an integer and a real
+    /// array (`cxx:273-296`), so the literal form is kept.
+    Int(i64),
     Num(f64),
     Str(String),
     Arr(Vec<JVal>),
@@ -208,6 +435,27 @@ impl JVal {
         }
     }
     pub(super) fn as_num(&self) -> Option<f64> {
+        match self {
+            JVal::Int(n) => Some(*n as f64),
+            JVal::Num(n) => Some(*n),
+            _ => None,
+        }
+    }
+    pub(super) fn as_bool(&self) -> Option<bool> {
+        match self {
+            JVal::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+    /// `RapidJSON::Value::IsInt()`: the literal has no fraction or exponent.
+    pub(super) fn as_int(&self) -> Option<i64> {
+        match self {
+            JVal::Int(n) => Some(*n),
+            _ => None,
+        }
+    }
+    /// `RapidJSON::Value::IsDouble()`.
+    pub(super) fn as_double(&self) -> Option<f64> {
         match self {
             JVal::Num(n) => Some(*n),
             _ => None,
@@ -259,7 +507,7 @@ impl<'a> JP<'a> {
                 self.lit("null")?;
                 Ok(JVal::Null)
             }
-            Some(c) if c == b'-' || c.is_ascii_digit() => Ok(JVal::Num(self.number()?)),
+            Some(c) if c == b'-' || c.is_ascii_digit() => self.number(),
             _ => Err(format!("json: unexpected char at {}", self.i)),
         }
     }
@@ -326,7 +574,9 @@ impl<'a> JP<'a> {
         }
         Ok(out)
     }
-    pub(super) fn number(&mut self) -> Result<f64, String> {
+    /// JSON number: an integer literal stays [`JVal::Int`] so callers can
+    /// distinguish `IsInt()` from `IsDouble()` like RapidJSON does.
+    pub(super) fn number(&mut self) -> Result<JVal, String> {
         let start = self.i;
         while self.i < self.s.len()
             && (self.s[self.i].is_ascii_digit()
@@ -334,9 +584,15 @@ impl<'a> JP<'a> {
         {
             self.i += 1;
         }
-        std::str::from_utf8(&self.s[start..self.i])
-            .map_err(|_| "json: bad number".to_string())?
-            .parse::<f64>()
+        let text = std::str::from_utf8(&self.s[start..self.i])
+            .map_err(|_| "json: bad number".to_string())?;
+        if !text.contains(['.', 'e', 'E']) {
+            if let Ok(n) = text.parse::<i64>() {
+                return Ok(JVal::Int(n));
+            }
+        }
+        text.parse::<f64>()
+            .map(JVal::Num)
             .map_err(|_| "json: bad number".to_string())
     }
     pub(super) fn array(&mut self) -> Result<JVal, String> {
@@ -403,25 +659,6 @@ pub(super) fn parse_json(text: &str) -> Result<JVal, String> {
     Ok(v)
 }
 
-pub(super) fn arr3(a: &[JVal]) -> [f64; 3] {
-    let mut out = [0.0; 3];
-    for (k, v) in a.iter().take(3).enumerate() {
-        if let Some(n) = v.as_num() {
-            out[k] = n;
-        }
-    }
-    out
-}
-
-pub(super) fn arr4(a: &[JVal]) -> [f64; 4] {
-    let mut out = [0.0; 4];
-    for (k, v) in a.iter().take(4).enumerate() {
-        if let Some(n) = v.as_num() {
-            out[k] = n;
-        }
-    }
-    out
-}
 
 // ---------------------------------------------------------------------------
 // Small utilities

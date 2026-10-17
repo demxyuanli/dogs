@@ -157,5 +157,4 @@ impl<'a> Resolver<'a> {
             None
         }
     }
-
 }

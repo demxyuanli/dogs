@@ -1,6 +1,9 @@
 use super::prelude::*;
 use super::*;
 
+use crate::tdata_std_named_data::TDataStdNamedData;
+use crate::xcaf_doc_vis_material::XcafDocVisMaterial;
+
 
 /// Resolve a 1-based (or negative = from-end) OBJ index to a 0-based index.
 pub(super) fn obj_index(i: i32, len: usize) -> Result<usize, String> {
@@ -579,105 +582,16 @@ pub(super) fn build_vrml_node(
         name: name.to_string(),
         vertices: verts,
         triangles: tris,
+        mode: RwGltfPrimitiveMode::Triangles,
+        polyline: Vec::new(),
         transform: Some(world.clone()),
         material,
+        vis_material: None,
         uv,
+        normals: None,
         texture_path: None,
+        named_data: None,
+        late: None,
     }
 }
 
-// ---------------------------------------------------------------------------
-// glTF internals
-// ---------------------------------------------------------------------------
-
-#[derive(Default, Clone, Copy)]
-pub(super) struct BufView {
-    pub(super) buffer: usize,
-    pub(super) offset: usize,
-    pub(super) len: usize,
-}
-
-#[derive(Default, Clone, Copy)]
-pub(super) struct Accessor {
-    pub(super) view: Option<usize>,
-    pub(super) offset: usize,
-    pub(super) comp: u32,
-    pub(super) count: usize,
-}
-
-#[derive(Default, Clone, Copy)]
-pub(super) struct Prim {
-    pub(super) pos_view: Option<usize>,
-    pub(super) pos_offset: usize,
-    pub(super) pos_count: usize,
-    pub(super) pos_comp: u32,
-    pub(super) idx_view: Option<usize>,
-    pub(super) idx_offset: usize,
-    pub(super) idx_count: usize,
-    pub(super) idx_comp: u32,
-    pub(super) mat_idx: Option<usize>,
-}
-
-pub(super) struct GlMesh {
-    pub(super) prims: Vec<Prim>,
-}
-
-pub(super) struct GlNode {
-    pub(super) name: String,
-    pub(super) mesh: Option<usize>,
-    pub(super) trsf: GpTrsf,
-    pub(super) children: Vec<usize>,
-}
-
-/// glTF material: base-color diffuse + opacity plus an optional base-color
-/// texture reference (texture index → `textures[].source` → image).
-pub(super) struct GlMat {
-    pub(super) name: String,
-    pub(super) diffuse: (f64, f64, f64),
-    pub(super) opacity: f64,
-    pub(super) base_color_texture: Option<usize>,
-}
-
-/// Shared resources handed to the node-graph walk.
-pub(super) struct GltfCtx<'a> {
-    pub(super) meshes: &'a [GlMesh],
-    pub(super) buffers: &'a [Vec<u8>],
-    pub(super) views: &'a [BufView],
-    pub(super) materials: &'a [GlMat],
-    pub(super) textures: &'a [Option<usize>],
-    pub(super) images: &'a [String],
-    pub(super) base_dir: &'a Path,
-}
-
-/// Build the local transform for a glTF node from `matrix` or `translation`/
-/// `rotation`/`scale` (matrix wins per the spec).
-pub(super) fn node_transform(nd: &JVal) -> GpTrsf {
-    if let Some(mat) = nd.get("matrix").and_then(|v| v.as_arr()) {
-        let m: Vec<f64> = mat.iter().filter_map(|v| v.as_num()).take(16).collect();
-        if m.len() == 16 {
-            return trsf_from_matrix(&m);
-        }
-    }
-    let t = nd.get("translation").and_then(|v| v.as_arr()).map(arr3).unwrap_or([0.0; 3]);
-    let r = nd.get("rotation").and_then(|v| v.as_arr()).map(arr4).unwrap_or([0.0, 0.0, 0.0, 1.0]);
-    let s = nd.get("scale").and_then(|v| v.as_arr()).map(arr3).unwrap_or([1.0; 3]);
-    trsf_from_trs(&t, &r, &s)
-}
-
-/// TRS → `GpTrsf`. Non-uniform scale is folded into the 3x3 linear part
-/// (`scale = 1` so `transforms_xyz` never applies a second uniform scale).
-pub(super) fn trsf_from_trs(t: &[f64; 3], r: &[f64; 4], s: &[f64; 3]) -> GpTrsf {
-    let rot = GpQuaternion::new(r[0], r[1], r[2], r[3]).get_matrix();
-    let mut m = occt_core::gp::GpMat::zero();
-    for i in 0..3 {
-        for j in 0..3 {
-            m.m[i][j] = rot.m[i][j] * s[j];
-        }
-    }
-    GpTrsf {
-        scale: 1.0,
-        shape: TrsfForm::CompoundTrsf,
-        matrix: m,
-        loc: GpXyz::new(t[0], t[1], t[2]),
-    }
-}

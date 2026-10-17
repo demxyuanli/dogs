@@ -144,10 +144,16 @@ mod tests {
                 name: "box".into(),
                 vertices: m.vertices,
                 triangles: m.triangles.iter().map(|t| (t.n0, t.n1, t.n2)).collect(),
+                mode: RwGltfPrimitiveMode::Triangles,
+                polyline: Vec::new(),
                 transform: None,
                 material: None,
+                vis_material: None,
                 uv: None,
+                normals: None,
                 texture_path: None,
+                named_data: None,
+                late: None,
             }],
             materials: Vec::new(),
         };
@@ -167,10 +173,16 @@ mod tests {
                     GpPnt::new(4., 0., 5.),
                 ],
                 triangles: vec![(0, 1, 2)],
+                mode: RwGltfPrimitiveMode::Triangles,
+                polyline: Vec::new(),
                 transform: None,
                 material: None,
+                vis_material: None,
                 uv: None,
+                normals: None,
                 texture_path: None,
+                named_data: None,
+                late: None,
             }],
             materials: Vec::new(),
         };
@@ -458,10 +470,16 @@ mod tests {
                 name: "n".into(),
                 vertices: vec![GpPnt::new(0., 0., 0.)],
                 triangles: Vec::new(),
+                mode: RwGltfPrimitiveMode::Triangles,
+                polyline: Vec::new(),
                 transform: None,
                 material: None,
+                vis_material: None,
                 uv: Some(vec![GpPnt2d::new(0.1, 0.1)]),
+                normals: None,
                 texture_path: None,
+                named_data: None,
+                late: None,
             }],
             materials: Vec::new(),
         };
@@ -476,15 +494,24 @@ mod tests {
                 name: "n".into(),
                 vertices: vec![GpPnt::new(0., 0., 0.)],
                 triangles: Vec::new(),
+                mode: RwGltfPrimitiveMode::Triangles,
+                polyline: Vec::new(),
                 transform: None,
                 material: None,
+                vis_material: None,
                 uv: None,
+                normals: None,
                 texture_path: None,
+                named_data: None,
+                late: None,
             }],
             materials: Vec::new(),
         };
         let ppm2 = scene_with_texture_to_ppm(&plain, 0, 1, 1).unwrap();
-        assert!(ppm2.contains("179 179 179\n"), "default gray 0.7 -> 179");
+        assert!(
+            ppm2.contains("204 204 204\n"),
+            "no material falls back to RWObj_Material default diffuse 0.8 -> 204"
+        );
         assert!(scene_with_texture_to_ppm(&plain, 5, 1, 1).is_err(), "bad index errors");
     }
 }

@@ -87,6 +87,7 @@ mod transfer;
 mod clean_text;
 mod read_topology;
 mod read_geometry;
+mod read_assembly;
 mod read_colors;
 mod construct_styles;
 mod rendering_properties;

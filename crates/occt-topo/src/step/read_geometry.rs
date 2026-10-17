@@ -832,6 +832,18 @@ fn compute_srrwt(
         return None;
     }
     let op_ref = parse_ref(rec.args.get(4)?)?;
+    compute_srrwt_from_op(resolver, records, op_ref)
+}
+
+/// The `ComputeSRRWT` body above, starting from the operator entity: the same
+/// operator reaches it through a `CDSR`'s complex relationship
+/// (`read_assembly::nauo_target`), where the `SRRWT` record itself does not
+/// exist as a standalone entity.
+pub(super) fn compute_srrwt_from_op(
+    resolver: &Resolver,
+    records: &HashMap<usize, Record>,
+    op_ref: usize,
+) -> Option<occt_core::gp::GpTrsf> {
     let op = records.get(&op_ref)?;
     match op.type_name.as_str() {
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D" => {
@@ -867,21 +879,20 @@ fn self_axis(resolver: &Resolver, arg: Option<&String>) -> Option<GpAx2> {
 ///   transformation to the single result or to the compound (`cxx:1408-1417`).
 ///
 /// **UNPORTED**: the `MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP` and
-/// constructive-geometry arms of `TransferRelatedSRR` (`cxx:2707-2721`), and
-/// `TransferEntity(NAUO, …)` (`cxx:859-981`) — the assembly-level path that
-/// resolves `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` / `SRRReversed`. Those need
-/// entities no sample in `data/` carries; the port reads the relation entities
-/// directly, as `TransferRelatedSRR` does.
-struct SsrComposer<'a, 'r> {
+/// constructive-geometry arms of `TransferRelatedSRR` (`cxx:2707-2721`).
+/// `TransferEntity(NAUO, …)` (`cxx:859-981`), the assembly-level path that
+/// resolves `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION` / `SRRReversed`, lives in
+/// [`crate::step::read_assembly`]; the relation entities themselves are read
+/// directly here, as `TransferRelatedSRR` does.
+pub(super) struct SsrComposer<'a, 'r> {
     resolver: &'a Resolver<'r>,
     records: &'a HashMap<usize, Record>,
     names: RefCell<HashMap<usize, String>>,
     cache: RefCell<HashMap<usize, Option<TopoShape>>>,
     in_progress: RefCell<HashSet<usize>>,
 }
-
 impl<'a, 'r> SsrComposer<'a, 'r> {
-    fn new(resolver: &'a Resolver<'r>, records: &'a HashMap<usize, Record>) -> Self {
+    pub(super) fn new(resolver: &'a Resolver<'r>, records: &'a HashMap<usize, Record>) -> Self {
         Self {
             resolver,
             records,
@@ -892,7 +903,7 @@ impl<'a, 'r> SsrComposer<'a, 'r> {
     }
 
     /// The representation name recorded by `resolve_representation`.
-    fn name(&self, rep_id: usize) -> String {
+    pub(super) fn name(&self, rep_id: usize) -> String {
         if let Some(n) = self.names.borrow().get(&rep_id) {
             return n.clone();
         }
@@ -906,7 +917,7 @@ impl<'a, 'r> SsrComposer<'a, 'r> {
     }
 
     /// `TransferEntity(ShapeRepresentation, …)` (`cxx:2048-2092`).
-    fn rep_shape(&self, rep_id: usize) -> Option<TopoShape> {
+    pub(super) fn rep_shape(&self, rep_id: usize) -> Option<TopoShape> {
         if let Some(hit) = self.cache.borrow().get(&rep_id) {
             return hit.clone();
         }
@@ -1035,6 +1046,13 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
     rep_ids.sort_unstable();
 
     let mut model = BRepModel::new();
+    // `STEPCAFControl_Reader::prepareUnits` (`cxx:508-522`):
+    // `SetLengthUnit(doc, aScaleFactorMM, Millimeter)` stores
+    // `aScaleFactorMM * 1e-3` metres per model unit, and `aScaleFactorMM` is
+    // `UnitsMethods::GetCasCadeLengthUnit()` — the representation's length
+    // factor, which `context_length_factor` computes in millimetres
+    // (`transfer.rs`, `cxx:272-302`).
+    model.length_unit = Some(super::transfer::context_length_factor(&records) / 1000.0);
     // `readNameAttribute(RefLabel)` (`RWObj_CafWriter.cxx:197`): the label name
     // `STEPCAFControl_Reader::SetName` wrote, i.e. the PRODUCT name. The
     // representation's own name is the fallback for a file without a product
@@ -1057,23 +1075,78 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
     // claim the shared faces of the product's node and carry neither its name nor
     // its styles.
     let roots = root_product_definitions(&records);
+    if std::env::var("ZZSTEP_DBG").is_ok() {
+        eprintln!(
+            "DBG records={} roots={} rep_ids={}",
+            records.len(),
+            roots.len(),
+            rep_ids.len()
+        );
+    }
     let composer = SsrComposer::new(&resolver, &records);
+    // One reverse-relation pass over the record table; the assembly walk below
+    // queries it per node instead of rescanning the file for every NAUO
+    // (`STEPConstruct_Assembly.cxx` reads the same relations through the
+    // transfer processor's bindings).
+    let assembly_index = super::read_assembly::AssemblyIndex::new(&records);
     if !roots.is_empty() {
         for pd in roots {
+            // `TransferEntity(PD)`'s assembly arm (`cxx:713-758`): the product's
+            // shape is the composition of its `NEXT_ASSEMBLY_USAGE_OCCURRENCE`
+            // components, and `STEPCAFControl_Reader` gives each component that
+            // owns geometry its own document label (`cxx:540-557`). Emitting the
+            // per-product nodes keeps the group names an assembly file carries.
+            if assembly_index.has_sub_assemblies(pd) {
+                let mut nodes = Vec::new();
+                super::read_assembly::collect_product_nodes(
+                    &resolver,
+                    &assembly_index,
+                    &records,
+                    &composer,
+                    pd,
+                    None,
+                    &mut nodes,
+                    0,
+                );
+                for node in nodes {
+                    let name = names
+                        .rep_name
+                        .get(&node.rep)
+                        .filter(|n| !n.is_empty())
+                        .cloned()
+                        .or_else(|| {
+                            names.def_name.get(&node.pd).filter(|n| !n.is_empty()).cloned()
+                        })
+                        .unwrap_or_else(|| composer.name(node.rep));
+                    if std::env::var("ZZSTEP_DBG").is_ok() {
+                        let n = crate::topo_tools_full::faces_of(&node.shape).len();
+                        let b = crate::brep_bnd_lib::shape_bnd_box(&node.shape).get();
+                        eprintln!(
+                            "DBG pd={} rep={} faces={n} name={name} bbox={b:?}",
+                            node.pd, node.rep
+                        );
+                    }
+                    let index = model.add(&name, node.shape);
+                    rep_index.insert(node.rep, index);
+                    rep_index.insert(node.pd, index);
+                }
+                continue;
+            }
             // The product's own representation: `GetLabelFromPD`'s
             // PDS -> SDR -> `used_representation` chain
             // (`STEPCAFControl_Reader.cxx:1552-1770`).
             let Some(rep) = product_representation(&records, pd) else {
-                // A product without a representation is an assembly whose shape
-                // comes from its `NEXT_ASSEMBLY_USAGE_OCCURRENCE` components
-                // (`STEPControl_ActorRead.cxx:713-758`); no sample in `data/`
-                // carries one, so this arm stays unported like
-                // `StepAssembly`'s shape composition.
+                // A product with neither a representation nor sub-assemblies
+                // carries no shape at all (`STEPControl_ActorRead.cxx:713-716`).
                 continue;
             };
             // `TransferEntity(PD)` with one SDR and no NAUO binds the
             // representation's own shape as it is (`cxx:842-848`).
             let Some(shape) = composer.rep_shape(rep) else { continue };
+            if std::env::var("ZZSTEP_DBG").is_ok() {
+                let n = crate::topo_tools_full::faces_of(&shape).len();
+                eprintln!("DBG pd={pd} rep={rep} faces={n}");
+            }
             let name = names
                 .rep_name
                 .get(&rep)

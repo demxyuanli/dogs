@@ -1,23 +1,49 @@
 use super::prelude::*;
 use super::*;
 
-/// A surface material. `diffuse`/`specular` are RGB triples in `[0,1]`;
-/// `opacity` is `1.0` for fully opaque.
+/// A surface material. `ambient`/`diffuse`/`specular` are RGB triples in
+/// `[0,1]` (sRGB, as the `.mtl` text carries them); `shininess` is OCCT's
+/// normalised specular exponent, `opacity` is `1.0` for fully opaque.
+///
+/// Source: `RWObj_Material` (`RWObj_Material.hxx:22-47`). That struct stores
+/// `Transparency` where this one stores `opacity`, so `opacity = 1 -
+/// transparency` throughout (`RWObj_MtlReader.cxx:210-240`). The three texture
+/// fields are resolved to a path by `processTexturePath`
+/// (`RWObj_MtlReader.cxx:270-306`), `None` when the material has no such map.
 #[derive(Debug, Clone)]
 pub struct Material {
     pub name: String,
+    pub ambient: (f64, f64, f64),
     pub diffuse: (f64, f64, f64),
     pub specular: (f64, f64, f64),
+    /// `Shininess` (`RWObj_Material.hxx:43`), `[0, 1]`; the MTL text carries
+    /// `Ns = shininess * 1000` (`RWObj_ObjMaterialMap.cxx:84`).
+    pub shininess: f64,
     pub opacity: f64,
+    /// `DiffuseTexture` (`RWObj_Material.hxx:34`), from `map_Kd`.
+    pub diffuse_texture: Option<String>,
+    /// `SpecularTexture` (`RWObj_Material.hxx:35`), from `map_Ks`.
+    pub specular_texture: Option<String>,
+    /// `BumpTexture` (`RWObj_Material.hxx:36`), from `map_Bump`.
+    pub bump_texture: Option<String>,
 }
 
 impl Default for Material {
+    /// `RWObj_Material::RWObj_Material` (`RWObj_Material.hxx:45-46`):
+    /// `AmbientColor(0.1)`, `DiffuseColor(0.8)`, `SpecularColor(0.2)`,
+    /// `Shininess(1.0)`, `Transparency(0.0)`; the texture paths default empty
+    /// (`TCollection_AsciiString` default-constructs empty).
     fn default() -> Self {
         Material {
             name: "default".to_string(),
-            diffuse: (0.7, 0.7, 0.7),
-            specular: (1.0, 1.0, 1.0),
+            ambient: (0.1, 0.1, 0.1),
+            diffuse: (0.8, 0.8, 0.8),
+            specular: (0.2, 0.2, 0.2),
+            shininess: 1.0,
             opacity: 1.0,
+            diffuse_texture: None,
+            specular_texture: None,
+            bump_texture: None,
         }
     }
 }
@@ -41,10 +67,43 @@ pub struct MeshNode {
     pub name: String,
     pub vertices: Vec<GpPnt>,
     pub triangles: Vec<(usize, usize, usize)>,
+    /// `RWGltf_GltfLatePrimitiveArray::PrimitiveMode`
+    /// (`RWGltf_GltfPrimitiveMode.hxx:20-30`). Formats that only produce
+    /// triangulations (OBJ, PLY, STL, VRML) always report `Triangles`.
+    pub mode: RwGltfPrimitiveMode,
+    /// `RWGltf_GltfLatePrimitiveArray`'s edge array (`NbEdges`/`Edge`) for the
+    /// `Lines` mode: the index buffer read in order, one node index per entry.
+    /// The whole sequence becomes a single `Poly_Polygon3D`-backed edge
+    /// (`RWGltf_GltfJsonParser.cxx:1985-1998`), not one edge per pair. Empty for
+    /// the other modes.
+    pub polyline: Vec<usize>,
     pub transform: Option<GpTrsf>,
     pub material: Option<Material>,
+    /// The document-level material (`XCAFPrs_Style::SetMaterial`) the glTF
+    /// reader bound to this node's shape (`RWGltf_GltfJsonParser.cxx:867-947`).
+    /// `None` for formats and nodes that carry no such material.
+    pub vis_material: Option<crate::xcaf_doc_vis_material::XcafDocVisMaterial>,
     pub uv: Option<Vec<GpPnt2d>>,
+    /// `Poly_Triangulation::Normal` of the primitive's `NORMAL` accessor, after
+    /// `RWGltf_TriangulationReader`'s coordinate conversion
+    /// (`RWGltf_TriangulationReader.cxx:330-364`, `setNodeNormal`). The proxy
+    /// shape's triangulation carries these back for export
+    /// (`rwmesh::gltf_shape_reader`), and they are transformed by the node's
+    /// rotation because this crate bakes the placement into the geometry.
+    pub normals: Option<Vec<GpPnt>>,
     pub texture_path: Option<String>,
+    /// `RWMesh_NodeAttributes::NamedData` for this node: the `extras` object
+    /// parsed into `TDataStd_NamedData` (`RWGltf_GltfJsonParser.cxx:1621-1622`,
+    /// `:2435`). `None` when neither the node nor its mesh defines `extras`.
+    pub named_data: Option<crate::tdata_std_named_data::TDataStdNamedData>,
+    /// The glTF primitive array this node's proxy shape carries in place of a
+    /// triangulation — `RWGltf_GltfLatePrimitiveArray` put on the face by
+    /// `BRep_Builder::MakeFace(face, theTriangulation)`
+    /// (`RWGltf_GltfJsonParser.cxx:2000-2007`). `None` for formats that decode
+    /// their data directly. `late.resolved()` is the triangulation currently in
+    /// the slot; it stays `None` while `myToSkipLateDataLoading` deferred the
+    /// array (`RWGltf_CafReader.cxx:376-388`).
+    pub late: Option<std::sync::Arc<crate::rwmesh::GltfLatePrimitiveArray>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -75,10 +134,16 @@ pub fn read_ply_scene(path: &str) -> Result<MeshScene, String> {
             name: "mesh".to_string(),
             vertices: tri.nodes,
             triangles,
+            mode: RwGltfPrimitiveMode::Triangles,
+            polyline: Vec::new(),
             transform: None,
             material: None,
+            vis_material: None,
             uv: None,
+            normals: None,
             texture_path: None,
+            named_data: None,
+            late: None,
         }],
         materials: Vec::new(),
     })
@@ -97,200 +162,22 @@ pub fn read_stl_scene(path: &str) -> Result<MeshScene, String> {
             name: "mesh".to_string(),
             vertices: tri.nodes,
             triangles,
+            mode: RwGltfPrimitiveMode::Triangles,
+            polyline: Vec::new(),
             transform: None,
             material: None,
+            vis_material: None,
             uv: None,
+            normals: None,
             texture_path: None,
+            named_data: None,
+            late: None,
         }],
         materials: Vec::new(),
     })
 }
 
-/// Read a glTF 2.0 `.gltf` file into a scene. Returns one node per mesh node,
-/// with the node's world transform (TRS or matrix, accumulated through the scene
-/// graph) applied to its vertices. External `.bin` buffers are resolved relative
-/// to the `.gltf` file; embedded `data:` URIs are base64-decoded.
-pub fn read_gltf_scene(path: &str) -> Result<MeshScene, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("rwmesh: read {path}: {e}"))?;
-    let root = parse_json(&text)?;
-
-    // buffers → raw bytes
-    let mut buffers: Vec<Vec<u8>> = Vec::new();
-    if let Some(arr) = root.get("buffers").and_then(|v| v.as_arr()) {
-        for (bi, buf) in arr.iter().enumerate() {
-            let uri = buf.get("uri").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let want = buf.get("byteLength").and_then(|v| v.as_num()).map(|n| n as usize).unwrap_or(0);
-            let mut bytes = if let Some(data) = uri.strip_prefix("data:") {
-                let b64 = data.split("base64,").nth(1)
-                    .ok_or_else(|| format!("gltf: buffer {bi}: malformed data uri"))?;
-                base64_decode(b64)?
-            } else {
-                let dir = Path::new(path).parent().unwrap_or_else(|| Path::new("."));
-                std::fs::read(dir.join(&uri))
-                    .map_err(|e| format!("gltf: buffer {bi}: read {}: {e}", dir.join(&uri).display()))?
-            };
-            if want > 0 && bytes.len() < want {
-                return Err(format!("gltf: buffer {bi}: expected {want} bytes, got {}", bytes.len()));
-            }
-            if want > 0 && bytes.len() > want {
-                bytes.truncate(want);
-            }
-            buffers.push(bytes);
-        }
-    }
-    if buffers.is_empty() {
-        return Err("gltf: no buffers".into());
-    }
-
-    // bufferViews
-    let mut views: Vec<BufView> = Vec::new();
-    if let Some(arr) = root.get("bufferViews").and_then(|v| v.as_arr()) {
-        for bv in arr {
-            views.push(BufView {
-                buffer: bv.get("buffer").and_then(|v| v.as_num()).map(|n| n as usize).unwrap_or(0),
-                offset: bv.get("byteOffset").and_then(|v| v.as_num()).map(|n| n as usize).unwrap_or(0),
-                len: bv.get("byteLength").and_then(|v| v.as_num()).map(|n| n as usize).unwrap_or(0),
-            });
-        }
-    }
-
-    // accessors
-    let mut accessors: Vec<Accessor> = Vec::new();
-    if let Some(arr) = root.get("accessors").and_then(|v| v.as_arr()) {
-        for ac in arr {
-            accessors.push(Accessor {
-                view: ac.get("bufferView").and_then(|v| v.as_num()).map(|n| n as usize),
-                offset: ac.get("byteOffset").and_then(|v| v.as_num()).map(|n| n as usize).unwrap_or(0),
-                comp: ac.get("componentType").and_then(|v| v.as_num()).map(|n| n as u32).unwrap_or(0),
-                count: ac.get("count").and_then(|v| v.as_num()).map(|n| n as usize).unwrap_or(0),
-            });
-        }
-    }
-
-    // images → uri (file path or data: URI), textures → source image index,
-    // materials → PBR base-color factor + base-color texture reference.
-    let mut images: Vec<String> = Vec::new();
-    if let Some(arr) = root.get("images").and_then(|v| v.as_arr()) {
-        for im in arr {
-            images.push(im.get("uri").and_then(|v| v.as_str()).unwrap_or("").to_string());
-        }
-    }
-    let mut textures: Vec<Option<usize>> = Vec::new();
-    if let Some(arr) = root.get("textures").and_then(|v| v.as_arr()) {
-        for tx in arr {
-            textures.push(tx.get("source").and_then(|v| v.as_num()).map(|n| n as usize));
-        }
-    }
-    let mut gl_materials: Vec<GlMat> = Vec::new();
-    if let Some(arr) = root.get("materials").and_then(|v| v.as_arr()) {
-        for ma in arr {
-            let mut m = GlMat {
-                name: ma.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                diffuse: (0.7, 0.7, 0.7),
-                opacity: 1.0,
-                base_color_texture: None,
-            };
-            if let Some(pbr) = ma.get("pbrMetallicRoughness") {
-                if let Some(bcf) = pbr.get("baseColorFactor").and_then(|v| v.as_arr()) {
-                    let c = arr4(bcf);
-                    m.diffuse = (c[0], c[1], c[2]);
-                    m.opacity = c[3];
-                }
-                if let Some(bct) = pbr.get("baseColorTexture") {
-                    m.base_color_texture = bct.get("index").and_then(|v| v.as_num()).map(|n| n as usize);
-                }
-            }
-            gl_materials.push(m);
-        }
-    }
-
-    // meshes → primitives
-    let mut meshes: Vec<GlMesh> = Vec::new();
-    if let Some(arr) = root.get("meshes").and_then(|v| v.as_arr()) {
-        for ms in arr {
-            let mut prims = Vec::new();
-            if let Some(p_arr) = ms.get("primitives").and_then(|v| v.as_arr()) {
-                for pr in p_arr {
-                    let mut p = Prim::default();
-                    if let Some(attrs) = pr.get("attributes").and_then(|v| v.as_obj()) {
-                        for (k, val) in attrs {
-                            if k == "POSITION" {
-                                let ai = val.as_num().map(|n| n as usize).unwrap_or(0);
-                                let a = &accessors[ai];
-                                p.pos_view = a.view;
-                                p.pos_offset = a.offset;
-                                p.pos_count = a.count;
-                                p.pos_comp = a.comp;
-                            }
-                        }
-                    }
-                    if let Some(ii) = pr.get("indices").and_then(|v| v.as_num()) {
-                        let a = &accessors[ii as usize];
-                        p.idx_view = a.view;
-                        p.idx_offset = a.offset;
-                        p.idx_count = a.count;
-                        p.idx_comp = a.comp;
-                    }
-                    p.mat_idx = pr.get("material").and_then(|v| v.as_num()).map(|n| n as usize);
-                    prims.push(p);
-                }
-            }
-            meshes.push(GlMesh { prims });
-        }
-    }
-
-    // nodes
-    let mut nodes: Vec<GlNode> = Vec::new();
-    if let Some(arr) = root.get("nodes").and_then(|v| v.as_arr()) {
-        for nd in arr {
-            nodes.push(GlNode {
-                name: nd.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                mesh: nd.get("mesh").and_then(|v| v.as_num()).map(|n| n as usize),
-                trsf: node_transform(nd),
-                children: nd.get("children").and_then(|v| v.as_arr())
-                    .map(|a| a.iter().filter_map(|c| c.as_num().map(|n| n as usize)).collect())
-                    .unwrap_or_default(),
-            });
-        }
-    }
-    if nodes.is_empty() {
-        return Err("gltf: no nodes".into());
-    }
-
-    // scene roots
-    let roots: Vec<usize> = root.get("scenes").and_then(|v| v.as_arr())
-        .and_then(|a| a.first())
-        .and_then(|s| s.get("nodes"))
-        .and_then(|v| v.as_arr())
-        .map(|a| a.iter().filter_map(|c| c.as_num().map(|n| n as usize)).collect())
-        .unwrap_or_else(|| vec![0]);
-
-    let mut scene_nodes = Vec::new();
-    let gltf_ctx = GltfCtx {
-        meshes: &meshes,
-        buffers: &buffers,
-        views: &views,
-        materials: &gl_materials,
-        textures: &textures,
-        images: &images,
-        base_dir: Path::new(path).parent().unwrap_or_else(|| Path::new(".")),
-    };
-    for &r in &roots {
-        collect_gltf_nodes(&nodes, r, &GpTrsf::identity(), &gltf_ctx, &mut scene_nodes)?;
-    }
-
-    let materials = gl_materials
-        .iter()
-        .map(|m| Material {
-            name: m.name.clone(),
-            diffuse: m.diffuse,
-            specular: (1.0, 1.0, 1.0),
-            opacity: m.opacity,
-        })
-        .collect();
-    Ok(MeshScene { name: file_stem(path).to_string(), nodes: scene_nodes, materials })
-}
+// The glTF reader lives in gltf_file.rs.
 
 // ---------------------------------------------------------------------------
 // Scene → shape
@@ -329,10 +216,16 @@ pub fn mesh_from_shape(shape: &TopoShape, deflection: f64) -> MeshScene {
             name: "mesh".to_string(),
             vertices: m.vertices,
             triangles: m.triangles.iter().map(|t| (t.n0, t.n1, t.n2)).collect(),
+            mode: RwGltfPrimitiveMode::Triangles,
+            polyline: Vec::new(),
             transform: None,
             material: None,
+            vis_material: None,
             uv: None,
+            normals: None,
             texture_path: None,
+            named_data: None,
+            late: None,
         }],
         materials: Vec::new(),
     }
@@ -350,6 +243,9 @@ pub fn convert_mesh_format(src_path: &str, dst_path: &str) -> Result<(), String>
         "ply" => read_ply_scene(src_path)?,
         "stl" => read_stl_scene(src_path)?,
         "gltf" => read_gltf_scene(src_path)?,
+        // `.glb` is the same reader: the container is sniffed from the `glTF`
+        // magic (`RWGltf_CafReader.cxx:206-286`), not from the extension.
+        "glb" => read_gltf_scene(src_path)?,
         "wrl" => read_vrml_scene(src_path)?,
         e => return Err(format!("rwmesh: unsupported source format .{e}")),
     };
@@ -452,6 +348,11 @@ pub fn scene_with_texture_to_ppm(scene: &MeshScene, node_index: usize, width: u3
     let mut out = String::new();
     out.push_str(&format!("P3\n{} {}\n255\n", width, height));
     let (w, h) = (width.max(1), height.max(1));
+    // Fallback for a node with no material: `RWObj_Material`'s default diffuse
+    // (`RWObj_Material.hxx:45-46`, carried by [`Material::default`]) so the
+    // debug renderer and the reader agree on what "unstyled" looks like. This
+    // whole function is port-only (OCCT has no PPM dump of a `MeshScene`).
+    let unstyled = Material::default().diffuse;
     for y in 0..height {
         for x in 0..width {
             let (r, g, b) = if node.uv.is_some() {
@@ -464,7 +365,7 @@ pub fn scene_with_texture_to_ppm(scene: &MeshScene, node_index: usize, width: u3
                     (false, false) => (1.0, 1.0, 0.0),
                 }
             } else {
-                node.material.as_ref().map(|m| m.diffuse).unwrap_or((0.7, 0.7, 0.7))
+                node.material.as_ref().map(|m| m.diffuse).unwrap_or(unstyled)
             };
             let px = |c: f64| (c.clamp(0.0, 1.0) * 255.0).round() as u32;
             out.push_str(&format!("{} {} {}\n", px(r), px(g), px(b)));
@@ -531,12 +432,22 @@ pub(super) fn parse_obj_scene_inner(
                 }
             }
             "usemtl" => {
-                if let Some(m) = parts.next() {
-                    cur_material = Some(m.to_string());
-                }
+                // `RWObj_Tools::ReadName` (`RWObj_Tools.hxx:51-73`): the name is
+                // the rest of the line, not the first token.
+                let rest = line[tag.len()..].trim();
+                cur_material = if rest.is_empty() { None } else { Some(rest.to_string()) };
             }
             "o" | "g" => {
-                let gname = parts.next().unwrap_or("mesh").to_string();
+                // `pushGroup` / `pushObject` use `ReadName` too, so an unquoted
+                // group name may contain spaces (`g Open CASCADE STEP
+                // translator 7.6 1` is one group).
+                let rest = line[tag.len()..].trim();
+                let gname = if rest.is_empty() { "mesh".to_string() } else { rest.to_string() };
+                // `RWObj_SubMesh::Group` (`RWObj_Reader.cxx:628-646`): a new
+                // group keeps the material of the sub-mesh being flushed; the
+                // `f` branch below then replaces it with the material actually
+                // in effect for the faces (`myLastFaceMaterial`,
+                // `RWObj_TriangulationReader.cxx:39-55,61`).
                 groups.push(ObjGroup {
                     name: gname,
                     faces: Vec::new(),
@@ -568,6 +479,11 @@ pub(super) fn parse_obj_scene_inner(
                     corners.push((v_idx, vt_idx));
                 }
                 groups[current].faces.push(corners);
+                // `myLastFaceMaterial = theMesh.Material`
+                // (`RWObj_TriangulationReader.cxx:61`): the group's bound
+                // material is the one in effect for its **last** face, which is
+                // why a `usemtl` after the `g` line still reaches the group.
+                groups[current].material = cur_material.clone();
             }
             _ => {}
         }
@@ -582,7 +498,11 @@ pub(super) fn parse_obj_scene_inner(
         };
         let mtl_content = std::fs::read_to_string(&mtl_path)
             .map_err(|e| format!("rwmesh: read mtl {}: {e}", mtl_path.display()))?;
-        materials.extend(parse_mtl(&mtl_content));
+        // `RWObj_MtlReader::Read(theFolder, theFile)` (`cxx:117`): texture paths
+        // in the library resolve against the folder the MTL lives in, not the
+        // OBJ's folder.
+        let mtl_dir = mtl_path.parent().unwrap_or_else(|| Path::new("."));
+        materials.extend(parse_mtl(&mtl_content, mtl_dir));
     }
 
     let nodes = if groups.is_empty() {
@@ -590,10 +510,16 @@ pub(super) fn parse_obj_scene_inner(
             name: "mesh".to_string(),
             vertices,
             triangles: Vec::new(),
+            mode: RwGltfPrimitiveMode::Triangles,
+            polyline: Vec::new(),
             transform: None,
             material: None,
+            vis_material: None,
             uv: None,
+            normals: None,
             texture_path: None,
+            named_data: None,
+            late: None,
         }]
     } else {
         let mut out_nodes = Vec::with_capacity(groups.len());
@@ -624,14 +550,26 @@ pub(super) fn parse_obj_scene_inner(
                 }
             }
             let material = g.material.as_ref().and_then(|mn| find_material(&materials, mn)).cloned();
+            // `RWObj_CafReader::BindNamedShape` feeds `DiffuseTexture` into the
+            // material's `XCAFDoc_VisMaterialCommon::DiffuseTexture`
+            // (`RWObj_CafReader.cxx:63-65`); this crate keeps the same reference
+            // on the node (`MeshNode::texture_path`), the slot the glTF reader
+            // uses for its base-colour image.
+            let texture_path = material.as_ref().and_then(|m| m.diffuse_texture.clone());
             out_nodes.push(MeshNode {
                 name: g.name,
                 vertices: local,
                 triangles: tris,
+                mode: RwGltfPrimitiveMode::Triangles,
+                polyline: Vec::new(),
                 transform: None,
                 material,
+                vis_material: None,
                 uv: if has_uv { Some(uv) } else { None },
-                texture_path: None,
+                normals: None,
+                texture_path,
+                named_data: None,
+                late: None,
             });
         }
         out_nodes
@@ -641,8 +579,21 @@ pub(super) fn parse_obj_scene_inner(
 }
 
 /// Parse a Wavefront `.mtl` material library: `newmtl <name>` starts a material,
-/// `Kd`/`Ks` set the diffuse/specular RGB, `d` sets opacity.
-pub(super) fn parse_mtl(content: &str) -> Vec<Material> {
+/// `Kd`/`Ks`/`Ka` set the diffuse/specular/ambient RGB, `Ns` the specular
+/// exponent, `d`/`Tr` the opacity, `map_Kd`/`map_Ks`/`map_Bump` the texture
+/// paths.
+///
+/// `RWObj_MtlReader::Read` (`RWObj_MtlReader.cxx:135-262`) is the source: `Ka`
+/// (`cxx:161-173`), `Kd` (`cxx:174-186`) and `Ks` (`cxx:187-199`) are the three
+/// colours `Material` carries, `Ns` (`cxx:200-211`) is `Shininess =
+/// min(Ns/1000, 1)`, `Tr` (`cxx:212-224`) stores transparency directly and `d`
+/// (`cxx:225-236`) stores `1 - alpha`. The latter two collapse onto one field
+/// here, so `Tr t` maps to `opacity = 1 - t` — the same value the writer derives
+/// it from (`RWObj_ObjMaterialMap.cxx:118-121` writes `Tr = 1 - alpha`).
+///
+/// `folder` is `RWObj_MtlReader::Read`'s `theFolder`: texture names are resolved
+/// against it (`processTexturePath`, `cxx:270-306`).
+pub(super) fn parse_mtl(content: &str, folder: &Path) -> Vec<Material> {
     let mut mats: Vec<Material> = Vec::new();
     let mut cur: Option<Material> = None;
     for line in content.lines() {
@@ -651,7 +602,8 @@ pub(super) fn parse_mtl(content: &str) -> Vec<Material> {
             continue;
         }
         let mut parts = line.split_whitespace();
-        match parts.next().unwrap_or("") {
+        let tag = parts.next().unwrap_or("");
+        match tag {
             "newmtl" => {
                 if let Some(m) = cur.take() {
                     mats.push(m);
@@ -661,10 +613,19 @@ pub(super) fn parse_mtl(content: &str) -> Vec<Material> {
                     ..Material::default()
                 });
             }
+            "Ka" => {
+                // `RWObj_MtlReader.cxx:161-173`: `AmbientColor`.
+                if let Some(m) = &mut cur {
+                    let c: Vec<f64> = parts.filter_map(|p| p.parse().ok()).collect();
+                    if c.len() >= 3 && valid_color((c[0], c[1], c[2])) {
+                        m.ambient = (c[0], c[1], c[2]);
+                    }
+                }
+            }
             "Kd" => {
                 if let Some(m) = &mut cur {
                     let c: Vec<f64> = parts.filter_map(|p| p.parse().ok()).collect();
-                    if c.len() >= 3 {
+                    if c.len() >= 3 && valid_color((c[0], c[1], c[2])) {
                         m.diffuse = (c[0], c[1], c[2]);
                     }
                 }
@@ -672,15 +633,59 @@ pub(super) fn parse_mtl(content: &str) -> Vec<Material> {
             "Ks" => {
                 if let Some(m) = &mut cur {
                     let c: Vec<f64> = parts.filter_map(|p| p.parse().ok()).collect();
-                    if c.len() >= 3 {
+                    if c.len() >= 3 && valid_color((c[0], c[1], c[2])) {
                         m.specular = (c[0], c[1], c[2]);
+                    }
+                }
+            }
+            "Ns" => {
+                // `RWObj_MtlReader.cxx:200-211`: `Shininess =
+                // min(Ns / 1000.0, 1.0)`, rejected when negative.
+                if let Some(m) = &mut cur {
+                    if let Some(v) = parts.next().and_then(|p| p.parse::<f64>().ok()) {
+                        if v >= 0.0 {
+                            m.shininess = (v / 1000.0).min(1.0);
+                        }
                     }
                 }
             }
             "d" => {
                 if let Some(m) = &mut cur {
-                    if let Some(v) = parts.next().and_then(|p| p.parse().ok()) {
-                        m.opacity = v;
+                    if let Some(v) = parts.next().and_then(|p| p.parse::<f64>().ok()) {
+                        // `cxx:228-240`: the value is a dissolve, `Transparency =
+                        // 1 - alpha`, and `alpha < 0.01` is rejected.
+                        if (0.0..=1.0).contains(&v) && v >= 0.01 {
+                            m.opacity = v;
+                        }
+                    }
+                }
+            }
+            "Tr" => {
+                if let Some(m) = &mut cur {
+                    if let Some(v) = parts.next().and_then(|p| p.parse::<f64>().ok()) {
+                        // `cxx:212-224`: `Transparency = value`, rejected above
+                        // 0.99 (fully transparent is not a colour).
+                        if (0.0..=0.99).contains(&v) {
+                            m.opacity = 1.0 - v;
+                        }
+                    }
+                }
+            }
+            "map_Kd" | "map_Ks" | "map_Bump" => {
+                // `cxx:242-267`: `RWObj_Tools::ReadName(aPos, aMat.*Texture)`
+                // then `processTexturePath(aMat.*Texture, theFolder)`. A name
+                // longer than `aLine[256]` cannot occur here because the reader
+                // never truncates; an empty name is ignored like `ReadName`'s
+                // `false` return.
+                if let Some(m) = &mut cur {
+                    let rest = line[tag.len()..].trim();
+                    if !rest.is_empty() {
+                        let resolved = process_texture_path(folder, rest);
+                        match tag {
+                            "map_Kd" => m.diffuse_texture = Some(resolved),
+                            "map_Ks" => m.specular_texture = Some(resolved),
+                            _ => m.bump_texture = Some(resolved),
+                        }
                     }
                 }
             }
@@ -691,6 +696,53 @@ pub(super) fn parse_mtl(content: &str) -> Vec<Material> {
         mats.push(m);
     }
     mats
+}
+
+/// `RWObj_MtlReader::processTexturePath` (`RWObj_MtlReader.cxx:270-306`): a
+/// relative name is prefixed with the material library's folder; an absolute one
+/// is kept as written, and when it does not exist the reader looks for the same
+/// tail of the path next to the library (`findRelativePath`, `cxx:33-77`).
+fn process_texture_path(folder: &Path, texture: &str) -> String {
+    let p = Path::new(texture);
+    if p.is_absolute() {
+        if p.exists() {
+            return texture.to_string();
+        }
+        // `findRelativePath(theAbsolutePath, theFolder, aRelativePath)` then
+        // `theTexturePath = theFolder + aRelativePath` (`cxx:284-289`).
+        if let Some(rel) = find_relative_path(p, folder) {
+            return folder.join(rel).to_string_lossy().to_string();
+        }
+        return texture.to_string();
+    }
+    // `theTexturePath = theFolder + theTexturePath` (`cxx:302`).
+    folder.join(p).to_string_lossy().to_string()
+}
+
+/// `findRelativePath` (`RWObj_MtlReader.cxx:33-77`): strip leading components
+/// off the absolute path until the remaining tail exists under `folder`.
+fn find_relative_path(absolute: &Path, folder: &Path) -> Option<std::path::PathBuf> {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    for comp in absolute.components().rev() {
+        if let std::path::Component::Normal(c) = comp {
+            tail.insert(0, c.to_os_string());
+            let candidate: std::path::PathBuf = tail.iter().collect();
+            if folder.join(&candidate).exists() {
+                return Some(candidate);
+            }
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+/// `RWObj_MtlReader::validateColor` (`RWObj_MtlReader.cxx:336-350`): every
+/// component within `[0, 1]`, otherwise the line is ignored with a warning.
+/// The port has no message stream, so an invalid line simply leaves the field
+/// at its default.
+fn valid_color(c: (f64, f64, f64)) -> bool {
+    (0.0..=1.0).contains(&c.0) && (0.0..=1.0).contains(&c.1) && (0.0..=1.0).contains(&c.2)
 }
 
 pub(super) fn find_material<'a>(materials: &'a [Material], name: &str) -> Option<&'a Material> {

@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpAx1, GpPnt, GpTrsf, GpVec};
 use occt_core::toploc::TopLocLocation;
+use occt_geom::Surface;
 
 use crate::abs::ShapeType;
 use crate::shape::TopoShape;
@@ -25,48 +26,80 @@ pub fn transform_shape(shape: &mut TopoShape, t: &GpTrsf) -> Result<(), String> 
     let reg = GeometryRegistry::global();
     let mut stack = vec![shape.clone()];
     let mut seen = std::collections::HashSet::new();
+    let mut shapes: Vec<TopoShape> = Vec::new();
     while let Some(s) = stack.pop() {
         if !seen.insert(std::sync::Arc::as_ptr(&s.tshape)) {
             continue;
         }
-        match s.shape_type() {
-            ShapeType::Vertex => {
-                if let Some(g) = reg.vertex_geom(&s) {
-                    let p = g.point.transformed(t);
-                    reg.set_vertex(&s, VertexGeom { point: p, tolerance: g.tolerance });
-                }
-            }
-            ShapeType::Edge => {
-                if let Some(g) = reg.edge_geom(&s) {
-                    let curve = Arc::from(g.curve.transformed(t));
-                    reg.set_edge(&s, EdgeGeom {
-                        curve,
-                        curve3d_null: g.curve3d_null,
-                        first: g.first,
-                        last: g.last,
-                        tolerance: g.tolerance,
-                        same_parameter: g.same_parameter,
-                        same_range: g.same_range,
-                        degenerated: g.degenerated,
-                        pcurves: g.pcurves.clone(),
-                        pcurve_ranges: g.pcurve_ranges.clone(),
-                    });
-                }
-            }
-            ShapeType::Face => {
-                if let Some(g) = reg.face_geom(&s) {
-                    let surface = Arc::from(g.surface.transformed(t));
-                    reg.set_face(&s, FaceGeom {
-                        surface,
-                        tolerance: g.tolerance,
-                        natural_restriction: g.natural_restriction,
-                    });
-                }
-            }
-            _ => {}
-        }
         for k in s.tshape.read().unwrap().children.clone() {
             stack.push(k);
+        }
+        shapes.push(s);
+    }
+    // Faces first: the transformed surfaces are the new pcurve representation
+    // keys (`GeometryRegistry::repr_key`), and one transformed surface is made
+    // per source `Geom_Surface` so two faces that shared a surface still share
+    // it (`BRepTools_ShapeSet::Add`, `cxx:128-172`).
+    let mut surface_copies: std::collections::HashMap<usize, Arc<dyn Surface>> =
+        std::collections::HashMap::new();
+    for s in &shapes {
+        if s.shape_type() != ShapeType::Face {
+            continue;
+        }
+        if let Some(g) = reg.face_geom(s) {
+            let old = Arc::as_ptr(&g.surface) as *const () as usize;
+            let surface = match surface_copies.get(&old) {
+                Some(c) => c.clone(),
+                None => {
+                    let c: Arc<dyn Surface> = Arc::from(g.surface.transformed(t));
+                    surface_copies.insert(old, c.clone());
+                    c
+                }
+            };
+            reg.set_face(s, FaceGeom {
+                surface,
+                tolerance: g.tolerance,
+                natural_restriction: g.natural_restriction,
+            });
+        }
+    }
+    // Edges: the pcurve representations keep their 2D curves (an isometry does
+    // not change a pcurve), only their surface key moves to the transformed
+    // surface of the face they belong to.
+    let mut surface_new: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for (old, c) in surface_copies.iter() {
+        surface_new.insert(*old, Arc::as_ptr(c) as *const () as usize);
+    }
+    for s in &shapes {
+        if s.shape_type() != ShapeType::Edge {
+            continue;
+        }
+        if let Some(g) = reg.edge_geom(s) {
+            let remap = |k: usize| surface_new.get(&k).copied().unwrap_or(k);
+            let pcurves = g.pcurves.map_keys(remap);
+            let pcurve_ranges = g.pcurve_ranges.map_keys(remap);
+            let curve = Arc::from(g.curve.transformed(t));
+            reg.set_edge(s, EdgeGeom {
+                curve,
+                curve3d_null: g.curve3d_null,
+                first: g.first,
+                last: g.last,
+                tolerance: g.tolerance,
+                same_parameter: g.same_parameter,
+                same_range: g.same_range,
+                degenerated: g.degenerated,
+                pcurves,
+                pcurve_ranges,
+            });
+        }
+    }
+    for s in &shapes {
+        if s.shape_type() != ShapeType::Vertex {
+            continue;
+        }
+        if let Some(g) = reg.vertex_geom(s) {
+            let p = g.point.transformed(t);
+            reg.set_vertex(s, VertexGeom { point: p, tolerance: g.tolerance });
         }
     }
     shape.location = TopLocLocation::identity();
@@ -104,6 +137,13 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
     let mut map: std::collections::HashMap<usize, TopoShape> = std::collections::HashMap::new();
     // Source/copy pairs, for the pcurve re-keying pass below.
     let mut pairs: Vec<(TopoShape, TopoShape)> = Vec::new();
+    // One transformed surface per source `Geom_Surface`, as `BRepTools_ShapeSet`
+    // does (`mySurfaces.Add` de-duplicates identical handles, `cxx:128-172`), so
+    // two faces that share a surface still share it after the copy. Cloning the
+    // surface per face would make the source→copy surface map below
+    // non-injective and re-key a face's pcurves onto its sibling's surface.
+    let mut surface_copies: std::collections::HashMap<usize, Arc<dyn Surface>> =
+        std::collections::HashMap::new();
     let mut stack = vec![shape.clone()];
     while let Some(s) = stack.pop() {
         let key = std::sync::Arc::as_ptr(&s.tshape) as usize;
@@ -136,8 +176,17 @@ pub fn transformed_copy(shape: &TopoShape, t: &GpTrsf) -> Result<TopoShape, Stri
             }
             ShapeType::Face => {
                 if let Some(g) = reg.face_geom(&s) {
+                    let src_surf = Arc::as_ptr(&g.surface) as *const () as usize;
+                    let surface = match surface_copies.get(&src_surf) {
+                        Some(s) => s.clone(),
+                        None => {
+                            let c: Arc<dyn Surface> = Arc::from(g.surface.transformed(t));
+                            surface_copies.insert(src_surf, c.clone());
+                            c
+                        }
+                    };
                     reg.set_face(&copy, FaceGeom {
-                        surface: Arc::from(g.surface.transformed(t)),
+                        surface,
                         tolerance: g.tolerance,
                         natural_restriction: g.natural_restriction,
                     });

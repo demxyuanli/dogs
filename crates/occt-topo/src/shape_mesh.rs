@@ -23,13 +23,25 @@ use crate::wireframe::{edge_to_polyline, face_to_triangles};
 ///
 /// Vertex lists of per-face tessellations are concatenated and triangle
 /// indices shifted by the running offset.
+///
+/// A face that already carries a triangulation is emitted as-is: that is what
+/// `BRep_Tool::Triangulation` answers (`BRep_Tool.cxx:111-119`) and what the
+/// consumers that accept pre-meshed faces read (`BRepBndLib.cxx:94`,
+/// `BRepBndLib_1.cxx:187`). A glTF proxy face has no surface at all, so the
+/// tessellator cannot be asked to rebuild it.
 pub fn mesh_shape(shape: &TopoShape, deflection: f64) -> ShapeMesh {
     let mut vertices: Vec<GpPnt> = Vec::new();
     let mut triangles: Vec<Triangle> = Vec::new();
     let mut ex = Explorer::new(shape, ShapeType::Face);
     while ex.more() {
         let face = crate::shape::Face(ex.current().clone());
-        let (vs, ts) = face_to_triangles(&face, deflection);
+        let (vs, ts) = match crate::brep_tool::BRepTool::face_triangulation(&face) {
+            Some(tri) => (tri.nodes.clone(), tri.triangles.clone()),
+            None => {
+                let (vs, ts) = face_to_triangles(&face, deflection);
+                (vs, ts)
+            }
+        };
         let offset = vertices.len();
         vertices.extend(vs);
         for t in ts {

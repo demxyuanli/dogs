@@ -9,6 +9,7 @@ use occt_geom2d::curve::Curve2d;
 use crate::abs::{ShapeType, ShapeFlags};
 use crate::shape::TopoShape;
 use occt_core::toploc::TopLocLocation;
+use occt_core::poly::Triangulation;
 
 /// Thread-safe shared handle to a TShape (replaces Handle(TopoDS_TShape)).
 pub type HandleTShape = Arc<RwLock<TShape>>;
@@ -122,6 +123,81 @@ impl TShape {
 
     /// The face's geometry, if it has one yet.
     pub fn face_core(&self) -> Option<&FaceGeomCore> { self.face_core.as_ref() }
+
+    /// `BRep_TFace::Triangulation(Poly_MeshPurpose_NONE)` (`BRep_TFace.cxx:47-53`):
+    /// the active triangulation, if any.
+    ///
+    /// UNPORTED: the `Poly_MeshPurpose` selection (`cxx:54-70`) — this crate's
+    /// `Triangulation` carries no purpose bits, so only the active one is
+    /// answerable.
+    pub fn face_triangulation(&self) -> Option<&Arc<Triangulation>> {
+        let core = self.face_core()?;
+        core.active_triangulation.and_then(|i| core.triangulations.get(i))
+    }
+
+    /// `BRep_TFace::Triangulations()` (`BRep_TFace.hxx:112-115`): every
+    /// triangulation attached to the face.
+    pub fn face_triangulations(&self) -> &[Arc<Triangulation>] {
+        match self.face_core() {
+            Some(c) => &c.triangulations,
+            None => &[],
+        }
+    }
+
+    /// `BRep_TFace::Triangulation(theTriangulation, theToReset)`
+    /// (`BRep_TFace.cxx:75-136`).
+    ///
+    /// With `to_reset` (or a null triangulation) the list is replaced by the
+    /// single input and that one becomes active. Otherwise an input already in
+    /// the list is made active; an input not in the list replaces the active
+    /// entry in place. The active bit OCCT keeps on `Poly_Triangulation` is the
+    /// `active_triangulation` index here.
+    pub fn set_face_triangulation(&mut self, tri: Option<Arc<Triangulation>>, to_reset: bool) {
+        let core = self.face_core_mut();
+        if to_reset || tri.is_none() {
+            core.active_triangulation = None;
+            core.triangulations.clear();
+            if let Some(t) = tri {
+                core.triangulations.push(t);
+                core.active_triangulation = Some(0);
+            }
+            return;
+        }
+        let Some(t) = tri else { return };
+        // `cxx:99-118`: already listed -> make it the active one.
+        if let Some(i) = core.triangulations.iter().position(|e| Arc::ptr_eq(e, &t)) {
+            core.active_triangulation = Some(i);
+            return;
+        }
+        // `cxx:119-135`: replace the active entry, keeping the list length.
+        if let Some(a) = core.active_triangulation {
+            if let Some(slot) = core.triangulations.get_mut(a) {
+                *slot = t;
+            }
+        }
+    }
+
+    /// `BRep_TFace::Triangulations(theTriangulations, theActiveTriangulation)`
+    /// (`BRep_TFace.cxx:139-177`): replace the whole list; a null active handle
+    /// selects the first entry.
+    pub fn set_face_triangulations(
+        &mut self,
+        mut tris: Vec<Arc<Triangulation>>,
+        active: Option<usize>,
+    ) {
+        let core = self.face_core_mut();
+        if tris.is_empty() {
+            core.active_triangulation = None;
+            core.triangulations.clear();
+            return;
+        }
+        core.active_triangulation = Some(match active {
+            Some(i) if i < tris.len() => i,
+            _ => 0,
+        });
+        core.triangulations.clear();
+        core.triangulations.append(&mut tris);
+    }
 }
 
 impl Drop for TShape {
@@ -158,16 +234,29 @@ pub struct FaceGeomCore {
     pub surface: Option<Arc<dyn Surface>>,
     pub tolerance: f64,
     pub natural_restriction: bool,
+    /// `BRep_TFace::myTriangulations` (`BRep_TFace.hxx:139`): every
+    /// triangulation attached to the face, in insertion order. A face built by
+    /// meshing holds one; a glTF "proxy" face also holds one while carrying no
+    /// surface (`BRep_Builder::MakeFace(face, triangulation)`,
+    /// `BRep_Builder.cxx:516-527`).
+    pub triangulations: Vec<Arc<Triangulation>>,
+    /// `BRep_TFace::myActiveTriangulation` (`BRep_TFace.hxx:140`), stored as an
+    /// index into `triangulations` because this crate has no handle identity
+    /// for `Poly_Triangulation`.
+    pub active_triangulation: Option<usize>,
 }
 
 impl Default for FaceGeomCore {
     fn default() -> Self {
         // `BRep_TFace::BRep_TFace()` (`BRep_TFace.cxx:29-30`): tolerance
-        // `RealEpsilon()`, no surface, `myNaturalRestriction` false.
+        // `RealEpsilon()`, no surface, `myNaturalRestriction` false; the
+        // triangulation list and the active handle start empty.
         Self {
             surface: None,
             tolerance: occt_core::precision::REAL_EPSILON,
             natural_restriction: false,
+            triangulations: Vec::new(),
+            active_triangulation: None,
         }
     }
 }
@@ -178,6 +267,8 @@ impl fmt::Debug for FaceGeomCore {
             .field("has_surface", &self.surface.is_some())
             .field("tolerance", &self.tolerance)
             .field("natural_restriction", &self.natural_restriction)
+            .field("triangulations", &self.triangulations.len())
+            .field("active_triangulation", &self.active_triangulation)
             .finish()
     }
 }
@@ -230,6 +321,13 @@ pub struct EdgeGeomCore {
     /// (`BRepSweep_Rotation::SetDirectingParameter` / `SetGeneratingParameter`).
     /// Keyed by `GeometryRegistry::shape_key` of the vertex.
     pub vertex_params: Vec<(usize, f64)>,
+    /// The `BRep_Polygon3D` representation (`BRep_Builder::UpdateEdge(E, P, L)`,
+    /// `BRep_Builder.cxx:749-785`): a polygon-backed edge with no 3D curve.
+    /// glTF line primitives create exactly this kind of edge —
+    /// `aBuilder.MakeEdge(anEdge, aPoly)` (`RWGltf_GltfJsonParser.cxx:1994-1996`,
+    /// `.lxx:43-47`). `BRep_Tool::Curve` stays null for such an edge; the
+    /// polygon is read through `BRep_Tool::Polygon3D` (`BRep_Tool.cxx:723-741`).
+    pub polygon3d: Option<Arc<occt_core::poly::Polygon3D>>,
 }
 
 impl fmt::Debug for EdgeGeomCore {
@@ -257,6 +355,7 @@ impl Default for EdgeGeomCore {
             same_range: false,
             degenerated: false,
             vertex_params: Vec::new(),
+            polygon3d: None,
         }
     }
 }

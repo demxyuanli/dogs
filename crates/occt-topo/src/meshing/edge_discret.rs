@@ -212,7 +212,9 @@ impl EdgeParameterProvider {
     /// `BRepMesh_EdgeParameterProvider::Parameter` (`hxx:109-139`).
     /// SameParameter returns `stored`. Otherwise scale, then
     /// `Extrema_LocateExtPC` on the face `BRepAdaptor_Curve` (curve-on-surface)
-    /// with the period/regression guard.
+    /// with the period/regression guard. The projector is initialized with
+    /// `Precision::PConfusion()` (`hxx:99-103`), which drives the iteration stop
+    /// criterion `abs(Un - Un-1) < TolF` (`Extrema_GLocateExtPC.hxx:71-72`).
     pub fn parameter_of(&mut self, stored: f64, point3d: &GpPnt, cos: &dyn Curve) -> f64 {
         if self.is_same_param {
             return stored;
@@ -221,13 +223,16 @@ impl EdgeParameterProvider {
         self.cur_param = self.first + self.scale * (stored - self.old_first);
         let prev_found = self.found_param;
         self.found_param += self.cur_param - prev_param;
-        if let Some((found, _)) = crate::int_tools_vertex_line::extrema_locate_ext_pc(
-            cos,
-            point3d,
-            self.found_param,
-            self.first,
-            self.last,
-        ) {
+        if let Some((found, _)) =
+            crate::int_tools_vertex_line::extrema_locate_ext_pc_with_tol(
+                cos,
+                point3d,
+                self.found_param,
+                self.first,
+                self.last,
+                PCONFUSION,
+            )
+        {
             if (prev_found < self.found_param && prev_found < found)
                 || (prev_found > self.found_param && prev_found > found)
             {

@@ -67,6 +67,7 @@
 | §9.632 | `wire_fix.rs` 拆为 `wire_fix/` 子模块（3379 行 → 多个文件） | 逻辑不变 |
 | §9.633 | `FixIntersectingWires` 与 `FixWiresTwoCoincEdges` 接入 `ShapeFix_Face::Perform` | 结构对齐 |
 | §9.634 | 提交前门禁与提交内容整理 | `step_obj_gates` 4/4 |
+| T-184 | 平面面 pcurve 走 `ProjLib_ComputeApprox::Perform` 的 `GeomAbs_Plane` + BSpline/Bezier 控制点短路（`pcurve.rs::projected_pole_curve`），使 `GeomBndLib_Curve2d` 选到控制点凸包；装配副本按源曲面去重（`shape_ops.rs`） | a3n00 95/95 平面面 UV 窗口对齐（max\|du\|=4.6e-5 / max\|dv\|=4.9e-4）；Honda GX390 拓扑 bbox 的 ±inf 消除 |
 
 ## 6. 当前基线（面积比，门禁口径）
 
@@ -89,7 +90,7 @@
 | TDB | 1.0015 | 2026-10-16 复测（2026-10-13 的 1.0000 为历史） |
 | bottom | 1.0000 | **2026-10-16 复测：已闭环**（原 ≈0.976 为过期读数） |
 
-- 门禁：`occt-topo --lib` **1251/1251**（`notes/T002-gate-baseline.md` 冻结值；原记的 1281/1281 是更早的读数），`step_obj_gates` 4/4（23 个模型表），`fuse_box_cylinder_is_closed_solid` 通过。
+- 门禁：`occt-topo --lib` **1254/1254**（T-184 实测；doc 原记 1251/1251 与 T-183 之前的读数），`step_obj_gates` 4/4（23 个模型表），`fuse_box_cylinder_is_closed_solid` 通过。T-184 后 occt-topo 全量 `cargo test` 为 1325 passed / 1 ignored（15 suites）。
 
 ## 7. 遗留项
 

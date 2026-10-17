@@ -111,5 +111,9 @@ fn bbox_and_mesh_agree() {
     let (_, a1, _, b1, _, c1) = mesh_bb.get().unwrap();
     let (_, x1, _, y1, _, z1) = geom_bb.get().unwrap();
     assert!(a1 > 0.99 && a1 <= 1.01);
-    assert!(x1 > 0.99 && x1 <= 1.01 && b1 == y1 && c1 == z1);
+    // `shape_bbox` is `BRepBndLib::Add` (`BRepBndLib.cxx:81-215`), which enlarges
+    // by the face / edge tolerance (`:112-131`), so the mesh box sits inside the
+    // geometric box instead of matching it bit for bit.
+    assert!(a1 <= x1 && b1 <= y1 && c1 <= z1);
+    assert!(approx(x1, a1) && approx(y1, b1) && approx(z1, c1));
 }
