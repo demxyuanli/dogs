@@ -132,7 +132,7 @@ pub(super) fn on_face_split_edges<B: BopBuilderLike>(
         let (a, b) = pb.range();
         let (a, b) = (a.min(b), a.max(b));
         // Positive-length overlap with the FaceInfo range, not a shared end.
-        // `_2.cxx` takes that one `aPB->Edge()`; a neighbour whose Edge() is
+        // `_2.cxx` takes that one `aPB->Edge()`; a neighbor whose Edge() is
         // still the unsplit original poisons ShapesToAvoid.
         if a >= hi - tol || b <= lo + tol {
             continue;

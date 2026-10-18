@@ -108,11 +108,11 @@ pub(super) fn build_adjacent_face(
 // Public API
 // ===========================================================================
 
-/// Sample the rolling-ball centre locus for two surfaces. For the supported
+/// Sample the rolling-ball center locus for two surfaces. For the supported
 /// analytic pairs the locus is a circle (plane+sphere, sphere+sphere,
 /// plane+cylinder); the returned points lie on it.
 ///
-/// Each returned centre point is at distance `radius` from the first surface
+/// Each returned center point is at distance `radius` from the first surface
 /// and `radius` from the second surface (measuring against the *offset*
 /// surfaces — the plane pushed out by `r`, the sphere/cylinder enlarged by
 /// `R + r`). Unsupported pairs return an error.
@@ -367,7 +367,7 @@ impl Xy {
     }
 }
 
-/// Intersections of two circles (centres `c1`/`c2`, radii `r1`/`r2`) in the
+/// Intersections of two circles (centers `c1`/`c2`, radii `r1`/`r2`) in the
 /// cross-section plane. Returns 0, 1 or 2 points.
 pub(super) fn circle_circle_intersections(c1: &Xy, r1: f64, c2: &Xy, r2: f64) -> Vec<Xy> {
     let d = c2.sub(c1).norm();
@@ -417,7 +417,7 @@ pub(super) fn build_xy_arc(
 
 /// Rolling-ball fillet between two parallel (non-coaxial) cylinder lateral
 /// faces sharing a generator line. The blend is a cylindrical band of radius
-/// `r` whose axis is the rolling-ball centreline (the line at distance `r`
+/// `r` whose axis is the rolling-ball centerline (the line at distance `r`
 /// from both cylinders, on the material side of the shared edge).
 pub(super) fn fillet_edge_parallel_cylinders(
     solid: &TopoShape,
@@ -455,7 +455,7 @@ pub(super) fn fillet_edge_parallel_cylinders(
     );
     let p_edge = Xy::from_proj(&edge_mid, &xh, &yh, &ref_pt);
 
-    // Inner offset circles: the ball centre is at distance r inside both.
+    // Inner offset circles: the ball center is at distance r inside both.
     let r1o = c1.radius - r;
     let r2o = c2.radius - r;
     if r1o <= 1e-9 || r2o <= 1e-9 {
@@ -465,7 +465,7 @@ pub(super) fn fillet_edge_parallel_cylinders(
     }
     let hits = circle_circle_intersections(&o1, r1o, &o2, r2o);
     if hits.is_empty() {
-        return Err("fillet_edge_parallel_cylinders: no rolling-ball centreline".to_string());
+        return Err("fillet_edge_parallel_cylinders: no rolling-ball centerline".to_string());
     }
     let side_edge = p_edge.sub(&o1).cross(&o2.sub(&o1)).signum();
     let c_xy = hits
@@ -540,7 +540,7 @@ pub(super) fn fillet_edge_parallel_cylinders(
     let lat2_wire = b.make_wire(&[arc2_bottom.clone(), p2_line.clone(), arc2_top.clone(), tangency2.clone()]);
     let lat2 = b.make_face(surf2, &[lat2_wire]);
 
-    // Blend face: a cylinder of radius r around the centreline.
+    // Blend face: a cylinder of radius r around the centerline.
     let blend_axis = c_xy.to_pnt(0.0, &xh, &yh, &ax, &ref_pt);
     let ax3 = GpAx3::new(blend_axis, GpDir::from_xyz(&ax.xyz()).map_err(|e| e.to_string())?, &GpDir::from_xyz(&xh.xyz()).map_err(|e| e.to_string())?)
         .map_err(|e| format!("fillet_curved: blend cylinder frame: {e}"))?;

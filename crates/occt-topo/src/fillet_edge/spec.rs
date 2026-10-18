@@ -25,7 +25,7 @@ impl FilletSpec {
 /// Points are deduplicated by position; line segments are keyed by their
 /// (unordered) endpoint pair; circular arcs by the same. Original edges that
 /// are fully retained by a face are registered here too, so a rebuilt face
-/// reuses the identical edge instance that a kept neighbour face still
+/// reuses the identical edge instance that a kept neighbor face still
 /// references.
 pub(super) struct EdgeCache {
     pub(super) b: TopoBuilder,
@@ -85,7 +85,7 @@ impl EdgeCache {
         e
     }
 
-    /// A circular-arc edge from `a` to `b` on the circle of `radius` centred at
+    /// A circular-arc edge from `a` to `b` on the circle of `radius` centered at
     /// `center` with plane normal `normal`, shared by all requesters. The arc
     /// is the minor arc that sweeps from `a` to `b` counter-clockwise in the
     /// frame whose X axis points at `a`.
@@ -104,7 +104,7 @@ impl EdgeCache {
             return Ok(e.clone());
         }
         let xd = GpDir::from_vec(&GpVec::from_pnts(center, a))
-            .map_err(|_| "fillet: arc start coincides with the arc centre".to_string())?;
+            .map_err(|_| "fillet: arc start coincides with the arc center".to_string())?;
         let ax2 = GpAx2::new(*center, *normal, xd)
             .map_err(|e| format!("fillet: arc frame is degenerate: {e}"))?;
         let xdir = *ax2.x_direction();
@@ -450,7 +450,7 @@ pub(super) fn face_outward_normal(face: &Face) -> Result<GpVec, String> {
 /// Rebuild one planar face into its trimmed version: the retained region is
 /// `inside(p)` (a half-plane for adjacent faces, the outside-of-sphere test for
 /// corner faces). Original edges that survive untouched are reused so shared
-/// boundaries with kept neighbour faces stay intact.
+/// boundaries with kept neighbor faces stay intact.
 pub(super) fn rebuild_face(face: &Face, inside: &impl Fn(&GpPnt) -> bool, cache: &mut EdgeCache) -> Result<Face, String> {
     let poly = register_face_edges(face, cache)?;
     let clipped = clip_polygon(&poly, inside);
@@ -464,10 +464,10 @@ pub(super) fn rebuild_face(face: &Face, inside: &impl Fn(&GpPnt) -> bool, cache:
 
 /// Rebuild the end face at an edge endpoint: replace the corner vertex `p`
 /// (on the filleted edge) with the tangency points `t1`, `t2` and the blend
-/// arc between them, all shared with the neighbouring rebuilt faces.
+/// arc between them, all shared with the neighboring rebuilt faces.
 ///
 /// `center` is the blend-cylinder axis point at this endpoint (the arc's
-/// centre), `n1`/`n2` are the adjacent faces' outward normals used to tell
+/// center), `n1`/`n2` are the adjacent faces' outward normals used to tell
 /// which incident edge of the end face lies on which adjacent face.
 pub(super) fn rebuild_end_face(
     face: &Face,

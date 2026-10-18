@@ -33,7 +33,7 @@
 //! |---------------|----------------------|---------------------------------------------------|
 //! | `box`         | `name dx dy dz`      | axis-aligned box `[0,dx]×[0,dy]×[0,dz]`           |
 //! | `cylinder`    | `name r h`           | Z-axis cylinder, radius `r`, height `h`           |
-//! | `sphere`      | `name r`             | sphere of radius `r` centred at the origin        |
+//! | `sphere`      | `name r`             | sphere of radius `r` centered at the origin        |
 //! | `cone`        | `name r1 r2 h`       | right cone (base `r1`, top `r2` = 0), height `h`  |
 //! | `torus`       | `name r1 r2`         | torus, major radius `r1`, minor radius `r2`       |
 //! | `fuse`        | `a b out`            | boolean union `a ∪ b` → `out`                     |

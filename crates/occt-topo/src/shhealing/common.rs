@@ -468,10 +468,10 @@ pub fn weld_coincident_vertices(shape: &TopoShape, tol: f64) -> (TopoShape, usiz
 /// `Context()->Remove` half of which has no counterpart here - see
 /// `fix_small_one`), and when its two endpoints are distinct the fix continues
 /// with `FixConnected(n, precsmall)` (`cxx:1459-1468`) exactly as OCCT does;
-/// that is what merges the neighbouring vertices
+/// that is what merges the neighboring vertices
 /// (`ShapeFix_Wire.cxx:1538-1544`, `ShapeBuild_Vertex::CombineVertex(V1, V2,
 /// 1.0001)` + `BRepTools_ReShape::Replace` on both), and it merges them only
-/// when the *neighbours* are within `precsmall`. A surviving edge is rebuilt
+/// when the *neighbors* are within `precsmall`. A surviving edge is rebuilt
 /// with `ShapeBuild_Edge::CopyReplaceVertices` (`ShapeBuild_Edge.cxx:59-140`),
 /// which keeps its curve: OCCT never replaces a heal survivor with a straight
 /// segment. Because `CheckSmall` bails out at `NbEdges() <= 1`

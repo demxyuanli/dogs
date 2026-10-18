@@ -150,7 +150,7 @@ pub fn boolean_planar_legacy(
     }
     // Unify edges across faces so shared geometric boundaries reference one
     // Edge TShape (a face split by intersection lines otherwise keeps
-    // subdivided boundary edges while its neighbour keeps the long edge, and
+    // subdivided boundary edges while its neighbor keeps the long edge, and
     // the shell never closes). Run BEFORE orienting outward — the closure
     // check in `orient_faces_outward` needs the unified (closed) shell.
     let result_faces = unify_result_edges(&bld, &result_faces, tol);

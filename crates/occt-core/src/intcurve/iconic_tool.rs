@@ -84,7 +84,7 @@ impl IntCurveIConicTool {
     }
 
     /// `IntCurve_IConicTool(const gp_Circ2d&)` (`cxx:100-111`): `prm1 = r`,
-    /// `prm2 = x0`, `prm3 = y0` (the centre in *absolute* coordinates).
+    /// `prm2 = x0`, `prm3 = y0` (the center in *absolute* coordinates).
     pub fn from_circ2d(c: &GpCirc2d) -> Self {
         let mut abs_to_object = GpTrsf2d::identity();
         abs_to_object.set_transformation(&crate::gp::ox2d(), &c.pos.x_axis());

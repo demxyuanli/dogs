@@ -478,7 +478,7 @@ pub fn curve_to_bspline_curve(
         }
 
         if let Some(circ) = basis.gp_circ() {
-            // `cxx:208-244`: the 2D conic is centred at the origin with the same
+            // `cxx:208-244`: the 2D conic is centered at the origin with the same
             // radius; `BSplineCurveBuilder` moves it back through
             // `TheConic->Position()`.
             let c2d = GpCirc2d::new(GpAx22d::standard(), circ.radius());

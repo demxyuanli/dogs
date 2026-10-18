@@ -598,11 +598,11 @@ pub fn inertia_tensor_at(shape: &TopoShape, density: f64, p: &GpPnt) -> Result<I
     Ok(t.translated(mass, &offset))
 }
 
-/// Inertia tensor of a set of disjoint solids about their combined centre of
+/// Inertia tensor of a set of disjoint solids about their combined center of
 /// mass.
 ///
 /// Each solid's tensor is computed about its own centroid (via
-/// [`inertia_tensor`]), shifted to the combined centre of mass by the
+/// [`inertia_tensor`]), shifted to the combined center of mass by the
 /// parallel-axis theorem, and summed element-wise. Returns the combined tensor
 /// and the combined centroid.
 pub fn inertia_tensor_composite(

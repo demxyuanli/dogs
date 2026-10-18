@@ -317,7 +317,7 @@ impl ModelHealer {
     /// `BRepMesh_ModelHealer::adjustSamePoints` (`hxx:134-152`).
     ///
     /// The "major" edge is the current pcurve (`curr_first`/`curr_last`), the
-    /// "minor" edge is a neighbour (`minor_first`/`minor_last`).
+    /// "minor" edge is a neighbor (`minor_first`/`minor_last`).
     /// `side`/`b_val` are the major's closest-to-`prev`/`next` end and the
     /// value it takes; `c_side`/`d_val` are the other pairing. When both pairings
     /// select the **same** major end, that end is flipped to the other one and
@@ -773,7 +773,7 @@ mod tests {
         let ds = delaun.into_result();
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
-        // triangles whose neighbour touches the super-triangle. With only Free links
+        // triangles whose neighbor touches the super-triangle. With only Free links
         // the 3x3 grid keeps 6 triangles over 7 nodes instead of the old 8 over 9.
         assert_eq!(ds.elements_of_domain().len(), 6);
 

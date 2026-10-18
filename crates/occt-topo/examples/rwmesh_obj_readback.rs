@@ -370,7 +370,7 @@ fn print_node(name: &str, nv: usize, nf: usize, mat: Option<&Material>, uv: bool
 ///
 /// `RWObj_ObjMaterialMap::DefineMaterial` writes `Ka`/`Kd`/`Ks`/`Ns` together
 /// (`RWObj_ObjMaterialMap.cxx:85-121`) or none of them (a style with no surface
-/// colour), so a field the file does not carry must read back as the
+/// color), so a field the file does not carry must read back as the
 /// `RWObj_Material` default (`RWObj_Material.hxx:45-46`), and `Tr` missing means
 /// opaque. `Ns` is normalised by the reader (`Shininess = min(Ns/1000, 1)`,
 /// `RWObj_MtlReader.cxx:200-211`), so 1000.000000 comes back as 1.0.

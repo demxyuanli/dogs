@@ -21,7 +21,7 @@ pub(super) const NGV: usize = 10; // number of value types in the GK integrator
 ///
 /// * `dim` — mass / length / area / volume (the "dimension" of the system);
 /// * `loc` — the reference point the inertia is computed about;
-/// * `g`   — the centre of mass *relative to* `loc`;
+/// * `g`   — the center of mass *relative to* `loc`;
 /// * `inertia` — the 3×3 inertia matrix about `loc` (standard form, off
 ///   diagonal entries negated: `I[1][2] = −∫xy dm`).
 #[derive(Debug, Clone, Copy)]
@@ -43,7 +43,7 @@ impl GaussProperties {
         self.dim
     }
 
-    /// The absolute centre of mass (`loc + g`).
+    /// The absolute center of mass (`loc + g`).
     pub fn center(&self) -> GpPnt {
         GpPnt::from_xyz(&self.loc.coord.added(&self.g.coord))
     }
@@ -53,10 +53,10 @@ impl GaussProperties {
         self.inertia
     }
 
-    /// The inertia matrix about the centre of mass (parallel-axis shift from
-    /// `loc` to the centre).
+    /// The inertia matrix about the center of mass (parallel-axis shift from
+    /// `loc` to the center).
     pub fn central_inertia(&self) -> GpMat {
-        let d = GpVec::from_pnts(&self.center(), &self.loc); // loc − centre
+        let d = GpVec::from_pnts(&self.center(), &self.loc); // loc − center
         self.inertia.add(&huygens_mat(-self.dim, &d))
     }
 
@@ -80,7 +80,7 @@ impl GaussProperties {
         self.inertia = self.inertia.add(&other.inertia.add(&huy));
     }
 
-    /// Add an unlocated piece whose centre and inertia are already about
+    /// Add an unlocated piece whose center and inertia are already about
     /// `self.loc`.
     pub fn add_here(&mut self, dim: f64, g: &GpVec, inertia: &GpMat) {
         let d = self.dim + dim;

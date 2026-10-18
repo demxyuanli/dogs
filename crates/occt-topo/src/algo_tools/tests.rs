@@ -282,7 +282,7 @@ use super::*;
         adj.entry(1).or_default().extend([0]);
         adj.entry(2).or_default().extend([3]);
         adj.entry(3).or_default().extend([2]);
-        adj.entry(4).or_default(); // isolated: present as a key, no neighbours
+        adj.entry(4).or_default(); // isolated: present as a key, no neighbors
         let blocks = AlgoTools::make_blocks(&adj);
         assert_eq!(blocks.len(), 3);
         let mut sizes: Vec<usize> = blocks.iter().map(|b| b.len()).collect();

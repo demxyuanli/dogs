@@ -20,7 +20,7 @@
 //! Not ported (no counterpart in this crate, documented rather than faked):
 //! the `XCAFDoc_VisMaterial` common / PBR material properties
 //! (`RWObj_ObjMaterialMap.cxx:78-92`). That arm is dead on the STEP -> OBJ path in
-//! OCCT too (see the `xcaf_prs` module header); only the material's base-colour
+//! OCCT too (see the `xcaf_prs` module header); only the material's base-color
 //! texture reaches the style. Also not ported: the `WriteHeader` file-info map
 //! (`RWObj_ObjWriterContext.cxx:112-135`).
 //!

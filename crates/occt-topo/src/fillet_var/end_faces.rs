@@ -45,7 +45,7 @@ pub(super) struct CornerFaceRebuild {
     pub(super) face: Face,
     /// Tangency trims `(edge_p0, u_dir, off)` from adjacent filleted edges.
     pub(super) trims: Vec<(GpPnt, GpVec, f64)>,
-    /// Corner arcs that live on this face (their circle centre/radius also
+    /// Corner arcs that live on this face (their circle center/radius also
     /// define the corner disk that is cut out of the face).
     pub(super) arcs: Vec<(GpPnt, GpVec, f64, GpPnt, GpPnt)>,
     /// Sampled tangency polylines `(first, last, points)` of the adjacent
@@ -308,7 +308,7 @@ pub(super) fn build_combined_run(
 }
 
 /// Sample the blend cross-section at an edge endpoint fraction (0 or 1) and
-/// return the tangency points and arc centre at that cross-section.
+/// return the tangency points and arc center at that cross-section.
 pub(super) fn sample_endpoint_blend(
     e: &EdgeInfo,
     t: f64,

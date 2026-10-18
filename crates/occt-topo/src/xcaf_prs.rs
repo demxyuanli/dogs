@@ -1,10 +1,10 @@
 //! `XCAFPrs_Style` and the `XCAFPrs` style helpers. Source: `XCAFPrs_Style.hxx`,
 //! `XCAFPrs.cxx`.
 //!
-//! `XCAFPrs_Style` is the carrier between the colour / material readers
+//! `XCAFPrs_Style` is the carrier between the color / material readers
 //! (`STEPCAFControl_Reader::ReadColors`, the document-level format readers) and
 //! the mesh writers (`RWMesh_ShapeIterator`, `RWMesh_FaceIterator`,
-//! `RWObj_ObjMaterialMap`). The port carries the surface colour / curve colour /
+//! `RWObj_ObjMaterialMap`). The port carries the surface color / curve color /
 //! material / visibility subset those callers read back:
 //!
 //! * [`XcafPrsStyle`] — `XCAFPrs_Style` (`XCAFPrs_Style.hxx:27-120`).
@@ -18,7 +18,7 @@
 //!
 //! `myMaterial` is the [`XcafDocVisMaterial`] the document attaches to the
 //! label (`XCAFPrs_Style.hxx:40-48`); `BaseColorTexture()` (`hxx:86-103`) reads
-//! its PBR base-colour or common diffuse texture. In OCCT the material is
+//! its PBR base-color or common diffuse texture. In OCCT the material is
 //! written into the document by a document-level reader (`RWGltf_CafReader`,
 //! `RWObj_CafReader`, XBF) and read back by `XCAFPrs::CollectStyleSettings`
 //! through `aMatTool->GetShapeMaterial(aLabel)` (`XCAFPrs.cxx:174`, `cxx:251`).
@@ -82,7 +82,7 @@ impl Default for XcafPrsStyle {
 
 impl XcafPrsStyle {
     /// Build a style from a model shape's optional surface color. Used by the
-    /// OBJ export for shapes whose colour comes from `ModelShape.color` rather
+    /// OBJ export for shapes whose color comes from `ModelShape.color` rather
     /// than from a `XCAFDoc_ColorTool` label.
     pub fn from_color(color: Option<Color>) -> Self {
         Self {
@@ -109,7 +109,7 @@ impl XcafPrsStyle {
         self.material = material;
     }
 
-    /// `XCAFPrs_Style::BaseColorTexture` (`hxx:86-103`): the PBR base-colour
+    /// `XCAFPrs_Style::BaseColorTexture` (`hxx:86-103`): the PBR base-color
     /// texture when the material defines PBR and carries one, else the common
     /// diffuse texture, else null.
     pub fn base_color_texture(&self) -> Option<&ImageTexture> {
@@ -135,7 +135,7 @@ impl XcafPrsStyle {
     /// `XCAFPrs_Style::SetColorSurf` (`hxx:62`) — the `Quantity_ColorRGBA`
     /// overload. `Color` carries sRGB in this port, so the stored triple is
     /// sRGB, the same value `Quantity_Color::Values(..., Quantity_TOC_sRGB)`
-    /// returns for OCCT's internally-linear colour.
+    /// returns for OCCT's internally-linear color.
     pub fn set_color_surf(&mut self, color: ColorRGBA) {
         self.color_surf = Some(color);
     }
@@ -183,7 +183,7 @@ impl XcafPrsStyle {
 
     /// `XCAFPrs_Style::IsEqual` (`XCAFPrs_Style.hxx:107-122`) / `operator==`
     /// (`hxx:125`). Note the visibility short-circuit: an invisible style equals
-    /// every other invisible style regardless of its unset colour slots
+    /// every other invisible style regardless of its unset color slots
     /// (`hxx:112-115`). `myMaterial == theOther.myMaterial` (`hxx:119`) compares
     /// handles by pointer, which [`XcafDocVisMaterial::id`] reproduces: two
     /// separately created materials stay distinct even when their values match.
@@ -207,14 +207,14 @@ impl XcafPrsStyle {
 
     /// `RWMesh_ShapeIterator::initShape`'s `myHasColor` flag
     /// (`RWMesh_ShapeIterator.cxx:140-163`): set by any material handle or by
-    /// either colour slot.
+    /// either color slot.
     pub fn has_color(&self) -> bool {
         self.material.is_some() || self.is_set_color_surf() || self.is_set_color_curv()
     }
 
     /// `RWMesh_ShapeIterator::initShape`'s `myColor`
-    /// (`RWMesh_ShapeIterator.cxx:149-162`): the material's base colour, else
-    /// the surface colour, else the curve colour. The material arm returns
+    /// (`RWMesh_ShapeIterator.cxx:149-162`): the material's base color, else
+    /// the surface color, else the curve color. The material arm returns
     /// `Quantity_ColorRGBA`'s externally-visible sRGB triple.
     pub fn color(&self) -> ColorRGBA {
         if let Some(material) = self.material.as_ref() {
@@ -229,7 +229,7 @@ impl XcafPrsStyle {
         }
     }
 
-    /// The colour slots `RWMesh_ShapeIterator::dispatchStyles` fills from the
+    /// The color slots `RWMesh_ShapeIterator::dispatchStyles` fills from the
     /// parent style when the shape's own style leaves them unset
     /// (`RWMesh_ShapeIterator.cxx:103-112`), plus the material slot
     /// (`cxx:113-116`: `if (aCafStyle.Material().IsNull() && !theStyle.Material()
@@ -260,7 +260,7 @@ impl XcafPrsStyle {
 /// wins, `cxx:119`), then SHELL, SOLID, COMPSOLID and COMPOUND keys expand to
 /// their faces with `if (!myStyles.IsBound(...))` first-write-wins
 /// (`cxx:126-129`) — so the most specific key wins, exactly as in OCCT. Every
-/// bound style takes the node style's unset colour slots
+/// bound style takes the node style's unset color slots
 /// (`cxx:103-112`); a face that no key covers is bound to the node style by the
 /// caller (`RWMesh_ShapeIterator::initShape`'s `myDefStyle` fallback,
 /// `cxx:145-148`).
@@ -311,7 +311,7 @@ pub fn dispatch_face_styles(
 /// winning.
 ///
 /// UNPORTED, with the `cxx` lines they come from: the `XCAFDoc_LayerTool` arms
-/// (`cxx:125-142`, `:178-216`: hidden layers, colour-by-layer and the
+/// (`cxx:125-142`, `:178-216`: hidden layers, color-by-layer and the
 /// `theLayerColor` fallback — `BRepModel` has no layer tree), the SHUO arm
 /// (`cxx:222-303`, no NAUO/SHUO graph) and `XCAFDoc_ColorTool::IsColorByLayer`.
 /// `IsVisible(aLabel)` is always true here: labels carry no visibility

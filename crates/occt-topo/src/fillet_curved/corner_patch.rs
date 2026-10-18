@@ -3,7 +3,7 @@ use super::*;
 
 /// Fillet one sphere+sphere arc edge of the tri-sphere corner into a torus
 /// sector spanning the azimuth interval between the two rolling-ball corner
-/// centres `c0` (near the edge's first endpoint) and `c1` (near its last). The
+/// centers `c0` (near the edge's first endpoint) and `c1` (near its last). The
 /// two adjacent sphere caps are rebuilt preserving their other boundaries, and
 /// the two sector cross-section arcs (at `c0` and `c1`) are returned so the
 /// caller can wire the spherical corner patches.
@@ -89,7 +89,7 @@ pub(super) fn fillet_sphere_sector(
     Ok((solid_out.0, cross_start, cross_end))
 }
 
-/// Rolling-ball corner centre for the tri-sphere corner: the point at distance
+/// Rolling-ball corner center for the tri-sphere corner: the point at distance
 /// `radius` from every face incident at `pv`, found by Newton iteration. `hint`
 /// seeds the iteration toward the exterior of the corner (there are two such
 /// points — one near each of the two common vertices — and the hint picks the
@@ -160,7 +160,7 @@ pub(super) fn corner_center_ball(solid: &TopoShape, pv: &GpPnt, radius: f64, hin
 /// Every edge is filleted as a torus sector (sphere+sphere arc edges of the
 /// tri-sphere corner), the adjacent sphere caps become bands bounded by their
 /// two tangency arcs, and each shared vertex is closed by a spherical patch of
-/// radius `radius` centred at the rolling-ball corner centre, bounded by the
+/// radius `radius` centered at the rolling-ball corner center, bounded by the
 /// three sector cross-section arcs. Unlike the best-effort
 /// `fillet_curved_multi_normal`, the result is a closed shell: every edge of
 /// the rebuilt solid is referenced by exactly two faces.
@@ -217,7 +217,7 @@ pub fn fillet_curved_corner_patch(
         return Err("fillet_curved_corner_patch: the given edges share no vertex".to_string());
     }
 
-    // Rolling-ball corner centre for each shared vertex, seeded toward the
+    // Rolling-ball corner center for each shared vertex, seeded toward the
     // exterior (away from the other shared vertices).
     let mut centers: Vec<GpPnt> = Vec::new();
     for q in &shared {
@@ -239,7 +239,7 @@ pub fn fillet_curved_corner_patch(
     }
 
     // Fillet each edge as a torus sector, collecting the cross-section arcs per
-    // corner centre for the spherical patches.
+    // corner center for the spherical patches.
     let mut current = solid.clone();
     let mut cross_by_center: Vec<Vec<Edge>> = vec![Vec::new(); shared.len()];
     for (ei, e) in e_objs.iter().enumerate() {
@@ -284,7 +284,7 @@ pub fn fillet_curved_corner_patch(
     for (i, c) in centers.iter().enumerate() {
         if cross_by_center[i].len() < 3 {
             return Err(format!(
-                "fillet_curved_corner_patch: corner centre {i} has only {} cross-section arcs",
+                "fillet_curved_corner_patch: corner center {i} has only {} cross-section arcs",
                 cross_by_center[i].len()
             ));
         }

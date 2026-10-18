@@ -161,7 +161,7 @@ use super::*;
     }
 
     /// A sphere cap sitting on the top face of a box: box `[-1.5,1.5]²×[-1,0]`
-    /// with a sphere of radius `r_s` centred at the origin (on the top plane).
+    /// with a sphere of radius `r_s` centered at the origin (on the top plane).
     pub(super) fn build_sphere_on_box(r_s: f64) -> (Solid, Edge) {
         let b = TopoBuilder::new();
         let (solid, holes) = build_box_with_holes(
@@ -226,7 +226,7 @@ use super::*;
     }
 
     /// Two sphere caps on a box, for the chain test: box `[-2,2]²×[-1,0]`, two
-    /// spheres of radius 0.7 centred at `(±0.9, 0, 0)`.
+    /// spheres of radius 0.7 centered at `(±0.9, 0, 0)`.
     pub(super) fn build_two_spheres_on_box() -> (Solid, Vec<Edge>) {
         let b = TopoBuilder::new();
         let (solid, holes) = build_box_with_holes(
@@ -290,7 +290,7 @@ use super::*;
             .expect("torus blend face")
     }
 
-    /// Distance from `p` to the circle (centre `c`, unit normal `n`, radius
+    /// Distance from `p` to the circle (center `c`, unit normal `n`, radius
     /// `rho`) in the plane perpendicular to `n`.
     pub(super) fn distance_to_circle(p: &GpPnt, c: &GpPnt, n: &GpVec, rho: f64) -> f64 {
         let v = GpVec::from_pnts(c, p);
@@ -365,7 +365,7 @@ use super::*;
     }
 
     /// A cone (apex at the origin, widening up) capped by a sphere: the sphere
-    /// centre is on the cone axis and its base circle sits on the cone's top
+    /// center is on the cone axis and its base circle sits on the cone's top
     /// rim (z=1, radius tan(α)). The rim circle is the fillet edge.
     pub(super) fn build_cone_sphere_union(alpha: f64, rs: f64) -> (Solid, Edge) {
         let b = TopoBuilder::new();
@@ -431,7 +431,7 @@ use super::*;
         let p2 = GpPnt::new(half, -h_half, 0.0);
         let p1_top = GpPnt::new(half, h_half, 2.0);
         let p2_top = GpPnt::new(half, -h_half, 2.0);
-        // Angles on circle A (centre 0,0) and circle B (centre d,0).
+        // Angles on circle A (center 0,0) and circle B (center d,0).
         let a1_p1 = h_half.atan2(half);
         let a1_p2 = (-h_half).atan2(half);
         let a2_p1 = h_half.atan2(half - d);
@@ -469,7 +469,7 @@ use super::*;
         assert_eq!(faces.len(), 8, "7 input faces + 1 blend face, got {}", faces.len());
         assert!(shell_is_closed(&shell_of(&out)), "plane+sphere fillet is closed");
         // The blend face is a torus band: every sampled point is at distance r
-        // from the rolling-ball centreline circle.
+        // from the rolling-ball centerline circle.
         let blend = find_blend_face(&faces);
         let s = BRepTool::face_surface(blend).unwrap();
         let r = 0.2;
@@ -492,7 +492,7 @@ use super::*;
         let faces = faces_of(&out);
         assert_eq!(faces.len(), 9, "8 input faces + 1 blend face, got {}", faces.len());
         assert!(shell_is_closed(&shell_of(&out)), "plane+cylinder fillet is closed");
-        // The blend face is a torus band around the centreline circle of radius
+        // The blend face is a torus band around the centerline circle of radius
         // R_c + r at height r above the plane.
         let blend = find_blend_face(&faces);
         let s = BRepTool::face_surface(blend).unwrap();
@@ -621,14 +621,14 @@ use super::*;
         sph.set_location(GpPnt::new(0.0, 0.0, 0.5));
         let sph_geom = GeomSphere::new(sph);
         let r = 0.2;
-        let pts = rolling_ball_center_line(&pln, &sph_geom, r, 1e-6).expect("rolling centre line");
+        let pts = rolling_ball_center_line(&pln, &sph_geom, r, 1e-6).expect("rolling center line");
         assert_eq!(pts.len(), CENTERLINE_SAMPLES);
         for p in &pts {
-            // The centre lies on the plane offset by r (here z = r).
-            assert!((p.z() - r).abs() < 1e-9, "centre height {p:?}");
+            // The center lies on the plane offset by r (here z = r).
+            assert!((p.z() - r).abs() < 1e-9, "center height {p:?}");
             // And on the sphere offset by R + r.
             let d = p.distance(&GpPnt::new(0.0, 0.0, 0.5));
-            assert!((d - 1.2).abs() < 1e-9, "centre distance {d} (expected 1.2)");
+            assert!((d - 1.2).abs() < 1e-9, "center distance {d} (expected 1.2)");
         }
     }
 

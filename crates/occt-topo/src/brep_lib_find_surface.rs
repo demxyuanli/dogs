@@ -164,7 +164,7 @@ fn fill_params(knots: &[f64], degree: i32, par_min: f64, par_max: f64, out: &mut
 }
 
 /// `fillPoints` (`cxx:217-243`): append the sampled points and their weights
-/// (the sum of the distances to the neighbouring points *on the same edge*).
+/// (the sum of the distances to the neighboring points *on the same edge*).
 fn fill_points(
     curve: &dyn Curve,
     params: &[f64],

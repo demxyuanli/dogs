@@ -11,7 +11,7 @@ pub(super) fn xyz_component(c: &occt_core::gp::xyz::GpXyz, i: usize) -> f64 {
     }
 }
 
-/// Number of sampled points on a rolling-ball centreline circle.
+/// Number of sampled points on a rolling-ball centerline circle.
 pub(super) const CENTERLINE_SAMPLES: usize = 48;
 
 // ===========================================================================
@@ -67,7 +67,7 @@ impl ConeInfo {
     }
 }
 
-/// A circle in 3D (the rolling-ball centreline, or a tangency circle).
+/// A circle in 3D (the rolling-ball centerline, or a tangency circle).
 #[derive(Debug, Clone, Copy)]
 pub(super) struct CircleGeom {
     pub(super) center: GpPnt,
@@ -88,7 +88,7 @@ pub(super) struct ContactCircleGeom {
 /// Full description of a torus band blend.
 #[derive(Debug, Clone)]
 pub(super) struct TorusBlendGeom {
-    /// Torus centre (on the centreline circle's axis).
+    /// Torus center (on the centerline circle's axis).
     pub(super) center: GpPnt,
     /// Unit torus axis.
     pub(super) axis: GpVec,
@@ -636,12 +636,12 @@ pub(super) fn perp_dir(z: &GpVec) -> GpVec {
 // Centreline geometry
 // ===========================================================================
 
-/// The rolling-ball centreline for a plane + sphere: the intersection circle
+/// The rolling-ball centerline for a plane + sphere: the intersection circle
 /// of the plane offset by `r` (toward the ball) and the sphere offset by
-/// `R_s + r`. The ball centre lies on this circle.
+/// `R_s + r`. The ball center lies on this circle.
 pub(super) fn plane_sphere_centerline(pln: &PlaneInfo, sph: &SphereInfo, r: f64) -> Result<CircleGeom, String> {
     let n = pln.normal.normalized();
-    // Signed distance from the sphere centre to the offset plane n·x = n·O + r,
+    // Signed distance from the sphere center to the offset plane n·x = n·O + r,
     // measured along +n (the side the ball rolls on).
     let delta = n.dot(&GpVec::from_pnts(&pln.origin, &sph.center)) - r;
     let rr = sph.radius + r;
@@ -657,7 +657,7 @@ pub(super) fn plane_sphere_centerline(pln: &PlaneInfo, sph: &SphereInfo, r: f64)
     Ok(CircleGeom { center, normal: n, radius: rho })
 }
 
-/// The rolling-ball centreline for two spheres: the intersection circle of the
+/// The rolling-ball centerline for two spheres: the intersection circle of the
 /// two offset spheres (radii `R_i + r`).
 pub(super) fn sphere_sphere_centerline(s1: &SphereInfo, s2: &SphereInfo, r: f64) -> Result<CircleGeom, String> {
     let dv = GpVec::from_pnts(&s1.center, &s2.center);

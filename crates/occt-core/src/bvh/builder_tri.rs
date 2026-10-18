@@ -41,7 +41,7 @@ fn range_bbox(s: usize, e: usize, boxes: &[BndBox]) -> BndBox {
 fn build_rec(indices: &[usize], boxes: &[BndBox], max_leaf: usize) -> BvhNode {
     let bbox = bbox_of(indices, boxes);
     if indices.len() <= max_leaf {
-        // The split sorts indices by bbox centre, so this leaf's indices are
+        // The split sorts indices by bbox center, so this leaf's indices are
         // NOT value-ascending: `(first, last+1)` can yield an empty or
         // non-covering range (e.g. [8,9,0,1,2,3] → (8,4)) and silently drop
         // triangles from ray/query traversal. Span the leaf's own index extent

@@ -170,7 +170,7 @@ use super::*;
         let all = point_curve_extrema2d_all(&circle, &p);
         // `Extrema_ExtPElC2d::Perform(p, circ, ...)`
         // (`Extrema_ExtPElC2d.cxx:113-152`) builds `V = gp_Vec2d(P, OC)`
-        // (P to centre) and reports `P1 = OC + radius*V` first, the far point,
+        // (P to center) and reports `P1 = OC + radius*V` first, the far point,
         // then `P2 = OC - radius*V`, the near point; `Extrema_ExtPC2d` keeps
         // that order and does not sort.
         assert_eq!(all.len(), 2, "min+max {all:?}");

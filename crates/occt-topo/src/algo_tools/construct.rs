@@ -323,7 +323,7 @@ impl AlgoTools {
     ///
     /// Port of `BOPAlgo_Tools::MakeBlocks` (BOPAlgo_Tools.hxx): each key of
     /// `adjacency` starts a chain; the chain is grown by repeatedly appending
-    /// the neighbours of its members (a breadth-first walk over the symmetric
+    /// the neighbors of its members (a breadth-first walk over the symmetric
     /// adjacency map — the map `FillMap` produces), so every element belongs to
     /// exactly one block. Blocks are returned in the order of their first key
     /// (keys visited in ascending order), matching the OCCT insertion order.
@@ -341,7 +341,7 @@ impl AlgoTools {
             }
             // Start the chain.
             let mut chain: Vec<K> = vec![key.clone()];
-            // Grow it: the neighbours of every member join.
+            // Grow it: the neighbors of every member join.
             let mut i = 0;
             while i < chain.len() {
                 if let Some(neighbors) = adjacency.get(&chain[i]) {

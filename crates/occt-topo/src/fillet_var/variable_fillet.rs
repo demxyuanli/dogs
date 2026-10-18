@@ -226,9 +226,9 @@ pub(super) fn find_edge_by_endpoints(shape: &TopoShape, p0: &GpPnt, p1: &GpPnt) 
 //
 // Two consecutive edge fillets meeting at a box corner leave a gap between the
 // two blend surfaces and the three corner faces. The gap is closed by a
-// spherical patch centred at the rolling-ball corner centre
+// spherical patch centered at the rolling-ball corner center
 // `C = v + R·(d0 + d1 + d2)` — the point at distance `R` from each of the
-// three faces. A sphere of radius `R·√2` centred at `C` passes through the
+// three faces. A sphere of radius `R·√2` centered at `C` passes through the
 // three fillet tangency points, and its boundary is five circular arcs:
 //
 //   · one arc in each of the three corner-face planes,
@@ -270,7 +270,7 @@ pub(super) fn corner_in_dirs(solid: &TopoShape, vertex: &Vertex) -> Result<[GpVe
     Ok([dirs[0], dirs[1], dirs[2]])
 }
 
-/// The rolling-ball corner centre: the point at distance `radius` from each of
+/// The rolling-ball corner center: the point at distance `radius` from each of
 /// the three faces meeting at `vertex` (for a box corner, `v + R·Σdirᵢ`).
 pub fn corner_center(solid: &TopoShape, vertex: &Vertex, radius: f64, _tol: f64) -> Option<GpPnt> {
     if radius <= 0.0 {
@@ -333,7 +333,7 @@ pub(super) fn in_edge_dir(edge: &Edge, p: &GpPnt) -> Result<GpVec, String> {
 pub(super) struct CornerGeom {
     pub(super) vertex: GpPnt,
     pub(super) radius: f64,
-    /// Rolling-ball corner centre (the corner-patch sphere centre).
+    /// Rolling-ball corner center (the corner-patch sphere center).
     pub(super) center: GpPnt,
     /// Direction of the first filleted edge (e_a), from the corner into material.
     pub(super) d0: GpVec,
@@ -441,7 +441,7 @@ pub(super) fn build_corner_patch_face(corner: &CornerGeom, cache: &mut EdgeCache
     Ok(b.make_face(Arc::new(GeomSphere::new(sph)), &[wire]))
 }
 
-/// Parameters `t ∈ [0,1]` where the segment `p→q` crosses the circle centred at
+/// Parameters `t ∈ [0,1]` where the segment `p→q` crosses the circle centered at
 /// `c` of radius `r` (the disk boundary).
 pub(super) fn line_circle_hits(p: &GpPnt, q: &GpPnt, c: &GpPnt, r: f64) -> Vec<f64> {
     let d = GpVec::from_pnts(p, q);
@@ -468,7 +468,7 @@ pub(super) fn line_circle_hits(p: &GpPnt, q: &GpPnt, c: &GpPnt, r: f64) -> Vec<f
     ts
 }
 
-/// Remove the disk (centre `c`, radius `r`) from the polygon, keeping the
+/// Remove the disk (center `c`, radius `r`) from the polygon, keeping the
 /// outside portion. The disk cap is replaced by a straight chord; the returned
 /// polygon has that chord as one boundary edge, to be replaced by the shared
 /// corner arc.

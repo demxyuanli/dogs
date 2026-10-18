@@ -49,7 +49,7 @@ impl FillCtx {
 /// Port of `BOPTools_AlgoTools::MakeVertex` + `BRepLib::BoundingVertex`: the
 /// point is the average of the input points and the tolerance is the smallest
 /// radius covering every input point sphere (max vertex tolerance + the
-/// farthest point distance from the centre).
+/// farthest point distance from the center).
 ///
 /// When `shapes` holds a single vertex it is returned unchanged.
 pub(super) fn merge_vertices(shapes: &[TopoShape]) -> Result<TopoShape, String> {

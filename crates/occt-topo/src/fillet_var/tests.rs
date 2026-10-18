@@ -317,7 +317,7 @@ use super::*;
 
     #[test]
     fn cut_disk_splits_bottom_edge() {
-        // The -Y face rectangle at z >= R, with the corner disk centred at
+        // The -Y face rectangle at z >= R, with the corner disk centered at
         // (R, 0, R) of radius R.
         let r = 0.4;
         let rect = [
@@ -342,9 +342,9 @@ use super::*;
         let c = corner_center(&bx.solid.0, &v, 0.4, 1e-6).expect("corner center");
         assert!(
             c.distance(&GpPnt::new(0.4, 0.4, 0.4)) < 1e-9,
-            "corner centre {c:?}"
+            "corner center {c:?}"
         );
-        // The centre of the opposite corner (2,2,2) is (1.6,1.6,1.6).
+        // The center of the opposite corner (2,2,2) is (1.6,1.6,1.6).
         let v2 = corner_vertex(&bx, &GpPnt::new(2.0, 2.0, 2.0));
         let c2 = corner_center(&bx.solid.0, &v2, 0.4, 1e-6).unwrap();
         assert!(c2.distance(&GpPnt::new(1.6, 1.6, 1.6)) < 1e-9);
@@ -427,7 +427,7 @@ use super::*;
                     .unwrap_or(false)
             })
             .expect("corner patch sphere face");
-        // All sampled surface points are equidistant from the corner centre.
+        // All sampled surface points are equidistant from the corner center.
         let v = corner_vertex(&bx, &GpPnt::new(0.0, 0.0, 0.0));
         let cc = corner_center(&bx.solid.0, &v, 0.4, 1e-6).unwrap();
         let s = BRepTool::face_surface(sphere).unwrap();

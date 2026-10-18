@@ -8,7 +8,7 @@
 //! [`ValueType`] enumeration.
 //!
 //! `GProps` composes the global properties (mass / length / area / volume,
-//! centre of mass, quadratic inertia matrix) of a *compound geometric system*.
+//! center of mass, quadratic inertia matrix) of a *compound geometric system*.
 //! Elementary pieces are added either directly ([`GProps::add_point_mass`]) or
 //! through the element frameworks, each of which accumulates one family of
 //! geometric cells into a `GProps`:
@@ -19,7 +19,7 @@
 //! * [`CelGProps`] — curve (segments).
 //!
 //! All inertia is accumulated about the framework's reference point `loc`
-//! (origin by default). [`GProps::matrix_of_inertia`] shifts it to the centre
+//! (origin by default). [`GProps::matrix_of_inertia`] shifts it to the center
 //! of mass by the parallel-axis (Huygens) theorem, and [`h_operator`] provides
 //! the parallel-axis term `m·(d²δ − d·dᵀ)` used everywhere.
 //!

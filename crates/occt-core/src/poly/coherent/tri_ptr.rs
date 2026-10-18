@@ -99,7 +99,7 @@ impl PolyCoherentLink {
     pub fn nullify(&mut self) { *self = Self::new(); }
 }
 
-/// A triangle with references to its neighbours. Ported from
+/// A triangle with references to its neighbors. Ported from
 /// `Poly_CoherentTriangle`. Connection side `i` is opposite node `i`; the
 /// shared edge of side `i` connects nodes `(i+1)%3` and `(i+2)%3`.
 #[derive(Debug, Clone)]
@@ -136,9 +136,9 @@ impl PolyCoherentTriangle {
         else if self.connected[2] == Some(tri_id) { 2 }
         else { -1 }
     }
-    /// Indices of the up-to-three neighbouring triangles.
+    /// Indices of the up-to-three neighboring triangles.
     pub fn neighbors(&self) -> [Option<usize>; 3] { self.connected }
-    /// Sides that have no neighbour (boundary sides).
+    /// Sides that have no neighbor (boundary sides).
     pub fn boundary_sides(&self) -> Vec<usize> {
         (0..3).filter(|&i| self.connected[i].is_none()).collect()
     }
@@ -285,7 +285,7 @@ impl PolyCoherentTriangulation {
     // ---- connection helpers (mutate triangle adjacency) ----
 
     /// Removes the connection on `tri_id`'s side `i_conn`, also clearing the
-    /// back-reference in the neighbour.
+    /// back-reference in the neighbor.
     pub(super) fn tri_remove_connection(&mut self, tri_id: usize, i_conn: usize) {
         let other = self.triangles[tri_id].connected[i_conn];
         if let Some(other_id) = other {
@@ -347,7 +347,7 @@ impl PolyCoherentTriangulation {
         true
     }
 
-    /// Automatic connection: analyse which sides of the two triangles share an
+    /// Automatic connection: analyze which sides of the two triangles share an
     /// edge and connect them. Port of
     /// `Poly_CoherentTriangle::SetConnection(Triangle&)`.
     pub fn tri_set_connection_auto(&mut self, a: usize, b: usize) -> bool {
@@ -446,7 +446,7 @@ impl PolyCoherentTriangulation {
         Ok(())
     }
 
-    /// Removes a triangle, disconnecting it from its neighbours and nodes.
+    /// Removes a triangle, disconnecting it from its neighbors and nodes.
     /// Returns whether any node reference was cleared.
     pub fn remove_triangle(&mut self, tri_id: usize) -> Result<bool, String> {
         if tri_id >= self.triangles.len() {

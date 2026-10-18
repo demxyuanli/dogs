@@ -12,7 +12,7 @@ use occt_core::bnd::BndBox;
 pub struct ModelShape {
     pub name: String,
     pub shape: TopoShape,
-    /// The surface colour the `XCAFDoc_ColorTool` holds for this shape's own
+    /// The surface color the `XCAFDoc_ColorTool` holds for this shape's own
     /// label (`XCAFDoc_ColorSurf`, `XCAFPrs_DocumentExplorer::mergedStyle`
     /// `XCAFPrs_DocumentExplorer.cxx:28-81`). This is the document-node style
     /// the OBJ writer receives as `aDocNode.Style`.
@@ -78,11 +78,11 @@ pub struct ModelLabel {
     pub children: Vec<usize>,
     /// `XCAFDoc_ColorTool::SetColor(..., XCAFDoc_ColorSurf)`.
     pub color: Option<occt_core::quantity::Color>,
-    /// `XCAFDoc_ColorTool::SetColor(..., XCAFDoc_ColorCurv)`: the curve colour
+    /// `XCAFDoc_ColorTool::SetColor(..., XCAFDoc_ColorCurv)`: the curve color
     /// `setShapeStyle` stores for a line style
     /// (`RWMesh_CafReader.cxx:229-232`). Only edge labels carry it on the glTF
     /// path (`RWGltf_GltfJsonParser.cxx:2020-2023`); the OBJ writer reads the
-    /// surface colour.
+    /// surface color.
     pub color_curv: Option<occt_core::quantity::Color>,
     /// `XCAFDoc_VisMaterialTool::SetShapeMaterial` link (index into
     /// [`BRepModel::materials`]).

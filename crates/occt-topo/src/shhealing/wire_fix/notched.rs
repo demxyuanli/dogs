@@ -288,7 +288,7 @@ pub(in crate::shhealing) fn fix_dummy_seam(wire: &mut Wire, num: usize) {
     reg.set_same_range(&new_edge.0, false); // `cxx:4237-4238`
     reg.set_same_parameter(&new_edge.0, false);
 
-    // `cxx:4258-4272`: the neighbouring edges are re-pointed at `Vm`.
+    // `cxx:4258-4272`: the neighboring edges are re-pointed at `Vm`.
     let next = if num1 == nb { 1 } else { num1 + 1 };
     let prev = if num > 1 { num - 1 } else { nb };
     if let Some(prev_e) = edges.get(prev - 1).cloned() {

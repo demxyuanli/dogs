@@ -274,7 +274,7 @@ pub(super) fn split_edge2(
 /// (`cxx:539-608`, `:629-698`, `:718-787`, `:808-877`).
 ///
 /// `keep` is the vertex of `edge1` the pair is welded onto, `drop` the
-/// vertex of `edge2` being replaced in the two neighbouring edges of the wire
+/// vertex of `edge2` being replaced in the two neighboring edges of the wire
 /// (`num2 - 1` and `num2 + 1`, wrapping).
 pub(super) fn replace_in_neighbours(
     wire: &mut Wire,

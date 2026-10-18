@@ -352,7 +352,7 @@ pub fn obj_caf_nodes(
     let mut nodes = Vec::with_capacity(model.shapes.len());
     for ms in &model.shapes {
         // `XCAFPrs_DocumentNode::Style` (`XCAFPrs_DocumentExplorer.cxx:28-81`):
-        // the node label's own colour, which `RWMesh_ShapeIterator` keeps as
+        // the node label's own color, which `RWMesh_ShapeIterator` keeps as
         // `myDefStyle`.
         let mut node_style = XcafPrsStyle::from_color(ms.color);
         // `XCAFPrs::CollectStyleSettings` (`XCAFPrs.cxx:174`, `cxx:251`) also
@@ -740,7 +740,7 @@ pub fn model_write_gltf_caf(
 /// The node list is the one [`obj_caf_nodes`] builds for
 /// `RWObj_CafWriter::Perform`: `XCAFPrs_DocumentExplorer(OnlyLeafNodes)` leaves
 /// with the label-keyed styles, so both writers see the same faces, styles and
-/// colours. `ply_path` supplies the context name only (the PLY header has no
+/// colors. `ply_path` supplies the context name only (the PLY header has no
 /// file-name record).
 pub fn model_to_ply_caf(
     model: &BRepModel,
@@ -794,7 +794,7 @@ pub fn document_shape(model: &BRepModel) -> Option<TopoShape> {
 /// (`RWObj_CafWriter.cxx:82-230`), returning `(obj_text, mtl_text)`.
 ///
 /// `obj_path` only supplies the `.mtl` sidecar name (`cxx:150-157`); nothing is
-/// written. `mtl_text` is empty when no node carries a colour
+/// written. `mtl_text` is empty when no node carries a color
 /// (`toCreateMatFile == false`), i.e. no `mtllib` record is emitted.
 pub fn model_to_obj_caf(
     model: &BRepModel,
@@ -807,7 +807,7 @@ pub fn model_to_obj_caf(
 }
 
 /// Write a document to an OBJ file plus its `.mtl` sidecar when any face carries
-/// a colour (`RWObj_CafWriter::Perform` + `RWObj_ObjMaterialMap`).
+/// a color (`RWObj_CafWriter::Perform` + `RWObj_ObjMaterialMap`).
 pub fn model_write_obj_caf(
     path: &str,
     model: &BRepModel,

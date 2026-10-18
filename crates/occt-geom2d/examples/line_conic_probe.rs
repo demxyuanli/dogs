@@ -3,7 +3,7 @@
 //! are an optimisation, not new capability. This measures it end-to-end through
 //! the public dispatcher -- the exact code path in question.
 //!
-//! Line: the x axis. Circle: centre (0,0), radius 5 => expect x = +/-5.
+//! Line: the x axis. Circle: center (0,0), radius 5 => expect x = +/-5.
 //! Before T-100 this pair fell into the empty UNPORTED arm, which returned no
 //! intersection at all.
 use occt_core::gp::{GpAx22d, GpCirc2d, GpDir2d, GpPnt2d};

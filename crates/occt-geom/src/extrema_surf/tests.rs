@@ -155,7 +155,7 @@ use super::*;
             min.u1,
             min.v2.unwrap()
         );
-        // Local min: neighbours are farther.
+        // Local min: neighbors are farther.
         let (u, v) = (min.u1, min.v2.unwrap());
         let eps = 1e-3;
         let du = p.distance(&s.d0(u + eps, v));

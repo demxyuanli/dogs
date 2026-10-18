@@ -21,7 +21,7 @@ use super::*;
         sphere_ss.material = RenderMaterial::from_diffuse((0.1, 0.1, 0.8));
         scene.add(sphere_ss);
         let cam = Camera::default();
-        // Box front-face centre and the sphere's front-most point toward the
+        // Box front-face center and the sphere's front-most point toward the
         // camera (a head-on hit; grazing rays can slip between the flat
         // tessellation triangles of the coarse sphere mesh).
         let (bx, by, _) = project_point(&cam, GpPnt::new(-1.0, 0.5, 1.0), 200, 150).unwrap();

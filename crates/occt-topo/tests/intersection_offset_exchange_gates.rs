@@ -51,7 +51,7 @@ fn geom_extrema_distances() {
     let cs = curve_surface_extrema_with_samples(&l2, &sphere, 16).expect("Extrema_ExtCS done");
     assert!((cs.distance - 2.0).abs() < 1e-4, "curve-surface {}", cs.distance);
 
-    // Surface–surface: two unit spheres with centres 4 apart → 2.
+    // Surface–surface: two unit spheres with centers 4 apart → 2.
     // (Sphere vs an *unbounded* plane is not an analytic arm in OCCT:
     // `Extrema_ExtElSS::Perform(gp_Pln, gp_Sphere)` throws
     // `Standard_NotImplemented` and `Extrema_GenExtSS` answers with its 2e100

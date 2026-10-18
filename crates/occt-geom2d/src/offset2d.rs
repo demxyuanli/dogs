@@ -18,7 +18,7 @@ use crate::HandleCurve2d;
 /// `normal2d` is the left unit normal (tangent rotated +90°). `direction` is a
 /// ±1 sign convention: `+1` (the default) offsets along that left normal, `-1`
 /// along the opposite (right) normal. For a counter-clockwise circle the left
-/// normal points toward the centre, so a positive offset shrinks its radius;
+/// normal points toward the center, so a positive offset shrinks its radius;
 /// offset by a negative amount (or set `direction = -1`) to grow it.
 ///
 /// Reversing the curve reverses the basis and flips `direction`.
@@ -281,7 +281,7 @@ pub fn minkowski_sum_convex(a: &[GpPnt2d], b: &[GpPnt2d]) -> Vec<GpPnt2d> {
 /// Approximate the Minkowski sum of a point set with a disc of `radius` as a
 /// rounded polygon: the convex hull of the input offset by `radius` along each
 /// hull edge's outward normal (K samples per edge), with the corners rounded
-/// by sampling the arc of radius `radius` centred on each hull vertex between
+/// by sampling the arc of radius `radius` centered on each hull vertex between
 /// the two incident edge normal directions.
 pub fn inflate_point_set(points: &[GpPnt2d], radius: f64) -> Vec<GpPnt2d> {
     let hull = convex_hull2d(points);

@@ -498,7 +498,7 @@ fn circle_pcurve_on_face(
     a: f64,
     b: f64,
 ) -> Option<Arc<dyn Curve2d>> {
-    // 3D circle centre from two opposite samples (valid for any trim range).
+    // 3D circle center from two opposite samples (valid for any trim range).
     let center3 = midpoint(&curve.d0(0.0), &curve.d0(std::f64::consts::PI));
     let center_uv = proj.project(&center3);
     let q0 = proj.project(&curve.d0(a));

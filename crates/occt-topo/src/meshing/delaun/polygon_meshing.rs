@@ -353,7 +353,7 @@ impl Delaun {
         let new_edges_info = [first_edge_info, new_edge_0, new_edge_1];
         // `BRepMesh_Delaun.cxx:2259-2274`: OCCT does `AddLink` twice and then
         // `addTriangle` **without touching existing triangles**. The previous body
-        // deleted whichever neighbour triangle already used one of the ear links
+        // deleted whichever neighbor triangle already used one of the ear links
         // ("free the slot before `AddElement`") — an invented rule (audit A25).
         // `add_triangle` now reports OCCT's `Standard_OutOfRange` condition
         // (= a link already carrying two triangles) instead of panicking, and the

@@ -66,8 +66,8 @@ pub fn write_step_model_with_splines(model: &BRepModel) -> Result<String, String
 /// Serialize a model to STEP, attaching a `COLOUR_RGB` style to each shape
 /// whose `ModelShape.color` is set.
 ///
-/// Shapes without a colour are written plain. This is the model-level
-/// counterpart of [`write_step_with_color`], reading the colours already
+/// Shapes without a color are written plain. This is the model-level
+/// counterpart of [`write_step_with_color`], reading the colors already
 /// stored on the [`BRepModel`] (e.g. via `add_with_color`).
 pub fn write_step_model_with_colors(model: &BRepModel) -> Result<String, String> {
     let mut ctx = WriteCtx::new();
@@ -91,7 +91,7 @@ pub fn write_step_model_with_colors(model: &BRepModel) -> Result<String, String>
 /// Serialize a model with per-shape [`StepWriteOptions`].
 ///
 /// Each shape in the model is written with the shared options; spline output
-/// applies to every shape, and the colour/units/name defaults apply as in
+/// applies to every shape, and the color/units/name defaults apply as in
 /// [`write_step_with_options`]. Shape names come from the model, so `opts.name`
 /// is only used as a fallback for unnamed shapes.
 pub fn write_step_model_with_options(model: &BRepModel, opts: &StepWriteOptions) -> Result<String, String> {
@@ -1033,7 +1033,7 @@ pub(super) struct Resolver<'a> {
     /// so one context covers a whole root shape. `ShapeFix_Shape::Perform`
     /// materialises it with `myResult = Context()->Apply(S)`
     /// (`ShapeFix_Shape.cxx:257`, `ShapeFix_Shell.cxx:139`), which is what
-    /// rewrites a face whose *neighbour* was split (T0M face 1693 vs 1695).
+    /// rewrites a face whose *neighbor* was split (T0M face 1693 vs 1695).
     /// The stack is pushed per root in `resolve_shell` / `resolve_solid` and
     /// popped together with that `Apply`.
     pub(super) heal_context: RefCell<Vec<crate::shape_fix_compose_shell::SharedReShape>>,

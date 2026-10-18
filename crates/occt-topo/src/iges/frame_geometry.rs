@@ -41,7 +41,7 @@ pub(super) fn clamp_infinite_range(v0: f64, v1: f64) -> (f64, f64) {
 /// - sphere: `gp_Ax2(gp::Origin(), -gp::DY(), gp::DX())`
 ///   (`GeomToIGES_GeomSurface.cxx:893`);
 /// - torus: `gp_Ax2(gp_Pnt(MajorRadius, 0., 0.), -gp::DY(), gp::DX())`
-///   (`cxx:960`), i.e. the same frame shifted to the tube centre.
+///   (`cxx:960`), i.e. the same frame shifted to the tube center.
 ///
 /// The circle is written in this frame (entity 100 + its own 124, see
 /// [`IgesWriter::emit_circular_arc`]) and referenced by the 120.

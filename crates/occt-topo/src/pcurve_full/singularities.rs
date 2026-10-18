@@ -22,7 +22,7 @@
 //!   `ShapeAnalysis_Surface::myNbDeg` / `myPreci` / ... (`ShapeAnalysis_Surface.hxx`).
 //!   `ComputeSingularities` is a pure function of the surface and its bounds, so
 //!   the values each block sees are identical.
-//! - `ShapeAnalysis_Surface::ProjectDegenerated(P3d, preci, neighbour, result)`
+//! - `ShapeAnalysis_Surface::ProjectDegenerated(P3d, preci, neighbor, result)`
 //!   (`ShapeAnalysis_Surface.cxx:414-458`) and `DegeneratedValues`
 //!   (`ShapeAnalysis_Surface.cxx:373-411`): no caller in the
 //!   `ShapeConstruct_ProjectCurveOnSurface` chain (the free function

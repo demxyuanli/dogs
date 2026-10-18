@@ -107,7 +107,7 @@ fn build_box(b: &TopoBuilder, corners: &[GpPnt; 8]) -> Solid {
     }
 
     // 6 faces. Each face is a plane through 4 corners; its wire is the cyclic
-    // list of the 4 boundary edges (each shared with a neighbouring face).
+    // list of the 4 boundary edges (each shared with a neighboring face).
     let faces_def: [(GpPnt, GpDir, [usize; 4]); 6] = [
         // (a corner point on the face, outward normal, corner cycle CCW-outward)
         (corners[0], dir(0.0, 0.0, -1.0), [0, 3, 2, 1]), // -Z

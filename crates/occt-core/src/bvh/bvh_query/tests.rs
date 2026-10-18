@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::*;
 
-    /// A unit cube centred at the origin: 8 vertices, 12 triangles.
+    /// A unit cube centered at the origin: 8 vertices, 12 triangles.
     ///
     /// The winding matches `geom::mesh_analysis::box_mesh` (outward CCW) so
     /// the divergence-theorem volume comes out positive.

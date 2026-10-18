@@ -65,7 +65,7 @@ use super::*;
 
     #[test]
     fn point_cloud_cube_corners() {
-        // 8 unit masses at the corners of [0,1]³: mass 8, COM at the centre,
+        // 8 unit masses at the corners of [0,1]³: mass 8, COM at the center,
         // each principal moment about the COM = Σ(y²+z²) = 8·(0.25+0.25) = 4.
         let pts = [
             GpPnt::new(0., 0., 0.),
@@ -119,7 +119,7 @@ use super::*;
 
     #[test]
     fn solid_box_2x3x4() {
-        // Density 1, box 2×3×4: volume 24, COM at the centre.
+        // Density 1, box 2×3×4: volume 24, COM at the center.
         let mut v = VelGProps::new();
         v.add_box(&GpPnt::new(0., 0., 0.), &GpPnt::new(2., 3., 4.), 1.0).unwrap();
         assert_approx(v.mass(), 24.0, 1e-9);
@@ -165,7 +165,7 @@ use super::*;
 
     #[test]
     fn surface_disk() {
-        // Triangulate a radius-1 disk from its centre: area → π, Izz → π/2.
+        // Triangulate a radius-1 disk from its center: area → π, Izz → π/2.
         let r = 1.0f64;
         let n = 256usize;
         let mut s = SelGProps::new();
@@ -187,7 +187,7 @@ use super::*;
     #[test]
     fn surface_sphere_shell() {
         // UV-grid triangulation of a unit sphere surface: area → 4π,
-        // Izz → ∫(x²+y²)dA = (8/3)π (isotropic shell, about the centre).
+        // Izz → ∫(x²+y²)dA = (8/3)π (isotropic shell, about the center).
         let r = 1.0f64;
         let (nu, nv) = (48usize, 32usize);
         let mut s = SelGProps::new();

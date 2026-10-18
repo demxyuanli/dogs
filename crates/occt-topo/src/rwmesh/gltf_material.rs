@@ -518,7 +518,7 @@ pub(super) fn material_view(vis: &XcafDocVisMaterial) -> Material {
     }
 }
 
-/// `srgb_to_linear` re-export so the scene layer can build sRGB colours the
+/// `srgb_to_linear` re-export so the scene layer can build sRGB colors the
 /// same way the material parser does.
 pub(super) fn srgb_component(v: f64) -> f32 {
     srgb_to_linear(v)

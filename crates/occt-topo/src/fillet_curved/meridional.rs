@@ -69,7 +69,7 @@ impl MeridionalShape {
     }
 
     /// z-interval on which `offset_radius(z, r)` is finite (the offset nappe).
-    /// `None` marks an unbounded end. Used to bound the offset-centreline search.
+    /// `None` marks an unbounded end. Used to bound the offset-centerline search.
     pub(super) fn offset_z_range(&self, r: f64) -> (Option<f64>, Option<f64>) {
         match *self {
             MeridionalShape::Cylinder { .. } => (None, None),
@@ -88,7 +88,7 @@ impl MeridionalShape {
     }
 }
 
-/// Closest point on a meridional curve `rho(z)` to the ball centre
+/// Closest point on a meridional curve `rho(z)` to the ball center
 /// `(rho_c, z_c)`, by coarse grid + ternary refinement. Returns `(rho, z)`.
 pub(super) fn closest_point_meridional(
     rho: &dyn Fn(f64) -> f64,
@@ -133,10 +133,10 @@ pub(super) fn closest_point_meridional(
 /// Compute the tangency circle of the rolling ball against a surface of
 /// revolution described by its meridional radius function `rho`.
 ///
-/// `center`/`axis` are the centreline circle (on the axis) and its unit
-/// normal; the ball centre is at radius `r_c` in the plane of the centreline
+/// `center`/`axis` are the centerline circle (on the axis) and its unit
+/// normal; the ball center is at radius `r_c` in the plane of the centerline
 /// (height 0). The search for the contact height is bounded by `z_lo`/`z_hi`
-/// (relative to the centreline plane).
+/// (relative to the centerline plane).
 pub(super) fn contact_circle_meridional(
     center: &GpPnt,
     axis: &GpVec,
@@ -166,7 +166,7 @@ pub(super) fn contact_circle_meridional(
 }
 
 /// Tangency circle of the ball against a plane perpendicular to the axis. The
-/// plane is at height `plane_z` relative to the centreline plane.
+/// plane is at height `plane_z` relative to the centerline plane.
 pub(super) fn contact_circle_plane(
     center: &GpPnt,
     axis: &GpVec,
@@ -184,7 +184,7 @@ pub(super) fn contact_circle_plane(
 }
 
 /// Find the height where two offset meridional radius functions are equal
-/// (the rolling-ball centreline circle). Returns `(z, radius)`.
+/// (the rolling-ball centerline circle). Returns `(z, radius)`.
 pub(super) fn offset_centerline_height(
     rho1: &dyn Fn(f64) -> f64,
     rho2: &dyn Fn(f64) -> f64,
@@ -223,7 +223,7 @@ pub(super) fn offset_centerline_height(
     Err("fillet_curved: the two offset surfaces do not intersect in a circle".to_string())
 }
 
-/// Finite z-window bracketing the offset-centreline crossing of two coaxial
+/// Finite z-window bracketing the offset-centerline crossing of two coaxial
 /// surfaces of revolution. Intersects the two offset nappes; an unbounded end
 /// (cylinder, or a cone whose nappe is open on that side) is clamped by walking
 /// outward until the faster-growing offset radius exceeds the other by a factor
@@ -477,7 +477,7 @@ pub(super) fn cone_sphere_blend(cone: &ConeInfo, sph: &SphereInfo, r: f64, tol: 
     let radial = cs.subtracted(&cone_val.multiplied_scalar(cs.dot(&cone_val)));
     if radial.magnitude() > tol.max(1e-6) {
         return Err(
-            "fillet_curved: cone+sphere blend requires the sphere centre on the cone axis".to_string(),
+            "fillet_curved: cone+sphere blend requires the sphere center on the cone axis".to_string(),
         );
     }
     let axis = cone_val;
@@ -551,7 +551,7 @@ pub(super) enum AdjacentKind {
 pub(super) fn build_circle_edge(b: &TopoBuilder, c: &ContactCircleGeom, seam: &GpPnt) -> Result<Edge, String> {
     let nd = GpDir::from_xyz(&c.normal.xyz()).map_err(|e| e.to_string())?;
     let xd = GpDir::from_vec(&GpVec::from_pnts(&c.center, seam))
-        .map_err(|_| "fillet_curved: tangency circle seam coincides with its centre".to_string())?;
+        .map_err(|_| "fillet_curved: tangency circle seam coincides with its center".to_string())?;
     let ax2 = GpAx2::new(c.center, nd, xd).map_err(|e| format!("fillet_curved: circle frame: {e}"))?;
     let mut e = b.make_edge_circle(&ax2, c.radius, 0.0, 2.0 * PI);
     let v = b.make_vertex(*seam, 0.0);
@@ -560,7 +560,7 @@ pub(super) fn build_circle_edge(b: &TopoBuilder, c: &ContactCircleGeom, seam: &G
 }
 
 /// A default seam point for a tangency circle (angle 0 along a fixed
-/// perpendicular). Used where the seam angle is not constrained by a neighbour.
+/// perpendicular). Used where the seam angle is not constrained by a neighbor.
 pub(super) fn default_seam(c: &ContactCircleGeom) -> GpPnt {
     let e1 = perp_dir(&c.normal);
     c.center.translated_vec(&e1.multiplied_scalar(c.radius))

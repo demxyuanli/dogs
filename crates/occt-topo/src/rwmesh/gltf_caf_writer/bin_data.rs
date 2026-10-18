@@ -320,7 +320,7 @@ pub(crate) fn save_normals(
 /// applied to the UV export gate: does the material reference any texture?
 fn material_has_texture(material: &crate::xcaf_doc_vis_material::XcafDocVisMaterial) -> bool {
     let pbr = material.pbr_material();
-    // `RWGltf_GltfMaterialMap::baseColorTexture`: PBR base colour, else the
+    // `RWGltf_GltfMaterialMap::baseColorTexture`: PBR base color, else the
     // common material's diffuse texture.
     let base_color = pbr
         .base_color_texture

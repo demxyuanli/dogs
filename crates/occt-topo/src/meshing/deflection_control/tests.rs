@@ -151,7 +151,7 @@ use super::*;
         let n0 = mesh.triangle_count();
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
-        // triangles whose neighbour touches the super-triangle. The naked grid keeps
+        // triangles whose neighbor touches the super-triangle. The naked grid keeps
         // 6 triangles instead of the old 8.
         assert_eq!(n0, 6, "3x3 grid meshes to 6 triangles after cleanupMesh");
 
@@ -181,7 +181,7 @@ use super::*;
         let n0 = mesh.triangle_count();
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
-        // triangles whose neighbour touches the super-triangle. The naked grid keeps
+        // triangles whose neighbor touches the super-triangle. The naked grid keeps
         // 6 triangles instead of the old 8.
         assert_eq!(n0, 6);
 

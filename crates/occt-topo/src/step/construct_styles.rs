@@ -1,4 +1,4 @@
-//! `STEPConstruct_Styles` — reading and writing shape styles (colour) to and
+//! `STEPConstruct_Styles` — reading and writing shape styles (color) to and
 //! from a STEP file. Source: `STEPConstruct_Styles.cxx` / `.hxx`.
 //!
 //! Reader side, which is what the OBJ export needs:
@@ -36,7 +36,7 @@ use occt_core::quantity::Color;
 use super::*;
 use crate::step::rendering_properties::RenderingProperties;
 
-/// `GetColors`' out-parameters (`cxx:735-741`). Each colour is an entity id
+/// `GetColors`' out-parameters (`cxx:735-741`). Each color is an entity id
 /// (`occ::handle<StepVisual_Colour>` in OCCT); `None` is a null handle.
 pub(in crate::step) struct StyleColors {
     /// `theSurfaceColour`.
@@ -289,7 +289,7 @@ pub(in crate::step) fn decode_color(
     // one string argument, never an entity reference.
     if rec.type_name == "DRAUGHTING_PRE_DEFINED_COLOUR" || rec.type_name == "PRE_DEFINED_COLOUR" {
         let name = parse_str(rec.args.first()?);
-        // `name.IsEqual(...)` against the eight predefined colours
+        // `name.IsEqual(...)` against the eight predefined colors
         // (`cxx:949-987`); an unrecognised name returns false (`cxx:982-987`).
         return predefined_color(&name);
     }
@@ -424,7 +424,7 @@ fn process_as_surface_style_fill_area(
         let Some(fc) = frec.args.get(1).and_then(|a| parse_ref(a)) else { continue };
         // `if (!aFASC.IsNull() && (theSurfaceColour.IsNull() ||
         // theSide != StepVisual_ssNegative))` (`cxx:157-161`): a negative
-        // side colour only fills an unset surface colour (`trj3_s1-pe.stp`).
+        // side color only fills an unset surface color (`trj3_s1-pe.stp`).
         if surface_colour.is_none() || side != SurfaceSide::Negative {
             *surface_colour = Some(fc);
         }

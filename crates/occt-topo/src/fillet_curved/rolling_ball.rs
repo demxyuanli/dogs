@@ -94,7 +94,7 @@ pub fn closest_point_on_surface(s: &dyn Surface, p: &GpPnt) -> Option<(GpPnt, Gp
     }
 }
 
-/// Sample the rolling-ball centre *locus* for two surfaces as one or more 3D
+/// Sample the rolling-ball center *locus* for two surfaces as one or more 3D
 /// curves. For the analytic surface-of-revolution pairs the locus is a circle
 /// (returned as one closed polyline); for two parallel cylinders it is one or
 /// two straight lines (each returned as a two-point polyline).
@@ -249,7 +249,7 @@ pub fn blend_tangency_ok(f1: &dyn Surface, f2: &dyn Surface, blend: &dyn Surface
 /// Fillet a multi-normal corner: several curved edges meeting at `vertex`.
 ///
 /// Each edge is filleted with `fillet_edge_curved_general`, then a spherical
-/// corner patch centred on the rolling-ball locus closes the vertex. The patch
+/// corner patch centered on the rolling-ball locus closes the vertex. The patch
 /// is a sphere of radius `radius` whose boundary is wired to the tangency
 /// circles of the three incident blends (best-effort — the patch is added and
 /// the shell re-closed; see the test for the supported configuration).
@@ -276,7 +276,7 @@ pub fn fillet_curved_multi_normal(
         return Ok(out);
     }
     // Best-effort fallback: fillet every edge sequentially, then add a
-    // spherical corner patch centred on the rolling-ball locus.
+    // spherical corner patch centered on the rolling-ball locus.
     let original_edges = edges_of(solid);
     let mut current = solid.clone();
     for &i in edges {
@@ -304,7 +304,7 @@ pub fn fillet_curved_multi_normal(
     Ok(solid_out.0)
 }
 
-/// The rolling-ball corner centre: the point at distance `radius` from each
+/// The rolling-ball corner center: the point at distance `radius` from each
 /// face meeting at `pv`, found by least-squares on the signed distance error.
 pub(super) fn multi_normal_corner_center(
     solid: &TopoShape,
@@ -373,7 +373,7 @@ pub(super) fn multi_normal_corner_center(
 }
 
 /// Build the spherical corner patch face for a multi-normal corner: a sphere of
-/// radius `radius` centred at `center`, bounded by a wire of three circular
+/// radius `radius` centered at `center`, bounded by a wire of three circular
 /// arcs that pass through points on the three incident edges at distance
 /// `2·radius` from the vertex.
 pub(super) fn build_multi_normal_patch(
@@ -423,7 +423,7 @@ pub(super) fn build_multi_normal_patch(
     Ok(b.make_face(Arc::new(GeomSphere::new(sph)), &[wire]))
 }
 
-/// A circular arc on a sphere of radius `radius` centred at `center`, in the
+/// A circular arc on a sphere of radius `radius` centered at `center`, in the
 /// plane through `center` with normal `nd`, from `a` to `b` (both on the
 /// sphere).
 pub(super) fn build_sphere_arc(
@@ -435,7 +435,7 @@ pub(super) fn build_sphere_arc(
     bb: &GpPnt,
 ) -> Result<Edge, String> {
     let xd = GpDir::from_vec(&GpVec::from_pnts(center, a))
-        .map_err(|_| "fillet_curved: sphere arc start coincides with its centre".to_string())?;
+        .map_err(|_| "fillet_curved: sphere arc start coincides with its center".to_string())?;
     let ax2 = GpAx2::new(*center, *nd, xd).map_err(|e| format!("fillet_curved: sphere arc frame: {e}"))?;
     let va = GpVec::from_pnts(center, a);
     let vb = GpVec::from_pnts(center, bb);
@@ -530,7 +530,7 @@ pub(super) fn find_edge_by_endpoints(shape: &TopoShape, p0: &GpPnt, p1: &GpPnt) 
 // caps. Filleting one sphere+sphere arc edge independently with a full annulus
 // would overlap the adjacent fillets near the vertices, so each edge is
 // filleted as a torus SECTOR spanning the azimuth interval between the two
-// rolling-ball corner centres. The trimmed caps become spherical bands bounded
+// rolling-ball corner centers. The trimmed caps become spherical bands bounded
 // by two tangency arcs, and each vertex is closed by a spherical patch (the
 // rolling ball tangent to all three spheres) bounded by the three sector
 // cross-section arcs. Every edge is then shared by exactly two faces, so the
@@ -538,7 +538,7 @@ pub(super) fn find_edge_by_endpoints(shape: &TopoShape, p0: &GpPnt, p1: &GpPnt) 
 
 /// Azimuth (angle in the plane perpendicular to `axis`) of `p` around `axis`,
 /// measured from the basis `(e1, e2)` with reference point `ref_pt` on the
-/// axis. All circles of a sphere+sphere blend (the edge arc, the centreline,
+/// axis. All circles of a sphere+sphere blend (the edge arc, the centerline,
 /// the two tangency circles) are coaxial, so the same azimuth identifies the
 /// matching points across them.
 pub(super) fn point_azimuth(p: &GpPnt, ref_pt: &GpPnt, axis: &GpVec, e1: &GpVec, e2: &GpVec) -> f64 {
@@ -615,7 +615,7 @@ pub(super) fn tube_angle(g: &TorusBlendGeom, ct: &ContactCircleGeom, radius: f64
 
 /// The cross-section arc of a torus sector at azimuth `theta`: the minor circle
 /// (radius `radius`) through the two tangency points at that azimuth, in the
-/// plane perpendicular to the centreline tangent. This is the arc shared with
+/// plane perpendicular to the centerline tangent. This is the arc shared with
 /// the spherical corner patch.
 pub(super) fn build_sector_cross_arc(
     b: &TopoBuilder,

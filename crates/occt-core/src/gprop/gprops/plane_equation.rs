@@ -256,7 +256,7 @@ pub(super) fn tetra_inertia_origin(a: &GpPnt, b: &GpPnt, c: &GpPnt, d: &GpPnt, v
 }
 
 /// Split an axis-aligned box into 12 tetrahedra (each of the 6 faces, fan-split
-/// into 2 triangles, connected to the box centre). Exactly tiles the box.
+/// into 2 triangles, connected to the box center). Exactly tiles the box.
 pub(super) fn box_tetrahedra(min: &GpPnt, max: &GpPnt) -> Vec<[GpPnt; 4]> {
     let center = GpPnt::new(
         (min.x() + max.x()) / 2.0,

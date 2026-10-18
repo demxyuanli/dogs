@@ -44,7 +44,7 @@ use super::*;
     #[test]
     fn camera_look_at_origin() {
         let cam = Camera::default();
-        // The origin maps to the screen centre.
+        // The origin maps to the screen center.
         let (ox, oy, _od) = project_point(&cam, GpPnt::zero(), 200, 150).unwrap();
         assert!((ox - 100.0).abs() < 1.0, "origin x {ox}");
         assert!((oy - 75.0).abs() < 1.0, "origin y {oy}");
@@ -205,7 +205,7 @@ use super::*;
         s
     }
 
-    /// Colors of the pixels in a square neighbourhood around `(cx, cy)`.
+    /// Colors of the pixels in a square neighborhood around `(cx, cy)`.
     pub(super) fn sample_region(raster: &Raster, cx: f64, cy: f64, r: i32) -> Vec<(f64, f64, f64)> {
         let mut out = Vec::new();
         for dy in -r..=r {
@@ -371,7 +371,7 @@ use super::*;
             0.25,
             &RenderSettings::default(),
         );
-        // The far box's front face centre projects here.
+        // The far box's front face center projects here.
         let cam = Camera::default();
         let (fx, fy, _) = project_point(&cam, GpPnt::new(0.5, 0.5, -3.0), 96, 72).unwrap();
         let region = sample_region(&raster, fx, fy, 5);
@@ -412,7 +412,7 @@ use super::*;
         assert!(cam.target.distance(&target_before) < 1e-9);
         // The eye keeps its distance from the target.
         assert!((cam.eye.distance(&cam.target) - 5.0).abs() < 1e-9, "distance {}", cam.eye.distance(&cam.target));
-        // The target still projects to the screen centre.
+        // The target still projects to the screen center.
         let (sx, sy, _) = project_point(&cam, cam.target, 200, 150).unwrap();
         assert!((sx - 100.0).abs() < 1.0, "target x {sx}");
         assert!((sy - 75.0).abs() < 1.0, "target y {sy}");
@@ -425,7 +425,7 @@ use super::*;
         cam.camera_zoom(2.0);
         let d1 = cam.eye.distance(&cam.target);
         assert!((d1 - d0 / 2.0).abs() < 1e-9, "distance {d0} -> {d1}");
-        // The origin still projects to the screen centre.
+        // The origin still projects to the screen center.
         let (sx, sy, _) = project_point(&cam, GpPnt::zero(), 200, 150).unwrap();
         assert!((sx - 100.0).abs() < 1.0, "origin x {sx}");
         assert!((sy - 75.0).abs() < 1.0, "origin y {sy}");
@@ -443,7 +443,7 @@ use super::*;
             before.0,
             after.0
         );
-        // The target moves with the eye, so it stays centred on screen.
+        // The target moves with the eye, so it stays centered on screen.
         let (tx, ty, _) = project_point(&cam, cam.target, 200, 150).unwrap();
         assert!((tx - 100.0).abs() < 1.0 && (ty - 75.0).abs() < 1.0);
     }
@@ -460,10 +460,10 @@ use super::*;
             origin.z() + dir.z() * t,
         );
         let dist = closest.distance(&cam.target);
-        // The centre pixel's sub-pixel ray is offset by half a pixel from the
+        // The center pixel's sub-pixel ray is offset by half a pixel from the
         // exact optical axis, so the ray passes within a fraction of a world
         // unit of the target rather than exactly through it.
-        assert!(dist < 0.1, "centre ray should pass near the target, dist {dist}");
+        assert!(dist < 0.1, "center ray should pass near the target, dist {dist}");
     }
 
     #[test]
@@ -502,7 +502,7 @@ use super::*;
         let scene = box_scene();
         let cam = Camera::default();
         // The box lives in the +X/+Y/+Z octant, so aim at the projected
-        // centre of its front face rather than the image centre.
+        // center of its front face rather than the image center.
         let (sx, sy, _) = project_point(&cam, GpPnt::new(0.5, 0.5, 1.0), 64, 48).unwrap();
         let (idx, hit, _t) = pick_shape(&scene, &cam, 64, 48, sx as usize, sy as usize, 0.25).unwrap();
         assert_eq!(idx, 0, "pick returns the only shape");

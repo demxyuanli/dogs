@@ -73,10 +73,10 @@ use super::*;
         let mut ct = PolyCoherentTriangulation::from_poly_triangulation(&tri).unwrap();
         ct.compute_links().unwrap();
         assert!(ct.n_links() > 0);
-        // Every triangle in the cube has 3 neighbours.
+        // Every triangle in the cube has 3 neighbors.
         for t in 0..ct.triangles.len() {
             let tr = &ct.triangles[t];
-            assert_eq!(tr.n_connections(), 3, "triangle {t} has 3 neighbours");
+            assert_eq!(tr.n_connections(), 3, "triangle {t} has 3 neighbors");
             let neigh = tr.neighbors();
             assert!(neigh.iter().all(|n| n.is_some()));
         }
@@ -115,7 +115,7 @@ use super::*;
         assert_eq!(link.node[1], 2);
         // Opposite node on the left (this triangle) is node index 2 (value 1).
         assert_eq!(link.opposite_node[1], 1);
-        assert_eq!(link.opposite_node[0], -1); // no neighbour yet
+        assert_eq!(link.opposite_node[0], -1); // no neighbor yet
     }
 
     #[test]

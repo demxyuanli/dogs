@@ -43,10 +43,10 @@ impl<'a> Resolver<'a> {
     /// (`ShapeFix_Shape.cxx:75`, `ShapeFix_Shell.cxx:108`,
     /// `ShapeFix_Face.cxx:379`) and closes it with `myResult = Context()->Apply(S)`
     /// (`ShapeFix_Shape.cxx:257`), so a face fix that splits/rebuilds an edge is
-    /// substituted on the *neighbouring* faces too. Sharing is therefore what
+    /// substituted on the *neighboring* faces too. Sharing is therefore what
     /// keeps one `TopoDS_Edge` TShape per geometric edge: without it the seam
     /// rebuild of one face leaves a coincident duplicate edge beside the
-    /// neighbour's, and BRepMesh discretizes the two independently (T-junctions).
+    /// neighbor's, and BRepMesh discretizes the two independently (T-junctions).
     ///
     /// ALWAYS ON (2026-10-07). The pass used to sit behind an `OCCT_SHARED_HEAL`
     /// switch while it was unverified; it is now the only path, because OCCT has

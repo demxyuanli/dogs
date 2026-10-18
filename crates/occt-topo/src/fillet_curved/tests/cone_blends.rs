@@ -58,12 +58,12 @@ use super::*;
         let s = BRepTool::face_surface(blend).unwrap();
         let r = 0.15;
         // Centreline: offset plane at z=r; the blend points are at distance r
-        // from the centreline circle.
+        // from the centerline circle.
         let mut on_torus = true;
         let (u0, u1, v0, v1) = sample_bounds(s.as_ref());
         let center = GpPnt::new(0.0, 0.0, r);
         let axis = GpVec::new(0.0, 0.0, 1.0);
-        // The centreline radius for α = atan(1/2): R_c = (H + r/sinα − r)tanα.
+        // The centerline radius for α = atan(1/2): R_c = (H + r/sinα − r)tanα.
         let alpha = (1.0_f64 / 2.0).atan();
         let rho = (2.0 + r / alpha.sin() - r) * alpha.tan();
         for i in 0..8 {
@@ -214,7 +214,7 @@ use super::*;
     fn general_sampled_blend_unsupported() {
         // Two non-parallel cylinders: the analytic general path documents a
         // clear error (a sampled B-spline blend for angled cylinders is out of
-        // scope). The parallel-cylinder centreline sampler still rejects them.
+        // scope). The parallel-cylinder centerline sampler still rejects them.
         let c1 = crate::primitives::BRepPrimCylinder::make_cylinder(0.5, 2.0);
         let s1 = BRepTool::face_surface(
             faces_of(&c1.solid.0).iter().find(|f| {
@@ -230,7 +230,7 @@ use super::*;
         let res = parallel_cylinder_centerlines(&info1, &info2, 0.1, 1e-6);
         assert!(
             res.is_err(),
-            "angled cylinders must be rejected by the parallel-cylinder centreline solver"
+            "angled cylinders must be rejected by the parallel-cylinder centerline solver"
         );
         clear_tree(&c1.solid.0);
     }
@@ -350,7 +350,7 @@ use super::*;
             GpPnt::new(-1.0, -1.0, 0.0),
             GpPnt::new(-1.0, -1.0, 0.0),
         ];
-        // Sphere caps: each sphere is centred along its plane's normal at
+        // Sphere caps: each sphere is centered along its plane's normal at
         // distance `rs` from the corner, tangent to that plane at the corner.
         let rs = 0.5;
         let sphere_centers = [
@@ -417,7 +417,7 @@ use super::*;
         e
     }
 
-    /// The tri-sphere corner solid: three radius-`s` spheres centred at
+    /// The tri-sphere corner solid: three radius-`s` spheres centered at
     /// `(s,0,0)`, `(0,s,0)`, `(0,0,s)`, all passing through the origin `V`.
     /// They intersect pairwise in the three circular arcs of radius `s/√2`
     /// (planes `x=y`, `y=z`, `z=x`) that all pass through `V` and the second
@@ -507,8 +507,8 @@ use super::*;
         assert!(err.is_empty(), "manifold check: {err}");
 
         // The two corner patches are spheres of the fillet radius, each tangent
-        // to all three original spheres (its centre is at distance R + r from
-        // every sphere centre).
+        // to all three original spheres (its center is at distance R + r from
+        // every sphere center).
         let orig_centers = [
             GpPnt::new(1.0, 0.0, 0.0),
             GpPnt::new(0.0, 1.0, 0.0),
@@ -530,7 +530,7 @@ use super::*;
                 let d = sp.center.distance(oc);
                 assert!(
                     (d - 1.15).abs() < 2e-3,
-                    "corner patch centre {sp:?} is at distance {d} from sphere centre {oc:?} (expected 1.15)"
+                    "corner patch center {sp:?} is at distance {d} from sphere center {oc:?} (expected 1.15)"
                 );
             }
         }

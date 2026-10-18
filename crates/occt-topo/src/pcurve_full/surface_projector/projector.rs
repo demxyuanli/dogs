@@ -55,7 +55,7 @@ impl Projector {
                 // `torus_params` from `top − bot` — not `x × y`, which flips for
                 // a left-handed STEP torus and would make `v = atan2(z·d, …)` land
                 // on the wrong half of the tube (the screw's thread got v < 0 for
-                // points above its centre).
+                // points above its center).
                 let z = ax;
                 Some(Projector::Torus { o: center, x, y, z, r_big, r_small })
             }
@@ -168,9 +168,9 @@ impl Projector {
 /// `None` for non-analytic surfaces (B-spline, …), where the caller must fall
 /// back to a numeric inversion.
 ///
-/// Unlike a Newton iterate seeded from the surface range centre, this is the
+/// Unlike a Newton iterate seeded from the surface range center, this is the
 /// exact inverse of `d0` even on unbounded-v surfaces (a cylinder/cone point far
-/// from v=0), where Newton from the centre cannot converge.
+/// from v=0), where Newton from the center cannot converge.
 pub fn surface_project_point(s: &dyn Surface, p: &GpPnt) -> Option<GpPnt2d> {
     let kind = classify_surface_kind(s);
     let proj = Projector::from_surface(s, kind)?;

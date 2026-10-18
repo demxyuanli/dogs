@@ -448,7 +448,7 @@ fn edge_key(e: &Edge) -> EKey {
     if ka <= kb { (ka, kb) } else { (kb, ka) }
 }
 
-/// A 3-D point on `face`: the surface centre when its UV range is bounded,
+/// A 3-D point on `face`: the surface center when its UV range is bounded,
 /// else the midpoint of the first boundary edge.
 ///
 /// Port-only: the sole remaining user is [`orient_face_outward`], the

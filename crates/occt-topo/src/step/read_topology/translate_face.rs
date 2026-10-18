@@ -142,7 +142,7 @@ impl<'a> Resolver<'a> {
                 // `ShapeFix_Face::Perform` runs its wire round on
                 // `S = Context()->Apply(myFace)` (`ShapeFix_Face.cxx:379-380`),
                 // i.e. after the shared `ReShape` has substituted every edge a
-                // neighbouring face's `ShapeFix_ComposeShell` recorded. The
+                // neighboring face's `ShapeFix_ComposeShell` recorded. The
                 // `FixAddPCurve` therefore has to land on the *substituted* edge
                 // (`ShapeFix_ComposeShell.cxx:3451`), otherwise the pcurve is
                 // attached to the pre-substitution edge that `Replace` drops and
@@ -275,7 +275,7 @@ impl<'a> Resolver<'a> {
                     // pre-heal composite: `SearchUsingMap` misses, its `else`
                     // arm (`STEPCAFControl_Reader.cxx:1417-1437`) gets a shell
                     // whose faces the model does not contain, and the patch
-                    // faces fall back to the node colour (T0M: `mat_9` red
+                    // faces fall back to the node color (T0M: `mat_9` red
                     // painted as the solid's `mat_2` grey).
                     if !split_happened && self.current_heal_context().is_some() {
                         return Ok(face.0);

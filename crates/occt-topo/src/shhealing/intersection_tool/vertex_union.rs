@@ -4,7 +4,7 @@ use super::*;
 ///
 /// Picks the closest of the four endpoint pairs, welds `edge1`'s vertex onto
 /// `edge2` (a fresh `CopyReplaceVertices`) and then replaces the dropped vertex
-/// in the two neighbouring edges. `false` when no pair is within tolerance.
+/// in the two neighboring edges. `false` when no pair is within tolerance.
 pub(super) fn union_vertexes(
     wire: &mut Wire,
     ctx: &mut dyn ReShape,

@@ -328,7 +328,7 @@ impl BopdsDS {
     /// Port of the `BRepBndLib::Add` + `SetGap` part of
     /// `BOPAlgo_PaveFiller::UpdateVertex`: a vertex whose tolerance grows must
     /// have its DS box enlarged, or the repeat intersection (which re-selects
-    /// pairs by box overlap) would miss its newly-touching neighbours.
+    /// pairs by box overlap) would miss its newly-touching neighbors.
     pub fn refresh_vertex_box(&mut self, index: usize, tol: f64) {
         let Some(shape) = self.shape(index) else { return };
         let mut b = shape_bbox(shape);

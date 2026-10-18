@@ -390,7 +390,7 @@ impl<'a> MathFunctionSetWithDerivatives for ExtremaFuncPsNorm<'a> {
 /// The distinct knot values of a flat knot vector - Geom_BSplineSurface::UKnots()
 /// / Geom_BSplineCurve::Knots(), which OCCT stores as distinct knots plus
 /// multiplicities (Geom_BSplineSurface.cxx:1148-1165). The port's surfaces keep
-/// the flat sequence, so collapsing equal neighbours recovers the OCCT array.
+/// the flat sequence, so collapsing equal neighbors recovers the OCCT array.
 fn distinct_knots(flat: &[f64]) -> Vec<f64> {
     let mut out: Vec<f64> = Vec::new();
     for &k in flat {
@@ -1235,7 +1235,7 @@ impl<'a> ExtremaGenExtPs<'a> {
             }
 
             if self.flag == ExtremaExtFlag::Max || self.flag == ExtremaExtFlag::MinMax {
-                // cxx:1081-1111 - maximums over the 3x3 node neighbourhood.
+                // cxx:1081-1111 - maximums over the 3x3 node neighborhood.
                 for no_u in 1..=usample as usize {
                     for no_v in 1..=vsample as usize {
                         let main = self.points[no_u][no_v];

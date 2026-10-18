@@ -85,7 +85,7 @@ pub fn lin2d_from_curve(curve: &dyn Curve2d) -> Option<GpLin2d> {
 }
 
 /// Reconstruct a `gp_Circ2d` from a 2-pi periodic curve (midpoint of `d0(0)`
-/// and `d0(pi)` is the centre for the standard parametrisation).
+/// and `d0(pi)` is the center for the standard parametrisation).
 ///
 /// Stand-in for `Adaptor2d_Curve2d::Circle()` on the port's wrapper classes
 /// that do not forward `gp_circ2d` (see [`lin2d_from_curve`]).

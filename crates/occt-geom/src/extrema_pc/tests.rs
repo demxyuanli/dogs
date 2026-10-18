@@ -131,7 +131,7 @@ use super::*;
         let (_, d1) = c.d1(min.u1);
         let v = GpVec::from_pnts(&p, &min.p2);
         assert!(v.dot(&d1).abs() < 1e-6, "dF={}", v.dot(&d1));
-        // The returned distance must be a local minimum: any neighbour is farther.
+        // The returned distance must be a local minimum: any neighbor is farther.
         let eps = 1e-3;
         let d0 = p.distance(&c.d0(min.u1 - eps));
         let d2 = p.distance(&c.d0(min.u1 + eps));

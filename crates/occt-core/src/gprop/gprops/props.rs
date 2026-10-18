@@ -20,7 +20,7 @@ pub enum ValueType {
 }
 
 /// Huygens operator (parallel-axis term) of a system of mass `mass` whose
-/// centre of mass is `g`, expressed at the point `q`:
+/// center of mass is `g`, expressed at the point `q`:
 ///
 /// ```text
 /// H = mass · (|g − q|² · δ − (g − q)(g − q)ᵀ)
@@ -48,7 +48,7 @@ pub fn h_operator(g: &GpPnt, q: &GpPnt, mass: f64) -> GpMat {
 ///
 /// Internal state:
 /// * `loc` — reference point used for inertia accumulation;
-/// * `g` — centre of mass *relative to* `loc` (absolute COM = `loc + g`);
+/// * `g` — center of mass *relative to* `loc` (absolute COM = `loc + g`);
 /// * `dim` — total mass / length / area / volume;
 /// * `inertia` — quadratic-moment (inertia) matrix about `loc`.
 #[derive(Debug, Clone)]
@@ -78,7 +78,7 @@ impl GProps {
 
     /// Empty system whose inertia is accumulated about `system_location`.
     /// For greater accuracy choose a point close to the system (e.g. near its
-    /// expected centre of mass).
+    /// expected center of mass).
     pub fn new_at(system_location: GpPnt) -> Self {
         Self {
             g: GpPnt::zero(),
@@ -94,7 +94,7 @@ impl GProps {
     }
 
     /// Override the reference point. Should be called before any `add*` call,
-    /// otherwise the accumulated inertia and centre-of-mass are left relative
+    /// otherwise the accumulated inertia and center-of-mass are left relative
     /// to the previous reference point (matching the OCCT usage contract).
     pub fn set_location(&mut self, loc: GpPnt) {
         self.loc = loc;
@@ -112,7 +112,7 @@ impl GProps {
     }
 
     /// The symmetric 3×3 matrix of inertia in the central coordinate system
-    /// `(G, Gx, Gy, Gz)` whose origin `G` is the centre of mass. To compute it
+    /// `(G, Gx, Gy, Gz)` whose origin `G` is the center of mass. To compute it
     /// at another location use [`h_operator`] (Huygens' theorem).
     pub fn matrix_of_inertia(&self) -> GpMat {
         self.inertia.subtract(&h_operator(&self.g, &GpPnt::zero(), self.dim))
@@ -128,7 +128,7 @@ impl GProps {
     /// Moment of inertia of the system about the axis `a`.
     ///
     /// The inertia matrix is evaluated about `a.location()` (moving from the
-    /// stored reference point or the centre of mass by Huygens' theorem) and
+    /// stored reference point or the center of mass by Huygens' theorem) and
     /// contracted with the axis direction: `I = uᵀ·I·u`.
     pub fn moment_of_inertia(&self, a: &GpAx1) -> f64 {
         let dir = *a.direction().xyz();
@@ -191,7 +191,7 @@ impl GProps {
             return Err("density <= resolution".into());
         }
         if self.loc.distance(&item.loc) <= CONFUSION {
-            // Same reference point: weight the centres of mass directly.
+            // Same reference point: weight the centers of mass directly.
             let mut gxyz = item.g.coord.multiplied(item.dim * density);
             gxyz = gxyz.added(&self.g.coord.multiplied(self.dim));
             self.dim += item.dim * density;
@@ -214,7 +214,7 @@ impl GProps {
             } else {
                 GpPnt::zero()
             };
-            // Item inertia about item's own centre of mass, then about self.loc.
+            // Item inertia about item's own center of mass, then about self.loc.
             let mut item_inertia = item.inertia;
             if item.g.coord.modulus() > CONFUSION {
                 let h = h_operator(&GpPnt::from_xyz(&itemg), &item.loc, item.dim);
@@ -242,7 +242,7 @@ impl GProps {
     }
 
     /// Internal helper: compose one element whose inertia is known about the
-    /// origin and whose centre is `centroid`.
+    /// origin and whose center is `centroid`.
     pub(super) fn add_element(
         &mut self,
         centroid: GpPnt,
@@ -263,7 +263,7 @@ impl GProps {
 /// Presentation of the principal properties of inertia of a system.
 /// Source: `GProp_PrincipalProps`.
 ///
-/// The principal axes pass through the centre of mass and are parallel to the
+/// The principal axes pass through the center of mass and are parallel to the
 /// eigenvectors of the central inertia matrix; the principal moments are the
 /// associated eigenvalues (reported in descending order), and the principal
 /// radii of gyration are `sqrt(|I|/m)`.
@@ -299,7 +299,7 @@ impl PrincipalProps {
         }
     }
 
-    /// Full constructor with explicit moments, radii, axes and centre of mass.
+    /// Full constructor with explicit moments, radii, axes and center of mass.
     pub fn new_full(
         i1: f64,
         i2: f64,

@@ -84,7 +84,7 @@ impl MergedNodesMap {
         }
     }
 
-    /// Searches the map (including the 26 neighbour cells) for a merge
+    /// Searches the map (including the 26 neighbor cells) for a merge
     /// candidate. Sets `is_opposite` when the existing node has an opposite
     /// normal.
     fn find_merge(&self, pos: &[f64; 3], normal: &[f64; 3], is_opposite: &mut bool) -> Option<usize> {

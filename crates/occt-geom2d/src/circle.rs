@@ -8,7 +8,7 @@ pub struct Geom2dCircle { pos: GpCirc2d }
 
 impl Geom2dCircle {
     pub fn new(c: GpCirc2d) -> Self { Self { pos: c } }
-    /// Circle of `radius` centred at `center` in the standard frame
+    /// Circle of `radius` centered at `center` in the standard frame
     /// (`gp_Ax22d::from_xdir(center, +X)`, i.e. what
     /// `gce_MakeCirc(P1, P2, P3)` / `GC_MakeArcOfCircle` end up with once the
     /// location is fixed). Before this the `center` argument was dropped and

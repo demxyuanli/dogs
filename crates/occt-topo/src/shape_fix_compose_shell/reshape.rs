@@ -399,9 +399,9 @@ impl ReShape for MapReShape {
 /// (`ShapeFix_ComposeShell.cxx:3456-3457`, `:1397`, `:1412`) is visible to
 /// every later `Context()->Apply` of the pass - in particular to the final
 /// `myResult = Context()->Apply(S)` (`ShapeFix_Shape.cxx:257`,
-/// `ShapeFix_Shell.cxx:139`), which is what rewrites a face whose *neighbour*
+/// `ShapeFix_Shell.cxx:139`), which is what rewrites a face whose *neighbor*
 /// was split: T0M face 1693 (torus, R=12.5/r=3) gets its bottom R=9.5 circle
-/// cut at U=4.97868 by the seam the neighbouring cylinder
+/// cut at U=4.97868 by the seam the neighboring cylinder
 /// (face 1695, R=9.5) inserts at its own existing vertex azimuth, and has 5
 /// edges only because of that shared pass.
 #[derive(Clone, Default)]

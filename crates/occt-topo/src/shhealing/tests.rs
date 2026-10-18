@@ -39,7 +39,7 @@ use super::*;
         // CheckSmall` flags the tiny edge (its endpoints and its curve midpoint
         // are all within `precsmall`), so `ShapeFix_Wire::FixSmall` drops it.
         // The `FixConnected(n, precsmall)` follow-up only merges the
-        // neighbouring vertices when *they* are within `precsmall` - here they
+        // neighboring vertices when *they* are within `precsmall` - here they
         // are the ends of the one surviving edge, ~1.0 apart, so nothing is
         // merged and the survivor keeps its own endpoints
         // (`ShapeFix_Wire.cxx:1459-1468`, `ShapeAnalysis_Wire.cxx:693-762`).

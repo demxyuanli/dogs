@@ -1190,7 +1190,7 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
         }
     }
 
-    // `STEPCAFControl_Reader::Transfer`'s colour pass (`cxx:754-760`):
+    // `STEPCAFControl_Reader::Transfer`'s color pass (`cxx:754-760`):
     // `ReadColors(WS, Doc, ...)` after the shapes have been transferred.
     super::read_colors::read_colors(&mut model, &resolver, &rep_index);
 

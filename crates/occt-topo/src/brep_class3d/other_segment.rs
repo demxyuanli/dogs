@@ -265,7 +265,7 @@ fn grid_scan(
         }
         u += du37;
     }
-    // cxx:397-409: centre of the box.
+    // cxx:397-409: center of the box.
     visit(mu, mv)
 }
 

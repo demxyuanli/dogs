@@ -412,7 +412,7 @@ pub(crate) fn orient_faces_outward(bld: &TopoBuilder, faces: &[Face]) -> Vec<Fac
 /// geometric boundary use the same edge partition and thus the same `Edge`
 /// `TShape`. Without this, a face split by intersection lines (e.g. a box top
 /// cut by a boss cylinder's chord lines) keeps subdivided boundary edges while
-/// its neighbour keeps the original long edge, and the shell never closes.
+/// its neighbor keeps the original long edge, and the shell never closes.
 ///
 /// Each face's boundary loop is rebuilt by CHAINING its wire edges at shared
 /// endpoints (a shared edge's stored vertex order is the first creator's, so

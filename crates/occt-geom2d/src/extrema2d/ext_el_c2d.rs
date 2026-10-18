@@ -392,7 +392,7 @@ impl ExtremaExtElC2d {
 // ---------------------------------------------------------------------------
 
 /// `Extrema_ExtPElC2d::Perform(P, gp_Elips2d, Tol, Uinf, Usup)`
-/// (`Extrema_ExtPElC2d.cxx:166-213`): not done only when `P` is the centre of a
+/// (`Extrema_ExtPElC2d.cxx:166-213`): not done only when `P` is the center of a
 /// circle-like ellipse (`|A - B| <= Tol`).
 fn ext_p_el_c2d_ellipse(
     p: &GpPnt2d,
@@ -409,7 +409,7 @@ fn ext_p_el_c2d_ellipse(
 }
 
 /// `Extrema_ExtPElC2d::Perform(P, gp_Circ2d, Tol, Uinf, Usup)`
-/// (`Extrema_ExtPElC2d.cxx:94-154`): not done when `P` is the centre.
+/// (`Extrema_ExtPElC2d.cxx:94-154`): not done when `P` is the center.
 fn ext_p_el_c2d_circle(
     p: &GpPnt2d,
     c: &GpCirc2d,

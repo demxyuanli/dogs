@@ -1,7 +1,7 @@
 //! Phase 5 module: xcaf — STEP assembly metadata (`XCAFDoc_ShapeTool`-lite).
 //!
 //! **UNPORTED (audit A14)**: a minimal, port-local metadata container; OCCT's
-//! XCAF is `XCAFDoc_ShapeTool` + `TDocStd_Document` (with labels, colours and
+//! XCAF is `XCAFDoc_ShapeTool` + `TDocStd_Document` (with labels, colors and
 //! layers) and is not translated here.
 //!
 //! A minimal stand-in for OCCT's XCAF document: tracks the product list of an

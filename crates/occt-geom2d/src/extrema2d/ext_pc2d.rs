@@ -323,7 +323,7 @@ fn elementary2d(
         },
         CurveType::Circle => match c.gp_circ2d() {
             Some(gc) => {
-                // `Extrema_ExtPElC2d.cxx:100-103`: not done when P is the centre.
+                // `Extrema_ExtPElC2d.cxx:100-103`: not done when P is the center.
                 if gc.location().is_equal(p, T3D) {
                     return (false, Vec::new());
                 }

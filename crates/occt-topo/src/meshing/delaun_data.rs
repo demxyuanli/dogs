@@ -4,7 +4,7 @@
 //! - `BRepMesh_DataStructureOfDelaun.{hxx,cxx}` — indexed storage for vertices,
 //!   links (edges) and triangles plus a vertex-cell filter for coincidence
 //!   queries (the OCCT class holds this as a `BRepMesh_VertexTool`).
-//! - `BRepMesh_SelectorOfDataStructureOfDelaun.{hxx,cxx}` — neighbour selector.
+//! - `BRepMesh_SelectorOfDataStructureOfDelaun.{hxx,cxx}` — neighbor selector.
 //!
 //! ponytail: the OCCT value types carry movability inside the struct
 //! (`BRepMesh_Vertex/Edge/Triangle`). The Rust contract types in `delaun_types`
@@ -773,7 +773,7 @@ impl<'a> DelaunSelector<'a> {
         self.frontier.clear();
     }
 
-    /// Selects all neighbouring elements of the given node.
+    /// Selects all neighboring elements of the given node.
     pub fn neighbours_of(&mut self, node: &DelaunVertex) {
         let idx = self.mesh.index_of_node(node);
         if idx != 0 {
@@ -781,7 +781,7 @@ impl<'a> DelaunSelector<'a> {
         }
     }
 
-    /// Selects all neighbouring elements of the node with the given index.
+    /// Selects all neighboring elements of the node with the given index.
     pub fn neighbours_of_node(&mut self, node_index: i32) {
         let link_ids: Vec<i32> = self.mesh.links_connected_to(node_index).to_vec();
         self.nodes.insert(node_index);
@@ -790,14 +790,14 @@ impl<'a> DelaunSelector<'a> {
         }
     }
 
-    /// Selects all neighbouring elements of the given link.
+    /// Selects all neighboring elements of the given link.
     pub fn neighbours_of_link(&mut self, link_index: i32) {
         let link = self.mesh.link(link_index);
         self.neighbours_of_node(link.first_node());
         self.neighbours_of_node(link.last_node());
     }
 
-    /// Selects all neighbouring elements of the element with the given index.
+    /// Selects all neighboring elements of the element with the given index.
     pub fn neighbours_of_element(&mut self, element_index: i32) {
         let element = self.mesh.element(element_index);
         for v in element.vertex_indices {
@@ -805,21 +805,21 @@ impl<'a> DelaunSelector<'a> {
         }
     }
 
-    /// Selects all neighbouring elements of the given triangle by its nodes.
+    /// Selects all neighboring elements of the given triangle by its nodes.
     pub fn neighbours_of_triangle(&mut self, element: &DelaunTriangle) {
         for v in element.vertex_indices {
             self.neighbours_of_node(v);
         }
     }
 
-    /// Selects all neighbouring elements by the links of the given triangle.
+    /// Selects all neighboring elements by the links of the given triangle.
     pub fn neighbours_by_edge_of(&mut self, element: &DelaunTriangle) {
         for e in element.link_indices {
             self.elements_of_link(e.abs());
         }
     }
 
-    /// Adds a level of neighbours by edge to the selector (OCCT no-op).
+    /// Adds a level of neighbors by edge to the selector (OCCT no-op).
     pub fn add_neighbours(&mut self) {}
 
     /// Selected node indices.

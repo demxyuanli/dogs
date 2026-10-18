@@ -22,7 +22,7 @@
 //!   `SetNormals(true)` a face without normals still writes three `float` zeros,
 //!   and `SetColors(true)` writes the default white `uchar` triple. Only
 //!   `WriteIndices` consults the face (`cxx:229-267`).
-//! * Colours are the style's colour in **linear** RGB scaled by 255 and
+//! * Colours are the style's color in **linear** RGB scaled by 255 and
 //!   truncated (`cxx:236-244`); the sRGB conversion in the C++ is commented out.
 //!
 //! Not ported (no counterpart in this crate, kept out rather than faked):

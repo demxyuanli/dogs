@@ -55,7 +55,7 @@ fn rel_close(a: f64, b: f64) -> bool {
 /// `±Precision::Infinite()` = `2e100`, so `Extrema_GenExtSS` samples the plane
 /// over `[-2e100, 2e100]`. Its `math_BFGS` start step is
 /// `0.015 / sqrt(|dir|^2)` (`math_BFGS.cxx:115-135`) -- ulp-sized against that
-/// span -- so the quasi-Newton iterates stay in the `2e100` neighbourhood, and
+/// span -- so the quasi-Newton iterates stay in the `2e100` neighborhood, and
 /// the pair is then dropped by the `Extrema_ExtSS` window filter because its
 /// `V1` walked to `-1.5786`, outside the sphere's `v` window `[-pi/2, pi/2]`
 /// (`Extrema_ExtSS.cxx:162-166`). Only the grid maximum survives.

@@ -220,7 +220,7 @@ use super::*;
 
     #[test]
     fn line_through_torus_four_points() {
-        // Torus at origin R = 3, r = 1; line along X through the centre cuts at
+        // Torus at origin R = 3, r = 1; line along X through the center cuts at
         // x = ±2, ±4 (port of IntAna_IntLinTorus).
         let torus = GpTorus::new(GpAx3::standard(), 3.0, 1.0).unwrap();
         let surface = GeomTorus::new(torus);
@@ -260,7 +260,7 @@ use super::*;
     fn circle_crosses_cylinder_general_path() {
         let cyl = GpCylinder::new(GpAx3::standard(), 1.0).unwrap();
         let surface = GeomCylinder::new(cyl);
-        // Circle radius 1 centred (1.5, 0, 0) in the XY plane: points satisfy
+        // Circle radius 1 centered (1.5, 0, 0) in the XY plane: points satisfy
         // x = 1.5 + cos u, y = sin u; distance to the Z axis is √(3.25 + 3 cos u),
         // equal to 1 when cos u = −0.75 → two points.
         let ax2 = GpAx2::new(GpPnt::new(1.5, 0.0, 0.0), dir(0.0, 0.0, 1.0), dir(1.0, 0.0, 0.0)).unwrap();
@@ -277,7 +277,7 @@ use super::*;
     #[test]
     fn trimmed_circle_range_filters_points() {
         let sphere = sphere_at(GpPnt::zero(), 1.0);
-        // Circle radius 1 centred (1.5, 0, 0) in the XY plane crosses the unit
+        // Circle radius 1 centered (1.5, 0, 0) in the XY plane crosses the unit
         // sphere at u = acos(−0.75) ≈ 2.42 and u = 2π − 2.42 ≈ 3.86. Restricting
         // to [2.0, 3.0] keeps only the first.
         let ax2 = GpAx2::new(GpPnt::new(1.5, 0.0, 0.0), dir(0.0, 0.0, 1.0), dir(1.0, 0.0, 0.0)).unwrap();

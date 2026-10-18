@@ -67,7 +67,7 @@ use super::*;
         let mut ctx = IntToolsContext::new();
         let tol = 1e-6;
 
-        // Face centre -> strictly In.
+        // Face center -> strictly In.
         assert!(ctx.is_point_in_face(face, &GpPnt::new(0.5, 0.5, 0.0), None, tol).unwrap());
         // In the plane but outside the boundary -> false.
         assert!(!ctx.is_point_in_face(face, &GpPnt::new(-0.5, 0.5, 0.0), None, tol).unwrap());

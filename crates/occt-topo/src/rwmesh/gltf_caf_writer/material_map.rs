@@ -11,7 +11,7 @@
 //! * `myMatNameAsKey` is FALSE (`RWGltf_GltfMaterialMap.cxx:58`), so a material
 //!   key is the decimal material index and `name` is `mat_<index>`.
 //! * `DefineMaterial` (`cxx:356-557`) turns the style into a
-//!   `pbrMetallicRoughness` block: base colour, metallic/roughness factors, the
+//!   `pbrMetallicRoughness` block: base color, metallic/roughness factors, the
 //!   double-sided flag, alpha mode/cut-off, emissive/normal/occlusion textures.
 //! * Textures are copied next to the model (`AddImages`, `cxx:65-133`) or, for
 //!   a GLB with `myToEmbedTexturesInGlb`, appended to the binary data as image
@@ -37,7 +37,7 @@ fn same_texture(a: &ImageTexture, b: &ImageTexture) -> bool {
 }
 
 /// `RWGltf_GltfMaterialMap::baseColorTexture` (`cxx:29-47`): the PBR base
-/// colour texture, else the common material's diffuse texture, else none.
+/// color texture, else the common material's diffuse texture, else none.
 pub(crate) fn base_color_texture(material: Option<&XcafDocVisMaterial>) -> Option<&ImageTexture> {
     let material = material?;
     if material.has_pbr_material() {
@@ -357,7 +357,7 @@ impl GltfMaterialMap {
 
         if style.is_set_color_surf() {
             // `aPbrMat.BaseColor.SetRGB(theStyle.GetColorSurf())` — `SetRGB`
-            // takes the colour's linear components and keeps the alpha.
+            // takes the color's linear components and keeps the alpha.
             pbr.base_color.rgb = LinearRgb::from_srgb(style.color_surf());
             let rgba = style.color_surf_rgba();
             if rgba.a < 1.0 {

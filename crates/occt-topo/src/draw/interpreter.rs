@@ -370,7 +370,7 @@ pub(super) fn cmd_cylinder(session: &mut DrawSession, args: &[String]) -> Result
     Ok(())
 }
 
-/// `sphere <name> <r>` — build a sphere of radius `r` centred at the origin.
+/// `sphere <name> <r>` — build a sphere of radius `r` centered at the origin.
 pub(super) fn cmd_sphere(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
     need_args(args, 2, "sphere")?;
     let r = arg_f64(args, 1, "sphere")?;
@@ -381,7 +381,7 @@ pub(super) fn cmd_sphere(session: &mut DrawSession, args: &[String]) -> Result<(
 
 /// `cone <name> <r1> <r2> <h>` — build a cone with base radius `r1` and
 /// height `h`. The primitive in this crate is a right cone (apex above the
-/// base centre), so a truncated cone — `r2 != 0` — is rejected.
+/// base center), so a truncated cone — `r2 != 0` — is rejected.
 pub(super) fn cmd_cone(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
     need_args(args, 4, "cone")?;
     let r1 = arg_f64(args, 1, "cone")?;

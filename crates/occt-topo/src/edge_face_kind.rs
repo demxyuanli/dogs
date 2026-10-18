@@ -257,7 +257,7 @@ pub(crate) fn is_coplanar(curve: &dyn Curve, surface: &dyn Surface) -> bool {
     dirs_coinside(&n, &surface_plane_normal(surface))
 }
 
-/// `IsRadius` (`IntTools_EdgeFace.cxx:816-840`): the circle centre lies at
+/// `IsRadius` (`IntTools_EdgeFace.cxx:816-840`): the circle center lies at
 /// distance ~ radius from the plane, `aCType == GeomAbs_Circle &&
 /// aSType == GeomAbs_Plane` being the gate. `aPln.Distance(aCenter)` is measured
 /// from the plane's own `gp_Pln` placement (`SurfaceTool::Plane`), not from a

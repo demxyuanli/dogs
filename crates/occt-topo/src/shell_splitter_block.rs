@@ -72,7 +72,7 @@ fn edge_off_geo(e1: &Edge, f2: &TopoShape) -> Option<Edge> {
 /// ([`crate::shell_splitter::edge_key`], the module's documented convention and
 /// the key [`crate::shell_splitter::ShellSplitter::perform`] builds the blocks
 /// with). Keying `SplitBlock` by TShape instead makes every face whose
-/// neighbours were built by a different producer look "free-edged" and drops
+/// neighbors were built by a different producer look "free-edged" and drops
 /// the whole block.
 fn edge_ek(e: &Edge) -> crate::shell_splitter::EKey {
     crate::shell_splitter::edge_key(e)
@@ -115,7 +115,7 @@ fn make_shell(faces: &[TopoShape]) -> TopoShape {
 /// key makes a seam stored twice in one wire (Forward and Reversed) look like a
 /// *free* edge (`aLF.Extent() == 1`), so `SplitBlock`'s free-edge pass
 /// (`BOPAlgo_ShellSplitter.cxx:202-214`) removes the whole lateral face and the
-/// removal cascades through its neighbours.
+/// removal cascades through its neighbors.
 fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> {
     let mut mef: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
     for f in faces {

@@ -3,7 +3,7 @@
 //!
 //! Reader side only: `Init(SurfaceStyleRenderingWithProperties)`
 //! (`STEPConstruct_RenderingProperties.cxx:356-442`) and the accessors
-//! `IsDefined` / `GetRGBAColor` / `SurfaceColor` / `Transparency` the STEP colour
+//! `IsDefined` / `GetRGBAColor` / `SurfaceColor` / `Transparency` the STEP color
 //! reader and the OBJ material writer use.
 //!
 //! **UNPORTED**: the writer-side constructors and queries —
@@ -15,7 +15,7 @@
 //! `STYLED_ITEM` form only (`step/transfer.rs::write_step_model_with_colors`).
 //! The reflectance fields are still carried, because `Init` sets `myIsDefined`
 //! through them: a `SURFACE_STYLE_RENDERING_WITH_PROPERTIES` whose only property
-//! is a reflectance makes the style defined even without a colour.
+//! is a reflectance makes the style defined even without a color.
 
 use std::collections::HashMap;
 

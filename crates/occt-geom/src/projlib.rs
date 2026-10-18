@@ -84,7 +84,7 @@ pub fn project_pln_lin(pl: &GpPln, lin: &GpLin) -> (GpPnt2d, GpPnt2d) {
     (project_pln_pnt(pl, &p0), project_pln_pnt(pl, &p1))
 }
 
-/// Project a circle's centre onto a plane (`ProjLib_Plane` circle case).
+/// Project a circle's center onto a plane (`ProjLib_Plane` circle case).
 pub fn project_pln_circ(pl: &GpPln, c: &GpCirc) -> GpPnt2d {
     project_pln_pnt(pl, &c.location())
 }

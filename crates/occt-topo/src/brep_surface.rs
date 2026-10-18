@@ -66,7 +66,7 @@ pub fn surface_normal(s: &dyn Surface, u: f64, v: f64) -> GpVec {
 /// Torus, …; anything else is `GeomAbs_OtherSurface`). The port exposes the same
 /// information through the `Surface` type queries, so no sampling is needed.
 ///
-/// The previous body sampled an 8×8 grid and compared normals / centre
+/// The previous body sampled an 8×8 grid and compared normals / center
 /// distances with `1e-6` / `1e-4` thresholds, and could only ever report
 /// `Plane`, `Sphere` or `Other` (audit A30).
 pub fn classify_surface(s: &dyn Surface) -> SurfaceKind {

@@ -6,17 +6,17 @@
 //! face is a sphere or a cylinder:
 //!
 //! * **Plane + Sphere** — the rolling ball stays tangent to the plane and to
-//!   the sphere, so its centre sweeps the *intersection of the offset plane*
+//!   the sphere, so its center sweeps the *intersection of the offset plane*
 //!   (the plane pushed out by `r`) *and the offset sphere* (radius `R_s + r`).
 //!   That intersection is a circle; the envelope of the ball along it is a
 //!   **torus** with major radius = circle radius and minor radius = fillet
 //!   radius `r`.
-//! * **Plane + Cylinder** (axis perpendicular to the plane) — the ball centre
+//! * **Plane + Cylinder** (axis perpendicular to the plane) — the ball center
 //!   sweeps the intersection of the offset plane and the offset cylinder
 //!   (radius `R_c + r`), again a circle, and the blend is a **torus** band
 //!   tangent to the cylinder at the inner equator and to the plane at the
 //!   outer bottom.
-//! * **Sphere + Sphere** — the ball centre sweeps the intersection of the two
+//! * **Sphere + Sphere** — the ball center sweeps the intersection of the two
 //!   offset spheres (radius `R_i + r`), a circle, and the blend is a torus.
 //!
 //! In every supported case the blend face is a `GeomTorus` band bounded by the

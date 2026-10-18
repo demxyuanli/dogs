@@ -15,10 +15,10 @@
 //! * `RWMesh_MaterialMap::AddMaterial` (`RWMesh_MaterialMap.cxx:62-78`) uses the
 //!   material's `TDataStd_Name` as the `newmtl` key.
 //! * `RWMesh_ShapeIterator::initShape` (`RWMesh_ShapeIterator.cxx:145-152`) takes
-//!   `BaseColor()` as the shape colour.
+//!   `BaseColor()` as the shape color.
 //!
 //! Colour storage: OCCT keeps `Quantity_Color` as a **linear** `myRgb` triple
-//! (`Quantity_Color.hxx:36`), and every colour these structs are constructed
+//! (`Quantity_Color.hxx:36`), and every color these structs are constructed
 //! with is linear (`Quantity_TOC_RGB`, `Quantity_Color.hxx:26-31`). The port
 //! keeps the same linear triples in [`LinearRgb`] / [`LinearRgba`] and converts
 //! to/from the crate's sRGB [`Color`] only at the API edge.
@@ -188,7 +188,7 @@ fn textures_equal(a: &Option<ImageTexture>, b: &Option<ImageTexture>) -> bool {
 /// obsolete (OpenGL fixed-function) material definition.
 #[derive(Debug, Clone)]
 pub struct XcafDocVisMaterialCommon {
-    /// `DiffuseTexture` — image defining the diffuse colour.
+    /// `DiffuseTexture` — image defining the diffuse color.
     pub diffuse_texture: Option<ImageTexture>,
     /// `AmbientColor` (linear). Default `(0.1, 0.1, 0.1)`.
     pub ambient_color: LinearRgb,
@@ -256,7 +256,7 @@ impl XcafDocVisMaterialCommon {
 /// metallic-roughness material definition.
 #[derive(Debug, Clone)]
 pub struct XcafDocVisMaterialPbr {
-    /// `BaseColorTexture` — RGB texture for the base colour.
+    /// `BaseColorTexture` — RGB texture for the base color.
     pub base_color_texture: Option<ImageTexture>,
     /// `MetallicRoughnessTexture` — RG texture packing metallic and roughness.
     pub metallic_roughness_texture: Option<ImageTexture>,
@@ -266,7 +266,7 @@ pub struct XcafDocVisMaterialPbr {
     pub occlusion_texture: Option<ImageTexture>,
     /// `NormalTexture`.
     pub normal_texture: Option<ImageTexture>,
-    /// `BaseColor` — base colour (or scale factor for the texture); linear,
+    /// `BaseColor` — base color (or scale factor for the texture); linear,
     /// `[1, 1, 1, 1]` by default.
     pub base_color: LinearRgba,
     /// `EmissiveFactor` (linear); `[0, 0, 0]` by default.
@@ -488,8 +488,8 @@ impl XcafDocVisMaterial {
         self.common = XcafDocVisMaterialCommon::undefined();
     }
 
-    /// `BaseColor()` (`cxx:149-166`): the PBR base colour, else the common
-    /// diffuse colour with `1 - Transparency` alpha, else opaque white. The
+    /// `BaseColor()` (`cxx:149-166`): the PBR base color, else the common
+    /// diffuse color with `1 - Transparency` alpha, else opaque white. The
     /// result is linear, like `Quantity_ColorRGBA`'s internals.
     pub fn base_color(&self) -> LinearRgba {
         if self.pbr.is_defined {

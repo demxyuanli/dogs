@@ -437,7 +437,7 @@ impl Camera {
         GpPnt::new(self.eye.x() + world.x, self.eye.y() + world.y, self.eye.z() + world.z)
     }
 
-    /// Ray through the centre of pixel `(x, y)` (perspective: from the eye;
+    /// Ray through the center of pixel `(x, y)` (perspective: from the eye;
     /// orthographic: parallel to the forward axis).
     pub fn ray_for_pixel(&self, width: usize, height: usize, x: usize, y: usize) -> (GpPnt, GpVec) {
         let (nx, ny) = screen_to_ndc(width, height, x as f64 + 0.5, y as f64 + 0.5);
@@ -561,7 +561,7 @@ impl Camera {
         *self = fit_all_camera(scene);
     }
 
-    /// A world-space picking ray through the centre of pixel `(x, y)`.
+    /// A world-space picking ray through the center of pixel `(x, y)`.
     ///
     /// Perspective cameras cast from the eye through the pixel; orthographic
     /// cameras cast parallel to the forward axis. Wraps
@@ -649,7 +649,7 @@ pub fn project_point(cam: &Camera, p: GpPnt, width: usize, height: usize) -> Opt
 /// Frame a camera so the whole scene fits on screen.
 ///
 /// Positions a default-FOV perspective camera along `+Z` looking at the scene
-/// centre, at a distance that encloses the scene's bounding sphere. Ports the
+/// center, at a distance that encloses the scene's bounding sphere. Ports the
 /// behaviour of `V3d_View::FitAll`.
 pub fn fit_all_camera(scene: &VizScene) -> Camera {
     let (lo, hi) = viz_scene_bounds(scene)

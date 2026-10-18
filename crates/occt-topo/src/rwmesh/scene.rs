@@ -554,7 +554,7 @@ pub(super) fn parse_obj_scene_inner(
             // material's `XCAFDoc_VisMaterialCommon::DiffuseTexture`
             // (`RWObj_CafReader.cxx:63-65`); this crate keeps the same reference
             // on the node (`MeshNode::texture_path`), the slot the glTF reader
-            // uses for its base-colour image.
+            // uses for its base-color image.
             let texture_path = material.as_ref().and_then(|m| m.diffuse_texture.clone());
             out_nodes.push(MeshNode {
                 name: g.name,
@@ -585,7 +585,7 @@ pub(super) fn parse_obj_scene_inner(
 ///
 /// `RWObj_MtlReader::Read` (`RWObj_MtlReader.cxx:135-262`) is the source: `Ka`
 /// (`cxx:161-173`), `Kd` (`cxx:174-186`) and `Ks` (`cxx:187-199`) are the three
-/// colours `Material` carries, `Ns` (`cxx:200-211`) is `Shininess =
+/// colors `Material` carries, `Ns` (`cxx:200-211`) is `Shininess =
 /// min(Ns/1000, 1)`, `Tr` (`cxx:212-224`) stores transparency directly and `d`
 /// (`cxx:225-236`) stores `1 - alpha`. The latter two collapse onto one field
 /// here, so `Tr t` maps to `opacity = 1 - t` — the same value the writer derives
@@ -664,7 +664,7 @@ pub(super) fn parse_mtl(content: &str, folder: &Path) -> Vec<Material> {
                 if let Some(m) = &mut cur {
                     if let Some(v) = parts.next().and_then(|p| p.parse::<f64>().ok()) {
                         // `cxx:212-224`: `Transparency = value`, rejected above
-                        // 0.99 (fully transparent is not a colour).
+                        // 0.99 (fully transparent is not a color).
                         if (0.0..=0.99).contains(&v) {
                             m.opacity = 1.0 - v;
                         }

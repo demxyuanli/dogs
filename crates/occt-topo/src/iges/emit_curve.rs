@@ -85,7 +85,7 @@ impl IgesWriter {
     /// itself rides on the entity's transformation matrix (`cxx:591-597`).
     pub(super) fn emit_circular_arc(&mut self, frame: &GpAx3, radius: f64, u1: f64, u2: f64) -> usize {
         // `TransferCurve` (`GeomToIGES_GeomCurve.cxx:569-586`) evaluates the
-        // centre and the two ends with `Geom_Circle::D0`, then
+        // center and the two ends with `Geom_Circle::D0`, then
         // `IGESConvGeom_GeomBuilder::EvalXYZ` (`GeomBuilder.cxx:212-216`):
         // `thepos.Inverted().Transforms` after `SetPosition(gp_Ax3)`
         // (`:137-143`). `gp_Trsf::Invert` transposes (`gp_Trsf.cxx:418-425`).
@@ -192,7 +192,7 @@ impl IgesWriter {
                 Some(self.emit_line(&p1, &p2))
             }
             // `GeomToIGES_GeomCurve::TransferCircle`
-            // (`GeomToIGES_GeomCurve.cxx:533-603`): the centre, the axis and the
+            // (`GeomToIGES_GeomCurve.cxx:533-603`): the center, the axis and the
             // radius come from the `Geom_Circle`'s own `gp_Circ` - never from a
             // three-point fit on sampled points - and the start/end parameters are
             // used as they are, apart from the two special cases in

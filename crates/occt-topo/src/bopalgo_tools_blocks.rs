@@ -9,7 +9,7 @@
 //! `FillMap(n1, n2)` appends `n2` to the list of `n1` and `n1` to the list
 //! of `n2`. `MakeBlocks` then walks that map in insertion order: each key
 //! that is not yet in the fence starts a chain, and the chain grows by
-//! appending every neighbour that the fence has not seen.
+//! appending every neighbor that the fence has not seen.
 //!
 //! Identity is [`crate::bop_occt_util::shape_key`], the
 //! `TopTools_ShapeMapHasher` key (`TShape` + `Location`, i.e. `IsSame`). The
@@ -28,7 +28,7 @@ use crate::bop_occt_util::shape_key;
 use crate::shape::TopoShape;
 use crate::topo_tools::ShapeMapKey;
 
-/// Indexed shape-to-neighbours map used as `aDMSLS` in FillSameDomainFaces.
+/// Indexed shape-to-neighbors map used as `aDMSLS` in FillSameDomainFaces.
 ///
 /// Mirrors `NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>,
 /// TopTools_ShapeMapHasher>`. Keys are visited in insertion order so
@@ -86,7 +86,7 @@ impl IndexedShapeAdj {
     /// `BOPAlgo_Tools::FillMap(n1, n2, theMILI, theAllocator)`.
     ///
     /// Appends `n2` onto the list of `n1` and `n1` onto the list of `n2`.
-    /// Duplicate neighbour entries are kept, matching `NCollection_List::Append`
+    /// Duplicate neighbor entries are kept, matching `NCollection_List::Append`
     /// (MakeBlocks fences by key so duplicates do not duplicate a chain
     /// member).
     pub fn fill_map(&mut self, n1: &TopoShape, n2: &TopoShape) {
@@ -99,7 +99,7 @@ impl IndexedShapeAdj {
     /// `BOPAlgo_Tools::MakeBlocks(theMILI, theMBlocks, theAllocator)`.
     ///
     /// Each not-yet-seen key starts a chain. The chain is grown by walking
-    /// the neighbour lists of every member already in the chain (the OCCT
+    /// the neighbor lists of every member already in the chain (the OCCT
     /// `aItLChain` iterator that keeps going as `aChain.Append` extends the
     /// list). Isolated keys become singleton blocks; FillSameDomainFaces
     /// only ever inserts pairs, so those blocks have size >= 2.

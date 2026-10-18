@@ -234,7 +234,7 @@ impl EdgeEdge {
 
         // `IntTools_EdgeEdge::Prepare` (`cxx:109-147`): order the two edges by
         // curve type — the higher integer goes first, so a line/BSpline pair is
-        // analysed as BSpline/line. Equal non-line types compare the total
+        // analyzed as BSpline/line. Equal non-line types compare the total
         // tangent turn and decrement the first curve's integer when it is the
         // straighter one, which then forces the swap.
         self.kind1 = geom_curve_kind(&*c1);

@@ -22,12 +22,12 @@ pub fn fillet_edge_chain(
 
 /// Build a spherical-octant blend face for a box corner. `p` is the corner
 /// point, `dirs` the three unit edge directions from `p` into the material,
-/// `radius` the blend radius. The sphere is centred at `p` (an octant of a
-/// sphere centred on the corner), which is the smallest single patch that
+/// `radius` the blend radius. The sphere is centered at `p` (an octant of a
+/// sphere centered on the corner), which is the smallest single patch that
 /// closes the trimmed faces.
 ///
 /// ponytail: a rolling-ball corner patch that is tangent to all three faces
-/// (a sphere centred at p + R·Σdirᵢ) cannot be closed by a single spherical
+/// (a sphere centered at p + R·Σdirᵢ) cannot be closed by a single spherical
 /// face — it meets each plane at a single point and needs the three edge
 /// fillet cylinders. The corner here is therefore a spherical octant cut,
 /// which forms a closed shell with exactly one added face.
@@ -135,7 +135,7 @@ pub fn fillet_corner_solid(
         }
         idx_by_normal.push((match_idx, n));
     }
-    // Build the retained polygon for each face: outside the sphere centred at p
+    // Build the retained polygon for each face: outside the sphere centered at p
     // with radius R (in the two in-plane coordinates).
     for (f, (k, n)) in corner_faces.iter().zip(idx_by_normal.iter()) {
         let poly = register_face_edges(f, &mut cache)?;

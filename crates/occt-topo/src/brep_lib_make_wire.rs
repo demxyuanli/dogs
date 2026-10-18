@@ -30,7 +30,7 @@
 //! wire whose edges are **not chained** (board round 8: "edges all Forward,
 //! source/sink vertices"). Building such wires through this class reproduces
 //! OCCT: an edge **occurrence** is reversed when needed, leaving the shared
-//! `TShape` untouched so neighbouring faces are unaffected. Since the vertices
+//! `TShape` untouched so neighboring faces are unaffected. Since the vertices
 //! of adjacent edges are unified by proximity here as well, the result is the
 //! connected wire that `BRepTools_WireExplorer` requires.
 //!

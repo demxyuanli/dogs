@@ -1,5 +1,5 @@
 //! Material sidecar writers: `RWMesh_MaterialMap` and `RWObj_ObjMaterialMap`,
-//! plus the `Quantity_Color` colour-space conversions the `.mtl` numbers go
+//! plus the `Quantity_Color` color-space conversions the `.mtl` numbers go
 //! through.
 //!
 //! Source: `RWMesh_MaterialMap.cxx`, `RWObj_ObjMaterialMap.cxx`. Split out of

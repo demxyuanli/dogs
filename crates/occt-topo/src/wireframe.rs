@@ -199,7 +199,7 @@ pub(crate) mod tests {
         let pln = GpPln::new(GpAx3::new(GpPnt::new(0.0, 0.0, 1.0), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap());
         reg().set_face(&face.0, FaceGeom::new(Arc::new(GeomPlane::new(pln.clone()))));
         // Outer 2×2 square. Consecutive edges must share a vertex: a wire with
-        // no common vertex between neighbours is marked `IMeshData_OpenWire` by
+        // no common vertex between neighbors is marked `IMeshData_OpenWire` by
         // `BRepMesh_ModelHealer::fixFaceBoundaries` (`BRepMesh_ModelHealer.cxx:
         // 346-356` + `getCommonVertex`), and an inner open wire is skipped in
         // `BRepMesh_NodeInsertionMeshAlgo::initDataStructure` (`hxx:70-74`), so

@@ -87,7 +87,7 @@ use super::*;
         let n = ds.elements_of_domain().len();
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028), which prunes boundary
-        // triangles whose neighbour touches the super-triangle. This point set carries
+        // triangles whose neighbor touches the super-triangle. This point set carries
         // only Free links, so the pruned mesh keeps 6 triangles over 6 boundary
         // vertices instead of the old 8 over 8.
         assert_eq!(n, 6, "3x3 grid must mesh to 6 triangles after cleanupMesh, got {n}");
@@ -114,7 +114,7 @@ use super::*;
             let h = hull_vertices(ds).len();
             // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
             // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
-            // triangles whose neighbour touches the super-triangle. These point sets
+            // triangles whose neighbor touches the super-triangle. These point sets
             // carry only Free links, so the pruned mesh no longer obeys 2N-2-h for
             // N=8 (it collapses to an empty mesh); N=12/25 still keep the count.
             let expected = match n {
@@ -254,7 +254,7 @@ use super::*;
         let ds = delaun.result();
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028), which prunes boundary
-        // triangles whose neighbour touches the super-triangle. With only Free links
+        // triangles whose neighbor touches the super-triangle. With only Free links
         // (OCCT's real pipeline never enters Delaun in this state) the single hull
         // triangle is pruned together with its links.
         assert_eq!(ds.elements_of_domain().len(), 0);
@@ -309,7 +309,7 @@ use super::*;
         let n0 = ds0.elements_of_domain().len();
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
-        // triangles whose neighbour touches the super-triangle. With only Free links
+        // triangles whose neighbor touches the super-triangle. With only Free links
         // the 3x3 grid keeps 6 triangles instead of the old 8.
         assert_eq!(n0, 6);
         let center = *ds0.node(5); // node (1,1) is 5th 0-based => id 5 (1-based)

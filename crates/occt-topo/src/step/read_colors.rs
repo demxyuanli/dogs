@@ -1,4 +1,4 @@
-//! STEP colours onto a `BRepModel`. Source: `STEPCAFControl_Reader`
+//! STEP colors onto a `BRepModel`. Source: `STEPCAFControl_Reader`
 //! (`ReadColors` `cxx:1485-1547`, `SetStyle` `cxx:1223-1447`, `IsOverriden`
 //! `cxx:1456-1480`) plus `XCAFPrs::CollectStyleSettings` (`XCAFPrs.cxx:118-330`).
 //!
@@ -15,7 +15,7 @@
 //!   non-assembly shape, `cxx:565-583`) through `AddSubShape`
 //!   (`cxx:1139-1187`), which needs `IsSimpleShape(shapeL) && IsTopLevel(shapeL)`.
 //!
-//! The two colour sinks are [`crate::model::ModelShape`]'s:
+//! The two color sinks are [`crate::model::ModelShape`]'s:
 //!
 //! * `color` — the `XCAFDoc_ColorSurf` of the shape's own label, i.e. the
 //!   `XCAFPrs_DocumentNode::Style` the OBJ writer receives as `aDocNode.Style`
@@ -35,9 +35,9 @@
 //!   here and via `ReadMaterials` (`cxx:5596`), as documented by
 //!   [`crate::xcaf_prs`];
 //! * the `XCAFDoc_LayerTool` layer arms (`XCAFPrs.cxx:128-139`, `:176-216`):
-//!   `ModelShape.layer` is a name, not a layer tree with its own colours;
+//!   `ModelShape.layer` is a name, not a layer tree with its own colors;
 //! * `propagateColorToParts` (`cxx:1037-1077`) after `ReadColors`: it only
-//!   propagates a colour carried by an *assembly* label, and the port's model
+//!   propagates a color carried by an *assembly* label, and the port's model
 //!   shapes are the composed roots, never assembly labels.
 
 use super::construct_styles::{ConstructStyles, StyleColors};
@@ -107,7 +107,7 @@ fn set_style(
 
     // `if (occ::handle<StepVisual_OverRidingStyledItem> anOverridingStyle = ...)`
     // (`cxx:1239-1253`): the over-ridden style is written first, so the
-    // over-riding item can overwrite its colour slots. The
+    // over-riding item can overwrite its color slots. The
     // `ContextDependentOverRidingStyledItem` arm (`cxx:1250-1258`) is UNPORTED
     // (module header).
     if is_over_riding {
@@ -149,7 +149,7 @@ fn set_style(
             // `else { for (TopoDS_Iterator it(aS); it.More(); it.Next()) {
             // if (theSTool->SearchUsingMap(it.Value(), aL1, false, true)) {
             // theCTool->SetColor(aL1, ...); } } }` (`cxx:1417-1437`). The child
-            // label keeps the default visibility: only the colour is written.
+            // label keeps the default visibility: only the color is written.
             for child in cumulated_children(&s) {
                 let Some(child_label) = search_using_map(model, &child) else { continue };
                 let style = style_from_colors(resolver.records, &colors, true);
@@ -160,7 +160,7 @@ fn set_style(
 
     // `if (!anIsVisible) { if (isFound) theCTool->SetVisibility(aL, false); }`
     // (`cxx:1439-1443`) — the visibility attribute of the found label, applied
-    // whether or not the style carried a colour.
+    // whether or not the style carried a color.
     if !is_visible {
         if let Some(label) = &found {
             let mut style = XcafPrsStyle::default();
@@ -241,7 +241,7 @@ fn style_from_colors(
     // `Quantity_ColorRGBA aFullSCol; if (!aSurfCol.IsNull()) { DecodeColor(...);
     // aFullSCol = Quantity_ColorRGBA(aSCol); } ... if (aRenderProps.IsDefined())
     // aFullSCol = aRenderProps.GetRGBAColor();` (`cxx:1384-1399`): the rendering
-    // properties' colour replaces the decoded one when both are present.
+    // properties' color replaces the decoded one when both are present.
     let surface = if colors.rendering_props.is_defined() {
         Some(colors.rendering_props.rgba_color())
     } else {
@@ -255,7 +255,7 @@ fn style_from_colors(
     }
     // `if (!aBoundCol.IsNull()) theCTool->SetColor(aL, aBCol, XCAFDoc_ColorCurv);`
     // then `if (!aCurveCol.IsNull()) SetColor(aL, aCCol, XCAFDoc_ColorCurv);`
-    // (`cxx:1406-1414`) — both write the same attribute, so the curve colour
+    // (`cxx:1406-1414`) — both write the same attribute, so the curve color
     // wins.
     let curve = colors
         .curve_color
@@ -269,7 +269,7 @@ fn style_from_colors(
 
 /// `theCTool->SetColor(aL, ...)` / `SetVisibility(aL, false)`: write one label's
 /// attribute. `SetColor` replaces the attribute of its own type, so a label
-/// accumulates colour slots across styled items (`XCAFDoc_ColorTool.cxx:
+/// accumulates color slots across styled items (`XCAFDoc_ColorTool.cxx:
 /// 304-360`); `SetVisibility(false)` only ever sets the `InvisibleGUID`
 /// attribute, so visibility merges with `&&`
 /// (`XCAFDoc_ColorTool.cxx:442-462`).
@@ -293,7 +293,7 @@ fn add_setting(model: &mut BRepModel, label: &Found, style: XcafPrsStyle) {
 /// the shape-keyed settings map, restricted to the port's label set.
 fn collect_style_settings(ms: &mut ModelShape) {
     // `if (aStyle.IsEmpty()) continue;` (`cxx:307-310`) — an invisible style is
-    // not empty, a visible style with no colour is.
+    // not empty, a visible style with no color is.
     ms.style_settings.retain(|(_, style)| !style.is_empty());
     // `if (aSubshape.ShapeType() == TopAbs_COMPOUND) { if (aSubshape.NbChildren()
     // == 0) continue; }` (`cxx:312-318`).

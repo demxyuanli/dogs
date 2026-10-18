@@ -35,7 +35,7 @@ pub(crate) fn make_transition(tg_first: &GpVec, tg_second: &GpVec, normale: &GpD
     }
 }
 
-/// `Recadre` — wrap periodic UV to the neighbour walking sample.
+/// `Recadre` — wrap periodic UV to the neighbor walking sample.
 pub(crate) fn recadre(
     kind1: SurfaceKind,
     kind2: SurfaceKind,

@@ -110,7 +110,7 @@ pub(crate) fn midpoint(a: &GpPnt, b: &GpPnt) -> GpPnt {
 }
 
 /// Whether the curve is a full circle-like closed curve: all samples coplanar
-/// and equidistant from a common centre.
+/// and equidistant from a common center.
 pub(crate) fn is_circle_like(c: &dyn Curve) -> bool {
     let (a, b) = (c.first_parameter(), c.last_parameter());
     if !a.is_finite() || !b.is_finite() || (b - a).abs() <= 1e-15 {
@@ -215,7 +215,7 @@ pub(crate) fn is_ellipse_like(c: &dyn Curve) -> bool {
 }
 
 /// `(center, axis direction)` of an ellipse-like curve (natural 2π
-/// parametrisation: opposite samples share the centre, the plane normal is the
+/// parametrisation: opposite samples share the center, the plane normal is the
 /// axis).
 pub(crate) fn ellipse_geometry(c: &dyn Curve) -> Option<(GpPnt, GpDir)> {
     let center = midpoint(&c.d0(0.0), &c.d0(PI));
@@ -227,7 +227,7 @@ pub(crate) fn ellipse_geometry(c: &dyn Curve) -> Option<(GpPnt, GpDir)> {
         return None;
     }
     let d = GpDir::from_vec(&nrm.divided(m)).ok()?;
-    // Validate the centre with the perpendicular pair.
+    // Validate the center with the perpendicular pair.
     let c2 = midpoint(&c.d0(PI / 2.0), &c.d0(3.0 * PI / 2.0));
     if c2.distance(&center) > 1e-4 * center.distance(&p0).max(1.0) {
         return None;
@@ -290,7 +290,7 @@ pub(crate) fn sphere_geometry(s: &dyn Surface) -> Option<(GpPnt, f64)> {
 }
 
 /// `(axis, radius)` of a cylindrical surface (axis direction from the V
-/// advance, axis point = circle centre at V start, radius = half the opposite
+/// advance, axis point = circle center at V start, radius = half the opposite
 /// sample distance).
 pub(crate) fn cylinder_geometry(s: &dyn Surface) -> Option<(occt_core::gp::GpAx1, f64)> {
     let u0 = 0.0;

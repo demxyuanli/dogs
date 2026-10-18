@@ -291,7 +291,7 @@ fn split_c0_bspline(
 }
 
 /// `Rational` (`Geom_BSplineCurve.cxx:97-106`, `Geom2d_BSplineCurve.cxx:95-107`):
-/// the weights are rational when two neighbours differ by more than
+/// the weights are rational when two neighbors differ by more than
 /// `gp::Resolution()`.
 fn is_rational(weights: &[f64]) -> bool {
     weights

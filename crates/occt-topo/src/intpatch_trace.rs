@@ -187,7 +187,7 @@ pub(crate) fn trace_zero_set(
 }
 
 /// Chain an unordered set of 3D points into ordered polylines by greedy
-/// nearest-neighbour walking from both ends of each chain. Points separated by
+/// nearest-neighbor walking from both ends of each chain. Points separated by
 /// more than a (diagonal-relative) link distance start a new chain; junctions
 /// are left as separate chains rather than forcing a single path through them.
 ///

@@ -522,7 +522,7 @@ pub use crate::geom::mesh_analysis::mesh_edge_topology;
 /// A mesh is a closed manifold exactly when every undirected edge is shared by
 /// precisely two triangles (each edge has two incident faces and no dangling
 /// boundary edges). This is the discrete analogue of "every point has a
-/// neighbourhood homeomorphic to a disk" with the boundary empty.
+/// neighborhood homeomorphic to a disk" with the boundary empty.
 ///
 /// * `triangles` — the mesh as index triples.
 ///

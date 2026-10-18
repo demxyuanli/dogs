@@ -1927,7 +1927,7 @@ mod tests {
         assert!(!res.triangles.is_empty());
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
-        // triangles whose neighbour touches the super-triangle. These nodes carry only
+        // triangles whose neighbor touches the super-triangle. These nodes carry only
         // Free links, so the mesh keeps 6 triangles over 7 nodes instead of 8 over 9.
         assert_eq!(res.triangles.len(), 6);
         assert_eq!(res.nodes.len(), 7);

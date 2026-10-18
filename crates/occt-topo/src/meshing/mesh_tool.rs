@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(
             sorted,
             vec![(0, 1), (0, 3), (1, 2), (2, 3)],
-            "loop connects every corner to its neighbours"
+            "loop connects every corner to its neighbors"
         );
     }
 

@@ -63,7 +63,7 @@ use crate::topo_tools::{edges_of, faces_of, ShapeMapKey};
 /// with the first occurrence kept.
 ///
 /// A `HashSet` here would make [`connect_faces_into_shells`] discover its
-/// neighbours in a per-process hash order, and the face order inside each shell
+/// neighbors in a per-process hash order, and the face order inside each shell
 /// then feeds the (order sensitive) growth/hole walk of `perform_areas` — the
 /// `groove_cuts_cylinder` Cut produced 1 instead of 2 split solids in ~10% of
 /// runs because of it. OCCT walks the Ds faces in index order.

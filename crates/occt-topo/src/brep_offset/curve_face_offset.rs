@@ -536,7 +536,7 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
         // `BRepOffset`'s analytic branch for `GeomAbs_Sphere`: a spherical face
         // offsets to a *concentric* sphere and every boundary curve maps with it
         // (`BRepOffset_MakeOffset` → `BRepOffset::MakeOffset`; the map is
-        // `gp_Trsf::SetScale(centre, (r + d) / r)`). The source wire must not be
+        // `gp_Trsf::SetScale(center, (r + d) / r)`). The source wire must not be
         // reused: it lies on the *source* surface and carries no
         // (edge, offset-face) pcurve, so the analytic passes (`BRepGProp`) see a
         // pcurve-less face and report a zero volume.

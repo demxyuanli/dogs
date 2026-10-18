@@ -133,7 +133,7 @@ pub(super) fn cmd_arity(session: &mut DrawSession, args: &[String]) -> Result<()
 pub(super) const COMMANDS: &[CommandEntry] = &[
     CommandEntry { name: "box", handler: cmd_box, summary: "build an axis-aligned box [0,dx]x[0,dy]x[0,dz]", min_args: 4, max_args: 4 },
     CommandEntry { name: "cylinder", handler: cmd_cylinder, summary: "build a Z-axis cylinder of radius r, height h", min_args: 3, max_args: 3 },
-    CommandEntry { name: "sphere", handler: cmd_sphere, summary: "build a sphere of radius r centred at the origin", min_args: 2, max_args: 2 },
+    CommandEntry { name: "sphere", handler: cmd_sphere, summary: "build a sphere of radius r centered at the origin", min_args: 2, max_args: 2 },
     CommandEntry { name: "cone", handler: cmd_cone, summary: "build a cone (base r1, top 0), height h", min_args: 4, max_args: 4 },
     CommandEntry { name: "torus", handler: cmd_torus, summary: "build a torus, major radius r1, minor r2", min_args: 3, max_args: 3 },
     CommandEntry { name: "fuse", handler: cmd_fuse, summary: "boolean union a u b -> out", min_args: 3, max_args: 3 },

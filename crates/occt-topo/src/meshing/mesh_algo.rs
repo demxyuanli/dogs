@@ -403,7 +403,7 @@ mod tests {
         let mut mesher = Delaun::new_vertices(&points);
         // OCCT BRepMesh_Delaun.cxx:703 calls ProcessConstraints() unconditionally;
         // frontierAdjust() ends with cleanupMesh() (cxx:1028) which prunes boundary
-        // triangles whose neighbour touches the super-triangle. This square carries
+        // triangles whose neighbor touches the super-triangle. This square carries
         // only Free links, so cleanupMesh leaves no triangle at all.
         assert_eq!(mesher.result().elements_of_domain().len(), 0);
 

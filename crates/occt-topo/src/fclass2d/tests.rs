@@ -58,7 +58,7 @@ use super::*;
             .expect("face with hole");
         let cl = FClass2d::new(&face, 1e-6).expect("classifier");
 
-        // Hole centre -> Out; hole left-edge midpoint -> On; annulus -> In;
+        // Hole center -> Out; hole left-edge midpoint -> On; annulus -> In;
         // in the annulus near the outer corner -> In; outside the outer square
         // (projection clamps the grid to [-1,1], so use a direct UV point) -> Out.
         assert_eq!(cl.perform(project_uv(&face, &GpPnt::new(0.5, 0.5, 0.0))), FaceState::Out);

@@ -47,7 +47,7 @@ use crate::topo_tools::edge_vertices;
 /// for the 3D curve of the edge: the range of the curve that is *not* covered
 /// by the tolerance spheres of the edge's endpoint vertices. Any later edge
 /// splitting/intersection work should be restricted to this range so that the
-/// vertex neighbourhoods are left untouched.
+/// vertex neighborhoods are left untouched.
 #[derive(Debug, Clone)]
 pub struct ShrunkRange {
     edge: Option<Edge>,
@@ -286,7 +286,7 @@ pub(crate) fn find_valid_range(
 /// Port of the static `findNearestValidPoint` helper in `BRepLib_1.cxx:31-169`.
 ///
 /// Starting from the appointed end of the curve, find the nearest parameter
-/// whose curve point is *outside* the tolerance sphere of radius `tol` centred
+/// whose curve point is *outside* the tolerance sphere of radius `tol` centered
 /// at `vert_pnt`. The walk steps along the curve by a resolution-sized step,
 /// doubles that step to escape local derivative singularities of Bézier /
 /// B-spline curves (`BRepLib_1.cxx:69-135`), and refines the exit by bisection.
@@ -438,7 +438,7 @@ impl IntToolsTools {
         false
     }
 
-    /// The tolerance of a point set: the radius of the smallest sphere centred
+    /// The tolerance of a point set: the radius of the smallest sphere centered
     /// at the point-cloud centroid that contains every point.
     ///
     /// An empty or single-point set yields `0.0`.

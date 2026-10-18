@@ -2,7 +2,7 @@
 //!
 //! Pipeline: `read_step_file` → compound if multiple roots →
 //! `model_to_obj_caf(..., 0.1)` (`RWObj_CafWriter::Perform`: OBJ + the `.mtl`
-//! sidecar the STEP colours map to). The second argument is the drawer's
+//! sidecar the STEP colors map to). The second argument is the drawer's
 //! `MaximalChordialDeviation` (the fallback used only for a void/unbounded
 //! bounding box); the linear deflection actually driving the mesh is
 //! `Prs3d::GetDeflection(shape, drawer)` = `maxComp(bbox) * 0.001 * 4`
@@ -12,7 +12,7 @@
 //! Writes into `data/output/`, the CAF export dump directory. The
 //! `step_obj_gates` test runs the same pipeline into `data/output/gates/`, so a
 //! gate run never overwrites these artifacts; both directories are gitignored.
-//! The `.mtl` file appears only when a face carries a colour (`toCreateMatFile`),
+//! The `.mtl` file appears only when a face carries a color (`toCreateMatFile`),
 //! i.e. when the OBJ has a `mtllib` record.
 //!
 //! Optional positional arguments name extra source directories (relative to the

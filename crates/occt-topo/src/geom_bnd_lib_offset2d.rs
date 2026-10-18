@@ -4,7 +4,7 @@
 //! * basis line → translate location by `offset * Normal(Direction)` then
 //!   `GeomBndLib_Line2d::Box`;
 //! * basis circle → `NewRadius = R + offset * sign(Normal·Radial)` then
-//!   `GeomBndLib_Circle2d::Box` (or the centre if the radius vanishes).
+//!   `GeomBndLib_Circle2d::Box` (or the center if the radius vanishes).
 //! Generic fallback: `GeomBndLib_OtherCurve2d::Box` on the offset curve
 //! itself (not `basis_box.Enlarge(|offset|)`).
 //! T-97: items below are faithful ports of the named OCCT source, but their

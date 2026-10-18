@@ -286,7 +286,7 @@ mod tests {
     fn cube_triangle_adjacency() {
         let tri = unit_cube();
         let c = PolyConnect::from_triangulation(&tri);
-        // Interior edges have two triangles, so every triangle has 3 neighbours.
+        // Interior edges have two triangles, so every triangle has 3 neighbors.
         for t in 0..12 {
             let adj = c.adjacent_triangles(t);
             assert!(adj.iter().all(|&a| a != NONE), "triangle {t} fully adjacent");

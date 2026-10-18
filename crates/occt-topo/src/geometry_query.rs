@@ -146,7 +146,7 @@ fn point_triangle_distance(p: &GpPnt, a: &GpPnt, b: &GpPnt, c: &GpPnt) -> f64 {
     //   v = (|ac|²·bdot − bbc·cdot) / |ab×ac|²
     //   w = (|ab|²·cdot − bbc·bdot) / |ab×ac|²
     // Swapping |ab|² and |ac|² here was the bug: a point on a face split into
-    // two triangles (e.g. a box centre) landed on the wrong diagonal, giving
+    // two triangles (e.g. a box center) landed on the wrong diagonal, giving
     // the edge distance instead of the plane distance.
     let ab2 = ab.xyz().dot(&ab.xyz());
     let ac2 = ac.xyz().dot(&ac.xyz());
@@ -155,7 +155,7 @@ fn point_triangle_distance(p: &GpPnt, a: &GpPnt, b: &GpPnt, c: &GpPnt) -> f64 {
     let w = (ab2 * cdot - bbc * bdot) / denom;
     let u = 1.0 - v - w;
     // Tolerance on the barycentric bounds: a point exactly on the triangle's
-    // diagonal edge (a box centre projected onto a face split into two
+    // diagonal edge (a box center projected onto a face split into two
     // triangles) yields u/v/w that are zero up to floating-point sign — treat
     // |·| ≤ eps as inside rather than falling through to the edge distance.
     const EPS: f64 = 1e-12;

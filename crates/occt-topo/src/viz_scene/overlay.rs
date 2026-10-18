@@ -136,7 +136,7 @@ impl Font {
     }
 
     /// A copy of this font whose glyphs are scaled to `glyph_w`×`glyph_h`
-    /// cells by nearest-neighbour sampling.
+    /// cells by nearest-neighbor sampling.
     ///
     /// Used to derive larger (or smaller) styles from the same master glyph
     /// set without re-authoring every pattern.

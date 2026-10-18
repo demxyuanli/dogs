@@ -113,7 +113,7 @@ pub struct GltfCafWriterOptions {
     /// output system and metres (`cxx:255-258`).
     pub cs_trsf: RwMeshCoordinateSystemConverter,
     /// `SetDefaultStyle()` (`cxx:652`): the material definition used when a
-    /// style only carries colours.
+    /// style only carries colors.
     pub default_style: XcafPrsStyle,
 }
 

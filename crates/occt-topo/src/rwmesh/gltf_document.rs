@@ -326,7 +326,7 @@ impl Builder<'_> {
         let mut doc = DocShape::leaf(placed, unplaced);
         doc.late_name = inst.late.name().to_string();
         doc.has_late = true;
-        // `cxx:2012-2028`: the primitive array's attributes — a curve colour for
+        // `cxx:2012-2028`: the primitive array's attributes — a curve color for
         // lines, the material otherwise — and the mesh name as `RawName`.
         doc.product = prim_style(inst).map(|style| NodeAttribs {
             name: String::new(),
@@ -349,8 +349,8 @@ fn node_meshes(n: &GlNode) -> Vec<usize> {
     ids
 }
 
-/// `gltfParsePrimArray`'s style: lines carry their base colour as the curve
-/// colour, everything else binds the `XCAFDoc_VisMaterial`
+/// `gltfParsePrimArray`'s style: lines carry their base color as the curve
+/// color, everything else binds the `XCAFDoc_VisMaterial`
 /// (`RWGltf_GltfJsonParser.cxx:2014-2028`). `None` when the array has no style
 /// (`RWGltf_GltfLatePrimitiveArray::HasStyle`, `hxx:57`).
 fn prim_style(inst: &GltfNodeInst) -> Option<XcafPrsStyle> {

@@ -66,7 +66,7 @@ pub fn radius_at(spec: &VarFilletSpec, t: f64) -> f64 {
 pub(super) struct BlendSample {
     /// Ball radius at this sample.
     pub(super) radius: f64,
-    /// Blend-circle centre (the ball centre at this cross-section).
+    /// Blend-circle center (the ball center at this cross-section).
     pub(super) center: GpPnt,
     /// Tangency point on adjacent face 1.
     pub(super) t1: GpPnt,
@@ -168,7 +168,7 @@ impl EdgeCache {
             return Ok(e.clone());
         }
         let xd = GpDir::from_vec(&GpVec::from_pnts(center, a))
-            .map_err(|_| "fillet_var: arc start coincides with the arc centre".to_string())?;
+            .map_err(|_| "fillet_var: arc start coincides with the arc center".to_string())?;
         let ax2 = GpAx2::new(*center, *normal, xd)
             .map_err(|e| format!("fillet_var: arc frame is degenerate: {e}"))?;
         let xdir = *ax2.x_direction();
@@ -353,7 +353,7 @@ pub(super) fn face_contains_point(face: &Face, p: &GpPnt) -> bool {
 }
 
 /// Sample the cross-section arc at sample `i`: points on the circle of
-/// `radius` centred at `center`, in the plane perpendicular to `a`, from the
+/// `radius` centered at `center`, in the plane perpendicular to `a`, from the
 /// tangency point `t1` to `t2`. `m` points, uniform in arc angle.
 pub(super) fn arc_sample_points(
     center: &GpPnt,
@@ -556,7 +556,7 @@ pub(super) fn rebuild_end_face(
 
 /// Build the variable-radius blend face: a degree-1 tensor-product b-spline
 /// through the sampled cross-section arcs, bounded by the two tangency
-/// polylines and the two end arcs (all shared with the neighbouring faces).
+/// polylines and the two end arcs (all shared with the neighboring faces).
 pub(super) fn build_var_blend_face(samples: &[BlendSample], axis_dir: &GpVec, cache: &mut EdgeCache) -> Result<Face, String> {
     let n = samples.len();
     if n < 2 {

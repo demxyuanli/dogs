@@ -182,7 +182,7 @@ pub(super) fn collect_gltf_nodes(
                 })
                 .unwrap_or((None, None, None));
             // `RWGltf_GltfJsonParser.cxx:2019-2027`: a line shape carries a
-            // colour (`Style.SetColorCurv`), not an `XCAFDoc_VisMaterial`.
+            // color (`Style.SetColorCurv`), not an `XCAFDoc_VisMaterial`.
             let (material, vis_material, texture_path) = if prim.mode == RwGltfPrimitiveMode::Lines
             {
                 let color = material.as_ref().map(|m| {

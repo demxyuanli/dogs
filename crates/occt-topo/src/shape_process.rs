@@ -28,8 +28,8 @@
 //! Without this step a healed face keeps two identities: the binder's pre-heal
 //! `TopoDS_Face` and the face inside the repaired solid. `XCAFDoc_ShapeTool::
 //! SearchUsingMap` (`XCAFDoc_ShapeTool.cxx:134-195`) hashes by `IsSame`, so the
-//! pre-heal face finds no label, the styled item that named it loses its colour
-//! and the face falls back to the node colour: ATU01038 exported 70 `usemtl`
+//! pre-heal face finds no label, the styled item that named it loses its color
+//! and the face falls back to the node color: ATU01038 exported 70 `usemtl`
 //! runs instead of OCCT's 38, 798 triangles of `mat_8`/`mat_6` painted with the
 //! solid's `mat_2`.
 //!

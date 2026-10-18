@@ -180,7 +180,7 @@ impl<'a> LocateExtPC<'a> {
             return;
         }
 
-        // Try on the neighbouring intervals (`hxx:178-270`).
+        // Try on the neighboring intervals (`hxx:178-270`).
         let mut k: i32 = 1;
         let mut i1 = inter;
         let mut i2 = inter;
