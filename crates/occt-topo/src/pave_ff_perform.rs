@@ -34,7 +34,7 @@ use crate::int_face_face::FaceFace;
 use crate::int_tools_curve_box;
 use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
-use crate::pave_ff_misc::check_planes;
+use crate::pave_ff_make_blocks_helpers::check_planes;
 use crate::pave_ff_paves::get_ef_pnts;
 use crate::pave_filler::{GlueEnum, PaveFiller};
 use crate::pave_intersect::collect_pairs;

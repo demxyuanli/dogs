@@ -15,7 +15,7 @@ use crate::bopds::BopdsDS;
 use crate::bopds_ff::BopdsCurve;
 use crate::brep_tool::BRepTool;
 use crate::int_tools_vertex_line;
-use crate::pave_ff_misc::remove_used_vertices;
+use crate::pave_ff_make_blocks_helpers::remove_used_vertices;
 use crate::pave_ff_pave_put::put_pave_on_curve;
 use crate::pave_filler::PaveFiller;
 use crate::shape::{Face, Vertex};

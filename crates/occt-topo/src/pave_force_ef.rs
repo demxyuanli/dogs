@@ -21,7 +21,7 @@ use crate::edge_face::EdgeFace;
 use crate::fclass2d::FaceState;
 use crate::inttools_data::CommonPartType;
 use crate::pave_common::fill_shrunk_data_for_block;
-use crate::pave_ee_aux::get_pb_box;
+use crate::pave_force_ve::get_pb_box;
 use crate::pave_ff_exist::{pb_key, PbKey};
 use crate::pave_filler::PaveFiller;
 use crate::shape::{Edge, Face, Vertex};

@@ -20,7 +20,7 @@ use occt_core::bnd::BndBox2d;
 use occt_geom2d::curve::Curve2d;
 
 use crate::geom_bnd_lib_curve2d::add_curve2d;
-use crate::geom_bnd_lib_other2d::box_adaptor_sample;
+use crate::geom_bnd_lib_other_curve2d::box_adaptor_sample;
 
 /// `BndLib_Add2dCurve::Add(Adaptor2d_Curve2d, Tol, Box)`.
 pub fn add_adaptor(curve: &dyn Curve2d, a_tol: f64, a_box2d: &mut BndBox2d) {

@@ -19,7 +19,7 @@ use occt_core::precision::PCONFUSION;
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::Geom2dBezierCurve;
 
-use crate::geom_bnd_lib_other2d::box_other;
+use crate::geom_bnd_lib_other_curve2d::box_other;
 
 /// `GeomBndLib_BezierCurve2d::Box(theU1, theU2, theTol)` on an owned Bezier.
 pub fn box_bezier_poles(curve: &Geom2dBezierCurve, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {

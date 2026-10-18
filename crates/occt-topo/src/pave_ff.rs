@@ -477,7 +477,7 @@ fn post_treat_ff_legacy(
 }
 
 fn unused_section_vertices(f: &PaveFiller) -> Vec<TopoShape> {
-    crate::pave_ff_unused::unused_stick_vertices(f)
+    crate::pave_ff_unused_vertices::unused_stick_vertices(f)
 }
 
 fn remove_curve_pb(f: &mut PaveFiller, i_x: usize, i_c: usize, pb1: &BopdsPaveBlock) {

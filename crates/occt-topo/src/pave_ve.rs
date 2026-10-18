@@ -111,7 +111,7 @@ pub fn intersect_ve(
                 continue;
             };
             a_pb.append_ext_pave(BopdsPave::new(n_vx, a_t));
-            crate::pave_ee_aux::write_pave_block(f, &a_pb);
+            crate::pave_force_ve::write_pave_block(f, &a_pb);
             add_ext_pave(f.ds_mut(), t.n_e, a_t, n_vx);
             if the_add_interfs {
                 if f.ds().is_new_shape(n_vx) {

@@ -22,7 +22,7 @@ use crate::edge_face::EdgeFace;
 use crate::int_tools_full::IntToolsContext;
 use crate::inttools_data::{CommonPartType, IntRange};
 use crate::pave_common::update_vertex_sd;
-use crate::pave_ee_aux::{get_pb_box, update_vertices_of_cb};
+use crate::pave_force_ve::{get_pb_box, update_vertices_of_cb};
 use crate::pave_ef::{
     check_face_paves_index, check_face_paves_vertex, face_paves_on_in, force_interf_vf,
     record_ef_distance, reduce_intersection_range,

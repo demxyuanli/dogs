@@ -18,7 +18,7 @@ use crate::brep_tool::BRepTool;
 use crate::int_tools_curve_box::vertex_parameter;
 use crate::int_tools_full::IntToolsContext;
 use crate::inttools_data::IntRange;
-use crate::pave_ff_misc::get_full_shape_map;
+use crate::pave_ff_make_blocks_helpers::get_full_shape_map;
 use crate::pave_ff_paves::PntOn2s;
 use crate::pave_filler::PaveFiller;
 use crate::shape::{Edge, Face};

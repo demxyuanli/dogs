@@ -22,7 +22,7 @@ use occt_geom2d::offset::Geom2dOffsetCurve;
 
 use crate::geom_bnd_lib_circle2d::box_circ_range;
 use crate::geom_bnd_lib_line2d::box_lin;
-use crate::geom_bnd_lib_other2d::box_other;
+use crate::geom_bnd_lib_other_curve2d::box_other;
 
 fn try_offset_line2d(
     basis: &dyn Curve2d,

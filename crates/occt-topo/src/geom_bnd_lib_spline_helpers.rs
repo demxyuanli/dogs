@@ -15,7 +15,7 @@ use occt_geom2d::curve::Curve2d;
 use occt_geom2d::{Geom2dBezierCurve, Geom2dBSplineCurve};
 
 use crate::geom_bnd_lib_elclib2d::adjust_periodic;
-use crate::geom_bnd_lib_other2d::{box_other, fill_box2d};
+use crate::geom_bnd_lib_other_curve2d::{box_other, fill_box2d};
 use crate::geom_bnd_lib_sample2d::{compute_nb_samples2d, sample_kind_of};
 
 const WEAKNESS: f64 = 1.5;

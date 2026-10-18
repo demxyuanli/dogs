@@ -25,7 +25,7 @@ use crate::builder::TopoBuilder;
 use crate::iterator::ShapeIterator;
 use crate::pave_ff::CoupleOfPaveBlocks;
 use crate::pave_ff_exist::pb_key;
-use crate::pave_ff_misc::{get_stick_vertices, remove_used_vertices};
+use crate::pave_ff_make_blocks_helpers::{get_stick_vertices, remove_used_vertices};
 use crate::pave_ff_se::collect_micro_section_vertices;
 use crate::pave_ff_update::DmExEdges;
 use crate::pave_filler::PaveFiller;

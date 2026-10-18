@@ -40,7 +40,7 @@ use crate::geom_bnd_lib_ellipse2d::box_elips_range;
 use crate::geom_bnd_lib_hyperbola2d::box_hypr;
 use crate::geom_bnd_lib_line2d::box_lin;
 use crate::geom_bnd_lib_offset2d::box_offset_as_curve;
-use crate::geom_bnd_lib_other2d::box_other;
+use crate::geom_bnd_lib_other_curve2d::box_other;
 use crate::geom_bnd_lib_parabola2d::box_parab;
 
 /// Analytic 2D curve type matching `GeomAbs_CurveType` as used by the dispatcher.

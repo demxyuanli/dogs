@@ -16,7 +16,7 @@ use occt_core::precision::PCONFUSION;
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::Geom2dBSplineCurve;
 
-use crate::geom_bnd_lib_other2d::box_other;
+use crate::geom_bnd_lib_other_curve2d::box_other;
 
 /// `GeomBndLib_BSplineCurve2d::Box(theU1, theU2, theTol)` on an owned B-spline.
 ///

@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use crate::pave_ff_misc::{get_stick_vertices, remove_used_vertices};
+use crate::pave_ff_make_blocks_helpers::{get_stick_vertices, remove_used_vertices};
 use crate::pave_filler::PaveFiller;
 use crate::shape::TopoShape;
 

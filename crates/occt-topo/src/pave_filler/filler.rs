@@ -605,7 +605,7 @@ impl PaveFiller {
     /// non-destructive-only body (`EstimatePaveOnCurve` + the shared-vertex
     /// updates) is left as a translation boundary.
     pub(super) fn update_blocks_with_shared_vertices(&mut self) {
-        if let Err(e) = crate::pave_ff_misc::update_blocks_with_shared_vertices(self) {
+        if let Err(e) = crate::pave_ff_make_blocks_helpers::update_blocks_with_shared_vertices(self) {
             self.add_error(e);
         }
     }

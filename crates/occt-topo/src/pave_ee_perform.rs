@@ -24,7 +24,7 @@ use crate::edge_edge::EdgeEdge;
 use crate::int_tools_full::IntToolsContext;
 use crate::inttools_data::{CommonPartType, IntRange};
 use crate::pave_common::update_vertex_sd;
-use crate::pave_ee_aux::{force_interf_ve, get_pb_box, update_vertices_of_cb};
+use crate::pave_force_ve::{force_interf_ve, get_pb_box, update_vertices_of_cb};
 use crate::pave_filler::PaveFiller;
 use crate::pave_intersect::collect_pairs;
 use crate::pave_split_blocks;
@@ -243,8 +243,8 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
                     }
                 }
             }
-            crate::pave_ee_aux::write_pave_block(f, &pb1);
-            crate::pave_ee_aux::write_pave_block(f, &pb2);
+            crate::pave_force_ve::write_pave_block(f, &pb1);
+            crate::pave_force_ve::write_pave_block(f, &pb2);
             let Ok(a_vnew) = make_new_vertex_ee(&a_e1, a_t1, &a_e2, a_t2) else {
                 continue;
             };

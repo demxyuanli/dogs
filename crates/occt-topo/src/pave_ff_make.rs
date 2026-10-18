@@ -252,7 +252,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
 
         let (mv_on_in, mv_common, pbs_on_in) = f.ds().sub_shapes_on_in(n_f1, n_f2);
         let lse = f.ds().shared_edges(n_f1, n_f2);
-        let (mv_stick, mv_ef, mi) = crate::pave_ff_misc::get_stick_vertices(f.ds(), n_f1, n_f2);
+        let (mv_stick, mv_ef, mi) = crate::pave_ff_make_blocks_helpers::get_stick_vertices(f.ds(), n_f1, n_f2);
         let (on1, in1) = match f.ds().face_info(n_f1) {
             Some(fi) => (fi.paves_on().to_vec(), fi.paves_in().to_vec()),
             None => (Vec::new(), Vec::new()),
