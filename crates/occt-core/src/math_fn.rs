@@ -7,7 +7,7 @@ pub trait MathFunction {
     fn value(&mut self, x: f64, f: &mut f64) -> bool;
 
     /// `GetStateNumber` (`math_Function.cxx:17-20`). Default 0.
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         0
     }
 }

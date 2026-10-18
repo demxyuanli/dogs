@@ -41,7 +41,7 @@ pub fn edge_tangent_3d(edge: &Edge, t: f64) -> Option<GpVec> {
 }
 
 /// `BOPTools_AlgoTools3D::GetNormalToSurface`.
-pub fn get_normal_to_surface(s: &dyn Surface, u: f64, v: f64) -> Option<GpDir> {
+pub fn normal_to_surface(s: &dyn Surface, u: f64, v: f64) -> Option<GpDir> {
     let (_p, d1u, d1v) = s.d1(u, v);
     if d1u.square_magnitude() < RESOLUTION || d1v.square_magnitude() < RESOLUTION {
         return None;
@@ -52,7 +52,7 @@ pub fn get_normal_to_surface(s: &dyn Surface, u: f64, v: f64) -> Option<GpDir> {
 }
 
 /// `BOPTools_AlgoTools3D::GetNormalToFaceOnEdge` (edge, face, parameter).
-pub fn get_normal_to_face_on_edge_at(
+pub fn normal_to_face_on_edge_at(
     edge: &Edge,
     face: &Face,
     t: f64,
@@ -65,12 +65,12 @@ pub fn get_normal_to_face_on_edge_at(
     };
     let p2d = pc.d0(t);
     let surf = BRepTool::face_surface(face)?;
-    get_normal_to_surface(surf.as_ref(), p2d.x(), p2d.y())
+    normal_to_surface(surf.as_ref(), p2d.x(), p2d.y())
 }
 
 /// `BOPTools_AlgoTools3D::GetNormalToFaceOnEdge` (edge, face) at the
 /// intermediate p-curve parameter, reversed when the face is `REVERSED`.
-pub fn get_normal_to_face_on_edge(
+pub fn normal_to_face_on_edge(
     edge: &Edge,
     face: &Face,
     ctx: &IntToolsContext,
@@ -80,7 +80,7 @@ pub fn get_normal_to_face_on_edge(
         None => BRepTool::edge_parameters(edge),
     };
     let t = intermediate_point(t1, t2);
-    let mut dn = get_normal_to_face_on_edge_at(edge, face, t, ctx)?;
+    let mut dn = normal_to_face_on_edge_at(edge, face, t, ctx)?;
     if face.0.orientation() == Orientation::Reversed {
         dn = dn.reversed();
     }
@@ -178,7 +178,7 @@ pub fn point_near_edge(
 }
 
 /// `BOPTools_AlgoTools3D::GetApproxNormalToFaceOnEdge` with an explicit 2-D step.
-pub fn get_approx_normal_dt(
+pub fn approx_normal_dt(
     edge: &Edge,
     face: &Face,
     t: f64,
@@ -190,7 +190,7 @@ pub fn get_approx_normal_dt(
         Err(_) => return None,
     };
     let surf = BRepTool::face_surface(face)?;
-    let mut dn = get_normal_to_surface(surf.as_ref(), p2d.x(), p2d.y())?;
+    let mut dn = normal_to_surface(surf.as_ref(), p2d.x(), p2d.y())?;
     if face.0.orientation() == Orientation::Reversed {
         dn = dn.reversed();
     }
@@ -198,7 +198,7 @@ pub fn get_approx_normal_dt(
 }
 
 /// `BOPTools_AlgoTools3D::GetApproxNormalToFaceOnEdge` (context overload).
-pub fn get_approx_normal(
+pub fn approx_normal(
     edge: &Edge,
     face: &Face,
     t: f64,
@@ -206,7 +206,7 @@ pub fn get_approx_normal(
 ) -> Option<(GpPnt, GpDir)> {
     let (p2d, pnear) = point_near_edge(edge, face, t, ctx).ok()?;
     let surf = BRepTool::face_surface(face)?;
-    let mut dn = get_normal_to_surface(surf.as_ref(), p2d.x(), p2d.y())?;
+    let mut dn = normal_to_surface(surf.as_ref(), p2d.x(), p2d.y())?;
     if face.0.orientation() == Orientation::Reversed {
         dn = dn.reversed();
     }

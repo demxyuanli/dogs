@@ -41,12 +41,12 @@ use super::*;
     #[test]
     fn base_range_sample_depth_access() {
         let mut s = BaseRangeSample::new();
-        assert_eq!(s.get_depth(), 0);
+        assert_eq!(s.depth(), 0);
         s.set_depth(3);
-        assert_eq!(s.get_depth(), 3);
+        assert_eq!(s.depth(), 3);
         let s2 = BaseRangeSample::with_depth(5);
-        assert_eq!(s2.get_depth(), 5);
-        assert_eq!(BaseRangeSample::default().get_depth(), 0);
+        assert_eq!(s2.depth(), 5);
+        assert_eq!(BaseRangeSample::default().depth(), 0);
     }
 
     // ---- CurveRangeSample ----
@@ -54,8 +54,8 @@ use super::*;
     #[test]
     fn curve_range_sample_construct_depth_index_equal() {
         let a = CurveRangeSample::with_index_depth(7, 2);
-        assert_eq!(a.get_depth(), 2);
-        assert_eq!(a.get_index(), 7);
+        assert_eq!(a.depth(), 2);
+        assert_eq!(a.index(), 7);
         let b = CurveRangeSample::with_index_depth(7, 2);
         assert!(a.is_equal(&b));
         assert_eq!(a, b);
@@ -64,37 +64,37 @@ use super::*;
         let d = CurveRangeSample::with_index_depth(8, 2);
         assert!(!a.is_equal(&d), "different index");
         let e = CurveRangeSample::with_index(4);
-        assert_eq!(e.get_depth(), 0);
-        assert_eq!(e.get_index(), 4);
+        assert_eq!(e.depth(), 0);
+        assert_eq!(e.index(), 4);
     }
 
     #[test]
     fn curve_range_sample_get_range_depth_zero_covers_domain() {
         let s = CurveRangeSample::new();
-        assert_eq!(s.get_range(-2.0, 5.0, 10), r(-2.0, 5.0));
+        assert_eq!(s.range(-2.0, 5.0, 10), r(-2.0, 5.0));
     }
 
     #[test]
     fn curve_range_sample_get_range_subdivides() {
         // Depth 1 with 4 samples splits [0, 1] into 4 quarters.
         let s = CurveRangeSample::with_index_depth(2, 1);
-        assert_eq!(s.get_range(0.0, 1.0, 4), r(0.5, 0.75));
+        assert_eq!(s.range(0.0, 1.0, 4), r(0.5, 0.75));
         // Index 0 -> first quarter.
         let s0 = CurveRangeSample::with_index_depth(0, 1);
-        assert_eq!(s0.get_range(0.0, 1.0, 4), r(0.0, 0.25));
+        assert_eq!(s0.range(0.0, 1.0, 4), r(0.0, 0.25));
         // Last index -> last quarter (upper bound inclusive).
         let s3 = CurveRangeSample::with_index_depth(3, 1);
-        assert_eq!(s3.get_range(0.0, 1.0, 4), r(0.75, 1.0));
+        assert_eq!(s3.range(0.0, 1.0, 4), r(0.75, 1.0));
         // Depth 2 squares the sample count: 4^2 = 16 intervals of length 1/16.
         let sd = CurveRangeSample::with_index_depth(5, 2);
-        assert_eq!(sd.get_range(0.0, 1.0, 4), r(5.0 / 16.0, 6.0 / 16.0));
+        assert_eq!(sd.range(0.0, 1.0, 4), r(5.0 / 16.0, 6.0 / 16.0));
     }
 
     #[test]
     fn curve_range_sample_index_deeper() {
         let s = CurveRangeSample::with_index_depth(3, 1);
-        assert_eq!(s.get_range_index_deeper(4), 12);
-        assert_eq!(CurveRangeSample::with_index(0).get_range_index_deeper(10), 0);
+        assert_eq!(s.range_index_deeper(4), 12);
+        assert_eq!(CurveRangeSample::with_index(0).range_index_deeper(10), 0);
     }
 
     #[test]
@@ -110,22 +110,22 @@ use super::*;
     #[test]
     fn surface_range_sample_construct_and_accessors() {
         let s = SurfaceRangeSample::with_indexes_depths(2, 1, 3, 2);
-        assert_eq!(s.get_index_u(), 2);
-        assert_eq!(s.get_depth_u(), 1);
-        assert_eq!(s.get_index_v(), 3);
-        assert_eq!(s.get_depth_v(), 2);
-        assert_eq!(s.get_indexes(), (2, 3));
-        assert_eq!(s.get_depths(), (1, 2));
+        assert_eq!(s.index_u(), 2);
+        assert_eq!(s.depth_u(), 1);
+        assert_eq!(s.index_v(), 3);
+        assert_eq!(s.depth_v(), 2);
+        assert_eq!(s.indexes(), (2, 3));
+        assert_eq!(s.depths(), (1, 2));
 
         let mut m = SurfaceRangeSample::new();
         m.set_index_u(5);
         m.set_index_v(6);
         m.set_depth_u(1);
         m.set_depth_v(1);
-        assert_eq!(m.get_indexes(), (5, 6));
-        assert_eq!(m.get_depths(), (1, 1));
+        assert_eq!(m.indexes(), (5, 6));
+        assert_eq!(m.depths(), (1, 1));
 
-        let (ru, rv) = m.get_ranges();
+        let (ru, rv) = m.ranges();
         assert_eq!(ru, CurveRangeSample::with_index_depth(5, 1));
         assert_eq!(rv, CurveRangeSample::with_index_depth(6, 1));
     }
@@ -143,13 +143,13 @@ use super::*;
     #[test]
     fn surface_range_sample_get_ranges_and_deeper() {
         let s = SurfaceRangeSample::with_indexes_depths(1, 1, 2, 1);
-        assert_eq!(s.get_range_u(0.0, 1.0, 4), r(0.25, 0.5));
-        assert_eq!(s.get_range_v(0.0, 2.0, 4), r(1.0, 1.5));
-        let (ur, vr) = s.get_range(0.0, 1.0, 4, 0.0, 2.0, 4);
+        assert_eq!(s.range_u(0.0, 1.0, 4), r(0.25, 0.5));
+        assert_eq!(s.range_v(0.0, 2.0, 4), r(1.0, 1.5));
+        let (ur, vr) = s.range(0.0, 1.0, 4, 0.0, 2.0, 4);
         assert_eq!(ur, r(0.25, 0.5));
         assert_eq!(vr, r(1.0, 1.5));
-        assert_eq!(s.get_range_index_u_deeper(4), 4);
-        assert_eq!(s.get_range_index_v_deeper(4), 8);
+        assert_eq!(s.range_index_u_deeper(4), 4);
+        assert_eq!(s.range_index_v_deeper(4), 8);
     }
 
     #[test]
@@ -157,9 +157,9 @@ use super::*;
         let ru = CurveRangeSample::with_index_depth(1, 1);
         let rv = CurveRangeSample::with_index_depth(2, 1);
         let s = SurfaceRangeSample::from_ranges(ru, rv);
-        assert_eq!(s.get_sample_range_u(), ru);
-        assert_eq!(s.get_sample_range_v(), rv);
-        s.get_ranges();
+        assert_eq!(s.sample_range_u(), ru);
+        assert_eq!(s.sample_range_v(), rv);
+        s.ranges();
     }
 
     // ---- CurveRangeLocalizeData ----
@@ -170,8 +170,8 @@ use super::*;
         ld.set_root_index(2);
         let n = ld.build(r(0.0, 1.0), 7);
         assert_eq!(n, 4);
-        assert_eq!(ld.get_nb_sample(), 4);
-        assert_eq!(ld.get_root_index(), 2);
+        assert_eq!(ld.nb_sample(), 4);
+        assert_eq!(ld.root_index(), 2);
         assert_eq!(ld.ranges().len(), 4);
         assert_eq!(ld.range(0), Some(r(0.0, 0.25)));
         assert_eq!(ld.range(1), Some(r(0.25, 0.5)));
@@ -216,21 +216,21 @@ use super::*;
         ld.set_root_index(5);
         let n = ld.build(r(0.0, 1.0), r(0.0, 3.0), 11);
         assert_eq!(n, 6, "2 × 3 cells");
-        assert_eq!(ld.get_nb_samples_u(), 2);
-        assert_eq!(ld.get_nb_samples_v(), 3);
-        assert_eq!(ld.get_root_index(), 5);
+        assert_eq!(ld.nb_samples_u(), 2);
+        assert_eq!(ld.nb_samples_v(), 3);
+        assert_eq!(ld.root_index(), 5);
         assert_eq!(ld.ranges().len(), 6);
 
         // Cell (0, 0): U in [0, 0.5], V in [0, 1].
-        let (ur, vr) = ld.get_depth_range(0, 0).unwrap();
+        let (ur, vr) = ld.depth_range(0, 0).unwrap();
         assert_eq!(ur, r(0.0, 0.5));
         assert_eq!(vr, r(0.0, 1.0));
         // Cell (1, 1): U in [0.5, 1], V in [1, 2].
-        let (ur, vr) = ld.get_depth_range(1, 1).unwrap();
+        let (ur, vr) = ld.depth_range(1, 1).unwrap();
         assert_eq!(ur, r(0.5, 1.0));
         assert_eq!(vr, r(1.0, 2.0));
         // Last cell (1, 2): V upper bound inclusive.
-        let (ur, vr) = ld.get_depth_range(1, 2).unwrap();
+        let (ur, vr) = ld.depth_range(1, 2).unwrap();
         assert_eq!(ur, r(0.5, 1.0));
         assert_eq!(vr, r(2.0, 3.0));
 
@@ -239,7 +239,7 @@ use super::*;
                 assert_eq!(ld.surface_index(iu, iv), Some(11));
             }
         }
-        assert_eq!(ld.get_depth_range(2, 0), None, "out of grid");
+        assert_eq!(ld.depth_range(2, 0), None, "out of grid");
 
         // Parametric lookup.
         assert_eq!(ld.find_cell(0.25, 0.5), Some((0, 0)));

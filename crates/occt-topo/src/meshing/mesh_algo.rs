@@ -43,7 +43,7 @@ pub trait BaseMeshAlgo {
 pub trait ConstrainedBaseMeshAlgo: BaseMeshAlgo {
     /// Size of the cell to be used by the acceleration circles grid structure.
     /// `(-1, -1)` means "let the mesher pick the default".
-    fn get_cells_count(&self, _vertices_nb: usize) -> (i32, i32) {
+    fn cells_count(&self, _vertices_nb: usize) -> (i32, i32) {
         (-1, -1)
     }
 
@@ -91,12 +91,12 @@ impl<A: CustomBaseMeshAlgo> BaseMeshAlgo for CustomDelaunayBaseMeshAlgo<A> {
 }
 
 impl<A: CustomBaseMeshAlgo> ConstrainedBaseMeshAlgo for CustomDelaunayBaseMeshAlgo<A> {
-    fn get_cells_count(&self, vertices_nb: usize) -> (i32, i32) {
-        self.inner.get_cells_count(vertices_nb)
+    fn cells_count(&self, vertices_nb: usize) -> (i32, i32) {
+        self.inner.cells_count(vertices_nb)
     }
 
     fn post_process_mesh(&mut self, mesher: &mut Delaun, parameters: &MeshParameters) {
-        let (cells_u, cells_v) = self.inner.get_cells_count(mesher.result().nb_nodes());
+        let (cells_u, cells_v) = self.inner.cells_count(mesher.result().nb_nodes());
         if cells_u > 0 && cells_v > 0 {
             mesher.init_circles_tool_public(cells_u, cells_v);
         }
@@ -329,10 +329,10 @@ mod tests {
         assert_eq!(triangles, 2, "square triangulates to 2 triangles, got {triangles}");
         // Every triangle references three live, distinct nodes.
         for &id in ds.elements_of_domain() {
-            let verts = ds.get_element(id).vertex_indices;
+            let verts = ds.element(id).vertex_indices;
             assert!(verts[0] != verts[1] && verts[1] != verts[2] && verts[0] != verts[2]);
             for &w in &verts {
-                assert_ne!(ds.get_node(w).state, VertexState::Deleted);
+                assert_ne!(ds.node(w).state, VertexState::Deleted);
             }
         }
         // The four boundary links survive the triangulation as frontier edges.
@@ -379,7 +379,7 @@ mod tests {
         }
 
         impl ConstrainedBaseMeshAlgo for InnerCustom {
-            fn get_cells_count(&self, _vertices_nb: usize) -> (i32, i32) {
+            fn cells_count(&self, _vertices_nb: usize) -> (i32, i32) {
                 (2, 2)
             }
         }

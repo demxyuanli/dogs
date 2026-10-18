@@ -44,7 +44,7 @@ use super::*;
         fn live_vertex_ids(&self) -> Vec<i32> {
             let mut ids = HashSet::new();
             for &id in self.delaun.result().elements_of_domain() {
-                let tri = self.delaun.get_triangle(id);
+                let tri = self.delaun.triangle(id);
                 for v in tri.vertex_indices {
                     ids.insert(v);
                 }
@@ -58,16 +58,16 @@ use super::*;
             self.delaun.result().elements_of_domain().iter().copied().collect()
         }
         fn triangle(&self, id: i32) -> DelaunTriangle {
-            self.delaun.get_triangle(id)
+            self.delaun.triangle(id)
         }
         fn link(&self, id: i32) -> DelaunLink {
-            self.delaun.get_edge(id)
+            self.delaun.edge(id)
         }
         fn link_movability(&self, id: i32) -> VertexState {
             self.delaun.result().link_movability(id)
         }
         fn vertex(&self, id: i32) -> DelaunVertex {
-            self.delaun.get_vertex(id)
+            self.delaun.vertex(id)
         }
         fn shot_triangles(&self, p: occt_core::gp::GpXY) -> Option<Vec<i32>> {
             Some(self.delaun.circles().select(p))
@@ -223,7 +223,7 @@ use super::*;
         let ids = mesh.live_vertex_ids();
         assert!(ids.len() > points.len(), "refinement must add vertices");
         for id in ids {
-            let vertex = mesh.delaun.get_vertex(id);
+            let vertex = mesh.delaun.vertex(id);
             let radius = vertex.p3d.distance(&GpPnt::zero());
             assert!(
                 (radius - 1.0).abs() < 1e-9,

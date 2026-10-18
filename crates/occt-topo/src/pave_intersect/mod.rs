@@ -174,8 +174,8 @@ mod tests {
         let n1 = ds.append(v1.into()).unwrap();
         let n2 = ds.append(v2.into()).unwrap();
         let nv = intersect_make_sd_vertices(&mut ds, &[n1, n2], true).unwrap();
-        assert_eq!(ds.get_same_domain_index(n1), nv);
-        assert_eq!(ds.get_same_domain_index(n2), nv);
+        assert_eq!(ds.same_domain_index(n1), nv);
+        assert_eq!(ds.same_domain_index(n2), nv);
         assert!(ds.has_interf_pair(n1, n2));
     }
 
@@ -208,15 +208,15 @@ mod tests {
                 "corner pair {i} merged into an SD vertex"
             );
             assert_eq!(
-                f.ds().get_same_domain_index(na),
-                f.ds().get_same_domain_index(nb),
+                f.ds().same_domain_index(na),
+                f.ds().same_domain_index(nb),
                 "corner pair {i} share the same SD vertex"
             );
         }
         // A non-coincident corner pair is not merged.
         let n0a = f.ds().index(&a.vertices[0].0).unwrap(); // (0,0,0)
         let n0b = f.ds().index(&bbox.vertices[1].0).unwrap(); // (2,0,0)
-        assert_ne!(f.ds().get_same_domain_index(n0a), f.ds().get_same_domain_index(n0b));
+        assert_ne!(f.ds().same_domain_index(n0a), f.ds().same_domain_index(n0b));
     }
 
     #[test]

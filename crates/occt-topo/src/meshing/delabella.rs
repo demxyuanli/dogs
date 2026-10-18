@@ -68,7 +68,7 @@ impl DelabellaBaseMeshAlgo {
         let mut indices: Vec<i32> = Vec::new();
         let mut points: Vec<GpPnt2d> = Vec::new();
         for index in 1..=structure.nb_nodes() as i32 {
-            let node = structure.get_node(index);
+            let node = structure.node(index);
             if node.state != VertexState::Deleted {
                 indices.push(index);
                 points.push(node.location);
@@ -427,7 +427,7 @@ mod tests {
     fn boundary_vertices(ds: &DelaunDataStructure) -> usize {
         let mut edge_count: HashMap<(i32, i32), usize> = HashMap::new();
         for &id in ds.elements_of_domain() {
-            let verts = ds.get_element(id).vertex_indices;
+            let verts = ds.element(id).vertex_indices;
             for k in 0..3 {
                 let (u, v) = (verts[k], verts[(k + 1) % 3]);
                 *edge_count.entry((u.min(v), u.max(v))).or_insert(0) += 1;
@@ -467,10 +467,10 @@ mod tests {
 
         // Every triangle references three live, distinct nodes.
         for &id in ds.elements_of_domain() {
-            let verts = ds.get_element(id).vertex_indices;
+            let verts = ds.element(id).vertex_indices;
             assert!(verts[0] != verts[1] && verts[1] != verts[2] && verts[0] != verts[2]);
             for &w in &verts {
-                assert_ne!(ds.get_node(w).state, VertexState::Deleted);
+                assert_ne!(ds.node(w).state, VertexState::Deleted);
             }
         }
     }
@@ -486,7 +486,7 @@ mod tests {
         let mut nodes: Vec<(i32, GpPnt2d)> = Vec::new();
         for &(u, v) in &pts {
             let idx = structure.add_node(DelaunVertex::new_parametric(u, v, VertexState::Free));
-            nodes.push((idx, structure.get_node(idx).location));
+            nodes.push((idx, structure.node(idx).location));
         }
 
         let mut algo = DelabellaBaseMeshAlgo::new();
@@ -504,11 +504,11 @@ mod tests {
         // Empty-circle property: no other point lies strictly inside the
         // circumcircle of any triangle.
         for &id in ds.elements_of_domain() {
-            let tri = ds.get_element(id);
+            let tri = ds.element(id);
             let [va, vb, vc] = tri.vertex_indices;
-            let a = ds.get_node(va).location;
-            let b = ds.get_node(vb).location;
-            let c = ds.get_node(vc).location;
+            let a = ds.node(va).location;
+            let b = ds.node(vb).location;
+            let c = ds.node(vc).location;
             for &(idx, p) in &nodes {
                 if idx == va || idx == vb || idx == vc {
                     continue;
@@ -569,12 +569,12 @@ mod tests {
             .elements_of_domain()
             .iter()
             .map(|&id| {
-                let tri = ds.get_element(id);
+                let tri = ds.element(id);
                 let [va, vb, vc] = tri.vertex_indices;
                 signed_area2d(
-                    &ds.get_node(va).location,
-                    &ds.get_node(vb).location,
-                    &ds.get_node(vc).location,
+                    &ds.node(va).location,
+                    &ds.node(vb).location,
+                    &ds.node(vc).location,
                 )
                 .abs()
                     * 0.5

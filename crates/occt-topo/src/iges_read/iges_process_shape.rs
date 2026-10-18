@@ -171,7 +171,7 @@ fn perform_iges_solid(solid: &TopoShape, ctx: &mut SharedReShape, preci: f64, ma
 /// `ClosedWireMode` follows `S.Closed()`.
 fn perform_free_wire(shape: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
     let mut wire = Wire(shape.clone());
-    let closed = shape.closed();
+    let closed = shape.is_closed();
     let (reorder_ok, status) = fix_reorder_wire_3d(&wire);
     let mut fixed = status != crate::meshing::wire_order::WireOrderStatus::Same;
     let bare = Face(TopoShape::new(ShapeType::Face));

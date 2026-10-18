@@ -250,7 +250,7 @@ pub fn align_shell_closed_to_free_bounds(shell: &TopoShape) {
         return;
     }
     let closed = !shell_has_free_edge(shell);
-    if shell.closed() != closed {
+    if shell.is_closed() != closed {
         shell.set_closed(closed);
     }
 }
@@ -262,7 +262,7 @@ pub fn clear_shell_closed_if_analysis_free(shell: &TopoShape) {
     if shell.shape_type() != ShapeType::Shell {
         return;
     }
-    if shell.closed() && shell_analysis_has_free_edges(shell) {
+    if shell.is_closed() && shell_analysis_has_free_edges(shell) {
         shell.set_closed(false);
     }
 }

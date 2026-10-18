@@ -83,7 +83,7 @@ pub fn shell(wire1: &Wire, wire2: &Wire) -> Result<Shell, String> {
     let mut shell = Shell::new();
     let edges1 = edges_of_wire(wire1);
     let edges2 = edges_of_wire(wire2);
-    let closed = wire1.0.closed() && wire2.0.closed();
+    let closed = wire1.0.is_closed() && wire2.0.is_closed();
     let mut edge4: Option<Edge> = None;
     let mut couture: Option<Edge> = None;
     let n = edges1.len().min(edges2.len());

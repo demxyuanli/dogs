@@ -88,7 +88,7 @@ impl ModelHealer {
         // 1. Delete degenerate (zero-area / repeated-vertex) triangles.
         let ids: Vec<i32> = mesh_data.elements_of_domain().iter().copied().collect();
         for id in ids {
-            let tri = mesh_data.get_element(id);
+            let tri = mesh_data.element(id);
             if Self::is_degenerate(mesh_data, &tri) {
                 mesh_data.remove_element(id);
                 stats.degenerate_triangles += 1;
@@ -109,7 +109,7 @@ impl ModelHealer {
         // 3. Unify orientation: flip clockwise triangles to counter-clockwise.
         let ids: Vec<i32> = mesh_data.elements_of_domain().iter().copied().collect();
         for id in ids {
-            let tri = mesh_data.get_element(id);
+            let tri = mesh_data.element(id);
             if Self::signed_area(mesh_data, &tri) < 0.0 {
                 Self::flip_triangle(mesh_data, id);
                 stats.flipped_triangles += 1;
@@ -123,16 +123,16 @@ impl ModelHealer {
             let mut set = HashSet::new();
             let ids: Vec<i32> = mesh_data.elements_of_domain().iter().copied().collect();
             for id in ids {
-                set.extend(mesh_data.get_element(id).vertex_indices.iter().copied());
+                set.extend(mesh_data.element(id).vertex_indices.iter().copied());
             }
             set
         };
         let orphans: Vec<i32> = (1..=mesh_data.nb_nodes() as i32)
-            .filter(|&n| mesh_data.get_node(n).state != VertexState::Deleted && !live.contains(&n))
+            .filter(|&n| mesh_data.node(n).state != VertexState::Deleted && !live.contains(&n))
             .collect();
         for n in orphans {
             mesh_data.remove_node(n, true);
-            if mesh_data.get_node(n).state == VertexState::Deleted {
+            if mesh_data.node(n).state == VertexState::Deleted {
                 stats.orphan_nodes += 1;
             }
         }
@@ -361,8 +361,8 @@ impl ModelHealer {
             return (GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.0, 0.0));
         }
         (
-            p.get_point(0).unwrap_or_else(|_| GpPnt2d::new(0.0, 0.0)),
-            p.get_point(n - 1).unwrap_or_else(|_| GpPnt2d::new(0.0, 0.0)),
+            p.point(0).unwrap_or_else(|_| GpPnt2d::new(0.0, 0.0)),
+            p.point(n - 1).unwrap_or_else(|_| GpPnt2d::new(0.0, 0.0)),
         )
     }
 
@@ -381,11 +381,11 @@ impl ModelHealer {
             return false;
         }
         let idx = if is_first { 0 } else { n - 1 };
-        let cur = p.get_point(idx).unwrap_or(val);
+        let cur = p.point(idx).unwrap_or(val);
         if cur == val {
             return false;
         }
-        if let Ok(slot) = p.get_point_mut(idx) {
+        if let Ok(slot) = p.point_mut(idx) {
             *slot = val;
             true
         } else {
@@ -506,8 +506,8 @@ impl ModelHealer {
         let mut removed = 0usize;
         let mut i = 1usize;
         while i < curve.parameters_nb() {
-            let a = curve.get_point(i - 1)?;
-            let b = curve.get_point(i)?;
+            let a = curve.point(i - 1)?;
+            let b = curve.point(i)?;
             if a.distance(&b) <= PCONFUSION {
                 curve.remove_point(i)?;
                 removed += 1;
@@ -530,9 +530,9 @@ impl ModelHealer {
 
     /// Twice the signed area of the triangle in UV space (positive = CCW).
     fn signed_area(mesh_data: &DelaunDataStructure, tri: &DelaunTriangle) -> f64 {
-        let a = mesh_data.get_node(tri.vertex_indices[0]).location;
-        let b = mesh_data.get_node(tri.vertex_indices[1]).location;
-        let c = mesh_data.get_node(tri.vertex_indices[2]).location;
+        let a = mesh_data.node(tri.vertex_indices[0]).location;
+        let b = mesh_data.node(tri.vertex_indices[1]).location;
+        let c = mesh_data.node(tri.vertex_indices[2]).location;
         (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
     }
 
@@ -540,14 +540,14 @@ impl ModelHealer {
     /// swapped and each link is retargeted (with orientation) so link `k` still
     /// joins vertex `k` to vertex `(k+1) % 3` of the new order.
     fn flip_triangle(mesh_data: &mut DelaunDataStructure, element_id: i32) {
-        let tri = mesh_data.get_element(element_id);
+        let tri = mesh_data.element(element_id);
         let v = tri.vertex_indices;
         let new_verts = [v[0], v[2], v[1]];
         let mut new_links = [0i32; 3];
         for k in 0..3 {
             let (p, q) = (new_verts[k], new_verts[(k + 1) % 3]);
             let link_id = mesh_data.index_of_link(&DelaunLink::new_unparameterized(p, q, 0));
-            let link = mesh_data.get_link(link_id);
+            let link = mesh_data.link(link_id);
             // `index_of_link` reports only the (positive) id; re-derive the sign:
             // the stored link is traversed forward exactly when it runs p -> q.
             let sign = if link.first_node() == p && link.last_node() == q { 1 } else { -1 };
@@ -622,11 +622,11 @@ impl ModelPostProcessor {
         let mut triangles: Vec<[i32; 3]> = Vec::with_capacity(element_ids.len());
 
         for id in element_ids {
-            let tri = delaun.get_element(id);
+            let tri = delaun.element(id);
             let mut corner = [0i32; 3];
             for (k, &node_id) in tri.vertex_indices.iter().enumerate() {
                 let pos = *remap.entry(node_id).or_insert_with(|| {
-                    let vertex = delaun.get_node(node_id);
+                    let vertex = delaun.node(node_id);
                     nodes.push(vertex.p3d);
                     uv_nodes.push(vertex.location);
                     nodes.len() - 1
@@ -691,7 +691,7 @@ mod tests {
     }
 
     fn signed_area_of(ds: &DelaunDataStructure, id: i32) -> f64 {
-        let tri = ds.get_element(id);
+        let tri = ds.element(id);
         ModelHealer::signed_area(ds, &tri)
     }
 
@@ -728,7 +728,7 @@ mod tests {
         assert!(signed_area_of(&ds, valid) > 0.0);
         // Orphan nodes are marked deleted.
         for n in [d, e, f] {
-            assert_eq!(ds.get_node(n).state, VertexState::Deleted);
+            assert_eq!(ds.node(n).state, VertexState::Deleted);
         }
     }
 
@@ -752,12 +752,12 @@ mod tests {
         assert_eq!(stats.flipped_triangles, 1);
         assert_eq!(ds.elements_of_domain().len(), 2);
         // Both triangles now share the edge in opposite directions => consistent normals.
-        let te1 = ds.get_element(t1);
-        let te2 = ds.get_element(t2);
+        let te1 = ds.element(t1);
+        let te2 = ds.element(t2);
         assert!(te1.link_indices.contains(&shared), "t1 traverses shared link forward");
         assert!(te2.link_indices.contains(&-shared), "t2 traverses shared link backward");
         for id in [t1, t2] {
-            let tri = ds.get_element(id);
+            let tri = ds.element(id);
             let area = ModelHealer::signed_area(&ds, &tri);
             assert!(area > 0.0, "every live triangle is counter-clockwise, got {area}");
         }

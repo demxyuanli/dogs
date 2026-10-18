@@ -256,7 +256,7 @@ impl BeanFaceIntersector {
     /// Expand a result range from a known on-surface point, increasing or
     /// decreasing the parameter. Port of `ComputeRangeFromStartPoint(bool, …)`.
     pub(crate) fn compute_range_from_start_point(&mut self, to_increase: bool, parameter: f64, u: f64, v: f64) {
-        let found = self.range_manager.get_index(parameter, to_increase);
+        let found = self.range_manager.index(parameter, to_increase);
         if found < 0 {
             return;
         }
@@ -386,7 +386,7 @@ impl BeanFaceIntersector {
     /// Insert a degenerate (point) result range when a crossing point added no
     /// interval — a tangency point. Port of the static `SetEmptyResultRange`.
     pub(crate) fn set_empty_result_range(&mut self, parameter: f64) {
-        let indices = self.range_manager.get_indices(parameter);
+        let indices = self.range_manager.indices(parameter);
         let mut add = !indices.is_empty();
         for &k in &indices {
             if self.range_manager.flag(k) == 2 {

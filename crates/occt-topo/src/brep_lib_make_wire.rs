@@ -185,7 +185,7 @@ impl MakeWire {
             }
         } else {
             // `init = myShape.Closed();` (`cxx:153`)
-            init = self.shape.closed();
+            init = self.shape.is_closed();
             // `TopoDS_Shape aLocalShape = E.Oriented(TopAbs_FORWARD);` (`cxx:154-155`)
             let ee = Edge(e.oriented(Orientation::Forward));
 
@@ -547,7 +547,7 @@ mod tests {
             }
             end = Some(v2);
         }
-        assert!(wire.closed(), "a triangle wire closes back onto its first vertex");
+        assert!(wire.is_closed(), "a triangle wire closes back onto its first vertex");
     }
 
     #[test]

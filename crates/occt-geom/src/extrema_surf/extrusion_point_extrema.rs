@@ -151,7 +151,7 @@ impl<'a> ExtremaExtPExtS<'a> {
         self.f.initialize(s);
         self.c = an_a_curve;
         self.s = s;
-        self.position = get_position(self.c.as_ref());
+        self.position = position(self.c.as_ref());
         self.direction = s
             .extrusion_direction()
             .expect("Extrema_ExtPExtS: extrusion surface without a direction");
@@ -412,7 +412,7 @@ impl<'a> ExtremaExtPExtS<'a> {
 
 /// `GetPosition(C)` (`Extrema_ExtPExtS.cxx:509-534`): the supporting plane
 /// of the elementary basis, as `(location, normal)`.
-fn get_position(c: &dyn Curve) -> CurvePlane {
+fn position(c: &dyn Curve) -> CurvePlane {
     if let Some(l) = c.gp_line() {
         // gp_Lin L = C->Line(); gp_Pln Pln(L.Location(), L.Direction());
         // gp_Ax2 Pos(Pln.Location(), Pln.Position().Direction(), ...);

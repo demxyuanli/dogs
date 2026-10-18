@@ -54,7 +54,7 @@ use super::*;
         let base = render_scene_raster_zbuffer(&scene, &cam, 96, 72, 0.25, &settings);
         let sel = render_scene_with_selection(&scene, &cam, 96, 72, 0.25, &settings, &[idx]);
         assert!(sel.starts_with(b"P6\n96 72\n255\n"), "PPM header");
-        let base_px = base.get_pixel(px, py);
+        let base_px = base.pixel(px, py);
         let i = 13 + (py * 96 + px) * 3;
         let sel_px = (sel[i] as f64 / 255.0, sel[i + 1] as f64 / 255.0, sel[i + 2] as f64 / 255.0);
         // The highlight is yellow-dominant while the base front face is a
@@ -103,11 +103,11 @@ use super::*;
         raster.clear((0.0, 0.0, 0.0));
         overlay_text_rect(&mut raster, "A", &font, 1, 10, 10, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
         // Padding is 2 and "A" is 5×7, so the white box spans x∈[8,16], y∈[8,18].
-        assert_eq!(raster.get_pixel(8, 8), (1.0, 1.0, 1.0), "box top-left corner filled");
-        assert_eq!(raster.get_pixel(16, 8), (1.0, 1.0, 1.0), "box top-right corner filled");
-        assert_eq!(raster.get_pixel(6, 8), (0.0, 0.0, 0.0), "outside the box stays untouched");
+        assert_eq!(raster.pixel(8, 8), (1.0, 1.0, 1.0), "box top-left corner filled");
+        assert_eq!(raster.pixel(16, 8), (1.0, 1.0, 1.0), "box top-right corner filled");
+        assert_eq!(raster.pixel(6, 8), (0.0, 0.0, 0.0), "outside the box stays untouched");
         // 'A' top row has a lit pixel at source column 1 → absolute (11, 10).
-        assert_eq!(raster.get_pixel(11, 10), (0.0, 0.0, 0.0), "text pixel stamped black");
+        assert_eq!(raster.pixel(11, 10), (0.0, 0.0, 0.0), "text pixel stamped black");
     }
 
     #[test]

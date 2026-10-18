@@ -326,7 +326,7 @@ fn brep_tool_is_closed(s: &TopoShape) -> bool {
             }
         }
         // `BRep_Tool.cxx:1755`: `return theShape.Closed();`
-        _ => return s.closed(),
+        _ => return s.is_closed(),
     }
     has_bound && odd.is_empty()
 }
@@ -489,7 +489,7 @@ pub fn apply_context(wire: &mut WireSegment, iedge: usize, context: &mut dyn ReS
     };
     if !segw.is_empty() {
         let (iumin, iumax, ivmin, ivmax) =
-            wire.get_patch_index(iedge).unwrap_or((0, 0, 0, 0));
+            wire.patch_index(iedge).unwrap_or((0, 0, 0, 0));
         let nb_edges = segw.len() as i32;
         let eo = edge.0.orientation();
         for i in 1..=nb_edges {

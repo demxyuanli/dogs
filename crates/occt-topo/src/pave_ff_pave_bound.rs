@@ -24,7 +24,7 @@ use crate::shape::{Face, Vertex};
 ///
 /// Extreme ext-paves compared with the curve ends through `ComputeVV`.
 /// A miss (`compute_vv == 0` in this port, OCCT `iFlag != 0`) clears that end.
-pub fn get_bound_paves(ds: &BopdsDS, nc: &BopdsCurve) -> [Option<usize>; 2] {
+pub fn bound_paves(ds: &BopdsDS, nc: &BopdsCurve) -> [Option<usize>; 2] {
     let Some(pb) = nc.pave_blocks().first() else {
         return [None, None];
     };
@@ -88,7 +88,7 @@ pub fn put_bound_pave_on_curve(
     let (t0, t1) = range;
     let p0 = curve.d0(t0);
     let p1 = curve.d0(t1);
-    let bnd = get_bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
+    let bnd = bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
     let is_closed = p1.distance(&p0) <= CONFUSION;
     if is_closed && (bnd[0].is_some() || bnd[1].is_some()) {
         return Ok(Vec::new());

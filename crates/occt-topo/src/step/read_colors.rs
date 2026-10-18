@@ -120,7 +120,7 @@ fn set_style(
     let is_visible = !invis.contains(&style_id);
 
     // `if (!theStyles.GetColors(...) && anIsVisible) return;` (`cxx:1276-1283`).
-    let colors = styles.get_colors(style_id);
+    let colors = styles.colors(style_id);
     if !colors.is_defined() && is_visible {
         return;
     }
@@ -243,7 +243,7 @@ fn style_from_colors(
     // aFullSCol = aRenderProps.GetRGBAColor();` (`cxx:1384-1399`): the rendering
     // properties' colour replaces the decoded one when both are present.
     let surface = if colors.rendering_props.is_defined() {
-        Some(colors.rendering_props.get_rgba_color())
+        Some(colors.rendering_props.rgba_color())
     } else {
         colors
             .surface_color
@@ -278,10 +278,10 @@ fn add_setting(model: &mut BRepModel, label: &Found, style: XcafPrsStyle) {
     let ms = &mut model.shapes[*index];
     if let Some(slot) = ms.style_settings.iter_mut().find(|(s, _)| is_same(s, key_shape)) {
         if style.is_set_color_surf() {
-            slot.1.set_color_surf(style.get_color_surf_rgba());
+            slot.1.set_color_surf(style.color_surf_rgba());
         }
         if style.is_set_color_curv() {
-            slot.1.set_color_curv(style.get_color_curv());
+            slot.1.set_color_curv(style.color_curv());
         }
         slot.1.set_visibility(slot.1.is_visible() && style.is_visible());
         return;
@@ -307,7 +307,7 @@ fn collect_style_settings(ms: &mut ModelShape) {
         .find(|(key, _)| is_same(key, &ms.shape))
     {
         if style.is_set_color_surf() {
-            ms.color = Some(style.get_color_surf());
+            ms.color = Some(style.color_surf());
         }
     }
 }

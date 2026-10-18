@@ -85,7 +85,7 @@ impl Geom2dIntIntPolyPolyGen {
     }
 
     /// `GetMinNbSamples()` (`gxx:1787-1790`).
-    pub fn get_min_nb_samples(&self) -> usize {
+    pub fn min_nb_samples(&self) -> usize {
         self.min_pnt_nb
     }
 
@@ -603,7 +603,7 @@ impl Geom2dIntIntPolyPolyGen {
             param_inf_on_curve2 = f64::MAX;
             param_inf_on_curve1 = f64::MAX;
             for qq in 1..=nb_pnts {
-                let spnt1 = zone.get_point(qq);
+                let spnt1 = zone.point(qq);
                 let (_, mut seg_index1on_p1, mut param_on_line) = spnt1.info_first();
                 if seg_index1on_p1 > poly1.nb_segments() as i32 {
                     seg_index1on_p1 -= 1;
@@ -905,7 +905,7 @@ impl Geom2dIntIntPolyPolyGen {
                 //
                 let max_count = 16i32;
                 let mut count = 0i32;
-                get_intersection(
+                intersection(
                     c1,
                     t1f,
                     t1l,
@@ -1018,7 +1018,7 @@ impl Geom2dIntIntPolyPolyGen {
             param_inf_on_curve2 = f64::MAX;
             param_inf_on_curve1 = f64::MAX;
             for qq in 1..=nb_pnts {
-                let spnt1 = zone.get_point(qq);
+                let spnt1 = zone.point(qq);
                 let (_, mut seg_index1on_p1, mut param_on_line) = spnt1.info_first();
                 if seg_index1on_p1 > poly1.nb_segments() as i32 {
                     seg_index1on_p1 -= 1;
@@ -1461,7 +1461,7 @@ fn head_or_end_point(
 
 /// `GetIntersection(...)` (`gxx:1573-1783`).
 #[allow(clippy::too_many_arguments)]
-fn get_intersection(
+fn intersection(
     c1: &dyn Curve2d,
     t1f: f64,
     t1l: f64,
@@ -1559,40 +1559,40 @@ fn get_intersection(
 
     if is_small1 {
         let t2m = (t2l + t2f) / 2.0;
-        get_intersection(
+        intersection(
             c1, t1f, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
             dist, count,
         );
-        get_intersection(
+        intersection(
             c1, t1f, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
     } else if is_small2 {
         let t1m = (t1l + t1f) / 2.0;
-        get_intersection(
+        intersection(
             c1, t1f, t1m, c2, t2f, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
-        get_intersection(
+        intersection(
             c1, t1m, t1l, c2, t2f, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
     } else {
         let t1m = (t1l + t1f) / 2.0;
         let t2m = (t2l + t2f) / 2.0;
-        get_intersection(
+        intersection(
             c1, t1f, t1m, c2, t2f, t2m, tol_conf, max_count, p_int,
             dist, count,
         );
-        get_intersection(
+        intersection(
             c1, t1f, t1m, c2, t2m, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
-        get_intersection(
+        intersection(
             c1, t1m, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
             dist, count,
         );
-        get_intersection(
+        intersection(
             c1, t1m, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
             dist, count,
         );

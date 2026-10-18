@@ -302,7 +302,7 @@ pub fn process_de<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
             continue;
         };
         let n_v0 = an_edge_info.sub_shapes().first().copied().unwrap_or(0);
-        let n_v = f.ds().get_same_domain_index(n_v0);
+        let n_v = f.ds().same_domain_index(n_v0);
         match sif.shape_type() {
             ShapeType::Face => {
                 let mut lpb_out: Vec<BopdsPaveBlock> = Vec::new();

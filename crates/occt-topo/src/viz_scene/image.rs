@@ -18,7 +18,7 @@ impl Raster {
     }
 
     /// Read a pixel's color.
-    pub fn get_pixel(&self, x: usize, y: usize) -> (f64, f64, f64) {
+    pub fn pixel(&self, x: usize, y: usize) -> (f64, f64, f64) {
         let i = (y * self.width + x) * 3;
         (self.pixels[i], self.pixels[i + 1], self.pixels[i + 2])
     }

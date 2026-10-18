@@ -34,7 +34,7 @@ pub fn intersect_ext_pairs(ds: &BopdsDS, indices: &HashSet<usize>) -> Vec<Vec<(u
     // (OCCT `aSI.Box()` for the tree).
     let box_of = |k: usize, in_map: bool| -> BndBox {
         if in_map {
-            ds.boxes[ds.get_same_domain_index(k)].clone()
+            ds.boxes[ds.same_domain_index(k)].clone()
         } else {
             ds.boxes[k].clone()
         }

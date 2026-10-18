@@ -475,7 +475,7 @@ fn is_cn_1(s: &dyn Surface) -> bool {
 /// (`cxx:531-575`) come straight from the edge, so the sample point lands
 /// ~1e-11 off the sphere's principal plane and `atan2` (`ElSLib.cxx:1640-1643`)
 /// no longer returns the exact `0.`.
-pub(super) fn get_line(
+pub(super) fn line_pcurve_from_points(
     s: &dyn Surface,
     points: &[GpPnt],
     params: &[f64],

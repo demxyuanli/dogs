@@ -209,11 +209,11 @@ mod tests {
         ];
         let open = BRepBuilderWire::from_points(&pts).expect("open wire");
         assert_eq!(edges_of_wire(&open).len(), 3, "open: n-1 edges");
-        assert!(!open.closed());
+        assert!(!open.is_closed());
 
         let closed = BRepBuilderPolygon::from_points(&pts, true).expect("closed wire");
         assert_eq!(edges_of_wire(&closed).len(), 4, "closed: n edges");
-        assert!(closed.closed());
+        assert!(closed.is_closed());
         assert!(crate::topo_tools_full::wire_is_closed(&closed), "closed chains end-to-end");
     }
 
@@ -230,7 +230,7 @@ mod tests {
         assert!(w.add_edge(far).is_err(), "disjoint edge rejected");
         let wire = w.build().expect("build wire");
         assert_eq!(edges_of_wire(&wire).len(), 2);
-        assert!(!wire.closed());
+        assert!(!wire.is_closed());
     }
 
     #[test]
@@ -307,10 +307,10 @@ mod tests {
         ];
         let open = BRepBuilderPolygon::from_points(&pts, false).expect("open polygon");
         assert_eq!(edges_of_wire(&open).len(), pts.len() - 1, "open: n-1 edges");
-        assert!(!open.closed());
+        assert!(!open.is_closed());
         let closed = BRepBuilderPolygon::from_points(&pts, true).expect("closed polygon");
         assert_eq!(edges_of_wire(&closed).len(), pts.len(), "closed: n edges");
-        assert!(closed.closed());
+        assert!(closed.is_closed());
     }
 
     #[test]

@@ -424,7 +424,7 @@ impl GltfCafWriter<'_> {
         let mut trsf = node.local_trsf.clone();
         self.options.cs_trsf.transform_transformation(&mut trsf);
 
-        let quaternion = trsf.get_rotation();
+        let quaternion = trsf.rotation();
         let resolution = 1e-15; // `gp::Resolution()`
         let has_rotation = quaternion.x().abs() > resolution
             || quaternion.y().abs() > resolution
@@ -447,7 +447,7 @@ impl GltfCafWriter<'_> {
         };
         if format == GltfWriterTrsfFormat::Mat4 {
             // `cxx:2375-2389`: column-major 4x4.
-            let matrix = trsf.get_mat4();
+            let matrix = trsf.mat4();
             let is_identity = (0..4).all(|col| {
                 (0..4).all(|row| {
                     let expected = if row == col { 1.0 } else { 0.0 };

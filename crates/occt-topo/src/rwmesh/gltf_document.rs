@@ -399,10 +399,10 @@ fn bind_mesh(doc: &mut DocShape, mesh: &GlMesh, is_gltf1: bool, fallback: bool) 
                     att.style.set_material(Some(m.clone()));
                 }
                 if prim.style.is_set_color_curv() {
-                    att.style.set_color_curv(prim.style.get_color_curv());
+                    att.style.set_color_curv(prim.style.color_curv());
                 }
                 if prim.style.is_set_color_surf() {
-                    att.style.set_color_surf(prim.style.get_color_surf_rgba());
+                    att.style.set_color_surf(prim.style.color_surf_rgba());
                 }
                 // `cxx:2444-2447`: fall back to the mesh name the array carries.
                 if att.name.is_empty() && fallback {
@@ -452,10 +452,10 @@ fn bind_node(doc: &mut DocShape, node: &GlNode, local_identity: bool, is_gltf1: 
                     att.style.set_material(Some(m.clone()));
                 }
                 if face.style.is_set_color_curv() {
-                    att.style.set_color_curv(face.style.get_color_curv());
+                    att.style.set_color_curv(face.style.color_curv());
                 }
                 if face.style.is_set_color_surf() {
-                    att.style.set_color_surf(face.style.get_color_surf_rgba());
+                    att.style.set_color_surf(face.style.color_surf_rgba());
                 }
                 if att.name.is_empty() && fallback {
                     // `cxx:2444-2447`
@@ -690,12 +690,12 @@ fn set_shape_name(
 fn set_shape_style(model: &mut BRepModel, tools: &mut DocTools, label: usize, style: &XcafPrsStyle) {
     if style.is_set_color_surf() {
         if let Some(l) = model.label_mut(label) {
-            l.color = Some(style.get_color_surf());
+            l.color = Some(style.color_surf());
         }
     }
     if style.is_set_color_curv() {
         if let Some(l) = model.label_mut(label) {
-            l.color_curv = Some(style.get_color_curv());
+            l.color_curv = Some(style.color_curv());
         }
     }
     if let Some(mat) = style.material() {

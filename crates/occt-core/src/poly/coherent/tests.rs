@@ -131,7 +131,7 @@ use super::*;
         ct.remove_triangle(t0).unwrap();
         assert!(ct.nodes[0].is_free_node());
         assert_eq!(ct.n_triangles(), 0);
-        assert_eq!(ct.get_free_nodes(), vec![0, 1, 2]);
+        assert_eq!(ct.free_nodes(), vec![0, 1, 2]);
     }
 
     #[test]
@@ -156,7 +156,7 @@ use super::*;
         let mut ct = PolyCoherentTriangulation::from_poly_triangulation(&tri).unwrap();
         // Add an extra free node.
         ct.set_node(&GpXyz::new(9., 9., 9.), -1).unwrap();
-        let out = ct.get_poly_triangulation().unwrap();
+        let out = ct.poly_triangulation().unwrap();
         assert_eq!(out.nb_nodes(), 8);
         assert_eq!(out.nb_triangles(), 12);
     }

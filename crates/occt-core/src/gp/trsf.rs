@@ -163,7 +163,7 @@ impl GpTrsf {
 
     /// `gp_Trsf::GetRotation()` (`gp_Trsf.cxx:387-390`): the rotation part as a
     /// quaternion, built from the h-vectorial matrix (scale excluded).
-    pub fn get_rotation(&self) -> GpQuaternion {
+    pub fn rotation(&self) -> GpQuaternion {
         let mut q = GpQuaternion::identity();
         q.set_matrix(&self.matrix);
         q
@@ -186,7 +186,7 @@ impl GpTrsf {
     /// row-major 4x4 with rows 1-3 taken from `Value(row, col)` and last row
     /// `[0, 0, 0, 1]`. `NCollection_Mat4` has no port equivalent, so the 4x4 is
     /// mirrored as a plain `[[f64; 4]; 4]` with `SetValue(row, col)` semantics.
-    pub fn get_mat4(&self) -> [[f64; 4]; 4] {
+    pub fn mat4(&self) -> [[f64; 4]; 4] {
         if self.shape == TrsfForm::Identity {
             return [
                 [1.0, 0.0, 0.0, 0.0],
@@ -307,7 +307,7 @@ impl GpTrsf {
         self.shape = TrsfForm::CompoundTrsf;
         self.scale = 1.0;
         self.loc = *t.xyz();
-        self.matrix = r.get_matrix();
+        self.matrix = r.matrix();
     }
 
     /// `gp_Trsf::SetRotation(const gp_Quaternion&)` (`gp_Trsf.cxx:103-109`).
@@ -315,7 +315,7 @@ impl GpTrsf {
         self.shape = TrsfForm::Rotation;
         self.scale = 1.0;
         self.loc = GpXyz::zero();
-        self.matrix = q.get_matrix();
+        self.matrix = q.matrix();
     }
 
     /// `gp_Trsf::SetRotationPart(const gp_Quaternion&)` (`gp_Trsf.cxx:111-156`):
@@ -323,7 +323,7 @@ impl GpTrsf {
     pub fn set_rotation_part(&mut self, q: &GpQuaternion) {
         let has_rotation = !q.is_identity();
         if has_rotation {
-            self.matrix = q.get_matrix();
+            self.matrix = q.matrix();
         } else {
             self.matrix.set_identity();
         }

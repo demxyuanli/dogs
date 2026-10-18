@@ -82,7 +82,7 @@ fn stick_vertices(
             }
             let (s1, s2) = it.indices();
             if mi.contains(&s1) && mi.contains(&s2) {
-                let mut n = it.get_index_new().unwrap();
+                let mut n = it.new_index().unwrap();
                 n = ds.has_shape_sd(n).unwrap_or(n);
                 stick.insert(n);
             }
@@ -98,7 +98,7 @@ fn stick_vertices(
         }
         let (s1, s2) = it.indices();
         if mi.contains(&s1) && mi.contains(&s2) {
-            let mut n = it.get_index_new().unwrap();
+            let mut n = it.new_index().unwrap();
             n = ds.has_shape_sd(n).unwrap_or(n);
             stick.insert(n);
             ef.insert(n);
@@ -489,12 +489,12 @@ fn remove_curve_pb(f: &mut PaveFiller, i_x: usize, i_c: usize, pb1: &BopdsPaveBl
 }
 
 fn import_index(main: &mut BopdsDS, nested: &BopdsDS, n: usize) -> Result<usize, String> {
-    let n = nested.get_same_domain_index(n);
+    let n = nested.same_domain_index(n);
     let Some(s) = nested.shape(n).cloned() else {
         return Err(format!("post_treat_ff: nested shape {n} missing"));
     };
     if let Some(i) = main.index(&s) {
-        return Ok(main.get_same_domain_index(i));
+        return Ok(main.same_domain_index(i));
     }
     match s.shape_type() {
         ShapeType::Vertex => main.append(s),

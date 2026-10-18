@@ -22,7 +22,7 @@ impl Delaun {
                     if prior_elem < 0 {
                         continue;
                     }
-                    let element = self.mesh_data.get_element(prior_elem);
+                    let element = self.mesh_data.element(prior_elem);
                     let mut found = false;
                     for n in 0..3 {
                         if frontier_id == element.link_at(n).abs() {
@@ -88,8 +88,8 @@ impl Delaun {
     pub(super) fn fill_bnd_box(&self, boxes: &mut Vec<BndB2>, v1: i32, v2: i32) {
         let mut b = BndB2::void();
         update_bnd_box(
-            self.mesh_data.get_node(v1).location.coord,
-            self.mesh_data.get_node(v2).location.coord,
+            self.mesh_data.node(v1).location.coord,
+            self.mesh_data.node(v2).location.coord,
             &mut b,
         );
         boxes.push(b);
@@ -102,7 +102,7 @@ impl Delaun {
                 return true;
             }
         }
-        let ref_edge = self.mesh_data.get_link(start_edge_id);
+        let ref_edge = self.mesh_data.link(start_edge_id);
 
         let mut polygon: Vec<i32> = Vec::new();
         let (mut start_node, mut pivot_node);
@@ -115,8 +115,8 @@ impl Delaun {
             start_node = ref_edge.last_node();
             pivot_node = ref_edge.first_node();
         }
-        let start_edge_vertex_s = self.mesh_data.get_node(start_node).location.coord;
-        let mut pivot_vertex = self.mesh_data.get_node(pivot_node).location.coord;
+        let start_edge_vertex_s = self.mesh_data.node(start_node).location.coord;
+        let mut pivot_vertex = self.mesh_data.node(pivot_node).location.coord;
         let mut ref_link_dir = GpVec2d::from_xy(pivot_vertex.subtracted(&start_edge_vertex_s));
         if ref_link_dir.square_magnitude() < PREC2 {
             self.diag_stage(&format!("mesh_left_polygon_of e={start_edge_id} fwd={is_forward} DEGENERATE"));
@@ -154,7 +154,7 @@ impl Delaun {
                 start_node = pivot_node;
                 ref_link_dir = next_link_dir;
                 pivot_node = next_pivot_node;
-                pivot_vertex = self.mesh_data.get_node(next_pivot_node).location.coord;
+                pivot_vertex = self.mesh_data.node(next_pivot_node).location.coord;
                 boxes.push(next_link_bbox);
                 polygon.push(next_link_id);
                 is_skip_leprous = true;
@@ -170,7 +170,7 @@ impl Delaun {
                 boxes.pop();
 
                 let prev_link_info = *polygon.last().unwrap();
-                let prev_link = self.mesh_data.get_link(prev_link_info.abs());
+                let prev_link = self.mesh_data.link(prev_link_info.abs());
                 if prev_link_info > 0 {
                     start_node = prev_link.first_node();
                     pivot_node = prev_link.last_node();
@@ -178,8 +178,8 @@ impl Delaun {
                     start_node = prev_link.last_node();
                     pivot_node = prev_link.first_node();
                 }
-                pivot_vertex = self.mesh_data.get_node(pivot_node).location.coord;
-                let sn = self.mesh_data.get_node(start_node).location.coord;
+                pivot_vertex = self.mesh_data.node(pivot_node).location.coord;
+                let sn = self.mesh_data.node(start_node).location.coord;
                 ref_link_dir = GpVec2d::from_xy(pivot_vertex.subtracted(&sn));
                 is_skip_leprous = false;
             }
@@ -228,7 +228,7 @@ impl Delaun {
             if is_skip_leprous && is_leprous {
                 continue;
             }
-            let neighbor_link = self.mesh_data.get_link(neighbor_id);
+            let neighbor_link = self.mesh_data.link(neighbor_id);
             if self.mesh_data.link_movability(neighbor_id) == VertexState::Free
                 && self.mesh_data.elements_connected_to(neighbor_id).is_empty()
             {
@@ -239,7 +239,7 @@ impl Delaun {
             if other_node == pivot_node {
                 other_node = neighbor_link.last_node();
             }
-            let cur_link_dir = GpVec2d::from_xy(self.mesh_data.get_node(other_node).location.coord.subtracted(&pivot_vertex));
+            let cur_link_dir = GpVec2d::from_xy(self.mesh_data.node(other_node).location.coord.subtracted(&pivot_vertex));
             if cur_link_dir.square_magnitude() < PREC2 {
                 dead_links.insert(neighbor_id);
                 continue;
@@ -298,10 +298,10 @@ impl Delaun {
         is_skip_last_edge: bool,
         link_bbox: &mut BndB2,
     ) -> bool {
-        let link = self.mesh_data.get_link(link_id);
+        let link = self.mesh_data.link(link_id);
         update_bnd_box(
-            self.mesh_data.get_node(link.first_node()).location.coord,
-            self.mesh_data.get_node(link.last_node()).location.coord,
+            self.mesh_data.node(link.first_node()).location.coord,
+            self.mesh_data.node(link.last_node()).location.coord,
             link_bbox,
         );
         let mut poly_len = polygon.len();
@@ -313,7 +313,7 @@ impl Delaun {
         for poly_it in 0..poly_len {
             if !link_bbox.is_out(&poly_boxes[poly_it]) {
                 let poly_link_id = polygon[poly_it].abs();
-                let _poly_link = self.mesh_data.get_link(poly_link_id);
+                let _poly_link = self.mesh_data.link(poly_link_id);
                 if self.mesh_data.link_movability(poly_link_id) == VertexState::Frontier && is_frontier {
                     continue;
                 }
@@ -362,7 +362,7 @@ impl Delaun {
                     elem_it += 1;
                     continue;
                 }
-                let element = self.mesh_data.get_element(elem_id);
+                let element = self.mesh_data.element(elem_id);
                 let mut found = false;
                 for k in 0..3 {
                     if element.link_at(k).abs() == poly_edge_id && (element.link_at(k) > 0) == is_forward {
@@ -378,7 +378,7 @@ impl Delaun {
             }
 
             if poly_it % 2 == 1 {
-                let poly_edge = self.mesh_data.get_link(poly_edge_id);
+                let poly_edge = self.mesh_data.link(poly_edge_id);
                 let first_vertex = poly_edge.first_node();
                 let last_vertex = poly_edge.last_node();
                 poly_vertices_find_map.insert(first_vertex);
@@ -454,7 +454,7 @@ impl Delaun {
             if survived_links.contains(&neighbor_link_id) {
                 continue;
             }
-            let neighbor_link = self.mesh_data.get_link(neighbor_link_id);
+            let neighbor_link = self.mesh_data.link(neighbor_link_id);
             if self.mesh_data.link_movability(neighbor_link_id) == VertexState::Frontier {
                 let mut b = BndB2::void();
                 let is_not_intersect =
@@ -494,15 +494,15 @@ impl Delaun {
         if poly_len < 3 {
             return false;
         }
-        let center = self.mesh_data.get_node(vertex_id).location;
-        let first_vertex = self.mesh_data.get_node(polygon_vertices[0]).location;
+        let center = self.mesh_data.node(vertex_id).location;
+        let first_vertex = self.mesh_data.node(polygon_vertices[0]).location;
         let mut prev_dir = GpVec2d::from_xy(first_vertex.coord.subtracted(&center.coord));
         if prev_dir.square_magnitude() < PREC2 {
             return true;
         }
         let mut total_ang = 0.0;
         for poly_it in 1..poly_len {
-            let poly_vertex = self.mesh_data.get_node(polygon_vertices[poly_it]).location;
+            let poly_vertex = self.mesh_data.node(polygon_vertices[poly_it]).location;
             let cur_dir = GpVec2d::from_xy(poly_vertex.coord.subtracted(&center.coord));
             if cur_dir.square_magnitude() < PREC2 {
                 return true;
@@ -536,7 +536,7 @@ impl Delaun {
         self.kill_link_triangles(link_to_check_id, loop_edges);
         let neighbors: Vec<i32> = self.mesh_data.links_connected_to(end_point).to_vec();
         for &neighbor_id in &neighbors {
-            let neighbor_link = self.mesh_data.get_link(neighbor_id);
+            let neighbor_link = self.mesh_data.link(neighbor_id);
             let mut other_node = neighbor_link.first_node();
             if other_node == end_point {
                 other_node = neighbor_link.last_node();
@@ -556,8 +556,8 @@ impl Delaun {
         }
     }
 
-    pub(super) fn get_oriented_nodes(&self, edge_id: i32, is_forward: bool, nodes: &mut [i32]) {
-        let edge = self.mesh_data.get_link(edge_id);
+    pub(super) fn oriented_nodes(&self, edge_id: i32, is_forward: bool, nodes: &mut [i32]) {
+        let edge = self.mesh_data.link(edge_id);
         if is_forward {
             nodes[0] = edge.first_node();
             nodes[1] = edge.last_node();

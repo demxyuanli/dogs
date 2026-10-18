@@ -44,7 +44,7 @@ impl IntfTangentZone {
 
     /// `GetPoint(Index)` (`Intf_TangentZone.cxx:226-229`). OCCT uses 1-based
     /// indexing.
-    pub fn get_point(&self, index: usize) -> &IntfSectionPoint {
+    pub fn point(&self, index: usize) -> &IntfSectionPoint {
         &self.result[index - 1]
     }
 
@@ -68,7 +68,7 @@ impl IntfTangentZone {
     /// `Append(Tzi)` (`Intf_TangentZone.cxx:64-71`).
     pub fn append_zone(&mut self, tzi: &Self) {
         for ipi in 1..=tzi.number_of_points() {
-            let p = *tzi.get_point(ipi);
+            let p = *tzi.point(ipi);
             self.polygon_insert(&p);
         }
     }

@@ -178,7 +178,7 @@ impl Powell {
     }
 
     /// `GetStatus()`.
-    pub fn get_status(&self) -> MathStatus {
+    pub fn status(&self) -> MathStatus {
         self.status
     }
 
@@ -243,7 +243,7 @@ impl Powell {
 
             if self.is_solution_reached() {
                 // Termination criterion (`cxx:182-189`).
-                self.state = f.get_state_number();
+                self.state = f.state_number();
                 self.done = true;
                 self.status = MathStatus::Ok;
                 return;

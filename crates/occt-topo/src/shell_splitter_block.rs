@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::abs::{Orientation, ShapeType};
-use crate::algo_tools_face::{get_face_off, CoupleOfShape};
+use crate::algo_tools_face::{face_off, CoupleOfShape};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::connexity_block::ConnexityBlock;
@@ -31,7 +31,7 @@ fn shape_key(s: &TopoShape) -> usize {
 /// the ancestor maps above. Two geometric views of one segment may carry
 /// opposite intrinsic directions, so the orientation test is expressed as the
 /// traversal test it stands for in OCCT ([`crate::shell_splitter::edge_traversal`]).
-fn get_edge_off_geo(e1: &Edge, f2: &TopoShape) -> Option<Edge> {
+fn edge_off_geo(e1: &Edge, f2: &TopoShape) -> Option<Edge> {
     let k = edge_ek(e1);
     for w in crate::bop_occt_util::iter_children(f2) {
         if w.shape_type() != ShapeType::Wire {
@@ -348,7 +348,7 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                     if is_same(&f_val, fl) || added.contains(&ori_key(fl)) {
                         continue;
                     }
-                    let Some(el) = get_edge_off_geo(&e_val, fl) else {
+                    let Some(el) = edge_off_geo(&e_val, fl) else {
                         continue;
                     };
                     if is_boundary && !boundary.contains(&shape_key(fl)) {
@@ -364,7 +364,7 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                     if lcs_off.len() == 1 {
                         sel_val = Some(lcs_off[0].shape2.clone());
                     } else if let Some((f, _)) =
-                        get_face_off(&e_val, &Face(f_val.clone()), &lcs_off, &ctx)
+                        face_off(&e_val, &Face(f_val.clone()), &lcs_off, &ctx)
                     {
                         sel_val = Some(f.0);
                     }

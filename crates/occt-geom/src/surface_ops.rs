@@ -74,7 +74,7 @@ impl IsoCurve {
         }
     }
 
-    fn periodic(&self) -> bool {
+    fn is_periodic(&self) -> bool {
         match self.direction {
             'u' => self.surface.is_u_periodic(),
             _ => self.surface.is_v_periodic(),
@@ -130,9 +130,9 @@ impl Curve for IsoCurve {
 
     fn first_parameter(&self) -> f64 { self.range().0 }
     fn last_parameter(&self) -> f64 { self.range().1 }
-    fn is_periodic(&self) -> bool { self.periodic() }
+    fn is_periodic(&self) -> bool { self.is_periodic() }
     fn period(&self) -> f64 {
-        if self.periodic() {
+        if self.is_periodic() {
             let (a, b) = self.range();
             b - a
         } else {

@@ -53,12 +53,12 @@ pub struct SelfIntersectingEdgeCheck {
 
 impl SelfIntersectingEdgeCheck {
     /// `LastCheckStatus(ShapeExtend_FAIL)` (`cxx:2726`, `:2728`).
-    pub fn failed(&self) -> bool {
+    pub fn is_failed(&self) -> bool {
         self.fail1 || self.fail2
     }
 
     /// `LastCheckStatus(ShapeExtend_DONE)` (`cxx:2729`, `cxx:2821`).
-    pub fn done(&self) -> bool {
+    pub fn is_done(&self) -> bool {
         self.done1
     }
 }
@@ -177,12 +177,12 @@ pub struct IntersectingEdgesCheck {
 
 impl IntersectingEdgesCheck {
     /// `LastCheckStatus(ShapeExtend_FAIL)` (`cxx:1126-1132`).
-    pub fn failed(&self) -> bool {
+    pub fn is_failed(&self) -> bool {
         self.fail1 || self.fail2 || self.fail3
     }
 
     /// `LastCheckStatus(ShapeExtend_DONE)` (`cxx:1136`).
-    pub fn done(&self) -> bool {
+    pub fn is_done(&self) -> bool {
         self.done1
     }
 }
@@ -473,7 +473,7 @@ pub struct FixIntersectingEdgesStatus {
 
 impl FixIntersectingEdgesStatus {
     /// `LastFixStatus(ShapeExtend_DONE)`.
-    pub fn done(&self) -> bool {
+    pub fn is_done(&self) -> bool {
         self.done1
             || self.done2
             || self.done3
@@ -508,10 +508,10 @@ pub fn fix_intersecting_edges(
 
     // `cxx:2972-2989`.
     let check = check_intersecting_edges(wire, face, num, preci);
-    if check.failed() {
+    if check.is_failed() {
         st.fail1 = true;
     }
-    if !check.done() {
+    if !check.is_done() {
         return st;
     }
 
@@ -681,7 +681,7 @@ pub fn fix_intersecting_edges(
     }
 
     // `cxx:3207-3209`.
-    if !st.done() {
+    if !st.is_done() {
         return st;
     }
 

@@ -98,7 +98,7 @@ impl ComposeShell {
             }
             if !redo {
                 let edge = wire.edge(i).cloned();
-                let patch = wire.get_patch_index(i).unwrap_or((0, 0, 0, 0));
+                let patch = wire.patch_index(i).unwrap_or((0, 0, 0, 0));
                 if let Some(edge) = edge {
                     let (iumin, iumax, ivmin, ivmax) = patch;
                     // cxx:988: position code of the first segment of the edge.
@@ -491,10 +491,10 @@ impl ComposeShell {
     fn split_res(&self, is_cut_by_u: bool, cut_index: i32, vtol: f64) -> (f64, f64) {
         let (mut u_res, mut v_res) = (self.u_resolution, self.v_resolution);
         if is_cut_by_u {
-            let grid_res = get_grid_resolution(self.grid.u_joint_values(), cut_index) / vtol;
+            let grid_res = grid_resolution(self.grid.u_joint_values(), cut_index) / vtol;
             u_res = self.u_resolution.min(grid_res);
         } else {
-            let grid_res = get_grid_resolution(self.grid.v_joint_values(), cut_index) / vtol;
+            let grid_res = grid_resolution(self.grid.v_joint_values(), cut_index) / vtol;
             v_res = self.v_resolution.min(grid_res);
         }
         (u_res, v_res)

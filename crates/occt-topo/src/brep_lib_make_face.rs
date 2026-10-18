@@ -485,7 +485,7 @@ pub fn make_face_uv(
 ///   the returned face's wire orientations.
 pub fn make_face_from_wire(wire: &Wire, only_plane: bool) -> Option<Face> {
     let fs = crate::brep_lib_find_surface::FindSurface::new(&wire.0, -1.0, only_plane, true);
-    if !fs.found() {
+    if !fs.is_found() {
         return None;
     }
     let surface = fs.surface()?;
@@ -535,6 +535,6 @@ fn strip_degenerated(wire: &Wire) -> Wire {
     }
     let mut out = TopoBuilder::new().make_wire(&kept);
     out.0.set_orientation(wire.0.orientation());
-    out.0.set_closed(wire.closed());
+    out.0.set_closed(wire.is_closed());
     out
 }

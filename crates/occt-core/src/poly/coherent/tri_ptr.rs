@@ -45,16 +45,16 @@ impl PolyCoherentNode {
         Self { coord: pnt, uv: [INFINITE; 2], normal: [0.0; 3], index: -1, triangles: PolyCoherentTriPtr::default() }
     }
     pub fn set_uv(&mut self, u: f64, v: f64) { self.uv = [u, v]; }
-    pub fn get_u(&self) -> f64 { self.uv[0] }
-    pub fn get_v(&self) -> f64 { self.uv[1] }
+    pub fn u(&self) -> f64 { self.uv[0] }
+    pub fn v(&self) -> f64 { self.uv[1] }
     pub fn set_normal(&mut self, v: &GpXyz) { self.normal = [v.x, v.y, v.z]; }
     pub fn has_normal(&self) -> bool {
         self.normal[0] * self.normal[0] + self.normal[1] * self.normal[1] + self.normal[2] * self.normal[2]
             > CONFUSION
     }
-    pub fn get_normal(&self) -> GpXyz { GpXyz::new(self.normal[0], self.normal[1], self.normal[2]) }
+    pub fn normal(&self) -> GpXyz { GpXyz::new(self.normal[0], self.normal[1], self.normal[2]) }
     pub fn set_index(&mut self, i: isize) { self.index = i; }
-    pub fn get_index(&self) -> isize { self.index }
+    pub fn index(&self) -> isize { self.index }
     /// A free node is one without any incident triangle.
     pub fn is_free_node(&self) -> bool { self.triangles.is_empty() }
 }
@@ -84,9 +84,9 @@ impl PolyCoherentLink {
         let a0 = tri.node(ind[i_side]);
         let a1 = tri.node(ind[i_side + 1]);
         if a0 < a1 {
-            Self { node: [a0, a1], opposite_node: [tri.node(i_side), tri.get_connected_node(i_side)], attribute: None }
+            Self { node: [a0, a1], opposite_node: [tri.node(i_side), tri.connected_node(i_side)], attribute: None }
         } else {
-            Self { node: [a1, a0], opposite_node: [tri.get_connected_node(i_side), tri.node(i_side)], attribute: None }
+            Self { node: [a1, a0], opposite_node: [tri.connected_node(i_side), tri.node(i_side)], attribute: None }
         }
     }
     /// `ind` 0 or 1 selects the smaller/larger node of the link.
@@ -94,7 +94,7 @@ impl PolyCoherentLink {
     /// Opposite node on the left (0) or right (1) incident triangle.
     pub fn opposite_node(&self, ind: usize) -> isize { self.opposite_node[ind & 1] }
     pub fn set_attribute(&mut self, a: Option<usize>) { self.attribute = a; }
-    pub fn get_attribute(&self) -> Option<usize> { self.attribute }
+    pub fn attribute(&self) -> Option<usize> { self.attribute }
     pub fn is_empty(&self) -> bool { self.node[0] < 0 || self.node[1] < 0 }
     pub fn nullify(&mut self) { *self = Self::new(); }
 }
@@ -126,9 +126,9 @@ impl PolyCoherentTriangle {
     pub fn node(&self, i: usize) -> isize { self.nodes[i] }
     pub fn is_empty(&self) -> bool { self.nodes[0] < 0 || self.nodes[1] < 0 || self.nodes[2] < 0 }
     pub fn n_connections(&self) -> usize { self.n_connections }
-    pub fn get_connected_node(&self, i: usize) -> isize { self.nodes_on_connected[i] }
-    pub fn get_connected_tri(&self, i: usize) -> Option<usize> { self.connected[i] }
-    pub fn get_link(&self, i: usize) -> Option<usize> { self.links[i] }
+    pub fn connected_node(&self, i: usize) -> isize { self.nodes_on_connected[i] }
+    pub fn connected_tri(&self, i: usize) -> Option<usize> { self.connected[i] }
+    pub fn link(&self, i: usize) -> Option<usize> { self.links[i] }
     /// Returns the side of the connection with the given triangle, or -1.
     pub fn find_connection(&self, tri_id: usize) -> isize {
         if self.connected[0] == Some(tri_id) { 0 }
@@ -199,7 +199,7 @@ impl PolyCoherentTriangulation {
 
     /// Exports active (non-free) nodes and non-empty triangles to a full
     /// `PolyTriangulation`.
-    pub fn get_poly_triangulation(&self) -> Result<PolyTriangulation, String> {
+    pub fn poly_triangulation(&self) -> Result<PolyTriangulation, String> {
         let n_nodes = self.n_nodes();
         let n_tris = self.n_triangles();
         if n_nodes == 0 || n_tris == 0 {
@@ -216,15 +216,15 @@ impl PolyCoherentTriangulation {
             node_map[i] = count;
             out.set_node(count - 1, GpPnt::from_xyz(&node.coord));
             if node.has_normal() { any_normal = true; }
-            if node.get_u() * node.get_u() + node.get_v() * node.get_v() > CONFUSION { any_uv = true; }
+            if node.u() * node.u() + node.v() * node.v() > CONFUSION { any_uv = true; }
         }
         if any_normal { out.add_normals(); }
         if any_uv { out.add_uv_nodes(); }
         for (i, node) in self.nodes.iter().enumerate() {
             if node.is_free_node() { continue; }
             let k = node_map[i] - 1;
-            if any_normal { out.set_normal(k, GpPnt::from_xyz(&node.get_normal())); }
-            if any_uv { out.set_uv_node(k, GpPnt2d::new(node.get_u(), node.get_v())); }
+            if any_normal { out.set_normal(k, GpPnt::from_xyz(&node.normal())); }
+            if any_uv { out.set_uv_node(k, GpPnt2d::new(node.u(), node.v())); }
         }
         count = 0;
         for tri in &self.triangles {
@@ -278,7 +278,7 @@ impl PolyCoherentTriangulation {
     pub fn link(&self, i: usize) -> &PolyCoherentLink { &self.links[i] }
 
     /// Indices of free nodes (nodes without incident triangles).
-    pub fn get_free_nodes(&self) -> Vec<usize> {
+    pub fn free_nodes(&self) -> Vec<usize> {
         (0..self.nodes.len()).filter(|&i| self.nodes[i].is_free_node()).collect()
     }
 

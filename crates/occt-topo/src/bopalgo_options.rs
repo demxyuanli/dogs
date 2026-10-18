@@ -82,7 +82,7 @@ impl BopAlgoOptions {
     pub fn new() -> Self {
         Self {
             fuzzy_value: 1e-7,
-            run_parallel: get_parallel_mode(),
+            run_parallel: parallel_mode(),
             use_obb: false,
             errors: Vec::new(),
             warnings: Vec::new(),
@@ -253,7 +253,7 @@ fn dump_alerts(kind: &str, alerts: &[String]) -> String {
 /// Returns the process-global parallel mode.
 ///
 /// Mirrors `BOPAlgo_Options::GetParallelMode()`.
-pub fn get_parallel_mode() -> bool {
+pub fn parallel_mode() -> bool {
     GLOBAL_PARALLEL_MODE.load(Ordering::Relaxed)
 }
 
@@ -274,7 +274,7 @@ mod tests {
         set_parallel_mode(false);
         let o = BopAlgoOptions::new();
         assert_eq!(o.fuzzy_value(), 1e-7, "fuzzy defaults to Precision::Confusion");
-        assert_eq!(o.run_parallel(), get_parallel_mode(), "run_parallel inherits the global");
+        assert_eq!(o.run_parallel(), parallel_mode(), "run_parallel inherits the global");
         assert!(!o.use_obb(), "OBB off by default");
         assert!(!o.has_errors());
         assert!(!o.has_warnings());
@@ -394,12 +394,12 @@ mod tests {
     #[test]
     fn global_parallel_mode_is_an_atomic() {
         set_parallel_mode(true);
-        assert!(get_parallel_mode());
+        assert!(parallel_mode());
         // New instances inherit the global.
         let o = BopAlgoOptions::new();
         assert!(o.run_parallel());
         set_parallel_mode(false);
-        assert!(!get_parallel_mode());
+        assert!(!parallel_mode());
         let o2 = BopAlgoOptions::new();
         assert!(!o2.run_parallel());
     }

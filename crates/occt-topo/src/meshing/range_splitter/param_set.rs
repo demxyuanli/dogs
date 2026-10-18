@@ -386,7 +386,7 @@ fn adaptor_surface_intervals(
 /// `NbUIntervals` / `UIntervals` see the full `Geom_Surface` bounds. The
 /// adjusted range `GetRangeU()` (`cxx:460-461`) is only fed to the uniform
 /// fallback grid (`cxx:430`).
-pub(super) fn get_undefined_interval(
+pub(super) fn undefined_interval(
     s: &dyn RangeSplitter,
     is_u: bool,
     continuity: u8,
@@ -409,7 +409,7 @@ pub(super) fn get_undefined_interval(
     }
     let mut intervals_nb = iv.len().saturating_sub(1) as i32;
     if intervals_nb == 1 {
-        intervals_nb = s.get_undefined_interval_nb(is_u, continuity);
+        intervals_nb = s.undefined_interval_nb(is_u, continuity);
         if intervals_nb > 1 {
             let diff = (range.1 - range.0) / intervals_nb as f64;
             return (1..intervals_nb)
@@ -566,8 +566,8 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
         // direction adds no interval sample. INTERNAL edge params are already
         // in `parameters_u/v` via `grabParamsOfEdges` (`cxx:487`); do not
         // invent range-end samples (not in cxx).
-        let u_intervals = get_undefined_interval(s, true, GEOM_ABS_CN, range_u);
-        let v_intervals = get_undefined_interval(s, false, GEOM_ABS_CN, range_v);
+        let u_intervals = undefined_interval(s, true, GEOM_ABS_CN, range_u);
+        let v_intervals = undefined_interval(s, false, GEOM_ABS_CN, range_v);
         let is_split = to_split_intervals(surface.as_ref(), &u_intervals, &v_intervals);
         if std::env::var("NURBSGRID").is_ok() {
             eprintln!(
@@ -1134,7 +1134,7 @@ pub trait RangeSplitter {
 
     /// Number of intervals to subdivide an undefined range into. Source:
     /// `getUndefinedIntervalNb` — `(isU ? NbUPoles : NbVPoles) - 1` for NURBS.
-    fn get_undefined_interval_nb(&self, _is_u: bool, continuity: u8) -> i32 {
+    fn undefined_interval_nb(&self, _is_u: bool, continuity: u8) -> i32 {
         ((continuity as i32) + 1).clamp(2, 32)
     }
 

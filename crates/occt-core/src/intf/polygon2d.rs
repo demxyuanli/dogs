@@ -15,7 +15,7 @@ pub trait IntfPolygon2d {
     fn bounding(&self) -> &BndBox2d;
 
     /// `Closed()` (`Intf_Polygon2d.cxx:20-23`). Default `false`.
-    fn closed(&self) -> bool {
+    fn is_closed(&self) -> bool {
         false
     }
 

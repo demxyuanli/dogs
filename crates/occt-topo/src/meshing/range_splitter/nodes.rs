@@ -30,7 +30,7 @@ impl RangeSplitter for UndefinedRangeSplitter {
         Some(&mut self.inner.inner.v_params)
     }
 
-    fn get_undefined_interval_nb(&self, _is_u: bool, _continuity: u8) -> i32 {
+    fn undefined_interval_nb(&self, _is_u: bool, _continuity: u8) -> i32 {
         1
     }
 }
@@ -149,7 +149,7 @@ impl RangeSplitter for ExtrusionRangeSplitter {
         Some(&mut self.inner.inner.v_params)
     }
 
-    fn get_undefined_interval_nb(&self, _is_u: bool, continuity: u8) -> i32 {
+    fn undefined_interval_nb(&self, _is_u: bool, continuity: u8) -> i32 {
         // `BRepMesh_ExtrusionRangeSplitter.cxx:24-47`: BasisCurve NbIntervals,
         // then NbPoles-1 for Bezier/BSpline when the curve is a single span.
         let Some(surf) = self.surface() else {

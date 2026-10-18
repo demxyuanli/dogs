@@ -90,7 +90,7 @@ pub(super) fn is_inter(bond: &BndBox2d, l: &GpLin2d, p: f64) -> bool {
 /// `GetTangentAsChord` (`BRepClass_Intersector.cxx:520-550`). `None` when the
 /// chord is shorter than `SquarePConfusion` (OCCT leaves the output
 /// unchanged).
-pub(super) fn get_tangent_as_chord(
+pub(super) fn tangent_as_chord(
     pcurve: &dyn Curve2d,
     param: f64,
     first: f64,

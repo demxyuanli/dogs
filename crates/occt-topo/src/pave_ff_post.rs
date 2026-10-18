@@ -25,7 +25,7 @@ use crate::builder::TopoBuilder;
 use crate::iterator::ShapeIterator;
 use crate::pave_ff::CoupleOfPaveBlocks;
 use crate::pave_ff_exist::pb_key;
-use crate::pave_ff_make_blocks_helpers::{get_stick_vertices, remove_used_vertices};
+use crate::pave_ff_make_blocks_helpers::{collect_stick_vertices, remove_used_vertices};
 use crate::pave_ff_se::collect_micro_section_vertices;
 use crate::pave_ff_update::DmExEdges;
 use crate::pave_filler::PaveFiller;
@@ -51,7 +51,7 @@ pub fn verts_unused_post_treat(f: &PaveFiller) -> Vec<TopoShape> {
     let mut unused: HashMap<usize, TopoShape> = HashMap::new();
     for i in 0..nb_ff {
         let (n_f1, n_f2) = f.ds().interf_ff()[i].indices();
-        let (mut mv, _mv_ef, _mi) = get_stick_vertices(f.ds(), n_f1, n_f2);
+        let (mut mv, _mv_ef, _mi) = collect_stick_vertices(f.ds(), n_f1, n_f2);
         remove_used_vertices(f.ds().interf_ff()[i].curves(), &mut mv);
         for n_v in mv {
             let Some(s) = f.ds().shape(n_v).cloned() else {
@@ -145,12 +145,12 @@ fn fast_path_one(
 }
 
 fn import_index(main: &mut BopdsDS, nested: &BopdsDS, n: usize) -> Result<usize, String> {
-    let n = nested.get_same_domain_index(n);
+    let n = nested.same_domain_index(n);
     let Some(s) = nested.shape(n).cloned() else {
         return Err(format!("post_treat_ff: nested shape {n} missing"));
     };
     if let Some(i) = main.index(&s) {
-        return Ok(main.get_same_domain_index(i));
+        return Ok(main.same_domain_index(i));
     }
     match s.shape_type() {
         ShapeType::Vertex => main.append(s),

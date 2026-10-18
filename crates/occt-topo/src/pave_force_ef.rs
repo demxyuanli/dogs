@@ -21,7 +21,7 @@ use crate::edge_face::EdgeFace;
 use crate::fclass2d::FaceState;
 use crate::inttools_data::CommonPartType;
 use crate::pave_common::fill_shrunk_data_for_block;
-use crate::pave_force_ve::get_pb_box;
+use crate::pave_force_ve::pave_block_box;
 use crate::pave_ff_exist::{pb_key, PbKey};
 use crate::pave_filler::PaveFiller;
 use crate::shape::{Edge, Face, Vertex};
@@ -208,7 +208,7 @@ pub fn force_interf_ef_on(
             let e_val = Edge(es);
             // `_5.cxx:903-910`: BVH Select of the shrunk PB box against the
             // face box. Whole-edge boxes would keep pairs that OCCT rejects.
-            if let Some((_, _, _, _, shrunk_box)) = get_pb_box(&e_val, pb_val, &mut pb_box) {
+            if let Some((_, _, _, _, shrunk_box)) = pave_block_box(&e_val, pb_val, &mut pb_box) {
                 if shrunk_box.is_out_box(&box_f) {
                     continue;
                 }

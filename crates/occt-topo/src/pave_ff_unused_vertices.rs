@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use crate::pave_ff_make_blocks_helpers::{get_stick_vertices, remove_used_vertices};
+use crate::pave_ff_make_blocks_helpers::{collect_stick_vertices, remove_used_vertices};
 use crate::pave_filler::PaveFiller;
 use crate::shape::TopoShape;
 
@@ -18,7 +18,7 @@ pub fn unused_stick_vertices(f: &PaveFiller) -> Vec<TopoShape> {
     let mut seen: HashSet<usize> = HashSet::new();
     for i in 0..nb_ff {
         let (n_f1, n_f2) = f.ds().interf_ff()[i].indices();
-        let (mut mv, _mv_ef, _mi) = get_stick_vertices(f.ds(), n_f1, n_f2);
+        let (mut mv, _mv_ef, _mi) = collect_stick_vertices(f.ds(), n_f1, n_f2);
         remove_used_vertices(f.ds().interf_ff()[i].curves(), &mut mv);
         for n_v in mv {
             if !seen.insert(n_v) {

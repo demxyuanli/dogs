@@ -42,7 +42,7 @@ impl FunctionAllRoots {
 
         let nbp = s.nb_points();
         let mut val = 0.0;
-        f.value(s.get_parameter(1), &mut val);
+        f.value(s.parameter(1), &mut val);
         let mut p_nul = val.abs() <= eps_nul;
         let mut val_sav = 0.0;
         if !p_nul {
@@ -60,7 +60,7 @@ impl FunctionAllRoots {
         let mut fini = i > nbp;
 
         while !fini {
-            f.value(s.get_parameter(i), &mut val);
+            f.value(s.parameter(i), &mut val);
             let nul = val.abs() <= eps_nul;
             if !nul {
                 val_sav = val;
@@ -72,8 +72,8 @@ impl FunctionAllRoots {
                 let mut cst = if val > 0.0 { eps_nul } else { -eps_nul };
                 let res1 = FunctionRoots::new(
                     f,
-                    s.get_parameter(i - 1),
-                    s.get_parameter(i),
+                    s.parameter(i - 1),
+                    s.parameter(i),
                     10,
                     eps_x,
                     eps_f,
@@ -91,8 +91,8 @@ impl FunctionAllRoots {
                 cst = -cst;
                 let res2 = FunctionRoots::new(
                     f,
-                    s.get_parameter(i - 1),
-                    s.get_parameter(i),
+                    s.parameter(i - 1),
+                    s.parameter(i),
                     10,
                     eps_x,
                     eps_f,
@@ -115,17 +115,17 @@ impl FunctionAllRoots {
             } else if !inter_nul && p_nul && nul {
                 inter_nul = true;
                 if i == 2 {
-                    deb_nul = s.get_parameter(1);
+                    deb_nul = s.parameter(1);
                     let mut val_bid = 0.0;
                     f.value(deb_nul, &mut val_bid);
-                    ind_d = f.get_state_number();
+                    ind_d = f.state_number();
                     nul_d = true;
                 } else {
                     let mut cst = if val_sav > 0.0 { eps_nul } else { -eps_nul };
                     let res1 = FunctionRoots::new(
                         f,
-                        s.get_parameter(i - 2),
-                        s.get_parameter(i - 1),
+                        s.parameter(i - 2),
+                        s.parameter(i - 1),
                         10,
                         eps_x,
                         eps_f,
@@ -142,8 +142,8 @@ impl FunctionAllRoots {
                     cst = -cst;
                     let res3 = FunctionRoots::new(
                         f,
-                        s.get_parameter(i - 2),
-                        s.get_parameter(i - 1),
+                        s.parameter(i - 2),
+                        s.parameter(i - 1),
                         10,
                         eps_x,
                         eps_f,
@@ -171,10 +171,10 @@ impl FunctionAllRoots {
         if inter_nul {
             pdeb.push(deb_nul);
             ideb.push(ind_d);
-            fin_nul = s.get_parameter(nbp);
+            fin_nul = s.parameter(nbp);
             let mut val_bid = 0.0;
             f.value(fin_nul, &mut val_bid);
-            ind_f = f.get_state_number();
+            ind_f = f.state_number();
             pfin.push(fin_nul);
             ifin.push(ind_f);
             nul_f = true;
@@ -183,8 +183,8 @@ impl FunctionAllRoots {
         if pdeb.is_empty() {
             let res = FunctionRoots::new(
                 f,
-                s.get_parameter(1),
-                s.get_parameter(nbp),
+                s.parameter(1),
+                s.parameter(nbp),
                 nbp,
                 eps_x,
                 eps_f,
@@ -203,14 +203,14 @@ impl FunctionAllRoots {
         } else {
             let nbp_min = 3;
             if !nul_d {
-                let nbrpt = (((pdeb[0] - s.get_parameter(1))
-                    / (s.get_parameter(nbp) - s.get_parameter(1)))
+                let nbrpt = (((pdeb[0] - s.parameter(1))
+                    / (s.parameter(nbp) - s.parameter(1)))
                 .abs()
                     * nbp as f64)
                     .trunc() as i32;
                 let res = FunctionRoots::new(
                     f,
-                    s.get_parameter(1),
+                    s.parameter(1),
                     pdeb[0],
                     if nbrpt > nbp_min { nbrpt } else { nbp_min },
                     eps_x,
@@ -230,7 +230,7 @@ impl FunctionAllRoots {
             }
             for k in 2..=pdeb.len() {
                 let nbrpt = (((pdeb[k - 1] - pfin[k - 2])
-                    / (s.get_parameter(nbp) - s.get_parameter(1)))
+                    / (s.parameter(nbp) - s.parameter(1)))
                 .abs()
                     * nbp as f64)
                     .trunc() as i32;
@@ -256,15 +256,15 @@ impl FunctionAllRoots {
             }
             if !nul_f {
                 let last = pdeb.len();
-                let nbrpt = (((s.get_parameter(nbp) - pfin[last - 1])
-                    / (s.get_parameter(nbp) - s.get_parameter(1)))
+                let nbrpt = (((s.parameter(nbp) - pfin[last - 1])
+                    / (s.parameter(nbp) - s.parameter(1)))
                 .abs()
                     * nbp as f64)
                     .trunc() as i32;
                 let res = FunctionRoots::new(
                     f,
                     pfin[last - 1],
-                    s.get_parameter(nbp),
+                    s.parameter(nbp),
                     if nbrpt > nbp_min { nbrpt } else { nbp_min },
                     eps_x,
                     eps_f,
@@ -306,14 +306,14 @@ impl FunctionAllRoots {
     }
 
     /// `GetInterval(Index, A, B)` (`math_FunctionAllRoots.lxx:36-41`), 1-based.
-    pub fn get_interval(&self, index: i32) -> (f64, f64) {
+    pub fn interval(&self, index: i32) -> (f64, f64) {
         assert!(self.done, "StdFail_NotDone in math_FunctionAllRoots::GetInterval");
         (self.pdeb[(index - 1) as usize], self.pfin[(index - 1) as usize])
     }
 
     /// `GetIntervalState(Index, IFirst, ILast)` (`math_FunctionAllRoots.lxx:43-49`),
     /// 1-based.
-    pub fn get_interval_state(&self, index: i32) -> (i32, i32) {
+    pub fn interval_state(&self, index: i32) -> (i32, i32) {
         assert!(
             self.done,
             "StdFail_NotDone in math_FunctionAllRoots::GetIntervalState"
@@ -328,13 +328,13 @@ impl FunctionAllRoots {
     }
 
     /// `GetPoint(Index)` (`math_FunctionAllRoots.lxx:57-61`), 1-based.
-    pub fn get_point(&self, index: i32) -> f64 {
+    pub fn point(&self, index: i32) -> f64 {
         assert!(self.done, "StdFail_NotDone in math_FunctionAllRoots::GetPoint");
         self.piso[(index - 1) as usize]
     }
 
     /// `GetPointState(Index)` (`math_FunctionAllRoots.lxx:63-68`), 1-based.
-    pub fn get_point_state(&self, index: i32) -> i32 {
+    pub fn point_state(&self, index: i32) -> i32 {
         assert!(self.done, "StdFail_NotDone in math_FunctionAllRoots::GetPointState");
         self.iiso[(index - 1) as usize]
     }

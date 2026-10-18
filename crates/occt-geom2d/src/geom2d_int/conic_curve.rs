@@ -382,7 +382,7 @@ impl Geom2dIntConicCurve {
 
         // Traitement des Points Solutions
         for i in 1..=nb_points_solution {
-            let param2 = sol.get_point(i);
+            let param2 = sol.point(i);
             let mut pt = GpPnt2d::new(0.0, 0.0);
             let mut param1 = Self::find_u(param2, &mut pt, par_curve, imp_tool);
 
@@ -463,7 +463,7 @@ impl Geom2dIntConicCurve {
         let mut j2 = 1;
         for j in 1..=nb_segments_solution {
             let mut ptemp = GpPnt2d::new(0.0, 0.0);
-            let (param2_inf, param2_sup) = sol.get_interval(j);
+            let (param2_inf, param2_sup) = sol.interval(j);
             let mut param1_inf = Self::find_u(param2_inf, &mut ptemp, par_curve, imp_tool);
             let mut param1_sup = Self::find_u(param2_sup, &mut ptemp, par_curve, imp_tool);
 

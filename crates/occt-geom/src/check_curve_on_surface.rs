@@ -453,7 +453,7 @@ fn min_computing(
     let mut min_sol = NewtonMinimum::with_defaults(1);
     min_sol.perform(func, &out_param);
 
-    if min_sol.is_done() && min_sol.get_status() == MathStatus::Ok {
+    if min_sol.is_done() && min_sol.status() == MathStatus::Ok {
         // math_NewtonMinimum has precised the value. We take it.
         out_param.set_value(1, min_sol.location().value(1));
         *best_parameter = out_param.value(1);

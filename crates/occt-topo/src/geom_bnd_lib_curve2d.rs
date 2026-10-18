@@ -30,7 +30,7 @@
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::{GpCirc2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d};
 use occt_core::kernel::geomabs::CurveType;
-use occt_geom2d::adaptor_curve::get_type2d;
+use occt_geom2d::adaptor_curve::type2d;
 use occt_geom2d::curve::Curve2d;
 
 use crate::geom_bnd_lib_bezier2d::box_bezier_as_curve;
@@ -59,7 +59,7 @@ pub enum GeomAbsCurve2d {
 
 /// Map a pcurve to the dispatcher kind (`GeomBndLib_Curve2d` ctor from handle).
 pub fn curve2d_abs_type(curve: &dyn Curve2d) -> GeomAbsCurve2d {
-    match get_type2d(curve) {
+    match type2d(curve) {
         CurveType::Line => GeomAbsCurve2d::Line,
         CurveType::Circle => GeomAbsCurve2d::Circle,
         CurveType::Ellipse => GeomAbsCurve2d::Ellipse,

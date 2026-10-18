@@ -59,10 +59,10 @@ impl ComposeShell {
                 vf1 += shift_v;
                 vl1 += shift_v;
                 // cxx:2182-2198.
-                let iumin = 0.max(get_patch_index(uf1 + pprec, self.grid.u_joint_values(), self.u_closed));
-                let iumax = get_patch_index(ul1 - pprec, self.grid.u_joint_values(), self.u_closed) + 1;
-                let ivmin = 0.max(get_patch_index(vf1 + pprec, self.grid.v_joint_values(), self.v_closed));
-                let ivmax = get_patch_index(vl1 - pprec, self.grid.v_joint_values(), self.v_closed) + 1;
+                let iumin = 0.max(patch_index(uf1 + pprec, self.grid.u_joint_values(), self.u_closed));
+                let iumax = patch_index(ul1 - pprec, self.grid.u_joint_values(), self.u_closed) + 1;
+                let ivmin = 0.max(patch_index(vf1 + pprec, self.grid.v_joint_values(), self.v_closed));
+                let ivmax = patch_index(vl1 - pprec, self.grid.v_joint_values(), self.v_closed) + 1;
                 for j in 1..=w.nb_edges() {
                     w.define_iu_min(j, iumin);
                     w.define_iu_max(j, iumax);
@@ -72,16 +72,16 @@ impl ComposeShell {
             }
         } else {
             // cxx:2203-2225.
-            let iumin = get_patch_index(uf + pprec, self.grid.u_joint_values(), self.u_closed);
-            let iumax = get_patch_index(ul - pprec, self.grid.u_joint_values(), self.u_closed) + 1;
+            let iumin = patch_index(uf + pprec, self.grid.u_joint_values(), self.u_closed);
+            let iumax = patch_index(ul - pprec, self.grid.u_joint_values(), self.u_closed) + 1;
             for w in seqw.iter_mut() {
                 for j in 1..=w.nb_edges() {
                     w.define_iu_min(j, iumin);
                     w.define_iu_max(j, iumax);
                 }
             }
-            let ivmin = get_patch_index(vf + pprec, self.grid.v_joint_values(), self.v_closed);
-            let ivmax = get_patch_index(vl - pprec, self.grid.v_joint_values(), self.v_closed) + 1;
+            let ivmin = patch_index(vf + pprec, self.grid.v_joint_values(), self.v_closed);
+            let ivmax = patch_index(vl - pprec, self.grid.v_joint_values(), self.v_closed) + 1;
             for w in seqw.iter_mut() {
                 for j in 1..=w.nb_edges() {
                     w.define_iv_min(j, ivmin);
@@ -102,7 +102,7 @@ impl ComposeShell {
                 let mut sh = compose_adjust_to_period(x, uf, uf + period);
                 while x + sh <= ul + pprec {
                     let ln = line.translated_vec(&GpVec2d::new(sh, 0.0));
-                    let cut_index = get_patch_index(x + sh + pprec, self.grid.u_joint_values(), self.u_closed);
+                    let cut_index = patch_index(x + sh + pprec, self.grid.u_joint_values(), self.u_closed);
                     self.split_by_line_wires(seqw, &ln, true, cut_index);
                     sh += period;
                 }
@@ -123,7 +123,7 @@ impl ComposeShell {
                 let mut sh = compose_adjust_to_period(y, vf, vf + period);
                 while y + sh <= vl + pprec {
                     let ln = line.translated_vec(&GpVec2d::new(0.0, sh));
-                    let cut_index = get_patch_index(y + sh + pprec, self.grid.v_joint_values(), self.v_closed);
+                    let cut_index = patch_index(y + sh + pprec, self.grid.v_joint_values(), self.v_closed);
                     self.split_by_line_wires(seqw, &ln, false, cut_index);
                     sh += period;
                 }

@@ -282,7 +282,7 @@ fn main() -> ExitCode {
                             p.parameters_nb()
                         );
                         for k in 0..p.parameters_nb() {
-                            if let Ok(p2) = p.get_point(k) {
+                            if let Ok(p2) = p.point(k) {
                                 println!("P {:.17e} {:.17e}", p2.x(), p2.y());
                             }
                         }

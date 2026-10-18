@@ -387,7 +387,7 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
                     }
                 }
                 for n_v_raw in [pb.pave1().index(), pb.pave2().index()] {
-                    let n_v = f.ds().get_same_domain_index(n_v_raw);
+                    let n_v = f.ds().same_domain_index(n_v_raw);
                     mvi_pbs.entry(n_v).or_default().push(pb.clone());
                     if b_is_reduced {
                         mvi_to_reduce.insert(n_v);
@@ -462,7 +462,7 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
             };
             let tol_e = BRepTool::edge_tolerance(&e);
             for pave in [pb.pave1(), pb.pave2()] {
-                let n_vsd = f.ds().get_same_domain_index(pave.index());
+                let n_vsd = f.ds().same_domain_index(pave.index());
                 if n_vsd != n_v {
                     continue;
                 }

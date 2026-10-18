@@ -28,10 +28,10 @@ impl Delaun {
                 continue;
             }
             let mut cur_nodes = [0i32; 2];
-            self.get_oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut cur_nodes);
+            self.oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut cur_nodes);
             let mut cur_pnts = [
-                self.mesh_data.get_node(cur_nodes[0]).location,
-                self.mesh_data.get_node(cur_nodes[1]).location,
+                self.mesh_data.node(cur_nodes[0]).location,
+                self.mesh_data.node(cur_nodes[1]).location,
             ];
 
             let mut next_poly_it = poly_it + 1;
@@ -43,10 +43,10 @@ impl Delaun {
                     continue;
                 }
                 let mut next_nodes = [0i32; 2];
-                self.get_oriented_nodes(next_edge_id, next_edge_info > 0, &mut next_nodes);
+                self.oriented_nodes(next_edge_id, next_edge_info > 0, &mut next_nodes);
                 let next_pnts = [
-                    self.mesh_data.get_node(next_nodes[0]).location,
-                    self.mesh_data.get_node(next_nodes[1]).location,
+                    self.mesh_data.node(next_nodes[0]).location,
+                    self.mesh_data.node(next_nodes[1]).location,
                 ];
 
                 let mut int_pnt = GpPnt2d::zero();
@@ -226,8 +226,8 @@ impl Delaun {
             edges[i] = info.abs();
             oris[i] = info > 0;
         }
-        let edge1 = self.mesh_data.get_link(edges[0]);
-        let edge2 = self.mesh_data.get_link(edges[1]);
+        let edge1 = self.mesh_data.link(edges[0]);
+        let edge2 = self.mesh_data.link(edges[1]);
         let mut nodes = [edge1.first_node(), edge1.last_node(), edge2.first_node()];
         if nodes[2] == nodes[0] || nodes[2] == nodes[1] {
             nodes[2] = edge2.last_node();
@@ -251,13 +251,13 @@ impl Delaun {
 
         let poly_len = polygon.len();
         let first_edge_info = polygon[0];
-        let _first_edge = self.mesh_data.get_link(first_edge_info.abs());
+        let _first_edge = self.mesh_data.link(first_edge_info.abs());
         let mut nodes = [0i32; 3];
-        self.get_oriented_nodes(first_edge_info.abs(), first_edge_info > 0, &mut nodes[..2]);
+        self.oriented_nodes(first_edge_info.abs(), first_edge_info > 0, &mut nodes[..2]);
 
         let mut ref_vertices = [
-            self.mesh_data.get_node(nodes[0]).location,
-            self.mesh_data.get_node(nodes[1]).location,
+            self.mesh_data.node(nodes[0]).location,
+            self.mesh_data.node(nodes[1]).location,
             GpPnt2d::zero(),
         ];
         let mut ref_edge_dir = GpVec2d::from_xy(ref_vertices[1].coord.subtracted(&ref_vertices[0].coord));
@@ -276,12 +276,12 @@ impl Delaun {
 
         for link_it in 3..=poly_len {
             let link_info = polygon[link_it - 1];
-            let next_edge = self.mesh_data.get_link(link_info.abs());
+            let next_edge = self.mesh_data.link(link_info.abs());
             pivot_node = if link_info > 0 { next_edge.first_node() } else { next_edge.last_node() };
             if pivot_node == nodes[1] {
                 continue;
             }
-            let pivot_vertex = self.mesh_data.get_node(pivot_node).location;
+            let pivot_vertex = self.mesh_data.node(pivot_node).location;
             let distance_dir = GpVec2d::from_xy(pivot_vertex.coord.subtracted(&ref_vertices[1].coord));
             let dist = ref_edge_dir.crossed(&distance_dir);
             let angle = ref_edge_dir.angle(&distance_dir).abs();
@@ -306,7 +306,7 @@ impl Delaun {
                     if b.is_out(&poly_boxes[check_link_it - 1]) {
                         continue;
                     }
-                    let poly_link = self.mesh_data.get_link(polygon[check_link_it - 1].abs());
+                    let poly_link = self.mesh_data.link(polygon[check_link_it - 1].abs());
                     let check_same = (link_first_node == poly_link.first_node() && pivot_node == poly_link.last_node())
                         || (link_first_node == poly_link.last_node() && pivot_node == poly_link.first_node());
                     if check_same {
@@ -410,7 +410,7 @@ impl Delaun {
             return;
         }
         let an_edge_id = keys[0];
-        let edge = self.mesh_data.get_link(an_edge_id);
+        let edge = self.mesh_data.link(an_edge_id);
         let mut first_node = edge.first_node();
         let mut pivot_node = edge.last_node();
         let mut edge_id = an_edge_id;
@@ -426,8 +426,8 @@ impl Delaun {
         }
         let mut b = BndB2::void();
         update_bnd_box(
-            self.mesh_data.get_node(first_node).location.coord,
-            self.mesh_data.get_node(pivot_node).location.coord,
+            self.mesh_data.node(first_node).location.coord,
+            self.mesh_data.node(pivot_node).location.coord,
             &mut b,
         );
         boxes.push(b);
@@ -440,7 +440,7 @@ impl Delaun {
             for &link_value in &links {
                 if link_value != edge_id && loop_edges.contains_key(&link_value) {
                     edge_id = link_value;
-                    let e = self.mesh_data.get_link(edge_id);
+                    let e = self.mesh_data.link(edge_id);
                     // Traverse the next cavity edge away from the pivot node: if
                     // the link is stored pivot->last use it forward, otherwise
                     // reverse it so the polygon advances to the other endpoint.
@@ -453,8 +453,8 @@ impl Delaun {
                     };
                     let mut b2 = BndB2::void();
                     update_bnd_box(
-                        self.mesh_data.get_node(current_node).location.coord,
-                        self.mesh_data.get_node(pivot_node).location.coord,
+                        self.mesh_data.node(current_node).location.coord,
+                        self.mesh_data.node(pivot_node).location.coord,
                         &mut b2,
                     );
                     boxes.push(b2);
@@ -481,7 +481,7 @@ impl Delaun {
     /// Source: `BRepMesh_MeshTool::GetEdgesByType` (`BRepMesh_MeshTool.cxx:284-300`),
     /// which walks `LinksOfDomain()` (a `NCollection_PackedMap<int>`) in
     /// ascending order and stores into another `IMeshData::MapOfInteger`.
-    pub(super) fn get_edges_by_type(&self, edge_type: VertexState) -> BTreeSet<i32> {
+    pub(super) fn edges_by_type(&self, edge_type: VertexState) -> BTreeSet<i32> {
         let mut result = BTreeSet::new();
         for &edge in self.mesh_data.links_of_domain() {
             let is_to_add = if edge_type == VertexState::Free {
@@ -530,8 +530,8 @@ impl Delaun {
         is_consider_point_on_edge: bool,
         int_pnt: &mut GpPnt2d,
     ) -> IntFlag {
-        let e1 = self.mesh_data.get_link(edge1_id);
-        let e2 = self.mesh_data.get_link(edge2_id);
+        let e1 = self.mesh_data.link(edge1_id);
+        let e2 = self.mesh_data.link(edge2_id);
         self.int_seg_seg_nodes(
             e1.first_node(),
             e1.last_node(),
@@ -553,10 +553,10 @@ impl Delaun {
         is_consider_point_on_edge: bool,
         int_pnt: &mut GpPnt2d,
     ) -> IntFlag {
-        let p1 = self.mesh_data.get_node(n1).location.coord;
-        let p2 = self.mesh_data.get_node(n2).location.coord;
-        let p3 = self.mesh_data.get_node(n3).location.coord;
-        let p4 = self.mesh_data.get_node(n4).location.coord;
+        let p1 = self.mesh_data.node(n1).location.coord;
+        let p2 = self.mesh_data.node(n2).location.coord;
+        let p3 = self.mesh_data.node(n3).location.coord;
+        let p4 = self.mesh_data.node(n4).location.coord;
         let (flag, pnt) = GeomTool::int_seg_seg(&p1, &p2, &p3, &p4, is_consider_end_point_touch, is_consider_point_on_edge);
         *int_pnt = GpPnt2d::from_xy(pnt);
         flag
@@ -571,14 +571,14 @@ impl Delaun {
         let mut cur_edge_info = polygon[start_1based - 1];
         let mut cur_edge_id = cur_edge_info.abs();
         let mut nodes = [0i32; 2];
-        self.get_oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut nodes);
-        let ref_pnt = self.mesh_data.get_node(nodes[0]).location;
+        self.oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut nodes);
+        let ref_pnt = self.mesh_data.node(nodes[0]).location;
         for poly_it in (start_1based + 1)..=end_1based {
             cur_edge_info = polygon[poly_it - 1];
             cur_edge_id = cur_edge_info.abs();
-            self.get_oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut nodes);
-            let v1 = GpVec2d::from_xy(self.mesh_data.get_node(nodes[0]).location.coord.subtracted(&ref_pnt.coord));
-            let v2 = GpVec2d::from_xy(self.mesh_data.get_node(nodes[1]).location.coord.subtracted(&ref_pnt.coord));
+            self.oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut nodes);
+            let v1 = GpVec2d::from_xy(self.mesh_data.node(nodes[0]).location.coord.subtracted(&ref_pnt.coord));
+            let v2 = GpVec2d::from_xy(self.mesh_data.node(nodes[1]).location.coord.subtracted(&ref_pnt.coord));
             area += v1.crossed(&v2);
         }
         area / 2.0

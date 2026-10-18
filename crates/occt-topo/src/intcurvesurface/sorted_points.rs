@@ -108,7 +108,7 @@ pub fn collect_interference_points(
         let tz: &IntfTangentZone = base.zone_value(i);
         let nbpnts = tz.number_of_points();
         for j in 1..=nbpnts {
-            let sp = tz.get_point(j);
+            let sp = tz.point(j);
             let (u, v, w) = section_point_to_parameters(sp, polyhedron, polygon);
             points.append(u, v, w);
         }

@@ -53,7 +53,7 @@ impl ResolutionLatch {
 
     /// `Geom_BSplineSurface::Resolution`: run the `BSplSLib::Resolution` sweep
     /// only while the flag is clear, then reuse the bound.
-    fn get_or_compute(&self, compute: impl FnOnce() -> (f64, f64)) -> (f64, f64) {
+    fn or_compute(&self, compute: impl FnOnce() -> (f64, f64)) -> (f64, f64) {
         if self.ok.load(Ordering::Acquire) {
             return (
                 f64::from_bits(self.max_deriv_u.load(Ordering::Relaxed)),
@@ -1754,7 +1754,7 @@ impl Surface for GeomBSplineSurface {
     /// each query divides it by `Tolerance3D`.
     fn uv_resolution(&self, r3d: f64) -> Option<(f64, f64)> {
         let (u_rational, v_rational) = self.occt_rational_flags();
-        let (max_deriv_u, max_deriv_v) = self.res_latch.get_or_compute(|| {
+        let (max_deriv_u, max_deriv_v) = self.res_latch.or_compute(|| {
             occt_core::bspl::bspline_surface_max_derivative(
                 &self.poles,
                 self.weights.as_deref(),

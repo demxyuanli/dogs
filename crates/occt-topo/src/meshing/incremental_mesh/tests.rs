@@ -29,7 +29,7 @@ use super::*;
         let params = MeshParameters { deflection: 0.05, ..MeshParameters::default() };
         let inc = IncrementalMesh::from_parameters(&shape, params);
         assert!(inc.mesh().is_some(), "mesh cached");
-        assert_eq!(inc.get_status_flags(), 0, "flags {}", inc.get_status_flags());
+        assert_eq!(inc.status_flags(), 0, "flags {}", inc.status_flags());
     }
 
     #[test]

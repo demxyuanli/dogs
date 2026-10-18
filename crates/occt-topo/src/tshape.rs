@@ -80,7 +80,7 @@ impl TShape {
     pub fn shape_type(&self) -> ShapeType { self.shape_type }
     pub fn free(&self) -> bool { self.flags.free }
     pub fn set_free(&mut self, v: bool) { self.flags.free = v; }
-    pub fn closed(&self) -> bool { self.flags.closed }
+    pub fn is_closed(&self) -> bool { self.flags.closed }
     pub fn set_closed(&mut self, v: bool) { self.flags.closed = v; }
     pub fn infinite(&self) -> bool { self.flags.infinite }
     pub fn set_infinite(&mut self, v: bool) { self.flags.infinite = v; }
@@ -545,12 +545,12 @@ impl EdgePcurves {
     }
 
     /// The first pcurve on `face_key`.
-    pub fn get_pcurve(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
+    pub fn pcurve(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
         self.curves.get(&face_key).and_then(|v| v.first().cloned())
     }
 
     /// All pcurves on `face_key`.
-    pub fn get_pcurves(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
+    pub fn pcurves(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
         self.curves.get(&face_key).cloned().unwrap_or_default()
     }
 }

@@ -465,7 +465,7 @@ fn append_root<F: MathFunctionWithDerivative>(
     if n == 0 {
         sol.push(x);
         f.value(x, &mut t);
-        nb_state_sol.push(f.get_state_number());
+        nb_state_sol.push(f.state_number());
         return;
     }
     let mut i = 1;
@@ -485,11 +485,11 @@ fn append_root<F: MathFunctionWithDerivative>(
     if pl > n {
         sol.push(x);
         f.value(x, &mut t);
-        nb_state_sol.push(f.get_state_number());
+        nb_state_sol.push(f.state_number());
     } else if pl > 0 {
         sol.insert(pl - 1, x);
         f.value(x, &mut t);
-        nb_state_sol.insert(pl - 1, f.get_state_number());
+        nb_state_sol.insert(pl - 1, f.state_number());
     }
 }
 

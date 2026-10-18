@@ -286,12 +286,12 @@ impl DelaunDataStructure {
     }
 
     /// Node by 1-based index.
-    pub fn get_node(&self, index: i32) -> &DelaunVertex {
+    pub fn node(&self, index: i32) -> &DelaunVertex {
         &self.vertices[(index - 1) as usize]
     }
 
     /// Mutable node by 1-based index.
-    pub fn get_node_mut(&mut self, index: i32) -> &mut DelaunVertex {
+    pub fn node_mut(&mut self, index: i32) -> &mut DelaunVertex {
         &mut self.vertices[(index - 1) as usize]
     }
 
@@ -361,7 +361,7 @@ impl DelaunDataStructure {
         let probe = DelaunLink::new_unparameterized(first, last, 0);
         let existing = self.index_of_link(&probe);
         if existing > 0 {
-            let l = self.get_link(existing);
+            let l = self.link(existing);
             return if l.is_same_orientation(&probe) { existing } else { -existing };
         }
 
@@ -415,7 +415,7 @@ impl DelaunDataStructure {
     }
 
     /// Link by 1-based index.
-    pub fn get_link(&self, index: i32) -> DelaunLink {
+    pub fn link(&self, index: i32) -> DelaunLink {
         self.links[(index - 1) as usize]
     }
 
@@ -537,7 +537,7 @@ impl DelaunDataStructure {
     }
 
     /// Triangle by 1-based index.
-    pub fn get_element(&self, index: i32) -> DelaunTriangle {
+    pub fn element(&self, index: i32) -> DelaunTriangle {
         self.elements[(index - 1) as usize]
     }
 
@@ -603,7 +603,7 @@ impl DelaunDataStructure {
     /// are not the source of truth.
     pub fn element_nodes(&self, triangle: &DelaunTriangle) -> [i32; 3] {
         let mut nodes = [0i32; 3];
-        let link1 = self.get_link(triangle.link_at(0).abs());
+        let link1 = self.link(triangle.link_at(0).abs());
         if triangle.link_at(0) > 0 {
             nodes[0] = link1.first_node();
             nodes[1] = link1.last_node();
@@ -611,7 +611,7 @@ impl DelaunDataStructure {
             nodes[1] = link1.first_node();
             nodes[0] = link1.last_node();
         }
-        let link2 = self.get_link(triangle.link_at(2).abs());
+        let link2 = self.link(triangle.link_at(2).abs());
         nodes[2] = if triangle.link_at(2) > 0 {
             link2.first_node()
         } else {
@@ -626,7 +626,7 @@ impl DelaunDataStructure {
 
     /// Coincidence tolerance used by the vertex filter (OCCT
     /// `VertexTool::GetTolerance`).
-    pub fn get_tolerance(&self) -> (f64, f64) {
+    pub fn tolerance(&self) -> (f64, f64) {
         self.vertex_cells.tolerance
     }
 
@@ -635,7 +635,7 @@ impl DelaunDataStructure {
         let mut free_edges: BTreeSet<i32> = BTreeSet::new();
         let element_ids: Vec<i32> = self.elements_of_domain.iter().copied().collect();
         for id in element_ids {
-            let element = self.get_element(id);
+            let element = self.element(id);
             for e in element.link_indices {
                 free_edges.insert(e.abs());
             }
@@ -792,14 +792,14 @@ impl<'a> DelaunSelector<'a> {
 
     /// Selects all neighbouring elements of the given link.
     pub fn neighbours_of_link(&mut self, link_index: i32) {
-        let link = self.mesh.get_link(link_index);
+        let link = self.mesh.link(link_index);
         self.neighbours_of_node(link.first_node());
         self.neighbours_of_node(link.last_node());
     }
 
     /// Selects all neighbouring elements of the element with the given index.
     pub fn neighbours_of_element(&mut self, element_index: i32) {
-        let element = self.mesh.get_element(element_index);
+        let element = self.mesh.element(element_index);
         for v in element.vertex_indices {
             self.neighbours_of_node(v);
         }

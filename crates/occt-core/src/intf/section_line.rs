@@ -43,7 +43,7 @@ impl IntfSectionLine {
 
     /// `GetPoint(Index)` (`Intf_SectionLine.cxx:79-82`). OCCT uses 1-based
     /// indexing.
-    pub fn get_point(&self, index: usize) -> &IntfSectionPoint {
+    pub fn point(&self, index: usize) -> &IntfSectionPoint {
         &self.points[index - 1]
     }
 

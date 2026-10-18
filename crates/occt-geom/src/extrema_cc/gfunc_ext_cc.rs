@@ -638,7 +638,7 @@ impl<'a> MathFunctionSetWithDerivatives for GFuncExtCC<'a> {
     }
 
     /// `GetStateNumber()` (`Extrema_GFuncExtCC.hxx:832-870`).
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         let mut du = self.du;
         let mut dv = self.dv;
         let p1p2 = GpVec::from_pnts(&self.p1, &self.p2);

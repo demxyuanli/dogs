@@ -155,7 +155,7 @@ pub fn reduce_intersection_range(
         }
     }
     for ee in ds.interf_ee() {
-        let Some(n_v) = ee.get_index_new() else {
+        let Some(n_v) = ee.new_index() else {
             continue;
         };
         if n_v != v1 && n_v != v2 {

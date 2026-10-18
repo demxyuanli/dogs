@@ -282,7 +282,7 @@ impl MathFunction for ExtPcf<'_> {
         self.value_at(x, f)
     }
 
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         // `GFuncExtPC::GetStateNumber` (`hxx:357-378`).
         let sq = self.pc.square_distance(&self.point);
         let mut ff = 0.0;

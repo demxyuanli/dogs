@@ -66,7 +66,7 @@ pub trait NodeInsertionMeshAlgo {
 
     /// Returns the 2D point associated with the given vertex.
     /// Source: `getNodePoint2d`.
-    fn get_node_point_2d(&self, vertex: &DelaunVertex) -> GpPnt2d;
+    fn node_point_2d(&self, vertex: &DelaunVertex) -> GpPnt2d;
 
     /// Registers the boundary UV points of a face as `Frontier` nodes and adds
     /// the given constraint edges — `(first, last)` positions into `uv_points` —
@@ -386,7 +386,7 @@ impl DelaunayNodeInsertionMeshAlgo {
 
         let structure = std::mem::replace(&mut self.structure, DelaunDataStructure::new(0));
         let mut indices: Vec<i32> = (1..=structure.nb_nodes() as i32)
-            .filter(|&i| structure.get_node(i).state != VertexState::Deleted)
+            .filter(|&i| structure.node(i).state != VertexState::Deleted)
             .collect();
         let (cells_u, cells_v) = self.cells_count(indices.len() as i32);
         // TEMPORARY diagnostic (DELAUNDUMP): writes the exact pre-triangulation
@@ -418,7 +418,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         // triangulation at all — not with the partial mesh built so far. Record
         // the flag and stop here; `perform` turns it into the face's FAILURE
         // status (audit A25 / task T-61).
-        if delaun.failed() {
+        if delaun.is_failed() {
             self.delaun_failed = true;
             return Err(format!(
                 "DelaunayNodeInsertionMeshAlgo::finish_mesh: BRepMesh_Delaun::addTriangle failed (link pair overflow)"
@@ -493,7 +493,7 @@ impl DelaunayNodeInsertionMeshAlgo {
                 if std::env::var("DELONESTEP_RAW").is_err() {
                     let ds = delaun.result();
                     crate::meshing::delaun::heap_sort_by_xy_sum(&mut order, |i| {
-                        let p = ds.get_node(*i).location;
+                        let p = ds.node(*i).location;
                         (p.x(), p.y())
                     });
                 }
@@ -528,7 +528,7 @@ impl DelaunayNodeInsertionMeshAlgo {
                         let ds = delaun.result();
                         let mut edge_fp: u64 = 0;
                         for &tid in ds.elements_of_domain() {
-                            let e = ds.get_element(tid);
+                            let e = ds.element(tid);
                             let n = ds.element_nodes(&e);
                             for k in 0..3 {
                                 let a = n[k].min(n[(k + 1) % 3]) as u64;
@@ -567,12 +567,12 @@ impl DelaunayNodeInsertionMeshAlgo {
                             ds.elements_of_domain().len()
                         );
                         for tid in ds.elements_of_domain() {
-                            let e = ds.get_element(*tid);
+                            let e = ds.element(*tid);
                             let n = ds.element_nodes(&e);
                             eprintln!("PORTT PRE T {} {} {} {}", tid, n[0], n[1], n[2]);
                         }
                         for i in 1..=ds.nb_nodes() as i32 {
-                            let v = ds.get_node(i);
+                            let v = ds.node(i);
                             eprintln!(
                                 "PORTN PRE {} {:.17e} {:.17e} {}",
                                 i,
@@ -582,7 +582,7 @@ impl DelaunayNodeInsertionMeshAlgo {
                             );
                         }
                         for i in 1..=ds.nb_elements() as i32 {
-                            let e = ds.get_element(i);
+                            let e = ds.element(i);
                             let n = ds.element_nodes(&e);
                             eprintln!("PORTEL PRE E {} {} {} {} {}", i, n[0], n[1], n[2], 0 as i32);
                         }
@@ -706,7 +706,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         let mut used = self.used_nodes.clone();
         let mut triangles: Vec<DelaunTriangle> = Vec::new();
         for &id in ds.elements_of_domain() {
-            let mut elem = ds.get_element(id);
+            let mut elem = ds.element(id);
             let mut a = ds.element_nodes(&elem);
             for n in &mut a {
                 if !used.contains_key(n) {
@@ -722,11 +722,11 @@ impl DelaunayNodeInsertionMeshAlgo {
         let n_out = used.values().copied().max().unwrap_or(0) as usize;
         let mut slots: Vec<Option<DelaunVertex>> = vec![None; n_out];
         for i in 1..=ds.nb_nodes() as i32 {
-            if ds.get_node(i).state == VertexState::Deleted {
+            if ds.node(i).state == VertexState::Deleted {
                 continue;
             }
             if let Some(&out) = used.get(&i) {
-                let mut n = *ds.get_node(i);
+                let mut n = *ds.node(i);
                 n.location = self.scale_from_face(n.location);
                 let slot = (out as usize).saturating_sub(1);
                 if slot < slots.len() {
@@ -822,7 +822,7 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                                     edge.same_param() as u8,
                                     edge.same_range() as u8,
                                     edge.is_free() as u8,
-                                    edge.degenerated() as u8,
+                                    edge.is_degenerated() as u8,
                                     edge.deflection(),
                                     edge.angular_deflection(),
                                     f.x(),
@@ -934,7 +934,7 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                 let nb = self.structure.nb_nodes() as i32;
                 let (mut nfree, mut nfront, mut nfixed) = (0usize, 0usize, 0usize);
                 for i in 1..=nb {
-                    match self.structure.get_node(i).state {
+                    match self.structure.node(i).state {
                         VertexState::Free => nfree += 1,
                         VertexState::Frontier => nfront += 1,
                         VertexState::Fixed => nfixed += 1,
@@ -947,7 +947,7 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                     uv.len()
                 );
                 for i in 1..=nb {
-                    let n = self.structure.get_node(i);
+                    let n = self.structure.node(i);
                     let p3d = self
                         .nodes_map
                         .get(i as usize - 1)
@@ -1269,7 +1269,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         free_xy: &[(f64, f64)],
     ) {
         use std::fmt::Write as _;
-        let (tol_u, tol_v) = structure.get_tolerance();
+        let (tol_u, tol_v) = structure.tolerance();
         let mut out = String::new();
         let _ = writeln!(out, "TOL {tol_u:.17e} {tol_v:.17e}");
         let _ = writeln!(out, "CELLS {cells_u} {cells_v}");
@@ -1280,7 +1280,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
             let (mut lo, mut hi) = (GpPnt::zero(), GpPnt::zero());
             let mut first = true;
             for i in 1..=structure.nb_nodes() as i32 {
-                let p = structure.get_node(i).p3d;
+                let p = structure.node(i).p3d;
                 if first {
                     lo = p;
                     hi = p;
@@ -1304,7 +1304,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
             }
         }
         for i in 1..=structure.nb_nodes() as i32 {
-            let n = structure.get_node(i);
+            let n = structure.node(i);
             let _ = writeln!(
                 out,
                 "N {i} {:.17e} {:.17e} {}",
@@ -1314,7 +1314,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
             );
         }
         for i in 1..=structure.nb_links() as i32 {
-            let l = structure.get_link(i);
+            let l = structure.link(i);
             let _ = writeln!(
                 out,
                 "L {i} {} {} {}",
@@ -1368,12 +1368,12 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         phase2: &[i32],
     ) {
         use std::fmt::Write as _;
-        let (tol_u, tol_v) = structure.get_tolerance();
+        let (tol_u, tol_v) = structure.tolerance();
         let mut out = String::new();
         let _ = writeln!(out, "TOL {tol_u:.17e} {tol_v:.17e}");
         let _ = writeln!(out, "CELLS {cells_u} {cells_v}");
         for i in 1..=structure.nb_nodes() as i32 {
-            let n = structure.get_node(i);
+            let n = structure.node(i);
             let _ = writeln!(
                 out,
                 "N {i} {:.17e} {:.17e} {}",
@@ -1383,7 +1383,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
             );
         }
         for i in 1..=structure.nb_links() as i32 {
-            let l = structure.get_link(i);
+            let l = structure.link(i);
             let _ = writeln!(
                 out,
                 "L {i} {} {} {}",
@@ -1413,7 +1413,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         use std::fmt::Write as _;
         let mut out = String::new();
         for i in 1..=structure.nb_nodes() as i32 {
-            let n = structure.get_node(i);
+            let n = structure.node(i);
             if n.state == VertexState::Deleted {
                 continue;
             }
@@ -1421,7 +1421,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         }
         let mut tris: Vec<(i32, [i32; 3])> = Vec::new();
         for &tid in structure.elements_of_domain() {
-            let e = structure.get_element(tid);
+            let e = structure.element(tid);
             let mut n = structure.element_nodes(&e);
             n.sort_unstable();
             tris.push((tid, n));
@@ -1446,7 +1446,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         let _ = writeln!(out, "STEP {step}");
         let mut tris: Vec<[i32; 3]> = Vec::new();
         for &tid in structure.elements_of_domain() {
-            let e = structure.get_element(tid);
+            let e = structure.element(tid);
             let mut n = structure.element_nodes(&e);
             n.sort_unstable();
             tris.push(n);
@@ -1465,7 +1465,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         let mut out = String::new();
         let mut tris: Vec<(i32, [i32; 3])> = Vec::new();
         for &tid in structure.elements_of_domain() {
-            let e = structure.get_element(tid);
+            let e = structure.element(tid);
             let mut n = structure.element_nodes(&e);
             n.sort_unstable();
             tris.push((tid, n));
@@ -1489,7 +1489,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         }
         let nb = self.structure.nb_nodes() as i32;
         let is_target = (1..=nb).any(|i| {
-            let p = self.structure.get_node(i).p3d;
+            let p = self.structure.node(i).p3d;
             (p.x() - 13.017621944).abs() < 1e-3
                 && (p.y() + 24.789947988).abs() < 1e-3
                 && (p.z() - 290.0).abs() < 1e-3
@@ -1500,7 +1500,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         let nb_links = self.structure.nb_links() as i32;
         eprintln!("DELDIAG face={face_index} nodes={nb} links={nb_links}");
         for i in 1..=nb {
-            let n = self.structure.get_node(i);
+            let n = self.structure.node(i);
             eprintln!(
                 "DELDIAG n i={i} st={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
                 n.state.to_str(),
@@ -1512,9 +1512,9 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
             );
         }
         for i in 1..=nb_links {
-            let l = self.structure.get_link(i);
-            let a = self.structure.get_node(l.first_node());
-            let b = self.structure.get_node(l.last_node());
+            let l = self.structure.link(i);
+            let a = self.structure.node(l.first_node());
+            let b = self.structure.node(l.last_node());
             eprintln!(
                 "DELDIAG l i={i} st={} n=({},{}) p=[({:.6},{:.6},{:.6}),({:.6},{:.6},{:.6})]",
                 self.structure.link_movability(i).to_str(),
@@ -1668,7 +1668,7 @@ impl DeflectionMesh for ParametricDelaun<'_> {
         self.delaun.link_movability(id)
     }
     fn vertex(&self, id: i32) -> DelaunVertex {
-        let mut v = self.delaun.get_vertex(id);
+        let mut v = self.delaun.vertex(id);
         v.location = self.to_param(v.location);
         v
     }
@@ -1836,7 +1836,7 @@ impl NodeInsertionMeshAlgo for DelaunayNodeInsertionMeshAlgo {
         }
     }
 
-    fn get_node_point_2d(&self, vertex: &DelaunVertex) -> GpPnt2d {
+    fn node_point_2d(&self, vertex: &DelaunVertex) -> GpPnt2d {
         // ponytail: no range splitter, so the stored parametric location is
         // returned verbatim (OCCT un-scales it via the splitter).
         vertex.location
@@ -1956,7 +1956,7 @@ mod tests {
         let ds = algo.structure();
         assert_eq!(ds.nb_nodes(), 4);
         for i in 1..=4 {
-            assert_eq!(ds.get_node(i).state, VertexState::Frontier);
+            assert_eq!(ds.node(i).state, VertexState::Frontier);
         }
         // The four constraint edges are registered as Frontier links.
         assert_eq!(ds.links_of_domain().len(), 4);

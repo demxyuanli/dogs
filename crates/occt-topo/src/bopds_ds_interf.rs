@@ -144,7 +144,7 @@ impl BopdsDS {
 
     /// Returns the same-domain index of `index` following the chain, or the
     /// index itself when no same-domain shape exists.
-    pub fn get_same_domain_index(&self, index: usize) -> usize {
+    pub fn same_domain_index(&self, index: usize) -> usize {
         let mut cur = index;
         while let Some(&next) = self.shapes_sd.get(&cur) {
             cur = next;
@@ -154,7 +154,7 @@ impl BopdsDS {
 
     /// Returns the final same-domain index of `index`, if any.
     pub fn has_shape_sd(&self, index: usize) -> Option<usize> {
-        let result = self.get_same_domain_index(index);
+        let result = self.same_domain_index(index);
         if result == index {
             None
         } else {
@@ -433,7 +433,7 @@ impl BopdsDS {
 
     fn update_intfs_with_sd_vertices(sd: &HashMap<usize, usize>, interfs: &mut [BopdsInterf]) {
         for it in interfs.iter_mut() {
-            let Some(n) = it.get_index_new() else { continue };
+            let Some(n) = it.new_index() else { continue };
             // `BOPDS_DS::HasShapeSD` walks the same-domain chain and returns
             // the last representative; skip when the index has no SD partner.
             let mut cur = n;

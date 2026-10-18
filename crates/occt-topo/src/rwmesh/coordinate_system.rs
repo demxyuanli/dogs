@@ -232,7 +232,7 @@ impl RwMeshCoordinateSystemConverter {
 
         self.trsf = trsf.clone();
         self.trsf_inv = trsf.inverted().unwrap_or_else(|_| GpTrsf::identity());
-        self.norm_trsf = trsf.get_mat4();
+        self.norm_trsf = trsf.mat4();
         // `myIsEmpty = !myHasScale && myTrsf.Form() == gp_Identity` (`cxx:69`).
         self.is_empty = !self.has_scale && trsf.form() == TrsfForm::Identity;
     }
@@ -288,7 +288,7 @@ impl RwMeshCoordinateSystemConverter {
 /// `gp_Quaternion::IsEqual(gp_Quaternion())` — the rotation half of the
 /// identity check in `cxx:59-60`.
 fn rotation_is_identity(trsf: &GpTrsf) -> bool {
-    let q = trsf.get_rotation();
+    let q = trsf.rotation();
     occt_core::precision::RESOLUTION >= q.x().abs()
         && occt_core::precision::RESOLUTION >= q.y().abs()
         && occt_core::precision::RESOLUTION >= q.z().abs()

@@ -145,7 +145,7 @@ pub fn parameter<F: Fn(f64) -> occt_core::gp::GpPnt>(pt: &F, p: &occt_core::gp::
 /// treat as radius 1"), a circle its exact radius, and a general curve the
 /// radius of the circumcircle through the three samples. Returns `Err` when the
 /// three points are collinear or coincident (no circle exists).
-pub fn get_radius<F: Fn(f64) -> occt_core::gp::GpPnt>(
+pub fn radius<F: Fn(f64) -> occt_core::gp::GpPnt>(
     pt: &F,
     t1: f64,
     t3: f64,
@@ -282,13 +282,13 @@ mod tests {
 
     #[test]
     fn radius_of_circle_is_exact() {
-        let r = get_radius(&circle_pt, 0.0, 1.0).expect("radius");
+        let r = radius(&circle_pt, 0.0, 1.0).expect("radius");
         assert!((r - 3.0).abs() < 1e-9, "r {r}");
     }
 
     #[test]
     fn radius_of_collinear_is_err() {
-        let r = get_radius(&line_pt, 0.0, 1.0);
+        let r = radius(&line_pt, 0.0, 1.0);
         assert!(r.is_err());
     }
 

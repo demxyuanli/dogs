@@ -21,7 +21,7 @@
 use crate::gp::GpPnt;
 
 use super::build_knots::build_knots;
-use super::insert_knots::{boor_index, copy, get_pole};
+use super::insert_knots::{boor_index, copy, boor_pole};
 use super::knots::pole_index;
 use super::locate::{first_u_knot_index, last_u_knot_index};
 
@@ -237,7 +237,7 @@ pub fn remove_knot_dim(
     let mut np = 1i32;
     copy((p_index + 1) * d, &mut p, poles, &mut np, new_poles);
     for i in 1..=length {
-        get_pole(&lp, i, length, 0, d, new_poles, new_poles.len() as i32, &mut np);
+        boor_pole(&lp, i, length, 0, d, new_poles, new_poles.len() as i32, &mut np);
     }
     p += (length + depth) * d;
     if p != 1 {

@@ -180,7 +180,7 @@ impl BopdsDS {
                     on.push((rpb.edge(), rpb.first, rpb.last));
                 }
             } else if ty == Some(ShapeType::Vertex) {
-                verts_on.push(self.get_same_domain_index(sub));
+                verts_on.push(self.same_domain_index(sub));
             }
         }
         verts_on.sort_unstable();
@@ -212,7 +212,7 @@ impl BopdsDS {
                 continue;
             }
             if let Some(i) = self.index(&child) {
-                verts.push(self.get_same_domain_index(i));
+                verts.push(self.same_domain_index(i));
             }
         }
         if let Some(fi) = self.face_info_pool.iter_mut().find(|fi| fi.face_index == n_f) {
@@ -304,7 +304,7 @@ impl BopdsDS {
             .interf_vf
             .iter()
             .filter(|it| faces.contains(&it.index2))
-            .map(|it| (it.index2, self.get_same_domain_index(it.index1)))
+            .map(|it| (it.index2, self.same_domain_index(it.index1)))
             .collect();
         for (n_f, n_v) in vf {
             if let Some(fi) = self.face_info_pool.iter_mut().find(|fi| fi.face_index == n_f) {
@@ -318,8 +318,8 @@ impl BopdsDS {
             if !faces.contains(&n_f) {
                 continue;
             }
-            if let Some(n_new) = it.get_index_new() {
-                let n_v = self.get_same_domain_index(n_new);
+            if let Some(n_new) = it.new_index() {
+                let n_v = self.same_domain_index(n_new);
                 if let Some(fi) = self.face_info_pool.iter_mut().find(|fi| fi.face_index == n_f)
                 {
                     fi.add_vert_in(n_v);

@@ -93,7 +93,7 @@ impl FastDiscret {
             let mut prev: Option<i32> = None;
             for p in wire.iter() {
                 if let Some(pi) = prev {
-                    if structure.get_node(pi).location.distance(p) <= 1e-9 {
+                    if structure.node(pi).location.distance(p) <= 1e-9 {
                         continue;
                     }
                 }
@@ -127,7 +127,7 @@ impl FastDiscret {
         // `BRepMesh_BaseMeshAlgo::Perform` swallows it (`cxx:59-62`), so the face
         // gets no triangulation at all (audit A25 / task T-61). Report the empty
         // result instead of the partial mesh.
-        if delaun.failed() {
+        if delaun.is_failed() {
             return (Vec::new(), Vec::new());
         }
         let ds = delaun.result();
@@ -139,11 +139,11 @@ impl FastDiscret {
             if ds.element_movability(id) == VertexState::Deleted {
                 continue;
             }
-            let nodes = ds.element_nodes(&ds.get_element(id));
+            let nodes = ds.element_nodes(&ds.element(id));
             let mut corner = [0usize; 3];
             for (k, &n) in nodes.iter().enumerate() {
                 let vi = *node_to_v.entry(n).or_insert_with(|| {
-                    let loc = ds.get_node(n).location;
+                    let loc = ds.node(n).location;
                     out_v.push(surface.d0(loc.x(), loc.y()));
                     out_v.len() - 1
                 });

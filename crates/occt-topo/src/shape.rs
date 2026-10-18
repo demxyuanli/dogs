@@ -45,7 +45,7 @@ impl TopoShape {
 
     pub fn free(&self) -> bool { self.tshape.read().unwrap().free() }
     pub fn set_free(&self, v: bool) { self.tshape.write().unwrap().set_free(v); }
-    pub fn closed(&self) -> bool { self.tshape.read().unwrap().closed() }
+    pub fn is_closed(&self) -> bool { self.tshape.read().unwrap().is_closed() }
     pub fn set_closed(&self, v: bool) { self.tshape.write().unwrap().set_closed(v); }
 
     pub fn location(&self) -> &TopLocLocation { &self.location }

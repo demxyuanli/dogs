@@ -59,7 +59,7 @@ use crate::gp::{GpPln, GpPnt};
 ///
 /// Resolution depends only on the number of boxes; it is 8, 16, 32, 64 or
 /// 128 for 0..=100, 101..=1000, 1001..=10000, 10001..=40000 and > 40000 boxes.
-fn get_bnd_voxel_grid_resolution(boxes_count: usize) -> usize {
+fn bnd_voxel_grid_resolution(boxes_count: usize) -> usize {
     if boxes_count > 40000 {
         return 128;
     }
@@ -130,19 +130,19 @@ impl BndVoxelGrid {
 
     /// GetSliceX(theVoxelIndex) (cxx:251-255): None stands for the null
     /// pointer OCCT returns for an empty slice.
-    fn get_slice_x(&self, voxel_index: usize) -> Option<&[usize]> {
+    fn slice_x(&self, voxel_index: usize) -> Option<&[usize]> {
         let slice = &self.slices_x[voxel_index];
         if slice.is_empty() { None } else { Some(slice) }
     }
 
     /// GetSliceY(theVoxelIndex) (cxx:259-263).
-    fn get_slice_y(&self, voxel_index: usize) -> Option<&[usize]> {
+    fn slice_y(&self, voxel_index: usize) -> Option<&[usize]> {
         let slice = &self.slices_y[voxel_index];
         if slice.is_empty() { None } else { Some(slice) }
     }
 
     /// GetSliceZ(theVoxelIndex) (cxx:267-271).
-    fn get_slice_z(&self, voxel_index: usize) -> Option<&[usize]> {
+    fn slice_z(&self, voxel_index: usize) -> Option<&[usize]> {
         let slice = &self.slices_z[voxel_index];
         if slice.is_empty() { None } else { Some(slice) }
     }
@@ -204,7 +204,7 @@ impl BoundSortBox {
         }
 
         // myResolution = getBnd_VoxelGridResolution(myBoxes->Length()) (cxx:337).
-        self.resolution = get_bnd_voxel_grid_resolution(self.boxes.len() - 1);
+        self.resolution = bnd_voxel_grid_resolution(self.boxes.len() - 1);
 
         if self.enclosing_box.is_void() {
             return; // cxx:339-342
@@ -220,7 +220,7 @@ impl BoundSortBox {
     pub fn initialize_with_enclosing(&mut self, enclosing_box_par: &BndBox, set_of_boxes: &[BndBox]) {
         self.boxes = with_placeholder(set_of_boxes);      // cxx:355
         self.enclosing_box = *enclosing_box_par;              // cxx:356
-        self.resolution = get_bnd_voxel_grid_resolution(self.boxes.len() - 1); // cxx:357
+        self.resolution = bnd_voxel_grid_resolution(self.boxes.len() - 1); // cxx:357
 
         if self.enclosing_box.is_void() {
             return; // cxx:359-362
@@ -240,7 +240,7 @@ impl BoundSortBox {
         // (cxx:375-379): slot 0 is the placeholder, 1..=theNbBoxes are void.
         self.boxes = vec![BndBox::new(); nb_boxes + 1];
         self.enclosing_box = *enclosing_box_par; // cxx:380
-        self.resolution = get_bnd_voxel_grid_resolution(nb_boxes); // cxx:381
+        self.resolution = bnd_voxel_grid_resolution(nb_boxes); // cxx:381
 
         if self.enclosing_box.is_void() {
             return; // cxx:383-386
@@ -292,7 +292,7 @@ impl BoundSortBox {
         }
 
         // Obtaining the box voxel coordinates (cxx:432-433).
-        let voxels = self.get_bounding_voxels(bnd_box);
+        let voxels = self.bounding_voxels(bnd_box);
         let [min_voxel_x, min_voxel_y, min_voxel_z, max_voxel_x, max_voxel_y, max_voxel_z] =
             voxels;
 
@@ -305,7 +305,7 @@ impl BoundSortBox {
         if let Some(voxel_grid_val) = self.voxel_grid.as_ref() {
             // Checking the voxels along X-axis (cxx:449-461).
             for voxel_x in min_voxel_x..=max_voxel_x {
-                if let Some(box_indices) = voxel_grid_val.get_slice_x(voxel_x) {
+                if let Some(box_indices) = voxel_grid_val.slice_x(voxel_x) {
                     for &box_index in box_indices {
                         result_indices[box_index] |= AN_OCCUPIED_X;
                     }
@@ -314,7 +314,7 @@ impl BoundSortBox {
 
             // Checking the voxels along Y-axis (cxx:464-476).
             for voxel_y in min_voxel_y..=max_voxel_y {
-                if let Some(box_indices) = voxel_grid_val.get_slice_y(voxel_y) {
+                if let Some(box_indices) = voxel_grid_val.slice_y(voxel_y) {
                     for &box_index in box_indices {
                         result_indices[box_index] |= AN_OCCUPIED_Y;
                     }
@@ -323,7 +323,7 @@ impl BoundSortBox {
 
             // Checking the voxels along Z-axis (cxx:479-501).
             for voxel_z in min_voxel_z..=max_voxel_z {
-                if let Some(box_indices) = voxel_grid_val.get_slice_z(voxel_z) {
+                if let Some(box_indices) = voxel_grid_val.slice_z(voxel_z) {
                     for &box_index in box_indices {
                         if result_indices[box_index] == AN_OCCUPIED_XY {
                             result_indices[box_index] = 0; // cxx:492
@@ -383,7 +383,7 @@ impl BoundSortBox {
 
     /// getBoundingVoxels(const Bnd_Box&) (cxx:556-596):
     /// [minX, minY, minZ, maxX, maxY, maxZ] voxel indices.
-    fn get_bounding_voxels(&self, bnd_box: &BndBox) -> [usize; 6] {
+    fn bounding_voxels(&self, bnd_box: &BndBox) -> [usize; 6] {
         // Start point of the voxel grid (cxx:559).
         let grid_start: GpPnt = self.enclosing_box.corner_min();
 
@@ -433,7 +433,7 @@ impl BoundSortBox {
             return; // cxx:602-605
         }
 
-        let voxel_box = self.get_bounding_voxels(bnd_box); // cxx:607-608
+        let voxel_box = self.bounding_voxels(bnd_box); // cxx:607-608
         let [min_voxel_x, min_voxel_y, min_voxel_z, max_voxel_x, max_voxel_y, max_voxel_z] =
             voxel_box;
         let box_min_side = (max_voxel_x - min_voxel_x)

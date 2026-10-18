@@ -133,7 +133,7 @@ impl MeshCurve {
     }
 
     /// Discretization point at the given index.
-    pub fn get_point(&self, index: usize) -> Result<GpPnt, String> {
+    pub fn point(&self, index: usize) -> Result<GpPnt, String> {
         self.points
             .get(index)
             .copied()
@@ -141,7 +141,7 @@ impl MeshCurve {
     }
 
     /// Mutable access to the discretization point at the given index.
-    pub fn get_point_mut(&mut self, index: usize) -> Result<&mut GpPnt, String> {
+    pub fn point_mut(&mut self, index: usize) -> Result<&mut GpPnt, String> {
         if index >= self.points.len() {
             return Err(out_of_range("MeshCurve::get_point_mut", index, self.points.len()));
         }
@@ -159,7 +159,7 @@ impl MeshCurve {
     }
 
     /// Curve parameter at the given index.
-    pub fn get_parameter(&self, index: usize) -> Result<f64, String> {
+    pub fn parameter(&self, index: usize) -> Result<f64, String> {
         self.parameters
             .get(index)
             .copied()
@@ -167,7 +167,7 @@ impl MeshCurve {
     }
 
     /// Mutable access to the parameter at the given index.
-    pub fn get_parameter_mut(&mut self, index: usize) -> Result<&mut f64, String> {
+    pub fn parameter_mut(&mut self, index: usize) -> Result<&mut f64, String> {
         if index >= self.parameters.len() {
             return Err(out_of_range("MeshCurve::get_parameter_mut", index, self.parameters.len()));
         }
@@ -263,7 +263,7 @@ impl MeshPCurve {
     }
 
     /// Discretization point at the given index.
-    pub fn get_point(&self, index: usize) -> Result<GpPnt2d, String> {
+    pub fn point(&self, index: usize) -> Result<GpPnt2d, String> {
         self.points
             .get(index)
             .copied()
@@ -271,7 +271,7 @@ impl MeshPCurve {
     }
 
     /// Mutable access to the discretization point at the given index.
-    pub fn get_point_mut(&mut self, index: usize) -> Result<&mut GpPnt2d, String> {
+    pub fn point_mut(&mut self, index: usize) -> Result<&mut GpPnt2d, String> {
         if index >= self.points.len() {
             return Err(out_of_range("MeshPCurve::get_point_mut", index, self.points.len()));
         }
@@ -279,7 +279,7 @@ impl MeshPCurve {
     }
 
     /// Mesh node index corresponding to the discretization point at the index.
-    pub fn get_index(&self, index: usize) -> Result<i32, String> {
+    pub fn index(&self, index: usize) -> Result<i32, String> {
         self.indices
             .get(index)
             .copied()
@@ -287,7 +287,7 @@ impl MeshPCurve {
     }
 
     /// Mutable access to the mesh node index at the given index.
-    pub fn get_index_mut(&mut self, index: usize) -> Result<&mut i32, String> {
+    pub fn index_mut(&mut self, index: usize) -> Result<&mut i32, String> {
         if index >= self.indices.len() {
             return Err(out_of_range("MeshPCurve::get_index_mut", index, self.indices.len()));
         }
@@ -306,7 +306,7 @@ impl MeshPCurve {
     }
 
     /// Curve parameter at the given index.
-    pub fn get_parameter(&self, index: usize) -> Result<f64, String> {
+    pub fn parameter(&self, index: usize) -> Result<f64, String> {
         self.parameters
             .get(index)
             .copied()
@@ -314,7 +314,7 @@ impl MeshPCurve {
     }
 
     /// Mutable access to the parameter at the given index.
-    pub fn get_parameter_mut(&mut self, index: usize) -> Result<&mut f64, String> {
+    pub fn parameter_mut(&mut self, index: usize) -> Result<&mut f64, String> {
         if index >= self.parameters.len() {
             return Err(out_of_range("MeshPCurve::get_parameter_mut", index, self.parameters.len()));
         }
@@ -563,7 +563,7 @@ impl MeshEdge {
     }
 
     /// Degenerated flag (from `BRep_TEdge`).
-    pub fn degenerated(&self) -> bool {
+    pub fn is_degenerated(&self) -> bool {
         self.degenerated
     }
 

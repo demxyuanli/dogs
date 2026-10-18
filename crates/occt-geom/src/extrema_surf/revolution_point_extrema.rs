@@ -134,7 +134,7 @@ impl<'a> ExtremaExtPRevS<'a> {
         self.axis = s
             .revolution_axis()
             .expect("Extrema_ExtPRevS: revolution surface without an axis");
-        self.position = get_position(s);
+        self.position = position(s);
         self.is_analytically_computable =
             is_case_analytically_computable(self.c.as_ref(), &self.position, &self.axis);
 
@@ -364,7 +364,7 @@ impl<'a> ExtremaExtPRevS<'a> {
 
 /// `GetPosition(S)` (`Extrema_ExtPRevS.cxx:38-79`): the supporting plane of
 /// the generatrix, as `(location, normal)`.
-fn get_position(s: &dyn Surface) -> CurvePlane {
+fn position(s: &dyn Surface) -> CurvePlane {
     let c = s
         .revolution_basis_curve()
         .expect("Extrema_ExtPRevS: revolution surface without a basis curve");

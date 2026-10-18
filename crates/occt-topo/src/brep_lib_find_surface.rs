@@ -287,7 +287,7 @@ impl FindSurface {
     }
 
     /// `Found()` (`cxx:583-586`).
-    pub fn found(&self) -> bool {
+    pub fn is_found(&self) -> bool {
         self.surface.is_some()
     }
 
@@ -563,7 +563,7 @@ impl FindSurface {
             self.surface = Some(plane_surface.clone());
             // If S is wire, try to orient surface according to orientation of
             // wire (cxx:564-576).
-            if shape.shape_type() == ShapeType::Wire && shape.closed() {
+            if shape.shape_type() == ShapeType::Wire && shape.is_closed() {
                 if let Some(w) = wires_of(shape).into_iter().next() {
                     let tmp_face = crate::brep_lib_make_face::make_face_from_surface(
                         plane_surface,

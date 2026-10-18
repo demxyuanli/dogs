@@ -368,16 +368,16 @@ impl ObjMaterialMap {
         }
         if style.is_set_color_surf() {
             has_material = true;
-            let c = style.get_color_surf();
+            let c = style.color_surf();
             // `aDiffQ = theStyle.GetColorSurf()`; ambient is
             // `Vec3(color) * 0.25f` through the *linear* `Quantity_Color`
             // constructor (`cxx:96-99`).
             diff_q = LinearRgb::from_srgb(c);
             amb_q = diff_q.scaled(0.25);
-            if style.get_color_surf_rgba().a < 1.0 {
+            if style.color_surf_rgba().a < 1.0 {
                 // `aTransp = 1.0f - theStyle.GetColorSurfRGBA().Alpha()`
                 // (`cxx:100-103`).
-                transp = 1.0 - style.get_color_surf_rgba().a;
+                transp = 1.0 - style.color_surf_rgba().a;
             }
         }
 

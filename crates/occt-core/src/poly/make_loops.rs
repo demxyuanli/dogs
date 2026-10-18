@@ -50,29 +50,29 @@ pub const RC_FAILURE: u8 = 4;
 /// Helper providing adjacent links for each node, used by the loop search.
 pub trait MakeLoopsHelper {
     /// Returns the links adjacent to the given node.
-    fn get_adjacent_links(&self, node: usize) -> &[Link];
+    fn adjacent_links(&self, node: usize) -> &[Link];
     /// Optional hook called from `add_link`.
     fn on_add_link(&self, _num: usize, _link: &Link) {}
     /// `Poly_MakeLoops::Helper::GetNormal` (`Poly_MakeLoops.hxx:104-118`).
     /// OCCT's base implementation returns `false`, which makes `chooseLeftWay`
     /// fall back to `theLstIndS.First()`; `None` is that `false`.
-    fn get_normal(&self, _node: usize) -> Option<GpDir> {
+    fn normal(&self, _node: usize) -> Option<GpDir> {
         None
     }
     /// `Poly_MakeLoops3D::Helper::GetFirstTangent` (`Poly_MakeLoops.hxx:276`).
-    fn get_first_tangent(&self, _link: &Link) -> Option<GpDir> {
+    fn first_tangent(&self, _link: &Link) -> Option<GpDir> {
         None
     }
     /// `Poly_MakeLoops3D::Helper::GetLastTangent` (`Poly_MakeLoops.hxx:279`).
-    fn get_last_tangent(&self, _link: &Link) -> Option<GpDir> {
+    fn last_tangent(&self, _link: &Link) -> Option<GpDir> {
         None
     }
     /// `Poly_MakeLoops2D::Helper::GetFirstTangent` (`Poly_MakeLoops.hxx:317`).
-    fn get_first_tangent_2d(&self, _link: &Link) -> Option<GpDir2d> {
+    fn first_tangent_2d(&self, _link: &Link) -> Option<GpDir2d> {
         None
     }
     /// `Poly_MakeLoops2D::Helper::GetLastTangent` (`Poly_MakeLoops.hxx:320`).
-    fn get_last_tangent_2d(&self, _link: &Link) -> Option<GpDir2d> {
+    fn last_tangent_2d(&self, _link: &Link) -> Option<GpDir2d> {
         None
     }
 }
@@ -228,11 +228,11 @@ impl<'a> PolyMakeLoops<'a> {
                 if start_number > 1 {
                     // It is required to mark hanging edges.
                     let node = if start_number <= contour.len() {
-                        self.get_first_node(index_s)
+                        self.first_node(index_s)
                     } else {
                         // Open contour: mark from the end back to a bifurcation.
                         let last_s = contour[start_number - 2];
-                        self.get_last_node(last_s)
+                        self.last_node(last_s)
                     };
                     self.mark_hang_chain(node, index_s);
                 }
@@ -250,16 +250,16 @@ impl<'a> PolyMakeLoops<'a> {
     }
 
     /// Returns the number of loops in the result.
-    pub fn get_nb_loops(&self) -> usize { self.loops.len() }
+    pub fn nb_loops(&self) -> usize { self.loops.len() }
 
     /// Returns the loop of the given index.
-    pub fn get_loop(&self, index: usize) -> &[Link] { &self.loops[index] }
+    pub fn loop_at(&self, index: usize) -> &[Link] { &self.loops[index] }
 
     /// Returns the number of detected hanging chains.
-    pub fn get_nb_hanging(&self) -> usize { self.hang_indices.len() }
+    pub fn nb_hanging(&self) -> usize { self.hang_indices.len() }
 
     /// Fills in the list of hanging links.
-    pub fn get_hanging_links(&self) -> Vec<Link> {
+    pub fn hanging_links(&self) -> Vec<Link> {
         let mut out = Vec::new();
         for &index_s in &self.hang_indices {
             let mut link = self.map_links[index_s.unsigned_abs() as usize - 1];
@@ -287,11 +287,11 @@ impl<'a> PolyMakeLoops<'a> {
             return self.choose_left_way_2d(seg_index, lst_ind_s);
         }
         let mut angle_min = std::f64::consts::PI * 2.0;
-        let Some(normal) = self.helper.get_normal(node) else {
+        let Some(normal) = self.helper.normal(node) else {
             return lst_ind_s[0];
         };
         let link = &self.map_links[seg_index.unsigned_abs() as usize - 1];
-        let Some(tgt_ref) = self.helper.get_last_tangent(link) else {
+        let Some(tgt_ref) = self.helper.last_tangent(link) else {
             return lst_ind_s[0];
         };
 
@@ -313,7 +313,7 @@ impl<'a> PolyMakeLoops<'a> {
         let mut res_index: isize = 0;
         for &ind_s in lst_ind_s {
             let link = &self.map_links[ind_s.unsigned_abs() as usize - 1];
-            let Some(tgt) = self.helper.get_first_tangent(link) else {
+            let Some(tgt) = self.helper.first_tangent(link) else {
                 continue;
             };
             let t = GpVec::from_xyz(tgt.xyz());
@@ -351,14 +351,14 @@ impl<'a> PolyMakeLoops<'a> {
     fn choose_left_way_2d(&self, seg_index: isize, lst_ind_s: &[isize]) -> isize {
         let mut angle_min = std::f64::consts::PI * 2.0;
         let link = &self.map_links[seg_index.unsigned_abs() as usize - 1];
-        let Some(tgt_ref) = self.helper.get_last_tangent_2d(link) else {
+        let Some(tgt_ref) = self.helper.last_tangent_2d(link) else {
             // A problem with defining the reference direction: take the first way.
             return lst_ind_s[0];
         };
         let mut res_index: isize = 0;
         for &ind_s in lst_ind_s {
             let link = &self.map_links[ind_s.unsigned_abs() as usize - 1];
-            let Some(tgt) = self.helper.get_first_tangent_2d(link) else {
+            let Some(tgt) = self.helper.first_tangent_2d(link) else {
                 // Skip a problem way.
                 continue;
             };
@@ -388,20 +388,20 @@ impl<'a> PolyMakeLoops<'a> {
         let mut contour: Vec<isize> = Vec::new();
         let mut node_link: HashMap<usize, isize> = HashMap::new();
         let mut index_s = start_index_s;
-        let mut last_node = self.get_last_node(index_s);
+        let mut last_node = self.last_node(index_s);
         let start_number;
         loop {
             contour.push(index_s);
-            node_link.insert(self.get_first_node(index_s), index_s);
+            node_link.insert(self.first_node(index_s), index_s);
             let index = index_s.unsigned_abs() as usize;
 
             // Collect the list of links from this node able to participate.
             let mut lst_ind_s: Vec<isize> = Vec::new();
-            for link in self.helper.get_adjacent_links(last_node) {
+            for link in self.helper.adjacent_links(last_node) {
                 let Some(ind) = self.find_link_index(link) else { continue };
                 if ind == index { continue; }
                 let mut ind_s = ind as isize;
-                if self.get_first_node(ind as isize) != last_node {
+                if self.first_node(ind as isize) != last_node {
                     ind_s = -ind_s;
                 }
                 if self.can_link_be_taken(ind_s) {
@@ -438,7 +438,7 @@ impl<'a> PolyMakeLoops<'a> {
                 break;
             }
 
-            last_node = self.get_last_node(index_s);
+            last_node = self.last_node(index_s);
 
             if let Some(&bound) = node_link.get(&last_node) {
                 // Closing the loop: stop search.
@@ -466,13 +466,13 @@ impl<'a> PolyMakeLoops<'a> {
 
     /// Returns the first node of the link, taking orientation (the sign of the
     /// index) into account.
-    fn get_first_node(&self, index_s: isize) -> usize {
+    fn first_node(&self, index_s: isize) -> usize {
         let link = &self.map_links[index_s.unsigned_abs() as usize - 1];
         if index_s > 0 { link.node1 } else { link.node2 }
     }
 
     /// Returns the last node of the link, taking orientation into account.
-    fn get_last_node(&self, index_s: isize) -> usize {
+    fn last_node(&self, index_s: isize) -> usize {
         let link = &self.map_links[index_s.unsigned_abs() as usize - 1];
         if index_s > 0 { link.node2 } else { link.node1 }
     }
@@ -483,10 +483,10 @@ impl<'a> PolyMakeLoops<'a> {
         let mut node1 = start_node;
         let mut index_s = start_index_s;
         let mut index = index_s.unsigned_abs() as usize;
-        let is_out = node1 == self.get_first_node(index_s);
+        let is_out = node1 == self.first_node(index_s);
         loop {
             // Check whether the current link is hanging: count other ways.
-            let links = self.helper.get_adjacent_links(node1).to_vec();
+            let links = self.helper.adjacent_links(node1).to_vec();
             let mut n_edges = 0;
             for link in &links {
                 let Some(ind) = self.find_link_index(link) else { continue };
@@ -507,11 +507,11 @@ impl<'a> PolyMakeLoops<'a> {
             self.hang_indices.insert(index_s);
 
             // Get the other node of the link.
-            if is_out { node1 = self.get_last_node(index_s); }
-            else { node1 = self.get_first_node(index_s); }
+            if is_out { node1 = self.last_node(index_s); }
+            else { node1 = self.first_node(index_s); }
 
             // Find the next link in the chain.
-            let next_links = self.helper.get_adjacent_links(node1).to_vec();
+            let next_links = self.helper.adjacent_links(node1).to_vec();
             let mut next_index_s: isize = 0;
             for link in &next_links {
                 let Some(ind) = self.find_link_index(link) else { continue };
@@ -563,7 +563,7 @@ impl Default for FixedLinkHelper {
 }
 
 impl MakeLoopsHelper for FixedLinkHelper {
-    fn get_adjacent_links(&self, node: usize) -> &[Link] {
+    fn adjacent_links(&self, node: usize) -> &[Link] {
         self.adjacent.get(&node).map(|v| v.as_slice()).unwrap_or(&[])
     }
 }
@@ -595,9 +595,9 @@ mod tests {
         }
         let rc = ml.perform().unwrap();
         assert_ne!(rc & RC_LOOPS_DONE, 0);
-        assert_eq!(ml.get_nb_loops(), 6);
+        assert_eq!(ml.nb_loops(), 6);
         for i in 0..6 {
-            let l = ml.get_loop(i);
+            let l = ml.loop_at(i);
             assert_eq!(l.len(), 4, "loop {i} has 4 links");
             // Each loop is closed: last link's last node == first link's first node.
             let first_first = if l[0].is_reversed() { l[0].node2 } else { l[0].node1 };
@@ -618,8 +618,8 @@ mod tests {
         }
         let rc = ml.perform().unwrap();
         assert_ne!(rc & RC_LOOPS_DONE, 0);
-        assert_eq!(ml.get_nb_loops(), 1);
-        assert_eq!(ml.get_loop(0).len(), 4);
+        assert_eq!(ml.nb_loops(), 1);
+        assert_eq!(ml.loop_at(0).len(), 4);
         assert_eq!(rc & RC_HANGING_LINKS, 0);
     }
 
@@ -637,9 +637,9 @@ mod tests {
         let rc = ml.perform().unwrap();
         assert_ne!(rc & RC_LOOPS_DONE, 0);
         assert_ne!(rc & RC_HANGING_LINKS, 0);
-        assert_eq!(ml.get_nb_loops(), 1);
-        assert_eq!(ml.get_nb_hanging(), 1);
-        assert_eq!(ml.get_hanging_links().len(), 1);
+        assert_eq!(ml.nb_loops(), 1);
+        assert_eq!(ml.nb_hanging(), 1);
+        assert_eq!(ml.hanging_links().len(), 1);
     }
 
     #[test]

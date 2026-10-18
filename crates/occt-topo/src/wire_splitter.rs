@@ -583,7 +583,7 @@ mod tests {
         let mut edges = square_edges();
         let w = WireSplitter::make_wire(&mut edges).expect("square closes");
         assert!(w.is_wire());
-        assert!(w.closed());
+        assert!(w.is_closed());
         assert!(edges.is_empty(), "all 4 edges consumed");
         assert!(wire_chains_closed(&w), "edges chain end-to-end and close");
     }
@@ -633,7 +633,7 @@ mod tests {
             let wires = WireSplitter::make_wires(f).expect("face wires build");
             assert_eq!(wires.len(), 1, "one closed loop per box face");
             assert!(wires[0].is_wire());
-            assert!(wires[0].closed());
+            assert!(wires[0].is_closed());
             assert_eq!(edges_of(&wires[0]).len(), 4, "loop has the 4 edges");
             assert!(wire_chains_closed(&wires[0]));
         }
@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(wires.len(), 2, "outer loop and hole loop");
         for w in &wires {
             assert_eq!(edges_of(w).len(), 4);
-            assert!(w.closed());
+            assert!(w.is_closed());
             assert!(wire_chains_closed(w));
         }
 
@@ -693,7 +693,7 @@ mod tests {
         assert_eq!(ws.wires().len(), 2, "outer loop and hole loop from IN+boundary");
         for w in ws.wires() {
             assert_eq!(edges_of(w).len(), 4);
-            assert!(w.closed());
+            assert!(w.is_closed());
             assert!(wire_chains_closed(w));
         }
     }
@@ -737,7 +737,7 @@ mod tests {
         let wires = WireSplitter::split_block(&face, all).expect("split block");
         assert_eq!(wires.len(), 2, "the square splits into two pieces, got {}", wires.len());
         for w in &wires {
-            assert!(w.closed());
+            assert!(w.is_closed());
             assert!(wire_chains_closed(w));
         }
     }

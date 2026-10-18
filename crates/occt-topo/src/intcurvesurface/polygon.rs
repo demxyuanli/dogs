@@ -279,7 +279,7 @@ impl IntfPolygon3dTool for ThePolygonToolOfHInter {
         polyg.deflection_over_estimation()
     }
 
-    fn closed(polyg: &Self::Polygon3d) -> bool {
+    fn is_closed(polyg: &Self::Polygon3d) -> bool {
         polyg.is_closed()
     }
 

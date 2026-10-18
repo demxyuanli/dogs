@@ -10,7 +10,7 @@ pub mod tools {
     use crate::gp::GpPnt;
 
     /// Compute the tight bounding box around an array of points (3D).
-    pub fn get_box(points: &[GpPnt]) -> super::B3 {
+    pub fn box_of_points(points: &[GpPnt]) -> super::B3 {
         let mut b = super::B3::new();
         for p in points { b.add_point(p); }
         b

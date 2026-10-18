@@ -264,11 +264,11 @@ impl Triangulator {
             if ds.element_movability(id) == VertexState::Deleted {
                 continue;
             }
-            let nodes = ds.element_nodes(&ds.get_element(id));
+            let nodes = ds.element_nodes(&ds.element(id));
             let [p0, p1, p2] = [
-                ds.get_node(nodes[0]).location,
-                ds.get_node(nodes[1]).location,
-                ds.get_node(nodes[2]).location,
+                ds.node(nodes[0]).location,
+                ds.node(nodes[1]).location,
+                ds.node(nodes[2]).location,
             ];
             let c = GpPnt2d::new(
                 (p0.x() + p1.x() + p2.x()) / 3.0,
@@ -319,7 +319,7 @@ impl Triangulator {
         let mut used: Vec<i32> = Vec::new();
         let mut seen: HashSet<i32> = HashSet::new();
         for &id in &ids {
-            for &n in ds.element_nodes(&ds.get_element(id)).iter() {
+            for &n in ds.element_nodes(&ds.element(id)).iter() {
                 if seen.insert(n) {
                     used.push(n);
                 }
@@ -332,14 +332,14 @@ impl Triangulator {
         let mut uv: Vec<GpPnt2d> = Vec::with_capacity(used.len());
         for &n in &used {
             node_to_vertex.insert(n, uv.len());
-            let loc = ds.get_node(n).location;
+            let loc = ds.node(n).location;
             uv.push(loc);
             vertices.push(surface.d0(loc.x(), loc.y()));
         }
 
         let mut triangles: Vec<Triangle> = Vec::with_capacity(ids.len());
         for &id in &ids {
-            let nodes = ds.element_nodes(&ds.get_element(id));
+            let nodes = ds.element_nodes(&ds.element(id));
             triangles.push(Triangle::new(
                 node_to_vertex[&nodes[0]],
                 node_to_vertex[&nodes[1]],

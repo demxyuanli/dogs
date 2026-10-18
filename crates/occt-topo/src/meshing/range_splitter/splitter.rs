@@ -327,7 +327,7 @@ impl ConeRangeSplitter {
 
     /// Returns the split steps along U and V and the number of steps.
     /// Source: `GetSplitSteps`.
-    pub fn get_split_steps(
+    pub fn split_steps(
         &self,
         params: &MeshParameters,
         steps_nb: &mut (i32, i32),
@@ -377,7 +377,7 @@ impl RangeSplitter for ConeRangeSplitter {
         let range_u = self.base().range_u();
         let range_v = self.base().range_v();
         let mut steps_nb = (0i32, 0i32);
-        let (du, dv) = self.get_split_steps(params, &mut steps_nb);
+        let (du, dv) = self.split_steps(params, &mut steps_nb);
 
         let pas_max_v = range_v.1 - dv * 0.5;
         let pas_max_u = range_u.1 - du * 0.5;
@@ -767,7 +767,7 @@ impl RangeSplitter for NURBSRangeSplitter {
         Some(&mut self.inner.v_params)
     }
 
-    fn get_undefined_interval_nb(&self, is_u: bool, _continuity: u8) -> i32 {
+    fn undefined_interval_nb(&self, is_u: bool, _continuity: u8) -> i32 {
         let Some(surf) = self.surface() else {
             return 1;
         };

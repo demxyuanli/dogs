@@ -198,7 +198,7 @@ impl<'a> ConstructStyles<'a> {
     }
 
     /// `STEPConstruct_Styles::GetColors` (`cxx:735-770`).
-    pub(in crate::step) fn get_colors(&self, style_id: usize) -> StyleColors {
+    pub(in crate::step) fn colors(&self, style_id: usize) -> StyleColors {
         let mut res = StyleColors {
             surface_color: None,
             boundary_color: None,
@@ -245,7 +245,7 @@ impl<'a> ConstructStyles<'a> {
 
     /// The `GetColors` return value, as `SetStyle` reads it (`cxx:1279-1282`).
     pub(in crate::step) fn has_colors(&self, style_id: usize) -> Option<StyleColors> {
-        let colors = self.get_colors(style_id);
+        let colors = self.colors(style_id);
         if colors.is_defined() { Some(colors) } else { None }
     }
 }

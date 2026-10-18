@@ -34,7 +34,7 @@ pub fn shape_dimension(t: ShapeType) -> u8 {
 
 /// Check if a shape is closed (all boundary sub-shapes have even multiplicity).
 /// Simplified: uses the `closed` flag stored on the TShape.
-pub fn is_closed(s: &TopoShape) -> bool { s.closed() }
+pub fn is_closed(s: &TopoShape) -> bool { s.is_closed() }
 
 /// Vertex tools — access the 3D point from the geometry side-table.
 impl Vertex {

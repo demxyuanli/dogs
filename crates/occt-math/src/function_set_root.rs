@@ -61,7 +61,7 @@ pub trait MathFunctionSetWithDerivatives {
     fn value(&mut self, x: &MathVector, f: &mut MathVector) -> bool;
     fn derivatives(&mut self, x: &MathVector, d: &mut MathMatrix) -> bool;
     fn values(&mut self, x: &MathVector, f: &mut MathVector, d: &mut MathMatrix) -> bool;
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         0
     }
 }
@@ -72,7 +72,7 @@ pub trait FunctionWithDerivative {
     fn value(&mut self, x: f64, f: &mut f64) -> bool;
     fn derivative(&mut self, x: f64, d: &mut f64) -> bool;
     fn values(&mut self, x: f64, f: &mut f64, d: &mut f64) -> bool;
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         0
     }
 }
@@ -1066,7 +1066,7 @@ impl MathFunctionSetRoot {
             None => {
                 self.done = false;
                 if !stop_on_divergent || !self.is_divergent {
-                    self.state = f.get_state_number();
+                    self.state = f.state_number();
                 }
                 return;
             }
@@ -1079,7 +1079,7 @@ impl MathFunctionSetRoot {
             self.done = false;
             if !stop_on_divergent || !self.is_divergent {
                 self.done = true;
-                self.state = f.get_state_number();
+                self.state = f.state_number();
             }
             return;
         }
@@ -1109,7 +1109,7 @@ impl MathFunctionSetRoot {
                     self.done = true;
                     // modified by jgv, 31.08.2011: update F before GetStateNumber
                     f.value(&self.sol, &mut self.ff);
-                    self.state = f.get_state_number();
+                    self.state = f.state_number();
                 }
                 return;
             }
@@ -1165,7 +1165,7 @@ impl MathFunctionSetRoot {
                     None => {
                         self.done = false;
                         if !stop_on_divergent || !self.is_divergent {
-                            self.state = f.get_state_number();
+                            self.state = f.state_number();
                         }
                         return;
                     }
@@ -1177,7 +1177,7 @@ impl MathFunctionSetRoot {
                 if !stop_on_divergent || !self.is_divergent {
                     self.done = true;
                     f.value(&self.sol, &mut self.ff);
-                    self.state = f.get_state_number();
+                    self.state = f.state_number();
                 }
                 return;
             }
@@ -1301,7 +1301,7 @@ impl MathFunctionSetRoot {
                                 None => {
                                     self.done = false;
                                     if !stop_on_divergent || !self.is_divergent {
-                                        self.state = f.get_state_number();
+                                        self.state = f.state_number();
                                     }
                                     return;
                                 }
@@ -1316,7 +1316,7 @@ impl MathFunctionSetRoot {
                             if !stop_on_divergent || !self.is_divergent {
                                 self.done = true;
                                 f.value(&self.sol, &mut self.ff);
-                                self.state = f.get_state_number();
+                                self.state = f.state_number();
                             }
                             return;
                         }
@@ -1401,7 +1401,7 @@ impl MathFunctionSetRoot {
                                     None => {
                                         self.done = false;
                                         if !stop_on_divergent || !self.is_divergent {
-                                            self.state = f.get_state_number();
+                                            self.state = f.state_number();
                                         }
                                         return;
                                     }
@@ -1460,7 +1460,7 @@ impl MathFunctionSetRoot {
                                     None => {
                                         self.done = false;
                                         if !stop_on_divergent || !self.is_divergent {
-                                            self.state = f.get_state_number();
+                                            self.state = f.state_number();
                                         }
                                         return;
                                     }
@@ -1527,7 +1527,7 @@ impl MathFunctionSetRoot {
                                     None => {
                                         self.done = false;
                                         if !stop_on_divergent || !self.is_divergent {
-                                            self.state = f.get_state_number();
+                                            self.state = f.state_number();
                                         }
                                         return;
                                     }
@@ -1572,7 +1572,7 @@ impl MathFunctionSetRoot {
                     if !stop_on_divergent || !self.is_divergent {
                         self.done = true;
                         f.value(&self.sol, &mut self.ff);
-                        self.state = f.get_state_number();
+                        self.state = f.state_number();
                     }
                     return;
                 }
@@ -1589,7 +1589,7 @@ impl MathFunctionSetRoot {
                             self.done = false;
                             if !stop_on_divergent || !self.is_divergent {
                                 self.done = true;
-                                self.state = f.get_state_number();
+                                self.state = f.state_number();
                             }
                             // si un gain inf a 5% on sort
                             return;
@@ -1618,7 +1618,7 @@ impl MathFunctionSetRoot {
                         if !stop_on_divergent || !self.is_divergent {
                             self.done = true;
                             f.value(&self.sol, &mut self.ff);
-                            self.state = f.get_state_number();
+                            self.state = f.state_number();
                         }
                         return;
                     }
@@ -1643,14 +1643,14 @@ impl MathFunctionSetRoot {
                         None => {
                             self.done = false;
                             if !stop_on_divergent || !self.is_divergent {
-                                self.state = f.get_state_number();
+                                self.state = f.state_number();
                             }
                             return;
                         }
                     }
                 } else {
                     if !stop_on_divergent || !self.is_divergent {
-                        self.state = f.get_state_number();
+                        self.state = f.state_number();
                     }
                     // y a plus d'issues
                     return;
@@ -1660,7 +1660,7 @@ impl MathFunctionSetRoot {
             self.kount += 1;
         }
         if !stop_on_divergent || !self.is_divergent {
-            self.state = f.get_state_number();
+            self.state = f.state_number();
         }
     }
 
@@ -1732,7 +1732,7 @@ impl MathFunctionRoot {
         };
 
         if done {
-            f.get_state_number();
+            f.state_number();
             let mut error = 0.0;
             f.value(root, &mut error);
             Self {

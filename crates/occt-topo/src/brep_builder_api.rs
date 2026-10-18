@@ -363,7 +363,7 @@ mod tests {
         let poly = make_polygon(&pts).expect("square polygon");
         assert_eq!(poly.vertices.len(), 4);
         assert_eq!(poly.edges.len(), 4);
-        assert!(poly.wire.closed(), "polygon wire is flagged closed");
+        assert!(poly.wire.is_closed(), "polygon wire is flagged closed");
         assert!(wire_is_closed(&poly.wire), "polygon wire chains end-to-end");
         for (v, p) in poly.vertices.iter().zip(&pts) {
             assert!(vertex_position(v).is_equal(p), "vertex point matches input");
@@ -446,7 +446,7 @@ mod tests {
             GpPnt::new(1., 1., 0.),
         ])
         .expect("open wire");
-        assert!(!w.closed());
+        assert!(!w.is_closed());
         assert_eq!(crate::topo_tools_full::edges_of_wire(&w).len(), 2);
 
         // Solid from faces, compound from shapes.

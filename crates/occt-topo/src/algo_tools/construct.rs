@@ -133,7 +133,7 @@ impl AlgoTools {
     ///
     /// Errors when the surface has a degenerate parameterization at that point
     /// (both partial derivatives collapse to zero).
-    pub fn get_normal_to_surface(s: &dyn Surface, u: f64, v: f64) -> Result<GpVec, String> {
+    pub fn normal_to_surface(s: &dyn Surface, u: f64, v: f64) -> Result<GpVec, String> {
         let n = surface_normal(s, u, v);
         if n.square_magnitude() < 1e-30 {
             return Err(format!(

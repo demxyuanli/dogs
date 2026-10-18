@@ -175,8 +175,8 @@ pub fn update_pave_blocks_with_sd_vertices(f: &mut PaveFiller) -> Result<(), Str
             let blocks = ds.pave_blocks(e);
             for (slot, pb) in blocks.iter().enumerate() {
                 let (i1, i2) = pb.indices();
-                let n1 = ds.get_same_domain_index(i1);
-                let n2 = ds.get_same_domain_index(i2);
+                let n1 = ds.same_domain_index(i1);
+                let n2 = ds.same_domain_index(i2);
                 if n1 != i1 || n2 != i2 {
                     updates.push((e, slot, n1, n2));
                 }
@@ -237,8 +237,8 @@ pub fn update_vertex_sd(f: &mut PaveFiller, n_v: usize, tol: f64) -> Result<usiz
 /// index are rewritten when that index was merged into a same-domain shape.
 pub fn update_intfs_with_sd_vertices(ds: &BopdsDS, interfs: &mut [BopdsInterf]) {
     for intf in interfs.iter_mut() {
-        if let Some(idx_new) = intf.get_index_new() {
-            intf.set_index_new(ds.get_same_domain_index(idx_new));
+        if let Some(idx_new) = intf.new_index() {
+            intf.set_index_new(ds.same_domain_index(idx_new));
         }
     }
 }
@@ -386,6 +386,6 @@ pub(super) fn edges_share_boundary_vertex(ds: &BopdsDS, i: usize, j: usize) -> b
         .map(|s| s.sub_shapes().to_vec())
         .unwrap_or_default();
     vi.iter()
-        .map(|&v| ds.get_same_domain_index(v))
-        .any(|v| vj.iter().map(|&w| ds.get_same_domain_index(w)).any(|w| w == v))
+        .map(|&v| ds.same_domain_index(v))
+        .any(|v| vj.iter().map(|&w| ds.same_domain_index(w)).any(|w| w == v))
 }

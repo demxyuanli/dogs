@@ -9,7 +9,7 @@ use occt_core::precision::PCONFUSION;
 use occt_geom::extrema_surf::curve_surface_extrema_all;
 
 use crate::bean_face::BeanFaceIntersector;
-use crate::bean_face_grid::{add_surface_to_box, get_surface_box};
+use crate::bean_face_grid::{add_surface_to_box, surface_box};
 use crate::bean_face_sample::{
     check_sampling, CurveRangeLocalizeData, CurveRangeSample, SurfaceRangeLocalizeData,
     SurfaceRangeSample,
@@ -40,7 +40,7 @@ impl BeanFaceIntersector {
         );
         if is_bspline && surface_data.has_grid() {
             if !b_fbox_found {
-                fbox = get_surface_box(
+                fbox = surface_box(
                     self.surface(),
                     self.umin,
                     self.umax,
@@ -131,22 +131,22 @@ impl BeanFaceIntersector {
             let mut range_c =
                 IntRange::new_unchecked(self.first_parameter, self.last_parameter);
             if b_allow_c {
-                range_c = it_c.get_range(self.first_parameter, self.last_parameter, nb_sample_c);
+                range_c = it_c.range(self.first_parameter, self.last_parameter, nb_sample_c);
             }
             let mut range_u = IntRange::new_unchecked(self.umin, self.umax);
             if b_allow_u {
-                range_u = it_s.get_range_u(self.umin, self.umax, nb_sample_u);
+                range_u = it_s.range_u(self.umin, self.umax, nb_sample_u);
             }
             let mut range_v = IntRange::new_unchecked(self.vmin, self.vmax);
             if b_allow_v {
-                range_v = it_s.get_range_v(self.vmin, self.vmax, nb_sample_v);
+                range_v = it_s.range_v(self.vmin, self.vmax, nb_sample_v);
             }
             let anarg1 = range_c.first;
             let anarg2 = range_c.last;
 
             let mut n_min_index = self.range_manager.len() as i32;
             let mut n_max_index = -1i32;
-            let inds1 = self.range_manager.get_indices(anarg1);
+            let inds1 = self.range_manager.indices(anarg1);
             for &n_index in &inds1 {
                 let n = n_index as i32;
                 n_min_index = n_min_index.min(n);
@@ -169,7 +169,7 @@ impl BeanFaceIntersector {
             } else {
                 n_min_index
             };
-            let inds2 = self.range_manager.get_indices(anarg2);
+            let inds2 = self.range_manager.indices(anarg2);
             for &n_index in &inds2 {
                 let n = n_index as i32;
                 n_min_index = n_min_index.min(n);
@@ -210,7 +210,7 @@ impl BeanFaceIntersector {
         if b_allow_c {
             for out_c in curve_data.list_range_out() {
                 let range_c =
-                    out_c.get_range(self.first_parameter, self.last_parameter, nb_sample_c);
+                    out_c.range(self.first_parameter, self.last_parameter, nb_sample_c);
                 let _ = self
                     .range_manager
                     .insert_range(range_c.first, range_c.last, 1);
@@ -247,7 +247,7 @@ impl BeanFaceIntersector {
         let mut list_curve_found: Vec<CurveRangeSample> = Vec::new();
         let mut list_surface_found: Vec<SurfaceRangeSample> = Vec::new();
 
-        let range_c = curve_range.get_range(
+        let range_c = curve_range.range(
             self.first_parameter,
             self.last_parameter,
             curve_data.nb_sample(),
@@ -263,12 +263,12 @@ impl BeanFaceIntersector {
             surface_range.range_index_u_deeper(surface_data.nb_sample_u());
         let mut cur_index_v_init =
             surface_range.range_index_v_deeper(surface_data.nb_sample_v());
-        let range_v = surface_range.get_range_v(
+        let range_v = surface_range.range_v(
             self.vmin,
             self.vmax,
             surface_data.nb_sample_v(),
         );
-        let range_u = surface_range.get_range_u(
+        let range_u = surface_range.range_u(
             self.umin,
             self.umax,
             surface_data.nb_sample_u(),
@@ -370,7 +370,7 @@ impl BeanFaceIntersector {
                             MeshSurfaceType::BSplineSurface
                         );
                         if is_bspline && surface_data.has_grid() {
-                            box_s = get_surface_box(
+                            box_s = surface_box(
                                 self.surface(),
                                 prev_par_u,
                                 cur_par_u,

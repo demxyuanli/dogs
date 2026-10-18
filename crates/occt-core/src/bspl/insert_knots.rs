@@ -274,7 +274,7 @@ pub(super) fn copy(nb: i32, old_first: &mut i32, old: &[f64], new_first: &mut i3
 /// `BoorIndex(index, …)` out of the Boor work array into `pole` at `position`,
 /// wrapping `position` at `pole_upper`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn get_pole(
+pub(super) fn boor_pole(
     local: &[f64],
     index: i32,
     length: i32,
@@ -442,7 +442,7 @@ pub fn insert_knots_dim(
         let upper_val = curnp - 1;
         let mut np = 1 + (index + 1) * dim;
         for i in 1..=(length + depth) {
-            get_pole(
+            boor_pole(
                 &local_poles,
                 i,
                 length,
@@ -506,7 +506,7 @@ pub fn insert_knots_dim(
             // copy the new poles but rotate them with depth
             let mut np = 1;
             for i in depth..(length + depth) {
-                get_pole(
+                boor_pole(
                     &local_poles,
                     i,
                     length,
@@ -519,7 +519,7 @@ pub fn insert_knots_dim(
             }
             let mut np = new_poles.len() as i32 - depth * dim + 1;
             for i in 0..depth {
-                get_pole(
+                boor_pole(
                     &local_poles,
                     i,
                     length,

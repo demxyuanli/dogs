@@ -213,7 +213,7 @@ use super::*;
                 let x = cx as i32 + dx;
                 let y = cy as i32 + dy;
                 if x >= 0 && y >= 0 && x < raster.width as i32 && y < raster.height as i32 {
-                    out.push(raster.get_pixel(x as usize, y as usize));
+                    out.push(raster.pixel(x as usize, y as usize));
                 }
             }
         }

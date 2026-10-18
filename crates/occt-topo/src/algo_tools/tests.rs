@@ -101,11 +101,11 @@ use super::*;
     }
 
     #[test]
-    fn get_normal_to_surface_plane_is_z() {
+    fn normal_to_surface_plane_is_z() {
         let b = TopoBuilder::new();
         let face = b.make_face_plane(&GpPln::new(GpAx3::standard()));
         let s = BRepTool::face_surface(&face).expect("plane surface");
-        let n = AlgoTools::get_normal_to_surface(s.as_ref(), 0.5, 0.5).expect("normal");
+        let n = AlgoTools::normal_to_surface(s.as_ref(), 0.5, 0.5).expect("normal");
         // Standard plane: unit normal along ±Z.
         assert!(n.xyz().z.abs() > 0.99, "normal {:?}", n);
         assert!(n.square_magnitude() - 1.0 < 1e-6, "unit normal");
@@ -439,8 +439,8 @@ use super::*;
     }
 
     #[test]
-    fn get_edge_off_none_for_edge_on_face() {
+    fn edge_off_none_for_edge_on_face() {
         let b = unit_box();
         // Edge 0 lies on the bottom face → no off-face parameter.
-        assert!(AlgoTools::get_edge_off(&b.edges[0], &b.faces[0]).is_none());
+        assert!(AlgoTools::edge_off(&b.edges[0], &b.faces[0]).is_none());
     }

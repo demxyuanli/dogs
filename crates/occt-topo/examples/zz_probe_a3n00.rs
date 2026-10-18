@@ -174,7 +174,7 @@ fn main() {
                             "UVDBG  w{wi}e{ei} ori={:?} deg={} kind={:?} stored_reps={} range=({t1:.9},{t2:.9}) first=({:.9},{:.9}) last=({:.9},{:.9}) samp_u=[{:.9},{:.9}] samp_v=[{:.9},{:.9}]",
                             e.0.orientation(),
                             BRepTool::is_degenerated(e),
-                            occt_geom2d::adaptor_curve::get_type2d(c2d.as_ref()),
+                            occt_geom2d::adaptor_curve::type2d(c2d.as_ref()),
                             GeometryRegistry::global().edge_pcurve_reps(e).len(),
                             p1.x(), p1.y(), p2.x(), p2.y(),
                             su.0, su.1, sv.0, sv.1

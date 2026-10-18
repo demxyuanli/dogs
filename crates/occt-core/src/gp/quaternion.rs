@@ -109,7 +109,7 @@ impl GpQuaternion {
     /// `gp_Quaternion::GetVectorAndAngle(gp_Vec&, double&)`
     /// (`gp_Quaternion.cxx:91-112`). Returns `(axis, angle)` with the angle in
     /// `[-PI, PI]`; a zero vector part yields axis `+Z` and angle `0`.
-    pub fn get_vector_and_angle(&self) -> (GpVec, f64) {
+    pub fn vector_and_angle(&self) -> (GpVec, f64) {
         let vl = (self.x * self.x + self.y * self.y + self.z * self.z).sqrt();
         // `gp_Quaternion::GetVectorAndAngle` (`gp_Quaternion.cxx:94`):
         // `vl > gp::Resolution()`.
@@ -186,11 +186,11 @@ impl GpQuaternion {
     }
 
     /// `gp_Quaternion::GetEulerAngles(...)` (`gp_Quaternion.cxx:362-412`).
-    pub fn get_euler_angles(
+    pub fn euler_angles(
         &self,
         order: crate::gp::euler_sequence::GpEulerSequence,
     ) -> (f64, f64, f64) {
-        let m = self.get_matrix();
+        let m = self.matrix();
         let o = crate::gp::euler_sequence::translate_euler_sequence(order);
 
         let (mut alpha, mut beta, mut gamma);
@@ -297,7 +297,7 @@ impl GpQuaternion {
 
     /// `gp_Quaternion::GetMatrix()` (`gp_Quaternion.cxx:153-187`): the factor
     /// `2/SquareNorm()` means a non-unit quaternion yields a scaled matrix.
-    pub fn get_matrix(&self) -> GpMat {
+    pub fn matrix(&self) -> GpMat {
         let s = 2.0 / self.square_norm();
         let x2 = self.x * s;
         let y2 = self.y * s;

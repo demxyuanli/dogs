@@ -56,7 +56,7 @@ impl AlgoTools {
     /// (`BOPTools_AlgoTools::GetEdgeOff`, geometric form).
     ///
     /// Returns `None` when the whole edge lies on or inside the face.
-    pub fn get_edge_off(edge: &Edge, face: &Face) -> Option<f64> {
+    pub fn edge_off(edge: &Edge, face: &Face) -> Option<f64> {
         let surf = BRepTool::face_surface(face)?;
         let cl = FClass2d::new(face, 1e-7).ok()?;
         let (a, b) = BRepTool::edge_parameters(edge);

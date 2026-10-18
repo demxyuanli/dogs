@@ -157,7 +157,7 @@ impl CurvlinFunc {
         self.last_s
     }
 
-    pub fn get_length(&self) -> f64 {
+    pub fn length(&self) -> f64 {
         self.length
     }
 
@@ -196,8 +196,8 @@ impl CurvlinFunc {
         }
         // Restore full Cos window then re-trim to [FirstU, LastU] in U.
         self.cos1 = rebuild_cos(self.c2d1.clone(), self.surf1.clone());
-        let first_u = self.get_u_parameter(first);
-        let last_u = self.get_u_parameter(last);
+        let first_u = self.u_parameter(first);
+        let last_u = self.u_parameter(last);
         // Trim pcurve to the U window and rebuild Cos.
         let trimmed: Arc<dyn Curve2d> = Arc::new(occt_geom2d::trimmed::Geom2dTrimmedCurve::new(
             Arc::from(self.c2d1.clone_dyn()),
@@ -215,7 +215,7 @@ impl CurvlinFunc {
     }
 
     /// `GetUParameter` case 2 (`cxx:491-572`).
-    pub fn get_u_parameter(&mut self, s: f64) -> f64 {
+    pub fn u_parameter(&mut self, s: f64) -> f64 {
         if !(0.0..=1.0).contains(&s) {
             return self.first_u1;
         }
@@ -270,7 +270,7 @@ impl CurvlinFunc {
         if result.len() < 5 {
             return false;
         }
-        let u = self.get_u_parameter(s);
+        let u = self.u_parameter(s);
         let length = self.length;
         match order {
             0 => {

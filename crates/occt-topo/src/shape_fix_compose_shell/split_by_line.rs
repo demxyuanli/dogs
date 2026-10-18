@@ -59,7 +59,7 @@ impl ComposeShell {
                 Some(s) => s,
                 None => return false,
             };
-            let vert = wire.get_vertex().cloned();
+            let vert = wire.vertex().cloned();
             let vert = match vert {
                 Some(v) => v,
                 None => return false,
@@ -642,11 +642,11 @@ impl ComposeShell {
                 let par = split_line_par[i - 2] + shift_u;
                 seg.define_iu_min(
                     1,
-                    get_patch_index(par + PCONFUSION, self.grid.u_joint_values(), self.u_closed),
+                    patch_index(par + PCONFUSION, self.grid.u_joint_values(), self.u_closed),
                 );
                 seg.define_iu_max(
                     1,
-                    get_patch_index(par - PCONFUSION, self.grid.u_joint_values(), self.u_closed) + 1,
+                    patch_index(par - PCONFUSION, self.grid.u_joint_values(), self.u_closed) + 1,
                 );
             } else {
                 let shift_v = if self.closed_mode && self.v_closed {
@@ -661,11 +661,11 @@ impl ComposeShell {
                 let par = split_line_par[i - 2] + shift_v;
                 seg.define_iv_min(
                     1,
-                    get_patch_index(par + PCONFUSION, self.grid.v_joint_values(), self.v_closed),
+                    patch_index(par + PCONFUSION, self.grid.v_joint_values(), self.v_closed),
                 );
                 seg.define_iv_max(
                     1,
-                    get_patch_index(par - PCONFUSION, self.grid.v_joint_values(), self.v_closed) + 1,
+                    patch_index(par - PCONFUSION, self.grid.v_joint_values(), self.v_closed) + 1,
                 );
             }
             wires.push(seg);

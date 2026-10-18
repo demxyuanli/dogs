@@ -73,7 +73,7 @@ impl IntfInterference {
     }
 
     /// `GetTolerance()` (`Interference.lxx:73-76`).
-    pub fn get_tolerance(&self) -> f64 {
+    pub fn tolerance(&self) -> f64 {
         self.tolerance
     }
 
@@ -116,10 +116,10 @@ impl IntfInterference {
                 for ilz1 in 1..=nplz {
                     let ilz2 = (ilz1 % nplz) + 1;
 
-                    let p_ipz1 = self.t_zones[iz - 1].get_point(ipz1);
-                    if p_ipz1.is_equal(la_zone.get_point(ilz1)) {
-                        let p_ipz0 = self.t_zones[iz - 1].get_point(ipz0);
-                        if p_ipz0.is_equal(la_zone.get_point(ilz2)) {
+                    let p_ipz1 = self.t_zones[iz - 1].point(ipz1);
+                    if p_ipz1.is_equal(la_zone.point(ilz1)) {
+                        let p_ipz0 = self.t_zones[iz - 1].point(ipz0);
+                        if p_ipz0.is_equal(la_zone.point(ilz2)) {
                             lzin = iz;
                             lunp = ipz0;
                             lotp = ipz1;
@@ -128,8 +128,8 @@ impl IntfInterference {
                             same = false;
                             break;
                         } else {
-                            let p_ipz2 = self.t_zones[iz - 1].get_point(ipz2);
-                            if p_ipz2.is_equal(la_zone.get_point(ilz2)) {
+                            let p_ipz2 = self.t_zones[iz - 1].point(ipz2);
+                            if p_ipz2.is_equal(la_zone.point(ilz2)) {
                                 lzin = iz;
                                 lunp = ipz1;
                                 lotp = ipz2;
@@ -157,7 +157,7 @@ impl IntfInterference {
         if lotp != 0 {
             let mut ilc = lotl + 1;
             while ((ilc - 1) % nplz) + 1 != lunl {
-                let p = *la_zone.get_point(((ilc - 1) % nplz) + 1);
+                let p = *la_zone.point(((ilc - 1) % nplz) + 1);
                 self.t_zones[lzin - 1].insert_before(lotp, &p);
                 if !same {
                     lotp += 1;
@@ -168,7 +168,7 @@ impl IntfInterference {
             let mut loop_ = false;
             let mut ilc = lunl;
             loop {
-                let p = *la_zone.get_point(((ilc - 1) % nplz) + 1);
+                let p = *la_zone.point(((ilc - 1) % nplz) + 1);
                 self.t_zones[lzin - 1].insert_before(lunp, &p);
                 lunp += 1;
                 if loop_ && ((ilc - 1) % nplz) + 1 == lunl {

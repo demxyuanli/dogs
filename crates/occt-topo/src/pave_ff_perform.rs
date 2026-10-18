@@ -35,7 +35,7 @@ use crate::int_tools_curve_box;
 use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::pave_ff_make_blocks_helpers::check_planes;
-use crate::pave_ff_paves::get_ef_pnts;
+use crate::pave_ff_paves::ef_pnts;
 use crate::pave_filler::{GlueEnum, PaveFiller};
 use crate::pave_intersect::collect_pairs;
 use crate::shape::{Edge, Face, Vertex};
@@ -198,7 +198,7 @@ pub fn max_vertex_tolerance_of_face(ds: &crate::bopds::BopdsDS, n_f: usize) -> f
 fn build_ee_new_vertex_map(ds: &crate::bopds::BopdsDS) -> HashMap<(usize, usize), Vec<usize>> {
     let mut map: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
     for it in ds.interf_ee() {
-        let Some(n_vn) = it.get_index_new() else {
+        let Some(n_vn) = it.new_index() else {
             continue;
         };
         let (n_e1, n_e2) = it.indices();
@@ -408,7 +408,7 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
         let (shifted1, shifted2, shift_value) =
             shift_closed_faces(f.ds(), &ctx_tools, n_f1, n_f2, &face1, &face2, &ee_map);
         let tol_ff_val = shift_value.max(tolerance_ff(&face1, &face2));
-        let starts: Vec<(f64, f64, f64, f64)> = get_ef_pnts(f, n_f1, n_f2)
+        let starts: Vec<(f64, f64, f64, f64)> = ef_pnts(f, n_f1, n_f2)
             .into_iter()
             .map(|p| (p.u1, p.v1, p.u2, p.v2))
             .collect();

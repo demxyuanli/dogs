@@ -314,7 +314,7 @@ impl GpGTrsf {
     /// row-major 4x4 with rows 1-3 from `Value(row, col)` and last row
     /// `[0, 0, 0, 1]`. `NCollection_Mat4` has no port equivalent, so the 4x4 is
     /// mirrored as a plain `[[f64; 4]; 4]` with `SetValue(row, col)` semantics.
-    pub fn get_mat4(&self) -> [[f64; 4]; 4] {
+    pub fn mat4(&self) -> [[f64; 4]; 4] {
         if self.shape == TrsfForm::Identity {
             return [
                 [1.0, 0.0, 0.0, 0.0],

@@ -358,7 +358,7 @@ pub fn obj_caf_nodes(
         // `XCAFPrs::CollectStyleSettings` (`XCAFPrs.cxx:174`, `cxx:251`) also
         // reads the label's visualization material:
         // `aStyle.SetMaterial(aMatTool->GetShapeMaterial(aLabel))`.
-        node_style.set_material(model.get_shape_material(&ms.name).cloned());
+        node_style.set_material(model.shape_material(&ms.name).cloned());
         let face_styles = dispatch_face_styles(&ms.style_settings, &node_style);
 
         let mut faces = Vec::new();

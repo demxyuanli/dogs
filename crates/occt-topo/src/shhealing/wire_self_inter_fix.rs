@@ -316,7 +316,7 @@ pub fn fix_self_intersecting_edge(wire: &mut Wire, face: &Face, num: usize, prec
     // `cxx:2710-2731`: analysis. The `FAIL1` bit of the analyzer is not
     // modelled as a status here (no `myLastFixStatus` accumulator).
     let check = check_self_intersecting_edge(wire, face, num);
-    if !check.done() {
+    if !check.is_done() {
         return false;
     }
 
@@ -403,7 +403,7 @@ pub fn fix_self_intersecting_edge(wire: &mut Wire, face: &Face, num: usize, prec
         // the self-intersection disappears (or the iteration cap is hit).
         if loop_removed {
             let pnts = check_self_intersecting_edge(wire, face, num);
-            if !pnts.done() {
+            if !pnts.is_done() {
                 break;
             }
             points2d = pnts.points2d;
@@ -475,7 +475,7 @@ pub fn fix_self_intersection(
     let mut num = if closed_mode { 1usize } else { 2 };
     while nb > 1 && num <= nb {
         let st = fix_intersecting_edges(wire, face, num, preci);
-        if !st.done() {
+        if !st.is_done() {
             num += 1;
             continue;
         }

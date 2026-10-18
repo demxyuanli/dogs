@@ -217,7 +217,7 @@ impl BeanFaceIntersector {
         }
         self.compute_range_from_start_point(true, cfp, u, v);
 
-        let found = self.range_manager.get_index(clp, false);
+        let found = self.range_manager.index(clp, false);
         if found >= 0 && self.range_manager.flag(found as usize) == 2 {
             return true;
         }

@@ -219,7 +219,7 @@ mod tests {
         let plane = standard_plane();
         let wire = sketch_to_wire(&sketch, &plane).expect("wire");
         assert_eq!(edges_of_wire(&wire).len(), 4);
-        assert!(wire.closed(), "square wire is flagged closed");
+        assert!(wire.is_closed(), "square wire is flagged closed");
         // Standard plane → every vertex at z = 0.
         for v in vertices_of(&wire.0) {
             assert!((vertex_position(&v).z() - 0.0).abs() < 1e-12);
@@ -250,7 +250,7 @@ mod tests {
             s.add_line(i, i + 1);
         }
         let wire = sketch_to_wire(&s, &standard_plane()).expect("wire");
-        assert!(!wire.closed(), "open wire is not closed");
+        assert!(!wire.is_closed(), "open wire is not closed");
         assert_eq!(edges_of_wire(&wire).len(), 4);
         assert_eq!(vertices_of(&wire.0).len(), 5);
     }
@@ -265,10 +265,10 @@ mod tests {
             GpPnt2d::new(0.0, 1.0),
         ];
         let open = profile_from_points(&pts, &plane, false).expect("open profile");
-        assert!(!open.closed());
+        assert!(!open.is_closed());
         assert_eq!(edges_of_wire(&open).len(), 3);
         let closed = profile_from_points(&pts, &plane, true).expect("closed profile");
-        assert!(closed.closed());
+        assert!(closed.is_closed());
         assert_eq!(edges_of_wire(&closed).len(), 4);
     }
 }

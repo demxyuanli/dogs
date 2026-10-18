@@ -131,10 +131,10 @@ impl TheQuadCurvExactHInter {
 
             if roots.is_done() {
                 for i in 1..=roots.nb_points() {
-                    r.pnts.push(roots.get_point(i));
+                    r.pnts.push(roots.point(i));
                 }
                 for i in 1..=roots.nb_intervals() {
-                    let (a, b) = roots.get_interval(i);
+                    let (a, b) = roots.interval(i);
                     r.intv.push(a);
                     r.intv.push(b);
                 }

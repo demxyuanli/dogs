@@ -221,7 +221,7 @@ fn path(
         let pa = coord2d(&p_va, &e_out, face);
         coord_va.push(pa);
 
-        let vb = get_next_vertex(&p_va, &e_out);
+        let vb = next_vertex(&p_va, &e_out);
         let pb = coord2d(&vb, &e_out, face);
         let Some(&vb_slot) = map.index.get(&GeometryRegistry::shape_key(&vb)) else {
             return;
@@ -460,7 +460,7 @@ fn vertex_parameter(v: &TopoShape, e: &Edge) -> f64 {
     }
 }
 
-fn get_next_vertex(v: &TopoShape, e: &Edge) -> TopoShape {
+fn next_vertex(v: &TopoShape, e: &Edge) -> TopoShape {
     for vx in oriented_vertices(e) {
         if !is_equal(&vx, v) {
             return vx;

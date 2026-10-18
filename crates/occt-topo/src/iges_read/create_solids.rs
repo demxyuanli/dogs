@@ -67,7 +67,7 @@ fn collect_solids(shells: &[TopoShape]) -> (Vec<ShellHoles>, Vec<(TopoShape, i32
     let mut holes = Vec::new();
     let mut status: Vec<(TopoShape, i32)> = Vec::new();
     for (i, shell1) in shells.iter().enumerate() {
-        if !shell1.closed() || edges_of(shell1).is_empty() {
+        if !shell1.is_closed() || edges_of(shell1).is_empty() {
             continue;
         }
         let st = if let Some((_, found)) = status.iter().find(|(s, _)| is_same(s, shell1)) {
@@ -91,7 +91,7 @@ fn collect_solids(shells: &[TopoShape]) -> (Vec<ShellHoles>, Vec<(TopoShape, i32
         let mut sc = SolidClassifier::new();
         sc.load(solid);
         for (j, shell2) in shells.iter().enumerate() {
-            if i == j || !shell2.closed() || contains_shape(&holes, shell2) {
+            if i == j || !shell2.is_closed() || contains_shape(&holes, shell2) {
                 continue;
             }
             if let Some(idx) = find_holes(&map, shell2) {
@@ -205,7 +205,7 @@ fn create_solids(shape: &TopoShape) -> Option<Vec<TopoShape>> {
     let mut done = false;
     for root in &roots {
         let shell = &root.shell;
-        if !shell.closed() || edges_of(shell).is_empty() {
+        if !shell.is_closed() || edges_of(shell).is_empty() {
             shell_solid.push((shell.clone(), shell.clone()));
             done = true;
             continue;

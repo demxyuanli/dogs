@@ -36,7 +36,7 @@ fn pb_range_box(edge: &Edge, first: f64, last: f64) -> BndBox {
 }
 
 /// `BOPAlgo_PaveFiller::GetPBBox`.
-pub fn get_pb_box(
+pub fn pave_block_box(
     e: &Edge,
     pb: &BopdsPaveBlock,
     pb_box: &mut HashMap<(usize, u64, u64), BndBox>,
@@ -82,7 +82,7 @@ pub fn force_interf_ve(
     if pv1 == n_v || pv2 == n_v {
         return Ok(true);
     }
-    let n_vx0 = f.ds().get_same_domain_index(n_v);
+    let n_vx0 = f.ds().same_domain_index(n_v);
     let Some(v_shape) = f.ds().shape(n_vx0).cloned() else {
         return Ok(false);
     };

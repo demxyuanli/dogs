@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(ss.shells().len(), 1, "6 faces of a closed box -> 1 shell");
         let sf = faces_of(&ss.shells()[0]);
         assert_eq!(sf.len(), 6, "shell must contain all 6 faces");
-        assert!(ss.shells()[0].closed(), "shell must be flagged closed");
+        assert!(ss.shells()[0].is_closed(), "shell must be flagged closed");
         assert_eq!(ss.blocks().len(), 1);
         assert!(ss.blocks()[0].is_regular(), "a closed box block is regular");
     }
@@ -365,7 +365,7 @@ mod tests {
         // each shell holds exactly its 6 faces
         for s in ss.shells() {
             assert_eq!(faces_of(s).len(), 6);
-            assert!(s.closed());
+            assert!(s.is_closed());
         }
         assert_eq!(ss.blocks().len(), 2);
     }
@@ -393,7 +393,7 @@ mod tests {
         ShellSplitter::split_block(&mut cb);
         assert_eq!(cb.loops().len(), 1);
         assert_eq!(faces_of(&cb.loops()[0]).len(), 6);
-        assert!(cb.loops()[0].closed());
+        assert!(cb.loops()[0].is_closed());
     }
 
     #[test]

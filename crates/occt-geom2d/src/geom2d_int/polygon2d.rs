@@ -411,7 +411,7 @@ impl IntfPolygon2d for Geom2dIntPolygon2d {
     }
 
     /// `Closed()` (`lxx:32-35` / `Intf_Polygon2d.cxx:20-23`).
-    fn closed(&self) -> bool {
+    fn is_closed(&self) -> bool {
         self.closed_polygon
     }
 

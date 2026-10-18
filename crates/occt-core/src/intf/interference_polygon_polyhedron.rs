@@ -82,7 +82,7 @@ pub trait IntfPolygon3dTool {
     fn deflection_over_estimation(polyg: &Self::Polygon3d) -> f64;
 
     /// `Closed` (`...hxx:43-46`).
-    fn closed(polyg: &Self::Polygon3d) -> bool;
+    fn is_closed(polyg: &Self::Polygon3d) -> bool;
 
     /// `NbSegments` (`...hxx:48-51`).
     fn nb_segments(polyg: &Self::Polygon3d) -> usize;
@@ -132,7 +132,7 @@ pub trait IntfPolyhedronTool {
     fn is_on_bound(polyh: &Self::Polyhedron, index1: i32, index2: i32) -> bool;
 
     /// `GetBorderDeflection` (`...hxx:106-109`).
-    fn get_border_deflection(polyh: &Self::Polyhedron) -> f64;
+    fn border_deflection(polyh: &Self::Polyhedron) -> f64;
 }
 
 /// The `Bnd_BoundSortBox` the gxx builds
@@ -449,7 +449,7 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
     ) {
         let polyh_grid = IntfPolyhGrid::initialize::<TH>(polyh);
 
-        self.begin_of_closed_polygon = TP::closed(polyg);
+        self.begin_of_closed_polygon = TP::is_closed(polyg);
 
         let def_ph = TH::deflection_over_estimation(polyh);
 
@@ -497,7 +497,7 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
         polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) {
-        self.begin_of_closed_polygon = TP::closed(polyg);
+        self.begin_of_closed_polygon = TP::is_closed(polyg);
 
         for i_lin in 1..=TP::nb_segments(polyg) {
             self.i_lin = i_lin as i32;
@@ -804,7 +804,7 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                     let ind_p2 = p_tri[i - 1];
 
                     if TH::is_on_bound(polyh, ind_p1, ind_p2) {
-                        let deflection = TH::get_border_deflection(polyh);
+                        let deflection = TH::border_deflection(polyh);
                         let beg_p = TH::point(polyh, ind_p1);
                         let end_p = TH::point(polyh, ind_p2);
                         let vec_tri = GpVec::from_pnts(&beg_p, &end_p);

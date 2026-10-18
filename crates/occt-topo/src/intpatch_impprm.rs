@@ -105,7 +105,7 @@ impl ImpPrmIntersection {
             (q, s1, d1, s2)
         };
 
-        let local_pas = get_local_step(prm, pas);
+        let local_pas = local_step(prm, pas);
         let mut func = SurfFunction::new(prm, &quad, quadric_tolerance(&quad));
         let solrst = search_on_bounds(prm, &quad, d_prm, tol_arc, tol_tang);
         if !solrst.done {
@@ -208,7 +208,7 @@ fn wline_on_quadric(w: &WLine, quad: &ImplicitQuad, f_tol: f64) -> bool {
 }
 
 /// `GetLocalStep` (BSpline/Bezier resolution branch).
-fn get_local_step(surf: &dyn Surface, step: f64) -> f64 {
+fn local_step(surf: &dyn Surface, step: f64) -> f64 {
     let mut local = step;
     match classify_surface(surf) {
         SurfaceKind::Other => {

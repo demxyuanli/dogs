@@ -182,7 +182,7 @@ impl IncrementalMesh {
     }
 
     /// Accumulated status flags faced during meshing (`GetStatusFlags`).
-    pub fn get_status_flags(&self) -> i32 {
+    pub fn status_flags(&self) -> i32 {
         self.status_flags
     }
 
@@ -835,7 +835,7 @@ impl IncrementalMesh {
             (
                 (0.5 * e.deflection()).max(1e-9),
                 0.5 * e.angular_deflection(),
-                e.degenerated(),
+                e.is_degenerated(),
                 e.is_free(),
                 e.same_param(),
                 e.same_range(),
@@ -1047,7 +1047,7 @@ impl IncrementalMesh {
                         (
                             (0.5 * e.deflection()).max(1e-9),
                             0.5 * e.angular_deflection(),
-                            e.degenerated(),
+                            e.is_degenerated(),
                             e.is_free(),
                             e.same_param(),
                             e.same_range(),
@@ -1416,8 +1416,8 @@ impl IncrementalMesh {
             if std::env::var("PCW").is_ok() {
                 let n_pc = pcurve.parameters_nb();
                 for k in 0..n_pc {
-                    let p = pcurve.get_point(k)?;
-                    let t = pcurve.get_parameter(k)?;
+                    let p = pcurve.point(k)?;
+                    let t = pcurve.parameter(k)?;
                     eprintln!(
                         "PCW f={pc_face} e={edge_index} pc={pcurve_index} k={k} u={:.17e} v={:.17e} t={:.17e}",
                         p.x(),                        p.y(),

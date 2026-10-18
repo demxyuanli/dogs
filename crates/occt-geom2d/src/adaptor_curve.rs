@@ -28,7 +28,7 @@ pub fn basis2d(mut c: &dyn Curve2d) -> &dyn Curve2d {
 /// `DynamicType() == STANDARD_TYPE(Geom2d_*)` branches; each is answered only
 /// by the matching concrete curve, and a `Geom2d_TrimmedCurve` forwards to its
 /// basis because `load` recurses into it (`:285-288`).
-pub fn get_type2d(c: &dyn Curve2d) -> CurveType {
+pub fn type2d(c: &dyn Curve2d) -> CurveType {
     let base = basis2d(c);
     if base.is_line() {
         CurveType::Line // `:292-296`

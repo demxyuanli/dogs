@@ -49,7 +49,7 @@ impl MarkedRangeSet {
     /// Index (0-based) of the range containing `value`, using the OCCT
     /// `GetIndex(value, UseLower)` semantics; `-1` when `value` is outside the
     /// set (or exactly at the last boundary with `UseLower`).
-    pub(crate) fn get_index(&self, value: f64, use_lower: bool) -> isize {
+    pub(crate) fn index(&self, value: f64, use_lower: bool) -> isize {
         if self.boundaries.is_empty() {
             return -1;
         }
@@ -70,7 +70,7 @@ impl MarkedRangeSet {
 
     /// Indices (0-based) of every range containing `value` (a boundary value
     /// belongs to both adjacent ranges). Port of `GetIndices`.
-    pub(crate) fn get_indices(&self, value: f64) -> Vec<usize> {
+    pub(crate) fn indices(&self, value: f64) -> Vec<usize> {
         let mut out = Vec::new();
         if self.boundaries.is_empty() || value < self.boundaries[0] {
             return out;
@@ -97,11 +97,11 @@ impl MarkedRangeSet {
         if self.boundaries.is_empty() {
             return false;
         }
-        let mut idx1 = self.get_index(first, true);
+        let mut idx1 = self.index(first, true);
         if idx1 < 0 {
             return false;
         }
-        let mut idx2 = self.get_index(last, false);
+        let mut idx2 = self.index(last, false);
         if idx2 < 0 {
             return false;
         }

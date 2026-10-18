@@ -256,7 +256,7 @@ impl ThePolyhedronOfHInter {
     }
 
     /// `GetBorderDeflection()` (`...hxx:151`).
-    pub fn get_border_deflection(&self) -> f64 {
+    pub fn border_deflection(&self) -> f64 {
         self.border_deflection
     }
 
@@ -734,7 +734,7 @@ impl IntfPolyhedronTool for ThePolyhedronToolOfHInter {
         polyh.is_on_bound(index1, index2)
     }
 
-    fn get_border_deflection(polyh: &Self::Polyhedron) -> f64 {
-        polyh.get_border_deflection()
+    fn border_deflection(polyh: &Self::Polyhedron) -> f64 {
+        polyh.border_deflection()
     }
 }

@@ -190,7 +190,7 @@ pub(crate) fn cy_cy_walk(
     );
     let nb_wl = 2;
     for range in ranges {
-        let Some((mut uf, ul)) = range.get_bounds() else {
+        let Some((mut uf, ul)) = range.bounds() else {
             continue;
         };
         let is_delta_period = (ul - uf) == PERIOD;

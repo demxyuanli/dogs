@@ -90,7 +90,7 @@ pub(crate) fn extended_tolerance(
                     (
                         it.index1(),
                         it.index2(),
-                        it.get_index_new(),
+                        it.new_index(),
                         it.common_first,
                         it.common_last,
                     )
@@ -104,7 +104,7 @@ pub(crate) fn extended_tolerance(
                     (
                         it.index1(),
                         it.index2(),
-                        it.get_index_new(),
+                        it.new_index(),
                         it.common_first,
                         it.common_last,
                     )
@@ -141,10 +141,10 @@ pub(crate) fn extended_tolerance(
 }
 
 /// `BOPAlgo_PaveFiller::GetEFPnts` (`_6.cxx:2608`).
-pub(crate) use crate::pave_ff_ef_pnts::get_ef_pnts;
+pub(crate) use crate::pave_ff_ef_pnts::ef_pnts;
 
 #[allow(dead_code)]
-fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> {
+fn ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> {
     let mut mi = HashSet::new();
     full_shape_map(f.ds(), n_f1, &mut mi);
     full_shape_map(f.ds(), n_f2, &mut mi);
@@ -157,7 +157,7 @@ fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> 
             (
                 it.index1(),
                 it.index2(),
-                it.get_index_new(),
+                it.new_index(),
                 0.5 * (it.common_first + it.common_last),
             )
         })

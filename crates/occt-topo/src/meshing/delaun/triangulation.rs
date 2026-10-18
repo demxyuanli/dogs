@@ -125,9 +125,9 @@ impl Delaun {
         }
         let ids: Vec<i32> = self.mesh_data.elements_of_domain().iter().copied().collect();
         for id in ids {
-            let element = self.mesh_data.get_element(id);
+            let element = self.mesh_data.element(id);
             let n = self.mesh_data.element_nodes(&element);
-            let p = |k: i32| self.mesh_data.get_node(k).location;
+            let p = |k: i32| self.mesh_data.node(k).location;
             let (a, b, c) = (p(n[0]), p(n[1]), p(n[2]));
             eprintln!(
                 "DELTRI {stage} {id} {:.9} {:.9} {:.9} {:.9} {:.9} {:.9}",
@@ -143,15 +143,15 @@ impl Delaun {
         let mut link_ids: Vec<i32> = self.mesh_data.links_of_domain().iter().copied().collect();
         link_ids.sort_unstable();
         for lid in link_ids {
-            let link = self.mesh_data.get_link(lid);
+            let link = self.mesh_data.link(lid);
             let pair = self.mesh_data.elements_connected_to(lid);
             let state = self.mesh_data.link_movability(lid);
-            let na = self.mesh_data.get_node(link.first_node()).location;
-            let nb = self.mesh_data.get_node(link.last_node()).location;
+            let na = self.mesh_data.node(link.first_node()).location;
+            let nb = self.mesh_data.node(link.last_node()).location;
             let mut conn = String::new();
             for it in 1..=pair.extent() {
                 let tid = pair.index(it);
-                let el = self.mesh_data.get_element(tid);
+                let el = self.mesh_data.element(tid);
                 let mut orient = ' ';
                 for k in 0..3 {
                     if el.link_at(k).abs() == lid {
@@ -200,19 +200,19 @@ impl Delaun {
     pub fn init_circles_tool_public(&mut self, cells_u: i32, cells_v: i32) {
         let mut box2 = BndB2::void();
         for i in 1..=self.mesh_data.nb_nodes() as i32 {
-            box2.add_pnt(self.mesh_data.get_node(i).location);
+            box2.add_pnt(self.mesh_data.node(i).location);
         }
         box2.enlarge(PREC);
         self.init_circles_tool(&box2, cells_u, cells_v);
         let element_ids: Vec<i32> = self.mesh_data.elements_of_domain().iter().copied().collect();
         for id in element_ids {
-            let triangle = self.mesh_data.get_element(id);
+            let triangle = self.mesh_data.element(id);
             let nodes = self.mesh_data.element_nodes(&triangle);
             self.circles.bind_circle(
                 id,
-                self.mesh_data.get_node(nodes[0]).location.coord,
-                self.mesh_data.get_node(nodes[1]).location.coord,
-                self.mesh_data.get_node(nodes[2]).location.coord,
+                self.mesh_data.node(nodes[0]).location.coord,
+                self.mesh_data.node(nodes[1]).location.coord,
+                self.mesh_data.node(nodes[2]).location.coord,
             );
         }
     }
@@ -228,7 +228,7 @@ impl Delaun {
     /// swallows it (`BRepMesh_BaseMeshAlgo.cxx:59-62`), so
     /// `commitSurfaceTriangulation` never runs and the face keeps
     /// `IMeshData_Failure` with **no** triangulation.
-    pub fn failed(&self) -> bool {
+    pub fn is_failed(&self) -> bool {
         self.failed
     }
 
@@ -257,32 +257,32 @@ impl Delaun {
 
     /// Gives the list of frontier edges. Source: `Frontier()`.
     pub fn frontier(&self) -> BTreeSet<i32> {
-        self.get_edges_by_type(VertexState::Frontier)
+        self.edges_by_type(VertexState::Frontier)
     }
 
     /// Gives the list of internal (fixed) edges. Source: `InternalEdges()`.
     pub fn internal_edges(&self) -> BTreeSet<i32> {
-        self.get_edges_by_type(VertexState::Fixed)
+        self.edges_by_type(VertexState::Fixed)
     }
 
     /// Gives the list of free edges used at most once. Source: `FreeEdges()`.
     pub fn free_edges(&self) -> BTreeSet<i32> {
-        self.get_edges_by_type(VertexState::Free)
+        self.edges_by_type(VertexState::Free)
     }
 
     /// Vertex by index.
-    pub fn get_vertex(&self, index: i32) -> DelaunVertex {
-        *self.mesh_data.get_node(index)
+    pub fn vertex(&self, index: i32) -> DelaunVertex {
+        *self.mesh_data.node(index)
     }
 
     /// Edge (link) by index.
-    pub fn get_edge(&self, index: i32) -> DelaunLink {
-        self.mesh_data.get_link(index)
+    pub fn edge(&self, index: i32) -> DelaunLink {
+        self.mesh_data.link(index)
     }
 
     /// Triangle by index.
-    pub fn get_triangle(&self, index: i32) -> DelaunTriangle {
-        self.mesh_data.get_element(index)
+    pub fn triangle(&self, index: i32) -> DelaunTriangle {
+        self.mesh_data.element(index)
     }
 
     /// Removes a vertex and re-triangulates the cavity. Source: `RemoveVertex`.
@@ -304,7 +304,7 @@ impl Delaun {
         // (`cxx:49-75`, key `Coord().X() + Coord().Y()`).
         let mesh_data = &self.mesh_data;
         heap_sort_by_xy_sum(vertices, |i| {
-            let p = mesh_data.get_node(*i).location;
+            let p = mesh_data.node(*i).location;
             (p.x(), p.y())
         });
         // TEMPORARY diagnostic (SORTDUMP): the index order `AddVertices` hands to
@@ -348,12 +348,12 @@ impl Delaun {
     /// edges 0 and 2, not the cached `vertex_indices`.
     pub fn contains(&self, triangle_id: i32, vertex: &DelaunVertex, sq_tol: f64, edge_on: &mut i32) -> bool {
         *edge_on = 0;
-        let element = self.mesh_data.get_element(triangle_id);
+        let element = self.mesh_data.element(triangle_id);
         let p = self.element_nodes_cxx(&element);
         let points = [
-            self.mesh_data.get_node(p[0]).location,
-            self.mesh_data.get_node(p[1]).location,
-            self.mesh_data.get_node(p[2]).location,
+            self.mesh_data.node(p[0]).location,
+            self.mesh_data.node(p[1]).location,
+            self.mesh_data.node(p[2]).location,
         ];
         let v_edges = [
             points[1].coord.subtracted(&points[0].coord),
@@ -392,7 +392,7 @@ impl Delaun {
         }
         let mut box2 = BndB2::void();
         for &idx in vertex_indices.iter() {
-            box2.add_pnt(self.mesh_data.get_node(idx).location);
+            box2.add_pnt(self.mesh_data.node(idx).location);
         }
         box2.enlarge(PREC);
         self.init_circles_tool(&box2, cells_u, cells_v);
@@ -401,7 +401,7 @@ impl Delaun {
         // (`cxx:49-75`, key `Coord().X() + Coord().Y()`).
         let mesh_data = &self.mesh_data;
         heap_sort_by_xy_sum(vertex_indices, |i| {
-            let p = mesh_data.get_node(*i).location;
+            let p = mesh_data.node(*i).location;
             (p.x(), p.y())
         });
         self.compute(vertex_indices);
@@ -481,7 +481,7 @@ impl Delaun {
         if self.init_circles {
             self.circles.delete(index);
         }
-        let element = self.mesh_data.get_element(index);
+        let element = self.mesh_data.element(index);
         self.mesh_data.remove_element(index);
         for i in 0..3 {
             let e = element.link_at(i).abs();
@@ -528,12 +528,12 @@ impl Delaun {
     pub(super) fn create_triangles(&mut self, vertex_index: i32, poly: &mut IntBoolDataMap) {
         let mut loop_edges: Vec<i32> = Vec::new();
         let mut external_edges: Vec<i32> = Vec::new();
-        let vertex_coord = self.mesh_data.get_node(vertex_index).location.coord;
+        let vertex_coord = self.mesh_data.node(vertex_index).location.coord;
 
         let keys: Vec<i32> = poly.keys();
         for edge_id in keys {
             let is_positive = poly.value(edge_id);
-            let edge = self.mesh_data.get_link(edge_id);
+            let edge = self.mesh_data.link(edge_id);
             let mut nodes = [0i32; 3];
             if is_positive {
                 nodes[0] = edge.first_node();
@@ -544,8 +544,8 @@ impl Delaun {
             }
             nodes[1] = vertex_index;
 
-            let first_vertex = self.mesh_data.get_node(nodes[0]).location.coord;
-            let last_vertex = self.mesh_data.get_node(nodes[2]).location.coord;
+            let first_vertex = self.mesh_data.node(nodes[0]).location.coord;
+            let last_vertex = self.mesh_data.node(nodes[2]).location.coord;
             let mut edge_dir = last_vertex.subtracted(&first_vertex);
             let edge_len = edge_dir.modulus();
             if edge_len < PREC {
@@ -614,14 +614,14 @@ impl Delaun {
     }
 
     pub(super) fn create_triangles_on_new_vertices(&mut self, vertex_indexes: &mut Vec<i32>) {
-        let (tol_u, tol_v) = self.mesh_data.get_tolerance();
+        let (tol_u, tol_v) = self.mesh_data.tolerance();
         let sq_tol = tol_u * tol_u + tol_v * tol_v;
 
         let upper = vertex_indexes.len();
         let mut i = 0;
         while i < upper {
             let vertex_idx = vertex_indexes[i];
-            let vertex = *self.mesh_data.get_node(vertex_idx);
+            let vertex = *self.mesh_data.node(vertex_idx);
             let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
             let mut circles_list = self.circles.select(vertex.location.coord);
 
@@ -700,7 +700,7 @@ impl Delaun {
                     let mut k = 0;
                     while k < circles_list.len() {
                         let t = circles_list[k];
-                        let element = self.mesh_data.get_element(t);
+                        let element = self.mesh_data.element(t);
                         if loop_edges.contains_key(&element.link_at(0).abs())
                             || loop_edges.contains_key(&element.link_at(1).abs())
                             || loop_edges.contains_key(&element.link_at(2).abs())
@@ -763,15 +763,15 @@ impl Delaun {
         // `contains`'s point-in-triangle orientation test (all inserts were rejected).
         let verts = [
             {
-                let l = self.mesh_data.get_link(edges[0].abs());
+                let l = self.mesh_data.link(edges[0].abs());
                 if oris[0] { l.first_node() } else { l.last_node() }
             },
             {
-                let l = self.mesh_data.get_link(edges[1].abs());
+                let l = self.mesh_data.link(edges[1].abs());
                 if oris[1] { l.first_node() } else { l.last_node() }
             },
             {
-                let l = self.mesh_data.get_link(edges[2].abs());
+                let l = self.mesh_data.link(edges[2].abs());
                 if oris[2] { l.first_node() } else { l.last_node() }
             },
         ];
@@ -781,9 +781,9 @@ impl Delaun {
         if self.init_circles {
             is_added = self.circles.bind_circle(
                 new_id,
-                self.mesh_data.get_node(verts[0]).location.coord,
-                self.mesh_data.get_node(verts[1]).location.coord,
-                self.mesh_data.get_node(verts[2]).location.coord,
+                self.mesh_data.node(verts[0]).location.coord,
+                self.mesh_data.node(verts[1]).location.coord,
+                self.mesh_data.node(verts[2]).location.coord,
             );
         }
         if !is_added {
@@ -799,7 +799,7 @@ impl Delaun {
             let pair = self.mesh_data.elements_connected_to(link_index);
             let mut is_go = [true, true];
             for tri_it in 1..=pair.extent() {
-                let element = self.mesh_data.get_element(pair.index(tri_it));
+                let element = self.mesh_data.element(pair.index(tri_it));
                 for i in 0..3 {
                     if element.link_at(i).abs() == link_index {
                         is_go[if element.link_at(i) > 0 { 0 } else { 1 }] = false;
@@ -838,13 +838,13 @@ impl Delaun {
                 if tri_id < 0 {
                     continue;
                 }
-                let element = self.mesh_data.get_element(tri_id);
+                let element = self.mesh_data.element(tri_id);
                 for k in 0..3 {
                     let edge_id = element.link_at(k).abs();
                     if edge_id == cur {
                         continue;
                     }
-                    let edge = self.mesh_data.get_link(edge_id);
+                    let edge = self.mesh_data.link(edge_id);
                     if edge.first_node() != ref_node_id && edge.last_node() != ref_node_id {
                         continue;
                     }
@@ -875,7 +875,7 @@ impl Delaun {
             let mut free_edges: Vec<i32> = self.free_edges().into_iter().collect();
             free_edges.sort_unstable();
             for free_edge_id in free_edges {
-                let edge = self.mesh_data.get_link(free_edge_id);
+                let edge = self.mesh_data.link(free_edge_id);
                 if self.mesh_data.link_movability(free_edge_id) == VertexState::Frontier {
                     continue;
                 }
@@ -885,7 +885,7 @@ impl Delaun {
                     continue;
                 }
                 let tri_id = pair.first_index();
-                let element = self.mesh_data.get_element(tri_id);
+                let element = self.mesh_data.element(tri_id);
                 let an_edges = element.link_indices;
 
                 let mut can_not_be_removed = true;
@@ -909,7 +909,7 @@ impl Delaun {
                                 if other_pair.index(tri_idx) == tri_id {
                                     continue;
                                 }
-                                let cur_triangle = self.mesh_data.get_element(other_pair.index(tri_idx));
+                                let cur_triangle = self.mesh_data.element(other_pair.index(tri_idx));
                                 for v in cur_triangle.vertex_indices {
                                     if self.is_sup_vertex(v) {
                                         can_not_be_removed = false;

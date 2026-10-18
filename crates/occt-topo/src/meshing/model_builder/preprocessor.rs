@@ -245,13 +245,13 @@ fn cone_seam_step(model: &MeshModel, face_index: usize, params: &MeshParameters)
             continue;
         };
         for k in 0..pc.parameters_nb() {
-            if let Ok(uv) = pc.get_point(k) {
+            if let Ok(uv) = pc.point(k) {
                 splitter.add_point(uv);
             }
         }
     }
     let mut steps_nb = (0i32, 0i32);
-    splitter.get_split_steps(params, &mut steps_nb).1
+    splitter.split_steps(params, &mut steps_nb).1
 }
 
 /// `SeamEdgeAmplifier::splitEdge`.
@@ -271,10 +271,10 @@ fn split_cone_seam(model: &mut MeshModel, edge_index: usize, face_index: usize, 
         if n < 2 {
             return false;
         }
-        let Ok(p0) = pc0.get_point(0) else {
+        let Ok(p0) = pc0.point(0) else {
             return false;
         };
-        let Ok(p1) = pc0.get_point(n - 1) else {
+        let Ok(p1) = pc0.point(n - 1) else {
             return false;
         };
         (
@@ -368,10 +368,10 @@ fn split_curve_3d(geom: &dyn Curve, disc: &mut MeshCurve, dt: f64) -> bool {
     if n < 2 {
         return false;
     }
-    let Ok(first) = disc.get_parameter(0) else {
+    let Ok(first) = disc.parameter(0) else {
         return false;
     };
-    let Ok(last) = disc.get_parameter(n - 1) else {
+    let Ok(last) = disc.parameter(n - 1) else {
         return false;
     };
     let reversed = first > last;
@@ -398,10 +398,10 @@ fn split_curve_2d(geom: &dyn Curve2d, disc: &mut MeshPCurve, dt: f64) -> bool {
     if n < 2 {
         return false;
     }
-    let Ok(first) = disc.get_parameter(0) else {
+    let Ok(first) = disc.parameter(0) else {
         return false;
     };
-    let Ok(last) = disc.get_parameter(n - 1) else {
+    let Ok(last) = disc.parameter(n - 1) else {
         return false;
     };
     let reversed = first > last;

@@ -19,7 +19,7 @@ use crate::topo_tools_full::edge_vertices;
 
 use super::edge::BRepClassEdge;
 use super::intersector_checks::{
-    adaptor_curve, check_on, check_skip, get_tangent_as_chord, is_inter, lin_value,
+    adaptor_curve, check_on, check_skip, tangent_as_chord, is_inter, lin_value,
     max_tol_2d_cur_edge,
 };
 
@@ -182,7 +182,7 @@ impl BRepClassIntersector {
         if prop.is_tangent_defined() {
             tang = prop.tangent();
             curv = prop.curvature();
-        } else if let Some(chord) = get_tangent_as_chord(pcurve.as_ref(), u, fpar, lpar) {
+        } else if let Some(chord) = tangent_as_chord(pcurve.as_ref(), u, fpar, lpar) {
             tang = chord;
         }
 

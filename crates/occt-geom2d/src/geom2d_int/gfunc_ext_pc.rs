@@ -291,7 +291,7 @@ impl<'a> GFuncExtPC2d<'a> {
     }
 
     /// `GetStateNumber` (`hxx:357-379`).
-    fn get_state_number_impl(&mut self) -> i32 {
+    fn state_number_impl(&mut self) -> i32 {
         self.sq_dist.push(self.pc.square_distance(&self.p));
         self.d1_init = true;
         let (mut ff, mut dd) = (0.0, 0.0);
@@ -341,7 +341,7 @@ impl FunctionWithDerivative for GFuncExtPC2d<'_> {
     }
 
     /// `GetStateNumber` (`hxx:357-379`).
-    fn get_state_number(&mut self) -> i32 {
-        self.get_state_number_impl()
+    fn state_number(&mut self) -> i32 {
+        self.state_number_impl()
     }
 }

@@ -120,8 +120,8 @@ pub fn update_edge_tolerance(f: &mut PaveFiller, n_e: usize, tol: f64) -> Result
 pub fn update_pave_block_with_sd_vertices(f: &PaveFiller, pb: &mut BopdsPaveBlock) {
     let (n1, n2) = pb.indices();
     pb.set_indices(
-        f.ds().get_same_domain_index(n1),
-        f.ds().get_same_domain_index(n2),
+        f.ds().same_domain_index(n1),
+        f.ds().same_domain_index(n2),
     );
 }
 

@@ -313,7 +313,7 @@ impl MathFunction for FuncExtPc2d<'_> {
     }
 
     /// `GFuncExtPC::GetStateNumber` (`hxx:355-379`).
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         let sq = self.pc.square_distance(&self.point);
         // It is necessary to always compute myD1f (`hxx:365-368`).
         let mut ff = 0.0;

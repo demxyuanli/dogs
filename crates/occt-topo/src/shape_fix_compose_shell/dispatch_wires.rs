@@ -14,7 +14,7 @@ use crate::shhealing::fix_shifted_wire;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
 use crate::shhealing::{ShapeBuildEdge, ShapeFixEdge};
 
-use super::helpers::{compose_adjust_to_period, get_middle_point, TOLINT};
+use super::helpers::{compose_adjust_to_period, middle_point, TOLINT};
 use super::reshape::{MapReShape, ReShape};
 use super::shell::ComposeShell;
 
@@ -119,7 +119,7 @@ impl ComposeShell {
                 // restore the patch indices of the surviving edges.
                 let old_edges: Vec<Edge> = wires[i].edges().to_vec();
                 let old_patches: Vec<Option<(i32, i32, i32, i32)>> = (1..=old_edges.len())
-                    .map(|j| wires[i].get_patch_index(j))
+                    .map(|j| wires[i].patch_index(j))
                     .collect();
                 let mut dw = builder.make_wire(&old_edges);
                 if crate::shhealing::fix_degenerated_all(&mut dw, &face_val, self.precision) {
@@ -149,7 +149,7 @@ impl ComposeShell {
         }
         let mut m_pnts: Vec<GpPnt2d> = Vec::with_capacity(nb);
         for i in 0..nb {
-            m_pnts.push(get_middle_point(&wires[i], &face_val));
+            m_pnts.push(middle_point(&wires[i], &face_val));
         }
 
         // cxx:3378-3382.
@@ -365,7 +365,7 @@ impl ComposeShell {
                 }
                 used[i] = true;
                 if wires[i].is_vertex() {
-                    if let Some(v) = wires[i].get_vertex() {
+                    if let Some(v) = wires[i].vertex() {
                         if v.0.orientation() == Orientation::Internal {
                             loops.push(v.0.clone()); // cxx:3561-3567
                         }

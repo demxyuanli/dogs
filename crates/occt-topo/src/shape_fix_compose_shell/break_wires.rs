@@ -109,7 +109,7 @@ impl ComposeShell {
                     cur_ori = ori;
                 }
                 let (iumin, iumax, ivmin, ivmax) =
-                    wire.get_patch_index(j + 1).unwrap_or((0, 0, 0, 0));
+                    wire.patch_index(j + 1).unwrap_or((0, 0, 0, 0));
                 if ori == Orientation::Internal && edge.0.orientation() == Orientation::External {
                     cur_ori = Orientation::External;
                     edge.0.set_orientation(Orientation::Forward);

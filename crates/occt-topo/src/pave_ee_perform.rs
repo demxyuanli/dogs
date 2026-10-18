@@ -24,7 +24,7 @@ use crate::edge_edge::EdgeEdge;
 use crate::int_tools_full::IntToolsContext;
 use crate::inttools_data::{CommonPartType, IntRange};
 use crate::pave_common::update_vertex_sd;
-use crate::pave_force_ve::{force_interf_ve, get_pb_box, update_vertices_of_cb};
+use crate::pave_force_ve::{force_interf_ve, pave_block_box, update_vertices_of_cb};
 use crate::pave_filler::PaveFiller;
 use crate::pave_intersect::collect_pairs;
 use crate::pave_split_blocks;
@@ -101,12 +101,12 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
         let e1 = Edge(e1s);
         let e2 = Edge(e2s);
         for pb1 in &pbs1 {
-            let Some((t11, t12, _ts11, _ts12, bb1)) = get_pb_box(&e1, pb1, &mut pb_box) else {
+            let Some((t11, t12, _ts11, _ts12, bb1)) = pave_block_box(&e1, pb1, &mut pb_box) else {
                 continue;
             };
             let (n_v11, n_v12) = pb1.indices();
             for pb2 in &pbs2 {
-                let Some((t21, t22, _ts21, _ts22, bb2)) = get_pb_box(&e2, pb2, &mut pb_box)
+                let Some((t21, t22, _ts21, _ts22, bb2)) = pave_block_box(&e2, pb2, &mut pb_box)
                 else {
                     continue;
                 };

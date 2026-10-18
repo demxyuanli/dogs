@@ -147,13 +147,13 @@ impl EdgeGeom {
     }
 
     /// The first pcurve on the face (the single pcurve of a normal edge).
-    pub fn get_pcurve(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
+    pub fn pcurve(&self, face_key: usize) -> Option<Arc<dyn Curve2d>> {
         self.pcurves.get(&face_key).and_then(|v| v.first().cloned())
     }
 
     /// All pcurves on the face (two, in forward-then-reversed order, for a seam
     /// edge).
-    pub fn get_pcurves(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
+    pub fn pcurves(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
         self.pcurves.get(&face_key).cloned().unwrap_or_default()
     }
 }
@@ -512,7 +512,7 @@ impl GeometryRegistry {
         let key = self.repr_key(face_key);
         let ts = s.tshape.read().unwrap();
         ts.edge_pcurves()
-            .map(|p| p.get_pcurves(key))
+            .map(|p| p.pcurves(key))
             .unwrap_or_default()
     }
 

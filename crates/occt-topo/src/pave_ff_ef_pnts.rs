@@ -18,13 +18,13 @@ use crate::brep_tool::BRepTool;
 use crate::int_tools_curve_box::curve_box_vertex_parameter;
 use crate::int_tools_full::IntToolsContext;
 use crate::inttools_data::IntRange;
-use crate::pave_ff_make_blocks_helpers::get_full_shape_map;
+use crate::pave_ff_make_blocks_helpers::collect_full_shape_map;
 use crate::pave_ff_paves::PntOn2s;
 use crate::pave_filler::PaveFiller;
 use crate::shape::{Edge, Face};
 
 fn full_shape_map(ds: &BopdsDS, n_f: usize, mi: &mut HashSet<usize>) {
-    get_full_shape_map(ds, n_f, mi);
+    collect_full_shape_map(ds, n_f, mi);
 }
 
 fn curve_box_vertex_parameter1(common_first: f64, common_last: f64) -> f64 {
@@ -97,7 +97,7 @@ struct EfNewVertex {
 fn collect_ef_new_vertices(f: &PaveFiller, mi: &HashSet<usize>) -> Vec<EfNewVertex> {
     let mut out = Vec::new();
     for it in f.ds().interf_ef() {
-        if it.get_index_new().is_none() {
+        if it.new_index().is_none() {
             continue;
         }
         let n_e = it.index1();
@@ -157,7 +157,7 @@ fn append_ef_point(
 }
 
 /// `BOPAlgo_PaveFiller::GetEFPnts` (`_6.cxx:2608`).
-pub fn get_ef_pnts(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> {
+pub fn ef_pnts(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> {
     let mut mi = HashSet::new();
     full_shape_map(f.ds(), n_f1, &mut mi);
     full_shape_map(f.ds(), n_f2, &mut mi);

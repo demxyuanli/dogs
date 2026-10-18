@@ -289,7 +289,7 @@ impl NewtonMinimum {
     }
 
     /// `GetStatus()` (`math_NewtonMinimum.lxx:66-69`).
-    pub fn get_status(&self) -> MathStatus {
+    pub fn status(&self) -> MathStatus {
         self.status
     }
 

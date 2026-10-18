@@ -69,7 +69,7 @@ impl BRepTool {
                 (Some(a), Some(b)) => is_same(&a.0, &b.0),
                 _ => false,
             },
-            _ => shape.closed(),
+            _ => shape.is_closed(),
         }
     }
 

@@ -122,7 +122,7 @@ pub(crate) fn find_position_ll(param: &mut f64, domain: &IntRes2dDomain) -> IntR
 }
 
 /// `getDomainParametrs` (`_1.cxx:1240-1250`).
-pub(crate) fn get_domain_parameters(domain: &IntRes2dDomain) -> (f64, f64, f64, f64) {
+pub(crate) fn domain_parameters(domain: &IntRes2dDomain) -> (f64, f64, f64, f64) {
     let first = if domain.has_first_point() { domain.first_parameter() } else { -f64::INFINITY };
     let last = if domain.has_last_point() { domain.last_parameter() } else { f64::INFINITY };
     let tol1 = if domain.has_first_point() { domain.first_tolerance() } else { 0.0 };
@@ -170,12 +170,12 @@ pub(crate) fn compute_int_point(
         *res_sup = res_inf;
     }
     let mut res2 = par_other + (*res_sup - par_cur) * cos_t1t2;
-    let (first2, last2, tol21, tol22) = get_domain_parameters(other_domain);
+    let (first2, last2, tol21, tol22) = domain_parameters(other_domain);
     if res2 < first2 - tol21 || res2 > last2 + tol22 {
         return None;
     }
-    let (_, _, tol11, tol12) = get_domain_parameters(cur_domain);
-    let (first1, last1, _, _) = get_domain_parameters(cur_domain);
+    let (_, _, tol11, tol12) = domain_parameters(cur_domain);
+    let (first1, last1, _, _) = domain_parameters(cur_domain);
     let pos1a = find_position_ll(res_sup, cur_domain);
     let pos2a = find_position_ll(&mut res2, other_domain);
     let an_other_trans = if cur_trans == IntRes2dTypeTrans::Out {

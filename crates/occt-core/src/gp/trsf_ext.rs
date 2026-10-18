@@ -47,7 +47,7 @@ pub fn interpolate_transforms(a: &GpTrsf, b: &GpTrsf, t: f64) -> GpTrsf {
     GpTrsf {
         scale,
         shape: TrsfForm::CompoundTrsf,
-        matrix: q.get_matrix(),
+        matrix: q.matrix(),
         loc,
     }
 }

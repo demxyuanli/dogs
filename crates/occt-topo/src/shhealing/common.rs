@@ -159,7 +159,7 @@ pub(super) fn rebuild_wire(s: &TopoShape, ctx: &HealCtx) -> TopoShape {
         return replacement.0.clone();
     }
     let mut new_wire = Wire::new();
-    let mut closed_flag = s.closed();
+    let mut closed_flag = s.is_closed();
     if ctx.add_closing.contains_key(&wire_ptr) {
         closed_flag = true;
     }
@@ -501,7 +501,7 @@ pub fn remove_small_edges(shape: &TopoShape, precsmall: f64) -> (TopoShape, usiz
     let mut removed = 0usize;
     let mut wire_replace: HashMap<usize, Wire> = HashMap::new();
     for (wptr, face, wire) in &targets {
-        let closed = wire.0.closed();
+        let closed = wire.0.is_closed();
         // `ShapeFix_Wire::FixSmall(lockvtx, precsmall)` (`cxx:538-553`): `i` is
         // initialised from `NbEdges()` once, while every iteration re-reads the
         // shrunken `NbEdges()` inside `FixSmall`/`CheckSmall`. `lockvtx` is

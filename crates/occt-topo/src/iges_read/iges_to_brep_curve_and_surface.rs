@@ -80,7 +80,7 @@ impl<'a> Session<'a> {
     }
 
     /// `GetShapeResult` (`cxx:587-604`).
-    pub(in crate::iges_read) fn get_shape_result(&self, index: usize) -> Option<TopoShape> {
+    pub(in crate::iges_read) fn shape_result(&self, index: usize) -> Option<TopoShape> {
         self.cache.get(&index).cloned()
     }
 

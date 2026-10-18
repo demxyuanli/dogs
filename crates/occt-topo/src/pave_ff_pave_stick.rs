@@ -38,7 +38,7 @@ pub fn put_stick_paves_on_curve(
     mv_tol: &mut HashMap<usize, f64>,
     dmvlv: &mut HashMap<usize, Vec<usize>>,
 ) {
-    let bnd = crate::pave_ff_pave_bound::get_bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
+    let bnd = crate::pave_ff_pave_bound::bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
     if bnd[0].is_some() && bnd[1].is_some() {
         return;
     }
@@ -90,7 +90,7 @@ pub fn put_stick_paves_on_curve(
                 let c2d = if n == 0 { c2d0.as_ref() } else { c2d1.as_ref() };
                 let p2d = c2d.d0(ts[m]);
                 let s = if n == 0 { s1.as_ref() } else { s2.as_ref() };
-                nrm[n] = algo_tools3d::get_normal_to_surface(s, p2d.x(), p2d.y());
+                nrm[n] = algo_tools3d::normal_to_surface(s, p2d.x(), p2d.y());
             }
             let (Some(n0), Some(n1)) = (nrm[0], nrm[1]) else {
                 continue;

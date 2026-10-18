@@ -156,7 +156,7 @@ impl ExtremaPOnSurfParams {
     }
 
     /// GetSqrDistance (Extrema_POnSurfParams.hxx:59).
-    pub fn get_sqr_distance(&self) -> f64 {
+    pub fn sqr_distance(&self) -> f64 {
         self.sqr_distance
     }
 
@@ -166,7 +166,7 @@ impl ExtremaPOnSurfParams {
     }
 
     /// GetElementType (Extrema_POnSurfParams.hxx:65).
-    pub fn get_element_type(&self) -> ExtremaElementType {
+    pub fn element_type(&self) -> ExtremaElementType {
         self.element_type
     }
 
@@ -177,7 +177,7 @@ impl ExtremaPOnSurfParams {
     }
 
     /// GetIndices (Extrema_POnSurfParams.hxx:77-81).
-    pub fn get_indices(&self) -> (i32, i32) {
+    pub fn indices(&self) -> (i32, i32) {
         (self.index_u, self.index_v)
     }
 
@@ -362,7 +362,7 @@ impl<'a> MathFunctionSetWithDerivatives for ExtremaFuncPsNorm<'a> {
     /// Extrema_FuncPSNorm::GetStateNumber (Extrema_FuncPSNorm.cxx:139-165):
     /// append the current stationary point unless it is within
     /// Precision::PConfusion()^2 of an already stored one.
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         let tol2d = PCONFUSION * PCONFUSION;
         let nb_sol = self.sq_dist.len();
         let mut i = 0usize;
@@ -722,11 +722,11 @@ impl<'a> ExtremaGenExtPs<'a> {
     }
 
     /// Extrema_GenExtPS::GetGridPoints (cxx:371-454).
-    fn get_grid_points(&mut self, s: &dyn Surface) {
+    fn grid_points(&mut self, s: &dyn Surface) {
         if s.is_offset_surface() {
             // cxx:375-378.
             if let Some(basis) = s.offset_basis_surface() {
-                self.get_grid_points(&*basis);
+                self.grid_points(&*basis);
             }
         } else if s.is_bspline_surface() {
             // cxx:380-390.
@@ -801,10 +801,10 @@ impl<'a> ExtremaGenExtPs<'a> {
             // cxx:469-473: the points are confused.
             return *param0;
         }
-        let diff_dist = (param0.get_sqr_distance() - param1.get_sqr_distance()).abs();
+        let diff_dist = (param0.sqr_distance() - param1.sqr_distance()).abs();
         if diff_dist >= sqr_dist01 - diff_tol {
             // cxx:476-491: the shortest distance is one of the nodes.
-            return if param0.get_sqr_distance() > param1.get_sqr_distance() {
+            return if param0.sqr_distance() > param1.sqr_distance() {
                 *param1
             } else {
                 *param0
@@ -823,7 +823,7 @@ impl<'a> ExtremaGenExtPs<'a> {
             v_par += ratio * (av1 - av0);
         }
         self.grid_param.set_parameters(u_par, v_par, s.d0(u_par, v_par));
-        let (i0, j0) = param0.get_indices();
+        let (i0, j0) = param0.indices();
         self.grid_param.set_element_type(if is_u_edge {
             ExtremaElementType::UIsoEdge
         } else {
@@ -841,7 +841,7 @@ impl<'a> ExtremaGenExtPs<'a> {
 
         if !self.init {
             // cxx:534: build parametric grid for complex geometry.
-            self.get_grid_points(s);
+            self.grid_points(s);
             let usample = self.usample as usize;
             let vsample = self.vsample as usize;
 
@@ -960,14 +960,14 @@ impl<'a> ExtremaGenExtPs<'a> {
                     let ve1 = self.v_edge_pnt_params[no_u + 1][no_v];
 
                     let mut sqr_dist01 = ue0.value().square_distance(&ue1.value());
-                    let mut diff_dist = (ue0.get_sqr_distance() - ue1.get_sqr_distance()).abs();
+                    let mut diff_dist = (ue0.sqr_distance() - ue1.sqr_distance()).abs();
                     let mut is_out = false;
                     if diff_dist >= sqr_dist01 - diff_tol {
                         // cxx:684-688: projection outside the face.
                         is_out = true;
                     } else {
                         sqr_dist01 = ve0.value().square_distance(&ve1.value());
-                        diff_dist = (ve0.get_sqr_distance() - ve1.get_sqr_distance()).abs();
+                        diff_dist = (ve0.sqr_distance() - ve1.sqr_distance()).abs();
                         if diff_dist >= sqr_dist01 - diff_tol {
                             is_out = true;
                         }
@@ -975,17 +975,17 @@ impl<'a> ExtremaGenExtPs<'a> {
 
                     if is_out {
                         // cxx:701-712: closest point on an edge.
-                        let ue_min = if ue0.get_sqr_distance() < ue1.get_sqr_distance() {
+                        let ue_min = if ue0.sqr_distance() < ue1.sqr_distance() {
                             ue0
                         } else {
                             ue1
                         };
-                        let ve_min = if ve0.get_sqr_distance() < ve1.get_sqr_distance() {
+                        let ve_min = if ve0.sqr_distance() < ve1.sqr_distance() {
                             ve0
                         } else {
                             ve1
                         };
-                        let e_min = if ue_min.get_sqr_distance() < ve_min.get_sqr_distance() {
+                        let e_min = if ue_min.sqr_distance() < ve_min.sqr_distance() {
                             ue_min
                         } else {
                             ve_min
@@ -1168,12 +1168,12 @@ impl<'a> ExtremaGenExtPs<'a> {
                     for no_v in 1..vsample as usize {
                         let param = self.face_pnt_params[no_u][no_v];
                         let mut is_min = false;
-                        let an_elem_type = param.get_element_type();
+                        let an_elem_type = param.element_type();
 
                         if an_elem_type == ExtremaElementType::Face {
                             is_min = true;
                         } else {
-                            let (i_u, i_v) = param.get_indices();
+                            let (i_u, i_v) = param.indices();
                             if an_elem_type == ExtremaElementType::UIsoEdge {
                                 is_min = i_v == 1 || i_v == vsample;
                             } else if an_elem_type == ExtremaElementType::VIsoEdge {
@@ -1190,8 +1190,8 @@ impl<'a> ExtremaGenExtPs<'a> {
                                 {
                                     // cxx:1025-1033: check the down face.
                                     let down = self.face_pnt_params[no_u][no_v - 1];
-                                    if down.get_element_type() == an_elem_type {
-                                        let (i_u2, i_v2) = down.get_indices();
+                                    if down.element_type() == an_elem_type {
+                                        let (i_u2, i_v2) = down.indices();
                                         is_min = i_u == i_u2 && i_v == i_v2;
                                     }
                                 } else if an_elem_type == ExtremaElementType::VIsoEdge
@@ -1200,8 +1200,8 @@ impl<'a> ExtremaGenExtPs<'a> {
                                 {
                                     // cxx:1034-1045: check the right face.
                                     let right = self.face_pnt_params[no_u - 1][no_v];
-                                    if right.get_element_type() == an_elem_type {
-                                        let (i_u2, i_v2) = right.get_indices();
+                                    if right.element_type() == an_elem_type {
+                                        let (i_u2, i_v2) = right.indices();
                                         is_min = i_u == i_u2 && i_v == i_v2;
                                     }
                                 } else if i_u == no_u as i32 && i_v == no_v as i32 {
@@ -1216,8 +1216,8 @@ impl<'a> ExtremaGenExtPs<'a> {
                                         if !is_min {
                                             break;
                                         }
-                                        if other.get_element_type() == ExtremaElementType::Node {
-                                            let (i_u2, i_v2) = other.get_indices();
+                                        if other.element_type() == ExtremaElementType::Node {
+                                            let (i_u2, i_v2) = other.indices();
                                             is_min = i_u == i_u2 && i_v == i_v2;
                                         } else {
                                             is_min = false;
@@ -1248,15 +1248,15 @@ impl<'a> ExtremaGenExtPs<'a> {
                         let p7 = self.points[no_u + 1][no_v];
                         let p8 = self.points[no_u + 1][no_v + 1];
 
-                        let dist = main.get_sqr_distance();
-                        if p1.get_sqr_distance() <= dist
-                            && p2.get_sqr_distance() <= dist
-                            && p3.get_sqr_distance() <= dist
-                            && p4.get_sqr_distance() <= dist
-                            && p5.get_sqr_distance() <= dist
-                            && p6.get_sqr_distance() <= dist
-                            && p7.get_sqr_distance() <= dist
-                            && p8.get_sqr_distance() <= dist
+                        let dist = main.sqr_distance();
+                        if p1.sqr_distance() <= dist
+                            && p2.sqr_distance() <= dist
+                            && p3.sqr_distance() <= dist
+                            && p4.sqr_distance() <= dist
+                            && p5.sqr_distance() <= dist
+                            && p6.sqr_distance() <= dist
+                            && p7.sqr_distance() <= dist
+                            && p8.sqr_distance() <= dist
                         {
                             self.find_solution(p, &main);
                         }

@@ -114,7 +114,7 @@ use std::collections::HashMap;
         assert_eq!(imgs.len(), 1, "one closed shell image");
         let img = &imgs[0];
         assert!(img.is_shell(), "image is a shell");
-        assert!(img.closed(), "rebuilt shell is closed");
+        assert!(img.is_closed(), "rebuilt shell is closed");
         assert_eq!(faces_of(img).len(), 6, "all six split faces present");
     }
 

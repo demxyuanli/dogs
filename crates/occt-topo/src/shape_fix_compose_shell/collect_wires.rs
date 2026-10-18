@@ -119,7 +119,7 @@ impl ComposeShell {
                         reverse = true;
                     }
                     index = Some(i);
-                    if let Some(p) = seg.get_patch_index(1) {
+                    if let Some(p) = seg.patch_index(1) {
                         iumin = p.0;
                         iumax = p.1;
                         ivmin = p.2;
@@ -177,7 +177,7 @@ impl ComposeShell {
                             wire_edges[k].clone()
                         };
                         edge_tol = BRepTool::edge_tolerance(&e);
-                        if get_end_tangent_2d(&e, &face, false, &mut l_pnt, &mut l_vec, 1e-3) {
+                        if end_tangent_2d(&e, &face, false, &mut l_pnt, &mut l_vec, 1e-3) {
                             break;
                         }
                         k += 1;
@@ -244,7 +244,7 @@ impl ComposeShell {
                 }
                 if self.closed_mode {
                     // cxx:2752-2755.
-                    if let Some(p) = seg.get_patch_index(1) {
+                    if let Some(p) = seg.patch_index(1) {
                         iumin = p.0;
                         iumax = p.1;
                         ivmin = p.2;
@@ -276,7 +276,7 @@ impl ComposeShell {
             if end_v.is_none() {
                 first_edge = Some(sbwd[0].clone());
                 first_v = crate::shhealing::first_vertex(&sbwd[0]);
-                let _ = get_end_tangent_2d(&sbwd[0], &face, false, &mut first_pnt, &mut first_tan, 1e-3);
+                let _ = end_tangent_2d(&sbwd[0], &face, false, &mut first_pnt, &mut first_tan, 1e-3);
             }
 
             // cxx:2793-2822: update the last edge / vertex (not for short segs).
@@ -289,7 +289,7 @@ impl ComposeShell {
                 let mut k = nbe;
                 let mut found = false;
                 while k >= 1 {
-                    if get_end_tangent_2d(&sbwd[k - 1], &face, true, &mut end_pnt, &mut end_tan, 1e-3) {
+                    if end_tangent_2d(&sbwd[k - 1], &face, true, &mut end_pnt, &mut end_tan, 1e-3) {
                         found = true;
                         break;
                     }
@@ -347,13 +347,13 @@ impl ComposeShell {
             let mut tangent = GpVec2d::new(0.0, 0.0);
             let mut mindist = 0.0f64;
             let mut samepatch = false;
-            if let Some(p) = seqw[i].get_patch_index(1) {
+            if let Some(p) = seqw[i].patch_index(1) {
                 iumin = p.0;
                 iumax = p.1;
                 ivmin = p.2;
                 ivmax = p.3;
             }
-            let _ = get_end_tangent_2d(&wd[0], &face, false, &mut p2d, &mut tangent, 0.0);
+            let _ = end_tangent_2d(&wd[0], &face, false, &mut p2d, &mut tangent, 0.0);
             for j in 0..wires.len() {
                 let cand: Vec<Edge> = wires[j].edges().to_vec();
                 for k in 0..cand.len() {
@@ -366,7 +366,7 @@ impl ComposeShell {
                         continue;
                     }
                     let mut pp = GpPnt2d::new(0.0, 0.0);
-                    let _ = get_end_tangent_2d(&cand[k], &face, false, &mut pp, &mut tangent, 0.0);
+                    let _ = end_tangent_2d(&cand[k], &face, false, &mut pp, &mut tangent, 0.0);
                     let dist = pp.square_distance(&p2d);
                     if sp && !samepatch {
                         minj = Some(j);

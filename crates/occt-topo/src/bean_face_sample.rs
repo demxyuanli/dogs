@@ -72,7 +72,7 @@ impl CurveRangeSample {
     }
 
     /// `IntTools_CurveRangeSample::GetRange`.
-    pub(crate) fn get_range(&self, first: f64, last: f64, nb_sample: i32) -> IntRange {
+    pub(crate) fn range(&self, first: f64, last: f64, nb_sample: i32) -> IntRange {
         if self.depth() <= 0 {
             return IntRange::new_unchecked(first, last);
         }
@@ -150,12 +150,12 @@ impl SurfaceRangeSample {
         self.range_v.range_index_deeper(nb_sample_v)
     }
 
-    pub(crate) fn get_range_u(&self, first: f64, last: f64, nb_sample: i32) -> IntRange {
-        self.range_u.get_range(first, last, nb_sample)
+    pub(crate) fn range_u(&self, first: f64, last: f64, nb_sample: i32) -> IntRange {
+        self.range_u.range(first, last, nb_sample)
     }
 
-    pub(crate) fn get_range_v(&self, first: f64, last: f64, nb_sample: i32) -> IntRange {
-        self.range_v.get_range(first, last, nb_sample)
+    pub(crate) fn range_v(&self, first: f64, last: f64, nb_sample: i32) -> IntRange {
+        self.range_v.range(first, last, nb_sample)
     }
 
     pub(crate) fn is_equal(&self, other: &Self) -> bool {

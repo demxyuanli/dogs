@@ -37,7 +37,7 @@ impl URange {
         self.hi - self.lo
     }
 
-    pub(crate) fn get_bounds(&self) -> Option<(f64, f64)> {
+    pub(crate) fn bounds(&self) -> Option<(f64, f64)> {
         if self.is_void() {
             None
         } else {
@@ -45,7 +45,7 @@ impl URange {
         }
     }
 
-    pub(crate) fn get_min(&self) -> Option<f64> {
+    pub(crate) fn min(&self) -> Option<f64> {
         if self.is_void() {
             None
         } else {
@@ -53,7 +53,7 @@ impl URange {
         }
     }
 
-    pub(crate) fn get_max(&self) -> Option<f64> {
+    pub(crate) fn max(&self) -> Option<f64> {
         if self.is_void() {
             None
         } else {
@@ -236,7 +236,7 @@ pub(crate) fn inscribe_interval(
     tol2d: f64,
     period: f64,
 ) -> bool {
-    let Some(mut u) = range.get_min() else {
+    let Some(mut u) = range.min() else {
         return false;
     };
     let delta = range.delta();
@@ -247,7 +247,7 @@ pub(crate) fn inscribe_interval(
         range.add(u + delta);
         return true;
     }
-    let Some(mut u) = range.get_max() else {
+    let Some(mut u) = range.max() else {
         return false;
     };
     let force_max = (uf - u).abs() < tol2d;
@@ -397,7 +397,7 @@ pub(crate) fn sum_inscribed_u(ranges: [URange; 2], uf: f64, ul: f64, tol2d: f64)
         bound.add(uf);
         bound.add(ul);
         if !inscribe_interval(uf, ul, &mut cur, tol2d, PERIOD) {
-            let Some((f, l)) = cur.get_bounds() else {
+            let Some((f, l)) = cur.bounds() else {
                 continue;
             };
             if l < uf {

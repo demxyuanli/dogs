@@ -213,13 +213,13 @@ impl BRepModel {
 
     /// `XCAFDoc_VisMaterialTool::GetMaterial` (`cxx:55-56`): null unless the
     /// label is in the material table.
-    pub fn get_material(&self, index: usize) -> Option<&XcafDocVisMaterial> {
+    pub fn material(&self, index: usize) -> Option<&XcafDocVisMaterial> {
         self.materials.get(index).and_then(|m| m.as_ref())
     }
 
     /// `XCAFDoc_VisMaterialTool::IsMaterial` (`hxx:58-61`).
     pub fn is_material(&self, index: usize) -> bool {
-        self.get_material(index).is_some()
+        self.material(index).is_some()
     }
 
     /// `XCAFDoc_VisMaterialTool::GetMaterials` (`cxx:114-127`): the labels still
@@ -260,9 +260,9 @@ impl BRepModel {
     /// `XCAFDoc_VisMaterialTool::GetShapeMaterial` (`cxx:181-187`): the material
     /// of the linked label, or NULL when no link is set or the linked label no
     /// longer carries a material.
-    pub fn get_shape_material(&self, shape_name: &str) -> Option<&XcafDocVisMaterial> {
+    pub fn shape_material(&self, shape_name: &str) -> Option<&XcafDocVisMaterial> {
         let index = self.find(shape_name)?.material?;
-        self.get_material(index)
+        self.material(index)
     }
 
     // -----------------------------------------------------------------
@@ -439,7 +439,7 @@ impl BRepModel {
     /// `XCAFDoc_ShapeTool::GetReferredShape(theLabel, theRefLabel)`
     /// (`cxx:936-950`): the Product label a reference label points at. A
     /// non-reference label refers to itself.
-    pub fn get_referred_shape(&self, label: usize) -> Option<usize> {
+    pub fn referred_shape(&self, label: usize) -> Option<usize> {
         let l = self.labels.get(label)?;
         Some(l.referred.unwrap_or(label))
     }
@@ -493,7 +493,7 @@ impl BRepModel {
         let roots = self.roots.clone();
         let mut updated = std::collections::HashSet::new();
         for root in roots {
-            let Some(ref_label) = self.get_referred_shape(root) else { continue };
+            let Some(ref_label) = self.referred_shape(root) else { continue };
             self.update_component(ref_label, &mut updated);
         }
     }

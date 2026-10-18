@@ -94,7 +94,7 @@ impl ShapeFixFace {
             // `aB.Add(aWireFace, aw)`, `ShapeAnalysis::GetFaceUVBounds`.
             let wire_face = builder.make_face(surf.clone(), std::slice::from_ref(&ws[i]));
             let (umin, umax, vmin, vmax) =
-                crate::shape_fix_compose_shell::get_face_uv_bounds(&wire_face);
+                crate::shape_fix_compose_shell::shape_analysis_face_uv_bounds(&wire_face);
             if is_u_closed {
                 cut_interval(&mut int_u, &GpPnt2d::new(umin, umax), sul - suf);
             }

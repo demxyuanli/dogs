@@ -373,7 +373,7 @@ pub fn render_view_grid(
             let tile = render_scene_raster_zbuffer(scene, cam, width, height, deflection, &settings);
             for ty in 0..height {
                 for tx in 0..width {
-                    out.set_pixel(c * width + tx, r * height + ty, tile.get_pixel(tx, ty));
+                    out.set_pixel(c * width + tx, r * height + ty, tile.pixel(tx, ty));
                 }
             }
         }

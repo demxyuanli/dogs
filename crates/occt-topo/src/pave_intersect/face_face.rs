@@ -15,19 +15,19 @@ pub(super) fn check_planes(ds: &BopdsDS, n_f1: usize, n_f2: usize) -> bool {
         if let Some(shape) = ds.shape(n_f) {
             for v in vertices_of(shape) {
                 if let Some(i) = ds.index(&v.0) {
-                    s.insert(ds.get_same_domain_index(i));
+                    s.insert(ds.same_domain_index(i));
                 }
             }
         }
         if let Some(fi) = ds.face_info_pool().iter().find(|fi| fi.face_index == n_f) {
             for &(nv, _, _) in fi.verts() {
-                s.insert(ds.get_same_domain_index(nv));
+                s.insert(ds.same_domain_index(nv));
             }
             for &(e, _, _) in fi.paves_in() {
                 if let Some(si) = ds.shape_info(e) {
                     for &sub in si.sub_shapes() {
                         if ds.shape_info(sub).map(|x| x.shape_type()) == Some(ShapeType::Vertex) {
-                            s.insert(ds.get_same_domain_index(sub));
+                            s.insert(ds.same_domain_index(sub));
                         }
                     }
                 }

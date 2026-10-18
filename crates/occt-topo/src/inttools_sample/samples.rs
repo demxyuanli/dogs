@@ -38,7 +38,7 @@ impl BaseRangeSample {
     }
 
     /// The subdivision depth of this sample.
-    pub fn get_depth(&self) -> usize {
+    pub fn depth(&self) -> usize {
         self.depth
     }
 
@@ -85,7 +85,7 @@ impl CurveRangeSample {
     }
 
     /// The subdivision depth of this sample.
-    pub fn get_depth(&self) -> usize {
+    pub fn depth(&self) -> usize {
         self.depth
     }
 
@@ -95,7 +95,7 @@ impl CurveRangeSample {
     }
 
     /// The sub-interval index within the current depth.
-    pub fn get_index(&self) -> usize {
+    pub fn index(&self) -> usize {
         self.index
     }
 
@@ -114,7 +114,7 @@ impl CurveRangeSample {
     /// Depth 0 returns the whole `[first, last]`; otherwise the domain is
     /// split into `nb_sample^depth` equal intervals and this sample's `index`
     /// selects one. Source: `IntTools_CurveRangeSample::GetRange`.
-    pub fn get_range(&self, first: f64, last: f64, nb_sample: usize) -> IntRange {
+    pub fn range(&self, first: f64, last: f64, nb_sample: usize) -> IntRange {
         if self.depth == 0 {
             return IntRange::new_unchecked(first, last);
         }
@@ -127,7 +127,7 @@ impl CurveRangeSample {
     /// The index of the deeper sub-interval `[index * nb_sample,
     /// (index + 1) * nb_sample)` at depth + 1. Source:
     /// `GetRangeIndexDeeper`.
-    pub fn get_range_index_deeper(&self, nb_sample: usize) -> usize {
+    pub fn range_index_deeper(&self, nb_sample: usize) -> usize {
         self.index * nb_sample
     }
 }
@@ -185,7 +185,7 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the two direction samples. Source: `GetRanges`.
-    pub fn get_ranges(&self) -> (CurveRangeSample, CurveRangeSample) {
+    pub fn ranges(&self) -> (CurveRangeSample, CurveRangeSample) {
         (self.range_u, self.range_v)
     }
 
@@ -196,13 +196,13 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the U/V indexes. Source: `GetIndexes`.
-    pub fn get_indexes(&self) -> (usize, usize) {
-        (self.range_u.get_index(), self.range_v.get_index())
+    pub fn indexes(&self) -> (usize, usize) {
+        (self.range_u.index(), self.range_v.index())
     }
 
     /// Returns the U/V depths. Source: `GetDepths`.
-    pub fn get_depths(&self) -> (usize, usize) {
-        (self.range_u.get_depth(), self.range_v.get_depth())
+    pub fn depths(&self) -> (usize, usize) {
+        (self.range_u.depth(), self.range_v.depth())
     }
 
     /// Sets the U-direction sample. Source: `SetSampleRangeU`.
@@ -211,7 +211,7 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the U-direction sample. Source: `GetSampleRangeU`.
-    pub fn get_sample_range_u(&self) -> CurveRangeSample {
+    pub fn sample_range_u(&self) -> CurveRangeSample {
         self.range_u
     }
 
@@ -221,7 +221,7 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the V-direction sample. Source: `GetSampleRangeV`.
-    pub fn get_sample_range_v(&self) -> CurveRangeSample {
+    pub fn sample_range_v(&self) -> CurveRangeSample {
         self.range_v
     }
 
@@ -231,8 +231,8 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the U index. Source: `GetIndexU`.
-    pub fn get_index_u(&self) -> usize {
-        self.range_u.get_index()
+    pub fn index_u(&self) -> usize {
+        self.range_u.index()
     }
 
     /// Sets the V index. Source: `SetIndexV`.
@@ -241,8 +241,8 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the V index. Source: `GetIndexV`.
-    pub fn get_index_v(&self) -> usize {
-        self.range_v.get_index()
+    pub fn index_v(&self) -> usize {
+        self.range_v.index()
     }
 
     /// Sets the U depth. Source: `SetDepthU`.
@@ -251,8 +251,8 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the U depth. Source: `GetDepthU`.
-    pub fn get_depth_u(&self) -> usize {
-        self.range_u.get_depth()
+    pub fn depth_u(&self) -> usize {
+        self.range_u.depth()
     }
 
     /// Sets the V depth. Source: `SetDepthV`.
@@ -261,24 +261,24 @@ impl SurfaceRangeSample {
     }
 
     /// Returns the V depth. Source: `GetDepthV`.
-    pub fn get_depth_v(&self) -> usize {
-        self.range_v.get_depth()
+    pub fn depth_v(&self) -> usize {
+        self.range_v.depth()
     }
 
     /// The materialised `[first_u, last_u]` sub-range. Source: `GetRangeU`.
-    pub fn get_range_u(&self, first_u: f64, last_u: f64, nb_sample_u: usize) -> IntRange {
-        self.range_u.get_range(first_u, last_u, nb_sample_u)
+    pub fn range_u(&self, first_u: f64, last_u: f64, nb_sample_u: usize) -> IntRange {
+        self.range_u.range(first_u, last_u, nb_sample_u)
     }
 
     /// The materialised `[first_v, last_v]` sub-range. Source: `GetRangeV`.
-    pub fn get_range_v(&self, first_v: f64, last_v: f64, nb_sample_v: usize) -> IntRange {
-        self.range_v.get_range(first_v, last_v, nb_sample_v)
+    pub fn range_v(&self, first_v: f64, last_v: f64, nb_sample_v: usize) -> IntRange {
+        self.range_v.range(first_v, last_v, nb_sample_v)
     }
 
     /// The `(U, V)` cell bounds materialised from both domains at once.
     /// Equivalent to calling [`get_range_u`](Self::get_range_u) and
     /// [`get_range_v`](Self::get_range_v).
-    pub fn get_range(
+    pub fn range(
         &self,
         first_u: f64,
         last_u: f64,
@@ -288,8 +288,8 @@ impl SurfaceRangeSample {
         nb_sample_v: usize,
     ) -> (IntRange, IntRange) {
         (
-            self.range_u.get_range(first_u, last_u, nb_sample_u),
-            self.range_v.get_range(first_v, last_v, nb_sample_v),
+            self.range_u.range(first_u, last_u, nb_sample_u),
+            self.range_v.range(first_v, last_v, nb_sample_v),
         )
     }
 
@@ -299,13 +299,13 @@ impl SurfaceRangeSample {
     }
 
     /// The deeper U index at depth + 1. Source: `GetRangeIndexUDeeper`.
-    pub fn get_range_index_u_deeper(&self, nb_sample_u: usize) -> usize {
-        self.range_u.get_range_index_deeper(nb_sample_u)
+    pub fn range_index_u_deeper(&self, nb_sample_u: usize) -> usize {
+        self.range_u.range_index_deeper(nb_sample_u)
     }
 
     /// The deeper V index at depth + 1. Source: `GetRangeIndexVDeeper`.
-    pub fn get_range_index_v_deeper(&self, nb_sample_v: usize) -> usize {
-        self.range_v.get_range_index_deeper(nb_sample_v)
+    pub fn range_index_v_deeper(&self, nb_sample_v: usize) -> usize {
+        self.range_v.range_index_deeper(nb_sample_v)
     }
 }
 
@@ -356,17 +356,17 @@ impl CurveRangeLocalizeData {
     }
 
     /// The configured number of sub-intervals.
-    pub fn get_nb_sample(&self) -> usize {
+    pub fn nb_sample(&self) -> usize {
         self.nb_samples
     }
 
     /// The configured minimal range length.
-    pub fn get_min_range(&self) -> f64 {
+    pub fn min_range(&self) -> f64 {
         self.min_range
     }
 
     /// The seed curve index. Source: OCCT's `myRootIndex`-style seed field.
-    pub fn get_root_index(&self) -> usize {
+    pub fn root_index(&self) -> usize {
         self.root_index
     }
 
@@ -514,27 +514,27 @@ impl SurfaceRangeLocalizeData {
     }
 
     /// Number of U sub-intervals.
-    pub fn get_nb_samples_u(&self) -> usize {
+    pub fn nb_samples_u(&self) -> usize {
         self.nb_samples_u
     }
 
     /// Number of V sub-intervals.
-    pub fn get_nb_samples_v(&self) -> usize {
+    pub fn nb_samples_v(&self) -> usize {
         self.nb_samples_v
     }
 
     /// Minimal acceptable U range length.
-    pub fn get_min_range_u(&self) -> f64 {
+    pub fn min_range_u(&self) -> f64 {
         self.min_range_u
     }
 
     /// Minimal acceptable V range length.
-    pub fn get_min_range_v(&self) -> f64 {
+    pub fn min_range_v(&self) -> f64 {
         self.min_range_v
     }
 
     /// The seed surface index.
-    pub fn get_root_index(&self) -> usize {
+    pub fn root_index(&self) -> usize {
         self.root_index
     }
 
@@ -578,7 +578,7 @@ impl SurfaceRangeLocalizeData {
     }
 
     /// The `(U, V)` bounds of the cell at grid position `(iu, iv)`.
-    pub fn get_depth_range(&self, iu: usize, iv: usize) -> Option<(IntRange, IntRange)> {
+    pub fn depth_range(&self, iu: usize, iv: usize) -> Option<(IntRange, IntRange)> {
         if iu >= self.nb_samples_u.max(1) || iv >= self.nb_samples_v.max(1) {
             return None;
         }

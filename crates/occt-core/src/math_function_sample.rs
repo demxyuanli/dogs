@@ -28,7 +28,7 @@ impl FunctionSample {
 
     /// `GetParameter(Index)` (`math_FunctionSample.cxx:44-47`), 1-based.
     /// Raises `Standard_OutOfRange` when `Index <= 0 || Index > N`.
-    pub fn get_parameter(&self, index: i32) -> f64 {
+    pub fn parameter(&self, index: i32) -> f64 {
         assert!(
             index > 0 && index <= self.n,
             "Standard_OutOfRange in math_FunctionSample::GetParameter"

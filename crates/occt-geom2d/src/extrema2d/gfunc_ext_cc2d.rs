@@ -612,7 +612,7 @@ impl<'a> MathFunctionSetWithDerivatives for GFuncExtCC2d<'a> {
     }
 
     /// `GetStateNumber()` (`Extrema_GFuncExtCC.hxx:832-870`).
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         let mut du = self.du;
         let mut dv = self.dv;
         let p1p2 = GpVec2d::new(self.p2.x() - self.p1.x(), self.p2.y() - self.p1.y());

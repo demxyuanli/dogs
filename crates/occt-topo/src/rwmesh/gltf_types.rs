@@ -161,7 +161,7 @@ pub(super) struct DecodedBuffers {
 }
 
 impl DecodedBuffers {
-    fn get_or(&self, key: &str, body: &[u8]) -> Arc<Vec<u8>> {
+    fn or(&self, key: &str, body: &[u8]) -> Arc<Vec<u8>> {
         let mut cache = self.buffers.borrow_mut();
         cache
             .entry(key.to_string())
@@ -292,7 +292,7 @@ pub(super) fn prim_array_data(
         // `cxx:2315-2331`: `StreamLength` stays 0; `StreamOffset` indexes the
         // decoded body.
         return Ok(GltfPrimArrayData {
-            stream_data: Some(ctx.decoded.get_or(&buffer_idx.to_string(), body)),
+            stream_data: Some(ctx.decoded.or(&buffer_idx.to_string(), body)),
             stream_uri: String::new(),
             stream_offset: offset,
             stream_length: 0,

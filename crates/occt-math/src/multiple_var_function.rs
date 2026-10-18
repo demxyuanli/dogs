@@ -24,7 +24,7 @@ pub trait MathMultipleVarFunction {
     fn value(&self, x: &MathVector, f: &mut f64) -> bool;
 
     /// `GetStateNumber()` (`math_MultipleVarFunction.hxx:51`): default 0.
-    fn get_state_number(&self) -> i32 {
+    fn state_number(&self) -> i32 {
         0
     }
 

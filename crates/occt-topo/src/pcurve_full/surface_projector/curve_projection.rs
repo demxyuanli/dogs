@@ -99,7 +99,7 @@ pub fn project_curve_on_surface_perform(
     // refills `myCache` from its two endpoints (`cxx:1122-1142`).
     let mut gl = super::super::projection_cache::GetLineOut::default();
     let trace_gl = std::env::var("IGES_TRACE").is_ok();
-    let hit = super::super::projection_cache::get_line(surf, &pts3d, &t_vals, preci, cache, &mut gl);
+    let hit = super::super::projection_cache::line_pcurve_from_points(surf, &pts3d, &t_vals, preci, cache, &mut gl);
     if trace_gl {
         let a = &pts3d[0];
         let b = &pts3d[pts3d.len() - 1];

@@ -28,7 +28,7 @@ pub fn treat_vertices_ee(f: &mut PaveFiller) -> Result<(), String> {
     let mut mi: HashSet<usize> = HashSet::new();
     let mut liv: Vec<usize> = Vec::new();
     for it in f.ds().interf_ee() {
-        if let Some(n_v) = it.get_index_new() {
+        if let Some(n_v) = it.new_index() {
             if mi.insert(n_v) {
                 liv.push(n_v);
             }

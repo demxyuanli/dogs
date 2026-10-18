@@ -21,8 +21,8 @@ use occt_core::precision::{ANGULAR, CONFUSION};
 use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::AlgoTools;
 use crate::algo_tools3d::{
-    edge_tangent_3d, get_approx_normal, get_normal_to_face_on_edge,
-    get_normal_to_face_on_edge_at, get_normal_to_surface, point_in_face, surface_ref_radius,
+    edge_tangent_3d, approx_normal, normal_to_face_on_edge,
+    normal_to_face_on_edge_at, normal_to_surface, point_in_face, surface_ref_radius,
 };
 use crate::boptools_2d::intermediate_point;
 use crate::brep_tool::BRepTool;
@@ -51,7 +51,7 @@ impl CoupleOfShape {
 }
 
 /// `BOPTools_AlgoTools::GetEdgeOnFace`.
-pub fn get_edge_on_face(e1: &Edge, f2: &Face) -> Option<Edge> {
+pub fn edge_on_face(e1: &Edge, f2: &Face) -> Option<Edge> {
     for w in ShapeIterator::of_shape(&f2.0) {
         if w.shape_type() != ShapeType::Wire {
             continue;
@@ -66,7 +66,7 @@ pub fn get_edge_on_face(e1: &Edge, f2: &Face) -> Option<Edge> {
 }
 
 /// `BOPTools_AlgoTools::GetEdgeOff`.
-pub fn get_edge_off(e1: &Edge, f2: &Face) -> Option<Edge> {
+pub fn edge_off(e1: &Edge, f2: &Face) -> Option<Edge> {
     let or1c = e1.0.orientation().reversed();
     for w in ShapeIterator::of_shape(&f2.0) {
         if w.shape_type() != ShapeType::Wire {
@@ -245,7 +245,7 @@ fn min_step_3d(
 }
 
 /// `GetFaceDir`.
-fn get_face_dir(
+fn face_dir(
     edge: &Edge,
     face: &Face,
     p: &GpPnt,
@@ -257,7 +257,7 @@ fn get_face_dir(
     n_pl: &GpDir,
     dt: f64,
 ) -> Option<(GpDir, GpDir)> {
-    let mut dn = get_normal_to_face_on_edge_at(edge, face, t, ctx)?;
+    let mut dn = normal_to_face_on_edge_at(edge, face, t, ctx)?;
     if face.0.orientation() == Orientation::Reversed {
         dn = dn.reversed();
     }
@@ -269,7 +269,7 @@ fn get_face_dir(
         false
     };
     if !found {
-        let (px, dn2) = get_approx_normal(edge, face, t, ctx)?;
+        let (px, dn2) = approx_normal(edge, face, t, ctx)?;
         let pxp = project_on_plane(&px, origin, n_pl);
         let vec = GpVec::from_pnts(p, &pxp);
         db = GpDir::from_vec(&vec).ok()?;
@@ -279,7 +279,7 @@ fn get_face_dir(
 }
 
 /// `BOPTools_AlgoTools::GetFaceOff`.
-pub fn get_face_off(
+pub fn face_off(
     e1: &Edge,
     f1: &Face,
     lcs_off: &[CoupleOfShape],
@@ -298,7 +298,7 @@ pub fn get_face_off(
     let or1 = e1.0.orientation();
     let mut small = false;
     let dt3d = min_step_3d(e1, f1, lcs_off, &px, ctx, &mut small);
-    let (dn1, dbf) = get_face_dir(e1, f1, &px, t, &dtgt, small, ctx, &px, &dtgt, dt3d)?;
+    let (dn1, dbf) = face_dir(e1, f1, &px, t, &dtgt, small, ctx, &px, &dtgt, dt3d)?;
     let dtf = dn1.crossed(&dbf).ok()?;
     let criteria = CONFUSION;
     let mut ok = true;
@@ -319,7 +319,7 @@ pub fn get_face_off(
         };
         let dtgt2 = if same_dir { dtgt } else { dtgt.reversed() };
         let Some((_dn2, dbf2)) =
-            get_face_dir(&e2, &f2, &px, t, &dtgt2, small, ctx, &px, &dtgt, dt3d)
+            face_dir(&e2, &f2, &px, t, &dtgt2, small, ctx, &px, &dtgt, dt3d)
         else {
             continue;
         };
@@ -355,7 +355,7 @@ fn find_face_pairs(
     let mut lcef: Vec<CoupleOfShape> = Vec::new();
     for fl in lf {
         let f = Face(fl.clone());
-        let Some(el) = get_edge_on_face(e, &f) else {
+        let Some(el) = edge_on_face(e, &f) else {
             return Vec::new();
         };
         lcef.push(CoupleOfShape::new(el.0, fl.clone()));
@@ -384,7 +384,7 @@ fn find_face_pairs(
         let (Some(e1), Some(f1)) = (e1, f1) else {
             break;
         };
-        let f2 = match get_face_off(&e1, &f1, &lcefx, ctx) {
+        let f2 = match face_off(&e1, &f1, &lcefx, ctx) {
             Some((f, _)) => f,
             None => break,
         };
@@ -404,7 +404,7 @@ pub fn is_internal_face_by_pair(
     face2: &Face,
     ctx: &IntToolsContext,
 ) -> i32 {
-    let Some(mut e1) = get_edge_on_face(edge, face1) else {
+    let Some(mut e1) = edge_on_face(edge, face1) else {
         return 2;
     };
     let e2 = if e1.0.orientation() == Orientation::Internal {
@@ -419,7 +419,7 @@ pub fn is_internal_face_by_pair(
         e.0.set_orientation(Orientation::Reversed);
         e
     } else {
-        match get_edge_on_face(edge, face2) {
+        match edge_on_face(edge, face2) {
             Some(e) => e,
             None => return 2,
         }
@@ -429,7 +429,7 @@ pub fn is_internal_face_by_pair(
         CoupleOfShape::new(e2.0, face2.0.clone()),
     ];
     // `GetFaceOff` false: angles are not distinct (`_cxx:977-982`) → iRet=2.
-    match get_face_off(&e1, face1, &lcs, ctx) {
+    match face_off(&e1, face1, &lcs, ctx) {
         None => 2,
         Some((_, false)) => 2,
         Some((f_off, true)) => {
@@ -496,7 +496,7 @@ pub fn is_internal_face(
         };
         if lf.len() == 1 {
             let f1 = Face(lf[0].clone());
-            let Some(e1) = get_edge_on_face(&e, &f1) else {
+            let Some(e1) = edge_on_face(&e, &f1) else {
                 continue;
             };
             if e1.0.orientation() != Orientation::Internal {
@@ -677,10 +677,10 @@ pub fn sense_faces(f1: &Face, f2: &Face, ctx: &IntToolsContext) -> i32 {
     let Some(e2) = e2 else {
         return 0;
     };
-    let Some(n1) = get_normal_to_face_on_edge(&e1, f1, ctx) else {
+    let Some(n1) = normal_to_face_on_edge(&e1, f1, ctx) else {
         return 0;
     };
-    let Some(n2) = get_normal_to_face_on_edge(&e2, f2, ctx) else {
+    let Some(n2) = normal_to_face_on_edge(&e2, f2, ctx) else {
         return 0;
     };
     crate::algo_tools3d::sense_flag(&n1, &n2)
@@ -724,12 +724,12 @@ pub fn is_split_to_reverse_face(
             found.ok_or(1)?
         }
     };
-    let mut dn_sp = get_normal_to_surface(s_sp.as_ref(), p2d.x(), p2d.y()).ok_or(2)?;
+    let mut dn_sp = normal_to_surface(s_sp.as_ref(), p2d.x(), p2d.y()).ok_or(2)?;
     if f_sp.0.orientation() == Orientation::Reversed {
         dn_sp = dn_sp.reversed();
     }
     let (u, v) = ctx.project_point_on_face(f_sr, &p_sp).map_err(|_| 3)?;
-    let mut dn_or = get_normal_to_surface(s_sr.as_ref(), u, v).ok_or(4)?;
+    let mut dn_or = normal_to_surface(s_sr.as_ref(), u, v).ok_or(4)?;
     if f_sr.0.orientation() == Orientation::Reversed {
         dn_or = dn_or.reversed();
     }

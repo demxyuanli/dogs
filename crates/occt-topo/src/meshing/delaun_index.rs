@@ -342,7 +342,7 @@ impl VertexTool {
     }
 
     /// Grid cell containing the given UV point.
-    pub fn get_cell(&self, u: f64, v: f64) -> (usize, usize) {
+    pub fn cell(&self, u: f64, v: f64) -> (usize, usize) {
         self.grid.cell_of(u, v)
     }
 
@@ -727,9 +727,9 @@ mod tests {
         let c = vt.add_vertex(IndexVertex::new(0.3, 0.7), 1e-6);
 
         // Each point lands in its own cell.
-        assert_eq!(vt.get_cell(0.1, 0.1), (0, 0));
-        assert_eq!(vt.get_cell(0.9, 0.9), (3, 3));
-        assert_eq!(vt.get_cell(0.3, 0.7), (1, 2));
+        assert_eq!(vt.cell(0.1, 0.1), (0, 0));
+        assert_eq!(vt.cell(0.9, 0.9), (3, 3));
+        assert_eq!(vt.cell(0.3, 0.7), (1, 2));
         // select_cell returns exactly the hashed entries.
         assert_eq!(vt.select_cell(0, 0), &[a]);
         assert_eq!(vt.select_cell(3, 3), &[b]);
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!(vt.select(0.1, 0.1, 1e-3), vec![a]);
         assert!(vt.select(0.5, 0.5, 0.05).is_empty());
         // Out-of-box coordinates clamp to the boundary cells.
-        assert_eq!(vt.get_cell(-5.0, 2.0), (0, 3));
+        assert_eq!(vt.cell(-5.0, 2.0), (0, 3));
     }
 
     #[test]

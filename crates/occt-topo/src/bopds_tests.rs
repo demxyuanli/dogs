@@ -229,7 +229,7 @@
         assert_eq!(interf.opposite_index(4), Some(9));
         assert_eq!(interf.opposite_index(8), None);
         interf.set_index_new(12);
-        assert_eq!(interf.get_index_new(), Some(12));
+        assert_eq!(interf.new_index(), Some(12));
     }
 
     #[test]
@@ -341,9 +341,9 @@
 
         ds.add_shape_sd(1, 4);
         ds.add_shape_sd(4, 9);
-        assert_eq!(ds.get_same_domain_index(1), 9);
+        assert_eq!(ds.same_domain_index(1), 9);
         assert_eq!(ds.has_shape_sd(1), Some(9));
-        assert_eq!(ds.get_same_domain_index(2), 2);
+        assert_eq!(ds.same_domain_index(2), 2);
     }
 
     #[test]
@@ -354,7 +354,7 @@
         // Unordered duplicate: no second flat pair, no second typed record.
         assert!(!ds.add_interf_vv(7, 3, Some(5)));
         assert_eq!(ds.interf_vv().len(), 1);
-        assert_eq!(ds.interf_vv()[0].get_index_new(), Some(5));
+        assert_eq!(ds.interf_vv()[0].new_index(), Some(5));
         // The flat table still tracks membership.
         assert!(ds.has_interf_pair(3, 7));
         assert!(ds.has_interf(7));
@@ -365,21 +365,21 @@
         ds.add_shape_sd(12, 20);
         ds.update_interfs_with_sd_vertices();
         assert_eq!(
-            ds.interf_ve()[0].get_index_new(),
+            ds.interf_ve()[0].new_index(),
             Some(20),
             "redirected to the final SD representative"
         );
         // The V/V new vertex has no SD partner — left untouched.
-        assert_eq!(ds.interf_vv()[0].get_index_new(), Some(5));
+        assert_eq!(ds.interf_vv()[0].new_index(), Some(5));
 
         // An interference with no new-vertex index stays untouched.
         assert!(ds.add_interf_ee(2, 9, None));
         ds.update_interfs_with_sd_vertices();
-        assert_eq!(ds.interf_ee()[0].get_index_new(), None);
+        assert_eq!(ds.interf_ee()[0].new_index(), None);
         // PerformNewVertices binds IndexNew; the SD walk then redirects it.
         assert!(ds.bind_ee_new_vertex(2, 9, 6));
         ds.update_interfs_with_sd_vertices();
-        assert_eq!(ds.interf_ee()[0].get_index_new(), Some(20));
+        assert_eq!(ds.interf_ee()[0].new_index(), Some(20));
     }
 
     #[test]

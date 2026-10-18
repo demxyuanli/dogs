@@ -313,8 +313,8 @@ mod tests {
         ];
         interfs[0].set_index_new(v0);
         update_intfs_with_sd_vertices(pf.ds(), &mut interfs);
-        assert_eq!(interfs[0].get_index_new(), Some(v5), "index_new rewritten through the SD map");
-        assert_eq!(interfs[1].get_index_new(), None, "an unset index_new stays unset");
+        assert_eq!(interfs[0].new_index(), Some(v5), "index_new rewritten through the SD map");
+        assert_eq!(interfs[1].new_index(), None, "an unset index_new stays unset");
 
         update_interfs_with_sd_vertices(&mut pf).unwrap();
         assert!(!pf.has_errors());

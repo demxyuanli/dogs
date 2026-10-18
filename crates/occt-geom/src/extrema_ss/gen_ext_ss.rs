@@ -299,7 +299,7 @@ impl<'a> ExtremaGenExtSS<'a> {
                 uv = location;
                 let mut scratch = MathVector::new(1, 4);
                 self.f.value(&uv, &mut scratch);
-                self.f.get_state_number();
+                self.f.state_number();
             }
             Err(_) => {
                 // If optimum is not computed successfully then compute by old

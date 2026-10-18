@@ -60,8 +60,8 @@ impl IntfInterferencePolygon2d {
                 r.base.tolerance = epsilon(1000.0);
             }
             r.nbso = obje1.nb_segments();
-            r.o_clos = obje1.closed();
-            r.t_clos = obje2.closed();
+            r.o_clos = obje1.is_closed();
+            r.t_clos = obje2.is_closed();
             r.interference_two(obje1, obje2);
             r.clean();
         }
@@ -81,7 +81,7 @@ impl IntfInterferencePolygon2d {
         if r.base.tolerance == 0.0 {
             r.base.tolerance = epsilon(1000.0);
         }
-        r.o_clos = obje.closed();
+        r.o_clos = obje.is_closed();
         r.t_clos = r.o_clos;
         r.interference_one(obje);
         r.clean();
@@ -98,8 +98,8 @@ impl IntfInterferencePolygon2d {
                 self.base.tolerance = epsilon(1000.0);
             }
             self.nbso = obje1.nb_segments();
-            self.o_clos = obje1.closed();
-            self.t_clos = obje2.closed();
+            self.o_clos = obje1.is_closed();
+            self.t_clos = obje2.is_closed();
             self.interference_two(obje1, obje2);
             self.clean();
         }
@@ -112,7 +112,7 @@ impl IntfInterferencePolygon2d {
         if self.base.tolerance == 0.0 {
             self.base.tolerance = epsilon(1000.0);
         }
-        self.o_clos = obje.closed();
+        self.o_clos = obje.is_closed();
         self.t_clos = self.o_clos;
         self.interference_one(obje);
         self.clean();
@@ -207,7 +207,7 @@ impl IntfInterferencePolygon2d {
             }
 
             for lpi in 1..=self.base.t_zones[ltz - decal - 1].number_of_points() {
-                let pi1 = *self.base.t_zones[ltz - decal - 1].get_point(lpi);
+                let pi1 = *self.base.t_zones[ltz - decal - 1].point(lpi);
                 if pi1.incidence() <= PRCANG {
                     tsp = 0;
                     tsps = 0;
@@ -228,12 +228,12 @@ impl IntfInterferencePolygon2d {
                 }
             }
             if tsp > 0 {
-                let p = *self.base.t_zones[ltz - decal - 1].get_point(tsp);
+                let p = *self.base.t_zones[ltz - decal - 1].point(tsp);
                 self.base.s_poins.push(p);
                 self.base.t_zones.remove(ltz - decal - 1);
                 decal += 1;
             } else if only1_seg && tsps != 0 {
-                let p = *self.base.t_zones[ltz - decal - 1].get_point(tsps);
+                let p = *self.base.t_zones[ltz - decal - 1].point(tsps);
                 self.base.s_poins.push(p);
                 self.base.t_zones.remove(ltz - decal - 1);
                 decal += 1;

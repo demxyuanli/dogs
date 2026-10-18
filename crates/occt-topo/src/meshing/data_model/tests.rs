@@ -130,18 +130,18 @@ use super::*;
         c.add_point(GpPnt::new(2.0, 0.0, 0.0), 2.0);
         c.insert_point(1, GpPnt::new(0.5, 0.0, 0.0), 0.5).unwrap();
         assert_eq!(c.parameters_nb(), 4);
-        assert_eq!(c.get_parameter(1).unwrap(), 0.5);
-        assert!(c.get_point(1).unwrap().is_equal(&GpPnt::new(0.5, 0.0, 0.0)));
+        assert_eq!(c.parameter(1).unwrap(), 0.5);
+        assert!(c.point(1).unwrap().is_equal(&GpPnt::new(0.5, 0.0, 0.0)));
         assert_eq!(c.points().len(), c.parameters().len());
 
         // Out-of-range access is an error.
-        assert!(c.get_point(99).is_err());
+        assert!(c.point(99).is_err());
 
         // Clear keeps only the end points when requested.
         c.clear(true);
         assert_eq!(c.parameters_nb(), 2);
-        assert_eq!(c.get_parameter(0).unwrap(), 0.0);
-        assert_eq!(c.get_parameter(1).unwrap(), 2.0);
+        assert_eq!(c.parameter(0).unwrap(), 0.0);
+        assert_eq!(c.parameter(1).unwrap(), 2.0);
         c.clear(false);
         assert_eq!(c.parameters_nb(), 0);
 
@@ -153,10 +153,10 @@ use super::*;
         pc.add_point(GpPnt2d::new(0.0, 0.0), 0.0);
         pc.add_point(GpPnt2d::new(1.0, 1.0), 1.0);
         assert_eq!(pc.parameters_nb(), 2);
-        assert_eq!(pc.get_point(1).unwrap(), GpPnt2d::new(1.0, 1.0));
-        assert_eq!(pc.get_index(0).unwrap(), 0);
-        *pc.get_index_mut(1).unwrap() = 7;
-        assert_eq!(pc.get_index(1).unwrap(), 7);
+        assert_eq!(pc.point(1).unwrap(), GpPnt2d::new(1.0, 1.0));
+        assert_eq!(pc.index(0).unwrap(), 0);
+        *pc.index_mut(1).unwrap() = 7;
+        assert_eq!(pc.index(1).unwrap(), 7);
         assert!(!pc.is_forward());
         assert!(!pc.is_internal());
         assert_eq!(pc.face(), 3);
@@ -180,7 +180,7 @@ use super::*;
         assert_eq!(me.last_parameter(), 1.0);
         assert!(me.same_param());
         assert!(me.same_range());
-        assert!(!me.degenerated());
+        assert!(!me.is_degenerated());
         assert!(me.is_free());
         assert_eq!(me.angular_deflection(), f64::MAX);
 

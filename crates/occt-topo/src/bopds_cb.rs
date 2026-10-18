@@ -446,7 +446,7 @@ impl BopdsInterf {
     }
 
     /// Returns the new-shape index, if set.
-    pub fn get_index_new(&self) -> Option<usize> {
+    pub fn new_index(&self) -> Option<usize> {
         if self.index_new >= 0 {
             Some(self.index_new as usize)
         } else {

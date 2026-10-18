@@ -21,7 +21,7 @@ use crate::pave_filler::PaveFiller;
 
 
 /// `BOPAlgo_PaveFiller::GetFullShapeMap`.
-pub fn get_full_shape_map(ds: &BopdsDS, n_f: usize, mi: &mut HashSet<usize>) {
+pub fn collect_full_shape_map(ds: &BopdsDS, n_f: usize, mi: &mut HashSet<usize>) {
     mi.insert(n_f);
     if let Some(si) = ds.shape_info(n_f) {
         for &n in si.sub_shapes() {
@@ -31,24 +31,24 @@ pub fn get_full_shape_map(ds: &BopdsDS, n_f: usize, mi: &mut HashSet<usize>) {
 }
 
 /// `BOPAlgo_PaveFiller::GetStickVertices`.
-pub fn get_stick_vertices(
+pub fn collect_stick_vertices(
     ds: &BopdsDS,
     n_f1: usize,
     n_f2: usize,
 ) -> (HashSet<usize>, HashSet<usize>, HashSet<usize>) {
     let mut mi = HashSet::new();
-    get_full_shape_map(ds, n_f1, &mut mi);
-    get_full_shape_map(ds, n_f2, &mut mi);
+    collect_full_shape_map(ds, n_f1, &mut mi);
+    collect_full_shape_map(ds, n_f2, &mut mi);
     let mut mv_stick = HashSet::new();
     let mut mv_ef = HashSet::new();
     let push_new = |arr: &[crate::bopds::BopdsInterf], mi: &HashSet<usize>, out: &mut HashSet<usize>| {
         for it in arr {
-            let Some(n_new) = it.get_index_new() else {
+            let Some(n_new) = it.new_index() else {
                 continue;
             };
             let (s1, s2) = it.indices();
             if mi.contains(&s1) && mi.contains(&s2) {
-                out.insert(ds.get_same_domain_index(n_new));
+                out.insert(ds.same_domain_index(n_new));
             }
         }
     };
@@ -57,12 +57,12 @@ pub fn get_stick_vertices(
     push_new(ds.interf_ee(), &mi, &mut mv_stick);
     push_new(ds.interf_vf(), &mi, &mut mv_stick);
     for it in ds.interf_ef() {
-        let Some(n_new) = it.get_index_new() else {
+        let Some(n_new) = it.new_index() else {
             continue;
         };
         let (s1, s2) = it.indices();
         if mi.contains(&s1) && mi.contains(&s2) {
-            let n = ds.get_same_domain_index(n_new);
+            let n = ds.same_domain_index(n_new);
             mv_stick.insert(n);
             mv_ef.insert(n);
         }
@@ -94,10 +94,10 @@ pub fn check_planes(ds: &BopdsDS, n_f1: usize, n_f2: usize) -> bool {
         let mut s = HashSet::new();
         if let Some(fi) = ds.face_info(n_f) {
             for &v in fi.verts_on() {
-                s.insert(ds.get_same_domain_index(v));
+                s.insert(ds.same_domain_index(v));
             }
             for &v in fi.verts_in() {
-                s.insert(ds.get_same_domain_index(v));
+                s.insert(ds.same_domain_index(v));
             }
         }
         s

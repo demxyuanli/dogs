@@ -329,7 +329,7 @@ pub fn define_child_id(label: usize, parent_id: &str) -> String {
 /// (`ModelLabel::color_curv`) only, so the `ColorGen` arm has no source.
 fn apply_label_style(model: &BRepModel, label: usize, style: &mut XcafPrsStyle) {
     let Some(l) = model.label(label) else { return };
-    if let Some(mat) = l.material.and_then(|i| model.get_material(i)) {
+    if let Some(mat) = l.material.and_then(|i| model.material(i)) {
         style.set_material(Some(mat.clone()));
     }
     if let Some(c) = l.color {

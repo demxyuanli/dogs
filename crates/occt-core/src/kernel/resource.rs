@@ -55,7 +55,7 @@ impl ResourceManager {
     }
 
     /// Parses the value under `key` as a boolean (`true`/`false`/`1`/`0`).
-    pub fn get_bool(&self, key: &str) -> Option<bool> {
+    pub fn bool(&self, key: &str) -> Option<bool> {
         match self.get(key)?.trim().to_ascii_lowercase().as_str() {
             "true" | "1" => Some(true),
             "false" | "0" => Some(false),
@@ -64,12 +64,12 @@ impl ResourceManager {
     }
 
     /// Parses the value under `key` as a 32-bit integer.
-    pub fn get_int(&self, key: &str) -> Option<i32> {
+    pub fn int(&self, key: &str) -> Option<i32> {
         self.get(key)?.trim().parse().ok()
     }
 
     /// Parses the value under `key` as a double-precision float.
-    pub fn get_double(&self, key: &str) -> Option<f64> {
+    pub fn double(&self, key: &str) -> Option<f64> {
         self.get(key)?.trim().parse().ok()
     }
 
@@ -106,9 +106,9 @@ mod tests {
         );
 
         assert_eq!(rm.get("NAME"), Some("OpenCASCADE"));
-        assert_eq!(rm.get_double("FLOAT_VAL"), Some(1.5));
-        assert_eq!(rm.get_bool("BOOL"), Some(true));
-        assert_eq!(rm.get_bool("FLAG"), Some(true));
+        assert_eq!(rm.double("FLOAT_VAL"), Some(1.5));
+        assert_eq!(rm.bool("BOOL"), Some(true));
+        assert_eq!(rm.bool("FLAG"), Some(true));
         assert!(rm.contains("NAME"));
         assert!(!rm.contains("comment"));
 
@@ -120,9 +120,9 @@ mod tests {
     fn set_overwrites_and_get_int() {
         let mut rm = ResourceManager::new();
         rm.set("COUNT", "3");
-        assert_eq!(rm.get_int("COUNT"), Some(3));
+        assert_eq!(rm.int("COUNT"), Some(3));
         rm.set("COUNT", "42");
-        assert_eq!(rm.get_int("COUNT"), Some(42));
-        assert_eq!(rm.get_int("MISSING"), None);
+        assert_eq!(rm.int("COUNT"), Some(42));
+        assert_eq!(rm.int("MISSING"), None);
     }
 }

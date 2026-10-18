@@ -233,7 +233,7 @@ impl WireSegment {
     }
 
     /// GetPatchIndex(i, ...) (cxx:249-259).
-    pub fn get_patch_index(&self, i: usize) -> Option<(i32, i32, i32, i32)> {
+    pub fn patch_index(&self, i: usize) -> Option<(i32, i32, i32, i32)> {
         let k = i.checked_sub(1)?;
         if k >= self.edges.len() {
             return None;
@@ -243,7 +243,7 @@ impl WireSegment {
 
     /// CheckPatchIndex(i) (cxx:263-274): dU and dV must each be 0 or 1.
     pub fn check_patch_index(&self, i: usize) -> bool {
-        match self.get_patch_index(i) {
+        match self.patch_index(i) {
             Some((iun, iux, ivn, ivx)) => {
                 let du = iux - iun;
                 let dv = ivx - ivn;
@@ -259,7 +259,7 @@ impl WireSegment {
     }
 
     /// GetVertex() (cxx:300-303).
-    pub fn get_vertex(&self) -> Option<&Vertex> {
+    pub fn vertex(&self) -> Option<&Vertex> {
         self.vertex.as_ref()
     }
 

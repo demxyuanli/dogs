@@ -358,14 +358,14 @@ impl GltfMaterialMap {
         if style.is_set_color_surf() {
             // `aPbrMat.BaseColor.SetRGB(theStyle.GetColorSurf())` — `SetRGB`
             // takes the colour's linear components and keeps the alpha.
-            pbr.base_color.rgb = LinearRgb::from_srgb(style.get_color_surf());
-            let rgba = style.get_color_surf_rgba();
+            pbr.base_color.rgb = LinearRgb::from_srgb(style.color_surf());
+            let rgba = style.color_surf_rgba();
             if rgba.a < 1.0 {
                 pbr.metallic = 0.0;
                 pbr.base_color.a = rgba.a;
             }
         } else if style.is_set_color_curv() {
-            pbr.base_color.rgb = LinearRgb::from_srgb(style.get_color_curv());
+            pbr.base_color.rgb = LinearRgb::from_srgb(style.color_curv());
         }
 
         writer.start_object();

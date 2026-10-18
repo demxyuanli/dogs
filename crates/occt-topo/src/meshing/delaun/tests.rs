@@ -9,9 +9,9 @@ use super::*;
     fn tri_verts(ds: &DelaunDataStructure, t: &DelaunTriangle) -> [GpPnt2d; 3] {
         let n = t.vertex_indices;
         [
-            ds.get_node(n[0]).location,
-            ds.get_node(n[1]).location,
-            ds.get_node(n[2]).location,
+            ds.node(n[0]).location,
+            ds.node(n[1]).location,
+            ds.node(n[2]).location,
         ]
     }
 
@@ -40,7 +40,7 @@ use super::*;
         let mut boundary: Vec<(i32, i32)> = Vec::new();
         for &e in ds.links_of_domain() {
             if ds.elements_connected_to(e).extent() == 1 {
-                let l = ds.get_link(e);
+                let l = ds.link(e);
                 boundary.push((l.first_node(), l.last_node()));
             }
         }
@@ -138,7 +138,7 @@ use super::*;
         let ids: Vec<i32> = ds.elements_of_domain().iter().copied().collect();
         assert!(ids.len() >= 10);
         for id in ids {
-            let t = ds.get_element(id);
+            let t = ds.element(id);
             let p = tri_verts(ds, &t);
             let area = signed_area(&p[0], &p[1], &p[2]);
             assert!(area.abs() > 1e-9, "degenerate triangle {id}: area {area}");
@@ -164,7 +164,7 @@ use super::*;
         let tris: Vec<(i32, [i32; 3])> = ds
             .elements_of_domain()
             .iter()
-            .map(|&id| (id, ds.get_element(id).vertex_indices))
+            .map(|&id| (id, ds.element(id).vertex_indices))
             .collect();
 
         // Build undirected edge -> triangle id map.
@@ -196,8 +196,8 @@ use super::*;
                 if share_edge {
                     continue;
                 }
-                let pa = tri_verts(ds, &ds.get_element(id_a));
-                let pb = tri_verts(ds, &ds.get_element(id_b));
+                let pa = tri_verts(ds, &ds.element(id_a));
+                let pb = tri_verts(ds, &ds.element(id_b));
                 for p in &pa {
                     assert!(
                         !in_circumcircle(&pb[0], &pb[1], &pb[2], p),
@@ -228,14 +228,14 @@ use super::*;
         assert!(n >= pts.len() + 3);
         for i in (n - 2)..=n {
             assert_eq!(
-                ds.get_node(i as i32).state,
+                ds.node(i as i32).state,
                 VertexState::Deleted,
                 "super vertex {i} must be removed"
             );
         }
         // No triangle may reference a super vertex (super vertices are >= n-2).
         for &id in ds.elements_of_domain() {
-            let t = ds.get_element(id);
+            let t = ds.element(id);
             for w in t.vertex_indices {
                 assert!(
                     w < (n - 2) as i32,
@@ -312,7 +312,7 @@ use super::*;
         // triangles whose neighbour touches the super-triangle. With only Free links
         // the 3x3 grid keeps 6 triangles instead of the old 8.
         assert_eq!(n0, 6);
-        let center = *ds0.get_node(5); // node (1,1) is 5th 0-based => id 5 (1-based)
+        let center = *ds0.node(5); // node (1,1) is 5th 0-based => id 5 (1-based)
         delaun.remove_vertex(&center);
         let ds1 = delaun.result();
         let n1 = ds1.elements_of_domain().len();

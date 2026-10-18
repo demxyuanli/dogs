@@ -177,7 +177,7 @@ fn main() {
                     let ei = w.edge(j).expect("edge index");
                     let ori = w.edge_orientation(j).expect("ori");
                     let e = model.edge(ei).expect("edge");
-                    let deg = e.degenerated();
+                    let deg = e.is_degenerated();
                     let (ef, el) = (e.first_parameter(), e.last_parameter());
                     let curve_desc = match e.curve() {
                         None => "none".to_string(),

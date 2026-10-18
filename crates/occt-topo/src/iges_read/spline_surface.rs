@@ -301,7 +301,7 @@ fn write_c0(
     eps: f64,
     was_c0: &mut bool,
 ) -> Result<(), String> {
-    let prev = get_pole(poles, u, v)?;
+    let prev = pole_at(poles, u, v)?;
     if prev.distance(&bz) > eps {
         *was_c0 = false;
         set_pole(
@@ -326,7 +326,7 @@ fn set_pole(poles: &mut [Vec<GpPnt>], u: usize, v: usize, p: GpPnt) -> Result<()
     Ok(())
 }
 
-fn get_pole(poles: &[Vec<GpPnt>], u: usize, v: usize) -> Result<GpPnt, String> {
+fn pole_at(poles: &[Vec<GpPnt>], u: usize, v: usize) -> Result<GpPnt, String> {
     poles
         .get(u)
         .and_then(|row| row.get(v))

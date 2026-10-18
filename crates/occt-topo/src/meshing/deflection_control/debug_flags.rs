@@ -55,16 +55,16 @@ impl DeflectionMesh for Delaun {
         self.result().elements_of_domain().iter().copied().collect()
     }
     fn triangle(&self, id: i32) -> DelaunTriangle {
-        self.get_triangle(id)
+        self.triangle(id)
     }
     fn link(&self, id: i32) -> DelaunLink {
-        self.get_edge(id)
+        self.edge(id)
     }
     fn link_movability(&self, id: i32) -> VertexState {
         self.result().link_movability(id)
     }
     fn vertex(&self, id: i32) -> DelaunVertex {
-        self.get_vertex(id)
+        self.vertex(id)
     }
     fn shot_triangles(&self, p: GpXY) -> Option<Vec<i32>> {
         Some(self.circles().select(p))
@@ -266,7 +266,7 @@ impl DelaunayDeflectionControlMeshAlgo {
                         let triangle = mesh.triangle(*id);
                         let node_indices = element_nodes_from_links(mesh, &triangle);
                         let mut nodes_info = [TriangleNodeInfo::default(); 3];
-                        self.get_triangle_info(mesh, &triangle, node_indices, &mut nodes_info);
+                        self.triangle_info(mesh, &triangle, node_indices, &mut nodes_info);
                         for i in 0..3 {
                             if nodes_info[i].is_frontier_link {
                                 continue;
@@ -278,7 +278,7 @@ impl DelaunayDeflectionControlMeshAlgo {
                                     .added(&nodes_info[j].point_2d)
                                     .multiplied_scalar(0.5),
                             );
-                            let mid_3d = self.get_point_3d(surface, mid_2d);
+                            let mid_3d = self.point_3d(surface, mid_2d);
                             let sq = LineDeviation::new(
                                 &nodes_info[i].point_3d,
                                 &nodes_info[j].point_3d,
@@ -378,7 +378,7 @@ impl DelaunayDeflectionControlMeshAlgo {
         let node_indices = element_nodes_from_links(mesh, triangle);
 
         let mut nodes_info = [TriangleNodeInfo::default(); 3];
-        self.get_triangle_info(mesh, triangle, node_indices, &mut nodes_info);
+        self.triangle_info(mesh, triangle, node_indices, &mut nodes_info);
 
         let mut link_vecs = [GpVec::zero(); 3];
         let mut normal = GpVec::zero();
@@ -404,7 +404,7 @@ impl DelaunayDeflectionControlMeshAlgo {
 
     /// Returns the 2D/3D data of the three nodes of a triangle, together with the
     /// frontier flag of each opposite link. Source: `getTriangleInfo`.
-    pub(super) fn get_triangle_info<M: DeflectionMesh>(
+    pub(super) fn triangle_info<M: DeflectionMesh>(
         &self,
         mesh: &M,
         triangle: &DelaunTriangle,
@@ -541,7 +541,7 @@ impl DelaunayDeflectionControlMeshAlgo {
         node2: &TriangleNodeInfo,
         mid: GpPnt2d,
     ) -> bool {
-        let mid_3d = self.get_point_3d(surface, mid);
+        let mid_3d = self.point_3d(surface, mid);
         node1.point_3d.square_distance(&mid_3d) < self.sq_min_size
             || node2.point_3d.square_distance(&mid_3d) < self.sq_min_size
     }
@@ -599,7 +599,7 @@ impl DelaunayDeflectionControlMeshAlgo {
 
     /// Returns the 3D surface point for the given 2D parameter.
     /// Source: `getPoint3d` (via `IMeshData_Face::GetSurface()->D0`).
-    pub(super) fn get_point_3d(&self, surface: &dyn Surface, p2d: GpPnt2d) -> GpPnt {
+    pub(super) fn point_3d(&self, surface: &dyn Surface, p2d: GpPnt2d) -> GpPnt {
         surface.d0(p2d.x(), p2d.y())
     }
 
@@ -613,7 +613,7 @@ impl DelaunayDeflectionControlMeshAlgo {
         p2d: GpPnt2d,
         functor: &D,
     ) -> bool {
-        let p3d = self.get_point_3d(surface, p2d);
+        let p3d = self.point_3d(surface, p2d);
         if !self.check_deflection_of_point_and_update_cache(mesh, p2d, p3d, functor.square_deviation(&p3d)) {
             self.control_nodes.push(p2d);
             return true;

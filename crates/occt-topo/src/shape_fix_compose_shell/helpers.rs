@@ -93,7 +93,7 @@ pub fn compose_adjust_to_period(val: f64, val_min: f64, val_max: f64) -> f64 {
 }
 
 /// GetPatchIndex (cxx:467-495): 1-based index of the patch holding Param.
-pub fn get_patch_index(param: f64, params: &[f64], is_closed: bool) -> i32 {
+pub fn patch_index(param: f64, params: &[f64], is_closed: bool) -> i32 {
     let np = params.len() as i32;
     if np < 2 {
         return 0;
@@ -153,7 +153,7 @@ pub fn define_patch(
 }
 
 /// GetGridResolution (cxx:929-938).
-pub fn get_grid_resolution(split_values: &[f64], cut_index: i32) -> f64 {
+pub fn grid_resolution(split_values: &[f64], cut_index: i32) -> f64 {
     let nb = split_values.len() as i32;
     let ci = cut_index as usize;
     let left_len = if cut_index > 1 {
@@ -329,7 +329,7 @@ pub fn fill_bnd_box(
 /// (`cxx:296`) and the box is read back with `Bnd_Box2d::Get`
 /// (`cxx:298`), which is `(UMin, VMin, UMax, VMax)` -- returned here as
 /// `(UMin, UMax, VMin, VMax)`.
-pub fn get_face_uv_bounds(face: &Face) -> (f64, f64, f64, f64) {
+pub fn shape_analysis_face_uv_bounds(face: &Face) -> (f64, f64, f64, f64) {
     let mut ff = face.0.clone();
     ff.set_orientation(crate::abs::Orientation::Forward);
     let edges = crate::topo_tools_full::edges_of(&ff);
@@ -361,10 +361,10 @@ pub fn get_face_uv_bounds(face: &Face) -> (f64, f64, f64, f64) {
 }
 
 /// GetMiddlePoint (cxx:2940-2974).
-pub fn get_middle_point(seg: &WireSegment, face: &crate::shape::Face) -> GpPnt2d {
+pub fn middle_point(seg: &WireSegment, face: &crate::shape::Face) -> GpPnt2d {
     if seg.is_vertex() {
         // cxx:2942-2949: ShapeAnalysis_Surface::ValueOfUV of the vertex point.
-        let v = seg.get_vertex().expect("vertex segment without vertex");
+        let v = seg.vertex().expect("vertex segment without vertex");
         let p3d = BRepTool::vertex_point(v);
         if let Some(surf) = BRepTool::face_surface(face) {
             return crate::pcurve_full::surface_value_of_uv(surf.as_ref(), &p3d, CONFUSION);
@@ -445,7 +445,7 @@ pub fn is_same_patch(
     ivmax: &mut i32,
     extend: bool,
 ) -> bool {
-    let Some((mut jumin, mut jumax, mut jvmin, mut jvmax)) = wire.get_patch_index(1) else {
+    let Some((mut jumin, mut jumax, mut jvmin, mut jvmax)) = wire.patch_index(1) else {
         return false;
     };
     let (mut du, mut dv) = (0i32, 0i32);
@@ -482,7 +482,7 @@ pub fn is_same_patch(
 }
 
 /// ShapeAnalysis_Edge::GetEndTangent2d (ShapeAnalysis_Edge.cxx:269-366): the
-pub fn get_end_tangent_2d(
+pub fn end_tangent_2d(
     edge: &Edge,
     face: &Face,
     atend: bool,

@@ -280,7 +280,7 @@ impl MathFunctionSetWithDerivatives for ExtremaFuncExtSS<'_> {
     /// `Extrema_FuncExtSS::GetStateNumber` (`Extrema_FuncExtSS.cxx:192-202`):
     /// appends `myP1.SquareDistance(myP2)`, `(myU1, myV1, myP1)` and
     /// `(myU2, myV2, myP2)`.
-    fn get_state_number(&mut self) -> i32 {
+    fn state_number(&mut self) -> i32 {
         let (_, _) = self.surfaces();
         self.sq_dist.push(self.p1.square_distance(&self.p2));
         self.point1.push(ExtremaPOnSurf::new(self.u1, self.v1, self.p1));

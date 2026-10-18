@@ -559,7 +559,7 @@ pub fn shape_is_closed(s: &TopoShape) -> bool {
                 toggle(&mut odd, GeometryRegistry::shape_key(&e.0));
             }
         }
-        _ => return s.closed(),
+        _ => return s.is_closed(),
     }
     has_bound && odd.is_empty()
 }

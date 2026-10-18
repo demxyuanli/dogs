@@ -555,7 +555,7 @@ fn wire_next_by_uv(
     // The direction from the current vertex back into the current edge
     // (`cxx:551-556`), used as the angle reference.
     let df_m_par =
-        get_next_param_on_pc(pcurve.as_ref(), &p_ref, df_f_par, df_l_par, tol_u, tol_v, rev);
+        next_param_on_pc(pcurve.as_ref(), &p_ref, df_f_par, df_l_par, tol_u, tol_v, rev);
     let p_refm = pcurve.d0(df_m_par);
     let an_e_ref_dir = GpVec2d::new(p_refm.x() - p_ref.x(), p_refm.y() - p_ref.y());
     if an_e_ref_dir.square_magnitude() < REAL_SMALL {
@@ -594,7 +594,7 @@ fn wire_next_by_uv(
                 if (l - f).abs() > PCONFUSION {
                     let reverse = !e.0.orientation().is_reversed();
                     let epm =
-                        get_next_param_on_pc(pc.as_ref(), &peb, f, l, tol_u, tol_v, reverse);
+                        next_param_on_pc(pc.as_ref(), &peb, f, l, tol_u, tol_v, reverse);
                     let mut pee = pc.d0(epm);
                     if peb.square_distance(&pee) <= REAL_SMALL {
                         // Very short curve: take its tangent (`cxx:626-643`).
@@ -642,7 +642,7 @@ fn wire_next_by_uv(
 /// `GetNextParamOnPC` (`BRepTools_WireExplorer.cxx:798-873`): the parameter of
 /// the first sample of `pc` more than `(tol_u, tol_v)` away from `p_ref`,
 /// stepping from the `reverse` end of `[f, l]` in `|l - f| / 1000` increments.
-fn get_next_param_on_pc(
+fn next_param_on_pc(
     pc: &dyn Curve2d,
     p_ref: &GpPnt2d,
     f: f64,

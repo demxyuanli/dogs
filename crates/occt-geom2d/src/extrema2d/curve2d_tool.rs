@@ -21,7 +21,7 @@ use super::analytic_solvers::PI;
 
 /// `Extrema_Curve2dTool::GetType` (`Extrema_Curve2dTool.hxx:43-156`) ->
 /// `Geom2dAdaptor_Curve::GetType` (`Geom2dAdaptor_Curve.cxx:96-120`).
-pub(super) use crate::adaptor_curve::get_type2d as adaptor_type2d;
+pub(super) use crate::adaptor_curve::type2d as adaptor_type2d;
 
 /// `Extrema_Curve2dTool::Resolution` (`Extrema_Curve2dTool.hxx:121-124`) ->
 /// `Geom2dAdaptor_Curve::Resolution` (`Geom2dAdaptor_Curve.cxx:1186-1219`).

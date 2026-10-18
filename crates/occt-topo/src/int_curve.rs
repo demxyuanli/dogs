@@ -129,12 +129,12 @@ impl IntCurve {
     }
 
     /// Returns the curve tolerance (OCCT `Tolerance()`).
-    pub fn get_tolerance(&self) -> f64 {
+    pub fn tolerance(&self) -> f64 {
         self.tolerance
     }
 
     /// Returns the tangential tolerance (OCCT `TangentialTolerance()`).
-    pub fn get_tangential_tolerance(&self) -> f64 {
+    pub fn tangential_tolerance(&self) -> f64 {
         self.tangential_tolerance
     }
 
@@ -353,8 +353,8 @@ mod tests {
         ic.set_tolerance(1e-7);
         ic.set_tangential_tolerance(2e-7);
 
-        assert_eq!(ic.get_tolerance(), 1e-7);
-        assert_eq!(ic.get_tangential_tolerance(), 2e-7);
+        assert_eq!(ic.tolerance(), 1e-7);
+        assert_eq!(ic.tangential_tolerance(), 2e-7);
         assert!(ic.first_curve2d().is_some(), "first pcurve stored");
         assert!(ic.second_curve2d().is_none(), "second pcurve not set");
         assert_eq!(ic.curve_type(), CurveKind::Line);
@@ -397,8 +397,8 @@ mod tests {
     fn intcurve_full_constructor_and_accessors() {
         let lin = GeomLine::from_pnt_dir(GpPnt::zero(), GpDir::default_dir());
         let ic = IntCurve::with_curves(Arc::new(lin), Some(pc_x(1.0)), Some(pc_x(2.0)), 1e-6, 1e-5);
-        assert_eq!(ic.get_tolerance(), 1e-6);
-        assert_eq!(ic.get_tangential_tolerance(), 1e-5);
+        assert_eq!(ic.tolerance(), 1e-6);
+        assert_eq!(ic.tangential_tolerance(), 1e-5);
         assert!(ic.curve().first_parameter().is_infinite(), "unbounded line");
         assert!(ic.first_curve2d().is_some());
         assert!(ic.second_curve2d().is_some());
@@ -412,7 +412,7 @@ mod tests {
         assert!(d.first_curve2d().is_some());
         assert!(d.second_curve2d().is_none());
         d.set_tolerance(0.25);
-        assert_eq!(d.get_tolerance(), 0.25);
+        assert_eq!(d.tolerance(), 0.25);
     }
 
     #[test]

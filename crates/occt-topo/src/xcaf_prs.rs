@@ -146,13 +146,13 @@ impl XcafPrsStyle {
     }
 
     /// `XCAFPrs_Style::GetColorSurf` (`hxx:53`) — the sRGB `Quantity_Color`.
-    pub fn get_color_surf(&self) -> Color {
+    pub fn color_surf(&self) -> Color {
         let c = self.color_surf.unwrap_or(ColorRGBA { r: 0.0, g: 0.0, b: 0.0, a: 1.0 });
         Color::new(c.r, c.g, c.b)
     }
 
     /// `XCAFPrs_Style::GetColorSurfRGBA` (`hxx:58`).
-    pub fn get_color_surf_rgba(&self) -> ColorRGBA {
+    pub fn color_surf_rgba(&self) -> ColorRGBA {
         self.color_surf.unwrap_or(ColorRGBA { r: 0.0, g: 0.0, b: 0.0, a: 1.0 })
     }
 
@@ -167,7 +167,7 @@ impl XcafPrsStyle {
     }
 
     /// `XCAFPrs_Style::GetColorCurv` (`hxx:72`).
-    pub fn get_color_curv(&self) -> Color {
+    pub fn color_curv(&self) -> Color {
         self.color_curv.unwrap_or(Color::WHITE)
     }
 
@@ -220,9 +220,9 @@ impl XcafPrsStyle {
         if let Some(material) = self.material.as_ref() {
             material.base_color().to_srgb()
         } else if self.is_set_color_surf() {
-            self.get_color_surf_rgba()
+            self.color_surf_rgba()
         } else if self.is_set_color_curv() {
-            let c = self.get_color_curv();
+            let c = self.color_curv();
             ColorRGBA { r: c.r, g: c.g, b: c.b, a: 1.0 }
         } else {
             ColorRGBA { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }
@@ -236,10 +236,10 @@ impl XcafPrsStyle {
     /// .IsNull()) aCafStyle.SetMaterial(theStyle.Material())`).
     pub fn merge_missing_from(&mut self, other: &XcafPrsStyle) {
         if self.color_curv.is_none() && other.is_set_color_curv() {
-            self.color_curv = Some(other.get_color_curv());
+            self.color_curv = Some(other.color_curv());
         }
         if self.color_surf.is_none() && other.is_set_color_surf() {
-            self.color_surf = Some(other.get_color_surf_rgba());
+            self.color_surf = Some(other.color_surf_rgba());
         }
         if self.material.is_none() && other.material.is_some() {
             self.material = other.material.clone();
@@ -353,7 +353,7 @@ fn collect_style_settings_into(
     for candidate in candidates {
         let mut style = XcafPrsStyle::default();
         // `aStyle.SetMaterial(aMatTool->GetShapeMaterial(aLabel))` (`cxx:176`).
-        if let Some(material) = model.labels[candidate].material.and_then(|i| model.get_material(i)) {
+        if let Some(material) = model.labels[candidate].material.and_then(|i| model.material(i)) {
             style.set_material(Some(material.clone()));
         }
         // `fillStyleColors` (`XCAFPrs.cxx:34-53`).
@@ -403,8 +403,8 @@ mod tests {
         let mut s = XcafPrsStyle::default();
         s.set_color_surf(ColorRGBA { r: 0.25, g: 0.5, b: 0.75, a: 0.5 });
         assert!(s.is_set_color_surf() && !s.is_empty());
-        assert_eq!(s.get_color_surf(), Color::new(0.25, 0.5, 0.75));
-        assert_eq!(s.get_color_surf_rgba().a, 0.5);
+        assert_eq!(s.color_surf(), Color::new(0.25, 0.5, 0.75));
+        assert_eq!(s.color_surf_rgba().a, 0.5);
         assert!(s.has_color());
     }
 
@@ -414,7 +414,7 @@ mod tests {
         face.set_color_curv(Color::RED);
         face.merge_missing_from(&XcafPrsStyle::from_color(Some(Color::GREEN)));
         assert!(face.is_set_color_surf());
-        assert_eq!(face.get_color_surf(), Color::GREEN);
-        assert_eq!(face.get_color_curv(), Color::RED);
+        assert_eq!(face.color_surf(), Color::GREEN);
+        assert_eq!(face.color_curv(), Color::RED);
     }
 }

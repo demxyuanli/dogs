@@ -59,7 +59,7 @@ pub(crate) fn add_surface_to_box(
 }
 
 /// `GetSurfaceBox`.
-pub(crate) fn get_surface_box(
+pub(crate) fn surface_box(
     surf: &dyn Surface,
     first_u: f64,
     last_u: f64,

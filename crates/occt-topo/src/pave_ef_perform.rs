@@ -22,7 +22,7 @@ use crate::edge_face::EdgeFace;
 use crate::int_tools_full::IntToolsContext;
 use crate::inttools_data::{CommonPartType, IntRange};
 use crate::pave_common::update_vertex_sd;
-use crate::pave_force_ve::{get_pb_box, update_vertices_of_cb};
+use crate::pave_force_ve::{pave_block_box, update_vertices_of_cb};
 use crate::pave_ef::{
     check_face_paves_index, check_face_paves_vertex, face_paves_on_in, force_interf_vf,
     record_ef_distance, reduce_intersection_range,
@@ -115,7 +115,7 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             if pb_on_face(f.ds(), n_f, &pbr) {
                 continue;
             }
-            let Some((t1_val, t2_val, ts1_val, ts2_val, bbe)) = get_pb_box(&e_val, &pb, &mut pb_box) else {
+            let Some((t1_val, t2_val, ts1_val, ts2_val, bbe)) = pave_block_box(&e_val, &pb, &mut pb_box) else {
                 continue;
             };
             if let Some(bbf) = f.ds().box_of(n_f) {

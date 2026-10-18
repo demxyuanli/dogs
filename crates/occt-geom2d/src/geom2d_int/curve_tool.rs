@@ -154,7 +154,7 @@ pub fn geom2d_intervals(c: &dyn Curve2d) -> Vec<f64> {
 }
 
 /// `GetInterval` (`lxx:158-166`): `a = Tab(i)`, `b = Tab(i+1)` (1-based i).
-pub fn get_interval(tab: &[f64], i: usize) -> (f64, f64) {
+pub fn interval(tab: &[f64], i: usize) -> (f64, f64) {
     (tab[i - 1], tab[i])
 }
 

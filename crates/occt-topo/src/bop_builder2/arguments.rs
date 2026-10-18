@@ -667,7 +667,7 @@ impl BopBuilder {
         out: &mut Vec<TopoShape>,
     ) {
         for it in ints {
-            let Some(n_v) = it.get_index_new() else { continue };
+            let Some(n_v) = it.new_index() else { continue };
             if !it.contains(n_s) {
                 continue;
             }

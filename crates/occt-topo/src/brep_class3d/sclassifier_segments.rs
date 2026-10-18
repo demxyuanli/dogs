@@ -49,7 +49,7 @@ pub(super) fn face_normal_cxx(face: &Face, u: f64, v: f64) -> Option<GpDir> {
 }
 
 /// `GetNormalOnFaceBound` (`cxx:631-650`).
-fn get_normal_on_face_bound(edge: &Edge, face: &Face, param: f64) -> Option<GpDir> {
+fn normal_on_face_bound(edge: &Edge, face: &Face, param: f64) -> Option<GpDir> {
     let (c2d, first, last) = curve_on_surface_range(edge, face)?;
     if param < first || param > last {
         return None;
@@ -60,12 +60,12 @@ fn get_normal_on_face_bound(edge: &Edge, face: &Face, param: f64) -> Option<GpDi
 
 /// `GetTransi` (`cxx:654-724`). Returns the OCCT status (`1` OK, `0` skip,
 /// `-1` probably faulty line) together with the transition.
-fn get_transi(f1: &Face, f2: &Face, e: &Edge, param: f64, lin: &GpLin) -> (i32, Transition) {
+fn transi(f1: &Face, f2: &Face, e: &Edge, param: f64, lin: &GpLin) -> (i32, Transition) {
     let mut tran = Transition::Tangent;
-    let Some(nf1) = get_normal_on_face_bound(e, f1, param) else {
+    let Some(nf1) = normal_on_face_bound(e, f1, param) else {
         return (-1, tran);
     };
-    let Some(nf2) = get_normal_on_face_bound(e, f2, param) else {
+    let Some(nf2) = normal_on_face_bound(e, f2, param) else {
         return (-1, tran);
     };
     let ldir = lin.direction();
@@ -108,7 +108,7 @@ fn get_transi(f1: &Face, f2: &Face, e: &Edge, param: f64, lin: &GpLin) -> (i32, 
 /// `GetAddToParam` (`cxx:569-602`): how far the line must be prolonged so that
 /// it reaches the bounding box `box_`. Returns `1e20` when a box corner lies
 /// beyond `1e20` from the line origin.
-fn get_add_to_param(lin: &GpLin, par: f64, box_: &BndBox) -> f64 {
+fn add_to_param(lin: &GpLin, par: f64, box_: &BndBox) -> f64 {
     let Some((xmin, xmax, ymin, ymax, zmin, zmax)) = box_.get() else {
         return 0.0;
     };
@@ -294,7 +294,7 @@ impl SClassifier {
             if hit_vertex(&v1) || hit_vertex(&v2) {
                 continue;
             }
-            let (status, mut tran) = get_transi(f1, f2, e, *param, &seg.lin);
+            let (status, mut tran) = transi(f1, f2, e, *param, &seg.lin);
             if status == 1 && lpar.abs() < parmin.abs() {
                 *parmin = *lpar;
                 apply_trans(*parmin, &mut tran, &mut self.state);
@@ -332,7 +332,7 @@ impl SClassifier {
             let mut add = add_w;
             let bbox = inter.bounding();
             if !bbox.is_void() && !bbox.is_whole() {
-                add = add.max(get_add_to_param(&seg.lin, seg.par, &bbox));
+                add = add.max(add_to_param(&seg.lin, seg.par, &bbox));
             }
             let min_w = -add_w;
             let max_w = (seg.par * 10.0).min(seg.par + add);

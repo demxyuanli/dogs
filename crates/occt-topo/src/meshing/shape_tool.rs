@@ -133,7 +133,7 @@ impl ShapeTool {
     /// from the 3D range; that also clears SameParam. A closed edge whose 3D
     /// length is below the vertex tolerance is marked degenerated.
     pub fn check_and_update_flags(edge: &mut MeshEdge, face: &Face) {
-        if !edge.same_param() && !edge.same_range() && edge.degenerated() {
+        if !edge.same_param() && !edge.same_range() && edge.is_degenerated() {
             return;
         }
         let Some(curve) = edge.curve() else {
@@ -153,7 +153,7 @@ impl ShapeTool {
                 }
             }
         }
-        if edge.degenerated() {
+        if edge.is_degenerated() {
             return;
         }
         let (v1, v2) = edge_vertices(edge.edge());

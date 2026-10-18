@@ -81,7 +81,7 @@ impl RenderingProperties {
     }
 
     /// `STEPConstruct_RenderingProperties::GetRGBAColor` (`hxx:146-149`).
-    pub fn get_rgba_color(&self) -> ColorRGBA {
+    pub fn rgba_color(&self) -> ColorRGBA {
         ColorRGBA {
             r: self.surface_color.r,
             g: self.surface_color.g,

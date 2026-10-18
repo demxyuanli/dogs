@@ -247,7 +247,7 @@ fn transfer_loop(
     u_fact: f64,
 ) -> Result<Option<TopoShape>, String> {
     if session.has_shape_result(loop_index) {
-        return Ok(session.get_shape_result(loop_index));
+        return Ok(session.shape_result(loop_index));
     }
 
     let items = match &session.model.entity(loop_index)?.data {
@@ -400,7 +400,7 @@ fn transfer_face(
     index: usize,
 ) -> Result<Option<TopoShape>, String> {
     if session.has_shape_result(index) {
-        return Ok(session.get_shape_result(index));
+        return Ok(session.shape_result(index));
     }
 
     let (surface, loops) = match &session.model.entity(index)?.data {
@@ -495,7 +495,7 @@ fn transfer_shell(
     index: usize,
 ) -> Result<Option<TopoShape>, String> {
     if session.has_shape_result(index) {
-        return Ok(session.get_shape_result(index));
+        return Ok(session.shape_result(index));
     }
 
     let (faces, orientations) = match &session.model.entity(index)?.data {
@@ -545,7 +545,7 @@ fn transfer_manifold_solid(
     index: usize,
 ) -> Result<Option<TopoShape>, String> {
     if session.has_shape_result(index) {
-        return Ok(session.get_shape_result(index));
+        return Ok(session.shape_result(index));
     }
 
     let (shell, isoriented, void_shells) = match &session.model.entity(index)?.data {
