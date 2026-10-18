@@ -2,24 +2,24 @@
 //! monomorphised onto the `Geom2dInt` instantiation
 //! (`Geom2dInt_TheLocateExtPCOfTheProjPCurOfGInter.hxx:28-33`):
 //! `TheCurve=Curve2d`, `TheTool=Geom2dInt_Geom2dCurveTool`, `ThePOnC=POnCurv2d`,
-//! `ThePnt=GpPnt2d`, `ThePCLocF=GFuncExtPC`.
+//! `ThePnt=GpPnt2d`, `ThePCLocF=GFuncExtPC2d`.
 
 use occt_core::gp::GpPnt2d;
 use occt_math::{MathFunctionRoot, MathFunctionWithDerivative};
 
 use crate::curve::Curve2d;
-use super::gfunc_ext_pc::{GFuncExtPC, POnCurv2d};
+use super::gfunc_ext_pc::{GFuncExtPC2d, POnCurv2d};
 
 /// `Extrema_GenLocateExtPC` (`hxx:42-167`), 2D instantiation.
-pub struct GenLocateExtPC<'a> {
+pub struct GenLocateExtPC2d<'a> {
     my_done: bool,
     my_tol_u: f64,
     my_u_min: f64,
     my_u_sup: f64,
-    my_f: GFuncExtPC<'a>,
+    my_f: GFuncExtPC2d<'a>,
 }
 
-impl<'a> Default for GenLocateExtPC<'a> {
+impl<'a> Default for GenLocateExtPC2d<'a> {
     /// `Extrema_GenLocateExtPC()` (`hxx:48-54`).
     fn default() -> Self {
         Self {
@@ -27,12 +27,12 @@ impl<'a> Default for GenLocateExtPC<'a> {
             my_tol_u: 0.0,
             my_u_min: 0.0,
             my_u_sup: 0.0,
-            my_f: GFuncExtPC::default(),
+            my_f: GFuncExtPC2d::default(),
         }
     }
 }
 
-impl<'a> GenLocateExtPC<'a> {
+impl<'a> GenLocateExtPC2d<'a> {
     /// `Extrema_GenLocateExtPC(P, C, U0, TolU)` (`hxx:64-71`): the search
     /// window is the curve's own `[FirstParameter, LastParameter]`.
     pub fn with_params(p: &GpPnt2d, c: &'a dyn Curve2d, u0: f64, tol_u: f64) -> Self {

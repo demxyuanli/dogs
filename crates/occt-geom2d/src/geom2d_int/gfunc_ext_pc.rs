@@ -12,7 +12,7 @@ use occt_math::MathFunctionWithDerivative;
 use occt_core::precision::{INFINITE, Precision};
 
 use crate::curve::Curve2d;
-use super::curve_tool::{self, GeomAbsCurveType};
+use super::curve_tool::{self, GeomAbsCurveType2d};
 
 const TOL_FACTOR: f64 = 1.0e-12;
 const MIN_TOL: f64 = 1.0e-20;
@@ -41,7 +41,7 @@ impl POnCurv2d {
 }
 
 /// `Extrema_GFuncExtPC` (`hxx:53-480`), 2D instantiation.
-pub struct GFuncExtPC<'a> {
+pub struct GFuncExtPC2d<'a> {
     my_p: GpPnt2d,
     my_c: Option<&'a dyn Curve2d>,
     my_u: f64,
@@ -59,7 +59,7 @@ pub struct GFuncExtPC<'a> {
     my_u_supremum: f64,
 }
 
-impl<'a> Default for GFuncExtPC<'a> {
+impl<'a> Default for GFuncExtPC2d<'a> {
     /// `Extrema_GFuncExtPC()` (`hxx:59-71`).
     fn default() -> Self {
         Self {
@@ -82,7 +82,7 @@ impl<'a> Default for GFuncExtPC<'a> {
     }
 }
 
-impl<'a> GFuncExtPC<'a> {
+impl<'a> GFuncExtPC2d<'a> {
     /// `Initialize(theC)` (`hxx:105-129`).
     pub fn initialize(&mut self, c: &'a dyn Curve2d) {
         self.my_c = Some(c);
@@ -92,10 +92,10 @@ impl<'a> GFuncExtPC<'a> {
         self.my_is_min.clear();
         self.sub_interval_initialize(curve_tool::first_parameter(c), curve_tool::last_parameter(c));
         match curve_tool::get_type(c) {
-            GeomAbsCurveType::BezierCurve
-            | GeomAbsCurveType::BSplineCurve
-            | GeomAbsCurveType::OffsetCurve
-            | GeomAbsCurveType::OtherCurve => {
+            GeomAbsCurveType2d::BezierCurve
+            | GeomAbsCurveType2d::BSplineCurve
+            | GeomAbsCurveType2d::OffsetCurve
+            | GeomAbsCurveType2d::OtherCurve => {
                 self.my_max_deriv_order = MAX_ORDER;
                 self.my_tol = self.search_of_tolerance();
             }
@@ -323,7 +323,7 @@ impl<'a> GFuncExtPC<'a> {
     }
 }
 
-impl MathFunctionWithDerivative for GFuncExtPC<'_> {
+impl MathFunctionWithDerivative for GFuncExtPC2d<'_> {
     /// `Value` (`hxx:146`).
     fn value(&mut self, param: f64, approx_distance: &mut f64) -> bool {
         self.value_impl(param, approx_distance)

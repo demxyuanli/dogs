@@ -45,7 +45,7 @@ pub use hyperbola::Geom2dHyperbola;
 pub use parabola::Geom2dParabola;
 pub use bezier_curve::Geom2dBezierCurve;
 pub use bspline2d_to_bezier::BezierSegment2d;
-pub use comp_curve_to_bspline::CompCurveToBSplineCurve;
+pub use comp_curve_to_bspline::CompCurveToBSplineCurve2d;
 pub use geom2d_convert_concat::{c0_bspline_to_c1_bspline_curve, concat_c1};
 pub use convert_approx_curve::Geom2dConvertApproxCurve;
 pub use curve_ops::*;

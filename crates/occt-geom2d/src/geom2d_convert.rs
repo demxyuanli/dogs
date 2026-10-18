@@ -27,7 +27,7 @@
 
 use crate::bezier_curve::Geom2dBezierCurve;
 use crate::bspline_curve::Geom2dBSplineCurve;
-use crate::comp_curve_to_bspline::CompCurveToBSplineCurve;
+use crate::comp_curve_to_bspline::CompCurveToBSplineCurve2d;
 use crate::convert_approx_curve::Geom2dConvertApproxCurve;
 use crate::curve::Curve2d;
 use crate::trimmed::Geom2dTrimmedCurve;
@@ -165,7 +165,7 @@ pub fn trimmed_curve_to_bspline_curve(
         let curve1 = build_conic_bspline2d(&convert1)?;
         let convert2 = circle_to_bspline_curve_range(&circ, u_med, u2, parameterisation).ok()?;
         let curve2 = build_conic_bspline2d(&convert2)?;
-        let mut cctbspl = CompCurveToBSplineCurve::from_bspline(curve1, parameterisation);
+        let mut cctbspl = CompCurveToBSplineCurve2d::from_bspline(curve1, parameterisation);
         let _ = cctbspl.add(&curve2, occt_core::precision::PCONFUSION, true);
         return cctbspl.into_curve();
     }
@@ -182,7 +182,7 @@ pub fn trimmed_curve_to_bspline_curve(
         let curve1 = build_conic_bspline2d(&convert1)?;
         let convert2 = ellipse_to_bspline_curve_range(&elips, u_med, u2, parameterisation).ok()?;
         let curve2 = build_conic_bspline2d(&convert2)?;
-        let mut cctbspl = CompCurveToBSplineCurve::from_bspline(curve1, parameterisation);
+        let mut cctbspl = CompCurveToBSplineCurve2d::from_bspline(curve1, parameterisation);
         let _ = cctbspl.add(&curve2, occt_core::precision::PCONFUSION, true);
         return cctbspl.into_curve();
     }

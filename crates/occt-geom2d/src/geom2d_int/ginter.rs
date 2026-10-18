@@ -27,7 +27,7 @@ use occt_core::intres2d::{
 use occt_core::precision::INFINITE;
 
 use crate::curve::Curve2d;
-use super::curve_tool::{self, GeomAbsCurveType};
+use super::curve_tool::{self, GeomAbsCurveType2d};
 use super::int_conic_conic::IntCurveIntConicConic;
 use super::int_conic_curve::IntConicCurveGen;
 use super::int_poly_poly_gen::Geom2dIntIntPolyPolyGen;
@@ -127,11 +127,11 @@ impl Geom2dIntGInter {
         tol: f64,
     ) {
         match curve_tool::get_type(c) {
-            GeomAbsCurveType::Ellipse
-            | GeomAbsCurveType::Circle
-            | GeomAbsCurveType::Parabola
-            | GeomAbsCurveType::Hyperbola
-            | GeomAbsCurveType::Line => {
+            GeomAbsCurveType2d::Ellipse
+            | GeomAbsCurveType2d::Circle
+            | GeomAbsCurveType2d::Parabola
+            | GeomAbsCurveType2d::Hyperbola
+            | GeomAbsCurveType2d::Line => {
                 // `gxx:97-106`.
                 self.base.reset_fields();
                 self.base.done = true;
@@ -164,7 +164,7 @@ impl Geom2dIntGInter {
     /// `ComputeDomain(C1, TolDomain)` (`gxx:120-177`).
     pub fn compute_domain(&self, c: &dyn Curve2d, tol_domain: f64) -> IntRes2dDomain {
         match curve_tool::get_type(c) {
-            GeomAbsCurveType::Ellipse | GeomAbsCurveType::Circle => {
+            GeomAbsCurveType2d::Ellipse | GeomAbsCurveType2d::Circle => {
                 let first = curve_tool::first_parameter(c);
                 let last = curve_tool::last_parameter(c);
                 let p1 = curve_tool::value(c, first);
@@ -211,7 +211,7 @@ impl Geom2dIntGInter {
         let typ1 = curve_tool::get_type(c1);
         let typ2 = curve_tool::get_type(c2);
 
-        use GeomAbsCurveType::*;
+        use GeomAbsCurveType2d::*;
 
         match typ1 {
             // `gxx:249-339`: the `typ1 == Line` row.

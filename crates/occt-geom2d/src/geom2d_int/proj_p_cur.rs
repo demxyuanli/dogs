@@ -10,7 +10,7 @@ use occt_core::gp::GpPnt2d;
 use crate::curve::Curve2d;
 use super::curve_locator;
 use super::curve_tool;
-use super::gen_locate_ext_pc::GenLocateExtPC;
+use super::gen_locate_ext_pc::GenLocateExtPC2d;
 
 /// `FindParameter(C, P, LowParameter, HighParameter, Tol)` (`cxx:27-65`).
 pub fn find_parameter_range(
@@ -27,7 +27,7 @@ pub fn find_parameter_range(
     let (defaultparam, _p_on_c) =
         curve_locator::locate_range(p, c, nb_pts, low_parameter, high_parameter);
     // cxx:45: Geom2dInt_TheLocateExtPCOfTheProjPCurOfGInter Loc(P, C, defaultparam, theEpsX).
-    let mut loc = GenLocateExtPC::default();
+    let mut loc = GenLocateExtPC2d::default();
     loc.initialize(
         c,
         curve_tool::first_parameter(c),

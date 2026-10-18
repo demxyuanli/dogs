@@ -26,12 +26,12 @@ use occt_core::intimpargen::gen;
 /// the `math_FunctionWithDerivative` handed to `math_FunctionAllRoots`. It
 /// evaluates the signed distance from a point of the parametric curve to the
 /// implicit curve.
-pub struct MyImpParTool<'a> {
+pub struct ConicImpParTool<'a> {
     the_imp_tool: &'a IntCurveIConicTool,
     the_par_curve: &'a dyn Curve2d,
 }
 
-impl<'a> MyImpParTool<'a> {
+impl<'a> ConicImpParTool<'a> {
     /// `IntCurve_MyImpParToolOfIntImpConicParConic(ITool, PC)` (`_0.cxx:26-31`).
     pub fn new(the_imp_tool: &'a IntCurveIConicTool, the_par_curve: &'a dyn Curve2d) -> Self {
         Self {
@@ -41,7 +41,7 @@ impl<'a> MyImpParTool<'a> {
     }
 }
 
-impl MathFunction for MyImpParTool<'_> {
+impl MathFunction for ConicImpParTool<'_> {
     /// `Value(Param, ApproxDistance)` (`_0.cxx:33-39`).
     fn value(&mut self, param: f64, approx_distance: &mut f64) -> bool {
         *approx_distance = self
@@ -51,7 +51,7 @@ impl MathFunction for MyImpParTool<'_> {
     }
 }
 
-impl MathFunctionWithDerivative for MyImpParTool<'_> {
+impl MathFunctionWithDerivative for ConicImpParTool<'_> {
     /// `Derivative(Param, D)` (`_0.cxx:41-50`).
     fn derivative(&mut self, param: f64, d: &mut f64) -> bool {
         let grad = self
@@ -335,7 +335,7 @@ impl Geom2dIntConicCurve {
 
         self.base.reset_fields();
 
-        let mut the_imp_par_tool = MyImpParTool::new(the_imp_tool, the_par_curve);
+        let mut the_imp_par_tool = ConicImpParTool::new(the_imp_tool, the_par_curve);
 
         if !(the_par_curve_domain.has_first_point() && the_par_curve_domain.has_last_point()) {
             panic!("Standard_ConstructionError: Domaine sur courbe incorrect");

@@ -5,7 +5,7 @@
 //! * junction `Continuity` (`cxx:748-852`);
 //! * `Pretreatment` / `NeedToBeTreated` / `Need2DegRepara` / `Indexmin` /
 //!   `ReorderArrayOfG1` (`cxx:571-712`);
-//! * open / multi-group `ConcatC1` via `CompCurveToBSplineCurve::Add`
+//! * open / multi-group `ConcatC1` via `CompCurveToBSplineCurve2d::Add`
 //!   (`cxx:1394-1453`);
 //! * closed single-group path including Need2DegRepara
 //!   (`cxx:1272-1391`);
@@ -13,7 +13,7 @@
 //!   (`cxx:1459-1541`).
 //!
 use crate::bspline_curve::Geom2dBSplineCurve;
-use crate::comp_curve_to_bspline::CompCurveToBSplineCurve;
+use crate::comp_curve_to_bspline::CompCurveToBSplineCurve2d;
 use crate::curve::Curve2d;
 use crate::geom2d_convert::DEFAULT_PARAMETERISATION;
 use crate::geom2d_convert_mult::mult_num_and_denom;
@@ -447,7 +447,7 @@ pub fn concat_c1(
                     let prev = curve2.as_ref().ok_or("Geom2dConvert Concatenation Error")?;
                     curve1 = closed_need2deg_repara(prev, &curve1, &array_of_curves[0])?;
                 }
-                let mut c = CompCurveToBSplineCurve::from_bspline(
+                let mut c = CompCurveToBSplineCurve2d::from_bspline(
                     curve2.take().unwrap(),
                     DEFAULT_PARAMETERISATION,
                 );
@@ -498,7 +498,7 @@ pub fn concat_c1(
                 if index == j {
                     group_curve = Some(curve1);
                 } else {
-                    let mut c = CompCurveToBSplineCurve::from_bspline(
+                    let mut c = CompCurveToBSplineCurve2d::from_bspline(
                         group_curve.take().unwrap(),
                         DEFAULT_PARAMETERISATION,
                     );
@@ -574,7 +574,7 @@ pub fn c0_bspline_to_c1_bspline_curve(
     if concatenated.is_empty() {
         return Ok(());
     }
-    let mut c = CompCurveToBSplineCurve::from_bspline(
+    let mut c = CompCurveToBSplineCurve2d::from_bspline(
         concatenated[0].clone(),
         DEFAULT_PARAMETERISATION,
     );

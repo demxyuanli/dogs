@@ -56,13 +56,13 @@ fn weights_are_rational(weights: &[f64]) -> bool {
 
 /// `Geom2dConvert_CompCurveToBSplineCurve`
 /// (`Geom2dConvert_CompCurveToBSplineCurve.hxx:28-68`).
-pub struct CompCurveToBSplineCurve {
+pub struct CompCurveToBSplineCurve2d {
     my_curve: Option<Geom2dBSplineCurve>,
     my_tol: f64,
     my_type: ParameterisationType,
 }
 
-impl CompCurveToBSplineCurve {
+impl CompCurveToBSplineCurve2d {
     /// `Geom2dConvert_CompCurveToBSplineCurve(Parameterisation)`
     /// (`cxx:28-33`): `myTol = Precision::Confusion()`.
     pub fn new(parameterisation: ParameterisationType) -> Self {
@@ -137,10 +137,10 @@ impl CompCurveToBSplineCurve {
     ) -> Result<bool, &'static str> {
         // Conversion (`cxx:60-70`).
         let mut bs = if new_curve.is_bspline2d() {
-            new_curve.bspline_copy2d().ok_or("CompCurveToBSplineCurve::add")?
+            new_curve.bspline_copy2d().ok_or("CompCurveToBSplineCurve2d::add")?
         } else {
             curve_to_bspline_curve_bspl(new_curve, self.my_type)
-                .ok_or("CompCurveToBSplineCurve::add")?
+                .ok_or("CompCurveToBSplineCurve2d::add")?
         };
         if self.my_curve.is_none() {
             self.my_curve = Some(bs);
@@ -242,7 +242,7 @@ impl CompCurveToBSplineCurve {
         let nb_k1 = uknots_f.len();
         let nb_k2 = uknots_s.len();
         if nb_k1 == 0 || nb_k2 == 0 || nb_p1 == 0 || nb_p2 == 0 {
-            return Err("CompCurveToBSplineCurve::add_pair");
+            return Err("CompCurveToBSplineCurve2d::add_pair");
         }
 
         let (ratio1, delta1, ratio2, delta2, u_de_raccord);
@@ -298,10 +298,10 @@ impl CompCurveToBSplineCurve {
         let flat = occt_core::bspl::banded_interp::knot_sequence(&noeuds, &mults_out, deg as i32);
         let mut curve = if weights_are_rational(&weights_out) {
             Geom2dBSplineCurve::from_flat(xs, ys, Some(weights_out), flat, deg, false)
-                .map_err(|_| "CompCurveToBSplineCurve::add_pair")?
+                .map_err(|_| "CompCurveToBSplineCurve2d::add_pair")?
         } else {
             Geom2dBSplineCurve::from_flat(xs, ys, None, flat, deg, false)
-                .map_err(|_| "CompCurveToBSplineCurve::add_pair")?
+                .map_err(|_| "CompCurveToBSplineCurve2d::add_pair")?
         };
 
         // Optionally reduce multiplicity down to `MinM` (`cxx:222-229`,
@@ -312,7 +312,7 @@ impl CompCurveToBSplineCurve {
             m -= 1;
             ok = curve
                 .remove_knot(nb_k1 as i32, m, self.my_tol)
-                .map_err(|_| "CompCurveToBSplineCurve::add_pair")?;
+                .map_err(|_| "CompCurveToBSplineCurve2d::add_pair")?;
         }
 
         self.my_curve = Some(curve);

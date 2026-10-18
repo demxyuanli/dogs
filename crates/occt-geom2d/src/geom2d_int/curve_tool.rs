@@ -11,7 +11,7 @@ use super::curve_sampling::{nb_samples, nb_samples_range};
 /// `GeomAbs_CurveType` (`GeomAbs_CurveType.hxx`), the values
 /// `Geom2dAdaptor_Curve::GetType()` can return.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum GeomAbsCurveType {
+pub enum GeomAbsCurveType2d {
     Line,
     Circle,
     Ellipse,
@@ -28,25 +28,25 @@ const GEOMABS_C1: u8 = 2;
 
 /// `Geom2dInt_Geom2dCurveTool::GetType` (`lxx:32-35`) =
 /// `Geom2dAdaptor_Curve::GetType()`.
-pub fn get_type(c: &dyn Curve2d) -> GeomAbsCurveType {
+pub fn get_type(c: &dyn Curve2d) -> GeomAbsCurveType2d {
     if c.is_line() {
-        GeomAbsCurveType::Line
+        GeomAbsCurveType2d::Line
     } else if c.gp_circ2d().is_some() {
-        GeomAbsCurveType::Circle
+        GeomAbsCurveType2d::Circle
     } else if c.gp_elips2d().is_some() {
-        GeomAbsCurveType::Ellipse
+        GeomAbsCurveType2d::Ellipse
     } else if c.gp_hypr2d().is_some() {
-        GeomAbsCurveType::Hyperbola
+        GeomAbsCurveType2d::Hyperbola
     } else if c.gp_parab2d().is_some() {
-        GeomAbsCurveType::Parabola
+        GeomAbsCurveType2d::Parabola
     } else if c.bezier_nb_poles().is_some() {
-        GeomAbsCurveType::BezierCurve
+        GeomAbsCurveType2d::BezierCurve
     } else if c.bspline_nb_knots().is_some() {
-        GeomAbsCurveType::BSplineCurve
+        GeomAbsCurveType2d::BSplineCurve
     } else if c.offset_basis().is_some() {
-        GeomAbsCurveType::OffsetCurve
+        GeomAbsCurveType2d::OffsetCurve
     } else {
-        GeomAbsCurveType::OtherCurve
+        GeomAbsCurveType2d::OtherCurve
     }
 }
 
