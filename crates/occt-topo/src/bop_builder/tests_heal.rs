@@ -349,7 +349,7 @@ use occt_core::gp::GpPnt;
     }
 
     #[test]
-    fn phase12_integration_fuse_cut_split_repair_classify() {
+    fn fuse_cut_split_repair_classify() {
         let (a, b) = overlapping_boxes();
         let fuse = boolean(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("fuse ok");
         assert!(fuse.solid.is_some(), "fuse is a solid");

@@ -140,9 +140,7 @@ pub use crate::bop_builder_splitapi::*;
 mod tests;
 
 #[cfg(test)]
-#[path = "bop_builder_tests_api.rs"]
 mod tests_api;
 
 #[cfg(test)]
-#[path = "bop_builder_tests_heal.rs"]
 mod tests_heal;
