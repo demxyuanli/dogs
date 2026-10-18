@@ -10,11 +10,11 @@ use crate::precision::REAL_SMALL;
 /// (`gp_Trsf2d.hxx:78-82`). `gp_Trsf2d::Value(Row, Col)`
 /// (`gp_Trsf2d.hxx:301-312`) is `scale * matrix[Row-1][Col-1]` for `Col < 3` and
 /// `loc.Coord(Row)` for `Col == 3`.
-fn trsf2d_values(the_a: &GpAx2d) -> (f64, f64, f64, f64, f64, f64) {
-    let v1x = the_a.vdir.x;
-    let v1y = the_a.vdir.y;
-    let lx = the_a.loc.x();
-    let ly = the_a.loc.y();
+fn trsf2d_values(a: &GpAx2d) -> (f64, f64, f64, f64, f64, f64) {
+    let v1x = a.vdir.x;
+    let v1y = a.vdir.y;
+    let lx = a.loc.x();
+    let ly = a.loc.y();
     // `SetCol(1, V1)`, `SetCol(2, (-V1.Y(), V1.X()))`, then `Transpose()`.
     let t11 = v1x;
     let t12 = v1y;

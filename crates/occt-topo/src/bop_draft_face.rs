@@ -52,12 +52,12 @@ pub type VertexEdgeMap = HashMap<ShapeMapKey, Vec<ShapeMapKey>>;
 /// Walks the vertices of `edge`. For each vertex, records the edge in
 /// `the_map` (by TShape key). Returns true as soon as any vertex lists more
 /// than two distinct edges.
-pub fn has_multi_connected(edge: &Edge, the_map: &mut VertexEdgeMap) -> bool {
+pub fn has_multi_connected(edge: &Edge, map: &mut VertexEdgeMap) -> bool {
     let e_key = shape_key(&edge.0);
     let (va, vb) = edge_vertices(edge);
     for v in [va, vb].into_iter().flatten() {
         let vk = shape_key(&v.0);
-        let list = the_map.entry(vk).or_default();
+        let list = map.entry(vk).or_default();
         if !list.contains(&e_key) {
             list.push(e_key.clone());
         }
@@ -277,13 +277,13 @@ pub fn split_face_fast_path<F: FnMut(String)>(
 }
 
 /// Count the vertices in `the_map` that already have more than two edges.
-pub fn multi_connected_vertex_count(the_map: &VertexEdgeMap) -> usize {
-    the_map.values().filter(|l| l.len() > 2).count()
+pub fn multi_connected_vertex_count(map: &VertexEdgeMap) -> usize {
+    map.values().filter(|l| l.len() > 2).count()
 }
 
 /// Reset helper used by tests and by callers that reuse a counter map.
-pub fn clear_vertex_edge_map(the_map: &mut VertexEdgeMap) {
-    the_map.clear();
+pub fn clear_vertex_edge_map(map: &mut VertexEdgeMap) {
+    map.clear();
 }
 
 /// Whether `edge` currently appears more than twice at any of its vertices

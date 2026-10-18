@@ -35,18 +35,18 @@ use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::topo_tools_full::edge_vertices;
 
 /// `UpdateVertices` (`BOPAlgo_PaveFiller_7.cxx:808`).
-pub fn update_vertices_pcurve(a_e: &Edge, a_f: &Face) {
-    let mut ef = a_e.clone();
+pub fn update_vertices_pcurve(e: &Edge, f: &Face) {
+    let mut ef = e.clone();
     ef.0.set_orientation(Orientation::Forward);
     let (v1, v2) = edge_vertices(&ef);
     let verts = [v1, v2];
-    let Some(s) = BRepTool::face_surface(a_f) else {
+    let Some(s) = BRepTool::face_surface(f) else {
         return;
     };
     let Some(c3d) = BRepTool::edge_curve(&ef) else {
         return;
     };
-    let Some(c2d) = crate::boptools_2d::curve_on_surface(&ef, a_f) else {
+    let Some(c2d) = crate::boptools_2d::curve_on_surface(&ef, f) else {
         return;
     };
     let (t0, t1) = BRepTool::edge_parameters(&ef);
@@ -106,8 +106,8 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
             let Some(es) = f.ds().shape(n_e).cloned() else {
                 continue;
             };
-            let a_e = Edge(es);
-            if has_curve_on_surface(&a_e, &f1f) {
+            let e = Edge(es);
+            if has_curve_on_surface(&e, &f1f) {
                 continue;
             }
             let mut copied = false;
@@ -130,7 +130,7 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                                 continue;
                             }
                             if let Ok(pc) = crate::boptools_2d::make_2d(&ex, &f1f) {
-                                let _ = attach_existing_pcurve(&a_e, &f1f, pc);
+                                let _ = attach_existing_pcurve(&e, &f1f, pc);
                                 copied = true;
                                 break;
                             }
@@ -139,9 +139,9 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                 }
             }
             if !copied {
-                build_or_warn(f, &a_e, &f1f, n_e, n_f1);
+                build_or_warn(f, &e, &f1f, n_e, n_f1);
             } else {
-                update_vertices_pcurve(&a_e, &f1f);
+                update_vertices_pcurve(&e, &f1f);
             }
         }
     }
@@ -170,14 +170,14 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                     let Some(es) = f.ds().shape(n_e).cloned() else {
                         continue;
                     };
-                    let a_e = Edge(es);
+                    let e = Edge(es);
                     for m in 0..2 {
                         if b_pc[m] && an_ef_pairs.insert((n_e, n_f[m])) {
                             if let Some(ref face) = a_ff[m] {
-                                if has_curve_on_surface(&a_e, face) {
-                                    update_vertices_pcurve(&a_e, face);
+                                if has_curve_on_surface(&e, face) {
+                                    update_vertices_pcurve(&e, face);
                                 } else {
-                                    build_or_warn(f, &a_e, face, n_e, n_f[m]);
+                                    build_or_warn(f, &e, face, n_e, n_f[m]);
                                 }
                             }
                         }
@@ -197,8 +197,8 @@ fn pb_same(a: &crate::bopds::BopdsPaveBlock, b: &crate::bopds::BopdsPaveBlock) -
 /// basis when trimmed, is a `Geom_Plane`. Equivalent to
 /// [`face_is_plane_type`]: the C++ down-cast to `Geom_Plane` is exactly the
 /// `GeomAbs_Plane` adaptor type.
-pub fn is_based_on_plane(a_f: &Face) -> bool {
-    face_is_plane_type(a_f)
+pub fn is_based_on_plane(f: &Face) -> bool {
+    face_is_plane_type(f)
 }
 
 /// `BOPAlgo_PaveFiller::Prepare`.

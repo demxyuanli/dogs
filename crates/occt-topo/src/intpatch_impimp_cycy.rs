@@ -190,12 +190,12 @@ fn coeffs_from_cylinders(c1: &GpCylinder, c2: &GpCylinder) -> Option<Coeffs> {
     let mut m_c = xyz_comp(&d, 2) - xyz_comp(&c1v, 2) * m1 - xyz_comp(&c2v, 2) * m2;
 
     let (m_b, fi1) = short_cos_form(a_b2, a_b1);
-    let (a_a, fi2) = short_cos_form(a_a2, a_a1);
-    if a_a.abs() < NUL_VALUE {
+    let (a, fi2) = short_cos_form(a_a2, a_a1);
+    if a.abs() < NUL_VALUE {
         return None;
     }
-    let m_b = m_b / a_a;
-    m_c /= a_a;
+    let m_b = m_b / a;
+    m_c /= a;
 
     Some(Coeffs {
         vec_a1: a1,

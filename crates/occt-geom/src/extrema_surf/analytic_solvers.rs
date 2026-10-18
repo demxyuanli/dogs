@@ -120,7 +120,7 @@ pub fn point_sphere_extrema(sp: &GpSphere, p: &GpPnt) -> Vec<ExtremaPair> {
     let zp = op.dot(&oz);
     let pp = p.translated_vec(&oz.multiplied_scalar(-zp));
     let opp = GpVec::from_pnts(&o, &pp);
-    let my_z = GpVec::from_xyz(pos.x_direction().xyz())
+    let z = GpVec::from_xyz(pos.x_direction().xyz())
         .crossed(&GpVec::from_xyz(pos.y_direction().xyz()));
     let (u1, u2, v) = if opp.square_magnitude() < tol * tol {
         let v = if zp < 0.0 {
@@ -130,7 +130,7 @@ pub fn point_sphere_extrema(sp: &GpSphere, p: &GpPnt) -> Vec<ExtremaPair> {
         };
         (0.0, 0.0, v)
     } else {
-        let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &my_z);
+        let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &z);
         if u1.abs() < SNAP_EPS {
             u1 = 0.0;
         }
@@ -165,9 +165,9 @@ pub fn point_cylinder_extrema(cy: &GpCylinder, p: &GpPnt) -> Vec<ExtremaPair> {
     if opp.magnitude() < tol {
         return Vec::new(); // point on the axis: infinite solutions
     }
-    let my_z = GpVec::from_xyz(pos.x_direction().xyz())
+    let z = GpVec::from_xyz(pos.x_direction().xyz())
         .crossed(&GpVec::from_xyz(pos.y_direction().xyz()));
-    let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &my_z);
+    let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &z);
     if u1.abs() < SNAP_EPS {
         u1 = 0.0;
     }
@@ -213,10 +213,10 @@ pub fn point_cone_extrema(co: &GpCone, p: &GpPnt) -> Vec<ExtremaPair> {
     if opp.square_magnitude() < tol * tol {
         return Vec::new(); // P on the axis: infinite solutions
     }
-    let my_z = GpVec::from_xyz(pos.x_direction().xyz())
+    let z = GpVec::from_xyz(pos.x_direction().xyz())
         .crossed(&GpVec::from_xyz(pos.y_direction().xyz()));
     let same = dirz.dot(&mp) >= 0.0;
-    let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &my_z);
+    let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &z);
     if u1.abs() < SNAP_EPS {
         u1 = 0.0;
     }
@@ -264,9 +264,9 @@ pub fn point_torus_extrema(to: &GpTorus, p: &GpPnt) -> Vec<ExtremaPair> {
     if r2 < tol2 {
         return Vec::new(); // P on the torus axis: infinite solutions
     }
-    let my_z = GpVec::from_xyz(pos.x_direction().xyz())
+    let z = GpVec::from_xyz(pos.x_direction().xyz())
         .crossed(&GpVec::from_xyz(pos.y_direction().xyz()));
-    let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &my_z);
+    let mut u1 = vec_angle_with_ref(&GpVec::from_xyz(pos.x_direction().xyz()), &opp, &z);
     if u1.abs() < SNAP_EPS {
         u1 = 0.0;
     }

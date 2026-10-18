@@ -303,23 +303,23 @@ impl Geom2dIntIntPolyPolyGen {
             nbsamples_on_c2 = (5 * (nbsamples_on_c2 * nb_iter as usize)) / 4;
         }
 
-        let mut a_poly1 = Geom2dIntPolygon2d::new(c1, nbsamples_on_c1, d1, tol);
-        let mut a_poly2 = Geom2dIntPolygon2d::new(c2, nbsamples_on_c2, d2, tol);
+        let mut poly1 = Geom2dIntPolygon2d::new(c1, nbsamples_on_c1, d1, tol);
+        let mut poly2 = Geom2dIntPolygon2d::new(c2, nbsamples_on_c2, d2, tol);
 
-        if (a_poly1.deflection_over_estimation() > tol_conf)
-            && (a_poly2.deflection_over_estimation() > tol_conf)
+        if (poly1.deflection_over_estimation() > tol_conf)
+            && (poly2.deflection_over_estimation() > tol_conf)
         {
-            let deflection_sum = a_poly1.deflection_over_estimation().max(tol_conf)
-                + a_poly2.deflection_over_estimation().max(tol_conf);
+            let deflection_sum = poly1.deflection_over_estimation().max(tol_conf)
+                + poly2.deflection_over_estimation().max(tol_conf);
 
             if nbsamples_on_c2 > nbsamples_on_c1 {
-                a_poly2.compute_with_box(c2, a_poly1.bounding());
-                a_poly1.set_deflection_over_estimation(deflection_sum);
-                a_poly1.compute_with_box(c1, a_poly2.bounding());
+                poly2.compute_with_box(c2, poly1.bounding());
+                poly1.set_deflection_over_estimation(deflection_sum);
+                poly1.compute_with_box(c1, poly2.bounding());
             } else {
-                a_poly1.compute_with_box(c1, a_poly2.bounding());
-                a_poly2.set_deflection_over_estimation(deflection_sum);
-                a_poly2.compute_with_box(c2, a_poly1.bounding());
+                poly1.compute_with_box(c1, poly2.bounding());
+                poly2.set_deflection_over_estimation(deflection_sum);
+                poly2.compute_with_box(c2, poly1.bounding());
             }
         }
 
@@ -328,11 +328,11 @@ impl Geom2dIntIntPolyPolyGen {
         //-- Then the deflection of the polygon is set in TolConf
         //-- (Detection of Tangency Zones)
         //----------------------------------------------------------------------
-        if a_poly1.deflection_over_estimation() < tol_conf {
-            a_poly1.set_deflection_over_estimation(tol_conf);
+        if poly1.deflection_over_estimation() < tol_conf {
+            poly1.set_deflection_over_estimation(tol_conf);
         }
-        if a_poly2.deflection_over_estimation() < tol_conf {
-            a_poly2.set_deflection_over_estimation(tol_conf);
+        if poly2.deflection_over_estimation() < tol_conf {
+            poly2.set_deflection_over_estimation(tol_conf);
         }
 
         // for case when a few polygon points were replaced by line
@@ -341,8 +341,8 @@ impl Geom2dIntIntPolyPolyGen {
         // for polygon contains all initial points
         // secondary search will be performed only for case when initial points
         // were dropped
-        let is_full_representation = (a_poly1.nb_segments() == nbsamples_on_c1
-            && a_poly2.nb_segments() == nbsamples_on_c2);
+        let is_full_representation = (poly1.nb_segments() == nbsamples_on_c1
+            && poly2.nb_segments() == nbsamples_on_c2);
 
         if !self.find_intersect(
             c1,
@@ -354,20 +354,20 @@ impl Geom2dIntIntPolyPolyGen {
             nb_iter,
             delta_u,
             delta_v,
-            &a_poly1,
-            &a_poly2,
+            &poly1,
+            &poly2,
             is_full_representation,
         ) && !is_full_representation
         {
-            if a_poly1.nb_segments() < nbsamples_on_c1 {
-                a_poly1 = Geom2dIntPolygon2d::new(c1, nbsamples_on_c1, d1, tol);
+            if poly1.nb_segments() < nbsamples_on_c1 {
+                poly1 = Geom2dIntPolygon2d::new(c1, nbsamples_on_c1, d1, tol);
             }
-            if a_poly2.nb_segments() < nbsamples_on_c2 {
-                a_poly2 = Geom2dIntPolygon2d::new(c2, nbsamples_on_c2, d2, tol);
+            if poly2.nb_segments() < nbsamples_on_c2 {
+                poly2 = Geom2dIntPolygon2d::new(c2, nbsamples_on_c2, d2, tol);
             }
 
             self.find_intersect(
-                c1, d1, c2, d2, tol_conf, tol, nb_iter, delta_u, delta_v, &a_poly1, &a_poly2, true,
+                c1, d1, c2, d2, tol_conf, tol, nb_iter, delta_u, delta_v, &poly1, &poly2, true,
             );
         }
 
@@ -898,25 +898,25 @@ impl Geom2dIntIntPolyPolyGen {
                 let mut trans = IntRes2dTransition::new();
                 let mut pint =
                     IntRes2dIntersectionPoint::with_transitions(&p1, u, v, &trans, &trans, false);
-                let a_t1f = poly1.approx_param_on_curve(seg_index1 as usize, 0.0);
-                let a_t1l = poly1.approx_param_on_curve(seg_index1 as usize, 1.0);
-                let a_t2f = poly2.approx_param_on_curve(seg_index2 as usize, 0.0);
-                let a_t2l = poly2.approx_param_on_curve(seg_index2 as usize, 1.0);
+                let t1f = poly1.approx_param_on_curve(seg_index1 as usize, 0.0);
+                let t1l = poly1.approx_param_on_curve(seg_index1 as usize, 1.0);
+                let t2f = poly2.approx_param_on_curve(seg_index2 as usize, 0.0);
+                let t2l = poly2.approx_param_on_curve(seg_index2 as usize, 1.0);
                 //
-                let a_max_count = 16i32;
-                let mut a_count = 0i32;
+                let max_count = 16i32;
+                let mut count = 0i32;
                 get_intersection(
                     c1,
-                    a_t1f,
-                    a_t1l,
+                    t1f,
+                    t1l,
                     c2,
-                    a_t2f,
-                    a_t2l,
+                    t2f,
+                    t2l,
                     tol_conf,
-                    a_max_count,
+                    max_count,
                     &mut pint,
                     &mut dist,
-                    &mut a_count,
+                    &mut count,
                 );
                 u = pint.param_on_first();
                 v = pint.param_on_second();
@@ -1462,7 +1462,7 @@ fn head_or_end_point(
 /// `GetIntersection(...)` (`gxx:1573-1783`).
 #[allow(clippy::too_many_arguments)]
 fn get_intersection(
-    the_c1: &dyn Curve2d,
+    c1: &dyn Curve2d,
     t1f: f64,
     t1l: f64,
     c2: &dyn Curve2d,
@@ -1480,8 +1480,8 @@ fn get_intersection(
     let p_tol1 = (100.0 * epsilon(t1f.abs().max(t1l.abs()))).max(PCONFUSION);
     let p_tol2 = (100.0 * epsilon(t2f.abs().max(t2l.abs()))).max(PCONFUSION);
     //
-    let p1f = curve_tool::geom2d_d0(the_c1, t1f);
-    let p1l = curve_tool::geom2d_d0(the_c1, t1l);
+    let p1f = curve_tool::geom2d_d0(c1, t1f);
+    let p1l = curve_tool::geom2d_d0(c1, t1l);
     let mut b1 = BndBox2d::new();
     b1.add_point(&p1f);
     b1.add_point(&p1l);
@@ -1560,40 +1560,40 @@ fn get_intersection(
     if is_small1 {
         let t2m = (t2l + t2f) / 2.0;
         get_intersection(
-            the_c1, t1f, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
+            c1, t1f, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
             dist, count,
         );
         get_intersection(
-            the_c1, t1f, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
+            c1, t1f, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
     } else if is_small2 {
         let t1m = (t1l + t1f) / 2.0;
         get_intersection(
-            the_c1, t1f, t1m, c2, t2f, t2l, tol_conf, max_count, p_int,
+            c1, t1f, t1m, c2, t2f, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
         get_intersection(
-            the_c1, t1m, t1l, c2, t2f, t2l, tol_conf, max_count, p_int,
+            c1, t1m, t1l, c2, t2f, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
     } else {
         let t1m = (t1l + t1f) / 2.0;
         let t2m = (t2l + t2f) / 2.0;
         get_intersection(
-            the_c1, t1f, t1m, c2, t2f, t2m, tol_conf, max_count, p_int,
+            c1, t1f, t1m, c2, t2f, t2m, tol_conf, max_count, p_int,
             dist, count,
         );
         get_intersection(
-            the_c1, t1f, t1m, c2, t2m, t2l, tol_conf, max_count, p_int,
+            c1, t1f, t1m, c2, t2m, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
         get_intersection(
-            the_c1, t1m, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
+            c1, t1m, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
             dist, count,
         );
         get_intersection(
-            the_c1, t1m, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
+            c1, t1m, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
             dist, count,
         );
     }

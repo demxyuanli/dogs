@@ -167,8 +167,8 @@ pub fn is_vertex_pnt(p: &GpPnt, tol_pv: f64, v: &Vertex) -> bool {
 }
 
 /// `IntTools_Tools::IsVertex(E, V, t)`.
-pub fn is_vertex_edge_at(a_e: &Edge, v: &Vertex, t: f64) -> bool {
-    let Some(c) = GeometryRegistry::global().edge_curve(&a_e.0) else {
+pub fn is_vertex_edge_at(e: &Edge, v: &Vertex, t: f64) -> bool {
+    let Some(c) = GeometryRegistry::global().edge_curve(&e.0) else {
         return false;
     };
     let pt = c.d0(t);

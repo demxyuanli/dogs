@@ -600,13 +600,13 @@ impl<'a> GFuncExtCC<'a> {
     }
 
     /// `SquareDistance(theN)` (`Extrema_GFuncExtCC.hxx:88-89`), `the_n` 1-based.
-    pub(super) fn square_distance(&self, the_n: usize) -> f64 {
-        self.sq_dist[the_n - 1]
+    pub(super) fn square_distance(&self, n: usize) -> f64 {
+        self.sq_dist[n - 1]
     }
 
     /// `Points(theN, P1, P2)` (`Extrema_GFuncExtCC.hxx:885-895`).
-    pub(super) fn points(&self, the_n: usize) -> (POnCurv, POnCurv) {
-        (self.points[2 * the_n - 2], self.points[2 * the_n - 1])
+    pub(super) fn points(&self, n: usize) -> (POnCurv, POnCurv) {
+        (self.points[2 * n - 2], self.points[2 * n - 1])
     }
 }
 

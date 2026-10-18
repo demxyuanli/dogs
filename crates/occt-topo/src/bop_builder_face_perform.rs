@@ -522,8 +522,8 @@ pub fn perform_internal_shapes(fb: &mut FaceBuilder) -> Result<(), String> {
     let mut me_done: HashSet<i32> = HashSet::new();
     let mut ctx = IntToolsContext::new();
     let areas = fb.base.areas.clone();
-    for a_f in &areas {
-        let mut face = Face(a_f.clone());
+    for f in &areas {
+        let mut face = Face(f.clone());
         let mut box_f = occt_core::bnd::BndBox2d::new();
         add_uv_bounds_face(&face, &mut box_f);
         let mut selector = Box2dTreeSelector::new();
@@ -556,7 +556,7 @@ pub fn perform_internal_shapes(fb: &mut FaceBuilder) -> Result<(), String> {
         for wi in lsi {
             b.add_wire(&mut face, &Wire(wi));
         }
-        if let Some(pos) = fb.base.areas.iter().position(|a| a.same_tshape(a_f)) {
+        if let Some(pos) = fb.base.areas.iter().position(|a| a.same_tshape(f)) {
             fb.base.areas[pos] = face.0;
         }
         if me_done.len() == an_edges_map.len() {

@@ -88,14 +88,14 @@ fn epsilon_abs(x: f64) -> f64 {
 }
 
 /// `AdjustUPeriodic` (`GeomInt_IntSS_1.cxx:55`).
-pub fn adjust_u_periodic_curve2d(a_s: &dyn Surface, a_c2d: &mut Arc<dyn Curve2d>) {
-    if !a_s.is_u_periodic() {
+pub fn adjust_u_periodic_curve2d(s: &dyn Surface, c2d: &mut Arc<dyn Curve2d>) {
+    if !s.is_u_periodic() {
         return;
     }
-    let (umin, umax) = a_s.u_range();
-    let f = a_c2d.first_parameter();
-    let l = a_c2d.last_parameter();
-    recadre_u_periodic(f, l, umin, umax, a_s, a_c2d);
+    let (umin, umax) = s.u_range();
+    let f = c2d.first_parameter();
+    let l = c2d.last_parameter();
+    recadre_u_periodic(f, l, umin, umax, s, c2d);
 }
 
 fn recadre_u_periodic(
@@ -200,15 +200,15 @@ pub fn treat_rline(
     let c3d = int_ss_make_bspline(&wl, 1, wl.nb_pnts());
     let mut tol_reached = 0.0;
     if let Some(c3) = &c3d {
-        let mut a_tol = occt_core::precision::CONFUSION;
+        let mut tol = occt_core::precision::CONFUSION;
         let f = c3.first_parameter();
         let l = c3.last_parameter();
         if on_s1 {
-            c2d2 = build_pcurves(f, l, &mut a_tol, hs2, c3.as_ref());
+            c2d2 = build_pcurves(f, l, &mut tol, hs2, c3.as_ref());
         } else {
-            c2d1 = build_pcurves(f, l, &mut a_tol, hs1, c3.as_ref());
+            c2d1 = build_pcurves(f, l, &mut tol, hs1, c3.as_ref());
         }
-        tol_reached = a_tol;
+        tol_reached = tol;
         return (Some(c3.clone()), c2d1, c2d2, tol_reached);
     }
     (None, c2d1, c2d2, tol_reached)

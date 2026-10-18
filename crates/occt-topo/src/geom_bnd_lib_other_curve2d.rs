@@ -75,40 +75,40 @@ const N_SAMPLES: i32 = 33;
 
 /// `GeomBndLib_OtherCurve2d::Box(theU1, theU2, theTol)`.
 pub fn box_other_2d(curve: &dyn Curve2d, u1: f64, u2: f64, the_tol: f64) -> BndBox2d {
-    let mut a_box = BndBox2d::new();
+    let mut bnd_box = BndBox2d::new();
     let mut b1 = BndBox2d::new();
     let tol = fill_box2d(&mut b1, curve, u1, u2, N_SAMPLES);
     b1.enlarge(WEAKNESS * tol);
     if let Some((x, y, xx, yy)) = b1.get() {
-        a_box.update(x, y, xx, yy);
+        bnd_box.update(x, y, xx, yy);
     }
-    a_box.enlarge(the_tol);
-    a_box
+    bnd_box.enlarge(the_tol);
+    bnd_box
 }
 
 /// `GeomBndLib_OtherCurve2d::Box(theTol)` — full parameter range.
-pub fn box_other_full(curve: &dyn Curve2d, the_tol: f64) -> BndBox2d {
+pub fn box_other_full(curve: &dyn Curve2d, tol: f64) -> BndBox2d {
     box_other_2d(
         curve,
         curve.first_parameter(),
         curve.last_parameter(),
-        the_tol,
+        tol,
     )
 }
 
 /// Adaptor-style 33-point box used when `BndLib_Add2dCurve::Add` cannot
 /// downcast to `Geom2dAdaptor_Curve` (`BndLib_Add2dCurve.cxx:38-56`):
 /// `N = 33`, `DU = (U2-U1)/(N-1)`, add `D0` at each node, then `Enlarge(Tol)`.
-pub fn box_adaptor_sample(curve: &dyn Curve2d, a_u1: f64, a_u2: f64, a_tol: f64) -> BndBox2d {
+pub fn box_adaptor_sample(curve: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
     let mut box2d = BndBox2d::new();
     let n = 33;
-    let mut u = a_u1;
-    let du = if n > 1 { (a_u2 - a_u1) / (n - 1) as f64 } else { 0.0 };
+    let mut u = u1;
+    let du = if n > 1 { (u2 - u1) / (n - 1) as f64 } else { 0.0 };
     for _j in 1..n {
         box2d.add_point(&curve.d0(u));
         u += du;
     }
-    box2d.add_point(&curve.d0(a_u2));
-    box2d.enlarge(a_tol);
+    box2d.add_point(&curve.d0(u2));
+    box2d.enlarge(tol);
     box2d
 }

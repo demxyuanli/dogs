@@ -480,14 +480,14 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
         let mut pmin = GpPnt::zero();
         let mut min2 = 0.0;
         for an_idx in first_used..last_used {
-            let mut a_f = knots[(an_idx - 1) as usize] + period_jump;
+            let mut f = knots[(an_idx - 1) as usize] + period_jump;
             let mut l = knots[an_idx as usize] + period_jump;
             if an_idx == first_used {
-                a_f = state.u_inf;
+                f = state.u_inf;
             } else if an_idx == last_used - 1 {
                 l = state.u_sup;
             }
-            let a_p1 = curve.d0(a_f);
+            let a_p1 = curve.d0(f);
             let a_p2 = curve.d0(l);
             let base1 = GpVec::from_pnts(point, &a_p1);
             let base2 = GpVec::from_pnts(point, &a_p2);
@@ -500,7 +500,7 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
                 let prev = min2;
                 if distmin > prev {
                     distmin = prev;
-                    tmin = a_f;
+                    tmin = f;
                     pmin = a_p1;
                 }
                 prev
@@ -513,7 +513,7 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
                     || min_sq < 100.0 * CONFUSION * CONFUSION
                     || 2.0 * min_der < CONFUSION)
             {
-                state.int_u_inf = a_f;
+                state.int_u_inf = f;
                 state.int_u_sup = l;
                 state.interval_perform(curve, point);
             }
@@ -537,17 +537,17 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
         let mut vals = Vec::with_capacity(cap);
         let mut params = Vec::with_capacity(cap);
         for an_idx in first_used..last_used {
-            let mut a_f = knots[(an_idx - 1) as usize] + period_jump;
+            let mut f = knots[(an_idx - 1) as usize] + period_jump;
             let mut l = knots[an_idx as usize] + period_jump;
             if an_idx == first_used {
-                a_f = state.u_inf;
+                f = state.u_inf;
             }
             if an_idx == last_used - 1 {
                 l = state.u_sup;
             }
-            let step = (l - a_f) / state.sample as f64;
+            let step = (l - f) / state.sample as f64;
             for pnt_idx in 0..state.sample {
-                let cur = a_f + step * pnt_idx as f64;
+                let cur = f + step * pnt_idx as f64;
                 vals.push(curve.d0(cur).square_distance(point));
                 params.push(cur);
             }

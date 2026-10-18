@@ -120,11 +120,11 @@ pub fn find_plane_curve(curve: &dyn Curve) -> Option<GpPln> {
 
 /// `FindPlane` (wire overload, `BOPAlgo_Tools.cxx:976`).
 pub fn find_plane_wire(
-    the_wire: &TopoShape,
+    wire: &TopoShape,
     dm_edge_tgt: &mut HashMap<usize, GpDir>,
     m_edges_no_unique_plane: &mut HashSet<usize>,
 ) -> Option<GpPln> {
-    let edges = edges_of(the_wire);
+    let edges = edges_of(wire);
     if edges.is_empty() {
         return None;
     }
@@ -243,12 +243,12 @@ pub fn make_wires(
 /// `error_code == 2` is unused here (the nested boolean of `shared == false`
 /// is the caller's responsibility).
 pub fn edges_to_wires(
-    the_edges: &TopoShape,
+    edges: &TopoShape,
     shared: bool,
     ang_tol: f64,
 ) -> (i32, TopoShape) {
     let mut le: Vec<TopoShape> = Vec::new();
-    for e in edges_of(the_edges) {
+    for e in edges_of(edges) {
         if is_geometric_edge(&e) {
             le.push(e.0);
         }
@@ -290,7 +290,7 @@ pub fn edges_to_wires(
         if !me_fence.insert(k_i) {
             continue;
         }
-        let Some(ei) = a_s_edges_edge_by_key(&s_edges, k_i) else {
+        let Some(ei) = s_edges_edge_by_key(&s_edges, k_i) else {
             continue;
         };
         let pln_i = dm_edge_pln[&k_i].clone();
@@ -304,7 +304,7 @@ pub fn edges_to_wires(
         for &k_j in pln_keys.iter().skip(ii + 1) {
             let dj = dm_edge_pln[&k_j].position().direction();
             if dirs_parallel(&di, &dj, ang_tol) {
-                if let Some(ej) = a_s_edges_edge_by_key(&s_edges, k_j) {
+                if let Some(ej) = s_edges_edge_by_key(&s_edges, k_j) {
                     me_pln.push(ej.clone());
                     me_fence.insert(k_j);
                     for v in vertices_of(&ej) {
@@ -316,7 +316,7 @@ pub fn edges_to_wires(
         let mut ce_pln: Vec<TopoShape> = Vec::new();
         for (k_j, dj) in &dm_edge_tgt {
             if dirs_normal(&di, dj, ang_tol) {
-                if let Some(e) = a_s_edges_edge_by_key(&s_edges, *k_j) {
+                if let Some(e) = s_edges_edge_by_key(&s_edges, *k_j) {
                     ce_pln.push(e);
                 }
             }
@@ -378,7 +378,7 @@ pub fn edges_to_wires(
                 let mut me_pln = vec![ei1.clone(), ei2.clone()];
                 for (k_j, dj) in &dm_edge_tgt {
                     if dirs_normal(&dni, dj, ang_tol) {
-                        if let Some(e) = a_s_edges_edge_by_key(&s_edges, *k_j) {
+                        if let Some(e) = s_edges_edge_by_key(&s_edges, *k_j) {
                             me_pln.push(e);
                         }
                     }
@@ -402,7 +402,7 @@ pub fn edges_to_wires(
     let mut me_alone: Vec<TopoShape> = Vec::new();
     for (k, _) in &dm_edge_tgt {
         if !me_used.contains(k) {
-            if let Some(e) = a_s_edges_edge_by_key(&s_edges, *k) {
+            if let Some(e) = s_edges_edge_by_key(&s_edges, *k) {
                 me_alone.push(e);
             }
         }
@@ -417,7 +417,7 @@ pub fn edges_to_wires(
     (0, b.make_compound_of(&r_wires).0)
 }
 
-fn a_s_edges_edge_by_key(compound: &TopoShape, key: usize) -> Option<TopoShape> {
+fn s_edges_edge_by_key(compound: &TopoShape, key: usize) -> Option<TopoShape> {
     edges_of(compound)
         .into_iter()
         .find(|e| shape_key(&e.0) == key)

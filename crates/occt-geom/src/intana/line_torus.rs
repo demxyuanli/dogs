@@ -636,13 +636,13 @@ fn cone_cone_common_generatrix(
         let o1 = gen1.location();
         let o2 = gen2.location();
         let d1_dot_d2 = d1.dot(&d2);
-        let a_sin = 1.0 - d1_dot_d2 * d1_dot_d2;
+        let sin = 1.0 - d1_dot_d2 * d1_dot_d2;
         let o1o2 = GpVec::from_pnts(&o1, &o2);
         let mut u2 = GpVec::from_xyz(d1.xyz())
             .multiplied_scalar(o1o2.dot(&GpVec::from_xyz(d1.xyz())))
             .subtracted(&o1o2)
             .dot(&GpVec::from_xyz(d2.xyz()));
-        u2 /= a_sin;
+        u2 /= sin;
         let p_gint = clib::line_value(&gen2, u2);
         let d1 = GpDir::from_vec(&GpVec::from_pnts(&p_gint, &pchar)).ok()?;
         d1.crossed(&a_d2).ok()?

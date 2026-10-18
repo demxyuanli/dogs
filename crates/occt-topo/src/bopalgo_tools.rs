@@ -121,7 +121,7 @@ pub fn perform_common_blocks_pb(
         }
         let mut m_faces: HashSet<usize> = HashSet::new();
         let mut l_faces: Vec<usize> = Vec::new();
-        let mut a_cb: Option<BopdsCommonBlock> = None;
+        let mut cb: Option<BopdsCommonBlock> = None;
         for pb in &lpb {
             if ds.is_common_block(pb) {
                 if let Some(cbx) = ds.common_block(pb) {
@@ -130,19 +130,19 @@ pub fn perform_common_blocks_pb(
                             l_faces.push(n_f);
                         }
                     }
-                    if a_cb.is_none() {
-                        a_cb = Some(cbx.clone());
+                    if cb.is_none() {
+                        cb = Some(cbx.clone());
                     }
                 }
             }
         }
-        let mut a_cb = a_cb.unwrap_or_else(BopdsCommonBlock::new);
-        a_cb.set_pave_blocks(lpb.clone());
-        a_cb.set_faces(l_faces);
-        let tol = compute_tolerance_of_cb(&a_cb, ds, ctx);
-        a_cb.set_tolerance(tol);
+        let mut cb = cb.unwrap_or_else(BopdsCommonBlock::new);
+        cb.set_pave_blocks(lpb.clone());
+        cb.set_faces(l_faces);
+        let tol = compute_tolerance_of_cb(&cb, ds, ctx);
+        cb.set_tolerance(tol);
         for pb in &lpb {
-            ds.set_common_block(pb, a_cb.clone());
+            ds.set_common_block(pb, cb.clone());
         }
     }
 }

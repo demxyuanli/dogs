@@ -77,10 +77,10 @@ impl Frpr {
 
         for its in 1..=self.max_iter {
             // Minimize f along direction `the_grad` from `location`.
-            let Some((scale, the_min)) = minimize_direction(&f, &location, &the_grad) else {
+            let Some((scale, min)) = minimize_direction(&f, &location, &the_grad) else {
                 return Err(MathStatus::DirectionSearchError);
             };
-            if !the_min.is_finite() {
+            if !min.is_finite() {
                 return Err(MathStatus::FunctionError);
             }
             // Apply the step: location += scale * direction.
@@ -90,13 +90,13 @@ impl Frpr {
             for i in 1..=n {
                 location.set_value(i, location.value(i) + the_grad.value(i));
             }
-            if 2.0 * (the_min - prev_min).abs()
-                <= self.tolerance * (the_min.abs() + prev_min.abs() + self.zeps)
+            if 2.0 * (min - prev_min).abs()
+                <= self.tolerance * (min.abs() + prev_min.abs() + self.zeps)
             {
                 let gradient = grad(&location);
                 return Ok(FrprResult {
                     location,
-                    minimum: the_min,
+                    minimum: min,
                     nb_iter: its,
                     gradient,
                     done: true,

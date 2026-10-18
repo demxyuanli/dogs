@@ -320,16 +320,16 @@ pub(in crate::shhealing) fn check_pcurve_rep_range(wire: &Wire, face: &Face, pre
     let face_key = GeometryRegistry::shape_key(&face.0);
     let reg = GeometryRegistry::global();
     for e in edges_of_wire(wire) {
-        let Some((the_pc, mut w1, mut w2)) = curve_on_surface_oriented(&e, face, false) else {
+        let Some((pc, mut w1, mut w2)) = curve_on_surface_oriented(&e, face, false) else {
             continue;
         };
-        let cf = the_pc.first_parameter();
-        let cl = the_pc.last_parameter();
+        let cf = pc.first_parameter();
+        let cl = pc.last_parameter();
         if w1 == w2 {
             reg.remove_pcurves_on_surface(&e.0, &face.0);
             continue;
         }
-        if !the_pc.is_periodic() {
+        if !pc.is_periodic() {
             if w1 < cf {
                 w1 = cf;
                 reg.set_pcurve_range(&e.0, face_key, w1, w2);

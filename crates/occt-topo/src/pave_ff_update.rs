@@ -146,8 +146,8 @@ pub(crate) fn update_existing_pave_blocks(
     } else {
         let n_e = pbf.original_edge();
         if n_e != 0 {
-            for a_pb in lpb.iter() {
-                f.ds_mut().change_pave_blocks_mut(n_e).push(a_pb.clone());
+            for pb in lpb.iter() {
+                f.ds_mut().change_pave_blocks_mut(n_e).push(pb.clone());
             }
         }
     }
@@ -162,12 +162,12 @@ pub(crate) fn update_existing_pave_blocks(
             continue;
         };
         let a_f = Face(f_shape);
-        for a_pb in lpb.iter() {
+        for pb in lpb.iter() {
             let on_or_in = f
                 .ds()
                 .face_info(n_f)
                 .map(|fi| {
-                    let t = tuple_of(a_pb);
+                    let t = tuple_of(pb);
                     fi.paves_on().iter().copied().any(|x| tuples_eq(x, t))
                         || fi.paves_in().iter().copied().any(|x| tuples_eq(x, t))
                 })
@@ -175,14 +175,14 @@ pub(crate) fn update_existing_pave_blocks(
             if on_or_in {
                 continue;
             }
-            let Some(e_shape) = f.ds().shape(a_pb.edge()).cloned() else {
+            let Some(e_shape) = f.ds().shape(pb.edge()).cloned() else {
                 continue;
             };
             let mut an_ef = EdgeFace::new();
             an_ef.set_edge(Edge(e_shape));
             an_ef.set_face(a_f.clone());
             an_ef.set_fuzzy_value(fuzzy);
-            an_ef.set_range(a_pb.pave1().parameter(), a_pb.pave2().parameter());
+            an_ef.set_range(pb.pave1().parameter(), pb.pave2().parameter());
             if an_ef.perform().is_err() {
                 continue;
             }
@@ -191,19 +191,19 @@ pub(crate) fn update_existing_pave_blocks(
             if !b_coincide {
                 continue;
             }
-            if f.ds().is_common_block(a_pb) {
-                if let Some(mut cb) = f.ds().common_block(a_pb).cloned() {
+            if f.ds().is_common_block(pb) {
+                if let Some(mut cb) = f.ds().common_block(pb).cloned() {
                     cb.add_face(n_f);
-                    f.ds_mut().set_common_block(a_pb, cb);
+                    f.ds_mut().set_common_block(pb, cb);
                 }
             } else {
                 let mut cb = BopdsCommonBlock::new();
-                cb.add_pave_block(a_pb.clone());
+                cb.add_pave_block(pb.clone());
                 cb.add_face(n_f);
-                f.ds_mut().set_common_block(a_pb, cb);
+                f.ds_mut().set_common_block(pb, cb);
             }
             if let Some(fi) = f.ds_mut().face_info_mut(n_f) {
-                fi.add_pave_in(a_pb.edge(), a_pb.first, a_pb.last);
+                fi.add_pave_in(pb.edge(), pb.first, pb.last);
             }
         }
     }
@@ -261,10 +261,10 @@ pub(crate) fn update_face_info_ff(
         for j in 0..nb_c {
             let mut k = 0;
             while k < f.ds().interf_ff()[i].curves()[j].pave_blocks().len() {
-                let a_pb = f.ds().interf_ff()[i].curves()[j].pave_blocks()[k].clone();
-                if let Some(lpb) = dm_ex.get(&pb_key(&a_pb)).cloned() {
+                let pb = f.ds().interf_ff()[i].curves()[j].pave_blocks()[k].clone();
+                if let Some(lpb) = dm_ex.get(&pb_key(&pb)).cloned() {
                     let mut lpb = lpb;
-                    update_existing_pave_blocks(f, &a_pb, &mut lpb, pb_faces);
+                    update_existing_pave_blocks(f, &pb, &mut lpb, pb_faces);
                     for it in &lpb {
                         let n_e = it.edge();
                         an_edge_lpb.entry(n_e).or_default().push(it.clone());
@@ -276,17 +276,17 @@ pub(crate) fn update_face_info_ff(
                         .remove(k);
                     continue;
                 }
-                if a_pb.edge() != 0 {
+                if pb.edge() != 0 {
                     if let Some(fi) = f.ds_mut().face_info_mut(n_f1) {
-                        fi.add_pave(a_pb.edge(), a_pb.first, a_pb.last);
+                        fi.add_pave(pb.edge(), pb.first, pb.last);
                     }
                     if let Some(fi) = f.ds_mut().face_info_mut(n_f2) {
-                        fi.add_pave(a_pb.edge(), a_pb.first, a_pb.last);
+                        fi.add_pave(pb.edge(), pb.first, pb.last);
                     }
                     an_edge_lpb
-                        .entry(a_pb.edge())
+                        .entry(pb.edge())
                         .or_default()
-                        .push(a_pb.clone());
+                        .push(pb.clone());
                 }
                 k += 1;
             }
@@ -320,11 +320,11 @@ pub(crate) fn update_face_info_ff(
         let mut m_faces: HashSet<usize> = HashSet::new();
         let mut m_pbs: Vec<BopdsPaveBlock> = Vec::new();
         let mut a_cb: Option<BopdsCommonBlock> = None;
-        for a_pb in &lpb {
-            if !m_pbs.iter().any(|p| pb_eq(p, a_pb)) {
-                m_pbs.push(a_pb.clone());
+        for pb in &lpb {
+            if !m_pbs.iter().any(|p| pb_eq(p, pb)) {
+                m_pbs.push(pb.clone());
             }
-            if let Some(cb) = f.ds().common_block(a_pb) {
+            if let Some(cb) = f.ds().common_block(pb) {
                 for p in cb.pave_blocks() {
                     if !m_pbs.iter().any(|x| pb_eq(x, p)) {
                         m_pbs.push(p.clone());
@@ -341,15 +341,15 @@ pub(crate) fn update_face_info_ff(
         if a_cb.is_none() {
             let mut cb = BopdsCommonBlock::new();
             cb.set_pave_blocks(lpb.clone());
-            for a_pb in &lpb {
-                f.ds_mut().set_common_block(a_pb, cb.clone());
+            for pb in &lpb {
+                f.ds_mut().set_common_block(pb, cb.clone());
             }
             f.ds_mut().push_common_block(cb);
         } else if let Some(mut cb) = a_cb {
             let mut lpb_new = Vec::new();
-            for a_pb in &m_pbs {
-                f.ds_mut().set_common_block(a_pb, cb.clone());
-                lpb_new.push(a_pb.clone());
+            for pb in &m_pbs {
+                f.ds_mut().set_common_block(pb, cb.clone());
+                lpb_new.push(pb.clone());
             }
             cb.set_pave_blocks(lpb_new);
             cb.set_faces(m_faces.into_iter().collect());

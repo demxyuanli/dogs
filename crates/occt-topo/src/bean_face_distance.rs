@@ -136,20 +136,20 @@ impl BeanFaceIntersector {
                 self.vmax
             };
             let a_min = if i < 2 { self.vmin } else { self.umin };
-            let a_max = if i < 2 { self.vmax } else { self.umax };
-            if !a_min.is_finite() || !a_max.is_finite() || !an_iso.is_finite() {
+            let max = if i < 2 { self.vmax } else { self.umax };
+            if !a_min.is_finite() || !max.is_finite() || !an_iso.is_finite() {
                 continue;
             }
-            let mid = (a_min + a_max) * 0.5;
+            let mid = (a_min + max) * 0.5;
             let point_min = if i < 2 {
                 self.surface_d0(an_iso, a_min)
             } else {
                 self.surface_d0(a_min, an_iso)
             };
             let point_max = if i < 2 {
-                self.surface_d0(an_iso, a_max)
+                self.surface_d0(an_iso, max)
             } else {
-                self.surface_d0(a_max, an_iso)
+                self.surface_d0(max, an_iso)
             };
             let point_mid = if i < 2 {
                 self.surface_d0(an_iso, mid)
@@ -166,7 +166,7 @@ impl BeanFaceIntersector {
             }
             if compute_iso {
                 if let Some((_t, dist_iso)) =
-                    project_point_on_iso(self.surface(), &p, i < 2, an_iso, a_min, a_max)
+                    project_point_on_iso(self.surface(), &p, i < 2, an_iso, a_min, max)
                 {
                     use_min_max = false;
                     if a_distance > dist_iso {

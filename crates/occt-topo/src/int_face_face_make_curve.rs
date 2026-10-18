@@ -99,7 +99,7 @@ pub fn approx_with_pcurves(cyl: &GpCylinder, sph: &GpSphere) -> bool {
     let r1 = cyl.radius();
     let r2 = sph.radius();
     {
-        let a_eps = 1.0e-7;
+        let eps = 1.0e-7;
         let rc2 = r1 * r1;
         let ax3_sph = sph.position();
         let loc_sph = ax3_sph.location();
@@ -112,7 +112,7 @@ pub fn approx_with_pcurves(cyl: &GpCylinder, sph: &GpSphere) -> bool {
             loc_sph.z() + r2 * dir_sph.z(),
         );
         let d2 = lin_cyl.square_distance(&apex);
-        if (d2 - rc2).abs() < a_eps {
+        if (d2 - rc2).abs() < eps {
             return !b_res;
         }
         apex = GpPnt::new(
@@ -121,7 +121,7 @@ pub fn approx_with_pcurves(cyl: &GpCylinder, sph: &GpSphere) -> bool {
             loc_sph.z() - r2 * dir_sph.z(),
         );
         let d2 = lin_cyl.square_distance(&apex);
-        if (d2 - rc2).abs() < a_eps {
+        if (d2 - rc2).abs() < eps {
             return !b_res;
         }
     }
@@ -139,12 +139,12 @@ pub fn approx_with_pcurves(cyl: &GpCylinder, sph: &GpSphere) -> bool {
     let par = (sph.location().x() - loc.x()) * dir.x()
         + (sph.location().y() - loc.y()) * dir.y()
         + (sph.location().z() - loc.z()) * dir.z();
-    let a_p = GpPnt::new(
+    let p = GpPnt::new(
         loc.x() + par * dir.x(),
         loc.y() + par * dir.y(),
         loc.z() + par * dir.z(),
     );
-    let v = occt_core::gp::GpVec::from_pnts(&a_p, &sph.location());
+    let v = occt_core::gp::GpVec::from_pnts(&p, &sph.location());
     let dd = v.dot(&occt_core::gp::GpVec::from_xyz(sph.position().x_direction().xyz()));
     if dist < r1 && dd > 0.0 {
         return false;
@@ -310,7 +310,7 @@ pub fn tolerances(kind_a: SurfaceKind, kind_b: SurfaceKind, tol_tang: &mut f64) 
 
 /// Golden-section max of curve-to-surface distance on `[first, last]`.
 fn find_max_distance_interval(
-    the_c: &dyn Curve,
+    c: &dyn Curve,
     first: f64,
     last: f64,
     surf: &dyn Surface,
@@ -320,25 +320,25 @@ fn find_max_distance_interval(
     let mut a = first;
     let mut b = last;
     let mut x1 = b - cf * (b - a);
-    let mut f1 = max_distance(the_c, x1, surf);
+    let mut f1 = max_distance(c, x1, surf);
     let mut x2 = a + cf * (b - a);
-    let mut f2 = max_distance(the_c, x2, surf);
+    let mut f2 = max_distance(c, x2, surf);
     while (x1 - x2).abs() > eps {
         if f1 > f2 {
             b = x2;
             x2 = x1;
             f2 = f1;
             x1 = b - cf * (b - a);
-            f1 = max_distance(the_c, x1, surf);
+            f1 = max_distance(c, x1, surf);
         } else {
             a = x1;
             x1 = x2;
             f1 = f2;
             x2 = a + cf * (b - a);
-            f2 = max_distance(the_c, x2, surf);
+            f2 = max_distance(c, x2, surf);
         }
     }
-    let mut f = max_distance(the_c, 0.5 * (x1 + x2), surf);
+    let mut f = max_distance(c, 0.5 * (x1 + x2), surf);
     if f1 > f {
         f = f1;
     }
@@ -348,8 +348,8 @@ fn find_max_distance_interval(
     f
 }
 
-fn max_distance(the_c: &dyn Curve, t: f64, surf: &dyn Surface) -> f64 {
-    let a_p = the_c.d0(t);
+fn max_distance(c: &dyn Curve, t: f64, surf: &dyn Surface) -> f64 {
+    let a_p = c.d0(t);
     project_point_on_surface(surf, &a_p, 0.0)
         .map(|p| p.distance)
         .unwrap_or(0.0)
@@ -385,14 +385,14 @@ pub fn find_max_distance_face(
 }
 
 /// `CheckPCurve` (`IntTools_FaceFace.cxx:3010`) with a single CN interval.
-pub fn face_pcurve_check(pc: &dyn Curve2d, a_face: &Face) -> bool {
+pub fn face_pcurve_check(pc: &dyn Curve2d, face: &Face) -> bool {
     const N_POINTS: i32 = 23;
-    let (mut umin, mut umax, mut vmin, mut vmax) = crate::brep_surface::face_uv_bounds(a_face);
+    let (mut umin, mut umax, mut vmin, mut vmax) = crate::brep_surface::face_uv_bounds(face);
     let tol_u = ((umax - umin) * 0.01).max(CONFUSION);
     let tol_v = ((vmax - vmin) * 0.01).max(CONFUSION);
     let fp = pc.first_parameter();
     let lp = pc.last_parameter();
-    if let Some(surf) = BRepTool::face_surface(a_face) {
+    if let Some(surf) = BRepTool::face_surface(face) {
         let pnt = pc.d0(0.5 * (fp + lp));
         let (u, v) = (pnt.x(), pnt.y());
         if surf.is_u_periodic() {
@@ -647,15 +647,15 @@ impl FaceFace {
             return;
         };
         for c in &mut self.result.curves {
-            let a_first = c.curve.first_parameter();
-            let a_last = c.curve.last_parameter();
+            let first = c.curve.first_parameter();
+            let last = c.curve.last_parameter();
             let mut tol_c = c.tolerance;
             for j in 0..2 {
                 let c2d = if j == 0 { &c.pcurve1 } else { &c.pcurve2 };
                 if let Some(pc) = c2d {
                     let s = if j == 0 { &s1 } else { &s2 };
                     if let Some((d, _a_t)) =
-                        compute_tolerance(&c.curve, pc, s, a_first, a_last)
+                        compute_tolerance(&c.curve, pc, s, first, last)
                     {
                         if d > tol_c {
                             tol_c = d;
@@ -663,7 +663,7 @@ impl FaceFace {
                     }
                 } else {
                     let f = if j == 0 { fa } else { fb };
-                    let d = find_max_distance_face(c.curve.as_ref(), a_first, a_last, f);
+                    let d = find_max_distance_face(c.curve.as_ref(), first, last, f);
                     if d > tol_c {
                         tol_c = d;
                     }
@@ -715,14 +715,14 @@ pub fn adjust_closed_part(
     lprm: f64,
     fa: &Face,
     fb: &Face,
-    my_tol: f64,
+    tol: f64,
 ) -> (f64, f64) {
     let mut f = fprm;
     let mut l = lprm;
-    if let Some(anew) = parameter_out_of_boundary(fprm, newc, fa, fb, lprm, false, my_tol) {
+    if let Some(anew) = parameter_out_of_boundary(fprm, newc, fa, fb, lprm, false, tol) {
         f = anew;
     }
-    if let Some(anew) = parameter_out_of_boundary(lprm, newc, fa, fb, fprm, true, my_tol) {
+    if let Some(anew) = parameter_out_of_boundary(lprm, newc, fa, fb, fprm, true, tol) {
         l = anew;
     }
     (f, l)

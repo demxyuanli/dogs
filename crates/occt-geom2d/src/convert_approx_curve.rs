@@ -80,10 +80,10 @@ impl Geom2dConvertApproxCurve {
     /// `Geom2dConvert_ApproxCurve::Approximate` (`cxx:127-183`).
     fn approximate(
         the_curve: &dyn Curve2d,
-        the_tol2d: f64,
+        tol2d: f64,
         the_order: Shape,
-        the_max_segments: i32,
-        the_max_degree: i32,
+        max_segments: i32,
+        max_degree: i32,
     ) -> Self {
         // `cxx:137-139`: Num1DSS = Num3DSS = 0, Num2DSS = 1, TwoDTol = {Tol2d}.
         // `cxx:141-142`.
@@ -139,9 +139,9 @@ impl Geom2dConvertApproxCurve {
             first,
             last,
             the_order,
-            the_max_degree,
-            the_max_segments,
-            the_tol2d,
+            max_degree,
+            max_segments,
+            tol2d,
             &cut_tool,
             &eval,
         );

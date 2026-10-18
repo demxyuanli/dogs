@@ -123,7 +123,7 @@ impl<'a> LocateExtPC<'a> {
     }
 
     /// `Perform(theP, U0)` (`hxx:125-306`).
-    pub fn perform(&mut self, the_p: &GpPnt, the_u0: f64) {
+    pub fn perform(&mut self, p: &GpPnt, u0: f64) {
         let c = match self.c {
             Some(c) => c,
             None => return,
@@ -131,21 +131,21 @@ impl<'a> LocateExtPC<'a> {
         match self.type_ {
             GeomAbsCurveType::OtherCurve
             | GeomAbsCurveType::OffsetCurve
-            | GeomAbsCurveType::BSplineCurve => self.perform_freeform(c, the_p, the_u0),
+            | GeomAbsCurveType::BSplineCurve => self.perform_freeform(c, p, u0),
             GeomAbsCurveType::BezierCurve => {
-                self.loc_ext_pc.perform(the_p, the_u0);
+                self.loc_ext_pc.perform(p, u0);
                 self.done = self.loc_ext_pc.is_done();
             }
-            _ => self.perform_elementary(c, the_p, the_u0),
+            _ => self.perform_elementary(c, p, u0),
         }
     }
 
     /// `hxx:132-272`: the free-form arm, walking the `GeomAbs_C2` intervals.
-    fn perform_freeform(&mut self, c: &'a dyn Curve, the_p: &GpPnt, the_u0: f64) {
+    fn perform_freeform(&mut self, c: &'a dyn Curve, p: &GpPnt, u0: f64) {
         let n = curve_tool::extrema_nb_intervals(c, GEOMABS_C2);
         let the_inter = curve_tool::extrema_intervals(c, GEOMABS_C2);
         // Be gentle with the caller (`hxx:142-150`).
-        let mut local_u0 = the_u0;
+        let mut local_u0 = u0;
         if local_u0 < self.umin {
             local_u0 = self.umin;
         } else if local_u0 > self.usup {
@@ -171,7 +171,7 @@ impl<'a> LocateExtPC<'a> {
 
         self.loc_ext_pc
             .initialize(c, myintuinf, myintusup, self.mytol);
-        self.loc_ext_pc.perform(the_p, local_u0);
+        self.loc_ext_pc.perform(p, local_u0);
         self.done = self.loc_ext_pc.is_done();
         if self.done {
             self.mypp = self.loc_ext_pc.point(1);
@@ -187,9 +187,9 @@ impl<'a> LocateExtPC<'a> {
         // `s2inf` / `s1sup` are the dot products at the two ends of the
         // interval that was tried first (`hxx:185-188`).
         let (p1, v1) = curve_tool::extrema_d1(c, myintuinf);
-        let mut s2inf = v1.dot(&GpVec::from_pnts(the_p, &p1));
+        let mut s2inf = v1.dot(&GpVec::from_pnts(p, &p1));
         let (p1, v1) = curve_tool::extrema_d1(c, myintusup);
-        let mut s1sup = v1.dot(&GpVec::from_pnts(the_p, &p1));
+        let mut s1sup = v1.dot(&GpVec::from_pnts(p, &p1));
 
         while !self.done && i2 > 0 && i1 <= n {
             i1 = inter + k;
@@ -199,7 +199,7 @@ impl<'a> LocateExtPC<'a> {
                 myintusup = the_inter[i1 as usize].min(self.usup);
                 if myintuinf < myintusup {
                     let (p1, v1) = curve_tool::extrema_d1(c, myintuinf);
-                    let s2sup = v1.dot(&GpVec::from_pnts(the_p, &p1));
+                    let s2sup = v1.dot(&GpVec::from_pnts(p, &p1));
                     if Precision::is_infinite(s2sup) || Precision::is_infinite(s1sup) {
                         break;
                     }
@@ -208,15 +208,15 @@ impl<'a> LocateExtPC<'a> {
                         self.done = true;
                         self.mypp = POnCurv::new(myintuinf, p1);
                         self.ismin = s1sup <= 0.0;
-                        self.dist2 = the_p.square_distance(&p1);
+                        self.dist2 = p.square_distance(&p1);
                         break;
                     }
                     let (p1, v1) = curve_tool::extrema_d1(c, myintusup);
-                    s1sup = v1.dot(&GpVec::from_pnts(the_p, &p1));
+                    s1sup = v1.dot(&GpVec::from_pnts(p, &p1));
                     self.loc_ext_pc
                         .initialize(c, myintuinf, myintusup, self.mytol);
                     self.loc_ext_pc
-                        .perform(the_p, (myintuinf + myintusup) * 0.5);
+                        .perform(p, (myintuinf + myintusup) * 0.5);
                     self.done = self.loc_ext_pc.is_done();
                     if self.done {
                         self.mypp = self.loc_ext_pc.point(1);
@@ -232,7 +232,7 @@ impl<'a> LocateExtPC<'a> {
                 myintusup = the_inter[i2 as usize].min(self.usup);
                 if myintuinf < myintusup {
                     let (p1, v1) = curve_tool::extrema_d1(c, myintusup);
-                    let s1inf = v1.dot(&GpVec::from_pnts(the_p, &p1));
+                    let s1inf = v1.dot(&GpVec::from_pnts(p, &p1));
                     if Precision::is_infinite(s2inf) || Precision::is_infinite(s1inf) {
                         break;
                     }
@@ -241,15 +241,15 @@ impl<'a> LocateExtPC<'a> {
                         self.done = true;
                         self.mypp = POnCurv::new(myintusup, p1);
                         self.ismin = s1inf <= 0.0;
-                        self.dist2 = the_p.square_distance(&p1);
+                        self.dist2 = p.square_distance(&p1);
                         break;
                     }
                     let (p1, v1) = curve_tool::extrema_d1(c, myintuinf);
-                    s2inf = v1.dot(&GpVec::from_pnts(the_p, &p1));
+                    s2inf = v1.dot(&GpVec::from_pnts(p, &p1));
                     self.loc_ext_pc
                         .initialize(c, myintuinf, myintusup, self.mytol);
                     self.loc_ext_pc
-                        .perform(the_p, (myintuinf + myintusup) * 0.5);
+                        .perform(p, (myintuinf + myintusup) * 0.5);
                     self.done = self.loc_ext_pc.is_done();
                     if self.done {
                         self.mypp = self.loc_ext_pc.point(1);
@@ -266,8 +266,8 @@ impl<'a> LocateExtPC<'a> {
 
     /// `hxx:281-304`: the elementary arm runs the whole `Extrema_ExtPC` and
     /// keeps the solution whose parameter is closest to U0.
-    fn perform_elementary(&mut self, c: &dyn Curve, the_p: &GpPnt, the_u0: f64) {
-        let (sols, done) = extrema_ext_pc_range_done(c, the_p, self.umin, self.usup);
+    fn perform_elementary(&mut self, c: &dyn Curve, p: &GpPnt, u0: f64) {
+        let (sols, done) = extrema_ext_pc_range_done(c, p, self.umin, self.usup);
         self.ext_pc_sols = sols;
         self.numberext = 0;
         if done {
@@ -275,7 +275,7 @@ impl<'a> LocateExtPC<'a> {
             // `RealLast()`.
             let mut valu2 = f64::MAX;
             for (idx, s) in self.ext_pc_sols.iter().enumerate() {
-                let valu = (s.u - the_u0).abs();
+                let valu = (s.u - u0).abs();
                 if valu <= valu2 {
                     valu2 = valu;
                     self.numberext = idx + 1;

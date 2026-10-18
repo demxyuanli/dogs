@@ -321,18 +321,18 @@ impl<'a> GFuncExtPC<'a> {
     }
 
     /// `SquareDistance` (`hxx:386-393`), 1-based.
-    pub fn square_distance(&self, the_n: usize) -> f64 {
-        self.sq_dist[the_n - 1]
+    pub fn square_distance(&self, n: usize) -> f64 {
+        self.sq_dist[n - 1]
     }
 
     /// `IsMin` (`hxx:397-404`), 1-based.
-    pub fn is_min(&self, the_n: usize) -> bool {
-        self.is_min[the_n - 1] == 1
+    pub fn is_min(&self, n: usize) -> bool {
+        self.is_min[n - 1] == 1
     }
 
     /// `Point` (`hxx:408-415`), 1-based.
-    pub fn point(&self, the_n: usize) -> POnCurv {
-        self.point[the_n - 1]
+    pub fn point(&self, n: usize) -> POnCurv {
+        self.point[n - 1]
     }
 }
 

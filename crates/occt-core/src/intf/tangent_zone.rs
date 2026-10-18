@@ -143,8 +143,8 @@ impl IntfTangentZone {
     }
 
     /// `Contains(ThePI)` (`Intf_TangentZone.cxx:252-262`).
-    pub fn contains(&self, the_pi: &IntfSectionPoint) -> bool {
-        self.result.iter().any(|p| the_pi.is_equal(p))
+    pub fn contains(&self, pi: &IntfSectionPoint) -> bool {
+        self.result.iter().any(|p| pi.is_equal(p))
     }
 
     /// `ParamOnFirst(paraMin, paraMax)` (`TangentZone.lxx:32-36`).
@@ -180,13 +180,13 @@ impl IntfTangentZone {
     }
 
     /// `RangeContains(ThePI)` (`Intf_TangentZone.cxx:288-296`).
-    pub fn range_contains(&self, the_pi: &IntfSectionPoint) -> bool {
+    pub fn range_contains(&self, pi: &IntfSectionPoint) -> bool {
         let (a, b) = self.param_on_first();
         let (c, d) = self.param_on_second();
-        a <= the_pi.param_on_first()
-            && the_pi.param_on_first() <= b
-            && c <= the_pi.param_on_second()
-            && the_pi.param_on_second() <= d
+        a <= pi.param_on_first()
+            && pi.param_on_first() <= b
+            && c <= pi.param_on_second()
+            && pi.param_on_second() <= d
     }
 
     /// `HasCommonRange(Other)` (`Intf_TangentZone.cxx:300-311`).

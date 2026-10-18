@@ -563,10 +563,10 @@ pub fn adjust_by_neighbour(
 ) -> GpPnt2d {
     let ap1 = *neighbour;
     let mut ap2 = *original;
-    if let Some(a_period) = u_period(s) {
+    if let Some(period) = u_period(s) {
         let mut sq_dist_min = 1.0e100;
         for p_it in -1..=1 {
-            let p_test = GpPnt2d::new(original.x() + a_period * p_it as f64, original.y());
+            let p_test = GpPnt2d::new(original.x() + period * p_it as f64, original.y());
             let dd = ap1.square_distance(&p_test);
             if dd < sq_dist_min {
                 ap2 = p_test;
@@ -574,10 +574,10 @@ pub fn adjust_by_neighbour(
             }
         }
     }
-    if let Some(a_period) = v_period(s) {
+    if let Some(period) = v_period(s) {
         let mut sq_dist_min = 1.0e100;
         for p_it in -1..=1 {
-            let p_test = GpPnt2d::new(ap2.x(), original.y() + a_period * p_it as f64);
+            let p_test = GpPnt2d::new(ap2.x(), original.y() + period * p_it as f64);
             let dd = ap1.square_distance(&p_test);
             if dd < sq_dist_min {
                 ap2 = p_test;
@@ -590,9 +590,9 @@ pub fn adjust_by_neighbour(
 
 /// `RefineVector` — snap a 2D vector whose one component is nearly ±1.
 pub fn refine_vector(v2d: &mut GpVec2d) {
-    let a_eps = f64::EPSILON;
-    let r1 = 1.0 - a_eps;
-    let r2 = 1.0 + a_eps;
+    let eps = f64::EPSILON;
+    let r1 = 1.0 - eps;
+    let r2 = 1.0 + eps;
     let mut c = [v2d.x(), v2d.y()];
     for k in 0..2 {
         let m = (k + 1) % 2;

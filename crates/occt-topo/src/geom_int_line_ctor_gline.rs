@@ -68,11 +68,11 @@ pub(crate) fn perform_gline(ctor: &mut LineConstructor, line: &GeomIntLine, tol:
 }
 
 fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, tol: f64) {
-    let a_type = line.arc_type();
+    let kind = line.arc_type();
     let Some(gline) = line.as_gline() else {
         return;
     };
-    if reject_micro_circle(gline, a_type, tol) {
+    if reject_micro_circle(gline, kind, tol) {
         return;
     }
     let nb_vtx = gline.nb_vertex();
@@ -81,16 +81,16 @@ fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, tol: f64) {
         ctor.seqp_mut().push(line_tool::line_tool_last_parameter(line));
         return;
     }
-    let mut a_vtx: Vec<PatchPoint> = (1..=nb_vtx).map(|i| *gline.vertex(i)).collect();
-    a_vtx.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
-    let min_prm = a_vtx.first().map(|v| v.param_on_line + TWO_PI).unwrap_or(TWO_PI);
-    a_vtx.push({
-        let mut last = a_vtx[0];
+    let mut vtx: Vec<PatchPoint> = (1..=nb_vtx).map(|i| *gline.vertex(i)).collect();
+    vtx.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
+    let min_prm = vtx.first().map(|v| v.param_on_line + TWO_PI).unwrap_or(TWO_PI);
+    vtx.push({
+        let mut last = vtx[0];
         last.param_on_line = min_prm;
         last
     });
-    reject_duplicates(&mut a_vtx);
-    a_vtx.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
+    reject_duplicates(&mut vtx);
+    vtx.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
     let Some((s1, s2)) = ctor.surface_arcs() else {
         return;
     };
@@ -99,14 +99,14 @@ fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, tol: f64) {
     };
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
-    for i in 0..a_vtx.len().saturating_sub(1) {
-        let t1 = a_vtx[i].param_on_line;
-        let t2 = a_vtx[i + 1].param_on_line;
+    for i in 0..vtx.len().saturating_sub(1) {
+        let t1 = vtx[i].param_on_line;
+        let t2 = vtx[i + 1].param_on_line;
         if t2 == f64::MAX {
             break;
         }
         let tmid = (t1 + t2) * 0.5;
-        let Some(pmid) = gline_point(a_type, gline, tmid) else {
+        let Some(pmid) = gline_point(kind, gline, tmid) else {
             continue;
         };
         let Some((mut u1, mut v1)) = surface_parameters(s1, &pmid) else {

@@ -189,8 +189,8 @@ pub(super) fn blend_geometry(
     radius: f64,
 ) -> Result<BlendGeom, String> {
     let a = GpVec::from_pnts(p0, p1).normalized();
-    let a_mag = GpVec::from_pnts(p0, p1).magnitude();
-    if a_mag < 1e-12 {
+    let mag = GpVec::from_pnts(p0, p1).magnitude();
+    if mag < 1e-12 {
         return Err("fillet: edge has zero length".to_string());
     }
     let (u1, u2, theta) = in_wedge_directions(&a, n1, n2)?;
@@ -224,7 +224,7 @@ pub(super) fn blend_geometry(
         return Err("fillet: blend arc angle is degenerate".to_string());
     }
 
-    let _ = (c1, a_mag);
+    let _ = (c1, mag);
     Ok(BlendGeom {
         t1_0,
         t1_1,

@@ -399,25 +399,25 @@ pub(super) fn gk_integrate_arc(
                 f += adaptive_integrate(&|x: f64| uf.value(x), ua, ub, tol_span).unwrap_or(0.0);
             }
             // Scale by the arc derivative coefficient.
-            let mut a_coeff = vuv.y();
+            let mut coeff = vuv.y();
             match value_type {
                 ValueType::Mass => {
                     if is_by_point {
-                        a_coeff /= 3.0;
+                        coeff /= 3.0;
                     }
                 }
                 ValueType::CenterMassX | ValueType::CenterMassY | ValueType::CenterMassZ => {
                     if is_by_point {
-                        a_coeff *= 0.25;
+                        coeff *= 0.25;
                     }
                 }
                 _ => {
                     if is_by_point {
-                        a_coeff *= 0.2;
+                        coeff *= 0.2;
                     }
                 }
             }
-            f * a_coeff
+            f * coeff
         };
         let (v, e) = adaptive_integrate_with_err(&outer, a, b, tol_span)?;
         result += v;

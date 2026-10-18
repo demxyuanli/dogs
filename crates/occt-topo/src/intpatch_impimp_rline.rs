@@ -182,9 +182,9 @@ fn is_rline_good(
     rline: &RLine,
     s1: &dyn Surface,
     s2: &dyn Surface,
-    the_tol: f64,
+    tol: f64,
 ) -> bool {
-    let sq = the_tol * the_tol;
+    let sq = tol * tol;
     let n = rline.vertices.len();
     if n < 2 {
         return false;

@@ -181,8 +181,8 @@ pub fn do_split_seam_on_face(split: &Edge, f: &Face) -> bool {
         return false;
     };
     let (a, b) = GeometryRegistry::global().edge_parameters(&sp.0);
-    let a_t = intermediate_point(a, b);
-    let (p2d, vec2d) = c2d1.d1(a_t);
+    let t = intermediate_point(a, b);
+    let (p2d, vec2d) = c2d1.d1(t);
     let dir2d1 = if vec2d.square_magnitude() <= RESOLUTION {
         GpDir2d::default()
     } else {

@@ -24,21 +24,21 @@ impl BeanFaceIntersector {
     pub(crate) fn compute_localized(&mut self) -> bool {
         let d_min_u = 10.0 * PCONFUSION;
         let d_min_v = d_min_u;
-        let mut a_surface_data = SurfaceRangeLocalizeData::with_samples(3, 3, d_min_u, d_min_v);
-        a_surface_data.remove_range_out_all();
-        a_surface_data.clear_grid();
+        let mut surface_data = SurfaceRangeLocalizeData::with_samples(3, 3, d_min_u, d_min_v);
+        surface_data.remove_range_out_all();
+        surface_data.clear_grid();
 
-        let a_surface_range = SurfaceRangeSample::with_indices(0, 0, 0, 0);
-        let mut fbox = a_surface_data
-            .find_box(&a_surface_range)
+        let surface_range = SurfaceRangeSample::with_indices(0, 0, 0, 0);
+        let mut fbox = surface_data
+            .find_box(&surface_range)
             .unwrap_or_else(BndBox::new);
-        let b_fbox_found = a_surface_data.find_box(&a_surface_range).is_some();
+        let b_fbox_found = surface_data.find_box(&surface_range).is_some();
 
         let is_bspline = matches!(
             mesh_surface_type_mesh(self.surface()),
             MeshSurfaceType::BSplineSurface
         );
-        if is_bspline && a_surface_data.has_grid() {
+        if is_bspline && surface_data.has_grid() {
             if !b_fbox_found {
                 fbox = get_surface_box(
                     self.surface(),
@@ -47,9 +47,9 @@ impl BeanFaceIntersector {
                     self.vmin,
                     self.vmax,
                     self.criteria,
-                    &mut a_surface_data,
+                    &mut surface_data,
                 );
-                a_surface_data.add_box(a_surface_range, fbox);
+                surface_data.add_box(surface_range, fbox);
             }
         } else if !b_fbox_found {
             add_surface_to_box(
@@ -61,7 +61,7 @@ impl BeanFaceIntersector {
                 self.face_tolerance,
                 &mut fbox,
             );
-            a_surface_data.add_box(a_surface_range, fbox);
+            surface_data.add_box(surface_range, fbox);
         }
 
         let mut ebox = BndBox::new();
@@ -77,26 +77,26 @@ impl BeanFaceIntersector {
             for i in 0..self.range_manager.len() {
                 self.range_manager.set_flag(i, 1);
             }
-            a_surface_data.clear_grid();
+            surface_data.clear_grid();
             return true;
         }
 
-        let a_curve_range = {
+        let curve_range = {
             let mut c = CurveRangeSample::with_index(0);
             c.set_depth(0);
             c
         };
         let nb_sample_c = 3i32;
-        let nb_sample_u = a_surface_data.nb_sample_u();
-        let nb_sample_v = a_surface_data.nb_sample_v();
+        let nb_sample_u = surface_data.nb_sample_u();
+        let nb_sample_v = surface_data.nb_sample_v();
         let d_min_c = 10.0 * self.curve_resolution;
 
         let curve_data_tmp = CurveRangeLocalizeData::new(nb_sample_c, d_min_c);
         let surface_data_tmp =
             SurfaceRangeLocalizeData::with_samples(nb_sample_u, nb_sample_v, d_min_u, d_min_v);
         let (b_allow_c, b_allow_u, b_allow_v) = check_sampling(
-            &a_curve_range,
-            &a_surface_range,
+            &curve_range,
+            &surface_range,
             &curve_data_tmp,
             &surface_data_tmp,
             self.last_parameter - self.first_parameter,
@@ -106,20 +106,20 @@ impl BeanFaceIntersector {
 
         let mut list_curve: Vec<CurveRangeSample> = Vec::new();
         let mut list_surface: Vec<SurfaceRangeSample> = Vec::new();
-        let mut a_curve_data = CurveRangeLocalizeData::new(nb_sample_c, d_min_c);
-        a_curve_data.add_box(a_curve_range, ebox);
+        let mut curve_data = CurveRangeLocalizeData::new(nb_sample_c, d_min_c);
+        curve_data.add_box(curve_range, ebox);
 
         if !self.localize_solutions(
-            a_curve_range,
+            curve_range,
             ebox,
-            a_surface_range,
+            surface_range,
             fbox,
-            &mut a_curve_data,
-            &mut a_surface_data,
+            &mut curve_data,
+            &mut surface_data,
             &mut list_curve,
             &mut list_surface,
         ) {
-            a_surface_data.clear_grid();
+            surface_data.clear_grid();
             return false;
         }
 
@@ -208,7 +208,7 @@ impl BeanFaceIntersector {
         }
 
         if b_allow_c {
-            for out_c in a_curve_data.list_range_out() {
+            for out_c in curve_data.list_range_out() {
                 let range_c =
                     out_c.get_range(self.first_parameter, self.last_parameter, nb_sample_c);
                 let _ = self
@@ -217,7 +217,7 @@ impl BeanFaceIntersector {
             }
         }
         self.compute_near_range_boundaries();
-        a_surface_data.clear_grid();
+        surface_data.clear_grid();
         true
     }
 

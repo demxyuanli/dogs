@@ -163,13 +163,13 @@ pub fn build_draft_solid_from_history(
     for sh in shells {
         let mut sh_d = make_empty_shell(sh.0.orientation());
         let mut i_flag = false;
-        for a_f in iter_children(&sh.0) {
-            if a_f.shape_type() != ShapeType::Face {
+        for f in iter_children(&sh.0) {
+            if f.shape_type() != ShapeType::Face {
                 continue;
             }
-            let or_f = a_f.orientation();
-            if images_bound(history, &a_f) {
-                for fx_src in images_of(history, &a_f) {
+            let or_f = f.orientation();
+            if images_bound(history, &f) {
+                for fx_src in images_of(history, &f) {
                     let mut fx = fx_src.clone();
                     fx.set_orientation(or_f);
                     if is_internal(or_f) {
@@ -179,8 +179,8 @@ pub fn build_draft_solid_from_history(
                     }
                 }
             } else if is_internal(or_f) {
-                lif.push(a_f);
-            } else if add_draft_face_once(&mut sh_d, &a_f) {
+                lif.push(f);
+            } else if add_draft_face_once(&mut sh_d, &f) {
                 i_flag = true;
             }
         }

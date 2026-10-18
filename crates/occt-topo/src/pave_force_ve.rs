@@ -62,10 +62,10 @@ pub fn get_pb_box(
 pub fn force_interf_ve(
     f: &mut PaveFiller,
     n_v: usize,
-    a_pb: &mut BopdsPaveBlock,
+    pb: &mut BopdsPaveBlock,
     m_edges: &mut Vec<usize>,
 ) -> Result<bool, String> {
-    let n_e = a_pb.original_edge();
+    let n_e = pb.original_edge();
     let Some(si_e) = f.ds().shape_info(n_e).cloned() else {
         return Ok(false);
     };
@@ -78,7 +78,7 @@ pub fn force_interf_ve(
     if has_interf_shape_sub_shapes(f.ds(), n_v, n_e) {
         return Ok(true);
     }
-    let (pv1, pv2) = a_pb.indices();
+    let (pv1, pv2) = pb.indices();
     if pv1 == n_v || pv2 == n_v {
         return Ok(true);
     }
@@ -115,7 +115,7 @@ pub fn force_interf_ve(
             }
         }
     }
-    a_pb.append_ext_pave(BopdsPave::new(n_vx, t));
+    pb.append_ext_pave(BopdsPave::new(n_vx, t));
     if !m_edges.contains(&n_e) {
         m_edges.push(n_e);
     }

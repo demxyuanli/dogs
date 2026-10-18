@@ -211,9 +211,9 @@ pub fn split_edge(
     f: &mut PaveFiller,
     n_e: usize,
     n_v1: usize,
-    a_t1: f64,
+    t1: f64,
     n_v2: usize,
-    a_t2: f64,
+    t2: f64,
 ) -> Result<usize, String> {
     let Some(e_shape) = f.ds().shape(n_e).cloned() else {
         return Err(format!("split_edge: edge {n_e} not found"));
@@ -224,13 +224,13 @@ pub fn split_edge(
     let Some(v2s) = f.ds().shape(n_v2).cloned() else {
         return Err(format!("split_edge: vertex {n_v2} not found"));
     };
-    let mut a_e = e_shape;
-    a_e.set_orientation(Orientation::Forward);
+    let mut e = e_shape;
+    e.set_orientation(Orientation::Forward);
     let mut v1 = v1s;
     v1.set_orientation(Orientation::Forward);
     let mut v2 = v2s;
     v2.set_orientation(Orientation::Reversed);
-    let sp = AlgoTools::make_split_edge(&Edge(a_e), Some(&v1), a_t1, Some(&v2), a_t2)?;
+    let sp = AlgoTools::make_split_edge(&Edge(e), Some(&v1), t1, Some(&v2), t2)?;
     let mut si = BopdsShapeInfo::new(sp.0);
     si.change_sub_shapes().extend_from_slice(&[n_v1, n_v2]);
     Ok(f.ds_mut().append_info(si))

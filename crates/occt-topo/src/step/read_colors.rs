@@ -130,13 +130,13 @@ fn set_style(
     // *transferred* shape. An item the transfer never bound keeps an index 0,
     // i.e. a null `aS`, and is skipped (`cxx:1368-1372`).
     let Some(item) = rec.args.get(2).and_then(|a| parse_ref(a)) else { return };
-    let Some(a_s) = transferred_shape(model, resolver, rep_index, item) else {
+    let Some(s) = transferred_shape(model, resolver, rep_index, item) else {
         return;
     };
 
     // `TDF_Label aL; bool isFound = theSTool->SearchUsingMap(aS, aL, false, true);`
     // (`cxx:1377-1378`).
-    let found = search_using_map(model, &a_s);
+    let found = search_using_map(model, &s);
 
     // `if (!aSurfCol.IsNull() || !aBoundCol.IsNull() || !aCurveCol.IsNull() ||
     // aRenderProps.IsDefined()) { ... }` (`cxx:1379-1437`).
@@ -150,7 +150,7 @@ fn set_style(
             // if (theSTool->SearchUsingMap(it.Value(), aL1, false, true)) {
             // theCTool->SetColor(aL1, ...); } } }` (`cxx:1417-1437`). The child
             // label keeps the default visibility: only the colour is written.
-            for child in cumulated_children(&a_s) {
+            for child in cumulated_children(&s) {
                 let Some(child_label) = search_using_map(model, &child) else { continue };
                 let style = style_from_colors(resolver.records, &colors, true);
                 add_setting(model, &child_label, style);
@@ -183,13 +183,13 @@ enum Found {
 /// never a component reference (`cxx:849-856`), and no model shape is an
 /// `XCAFDoc::AssemblyGUID` holder (`cxx:539-546`), because the assembly path
 /// (`cxx:929-945`) builds a `StepAssembly`, not a `BRepModel`.
-fn search_using_map(model: &BRepModel, a_s: &TopoShape) -> Option<Found> {
+fn search_using_map(model: &BRepModel, s: &TopoShape) -> Option<Found> {
     // `if (myShapeLabels.IsBound(S)) { L = myShapeLabels.Find(S); return true; }`
     // (`cxx:139-143`). `NCollection_DataMap::Bind` keeps the last binding, so
     // the last model shape holding that exact shape wins.
     let mut exact: Option<usize> = None;
     for (i, ms) in model.shapes.iter().enumerate() {
-        if is_same(&ms.shape, a_s) {
+        if is_same(&ms.shape, s) {
             exact = Some(i);
         }
     }
@@ -201,7 +201,7 @@ fn search_using_map(model: &BRepModel, a_s: &TopoShape) -> Option<Found> {
     // false; L = AddSubShape(mainL, S);` (`cxx:188-193`).
     let mut main: Option<usize> = None;
     for (i, ms) in model.shapes.iter().enumerate() {
-        if contains_subshape(&ms.shape, a_s) {
+        if contains_subshape(&ms.shape, s) {
             main = Some(i);
         }
     }
@@ -210,7 +210,7 @@ fn search_using_map(model: &BRepModel, a_s: &TopoShape) -> Option<Found> {
     // false;` (`cxx:1143-1147`) — see the function doc for why both hold.
     // `if (!IsSubShape(shapeL, sub))` (`cxx:1152`): `FindMainShapeUsingMap`
     // already answered that.
-    Some(Found::Label { index: main, key_shape: a_s.clone() })
+    Some(Found::Label { index: main, key_shape: s.clone() })
 }
 
 /// `XCAFDoc_ShapeMapTool::SetShape` + `IsSubShape`

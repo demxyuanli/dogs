@@ -253,8 +253,8 @@ pub fn remove_wire_edge(wire: &mut Wire, at: usize) {
 }
 
 /// One junction of `FixConnected(num, prec)` (`ShapeFix_Wire.cxx:1476-1485`).
-pub fn fix_connected_at(wire: &mut Wire, my_precision: f64, prec: f64, num: usize) -> bool {
-    reorder_connected::fix_connected_one(wire, my_precision, prec, num)
+pub fn fix_connected_at(wire: &mut Wire, precision: f64, prec: f64, num: usize) -> bool {
+    reorder_connected::fix_connected_one(wire, precision, prec, num)
 }
 
 /// `ShapeFix_Wire::FixConnected` (`ShapeFix_Wire.cxx:557-569`). `closed` false
@@ -262,7 +262,7 @@ pub fn fix_connected_at(wire: &mut Wire, my_precision: f64, prec: f64, num: usiz
 /// `ClosedWireMode` was cleared (`ShapeFix_Shape.cxx:221-223`).
 pub fn fix_connected_closed(
     wire: &mut Wire,
-    my_precision: f64,
+    precision: f64,
     max_tolerance: f64,
     closed: bool,
 ) -> bool {
@@ -274,7 +274,7 @@ pub fn fix_connected_closed(
     let mut done = false;
     let mut index = nb;
     while index > stop {
-        done |= reorder_connected::fix_connected_one(wire, my_precision, max_tolerance, index);
+        done |= reorder_connected::fix_connected_one(wire, precision, max_tolerance, index);
         index -= 1;
     }
     done

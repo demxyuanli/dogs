@@ -60,7 +60,7 @@ fn is_analytic_ff(kind: SurfaceKind) -> bool {
 pub fn tolerance_ff(face1: &Face, face2: &Face) -> f64 {
     let tol1 = BRepTool::face_tolerance(face1);
     let tol2 = BRepTool::face_tolerance(face2);
-    let mut a_tol_ff = tol1.max(tol2);
+    let mut tol_ff = tol1.max(tol2);
     let k1 = BRepTool::face_surface(face1)
         .map(|s| classify_surface(s.as_ref()))
         .unwrap_or(SurfaceKind::Other);
@@ -68,9 +68,9 @@ pub fn tolerance_ff(face1: &Face, face2: &Face) -> f64 {
         .map(|s| classify_surface(s.as_ref()))
         .unwrap_or(SurfaceKind::Other);
     if !is_analytic_ff(k1) || !is_analytic_ff(k2) {
-        a_tol_ff = a_tol_ff.max(5.0e-6);
+        tol_ff = tol_ff.max(5.0e-6);
     }
-    a_tol_ff
+    tol_ff
 }
 
 /// `IsPlaneFF` at `_6.cxx:84` — a `Geom_Plane`, a

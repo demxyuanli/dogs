@@ -106,8 +106,8 @@ fn box_is_bounded(ds: &crate::bopds::BopdsDS, n_f: usize) -> bool {
 }
 
 /// `myContext->SurfaceAdaptor(TopoDS::Face(aF)).GetType() == GeomAbs_Plane`.
-fn face_is_plane(a_f: &TopoShape) -> bool {
-    let Some(surf) = BRepTool::face_surface_world(&Face(a_f.clone())) else {
+fn face_is_plane(f: &TopoShape) -> bool {
+    let Some(surf) = BRepTool::face_surface_world(&Face(f.clone())) else {
         return false;
     };
     classify_surface(surf.as_ref()) == SurfaceKind::Plane

@@ -490,9 +490,9 @@ fn encode_regul(shape: &TopoShape) {
 }
 
 /// `TrimTolerances` (`IGESToBRep_Actor.cxx:72-80`).
-fn trim_tolerances(shape: &TopoShape, the_tolerance: f64) {
+fn trim_tolerances(shape: &TopoShape, tolerance: f64) {
     if MAX_PRECISION_MODE == 1 {
-        let tmax = the_tolerance.max(MAX_PRECISION_VAL);
+        let tmax = tolerance.max(MAX_PRECISION_VAL);
         limit_tolerance(shape, 0.0, tmax);
     }
 }

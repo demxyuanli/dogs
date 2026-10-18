@@ -48,41 +48,41 @@ fn compute_hyperbola2d_box(hypr: &GpHypr2d, t1: f64, t2: f64, bnd_box: &mut BndB
 
 /// `GeomBndLib_Hyperbola2d::Box(theHypr, theU1, theU2, theTol)`.
 pub fn box_hypr(hypr: &GpHypr2d, u1: f64, u2: f64, tol: f64) -> Result<BndBox2d, String> {
-    let mut a_box = BndBox2d::new();
+    let mut bnd_box = BndBox2d::new();
     if Precision::is_negative_infinite(u1) {
         if Precision::is_negative_infinite(u2) {
             return Err("GeomBndLib_Hyperbola2d::Box - bad parameter".into());
         } else if Precision::is_positive_infinite(u2) {
-            a_box.open_xmax();
-            a_box.open_ymax();
+            bnd_box.open_xmax();
+            bnd_box.open_ymax();
         } else {
-            a_box.add_point(&hypr_value(u2, hypr));
+            bnd_box.add_point(&hypr_value(u2, hypr));
         }
-        a_box.open_xmin();
-        a_box.open_ymin();
+        bnd_box.open_xmin();
+        bnd_box.open_ymin();
     } else if Precision::is_positive_infinite(u1) {
         if Precision::is_negative_infinite(u2) {
-            a_box.open_xmin();
-            a_box.open_ymin();
+            bnd_box.open_xmin();
+            bnd_box.open_ymin();
         } else if Precision::is_positive_infinite(u2) {
             return Err("GeomBndLib_Hyperbola2d::Box - bad parameter".into());
         } else {
-            a_box.add_point(&hypr_value(u2, hypr));
+            bnd_box.add_point(&hypr_value(u2, hypr));
         }
-        a_box.open_xmax();
-        a_box.open_ymax();
+        bnd_box.open_xmax();
+        bnd_box.open_ymax();
     } else {
-        a_box.add_point(&hypr_value(u1, hypr));
+        bnd_box.add_point(&hypr_value(u1, hypr));
         if Precision::is_negative_infinite(u2) {
-            a_box.open_xmin();
-            a_box.open_ymin();
+            bnd_box.open_xmin();
+            bnd_box.open_ymin();
         } else if Precision::is_positive_infinite(u2) {
-            a_box.open_xmax();
-            a_box.open_ymax();
+            bnd_box.open_xmax();
+            bnd_box.open_ymax();
         } else {
-            compute_hyperbola2d_box(hypr, u1, u2, &mut a_box);
+            compute_hyperbola2d_box(hypr, u1, u2, &mut bnd_box);
         }
     }
-    a_box.enlarge(tol);
-    Ok(a_box)
+    bnd_box.enlarge(tol);
+    Ok(bnd_box)
 }

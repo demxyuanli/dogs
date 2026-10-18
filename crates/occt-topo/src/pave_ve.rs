@@ -161,13 +161,13 @@ pub fn perform_ve(f: &mut PaveFiller) -> Result<(), String> {
         if pbs.is_empty() {
             continue;
         }
-        let a_pb = pbs[0].clone();
-        if !a_pb.is_splittable() {
+        let pb = pbs[0].clone();
+        if !pb.is_splittable() {
             continue;
         }
         mve
-            .entry(pb_key(&a_pb))
-            .or_insert_with(|| (a_pb, Vec::new()))
+            .entry(pb_key(&pb))
+            .or_insert_with(|| (pb, Vec::new()))
             .1
             .push(n_v);
     }
@@ -194,10 +194,10 @@ pub fn perform_ve_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> Result<
         if pbs.is_empty() || !pbs[0].is_splittable() {
             continue;
         }
-        let a_pb = pbs[0].clone();
+        let pb = pbs[0].clone();
         mve
-            .entry(pb_key(&a_pb))
-            .or_insert_with(|| (a_pb, Vec::new()))
+            .entry(pb_key(&pb))
+            .or_insert_with(|| (pb, Vec::new()))
             .1
             .push(n_v);
     }
@@ -217,8 +217,8 @@ pub fn make_new_common_block(
     let mut cb_new = crate::bopds::BopdsCommonBlock::new();
     cb_new.set_pave_blocks(lpb.to_vec());
     cb_new.set_faces(l_faces.to_vec());
-    for a_pb in lpb {
-        f.ds_mut().set_common_block(a_pb, cb_new.clone());
+    for pb in lpb {
+        f.ds_mut().set_common_block(pb, cb_new.clone());
     }
 }
 

@@ -463,13 +463,13 @@ impl DelaunPairOfIndex {
     ///
     /// Fills the first free slot; panics when the pair already holds two
     /// indices (OCCT throws `Standard_OutOfRange`).
-    pub fn append(&mut self, the_index: i32) {
+    pub fn append(&mut self, index: i32) {
         if self.first < 0 {
-            self.first = the_index;
+            self.first = index;
         } else if self.second >= 0 {
             panic!("DelaunPairOfIndex::append, more than two index to store");
         } else {
-            self.second = the_index;
+            self.second = index;
         }
     }
 
@@ -477,12 +477,12 @@ impl DelaunPairOfIndex {
     ///
     /// Shifts the first index into the second slot; panics when the pair is
     /// already full.
-    pub fn prepend(&mut self, the_index: i32) {
+    pub fn prepend(&mut self, index: i32) {
         if self.second >= 0 {
             panic!("DelaunPairOfIndex::prepend, more than two index to store");
         }
         self.second = self.first;
-        self.first = the_index;
+        self.first = index;
     }
 
     /// Returns whether the pair is empty. Source: `IsEmpty`.
@@ -518,10 +518,10 @@ impl DelaunPairOfIndex {
 
     /// Sets the index at the 1-based position `pos` (`1` or `2`).
     /// Source: `SetIndex`.
-    pub fn set_index(&mut self, pos: usize, the_index: i32) {
+    pub fn set_index(&mut self, pos: usize, index: i32) {
         match pos {
-            1 => self.first = the_index,
-            2 => self.second = the_index,
+            1 => self.first = index,
+            2 => self.second = index,
             _ => panic!("DelaunPairOfIndex::set_index, requested index is out of range"),
         }
     }

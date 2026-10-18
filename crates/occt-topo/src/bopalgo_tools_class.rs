@@ -79,9 +79,9 @@ fn make_connexity_block(
     }
     let mut i = 0;
     while i < lcb.len() {
-        let a_f = lcb[i].clone();
+        let f = lcb[i].clone();
         i += 1;
-        for w in ShapeIterator::of_shape(&a_f) {
+        for w in ShapeIterator::of_shape(&f) {
             if w.shape_type() != ShapeType::Wire {
                 continue;
             }
@@ -92,7 +92,7 @@ fn make_connexity_block(
                 let k = shape_key(&e);
                 if me_avoid.contains(&k) || BRepTool::is_degenerated(&Edge(e.clone())) {
                     if face_to_classify.is_none() {
-                        *face_to_classify = Some(a_f.clone());
+                        *face_to_classify = Some(f.clone());
                     }
                     continue;
                 }
@@ -225,22 +225,22 @@ pub fn fill_in_3d_parts(
     // `_cxx:1498-1501`: `aMEFDS` is filled by
     // `TopExp::MapShapesAndAncestors(mySolid, EDGE, FACE)`, keyed by
     // `TopTools_ShapeMapHasher` and built once.
-    let mut a_mefds: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    let mut a_mf_done: HashSet<ShapeMapKey> = HashSet::new();
+    let mut mefds: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    let mut mf_done: HashSet<ShapeMapKey> = HashSet::new();
     for &n_fp in &ivec {
         let fp = v_shape_box[n_fp].shape.clone();
-        if !a_mf_done.insert(shape_key(&fp)) {
+        if !mf_done.insert(shape_key(&fp)) {
             continue;
         }
         let mut lcbf: Vec<TopoShape> = Vec::new();
-        let mut a_face_to_classify: Option<TopoShape> = None;
+        let mut face_to_classify: Option<TopoShape> = None;
         make_connexity_block(
             &fp,
             &mse,
             &mefp,
-            &mut a_mf_done,
+            &mut mf_done,
             &mut lcbf,
-            &mut a_face_to_classify,
+            &mut face_to_classify,
         );
         if !box_s.is_whole() {
             let mut b_out = false;
@@ -262,11 +262,11 @@ pub fn fill_in_3d_parts(
                 continue;
             }
         }
-        let a_face = a_face_to_classify.unwrap_or(fp);
-        if a_mefds.is_empty() {
-            a_mefds = map_shapes_and_ancestors(solid, ShapeType::Edge, ShapeType::Face);
+        let face = face_to_classify.unwrap_or(fp);
+        if mefds.is_empty() {
+            mefds = map_shapes_and_ancestors(solid, ShapeType::Edge, ShapeType::Face);
         }
-        if is_internal_face(&Face(a_face), solid, &a_mefds, CONFUSION, ctx) {
+        if is_internal_face(&Face(face), solid, &mefds, CONFUSION, ctx) {
             in_faces.extend(lcbf);
         }
     }
@@ -275,38 +275,38 @@ pub fn fill_in_3d_parts(
 
 /// `BOPAlgo_Tools::ClassifyFaces` (`BOPAlgo_Tools.cxx:1622`).
 pub fn classify_faces(
-    the_faces: &[TopoShape],
+    faces: &[TopoShape],
     solids: &[TopoShape],
     ctx: &IntToolsContext,
     shape_box_map: &HashMap<ShapeMapKey, BndBox>,
     solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
 ) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
     let mut vsb: Vec<ShapeBox> = Vec::new();
-    for a_f in the_faces {
+    for f in faces {
         let bnd_box = shape_box_map
-            .get(&shape_key(a_f))
+            .get(&shape_key(f))
             .cloned()
-            .unwrap_or_else(|| shape_bbox(a_f));
-        vsb.push(ShapeBox::new(a_f.clone(), bnd_box));
+            .unwrap_or_else(|| shape_bbox(f));
+        vsb.push(ShapeBox::new(f.clone(), bnd_box));
     }
     let mut in_parts: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    for a_solid in solids {
+    for solid in solids {
         let bnd_box = shape_box_map
-            .get(&shape_key(a_solid))
+            .get(&shape_key(solid))
             .cloned()
             .unwrap_or_else(|| {
-                let mut b = shape_bbox(a_solid);
-                if !b.is_whole() && AlgoTools::is_inverted_solid(a_solid) {
+                let mut b = shape_bbox(solid);
+                if !b.is_whole() && AlgoTools::is_inverted_solid(solid) {
                     b.set_whole();
                 }
                 b
             });
         let own = solids_if
-            .get(&shape_key(a_solid))
+            .get(&shape_key(solid))
             .cloned()
             .unwrap_or_default();
-        let in_faces = fill_in_3d_parts(a_solid, &bnd_box, &own, &vsb, ctx);
-        in_parts.insert(shape_key(a_solid), in_faces);
+        let in_faces = fill_in_3d_parts(solid, &bnd_box, &own, &vsb, ctx);
+        in_parts.insert(shape_key(solid), in_faces);
     }
     in_parts
 }
@@ -322,17 +322,17 @@ pub fn fill_internals(
         return;
     }
     let mut ms_solids: HashSet<ShapeMapKey> = HashSet::new();
-    for a_solid in solids.iter() {
-        if a_solid.shape_type() != ShapeType::Solid {
+    for solid in solids.iter() {
+        if solid.shape_type() != ShapeType::Solid {
             continue;
         }
-        for v in vertices_of(a_solid) {
+        for v in vertices_of(solid) {
             ms_solids.insert(shape_key(&v.0));
         }
-        for e in edges_of(a_solid) {
+        for e in edges_of(solid) {
             ms_solids.insert(shape_key(&e.0));
         }
-        for f in ShapeIterator::of_shape(a_solid) {
+        for f in ShapeIterator::of_shape(solid) {
             if f.shape_type() == ShapeType::Face {
                 ms_solids.insert(shape_key(&f));
             }

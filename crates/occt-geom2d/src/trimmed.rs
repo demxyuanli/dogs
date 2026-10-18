@@ -12,19 +12,19 @@ fn adjust_periodic(u_first: f64, u_last: f64, preci: f64, u1: &mut f64, u2: &mut
         *u2 = u_last;
         return;
     }
-    let a_period = u_last - u_first;
-    if a_period < f64::EPSILON {
+    let period = u_last - u_first;
+    if period < f64::EPSILON {
         *u1 = u_first;
         *u2 = u_last;
         return;
     }
-    *u1 -= ((*u1 - u_first) / a_period).floor() * a_period;
+    *u1 -= ((*u1 - u_first) / period).floor() * period;
     if u_last - *u1 < preci {
-        *u1 -= a_period;
+        *u1 -= period;
     }
-    *u2 -= ((*u2 - *u1) / a_period).floor() * a_period;
+    *u2 -= ((*u2 - *u1) / period).floor() * period;
     if *u2 - *u1 < preci {
-        *u2 += a_period;
+        *u2 += period;
     }
 }
 

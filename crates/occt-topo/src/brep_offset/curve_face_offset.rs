@@ -110,14 +110,14 @@ pub fn polygon_offset_3d(points: &[GpPnt], plane: &GpPln, distance: f64) -> Resu
         let a = &points[i];
         let b = &points[(i + 1) % n];
         let j = (i + n - 1) % n;
-        let a_prev = &points[j];
+        let prev = &points[j];
         let b_prev = &points[i];
         let o_cur = outward(a, b).ok_or("offset_polygon: degenerate edge")?;
-        let o_prev = outward(a_prev, b_prev).ok_or("offset_polygon: degenerate edge")?;
+        let o_prev = outward(prev, b_prev).ok_or("offset_polygon: degenerate edge")?;
         let e_cur = edge_dir(a, b).ok_or("offset_polygon: degenerate edge")?;
-        let e_prev = edge_dir(a_prev, b_prev).ok_or("offset_polygon: degenerate edge")?;
+        let e_prev = edge_dir(prev, b_prev).ok_or("offset_polygon: degenerate edge")?;
         let a1 = a.translated_vec(&o_cur.multiplied_scalar(distance));
-        let a2 = a_prev.translated_vec(&o_prev.multiplied_scalar(distance));
+        let a2 = prev.translated_vec(&o_prev.multiplied_scalar(distance));
         let pt = line_line_intersect_3d(&a1, &e_cur, &a2, &e_prev, &plane_n)
             .ok_or("offset_polygon: parallel offset edges (miter fails)")?;
         result.push(pt);

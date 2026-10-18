@@ -278,7 +278,7 @@ fn append_trimmed_conic(
 fn make_walking(
     iss: &mut IntSS,
     wl: &WLine,
-    my_approx: bool,
+    approx: bool,
     approx1: bool,
     approx2: bool,
     tol_approx: f64,
@@ -288,7 +288,7 @@ fn make_walking(
     };
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
-    if !my_approx {
+    if !approx {
         let a_nb_parts = iss.l_construct.nb_parts();
         for i in 1..=a_nb_parts {
             let Some((fprm, lprm)) = iss.l_construct.part(i) else {
@@ -357,7 +357,7 @@ fn make_walking(
             piece,
             ifprm,
             ilprm,
-            my_approx,
+            approx,
             approx1,
             approx2,
             tol_approx,
@@ -371,7 +371,7 @@ fn walking_approx_one(
     wl: &WLine,
     ifprm: i32,
     ilprm: i32,
-    my_approx: bool,
+    approx: bool,
     approx1: bool,
     approx2: bool,
     tol_approx: f64,
@@ -382,7 +382,7 @@ fn walking_approx_one(
     };
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
-    let mut an_approx = my_approx;
+    let mut an_approx = approx;
     let mut an_approx1 = approx1;
     let mut an_approx2 = approx2;
     let typs1 = classify_surface(s1);

@@ -132,14 +132,14 @@ impl WlApprox {
         &mut self,
         _surf1: &dyn Surface,
         _surf2: &dyn Surface,
-        a_line: &WLine,
+        line: &WLine,
         approx_xyz: bool,
         approx_u1v1: bool,
         approx_u2v2: bool,
         indicemin: i32,
         indicemax: i32,
     ) {
-        self.fill_data(a_line);
+        self.fill_data(line);
         self.prepare_ds(approx_xyz, approx_u1v1, approx_u2v2, indicemin, indicemax);
         self.done = false;
         self.curves.clear();
@@ -149,9 +149,9 @@ impl WlApprox {
             self.data.indicemin
         };
         let ilprm = if self.data.indicemax < 1 {
-            a_line.nb_pnts()
+            line.nb_pnts()
         } else {
-            self.data.indicemax.min(a_line.nb_pnts())
+            self.data.indicemax.min(line.nb_pnts())
         };
         if ilprm - ifprm < 1 {
             return;
@@ -160,7 +160,7 @@ impl WlApprox {
         let mut poles2d_s1 = Vec::new();
         let mut poles2d_s2 = Vec::new();
         for i in ifprm..=ilprm {
-            let p = a_line.point(i);
+            let p = line.point(i);
             poles3d.push(p.value());
             let (u1, v1) = p.parameters_on_s1();
             poles2d_s1.push(occt_core::gp::GpPnt2d::new(u1, v1));
@@ -175,17 +175,17 @@ impl WlApprox {
         }
         knots.push((n - 1) as f64);
         let c3 = if self.data.approx_xyz {
-            int_ss_make_bspline(a_line, ifprm, ilprm)
+            int_ss_make_bspline(line, ifprm, ilprm)
         } else {
             None
         };
         let c1 = if self.data.approx_u1v1 {
-            int_ss_make_bspline2d(a_line, ifprm, ilprm, true)
+            int_ss_make_bspline2d(line, ifprm, ilprm, true)
         } else {
             None
         };
         let c2 = if self.data.approx_u2v2 {
-            int_ss_make_bspline2d(a_line, ifprm, ilprm, false)
+            int_ss_make_bspline2d(line, ifprm, ilprm, false)
         } else {
             None
         };

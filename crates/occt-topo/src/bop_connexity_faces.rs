@@ -103,9 +103,9 @@ pub fn make_connexity_block(
 
     let mut i = 0;
     while i < lcb.len() {
-        let a_f = lcb[i].clone();
+        let f = lcb[i].clone();
         i += 1;
-        for w in iter_children(&a_f) {
+        for w in iter_children(&f) {
             if w.shape_type() != ShapeType::Wire {
                 continue;
             }
@@ -116,7 +116,7 @@ pub fn make_connexity_block(
                 let e = Edge(e_s);
                 if me_avoid.contains(&shape_key(&e.0)) || BRepTool::is_degenerated(&e) {
                     if face_to_classify.is_none() {
-                        face_to_classify = Some(a_f.clone());
+                        face_to_classify = Some(f.clone());
                     }
                     continue;
                 }
@@ -150,7 +150,7 @@ pub fn classification_face<'a>(
 ///
 /// Each connexity block of IN faces becomes one INTERNAL shell added to
 /// `the_solid`.
-pub fn add_internal_face_shells(the_solid: &mut TopoShape, in_faces: &[TopoShape]) {
+pub fn add_internal_face_shells(solid: &mut TopoShape, in_faces: &[TopoShape]) {
     if in_faces.is_empty() {
         return;
     }
@@ -158,13 +158,13 @@ pub fn add_internal_face_shells(the_solid: &mut TopoShape, in_faces: &[TopoShape
     let bld = TopoBuilder::new();
     for block in blocks {
         let mut shell = Shell::new();
-        for mut a_f in block {
-            a_f.set_orientation(Orientation::Internal);
-            if let Some(fc) = Face::wrap(a_f) {
+        for mut f in block {
+            f.set_orientation(Orientation::Internal);
+            if let Some(fc) = Face::wrap(f) {
                 bld.add_face(&mut shell, &fc);
             }
         }
-        bld.add(the_solid, &shell.0);
+        bld.add(solid, &shell.0);
     }
 }
 

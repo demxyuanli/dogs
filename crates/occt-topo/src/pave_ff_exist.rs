@@ -171,8 +171,8 @@ pub(crate) use crate::pave_ff_exist_onin::is_existing_pave_block_on_in;
 /// `BOPAlgo_PaveFiller::PreparePostTreatFF` (`_6.cxx:3609`).
 pub(crate) fn prepare_post_treat_ff(
     ds: &BopdsDS,
-    a_int: usize,
-    a_cur: usize,
+    int: usize,
+    cur: usize,
     pb: &BopdsPaveBlock,
     mscpb: &mut Vec<(TopoShape, CoupleOfPaveBlocks)>,
     lpbc: &mut Vec<BopdsPaveBlock>,
@@ -182,8 +182,8 @@ pub(crate) fn prepare_post_treat_ff(
     mscpb.push((
         e.clone(),
         CoupleOfPaveBlocks {
-            index_interf: a_int,
-            index: a_cur,
+            index_interf: int,
+            index: cur,
             pb: Some(pb.clone()),
         },
     ));

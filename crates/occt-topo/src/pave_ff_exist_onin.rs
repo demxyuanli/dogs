@@ -67,11 +67,11 @@ fn first_point_candidates<'a>(
 ) -> Vec<&'a BopdsPaveBlock> {
     let mut tree = crate::bop_aabb_faces::AabbTree::new();
     tree.set_size(on_in.len());
-    for (i, a_pb) in on_in.iter().enumerate() {
-        if a_pb.edge() == 0 {
+    for (i, pb) in on_in.iter().enumerate() {
+        if pb.edge() == 0 {
             continue;
         }
-        let Some(b) = ds.box_of(a_pb.edge()) else {
+        let Some(b) = ds.box_of(pb.edge()) else {
             continue;
         };
         if b.is_void() {
@@ -82,9 +82,9 @@ fn first_point_candidates<'a>(
     tree.build();
     let mut candidates = Vec::new();
     for i in tree.select(box_p1) {
-        if let Some(a_pb) = on_in.get(i) {
-            if a_pb.edge() != 0 {
-                candidates.push(a_pb);
+        if let Some(pb) = on_in.get(i) {
+            if pb.edge() != 0 {
+                candidates.push(pb);
             }
         }
     }

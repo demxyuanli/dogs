@@ -172,12 +172,12 @@ pub fn correct_surface_boundaries(
                 } else {
                     an_edge.0.set_orientation(Orientation::Reversed);
                 }
-                let Some(a_curve) = curve_on_surface(&an_edge, face) else {
+                let Some(curve) = curve_on_surface(&an_edge, face) else {
                     correct = false;
                     break 'edges;
                 };
                 // `occ::down_cast<Geom2d_Line>(aCurve)` (`IntTools_FaceFace.cxx:2149`).
-                let Some(line) = a_curve.gp_lin2d() else {
+                let Some(line) = curve.gp_lin2d() else {
                     correct = false;
                     break 'edges;
                 };
@@ -186,8 +186,8 @@ pub fn correct_surface_boundaries(
                 correct_u = correct_u || dir.is_parallel(&v_dir, an_angular_tolerance);
                 correct_v = correct_v || dir.is_parallel(&an_u_dir, an_angular_tolerance);
                 let (f, l) = GeometryRegistry::global().edge_parameters(&an_edge.0);
-                bnd_box.add_point(&a_curve.d0(f));
-                bnd_box.add_point(&a_curve.d0(l));
+                bnd_box.add_point(&curve.d0(f));
+                bnd_box.add_point(&curve.d0(l));
             }
         }
 

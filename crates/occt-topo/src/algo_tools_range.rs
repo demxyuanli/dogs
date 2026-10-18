@@ -33,11 +33,11 @@ pub fn point_on_edge(edge: &Edge, t: f64) -> Option<GpPnt> {
 }
 
 /// `BOPTools_AlgoTools::UpdateVertex` (vertex / vertex).
-pub fn update_vertex_vv(vf: &Vertex, a_new: &Vertex) {
+pub fn update_vertex_vv(vf: &Vertex, new: &Vertex) {
     let pvf = BRepTool::vertex_point(vf);
-    let pnew = BRepTool::vertex_point(a_new);
+    let pnew = BRepTool::vertex_point(new);
     let tol_vf = BRepTool::vertex_tolerance(vf);
-    let tol_new = BRepTool::vertex_tolerance(a_new);
+    let tol_new = BRepTool::vertex_tolerance(new);
     let dist = pvf.distance(&pnew);
     let new_tol = dist + tol_new;
     if new_tol > tol_vf {
@@ -46,10 +46,10 @@ pub fn update_vertex_vv(vf: &Vertex, a_new: &Vertex) {
 }
 
 /// `BOPTools_AlgoTools::UpdateVertex` (edge, parameter, vertex).
-pub fn update_vertex_et(a_e: &Edge, a_t: f64, v: &Vertex) {
+pub fn update_vertex_et(e: &Edge, t: f64, v: &Vertex) {
     let pv = BRepTool::vertex_point(v);
     let tol_v = BRepTool::vertex_tolerance(v);
-    let Some(pc) = point_on_edge(a_e, a_t) else {
+    let Some(pc) = point_on_edge(e, t) else {
         return;
     };
     let dist = pv.distance(&pc);
@@ -59,10 +59,10 @@ pub fn update_vertex_et(a_e: &Edge, a_t: f64, v: &Vertex) {
 }
 
 /// `BOPTools_AlgoTools::UpdateVertex` (curve, parameter, vertex).
-pub fn update_vertex_ct(curve: &dyn Curve, a_t: f64, v: &Vertex) {
+pub fn update_vertex_ct(curve: &dyn Curve, t: f64, v: &Vertex) {
     let pv = BRepTool::vertex_point(v);
     let tol_v = BRepTool::vertex_tolerance(v);
-    let pc = curve.d0(a_t);
+    let pc = curve.d0(t);
     let dist = pv.distance(&pc);
     if dist > tol_v {
         v.set_tolerance(dist + D_TOLERANCE);
@@ -70,9 +70,9 @@ pub fn update_vertex_ct(curve: &dyn Curve, a_t: f64, v: &Vertex) {
 }
 
 /// `BOPTools_AlgoTools::MakeNewVertex` (two vertices).
-pub fn make_new_vertex_vv(a_v1: &Vertex, v2: &Vertex) -> Result<TopoShape, String> {
-    let pnt1 = BRepTool::vertex_point(a_v1);
-    let tol1 = BRepTool::vertex_tolerance(a_v1);
+pub fn make_new_vertex_vv(v1: &Vertex, v2: &Vertex) -> Result<TopoShape, String> {
+    let pnt1 = BRepTool::vertex_point(v1);
+    let tol1 = BRepTool::vertex_tolerance(v1);
     let pnt2 = BRepTool::vertex_point(v2);
     let tol2 = BRepTool::vertex_tolerance(v2);
     let dist = pnt1.distance(&pnt2);
@@ -207,7 +207,7 @@ pub fn correct_range_ee(e1: &Edge, e2: &Edge, sr: IntRange) -> IntRange {
 }
 
 /// `BOPTools_AlgoTools::CorrectRange` (edge / face).
-pub fn correct_range_ef(a_e: &Edge, a_f: &Face, sr: IntRange) -> IntRange {
+pub fn correct_range_ef(a_e: &Edge, f: &Face, sr: IntRange) -> IntRange {
     let mut new_sr = sr;
     let Some(c) = BRepTool::edge_curve(a_e) else {
         return new_sr;
@@ -215,7 +215,7 @@ pub fn correct_range_ef(a_e: &Edge, a_f: &Face, sr: IntRange) -> IntRange {
     let d_t = PCONFUSION;
     let tf = sr.first;
     let tl = sr.last;
-    let tol_f = BRepTool::face_tolerance(a_f);
+    let tol_f = BRepTool::face_tolerance(f);
     let freeform = curve_is_freeform(c.as_ref());
     for i in 0..2 {
         let mut res = tol_f;
@@ -258,8 +258,8 @@ pub fn copy_edge(edge: &Edge) -> Result<Edge, String> {
 
 /// Elementary-shape dimension (`BOPTools_AlgoTools_2.cxx` anonymous
 /// `dimension`).
-pub fn dimension(the_s: &TopoShape) -> i32 {
-    match the_s.shape_type() {
+pub fn dimension(s: &TopoShape) -> i32 {
+    match s.shape_type() {
         ShapeType::Vertex => 0,
         ShapeType::Edge | ShapeType::Wire => 1,
         ShapeType::Face | ShapeType::Shell => 2,
@@ -269,14 +269,14 @@ pub fn dimension(the_s: &TopoShape) -> i32 {
 }
 
 /// `BOPTools_AlgoTools::Dimensions`.
-pub fn dimensions(the_s: &TopoShape) -> (i32, i32) {
-    let d = dimension(the_s);
+pub fn dimensions(s: &TopoShape) -> (i32, i32) {
+    let d = dimension(s);
     if d >= 0 {
         return (d, d);
     }
     let mut d_min = 4;
     let mut d_max = -1;
-    for sub in ShapeIterator::of_shape(the_s) {
+    for sub in ShapeIterator::of_shape(s) {
         let di = dimension(&sub);
         if di < 0 {
             continue;
@@ -298,13 +298,13 @@ pub fn dimensions(the_s: &TopoShape) -> (i32, i32) {
 /// `IntTools_Tools::VertexParameter`.
 pub fn algo_tools_vertex_parameter(c_part: &CommonPrt, param: Option<f64>) -> f64 {
     let r = c_part.range;
-    let mut a_t = 0.5 * (r.first + r.last);
+    let mut t = 0.5 * (r.first + r.last);
     if let Some(vp) = param {
         if vp >= r.first && vp <= r.last {
-            a_t = vp;
+            t = vp;
         }
     }
-    a_t
+    t
 }
 
 /// `IntTools_Tools::VertexParameters`.
@@ -332,11 +332,11 @@ pub fn algo_tools_is_on_pave1(tr: f64, cp_first: f64, cp_last: f64, tolerance: f
 
 /// `IntTools_Tools::IsInRange`.
 pub fn algo_tools_is_in_range(r_ref: IntRange, r: IntRange, tolerance: f64) -> bool {
-    let a_t1 = r.first;
-    let a_t2 = r.last;
+    let t1 = r.first;
+    let t2 = r.last;
     let t_ref1 = r_ref.first - tolerance;
     let t_ref2 = r_ref.last + tolerance;
-    (a_t1 >= t_ref1 && a_t1 <= t_ref2) || (a_t2 >= t_ref1 && a_t2 <= t_ref2)
+    (t1 >= t_ref1 && t1 <= t_ref2) || (t2 >= t_ref1 && t2 <= t_ref2)
 }
 
 /// `BOPTools_AlgoTools::MakeSectEdge` — wrap [`AlgoTools::make_edge`].
@@ -353,8 +353,8 @@ pub fn make_sect_edge(
 
 /// Raise a vertex tolerance if `dist` exceeds the current value.
 pub fn raise_vertex_tolerance(v: &Vertex, dist: f64) {
-    let a_tol = BRepTool::vertex_tolerance(v);
-    if dist > a_tol {
+    let tol = BRepTool::vertex_tolerance(v);
+    if dist > tol {
         v.set_tolerance(dist + D_TOLERANCE);
     }
 }

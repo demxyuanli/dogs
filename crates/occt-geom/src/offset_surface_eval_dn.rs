@@ -74,15 +74,15 @@ pub fn evaluate_d3(
     let (v_min, v_max) = basis.v_range();
     let is_u_per = basis.is_u_periodic();
     let is_v_per = basis.is_v_periodic();
-    let mut the_u = u_in;
-    let mut the_v = v_in;
+    let mut u = u_in;
+    let mut v = v_in;
 
     loop {
-        let (_, d1u, d1v, d2u, d2v, d2uv) = basis.d2(the_u, the_v);
-        let d3u = basis.eval_dn(the_u, the_v, 3, 0);
-        let d3v = basis.eval_dn(the_u, the_v, 0, 3);
-        let d3uuv = basis.eval_dn(the_u, the_v, 2, 1);
-        let d3uvv = basis.eval_dn(the_u, the_v, 1, 2);
+        let (_, d1u, d1v, d2u, d2v, d2uv) = basis.d2(u, v);
+        let d3u = basis.eval_dn(u, v, 3, 0);
+        let d3v = basis.eval_dn(u, v, 0, 3);
+        let d3uuv = basis.eval_dn(u, v, 2, 1);
+        let d3uvv = basis.eval_dn(u, v, 1, 2);
         if is_infinite_coord(&d1u) || is_infinite_coord(&d1v) {
             return None;
         }
@@ -94,7 +94,7 @@ pub fn evaluate_d3(
             3
         };
         let pick = if n_status != CSLibNormalStatus::Defined {
-            osc_pick(osc_query, the_u, the_v)
+            osc_pick(osc_query, u, v)
         } else {
             OscPick {
                 along_u: false,
@@ -121,8 +121,8 @@ pub fn evaluate_d3(
         if !compute_derivatives(
             max_order,
             3,
-            the_u,
-            the_v,
+            u,
+            v,
             basis,
             3,
             3,
@@ -136,12 +136,12 @@ pub fn evaluate_d3(
         }
 
         let (status, _, order_u, order_v) = normal_max_order(
-            max_order, &der_nuv, D1_TOL, the_u, the_v, u_min, u_max, v_min, v_max,
+            max_order, &der_nuv, D1_TOL, u, v, u_min, u_max, v_min, v_max,
         );
         if status == CSLibNormalStatus::Defined {
             let sign = offset * osc_sign(&pick);
             let add = |nu: i32, nv: i32| {
-                basis.eval_dn(the_u, the_v, nu, nv).added(
+                basis.eval_dn(u, v, nu, nv).added(
                     &dn_normal(nu, nv, &der_nuv, order_u, order_v).multiplied_scalar(sign),
                 )
             };
@@ -156,8 +156,8 @@ pub fn evaluate_d3(
         if !shift_point(
             u_start,
             v_start,
-            &mut the_u,
-            &mut the_v,
+            &mut u,
+            &mut v,
             u_min,
             u_max,
             v_min,
@@ -188,11 +188,11 @@ pub fn evaluate_dn(
     let (v_min, v_max) = basis.v_range();
     let is_u_per = basis.is_u_periodic();
     let is_v_per = basis.is_v_periodic();
-    let mut the_u = u_in;
-    let mut the_v = v_in;
+    let mut u = u_in;
+    let mut v = v_in;
 
     loop {
-        let (_, d1u, d1v) = basis.d1(the_u, the_v);
+        let (_, d1u, d1v) = basis.d1(u, v);
         if is_infinite_coord(&d1u) || is_infinite_coord(&d1v) {
             return None;
         }
@@ -203,7 +203,7 @@ pub fn evaluate_dn(
             3
         };
         let pick = if n_status != CSLibNormalStatus::Defined {
-            osc_pick(osc_query, the_u, the_v)
+            osc_pick(osc_query, u, v)
         } else {
             OscPick {
                 along_u: false,
@@ -223,8 +223,8 @@ pub fn evaluate_dn(
         if !compute_derivatives(
             max_order,
             1,
-            the_u,
-            the_v,
+            u,
+            v,
             basis,
             nu,
             nv,
@@ -238,11 +238,11 @@ pub fn evaluate_dn(
         }
 
         let (status, _, order_u, order_v) = normal_max_order(
-            max_order, &der_nuv, D1_TOL, the_u, the_v, u_min, u_max, v_min, v_max,
+            max_order, &der_nuv, D1_TOL, u, v, u_min, u_max, v_min, v_max,
         );
         if status == CSLibNormalStatus::Defined {
             let sign = offset * osc_sign(&pick);
-            let base = basis.eval_dn(the_u, the_v, nu, nv);
+            let base = basis.eval_dn(u, v, nu, nv);
             return Some(base.added(
                 &dn_normal(nu, nv, &der_nuv, order_u, order_v).multiplied_scalar(sign),
             ));
@@ -251,8 +251,8 @@ pub fn evaluate_dn(
         if !shift_point(
             u_start,
             v_start,
-            &mut the_u,
-            &mut the_v,
+            &mut u,
+            &mut v,
             u_min,
             u_max,
             v_min,

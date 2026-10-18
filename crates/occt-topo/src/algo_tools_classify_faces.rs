@@ -39,11 +39,11 @@ pub type FaceBox = ShapeBox;
 /// precomputed box map (`theShapeBoxMap`). Missing entries are computed
 /// with `BRepBndLib::Add` (`_cxx:1660-1666`).
 pub fn make_shape_box_vector(
-    the_faces: &[TopoShape],
+    faces: &[TopoShape],
     shape_box_map: &HashMap<ShapeMapKey, BndBox>,
 ) -> Vec<ShapeBox> {
-    let mut vsb = Vec::with_capacity(the_faces.len());
-    for f in the_faces {
+    let mut vsb = Vec::with_capacity(faces.len());
+    for f in faces {
         let bnd_box = shape_box_map
             .get(&shape_key(f))
             .copied()
@@ -114,14 +114,14 @@ impl FillIn3dTask {
 /// [`shape_key`] of that solid so callers can look up by the same identity
 /// FillIn3DParts stored in `aDraftSolid`.
 pub fn classify_faces_occt(
-    the_faces: &[TopoShape],
+    faces: &[TopoShape],
     solids: &[TopoShape],
     ctx: &IntToolsContext,
     shape_box_map: &HashMap<ShapeMapKey, BndBox>,
     solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
 ) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
     classify_faces_aabb(
-        the_faces,
+        faces,
         solids,
         ctx,
         shape_box_map,
@@ -131,24 +131,24 @@ pub fn classify_faces_occt(
 
 /// ClassifyFaces that also returns the per-solid tasks (diagnostics).
 pub fn classify_faces_with_tasks(
-    the_faces: &[TopoShape],
+    faces: &[TopoShape],
     solids: &[TopoShape],
     ctx: &IntToolsContext,
     shape_box_map: &HashMap<ShapeMapKey, BndBox>,
     solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
 ) -> (HashMap<ShapeMapKey, Vec<TopoShape>>, Vec<FillIn3dTask>) {
-    let v_sb = make_shape_box_vector(the_faces, shape_box_map);
+    let v_sb = make_shape_box_vector(faces, shape_box_map);
     let mut tasks = Vec::new();
     let mut in_parts: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    for a_solid in solids {
-        let box_s = solid_box_for_classify(a_solid, shape_box_map);
+    for solid in solids {
+        let box_s = solid_box_for_classify(solid, shape_box_map);
         let own = solids_if
-            .get(&shape_key(a_solid))
+            .get(&shape_key(solid))
             .cloned()
             .unwrap_or_default();
-        let task = FillIn3dTask::new(a_solid.clone(), box_s, own);
+        let task = FillIn3dTask::new(solid.clone(), box_s, own);
         let in_faces = task.perform(&v_sb, ctx);
-        in_parts.insert(shape_key(a_solid), in_faces);
+        in_parts.insert(shape_key(solid), in_faces);
         tasks.push(task);
     }
     let _ = v_sb;
@@ -159,12 +159,12 @@ pub fn classify_faces_with_tasks(
 /// `FillIn3DParts` parallel task).
 pub fn classify_one_solid(
     solid: &TopoShape,
-    the_faces: &[TopoShape],
+    faces: &[TopoShape],
     own_if: &[TopoShape],
     shape_box_map: &HashMap<ShapeMapKey, BndBox>,
     ctx: &IntToolsContext,
 ) -> Vec<TopoShape> {
-    let v_sb = make_shape_box_vector(the_faces, shape_box_map);
+    let v_sb = make_shape_box_vector(faces, shape_box_map);
     let box_s = solid_box_for_classify(solid, shape_box_map);
     fill_in_3d_parts(solid, &box_s, own_if, &v_sb, ctx)
 }
@@ -172,11 +172,11 @@ pub fn classify_one_solid(
 /// Merge `the_in_faces` with `internal` as FillIn3DParts does when
 /// writing `myInParts` (`_3.cxx:243-260`).
 pub fn combine_in_and_internal(
-    the_in_faces: &[TopoShape],
+    in_faces: &[TopoShape],
     internal: &[TopoShape],
 ) -> Vec<TopoShape> {
-    let mut out = Vec::with_capacity(the_in_faces.len() + internal.len());
-    out.extend(the_in_faces.iter().cloned());
+    let mut out = Vec::with_capacity(in_faces.len() + internal.len());
+    out.extend(in_faces.iter().cloned());
     out.extend(internal.iter().cloned());
     out
 }
@@ -225,7 +225,7 @@ pub fn perform_fill_in_3d_parts_tree(
     use occt_core::precision::CONFUSION;
     use std::collections::HashSet;
 
-    let mut my_in_faces: Vec<TopoShape> = Vec::new();
+    let mut in_faces: Vec<TopoShape> = Vec::new();
     let tree = AabbTree::from_shape_boxes(v_sb);
     let lifp = if tree.is_empty() {
         Vec::new()
@@ -233,7 +233,7 @@ pub fn perform_fill_in_3d_parts_tree(
         tree.select(box_s)
     };
     if lifp.is_empty() {
-        return my_in_faces;
+        return in_faces;
     }
 
     let mse = solid_edge_avoid_set(solid);
@@ -252,14 +252,14 @@ pub fn perform_fill_in_3d_parts_tree(
     }
     ivec.sort_unstable();
     if ivec.is_empty() {
-        return my_in_faces;
+        return in_faces;
     }
 
     if b_is_empty {
         for k in ivec {
-            my_in_faces.push(v_sb[k].shape.clone());
+            in_faces.push(v_sb[k].shape.clone());
         }
-        return my_in_faces;
+        return in_faces;
     }
 
     let mut mefp: EdgeFaceMap = EdgeFaceMap::new();
@@ -290,31 +290,31 @@ pub fn perform_fill_in_3d_parts_tree(
         }
         let is_in = is_internal_face(&Face(face.clone()), solid, &mefds, CONFUSION, ctx);
         if is_in {
-            my_in_faces.extend(block.faces);
+            in_faces.extend(block.faces);
         }
     }
-    my_in_faces
+    in_faces
 }
 
 /// ClassifyFaces that uses the AABB-tree Perform instead of the linear
 /// `fill_in_3d_parts` wrapper.
 pub fn classify_faces_aabb(
-    the_faces: &[TopoShape],
+    faces: &[TopoShape],
     solids: &[TopoShape],
     ctx: &IntToolsContext,
     shape_box_map: &HashMap<ShapeMapKey, BndBox>,
     solids_if: &HashMap<ShapeMapKey, Vec<TopoShape>>,
 ) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
-    let v_sb = make_shape_box_vector(the_faces, shape_box_map);
+    let v_sb = make_shape_box_vector(faces, shape_box_map);
     let mut in_parts: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    for a_solid in solids {
-        let box_s = solid_box_for_classify(a_solid, shape_box_map);
+    for solid in solids {
+        let box_s = solid_box_for_classify(solid, shape_box_map);
         let own = solids_if
-            .get(&shape_key(a_solid))
+            .get(&shape_key(solid))
             .cloned()
             .unwrap_or_default();
-        let in_faces = perform_fill_in_3d_parts_tree(a_solid, &box_s, &own, &v_sb, ctx);
-        in_parts.insert(shape_key(a_solid), in_faces);
+        let in_faces = perform_fill_in_3d_parts_tree(solid, &box_s, &own, &v_sb, ctx);
+        in_parts.insert(shape_key(solid), in_faces);
     }
     in_parts
 }

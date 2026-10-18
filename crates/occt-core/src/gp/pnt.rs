@@ -86,8 +86,8 @@ impl GpPnt {
     pub fn mirror_ax2(&mut self, a: &GpAx2) {
         let loc_pnt = a.location();
         let p = GpPnt::from_xyz(&loc_pnt.coord);
-        let a_dir = a.direction();
-        let d = a_dir.xyz();
+        let dir = a.direction();
+        let d = dir.xyz();
         // reflect through plane whose normal is zdir, passing through location
         let vx = self.coord.x - p.coord.x;
         let vy = self.coord.y - p.coord.y;

@@ -196,10 +196,10 @@ impl BoundSortBox {
     pub fn initialize(&mut self, set_of_boxes: &[BndBox]) {
         self.boxes = with_placeholder(set_of_boxes);
 
-        for a_box in set_of_boxes {
+        for bnd_box in set_of_boxes {
             // if (!aBox.IsVoid()) myEnclosingBox.Add(aBox) (cxx:330-335).
-            if !a_box.is_void() {
-                self.enclosing_box.add_box(a_box);
+            if !bnd_box.is_void() {
+                self.enclosing_box.add_box(bnd_box);
             }
         }
 
@@ -285,9 +285,9 @@ impl BoundSortBox {
 
         // Processing the large boxes (cxx:422-429).
         for i in 0..self.large_boxes.len() {
-            let a_box_index = self.large_boxes[i];
-            if !self.boxes[a_box_index].is_out_box(bnd_box) {
-                self.last_result.push(a_box_index);
+            let box_index = self.large_boxes[i];
+            if !self.boxes[box_index].is_out_box(bnd_box) {
+                self.last_result.push(box_index);
             }
         }
 
@@ -306,8 +306,8 @@ impl BoundSortBox {
             // Checking the voxels along X-axis (cxx:449-461).
             for voxel_x in min_voxel_x..=max_voxel_x {
                 if let Some(box_indices) = a_voxel_grid.get_slice_x(voxel_x) {
-                    for &a_box_index in box_indices {
-                        result_indices[a_box_index] |= AN_OCCUPIED_X;
+                    for &box_index in box_indices {
+                        result_indices[box_index] |= AN_OCCUPIED_X;
                     }
                 }
             }
@@ -315,8 +315,8 @@ impl BoundSortBox {
             // Checking the voxels along Y-axis (cxx:464-476).
             for voxel_y in min_voxel_y..=max_voxel_y {
                 if let Some(box_indices) = a_voxel_grid.get_slice_y(voxel_y) {
-                    for &a_box_index in box_indices {
-                        result_indices[a_box_index] |= AN_OCCUPIED_Y;
+                    for &box_index in box_indices {
+                        result_indices[box_index] |= AN_OCCUPIED_Y;
                     }
                 }
             }
@@ -324,11 +324,11 @@ impl BoundSortBox {
             // Checking the voxels along Z-axis (cxx:479-501).
             for voxel_z in min_voxel_z..=max_voxel_z {
                 if let Some(box_indices) = a_voxel_grid.get_slice_z(voxel_z) {
-                    for &a_box_index in box_indices {
-                        if result_indices[a_box_index] == AN_OCCUPIED_XY {
-                            result_indices[a_box_index] = 0; // cxx:492
-                            if !self.boxes[a_box_index].is_out_box(bnd_box) {
-                                self.last_result.push(a_box_index); // cxx:497
+                    for &box_index in box_indices {
+                        if result_indices[box_index] == AN_OCCUPIED_XY {
+                            result_indices[box_index] = 0; // cxx:492
+                            if !self.boxes[box_index].is_out_box(bnd_box) {
+                                self.last_result.push(box_index); // cxx:497
                             }
                         }
                     }
@@ -343,10 +343,10 @@ impl BoundSortBox {
     /// boxes not IsOut(thePlane).
     pub fn compare_plane(&mut self, plane: &GpPln) -> &[usize] {
         self.last_result.clear(); // cxx:511
-        for a_box_index in 1..self.boxes.len() {
-            let a_box = &self.boxes[a_box_index];
-            if !is_out_plane(a_box, plane) {
-                self.last_result.push(a_box_index); // cxx:517
+        for box_index in 1..self.boxes.len() {
+            let bnd_box = &self.boxes[box_index];
+            if !is_out_plane(bnd_box, plane) {
+                self.last_result.push(box_index); // cxx:517
             }
         }
         &self.last_result // cxx:520
@@ -375,9 +375,9 @@ impl BoundSortBox {
 
     /// sortBoxes() (cxx:546-552).
     fn sort_boxes(&mut self) {
-        for a_box_index in 1..self.boxes.len() {
-            let a_box = self.boxes[a_box_index];
-            self.add_box(&a_box, a_box_index); // cxx:550
+        for box_index in 1..self.boxes.len() {
+            let bnd_box = self.boxes[box_index];
+            self.add_box(&bnd_box, box_index); // cxx:550
         }
     }
 
@@ -433,9 +433,9 @@ impl BoundSortBox {
             return; // cxx:602-605
         }
 
-        let a_voxel_box = self.get_bounding_voxels(bnd_box); // cxx:607-608
+        let voxel_box = self.get_bounding_voxels(bnd_box); // cxx:607-608
         let [min_voxel_x, min_voxel_y, min_voxel_z, max_voxel_x, max_voxel_y, max_voxel_z] =
-            a_voxel_box;
+            voxel_box;
         let box_min_side = (max_voxel_x - min_voxel_x)
             .min(max_voxel_y - min_voxel_y)
             .min(max_voxel_z - min_voxel_z); // cxx:610-611
@@ -443,7 +443,7 @@ impl BoundSortBox {
         if box_min_side * 4 > self.resolution {
             self.large_boxes.push(index); // cxx:617
         } else if let Some(a_voxel_grid) = self.voxel_grid.as_mut() {
-            a_voxel_grid.add_box(index, a_voxel_box); // cxx:621-622
+            a_voxel_grid.add_box(index, voxel_box); // cxx:621-622
         }
     }
 

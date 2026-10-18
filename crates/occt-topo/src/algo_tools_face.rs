@@ -477,9 +477,9 @@ pub fn is_internal_face_by_list(
 /// must fall through to `ComputeState`, not report Out.
 pub fn is_internal_face(
     face: &Face,
-    the_solid: &TopoShape,
+    solid: &TopoShape,
     mef: &std::collections::HashMap<crate::topo_tools_full::ShapeMapKey, Vec<TopoShape>>,
-    the_tol: f64,
+    tol: f64,
     ctx: &IntToolsContext,
 ) -> bool {
     let mut i_ret = 0i32;
@@ -522,7 +522,7 @@ pub fn is_internal_face(
     if classified && i_ret != 2 {
         return i_ret == 1;
     }
-    compute_state_face_in_solid(face, the_solid, the_tol)
+    compute_state_face_in_solid(face, solid, tol)
 }
 
 /// Representative point of a face for `BOPTools_AlgoTools::ComputeState`
@@ -578,8 +578,8 @@ pub(crate) fn compute_state_face(face: &Face, solid: &TopoShape, tol: f64) -> Fa
 ///
 /// Prefer the midpoint of an edge that is not a bound of the solid; if every
 /// edge sits on the solid, classify a point in the face.
-fn compute_state_face_in_solid(face: &Face, the_solid: &TopoShape, the_tol: f64) -> bool {
-    compute_state_face(face, the_solid, the_tol) == FaceState::In
+fn compute_state_face_in_solid(face: &Face, solid: &TopoShape, tol: f64) -> bool {
+    compute_state_face(face, solid, tol) == FaceState::In
 }
 
 /// `BOPTools_AlgoTools::ComputeState` (edge, solid, tol, context)

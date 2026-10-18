@@ -191,30 +191,30 @@ impl IntCurveIConicTool {
     /// `IntCurve_IConicTool::Distance` (`cxx:220-279`) — the signed distance
     /// between the point and the *implicit* curve. The `AN_ELIPS` alternative
     /// body (`cxx:230-236`) is disabled upstream and therefore not ported.
-    pub fn distance(&self, the_point: &GpPnt2d) -> f64 {
+    pub fn distance(&self, point: &GpPnt2d) -> f64 {
         match self.type_curve {
-            CurveType::Line => self.prm1 * the_point.x() + self.prm2 * the_point.y() + self.prm3,
+            CurveType::Line => self.prm1 * point.x() + self.prm2 * point.y() + self.prm3,
             CurveType::Ellipse => {
-                let p = the_point.transformed(&self.abs_to_object);
+                let p = point.transformed(&self.abs_to_object);
                 let x = p.x();
                 let y = p.y() * (self.prm1 / self.prm2);
                 (x * x + y * y).sqrt() - self.prm1
             }
             CurveType::Circle => {
-                let dx = self.prm2 - the_point.x();
-                let dy = self.prm3 - the_point.y();
+                let dx = self.prm2 - point.x();
+                let dy = self.prm3 - point.y();
                 (dx * dx + dy * dy).sqrt() - self.prm1
             }
             CurveType::Parabola => {
                 // `Distance(X, Y) = Y**2 - 2 P X` (`cxx:253`).
-                let p = the_point.transformed(&self.abs_to_object);
+                let p = point.transformed(&self.abs_to_object);
                 p.y() * p.y() - self.prm2 * p.x()
             }
             CurveType::Hyperbola => {
                 // `Distance(X, Y) = (X/a)**2 - (Y/b)**2 - 1` for `X > 0`
                 // (`cxx:257-272`). The negative branch negates `X/a` so the
                 // gradient of `x -> |x|` keeps pushing back to the `+X` branch.
-                let p = the_point.transformed(&self.abs_to_object);
+                let p = point.transformed(&self.abs_to_object);
                 let aa = self.prm1 * self.prm1;
                 let bb = self.prm2 * self.prm2;
                 if p.x() > 0.0 {
@@ -232,7 +232,7 @@ impl IntCurveIConicTool {
     /// `Object_To_Abs` is `Abs_To_Object.Inverted()` (`cxx:26`); a singular
     /// `Abs_To_Object` cannot occur because `SetTransformation` is always given
     /// an orthonormal basis pair, so the inversion cannot fail.
-    pub fn grad_distance(&self, the_point: &GpPnt2d) -> GpVec2d {
+    pub fn grad_distance(&self, point: &GpPnt2d) -> GpVec2d {
         let object_to_abs = self
             .abs_to_object
             .inverted()
@@ -240,7 +240,7 @@ impl IntCurveIConicTool {
         match self.type_curve {
             CurveType::Line => GpVec2d::new(self.prm1, self.prm2),
             CurveType::Circle => {
-                let p = the_point.transformed(&self.abs_to_object);
+                let p = point.transformed(&self.abs_to_object);
                 let mut gradx = 0.0;
                 let mut grady = 0.0;
                 let temp1 = (p.y() * p.y() + p.x() * p.x()).sqrt();
@@ -251,7 +251,7 @@ impl IntCurveIConicTool {
                 GpVec2d::new(gradx, grady).transformed(&object_to_abs)
             }
             CurveType::Ellipse => {
-                let p = the_point.transformed(&self.abs_to_object);
+                let p = point.transformed(&self.abs_to_object);
                 let mut gradx = 0.0;
                 let mut grady = 0.0;
                 let x = p.x();
@@ -265,12 +265,12 @@ impl IntCurveIConicTool {
             }
             CurveType::Parabola => {
                 // `Distance(X, Y) = Y**2 - 2 P X` (`cxx:350`).
-                let p = the_point.transformed(&self.abs_to_object);
+                let p = point.transformed(&self.abs_to_object);
                 GpVec2d::new(-self.prm2, p.y() + p.y()).transformed(&object_to_abs)
             }
             CurveType::Hyperbola => {
                 // `Distance(X, Y) = (X/a)**2 - (Y/b)**2 - 1` (`cxx:357-363`).
-                let p = the_point.transformed(&self.abs_to_object);
+                let p = point.transformed(&self.abs_to_object);
                 let aa = self.prm1 * self.prm1;
                 let bb = self.prm2 * self.prm2;
                 GpVec2d::new(2.0 * p.x().abs() / aa, -2.0 * p.y() / bb).transformed(&object_to_abs)

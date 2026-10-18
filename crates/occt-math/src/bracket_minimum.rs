@@ -311,13 +311,13 @@ fn limit_and_may_be_swap_fallible<F: FnMut(f64) -> Option<f64>>(
     b: f64,
     fb: f64,
     c: f64,
-    the_left: f64,
-    the_right: f64,
+    left: f64,
+    right: f64,
 ) -> Option<(f64, f64, f64, f64)> {
-    let c = if c < the_left {
-        the_left
-    } else if c > the_right {
-        the_right
+    let c = if c < left {
+        left
+    } else if c > right {
+        right
     } else {
         c
     };

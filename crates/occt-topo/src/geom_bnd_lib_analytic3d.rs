@@ -98,7 +98,7 @@ fn plane_bary_center(pos: &GpAx3, umin: f64, umax: f64, vmin: f64, vmax: f64) ->
     let is_v1_inf = !vmin.is_finite();
     let is_v2_inf = !vmax.is_finite();
 
-    let a_u = if is_u1_inf && is_u2_inf {
+    let u = if is_u1_inf && is_u2_inf {
         0.0
     } else if is_u1_inf {
         umax - 10.0
@@ -117,7 +117,7 @@ fn plane_bary_center(pos: &GpAx3, umin: f64, umax: f64, vmin: f64, vmax: f64) ->
         (vmin + vmax) / 2.0
     };
     let pln = occt_core::gp::GpPln::new(*pos);
-    plane_value(&pln, a_u, v)
+    plane_value(&pln, u, v)
 }
 
 /// `GeomBndLib_Plane::TreatInfinitePlane` (`Plane.hxx:125-168`).

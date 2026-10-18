@@ -81,12 +81,12 @@ pub(crate) fn determine_transition_lc(
 }
 
 /// `NormalizeOnCircleDomain` (`Tool.cxx:96-108`).
-pub(crate) fn normalize_on_circle_domain(param: f64, the_domain: &IntRes2dDomain) -> f64 {
+pub(crate) fn normalize_on_circle_domain(param: f64, domain: &IntRes2dDomain) -> f64 {
     let mut param = param;
-    while param < the_domain.first_parameter() {
+    while param < domain.first_parameter() {
         param += pi_p_pi();
     }
-    while param > the_domain.last_parameter() {
+    while param > domain.last_parameter() {
         param -= pi_p_pi();
     }
     param

@@ -1273,10 +1273,10 @@ impl<'a> ExtremaGenExtPs<'a> {
                 let u = self.u_params.as_ref().unwrap()[(nu - 1) as usize];
                 let v = self.v_params.as_ref().unwrap()[(nv - 1) as usize];
                 let s = self.s.expect("Extrema_GenExtPS: surface not set");
-                let mut a_params = ExtremaPOnSurfParams::new(u, v, s.d0(u, v));
-                a_params.set_sqr_distance(p.square_distance(&a_params.value()));
-                a_params.set_indices(nu, nv);
-                self.find_solution(p, &a_params);
+                let mut params = ExtremaPOnSurfParams::new(u, v, s.d0(u, v));
+                params.set_sqr_distance(p.square_distance(&params.value()));
+                params.set_indices(nu, nv);
+                self.find_solution(p, &params);
             }
             if self.flag == ExtremaExtFlag::Max || self.flag == ExtremaExtFlag::MinMax {
                 let idx = self.select_sphere(p, false);
@@ -1284,10 +1284,10 @@ impl<'a> ExtremaGenExtPs<'a> {
                 let u = self.u_params.as_ref().unwrap()[(nu - 1) as usize];
                 let v = self.v_params.as_ref().unwrap()[(nv - 1) as usize];
                 let s = self.s.expect("Extrema_GenExtPS: surface not set");
-                let mut a_params = ExtremaPOnSurfParams::new(u, v, s.d0(u, v));
-                a_params.set_sqr_distance(p.square_distance(&a_params.value()));
-                a_params.set_indices(nu, nv);
-                self.find_solution(p, &a_params);
+                let mut params = ExtremaPOnSurfParams::new(u, v, s.d0(u, v));
+                params.set_sqr_distance(p.square_distance(&params.value()));
+                params.set_indices(nu, nv);
+                self.find_solution(p, &params);
             }
         }
     }

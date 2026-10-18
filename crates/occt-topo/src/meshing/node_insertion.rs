@@ -1552,10 +1552,10 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         pcurve_index: usize,
         face_index: usize,
     ) -> Result<Orientation, String> {
-        let the_pc = edge.pcurve(pcurve_index)?;
-        let pts = the_pc.points();
+        let pc = edge.pcurve(pcurve_index)?;
+        let pts = pc.points();
         if pts.is_empty() {
-            return Ok(the_pc.orientation());
+            return Ok(pc.orientation());
         }
         let pnt1_1 = pts[0];
         let pnt2_1 = pts[pts.len() - 1];
@@ -1580,7 +1580,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                 return Ok(Orientation::Internal);
             }
         }
-        Ok(the_pc.orientation())
+        Ok(pc.orientation())
     }
 }
 

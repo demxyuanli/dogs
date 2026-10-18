@@ -100,7 +100,7 @@ pub fn de_fill_paves<F: PaveFillerLike>(
     n_ed: usize,
     n_fd: usize,
     lpb_out: &[BopdsPaveBlock],
-    a_pbd: &mut BopdsPaveBlock,
+    pbd: &mut BopdsPaveBlock,
 ) {
     let Some(dv_s) = f.ds().shape(n_vd).cloned() else {
         return;
@@ -129,12 +129,12 @@ pub fn de_fill_paves<F: PaveFillerLike>(
     let p2 = c2d_de.d0(td2);
     let b_u_dir = (p1.y() - p2.y()).abs() < PCONFUSION;
     let tol_cmp = PCONFUSION.max(if b_u_dir { u_res } else { v_res });
-    let mut a_pave = BopdsPave::new(n_vd, 0.0);
-    for a_pb in lpb_out {
-        let n_e = if a_pb.edge() != 0 {
-            a_pb.edge()
+    let mut pave = BopdsPave::new(n_vd, 0.0);
+    for pb in lpb_out {
+        let n_e = if pb.edge() != 0 {
+            pb.edge()
         } else {
-            a_pb.original_edge()
+            pb.original_edge()
         };
         if n_e == 0 || n_e >= f.ds().nb_shapes() {
             continue;
@@ -142,32 +142,32 @@ pub fn de_fill_paves<F: PaveFillerLike>(
         let Some(es) = f.ds().shape(n_e).cloned() else {
             continue;
         };
-        let a_e = Edge(es);
-        let Ok(c2d) = boptools_2d::make_2d(&a_e, &df) else {
+        let e = Edge(es);
+        let Ok(c2d) = boptools_2d::make_2d(&e, &df) else {
             continue;
         };
         let hits = if curve2d_is_line(c2d.as_ref()) {
             intersect_curves(c2d_de.as_ref(), c2d.as_ref(), tol_int)
         } else {
-            let (t1, t2) = BRepTool::edge_parameters(&a_e);
+            let (t1, t2) = BRepTool::edge_parameters(&e);
             let _ = (t1, t2);
             intersect_curves(c2d_de.as_ref(), c2d.as_ref(), tol_int)
         };
         if hits.is_empty() {
-            let t = if n_vd == a_pb.pave1().index() {
-                a_pb.pave1().parameter()
+            let t = if n_vd == pb.pave1().index() {
+                pb.pave1().parameter()
             } else {
-                a_pb.pave2().parameter()
+                pb.pave2().parameter()
             };
             let p2d = c2d.d0(t);
             if let Some(proj) = project_point_on_curve(c2d_de.as_ref(), &p2d, tol_int) {
-                a_pave.set_parameter(proj.parameter);
-                add_split_point(a_pbd, a_pave, tol_cmp);
+                pave.set_parameter(proj.parameter);
+                add_split_point(pbd, pave, tol_cmp);
             }
         } else {
             for hit in hits {
-                a_pave.set_parameter(hit.u1);
-                add_split_point(a_pbd, a_pave, tol_cmp);
+                pave.set_parameter(hit.u1);
+                add_split_point(pbd, pave, tol_cmp);
             }
         }
     }
@@ -182,11 +182,11 @@ pub fn make_split_edge1(
     v2: &Vertex,
     p2: f64,
 ) -> Result<Edge, String> {
-    let a_tol = 1.0e-7;
+    let tol = 1.0e-7;
     let e = AlgoTools::make_split_edge(a_e, Some(&v1.0), p1, Some(&v2.0), p2)?;
     if let Some(mut g) = GeometryRegistry::global().edge_geom(&e.0) {
         g.degenerated = true;
-        g.tolerance = a_tol;
+        g.tolerance = tol;
         GeometryRegistry::global().set_edge(&e.0, g);
     }
     let face_key = GeometryRegistry::shape_key(&f.0);
@@ -298,20 +298,20 @@ pub fn de_process<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                 let Some(vn) = f.ds().shape(n_v).cloned() else {
                     continue;
                 };
-                let a_e = AlgoTools::make_split_edge(
+                let e = AlgoTools::make_split_edge(
                     &Edge(de),
                     Some(&vn),
                     0.0,
                     Some(&vn),
                     0.0,
                 )?;
-                if let Some(mut g) = GeometryRegistry::global().edge_geom(&a_e.0) {
+                if let Some(mut g) = GeometryRegistry::global().edge_geom(&e.0) {
                     g.degenerated = true;
                     g.tolerance = occt_core::precision::CONFUSION;
-                    GeometryRegistry::global().set_edge(&a_e.0, g);
+                    GeometryRegistry::global().set_edge(&e.0, g);
                 }
-                let a_si = BopdsShapeInfo::new(a_e.0);
-                let n_en = f.ds_mut().append_info(a_si);
+                let si = BopdsShapeInfo::new(e.0);
+                let n_en = f.ds_mut().append_info(si);
                 let blocks = f.ds_mut().change_pave_blocks_mut(an_edge_index);
                 if let Some(a_pbd) = blocks.first_mut() {
                     a_pbd.set_edge(n_en);

@@ -492,14 +492,14 @@ pub fn make_face_from_wire(wire: &Wire, only_plane: bool) -> Option<Face> {
     let tol = (1.2 * fs.tolerance_reached()).max(fs.tolerance());
 
     // get rid of degenerative edges in the input wire (cxx:209-242)
-    let a_w = if only_plane {
+    let w = if only_plane {
         strip_degenerated(wire)
     } else {
         wire.clone()
     };
 
     let b = TopoBuilder::new();
-    Some(b.make_face_with_tolerance(surface, &[a_w], tol))
+    Some(b.make_face_with_tolerance(surface, &[w], tol))
 }
 
 /// `BRepLib_MakeFace`'s `OnlyPlane` wire filtering (`cxx:211-242`).

@@ -227,8 +227,8 @@ pub(in crate::shhealing) fn check_connected(wire: &Wire, my_precision: f64, prec
 /// `cxx:569`). `Context()` is not modelled: the two `CopyReplaceVertices`
 /// writes to `WireData` (`cxx:1585-1601`) are applied directly to the wire's
 /// child list, the same convention `fix_degenerated` uses.
-pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, my_precision: f64, prec: f64, num: usize) -> bool {
-    let check = check_connected(wire, my_precision, prec, num);
+pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, precision: f64, prec: f64, num: usize) -> bool {
+    let check = check_connected(wire, precision, prec, num);
     if check == ConnectedCheck::None {
         return false;
     }
@@ -303,14 +303,14 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, my_precision: f64
 /// `ShapeFix_Face.cxx:173-177`), so this is `FromSTEP.FixShape.MaxTolerance3d`
 /// (`STEPControl_Controller.cxx:204-206`, set from
 /// `STEPControl_ActorRead::myMaxTol` at `cxx:1146`).
-pub fn fix_connected_all(wire: &mut Wire, my_precision: f64, max_tolerance: f64) -> bool {
+pub fn fix_connected_all(wire: &mut Wire, precision: f64, max_tolerance: f64) -> bool {
     let nb = wire_edges_nb(wire);
     if nb == 0 {
         return false;
     }
     let mut done = false;
-    for a_i in (1..=nb).rev() {
-        done |= fix_connected_one(wire, my_precision, max_tolerance, a_i);
+    for i in (1..=nb).rev() {
+        done |= fix_connected_one(wire, precision, max_tolerance, i);
     }
     done
 }

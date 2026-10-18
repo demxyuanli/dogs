@@ -56,16 +56,16 @@ impl IntfSectionLine {
     }
 
     /// `Contains(ThePI)` (`Intf_SectionLine.cxx:98-109`).
-    pub fn contains(&self, the_pi: &IntfSectionPoint) -> bool {
-        self.points.iter().any(|p| the_pi.is_equal(p))
+    pub fn contains(&self, pi: &IntfSectionPoint) -> bool {
+        self.points.iter().any(|p| pi.is_equal(p))
     }
 
     /// `IsEnd(ThePI)` (`Intf_SectionLine.cxx:113-124`).
-    pub fn is_end(&self, the_pi: &IntfSectionPoint) -> usize {
-        if self.points.first().map(|f| f.is_equal(the_pi)) == Some(true) {
+    pub fn is_end(&self, pi: &IntfSectionPoint) -> usize {
+        if self.points.first().map(|f| f.is_equal(pi)) == Some(true) {
             return 1;
         }
-        if self.points.last().map(|l| l.is_equal(the_pi)) == Some(true) {
+        if self.points.last().map(|l| l.is_equal(pi)) == Some(true) {
             return self.points.len();
         }
         0

@@ -73,14 +73,14 @@ fn project_with_pcurve(
 fn project_both_faces(
     ctx: &IntToolsContext,
     point: &GpPnt,
-    a_f: &Face,
+    f: &Face,
     f_opp: &Face,
     n_f: usize,
     n_f1: usize,
     out: &mut Vec<PntOn2s>,
 ) {
     if let (Ok((u1, v1)), Ok((u2, v2))) = (
-        ctx.project_point_on_face(a_f, point),
+        ctx.project_point_on_face(f, point),
         ctx.project_point_on_face(f_opp, point),
     ) {
         push_pnt(n_f, n_f1, (u1, v1), (u2, v2), out);

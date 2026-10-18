@@ -282,14 +282,14 @@ impl ShapeBuildEdge {
         pcurve: &Arc<dyn Curve2d>,
         trans: &GpTrsf2d,
         u_fact: f64,
-        a_first: &mut f64,
-        a_last: &mut f64,
+        first: &mut f64,
+        last: &mut f64,
     ) -> Arc<dyn Curve2d> {
         let mut result = pcurve.clone_dyn();
         if trans.form() != TrsfForm::Identity {
             result.transform(trans); // cxx:605
-            *a_first = result.transformed_parameter(*a_first, trans); // cxx:606
-            *a_last = result.transformed_parameter(*a_last, trans); // cxx:607
+            *first = result.transformed_parameter(*first, trans); // cxx:606
+            *last = result.transformed_parameter(*last, trans); // cxx:607
         }
         if u_fact == 1.0 {
             return Arc::from(result); // cxx:609-612
@@ -304,15 +304,15 @@ impl ShapeBuildEdge {
         // cxx:624-641: Line.
         let reference: &dyn Curve2d = result.trimmed_basis().unwrap_or(result.as_ref());
         if reference.gp_lin2d().is_some() {
-            let pf = reference.d0(*a_first);
-            let pl = reference.d0(*a_last);
+            let pf = reference.d0(*first);
+            let pl = reference.d0(*last);
             let pf2 = t_matu.transforms(&pf);
             let pl2 = t_matu.transforms(&pl);
             let v = GpVec2d::new(pl2.x() - pf2.x(), pl2.y() - pf2.y());
             if let Ok(dir) = GpDir2d::from_vec2d(&v) {
                 let new_line = GpLin2d::from_pnt_dir(pf2, dir);
-                *a_first = occt_core::elib::clib2d::line_parameter_ax2d(new_line.position(), &pf2);
-                *a_last = occt_core::elib::clib2d::line_parameter_ax2d(new_line.position(), &pl2);
+                *first = occt_core::elib::clib2d::line_parameter_ax2d(new_line.position(), &pf2);
+                *last = occt_core::elib::clib2d::line_parameter_ax2d(new_line.position(), &pl2);
                 return Arc::new(occt_geom2d::line::Geom2dLine::new(*new_line.position()));
             }
         }
@@ -338,8 +338,8 @@ impl ShapeBuildEdge {
         if is_conic {
             let tcurve = Geom2dTrimmedCurve::new_sense(
                 Arc::from(reference.clone_dyn()),
-                *a_first,
-                *a_last,
+                *first,
+                *last,
                 true,
                 false,
             );
@@ -354,8 +354,8 @@ impl ShapeBuildEdge {
                     None => return Arc::from(result),
                 },
             };
-            *a_first = bs.first_parameter();
-            *a_last = bs.last_parameter();
+            *first = bs.first_parameter();
+            *last = bs.last_parameter();
             if let Some(poles) = bs.poles2d() {
                 let scaled: Vec<GpPnt2d> = poles.iter().map(|p| t_matu.transforms(p)).collect();
                 bs.set_poles2d(&scaled);

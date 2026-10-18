@@ -82,9 +82,9 @@ fn realign_periodic_origin(bs2d: &mut occt_geom2d::Geom2dBSplineCurve, origin_po
 }
 
 /// Knot-span ratio "bad BSpline" test (`BRepLib.cxx:1537-1581`).
-fn is_bad_bspline_knots(bs2d: &occt_geom2d::Geom2dBSplineCurve, error: f64, the_tol: f64) -> bool {
+fn is_bad_bspline_knots(bs2d: &occt_geom2d::Geom2dBSplineCurve, error: f64, tol: f64) -> bool {
     let cont = bs2d.continuity();
-    if cont <= 0 || error <= (1.0e-3_f64).max(the_tol) {
+    if cont <= 0 || error <= (1.0e-3_f64).max(tol) {
         return false;
     }
     let (knots, _) = bs2d.distinct_knots_and_mults();
@@ -116,7 +116,7 @@ fn is_bad_bspline_knots(bs2d: &occt_geom2d::Geom2dBSplineCurve, error: f64, the_
     if is_bad {
         // `cxx:1575-1579`: clear IsBad when the smallest span is still above
         // the curve resolution at `max(1e-3, theTolerance)`.
-        let dtcur = bs2d.resolution((1.0e-3_f64).max(the_tol));
+        let dtcur = bs2d.resolution((1.0e-3_f64).max(tol));
         if dtmin < dtcur {
             is_bad = false;
         }
@@ -219,7 +219,7 @@ fn compute_tol(
 
 /// `BRepLib::SameParameter` four-argument core (`BRepLib.cxx:1251-1739`):
 /// walk every `CurveOnSurface` representation (`cxx:1263-1291`, `:1352-1718`).
-fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
+fn same_parameter_edge(edge: &Edge, tol: f64) -> f64 {
     let reg = GeometryRegistry::global();
     let Some(mut g) = reg.edge_geom(&edge.0) else {
         return -1.0;
@@ -261,7 +261,7 @@ fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
     // `cxx:1378`: TolSameRange = max(GAC.Resolution(theTolerance), PConfusion).
     // Passed to `GeomLib::SameRange` (`cxx:1389`, `:1678`) and used by the
     // Curvilinear reparam range check (`cxx:1610-1611`).
-    let tol_same_range = crate::int_tools_vertex_line::adaptor_resolution(c3d.as_ref(), the_tol)
+    let tol_same_range = crate::int_tools_vertex_line::adaptor_resolution(c3d.as_ref(), tol)
         .max(occt_core::precision::PCONFUSION);
     // Group Cos by representation key so seam pairs stay together when rewritten.
     let mut by_key: std::collections::BTreeMap<
@@ -311,8 +311,8 @@ fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
             let mut is_ana = false;
             if cur_pc.is_bspline2d() && cur_pc.continuity() == 0 {
                 if let Some(mut bs2d) = cur_pc.bspline_copy2d() {
-                    let u_resol = u_resolution(surf.as_ref(), the_tol);
-                    let v_resol = v_resolution(surf.as_ref(), the_tol);
+                    let u_resol = u_resolution(surf.as_ref(), tol);
+                    let v_resol = v_resolution(surf.as_ref(), tol);
                     let tol_conf2d = u_resol.min(v_resol).max(PCONFUSION);
                     let bs2dsov = bs2d.clone();
                     let f_c0 = bs2d.first_parameter();
@@ -330,7 +330,7 @@ fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
                                 c3d.as_ref(),
                                 f3d,
                                 l3d,
-                                the_tol,
+                                tol,
                             ) {
                                 bs2d = bs2dsov.clone();
                                 let u_resbail = u_resolution(surf.as_ref(), tolbail);
@@ -388,7 +388,7 @@ fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
                                 }
                             }
                             // `cxx:1537-1621`: knot-span ratio + Curvilinear.
-                            if is_bad_bspline_knots(&bs2d, error, the_tol) {
+                            if is_bad_bspline_knots(&bs2d, error, tol) {
                                 let mut cont = match bs2d.continuity() {
                                     0 => Shape::C0,
                                     1 => Shape::G1,
@@ -419,7 +419,7 @@ fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
                                     pc_arc,
                                     surf_arc.clone(),
                                     cos,
-                                    (1.0e-3_f64).max(the_tol),
+                                    (1.0e-3_f64).max(tol),
                                     cont,
                                     maxdeg,
                                     10,
@@ -453,7 +453,7 @@ fn same_parameter_edge(edge: &Edge, the_tol: f64) -> f64 {
                 out_pcs.push(cur_pc);
                 continue;
             }
-            let a_tol = if is_ana && is_bsp { 1.0e-7 } else { the_tol };
+            let a_tol = if is_ana && is_bsp { 1.0e-7 } else { tol };
             let same_p = ApproxSameParameter::new(
                 c3d.as_ref(),
                 cur_pc.as_ref(),

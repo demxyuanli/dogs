@@ -327,7 +327,7 @@ pub fn loft_sections(sections: &[Wire]) -> Result<LoftedSolid, String> {
     for i in 0..sections.len() - 1 {
         let a = &rings[i];
         let bb = &rings[i + 1];
-        let a_pts: Vec<GpPnt> = a.iter().map(vertex_position).collect();
+        let pts: Vec<GpPnt> = a.iter().map(vertex_position).collect();
         let b_pts: Vec<GpPnt> = bb.iter().map(vertex_position).collect();
         // Vertical edges, shared by the two adjacent lateral quads.
         let vert_edges: Vec<Edge> = (0..n).map(|k| edge_through(&b, &a[k], &bb[k])).collect();
@@ -345,7 +345,7 @@ pub fn loft_sections(sections: &[Wire]) -> Result<LoftedSolid, String> {
                 vert_edges[k].clone(),
             ]);
             let surface: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane_through3(
-                &a_pts[k], &a_pts[j], &b_pts[j],
+                &pts[k], &pts[j], &b_pts[j],
             )?));
             lateral_faces.push(b.make_face(surface, &[wire]));
         }

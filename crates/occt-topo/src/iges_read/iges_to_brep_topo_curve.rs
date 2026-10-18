@@ -208,8 +208,8 @@ fn fix_composite_connected(session: &Session<'_>, wire: &mut Wire) {
         return;
     }
     if nb >= 2 {
-        for a_i in (2..=nb).rev() {
-            fix_connected_junction(wire, CONFUSION, maxtol, a_i);
+        for i in (2..=nb).rev() {
+            fix_connected_junction(wire, CONFUSION, maxtol, i);
         }
     }
     fix_connected_junction(wire, CONFUSION, precision, 1);
@@ -227,7 +227,7 @@ enum ConnectedCheck {
 }
 
 /// `ShapeAnalysis_Wire::CheckConnected(num, prec)` (`cxx:693-762`).
-fn check_connected(wire: &Wire, my_precision: f64, prec: f64, num: usize) -> ConnectedCheck {
+fn check_connected(wire: &Wire, precision: f64, prec: f64, num: usize) -> ConnectedCheck {
     let Ok(edges) = edges_of(&wire.0) else {
         return ConnectedCheck::None;
     };
@@ -253,7 +253,7 @@ fn check_connected(wire: &Wire, my_precision: f64, prec: f64, num: usize) -> Con
     if dist <= REAL_SMALL {
         return ConnectedCheck::Done1;
     }
-    if dist <= my_precision {
+    if dist <= precision {
         return ConnectedCheck::Done2;
     }
     if dist <= prec {
@@ -263,8 +263,8 @@ fn check_connected(wire: &Wire, my_precision: f64, prec: f64, num: usize) -> Con
 }
 
 /// `ShapeFix_Wire::FixConnected(num, prec, false)` (`ShapeFix_Wire.cxx:1476-1608`).
-fn fix_connected_junction(wire: &mut Wire, my_precision: f64, prec: f64, num: usize) -> bool {
-    let check = check_connected(wire, my_precision, prec, num);
+fn fix_connected_junction(wire: &mut Wire, precision: f64, prec: f64, num: usize) -> bool {
+    let check = check_connected(wire, precision, prec, num);
     if check == ConnectedCheck::None {
         return false;
     }

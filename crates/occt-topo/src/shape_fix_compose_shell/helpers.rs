@@ -302,18 +302,18 @@ pub fn fill_bnd_box(
         (0..=nb_samples).map(|i| first + f64::from(i) * step).collect()
     };
     for i in 0..=nb_samples as usize {
-        let a_par1 = params[i];
-        box2d.add_point(&c2d.d0(a_par1));
+        let par1 = params[i];
+        box2d.add_point(&c2d.d0(par1));
         if i < nb_samples as usize {
-            let a_par2 = params[i + 1];
-            let par = 0.5 * (a_par1 + a_par2);
+            let par2 = params[i + 1];
+            let par = 0.5 * (par1 + par2);
             let mut pextr = GpPnt2d::new(0.0, 0.0);
             let mut parextr = par;
-            if search_for_extremum(c2d, a_par1, a_par2, &GpVec2d::new(1.0, 0.0), &mut parextr, &mut pextr) {
+            if search_for_extremum(c2d, par1, par2, &GpVec2d::new(1.0, 0.0), &mut parextr, &mut pextr) {
                 box2d.add_point(&pextr);
             }
             parextr = par;
-            if search_for_extremum(c2d, a_par1, a_par2, &GpVec2d::new(0.0, 1.0), &mut parextr, &mut pextr) {
+            if search_for_extremum(c2d, par1, par2, &GpVec2d::new(0.0, 1.0), &mut parextr, &mut pextr) {
                 box2d.add_point(&pextr);
             }
         }
