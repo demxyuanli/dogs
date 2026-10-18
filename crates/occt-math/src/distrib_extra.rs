@@ -82,7 +82,7 @@ fn erf(x: f64) -> f64 {
 }
 
 /// Cumulative distribution function of the standard normal distribution.
-pub fn normal_cdf(z: f64) -> f64 {
+pub fn standard_normal_cdf(z: f64) -> f64 {
     0.5 * (1.0 + erf(z / SQRT_2))
 }
 
@@ -524,10 +524,10 @@ mod tests {
 
     #[test]
     fn normal_cdf_known_values() {
-        assert!((normal_cdf(0.0) - 0.5).abs() < 1e-6);
-        assert!((normal_cdf(1.96) - 0.975).abs() < 1e-4, "{}", normal_cdf(1.96));
-        assert!((normal_cdf(-1.96) - 0.025).abs() < 1e-4);
-        assert!(normal_cdf(8.0) > 1.0 - 1e-12);
+        assert!((standard_normal_cdf(0.0) - 0.5).abs() < 1e-6);
+        assert!((standard_normal_cdf(1.96) - 0.975).abs() < 1e-4, "{}", standard_normal_cdf(1.96));
+        assert!((standard_normal_cdf(-1.96) - 0.025).abs() < 1e-4);
+        assert!(standard_normal_cdf(8.0) > 1.0 - 1e-12);
     }
 
     #[test]

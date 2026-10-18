@@ -1,7 +1,8 @@
-//! Statistical utilities for one- and two-dimensional data sets.
+//! Population-flavoured statistical utilities for one- and two-dimensional
+//! data sets. The sample-based estimators live in [crate::descriptive_stats].
 
 /// Arithmetic mean of `data`. Returns 0.0 for an empty slice.
-pub fn mean(data: &[f64]) -> f64 {
+pub fn arithmetic_mean(data: &[f64]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
@@ -9,12 +10,12 @@ pub fn mean(data: &[f64]) -> f64 {
 }
 
 /// Population variance (divide by n).
-pub fn variance(data: &[f64]) -> f64 {
+pub fn population_variance(data: &[f64]) -> f64 {
     let n = data.len();
     if n == 0 {
         return 0.0;
     }
-    let m = mean(data);
+    let m = arithmetic_mean(data);
     data.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / n as f64
 }
 
@@ -24,13 +25,13 @@ pub fn sample_variance(data: &[f64]) -> f64 {
     if n < 2 {
         return 0.0;
     }
-    let m = mean(data);
+    let m = arithmetic_mean(data);
     data.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / (n - 1) as f64
 }
 
 /// Population standard deviation.
-pub fn std_dev(data: &[f64]) -> f64 {
-    variance(data).sqrt()
+pub fn population_std_dev(data: &[f64]) -> f64 {
+    population_variance(data).sqrt()
 }
 
 /// Median of `data` (averages the two middle values for even lengths).
@@ -73,7 +74,7 @@ pub fn sum(data: &[f64]) -> f64 {
 
 /// Quantile via linear interpolation; `sorted` is assumed ascending.
 /// `q` is clamped to [0, 1].
-pub fn quantile(sorted: &[f64], q: f64) -> f64 {
+pub fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
     if sorted.is_empty() {
         return 0.0;
     }
@@ -88,22 +89,22 @@ pub fn quantile(sorted: &[f64], q: f64) -> f64 {
     sorted[lo] * (1.0 - frac) + sorted[hi] * frac
 }
 
-/// Sample covariance; `None` when the slices differ in length or are empty.
-pub fn covariance(x: &[f64], y: &[f64]) -> Option<f64> {
+/// Population covariance (divide by n); `None` when the slices differ in length or are empty.
+pub fn population_covariance(x: &[f64], y: &[f64]) -> Option<f64> {
     let n = x.len();
     if n == 0 || n != y.len() {
         return None;
     }
-    let mx = mean(x);
-    let my = mean(y);
+    let mx = arithmetic_mean(x);
+    let my = arithmetic_mean(y);
     Some(x.iter().zip(y).map(|(a, b)| (a - mx) * (b - my)).sum::<f64>() / n as f64)
 }
 
-/// Pearson correlation coefficient; `None` when either series has zero spread.
-pub fn correlation(x: &[f64], y: &[f64]) -> Option<f64> {
-    let cov = covariance(x, y)?;
-    let sx = std_dev(x);
-    let sy = std_dev(y);
+/// Pearson correlation coefficient from the population covariance; `None` when either series has zero spread.
+pub fn population_correlation(x: &[f64], y: &[f64]) -> Option<f64> {
+    let cov = population_covariance(x, y)?;
+    let sx = population_std_dev(x);
+    let sy = population_std_dev(y);
     if sx == 0.0 || sy == 0.0 {
         return None;
     }
@@ -112,7 +113,7 @@ pub fn correlation(x: &[f64], y: &[f64]) -> Option<f64> {
 
 /// Histogram of `data`. Returns `(bin_edges, counts)` where `bin_edges`
 /// has `bins + 1` entries spanning [min, max].
-pub fn histogram(data: &[f64], bins: usize) -> (Vec<f64>, Vec<usize>) {
+pub fn histogram_auto_range(data: &[f64], bins: usize) -> (Vec<f64>, Vec<usize>) {
     let bins = bins.max(1);
     if data.is_empty() {
         return (vec![0.0; bins + 1], vec![0; bins]);
@@ -158,21 +159,21 @@ mod tests {
     #[test]
     fn mean_and_median() {
         let d = [1.0, 2.0, 3.0, 4.0, 5.0];
-        assert!((mean(&d) - 3.0).abs() < 1e-12);
+        assert!((arithmetic_mean(&d) - 3.0).abs() < 1e-12);
         assert!((median(&d) - 3.0).abs() < 1e-12);
     }
 
     #[test]
-    fn population_variance() {
+    fn variance_divides_by_n() {
         let d = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
-        assert!((variance(&d) - 4.0).abs() < 1e-12);
+        assert!((population_variance(&d) - 4.0).abs() < 1e-12);
     }
 
     #[test]
     fn covariance_and_correlation() {
         let x = [1.0, 2.0, 3.0];
         let y = [2.0, 4.0, 6.0];
-        assert!((covariance(&x, &y).unwrap() - 4.0 / 3.0).abs() < 1e-12);
-        assert!((correlation(&x, &y).unwrap() - 1.0).abs() < 1e-12);
+        assert!((population_covariance(&x, &y).unwrap() - 4.0 / 3.0).abs() < 1e-12);
+        assert!((population_correlation(&x, &y).unwrap() - 1.0).abs() < 1e-12);
     }
 }

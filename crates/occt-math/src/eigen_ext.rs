@@ -144,7 +144,7 @@ pub fn jacobi_eigen_symmetric(a: &MathMatrix, tol: f64) -> Result<(Vec<f64>, Vec
 
 /// Deflate: remove a known eigenpair (λ, v) from a symmetric matrix, returning
 /// a matrix with that eigenvalue shifted to ~0.
-pub fn deflate(a: &MathMatrix, lambda: f64, v: &MathVector) -> MathMatrix {
+pub fn deflate_eigenpair(a: &MathMatrix, lambda: f64, v: &MathVector) -> MathMatrix {
     let n = a.row_count();
     let mut out = a.clone();
     for i in 1..=n {

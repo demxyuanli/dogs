@@ -109,7 +109,7 @@ fn newton_from(coeffs: &[f64], deriv: &[f64], x0: f64, tol: f64) -> Option<f64> 
 
 /// Synthetic division of `coeffs` (highest-first) by `(x - root)`; returns the
 /// quotient coefficients (highest-first).
-pub fn deflate(coeffs: &[f64], root: f64) -> Vec<f64> {
+pub fn deflate_polynomial(coeffs: &[f64], root: f64) -> Vec<f64> {
     let n = coeffs.len();
     if n <= 1 {
         return Vec::new();
@@ -157,10 +157,10 @@ mod tests {
     #[test]
     fn deflate_divides() {
         // (x²-4)/(x-2) = x+2
-        let q = deflate(&[1.0, 0.0, -4.0], 2.0);
+        let q = deflate_polynomial(&[1.0, 0.0, -4.0], 2.0);
         assert_eq!(q, vec![1.0, 2.0]);
         // x²-3x+2 = (x-1)(x-2): dividing by (x-1) leaves the other root.
-        let q = deflate(&[1.0, -3.0, 2.0], 1.0);
+        let q = deflate_polynomial(&[1.0, -3.0, 2.0], 1.0);
         assert_eq!(q, vec![1.0, -2.0]);
         assert!((poly_eval(&q, 2.0)).abs() < 1e-15);
     }

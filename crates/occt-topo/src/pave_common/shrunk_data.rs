@@ -209,9 +209,7 @@ pub fn update_pave_blocks_with_sd_vertices(f: &mut PaveFiller) -> Result<(), Str
 /// Note: the DS bounding box is not refreshed after the tolerance increase —
 /// the Rust `BopdsDS` exposes no box mutation; the tolerance side-table is
 /// kept in sync.
-pub fn update_edge_tolerance(f: &mut PaveFiller, n_e: usize, tol: f64) -> Result<(), String> {
-    crate::pave_update_sd::update_edge_tolerance(f, n_e, tol)
-}
+pub use crate::pave_update_sd::update_edge_tolerance;
 
 /// Raises the tolerance of the vertex `n_v` to `tol`, returning the index of
 /// the vertex that now carries the enlarged tolerance.
@@ -267,9 +265,7 @@ pub fn update_interfs_with_sd_vertices(f: &mut PaveFiller) -> Result<(), String>
 /// `BopdsCommonBlock` records only the shared edge indices and ranges (no
 /// bound vertices), so that pass is elided and the SD-index update reduces to
 /// the pave-block pass.
-pub fn update_common_blocks_with_sd_vertices(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_update_sd::update_common_blocks_with_sd_vertices(f)
-}
+pub use crate::pave_update_sd::update_common_blocks_with_sd_vertices;
 
 // ---------------------------------------------------------------------------
 // CheckSelfInterference
@@ -307,9 +303,7 @@ pub(super) const SI_TYPE_PAIRS: [(ShapeType, ShapeType); 3] = [
 /// edge lying on a face) are therefore not reported, while genuinely
 /// self-intersecting shapes (e.g. two overlapping boxes passed as one
 /// compound, or crossing edges of a wire) are.
-pub fn check_self_interference(f: &mut PaveFiller) -> Result<bool, String> {
-    crate::pave_self::check_self_interference(f)
-}
+pub use crate::pave_self::check_self_interference;
 
 /// Removes the micro edges — degenerate pave blocks whose bound vertices
 /// coincide and whose shrunk range cannot be computed — from the data
@@ -330,9 +324,7 @@ pub fn check_self_interference(f: &mut PaveFiller) -> Result<bool, String> {
 /// [`ShrunkRange`] on the block's edge over a neutral face (the same
 /// simplification as [`fill_shrunk_data_for_block`]), matching the OCCT
 /// `FillShrunkData` semantics.
-pub fn remove_micro_edges(f: &mut PaveFiller) {
-    crate::pave_ff_se::remove_micro_edges(f);
-}
+pub use crate::pave_ff_se::remove_micro_edges;
 
 /// Whether the two sub-shapes of indices `i` and `j` genuinely self-intersect
 /// (beyond sharing a boundary element).

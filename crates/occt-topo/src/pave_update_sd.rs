@@ -5,6 +5,10 @@
 //! `SetNonDestructive` auto-detection from `TopoDS_Shape::Locked` has no
 //! equivalent on the Rust `TopoShape` and is left as a translation boundary
 //! (the explicit `set_non_destructive` setter is used instead).
+//!
+//! The `ds_`-prefixed helpers are thin front-ends over the equally named
+//! `BopdsDS` methods; the OCCT-faithful entry points with the plain names live
+//! in [`crate::pave_common`], which re-exports the non-trivial ports here.
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
@@ -122,7 +126,7 @@ pub fn update_pave_block_with_sd_vertices(f: &PaveFiller, pb: &mut BopdsPaveBloc
 }
 
 /// `BOPAlgo_PaveFiller::UpdatePaveBlocksWithSDVertices` (`_10.cxx:166`).
-pub fn update_pave_blocks_with_sd_vertices(f: &mut PaveFiller) {
+pub fn ds_update_pave_blocks_with_sd_vertices(f: &mut PaveFiller) {
     f.ds_mut().update_pave_blocks_with_sd_vertices();
 }
 
@@ -145,13 +149,13 @@ pub fn update_common_block_with_sd_vertices(f: &mut PaveFiller, cb_idx: usize) {
 
 /// `BOPAlgo_PaveFiller::UpdateCommonBlocksWithSDVertices` (`_10.cxx:173`).
 ///
-/// In destructive mode this reduces to [`update_pave_blocks_with_sd_vertices`].
+/// In destructive mode this reduces to [`ds_update_pave_blocks_with_sd_vertices`].
 /// In non-destructive mode each unique common block first has its bound
 /// vertices passed through [`update_vertex`] with `Precision::Confusion()`,
 /// then the common-block members themselves are redirected to SD vertices.
 pub fn update_common_blocks_with_sd_vertices(f: &mut PaveFiller) -> Result<(), String> {
     if !f.non_destructive() {
-        update_pave_blocks_with_sd_vertices(f);
+        ds_update_pave_blocks_with_sd_vertices(f);
         return Ok(());
     }
     let a_nb_pbp = f.ds().pave_blocks_pool().len();
@@ -185,12 +189,12 @@ pub fn update_common_blocks_with_sd_vertices(f: &mut PaveFiller) -> Result<(), S
     for i in 0..n_cb {
         update_common_block_with_sd_vertices(f, i);
     }
-    update_pave_blocks_with_sd_vertices(f);
+    ds_update_pave_blocks_with_sd_vertices(f);
     Ok(())
 }
 
 /// `BOPAlgo_PaveFiller::UpdateInterfsWithSDVertices` (`_10.cxx:248`).
-pub fn update_interfs_with_sd_vertices(f: &mut PaveFiller) {
+pub fn ds_update_interfs_with_sd_vertices(f: &mut PaveFiller) {
     f.ds_mut().update_interfs_with_sd_vertices();
 }
 
@@ -199,7 +203,7 @@ pub fn update_interfs_with_sd_vertices(f: &mut PaveFiller) {
 /// OCCT walks the arguments and turns the flag on when any argument is
 /// `Locked`. The Rust `TopoShape` has no lock bit, so the method is a no-op
 /// unless the flag is already set (matching `if (!myIsPrimary || myNonDestructive) return`).
-pub fn set_non_destructive(f: &mut PaveFiller) {
+pub fn derive_non_destructive(f: &mut PaveFiller) {
     if !f.is_primary() || f.non_destructive() {
         return;
     }
