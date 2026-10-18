@@ -255,9 +255,9 @@ impl<'a> ConstructStyles<'a> {
 /// component store.
 pub(in crate::step) fn decode_color(
     records: &HashMap<usize, Record>,
-    colour: usize,
+    color: usize,
 ) -> Option<Color> {
-    let rec = records.get(&colour)?;
+    let rec = records.get(&color)?;
     // `Colour->IsKind(STANDARD_TYPE(StepVisual_ColourRgb))` (`cxx:921-942`).
     if rec.type_name == "COLOUR_RGB" {
         let r = parse_f64(rec.args.get(1).map(String::as_str).unwrap_or("$")).ok()?;

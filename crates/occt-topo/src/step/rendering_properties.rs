@@ -142,8 +142,8 @@ impl RenderingProperties {
         // `occ::handle<StepVisual_Colour> aColor =
         // theRenderingProperties->SurfaceColour(); if (!aColor.IsNull()) { ... }`
         // (`cxx:377-386`).
-        if let Some(colour) = rec.args.get(1).and_then(|a| parse_ref(a)) {
-            if let Some(decoded) = decode_color(records, colour) {
+        if let Some(color) = rec.args.get(1).and_then(|a| parse_ref(a)) {
+            if let Some(decoded) = decode_color(records, color) {
                 self.surface_color = decoded;
                 self.is_defined = true;
             }

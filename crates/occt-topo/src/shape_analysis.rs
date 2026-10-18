@@ -114,7 +114,7 @@ impl ShapeReport {
 }
 
 /// Run every check over `shape`, collecting issues into a report.
-pub fn analyse(shape: &TopoShape) -> ShapeReport {
+pub fn analyze(shape: &TopoShape) -> ShapeReport {
     let mut report = ShapeReport::default();
     for msg in check_vertices(shape) {
         if let Some(w) = msg.strip_prefix("warning:") {
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn valid_box_has_no_errors() {
         let b = test_box::unit_box();
-        let report = analyse(&b.solid.0);
+        let report = analyze(&b.solid.0);
         assert!(report.errors.is_empty(), "errors: {:?}", report.errors);
         assert!(report.is_valid());
     }
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn report_summary_mentions_errors() {
         let b = test_box::unit_box();
-        let report = analyse(&b.solid.0);
+        let report = analyze(&b.solid.0);
         assert!(report.summary().contains("valid"));
     }
 }

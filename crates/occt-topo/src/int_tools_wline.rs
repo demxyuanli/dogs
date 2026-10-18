@@ -557,11 +557,11 @@ pub fn is_point_on_boundary(
 
 /// `AdjustByNeighbour` — pick the periodic image of `original` nearest `neighbour`.
 pub fn adjust_by_neighbour(
-    neighbour: &GpPnt2d,
+    neighbor: &GpPnt2d,
     original: &GpPnt2d,
     s: &dyn Surface,
 ) -> GpPnt2d {
-    let ap1 = *neighbour;
+    let ap1 = *neighbor;
     let mut ap2 = *original;
     if let Some(period) = u_period(s) {
         let mut sq_dist_min = 1.0e100;

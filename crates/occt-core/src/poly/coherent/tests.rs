@@ -77,7 +77,7 @@ use super::*;
         for t in 0..ct.triangles.len() {
             let tr = &ct.triangles[t];
             assert_eq!(tr.n_connections(), 3, "triangle {t} has 3 neighbours");
-            let neigh = tr.neighbours();
+            let neigh = tr.neighbors();
             assert!(neigh.iter().all(|n| n.is_some()));
         }
         // find_triangle on the interior cube edge (0,1): two triangles share it.

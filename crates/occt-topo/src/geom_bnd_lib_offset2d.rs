@@ -66,9 +66,9 @@ fn try_offset_circle2d(
         return None;
     }
     let _ = normal.normalize();
-    let centre = basis_circ.location();
+    let center = basis_circ.location();
     let radius_val = basis_circ.radius();
-    let mut radial = GpVec2d::new(p.x() - centre.x(), p.y() - centre.y());
+    let mut radial = GpVec2d::new(p.x() - center.x(), p.y() - center.y());
     if radial.square_magnitude() <= SQUARE_CONFUSION {
         return None;
     }
@@ -81,11 +81,11 @@ fn try_offset_circle2d(
     let mut local = BndBox2d::new();
     if new_radius > CONFUSION {
         let mut offset_circ = GpCirc2d::default();
-        offset_circ.set_location(centre);
+        offset_circ.set_location(center);
         offset_circ.set_radius(new_radius);
         local = box_circ_range_2d(&offset_circ, u1, u2, 0.0);
     } else if new_radius.abs() <= CONFUSION {
-        local.add_point(&centre);
+        local.add_point(&center);
     } else {
         return None;
     }

@@ -92,13 +92,13 @@ pub fn lin2d_from_curve(curve: &dyn Curve2d) -> Option<GpLin2d> {
 pub fn circ2d_from_curve(curve: &dyn Curve2d) -> Option<GpCirc2d> {
     let p0 = curve.d0(0.0);
     let ppi = curve.d0(std::f64::consts::PI);
-    let centre = occt_core::gp::GpPnt2d::new(0.5 * (p0.x() + ppi.x()), 0.5 * (p0.y() + ppi.y()));
-    let r = centre.distance(&p0);
+    let center = occt_core::gp::GpPnt2d::new(0.5 * (p0.x() + ppi.x()), 0.5 * (p0.y() + ppi.y()));
+    let r = center.distance(&p0);
     if r <= occt_core::precision::CONFUSION {
         return None;
     }
     let mut c = GpCirc2d::default();
-    c.set_location(centre);
+    c.set_location(center);
     c.set_radius(r);
     Some(c)
 }

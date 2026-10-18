@@ -730,13 +730,13 @@ pub fn write_step_with_color(shape: &TopoShape, color: (f64, f64, f64)) -> Resul
     let rep = ctx
         .write_shape_named("Shape", shape)
         .ok_or_else(|| "write_step_with_color: nothing to write".to_string())?;
-    let colour = ctx.w.emit(format!(
+    let color = ctx.w.emit(format!(
         "COLOUR_RGB('',{},{},{})",
         step_real(color.0),
         step_real(color.1),
         step_real(color.2)
     ));
-    let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+    let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{color})"));
     let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
     ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
     Ok(ctx.finish())
@@ -833,13 +833,13 @@ pub fn write_step_with_options(shape: &TopoShape, opts: &StepWriteOptions) -> Re
         .write_shape_named(&opts.name, shape)
         .ok_or_else(|| "write_step_with_options: nothing to write".to_string())?;
     if let Some((r, g, b)) = opts.color {
-        let colour = ctx.w.emit(format!(
+        let color = ctx.w.emit(format!(
             "COLOUR_RGB('',{},{},{})",
             step_real(r),
             step_real(g),
             step_real(b)
         ));
-        let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+        let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{color})"));
         let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
         ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
     }
@@ -861,13 +861,13 @@ pub fn write_step_with_name_and_color(
     let rep = ctx
         .write_shape_named(name, shape)
         .ok_or_else(|| "write_step_with_name_and_color: nothing to write".to_string())?;
-    let colour = ctx.w.emit(format!(
+    let color = ctx.w.emit(format!(
         "COLOUR_RGB('',{},{},{})",
         step_real(color.0),
         step_real(color.1),
         step_real(color.2)
     ));
-    let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+    let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{color})"));
     let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
     ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
     Ok(ctx.finish())

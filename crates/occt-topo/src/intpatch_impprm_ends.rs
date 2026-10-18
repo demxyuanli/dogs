@@ -40,14 +40,14 @@ pub(crate) fn recadre(
     kind1: SurfaceKind,
     kind2: SurfaceKind,
     pt: &mut PatchPoint,
-    neighbour: &crate::int_tools_wline::PntOn2S,
+    neighbor: &crate::int_tools_wline::PntOn2S,
     mut u1: f64,
     mut v1: f64,
     mut u2: f64,
     mut v2: f64,
 ) {
-    let (u1p, v1p) = neighbour.parameters_on_s1();
-    let (u2p, v2p) = neighbour.parameters_on_s2();
+    let (u1p, v1p) = neighbor.parameters_on_s1();
+    let (u2p, v2p) = neighbor.parameters_on_s2();
     wrap_surface(kind1, &mut u1, &mut v1, u1p, v1p);
     wrap_surface(kind2, &mut u2, &mut v2, u2p, v2p);
     pt.u1 = u1;

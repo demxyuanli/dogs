@@ -148,14 +148,14 @@ pub fn decomposition_of_wline(
             if an_array_of_line_type[aneighbourindex as usize] == 0 {
                 continue;
             }
-            let neighbour = &an_array_of_lines[aneighbourindex as usize];
-            if neighbour.is_empty() {
+            let neighbor = &an_array_of_lines[aneighbourindex as usize];
+            if neighbor.is_empty() {
                 continue;
             }
             let an_index = if j == 0 {
-                *neighbour.last().unwrap()
+                *neighbor.last().unwrap()
             } else {
-                neighbour[0]
+                neighbor[0]
             };
             let point_val = *wline.point(an_index);
             let mut new_p = point_val;

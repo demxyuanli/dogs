@@ -74,13 +74,13 @@ pub fn write_step_model_with_colors(model: &BRepModel) -> Result<String, String>
     for ms in &model.shapes {
         let rep = ctx.write_shape_named(&ms.name, &ms.shape);
         if let (Some(rep), Some(c)) = (rep, ms.color) {
-            let colour = ctx.w.emit(format!(
+            let color = ctx.w.emit(format!(
                 "COLOUR_RGB('',{},{},{})",
                 step_real(c.r as f64),
                 step_real(c.g as f64),
                 step_real(c.b as f64)
             ));
-            let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+            let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{color})"));
             let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
             ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
         }
@@ -101,13 +101,13 @@ pub fn write_step_model_with_options(model: &BRepModel, opts: &StepWriteOptions)
         let name = if ms.name.is_empty() { opts.name.clone() } else { ms.name.clone() };
         let rep = ctx.write_shape_named(&name, &ms.shape);
         if let (Some(rep), Some((r, g, b))) = (rep, opts.color) {
-            let colour = ctx.w.emit(format!(
+            let color = ctx.w.emit(format!(
                 "COLOUR_RGB('',{},{},{})",
                 step_real(r),
                 step_real(g),
                 step_real(b)
             ));
-            let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{colour})"));
+            let fill = ctx.w.emit(format!("SURFACE_STYLE_FILL_AREA('',#{color})"));
             let usage = ctx.w.emit(format!("SURFACE_STYLE_USAGE('',#{fill})"));
             ctx.w.emit(format!("STYLED_ITEM('',(#{usage}),#{rep})"));
         }

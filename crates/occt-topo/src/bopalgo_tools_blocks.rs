@@ -64,7 +64,7 @@ impl IndexedShapeAdj {
     }
 
     /// Neighbour keys of `key`.
-    pub fn neighbours(&self, key: ShapeMapKey) -> &[ShapeMapKey] {
+    pub fn neighbors(&self, key: ShapeMapKey) -> &[ShapeMapKey] {
         self.lists.get(&key).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
@@ -173,7 +173,7 @@ impl IndexedIntAdj {
         self.lists.contains_key(&n)
     }
 
-    pub fn neighbours(&self, n: usize) -> &[usize] {
+    pub fn neighbors(&self, n: usize) -> &[usize] {
         self.lists.get(&n).map(|v| v.as_slice()).unwrap_or(&[])
     }
 

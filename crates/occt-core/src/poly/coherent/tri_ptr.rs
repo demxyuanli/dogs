@@ -137,7 +137,7 @@ impl PolyCoherentTriangle {
         else { -1 }
     }
     /// Indices of the up-to-three neighbouring triangles.
-    pub fn neighbours(&self) -> [Option<usize>; 3] { self.connected }
+    pub fn neighbors(&self) -> [Option<usize>; 3] { self.connected }
     /// Sides that have no neighbour (boundary sides).
     pub fn boundary_sides(&self) -> Vec<usize> {
         (0..3).filter(|&i| self.connected[i].is_none()).collect()

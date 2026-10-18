@@ -344,8 +344,8 @@ impl AlgoTools {
             // Grow it: the neighbours of every member join.
             let mut i = 0;
             while i < chain.len() {
-                if let Some(neighbours) = adjacency.get(&chain[i]) {
-                    for n in neighbours {
+                if let Some(neighbors) = adjacency.get(&chain[i]) {
+                    for n in neighbors {
                         if used.insert(n.clone()) {
                             chain.push(n.clone());
                         }
