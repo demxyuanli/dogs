@@ -1,4 +1,4 @@
-//! Phase 7 end-to-end: BRepFeat features (draft/groove/neck), variable-radius
+//! End-to-end gate: BRepFeat features (draft/groove/neck), variable-radius
 //! fillet, shape healing, XML XCAF, and math depth (RK45).
 
 use occt_core::gp::{GpDir, GpPnt};

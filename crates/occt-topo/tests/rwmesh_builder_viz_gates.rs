@@ -1,4 +1,4 @@
-//! Phase 8 end-to-end: RWMesh import, BRepBuilderAPI full, visualization-lite,
+//! End-to-end gate: RWMesh import, BRepBuilderAPI full, visualization-lite,
 //! BVH queries, and math depth.
 
 use occt_core::bvh::builder_tri::{build_tri_bvh, TriBvh};

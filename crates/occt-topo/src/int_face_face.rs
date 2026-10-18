@@ -553,5 +553,4 @@ fn curves_lie_on_both(
 }
 
 #[cfg(test)]
-#[path = "int_face_face_tests.rs"]
 mod tests;

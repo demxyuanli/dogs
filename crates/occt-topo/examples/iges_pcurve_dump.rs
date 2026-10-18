@@ -8,7 +8,7 @@
 //! sees through `BRep_Tool::CurveOnSurface`.
 //!
 //! Usage:
-//!   cargo run --example zz_pcface_dump -- data/Shape-1.step [out.txt]
+//!   cargo run --example iges_pcurve_dump -- data/Shape-1.step [out.txt]
 
 use std::io::Write;
 use std::path::PathBuf;

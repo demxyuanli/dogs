@@ -7,7 +7,7 @@
 //!
 //! Set `ZZFACE=<n>` to also dump the boundary arcs of that face.
 //!
-//! Usage: cargo run --example zz_face_area -- occ/T0M.stp [minArea maxArea]
+//! Usage: cargo run --example face_area_probe -- occ/T0M.stp [minArea maxArea]
 
 use std::path::PathBuf;
 

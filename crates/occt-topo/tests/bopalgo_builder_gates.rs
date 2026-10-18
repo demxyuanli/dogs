@@ -1,4 +1,4 @@
-//! Phase 20 integration — BOPAlgo_Builder end-to-end boolean over boxes.
+//! End-to-end gate — BOPAlgo_Builder end-to-end boolean over boxes.
 //!
 //! The precise boolean pipeline (PaveFiller intersection → BOPAlgo_Builder
 //! rebuild) is exercised through the public `bop_builder2::{fuse, cut, common}`

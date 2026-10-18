@@ -9,7 +9,7 @@
 //! does (`BRepOffset_Offset.cxx:483-488`).
 //!
 //! Usage:
-//!   cargo run --example zz_offset_surf -- data/Cone.step 0.5
+//!   cargo run --example offset_surface_probe -- data/Cone.step 0.5
 
 use std::path::PathBuf;
 
@@ -67,7 +67,7 @@ fn collect_faces(shape: &TopoShape, out: &mut Vec<TopoShape>) {
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let name = args.first().expect("usage: zz_offset_surf <file.step> <dist>").clone();
+    let name = args.first().expect("usage: offset_surface_probe <file.step> <dist>").clone();
     let dist: f64 = args.get(1).map_or(0.5, |s| s.parse().expect("distance"));
     let path = if name.contains('/') {
         root.join(&name)

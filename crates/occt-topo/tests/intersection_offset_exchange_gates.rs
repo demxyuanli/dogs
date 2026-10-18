@@ -1,4 +1,4 @@
-//! Phase 6 end-to-end: exact surface intersection (IntPatch), offset
+//! End-to-end gate: exact surface intersection (IntPatch), offset
 //! operations, BinXCAF binary container, glTF export, polygon boolean and
 //! curve/surface extrema.
 //!

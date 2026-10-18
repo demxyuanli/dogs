@@ -33,9 +33,4 @@ pub use convert::*;
 pub use step_io::*;
 
 #[cfg(test)]
-#[path = "tests.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "xcaf_doc_tests.rs"]
-mod xcaf_doc_tests;

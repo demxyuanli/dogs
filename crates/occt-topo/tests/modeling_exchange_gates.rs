@@ -1,4 +1,4 @@
-//! Phase 4 end-to-end: STEP exchange, fillet, revolve, projection, HLR/VRML,
+//! End-to-end gate: STEP exchange, fillet, revolve, projection, HLR/VRML,
 //! geometry transforms, and shape identification — the ModelingAlgorithms +
 //! DataExchange milestone.
 

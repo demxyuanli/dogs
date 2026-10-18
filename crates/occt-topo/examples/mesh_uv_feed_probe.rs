@@ -5,7 +5,7 @@
 //! into `RangeSplitter::add_point` (the port's `collectWirePoints` equivalent),
 //! so it can be diffed against the OCCT probe's `--uv <face>` output.
 //!
-//! Usage: `cargo run --example zz_uv_feed -- <file.step> [--sum] [--dump <path>]`
+//! Usage: `cargo run --example mesh_uv_feed_probe -- <file.step> [--sum] [--dump <path>]`
 //!
 //! `--dump <path>` re-runs the pipeline a second time and writes the flat OBJ
 //! triangle soup of that run to `path`, so the dump and the mesh always come
@@ -16,7 +16,7 @@ use std::io::Write;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: zz_uv_feed <file.step> [--sum] [--dump <path>]");
+    let path = args.get(1).expect("usage: mesh_uv_feed_probe <file.step> [--sum] [--dump <path>]");
     let model = read_step_file(path).expect("read step");
     let shape = model.shapes[0].shape.clone();
     // T-99: `--lin <d>` overrides the port's deflection so the port's mesh can be
@@ -35,7 +35,7 @@ fn main() {
         std::env::set_var("OCCT_TOPO_DUMP_UV_SUM", "1");
     }
     let inc = IncrementalMesh::from_deflection(&shape, lin, false, 20.0_f64.to_radians());
-    eprintln!("zz_uv_feed done lin={lin:.6}");
+    eprintln!("mesh_uv_feed_probe done lin={lin:.6}");
 
     // `--fixall`: run the port's `ShapeFixFace::fix_missing_seam` over every face
     // of the shape (no reader change), rebuild the discrete model from the

@@ -1,4 +1,4 @@
-//! Phase 19 integration — PaveFiller end-to-end over overlapping boxes.
+//! End-to-end gate — PaveFiller end-to-end over overlapping boxes.
 //!
 //! Exercises the full intersection pipeline (VV → VE → EE → VF → EF → FF →
 //! MakeBlocks → MakePCurves → MakeSplitEdges) on two overlapping unit boxes and

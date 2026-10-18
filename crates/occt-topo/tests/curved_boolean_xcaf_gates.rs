@@ -1,4 +1,4 @@
-//! Phase 10 end-to-end: full topology boolean, curved-face fillet, texture/
+//! End-to-end gate: full topology boolean, curved-face fillet, texture/
 //! font/views rendering, Draw TCL vars, inertia tensors, XCAF schema + STEP read.
 
 use occt_core::geom::curve_interp3d::{catmull_rom, cubic_spline_interp, polyline_curve};

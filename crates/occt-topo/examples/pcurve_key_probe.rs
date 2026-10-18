@@ -11,7 +11,7 @@
 //! experiment violates the invariant on faces the baseline does not, the cause
 //! of the area under-cover is "pcurve stored under a mismatched key".
 //!
-//! Usage: `cargo run --example zz_pcurve_key_probe -- <file.step>`
+//! Usage: `cargo run --example pcurve_key_probe -- <file.step>`
 use occt_topo::shape::Face;
 use occt_topo::step::read_step_file;
 use occt_topo::tgeometry::GeometryRegistry;
@@ -19,7 +19,7 @@ use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: zz_pcurve_key_probe <file.step>");
+    let path = args.get(1).expect("usage: pcurve_key_probe <file.step>");
     let model = read_step_file(path).expect("read step");
     let shape = model.shapes[0].shape.clone();
     let reg = GeometryRegistry::global();

@@ -21,7 +21,7 @@ fn tname(t: MeshSurfaceType) -> &'static str {
 }
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: zz_probe_a3n00 <step> [lin_override|--edges]");
+    let path = std::env::args().nth(1).expect("usage: model_probe <step> [lin_override|--edges]");
     let mode_edges = std::env::args().any(|a| a == "--edges");
     let mode_dev = std::env::args().any(|a| a == "--dev");
     let mode_low = std::env::args().any(|a| a == "--low");

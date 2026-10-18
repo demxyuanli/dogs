@@ -1,4 +1,4 @@
-//! Phase 3 end-to-end integration: create real-geometry BRep → query →
+//! End-to-end gate: create real-geometry BRep → query →
 //! measure → mesh → export → re-import.
 //!
 //! Exercises the milestone chain A1→A4 (geometry kernel + children tree),

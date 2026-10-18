@@ -1,4 +1,4 @@
-//! Phase 9 end-to-end: analytic mass properties, trimmed-face boolean, fillet
+//! End-to-end gate: analytic mass properties, trimmed-face boolean, fillet
 //! corner patch, Draw REPL, hardware-style shaded rendering, curve Frenet
 //! frame, VRML import.
 

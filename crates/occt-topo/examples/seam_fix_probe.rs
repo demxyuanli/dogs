@@ -6,7 +6,7 @@
 //!   * whether the healed face produces a valid `RangeSplitter` range
 //!     (`IsValid`, i.e. the gate that was rejecting it).
 //!
-//! Usage: `cargo run --example zz_seam_fix -- <file.step> <face-index>`
+//! Usage: `cargo run --example seam_fix_probe -- <file.step> <face-index>`
 use occt_topo::brep_bnd_lib;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::builder::TopoBuilder;
@@ -84,7 +84,7 @@ fn probe_splitter(face: &Face, label: &str) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: zz_seam_fix <file.step> <face-index>");
+    let path = args.get(1).expect("usage: seam_fix_probe <file.step> <face-index>");
     let want: usize = args.get(2).expect("face index").parse().expect("index");
     let model = read_step_file(path).expect("read step");
     let shape = model.shapes[0].shape.clone();

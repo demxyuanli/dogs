@@ -1,4 +1,4 @@
-//! Phase 5 end-to-end: exact boolean, real BRepMesh, IGES, SVG render,
+//! End-to-end gate: exact boolean, real BRepMesh, IGES, SVG render,
 //! BVH queries, offset2d and the extended math/numerics.
 
 use occt_core::gp::{GpPnt, GpVec};

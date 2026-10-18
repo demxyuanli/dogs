@@ -3,7 +3,7 @@
 //! from `surf.clone()`, and `repr_key` resolves by surface pointer, so the write
 //! can land on the original face's slot. This measures it.
 //!
-//! Usage: `cargo run --example zz_share_probe -- <file.step> [max-faces]`
+//! Usage: `cargo run --example seam_pcurve_share_probe -- <file.step> [max-faces]`
 use occt_topo::shape::Face;
 use occt_topo::shhealing::ShapeFixFace;
 use occt_topo::step::read_step_file;
@@ -53,7 +53,7 @@ fn snapshot(face: &Face) -> Vec<(usize, usize, String)> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: zz_share_probe <file.step> [max-faces]");
+    let path = args.get(1).expect("usage: seam_pcurve_share_probe <file.step> [max-faces]");
     let max: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(usize::MAX);
     let model = read_step_file(path).expect("read step");
     let shape = model.shapes[0].shape.clone();

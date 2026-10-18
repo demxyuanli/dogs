@@ -524,5 +524,4 @@ impl Default for BopdsDS {
 }
 
 #[cfg(test)]
-#[path = "bopds_tests.rs"]
 mod tests;
