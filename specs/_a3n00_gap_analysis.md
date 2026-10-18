@@ -106,6 +106,6 @@
 ```powershell
 cd D:\source\repos\dogs
 rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj -- data/occ
-rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_probe_a3n00 -- data/occ/a3n00.stp --fstats
+rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example model_probe -- data/occ/a3n00.stp --fstats
 specs\occt_probe\probe.bat D:\source\repos\dogs\data\occ\a3n00.stp --facestats 0.451774 0.349066
 ```

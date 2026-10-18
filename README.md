@@ -86,10 +86,10 @@ cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export
 | 探针 | 用途 |
 |---|---|
 | `export_data_obj` | 批量导出 OBJ（`data/*.step` → `data/output/<stem>.obj`） |
-| `zz_probe_a3n00` | a3n00 逐面读数：`--fstats`（每面 mv/mt/bbox）、`--fdump`、`--fixms`、`--ecensus`（逐面 wire/边数） |
-| `zz_uv_feed` | 面/模型结构：`--model <f>`、`--ids`（逐面 wire 数 + 直方图） |
-| `zz_seam_fix` | 单面 `FixMissingSeam` 前后结构（`<stp> <face>`：BEFORE/result/HEALED） |
-| `zz_share_probe` / `zz_pcurve_key_probe` / `cone_dbg` / `linkrods_dbg` / `iges_check` | 专题排查。`iges_check` 写 IGES 并做卡片结构检查：参数是 `data/<name>.step`，含 `/` 的参数按仓库根路径读 `.step` 或 `.stp`。`IGES_DUMP` 指向目录时写出 `<参数名>.iges` |
+| `model_probe` | a3n00 逐面读数：`--fstats`（每面 mv/mt/bbox）、`--fdump`、`--fixms`、`--ecensus`（逐面 wire/边数） |
+| `mesh_uv_feed_probe` | 面/模型结构：`--model <f>`、`--ids`（逐面 wire 数 + 直方图） |
+| `seam_fix_probe` | 单面 `FixMissingSeam` 前后结构（`<stp> <face>`：BEFORE/result/HEALED） |
+| `seam_pcurve_share_probe` / `pcurve_key_probe` / `cone_classify_check` / `mesh_diagnostics` / `iges_check` | 专题排查。`iges_check` 写 IGES 并做卡片结构检查：参数是 `data/<name>.step`，含 `/` 的参数按仓库根路径读 `.step` 或 `.stp`。`IGES_DUMP` 指向目录时写出 `<参数名>.iges` |
 
 **OCCT 侧**（`specs/occt_probe/`，需本机 OCCT）：
 
@@ -109,8 +109,8 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 
 - 输入：`data/occ/*.stp` 与 `data/occ/*.step`（a3n00、acs10、ATU01038、bottom、motoc、T0M、top、TDB），以及 `data/*.step`（含 `linkrods.step`）
 - 参考（GT）：`data/occ/occ-*.obj` —— 逐模型面积比与 f-ratio 的对照基准
-- glTF 参考（GT）：`data/occ-{cube,cone,linkrods}.gltf` + `.bin` —— 由 `data/_occ_ref_gltf.tcl` 在 DRAWEXE 里重生成（`ReadStep` → `incmesh` 用 `bbox_max*0.001*4`、`-angular 20` → `WriteGltf`，默认非二进制、`systemCoordSys Zup`、`nodeNameFormat instOrProd`、`meshNameFormat product`；设 `OCC_FORCE_UV=1` 则加 `-forceUVExport`，用于逐节点 UV 对拍）。对拍用 `rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example zz_gltf1_probe`：`model_to_gltf_caf` 的 Cube/Cone 输出与基线逐字节相等。linkrods 的 accessor/bufferView/mesh 布局一致，几何残差读数（按显式 bin 路径比对，**不要**让脚本按 `buffers[0].uri` 回退路径，否则会读到 OCCT 的 bin）：37 个 primitive 里位置 21 个逐位相同、10 个差 ≤1e-4、5 个差 1e-4..7.5e-4；索引 25 个不同但三角形按 1e-3 取整做集合比对只 5/5078 不匹配；法向 29 个不同。对拍脚本所在 `_tmp/` 已 gitignore
-- glTF 读入：`rwmesh::read_gltf_scene_with_options` / `read_gltf_model`（`RWGltf_CafReader`，含 glTF 1.0/2.0、GLB、bufferView/data URI 贴图、late-data 两阶段）。文档式回读见 `zz_gltf1_probe` 的 doc OBJ 段
+- glTF 参考（GT）：`data/occ-{cube,cone,linkrods}.gltf` + `.bin` —— 由 `data/_occ_ref_gltf.tcl` 在 DRAWEXE 里重生成（`ReadStep` → `incmesh` 用 `bbox_max*0.001*4`、`-angular 20` → `WriteGltf`，默认非二进制、`systemCoordSys Zup`、`nodeNameFormat instOrProd`、`meshNameFormat product`；设 `OCC_FORCE_UV=1` 则加 `-forceUVExport`，用于逐节点 UV 对拍）。对拍用 `rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example gltf1_read_probe`：`model_to_gltf_caf` 的 Cube/Cone 输出与基线逐字节相等。linkrods 的 accessor/bufferView/mesh 布局一致，几何残差读数（按显式 bin 路径比对，**不要**让脚本按 `buffers[0].uri` 回退路径，否则会读到 OCCT 的 bin）：37 个 primitive 里位置 21 个逐位相同、10 个差 ≤1e-4、5 个差 1e-4..7.5e-4；索引 25 个不同但三角形按 1e-3 取整做集合比对只 5/5078 不匹配；法向 29 个不同。对拍脚本所在 `_tmp/` 已 gitignore
+- glTF 读入：`rwmesh::read_gltf_scene_with_options` / `read_gltf_model`（`RWGltf_CafReader`，含 glTF 1.0/2.0、GLB、bufferView/data URI 贴图、late-data 两阶段）。文档式回读见 `gltf1_read_probe` 的 doc OBJ 段
 - 产物：`data/output/<stem>.obj` + `<stem>.mtl`（已 gitignore）—— STEP→OBJ 导出目录，由 `export_data_obj` 独占写入（带颜色时同时写 `.mtl` sidecar）
 - 贴图目录：`data/output/<stem>_textures/` —— 样式带 `BaseColorTexture` 时由 `RWMesh_MaterialMap::CreateTextureFolder` / `CopyTexture` 写出（纯图片文件按原名拷贝，块/缓冲区贴图按 `<n>.<ext>` 重命名），`.mtl` 里对应 `map_Kd <stem>_textures/<file>`。STEP 读侧当前不带贴图，故该目录只在实际带贴图的样式上出现
 - 门禁产物：`data/output/gates/<stem>.obj` + `<stem>.mtl` —— `step_obj_gates` 写入，**与导出目录分离**，避免跑门禁时覆盖上面的 CAF 产物；门禁走同一 `model_to_obj_caf` 管线，同一模型两边文件逐字节相同

@@ -4,7 +4,7 @@
 > 本文件只做设计，**不改行为**。每项给出：现状（实测）、OCCT 权威控制流（文件:行号）、影响面、分步方案、验收门禁、风险。
 >
 > 基线（本文件撰写时实测，HEAD `4db3743`）：topo `--lib` **1287/0**；`bop_builder2_boss` 1/2（R2-8 已定案 (b)）；
-> `phase10` 7/8（T-88）；`phase19` **5/5**；`phase20/3/4/5/6/7/8/9` 全绿；`step_geometry_parity` **3/3**；
+> `phase10` 7/8（T-88）；`phase19` **5/5**；`end-to-end gate suites` 全绿；`step_geometry_parity` **3/3**；
 > `step_obj_area` 11/11；`step_obj_parity` 14/14；`step_to_obj` 13/13；`export_data_obj` 15 模型；`iges_check` Cube/Sphere ok。
 > 总纪律：每步先编译；对照 `.cxx` 审控制流；缺分支补忠实移植并注 OCCT 文件:行号，缺失处标 `UNPORTED`；
 > 不自创判据/阈值；只跑现有基线；有回归立即回退；提交只用显式路径。
@@ -177,7 +177,7 @@
    调用点 `intpatch.rs:77` 的 re-export 与 `int_face_face_analytic.rs:141/163/198` 改接 intana。验证：`intpatch.rs:374-507`、`int_face_face_tests.rs:219-244`。
 5. **合并分派器**：让 `intpatch.rs:138` 内部改调 `PatchIntersection::perform`，单一入口覆盖 analytic + ImpPrm + tracer。
    验证：BOP 三处调用点（`bop_builder_dispatch.rs:412`、`bop_builder_repair.rs:120`/`:511`）的 phase 套件。
-6. **全门禁**：四道 STEP + phase3–10/19/20 + `export_data_obj` 逐位对齐基线；失配即停并报告。
+6. **全门禁**：四道 STEP + end-to-end gate suites + `export_data_obj` 逐位对齐基线；失配即停并报告。
 
 ### 风险
 
@@ -242,7 +242,7 @@
 | 1 | **T-27** 摘除 leftover 死模块 | 删代码 + 文档化 | 1 | 判定性探针（`is_covering_face` vs live `is_internal_face`）一致 | 门禁逐位不变；被删用例在提交信息中列名 |
 | 2 | **T-26** `IsEmptyShape` + `TreatEmptyShape` 语义 | 语义订正 | 1–2 | 无 | 门禁不变；`_coverage.md` 偏差条目消账 |
 | 3 | **T-25** 几何进 `TShape` | 架构重构（可分步停在中间态） | 5–8 | 第 2 步的转发层先落地 | 每步门禁 1–4 + `export_data_obj` 逐位 |
-| 4 | **T-28** ImpPrm HVertex 合并 + 分派器合并 | 算法移植 | 6–10 | 第 1–3 步各自独立 | 四道 STEP + phase3–10/19/20 + `export_data_obj` |
+| 4 | **T-28** ImpPrm HVertex 合并 + 分派器合并 | 算法移植 | 6–10 | 第 1–3 步各自独立 | 四道 STEP + end-to-end gate suites + `export_data_obj` |
 
 > 四项都**不需要新测试**（总纪律）；被删/被改的既有断言一律按 goal ④ 以 OCCT 为依据订正。
 

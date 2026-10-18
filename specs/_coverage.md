@@ -88,7 +88,7 @@
 |---|---|---|
 | gp（42 类） | gp/（34 类型） | 81% |
 | Bnd（9） | bnd/（9 模块） | 100% |
-| TopExp（2） | topexp + topo_tools_full | 100% |
+| TopExp（2） | topexp + topo_tools | 100% |
 | BRep_Tool / BRep_Builder | brep_tool / builder | 100% 语义 |
 | ElCLib / ElSLib | elib/ | ~90% |
 | BSplCLib / BSplSLib | bspl/（14 模块） | ~70% |

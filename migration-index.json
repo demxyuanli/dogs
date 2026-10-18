@@ -2673,7 +2673,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "XcafAttribute",
    "target_path": "crates/occt-topo/src/bincaf.rs",
@@ -2718,7 +2718,7 @@
     "topo_shape",
     "topo_shell_check",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "BoolOp",
    "target_path": "crates/occt-topo/src/bop_builder.rs",
@@ -2745,7 +2745,7 @@
     "topo_shape_mesh",
     "topo_shell_check",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "FaceRegion",
    "target_path": "crates/occt-topo/src/bop_curved.rs",
@@ -2780,7 +2780,7 @@
     "topo_brep_tool",
     "topo_builder",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "PolygonBuilder",
    "target_path": "crates/occt-topo/src/brep_builder_api.rs",
@@ -2805,7 +2805,7 @@
     "topo_fillet_edge",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "BRepBuilderEdge",
    "target_path": "crates/occt-topo/src/brep_builder_full.rs",
@@ -2824,7 +2824,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_shape_ops",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "shape_signature",
    "target_path": "crates/occt-topo/src/brep_compare.rs",
@@ -2841,7 +2841,7 @@
     "topo_builder",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "weld_vertices_shape",
    "target_path": "crates/occt-topo/src/brep_connect.rs",
@@ -2900,7 +2900,7 @@
     "topo_builder",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "GeomBSplineSurface",
    "target_path": "crates/occt-topo/src/brep_faces.rs",
@@ -2933,7 +2933,7 @@
     "topo_builder",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "edge_length",
    "target_path": "crates/occt-topo/src/brep_measure.rs",
@@ -2957,7 +2957,7 @@
     "topo_shape_ops",
     "topo_shell_check",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "plane_plane_plane_intersection",
    "target_path": "crates/occt-topo/src/brep_offset.rs",
@@ -2991,7 +2991,7 @@
     "topo_builder",
     "topo_loft",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "Pipe",
    "target_path": "crates/occt-topo/src/brep_pipe.rs",
@@ -3049,7 +3049,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "face_normal_at_centroid",
    "target_path": "crates/occt-topo/src/brep_shell.rs",
@@ -3068,7 +3068,7 @@
     "topo_brep_surface",
     "topo_builder",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "Sketch",
    "target_path": "crates/occt-topo/src/brep_sketch.rs",
@@ -3126,7 +3126,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "FeatResult",
    "target_path": "crates/occt-topo/src/brepfeat.rs",
@@ -3146,7 +3146,7 @@
     "topo_mesh",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full",
+    "topo_topo_tools",
     "topo_wireframe"
    ],
    "target": "IncrementalMesh",
@@ -3192,7 +3192,7 @@
     "topo_shape_mesh",
     "topo_shape_ops",
     "topo_step",
-    "topo_topo_tools_full",
+    "topo_topo_tools",
     "topo_viz_scene"
    ],
    "target": "ProcDef",
@@ -3266,7 +3266,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "FilletEdge",
    "target_path": "crates/occt-topo/src/fillet.rs",
@@ -3289,7 +3289,7 @@
     "topo_shape",
     "topo_shell_check",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "PlaneInfo",
    "target_path": "crates/occt-topo/src/fillet_curved.rs",
@@ -3309,7 +3309,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_shell_check",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "FilletSpec",
    "target_path": "crates/occt-topo/src/fillet_edge.rs",
@@ -3331,7 +3331,7 @@
     "topo_shape",
     "topo_shell_check",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "RadiusLaw",
    "target_path": "crates/occt-topo/src/fillet_var.rs",
@@ -3351,7 +3351,7 @@
     "topo_mesh",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "Hit",
    "target_path": "crates/occt-topo/src/geometry_query.rs",
@@ -3385,7 +3385,7 @@
     "topo_brep_tool",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "AnalyticProps",
    "target_path": "crates/occt-topo/src/gprop_analytic.rs",
@@ -3420,7 +3420,7 @@
     "topo_model",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "rec80",
    "target_path": "crates/occt-topo/src/iges.rs",
@@ -3456,7 +3456,7 @@
     "topo_face_face",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "EdgeEdgeHit",
    "target_path": "crates/occt-topo/src/inttools.rs",
@@ -3486,7 +3486,7 @@
     "topo_builder",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "LoftedSolid",
    "target_path": "crates/occt-topo/src/loft.rs",
@@ -3661,7 +3661,7 @@
     "topo_brep_tool",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "CheckLevel",
    "target_path": "crates/occt-topo/src/shape_checks.rs",
@@ -3696,7 +3696,7 @@
     "topo_brep_tool",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "ShapeMetrics",
    "target_path": "crates/occt-topo/src/shape_metrics.rs",
@@ -3716,7 +3716,7 @@
     "topo_shape",
     "topo_shape_ops",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "ShapeId",
    "target_path": "crates/occt-topo/src/shape_naming.rs",
@@ -3776,7 +3776,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "HealReport",
    "target_path": "crates/occt-topo/src/shhealing.rs",
@@ -3817,7 +3817,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "StepHeader",
    "target_path": "crates/occt-topo/src/step.rs",
@@ -3837,7 +3837,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "Prism",
    "target_path": "crates/occt-topo/src/sweep.rs",
@@ -3855,7 +3855,7 @@
     "topo_builder",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "RevolvedSolid",
    "target_path": "crates/occt-topo/src/sweep_revolve.rs",
@@ -3903,7 +3903,7 @@
    "target_path": "crates/occt-topo/src/topexp.rs",
    "updated_at": "2026-08-02T12:40:58.447091+00:00"
   },
-  "topo_topo_tools_full": {
+  "topo_topo_tools": {
    "module": "occt-topo",
    "layer": 0,
    "status": "done",
@@ -3917,7 +3917,7 @@
     "topo_tgeometry"
    ],
    "target": "map_shapes",
-   "target_path": "crates/occt-topo/src/topo_tools_full.rs",
+   "target_path": "crates/occt-topo/src/topo_tools.rs",
    "updated_at": "2026-08-02T12:40:58.447091+00:00"
   },
   "topo_transform": {
@@ -4029,7 +4029,7 @@
     "topo_model",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full",
+    "topo_topo_tools",
     "topo_xmlcaf"
    ],
    "target": "StepAssembly",
@@ -4050,7 +4050,7 @@
     "topo_primitives",
     "topo_shape",
     "topo_tgeometry",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "XmlAttribute",
    "target_path": "crates/occt-topo/src/xmlcaf.rs",
@@ -4065,7 +4065,7 @@
     "topo_abs",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "MeshAlgo",
    "target_path": "crates/occt-topo/src/meshing/context.rs",
@@ -4332,7 +4332,7 @@
     "topo_brep_tool",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "ModelBuilder",
    "target_path": "crates/occt-topo/src/meshing/model_builder.rs",
@@ -4420,7 +4420,7 @@
     "topo_meshing_context",
     "topo_primitives",
     "topo_shape",
-    "topo_topo_tools_full"
+    "topo_topo_tools"
    ],
    "target": "ShapeTool",
    "target_path": "crates/occt-topo/src/meshing/shape_tool.rs",
