@@ -46,7 +46,7 @@ impl<'a> Geom2dIntExactIntersectionPoint<'a> {
     /// `IntCurve_ExactIntersectionPoint(C1, C2, Tol)` (`gxx:26-41`).
     pub fn new(c1: &'a dyn Curve2d, c2: &'a dyn Curve2d, tol: f64) -> Self {
         let mut tolerance_vector = MathVector::new(1, 2);
-        tolerance_vector.set_value(1, curve_tool::eps_x());
+        tolerance_vector.set_value(1, curve_tool::geom2d_eps_x());
         let mut r = Self {
             done: false,
             nbroots: 0,
@@ -59,7 +59,7 @@ impl<'a> Geom2dIntExactIntersectionPoint<'a> {
             root: MathVector::new(1, 2),
             an_error_occurred: false,
         };
-        r.tolerance_vector.set_value(2, curve_tool::eps_x());
+        r.tolerance_vector.set_value(2, curve_tool::geom2d_eps_x());
         r
     }
 

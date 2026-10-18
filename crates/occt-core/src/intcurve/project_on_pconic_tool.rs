@@ -47,7 +47,7 @@ pub fn find_parameter_bounded(
 /// `IntCurve_ProjectOnPConicTool::FindParameter(C, Pnt, Tol)` (`cxx:92-140`):
 /// the unbounded overload. The research runs on the natural parametric domain
 /// of the curve. The tolerance is unnamed in OCCT and unused.
-pub fn find_parameter(the_p_conic: &IntCurvePConic, p: &GpPnt2d, _tol: f64) -> f64 {
+pub fn pconic_find_parameter(the_p_conic: &IntCurvePConic, p: &GpPnt2d, _tol: f64) -> f64 {
     raw_parameter(the_p_conic, p)
 }
 

@@ -327,7 +327,7 @@ fn make_walking(
         ParametrizationType::ChordLength,
     );
     let mut a_seq_of_l: Vec<WLine> = Vec::new();
-    let b_is_decomposited = line_tool::decomposition_of_wline(
+    let b_is_decomposited = line_tool::decomposition_from_constructor(
         wl,
         s1,
         s2,

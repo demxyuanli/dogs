@@ -13,7 +13,7 @@ use occt_geom::{Curve, Surface};
 pub const MY_MIN_PNTS: usize = 5;
 
 /// `IntCurveSurface_TheHCurveTool::NbSamples` (`...cxx:31-70`).
-pub fn nb_samples(curve: &dyn Curve, u0: f64, u1: f64) -> usize {
+pub fn curve_nb_samples(curve: &dyn Curve, u0: f64, u1: f64) -> usize {
     const NBS_OTHER: f64 = 10.0;
     let mut nbs = NBS_OTHER;
 

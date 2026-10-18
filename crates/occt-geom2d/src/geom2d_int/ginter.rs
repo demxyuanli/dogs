@@ -126,7 +126,7 @@ impl Geom2dIntGInter {
         tol_conf: f64,
         tol: f64,
     ) {
-        match curve_tool::get_type(c) {
+        match curve_tool::geom2d_curve_type(c) {
             GeomAbsCurveType2d::Ellipse
             | GeomAbsCurveType2d::Circle
             | GeomAbsCurveType2d::Parabola
@@ -163,35 +163,35 @@ impl Geom2dIntGInter {
 
     /// `ComputeDomain(C1, TolDomain)` (`gxx:120-177`).
     pub fn compute_domain(&self, c: &dyn Curve2d, tol_domain: f64) -> IntRes2dDomain {
-        match curve_tool::get_type(c) {
+        match curve_tool::geom2d_curve_type(c) {
             GeomAbsCurveType2d::Ellipse | GeomAbsCurveType2d::Circle => {
-                let first = curve_tool::first_parameter(c);
-                let last = curve_tool::last_parameter(c);
-                let p1 = curve_tool::value(c, first);
-                let p2 = curve_tool::value(c, last);
+                let first = curve_tool::geom2d_first_parameter(c);
+                let last = curve_tool::geom2d_last_parameter(c);
+                let p1 = curve_tool::geom2d_value(c, first);
+                let p2 = curve_tool::geom2d_value(c, last);
                 let mut d = IntRes2dDomain::bounded(&p1, first, tol_domain, &p2, last, tol_domain);
                 d.set_equivalent_parameters(first, first + PI + PI);
                 d
             }
             _ => {
-                let param_inf = curve_tool::first_parameter(c);
-                let param_sup = curve_tool::last_parameter(c);
+                let param_inf = curve_tool::geom2d_first_parameter(c);
+                let param_sup = curve_tool::geom2d_last_parameter(c);
                 let mut d = IntRes2dDomain::new();
                 if param_inf > -INFINITE {
                     if param_sup < INFINITE {
                         d.set_bounded(
-                            &curve_tool::value(c, param_inf),
+                            &curve_tool::geom2d_value(c, param_inf),
                             param_inf,
                             tol_domain,
-                            &curve_tool::value(c, param_sup),
+                            &curve_tool::geom2d_value(c, param_sup),
                             param_sup,
                             tol_domain,
                         );
                     } else {
-                        d.set_semi_infinite(&curve_tool::value(c, param_inf), param_inf, tol_domain, true);
+                        d.set_semi_infinite(&curve_tool::geom2d_value(c, param_inf), param_inf, tol_domain, true);
                     }
                 } else if param_sup < INFINITE {
-                    d.set_semi_infinite(&curve_tool::value(c, param_sup), param_sup, tol_domain, false);
+                    d.set_semi_infinite(&curve_tool::geom2d_value(c, param_sup), param_sup, tol_domain, false);
                 }
                 d
             }
@@ -208,8 +208,8 @@ impl Geom2dIntGInter {
         tol_conf: f64,
         tol: f64,
     ) {
-        let typ1 = curve_tool::get_type(c1);
-        let typ2 = curve_tool::get_type(c2);
+        let typ1 = curve_tool::geom2d_curve_type(c1);
+        let typ2 = curve_tool::geom2d_curve_type(c2);
 
         use GeomAbsCurveType2d::*;
 

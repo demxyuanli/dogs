@@ -18,7 +18,7 @@ use occt_geom::{Curve, Surface};
 
 use crate::int_surf_quadric::IntSurfQuadric;
 
-use super::polygon_utils::nb_samples;
+use super::polygon_utils::curve_nb_samples;
 
 /// `EPSX` (`IntCurveSurface_QuadricCurveExactInterUtils.pxx:29`).
 pub const EPSX: f64 = 0.00000000000001;
@@ -125,7 +125,7 @@ impl TheQuadCurvExactHInter {
             let u1 = intervals[ii];
             let u2 = intervals[ii + 1];
 
-            let sample = FunctionSample::new(u1, u2, nb_samples(curve, u1, u2) as i32);
+            let sample = FunctionSample::new(u1, u2, curve_nb_samples(curve, u1, u2) as i32);
             let mut func = TheQuadCurvFuncOfTheQuadCurvExactHInter::new(quadric.clone(), curve);
             let roots = FunctionAllRoots::new(&mut func, &sample, EPSX, EPSDIST, EPSNUL);
 

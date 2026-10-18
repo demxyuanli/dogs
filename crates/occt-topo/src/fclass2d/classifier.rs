@@ -529,7 +529,7 @@ pub(super) fn sample_count(pc: &dyn Curve2d, first: f64, last: f64) -> usize {
     // `BRepTopAdaptor_FClass2d.cxx:180` -> `Geom2dInt_Geom2dCurveTool::NbSamples`
     // (`Geom2dInt_Geom2dCurveTool.cxx:73-91`) -> `Geom2dAdaptor_Curve::NbSamples`
     // (`Geom2dAdaptor_Curve.cxx:1391-1394`, body `cxx:1351-1389`).
-    let mut nbs = nb_samples(pc, first, last);
+    let mut nbs = geom2d_nb_samples(pc, first, last);
     if nbs > 2 {
         // `BRepTopAdaptor_FClass2d.cxx:182-184`.
         nbs *= 4;

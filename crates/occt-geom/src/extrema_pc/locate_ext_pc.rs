@@ -73,8 +73,8 @@ impl<'a> LocateExtPC<'a> {
         let mut r = Self::default();
         r.initialize(
             c,
-            curve_tool::first_parameter(c),
-            curve_tool::last_parameter(c),
+            curve_tool::extrema_first_parameter(c),
+            curve_tool::extrema_last_parameter(c),
             tol_f,
         );
         r.perform(p, u0);
@@ -102,7 +102,7 @@ impl<'a> LocateExtPC<'a> {
         self.mytol = tol_f;
         self.my_umin = u_min;
         self.my_usup = u_sup;
-        self.type_ = curve_tool::get_type(c);
+        self.type_ = curve_tool::extrema_curve_type(c);
         let tolu = curve_tool::resolution(c, CONFUSION);
         match self.type_ {
             GeomAbsCurveType::BSplineCurve
@@ -142,8 +142,8 @@ impl<'a> LocateExtPC<'a> {
 
     /// `hxx:132-272`: the free-form arm, walking the `GeomAbs_C2` intervals.
     fn perform_freeform(&mut self, c: &'a dyn Curve, the_p: &GpPnt, the_u0: f64) {
-        let n = curve_tool::nb_intervals(c, GEOMABS_C2);
-        let the_inter = curve_tool::intervals(c, GEOMABS_C2);
+        let n = curve_tool::extrema_nb_intervals(c, GEOMABS_C2);
+        let the_inter = curve_tool::extrema_intervals(c, GEOMABS_C2);
         // Be gentle with the caller (`hxx:142-150`).
         let mut local_u0 = the_u0;
         if local_u0 < self.my_umin {
@@ -186,9 +186,9 @@ impl<'a> LocateExtPC<'a> {
         let mut i2 = inter;
         // `s2inf` / `s1sup` are the dot products at the two ends of the
         // interval that was tried first (`hxx:185-188`).
-        let (p1, v1) = curve_tool::d1(c, myintuinf);
+        let (p1, v1) = curve_tool::extrema_d1(c, myintuinf);
         let mut s2inf = v1.dot(&GpVec::from_pnts(the_p, &p1));
-        let (p1, v1) = curve_tool::d1(c, myintusup);
+        let (p1, v1) = curve_tool::extrema_d1(c, myintusup);
         let mut s1sup = v1.dot(&GpVec::from_pnts(the_p, &p1));
 
         while !self.my_done && i2 > 0 && i1 <= n {
@@ -198,7 +198,7 @@ impl<'a> LocateExtPC<'a> {
                 myintuinf = the_inter[(i1 - 1) as usize].max(self.my_umin);
                 myintusup = the_inter[i1 as usize].min(self.my_usup);
                 if myintuinf < myintusup {
-                    let (p1, v1) = curve_tool::d1(c, myintuinf);
+                    let (p1, v1) = curve_tool::extrema_d1(c, myintuinf);
                     let s2sup = v1.dot(&GpVec::from_pnts(the_p, &p1));
                     if Precision::is_infinite(s2sup) || Precision::is_infinite(s1sup) {
                         break;
@@ -211,7 +211,7 @@ impl<'a> LocateExtPC<'a> {
                         self.my_dist2 = the_p.square_distance(&p1);
                         break;
                     }
-                    let (p1, v1) = curve_tool::d1(c, myintusup);
+                    let (p1, v1) = curve_tool::extrema_d1(c, myintusup);
                     s1sup = v1.dot(&GpVec::from_pnts(the_p, &p1));
                     self.my_loc_ext_pc
                         .initialize(c, myintuinf, myintusup, self.mytol);
@@ -231,7 +231,7 @@ impl<'a> LocateExtPC<'a> {
                 myintuinf = the_inter[(i2 - 1) as usize].max(self.my_umin);
                 myintusup = the_inter[i2 as usize].min(self.my_usup);
                 if myintuinf < myintusup {
-                    let (p1, v1) = curve_tool::d1(c, myintusup);
+                    let (p1, v1) = curve_tool::extrema_d1(c, myintusup);
                     let s1inf = v1.dot(&GpVec::from_pnts(the_p, &p1));
                     if Precision::is_infinite(s2inf) || Precision::is_infinite(s1inf) {
                         break;
@@ -244,7 +244,7 @@ impl<'a> LocateExtPC<'a> {
                         self.my_dist2 = the_p.square_distance(&p1);
                         break;
                     }
-                    let (p1, v1) = curve_tool::d1(c, myintuinf);
+                    let (p1, v1) = curve_tool::extrema_d1(c, myintuinf);
                     s2inf = v1.dot(&GpVec::from_pnts(the_p, &p1));
                     self.my_loc_ext_pc
                         .initialize(c, myintuinf, myintusup, self.mytol);

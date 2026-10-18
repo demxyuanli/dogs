@@ -83,7 +83,7 @@ impl Geom2dIntPolygon2d {
         let du = (u1 - u) / (nb_pts - 1) as f64;
         let mut i = 1usize;
         loop {
-            let pnt = curve_tool::value(c, u);
+            let pnt = curve_tool::geom2d_value(c, u);
             p.my_box.add_point(&pnt);
             p.set_ti(i, i);
             p.set_tp(i, pnt);
@@ -103,7 +103,7 @@ impl Geom2dIntPolygon2d {
         u = d.first_parameter();
         u += du * 0.5;
         loop {
-            let pm = curve_tool::value(c, u);
+            let pm = curve_tool::geom2d_value(c, u);
             let p1 = p.tp(i);
             let p2 = p.tp(i + 1);
             u += du;
@@ -283,7 +283,7 @@ impl Geom2dIntPolygon2d {
                         let regim1 = Self::calcul_region(pim1.x(), pim1.y(), bx0, bx1, by0, by1);
                         if (regi & regim1) == 0 {
                             let u = 0.5 * (self.tpar(ii) + self.tpar(iim1));
-                            let pm = curve_tool::value(c, u);
+                            let pm = curve_tool::geom2d_value(c, u);
                             let mut t = 0.0;
                             let mut dx = pim1.x() - pi.x();
                             if dx < 0.0 {
@@ -323,7 +323,7 @@ impl Geom2dIntPolygon2d {
                                     self.set_tpar(max_index_used, u);
 
                                     let u1m = 0.5 * (u + self.tpar(self.ti(i - 1)));
-                                    let p1m = curve_tool::value(c, u1m);
+                                    let p1m = curve_tool::geom2d_value(c, u1m);
                                     if let Ok(dir) = GpDir2d::from_vec2d(&GpVec2d::new(
                                         pm.x() - p1.x(),
                                         pm.y() - p1.y(),

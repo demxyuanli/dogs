@@ -43,7 +43,7 @@ pub fn nb_points(pc: &dyn Curve2d) -> usize {
 
 /// `Geom2dInt_Geom2dCurveTool::NbSamples(const Adaptor2d_Curve2d&)`
 /// (`Geom2dInt_Geom2dCurveTool.cxx:73-91`).
-pub fn nb_samples(pc: &dyn Curve2d, first: f64, last: f64) -> usize {
+pub fn geom2d_nb_samples(pc: &dyn Curve2d, first: f64, last: f64) -> usize {
     let mut nbs = nb_points(pc);
     if let Some(circ) = pc.gp_circ2d() {
         if circ.radius() > 1.0 {

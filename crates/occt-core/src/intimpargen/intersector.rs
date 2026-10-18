@@ -51,7 +51,7 @@ impl MathFunction for MyImpParTool<'_> {
     fn value(&mut self, param: f64, approx_distance: &mut f64) -> bool {
         *approx_distance = self
             .the_imp_tool
-            .distance(&pconic_tool::value(self.the_par_curve, param));
+            .distance(&pconic_tool::pconic_value(self.the_par_curve, param));
         true
     }
 }
@@ -61,8 +61,8 @@ impl MathFunctionWithDerivative for MyImpParTool<'_> {
     fn derivative(&mut self, param: f64, d: &mut f64) -> bool {
         let grad = self
             .the_imp_tool
-            .grad_distance(&pconic_tool::value(self.the_par_curve, param));
-        let (_pt, tan) = pconic_tool::d1(self.the_par_curve, param);
+            .grad_distance(&pconic_tool::pconic_value(self.the_par_curve, param));
+        let (_pt, tan) = pconic_tool::pconic_d1(self.the_par_curve, param);
         *d = grad.dot(&tan);
         true
     }
@@ -280,7 +280,7 @@ impl IntImpParGenIntersector {
         the_par_curve: &IntCurvePConic,
         the_imp_tool: &IntCurveIConicTool,
     ) -> f64 {
-        *point = pconic_tool::value(the_par_curve, parameter);
+        *point = pconic_tool::pconic_value(the_par_curve, parameter);
         the_imp_tool.find_parameter(point)
     }
 
@@ -298,7 +298,7 @@ impl IntImpParGenIntersector {
     ) -> f64 {
         *point = the_imp_tool.value(parameter);
         if the_par_curve_domain.is_closed() {
-            let v = project_on_pconic_tool::find_parameter(the_par_curve, point, tolerance);
+            let v = project_on_pconic_tool::pconic_find_parameter(the_par_curve, point, tolerance);
             gen::normalize_on_domain(v, the_par_curve_domain)
         } else {
             let mut vv0 = v0;
@@ -352,7 +352,7 @@ impl IntImpParGenIntersector {
             the_par_curve_domain.last_parameter(),
         );
 
-        let mut eps_x = pconic_tool::eps_x(the_par_curve);
+        let mut eps_x = pconic_tool::pconic_eps_x(the_par_curve);
         if eps_x > 1.0e-10 {
             eps_x = 1.0e-10;
         }
@@ -417,7 +417,7 @@ impl IntImpParGenIntersector {
 
             if is_on_the_imp_curve_domain {
                 let (pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (pt2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2);
+                let (pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
 
                 let pos1 = gen::determine_position(the_imp_curve_domain, &pt1, param1);
                 let pos2 = gen::determine_position(the_par_curve_domain, &pt2, param2);
@@ -483,7 +483,7 @@ impl IntImpParGenIntersector {
                     param1_sup += periode;
                 }
 
-                let (_p2, mut t2, n2) = pconic_tool::d2(the_par_curve, param2_inf);
+                let (_p2, mut t2, n2) = pconic_tool::pconic_d2(the_par_curve, param2_inf);
                 let (_p1, mut t1, n1) = the_imp_tool.d2(param1_inf);
                 if t1.magnitude() <= crate::precision::RESOLUTION {
                     t1 = n1;
@@ -577,8 +577,8 @@ impl IntImpParGenIntersector {
 
                 let pt1_on1 = the_imp_tool.value(param1_on1);
                 let pt2_on1 = the_imp_tool.value(param2_on1);
-                let pt1_on2 = pconic_tool::value(the_par_curve, param1_on2);
-                let pt2_on2 = pconic_tool::value(the_par_curve, param2_on2);
+                let pt1_on2 = pconic_tool::pconic_value(the_par_curve, param1_on2);
+                let pt2_on2 = pconic_tool::pconic_value(the_par_curve, param2_on2);
 
                 if !the_imp_curve_domain.is_closed() {
                     if pt1_on1.distance(&pt2_on1) <= dist_mini_imp_curve
@@ -592,7 +592,7 @@ impl IntImpParGenIntersector {
                 param1_on2 = gen::normalize_on_domain(param1_on2, the_par_curve_domain);
 
                 let (mut pt1_on1, mut tan1, norm1) = the_imp_tool.d2(param1_on1);
-                let (_pt1_on2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param1_on2);
+                let (_pt1_on2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param1_on2);
 
                 let pos1 = gen::determine_position(the_imp_curve_domain, &pt1_on1, param1_on1);
                 let pos2 = gen::determine_position(the_par_curve_domain, &pt1_on2, param1_on2);
@@ -646,7 +646,7 @@ impl IntImpParGenIntersector {
                     let param2_on2 = gen::normalize_on_domain(param2_on2, the_par_curve_domain);
 
                     let (mut pt2_on1, mut tan1, norm1) = the_imp_tool.d2(param2_on1);
-                    let (pt2_on2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2_on2);
+                    let (pt2_on2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2_on2);
 
                     let pos1 = gen::determine_position(the_imp_curve_domain, &pt2_on1, param2_on1);
                     let pos2 = gen::determine_position(the_par_curve_domain, &pt2_on2, param2_on2);
@@ -722,7 +722,7 @@ impl IntImpParGenIntersector {
                 let param1 = the_imp_curve_domain.first_parameter();
                 let param2 = the_par_curve_domain.first_parameter();
                 let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(
@@ -757,7 +757,7 @@ impl IntImpParGenIntersector {
                 let param1 = the_imp_curve_domain.first_parameter();
                 let param2 = the_par_curve_domain.last_parameter();
                 let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(
@@ -795,7 +795,7 @@ impl IntImpParGenIntersector {
                 let param1 = the_imp_curve_domain.last_parameter();
                 let param2 = the_par_curve_domain.first_parameter();
                 let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(
@@ -830,7 +830,7 @@ impl IntImpParGenIntersector {
                 let param1 = the_imp_curve_domain.last_parameter();
                 let param2 = the_par_curve_domain.last_parameter();
                 let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::d2(the_par_curve, param2);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(

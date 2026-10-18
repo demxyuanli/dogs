@@ -33,7 +33,7 @@ pub enum GeomAbsCurveType {
 /// concrete class decides -- a geometrically straight B-spline is
 /// `GeomAbs_BSplineCurve` in OCCT, so `Curve::is_line` (a geometric test) is
 /// deliberately **not** used here.
-pub fn get_type(c: &dyn Curve) -> GeomAbsCurveType {
+pub fn extrema_curve_type(c: &dyn Curve) -> GeomAbsCurveType {
     if c.gp_circ().is_some() {
         GeomAbsCurveType::Circle
     } else if c.gp_line().is_some() {
@@ -56,32 +56,32 @@ pub fn get_type(c: &dyn Curve) -> GeomAbsCurveType {
 }
 
 /// `D0` (`hxx:84-87`).
-pub fn d0(c: &dyn Curve, u: f64) -> GpPnt {
+pub fn extrema_d0(c: &dyn Curve, u: f64) -> GpPnt {
     c.d0(u)
 }
 
 /// `D1` (`hxx:89-93`).
-pub fn d1(c: &dyn Curve, u: f64) -> (GpPnt, GpVec) {
+pub fn extrema_d1(c: &dyn Curve, u: f64) -> (GpPnt, GpVec) {
     c.d1(u)
 }
 
 /// `D2` (`hxx:95-104`).
-pub fn d2(c: &dyn Curve, u: f64) -> (GpPnt, GpVec, GpVec) {
+pub fn extrema_d2(c: &dyn Curve, u: f64) -> (GpPnt, GpVec, GpVec) {
     c.d2(u)
 }
 
 /// `DN` (`hxx:112-115`).
-pub fn dn(c: &dyn Curve, u: f64, n: i32) -> GpVec {
+pub fn extrema_dn(c: &dyn Curve, u: f64, n: i32) -> GpVec {
     c.eval_dn(u, n)
 }
 
 /// `FirstParameter` (`hxx:42`).
-pub fn first_parameter(c: &dyn Curve) -> f64 {
+pub fn extrema_first_parameter(c: &dyn Curve) -> f64 {
     c.first_parameter()
 }
 
 /// `LastParameter` (`hxx:44`).
-pub fn last_parameter(c: &dyn Curve) -> f64 {
+pub fn extrema_last_parameter(c: &dyn Curve) -> f64 {
     c.last_parameter()
 }
 
@@ -91,11 +91,11 @@ pub fn resolution(c: &dyn Curve, r3d: f64) -> f64 {
 }
 
 /// `NbIntervals` (`hxx:50-53`).
-pub fn nb_intervals(c: &dyn Curve, s: u8) -> i32 {
+pub fn extrema_nb_intervals(c: &dyn Curve, s: u8) -> i32 {
     c.nb_intervals(s)
 }
 
 /// `Intervals` (`hxx:56-63`).
-pub fn intervals(c: &dyn Curve, s: u8) -> Vec<f64> {
+pub fn extrema_intervals(c: &dyn Curve, s: u8) -> Vec<f64> {
     c.parameter_intervals(s)
 }

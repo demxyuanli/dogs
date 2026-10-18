@@ -40,8 +40,8 @@ impl MathFunctionSetWithDerivatives for DistBetweenPCurves<'_> {
 
     /// `Value(X, F)` (`gxx:55-63`).
     fn value(&mut self, x: &MathVector, f: &mut MathVector) -> bool {
-        let p1 = curve_tool::d0(self.curve1, x.value(1));
-        let p2 = curve_tool::d0(self.curve2, x.value(2));
+        let p1 = curve_tool::geom2d_d0(self.curve1, x.value(1));
+        let p2 = curve_tool::geom2d_d0(self.curve2, x.value(2));
         f.set_value(1, p1.x() - p2.x());
         f.set_value(2, p1.y() - p2.y());
         true
@@ -49,11 +49,11 @@ impl MathFunctionSetWithDerivatives for DistBetweenPCurves<'_> {
 
     /// `Derivatives(X, D)` (`gxx:67-81`).
     fn derivatives(&mut self, x: &MathVector, d: &mut MathMatrix) -> bool {
-        let (_, t) = curve_tool::d1(self.curve1, x.value(1));
+        let (_, t) = curve_tool::geom2d_d1(self.curve1, x.value(1));
         d.set_value(1, 1, t.x());
         d.set_value(2, 1, t.y());
 
-        let (_, t) = curve_tool::d1(self.curve2, x.value(2));
+        let (_, t) = curve_tool::geom2d_d1(self.curve2, x.value(2));
         d.set_value(1, 2, -t.x());
         d.set_value(2, 2, -t.y());
         true
@@ -61,11 +61,11 @@ impl MathFunctionSetWithDerivatives for DistBetweenPCurves<'_> {
 
     /// `Values(X, F, D)` (`gxx:85-104`).
     fn values(&mut self, x: &MathVector, f: &mut MathVector, d: &mut MathMatrix) -> bool {
-        let (p1, t) = curve_tool::d1(self.curve1, x.value(1));
+        let (p1, t) = curve_tool::geom2d_d1(self.curve1, x.value(1));
         d.set_value(1, 1, t.x());
         d.set_value(2, 1, t.y());
 
-        let (p2, t) = curve_tool::d1(self.curve2, x.value(2));
+        let (p2, t) = curve_tool::geom2d_d1(self.curve2, x.value(2));
         d.set_value(1, 2, -t.x());
         d.set_value(2, 2, -t.y());
 

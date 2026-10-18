@@ -43,5 +43,5 @@ pub mod knot_analysis;
 
 pub use surface_resolution::{bspline_surface_max_derivative, bspline_surface_resolution};
 pub use curve_resolution::bspline_curve_resolution;
-pub use intervals::{adaptor_intervals, intervals as bspline_intervals, local_continuity};
+pub use intervals::{adaptor_intervals, knot_intervals as bspline_intervals, local_continuity};
 pub use unperiodize::{flat_knots_from_mults, unperiodize_direction, unperiodize_knots};

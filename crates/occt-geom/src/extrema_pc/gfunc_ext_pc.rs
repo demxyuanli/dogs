@@ -79,8 +79,8 @@ impl<'a> GFuncExtPC<'a> {
         self.my_point.clear();
         self.my_sq_dist.clear();
         self.my_is_min.clear();
-        self.sub_interval_initialize(curve_tool::first_parameter(c), curve_tool::last_parameter(c));
-        match curve_tool::get_type(c) {
+        self.sub_interval_initialize(curve_tool::extrema_first_parameter(c), curve_tool::extrema_last_parameter(c));
+        match curve_tool::extrema_curve_type(c) {
             GeomAbsCurveType::BezierCurve
             | GeomAbsCurveType::BSplineCurve
             | GeomAbsCurveType::OffsetCurve
@@ -122,7 +122,7 @@ impl<'a> GFuncExtPC<'a> {
             if u > self.my_u_supremum {
                 u = self.my_u_supremum;
             }
-            let (_p, v_der) = curve_tool::d1(c, u);
+            let (_p, v_der) = curve_tool::extrema_d1(c, u);
             if !Precision::is_infinite(v_der.x()) && !Precision::is_infinite(v_der.y()) {
                 let vm = v_der.magnitude();
                 if vm > a_max {
@@ -144,7 +144,7 @@ impl<'a> GFuncExtPC<'a> {
             None => return false,
         };
         self.my_u = the_u;
-        let (pc, mut d1c) = curve_tool::d1(c, self.my_u);
+        let (pc, mut d1c) = curve_tool::extrema_d1(c, self.my_u);
         self.my_pc = pc;
         if Precision::is_infinite(d1c.x()) || Precision::is_infinite(d1c.y()) {
             *the_f = INFINITE;
@@ -165,7 +165,7 @@ impl<'a> GFuncExtPC<'a> {
             let (mut v, mut is_derive_found);
             loop {
                 n += 1;
-                v = curve_tool::dn(c, self.my_u, n);
+                v = curve_tool::extrema_dn(c, self.my_u, n);
                 ndu = v.magnitude();
                 is_derive_found = ndu > self.my_tol;
                 if is_derive_found || n >= self.my_max_deriv_order {
@@ -178,8 +178,8 @@ impl<'a> GFuncExtPC<'a> {
                 } else {
                     self.my_u - a_delta
                 };
-                let p1 = curve_tool::d0(c, self.my_u.min(u));
-                let p2 = curve_tool::d0(c, self.my_u.max(u));
+                let p1 = curve_tool::extrema_d0(c, self.my_u.min(u));
+                let p2 = curve_tool::extrema_d0(c, self.my_u.max(u));
                 let v1 = GpVec::new(p2.x() - p1.x(), p2.y() - p1.y(), p2.z() - p1.z());
                 let a_dir_factor = v.dot(&v1);
                 d1c = if a_dir_factor < 0.0 {
@@ -190,14 +190,14 @@ impl<'a> GFuncExtPC<'a> {
             } else {
                 let (p1, p2, p3, grown);
                 if self.my_u - self.my_u_infium < 2.0 * a_delta {
-                    p1 = curve_tool::d0(c, self.my_u);
-                    p2 = curve_tool::d0(c, self.my_u + a_delta);
-                    p3 = curve_tool::d0(c, self.my_u + 2.0 * a_delta);
+                    p1 = curve_tool::extrema_d0(c, self.my_u);
+                    p2 = curve_tool::extrema_d0(c, self.my_u + a_delta);
+                    p3 = curve_tool::extrema_d0(c, self.my_u + 2.0 * a_delta);
                     grown = true;
                 } else {
-                    p1 = curve_tool::d0(c, self.my_u - 2.0 * a_delta);
-                    p2 = curve_tool::d0(c, self.my_u - a_delta);
-                    p3 = curve_tool::d0(c, self.my_u);
+                    p1 = curve_tool::extrema_d0(c, self.my_u - 2.0 * a_delta);
+                    p2 = curve_tool::extrema_d0(c, self.my_u - a_delta);
+                    p3 = curve_tool::extrema_d0(c, self.my_u);
                     grown = false;
                 }
                 // `gp_Vec(Ptemp, P1)` with the default-constructed `Ptemp` is
@@ -250,7 +250,7 @@ impl<'a> GFuncExtPC<'a> {
         self.my_u = the_u;
         self.my_pc = pc_old;
         self.my_p = p_old;
-        let (pc, d1c, d2c) = curve_tool::d2(c, self.my_u);
+        let (pc, d1c, d2c) = curve_tool::extrema_d2(c, self.my_u);
         self.my_pc = pc;
         let ndu = d1c.magnitude();
         if ndu <= self.my_tol {

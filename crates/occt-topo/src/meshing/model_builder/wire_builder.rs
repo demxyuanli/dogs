@@ -753,9 +753,9 @@ pub(crate) fn sample_pcurve(pc: &dyn Curve2d, a: f64, b: f64) -> Vec<GpPnt2d> {
 /// * `BRepTopAdaptor_FClass2d.cxx:182-184`
 ///
 /// Both apply the `*4` at their own call site, so it stays here rather than in
-/// [`crate::curve_sampling_2d::nb_samples`].
+/// [`crate::curve_sampling_2d::geom2d_nb_samples`].
 pub(crate) fn sample_count_2d(pc: &dyn Curve2d, a: f64, b: f64) -> usize {
-    let mut nbs = crate::curve_sampling_2d::nb_samples(pc, a, b);
+    let mut nbs = crate::curve_sampling_2d::geom2d_nb_samples(pc, a, b);
     if nbs > 2 {
         nbs *= 4;
     }

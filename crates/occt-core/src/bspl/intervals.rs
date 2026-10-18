@@ -72,7 +72,7 @@ pub fn local_continuity(flat_knots: &[f64], degree: usize, periodic: bool, u1: f
 
 /// `BSplCLib::Intervals` (`cxx:4824-4961`) plus the GeomAdaptor CN mapping:
 /// requested `CN` (`>= 6`) uses `aCont = degree`.
-pub fn intervals(
+pub fn knot_intervals(
     flat_knots: &[f64],
     degree: usize,
     periodic: bool,
@@ -206,5 +206,5 @@ pub fn adaptor_intervals(
         return vec![first, last];
     }
     let eps = if tolerance > 0.0 { tolerance } else { PCONFUSION };
-    intervals(flat_knots, degree, periodic, continuity, first, last, eps)
+    knot_intervals(flat_knots, degree, periodic, continuity, first, last, eps)
 }

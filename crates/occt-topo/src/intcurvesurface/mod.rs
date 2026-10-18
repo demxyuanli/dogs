@@ -67,7 +67,7 @@ pub use polygon::{ThePolygonOfHInter, ThePolygonToolOfHInter};
 pub use polyhedron::{ThePolyhedronOfHInter, ThePolyhedronToolOfHInter};
 pub use section_point_params::section_point_to_parameters;
 pub use polygon_utils::{
-    nb_samples, sample_pars, surface_nb_samples_u, surface_nb_samples_u_range,
+    curve_nb_samples, sample_pars, surface_nb_samples_u, surface_nb_samples_u_range,
     surface_nb_samples_v, surface_nb_samples_v_range, unique_knot_count, MY_MIN_PNTS,
 };
 pub use interference::TheInterferenceOfHInter;

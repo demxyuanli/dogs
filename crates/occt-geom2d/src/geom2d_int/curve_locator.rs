@@ -15,14 +15,14 @@ use super::curve_tool;
 /// the same.
 pub fn locate(p: &GpPnt2d, c: &dyn Curve2d, nb_u: i32) -> (f64, GpPnt2d) {
     assert!(nb_u >= 2, "Extrema_GCurveLocator::Locate: NbU < 2");
-    let mut u = curve_tool::first_parameter(c);
-    let pas_u = (curve_tool::last_parameter(c) - u) / f64::from(nb_u - 1);
+    let mut u = curve_tool::geom2d_first_parameter(c);
+    let pas_u = (curve_tool::geom2d_last_parameter(c) - u) / f64::from(nb_u - 1);
     let mut dist2_min = f64::MAX;
     let mut u_min = 0.0f64;
     let mut pnt_min = GpPnt2d::new(0.0, 0.0);
     let mut no_sample = 1;
     while no_sample < nb_u {
-        let pt = curve_tool::value(c, u);
+        let pt = curve_tool::geom2d_value(c, u);
         let dist2 = pt.square_distance(p);
         if dist2 < dist2_min {
             dist2_min = dist2;
@@ -45,8 +45,8 @@ pub fn locate_range(
     u_sup_in: f64,
 ) -> (f64, GpPnt2d) {
     assert!(nb_u >= 2, "Extrema_GCurveLocator::Locate: NbU < 2");
-    let u_inf = curve_tool::first_parameter(c);
-    let u_last = curve_tool::last_parameter(c);
+    let u_inf = curve_tool::geom2d_first_parameter(c);
+    let u_last = curve_tool::geom2d_last_parameter(c);
     let u1 = u_inf.min(u_last);
     let u2 = u_inf.max(u_last);
     let mut u11 = u_min_in.min(u_sup_in);
@@ -65,7 +65,7 @@ pub fn locate_range(
     let mut pnt_min = GpPnt2d::new(0.0, 0.0);
     let mut no_sample = 1;
     while no_sample < nb_u {
-        let pt = curve_tool::value(c, u);
+        let pt = curve_tool::geom2d_value(c, u);
         let dist2 = pt.square_distance(p);
         if dist2 < dist2_min {
             dist2_min = dist2;

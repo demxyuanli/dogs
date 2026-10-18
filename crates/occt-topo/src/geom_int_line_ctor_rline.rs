@@ -16,8 +16,8 @@ pub(crate) fn perform_restriction(ctor: &mut LineConstructor, line: &GeomIntLine
     ctor.seqp_mut().clear();
     let nbvtx = line_tool::nb_vertex(line);
     if nbvtx == 0 {
-        ctor.seqp_mut().push(line_tool::first_parameter(line));
-        ctor.seqp_mut().push(line_tool::last_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_first_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_last_parameter(line));
         ctor.set_done(true);
         return;
     }
@@ -102,13 +102,13 @@ pub(crate) fn perform_restriction(ctor: &mut LineConstructor, line: &GeomIntLine
         dans_s2 = true;
     }
     if !trim {
-        ctor.seqp_mut().push(line_tool::first_parameter(line));
-        ctor.seqp_mut().push(line_tool::last_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_first_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_last_parameter(line));
         ctor.set_done(true);
         return;
     }
-    let thefirst = line_tool::first_parameter(line);
-    let thelast = line_tool::last_parameter(line);
+    let thefirst = line_tool::line_tool_first_parameter(line);
+    let thelast = line_tool::line_tool_last_parameter(line);
     let mut firstp = thefirst;
     for item in &seqpss {
         let or1 = item.orientation1();

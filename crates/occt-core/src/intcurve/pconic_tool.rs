@@ -9,7 +9,7 @@ use super::pconic::IntCurvePConic;
 /// `IntCurve_PConicTool::Value` (`cxx:26-42`). The `default:` arm is
 /// `GeomAbs_Hyperbola`, so an unexpected type falls through to the hyperbola
 /// evaluation rather than the degenerate hyperbola of a "no match".
-pub fn value(c: &IntCurvePConic, x: f64) -> GpPnt2d {
+pub fn pconic_value(c: &IntCurvePConic, x: f64) -> GpPnt2d {
     match c.type_curve() {
         CurveType::Line => clib2d::line_value_ax2d(x, &c.axis2().x_axis()),
         CurveType::Circle => clib2d::circle_value_ax22d(x, c.axis2(), c.param1()),
@@ -23,7 +23,7 @@ pub fn value(c: &IntCurvePConic, x: f64) -> GpPnt2d {
 
 /// `IntCurve_PConicTool::D1` (`cxx:48-78`). Unknown types leave `Pt`/`Tan`
 /// untouched in OCCT; the Rust port returns the degenerate zero pair.
-pub fn d1(c: &IntCurvePConic, u: f64) -> (GpPnt2d, GpVec2d) {
+pub fn pconic_d1(c: &IntCurvePConic, u: f64) -> (GpPnt2d, GpVec2d) {
     match c.type_curve() {
         CurveType::Line => clib2d::line_d1_ax2d(u, &c.axis2().x_axis()),
         CurveType::Circle => clib2d::circle_d1_ax22d(u, c.axis2(), c.param1()),
@@ -39,7 +39,7 @@ pub fn d1(c: &IntCurvePConic, u: f64) -> (GpPnt2d, GpVec2d) {
 /// `IntCurve_PConicTool::D2` (`cxx:80-114`). The line arm writes the tangent
 /// twice — `Tan.SetCoord(0,0)` then `ElCLib::LineD1` overwrites it — so the
 /// second derivative is zero, as in [`super::iconic_tool`].
-pub fn d2(c: &IntCurvePConic, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
+pub fn pconic_d2(c: &IntCurvePConic, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
     match c.type_curve() {
         CurveType::Line => {
             let (p, tan) = clib2d::line_d1_ax2d(u, &c.axis2().x_axis());
@@ -60,12 +60,12 @@ pub fn d2(c: &IntCurvePConic, u: f64) -> (GpPnt2d, GpVec2d, GpVec2d) {
 }
 
 /// `IntCurve_PConicTool::EpsX` (`cxx:116-119`).
-pub fn eps_x(c: &IntCurvePConic) -> f64 {
+pub fn pconic_eps_x(c: &IntCurvePConic) -> f64 {
     c.eps_x()
 }
 
 /// `IntCurve_PConicTool::NbSamples(const IntCurve_PConic&)` (`cxx:121-124`).
-pub fn nb_samples(c: &IntCurvePConic) -> i32 {
+pub fn pconic_nb_samples(c: &IntCurvePConic) -> i32 {
     c.accuracy()
 }
 

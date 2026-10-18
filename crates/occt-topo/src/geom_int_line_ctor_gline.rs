@@ -61,8 +61,8 @@ pub(crate) fn perform_gline(ctor: &mut LineConstructor, line: &GeomIntLine, tol:
         }
     }
     if !intrvtested {
-        ctor.seqp_mut().push(line_tool::first_parameter(line));
-        ctor.seqp_mut().push(line_tool::last_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_first_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_last_parameter(line));
     }
     ctor.set_done(true);
 }
@@ -77,8 +77,8 @@ fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, the_tol: f64) {
     }
     let a_nb_vtx = a_gline.nb_vertex();
     if a_nb_vtx <= 0 {
-        ctor.seqp_mut().push(line_tool::first_parameter(line));
-        ctor.seqp_mut().push(line_tool::last_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_first_parameter(line));
+        ctor.seqp_mut().push(line_tool::line_tool_last_parameter(line));
         return;
     }
     let mut a_vtx: Vec<PatchPoint> = (1..=a_nb_vtx).map(|i| *a_gline.vertex(i)).collect();

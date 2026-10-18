@@ -48,7 +48,7 @@ pub fn vertex(l: &GeomIntLine, i: i32) -> PatchPoint {
 }
 
 /// `GeomInt_LineTool::FirstParameter`.
-pub fn first_parameter(l: &GeomIntLine) -> f64 {
+pub fn line_tool_first_parameter(l: &GeomIntLine) -> f64 {
     match l.arc_type() {
         IntPatchIType::Analytic => {
             let a = l.as_aline().expect("analytic");
@@ -96,7 +96,7 @@ pub fn first_parameter(l: &GeomIntLine) -> f64 {
 }
 
 /// `GeomInt_LineTool::LastParameter`.
-pub fn last_parameter(l: &GeomIntLine) -> f64 {
+pub fn line_tool_last_parameter(l: &GeomIntLine) -> f64 {
     match l.arc_type() {
         IntPatchIType::Analytic => {
             let a = l.as_aline().expect("analytic");
@@ -145,7 +145,7 @@ pub fn last_parameter(l: &GeomIntLine) -> f64 {
 
 /// `GeomInt_LineTool::DecompositionOfWLine` — constructor parts become the
 /// `line_parts` argument of `IntTools_WLineTool::DecompositionOfWLine`.
-pub fn decomposition_of_wline(
+pub fn decomposition_from_constructor(
     the_wline: &WLine,
     the_surface1: &dyn Surface,
     the_surface2: &dyn Surface,

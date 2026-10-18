@@ -39,7 +39,7 @@ mod wl_approx;
 pub use types::{ALine, GLine, GLineKind, GeomIntLine, IntPatchIType, RLine};
 pub use param_ori::ParameterAndOrientation;
 pub use topol::{RestrictionArc, TopolTool};
-pub use line_tool::{first_parameter, last_parameter, nb_vertex, vertex};
+pub use line_tool::{line_tool_first_parameter, line_tool_last_parameter, nb_vertex, vertex};
 pub use line_ctor::LineConstructor;
 pub use intss::{IntSS, IntSSLine};
 pub use intss_bspline::{make_bspline, make_bspline2d};
