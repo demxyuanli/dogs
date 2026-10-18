@@ -16,7 +16,7 @@ use crate::curve::Curve2d;
 
 /// Unit tangent vector at parameter `u`, computed from the normalized first
 /// derivative. Degenerate derivatives yield the +X axis.
-pub fn tangent2d(curve: &Arc<dyn Curve2d>, u: f64) -> GpVec2d {
+pub fn convert_tangent2d(curve: &Arc<dyn Curve2d>, u: f64) -> GpVec2d {
     let (_, v) = curve.d1(u);
     let m = v.magnitude();
     if m > 1e-15 {
@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn tangent_at_midpoint_has_unit_length() {
         let curve = unit_x_line();
-        let t = tangent2d(&curve, 0.5);
+        let t = convert_tangent2d(&curve, 0.5);
         assert!((t.magnitude() - 1.0).abs() < 1e-9);
     }
 }

@@ -11,7 +11,7 @@
 //!   leaves the vertex sphere, then bisect to the exact exit), followed by the
 //!   arc-length computation of the shrunk span
 //!   (`GCPnts_AbscissaPoint::Length`, `IntTools_ShrunkRange.cxx:170`, served by
-//!   `occt_geom::gcpnts::length`).
+//!   `occt_geom::gcpnts::curve_length_between`).
 //!   Degenerated edges, edges without a registered 3D curve and unbounded
 //!   parameter ranges return `Err` rather than panicking.
 //! - [`IntToolsTools`] is a namespace of small static helpers used by the
@@ -23,7 +23,7 @@
 //!   `None` shells.
 //!
 //! Note: the arc-length measurement is the faithful
-//! `GCPnts_AbscissaPoint::Length` dispatch in `occt_geom::gcpnts::length`
+//! `GCPnts_AbscissaPoint::Length` dispatch in `occt_geom::gcpnts::curve_length_between`
 //! (`GCPnts_AbscissaPoint.cxx:371-423`).
 
 use occt_core::gp::{GpPnt, GpPnt2d};
@@ -175,7 +175,7 @@ impl ShrunkRange {
         }
         // `GCPnts_AbscissaPoint::Length(aBAC, myTS1, myTS2, aPTolE)`
         // (`IntTools_ShrunkRange.cxx:170`).
-        let length = gcpnts::length(curve.as_ref(), s1, s2, Some(a_ptol_e));
+        let length = gcpnts::curve_length_between(curve.as_ref(), s1, s2, Some(a_ptol_e));
         if length < CONFUSION {
             return self.fail("shrunk length is too short (micro edge)");
         }

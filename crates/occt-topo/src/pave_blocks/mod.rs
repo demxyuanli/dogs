@@ -33,7 +33,7 @@ pub(crate) use std::sync::Arc;
 pub(crate) use occt_core::gp::{GpPnt, GpPnt2d};
 pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION};
 pub(crate) use occt_geom2d::curve::Curve2d;
-pub(crate) use occt_geom2d::geom2d_api::{intersect_curves, project_point_on_curve};
+pub(crate) use occt_geom2d::geom2d_api::{intersect_curves, project_point_on_curve_2d as project_point_on_curve};
 pub(crate) use occt_geom2d::Geom2dBSplineCurve;
 
 pub(crate) use crate::abs::{Orientation, ShapeType};

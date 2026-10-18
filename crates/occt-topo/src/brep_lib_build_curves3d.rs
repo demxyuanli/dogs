@@ -105,7 +105,7 @@ pub fn build_curve3d(
     };
     let cos: Arc<dyn Curve> = Arc::new(CurveOnSurface::new(pc.clone(), surf.clone(), f, l));
     let max_segment = evaluate_max_segment(max_segment, &surf, &pc);
-    let result = geom_lib::build_curve3d(
+    let result = geom_lib::geom_lib_build_curve3d(
         tolerance,
         cos.as_ref(),
         &surf,

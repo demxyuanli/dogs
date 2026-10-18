@@ -15,7 +15,7 @@ pub struct Project2d {
 
 /// Project `p` onto `c`. Wraps [`curve2d_closest_point`] with a bounded Newton
 /// refinement on the tangency condition `(c(u) - p)·c'(u) = 0`.
-pub fn project_point_on_curve(c: &dyn Curve2d, p: &GpPnt2d, tol: f64) -> Option<Project2d> {
+pub fn project_point_on_curve_2d(c: &dyn Curve2d, p: &GpPnt2d, tol: f64) -> Option<Project2d> {
     let (mut u, mut q) = curve2d_closest_point(c, p, tol)?;
     let a = c.first_parameter();
     let b = c.last_parameter();
@@ -397,7 +397,7 @@ mod tests {
     #[test]
     fn project_point_on_circle() {
         let c = circle((0.0, 0.0), 1.0);
-        let r = project_point_on_curve(&c as &dyn Curve2d, &GpPnt2d::new(0.0, 2.0), 1e-9).unwrap();
+        let r = project_point_on_curve_2d(&c as &dyn Curve2d, &GpPnt2d::new(0.0, 2.0), 1e-9).unwrap();
         assert!((r.distance - 1.0).abs() < 1e-9, "distance={}", r.distance);
         assert!((r.point.x() - 0.0).abs() < 1e-9 && (r.point.y() - 1.0).abs() < 1e-9, "point={:?}", r.point);
     }

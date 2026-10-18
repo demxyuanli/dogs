@@ -79,20 +79,20 @@ pub use crate::extrema_pc::point_curve_extrema;
 /// Maximum distance from point `p` to curve `c` over its parameter range.
 /// `samples` is kept for signature compatibility but no longer drives the
 /// computation. `None` as above.
-pub fn point_curve_max_extrema(c: &dyn Curve, p: &GpPnt, _samples: usize) -> Option<ExtremaPair> {
+pub fn point_curve_max_extrema_with_samples(c: &dyn Curve, p: &GpPnt, _samples: usize) -> Option<ExtremaPair> {
     crate::extrema_pc::point_curve_max_extrema(c, p)
 }
 
 /// All local extrema between two curves, sorted by distance (min first).
 /// `samples` is kept for signature compatibility.
-pub fn curve_curve_extrema(c1: &dyn Curve, c2: &dyn Curve, _samples: usize) -> Vec<ExtremaPair> {
+pub fn curve_curve_extrema_with_samples(c1: &dyn Curve, c2: &dyn Curve, _samples: usize) -> Vec<ExtremaPair> {
     crate::extrema_cc::curve_curve_extrema_all(c1, c2)
 }
 
 /// Minimum distance between a curve and a surface.
 /// `samples` is kept for signature compatibility.
 /// `None` = `Extrema_ExtCS::IsDone() == false` or `NbExt() == 0`.
-pub fn curve_surface_extrema(c: &dyn Curve, s: &dyn Surface, _samples: usize) -> Option<ExtremaPair> {
+pub fn curve_surface_extrema_with_samples(c: &dyn Curve, s: &dyn Surface, _samples: usize) -> Option<ExtremaPair> {
     crate::extrema_surf::curve_surface_extrema(c, s)
 }
 
@@ -141,7 +141,7 @@ pub use crate::extrema_surf::point_surface_extrema;
 
 /// Build an extrema pair from a point and a tangent vector on a curve —
 /// convenience for callers that already have the closest parameter.
-pub fn tangent_at(c: &dyn Curve, u: f64) -> GpVec {
+pub fn tangent_at_unnormalized(c: &dyn Curve, u: f64) -> GpVec {
     let (_, d) = c.d1(u);
     d
 }
@@ -174,7 +174,7 @@ mod tests {
         let p = GpPnt::new(3.0, 0.0, 0.0);
         let e = point_curve_extrema(&circle, &p).expect("circle projection");
         assert!((e.distance - 2.0).abs() < 1e-6, "min dist {}", e.distance);
-        let m = point_curve_max_extrema(&circle, &p, 64).expect("circle max");
+        let m = point_curve_max_extrema_with_samples(&circle, &p, 64).expect("circle max");
         assert!((m.distance - 4.0).abs() < 1e-6, "max dist {}", m.distance);
     }
 
@@ -185,7 +185,7 @@ mod tests {
         let mut t = GpTrsf::identity();
         t.set_translation_vec(&GpVec::new(3.0, 0.0, 0.0));
         c2.transform(&t);
-        let es = curve_curve_extrema(&c1, &c2, 24);
+        let es = curve_curve_extrema_with_samples(&c1, &c2, 24);
         assert!(!es.is_empty());
         assert!((es[0].distance - 1.0).abs() < 1e-5, "min {}", es[0].distance);
     }
@@ -195,7 +195,7 @@ mod tests {
         // Line at y=3, sphere radius 1 at origin → min distance 2.
         let line = line(GpPnt::new(0.0, 3.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap());
         let sphere = sphere(1.0);
-        let e = curve_surface_extrema(&line, &sphere, 16).expect("Extrema_ExtCS done");
+        let e = curve_surface_extrema_with_samples(&line, &sphere, 16).expect("Extrema_ExtCS done");
         assert!((e.distance - 2.0).abs() < 1e-4, "min {}", e.distance);
     }
 
@@ -253,7 +253,7 @@ mod tests {
     fn curve_curve_skew_lines() {
         let l1 = line(GpPnt::new(0.0, 0.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap());
         let l2 = line(GpPnt::new(0.0, 0.0, 3.0), GpDir::new(0.0, 1.0, 0.0).unwrap());
-        let es = curve_curve_extrema(&l1, &l2, 8);
+        let es = curve_curve_extrema_with_samples(&l1, &l2, 8);
         assert!(!es.is_empty());
         assert!((es[0].distance - 3.0).abs() < 1e-5, "min {}", es[0].distance);
     }

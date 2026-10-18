@@ -282,7 +282,7 @@ pub fn curve_length_range(c: &dyn Curve, a: f64, b: f64, tol: f64) -> f64 {
 ///
 /// `tol == None` is OCCT's `nullptr` (`:337`, `:345`), i.e. the three-argument
 /// `Length` overloads; `Some(t)` is the four-argument form.
-pub fn length(c: &dyn Curve, u1: f64, u2: f64, tol: Option<f64>) -> f64 {
+pub fn curve_length_between(c: &dyn Curve, u1: f64, u2: f64, tol: Option<f64>) -> f64 {
     match compute_type(c) {
         (AbscissaType::LengthParametrized, ratio) => (u2 - u1).abs() * ratio,
         (AbscissaType::Parametrized, _) => match tol {
@@ -324,7 +324,7 @@ pub fn length(c: &dyn Curve, u1: f64, u2: f64, tol: Option<f64>) -> f64 {
 pub fn curve_length(c: &dyn Curve) -> f64 {
     let (a, b) = (c.first_parameter(), c.last_parameter());
     if a.is_finite() && b.is_finite() {
-        length(c, a, b, None)
+        curve_length_between(c, a, b, None)
     } else {
         f64::INFINITY
     }

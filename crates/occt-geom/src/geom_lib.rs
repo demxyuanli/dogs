@@ -397,7 +397,7 @@ pub fn knots_reparametrize(u1: f64, u2: f64, knots: &mut [f64]) {
     occt_core::bspl::knots::reparametrize(u1, u2, knots);
 }
 
-/// Result of [`build_curve3d`]: the OCCT out-parameters
+/// Result of [`geom_lib_build_curve3d`]: the OCCT out-parameters
 /// `NewCurvePtr`, `MaxDeviation` and `AverageDeviation`.
 pub struct BuildCurve3d {
     /// `NewCurvePtr`; `None` where OCCT leaves the handle null (and, for the
@@ -424,7 +424,7 @@ pub struct BuildCurve3d {
 /// [`Curve::approx_eval`]. Cut points come from
 /// `Adaptor3d_CurveOnSurface::NbIntervals` (`Adaptor3d_CurveOnSurface.cxx:1045-1114`).
 #[allow(clippy::too_many_arguments)]
-pub fn build_curve3d(
+pub fn geom_lib_build_curve3d(
     tolerance: f64,
     curve: &dyn Curve,
     surface: &Arc<dyn Surface>,

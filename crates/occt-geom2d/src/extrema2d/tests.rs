@@ -81,7 +81,7 @@ use super::*;
     #[test]
     fn tangent_horizontal_line() {
         let c = line2d();
-        let t = tangent2d(&c, 0.5);
+        let t = extrema_tangent2d(&c, 0.5);
         assert!((t.x() - 1.0).abs() < 1e-9 && t.y().abs() < 1e-9, "tangent {t:?}");
     }
 

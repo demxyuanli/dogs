@@ -9,7 +9,7 @@
 use occt_core::precision::PCONFUSION;
 use occt_geom::Surface;
 use occt_geom2d::curve::Curve2d;
-use occt_geom2d::geom2d_api::{intersect_curves, project_point_on_curve};
+use occt_geom2d::geom2d_api::{intersect_curves, project_point_on_curve_2d as project_point_on_curve};
 
 use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::AlgoTools;

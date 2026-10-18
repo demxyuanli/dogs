@@ -162,7 +162,7 @@ pub fn point_polyline_extrema2d(poly: &[GpPnt2d], p: &GpPnt2d) -> Extrema2d {
 }
 
 /// Tangent direction of a 2D curve at `u` (normalized).
-pub fn tangent2d(c: &dyn Curve2d, u: f64) -> GpVec2d {
+pub fn extrema_tangent2d(c: &dyn Curve2d, u: f64) -> GpVec2d {
     let (_, d) = c.d1(u);
     let m = d.magnitude();
     if m > 1e-12 {

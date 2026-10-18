@@ -165,7 +165,7 @@ impl ShapeBuildEdge {
             let cos: Arc<dyn Curve> = Arc::new(CurveOnSurface::new(pc.clone(), surf.clone(), f, l));
             // `evaluateMaxSegment(MaxSegment, CurveOnSurface)` (`cxx:430`).
             let max_segment = evaluate_max_segment(0, &surf, &pc);
-            let result = geom_lib::build_curve3d(
+            let result = geom_lib::geom_lib_build_curve3d(
                 tolerance,
                 cos.as_ref(),
                 &surf,

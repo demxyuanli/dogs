@@ -10,7 +10,7 @@ use crate::surface::Surface;
 
 /// Least-squares plane fit through a point set. Returns the plane whose
 /// normal is the smallest-eigenvalue direction of the covariance.
-pub fn fit_plane(points: &[GpPnt]) -> Option<GpPln> {
+pub fn surface_fit_plane(points: &[GpPnt]) -> Option<GpPln> {
     if points.len() < 3 {
         return None;
     }
@@ -74,7 +74,7 @@ pub fn fit_sphere(points: &[GpPnt]) -> Option<(GpPnt, f64)> {
 /// Fit a plane, circle (in that plane), or sphere and report which matched
 /// best by residual.
 pub fn fit_surface_kind(points: &[GpPnt]) -> (SurfaceFitKind, f64) {
-    let pln = fit_plane(points);
+    let pln = surface_fit_plane(points);
     let sph = fit_sphere(points);
     let plane_resid = pln.as_ref().map(|p| plane_residual(points, p)).unwrap_or(f64::INFINITY);
     let sphere_resid = sph.as_ref().map(|(c, r)| sphere_residual(points, c, *r)).unwrap_or(f64::INFINITY);
@@ -188,7 +188,7 @@ fn index_of(sorted: &[f64], x: f64) -> usize {
 
 /// Wrap a fitted surface as a trait object.
 pub fn fit_surface(points: &[GpPnt]) -> Result<Arc<dyn Surface>, String> {
-    let pln = fit_plane(points).ok_or("fit_surface: insufficient points")?;
+    let pln = surface_fit_plane(points).ok_or("fit_surface: insufficient points")?;
     Ok(Arc::new(crate::GeomPlane::new(pln)))
 }
 
@@ -337,7 +337,7 @@ mod tests {
             GpPnt::new(0.,0.,0.), GpPnt::new(1.,0.,0.1),
             GpPnt::new(0.,1.,-0.1), GpPnt::new(1.,1.,0.),
         ];
-        let pln = fit_plane(&pts).expect("plane");
+        let pln = surface_fit_plane(&pts).expect("plane");
         let n = *pln.axis().direction();
         assert!(n.z().abs() > 0.99, "normal ~ +Z: {n:?}");
         assert!(plane_residual(&pts, &pln) < 0.15);

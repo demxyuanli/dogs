@@ -267,7 +267,7 @@ pub fn tangent_at(c: &dyn Curve, u: f64) -> GpVec {
 
 /// Approximate bounding box of a curve by sampling `(pmin, pmax)`.
 /// Unbounded curves are sampled over a clamped `[-1, 1]` proxy window.
-pub fn curve_bbox(c: &dyn Curve, samples: usize) -> (GpPnt, GpPnt) {
+pub fn curve_bounding_box(c: &dyn Curve, samples: usize) -> (GpPnt, GpPnt) {
     let (a, b) = finite_range(c.first_parameter(), c.last_parameter());
     let n = samples.max(1);
     let mut min = GpPnt::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn bbox_and_pcurve() {
         let circle = GeomCircle::new(GpCirc::new(GpAx2::standard(), 1.0));
-        let (pmin, pmax) = curve_bbox(&circle as &dyn Curve, 64);
+        let (pmin, pmax) = curve_bounding_box(&circle as &dyn Curve, 64);
         assert!((pmin.x() + 1.0).abs() < 1e-6 && (pmax.x() - 1.0).abs() < 1e-6);
 
         let plane = GeomPlane::new(GpPln::new(GpAx3::standard()));

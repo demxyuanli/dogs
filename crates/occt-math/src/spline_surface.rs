@@ -131,7 +131,7 @@ pub use crate::nurbs_fit::bspline_basis_1d;
 
 /// Evaluate a 1-D B-spline curve (optionally rational) at parameter `t`.
 ///
-/// This is the building block used by [`eval_bspline_surface`]: the surface is
+/// This is the building block used by [`bspline_surface_d0`]: the surface is
 /// a tensor product, so evaluating along v for each active u basis function and
 /// combining with the u basis gives the surface point.
 pub fn eval_bspline_curve_1d(
@@ -173,7 +173,7 @@ pub fn eval_bspline_curve_1d(
 /// the active control-pole grid is formed. For a rational surface (`weights`
 /// present) the weighted sum is divided by the weight sum, which reproduces
 /// standard NURBS evaluation.
-pub fn eval_bspline_surface(s: &BSplineSurface, u: f64, v: f64) -> [f64; 3] {
+pub fn bspline_surface_d0(s: &BSplineSurface, u: f64, v: f64) -> [f64; 3] {
     let nu_p = s.poles.len();
     if nu_p == 0 || s.poles[0].len() == 0 {
         return [0.0; 3];
@@ -373,7 +373,7 @@ pub fn eval_grid_surface(s: &BSplineSurface, nu: usize, nv: usize) -> Vec<[f64; 
         let u = if nu == 1 { 0.5 } else { i as f64 / (nu - 1) as f64 };
         for j in 0..nv {
             let v = if nv == 1 { 0.5 } else { j as f64 / (nv - 1) as f64 };
-            out.push(eval_bspline_surface(s, u, v));
+            out.push(bspline_surface_d0(s, u, v));
         }
     }
     out
@@ -432,16 +432,16 @@ mod tests {
             weights: None,
         };
         // u = 0 selects the first pole row, v = 0 the first column.
-        let p = eval_bspline_surface(&s, 0.0, 0.0);
+        let p = bspline_surface_d0(&s, 0.0, 0.0);
         assert!((p[0] - 0.0).abs() < 1e-12);
         assert!((p[1] - 0.0).abs() < 1e-12);
         assert!((p[2] - 0.0).abs() < 1e-12);
-        let p = eval_bspline_surface(&s, 0.0, 1.0);
+        let p = bspline_surface_d0(&s, 0.0, 1.0);
         assert!((p[1] - 3.0).abs() < 1e-12);
-        let p = eval_bspline_surface(&s, 1.0, 0.0);
+        let p = bspline_surface_d0(&s, 1.0, 0.0);
         assert!((p[0] - 3.0).abs() < 1e-12);
         // Interior evaluation is finite.
-        let p = eval_bspline_surface(&s, 0.5, 0.5);
+        let p = bspline_surface_d0(&s, 0.5, 0.5);
         assert!(p.iter().all(|x| x.is_finite()));
     }
 
@@ -481,12 +481,12 @@ mod tests {
         let s = interpolate_grid(&rows, 5, 5, 3, 3).unwrap();
         let h = 1e-6;
         let (u, v) = (0.37, 0.61);
-        let p1 = eval_bspline_surface(&s, u + h, v);
-        let p2 = eval_bspline_surface(&s, u - h, v);
+        let p1 = bspline_surface_d0(&s, u + h, v);
+        let p2 = bspline_surface_d0(&s, u - h, v);
         let du = [(p1[0] - p2[0]) / (2.0 * h), (p1[1] - p2[1]) / (2.0 * h), (p1[2] - p2[2]) / (2.0 * h)];
         assert!(du.iter().all(|x| x.is_finite()), "du = {du:?}");
-        let q1 = eval_bspline_surface(&s, u, v + h);
-        let q2 = eval_bspline_surface(&s, u, v - h);
+        let q1 = bspline_surface_d0(&s, u, v + h);
+        let q2 = bspline_surface_d0(&s, u, v - h);
         let dv = [(q1[0] - q2[0]) / (2.0 * h), (q1[1] - q2[1]) / (2.0 * h), (q1[2] - q2[2]) / (2.0 * h)];
         assert!(dv.iter().all(|x| x.is_finite()), "dv = {dv:?}");
     }
@@ -502,7 +502,7 @@ mod tests {
             (0.0, 1.0, [0.0, 1.0, 0.0]),
             (1.0, 1.0, [1.0, 1.0, 1.0]),
         ] {
-            let got = eval_bspline_surface(&s, u, v);
+            let got = bspline_surface_d0(&s, u, v);
             for c in 0..3 {
                 assert!(
                     (got[c] - want[c]).abs() < 1e-10,
@@ -551,9 +551,9 @@ mod tests {
         let all_ones = Some(vec![vec![1.0; nv]; nu]);
         s.weights = all_ones.clone();
         for (u, v) in [(0.0, 0.0), (0.3, 0.7), (1.0, 1.0), (0.5, 0.25)] {
-            let a = eval_bspline_surface(&s, u, v);
+            let a = bspline_surface_d0(&s, u, v);
             s.weights = None;
-            let b = eval_bspline_surface(&s, u, v);
+            let b = bspline_surface_d0(&s, u, v);
             s.weights = all_ones.clone();
             for c in 0..3 {
                 assert!((a[c] - b[c]).abs() < 1e-12, "weight=1 mismatch at ({u},{v})");

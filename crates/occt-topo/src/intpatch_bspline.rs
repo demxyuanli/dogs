@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpPnt, GpTrsf, GpVec};
 use occt_geom::Surface;
-use occt_math::spline_surface::{eval_bspline_surface, interpolate_grid, BSplineSurface};
+use occt_math::spline_surface::{bspline_surface_d0, interpolate_grid, BSplineSurface};
 
 /// A thin wrapper over `occt_math`'s tensor-product B-spline surface, exposing
 /// it as an `occt_geom::Surface` on the unit square `[0, 1]²`.
@@ -24,7 +24,7 @@ impl BsplinePatch {
 
     /// Evaluate the patch at `(u, v)`.
     pub fn d0(&self, u: f64, v: f64) -> GpPnt {
-        let a = eval_bspline_surface(&self.bs, u, v);
+        let a = bspline_surface_d0(&self.bs, u, v);
         GpPnt::new(a[0], a[1], a[2])
     }
 
@@ -53,7 +53,7 @@ impl BsplineSurfaceWrapper {
 
 impl Surface for BsplineSurfaceWrapper {
     fn d0(&self, u: f64, v: f64) -> GpPnt {
-        let a = eval_bspline_surface(&self.patch.bs, u, v);
+        let a = bspline_surface_d0(&self.patch.bs, u, v);
         GpPnt::new(a[0], a[1], a[2])
     }
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {

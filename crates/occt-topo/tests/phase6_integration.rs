@@ -7,7 +7,7 @@
 
 use occt_core::geom::polygon_boolean::{polygon_difference, polygon_intersect, polygon_union};
 use occt_core::gp::{GpAx1, GpAx3, GpCirc, GpDir, GpLin, GpPnt, GpTrsf, GpVec};
-use occt_geom::extrema::{curve_surface_extrema, point_curve_extrema, surface_surface_extrema};
+use occt_geom::extrema::{curve_surface_extrema_with_samples, point_curve_extrema, surface_surface_extrema};
 use occt_geom::{GeomCircle, GeomLine, GeomSphere};
 use occt_topo::brep_offset::{offset_polygon, offset_shell};
 use occt_topo::gltf::{build_gltf_bin, GltfOptions};
@@ -48,7 +48,7 @@ fn geom_extrema_distances() {
     // Curve–surface: line y=3 vs unit sphere at origin → 2.
     let sphere = GeomSphere::new(occt_core::gp::GpSphere::new(GpAx3::standard(), 1.0).unwrap());
     let l2 = make_line(GpPnt::new(0.0, 3.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap());
-    let cs = curve_surface_extrema(&l2, &sphere, 16).expect("Extrema_ExtCS done");
+    let cs = curve_surface_extrema_with_samples(&l2, &sphere, 16).expect("Extrema_ExtCS done");
     assert!((cs.distance - 2.0).abs() < 1e-4, "curve-surface {}", cs.distance);
 
     // Surface–surface: two unit spheres with centres 4 apart → 2.

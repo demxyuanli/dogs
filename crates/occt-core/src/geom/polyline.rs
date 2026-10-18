@@ -77,7 +77,7 @@ pub fn arc_length<F: Fn(f64) -> GpPnt>(curve: &F, a: f64, b: f64, n: usize) -> f
 }
 
 /// Tangent direction at a curve point via finite differences.
-pub fn tangent_at<F: Fn(f64) -> GpPnt>(curve: &F, u: f64, h: f64) -> GpVec {
+pub fn finite_difference_tangent<F: Fn(f64) -> GpPnt>(curve: &F, u: f64, h: f64) -> GpVec {
     let p1 = curve(u + h);
     let p2 = curve(u - h);
     let v = p1.coord.subtracted(&p2.coord).divided(2.0 * h);
