@@ -40,7 +40,7 @@ pub(crate) use super::super::delaun_types::VertexState;
 pub(crate) use super::super::edge_discret::{
     curve_tessellator_value_ok, split_by_deflection2d, tessellator_min_points, CurveOnSurface,
     CurveTessellator, EdgeDiscret, EdgeParameterProvider,
-    MeshFace as UvFace,
+    UvFace,
 };
 pub(crate) use super::super::shape_tool::ShapeTool;
 pub(crate) use super::super::face_discret::FaceChecker;

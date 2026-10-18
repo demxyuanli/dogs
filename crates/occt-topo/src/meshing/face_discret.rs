@@ -7,7 +7,7 @@
 //! "is this UV point inside the face?" with a winding-number test
 //! (`BRepMesh_Classifier` + `CSLib_Class2d`).
 //!
-//! Contract types (`MeshParameters`/`MeshFace`/`GeomTool`) are owned by the
+//! Contract types (`MeshParameters`/`UvFace`/`GeomTool`) are owned by the
 //! sibling stubs (`parameters.rs`/`data_model.rs`/`geom_tool.rs`). Until those
 //! stubs are filled this module uses the stand-ins from `edge_discret` and
 //! carries a local `GeomTool` stand-in so the algorithms stay self-testable.
@@ -16,8 +16,8 @@ use occt_core::cslib::{Class2d, Class2dResult};
 use occt_core::gp::{GpPnt2d, GpVec2d};
 use occt_core::precision::{ANGULAR, PCONFUSION};
 
-use super::edge_discret::MeshFace;
-use super::geom_tool::{GeomTool as OcctGeomTool, IntFlag as OcctIntFlag};
+use super::edge_discret::UvFace;
+use super::geom_tool::{GeomTool, IntFlag};
 use super::parameters::MeshParameters;
 
 // ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ use super::parameters::MeshParameters;
 
 /// State of a 2D segment intersection check (`BRepMesh_GeomTool::IntFlag`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IntFlag {
+pub enum FaceCheckerIntFlag {
     NoIntersection,
     Cross,
     EndPointTouch,
@@ -37,10 +37,10 @@ pub enum IntFlag {
     Same,
 }
 
-/// 2D geometry helpers (`BRepMesh_GeomTool`).
-pub struct GeomTool;
+/// 2D geometry helpers for `BRepMesh_FaceChecker` (stand-in for `BRepMesh_GeomTool`).
+pub struct FaceCheckerGeomTool;
 
-impl GeomTool {
+impl FaceCheckerGeomTool {
     /// Intersect segments `(s1, e1)` and `(s2, e2)`. When `consider_end_touch`
     /// / `consider_point_on_segment` are false the touching cases degrade to
     /// `NoIntersection` (matching `BRepMesh_FaceChecker`'s call). The
@@ -53,7 +53,7 @@ impl GeomTool {
         consider_end_touch: bool,
         consider_point_on_segment: bool,
         int_pnt: &mut GpPnt2d,
-    ) -> IntFlag {
+    ) -> FaceCheckerIntFlag {
         let v = e1.coord.subtracted(&s1.coord);
         let w = e2.coord.subtracted(&s2.coord);
         let denom = v.crossed(&w);
@@ -64,9 +64,9 @@ impl GeomTool {
             let collinear = r.crossed(&v).abs() < 1e-12;
             if collinear && segments_overlap(s1, e1, s2, e2) {
                 *int_pnt = *s2;
-                return IntFlag::Same;
+                return FaceCheckerIntFlag::Same;
             }
-            return IntFlag::NoIntersection;
+            return FaceCheckerIntFlag::NoIntersection;
         }
 
         // t along (s1->e1), s along (s2->e2).
@@ -75,7 +75,7 @@ impl GeomTool {
         let s = r.crossed(&v) / denom;
 
         if t < -1e-12 || t > 1.0 + 1e-12 || s < -1e-12 || s > 1.0 + 1e-12 {
-            return IntFlag::NoIntersection;
+            return FaceCheckerIntFlag::NoIntersection;
         }
 
         let p = GpPnt2d::new(
@@ -87,15 +87,15 @@ impl GeomTool {
         let at_end = t <= 1e-12 || (t - 1.0).abs() <= 1e-12;
         let bs_end = s <= 1e-12 || (s - 1.0).abs() <= 1e-12;
         if (at_end || bs_end) && consider_end_touch {
-            return IntFlag::EndPointTouch;
+            return FaceCheckerIntFlag::EndPointTouch;
         }
         if (at_end || bs_end) && !consider_end_touch {
-            return IntFlag::NoIntersection;
+            return FaceCheckerIntFlag::NoIntersection;
         }
         if consider_point_on_segment {
-            return IntFlag::PointOnSegment;
+            return FaceCheckerIntFlag::PointOnSegment;
         }
-        IntFlag::Cross
+        FaceCheckerIntFlag::Cross
     }
 }
 
@@ -292,12 +292,12 @@ fn is_left(a: &GpPnt2d, b: &GpPnt2d, p: &GpPnt2d) -> f64 {
 ///
 /// Port of `BRepMesh_FaceChecker`: every boundary edge of every wire becomes a
 /// 2D segment; pairs of segments (within a wire and across wires) are tested
-/// for proper crossings via [`GeomTool::int_seg_seg`]. Degenerate faces (no
+/// for proper crossings via [`FaceCheckerGeomTool::int_seg_seg`]. Degenerate faces (no
 /// outer wire, fewer than three distinct points, zero UV area) are rejected by
 /// [`FaceChecker::check`].
 #[derive(Debug)]
 pub struct FaceChecker<'a> {
-    face: &'a MeshFace,
+    face: &'a UvFace,
     /// Collected `(p1, p2, wire_index, edge_index)` boundary segments.
     /// `edge_index` is the discrete-model edge; `usize::MAX` when unknown.
     segments: Vec<(GpPnt2d, GpPnt2d, usize, usize)>,
@@ -315,7 +315,7 @@ impl<'a> FaceChecker<'a> {
     /// `tolerance` is accepted for OCCT API parity
     /// (`BRepMesh_FaceChecker(face, parameters)`) but the O(n²) segment scan
     /// does not need it.
-    pub fn new(face: &'a MeshFace, tolerance: f64) -> Self {
+    pub fn new(face: &'a UvFace, tolerance: f64) -> Self {
         let _ = tolerance;
         let mut segments = Vec::new();
         for (wi, wire) in std::iter::once(&face.outer_wire)
@@ -354,7 +354,7 @@ impl<'a> FaceChecker<'a> {
     /// samples inside each edge pcurve. No segment is created between edges.
     /// `edges` is `(wire_index, pcurve points in GetPoint order)`.
     pub fn from_pcurve_edges(
-        face: &'a MeshFace,
+        face: &'a UvFace,
         edges: &[(usize, usize, Vec<GpPnt2d>)],
         tolerance: f64,
     ) -> Self {
@@ -399,7 +399,7 @@ impl<'a> FaceChecker<'a> {
                 // `516-551`): a shared vertex is EndPointTouch / NoIntersection
                 // when `consider_end_touch` is false. Homemade consecutive-index
                 // skip is not in `BndBox2dTreeSelector::Accept`.
-                let (flag, ip_xy) = OcctGeomTool::int_seg_seg(
+                let (flag, ip_xy) = GeomTool::int_seg_seg(
                     a1.xy(),
                     a2.xy(),
                     b1.xy(),
@@ -409,7 +409,7 @@ impl<'a> FaceChecker<'a> {
                 );
                 // `BRepMesh_FaceChecker.cxx:150-158`: only a proper Cross counts,
                 // and `|gp_Vec2d::Angle| < 5 deg` is ignored (same direction).
-                if flag != OcctIntFlag::Cross {
+                if flag != IntFlag::Cross {
                     continue;
                 }
                 let ip = GpPnt2d::from_xy(ip_xy);
@@ -498,7 +498,7 @@ impl<'a> FaceChecker<'a> {
     /// `BRepMesh_BaseMeshAlgo.cxx:116-120` ("Prevent holes around wire of zero
     /// area", which only re-tags links as `BRepMesh_Fixed`). The 1e-9 and 1e-12
     /// thresholds below are Rust-only and are kept unchanged.
-    pub fn is_degenerate(face: &MeshFace) -> bool {
+    pub fn is_degenerate(face: &UvFace) -> bool {
         if face.outer_wire.len() < 3 {
             return true;
         }
@@ -519,7 +519,7 @@ impl<'a> FaceChecker<'a> {
     }
 
     /// Twice the signed area of the outer wire polygon (shoelace formula).
-    pub fn outer_signed_area2(face: &MeshFace) -> f64 {
+    pub fn outer_signed_area2(face: &UvFace) -> f64 {
         let n = face.outer_wire.len();
         let mut a2 = 0.0;
         for i in 0..n {
@@ -532,7 +532,7 @@ impl<'a> FaceChecker<'a> {
 
     /// Human-readable check: `Ok(())` when the face is meshable, otherwise an
     /// `Err` describing the failure.
-    pub fn check(face: &MeshFace) -> Result<(), String> {
+    pub fn check(face: &UvFace) -> Result<(), String> {
         if face.outer_wire.is_empty() {
             return Err("face has no outer wire".into());
         }
@@ -576,12 +576,12 @@ impl FaceDiscret {
     }
 
     /// Discretize a face into UV vertices: the boundary wires only.
-    pub fn discretize_face(&self, face: &MeshFace) -> Vec<GpPnt2d> {
+    pub fn discretize_face(&self, face: &UvFace) -> Vec<GpPnt2d> {
         dedup_points(Self::boundary_points(face))
     }
 
     /// UV points of every boundary wire, in order (outer then holes).
-    pub fn boundary_points(face: &MeshFace) -> Vec<GpPnt2d> {
+    pub fn boundary_points(face: &UvFace) -> Vec<GpPnt2d> {
         let mut out = face.outer_wire.clone();
         for hole in &face.inner_wires {
             out.extend_from_slice(hole);
@@ -664,7 +664,7 @@ mod tests {
 
     #[test]
     fn degenerate_face_detected() {
-        let mut face = MeshFace::new(square());
+        let mut face = UvFace::new(square());
         assert!(!FaceChecker::is_degenerate(&face), "unit square is not degenerate");
         assert!(FaceChecker::check(&face).is_ok());
 
@@ -693,14 +693,14 @@ mod tests {
             GpPnt2d::new(1.0, 0.0),
             GpPnt2d::new(0.0, 1.0),
         ];
-        let face = MeshFace::new(bowtie);
+        let face = UvFace::new(bowtie);
         let mut checker = FaceChecker::new(&face, 1e-7);
         assert!(!checker.perform(), "bowtie must self-intersect");
         assert!(!checker.intersecting_segments().is_empty());
         assert!(FaceChecker::check(&face).is_err(), "self-intersecting face must not be meshable");
 
         // Clean square passes.
-        let face = MeshFace::new(square());
+        let face = UvFace::new(square());
         let mut checker = FaceChecker::new(&face, 1e-7);
         assert!(checker.perform());
         assert!(checker.intersecting_segments().is_empty());
@@ -717,7 +717,7 @@ mod tests {
             GpPnt2d::new(0.951_056_516_3, -0.309_016_994_4),
             GpPnt2d::new(-0.587_785_252_3, 0.809_016_994_4),
         ];
-        let face = MeshFace::new(star);
+        let face = UvFace::new(star);
         assert!(!FaceChecker::is_degenerate(&face), "star has nonzero area");
         let mut checker = FaceChecker::new(&face, 1e-7);
         assert!(!checker.perform(), "pentagram must self-intersect");
@@ -732,8 +732,8 @@ mod tests {
         let s2 = GpPnt2d::new(1.0, -1.0);
         let e2 = GpPnt2d::new(1.0, 1.0);
         assert_eq!(
-            GeomTool::int_seg_seg(&s1, &e1, &s2, &e2, false, false, &mut ip),
-            IntFlag::Cross
+            FaceCheckerGeomTool::int_seg_seg(&s1, &e1, &s2, &e2, false, false, &mut ip),
+            FaceCheckerIntFlag::Cross
         );
         assert!(ip.distance(&GpPnt2d::new(1.0, 0.0)) < 1e-9);
 
@@ -741,15 +741,15 @@ mod tests {
         let s3 = GpPnt2d::new(2.0, 1.0);
         let e3 = GpPnt2d::new(2.0, -1.0);
         assert_eq!(
-            GeomTool::int_seg_seg(&s1, &e1, &s3, &e3, false, false, &mut ip),
-            IntFlag::NoIntersection
+            FaceCheckerGeomTool::int_seg_seg(&s1, &e1, &s3, &e3, false, false, &mut ip),
+            FaceCheckerIntFlag::NoIntersection
         );
         // Parallel disjoint.
         let s4 = GpPnt2d::new(0.0, 1.0);
         let e4 = GpPnt2d::new(2.0, 1.0);
         assert_eq!(
-            GeomTool::int_seg_seg(&s1, &e1, &s4, &e4, false, false, &mut ip),
-            IntFlag::NoIntersection
+            FaceCheckerGeomTool::int_seg_seg(&s1, &e1, &s4, &e4, false, false, &mut ip),
+            FaceCheckerIntFlag::NoIntersection
         );
     }
 
@@ -758,7 +758,7 @@ mod tests {
         // `BRepMesh_FaceDiscret::process` only forwards the face to the mesh
         // algorithm; it contributes no interior grid
         // (`BRepMesh_FaceDiscret.cxx:98-131`).
-        let face = MeshFace::new(square());
+        let face = UvFace::new(square());
         let params = MeshParameters {
             deflection: 0.25,
             ..MeshParameters::default()

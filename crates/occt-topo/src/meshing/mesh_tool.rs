@@ -6,7 +6,7 @@
 //! this Wave-2 `MeshTool` is its model-side counterpart: it extracts the 2D UV
 //! vertex set and the constraint (boundary) edges of a face from the discrete
 //! model — either the UV polygons produced by the face discretizer
-//! (`edge_discret::MeshFace`) or the pcurves of a `data_model::MeshModel` —
+//! (`edge_discret::UvFace`) or the pcurves of a `data_model::MeshModel` —
 //! ready to be fed to the Delaunay triangulator. The self-contained
 //! [`NodeClassifier`] helper (left/right of a constraint) is ported as-is.
 
@@ -69,7 +69,7 @@ impl MeshTool {
     /// coincident vertices within `tolerance` collapse to a single node.
     pub fn extract_face(
         &self,
-        face: &edge_discret::MeshFace,
+        face: &edge_discret::UvFace,
         tolerance: f64,
     ) -> Result<FaceMeshData, String> {
         let mut chains: Vec<Vec<GpPnt2d>> = Vec::new();
@@ -246,14 +246,14 @@ fn default_cells(n: usize) -> (usize, usize) {
 mod tests {
     use super::*;
     use crate::builder::TopoBuilder;
-    use crate::meshing::edge_discret::MeshFace;
+    use crate::meshing::edge_discret::UvFace;
     use crate::meshing::model_builder::ModelBuilder;
     use crate::meshing::parameters::MeshParameters;
     use crate::primitives::BRepPrimBox;
     use crate::tgeometry::GeometryRegistry;
 
-    fn box_face_polygon() -> MeshFace {
-        MeshFace {
+    fn box_face_polygon() -> UvFace {
+        UvFace {
             outer_wire: vec![
                 GpPnt2d::new(0.0, 0.0),
                 GpPnt2d::new(1.0, 0.0),

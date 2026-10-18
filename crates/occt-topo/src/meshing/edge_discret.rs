@@ -71,7 +71,7 @@ impl MeshEdge {
 
 /// Discrete face — boundary wires as UV polygons + mesh control values.
 #[derive(Debug, Clone)]
-pub struct MeshFace {
+pub struct UvFace {
     /// Outer wire as a closed UV polygon (first == last point).
     pub outer_wire: Vec<GpPnt2d>,
     /// Inner (hole) wires as closed UV polygons.
@@ -80,7 +80,7 @@ pub struct MeshFace {
     pub id: usize,
 }
 
-impl MeshFace {
+impl UvFace {
     pub fn new(outer_wire: Vec<GpPnt2d>) -> Self {
         Self { outer_wire, inner_wires: Vec::new(), deflection: 0.1, id: 0 }
     }
@@ -90,7 +90,7 @@ impl MeshFace {
 #[derive(Default, Clone)]
 pub struct MeshModel {
     pub edges: Vec<MeshEdge>,
-    pub faces: Vec<MeshFace>,
+    pub faces: Vec<UvFace>,
     pub max_size: f64,
 }
 

@@ -43,7 +43,7 @@ use super::data_model::MeshModel;
 use super::delaun::Delaun;
 use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunVertex, VertexState};
-use super::edge_discret::MeshFace as UvFace;
+use super::edge_discret::UvFace;
 use super::mesh_tool::{FaceMeshData, MeshTool};
 use super::parameters::MeshParameters;
 

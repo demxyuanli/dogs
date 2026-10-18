@@ -21,7 +21,7 @@ use occt_geom::{Curve, Surface};
 use super::delaun::Delaun;
 use super::delaun_data::DelaunDataStructure;
 use super::delaun_types::{DelaunVertex, VertexState};
-use super::edge_discret::{CurveTessellator, MeshFace};
+use super::edge_discret::{CurveTessellator, UvFace};
 use super::parameters::MeshParameters;
 
 /// Legacy fast discretizer — edge → deflection-adaptive polyline, face → UV
@@ -75,7 +75,7 @@ impl FastDiscret {
     /// (`BRepMesh_NodeInsertionMeshAlgo.hxx:60-111,142-183`).
     pub fn discretize_face(
         &self,
-        face: &MeshFace,
+        face: &UvFace,
         surface: &dyn Surface,
     ) -> (Vec<GpPnt>, Vec<Triangle>) {
         let mut wires: Vec<&[GpPnt2d]> = Vec::with_capacity(1 + face.inner_wires.len());
@@ -247,8 +247,8 @@ mod tests {
     use occt_core::gp::{GpAx2, GpAx3, GpCirc, GpPln, GpPnt2d};
     use occt_geom::{GeomCircle, GeomPlane};
 
-    fn box_uv_face() -> MeshFace {
-        MeshFace::new(vec![
+    fn box_uv_face() -> UvFace {
+        UvFace::new(vec![
             GpPnt2d::new(0.0, 0.0),
             GpPnt2d::new(1.0, 0.0),
             GpPnt2d::new(1.0, 1.0),
