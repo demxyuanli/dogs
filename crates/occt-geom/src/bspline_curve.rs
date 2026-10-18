@@ -899,7 +899,7 @@ impl Curve for GeomBSplineCurve {
         // `Geom_BSplineCurve::EvalD0` (`Geom_BSplineCurve_1.cxx:174-194`) ->
         // `BSplCLib::D0` over `myKnots` + `&myMults` (distinct knots).
         let (new_u, span, uknots, umults) = self.eval_span(u);
-        occt_core::bspl::curve_eval::d0(
+        occt_core::bspl::curve_eval::curve_d0(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
             self.weights.as_deref(), &uknots, Some(&umults),
         )
@@ -908,7 +908,7 @@ impl Curve for GeomBSplineCurve {
     fn d1(&self, u: f64) -> (GpPnt, GpVec) {
         // `Geom_BSplineCurve::EvalD1` (`:198-227`) -> `BSplCLib::D1`.
         let (new_u, span, uknots, umults) = self.eval_span(u);
-        occt_core::bspl::curve_eval::d1(
+        occt_core::bspl::curve_eval::curve_d1(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
             self.weights.as_deref(), &uknots, Some(&umults),
         )
@@ -920,7 +920,7 @@ impl Curve for GeomBSplineCurve {
         if n < 1 {
             return GpVec::zero();
         }
-        occt_core::bspl::curve_dn::dn(
+        occt_core::bspl::curve_dn::curve_dn(
             u,
             n,
             0,
@@ -936,7 +936,7 @@ impl Curve for GeomBSplineCurve {
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
         // `Geom_BSplineCurve::EvalD2` (`:231-261`) -> `BSplCLib::D2`.
         let (new_u, span, uknots, umults) = self.eval_span(u);
-        let r = occt_core::bspl::curve_eval::d2(
+        let r = occt_core::bspl::curve_eval::curve_d2(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
             self.weights.as_deref(), &uknots, Some(&umults),
         );
@@ -949,7 +949,7 @@ impl Curve for GeomBSplineCurve {
     /// **zero** third derivative for every B-spline basis.
     fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
         let (new_u, span, uknots, umults) = self.eval_span(u);
-        occt_core::bspl::curve_eval::d3(
+        occt_core::bspl::curve_eval::curve_d3(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
             self.weights.as_deref(), &uknots, Some(&umults),
         )

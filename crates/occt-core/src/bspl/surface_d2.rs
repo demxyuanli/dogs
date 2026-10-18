@@ -30,7 +30,7 @@ fn zero_or(buf: &[f64], off: Option<usize>) -> GpVec {
 pub type SurfD2 = (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec);
 
 /// `BSplSLib::D2` (`cxx:1063-1247`).
-pub fn d2(
+pub fn surface_d2(
     u: f64,
     v: f64,
     u_index: i32,

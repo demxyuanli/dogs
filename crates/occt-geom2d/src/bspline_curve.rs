@@ -843,9 +843,9 @@ impl Curve2d for Geom2dBSplineCurve {
         if self.periodic {
             // `Geom2d_BSplineCurve::D0` on a periodic flat knot sequence:
             // `BSplCLib::PrepareEval` wraps the pole window and `LocateParameter`
-            // maps the parameter into the period; `curve_dn::dn` with order 0 is
+            // maps the parameter into the period; `curve_dn::curve_dn` with order 0 is
             // `BSplCLib::D0`.
-            let v = occt_core::bspl::curve_dn::dn(
+            let v = occt_core::bspl::curve_dn::curve_dn(
                 u, 0, 0, self.degree as i32, true, &self.poles_3d(), self.weights.as_deref(),
                 &self.knots, None,
             );
@@ -864,7 +864,7 @@ impl Curve2d for Geom2dBSplineCurve {
         // `Geom2d_BSplineCurve::D1` / `BSplCLib::D1`.
         let poles = self.poles_3d();
         if self.periodic {
-            let d = occt_core::bspl::curve_dn::dn(
+            let d = occt_core::bspl::curve_dn::curve_dn(
                 u, 1, 0, self.degree as i32, true, &poles, self.weights.as_deref(), &self.knots,
                 None,
             );
@@ -884,11 +884,11 @@ impl Curve2d for Geom2dBSplineCurve {
         // `Geom2d_BSplineCurve::D2` / `BSplCLib::D2`.
         let poles = self.poles_3d();
         if self.periodic {
-            let d1 = occt_core::bspl::curve_dn::dn(
+            let d1 = occt_core::bspl::curve_dn::curve_dn(
                 u, 1, 0, self.degree as i32, true, &poles, self.weights.as_deref(), &self.knots,
                 None,
             );
-            let d2 = occt_core::bspl::curve_dn::dn(
+            let d2 = occt_core::bspl::curve_dn::curve_dn(
                 u, 2, 0, self.degree as i32, true, &poles, self.weights.as_deref(), &self.knots,
                 None,
             );

@@ -28,7 +28,7 @@ fn zero_or(buf: &[f64], off: Option<usize>) -> GpVec {
 }
 
 /// `BSplSLib::D3` (`cxx:1251-1515`).
-pub fn d3(
+pub fn surface_d3(
     u: f64,
     v: f64,
     u_index: i32,

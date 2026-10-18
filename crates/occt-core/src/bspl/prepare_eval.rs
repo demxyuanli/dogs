@@ -305,7 +305,7 @@ pub fn prepare_eval(
 }
 
 /// `BSplSLib::DN` (`cxx:1519-1605`).
-pub fn dn(
+pub fn surface_dn(
     u: f64,
     v: f64,
     nu: i32,

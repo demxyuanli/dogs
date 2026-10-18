@@ -55,7 +55,7 @@ pub fn homogeneous_d0(
 }
 
 /// `BSplSLib::D0` (`cxx:737-778`): `HomogeneousD0` then divide by `W`.
-pub fn d0(
+pub fn surface_d0(
     u: f64,
     v: f64,
     u_index: i32,

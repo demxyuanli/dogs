@@ -134,7 +134,7 @@ pub fn prepare_curve_eval(
 }
 
 /// `BSplCLib::D0` (`pxx:843-882`).
-pub fn d0(
+pub fn curve_d0(
     u: f64,
     index: i32,
     degree: i32,
@@ -155,7 +155,7 @@ pub fn d0(
 }
 
 /// `BSplCLib::D1` (`pxx:896-935`).
-pub fn d1(
+pub fn curve_d1(
     u: f64,
     index: i32,
     degree: i32,
@@ -183,7 +183,7 @@ pub fn d1(
 }
 
 /// `BSplCLib::D2` (`pxx:948-998`).
-pub fn d2(
+pub fn curve_d2(
     u: f64,
     index: i32,
     degree: i32,
@@ -222,7 +222,7 @@ pub fn d2(
 }
 
 /// `BSplCLib::D3` (`pxx:1013-1055`).
-pub fn d3(
+pub fn curve_d3(
     u: f64,
     index: i32,
     degree: i32,

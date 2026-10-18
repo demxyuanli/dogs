@@ -15,7 +15,7 @@ use crate::gp::{GpPnt, GpVec};
 /// derivative order 0 leaves the value in slot 0 and `RationalDerivative(…, 0)`
 /// divides by the weight, so the point comes back as a vector. This is the arm
 /// the periodic evaluation in `GeomBSplineCurve::{d0,d1,d2}` uses.
-pub fn dn(
+pub fn curve_dn(
     u: f64,
     n: i32,
     index: i32,

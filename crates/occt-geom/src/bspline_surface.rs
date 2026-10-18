@@ -443,11 +443,11 @@ impl GeomBSplineSurface {
     }
 
     /// `Geom_BSplineSurface::EvalD0` (`Geom_BSplineSurface_1.cxx:131-159`) via
-    /// `BSplSLib::D0` (`surface_d0::d0`).
+    /// `BSplSLib::D0` (`surface_d0::surface_d0`).
     pub fn eval_d0_bspl(&self, u: f64, v: f64) -> GpPnt {
         let (uk, vk, rat) = self.bspl_lib_args();
         match (uk, vk) {
-            (Some(uk), Some(vk)) => occt_core::bspl::surface_d0::d0(
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d0::surface_d0(
                 u,
                 v,
                 0,
@@ -465,7 +465,7 @@ impl GeomBSplineSurface {
                 self.u_periodic,
                 self.v_periodic,
             ),
-            _ => occt_core::bspl::surface_d0::d0(
+            _ => occt_core::bspl::surface_d0::surface_d0(
                 u,
                 v,
                 0,
@@ -487,11 +487,11 @@ impl GeomBSplineSurface {
     }
 
     /// `Geom_BSplineSurface::EvalD1` (`Geom_BSplineSurface_1.cxx:163-195`) via
-    /// `BSplSLib::D1` (`surface_d1::d1`).
+    /// `BSplSLib::D1` (`surface_d1::surface_d1`).
     pub fn eval_d1_bspl(&self, u: f64, v: f64) -> occt_core::bspl::surface_d1::SurfD1 {
         let (uk, vk, rat) = self.bspl_lib_args();
         match (uk, vk) {
-            (Some(uk), Some(vk)) => occt_core::bspl::surface_d1::d1(
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d1::surface_d1(
                 u,
                 v,
                 0,
@@ -509,7 +509,7 @@ impl GeomBSplineSurface {
                 self.u_periodic,
                 self.v_periodic,
             ),
-            _ => occt_core::bspl::surface_d1::d1(
+            _ => occt_core::bspl::surface_d1::surface_d1(
                 u,
                 v,
                 0,
@@ -531,11 +531,11 @@ impl GeomBSplineSurface {
     }
 
     /// `Geom_BSplineSurface::EvalD2` (`Geom_BSplineSurface_1.cxx:199-235`) via
-    /// `BSplSLib::D2` (`surface_d2::d2`).
+    /// `BSplSLib::D2` (`surface_d2::surface_d2`).
     pub fn eval_d2_bspl(&self, u: f64, v: f64) -> occt_core::bspl::surface_d2::SurfD2 {
         let (uk, vk, rat) = self.bspl_lib_args();
         match (uk, vk) {
-            (Some(uk), Some(vk)) => occt_core::bspl::surface_d2::d2(
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d2::surface_d2(
                 u,
                 v,
                 0,
@@ -553,7 +553,7 @@ impl GeomBSplineSurface {
                 self.u_periodic,
                 self.v_periodic,
             ),
-            _ => occt_core::bspl::surface_d2::d2(
+            _ => occt_core::bspl::surface_d2::surface_d2(
                 u,
                 v,
                 0,
@@ -575,11 +575,11 @@ impl GeomBSplineSurface {
     }
 
     /// `Geom_BSplineSurface::EvalD3` (`Geom_BSplineSurface_1.cxx:239-274`) via
-    /// `BSplSLib::D3` (`surface_d3::d3`).
+    /// `BSplSLib::D3` (`surface_d3::surface_d3`).
     pub fn eval_d3_bspl(&self, u: f64, v: f64) -> occt_core::elib::surface_eval_d3::SurfD3 {
         let (uk, vk, rat) = self.bspl_lib_args();
         match (uk, vk) {
-            (Some(uk), Some(vk)) => occt_core::bspl::surface_d3::d3(
+            (Some(uk), Some(vk)) => occt_core::bspl::surface_d3::surface_d3(
                 u,
                 v,
                 0,
@@ -597,7 +597,7 @@ impl GeomBSplineSurface {
                 self.u_periodic,
                 self.v_periodic,
             ),
-            _ => occt_core::bspl::surface_d3::d3(
+            _ => occt_core::bspl::surface_d3::surface_d3(
                 u,
                 v,
                 0,
@@ -619,7 +619,7 @@ impl GeomBSplineSurface {
     }
 
     /// Periodic-surface value / derivative through the ported `BSplSLib::DN`
-    /// (`prepare_eval::dn`), whose pole indexing wraps across the period
+    /// (`prepare_eval::surface_dn`), whose pole indexing wraps across the period
     /// (`prepare_eval.rs:174-207`). `nu`/`nv` are the derivative orders in U/V.
     fn dn_orders(&self, u: f64, v: f64, nu: i32, nv: i32) -> GpVec {
         let rat = self.weights.is_some();
@@ -629,7 +629,7 @@ impl GeomBSplineSurface {
             // knot window; the flat NoMults arm cannot.
             let uk = distinct_km(&self.knots_u, self.u_periodic, self.u_range());
             let vk = distinct_km(&self.knots_v, self.v_periodic, self.v_range());
-            return occt_core::bspl::prepare_eval::dn(
+            return occt_core::bspl::prepare_eval::surface_dn(
                 u,
                 v,
                 nu,
@@ -650,7 +650,7 @@ impl GeomBSplineSurface {
                 self.v_periodic,
             );
         }
-        occt_core::bspl::prepare_eval::dn(
+        occt_core::bspl::prepare_eval::surface_dn(
             u,
             v,
             nu,
@@ -968,7 +968,7 @@ impl GeomBSplineSurface {
         let (v_flat, vv) = self.local_flat_index(v, false, from_vk1, to_vk2);
         let rat = self.weights.is_some();
         let p = self.d0(uu, vv);
-        let du = occt_core::bspl::prepare_eval::dn(
+        let du = occt_core::bspl::prepare_eval::surface_dn(
             uu,
             vv,
             1,
@@ -988,7 +988,7 @@ impl GeomBSplineSurface {
             self.u_periodic,
             self.v_periodic,
         );
-        let dv = occt_core::bspl::prepare_eval::dn(
+        let dv = occt_core::bspl::prepare_eval::surface_dn(
             uu,
             vv,
             0,
@@ -1032,7 +1032,7 @@ impl GeomBSplineSurface {
         let (v_flat, vv) = self.local_flat_index(v, false, from_vk1, to_vk2);
         let rat = self.weights.is_some();
         let dn = |nu: i32, nv: i32| {
-            occt_core::bspl::prepare_eval::dn(
+            occt_core::bspl::prepare_eval::surface_dn(
                 uu,
                 vv,
                 nu,

@@ -26,7 +26,7 @@ fn pnt_at(buf: &[f64], off: usize) -> GpPnt {
 pub type SurfD1 = (GpPnt, GpVec, GpVec);
 
 /// `BSplSLib::D1` (`cxx:855-970`).
-pub fn d1(
+pub fn surface_d1(
     u: f64,
     v: f64,
     u_index: i32,

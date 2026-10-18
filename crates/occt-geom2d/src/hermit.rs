@@ -3,7 +3,7 @@
 //! `InsertKnots` `:849-860`, `MovePoles` `:867-880`, `Solution` `:994-1098`).
 
 use crate::bspline_curve::Geom2dBSplineCurve;
-use occt_core::bspl::curve_dn::dn;
+use occt_core::bspl::curve_dn::curve_dn;
 use occt_core::bspl::knots::reparametrize;
 use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::precision::CONFUSION;
@@ -23,7 +23,7 @@ fn hermite_coeff(bs: &Geom2dBSplineCurve) -> Result<[f64; 4], &'static str> {
     let index0 = bs.first_u_knot_index();
     let index1 = bs.last_u_knot_index() - 1;
     let poles: Vec<GpPnt> = weights.iter().map(|w| GpPnt::new(*w, 0.0, 0.0)).collect();
-    let denom0 = dn(
+    let denom0 = curve_dn(
         0.0,
         0,
         index0,
@@ -35,7 +35,7 @@ fn hermite_coeff(bs: &Geom2dBSplineCurve) -> Result<[f64; 4], &'static str> {
         Some(&mults),
     )
     .x();
-    let deriv0 = dn(
+    let deriv0 = curve_dn(
         0.0,
         1,
         index0,
@@ -47,7 +47,7 @@ fn hermite_coeff(bs: &Geom2dBSplineCurve) -> Result<[f64; 4], &'static str> {
         Some(&mults),
     )
     .x();
-    let denom1 = dn(
+    let denom1 = curve_dn(
         1.0,
         0,
         index1,
@@ -59,7 +59,7 @@ fn hermite_coeff(bs: &Geom2dBSplineCurve) -> Result<[f64; 4], &'static str> {
         Some(&mults),
     )
     .x();
-    let deriv1 = dn(
+    let deriv1 = curve_dn(
         1.0,
         1,
         index1,
