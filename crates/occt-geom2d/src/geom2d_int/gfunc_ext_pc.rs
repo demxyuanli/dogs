@@ -8,7 +8,7 @@
 //! `Extrema_GenLocateExtPC` (and hence by `Geom2dInt_TheProjPCurOfGInter`).
 
 use occt_core::gp::{GpPnt2d, GpVec2d};
-use occt_math::MathFunctionWithDerivative;
+use occt_math::FunctionWithDerivative;
 use occt_core::precision::{INFINITE, Precision};
 
 use crate::curve::Curve2d;
@@ -323,7 +323,7 @@ impl<'a> GFuncExtPC2d<'a> {
     }
 }
 
-impl MathFunctionWithDerivative for GFuncExtPC2d<'_> {
+impl FunctionWithDerivative for GFuncExtPC2d<'_> {
     /// `Value` (`hxx:146`).
     fn value(&mut self, param: f64, approx_distance: &mut f64) -> bool {
         self.value_impl(param, approx_distance)

@@ -136,7 +136,7 @@ impl MeshTool {
         if stored.is_finite() && stored > 0.0 && stored < f64::MAX {
             stored
         } else {
-            edge_discret::Deflection::compute_absolute_deflection(
+            edge_discret::EdgeDeflection::compute_absolute_deflection(
                 self.params.deflection,
                 max_shape_size,
             )

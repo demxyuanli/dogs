@@ -7,7 +7,7 @@
 //! The 2D twin is `occt_geom2d::geom2d_int::gen_locate_ext_pc`.
 
 use occt_core::gp::GpPnt;
-use occt_math::{MathFunctionRoot, MathFunctionWithDerivative};
+use occt_math::{MathFunctionRoot, FunctionWithDerivative};
 
 use crate::curve::Curve;
 use crate::extrema_cc::POnCurv;

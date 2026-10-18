@@ -1,14 +1,14 @@
 //! Port of OCCT edge_discret — Wave 1 BRepMesh.
 //!
 //! `EdgeDiscret` turns a 3D edge into a deflection-bounded polyline
-//! (`BRepMesh_EdgeDiscret` + `BRepMesh_CurveTessellator` + `GCPnts_*Deflection`),
+//! (`BRepMesh_EdgeDiscret` + `BRepMesh_CurveTessellator` + `GCPnts_*EdgeDeflection`),
 //! `EdgeParameterProvider` maps stored edge parameters to the actual pcurve
 //! parameters (`BRepMesh_EdgeParameterProvider`), and `CurveTessellator`
 //! flattens an `Arc<dyn Curve>` with adaptive chord-deviation control
 //! (`BRepMesh_CurveTessellator`).
 //!
-//! `MeshParameters` is imported from the sibling `parameters.rs`; `MeshEdge`,
-//! `MeshFace` and `MeshModel` are local UV-polygon stand-ins (see below) until
+//! `MeshParameters` is imported from the sibling `parameters.rs`; `DiscreteMeshEdge`,
+//! `MeshFace` and `DiscreteMeshModel` are local UV-polygon stand-ins (see below) until
 //! the `data_model.rs` topology-indexed types are stable.
 
 use std::sync::Arc;
@@ -34,13 +34,13 @@ pub use super::parameters::MeshParameters;
 // Sibling-contract stand-ins
 // ---------------------------------------------------------------------------
 // ponytail: temporary UV-polygon stand-ins mirroring the sibling-stub contract.
-// The real `data_model::{MeshEdge,MeshFace}` are topology-index based and not
+// The real `data_model::{DiscreteMeshEdge,MeshFace}` are topology-index based and not
 // stable yet; swap to `use super::data_model::*;` once the discretizers are
 // rewritten against the model's wire/edge/pcurve collections.
 
 /// Discrete edge carrying a 3D curve + parameter range + discretization data.
 #[derive(Clone)]
-pub struct MeshEdge {
+pub struct DiscreteMeshEdge {
     pub curve: Arc<dyn Curve>,
     pub first: f64,
     pub last: f64,
@@ -53,7 +53,7 @@ pub struct MeshEdge {
     pub pcurves: Vec<Vec<GpPnt2d>>,
 }
 
-impl MeshEdge {
+impl DiscreteMeshEdge {
     pub fn new(curve: Arc<dyn Curve>, first: f64, last: f64) -> Self {
         Self {
             curve,
@@ -88,8 +88,8 @@ impl UvFace {
 
 /// Discrete model — the mesh data shared between the two discretizers.
 #[derive(Default, Clone)]
-pub struct MeshModel {
-    pub edges: Vec<MeshEdge>,
+pub struct DiscreteMeshModel {
+    pub edges: Vec<DiscreteMeshEdge>,
     pub faces: Vec<UvFace>,
     pub max_size: f64,
 }
@@ -605,13 +605,13 @@ impl CurveTessellator {
 }
 
 // ---------------------------------------------------------------------------
-// Deflection
+// EdgeDeflection
 // ---------------------------------------------------------------------------
 
-/// Deflection computation helpers (`BRepMesh_Deflection`).
-pub struct Deflection;
+/// EdgeDeflection computation helpers (`BRepMesh_Deflection`).
+pub struct EdgeDeflection;
 
-impl Deflection {
+impl EdgeDeflection {
     /// Absolute deflection for a shape of `max_shape_size` given a relative
     /// deflection. Mirrors `ComputeAbsoluteDeflection` (clamped 0.5×..2×).
     pub fn compute_absolute_deflection(relative: f64, max_shape_size: f64) -> f64 {
@@ -669,11 +669,11 @@ impl EdgeDiscret {
         self.params = params;
     }
 
-    /// Deflection used for the given edge: the parameters' deflection, adjusted
+    /// EdgeDeflection used for the given edge: the parameters' deflection, adjusted
     /// for a relative deflection against `max_shape_size`.
     pub fn edge_deflection(&self, max_shape_size: f64) -> f64 {
         if self.params.relative {
-            Deflection::compute_absolute_deflection(self.params.deflection, max_shape_size)
+            EdgeDeflection::compute_absolute_deflection(self.params.deflection, max_shape_size)
         } else {
             self.params.deflection
         }
@@ -712,7 +712,7 @@ impl EdgeDiscret {
 
     /// Discretize an edge of the mesh model into a 3D polyline using the edge's
     /// own deflection. Degenerated edges collapse to their endpoints.
-    pub fn discretize_edge_mesh(&self, edge: &MeshEdge) -> Vec<GpPnt> {
+    pub fn discretize_edge_mesh(&self, edge: &DiscreteMeshEdge) -> Vec<GpPnt> {
         let def = if edge.deflection > 0.0 {
             edge.deflection
         } else {
@@ -738,7 +738,7 @@ impl EdgeDiscret {
     /// (OCCT's indices 2..PointsNb−1). Degenerated edges keep only the start
     /// vertex.
     pub fn tessellate_3d(
-        edge: &MeshEdge,
+        edge: &DiscreteMeshEdge,
         tessellator: &CurveTessellator,
         first_vertex: GpPnt,
         last_vertex: GpPnt,
@@ -1614,7 +1614,7 @@ mod tests {
 
     #[test]
     fn tessellate_3d_replaces_endpoints_with_vertices() {
-        let edge = MeshEdge::new(segment_curve(1.0), 0.0, 1.0);
+        let edge = DiscreteMeshEdge::new(segment_curve(1.0), 0.0, 1.0);
         let t = CurveTessellator::from_range(edge.curve.clone(), 0.0, 1.0, 0.1, 4);
         let a = GpPnt::new(0.0, 0.0, 0.0);
         let b = GpPnt::new(1.0, 0.0, 0.0);
@@ -1630,12 +1630,12 @@ mod tests {
     #[test]
     fn deflection_absolute_and_consistency() {
         // Relative deflection against a 2-unit shape: clamped coefficient ≥ 0.5.
-        let abs = Deflection::compute_absolute_deflection(0.01, 2.0);
+        let abs = EdgeDeflection::compute_absolute_deflection(0.01, 2.0);
         assert!(abs > 0.0 && abs <= 0.02);
-        assert_eq!(Deflection::compute_absolute_deflection(0.01, 0.0), 0.01);
-        assert!(Deflection::is_consistent(0.05, 0.05, false, 0.1));
-        assert!(!Deflection::is_consistent(0.5, 0.05, false, 0.1));
+        assert_eq!(EdgeDeflection::compute_absolute_deflection(0.01, 0.0), 0.01);
+        assert!(EdgeDeflection::is_consistent(0.05, 0.05, false, 0.1));
+        assert!(!EdgeDeflection::is_consistent(0.5, 0.05, false, 0.1));
         // Quality decrease allowed: too-small current is inconsistent.
-        assert!(!Deflection::is_consistent(0.001, 0.05, true, 0.1));
+        assert!(!EdgeDeflection::is_consistent(0.001, 0.05, true, 0.1));
     }
 }

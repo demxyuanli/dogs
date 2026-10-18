@@ -109,5 +109,5 @@ pub mod frpr;
 pub mod function_set_root;
 pub use function_set_root::{
     MathFunctionRoot, MathFunctionSetRoot, MathFunctionSetWithDerivatives,
-    MathFunctionWithDerivative,
+    FunctionWithDerivative,
 };

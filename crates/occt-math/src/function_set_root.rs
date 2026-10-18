@@ -68,7 +68,7 @@ pub trait MathFunctionSetWithDerivatives {
 
 /// `math_FunctionWithDerivative` (`math_FunctionWithDerivative.hxx:31-52`) plus
 /// `math_Function::GetStateNumber` (`math_Function.hxx:57`).
-pub trait MathFunctionWithDerivative {
+pub trait FunctionWithDerivative {
     fn value(&mut self, x: f64, f: &mut f64) -> bool;
     fn derivative(&mut self, x: f64, d: &mut f64) -> bool;
     fn values(&mut self, x: f64, f: &mut f64, d: &mut f64) -> bool;
@@ -80,7 +80,7 @@ pub trait MathFunctionWithDerivative {
 /// `math_MyFunctionSetWithDerivatives` (`math_FunctionRoot.cxx:27-71`): wraps a
 /// one-variable function so that `math_FunctionSetRoot` can solve it.
 struct MyFunctionSetWithDerivatives<'a> {
-    f: &'a mut dyn MathFunctionWithDerivative,
+    f: &'a mut dyn FunctionWithDerivative,
 }
 
 impl<'a> MathFunctionSetWithDerivatives for MyFunctionSetWithDerivatives<'a> {
@@ -1687,7 +1687,7 @@ impl MathFunctionRoot {
     /// `InfBound = RealFirst()`, `SupBound = RealLast()`
     /// (`math_FunctionSetRoot.cxx:721-722`).
     pub fn new(
-        f: &mut dyn MathFunctionWithDerivative,
+        f: &mut dyn FunctionWithDerivative,
         guess: f64,
         tolerance: f64,
         nb_iterations: i32,
@@ -1698,7 +1698,7 @@ impl MathFunctionRoot {
     /// `math_FunctionRoot(F, Guess, Tolerance, A, B, NbIterations = 100)`
     /// (`math_FunctionRoot.cxx:95-119`).
     pub fn new_with_bounds(
-        f: &mut dyn MathFunctionWithDerivative,
+        f: &mut dyn FunctionWithDerivative,
         guess: f64,
         tolerance: f64,
         a: f64,

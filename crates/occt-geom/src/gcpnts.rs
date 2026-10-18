@@ -62,7 +62,7 @@
 use occt_core::gcpnts::{perform_tangential_curve, CurveSecondDeriv};
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::precision::{CONFUSION, PCONFUSION};
-use occt_math::function_set_root::{MathFunctionRoot, MathFunctionWithDerivative};
+use occt_math::function_set_root::{MathFunctionRoot, FunctionWithDerivative};
 
 use crate::curve::Curve;
 
@@ -517,7 +517,7 @@ impl<'a> CpntsMyRootFunction<'a> {
     }
 }
 
-impl MathFunctionWithDerivative for CpntsMyRootFunction<'_> {
+impl FunctionWithDerivative for CpntsMyRootFunction<'_> {
     /// `CPnts_MyRootFunction::Value` (`:39-61`). `math_GaussSingleIntegration`
     /// fails only when the integrand's `Value` returns false
     /// (`math_GaussSingleIntegration.cxx:128-147`), and

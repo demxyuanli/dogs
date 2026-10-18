@@ -41,7 +41,7 @@ pub fn curve_integration_order(c: &dyn Curve, a: f64, b: f64) -> usize {
 
 /// Linear (curve) global properties of one edge, relative to `loc`.
 /// Port of `BRepGProp_Cinert::Perform`.
-pub(super) fn cinert_perform(curve: &dyn Curve, a: f64, b: f64, loc: &GpPnt) -> MassProperties {
+pub(super) fn cinert_perform(curve: &dyn Curve, a: f64, b: f64, loc: &GpPnt) -> GaussProperties {
     let order = curve_integration_order(curve, a, b).min(GPM);
     let (gp, gw) = gauss_legendre(-1.0, 1.0, order);
     let lm = 0.5 * (b + a);
@@ -66,17 +66,17 @@ pub(super) fn cinert_perform(curve: &dyn Curve, a: f64, b: f64, loc: &GpPnt) -> 
     }
     inert.mul(lr);
     let (mass, g, mat) = convert_s(&inert);
-    MassProperties { dim: mass, loc: *loc, g, inertia: mat }
+    GaussProperties { dim: mass, loc: *loc, g, inertia: mat }
 }
 
 /// Linear global properties of a shape — the sum over every (distinct) edge of
 /// the edge-length integrals. The mass equals the total edge length.
-pub fn linear_properties(shape: &TopoShape) -> Result<MassProperties, String> {
+pub fn linear_properties(shape: &TopoShape) -> Result<GaussProperties, String> {
     // The reference point is the origin transformed by the shape's location
     // (mirrors `BRepGProp::LinearProperties`).
     let t = shape.location().transformation();
     let loc = GpPnt::zero().transformed(&t);
-    let mut props = MassProperties::new(loc);
+    let mut props = GaussProperties::new(loc);
     let edges = edges_of(shape);
     if edges.is_empty() {
         return Err("linear_properties: shape has no edges".into());
@@ -104,7 +104,7 @@ pub fn linear_properties(shape: &TopoShape) -> Result<MassProperties, String> {
 /// comes from `BRepGProp_EdgeTool::IntegrationOrder` (2 for a line, 10
 /// otherwise), so a circular arc's length is exact rather than a chord-length
 /// underestimate.
-pub fn edge_linear_properties(e: &Edge) -> Result<MassProperties, String> {
+pub fn edge_linear_properties(e: &Edge) -> Result<GaussProperties, String> {
     let t = e.location().transformation();
     let loc = GpPnt::zero().transformed(&t);
     let Some(curve) = BRepTool::edge_curve_world(e) else {
@@ -128,10 +128,10 @@ pub fn edge_linear_properties(e: &Edge) -> Result<MassProperties, String> {
 
 /// Surface global properties of a shape — the sum over every face of the
 /// surface-area integrals. Returns the properties and the total area.
-pub fn surface_properties(shape: &TopoShape) -> Result<(MassProperties, f64), String> {
+pub fn surface_properties(shape: &TopoShape) -> Result<(GaussProperties, f64), String> {
     let loc = rough_barycenter(shape);
     let coeff = [0.0, 0.0, 0.0];
-    let mut props = MassProperties::new(loc);
+    let mut props = GaussProperties::new(loc);
     let faces = faces_of(shape);
     if faces.is_empty() {
         return Err("surface_properties: shape has no faces".into());
@@ -166,10 +166,10 @@ pub fn face_volume_contribution(face: &Face) -> Result<f64, String> {
 
 /// Volume global properties of a shape — the divergence-theorem surface
 /// integral over every face. The mass equals the (signed) volume.
-pub fn volume_properties(shape: &TopoShape) -> Result<MassProperties, String> {
+pub fn volume_properties(shape: &TopoShape) -> Result<GaussProperties, String> {
     let loc = rough_barycenter(shape);
     let coeff = [0.0, 0.0, 0.0];
-    let mut props = MassProperties::new(loc);
+    let mut props = GaussProperties::new(loc);
     let faces = faces_of(shape);
     if faces.is_empty() {
         return Err("volume_properties: shape has no faces".into());
@@ -190,10 +190,10 @@ pub fn volume_properties(shape: &TopoShape) -> Result<MassProperties, String> {
 /// Surface global properties with adaptive 2D Gauss integration to a relative
 /// error target `eps` (mirrors `BRepGProp::SurfaceProperties(S, Props, Eps)`).
 /// Returns the properties and the reached relative error.
-pub fn surface_properties_adaptive(shape: &TopoShape, eps: f64) -> Result<(MassProperties, f64), String> {
+pub fn surface_properties_adaptive(shape: &TopoShape, eps: f64) -> Result<(GaussProperties, f64), String> {
     let loc = rough_barycenter(shape);
     let coeff = [0.0, 0.0, 0.0];
-    let mut props = MassProperties::new(loc);
+    let mut props = GaussProperties::new(loc);
     let mut err_max = 0.0f64;
     let faces = faces_of(shape);
     if faces.is_empty() {
@@ -212,10 +212,10 @@ pub fn surface_properties_adaptive(shape: &TopoShape, eps: f64) -> Result<(MassP
 /// Volume global properties with adaptive 2D Gauss integration to a relative
 /// error target `eps` (mirrors `BRepGProp::VolumeProperties(S, Props, Eps)`).
 /// Returns the properties and the reached relative error.
-pub fn volume_properties_adaptive(shape: &TopoShape, eps: f64) -> Result<(MassProperties, f64), String> {
+pub fn volume_properties_adaptive(shape: &TopoShape, eps: f64) -> Result<(GaussProperties, f64), String> {
     let loc = rough_barycenter(shape);
     let coeff = [0.0, 0.0, 0.0];
-    let mut props = MassProperties::new(loc);
+    let mut props = GaussProperties::new(loc);
     let mut err_max = 0.0f64;
     let faces = faces_of(shape);
     if faces.is_empty() {
@@ -487,11 +487,11 @@ pub(super) fn adaptive_integrate_with_err<F: Fn(f64) -> f64>(f: &F, a: f64, b: f
 
 /// Volume global properties of a shape via the adaptive Gauss–Kronrod method.
 /// Port of `BRepGProp::VolumePropertiesGK`.
-pub fn volume_properties_gk(shape: &TopoShape) -> Result<MassProperties, String> {
+pub fn volume_properties_gk(shape: &TopoShape) -> Result<GaussProperties, String> {
     let loc = rough_barycenter(shape);
     let coeffs = [0.0, 0.0, 0.0];
     let tol = 0.001;
-    let mut props = MassProperties::new(loc);
+    let mut props = GaussProperties::new(loc);
     let faces = faces_of(shape);
     if faces.is_empty() {
         return Err("volume_properties_gk: shape has no faces".into());
@@ -594,7 +594,7 @@ pub const TRI_GAUSS: [f64; 9] = [
 ];
 
 /// Global properties of a single triangle about `apex` (`CalculateProps`).
-/// `MassProperties` layout: `[mass, Ix, Iy, Iz, Ixx, Iyy, Izz, Ixy, Ixz, Iyz]`.
+/// `GaussProperties` layout: `[mass, Ix, Iy, Iz, Ixx, Iyy, Izz, Ixy, Ixz, Iyz]`.
 pub fn triangle_props(
     p1: &GpPnt,
     p2: &GpPnt,
@@ -681,8 +681,8 @@ pub fn mesh_props(
     loc: &GpPnt,
     reversed: bool,
     is_volume: bool,
-) -> MassProperties {
-    let mut props = MassProperties::new(*loc);
+) -> GaussProperties {
+    let mut props = GaussProperties::new(*loc);
     let mut gacc = [0.0f64; 10];
     for tri in &mesh.triangles {
         let n1 = tri.n0;

@@ -12,7 +12,7 @@
 
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::precision::{INFINITE, Precision};
-use occt_math::MathFunctionWithDerivative;
+use occt_math::FunctionWithDerivative;
 
 use crate::curve::Curve;
 use crate::extrema_cc::POnCurv;
@@ -336,7 +336,7 @@ impl<'a> GFuncExtPC<'a> {
     }
 }
 
-impl MathFunctionWithDerivative for GFuncExtPC<'_> {
+impl FunctionWithDerivative for GFuncExtPC<'_> {
     /// `Value` (`hxx:146`).
     fn value(&mut self, param: f64, approx_distance: &mut f64) -> bool {
         self.value_impl(param, approx_distance)

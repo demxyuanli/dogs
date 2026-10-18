@@ -5,7 +5,7 @@
 //! `ThePnt=GpPnt2d`, `ThePCLocF=GFuncExtPC2d`.
 
 use occt_core::gp::GpPnt2d;
-use occt_math::{MathFunctionRoot, MathFunctionWithDerivative};
+use occt_math::{MathFunctionRoot, FunctionWithDerivative};
 
 use crate::curve::Curve2d;
 use super::gfunc_ext_pc::{GFuncExtPC2d, POnCurv2d};
