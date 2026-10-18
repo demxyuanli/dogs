@@ -429,10 +429,10 @@ where
 /// Vertex/Vertex intersection: fuse coincident vertices of the arguments into
 /// same-domain vertices.
 ///
-/// Source: `BOPAlgo_PaveFiller::PerformVV` (`BOPAlgo_PaveFiller_1.cxx`).
-pub fn perform_vv(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_vv::perform_vv(f)
-}
+/// Source: `BOPAlgo_PaveFiller::PerformVV` (`BOPAlgo_PaveFiller_1.cxx`). The
+/// implementations live in the `pave_*` phase modules; these re-exports keep
+/// the `pave_intersect::vertex_face` path working.
+pub use crate::pave_vv::perform_vv;
 
 /// Vertex/Vertex intersection restricted to the given pairs (used by the
 /// repeat-intersection stage — `RepeatIntersection`).
@@ -445,9 +445,7 @@ pub(crate) fn perform_vv_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> 
 ///
 /// Source: `BOPAlgo_PaveFiller::PerformVE` / `IntersectVE`
 /// (`BOPAlgo_PaveFiller_2.cxx`).
-pub fn perform_ve(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_ve::perform_ve(f)
-}
+pub use crate::pave_ve::perform_ve;
 
 /// Vertex/Edge intersection restricted to the given pairs (used by the
 /// repeat-intersection stage — `RepeatIntersection`).
@@ -461,9 +459,7 @@ pub(crate) fn perform_ve_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> 
 ///
 /// Source: `BOPAlgo_PaveFiller::PerformEE` + `PerformNewVertices` /
 /// `TreatNewVertices` (`BOPAlgo_PaveFiller_3.cxx`).
-pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_ee_perform::perform_ee(f)
-}
+pub use crate::pave_ee_perform::perform_ee;
 
 /// Vertex/Face intersection: classify every interfering vertex against its face
 /// and record the vertices that project onto the face (inside or on the
@@ -471,9 +467,7 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
 ///
 /// Source: `BOPAlgo_PaveFiller::PerformVF` + `TreatVerticesEE`
 /// (`BOPAlgo_PaveFiller_4.cxx`).
-pub fn perform_vf(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_vf::perform_vf(f)
-}
+pub use crate::pave_vf::perform_vf;
 
 /// Vertex/Face intersection restricted to the given pairs (used by the
 /// repeat-intersection stage — `RepeatIntersection`).

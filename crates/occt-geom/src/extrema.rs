@@ -71,9 +71,10 @@ pub fn refine_curve_point(c: &dyn Curve, p: &GpPnt, a: f64, b: f64) -> (f64, GpP
 /// Minimum distance from point `p` to curve `c` (with the closest point).
 /// Exact analytic dispatch for lines/circles; Newton refinement otherwise.
 /// `None` mirrors OCCT's `IsDone() == false` (`Extrema_GGExtPC.hxx:531`).
-pub fn point_curve_extrema(c: &dyn Curve, p: &GpPnt) -> Option<ExtremaPair> {
-    crate::extrema_pc::point_curve_extrema(c, p)
-}
+///
+/// `Extrema_GenExtPC` lives in `extrema_pc`; this re-export keeps the
+/// `extrema::point_curve_extrema` path working.
+pub use crate::extrema_pc::point_curve_extrema;
 
 /// Maximum distance from point `p` to curve `c` over its parameter range.
 /// `samples` is kept for signature compatibility but no longer drives the
@@ -136,9 +137,7 @@ pub fn surface_surface_extrema(
 
 /// Minimum distance from point `p` to surface `s` (with the closest point).
 /// `None` = `Extrema_ExtPS::IsDone() == false` or `NbExt() == 0`.
-pub fn point_surface_extrema(s: &dyn Surface, p: &GpPnt) -> Option<ExtremaPair> {
-    crate::extrema_surf::point_surface_extrema(s, p)
-}
+pub use crate::extrema_surf::point_surface_extrema;
 
 /// Build an extrema pair from a point and a tangent vector on a curve —
 /// convenience for callers that already have the closest parameter.

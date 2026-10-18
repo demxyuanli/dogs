@@ -43,10 +43,9 @@ fn pb_has_edge(pb: &BopdsPaveBlock) -> bool {
     pb.edge() != 0
 }
 
-/// `BOPAlgo_PaveFiller::MakeBlocks` (`BOPAlgo_PaveFiller_6.cxx`).
-pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_ff_make::make_blocks_ff(f)
-}
+/// `BOPAlgo_PaveFiller::MakeBlocks` (`BOPAlgo_PaveFiller_6.cxx`). The
+/// implementation lives in `pave_ff_make`.
+pub use crate::pave_ff_make::make_blocks_ff;
 
 fn is_existing_vertex(ds: &BopdsDS, p: &GpPnt, tol: f64, mv_on_in: &HashSet<usize>) -> bool {
     let mut box_p = occt_core::bnd::BndBox::new();

@@ -16,16 +16,14 @@ pub(crate) fn put_se_in_other_faces(f: &mut PaveFiller) -> Result<(), String> {
 /// sub-ranges as face paves.
 ///
 /// Source: `BOPAlgo_PaveFiller::PerformEF` + `IntersectEF`
-/// (`BOPAlgo_PaveFiller_5.cxx`).
-pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_ef_perform::perform_ef(f)
-}
+/// (`BOPAlgo_PaveFiller_5.cxx`). The implementation lives in
+/// `pave_ef_perform`; these re-exports keep the `pave_intersect::perform`
+/// path working.
+pub use crate::pave_ef_perform::perform_ef;
 
 /// Face/Face intersection: intersect every interfering pair of faces and build
 /// a section edge for each intersection curve, recording the edge on both
 /// faces and the F/F interference.
 ///
 /// Source: `BOPAlgo_PaveFiller::PerformFF` (`BOPAlgo_PaveFiller_6.cxx`).
-pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_ff_perform::perform_ff(f)
-}
+pub use crate::pave_ff_perform::perform_ff;
