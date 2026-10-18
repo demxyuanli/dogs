@@ -63,7 +63,7 @@ impl EdgeFace {
             return false;
         }
         let mut dist2 = min_d * min_d;
-        let mut a_tx = min_t;
+        let mut tx_val = min_t;
 
         // Exact curve–surface intersection fallback (the `Extrema` aNbExt == 0
         // branch of `IntTools_EdgeFace::CheckTouch`): when the sampled profile
@@ -81,7 +81,7 @@ impl EdgeFace {
                     let p = hr.point(i);
                     if p.param() >= tf && p.param() <= tl {
                         dist2 = 0.0;
-                        a_tx = p.param();
+                        tx_val = p.param();
                         break;
                     }
                 }
@@ -91,30 +91,30 @@ impl EdgeFace {
         let b1 = self.distance_function(tf) + self.criteria;
         if b1 * b1 < dist2 {
             dist2 = b1 * b1;
-            a_tx = tf;
+            tx_val = tf;
         }
         let b2 = self.distance_function(tl) + self.criteria;
         if b2 * b2 < dist2 {
             dist2 = b2 * b2;
-            a_tx = tl;
+            tx_val = tl;
         }
         let bm = self.distance_function(0.5 * (tf + tl)) + self.criteria;
         if bm * bm < dist2 {
             dist2 = bm * bm;
-            a_tx = 0.5 * (tf + tl);
+            tx_val = 0.5 * (tf + tl);
         }
 
         if dist2 > self.criteria * self.criteria {
             return false;
         }
-        *tx = a_tx;
-        if (a_tx - tf).abs() < PCONFUSION {
+        *tx = tx_val;
+        if (tx_val - tf).abs() < PCONFUSION {
             return true;
         }
-        if (a_tx - tl).abs() < PCONFUSION {
+        if (tx_val - tl).abs() < PCONFUSION {
             return true;
         }
-        if a_tx > tf && a_tx < tl {
+        if tx_val > tf && tx_val < tl {
             return true;
         }
         false
@@ -147,15 +147,15 @@ impl EdgeFace {
         if dist2_new > self.criteria * self.criteria {
             return false;
         }
-        let a_tx = min_t;
-        if (a_tx - tf).abs() < eps_t {
+        let tx_val = min_t;
+        if (tx_val - tf).abs() < eps_t {
             return false;
         }
-        if (a_tx - tl).abs() < eps_t {
+        if (tx_val - tl).abs() < eps_t {
             return false;
         }
-        if a_tx > tf && a_tx < tl {
-            *tx = a_tx;
+        if tx_val > tf && tx_val < tl {
+            *tx = tx_val;
             return true;
         }
         false

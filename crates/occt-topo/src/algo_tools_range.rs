@@ -77,12 +77,12 @@ pub fn make_new_vertex_vv(v1: &Vertex, v2: &Vertex) -> Result<TopoShape, String>
     let tol2 = BRepTool::vertex_tolerance(v2);
     let dist = pnt1.distance(&pnt2);
     let max_tol = tol1.max(tol2) + 0.5 * dist;
-    let a_new = GpPnt::new(
+    let new_val = GpPnt::new(
         0.5 * (pnt1.x() + pnt2.x()),
         0.5 * (pnt1.y() + pnt2.y()),
         0.5 * (pnt1.z() + pnt2.z()),
     );
-    AlgoTools::make_new_vertex(&a_new, max_tol)
+    AlgoTools::make_new_vertex(&new_val, max_tol)
 }
 
 /// `BOPTools_AlgoTools::MakeNewVertex` (two edges and parameters).
@@ -98,12 +98,12 @@ pub fn make_new_vertex_ee(
     let tol2 = BRepTool::edge_tolerance(e2);
     let dist = pnt1.distance(&pnt2);
     let max_tol = tol1.max(tol2) + 0.5 * dist;
-    let a_new = GpPnt::new(
+    let new_val = GpPnt::new(
         0.5 * (pnt1.x() + pnt2.x()),
         0.5 * (pnt1.y() + pnt2.y()),
         0.5 * (pnt1.z() + pnt2.z()),
     );
-    AlgoTools::make_new_vertex(&a_new, max_tol)
+    AlgoTools::make_new_vertex(&new_val, max_tol)
 }
 
 /// `BOPTools_AlgoTools::MakeNewVertex` (edge, parameter, face).
@@ -207,9 +207,9 @@ pub fn correct_range_ee(e1: &Edge, e2: &Edge, sr: IntRange) -> IntRange {
 }
 
 /// `BOPTools_AlgoTools::CorrectRange` (edge / face).
-pub fn correct_range_ef(a_e: &Edge, f: &Face, sr: IntRange) -> IntRange {
+pub fn correct_range_ef(e_par: &Edge, f: &Face, sr: IntRange) -> IntRange {
     let mut new_sr = sr;
-    let Some(c) = BRepTool::edge_curve(a_e) else {
+    let Some(c) = BRepTool::edge_curve(e_par) else {
         return new_sr;
     };
     let d_t = PCONFUSION;
@@ -309,15 +309,15 @@ pub fn algo_tools_vertex_parameter(c_part: &CommonPrt, param: Option<f64>) -> f6
 
 /// `IntTools_Tools::VertexParameters`.
 pub fn algo_tools_vertex_parameters(c_part: &CommonPrt, t1: Option<f64>, t2: Option<f64>) -> (f64, f64) {
-    let a_t1 = algo_tools_vertex_parameter(c_part, t1);
+    let t1_val = algo_tools_vertex_parameter(c_part, t1);
     let r2 = c_part.range;
-    let mut a_t2 = 0.5 * (r2.first + r2.last);
+    let mut t2_val = 0.5 * (r2.first + r2.last);
     if let Some(vp) = t2 {
         if vp >= r2.first && vp <= r2.last {
-            a_t2 = vp;
+            t2_val = vp;
         }
     }
-    (a_t1, a_t2)
+    (t1_val, t2_val)
 }
 
 /// `IntTools_Tools::IsOnPave1`.

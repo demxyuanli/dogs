@@ -41,8 +41,8 @@ fn line_point_square_distance(l: &GpLin2d, p: &GpPnt2d) -> f64 {
     let d = l.pos.vdir;
     let cx = p.x() - l.pos.loc.x();
     let cy = p.y() - l.pos.loc.y();
-    let a_d = cx * d.y - cy * d.x;
-    a_d * a_d
+    let d_val = cx * d.y - cy * d.x;
+    d_val * d_val
 }
 
 /// `Extrema_ExtElC2d` (`Extrema_ExtElC2d.hxx:36-101`): `mySqDist[8]`,

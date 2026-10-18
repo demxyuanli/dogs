@@ -156,12 +156,12 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
             }
             let (n_f0, n_f1) = ff.indices();
             let n_f = [n_f0, n_f1];
-            let mut a_ff = [None, None];
+            let mut ff_val = [None, None];
             for m in 0..2 {
                 if let Some(s) = f.ds().shape(n_f[m]).cloned() {
                     let mut face = Face(s);
                     face.0.set_orientation(Orientation::Forward);
-                    a_ff[m] = Some(face);
+                    ff_val[m] = Some(face);
                 }
             }
             for nc in ff.curves() {
@@ -173,7 +173,7 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                     let e = Edge(es);
                     for m in 0..2 {
                         if b_pc[m] && an_ef_pairs.insert((n_e, n_f[m])) {
-                            if let Some(ref face) = a_ff[m] {
+                            if let Some(ref face) = ff_val[m] {
                                 if has_curve_on_surface(&e, face) {
                                     update_vertices_pcurve(&e, face);
                                 } else {
@@ -217,8 +217,8 @@ pub fn prepare_pcurves_on_planes(f: &mut PaveFiller) -> Result<(), String> {
             let Some(fs) = f.ds().shape(n_f).cloned() else {
                 continue;
             };
-            let a_f = Face(fs.clone());
-            if is_based_on_plane(&a_f) {
+            let f_val = Face(fs.clone());
+            if is_based_on_plane(&f_val) {
                 mf.push(fs);
             }
         }
@@ -226,19 +226,19 @@ pub fn prepare_pcurves_on_planes(f: &mut PaveFiller) -> Result<(), String> {
     if mf.is_empty() {
         return Ok(());
     }
-    for a_f in mf {
-        let face = Face(a_f.clone());
-        for sub in ShapeIterator::of_shape(&a_f) {
+    for f_val in mf {
+        let face = Face(f_val.clone());
+        for sub in ShapeIterator::of_shape(&f_val) {
             if sub.shape_type() != ShapeType::Edge {
                 continue;
             }
-            let a_e = Edge(sub);
-            if has_curve_on_surface(&a_e, &face) {
+            let e_val = Edge(sub);
+            if has_curve_on_surface(&e_val, &face) {
                 continue;
             }
-            match pcurve_full::make_pcurve_full(&a_e, &face) {
+            match pcurve_full::make_pcurve_full(&e_val, &face) {
                 Ok(pc) => {
-                    let _ = attach_existing_pcurve(&a_e, &face, pc);
+                    let _ = attach_existing_pcurve(&e_val, &face, pc);
                 }
                 Err(e) => f.add_warning(format!("prepare: pcurve on plane failed: {e}")),
             }

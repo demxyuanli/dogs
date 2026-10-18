@@ -456,13 +456,13 @@ fn length_of_iso(
 ) -> f64 {
     let mut len = 0.0;
     let dpar = (par2 - par1) / (nb_pnts - 1) as f64;
-    let mut a_par = par1 + dpar;
+    let mut par_val = par1 + dpar;
     let mut p1 = if iso_u { s.d0(par, par1) } else { s.d0(par1, par) };
     for _i in 2..=nb_pnts {
-        let p2 = if iso_u { s.d0(par, a_par) } else { s.d0(a_par, par) };
+        let p2 = if iso_u { s.d0(par, par_val) } else { s.d0(par_val, par) };
         len += p1.distance(&p2);
         p1 = p2;
-        a_par += dpar;
+        par_val += dpar;
     }
     len
 }

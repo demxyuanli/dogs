@@ -79,8 +79,8 @@ impl CurveRangeSample {
         let n = nb_sample.max(1) as f64;
         let tmp = n.powi(self.depth());
         let local = (last - first) / tmp;
-        let a_first = first + self.index as f64 * local;
-        IntRange::new_unchecked(a_first, a_first + local)
+        let first_val = first + self.index as f64 * local;
+        IntRange::new_unchecked(first_val, first_val + local)
     }
 }
 
@@ -401,31 +401,31 @@ impl SurfaceRangeLocalizeData {
         if self.u_params.is_empty() || self.v_params.is_empty() {
             return;
         }
-        let a_len = self.u_params.len() as i32;
-        for i in 1..=a_len {
+        let len_val = self.u_params.len() as i32;
+        for i in 1..=len_val {
             if self.u_ind_min == 0 && u_min < self.u_param(i) {
                 self.u_ind_min = i;
             }
-            let lmi = a_len - i + 1;
+            let lmi = len_val - i + 1;
             if self.u_ind_max == 0 && u_max > self.u_param(lmi) {
                 self.u_ind_max = lmi;
             }
         }
         if self.u_ind_min == 0 {
-            self.u_ind_min = a_len + 1;
+            self.u_ind_min = len_val + 1;
         }
-        let a_len = self.v_params.len() as i32;
-        for i in 1..=a_len {
+        let len_val = self.v_params.len() as i32;
+        for i in 1..=len_val {
             if self.v_ind_min == 0 && v_min < self.v_param(i) {
                 self.v_ind_min = i;
             }
-            let lmi = a_len - i + 1;
+            let lmi = len_val - i + 1;
             if self.v_ind_max == 0 && v_max > self.v_param(lmi) {
                 self.v_ind_max = lmi;
             }
         }
         if self.v_ind_min == 0 {
-            self.v_ind_min = a_len + 1;
+            self.v_ind_min = len_val + 1;
         }
     }
 

@@ -82,8 +82,8 @@ fn project_point_on_curve(
 ) -> Option<f64> {
     let mut param = init;
     for _ in 0..30 {
-        let (a_point, d1, d2) = curve.d2(param);
-        let vector = GpVec::from_pnts(&a_point, point);
+        let (point_val, d1, d2) = curve.d2(param);
+        let vector = GpVec::from_pnts(&point_val, point);
         let func = vector.dot(&d1);
         if func.abs() < tolerance * d1.magnitude() {
             return Some(param);

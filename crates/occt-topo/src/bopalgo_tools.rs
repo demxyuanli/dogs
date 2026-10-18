@@ -154,7 +154,7 @@ pub fn perform_common_blocks_faces(
     ctx: &IntToolsContext,
 ) {
     for (_k, (pb, li)) in mpbli {
-        let mut a_cb = if ds.is_common_block(pb) {
+        let mut cb_val = if ds.is_common_block(pb) {
             ds.common_block(pb)
                 .cloned()
                 .unwrap_or_else(BopdsCommonBlock::new)
@@ -164,14 +164,14 @@ pub fn perform_common_blocks_faces(
             cb
         };
         let mut new_faces: Vec<usize> = Vec::new();
-        let old = a_cb.faces().to_vec();
+        let old = cb_val.faces().to_vec();
         for &n_f in li {
             if !old.contains(&n_f) {
                 new_faces.push(n_f);
             }
         }
-        a_cb.append_faces(&new_faces);
-        ds.set_common_block(pb, a_cb.clone());
+        cb_val.append_faces(&new_faces);
+        ds.set_common_block(pb, cb_val.clone());
         if let Some(cb) = ds.common_block(pb).cloned() {
             let tol = compute_tolerance_of_cb(&cb, ds, ctx);
             if let Some(cbm) = ds.common_block(pb).cloned() {
@@ -280,13 +280,13 @@ pub fn intersect_vertices(vertices: &[VertexTol], fuzzy: f64) -> Vec<Vec<TopoSha
     let mut boxes: Vec<BndBox> = Vec::with_capacity(nb_v);
     let mut tols: Vec<f64> = Vec::with_capacity(nb_v);
     for v in vertices {
-        let a_v = Vertex(v.shape.clone());
-        let mut tol = BRepTool::vertex_tolerance(&a_v);
+        let v_val = Vertex(v.shape.clone());
+        let mut tol = BRepTool::vertex_tolerance(&v_val);
         if tol < v.extra_tol {
             tol = v.extra_tol;
         }
         let mut bnd_box = BndBox::new();
-        bnd_box.add_point(&BRepTool::vertex_point(&a_v));
+        bnd_box.add_point(&BRepTool::vertex_point(&v_val));
         bnd_box.enlarge(tol + tol_add);
         boxes.push(bnd_box);
         tols.push(tol);
@@ -343,8 +343,8 @@ pub fn trsf_to_point(
     point: Option<GpPnt>,
     criteria: Option<f64>,
 ) -> Option<GpTrsf> {
-    let the_point = point.unwrap_or_else(GpPnt::zero);
-    let the_criteria = criteria.unwrap_or(1.0e5);
+    let point_val = point.unwrap_or_else(GpPnt::zero);
+    let criteria_val = criteria.unwrap_or(1.0e5);
     let mut bnd_box = *box1;
     bnd_box.add_box(box2);
     let cmin = bnd_box.corner_min();
@@ -352,18 +352,18 @@ pub fn trsf_to_point(
     let cx = (cmin.x() + cmax.x()) * 0.5;
     let cy = (cmin.y() + cmax.y()) * 0.5;
     let cz = (cmin.z() + cmax.z()) * 0.5;
-    let dx = the_point.x() - cx;
-    let dy = the_point.y() - cy;
-    let dz = the_point.z() - cz;
+    let dx = point_val.x() - cx;
+    let dy = point_val.y() - cy;
+    let dz = point_val.z() - cz;
     let pb_dist = (dx * dx + dy * dy + dz * dz).sqrt();
-    if pb_dist < the_criteria {
+    if pb_dist < criteria_val {
         return None;
     }
     let b_size = bnd_box.square_extent().sqrt();
-    if b_size / pb_dist > 1.0 / the_criteria {
+    if b_size / pb_dist > 1.0 / criteria_val {
         return None;
     }
     let mut trsf = GpTrsf::identity();
-    trsf.set_translation_pnts(&cmin, &the_point);
+    trsf.set_translation_pnts(&cmin, &point_val);
     Some(trsf)
 }

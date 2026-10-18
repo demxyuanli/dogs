@@ -79,7 +79,7 @@ fn gfunc_search_of_tolerance(curve: &dyn Curve) -> f64 {
     let u_sup = curve.last_parameter();
     let step = (u_sup - u_inf) / (N_POINT as f64);
     let mut num = 0;
-    let mut a_max = -Precision::INFINITE;
+    let mut max_val = -Precision::INFINITE;
     loop {
         let mut u = u_inf + (num as f64) * step;
         if u > u_sup {
@@ -88,8 +88,8 @@ fn gfunc_search_of_tolerance(curve: &dyn Curve) -> f64 {
         let (_p, v_der) = curve.d1(u);
         if !(Precision::is_infinite(v_der.x()) || Precision::is_infinite(v_der.y())) {
             let vm = v_der.magnitude();
-            if vm > a_max {
-                a_max = vm;
+            if vm > max_val {
+                max_val = vm;
             }
         }
         num += 1;
@@ -97,7 +97,7 @@ fn gfunc_search_of_tolerance(curve: &dyn Curve) -> f64 {
             break;
         }
     }
-    (a_max * TOL_FACTOR).max(MIN_TOL)
+    (max_val * TOL_FACTOR).max(MIN_TOL)
 }
 
 impl<'a> ExtPcf<'a> {
@@ -141,9 +141,9 @@ impl<'a> ExtPcf<'a> {
     }
 
     /// `GFuncExtPC::Value` (`hxx:146-253`) including MaxDerivOrder singular D1.
-    fn value_at(&mut self, the_u: f64, f: &mut f64) -> bool {
-        self.u = the_u;
-        let (pc, mut d1c) = self.curve.d1(the_u);
+    fn value_at(&mut self, u_par: f64, f: &mut f64) -> bool {
+        self.u = u_par;
+        let (pc, mut d1c) = self.curve.d1(u_par);
         self.pc = pc;
         if Precision::is_infinite(d1c.x()) || Precision::is_infinite(d1c.y()) {
             *f = f64::INFINITY;
@@ -161,7 +161,7 @@ impl<'a> ExtPcf<'a> {
             let mut is_derive_found = false;
             while !is_derive_found && n < self.max_deriv_order {
                 n += 1;
-                v = self.curve.eval_dn(the_u, n);
+                v = self.curve.eval_dn(u_par, n);
                 ndu = v.magnitude();
                 is_derive_found = ndu > self.tol;
             }
@@ -221,16 +221,16 @@ impl<'a> ExtPcf<'a> {
     }
 
     /// `GFuncExtPC::Values` (`hxx:274-352`) including singular DF (`hxx:297-338`).
-    fn values_at(&mut self, the_u: f64, f: &mut f64, df: &mut f64) -> bool {
+    fn values_at(&mut self, u_par: f64, f: &mut f64, df: &mut f64) -> bool {
         let pc_old = self.pc;
         let p_old = self.point;
-        if !self.value_at(the_u, f) {
+        if !self.value_at(u_par, f) {
             return false;
         }
-        self.u = the_u;
+        self.u = u_par;
         self.pc = pc_old;
         self.point = p_old;
-        let (pc, d1c, d2c) = self.curve.d2(the_u);
+        let (pc, d1c, d2c) = self.curve.d2(u_par);
         self.pc = pc;
         let ndu = d1c.magnitude();
         if ndu <= self.tol {
@@ -265,7 +265,7 @@ impl<'a> ExtPcf<'a> {
                 f2 = f2v;
                 *df = (f1 - 4.0 * f2 + 3.0 * f3) / (2.0 * delta);
             }
-            self.u = the_u;
+            self.u = u_par;
             self.pc = pc_old;
             self.point = p_old;
         } else {
@@ -487,25 +487,25 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
             } else if an_idx == last_used - 1 {
                 l = state.u_sup;
             }
-            let a_p1 = curve.d0(f);
-            let a_p2 = curve.d0(l);
-            let base1 = GpVec::from_pnts(point, &a_p1);
-            let base2 = GpVec::from_pnts(point, &a_p2);
-            let v = GpVec::from_pnts(&a_p2, &a_p1);
+            let p1_val = curve.d0(f);
+            let p2_val = curve.d0(l);
+            let base1 = GpVec::from_pnts(point, &p1_val);
+            let base2 = GpVec::from_pnts(point, &p2_val);
+            let v = GpVec::from_pnts(&p2_val, &p1_val);
             let val1 = v.dot(&base1);
             let val2 = v.dot(&base2);
             let min1 = if an_idx == first_used {
-                point.square_distance(&a_p1)
+                point.square_distance(&p1_val)
             } else {
                 let prev = min2;
                 if distmin > prev {
                     distmin = prev;
                     tmin = f;
-                    pmin = a_p1;
+                    pmin = p1_val;
                 }
                 prev
             };
-            min2 = point.square_distance(&a_p2);
+            min2 = point.square_distance(&p2_val);
             let min_sq = min1.min(min2);
             let min_der = val1.abs().min(val2.abs());
             if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))

@@ -191,7 +191,7 @@ impl ComposeShell {
                                 let mut prev_pnt = self.grid.value_pnt(&prev_pnt2d);
                                 let last_pnt = self.grid.value_pnt(&last_pnt2d);
                                 let is_periodic = c2d.is_periodic();
-                                let a_period = if is_periodic { c2d.period() } else { 0.0 };
+                                let period_val = if is_periodic { c2d.period() } else { 0.0 };
 
                                 // cxx:1104-1108.
                                 let nb_edges_start = result.nb_edges();
@@ -209,7 +209,7 @@ impl ComposeShell {
                                         let lo = last_par.min(first_par) - PCONFUSION;
                                         if curr_par > hi || curr_par < lo {
                                             let shift = crate::shhealing::adjust_by_period(
-                                                curr_par, (first_par + last_par) * 0.5, a_period,
+                                                curr_par, (first_par + last_par) * 0.5, period_val,
                                             );
                                             curr_par += shift;
                                         }

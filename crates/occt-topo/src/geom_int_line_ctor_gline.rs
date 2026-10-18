@@ -142,10 +142,10 @@ pub(crate) fn gline_point(
 
 fn reject_micro_circle(
     gline: &crate::geom_int::types::GLine,
-    a_type: IntPatchIType,
+    kind_par: IntPatchIType,
     tol3d: f64,
 ) -> bool {
-    match (a_type, &gline.kind) {
+    match (kind_par, &gline.kind) {
         (IntPatchIType::Circle, GLineKind::Circ(c)) => c.radius() < tol3d,
         (IntPatchIType::Ellipse, GLineKind::Elips(e)) => e.major_radius() < tol3d,
         _ => false,

@@ -91,7 +91,7 @@ pub fn put_pave_on_curve(
         return;
     };
     let fuzzy = f.fuzzy_value();
-    let mut a_tol_v = mv_tol
+    let mut tol_v_val = mv_tol
         .get(&n_v)
         .copied()
         .unwrap_or_else(|| BRepTool::vertex_tolerance(&Vertex(v_shape.clone())));
@@ -99,12 +99,12 @@ pub fn put_pave_on_curve(
 
     let mut t_on = int_tools_vertex_line::is_vertex_on_line_tol(
         &Vertex(v_shape.clone()),
-        a_tol_v,
+        tol_v_val,
         curve.as_ref(),
         ic_tol,
     );
     if t_on.is_none() && i_check_extend != 0 && !f.verts_to_avoid_extension().contains(&n_v) {
-        let mut an_extra = a_tol_v;
+        let mut an_extra = tol_v_val;
         if extended_tolerance(f, n_v, mi, &mut an_extra, i_check_extend) {
             if let Some(t) = int_tools_vertex_line::is_vertex_on_line_tol(
                 &Vertex(v_shape.clone()),
@@ -113,7 +113,7 @@ pub fn put_pave_on_curve(
                 ic_tol,
             ) {
                 let p_on_c = curve.d0(t);
-                a_tol_v = p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
+                tol_v_val = p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
                 t_on = Some(t);
             }
         }
@@ -123,7 +123,7 @@ pub fn put_pave_on_curve(
     };
 
     let d_tol = D_TOLERANCE;
-    let p_tol = int_tools_vertex_line::adaptor_resolution(curve.as_ref(), tol_r3d.max(a_tol_v));
+    let p_tol = int_tools_vertex_line::adaptor_resolution(curve.as_ref(), tol_r3d.max(tol_v_val));
     let existing = f.ds().interf_ff()[i].curves()[j]
         .pave_blocks()
         .first()

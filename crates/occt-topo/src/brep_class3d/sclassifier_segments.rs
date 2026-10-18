@@ -381,12 +381,12 @@ impl SClassifier {
                     continue;
                 }
                 *parmin = w;
-                let a_state = inter.state(i);
+                let state_val = inter.state(i);
                 if parmin.abs() <= tol {
                     self.state = FaceState::On;
                     self.face = Some(f.clone());
                     break;
-                } else if a_state == FaceState::In {
+                } else if state_val == FaceState::In {
                     let mut tran = inter.transition(i);
                     if tran == Transition::Tangent {
                         // `cxx:463-470`: ignore this point.
@@ -394,7 +394,7 @@ impl SClassifier {
                     }
                     apply_trans(*parmin, &mut tran, &mut self.state);
                     self.face = Some(f.clone());
-                } else if a_state == FaceState::On {
+                } else if state_val == FaceState::On {
                     *faulty = true;
                     break;
                 }

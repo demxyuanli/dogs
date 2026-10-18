@@ -79,7 +79,7 @@ pub fn build_draft_solid_occt<B: BopSolidHost>(
     add_warning: &mut dyn FnMut(String),
 ) -> DraftSolidResult {
     let or_sd = solid.orientation();
-    let mut the_draft = make_empty_solid(or_sd);
+    let mut draft_val = make_empty_solid(or_sd);
     let mut lif: Vec<TopoShape> = Vec::new();
 
     let shells = if solid.shape_type() == ShapeType::Solid {
@@ -95,19 +95,19 @@ pub fn build_draft_solid_occt<B: BopSolidHost>(
         let mut sh_d = make_empty_shell(or_sh);
         let mut i_flag = false;
 
-        for a_f in iter_children(&sh.0) {
-            if a_f.shape_type() != ShapeType::Face {
+        for f_val in iter_children(&sh.0) {
+            if f_val.shape_type() != ShapeType::Face {
                 continue;
             }
-            let or_f = a_f.orientation();
-            if images_bound(f.history(), &a_f) {
-                for fx_src in images_of(f.history(), &a_f) {
+            let or_f = f_val.orientation();
+            if images_bound(f.history(), &f_val) {
+                for fx_src in images_of(f.history(), &f_val) {
                     let mut fx = fx_src.clone();
                     if shapes_sd_bound(f, &fx) {
                         if is_internal(or_f) {
                             fx.set_orientation(or_f);
                             lif.push(fx);
-                        } else if let Some(w) = orient_split_with_warn(&mut fx, &a_f, ctx) {
+                        } else if let Some(w) = orient_split_with_warn(&mut fx, &f_val, ctx) {
                             add_warning(w.message);
                             if add_draft_face_once(&mut sh_d, &fx) {
                                 i_flag = true;
@@ -125,8 +125,8 @@ pub fn build_draft_solid_occt<B: BopSolidHost>(
                     }
                 }
             } else if is_internal(or_f) {
-                lif.push(a_f);
-            } else if add_draft_face_once(&mut sh_d, &a_f) {
+                lif.push(f_val);
+            } else if add_draft_face_once(&mut sh_d, &f_val) {
                 i_flag = true;
             }
         }
@@ -136,12 +136,12 @@ pub fn build_draft_solid_occt<B: BopSolidHost>(
             sh_d
                 .0
                 .set_closed(crate::brep_tool::BRepTool::is_closed(&sh_d.0));
-            add_shell_to_solid(&mut the_draft, &sh_d);
+            add_shell_to_solid(&mut draft_val, &sh_d);
         }
     }
 
     DraftSolidResult {
-        draft: the_draft.0,
+        draft: draft_val.0,
         internal_faces: lif,
     }
 }
@@ -153,7 +153,7 @@ pub fn build_draft_solid_from_history(
     solid: &TopoShape,
 ) -> DraftSolidResult {
     let or_sd = solid.orientation();
-    let mut the_draft = make_empty_solid(or_sd);
+    let mut draft_val = make_empty_solid(or_sd);
     let mut lif: Vec<TopoShape> = Vec::new();
     let shells = if solid.shape_type() == ShapeType::Solid {
         shells_of_solid(solid)
@@ -189,11 +189,11 @@ pub fn build_draft_solid_from_history(
             sh_d
                 .0
                 .set_closed(crate::brep_tool::BRepTool::is_closed(&sh_d.0));
-            add_shell_to_solid(&mut the_draft, &sh_d);
+            add_shell_to_solid(&mut draft_val, &sh_d);
         }
     }
     DraftSolidResult {
-        draft: the_draft.0,
+        draft: draft_val.0,
         internal_faces: lif,
     }
 }

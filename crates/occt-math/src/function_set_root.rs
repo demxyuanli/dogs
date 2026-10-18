@@ -535,15 +535,15 @@ fn search_direction_constrained(
         *dy = 0.0;
     } else {
         let mut df2 = MathMatrix::new(1, neq, 1, ninc - cons);
-        let mut my_gh = MathVector::new(1, ninc - cons);
-        let mut my_direction = MathVector::new(1, ninc - cons);
-        let mut my_inv_length_max = MathVector::new(1, ninc);
+        let mut gh_val = MathVector::new(1, ninc - cons);
+        let mut direction_val = MathVector::new(1, ninc - cons);
+        let mut inv_length_max_val = MathVector::new(1, ninc);
         let mut k = 1;
         for i in 1..=ninc {
             if constraints[i] == 0 {
-                my_gh.set_value(k, gh.value(i));
-                my_inv_length_max.set_value(k, inv_length_max.value(i));
-                my_direction.set_value(k, direction.value(i));
+                gh_val.set_value(k, gh.value(i));
+                inv_length_max_val.set_value(k, inv_length_max.value(i));
+                direction_val.set_value(k, direction.value(i));
                 for j in 1..=neq {
                     df2.set_value(j, k, df.value(j, i));
                 }
@@ -554,18 +554,18 @@ fn search_direction_constrained(
         // value; the reconstruction below reads this function's own parameter.
         search_direction(
             &df2,
-            &my_gh,
+            &gh_val,
             ff,
             change_direction,
-            &my_inv_length_max,
-            &mut my_direction,
+            &inv_length_max_val,
+            &mut direction_val,
             dy,
         );
         let mut k = 1;
         for i in 1..=ninc {
             if constraints[i] == 0 {
                 if !change_direction {
-                    direction.set_value(i, my_direction.value(k));
+                    direction.set_value(i, direction_val.value(k));
                 } else {
                     direction.set_value(i, -gh.value(i));
                 }
@@ -1020,11 +1020,11 @@ impl MathFunctionSetRoot {
         // InvLengthMax / aConstraints (math_FunctionSetRoot.cxx:817-824).
         let mut inv_length_max = MathVector::new(1, ninc);
         for i in 1..=ninc {
-            let a_sup_bound = sup_bound.value(i).min(PRECISION_INFINITE);
+            let sup_bound_val = sup_bound.value(i).min(PRECISION_INFINITE);
             let an_inf_bound = inf_bound.value(i).max(-PRECISION_INFINITE);
             inv_length_max.set_value(
                 i,
-                1.0 / ((a_sup_bound - an_inf_bound) / 4.0).max(1.0e-9),
+                1.0 / ((sup_bound_val - an_inf_bound) / 4.0).max(1.0e-9),
             );
         }
         let mut constraints = vec![0i32; ninc + 1];

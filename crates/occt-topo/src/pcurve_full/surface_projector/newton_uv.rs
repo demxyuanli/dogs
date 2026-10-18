@@ -480,9 +480,9 @@ pub(crate) fn next_value_of_uv(
             let gap = p3d.distance(&s.value(sol.x(), sol.y()));
             if res == 2 || (maxpreci > 0.0 && gap - maxpreci > occt_core::precision::CONFUSION) {
                 // `cxx:1226-1230`: `UVFromIso` writes back into `U` / `V`.
-                let (my_gap, u, v) = uv_from_iso(s, p3d, preci, sol.x(), sol.y());
-                if gap >= my_gap {
-                    return (GpPnt2d::new(u, v), my_gap);
+                let (gap_val, u, v) = uv_from_iso(s, p3d, preci, sol.x(), sol.y());
+                if gap >= gap_val {
+                    return (GpPnt2d::new(u, v), gap_val);
                 }
             }
             return (sol, gap);

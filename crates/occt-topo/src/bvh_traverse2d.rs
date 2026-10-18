@@ -279,13 +279,13 @@ pub fn select_pair_tree<S: PairTraverse2d>(
         let data1 = bvh1.nodes[node.node_id1 as usize];
         let data2 = bvh2.nodes[node.node_id2 as usize];
         if !data1.is_inner() && !data2.is_inner() {
-            let mut a_metric = 0.0;
+            let mut metric_val = 0.0;
             let is_rejected = sel.reject_node(
                 bvh1.min_point(node.node_id1),
                 bvh1.max_point(node.node_id1),
                 bvh2.min_point(node.node_id2),
                 bvh2.max_point(node.node_id2),
-                &mut a_metric,
+                &mut metric_val,
             );
             if !is_rejected {
                 let mut i_n1 = data1.y;

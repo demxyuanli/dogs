@@ -108,7 +108,7 @@ pub fn compute_pole_index_range(
     mults: &[i32],
     degree: i32,
     min: f64,
-    the_max: f64,
+    max_par: f64,
     max_pole_idx: i32,
     is_periodic: bool,
 ) -> (i32, i32) {
@@ -124,7 +124,7 @@ pub fn compute_pole_index_range(
     if out_min > upper {
         out_min = upper;
     }
-    let mut out_max = hunt_occt(knots, the_max);
+    let mut out_max = hunt_occt(knots, max_par);
     out_max += 1;
     if out_max < lower {
         out_max = lower;
@@ -170,8 +170,8 @@ pub fn bezier_curve_box2d(
     }
     let mut b1 = BndBox2d::new();
     let n = geom.degree().max(1) as i32;
-    let a_tol = fill_box2d(&mut b1, geom, u1, u2, n);
-    b1.enlarge(WEAKNESS * a_tol);
+    let tol_val = fill_box2d(&mut b1, geom, u1, u2, n);
+    b1.enlarge(WEAKNESS * tol_val);
     let mut box_ = reduce_spline_box2d(&geom.poles, &b1);
     box_.enlarge(tol);
     box_
@@ -196,16 +196,16 @@ pub fn bspline_curve_box2d_periodic(
     u2: f64,
     tol: f64,
 ) -> BndBox2d {
-    let mut a_u1 = u1;
-    let mut a_u2 = u2;
+    let mut u1_val = u1;
+    let mut u2_val = u2;
     adjust_periodic(
         geom.first_parameter(),
         geom.last_parameter(),
         PCONFUSION,
-        &mut a_u1,
-        &mut a_u2,
+        &mut u1_val,
+        &mut u2_val,
     );
-    box_other_2d(geom, a_u1, a_u2, tol)
+    box_other_2d(geom, u1_val, u2_val, tol)
 }
 
 /// Non-periodic `BSplineCurveBox` (`SplineHelpers.pxx:332-398`).
@@ -215,60 +215,60 @@ pub fn bspline_curve_box2d(
     u2: f64,
     tol: f64,
 ) -> BndBox2d {
-    let a_degree = geom.degree() as i32;
-    let a_u1 = u1.max(geom.first_parameter());
-    let a_u2 = u2.min(geom.last_parameter());
-    if a_u1 - geom.first_parameter() > PCONFUSION || geom.last_parameter() - a_u2 > PCONFUSION {
-        return box_other_2d(geom, a_u1, a_u2, tol);
+    let degree_val = geom.degree() as i32;
+    let u1_val = u1.max(geom.first_parameter());
+    let u2_val = u2.min(geom.last_parameter());
+    if u1_val - geom.first_parameter() > PCONFUSION || geom.last_parameter() - u2_val > PCONFUSION {
+        return box_other_2d(geom, u1_val, u2_val, tol);
     }
     let (uknots, umults) = bspl_knots::unique_knots_mults(&geom.knots);
     if uknots.len() < 2 {
         let mut box_ = BndBox2d::new();
-        box_.add_point(&geom.d0(a_u1));
-        box_.add_point(&geom.d0(a_u2));
+        box_.add_point(&geom.d0(u1_val));
+        box_.add_point(&geom.d0(u2_val));
         box_.enlarge(tol);
         return box_;
     }
     let lower = 0usize;
     let upper = uknots.len() - 1;
-    let mut k_min = bspl_knots::hunt(&uknots, a_u1);
+    let mut k_min = bspl_knots::hunt(&uknots, u1_val);
     k_min = k_min.clamp(lower, upper.saturating_sub(1));
-    let mut k_max = bspl_knots::hunt(&uknots, a_u2);
+    let mut k_max = bspl_knots::hunt(&uknots, u2_val);
     k_max = (k_max + 1).clamp(lower, upper);
 
     let mut b1 = BndBox2d::new();
-    let mut a_tol = 0.0_f64;
-    let mut first = a_u1;
-    let n = a_degree.max(1);
+    let mut tol_val = 0.0_f64;
+    let mut first = u1_val;
+    let n = degree_val.max(1);
     for k in (k_min + 1)..=k_max {
         let last = if k < k_max {
-            a_u2.min(uknots[k])
+            u2_val.min(uknots[k])
         } else {
-            a_u2
+            u2_val
         };
         if last > first + PCONFUSION {
-            a_tol = a_tol.max(fill_box2d(&mut b1, geom, first, last, n));
+            tol_val = tol_val.max(fill_box2d(&mut b1, geom, first, last, n));
         }
         first = last;
-        if first >= a_u2 - PCONFUSION {
+        if first >= u2_val - PCONFUSION {
             break;
         }
     }
     if b1.is_void() {
         let mut box_ = BndBox2d::new();
-        box_.add_point(&geom.d0(a_u1));
-        box_.add_point(&geom.d0(a_u2));
+        box_.add_point(&geom.d0(u1_val));
+        box_.add_point(&geom.d0(u2_val));
         box_.enlarge(tol);
         return box_;
     }
-    b1.enlarge(WEAKNESS * a_tol);
+    b1.enlarge(WEAKNESS * tol_val);
     let poles = bspline_poles(geom);
     let (pmin, pmax) = compute_pole_index_range(
         &uknots,
         &umults,
-        a_degree,
-        a_u1,
-        a_u2,
+        degree_val,
+        u1_val,
+        u2_val,
         poles.len() as i32,
         false,
     );

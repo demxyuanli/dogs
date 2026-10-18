@@ -272,7 +272,7 @@ impl IntfInterferencePolygon2d {
         let mut nbpi = 0usize;
         let mut par_o = [0.0f64; 9];
         let mut par_t = [0.0f64; 9];
-        let mut the_pi: Vec<IntfSectionPoint> = Vec::new();
+        let mut pi_val: Vec<IntfSectionPoint> = Vec::new();
         let seg_t = end_t.xy().subtracted(beg_t.xy());
         let seg_o = end_o.xy().subtracted(beg_o.xy());
 
@@ -303,7 +303,7 @@ impl IntfInterferencePolygon2d {
                 nbpi += 1;
                 par_o[nbpi] = 0.0;
                 par_t[nbpi] = 0.0;
-                the_pi.push(IntfSectionPoint::with_2d(
+                pi_val.push(IntfSectionPoint::with_2d(
                     beg_o,
                     IntfPIType::Vertex,
                     i_obje1 as i32,
@@ -318,7 +318,7 @@ impl IntfInterferencePolygon2d {
                 nbpi += 1;
                 par_o[nbpi] = 0.0;
                 par_t[nbpi] = 1.0;
-                the_pi.push(IntfSectionPoint::with_2d(
+                pi_val.push(IntfSectionPoint::with_2d(
                     beg_o,
                     IntfPIType::Vertex,
                     i_obje1 as i32,
@@ -336,7 +336,7 @@ impl IntfInterferencePolygon2d {
                 nbpi += 1;
                 par_o[nbpi] = 0.0;
                 par_t[nbpi] = db_obt / lg_t;
-                the_pi.push(IntfSectionPoint::with_2d(
+                pi_val.push(IntfSectionPoint::with_2d(
                     beg_o,
                     IntfPIType::Vertex,
                     i_obje1 as i32,
@@ -358,7 +358,7 @@ impl IntfInterferencePolygon2d {
                 nbpi += 1;
                 par_o[nbpi] = 1.0;
                 par_t[nbpi] = 0.0;
-                the_pi.push(IntfSectionPoint::with_2d(
+                pi_val.push(IntfSectionPoint::with_2d(
                     end_o,
                     IntfPIType::Vertex,
                     (i_obje1 + 1) as i32,
@@ -373,7 +373,7 @@ impl IntfInterferencePolygon2d {
                 nbpi += 1;
                 par_o[nbpi] = 1.0;
                 par_t[nbpi] = 1.0;
-                the_pi.push(IntfSectionPoint::with_2d(
+                pi_val.push(IntfSectionPoint::with_2d(
                     end_o,
                     IntfPIType::Vertex,
                     (i_obje1 + 1) as i32,
@@ -391,7 +391,7 @@ impl IntfInterferencePolygon2d {
                 nbpi += 1;
                 par_o[nbpi] = 1.0;
                 par_t[nbpi] = de_obt / lg_t;
-                the_pi.push(IntfSectionPoint::with_2d(
+                pi_val.push(IntfSectionPoint::with_2d(
                     end_o,
                     IntfPIType::Vertex,
                     (i_obje1 + 1) as i32,
@@ -414,7 +414,7 @@ impl IntfInterferencePolygon2d {
             nbpi += 1;
             par_o[nbpi] = db_obt / lg_o;
             par_t[nbpi] = 0.0;
-            the_pi.push(IntfSectionPoint::with_2d(
+            pi_val.push(IntfSectionPoint::with_2d(
                 beg_t,
                 IntfPIType::Edge,
                 i_obje1 as i32,
@@ -436,7 +436,7 @@ impl IntfInterferencePolygon2d {
             nbpi += 1;
             par_o[nbpi] = db_oet / lg_o;
             par_t[nbpi] = 1.0;
-            the_pi.push(IntfSectionPoint::with_2d(
+            pi_val.push(IntfSectionPoint::with_2d(
                 end_t,
                 IntfPIType::Edge,
                 i_obje1 as i32,
@@ -467,7 +467,7 @@ impl IntfInterferencePolygon2d {
                 nbpi += 1;
                 par_o[nbpi] = par_osp;
                 par_t[nbpi] = par_tsp;
-                the_pi.push(IntfSectionPoint::with_2d(
+                pi_val.push(IntfSectionPoint::with_2d(
                     &GpPnt2d::new(beg_o.x() + seg_o.x() * par_osp, beg_o.y() + seg_o.y() * par_osp),
                     IntfPIType::Edge,
                     i_obje1 as i32,
@@ -493,7 +493,7 @@ impl IntfInterferencePolygon2d {
                         nbpi += 1;
                         let x = beg_o.x() + seg_o.x() * par_o[nbpi];
                         let y = beg_o.y() + seg_o.y() * par_o[nbpi];
-                        the_pi.push(IntfSectionPoint::with_2d(
+                        pi_val.push(IntfSectionPoint::with_2d(
                             &GpPnt2d::new(x, y),
                             IntfPIType::External,
                             i_obje1 as i32,
@@ -523,11 +523,11 @@ impl IntfInterferencePolygon2d {
                     if ok {
                         let x = beg_o.x() + seg_o.x() * par_o[nbpi + 1];
                         let y = beg_o.y() + seg_o.y() * par_o[nbpi + 1];
-                        if the_pi[0].pnt().distance(&crate::gp::GpPnt::new(x, y, 0.0))
+                        if pi_val[0].pnt().distance(&crate::gp::GpPnt::new(x, y, 0.0))
                             >= self.base.tolerance / 4.0
                         {
                             nbpi += 1;
-                            the_pi.push(IntfSectionPoint::with_2d(
+                            pi_val.push(IntfSectionPoint::with_2d(
                                 &GpPnt2d::new(x, y),
                                 IntfPIType::External,
                                 i_obje1 as i32,
@@ -596,7 +596,7 @@ impl IntfInterferencePolygon2d {
                         par_t[nbpi] = par_tdeb.max(0.0).min(1.0);
                         let x = beg_o.x() + seg_o.x() * par_o[nbpi];
                         let y = beg_o.y() + seg_o.y() * par_o[nbpi];
-                        the_pi.push(IntfSectionPoint::with_2d(
+                        pi_val.push(IntfSectionPoint::with_2d(
                             &GpPnt2d::new(x, y),
                             IntfPIType::External,
                             i_obje1 as i32,
@@ -617,7 +617,7 @@ impl IntfInterferencePolygon2d {
                         par_t[nbpi] = par_tfin.min(1.0).max(0.0);
                         let x = beg_o.x() + seg_o.x() * par_o[nbpi];
                         let y = beg_o.y() + seg_o.y() * par_o[nbpi];
-                        the_pi.push(IntfSectionPoint::with_2d(
+                        pi_val.push(IntfSectionPoint::with_2d(
                             &GpPnt2d::new(x, y),
                             IntfPIType::External,
                             i_obje1 as i32,
@@ -638,13 +638,13 @@ impl IntfInterferencePolygon2d {
             suppr = false;
             let mut i = 2;
             while !suppr && i <= nbpi {
-                let pim1 = *the_pi[i - 2].pnt();
-                let pi = *the_pi[i - 1].pnt();
+                let pim1 = *pi_val[i - 2].pnt();
+                let pi = *pi_val[i - 1].pnt();
                 let mut d = pi.distance(&pim1);
                 d *= 50.0;
                 if d < lg_t && d < lg_o {
                     for j in i..nbpi {
-                        the_pi[j - 1] = the_pi[j];
+                        pi_val[j - 1] = pi_val[j];
                     }
                     nbpi -= 1;
                     suppr = true;
@@ -658,7 +658,7 @@ impl IntfInterferencePolygon2d {
 
         if nbpi == 1 {
             if edge_sp {
-                the_pi[0] = IntfSectionPoint::with_2d(
+                pi_val[0] = IntfSectionPoint::with_2d(
                     &GpPnt2d::new(
                         beg_o.x() + seg_o.x() * par_osp,
                         beg_o.y() + seg_o.y() * par_osp,
@@ -679,20 +679,20 @@ impl IntfInterferencePolygon2d {
                     .base
                     .s_poins
                     .iter()
-                    .any(|p| the_pi[0].is_equal(p));
+                    .any(|p| pi_val[0].is_equal(p));
                 if !contains {
-                    self.base.s_poins.push(the_pi[0]);
+                    self.base.s_poins.push(pi_val[0]);
                 }
             } else if i_obje2 - i_obje1 != 1
                 && (!self.o_clos || (i_obje1 != 1 && i_obje2 != self.nbso))
             {
-                self.base.s_poins.push(the_pi[0]);
+                self.base.s_poins.push(pi_val[0]);
             }
         } else if nbpi >= 2 {
             let mut tz = IntfTangentZone::new();
             if nbpi == 2 {
-                let p1 = the_pi[0];
-                let p2 = the_pi[1];
+                let p1 = pi_val[0];
+                let p2 = pi_val[1];
                 tz.polygon_insert(&p1);
                 tz.polygon_insert(&p2);
             } else {
@@ -705,9 +705,9 @@ impl IntfInterferencePolygon2d {
                         lmax = lpj;
                     }
                 }
-                let p = the_pi[lmin - 1];
+                let p = pi_val[lmin - 1];
                 tz.polygon_insert(&p);
-                let p = the_pi[lmax - 1];
+                let p = pi_val[lmax - 1];
                 tz.polygon_insert(&p);
 
                 let mut ltmin = 1usize;
@@ -720,11 +720,11 @@ impl IntfInterferencePolygon2d {
                     }
                 }
                 if ltmin != lmin && ltmin != lmax {
-                    let p = the_pi[ltmin - 1];
+                    let p = pi_val[ltmin - 1];
                     tz.polygon_insert(&p);
                 }
                 if ltmax != lmin && ltmax != lmax {
-                    let p = the_pi[ltmax - 1];
+                    let p = pi_val[ltmax - 1];
                     tz.polygon_insert(&p);
                 }
             }

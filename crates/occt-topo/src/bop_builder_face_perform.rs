@@ -208,8 +208,8 @@ pub fn perform_loops(fb: &mut FaceBuilder) -> Result<(), String> {
                 }
             }
         }
-        let a_w = TopoBuilder::new().make_wire(&edges);
-        fb.base.internal.push(a_w.0);
+        let w_val = TopoBuilder::new().make_wire(&edges);
+        fb.base.internal.push(w_val.0);
     }
     Ok(())
 }
@@ -328,8 +328,8 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
     if fb.base.loops.is_empty() {
         if ctx.is_infinite_face(&gf) {
             let natural = BRepTool::natural_restriction(&gf);
-            let a_face = make_empty_face(fb, natural)?;
-            fb.base.areas.push(a_face.0);
+            let face_val = make_empty_face(fb, natural)?;
+            fb.base.areas.push(face_val.0);
         }
         return Ok(());
     }
@@ -338,20 +338,20 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
     let mut hole_faces: Vec<TopoShape> = Vec::new();
     let mut mhe: HashSet<usize> = HashSet::new();
 
-    for (_i_loop, a_wire) in fb.base.loops.clone().into_iter().enumerate() {
-        let wire = Wire(a_wire.clone());
-        let a_face = make_face_on(fb, &wire)?;
-        let mut b_is_growth = is_growth_wire(&a_wire, &mhe);
+    for (_i_loop, wire_val) in fb.base.loops.clone().into_iter().enumerate() {
+        let wire = Wire(wire_val.clone());
+        let face_val = make_face_on(fb, &wire)?;
+        let mut b_is_growth = is_growth_wire(&wire_val, &mhe);
         if !b_is_growth {
-            if let Ok(c) = FClass2d::new(&a_face, tol) {
+            if let Ok(c) = FClass2d::new(&face_val, tol) {
                 b_is_growth = !c.is_hole();
             }
         }
         if b_is_growth {
-            new_faces.push(a_face.0);
+            new_faces.push(face_val.0);
         } else {
-            hole_faces.push(a_face.0);
-            for e in edges_of(&a_wire) {
+            hole_faces.push(face_val.0);
+            for e in edges_of(&wire_val) {
                 mhe.insert(sk(&e.0));
             }
         }
@@ -376,8 +376,8 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
     let mut selector = Box2dTreeSelector::new();
     selector.set_bvh_set(&box_tree);
 
-    for a_face in &new_faces {
-        let af = Face(a_face.clone());
+    for face_val in &new_faces {
+        let af = Face(face_val.clone());
         let mut bnd_box = occt_core::bnd::BndBox2d::new();
         add_uv_bounds_face(&af, &mut bnd_box);
         selector.clear();
@@ -388,28 +388,28 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
             if idx >= hole_faces.len() {
                 continue;
             }
-            let a_hole = &hole_faces[idx];
-            if !face_perform_is_inside(a_hole, &af, &mut ctx) {
+            let hole_val = &hole_faces[idx];
+            if !face_perform_is_inside(hole_val, &af, &mut ctx) {
                 continue;
             }
-            let hk = sk(a_hole);
+            let hk = sk(hole_val);
             if let Some(was) = hole_face_map.get(&hk).cloned() {
-                if face_perform_is_inside(a_face, &Face(was), &mut ctx) {
-                    hole_face_map.insert(hk, a_face.clone());
+                if face_perform_is_inside(face_val, &Face(was), &mut ctx) {
+                    hole_face_map.insert(hk, face_val.clone());
                 }
             } else {
-                hole_face_map.insert(hk, a_face.clone());
+                hole_face_map.insert(hk, face_val.clone());
             }
         }
     }
 
     let mut face_holes: HashMap<usize, Vec<TopoShape>> = HashMap::new();
-    for (hk, a_face) in &hole_face_map {
+    for (hk, face_val) in &hole_face_map {
         let Some(hole) = hole_faces.iter().find(|h| sk(h) == *hk) else {
             continue;
         };
         face_holes
-            .entry(sk(a_face))
+            .entry(sk(face_val))
             .or_default()
             .push(hole.clone());
     }
@@ -423,22 +423,22 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
             || box_f.is_open_zmin()
             || box_f.is_open_zmax()
         {
-            let a_face = make_empty_face(fb, false)?;
+            let face_val = make_empty_face(fb, false)?;
             let mut unused: Vec<TopoShape> = Vec::new();
-            for a_hole in &hole_faces {
-                if !hole_face_map.contains_key(&sk(a_hole)) {
-                    unused.push(a_hole.clone());
+            for hole_val in &hole_faces {
+                if !hole_face_map.contains_key(&sk(hole_val)) {
+                    unused.push(hole_val.clone());
                 }
             }
-            face_holes.insert(sk(&a_face.0), unused);
-            new_faces.push(a_face.0);
+            face_holes.insert(sk(&face_val.0), unused);
+            new_faces.push(face_val.0);
         }
     }
 
     let b = TopoBuilder::new();
-    for a_face in new_faces {
-        let holes = face_holes.get(&sk(&a_face)).cloned().unwrap_or_default();
-        let mut face = Face(a_face);
+    for face_val in new_faces {
+        let holes = face_holes.get(&sk(&face_val)).cloned().unwrap_or_default();
+        let mut face = Face(face_val);
         if !holes.is_empty() {
             for f_hole in &holes {
                 if let Some(w) = first_wire_of(f_hole) {
@@ -474,9 +474,9 @@ pub fn make_internal_wires(me: &[TopoShape]) -> Vec<TopoShape> {
             for e in &current {
                 for v in vertices_of(&e.0) {
                     if let Some(le) = mve.get(&sk(&v.0)) {
-                        for a_el in le {
-                            if added.insert(sk(a_el)) {
-                                let mut el = a_el.clone();
+                        for el_val in le {
+                            if added.insert(sk(el_val)) {
+                                let mut el = el_val.clone();
                                 el.set_orientation(Orientation::Internal);
                                 edges.push(Edge(el));
                                 growing = true;
@@ -542,9 +542,9 @@ pub fn perform_internal_shapes(fb: &mut FaceBuilder) -> Result<(), String> {
             if idx >= an_edges_map.len() {
                 continue;
             }
-            let a_e = &an_edges_map[idx];
-            if face_perform_is_inside(a_e, &face, &mut ctx) {
-                an_edges_inside.push(a_e.clone());
+            let e_val = &an_edges_map[idx];
+            if face_perform_is_inside(e_val, &face, &mut ctx) {
+                an_edges_inside.push(e_val.clone());
                 me_done.insert(n_e);
             }
         }

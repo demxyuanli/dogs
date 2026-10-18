@@ -319,17 +319,17 @@ fn run_compute(
 
 fn calculate_d0(value: &mut GpPnt, d1u: &GpVec, d1v: &GpVec, offset: f64, sign: f64) -> bool {
     // `ComputeNormal` (`pxx:104-129`) then offset (`pxx:197-209`).
-    let mut a_d1u = *d1u;
-    let mut a_d1v = *d1v;
-    let nu2 = a_d1u.square_magnitude();
-    let nv2 = a_d1v.square_magnitude();
+    let mut d1u_val = *d1u;
+    let mut d1v_val = *d1v;
+    let nu2 = d1u_val.square_magnitude();
+    let nv2 = d1v_val.square_magnitude();
     if nu2 > 1.0 {
-        a_d1u = a_d1u.divided(nu2.sqrt());
+        d1u_val = d1u_val.divided(nu2.sqrt());
     }
     if nv2 > 1.0 {
-        a_d1v = a_d1v.divided(nv2.sqrt());
+        d1v_val = d1v_val.divided(nv2.sqrt());
     }
-    let mut norm = a_d1u.crossed(&a_d1v);
+    let mut norm = d1u_val.crossed(&d1v_val);
     if norm.square_magnitude() <= D1_TOL * D1_TOL {
         return false;
     }
@@ -360,24 +360,24 @@ pub fn evaluate_d0(
     let mut u = u_in;
     let mut v = v_in;
     let mut value = value_in;
-    let mut a_d1u = d1u_in;
-    let mut a_d1v = d1v_in;
+    let mut d1u_val = d1u_in;
+    let mut d1v_val = d1v_in;
     let mut is_first = true;
 
     loop {
         if !is_first {
             let (p, d1u, d1v) = basis.d1(u, v);
             value = p;
-            a_d1u = d1u;
-            a_d1v = d1v;
+            d1u_val = d1u;
+            d1v_val = d1v;
         }
         is_first = false;
 
-        if is_infinite_coord(&a_d1u) || is_infinite_coord(&a_d1v) {
+        if is_infinite_coord(&d1u_val) || is_infinite_coord(&d1v_val) {
             return None;
         }
 
-        if calculate_d0(&mut value, &a_d1u, &a_d1v, offset, 1.0) {
+        if calculate_d0(&mut value, &d1u_val, &d1v_val, offset, 1.0) {
             return Some(value);
         }
 
@@ -408,8 +408,8 @@ pub fn evaluate_d0(
 
         let mut der_nuv = alloc_grid(max_order + 1, max_order + 1);
         let mut der_surf = alloc_grid(max_order + 2, max_order + 2);
-        grid_set(&mut der_surf, 1, 0, a_d1u);
-        grid_set(&mut der_surf, 0, 1, a_d1v);
+        grid_set(&mut der_surf, 1, 0, d1u_val);
+        grid_set(&mut der_surf, 0, 1, d1v_val);
         let osc_ref = osc_surf.as_ref().map(|s| s as &dyn Surface);
         let has_osc = (along_u || along_v) && osc_ref.is_some();
         if !run_compute(
@@ -435,8 +435,8 @@ pub fn evaluate_d0(
 
         // `pxx:708-724`: InfinityOfSolutions -> ReplaceDerivative then MagTol Normal.
         if n_status == CSLibNormalStatus::InfinityOfSolutions {
-            let mut new_du = a_d1u;
-            let mut new_dv = a_d1v;
+            let mut new_du = d1u_val;
+            let mut new_dv = d1v_val;
             if replace_derivative(
                 u,
                 v,
@@ -474,8 +474,8 @@ pub fn evaluate_d0(
             v_max,
             is_u_per,
             is_v_per,
-            &a_d1u,
-            &a_d1v,
+            &d1u_val,
+            &d1v_val,
         ) {
             return None;
         }
@@ -507,42 +507,42 @@ pub fn evaluate_d1(
     let mut u = u_in;
     let mut v = v_in;
     let mut value = value_in;
-    let mut the_d1u = d1u_in;
-    let mut the_d1v = d1v_in;
-    let mut a_d2u = d2u_in;
-    let mut a_d2v = d2v_in;
-    let mut a_d2uv = d2uv_in;
+    let mut d1u_val = d1u_in;
+    let mut d1v_val = d1v_in;
+    let mut d2u_val = d2u_in;
+    let mut d2v_val = d2v_in;
+    let mut d2uv_val = d2uv_in;
     let mut is_first = true;
 
     loop {
         if !is_first {
             let (p, d1u, d1v, d2u, d2v, d2uv) = basis.d2(u, v);
             value = p;
-            the_d1u = d1u;
-            the_d1v = d1v;
-            a_d2u = d2u;
-            a_d2v = d2v;
-            a_d2uv = d2uv;
+            d1u_val = d1u;
+            d1v_val = d1v;
+            d2u_val = d2u;
+            d2v_val = d2v;
+            d2uv_val = d2uv;
         }
         is_first = false;
 
-        if is_infinite_coord(&the_d1u) || is_infinite_coord(&the_d1v) {
+        if is_infinite_coord(&d1u_val) || is_infinite_coord(&d1v_val) {
             return None;
         }
 
-        let mut a_d1u = the_d1u;
-        let mut a_d1v = the_d1v;
-        let nu2 = a_d1u.square_magnitude();
-        let nv2 = a_d1v.square_magnitude();
+        let mut d1u_unit = d1u_val;
+        let mut d1v_unit = d1v_val;
+        let nu2 = d1u_unit.square_magnitude();
+        let nv2 = d1v_unit.square_magnitude();
         if nu2 > 1.0 {
-            a_d1u = a_d1u.divided(nu2.sqrt());
+            d1u_unit = d1u_unit.divided(nu2.sqrt());
         }
         if nv2 > 1.0 {
-            a_d1v = a_d1v.divided(nv2.sqrt());
+            d1v_unit = d1v_unit.divided(nv2.sqrt());
         }
 
         let max_order = 3;
-        let mut norm = a_d1u.crossed(&a_d1v);
+        let mut norm = d1u_unit.crossed(&d1v_unit);
         let is_singular = norm.square_magnitude() <= D1_TOL * D1_TOL;
         let mut along_u = false;
         let mut along_v = false;
@@ -574,45 +574,45 @@ pub fn evaluate_d1(
             norm.normalize();
             value = GpPnt::from_xyz(&value.coord.added(&norm.xyz().multiplied(offset * sign)));
             let n0 = norm;
-            let scale = the_d1u.crossed(&the_d1v).dot(&n0);
+            let scale = d1u_val.crossed(&d1v_val).dot(&n0);
             let mut n1u = GpVec::new(
-                a_d2u.y() * the_d1v.z() + the_d1u.y() * a_d2uv.z()
-                    - a_d2u.z() * the_d1v.y()
-                    - the_d1u.z() * a_d2uv.y(),
-                -(a_d2u.x() * the_d1v.z() + the_d1u.x() * a_d2uv.z()
-                    - a_d2u.z() * the_d1v.x()
-                    - the_d1u.z() * a_d2uv.x()),
-                a_d2u.x() * the_d1v.y() + the_d1u.x() * a_d2uv.y()
-                    - a_d2u.y() * the_d1v.x()
-                    - the_d1u.y() * a_d2uv.x(),
+                d2u_val.y() * d1v_val.z() + d1u_val.y() * d2uv_val.z()
+                    - d2u_val.z() * d1v_val.y()
+                    - d1u_val.z() * d2uv_val.y(),
+                -(d2u_val.x() * d1v_val.z() + d1u_val.x() * d2uv_val.z()
+                    - d2u_val.z() * d1v_val.x()
+                    - d1u_val.z() * d2uv_val.x()),
+                d2u_val.x() * d1v_val.y() + d1u_val.x() * d2uv_val.y()
+                    - d2u_val.y() * d1v_val.x()
+                    - d1u_val.y() * d2uv_val.x(),
             );
             let scale_u = n1u.dot(&n0);
             n1u = n1u
                 .subtracted(&n0.multiplied_scalar(scale_u))
                 .divided(scale);
             let mut n1v = GpVec::new(
-                a_d2uv.y() * the_d1v.z() + a_d2v.z() * the_d1u.y()
-                    - a_d2uv.z() * the_d1v.y()
-                    - a_d2v.y() * the_d1u.z(),
-                -(a_d2uv.x() * the_d1v.z() + a_d2v.z() * the_d1u.x()
-                    - a_d2uv.z() * the_d1v.x()
-                    - a_d2v.x() * the_d1u.z()),
-                a_d2uv.x() * the_d1v.y() + a_d2v.y() * the_d1u.x()
-                    - a_d2uv.y() * the_d1v.x()
-                    - a_d2v.x() * the_d1u.y(),
+                d2uv_val.y() * d1v_val.z() + d2v_val.z() * d1u_val.y()
+                    - d2uv_val.z() * d1v_val.y()
+                    - d2v_val.y() * d1u_val.z(),
+                -(d2uv_val.x() * d1v_val.z() + d2v_val.z() * d1u_val.x()
+                    - d2uv_val.z() * d1v_val.x()
+                    - d2v_val.x() * d1u_val.z()),
+                d2uv_val.x() * d1v_val.y() + d2v_val.y() * d1u_val.x()
+                    - d2uv_val.y() * d1v_val.x()
+                    - d2v_val.x() * d1u_val.y(),
             );
             let scale_v = n1v.dot(&n0);
             n1v = n1v
                 .subtracted(&n0.multiplied_scalar(scale_v))
                 .divided(scale);
-            the_d1u = the_d1u.added(&n1u.multiplied_scalar(offset * sign));
-            the_d1v = the_d1v.added(&n1v.multiplied_scalar(offset * sign));
-            return Some((value, the_d1u, the_d1v));
+            d1u_val = d1u_val.added(&n1u.multiplied_scalar(offset * sign));
+            d1v_val = d1v_val.added(&n1v.multiplied_scalar(offset * sign));
+            return Some((value, d1u_val, d1v_val));
         }
 
         let mut der_nuv = alloc_grid(max_order + 1, max_order + 1);
         let mut der_surf = alloc_grid(max_order + 2, max_order + 2);
-        fill_der_surf_d2(&mut der_surf, the_d1u, the_d1v, a_d2u, a_d2v, a_d2uv);
+        fill_der_surf_d2(&mut der_surf, d1u_val, d1v_val, d2u_val, d2v_val, d2uv_val);
         let osc_ref = osc_surf.as_ref().map(|s| s as &dyn Surface);
         let has_osc = (along_u || along_v) && osc_ref.is_some();
         if !run_compute(
@@ -637,8 +637,8 @@ pub fn evaluate_d1(
         );
 
         if n_status == CSLibNormalStatus::InfinityOfSolutions {
-            let mut new_du = the_d1u;
-            let mut new_dv = the_d1v;
+            let mut new_du = d1u_val;
+            let mut new_dv = d1v_val;
             if replace_derivative(
                 u,
                 v,
@@ -705,8 +705,8 @@ pub fn evaluate_d1(
             v_max,
             is_u_per,
             is_v_per,
-            &the_d1u,
-            &the_d1v,
+            &d1u_val,
+            &d1v_val,
         ) {
             return None;
         }

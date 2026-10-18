@@ -252,7 +252,7 @@ pub fn project_curve_on_surface_perform(
     let vp = vl - vf;
     // `cxx:1296-1304`: the sample order reverses when the incoming cache is
     // anchored on the LAST point of this curve.
-    let a_change_cycle = cache.change_cycle(&pts3d[0], &pts3d[n - 1]);
+    let change_cycle_val = cache.change_cycle(&pts3d[0], &pts3d[n - 1]);
     let mut is_from_cache = false;
     let mut saved_point = GpPnt2d::zero();
     let mut pts: Vec<GpPnt2d> = vec![GpPnt2d::zero(); n];
@@ -277,7 +277,7 @@ pub fn project_curve_on_surface_perform(
     let mut prev_p2d = GpPnt2d::zero();
     for ii in 1..=n {
         // `cxx:1313`: the sample order may be reversed.
-        let pnt_index = if a_change_cycle { n - ii + 1 } else { ii };
+        let pnt_index = if change_cycle_val { n - ii + 1 } else { ii };
         let p3d = pts3d[pnt_index - 1];
         if iso_param {
             // `cxx:1317-1375`: the isoparametric arms.
@@ -415,7 +415,7 @@ pub fn project_curve_on_surface_perform(
         // `cxx:1455-1463`: the seed for the next sample is the linear
         // extrapolation of this sample against the previously stored one.
         if ii > 1 {
-            let base = if a_change_cycle {
+            let base = if change_cycle_val {
                 pts[pnt_index]
             } else {
                 pts[pnt_index - 2]

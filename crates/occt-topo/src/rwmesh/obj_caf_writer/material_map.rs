@@ -66,9 +66,9 @@ impl MeshMaterialMap {
     /// `RWMesh_MaterialMap::RWMesh_MaterialMap` (`RWMesh_MaterialMap.cxx:29-40`):
     /// split the model path into folder + stem, defaulting the folder to `"."`.
     pub(crate) fn new(file_name: &str) -> Self {
-        let (mut folder, a_file_name) = crate::image_texture::ImageTexture::folder_and_file(file_name);
+        let (mut folder, file_name_val) = crate::image_texture::ImageTexture::folder_and_file(file_name);
         let (short_file_name_base, _ext) =
-            crate::image_texture::ImageTexture::file_name_and_extension(&a_file_name);
+            crate::image_texture::ImageTexture::file_name_and_extension(&file_name_val);
         if folder.is_empty() {
             // `if (myFolder.IsEmpty()) { myFolder = "."; }` (`cxx:36-39`).
             folder = ".".to_string();

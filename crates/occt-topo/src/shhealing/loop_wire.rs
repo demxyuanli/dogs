@@ -406,8 +406,8 @@ pub fn fix_loop_wire(wire: &Wire, face: &Face) -> Option<Vec<Wire>> {
             // common end vertex, accumulating into the current wire.
             let mut i = 0usize;
             while i < seq.len() {
-                let mut a_wire = seq[i].clone();
-                let (mut v1, mut v2) = wire_end_vertices(&a_wire);
+                let mut wire_val = seq[i].clone();
+                let (mut v1, mut v2) = wire_end_vertices(&wire_val);
                 let mut j = i + 1;
                 while j < seq.len() {
                     let (w1, w2) = wire_end_vertices(&seq[j]);
@@ -416,8 +416,8 @@ pub fn fix_loop_wire(wire: &Wire, face: &Face) -> Option<Vec<Wire>> {
                         || same_view(&v2, &w1)
                         || same_view(&v2, &w2)
                     {
-                        a_wire = merge_wires(&a_wire, &seq[j], &builder);
-                        let (n1, n2) = wire_end_vertices(&a_wire);
+                        wire_val = merge_wires(&wire_val, &seq[j], &builder);
+                        let (n1, n2) = wire_end_vertices(&wire_val);
                         v1 = n1;
                         v2 = n2;
                         seq.remove(j);
@@ -425,7 +425,7 @@ pub fn fix_loop_wire(wire: &Wire, face: &Face) -> Option<Vec<Wire>> {
                         j += 1;
                     }
                 }
-                res.push(a_wire);
+                res.push(wire_val);
                 i += 1;
             }
         }

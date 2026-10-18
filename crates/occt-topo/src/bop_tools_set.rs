@@ -87,9 +87,9 @@ impl BopToolsSet {
     }
 
     /// Construct and fill in one call.
-    pub fn from_shape(the_s: &TopoShape, kind: ShapeType) -> Self {
+    pub fn from_shape(s_par: &TopoShape, kind: ShapeType) -> Self {
         let mut s = Self::new();
-        s.add(the_s, kind);
+        s.add(s_par, kind);
         s
     }
 

@@ -89,40 +89,40 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
         if si.shape_type() != ShapeType::Solid {
             continue;
         }
-        let a_s = si.shape().clone();
-        for a_si in own_internal_shapes(&a_s) {
-            if images_bound(f.history(), &a_si) {
-                for sp in images_of(f.history(), &a_si) {
+        let s_val = si.shape().clone();
+        for si_val in own_internal_shapes(&s_val) {
+            if images_bound(f.history(), &si_val) {
+                for sp in images_of(f.history(), &si_val) {
                     msi.push(sp.clone());
                 }
             } else {
-                msi.push(a_si);
+                msi.push(si_val);
             }
         }
-        if images_bound(f.history(), &a_s) {
-            for a_sp in images_of(f.history(), &a_s) {
-                if fence.insert(shape_key(a_sp)) {
-                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Edge, &mut msx);
-                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Face, &mut msx);
-                    map_shapes_and_ancestors_into(a_sp, ShapeType::Edge, ShapeType::Face, &mut msx);
-                    lsd.push(a_sp.clone());
+        if images_bound(f.history(), &s_val) {
+            for sp_val in images_of(f.history(), &s_val) {
+                if fence.insert(shape_key(sp_val)) {
+                    map_shapes_and_ancestors_into(sp_val, ShapeType::Vertex, ShapeType::Edge, &mut msx);
+                    map_shapes_and_ancestors_into(sp_val, ShapeType::Vertex, ShapeType::Face, &mut msx);
+                    map_shapes_and_ancestors_into(sp_val, ShapeType::Edge, ShapeType::Face, &mut msx);
+                    lsd.push(sp_val.clone());
                 }
             }
-        } else if fence.insert(shape_key(&a_s)) {
-            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Edge, &mut msx);
-            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Face, &mut msx);
-            map_shapes_and_ancestors_into(&a_s, ShapeType::Edge, ShapeType::Face, &mut msx);
-            lsd.push(a_s.clone());
-            msor.insert(shape_key(&a_s));
+        } else if fence.insert(shape_key(&s_val)) {
+            map_shapes_and_ancestors_into(&s_val, ShapeType::Vertex, ShapeType::Edge, &mut msx);
+            map_shapes_and_ancestors_into(&s_val, ShapeType::Vertex, ShapeType::Face, &mut msx);
+            map_shapes_and_ancestors_into(&s_val, ShapeType::Edge, ShapeType::Face, &mut msx);
+            lsd.push(s_val.clone());
+            msor.insert(shape_key(&s_val));
         }
     }
 
     // 3. Drop candidates already tied to a split-solid ancestor.
     let mut lsi: Vec<TopoShape> = Vec::new();
-    for a_si in &msi {
-        match msx.get(&shape_map_key(a_si)) {
+    for si_val in &msi {
+        match msx.get(&shape_map_key(si_val)) {
             Some(lsx) if !lsx.is_empty() => {}
-            _ => lsi.push(a_si.clone()),
+            _ => lsi.push(si_val.clone()),
         }
     }
     if lsi.is_empty() {
@@ -135,9 +135,9 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
         let mut sd_cur = sd.clone();
         let mut i = 0;
         while i < lsi.len() {
-            let mut a_si = lsi[i].clone();
-            a_si.set_orientation(Orientation::Internal);
-            let state = compute_state_by_one_point(&a_si, &sd_cur, 1e-11);
+            let mut si_val = lsi[i].clone();
+            si_val.set_orientation(Orientation::Internal);
+            let state = compute_state_by_one_point(&si_val, &sd_cur, 1e-11);
             if state != FaceState::In {
                 i += 1;
                 continue;
@@ -147,13 +147,13 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
                 for sh in iter_children(&sd_cur) {
                     bld.add(&mut sdx.0, &sh);
                 }
-                bld.add(&mut sdx.0, &a_si);
+                bld.add(&mut sdx.0, &si_val);
                 f.history_mut().add_image(&sd_cur, sdx.0.clone());
                 origins_append(f.origins_mut(), &sdx.0, sd_cur.clone());
                 msor.remove(&shape_key(&sd_cur));
                 sd_cur = sdx.0;
             } else {
-                bld.add(&mut sd_cur, &a_si);
+                bld.add(&mut sd_cur, &si_val);
             }
             lsi.remove(i);
         }

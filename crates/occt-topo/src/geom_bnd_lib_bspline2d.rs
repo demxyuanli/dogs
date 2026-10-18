@@ -31,23 +31,23 @@ pub fn box_bspline_poles(
     u2: f64,
     tol: f64,
 ) -> BndBox2d {
-    let mut a_curve = curve.clone();
-    let a_u1 = a_curve.first_parameter();
-    let a_u2 = a_curve.last_parameter();
-    let mut trim1 = u1.max(a_u1);
-    let mut trim2 = u2.min(a_u2);
+    let mut curve_val = curve.clone();
+    let u1_val = curve_val.first_parameter();
+    let u2_val = curve_val.last_parameter();
+    let mut trim1 = u1.max(u1_val);
+    let mut trim2 = u2.min(u2_val);
     if trim2 < trim1 {
-        trim1 = a_u1;
-        trim2 = a_u2;
+        trim1 = u1_val;
+        trim2 = u2_val;
     }
-    if (a_u1 - trim1).abs() > PCONFUSION || (a_u2 - trim2).abs() > PCONFUSION {
-        if a_curve.segment(trim1, trim2, PCONFUSION).is_err() {
+    if (u1_val - trim1).abs() > PCONFUSION || (u2_val - trim2).abs() > PCONFUSION {
+        if curve_val.segment(trim1, trim2, PCONFUSION).is_err() {
             return box_other_2d(curve, trim1, trim2, tol);
         }
     }
     let mut bnd_box = BndBox2d::new();
-    for i in 0..a_curve.nb_poles() {
-        bnd_box.add_point(&GpPnt2d::new(a_curve.xs[i], a_curve.ys[i]));
+    for i in 0..curve_val.nb_poles() {
+        bnd_box.add_point(&GpPnt2d::new(curve_val.xs[i], curve_val.ys[i]));
     }
     bnd_box.enlarge(tol);
     bnd_box
@@ -76,7 +76,7 @@ pub fn box_bspline_xy(xs: &[f64], ys: &[f64], tol: f64) -> BndBox2d {
 /// `GeomBndLib_OtherCurve2d::Box` fallback.
 pub fn box_bspline_as_curve(curve: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
     match curve.bspline_copy2d() {
-        Some(a_curve) => box_bspline_poles(&a_curve, u1, u2, tol),
+        Some(curve_val) => box_bspline_poles(&curve_val, u1, u2, tol),
         None => box_other_2d(curve, u1, u2, tol),
     }
 }

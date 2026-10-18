@@ -322,9 +322,9 @@ impl Pso {
                     );
                 }
 
-                let mut a_distance = 0.0;
-                func.value(&curr_point, &mut a_distance);
-                particles.particle_mut(part_idx).distance = a_distance;
+                let mut distance_val = 0.0;
+                func.value(&curr_point, &mut distance_val);
+                particles.particle_mut(part_idx).distance = distance_val;
 
                 let p = particles.particle_mut(part_idx);
                 if p.distance < p.best_distance {

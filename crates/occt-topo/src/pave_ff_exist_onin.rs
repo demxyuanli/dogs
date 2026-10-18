@@ -200,12 +200,12 @@ pub fn is_existing_pave_block_on_in(
     let mut found: Option<(BopdsPaveBlock, f64)> = None;
     let mut tol_new = f64::MAX;
 
-    for a_pb in candidates {
-        let (n_v21, n_v22) = a_pb.indices();
+    for pb_val in candidates {
+        let (n_v21, n_v22) = pb_val.indices();
         let tol_v21 = vertex_tol(ds, n_v21);
         let tol_v22 = vertex_tol(ds, n_v22);
         let tol_v2 = tol_v21.max(tol_v22) + fuzzy;
-        let n_e = a_pb.edge();
+        let n_e = pb_val.edge();
         let Some(sp_shape) = ds.shape(n_e) else {
             continue;
         };
@@ -216,13 +216,13 @@ pub fn is_existing_pave_block_on_in(
             continue;
         }
 
-        let mut a_coeff = 1.0;
+        let mut coeff_val = 1.0;
         let mut dist_m1m2 = 0.0;
         let mut pe_status = 1i32;
         let mut real_tol = tol_check;
-        if ds.is_common_block(a_pb) {
+        if ds.is_common_block(pb_val) {
             real_tol = real_tol.max(tol_v1.max(tol_v2));
-            if pb_in_common(mpb_common, a_pb) {
+            if pb_in_common(mpb_common, pb_val) {
                 real_tol *= 2.0;
             }
         } else if i_flag1 == 2 && i_flag2 == 2 {
@@ -245,7 +245,7 @@ pub fn is_existing_pave_block_on_in(
             pe_status = st;
             dist_m1m2 = dist;
             real_tol = real;
-            a_coeff = coeff;
+            coeff_val = coeff;
         }
 
         let mut box_tmp = box_pm;
@@ -278,8 +278,8 @@ pub fn is_existing_pave_block_on_in(
             }
         }
         if i_flag1 != 0 && i_flag2 != 0 && dist_to_sp < tol_new {
-            tol_new = a_coeff * dist_to_sp;
-            found = Some((a_pb.clone(), tol_new));
+            tol_new = coeff_val * dist_to_sp;
+            found = Some((pb_val.clone(), tol_new));
         }
     }
     found

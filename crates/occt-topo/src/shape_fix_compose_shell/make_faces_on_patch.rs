@@ -33,7 +33,7 @@ impl ComposeShell {
         loops: &mut Vec<TopoShape>,
     ) {
         let builder = TopoBuilder::new();
-        let my_face = match self.face() {
+        let face_val = match self.face() {
             Some(f) => f.clone(),
             None => return,
         };
@@ -143,11 +143,11 @@ impl ComposeShell {
                     // current `ew` child (`cxx:3106-3107`), and `aCL` travels
                     // with `aCW` (`cxx:3124-3128`).
                     if eidx < ew.len() {
-                        if let Some((mut a_cw, _acf, mut a_cl)) =
+                        if let Some((mut cw_val, _acf, mut cl_val)) =
                             boptools_2d::curve_on_surface_range(&ew[eidx], &pf)
                         {
                             while st_point == FaceState::On || st_point == FaceState::Unknown {
-                                st_point = clas.perform_tab_orien(a_cw.d0(a_cl)); // cxx:3110
+                                st_point = clas.perform_tab_orien(cw_val.d0(cl_val)); // cxx:3110
                                 if eidx >= ew.len() {
                                     break; // cxx:3112 `if (!ew.More()) break;`
                                 }
@@ -161,8 +161,8 @@ impl ComposeShell {
                                 if let Some((c2d, _a, b)) =
                                     boptools_2d::curve_on_surface_range(&ew[eidx], &pf)
                                 {
-                                    a_cw = c2d; // cxx:3127
-                                    a_cl = b; // cxx:3126 `aCL` out-param
+                                    cw_val = c2d; // cxx:3127
+                                    cl_val = b; // cxx:3126 `aCL` out-param
                                 }
                             }
                         }
@@ -237,9 +237,9 @@ impl ComposeShell {
                         }
                     }
                     ShapeType::Vertex => {
-                        let a_v = Vertex(loops[j].clone());
-                        let a_p = BRepTool::vertex_point(&a_v);
-                        Some(surface_value_of_uv(surf_ref.as_ref(), &a_p, CONFUSION))
+                        let v_val = Vertex(loops[j].clone());
+                        let p_val = BRepTool::vertex_point(&v_val);
+                        Some(surface_value_of_uv(surf_ref.as_ref(), &p_val, CONFUSION))
                     }
                     _ => None,
                 };
@@ -263,9 +263,9 @@ impl ComposeShell {
             let mut new_face = builder.make_face(surf.clone(), &[wire]);
             for h in &holes {
                 if h.shape_type() == ShapeType::Vertex {
-                    let a_v = Vertex(h.clone());
-                    if let Some(new_v) = copy_nm_vertex_face(&a_v, &new_face, &my_face) {
-                        self.context_mut().replace(&a_v.0, &new_v.0);
+                    let v_val = Vertex(h.clone());
+                    if let Some(new_v) = copy_nm_vertex_face(&v_val, &new_face, &face_val) {
+                        self.context_mut().replace(&v_val.0, &new_v.0);
                         builder.add(&mut new_face.0, &new_v.0);
                     }
                 } else {

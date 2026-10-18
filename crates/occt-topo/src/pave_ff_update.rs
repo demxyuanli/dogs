@@ -62,10 +62,10 @@ pub(crate) fn update_existing_pave_blocks(
     }
     let b_cb = f.ds().is_common_block(pbf);
     let mut lpb1: Vec<BopdsPaveBlock> = Vec::new();
-    let mut a_faces: Vec<usize> = Vec::new();
+    let mut faces_val: Vec<usize> = Vec::new();
     if b_cb {
         if let Some(cb) = f.ds().common_block(pbf) {
-            a_faces = cb.faces().to_vec();
+            faces_val = cb.faces().to_vec();
             if !cb.pave_blocks().is_empty() {
                 lpb1 = cb.pave_blocks().to_vec();
             } else {
@@ -90,7 +90,7 @@ pub(crate) fn update_existing_pave_blocks(
         let fuzzy = f.fuzzy_value();
         for pb_value in lpb.iter() {
             let pb_value_paves = [pb_value.pave1(), pb_value.pave2()];
-            let mut a_cb = BopdsCommonBlock::new();
+            let mut cb_val = BopdsCommonBlock::new();
             for pb2 in &lpb1 {
                 let n_e = pb2.original_edge();
                 let mut pb2n = BopdsPaveBlock::new();
@@ -132,15 +132,15 @@ pub(crate) fn update_existing_pave_blocks(
                 }
                 pb2n.set_edge(pb_value.edge());
                 pb2n.set_original_edge(n_e);
-                a_cb.add_pave_block(pb2n.clone());
+                cb_val.add_pave_block(pb2n.clone());
                 f.ds_mut().change_pave_blocks_mut(n_e).push(pb2n.clone());
-                f.ds_mut().set_common_block(&pb2n, a_cb.clone());
+                f.ds_mut().set_common_block(&pb2n, cb_val.clone());
             }
-            a_cb.set_faces(a_faces.clone());
-            if let Some(pb_new) = a_cb.pave_block1().cloned() {
+            cb_val.set_faces(faces_val.clone());
+            if let Some(pb_new) = cb_val.pave_block1().cloned() {
                 lpb_new.push(pb_new);
             }
-            f.ds_mut().push_common_block(a_cb);
+            f.ds_mut().push_common_block(cb_val);
         }
         *lpb = lpb_new;
     } else {
@@ -161,7 +161,7 @@ pub(crate) fn update_existing_pave_blocks(
         let Some(f_shape) = f.ds().shape(n_f).cloned() else {
             continue;
         };
-        let a_f = Face(f_shape);
+        let f_val = Face(f_shape);
         for pb in lpb.iter() {
             let on_or_in = f
                 .ds()
@@ -180,7 +180,7 @@ pub(crate) fn update_existing_pave_blocks(
             };
             let mut an_ef = EdgeFace::new();
             an_ef.set_edge(Edge(e_shape));
-            an_ef.set_face(a_f.clone());
+            an_ef.set_face(f_val.clone());
             an_ef.set_fuzzy_value(fuzzy);
             an_ef.set_range(pb.pave1().parameter(), pb.pave2().parameter());
             if an_ef.perform().is_err() {
@@ -319,7 +319,7 @@ pub(crate) fn update_face_info_ff(
         b_new_cb = true;
         let mut m_faces: HashSet<usize> = HashSet::new();
         let mut m_pbs: Vec<BopdsPaveBlock> = Vec::new();
-        let mut a_cb: Option<BopdsCommonBlock> = None;
+        let mut cb_val: Option<BopdsCommonBlock> = None;
         for pb in &lpb {
             if !m_pbs.iter().any(|p| pb_eq(p, pb)) {
                 m_pbs.push(pb.clone());
@@ -333,19 +333,19 @@ pub(crate) fn update_face_info_ff(
                 for &face in cb.faces() {
                     m_faces.insert(face);
                 }
-                if a_cb.is_none() {
-                    a_cb = Some(cb.clone());
+                if cb_val.is_none() {
+                    cb_val = Some(cb.clone());
                 }
             }
         }
-        if a_cb.is_none() {
+        if cb_val.is_none() {
             let mut cb = BopdsCommonBlock::new();
             cb.set_pave_blocks(lpb.clone());
             for pb in &lpb {
                 f.ds_mut().set_common_block(pb, cb.clone());
             }
             f.ds_mut().push_common_block(cb);
-        } else if let Some(mut cb) = a_cb {
+        } else if let Some(mut cb) = cb_val {
             let mut lpb_new = Vec::new();
             for pb in &m_pbs {
                 f.ds_mut().set_common_block(pb, cb.clone());
@@ -444,37 +444,37 @@ pub(crate) fn update_pave_blocks_ff(
 
     let mut mpb: HashSet<PbKey> = HashSet::new();
     let mut micro: HashSet<usize> = HashSet::new();
-    for mut a_pb in an_all {
-        if f.ds().is_common_block(&a_pb) {
-            if let Some(cb) = f.ds().common_block(&a_pb) {
+    for mut pb_val in an_all {
+        if f.ds().is_common_block(&pb_val) {
+            if let Some(cb) = f.ds().common_block(&pb_val) {
                 if let Some(first) = cb.pave_block1() {
-                    a_pb = first.clone();
+                    pb_val = first.clone();
                 }
             }
         }
-        if !mpb.insert(pb_key(&a_pb)) {
+        if !mpb.insert(pb_key(&pb_val)) {
             continue;
         }
-        let (mut n_v1, mut n_v2) = a_pb.indices();
-        let (t1, t2) = a_pb.range();
+        let (mut n_v1, mut n_v2) = pb_val.indices();
+        let (t1, t2) = pb_val.range();
         let was_regular = n_v1 != n_v2;
         let mut b_rebuild = false;
         if let Some(&n) = dm_new_sd.get(&n_v1) {
             n_v1 = n;
-            a_pb.set_pave1(BopdsPave::new(n_v1, t1));
+            pb_val.set_pave1(BopdsPave::new(n_v1, t1));
             b_rebuild = true;
         }
         if let Some(&n) = dm_new_sd.get(&n_v2) {
             n_v2 = n;
-            a_pb.set_pave2(BopdsPave::new(n_v2, t2));
+            pb_val.set_pave2(BopdsPave::new(n_v2, t2));
             b_rebuild = true;
         }
         if !b_rebuild {
             continue;
         }
-        let mut n_e = a_pb.edge();
+        let mut n_e = pb_val.edge();
         if n_e == 0 {
-            n_e = a_pb.original_edge();
+            n_e = pb_val.original_edge();
         }
         let is_deg = f
             .ds()
@@ -496,25 +496,25 @@ pub(crate) fn update_pave_blocks_ff(
             if let Some(e_shape) = f.ds().shape(n_e).cloned() {
                 let edge = Edge(e_shape);
                 let tol = BRepTool::edge_tolerance(&edge);
-                fill_shrunk_data_for_block(f, &edge, tol, &mut a_pb);
+                fill_shrunk_data_for_block(f, &edge, tol, &mut pb_val);
             }
-            if !a_pb.has_shrunk_data() {
+            if !pb_val.has_shrunk_data() {
                 micro.insert(n_e);
                 continue;
             }
         }
         let n_sp = make_split_edge(f, n_e, n_v1, t1, n_v2, t2)?;
-        if f.ds().is_common_block(&a_pb) {
-            if let Some(mut cb) = f.ds().common_block(&a_pb).cloned() {
+        if f.ds().is_common_block(&pb_val) {
+            if let Some(mut cb) = f.ds().common_block(&pb_val).cloned() {
                 cb.set_edge(n_sp);
-                f.ds_mut().set_common_block(&a_pb, cb);
+                f.ds_mut().set_common_block(&pb_val, cb);
             }
         } else {
-            a_pb.set_edge(n_sp);
-            let orig = a_pb.original_edge();
+            pb_val.set_edge(n_sp);
+            let orig = pb_val.original_edge();
             if orig != 0 {
                 let list = f.ds_mut().change_pave_blocks_mut(orig);
-                if let Some(slot) = list.iter_mut().find(|p| pb_eq(p, &a_pb) || p.edge() == n_e) {
+                if let Some(slot) = list.iter_mut().find(|p| pb_eq(p, &pb_val) || p.edge() == n_e) {
                     slot.set_edge(n_sp);
                     slot.set_pave1(BopdsPave::new(n_v1, t1));
                     slot.set_pave2(BopdsPave::new(n_v2, t2));
@@ -523,7 +523,7 @@ pub(crate) fn update_pave_blocks_ff(
             for ff in f.ds_mut().interf_ff_mut() {
                 for nc in ff.change_curves() {
                     for pb in nc.change_pave_blocks() {
-                        if pb_eq(pb, &a_pb) || (pb.edge() == n_e && (pb.first - t1).abs() <= 1e-7) {
+                        if pb_eq(pb, &pb_val) || (pb.edge() == n_e && (pb.first - t1).abs() <= 1e-7) {
                             pb.set_edge(n_sp);
                             pb.set_pave1(BopdsPave::new(n_v1, t1));
                             pb.set_pave2(BopdsPave::new(n_v2, t2));

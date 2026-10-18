@@ -292,14 +292,14 @@ pub fn bspline_surface_to_bezier_surface(s: &GeomBSplineSurface) -> Vec<BezierSu
     let mut patches = Vec::with_capacity((bpu.len() - 1) * (bpv.len() - 1));
     for iu in 0..bpu.len() - 1 {
         for iv in 0..bpv.len() - 1 {
-            let a_u = iu * du;
-            let a_v = iv * dv;
+            let u_val = iu * du;
+            let v_val = iv * dv;
             let mut poles = Vec::with_capacity(du + 1);
             let mut weights = s.weights.as_ref().map(|_| Vec::with_capacity(du + 1));
-            for i in a_u..=a_u + du {
-                poles.push(s.poles[i][a_v..=a_v + dv].to_vec());
+            for i in u_val..=u_val + du {
+                poles.push(s.poles[i][v_val..=v_val + dv].to_vec());
                 if let (Some(w), Some(sw)) = (weights.as_mut(), s.weights.as_ref()) {
-                    w.push(sw[i][a_v..=a_v + dv].to_vec());
+                    w.push(sw[i][v_val..=v_val + dv].to_vec());
                 }
             }
             patches.push(BezierSurfacePatch {

@@ -36,9 +36,9 @@ pub struct Geom2dIntPolygon2d {
     /// `ThePnts` (`gxx:45`).
     pnts: Vec<GpPnt2d>,
     /// `TheParams` (`gxx:46`).
-    the_params: Vec<f64>,
+    params: Vec<f64>,
     /// `TheIndex` (`gxx:47`).
-    the_index: Vec<usize>,
+    index: Vec<usize>,
     /// `NbPntIn` (`hxx`).
     nb_pnt_in: usize,
     /// `TheMaxNbPoints` (`hxx`).
@@ -62,8 +62,8 @@ impl Geom2dIntPolygon2d {
         let alloc = if t_nb_pts < 3 { 6 } else { t_nb_pts + t_nb_pts };
         let mut p = Self {
             pnts: vec![GpPnt2d::zero(); alloc],
-            the_params: vec![0.0; alloc],
-            the_index: vec![0; alloc],
+            params: vec![0.0; alloc],
+            index: vec![0; alloc],
             nb_pnt_in: nb_pts,
             max_nb_points: nb_pts + nb_pts,
             bnd_box: BndBox2d::new(),
@@ -151,19 +151,19 @@ impl Geom2dIntPolygon2d {
     }
     #[inline]
     fn tpar(&self, i: usize) -> f64 {
-        self.the_params[i - 1]
+        self.params[i - 1]
     }
     #[inline]
     fn set_tpar(&mut self, i: usize, v: f64) {
-        self.the_params[i - 1] = v;
+        self.params[i - 1] = v;
     }
     #[inline]
     fn ti(&self, i: usize) -> usize {
-        self.the_index[i - 1]
+        self.index[i - 1]
     }
     #[inline]
     fn set_ti(&mut self, i: usize, v: usize) {
-        self.the_index[i - 1] = v;
+        self.index[i - 1] = v;
     }
 
     /// `NbPntIn` (`hxx`).
@@ -382,9 +382,9 @@ impl Geom2dIntPolygon2d {
     }
 
     /// `ApproxParamOnCurve(Aindex, TheParamOnLine)` (`gxx:287-310`).
-    pub fn approx_param_on_curve(&self, a_index: usize, the_param_on_line: f64) -> f64 {
-        let mut index = a_index;
-        let mut param_on_line = the_param_on_line;
+    pub fn approx_param_on_curve(&self, index_par: usize, param_on_line_par: f64) -> f64 {
+        let mut index = index_par;
+        let mut param_on_line = param_on_line_par;
         if index > self.nb_pnt_in {
             // `gxx:291-293` prints to stdout; the port carries no debug output.
         }

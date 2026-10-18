@@ -222,15 +222,15 @@ impl WlApprox {
 
     fn prepare_ds(
         &mut self,
-        the_approx_xyz: bool,
-        the_approx_u1v1: bool,
-        the_approx_u2v2: bool,
+        approx_xyz_par: bool,
+        approx_u1v1_par: bool,
+        approx_u2v2_par: bool,
         indicemin: i32,
         indicemax: i32,
     ) {
-        self.data.approx_xyz = the_approx_xyz;
-        self.data.approx_u1v1 = the_approx_u1v1;
-        self.data.approx_u2v2 = the_approx_u2v2;
+        self.data.approx_xyz = approx_xyz_par;
+        self.data.approx_u1v1 = approx_u1v1_par;
+        self.data.approx_u2v2 = approx_u2v2_par;
         self.data.indicemin = indicemin;
         self.data.indicemax = indicemax;
     }

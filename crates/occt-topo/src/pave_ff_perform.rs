@@ -284,21 +284,21 @@ fn shift_closed_faces(
                     continue;
                 };
                 let vertex = Vertex(vs);
-                let a_vertex_point = BRepTool::vertex_point(&vertex);
-                let t1 = ctx.project_point_on_edge(&edge1, &a_vertex_point);
-                let t2 = ctx.project_point_on_edge(&edge2, &a_vertex_point);
+                let vertex_point_val = BRepTool::vertex_point(&vertex);
+                let t1 = ctx.project_point_on_edge(&edge1, &vertex_point_val);
+                let t2 = ctx.project_point_on_edge(&edge2, &vertex_point_val);
                 if t1.is_none() && t2.is_none() {
                     continue;
                 }
                 let p1 = if let (Some(t), Some(c)) = (t1, BRepTool::edge_curve(&edge1)) {
                     c.d0(t)
                 } else {
-                    a_vertex_point
+                    vertex_point_val
                 };
                 let p2 = if let (Some(t), Some(c)) = (t2, BRepTool::edge_curve(&edge2)) {
                     c.d0(t)
                 } else {
-                    a_vertex_point
+                    vertex_point_val
                 };
                 let shift_dist = p1.distance(&p2);
                 if shift_dist > BRepTool::vertex_tolerance(&vertex) {
@@ -407,7 +407,7 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
 
         let (shifted1, shifted2, shift_value) =
             shift_closed_faces(f.ds(), &ctx_tools, n_f1, n_f2, &face1, &face2, &ee_map);
-        let a_tol_ff = shift_value.max(tolerance_ff(&face1, &face2));
+        let tol_ff_val = shift_value.max(tolerance_ff(&face1, &face2));
         let starts: Vec<(f64, f64, f64, f64)> = get_ef_pnts(f, n_f1, n_f2)
             .into_iter()
             .map(|p| (p.u1, p.v1, p.u2, p.v2))
@@ -419,7 +419,7 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
             orig2: face2,
             face1: shifted1,
             face2: shifted2,
-            tol_ff: a_tol_ff,
+            tol_ff: tol_ff_val,
             starts,
         });
     }
@@ -447,21 +447,21 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
         }
 
         let b_tangent = ff.tangent_faces();
-        let a_tol_ff = job.tol_ff;
+        let tol_ff_val = job.tol_ff;
         let res = ff.result();
-        let a_nb_curves = res.nb_curves();
+        let nb_curves_val = res.nb_curves();
         let nb_points = 0usize;
 
-        if a_nb_curves > 0 || nb_points > 0 {
+        if nb_curves_val > 0 || nb_points > 0 {
             f.ds_mut().add_interf(n_f1, n_f2);
         }
 
         let mut rec = BopdsInterfFf::new(n_f1, n_f2);
         rec.set_tangent_faces(b_tangent);
-        rec.init(a_nb_curves, nb_points);
+        rec.init(nb_curves_val, nb_points);
 
-        let mut box_expand = a_tol_ff;
-        if a_nb_curves > 0 {
+        let mut box_expand = tol_ff_val;
+        if nb_curves_val > 0 {
             let max_v = max_vertex_tolerance_of_face(f.ds(), n_f1)
                 .max(max_vertex_tolerance_of_face(f.ds(), n_f2));
             box_expand += max_v;
@@ -482,7 +482,7 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
                 Some(c.curve.as_ref()),
                 r.first,
                 r.last,
-                a_tol_ff.max(CONFUSION),
+                tol_ff_val.max(CONFUSION),
                 tang_default,
                 &mut box_,
             );
@@ -494,7 +494,7 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
             nc.set_curve(c.curve.clone());
             nc.set_pcurves(c.pcurve1.clone(), c.pcurve2.clone());
             nc.set_range(r.first, r.last);
-            nc.set_tolerance(a_tol_ff);
+            nc.set_tolerance(tol_ff_val);
             nc.set_tangential_tolerance(tang_default);
             nc.set_box(box_);
             nc.init_pave_block1();

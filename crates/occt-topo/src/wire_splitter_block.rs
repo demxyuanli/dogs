@@ -620,16 +620,16 @@ fn refine_angles_at_vertex(face: &Face, v: &TopoShape, infos: &mut [EdgeInfo]) {
         }
         let ek = GeometryRegistry::shape_key(&ei.edge.0);
         match refine_angle_2d(face, v, &ei.edge, a1, a2, delta) {
-            Some(a_new) => {
-                refined.insert(ek, a_new);
+            Some(new_val) => {
+                refined.insert(ek, new_val);
             }
             None if i_cnt_int == 2 => {
-                let a_new = if ei.angle <= a1 {
+                let new_val = if ei.angle <= a1 {
                     a1 + ANGULAR
                 } else {
                     a2 - ANGULAR
                 };
-                refined.insert(ek, a_new);
+                refined.insert(ek, new_val);
             }
             None => {}
         }
@@ -705,8 +705,8 @@ fn refine_angle_2d(
             continue;
         }
         let t = t1max + cf * d_t;
-        let a_p = c.d0(t);
-        let vec2 = GpVec2d::new(a_p.x() - pv.x(), a_p.y() - pv.y());
+        let p_val = c.d0(t);
+        let vec2 = GpVec2d::new(p_val.x() - pv.x(), p_val.y() - pv.y());
         let Ok(dir2) = GpDir2d::from_vec2d(&vec2) else {
             continue;
         };

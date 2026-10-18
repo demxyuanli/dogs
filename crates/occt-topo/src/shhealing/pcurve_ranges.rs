@@ -482,11 +482,11 @@ fn init2d(edge: &Edge, face: &Face, preci: f64) -> Option<(f64, f64, bool)> {
     if let (Some(v1), Some(v2)) = (v1.as_ref(), v2.as_ref()) {
         if is_same(&v1.0, &v2.0) {
             let dg = degenerated_values(surf.as_ref(), &pt1, preci);
-            if let Some((a_pt1, a_pt2, firstpar, lastpar)) = dg
+            if let Some((pt1_val, pt2_val, firstpar, lastpar)) = dg
             {
                 if is_geom2d_line(pc.as_ref())
-                    && a_pt1.distance(&pc.d0(firstpar)) <= preci
-                    && a_pt2.distance(&pc.d0(lastpar)) <= preci
+                    && pt1_val.distance(&pc.d0(firstpar)) <= preci
+                    && pt2_val.distance(&pc.d0(lastpar)) <= preci
                 {
                     return Some((firstpar, lastpar, false));
                 }

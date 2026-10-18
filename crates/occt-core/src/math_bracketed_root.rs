@@ -31,14 +31,14 @@ pub fn bracketed_root<F: MathFunction>(
     let mut c = 0.0;
     let mut d = 0.0;
     let mut e = 0.0;
-    let mut the_root = bound2;
+    let mut root_val = bound2;
     let mut error = 0.0;
     f.value(a, &mut fa);
-    f.value(the_root, &mut error);
+    f.value(root_val, &mut error);
     if fa * error > 0.0 {
         return BracketedRoot {
             done: false,
-            root: the_root,
+            root: root_val,
             value: error,
             nb_iterations: 0,
         };
@@ -48,23 +48,23 @@ pub fn bracketed_root<F: MathFunction>(
         if error * fc > 0.0 {
             c = a;
             fc = fa;
-            d = the_root - a;
+            d = root_val - a;
             e = d;
         }
         if fc.abs() < fa.abs() {
-            a = the_root;
-            the_root = c;
+            a = root_val;
+            root_val = c;
             c = a;
             fa = error;
             error = fc;
             fc = fa;
         }
-        let tol1 = 2.0 * zeps * the_root.abs() + 0.5 * tolerance;
-        let xm = 0.5 * (c - the_root);
+        let tol1 = 2.0 * zeps * root_val.abs() + 0.5 * tolerance;
+        let xm = 0.5 * (c - root_val);
         if xm.abs() <= tol1 || error == 0.0 {
             return BracketedRoot {
                 done: true,
-                root: the_root,
+                root: root_val,
                 value: error,
                 nb_iterations: nb_iter,
             };
@@ -77,7 +77,7 @@ pub fn bracketed_root<F: MathFunction>(
                 let qv = fa / fc;
                 let r = error / fc;
                 (
-                    s * (2.0 * xm * qv * (qv - r) - (the_root - a) * (r - 1.0)),
+                    s * (2.0 * xm * qv * (qv - r) - (root_val - a) * (r - 1.0)),
                     (qv - 1.0) * (r - 1.0) * (s - 1.0),
                 )
             };
@@ -98,18 +98,18 @@ pub fn bracketed_root<F: MathFunction>(
             d = xm;
             e = d;
         }
-        a = the_root;
+        a = root_val;
         fa = error;
         if d.abs() > tol1 {
-            the_root += d;
+            root_val += d;
         } else {
-            the_root += if xm > 0.0 { tol1.abs() } else { -tol1.abs() };
+            root_val += if xm > 0.0 { tol1.abs() } else { -tol1.abs() };
         }
-        f.value(the_root, &mut error);
+        f.value(root_val, &mut error);
     }
     BracketedRoot {
         done: false,
-        root: the_root,
+        root: root_val,
         value: error,
         nb_iterations,
     }

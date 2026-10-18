@@ -159,18 +159,18 @@ pub fn quadric_quadric_cylinder_cylinder(
                 let pt1 = p1.translated_vec(&dir_a1a2.multiplied_scalar(r1 * cos));
                 QuadricIntersection::Line(GpLin::from_pnt_dir(pt1, dir_cyl))
             } else {
-                let a_sin = sin2.sqrt();
+                let sin_val = sin2.sqrt();
                 let axd = *c1.position().x_direction();
                 let ayd = *c1.position().y_direction();
                 let r1x = GpVec::from_xyz(axd.xyz()).multiplied_scalar(r1);
                 let r1y = GpVec::from_xyz(ayd.xyz()).multiplied_scalar(r1);
                 let adx = dir_a1a2.dot(&GpVec::from_xyz(axd.xyz()));
                 let ady = dir_a1a2.dot(&GpVec::from_xyz(ayd.xyz()));
-                let (ndx, ndy) = (adx * cos - ady * a_sin, ady * cos + adx * a_sin);
+                let (ndx, ndy) = (adx * cos - ady * sin_val, ady * cos + adx * sin_val);
                 let pt1 = p1
                     .translated_vec(&r1x.multiplied_scalar(ndx))
                     .translated_vec(&r1y.multiplied_scalar(ndy));
-                let (ndx, ndy) = (adx * cos + ady * a_sin, ady * cos - adx * a_sin);
+                let (ndx, ndy) = (adx * cos + ady * sin_val, ady * cos - adx * sin_val);
                 let pt2 = p1
                     .translated_vec(&r1x.multiplied_scalar(ndx))
                     .translated_vec(&r1y.multiplied_scalar(ndy));
@@ -606,20 +606,20 @@ fn cone_cone_common_generatrix(
     // axes intersection projected onto that generatrix).
     let ap1 = c1.apex();
     let ap2 = c2.apex();
-    let a_gen = GpLin::from_pnt_dir(ap1, GpDir::from_vec(&GpVec::from_pnts(&ap1, &ap2)).ok()?);
-    let u = clib::line_parameter(&a_gen, pt_axe_int);
-    let pchar = clib::line_value(&a_gen, u);
+    let gen_line = GpLin::from_pnt_dir(ap1, GpDir::from_vec(&GpVec::from_pnts(&ap1, &ap2)).ok()?);
+    let u = clib::line_parameter(&gen_line, pt_axe_int);
+    let pchar = clib::line_value(&gen_line, u);
     // `cxx:1795-1830`: the other generatrices of the two cones laying in the
     // maximal plane determine that plane's normal.
-    let gen1 = a_gen.rotated(&c1.axis(), PI);
-    let gen2 = a_gen.rotated(&c2.axis(), PI);
-    let a_d1 = gen1.direction();
-    let a_d2 = GpDir::from_vec(
-        &GpVec::from_xyz(a_d1.xyz()).crossed(&GpVec::from_xyz(a_gen.direction().xyz())),
+    let gen1 = gen_line.rotated(&c1.axis(), PI);
+    let gen2 = gen_line.rotated(&c2.axis(), PI);
+    let d1_val = gen1.direction();
+    let d2_val = GpDir::from_vec(
+        &GpVec::from_xyz(d1_val.xyz()).crossed(&GpVec::from_xyz(gen_line.direction().xyz())),
     )
     .ok()?;
-    let n = if a_d1.is_parallel_tol(&gen2.direction(), ANGULAR) {
-        a_d1.crossed(&a_d2).ok()?
+    let n = if d1_val.is_parallel_tol(&gen2.direction(), ANGULAR) {
+        d1_val.crossed(&d2_val).ok()?
     } else if lin_lin_square_distance(&gen1, &gen2) > tol2 {
         // `cxx:1805-1811`: "Something wrong ???" -> `typeres =
         // IntAna_NoGeometricSolution`. Note this `return` happens *after*
@@ -645,7 +645,7 @@ fn cone_cone_common_generatrix(
         u2 /= sin;
         let p_gint = clib::line_value(&gen2, u2);
         let d1 = GpDir::from_vec(&GpVec::from_pnts(&p_gint, &pchar)).ok()?;
-        d1.crossed(&a_d2).ok()?
+        d1.crossed(&d2_val).ok()?
     };
     let pln = plane_normal_at(pchar, n)?;
     // `cxx:1833-1881`: the section lies in `anIntPln`; its nested plane∩cone
@@ -661,7 +661,7 @@ fn cone_cone_common_generatrix(
         QuadricIntersection::Hyperbola(h) => QuadricIntersection::Hyperbola(h),
         _ => QuadricIntersection::None,
     };
-    Some((inter, (a_gen, pchar)))
+    Some((inter, (gen_line, pchar)))
 }
 
 /// `gp_Lin::SquareDistance(const gp_Lin&)` (`gp_Lin.cxx:28-39` +

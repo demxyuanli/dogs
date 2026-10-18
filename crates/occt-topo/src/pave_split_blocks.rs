@@ -159,11 +159,11 @@ pub fn split_pave_blocks(
                     }
                 }
                 new_list.push(pbn.clone());
-                if let Some(ref a_cb) = cb {
-                    let id = cb_identity(a_cb);
+                if let Some(ref cb_val) = cb {
+                    let id = cb_identity(cb_val);
                     mcb_new_pb.entry(id.clone()).or_default().push(pbn);
-                    mcb_faces.entry(id.clone()).or_insert_with(|| a_cb.faces().to_vec());
-                    let closed = a_cb
+                    mcb_faces.entry(id.clone()).or_insert_with(|| cb_val.faces().to_vec());
+                    let closed = cb_val
                         .pave_block1()
                         .map(|p| {
                             let (a, b) = p.indices();

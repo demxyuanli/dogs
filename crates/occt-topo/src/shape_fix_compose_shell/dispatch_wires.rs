@@ -31,7 +31,7 @@ impl ComposeShell {
     /// `DispatchWires(faces, wires)` (`cxx:3275-3584`).
     pub fn dispatch_wires(&mut self, faces: &mut Vec<TopoShape>, wires: &mut Vec<WireSegment>) {
         let builder = TopoBuilder::new();
-        let my_face = match self.face() {
+        let face_val = match self.face() {
             Some(f) => f.clone(),
             None => return,
         };
@@ -41,7 +41,7 @@ impl ComposeShell {
             // cxx:3287-3327: shift the seam pcurves. `CurveOnSurface(E)` reads
             // `PCurve2` for a REVERSED edge, `CurveOnSurface(E.Reversed())`
             // reads `PCurve1` (`BRep_Tool.cxx:347-357`).
-            let my_face_key = GeometryRegistry::shape_key(&my_face.0);
+            let face_key_val = GeometryRegistry::shape_key(&face_val.0);
             for wi in 0..wires.len() {
                 if wires[wi].is_vertex() {
                     continue;
@@ -51,14 +51,14 @@ impl ComposeShell {
                     if e.0.orientation() != Orientation::Reversed {
                         continue; // cxx:3300
                     }
-                    if !crate::brep_tool::BRepTool::is_closed_edge_face(&e, &my_face) {
+                    if !crate::brep_tool::BRepTool::is_closed_edge_face(&e, &face_val) {
                         continue; // BRep_Tool::IsClosed(E, myFace)
                     }
-                    let pcs = GeometryRegistry::global().edge_pcurves(&e.0, my_face_key);
+                    let pcs = GeometryRegistry::global().edge_pcurves(&e.0, face_key_val);
                     let c21 = pcs[1].clone();
                     let c22 = pcs[0].clone();
                     let (f1, l1) = GeometryRegistry::global()
-                        .pcurve_range(&e.0, my_face_key)
+                        .pcurve_range(&e.0, face_key_val)
                         .unwrap_or((c21.first_parameter(), c21.last_parameter()));
                     let (f2, l2) = (f1, l1);
                     let pf1 = c21.d0(f1);
@@ -84,7 +84,7 @@ impl ComposeShell {
                         nc.transform(&tr);
                         GeometryRegistry::global().set_edge_pcurves(
                             &e.0,
-                            my_face_key,
+                            face_key_val,
                             vec![Arc::from(nc), c21.clone()],
                         );
                     }
@@ -106,12 +106,12 @@ impl ComposeShell {
                 }
                 // cxx:3345-3346: sfw.Load(sbwd); sfw.FixShifted().
                 let wire = builder.make_wire(wires[i].edges());
-                let _ = fix_shifted_wire(&wire, &my_face);
+                let _ = fix_shifted_wire(&wire, &face_val);
                 // cxx:3348-3357: ShapeBuild_Edge::RemovePCurve on degenerated edges.
                 let sbe = ShapeBuildEdge;
                 for j in 0..wires[i].nb_edges() {
                     if BRepTool::is_degenerated(&wires[i].edges()[j]) {
-                        sbe.remove_pcurve(&wires[i].edges()[j], &my_face);
+                        sbe.remove_pcurve(&wires[i].edges()[j], &face_val);
                     }
                 }
                 // cxx:3358: sfw.FixDegenerated(). The port's `fix_degenerated_all`
@@ -122,7 +122,7 @@ impl ComposeShell {
                     .map(|j| wires[i].get_patch_index(j))
                     .collect();
                 let mut dw = builder.make_wire(&old_edges);
-                if crate::shhealing::fix_degenerated_all(&mut dw, &my_face, self.precision) {
+                if crate::shhealing::fix_degenerated_all(&mut dw, &face_val, self.precision) {
                     let new_edges = crate::topo_tools_full::edges_of_wire(&dw);
                     let manifold = wires[i].manifold_mode();
                     wires[i].clear();
@@ -149,7 +149,7 @@ impl ComposeShell {
         }
         let mut m_pnts: Vec<GpPnt2d> = Vec::with_capacity(nb);
         for i in 0..nb {
-            m_pnts.push(get_middle_point(&wires[i], &my_face));
+            m_pnts.push(get_middle_point(&wires[i], &face_val));
         }
 
         // cxx:3378-3382.
@@ -166,11 +166,11 @@ impl ComposeShell {
         // two ends of the UV range. Without it the periodic boundary chain stays
         // open and the Delaunay fills nothing (a3n00 f176: frontier=0).
         if self.closed_mode {
-            let face_key = GeometryRegistry::shape_key(&my_face.0);
+            let face_key = GeometryRegistry::shape_key(&face_val.0);
             for w in wires.iter() {
                 for e in w.edges() {
                     if e.0.orientation() != Orientation::Reversed
-                        || !BRepTool::is_closed_edge_face(e, &my_face)
+                        || !BRepTool::is_closed_edge_face(e, &face_val)
                     {
                         continue;
                     }
@@ -219,7 +219,7 @@ impl ComposeShell {
         // run on each wire after the seam pcurve shift above.
         for w in wires.iter() {
             let dw = builder.make_wire(w.edges());
-            let _ = crate::shhealing::fix_shifted_wire(&dw, &my_face);
+            let _ = crate::shhealing::fix_shifted_wire(&dw, &face_val);
         }
 
         // cxx:3387-3533.
@@ -274,7 +274,7 @@ impl ComposeShell {
                     rs.replace(&edge.0, &new_edge.0); // cxx:3456
                     self.context_mut().replace(&edge.0, &new_edge.0); // cxx:3457
                 }
-                sbe.reassign_pcurve(&new_edge, &my_face, &face); // cxx:3460
+                sbe.reassign_pcurve(&new_edge, &face_val, &face); // cxx:3460
 
                 // cxx:3462-3504: transform the pcurve into the patch's
                 // parametric space.

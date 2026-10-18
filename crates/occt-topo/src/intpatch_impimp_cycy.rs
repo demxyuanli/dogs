@@ -183,14 +183,14 @@ fn coeffs_from_cylinders(c1: &GpCylinder, c2: &GpCylinder) -> Option<Coeffs> {
     let l12 = (xyz_comp(&c1v, 0) * xyz_comp(&a1, 1) - xyz_comp(&c1v, 1) * xyz_comp(&a1, 0)) / det;
     let m2 = (xyz_comp(&c1v, 0) * xyz_comp(&d, 1) - xyz_comp(&c1v, 1) * xyz_comp(&d, 0)) / det;
 
-    let a_a1 = xyz_comp(&c1v, 2) * k21 + xyz_comp(&c2v, 2) * k22 - xyz_comp(&b2, 2);
-    let a_a2 = xyz_comp(&c1v, 2) * l21 + xyz_comp(&c2v, 2) * l22 - xyz_comp(&a2, 2);
-    let a_b1 = xyz_comp(&b1, 2) - xyz_comp(&c1v, 2) * k11 - xyz_comp(&c2v, 2) * k12;
-    let a_b2 = xyz_comp(&a1, 2) - xyz_comp(&c1v, 2) * l11 - xyz_comp(&c2v, 2) * l12;
+    let a1_val = xyz_comp(&c1v, 2) * k21 + xyz_comp(&c2v, 2) * k22 - xyz_comp(&b2, 2);
+    let a2_val = xyz_comp(&c1v, 2) * l21 + xyz_comp(&c2v, 2) * l22 - xyz_comp(&a2, 2);
+    let b1_val = xyz_comp(&b1, 2) - xyz_comp(&c1v, 2) * k11 - xyz_comp(&c2v, 2) * k12;
+    let b2_val = xyz_comp(&a1, 2) - xyz_comp(&c1v, 2) * l11 - xyz_comp(&c2v, 2) * l12;
     let mut m_c = xyz_comp(&d, 2) - xyz_comp(&c1v, 2) * m1 - xyz_comp(&c2v, 2) * m2;
 
-    let (m_b, fi1) = short_cos_form(a_b2, a_b1);
-    let (a, fi2) = short_cos_form(a_a2, a_a1);
+    let (m_b, fi1) = short_cos_form(b2_val, b1_val);
+    let (a, fi2) = short_cos_form(a2_val, a1_val);
     if a.abs() < NUL_VALUE {
         return None;
     }
@@ -263,9 +263,9 @@ pub(crate) fn inscribe_point(
         }
         return true;
     }
-    let a_uf = uf - tol2d;
-    let a_ul = a_uf + period;
-    *u = in_period(*u, a_uf, a_ul);
+    let uf_val = uf - tol2d;
+    let ul_val = uf_val + period;
+    *u = in_period(*u, uf_val, ul_val);
     uf - *u <= tol2d && *u - ul <= tol2d
 }
 

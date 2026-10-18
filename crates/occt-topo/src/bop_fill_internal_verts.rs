@@ -28,8 +28,8 @@ pub fn fill_internal_vertices_occt<B: BopBuilderLike>(f: &mut B) -> Result<(), S
         if si.shape_type() != ShapeType::Face {
             continue;
         }
-        let a_f = si.shape();
-        let Some(p_lf_im) = f.history().image(a_f) else { continue };
+        let f_val = si.shape();
+        let Some(p_lf_im) = f.history().image(f_val) else { continue };
         if p_lf_im.is_empty() {
             continue;
         }

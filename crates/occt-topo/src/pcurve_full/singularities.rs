@@ -421,15 +421,15 @@ pub(super) fn correct_degenerated_points(
 
     // `cxx:1473-1497`. `theTolFirst` / `theTolLast` are `Perform`'s arguments;
     // a negative value means `Precision::Confusion()` (`cxx:1475-1476`).
-    let a_tol_first = if tol_first < 0.0 { CONFUSION } else { tol_first };
-    let a_tol_last = if tol_last < 0.0 { CONFUSION } else { tol_last };
+    let tol_first_val = if tol_first < 0.0 { CONFUSION } else { tol_first };
+    let tol_last_val = if tol_last < 0.0 { CONFUSION } else { tol_last };
     let point_first = points[0];
     let point_last = points[points.len() - 1];
     for sg in sing {
-        if sg.preci <= CONFUSION && point_first.distance(&sg.p3d) <= a_tol_first {
+        if sg.preci <= CONFUSION && point_first.distance(&sg.p3d) <= tol_first_val {
             correct_extremity(curve, params, pnt2d, true, &sg.first_p2d, sg.u_iso_deg, preci, s);
         }
-        if sg.preci <= CONFUSION && point_last.distance(&sg.p3d) <= a_tol_last {
+        if sg.preci <= CONFUSION && point_last.distance(&sg.p3d) <= tol_last_val {
             // `cxx:1495` passes `aFirstP2d` for the last point too.
             correct_extremity(curve, params, pnt2d, false, &sg.first_p2d, sg.u_iso_deg, preci, s);
         }

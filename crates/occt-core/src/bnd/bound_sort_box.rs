@@ -217,9 +217,9 @@ impl BoundSortBox {
 
     /// Initialize(const Bnd_Box& theEnclosingBox,
     ///            const Handle(NCollection_HArray1<Bnd_Box>)&) (cxx:352-368).
-    pub fn initialize_with_enclosing(&mut self, the_enclosing_box: &BndBox, set_of_boxes: &[BndBox]) {
+    pub fn initialize_with_enclosing(&mut self, enclosing_box_par: &BndBox, set_of_boxes: &[BndBox]) {
         self.boxes = with_placeholder(set_of_boxes);      // cxx:355
-        self.enclosing_box = *the_enclosing_box;              // cxx:356
+        self.enclosing_box = *enclosing_box_par;              // cxx:356
         self.resolution = get_bnd_voxel_grid_resolution(self.boxes.len() - 1); // cxx:357
 
         if self.enclosing_box.is_void() {
@@ -233,13 +233,13 @@ impl BoundSortBox {
 
     /// Initialize(const Bnd_Box& theEnclosingBox, const int theNbBoxes)
     /// (cxx:372-390). Boxes are then supplied with add().
-    pub fn initialize_empty(&mut self, the_enclosing_box: &BndBox, nb_boxes: usize) {
+    pub fn initialize_empty(&mut self, enclosing_box_par: &BndBox, nb_boxes: usize) {
         // Standard_NullValue_Raise_if(theNbBoxes <= 0, ...) (cxx:374).
         assert!(nb_boxes > 0, "Unexpected: theNbBoxes <= 0");
         // new NCollection_HArray1<Bnd_Box>(1, theNbBoxes) + Init(emptyBox)
         // (cxx:375-379): slot 0 is the placeholder, 1..=theNbBoxes are void.
         self.boxes = vec![BndBox::new(); nb_boxes + 1];
-        self.enclosing_box = *the_enclosing_box; // cxx:380
+        self.enclosing_box = *enclosing_box_par; // cxx:380
         self.resolution = get_bnd_voxel_grid_resolution(nb_boxes); // cxx:381
 
         if self.enclosing_box.is_void() {
@@ -302,10 +302,10 @@ impl BoundSortBox {
         const AN_OCCUPIED_Y: u8 = 0b10;
         const AN_OCCUPIED_XY: u8 = 0b11;
 
-        if let Some(a_voxel_grid) = self.voxel_grid.as_ref() {
+        if let Some(voxel_grid_val) = self.voxel_grid.as_ref() {
             // Checking the voxels along X-axis (cxx:449-461).
             for voxel_x in min_voxel_x..=max_voxel_x {
-                if let Some(box_indices) = a_voxel_grid.get_slice_x(voxel_x) {
+                if let Some(box_indices) = voxel_grid_val.get_slice_x(voxel_x) {
                     for &box_index in box_indices {
                         result_indices[box_index] |= AN_OCCUPIED_X;
                     }
@@ -314,7 +314,7 @@ impl BoundSortBox {
 
             // Checking the voxels along Y-axis (cxx:464-476).
             for voxel_y in min_voxel_y..=max_voxel_y {
-                if let Some(box_indices) = a_voxel_grid.get_slice_y(voxel_y) {
+                if let Some(box_indices) = voxel_grid_val.get_slice_y(voxel_y) {
                     for &box_index in box_indices {
                         result_indices[box_index] |= AN_OCCUPIED_Y;
                     }
@@ -323,7 +323,7 @@ impl BoundSortBox {
 
             // Checking the voxels along Z-axis (cxx:479-501).
             for voxel_z in min_voxel_z..=max_voxel_z {
-                if let Some(box_indices) = a_voxel_grid.get_slice_z(voxel_z) {
+                if let Some(box_indices) = voxel_grid_val.get_slice_z(voxel_z) {
                     for &box_index in box_indices {
                         if result_indices[box_index] == AN_OCCUPIED_XY {
                             result_indices[box_index] = 0; // cxx:492
@@ -359,10 +359,10 @@ impl BoundSortBox {
         // (xmin, ymin, zmin, xmax, ymax, zmax) at cxx:528; rebind accordingly.
         let (xmin, xmax, ymin, ymax, zmin, zmax) =
             self.enclosing_box.get().expect("Bnd_Box is void"); // cxx:528
-        let a_resolution = self.resolution as f64;
-        self.coeff_x = if xmax - xmin == 0.0 { 0.0 } else { a_resolution / (xmax - xmin) }; // cxx:529
-        self.coeff_y = if ymax - ymin == 0.0 { 0.0 } else { a_resolution / (ymax - ymin) }; // cxx:530
-        self.coeff_z = if zmax - zmin == 0.0 { 0.0 } else { a_resolution / (zmax - zmin) }; // cxx:531
+        let resolution_val = self.resolution as f64;
+        self.coeff_x = if xmax - xmin == 0.0 { 0.0 } else { resolution_val / (xmax - xmin) }; // cxx:529
+        self.coeff_y = if ymax - ymin == 0.0 { 0.0 } else { resolution_val / (ymax - ymin) }; // cxx:530
+        self.coeff_z = if zmax - zmin == 0.0 { 0.0 } else { resolution_val / (zmax - zmin) }; // cxx:531
     }
 
     /// resetVoxelGrid() (cxx:536-542).
@@ -390,7 +390,7 @@ impl BoundSortBox {
         // Same tuple-order note as in calculate_coefficients (box3d.rs:139).
         let (xmin, xmax, ymin, ymax, zmin, zmax) =
             bnd_box.get().expect("Bnd_Box is void"); // cxx:562
-        let a_resolution = self.resolution;
+        let resolution_val = self.resolution;
 
         // cxx:582-593. The -1 / +1 safety margin is OCCT's. `static_cast<int>`
         // of a coordinate far outside the grid saturates, and the following
@@ -399,27 +399,27 @@ impl BoundSortBox {
         // overflows before `clamp_voxel_index` runs.
         let xmin_index = clamp_voxel_index(
             static_cast_int((xmin - grid_start.x()) * self.coeff_x).saturating_sub(1),
-            a_resolution,
+            resolution_val,
         );
         let ymin_index = clamp_voxel_index(
             static_cast_int((ymin - grid_start.y()) * self.coeff_y).saturating_sub(1),
-            a_resolution,
+            resolution_val,
         );
         let zmin_index = clamp_voxel_index(
             static_cast_int((zmin - grid_start.z()) * self.coeff_z).saturating_sub(1),
-            a_resolution,
+            resolution_val,
         );
         let xmax_index = clamp_voxel_index(
             static_cast_int((xmax - grid_start.x()) * self.coeff_x).saturating_add(1),
-            a_resolution,
+            resolution_val,
         );
         let ymax_index = clamp_voxel_index(
             static_cast_int((ymax - grid_start.y()) * self.coeff_y).saturating_add(1),
-            a_resolution,
+            resolution_val,
         );
         let zmax_index = clamp_voxel_index(
             static_cast_int((zmax - grid_start.z()) * self.coeff_z).saturating_add(1),
-            a_resolution,
+            resolution_val,
         );
 
         [
@@ -442,8 +442,8 @@ impl BoundSortBox {
 
         if box_min_side * 4 > self.resolution {
             self.large_boxes.push(index); // cxx:617
-        } else if let Some(a_voxel_grid) = self.voxel_grid.as_mut() {
-            a_voxel_grid.add_box(index, voxel_box); // cxx:621-622
+        } else if let Some(voxel_grid_val) = self.voxel_grid.as_mut() {
+            voxel_grid_val.add_box(index, voxel_box); // cxx:621-622
         }
     }
 

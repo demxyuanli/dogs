@@ -78,9 +78,9 @@ pub fn eval_bspline_basis(
 
     let mut data = vec![0.0f64; n_rows * n_cols];
     data[0] = 1.0;
-    let a_local_request = local_request;
+    let local_request_val = local_request;
 
-    for qq in 2..=order - a_local_request {
+    for qq in 2..=order - local_request_val {
         data[(qq - 1) as usize] = 0.0;
         for pp in 1..=qq - 1 {
             let scale = knots(pp) - knots(1 - qq + pp);
@@ -95,13 +95,13 @@ pub fn eval_bspline_basis(
         }
     }
 
-    for qq in order - a_local_request + 1..=order {
+    for qq in order - local_request_val + 1..=order {
         for pp in 1..=qq - 1 {
             data[((order - qq + 1) * order + (pp - 1)) as usize] = data[(pp - 1) as usize];
         }
         data[(qq - 1) as usize] = 0.0;
 
-        for ss in order - a_local_request + 1..=qq {
+        for ss in order - local_request_val + 1..=qq {
             data[((order - ss + 1) * order + (qq - 1)) as usize] = 0.0;
         }
 
@@ -118,7 +118,7 @@ pub fn eval_bspline_basis(
             data[(qq - 1) as usize] = saved;
             let local_inverse = f64::from(qq - 1) * inverse;
 
-            for ss in order - a_local_request + 1..=qq {
+            for ss in order - local_request_val + 1..=qq {
                 let row = ((order - ss + 1) * order) as usize;
                 saved = local_inverse * data[row + (pp - 1) as usize];
                 data[row + (pp - 1) as usize] *= -local_inverse;

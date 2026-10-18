@@ -70,13 +70,13 @@ fn delete_equal_points(wl: &mut WLine) {
                 let uv = [
                     p1.u1, p1.v1, p1.u2, p1.v2, p2.u1, p2.v1, p2.u2, p2.v2,
                 ];
-                let mut a_max = uv[0].abs();
+                let mut max_val = uv[0].abs();
                 for x in &uv[1..] {
-                    a_max = a_max.max(x.abs());
+                    max_val = max_val.max(x.abs());
                 }
                 if p1.p.is_equal(&p2.p)
-                    || (p1.u1 - p2.u1).abs() + (p1.v1 - p2.v1).abs() < 1.0e-16 * a_max
-                    || (p1.u2 - p2.u2).abs() + (p1.v2 - p2.v2).abs() < 1.0e-16 * a_max
+                    || (p1.u1 - p2.u1).abs() + (p1.v1 - p2.v1).abs() < 1.0e-16 * max_val
+                    || (p1.u2 - p2.u2).abs() + (p1.v2 - p2.v2).abs() < 1.0e-16 * max_val
                 {
                     wl.remove_point(k);
                     continue;

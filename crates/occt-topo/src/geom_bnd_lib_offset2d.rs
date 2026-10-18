@@ -40,8 +40,8 @@ fn try_offset_line2d(
     }
     let _ = normal.normalize();
     normal.multiply_scalar(offset);
-    let a_loc = GpPnt2d::new(loc.x() + normal.x(), loc.y() + normal.y());
-    let lin = GpLin2d::from_pnt_dir(a_loc, dir);
+    let loc_val = GpPnt2d::new(loc.x() + normal.x(), loc.y() + normal.y());
+    let lin = GpLin2d::from_pnt_dir(loc_val, dir);
     let mut local = box_lin_2d(&lin, u1, u2, 0.0).ok()?;
     local.enlarge(tol);
     Some(local)
@@ -67,7 +67,7 @@ fn try_offset_circle2d(
     }
     let _ = normal.normalize();
     let centre = basis_circ.location();
-    let a_radius = basis_circ.radius();
+    let radius_val = basis_circ.radius();
     let mut radial = GpVec2d::new(p.x() - centre.x(), p.y() - centre.y());
     if radial.square_magnitude() <= SQUARE_CONFUSION {
         return None;
@@ -77,7 +77,7 @@ fn try_offset_circle2d(
     if (sign.abs() - 1.0).abs() > 1e-9 {
         return None;
     }
-    let new_radius = a_radius + offset * sign;
+    let new_radius = radius_val + offset * sign;
     let mut local = BndBox2d::new();
     if new_radius > CONFUSION {
         let mut offset_circ = GpCirc2d::default();

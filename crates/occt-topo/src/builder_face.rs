@@ -340,11 +340,11 @@ mod tests {
         let pln = plane_from_loop(&build_loops(&outer_edges).unwrap()[0]).unwrap();
         let outer_loop = &build_loops(&outer_edges).unwrap()[0];
         let hole_loop = &build_loops(&hole_edges).unwrap()[0];
-        let a_outer = loop_signed_area(outer_loop, &pln).abs();
-        let a_hole = loop_signed_area(hole_loop, &pln).abs();
-        assert!((a_outer - 1.0).abs() < 1e-9, "outer area {a_outer}");
-        assert!((a_hole - 0.25).abs() < 1e-9, "hole area {a_hole}");
-        assert!((a_outer - a_hole - 0.75).abs() < 1e-9, "face area = outer − hole");
+        let outer_val = loop_signed_area(outer_loop, &pln).abs();
+        let hole_val = loop_signed_area(hole_loop, &pln).abs();
+        assert!((outer_val - 1.0).abs() < 1e-9, "outer area {outer_val}");
+        assert!((hole_val - 0.25).abs() < 1e-9, "hole area {hole_val}");
+        assert!((outer_val - hole_val - 0.75).abs() < 1e-9, "face area = outer − hole");
     }
 
     #[test]

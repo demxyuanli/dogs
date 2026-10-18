@@ -336,8 +336,8 @@ pub fn process_de<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                 let si = BopdsShapeInfo::new(sp.0);
                 let n_en = f.ds_mut().append_info(si);
                 let blocks = f.ds_mut().change_pave_blocks_mut(an_edge_index);
-                if let Some(a_pbd) = blocks.first_mut() {
-                    a_pbd.set_edge(n_en);
+                if let Some(pbd_val) = blocks.first_mut() {
+                    pbd_val.set_edge(n_en);
                 }
             }
             _ => {}

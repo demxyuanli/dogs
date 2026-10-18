@@ -257,8 +257,8 @@ impl<'a> GGenExtCC<'a> {
                 let mut t2 = c2.first_parameter();
                 for _i2 in 1..=n2 {
                     if let Some((_f, (g1, g2))) = func.values_uv(t1, t2) {
-                        let a_mod = g1 * g1 + g2 * g2;
-                        max_g = max_g.max(a_mod);
+                        let grad_mag = g1 * g1 + g2 * g2;
+                        max_g = max_g.max(grad_mag);
                     }
                     t2 += dt2;
                 }
@@ -413,8 +413,8 @@ impl<'a> GGenExtCC<'a> {
 
         if is_parallel {
             // `hxx:765-783`: confirm with the point/curve projections.
-            let a_t1 = [self.low_border.0, self.upp_border.0];
-            let a_t2 = [
+            let t1_val = [self.low_border.0, self.upp_border.0];
+            let t2_val = [
                 if b_dirs_coinside { self.low_border.1 } else { self.upp_border.1 },
                 if b_dirs_coinside { self.upp_border.1 } else { self.low_border.1 },
             ];
@@ -422,8 +422,8 @@ impl<'a> GGenExtCC<'a> {
                 if !is_parallel {
                     break;
                 }
-                let dist1 = proj_p_on_c(c2, &c1.d0(a_t1[i_t]), self.low_border.1, self.upp_border.1);
-                let dist2 = proj_p_on_c(c1, &c2.d0(a_t2[i_t]), self.low_border.0, self.upp_border.0);
+                let dist1 = proj_p_on_c(c2, &c1.d0(t1_val[i_t]), self.low_border.1, self.upp_border.1);
+                let dist2 = proj_p_on_c(c1, &c2.d0(t2_val[i_t]), self.low_border.0, self.upp_border.0);
                 is_parallel = (dist1.min(dist2) - f * f).abs() < CONFUSION;
             }
         }
@@ -480,9 +480,9 @@ fn border(v: f64) -> f64 {
 
 /// `Extrema_GGenExtCC_ChangeIntervals` (`Extrema_GGenExtCC.hxx:152-202`).
 fn change_intervals(ints: &mut Vec<f64>, nb_ints: i32) {
-    let a_nb_ints = (ints.len() - 1) as i32;
-    let mut nb_add = nb_ints - a_nb_ints;
-    if a_nb_ints == 1 {
+    let nb_ints_val = (ints.len() - 1) as i32;
+    let mut nb_add = nb_ints - nb_ints_val;
+    if nb_ints_val == 1 {
         let first = ints[0];
         let last = ints[ints.len() - 1];
         let dt = (last - first) / f64::from(nb_ints);

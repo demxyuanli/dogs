@@ -168,9 +168,9 @@ pub(super) fn loop_contains(outer: &[Edge], inner: &[Edge]) -> bool {
         Ok(p) => p,
         Err(_) => return false,
     };
-    let a_outer = crate::builder_face::loop_signed_area(outer, &op).abs();
-    let a_inner = crate::builder_face::loop_signed_area(inner, &op).abs();
-    if a_inner >= a_outer {
+    let outer_val = crate::builder_face::loop_signed_area(outer, &op).abs();
+    let inner_val = crate::builder_face::loop_signed_area(inner, &op).abs();
+    if inner_val >= outer_val {
         return false;
     }
     // Project `outer` into its own plane frame and test one vertex of `inner`

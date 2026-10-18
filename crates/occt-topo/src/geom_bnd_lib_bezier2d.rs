@@ -23,11 +23,11 @@ use crate::geom_bnd_lib_other_curve2d::box_other_2d;
 
 /// `GeomBndLib_BezierCurve2d::Box(theU1, theU2, theTol)` on an owned Bezier.
 pub fn box_bezier_poles(curve: &Geom2dBezierCurve, u1: f64, u2: f64, tol: f64) -> BndBox2d {
-    let a_u1 = 0.0;
-    let a_u2 = 1.0;
-    let trim1 = u1.max(a_u1);
-    let trim2 = u2.min(a_u2);
-    if (a_u1 - trim1).abs() > PCONFUSION || (a_u2 - trim2).abs() > PCONFUSION {
+    let u1_val = 0.0;
+    let u2_val = 1.0;
+    let trim1 = u1.max(u1_val);
+    let trim2 = u2.min(u2_val);
+    if (u1_val - trim1).abs() > PCONFUSION || (u2_val - trim2).abs() > PCONFUSION {
         return box_other_2d(curve, trim1, trim2, tol);
     }
     let mut bnd_box = BndBox2d::new();
@@ -57,11 +57,11 @@ pub fn box_bezier_pole_slice(poles: &[GpPnt2d], tol: f64) -> BndBox2d {
 /// `GeomBndLib_OtherCurve2d::Box` sampling, and otherwise the control-polygon
 /// hull is the box.
 pub fn box_bezier_as_curve(curve: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
-    let a_u1 = curve.first_parameter();
-    let a_u2 = curve.last_parameter();
-    let trim1 = u1.max(a_u1);
-    let trim2 = u2.min(a_u2);
-    if (a_u1 - trim1).abs() > PCONFUSION || (a_u2 - trim2).abs() > PCONFUSION {
+    let u1_val = curve.first_parameter();
+    let u2_val = curve.last_parameter();
+    let trim1 = u1.max(u1_val);
+    let trim2 = u2.min(u2_val);
+    if (u1_val - trim1).abs() > PCONFUSION || (u2_val - trim2).abs() > PCONFUSION {
         return box_other_2d(curve, trim1, trim2, tol);
     }
     match curve.poles2d() {

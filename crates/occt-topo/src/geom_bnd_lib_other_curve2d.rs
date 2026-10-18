@@ -74,7 +74,7 @@ const WEAKNESS: f64 = 1.5;
 const N_SAMPLES: i32 = 33;
 
 /// `GeomBndLib_OtherCurve2d::Box(theU1, theU2, theTol)`.
-pub fn box_other_2d(curve: &dyn Curve2d, u1: f64, u2: f64, the_tol: f64) -> BndBox2d {
+pub fn box_other_2d(curve: &dyn Curve2d, u1: f64, u2: f64, tol_par: f64) -> BndBox2d {
     let mut bnd_box = BndBox2d::new();
     let mut b1 = BndBox2d::new();
     let tol = fill_box2d(&mut b1, curve, u1, u2, N_SAMPLES);
@@ -82,7 +82,7 @@ pub fn box_other_2d(curve: &dyn Curve2d, u1: f64, u2: f64, the_tol: f64) -> BndB
     if let Some((x, y, xx, yy)) = b1.get() {
         bnd_box.update(x, y, xx, yy);
     }
-    bnd_box.enlarge(the_tol);
+    bnd_box.enlarge(tol_par);
     bnd_box
 }
 

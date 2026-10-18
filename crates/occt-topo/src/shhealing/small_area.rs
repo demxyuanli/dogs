@@ -86,10 +86,10 @@ pub fn check_small_area(wire: &Wire, face: &Face) -> bool {
     let tolerance = length * CONFUSION;
     if cross.magnitude() < tolerance {
         let builder = TopoBuilder::new();
-        let a_face = builder.make_face(surf, &[wire.clone()]); // cxx:2085-2086
+        let face_val = builder.make_face(surf, &[wire.clone()]); // cxx:2085-2086
         if let (Ok((sp, _)), Ok(lp)) = (
-            crate::brep_gprop_full::surface_properties(&a_face.0),
-            crate::brep_gprop_full::linear_properties(&a_face.0),
+            crate::brep_gprop_full::surface_properties(&face_val.0),
+            crate::brep_gprop_full::linear_properties(&face_val.0),
         ) {
             let new_tolerance = lp.mass() * CONFUSION;
             if sp.mass().abs() < 0.5 * new_tolerance {

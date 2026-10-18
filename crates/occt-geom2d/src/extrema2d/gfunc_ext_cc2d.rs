@@ -111,11 +111,11 @@ pub(super) struct GFuncExtCC2d<'a> {
 impl<'a> GFuncExtCC2d<'a> {
     /// `Extrema_GFuncExtCC(theC1, theC2, theTol = 1.0e-10)`
     /// (`Extrema_GFuncExtCC.hxx:235-291`).
-    pub(super) fn new(c1: &'a dyn Curve2d, c2: &'a dyn Curve2d, the_tol: f64) -> Self {
+    pub(super) fn new(c1: &'a dyn Curve2d, c2: &'a dyn Curve2d, tol_par: f64) -> Self {
         let mut out = Self {
             c1: c1,
             c2: c2,
-            tol: the_tol,
+            tol: tol_par,
             u: 0.0,
             v: 0.0,
             p1: GpPnt2d::zero(),
@@ -195,7 +195,7 @@ impl<'a> GFuncExtCC2d<'a> {
         let step = (an_end_param - start_param) / (N_POINT as f64);
 
         let mut num = 0;
-        let mut a_max = -INFINITE;
+        let mut max_val = -INFINITE;
 
         loop {
             let mut u = start_param + (num as f64) * step;
@@ -211,8 +211,8 @@ impl<'a> GFuncExtCC2d<'a> {
                 self.c2.d1(u)
             };
             let vm = v_der.magnitude();
-            if vm > a_max {
-                a_max = vm;
+            if vm > max_val {
+                max_val = vm;
             }
 
             num += 1;
@@ -221,7 +221,7 @@ impl<'a> GFuncExtCC2d<'a> {
             }
         }
 
-        (a_max * THE_TOL_FACTOR).max(THE_MIN_TOL)
+        (max_val * THE_TOL_FACTOR).max(THE_MIN_TOL)
     }
 
     /// The `myMaxDerivOrderCx != 0 && |D1| <= myTolCx` arm of `Value`
@@ -307,12 +307,12 @@ impl<'a> GFuncExtCC2d<'a> {
 
     /// `Extrema_GFuncExtCC::Value(theUV, theF)`
     /// (`Extrema_GFuncExtCC.hxx:359-550`).
-    fn value_impl(&mut self, the_u: f64, the_v: f64, f: &mut MathVector) -> bool {
-        self.u = the_u;
-        self.v = the_v;
+    fn value_impl(&mut self, u_par: f64, v_par: f64, f: &mut MathVector) -> bool {
+        self.u = u_par;
+        self.v = v_par;
 
-        let (p1, du) = self.c1.d1(the_u);
-        let (p2, dv) = self.c2.d1(the_v);
+        let (p1, du) = self.c1.d1(u_par);
+        let (p2, dv) = self.c2.d1(v_par);
         self.p1 = p1;
         self.p2 = p2;
         self.du = du;

@@ -259,9 +259,9 @@ impl IntCurveIntConicConic {
         tol_conf: f64,
         tol: f64,
     ) {
-        let the_reversed_parameters = self.result.reversed_parameters();
+        let reversed_parameters_val = self.result.reversed_parameters();
         self.result.reset_fields();
-        self.result.set_reversed_parameters(the_reversed_parameters);
+        self.result.set_reversed_parameters(reversed_parameters_val);
 
         let mut c_int1 = PeriodicInterval::default();
         let mut c_int2 = PeriodicInterval::default();

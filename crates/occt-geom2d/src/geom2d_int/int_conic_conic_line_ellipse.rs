@@ -49,10 +49,10 @@ pub(crate) fn line_ellipse_geometric_intersection(
         eps0 = 1.0e-6;
     }
 
-    let (an_a, mut a_b, mut a_c) = t_line.coefficients();
+    let (an_a, mut b_val, mut c_val) = t_line.coefficients();
     if is_vert {
-        a_c += a_b * t_line.pos.loc.y();
-        a_b = 0.0;
+        c_val += b_val * t_line.pos.loc.y();
+        b_val = 0.0;
     }
 
     let mut x1 = 0.0;
@@ -61,10 +61,10 @@ pub(crate) fn line_ellipse_geometric_intersection(
     let mut y2 = 0.0;
     let nbsol;
 
-    if a_b.abs() > eps0 {
-        let m = -an_a / a_b;
+    if b_val.abs() > eps0 {
+        let m = -an_a / b_val;
         let m2 = m * m;
-        let c = -a_c / a_b;
+        let c = -c_val / b_val;
         let c2 = c * c;
         let mut d = a2 * m2 + b2 - c2;
         if d < 0.0 {
@@ -99,7 +99,7 @@ pub(crate) fn line_ellipse_geometric_intersection(
         y2 = m * x2 + c;
         nbsol = 2;
     } else {
-        x1 = -a_c / an_a;
+        x1 = -c_val / an_a;
         if x1.abs() > a + tol_tang {
             return 0;
         } else if x1.abs() >= a - epsilon(1.0 + a) {
@@ -230,9 +230,9 @@ impl IntCurveIntConicConic {
         tol_conf: f64,
         tol: f64,
     ) {
-        let the_reversed_parameters = self.result.reversed_parameters();
+        let reversed_parameters_val = self.result.reversed_parameters();
         self.result.reset_fields();
-        self.result.set_reversed_parameters(the_reversed_parameters);
+        self.result.set_reversed_parameters(reversed_parameters_val);
 
         let mut e_int1 = PeriodicInterval::default();
         let mut e_int2 = PeriodicInterval::default();

@@ -142,17 +142,17 @@ pub fn force_interf_ef_on(
     }
     let mut pb_ready: Vec<BopdsPaveBlock> = Vec::new();
     for pb in mpb {
-        let mut a_pb = pb.clone();
-        if !a_pb.has_shrunk_data() {
-            let n_e = a_pb.original_edge();
+        let mut pb_val = pb.clone();
+        if !pb_val.has_shrunk_data() {
+            let n_e = pb_val.original_edge();
             if let Some(es) = f.ds().shape(n_e).cloned() {
                 let e = Edge(es);
                 let tol = BRepTool::edge_tolerance(&e);
-                fill_shrunk_data_for_block(f, &e, tol, &mut a_pb);
+                fill_shrunk_data_for_block(f, &e, tol, &mut pb_val);
             }
         }
-        if a_pb.has_shrunk_data() {
-            pb_ready.push(a_pb);
+        if pb_val.has_shrunk_data() {
+            pb_ready.push(pb_val);
         }
     }
     if pb_ready.is_empty() {
@@ -176,56 +176,56 @@ pub fn force_interf_ef_on(
         let Some(fs) = f.ds().shape(n_f).cloned() else {
             continue;
         };
-        let a_f = Face(fs);
+        let f_val = Face(fs);
         let box_f = f
             .ds()
             .box_of(n_f)
             .cloned()
-            .unwrap_or_else(|| shape_bbox(&a_f.0));
+            .unwrap_or_else(|| shape_bbox(&f_val.0));
         let mvf = collect_face_verts(f, n_f);
-        for a_pb in &pb_ready {
-            let n_e = if a_pb.has_edge() {
-                a_pb.edge()
+        for pb_val in &pb_ready {
+            let n_e = if pb_val.has_edge() {
+                pb_val.edge()
             } else {
-                a_pb.original_edge()
+                pb_val.original_edge()
             };
             if n_e >= f.ds().nb_shapes() {
                 continue;
             }
-            if pb_on_face_lists(f, n_f, a_pb) {
+            if pb_on_face_lists(f, n_f, pb_val) {
                 continue;
             }
-            let (n_v1, n_v2) = a_pb.indices();
+            let (n_v1, n_v2) = pb_val.indices();
             if !mvf.contains(&n_v1) || !mvf.contains(&n_v2) {
                 continue;
             }
-            if !a_pb.has_edge() && f.ds().rank(n_f) == f.ds().rank(a_pb.original_edge()) {
+            if !pb_val.has_edge() && f.ds().rank(n_f) == f.ds().rank(pb_val.original_edge()) {
                 continue;
             }
             let Some(es) = f.ds().shape(n_e).cloned() else {
                 continue;
             };
-            let a_e = Edge(es);
+            let e_val = Edge(es);
             // `_5.cxx:903-910`: BVH Select of the shrunk PB box against the
             // face box. Whole-edge boxes would keep pairs that OCCT rejects.
-            if let Some((_, _, _, _, shrunk_box)) = get_pb_box(&a_e, a_pb, &mut pb_box) {
+            if let Some((_, _, _, _, shrunk_box)) = get_pb_box(&e_val, pb_val, &mut pb_box) {
                 if shrunk_box.is_out_box(&box_f) {
                     continue;
                 }
             }
-            let Some(c) = BRepTool::edge_curve(&a_e) else {
+            let Some(c) = BRepTool::edge_curve(&e_val) else {
                 continue;
             };
-            let (ts0, ts1, _) = a_pb.shrunk_data();
+            let (ts0, ts1, _) = pb_val.shrunk_data();
             let tm = intermediate_point(ts0, ts1);
             let (p_on_e, ve_tgt) = c.d1(tm);
             if ve_tgt.square_magnitude() < RESOLUTION {
                 continue;
             }
-            let Ok((u, v)) = f.context_mut().project_point_on_face(&a_f, &p_on_e) else {
+            let Ok((u, v)) = f.context_mut().project_point_on_face(&f_val, &p_on_e) else {
                 continue;
             };
-            let Some(surf) = BRepTool::face_surface(&a_f) else {
+            let Some(surf) = BRepTool::face_surface(&f_val) else {
                 continue;
             };
             let p_on_s = surf.d0(u, v);
@@ -241,14 +241,14 @@ pub fn force_interf_ef_on(
             // `_5.cxx:1033`: `IsPointInFace(face, Pnt2d)` — In only, not On.
             let in_face = f
                 .context_mut()
-                .state_point_face(&a_f, (u, v), 0.0)
+                .state_point_face(&f_val, (u, v), 0.0)
                 .map(|st| st == FaceState::In)
                 .unwrap_or(false);
             if !in_face {
                 continue;
             }
             let mut b_use_add_tol = true;
-            if !face_is_plane_type(&a_f) || !curve_is_line_edge(&a_e) {
+            if !face_is_plane_type(&f_val) || !curve_is_line_edge(&e_val) {
                 let vf_norm = occt_core::gp::GpVec::from_pnts(&p_on_s, &p_on_e);
                 if vf_norm.square_magnitude() > RESOLUTION {
                     let cos = vf_norm.normalized().dot(&ve_tgt.normalized());
@@ -261,7 +261,7 @@ pub fn force_interf_ef_on(
             if b_use_add_tol {
                 for t in [ts0, ts1] {
                     let p = c.d0(t);
-                    if let Ok((uu, vv)) = f.context_mut().project_point_on_face(&a_f, &p) {
+                    if let Ok((uu, vv)) = f.context_mut().project_point_on_face(&f_val, &p) {
                         let d = p.distance(&surf.d0(uu, vv));
                         if d < tol_check && d > tol_add {
                             tol_add = d;
@@ -269,7 +269,7 @@ pub fn force_interf_ef_on(
                     }
                 }
                 if tol_add > 0.0 {
-                    tol_add -= BRepTool::edge_tolerance(&a_e) + BRepTool::face_tolerance(&a_f);
+                    tol_add -= BRepTool::edge_tolerance(&e_val) + BRepTool::face_tolerance(&f_val);
                     if tol_add < 0.0 {
                         tol_add = 0.0;
                     }
@@ -280,18 +280,18 @@ pub fn force_interf_ef_on(
                 let done = f
                     .fpb_done()
                     .get(&n_f)
-                    .map(|s| s.contains(&pb_key(a_pb)))
+                    .map(|s| s.contains(&pb_key(pb_val)))
                     .unwrap_or(false);
                 b_intersect = !done;
             }
             if !b_intersect {
                 continue;
             }
-            let (t1, t2) = a_pb.range();
+            let (t1, t2) = pb_val.range();
             tasks.push(EdgeFaceForceTask {
                 n_e,
                 n_f,
-                pb: a_pb.clone(),
+                pb: pb_val.clone(),
                 t1,
                 t2,
                 fuzzy: f.fuzzy_value() + tol_add,

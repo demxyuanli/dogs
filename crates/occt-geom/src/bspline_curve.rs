@@ -546,7 +546,7 @@ impl GeomBSplineCurve {
         new_u1 = nu1;
         new_u2 = nu2;
 
-        let a_nu2 = new_u2;
+        let nu2_val = new_u2;
 
         let knots_pair = [new_u1.min(new_u2), new_u1.max(new_u2)];
         let mults_pair = [self.degree as i32, self.degree as i32];
@@ -662,7 +662,7 @@ impl GeomBSplineCurve {
 
         if was_periodic {
             nknots[0] = u1;
-            if a_nu2 < u2 {
+            if nu2_val < u2 {
                 nknots[last_k] = u1 + ddu;
             }
         }

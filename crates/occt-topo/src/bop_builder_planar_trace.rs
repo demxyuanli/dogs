@@ -114,16 +114,16 @@ pub(crate) fn seg_intersections(
     if (dax * way - day * wax).abs() > eps {
         return Vec::new();
     }
-    let a_lo = proj_a(b0).min(proj_a(b1)).max(0.0);
-    let a_hi = proj_a(b0).max(proj_a(b1)).min(1.0);
-    if a_hi - a_lo < 1e-9 {
+    let lo_val = proj_a(b0).min(proj_a(b1)).max(0.0);
+    let hi_val = proj_a(b0).max(proj_a(b1)).min(1.0);
+    if hi_val - lo_val < 1e-9 {
         return Vec::new();
     }
-    let p_lo = GpPnt2d::new(a0.x() + dax * a_lo, a0.y() + day * a_lo);
-    let p_hi = GpPnt2d::new(a0.x() + dax * a_hi, a0.y() + day * a_hi);
+    let p_lo = GpPnt2d::new(a0.x() + dax * lo_val, a0.y() + day * lo_val);
+    let p_hi = GpPnt2d::new(a0.x() + dax * hi_val, a0.y() + day * hi_val);
     vec![
-        (a_lo, proj_b(p_lo), p_lo),
-        (a_hi, proj_b(p_hi), p_hi),
+        (lo_val, proj_b(p_lo), p_lo),
+        (hi_val, proj_b(p_hi), p_hi),
     ]
 }
 

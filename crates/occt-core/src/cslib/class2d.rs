@@ -122,12 +122,12 @@ impl Class2d {
         }
         let mut x = point.x();
         let mut y = point.y();
-        let a_tol_u = self.tol_u * (self.u_max - self.u_min);
-        let a_tol_v = self.tol_v * (self.v_max - self.v_min);
-        if x < (self.u_min - a_tol_u)
-            || x > (self.u_max + a_tol_u)
-            || y < (self.v_min - a_tol_v)
-            || y > (self.v_max + a_tol_v)
+        let tol_u_val = self.tol_u * (self.u_max - self.u_min);
+        let tol_v_val = self.tol_v * (self.v_max - self.v_min);
+        if x < (self.u_min - tol_u_val)
+            || x > (self.u_max + tol_u_val)
+            || y < (self.v_min - tol_v_val)
+            || y > (self.v_max + tol_v_val)
         {
             return Class2dResult::Outside;
         }

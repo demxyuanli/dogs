@@ -208,9 +208,9 @@ pub(crate) fn compute_int_point(
             let par1 = clib2d::line_parameter_ax2d(cur_lin.position(), &pt1);
             res_u1 = if par1 >= first1 && par1 <= last1 { par1 } else { *res_sup };
         } else if is_inside2 {
-            let a_pt1 = clib2d::line_value_ax2d(*res_sup, cur_lin.position());
+            let pt1_val = clib2d::line_value_ax2d(*res_sup, cur_lin.position());
             res_u1 = *res_sup;
-            let par2 = clib2d::line_parameter_ax2d(other_lin.position(), &a_pt1);
+            let par2 = clib2d::line_parameter_ax2d(other_lin.position(), &pt1_val);
             res_u2 = if par2 >= first2 && par2 <= last2 { par2 } else { res2 };
         } else {
             if par_cur < first1 - tol11

@@ -286,15 +286,15 @@ fn split_cone_seam(model: &mut MeshModel, edge_index: usize, face_index: usize, 
             p1.x(),
         )
     };
-    let a_mod = (y0 - y1).abs();
+    let y_span = (y0 - y1).abs();
     // `BRepMesh_ModelPreProcessor.cxx:197-199`:
     //   const double aMod = std::abs(aFPntOfIPC1.Y() - aLPntOfIPC1.Y());
     //   if (aMod < gp::Resolution())
     // with `gp::Resolution()` = `RealSmall()` = `DBL_MIN` (`gp.hxx:60`).
-    if a_mod < REAL_SMALL {
+    if y_span < REAL_SMALL {
         return false;
     }
-    let dt = (last - first).abs() / a_mod * du;
+    let dt = (last - first).abs() / y_span * du;
     if !(dt.is_finite() && dt > PCONFUSION) {
         return false;
     }

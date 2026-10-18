@@ -340,12 +340,12 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
 
 /// `GeomBndLib_BezierSurface::Box` (`BezierSurface.cxx:43-91`).
 pub fn box_bezier_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, tol: f64) -> BndBox {
-    let (a_u1, a_u2) = s.u_range();
-    let (a_v1, a_v2) = s.v_range();
-    if (u1 - a_u1).abs() <= PARAMETRIC_CONFUSION
-        && (v1 - a_v1).abs() <= PARAMETRIC_CONFUSION
-        && (u2 - a_u2).abs() <= PARAMETRIC_CONFUSION
-        && (v2 - a_v2).abs() <= PARAMETRIC_CONFUSION
+    let (u1_val, u2_val) = s.u_range();
+    let (v1_val, v2_val) = s.v_range();
+    if (u1 - u1_val).abs() <= PARAMETRIC_CONFUSION
+        && (v1 - v1_val).abs() <= PARAMETRIC_CONFUSION
+        && (u2 - u2_val).abs() <= PARAMETRIC_CONFUSION
+        && (v2 - v2_val).abs() <= PARAMETRIC_CONFUSION
     {
         // Full surface: convex hull of every pole (`BezierSurface.cxx:26-40`).
         let mut bnd_box = BndBox::new();

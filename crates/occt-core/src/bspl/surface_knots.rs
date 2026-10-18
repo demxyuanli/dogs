@@ -145,19 +145,19 @@ pub fn trim_surface(
     let lv1 = last_index(&kv, v1);
     let lv2 = last_index(&kv, v2);
 
-    let a_u = lu1.saturating_sub(degree_u);
+    let u_val = lu1.saturating_sub(degree_u);
     let b_u = lu2.saturating_sub(degree_u + 1);
-    let a_v = lv1.saturating_sub(degree_v);
+    let v_val = lv1.saturating_sub(degree_v);
     let b_v = lv2.saturating_sub(degree_v + 1);
 
     let eu = (b_u + degree_u + 1).min(ku.len().saturating_sub(1));
     let ev = (b_v + degree_v + 1).min(kv.len().saturating_sub(1));
-    let new_knots_u = if a_u <= eu { ku[a_u..=eu].to_vec() } else { Vec::new() };
-    let new_knots_v = if a_v <= ev { kv[a_v..=ev].to_vec() } else { Vec::new() };
+    let new_knots_u = if u_val <= eu { ku[u_val..=eu].to_vec() } else { Vec::new() };
+    let new_knots_v = if v_val <= ev { kv[v_val..=ev].to_vec() } else { Vec::new() };
 
     let mut new_poles = Vec::new();
-    for i in a_u..=b_u {
-        for j in a_v..=b_v {
+    for i in u_val..=b_u {
+        for j in v_val..=b_v {
             new_poles.push(p[i * n_v + j]);
         }
     }

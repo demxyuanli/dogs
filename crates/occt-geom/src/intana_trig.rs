@@ -27,7 +27,7 @@ pub(crate) fn trig_function_roots(
     sup: f64,
 ) -> TrigRoots {
     let depi = 2.0 * PI;
-    let my_inf = inf;
+    let inf_val = inf;
     let mut delta = sup - inf;
     if delta > depi {
         delta = depi;
@@ -49,7 +49,7 @@ pub(crate) fn trig_function_roots(
             }
             let z1 = aa.asin();
             let z2 = PI - z1;
-            return TrigRoots::Values(collect_in_range(&[z1, z2], my_inf, delta, md, depi, inf, sup));
+            return TrigRoots::Values(collect_in_range(&[z1, z2], inf_val, delta, md, depi, inf, sup));
         }
         if d.abs() <= EPS {
             let aa = -e / c;
@@ -59,7 +59,7 @@ pub(crate) fn trig_function_roots(
             let z1 = aa.acos();
             return TrigRoots::Values(collect_in_range(
                 &[z1, -z1],
-                my_inf,
+                inf_val,
                 delta,
                 md,
                 depi,
@@ -72,7 +72,7 @@ pub(crate) fn trig_function_roots(
         let cc = e + c;
         let mut zer = super::quadratic_roots(aa, bb, cc);
         zer.retain(|t| t.is_finite());
-        return wrap_tan_half(&zer, a, b, c, d, e, my_inf, delta, md, depi, inf, sup);
+        return wrap_tan_half(&zer, a, b, c, d, e, inf_val, delta, md, depi, inf, sup);
     }
 
     if a.abs() <= EPS && e.abs() <= EPS {
@@ -92,7 +92,7 @@ pub(crate) fn trig_function_roots(
                     zer.push(depi - z);
                 }
             }
-            return TrigRoots::Values(collect_in_range(&zer, my_inf, delta, md, depi, inf, sup));
+            return TrigRoots::Values(collect_in_range(&zer, inf_val, delta, md, depi, inf, sup));
         }
         if d.abs() <= EPS {
             let mut zer = vec![PI / 2.0, 1.5 * PI];
@@ -110,7 +110,7 @@ pub(crate) fn trig_function_roots(
                     zer.push(PI - z);
                 }
             }
-            return TrigRoots::Values(collect_in_range(&zer, my_inf, delta, md, depi, inf, sup));
+            return TrigRoots::Values(collect_in_range(&zer, inf_val, delta, md, depi, inf, sup));
         }
     }
 
@@ -137,12 +137,12 @@ pub(crate) fn trig_function_roots(
             *k *= 0.0001;
         }
     }
-    wrap_tan_half(&zer, a, b, c, d, e, my_inf, delta, md, depi, inf, sup)
+    wrap_tan_half(&zer, a, b, c, d, e, inf_val, delta, md, depi, inf, sup)
 }
 
 fn collect_in_range(
     raw: &[f64],
-    my_inf: f64,
+    inf_par: f64,
     delta: f64,
     md: f64,
     depi: f64,
@@ -156,7 +156,7 @@ fn collect_in_range(
             z = depi - z.abs();
         }
         z += md.trunc() * depi;
-        let x = z - my_inf;
+        let x = z - inf_par;
         if x >= -delta.abs() * f64::EPSILON && x <= delta + delta.abs() * f64::EPSILON {
             let mut t = z;
             if t < inf {
@@ -178,7 +178,7 @@ fn wrap_tan_half(
     c: f64,
     d: f64,
     e: f64,
-    my_inf: f64,
+    inf_par: f64,
     delta: f64,
     md: f64,
     depi: f64,
@@ -194,10 +194,10 @@ fn wrap_tan_half(
             teta = depi - teta.abs();
         }
         teta += md.trunc() * depi;
-        if teta - my_inf < 0.0 {
+        if teta - inf_par < 0.0 {
             teta += depi;
         }
-        let x = teta - my_inf;
+        let x = teta - inf_par;
         if x >= -delta.abs() * f64::EPSILON && x <= delta + delta.abs() * f64::EPSILON {
             let polished = newton_trig(a, b, c, d, e, teta);
             let dn = polished - teta;
@@ -207,7 +207,7 @@ fn wrap_tan_half(
     }
     if sols.len() < 4 && (a - c + e).abs() <= EPS {
         let teta = PI + md.trunc() * depi;
-        let x = teta - my_inf;
+        let x = teta - inf_par;
         if x >= -delta.abs() * f64::EPSILON && x <= delta + delta.abs() * f64::EPSILON {
             push_unique(&mut sols, teta);
         }

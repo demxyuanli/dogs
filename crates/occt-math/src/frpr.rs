@@ -62,8 +62,8 @@ impl Frpr {
             return Err(MathStatus::FunctionError);
         }
         let mut location = start.clone();
-        let mut the_grad = grad(&location);
-        if has_non_finite(&the_grad) {
+        let mut grad_val = grad(&location);
+        if has_non_finite(&grad_val) {
             return Err(MathStatus::FunctionError);
         }
         let mut prev_min = f(&location);
@@ -71,13 +71,13 @@ impl Frpr {
             return Err(MathStatus::FunctionError);
         }
 
-        let mut g = the_grad.opposite();
+        let mut g = grad_val.opposite();
         let mut h = g.clone();
-        the_grad = g.clone(); // first search direction = -gradient
+        grad_val = g.clone(); // first search direction = -gradient
 
         for its in 1..=self.max_iter {
             // Minimize f along direction `the_grad` from `location`.
-            let Some((scale, min)) = minimize_direction(&f, &location, &the_grad) else {
+            let Some((scale, min)) = minimize_direction(&f, &location, &grad_val) else {
                 return Err(MathStatus::DirectionSearchError);
             };
             if !min.is_finite() {
@@ -85,10 +85,10 @@ impl Frpr {
             }
             // Apply the step: location += scale * direction.
             for i in 1..=n {
-                the_grad.set_value(i, the_grad.value(i) * scale);
+                grad_val.set_value(i, grad_val.value(i) * scale);
             }
             for i in 1..=n {
-                location.set_value(i, location.value(i) + the_grad.value(i));
+                location.set_value(i, location.value(i) + grad_val.value(i));
             }
             if 2.0 * (min - prev_min).abs()
                 <= self.tolerance * (min.abs() + prev_min.abs() + self.zeps)
@@ -104,8 +104,8 @@ impl Frpr {
             }
             // Re-evaluate objective and gradient at the new location.
             prev_min = f(&location);
-            the_grad = grad(&location);
-            if !prev_min.is_finite() || has_non_finite(&the_grad) {
+            grad_val = grad(&location);
+            if !prev_min.is_finite() || has_non_finite(&grad_val) {
                 return Err(MathStatus::FunctionError);
             }
 
@@ -114,18 +114,18 @@ impl Frpr {
             let mut gg = 0.0;
             for j in 1..=n {
                 gg += g.value(j) * g.value(j);
-                dgg += (the_grad.value(j) + g.value(j)) * the_grad.value(j);
+                dgg += (grad_val.value(j) + g.value(j)) * grad_val.value(j);
             }
             if gg == 0.0 {
                 // Exact stationary point reached.
                 return Err(MathStatus::FunctionError);
             }
             let gam = dgg / gg;
-            g = the_grad.opposite();
+            g = grad_val.opposite();
             for j in 1..=n {
-                the_grad.set_value(j, g.value(j) + gam * h.value(j));
+                grad_val.set_value(j, g.value(j) + gam * h.value(j));
             }
-            h = the_grad.clone();
+            h = grad_val.clone();
         }
         Err(MathStatus::TooManyIterations)
     }

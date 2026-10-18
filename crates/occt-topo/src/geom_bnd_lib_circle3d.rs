@@ -48,13 +48,13 @@ pub fn box_circ_range(circ: &GpCirc, u1: f64, u2: f64, tol: f64) -> BndBox {
     let xd = x_ax.direction().xyz();
     let yd = y_ax.direction().xyz();
 
-    let mut a_u1 = u1;
-    let mut a_u2 = u2;
-    let a_tol = epsilon(1.0);
-    adjust_periodic(0.0, 2.0 * std::f64::consts::PI, a_tol, &mut a_u1, &mut a_u2);
+    let mut u1_val = u1;
+    let mut u2_val = u2;
+    let tol_val = epsilon(1.0);
+    adjust_periodic(0.0, 2.0 * std::f64::consts::PI, tol_val, &mut u1_val, &mut u2_val);
 
-    bnd_box.add_point(&circle_value(circ, a_u1));
-    bnd_box.add_point(&circle_value(circ, a_u2));
+    bnd_box.add_point(&circle_value(circ, u1_val));
+    bnd_box.add_point(&circle_value(circ, u2_val));
     for k in 0..3 {
         let xk = xd.coord(k);
         let yk = yd.coord(k);
@@ -80,12 +80,12 @@ pub fn box_circ_range(circ: &GpCirc, u1: f64, u2: f64, tol: f64) -> BndBox {
             std::mem::swap(&mut t_extr_min, &mut t_extr_max);
         }
 
-        let mut tk = in_period(t_extr_min, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
-        if tk >= a_u1 && tk <= a_u2 {
+        let mut tk = in_period(t_extr_min, u1_val, u1_val + 2.0 * std::f64::consts::PI);
+        if tk >= u1_val && tk <= u2_val {
             bnd_box.add_point(&circle_value(circ, t_extr_min));
         }
-        tk = in_period(t_extr_max, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
-        if tk >= a_u1 && tk <= a_u2 {
+        tk = in_period(t_extr_max, u1_val, u1_val + 2.0 * std::f64::consts::PI);
+        if tk >= u1_val && tk <= u2_val {
             bnd_box.add_point(&circle_value(circ, t_extr_max));
         }
     }

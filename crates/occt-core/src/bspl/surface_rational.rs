@@ -54,14 +54,14 @@ pub fn eval_surface_rational_d1(
     if poles.len() != weights.len() || poles.is_empty() || n_u == 0 || n_v == 0 {
         return (GpPnt::zero(), GpVec::zero(), GpVec::zero());
     }
-    let a_poles: Vec<GpPnt> = poles
+    let poles_val: Vec<GpPnt> = poles
         .iter()
         .zip(weights.iter())
         .map(|(p, w)| GpPnt::new(p.x() * w, p.y() * w, p.z() * w))
         .collect();
     let w_poles: Vec<GpPnt> = weights.iter().map(|&w| GpPnt::new(w, 0.0, 0.0)).collect();
     let (a, da_u, da_v) =
-        eval::eval_surface_d1_non_rational(&a_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
+        eval::eval_surface_d1_non_rational(&poles_val, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
     let (wpt, dw_u, dw_v) =
         eval::eval_surface_d1_non_rational(&w_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
     let w = wpt.x();
@@ -112,14 +112,14 @@ pub fn eval_surface_rational_d2(
             GpVec::zero(),
         );
     }
-    let a_poles: Vec<GpPnt> = poles
+    let poles_val: Vec<GpPnt> = poles
         .iter()
         .zip(weights.iter())
         .map(|(p, w)| GpPnt::new(p.x() * w, p.y() * w, p.z() * w))
         .collect();
     let w_poles: Vec<GpPnt> = weights.iter().map(|&w| GpPnt::new(w, 0.0, 0.0)).collect();
     let (a, da_u, da_v, d2a_u, d2a_v, d2a_uv) = eval::eval_surface_d2(
-        &a_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v,
+        &poles_val, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v,
     );
     let (wpt, dw_u, dw_v, d2w_u, d2w_v, d2w_uv) = eval::eval_surface_d2(
         &w_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v,

@@ -349,8 +349,8 @@ fn find_max_distance_interval(
 }
 
 fn max_distance(c: &dyn Curve, t: f64, surf: &dyn Surface) -> f64 {
-    let a_p = c.d0(t);
-    project_point_on_surface(surf, &a_p, 0.0)
+    let p_val = c.d0(t);
+    project_point_on_surface(surf, &p_val, 0.0)
         .map(|p| p.distance)
         .unwrap_or(0.0)
 }
@@ -539,7 +539,7 @@ impl FaceFace {
         let typs2 = classify_surface(sb);
         let mut an_approx1 = self.approx1;
         let mut an_approx2 = self.approx2;
-        let mut my_tol_approx = self.tol_approx;
+        let mut tol_approx_val = self.tol_approx;
         let mut an_with_pc = true;
         if typs1 == SurfaceKind::Cylinder && typs2 == SurfaceKind::Sphere {
             if let (Some(cyl), Some(sph)) = (gp_cylinder_from_surface(sa), gp_sphere_from_surface(sb)) {
@@ -551,7 +551,7 @@ impl FaceFace {
             }
         }
         if !an_with_pc {
-            my_tol_approx = 1.0e-5;
+            tol_approx_val = 1.0e-5;
             an_approx1 = false;
             an_approx2 = false;
         }
@@ -601,8 +601,8 @@ impl FaceFace {
             let b_reject = not_use_surfaces_for_approx_wline(fa, fb, piece, ifprm, ilprm);
             let mut theapp3d = WlApprox::new();
             theapp3d.set_parameters(
-                my_tol_approx,
-                my_tol_approx,
+                tol_approx_val,
+                tol_approx_val,
                 i_deg_min,
                 i_deg_max,
                 i_nb_iter,

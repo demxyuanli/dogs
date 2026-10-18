@@ -383,14 +383,14 @@ impl NewtonMinimum {
                         continue;
                     }
                     if point2.value(an_idx) < self.left.value(an_idx) {
-                        let a_value = (point1.value(an_idx) - self.left.value(an_idx)).abs()
+                        let value_val = (point1.value(an_idx) - self.left.value(an_idx)).abs()
                             / an_abs_step;
-                        mult = mult.min(a_value);
+                        mult = mult.min(value_val);
                     }
                     if point2.value(an_idx) > self.right.value(an_idx) {
-                        let a_value = (point1.value(an_idx) - self.right.value(an_idx)).abs()
+                        let value_val = (point1.value(an_idx) - self.right.value(an_idx)).abs()
                             / an_abs_step;
-                        mult = mult.min(a_value);
+                        mult = mult.min(value_val);
                     }
                 }
 

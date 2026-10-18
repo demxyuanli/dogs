@@ -173,7 +173,7 @@ fn wiredata_storage_index(wire: &Wire, wiredata_index: usize, nb: usize) -> usiz
     }
 }
 
-pub(in crate::shhealing) fn check_connected(wire: &Wire, my_precision: f64, prec: f64, num: usize) -> ConnectedCheck {
+pub(in crate::shhealing) fn check_connected(wire: &Wire, precision_par: f64, prec: f64, num: usize) -> ConnectedCheck {
     let nb = wire_edges_nb(wire);
     if nb < 1 {
         return ConnectedCheck::None;
@@ -199,7 +199,7 @@ pub(in crate::shhealing) fn check_connected(wire: &Wire, my_precision: f64, prec
     if min3d <= occt_core::precision::REAL_SMALL {
         return ConnectedCheck::Done1;
     }
-    if min3d <= my_precision {
+    if min3d <= precision_par {
         return ConnectedCheck::Done2;
     }
     if min3d <= prec {
@@ -214,7 +214,7 @@ pub(in crate::shhealing) fn check_connected(wire: &Wire, my_precision: f64, prec
     };
     let p2b = BRepTool::vertex_point(&v2b);
     let dist = p1.distance(&p2b);
-    if dist > my_precision {
+    if dist > precision_par {
         return ConnectedCheck::None;
     }
     min3d = dist;

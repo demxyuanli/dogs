@@ -41,7 +41,7 @@ impl<'a> Resolver<'a> {
         };
         // `StepToTopoDS_TranslateFace.cxx:572-573` / `716-752`.
         let same_sense = parse_logical(rec.args.last().map(String::as_str), true);
-        let a_same_sense = if self.step_surface_is_reversed(surf_ref) {
+        let same_sense_val = if self.step_surface_is_reversed(surf_ref) {
             !same_sense
         } else {
             same_sense
@@ -82,7 +82,7 @@ impl<'a> Resolver<'a> {
             // Bound orientation is already on the wire from `resolve_outer_bound`.
             // A reversed `Face_Surface` (or negative-major torus) flips it again
             // so the stored wire matches CAS.CADE (`cxx:714-723`).
-            if !a_same_sense {
+            if !same_sense_val {
                 s.reverse();
             }
             wires.push(Wire(s));

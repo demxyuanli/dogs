@@ -137,10 +137,10 @@ fn append_ef_point(
     let Some(f_shape) = f.ds().shape(n_f).cloned() else {
         return;
     };
-    let a_f = Face(f_shape);
+    let f_val = Face(f_shape);
     let point = curve.d0(rec.par);
     let ctx = f.context();
-    if let Some(pcurve) = curve_on_surface(&e, &a_f) {
+    if let Some(pcurve) = curve_on_surface(&e, &f_val) {
         project_with_pcurve(
             ctx,
             rec.par,
@@ -152,7 +152,7 @@ fn append_ef_point(
             out,
         );
     } else {
-        project_both_faces(ctx, &point, &a_f, &f_opp, n_f, n_f1, out);
+        project_both_faces(ctx, &point, &f_val, &f_opp, n_f, n_f1, out);
     }
 }
 

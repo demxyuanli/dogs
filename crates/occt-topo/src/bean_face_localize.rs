@@ -361,7 +361,7 @@ impl BeanFaceIntersector {
                     continue;
                 }
 
-                let a_box_s = match surface_data.find_box(&new_range_s) {
+                let box_s_val = match surface_data.find_box(&new_range_s) {
                     Some(b) => b,
                     None => {
                         let mut box_s = BndBox::new();
@@ -406,7 +406,7 @@ impl BeanFaceIntersector {
                     }
                 };
 
-                if a_box_s.is_out_box(&box_curve) {
+                if box_s_val.is_out_box(&box_curve) {
                     b_has_out_v = true;
                     continue;
                 }
@@ -435,7 +435,7 @@ impl BeanFaceIntersector {
                         continue;
                     }
 
-                    let a_box_c = match curve_data.find_box(&cur_range_c) {
+                    let box_c_val = match curve_data.find_box(&cur_range_c) {
                         Some(b) => b,
                         None => {
                             let mut box_c = BndBox::new();
@@ -462,18 +462,18 @@ impl BeanFaceIntersector {
                         }
                     };
 
-                    if !b_global_check_done && a_box_c.is_out_box(&box_surface) {
+                    if !b_global_check_done && box_c_val.is_out_box(&box_surface) {
                         list_c_to_avoid.push(t_it);
                         b_has_out_c = true;
                         continue;
                     }
-                    if a_box_c.is_out_box(&a_box_s) {
+                    if box_c_val.is_out_box(&box_s_val) {
                         b_has_out_v = true;
                         b_has_out_c = true;
                         continue;
                     }
                     list_of_index.push(t_it);
-                    list_of_box.push(a_box_c);
+                    list_of_box.push(box_c_val);
                 }
                 b_global_check_done = true;
                 if b_has_out_c {
@@ -485,7 +485,7 @@ impl BeanFaceIntersector {
                 let mut b_use_old_s = false;
                 let b_check_size = !b_has_out_c;
 
-                for (t_it, a_box_c) in list_of_index.iter().zip(list_of_box.iter()) {
+                for (t_it, box_c_val) in list_of_index.iter().zip(list_of_box.iter()) {
                     cur_index = cur_index_init + t_it - 1;
                     b_use_old_s = false;
                     if b_allow_c {
@@ -502,9 +502,9 @@ impl BeanFaceIntersector {
                             && surface_range.depth_u() < 4
                             && surface_range.depth_v() < 4
                         {
-                            if !a_box_c.is_whole() && !a_box_s.is_whole() {
-                                let diag_c = a_box_c.square_extent();
-                                let diag_s = a_box_s.square_extent();
+                            if !box_c_val.is_whole() && !box_s_val.is_whole() {
+                                let diag_c = box_c_val.square_extent();
+                                let diag_s = box_s_val.square_extent();
                                 if diag_c < diag_s {
                                     if diag_c * 10.0 < diag_s {
                                         b_use_old_c = true;
@@ -535,11 +535,11 @@ impl BeanFaceIntersector {
                         let surf_box = if b_use_old_s {
                             box_surface
                         } else {
-                            a_box_s
+                            box_s_val
                         };
                         if !self.localize_solutions(
                             new_range_c,
-                            *a_box_c,
+                            *box_c_val,
                             surf_range,
                             surf_box,
                             curve_data,
@@ -560,7 +560,7 @@ impl BeanFaceIntersector {
                         curve_range,
                         box_curve,
                         new_range_s,
-                        a_box_s,
+                        box_s_val,
                         curve_data,
                         surface_data,
                         list_curve_range,
@@ -569,7 +569,7 @@ impl BeanFaceIntersector {
                 {
                     return false;
                 }
-                let _ = a_box_s;
+                let _ = box_s_val;
             }
             cur_index_u += 1;
             if b_has_out_v {

@@ -350,9 +350,9 @@ fn find_nearest_valid_point(
             let mut step_local = step;
             loop {
                 // Cycle to escape a local singularity (`BRepLib_1.cxx:111-135`).
-                let (p, a_d1) = curve.d1(u_out);
+                let (p, d1_val) = curve.d1(u_out);
                 is_out = p.square_distance(vert_pnt) > sq_tol;
-                if !is_out && a_d1.square_magnitude() < d1_mag {
+                if !is_out && d1_val.square_magnitude() < d1_mag {
                     step_local *= 2.0;
                     u_out += step_local;
                     if (is_first && u_out < end_u) || (!is_first && u_out > end_u) {

@@ -158,7 +158,7 @@ pub fn remove_knot_dim(
 ) -> bool {
     let degree = degree.max(0);
     let d = dim.max(1);
-    let mut the_index = index;
+    let mut index_val = index;
 
     // Protection (BSplCLib.cxx:2372-2396).
     let (first, last) = if periodic {
@@ -176,10 +176,10 @@ pub fn remove_knot_dim(
         return false;
     }
     if periodic && index == first {
-        the_index = last;
+        index_val = last;
     }
 
-    let depth = get1_i32(mults, the_index) - mult;
+    let depth = get1_i32(mults, index_val) - mult;
     let length = degree - mult;
 
     // Local arrays (BSplCLib.cxx:2404-2406).
@@ -187,12 +187,12 @@ pub fn remove_knot_dim(
     let mut lp = vec![0.0f64; ((2 * degree + 1) * d) as usize];
 
     // Build the knots for the anti Boor scheme (BSplCLib.cxx:2408-2429).
-    let kb1 = build_knots(degree, the_index - 1, periodic, knots, Some(mults));
+    let kb1 = build_knots(degree, index_val - 1, periodic, knots, Some(mults));
     for i in 0..(2 * degree) as usize {
         lk[i] = kb1.get(i).copied().unwrap_or(0.0);
     }
-    let mut p_index = pole_index(degree, the_index - 1, periodic, mults);
-    let kb2 = build_knots(degree, the_index, periodic, knots, Some(mults));
+    let mut p_index = pole_index(degree, index_val - 1, periodic, mults);
+    let kb2 = build_knots(degree, index_val, periodic, knots, Some(mults));
     for i in 0..(2 * degree) as usize {
         lk[(2 * degree) as usize + i] = kb2.get(i).copied().unwrap_or(0.0);
     }
@@ -220,7 +220,7 @@ pub fn remove_knot_dim(
 
     // Anti Boor scheme (BSplCLib.cxx:2452-2457).
     if !anti_boor_scheme(
-        get1(knots, the_index),
+        get1(knots, index_val),
         degree,
         &lk,
         d,
@@ -251,17 +251,17 @@ pub fn remove_knot_dim(
         new_knots[..n].copy_from_slice(&knots[..n]);
         let n = mults.len().min(new_mults.len());
         new_mults[..n].copy_from_slice(&mults[..n]);
-        set1_i32(new_mults, the_index, mult);
+        set1_i32(new_mults, index_val, mult);
         if periodic {
-            if the_index == first {
+            if index_val == first {
                 set1_i32(new_mults, last, mult);
             }
-            if the_index == last {
+            if index_val == last {
                 set1_i32(new_mults, first, mult);
             }
         }
-    } else if !periodic || (the_index != first && the_index != last) {
-        for i in 1..the_index {
+    } else if !periodic || (index_val != first && index_val != last) {
+        for i in 1..index_val {
             let (s, d2) = ((i - 1) as usize, (i - 1) as usize);
             if s < knots.len() && d2 < new_knots.len() {
                 new_knots[d2] = knots[s];
@@ -270,7 +270,7 @@ pub fn remove_knot_dim(
                 new_mults[d2] = mults[s];
             }
         }
-        for i in (the_index + 1)..=knots.len() as i32 {
+        for i in (index_val + 1)..=knots.len() as i32 {
             let (s, d2) = ((i - 1) as usize, (i - 2) as usize);
             if s < knots.len() && d2 < new_knots.len() {
                 new_knots[d2] = knots[s];

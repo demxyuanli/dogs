@@ -79,22 +79,22 @@ impl Geom2dConvertApproxCurve {
 
     /// `Geom2dConvert_ApproxCurve::Approximate` (`cxx:127-183`).
     fn approximate(
-        the_curve: &dyn Curve2d,
+        curve_par: &dyn Curve2d,
         tol2d: f64,
-        the_order: Shape,
+        order_par: Shape,
         max_segments: i32,
         max_degree: i32,
     ) -> Self {
         // `cxx:137-139`: Num1DSS = Num3DSS = 0, Num2DSS = 1, TwoDTol = {Tol2d}.
         // `cxx:141-142`.
-        let first = the_curve.first_parameter();
-        let last = the_curve.last_parameter();
+        let first = curve_par.first_parameter();
+        let last = curve_par.last_parameter();
 
         // `cxx:145-150`: `NbIntervals(GeomAbs_C2)` / `NbIntervals(GeomAbs_C3)`
         // then `Intervals(CutPnts_C2, GeomAbs_C2)` / `Intervals(CutPnts_C3,
         // GeomAbs_C3)`.
-        let cut_pnts_c2 = adaptor_intervals(the_curve, 4);
-        let cut_pnts_c3 = adaptor_intervals(the_curve, 5);
+        let cut_pnts_c2 = adaptor_intervals(curve_par, 4);
+        let cut_pnts_c3 = adaptor_intervals(curve_par, 5);
 
         // `cxx:151`: `AdvApprox_PrefAndRec CutTool(CutPnts_C2, CutPnts_C3)`
         // (default `Weight = 5`).
@@ -109,17 +109,17 @@ impl Geom2dConvertApproxCurve {
         let eval = |_a: f64, _b: f64, u: f64, order: i32, out: &mut [f64]| -> i32 {
             match order {
                 0 => {
-                    let p = the_curve.d0(u);
+                    let p = curve_par.d0(u);
                     out[0] = p.x();
                     out[1] = p.y();
                 }
                 1 => {
-                    let (_, v) = the_curve.d1(u);
+                    let (_, v) = curve_par.d1(u);
                     out[0] = v.x();
                     out[1] = v.y();
                 }
                 2 => {
-                    let (_, _, v) = the_curve.d2(u);
+                    let (_, _, v) = curve_par.d2(u);
                     out[0] = v.x();
                     out[1] = v.y();
                 }
@@ -135,10 +135,10 @@ impl Geom2dConvertApproxCurve {
         // `cxx:155-168`: `AdvApprox_ApproxAFunction(Num1DSS, Num2DSS, Num3DSS,
         // OneDTol, TwoDTol, ThreeDTol, First, Last, theOrder, theMaxDegree,
         // theMaxSegments, ev, CutTool)`.
-        let a_approx = ApproxAFunction2d::approx(
+        let approx_val = ApproxAFunction2d::approx(
             first,
             last,
-            the_order,
+            order_par,
             max_degree,
             max_segments,
             tol2d,
@@ -146,23 +146,23 @@ impl Geom2dConvertApproxCurve {
             &eval,
         );
 
-        match a_approx {
-            Ok(a_approx) => {
+        match approx_val {
+            Ok(approx_val) => {
                 // `cxx:170-171`.
-                let is_done = a_approx.done;
-                let has_result = a_approx.has_result;
+                let is_done = approx_val.done;
+                let has_result = approx_val.has_result;
                 // `cxx:172-183`: the `Poles2d` are packed into a
                 // `Geom2d_BSplineCurve(Poles, Knots, Mults, Degree)` and
                 // `myMaxError = aApprox.MaxError(2, 1)`.
                 let (curve, max_error) = if has_result {
                     let curve = bspline_from_poles_knots_mults(
-                        &a_approx.poles,
-                        &a_approx.knots,
-                        &a_approx.mults,
-                        a_approx.degree,
+                        &approx_val.poles,
+                        &approx_val.knots,
+                        &approx_val.mults,
+                        approx_val.degree,
                     )
                     .ok();
-                    (curve, a_approx.max_error)
+                    (curve, approx_val.max_error)
                 } else {
                     (None, 0.0)
                 };

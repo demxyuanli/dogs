@@ -136,10 +136,10 @@ impl Delaun {
         // OCCT `BRepMesh_Delaun.cxx:1116-1140`: `aFirstNode` is the loop-close
         // target and `findNextPolygonLink`'s endpoint check; it never updates.
         // `aStartNode` walks with the polygon and is the origin of `aRefLinkDir`.
-        let a_first_node = start_node;
-        while pivot_node != a_first_node {
+        let first_node_val = start_node;
+        while pivot_node != first_node_val {
             let result = self.find_next_polygon_link(
-                a_first_node,
+                first_node_val,
                 pivot_node,
                 pivot_vertex,
                 ref_link_dir,

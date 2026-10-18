@@ -119,17 +119,17 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
     }
 
     // 1-based arrays to mirror the OCCT index arithmetic.
-    let mut a_pars = vec![0.0; nbsu + 1];
+    let mut pars_val = vec![0.0; nbsu + 1];
     let mut flg = vec![false; nbsu + 1];
     if nbsu >= 2 {
         if b_uniform {
             let t1 = u0;
             let t2 = u1;
             let dt = (t2 - t1) / (nbsu - 1) as f64;
-            a_pars[1] = t1;
-            a_pars[nbsu] = t2;
+            pars_val[1] = t1;
+            pars_val[nbsu] = t2;
             let mut t = t1 + dt;
-            for p in a_pars.iter_mut().take(nbsu).skip(2) {
+            for p in pars_val.iter_mut().take(nbsu).skip(2) {
                 *p = t;
                 t += dt;
             }
@@ -144,7 +144,7 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
                 loop {
                     k += 1;
                     if k <= nbsu {
-                        a_pars[k] = t1;
+                        pars_val[k] = t1;
                         flg[k] = false;
                     }
                     t1 += dt;
@@ -157,7 +157,7 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
             }
             k += 1;
             if k <= nbsu {
-                a_pars[k] = t1;
+                pars_val[k] = t1;
             }
         }
     } else {
@@ -178,12 +178,12 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
             j += 1;
             continue;
         }
-        let p1 = curve.d0(a_pars[j]);
+        let p1 = curve.d0(pars_val[j]);
         let mut k = j + 2;
         let mut last_k = k;
         while k <= nbsu {
             last_k = k;
-            let p2 = curve.d0(a_pars[k]);
+            let p2 = curve.d0(pars_val[k]);
             if p1.square_distance(&p2) <= tol {
                 k += 1;
                 continue;
@@ -197,7 +197,7 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
                         ok = false;
                         break;
                     }
-                    let pp = curve.d0(a_pars[l]);
+                    let pp = curve.d0(pars_val[l]);
                     let d = lin.square_distance(&pp);
                     if d <= defl2 {
                         continue;
@@ -244,7 +244,7 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
     let mut pars = Vec::with_capacity(nb_samples);
     for i in 1..=nbsu {
         if flg[i] {
-            pars.push(a_pars[i]);
+            pars.push(pars_val[i]);
         }
     }
     pars

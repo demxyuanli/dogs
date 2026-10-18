@@ -248,8 +248,8 @@ fn pso_1d<F: Fn(f64) -> Option<f64>>(
     let term_vel = step / 2048.0;
 
     // `for (aStep = 1; aStep < myNbIter; ++aStep)` (`cxx:169`).
-    let mut a_step = 1i32;
-    while a_step < nb_iter as i32 {
+    let mut step_val = 1i32;
+    while step_val < nb_iter as i32 {
         let mut min_vel = f64::MAX;
         for p in &mut pool {
             let ksi1 = rng.next_real();
@@ -275,7 +275,7 @@ fn pso_1d<F: Fn(f64) -> Option<f64>>(
         }
         if min_vel <= term_vel {
             const MIN_STEPS: i32 = 16;
-            if a_step > MIN_STEPS {
+            if step_val > MIN_STEPS {
                 break;
             }
             for p in &mut pool {
@@ -291,7 +291,7 @@ fn pso_1d<F: Fn(f64) -> Option<f64>>(
                 }
             }
         }
-        a_step += 1;
+        step_val += 1;
     }
     (best_dist, best_pos)
 }

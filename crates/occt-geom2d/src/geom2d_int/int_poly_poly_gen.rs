@@ -64,12 +64,12 @@ impl Geom2dIntIntPolyPolyGen {
     /// `IntCurve_IntPolyPolyGen()` (`gxx:86-90`).
     pub fn new() -> Self {
         // Minimum number of samples (`gxx:87`).
-        let a_min_pnt_nb = 20;
+        let min_pnt_nb_val = 20;
         Self {
             base: IntRes2dIntersection::new(),
             domain_on_curve1: IntRes2dDomain::new(),
             domain_on_curve2: IntRes2dDomain::new(),
-            min_pnt_nb: a_min_pnt_nb,
+            min_pnt_nb: min_pnt_nb_val,
         }
     }
 

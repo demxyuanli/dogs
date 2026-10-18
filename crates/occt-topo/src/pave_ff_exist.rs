@@ -233,13 +233,13 @@ pub(crate) fn process_existing_pave_blocks(
         };
         let (t1, t2) = pbf.range();
         let mut dist = f64::MAX;
-        for a_range in p_list {
-            if (t1 <= a_range.first && a_range.first <= t2)
-                || (t1 <= a_range.last && a_range.last <= t2)
-                || (a_range.first <= t1 && t1 <= a_range.last)
-                || (a_range.first <= t2 && t2 <= a_range.last)
+        for range_val in p_list {
+            if (t1 <= range_val.first && range_val.first <= t2)
+                || (t1 <= range_val.last && range_val.last <= t2)
+                || (range_val.first <= t1 && t1 <= range_val.last)
+                || (range_val.first <= t2 && t2 <= range_val.last)
             {
-                dist = a_range.distance;
+                dist = range_val.distance;
                 break;
             }
         }

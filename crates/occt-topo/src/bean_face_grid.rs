@@ -211,7 +211,7 @@ pub(crate) fn compute_grid_points(
         };
         for j in 1..=nb_grid[1] {
             let par_v = surface_data.v_param(j);
-            let (pnt, a_du, a_dv) = if is_calc_defl {
+            let (pnt, du_val, dv_val) = if is_calc_defl {
                 surf.d1(par_u, par_v)
             } else {
                 (surf.d0(par_u, par_v), GpVec::zero(), GpVec::zero())
@@ -221,9 +221,9 @@ pub(crate) fn compute_grid_points(
                 grid_box.add_point(&pnt);
                 if i < nb_grid[0] && j < nb_grid[1] {
                     let dv = 0.5 * (surface_data.v_param(j + 1) - par_v);
-                    let shift = a_du
+                    let shift = du_val
                         .multiplied_scalar(du)
-                        .added(&a_dv.multiplied_scalar(dv));
+                        .added(&dv_val.multiplied_scalar(dv));
                     an_ext_box.add_point(&pnt.translated_vec(&shift));
                 }
             }

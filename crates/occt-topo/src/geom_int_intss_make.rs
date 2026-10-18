@@ -37,7 +37,7 @@ pub(crate) fn make_curve(
     tol: f64,
 ) {
     let mut tolpc = tol;
-    let my_approx = approx;
+    let approx_val = approx;
     let approx1 = approx_s1;
     let approx2 = approx_s2;
     let tol_approx = 1.0e-7;
@@ -67,7 +67,7 @@ pub(crate) fn make_curve(
                         make_walking(
                             iss,
                             &wl,
-                            my_approx,
+                            approx_val,
                             approx1,
                             approx2,
                             tol_approx,
@@ -81,7 +81,7 @@ pub(crate) fn make_curve(
                 make_walking(
                     iss,
                     wl,
-                    my_approx,
+                    approx_val,
                     approx1,
                     approx2,
                     tol_approx,
@@ -158,8 +158,8 @@ fn make_lin_parab_hypr(
     };
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
-    let a_nb_parts = iss.l_construct.nb_parts();
-    for i in 1..=a_nb_parts {
+    let nb_parts_val = iss.l_construct.nb_parts();
+    for i in 1..=nb_parts_val {
         let Some((fprm, lprm)) = iss.l_construct.part(i) else {
             continue;
         };
@@ -229,8 +229,8 @@ fn make_circle_ellipse(
     let s2 = s2.as_ref();
     let real_eps = f64::EPSILON;
     let period = TWO_PI;
-    let a_nb_parts = iss.l_construct.nb_parts();
-    for i in 1..=a_nb_parts {
+    let nb_parts_val = iss.l_construct.nb_parts();
+    for i in 1..=nb_parts_val {
         let Some((fprm, lprm)) = iss.l_construct.part(i) else {
             continue;
         };
@@ -238,7 +238,7 @@ fn make_circle_ellipse(
             append_trimmed_conic(iss, newc.clone(), fprm, lprm, s1, s2, approx1, approx2, tolpc);
             continue;
         }
-        if a_nb_parts == 1 && fprm.abs() < real_eps && (lprm - TWO_PI).abs() < real_eps {
+        if nb_parts_val == 1 && fprm.abs() < real_eps && (lprm - TWO_PI).abs() < real_eps {
             append_trimmed_conic(iss, newc.clone(), fprm, lprm, s1, s2, approx1, approx2, tolpc);
             break;
         }
@@ -289,8 +289,8 @@ fn make_walking(
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
     if !approx {
-        let a_nb_parts = iss.l_construct.nb_parts();
-        for i in 1..=a_nb_parts {
+        let nb_parts_val = iss.l_construct.nb_parts();
+        for i in 1..=nb_parts_val {
             let Some((fprm, lprm)) = iss.l_construct.part(i) else {
                 continue;
             };
@@ -335,12 +335,12 @@ fn make_walking(
         &iss.l_construct,
         &mut seq_of_l,
     );
-    let a_nb_parts = iss.l_construct.nb_parts();
+    let nb_parts_val = iss.l_construct.nb_parts();
     let nb_seq_of_l = seq_of_l.len() as i32;
     let nbiter = if b_is_decomposited {
         nb_seq_of_l
     } else {
-        a_nb_parts
+        nb_parts_val
     };
     for i in 1..=nbiter {
         let (piece, ifprm, ilprm) = if b_is_decomposited {

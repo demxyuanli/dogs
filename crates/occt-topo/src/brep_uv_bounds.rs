@@ -210,7 +210,7 @@ fn verify_v_periodic_bspline(
 }
 
 /// `BRepTools::AddUVBounds(Face, Edge, Box)`.
-pub fn add_uv_bounds_edge(f: &Face, e: &Edge, a_b: &mut BndBox2d) {
+pub fn add_uv_bounds_edge(f: &Face, e: &Edge, b_par: &mut BndBox2d) {
     let Some((c2d, t1, t2)) = curve_on_surface_range(e, f) else {
         return;
     };
@@ -290,7 +290,7 @@ pub fn add_uv_bounds_edge(f: &Face, e: &Edge, a_b: &mut BndBox2d) {
 
     let mut box_s = BndBox2d::new();
     box_s.update(xmin, ymin, xmax, ymax);
-    a_b.add_box(&box_s);
+    b_par.add_box(&box_s);
     let _ = CONFUSION;
 }
 

@@ -36,8 +36,8 @@ pub fn intersect_ve(
     }
     let mut dmvsd: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
     let mut tasks: Vec<VertexEdgeTask> = Vec::new();
-    for (a_pb, lv) in ve_pairs {
-        let n_e = a_pb.original_edge();
+    for (pb_val, lv) in ve_pairs {
+        let n_e = pb_val.original_edge();
         let mut mvpb: HashSet<usize> = HashSet::new();
         for pb in f.ds().pave_blocks(n_e) {
             let (n1, n2) = pb.indices();
@@ -58,7 +58,7 @@ pub fn intersect_ve(
                 n_vsd,
                 n_e,
                 members: vec![n_v],
-                pb: a_pb.clone(),
+                pb: pb_val.clone(),
             });
         }
     }
@@ -79,7 +79,7 @@ pub fn intersect_ve(
         };
         let v = Vertex(vs);
         let e = Edge(es);
-        let (flag, a_t, dist) = f.context().compute_pe_pnt(
+        let (flag, t_val, dist) = f.context().compute_pe_pnt(
             &BRepTool::vertex_point(&v),
             BRepTool::vertex_tolerance(&v) + fuzzy,
             &e,
@@ -102,17 +102,17 @@ pub fn intersect_ve(
             let mut found = None;
             for pb in &pbs {
                 let (t1, t2) = pb.range();
-                if a_t > t1 && a_t < t2 {
+                if t_val > t1 && t_val < t2 {
                     found = Some(pb.clone());
                     break;
                 }
             }
-            let Some(mut a_pb) = found else {
+            let Some(mut pb_val) = found else {
                 continue;
             };
-            a_pb.append_ext_pave(BopdsPave::new(n_vx, a_t));
-            crate::pave_force_ve::write_pave_block(f, &a_pb);
-            add_ext_pave(f.ds_mut(), t.n_e, a_t, n_vx);
+            pb_val.append_ext_pave(BopdsPave::new(n_vx, t_val));
+            crate::pave_force_ve::write_pave_block(f, &pb_val);
+            add_ext_pave(f.ds_mut(), t.n_e, t_val, n_vx);
             if add_interfs {
                 if f.ds().is_new_shape(n_vx) {
                     f.ds_mut().add_interf_ve(n_v, t.n_e, Some(n_vx));

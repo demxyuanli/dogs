@@ -453,14 +453,14 @@ fn same_parameter_edge(edge: &Edge, tol: f64) -> f64 {
                 out_pcs.push(cur_pc);
                 continue;
             }
-            let a_tol = if is_ana && is_bsp { 1.0e-7 } else { tol };
+            let tol_val = if is_ana && is_bsp { 1.0e-7 } else { tol };
             let same_p = ApproxSameParameter::new(
                 c3d.as_ref(),
                 cur_pc.as_ref(),
                 surf.as_ref(),
                 f3d,
                 l3d,
-                a_tol,
+                tol_val,
             );
             if same_p.same_parameter {
                 maxdist = maxdist.max(same_p.tol_reached);

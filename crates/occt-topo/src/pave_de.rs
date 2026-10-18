@@ -175,7 +175,7 @@ pub fn de_fill_paves<F: PaveFillerLike>(
 
 /// `MakeSplitEdge1`.
 pub fn make_split_edge1(
-    a_e: &Edge,
+    e_par: &Edge,
     f: &Face,
     v1: &Vertex,
     p1: f64,
@@ -183,14 +183,14 @@ pub fn make_split_edge1(
     p2: f64,
 ) -> Result<Edge, String> {
     let tol = 1.0e-7;
-    let e = AlgoTools::make_split_edge(a_e, Some(&v1.0), p1, Some(&v2.0), p2)?;
+    let e = AlgoTools::make_split_edge(e_par, Some(&v1.0), p1, Some(&v2.0), p2)?;
     if let Some(mut g) = GeometryRegistry::global().edge_geom(&e.0) {
         g.degenerated = true;
         g.tolerance = tol;
         GeometryRegistry::global().set_edge(&e.0, g);
     }
     let face_key = GeometryRegistry::shape_key(&f.0);
-    if let Some(pc) = GeometryRegistry::global().edge_pcurve(&a_e.0, face_key) {
+    if let Some(pc) = GeometryRegistry::global().edge_pcurve(&e_par.0, face_key) {
         GeometryRegistry::global().set_edge_pcurve(&e.0, face_key, pc);
     }
     Ok(e)
@@ -211,9 +211,9 @@ pub fn de_make_split_edge<F: PaveFillerLike>(f: &mut F, n_de: usize, n_df: usize
     let nb_pb = lpb.len();
     let mut clear_all = false;
     let mut splits: Vec<(usize, usize)> = Vec::new();
-    for (i, a_pb) in lpb.iter().enumerate() {
-        let (n_v1, n_v2) = a_pb.indices();
-        let (t1, t2) = a_pb.range();
+    for (i, pb_val) in lpb.iter().enumerate() {
+        let (n_v1, n_v2) = pb_val.indices();
+        let (t1, t2) = pb_val.range();
         if f.ds().is_new_shape(n_v1) || nb_pb > 1 {
             let Some(v1s) = f.ds().shape(n_v1).cloned() else {
                 continue;
@@ -226,9 +226,9 @@ pub fn de_make_split_edge<F: PaveFillerLike>(f: &mut F, n_de: usize, n_df: usize
             let mut v2 = Vertex(v2s);
             v2.0.set_orientation(Orientation::Reversed);
             let sp = make_split_edge1(&de, &df, &v1, t1, &v2, t2)?;
-            let mut a_si = BopdsShapeInfo::new(sp.0);
-            a_si.change_sub_shapes().extend_from_slice(&[n_v1, n_v2]);
-            let n_sp = f.ds_mut().append_info(a_si);
+            let mut si_val = BopdsShapeInfo::new(sp.0);
+            si_val.change_sub_shapes().extend_from_slice(&[n_v1, n_v2]);
+            let n_sp = f.ds_mut().append_info(si_val);
             splits.push((i, n_sp));
         } else {
             clear_all = true;
@@ -313,8 +313,8 @@ pub fn de_process<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                 let si = BopdsShapeInfo::new(e.0);
                 let n_en = f.ds_mut().append_info(si);
                 let blocks = f.ds_mut().change_pave_blocks_mut(an_edge_index);
-                if let Some(a_pbd) = blocks.first_mut() {
-                    a_pbd.set_edge(n_en);
+                if let Some(pbd_val) = blocks.first_mut() {
+                    pbd_val.set_edge(n_en);
                 }
             }
             _ => {}

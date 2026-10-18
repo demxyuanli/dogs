@@ -275,17 +275,17 @@ pub fn build_c3d_on_iso_line(
 
     if is_u {
         // `cxx:3111-3145`.
-        let mut a_v1 = f2d.y().min(l2d.y());
-        let mut a_v2 = f2d.y().max(l2d.y());
-        if a_v2 < v1 - tolerance || a_v1 > v2 + tolerance {
+        let mut v1_val = f2d.y().min(l2d.y());
+        let mut v2_val = f2d.y().max(l2d.y());
+        if v2_val < v1 - tolerance || v1_val > v2 + tolerance {
             return None;
         } else if Precision::is_infinite(v1) || Precision::is_infinite(v2) {
-            if (a_v2 - a_v1).abs() < PCONFUSION {
+            if (v2_val - v1_val).abs() < PCONFUSION {
                 return None;
             }
             surf = Arc::new(
                 crate::rectangular_trimmed::GeomRectangularTrimmedSurface::uv(
-                    surf, u1, u2, a_v1, a_v2,
+                    surf, u1, u2, v1_val, v2_val,
                 )
                 // OCCT lets `Geom_RectangularTrimmedSurface` throw here; the
                 // deviation guards above make it unreachable, so a failure is
@@ -294,42 +294,42 @@ pub fn build_c3d_on_iso_line(
             );
             is_to_trim = false;
         } else {
-            a_v1 = a_v1.max(v1);
-            a_v2 = a_v2.min(v2);
-            if (a_v2 - a_v1).abs() < PCONFUSION {
+            v1_val = v1_val.max(v1);
+            v2_val = v2_val.min(v2);
+            if (v2_val - v1_val).abs() < PCONFUSION {
                 return None;
             }
         }
-        trim_first = a_v1;
-        trim_last = a_v2;
+        trim_first = v1_val;
+        trim_last = v2_val;
         iso = surf.u_iso_curve(param)?;
     } else {
         // `cxx:3146-3173`.
-        let mut a_u1 = f2d.x().min(l2d.x());
-        let mut a_u2 = f2d.x().max(l2d.x());
-        if a_u2 < u1 - tolerance || a_u1 > u2 + tolerance {
+        let mut u1_val = f2d.x().min(l2d.x());
+        let mut u2_val = f2d.x().max(l2d.x());
+        if u2_val < u1 - tolerance || u1_val > u2 + tolerance {
             return None;
         } else if Precision::is_infinite(u1) || Precision::is_infinite(u2) {
-            if (a_u2 - a_u1).abs() < PCONFUSION {
+            if (u2_val - u1_val).abs() < PCONFUSION {
                 return None;
             }
             surf = Arc::new(
                 crate::rectangular_trimmed::GeomRectangularTrimmedSurface::uv(
-                    surf, a_u1, a_u2, v1, v2,
+                    surf, u1_val, u2_val, v1, v2,
                 )
                 // See the U arm above.
                 .ok()?,
             );
             is_to_trim = false;
         } else {
-            a_u1 = a_u1.max(u1);
-            a_u2 = a_u2.min(u2);
-            if (a_u2 - a_u1).abs() < PCONFUSION {
+            u1_val = u1_val.max(u1);
+            u2_val = u2_val.min(u2);
+            if (u2_val - u1_val).abs() < PCONFUSION {
                 return None;
             }
         }
-        trim_first = a_u1;
-        trim_last = a_u2;
+        trim_first = u1_val;
+        trim_last = u2_val;
         iso = surf.v_iso_curve(param)?;
     }
 

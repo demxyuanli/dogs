@@ -97,14 +97,14 @@ impl BvhBox2d {
     }
 
     /// `BVH_Box::IsOut(theMinPoint, theMaxPoint)`.
-    pub fn is_out_corners(&self, the_min: BvhVec2d, the_max: BvhVec2d) -> bool {
+    pub fn is_out_corners(&self, min_par: BvhVec2d, max_par: BvhVec2d) -> bool {
         if !self.is_valid() {
             return true;
         }
-        if self.min.x > the_max.x || self.max.x < the_min.x {
+        if self.min.x > max_par.x || self.max.x < min_par.x {
             return true;
         }
-        if self.min.y > the_max.y || self.max.y < the_min.y {
+        if self.min.y > max_par.y || self.max.y < min_par.y {
             return true;
         }
         false
@@ -123,7 +123,7 @@ impl BvhBox2d {
     /// Returns `(isInside, hasOverlap)`. The loop updates `hasOverlap` per
     /// axis and bails on the first miss; `isInside` requires containment on
     /// every axis (`BVH_Box.hxx:327-344`).
-    pub fn contains_corners(&self, the_min: BvhVec2d, the_max: BvhVec2d) -> (bool, bool) {
+    pub fn contains_corners(&self, min_par: BvhVec2d, max_par: BvhVec2d) -> (bool, bool) {
         if !self.is_valid() {
             return (false, false);
         }
@@ -132,8 +132,8 @@ impl BvhBox2d {
         for i in 0..2 {
             let amin = self.min.coord(i);
             let amax = self.max.coord(i);
-            let bmin = the_min.coord(i);
-            let bmax = the_max.coord(i);
+            let bmin = min_par.coord(i);
+            let bmax = max_par.coord(i);
             has_overlap = amin <= bmax && amax >= bmin;
             if !has_overlap {
                 return (false, false);

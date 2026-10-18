@@ -319,12 +319,12 @@ pub fn check_wire_closed(wire: &Wire) -> bool {
     // Connectivity: every edge in one component via shared endpoints.
     let mut parent: Vec<usize> = (0..edges.len()).collect();
     for i in 0..edges.len() {
-        let (a_i, b_i) = (endpoints[2 * i], endpoints[2 * i + 1]);
+        let (i_val, b_i) = (endpoints[2 * i], endpoints[2 * i + 1]);
         for j in (i + 1)..edges.len() {
-            let (a_j, b_j) = (endpoints[2 * j], endpoints[2 * j + 1]);
-            if a_i.distance(&a_j) <= tol
-                || a_i.distance(&b_j) <= tol
-                || b_i.distance(&a_j) <= tol
+            let (j_val, b_j) = (endpoints[2 * j], endpoints[2 * j + 1]);
+            if i_val.distance(&j_val) <= tol
+                || i_val.distance(&b_j) <= tol
+                || b_i.distance(&j_val) <= tol
                 || b_i.distance(&b_j) <= tol
             {
                 union(&mut parent, i, j);

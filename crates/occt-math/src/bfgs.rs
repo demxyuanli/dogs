@@ -181,10 +181,10 @@ impl BFGS {
 
             for i in 1..=n {
                 for j in 1..=n {
-                    let a_new = hessin.value(i, j) + fac * xi.value(i) * xi.value(j)
+                    let new_val = hessin.value(i, j) + fac * xi.value(i) * xi.value(j)
                         - fad * hdg.value(i) * hdg.value(j)
                         + fae * dg.value(i) * dg.value(j);
-                    hessin.set_value(i, j, a_new);
+                    hessin.set_value(i, j, new_val);
                 }
             }
 
@@ -359,22 +359,22 @@ fn compute_min_max_scale(
     max_scale: &mut f64,
 ) -> bool {
     for an_idx in 1..=left.upper() {
-        let a_left = left.value(an_idx) - point.value(an_idx);
-        let a_right = right.value(an_idx) - point.value(an_idx);
+        let left_val = left.value(an_idx) - point.value(an_idx);
+        let right_val = right.value(an_idx) - point.value(an_idx);
         if dir.value(an_idx).abs() > REAL_SMALL {
             // Use PConfusion to get off a little from the bounds to prevent
             // possible refuse in Value function.
-            let l_scale = (a_left + P_CONFUSION) / dir.value(an_idx);
-            let r_scale = (a_right - P_CONFUSION) / dir.value(an_idx);
-            if a_left.abs() < P_CONFUSION {
+            let l_scale = (left_val + P_CONFUSION) / dir.value(an_idx);
+            let r_scale = (right_val - P_CONFUSION) / dir.value(an_idx);
+            if left_val.abs() < P_CONFUSION {
                 // Point is on the left border. — cxx:161-166
                 *max_scale = (*max_scale).min(0.0f64.max(r_scale));
                 *min_scale = (*min_scale).max(0.0f64.min(r_scale));
-            } else if a_right.abs() < P_CONFUSION {
+            } else if right_val.abs() < P_CONFUSION {
                 // Point is on the right border. — cxx:167-172
                 *max_scale = (*max_scale).min(0.0f64.max(l_scale));
                 *min_scale = (*min_scale).max(0.0f64.min(l_scale));
-            } else if a_left * a_right < 0.0 {
+            } else if left_val * right_val < 0.0 {
                 // Point is inside allowed range. — cxx:173-178
                 *max_scale = (*max_scale).min(l_scale.max(r_scale));
                 *min_scale = (*min_scale).max(l_scale.min(r_scale));
@@ -385,7 +385,7 @@ fn compute_min_max_scale(
         } else {
             // Direction is parallel to the border.
             // Check that the point is not out of bounds — cxx:185-193
-            if a_left > P_CONFUSION || a_right < -P_CONFUSION {
+            if left_val > P_CONFUSION || right_val < -P_CONFUSION {
                 return false;
             }
         }

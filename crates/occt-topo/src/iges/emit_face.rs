@@ -246,7 +246,7 @@ impl IgesWriter {
         // call from the face path passes 'theIsBRepMode = false'.
         // 'cxx:504-538': the 'theIsBRepMode && Surf->IsKind(Geom_Plane)' branch
         // is false too, so 'trans' only carries the extrusion scale.
-        let my_len = surface_transfer_length(surf_base.as_ref(), vfirst, vlast);
+        let len_val = surface_transfer_length(surf_base.as_ref(), vfirst, vlast);
         let mut trans = GpTrsf2d::identity();
         let mut u_fact = 1.0;
         if is_extr {
@@ -259,7 +259,7 @@ impl IgesWriter {
         }
         if is_cyl || is_cone || is_rev {
             // 'cxx:533-538': 'uFact = 1. / myLen'.
-            u_fact = 1.0 / my_len;
+            u_fact = 1.0 / len_val;
         }
         curve2d = transform_pcurve(&curve2d, &trans, u_fact, &mut first, &mut last)?;
 

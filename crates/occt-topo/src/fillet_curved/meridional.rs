@@ -442,12 +442,12 @@ pub(super) fn plane_cone_blend(pln: &PlaneInfo, cone: &ConeInfo, r: f64, tol: f6
 
 /// Build the torus band blend for a coaxial cylinder + cone pair.
 pub(super) fn cylinder_cone_blend(cyl: &CylinderInfo, cone: &ConeInfo, r: f64, tol: f64) -> Result<TorusBlendGeom, String> {
-    let a_cyl = cyl.axis.normalized();
-    let a_cone = cone.axis.normalized();
-    if a_cyl.xyz().crossed(&a_cone.xyz()).modulus() > tol.max(1e-6) {
+    let cyl_val = cyl.axis.normalized();
+    let cone_val = cone.axis.normalized();
+    if cyl_val.xyz().crossed(&cone_val.xyz()).modulus() > tol.max(1e-6) {
         return Err("fillet_curved: cylinder+cone blend requires coaxial surfaces".to_string());
     }
-    let axis = a_cone;
+    let axis = cone_val;
     let ref_pt = cone.apex;
     let m_cyl = MeridionalShape::Cylinder { rho: cyl.radius };
     let m_cone = cone_meridional(cone, &axis, &ref_pt);
@@ -472,15 +472,15 @@ pub(super) fn cylinder_cone_blend(cyl: &CylinderInfo, cone: &ConeInfo, r: f64, t
 
 /// Build the torus band blend for a sphere + coaxial cone pair.
 pub(super) fn cone_sphere_blend(cone: &ConeInfo, sph: &SphereInfo, r: f64, tol: f64) -> Result<TorusBlendGeom, String> {
-    let a_cone = cone.axis.normalized();
+    let cone_val = cone.axis.normalized();
     let cs = GpVec::from_pnts(&cone.apex, &sph.center);
-    let radial = cs.subtracted(&a_cone.multiplied_scalar(cs.dot(&a_cone)));
+    let radial = cs.subtracted(&cone_val.multiplied_scalar(cs.dot(&cone_val)));
     if radial.magnitude() > tol.max(1e-6) {
         return Err(
             "fillet_curved: cone+sphere blend requires the sphere centre on the cone axis".to_string(),
         );
     }
-    let axis = a_cone;
+    let axis = cone_val;
     let ref_pt = cone.apex;
     let m_cone = cone_meridional(cone, &axis, &ref_pt);
     let m_sph = MeridionalShape::Sphere { center_z: cs.dot(&axis), rho: sph.radius };

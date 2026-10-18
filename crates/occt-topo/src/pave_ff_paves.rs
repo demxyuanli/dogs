@@ -184,10 +184,10 @@ fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> 
         let Some(f_shape) = f.ds().shape(n_f).cloned() else {
             continue;
         };
-        let a_f = Face(f_shape);
+        let f_val = Face(f_shape);
         let point = curve.d0(par);
         let ctx = f.context();
-        let pc = crate::boptools_2d::curve_on_surface(&e, &a_f);
+        let pc = crate::boptools_2d::curve_on_surface(&e, &f_val);
         let mut pnt = PntOn2s {
             u1: 0.0,
             v1: 0.0,
@@ -205,7 +205,7 @@ fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> 
                 out.push(pnt);
             }
         } else if let (Ok((u1, v1)), Ok((u2, v2))) = (
-            ctx.project_point_on_face(&a_f, &point),
+            ctx.project_point_on_face(&f_val, &point),
             ctx.project_point_on_face(&f_opp, &point),
         ) {
             if n_f == n_f1 {
@@ -366,7 +366,7 @@ pub(crate) fn pave_paves_put_pave_on_curve(
     };
     let range = f.ds().interf_ff()[i].curves()[j].range();
     let fuzzy = f.fuzzy_value();
-    let mut a_tol_v = mv_tol
+    let mut tol_v_val = mv_tol
         .get(&n_v)
         .copied()
         .unwrap_or_else(|| BRepTool::vertex_tolerance(&Vertex(v_shape.clone())));
@@ -374,12 +374,12 @@ pub(crate) fn pave_paves_put_pave_on_curve(
         &Vertex(v_shape.clone()),
         curve.as_ref(),
         range,
-        a_tol_v,
+        tol_v_val,
         tol_r3d,
         fuzzy,
     );
     if t_on.is_none() && i_check_extend != 0 && !f.verts_to_avoid_extension().contains(&n_v) {
-        let mut an_extra = a_tol_v;
+        let mut an_extra = tol_v_val;
         if extended_tolerance(f, n_v, mi, &mut an_extra, i_check_extend) {
             if let Some(t) = vertex_on_curve_param(
                 &Vertex(v_shape.clone()),
@@ -390,7 +390,7 @@ pub(crate) fn pave_paves_put_pave_on_curve(
                 fuzzy,
             ) {
                 let p_on_c = curve.d0(t);
-                a_tol_v = p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
+                tol_v_val = p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
                 t_on = Some(t);
             }
         }
@@ -399,7 +399,7 @@ pub(crate) fn pave_paves_put_pave_on_curve(
         return;
     };
     let d_tol = D_TOLERANCE;
-    let p_tol = PCONFUSION.max(tol_r3d.max(a_tol_v));
+    let p_tol = PCONFUSION.max(tol_r3d.max(tol_v_val));
     let existing = f.ds().interf_ff()[i].curves()[j]
         .pave_blocks()
         .first()

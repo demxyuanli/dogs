@@ -191,13 +191,13 @@ pub fn eval_curve_rational_d2(
     if poles.len() != weights.len() || poles.is_empty() {
         return (GpPnt::zero(), GpVec::zero(), GpVec::zero());
     }
-    let a_poles: Vec<GpPnt> = poles
+    let poles_val: Vec<GpPnt> = poles
         .iter()
         .zip(weights.iter())
         .map(|(p, w)| GpPnt::new(p.x() * w, p.y() * w, p.z() * w))
         .collect();
     let w_poles: Vec<GpPnt> = weights.iter().map(|w| GpPnt::new(*w, 0.0, 0.0)).collect();
-    let (a, da, d2a) = eval_curve_d2(&a_poles, knots, degree, u);
+    let (a, da, d2a) = eval_curve_d2(&poles_val, knots, degree, u);
     let (_, dwv, d2wv) = eval_curve_d2(&w_poles, knots, degree, u);
     let w = eval_curve(&w_poles, knots, degree, u).x();
     if w.abs() < 1e-30 {

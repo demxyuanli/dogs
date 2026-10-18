@@ -210,16 +210,16 @@ fn make_connexity_edge_blocks(edges: &[TopoShape]) -> Vec<Vec<TopoShape>> {
 
 /// `MakeWires` (`BOPAlgo_Tools.cxx:805`).
 pub fn make_wires(
-    the_edges: &[TopoShape],
+    edges_par: &[TopoShape],
     wires: &mut Vec<TopoShape>,
     check_unique_plane: bool,
     dm_edge_tgt: &mut HashMap<usize, GpDir>,
     m_edges_no_unique_plane: &mut HashSet<usize>,
 ) {
-    if the_edges.is_empty() {
+    if edges_par.is_empty() {
         return;
     }
-    let blocks = make_connexity_edge_blocks(the_edges);
+    let blocks = make_connexity_edge_blocks(edges_par);
     let b = TopoBuilder::new();
     for cbe in blocks {
         if check_unique_plane {

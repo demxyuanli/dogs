@@ -236,16 +236,16 @@ impl ShapeFixFace {
             nb_wires_new += 1;
             // cxx:2955-2972.
             for iw in &int_wires {
-                let mut a_face = empty_copied_face(&tmp_face);
-                a_face.0.set_orientation(Orientation::Forward);
-                builder.add(&mut a_face.0, &iw.0);
+                let mut face_val = empty_copied_face(&tmp_face);
+                face_val.0.set_orientation(Orientation::Forward);
+                builder.add(&mut face_val.0, &iw.0);
                 // `BRepTopAdaptor_FClass2d clas(aFace, PConfusion())` then
                 // `PerformInfinitePoint()`. OCCT's constructor cannot fail; the
                 // port's returns `Err` for a face whose UV definition is
                 // degenerate, and that is folded into the `else` (Reversed)
                 // arm rather than given an invented state.
                 let inside = matches!(
-                    FClass2d::new(&a_face, PCONFUSION),
+                    FClass2d::new(&face_val, PCONFUSION),
                     Ok(clas) if clas.perform_infinite_point() == FaceState::In
                 );
                 if inside {

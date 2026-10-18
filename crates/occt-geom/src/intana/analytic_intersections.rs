@@ -130,9 +130,9 @@ pub(super) fn plane_plane_line(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) -
         // `cxx:449-508`: with a near-zero angle between the planes the origin
         // above carries ~1e-4 of error, so OCCT re-derives it from two
         // line/plane solves (`IntAna_IntConicQuad`).
-        let a_dist1 = a1 * pt1.x() + b1 * pt1.y() + c1 * pt1.z() + d1;
-        let a_dist2 = a2 * pt1.x() + b2 * pt1.y() + c2 * pt1.z() + d2;
-        if a_dist1.abs() > A_TRESH_DIST || a_dist2.abs() > A_TRESH_DIST {
+        let dist1_val = a1 * pt1.x() + b1 * pt1.y() + c1 * pt1.z() + d1;
+        let dist2_val = a2 * pt1.x() + b2 * pt1.y() + c2 * pt1.z() + d2;
+        if dist1_val.abs() > A_TRESH_DIST || dist2_val.abs() > A_TRESH_DIST {
             let dn1 = GpDir::from_xyz(&n1.xyz()).ok()?;
             let l1 = GpLin::from_pnt_dir(pt1, dn1);
             let icq = IntAnaIntConicQuad::line_plane(&l1, p1, tol_ang, tol, 0.0);

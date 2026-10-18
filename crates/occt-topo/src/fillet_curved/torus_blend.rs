@@ -490,17 +490,17 @@ pub(super) fn fillet_edge_parallel_cylinders(
     let b = TopoBuilder::new();
 
     let ang = |p: &Xy, o: &Xy| (p.y - o.y).atan2(p.x - o.x);
-    let a_t1 = ang(&t1, &o1);
+    let t1_val = ang(&t1, &o1);
     let p2_1 = ang(&p2, &o1);
-    let a_t2 = ang(&t2, &o2);
+    let t2_val = ang(&t2, &o2);
     let p2_2 = ang(&p2, &o2);
 
     let outer1 = o1.sub(&o2.sub(&o1).normalized().scale(c1.radius));
-    let a_outer1 = ang(&outer1, &o1);
-    let t1_hi = sweep_through(a_t1, p2_1, a_outer1);
+    let outer1_val = ang(&outer1, &o1);
+    let t1_hi = sweep_through(t1_val, p2_1, outer1_val);
     let outer2 = o2.sub(&o1.sub(&o2).normalized().scale(c2.radius));
-    let a_outer2 = ang(&outer2, &o2);
-    let t2_hi = sweep_through(a_t2, p2_2, a_outer2);
+    let outer2_val = ang(&outer2, &o2);
+    let t2_hi = sweep_through(t2_val, p2_2, outer2_val);
 
     let t1_bottom = t1.to_pnt(z_lo, &xh, &yh, &ax, &ref_pt);
     let t1_top = t1.to_pnt(z_hi, &xh, &yh, &ax, &ref_pt);
@@ -515,22 +515,22 @@ pub(super) fn fillet_edge_parallel_cylinders(
 
     // Blend arc in the two cap planes (the SHORT arc from T1 to T2).
     let blend_center = c_xy;
-    let mut blend_sweep = a_t2 - a_t1;
+    let mut blend_sweep = t2_val - t1_val;
     while blend_sweep > PI {
         blend_sweep -= 2.0 * PI;
     }
     while blend_sweep < -PI {
         blend_sweep += 2.0 * PI;
     }
-    let blend_end = a_t1 + blend_sweep;
-    let blend_bottom_arc = build_xy_arc(&b, &blend_center, z_lo, r, a_t1, blend_end, &xh, &yh, &ax, &ref_pt)?;
-    let blend_top_arc = build_xy_arc(&b, &blend_center, z_hi, r, a_t1, blend_end, &xh, &yh, &ax, &ref_pt)?;
+    let blend_end = t1_val + blend_sweep;
+    let blend_bottom_arc = build_xy_arc(&b, &blend_center, z_lo, r, t1_val, blend_end, &xh, &yh, &ax, &ref_pt)?;
+    let blend_top_arc = build_xy_arc(&b, &blend_center, z_hi, r, t1_val, blend_end, &xh, &yh, &ax, &ref_pt)?;
 
     // Retained arcs on each cylinder lateral face.
-    let arc1_bottom = build_xy_arc(&b, &o1, z_lo, c1.radius, a_t1, t1_hi, &xh, &yh, &ax, &ref_pt)?;
-    let arc1_top = build_xy_arc(&b, &o1, z_hi, c1.radius, t1_hi, a_t1 + 2.0 * PI, &xh, &yh, &ax, &ref_pt)?;
-    let arc2_bottom = build_xy_arc(&b, &o2, z_lo, c2.radius, a_t2, t2_hi, &xh, &yh, &ax, &ref_pt)?;
-    let arc2_top = build_xy_arc(&b, &o2, z_hi, c2.radius, t2_hi, a_t2 + 2.0 * PI, &xh, &yh, &ax, &ref_pt)?;
+    let arc1_bottom = build_xy_arc(&b, &o1, z_lo, c1.radius, t1_val, t1_hi, &xh, &yh, &ax, &ref_pt)?;
+    let arc1_top = build_xy_arc(&b, &o1, z_hi, c1.radius, t1_hi, t1_val + 2.0 * PI, &xh, &yh, &ax, &ref_pt)?;
+    let arc2_bottom = build_xy_arc(&b, &o2, z_lo, c2.radius, t2_val, t2_hi, &xh, &yh, &ax, &ref_pt)?;
+    let arc2_top = build_xy_arc(&b, &o2, z_hi, c2.radius, t2_hi, t2_val + 2.0 * PI, &xh, &yh, &ax, &ref_pt)?;
 
     // Lateral faces.
     let surf1 = BRepTool::face_surface(f1).ok_or("cylinder face 1 has no surface")?;

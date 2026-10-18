@@ -72,8 +72,8 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
             }
             let cb = f.ds().common_block(&pb).cloned();
             let b_cb = cb.is_some();
-            if let Some(ref a_cb) = cb {
-                if let Some(pbr) = a_cb.pave_block1() {
+            if let Some(ref cb_val) = cb {
+                if let Some(pbr) = cb_val.pave_block1() {
                     if !mcb.insert(pb_key(pbr)) {
                         continue;
                     }
@@ -85,9 +85,9 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
             let mut b_to_split = true;
             if !b_v1 && !b_v2 {
                 if !f.non_destructive() || !b_cb {
-                    if let Some(ref a_cb) = cb {
+                    if let Some(ref cb_val) = cb {
                         let mut found = None;
-                        for pbx in a_cb.pave_blocks() {
+                        for pbx in cb_val.pave_blocks() {
                             let n_ex = pbx.original_edge();
                             if f.ds().pave_blocks(n_ex).len() == 1 {
                                 found = Some(pbx.clone());
@@ -97,11 +97,11 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
                         if let Some(pbr) = found {
                             b_to_split = false;
                             let n_e_real = pbr.original_edge();
-                            if let Some(mut a_cb) = f.ds().common_block(&pb).cloned() {
-                                a_cb.set_real_pave_block(&pbr);
-                                a_cb.set_edge(n_e_real);
-                                let tol = compute_tolerance_of_cb(&a_cb, f.ds(), f.context());
-                                f.ds_mut().set_common_block(&pb, a_cb);
+                            if let Some(mut cb_val) = f.ds().common_block(&pb).cloned() {
+                                cb_val.set_real_pave_block(&pbr);
+                                cb_val.set_edge(n_e_real);
+                                let tol = compute_tolerance_of_cb(&cb_val, f.ds(), f.context());
+                                f.ds_mut().set_common_block(&pb, cb_val);
                                 update_edge_tolerance(f, n_e_real, tol)?;
                             }
                         }
@@ -114,33 +114,33 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
                     }
                 }
             }
-            let mut a_pb = pb.clone();
+            let mut pb_val = pb.clone();
             let mut n_e_split = n_e;
             let mut n_v1s = n_v1;
             let mut n_v2s = n_v2;
             if b_cb {
-                if let Some(a_cb) = f.ds().common_block(&pb) {
-                    if let Some(pbr) = a_cb.pave_block1() {
-                        a_pb = pbr.clone();
-                        n_e_split = a_pb.original_edge();
-                        let (a, b) = a_pb.indices();
+                if let Some(cb_val) = f.ds().common_block(&pb) {
+                    if let Some(pbr) = cb_val.pave_block1() {
+                        pb_val = pbr.clone();
+                        n_e_split = pb_val.original_edge();
+                        let (a, b) = pb_val.indices();
                         n_v1s = a;
                         n_v2s = b;
                     }
                 }
             }
-            let (a_t1, a_t2) = a_pb.range();
-            if (a_t2 - a_t1).abs() <= PCONFUSION {
+            let (t1_val, t2_val) = pb_val.range();
+            if (t2_val - t1_val).abs() <= PCONFUSION {
                 continue;
             }
             tasks.push(SplitTask {
-                pb: a_pb,
+                pb: pb_val,
                 cb_key: cb.and_then(|c| c.pave_block1().map(pb_key)),
                 n_e: n_e_split,
                 n_v1: n_v1s,
                 n_v2: n_v2s,
-                t1: a_t1,
-                t2: a_t2,
+                t1: t1_val,
+                t2: t2_val,
             });
         }
     }
@@ -157,13 +157,13 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
         let Some(v2s) = f.ds().shape(t.n_v2).cloned() else {
             return Err(format!("make_split_edges: vertex {} not found", t.n_v2));
         };
-        let mut a_e = e_shape;
-        a_e.set_orientation(Orientation::Forward);
+        let mut e_val = e_shape;
+        e_val.set_orientation(Orientation::Forward);
         let mut v1 = v1s;
         v1.set_orientation(Orientation::Forward);
         let mut v2 = v2s;
         v2.set_orientation(Orientation::Reversed);
-        let sp = AlgoTools::make_split_edge(&Edge(a_e), Some(&v1), t.t1, Some(&v2), t.t2)
+        let sp = AlgoTools::make_split_edge(&Edge(e_val), Some(&v1), t.t1, Some(&v2), t.t2)
             .map_err(|e| {
                 let msg = format!("make_split_edges: {e}");
                 f.add_error(msg.clone());

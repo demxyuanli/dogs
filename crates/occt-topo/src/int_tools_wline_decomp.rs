@@ -32,35 +32,35 @@ pub fn decomposition_of_wline(
     new_lines: &mut Vec<WLine>,
 ) -> bool {
     let b_ret = false;
-    let a_nb_pnts = wline.nb_pnts();
+    let nb_pnts_val = wline.nb_pnts();
     let b_avoid_line_constructor = avoid_l_constructor;
-    if a_nb_pnts == 0 {
+    if nb_pnts_val == 0 {
         return b_ret;
     }
     if !b_avoid_line_constructor && line_parts.is_empty() {
         return b_ret;
     }
 
-    let mut an_array_of_lines: Vec<Vec<i32>> = vec![Vec::new(); (a_nb_pnts as usize) + 1];
-    let mut an_array_of_line_type: Vec<i32> = vec![0; (a_nb_pnts as usize) + 1];
+    let mut an_array_of_lines: Vec<Vec<i32>> = vec![Vec::new(); (nb_pnts_val as usize) + 1];
+    let mut an_array_of_line_type: Vec<i32> = vec![0; (nb_pnts_val as usize) + 1];
     let mut list_of_point_index: Vec<i32> = Vec::new();
 
     let mut nblines = 0i32;
-    let a_tol = 0.5 * CONFUSION;
+    let tol_val = 0.5 * CONFUSION;
     let mut b_is_prev_point_on_boundary = false;
     let mut b_is_point_on_boundary = false;
 
-    for pit in 1..=a_nb_pnts {
+    for pit in 1..=nb_pnts_val {
         let mut b_is_current_point_on_boundary = false;
-        let a_point = wline.point(pit);
+        let point_val = wline.point(pit);
         for i in 0..2 {
             let ga = if i == 0 { surface1 } else { surface2 };
             let (umin, umax) = ga.u_range();
             let (vmin, vmax) = ga.v_range();
             let (u, v) = if i == 0 {
-                a_point.parameters_on_s1()
+                point_val.parameters_on_s1()
             } else {
-                a_point.parameters_on_s2()
+                point_val.parameters_on_s2()
             };
             for j in 0..2 {
                 let isperiodic = if j == 0 {
@@ -74,7 +74,7 @@ pub fn decomposition_of_wline(
                 let (resolution, period, alowerboundary, aupperboundary, parameter) =
                     if j == 0 {
                         (
-                            u_resolution(ga, a_tol),
+                            u_resolution(ga, tol_val),
                             u_period(ga).unwrap_or(0.0),
                             umin,
                             umax,
@@ -82,7 +82,7 @@ pub fn decomposition_of_wline(
                         )
                     } else {
                         (
-                            v_resolution(ga, a_tol),
+                            v_resolution(ga, tol_val),
                             v_period(ga).unwrap_or(0.0),
                             vmin,
                             vmax,
@@ -157,8 +157,8 @@ pub fn decomposition_of_wline(
             } else {
                 neighbour[0]
             };
-            let a_point = *wline.point(an_index);
-            let mut new_p = a_point;
+            let point_val = *wline.point(an_index);
+            let mut new_p = point_val;
             if list_of_index.len() < 2 {
                 seq_of_pnt_on_2s.push(new_p);
                 list_of_fl_index.push(seq_of_pnt_on_2s.len() as i32);
@@ -192,9 +192,9 @@ pub fn decomposition_of_wline(
                         ga.is_v_periodic()
                     };
                     let resolution = if parit == 0 {
-                        u_resolution(ga, a_tol)
+                        u_resolution(ga, tol_val)
                     } else {
-                        v_resolution(ga, a_tol)
+                        v_resolution(ga, tol_val)
                     };
                     let alowerboundary = if parit == 0 { umin } else { vmin };
                     let aupperboundary = if parit == 0 { umax } else { vmax };
@@ -349,10 +349,10 @@ pub fn decomposition_of_wline(
                                         let (u1, v1, u2, v2) = atmppoint.parameters();
                                         let p1 = surface1.d0(u1, v1);
                                         let p2 = surface2.d0(u2, v2);
-                                        let p0 = a_point.value();
-                                        if p0.distance(&p1) <= a_tol
-                                            && p0.distance(&p2) <= a_tol
-                                            && p1.distance(&p2) <= a_tol
+                                        let p0 = point_val.value();
+                                        if p0.distance(&p1) <= tol_val
+                                            && p0.distance(&p2) <= tol_val
+                                            && p1.distance(&p2) <= tol_val
                                         {
                                             b_compute_line_end = false;
                                             new_p.set_uv_on(surfit == 0, anew_u, anew_v);
@@ -450,8 +450,8 @@ pub fn decomposition_of_wline(
                         } else {
                             surface1
                         };
-                        let a_p3d = surface.d0(anewpoint.x(), anewpoint.y());
-                        if let Some(proj) = project_point_on_surface(surface_other, &a_p3d, 0.0) {
+                        let p3d_val = surface.d0(anewpoint.x(), anewpoint.y());
+                        if let Some(proj) = project_point_on_surface(surface_other, &p3d_val, 0.0) {
                             if proj.distance < criteria {
                                 let mut found_u = u;
                                 let mut found_v = v;
@@ -492,7 +492,7 @@ pub fn decomposition_of_wline(
                                 }
                                 if surfit == 0 {
                                     new_p.set_value(
-                                        a_p3d,
+                                        p3d_val,
                                         anewpoint.x(),
                                         anewpoint.y(),
                                         found_u,
@@ -500,7 +500,7 @@ pub fn decomposition_of_wline(
                                     );
                                 } else {
                                     new_p.set_value(
-                                        a_p3d,
+                                        p3d_val,
                                         found_u,
                                         found_v,
                                         anewpoint.x(),

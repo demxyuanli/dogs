@@ -22,12 +22,12 @@ impl BeanFaceIntersector {
         *v = self.vmin;
         let (su, sv, d) = self.closest_params_dist(&p);
         let projection_found = d.is_finite();
-        let mut a_distance = d;
-        let mut the_u = su;
-        let mut the_v = sv;
+        let mut distance_val = d;
+        let mut u_val = su;
+        let mut v_val = sv;
 
         if !projection_found {
-            a_distance = f64::MAX;
+            distance_val = f64::MAX;
             for i in 0..4 {
                 let an_iso = if i == 0 {
                     self.umin
@@ -38,21 +38,21 @@ impl BeanFaceIntersector {
                 } else {
                     self.vmax
                 };
-                let a_min = if i < 2 { self.vmin } else { self.umin };
-                let a_max = if i < 2 { self.vmax } else { self.umax };
-                if !a_min.is_finite() || !a_max.is_finite() || !an_iso.is_finite() {
+                let min_val = if i < 2 { self.vmin } else { self.umin };
+                let max_val = if i < 2 { self.vmax } else { self.umax };
+                if !min_val.is_finite() || !max_val.is_finite() || !an_iso.is_finite() {
                     continue;
                 }
-                let mid = (a_min + a_max) * 0.5;
+                let mid = (min_val + max_val) * 0.5;
                 let point_min = if i < 2 {
-                    self.surface_d0(an_iso, a_min)
+                    self.surface_d0(an_iso, min_val)
                 } else {
-                    self.surface_d0(a_min, an_iso)
+                    self.surface_d0(min_val, an_iso)
                 };
                 let point_max = if i < 2 {
-                    self.surface_d0(an_iso, a_max)
+                    self.surface_d0(an_iso, max_val)
                 } else {
-                    self.surface_d0(a_max, an_iso)
+                    self.surface_d0(max_val, an_iso)
                 };
                 let point_mid = if i < 2 {
                     self.surface_d0(an_iso, mid)
@@ -71,36 +71,36 @@ impl BeanFaceIntersector {
 
                 if compute_iso {
                     if let Some((t_iso, dist_iso)) =
-                        project_point_on_iso(self.surface(), &p, i < 2, an_iso, a_min, a_max)
+                        project_point_on_iso(self.surface(), &p, i < 2, an_iso, min_val, max_val)
                     {
                         use_min_max = false;
-                        if a_distance > dist_iso {
-                            the_u = if i <= 1 { an_iso } else { t_iso };
-                            the_v = if i >= 2 { an_iso } else { t_iso };
-                            a_distance = dist_iso;
+                        if distance_val > dist_iso {
+                            u_val = if i <= 1 { an_iso } else { t_iso };
+                            v_val = if i >= 2 { an_iso } else { t_iso };
+                            distance_val = dist_iso;
                         }
                     }
                 }
 
                 if use_min_max {
                     let dmin = p.distance(&point_min);
-                    if dmin < a_distance {
-                        the_u = if i <= 1 { an_iso } else { a_min };
-                        the_v = if i >= 2 { an_iso } else { a_min };
-                        a_distance = dmin;
+                    if dmin < distance_val {
+                        u_val = if i <= 1 { an_iso } else { min_val };
+                        v_val = if i >= 2 { an_iso } else { min_val };
+                        distance_val = dmin;
                     }
                     let dmax = p.distance(&point_max);
-                    if dmax < a_distance {
-                        the_u = if i <= 1 { an_iso } else { a_max };
-                        the_v = if i >= 2 { an_iso } else { a_max };
-                        a_distance = dmax;
+                    if dmax < distance_val {
+                        u_val = if i <= 1 { an_iso } else { max_val };
+                        v_val = if i >= 2 { an_iso } else { max_val };
+                        distance_val = dmax;
                     }
                 }
             }
         }
 
-        *u = the_u.clamp(self.umin.min(self.umax), self.umin.max(self.umax));
-        *v = the_v.clamp(self.vmin.min(self.vmax), self.vmin.max(self.vmax));
+        *u = u_val.clamp(self.umin.min(self.umax), self.umin.max(self.umax));
+        *v = v_val.clamp(self.vmin.min(self.vmax), self.vmin.max(self.vmax));
         if self.umin > *u {
             *u = self.umin;
         }
@@ -113,7 +113,7 @@ impl BeanFaceIntersector {
         if self.vmax < *v {
             *v = self.vmax;
         }
-        a_distance
+        distance_val
     }
 
     /// Distance from the curve point at `arg` to the surface.
@@ -124,7 +124,7 @@ impl BeanFaceIntersector {
         if d.is_finite() {
             return d;
         }
-        let mut a_distance = f64::MAX;
+        let mut distance_val = f64::MAX;
         for i in 0..4 {
             let an_iso = if i == 0 {
                 self.umin
@@ -135,16 +135,16 @@ impl BeanFaceIntersector {
             } else {
                 self.vmax
             };
-            let a_min = if i < 2 { self.vmin } else { self.umin };
+            let min_val = if i < 2 { self.vmin } else { self.umin };
             let max = if i < 2 { self.vmax } else { self.umax };
-            if !a_min.is_finite() || !max.is_finite() || !an_iso.is_finite() {
+            if !min_val.is_finite() || !max.is_finite() || !an_iso.is_finite() {
                 continue;
             }
-            let mid = (a_min + max) * 0.5;
+            let mid = (min_val + max) * 0.5;
             let point_min = if i < 2 {
-                self.surface_d0(an_iso, a_min)
+                self.surface_d0(an_iso, min_val)
             } else {
-                self.surface_d0(a_min, an_iso)
+                self.surface_d0(min_val, an_iso)
             };
             let point_max = if i < 2 {
                 self.surface_d0(an_iso, max)
@@ -166,20 +166,20 @@ impl BeanFaceIntersector {
             }
             if compute_iso {
                 if let Some((_t, dist_iso)) =
-                    project_point_on_iso(self.surface(), &p, i < 2, an_iso, a_min, max)
+                    project_point_on_iso(self.surface(), &p, i < 2, an_iso, min_val, max)
                 {
                     use_min_max = false;
-                    if a_distance > dist_iso {
-                        a_distance = dist_iso;
+                    if distance_val > dist_iso {
+                        distance_val = dist_iso;
                     }
                 }
             }
             if use_min_max {
-                a_distance = a_distance.min(p.distance(&point_min));
-                a_distance = a_distance.min(p.distance(&point_max));
+                distance_val = distance_val.min(p.distance(&point_min));
+                distance_val = distance_val.min(p.distance(&point_max));
             }
         }
-        a_distance
+        distance_val
     }
 }
 

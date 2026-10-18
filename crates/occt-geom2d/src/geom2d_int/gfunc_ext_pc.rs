@@ -127,7 +127,7 @@ impl<'a> GFuncExtPC2d<'a> {
         let step = (self.u_supremum - self.u_infium) / f64::from(N_POINT);
         let c = self.c.expect("curve not initialized");
         let mut num = 0;
-        let mut a_max = -INFINITE;
+        let mut max_val = -INFINITE;
         loop {
             let mut u = self.u_infium + f64::from(num) * step;
             if u > self.u_supremum {
@@ -136,8 +136,8 @@ impl<'a> GFuncExtPC2d<'a> {
             let (_p, v_der) = curve_tool::geom2d_d1(c, u);
             if !Precision::is_infinite(v_der.x()) && !Precision::is_infinite(v_der.y()) {
                 let vm = v_der.magnitude();
-                if vm > a_max {
-                    a_max = vm;
+                if vm > max_val {
+                    max_val = vm;
                 }
             }
             num += 1;
@@ -145,16 +145,16 @@ impl<'a> GFuncExtPC2d<'a> {
                 break;
             }
         }
-        (a_max * TOL_FACTOR).max(MIN_TOL)
+        (max_val * TOL_FACTOR).max(MIN_TOL)
     }
 
     /// `Value` (`hxx:146-253`).
-    fn value_impl(&mut self, the_u: f64, f: &mut f64) -> bool {
+    fn value_impl(&mut self, u_par: f64, f: &mut f64) -> bool {
         let c = match self.c {
             Some(c) => c,
             None => return false,
         };
-        self.u = the_u;
+        self.u = u_par;
         let (pc, mut d1c) = curve_tool::geom2d_d1(c, self.u);
         self.pc = pc;
         if Precision::is_infinite(d1c.x()) || Precision::is_infinite(d1c.y()) {
@@ -232,18 +232,18 @@ impl<'a> GFuncExtPC2d<'a> {
     }
 
     /// `Values` (`hxx:274-353`).
-    fn values_impl(&mut self, the_u: f64, f: &mut f64, df: &mut f64) -> bool {
+    fn values_impl(&mut self, u_par: f64, f: &mut f64, df: &mut f64) -> bool {
         let c = match self.c {
             Some(c) => c,
             None => return false,
         };
         let pc_old = self.pc;
         let p_old = self.p;
-        if !self.value_impl(the_u, f) {
+        if !self.value_impl(u_par, f) {
             self.d1_init = false;
             return false;
         }
-        self.u = the_u;
+        self.u = u_par;
         self.pc = pc_old;
         self.p = p_old;
         let (pc, d1c, d2c) = curve_tool::geom2d_d2(c, self.u);
@@ -278,7 +278,7 @@ impl<'a> GFuncExtPC2d<'a> {
                 }
                 *df = (f1 - 4.0 * f2 + 3.0 * f3) / (2.0 * delta);
             }
-            self.u = the_u;
+            self.u = u_par;
             self.pc = pc_old;
             self.p = p_old;
         } else {

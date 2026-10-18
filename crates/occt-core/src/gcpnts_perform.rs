@@ -212,7 +212,7 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
         }
 
         let mut coef = 0.0;
-        let mut a_coef = 0.0;
+        let mut coef_val = 0.0;
         let mut f_coef = 0.0;
         let mut too_large = false;
         let mut correction = true;
@@ -253,12 +253,12 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
             let v1b = GpVec::from_pnts(&mid, &current_point);
             let l1b = v1b.magnitude();
             let l2 = v2.magnitude();
-            a_coef = if l1b > min_len && l2 > min_len {
+            coef_val = if l1b > min_len && l2 > min_len {
                 (v1b.cross_magnitude(&v2) / (l1b * l2)) / angle_max
             } else {
                 0.0
             };
-            coef = a_coef.max(f_coef);
+            coef = coef_val.max(f_coef);
 
             if need_check && coef < 0.55 {
                 need_check = false;
@@ -281,7 +281,7 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
                     if gdbg {
                         eprintln!(
                             "GDBG accept idx={} u2={:.17e} du={:.17e} coef={:.17e} f={:.17e} a={:.17e}",
-                            points.len(), u2, du, coef, f_coef, a_coef
+                            points.len(), u2, du, coef, f_coef, coef_val
                         );
                     }
                     params.push(u2);
@@ -321,7 +321,7 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
         du = u2 - u1;
         if more_points {
             if u1 > first {
-                if f_coef > a_coef {
+                if f_coef > coef_val {
                     let mut nd = true;
                     evaluate_du(
                         curve,

@@ -117,17 +117,17 @@ impl TopClassClassifier2d {
         let nb_points = intersector.nb_points();
         let mut d_min = f64::MAX;
         let mut p_closest: Option<IntRes2dIntersectionPoint> = None;
-        for a_point in 1..=nb_points {
-            let p_inter = *intersector.point(a_point);
+        for point_val in 1..=nb_points {
+            let p_inter = *intersector.point(point_val);
             // Test for ON.
             if p_inter.transition_of_first().position_on_curve() == IntRes2dPosition::Head {
-                self.closest = a_point as i32;
+                self.closest = point_val as i32;
                 self.state = FaceState::On;
                 return;
             }
             let param_first = p_inter.param_on_first();
             if param_first < d_min {
-                self.closest = a_point as i32;
+                self.closest = point_val as i32;
                 p_closest = Some(p_inter);
                 d_min = param_first;
             }
@@ -135,16 +135,16 @@ impl TopClassClassifier2d {
 
         // For the segments only the first point is tested.
         let nb_segments = intersector.nb_segments();
-        for a_segment in 1..=nb_segments {
-            let p_inter = *intersector.segment(a_segment).first_point();
+        for segment_val in 1..=nb_segments {
+            let p_inter = *intersector.segment(segment_val).first_point();
             if p_inter.transition_of_first().position_on_curve() == IntRes2dPosition::Head {
-                self.closest = (nb_points + a_segment + a_segment - 1) as i32;
+                self.closest = (nb_points + segment_val + segment_val - 1) as i32;
                 self.state = FaceState::On;
                 return;
             }
             let param_first = p_inter.param_on_first();
             if param_first < d_min {
-                self.closest = (nb_points + a_segment + a_segment - 1) as i32;
+                self.closest = (nb_points + segment_val + segment_val - 1) as i32;
                 p_closest = Some(p_inter);
                 d_min = param_first;
             }

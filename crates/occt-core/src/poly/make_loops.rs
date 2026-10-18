@@ -491,11 +491,11 @@ impl<'a> PolyMakeLoops<'a> {
             for link in &links {
                 let Some(ind) = self.find_link_index(link) else { continue };
                 if ind == index { continue; }
-                let mut a_ind = ind as isize;
+                let mut ind_val = ind as isize;
                 if (is_out && node1 == link.node1) || (!is_out && node1 == link.node2) {
-                    a_ind = -a_ind;
+                    ind_val = -ind_val;
                 }
-                if self.can_link_be_taken(a_ind) { n_edges += 1; }
+                if self.can_link_be_taken(ind_val) { n_edges += 1; }
             }
             if n_edges > 0 {
                 // Leave this chain.
@@ -516,13 +516,13 @@ impl<'a> PolyMakeLoops<'a> {
             for link in &next_links {
                 let Some(ind) = self.find_link_index(link) else { continue };
                 if ind == index { continue; }
-                let mut a_ind = ind as isize;
+                let mut ind_val = ind as isize;
                 if (is_out && node1 == link.node2) || (!is_out && node1 == link.node1) {
-                    a_ind = -a_ind;
+                    ind_val = -ind_val;
                 }
-                if self.can_link_be_taken(a_ind) {
+                if self.can_link_be_taken(ind_val) {
                     if next_index_s == 0 {
-                        next_index_s = a_ind;
+                        next_index_s = ind_val;
                     } else {
                         // More than one way: stop the chain.
                         next_index_s = 0;

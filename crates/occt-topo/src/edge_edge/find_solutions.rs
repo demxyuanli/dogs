@@ -480,13 +480,13 @@ pub(super) fn find_parameters(
     for i in 0..2 {
         let mut tb = if i == 0 { t1 } else { t2 };
         let mut t = if i == 0 { t2 } else { tb1 };
-        let a_c = if i == 0 { 1.0 } else { -1.0 };
+        let c_val = if i == 0 { 1.0 } else { -1.0 };
         let mut dt = res;
         let mut distp = 0.0;
         b_ret = false;
         let mut k = 1.0;
         // Looking for the point on the edge which is in the box.
-        while a_c * (t - tb) >= 0.0 {
+        while c_val * (t - tb) >= 0.0 {
             let p = c.d0(tb);
             let dist = point_box_distance(cbox, &p);
             if dist > tol {
@@ -504,7 +504,7 @@ pub(super) fn find_parameters(
                         dt = resolution_of(c, kind, res_coeff, dist);
                     }
                 }
-                tb += a_c * dt;
+                tb += c_val * dt;
             } else {
                 b_ret = true;
                 break;
@@ -524,7 +524,7 @@ pub(super) fn find_parameters(
         if tb != t {
             // One point IN, one point OUT: look for the bounding point.
             let mut tin = tb;
-            let mut tout = tb - a_c * dt;
+            let mut tout = tb - c_val * dt;
             let mut diff = tin - tout;
             while diff.abs() > ptol {
                 tb = tout + diff * cf;
@@ -612,11 +612,11 @@ impl EdgeEdge {
         let segments1 = split_range_on_segments(t11, t12, self.res1, nb1);
         let segments2 = split_range_on_segments(t21, t22, self.res2, 2);
 
-        for a_r1 in &segments1 {
-            let b1 = bnd_build_box(&*c1, a_r1.first, a_r1.last, self.tol1);
-            for a_r2 in &segments2 {
-                let b2 = bnd_build_box(&*c2, a_r2.first, a_r2.last, self.tol2);
-                self.find_solutions_range(*a_r1, &b1, *a_r2, &b2, &mut ranges1, &mut ranges2);
+        for r1_val in &segments1 {
+            let b1 = bnd_build_box(&*c1, r1_val.first, r1_val.last, self.tol1);
+            for r2_val in &segments2 {
+                let b2 = bnd_build_box(&*c2, r2_val.first, r2_val.last, self.tol2);
+                self.find_solutions_range(*r1_val, &b1, *r2_val, &b2, &mut ranges1, &mut ranges2);
             }
         }
         b_split2 = segments2.len() > 1;
@@ -637,8 +637,8 @@ impl EdgeEdge {
     ) {
         let c1 = self.curve1.as_ref().unwrap();
         let c2 = self.curve2.as_ref().unwrap();
-        let (mut a_t11, mut a_t12) = (r1.first, r1.last);
-        let (mut a_t21, mut a_t22) = (r2.first, r2.last);
+        let (mut t11_val, mut t12_val) = (r1.first, r1.last);
+        let (mut t21_val, mut t22_val) = (r2.first, r2.last);
         let mut b1 = *box1;
         // `cxx:371`: `aB2` starts at the incoming box and is rebuilt at step 2;
         // the rebuilt value carries into the next iteration's step 1.
@@ -649,8 +649,8 @@ impl EdgeEdge {
         let mut b_stop = false;
         let mut i_com = 1;
         loop {
-            let (tb11, tb12) = (a_t11, a_t12);
-            let (tb21, tb22) = (a_t21, a_t22);
+            let (tb11, tb12) = (t11_val, t12_val);
+            let (tb21, tb22) = (t21_val, t22_val);
 
             // 1. Find the parameters of the second edge inside the box of the
             //    first one.
@@ -658,7 +658,7 @@ impl EdgeEdge {
             if b_out {
                 break;
             }
-            b_thin = (a_t12 - a_t11) < self.res1
+            b_thin = (t12_val - t11_val) < self.res1
                 || (b1.is_x_thin(self.tol)
                     && b1.is_y_thin(self.tol)
                     && b1.is_z_thin(self.tol));
@@ -672,15 +672,15 @@ impl EdgeEdge {
                 self.ptol2,
                 self.res_coeff2,
                 &b1,
-                a_t21,
-                a_t22,
+                t21_val,
+                t22_val,
             ) {
                 None => {
                     b_out = true;
                 }
                 Some((t21, t22)) => {
-                    a_t21 = t21;
-                    a_t22 = t22;
+                    t21_val = t21;
+                    t22_val = t22;
                     b_out = false;
                 }
             }
@@ -690,12 +690,12 @@ impl EdgeEdge {
 
             // 2. Build the box of the second edge and find the parameters of
             //    the first one inside it.
-            b2 = bnd_build_box(&**c2, a_t21, a_t22, self.tol2);
+            b2 = bnd_build_box(&**c2, t21_val, t22_val, self.tol2);
             b_out = b1.is_out_box(&b2);
             if b_out {
                 break;
             }
-            b_thin = (a_t22 - a_t21) < self.res2
+            b_thin = (t22_val - t21_val) < self.res2
                 || (b2.is_x_thin(self.tol)
                     && b2.is_y_thin(self.tol)
                     && b2.is_z_thin(self.tol));
@@ -709,15 +709,15 @@ impl EdgeEdge {
                 self.ptol1,
                 self.res_coeff1,
                 &b2,
-                a_t11,
-                a_t12,
+                t11_val,
+                t12_val,
             ) {
                 None => {
                     b_out = true;
                 }
                 Some((t11, t12)) => {
-                    a_t11 = t11;
-                    a_t12 = t12;
+                    t11_val = t11;
+                    t12_val = t12;
                     b_out = false;
                 }
             }
@@ -734,14 +734,14 @@ impl EdgeEdge {
             if small_step2 < self.res2 {
                 small_step2 = self.res2;
             }
-            if ((a_t11 - tb11) < small_step1)
-                && ((tb12 - a_t12) < small_step1)
-                && ((a_t21 - tb21) < small_step2)
-                && ((tb22 - a_t22) < small_step2)
+            if ((t11_val - tb11) < small_step1)
+                && ((tb12 - t12_val) < small_step1)
+                && ((t21_val - tb21) < small_step2)
+                && ((tb22 - t22_val) < small_step2)
             {
                 b_stop = true;
             } else {
-                b1 = bnd_build_box(&**c1, a_t11, a_t12, self.tol1);
+                b1 = bnd_build_box(&**c1, t11_val, t12_val, self.tol1);
             }
             if b_stop {
                 break;
@@ -754,7 +754,7 @@ impl EdgeEdge {
         }
         if !b_thin {
             // check the curves for coincidence on the ranges
-            i_com = self.check_coincidence(a_t11, a_t12, a_t21, a_t22, self.tol, self.res1);
+            i_com = self.check_coincidence(t11_val, t12_val, t21_val, t22_val, self.tol, self.res1);
             if i_com == 0 {
                 b_thin = true;
             }
@@ -762,13 +762,13 @@ impl EdgeEdge {
         if b_thin {
             if i_com != 0 {
                 // check the intermediate points
-                let t1 = (a_t11 + a_t12) * 0.5;
+                let t1 = (t11_val + t12_val) * 0.5;
                 let p1 = c1.d0(t1);
-                let proj = ProjPc::new(&**c2, a_t21, a_t22);
+                let proj = ProjPc::new(&**c2, t21_val, t22_val);
                 let b_sol = match proj.project(&p1) {
                     Some((d, _)) => d <= self.tol,
                     None => {
-                        let t2 = (a_t21 + a_t22) * 0.5;
+                        let t2 = (t21_val + t22_val) * 0.5;
                         let p2 = c2.d0(t2);
                         p1.distance(&p2) <= self.tol
                     }
@@ -778,28 +778,28 @@ impl EdgeEdge {
                 }
             }
             // add the common part
-            ranges1.push(IntRange::new_unchecked(a_t11, a_t12));
-            ranges2.push(IntRange::new_unchecked(a_t21, a_t22));
+            ranges1.push(IntRange::new_unchecked(t11_val, t12_val));
+            ranges2.push(IntRange::new_unchecked(t21_val, t22_val));
             return;
         }
 
-        if !self.is_intersection(a_t11, a_t12, a_t21, a_t22) {
+        if !self.is_intersection(t11_val, t12_val, t21_val, t22_val) {
             return;
         }
 
         // Split the ranges on segments and repeat.
-        let b1_first = bnd_build_box(&**c1, a_t11, a_t12, self.tol1);
+        let b1_first = bnd_build_box(&**c1, t11_val, t12_val, self.tol1);
         let b1_sq_extent = b1_first.square_extent();
-        let a_r2 = IntRange::new_unchecked(a_t21, a_t22);
-        let b2_seg = bnd_build_box(&**c2, a_t21, a_t22, self.tol2);
-        let segments1 = split_range_on_segments(a_t11, a_t12, self.res1, 3);
+        let r2_val = IntRange::new_unchecked(t21_val, t22_val);
+        let b2_seg = bnd_build_box(&**c2, t21_val, t22_val, self.tol2);
+        let segments1 = split_range_on_segments(t11_val, t12_val, self.res1, 3);
         let nb1 = segments1.len();
-        for a_r1 in segments1 {
-            let b1s = bnd_build_box(&**c1, a_r1.first, a_r1.last, self.tol1);
+        for r1_val in segments1 {
+            let b1s = bnd_build_box(&**c1, r1_val.first, r1_val.last, self.tol1);
             if !b1s.is_out_box(&b2_seg)
                 && (nb1 == 1 || b1s.square_extent() < b1_sq_extent)
             {
-                self.find_solutions_range(a_r1, &b1s, a_r2, &b2_seg, ranges1, ranges2);
+                self.find_solutions_range(r1_val, &b1s, r2_val, &b2_seg, ranges1, ranges2);
             }
         }
     }
@@ -818,12 +818,12 @@ impl EdgeEdge {
         }
         let c1 = self.curve1.clone().unwrap();
         let c2 = self.curve2.clone().unwrap();
-        let a_res1 = resolution_of(&*c1, self.kind1, self.res_coeff1, self.tol);
-        let a_res2 = resolution_of(&*c2, self.kind2, self.res_coeff2, self.tol);
+        let res1_val = resolution_of(&*c1, self.kind1, self.res_coeff1, self.tol);
+        let res2_val = resolution_of(&*c2, self.kind2, self.res_coeff2, self.tol);
         let (t11, t12) = (self.r1().first, self.r1().last);
         let (t21, t22) = (self.r2().first, self.r2().last);
-        let d_tr1 = 20.0 * a_res1;
-        let d_tr2 = 20.0 * a_res2;
+        let d_tr1 = 20.0 * res1_val;
+        let d_tr2 = 20.0 * res2_val;
         let mut type_edge = false;
         let mut used = vec![false; nb_cp];
 
@@ -930,7 +930,7 @@ impl EdgeEdge {
         let c2 = self.curve2.as_ref().unwrap();
         let mut d_min = INFINITE;
         let mut t1 = 0.0;
-        let mut a_t2 = 0.0;
+        let mut t2_val = 0.0;
         let mut b_touch = false;
         let mut b_touch_confirm = false;
         let (mut t11_touch, mut t12_touch) = (t11, t12);
@@ -958,7 +958,7 @@ impl EdgeEdge {
             if i_err != 1 {
                 if d < d_min {
                     t1 = st.t1_max;
-                    a_t2 = st.t2_max;
+                    t2_val = st.t2_max;
                     d_min = d;
                     is_sol_found = true;
                 }
@@ -979,12 +979,12 @@ impl EdgeEdge {
         if !is_sol_found || b_touch_confirm {
             t1 = (t11_touch + t12_touch) * 0.5;
             let (i_err, _d, t2) = dist_pc(&proj, &**c1, t1, A_SOL_CRITERIA, -1);
-            a_t2 = t2;
+            t2_val = t2;
             if i_err == 1 {
-                a_t2 = (t21_touch + t22_touch) * 0.5;
+                t2_val = (t21_touch + t22_touch) * 0.5;
             }
         }
-        (t1, a_t2)
+        (t1, t2_val)
     }
 
     /// `IntTools_EdgeEdge::CheckCoincidence` (`IntTools_EdgeEdge.cxx:1150-1206`).
@@ -1010,12 +1010,12 @@ impl EdgeEdge {
         // 1. Express evaluation. The 7-argument `DistPC` writes the distance
         //    straight into `aDmax` (`cxx:1174`), so there is no extremum
         //    tracking here.
-        let mut a_d_max = -1.0;
+        let mut d_max_val = -1.0;
         let mut i_err = 0;
         for k in 0..nb1.saturating_sub(1) {
             let t1b = ranges[k as usize].last;
             let (e, d, _t2) = dist_pc(&proj, &**c1, t1b, criteria, 1);
-            a_d_max = d;
+            d_max_val = d;
             i_err = e;
             if i_err != 0 {
                 return i_err;
@@ -1030,7 +1030,7 @@ impl EdgeEdge {
         // 2. Deep evaluation.
         for k in 1..nb1.saturating_sub(1) {
             let (t1a, t1b) = (ranges[k as usize].first, ranges[k as usize].last);
-            let mut st = DistState { d_max: a_d_max, t1_max: 0.0, t2_max: 0.0 };
+            let mut st = DistState { d_max: d_max_val, t1_max: 0.0, t2_max: 0.0 };
             i_err = find_dist_pc(
                 &proj,
                 &**c1,
@@ -1041,7 +1041,7 @@ impl EdgeEdge {
                 &mut st,
                 true,
             );
-            a_d_max = st.d_max;
+            d_max_val = st.d_max;
             if i_err != 0 {
                 return i_err;
             }

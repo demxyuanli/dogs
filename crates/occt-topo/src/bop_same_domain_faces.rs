@@ -60,9 +60,9 @@ fn face_to_parent_map<B: BopBuilderLike>(f: &B) -> HashMap<ShapeMapKey, TopoShap
             continue;
         }
         let solid = si.shape().clone();
-        for a_f in faces_of(&solid) {
+        for f_val in faces_of(&solid) {
             face_to_parent
-                .entry(shape_key(&a_f.0))
+                .entry(shape_key(&f_val.0))
                 .or_insert_with(|| solid.clone());
         }
     }
@@ -73,11 +73,11 @@ fn face_to_parent_map<B: BopBuilderLike>(f: &B) -> HashMap<ShapeMapKey, TopoShap
         if si.shape_type() != ShapeType::Face {
             continue;
         }
-        let a_f = si.shape();
-        let Some(parent) = face_to_parent.get(&shape_key(a_f)).cloned() else {
+        let f_val = si.shape();
+        let Some(parent) = face_to_parent.get(&shape_key(f_val)).cloned() else {
             continue;
         };
-        let Some(imgs) = f.history().image(a_f) else { continue };
+        let Some(imgs) = f.history().image(f_val) else { continue };
         for piece in imgs {
             if !face_to_parent.contains_key(&shape_key(piece)) {
                 propagation.insert(shape_key(piece), parent.clone());
@@ -146,12 +146,12 @@ fn collect_edge_set_faces<B: BopBuilderLike>(
     let mut mf_planar: HashSet<ShapeMapKey> = HashSet::new();
     for &n_f in fi_vec {
         let Some(si) = ds.shape_info(n_f) else { continue };
-        let a_f = si.shape();
+        let f_val = si.shape();
         let mut b_check_planar = false;
-        if face_is_plane(a_f) {
+        if face_is_plane(f_val) {
             b_check_planar = box_is_bounded(ds, n_f);
         }
-        if let Some(p_lf_sp) = f.history().image(a_f) {
+        if let Some(p_lf_sp) = f.history().image(f_val) {
             for it_lf in p_lf_sp {
                 add_edge_set(it_lf, &mut an_e_set_faces);
                 if b_check_planar {
@@ -159,9 +159,9 @@ fn collect_edge_set_faces<B: BopBuilderLike>(
                 }
             }
         } else {
-            add_edge_set(a_f, &mut an_e_set_faces);
+            add_edge_set(f_val, &mut an_e_set_faces);
             if b_check_planar {
-                mf_planar.insert(shape_key(a_f));
+                mf_planar.insert(shape_key(f_val));
             }
         }
     }
@@ -217,11 +217,11 @@ fn collect_sd_pairs(
 fn group_representative<B: BopBuilderLike>(f: &B, lsd: &[TopoShape]) -> TopoShape {
     let mut p_fsd: Option<TopoShape> = None;
     let mut n_f_min = usize::MAX;
-    for a_f in lsd {
-        if let Some(n_f) = f.ds().index(a_f) {
+    for f_val in lsd {
+        if let Some(n_f) = f.ds().index(f_val) {
             if n_f < n_f_min {
                 n_f_min = n_f;
-                p_fsd = Some(a_f.clone());
+                p_fsd = Some(f_val.clone());
             }
         }
     }
@@ -236,14 +236,14 @@ fn bind_sd_groups<B: BopBuilderLike>(f: &mut B, m_blocks: &[Vec<TopoShape>]) {
             continue;
         }
         let p_fsd = group_representative(f, lsd);
-        for a_f in lsd {
-            if f.ds().index(a_f).is_some() {
+        for f_val in lsd {
+            if f.ds().index(f_val).is_some() {
                 // `_2.cxx:858`: Bound + Append the original onto its image list.
-                f.history_mut().add_image(a_f, a_f.clone());
+                f.history_mut().add_image(f_val, f_val.clone());
             }
         }
-        for a_f in lsd {
-            f.bind_shapes_sd(a_f.clone(), p_fsd.clone());
+        for f_val in lsd {
+            f.bind_shapes_sd(f_val.clone(), p_fsd.clone());
         }
     }
 }
@@ -258,20 +258,20 @@ fn update_images_and_origins<B: BopBuilderLike>(f: &mut B) {
         if si.shape_type() != ShapeType::Face {
             continue;
         }
-        let a_f = si.shape().clone();
-        let Some(p_lf_im) = f.history().image(&a_f) else { continue };
+        let f_val = si.shape().clone();
+        let Some(p_lf_im) = f.history().image(&f_val) else { continue };
         let mut updated: Vec<TopoShape> = Vec::new();
         for f_im in p_lf_im {
             let resolved = f.seek_shapes_sd(f_im).unwrap_or_else(|| f_im.clone());
             updated.push(resolved);
         }
-        jobs.push((a_f, updated));
+        jobs.push((f_val, updated));
     }
-    for (a_f, updated) in jobs {
+    for (f_val, updated) in jobs {
         for f_im in &updated {
-            origins_append(f.origins_mut(), f_im, a_f.clone());
+            origins_append(f.origins_mut(), f_im, f_val.clone());
         }
-        if let Some(list) = f.history_mut().image_list_mut(&a_f) {
+        if let Some(list) = f.history_mut().image_list_mut(&f_val) {
             *list = updated;
         }
     }

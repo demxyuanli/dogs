@@ -153,13 +153,13 @@ pub fn decomposition_from_constructor(
     l_constructor: &LineConstructor,
     new_lines: &mut Vec<WLine>,
 ) -> bool {
-    let a_nb_parts = l_constructor.nb_parts();
-    let a_nb_pnts = wline.nb_pnts();
-    if a_nb_pnts == 0 || a_nb_parts <= 0 {
+    let nb_parts_val = l_constructor.nb_parts();
+    let nb_pnts_val = wline.nb_pnts();
+    if nb_pnts_val == 0 || nb_parts_val <= 0 {
         return false;
     }
-    let mut line_parts = Vec::with_capacity(a_nb_parts as usize);
-    for i in 1..=a_nb_parts {
+    let mut line_parts = Vec::with_capacity(nb_parts_val as usize);
+    for i in 1..=nb_parts_val {
         if let Some((f, l)) = l_constructor.part(i) {
             line_parts.push((f as i32, l as i32));
         }

@@ -185,14 +185,14 @@ pub fn box_ellipse_range(elips: &GpElips, u1: f64, u2: f64, tol: f64) -> BndBox 
     let yd = elips.pos.y_direction().xyz();
 
     let mut bnd_box = BndBox::new();
-    let mut a_u1 = u1;
-    let mut a_u2 = u2;
-    let a_tol = epsilon(1.0);
-    adjust_periodic(0.0, 2.0 * std::f64::consts::PI, a_tol, &mut a_u1, &mut a_u2);
+    let mut u1_val = u1;
+    let mut u2_val = u2;
+    let tol_val = epsilon(1.0);
+    adjust_periodic(0.0, 2.0 * std::f64::consts::PI, tol_val, &mut u1_val, &mut u2_val);
 
     // Arc endpoints (`cxx:71-72`).
-    bnd_box.add_point(&ellipse_value(elips, a_u1));
-    bnd_box.add_point(&ellipse_value(elips, a_u2));
+    bnd_box.add_point(&ellipse_value(elips, u1_val));
+    bnd_box.add_point(&ellipse_value(elips, u2_val));
 
     for k in 0..3 {
         let xk = xd.coord(k);
@@ -220,12 +220,12 @@ pub fn box_ellipse_range(elips: &GpElips, u1: f64, u2: f64, tol: f64) -> BndBox 
             std::mem::swap(&mut t_extr_min, &mut t_extr_max);
         }
 
-        let tk = in_period(t_extr_min, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
-        if tk >= a_u1 && tk <= a_u2 {
+        let tk = in_period(t_extr_min, u1_val, u1_val + 2.0 * std::f64::consts::PI);
+        if tk >= u1_val && tk <= u2_val {
             bnd_box.add_point(&ellipse_value(elips, t_extr_min));
         }
-        let tk = in_period(t_extr_max, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
-        if tk >= a_u1 && tk <= a_u2 {
+        let tk = in_period(t_extr_max, u1_val, u1_val + 2.0 * std::f64::consts::PI);
+        if tk >= u1_val && tk <= u2_val {
             bnd_box.add_point(&ellipse_value(elips, t_extr_max));
         }
     }
@@ -458,20 +458,20 @@ fn box_bezier(curve: &dyn Curve, poles: &[GpPnt], u1: f64, u2: f64, tol: f64) ->
 ///   knots shifted by multiples of the period — the span list below.
 fn box_bspline(curve: &dyn Curve, poles: &[GpPnt], knots: &[f64], u1: f64, u2: f64, tol: f64) -> BndBox {
     let degree = curve.nurbs_degree().unwrap_or(1) as i32;
-    let (a_u1, a_u2, cuts) = if curve.is_periodic() {
+    let (u1_val, u2_val, cuts) = if curve.is_periodic() {
         let first = curve.first_parameter();
         let last = curve.last_parameter();
-        let mut a_u1 = u1;
-        let mut a_u2 = u2;
-        adjust_periodic(first, last, PCONFUSION, &mut a_u1, &mut a_u2);
+        let mut u1_val = u1;
+        let mut u2_val = u2;
+        adjust_periodic(first, last, PCONFUSION, &mut u1_val, &mut u2_val);
         let period = last - first;
         let (uknots, _umults) = bspl_knots::unique_knots_mults(knots);
         let mut cuts: Vec<f64> = Vec::new();
         if period > PCONFUSION && uknots.len() >= 2 {
             // Knots of the segmented curve: the original distinct knots rotated
             // by whole periods to cover `[a_u1, a_u2]`.
-            let m_lo = ((a_u1 - uknots[uknots.len() - 1]) / period).floor() - 1.0;
-            let m_hi = ((a_u2 - uknots[0]) / period).ceil() + 1.0;
+            let m_lo = ((u1_val - uknots[uknots.len() - 1]) / period).floor() - 1.0;
+            let m_hi = ((u2_val - uknots[0]) / period).ceil() + 1.0;
             let mut m = m_lo;
             while m <= m_hi {
                 for k in &uknots {
@@ -481,18 +481,18 @@ fn box_bspline(curve: &dyn Curve, poles: &[GpPnt], knots: &[f64], u1: f64, u2: f
             }
             cuts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         }
-        (a_u1, a_u2, cuts)
+        (u1_val, u2_val, cuts)
     } else {
-        let a_u1 = u1.max(curve.first_parameter());
-        let a_u2 = u2.min(curve.last_parameter());
+        let u1_val = u1.max(curve.first_parameter());
+        let u2_val = u2.min(curve.last_parameter());
         let (uknots, _umults) = bspl_knots::unique_knots_mults(knots);
-        (a_u1, a_u2, uknots)
+        (u1_val, u2_val, uknots)
     };
 
     if cuts.is_empty() && !curve.is_periodic() {
         let mut bnd_box = BndBox::new();
-        bnd_box.add_point(&curve.d0(a_u1));
-        bnd_box.add_point(&curve.d0(a_u2));
+        bnd_box.add_point(&curve.d0(u1_val));
+        bnd_box.add_point(&curve.d0(u2_val));
         bnd_box.enlarge(tol);
         return bnd_box;
     }
@@ -501,29 +501,29 @@ fn box_bspline(curve: &dyn Curve, poles: &[GpPnt], knots: &[f64], u1: f64, u2: f
     // segmented curve's distinct knots; the interior knots outside the range are
     // dropped (the segment's end knots carry multiplicity `degree + 1`).
     let mut b1 = BndBox::new();
-    let mut a_tol = 0.0_f64;
-    let mut a_first = a_u1;
+    let mut tol_val = 0.0_f64;
+    let mut first_val = u1_val;
     let n = degree.max(1);
     for cut in cuts
         .iter()
         .copied()
-        .filter(|k| *k > a_u1 + PCONFUSION && *k < a_u2 - PCONFUSION)
-        .chain(std::iter::once(a_u2))
+        .filter(|k| *k > u1_val + PCONFUSION && *k < u2_val - PCONFUSION)
+        .chain(std::iter::once(u2_val))
     {
-        let a_last = cut.min(a_u2);
-        if a_last > a_first + PCONFUSION {
-            a_tol = a_tol.max(fill_box3d(&mut b1, curve, a_first, a_last, n));
+        let last_val = cut.min(u2_val);
+        if last_val > first_val + PCONFUSION {
+            tol_val = tol_val.max(fill_box3d(&mut b1, curve, first_val, last_val, n));
         }
-        a_first = a_last;
+        first_val = last_val;
     }
     if b1.is_void() {
         let mut bnd_box = BndBox::new();
-        bnd_box.add_point(&curve.d0(a_u1));
-        bnd_box.add_point(&curve.d0(a_u2));
+        bnd_box.add_point(&curve.d0(u1_val));
+        bnd_box.add_point(&curve.d0(u2_val));
         bnd_box.enlarge(tol);
         return bnd_box;
     }
-    b1.enlarge(WEAKNESS * a_tol);
+    b1.enlarge(WEAKNESS * tol_val);
     let mut bnd_box = reduce_spline_box3d(poles, &b1);
     bnd_box.enlarge(tol);
     bnd_box

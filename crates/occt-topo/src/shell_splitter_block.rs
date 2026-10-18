@@ -258,9 +258,9 @@ fn refine_shell(
 /// `BOPAlgo_ShellSplitter::SplitBlock`.
 pub fn split_shell_block(block: &mut ConnexityBlock) {
     block.change_loops_mut().clear();
-    let my_shapes = block.shapes().to_vec();
+    let shapes_val = block.shapes().to_vec();
     let mut m_faces: HashMap<(usize, u8), TopoShape> = HashMap::new();
-    for f in &my_shapes {
+    for f in &shapes_val {
         m_faces.insert(ori_key(f), f.clone());
     }
     loop {
@@ -293,7 +293,7 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
 
     let mut lf_connected: Vec<TopoShape> = Vec::new();
     let mut boundary: HashSet<usize> = HashSet::new();
-    for f in &my_shapes {
+    for f in &shapes_val {
         if m_faces.contains_key(&ori_key(f)) {
             lf_connected.push(f.clone());
             if !boundary.insert(shape_key(f)) {
@@ -319,41 +319,41 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
         merge_face_into_mef(&mut mefp, ff);
         let mut i = 0usize;
         while i < shell_faces.len() {
-            let a_f = shell_faces[i].clone();
-            let is_boundary = boundary.contains(&shape_key(&a_f));
-            for a_e in face_boundary_edges(&a_f) {
+            let f_val = shell_faces[i].clone();
+            let is_boundary = boundary.contains(&shape_key(&f_val));
+            for e_val in face_boundary_edges(&f_val) {
                 if mefp
-                    .get(&edge_ek(&a_e))
+                    .get(&edge_ek(&e_val))
                     .map(|l| l.len() > 1)
                     .unwrap_or(false)
                 {
                     continue;
                 }
-                if a_e.0.orientation() == Orientation::Internal {
+                if e_val.0.orientation() == Orientation::Internal {
                     continue;
                 }
-                if BRepTool::is_degenerated(&a_e) {
+                if BRepTool::is_degenerated(&e_val) {
                     continue;
                 }
-                let Some(a_lf) = ef_map.get(&edge_ek(&a_e)) else {
+                let Some(lf_val) = ef_map.get(&edge_ek(&e_val)) else {
                     continue;
                 };
-                if a_lf.is_empty() {
+                if lf_val.is_empty() {
                     continue;
                 }
                 let mut lcs_off: Vec<CoupleOfShape> = Vec::new();
                 let mut nb_ways_inside = 0i32;
-                let mut a_sel: Option<TopoShape> = None;
-                for fl in a_lf {
-                    if is_same(&a_f, fl) || added.contains(&ori_key(fl)) {
+                let mut sel_val: Option<TopoShape> = None;
+                for fl in lf_val {
+                    if is_same(&f_val, fl) || added.contains(&ori_key(fl)) {
                         continue;
                     }
-                    let Some(el) = get_edge_off_geo(&a_e, fl) else {
+                    let Some(el) = get_edge_off_geo(&e_val, fl) else {
                         continue;
                     };
                     if is_boundary && !boundary.contains(&shape_key(fl)) {
                         nb_ways_inside += 1;
-                        a_sel = Some(fl.clone());
+                        sel_val = Some(fl.clone());
                     }
                     lcs_off.push(CoupleOfShape::new(el.0, fl.clone()));
                 }
@@ -362,14 +362,14 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                 }
                 if !is_boundary || nb_ways_inside != 1 {
                     if lcs_off.len() == 1 {
-                        a_sel = Some(lcs_off[0].shape2.clone());
+                        sel_val = Some(lcs_off[0].shape2.clone());
                     } else if let Some((f, _)) =
-                        get_face_off(&a_e, &Face(a_f.clone()), &lcs_off, &ctx)
+                        get_face_off(&e_val, &Face(f_val.clone()), &lcs_off, &ctx)
                     {
-                        a_sel = Some(f.0);
+                        sel_val = Some(f.0);
                     }
                 }
-                if let Some(sel) = a_sel {
+                if let Some(sel) = sel_val {
                     if added.insert(ori_key(&sel)) {
                         shell_faces.push(sel.clone());
                         merge_face_into_mef(&mut mefp, &sel);

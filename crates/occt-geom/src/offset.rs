@@ -347,23 +347,23 @@ impl Curve for GeomOffsetCurve {
     fn d1(&self, u: f64) -> (GpPnt, GpVec) {
         let (p, d1, d2) = self.basis.d2(u);
         let mut value = p;
-        let mut a_d1 = d1;
-        if !self.calculate_d1(&mut value, &mut a_d1, &d2, GP_RESOLUTION) {
+        let mut d1_val = d1;
+        if !self.calculate_d1(&mut value, &mut d1_val, &d2, GP_RESOLUTION) {
             // `cxx:293` throws `Geom_UndefinedDerivative`.
             return (p, d1);
         }
-        (value, a_d1)
+        (value, d1_val)
     }
 
     /// `Geom_OffsetCurve::EvalD2` (`Geom_OffsetCurve.cxx:300-334`).
     fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
         let (p, d1, d2, d3) = self.basis.d3(u);
         let mut value = p;
-        let mut a_d1 = d1;
-        let mut a_d2 = d2;
-        let mut a_d3 = d3;
+        let mut d1_val = d1;
+        let mut d2_val = d2;
+        let mut d3_val = d3;
         let mut is_direction_change = false;
-        if a_d1.square_magnitude() <= GP_RESOLUTION {
+        if d1_val.square_magnitude() <= GP_RESOLUTION {
             // `cxx:311-330`: the basis D1 is singular, so `D1..D3` and
             // `isDirectionChange` come from `AdjustDerivative(..., 3, ...)`.
             let mut dummy_d4 = GpVec::zero();
@@ -373,25 +373,25 @@ impl Curve for GeomOffsetCurve {
                 self.basis.as_ref(),
                 3,
                 u,
-                &mut a_d1,
-                &mut a_d2,
-                &mut a_d3,
+                &mut d1_val,
+                &mut d2_val,
+                &mut d3_val,
                 &mut dummy_d4,
                 &mut is_direction_change,
             );
         }
         if !self.calculate_d2(
             &mut value,
-            &mut a_d1,
-            &mut a_d2,
-            &a_d3,
+            &mut d1_val,
+            &mut d2_val,
+            &d3_val,
             is_direction_change,
             GP_RESOLUTION,
         ) {
             // `cxx:328` throws `Geom_UndefinedDerivative`.
             return (p, d1, d2);
         }
-        (value, a_d1, a_d2)
+        (value, d1_val, d2_val)
     }
 
     fn first_parameter(&self) -> f64 { self.basis.first_parameter() }
@@ -441,20 +441,20 @@ impl Curve for GeomOffsetCurve {
     /// singular arm's `AdjustDerivative(..., 4, ...)`.
     fn d3(&self, u: f64) -> (GpPnt, GpVec, GpVec, GpVec) {
         let (p, d1, d2, d3) = self.basis.d3(u);
-        let mut a_d1 = d1;
-        let mut a_d2 = d2;
-        let mut a_d3 = d3;
+        let mut d1_val = d1;
+        let mut d2_val = d2;
+        let mut d3_val = d3;
         let mut d4 = self.basis.eval_dn(u, 4);
         let mut is_direction_change = false;
-        if a_d1.square_magnitude() <= GP_RESOLUTION {
+        if d1_val.square_magnitude() <= GP_RESOLUTION {
             // `cxx:357-366`: `AdjustDerivative(theBasisCurve, 4, ...)`.
             let _ = adjust_derivative(
                 self.basis.as_ref(),
                 4,
                 u,
-                &mut a_d1,
-                &mut a_d2,
-                &mut a_d3,
+                &mut d1_val,
+                &mut d2_val,
+                &mut d3_val,
                 &mut d4,
                 &mut is_direction_change,
             );
@@ -462,9 +462,9 @@ impl Curve for GeomOffsetCurve {
         let mut value = p;
         if !self.calculate_d3(
             &mut value,
-            &mut a_d1,
-            &mut a_d2,
-            &mut a_d3,
+            &mut d1_val,
+            &mut d2_val,
+            &mut d3_val,
             &d4,
             is_direction_change,
             GP_RESOLUTION,
@@ -472,7 +472,7 @@ impl Curve for GeomOffsetCurve {
             // `cxx:379` throws `Geom_UndefinedDerivative`.
             return (p, d1, d2, d3);
         }
-        (value, a_d1, a_d2, a_d3)
+        (value, d1_val, d2_val, d3_val)
     }
 
     /// `Geom_OffsetCurve::EvalDN` (`Geom_OffsetCurve.cxx:386-410`): orders 1..3

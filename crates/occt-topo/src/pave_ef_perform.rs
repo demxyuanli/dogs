@@ -105,8 +105,8 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
         let Some(f_shape) = f.ds().shape(n_f).cloned() else {
             continue;
         };
-        let a_e = Edge(e_shape);
-        let a_f = Face(f_shape);
+        let e_val = Edge(e_shape);
+        let f_val = Face(f_shape);
         f.ds_mut().ensure_face_info(n_f);
         let blocks = f.ds().pave_blocks(n_e).to_vec();
         let (on, inn) = face_paves_on_in(f.ds(), n_f);
@@ -115,7 +115,7 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             if pb_on_face(f.ds(), n_f, &pbr) {
                 continue;
             }
-            let Some((a_t1, a_t2, a_ts1, a_ts2, bbe)) = get_pb_box(&a_e, &pb, &mut pb_box) else {
+            let Some((t1_val, t2_val, ts1_val, ts2_val, bbe)) = get_pb_box(&e_val, &pb, &mut pb_box) else {
                 continue;
             };
             if let Some(bbf) = f.ds().box_of(n_f) {
@@ -127,10 +127,10 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             let b_v1 = on.contains(&n_v1) || inn.contains(&n_v1);
             let b_v2 = on.contains(&n_v2) || inn.contains(&n_v2);
             let b_express = b_v1 && b_v2;
-            let sr = IntRange::new_unchecked(a_ts1, a_ts2);
-            let anew_sr = correct_range_ef(&a_e, &a_f, sr);
-            let pb_range0 = IntRange::new_unchecked(a_t1, a_t2);
-            let a_pb_range = correct_range_ef(&a_e, &a_f, pb_range0);
+            let sr = IntRange::new_unchecked(ts1_val, ts2_val);
+            let anew_sr = correct_range_ef(&e_val, &f_val, sr);
+            let pb_range0 = IntRange::new_unchecked(t1_val, t2_val);
+            let pb_range_val = correct_range_ef(&e_val, &f_val, pb_range0);
             f.fpb_done_mut()
                 .entry(n_f)
                 .or_default()
@@ -139,12 +139,12 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                 n_e,
                 n_f,
                 pb,
-                t1: a_t1,
-                t2: a_t2,
-                ts1: a_ts1,
-                ts2: a_ts2,
+                t1: t1_val,
+                t2: t2_val,
+                ts1: ts1_val,
+                ts2: ts2_val,
                 new_sr: anew_sr,
-                pb_range: a_pb_range,
+                pb_range: pb_range_val,
                 express: b_express,
             });
         }
@@ -173,18 +173,18 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             .box_of(task.n_f)
             .copied()
             .unwrap_or_else(|| shape_bbox(&f_shape));
-        let mut a_e = Edge(e_shape);
-        let mut a_f = Face(f_shape);
+        let mut e_val = Edge(e_shape);
+        let mut f_val = Face(f_shape);
         if let Some(trsf) = trsf_to_point(&box_e, &box_f, None, None) {
             let loc = TopLocLocation::composed(&trsf, TopLocLocation::identity());
-            a_e.0.move_location(&loc);
-            a_f.0.move_location(&loc);
+            e_val.0.move_location(&loc);
+            f_val.0.move_location(&loc);
         }
-        let tol_e = BRepTool::edge_tolerance(&a_e);
-        let tol_f = BRepTool::face_tolerance(&a_f);
+        let tol_e = BRepTool::edge_tolerance(&e_val);
+        let tol_f = BRepTool::face_tolerance(&f_val);
         let mut ef = EdgeFace::new();
-        ef.set_edge(a_e.clone());
-        ef.set_face(a_f.clone());
+        ef.set_edge(e_val.clone());
+        ef.set_face(f_val.clone());
         ef.set_fuzzy_value(f.fuzzy_value());
         ef.set_quick_coincidence_check(task.express);
         ef.set_range(task.pb_range.first, task.pb_range.last);
@@ -210,8 +210,8 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             continue;
         }
         let n_v = task.pb.indices();
-        let mut a_ts1 = task.new_sr.first;
-        let mut a_ts2 = task.new_sr.last;
+        let mut ts1_val = task.new_sr.first;
+        let mut ts2_val = task.new_sr.last;
         if cps[0].part_type() == CommonPartType::Vertex {
             reduce_intersection_range(
                 f.ds(),
@@ -219,21 +219,21 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                 n_v.1,
                 task.n_e,
                 task.n_f,
-                &mut a_ts1,
-                &mut a_ts2,
+                &mut ts1_val,
+                &mut ts2_val,
             );
         }
-        let r1 = IntRange::new_unchecked(task.t1, a_ts1);
-        let r2 = IntRange::new_unchecked(a_ts2, task.t2);
+        let r1 = IntRange::new_unchecked(task.t1, ts1_val);
+        let r2 = IntRange::new_unchecked(ts2_val, task.t2);
         let (mif_on, mif_in) = face_paves_on_in(f.ds(), task.n_f);
-        let b_line_plane = curve_is_line_edge(&a_e) && face_is_plane_type(&a_f);
+        let b_line_plane = curve_is_line_edge(&e_val) && face_is_plane_type(&f_val);
         let b_splittable = task.pb.is_splittable();
 
         for cp in cps.iter() {
             match cp.part_type() {
                 CommonPartType::Vertex => {
                     let t = algo_tools_vertex_parameter(cp, cp.vertex_parameter1());
-                let Ok(vnew) = make_new_vertex_ef(&a_e, t, &a_f) else {
+                let Ok(vnew) = make_new_vertex_ef(&e_val, t, &f_val) else {
                     continue;
                 };
                 let r = cp.range;
@@ -281,8 +281,8 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                     let pnew = BRepTool::vertex_point(&Vertex(vnew.clone()));
                     let min_dist = {
                         let ctx = f.context();
-                        match ctx.project_point_on_face(&a_f, &pnew) {
-                            Ok((u, v)) => BRepTool::face_surface(&a_f)
+                        match ctx.project_point_on_face(&f_val, &pnew) {
+                            Ok((u, v)) => BRepTool::face_surface(&f_val)
                                 .map(|s| s.d0(u, v).distance(&pnew))
                                 .unwrap_or(f64::MAX),
                             Err(_) => f64::MAX,
@@ -299,12 +299,12 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                         let Some(vs) = f.ds().shape(n_vj).cloned() else {
                             continue;
                         };
-                        let a_v = Vertex(vs);
-                        let p = BRepTool::vertex_point(&a_v);
+                        let v_val = Vertex(vs);
+                        let p = BRepTool::vertex_point(&v_val);
                         let dist_pp = p.distance(&pnew);
-                        let a_tol = BRepTool::vertex_tolerance(&a_v);
-                        let mut max_dist = 1.0e4 * a_tol;
-                        if a_tol < 0.01 {
+                        let tol_val = BRepTool::vertex_tolerance(&v_val);
+                        let mut max_dist = 1.0e4 * tol_val;
+                        if tol_val < 0.01 {
                             max_dist = max_dist.min(0.1);
                         }
                         if dist_pp < max_dist {
@@ -326,7 +326,7 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                 let pnew = BRepTool::vertex_point(&Vertex(vnew.clone()));
                 let in_face = f
                     .context_mut()
-                    .is_point_in_face(&a_f, &pnew, None, tol_vnew)
+                    .is_point_in_face(&f_val, &pnew, None, tol_vnew)
                     .unwrap_or(false);
                 if !in_face {
                     continue;

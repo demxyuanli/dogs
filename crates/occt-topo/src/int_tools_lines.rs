@@ -91,7 +91,7 @@ fn curve_direction_at_mid(c: &dyn Curve) -> Option<GpDir> {
 pub fn reject_lines(s_in: &[FaceFaceCurve]) -> Vec<FaceFaceCurve> {
     let nb = s_in.len();
     let mut s_out = Vec::new();
-    let mut a_d1: Option<GpDir> = None;
+    let mut d1_val: Option<GpDir> = None;
     for (i, ic) in s_in.iter().enumerate() {
         if ic.kind != CurveKind::Line {
             return s_in.to_vec();
@@ -101,10 +101,10 @@ pub fn reject_lines(s_in: &[FaceFaceCurve]) -> Vec<FaceFaceCurve> {
         };
         if i == 0 {
             s_out.push(ic.clone());
-            a_d1 = Some(d2);
+            d1_val = Some(d2);
             continue;
         }
-        let Some(d1) = a_d1 else {
+        let Some(d1) = d1_val else {
             return s_in.to_vec();
         };
         if !is_dirs_coinside(&d1, &d2) {
@@ -179,12 +179,12 @@ pub fn is_vertex_edge_at(e: &Edge, v: &Vertex, t: f64) -> bool {
 
 /// `IntTools_Tools::IsVertex(E, t)` — OCCT overwrites the vertex-tolerance
 /// square with `1.e-12` before the distance test.
-pub fn is_vertex_on_edge(a_e: &Edge, t: f64) -> bool {
-    let Some(c) = GeometryRegistry::global().edge_curve(&a_e.0) else {
+pub fn is_vertex_on_edge(e_par: &Edge, t: f64) -> bool {
+    let Some(c) = GeometryRegistry::global().edge_curve(&e_par.0) else {
         return false;
     };
     let pt = c.d0(t);
-    let mut exp = Explorer::new(&a_e.0, ShapeType::Vertex);
+    let mut exp = Explorer::new(&e_par.0, ShapeType::Vertex);
     while exp.more() {
         let v = Vertex(exp.current().clone());
         let pv = BRepTool::vertex_point(&v);
@@ -218,8 +218,8 @@ pub fn make_face_from_wire_and_face(w: &Wire, f: &Face) -> Face {
 
 /// `IntTools_Tools::ClassifyPointByFace`.
 pub fn classify_point_by_face(f: &Face, p2d: GpPnt2d) -> FaceState {
-    let a_face_tolerance = BRepTool::face_tolerance(f);
-    match FClass2d::new(f, a_face_tolerance) {
+    let face_tolerance_val = BRepTool::face_tolerance(f);
+    match FClass2d::new(f, face_tolerance_val) {
         Ok(c) => c.perform(p2d),
         Err(_) => FaceState::Unknown,
     }

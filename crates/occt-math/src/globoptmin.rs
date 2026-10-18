@@ -162,8 +162,8 @@ impl GlobOptMin {
     /// [`MathMultipleVarFunction::as_hessian`] /
     /// [`MathMultipleVarFunction::as_gradient`], and the engine selection lives
     /// in [`GlobOptMin::compute_local_extremum`].
-    pub fn set_continuity(&mut self, the_cont: i32) {
-        self.cont = the_cont;
+    pub fn set_continuity(&mut self, cont_par: i32) {
+        self.cont = cont_par;
     }
 
     /// `math_GlobOptMin::GetContinuity()` (`math_GlobOptMin.hxx:104`).
@@ -512,11 +512,11 @@ impl GlobOptMin {
                     }
                     self.x.set_value(1, param);
                     // cxx:438-439: `double aVal = 0; myFunc->Value(myX, aVal);`
-                    let mut a_val = 0.0;
-                    eval_into(f, &self.x, &mut a_val);
+                    let mut val_val = 0.0;
+                    eval_into(f, &self.x, &mut val_val);
                     self.x.set_value(1, save_param);
 
-                    if (a_val < d && a_val < prev_val)
+                    if (val_val < d && val_val < prev_val)
                         || distance_to_border(&self.x, &self.a, &self.b) < self.e1
                     {
                         if let Some((out_pnt, out_val)) = self.compute_local_extremum(f, &self.x) {

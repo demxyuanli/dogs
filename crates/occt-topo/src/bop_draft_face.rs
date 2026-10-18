@@ -106,11 +106,11 @@ pub fn build_draft_face(
     let mut ff = face.clone();
     ff.0.set_orientation(Orientation::Forward);
 
-    for a_w in bop_wires_of_face(&ff) {
-        if a_w.0.shape_type() != ShapeType::Wire {
+    for w_val in bop_wires_of_face(&ff) {
+        if w_val.0.shape_type() != ShapeType::Wire {
             continue;
         }
-        let mut w_fwd = a_w.clone();
+        let mut w_fwd = w_val.clone();
         w_fwd.0.set_orientation(Orientation::Forward);
         let it_e: Vec<TopoShape> = iter_children(&w_fwd.0);
         if it_e.is_empty() {
@@ -166,7 +166,7 @@ pub fn build_draft_face(
                 add_edge_to_wire(&mut new_wire, &sp);
             }
         }
-        new_wire.0.set_orientation(a_w.0.orientation());
+        new_wire.0.set_orientation(w_val.0.orientation());
         new_wire.0.set_closed(crate::bop_occt_util::bop_wire_is_closed(&new_wire));
         add_wire_to_face(&mut draft_face, &new_wire);
     }
@@ -288,10 +288,10 @@ pub fn clear_vertex_edge_map(map: &mut VertexEdgeMap) {
 
 /// Whether `edge` currently appears more than twice at any of its vertices
 /// in `the_map` without mutating the map (a read-only probe).
-pub fn vertex_is_multi_connected(the_map: &VertexEdgeMap, edge: &Edge) -> bool {
+pub fn vertex_is_multi_connected(map_par: &VertexEdgeMap, edge: &Edge) -> bool {
     let (va, vb) = edge_vertices(edge);
     for v in [va, vb].into_iter().flatten() {
-        if the_map
+        if map_par
             .get(&shape_key(&v.0))
             .map(|l| l.len() > 2)
             .unwrap_or(false)

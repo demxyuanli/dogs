@@ -388,9 +388,9 @@ fn pso_perform(
         let mut val = REAL_LAST;
         if func.value_scalar(prm, &mut val) {
             // `GetWorstParticle()` (`math_PSOParticlesPool.cxx:63-66`).
-            let a_particle = particles.worst_particle_index();
-            if val <= particles.particle(a_particle).best_distance {
-                let particle = particles.particle_mut(a_particle);
+            let particle_val = particles.worst_particle_index();
+            if val <= particles.particle(particle_val).best_distance {
+                let particle = particles.particle_mut(particle_val);
                 particle.position[0] = prm;
                 particle.best_position[0] = prm;
                 particle.distance = val;
@@ -464,18 +464,18 @@ fn min_computing(
         par_inf.set_value(1, *best_parameter - 0.5 * step);
         par_sup.set_value(1, *best_parameter + 0.5 * step);
 
-        let mut a_value = REAL_LAST;
+        let mut value_val = REAL_LAST;
         if pso_perform(
             func,
             &par_inf,
             &par_sup,
             epsilon,
             nb_particles,
-            &mut a_value,
+            &mut value_val,
             &mut out_param,
         ) {
-            if a_value < *best_value {
-                *best_value = a_value;
+            if value_val < *best_value {
+                *best_value = value_val;
                 *best_parameter = out_param.value(1);
             }
         }
@@ -595,14 +595,14 @@ impl<'a> CheckCurveOnSurface<'a> {
     /// `curve_on_surface` is the `Adaptor3d_CurveOnSurface`; `curve2d` is its
     /// `GetCurve()` handle (`cxx:363`, `:381`).
     pub fn perform(&mut self, curve_on_surface: &dyn Curve, curve2d: &dyn Curve2d) {
-        let Some(my_curve) = self.curve else {
+        let Some(curve_val) = self.curve else {
             self.error_status = 1;
             return;
         };
 
         // `if (myCurve.IsNull() || theCurveOnSurface.IsNull())` (`cxx:338-342`).
-        if (my_curve.first_parameter() - curve_on_surface.first_parameter() > self.tol_range)
-            || (my_curve.last_parameter() - curve_on_surface.last_parameter() < -self.tol_range)
+        if (curve_val.first_parameter() - curve_on_surface.first_parameter() > self.tol_range)
+            || (curve_val.last_parameter() - curve_on_surface.last_parameter() < -self.tol_range)
         {
             self.error_status = 2;
             return;
@@ -616,10 +616,10 @@ impl<'a> CheckCurveOnSurface<'a> {
         // Polynomial function with degree n has not more than n-1 maxima and
         // minima, so one particle per monotonicity interval means n particles.
         let nb_sub_intervals = fill_sub_intervals(
-            my_curve,
+            curve_val,
             curve2d,
-            my_curve.first_parameter(),
-            my_curve.last_parameter(),
+            curve_val.first_parameter(),
+            curve_val.last_parameter(),
             &mut nb_particles,
             None,
         );
@@ -631,10 +631,10 @@ impl<'a> CheckCurveOnSurface<'a> {
 
         let mut an_intervals: Vec<f64> = Vec::with_capacity(nb_sub_intervals + 2);
         fill_sub_intervals(
-            my_curve,
+            curve_val,
             curve2d,
-            my_curve.first_parameter(),
-            my_curve.last_parameter(),
+            curve_val.first_parameter(),
+            curve_val.last_parameter(),
             &mut nb_particles,
             Some(&mut an_intervals),
         );
@@ -646,7 +646,7 @@ impl<'a> CheckCurveOnSurface<'a> {
 
         for an_i in 0..nb_sub_intervals {
             let func = TargetFunc {
-                curve1: my_curve,
+                curve1: curve_val,
                 curve2: curve_on_surface,
                 first: an_intervals[an_i],
                 last: an_intervals[an_i + 1],

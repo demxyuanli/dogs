@@ -439,26 +439,26 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
             } else if an_idx == last_used - 1 {
                 l = st.u_sup;
             }
-            let a_p1 = c.d0(f);
-            let a_p2 = c.d0(l);
+            let p1_val = c.d0(f);
+            let p2_val = c.d0(l);
             let p = st.point;
-            let base1 = vec_from_pnts2d(&p, &a_p1);
-            let base2 = vec_from_pnts2d(&p, &a_p2);
-            let v = vec_from_pnts2d(&a_p2, &a_p1);
+            let base1 = vec_from_pnts2d(&p, &p1_val);
+            let base2 = vec_from_pnts2d(&p, &p2_val);
+            let v = vec_from_pnts2d(&p2_val, &p1_val);
             let val1 = v.dot(&base1);
             let val2 = v.dot(&base2);
             let min1 = if an_idx == first_used {
-                p.square_distance(&a_p1)
+                p.square_distance(&p1_val)
             } else {
                 let prev = min2;
                 if distmin > prev {
                     distmin = prev;
                     tmin = f;
-                    pmin = a_p1;
+                    pmin = p1_val;
                 }
                 prev
             };
-            min2 = p.square_distance(&a_p2);
+            min2 = p.square_distance(&p2_val);
             let min_sq = min1.min(min2);
             let min_der = val1.abs().min(val2.abs());
             if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))

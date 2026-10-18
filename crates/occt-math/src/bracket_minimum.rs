@@ -64,9 +64,9 @@ impl BracketMinimum {
     }
 
     /// `SetLimits(theLeft, theRight)` (`math_BracketMinimum.lxx:46-51`).
-    pub fn set_limits(&mut self, the_left: f64, the_right: f64) {
-        self.left = the_left;
-        self.right = the_right;
+    pub fn set_limits(&mut self, left_par: f64, right_par: f64) {
+        self.left = left_par;
+        self.right = right_par;
         self.is_limited = true;
     }
 

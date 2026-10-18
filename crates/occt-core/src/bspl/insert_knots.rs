@@ -439,7 +439,7 @@ pub fn insert_knots_dim(
 
         // copy the new poles
         curnp += depth * dim;
-        let the_upper = curnp - 1;
+        let upper_val = curnp - 1;
         let mut np = 1 + (index + 1) * dim;
         for i in 1..=(length + depth) {
             get_pole(
@@ -449,7 +449,7 @@ pub fn insert_knots_dim(
                 depth,
                 dim,
                 new_poles,
-                the_upper,
+                upper_val,
                 &mut np,
             );
         }

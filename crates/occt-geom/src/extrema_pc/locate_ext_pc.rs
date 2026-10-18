@@ -143,7 +143,7 @@ impl<'a> LocateExtPC<'a> {
     /// `hxx:132-272`: the free-form arm, walking the `GeomAbs_C2` intervals.
     fn perform_freeform(&mut self, c: &'a dyn Curve, p: &GpPnt, u0: f64) {
         let n = curve_tool::extrema_nb_intervals(c, GEOMABS_C2);
-        let the_inter = curve_tool::extrema_intervals(c, GEOMABS_C2);
+        let inter_val = curve_tool::extrema_intervals(c, GEOMABS_C2);
         // Be gentle with the caller (`hxx:142-150`).
         let mut local_u0 = u0;
         if local_u0 < self.umin {
@@ -157,8 +157,8 @@ impl<'a> LocateExtPC<'a> {
         let mut found = false;
         let mut inter: i32 = 1;
         while !found && inter <= n {
-            myintuinf = the_inter[(inter - 1) as usize].max(self.umin);
-            myintusup = the_inter[inter as usize].min(self.usup);
+            myintuinf = inter_val[(inter - 1) as usize].max(self.umin);
+            myintusup = inter_val[inter as usize].min(self.usup);
             if local_u0 >= myintuinf && local_u0 < myintusup {
                 found = true;
             }
@@ -195,8 +195,8 @@ impl<'a> LocateExtPC<'a> {
             i1 = inter + k;
             i2 = inter - k;
             if i1 <= n {
-                myintuinf = the_inter[(i1 - 1) as usize].max(self.umin);
-                myintusup = the_inter[i1 as usize].min(self.usup);
+                myintuinf = inter_val[(i1 - 1) as usize].max(self.umin);
+                myintusup = inter_val[i1 as usize].min(self.usup);
                 if myintuinf < myintusup {
                     let (p1, v1) = curve_tool::extrema_d1(c, myintuinf);
                     let s2sup = v1.dot(&GpVec::from_pnts(p, &p1));
@@ -228,8 +228,8 @@ impl<'a> LocateExtPC<'a> {
             }
 
             if i2 > 0 {
-                myintuinf = the_inter[(i2 - 1) as usize].max(self.umin);
-                myintusup = the_inter[i2 as usize].min(self.usup);
+                myintuinf = inter_val[(i2 - 1) as usize].max(self.umin);
+                myintusup = inter_val[i2 as usize].min(self.usup);
                 if myintuinf < myintusup {
                     let (p1, v1) = curve_tool::extrema_d1(c, myintusup);
                     let s1inf = v1.dot(&GpVec::from_pnts(p, &p1));

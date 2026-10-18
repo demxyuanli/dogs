@@ -155,14 +155,14 @@ fn rec_modif(
     // `cxx:279-287`: the stored key is the shape with its location removed
     // ("gka - modification to keep history for shape with location", OCC21617);
     // `r` starts at that key, or at the entry already stored for it.
-    let a_s = s.located(&TopLocLocation::identity());
-    let mut r = map.find(&a_s).unwrap_or_else(|| a_s.clone());
+    let s_val = s.located(&TopLocLocation::identity());
+    let mut r = map.find(&s_val).unwrap_or_else(|| s_val.clone());
     if !r.is_null() {
         // `if (repl->Status(r, res, true) && res != r) map.Bind(aS, res);`
         // (`cxx:288-294`).
         if let Some(res) = ctx.status_last(&r) {
             if !crate::topo_tools_full::is_equal(&res, &r) {
-                map.bind(&a_s, &res);
+                map.bind(&s_val, &res);
             }
         }
         // `else if (r.ShapeType() < S.ShapeType()) { res = repl->Apply(r,
@@ -173,7 +173,7 @@ fn rec_modif(
         else if (r.shape_type() as u8) < (s.shape_type() as u8) {
             let res = ctx.apply(&r);
             if !crate::topo_tools_full::is_equal(&res, &r) {
-                map.bind(&a_s, &res);
+                map.bind(&s_val, &res);
             }
         }
     }

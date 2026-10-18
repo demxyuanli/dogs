@@ -318,7 +318,7 @@ fn fix_periodicity_troubles(
     let mut max_param = period;
     // `cxx:295-315`: with no cached point the reference is the middle of the
     // period and the walk starts at index 0.
-    let (a_saved_param, a_saved_point) = if saved_point < 0 {
+    let (saved_param_val, saved_point_val) = if saved_point < 0 {
         (0.5 * period, 0usize)
     } else {
         while min_param > saved_param {
@@ -335,8 +335,8 @@ fn fix_periodicity_troubles(
     // `cxx:317-324`: an iso line sits on the window border and is pinned there.
     let mut fix_iso_param = min_param;
     let mut is_iso_line = false;
-    if max_param - a_saved_param < PCONFUSION || a_saved_param - min_param < PCONFUSION {
-        fix_iso_param = a_saved_param;
+    if max_param - saved_param_val < PCONFUSION || saved_param_val - min_param < PCONFUSION {
+        fix_iso_param = saved_param_val;
         is_iso_line = true;
     }
 
@@ -376,7 +376,7 @@ fn fix_periodicity_troubles(
         return false;
     }
 
-    let sp = a_saved_point.min(3);
+    let sp = saved_point_val.min(3);
     if sum_diff > 0.0 {
         for i in (1..=sp).rev() {
             if iso_coord(&pnt[i], idx) > iso_coord(&pnt[i - 1], idx) {
@@ -933,14 +933,14 @@ pub(super) fn interpolate_pcurve(
     // `cxx:2158`: `theTolerance2d = myPreci / (100 * theNbPnt)`.
     let tol2d = preci / (100.0 * points.len() as f64);
     // `cxx:2177-2195`: drop coincident points and shrink the tolerance.
-    let (pts, prm, a_preci) = check_points2d(points, params, tol2d);
+    let (pts, prm, preci_val) = check_points2d(points, params, tol2d);
     if pts.len() < 2 || prm.len() != pts.len() {
         return None;
     }
     // `cxx:2197-2202`: `Geom2dAPI_Interpolate(aPnts2d, aParams, false, aPreci)`
     // then `Perform()`. The constructor's `CheckPoints` / `CheckParameters`
     // throws (`cxx:294-353`) surface as the `catch` at `cxx:2204`.
-    if !check_points(&pts, a_preci) || !check_parameters(&prm) {
+    if !check_points(&pts, preci_val) || !check_parameters(&prm) {
         return None;
     }
     let curve = interpolate_non_periodic(&pts, &prm)?;
