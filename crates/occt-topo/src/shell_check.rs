@@ -112,7 +112,7 @@ pub fn edge_face_usage(shape: &TopoShape) -> HashMap<EdgeKey, EdgeFaces> {
 /// three-or-more references lead into the multi-connexity branch
 /// (`cxx:409-423`), whose `NbConnectedSet` is not ported: the shell is reported
 /// not closed instead of counting connected face sets.
-pub fn shell_closed_check(shell: &Shell) -> Result<(), String> {
+pub fn validate_shell_closed(shell: &Shell) -> Result<(), String> {
     let usage = edge_face_usage(&shell.0);
     let mut offending: Vec<(String, usize)> = usage
         .iter()
@@ -147,7 +147,7 @@ pub fn shell_closed_check(shell: &Shell) -> Result<(), String> {
 /// single-use edge being accepted only when it is degenerated
 /// (`BRepCheck_Shell::Closed`, `BRepCheck_Shell.cxx:404-438`).
 pub fn shell_is_closed(shell: &Shell) -> bool {
-    shell_closed_check(shell).is_ok()
+    validate_shell_closed(shell).is_ok()
 }
 
 /// Strict manifold rule: every boundary edge is referenced by exactly 2 faces.
@@ -246,7 +246,7 @@ pub fn shell_invariants(shell: &Shell) -> ShellInvariants {
 
 /// Whether the wire's first edge start point equals its last edge end point.
 /// Falls back to edge-count parity when the edges carry no evaluable curve.
-pub fn wire_is_closed(wire: &Wire) -> bool {
+pub fn shell_wire_is_closed(wire: &Wire) -> bool {
     let edges: Vec<TopoShape> = direct_children(&wire.0)
         .into_iter()
         .filter(|s| s.shape_type() == ShapeType::Edge)
@@ -414,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn closed_wire_is_closed() {
+    fn closed_shell_wire_is_closed() {
         let b = TopoBuilder::new();
         let edges = [
             b.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(1.0, 0.0, 0.0)),
@@ -423,7 +423,7 @@ mod tests {
             b.make_edge_segment(&GpPnt::new(0.0, 1.0, 0.0), &GpPnt::new(0.0, 0.0, 0.0)),
         ];
         let wire = b.make_wire(&edges);
-        assert!(wire_is_closed(&wire));
+        assert!(shell_wire_is_closed(&wire));
         clear_tree(&wire.0);
     }
 
@@ -435,7 +435,7 @@ mod tests {
             b.make_edge_segment(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(1.0, 1.0, 0.0)),
         ];
         let wire = b.make_wire(&edges);
-        assert!(!wire_is_closed(&wire));
+        assert!(!shell_wire_is_closed(&wire));
         clear_tree(&wire.0);
     }
 

@@ -166,7 +166,7 @@ fn cylinder_step_mesh_covers_full_u_period() {
     .unwrap_or_else(|e| panic!("read Cylinder.step: {e}"));
     let shape = &model.shapes[0].shape;
     let mesh = occt_topo::shape_mesh::mesh_shape(shape, 0.1);
-    let area = occt_topo::mesh::mesh_surface_area(&mesh);
+    let area = occt_topo::mesh::shape_mesh_surface_area(&mesh);
     // Analytic: 2*pi*r^2 + 2*pi*r*h with r=2, h=10 -> 48pi ~ 150.80. The mesh is a
     // chord approximation of the curved lateral, so allow 2% under.
     let expect = 48.0 * std::f64::consts::PI;

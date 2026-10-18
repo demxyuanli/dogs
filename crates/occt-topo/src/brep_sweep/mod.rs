@@ -12,4 +12,4 @@ mod rotation;
 mod translation;
 
 pub use revol::make_revol;
-pub use translation::make_prism;
+pub use translation::sweep_make_prism;

@@ -121,7 +121,7 @@ pub fn weld_vertices(mesh: &mut ShapeMesh, tol: f64) {
 }
 
 /// Number of faces in `shape` (including itself if it is a face).
-pub fn count_faces(shape: &TopoShape) -> usize {
+pub fn mesh_face_count(shape: &TopoShape) -> usize {
     let mut n = 0;
     let mut ex = Explorer::new(shape, ShapeType::Face);
     while ex.more() {
@@ -135,7 +135,7 @@ pub fn count_faces(shape: &TopoShape) -> usize {
 mod tests {
     use super::*;
     use crate::builder::TopoBuilder;
-    use crate::mesh::mesh_surface_area;
+    use crate::mesh::shape_mesh_surface_area;
     use crate::shape::Compound;
     use crate::wireframe::tests::square_face;
 
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(mesh.source_shape, ShapeType::Compound);
         // Planar face triangulates exactly from its boundary polygon (2 tris).
         assert_eq!(mesh.triangles.len(), 2, "tris {}", mesh.triangles.len());
-        assert!((mesh_surface_area(&mesh) - 1.0).abs() < 1e-6, "area {}", mesh_surface_area(&mesh));
+        assert!((shape_mesh_surface_area(&mesh) - 1.0).abs() < 1e-6, "area {}", shape_mesh_surface_area(&mesh));
     }
 
     #[test]
@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn count_faces_in_compound() {
         let shape = square_face_compound();
-        assert_eq!(count_faces(&shape), 1);
+        assert_eq!(mesh_face_count(&shape), 1);
     }
 
     #[test]

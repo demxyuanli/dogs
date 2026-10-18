@@ -42,7 +42,7 @@ pub use topol::{RestrictionArc, TopolTool};
 pub use line_tool::{line_tool_first_parameter, line_tool_last_parameter, nb_vertex, vertex};
 pub use line_ctor::LineConstructor;
 pub use intss::{IntSS, IntSSLine};
-pub use intss_bspline::{make_bspline, make_bspline2d};
+pub use intss_bspline::{int_ss_make_bspline, int_ss_make_bspline2d};
 pub use intss_pcurve::{
     adjust_u_periodic_curve2d, build_pcurves, treat_rline, trim_iline_on_surf_boundaries,
 };

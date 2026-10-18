@@ -71,7 +71,7 @@ pub fn boundary_multiple_check(shape: &TopoShape) -> Vec<(Edge, usize, CheckLeve
 /// `BRepCheck_Shell.cxx:404-438`). Delegates to [`crate::shell_check::
 /// shell_closed_check`] so shape validity follows one control flow.
 pub fn shell_closed_check(shell: &Shell) -> CheckLevel {
-    match crate::shell_check::shell_closed_check(shell) {
+    match crate::shell_check::validate_shell_closed(shell) {
         Ok(()) => CheckLevel::Ok,
         Err(m) => CheckLevel::Error(m),
     }
@@ -264,7 +264,7 @@ pub fn max_vertex_gap(shape: &TopoShape) -> f64 {
 }
 
 /// Aggregate: run all checks and return (errors, warnings).
-pub fn analyse(shape: &TopoShape) -> (Vec<String>, Vec<String>) {
+pub fn check_shape(shape: &TopoShape) -> (Vec<String>, Vec<String>) {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     for (_, _, lvl) in boundary_multiple_check(shape) {
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn aggregate_clean_for_box() {
         let b = BRepPrimBox::make_box(2.0, 3.0, 4.0);
-        let (errors, _) = analyse(&b.solid.0);
+        let (errors, _) = check_shape(&b.solid.0);
         assert!(errors.is_empty(), "errors: {errors:?}");
     }
 }

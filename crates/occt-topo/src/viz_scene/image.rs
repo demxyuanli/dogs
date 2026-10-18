@@ -159,7 +159,7 @@ pub fn scene_triangles(scene: &VizScene, deflection: f64) -> Vec<SceneTriangle> 
 /// Returns `(min_corner, max_corner)`, or `None` for an empty scene. The
 /// per-shape box is taken from the registered geometry and then transformed
 /// into world space.
-pub fn scene_bounds(scene: &VizScene) -> Option<(GpPnt, GpPnt)> {
+pub fn viz_scene_bounds(scene: &VizScene) -> Option<(GpPnt, GpPnt)> {
     let mut b = BndBox::new();
     for ss in &scene.shapes {
         let bb = crate::bbox_from_geometry::shape_bbox(&ss.shape).transformed(&ss.transform);
@@ -177,7 +177,7 @@ pub fn shape_world_vertices(scene: &VizScene, idx: usize, deflection: f64) -> Ve
 /// Centre of the scene's combined bounds (falls back to the origin when the
 /// scene is empty).
 pub fn scene_center(scene: &VizScene) -> GpPnt {
-    let (lo, hi) = scene_bounds(scene)
+    let (lo, hi) = viz_scene_bounds(scene)
         .unwrap_or_else(|| (GpPnt::new(-1.0, -1.0, -1.0), GpPnt::new(1.0, 1.0, 1.0)));
     GpPnt::new((lo.x() + hi.x()) * 0.5, (lo.y() + hi.y()) * 0.5, (lo.z() + hi.z()) * 0.5)
 }

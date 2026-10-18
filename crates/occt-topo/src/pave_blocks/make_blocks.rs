@@ -243,7 +243,7 @@ pub(super) fn merge_touching_blocks(
 ///
 /// The merge is restricted to *source* vertices so a genuine intersection
 /// split — always delimited by a newly-created vertex — is never undone.
-pub fn filter_paves_on_curves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
+pub fn make_blocks_filter_paves_on_curves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
     let tol = PCONFUSION;
     let nb_source = f.ds().nb_source_shapes();
     let edge_indices: Vec<usize> = (0..f.ds().nb_shapes())

@@ -566,7 +566,7 @@ pub fn bin_file_path(gltf_path: &str, bin_file_name_short: &str) -> String {
 /// [`GltfCafWriterOutput::bin`]), the same in-memory contract as the OBJ and
 /// PLY ports. Texture files are copied by the material map, exactly like
 /// `RWMesh_MaterialMap::CopyTexture` does for the OBJ writer.
-pub fn perform(
+pub fn write_gltf(
     path: &str,
     nodes: &[GltfCafNode],
     file_info: &[(String, String)],

@@ -9,7 +9,7 @@ use crate::bean_face_kind::{
 };
 use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::inttools_data::IntRange;
-use crate::meshing::range_splitter::{classify_surface as classify_surface_mesh, MeshSurfaceType};
+use crate::meshing::range_splitter::{mesh_surface_type as mesh_surface_type_mesh, MeshSurfaceType};
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -151,7 +151,7 @@ impl BeanFaceIntersector {
             SurfaceKind::Cylinder | SurfaceKind::Other => {
                 // `brep_surface::classify_surface` never returns `Cylinder`
                 // directly; re-confirm via the mesh classifier.
-                if classify_surface_mesh(self.surface()) != MeshSurfaceType::Cylinder {
+                if mesh_surface_type_mesh(self.surface()) != MeshSurfaceType::Cylinder {
                     return false;
                 }
                 let (axis, radius) = match cylinder_geometry(self.surface()) {

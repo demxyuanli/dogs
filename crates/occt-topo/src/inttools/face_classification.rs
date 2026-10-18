@@ -198,7 +198,7 @@ pub(super) fn project_to_2d(pln: &GpPln, p: &GpPnt) -> GpPnt2d {
 
 /// Split an edge at the given interior parameters (`split_edge` wrapper).
 pub fn split_edges_at_params(e: &Edge, params: &[f64]) -> Vec<Edge> {
-    edge_split::split_edge(e, params)
+    edge_split::split_edge_at_params(e, params)
 }
 
 /// For every edge index in `edges`, every intersection point with an edge of

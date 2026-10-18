@@ -16,7 +16,7 @@ use crate::bean_face_sample::{
 };
 use crate::int_tools_curve_box::add_curve_to_box;
 use crate::inttools_data::IntRange;
-use crate::meshing::range_splitter::{classify_surface as classify_surface_mesh, MeshSurfaceType};
+use crate::meshing::range_splitter::{mesh_surface_type as mesh_surface_type_mesh, MeshSurfaceType};
 
 impl BeanFaceIntersector {
     /// Localized intersection for high-degree NURBS-like surfaces.
@@ -35,7 +35,7 @@ impl BeanFaceIntersector {
         let b_fbox_found = a_surface_data.find_box(&a_surface_range).is_some();
 
         let is_bspline = matches!(
-            classify_surface_mesh(self.surface()),
+            mesh_surface_type_mesh(self.surface()),
             MeshSurfaceType::BSplineSurface
         );
         if is_bspline && a_surface_data.has_grid() {
@@ -366,7 +366,7 @@ impl BeanFaceIntersector {
                     None => {
                         let mut box_s = BndBox::new();
                         let is_bspline = matches!(
-                            classify_surface_mesh(self.surface()),
+                            mesh_surface_type_mesh(self.surface()),
                             MeshSurfaceType::BSplineSurface
                         );
                         if is_bspline && the_surface_data.has_grid() {

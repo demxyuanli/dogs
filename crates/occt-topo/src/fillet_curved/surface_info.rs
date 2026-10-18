@@ -216,7 +216,7 @@ pub(super) fn sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
 /// The guard formerly sampled 8x8 normals, which also accepted a flat B-spline
 /// patch; `ChFi3d` dispatches on `GeomAbs_Plane` (`ChFi3d_Builder_0.cxx:626`,
 /// `:652`, `:3745-3750`).
-pub fn plane_from_surface(s: &dyn Surface) -> Option<PlaneInfo> {
+pub fn surface_plane_info(s: &dyn Surface) -> Option<PlaneInfo> {
     if !is_plane_type(s) {
         return None;
     }

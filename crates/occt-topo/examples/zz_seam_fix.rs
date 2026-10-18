@@ -133,7 +133,7 @@ fn main() {
     // summed displacement cancels can be diagnosed edge by edge.
     if args.iter().any(|a| a == "--wireuv") {
         use occt_topo::meshing::range_splitter::create_range_splitter;
-        use occt_topo::shhealing::check_wire;
+        use occt_topo::shhealing::healing_check_wire;
         let all = faces_of(&shape);
         let face = Face(all[want].0.clone());
         let (u_range, v_range) = match BRepTool::face_surface(&face) {
@@ -224,7 +224,7 @@ fn main() {
                     println!("WIREUV   e[{ei}] no pcurve (fk={fk} fk2={fk} reg_n={})", reg.edge_pcurves(&e.0, fk).len());
                 }
             }
-            println!("WIREUV wire[{wi}] sum=({sx:.6},{sy:.6}) check_wire={:?}", check_wire(w, &face, u_range, v_range));
+            println!("WIREUV wire[{wi}] sum=({sx:.6},{sy:.6}) check_wire={:?}", healing_check_wire(w, &face, u_range, v_range));
             let _ = create_range_splitter;
         }
         return;

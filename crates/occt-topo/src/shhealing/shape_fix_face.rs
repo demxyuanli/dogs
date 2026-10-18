@@ -37,7 +37,7 @@ use crate::topo_tools_full::{edges_of_wire, wires_of_face};
 
 /// `CheckWire(wire, face, dU, dV, isuopen, isvopen, isDeg)`
 /// (`ShapeFix_Face.cxx:1652-1718`).
-pub fn check_wire(
+pub fn healing_check_wire(
     wire: &Wire,
     face: &Face,
     d_u: f64,
@@ -841,7 +841,7 @@ impl ShapeFixFace {
         let mut i = 0usize;
         while i < ws.len() {
             let wire = ws[i].clone();
-            let (isuopen, isvopen, isdeg) = match check_wire(&wire, &face, u_range, v_range) {
+            let (isuopen, isvopen, isdeg) = match healing_check_wire(&wire, &face, u_range, v_range) {
                 Some(v) => v,
                 None => {
                     i += 1;

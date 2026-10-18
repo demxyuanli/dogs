@@ -740,7 +740,7 @@ impl RangeSplitter for NURBSRangeSplitter {
         self.adjust_range_base();
         self.surface_type = self
             .surface()
-            .map(|s| classify_surface(s.as_ref()))
+            .map(|s| mesh_surface_type(s.as_ref()))
             .unwrap_or(MeshSurfaceType::OtherSurface);
         if self.surface_type == MeshSurfaceType::BezierSurface {
             let (ru0, ru1) = self.base().range_u();

@@ -15,7 +15,7 @@ use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::fclass2d::FaceState;
 use crate::geom_int::intss::IntSS;
-use crate::geom_int::intss_bspline::{make_bspline, make_bspline2d};
+use crate::geom_int::intss_bspline::{int_ss_make_bspline, int_ss_make_bspline2d};
 use crate::geom_int::intss_pcurve::{
     adjust_u_periodic_curve2d, build_pcurves, treat_rline, trim_iline_on_surf_boundaries,
 };
@@ -297,16 +297,16 @@ fn make_walking(
             let ifprm = fprm as i32;
             let ilprm = lprm as i32;
             let a_h1 = if my_approx1 {
-                make_bspline2d(wl, ifprm, ilprm, true)
+                int_ss_make_bspline2d(wl, ifprm, ilprm, true)
             } else {
                 None
             };
             let a_h2 = if my_approx2 {
-                make_bspline2d(wl, ifprm, ilprm, false)
+                int_ss_make_bspline2d(wl, ifprm, ilprm, false)
             } else {
                 None
             };
-            if let Some(a_bsp) = make_bspline(wl, ifprm, ilprm) {
+            if let Some(a_bsp) = int_ss_make_bspline(wl, ifprm, ilprm) {
                 iss.append_line(a_bsp, a_h1, a_h2);
             }
         }
@@ -416,16 +416,16 @@ fn walking_approx_one(
 
     if !theapp3d.is_done() {
         let a_h1 = if my_approx1 {
-            make_bspline2d(wl, ifprm, ilprm, true)
+            int_ss_make_bspline2d(wl, ifprm, ilprm, true)
         } else {
             None
         };
         let a_h2 = if my_approx2 {
-            make_bspline2d(wl, ifprm, ilprm, false)
+            int_ss_make_bspline2d(wl, ifprm, ilprm, false)
         } else {
             None
         };
-        if let Some(a_bsp) = make_bspline(wl, ifprm, ilprm) {
+        if let Some(a_bsp) = int_ss_make_bspline(wl, ifprm, ilprm) {
             iss.append_line(a_bsp, a_h1, a_h2);
         }
         return;

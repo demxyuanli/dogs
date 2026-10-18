@@ -113,7 +113,7 @@ pub fn face_to_triangles(f: &Face, deflection: f64) -> (Vec<GpPnt>, Vec<Triangle
 }
 
 /// Sum of triangle areas of a face's tessellation.
-pub fn face_area(f: &Face) -> f64 {
+pub fn wireframe_face_area(f: &Face) -> f64 {
     let (pts, tris) = face_to_triangles(f, 0.01);
     tris.iter().map(|t| triangle_area(&pts, t)).sum()
 }
@@ -306,6 +306,6 @@ pub(crate) mod tests {
     #[test]
     fn face_area_of_unit_square() {
         let f = square_face();
-        assert!((face_area(&f) - 1.0).abs() < 1e-6, "area {}", face_area(&f));
+        assert!((wireframe_face_area(&f) - 1.0).abs() < 1e-6, "area {}", wireframe_face_area(&f));
     }
 }

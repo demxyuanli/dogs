@@ -590,7 +590,7 @@ fn write_shape(
 /// `path` supplies the context name only; the text is returned instead of being
 /// written, like `rwmesh::obj_caf_writer::perform`. The two failure exits of the
 /// C++ (`theRootLabels.IsEmpty()` / `aNbNodesAll == 0`) become `Err`.
-pub fn perform(
+pub fn write_ply(
     path: &str,
     nodes: &[ObjExportNode],
     file_info: &[(String, String)],

@@ -104,7 +104,7 @@ impl BRepScene {
         let mut result = BndBox::new();
         for s in &self.shapes {
             let mesh = crate::shape_mesh::mesh_shape(&s.shape, 0.1);
-            let b = crate::mesh::mesh_bbox(&mesh);
+            let b = crate::mesh::shape_mesh_bbox(&mesh);
             let b = match &s.transform {
                 Some(t) => b.transformed(t),
                 None => b,

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use occt_geom::Curve;
 use occt_geom2d::curve::Curve2d;
 
-use crate::geom_int::intss_bspline::{make_bspline, make_bspline2d};
+use crate::geom_int::intss_bspline::{int_ss_make_bspline, int_ss_make_bspline2d};
 use crate::int_tools_wline::WLine;
 use occt_geom::Surface;
 
@@ -175,17 +175,17 @@ impl WlApprox {
         }
         knots.push((n - 1) as f64);
         let c3 = if self.data.approx_xyz {
-            make_bspline(a_line, ifprm, ilprm)
+            int_ss_make_bspline(a_line, ifprm, ilprm)
         } else {
             None
         };
         let c1 = if self.data.approx_u1v1 {
-            make_bspline2d(a_line, ifprm, ilprm, true)
+            int_ss_make_bspline2d(a_line, ifprm, ilprm, true)
         } else {
             None
         };
         let c2 = if self.data.approx_u2v2 {
-            make_bspline2d(a_line, ifprm, ilprm, false)
+            int_ss_make_bspline2d(a_line, ifprm, ilprm, false)
         } else {
             None
         };

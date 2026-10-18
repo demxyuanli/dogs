@@ -106,7 +106,7 @@ fn sweep_prism_and_export_roundtrip() {
 #[test]
 fn bbox_and_mesh_agree() {
     let box_ = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-    let mesh_bb = occt_topo::mesh::mesh_bbox(&mesh_shape(&box_.solid.0, 0.1));
+    let mesh_bb = occt_topo::mesh::shape_mesh_bbox(&mesh_shape(&box_.solid.0, 0.1));
     let geom_bb = shape_bbox(&box_.solid.0);
     let (_, a1, _, b1, _, c1) = mesh_bb.get().unwrap();
     let (_, x1, _, y1, _, z1) = geom_bb.get().unwrap();

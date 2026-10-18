@@ -124,7 +124,7 @@ pub fn boundary_counts(shapes: &[TopoShape]) -> (usize, usize, usize, usize) {
 }
 
 /// Euler characteristic: V - E + F (2-complex) or V - E + F - C (3-complex).
-pub fn euler_characteristic(counts: (usize, usize, usize, usize)) -> i32 {
+pub fn validate_euler_characteristic(counts: (usize, usize, usize, usize)) -> i32 {
     let (v, e, f, s) = counts;
     (v as i32) - (e as i32) + (f as i32) - (s as i32)
 }
@@ -132,7 +132,7 @@ pub fn euler_characteristic(counts: (usize, usize, usize, usize)) -> i32 {
 /// Is the shape likely a closed manifold (genus 0) via Euler formula?
 /// Requires knowing it's a solid's boundary. Returns Ok if V-E+F == 2.
 pub fn is_closed_manifold(counts: (usize, usize, usize, usize)) -> bool {
-    euler_characteristic(counts) == 2
+    validate_euler_characteristic(counts) == 2
 }
 
 /// Simple BRepCheck_Analyzer-like wrapper.

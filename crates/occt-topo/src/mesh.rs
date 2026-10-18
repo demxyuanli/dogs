@@ -107,14 +107,14 @@ pub fn mesh_cylinder(radius: f64, height: f64, slices: usize) -> ShapeMesh {
 }
 
 /// Compute a bounding box from a triangulated mesh.
-pub fn mesh_bbox(mesh: &ShapeMesh) -> BndBox {
+pub fn shape_mesh_bbox(mesh: &ShapeMesh) -> BndBox {
     let mut b = BndBox::new();
     for v in &mesh.vertices { b.add_point(v); }
     b
 }
 
 /// Total surface area of a triangle mesh.
-pub fn mesh_surface_area(mesh: &ShapeMesh) -> f64 {
+pub fn shape_mesh_surface_area(mesh: &ShapeMesh) -> f64 {
     let mut area = 0.0;
     for t in &mesh.triangles {
         let a = &mesh.vertices[t.n0]; let b = &mesh.vertices[t.n1]; let c = &mesh.vertices[t.n2];
@@ -126,7 +126,7 @@ pub fn mesh_surface_area(mesh: &ShapeMesh) -> f64 {
 }
 
 /// Convert a ShapeMesh to a Poly Triangulation.
-pub fn to_triangulation(mesh: &ShapeMesh) -> Triangulation {
+pub fn shape_mesh_to_triangulation(mesh: &ShapeMesh) -> Triangulation {
     Triangulation::new(mesh.vertices.clone(), mesh.triangles.clone())
 }
 
@@ -148,7 +148,7 @@ pub fn compute_vertex_normals(mesh: &ShapeMesh) -> Vec<GpPnt> {
 }
 
 /// Mesh quality: fraction of degenerate (zero-area) triangles.
-pub fn degenerate_fraction(mesh: &ShapeMesh) -> f64 {
+pub fn mesh_degenerate_fraction(mesh: &ShapeMesh) -> f64 {
     let total = mesh.triangles.len();
     if total == 0 { return 0.0; }
     let mut deg = 0;
@@ -170,13 +170,13 @@ mod tests {
         let mesh = mesh_box((GpPnt::new(0.,0.,0.), GpPnt::new(1.,1.,1.)));
         assert_eq!(mesh.triangles.len(), 12);
         assert_eq!(mesh.vertices.len(), 8);
-        assert!((mesh_surface_area(&mesh) - 6.0).abs() < 1e-12);
+        assert!((shape_mesh_surface_area(&mesh) - 6.0).abs() < 1e-12);
     }
 
     #[test]
     fn sphere_area() {
         let mesh = mesh_sphere(1.0, 20, 20);
-        let area = mesh_surface_area(&mesh);
+        let area = shape_mesh_surface_area(&mesh);
         let expect = 4.0*std::f64::consts::PI;
         assert!((area - expect).abs() < 0.5, "sphere area {area} vs {expect}");
     }
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn cylinder_side_area() {
         let mesh = mesh_cylinder(1.0, 2.0, 32);
-        let area = mesh_surface_area(&mesh);
+        let area = shape_mesh_surface_area(&mesh);
         // side = 2πrh = 4π, caps = 2π → total 6π
         let expect2 = 6.0*std::f64::consts::PI;
         assert!((area - expect2).abs() < 1.0, "cyl area {area} vs {expect2}");
@@ -193,6 +193,6 @@ mod tests {
     #[test]
     fn no_degenerate() {
         let mesh = mesh_box((GpPnt::new(0.,0.,0.), GpPnt::new(1.,1.,1.)));
-        assert!(degenerate_fraction(&mesh) < 1e-12);
+        assert!(mesh_degenerate_fraction(&mesh) < 1e-12);
     }
 }

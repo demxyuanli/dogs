@@ -13,7 +13,7 @@ use occt_topo::brep_tool::BRepTool;
 use occt_topo::iges_read::read_iges_shape;
 use occt_topo::meshing::data_model::MeshStatus;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
-use occt_topo::meshing::range_splitter::{classify_surface, MeshSurfaceType};
+use occt_topo::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};
 use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
 
@@ -96,7 +96,7 @@ fn main() -> ExitCode {
             let surf = BRepTool::face_surface(face);
             let ty = surf
                 .as_ref()
-                .map(|s| tname(classify_surface(s.as_ref())))
+                .map(|s| tname(mesh_surface_type(s.as_ref())))
                 .unwrap_or("none");
             let (u0, u1, v0, v1) = surf
                 .as_ref()
@@ -237,7 +237,7 @@ fn main() -> ExitCode {
             let ty = face
                 .surface()
                 .as_ref()
-                .map(|s| tcode(classify_surface(s.as_ref())))
+                .map(|s| tcode(mesh_surface_type(s.as_ref())))
                 .unwrap_or(10);
             let mut pts = 0usize;
             for w in 0..face.wires_nb() {

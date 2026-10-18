@@ -179,7 +179,7 @@ use super::*;
         ];
         let pln = GpPln::new(GpAx3::standard());
         let surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
-        let f_ccw = crate::builder_face::make_face_from_wire(&square_edges(&b, &ccw), Some(surf))
+        let f_ccw = crate::builder_face::builder_make_face_from_wire(&square_edges(&b, &ccw), Some(surf))
             .expect("ccw face");
         let cl = FClass2d::new(&f_ccw, 1e-6).expect("classifier");
         assert!(!cl.is_hole(), "CCW ring is a bounded face, not a hole");
@@ -192,7 +192,7 @@ use super::*;
             GpPnt::new(1.0, 0.0, 0.0),
         ];
         let surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln));
-        let f_cw = crate::builder_face::make_face_from_wire(&square_edges(&b, &cw), Some(surf))
+        let f_cw = crate::builder_face::builder_make_face_from_wire(&square_edges(&b, &cw), Some(surf))
             .expect("cw face");
         let cl = FClass2d::new(&f_cw, 1e-6).expect("classifier");
         assert!(cl.is_hole(), "CW ring reports a hole face");

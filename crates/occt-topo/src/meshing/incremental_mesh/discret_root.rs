@@ -274,7 +274,7 @@ impl IncrementalMesh {
                 .face(ft.face_index)
                 .ok()
                 .and_then(|f| f.surface())
-                .map(|s| classify_surface(s.as_ref()))
+                .map(|s| mesh_surface_type(s.as_ref()))
                 .unwrap_or(MeshSurfaceType::OtherSurface);
             self.face_stats.push(FaceMeshStat {
                 index: ft.face_index,
@@ -1581,7 +1581,7 @@ impl IncrementalMesh {
             .map(|p| {
                 // Analytic ProjLib inverse first (exact even on unbounded-v
                 // surfaces); Newton fallback for non-analytic (B-spline) faces.
-                crate::pcurve_full::project_point_on_surface(surface, &p).unwrap_or_else(|| {
+                crate::pcurve_full::surface_project_point(surface, &p).unwrap_or_else(|| {
                     let (u, v) = project_uv(surface, &p);
                     GpPnt2d::new(u, v)
                 })

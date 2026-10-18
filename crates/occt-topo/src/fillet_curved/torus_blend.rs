@@ -135,20 +135,20 @@ pub fn rolling_ball_center_line(
             Ok(sample_circle(&c, CENTERLINE_SAMPLES))
         }
         (SurfaceKind::Plane, SurfaceKind::Sphere) => {
-            let pln = plane_from_surface(f1).ok_or("rolling_ball_center_line: cannot extract plane")?;
+            let pln = surface_plane_info(f1).ok_or("rolling_ball_center_line: cannot extract plane")?;
             let sph = sphere_from_surface(f2).ok_or("rolling_ball_center_line: cannot extract sphere")?;
             let c = plane_sphere_centerline(&pln, &sph, radius)?;
             Ok(sample_circle(&c, CENTERLINE_SAMPLES))
         }
         (SurfaceKind::Sphere, SurfaceKind::Plane) => {
             let sph = sphere_from_surface(f1).ok_or("rolling_ball_center_line: cannot extract sphere")?;
-            let pln = plane_from_surface(f2).ok_or("rolling_ball_center_line: cannot extract plane")?;
+            let pln = surface_plane_info(f2).ok_or("rolling_ball_center_line: cannot extract plane")?;
             let c = plane_sphere_centerline(&pln, &sph, radius)?;
             Ok(sample_circle(&c, CENTERLINE_SAMPLES))
         }
         (SurfaceKind::Plane, SurfaceKind::Cylinder) | (SurfaceKind::Cylinder, SurfaceKind::Plane) => {
             let (pln_s, cyl_s) = if k1 == SurfaceKind::Plane { (f1, f2) } else { (f2, f1) };
-            let pln = plane_from_surface(pln_s).ok_or("rolling_ball_center_line: cannot extract plane")?;
+            let pln = surface_plane_info(pln_s).ok_or("rolling_ball_center_line: cannot extract plane")?;
             let cyl = cylinder_from_surface(cyl_s).ok_or("rolling_ball_center_line: cannot extract cylinder")?;
             let blend = plane_cylinder_blend(&pln, &cyl, radius, tol)?;
             Ok(sample_circle(
@@ -243,7 +243,7 @@ pub fn fillet_edge_curved_general(
 
     match (k1, k2) {
         (SurfaceKind::Plane, SurfaceKind::Sphere) => {
-            let pln = plane_from_surface(s1.as_ref()).ok_or("cannot extract plane")?;
+            let pln = surface_plane_info(s1.as_ref()).ok_or("cannot extract plane")?;
             let sph = sphere_from_surface(s2.as_ref()).ok_or("cannot extract sphere")?;
             let g = plane_sphere_blend(&pln, &sph, radius)?;
             let (ca, cb) = (g.contact_a, g.contact_b);
@@ -251,13 +251,13 @@ pub fn fillet_edge_curved_general(
         }
         (SurfaceKind::Sphere, SurfaceKind::Plane) => {
             let sph = sphere_from_surface(s1.as_ref()).ok_or("cannot extract sphere")?;
-            let pln = plane_from_surface(s2.as_ref()).ok_or("cannot extract plane")?;
+            let pln = surface_plane_info(s2.as_ref()).ok_or("cannot extract plane")?;
             let g = plane_sphere_blend(&pln, &sph, radius)?;
             let (ca, cb) = (g.contact_a, g.contact_b);
             assemble_torus_blend(solid, edge, f1, f2, &g, AdjacentKind::Sphere, AdjacentKind::Plane, cb, ca)
         }
         (SurfaceKind::Plane, SurfaceKind::Cylinder) => {
-            let pln = plane_from_surface(s1.as_ref()).ok_or("cannot extract plane")?;
+            let pln = surface_plane_info(s1.as_ref()).ok_or("cannot extract plane")?;
             let cyl = cylinder_from_surface(s2.as_ref()).ok_or("cannot extract cylinder")?;
             let g = plane_cylinder_blend(&pln, &cyl, radius, tol)?;
             let (ca, cb) = (g.contact_a, g.contact_b);
@@ -265,7 +265,7 @@ pub fn fillet_edge_curved_general(
         }
         (SurfaceKind::Cylinder, SurfaceKind::Plane) => {
             let cyl = cylinder_from_surface(s1.as_ref()).ok_or("cannot extract cylinder")?;
-            let pln = plane_from_surface(s2.as_ref()).ok_or("cannot extract plane")?;
+            let pln = surface_plane_info(s2.as_ref()).ok_or("cannot extract plane")?;
             let g = plane_cylinder_blend(&pln, &cyl, radius, tol)?;
             let (ca, cb) = (g.contact_a, g.contact_b);
             assemble_torus_blend(solid, edge, f1, f2, &g, AdjacentKind::Cylinder, AdjacentKind::Plane, cb, ca)
@@ -278,7 +278,7 @@ pub fn fillet_edge_curved_general(
             assemble_torus_blend(solid, edge, f1, f2, &g, AdjacentKind::Sphere, AdjacentKind::Sphere, ca, cb)
         }
         (SurfaceKind::Plane, SurfaceKind::Cone) => {
-            let pln = plane_from_surface(s1.as_ref()).ok_or("cannot extract plane")?;
+            let pln = surface_plane_info(s1.as_ref()).ok_or("cannot extract plane")?;
             let cone = cone_from_surface(s2.as_ref()).ok_or("cannot extract cone")?;
             let g = plane_cone_blend(&pln, &cone, radius, tol)?;
             let (ca, cb) = (g.contact_a, g.contact_b);
@@ -286,7 +286,7 @@ pub fn fillet_edge_curved_general(
         }
         (SurfaceKind::Cone, SurfaceKind::Plane) => {
             let cone = cone_from_surface(s1.as_ref()).ok_or("cannot extract cone")?;
-            let pln = plane_from_surface(s2.as_ref()).ok_or("cannot extract plane")?;
+            let pln = surface_plane_info(s2.as_ref()).ok_or("cannot extract plane")?;
             let g = plane_cone_blend(&pln, &cone, radius, tol)?;
             let (ca, cb) = (g.contact_a, g.contact_b);
             assemble_torus_blend(solid, edge, f1, f2, &g, AdjacentKind::Cone, AdjacentKind::Plane, cb, ca)

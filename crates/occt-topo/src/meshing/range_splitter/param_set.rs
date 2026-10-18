@@ -90,9 +90,9 @@ pub enum MeshSurfaceType {
 /// periodicity flags plus a sampled constant-radius test (`is_cylinder_like`),
 /// which turned any V-bounded cylinder or cone into a `Sphere` and swapped the
 /// whole internal node grid (audit A24).
-pub fn classify_surface(s: &dyn Surface) -> MeshSurfaceType {
+pub fn mesh_surface_type(s: &dyn Surface) -> MeshSurfaceType {
     if let Some(basis) = s.rectangular_trimmed_basis() {
-        return classify_surface(basis.as_ref());
+        return mesh_surface_type(basis.as_ref());
     }
     if s.gp_pln().is_some() {
         return MeshSurfaceType::Plane;
@@ -325,7 +325,7 @@ fn adaptor_surface_intervals(
     continuity: u8,
     range: (f64, f64),
 ) -> Vec<f64> {
-    match classify_surface(surf) {
+    match mesh_surface_type(surf) {
         MeshSurfaceType::OffsetSurface => {
             let base_s = offset_interval_continuity(continuity);
             if let Some(basis) = surf.offset_basis_surface() {
@@ -625,7 +625,7 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
             .unwrap_or(0);
         eprintln!(
             "NURBSGRID pre key={fkey} type={:?} u_params={} v_params={} ru=[{:.17e},{:.17e}] rv=[{:.17e},{:.17e}] tol_u={tol_u:.6e} tol_v={tol_v:.6e} defl={deflection:.6} delta=({:.17e},{:.17e})",
-            classify_surface(surface.as_ref()),
+            mesh_surface_type(surface.as_ref()),
             u_params.len(),
             v_params.len(),
             range_u.0,

@@ -15,7 +15,7 @@ use occt_geom2d::Curve2d;
 use crate::bopds::BopdsDS;
 use crate::boptools_2d::curve_on_surface;
 use crate::brep_tool::BRepTool;
-use crate::int_tools_curve_box::vertex_parameter;
+use crate::int_tools_curve_box::curve_box_vertex_parameter;
 use crate::int_tools_full::IntToolsContext;
 use crate::inttools_data::IntRange;
 use crate::pave_ff_make_blocks_helpers::get_full_shape_map;
@@ -27,10 +27,10 @@ fn full_shape_map(ds: &BopdsDS, n_f: usize, mi: &mut HashSet<usize>) {
     get_full_shape_map(ds, n_f, mi);
 }
 
-fn vertex_parameter1(common_first: f64, common_last: f64) -> f64 {
+fn curve_box_vertex_parameter1(common_first: f64, common_last: f64) -> f64 {
     let lo = common_first.min(common_last);
     let hi = common_first.max(common_last);
-    vertex_parameter(IntRange::new_unchecked(lo, hi), 0.5 * (lo + hi))
+    curve_box_vertex_parameter(IntRange::new_unchecked(lo, hi), 0.5 * (lo + hi))
 }
 
 fn push_pnt(
@@ -105,7 +105,7 @@ fn collect_ef_new_vertices(f: &PaveFiller, mi: &HashSet<usize>) -> Vec<EfNewVert
         if !mi.contains(&n_e) || !mi.contains(&n_f_opp) {
             continue;
         }
-        let a_par = vertex_parameter1(it.common_first, it.common_last);
+        let a_par = curve_box_vertex_parameter1(it.common_first, it.common_last);
         out.push(EfNewVertex {
             n_e,
             n_f_opp,

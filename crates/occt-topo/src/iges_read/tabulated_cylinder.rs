@@ -51,7 +51,7 @@ pub(in crate::iges_read) fn transfer_tabulated_cylinder(
     }
     let Some(span) = extract_curve_3d(&shape) else {
         // `BRepPrimAPI_MakePrism(directrix, Vec(pt1, pt2))` (`cxx:989-995`).
-        let prism = crate::brep_sweep::make_prism(&shape, &extrusion)?;
+        let prism = crate::brep_sweep::sweep_make_prism(&shape, &extrusion)?;
         return apply_location(session, index, prism);
     };
     // `BRep_Tool::Curve(E, First, Last)` (`BRep_Tool.cxx:205-218`) returns the

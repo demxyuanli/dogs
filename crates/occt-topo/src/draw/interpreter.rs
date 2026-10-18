@@ -543,7 +543,7 @@ pub(super) fn cmd_info(session: &mut DrawSession, args: &[String]) -> Result<(),
     let nv = counts.get(&ShapeType::Vertex).copied().unwrap_or(0);
     let ne = counts.get(&ShapeType::Edge).copied().unwrap_or(0);
     let nf = counts.get(&ShapeType::Face).copied().unwrap_or(0);
-    let vol = volume(&shape);
+    let vol = draw_volume(&shape);
     session.log.push(format!(
         "info {}: vertices {nv}, edges {ne}, faces {nf}, volume {vol:.6}",
         args[0]

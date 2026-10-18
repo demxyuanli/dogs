@@ -210,7 +210,7 @@ impl IgesWriter {
     pub(super) fn note_max_coord(&mut self, shape: &TopoShape) {
         // `BRepBndLib::Add` then skip a void or open box
         // (`IGESControl_Writer.cxx:181-189`).
-        let box_ = crate::bopalgo_tools_wires::shape_box_of(shape);
+        let box_ = crate::bopalgo_tools_wires::wires_shape_box(shape);
         if box_.is_void()
             || box_.is_open_xmin()
             || box_.is_open_xmax()

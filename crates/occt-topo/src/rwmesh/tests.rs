@@ -133,7 +133,7 @@ mod tests {
         let shape = BRepPrimBox::make_box(2.0, 2.0, 2.0).solid.0;
         let scene = mesh_from_shape(&shape, 0.5);
         let comp = scene_to_compound(&scene, 1e-7).expect("compound");
-        assert!(crate::shape_mesh::count_faces(&comp) > 0, "no faces in compound");
+        assert!(crate::shape_mesh::mesh_face_count(&comp) > 0, "no faces in compound");
         assert!(mesh_vertex_count(&scene) > 0);
 
         // Closedness: a clean watertight box mesh converts to a solid.
@@ -237,7 +237,7 @@ mod tests {
                     && !coincident(&node.vertices[*c], &node.vertices[*a])
             })
             .count();
-        assert_eq!(crate::shape_mesh::count_faces(&s), n_solid);
+        assert_eq!(crate::shape_mesh::mesh_face_count(&s), n_solid);
 
         // Vertex count preserved by the conversion (mesh is a single closed grid).
         let tri = Triangulation::new(

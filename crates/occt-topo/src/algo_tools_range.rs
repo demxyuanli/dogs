@@ -296,7 +296,7 @@ pub fn dimensions(the_s: &TopoShape) -> (i32, i32) {
 }
 
 /// `IntTools_Tools::VertexParameter`.
-pub fn vertex_parameter(a_c_part: &CommonPrt, param: Option<f64>) -> f64 {
+pub fn algo_tools_vertex_parameter(a_c_part: &CommonPrt, param: Option<f64>) -> f64 {
     let a_r = a_c_part.range;
     let mut a_t = 0.5 * (a_r.first + a_r.last);
     if let Some(vp) = param {
@@ -308,8 +308,8 @@ pub fn vertex_parameter(a_c_part: &CommonPrt, param: Option<f64>) -> f64 {
 }
 
 /// `IntTools_Tools::VertexParameters`.
-pub fn vertex_parameters(a_c_part: &CommonPrt, t1: Option<f64>, t2: Option<f64>) -> (f64, f64) {
-    let a_t1 = vertex_parameter(a_c_part, t1);
+pub fn algo_tools_vertex_parameters(a_c_part: &CommonPrt, t1: Option<f64>, t2: Option<f64>) -> (f64, f64) {
+    let a_t1 = algo_tools_vertex_parameter(a_c_part, t1);
     let a_r2 = a_c_part.range;
     let mut a_t2 = 0.5 * (a_r2.first + a_r2.last);
     if let Some(vp) = t2 {
@@ -321,7 +321,7 @@ pub fn vertex_parameters(a_c_part: &CommonPrt, t1: Option<f64>, t2: Option<f64>)
 }
 
 /// `IntTools_Tools::IsOnPave1`.
-pub fn is_on_pave1(a_tr: f64, a_cp_first: f64, a_cp_last: f64, a_tolerance: f64) -> bool {
+pub fn algo_tools_is_on_pave1(a_tr: f64, a_cp_first: f64, a_cp_last: f64, a_tolerance: f64) -> bool {
     if a_tr >= a_cp_first && a_tr <= a_cp_last {
         return true;
     }
@@ -331,7 +331,7 @@ pub fn is_on_pave1(a_tr: f64, a_cp_first: f64, a_cp_last: f64, a_tolerance: f64)
 }
 
 /// `IntTools_Tools::IsInRange`.
-pub fn is_in_range(a_r_ref: IntRange, a_r: IntRange, a_tolerance: f64) -> bool {
+pub fn algo_tools_is_in_range(a_r_ref: IntRange, a_r: IntRange, a_tolerance: f64) -> bool {
     let a_t1 = a_r.first;
     let a_t2 = a_r.last;
     let a_t_ref1 = a_r_ref.first - a_tolerance;

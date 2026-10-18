@@ -13,7 +13,7 @@ use occt_geom2d::Geom2dBSplineCurve;
 
 use crate::geom_int::adjust_periodic;
 use crate::geom_int::types::RLine;
-use crate::geom_int::intss_bspline::make_bspline;
+use crate::geom_int::intss_bspline::int_ss_make_bspline;
 
 /// `GeomInt_IntSS::BuildPCurves` with explicit UV box.
 pub fn build_pcurves_box(
@@ -197,7 +197,7 @@ pub fn treat_rline(
             v2: uv.y(),
         });
     }
-    let the_c3d = make_bspline(&wl, 1, wl.nb_pnts());
+    let the_c3d = int_ss_make_bspline(&wl, 1, wl.nb_pnts());
     let mut the_tol_reached = 0.0;
     if let Some(c3) = &the_c3d {
         let mut a_tol = occt_core::precision::CONFUSION;

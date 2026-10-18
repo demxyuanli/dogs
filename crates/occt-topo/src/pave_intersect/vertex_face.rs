@@ -479,7 +479,7 @@ pub(crate) fn perform_vf_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> 
 /// blocks, unifying block vertices whose range collapsed.
 ///
 /// Source: `BOPAlgo_PaveFiller::SplitPaveBlocks` (`BOPAlgo_PaveFiller_2.cxx`).
-pub fn split_pave_blocks(f: &mut PaveFiller) -> Result<(), String> {
+pub fn split_pave_blocks_default(f: &mut PaveFiller) -> Result<(), String> {
     crate::pave_split_blocks::split_pave_blocks(f, &[], true)
 }
 

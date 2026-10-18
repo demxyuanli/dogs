@@ -217,7 +217,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use crate::builder::TopoBuilder;
-    use crate::mesh::{mesh_box, mesh_surface_area};
+    use crate::mesh::{mesh_box, shape_mesh_surface_area};
     use crate::shape::{Edge, Solid, Vertex};
     use crate::tgeometry::GeometryRegistry;
     use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpPnt, GpVec};
@@ -317,7 +317,7 @@ mod tests {
         assert!(u.triangles[12].n0 >= 8);
         assert!(u.triangles[23].n2 < 16);
         // Surface area is additive (disjoint meshes).
-        assert!((mesh_surface_area(&u) - 12.0).abs() < 1e-9);
+        assert!((shape_mesh_surface_area(&u) - 12.0).abs() < 1e-9);
     }
 
     #[test]

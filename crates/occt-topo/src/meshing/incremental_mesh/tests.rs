@@ -1,6 +1,6 @@
 use super::prelude::*;
 use super::*;
-    use crate::mesh::mesh_surface_area;
+    use crate::mesh::shape_mesh_surface_area;
     use crate::primitives::BRepPrimBox;
 
     fn unit_box() -> TopoShape {
@@ -19,7 +19,7 @@ use super::*;
         assert!(mesh.triangles.len() > 0, "triangles {}", mesh.triangles.len());
         assert!(mesh.vertices.len() >= 8, "vertices {}", mesh.vertices.len());
         // Unit box: surface area ≈ 6.
-        let area = mesh_surface_area(&mesh);
+        let area = shape_mesh_surface_area(&mesh);
         assert!((area - 6.0).abs() < 0.5, "box area {area}");
     }
 
@@ -66,7 +66,7 @@ use super::*;
         assert!(mesh.triangles.len() > 0, "triangles {}", mesh.triangles.len());
         assert!(!mesh.vertices.is_empty(), "vertices non-empty");
         // The 6 box faces tile the unit surface: area ≈ 6.
-        let area = mesh_surface_area(&mesh);
+        let area = shape_mesh_surface_area(&mesh);
         assert!((area - 6.0).abs() < 0.5, "box area {area}");
     }
 

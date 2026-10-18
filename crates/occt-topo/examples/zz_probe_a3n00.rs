@@ -4,7 +4,7 @@ use occt_topo::brep_exchange::prs3d_get_deflection;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::builder::TopoBuilder;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
-use occt_topo::meshing::range_splitter::{classify_surface, MeshSurfaceType};
+use occt_topo::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};
 use occt_topo::step::read_step_file;
 use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
@@ -47,7 +47,7 @@ fn main() {
                 i,
                 f.0.orientation(),
                 BRepTool::face_surface(f)
-                    .map(|s| tname(classify_surface(s.as_ref())))
+                    .map(|s| tname(mesh_surface_type(s.as_ref())))
                     .unwrap_or("none"),
                 b0.x(),
                 b0.y(),
@@ -75,7 +75,7 @@ fn main() {
                 let reps = reg.edge_pcurve_reps(&e.0);
                 let kinds: Vec<&str> = reps
                     .iter()
-                    .map(|(s, _, _, _)| tname(classify_surface(s.as_ref())))
+                    .map(|(s, _, _, _)| tname(mesh_surface_type(s.as_ref())))
                     .collect();
                 print!("ADJ w{wi}e{ei} nreps={} rep_types={kinds:?}", reps.len());
                 for (fi, ff) in all.iter().enumerate() {
@@ -88,7 +88,7 @@ fn main() {
                     let key = GeometryRegistry::shape_key(&ff.0);
                     let n = reg.edge_pcurves(&e.0, key).len();
                     let t = BRepTool::face_surface(ff)
-                        .map(|s| tname(classify_surface(s.as_ref())))
+                        .map(|s| tname(mesh_surface_type(s.as_ref())))
                         .unwrap_or("none");
                     print!(" | f{fi}:{t}:key={key}:pc={n}");
                 }
@@ -241,7 +241,7 @@ fn main() {
             let surf = BRepTool::face_surface(f);
             let st = surf
                 .as_ref()
-                .map(|s| tname(classify_surface(s.as_ref())))
+                .map(|s| tname(mesh_surface_type(s.as_ref())))
                 .unwrap_or("none");
             let (u0, u1, v0, v1) = occt_topo::brep_tools::uv_bounds(f);
             let (su, sv) = surf
@@ -308,7 +308,7 @@ fn main() {
             let surf = BRepTool::face_surface(f);
             let st = surf
                 .as_ref()
-                .map(|s| tname(classify_surface(s.as_ref())))
+                .map(|s| tname(mesh_surface_type(s.as_ref())))
                 .unwrap_or("none");
             let (u1, u2, v1, v2) = occt_topo::brep_tools::uv_bounds(f);
             let (sur, svr) = surf
@@ -346,7 +346,7 @@ fn main() {
                 println!(
                     "BNDINF  facesurf={:x} kind={} ur={:?} vr={:?}",
                     std::sync::Arc::as_ptr(&s) as *const () as usize,
-                    tname(classify_surface(s.as_ref())),
+                    tname(mesh_surface_type(s.as_ref())),
                     s.u_range(),
                     s.v_range()
                 );
@@ -384,7 +384,7 @@ fn main() {
                         println!(
                             "BNDINF    rep surf={:x} kind={} ur={:?} vr={:?} rng=({rf:.6},{rl:.6}) owners={owners}",
                             ptr,
-                            tname(classify_surface(rs.as_ref())),
+                            tname(mesh_surface_type(rs.as_ref())),
                             rs.u_range(),
                             rs.v_range()
                         );
@@ -673,7 +673,7 @@ fn main() {
                 let (v0, v1) = surf.v_range();
                 println!(
                     "FDUMP  surf={} u=[{u0:.6},{u1:.6}] v=[{v0:.6},{v1:.6}] uper={} vper={}",
-                    tname(classify_surface(surf.as_ref())),
+                    tname(mesh_surface_type(surf.as_ref())),
                     surf.is_u_periodic(),
                     surf.is_v_periodic()
                 );
@@ -742,7 +742,7 @@ fn main() {
             let wires = wires_of_face(f);
             if wires.len() != 2 { continue; }
             let surf = BRepTool::face_surface(f);
-            let tn = surf.as_ref().map(|s| tname(classify_surface(s.as_ref()))).unwrap_or("none");
+            let tn = surf.as_ref().map(|s| tname(mesh_surface_type(s.as_ref()))).unwrap_or("none");
             if tn != "BSpline" { continue; }
             let face_children = f.0.tshape.read().unwrap().children.len();
             let mut s = format!("RAW face={i} {tn} face_children={face_children} wires={}", wires.len());
@@ -873,7 +873,7 @@ fn main() {
         for st in &stats {
             let Ok(f) = model.face(st.index) else { continue };
             let surf = f.surface();
-            let tn = surf.as_ref().map(|s| tname(classify_surface(s.as_ref()))).unwrap_or("none");
+            let tn = surf.as_ref().map(|s| tname(mesh_surface_type(s.as_ref()))).unwrap_or("none");
             let (u0, u1, v0, v1) = surf
                 .as_ref()
                 .map(|s| (s.u_range().0, s.u_range().1, s.v_range().0, s.v_range().1))
@@ -912,7 +912,7 @@ fn main() {
                 continue;
             }
             let surf = BRepTool::face_surface(f);
-            let tn = surf.as_ref().map(|s| tname(classify_surface(s.as_ref()))).unwrap_or("none");
+            let tn = surf.as_ref().map(|s| tname(mesh_surface_type(s.as_ref()))).unwrap_or("none");
             let (u0, u1, v0, v1) = surf.as_ref().map(|s| (s.u_range().0, s.u_range().1, s.v_range().0, s.v_range().1)).unwrap_or((0.0,0.0,0.0,0.0));
             let (uper, vper) = surf.as_ref().map(|s| (s.is_u_periodic(), s.is_v_periodic())).unwrap_or((false,false));
             let wires = wires_of_face(f);
@@ -963,7 +963,7 @@ fn main() {
                         let (v0, v1) = st.v_range();
                         println!(
                             "DEV face={fi} surf={} urange=[{u0:.4},{u1:.4}] vrange=[{v0:.4},{v1:.4}] uper={} vper={} range=[{first:.4},{last:.4}] prange=[{cf:.4},{cl:.4}] npc={} maxd={maxd:.4} c3d={} pc=[{:.4},{:.4}]",
-                            tname(classify_surface(st)), st.is_u_periodic(), st.is_v_periodic(),
+                            tname(mesh_surface_type(st)), st.is_u_periodic(), st.is_v_periodic(),
                             pcs.len(),
                             if c3d.is_line() { "Line" } else if c3d.gp_circ().is_some() { "Circle" } else if c3d.bspline_poles().is_some() { "BSpline" } else { "Other" },
                             pcs[0].first_parameter(), pcs[0].last_parameter()
@@ -1059,7 +1059,7 @@ fn main() {
     println!("STATMAP matched={matched} unmatched={unmatched} sum_mt={sum_mt} flat_mt={mt}");
     for (i, f) in faces.iter().enumerate() {
         let surf = BRepTool::face_surface(f);
-        let tn = surf.as_ref().map(|s| tname(classify_surface(s.as_ref()))).unwrap_or("none");
+        let tn = surf.as_ref().map(|s| tname(mesh_surface_type(s.as_ref()))).unwrap_or("none");
         let wires = wires_of_face(f);
         let we: Vec<usize> = wires.iter().map(|w| edges_of_wire(w).len()).collect();
         // Pair the stat with the face by pointer identity: the mesh model skips

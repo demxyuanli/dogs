@@ -14,7 +14,7 @@ use occt_core::bnd::BndBox;
 use occt_core::gp::GpPnt;
 use occt_core::poly::triangulation::Triangle;
 
-use crate::mesh::{mesh_surface_area, ShapeMesh};
+use crate::mesh::{shape_mesh_surface_area, ShapeMesh};
 use crate::shape::TopoShape;
 
 /// The boolean operation to apply to a voxel cell.
@@ -213,7 +213,7 @@ pub fn voxel_subtract(a: &TopoShape, b: &TopoShape, resolution: usize) -> Result
 
 /// Surface area of a voxel boolean result.
 pub fn boolean_surface_area(a: &TopoShape, b: &TopoShape, resolution: usize, op: VoxelBoolOp) -> Result<f64, String> {
-    Ok(mesh_surface_area(&voxel_boolean(a, b, resolution, op)?))
+    Ok(shape_mesh_surface_area(&voxel_boolean(a, b, resolution, op)?))
 }
 
 /// Möller–Trumbore ray/triangle intersection. Returns the parameter `t` along
@@ -327,7 +327,7 @@ mod tests {
         let cut = voxel_subtract(&a.solid.0, &b.solid.0, 24).expect("subtract works");
         assert!(cut.triangles.len() > 24, "cut mesh has triangles");
         // Remaining region [0,1]×[0,2]×[0,2] → area 2(1·2 + 2·2 + 1·2) = 16.
-        let area = mesh_surface_area(&cut);
+        let area = shape_mesh_surface_area(&cut);
         assert!(area > 12.0 && area < 45.0, "cut area {area} (voxel staircase inflates it)");
     }
 
@@ -338,7 +338,7 @@ mod tests {
         let inter = voxel_intersect(&a.solid.0, &b.solid.0, 24).expect("intersect works");
         assert!(inter.triangles.len() > 24);
         // Overlap [1,2]×[0,2]×[0,2] → exact area 16; voxel staircase inflates.
-        let area = mesh_surface_area(&inter);
+        let area = shape_mesh_surface_area(&inter);
         assert!(area > 12.0 && area < 45.0, "intersect area {area}");
     }
 
@@ -347,7 +347,7 @@ mod tests {
         let a = BRepPrimBox::make_box(1.0, 1.0, 1.0);
         let b = BRepPrimBox::make_box_corner(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(2.0, 1.0, 1.0));
         let fused = voxel_boolean(&a.solid.0, &b.solid.0, 20, VoxelBoolOp::Union).expect("union works");
-        let area = mesh_surface_area(&fused);
+        let area = shape_mesh_surface_area(&fused);
         // Two 1×1×1 boxes side by side → exact surface 10 (touching faces
         // cancel), voxel staircase inflates.
         assert!(area > 8.0 && area < 25.0, "union area {area}");

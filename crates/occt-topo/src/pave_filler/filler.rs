@@ -452,7 +452,7 @@ impl PaveFiller {
         crate::pave_common::remove_micro_edges(self);
         self.make_pcurves()?;
         self.check_errors()?;
-        crate::pave_de::process_de(self)?;
+        crate::pave_de::de_process(self)?;
         self.check_errors()?;
         self.intersection_done = true;
         Ok(())
@@ -605,7 +605,7 @@ impl PaveFiller {
     /// non-destructive-only body (`EstimatePaveOnCurve` + the shared-vertex
     /// updates) is left as a translation boundary.
     pub(super) fn update_blocks_with_shared_vertices(&mut self) {
-        if let Err(e) = crate::pave_ff_make_blocks_helpers::update_blocks_with_shared_vertices(self) {
+        if let Err(e) = crate::pave_ff_shared::update_blocks_with_shared_vertices(self) {
             self.add_error(e);
         }
     }

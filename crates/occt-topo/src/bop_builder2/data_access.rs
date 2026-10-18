@@ -169,17 +169,17 @@ pub fn builder_bop_with_fuzzy(
 }
 
 /// Union of two groups of shapes. Source: `BOPAlgo_BOP` with `BOPAlgo_FUSE`.
-pub fn fuse(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, String> {
+pub fn bop_fuse(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, String> {
     builder_bop(objects, tools, BoolOp2::Fuse)
 }
 
 /// Subtraction of the tools from the objects. Source: `BOPAlgo_CUT`.
-pub fn cut(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, String> {
+pub fn bop_cut(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, String> {
     builder_bop(objects, tools, BoolOp2::Cut)
 }
 
 /// Intersection of the two groups. Source: `BOPAlgo_COMMON`.
-pub fn common(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, String> {
+pub fn bop_common(objects: &[TopoShape], tools: &[TopoShape]) -> Result<TopoShape, String> {
     builder_bop(objects, tools, BoolOp2::Common)
 }
 

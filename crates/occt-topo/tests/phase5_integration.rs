@@ -52,7 +52,7 @@ fn real_brepmesh_and_iges() {
     // `BRepMesh_IncrementalMesh` pipeline.
     let sphere = occt_topo::primitives::BRepPrimSphere::make_sphere(2.0);
     let mesh = occt_topo::shape_mesh::mesh_shape(&sphere.solid.0, 0.05);
-    let area = occt_topo::mesh::mesh_surface_area(&mesh);
+    let area = occt_topo::mesh::shape_mesh_surface_area(&mesh);
     assert!(approx(area, 4.0 * std::f64::consts::PI * 4.0), "sphere area {area}");
 
     // IGES export of a box.
@@ -148,6 +148,6 @@ fn shell_orientation_and_shape_checks() {
     let shells = occt_topo::topo_tools_full::shapes_of(&b.solid.0, occt_topo::ShapeType::Shell);
     let shell = occt_topo::shape::Shell(shells[0].clone());
     assert!(occt_topo::brep_shell::shell_is_valid(&shell));
-    let (errors, _) = occt_topo::shape_checks::analyse(&b.solid.0);
+    let (errors, _) = occt_topo::shape_checks::check_shape(&b.solid.0);
     assert!(errors.is_empty(), "box has no shape-check errors: {errors:?}");
 }

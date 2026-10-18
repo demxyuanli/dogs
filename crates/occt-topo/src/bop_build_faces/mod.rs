@@ -53,7 +53,7 @@ pub(crate) use crate::bopds::BopdsDS;
 pub(crate) use crate::boptools_2d;
 pub(crate) use crate::brep_tool::BRepTool;
 
-pub(crate) use crate::builder_face::{make_face_from_wire};
+pub(crate) use crate::builder_face::{builder_make_face_from_wire};
 pub(crate) use crate::fclass2d::{FClass2d, FaceState};
 pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};

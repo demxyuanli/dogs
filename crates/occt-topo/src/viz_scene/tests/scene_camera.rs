@@ -158,7 +158,7 @@ use super::*;
     #[test]
     fn scene_bounds_box() {
         let scene = box_scene();
-        let (lo, hi) = scene_bounds(&scene).unwrap();
+        let (lo, hi) = viz_scene_bounds(&scene).unwrap();
         // Scene bounds come from `bbox_from_geometry::shape_bbox` =
         // `BRepBndLib::Add`, whose box carries `Precision::Confusion()` on both
         // sides of every direction (`BRepBndLib.cxx:127-131,146-149` +

@@ -51,7 +51,7 @@ use super::*;
         assert!(joined.contains("edges 12"), "log: {joined}");
         assert!(joined.contains("faces 6"), "log: {joined}");
         assert!(joined.contains("volume"), "log: {joined}");
-        let v = volume(&shape_owned(&s, "b").unwrap());
+        let v = draw_volume(&shape_owned(&s, "b").unwrap());
         assert!(v > 0.0 && v < 16.0, "volume {v}");
     }
 
@@ -61,7 +61,7 @@ use super::*;
         run_script(&mut s, "box a 1 1 1\nbox c 2 1 1\nfuse a c f").expect("script ok");
         let f = shape_owned(&s, "f").expect("f exists");
         assert!(faces_of(&f).len() >= 6, "faces {}", faces_of(&f).len());
-        let v = volume(&f);
+        let v = draw_volume(&f);
         assert!((1.5..=2.5).contains(&v), "volume {v}");
     }
 
@@ -81,8 +81,8 @@ use super::*;
     fn sphere_fillet_offset() {
         let mut s = DrawSession::default();
         run_script(&mut s, "sphere s 1\noffset s 0.5 so").expect("sphere + offset");
-        let sv = volume(&shape_owned(&s, "s").unwrap());
-        let sov = volume(&shape_owned(&s, "so").unwrap());
+        let sv = draw_volume(&shape_owned(&s, "s").unwrap());
+        let sov = draw_volume(&shape_owned(&s, "so").unwrap());
         assert!(sov > sv, "offset volume {sov} should exceed sphere {sv}");
         assert!(sov > 10.0, "offset volume {sov} (sphere r=1.5 → ~14.1)");
     }

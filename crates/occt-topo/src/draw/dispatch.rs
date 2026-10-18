@@ -381,6 +381,6 @@ pub fn draw_repl() -> Result<(), String> {
 /// volume rather than the volume of an inscribed facet set; `VOLUME_DEFLECTION`
 /// only reaches the triangulation fallback of a shape whose faces carry no
 /// integrable surface (`BRepGProp.cxx:359`).
-pub fn volume(shape: &TopoShape) -> f64 {
+pub fn draw_volume(shape: &TopoShape) -> f64 {
     shape_volume(shape, VOLUME_DEFLECTION)
 }

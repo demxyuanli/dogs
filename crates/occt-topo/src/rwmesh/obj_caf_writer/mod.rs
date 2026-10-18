@@ -193,7 +193,7 @@ fn write_shape(writer: &mut ObjWriterContext, mat_mgr: &mut ObjMaterialMap, node
 ///
 /// Returns `(obj_text, mat_text)`; `mat_text` is empty when no node carries a
 /// color (`toCreateMatFile == false`, `cxx:150-157`).
-pub fn perform(obj_path: &str, nodes: &[ObjExportNode]) -> (String, String) {
+pub fn write_obj(obj_path: &str, nodes: &[ObjExportNode]) -> (String, String) {
     // `OSD_Path::FolderAndFileFromPath` / `FileNameAndExtension`
     // (`cxx:100-103`).
     let (folder, short_file_name_base) = split_path(obj_path);

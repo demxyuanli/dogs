@@ -504,6 +504,6 @@ pub fn wires_to_faces(the_wires: &TopoShape, the_ang_tol: f64) -> (bool, TopoSha
 }
 
 /// Bounding box of `shape` (used by classification helpers).
-pub fn shape_box_of(s: &TopoShape) -> occt_core::bnd::BndBox {
+pub fn wires_shape_box(s: &TopoShape) -> occt_core::bnd::BndBox {
     shape_bbox(s)
 }

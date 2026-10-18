@@ -35,7 +35,7 @@ use super::*;
             GpPnt::new(0.5, 0.5, 0.0),
             GpPnt::new(-0.5, 0.5, 0.0),
         ];
-        let out = offset_polygon(&pts, &plane, 0.5).expect("offset");
+        let out = polygon_offset_3d(&pts, &plane, 0.5).expect("offset");
         assert_eq!(out.len(), 4);
         for p in &out {
             assert!(approx(p.x().abs(), 1.0), "x {:?}", p);
@@ -53,7 +53,7 @@ use super::*;
             GpPnt::new(1.0, 1.0, 0.0),
             GpPnt::new(-1.0, 1.0, 0.0),
         ];
-        let out = offset_polygon(&pts, &plane, -0.5).expect("offset");
+        let out = polygon_offset_3d(&pts, &plane, -0.5).expect("offset");
         assert_eq!(out.len(), 4);
         for p in &out {
             assert!(approx(p.x().abs(), 0.5), "x {:?}", p);

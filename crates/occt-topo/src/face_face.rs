@@ -229,7 +229,7 @@ pub fn face_face_intersection(f1: &Face, f2: &Face, tol: f64) -> FaceIntersect {
 
 /// Grid-search for the `(u, v)` parameter of surface `s` nearest to `p`,
 /// returning `Some` only when within `tol`.
-pub fn point_on_surface(s: &dyn Surface, p: &GpPnt, tol: f64) -> Option<(f64, f64)> {
+pub fn face_face_point_on_surface(s: &dyn Surface, p: &GpPnt, tol: f64) -> Option<(f64, f64)> {
     let (u0, u1) = finite_window(s.u_range(), 10.0);
     let (v0, v1) = finite_window(s.v_range(), 10.0);
     let nu = 64usize;
@@ -398,7 +398,7 @@ mod tests {
         let b = TopoBuilder::new();
         let f = b.make_face_plane(&GpPln::new(GpAx3::standard()));
         let s = BRepTool::face_surface(&f).expect("surface");
-        let (u, v) = point_on_surface(&*s, &GpPnt::new(1.0, 2.0, 0.0), 0.5).expect("found");
+        let (u, v) = face_face_point_on_surface(&*s, &GpPnt::new(1.0, 2.0, 0.0), 0.5).expect("found");
         let q = s.d0(u, v);
         assert!(q.distance(&GpPnt::new(1.0, 2.0, 0.0)) < 0.5, "q {q:?}");
         clear_tree(&f.0);

@@ -91,7 +91,7 @@ impl IntToolsTopolTool {
         self.u_pars = None;
         self.v_pars = None;
 
-        let typ = classify_surface(s);
+        let typ = mesh_surface_type(s);
         let (mut nbsu, mut nbsv): (usize, usize) = match typ {
             MeshSurfaceType::Plane => (10, 10),
             MeshSurfaceType::Cylinder => {
@@ -284,7 +284,7 @@ impl IntToolsTopolTool {
             (1..=nbsv).map(|i| v0 + i as f64 * dv).collect()
         };
 
-        let typ = classify_surface(s);
+        let typ = mesh_surface_type(s);
         let (u_pars, v_pars) = if matches!(
             typ,
             MeshSurfaceType::BSplineSurface | MeshSurfaceType::BezierSurface

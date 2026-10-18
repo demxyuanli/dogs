@@ -303,7 +303,7 @@ pub fn build_pcurve_for_edge_on_face(
 /// (`BRep_Tool::Surface(aF).Value(u, v)`).
 ///
 /// Errors when the face has no registered surface.
-pub fn point_on_surface(face: &Face, u: f64, v: f64) -> Result<GpPnt, String> {
+pub fn face_point_at_uv(face: &Face, u: f64, v: f64) -> Result<GpPnt, String> {
     let surf = GeometryRegistry::global()
         .face_surface(&face.0)
         .ok_or("point_on_surface: face has no surface")?;
@@ -451,7 +451,7 @@ mod tests {
     fn point_on_surface_evaluates_face_d0() {
         let b = unit_box();
         let face = &b.faces[1]; // top (z = 1), (u,v) → (u, v, 1)
-        let p = point_on_surface(face, 0.3, 0.7).expect("d0");
+        let p = face_point_at_uv(face, 0.3, 0.7).expect("d0");
         assert!((p.x() - 0.3).abs() < 1e-9, "x {p:?}");
         assert!((p.y() - 0.7).abs() < 1e-9, "y {p:?}");
         assert!((p.z() - 1.0).abs() < 1e-9, "z {p:?}");

@@ -38,7 +38,7 @@ pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, 
 pub(crate) use super::super::data_model::{MeshCurve, MeshEdge, MeshModel, MeshPCurve, MeshStatus};
 pub(crate) use super::super::face_discret::PointState;
 pub(crate) use super::super::parameters::MeshParameters;
-pub(crate) use super::super::range_splitter::{classify_surface, ConeRangeSplitter, RangeSplitter, MeshSurfaceType};
+pub(crate) use super::super::range_splitter::{mesh_surface_type, ConeRangeSplitter, RangeSplitter, MeshSurfaceType};
 pub(crate) use super::super::shape_tool::ShapeTool;
 pub(crate) use super::super::wire_order::{WireOrder, WireOrderStatus};
 

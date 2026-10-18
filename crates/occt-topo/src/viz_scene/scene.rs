@@ -652,7 +652,7 @@ pub fn project_point(cam: &Camera, p: GpPnt, width: usize, height: usize) -> Opt
 /// centre, at a distance that encloses the scene's bounding sphere. Ports the
 /// behaviour of `V3d_View::FitAll`.
 pub fn fit_all_camera(scene: &VizScene) -> Camera {
-    let (lo, hi) = scene_bounds(scene)
+    let (lo, hi) = viz_scene_bounds(scene)
         .unwrap_or_else(|| (GpPnt::new(-1.0, -1.0, -1.0), GpPnt::new(1.0, 1.0, 1.0)));
     let center = GpPnt::new((lo.x() + hi.x()) * 0.5, (lo.y() + hi.y()) * 0.5, (lo.z() + hi.z()) * 0.5);
     let radius = center.distance(&hi).max(1e-6);

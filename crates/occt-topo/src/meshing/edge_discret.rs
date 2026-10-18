@@ -917,7 +917,7 @@ pub fn curve_tessellator_value_ok(
     edge_tol: f64,
 ) -> bool {
     use super::range_splitter::MeshSurfaceType;
-    let ty = super::range_splitter::classify_surface(surface);
+    let ty = super::range_splitter::mesh_surface_type(surface);
     match ty {
         MeshSurfaceType::BSplineSurface
         | MeshSurfaceType::BezierSurface

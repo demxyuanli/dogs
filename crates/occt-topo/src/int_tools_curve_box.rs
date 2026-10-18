@@ -117,7 +117,7 @@ pub fn is_on_pave(t1: f64, range: IntRange, tolerance: f64) -> bool {
 ///
 /// True when `aTR` is inside the range expanded by `aTol`, or on either
 /// bound within `aTol`.
-pub fn is_on_pave1(a_tr: f64, range: IntRange, a_tol: f64) -> bool {
+pub fn curve_box_is_on_pave1(a_tr: f64, range: IntRange, a_tol: f64) -> bool {
     if is_on_pave(a_tr, range, a_tol) {
         return true;
     }
@@ -126,7 +126,7 @@ pub fn is_on_pave1(a_tr: f64, range: IntRange, a_tol: f64) -> bool {
 
 /// `IntTools_Tools::IsInRange(aR, aRA, aTol)` — overlap of two 1D ranges
 /// expanded by `aTol`.
-pub fn is_in_range(a_r: IntRange, a_ra: IntRange, a_tol: f64) -> bool {
+pub fn curve_box_is_in_range(a_r: IntRange, a_ra: IntRange, a_tol: f64) -> bool {
     let f = a_r.first - a_tol;
     let l = a_r.last + a_tol;
     let fa = a_ra.first;
@@ -136,7 +136,7 @@ pub fn is_in_range(a_r: IntRange, a_ra: IntRange, a_tol: f64) -> bool {
 
 /// `IntTools_Tools::VertexParameters` — pick the vertex parameter of a
 /// common part on each edge, falling back to the mid of Range1 / Ranges2(1).
-pub fn vertex_parameters(
+pub fn curve_box_vertex_parameters(
     range1: IntRange,
     vertex_parameter1: f64,
     range2: IntRange,
@@ -155,7 +155,7 @@ pub fn vertex_parameters(
 
 /// `IntTools_Tools::VertexParameter` — Range1 mid, or VertexParameter1 when
 /// it sits inside Range1.
-pub fn vertex_parameter(range1: IntRange, vertex_parameter1: f64) -> f64 {
+pub fn curve_box_vertex_parameter(range1: IntRange, vertex_parameter1: f64) -> f64 {
     let mut t = 0.5 * (range1.first + range1.last);
     if vertex_parameter1 >= range1.first && vertex_parameter1 <= range1.last {
         t = vertex_parameter1;

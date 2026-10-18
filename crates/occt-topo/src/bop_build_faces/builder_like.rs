@@ -245,7 +245,7 @@ pub(crate) fn group_wires_as_areas(
     for i in 0..n {
         if is_growth[i] {
             if let Some(surf) = surface {
-                if let Ok(face) = make_face_from_wire(&wire_edges[i], Some(surf.clone())) {
+                if let Ok(face) = builder_make_face_from_wire(&wire_edges[i], Some(surf.clone())) {
                     if let Ok(c) = FClass2d::new(&face, 1e-7) {
                         cls[i] = Some(c);
                     }

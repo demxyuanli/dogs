@@ -326,7 +326,7 @@ impl XcafDocument {
 
     /// Total number of nodes in the assembly tree.
     pub fn node_count(&self) -> usize {
-        count_nodes(&self.root)
+        xcaf_node_count(&self.root)
     }
 }
 
@@ -539,8 +539,8 @@ pub(super) fn transform_from_string(s: &str) -> Option<GpTrsf> {
 }
 
 /// Total node count of a subtree (including `node` itself).
-pub fn count_nodes(node: &XcafDocNode) -> usize {
-    1 + node.children.iter().map(count_nodes).sum::<usize>()
+pub fn xcaf_node_count(node: &XcafDocNode) -> usize {
+    1 + node.children.iter().map(xcaf_node_count).sum::<usize>()
 }
 
 /// Human-readable tree dump: one line per node with depth indentation and a

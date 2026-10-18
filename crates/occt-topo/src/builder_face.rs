@@ -132,7 +132,7 @@ impl AreaBuilder for FaceBuilder {
 /// ([`build_loops`]); when `surface` is `None` a plane through the loop
 /// vertices is derived. Mirrors `BRepBuilderAPI_MakeFace(Wire)` after the
 /// `BOPAlgo_BuilderFace` loop construction.
-pub fn make_face_from_wire(edges: &[Edge], surface: Option<Arc<dyn Surface>>) -> Result<Face, String> {
+pub fn builder_make_face_from_wire(edges: &[Edge], surface: Option<Arc<dyn Surface>>) -> Result<Face, String> {
     if edges.len() < 3 {
         return Err("make_face_from_wire: need at least 3 edges".into());
     }
@@ -283,7 +283,7 @@ mod tests {
         for (i, face) in ub.faces.iter().enumerate() {
             let edges = edges_of(&face.0);
             assert_eq!(edges.len(), 4, "face {i} has 4 distinct boundary edges");
-            let rebuilt = make_face_from_wire(&edges, None).expect("rebuild box face");
+            let rebuilt = builder_make_face_from_wire(&edges, None).expect("rebuild box face");
             // closed: a single closed loop through the 4 edges.
             let loops = build_loops(&edges).unwrap();
             assert_eq!(loops.len(), 1, "face {i} edges form one loop");
@@ -375,6 +375,6 @@ mod tests {
         // Two segments forming an open chain cannot make a wire face.
         let e1 = b.make_edge_segment(&GpPnt::new(0., 0., 0.), &GpPnt::new(1., 0., 0.));
         let e2 = b.make_edge_segment(&GpPnt::new(1., 0., 0.), &GpPnt::new(1., 1., 0.));
-        assert!(make_face_from_wire(&[e1, e2], None).is_err());
+        assert!(builder_make_face_from_wire(&[e1, e2], None).is_err());
     }
 }

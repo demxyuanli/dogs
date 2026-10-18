@@ -178,7 +178,7 @@ pub fn orient_shell_positive(shell: &Shell, deflection: f64) -> Option<Shell> {
 
 /// The total surface area of a shell (mesh-based).
 pub fn shell_area(shell: &Shell, deflection: f64) -> f64 {
-    crate::mesh::mesh_surface_area(&crate::shape_mesh::mesh_shape(&shell.0, deflection))
+    crate::mesh::shape_mesh_surface_area(&crate::shape_mesh::mesh_shape(&shell.0, deflection))
 }
 
 #[cfg(test)]

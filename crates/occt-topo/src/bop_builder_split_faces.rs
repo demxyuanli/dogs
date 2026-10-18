@@ -183,7 +183,7 @@ fn rebuild_split_areas(face: &Face, edges: &[Edge]) -> Result<Vec<TopoShape>, St
     let mut fb = FaceBuilder::new();
     fb.set_face(&ff);
     fb.set_shapes(&shapes);
-    crate::bop_builder_face_perform::perform(&mut fb)?;
+    crate::bop_builder_face_perform::perform_face_builder(&mut fb)?;
     for area in fb.areas() {
         attach_pcurves(&Face(area.clone()), edges);
     }

@@ -112,7 +112,7 @@ impl Translation {
 
 /// `BRepPrimAPI_MakePrism(S, V)` (`BRepPrimAPI_MakePrism.cxx:36-42`).
 /// `Copy` is false and `Canonize` is true.
-pub fn make_prism(shape: &TopoShape, vec: &GpVec) -> Result<TopoShape, String> {
+pub fn sweep_make_prism(shape: &TopoShape, vec: &GpVec) -> Result<TopoShape, String> {
     let _ = crate::brep_lib_build_curves3d::build_curves3d(shape);
     if vec.magnitude() <= CONFUSION {
         return Err("BRepSweep_Prism::Constructor".into());

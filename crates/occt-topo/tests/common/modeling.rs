@@ -157,7 +157,7 @@ pub fn build(name: &str) -> TopoShape {
             // (`specs/modeling_probe/modeling_probe.cpp`), so the gate calls the
             // port of that class: `brep_sweep::make_prism`
             // (`BRepPrimAPI_MakePrism.cxx:36-42` -> `BRepSweep_Prism`).
-            occt_topo::brep_sweep::make_prism(&face.0, &GpVec::new(0.0, 0.0, 4.0))
+            occt_topo::brep_sweep::sweep_make_prism(&face.0, &GpVec::new(0.0, 0.0, 4.0))
                 .expect("prim-prism sweep")
         }
         other => panic!("no port construction registered for modeling model {other}"),

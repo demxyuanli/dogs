@@ -228,7 +228,7 @@ pub fn is_growth_wire(the_wire: &TopoShape, a_mhe: &HashSet<usize>) -> bool {
 ///
 /// Shared-edge rule: if the face already contains an edge of the wire, OCCT
 /// **returns false immediately** (the wire cannot lie inside that face).
-pub fn is_inside(
+pub fn face_perform_is_inside(
     the_wire_or_edge: &TopoShape,
     the_f: &Face,
     the_ctx: &mut IntToolsContext,
@@ -389,12 +389,12 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
                 continue;
             }
             let a_hole = &a_hole_faces[idx];
-            if !is_inside(a_hole, &af, &mut ctx) {
+            if !face_perform_is_inside(a_hole, &af, &mut ctx) {
                 continue;
             }
             let hk = sk(a_hole);
             if let Some(was) = a_hole_face_map.get(&hk).cloned() {
-                if is_inside(a_face, &Face(was), &mut ctx) {
+                if face_perform_is_inside(a_face, &Face(was), &mut ctx) {
                     a_hole_face_map.insert(hk, a_face.clone());
                 }
             } else {
@@ -543,7 +543,7 @@ pub fn perform_internal_shapes(fb: &mut FaceBuilder) -> Result<(), String> {
                 continue;
             }
             let a_e = &an_edges_map[idx];
-            if is_inside(a_e, &face, &mut ctx) {
+            if face_perform_is_inside(a_e, &face, &mut ctx) {
                 an_edges_inside.push(a_e.clone());
                 a_me_done.insert(n_e);
             }
@@ -594,7 +594,7 @@ pub fn perform_internal_shapes(fb: &mut FaceBuilder) -> Result<(), String> {
 }
 
 /// `BOPAlgo_BuilderFace::CheckData`.
-pub fn check_data(fb: &FaceBuilder) -> Result<(), String> {
+pub fn check_face_data(fb: &FaceBuilder) -> Result<(), String> {
     if fb.face.is_none() {
         return Err("BOPAlgo_AlertNullInputShapes".into());
     }
@@ -602,9 +602,9 @@ pub fn check_data(fb: &FaceBuilder) -> Result<(), String> {
 }
 
 /// `BOPAlgo_BuilderFace::Perform`.
-pub fn perform(fb: &mut FaceBuilder) -> Result<(), String> {
+pub fn perform_face_builder(fb: &mut FaceBuilder) -> Result<(), String> {
     fb.base.errors.clear();
-    check_data(fb)?;
+    check_face_data(fb)?;
     perform_shapes_to_avoid(fb)?;
     perform_loops(fb)?;
     perform_areas(fb)?;

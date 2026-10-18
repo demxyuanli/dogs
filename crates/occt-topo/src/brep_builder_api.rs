@@ -130,7 +130,7 @@ pub fn make_wire_from_points(points: &[GpPnt]) -> Result<Wire, String> {
 /// the first three non-collinear points; the polygon must be non-degenerate.
 pub fn make_face_from_polygon(points: &[GpPnt]) -> Result<Face, String> {
     let poly = make_polygon(points)?;
-    if polygon_area(points) <= 1e-12 {
+    if builder_polygon_area(points) <= 1e-12 {
         return Err("make_face_from_polygon: degenerate polygon (zero area)".into());
     }
     let (i, j, k) = first_three_noncollinear(points)?;
@@ -328,7 +328,7 @@ pub fn make_compound_shapes(shapes: &[TopoShape]) -> Compound {
 
 /// Signed planar polygon area from the cross-product shoelace formula
 /// (`½ |Σ Pi × Pi+1|`), used by MakeFace degenerate-polygon validation.
-pub fn polygon_area(points: &[GpPnt]) -> f64 {
+pub fn builder_polygon_area(points: &[GpPnt]) -> f64 {
     let n = points.len();
     if n < 3 {
         return 0.0;
@@ -432,9 +432,9 @@ mod tests {
             GpPnt::new(1., 1., 0.),
             GpPnt::new(0., 1., 0.),
         ];
-        assert!(approx(polygon_area(&sq), 1.0));
+        assert!(approx(builder_polygon_area(&sq), 1.0));
         let tri = [GpPnt::new(0., 0., 0.), GpPnt::new(2., 0., 0.), GpPnt::new(0., 2., 0.)];
-        assert!(approx(polygon_area(&tri), 2.0));
+        assert!(approx(builder_polygon_area(&tri), 2.0));
     }
 
     #[test]

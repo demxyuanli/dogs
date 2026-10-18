@@ -171,7 +171,7 @@ impl Projector {
 /// Unlike a Newton iterate seeded from the surface range centre, this is the
 /// exact inverse of `d0` even on unbounded-v surfaces (a cylinder/cone point far
 /// from v=0), where Newton from the centre cannot converge.
-pub fn project_point_on_surface(s: &dyn Surface, p: &GpPnt) -> Option<GpPnt2d> {
+pub fn surface_project_point(s: &dyn Surface, p: &GpPnt) -> Option<GpPnt2d> {
     let kind = classify_surface_kind(s);
     let proj = Projector::from_surface(s, kind)?;
     Some(proj.project(p))

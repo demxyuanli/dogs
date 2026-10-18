@@ -175,7 +175,7 @@ impl RangeSplitter for ExtrusionRangeSplitter {
 /// Creates the range splitter matching a surface's analytic type. Source:
 /// `BRepMesh_MeshAlgoFactory` splitter selection.
 pub fn create_range_splitter(surface: &dyn Surface) -> Box<dyn RangeSplitter> {
-    match classify_surface(surface) {
+    match mesh_surface_type(surface) {
         MeshSurfaceType::Plane => Box::new(DefaultRangeSplitter::new()),
         MeshSurfaceType::Sphere => Box::new(SphereRangeSplitter::new()),
         MeshSurfaceType::Cylinder => Box::new(CylinderRangeSplitter::new()),
@@ -200,7 +200,7 @@ pub fn factory_uses_deflection_control(surface: &dyn Surface, params: &MeshParam
     if params.enable_control_surface_deflection_all_surfaces {
         return true;
     }
-    match classify_surface(surface) {
+    match mesh_surface_type(surface) {
         MeshSurfaceType::SurfaceOfRevolution
         | MeshSurfaceType::SurfaceOfExtrusion
         | MeshSurfaceType::BezierSurface

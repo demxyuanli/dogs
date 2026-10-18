@@ -364,7 +364,7 @@ pub fn triangulation_to_brep(tri: &Triangulation) -> BrepFromMesh {
 
 /// Convert a `ShapeMesh` into BRep topology (via a `Triangulation`).
 pub fn shape_mesh_to_brep(mesh: &ShapeMesh) -> BrepFromMesh {
-    let tri = crate::mesh::to_triangulation(mesh);
+    let tri = crate::mesh::shape_mesh_to_triangulation(mesh);
     triangulation_to_brep(&tri)
 }
 

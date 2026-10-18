@@ -15,7 +15,7 @@ use occt_topo::brep_tool::BRepTool;
 use occt_topo::primitives::{BRepPrimBox, BRepPrimCylinder};
 use occt_topo::shell_check::shell_invariants;
 use occt_topo::topo_tools_full::{edges_of, faces_of, shapes_of};
-use occt_topo::wireframe::face_area;
+use occt_topo::wireframe::wireframe_face_area;
 
 fn report(tag: &str, a: &occt_topo::shape::TopoShape, b: &occt_topo::shape::TopoShape, op: BoolOp) {
     match boolean(a, b, op, 1e-6) {
@@ -64,7 +64,7 @@ fn report(tag: &str, a: &occt_topo::shape::TopoShape, b: &occt_topo::shape::Topo
                     .collect();
                 println!(
                     "  RFACE {i} kind={kind:?} area={:.5} uv=({u1:.4},{u2:.4})x({v1:.4},{v2:.4}) {place} wires=[{}]",
-                    face_area(f),
+                    wireframe_face_area(f),
                     wires.join(" | ")
                 );
             }

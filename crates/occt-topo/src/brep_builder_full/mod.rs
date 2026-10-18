@@ -356,7 +356,7 @@ mod tests {
             .filter_map(|e| crate::topo_tools_full::edge_vertices(e).0)
             .map(|v| crate::topo_tools_full::vertex_position(&v))
             .collect();
-        let area = crate::brep_builder_api::polygon_area(&ring);
+        let area = crate::brep_builder_api::builder_polygon_area(&ring);
         assert!((area - 0.5).abs() < 1e-9, "base area {area}");
         let vol = area * height;
         assert!(vol > 0.0, "volume positive");

@@ -125,7 +125,7 @@ fn main() {
             println!(
                 "FIXMS f={i} ret={ret} before_wires={before:?} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6}) surf={} uper={} vper={} nfaces={} after_edges={after:?}",
                 b0.x(), b0.y(), b0.z(), b1.x(), b1.y(), b1.z(),
-                BRepTool::face_surface(f).map(|s| format!("{:?}", occt_topo::meshing::range_splitter::classify_surface(s.as_ref()))).unwrap_or("none".into()),
+                BRepTool::face_surface(f).map(|s| format!("{:?}", occt_topo::meshing::range_splitter::mesh_surface_type(s.as_ref()))).unwrap_or("none".into()),
                 BRepTool::face_surface(f).map(|s| s.is_u_periodic()).unwrap_or(false),
                 BRepTool::face_surface(f).map(|s| s.is_v_periodic()).unwrap_or(false),
                 res.as_ref().map(|t| faces_of(t).len()).unwrap_or(0),
@@ -233,11 +233,11 @@ fn main() {
     if args.iter().any(|a| a == "--sph") {
         use occt_topo::brep_bnd_lib;
         use occt_topo::brep_tool::BRepTool;
-        use occt_topo::meshing::range_splitter::{classify_surface, MeshSurfaceType};
+        use occt_topo::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};
         use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
         for (i, f) in faces_of(&shape).iter().enumerate() {
             let Some(surf) = BRepTool::face_surface(f) else { continue };
-            if classify_surface(surf.as_ref()) != MeshSurfaceType::Sphere {
+            if mesh_surface_type(surf.as_ref()) != MeshSurfaceType::Sphere {
                 continue;
             }
             let bb = brep_bnd_lib::shape_bnd_box(&f.0);

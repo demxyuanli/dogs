@@ -11,7 +11,7 @@ use occt_core::toploc::TopLocLocation;
 
 use crate::abs::ShapeType;
 use crate::algo_tools_range::{
-    correct_range_ef, is_in_range, make_new_vertex_ef, point_on_edge, vertex_parameter,
+    correct_range_ef, algo_tools_is_in_range, make_new_vertex_ef, point_on_edge, algo_tools_vertex_parameter,
 };
 use crate::bopalgo_tools::{fill_map_pb_face, perform_common_blocks_faces, trsf_to_point, PbFaceListMap};
 use crate::bbox_from_geometry::shape_bbox;
@@ -232,15 +232,15 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
         for cp in cps.iter() {
             match cp.part_type() {
                 CommonPartType::Vertex => {
-                    let a_t = vertex_parameter(cp, cp.vertex_parameter1());
+                    let a_t = algo_tools_vertex_parameter(cp, cp.vertex_parameter1());
                 let Ok(a_vnew) = make_new_vertex_ef(&a_e, a_t, &a_f) else {
                     continue;
                 };
                 let a_r = cp.range;
                 let a_tol_to_decide = 5.0e-8;
                 let mut b_is_on_pave = [
-                    is_in_range(a_r1, a_r, a_tol_to_decide),
-                    is_in_range(a_r2, a_r, a_tol_to_decide),
+                    algo_tools_is_in_range(a_r1, a_r, a_tol_to_decide),
+                    algo_tools_is_in_range(a_r2, a_r, a_tol_to_decide),
                 ];
                 if (b_is_on_pave[0] && b_is_on_pave[1])
                     || (b_line_plane && (b_is_on_pave[0] || b_is_on_pave[1]))

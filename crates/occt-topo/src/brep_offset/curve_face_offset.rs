@@ -67,7 +67,7 @@ pub fn plane_plane_plane_intersection(p1: &GpPln, p2: &GpPln, p3: &GpPln) -> Opt
 /// perpendicular in-plane by `distance` and consecutive offset edges are
 /// re-intersected, producing sharp (miter) corners. Positive `distance`
 /// expands a CCW polygon (relative to the plane normal); negative shrinks it.
-pub fn offset_polygon(points: &[GpPnt], plane: &GpPln, distance: f64) -> Result<Vec<GpPnt>, String> {
+pub fn polygon_offset_3d(points: &[GpPnt], plane: &GpPln, distance: f64) -> Result<Vec<GpPnt>, String> {
     let n = points.len();
     if n < 3 {
         return Err("offset_polygon: need at least 3 points".into());

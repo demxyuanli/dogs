@@ -21,7 +21,7 @@ use crate::tgeometry::GeometryRegistry;
 /// and clamped to the edge's `[first, last]` range; the result has
 /// `params.len() + 1` edges covering `[first, last]` in order. Edges without a
 /// registered curve (or with an unbounded range) are returned unchanged.
-pub fn split_edge(e: &Edge, params: &[f64]) -> Vec<Edge> {
+pub fn split_edge_at_params(e: &Edge, params: &[f64]) -> Vec<Edge> {
     let reg = GeometryRegistry::global();
     let Some(curve) = reg.edge_curve(&e.0) else {
         return vec![e.clone()];
@@ -58,7 +58,7 @@ pub fn split_edge(e: &Edge, params: &[f64]) -> Vec<Edge> {
 
 /// Alias for [`split_edge`].
 pub fn split_edge_at_curve_params(e: &Edge, u: &[f64]) -> Vec<Edge> {
-    split_edge(e, u)
+    split_edge_at_params(e, u)
 }
 
 /// Batch split: apply [`split_edge`] to every edge with its own parameter list.
@@ -67,7 +67,7 @@ pub fn split_edges_at(edges: &[Edge], params_by_edge: &[Vec<f64>]) -> Vec<Edge> 
     let mut out = Vec::new();
     for (i, e) in edges.iter().enumerate() {
         let params = params_by_edge.get(i).map(Vec::as_slice).unwrap_or(&[]);
-        out.extend(split_edge(e, params));
+        out.extend(split_edge_at_params(e, params));
     }
     out
 }
@@ -93,7 +93,7 @@ mod tests {
     fn split_line_edge_into_three() {
         let b = TopoBuilder::new();
         let e = b.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(10.0, 0.0, 0.0));
-        let parts = split_edge(&e, &[3.0, 7.0]);
+        let parts = split_edge_at_params(&e, &[3.0, 7.0]);
         assert_eq!(parts.len(), 3);
 
         let ranges: Vec<(f64, f64)> = parts
@@ -131,7 +131,7 @@ mod tests {
         let b = TopoBuilder::new();
         let e = b.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(10.0, 0.0, 0.0));
         // Out of order + duplicates + outside-range + interior.
-        let parts = split_edge(&e, &[9.0, 2.0, 2.0, -5.0, 5.0, 100.0]);
+        let parts = split_edge_at_params(&e, &[9.0, 2.0, 2.0, -5.0, 5.0, 100.0]);
         let ranges: Vec<(f64, f64)> = parts
             .iter()
             .map(|p| BRepTool::edge_parameters(p))
@@ -148,7 +148,7 @@ mod tests {
     fn empty_params_returns_single_edge() {
         let b = TopoBuilder::new();
         let e = b.make_edge_segment(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(5.0, 0.0, 0.0));
-        let parts = split_edge(&e, &[]);
+        let parts = split_edge_at_params(&e, &[]);
         assert_eq!(parts.len(), 1);
         assert!(parts[0].same_tshape(&e.0));
         clear_tree(&e.0);

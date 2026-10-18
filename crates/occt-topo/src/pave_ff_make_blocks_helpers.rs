@@ -88,11 +88,6 @@ pub fn remove_used_vertices(a_vc: &[BopdsCurve], mv: &mut HashSet<usize>) {
     }
 }
 
-/// `BOPAlgo_PaveFiller::EstimatePaveOnCurve`.
-pub fn estimate_pave_on_curve(ds: &BopdsDS, n_v: usize, nc: &BopdsCurve, tol: f64) -> bool {
-    crate::pave_ff_pave_stick::estimate_pave_on_curve(ds, n_v, nc, tol)
-}
-
 /// `BOPAlgo_PaveFiller::CheckPlanes`.
 pub fn check_planes(ds: &BopdsDS, n_f1: usize, n_f2: usize) -> bool {
     let verts = |n_f: usize| -> HashSet<usize> {
@@ -112,7 +107,3 @@ pub fn check_planes(ds: &BopdsDS, n_f1: usize, n_f2: usize) -> bool {
     a.intersection(&b).count() > 1
 }
 
-/// `BOPAlgo_PaveFiller::UpdateBlocksWithSharedVertices`.
-pub fn update_blocks_with_shared_vertices(f: &mut PaveFiller) -> Result<(), String> {
-    crate::pave_ff_shared::update_blocks_with_shared_vertices(f)
-}

@@ -144,7 +144,7 @@ pub fn interpolate_bspline(points: &[GpPnt], degree: usize) -> Result<GeomBSplin
 
 /// Normalized cumulative chord-length parameters of `points` (first 0, last 1).
 /// Degenerate point sets fall back to uniform spacing.
-pub fn chord_length_params(points: &[GpPnt]) -> Vec<f64> {
+pub fn loft_chord_length_params(points: &[GpPnt]) -> Vec<f64> {
     let n = points.len();
     if n == 0 {
         return Vec::new();

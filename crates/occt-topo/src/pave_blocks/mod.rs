@@ -329,7 +329,7 @@ mod tests {
             blocks[0].append_ext_pave(BopdsPave::new(i3, 0.25));
             assert!(blocks[0].is_to_update());
         }
-        filter_paves_on_curves(&mut f).unwrap();
+        make_blocks_filter_paves_on_curves(&mut f).unwrap();
 
         // The bound-coincident pave is dropped; the 3 elementary blocks remain
         // (their shared vertices are new, so no spurious merge happens).
@@ -362,7 +362,7 @@ mod tests {
             blocks.push(a);
             blocks.push(b);
         }
-        filter_paves_on_curves(&mut f).unwrap();
+        make_blocks_filter_paves_on_curves(&mut f).unwrap();
         let blocks = f.ds.pave_blocks(e0);
         assert_eq!(blocks.len(), 1, "adjacent blocks merged");
         assert_eq!(blocks[0].range(), (0.0, 1.0));

@@ -265,7 +265,7 @@ fn corner_points(e1: &Edge, e2: &Edge) -> Result<(GpPnt, GpPnt, GpPnt), String> 
 }
 
 /// Length of a circular arc: radius × subtended angle.
-pub fn arc_length(radius: f64, angle: f64) -> f64 {
+pub fn fillet_arc_length(radius: f64, angle: f64) -> f64 {
     radius * angle.abs()
 }
 
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn arc_length_and_chord_deviation() {
-        assert!((arc_length(2.0, PI) - 2.0 * PI).abs() < 1e-12);
+        assert!((fillet_arc_length(2.0, PI) - 2.0 * PI).abs() < 1e-12);
         // Points on a unit quarter circle: sagitta = 1 − cos(π/4).
         let pts: Vec<GpPnt> = (0..=8)
             .map(|i| {

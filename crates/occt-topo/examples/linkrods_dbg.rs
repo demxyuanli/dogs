@@ -9,7 +9,7 @@ use occt_topo::meshing::face_discret::Classifier;
 use occt_topo::meshing::parameters::MeshParameters;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::meshing::range_splitter::{
-    classify_surface, create_range_splitter, RangeSplitter, MeshSurfaceType,
+    mesh_surface_type, create_range_splitter, RangeSplitter, MeshSurfaceType,
 };
 use occt_topo::shhealing::{edge_proj_aux_params, fix_shifted_wire};
 use occt_topo::step::read_step_file;
@@ -76,7 +76,7 @@ fn dump_grid(shape: &occt_topo::shape::TopoShape, stem: &str) {
             println!("{stem} f{face_i} no-surf");
             continue;
         };
-        let ty = classify_surface(surf.as_ref());
+        let ty = mesh_surface_type(surf.as_ref());
         let (su0, su1, sv0, sv1) = BRepTool::uv_bounds(&face);
         let (u0, u1, v0, v1) = brep_tools::uv_bounds(&face);
         let nu_p = surf.nb_u_poles();
@@ -358,7 +358,7 @@ fn dump_faces(shape: &occt_topo::shape::TopoShape, stem: &str) {
             continue;
         }
         let ty = BRepTool::face_surface(face)
-            .map(|s| type_name(classify_surface(s.as_ref())))
+            .map(|s| type_name(mesh_surface_type(s.as_ref())))
             .unwrap_or("no-surf");
         let (u0, u1, v0, v1) = BRepTool::uv_bounds(face);
         let poles = BRepTool::face_surface(face)
@@ -508,7 +508,7 @@ fn main() {
                 let mut ty_n = [0u32; 12];
                 for face in faces_of(shape) {
                     if let Some(surf) = BRepTool::face_surface(&face) {
-                        let ty = classify_surface(surf.as_ref());
+                        let ty = mesh_surface_type(surf.as_ref());
                         let i = match ty {
                             MeshSurfaceType::Plane => 0,
                             MeshSurfaceType::Cylinder => 1,

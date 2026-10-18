@@ -197,7 +197,7 @@ pub fn record_ef_distance(
 }
 
 /// `IntTools_Tools::IsInRange`.
-pub fn is_in_range(r1_first: f64, r1_last: f64, r2_first: f64, r2_last: f64, tol: f64) -> bool {
+pub fn pave_ef_is_in_range(r1_first: f64, r1_last: f64, r2_first: f64, r2_last: f64, tol: f64) -> bool {
     let a = (r1_first - tol).min(r1_last - tol);
     let b = (r1_first + tol).max(r1_last + tol);
     let c = r2_first.min(r2_last);

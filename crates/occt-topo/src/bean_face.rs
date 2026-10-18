@@ -48,7 +48,7 @@ use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::inttools_data::IntRange;
 use crate::inttools_range::IntContext;
-use crate::meshing::range_splitter::{classify_surface as classify_surface_mesh, MeshSurfaceType};
+use crate::meshing::range_splitter::{mesh_surface_type as mesh_surface_type_mesh, MeshSurfaceType};
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -476,7 +476,7 @@ impl BeanFaceIntersector {
         }
         // OCCT: Bezier / Other / (BSpline with degree>2 and knots>2).
         // Without knot access a BSpline is treated as Other and still localizes.
-        match classify_surface_mesh(self.surface()) {
+        match mesh_surface_type_mesh(self.surface()) {
             MeshSurfaceType::BezierSurface | MeshSurfaceType::OtherSurface | MeshSurfaceType::BSplineSurface => {
                 true
             }

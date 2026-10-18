@@ -9,7 +9,7 @@ use occt_core::geom::polygon_boolean::{polygon_difference, polygon_intersect, po
 use occt_core::gp::{GpAx1, GpAx3, GpCirc, GpDir, GpLin, GpPnt, GpTrsf, GpVec};
 use occt_geom::extrema::{curve_surface_extrema_with_samples, point_curve_extrema, surface_surface_extrema};
 use occt_geom::{GeomCircle, GeomLine, GeomSphere};
-use occt_topo::brep_offset::{offset_polygon, offset_shell};
+use occt_topo::brep_offset::{offset_shell, polygon_offset_3d};
 use occt_topo::gltf::{build_gltf_bin, GltfOptions};
 use occt_topo::primitives::BRepPrimBox;
 
@@ -77,7 +77,7 @@ fn offset_polygon_and_shell() {
     .iter()
     .map(|p| GpPnt::new(p.x(), p.y(), 0.0))
     .collect();
-    let out = offset_polygon(&sq, &plane, 0.5).expect("offset polygon");
+    let out = polygon_offset_3d(&sq, &plane, 0.5).expect("offset polygon");
     let mx = out.iter().map(|p| p.x().abs()).fold(0.0, f64::max);
     assert!((mx - 1.5).abs() < 1e-9, "offset square max x {mx}");
 

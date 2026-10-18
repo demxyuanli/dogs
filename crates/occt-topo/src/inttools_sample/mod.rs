@@ -28,7 +28,7 @@
 //! `ponytail:` `IntTools_TopolTool` in OCCT reads the concrete `Geom_*` surface
 //! type, radii and pole/knot counts through `Adaptor3d_Surface` accessors. The
 //! Rust port only sees `dyn Surface`, so the analytic type is recovered with
-//! [`classify_surface`], radii are measured by sampling diametrically opposite
+//! [`mesh_surface_type`], radii are measured by sampling diametrically opposite
 //! iso-parameter points, and BSpline/Bezier pole counts (unreachable through the
 //! trait object) fall back to a fixed 10×10 base grid that `sample_pnts` then
 //! refines adaptively.
@@ -39,7 +39,7 @@ pub(crate) use occt_core::precision::ANGULAR;
 pub(crate) use occt_geom::Surface;
 
 pub(crate) use crate::inttools_data::IntRange;
-pub(crate) use crate::meshing::range_splitter::{classify_surface, MeshSurfaceType};
+pub(crate) use crate::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};
 
 }
 

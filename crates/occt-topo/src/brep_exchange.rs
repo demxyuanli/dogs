@@ -803,7 +803,7 @@ pub fn model_to_obj_caf(
     maximal_chordial_deviation: f64,
 ) -> (String, String) {
     let nodes = obj_caf_nodes(model, whole, maximal_chordial_deviation);
-    crate::rwmesh::perform(obj_path, &nodes)
+    crate::rwmesh::write_obj(obj_path, &nodes)
 }
 
 /// Write a document to an OBJ file plus its `.mtl` sidecar when any face carries

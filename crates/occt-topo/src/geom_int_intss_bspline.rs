@@ -19,7 +19,7 @@ fn degree1_polyline_knots(n: usize) -> Vec<f64> {
 }
 
 /// `GeomInt_IntSS::MakeBSpline`.
-pub fn make_bspline(wl: &WLine, ideb: i32, ifin: i32) -> Option<Arc<dyn Curve>> {
+pub fn int_ss_make_bspline(wl: &WLine, ideb: i32, ifin: i32) -> Option<Arc<dyn Curve>> {
     if ifin < ideb {
         return None;
     }
@@ -38,7 +38,7 @@ pub fn make_bspline(wl: &WLine, ideb: i32, ifin: i32) -> Option<Arc<dyn Curve>> 
 }
 
 /// `GeomInt_IntSS::MakeBSpline2d`.
-pub fn make_bspline2d(wl: &WLine, ideb: i32, ifin: i32, on_first: bool) -> Option<Arc<dyn Curve2d>> {
+pub fn int_ss_make_bspline2d(wl: &WLine, ideb: i32, ifin: i32, on_first: bool) -> Option<Arc<dyn Curve2d>> {
     if ifin < ideb {
         return None;
     }

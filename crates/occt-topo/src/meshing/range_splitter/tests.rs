@@ -45,17 +45,17 @@ use super::*;
 
     #[test]
     fn classify_analytic_surfaces() {
-        assert_eq!(classify_surface(plane_surface().as_ref()), MeshSurfaceType::Plane);
-        assert_eq!(classify_surface(cylinder_surface(1.0).as_ref()), MeshSurfaceType::Cylinder);
-        assert_eq!(classify_surface(sphere_surface(1.0).as_ref()), MeshSurfaceType::Sphere);
-        assert_eq!(classify_surface(torus_surface(2.0, 1.0).as_ref()), MeshSurfaceType::Torus);
+        assert_eq!(mesh_surface_type(plane_surface().as_ref()), MeshSurfaceType::Plane);
+        assert_eq!(mesh_surface_type(cylinder_surface(1.0).as_ref()), MeshSurfaceType::Cylinder);
+        assert_eq!(mesh_surface_type(sphere_surface(1.0).as_ref()), MeshSurfaceType::Sphere);
+        assert_eq!(mesh_surface_type(torus_surface(2.0, 1.0).as_ref()), MeshSurfaceType::Torus);
 
         let (ku, kv) = bspline_surface_uniform_knots(4, 4, 3, 3);
         let poles = (0..4)
             .map(|i| (0..4).map(|j| GpPnt::new(i as f64, j as f64, 0.0)).collect())
             .collect();
         let bs: Arc<dyn Surface> = Arc::new(GeomBSplineSurface::new(poles, ku, kv, 3, 3).unwrap());
-        assert_eq!(classify_surface(bs.as_ref()), MeshSurfaceType::BSplineSurface);
+        assert_eq!(mesh_surface_type(bs.as_ref()), MeshSurfaceType::BSplineSurface);
     }
 
     #[test]

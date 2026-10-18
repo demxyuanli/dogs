@@ -5,7 +5,7 @@
 //! entry points on real box geometry, and the rebuilt solids' volumes are
 //! checked against the analytic expectations.
 
-use occt_topo::bop_builder2::{common, cut, fuse};
+use occt_topo::bop_builder2::{bop_common, bop_cut, bop_fuse};
 use occt_topo::shape::TopoShape;
 
 /// Axis-aligned unit box translated by `(dx, dy, dz)`.
@@ -43,7 +43,7 @@ fn fuse_two_overlapping_boxes() {
     // Fuse union volume = 1 + 1 − 0.5 = 1.5.
     let a = box_at(0.0, 0.0, 0.0);
     let b = box_at(0.5, 0.0, 0.0);
-    let r = fuse(&[a], &[b]).expect("fuse");
+    let r = bop_fuse(&[a], &[b]).expect("fuse");
     let v = total_volume(&r);
     assert!((v - 1.5).abs() < 0.15, "fuse volume {v}, expected 1.5");
 }
@@ -53,7 +53,7 @@ fn fuse_two_disjoint_boxes() {
     // Boxes [0,1]³ and [3,4]×[0,1]² — no overlap, union volume 2.0.
     let a = box_at(0.0, 0.0, 0.0);
     let b = box_at(3.0, 0.0, 0.0);
-    let r = fuse(&[a], &[b]).expect("fuse");
+    let r = bop_fuse(&[a], &[b]).expect("fuse");
     let v = total_volume(&r);
     assert!((v - 2.0).abs() < 0.15, "fuse volume {v}, expected 2.0");
 }
@@ -64,7 +64,7 @@ fn cut_box_removes_overlap() {
     // Remaining = 1.0 − 0.5 = 0.5.
     let a = box_at(0.0, 0.0, 0.0);
     let b = box_at(0.5, 0.0, 0.0);
-    let r = cut(&[a], &[b]).expect("cut");
+    let r = bop_cut(&[a], &[b]).expect("cut");
     let v = total_volume(&r);
     assert!((v - 0.5).abs() < 0.15, "cut volume {v}, expected 0.5");
 }
@@ -74,7 +74,7 @@ fn common_two_overlapping_boxes() {
     // Common of [0,1]³ and [0.5,1.5]×[0,1]² = [0.5,1]×[0,1]² = volume 0.5.
     let a = box_at(0.0, 0.0, 0.0);
     let b = box_at(0.5, 0.0, 0.0);
-    let r = common(&[a], &[b]).expect("common");
+    let r = bop_common(&[a], &[b]).expect("common");
     let v = total_volume(&r);
     assert!((v - 0.5).abs() < 0.15, "common volume {v}, expected 0.5");
 }
@@ -85,7 +85,7 @@ fn full_pipeline_runs_without_errors() {
     // returns a non-empty shape.
     let a = box_at(0.0, 0.0, 0.0);
     let b = box_at(0.5, 0.0, 0.0);
-    let r = fuse(&[a], &[b]).expect("fuse");
+    let r = bop_fuse(&[a], &[b]).expect("fuse");
     let n = occt_topo::topo_tools_full::shapes_of(&r, occt_topo::abs::ShapeType::Solid)
         .len();
     assert!(n > 0, "result should contain shapes");

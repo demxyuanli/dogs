@@ -7,7 +7,7 @@ use super::*;
 pub fn closest_point_on_surface(s: &dyn Surface, p: &GpPnt) -> Option<(GpPnt, GpVec)> {
     match classify_surface_analytic(s) {
         SurfaceKind::Plane => {
-            let pln = plane_from_surface(s)?;
+            let pln = surface_plane_info(s)?;
             let n = pln.normal.normalized();
             let d = GpVec::from_pnts(&pln.origin, p).dot(&n);
             let q = p.translated_vec(&n.multiplied_scalar(-d));
@@ -119,27 +119,27 @@ pub fn rolling_ball_center_surface(
         }
         (SurfaceKind::Plane, SurfaceKind::Sphere) | (SurfaceKind::Sphere, SurfaceKind::Plane) => {
             let (pln, sph) = if k1 == SurfaceKind::Plane {
-                (plane_from_surface(f1).ok_or("cannot extract plane")?, sphere_from_surface(f2).ok_or("cannot extract sphere")?)
+                (surface_plane_info(f1).ok_or("cannot extract plane")?, sphere_from_surface(f2).ok_or("cannot extract sphere")?)
             } else {
-                (plane_from_surface(f2).ok_or("cannot extract plane")?, sphere_from_surface(f1).ok_or("cannot extract sphere")?)
+                (surface_plane_info(f2).ok_or("cannot extract plane")?, sphere_from_surface(f1).ok_or("cannot extract sphere")?)
             };
             let c = plane_sphere_centerline(&pln, &sph, radius)?;
             Ok(vec![sample_circle(&c, CENTERLINE_SAMPLES)])
         }
         (SurfaceKind::Plane, SurfaceKind::Cylinder) | (SurfaceKind::Cylinder, SurfaceKind::Plane) => {
             let (pln, cyl) = if k1 == SurfaceKind::Plane {
-                (plane_from_surface(f1).ok_or("cannot extract plane")?, cylinder_from_surface(f2).ok_or("cannot extract cylinder")?)
+                (surface_plane_info(f1).ok_or("cannot extract plane")?, cylinder_from_surface(f2).ok_or("cannot extract cylinder")?)
             } else {
-                (plane_from_surface(f2).ok_or("cannot extract plane")?, cylinder_from_surface(f1).ok_or("cannot extract cylinder")?)
+                (surface_plane_info(f2).ok_or("cannot extract plane")?, cylinder_from_surface(f1).ok_or("cannot extract cylinder")?)
             };
             let g = plane_cylinder_blend(&pln, &cyl, radius, tol)?;
             Ok(vec![circle(&g)])
         }
         (SurfaceKind::Plane, SurfaceKind::Cone) | (SurfaceKind::Cone, SurfaceKind::Plane) => {
             let (pln, cone) = if k1 == SurfaceKind::Plane {
-                (plane_from_surface(f1).ok_or("cannot extract plane")?, cone_from_surface(f2).ok_or("cannot extract cone")?)
+                (surface_plane_info(f1).ok_or("cannot extract plane")?, cone_from_surface(f2).ok_or("cannot extract cone")?)
             } else {
-                (plane_from_surface(f2).ok_or("cannot extract plane")?, cone_from_surface(f1).ok_or("cannot extract cone")?)
+                (surface_plane_info(f2).ok_or("cannot extract plane")?, cone_from_surface(f1).ok_or("cannot extract cone")?)
             };
             let g = plane_cone_blend(&pln, &cone, radius, tol)?;
             Ok(vec![circle(&g)])

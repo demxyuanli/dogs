@@ -44,7 +44,7 @@ use super::deflection_control::{
 };
 use super::parameters::MeshParameters;
 use super::range_splitter::{
-    classify_surface, create_range_splitter, factory_uses_deflection_control,
+    mesh_surface_type, create_range_splitter, factory_uses_deflection_control,
     grab_params_of_internal_edges, RangeSplitter, MeshSurfaceType,
 };
 
@@ -884,7 +884,7 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                         let (bu0, bu1, bv0, bv1) = uv_bounds(&uv);
                         eprintln!(
                             "MBDIAG rng face={face_index} surf={:?} sup={} svp={} su=[{su0:.6},{su1:.6}] sv=[{sv0:.6},{sv1:.6}] du=[{ru0:.6},{ru1:.6}] dv=[{rv0:.6},{rv1:.6}] delta=({du:.6},{dv:.6}) buv=[{bu0:.6},{bu1:.6}]x[{bv0:.6},{bv1:.6}] nuv={}",
-                            classify_surface(surface.as_ref()),
+                            mesh_surface_type(surface.as_ref()),
                             surface.as_ref().is_u_periodic(),
                             surface.as_ref().is_v_periodic(),
                             uv.len()
@@ -1705,7 +1705,7 @@ fn geom_tool_cells_count(
     range_v: (f64, f64),
     delta: (f64, f64),
 ) -> (i32, i32) {
-    let kind = classify_surface(surface);
+    let kind = mesh_surface_type(surface);
     let (err_u, err_v) = compute_err_factors(surface, kind, deflection);
     let du = range_u.1 - range_u.0;
     let dv = range_v.1 - range_v.0;

@@ -108,7 +108,7 @@ use super::*;
         let leaf = find_by_name(&doc, "Leaf").expect("leaf found");
         assert_eq!(leaf.attrs.name.as_deref(), Some("Leaf"));
         assert!(find_by_name(&doc, "Nope").is_none());
-        assert_eq!(count_nodes(&doc.root), 3);
+        assert_eq!(xcaf_node_count(&doc.root), 3);
         let lines = document_tree_lines(&doc);
         assert_eq!(lines.len(), 3);
     }

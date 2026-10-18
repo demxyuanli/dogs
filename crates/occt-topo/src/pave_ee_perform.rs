@@ -12,7 +12,7 @@ use occt_core::toploc::TopLocLocation;
 
 use crate::abs::ShapeType;
 use crate::algo_tools_range::{
-    is_on_pave1, make_new_vertex_ee, point_on_edge,
+    algo_tools_is_on_pave1, make_new_vertex_ee, point_on_edge,
 };
 use crate::bopalgo_tools::{
     fill_map_pb_pb, perform_common_blocks_pb, trsf_to_point, PbPbListMap,
@@ -210,14 +210,14 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             let a_cr1 = IntRange::new_unchecked(a_t1, a_t1);
             let a_cr2 = IntRange::new_unchecked(a_t2, a_t2);
             let mut b_is_on_pave = [
-                is_on_pave1(a_t1, a_r11.first, a_r11.last, a_tol)
-                    || is_on_pave1(a_r11.first, a_cr1.first, a_cr1.last, a_tol),
-                is_on_pave1(a_t1, a_r12.first, a_r12.last, a_tol)
-                    || is_on_pave1(a_r12.last, a_cr1.first, a_cr1.last, a_tol),
-                is_on_pave1(a_t2, a_r21.first, a_r21.last, a_tol)
-                    || is_on_pave1(a_r21.first, a_cr2.first, a_cr2.last, a_tol),
-                is_on_pave1(a_t2, a_r22.first, a_r22.last, a_tol)
-                    || is_on_pave1(a_r22.last, a_cr2.first, a_cr2.last, a_tol),
+                algo_tools_is_on_pave1(a_t1, a_r11.first, a_r11.last, a_tol)
+                    || algo_tools_is_on_pave1(a_r11.first, a_cr1.first, a_cr1.last, a_tol),
+                algo_tools_is_on_pave1(a_t1, a_r12.first, a_r12.last, a_tol)
+                    || algo_tools_is_on_pave1(a_r12.last, a_cr1.first, a_cr1.last, a_tol),
+                algo_tools_is_on_pave1(a_t2, a_r21.first, a_r21.last, a_tol)
+                    || algo_tools_is_on_pave1(a_r21.first, a_cr2.first, a_cr2.last, a_tol),
+                algo_tools_is_on_pave1(a_t2, a_r22.first, a_r22.last, a_tol)
+                    || algo_tools_is_on_pave1(a_r22.last, a_cr2.first, a_cr2.last, a_tol),
             ];
             let mut n_v = [0usize; 4];
             let (a, b) = pb1.indices();

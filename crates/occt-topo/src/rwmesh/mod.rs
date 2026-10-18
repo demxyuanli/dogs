@@ -50,7 +50,7 @@ pub use scene::*;
 pub use vrml::*;
 pub use gltf::*;
 pub use gltf_caf_writer::{
-    bin_file_path, perform as perform_gltf, GltfCafNode, GltfCafWriterOptions,
+    bin_file_path, write_gltf as perform_gltf, GltfCafNode, GltfCafWriterOptions,
     GltfCafWriterOutput, GltfWriterTrsfFormat,
 };
 pub use gltf_extras::*;
@@ -60,7 +60,7 @@ pub use gltf_prim_array::*;
 pub use gltf_shape_reader::*;
 pub use obj_caf_writer::*;
 pub use ply_caf_writer::{
-    cxx_g, cxx_g6, perform as perform_ply, PlyCafWriterOptions, PlyWriterContext,
+    cxx_g, cxx_g6, write_ply as perform_ply, PlyCafWriterOptions, PlyWriterContext,
 };
 
 #[cfg(test)]
