@@ -427,7 +427,7 @@ impl IntCurveIntConicConic {
         let is_opposite = tan1.dot(&tan2) < 0.0;
 
         for i in 0..nb_sol_total {
-            // 7 aout 97: recentre Binf/Bsup so that a common portion with
+            // 7 aout 97: recenter Binf/Bsup so that a common portion with
             // CIRC_Domain exists.
             let mut p1 = solution_circle[i].binf;
             let mut p2 = solution_circle[i].bsup;

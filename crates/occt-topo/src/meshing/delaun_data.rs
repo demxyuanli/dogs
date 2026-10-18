@@ -774,15 +774,15 @@ impl<'a> DelaunSelector<'a> {
     }
 
     /// Selects all neighboring elements of the given node.
-    pub fn neighbours_of(&mut self, node: &DelaunVertex) {
+    pub fn neighbors_of(&mut self, node: &DelaunVertex) {
         let idx = self.mesh.index_of_node(node);
         if idx != 0 {
-            self.neighbours_of_node(idx);
+            self.neighbors_of_node(idx);
         }
     }
 
     /// Selects all neighboring elements of the node with the given index.
-    pub fn neighbours_of_node(&mut self, node_index: i32) {
+    pub fn neighbors_of_node(&mut self, node_index: i32) {
         let link_ids: Vec<i32> = self.mesh.links_connected_to(node_index).to_vec();
         self.nodes.insert(node_index);
         for id in link_ids {
@@ -791,36 +791,36 @@ impl<'a> DelaunSelector<'a> {
     }
 
     /// Selects all neighboring elements of the given link.
-    pub fn neighbours_of_link(&mut self, link_index: i32) {
+    pub fn neighbors_of_link(&mut self, link_index: i32) {
         let link = self.mesh.link(link_index);
-        self.neighbours_of_node(link.first_node());
-        self.neighbours_of_node(link.last_node());
+        self.neighbors_of_node(link.first_node());
+        self.neighbors_of_node(link.last_node());
     }
 
     /// Selects all neighboring elements of the element with the given index.
-    pub fn neighbours_of_element(&mut self, element_index: i32) {
+    pub fn neighbors_of_element(&mut self, element_index: i32) {
         let element = self.mesh.element(element_index);
         for v in element.vertex_indices {
-            self.neighbours_of_node(v);
+            self.neighbors_of_node(v);
         }
     }
 
     /// Selects all neighboring elements of the given triangle by its nodes.
-    pub fn neighbours_of_triangle(&mut self, element: &DelaunTriangle) {
+    pub fn neighbors_of_triangle(&mut self, element: &DelaunTriangle) {
         for v in element.vertex_indices {
-            self.neighbours_of_node(v);
+            self.neighbors_of_node(v);
         }
     }
 
     /// Selects all neighboring elements by the links of the given triangle.
-    pub fn neighbours_by_edge_of(&mut self, element: &DelaunTriangle) {
+    pub fn neighbors_by_edge_of(&mut self, element: &DelaunTriangle) {
         for e in element.link_indices {
             self.elements_of_link(e.abs());
         }
     }
 
     /// Adds a level of neighbors by edge to the selector (OCCT no-op).
-    pub fn add_neighbours(&mut self) {}
+    pub fn add_neighbors(&mut self) {}
 
     /// Selected node indices.
     pub fn nodes(&self) -> &BTreeSet<i32> {
@@ -931,7 +931,7 @@ mod tests {
     }
 
     #[test]
-    fn selector_collects_element_neighbours() {
+    fn selector_collects_element_neighbors() {
         let mut ds = DelaunDataStructure::new(10);
         let a = ds.add_node(v(0.0, 0.0));
         let b = ds.add_node(v(2.0, 0.0));
@@ -946,11 +946,11 @@ mod tests {
         ds.add_element(DelaunTriangle::new([ab, bd, da], [a, b, d]));
         ds.add_element(DelaunTriangle::new([bc, cd, bd], [b, c, d]));
         let mut sel = DelaunSelector::new(&ds);
-        sel.neighbours_of_node(a);
+        sel.neighbors_of_node(a);
         // Triangle (b,c,d) does not touch node a; only the (a,b,d) triangle does.
         assert_eq!(sel.elements().len(), 1);
         let mut sel2 = DelaunSelector::new(&ds);
-        sel2.neighbours_of_link(bd);
+        sel2.neighbors_of_link(bd);
         assert_eq!(sel2.elements().len(), 2);
     }
 }

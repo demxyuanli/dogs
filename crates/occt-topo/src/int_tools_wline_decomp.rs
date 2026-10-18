@@ -11,7 +11,7 @@ use occt_geom::Surface;
 use occt_geom::geom_api::project_point_on_surface;
 
 use crate::int_tools_wline::{
-    adjust_by_neighbour, wline_adjust_periodic, find_point, is_point_on_boundary, u_period,
+    adjust_by_neighbor, wline_adjust_periodic, find_point, is_point_on_boundary, u_period,
     u_resolution, v_period, v_resolution, PntOn2S, WLine,
 };
 use crate::shape::Face;
@@ -141,14 +141,14 @@ pub fn decomposition_of_wline(
         let mut list_of_fl_index: Vec<i32> = Vec::new();
 
         for j in 0..2 {
-            let aneighbourindex = if j == 0 { i - 1 } else { i + 1 };
-            if aneighbourindex < 1 || aneighbourindex > nblines {
+            let aneighborindex = if j == 0 { i - 1 } else { i + 1 };
+            if aneighborindex < 1 || aneighborindex > nblines {
                 continue;
             }
-            if an_array_of_line_type[aneighbourindex as usize] == 0 {
+            if an_array_of_line_type[aneighborindex as usize] == 0 {
                 continue;
             }
-            let neighbor = &an_array_of_lines[aneighbourindex as usize];
+            let neighbor = &an_array_of_lines[aneighborindex as usize];
             if neighbor.is_empty() {
                 continue;
             }
@@ -279,12 +279,12 @@ pub fn decomposition_of_wline(
                             alowerboundary + adist
                         };
                         another_par += anoffset;
-                        let aneighbourpointindex = if j == 0 { i_first } else { i_last };
-                        let neighbour_point = wline.point(aneighbourpointindex);
+                        let aneighborpointindex = if j == 0 { i_first } else { i_last };
+                        let neighbor_point = wline.point(aneighborpointindex);
                         let (n_u1, n_v1) = if surfit == 0 {
-                            neighbour_point.parameters_on_s1()
+                            neighbor_point.parameters_on_s1()
                         } else {
-                            neighbour_point.parameters_on_s2()
+                            neighbor_point.parameters_on_s2()
                         };
                         let adist1 = if b_is_u_boundary {
                             (n_u1 - u).abs()
@@ -319,7 +319,7 @@ pub fn decomposition_of_wline(
                         }
 
                         if b_check_angle1 || b_check_angle2 {
-                            let mut anindexother = aneighbourpointindex;
+                            let mut anindexother = aneighborpointindex;
                             while anindexother <= i_last && anindexother >= i_first {
                                 anindexother = if j == 0 {
                                     anindexother + 1
@@ -380,16 +380,16 @@ pub fn decomposition_of_wline(
                         } else {
                             GpPnt2d::new(u2, v2)
                         };
-                        let aneighbourpointindex1 = if j == 0 { i_first } else { i_last };
-                        let neighbour_point = wline.point(aneighbourpointindex1);
+                        let aneighborpointindex1 = if j == 0 { i_first } else { i_last };
+                        let neighbor_point = wline.point(aneighborpointindex1);
                         let (n_u1, n_v1) = if surfit == 0 {
-                            neighbour_point.parameters_on_s1()
+                            neighbor_point.parameters_on_s1()
                         } else {
-                            neighbour_point.parameters_on_s2()
+                            neighbor_point.parameters_on_s2()
                         };
                         let ap1 = GpPnt2d::new(n_u1, n_v1);
                         if ga.is_u_periodic() || ga.is_v_periodic() {
-                            let ap2 = adjust_by_neighbour(&ap1, &anewpoint, ga);
+                            let ap2 = adjust_by_neighbor(&ap1, &anewpoint, ga);
                             if ap2.x() < umin || ap2.x() > umax || ap2.y() < vmin || ap2.y() > vmax
                             {
                                 if let Some(p) = find_point(&ap1, &ap2, umin, umax, vmin, vmax) {
@@ -402,26 +402,26 @@ pub fn decomposition_of_wline(
                             }
                         }
                     } else {
-                        let aneighbourpointindex1 = if j == 0 { i_first } else { i_last };
-                        let neighbour_point = wline.point(aneighbourpointindex1);
+                        let aneighborpointindex1 = if j == 0 { i_first } else { i_last };
+                        let neighbor_point = wline.point(aneighborpointindex1);
                         let (n_u1, n_v1) = if surfit == 0 {
-                            neighbour_point.parameters_on_s1()
+                            neighbor_point.parameters_on_s1()
                         } else {
-                            neighbour_point.parameters_on_s2()
+                            neighbor_point.parameters_on_s2()
                         };
                         let ap1 = GpPnt2d::new(n_u1, n_v1);
                         let mut ap2 = GpPnt2d::new(n_u1, n_v1);
-                        let mut aneighbourpointindex2 = aneighbourpointindex1;
-                        while aneighbourpointindex2 <= i_last && aneighbourpointindex2 >= i_first {
-                            aneighbourpointindex2 = if j == 0 {
-                                aneighbourpointindex2 + 1
+                        let mut aneighborpointindex2 = aneighborpointindex1;
+                        while aneighborpointindex2 <= i_last && aneighborpointindex2 >= i_first {
+                            aneighborpointindex2 = if j == 0 {
+                                aneighborpointindex2 + 1
                             } else {
-                                aneighbourpointindex2 - 1
+                                aneighborpointindex2 - 1
                             };
-                            if aneighbourpointindex2 > i_last || aneighbourpointindex2 < i_first {
+                            if aneighborpointindex2 > i_last || aneighborpointindex2 < i_first {
                                 break;
                             }
-                            let prev = wline.point(aneighbourpointindex2);
+                            let prev = wline.point(aneighborpointindex2);
                             let (n_u2, n_v2) = if surfit == 0 {
                                 prev.parameters_on_s1()
                             } else {
@@ -458,15 +458,15 @@ pub fn decomposition_of_wline(
                                 found_u = proj.u;
                                 found_v = proj.v;
                                 let aneindex1 = if j == 0 { i_first } else { i_last };
-                                let neighbour_point = wline.point(aneindex1);
+                                let neighbor_point = wline.point(aneindex1);
                                 let (n_un, n_vn) = if surfit == 0 {
-                                    neighbour_point.parameters_on_s2()
+                                    neighbor_point.parameters_on_s2()
                                 } else {
-                                    neighbour_point.parameters_on_s1()
+                                    neighbor_point.parameters_on_s1()
                                 };
-                                let neighbour_2d = GpPnt2d::new(n_un, n_vn);
-                                let an_adjusted_point = adjust_by_neighbour(
-                                    &neighbour_2d,
+                                let neighbor_2d = GpPnt2d::new(n_un, n_vn);
+                                let an_adjusted_point = adjust_by_neighbor(
+                                    &neighbor_2d,
                                     &GpPnt2d::new(found_u, found_v),
                                     surface_other,
                                 );
@@ -566,12 +566,12 @@ pub fn decomposition_of_wline(
                         let pit = *list_of_fl_index.last().unwrap();
                         line_on_2s.add(seq_of_pnt_on_2s[(pit as usize).saturating_sub(1)]);
                     }
-                    let aneighbour = i + 1;
+                    let aneighbor = i + 1;
                     let mut b_is_end_of_line = true;
-                    if aneighbour <= nblines {
-                        let list_of_neighbour = &an_array_of_lines[aneighbour as usize];
-                        if an_array_of_line_type[aneighbour as usize] != 0
-                            && list_of_neighbour.is_empty()
+                    if aneighbor <= nblines {
+                        let list_of_neighbor = &an_array_of_lines[aneighbor as usize];
+                        if an_array_of_line_type[aneighbor as usize] != 0
+                            && list_of_neighbor.is_empty()
                         {
                             b_is_end_of_line = false;
                         }
@@ -604,12 +604,12 @@ pub fn decomposition_of_wline(
                         let pit = *list_of_fl_index.last().unwrap();
                         line_on_2s.add(seq_of_pnt_on_2s[(pit as usize).saturating_sub(1)]);
                     }
-                    let aneighbour = i + 1;
+                    let aneighbor = i + 1;
                     let mut b_is_end_of_line = true;
-                    if aneighbour <= nblines {
-                        let list_of_neighbour = &an_array_of_lines[aneighbour as usize];
-                        if an_array_of_line_type[aneighbour as usize] != 0
-                            && list_of_neighbour.is_empty()
+                    if aneighbor <= nblines {
+                        let list_of_neighbor = &an_array_of_lines[aneighbor as usize];
+                        if an_array_of_line_type[aneighbor as usize] != 0
+                            && list_of_neighbor.is_empty()
                         {
                             b_is_end_of_line = false;
                         }

@@ -180,7 +180,7 @@ pub fn rolling_ball_center_surface(
     }
 }
 
-/// The straight rolling-ball centrelines for two parallel cylinders: the lines
+/// The straight rolling-ball centerlines for two parallel cylinders: the lines
 /// at distance `r` from both cylinders (the intersections of the two offset
 /// cylinders in the cross-section plane). Returns each line as two points.
 pub(super) fn parallel_cylinder_centerlines(

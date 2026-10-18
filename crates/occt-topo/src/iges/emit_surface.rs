@@ -19,7 +19,7 @@ impl IgesWriter {
     /// `GeomToIGES_GeomSurface.cxx:1366-1400`, written by
     /// `IGESSolid_ToolSphericalSurface::WriteOwnParams`,
     /// `IGESSolid_ToolSphericalSurface.cxx:70-80`):
-    /// `196, centre_point, radius, axis_direction, reference_direction;` — the
+    /// `196, center_point, radius, axis_direction, reference_direction;` — the
     /// parametrised form, which is the one OCCT's transfer produces.
     ///
     /// **Not wired**: this is the BRep-mode arm (`myBRepMode && myAnalytic`,
@@ -119,7 +119,7 @@ impl IgesWriter {
 
     /// Entity 198 (`TransferToroidalSurface`, `cxx:1402-1435`, written by
     /// `IGESSolid_ToolToroidalSurface::WriteOwnParams`):
-    /// `198, centre_point, axis_direction, major_radius, minor_radius,
+    /// `198, center_point, axis_direction, major_radius, minor_radius,
     /// reference_direction;`.
     ///
     /// **Not wired**: BRep-mode only (`myBRepMode && myAnalytic`, `cxx:591-598`);

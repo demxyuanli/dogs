@@ -107,7 +107,7 @@ impl GProps {
     }
 
     /// Centre of mass of the current system in the absolute frame.
-    pub fn centre_of_mass(&self) -> GpPnt {
+    pub fn center_of_mass(&self) -> GpPnt {
         GpPnt::from_xyz(&self.loc.coord.added(&self.g.coord))
     }
 
@@ -121,7 +121,7 @@ impl GProps {
     /// Static moments of inertia about the three axes of the absolute
     /// Cartesian frame: `(m·x_G, m·y_G, m·z_G)`.
     pub fn static_moments(&self) -> (f64, f64, f64) {
-        let c = self.centre_of_mass();
+        let c = self.center_of_mass();
         (c.x() * self.dim, c.y() * self.dim, c.z() * self.dim)
     }
 
@@ -136,7 +136,7 @@ impl GProps {
             let iv = self.inertia.multiplied(&dir);
             dir.dot(&iv)
         } else {
-            let com = self.centre_of_mass();
+            let com = self.center_of_mass();
             let axis_inertia =
                 self.matrix_of_inertia().add(&h_operator(&com, a.location(), self.dim));
             let iv = axis_inertia.multiplied(&dir);
@@ -177,7 +177,7 @@ impl GProps {
                 (i3 / self.dim).abs().sqrt(),
             )
         };
-        Ok(PrincipalProps::new_full(i1, i2, i3, r1, r2, r3, v1, v2, v3, self.centre_of_mass()))
+        Ok(PrincipalProps::new_full(i1, i2, i3, r1, r2, r3, v1, v2, v3, self.center_of_mass()))
     }
 
     /// Compose the global properties of `item` into the current system.
@@ -341,7 +341,7 @@ impl PrincipalProps {
     }
 
     /// Centre of mass of the system the principal properties were computed for.
-    pub fn centre_of_mass(&self) -> GpPnt {
+    pub fn center_of_mass(&self) -> GpPnt {
         self.g
     }
 
@@ -418,8 +418,8 @@ impl PGProps {
         self.add_element(*p, 1.0, point_inertia_origin(p), density)
     }
 
-    /// Barycentre of a set of unit-mass points.
-    pub fn barycentre(points: &[GpPnt]) -> GpPnt {
+    /// Barycenter of a set of unit-mass points.
+    pub fn barycenter(points: &[GpPnt]) -> GpPnt {
         let n = points.len();
         if n == 0 {
             return GpPnt::zero();
@@ -431,14 +431,14 @@ impl PGProps {
         GpPnt::from_xyz(&sum.divided(n as f64))
     }
 
-    /// Weighted barycentre and total mass of a point set.
+    /// Weighted barycenter and total mass of a point set.
     /// Returns `Err` on length mismatch or a non-positive density.
-    pub fn weighted_barycentre(
+    pub fn weighted_barycenter(
         points: &[GpPnt],
         densities: &[f64],
     ) -> Result<(f64, GpPnt), String> {
         if points.len() != densities.len() {
-            return Err("PGProps::weighted_barycentre: length mismatch".into());
+            return Err("PGProps::weighted_barycenter: length mismatch".into());
         }
         let mut mass = 0.0;
         let mut sum = GpXyz::zero();
@@ -450,7 +450,7 @@ impl PGProps {
             sum = sum.added(&p.coord.multiplied(*d));
         }
         if mass.abs() < 1e-30 {
-            return Err("PGProps::weighted_barycentre: zero total mass".into());
+            return Err("PGProps::weighted_barycenter: zero total mass".into());
         }
         Ok((mass, GpPnt::from_xyz(&sum.divided(mass))))
     }

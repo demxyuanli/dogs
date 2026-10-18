@@ -378,7 +378,7 @@ fn process_as_surface_style_rendering(
 fn process_as_surface_style_boundary(
     records: &HashMap<usize, Record>,
     sses: usize,
-    boundary_colour: &mut Option<usize>,
+    boundary_color: &mut Option<usize>,
 ) -> bool {
     let Some(rec) = records.get(&sses) else { return false };
     if rec.type_name != "SURFACE_STYLE_BOUNDARY" {
@@ -393,7 +393,7 @@ fn process_as_surface_style_boundary(
     }
     // `aCS->CurveColour()` (attribute 4,
     // `RWStepVisual_RWCurveStyle.cxx:68-71`).
-    *boundary_colour = crec.args.get(3).and_then(|a| parse_ref(a));
+    *boundary_color = crec.args.get(3).and_then(|a| parse_ref(a));
     true
 }
 
@@ -402,7 +402,7 @@ fn process_as_surface_style_fill_area(
     records: &HashMap<usize, Record>,
     sses: usize,
     side: SurfaceSide,
-    surface_colour: &mut Option<usize>,
+    surface_color: &mut Option<usize>,
 ) -> bool {
     let Some(rec) = records.get(&sses) else { return false };
     if rec.type_name != "SURFACE_STYLE_FILL_AREA" {
@@ -425,8 +425,8 @@ fn process_as_surface_style_fill_area(
         // `if (!aFASC.IsNull() && (theSurfaceColour.IsNull() ||
         // theSide != StepVisual_ssNegative))` (`cxx:157-161`): a negative
         // side color only fills an unset surface color (`trj3_s1-pe.stp`).
-        if surface_colour.is_none() || side != SurfaceSide::Negative {
-            *surface_colour = Some(fc);
+        if surface_color.is_none() || side != SurfaceSide::Negative {
+            *surface_color = Some(fc);
         }
     }
     true
@@ -445,8 +445,8 @@ enum SurfaceSide {
 fn process_as_surface_style_usage(
     records: &HashMap<usize, Record>,
     pss: usize,
-    surface_colour: &mut Option<usize>,
-    boundary_colour: &mut Option<usize>,
+    surface_color: &mut Option<usize>,
+    boundary_color: &mut Option<usize>,
     rendering_props: &mut RenderingProperties,
 ) -> bool {
     let Some(rec) = records.get(&pss) else { return false };
@@ -470,8 +470,8 @@ fn process_as_surface_style_usage(
     // (`cxx:188-196`).
     let elements = sss_rec.args.get(1).map(|a| parse_ref_list(a)).unwrap_or_default();
     for sses in elements {
-        if !process_as_surface_style_fill_area(records, sses, side, surface_colour)
-            && !process_as_surface_style_boundary(records, sses, boundary_colour)
+        if !process_as_surface_style_fill_area(records, sses, side, surface_color)
+            && !process_as_surface_style_boundary(records, sses, boundary_color)
         {
             process_as_surface_style_rendering(records, sses, rendering_props);
         }
@@ -483,13 +483,13 @@ fn process_as_surface_style_usage(
 fn process_as_curve_style(
     records: &HashMap<usize, Record>,
     pss: usize,
-    curve_colour: &mut Option<usize>,
+    curve_color: &mut Option<usize>,
 ) -> bool {
     let Some(rec) = records.get(&pss) else { return false };
     // `thePSS.CurveStyle()` — select case 2, matched by kind.
     if rec.type_name != "CURVE_STYLE" {
         return false;
     }
-    *curve_colour = rec.args.get(3).and_then(|a| parse_ref(a));
+    *curve_color = rec.args.get(3).and_then(|a| parse_ref(a));
     true
 }

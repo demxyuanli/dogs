@@ -120,7 +120,7 @@ pub(super) fn resolve_closed_surface_period_jump(
             }
             i += 1;
         }
-        // `cxx:1571-1591`: recentre the sequence on the surface window. Skipped
+        // `cxx:1571-1591`: recenter the sequence on the surface window. Skipped
         // when the anchor came from the cache (`cxx:1571`).
         if !is_from_cache {
             let mid_x = 0.5 * (min_x + max_x);

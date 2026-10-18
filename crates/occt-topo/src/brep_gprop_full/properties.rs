@@ -17,7 +17,7 @@ pub(super) fn fill_intervals(a: f64, b: f64, knots: &[f64], _num_subs: usize) ->
 // Entry: linear properties (edges)
 // ---------------------------------------------------------------------------
 
-/// Rough barycentre of a shape: the mean of its vertices (roughBaryCenter).
+/// Rough barycenter of a shape: the mean of its vertices (roughBaryCenter).
 pub fn rough_barycenter(shape: &TopoShape) -> GpPnt {
     let verts = vertices_of(shape);
     if verts.is_empty() {

@@ -26,9 +26,9 @@ use super::*;
     fn empty_system_is_zero() {
         let s = GProps::new();
         assert_approx(s.mass(), 0.0, 1e-30);
-        assert_approx(s.centre_of_mass().x(), 0.0, 1e-30);
-        assert_approx(s.centre_of_mass().y(), 0.0, 1e-30);
-        assert_approx(s.centre_of_mass().z(), 0.0, 1e-30);
+        assert_approx(s.center_of_mass().x(), 0.0, 1e-30);
+        assert_approx(s.center_of_mass().y(), 0.0, 1e-30);
+        assert_approx(s.center_of_mass().z(), 0.0, 1e-30);
         for r in 0..3 {
             for c in 0..3 {
                 assert_approx(s.matrix_of_inertia().m[r][c], 0.0, 1e-30);
@@ -52,7 +52,7 @@ use super::*;
         let mut s = GProps::new();
         s.add_point_mass(&GpPnt::new(1.0, 0.0, 0.0), 2.0).unwrap();
         assert_approx(s.mass(), 2.0, 1e-12);
-        assert_approx(s.centre_of_mass().x(), 1.0, 1e-12);
+        assert_approx(s.center_of_mass().x(), 1.0, 1e-12);
         // Moment about the z axis through the origin: m·1² = 2.
         assert_approx(s.moment_of_inertia(&z_axis()), 2.0, 1e-12);
         assert_approx(s.radius_of_gyration(&z_axis()), 1.0, 1e-12);
@@ -82,7 +82,7 @@ use super::*;
             pg.add_point(p).unwrap();
         }
         assert_approx(pg.mass(), 8.0, 1e-12);
-        let c = pg.centre_of_mass();
+        let c = pg.center_of_mass();
         assert_approx(c.x(), 0.5, 1e-12);
         assert_approx(c.y(), 0.5, 1e-12);
         assert_approx(c.z(), 0.5, 1e-12);
@@ -102,7 +102,7 @@ use super::*;
         let mut v = VelGProps::new();
         v.add_box(&GpPnt::new(0., 0., 0.), &GpPnt::new(1., 1., 1.), 1.0).unwrap();
         assert_approx(v.mass(), 1.0, 1e-12);
-        let c = v.centre_of_mass();
+        let c = v.center_of_mass();
         assert_approx(c.x(), 0.5, 1e-9);
         assert_approx(c.y(), 0.5, 1e-9);
         assert_approx(c.z(), 0.5, 1e-9);
@@ -123,7 +123,7 @@ use super::*;
         let mut v = VelGProps::new();
         v.add_box(&GpPnt::new(0., 0., 0.), &GpPnt::new(2., 3., 4.), 1.0).unwrap();
         assert_approx(v.mass(), 24.0, 1e-9);
-        let c = v.centre_of_mass();
+        let c = v.center_of_mass();
         assert_approx(c.x(), 1.0, 1e-9);
         assert_approx(c.y(), 1.5, 1e-9);
         assert_approx(c.z(), 2.0, 1e-9);
@@ -155,7 +155,7 @@ use super::*;
         let mut c = CelGProps::new();
         c.add_segment(&GpPnt::new(0., 0., 0.), &GpPnt::new(2., 0., 0.), 1.0).unwrap();
         assert_approx(c.mass(), 2.0, 1e-12);
-        assert_approx(c.centre_of_mass().x(), 1.0, 1e-12);
+        assert_approx(c.center_of_mass().x(), 1.0, 1e-12);
         // About COM: Ixx = 0, Iyy = Izz = m·L²/12 = 2·4/12 = 2/3.
         let m = c.matrix_of_inertia();
         assert_approx(m.m[0][0], 0.0, 1e-12);
@@ -180,8 +180,8 @@ use super::*;
         assert_approx(s.mass(), PI * r * r, 0.01);
         let i = s.matrix_of_inertia();
         assert_approx(i.m[2][2], PI * r * r * r * r / 2.0, 0.02);
-        assert_approx(s.centre_of_mass().x(), 0.0, 1e-9);
-        assert_approx(s.centre_of_mass().y(), 0.0, 1e-9);
+        assert_approx(s.center_of_mass().x(), 0.0, 1e-9);
+        assert_approx(s.center_of_mass().y(), 0.0, 1e-9);
     }
 
     #[test]
@@ -247,7 +247,7 @@ use super::*;
         let mut sys = GProps::new();
         sys.add(&pg, 3.0).unwrap(); // density 3
         assert_approx(sys.mass(), 3.0, 1e-12);
-        assert_approx(sys.centre_of_mass().x(), 1.0, 1e-12);
+        assert_approx(sys.center_of_mass().x(), 1.0, 1e-12);
     }
 
     #[test]
@@ -262,8 +262,8 @@ use super::*;
         sys.add(&a, 1.0).unwrap();
         sys.add(&b, 1.0).unwrap();
         assert_approx(sys.mass(), 2.0, 1e-12);
-        assert_approx(sys.centre_of_mass().x(), 5.0, 1e-9);
-        assert_approx(sys.centre_of_mass().y(), 0.0, 1e-9);
+        assert_approx(sys.center_of_mass().x(), 5.0, 1e-9);
+        assert_approx(sys.center_of_mass().y(), 0.0, 1e-9);
         let m = sys.matrix_of_inertia();
         assert_approx(m.m[1][1], 50.0, 1e-9);
         assert_approx(m.m[2][2], 50.0, 1e-9);
@@ -289,16 +289,16 @@ use super::*;
     }
 
     #[test]
-    fn barycentre_helpers() {
+    fn barycenter_helpers() {
         let pts = [GpPnt::new(0., 0., 0.), GpPnt::new(2., 0., 0.), GpPnt::new(0., 2., 0.)];
-        let b = PGProps::barycentre(&pts);
+        let b = PGProps::barycenter(&pts);
         assert_approx(b.x(), 2.0 / 3.0, 1e-12);
         assert_approx(b.y(), 2.0 / 3.0, 1e-12);
-        let (mass, g) = PGProps::weighted_barycentre(&pts, &[1.0, 2.0, 1.0]).unwrap();
+        let (mass, g) = PGProps::weighted_barycenter(&pts, &[1.0, 2.0, 1.0]).unwrap();
         assert_approx(mass, 4.0, 1e-12);
         assert_approx(g.x(), 1.0, 1e-12); // (0·1 + 2·2 + 0·1)/4
         assert_approx(g.y(), 0.5, 1e-12); // (0·1 + 0·2 + 2·1)/4
-        assert!(PGProps::weighted_barycentre(&pts, &[1.0, 0.0, 1.0]).is_err());
+        assert!(PGProps::weighted_barycenter(&pts, &[1.0, 0.0, 1.0]).is_err());
     }
 
     #[test]
@@ -389,7 +389,7 @@ use super::*;
         let mut v = VelGProps::new();
         v.add_octahedron(&top, &bottom, &equator, 1.0).unwrap();
         assert_approx(v.mass(), 4.0 / 3.0, 1e-9);
-        let c = v.centre_of_mass();
+        let c = v.center_of_mass();
         assert_approx(c.x(), 0.0, 1e-9);
         assert_approx(c.y(), 0.0, 1e-9);
         assert_approx(c.z(), 0.0, 1e-9);

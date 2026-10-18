@@ -53,7 +53,7 @@ pub struct RenderingProperties {
     /// `mySpecularExponent` — `(value, is_set)`.
     specular_exponent: (f64, bool),
     /// `mySpecularColour` — `(value, is_set)`.
-    specular_colour: (Color, bool),
+    specular_color: (Color, bool),
 }
 
 impl Default for RenderingProperties {
@@ -69,7 +69,7 @@ impl Default for RenderingProperties {
             diffuse_reflectance: (0.0, false),
             specular_reflectance: (0.0, false),
             specular_exponent: (0.0, false),
-            specular_colour: (Color::WHITE, false),
+            specular_color: (Color::WHITE, false),
         }
     }
 }
@@ -110,7 +110,7 @@ impl RenderingProperties {
     /// (`cxx:356-442`).
     ///
     /// `rendering_properties` is the id of `@N =
-    /// SURFACE_STYLE_RENDERING_WITH_PROPERTIES(rendering_method, surface_colour,
+    /// SURFACE_STYLE_RENDERING_WITH_PROPERTIES(rendering_method, surface_color,
     /// (properties))`
     /// (`RWStepVisual_RWSurfaceStyleRenderingWithProperties.cxx:35-108`).
     pub fn init(&mut self, records: &HashMap<usize, Record>, rendering_properties: usize) {
@@ -122,7 +122,7 @@ impl RenderingProperties {
         self.diffuse_reflectance = (0.0, false);
         self.specular_reflectance = (0.0, false);
         self.specular_exponent = (0.0, false);
-        self.specular_colour = (Color::WHITE, false);
+        self.specular_color = (Color::WHITE, false);
 
         let Some(rec) = records.get(&rendering_properties) else {
             return;
@@ -179,7 +179,7 @@ impl RenderingProperties {
                         self.diffuse_reflectance = (dif, true);
                         self.specular_reflectance = (spec, true);
                         self.specular_exponent = (exp, true);
-                        self.specular_colour = match args.get(4).and_then(|a| parse_ref(a)) {
+                        self.specular_color = match args.get(4).and_then(|a| parse_ref(a)) {
                             Some(c) => match decode_color(records, c) {
                                 Some(decoded) => (decoded, true),
                                 None => (Color::WHITE, false),

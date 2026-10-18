@@ -556,7 +556,7 @@ pub fn is_point_on_boundary(
 }
 
 /// `AdjustByNeighbour` — pick the periodic image of `original` nearest `neighbor`.
-pub fn adjust_by_neighbour(
+pub fn adjust_by_neighbor(
     neighbor: &GpPnt2d,
     original: &GpPnt2d,
     s: &dyn Surface,

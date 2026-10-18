@@ -288,7 +288,7 @@ impl Delaun {
     /// Removes a vertex and re-triangulates the cavity. Source: `RemoveVertex`.
     pub fn remove_vertex(&mut self, vertex: &DelaunVertex) {
         let mut selector = DelaunSelector::new(&self.mesh_data);
-        selector.neighbours_of(vertex);
+        selector.neighbors_of(vertex);
         let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
         let elements: Vec<i32> = selector.elements().iter().copied().collect();
         for id in elements {
@@ -500,7 +500,7 @@ impl Delaun {
             let mut selector = DelaunSelector::new(&self.mesh_data);
             let sup = self.sup_vert.clone();
             for &sv in &sup {
-                selector.neighbours_of_node(sv);
+                selector.neighbors_of_node(sv);
             }
             for &e in selector.elements() {
                 elements.insert(e);

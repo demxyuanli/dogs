@@ -198,7 +198,7 @@ fn attach_one_end(
     tol_v: f64,
     tol_arc: f64,
     param_on_line: f64,
-    neighbour_1based: usize,
+    neighbor_1based: usize,
     first: bool,
 ) {
     let tgline = if first {
@@ -247,7 +247,7 @@ fn attach_one_end(
         let vec_n = d1u.crossed(&d1v);
         let mut pt = PatchPoint::new(ppoint.p, param_on_line, u1, v1, u2, v2);
         pt.tolerance = tol_arc;
-        let neigh_i = neighbour_1based.saturating_sub(1).min(w.points.len().saturating_sub(1));
+        let neigh_i = neighbor_1based.saturating_sub(1).min(w.points.len().saturating_sub(1));
         recadre(
             kind1,
             kind2,

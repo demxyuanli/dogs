@@ -2,7 +2,7 @@
 //! (`ShapeAnalysis_Curve.cxx`, TKShHealing).
 //!
 //! `ShapeAnalysis_TransferParametersProj` (`ShapeAnalysis_TransferParametersProj.cxx:200`,
-//! `:209`, `:404`, `:405`, `:473`, `:474`) and the wire analysers ported next to
+//! `:209`, `:404`, `:405`, `:473`, `:474`) and the wire analyzers ported next to
 //! it (`ShapeAnalysis_Wire::CheckNotchedEdges` `cxx:1993`, `ProjectInside`
 //! `cxx:1842`) project a 3D point onto a 3D curve or onto a curve-on-surface.
 //! Only the overloads those call sites use are ported:

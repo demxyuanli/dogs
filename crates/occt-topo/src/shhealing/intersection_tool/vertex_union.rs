@@ -43,7 +43,7 @@ pub(super) fn union_vertexes(
         ctx.replace(&edge2.0, &new_e.0);
         wire_set_edge_composed(wire, num2 as usize, &new_e);
         boxes.insert(skey(&new_e), *b2);
-        replace_in_neighbours(wire, ctx, boxes, num2, &v1f, &v2f);
+        replace_in_neighbors(wire, ctx, boxes, num2, &v1f, &v2f);
         true
     } else if d12 < d21 && d12 < d22 {
         // `cxx:610-617`: union vertexes V1F and V2L.
@@ -56,7 +56,7 @@ pub(super) fn union_vertexes(
         ctx.replace(&edge2.0, &new_e.0);
         wire_set_edge_composed(wire, num2 as usize, &new_e);
         boxes.insert(skey(&new_e), *b2);
-        replace_in_neighbours(wire, ctx, boxes, num2, &v1f, &v2l);
+        replace_in_neighbors(wire, ctx, boxes, num2, &v1f, &v2l);
         true
     } else if d21 < d22 {
         // `cxx:700-707`: union vertexes V1L and V2F.
@@ -69,7 +69,7 @@ pub(super) fn union_vertexes(
         ctx.replace(&edge2.0, &new_e.0);
         wire_set_edge_composed(wire, num2 as usize, &new_e);
         boxes.insert(skey(&new_e), *b2);
-        replace_in_neighbours(wire, ctx, boxes, num2, &v1l, &v2f);
+        replace_in_neighbors(wire, ctx, boxes, num2, &v1l, &v2f);
         true
     } else {
         // `cxx:789-796`: union vertexes V1L and V2L.
@@ -82,7 +82,7 @@ pub(super) fn union_vertexes(
         ctx.replace(&edge2.0, &new_e.0);
         wire_set_edge_composed(wire, num2 as usize, &new_e);
         boxes.insert(skey(&new_e), *b2);
-        replace_in_neighbours(wire, ctx, boxes, num2, &v1l, &v2l);
+        replace_in_neighbors(wire, ctx, boxes, num2, &v1l, &v2l);
         true
     }
 }
