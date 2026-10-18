@@ -429,7 +429,7 @@ pub fn closest_point_mesh(
 ///
 /// Returns the enclosed volume. For non-closed meshes the value is the signed
 /// "volume" of the open surface and has no strict geometric meaning.
-pub fn mesh_volume(bvh: &TriBvh, triangles: &[(GpPnt, GpPnt, GpPnt)]) -> f64 {
+pub fn mesh_volume_of_triangles(bvh: &TriBvh, triangles: &[(GpPnt, GpPnt, GpPnt)]) -> f64 {
     let _ = bvh;
     let mut vol = 0.0;
     for (a, b, c) in triangles {
@@ -515,9 +515,7 @@ pub fn edge_to_triangles(triangles: &[(usize, usize, usize)]) -> HashMap<(usize,
 /// * `triangles` — the mesh as index triples.
 ///
 /// Returns `(boundary_edge_count, non_manifold_edge_count)`.
-pub fn mesh_edge_topology(triangles: &[(usize, usize, usize)]) -> (usize, usize) {
-    crate::geom::mesh_analysis::mesh_edge_topology(triangles)
-}
+pub use crate::geom::mesh_analysis::mesh_edge_topology;
 
 /// Whether a triangle mesh is a closed 2-manifold.
 ///

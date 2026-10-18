@@ -80,25 +80,7 @@ pub fn segment_segment2d(
 }
 
 /// Even-odd point-in-polygon test (any winding).
-pub fn point_in_polygon2d(poly: &[GpPnt2d], p: &GpPnt2d) -> bool {
-    let n = poly.len();
-    if n < 3 {
-        return false;
-    }
-    let mut inside = false;
-    let mut j = n - 1;
-    for i in 0..n {
-        let (xi, yi) = (poly[i].x(), poly[i].y());
-        let (xj, yj) = (poly[j].x(), poly[j].y());
-        let crosses = (yi > p.y()) != (yj > p.y())
-            && p.x() < (xj - xi) * (p.y() - yi) / (yj - yi) + xi;
-        if crosses {
-            inside = !inside;
-        }
-        j = i;
-    }
-    inside
-}
+pub use crate::geom::polygon_ops::point_in_polygon2d;
 
 /// Whether all vertices of `poly` lie inside (or on the boundary of) `other`.
 fn all_vertices_inside(poly: &[GpPnt2d], other: &[GpPnt2d]) -> bool {

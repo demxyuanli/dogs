@@ -127,19 +127,7 @@ fn basis_vals(span: usize, deg: usize, u: f64, knots: &[f64]) -> Vec<f64> {
 /// Full basis vector `(N_{0,deg}(u), …, N_{np−1,deg}(u))` for a clamped knot
 /// vector with `np` poles. Zeros outside the active support. Useful for
 /// partition-of-unity checks and for building collocation matrices.
-pub fn bspline_basis_1d(knots: &[f64], deg: usize, u: f64) -> Vec<f64> {
-    let np = knots.len() - deg - 1;
-    let mut out = vec![0.0; np];
-    let span = find_span(knots, deg, u);
-    let vals = basis_vals(span, deg, u, knots);
-    for r in 0..=deg {
-        let idx = span - deg + r;
-        if idx < np {
-            out[idx] = vals[r];
-        }
-    }
-    out
-}
+pub use crate::nurbs_fit::bspline_basis_1d;
 
 /// Evaluate a 1-D B-spline curve (optionally rational) at parameter `t`.
 ///

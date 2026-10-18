@@ -126,7 +126,7 @@ pub fn read_obj_scene(path: &str) -> Result<MeshScene, String> {
 pub fn read_ply_scene(path: &str) -> Result<MeshScene, String> {
     let mesh = occt_core::io::ply::read_ply_file(path)
         .map_err(|e| format!("rwmesh: ply: {e}"))?;
-    let tri = occt_core::io::ply::to_triangulation(&mesh);
+    let tri = occt_core::io::ply::ply_to_triangulation(&mesh);
     let triangles = tri.triangles.iter().map(|t| (t.n0, t.n1, t.n2)).collect();
     Ok(MeshScene {
         name: file_stem(path).to_string(),
@@ -154,7 +154,7 @@ pub fn read_ply_scene(path: &str) -> Result<MeshScene, String> {
 pub fn read_stl_scene(path: &str) -> Result<MeshScene, String> {
     let mesh = occt_core::io::stl::read_stl_file(path)
         .map_err(|e| format!("rwmesh: stl: {e}"))?;
-    let tri = occt_core::io::stl::to_triangulation(&mesh);
+    let tri = occt_core::io::stl::stl_to_triangulation(&mesh);
     let triangles = tri.triangles.iter().map(|t| (t.n0, t.n1, t.n2)).collect();
     Ok(MeshScene {
         name: file_stem(path).to_string(),

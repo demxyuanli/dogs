@@ -14,7 +14,7 @@ use occt_math::{Gauss, MathMatrix, MathVector};
 // are gone.
 // ---------------------------------------------------------------------------
 
-pub(crate) use occt_core::math_direct_poly_roots::{quadratic_roots, quartic_roots};
+pub(crate) use occt_core::math_direct_poly_roots::{direct_quadratic_roots as quadratic_roots, quartic_roots};
 
 // ---------------------------------------------------------------------------
 // Plane helpers.

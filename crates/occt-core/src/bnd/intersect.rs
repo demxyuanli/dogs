@@ -46,6 +46,6 @@ pub fn merge_boxes(boxes: &[BndBox]) -> BndBox {
 }
 
 /// Check if point is inside box (inclusive bounds).
-pub fn is_inside(box3d: &BndBox, point: &GpPnt) -> bool {
+pub fn box_contains_point(box3d: &BndBox, point: &GpPnt) -> bool {
     !box3d.is_out(point)
 }

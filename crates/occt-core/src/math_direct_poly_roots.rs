@@ -710,12 +710,12 @@ fn solution_values(pol: DirectPolynomialRoots) -> Vec<f64> {
 }
 
 /// Real roots of `a*x^2 + b*x + c = 0` (`cxx:537-545`, `712-764`).
-pub fn quadratic_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
+pub fn direct_quadratic_roots(a: f64, b: f64, c: f64) -> Vec<f64> {
     solution_values(DirectPolynomialRoots::new3(a, b, c))
 }
 
 /// Real roots of `a*x^3 + b*x^2 + c*x + d = 0` (`cxx:525-533`, `627-708`).
-pub fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
+pub fn direct_cubic_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
     solution_values(DirectPolynomialRoots::new4(a, b, c, d))
 }
 

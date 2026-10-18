@@ -167,7 +167,7 @@ pub fn write_ascii_stl(mesh: &StlMesh) -> String {
 /// all nodes merge regardless of the facet angle, `RWStl_Reader.hxx:93-95`).
 /// The previous body quantised every coordinate onto a `1e-9` grid, an invented
 /// tolerance (audit A26) that also merged near-coincident nodes OCCT keeps apart.
-pub fn to_triangulation(mesh: &StlMesh) -> Triangulation {
+pub fn stl_to_triangulation(mesh: &StlMesh) -> Triangulation {
     let mut nodes: Vec<GpPnt> = Vec::new();
     let mut map: HashMap<(u64, u64, u64), usize> = HashMap::new();
     // `0.0 == -0.0` in OCCT's coordinate comparison, so normalise the sign bit
@@ -288,7 +288,7 @@ endsolid demo
 
     #[test]
     fn to_triangulation_one_triangle() {
-        let t = to_triangulation(&single_triangle());
+        let t = stl_to_triangulation(&single_triangle());
         assert_eq!(t.nodes.len(), 3);
         assert_eq!(t.triangles.len(), 1);
         assert_eq!(t.triangles[0].n2, 2);

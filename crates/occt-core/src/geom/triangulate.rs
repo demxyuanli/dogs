@@ -110,7 +110,7 @@ pub fn count_unique_edges(triangles: &[(usize, usize, usize)]) -> usize {
 }
 
 /// Compute signed volume of a closed triangle mesh (origin-based tetrahedra).
-pub fn mesh_signed_volume(verts: &[GpPnt], tris: &[(usize, usize, usize)]) -> f64 {
+pub fn triangulation_signed_volume(verts: &[GpPnt], tris: &[(usize, usize, usize)]) -> f64 {
     let mut vol = 0.0;
     for &(i, j, k) in tris {
         let a = verts[i].coord; let b = verts[j].coord; let c = verts[k].coord;

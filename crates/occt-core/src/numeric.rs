@@ -3,7 +3,7 @@ use crate::gp::GpPnt;
 
 /// Bisection root finding for continuous f on [a,b] where f(a)*f(b) <= 0.
 /// Returns root or None if no sign change. max_iter guards convergence.
-pub fn bisection<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64, tol: f64, max_iter: usize) -> Option<f64> {
+pub fn numeric_bisection<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64, tol: f64, max_iter: usize) -> Option<f64> {
     let mut lo = a; let mut hi = b;
     let flo = f(lo); let fhi = f(hi);
     if flo == 0.0 { return Some(lo); }
@@ -39,7 +39,7 @@ pub fn regula_falsi<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64, tol: f64, max_iter
 }
 
 /// Secant method root finding (no bracket needed, may diverge).
-pub fn secant<F: Fn(f64) -> f64>(f: &F, x0: f64, x1: f64, tol: f64, max_iter: usize) -> Option<f64> {
+pub fn numeric_secant<F: Fn(f64) -> f64>(f: &F, x0: f64, x1: f64, tol: f64, max_iter: usize) -> Option<f64> {
     let mut xn1 = x0; let mut xn = x1;
     let mut fn1 = f(xn1);
     for _ in 0..max_iter {
@@ -55,7 +55,7 @@ pub fn secant<F: Fn(f64) -> f64>(f: &F, x0: f64, x1: f64, tol: f64, max_iter: us
 
 /// Catmull-Rom spline interpolation through points. Returns y at t in [0,1]
 /// within segment i (P0,P1,P2,P3 control points).
-pub fn catmull_rom(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
+pub fn numeric_catmull_rom(p0: f64, p1: f64, p2: f64, p3: f64, t: f64) -> f64 {
     0.5 * ((2.0*p1) + (-p0+p2)*t + (2.0*p0-5.0*p1+4.0*p2-p3)*t*t + (-p0+3.0*p1-3.0*p2+p3)*t*t*t)
 }
 
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn bisection_linear() {
         let f = |x: f64| x - 2.0;
-        let r = bisection(&f, 0.0, 5.0, 1e-12, 100).unwrap();
+        let r = numeric_bisection(&f, 0.0, 5.0, 1e-12, 100).unwrap();
         assert!((r - 2.0).abs() < 1e-12);
     }
 

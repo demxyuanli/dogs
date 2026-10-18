@@ -120,7 +120,7 @@ use super::*;
     fn mesh_volume_box() {
         let tris = cube_triangles();
         let bvh = crate::bvh::builder_tri::build_tri_bvh(&tris, 2);
-        let vol = mesh_volume(&bvh, &tris);
+        let vol = mesh_volume_of_triangles(&bvh, &tris);
         assert!((vol - 1.0).abs() < 0.05, "unit cube volume = {vol}");
     }
 

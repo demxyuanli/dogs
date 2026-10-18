@@ -11,7 +11,7 @@
 //! mesh pipeline uses to tessellate curves.
 
 use crate::curve::Curve;
-use occt_core::gcpnts::{perform_tangential_curve, polyline_length, CurveSample, CurveSecondDeriv, UniformPoints};
+use occt_core::gcpnts::{perform_tangential_curve, polyline_arc_length, CurveSample, CurveSecondDeriv, UniformPoints};
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::precision::{CONFUSION, PCONFUSION};
 
@@ -86,7 +86,7 @@ pub fn adaptive_chord_error(c: &dyn Curve, a: f64, b: f64, mid_pt: &GpPnt) -> f6
 
 /// Length of the polyline produced by [`curve_to_polyline`] at `tol`.
 pub fn curve_approx_length(c: &dyn Curve, tol: f64) -> f64 {
-    polyline_length(&curve_to_polyline(c, tol))
+    polyline_arc_length(&curve_to_polyline(c, tol))
 }
 
 fn finite_param(a: f64, b: f64) -> (f64, f64) {

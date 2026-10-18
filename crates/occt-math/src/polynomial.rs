@@ -25,7 +25,7 @@ pub fn poly_derivative(coeffs: &[f64]) -> Vec<f64> {
 /// `math_DirectPolynomialRoots` (`occt_core::math_direct_poly_roots`); the
 /// closed form with its `1e-14` discriminant comparisons used to live here.
 pub fn quadratic_roots(a: f64, b: f64, c: f64) -> Option<(f64, f64)> {
-    let r = occt_core::math_direct_poly_roots::quadratic_roots(a, b, c);
+    let r = occt_core::math_direct_poly_roots::direct_quadratic_roots(a, b, c);
     if r.len() == 2 {
         Some((r[0], r[1]))
     } else {
@@ -36,7 +36,7 @@ pub fn quadratic_roots(a: f64, b: f64, c: f64) -> Option<(f64, f64)> {
 /// Real roots of `a*x^3 + b*x^2 + c*x + d = 0` in `Value` order, 1 to 3
 /// roots. Delegates to the ported `math_DirectPolynomialRoots`.
 pub fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> Vec<f64> {
-    occt_core::math_direct_poly_roots::cubic_roots(a, b, c, d)
+    occt_core::math_direct_poly_roots::direct_cubic_roots(a, b, c, d)
 }
 
 // ---------------------------------------------------------------------------

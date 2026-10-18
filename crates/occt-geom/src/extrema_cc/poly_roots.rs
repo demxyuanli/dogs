@@ -13,7 +13,7 @@ pub(super) const PI: f64 = std::f64::consts::PI;
 // same invented solver and are gone.
 // ---------------------------------------------------------------------------
 
-pub(super) use occt_core::math_direct_poly_roots::{cubic_roots, quadratic_roots, quartic_roots};
+pub(super) use occt_core::math_direct_poly_roots::{direct_cubic_roots as cubic_roots, direct_quadratic_roots as quadratic_roots, quartic_roots};
 
 /// Push `u + 2πk` for every integer k that lands in [uinf, usup].
 pub(super) fn push_periodic(roots: &mut Vec<f64>, u: f64, uinf: f64, usup: f64) {

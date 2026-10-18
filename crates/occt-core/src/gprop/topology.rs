@@ -12,7 +12,7 @@ fn distance(a: &GpPnt, b: &GpPnt) -> f64 {
 
 /// Total length of the polyline through `pts`; if `is_closed`, the closing
 /// edge back to the first point is included.
-pub fn polyline_length(pts: &[GpPnt], is_closed: bool) -> f64 {
+pub fn closed_polyline_length(pts: &[GpPnt], is_closed: bool) -> f64 {
     if pts.len() < 2 {
         return 0.0;
     }
@@ -57,7 +57,7 @@ pub fn polygon_centroid_area(pts: &[GpPnt]) -> (GpPnt, f64) {
 }
 
 /// Area of triangle `abc` via half the magnitude of the cross product.
-pub fn triangle_area(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> f64 {
+pub fn triangle_area_3d(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> f64 {
     let abx = b.x() - a.x();
     let aby = b.y() - a.y();
     let abz = b.z() - a.z();
@@ -71,7 +71,7 @@ pub fn triangle_area(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> f64 {
 }
 
 /// 2D circumcenter of triangle `abc`; `None` if the triangle is collinear.
-pub fn circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
+pub fn circumcenter_3d(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
     let (ax, ay) = (a.x(), a.y());
     let (bx, by) = (b.x(), b.y());
     let (cx, cy) = (c.x(), c.y());
@@ -171,13 +171,13 @@ mod tests {
     #[test]
     fn polyline_square() {
         let sq = [pt(0.0, 0.0), pt(1.0, 0.0), pt(1.0, 1.0), pt(0.0, 1.0)];
-        assert_approx(polyline_length(&sq, true), 4.0, 1e-12);
+        assert_approx(closed_polyline_length(&sq, true), 4.0, 1e-12);
     }
 
     #[test]
     fn triangle_area_2d() {
         assert_approx(
-            triangle_area(&pt(0.0, 0.0), &pt(1.0, 0.0), &pt(0.0, 1.0)),
+            triangle_area_3d(&pt(0.0, 0.0), &pt(1.0, 0.0), &pt(0.0, 1.0)),
             0.5,
             1e-12,
         );

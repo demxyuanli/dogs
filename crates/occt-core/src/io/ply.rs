@@ -112,7 +112,7 @@ pub fn write_ply(mesh: &PlyMesh) -> String {
 }
 
 /// Build a `Triangulation`, fan-triangulating polygon faces (triangles pass through).
-pub fn to_triangulation(mesh: &PlyMesh) -> Triangulation {
+pub fn ply_to_triangulation(mesh: &PlyMesh) -> Triangulation {
     let nodes = mesh.vertices.clone();
     let mut tris = Vec::new();
     for f in &mesh.faces {
@@ -206,7 +206,7 @@ end_header
     #[test]
     fn quad_triangulates_to_two() {
         let m = PlyMesh { faces: vec![vec![0, 1, 2, 3]], ..quad_ply() };
-        let t = to_triangulation(&m);
+        let t = ply_to_triangulation(&m);
         assert_eq!(t.nodes.len(), 4);
         assert_eq!(t.triangles.len(), 2);
         assert_eq!(t.triangles[1].n2, 3);

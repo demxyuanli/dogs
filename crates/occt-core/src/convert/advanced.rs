@@ -110,7 +110,7 @@ pub fn barycentric(a: &GpPnt, b: &GpPnt, c: &GpPnt, p: &GpPnt) -> (f64, f64, f64
 }
 
 /// Bilinear interpolation of the four corner values at `(u, v)` in `[0, 1]^2`.
-pub fn bilinear_interp(p00: f64, p10: f64, p01: f64, p11: f64, u: f64, v: f64) -> f64 {
+pub fn bilinear_interp_corners(p00: f64, p10: f64, p01: f64, p11: f64, u: f64, v: f64) -> f64 {
     p00 * (1.0 - u) * (1.0 - v) + p10 * u * (1.0 - v) + p01 * (1.0 - u) * v + p11 * u * v
 }
 
@@ -147,6 +147,6 @@ mod tests {
 
     #[test]
     fn bilinear_center() {
-        assert_approx(bilinear_interp(0.0, 1.0, 1.0, 0.0, 0.5, 0.5), 0.5, 1e-12);
+        assert_approx(bilinear_interp_corners(0.0, 1.0, 1.0, 0.0, 0.5, 0.5), 0.5, 1e-12);
     }
 }

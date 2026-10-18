@@ -13,7 +13,7 @@ pub fn conjugate(q: &GpQuaternion) -> GpQuaternion {
 }
 
 /// Inverse: conjugate / |q|² (unit quaternions: just the conjugate).
-pub fn inverse(q: &GpQuaternion) -> GpQuaternion {
+pub fn quaternion_inverse(q: &GpQuaternion) -> GpQuaternion {
     let n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
     if n2 < 1e-30 {
         return GpQuaternion::identity();
@@ -192,7 +192,7 @@ mod tests {
     #[test]
     fn inverse_composes_to_identity() {
         let q = from_axis_angle(&GpDir::new(0.0, 1.0, 0.0).unwrap(), 0.7);
-        let qinv = inverse(&q);
+        let qinv = quaternion_inverse(&q);
         let prod = multiply(&q, &qinv);
         assert!(angle_between(&prod, &q_unit()) < 1e-9);
     }

@@ -53,17 +53,7 @@ pub fn uniform_sample<F: Fn(f64) -> GpPnt>(curve: &F, a: f64, b: f64, n: usize) 
 }
 
 /// Chord-length parameterization of sampled points → cumulative parameter values.
-pub fn chord_length_params(pts: &[GpPnt]) -> Vec<f64> {
-    let n = pts.len();
-    if n < 2 { return vec![0.0]; }
-    let mut params = vec![0.0f64; n];
-    for i in 1..n {
-        params[i] = params[i-1] + pts[i].coord.subtracted(&pts[i-1].coord).modulus();
-    }
-    let total = params[n-1];
-    if total > 1e-30 { for p in &mut params { *p /= total; } }
-    params
-}
+pub use crate::bspl::curve_tools::chord_length_params;
 
 /// Distance from point to segment.
 pub fn point_segment_distance(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> f64 {

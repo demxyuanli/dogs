@@ -23,7 +23,7 @@ pub struct Extrema2d {
 // where the port lives, so nothing had to be kept local).
 // ---------------------------------------------------------------------------
 
-pub(super) use occt_core::math_direct_poly_roots::{cubic_roots, quartic_roots};
+pub(super) use occt_core::math_direct_poly_roots::{direct_cubic_roots, quartic_roots};
 
 pub(super) fn push_periodic(roots: &mut Vec<f64>, u: f64, uinf: f64, usup: f64) {
     if !(uinf.is_finite() && usup.is_finite()) {
@@ -234,7 +234,7 @@ pub(super) fn parabola_all2d(pa: &GpParab2d, p: &GpPnt2d, uinf: f64, usup: f64) 
     let v = GpVec2d::new(p.x() - o.x(), p.y() - o.y());
     let x = v.dot(&GpVec2d::new(xd.x, xd.y));
     let y = v.dot(&GpVec2d::new(yd.x, yd.y));
-    let us = cubic_roots(1.0 / (4.0 * f), 0.0, 2.0 * f - x, -2.0 * f * y);
+    let us = direct_cubic_roots(1.0 / (4.0 * f), 0.0, 2.0 * f - x, -2.0 * f * y);
     let tol2 = CONFUSION * CONFUSION;
     let mut out = Vec::new();
     let mut seen: Vec<GpPnt2d> = Vec::new();

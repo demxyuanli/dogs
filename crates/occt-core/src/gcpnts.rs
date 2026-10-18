@@ -15,7 +15,7 @@
 //! - `GCPnts_UniformAbscissa` (`GCPnts_UniformAbscissa.cxx`).
 //!
 //! The remaining helpers in this file (`UniformPoints`, `sample_line`,
-//! `sample_circle`, `polyline_length`, `reparametrize_by_chord_length`,
+//! `sample_circle`, `polyline_arc_length`, `reparametrize_by_chord_length`,
 //! `evaluate_at`, `total_chord_error`) are **port-internal utilities, not OCCT
 //! translations**; they carry no OCCT line references and must not be used as
 //! evidence of alignment.
@@ -85,7 +85,7 @@ impl UniformPoints {
 }
 
 /// Total length of the polyline through `pts`.
-pub fn polyline_length(pts: &[GpPnt]) -> f64 {
+pub fn polyline_arc_length(pts: &[GpPnt]) -> f64 {
     pts.windows(2).map(|w| w[0].distance(&w[1])).sum()
 }
 
@@ -258,7 +258,7 @@ mod tests {
             GpPnt::new(1.0, 1.0, 0.0),
             GpPnt::new(1.0, 1.0, 1.0),
         ];
-        assert!((polyline_length(&pts) - 3.0).abs() < 1e-12);
+        assert!((polyline_arc_length(&pts) - 3.0).abs() < 1e-12);
         let p = reparametrize_by_chord_length(&pts);
         assert_eq!(p.len(), 4);
         assert!(p[0].abs() < 1e-12);

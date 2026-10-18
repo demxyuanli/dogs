@@ -1244,31 +1244,10 @@ impl GeomBSplineSurface {
 
 /// Clamped uniform knot vector for `n` poles of degree `p`
 /// (length `n + p + 1`, multiplicity `p + 1` at both ends).
-fn clamped_uniform_knots(n: usize, p: usize) -> Vec<f64> {
-    let len = n + p + 1;
-    let interior = if n >= p + 1 { n - p - 1 } else { 0 };
-    let mut k = Vec::with_capacity(len);
-    for _ in 0..=p {
-        k.push(0.0);
-    }
-    for i in 1..=interior {
-        k.push(i as f64 / (interior + 1) as f64);
-    }
-    while k.len() < len {
-        k.push(1.0);
-    }
-    k
-}
+
 
 /// Clamped uniform knot vectors for a surface with `nu × nv` poles.
-pub fn bspline_surface_uniform_knots(
-    nu: usize,
-    nv: usize,
-    deg_u: usize,
-    deg_v: usize,
-) -> (Vec<f64>, Vec<f64>) {
-    (clamped_uniform_knots(nu, deg_u), clamped_uniform_knots(nv, deg_v))
-}
+pub use occt_math::spline_surface::bspline_surface_uniform_knots;
 
 /// All non-zero degree-`degree` basis functions at `u` (NURBS A2.2), returned
 /// as a full-length vector of length `#poles`.

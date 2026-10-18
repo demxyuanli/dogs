@@ -91,9 +91,7 @@ pub fn point_segment_closest(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> (GpPnt, f64) {
 }
 
 /// Shortest distance from point `p` to infinite line `l`.
-pub fn point_line_distance(p: &GpPnt, l: &GpLin) -> f64 {
-    l.distance(p)
-}
+pub use crate::elib::intersect::point_line_distance;
 
 // --- internals ---
 
