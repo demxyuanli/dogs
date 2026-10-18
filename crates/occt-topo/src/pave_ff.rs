@@ -25,7 +25,7 @@ use crate::builder::TopoBuilder;
 use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::pave_filler::{PaveFiller};
-use crate::pave_intersect::make_sd_vertices;
+use crate::pave_intersect::intersect_make_sd_vertices;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
 
@@ -137,7 +137,7 @@ fn is_valid_block_for_faces(
     true
 }
 
-pub(crate) fn is_existing_pave_block_on_shared(
+pub(crate) fn ff_is_existing_pave_block_on_shared(
     ds: &BopdsDS,
     ctx: &IntToolsContext,
     pb: &BopdsPaveBlock,
@@ -238,7 +238,7 @@ fn make_sd_vertices_ff(
         if list.len() < 2 {
             continue;
         }
-        let n_sd = make_sd_vertices(f.ds_mut(), list, false)?;
+        let n_sd = intersect_make_sd_vertices(f.ds_mut(), list, false)?;
         for &n_v in list {
             dm_new_sd.insert(n_v, n_sd);
         }
@@ -247,16 +247,7 @@ fn make_sd_vertices_ff(
 }
 
 /// `BOPAlgo_PaveFiller::PostTreatFF` (`BOPAlgo_PaveFiller_6.cxx`).
-pub(crate) fn post_treat_ff(
-    f: &mut PaveFiller,
-    mscpb: &[(TopoShape, CoupleOfPaveBlocks)],
-    dm_new_sd: &mut HashMap<usize, usize>,
-    dm_ex: &mut crate::pave_ff_update::DmExEdges,
-    micro_pb: &[BopdsPaveBlock],
-    verts_on_rejected: &[TopoShape],
-) -> Result<(), String> {
-    crate::pave_ff_post::post_treat_ff(f, mscpb, dm_new_sd, dm_ex, micro_pb, verts_on_rejected)
-}
+pub(crate) use crate::pave_ff_post::post_treat_ff;
 
 #[allow(dead_code)]
 fn post_treat_ff_legacy(

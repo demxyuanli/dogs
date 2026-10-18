@@ -276,7 +276,7 @@ pub(super) fn write_scene(scene: &MeshScene, path: &str) -> Result<(), String> {
                     ply.faces.push(vec![base + a, base + b, base + c]);
                 }
             }
-            std::fs::write(path, occt_core::io::ply::write_ply(&ply))
+            std::fs::write(path, occt_core::io::ply::ply_mesh_to_string(&ply))
                 .map_err(|e| format!("rwmesh: write {path}: {e}"))
         }
         "stl" => {

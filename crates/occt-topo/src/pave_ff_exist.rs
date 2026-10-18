@@ -166,20 +166,7 @@ fn edge_box_out(ds: &BopdsDS, n_e: usize, other: &BndBox) -> bool {
 }
 
 /// `BOPAlgo_PaveFiller::IsExistingPaveBlock` ON/IN tree overload (`_6.cxx:2047`).
-pub(crate) fn is_existing_pave_block_on_in(
-    ds: &BopdsDS,
-    ctx: &IntToolsContext,
-    pb: &BopdsPaveBlock,
-    curve: &dyn Curve,
-    tol_r3d: f64,
-    on_in: &[BopdsPaveBlock],
-    common: &[(usize, f64, f64)],
-    fuzzy: f64,
-) -> Option<(BopdsPaveBlock, f64)> {
-    crate::pave_ff_exist_onin::is_existing_pave_block_on_in(
-        ds, ctx, pb, curve, tol_r3d, on_in, common, fuzzy,
-    )
-}
+pub(crate) use crate::pave_ff_exist_onin::is_existing_pave_block_on_in;
 
 /// `BOPAlgo_PaveFiller::PreparePostTreatFF` (`_6.cxx:3609`).
 pub(crate) fn prepare_post_treat_ff(

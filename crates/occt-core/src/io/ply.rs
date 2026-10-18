@@ -90,7 +90,7 @@ pub fn read_ply_file(path: &str) -> Result<PlyMesh, String> {
 }
 
 /// Serialize mesh to ASCII PLY.
-pub fn write_ply(mesh: &PlyMesh) -> String {
+pub fn ply_mesh_to_string(mesh: &PlyMesh) -> String {
     let mut s = String::with_capacity(64 + mesh.vertices.len() * 32 + mesh.faces.len() * 24);
     s.push_str("ply\nformat ascii 1.0\n");
     s.push_str(&format!("element vertex {}\n", mesh.vertices.len()));
@@ -195,7 +195,7 @@ end_header
     #[test]
     fn write_parse_roundtrip() {
         let m = quad_ply();
-        let s = write_ply(&m);
+        let s = ply_mesh_to_string(&m);
         let back = parse_ply(&s).unwrap();
         assert_eq!(back.vertices.len(), 4);
         assert_eq!(back.faces.len(), 2);

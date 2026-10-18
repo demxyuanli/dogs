@@ -28,7 +28,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::shape_analysis::is_outer_bound;
 use crate::shape_fix_compose_shell::{
-    adjust_to_period, reverse_wire_data_on_face, CompositeSurface, ComposeShell, Parametrisation,
+    compose_adjust_to_period, reverse_wire_data_on_face, CompositeSurface, ComposeShell, Parametrisation,
     ReShape,
 };
 use crate::shhealing::{adjust_by_period, first_vertex, fix_reorder_wire, last_vertex};
@@ -1194,10 +1194,10 @@ impl ShapeFixFace {
 
         // cxx:2226-2234.
         if uf2 < suf || uf2 > sul {
-            uf2 += adjust_to_period(uf2, suf, suf + u_range);
+            uf2 += compose_adjust_to_period(uf2, suf, suf + u_range);
         }
         if vf2 < svf || vf2 > svl {
-            vf2 += adjust_to_period(vf2, svf, svf + v_range);
+            vf2 += compose_adjust_to_period(vf2, svf, svf + v_range);
         }
 
         // cxx:2236-2261: fictive grid + ComposeShell inserts the seam.

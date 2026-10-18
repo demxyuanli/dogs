@@ -119,7 +119,7 @@ pub fn thin_face_max_tol_add(tol_check: f64) -> f64 {
 }
 
 /// Whether two 1D ranges overlap (used by ProcessExisting distance lookup).
-pub fn ranges_overlap(t1: f64, t2: f64, f: f64, l: f64) -> bool {
+pub fn range_contains_param(t1: f64, t2: f64, f: f64, l: f64) -> bool {
     (t1 <= f && f <= t2) || (t1 <= l && l <= t2) || (f <= t1 && t1 <= l) || (f <= t2 && t2 <= l)
 }
 

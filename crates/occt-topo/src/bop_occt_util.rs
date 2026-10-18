@@ -108,7 +108,7 @@ fn collect_type(s: &TopoShape, ty: ShapeType) -> Vec<TopoShape> {
 
 /// `TopExp::MapShapes(s, type, map)` — `TopTools_IndexedMapOfShape` content
 /// (per-occurrence walk, deduplicated by [`same_shape`]).
-pub fn map_shapes(s: &TopoShape, ty: ShapeType) -> HashSet<ShapeMapKey> {
+pub fn map_shape_keys(s: &TopoShape, ty: ShapeType) -> HashSet<ShapeMapKey> {
     explore(s, ty).into_iter().map(|x| shape_key(&x)).collect()
 }
 
@@ -118,7 +118,7 @@ pub fn map_shapes(s: &TopoShape, ty: ShapeType) -> HashSet<ShapeMapKey> {
 /// `TShape` + `Location`). The list keeps per-occurrence duplicates; the
 /// previous local copy deduplicated the ancestors, which is
 /// `MapShapesAndUniqueAncestors` (`cxx:124-177`), not this function.
-pub fn map_shapes_and_ancestors(
+pub fn origin_map_shapes_and_ancestors(
     s: &TopoShape,
     sub: ShapeType,
     anc: ShapeType,
@@ -401,7 +401,7 @@ pub fn treat_compound(s: &TopoShape, out: &mut Vec<TopoShape>, fence: &mut HashS
 }
 
 /// `BRep_Tool::IsClosed(theShape)` (`BRep_Tool.cxx:1707-1757`).
-pub fn wire_is_closed(wire: &Wire) -> bool {
+pub fn bop_wire_is_closed(wire: &Wire) -> bool {
     crate::brep_tool::BRepTool::is_closed(&wire.0)
 }
 
@@ -488,7 +488,7 @@ pub fn list_append_unique(list: &mut Vec<TopoShape>, s: TopoShape) -> bool {
 }
 
 /// Wires that are direct children of a face.
-pub fn wires_of_face(face: &Face) -> Vec<Wire> {
+pub fn bop_wires_of_face(face: &Face) -> Vec<Wire> {
     iter_typed(&face.0, ShapeType::Wire)
         .into_iter()
         .filter_map(|w| Wire::wrap(w))

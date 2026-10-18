@@ -169,7 +169,7 @@ impl EdgeFace {
         self.surface = Some(surface.clone());
 
         let c_kind = curve_kind(curve.as_ref());
-        let s_kind = surface_kind(surface.as_ref());
+        let s_kind = edge_face_surface_kind(surface.as_ref());
 
         // Prepare myCriteria.
         let fuzz = self.fuzzy_value * 0.5;
@@ -307,7 +307,7 @@ impl EdgeFace {
         let curve = self.curve.clone().expect("curve set");
         let surface = self.surface.clone().expect("surface set");
         let a_nb_seg = if curve_kind(curve.as_ref()) == CurveKind::Line
-            && surface_kind(surface.as_ref()) == SurfaceKind::Plane
+            && edge_face_surface_kind(surface.as_ref()) == SurfaceKind::Plane
         {
             2
         } else {

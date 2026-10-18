@@ -173,7 +173,7 @@ mod tests {
         let mut ds = BopdsDS::new();
         let n1 = ds.append(v1.into()).unwrap();
         let n2 = ds.append(v2.into()).unwrap();
-        let nv = make_sd_vertices(&mut ds, &[n1, n2], true).unwrap();
+        let nv = intersect_make_sd_vertices(&mut ds, &[n1, n2], true).unwrap();
         assert_eq!(ds.get_same_domain_index(n1), nv);
         assert_eq!(ds.get_same_domain_index(n2), nv);
         assert!(ds.has_interf_pair(n1, n2));

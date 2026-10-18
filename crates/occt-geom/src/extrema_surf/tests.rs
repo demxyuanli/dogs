@@ -72,7 +72,7 @@ use super::*;
         let sp = unit_sphere();
         for (u, v) in [(0.0, 0.0), (PI / 2.0, PI / 4.0), (PI, -PI / 3.0), (3.0 * PI / 2.0, 0.2)] {
             let q = slib::sphere_value(&sp, u, v);
-            let (u2, v2) = sphere_parameters(&sp, &q);
+            let (u2, v2) = analytic_sphere_parameters(&sp, &q);
             let q2 = slib::sphere_value(&sp, u2, v2);
             assert!(q.distance(&q2) < 1e-9, "params roundtrip (u={u},v={v})");
         }

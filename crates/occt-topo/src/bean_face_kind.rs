@@ -64,14 +64,14 @@ pub(crate) fn first_three_spanning(pts: &[GpPnt]) -> Option<(GpPnt, GpPnt, GpPnt
     None
 }
 
-pub(crate) fn det3(m: &[[f64; 3]; 3]) -> f64 {
+pub(crate) fn det3_array(m: &[[f64; 3]; 3]) -> f64 {
     m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
 }
 
 pub(crate) fn solve3(a: &[[f64; 3]; 3], rhs: &[f64; 3]) -> Option<[f64; 3]> {
-    let d = det3(a);
+    let d = det3_array(a);
     if d.abs() < 1e-20 {
         return None;
     }
@@ -81,13 +81,13 @@ pub(crate) fn solve3(a: &[[f64; 3]; 3], rhs: &[f64; 3]) -> Option<[f64; 3]> {
         for i in 0..3 {
             m[i][k] = rhs[i];
         }
-        x[k] = det3(&m) / d;
+        x[k] = det3_array(&m) / d;
     }
     Some(x)
 }
 
 /// Circumcenter of three non-collinear points.
-pub(crate) fn circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
+pub(crate) fn triangle_circumcenter(a: &GpPnt, b: &GpPnt, c: &GpPnt) -> Option<GpPnt> {
     let d1 = GpVec::from_pnts(a, b);
     let d2 = GpVec::from_pnts(a, c);
     let n = d1.crossed(&d2);
@@ -122,7 +122,7 @@ pub(crate) fn is_circle_like(c: &dyn Curve) -> bool {
         Some(x) => x,
         None => return false,
     };
-    let center = match circumcenter(&p0, &p1, &p2) {
+    let center = match triangle_circumcenter(&p0, &p1, &p2) {
         Some(c) => c,
         None => return false,
     };
@@ -151,7 +151,7 @@ pub(crate) fn is_circle_like(c: &dyn Curve) -> bool {
 }
 
 /// `(center, radius, unit plane normal)` of a circle-like curve.
-pub(crate) fn circle_geometry(c: &dyn Curve) -> Option<(GpPnt, f64, GpDir)> {
+pub(crate) fn sampled_circle_geometry(c: &dyn Curve) -> Option<(GpPnt, f64, GpDir)> {
     let (a, b) = (c.first_parameter(), c.last_parameter());
     if !a.is_finite() || !b.is_finite() {
         return None;
@@ -159,7 +159,7 @@ pub(crate) fn circle_geometry(c: &dyn Curve) -> Option<(GpPnt, f64, GpDir)> {
     let n = 8;
     let pts: Vec<GpPnt> = (0..=n).map(|i| c.d0(a + (b - a) * i as f64 / n as f64)).collect();
     let (p0, p1, p2) = first_three_spanning(&pts)?;
-    let center = circumcenter(&p0, &p1, &p2)?;
+    let center = triangle_circumcenter(&p0, &p1, &p2)?;
     let radius = p0.distance(&center);
     if radius <= 1e-30 {
         return None;
@@ -262,7 +262,7 @@ pub(crate) fn classify_fast_curve(c: &dyn Curve) -> FastCurveKind {
 }
 
 /// `(location, x_dir, y_dir, normal)` of a planar surface (natural frame).
-pub(crate) fn plane_geometry(s: &dyn Surface) -> Option<(GpPnt, GpDir, GpDir, GpDir)> {
+pub(crate) fn plane_frame_geometry(s: &dyn Surface) -> Option<(GpPnt, GpDir, GpDir, GpDir)> {
     let (u0, _) = s.u_range();
     let (v0, _) = s.v_range();
     let u0 = if u0.is_finite() { u0 } else { 0.0 };
@@ -309,7 +309,7 @@ pub(crate) fn cylinder_geometry(s: &dyn Surface) -> Option<(occt_core::gp::GpAx1
     Some((occt_core::gp::GpAx1::new(c0, zd), r))
 }
 
-/// Signed distance from `p` to a plane (`plane_geometry` frame).
+/// Signed distance from `p` to a plane (`plane_frame_geometry` frame).
 pub(crate) fn plane_distance(ploc: &GpPnt, nrm: &GpDir, p: &GpPnt) -> f64 {
     GpVec::from_pnts(ploc, p).dot(&GpVec::from_xyz(nrm.xyz())).abs()
 }

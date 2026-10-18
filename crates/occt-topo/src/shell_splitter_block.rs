@@ -256,7 +256,7 @@ fn refine_shell(
 }
 
 /// `BOPAlgo_ShellSplitter::SplitBlock`.
-pub fn split_block(block: &mut ConnexityBlock) {
+pub fn split_shell_block(block: &mut ConnexityBlock) {
     block.change_loops_mut().clear();
     let my_shapes = block.shapes().to_vec();
     let mut a_m_faces: HashMap<(usize, u8), TopoShape> = HashMap::new();

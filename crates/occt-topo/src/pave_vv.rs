@@ -22,13 +22,13 @@ use crate::pave_intersect::collect_pairs;
 use crate::shape::{TopoShape, Vertex};
 
 /// `BOPAlgo_PaveFiller::MakeSDVertices`.
-pub fn make_sd_vertices(
+pub fn pave_vv_make_sd_vertices(
     f: &mut PaveFiller,
     the_vert_indices: &[usize],
     the_add_interfs: bool,
 ) -> Result<usize, String> {
     if the_vert_indices.is_empty() {
-        return Err("make_sd_vertices: empty vertex list".into());
+        return Err("pave_vv_make_sd_vertices: empty vertex list".into());
     }
     let mut n_sd: Option<usize> = None;
     let mut a_lv: Vec<TopoShape> = Vec::new();
@@ -111,7 +111,7 @@ pub fn perform_vv(f: &mut PaveFiller) -> Result<(), String> {
     }
     let blocks = make_blocks_int(&a_mili);
     for a_li in blocks {
-        make_sd_vertices(f, &a_li, true)?;
+        pave_vv_make_sd_vertices(f, &a_li, true)?;
     }
     let keys: Vec<usize> = f.ds().shapes_sd().keys().copied().collect();
     for n1 in keys {
@@ -146,7 +146,7 @@ pub fn perform_vv_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> Result<
         }
     }
     for a_li in make_blocks_int(&a_mili) {
-        make_sd_vertices(f, &a_li, true)?;
+        pave_vv_make_sd_vertices(f, &a_li, true)?;
     }
     Ok(())
 }

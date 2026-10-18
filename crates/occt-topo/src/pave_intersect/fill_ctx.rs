@@ -92,13 +92,13 @@ pub(super) fn merge_vertices(shapes: &[TopoShape]) -> Result<TopoShape, String> 
 /// [`BopdsDS::add_interf`] entries are recorded as well.
 ///
 /// Returns the DS index of the SD vertex.
-pub(crate) fn make_sd_vertices(
+pub(crate) fn intersect_make_sd_vertices(
     ds: &mut BopdsDS,
     vert_indices: &[usize],
     add_interfs: bool,
 ) -> Result<usize, String> {
     if vert_indices.is_empty() {
-        return Err("make_sd_vertices: empty vertex list".to_string());
+        return Err("intersect_make_sd_vertices: empty vertex list".to_string());
     }
     // Collect every vertex shape, following existing SD chains so the merged
     // vertex absorbs the whole cluster.
@@ -108,12 +108,12 @@ pub(crate) fn make_sd_vertices(
         let shape = ds
             .shape(n_x)
             .cloned()
-            .ok_or_else(|| format!("make_sd_vertices: no shape at index {n_x}"))?;
+            .ok_or_else(|| format!("intersect_make_sd_vertices: no shape at index {n_x}"))?;
         if let Some(n_sd1) = ds.has_shape_sd(n_x) {
             let sd_shape = ds
                 .shape(n_sd1)
                 .cloned()
-                .ok_or_else(|| format!("make_sd_vertices: no SD shape at index {n_sd1}"))?;
+                .ok_or_else(|| format!("intersect_make_sd_vertices: no SD shape at index {n_sd1}"))?;
             if n_sd.is_none() {
                 n_sd = Some(n_sd1);
             } else {
@@ -442,7 +442,7 @@ pub(super) fn connected_components(adjacency: &HashMap<usize, Vec<usize>>) -> Ve
 ///
 /// Every candidate V/V pair whose vertices coincide within the summed tolerance
 /// is linked; the connected components of the link graph are then merged by
-/// [`make_sd_vertices`].
+/// [`intersect_make_sd_vertices`].
 ///
 /// When `pairs_override` is set (the repeat-intersection stage) the given
 /// pairs are used *instead of* the iterator's regular inter-argument pairs —
@@ -478,7 +478,7 @@ pub(super) fn perform_vv_impl(
         }
     }
     for block in connected_components(&adjacency) {
-        make_sd_vertices(ds, &block, true)?;
+        intersect_make_sd_vertices(ds, &block, true)?;
     }
     Ok(())
 }

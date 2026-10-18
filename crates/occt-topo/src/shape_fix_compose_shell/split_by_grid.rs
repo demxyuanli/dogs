@@ -45,12 +45,12 @@ impl ComposeShell {
                 let mut vl1 = vl1b;
                 // cxx:2165-2174.
                 let shift_u = if self.closed_mode && self.u_closed {
-                    adjust_to_period(ul1 - pprec, self.grid.u_joint_value(1), self.grid.u_joint_value(2))
+                    compose_adjust_to_period(ul1 - pprec, self.grid.u_joint_value(1), self.grid.u_joint_value(2))
                 } else {
                     0.0
                 };
                 let shift_v = if self.closed_mode && self.v_closed {
-                    adjust_to_period(vl1 - pprec, self.grid.v_joint_value(1), self.grid.v_joint_value(2))
+                    compose_adjust_to_period(vl1 - pprec, self.grid.v_joint_value(1), self.grid.v_joint_value(2))
                 } else {
                     0.0
                 };
@@ -99,7 +99,7 @@ impl ComposeShell {
             if !self.closed_mode && self.u_closed {
                 let period = umax - umin;
                 let x = pos.x();
-                let mut sh = adjust_to_period(x, uf, uf + period);
+                let mut sh = compose_adjust_to_period(x, uf, uf + period);
                 while x + sh <= ul + pprec {
                     let ln = line.translated_vec(&GpVec2d::new(sh, 0.0));
                     let cut_index = get_patch_index(x + sh + pprec, self.grid.u_joint_values(), self.u_closed);
@@ -120,7 +120,7 @@ impl ComposeShell {
             if !self.closed_mode && self.v_closed {
                 let period = vmax - vmin;
                 let y = pos.y();
-                let mut sh = adjust_to_period(y, vf, vf + period);
+                let mut sh = compose_adjust_to_period(y, vf, vf + period);
                 while y + sh <= vl + pprec {
                     let ln = line.translated_vec(&GpVec2d::new(0.0, sh));
                     let cut_index = get_patch_index(y + sh + pprec, self.grid.v_joint_values(), self.v_closed);

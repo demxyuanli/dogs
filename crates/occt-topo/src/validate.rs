@@ -43,7 +43,7 @@ impl ValidationReport {
 /// Analyze a shape's validity using topological invariants.
 /// children: direct sub-shapes (as stored in this port).
 /// Euler characteristic check for closed solids: V - E + F = 2 (sphere genus 0).
-pub fn check_shape(shape: &TopoShape, children: &[TopoShape]) -> ValidationReport {
+pub fn validate_shape(shape: &TopoShape, children: &[TopoShape]) -> ValidationReport {
     match shape.shape_type() {
         ShapeType::Solid => check_solid(shape, children),
         ShapeType::Shell => check_shell(shape, children),
@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn solid_needs_shells() {
         let solid = TopoShape::new(ShapeType::Solid);
-        let report = check_shape(&solid, &[]);
+        let report = validate_shape(&solid, &[]);
         assert!(!report.is_valid());
     }
 

@@ -317,7 +317,7 @@ pub(crate) fn axis_distance(a: &occt_core::gp::GpAx1, b: &occt_core::gp::GpAx1) 
 }
 
 /// `IntSurf_Quadric::Distance(P)` — signed distance used by `IntPatch_ArcFunction`.
-pub(crate) fn distance(q: &ImplicitQuad, p: &GpPnt) -> f64 {
+pub(crate) fn point_quad_distance(q: &ImplicitQuad, p: &GpPnt) -> f64 {
     match q {
         ImplicitQuad::Plane(pl) => {
             let n = GpVec::from_xyz(pl.axis().direction().xyz());

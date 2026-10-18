@@ -39,7 +39,7 @@ impl Default for GltfOptions {
 }
 
 /// Build the `.gltf` JSON text for `shape` (buffer bytes are discarded).
-pub fn write_gltf(shape: &TopoShape, deflection: f64, options: &GltfOptions) -> Result<String, String> {
+pub fn write_gltf_text(shape: &TopoShape, deflection: f64, options: &GltfOptions) -> Result<String, String> {
     Ok(build_gltf_bin(shape, deflection, options)?.0)
 }
 
@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn gltf_box_valid_json() {
-        let json = write_gltf(&box_shape(), 0.5, &GltfOptions::default()).expect("write");
+        let json = write_gltf_text(&box_shape(), 0.5, &GltfOptions::default()).expect("write");
         assert!(json.trim_start().starts_with('{'));
         for needle in ["\"asset\"", "\"version\": \"2.0\"", "\"meshes\"", "\"scenes\""] {
             assert!(json.contains(needle), "missing {needle} in:\n{json}");
@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn gltf_min_max_present() {
-        let json = write_gltf(&box_shape(), 0.5, &GltfOptions::default()).expect("write");
+        let json = write_gltf_text(&box_shape(), 0.5, &GltfOptions::default()).expect("write");
         assert!(json.contains("\"min\":"));
         assert!(json.contains("\"max\":"));
     }
@@ -480,7 +480,7 @@ mod tests {
             embed_buffer: true,
             ..Default::default()
         };
-        let json = write_gltf(&box_shape(), 0.5, &opts).expect("write");
+        let json = write_gltf_text(&box_shape(), 0.5, &opts).expect("write");
         assert!(
             json.contains("data:application/octet-stream;base64,"),
             "missing data uri:\n{json}"
@@ -522,7 +522,7 @@ mod tests {
 
     #[test]
     fn gltf_box_bbox() {
-        let json = write_gltf(&box_shape(), 0.5, &GltfOptions::default()).expect("write");
+        let json = write_gltf_text(&box_shape(), 0.5, &GltfOptions::default()).expect("write");
         let min = json_arr3_field(&json, "min").expect("min array");
         let max = json_arr3_field(&json, "max").expect("max array");
         for i in 0..3 {
@@ -549,8 +549,8 @@ mod tests {
             pretty: false,
             ..Default::default()
         };
-        let p = write_gltf(&box_shape(), 0.5, &pretty).expect("pretty");
-        let c = write_gltf(&box_shape(), 0.5, &compact_opts).expect("compact");
+        let p = write_gltf_text(&box_shape(), 0.5, &pretty).expect("pretty");
+        let c = write_gltf_text(&box_shape(), 0.5, &compact_opts).expect("compact");
         assert_eq!(compact(&p), c, "minified pretty JSON must equal compact JSON");
     }
 

@@ -41,7 +41,7 @@ use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::{Curve, Surface};
 
 use crate::bean_face_kind::{
-    classify_fast_curve, plane_geometry, sphere_geometry, FastCurveKind,
+    classify_fast_curve, plane_frame_geometry, sphere_geometry, FastCurveKind,
 };
 use crate::bean_face_range::MarkedRangeSet;
 use crate::brep_surface::{classify_surface, SurfaceKind};
@@ -224,7 +224,7 @@ impl BeanFaceIntersector {
     pub(crate) fn closest_params_dist(&self, p: &GpPnt) -> (f64, f64, f64) {
         match classify_surface(self.surface()) {
             SurfaceKind::Plane => {
-                if let Some((ploc, px, py, pn)) = plane_geometry(self.surface()) {
+                if let Some((ploc, px, py, pn)) = plane_frame_geometry(self.surface()) {
                     let d = GpVec::from_pnts(&ploc, p);
                     let u = d.dot(&GpVec::from_xyz(px.xyz()));
                     let v = d.dot(&GpVec::from_xyz(py.xyz()));

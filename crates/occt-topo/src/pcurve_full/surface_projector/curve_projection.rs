@@ -499,7 +499,7 @@ pub(crate) fn cylinder_axes(surf: &dyn Surface) -> Option<(GpPnt, GpVec, GpVec, 
     let a = surf.d0(0.0, 0.0);
     let b = surf.d0(PI, 0.0);
     let c = surf.d0(FRAC_PI_2, 0.0);
-    let o = mid(&a, &b);
+    let o = sampled_mid(&a, &b);
     let r = 0.5 * a.distance(&b);
     if r < 1e-12 {
         return None;

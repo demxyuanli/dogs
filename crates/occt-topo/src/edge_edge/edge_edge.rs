@@ -2,7 +2,7 @@ use super::prelude::*;
 use super::*;
 
 use super::find_solutions::{
-    curve_deflection, curve_kind, resolution_coeff, resolution_of, type_to_integer, GeomCurveKind,
+    curve_deflection, geom_curve_kind, resolution_coeff, resolution_of, curve_kind_to_integer, GeomCurveKind,
 };
 
 /// The analytic family of an edge curve, used to choose the intersection path.
@@ -237,10 +237,10 @@ impl EdgeEdge {
         // analysed as BSpline/line. Equal non-line types compare the total
         // tangent turn and decrement the first curve's integer when it is the
         // straighter one, which then forces the swap.
-        self.kind1 = curve_kind(&*c1);
-        self.kind2 = curve_kind(&*c2);
-        let mut i_ct1 = type_to_integer(self.kind1);
-        let i_ct2 = type_to_integer(self.kind2);
+        self.kind1 = geom_curve_kind(&*c1);
+        self.kind2 = geom_curve_kind(&*c2);
+        let mut i_ct1 = curve_kind_to_integer(self.kind1);
+        let i_ct2 = curve_kind_to_integer(self.kind2);
         if i_ct1 == i_ct2 && i_ct1 != 0 {
             let a_c2 = curve_deflection(&*c2, r2);
             let a_c1 = if a_c2 > occt_core::precision::CONFUSION {

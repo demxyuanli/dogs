@@ -25,7 +25,7 @@ use crate::pave_common::fill_shrunk_data_for_block;
 use crate::pave_ff_exist::pb_key;
 use crate::pave_filler::PaveFiller;
 use crate::pave_force_ee::init_pave_blocks_for_vertex;
-use crate::pave_intersect::make_sd_vertices;
+use crate::pave_intersect::intersect_make_sd_vertices;
 use crate::pave_ve::make_new_common_block;
 use crate::shape::{Edge, Vertex};
 
@@ -148,7 +148,7 @@ pub fn split_pave_blocks(
                     if unify {
                         let key = (n_v1.min(n_v2), n_v1.max(n_v2));
                         if pair_fence.insert(key) {
-                            if let Err(e) = make_sd_vertices(f.ds_mut(), &[n_v1, n_v2], the_add_interfs)
+                            if let Err(e) = intersect_make_sd_vertices(f.ds_mut(), &[n_v1, n_v2], the_add_interfs)
                             {
                                 f.add_error(e);
                             }

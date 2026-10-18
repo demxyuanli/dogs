@@ -127,9 +127,7 @@ pub fn wireframe_face_area(f: &Face) -> f64 {
 /// `BndLib_Add2dCurve` range of each pcurve and clamps it to the surface bounds
 /// unless a B-spline periodicity probe succeeds; there is no UV sampling and no
 /// `[0,1]^2` window, so neither is reproduced here.
-pub(crate) fn face_uv_bounds(f: &Face) -> (f64, f64, f64, f64) {
-    crate::brep_tools::uv_bounds(f)
-}
+pub(crate) use crate::brep_surface::face_uv_bounds;
 
 /// Triangle area by cross-product magnitude.
 fn triangle_area(pts: &[GpPnt], t: &Triangle) -> f64 {

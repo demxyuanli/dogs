@@ -126,7 +126,7 @@ impl BRepScene {
 
     /// Export every shape (in its placed position) to one OBJ mesh.
     pub fn export_obj(&self, deflection: f64) -> String {
-        occt_core::io::obj::write_obj(&self.merged_obj(deflection))
+        occt_core::io::obj::obj_mesh_to_string(&self.merged_obj(deflection))
     }
 
     fn merged_obj(&self, deflection: f64) -> ObjMesh {
@@ -169,7 +169,7 @@ impl BRepScene {
                 mesh.faces.push(vec![base + t.n0, base + t.n1, base + t.n2]);
             }
         }
-        occt_core::io::ply::write_ply(&mesh)
+        occt_core::io::ply::ply_mesh_to_string(&mesh)
     }
 
     /// Write all shapes (placed) to an OBJ file.

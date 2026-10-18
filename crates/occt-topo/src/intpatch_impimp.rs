@@ -42,7 +42,7 @@ use quad::set_quad;
 pub(crate) use sonb::{search_on_bounds, PathPoint};
 pub(crate) use rline::{process_rline, process_segments};
 
-pub(crate) use quad::{distance, gradient, quadric_tolerance, set_quad as try_set_quad, ImplicitQuad};
+pub(crate) use quad::{gradient, point_quad_distance, quadric_tolerance, set_quad as try_set_quad, ImplicitQuad};
 
 /// `IntPatch_ImpImpIntersection::IntStatus`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

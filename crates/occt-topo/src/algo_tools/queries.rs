@@ -204,7 +204,7 @@ impl AlgoTools2D {
                 u2 = umin + u_period;
             }
             let (nu2, ndu) =
-                crate::geom_int::adjust_periodic(u2, umin, umax, u_period, 0.0);
+                crate::geom_int::geom_int_adjust_periodic(u2, umin, umax, u_period, 0.0);
             u2 = nu2;
             du = ndu;
             if du == 0.0 {

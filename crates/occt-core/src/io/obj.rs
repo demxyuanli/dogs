@@ -123,7 +123,7 @@ fn resolve_index(i: i32, len: usize) -> Result<i32, String> {
 }
 
 /// Write mesh to OBJ text.
-pub fn write_obj(mesh: &ObjMesh) -> String {
+pub fn obj_mesh_to_string(mesh: &ObjMesh) -> String {
     let mut out = String::new();
     for v in &mesh.vertices { out.push_str(&format!("v {:.9} {:.9} {:.9}\n", v.x(), v.y(), v.z())); }
     for (u, v) in &mesh.texcoords { out.push_str(&format!("vt {:.9} {:.9}\n", u, v)); }
@@ -142,7 +142,7 @@ pub fn write_obj(mesh: &ObjMesh) -> String {
 /// Write OBJ to file.
 pub fn write_obj_file(path: &str, mesh: &ObjMesh) -> io::Result<()> {
     let mut f = std::fs::File::create(path)?;
-    f.write_all(write_obj(mesh).as_bytes())?;
+    f.write_all(obj_mesh_to_string(mesh).as_bytes())?;
     Ok(())
 }
 
@@ -179,7 +179,7 @@ mod tests {
             texcoords: vec![], normals: vec![],
             faces: vec![ObjFace { v: vec![0,1,2], vt: None, vn: None }],
         };
-        let out = write_obj(&mesh);
+        let out = obj_mesh_to_string(&mesh);
         let back = ObjMesh::parse(&out).unwrap();
         assert_eq!(back.vertices.len(), 3);
         assert_eq!(back.faces[0].v, vec![0, 1, 2]);

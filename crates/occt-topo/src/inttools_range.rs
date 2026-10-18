@@ -33,7 +33,7 @@ use occt_geom::Curve;
 
 use crate::abs::ShapeType;
 use crate::brep_tool::BRepTool;
-use crate::edge_edge::{curve_kind, GeomCurveKind};
+use crate::edge_edge::{geom_curve_kind, GeomCurveKind};
 use crate::shape::{Edge, Face, Vertex};
 use crate::topo_tools_full::edge_vertices;
 
@@ -316,10 +316,10 @@ fn find_nearest_valid_point(
     // (`BRepLib_1.cxx:66-81`). `Geom_OffsetCurve` reports the type of its basis
     // curve there, and only Bézier / B-spline take the branch.
     let mut d1_mag = 0.0;
-    let mut curve_type = curve_kind(curve);
+    let mut curve_type = geom_curve_kind(curve);
     if curve_type == GeomCurveKind::OffsetCurve {
         if let Some((basis, _)) = curve.offset_curve() {
-            curve_type = curve_kind(&*basis);
+            curve_type = geom_curve_kind(&*basis);
         }
     }
     if matches!(curve_type, GeomCurveKind::BezierCurve | GeomCurveKind::BSplineCurve) {

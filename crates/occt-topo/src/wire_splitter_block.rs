@@ -63,7 +63,7 @@ impl SmartMap {
 }
 
 /// `BOPAlgo_WireSplitter::SplitBlock`.
-pub(crate) fn split_block(face: &Face, edges: &[Edge]) -> Result<Vec<TopoShape>, String> {
+pub(crate) fn split_wire_block(face: &Face, edges: &[Edge]) -> Result<Vec<TopoShape>, String> {
     let mut map = SmartMap::new();
     let mut unique: HashMap<usize, usize> = HashMap::new();
     let mut vert_closed: HashMap<usize, bool> = HashMap::new();

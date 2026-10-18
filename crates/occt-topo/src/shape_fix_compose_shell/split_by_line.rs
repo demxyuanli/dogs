@@ -138,7 +138,7 @@ impl ComposeShell {
                 let (umin, vmin, umax, vmax) = box2d.get().unwrap_or((0.0, 0.0, 0.0, 0.0));
                 if closed_dir < 0 {
                     let x = line.location().x();
-                    let mut shift = adjust_to_period(umin, x - self.u_period, x);
+                    let mut shift = compose_adjust_to_period(umin, x - self.u_period, x);
                     if shift != 0.0 {
                         let mut nc = c2d.clone_dyn();
                         let mut t = GpTrsf2d::identity();
@@ -157,7 +157,7 @@ impl ComposeShell {
                     posl = GpPnt2d::new(posl.x() + shift, posl.y());
                 } else if closed_dir > 0 {
                     let y = line.location().y();
-                    let mut shift = adjust_to_period(vmin, y - self.v_period, y);
+                    let mut shift = compose_adjust_to_period(vmin, y - self.v_period, y);
                     if shift != 0.0 {
                         let mut nc = c2d.clone_dyn();
                         let mut t = GpTrsf2d::identity();
@@ -631,7 +631,7 @@ impl ComposeShell {
             // cxx:2078-2108.
             if !is_cut_by_u {
                 let shift_u = if self.closed_mode && self.u_closed {
-                    adjust_to_period(
+                    compose_adjust_to_period(
                         split_line_par[i - 2] - TOLINT,
                         self.grid.u_joint_value(1),
                         self.grid.u_joint_value(2),
@@ -650,7 +650,7 @@ impl ComposeShell {
                 );
             } else {
                 let shift_v = if self.closed_mode && self.v_closed {
-                    adjust_to_period(
+                    compose_adjust_to_period(
                         split_line_par[i - 2] - TOLINT,
                         self.grid.v_joint_value(1),
                         self.grid.v_joint_value(2),

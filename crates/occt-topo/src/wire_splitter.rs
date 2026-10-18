@@ -326,7 +326,7 @@ impl WireSplitter {
         if let Some(face) = self.wes.face().cloned() {
             let mut wires: Vec<TopoShape> = Vec::new();
             for block in connexity_blocks(&self.wes.edges) {
-                match crate::wire_splitter_block::split_block(&face, &block) {
+                match crate::wire_splitter_block::split_wire_block(&face, &block) {
                     Ok(mut w) => wires.append(&mut w),
                     Err(_) => {
                         // No usable pcurve on the face for this block: keep the
@@ -346,7 +346,7 @@ impl WireSplitter {
         }
         if !regular {
             if let Some(face) = self.wes.face().cloned() {
-                self.wires = crate::wire_splitter_block::split_block(&face, &self.wes.edges)?;
+                self.wires = crate::wire_splitter_block::split_wire_block(&face, &self.wes.edges)?;
                 return Ok(());
             }
         }
@@ -362,7 +362,7 @@ impl WireSplitter {
             }
             Err(greedy_err) => {
                 if let Some(face) = self.wes.face().cloned() {
-                    self.wires = crate::wire_splitter_block::split_block(&face, &self.wes.edges)?;
+                    self.wires = crate::wire_splitter_block::split_wire_block(&face, &self.wes.edges)?;
                     return Ok(());
                 }
                 Err(greedy_err)
@@ -484,7 +484,7 @@ impl WireSplitter {
 
     /// `BOPAlgo_WireSplitter::SplitBlock`.
     pub fn split_block(face: &Face, edges: Vec<Edge>) -> Result<Vec<TopoShape>, String> {
-        crate::wire_splitter_block::split_block(face, &edges)
+        crate::wire_splitter_block::split_wire_block(face, &edges)
     }
 
     /// Build the closed wires of `face` — the outer loop plus, for a face

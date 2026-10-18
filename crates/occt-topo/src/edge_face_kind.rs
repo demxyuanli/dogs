@@ -164,7 +164,7 @@ pub(crate) fn plane_projection(s: &dyn Surface, p: &GpPnt) -> (f64, f64, f64) {
 /// `gp_Pln::Axis().Direction()` of a `GeomAbs_Plane` surface - the plane normal
 /// `IsCoplanar` compares the circle axis against (`IntTools_EdgeFace.cxx:804-808`,
 /// `SurfaceTool::Plane`). `GpVec::zero()` for every other surface type.
-pub(crate) fn plane_normal(s: &dyn Surface) -> GpVec {
+pub(crate) fn surface_plane_normal(s: &dyn Surface) -> GpVec {
     match s.gp_pln() {
         Some(pln) => GpVec::from_xyz(pln.pos.direction().xyz()).normalized(),
         None => GpVec::zero(),
@@ -182,7 +182,7 @@ pub(crate) fn plane_normal(s: &dyn Surface) -> GpVec {
 /// home-made `1e-4` tolerances. That reported a B-spline patch that merely
 /// resembled a cylinder / cone / torus as the analytic type, and could equally
 /// reject a genuine quadric whose window shifted the sampled frame.
-pub(crate) fn surface_kind(s: &dyn Surface) -> SurfaceKind {
+pub(crate) fn edge_face_surface_kind(s: &dyn Surface) -> SurfaceKind {
     classify_surface(s)
 }
 
@@ -194,7 +194,7 @@ pub(crate) fn surface_kind(s: &dyn Surface) -> SurfaceKind {
 /// `1.e-7` the caller passes.
 pub(crate) fn is_eq_distance(p: &GpPnt, s: &dyn Surface) -> Option<f64> {
     const TOL: f64 = 1e-7;
-    match surface_kind(s) {
+    match edge_face_surface_kind(s) {
         SurfaceKind::Cylinder => {
             let cyl = s.gp_cylinder()?;
             let z = GpVec::from_xyz(cyl.pos.direction().xyz());
@@ -247,14 +247,14 @@ pub(crate) fn dirs_coinside(d1: &GpVec, d2: &GpVec) -> bool {
 /// coincides with the plane normal, `aCType == GeomAbs_Circle &&
 /// aSType == GeomAbs_Plane` being the gate.
 pub(crate) fn is_coplanar(curve: &dyn Curve, surface: &dyn Surface) -> bool {
-    if curve_kind(curve) != CurveKind::Circle || surface_kind(surface) != SurfaceKind::Plane {
+    if curve_kind(curve) != CurveKind::Circle || edge_face_surface_kind(surface) != SurfaceKind::Plane {
         return false;
     }
     let (_, _, n) = match circle_geometry(curve) {
         Some(g) => g,
         None => return false,
     };
-    dirs_coinside(&n, &plane_normal(surface))
+    dirs_coinside(&n, &surface_plane_normal(surface))
 }
 
 /// `IsRadius` (`IntTools_EdgeFace.cxx:816-840`): the circle centre lies at
@@ -263,7 +263,7 @@ pub(crate) fn is_coplanar(curve: &dyn Curve, surface: &dyn Surface) -> bool {
 /// from the plane's own `gp_Pln` placement (`SurfaceTool::Plane`), not from a
 /// sampled `d0`.
 pub(crate) fn is_radius(curve: &dyn Curve, surface: &dyn Surface, criteria: f64) -> bool {
-    if curve_kind(curve) != CurveKind::Circle || surface_kind(surface) != SurfaceKind::Plane {
+    if curve_kind(curve) != CurveKind::Circle || edge_face_surface_kind(surface) != SurfaceKind::Plane {
         return false;
     }
     let (center, r, _) = match circle_geometry(curve) {
@@ -273,7 +273,7 @@ pub(crate) fn is_radius(curve: &dyn Curve, surface: &dyn Surface, criteria: f64)
     let Some(pln) = surface.gp_pln() else {
         return false;
     };
-    let d = GpVec::from_pnts(&pln.location(), &center).dot(&plane_normal(surface)).abs();
+    let d = GpVec::from_pnts(&pln.location(), &center).dot(&surface_plane_normal(surface)).abs();
     (d - r).abs() < criteria
 }
 

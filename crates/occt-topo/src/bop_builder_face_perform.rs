@@ -613,6 +613,6 @@ pub fn perform_face_builder(fb: &mut FaceBuilder) -> Result<(), String> {
 }
 
 /// Keep `Vertex` referenced for MapShapesAndAncestors helpers.
-pub fn vertex_key(v: &Vertex) -> usize {
+pub fn shape_vertex_key(v: &Vertex) -> usize {
     sk(&v.0)
 }

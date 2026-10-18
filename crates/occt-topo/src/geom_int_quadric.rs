@@ -130,11 +130,11 @@ fn adjust_one(s: &dyn Surface, u: &mut f64, v: &mut f64) {
     let (uf, ul) = s.u_range();
     let (vf, vl) = s.v_range();
     if u_per {
-        let (nu, _) = crate::geom_int::adjust_periodic(*u, uf, ul, two_pi, 0.0);
+        let (nu, _) = crate::geom_int::geom_int_adjust_periodic(*u, uf, ul, two_pi, 0.0);
         *u = nu;
     }
     if v_per {
-        let (nv, _) = crate::geom_int::adjust_periodic(*v, vf, vl, two_pi, 0.0);
+        let (nv, _) = crate::geom_int::geom_int_adjust_periodic(*v, vf, vl, two_pi, 0.0);
         *v = nv;
     }
 }

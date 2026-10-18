@@ -88,7 +88,7 @@ pub fn is_coincided(p1: &GpPnt2d, p2: &GpPnt2d, u_resolution: f64, v_resolution:
 }
 
 /// ShapeAnalysis::AdjustToPeriod (ShapeAnalysis.cxx:66-69).
-pub fn adjust_to_period(val: f64, val_min: f64, val_max: f64) -> f64 {
+pub fn compose_adjust_to_period(val: f64, val_min: f64, val_max: f64) -> f64 {
     crate::shhealing::adjust_by_period(val, 0.5 * (val_min + val_max), val_max - val_min)
 }
 
@@ -100,7 +100,7 @@ pub fn get_patch_index(param: f64, params: &[f64], is_closed: bool) -> i32 {
     }
     let period = params[(np - 1) as usize] - params[0];
     let shift = if is_closed {
-        adjust_to_period(param, params[0], params[(np - 1) as usize])
+        compose_adjust_to_period(param, params[0], params[(np - 1) as usize])
     } else {
         0.0
     };

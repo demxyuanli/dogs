@@ -9,7 +9,7 @@ use occt_core::gp::{GpPnt, GpVec};
 
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, TopoShape, Wire};
-use crate::shell_check::{edge_key, EdgeKey};
+use crate::shell_check::{bop_edge_key, EdgeKey};
 use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};
 
 /// A focused check result: error/warning with a short message and the type
@@ -37,7 +37,7 @@ pub fn edge_usage_counts(shape: &TopoShape) -> HashMap<EdgeKey, usize> {
     for f in faces_of(shape) {
         for w in wires_of_face(&f) {
             for e in edges_of_wire(&w) {
-                *counts.entry(edge_key(&e.0)).or_insert(0) += 1;
+                *counts.entry(bop_edge_key(&e.0)).or_insert(0) += 1;
             }
         }
     }
@@ -54,7 +54,7 @@ pub fn boundary_multiple_check(shape: &TopoShape) -> Vec<(Edge, usize, CheckLeve
     let counts = edge_usage_counts(shape);
     let mut out = Vec::new();
     for e in edges_of(shape) {
-        let n = counts.get(&edge_key(&e.0)).copied().unwrap_or(0);
+        let n = counts.get(&bop_edge_key(&e.0)).copied().unwrap_or(0);
         let level = match n {
             2 => CheckLevel::Ok,
             0 => CheckLevel::Error(format!("edge used by 0 faces")),

@@ -316,7 +316,7 @@ pub fn point_torus_extrema(to: &GpTorus, p: &GpPnt) -> Vec<ExtremaPair> {
 // ---------------------------------------------------------------------------
 
 /// (u, v) of a point on a plane (in the plane's own frame).
-pub(crate) fn plane_parameters(pl: &GpPln, q: &GpPnt) -> (f64, f64) {
+pub(crate) fn analytic_plane_parameters(pl: &GpPln, q: &GpPnt) -> (f64, f64) {
     let pos = pl.position();
     let o = pl.location();
     let v = GpVec::from_pnts(&o, q);
@@ -327,7 +327,7 @@ pub(crate) fn plane_parameters(pl: &GpPln, q: &GpPnt) -> (f64, f64) {
 
 /// (u, v) of a point on a sphere. Port of `ElSLib::Parameters(gp_Sphere)`
 /// against this crate's `slib::sphere_value` parameterization.
-pub(crate) fn sphere_parameters(sp: &GpSphere, q: &GpPnt) -> (f64, f64) {
+pub(crate) fn analytic_sphere_parameters(sp: &GpSphere, q: &GpPnt) -> (f64, f64) {
     let pos = sp.position();
     let w = GpVec::from_pnts(&sp.location(), q);
     let x = w.dot(&GpVec::from_xyz(pos.x_direction().xyz()));
@@ -365,13 +365,13 @@ pub fn line_sphere_extrema(l: &GpLin, sp: &GpSphere) -> Vec<ExtremaPair> {
         let ts = if s > 1e-12 { vec![t0 - s, t0 + s] } else { vec![t0] };
         for t in ts {
             let q = clib::line_value(l, t);
-            let (u, v) = sphere_parameters(sp, &q);
+            let (u, v) = analytic_sphere_parameters(sp, &q);
             out.push(cs_pair(q, t, q, u, v, 0.0));
         }
         if h > 1e-12 {
             let dir = GpVec::from_pnts(&c, &f).divided(h);
             let far = c.translated_vec(&dir.multiplied_scalar(-r));
-            let (u, v) = sphere_parameters(sp, &far);
+            let (u, v) = analytic_sphere_parameters(sp, &far);
             out.push(cs_pair(p1, t0, far, u, v, h + r));
         }
     } else if h > 1e-12 {
@@ -379,7 +379,7 @@ pub fn line_sphere_extrema(l: &GpLin, sp: &GpSphere) -> Vec<ExtremaPair> {
         let near = c.translated_vec(&dir.multiplied_scalar(r));
         let far = c.translated_vec(&dir.multiplied_scalar(-r));
         for (q, dist) in [(near, h - r), (far, h + r)] {
-            let (u, v) = sphere_parameters(sp, &q);
+            let (u, v) = analytic_sphere_parameters(sp, &q);
             out.push(cs_pair(p1, t0, q, u, v, dist));
         }
     }
@@ -397,12 +397,12 @@ pub fn line_plane_extrema(l: &GpLin, pl: &GpPln) -> Vec<ExtremaPair> {
         // P(t) = A + t·d meets (X-O)·n = 0 at t = (O-A)·n / (d·n).
         let t = GpVec::from_pnts(&l.location(), &pl.location()).dot(&n) / dn;
         let q = clib::line_value(l, t);
-        let (u, v) = plane_parameters(pl, &q);
+        let (u, v) = analytic_plane_parameters(pl, &q);
         vec![cs_pair(q, t, q, u, v, 0.0)]
     } else {
         let d0 = GpVec::from_pnts(&pl.location(), &l.location()).dot(&n).abs();
         let q = clib::line_value(l, 0.0);
-        let (u, v) = plane_parameters(pl, &q);
+        let (u, v) = analytic_plane_parameters(pl, &q);
         vec![cs_pair(q, 0.0, q, u, v, d0)]
     }
 }

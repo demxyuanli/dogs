@@ -4,9 +4,9 @@ use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION};
 use occt_geom::extrema_surf::curve_surface_extrema_all;
 
 use crate::bean_face::{golden_1d, BeanFaceIntersector};
-use crate::bean_face_analytic::adjust_periodic;
+use crate::bean_face_analytic::adjust_periodic_value;
 use crate::bean_face_kind::{
-    classify_fast_curve, plane_distance, plane_geometry, FastCurveKind,
+    classify_fast_curve, plane_distance, plane_frame_geometry, FastCurveKind,
 };
 use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::intcurvesurface::perform_curve_surface;
@@ -63,7 +63,7 @@ impl BeanFaceIntersector {
                     b_u_corrected = false;
                     solution_is_valid = false;
                     if self.surface().is_u_periodic() {
-                        u = adjust_periodic(u, self.umin, self.umax, 2.0 * PI);
+                        u = adjust_periodic_value(u, self.umin, self.umax, 2.0 * PI);
                         solution_is_valid = true;
                         b_u_corrected = true;
                     }
@@ -71,7 +71,7 @@ impl BeanFaceIntersector {
                 if b_u_corrected && v_not_valid {
                     solution_is_valid = false;
                     if self.surface().is_v_periodic() {
-                        v = adjust_periodic(v, self.vmin, self.vmax, 2.0 * PI);
+                        v = adjust_periodic_value(v, self.vmin, self.vmax, 2.0 * PI);
                         solution_is_valid = true;
                     }
                 }
@@ -314,7 +314,7 @@ impl BeanFaceIntersector {
         if classify_surface(self.surface()) != SurfaceKind::Plane {
             return None;
         }
-        let (ploc, _px, _py, pn) = plane_geometry(self.surface())?;
+        let (ploc, _px, _py, pn) = plane_frame_geometry(self.surface())?;
         let p0 = self.curve_d0(anarg1);
         let p1 = self.curve_d0(anarg2);
         let dir = GpVec::from_pnts(&p0, &p1);

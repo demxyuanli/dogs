@@ -406,7 +406,7 @@ impl BopBuilder {
     ///
     /// Port of `BOPAlgo_Builder::FillImagesEdges`: every source edge with pave
     /// blocks expands into the split edges of its blocks. The split edges were
-    /// built by the intersection phase ([`crate::pave_blocks::make_split_edges`]
+    /// built by the intersection phase ([`crate::pave_blocks::blocks_make_split_edges`]
     /// → [`crate::algo_tools::AlgoTools::make_split_edge`]) and stored in the
     /// data structure; each block's `edge()` points at its split edge. The
     /// split edge is recorded as the image of the source edge, and the origin
@@ -414,7 +414,7 @@ impl BopBuilder {
     /// `RealPaveBlock` (`BOPDS_DS::RealPaveBlock`) so the image is the shared
     /// split, matching `BOPAlgo_Builder::FillImagesEdges` (`_1.cxx:71-126`).
     pub(super) fn fill_images_edges(&mut self) -> Result<(), String> {
-        crate::pave_blocks::make_split_edges(&mut self.filler)?;
+        crate::pave_blocks::blocks_make_split_edges(&mut self.filler)?;
         let n = self.filler.ds().nb_source_shapes();
         for i in 0..n {
             let Some(si) = self.filler.ds().shape_info(i).cloned() else { continue };
@@ -576,7 +576,7 @@ impl BopBuilder {
                 let t = sp.shape_type();
                 if t == ShapeType::Vertex || t == ShapeType::Solid {
                     sp.set_orientation(s.orientation());
-                } else if is_split_to_reverse(&sp, &s) {
+                } else if is_split_to_reverse_ctxless(&sp, &s) {
                     sp.set_orientation(sp.orientation().reversed());
                 }
                 let _ = self.history.add_modified(&s, sp);

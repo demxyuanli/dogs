@@ -14,7 +14,7 @@ use crate::bopds::BopdsPaveBlock;
 use crate::brep_tool::BRepTool;
 use crate::pave_ff::CoupleOfPaveBlocks;
 use crate::pave_ff_exist::{pb_in_face, pb_key, prepare_post_treat_ff, PbKey};
-use crate::pave_ff_is_exist::ranges_overlap;
+use crate::pave_ff_is_exist::range_contains_param;
 use crate::pave_ff_update::PbFacesMap;
 use crate::pave_filler::{EdgeRangeDistance, PaveFiller};
 use crate::shape::{Edge, TopoShape};
@@ -34,7 +34,7 @@ fn distance_on_overlap(
         .get(&(n_e, n_f))
         .or_else(|| distances.get(&(n_f, n_e)))?;
     for r in list {
-        if ranges_overlap(t1, t2, r.first, r.last) {
+        if range_contains_param(t1, t2, r.first, r.last) {
             return Some(r.distance);
         }
     }

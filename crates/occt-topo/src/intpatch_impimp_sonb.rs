@@ -7,7 +7,7 @@ use occt_geom::Surface;
 
 use crate::geom_int::{RestrictionArc, TopolTool};
 
-use super::quad::{distance, ImplicitQuad};
+use super::quad::{point_quad_distance, ImplicitQuad};
 
 /// `IntPatch_ThePathPointOfTheSOnBounds`.
 #[derive(Debug, Clone, Copy)]
@@ -151,7 +151,7 @@ fn bounded_arc(
         let t = pdeb + (pfin - pdeb) * i as f64 / nb_echant as f64;
         let uv = arc.value(t);
         let p = surf.d0(uv.x(), uv.y());
-        let f = distance(quad, &p);
+        let f = point_quad_distance(quad, &p);
         max_abs = max_abs.max(f.abs());
         vals.push((t, f, p, uv.x(), uv.y()));
     }
@@ -242,7 +242,7 @@ fn root_on_interval(
         let m = 0.5 * (a + b);
         let uv = arc.value(m);
         let p = surf.d0(uv.x(), uv.y());
-        let fm = distance(quad, &p);
+        let fm = point_quad_distance(quad, &p);
         if fm.abs() <= tol || (b - a).abs() <= 1e-10 {
             return Some((m, p, uv.x(), uv.y()));
         }

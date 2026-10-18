@@ -19,8 +19,8 @@ use crate::pcurve_full::torus_params;
 use crate::shape::Face;
 
 use super::{
-    cone_from_surface, curve_range, cylinder_from_surface, cylinder_params, lin2d_through,
-    line_in_uv_rect, plane_cylinder_kind, plane_torus_circles, sphere_from_surface, FaceFace,
+    gp_cone_from_surface, curve_range, gp_cylinder_from_surface, cylinder_params, lin2d_through,
+    line_in_uv_rect, plane_cylinder_kind, plane_torus_circles, gp_sphere_from_surface, FaceFace,
     FaceFaceCurve,
 };
 
@@ -129,12 +129,12 @@ impl FaceFace {
         let (pln, sphere) = if is_plane_a {
             (
                 intpatch::plane_from_surface(sa).ok_or("FaceFace: plane extraction")?,
-                sphere_from_surface(sb).ok_or("FaceFace: sphere extraction")?,
+                gp_sphere_from_surface(sb).ok_or("FaceFace: sphere extraction")?,
             )
         } else {
             (
                 intpatch::plane_from_surface(sb).ok_or("FaceFace: plane extraction")?,
-                sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?,
+                gp_sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?,
             )
         };
         let mut out = Vec::new();
@@ -162,8 +162,8 @@ impl FaceFace {
         fb: &Face,
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
-        let s1 = sphere_from_surface(sa).ok_or("FaceFace: sphere extraction (a)")?;
-        let s2 = sphere_from_surface(sb).ok_or("FaceFace: sphere extraction (b)")?;
+        let s1 = gp_sphere_from_surface(sa).ok_or("FaceFace: sphere extraction (a)")?;
+        let s2 = gp_sphere_from_surface(sb).ok_or("FaceFace: sphere extraction (b)")?;
         let mut out = Vec::new();
         // T-28 step 4: `IntAna_QuadQuadGeo::Perform(gp_Sphere, gp_Sphere)`; the
         // 1e-7 linear tolerance is the same one `brep_face_intersect.rs:189`
@@ -201,7 +201,7 @@ impl FaceFace {
                 sa,
             )
         };
-        let cylinder = cylinder_from_surface(cyl).ok_or("FaceFace: cylinder extraction")?;
+        let cylinder = gp_cylinder_from_surface(cyl).ok_or("FaceFace: cylinder extraction")?;
         let mut out = Vec::new();
         // T-28 step 4: `IntAna_QuadQuadGeo::Perform(gp_Pln, gp_Cylinder)`; the
         // angular/linear tolerances follow the migrated `plane_cone` arm below.
@@ -235,12 +235,12 @@ impl FaceFace {
         let (pln, cone) = if is_plane_a {
             (
                 intpatch::plane_from_surface(sa).ok_or("FaceFace: plane extraction")?,
-                cone_from_surface(sb).ok_or("FaceFace: cone extraction")?,
+                gp_cone_from_surface(sb).ok_or("FaceFace: cone extraction")?,
             )
         } else {
             (
                 intpatch::plane_from_surface(sb).ok_or("FaceFace: plane extraction")?,
-                cone_from_surface(sa).ok_or("FaceFace: cone extraction")?,
+                gp_cone_from_surface(sa).ok_or("FaceFace: cone extraction")?,
             )
         };
         let qi = quadric_quadric_plane_cone(&pln, &cone, 1e-12, 1e-7);
@@ -300,8 +300,8 @@ impl FaceFace {
         fb: &Face,
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
-        let c1 = cylinder_from_surface(sa).ok_or("FaceFace: cylinder extraction (a)")?;
-        let c2 = cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction (b)")?;
+        let c1 = gp_cylinder_from_surface(sa).ok_or("FaceFace: cylinder extraction (a)")?;
+        let c2 = gp_cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction (b)")?;
         let qi = quadric_quadric_cylinder_cylinder(&c1, &c2, tol);
         let out = self.conics_to_curves(qi, fa, fb);
         if out.is_empty() {
@@ -322,8 +322,8 @@ impl FaceFace {
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
         // Sorted order: face1 (sa) is the sphere, face2 (sb) the cylinder.
-        let sph = sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?;
-        let cyl = cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction")?;
+        let sph = gp_sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?;
+        let cyl = gp_cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction")?;
         let qi = quadric_quadric_cylinder_sphere(&cyl, &sph, tol);
         let out = self.conics_to_curves(qi, fa, fb);
         if out.is_empty() {
@@ -344,8 +344,8 @@ impl FaceFace {
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
         // Sorted order: face1 (sa) is the sphere, face2 (sb) the cone.
-        let sph = sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?;
-        let cone = cone_from_surface(sb).ok_or("FaceFace: cone extraction")?;
+        let sph = gp_sphere_from_surface(sa).ok_or("FaceFace: sphere extraction")?;
+        let cone = gp_cone_from_surface(sb).ok_or("FaceFace: cone extraction")?;
         let qi = quadric_quadric_sphere_cone(&sph, &cone, tol);
         let out = self.conics_to_curves(qi, fa, fb);
         if out.is_empty() {
@@ -366,8 +366,8 @@ impl FaceFace {
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
         // Sorted order: face1 (sa) is the cone, face2 (sb) the cylinder.
-        let cone = cone_from_surface(sa).ok_or("FaceFace: cone extraction")?;
-        let cyl = cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction")?;
+        let cone = gp_cone_from_surface(sa).ok_or("FaceFace: cone extraction")?;
+        let cyl = gp_cylinder_from_surface(sb).ok_or("FaceFace: cylinder extraction")?;
         let qi = quadric_quadric_cylinder_cone(&cyl, &cone, tol);
         let out = self.conics_to_curves(qi, fa, fb);
         if out.is_empty() {
@@ -387,8 +387,8 @@ impl FaceFace {
         fb: &Face,
         tol: f64,
     ) -> Result<Vec<FaceFaceCurve>, String> {
-        let c1 = cone_from_surface(sa).ok_or("FaceFace: cone extraction (a)")?;
-        let c2 = cone_from_surface(sb).ok_or("FaceFace: cone extraction (b)")?;
+        let c1 = gp_cone_from_surface(sa).ok_or("FaceFace: cone extraction (a)")?;
+        let c2 = gp_cone_from_surface(sb).ok_or("FaceFace: cone extraction (b)")?;
         let qi = quadric_quadric_cone_cone(&c1, &c2, tol);
         let out = self.conics_to_curves(qi, fa, fb);
         if out.is_empty() {

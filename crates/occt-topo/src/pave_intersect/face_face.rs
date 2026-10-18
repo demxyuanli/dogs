@@ -277,7 +277,7 @@ pub(super) fn union_common_block(into: &mut BopdsCommonBlock, from: &BopdsCommon
     }
 }
 
-/// Core of [`force_interf_ee`].
+/// Core of [`intersect_force_interf_ee`].
 pub(super) fn force_interf_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Result<(), String> {
     // Build the map from bounding-vertex pair to the real pave blocks having
     // those vertices (port of `ForceInterfEE`'s first pass). Only the blocks of
@@ -370,7 +370,7 @@ pub(super) fn force_interf_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Resul
                 ee.set_range2(IntRange::new_unchecked(t21, t22));
                 ee.set_fuzzy_value(if use_add_tol { ctx.fuzzy + a_tol_add } else { ctx.fuzzy });
                 if let Err(msg) = ee.perform() {
-                    ctx.add_error(format!("force_interf_ee: edge/edge intersection failed: {msg}"));
+                    ctx.add_error(format!("intersect_force_interf_ee: edge/edge intersection failed: {msg}"));
                     continue;
                 }
                 if !ee.is_done() {
@@ -409,7 +409,7 @@ pub(super) fn force_interf_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Resul
 /// All real intersections already happened; this stage only looks for
 /// *additional common blocks* among the pairs of pave blocks bounded by the
 /// same two vertices, using the increased vertex tolerance as a fuzzy value.
-pub(crate) fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
+pub(crate) fn intersect_force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
     run_with(f, |ds, ctx| force_interf_ee_impl(ds, ctx))
 }
 
@@ -633,7 +633,7 @@ pub(super) fn force_interf_ef_impl(
         ef.set_fuzzy_value(ctx.fuzzy + a_tol_add);
         ef.set_quick_coincidence_check(true);
         if let Err(msg) = ef.perform() {
-            ctx.add_error(format!("force_interf_ef: edge/face intersection failed: {msg}"));
+            ctx.add_error(format!("intersect_force_interf_ef: edge/face intersection failed: {msg}"));
             continue;
         }
         if !ef.is_done() || ef.error_status() != 0 {
@@ -675,7 +675,7 @@ pub(super) fn force_interf_ef_impl(
 
 /// Force edge/face intersection of the given pave blocks
 /// (`BOPAlgo_PaveFiller::ForceInterfEF(theMPB, theAddInterf)`).
-pub(crate) fn force_interf_ef_on(
+pub(crate) fn intersect_force_interf_ef_on(
     f: &mut PaveFiller,
     pbs: Vec<BopdsPaveBlock>,
     add_interf: bool,
@@ -696,12 +696,12 @@ pub(crate) fn force_interf_ef_on(
 /// Looks for additional edge/face common blocks among the pairs of pave blocks
 /// whose bounding vertices lie on the face, using the increased vertex
 /// tolerance as a fuzzy value.
-pub(crate) fn force_interf_ef(f: &mut PaveFiller) -> Result<(), String> {
+pub(crate) fn intersect_force_interf_ef(f: &mut PaveFiller) -> Result<(), String> {
     // `BOPAlgo_PaveFiller::ForceInterfEF`: nested PostTreatFF fillers are not
     // primary and must not hunt extra E/F common blocks.
     if !f.is_primary() {
         return Ok(());
     }
     let pbs = collect_source_edge_pbs(f.ds());
-    force_interf_ef_on(f, pbs, true)
+    intersect_force_interf_ef_on(f, pbs, true)
 }

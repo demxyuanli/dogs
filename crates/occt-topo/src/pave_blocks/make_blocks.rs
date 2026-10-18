@@ -311,7 +311,7 @@ pub(super) fn set_ext_paves(pb: &mut BopdsPaveBlock, paves: Vec<BopdsPave>) {
 /// block's parameters ([`AlgoTools::make_split_edge`]), appended to the data
 /// structure, and the block is re-pointed at it. Blocks whose bounds are both
 /// source shapes on a single-block edge are left on the original edge.
-pub fn make_split_edges<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
+pub fn blocks_make_split_edges<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
     pub(super) struct Task {
         /// DS index of the shape whose pave-block list holds the block.
         pub(super) holder: usize,
@@ -383,22 +383,22 @@ pub fn make_split_edges<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
         let e_shape = match f.ds().shape(t.original) {
             Some(s) => s.clone(),
             None => {
-                let msg = format!("make_split_edges: edge {} not found", t.original);
+                let msg = format!("blocks_make_split_edges: edge {} not found", t.original);
                 f.add_error(msg.clone());
                 return Err(msg);
             }
         };
         let v1 = match f.ds().shape(t.v1) {
             Some(s) => s.clone(),
-            None => return Err(format!("make_split_edges: vertex {} not found", t.v1)),
+            None => return Err(format!("blocks_make_split_edges: vertex {} not found", t.v1)),
         };
         let v2 = match f.ds().shape(t.v2) {
             Some(s) => s.clone(),
-            None => return Err(format!("make_split_edges: vertex {} not found", t.v2)),
+            None => return Err(format!("blocks_make_split_edges: vertex {} not found", t.v2)),
         };
         let sp = AlgoTools::make_split_edge(&Edge(e_shape), Some(&v1), t.t1, Some(&v2), t.t2)
             .map_err(|e| {
-                let msg = format!("make_split_edges: {e}");
+                let msg = format!("blocks_make_split_edges: {e}");
                 f.add_error(msg.clone());
                 msg
             })?;

@@ -14,7 +14,7 @@ use crate::shhealing::fix_shifted_wire;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
 use crate::shhealing::{ShapeBuildEdge, ShapeFixEdge};
 
-use super::helpers::{adjust_to_period, get_middle_point, TOLINT};
+use super::helpers::{compose_adjust_to_period, get_middle_point, TOLINT};
 use super::reshape::{MapReShape, ReShape};
 use super::shell::ComposeShell;
 
@@ -228,11 +228,11 @@ impl ComposeShell {
             let mut ush = 0.0f64;
             let mut vsh = 0.0f64;
             if self.u_closed {
-                ush = adjust_to_period(pnt.x(), u1, u2);
+                ush = compose_adjust_to_period(pnt.x(), u1, u2);
                 pnt = GpPnt2d::new(pnt.x() + ush, pnt.y());
             }
             if self.v_closed {
-                vsh = adjust_to_period(pnt.y(), v1, v2);
+                vsh = compose_adjust_to_period(pnt.y(), v1, v2);
                 pnt = GpPnt2d::new(pnt.x(), pnt.y() + vsh);
             }
             m_pnts[i] = pnt;

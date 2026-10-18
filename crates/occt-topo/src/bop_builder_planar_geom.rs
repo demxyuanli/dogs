@@ -60,7 +60,7 @@ pub(crate) enum Class {
 // Plane / projection helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) fn plane_normal(pln: &GpPln) -> GpVec {
+pub(crate) fn planar_plane_normal(pln: &GpPln) -> GpVec {
     GpVec::from_xyz(pln.axis().direction().xyz())
 }
 
@@ -104,8 +104,8 @@ pub(crate) fn reversed_plane(pln: &GpPln) -> GpPln {
 }
 
 pub(crate) fn planes_coincident(a: &GpPln, b: &GpPln, tol: f64) -> bool {
-    let na = plane_normal(a);
-    let nb = plane_normal(b);
+    let na = planar_plane_normal(a);
+    let nb = planar_plane_normal(b);
     if na.cross_magnitude(&nb) > tol {
         return false;
     }

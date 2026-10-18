@@ -396,7 +396,7 @@ pub(crate) fn split_pave_blocks_impl(
                     if unify {
                         let key = (n_v1.min(n_v2), n_v1.max(n_v2));
                         if unify_fence.insert(key) {
-                            make_sd_vertices(ds, &[n_v1, n_v2], true)?;
+                            intersect_make_sd_vertices(ds, &[n_v1, n_v2], true)?;
                         }
                         continue;
                     }
@@ -436,9 +436,7 @@ pub use crate::pave_vv::perform_vv;
 
 /// Vertex/Vertex intersection restricted to the given pairs (used by the
 /// repeat-intersection stage — `RepeatIntersection`).
-pub(crate) fn perform_vv_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> Result<(), String> {
-    crate::pave_vv::perform_vv_pairs(f, pairs)
-}
+pub(crate) use crate::pave_vv::perform_vv_pairs;
 
 /// Vertex/Edge intersection: project every interfering vertex onto its edge and
 /// insert paves at the projections, splitting the affected pave blocks.
@@ -449,9 +447,7 @@ pub use crate::pave_ve::perform_ve;
 
 /// Vertex/Edge intersection restricted to the given pairs (used by the
 /// repeat-intersection stage — `RepeatIntersection`).
-pub(crate) fn perform_ve_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> Result<(), String> {
-    crate::pave_ve::perform_ve_pairs(f, pairs)
-}
+pub(crate) use crate::pave_ve::perform_ve_pairs;
 
 /// Edge/Edge intersection: intersect every interfering pair of pave blocks,
 /// creating new vertices at the crossing points and recording coincident edge
@@ -471,9 +467,7 @@ pub use crate::pave_vf::perform_vf;
 
 /// Vertex/Face intersection restricted to the given pairs (used by the
 /// repeat-intersection stage — `RepeatIntersection`).
-pub(crate) fn perform_vf_pairs(f: &mut PaveFiller, pairs: &[(usize, usize)]) -> Result<(), String> {
-    crate::pave_vf::perform_vf_pairs(f, pairs)
-}
+pub(crate) use crate::pave_vf::perform_vf_pairs;
 
 /// Split the pave blocks of the DS that carry extra paves into elementary
 /// blocks, unifying block vertices whose range collapsed.

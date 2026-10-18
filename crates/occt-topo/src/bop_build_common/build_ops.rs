@@ -79,7 +79,7 @@ pub(super) fn reverse_orientation(s: &mut TopoShape) {
 /// (`BOPTools_AlgoTools::IsSplitToReverse(Sp, Sr, ctx, err)`,
 /// `BOPTools_AlgoTools.cxx:1255-1291`): edges go through
 /// `BOPTools_AlgoTools.cxx:1432-1500`, faces through `:1316-1427`.
-pub(crate) fn is_split_to_reverse(split: &TopoShape, original: &TopoShape) -> bool {
+pub(crate) fn is_split_to_reverse_ctxless(split: &TopoShape, original: &TopoShape) -> bool {
     let mut ctx = IntToolsContext::new();
     crate::algo_tools_face::is_split_to_reverse(split, original, &mut ctx).unwrap_or(false)
 }
@@ -206,7 +206,7 @@ pub(super) fn collect_splits<B: BopBuildOps, F: FnMut(TopoShape)>(f: &B, sub: &T
     if let Some(im) = f.history().image(sub) {
         for ims in im {
             let mut s = ims.clone();
-            if !crate::topo_tools_full::is_equal(&s, sub) && is_split_to_reverse(&s, sub) {
+            if !crate::topo_tools_full::is_equal(&s, sub) && is_split_to_reverse_ctxless(&s, sub) {
                 reverse_orientation(&mut s);
             }
             out(s);

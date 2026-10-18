@@ -123,7 +123,7 @@ fn export_mesh(shape: &TopoShape, maximal_chordial_deviation: f64) -> ShapeMesh 
 /// a box is 24 nodes / 12 triangles, not a globally welded 8-node mesh.
 pub fn brep_to_obj(shape: &TopoShape, maximal_chordial_deviation: f64) -> String {
     let mesh = export_mesh(shape, maximal_chordial_deviation);
-    occt_core::io::obj::write_obj(&shape_mesh_to_obj(&mesh))
+    occt_core::io::obj::obj_mesh_to_string(&shape_mesh_to_obj(&mesh))
 }
 
 /// Export a shape to ASCII STL text.
@@ -149,7 +149,7 @@ pub fn brep_to_stl_binary(shape: &TopoShape, maximal_chordial_deviation: f64) ->
 /// mesh that OCCT never writes (audit A26).
 pub fn brep_to_ply(shape: &TopoShape, maximal_chordial_deviation: f64) -> String {
     let mesh = export_mesh(shape, maximal_chordial_deviation);
-    occt_core::io::ply::write_ply(&shape_mesh_to_ply(&mesh))
+    occt_core::io::ply::ply_mesh_to_string(&shape_mesh_to_ply(&mesh))
 }
 
 /// Write a shape to an OBJ file (per-face nodes, same as [`brep_to_obj`]).

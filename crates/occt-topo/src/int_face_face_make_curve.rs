@@ -33,7 +33,7 @@ use crate::int_tools_wline::{
 use crate::inttools_data::{CurveKind};
 use crate::shape::Face;
 
-use super::{curve_range, cylinder_from_surface, sphere_from_surface, FaceFace, FaceFaceCurve};
+use super::{curve_range, gp_cylinder_from_surface, gp_sphere_from_surface, FaceFace, FaceFaceCurve};
 
 /// Flattened knot vector for OCCT `Geom_BSplineCurve(poles, knots, mults, 1)`
 /// with unique knots `0..n-1` and end multiplicities 2.
@@ -385,7 +385,7 @@ pub fn find_max_distance_face(
 }
 
 /// `CheckPCurve` (`IntTools_FaceFace.cxx:3010`) with a single CN interval.
-pub fn check_pcurve(a_pc: &dyn Curve2d, a_face: &Face) -> bool {
+pub fn face_pcurve_check(a_pc: &dyn Curve2d, a_face: &Face) -> bool {
     const N_POINTS: i32 = 23;
     let (mut umin, mut umax, mut vmin, mut vmax) = crate::brep_surface::face_uv_bounds(a_face);
     let tol_u = ((umax - umin) * 0.01).max(CONFUSION);
@@ -542,11 +542,11 @@ impl FaceFace {
         let mut my_tol_approx = self.tol_approx;
         let mut an_with_pc = true;
         if typs1 == SurfaceKind::Cylinder && typs2 == SurfaceKind::Sphere {
-            if let (Some(cyl), Some(sph)) = (cylinder_from_surface(sa), sphere_from_surface(sb)) {
+            if let (Some(cyl), Some(sph)) = (gp_cylinder_from_surface(sa), gp_sphere_from_surface(sb)) {
                 an_with_pc = approx_with_pcurves(&cyl, &sph);
             }
         } else if typs1 == SurfaceKind::Sphere && typs2 == SurfaceKind::Cylinder {
-            if let (Some(sph), Some(cyl)) = (sphere_from_surface(sa), cylinder_from_surface(sb)) {
+            if let (Some(sph), Some(cyl)) = (gp_sphere_from_surface(sa), gp_cylinder_from_surface(sb)) {
                 an_with_pc = approx_with_pcurves(&cyl, &sph);
             }
         }

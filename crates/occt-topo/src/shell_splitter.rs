@@ -301,7 +301,7 @@ impl ShellSplitter {
     /// Split one connexity block into closed shells
     /// (`BOPAlgo_ShellSplitter::SplitBlock`).
     pub fn split_block(block: &mut ConnexityBlock) {
-        crate::shell_splitter_block::split_block(block);
+        crate::shell_splitter_block::split_shell_block(block);
     }
 }
 

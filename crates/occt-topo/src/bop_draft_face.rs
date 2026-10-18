@@ -29,7 +29,7 @@ use crate::abs::{Orientation, ShapeType};
 use crate::bop_hist::BopHistory;
 use crate::bop_occt_util::{
     add_edge_to_wire, add_wire_to_face, as_edge, iter_children, make_empty_wire, shape_key,
-    wires_of_face,
+    bop_wires_of_face,
 };
 use crate::bop_split_seam::{do_split_seam_on_face, is_closed_on_face};
 use crate::bop_split_to_reverse::{emit_warnings, orient_split_with_warn, ReverseWarn};
@@ -106,7 +106,7 @@ pub fn build_draft_face(
     let mut a_ff = the_face.clone();
     a_ff.0.set_orientation(Orientation::Forward);
 
-    for a_w in wires_of_face(&a_ff) {
+    for a_w in bop_wires_of_face(&a_ff) {
         if a_w.0.shape_type() != ShapeType::Wire {
             continue;
         }
@@ -167,7 +167,7 @@ pub fn build_draft_face(
             }
         }
         a_new_wire.0.set_orientation(a_w.0.orientation());
-        a_new_wire.0.set_closed(crate::bop_occt_util::wire_is_closed(&a_new_wire));
+        a_new_wire.0.set_closed(crate::bop_occt_util::bop_wire_is_closed(&a_new_wire));
         add_wire_to_face(&mut a_draft_face, &a_new_wire);
     }
 
@@ -193,7 +193,7 @@ pub fn build_draft_face_reported<F: FnMut(String)>(
 /// True when the face has any INTERNAL bounding edge (the check BuildSplitFaces
 /// does before calling BuildDraftFace when there are no alone vertices).
 pub fn face_has_internal_edges(face: &Face) -> bool {
-    for w in wires_of_face(face) {
+    for w in bop_wires_of_face(face) {
         for e in iter_children(&w.0) {
             if e.shape_type() == ShapeType::Edge && e.orientation() == Orientation::Internal {
                 return true;
@@ -205,7 +205,7 @@ pub fn face_has_internal_edges(face: &Face) -> bool {
 
 /// True when any wire of the face has an image (`hasModified` in `_2.cxx:327`).
 pub fn face_has_modified_wires(face: &Face, images: &BopHistory) -> bool {
-    for w in wires_of_face(face) {
+    for w in bop_wires_of_face(face) {
         if images.has_image(&w.0) {
             return true;
         }
@@ -305,7 +305,7 @@ pub fn vertex_is_multi_connected(the_map: &VertexEdgeMap, edge: &Edge) -> bool {
 /// Edges of a draft face, in wire order, for diagnostics.
 pub fn draft_face_edges(face: &Face) -> Vec<Edge> {
     let mut out = Vec::new();
-    for w in wires_of_face(face) {
+    for w in bop_wires_of_face(face) {
         for e in iter_children(&w.0) {
             if let Some(ed) = as_edge(&e) {
                 out.push(ed);
@@ -317,5 +317,5 @@ pub fn draft_face_edges(face: &Face) -> Vec<Edge> {
 
 /// Number of wires on a draft face.
 pub fn draft_face_wire_count(face: &Face) -> usize {
-    wires_of_face(face).len()
+    bop_wires_of_face(face).len()
 }

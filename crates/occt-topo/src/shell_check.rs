@@ -70,7 +70,7 @@ fn dedupe_count(shapes: &[TopoShape]) -> usize {
 pub type EdgeKey = crate::topo_tools_full::ShapeMapKey;
 
 /// The [`EdgeKey`] of one shape occurrence.
-pub fn edge_key(s: &TopoShape) -> EdgeKey {
+pub fn bop_edge_key(s: &TopoShape) -> EdgeKey {
     crate::topo_tools_full::shape_map_key(s)
 }
 
@@ -97,7 +97,7 @@ pub fn edge_face_usage(shape: &TopoShape) -> HashMap<EdgeKey, EdgeFaces> {
         collect_edges(&f, &mut edges);
         for e in edges {
             let entry = usage
-                .entry(edge_key(&e))
+                .entry(bop_edge_key(&e))
                 .or_insert_with(|| EdgeFaces { edge: Edge(e.clone()), count: 0 });
             entry.count += 1;
         }

@@ -11,7 +11,7 @@ use occt_geom2d::curve::Curve2d;
 use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 use occt_geom2d::Geom2dBSplineCurve;
 
-use crate::geom_int::adjust_periodic;
+use crate::geom_int::geom_int_adjust_periodic;
 use crate::geom_int::types::RLine;
 use crate::geom_int::intss_bspline::int_ss_make_bspline;
 
@@ -118,7 +118,7 @@ fn recadre_u_periodic(
     let a_tm = 0.5 * (the_first + the_last);
     let pm = the_curve2d.d0(a_tm);
     let u0 = pm.x();
-    let (u0x, du) = adjust_periodic(u0, the_umin, the_umax, period, a_eps);
+    let (u0x, du) = geom_int_adjust_periodic(u0, the_umin, the_umax, period, a_eps);
     if (u0x - u0).abs() > 0.0 || du.abs() > 0.0 {
         let n = 8;
         let mut xs = Vec::with_capacity(n);

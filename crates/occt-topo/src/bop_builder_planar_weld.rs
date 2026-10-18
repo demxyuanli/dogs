@@ -389,7 +389,7 @@ pub(crate) fn orient_faces_outward(bld: &TopoBuilder, faces: &[Face]) -> Vec<Fac
                 continue;
             }
         };
-        let n = plane_normal(&pln).normalized();
+        let n = planar_plane_normal(&pln).normalized();
         let c = match face_region_probe(f, &pln) {
             Some(c) => c,
             None => {
@@ -595,7 +595,7 @@ pub(crate) fn unify_result_edges(bld: &TopoBuilder, faces: &[Face], tol: f64) ->
 
 /// Is the point `p` (within `tol`) on the given face's polygon?
 pub(crate) fn point_in_face_polygon(face: &Face, pln: &GpPln, p: &GpPnt, tol: f64) -> bool {
-    let n = plane_normal(pln);
+    let n = planar_plane_normal(pln);
     let d = GpVec::from_pnts(&pln.location(), p).dot(&n.normalized()).abs();
     if d > tol {
         return false;
@@ -616,7 +616,7 @@ pub(crate) fn point_in_face_polygon(face: &Face, pln: &GpPln, p: &GpPnt, tol: f6
 /// hole is therefore `Out` (not "on" the face) while a ring-material point is
 /// `In`.
 pub(crate) fn point_in_face_holes(face: &Face, pln: &GpPln, p: &GpPnt, tol: f64) -> bool {
-    let n = plane_normal(pln);
+    let n = planar_plane_normal(pln);
     let d = GpVec::from_pnts(&pln.location(), p).dot(&n.normalized()).abs();
     if d > tol {
         return false;
@@ -739,7 +739,7 @@ pub(crate) fn classify_face(
     tol: f64,
 ) -> Class {
     if face_on_other(plane, interior, other_faces, tol) {
-        let n = plane_normal(plane);
+        let n = planar_plane_normal(plane);
         let eps = tol.max(1e-6);
         let p_in = interior.translated_vec(&n.reversed().multiplied_scalar(eps));
         if is_inside(other, &p_in) {

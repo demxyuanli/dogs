@@ -35,7 +35,7 @@ use crate::pave_ff_pave_stick;
 use crate::pave_ff_se;
 use crate::pave_ff_update;
 use crate::pave_filler::{GlueEnum, PaveFiller};
-use crate::pave_intersect::make_sd_vertices;
+use crate::pave_intersect::intersect_make_sd_vertices;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 
 /// `UpdateSavedTolerance` (`_6.cxx:629`).
@@ -184,7 +184,7 @@ fn make_sd_vertices_ff(
         if list.len() < 2 {
             continue;
         }
-        let n_sd = make_sd_vertices(f.ds_mut(), list, false)?;
+        let n_sd = intersect_make_sd_vertices(f.ds_mut(), list, false)?;
         for &n_v in list {
             dm_new_sd.insert(n_v, n_sd);
         }

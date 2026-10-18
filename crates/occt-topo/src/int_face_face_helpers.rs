@@ -108,7 +108,7 @@ fn perp_x_dir(z: &GpDir) -> GpDir {
 /// (apex + axis + semi-angle from `pcurve_full`). The cone is anchored at its
 /// apex with radius 0 — `IntAna_QuadQuadGeo` only reads apex / axis / semi-angle
 /// geometry (plus `radius` in one axis-flip heuristic, where 0 is safe).
-pub(crate) fn cone_from_surface(s: &dyn Surface) -> Option<GpCone> {
+pub(crate) fn gp_cone_from_surface(s: &dyn Surface) -> Option<GpCone> {
     let (apex, ax, alpha) = cone_params(s)?;
     let z = GpDir::from_vec(&ax).ok()?;
     let x = perp_x_dir(&z);
@@ -124,7 +124,7 @@ pub(crate) fn cone_from_surface(s: &dyn Surface) -> Option<GpCone> {
 /// dropping the U origin here mis-parameterizes the section curve and shifts the
 /// pave vertices that split the face. The sampled reconstruction is only a
 /// fallback for surfaces that do not expose their cylinder.
-pub(crate) fn cylinder_from_surface(s: &dyn Surface) -> Option<GpCylinder> {
+pub(crate) fn gp_cylinder_from_surface(s: &dyn Surface) -> Option<GpCylinder> {
     if let Some(c) = s.gp_cylinder() {
         return Some(c);
     }
@@ -136,7 +136,7 @@ pub(crate) fn cylinder_from_surface(s: &dyn Surface) -> Option<GpCylinder> {
 }
 
 /// Recover a `GpSphere` from a sphere surface (sphere frame is arbitrary).
-pub(crate) fn sphere_from_surface(s: &dyn Surface) -> Option<GpSphere> {
+pub(crate) fn gp_sphere_from_surface(s: &dyn Surface) -> Option<GpSphere> {
     let (c, r) = intpatch::sphere_params(s)?;
     let z = GpDir::new(0.0, 0.0, 1.0).ok()?;
     let x = GpDir::new(1.0, 0.0, 0.0).ok()?;

@@ -19,7 +19,7 @@
 //! | `SplitRangeOnSegments` | `:1366-1406` | [`split_range_on_segments`] |
 //! | `BndBuildBox` | `:1410-1419` | [`bnd_build_box`] |
 //! | `PointBoxDistance` | `:1423-1452` | [`point_box_distance`] |
-//! | `TypeToInteger` | `:1456-1482` | [`type_to_integer`] |
+//! | `TypeToInteger` | `:1456-1482` | [`curve_kind_to_integer`] |
 //! | `ResolutionCoeff` | `:1486-1559` | [`resolution_coeff`] |
 //! | `Resolution` | `:1561-1607` | [`resolution_of`] |
 //! | `CurveDeflection` | `:1611-1638` | [`curve_deflection`] |
@@ -75,7 +75,7 @@ pub(crate) enum GeomCurveKind {
 /// Hyperbola, Bezier, BSpline, Offset, Other. Only the concrete class decides —
 /// a geometrically straight B-spline is `GeomAbs_BSplineCurve` in OCCT, so
 /// `Curve::is_line` (a geometric test) is deliberately **not** used here.
-pub(crate) fn curve_kind(c: &dyn Curve) -> GeomCurveKind {
+pub(crate) fn geom_curve_kind(c: &dyn Curve) -> GeomCurveKind {
     if c.gp_circ().is_some() {
         GeomCurveKind::Circle
     } else if c.gp_line().is_some() {
@@ -98,7 +98,7 @@ pub(crate) fn curve_kind(c: &dyn Curve) -> GeomCurveKind {
 }
 
 /// `TypeToInteger` (`IntTools_EdgeEdge.cxx:1456-1482`).
-pub(crate) fn type_to_integer(kind: GeomCurveKind) -> i32 {
+pub(crate) fn curve_kind_to_integer(kind: GeomCurveKind) -> i32 {
     match kind {
         GeomCurveKind::Line => 0,
         GeomCurveKind::Hyperbola | GeomCurveKind::Parabola => 1,
@@ -131,7 +131,7 @@ pub(super) fn resolution_coeff(c: &dyn Curve, kind: GeomCurveKind, range: IntRan
             let Some((basis, offset)) = c.offset_curve() else {
                 return 0.0;
             };
-            match curve_kind(&*basis) {
+            match geom_curve_kind(&*basis) {
                 GeomCurveKind::Line => 0.0,
                 GeomCurveKind::Circle => match basis.circle_radius() {
                     Some(r) => 1.0 / (2.0 * (offset + r)),
@@ -192,7 +192,7 @@ pub(super) fn resolution_of(c: &dyn Curve, kind: GeomCurveKind, res_coeff: f64, 
             let Some((basis, _)) = c.offset_curve() else {
                 return res_coeff * r3d;
             };
-            match curve_kind(&*basis) {
+            match geom_curve_kind(&*basis) {
                 GeomCurveKind::Line => r3d,
                 GeomCurveKind::Circle => {
                     let a_dt = res_coeff * r3d;

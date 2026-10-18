@@ -170,7 +170,7 @@ pub fn surface_surface_intersection(a: &dyn Surface, b: &dyn Surface, tol: f64) 
                 Some(p) => p,
                 None => return SurfaceIntersection::None,
             };
-            let sphere = match crate::int_face_face::sphere_from_surface(b) {
+            let sphere = match crate::int_face_face::gp_sphere_from_surface(b) {
                 Some(s) => s,
                 None => return SurfaceIntersection::None,
             };
@@ -188,7 +188,7 @@ pub fn surface_surface_intersection(a: &dyn Surface, b: &dyn Surface, tol: f64) 
                 Some(p) => p,
                 None => return SurfaceIntersection::None,
             };
-            let sphere = match crate::int_face_face::sphere_from_surface(a) {
+            let sphere = match crate::int_face_face::gp_sphere_from_surface(a) {
                 Some(s) => s,
                 None => return SurfaceIntersection::None,
             };
@@ -202,8 +202,8 @@ pub fn surface_surface_intersection(a: &dyn Surface, b: &dyn Surface, tol: f64) 
         }
         (SurfaceKind::Sphere, SurfaceKind::Sphere) => {
             let (s1, s2) = match (
-                crate::int_face_face::sphere_from_surface(a),
-                crate::int_face_face::sphere_from_surface(b),
+                crate::int_face_face::gp_sphere_from_surface(a),
+                crate::int_face_face::gp_sphere_from_surface(b),
             ) {
                 (Some(x), Some(y)) => (x, y),
                 _ => return SurfaceIntersection::None,
@@ -541,7 +541,7 @@ mod tests {
         let semi = 30f64.to_radians();
         let pln_surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(pln.clone()));
         let cone_surf = cone_sh(semi);
-        let cone = crate::int_face_face::cone_from_surface(cone_surf.as_ref()).expect("cone");
+        let cone = crate::int_face_face::gp_cone_from_surface(cone_surf.as_ref()).expect("cone");
         let ic = analytic::ic_list_from_quadric(
             occt_geom::intana::quadric_quadric_plane_cone(&pln, &cone, 1e-12, 1e-7),
             pln_surf.as_ref(),

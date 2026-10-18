@@ -128,7 +128,7 @@ fn shape_type_of(s: &TopoShape) -> ShapeType {
 }
 
 /// Filter `shapes` to those whose type equals `target`.
-pub fn map_shapes(shapes: &[TopoShape], target: ShapeType) -> Vec<TopoShape> {
+pub fn map_shapes_of_type(shapes: &[TopoShape], target: ShapeType) -> Vec<TopoShape> {
     shapes
         .iter()
         .filter(|s| shape_type_of(s) == target)
@@ -200,10 +200,10 @@ mod tests {
             TopoShape::new(ShapeType::Edge),
             TopoShape::new(ShapeType::Vertex),
         ];
-        let verts = map_shapes(&shapes, ShapeType::Vertex);
+        let verts = map_shapes_of_type(&shapes, ShapeType::Vertex);
         assert_eq!(verts.len(), 2);
-        assert_eq!(map_shapes(&shapes, ShapeType::Edge).len(), 1);
-        assert!(map_shapes(&shapes, ShapeType::Face).is_empty());
+        assert_eq!(map_shapes_of_type(&shapes, ShapeType::Edge).len(), 1);
+        assert!(map_shapes_of_type(&shapes, ShapeType::Face).is_empty());
     }
 
     #[test]

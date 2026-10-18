@@ -11,7 +11,7 @@ use crate::fclass2d::FaceState;
 use crate::geom_int::{GeomIntLine, RestrictionArc, TopolTool};
 use crate::int_tools_wline::{u_resolution, v_resolution, WLine};
 use crate::intpatch::impimp::{
-    distance, process_rline, process_segments, quadric_tolerance, search_on_bounds, try_set_quad,
+    point_quad_distance, process_rline, process_segments, quadric_tolerance, search_on_bounds, try_set_quad,
     ImplicitQuad, PathPoint,
 };
 
@@ -200,7 +200,7 @@ fn wline_on_quadric(w: &WLine, quad: &ImplicitQuad, f_tol: f64) -> bool {
         return false;
     }
     for i in 1..=n {
-        if distance(quad, &w.point(i).p).abs() > f_tol {
+        if point_quad_distance(quad, &w.point(i).p).abs() > f_tol {
             return false;
         }
     }

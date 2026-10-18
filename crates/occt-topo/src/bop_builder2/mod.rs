@@ -31,7 +31,7 @@ pub(crate) use std::sync::Arc;
 
 pub(crate) use crate::abs::ShapeType;
 pub(crate) use crate::algo_tools::AlgoTools;
-pub(crate) use crate::bop_build_common::{is_split_to_reverse, BopBuildOps};
+pub(crate) use crate::bop_build_common::{is_split_to_reverse_ctxless, BopBuildOps};
 pub(crate) use crate::bop_build_faces::BopBuilderLike;
 pub(crate) use crate::bop_hist::{is_supported_type, BopHistory};
 pub(crate) use crate::bop_occt_util::shape_key;

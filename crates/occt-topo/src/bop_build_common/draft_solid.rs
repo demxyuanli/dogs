@@ -62,7 +62,7 @@ pub fn build_draft_solid<B: BopBuildOps>(
                         if or == Orientation::Internal {
                             // Internal face: collected by the caller, not added.
                         } else {
-                            if is_split_to_reverse(&fx, &child) {
+                            if is_split_to_reverse_ctxless(&fx, &child) {
                                 reverse_orientation(&mut fx);
                             }
                             if add_draft_face(&bld, &mut new_shell.0, &fx) {

@@ -1,17 +1,17 @@
-//! `IntPatch_TheSurfFunction` (`IntImp_ZerImpFunc.gxx`).
+﻿//! `IntPatch_TheSurfFunction` (`IntImp_ZerImpFunc.gxx`).
 //! F(u,v) = `IntSurf_Quadric::Distance`(S(u,v)).
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
 //! code. Do not delete them to silence warnings (see
-//! specs/_a3n00_gap_analysis.md §9.309/§9.310); wire the consumer instead.
+//! specs/_a3n00_gap_analysis.md 搂9.309/搂9.310); wire the consumer instead.
 #![allow(dead_code)]
 
 use occt_core::gp::{GpDir2d, GpPnt, GpVec};
 use occt_core::precision::CONFUSION;
 use occt_geom::Surface;
 
-use crate::intpatch::impimp::{distance, gradient, ImplicitQuad};
+use crate::intpatch::impimp::{gradient, point_quad_distance, ImplicitQuad};
 
 const EPS_ANG2: f64 = 1.0e-16;
 const TOL_PETIT: f64 = 1.0e-16;
@@ -76,7 +76,7 @@ impl<'a> SurfFunction<'a> {
         self.u = u;
         self.v = v;
         self.pntsol = self.surf.d0(u, v);
-        self.valf = distance(self.quad, &self.pntsol);
+        self.valf = point_quad_distance(self.quad, &self.pntsol);
         self.computed = false;
         self.derived = false;
         self.valf
@@ -102,7 +102,7 @@ impl<'a> SurfFunction<'a> {
         self.pntsol = p;
         self.d1u = d1u;
         self.d1v = d1v;
-        self.valf = distance(self.quad, &self.pntsol);
+        self.valf = point_quad_distance(self.quad, &self.pntsol);
         self.gradient = gradient(self.quad, &self.pntsol);
         self.computed = false;
         self.derived = true;

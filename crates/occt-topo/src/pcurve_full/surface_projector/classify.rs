@@ -1,4 +1,4 @@
-//! Surface-type classification plus the sampled analytic frames (`cylinder_params`/`cone_params`/`torus_params`) and the small vector helpers they share.
+//! Surface-type classification plus the sampled analytic frames (`projector_cylinder_params`/`cone_params`/`torus_params`) and the small vector helpers they share.
 
 use super::*;
 
@@ -33,7 +33,7 @@ pub fn classify_surface_kind(s: &dyn Surface) -> SurfaceKind {
 /// Cylinder parameters `(center, unit axis, radius)` from sampled invariants:
 /// the axis is along `∂S/∂v` and two opposite points of a `u`-ring give the
 /// radius (their midpoint lies on the axis).
-pub(crate) fn cylinder_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
+pub(crate) fn projector_cylinder_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
     let p0 = s.d0(0.0, 0.0);
     let p1 = s.d0(0.0, 1.0);
     let axis = GpVec::from_pnts(&p0, &p1);
@@ -48,7 +48,7 @@ pub(crate) fn cylinder_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
     if r <= 1e-9 {
         return None;
     }
-    let center = mid(&q0, &q1);
+    let center = sampled_mid(&q0, &q1);
     let (nu, nv) = (8, 6);
     for i in 0..=nu {
         for j in 0..=nv {
@@ -82,7 +82,7 @@ pub(crate) fn cone_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
     // The cone axis runs through the apex and the midpoint of two opposite
     // points on a u-ring. Sample the ring at v=1 (not v=0 — every u collapses
     // to the apex there, making the axis a zero vector).
-    let m0 = mid(&s.d0(0.0, 1.0), &s.d0(PI, 1.0));
+    let m0 = sampled_mid(&s.d0(0.0, 1.0), &s.d0(PI, 1.0));
     let axis = GpVec::from_pnts(&apex, &m0);
     let am = axis.magnitude();
     if am < 1e-9 {
@@ -129,7 +129,7 @@ pub(crate) fn torus_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> 
     let ax = axv.divided(m);
     let e0 = s.d0(0.0, 0.0);
     let e1 = s.d0(PI, 0.0);
-    let center = mid(&e0, &e1);
+    let center = sampled_mid(&e0, &e1);
     let rel = GpVec::from_pnts(&center, &top);
     let rel_axis = rel.dot(&ax);
     let in_plane = rel.subtracted(&ax.multiplied_scalar(rel_axis));
@@ -166,7 +166,7 @@ pub(crate) fn torus_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> 
 // Small vector helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) fn mid(a: &GpPnt, b: &GpPnt) -> GpPnt {
+pub(crate) fn sampled_mid(a: &GpPnt, b: &GpPnt) -> GpPnt {
     GpPnt::new(0.5 * (a.x() + b.x()), 0.5 * (a.y() + b.y()), 0.5 * (a.z() + b.z()))
 }
 

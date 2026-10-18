@@ -141,9 +141,7 @@ pub(crate) fn extended_tolerance(
 }
 
 /// `BOPAlgo_PaveFiller::GetEFPnts` (`_6.cxx:2608`).
-pub(crate) fn get_ef_pnts(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> {
-    crate::pave_ff_ef_pnts::get_ef_pnts(f, n_f1, n_f2)
-}
+pub(crate) use crate::pave_ff_ef_pnts::get_ef_pnts;
 
 #[allow(dead_code)]
 fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> {
@@ -222,7 +220,7 @@ fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> 
 }
 
 /// `BOPAlgo_PaveFiller::PutPavesOnCurve` (`_6.cxx:2372`).
-pub(crate) fn put_paves_on_curve(
+pub(crate) fn pave_paves_put_paves_on_curve(
     f: &mut PaveFiller,
     i: usize,
     j: usize,
@@ -241,7 +239,7 @@ pub(crate) fn put_paves_on_curve(
         )
     };
     for &n_v in mv_ef {
-        put_pave_on_curve(f, i, j, n_v, tol_r3d, mi, mv_tol, dmvlv, 2);
+        pave_paves_put_pave_on_curve(f, i, j, n_v, tol_r3d, mi, mv_tol, dmvlv, 2);
     }
     let others: Vec<usize> = mv_on_in
         .iter()
@@ -259,12 +257,12 @@ pub(crate) fn put_paves_on_curve(
                 continue;
             }
         }
-        put_pave_on_curve(f, i, j, n_v, tol_r3d, mi, mv_tol, dmvlv, 1);
+        pave_paves_put_pave_on_curve(f, i, j, n_v, tol_r3d, mi, mv_tol, dmvlv, 1);
     }
 }
 
 /// `BOPAlgo_PaveFiller::PutStickPavesOnCurve` (`_6.cxx:2748`).
-pub(crate) fn put_stick_paves_on_curve(
+pub(crate) fn pave_paves_put_stick_paves_on_curve(
     f: &mut PaveFiller,
     i: usize,
     j: usize,
@@ -273,7 +271,7 @@ pub(crate) fn put_stick_paves_on_curve(
     mv_tol: &mut HashMap<usize, f64>,
     dmvlv: &mut HashMap<usize, Vec<usize>>,
 ) {
-    let bnd = get_bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
+    let bnd = pave_paves_get_bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
     if bnd[0].is_some() && bnd[1].is_some() {
         return;
     }
@@ -295,12 +293,12 @@ pub(crate) fn put_stick_paves_on_curve(
         nc.tolerance().max(nc.tangential_tolerance())
     };
     for n_v in verts {
-        put_pave_on_curve(f, i, j, n_v, tol_r3d, mi, mv_tol, dmvlv, 1);
+        pave_paves_put_pave_on_curve(f, i, j, n_v, tol_r3d, mi, mv_tol, dmvlv, 1);
     }
 }
 
 /// `BOPAlgo_PaveFiller::PutEFPavesOnCurve` (`_6.cxx:2692`).
-pub(crate) fn put_ef_paves_on_curve(
+pub(crate) fn pave_paves_put_ef_paves_on_curve(
     f: &mut PaveFiller,
     i: usize,
     j: usize,
@@ -344,12 +342,12 @@ pub(crate) fn put_ef_paves_on_curve(
         let a_pv = BRepTool::vertex_point(&Vertex(v_shape));
         let t = inttools_roots::parameter(&|u| curve.d0(u), &a_pv, a, b);
         let a_dist = a_pv.distance(&curve.d0(t));
-        put_pave_on_curve(f, i, j, n_v, a_dist, mi, mv_tol, dmvlv, 2);
+        pave_paves_put_pave_on_curve(f, i, j, n_v, a_dist, mi, mv_tol, dmvlv, 2);
     }
 }
 
 /// `BOPAlgo_PaveFiller::PutPaveOnCurve` (`_6.cxx:2959`).
-pub(crate) fn put_pave_on_curve(
+pub(crate) fn pave_paves_put_pave_on_curve(
     f: &mut PaveFiller,
     i: usize,
     j: usize,
@@ -471,7 +469,7 @@ struct PaveBlockDist {
 }
 
 /// `BOPAlgo_PaveFiller::FilterPavesOnCurves` (`_6.cxx:2437`).
-pub(crate) fn filter_paves_on_curves(
+pub(crate) fn pave_paves_filter_paves_on_curves(
     ds: &mut BopdsDS,
     i: usize,
     mv_tol: &mut HashMap<usize, f64>,
@@ -544,7 +542,7 @@ pub(crate) fn filter_paves_on_curves(
     }
 }
 
-pub(crate) fn get_bound_paves(ds: &BopdsDS, nc: &BopdsCurve) -> [Option<usize>; 2] {
+pub(crate) fn pave_paves_get_bound_paves(ds: &BopdsDS, nc: &BopdsCurve) -> [Option<usize>; 2] {
     let Some(pb) = nc.pave_blocks().first() else {
         return [None, None];
     };
@@ -582,7 +580,7 @@ pub(crate) fn get_bound_paves(ds: &BopdsDS, nc: &BopdsCurve) -> [Option<usize>; 
 }
 
 /// `BOPAlgo_PaveFiller::PutBoundPaveOnCurve`.
-pub(crate) fn put_bound_pave_on_curve(
+pub(crate) fn pave_paves_put_bound_pave_on_curve(
     f: &mut PaveFiller,
     i: usize,
     j: usize,
@@ -600,7 +598,7 @@ pub(crate) fn put_bound_pave_on_curve(
     let (t0, t1) = range;
     let p0 = curve.d0(t0);
     let p1 = curve.d0(t1);
-    let bnd = get_bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
+    let bnd = pave_paves_get_bound_paves(f.ds(), &f.ds().interf_ff()[i].curves()[j]);
     let is_closed = p1.distance(&p0) <= CONFUSION;
     if is_closed && (bnd[0].is_some() || bnd[1].is_some()) {
         return Ok(Vec::new());
@@ -640,7 +638,7 @@ pub(crate) fn put_bound_pave_on_curve(
 }
 
 /// `BOPAlgo_PaveFiller::PutClosingPaveOnCurve`.
-pub(crate) fn put_closing_pave_on_curve(ds: &mut BopdsDS, i: usize, j: usize) {
+pub(crate) fn pave_paves_put_closing_pave_on_curve(ds: &mut BopdsDS, i: usize, j: usize) {
     let (curve, range, tol_r3d) = {
         let nc = &ds.interf_ff()[i].curves()[j];
         let Some(c) = nc.curve().cloned() else { return };

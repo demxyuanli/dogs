@@ -53,7 +53,7 @@ mod tests {
             ],
         };
         let path = temp_subdir("obj").join("m.obj");
-        std::fs::write(&path, occt_core::io::obj::write_obj(&mesh)).unwrap();
+        std::fs::write(&path, occt_core::io::obj::obj_mesh_to_string(&mesh)).unwrap();
         let scene = read_obj_scene(&path.to_string_lossy()).unwrap();
         assert_eq!(mesh_vertex_count(&scene), 4);
         assert_eq!(mesh_triangle_count(&scene), 2);
@@ -71,7 +71,7 @@ mod tests {
             faces: vec![vec![0, 1, 2], vec![0, 2, 3]],
         };
         let path = temp_subdir("ply").join("m.ply");
-        std::fs::write(&path, occt_core::io::ply::write_ply(&ply)).unwrap();
+        std::fs::write(&path, occt_core::io::ply::ply_mesh_to_string(&ply)).unwrap();
         let scene = read_ply_scene(&path.to_string_lossy()).unwrap();
         assert_eq!(mesh_vertex_count(&scene), 4);
         assert_eq!(mesh_triangle_count(&scene), 2);

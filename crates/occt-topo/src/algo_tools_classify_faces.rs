@@ -220,7 +220,7 @@ pub fn perform_fill_in_3d_parts_tree(
         block_vertices_out_of_solid, classification_face, make_connexity_block,
         map_edges_and_faces, solid_edge_avoid_set, solid_face_avoid_set, EdgeFaceMap,
     };
-    use crate::bop_occt_util::map_shapes_and_ancestors;
+    use crate::bop_occt_util::origin_map_shapes_and_ancestors;
     use crate::shape::Face;
     use occt_core::precision::CONFUSION;
     use std::collections::HashSet;
@@ -286,7 +286,7 @@ pub fn perform_fill_in_3d_parts_tree(
         }
         let a_face = classification_face(&block, &a_fp);
         if a_mefds.is_empty() {
-            a_mefds = map_shapes_and_ancestors(the_solid, crate::abs::ShapeType::Edge, crate::abs::ShapeType::Face);
+            a_mefds = origin_map_shapes_and_ancestors(the_solid, crate::abs::ShapeType::Edge, crate::abs::ShapeType::Face);
         }
         let is_in = is_internal_face(&Face(a_face.clone()), the_solid, &a_mefds, CONFUSION, the_ctx);
         if is_in {

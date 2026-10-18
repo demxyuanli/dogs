@@ -52,7 +52,7 @@ pub(crate) use quadric::surface_parameters;
 use crate::int_tools_wline::wline_adjust_periodic;
 
 /// `GeomInt::AdjustPeriodic` (`GeomInt.cxx:21`). Default `theEps` is 0.
-pub fn adjust_periodic(
+pub fn geom_int_adjust_periodic(
     the_par: f64,
     the_par_min: f64,
     the_par_max: f64,

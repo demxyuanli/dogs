@@ -392,21 +392,17 @@ fn is_degenerated_zone(p2d: &GpPnt2d, s: &dyn Surface, i_dir: i32) -> bool {
     !b_flag
 }
 
+pub(crate) use occt_geom::approx_same_parameter::{u_resolution, v_resolution};
+
 /// `GeomAdaptor_Surface::UResolution` (`GeomAdaptor_Surface.cxx:1818-1895`).
 /// OCCT call site: `IntTools_WLineTool.cxx:153`
 /// (`aD = aGAS1.UResolution(aDelta)`), with `aDelta = 1.e-7`
 /// (`cxx:149`). Kept as a wrapper so every `IntPatch` / `IntWalk` caller of
 /// this helper keeps resolving to one implementation.
-pub(crate) fn u_resolution(s: &dyn Surface, tol3d: f64) -> f64 {
-    occt_geom::approx_same_parameter::u_resolution(s, tol3d)
-}
 
 /// `GeomAdaptor_Surface::VResolution` (`GeomAdaptor_Surface.cxx:1900-1957`).
 /// OCCT call site: `IntTools_WLineTool.cxx:169`
 /// (`aD = aGAS1.VResolution(aDelta)`).
-pub(crate) fn v_resolution(s: &dyn Surface, tol3d: f64) -> f64 {
-    occt_geom::approx_same_parameter::v_resolution(s, tol3d)
-}
 
 fn is_point_in_degenerated_zone(
     p2s: (f64, f64, f64, f64),

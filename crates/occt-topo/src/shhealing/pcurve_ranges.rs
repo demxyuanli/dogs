@@ -124,7 +124,7 @@ pub fn check_pcurves_xsalgo(wire: &Wire, face: &Face, preci: f64) {
     }
     let edges = edges_of_wire(wire);
     for (i, e) in edges.iter().enumerate() {
-        let _ = check_pcurve(e, face, preci, is_seam_use(&edges, i));
+        let _ = edge_pcurve_check(e, face, preci, is_seam_use(&edges, i));
     }
 }
 
@@ -638,7 +638,7 @@ fn pcurve_on_reversed(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
 const CHECK_PCURVE_REPROJECT: bool = true;
 
 /// `XSAlgo_ShapeProcessor::CheckPCurve` (`XSAlgo_ShapeProcessor.cxx:344-505`).
-pub(crate) fn check_pcurve(edge: &Edge, face: &Face, preci: f64, is_seam: bool) -> bool {
+pub(crate) fn edge_pcurve_check(edge: &Edge, face: &Face, preci: f64, is_seam: bool) -> bool {
     let Some((c2d, p1, p2)) = curve_on_surface_oriented(edge, face, false) else {
         return false;
     };

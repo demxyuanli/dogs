@@ -7,7 +7,7 @@
 //! | `MakeBlocks`                  | [`make_blocks`]                        |
 //! | `MakeBlocks` (full)          | [`make_blocks_full`]                   |
 //! | `FilterPavesOnCurves`         | [`filter_paves_on_curves`]             |
-//! | `MakeSplitEdges`              | [`make_split_edges`]                   |
+//! | `MakeSplitEdges`              | [`blocks_make_split_edges`]                   |
 //! | `MakePCurves`                 | [`make_pcurves`]                       |
 //! | `FindPaveBlocks`              | [`find_pave_blocks`]                   |
 //! | `FillPaves`                   | [`fill_paves`]                         |
@@ -181,7 +181,7 @@ mod tests {
         }
         make_blocks(&mut f).unwrap();
         let before = f.ds.nb_shapes();
-        make_split_edges(&mut f).unwrap();
+        blocks_make_split_edges(&mut f).unwrap();
         assert_eq!(f.ds.nb_shapes(), before + 3, "3 sub-edges appended");
 
         let blocks = f.ds.pave_blocks(e0);
@@ -629,7 +629,7 @@ mod tests {
             blocks[0].append_ext_pave(BopdsPave::new(mid, 0.5));
         }
         make_blocks(&mut f).unwrap();
-        make_split_edges(&mut f).unwrap();
+        blocks_make_split_edges(&mut f).unwrap();
         let split: Vec<usize> = f.ds.pave_blocks(e0).iter().map(|pb| pb.edge()).collect();
         assert!(split.iter().any(|&e| e != e0), "split edges created: {split:?}");
         // The face info lists only the source edge.

@@ -4,8 +4,8 @@ use occt_core::precision::ANGULAR;
 
 use crate::bean_face::BeanFaceIntersector;
 use crate::bean_face_kind::{
-    circle_geometry, classify_fast_curve, cylinder_geometry, ellipse_geometry, line_geometry,
-    plane_distance, plane_geometry, sphere_geometry, FastCurveKind,
+    sampled_circle_geometry, classify_fast_curve, cylinder_geometry, ellipse_geometry, line_geometry,
+    plane_distance, plane_frame_geometry, sphere_geometry, FastCurveKind,
 };
 use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::inttools_data::IntRange;
@@ -22,7 +22,7 @@ impl BeanFaceIntersector {
         let tol_ang = 1e-9;
         self.is_done = true;
 
-        let (ploc, _px, _py, pn) = match plane_geometry(self.surface()) {
+        let (ploc, _px, _py, pn) = match plane_frame_geometry(self.surface()) {
             Some(g) => g,
             None => return,
         };
@@ -82,7 +82,7 @@ impl BeanFaceIntersector {
 
         // Parameter half-width from the tolerances and the incidence angle.
         let angle = (PI * 0.5 - ld.angle(&pn)).abs();
-        let a_dt = compute_int_range(self.bean_tolerance, self.face_tolerance, angle);
+        let a_dt = analytic_compute_int_range(self.bean_tolerance, self.face_tolerance, angle);
         let t1 = self.first_parameter.max(t - a_dt);
         let t2 = self.last_parameter.min(t + a_dt);
         self.results.push(IntRange::new_unchecked(t1, t2));
@@ -102,13 +102,13 @@ impl BeanFaceIntersector {
 
         match sk {
             SurfaceKind::Plane => {
-                let (ploc, _px, _py, pn) = match plane_geometry(self.surface()) {
+                let (ploc, _px, _py, pn) = match plane_frame_geometry(self.surface()) {
                     Some(g) => g,
                     None => return false,
                 };
                 let (adir, aloc) = match ck {
                     FastCurveKind::Circle => {
-                        let (c, _r, n) = match circle_geometry(self.curve()) {
+                        let (c, _r, n) = match sampled_circle_geometry(self.curve()) {
                             Some(g) => g,
                             None => return false,
                         };
@@ -173,7 +173,7 @@ impl BeanFaceIntersector {
                         is_coincide = dist < self.criteria;
                     }
                     FastCurveKind::Circle => {
-                        let (cloc, cr, cn) = match circle_geometry(self.curve()) {
+                        let (cloc, cr, cn) = match sampled_circle_geometry(self.curve()) {
                             Some(g) => g,
                             None => return false,
                         };
@@ -243,7 +243,7 @@ impl BeanFaceIntersector {
 }
 
 /// Wrap `value` into `[min, max]` by whole periods (positive modulo).
-pub(crate) fn adjust_periodic(value: f64, min: f64, max: f64, period: f64) -> f64 {
+pub(crate) fn adjust_periodic_value(value: f64, min: f64, max: f64, period: f64) -> f64 {
     let p = period.abs();
     if p <= 1e-30 || !min.is_finite() || !max.is_finite() {
         return value;
@@ -266,7 +266,7 @@ pub(crate) fn plane_uv_of_point(ploc: &GpPnt, _pn: &GpDir, p: &GpPnt, px: &GpDir
 
 /// Port of `IntTools_Tools::ComputeIntRange`: the parameter half-width that
 /// covers the tolerance band around a crossing at incidence `angle`.
-pub(crate) fn compute_int_range(tol1: f64, tol2: f64, angle: f64) -> f64 {
+pub(crate) fn analytic_compute_int_range(tol1: f64, tol2: f64, angle: f64) -> f64 {
     if (PI * 0.5 - angle).abs() < ANGULAR {
         return tol2;
     }
