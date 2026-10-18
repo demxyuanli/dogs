@@ -14,7 +14,7 @@
 //! sibling `crate::bop_build_common` module uses — so this module stays
 //! independent of the concrete `BopBuilder` fields and is verified standalone.
 //!
-//! Live GF path is [`crate::bop_images_solids`] → [`crate::bop_split_solids_occt`]
+//! Live GF path is [`crate::bop_images_solids`] → [`crate::bop_builder_split_solids`]
 //! (`aMST`): the OCCT `FillIn3DParts` + `BuildSplitSolids` pair
 //! (`BOPAlgo_Builder_3.cxx:97-263` / `:413-618`).
 //!
@@ -34,7 +34,7 @@
 //!   from `BOPAlgo_FillIn3DParts::Perform` (`:1334`) and
 //!   `BOPAlgo_BuilderSolid::PerformInternalShapes` (`BOPAlgo_BuilderSolid.cxx:673`).
 //! * The connexity-block grouping (`BOPAlgo_FillIn3DParts::MakeConnexityBlock`)
-//!   is ported in [`crate::bop_classify_occt`]; classification runs against the
+//!   is ported in [`crate::algo_tools_classify_faces`]; classification runs against the
 //!   *original* solid, whose volume equals the draft solid's (only the
 //!   boundary-edge set comes from the split faces, OCCT classifying against
 //!   the draft solid built by `BuildDraftSolid`).
@@ -136,7 +136,7 @@ pub fn fill_images_solids<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
 /// by the intersection expands into as many image solids as it has closed
 /// shells; a solid whose splits still form a single closed shell produces one
 /// image solid (the equivalent of the draft-solid fast path).
-/// **LEGACY / superseded（T-27，round 78）**：绿路径已由 [`bop_split_solids_occt`] 走 OCCT 的
+/// **LEGACY / superseded（T-27，round 78）**：绿路径已由 [`bop_builder_split_solids`] 走 OCCT 的
 /// `BOPAlgo_Builder_3.cxx:413-618`（`build_split_solids_occt` → `SplitSolid::perform` → `builder_solid.rs`），
 /// 本函数是同一 OCCT 段的**早期重复实现**，今天只有本文件的 2 条测试调用（`:666`/`:698`），生产 0 调用。
 /// 保留是为了不删除既有测试；新代码**不要**接入它。

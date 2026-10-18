@@ -5,14 +5,14 @@
 //! The Builder method:
 //! 1. Collects every source FACE, replaced by its image splits (`aLFaces`);
 //! 2. For every source SOLID, builds a draft via
-//!    [`crate::bop_draft_solid_occt::build_draft_solid_occt`] and keeps the
+//!    [`crate::bop_builder_draft_solid::build_draft_solid_occt`] and keeps the
 //!    INTERNAL faces as `aSolidsIF`;
-//! 3. Calls [`crate::bop_classify_occt::classify_faces_occt`];
+//! 3. Calls [`crate::algo_tools_classify_faces::classify_faces_occt`];
 //! 4. Binds `theDraftSolids` for solids that have IN faces or split shells,
 //!    and writes `myInParts` = IN faces + INTERNAL faces.
 //!
 //! `BopBuilder::fill_images_solids` passes the two maps into
-//! [`crate::bop_split_solids_occt::build_split_solids_occt`].
+//! [`crate::bop_builder_split_solids::build_split_solids_occt`].
 //! T-97: items below are faithful ports of the named OCCT source, but their
 //! OCCT-side consumers are not all ported yet, so parts are not called from this
 //! crate. The `dead_code` allowance is deliberate: **pending wiring**, not dead
@@ -25,8 +25,8 @@ use std::collections::{HashMap, HashSet};
 use occt_core::bnd::BndBox;
 
 use crate::abs::ShapeType;
-use crate::bop_classify_occt::{classify_faces_occt, combine_in_and_internal, solid_needs_draft};
-use crate::bop_draft_solid_occt::build_draft_solid_occt;
+use crate::algo_tools_classify_faces::{classify_faces_occt, combine_in_and_internal, solid_needs_draft};
+use crate::bop_builder_draft_solid::build_draft_solid_occt;
 use crate::bop_occt_util::{
     collect_candidate_faces, nb_source, shape_box_of, shape_key, source_solids, BopSolidHost,
 };

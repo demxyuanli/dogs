@@ -472,8 +472,8 @@ impl BopBuilder {
         let mut ctx = crate::int_tools_full::IntToolsContext::new();
         let fill = crate::bop_fill_in3d::fill_in_3d_parts_builder(self, &mut ctx);
         self.in_parts = fill.in_parts.clone();
-        crate::bop_split_solids_occt::build_split_solids_occt(self, &fill)?;
-        crate::bop_fill_internals_occt::fill_internal_shapes_occt(self)?;
+        crate::bop_builder_split_solids::build_split_solids_occt(self, &fill)?;
+        crate::bop_builder_fill_internals::fill_internal_shapes_occt(self)?;
         Ok(())
     }
 

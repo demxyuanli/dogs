@@ -86,16 +86,16 @@ impl AreaBuilder for FaceBuilder {
     }
 
     fn perform_shapes_to_avoid(&mut self) -> Result<(), String> {
-        crate::builder_face_occt::perform_shapes_to_avoid(self)
+        crate::bop_builder_face_perform::perform_shapes_to_avoid(self)
     }
 
     fn perform_loops(&mut self) -> Result<(), String> {
-        crate::builder_face_occt::perform_loops(self)
+        crate::bop_builder_face_perform::perform_loops(self)
     }
 
     fn perform_areas(&mut self) -> Result<(), String> {
         if self.face.is_some() {
-            return crate::builder_face_occt::perform_areas(self);
+            return crate::bop_builder_face_perform::perform_areas(self);
         }
         self.base.areas.clear();
         let loops = self.base.loops.clone();
@@ -118,7 +118,7 @@ impl AreaBuilder for FaceBuilder {
     }
 
     fn perform_internal_shapes(&mut self) -> Result<(), String> {
-        crate::builder_face_occt::perform_internal_shapes(self)
+        crate::bop_builder_face_perform::perform_internal_shapes(self)
     }
 
     fn areas(&self) -> &[TopoShape] {

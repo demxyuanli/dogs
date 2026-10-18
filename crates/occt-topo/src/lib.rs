@@ -216,7 +216,7 @@ mod pave_ee_perform;
 mod pave_ff_misc;
 mod pave_new;
 mod pave_split;
-mod builder_face_occt;
+mod bop_builder_face_perform;
 pub(crate) mod geom_bnd_lib_elclib2d;
 // The former `geom_bnd_lib_elclib2d_{d2,dn,param}` submodules were deleted:
 // they were a *second* port of the 2D `ElCLib` derivative/parameter surface
@@ -297,12 +297,12 @@ mod bop_split_seam;
 mod bop_split_to_reverse;
 mod bop_draft_face;
 mod bop_tools_set;
-mod bop_split_faces_occt;
-mod bop_draft_solid_occt;
-mod bop_classify_occt;
+mod bop_builder_split_faces;
+mod bop_builder_draft_solid;
+mod algo_tools_classify_faces;
 mod bop_fill_in3d;
-mod bop_split_solids_occt;
-mod bop_fill_internals_occt;
+mod bop_builder_split_solids;
+mod bop_builder_fill_internals;
 mod bop_aabb_faces;
 mod bop_connexity_faces;
 mod bop_geomlib_closed;

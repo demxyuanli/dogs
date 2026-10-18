@@ -69,11 +69,11 @@ pub fn fill_images_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
 /// Rebuild the split pieces of every source face that was cut by the
 /// intersection and record them as images of that face.
 ///
-/// Delegates to [`crate::bop_split_faces_occt::build_split_faces_occt`], the
+/// Delegates to [`crate::bop_builder_split_faces::build_split_faces_occt`], the
 /// full `BOPAlgo_Builder::BuildSplitFaces` translation (draft-face fast path,
 /// `DoSplitSEAMOnFace`, `IsSplitToReverseWithWarn`, IN/Sc both ways).
 pub fn build_split_faces<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
-    crate::bop_split_faces_occt::build_split_faces_occt(f)
+    crate::bop_builder_split_faces::build_split_faces_occt(f)
 }
 
 pub(crate) fn collect_unique_edge_paves<B: BopBuilderLike>(

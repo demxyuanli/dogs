@@ -48,7 +48,7 @@ use crate::abs::Orientation;
 use crate::algo_tools::AlgoTools;
 use crate::bbox_from_geometry::shape_bbox;
 use crate::bop_aabb_faces::AabbTree;
-use crate::bop_classify_occt::classify_faces_occt;
+use crate::algo_tools_classify_faces::classify_faces_occt;
 use crate::bop_occt_util::{iter_children, same_shape, shape_key as occt_shape_key};
 use crate::brep_extrema::{closest_point_on_face, is_inside};
 use crate::brep_tool::BRepTool;

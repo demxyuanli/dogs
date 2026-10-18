@@ -25,9 +25,9 @@
 #![allow(dead_code)]
 
 use crate::bop_fill_in3d::fill_in_3d_parts_builder;
-use crate::bop_fill_internals_occt::fill_internal_shapes_occt;
+use crate::bop_builder_fill_internals::fill_internal_shapes_occt;
 use crate::bop_occt_util::BopSolidHost;
-use crate::bop_split_solids_occt::build_split_solids_occt;
+use crate::bop_builder_split_solids::build_split_solids_occt;
 use crate::int_tools_full::IntToolsContext;
 
 /// `BOPAlgo_Builder::FillImagesSolids`.
