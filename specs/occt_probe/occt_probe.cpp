@@ -58,6 +58,7 @@
 #include <IGESControl_Reader.hxx>
 #include <IGESControl_Writer.hxx>
 #include <BRepMesh_TorusRangeSplitter.hxx>
+#include <TColStd_Array1OfReal.hxx>
 #include <BRepMesh_SphereRangeSplitter.hxx>
 #include <BRepMesh_CylinderRangeSplitter.hxx>
 #include <BRepMesh_ConeRangeSplitter.hxx>
@@ -118,11 +119,23 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopExp.hxx>
 #include <TopoDS_Vertex.hxx>
+// T-191: the `--pcdef` dump needs the concrete 2-D curve types behind a
+// `BRep_Tool::CurveOnSurface` handle.
+#include <Geom2d_BSplineCurve.hxx>
+#include <Geom2d_TrimmedCurve.hxx>
+#include <Geom2d_Curve.hxx>
 #include <Geom_Curve.hxx>
+#include <Geom_BSplineCurve.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Face.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Vec.hxx>
+// T-191: the `--spcheck` replay of `XSAlgo_ShapeProcessor::CheckPCurve` needs
+// the pcurve-fixer and the temporary-edge builder.
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <ShapeBuild_Edge.hxx>
+#include <ShapeFix_Edge.hxx>
+#include <BRep_Builder.hxx>
 
 #include <Geom2d_Curve.hxx>
 #include <Geom2d_Line.hxx>
@@ -2106,6 +2119,26 @@ protected:
                 aParams.Deflection);
     dumpRawParams("u", aSplitter.GetParametersU());
     dumpRawParams("v", aSplitter.GetParametersV());
+    {
+      const occ::handle<BRepAdaptor_Surface>& aSurf = aSplitter.GetSurface();
+      const int aNbU = aSurf->NbUIntervals(GeomAbs_CN);
+      const int aNbV = aSurf->NbVIntervals(GeomAbs_CN);
+      TColStd_Array1OfReal aIvU(1, (std::max)(aNbU + 1, 2));
+      TColStd_Array1OfReal aIvV(1, (std::max)(aNbV + 1, 2));
+      aSurf->UIntervals(aIvU, GeomAbs_CN);
+      aSurf->VIntervals(aIvV, GeomAbs_CN);
+      std::printf("OCCTSRP uint nb=%d vals=", aNbU);
+      for (int i = aIvU.Lower(); i <= aIvU.Upper(); ++i)
+      {
+        std::printf("%s%.17g", (i == aIvU.Lower()) ? "" : ",", aIvU.Value(i));
+      }
+      std::printf("\nOCCTSRP vint nb=%d vals=", aNbV);
+      for (int i = aIvV.Lower(); i <= aIvV.Upper(); ++i)
+      {
+        std::printf("%s%.17g", (i == aIvV.Lower()) ? "" : ",", aIvV.Value(i));
+      }
+      std::printf("\n");
+    }
 
     // `GenerateSurfaceNodes` fills the parameter maps on its first call for the
     // splitters that derive them lazily (`BRepMesh_NURBSRangeSplitter::
@@ -2115,6 +2148,9 @@ protected:
     dumpRawParams("u_after", aSplitter.GetParametersU());
     dumpRawParams("v_after", aSplitter.GetParametersV());
     std::printf("OCCTSRP nodes=%d\n", aNodes.IsNull() ? 0 : static_cast<int>(aNodes->Size()));
+    std::printf("OCCTSRP meshpre nodes=%d tris=%d\n",
+                theMesher.Result()->NbNodes(),
+                theMesher.Result()->NbElements());
     if (!aNodes.IsNull())
     {
       for (IMeshData::ListOfPnt2d::Iterator anIt(*aNodes); anIt.More(); anIt.Next())
@@ -2123,6 +2159,9 @@ protected:
       }
     }
     Base::postProcessMesh(theMesher, theRange);
+    std::printf("OCCTSRP meshpost nodes=%d tris=%d\n",
+                theMesher.Result()->NbNodes(),
+                theMesher.Result()->NbElements());
   }
 };
 
@@ -2185,6 +2224,9 @@ static int runSrfParams(const TopoDS_Shape& theShape, const int theFaceIdx,
   {
     case GeomAbs_SurfaceOfRevolution:
       aAlgo = new ZZSrfParamsAlgo<BRepMesh_BoundaryParamsRangeSplitter>();
+      break;
+    case GeomAbs_Torus:
+      aAlgo = new ZZSrfParamsAlgo<BRepMesh_TorusRangeSplitter>();
       break;
     case GeomAbs_SurfaceOfExtrusion:
       aAlgo = new ZZSrfParamsAlgo<BRepMesh_ExtrusionRangeSplitter>();
@@ -4537,6 +4579,384 @@ int main(int argc, char** argv)
         }
       }
       std::cout << "ADV none\n";
+      return 0;
+    }
+  }
+
+  // T-191 oracle: full definition of a face's p-curve, so the port's stored STEP
+  // 2-D curve can be diffed pole by pole against OCCT's object. Selection is by
+  // the p-curve's own first parameter (`--pcdef <first> [<tol>]`) because the
+  // face/edge indices of the port and of `TopExp_Explorer` are independent.
+  {
+    double aWantFirst = 0.;
+    double aWantTol   = 1.e-7;
+    bool   hasPcDef   = false;
+    for (int i = 2; i < argc; ++i)
+    {
+      const std::string a = argv[i];
+      if (a == "--pcdef" && i + 1 < argc)
+      {
+        aWantFirst = std::atof(argv[i + 1]);
+        hasPcDef   = true;
+        if (i + 2 < argc && argv[i + 2][0] != '-')
+        {
+          aWantTol = std::atof(argv[i + 2]);
+        }
+      }
+    }
+    if (hasPcDef)
+    {
+      int          fi = 0;
+      int          nHit = 0;
+      TopExp_Explorer fe(aShape, TopAbs_FACE);
+      for (; fe.More(); fe.Next(), ++fi)
+      {
+        const TopoDS_Face& aFace = TopoDS::Face(fe.Current());
+        int                wi = 0;
+        for (TopExp_Explorer we(aFace, TopAbs_WIRE); we.More(); we.Next(), ++wi)
+        {
+          int ei = 0;
+          for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+          {
+            const TopoDS_Edge anE = TopoDS::Edge(ee.Current());
+            double            pf = 0., pl = 0.;
+            occ::handle<Geom2d_Curve> aPC = BRep_Tool::CurveOnSurface(anE, aFace, pf, pl);
+            if (aPC.IsNull() || std::abs(pf - aWantFirst) > aWantTol)
+            {
+              continue;
+            }
+            occ::handle<Geom2d_Curve> aBasis = aPC;
+            if (aPC->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve)))
+            {
+              aBasis = occ::down_cast<Geom2d_TrimmedCurve>(aPC)->BasisCurve();
+            }
+            ++nHit;
+            std::cout << std::setprecision(17) << "PCDEF face=" << fi << " wire=" << wi
+                      << " edge=" << ei << " type=" << aBasis->DynamicType()->Name()
+                      << " pf=" << pf << " pl=" << pl << "\n";
+            if (aBasis->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve)))
+            {
+              occ::handle<Geom2d_BSplineCurve> aBS = occ::down_cast<Geom2d_BSplineCurve>(aBasis);
+              const bool aRat = aBS->IsRational();
+              std::cout << "PCDEF  degree=" << aBS->Degree() << " npoles=" << aBS->NbPoles()
+                        << " nknots=" << aBS->NbKnots() << " periodic=" << (aBS->IsPeriodic() ? 1 : 0)
+                        << " rational=" << (aRat ? 1 : 0) << "\n";
+              for (int i = 1; i <= aBS->NbPoles(); ++i)
+              {
+                const gp_Pnt2d aP = aBS->Pole(i);
+                std::cout << "PCDEF  pole[" << i << "]=" << aP.X() << "," << aP.Y();
+                if (aRat)
+                {
+                  std::cout << " w=" << aBS->Weight(i);
+                }
+                std::cout << "\n";
+              }
+              for (int i = 1; i <= aBS->NbKnots(); ++i)
+              {
+                std::cout << "PCDEF  knot[" << i << "]=" << aBS->Knot(i)
+                          << " m=" << aBS->Multiplicity(i) << "\n";
+              }
+              std::cout << "PCDEF  val";
+              for (int k = 0; k <= 4; ++k)
+              {
+                const double aU = pf + (pl - pf) * (double)k / 4.0;
+                const gp_Pnt2d aV = aBS->Value(aU);
+                std::cout << " [" << k << "]" << aV.X() << "," << aV.Y();
+              }
+              {
+                const gp_Pnt2d aV = aBS->Value(-0.19481982426506805);
+                std::cout << " [t]" << aV.X() << "," << aV.Y();
+              }
+              std::cout << "\n";
+              std::cout << "PCDEF  flat=";
+              {
+                const TColStd_Array1OfReal& aFlat = aBS->Knots();
+                for (int i = aFlat.Lower(); i <= aFlat.Upper(); ++i)
+                {
+                  std::cout << aFlat.Value(i) << (i < aFlat.Upper() ? "," : "\n");
+                }
+              }
+            }
+          }
+        }
+      }
+      std::cout << "PCDEF hits=" << nHit << "\n";
+      return 0;
+    }
+  }
+
+  // T-192 oracle: per-edge pcurve dump for one face index (`--pcf <face>`),
+  // sorted into the same order as the port's `PCDEF f=<face>` dump so the two
+  // can be diffed edge by edge.
+  {
+    int  aWantFace = -1;
+    bool hasPcF    = false;
+    for (int i = 2; i < argc; ++i)
+    {
+      const std::string a = argv[i];
+      if (a == "--pcf" && i + 1 < argc)
+      {
+        aWantFace = std::atoi(argv[i + 1]);
+        hasPcF    = true;
+      }
+    }
+    if (hasPcF)
+    {
+      int fi = 0;
+      for (TopExp_Explorer fe(aShape, TopAbs_FACE); fe.More(); fe.Next(), ++fi)
+      {
+        if (fi != aWantFace)
+        {
+          continue;
+        }
+        const TopoDS_Face& aFace = TopoDS::Face(fe.Current());
+        int                wi = 0;
+        for (TopExp_Explorer we(aFace, TopAbs_WIRE); we.More(); we.Next(), ++wi)
+        {
+          int ei = 0;
+          for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+          {
+            const TopoDS_Edge anE = TopoDS::Edge(ee.Current());
+            double            pf = 0., pl = 0., e3f = 0., e3l = 0.;
+            occ::handle<Geom2d_Curve> aPC = BRep_Tool::CurveOnSurface(anE, aFace, pf, pl);
+            occ::handle<Geom_Curve>   aC3 = BRep_Tool::Curve(anE, e3f, e3l);
+            occ::handle<Geom2d_Curve> aBasis = aPC;
+            if (!aPC.IsNull() && aPC->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve)))
+            {
+              aBasis = occ::down_cast<Geom2d_TrimmedCurve>(aPC)->BasisCurve();
+            }
+            int np = -1, nk = -1, dg = -1;
+            if (!aBasis.IsNull() && aBasis->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve)))
+            {
+              const occ::handle<Geom2d_BSplineCurve> aBS =
+                occ::down_cast<Geom2d_BSplineCurve>(aBasis);
+              np = aBS->NbPoles();
+              nk = aBS->NbKnots();
+              dg = aBS->Degree();
+            }
+            std::cout << std::setprecision(17) << "PCF face=" << fi << " wire=" << wi
+                      << " edge=" << ei << " c3f=" << e3f << " c3l=" << e3l
+                      << " pf=" << pf << " pl=" << pl
+                      << " pctype=" << (aBasis.IsNull() ? "none" : aBasis->DynamicType()->Name())
+                      << " np=" << np << " nk=" << nk << " deg=" << dg;
+            if (!aPC.IsNull())
+            {
+              for (int k = 0; k <= 4; ++k)
+              {
+                const double   aU = pf + (pl - pf) * (double)k / 4.0;
+                const gp_Pnt2d aV = aPC->Value(aU);
+                std::cout << " [" << k << "]" << aV.X() << "," << aV.Y();
+              }
+            }
+            std::cout << "\n";
+          }
+        }
+      }
+      return 0;
+    }
+  }
+
+  // T-191 oracle #2: replay `XSAlgo_ShapeProcessor::CheckPCurve`
+  // (`XSAlgo_ShapeProcessor.cxx:344-505`) on the imported shape. The tolerance
+  // of the temporary edge after `ShapeFix_Edge::FixSameParameter` (`cxx:444`)
+  // decides whether OCCT re-projects the pcurve at all (`cxx:449`), so it is
+  // the number to compare with the port's
+  // `shhealing::pcurve_ranges::check_pcurve` (`a_tol`). Selection is by the
+  // pcurve's own first parameter, like `--pcdef`.
+  {
+    double aWantFirst = 0.;
+    double aWantTol   = 1.e-7;
+    double aPreci     = Interface_Static::RVal("read.precision.val");
+    bool   hasSpChk   = false;
+    for (int i = 2; i < argc; ++i)
+    {
+      const std::string a = argv[i];
+      if (a == "--spcheck" && i + 1 < argc)
+      {
+        aWantFirst = std::atof(argv[i + 1]);
+        hasSpChk   = true;
+        if (i + 2 < argc && argv[i + 2][0] != '-')
+        {
+          aWantTol = std::atof(argv[i + 2]);
+          if (i + 3 < argc && argv[i + 3][0] != '-')
+          {
+            aPreci = std::atof(argv[i + 3]);
+          }
+        }
+      }
+    }
+    if (hasSpChk)
+    {
+      // `XSAlgo_ShapeProcessor.cxx:317-340` `MakeEdgeOnCurve`.
+      auto makeEdgeOnCurve = [](const TopoDS_Edge& theEdge) -> TopoDS_Edge {
+        ShapeAnalysis_Edge anAnalyzer;
+        occ::handle<Geom_Curve> aCurve;
+        double f = 0., l = 0.;
+        if (!anAnalyzer.Curve3d(theEdge, aCurve, f, l, false) || aCurve.IsNull())
+        {
+          return TopoDS_Edge();
+        }
+        BRepBuilderAPI_MakeEdge aMaker(aCurve, aCurve->Value(f), aCurve->Value(l), f, l);
+        ShapeBuild_Edge         aSBE;
+        aSBE.SetRange3d(aMaker, f, l);
+        return aMaker.Edge();
+      };
+      auto poleCount = [](const occ::handle<Geom2d_Curve>& thePC) -> int {
+        occ::handle<Geom2d_Curve> aBasis = thePC;
+        if (thePC->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve)))
+        {
+          aBasis = occ::down_cast<Geom2d_TrimmedCurve>(thePC)->BasisCurve();
+        }
+        if (aBasis->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve)))
+        {
+          return occ::down_cast<Geom2d_BSplineCurve>(aBasis)->NbPoles();
+        }
+        return -1;
+      };
+
+      int fi = 0, nHit = 0;
+      std::cout << std::setprecision(17) << "SPCHK preci=" << aPreci << "\n";
+      for (TopExp_Explorer fe(aShape, TopAbs_FACE); fe.More(); fe.Next(), ++fi)
+      {
+        const TopoDS_Face& aFace = TopoDS::Face(fe.Current());
+        int                wi = 0;
+        for (TopExp_Explorer we(aFace, TopAbs_WIRE); we.More(); we.Next(), ++wi)
+        {
+          int ei = 0;
+          for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next(), ++ei)
+          {
+            const TopoDS_Edge anE = TopoDS::Edge(ee.Current());
+            ShapeAnalysis_Edge anAnalyzer;
+            occ::handle<Geom2d_Curve> aPC;
+            double pf = 0., pl = 0.;
+            if (!anAnalyzer.PCurve(anE, aFace, aPC, pf, pl, false)
+                || std::abs(pf - aWantFirst) > aWantTol)
+            {
+              continue;
+            }
+            ++nHit;
+            const int npSrc = poleCount(aPC);
+            // `cxx:411-446`: temporary edge + pcurve, SameRange(false),
+            // FixSameParameter, then read the flags back.
+            TopoDS_Edge aTmp = makeEdgeOnCurve(anE);
+            if (aTmp.IsNull())
+            {
+              std::cout << "SPCHK face=" << fi << " wire=" << wi << " edge=" << ei
+                        << " no 3d curve\n";
+              continue;
+            }
+            BRep_Builder B;
+            B.UpdateEdge(aTmp, aPC, aFace, 0.);
+            B.Range(aTmp, aFace, pf, pl);
+            B.SameRange(aTmp, false);
+            if (Interface_Static::IVal("read.stdsameparameter.mode"))
+            {
+              B.SameParameter(aTmp, false);
+            }
+            occ::handle<ShapeFix_Edge> aFix = new ShapeFix_Edge;
+            aFix->FixSameParameter(aTmp);
+            const double aTol1 = BRep_Tool::Tolerance(aTmp);
+            const bool   aSR1  = BRep_Tool::SameRange(aTmp);
+            const bool   aSP1  = BRep_Tool::SameParameter(aTmp);
+            std::cout << "SPCHK face=" << fi << " wire=" << wi << " edge=" << ei
+                      << " pf=" << pf << " pl=" << pl << " npoles_src=" << npSrc
+                      << " tol=" << aTol1 << " same_range=" << (aSR1 ? 1 : 0)
+                      << " same_param=" << (aSP1 ? 1 : 0);
+            const double aLimit = std::min(1., 2. * aPreci);
+            if (aTol1 > aLimit || !aSR1)
+            {
+              // `cxx:451-465`: fresh temporary edge, FixAddPCurve (projection)
+              // then FixSameParameter; take it only when it is better.
+              TopoDS_Edge aPr = makeEdgeOnCurve(anE);
+              aFix->FixAddPCurve(aPr, aFace, false, aPreci);
+              occ::handle<Geom2d_Curve> aPC1b;
+              double                    f1b = 0., l1b = 0.;
+              if (!anAnalyzer.PCurve(aPr, aFace, aPC1b, f1b, l1b, false))
+              {
+                std::cout << " reproj_pc=none";
+              }
+              else
+              {
+                // T-191: which projection branch produced the pcurve.
+                occ::handle<Geom2d_Curve> aSrcBasis = aPC;
+                if (aSrcBasis->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve)))
+                {
+                  aSrcBasis = occ::down_cast<Geom2d_TrimmedCurve>(aSrcBasis)->BasisCurve();
+                }
+                int    aSrcNk = -1;
+                int    aNewNk = -1;
+                int    aNewDeg = -1;
+                if (aSrcBasis->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve)))
+                {
+                  aSrcNk = occ::down_cast<Geom2d_BSplineCurve>(aSrcBasis)->NbKnots();
+                }
+                occ::handle<Geom2d_Curve> aNewBasis = aPC1b;
+                if (aNewBasis->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve)))
+                {
+                  aNewBasis = occ::down_cast<Geom2d_TrimmedCurve>(aNewBasis)->BasisCurve();
+                }
+                if (aNewBasis->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve)))
+                {
+                  aNewNk  = occ::down_cast<Geom2d_BSplineCurve>(aNewBasis)->NbKnots();
+                  aNewDeg = occ::down_cast<Geom2d_BSplineCurve>(aNewBasis)->Degree();
+                }
+                double aMaxUv = 0.;
+                for (int k = 0; k <= 10; ++k)
+                {
+                  const double aT = k / 10.;
+                  const gp_Pnt2d aA =
+                    aPC->Value(pf + (pl - pf) * aT);
+                  const gp_Pnt2d aB =
+                    aPC1b->Value(f1b + (l1b - f1b) * aT);
+                  aMaxUv = std::max(aMaxUv, aA.Distance(aB));
+                }
+                occ::handle<Geom_Surface> aSurf = BRep_Tool::Surface(aFace);
+                int                        aUsedKnots = -1;
+                int                        aMinPnt    = -1;
+                occ::handle<Geom_Curve>    aC3d;
+                double                     a3f = 0., a3l = 0.;
+                anAnalyzer.Curve3d(anE, aC3d, a3f, a3l, false);
+                if (!aC3d.IsNull() && aC3d->IsKind(STANDARD_TYPE(Geom_BSplineCurve)))
+                {
+                  const occ::handle<Geom_BSplineCurve> a3bs =
+                    occ::down_cast<Geom_BSplineCurve>(aC3d);
+                  aUsedKnots = 0;
+                  for (int ki = 1; ki < a3bs->NbKnots(); ++ki)
+                  {
+                    if (a3bs->Knot(ki + 1) > a3f && a3bs->Knot(ki) < a3l)
+                    {
+                      aUsedKnots++;
+                    }
+                  }
+                  aMinPnt = aUsedKnots * (((const Geom_BSplineCurve&)*a3bs).Degree() + 1);
+                }
+                std::cout << " reproj_type=" << aPC1b->DynamicType()->Name()
+                          << " reproj_nknots=" << aNewNk << " reproj_deg=" << aNewDeg
+                          << " src_npoles=" << npSrc << " src_nknots=" << aSrcNk
+                          << " uv_dev=" << aMaxUv
+                          << " surf=" << aSurf->DynamicType()->Name()
+                          << " used_knots=" << aUsedKnots << " min_pnt=" << aMinPnt;
+              }
+
+              aFix->FixSameParameter(aPr);
+              const double aTol2 = BRep_Tool::Tolerance(aPr);
+              occ::handle<Geom2d_Curve> aPC2;
+              double                    f2 = 0., l2 = 0.;
+              anAnalyzer.PCurve(aPr, aFace, aPC2, f2, l2, false);
+              std::cout << " reproj_tol=" << aTol2 << " reproj_npoles="
+                        << (aPC2.IsNull() ? -1 : poleCount(aPC2))
+                        << " pre_fix_npoles=" << (aPC1b.IsNull() ? -1 : poleCount(aPC1b))
+                        << " take=" << ((aTol2 < aTol1 || !aSR1) ? 1 : 0);
+            }
+            else
+            {
+              std::cout << " reproj=skipped";
+            }
+            std::cout << "\n";
+          }
+        }
+      }
+      std::cout << "SPCHK hits=" << nHit << "\n";
       return 0;
     }
   }

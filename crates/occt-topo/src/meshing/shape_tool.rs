@@ -26,7 +26,7 @@ use crate::boptools_2d::curve_on_surface_range;
 use crate::brep_surface::edge_pcurve_on_face;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, wires_of_face};
+use crate::topo_tools_full::{edge_vertices, edges_of_wire, is_same, wires_of_face};
 
 use super::data_model::{MeshEdge, MeshModel, MeshStatus};
 
@@ -161,7 +161,7 @@ impl ShapeTool {
             edge.set_degenerated(true);
             return;
         };
-        if !v1.0.same_tshape(&v2.0) {
+        if !is_same(&v1.0, &v2.0) {
             return;
         }
         let vertex_tol = BRepTool::vertex_tolerance(&v1);

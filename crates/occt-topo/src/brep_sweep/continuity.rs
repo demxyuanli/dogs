@@ -303,5 +303,5 @@ fn vertex_edges(wire: &TopoShape) -> Vec<(TopoShape, Vec<TopoShape>)> {
 }
 
 fn same_located(a: &TopoShape, b: &TopoShape) -> bool {
-    a.same_tshape(b) && a.location().is_equal(b.location())
+    crate::topo_tools_full::is_same(a, b)
 }

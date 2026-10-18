@@ -132,9 +132,10 @@ pub fn build_draft_solid_occt<B: BopSolidHost>(
         }
 
         if i_flag {
+            // `BOPAlgo_Builder_3.cxx:364`: `aShD.Closed(BRep_Tool::IsClosed(aShD))`.
             a_sh_d
                 .0
-                .set_closed(!AlgoTools::is_open_shell(&a_sh_d.0));
+                .set_closed(crate::brep_tool::BRepTool::is_closed(&a_sh_d.0));
             add_shell_to_solid(&mut the_draft, &a_sh_d);
         }
     }
@@ -184,9 +185,10 @@ pub fn build_draft_solid_from_history(
             }
         }
         if i_flag {
+            // `BOPAlgo_Builder_3.cxx:364`: `aShD.Closed(BRep_Tool::IsClosed(aShD))`.
             a_sh_d
                 .0
-                .set_closed(!AlgoTools::is_open_shell(&a_sh_d.0));
+                .set_closed(crate::brep_tool::BRepTool::is_closed(&a_sh_d.0));
             add_shell_to_solid(&mut the_draft, &a_sh_d);
         }
     }

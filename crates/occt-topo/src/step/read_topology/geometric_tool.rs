@@ -185,6 +185,18 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
+        if std::env::var("PASSOC").is_ok() {
+            let np = matched
+                .first()
+                .and_then(|c| c.bspline_copy2d())
+                .map(|b| b.xs.len());
+            eprintln!(
+                "PASSOC edge={:p} facekey={face_key} edgeref={curve_ref} surf={surf_ref} nmatch={} np={:?}",
+                Arc::as_ptr(&edge.0.tshape),
+                matched.len(),
+                np
+            );
+        }
         let is_seam = self.is_seam_curve(curve_ref, surf_ref, nb_oe);
         let is_like_seam = !is_seam && self.is_like_seam(curve_ref, surf_ref, nb_oe);
         let matched_n = matched.len();

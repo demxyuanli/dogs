@@ -46,6 +46,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex};
 use crate::shhealing::{first_vertex, last_vertex};
 use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::is_same;
 
 use super::iges_data_iges_model::EntityData;
 use super::iges_to_brep_basic_curve::eps_geom;
@@ -214,7 +215,7 @@ fn rebuild_edge(
     let dist1l = p1.distance(&pl);
     let dist2l = p2.distance(&pl);
 
-    if v1.0.same_tshape(&v2.0)
+    if is_same(&v1.0, &v2.0)
         || dist1f + dist2l <= dist1l + dist2f + CONFUSION
     {
         add_edge_vertices(builder, &mut e, v1, v2);
@@ -337,7 +338,7 @@ fn transfer_loop(
         if curve3d.len() == 1 && lsewd.len() == 1 {
             let fromedge = lsewd[0].clone();
             let toedge = curve3d[0].clone();
-            if !fromedge.0.same_tshape(&toedge.0) {
+            if !is_same(&fromedge.0, &toedge.0) {
                 let reg = GeometryRegistry::global();
                 reg.remove_edge_curve3d(&toedge.0); // `sbe.RemoveCurve3d(toedge)` (`cxx:435`)
                 transfer_pcurve(&fromedge, &toedge, face); // `cxx:436`
@@ -369,7 +370,7 @@ fn set_wire_edge(out: &mut [Edge], to: &Edge, from: &Edge) {
     }
     let pos = out
         .iter()
-        .position(|e| e.0.same_tshape(&from.0))
+        .position(|e| is_same(&e.0, &from.0))
         .unwrap_or(out.len() - 1);
     out[pos] = to.clone();
 }

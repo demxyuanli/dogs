@@ -20,6 +20,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::{is_equal, is_same};
 
 const TWO_PI: f64 = PI + PI;
 
@@ -91,9 +92,9 @@ pub(crate) fn split_block(face: &Face, edges: &[Edge]) -> Result<Vec<TopoShape>,
                 angle: -1.0,
             });
             let vk = GeometryRegistry::shape_key(v);
-            let cyc = closed || (kids.len() >= 2 && kids[0].same_tshape(&kids[1]));
+            let cyc = closed || (kids.len() >= 2 && is_same(&kids[0], &kids[1]));
             let e0 = vert_closed.entry(vk).or_insert(false);
-            if cyc || i > 0 && kids[0].same_tshape(v) {
+            if cyc || i > 0 && is_same(&kids[0], v) {
                 *e0 = true;
             }
             if cyc {
@@ -203,7 +204,7 @@ fn path(
     let mut e_in: Option<Edge> = None;
     let eps = f64::EPSILON;
     loop {
-        if ls.len() == 1 && ls[0].0.same_tshape(&map.infos[va_slot][info_idx].edge.0) {
+        if ls.len() == 1 && is_same(&ls[0].0, &map.infos[va_slot][info_idx].edge.0) {
             return;
         }
         map.infos[va_slot][info_idx].passed = true;
@@ -246,7 +247,7 @@ fn path(
                         continue;
                     }
                 }
-                let same_v = vert_va[i].same_tshape(&vb);
+                let same_v = is_same(&vert_va[i], &vb);
                 let mut same_v2d = same_v;
                 if same_v && closed {
                     same_v2d = coord_va[i].square_distance(&pb) < tol2d2;
@@ -261,7 +262,7 @@ fn path(
                 }
                 if same_v && same_v2d {
                     let mut priz = true;
-                    if buf.len() == 2 && buf[0].0.same_tshape(&buf[1].0) {
+                    if buf.len() == 2 && is_same(&buf[0].0, &buf[1].0) {
                         priz = false;
                     }
                     if priz {
@@ -309,7 +310,7 @@ fn path(
                 chosen = Some(k);
                 break;
             }
-            let ang = if ei.edge.0.same_tshape(&e_out.0) {
+            let ang = if is_same(&ei.edge.0, &e_out.0) {
                 TWO_PI
             } else {
                 if closed {
@@ -408,7 +409,7 @@ fn vertex_parameter_on_face(v: &TopoShape, e: &Edge) -> f64 {
     let mut vf: Option<Orientation> = None;
     let mut rev = false;
     for k in stored_vertices_oriented(e) {
-        if !k.same_tshape(v) {
+        if !is_same(&k, v) {
             continue;
         }
         match vf {
@@ -452,7 +453,7 @@ fn coord2d_vf(e: &Edge, face: &Face) -> GpPnt2d {
 fn vertex_parameter(v: &TopoShape, e: &Edge) -> f64 {
     let (first, last) = BRepTool::edge_parameters(e);
     let kids = stored_vertices(e);
-    if kids.first().is_some_and(|k| k.same_tshape(v)) {
+    if kids.first().is_some_and(|k| is_same(k, v)) {
         first
     } else {
         last
@@ -461,7 +462,7 @@ fn vertex_parameter(v: &TopoShape, e: &Edge) -> f64 {
 
 fn get_next_vertex(v: &TopoShape, e: &Edge) -> TopoShape {
     for vx in oriented_vertices(e) {
-        if !(vx.same_tshape(v) && vx.orientation() == v.orientation()) {
+        if !is_equal(&vx, v) {
             return vx;
         }
     }
@@ -474,10 +475,7 @@ fn nb_ways_out(le: &[EdgeInfo]) -> usize {
 
 fn angle_in(e_in: &Edge, le: &[EdgeInfo]) -> f64 {
     for ei in le {
-        if ei.is_in
-            && ei.edge.0.same_tshape(&e_in.0)
-            && ei.edge.0.orientation() == e_in.0.orientation()
-        {
+        if ei.is_in && is_equal(&ei.edge.0, &e_in.0) {
             return ei.angle;
         }
     }

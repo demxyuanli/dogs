@@ -1278,6 +1278,74 @@ impl IncrementalMesh {
                     a1.y()
                 );
             }
+            // TEMP T-191 PCDEF: the port's own 2-D curve definition, in the same
+            // format as the OCCT probe's `--pcdef` dump, so the two can be diffed
+            // pole by pole.
+            if std::env::var("PCDEF").is_ok() {
+                eprintln!(
+                    "PCDEF f={pc_face} e={edge_index} pc={pcurve_index} edge={:p} type={} pf={:.17e} pl={:.17e}",
+                    std::sync::Arc::as_ptr(&topo_edge.0.tshape),
+                    std::any::type_name_of_val(pc.as_ref()),
+                    pc.first_parameter(),
+                    pc.last_parameter()
+                );
+                let trimmed = pc.trimmed_basis().is_some();
+                let offs = pc.offset_basis().is_some();
+                let knots2d = pc.bspline_knots2d().map(|k| k.len());
+                let dist = pc.bspline_distinct_knots_mults().map(|(k, m)| (k.len(), m));
+                let copy_bs = pc.bspline_copy2d().is_some();
+                eprintln!(
+                    "PCDEF  kind trimmed={trimmed} offset={offs} deg={:?} knots2d={knots2d:?} dist={dist:?} copybs={copy_bs}",
+                    pc.bspline_degree()
+                );
+                {
+                    let f = pc.first_parameter();
+                    let l = pc.last_parameter();
+                    let mut s = String::new();
+                    for k in 0..=4 {
+                        let u = f + (l - f) * (k as f64) / 4.0;
+                        let p = pc.d0(u);
+                        s.push_str(&format!(" [{k}]{:.17e},{:.17e}", p.x(), p.y()));
+                    }
+                    let q = pc.d0(-0.19481982426506805);
+                    s.push_str(&format!(" [t]{:.17e},{:.17e}", q.x(), q.y()));
+                    eprintln!("PCDEF  val{s}");
+                }
+                if let Some(b) = pc.bspline_copy2d() {
+                    eprintln!(
+                        "PCDEF  degree={} npoles={} nknots={} periodic={} rational={} flatlen={}",
+                        b.degree,
+                        b.xs.len(),
+                        b.knots.len(),
+                        b.periodic as i32,
+                        b.weights.is_some() as i32,
+                        b.knots.len()
+                    );
+                    for i in 0..b.xs.len() {
+                        eprintln!(
+                            "PCDEF  pole[{}]={:.17e},{:.17e}",
+                            i + 1,
+                            b.xs[i],
+                            b.ys[i]
+                        );
+                    }
+                    if let Some((knots, mults)) = pc.bspline_distinct_knots_mults() {
+                        for i in 0..knots.len() {
+                            eprintln!(
+                                "PCDEF  knot[{}]={:.17e} m={}",
+                                i + 1,
+                                knots[i],
+                                mults[i]
+                            );
+                        }
+                    }
+                    let mut flat = String::new();
+                    for k in &b.knots {
+                        flat.push_str(&format!("{k:.17e},"));
+                    }
+                    eprintln!("PCDEF  flat={flat}");
+                }
+            }
             // TEMP EINFO: edge/pcurve provenance for the determinism hunt.
             if let Ok(spec) = std::env::var("EINFO") {
                 let wanted: Vec<usize> = spec

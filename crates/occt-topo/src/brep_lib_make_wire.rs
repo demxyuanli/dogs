@@ -362,7 +362,7 @@ impl MakeWire {
 
     /// `myVertices.Contains(VE)` (`TopTools_ShapeMapHasher` = `IsSame`).
     fn contains_vertex(&self, v: &Vertex) -> bool {
-        self.vertices.iter().any(|w| w.0.same_tshape(&v.0))
+        self.vertices.iter().any(|w| crate::topo_tools_full::is_same(&w.0, &v.0))
     }
 
     /// The copy-edge branch of `Add` (`BRepLib_MakeWire.cxx:304-368`):

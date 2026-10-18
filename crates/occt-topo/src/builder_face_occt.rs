@@ -29,7 +29,7 @@ use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::tgeometry::{FaceGeom, GeometryRegistry};
-use crate::topo_tools_full::{edge_vertices, edges_of, vertices_of};
+use crate::topo_tools_full::{edge_vertices, edges_of, is_equal, is_same, vertices_of};
 use crate::wire_splitter::{WireEdgeSet, WireSplitter};
 
 fn sk(s: &TopoShape) -> usize {
@@ -96,25 +96,25 @@ pub fn perform_shapes_to_avoid(fb: &mut FaceBuilder) -> Result<(), String> {
                     continue;
                 }
                 b_found = true;
-                if !fb.base.avoid.iter().any(|a| a.same_tshape(a_e1)) {
+                if !fb.base.avoid.iter().any(|a| is_equal(a, a_e1)) {
                     fb.base.avoid.push(a_e1.clone());
                 }
             } else if a_nb_e == 2 {
                 let a_e2 = &a_le[1];
-                if a_e2.same_tshape(a_e1) {
+                if is_same(a_e2, a_e1) {
                     let (v1x, v2x) = edge_vertices(&Edge(a_e1.clone()));
                     let same_ends = match (v1x, v2x) {
-                        (Some(a), Some(b)) => a.0.same_tshape(&b.0),
+                        (Some(a), Some(b)) => is_same(&a.0, &b.0),
                         _ => false,
                     };
                     if same_ends {
                         continue;
                     }
                     b_found = true;
-                    if !fb.base.avoid.iter().any(|a| a.same_tshape(a_e1)) {
+                    if !fb.base.avoid.iter().any(|a| is_equal(a, a_e1)) {
                         fb.base.avoid.push(a_e1.clone());
                     }
-                    if !fb.base.avoid.iter().any(|a| a.same_tshape(a_e2)) {
+                    if !fb.base.avoid.iter().any(|a| is_equal(a, a_e2)) {
                         fb.base.avoid.push(a_e2.clone());
                     }
                 }
@@ -166,7 +166,7 @@ pub fn perform_loops(fb: &mut FaceBuilder) -> Result<(), String> {
     }
     for s in &fb.base.shapes {
         if s.shape_type() == ShapeType::Edge && !a_mep.contains(&sk(s)) {
-            if !fb.base.avoid.iter().any(|a| a.same_tshape(s)) {
+            if !fb.base.avoid.iter().any(|a| is_equal(a, s)) {
                 fb.base.avoid.push(s.clone());
             }
         }

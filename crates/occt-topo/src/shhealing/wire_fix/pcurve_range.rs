@@ -210,6 +210,15 @@ pub(in crate::shhealing) fn fix_add_pcurve(
     // the pcurve (`ShapeAnalysis_Edge::HasPCurve`) or both seam pcurves
     // (`ShapeAnalysis_Edge::IsSeam`).
     let existing = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
+    if std::env::var("PCFIX").is_ok() {
+        eprintln!(
+            "PCFIX edge={:p} face={:p} key={face_key} seam={} n={}",
+            Arc::as_ptr(&edge.0.tshape),
+            Arc::as_ptr(&face.0.tshape),
+            is_seam,
+            existing.len()
+        );
+    }
     if (!is_seam && !existing.is_empty()) || (is_seam && existing.len() >= 2) {
         return false;
     }

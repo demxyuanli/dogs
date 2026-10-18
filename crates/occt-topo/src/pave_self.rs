@@ -15,6 +15,7 @@ use crate::builder::TopoBuilder;
 use crate::pave_filler::PaveFiller;
 use crate::shape::TopoShape;
 use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools_full::is_same;
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
@@ -29,7 +30,7 @@ fn add_connection(
     let entry = mcsi
         .entry(key)
         .or_insert_with(|| (connector.clone(), Vec::new()));
-    if !entry.1.iter().any(|s| s.same_tshape(owner)) {
+    if !entry.1.iter().any(|s| is_same(s, owner)) {
         entry.1.push(owner.clone());
     }
 }

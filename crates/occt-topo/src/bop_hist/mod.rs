@@ -29,7 +29,7 @@ pub(crate) use std::collections::{HashMap, HashSet};
 
 pub(crate) use crate::abs::ShapeType;
 pub(crate) use crate::shape::TopoShape;
-pub(crate) use crate::shape_naming::ShapeId;
+pub(crate) use crate::topo_tools_full::{is_same, shape_map_key, ShapeMapKey};
 
 }
 

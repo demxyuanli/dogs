@@ -66,9 +66,7 @@ fn clamp_step(step: f64) -> f64 {
 /// `TopoDS_Shape::operator==` (`cxx:127`, `TopoDS_Shape.hxx:276-280`): same
 /// TShape, same location and same orientation.
 fn is_same_edge_occurrence(a: &Edge, b: &Edge) -> bool {
-    a.0.same_tshape(&b.0)
-        && a.0.location().is_equal(b.0.location())
-        && a.0.orientation() == b.0.orientation()
+    crate::topo_tools_full::is_equal(&a.0, &b.0)
 }
 
 /// `FClassifier.Compare(AEdge, Or)` followed by the `ClosestIntersection`

@@ -6,7 +6,7 @@ use occt_core::precision::INFINITE;
 
 use crate::abs::Orientation;
 use crate::shape::{Edge, Face, Vertex};
-use crate::topo_tools_full::edge_vertices;
+use crate::topo_tools_full::{edge_vertices, is_same};
 
 /// `BRepClass_Edge`.
 #[derive(Clone, Debug)]
@@ -99,16 +99,16 @@ impl BRepClassEdge {
             return;
         };
         if let Some(vf) = vf.as_ref() {
-            if vl.same_tshape(vf) {
+            if is_same(&vl, vf) {
                 return;
             }
         }
-        let Some((_, list)) = map_ve.iter().find(|(v, _)| v.same_tshape(&vl)) else {
+        let Some((_, list)) = map_ve.iter().find(|(v, _)| is_same(v, &vl)) else {
             return;
         };
         if list.len() == 2 {
             for e in list {
-                if !e.same_tshape(edge) {
+                if !is_same(e, edge) {
                     self.next_edge = Some(e.clone());
                 }
             }

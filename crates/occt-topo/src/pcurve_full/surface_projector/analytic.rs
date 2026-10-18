@@ -12,21 +12,50 @@ use super::*;
 /// `ShapeConstruct_ProjectCurveOnSurface.cxx:71`.
 pub(crate) const THE_NCONTROL: usize = 23;
 
-/// `generateCurvePoints` count (`cxx:531-556`).
+/// `generateCurvePoints` count (`cxx:531-581`).
 pub(crate) fn generate_curve_point_count(curve: &dyn Curve, first: f64, last: f64) -> usize {
     let mut n = THE_NCONTROL;
-    if curve.bspline_poles().is_some() {
-        let knots = curve.parameter_intervals(0);
-        let mut used = 0usize;
-        for w in knots.windows(2) {
-            if w[1] > first && w[0] < last {
-                used += 1;
+    if std::env::var("PCNT_OLD").is_ok() {
+        if curve.bspline_poles().is_some() {
+            let knots = curve.parameter_intervals(0);
+            let mut used = 0usize;
+            for w in knots.windows(2) {
+                if w[1] > first && w[0] < last {
+                    used += 1;
+                }
+            }
+            let deg = curve.nurbs_degree().unwrap_or(1);
+            let min_pnt = used * (deg + 1);
+            while n < min_pnt {
+                n += THE_NCONTROL - 1;
             }
         }
-        let deg = curve.nurbs_degree().unwrap_or(1);
-        let min_pnt = used * (deg + 1);
-        while n < min_pnt {
-            n += THE_NCONTROL - 1;
+        return n.max(2);
+    }
+    if curve.bspline_poles().is_some() {
+        if let Some(flat) = curve.bspline_knots() {
+            // `cxx:541-550`: `NbKnots()` / `Knot(i)` index the *distinct* knots
+            // (`Geom_BSplineCurve` stores `<Knots, Multiplicities>`), while the
+            // trait hands back the flattened array where a distinct knot repeats
+            // `Multiplicity` times (`Geom_BSplineCurve::Knots()`). Collapse the
+            // repeats before counting the knot intervals inside `[first, last]`.
+            let mut knots: Vec<f64> = Vec::with_capacity(flat.len());
+            for k in flat {
+                if knots.last().map_or(true, |p: &f64| *p != *k) {
+                    knots.push(*k);
+                }
+            }
+            let mut used = 0usize;
+            for w in knots.windows(2) {
+                if w[1] > first && w[0] < last {
+                    used += 1;
+                }
+            }
+            let deg = curve.nurbs_degree().unwrap_or(1);
+            let min_pnt = used * (deg + 1);
+            while n < min_pnt {
+                n += THE_NCONTROL - 1;
+            }
         }
     }
     n.max(2)

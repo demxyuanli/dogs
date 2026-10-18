@@ -18,6 +18,7 @@ use crate::pave_ff_exist::pb_key;
 use crate::pave_filler::PaveFiller;
 use crate::pave_force_ef::force_interf_ef_on;
 use crate::shape::{Edge, Face, TopoShape};
+use crate::topo_tools_full::is_same;
 
 fn pb_has_edge(pb: &BopdsPaveBlock) -> bool {
     pb.edge() != 0
@@ -200,7 +201,7 @@ pub fn collect_micro_section_vertices(
         let (Some(v0), Some(v1)) = (verts[0].take(), verts[1].take()) else {
             continue;
         };
-        if v0.same_tshape(&v1) {
+        if is_same(&v0, &v1) {
             continue;
         }
         let p1 = BRepTool::vertex_point(&crate::shape::Vertex(v0.clone()));

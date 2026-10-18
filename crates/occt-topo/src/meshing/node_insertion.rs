@@ -842,9 +842,12 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
             }
         }
 
-        // `BRepMesh_NodeInsertionMeshAlgo::initDataStructure`: Reset splitter,
-        // AddPoint from collectWirePoints, AdjustRange, SetCellSize/SetTolerance,
-        // then RegisterWire with the splitter range.
+        // `BRepMesh_NodeInsertionMeshAlgo::initDataStructure` (`hxx:47-112`):
+        // Reset the splitter, feed the discrete wire points (`collectWirePoints`
+        // calls `myRangeSplitter.AddPoint` per pcurve sample, `hxx:179`),
+        // AdjustRange, SetCellSize/SetTolerance, then RegisterWire with the
+        // splitter range. Without AddPoint a plane's range stays the adaptor's
+        // infinite bounds and the cell size collapses the whole face.
         self.splitter = None;
         self.classifier = Classifier::new();
         let mut range_invalid = false;
@@ -1090,6 +1093,29 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                 let n = pts.len();
                 if n == 0 {
                     continue;
+                }
+                if std::env::var("BPUV").is_ok() {
+                    let (mut minv, mut maxv) = (f64::INFINITY, f64::NEG_INFINITY);
+                    let (mut minu, mut maxu) = (f64::INFINITY, f64::NEG_INFINITY);
+                    for p in pts {
+                        minv = minv.min(p.y());
+                        maxv = maxv.max(p.y());
+                        minu = minu.min(p.x());
+                        maxu = maxu.max(p.x());
+                    }
+                    eprintln!(
+                        "BPUV face={face_index} wire={wire_it} edge={edge_index} n={n} \
+first=({:.17e},{:.17e}) last=({:.17e},{:.17e}) \
+u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
+                        pts[0].x(),
+                        pts[0].y(),
+                        pts[n - 1].x(),
+                        pts[n - 1].y(),
+                        minu,
+                        maxu,
+                        minv,
+                        maxv
+                    );
                 }
                 // Frontier links: every sample in the same traversal order as
                 // `collectWirePoints`, including the last (`initDataStructure`

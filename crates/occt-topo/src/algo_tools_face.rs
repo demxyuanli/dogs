@@ -31,7 +31,7 @@ use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, shape_map_key};
+use crate::topo_tools_full::{edges_of, is_equal, is_same, shape_map_key};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
@@ -50,21 +50,6 @@ impl CoupleOfShape {
     }
 }
 
-fn is_closed_on_face(edge: &Edge, face: &Face) -> bool {
-    let mut n = 0usize;
-    for w in ShapeIterator::of_shape(&face.0) {
-        if w.shape_type() != ShapeType::Wire {
-            continue;
-        }
-        for e in ShapeIterator::of_shape(&w) {
-            if e.shape_type() == ShapeType::Edge && e.same_tshape(&edge.0) {
-                n += 1;
-            }
-        }
-    }
-    n >= 2
-}
-
 /// `BOPTools_AlgoTools::GetEdgeOnFace`.
 pub fn get_edge_on_face(the_e1: &Edge, the_f2: &Face) -> Option<Edge> {
     for w in ShapeIterator::of_shape(&the_f2.0) {
@@ -72,7 +57,7 @@ pub fn get_edge_on_face(the_e1: &Edge, the_f2: &Face) -> Option<Edge> {
             continue;
         }
         for e in ShapeIterator::of_shape(&w) {
-            if e.shape_type() == ShapeType::Edge && e.same_tshape(&the_e1.0) {
+            if e.shape_type() == ShapeType::Edge && is_same(&e, &the_e1.0) {
                 return Some(Edge(e));
             }
         }
@@ -89,7 +74,7 @@ pub fn get_edge_off(the_e1: &Edge, the_f2: &Face) -> Option<Edge> {
         }
         for e in ShapeIterator::of_shape(&w) {
             if e.shape_type() == ShapeType::Edge
-                && e.same_tshape(&the_e1.0)
+                && is_same(&e, &the_e1.0)
                 && e.orientation() == or1c
             {
                 return Some(Edge(e));
@@ -340,9 +325,11 @@ pub fn get_face_off(
         };
         let mut angle = angle_with_ref(&dbf, &dbf2, &dtf);
         if angle.abs() < ANGULAR {
-            if f2.0.same_tshape(&f1.0) && f2.0.orientation() == f1.0.orientation() {
+            // `BOPTools_AlgoTools.cxx:1064-1072`: `aF2 == theF1` is `IsEqual`
+            // (`TopoDS_Shape.hxx:282`), then `aF2.IsSame(theF1)`.
+            if is_equal(&f2.0, &f1.0) {
                 angle = std::f64::consts::PI;
-            } else if f2.0.same_tshape(&f1.0) {
+            } else if is_same(&f2.0, &f1.0) {
                 angle = two_pi;
             }
         }
@@ -425,7 +412,8 @@ pub fn is_internal_face_by_pair(
         e1.0.set_orientation(Orientation::Forward);
         e.0.set_orientation(Orientation::Reversed);
         e
-    } else if face1.0.same_tshape(&face2.0) {
+    } else if is_equal(&face1.0, &face2.0) {
+        // `BOPTools_AlgoTools.cxx:958`: `theFace1 == theFace2` (`IsEqual`).
         let mut e = e1.clone();
         e1.0.set_orientation(Orientation::Forward);
         e.0.set_orientation(Orientation::Reversed);
@@ -445,8 +433,8 @@ pub fn is_internal_face_by_pair(
         None => 2,
         Some((_, false)) => 2,
         Some((f_off, true)) => {
-            if the_face.0.same_tshape(&f_off.0) && the_face.0.orientation() == f_off.0.orientation()
-            {
+            // `cxx:983`: `theFace.IsEqual(aFOff)`.
+            if is_equal(&the_face.0, &f_off.0) {
                 1
             } else {
                 0
@@ -659,14 +647,16 @@ pub fn are_faces_same_domain(
     ctx.is_valid_point_for_face((u, v), f2).unwrap_or(false)
 }
 
-/// `BOPTools_AlgoTools::Sense`.
+/// `BOPTools_AlgoTools::Sense` (`BOPTools_AlgoTools.cxx:1201-1252`). The
+/// closed-edge test is `BRep_Tool::IsClosed(E, F)` (`cxx:1215,1229`), i.e.
+/// [`BRepTool::is_closed_edge_face`].
 pub fn sense_faces(f1: &Face, f2: &Face, ctx: &IntToolsContext) -> i32 {
     let mut e1: Option<Edge> = None;
     for e in edges_of(&f1.0) {
         if BRepTool::is_degenerated(&e) {
             continue;
         }
-        if !is_closed_on_face(&e, f1) {
+        if !BRepTool::is_closed_edge_face(&e, f1) {
             e1 = Some(e);
             break;
         }
@@ -679,7 +669,7 @@ pub fn sense_faces(f1: &Face, f2: &Face, ctx: &IntToolsContext) -> i32 {
         if BRepTool::is_degenerated(&e) {
             continue;
         }
-        if !is_closed_on_face(&e, f2) && e.0.same_tshape(&e1.0) {
+        if !BRepTool::is_closed_edge_face(&e, f2) && is_same(&e.0, &e1.0) {
             e2 = Some(e);
             break;
         }
@@ -720,7 +710,8 @@ pub fn is_split_to_reverse_face(
         Err(_) => {
             let mut found = None;
             for e in edges_of(&f_sp.0) {
-                if BRepTool::is_degenerated(&e) || is_closed_on_face(&e, f_sp) {
+                // `BOPTools_AlgoTools.cxx:1353`: `!BRep_Tool::IsClosed(aESp, theFSp)`.
+                if BRepTool::is_degenerated(&e) || BRepTool::is_closed_edge_face(&e, f_sp) {
                     continue;
                 }
                 let (t1, t2) = BRepTool::edge_parameters(&e);

@@ -17,7 +17,7 @@ use crate::int_curves_face::{FaceIntersector, Transition};
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools_full::{faces_of, is_same};
 use std::collections::HashMap;
 
 mod other_segment;
@@ -94,7 +94,7 @@ impl SolidExplorer {
     /// as ON.
     fn edge_vertex_map(shape: &TopoShape) -> Vec<TopoShape> {
         fn push_unique(out: &mut Vec<TopoShape>, s: &TopoShape) {
-            if !out.iter().any(|k| k.same_tshape(s)) {
+            if !out.iter().any(|k| is_same(k, s)) {
                 out.push(s.clone());
             }
         }
@@ -409,7 +409,7 @@ pub fn orientation_of_edge_in_face(edge: &TopoShape, face: &TopoShape) -> Option
             continue;
         }
         for e in cumulated_children(&w) {
-            if e.shape_type() == crate::abs::ShapeType::Edge && e.same_tshape(edge) {
+            if e.shape_type() == crate::abs::ShapeType::Edge && is_same(&e, edge) {
                 return Some(e.orientation());
             }
         }

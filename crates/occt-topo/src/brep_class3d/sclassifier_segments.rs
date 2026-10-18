@@ -137,7 +137,7 @@ fn get_add_to_param(lin: &GpLin, par: f64, box_: &BndBox) -> f64 {
 /// Same shape occurrence: `TopTools_ShapeMapHasher` compares with `IsSame`,
 /// i.e. TShape and location (`TopoDS_Shape.hxx:268-271`).
 fn same_occurrence(a: &TopoShape, b: &TopoShape) -> bool {
-    a.same_tshape(b) && a.location().is_equal(b.location())
+    crate::topo_tools_full::is_same(a, b)
 }
 
 /// `TopExp::MapShapesAndAncestors(shape, EDGE, FACE)` (`cxx:698-699`, `mapEF`):

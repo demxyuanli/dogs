@@ -22,10 +22,12 @@
 //!
 //! ## Semantics preserved from OCCT
 //!
-//! * **Containers** — a wire/shell is rebuilt only when at least one of its
-//!   direct sub-shapes carries a non-trivial image. A shell is reassembled with
-//!   [`crate::shell_splitter::ShellSplitter`] so the image shells are closed;
-//!   a wire is reassembled with [`crate::builder::TopoBuilder::make_wire`].
+//! * **Containers** — a wire/shell/comp-solid is rebuilt only when at least one
+//!   of its direct sub-shapes carries a non-trivial image. The image is **one**
+//!   container of the same type holding every sub-shape (or its splits), built
+//!   the way `BOPTools_AlgoTools::MakeContainer` + `BRep_Builder::Add` do; the
+//!   container is then flagged with `BRep_Tool::IsClosed`. No splitting of the
+//!   container into several closed pieces happens at this stage.
 //! * **Compounds** — recursively rebuilt with the splits of their sub-shapes,
 //!   keeping each split oriented as the original sub-shape.
 //! * **Internal vertices** — alone vertices of a split face are classified
@@ -56,7 +58,6 @@ pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::fclass2d::FaceState;
 pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-pub(crate) use crate::shell_splitter::ShellSplitter;
 pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of, ShapeMapKey};
 
 }

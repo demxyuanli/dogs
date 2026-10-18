@@ -400,19 +400,9 @@ pub fn treat_compound(s: &TopoShape, out: &mut Vec<TopoShape>, fence: &mut HashS
     }
 }
 
-/// Whether a wire's first and last vertices coincide (`BRep_Tool::IsClosed`).
+/// `BRep_Tool::IsClosed(theShape)` (`BRep_Tool.cxx:1707-1757`).
 pub fn wire_is_closed(wire: &Wire) -> bool {
-    let edges = crate::topo_tools_full::edges_of_wire(wire);
-    if edges.is_empty() {
-        return false;
-    }
-    let (first_a, _) = crate::topo_tools_full::edge_vertices(&edges[0]);
-    let last = edges.last().unwrap();
-    let (_, last_b) = crate::topo_tools_full::edge_vertices(last);
-    match (first_a, last_b) {
-        (Some(a), Some(b)) => a.0.same_tshape(&b.0),
-        _ => false,
-    }
+    crate::brep_tool::BRepTool::is_closed(&wire.0)
 }
 
 /// Origins back-map insert (`myOrigins.ChangeSeek` + `Bound` /

@@ -28,7 +28,7 @@ use occt_core::precision::{PCONFUSION, REAL_SMALL, RESOLUTION};
 
 use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
-use crate::topo_tools_full::edge_vertices;
+use crate::topo_tools_full::{edge_vertices, is_same};
 
 use super::data_model::{MeshCurve, MeshModel, MeshStatus};
 use super::delaun_data::DelaunDataStructure;
@@ -444,13 +444,13 @@ impl ModelHealer {
         };
         // Same TEdge: only a closed edge (First == Last) shares a vertex
         // with itself (`cxx:394-397`).
-        if edge1.edge().0.same_tshape(&edge2.edge().0) {
-            return a1.0.same_tshape(&b1.0);
+        if is_same(&edge1.edge().0, &edge2.edge().0) {
+            return is_same(&a1.0, &b1.0);
         }
-        if a1.0.same_tshape(&a2.0) || a1.0.same_tshape(&b2.0) {
+        if is_same(&a1.0, &a2.0) || is_same(&a1.0, &b2.0) {
             return true;
         }
-        if b1.0.same_tshape(&a2.0) || b1.0.same_tshape(&b2.0) {
+        if is_same(&b1.0, &a2.0) || is_same(&b1.0, &b2.0) {
             return true;
         }
         let p1a = BRepTool::vertex_point_world(&a1);

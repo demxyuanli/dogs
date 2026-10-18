@@ -32,7 +32,7 @@ impl BopBuilder {
         self.arguments.clear();
         for s in shapes {
             let flat = flatten_location(s);
-            if !self.arguments.iter().any(|a| a.same_tshape(&flat)) {
+            if !self.arguments.iter().any(|a| is_same(a, &flat)) {
                 self.arguments.push(flat);
             }
         }
@@ -41,7 +41,7 @@ impl BopBuilder {
     /// Adds an argument to the operation, skipping duplicates.
     pub fn add_argument(&mut self, s: &TopoShape) {
         let flat = flatten_location(s);
-        if !self.arguments.iter().any(|a| a.same_tshape(&flat)) {
+        if !self.arguments.iter().any(|a| is_same(a, &flat)) {
             self.arguments.push(flat);
         }
     }
@@ -498,7 +498,7 @@ impl BopBuilder {
                     None => vec![arg.clone()],
                 };
                 for img in imgs {
-                    if !fence.iter().any(|f| f.same_tshape(&img)) {
+                    if !fence.iter().any(|f| is_same(f, &img)) {
                         fence.push(img.clone());
                         b.add(&mut result.0, &img);
                     }

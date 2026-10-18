@@ -87,7 +87,10 @@ pub fn build_draft_solid<B: BopBuildOps>(
             }
         }
         if i_flag {
-            new_shell.set_closed(!AlgoTools::is_open_shell(&new_shell.0));
+            // `BOPAlgo_Builder_3.cxx:364`: `aShD.Closed(BRep_Tool::IsClosed(aShD))`.
+            new_shell
+                .0
+                .set_closed(crate::brep_tool::BRepTool::is_closed(&new_shell.0));
             bld.add_shell(&mut solid, &new_shell);
         }
     }

@@ -15,7 +15,7 @@ use crate::connexity_block::ConnexityBlock;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, Shell, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, wires_of_face};
+use crate::topo_tools_full::{edges_of_wire, is_same, wires_of_face};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
@@ -229,7 +229,7 @@ fn refine_shell(
                         continue;
                     };
                     for fp1 in lf {
-                        if fp1.same_tshape(fp) {
+                        if is_same(fp1, fp) {
                             continue;
                         }
                         if in_block.contains(&ori_key(fp1)) {
@@ -345,7 +345,7 @@ pub fn split_block(block: &mut ConnexityBlock) {
                 let mut a_nb_ways_inside = 0i32;
                 let mut a_sel: Option<TopoShape> = None;
                 for a_fl in a_lf {
-                    if a_f.same_tshape(a_fl) || added.contains(&ori_key(a_fl)) {
+                    if is_same(&a_f, a_fl) || added.contains(&ori_key(a_fl)) {
                         continue;
                     }
                     let Some(a_el) = get_edge_off_geo(&a_e, a_fl) else {

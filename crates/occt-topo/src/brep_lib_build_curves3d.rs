@@ -153,6 +153,7 @@ fn evaluate_max_segment(
     (30 + nb_s_knots.max(nb_c2d_knots)) as i32
 }
 
+/// `TopTools_ShapeMapHasher` / `IsSame`: same `TShape` and the same location.
 fn same_located(a: &TopoShape, b: &TopoShape) -> bool {
-    a.same_tshape(b) && a.location().is_equal(b.location())
+    crate::topo_tools_full::is_same(a, b)
 }

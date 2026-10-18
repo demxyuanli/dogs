@@ -783,9 +783,11 @@ fn main() {
         // of skipped faces (`discret_root.rs:81-88`). Pair through `stat.index`
         // and resolve the bbox from the same pipeline's model, never from
         // `faces_of(&shape)[i]` (that ordering is a different traversal).
+        let defl_override = std::env::var("FSTAT_DEFL").ok().and_then(|s| s.parse::<f64>().ok());
+        let ang_override = std::env::var("FSTAT_ANGLE").ok().and_then(|s| s.parse::<f64>().ok());
         let params = occt_topo::meshing::parameters::MeshParameters {
-            deflection: prs3d_get_deflection(&shape, 0.1),
-            angle: 20.0_f64.to_radians(),
+            deflection: defl_override.unwrap_or_else(|| prs3d_get_deflection(&shape, 0.1)),
+            angle: ang_override.unwrap_or_else(|| 20.0_f64.to_radians()),
             ..Default::default()
         };
         let inc = IncrementalMesh::from_deflection(&shape, params.deflection, false, params.angle);

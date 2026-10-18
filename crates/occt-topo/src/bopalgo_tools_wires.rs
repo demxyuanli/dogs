@@ -28,7 +28,7 @@ use crate::builder_face::FaceBuilder;
 use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, vertices_of};
+use crate::topo_tools_full::{edges_of, is_same, vertices_of};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
@@ -133,7 +133,7 @@ pub fn find_plane_wire(
             continue;
         };
         for a_e2 in &edges {
-            if a_e2.0.same_tshape(&a_e1.0) {
+            if is_same(&a_e2.0, &a_e1.0) {
                 continue;
             }
             let Some(a_dte2) = find_edge_tangent(a_e2, dm_edge_tgt) else {
@@ -359,7 +359,7 @@ pub fn edges_to_wires(
                 continue;
             };
             for a_ei2 in a_lei {
-                if a_ei2.same_tshape(a_ei1) {
+                if is_same(a_ei2, a_ei1) {
                     continue;
                 }
                 let Some(a_di2) = dm_edge_tgt.get(&shape_key(a_ei2)).copied() else {

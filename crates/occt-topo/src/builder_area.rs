@@ -33,7 +33,7 @@ use crate::brep_lib_make_wire::MakeWire;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, TopoShape, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position};
+use crate::topo_tools_full::{edge_vertices, edges_of_wire, is_equal, vertex_position};
 
 /// Quantized 3-D vertex key: two vertices whose positions agree to within
 /// ~1e-9 collapse to the same key.
@@ -116,9 +116,11 @@ pub struct AreaBuilderBase {
 }
 
 impl AreaBuilderBase {
-    /// Whether `s` is currently marked to be avoided (same `TShape` identity).
+    /// Whether `s` is currently marked to be avoided (`BuilderArea.hxx:83`
+    /// `NCollection_IndexedMap<TopoDS_Shape>` with the default hasher ->
+    /// `TopoDS_Shape::operator==` -> `IsEqual`).
     pub fn is_avoided(&self, s: &TopoShape) -> bool {
-        self.avoid.iter().any(|a| a.same_tshape(s))
+        self.avoid.iter().any(|a| is_equal(a, s))
     }
 
     /// The input edges (shapes filtered down to `EDGE` type).

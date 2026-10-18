@@ -1,13 +1,18 @@
 use super::prelude::*;
 
 
-/// Stable key of a shape inside the history: the address of its shared TShape.
+/// Stable key of a shape inside the history: the `TopTools_ShapeMapHasher` key
+/// of `BRepTools_History`'s `NCollection_DataMap` members
+/// (`BRepTools_History.hxx:249-259`) and of `BOPAlgo_Builder::myImages`
+/// (`BOPAlgo_Builder.hxx:499-502`): the `TShape` address together with the
+/// location value (`TopoDS_Shape::IsSame`).
 ///
-/// Reuses [`ShapeId`] so callers can correlate history entries with
-/// `ShapeId::of(shape)`. The key is stable for the lifetime of the shape's
-/// `Arc`; cloned views of the same shape share the key.
+/// [`ShapeKey`] of one shape occurrence.
+fn key_of(s: &TopoShape) -> ShapeKey {
+    shape_map_key(s)
+}
 
-pub type ShapeKey = ShapeId;
+pub type ShapeKey = ShapeMapKey;
 
 /// Returns true if the shape participates in the history.
 ///
@@ -20,9 +25,10 @@ pub fn is_supported_type(s: &TopoShape) -> bool {
     )
 }
 
-/// Shape-identity test matching the `ShapeKey` domain (same TShape data).
+/// Shape-identity test matching the `ShapeKey` domain (`TopoDS_Shape::IsSame`:
+/// same `TShape`, same location).
 pub(super) fn same_shape(a: &TopoShape, b: &TopoShape) -> bool {
-    a.same_tshape(b)
+    is_same(a, b)
 }
 
 /// Appends the source shapes to `dst`, skipping entries already present.
@@ -90,7 +96,7 @@ impl BopHistory {
     /// The images table is the builder's naming side table, so it accepts any
     /// shape type (no `BRepTools_History` restriction).
     pub fn add_image(&mut self, old: &TopoShape, new: TopoShape) {
-        self.images.entry(ShapeId::of(old)).or_default().push(new);
+        self.images.entry(key_of(old)).or_default().push(new);
     }
 
     /// Records that `new` is modified from `old`.
@@ -104,7 +110,7 @@ impl BopHistory {
         if !is_supported_type(old) {
             return Err(unsupported_type(old));
         }
-        let id = ShapeId::of(old);
+        let id = key_of(old);
         // prepareModified: a generation of `new` cannot coexist with a
         // modification of `new`.
         if let Some(list) = self.generated.get_mut(&id) {
@@ -126,7 +132,7 @@ impl BopHistory {
         if !is_supported_type(old) {
             return Err(unsupported_type(old));
         }
-        let id = ShapeId::of(old);
+        let id = key_of(old);
         if let Some(list) = self.modified.get_mut(&id) {
             list.retain(|m| !same_shape(m, &new));
             if list.is_empty() {
@@ -146,7 +152,7 @@ impl BopHistory {
         if !is_supported_type(&s) {
             return Err(unsupported_type(&s));
         }
-        let id = ShapeId::of(&s);
+        let id = key_of(&s);
         self.modified.remove(&id);
         if self.removed_keys.insert(id) {
             self.removed.push(s);
@@ -160,44 +166,44 @@ impl BopHistory {
 
     /// Returns the image pieces of `old`, when recorded.
     pub fn image(&self, old: &TopoShape) -> Option<&[TopoShape]> {
-        self.images.get(&ShapeId::of(old)).map(|v| v.as_slice())
+        self.images.get(&key_of(old)).map(|v| v.as_slice())
     }
 
     /// Returns the shapes modified from `old`, when recorded.
     pub fn modified(&self, old: &TopoShape) -> Option<&[TopoShape]> {
-        self.modified.get(&ShapeId::of(old)).map(|v| v.as_slice())
+        self.modified.get(&key_of(old)).map(|v| v.as_slice())
     }
 
     /// Returns the shapes generated from `old`, when recorded.
     pub fn generated(&self, old: &TopoShape) -> Option<&[TopoShape]> {
-        self.generated.get(&ShapeId::of(old)).map(|v| v.as_slice())
+        self.generated.get(&key_of(old)).map(|v| v.as_slice())
     }
 
     /// Returns true if `old` has been completely removed from the result.
     ///
     /// Mirrors `BRepTools_History::IsRemoved` / `BOPAlgo_BuilderShape::IsDeleted`.
     pub fn is_deleted(&self, old: &TopoShape) -> bool {
-        self.removed_keys.contains(&ShapeId::of(old))
+        self.removed_keys.contains(&key_of(old))
     }
 
     /// BuilderShape-style: true if `old` has recorded images.
     pub fn has_image(&self, old: &TopoShape) -> bool {
-        self.images.contains_key(&ShapeId::of(old))
+        self.images.contains_key(&key_of(old))
     }
 
     /// Mutable image list of `old` (`myImages.ChangeSeek`).
     pub fn image_list_mut(&mut self, old: &TopoShape) -> Option<&mut Vec<TopoShape>> {
-        self.images.get_mut(&ShapeId::of(old))
+        self.images.get_mut(&key_of(old))
     }
 
     /// BuilderShape-style: true if `old` has modified shapes.
     pub fn has_modified(&self, old: &TopoShape) -> bool {
-        self.modified.contains_key(&ShapeId::of(old))
+        self.modified.contains_key(&key_of(old))
     }
 
     /// BuilderShape-style: true if `old` has generated shapes.
     pub fn has_generated(&self, old: &TopoShape) -> bool {
-        self.generated.contains_key(&ShapeId::of(old))
+        self.generated.contains_key(&key_of(old))
     }
 
     // -----------------------------------------------------------------------
@@ -295,9 +301,9 @@ impl BopHistory {
         // modified (false) table.
         for table_is_generated in [true, false] {
             let s1_keys: Vec<ShapeKey> = if table_is_generated {
-                self.generated.keys().copied().collect()
+                self.generated.keys().cloned().collect()
             } else {
-                self.modified.keys().copied().collect()
+                self.modified.keys().cloned().collect()
             };
             for s1 in s1_keys {
                 let mut additions_g: Vec<TopoShape> = Vec::new();
@@ -314,13 +320,13 @@ impl BopHistory {
                     if other.is_deleted(&s2) {
                         // R23: the intermediate disappeared, drop it from the
                         // S1 list.
-                        removed_propagated.insert(ShapeId::of(&s2));
+                        removed_propagated.insert(key_of(&s2));
                     } else {
-                        let id2 = ShapeId::of(&s2);
+                        let id2 = key_of(&s2);
                         if let Some(g23) = other.generated.get(&id2) {
                             // G23: these become generations of S1.
                             append_unique(&mut additions_g, g23.iter().cloned());
-                            mg_propagated.insert(id2);
+                            mg_propagated.insert(id2.clone());
                         }
                         if let Some(m23) = other.modified.get(&id2) {
                             // M23: these replace S2 — as modifications of S1,
@@ -344,7 +350,7 @@ impl BopHistory {
                     self.generated.insert(s1, kept);
                 } else {
                     append_unique(&mut kept, additions_m);
-                    self.modified.insert(s1, kept);
+                    self.modified.insert(s1.clone(), kept);
                     // Rule 2: generations of a modified intermediate become
                     // generations of the initial shape.
                     if !additions_g.is_empty() {
@@ -365,7 +371,7 @@ impl BopHistory {
             };
             let s2_keys: Vec<ShapeKey> = other_table
                 .keys()
-                .copied()
+                .cloned()
                 .filter(|k| !mg_propagated.contains(k))
                 .collect();
             for s2 in s2_keys {
@@ -375,10 +381,10 @@ impl BopHistory {
                 } else {
                     &mut self.modified
                 };
-                let entry = self_table.entry(s2).or_default();
+                let entry = self_table.entry(s2.clone()).or_default();
                 append_unique(entry, values);
                 self.removed_keys.remove(&s2);
-                self.removed.retain(|s| ShapeId::of(s) != s2);
+                self.removed.retain(|s| shape_map_key(s) != s2);
             }
         }
 
@@ -386,9 +392,9 @@ impl BopHistory {
         // initial shape is marked removed.
         for table_is_generated in [true, false] {
             let keys: Vec<ShapeKey> = if table_is_generated {
-                self.generated.keys().copied().collect()
+                self.generated.keys().cloned().collect()
             } else {
-                self.modified.keys().copied().collect()
+                self.modified.keys().cloned().collect()
             };
             for s1 in keys {
                 let empty = if table_is_generated {
@@ -411,7 +417,7 @@ impl BopHistory {
         // accounted for (not dropped out of an S1 list, not re-exposed as a
         // key in phase 2, not unbound in phase 3).
         for s2 in other.removed.iter() {
-            let id = ShapeId::of(s2);
+            let id = key_of(s2);
             if !removed_propagated.contains(&id)
                 && !self.modified.contains_key(&id)
                 && !self.generated.contains_key(&id)
@@ -427,13 +433,13 @@ impl BopHistory {
         let mut composed: HashMap<ShapeKey, Vec<TopoShape>> = HashMap::with_capacity(
             self.images.len() + other.images.len(),
         );
-        for (&s1, pieces) in &self.images {
+        for (s1, pieces) in &self.images {
             let mut out: Vec<TopoShape> = Vec::new();
             for s2 in pieces {
                 if other.is_deleted(s2) {
                     continue; // the piece no longer exists in H23
                 }
-                match other.images.get(&ShapeId::of(s2)) {
+                match other.images.get(&key_of(s2)) {
                     Some(sub) => append_unique(&mut out, sub.iter().cloned()),
                     None => {
                         if !out.iter().any(|d| same_shape(d, s2)) {
@@ -442,12 +448,12 @@ impl BopHistory {
                     }
                 }
             }
-            composed.insert(s1, out);
+            composed.insert(s1.clone(), out);
         }
         // Keys that only appear in `other` are bound as-is.
-        for (&s2, pieces) in &other.images {
-            if !self.images.contains_key(&s2) {
-                composed.insert(s2, pieces.clone());
+        for (s2, pieces) in &other.images {
+            if !self.images.contains_key(s2) {
+                composed.insert(s2.clone(), pieces.clone());
             }
         }
         self.images = composed;

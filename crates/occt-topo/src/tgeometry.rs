@@ -519,6 +519,36 @@ impl GeometryRegistry {
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
     /// Mirrors `BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`.
     pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
+        if std::env::var("PCSET").is_ok() {
+            let info = curve
+                .bspline_copy2d()
+                .map(|b| format!("bs np={} nk={}", b.xs.len(), b.knots.len()))
+                .unwrap_or_else(|| "nobs".to_string());
+            eprintln!(
+                "PCSET1 edge={:p} face={face_key} [{:.17e},{:.17e}] {info}",
+                Arc::as_ptr(&s.tshape),
+                curve.first_parameter(),
+                curve.last_parameter()
+            );
+        }
+        if std::env::var("PCBTRACE").is_ok()
+            && curve.bspline_copy2d().map(|b| b.xs.len()) == Some(25)
+            && curve.first_parameter() < -0.2
+        {
+            let bt = std::backtrace::Backtrace::force_capture();
+            let text = format!("{bt}");
+            let mut names: Vec<String> = Vec::new();
+            for line in text.lines() {
+                if let Some(pos) = line.find("occt_topo::") {
+                    let f = line[pos..].trim().to_string();
+                    names.push(f);
+                    if names.len() >= 8 {
+                        break;
+                    }
+                }
+            }
+            eprintln!("PCBTRACE edge={:p} {}", Arc::as_ptr(&s.tshape), names.join(" <- "));
+        }
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurve(key, curve, first, last);
@@ -527,6 +557,20 @@ impl GeometryRegistry {
     /// Replace the pcurves of edge `s` on the face identified by `face_key`.
     /// Mirrors the seam overload `BRep_Builder::UpdateEdge(edge, c1, c2, face)`.
     pub fn set_edge_pcurves(&self, s: &TopoShape, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
+        if std::env::var("PCSET").is_ok() {
+            for c in &curves {
+                let info = c
+                    .bspline_copy2d()
+                    .map(|b| format!("bs np={} nk={}", b.xs.len(), b.knots.len()))
+                    .unwrap_or_else(|| "nobs".to_string());
+                eprintln!(
+                    "PCSET edge={:p} face={face_key} [{:.17e},{:.17e}] {info}",
+                    Arc::as_ptr(&s.tshape),
+                    c.first_parameter(),
+                    c.last_parameter()
+                );
+            }
+        }
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurves(key, curves, first, last);

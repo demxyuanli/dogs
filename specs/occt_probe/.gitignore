@@ -32,5 +32,6 @@ ZZ_*.exp
 ZZ_*.map
 
 # local probe dumps (Session scratch)
-_fs.txt
+_*.txt
+_*.log
 _bd/

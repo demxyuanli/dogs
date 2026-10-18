@@ -222,7 +222,11 @@ fn connect_faces_into_shells(faces: &[TopoShape], force_internal: bool) -> Vec<T
                 }
             }
         }
-        shell.0.set_closed(true);
+        // `BOPAlgo_BuilderSolid.cxx:390` / `:816`:
+        // `aShell.Closed(BRep_Tool::IsClosed(aShell))`.
+        shell
+            .0
+            .set_closed(crate::brep_tool::BRepTool::is_closed(&shell.0));
         out.push(shell.0);
     }
     out
@@ -427,7 +431,8 @@ impl BuilderSolid {
             if is_infinite_face(f) {
                 let mut shell = Shell::new();
                 bld.add(&mut shell.0, f);
-                shell.0.set_closed(true);
+                // `BOPAlgo_BuilderSolid.cxx:242-251`: the infinite-face shell
+                // is left with the default `Closed` flag (no `Closed(...)` call).
                 self.loops.push(shell.0);
                 continue;
             }

@@ -382,7 +382,10 @@ impl AlgoTools {
             // orientation). A seam edge of a periodic surface appears twice with
             // opposite orientations (its two sides); both must be kept or the
             // wire's UV polygon degenerates to one seam side.
-            if !unique.iter().any(|u| u.same_tshape(&e) && u.orientation() == e.orientation()) {
+            // `BOPTools_AlgoTools.cxx:279`: `NCollection_Map<TopoDS_Shape>`
+            // without an explicit hasher -> `NCollection_DefaultHasher` ->
+            // `TopoDS_Shape::operator==` -> `IsEqual`.
+            if !unique.iter().any(|u| is_equal(u, &e)) {
                 unique.push(e);
             }
         }
@@ -456,7 +459,7 @@ impl AlgoTools {
             .collect();
         let mut unique: Vec<TopoShape> = Vec::new();
         for f in faces {
-            if !unique.iter().any(|u| u.same_tshape(&f)) {
+            if !unique.iter().any(|u| is_same(u, &f)) {
                 unique.push(f);
             }
         }
@@ -634,7 +637,7 @@ impl AlgoTools {
         let e1s = AlgoTools::face_edges(f1);
         let e2s = AlgoTools::face_edges(f2);
         let shared = e1s.iter().find(|e| {
-            !BRepTool::is_degenerated(e) && e2s.iter().any(|e2| e2.same_tshape(&e.0))
+            !BRepTool::is_degenerated(e) && e2s.iter().any(|e2| is_same(&e2.0, &e.0))
         });
         let Some(e) = shared else { return 0 };
         let (a, b) = BRepTool::edge_parameters(e);

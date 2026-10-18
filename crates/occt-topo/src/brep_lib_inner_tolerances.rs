@@ -188,7 +188,7 @@ fn edge_ancestors(shape: &TopoShape) -> Vec<(TopoShape, Vec<TopoShape>)> {
 
 /// `TopTools_ShapeMapHasher` / `IsSame`: same `TShape` and the same location.
 fn same_located(a: &TopoShape, b: &TopoShape) -> bool {
-    a.same_tshape(b) && a.location().is_equal(b.location())
+    crate::topo_tools_full::is_same(a, b)
 }
 
 /// `TopExp::Vertices(E, V1, V2)` with `CumOri = false` (`TopExp.hxx:126-129`).

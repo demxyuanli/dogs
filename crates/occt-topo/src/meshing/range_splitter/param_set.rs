@@ -397,6 +397,16 @@ pub(super) fn get_undefined_interval(
     };
     let geom_range = if is_u { surf.u_range() } else { surf.v_range() };
     let iv = adaptor_surface_intervals(surf.as_ref(), is_u, continuity, geom_range);
+    if std::env::var("NURBSGRID").is_ok() {
+        eprint!("NURBSGRID iv is_u={is_u} geom=[{:.17e},{:.17e}] n={} vals=", geom_range.0, geom_range.1, iv.len());
+        for (i, &v) in iv.iter().enumerate() {
+            if i > 0 {
+                eprint!(",");
+            }
+            eprint!("{v:.17e}");
+        }
+        eprintln!();
+    }
     let mut intervals_nb = iv.len().saturating_sub(1) as i32;
     if intervals_nb == 1 {
         intervals_nb = s.get_undefined_interval_nb(is_u, continuity);
@@ -559,6 +569,33 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
         let u_intervals = get_undefined_interval(s, true, GEOM_ABS_CN, range_u);
         let v_intervals = get_undefined_interval(s, false, GEOM_ABS_CN, range_v);
         let is_split = to_split_intervals(surface.as_ref(), &u_intervals, &v_intervals);
+        if std::env::var("NURBSGRID").is_ok() {
+            eprintln!(
+                "NURBSGRID intervals split={is_split} u_n={} v_n={} surf_u=[{:.17e},{:.17e}] surf_v=[{:.17e},{:.17e}]",
+                u_intervals.len(),
+                v_intervals.len(),
+                surface.as_ref().u_range().0,
+                surface.as_ref().u_range().1,
+                surface.as_ref().v_range().0,
+                surface.as_ref().v_range().1
+            );
+            eprint!("NURBSGRID u_int=");
+            for (i, &u) in u_intervals.iter().enumerate() {
+                if i > 0 {
+                    eprint!(",");
+                }
+                eprint!("{u:.17e}");
+            }
+            eprintln!();
+            eprint!("NURBSGRID v_int=");
+            for (i, &v) in v_intervals.iter().enumerate() {
+                if i > 0 {
+                    eprint!(",");
+                }
+                eprint!("{v:.17e}");
+            }
+            eprintln!();
+        }
         let mut u_iv = ParamSet::new();
         let mut v_iv = ParamSet::new();
         if !init_params_from_intervals(&u_intervals, range_u, is_split, &mut u_iv) {

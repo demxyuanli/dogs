@@ -118,16 +118,16 @@ fn face_edge_keys(f: &Face) -> HashSet<EKey> {
     edges_of(&f.0).into_iter().map(|e| edge_key(&e)).collect()}
 
 /// Build a shell containing `faces` (in order). Closed flag is set only when
-/// `BRep_Tool::IsClosed` holds (`ShellSplitter.cxx:383-386`).
+/// `BRep_Tool::IsClosed` holds (`BOPAlgo_ShellSplitter.cxx:383-386`).
 fn make_shell_from_faces(faces: &[Face]) -> Shell {
     let bld = TopoBuilder::new();
     let mut shell = Shell::new();
     for f in faces {
         bld.add_face(&mut shell, f);
     }
-    if !crate::algo_tools::AlgoTools::is_open_shell(&shell.0) {
-        shell.0.set_closed(true);
-    }
+    shell
+        .0
+        .set_closed(crate::brep_tool::BRepTool::is_closed(&shell.0));
     shell
 }
 

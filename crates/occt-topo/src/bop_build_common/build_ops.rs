@@ -112,24 +112,32 @@ pub fn fill_images_containers<B: BopBuildOps>(
     Ok(())
 }
 
-/// Builds the image of a single container (`BOPAlgo_Builder::FillImagesContainer`).
+/// Builds the image of a single container (`BOPAlgo_Builder::FillImagesContainer`,
+/// `BOPAlgo_Builder_1.cxx:221-274`).
 ///
-/// A wire is rebuilt with [`TopoBuilder::make_wire`] over the edge splits; a
-/// shell is reassembled with [`ShellSplitter`] so the produced image shells are
-/// closed. When the face splits do not form any closed shell (an open source
-/// shell), a plain shell holding all splits is produced instead, matching the
-/// OCCT behaviour of always emitting a container image.
+/// The container is rebuilt as **one** container of the same type: every direct
+/// sub-shape contributes its splits (a split whose orientation is inverted
+/// relative to the original is reversed first, `cxx:262-270`), or itself when it
+/// has no image (`cxx:253-258`). The assembled container is flagged with
+/// `BRep_Tool::IsClosed` (`cxx:274`).
+///
+/// `BOPTools_AlgoTools::MakeContainer` (`BOPTools_AlgoTools.cxx:1600-1645`) is
+/// an empty `MakeWire` / `MakeShell` / `MakeCompSolid`; the port's
+/// `TopoBuilder::make_wire` / `make_shell` and `TopoShape::new` are that empty
+/// constructor, so no splitting of the container into several closed shells
+/// happens here (that happens later, in `FillImagesSolids`).
 pub(super) fn fill_images_container<B: BopBuildOps>(
     f: &mut B,
     container: &TopoShape,
     container_type: ShapeType,
 ) -> Result<(), String> {
     let children = direct_children(container);
-    // Check if any direct sub-shape carries a non-identity image.
+    // `cxx:225-233`: check if any of the sub-shapes of the container has been
+    // modified. A sub-shape whose only image is itself is not a modification.
     let mut modified = false;
     for ss in &children {
         if let Some(im) = f.history().image(ss) {
-            if im.len() != 1 || !im[0].same_tshape(ss) {
+            if im.len() != 1 || !same_shape(&im[0], ss) {
                 modified = true;
                 break;
             }
@@ -139,65 +147,66 @@ pub(super) fn fill_images_container<B: BopBuildOps>(
         return Ok(());
     }
 
-    let bld = TopoBuilder::new();
-    match container_type {
-        ShapeType::Wire => {
-            let mut edges: Vec<Edge> = Vec::new();
-            for ss in &children {
-                if ss.shape_type() != ShapeType::Edge {
-                    continue;
-                }
-                collect_splits(f, ss, &mut |im| {
-                    edges.push(Edge(im));
-                });
-            }
-            let wire = bld.make_wire(&edges);
-            wire.0.set_closed(crate::topo_tools_full::wire_is_closed(&wire));
-            f.history_mut().add_image(container, wire.0);
-        }
-        ShapeType::Shell | ShapeType::CompSolid => {
-            let mut faces: Vec<TopoShape> = Vec::new();
-            for ss in &children {
-                if ss.shape_type() != ShapeType::Face {
-                    continue;
-                }
-                collect_splits(f, ss, &mut |im| faces.push(im));
-            }
-            if faces.is_empty() {
-                return Ok(());
-            }
-            // Reassemble the faces into closed shells.
-            let mut splitter = ShellSplitter::new();
-            for fc in &faces {
-                splitter.add_start_element(fc.clone());
-            }
-            splitter.perform()?;
-            let shells = splitter.shells().to_vec();
-            if shells.is_empty() {
-                // No closed shell (open source shell): emit a plain shell.
-                let shell_faces: Vec<Face> = faces.iter().map(|s| Face(s.clone())).collect();
-                let shell = bld.make_shell(&shell_faces);
-                shell.0.set_closed(!AlgoTools::is_open_shell(&shell.0));
-                f.history_mut().add_image(container, shell.0);
-            } else {
-                for s in shells {
-                    f.history_mut().add_image(container, s);
-                }
-            }
-        }
-        _ => {}
+    // `cxx:247-271`: add every sub-shape or its splits into the new container.
+    let mut parts: Vec<TopoShape> = Vec::new();
+    for ss in &children {
+        collect_splits(f, ss, &mut |im| parts.push(im));
     }
+    let bld = TopoBuilder::new();
+    let Some(image) = make_container_image(&bld, &parts, container_type) else {
+        return Ok(());
+    };
+    // `cxx:274`: `aCIm.Closed(BRep_Tool::IsClosed(aCIm))`.
+    image.set_closed(BRepTool::is_closed(&image));
+    f.history_mut().add_image(container, image);
     Ok(())
 }
 
+/// `BOPTools_AlgoTools::MakeContainer(theType, C)` + the `BRep_Builder::Add`
+/// loop of `FillImagesContainer`: an empty container of `container_type` filled
+/// with `parts`.
+fn make_container_image(
+    bld: &TopoBuilder,
+    parts: &[TopoShape],
+    container_type: ShapeType,
+) -> Option<TopoShape> {
+    match container_type {
+        ShapeType::Wire => {
+            let edges: Vec<Edge> = parts
+                .iter()
+                .filter(|s| s.shape_type() == ShapeType::Edge)
+                .map(|s| Edge(s.clone()))
+                .collect();
+            Some(bld.make_wire(&edges).0)
+        }
+        ShapeType::Shell => {
+            let faces: Vec<Face> = parts
+                .iter()
+                .filter(|s| s.shape_type() == ShapeType::Face)
+                .map(|s| Face(s.clone()))
+                .collect();
+            Some(bld.make_shell(&faces).0)
+        }
+        ShapeType::CompSolid | ShapeType::Compound => {
+            let mut container = TopoShape::new(container_type);
+            for p in parts {
+                bld.add(&mut container, p);
+            }
+            Some(container)
+        }
+        _ => None,
+    }
+}
+
 /// Pushes the image splits of `sub` into `out`, reversing those whose
-/// orientation is inverted relative to `sub`. When `sub` has no image, it is
-/// pushed itself (`BOPAlgo_Builder::FillImagesContainer` inner loop).
+/// orientation is inverted relative to `sub` (`BOPAlgo_Builder_1.cxx:264-269`:
+/// `!aSSIm.IsEqual(aSS) && IsSplitToReverse(aSSIm, aSS)`). When `sub` has no
+/// image, it is pushed itself (`cxx:253-258`).
 pub(super) fn collect_splits<B: BopBuildOps, F: FnMut(TopoShape)>(f: &B, sub: &TopoShape, out: &mut F) {
     if let Some(im) = f.history().image(sub) {
         for ims in im {
             let mut s = ims.clone();
-            if is_split_to_reverse(&s, sub) {
+            if !crate::topo_tools_full::is_equal(&s, sub) && is_split_to_reverse(&s, sub) {
                 reverse_orientation(&mut s);
             }
             out(s);
@@ -482,7 +491,7 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
                     .entry(shape_key(&sdx.0))
                     .or_default()
                     .push(sd.clone());
-                a_msor.retain(|x| !x.same_tshape(sd));
+                a_msor.retain(|x| !same_shape(x, sd));
                 *sd = sdx.0;
             } else {
                 bld.add(sd, &si_shape);
@@ -530,28 +539,33 @@ pub(super) fn map_ancestors_into(shape: &TopoShape, out: &mut HashMap<ShapeMapKe
     merge_ancestors(shape, ShapeType::Edge, ShapeType::Face, out);
 }
 
-/// For every ancestor of type `ancestor_type` in `shape`, records each of its
-/// boundary sub-shapes of type `child_type` → the ancestor.
+/// For every ancestor occurrence of type `ancestor_type` in `shape`, records
+/// each of its boundary sub-shape occurrences of type `child_type` → the
+/// ancestor (`TopExp::MapShapesAndAncestors`, `TopExp.cxx:90-107`). Both
+/// explorers are occurrence walks (`TopExp_Explorer`), not the uniquifying
+/// `TopExp::MapShapes`, so a seam edge stored twice under one face contributes
+/// the face twice and vice versa.
 pub(super) fn merge_ancestors(
     shape: &TopoShape,
     child_type: ShapeType,
     ancestor_type: ShapeType,
     out: &mut HashMap<ShapeMapKey, Vec<TopoShape>>,
 ) {
-    let ancestors = crate::topo_tools_full::shapes_of(shape, ancestor_type);
+    let ancestors = crate::topo_tools_full::explorer_shapes(shape, ancestor_type);
     for a in &ancestors {
         let kids: Vec<TopoShape> = match (child_type, ancestor_type) {
             (ShapeType::Vertex, ShapeType::Edge) | (ShapeType::Vertex, ShapeType::Face) => {
-                vertices_of(a).into_iter().map(|v| v.0).collect()
+                crate::topo_tools_full::explorer_shapes(a, ShapeType::Vertex)
             }
-            (ShapeType::Edge, ShapeType::Face) => edges_of(a).into_iter().map(|e| e.0).collect(),
+            (ShapeType::Edge, ShapeType::Face) => {
+                crate::topo_tools_full::explorer_shapes(a, ShapeType::Edge)
+            }
             _ => Vec::new(),
         };
         for k in kids {
-            let list = out.entry(shape_key(&k)).or_default();
-            if !list.iter().any(|x| x.same_tshape(a)) {
-                list.push(a.clone());
-            }
+            // `TopExp.cxx:96-105` appends unconditionally: one entry per
+            // `(ancestor, sub-shape)` occurrence pair, duplicates included.
+            out.entry(shape_key(&k)).or_default().push(a.clone());
         }
     }
 }

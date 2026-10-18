@@ -28,7 +28,7 @@ use crate::brep_tool::BRepTool;
 use crate::meshing::edge_discret::CurveOnSurface;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
+use crate::topo_tools_full::{edges_of_wire, faces_of, is_equal, is_same, wires_of_face};
 
 /// `GeomAbs_Shape` (`GeomAbs_Shape.hxx`). Order matches the comparisons in
 /// `ContinuityOfFaces` (`BRepLib.cxx:2300-2408`).
@@ -313,10 +313,6 @@ fn compute_surf_curvatures(
     Some((min_c, max_c, dir_min, dir_max))
 }
 
-fn same_tshape(a: &TopoShape, b: &TopoShape) -> bool {
-    GeometryRegistry::shape_key(a) == GeometryRegistry::shape_key(b)
-}
-
 /// Edges of `face` with the face forced `FORWARD` (`BRepLib.cxx:2213-2215`).
 fn edges_on_forward_face(face: &Face) -> Vec<Edge> {
     let stored = face
@@ -342,13 +338,13 @@ fn face_pcurves(
     face1: &Face,
     face2: &Face,
 ) -> Option<(std::sync::Arc<dyn Curve2d>, std::sync::Arc<dyn Curve2d>)> {
-    let seam_closed = !same_tshape(&face1.0, &face2.0)
+    let seam_closed = !is_same(&face1.0, &face2.0)
         && BRepTool::is_closed_edge_face(edge, face1)
         && BRepTool::is_closed_edge_face(edge, face2);
     if seam_closed {
         let edge_in_face1 = edges_on_forward_face(face1)
             .into_iter()
-            .find(|e| same_tshape(&e.0, &edge.0))?;
+            .find(|e| is_same(&e.0, &edge.0))?;
         let (c1, _, _) = curve_on_surface_oriented(&edge_in_face1, face1, false)?;
         let mut edge_in_face2 = edge_in_face1.clone();
         edge_in_face2.0.reverse();
@@ -357,7 +353,7 @@ fn face_pcurves(
     } else {
         let (c1, _, _) = curve_on_surface_oriented(edge, face1, false)?;
         let mut edge2 = edge.clone();
-        if same_tshape(&face1.0, &face2.0) {
+        if is_same(&face1.0, &face2.0) {
             edge2.0.reverse();
         }
         let (c2, _, _) = curve_on_surface_oriented(&edge2, face2, false)?;
@@ -373,8 +369,8 @@ fn continuity_of_faces(
     face2: &Face,
     angle_tol: f64,
 ) -> Option<AbsShape> {
-    let is_seam = same_tshape(&face1.0, &face2.0)
-        && face1.0.orientation() == face2.0.orientation();
+    // `BRepLib.cxx:2202`: `isSeam = theFace1.IsEqual(theFace2)`.
+    let is_seam = is_equal(&face1.0, &face2.0);
     let (c1, c2) = match face_pcurves(edge, face1, face2) {
         Some(v) => v,
         None => return Some(AbsShape::C0),
@@ -519,7 +515,7 @@ fn sewing_edge(edge: &Edge, face: &Face) -> bool {
     let ori = edge.0.orientation();
     for wire in wires_of_face(face) {
         for cur in edges_of_wire(&wire) {
-            if same_tshape(&edge.0, &cur.0) && ori != cur.0.orientation() {
+            if is_same(&edge.0, &cur.0) && ori != cur.0.orientation() {
                 return true;
             }
         }
@@ -557,7 +553,7 @@ pub fn encode_regularity(shape: &TopoShape, tol_ang: f64) {
                 if !entry
                     .1
                     .iter()
-                    .any(|f| same_tshape(&f.0, &face.0))
+                    .any(|f| is_same(&f.0, &face.0))
                 {
                     entry.1.push(face.clone());
                 }
