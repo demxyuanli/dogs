@@ -263,7 +263,7 @@ pub fn closest_point_on_face(face: &Face, p: &GpPnt, _nu: usize, _nv: usize) -> 
 /// Whether `p` lies inside the solid `shape` (audit A2 / task T-38).
 ///
 /// Solids go through `BRepClass3d_SolidClassifier` (the port's
-/// [`SolidClassifier::classify`], `brep_class3d.rs:463`, itself a port of
+/// [`SolidClassifier::classify`], `brep_class3d/mod.rs:463`, itself a port of
 /// `BRepClass3d_SClassifier::Perform`); `In` is the answer, matching the
 /// strictly-interior semantics the previous body had.
 ///

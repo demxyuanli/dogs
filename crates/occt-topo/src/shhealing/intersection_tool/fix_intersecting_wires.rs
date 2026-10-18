@@ -1,7 +1,7 @@
 //! `ShapeFix_IntersectionTool::FixIntersectingWires`
 //! (`ShapeFix_IntersectionTool.cxx:1834-2530`).
 //!
-//! The *face*-level twin of `FixSelfIntersectWire` (`intersection_tool.rs`):
+//! The *face*-level twin of `FixSelfIntersectWire` (`intersection_tool/mod.rs`):
 //! it pairs up every two boundary wires of one face, intersects every
 //! non-adjacent edge cross pair, and splits / cuts / welds on a hit. The
 //! `ShapeBuild_ReShape` context is `ShapeFix_Face::myContext`; the tool records

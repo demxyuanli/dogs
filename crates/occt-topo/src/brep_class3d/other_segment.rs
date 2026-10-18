@@ -5,7 +5,7 @@
 //!
 //! Control flow and statement order follow the OCCT functions. The edge branch
 //! of the `myMapEV` ON test is the shared `Extrema_ExtPC` predicate
-//! (`edge_accepts_point`, `brep_class3d.rs`). The `BRepClass3d_BndBoxTree`
+//! (`edge_accepts_point`, `brep_class3d/mod.rs`). The `BRepClass3d_BndBoxTree`
 //! pruning is replaced by a linear scan of the same `Accept` predicate.
 
 use occt_core::gp::{GpDir, GpDir2d, GpLin, GpLin2d, GpPnt, GpPnt2d, GpVec, GpVec2d};
