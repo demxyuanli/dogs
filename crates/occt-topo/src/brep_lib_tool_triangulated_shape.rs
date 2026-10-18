@@ -4,7 +4,7 @@
 use occt_core::gp::{GpDir, GpPnt, GpPnt2d, GpXyz};
 use occt_core::poly::connect::PolyConnect;
 use occt_core::poly::triangulation::Triangle;
-use occt_core::poly::triangulation_full::PolyTriangulation;
+use occt_core::poly::poly_triangulation::PolyTriangulation;
 use occt_geom::Surface;
 
 /// `Precision::Confusion()`: `constexpr double aTol = Precision::Confusion();`

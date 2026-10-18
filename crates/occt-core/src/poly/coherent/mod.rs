@@ -11,7 +11,7 @@ pub(crate) use std::slice::Iter;
 pub(crate) use crate::gp::{GpPnt, GpPnt2d, GpXyz};
 pub(crate) use crate::precision::{CONFUSION, INFINITE};
 
-pub(crate) use super::super::triangulation_full::PolyTriangulation;
+pub(crate) use super::super::poly_triangulation::PolyTriangulation;
 
 }
 

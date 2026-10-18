@@ -304,7 +304,7 @@ pub fn gauss_newton_solve_fd(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::qr_full::qr_least_squares;
+    use crate::qr_decomposition::qr_least_squares;
 
     const TAU: f64 = std::f64::consts::TAU;
 

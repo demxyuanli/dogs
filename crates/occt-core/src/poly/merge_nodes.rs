@@ -9,7 +9,7 @@ use crate::gp::{GpPnt, GpTrsf, GpXyz};
 use crate::precision::CONFUSION;
 
 use super::triangulation::Triangle;
-use super::triangulation_full::PolyTriangulation;
+use super::poly_triangulation::PolyTriangulation;
 
 /// A key in the merged-nodes map.
 #[derive(Debug, Clone, Copy)]

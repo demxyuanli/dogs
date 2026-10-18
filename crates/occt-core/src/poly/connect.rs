@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use super::triangulation_full::PolyTriangulation;
+use super::poly_triangulation::PolyTriangulation;
 
 /// Edge record used while building the adjacency tables.
 #[derive(Debug, Clone, Copy)]

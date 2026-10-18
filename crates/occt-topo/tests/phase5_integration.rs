@@ -126,7 +126,7 @@ fn geom2d_offset_and_math_stats() {
     // Statistics + sparse CG.
     let xs: Vec<f64> = (0..10).map(|i| i as f64).collect();
     let ys: Vec<f64> = xs.iter().map(|x| 2.0 * x + 1.0).collect();
-    let (b, a) = occt_math::statistics_full::linear_regression(&xs, &ys);
+    let (b, a) = occt_math::descriptive_stats::linear_regression(&xs, &ys);
     assert!((b - 2.0).abs() < 1e-9 && (a - 1.0).abs() < 1e-9);
 
     let mut sm = occt_math::matrix_sparse::SparseMatrix::new(3usize);
