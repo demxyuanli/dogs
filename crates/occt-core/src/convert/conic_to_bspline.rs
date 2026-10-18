@@ -32,7 +32,7 @@
 //! `Convert_QuasiAngular` (`GeomToIGES_GeomCurve.cxx:639`), also ported.
 
 use crate::bspl::banded_interp::{
-    eval_bspline_basis, interpolate_contact, knot_sequence, schoenberg_points,
+    eval_bspline_basis_flat, interpolate_contact, knot_sequence, schoenberg_points,
 };
 use crate::bspl::plib_eval::eval_poly0;
 use crate::gp::GpPnt2d;
@@ -157,7 +157,7 @@ enum Evaluator {
 /// Basis functions of one `BSplCLib::D0` evaluation:
 /// `BSplCLib::EvalBsplineBasis` (`BSplCLib_2.cxx:429-563`).
 fn d0_basis(flat: &[f64], degree: usize, u: f64) -> Result<(usize, Vec<f64>), ConvertError> {
-    eval_bspline_basis(0, degree + 1, flat, u).map_err(|_| ConvertError::ConstructionError)
+    eval_bspline_basis_flat(0, degree + 1, flat, u).map_err(|_| ConvertError::ConstructionError)
 }
 
 /// `BSplCLib::D0` non-rational arm (`BSplCLib_1.cxx:248-267`): the value of the

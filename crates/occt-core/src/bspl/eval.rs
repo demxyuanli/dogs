@@ -224,7 +224,7 @@ use crate::gp::GpVec;
 
 /// Evaluate non-rational B-spline surface at (u,v).
 /// poles: flat array of control points, row-major (n_u rows, n_v cols).
-pub fn eval_surface(poles: &[GpPnt], n_u: usize, n_v: usize,
+pub fn eval_surface_non_rational(poles: &[GpPnt], n_u: usize, n_v: usize,
                     knots_u: &[f64], knots_v: &[f64],
                     degree_u: usize, degree_v: usize,
                     u: f64, v: f64) -> GpPnt {
@@ -239,7 +239,7 @@ pub fn eval_surface(poles: &[GpPnt], n_u: usize, n_v: usize,
 }
 
 /// Evaluate non-rational B-spline surface D0 and D1 at (u,v).
-pub fn eval_surface_d1(poles: &[GpPnt], n_u: usize, n_v: usize,
+pub fn eval_surface_d1_non_rational(poles: &[GpPnt], n_u: usize, n_v: usize,
                        knots_u: &[f64], knots_v: &[f64],
                        degree_u: usize, degree_v: usize,
                        u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {

@@ -3,7 +3,7 @@
 
 /// Evaluate polynomial at x using Horner's scheme.
 /// coeffs[0] + coeffs[1]*x + coeffs[2]*x² + ... + coeffs[n]*xⁿ
-pub fn eval_polynomial(coeffs: &[f64], x: f64) -> f64 {
+pub fn eval_polynomial_horner(coeffs: &[f64], x: f64) -> f64 {
     if coeffs.is_empty() { return 0.0; }
     let mut result = coeffs[coeffs.len() - 1];
     for i in (0..coeffs.len() - 1).rev() {
@@ -32,14 +32,14 @@ pub fn eval_polynomial_derivs(coeffs: &[f64], x: f64, n_deriv: usize) -> Vec<f64
 }
 
 /// Evaluate 2-variable polynomial: sum(c[i][j] * x^i * y^j)
-pub fn eval_poly2var(coeffs: &[Vec<f64>], x: f64, y: f64) -> f64 {
+pub fn eval_poly2var_grid(coeffs: &[Vec<f64>], x: f64, y: f64) -> f64 {
     let nx = coeffs.len();
     if nx == 0 { return 0.0; }
     let mut row_vals = Vec::with_capacity(nx);
     for row in coeffs {
-        row_vals.push(eval_polynomial(row, y));
+        row_vals.push(eval_polynomial_horner(row, y));
     }
-    eval_polynomial(&row_vals, x)
+    eval_polynomial_horner(&row_vals, x)
 }
 
 /// Lagrange interpolation: find polynomial passing through (x[i], y[i]).
@@ -82,7 +82,7 @@ pub fn lagrange_coefficients(x_vals: &[f64], y_vals: &[f64]) -> Vec<f64> {
 /// Compute the value of a Lagrange interpolation at given x.
 pub fn lagrange_value(x_vals: &[f64], y_vals: &[f64], x: f64) -> f64 {
     let coeffs = lagrange_coefficients(x_vals, y_vals);
-    eval_polynomial(&coeffs, x)
+    eval_polynomial_horner(&coeffs, x)
 }
 
 /// Convert power basis to matrix form for Bezier representation.
@@ -441,7 +441,7 @@ fn binomial(n: usize, k: usize) -> usize {
 
 /// Evaluate multiple polynomials (array of coefficient sets) at x.
 pub fn eval_polynomials(coeffs: &[Vec<f64>], x: f64) -> Vec<f64> {
-    coeffs.iter().map(|c| eval_polynomial(c, x)).collect()
+    coeffs.iter().map(|c| eval_polynomial_horner(c, x)).collect()
 }
 
 #[cfg(test)]
@@ -449,10 +449,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn horner_linear() { assert!((eval_polynomial(&[2.0, 3.0], 4.0) - 14.0).abs() < 1e-14); }
+    fn horner_linear() { assert!((eval_polynomial_horner(&[2.0, 3.0], 4.0) - 14.0).abs() < 1e-14); }
 
     #[test]
-    fn horner_quadratic() { assert!((eval_polynomial(&[1.0, 2.0, 3.0], 2.0) - 17.0).abs() < 1e-14); }
+    fn horner_quadratic() { assert!((eval_polynomial_horner(&[1.0, 2.0, 3.0], 2.0) - 17.0).abs() < 1e-14); }
 
     #[test]
     fn lagrange_linear() {

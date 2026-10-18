@@ -2,7 +2,7 @@
 //! Source: `BSplCLib_CurveComputation.pxx:720-830` and `pxx:1085-1134`.
 
 use crate::bspl::bohm::bohm;
-use crate::bspl::curve_eval::prepare_eval;
+use crate::bspl::curve_eval::prepare_curve_eval;
 use crate::bspl::plib_rational;
 use crate::gp::{GpPnt, GpVec};
 
@@ -29,10 +29,10 @@ pub fn dn(
     if degree < 0 || n < 0 {
         return GpVec::zero();
     }
-    let mut p = prepare_eval(u, index, degree, periodic, poles, weights, knots, mults);
+    let mut p = prepare_curve_eval(u, index, degree, periodic, poles, weights, knots, mults);
     bohm(p.u, degree, n, &p.knots, p.dim, &mut p.poles);
     if p.rational {
-        let v = plib_rational::rational_derivative(degree, n, &p.poles);
+        let v = plib_rational::rational_derivative_xyz(degree, n, &p.poles);
         GpVec::new(v[0], v[1], v[2])
     } else if n > degree {
         GpVec::zero()

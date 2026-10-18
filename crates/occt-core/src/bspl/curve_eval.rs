@@ -97,7 +97,7 @@ pub struct CurvePrepared {
 /// `index` is the incoming knot guess (see `Geom_BSplineCurve::EvalDx`, which
 /// passes the span it located in `myKnots`). `mults == None` is the flat-knot
 /// convention (`BSplCLib::NoMults`).
-pub fn prepare_eval(
+pub fn prepare_curve_eval(
     u: f64,
     index: i32,
     degree: i32,
@@ -144,7 +144,7 @@ pub fn d0(
     knots: &[f64],
     mults: Option<&[i32]>,
 ) -> GpPnt {
-    let mut p = prepare_eval(u, index, degree, periodic, poles, weights, knots, mults);
+    let mut p = prepare_curve_eval(u, index, degree, periodic, poles, weights, knots, mults);
     eval(p.u, degree, &p.knots, p.dim, &mut p.poles);
     if p.rational {
         let w = p.poles[3];
@@ -165,7 +165,7 @@ pub fn d1(
     knots: &[f64],
     mults: Option<&[i32]>,
 ) -> (GpPnt, GpVec) {
-    let mut p = prepare_eval(u, index, degree, periodic, poles, weights, knots, mults);
+    let mut p = prepare_curve_eval(u, index, degree, periodic, poles, weights, knots, mults);
     bohm(p.u, degree, 1, &p.knots, p.dim, &mut p.poles);
     if p.rational {
         let ders = plib_rational::rational_derivatives(degree, 1, &p.poles);
@@ -193,7 +193,7 @@ pub fn d2(
     knots: &[f64],
     mults: Option<&[i32]>,
 ) -> (GpPnt, GpVec, GpVec) {
-    let mut p = prepare_eval(u, index, degree, periodic, poles, weights, knots, mults);
+    let mut p = prepare_curve_eval(u, index, degree, periodic, poles, weights, knots, mults);
     bohm(p.u, degree, 2, &p.knots, p.dim, &mut p.poles);
     if p.rational {
         let ders = plib_rational::rational_derivatives(degree, 2, &p.poles);
@@ -232,7 +232,7 @@ pub fn d3(
     knots: &[f64],
     mults: Option<&[i32]>,
 ) -> (GpPnt, GpVec, GpVec, GpVec) {
-    let mut p = prepare_eval(u, index, degree, periodic, poles, weights, knots, mults);
+    let mut p = prepare_curve_eval(u, index, degree, periodic, poles, weights, knots, mults);
     bohm(p.u, degree, 3, &p.knots, p.dim, &mut p.poles);
     if p.rational {
         let ders = plib_rational::rational_derivatives(degree, 3, &p.poles);

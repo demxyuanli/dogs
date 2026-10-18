@@ -73,7 +73,7 @@ fn eval_basis0(order: usize, flat: &[f64], parameter: f64) -> Option<(usize, Vec
 ///
 /// Returns `(first_nz_0based, basis)` where `basis[der * order + j]` is
 /// derivative `der` of basis function `j`.
-pub fn eval_bspline_basis(
+pub fn eval_bspline_basis_flat(
     derivative_request: usize,
     order: usize,
     flat: &[f64],
@@ -207,7 +207,7 @@ pub fn interpolate_contact(
     let mut matrix = vec![0.0; n * bw];
     for (i, &u) in parameters.iter().enumerate() {
         let der = contact[i].max(0) as usize;
-        let (first_nz, basis) = eval_bspline_basis(der, order, flat, u)?;
+        let (first_nz, basis) = eval_bspline_basis_flat(der, order, flat, u)?;
         let col0 = degree as isize + first_nz as isize - i as isize;
         let row = der * order;
         for j in 0..=degree {

@@ -63,7 +63,7 @@ fn solve_gauss(a: &[Vec<f64>], b: &[f64]) -> Result<Vec<f64>, &'static str> {
 }
 
 /// Evaluate polynomial fit at x (Horner).
-pub fn eval_fit(coeffs: &[f64], x: f64) -> f64 { plib::eval_polynomial(coeffs, x) }
+pub fn eval_fit(coeffs: &[f64], x: f64) -> f64 { plib::eval_polynomial_horner(coeffs, x) }
 
 /// Fit a line y = m*x + c to points. Returns (m, c).
 pub fn fit_line(xs: &[f64], ys: &[f64]) -> Option<(f64, f64)> {

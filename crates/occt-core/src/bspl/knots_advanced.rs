@@ -3,7 +3,7 @@ use crate::gp::GpPnt;
 
 /// Remove knot u mult times from curve while maintaining shape within tolerance.
 /// Returns (new_poles, new_knots). Uses Tiller's knot removal algorithm.
-pub fn remove_knot(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64, mult: usize, tolerance: f64) -> (Vec<GpPnt>, Vec<f64>) {
+pub fn remove_knot_tiller(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64, mult: usize, tolerance: f64) -> (Vec<GpPnt>, Vec<f64>) {
     let _n = poles.len();
     let _idx = super::knots::hunt(knots, u);
     let actual_mult = (0..knots.len()).filter(|&i| (knots[i] - u).abs() < 1e-15).count();
@@ -56,7 +56,7 @@ pub fn remove_knot(poles: &[GpPnt], knots: &[f64], degree: usize, u: f64, mult: 
 }
 
 /// Reduce B-spline degree by 1 while keeping shape within tolerance.
-pub fn reduce_degree(poles: &[GpPnt], knots: &[f64], degree: usize, _tolerance: f64) -> (Vec<GpPnt>, Vec<f64>, usize) {
+pub fn reduce_degree_tiller(poles: &[GpPnt], knots: &[f64], degree: usize, _tolerance: f64) -> (Vec<GpPnt>, Vec<f64>, usize) {
     if degree == 1 { return (poles.to_vec(), knots.to_vec(), degree); }
     // Degree reduction: remove one multiplicity from each end knot, then interpolate
     let mut new_knots = knots.to_vec();
@@ -103,7 +103,7 @@ mod tests {
     fn remove_knot_identity() {
         let poles = vec![GpPnt::new(0.,0.,0.),GpPnt::new(1.,0.,0.),GpPnt::new(2.,0.,0.)];
         let knots = vec![0.,0.,0.,1.,1.,1.];
-        let (np, _) = remove_knot(&poles, &knots, 2, 0.5, 1, 0.001);
+        let (np, _) = remove_knot_tiller(&poles, &knots, 2, 0.5, 1, 0.001);
         // Should not change much
         assert_eq!(np.len(), poles.len());
     }

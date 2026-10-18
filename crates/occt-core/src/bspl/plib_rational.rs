@@ -5,7 +5,7 @@
 ///
 /// `ders` layout (`cxx:307-316`): order `k` occupies `ders[k*4 .. k*4+4]` as
 /// `(ux, uy, uz, w)`. Returns the `DerivativeRequest`-th cartesian vector.
-pub fn rational_derivative(degree: i32, derivative_request: i32, ders: &[f64]) -> [f64; 3] {
+pub fn rational_derivative_xyz(degree: i32, derivative_request: i32, ders: &[f64]) -> [f64; 3] {
     let storage = rational_derivatives(degree, derivative_request, ders);
     let mut dim = (derivative_request << 1) + derivative_request;
     if dim < 0 {

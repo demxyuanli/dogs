@@ -20,7 +20,7 @@ use crate::geom2d_convert_mult::mult_num_and_denom;
 use crate::hermit;
 use occt_core::bspl::banded_interp::knot_sequence;
 use occt_core::bspl::function_ops::function_reparameterise;
-use occt_core::bspl::plib::eval_polynomial;
+use occt_core::bspl::plib::eval_polynomial_horner;
 use occt_core::kernel::geomabs::Shape;
 use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION};
 
@@ -295,7 +295,7 @@ fn closed_need2deg_repara(
         .collect();
 
     let eval = |_der: i32, _se: [f64; 2], p: f64| -> Result<f64, ()> {
-        Ok(eval_polynomial(&poly, p))
+        Ok(eval_polynomial_horner(&poly, p))
     };
 
     let mut new_poles = vec![0.0; num_new * 2];

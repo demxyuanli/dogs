@@ -61,9 +61,9 @@ pub fn eval_surface_rational_d1(
         .collect();
     let w_poles: Vec<GpPnt> = weights.iter().map(|&w| GpPnt::new(w, 0.0, 0.0)).collect();
     let (a, da_u, da_v) =
-        eval::eval_surface_d1(&a_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
+        eval::eval_surface_d1_non_rational(&a_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
     let (wpt, dw_u, dw_v) =
-        eval::eval_surface_d1(&w_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
+        eval::eval_surface_d1_non_rational(&w_poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v, u, v);
     let w = wpt.x();
     if w.abs() < 1e-30 {
         return (a, da_u, da_v);

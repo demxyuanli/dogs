@@ -3,7 +3,7 @@
 //! Source: `BSplCLib_2.cxx:861-934`, `:1001-1028`, `:1063-1173`;
 //! `BSplCLib.cxx:3640-3743` (in-range path only).
 
-use crate::bspl::banded_interp::{eval_bspline_basis, interpolate_contact, knot_sequence, schoenberg_points};
+use crate::bspl::banded_interp::{eval_bspline_basis_flat, interpolate_contact, knot_sequence, schoenberg_points};
 use crate::bspl::knots::{nb_poles, reparametrize};
 
 /// `BSplCLib::MergeBSplineKnots` (`BSplCLib_2.cxx:1063-1173`).
@@ -96,7 +96,7 @@ fn eval_poles_at(u: f64, degree: i32, flat: &[f64], poles: &[f64], dim: usize, o
         return;
     }
     let n_poles = flat.len() - order;
-    let Ok((first_nz, basis)) = eval_bspline_basis(0, order, flat, u) else {
+    let Ok((first_nz, basis)) = eval_bspline_basis_flat(0, order, flat, u) else {
         for o in out.iter_mut().take(dim) {
             *o = 0.0;
         }
